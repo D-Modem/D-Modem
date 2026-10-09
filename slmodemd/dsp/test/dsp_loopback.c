@@ -59,7 +59,7 @@ struct side {
 	int dp_requested;
 };
 
-static struct dp_operations *ops[DP_MAX];
+static struct dp_operations *ops[256];   /* by id: DP_MAX is below some ids */
 static struct side sides[2];
 static struct modem *fake[2];
 

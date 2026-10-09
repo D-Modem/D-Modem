@@ -134,6 +134,20 @@ int v22_descramble(struct v22_scrambler *s, int bit);
 /* root raised cosine impulse response, t in symbol periods */
 float rrc_pulse(float t, float alpha);
 
+/* rational sample rate converter L/M (polyphase FIR, 70 dB stop band,
+   cut off at 0.484 of the lower of the two rates) */
+#define RESAMPLER_MAX_TAPS 100
+struct resampler {
+	int L, M, taps, t;
+	const float *h;         /* L * taps, phase major */
+	float hist[2 * RESAMPLER_MAX_TAPS];
+	int pos;
+};
+/* 8000 <-> 9600 Hz: (L, M) = (6, 5) or (5, 6) */
+int  resampler_init(struct resampler *r, int L, int M);
+/* one input sample in; returns the number of outputs (0 to 2) */
+int  resampler_run(struct resampler *r, float x, float out[2]);
+
 /* dB helper: power of a sine of amplitude 'a' */
 static inline float tone_power(float a) { return a * a / 2; }
 

@@ -196,3 +196,75 @@ float dtmf_gen_next(struct dtmf_gen *d)
 {
 	return d->amp_lo * osc_next(&d->lo) + d->amp_hi * osc_next(&d->hi);
 }
+
+/*
+ *    8000 <-> 9600 Hz sample rate conversion through 48 kHz
+ */
+#define RS_LEN  480     /* prototype taps at 48 kHz */
+
+static float rs_h6[RS_LEN], rs_h5[RS_LEN];
+static int rs_ready;
+
+static double bessel_i0(double x)
+{
+	double s = 1, t = 1;
+	int k;
+	for (k = 1; k < 40; k++) {
+		t *= (x / (2 * k)) * (x / (2 * k));
+		s += t;
+	}
+	return s;
+}
+
+/* the low pass prototype at 48 kHz, cut off at 3870 Hz, Kaiser window
+   (beta 7: about 70 dB), sorted into L phases of RS_LEN / L taps */
+static void rs_design(float *h, int L)
+{
+	const double fc = 3870.0 / 48000, beta = 7.0;
+	int n, taps = RS_LEN / L;
+	for (n = 0; n < RS_LEN; n++) {
+		double m = n - (RS_LEN - 1) / 2.0, r = 2 * m / (RS_LEN - 1);
+		double s = m == 0 ? 2 * fc : sin(2 * M_PI * fc * m) / (M_PI * m);
+		double w = bessel_i0(beta * sqrt(1 - r * r)) / bessel_i0(beta);
+		/* gain L: each output sees one phase of the zero stuffed
+		   input */
+		h[(n % L) * taps + n / L] = (float)(L * s * w);
+	}
+}
+
+int resampler_init(struct resampler *r, int L, int M)
+{
+	if (!rs_ready) {
+		rs_design(rs_h6, 6);
+		rs_design(rs_h5, 5);
+		rs_ready = 1;
+	}
+	if (!((L == 6 && M == 5) || (L == 5 && M == 6)))
+		return -1;
+	memset(r, 0, sizeof(*r));
+	r->L = L;
+	r->M = M;
+	r->taps = RS_LEN / L;
+	r->h = L == 6 ? rs_h6 : rs_h5;
+	return 0;
+}
+
+int resampler_run(struct resampler *r, float x, float out[2])
+{
+	int n = 0;
+	/* the history twice over, so that it reads as one block */
+	if (--r->pos < 0)
+		r->pos = r->taps - 1;
+	r->hist[r->pos] = r->hist[r->pos + r->taps] = x;
+	while (r->t < r->L) {
+		const float *h = r->h + r->t * r->taps, *b = r->hist + r->pos;
+		float y = 0;
+		int k;
+		for (k = 0; k < r->taps; k++)
+			y += h[k] * b[k];
+		out[n++] = y;
+		r->t += r->M;
+	}
+	r->t -= r->L;
+	return n;
+}

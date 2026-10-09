@@ -193,11 +193,17 @@ struct v34_ec {
 	float mu, dbg_rx, dbg_err;
 };
 
+#define V34_FIFO        8
+
 struct v34_dp {
 	struct dp dp;
 	struct modem *modem;
 	struct dp_runtime *rt;
-	int srate;
+	int srate;              /* of the pump: 9600 */
+	int line_rate;          /* 9600, or 8000 through the converters */
+	struct resampler rs_up, rs_down;
+	float fifo[V34_FIFO];   /* converted output, 8000 Hz */
+	int fifo_n;
 	int caller;
 	enum v34_state state;
 	long count, total, timeout;
@@ -1728,27 +1734,60 @@ static float pump_tx_sample(struct v34_dp *v)
 	return y;
 }
 
+/* one sample at 9600 Hz each way */
+static int v34_sample(struct v34_dp *v, float x, float *y)
+{
+	int r = v34_handshake(v);
+	if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
+		return r;
+	*y = dsp_clip16(pump_tx_sample(v));
+	v->last_tx = *y;
+	pump_rx_sample(v, x);
+	if (v->state != V34_DATA && v->total >= v->timeout) {
+		DSP_DBG("v34: start-up timeout in state %d\n", v->state);
+		return DPSTAT_ERROR;
+	}
+	v->count++;
+	v->total++;
+	return r;
+}
+
 static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 {
 	struct v34_dp *v = dp->dp_data;
 	s16 *src = in, *dst = out;
-	int ret = DPSTAT_OK, r, i;
+	int ret = DPSTAT_OK, r, i, k, n;
+	float y, up[2], down[2];
 
 	for (i = 0; i < cnt; i++) {
-		r = v34_handshake(v);
-		if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
-			return r;
-		if (r != DPSTAT_OK)
-			ret = r;
-		dst[i] = dsp_clip16(pump_tx_sample(v));
-		v->last_tx = dst[i];
-		pump_rx_sample(v, src[i]);
-		if (v->state != V34_DATA && v->total >= v->timeout) {
-			DSP_DBG("v34: start-up timeout in state %d\n", v->state);
-			return DPSTAT_ERROR;
+		if (v->line_rate == V34_SRATE) {
+			r = v34_sample(v, src[i], &y);
+			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
+				return r;
+			if (r != DPSTAT_OK)
+				ret = r;
+			dst[i] = (s16)y;
+			continue;
 		}
-		v->count++;
-		v->total++;
+		/* an 8000 Hz line: the pump runs at 9600 Hz in between */
+		n = resampler_run(&v->rs_up, src[i], up);
+		for (k = 0; k < n; k++) {
+			r = v34_sample(v, up[k], &y);
+			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
+				return r;
+			if (r != DPSTAT_OK)
+				ret = r;
+			if (resampler_run(&v->rs_down, y, down) &&
+			    v->fifo_n < V34_FIFO)
+				v->fifo[v->fifo_n++] = down[0];
+		}
+		y = 0;
+		if (v->fifo_n) {
+			y = v->fifo[0];
+			memmove(v->fifo, v->fifo + 1,
+				--v->fifo_n * sizeof(v->fifo[0]));
+		}
+		dst[i] = dsp_clip16(y);
 	}
 	return ret;
 }
@@ -1760,13 +1799,19 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	struct v34_dp *v;
 	int s7, s10;
 
-	if (srate != V34_SRATE) {
+	if (srate != V34_SRATE && srate != 8000) {
 		DSP_DBG("v34: sample rate %d not supported\n", srate);
 		return NULL;
 	}
 	v = calloc(1, sizeof(*v));
 	if (!v)
 		return NULL;
+	/* at 8000 Hz through sample rate converters */
+	v->line_rate = srate;
+	srate = V34_SRATE;
+	resampler_init(&v->rs_up, 6, 5);
+	resampler_init(&v->rs_down, 5, 6);
+	v->fifo_n = 2;          /* so that it never runs dry */
 	v->dp.id = id;
 	v->dp.modem = m;
 	v->dp.op = op;
