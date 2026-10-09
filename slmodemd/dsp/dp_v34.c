@@ -753,10 +753,10 @@ static const int v34_max_rate_of_baud[V34_NBAUDS] = { 9, 11, 11, 12, 13, 14 };
 /* the remote's L2: the signal to noise ratio after equalization at
    each symbol rate, and the data rates (in 2400 bit/s steps) they
    allow; returns the best */
+#define PROBE_MARGIN 2	/* dB */
+
 static int probe_analyse(struct v34_dp *v)
 {
-	static const float min_snr[] = { 0, 8, 12, 15, 18, 21, 23, 25, 26.5f,
-					 28, 30, 31.5f, 33, 34.5f, 36 };
 	double periods = (double)v->pcount / PROBE_PERIOD, pt, pn, ptone[26];
 	int i, k, n, b, best = 1;
 
@@ -797,7 +797,11 @@ static int probe_analyse(struct v34_dp *v)
 			continue;
 		/* what the receiver itself achieves: about 40 dB */
 		snr = 10 * log10(1 / (inv / cnt + 1e-4));
-		for (n = v34_max_rate_of_baud[b]; n > 1 && snr < min_snr[n]; n--)
+		/* with the 16 state code the bit error rate stays below 1e-5
+		   from 3 dB per bit per symbol + 4 dB, at every symbol rate;
+		   plus a margin for the receiver's own impairments */
+		for (n = v34_max_rate_of_baud[b];
+		     n > 1 && snr < 3 * 2400.0 * n / rs + 4 + PROBE_MARGIN; n--)
 			;
 		v->rate_of_baud[b] = n;
 		DSP_DBG("v34: probe %d baud: SNR %.1f dB -> %d bit/s\n",

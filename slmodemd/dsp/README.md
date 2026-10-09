@@ -77,8 +77,12 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   symbol rate of Table 10 except the auxiliary channel ones. As the original
   library does: the trellis output of a 4D symbol is the low bit of the
   encoder state before that symbol, and the inversion pattern starts at its
-  bit 2J - 2. The receiver decides on the nearest points (no Viterbi
-  decoder yet). Neither side asks for precoding, non-linear encoding or
+  bit 2J - 2. The receiver runs a Viterbi decoder over the 16 states with
+  a decision delay of 32 4D symbols (for the equalizer and timing it still
+  takes the nearest point). It gains 3 to 4 dB over deciding on the nearest
+  points: with it the bit error rate stays below 1e-5 from an SNR of 3 dB per
+  bit per symbol plus 4 dB, at every symbol rate, and the rate selection
+  asks for 2 dB more than that. Neither side asks for precoding, non-linear encoding or
   pre-emphasis; when the remote asks for them they are not applied.
 
 - **Echo canceller:** real pass band NLMS on the line samples, structured
@@ -154,10 +158,11 @@ delay, a low-pass filter (`FLAT=1` leaves it out), white noise and an
 optional sample clock offset. It then checks the bit error rate in both
 directions. `DUMP=<prefix>` records what each side hears.
 
-V.34 between two open modems (`dsp_loopback 8 ...`): 33600 bit/s at 50 dB
-on a flat line, 31200 at 40 dB with the low-pass filter (also with ±80 ppm
-clock offset, or with near and far echo 6 and 10 dB below our signal),
-28800 at 35 dB, 21600 at 30 dB. `[echo dB] [far echo dB]` add the echoes;
+V.34 between two open modems (`dsp_loopback 8 ...`, with the low-pass
+filter, no bit errors): 33600 bit/s at 40 dB (also with ±80 ppm clock
+offset, or with near and far echo 6 and 10 dB below our signal), 31200
+at 38 dB, 28800 at 35 dB, 26400 at 33 dB, 24000 at 30 dB, 21600 at
+28 dB, 16800 at 25 dB, 14400 at 22 dB. `[echo dB] [far echo dB]` add the echoes;
 `FAR_DELAY=<samples>` delays the far one (200 ms: still 31200 bit/s).
 
 `interop` connects two `modem_half` processes with pipes. One process is

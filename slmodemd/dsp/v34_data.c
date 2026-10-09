@@ -382,12 +382,15 @@ static void make_lookup(void)
 	lookup_init = 1;
 }
 
+static void v34_viterbi_init(struct v34_drx *d);
+
 void v34_drx_init(struct v34_drx *d, const struct v34_dparm *p)
 {
 	memset(d, 0, sizeof(*d));
 	d->p = *p;
 	if (!lookup_init)
 		make_lookup();
+	v34_viterbi_init(d);
 }
 
 /* the nearest point of the constellation in use */
@@ -470,15 +473,158 @@ static void drx_frame(struct v34_drx *d, unsigned *scr, int tap)
 	d->put_bits(d->ctx, bits, n);
 }
 
-/* z: the equalized symbol, in units of the training points; returns
-   the decided point for the adaptation */
-cplx v34_drx_symbol(struct v34_drx *d, cplx z, unsigned *scr, int tap)
+/*
+ *    Viterbi decoder for the 16 state code
+ */
+
+/* the nearest valid point of each 2D subset to z */
+static void subset_points(const struct v34_dparm *p, cplx z,
+			  float dist[8], short code[8])
 {
-	int x, y;
-	d->e[d->pos++] = decide(&d->p, z, &x, &y);
+	float u = z.re / p->g, v = z.im / p->g;
+	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
+	int dx, dy, i, lim = p->M << p->q;
+
+	/* outside the constellation: from its edge */
+	if (x0 > 45) x0 = 45;
+	if (x0 < -45) x0 = -45;
+	if (y0 > 45) y0 = 45;
+	if (y0 < -45) y0 = -45;
+	for (i = 0; i < 8; i++) {
+		dist[i] = 1e30f;
+		code[i] = -1;
+	}
+	for (dx = -6; dx <= 6; dx += 2)
+		for (dy = -6; dy <= 6; dy += 2) {
+			int x = x0 + dx, y = y0 + dy, e, l;
+			float dd;
+			if (x < -45 || x > 45 || y < -45 || y > 45)
+				continue;
+			e = lookup[(x + 45) / 2][(y + 45) / 2];
+			if (e < 0 || (e & 511) >= lim)
+				continue;
+			l = subset_label(x, y);
+			dd = (u - x) * (u - x) + (v - y) * (v - y);
+			if (dd < dist[l]) {
+				dist[l] = dd;
+				code[l] = (short)e;
+			}
+		}
+}
+
+static void v34_viterbi_init(struct v34_drx *d)
+{
+	int s;
+	for (s = 0; s < V34_STATES; s++)
+		d->metric[s] = s ? 1e30f : 0;   /* the encoder starts at 0 */
+	d->vt = d->vn = 0;
+	d->half = 0;
+	d->pat = 2 * d->p.J - 2;
+	d->v0 = v34_sync_pattern[d->pat];
+}
+
+/* one 4D symbol in; returns 1 with a decided pair of point codes, after
+   the decoding delay */
+static int viterbi_4d(struct v34_drx *d, const float da[8], const short ca[8],
+		      const float db[8], const short cb[8], short out[2])
+{
+	float gm[8], m2[V34_STATES], best;
+	short ga[8], gb[8];
+	int l0, l1, g, s, y, t = d->vt, bs, k;
+
+	/* the best pair of subsets for each trellis input and Y0 */
+	for (g = 0; g < 8; g++)
+		gm[g] = 1e30f;
+	for (l0 = 0; l0 < 8; l0++)
+		for (l1 = 0; l1 < 8; l1++) {
+			float m = da[l0] + db[l1];
+			g = conv_in(l0, l1) | ((l0 ^ l1) & 1) << 2;
+			if (m < gm[g]) {
+				gm[g] = m;
+				ga[g] = ca[l0];
+				gb[g] = cb[l1];
+			}
+		}
+	for (s = 0; s < V34_STATES; s++)
+		m2[s] = 1e30f;
+	for (s = 0; s < V34_STATES; s++) {
+		/* U0 = Y0 ^ V0 (no precoding: C0 = 0) */
+		int y0 = (s ^ d->v0) & 1;
+		if (d->metric[s] >= 1e29f)
+			continue;
+		for (y = 0; y < 4; y++) {
+			int ns = trellis_next(s, y);
+			float m = d->metric[s] + gm[y | y0 << 2];
+			if (m < m2[ns]) {
+				m2[ns] = m;
+				d->prev[t][ns] = (unsigned char)s;
+				d->pa[t][ns] = ga[y | y0 << 2];
+				d->pb[t][ns] = gb[y | y0 << 2];
+			}
+		}
+	}
+	best = m2[0];
+	bs = 0;
+	for (s = 1; s < V34_STATES; s++)
+		if (m2[s] < best) {
+			best = m2[s];
+			bs = s;
+		}
+	for (s = 0; s < V34_STATES; s++)
+		d->metric[s] = m2[s] - best;
+
+	/* the superframe inversions, as the transmitter */
+	if (++d->half >= 2 * d->p.P) {
+		d->half = 0;
+		if (++d->pat >= 2 * d->p.J)
+			d->pat = 0;
+		d->v0 = v34_sync_pattern[d->pat];
+	} else
+		d->v0 = 0;
+
+	d->vt = (t + 1) % V34_TB;
+	if (++d->vn < V34_TB)
+		return 0;
+	/* trace back from the best state to the oldest symbol kept */
+	s = bs;
+	for (k = 0; k < V34_TB - 1; k++) {
+		s = d->prev[t][s];
+		t = (t + V34_TB - 1) % V34_TB;
+	}
+	out[0] = d->pa[t][s];
+	out[1] = d->pb[t][s];
+	return 1;
+}
+
+static void drx_point(struct v34_drx *d, int code, unsigned *scr, int tap)
+{
+	d->e[d->pos++] = code;
 	if (d->pos == 8) {
 		drx_frame(d, scr, tap);
 		d->pos = 0;
+	}
+}
+
+/* z: the equalized symbol, in units of the training points; returns
+   the (tentative) decided point for the adaptation */
+cplx v34_drx_symbol(struct v34_drx *d, cplx z, unsigned *scr, int tap)
+{
+	int x, y;
+	short out[2];
+
+	decide(&d->p, z, &x, &y);
+	if (!d->half2) {
+		subset_points(&d->p, z, d->da, d->ca);
+		d->half2 = 1;
+	} else {
+		float db[8];
+		short cb[8];
+		subset_points(&d->p, z, db, cb);
+		d->half2 = 0;
+		if (viterbi_4d(d, d->da, d->ca, db, cb, out)) {
+			drx_point(d, out[0] < 0 ? 0 : out[0], scr, tap);
+			drx_point(d, out[1] < 0 ? 0 : out[1], scr, tap);
+		}
 	}
 	return cplx_make(d->p.g * x, d->p.g * y);
 }

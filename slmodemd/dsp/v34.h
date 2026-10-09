@@ -94,6 +94,9 @@ struct v34_dtx {
 void v34_dtx_init(struct v34_dtx *d, const struct v34_dparm *p);
 cplx v34_dtx_symbol(struct v34_dtx *d, unsigned *scr, int tap);
 
+#define V34_STATES      16
+#define V34_TB          32      /* Viterbi decoding delay, 4D symbols */
+
 struct v34_drx {
 	struct v34_dparm p;
 	void (*put_bits)(void *ctx, const unsigned char *bits, int n);
@@ -101,6 +104,15 @@ struct v34_drx {
 	int sbc, z;
 	int e[8];               /* rotation << 9 | point index */
 	int pos;
+	/* Viterbi decoder */
+	float metric[V34_STATES];
+	unsigned char prev[V34_TB][V34_STATES];
+	short pa[V34_TB][V34_STATES], pb[V34_TB][V34_STATES];
+	int vt, vn;
+	int half, pat, v0;      /* superframe inversions, as the transmitter */
+	int half2;              /* the first 2D symbol of a 4D one is in: */
+	float da[8];
+	short ca[8];
 };
 
 void v34_drx_init(struct v34_drx *d, const struct v34_dparm *p);
