@@ -13,6 +13,9 @@ By default slmodemd links Smart Link's binary-only i386 DSP library (`slmodemd/d
 
 It implements V.8 and V.34 (up to 33600 bps), V.32bis (14400 bps), V.32, V.22bis, V.22, Bell 212A, V.23, V.21 and Bell 103, class 1 fax (V.17, V.29, V.27ter and V.21 HDLC), call progress, caller ID and voice.  It implements V.90 only as the digital modem (on an 8000 Hz G.711 line), not V.92.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md) for details and tests.
 
+### Asterisk module
+`asterisk/` has `app_dmodem`, a dialplan application that answers a call on an Asterisk channel with the open modem and hands the connection to a BBS (TCP) or a program on a pty such as pppd, per profile in `dmodem.conf`.  It is built on `libdmodem` (`slmodemd/dmodem.h`), the modem core and open DSP as a library.  See [asterisk/README.md](asterisk/README.md).
+
 ## How it Works
 Traditional “controller-based” modems generally used a microcontroller and a DSP to handle all aspects of modem communication on the device itself.  Later, so-called “Winmodems” were introduced that allowed for field-programmable DSPs and moved the controller and other functionality into software running on the host PC.  This was followed by “pure software” modems that moved DSP functionality to the host as well.  The physical hardware of these softmodems was only used to connect to the phone network, and all processing was done in software. 
 

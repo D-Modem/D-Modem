@@ -1,0 +1,46 @@
+;
+; dmodem.conf - profiles of the DModem() application
+;
+;   exten => 5551000,1,DModem(bbs)
+;   exten => 5552000,1,DModem(ppp)
+;
+; A profile:
+;   mode = tcp       the data goes to a TCP server: host, port
+;   mode = exec      the data goes to a program on a pty: command (run by
+;                    /bin/sh -c, with DMODEM_CHANNEL, DMODEM_PROFILE,
+;                    DMODEM_RATE and DMODEM_CALLERID in its environment);
+;                    the pty is hung up when the call ends
+;   init = AT...     extra AT commands for the modem, e.g. AT+MS=34 to
+;                    stop at V.34, AT+MS=132 for V.32bis
+;   law = auto       the G.711 law of the network, ulaw or alaw (auto:
+;                    the channel's)
+;   timeout = 60     seconds for the modems to connect
+;
+; The server or program sees nothing until the modems are connected.
+
+[general]
+; the modem's log on the console (verbose 5): 0 errors only, 1 the modem
+; core, 3 the data pumps too
+debug = 0
+
+[default]
+mode = tcp
+host = 127.0.0.1
+port = 2323
+
+; a BBS listening on a TCP port (raw, no telnet negotiation)
+[bbs]
+mode = tcp
+host = 127.0.0.1
+port = 2323
+
+; PPP: pppd on the pty, with the line as its tty (pppd takes stdin when
+; no device is given)
+[ppp]
+mode = exec
+command = exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:192.168.77.2 ms-dns 192.168.77.1
+
+; a login program on the pty
+;[login]
+;mode = exec
+;command = exec /bin/login

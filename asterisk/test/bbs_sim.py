@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+#
+# bbs_sim.py - both ends of a test call through Asterisk: a BBS on
+# BBS_PORT (served by DModem(bbs), the answering modem) and a terminal
+# server on TERM_PORT (DModem(term,o), the calling modem, connects to it
+# once online and so plays the user).  The user reads the banner, sends
+# lines, checks the echoes, logs off; the BBS then closes, which hangs up
+# the call.  Exit status 0 when all of it came through.
+#
+#   bbs_sim.py [timeout]          both, the BBS on TCP
+#   BBS_EXEC=1 bbs_sim.py         only the terminal: the BBS is run by
+#                                 DModem (mode=exec) as
+#   bbs_sim.py --stdio            the BBS on stdin/stdout (the pty)
+import os, socket, sys, threading, time
+
+BBS_PORT, TERM_PORT = 2323, 2324
+LINES = [b"hello from the caller %d " % i + b"x" * 40 for i in range(20)]
+result = {}
+
+class Stdio:
+    def sendall(self, b):
+        while b:
+            b = b[os.write(1, b):]
+    def recv(self, n):
+        return os.read(0, n)
+    def close(self):
+        pass
+
+def bbs(conn):
+    conn.sendall(b"Welcome to the test BBS\r\n")
+    buf = b""
+    while True:
+        d = conn.recv(4096)
+        if not d:
+            break
+        buf += d
+        while b"\r\n" in buf:
+            line, buf = buf.split(b"\r\n", 1)
+            if line == b"BYE":
+                conn.sendall(b"Goodbye\r\n")
+                time.sleep(0.2)
+                conn.close()
+                return
+            conn.sendall(line.upper() + b"\r\n")
+
+def term(conn):
+    f = conn.makefile("rb")
+    t0 = time.time()
+    ok = f.readline() == b"Welcome to the test BBS\r\n"
+    for l in LINES:
+        conn.sendall(l + b"\r\n")
+    for l in LINES:
+        ok = ok and f.readline() == l.upper() + b"\r\n"
+    conn.sendall(b"BYE\r\n")
+    ok = ok and f.readline() == b"Goodbye\r\n"
+    n = sum(len(l) + 2 for l in LINES)
+    result["ok"] = ok
+    result["secs"] = time.time() - t0
+    result["bytes"] = n
+    # the BBS hung up: the modem goes, the socket closes
+    while conn.recv(4096):
+        pass
+
+def serve(port, fn):
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", port))
+    s.listen(1)
+    s.settimeout(float(sys.argv[1]) if len(sys.argv) > 1 else 120)
+    c, _ = s.accept()
+    c.settimeout(120)
+    fn(c)
+
+if sys.argv[1:] == ["--stdio"]:
+    bbs(Stdio())
+    sys.exit(0)
+tt = threading.Thread(target=serve, args=(TERM_PORT, term), daemon=True)
+tt.start()
+if not os.environ.get("BBS_EXEC"):
+    threading.Thread(target=serve, args=(BBS_PORT, bbs), daemon=True).start()
+tt.join()
+ok = result.get("ok", False)
+print("user saw banner, %d echoed lines and goodbye: %s (%.1f s for %d bytes each way)"
+      % (len(LINES), "PASS" if ok else "FAIL", result.get("secs", 0), result.get("bytes", 0)))
+sys.exit(0 if ok else 1)
