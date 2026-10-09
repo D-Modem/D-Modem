@@ -6,6 +6,13 @@ https://www.aon.com/cyber-solutions/aon_cyber_labs/introducing-d-modem-a-softwar
 ## Building
 You'll need Linux and a working 32-bit development environment (gcc -m32 needs to work, Debian-based systems can install libc6-dev-i386), along with PJSIP's dependencies (OpenSSL).  Then run 'make' from the top-level directory.
 
+### Open source DSP (optional)
+By default slmodemd links Smart Link's binary-only i386 DSP library (`slmodemd/dsplibs.o`).  `slmodemd/dsp/` contains a C reimplementation of its interface that builds on any architecture and needs no 32-bit environment:
+
+    make DSPLIBS=open
+
+It implements V.22bis (2400 bps), V.22, Bell 212A, V.23, V.21 and Bell 103, call progress, caller ID and voice.  It does not implement V.32bis, V.34, V.90/V.92 or fax.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md) for details and tests.
+
 ## How it Works
 Traditional “controller-based” modems generally used a microcontroller and a DSP to handle all aspects of modem communication on the device itself.  Later, so-called “Winmodems” were introduced that allowed for field-programmable DSPs and moved the controller and other functionality into software running on the host PC.  This was followed by “pure software” modems that moved DSP functionality to the host as well.  The physical hardware of these softmodems was only used to connect to the phone network, and all processing was done in software. 
 

@@ -1,0 +1,358 @@
+/*
+ *
+ *    dp_fsk.c - FSK data pumps: ITU V.21 (300 bit/s), ITU V.23
+ *               (1200/75 bit/s) and Bell 103 (300 bit/s)
+ *
+ */
+
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "dsp.h"
+
+
+/*
+ *    FSK modulator
+ */
+
+void fsk_mod_init(struct fsk_mod *f, float mark, float space, float amp, int srate)
+{
+	memset(f, 0, sizeof(*f));
+	f->mark = mark;
+	f->space = space;
+	f->amp = amp;
+	f->srate = srate;
+}
+
+float fsk_mod_next(struct fsk_mod *f, int bit)
+{
+	osc_set_freq(&f->osc, bit ? f->mark : f->space, f->srate);
+	return f->amp * osc_next(&f->osc);
+}
+
+
+/*
+ *    FSK demodulator: band pass, complex down conversion to the centre
+ *    of the channel, low pass, phase difference discriminator and a
+ *    simple bit clock DPLL that locks to the data transitions.
+ */
+
+void fsk_demod_init(struct fsk_demod *f, float mark, float space, float baud,
+		    int srate)
+{
+	float fc = (mark + space) / 2;
+	float shift = fabsf(mark - space);
+	float bw = shift / 2 + baud * 0.6f;
+	int i;
+
+	memset(f, 0, sizeof(*f));
+	f->srate = srate;
+	f->sign = mark > space ? 1 : -1;
+	f->half_shift = shift / 2;
+	biquad_bandpass(&f->pre, fc, fc / (2 * bw + 1), srate);
+	osc_set_freq(&f->lo, -fc, srate);
+	for (i = 0; i < 2; i++) {
+		biquad_lowpass(&f->lp_re[i], bw, 0.707f, srate);
+		biquad_lowpass(&f->lp_im[i], bw, 0.707f, srate);
+	}
+	power_meter_init(&f->pwr, 8.0f / baud > 0.02f ? 8.0f / baud : 0.02f, srate);
+	f->dev_alpha = 1.0f / (0.02f * srate);
+	/* base band power of a tone of amplitude A is A^2/4 */
+	f->on_level = 200.0f * 200.0f / 4;
+	f->off_level = 140.0f * 140.0f / 4;
+	f->bit_inc = baud / srate;
+	f->bit_gain = 0.25f;
+	f->dev_avg = f->half_shift * 4;
+}
+
+int fsk_demod_run(struct fsk_demod *f, float x)
+{
+	cplx z, d;
+	float dev, p;
+	int dec, bit = -1, i;
+
+	x = biquad_run(&f->pre, x);
+	z = cplx_scale(osc_next_cplx(&f->lo), x);
+	for (i = 0; i < 2; i++) {
+		z.re = biquad_run(&f->lp_re[i], z.re);
+		z.im = biquad_run(&f->lp_im[i], z.im);
+	}
+
+	/* instantaneous frequency relative to the channel centre */
+	d = cplx_mulc(z, f->prev);
+	f->prev = z;
+	dev = atan2f(d.im, d.re) * f->srate / (2 * (float)M_PI);
+
+	/* carrier detector: level plus a sane frequency deviation, so that
+	   e.g. a 2100 Hz answer tone is not taken for a V.21 carrier */
+	p = power_meter_run(&f->pwr, sqrtf(cplx_pow(z)));
+	f->dev_avg += f->dev_alpha * (fabsf(fabsf(dev) - f->half_shift) - f->dev_avg);
+	if (!f->carrier) {
+		if (p > f->on_level && f->dev_avg < f->half_shift * 0.75f + 40)
+			f->carrier = 1;
+	} else if (p < f->off_level || f->dev_avg > f->half_shift * 1.5f + 80)
+		f->carrier = 0;
+
+	dec = dev * f->sign > 0;
+
+	/* bit clock: transitions should happen at phase 0 */
+	if (dec != f->last_dec) {
+		if (f->bit_phase < 0.5f)
+			f->bit_phase -= f->bit_gain * f->bit_phase;
+		else
+			f->bit_phase += f->bit_gain * (1 - f->bit_phase);
+		f->last_dec = dec;
+	}
+	p = f->bit_phase;
+	f->bit_phase += f->bit_inc;
+	if (p < 0.5f && f->bit_phase >= 0.5f)
+		bit = dec;
+	if (f->bit_phase >= 1)
+		f->bit_phase -= 1;
+	return bit;
+}
+
+
+/*
+ *    FSK data pump
+ */
+
+enum fsk_state {
+	FSK_ANS_SILENCE,
+	FSK_ANS_TONE,
+	FSK_ANS_GAP,
+	FSK_WAIT_CARRIER,
+	FSK_TRAIN,
+	FSK_DATA,
+};
+
+struct fsk_params {
+	const char *name;
+	float tx_mark, tx_space, tx_baud;
+	float rx_mark, rx_space, rx_baud;
+};
+
+/* index 0: caller, 1: answerer */
+static const struct fsk_params v21_params[2] = {
+	{ "V21", 980, 1180, 300, 1650, 1850, 300 },
+	{ "V21", 1650, 1850, 300, 980, 1180, 300 },
+};
+static const struct fsk_params b103_params[2] = {
+	{ "Bell103", 1270, 1070, 300, 2225, 2025, 300 },
+	{ "Bell103", 2225, 2025, 300, 1270, 1070, 300 },
+};
+/* V.23: the answering side sends the 1200 bit/s forward channel */
+static const struct fsk_params v23_params[2] = {
+	{ "V23", 390, 450, 75, 1300, 2100, 1200 },
+	{ "V23", 1300, 2100, 1200, 390, 450, 75 },
+};
+
+struct fsk_dp {
+	struct dp dp;
+	struct modem *modem;
+	const struct fsk_params *par;
+	int srate;
+	int caller;
+	enum fsk_state state;
+	long count;             /* samples spent in the current state */
+	long total;             /* samples since creation */
+	long carrier_count;     /* consecutive samples with/without carrier */
+	long mark_count;        /* consecutive samples of steady mark */
+	long timeout;
+	long carrier_loss;
+	struct osc ans;         /* answer tone */
+	struct fsk_mod tx;
+	struct fsk_demod rx;
+	float tx_phase, tx_inc;
+	int tx_bit;
+};
+
+static void fsk_set_state(struct fsk_dp *f, enum fsk_state state)
+{
+	DSP_DBG("%s: state %d -> %d at %ld\n", f->par->name, f->state, state, f->total);
+	f->state = state;
+	f->count = 0;
+}
+
+static struct dp *fsk_create(struct modem *m, enum DP_ID id,
+			     int caller, int srate, int max_frag,
+			     struct dp_operations *op)
+{
+	struct fsk_dp *f;
+	const struct fsk_params *par;
+	int s7, s10;
+
+	switch (id) {
+	case DP_V21:  par = v21_params; break;
+	case DP_V23:  par = v23_params; break;
+	case DP_B103: par = b103_params; break;
+	default: return NULL;
+	}
+	par += caller ? 0 : 1;
+
+	f = calloc(1, sizeof(*f));
+	if (!f)
+		return NULL;
+	f->dp.id = id;
+	f->dp.modem = m;
+	f->dp.op = op;
+	f->dp.dp_data = f;
+	f->modem = m;
+	f->par = par;
+	f->srate = srate;
+	f->caller = caller;
+
+	fsk_mod_init(&f->tx, par->tx_mark, par->tx_space, DSP_TX_AMPLITUDE, srate);
+	fsk_demod_init(&f->rx, par->rx_mark, par->rx_space, par->rx_baud, srate);
+	f->tx_inc = par->tx_baud / srate;
+	f->tx_bit = 1;
+	osc_set_freq(&f->ans, 2100, srate);
+
+	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
+	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
+	f->timeout = (long)(s7 > 0 ? s7 : 50) * srate;
+	f->carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate / 10;
+
+	if (caller)
+		f->state = FSK_WAIT_CARRIER;
+	else
+		f->state = FSK_ANS_SILENCE;
+	DSP_DBG("%s: create %s, srate %d\n", par->name,
+		caller ? "caller" : "answerer", srate);
+	return &f->dp;
+}
+
+static int fsk_delete(struct dp *dp)
+{
+	free(dp->dp_data);
+	return 0;
+}
+
+static int fsk_hangup(struct dp *dp)
+{
+	return 0;
+}
+
+static float fsk_tx_sample(struct fsk_dp *f, int data)
+{
+	f->tx_phase += f->tx_inc;
+	if (f->tx_phase >= 1) {
+		f->tx_phase -= 1;
+		if (data) {
+			u8 b = 1;
+			modem_get_bits(f->modem, 1, &b, 1);
+			f->tx_bit = b & 1;
+		} else
+			f->tx_bit = 1;
+	}
+	return fsk_mod_next(&f->tx, f->tx_bit);
+}
+
+static int fsk_process(struct dp *dp, void *in, void *out, int cnt)
+{
+	struct fsk_dp *f = dp->dp_data;
+	s16 *src = in, *dst = out;
+	int ret = DPSTAT_OK;
+	int i, bit;
+
+	for (i = 0; i < cnt; i++) {
+		float y = 0;
+
+		bit = fsk_demod_run(&f->rx, src[i]);
+		if (f->rx.carrier)
+			f->carrier_count = f->carrier_count > 0 ? f->carrier_count + 1 : 1;
+		else
+			f->carrier_count = f->carrier_count < 0 ? f->carrier_count - 1 : -1;
+
+		if (f->rx.carrier && f->rx.last_dec)
+			f->mark_count++;
+		else
+			f->mark_count = 0;
+
+		switch (f->state) {
+		case FSK_ANS_SILENCE:
+			if (f->count >= ms2samples(1000, f->srate)) {
+				/* Bell 103 uses its 2225 Hz mark as answer tone */
+				fsk_set_state(f, f->dp.id == DP_B103 ?
+					      FSK_TRAIN : FSK_ANS_TONE);
+			}
+			break;
+		case FSK_ANS_TONE:
+			y = DSP_TX_AMPLITUDE * osc_next(&f->ans);
+			if (f->count >= ms2samples(3300, f->srate))
+				fsk_set_state(f, FSK_ANS_GAP);
+			break;
+		case FSK_ANS_GAP:
+			if (f->count >= ms2samples(75, f->srate))
+				fsk_set_state(f, FSK_TRAIN);
+			break;
+		case FSK_WAIT_CARRIER:
+			/* caller: silent until the answerer's mark is heard;
+			   for V.23 the 2100 Hz answer tone is a valid space
+			   tone, so only a steady mark counts */
+			if (f->mark_count >= ms2samples(150, f->srate))
+				fsk_set_state(f, FSK_TRAIN);
+			break;
+		case FSK_TRAIN:
+			y = fsk_tx_sample(f, 0);
+			/* the caller already saw the answerer's steady mark,
+			   which may be data by now; the answerer waits for
+			   the caller's mark */
+			if (f->count >= ms2samples(200, f->srate) &&
+			    (f->caller ? f->carrier_count : f->mark_count) >=
+			    ms2samples(150, f->srate)) {
+				fsk_set_state(f, FSK_DATA);
+				modem_set_param(f->modem, MDMPRM_TX_RATE, (int)f->par->tx_baud);
+				modem_set_param(f->modem, MDMPRM_RX_RATE, (int)f->par->rx_baud);
+				DSP_DBG("%s: connect %d/%d\n", f->par->name,
+					(int)f->par->tx_baud, (int)f->par->rx_baud);
+				ret = DPSTAT_CONNECT;
+			}
+			break;
+		case FSK_DATA:
+			y = fsk_tx_sample(f, 1);
+			if (bit >= 0 && f->rx.carrier) {
+				u8 b = bit;
+				modem_put_bits(f->modem, 1, &b, 1);
+			}
+			if (-f->carrier_count >= f->carrier_loss) {
+				DSP_DBG("%s: carrier lost\n", f->par->name);
+				return DPSTAT_ERROR;
+			}
+			break;
+		}
+		if (f->state != FSK_DATA && f->total >= f->timeout) {
+			DSP_DBG("%s: handshake timeout\n", f->par->name);
+			return DPSTAT_ERROR;
+		}
+		dst[i] = dsp_clip16(y);
+		f->count++;
+		f->total++;
+	}
+	return ret;
+}
+
+
+static struct dp_operations fsk_operations = {
+	.name = "FSK (V.21/V.23/Bell103) data pump",
+	.create = fsk_create,
+	.delete = fsk_delete,
+	.process = fsk_process,
+	.hangup = fsk_hangup,
+};
+
+int dp_fsk_init(void)
+{
+	modem_dp_register(DP_V21, &fsk_operations);
+	modem_dp_register(DP_V23, &fsk_operations);
+	modem_dp_register(DP_B103, &fsk_operations);
+	return 0;
+}
+
+void dp_fsk_exit(void)
+{
+	modem_dp_deregister(DP_V21, &fsk_operations);
+	modem_dp_deregister(DP_V23, &fsk_operations);
+	modem_dp_deregister(DP_B103, &fsk_operations);
+}

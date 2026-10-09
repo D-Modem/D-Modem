@@ -13,9 +13,16 @@
 #
 ###########################################################################
 
+# DSPLIBS=blob (default) links the original binary-only dsplibs.o (i386 only),
+# DSPLIBS=open builds the C re-implementation in dsp/ (any architecture,
+# low speed modulations only, see dsp/README.md)
+DSPLIBS ?= blob
+
 ARCH64:=$(shell uname -m | sed -e '/amd64/s//x86_64/' | grep -c x86_64)
 
-ifeq ($(ARCH64), 0)
+ifeq ($(DSPLIBS), open)
+CC?= gcc
+else ifeq ($(ARCH64), 0)
 CC:= gcc
 else
 # SUPPORT_ALSA:=1
@@ -32,7 +39,13 @@ modem-objs:= \
 	modem_param.o modem_debug.o homolog_data.o
 dp-objs:= dp_sinus.o dp_dummy.o
 sysdep-objs:= sysdep_common.o
-all-objs:= modem_cmdline.o $(modem-objs) $(dp-objs) dsplibs.o $(sysdep-objs) 
+ifeq ($(DSPLIBS), open)
+dsp-objs:= dsp/dsp_glue.o dsp/dsp_util.o dsp/dp_callprog.o dsp/dp_fsk.o dsp/dp_v22.o
+LFLAGS+= -lm
+else
+dsp-objs:= dsplibs.o
+endif
+all-objs:= modem_cmdline.o $(modem-objs) $(dp-objs) $(dsp-objs) $(sysdep-objs) 
 
 all: slmodemd modem_test
 
@@ -57,6 +70,7 @@ modem_test:
 
 clean:
 	$(RM) slmodemd modem_test modem_main.o modem_cmdline.o modem_test.o $(modem-objs) $(dp-objs) $(sysdep-objs)
+	$(RM) dsp/*.o
 	$(RM) *~ *.orig *.rej
 
 .PHONY: all dep generic-dep clean clean-build-profile
