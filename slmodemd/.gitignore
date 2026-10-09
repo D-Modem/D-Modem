@@ -1,3 +1,6 @@
 lib/
 libdmodem.a
 *.o
+.build_profile
+slmodemd
+modem_test
