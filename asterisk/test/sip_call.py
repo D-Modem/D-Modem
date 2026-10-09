@@ -31,7 +31,7 @@ srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", 2323)); srv.listen(1)
 threading.Thread(target=lambda: bbs_conn(srv.accept()[0]), daemon=True).start()
 
-p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-d1", "-e", dmodem], stdout=subprocess.PIPE,
+p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-d" + os.environ.get("SLMODEMD_DEBUG", "1"), "-e", dmodem], stdout=subprocess.PIPE,
                      stderr=subprocess.STDOUT)
 log = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "wb")
 pty = None

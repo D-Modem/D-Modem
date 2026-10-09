@@ -21,8 +21,11 @@ unsigned int dsplibs_debug_level = 0;
 int dsplibs_debug_printf(const char *fmt, ...) { return 0; }
 
 static int alaw;
+static int plain;       /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
+			   resampler of dsp_util, not the raised cosine */
 static float gain = 1;
-/* NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
+/* NET_DELAY=<ms>: see main().
+   NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
    back towards B */
 #define ECHO_MAX 16384
 static float echo_g, echo_buf[ECHO_MAX];
@@ -188,7 +191,7 @@ static int run(struct dir *d, int a_out, int a_in)
 			d->obuf[o++] = (short)g711(ibuf[i]);
 			continue;
 		}
-		if (d->rate_in == 8000) {
+		if (d->rate_in == 8000 && !plain) {
 			/* the network, then the far codec (with the
 			   analogue loss or gain NET_GAIN on the way) */
 			m = rc_run(&d->rc, g711(ibuf[i]) * gain, y);
@@ -243,6 +246,7 @@ int main(int argc, char **argv)
 	ra = atoi(argv[1]);
 	rb = atoi(argv[2]);
 	alaw = !strcmp(argv[3], "alaw");
+	plain = getenv("NET_PLAIN") != NULL;
 	if (getenv("NET_GAIN"))
 		gain = atof(getenv("NET_GAIN"));
 	if (getenv("NET_ECHO")) {
@@ -276,6 +280,20 @@ int main(int argc, char **argv)
 		p[k].fd = d[k].in;
 		p[k].events = POLLIN;
 	}
+	/* NET_DELAY=<ms>: transport delay each way (a VoIP path's
+	   packetization and jitter buffers): the streams start with it */
+	if (getenv("NET_DELAY"))
+		for (k = 0; k < 2; k++) {
+			int n = (int)(atof(getenv("NET_DELAY")) *
+				      d[k].rate_out / 1000);
+			memset(d[k].obuf, 0, sizeof(d[k].obuf));
+			while (n > 0) {
+				int w = n < 4096 ? n : 4096;
+				if (write(d[k].out, d[k].obuf, w * 2) != w * 2)
+					return 1;
+				n -= w;
+			}
+		}
 	for (;;) {
 		if (poll(p, 2, -1) < 0) {
 			if (errno == EINTR)

@@ -35,6 +35,9 @@ struct dmodem {
 
 static struct dmodem port;
 static bool destroying = false;
+/* DMODEM_REC=<prefix>: the audio to and from slmodemd, 16 bit at 9600 Hz,
+   in <prefix>.rx (from the call) and <prefix>.tx (to the call) */
+static FILE *rec_rx, *rec_tx;
 static pj_pool_t *pool;
 
 static void error_exit(const char *title, pj_status_t status) {
@@ -51,6 +54,8 @@ static pj_status_t dmodem_put_frame(pjmedia_port *this_port, pjmedia_frame *fram
 	int len;
 
 	if (frame->type == PJMEDIA_FRAME_TYPE_AUDIO) {
+		if (rec_rx)
+			fwrite(frame->buf, 1, frame->size, rec_rx);
 		if ((len=write(sm->sock, frame->buf, frame->size)) != frame->size) {
 			error_exit("error writing frame",0);
 		}
@@ -67,6 +72,8 @@ static pj_status_t dmodem_get_frame(pjmedia_port *this_port, pjmedia_frame *fram
 	if ((len=read(sm->sock, frame->buf, frame->size)) != frame->size) {
 		error_exit("error reading frame",0);
 	}
+	if (rec_tx)
+		fwrite(frame->buf, 1, frame->size, rec_tx);
 
 	frame->timestamp.u64 = sm->timestamp.u64;
 	frame->type = PJMEDIA_FRAME_TYPE_AUDIO;
@@ -133,6 +140,14 @@ int main(int argc, char *argv[]) {
 
 	signal(SIGPIPE,SIG_IGN);
 
+	if (getenv("DMODEM_REC")) {
+		char name[256];
+		snprintf(name, sizeof(name), "%s.rx", getenv("DMODEM_REC"));
+		rec_rx = fopen(name, "wb");
+		snprintf(name, sizeof(name), "%s.tx", getenv("DMODEM_REC"));
+		rec_tx = fopen(name, "wb");
+	}
+
 	char *dialstr = argv[1];
 
 	char *sip_user = getenv("SIP_LOGIN");
@@ -172,6 +187,10 @@ int main(int argc, char *argv[]) {
 		med_cfg.jb_max = 2000;
 //		med_cfg.jb_init = 200;
 		med_cfg.audio_frame_ptime = 5;
+		if (getenv("DMODEM_CLOCK"))
+			med_cfg.clock_rate = atoi(getenv("DMODEM_CLOCK"));
+		if (getenv("DMODEM_PTIME"))
+			med_cfg.audio_frame_ptime = atoi(getenv("DMODEM_PTIME"));
 
 		status = pjsua_init(&cfg, &log_cfg, &med_cfg);
 		if (status != PJ_SUCCESS) error_exit("Error in pjsua_init()", status);

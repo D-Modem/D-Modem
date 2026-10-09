@@ -668,7 +668,7 @@ static int socket_stop (struct modem *m)
 
 static int socket_ioctl(struct modem *m, unsigned int cmd, unsigned long arg)
 {
-	//struct device_struct *dev = m->dev_data;
+	struct device_struct *dev = m->dev_data;
 	int ret = 0;
 	DBG("socket_ioctl: cmd %x, arg %lx...\n",cmd,arg);
 	if (cmd == MDMCTL_SETFRAG)
@@ -682,9 +682,17 @@ static int socket_ioctl(struct modem *m, unsigned int cmd, unsigned long arg)
 		ret = 4; // CODEC_STLC7550; XXX this worked fine as 0 (CODEC_UNKNOWN)...
 		break;
 	case MDMCTL_IODELAY: // kernel module returns s->delay + ST7554_HW_IODELAY (48)
-		ret = 0;//48 >> MFMT_SHIFT(m->format);
-		//ret += dev->delay;
-		//DBG("%d %d %d %d",m->format,MFMT_SHIFT(m->format),dev->delay,ret);
+		/* the DSP times the V.34 handshake with this (its L1 after
+		   the answerer's tone A reversal): 0 makes it give up phase 2
+		   and start over.  The delay is the samples queued towards
+		   the line, as the kernel driver's s->delay; when the DSP
+		   asks, it has trimmed them (update_delay) to about 140, and
+		   over d-modem it connects with 128 to 160 */
+		ret = dev->delay;
+		if (getenv("SLMODEMD_IODELAY"))
+			ret = atoi(getenv("SLMODEMD_IODELAY"));
+		if (getenv("SLMODEMD_IODELAY"))
+			ret = atoi(getenv("SLMODEMD_IODELAY"));
 		break;
 	case MDMCTL_HOOKSTATE: // 0 = on, 1 = off
 	case MDMCTL_SPEED: // sample rate (9600)
