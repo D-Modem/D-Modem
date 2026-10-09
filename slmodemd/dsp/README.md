@@ -138,7 +138,12 @@ law is mu-law, or A-law with `DSP_G711=alaw`.
   coding and the spectral shaper with its look-ahead (the exact choice of
   5.4.5.5: the analogue modem checks TRN2d against it). Upstream is the
   V.34 data mode receiver, with the trellis code and precoding our MP asks
-  for.
+  for. The echo canceller takes our PCM signal (converted to 9600 Hz)
+  and trains while Sd, TRN1d and Jd go out (the analogue modem is silent
+  then). With the hybrid echo of netsim 20 dB down, or 12 dB down after
+  200 ms, calls still connect at 56000/31200; 12 dB down after 20 ms is
+  too much at times: the echo of the DIL's loudest codes hides the
+  analogue modem's S.
 
 The original library, as an analogue V.90 modem calling through the
 simulated network (`make -C dsp/test v90_interop`), connects at 56000
@@ -232,7 +237,10 @@ network, between the two: each direction goes through the law at 8000 Hz,
 and to a modem at 9600 Hz through a converter that acts like a codec on
 an analogue line (a raised cosine at 4000 Hz, so that PCM samples stay
 free of intersymbol interference). `half_blob8`/`half_open8` are the
-modems at 8000 Hz (the original library does not work at 8000 Hz).
+modems at 8000 Hz (the original library does not work at 8000 Hz). `NET_GAIN`
+sets an analogue gain on the way to the 9600 Hz modem, and
+`NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
+clock: what it receives comes back with what it sends).
 
 `fax_interop` does the same with `AT+FCLASS=1`. `fax_interop.py` plays
 the T.30 side of both fax machines: CSI/DIS, DCS, TCF, CFR, one page (for

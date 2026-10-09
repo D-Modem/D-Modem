@@ -22,6 +22,11 @@ int dsplibs_debug_printf(const char *fmt, ...) { return 0; }
 
 static int alaw;
 static float gain = 1;
+/* NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
+   back towards B */
+#define ECHO_MAX 16384
+static float echo_g, echo_buf[ECHO_MAX];
+static long echo_d, echo_w, echo_r;     /* samples to A, from A */
 
 /* G.711 (the usual reference algorithms) */
 static int seg_search(int v, const short *t)
@@ -160,7 +165,7 @@ struct dir {
 };
 
 /* samples of one direction: to 8000 Hz G.711 and on */
-static int run(struct dir *d)
+static int run(struct dir *d, int a_out, int a_in)
 {
 	short ibuf[2048];
 	int n = read(d->in, ibuf, sizeof(ibuf)), i, k, m, o = 0;
@@ -169,6 +174,16 @@ static int run(struct dir *d)
 		return n == 0 || errno != EINTR ? -1 : 0;
 	n /= 2;
 	for (i = 0; i < n; i++) {
+		/* A sends its sample k as it receives its sample k: the
+		   hybrid's echo comes in A's own sample clock */
+		if (a_out && echo_g) {
+			long k = echo_r - echo_d;
+			if (k >= 0 && k < echo_w && echo_w - k < ECHO_MAX)
+				ibuf[i] = (short)lrintf(ibuf[i] + echo_g *
+							echo_buf[k % ECHO_MAX]);
+		}
+		if (a_out)
+			echo_r++;
 		if (d->rate_in == d->rate_out) {
 			d->obuf[o++] = (short)g711(ibuf[i]);
 			continue;
@@ -186,6 +201,9 @@ static int run(struct dir *d)
 				d->obuf[o++] = (short)g711((int)lrintf(y[k]));
 		}
 	}
+	if (a_in)
+		for (i = 0; i < o; i++)
+			echo_buf[echo_w++ % ECHO_MAX] = d->obuf[i];
 	for (i = 0; i < o * 2; ) {
 		k = write(d->out, (char *)d->obuf + i, o * 2 - i);
 		if (k < 0 && errno == EINTR)
@@ -227,6 +245,14 @@ int main(int argc, char **argv)
 	alaw = !strcmp(argv[3], "alaw");
 	if (getenv("NET_GAIN"))
 		gain = atof(getenv("NET_GAIN"));
+	if (getenv("NET_ECHO")) {
+		float db = 0, ms = 0;
+		sscanf(getenv("NET_ECHO"), "%f:%f", &db, &ms);
+		echo_g = powf(10, db / 20);
+		echo_d = (int)(ms * ra / 1000);
+		if (echo_d >= ECHO_MAX)
+			echo_d = ECHO_MAX - 1;
+	}
 	memset(d, 0, sizeof(d));
 	/* A -> B */
 	d[0].in = atoi(argv[4]);
@@ -258,7 +284,7 @@ int main(int argc, char **argv)
 		}
 		for (k = 0; k < 2; k++)
 			if (p[k].revents & (POLLIN | POLLHUP))
-				if (run(&d[k]))
+				if (run(&d[k], k == 0, k == 1))
 					return 0;
 	}
 }

@@ -254,6 +254,9 @@ struct v34_dp {
 	struct resampler rs_up, rs_down;
 	float fifo[V34_FIFO];   /* converted output, 8000 Hz */
 	int fifo_n;
+	struct resampler rs_ref;        /* V.90: our PCM signal at 9600 Hz */
+	float ref_fifo[V34_FIFO];
+	int ref_n;
 	int caller;
 	enum v34_state state;
 	long count, total, timeout;
@@ -1153,7 +1156,9 @@ static void ec_schedule(struct v34_dp *v)
 	int ours = v->state == P3A_S || v->state == P3A_SBAR ||
 		v->state == P3A_PP || v->state == P3A_TRN ||
 		v->state == P3C_S || v->state == P3C_SBAR ||
-		v->state == P3C_PP || v->state == P3C_TRN;
+		v->state == P3C_PP || v->state == P3C_TRN ||
+		/* V.90: Sd to Jd, the analogue modem is silent after Ja */
+		v->state == P3D_SD || v->state == P3D_JD;
 	int training;
 
 	if (ours && !e->on) {
@@ -2052,14 +2057,15 @@ static float pump_tx_sample(struct v34_dp *v)
 	return y;
 }
 
-/* one sample at 9600 Hz each way */
-static int v34_sample(struct v34_dp *v, float x, float *y)
+/* one sample at 9600 Hz each way; ref: what goes out on the line instead
+   (the PCM signal, for the echo canceller) */
+static int v34_sample(struct v34_dp *v, float x, float *y, const float *ref)
 {
 	int r = v34_handshake(v);
 	if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 		return r;
 	*y = dsp_clip16(pump_tx_sample(v));
-	v->last_tx = *y;
+	v->last_tx = ref ? *ref : *y;
 	pump_rx_sample(v, x);
 	if (v->state != V34_DATA && v->total >= v->timeout) {
 		DSP_DBG("v34: start-up timeout in state %d\n", v->state);
@@ -2075,11 +2081,11 @@ static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 	struct v34_dp *v = dp->dp_data;
 	s16 *src = in, *dst = out;
 	int ret = DPSTAT_OK, r, i, k, n;
-	float y, up[2], down[2];
+	float y, up[2], down[2], pcm = 0;
 
 	for (i = 0; i < cnt; i++) {
 		if (v->line_rate == V34_SRATE) {
-			r = v34_sample(v, src[i], &y);
+			r = v34_sample(v, src[i], &y, NULL);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 				return r;
 			if (r != DPSTAT_OK)
@@ -2088,9 +2094,25 @@ static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 			continue;
 		}
 		/* an 8000 Hz line: the pump runs at 9600 Hz in between */
+		if (v->pcm_tx) {
+			/* V.90: exact PCM codes at 8000 Hz; at 9600 Hz for the
+			   echo canceller */
+			float ref[2];
+			int m;
+			pcm = v90_tx_sample(&v->v90tx);
+			m = resampler_run(&v->rs_ref, pcm, ref);
+			for (k = 0; k < m && v->ref_n < V34_FIFO; k++)
+				v->ref_fifo[v->ref_n++] = ref[k];
+		}
 		n = resampler_run(&v->rs_up, src[i], up);
 		for (k = 0; k < n; k++) {
-			r = v34_sample(v, up[k], &y);
+			float rf = 0;
+			if (v->pcm_tx && v->ref_n) {
+				rf = v->ref_fifo[0];
+				memmove(v->ref_fifo, v->ref_fifo + 1,
+					--v->ref_n * sizeof(float));
+			}
+			r = v34_sample(v, up[k], &y, v->pcm_tx ? &rf : NULL);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 				return r;
 			if (r != DPSTAT_OK)
@@ -2105,9 +2127,8 @@ static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 			memmove(v->fifo, v->fifo + 1,
 				--v->fifo_n * sizeof(v->fifo[0]));
 		}
-		/* V.90: exact PCM codes at 8000 Hz */
 		if (v->pcm_tx)
-			y = v90_tx_sample(&v->v90tx);
+			y = pcm;
 		dst[i] = dsp_clip16(y);
 	}
 	return ret;
@@ -2132,6 +2153,7 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	srate = V34_SRATE;
 	resampler_init(&v->rs_up, 6, 5);
 	resampler_init(&v->rs_down, 5, 6);
+	resampler_init(&v->rs_ref, 6, 5);
 	v->fifo_n = 2;          /* so that it never runs dry */
 	v->dp.id = id;
 	/* a V.90 digital modem needs the 8000 Hz G.711 network */
