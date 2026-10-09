@@ -50,6 +50,17 @@
 /* our CM / JM: V-series data call, V.34 and V.32, LAPM, PSTN access */
 static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x11, 0x10, 0x2a, 0x0d };
 #define V8_MOD1_V34     0x40    /* in the first modulation octet */
+#define V8_MOD1_PCM     0x20    /* a PCM modem availability octet follows */
+#define V8_CAT_MOD      0x05    /* category tags (bits 0 to 4) */
+#define V8_CAT_ACCESS   0x0D
+#define V8_CAT_PCM      0x07
+#define V8_ACCESS_DIGITAL 0x80
+#define V8_PCM_ANALOGUE 0x20    /* V.90 / V.92 analogue modem */
+#define V8_PCM_DIGITAL  0x40    /* V.90 / V.92 digital modem */
+/* INFO0d: our phase 2 level (V34_LEVEL) is about -14 dBm0, the PCM
+   constellations may go up to -12 dBm0 */
+#define V90_P2_POWER    8       /* -6 - n dBm0 */
+#define V90_MAX_POWER   23      /* -0.5 - n / 2 dBm0 */
 #define V8_MOD2_V32     0x01    /* in the first extension octet */
 
 enum v34_state {
@@ -174,7 +185,8 @@ struct info1c {
 struct info1a {
 	int power_red, add_power_red, md;
 	int high, preemph, max_rate;
-	int baud_ac, baud_ca;
+	int baud_ac, baud_ca;   /* baud_ca 6: V.90 */
+	int uinfo;              /* V.90: the Ucode of the 2 point train */
 	int freq_offset;
 };
 
@@ -201,6 +213,9 @@ struct v34_dp {
 	struct dp_runtime *rt;
 	int srate;              /* of the pump: 9600 */
 	int line_rate;          /* 9600, or 8000 through the converters */
+	int v90;                /* offer V.90 as the digital modem */
+	int pcm;                /* V.90 agreed in V.8 */
+	int alaw;               /* the network's G.711 law */
 	struct resampler rs_up, rs_down;
 	float fifo[V34_FIFO];   /* converted output, 8000 Hz */
 	int fifo_n;
@@ -351,6 +366,15 @@ static void make_info0(struct v34_dp *v, struct bitq *q)
 	bq_put(q, 1, 1);        /* 1664 point constellations */
 	bq_put(q, 0, 2);        /* internal clock */
 	bq_put(q, 0, 1);        /* acknowledge */
+	if (v->pcm) {
+		/* INFO0d, Table 7/V.90 */
+		bq_put(q, V90_P2_POWER, 4);
+		bq_put(q, V90_MAX_POWER, 5);
+		bq_put(q, 0, 1);        /* power at the terminals */
+		bq_put(q, v->alaw, 1);
+		bq_put(q, 1, 1);        /* upstream at 3429 */
+		bq_put(q, 0, 1);
+	}
 	info_end(q);
 }
 
@@ -445,6 +469,8 @@ static void parse_info1a(struct info1a *i, const unsigned char *b)
 	i->max_rate = bits_val(b, 30, 33);
 	i->baud_ac = bits_val(b, 34, 36);
 	i->baud_ca = bits_val(b, 37, 39);
+	/* Table 10/V.90 */
+	i->uinfo = i->baud_ca == 6 ? bits_val(b, 25, 31) : 0;
 	i->freq_offset = bits_val(b, 40, 49);
 }
 
@@ -468,14 +494,37 @@ static void v8_put_octet(struct bitq *q, unsigned char c)
 	bq_put(q, 1, 1);
 }
 
-/* CM (caller) or JM (answerer); a JM repeats what both modems have */
-static void v8_make_msg(struct v34_dp *v, struct bitq *q)
+/* the remote's octet of a V.8 category (tag in the low 4 bits), or -1 */
+static int v8_remote_cat(struct v34_dp *v, int tag)
 {
 	int i;
+	for (i = 1; i < v->v8_remote_n; i++)
+		if ((v->v8_remote[i] & 0x1F) == tag)
+			return v->v8_remote[i];
+	return -1;
+}
+
+/* CM (caller) or JM (answerer); a JM repeats what both modems have.  As a
+   V.90 digital modem: PCM in the modulation octet, the PCM modem
+   availability category and a digital network connection. */
+static void v8_make_msg(struct v34_dp *v, struct bitq *q)
+{
+	int i, pcm = v->v90;
 	bq_reset(q);
 	bq_put(q, 0x3FF, 10);
-	for (i = 0; i < (int)sizeof(v8_msg); i++)
-		v8_put_octet(q, v8_msg[i]);
+	/* in a JM only when the CM had an analogue V.90 modem */
+	if (!v->caller && (v8_remote_cat(v, V8_CAT_PCM) & V8_PCM_ANALOGUE) == 0)
+		pcm = 0;
+	for (i = 0; i < (int)sizeof(v8_msg); i++) {
+		int c = v8_msg[i];
+		if (pcm && (c & 0x1F) == V8_CAT_MOD)
+			c |= V8_MOD1_PCM;
+		if (pcm && (c & 0x1F) == V8_CAT_ACCESS)
+			c |= V8_ACCESS_DIGITAL;
+		v8_put_octet(q, c);
+	}
+	if (pcm)
+		v8_put_octet(q, V8_CAT_PCM | V8_PCM_DIGITAL);
 	v->v8tx_repeat = 1;
 }
 
@@ -490,11 +539,15 @@ static void v8_make_cj(struct bitq *q)
 /* is V.34 in the remote's CM / JM? */
 static int v8_remote_v34(struct v34_dp *v)
 {
-	int i;
-	for (i = 1; i < v->v8_remote_n; i++)
-		if ((v->v8_remote[i] & 0x1F) == 0x05)
-			return (v->v8_remote[i] & V8_MOD1_V34) != 0;
-	return 0;
+	int c = v8_remote_cat(v, V8_CAT_MOD);
+	return c >= 0 && (c & V8_MOD1_V34) != 0;
+}
+
+/* V.90 with us as the digital modem: both offer it */
+static int v8_v90(struct v34_dp *v)
+{
+	int c = v8_remote_cat(v, V8_CAT_PCM);
+	return v->v90 && c >= 0 && (c & V8_PCM_ANALOGUE) != 0;
 }
 
 static void v8_rx_bit(struct v34_dp *v, int bit)
@@ -508,8 +561,13 @@ static void v8_rx_bit(struct v34_dp *v, int bit)
 				v->v8_ok = 1;
 				memcpy(v->v8_remote, v->v8_rx, v->v8_n);
 				v->v8_remote_n = v->v8_n;
-				DSP_DBG("v34: V.8 %s received, %d octets\n",
-					v->caller ? "JM" : "CM", v->v8_n);
+				DSP_DBG("v34: V.8 %s received, %d octets:"
+					" %02x %02x %02x %02x %02x %02x %02x %02x"
+					" %02x %02x\n", v->caller ? "JM" : "CM",
+					v->v8_n, v->v8_rx[0], v->v8_rx[1],
+					v->v8_rx[2], v->v8_rx[3], v->v8_rx[4],
+					v->v8_rx[5], v->v8_rx[6], v->v8_rx[7],
+					v->v8_rx[8], v->v8_rx[9]);
 			}
 			memcpy(v->v8_last, v->v8_rx, v->v8_n);
 			v->v8_last_n = v->v8_n;
@@ -1321,10 +1379,12 @@ static int v34_handshake(struct v34_dp *v)
 		if (v->v8_ok) {
 			if (!v8_remote_v34(v))
 				return v34_fallback(v, "no V.34 in CM");
+			v->pcm = v8_v90(v);
 			v34_set_state(v, V8A_JM);
 			/* the caller's INFO0c follows its CJ by only 75 ms:
-			   listen for it already */
-			cc_rx_init(&v->ccr, 1200);
+			   listen for it already; with V.90 the analogue
+			   modem's INFO0a */
+			cc_rx_init(&v->ccr, v->pcm ? 2400 : 1200);
 			v8_make_msg(v, &v->v8tx);
 			fsk_mod_init(&v->fsk, 1650, 1850, V34_TONE_AMP, v->srate);
 			v->fsk_phase = 1;
@@ -1341,7 +1401,17 @@ static int v34_handshake(struct v34_dp *v)
 		}
 		break;
 	case V8A_GAP:
-		if (c >= ms2samples(75, v->srate)) {
+		if (c >= ms2samples(75, v->srate) && v->pcm) {
+			/* the digital modem of V.90 takes the part of the
+			   V.34 call modem from phase 2 on */
+			DSP_DBG("v34: V.90 with us as the digital modem\n");
+			v->caller = 1;
+			goertzel_init(&v->tone_g, 2400, PROBE_PERIOD,
+				      v->srate);
+			v34_set_state(v, V8C_GAP);
+			v->count = c = ms2samples(75, v->srate);
+		}
+		if (c >= ms2samples(75, v->srate) && !v->pcm) {
 			v34_set_state(v, P2A_INFO0);
 			qam_tx_init(&v->cc, v->srate, 2400, CC_BAUD, 0.5f, 4, 1,
 				    V34_TONE_AMP);
@@ -1376,6 +1446,9 @@ static int v34_handshake(struct v34_dp *v)
 		if (v->v8_ok && fsk_bit_edge(v) && v->v8tx.pos % 10 == 0) {
 			if (!v8_remote_v34(v))
 				return v34_fallback(v, "no V.34 in JM");
+			v->pcm = v8_v90(v);
+			if (v->pcm)
+				DSP_DBG("v34: V.90 with us as the digital modem\n");
 			v34_set_state(v, V8C_CJ);
 			v8_make_cj(&v->v8tx);
 			v->v8tx_repeat = 0;
@@ -1562,6 +1635,13 @@ static int v34_handshake(struct v34_dp *v)
 		}
 		break;
 	case P2C_WAIT_INFO1:
+		if (v->ev_info1 && v->pcm && v->rinfo1a.baud_ca == 6) {
+			DSP_DBG("v34: INFO1a: V.90, upstream %d baud, UINFO "
+				"%d, MD %d\n",
+				v34_bauds[v->rinfo1a.baud_ac].nominal,
+				v->rinfo1a.uinfo, v->rinfo1a.md);
+			return DPSTAT_ERROR;    /* XXX phase 3 */
+		}
 		if (v->ev_info1) {
 			v->baud_tx = v->rinfo1a.baud_ca;
 			v->baud_rx = v->rinfo1a.baud_ac;
@@ -1813,6 +1893,8 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	resampler_init(&v->rs_down, 5, 6);
 	v->fifo_n = 2;          /* so that it never runs dry */
 	v->dp.id = id;
+	/* a V.90 digital modem needs the 8000 Hz G.711 network */
+	v->v90 = (id == DP_V90 || id == DP_V92) && v->line_rate == 8000;
 	v->dp.modem = m;
 	v->dp.op = op;
 	v->dp.dp_data = v;
