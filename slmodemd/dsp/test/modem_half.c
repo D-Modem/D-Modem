@@ -307,8 +307,21 @@ static int modem_test_run(struct modem_test *modems)
 					t->modem->update_delay = 0;
 				}
 				if(t->started) {
+					static FILE *rec_in, *rec_out;
 					modem_process(t->modem,in,outbuf,count>>1);
 					pace_clock(t, count>>1);
+					/* MODEM_REC=<prefix>: record <prefix>.in/.out */
+					if (getenv("MODEM_REC") && !rec_in) {
+						char name[256];
+						snprintf(name, sizeof(name), "%s.in", getenv("MODEM_REC"));
+						rec_in = fopen(name, "wb");
+						snprintf(name, sizeof(name), "%s.out", getenv("MODEM_REC"));
+						rec_out = fopen(name, "wb");
+					}
+					if (rec_in) {
+						fwrite(in, 1, count, rec_in);
+						fwrite(outbuf, 1, count, rec_out);
+					}
 				}
 				else {
 					memset(outbuf,0,count);

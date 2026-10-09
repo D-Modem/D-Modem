@@ -954,9 +954,8 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 	v->srate = srate;
 	v->caller = caller;
 	v->rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
-	v->automode = id != DP_V32 && id != DP_V32BIS;
-	if (id == DP_V34 || id == DP_V90 || id == DP_V92)
-		v->dp.id = DP_V32BIS;
+	v->automode = (id != DP_V32 && id != DP_V32BIS) ||
+		(v->rt && v->rt->v32_automode);
 
 	/* rates we offer */
 	min_rate = modem_get_param(m, MDMPRM_MIN_RATE);
@@ -1010,6 +1009,11 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 	if (caller) {
 		v->state = C_AA;
 		v->txm = TXM_AA;
+	} else if (v->rt && v->rt->ans_sent) {
+		/* from V.8: the answer tone (ANSam) is already sent */
+		v->rt->ans_sent = 0;
+		v->state = A_GAP;
+		v->txm = TXM_SILENCE;
 	} else {
 		v->state = A_SILENCE;
 		v->txm = TXM_SILENCE;
@@ -1041,13 +1045,9 @@ static struct dp_operations v32_operations = {
 	.hangup = v32_hangup,
 };
 
-/* DP_V8 is what the modem core starts for the default (fastest) mode
-   and for V.34/V.90/V.92: V.32bis with V.22bis fallback.  The faster
-   modulations are not implemented; the ids are registered so that
-   AT+MS=34/90/92 select this automode instead of failing. */
-static const enum DP_ID v32_ids[] = {
-	DP_V32, DP_V32BIS, DP_V8, DP_V34, DP_V90, DP_V92,
-};
+/* the V.8/V.34 pump (dp_v34.c) hands over to this one, with the
+   V.22bis fallback, when the remote modem does not do V.34 */
+static const enum DP_ID v32_ids[] = { DP_V32, DP_V32BIS };
 
 int dp_v32_init(void)
 {

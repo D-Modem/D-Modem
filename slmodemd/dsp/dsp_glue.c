@@ -27,6 +27,7 @@ int prop_dp_init(void)
 	dp_fsk_init();
 	dp_v22_init();
 	dp_v32_init();
+	dp_v34_init();
 	return 0;
 }
 
@@ -36,6 +37,7 @@ void prop_dp_exit(void)
 	dp_fsk_exit();
 	dp_v22_exit();
 	dp_v32_exit();
+	dp_v34_exit();
 }
 
 

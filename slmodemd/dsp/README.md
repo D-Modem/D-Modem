@@ -28,11 +28,10 @@ against it unchanged:
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | Full S1 handshake, falls back to V.22 |
 | 32 | ITU V.32, 4800/9600 bit/s | Uncoded 4800, trellis coded 9600, echo canceller |
 | 132 | ITU V.32bis, 4800 to 14400 bit/s | Rate chosen from the measured training quality |
-| 8, 34, 90, 92 | (V.8, V.34, V.90, V.92) | Served by the V.32bis pump in automode: it answers or calls as V.32bis and falls back to V.22bis/V.22 when the other end is not V.32 |
+| 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. V.90 and V.92 are not implemented and run as V.34 |
 
-V.34, V.90, V.92, K56flex and V.8/V.8bis negotiation are **not**
-reimplemented. With the default `AT+MS=92`, the modem connects at V.32bis
-or lower.
+V.90, V.92, K56flex and V.8bis are **not** reimplemented. With the default
+`AT+MS=92` the modem connects at V.34 or lower.
 
 The V.22/V.22bis constellation, quadrant coding and phase tables come from
 the original library's `SMCv22_*` and `DECv22_*` tables, and the V.32bis
@@ -48,6 +47,43 @@ words and E. The receivers train an NLMS echo canceller while their own
 TRN goes out. Each side offers the rates its training quality supports
 (14400 from about 25 dB SNR, 12000 from 22 dB, 9600 from 19 dB, 7200 from
 16 dB, else 4800).
+
+### V.8 and V.34
+
+`dp_v34.c` runs the start-up, `v34_modem.c` the primary channel training
+signals and receiver, `v34_data.c` the data mode, `v34_tables.c` the
+constants (the superconstellation, Table 10 rates, the PP sequence).
+
+- **V.8:** ANSam (2100 Hz, 15 Hz AM, reversals every 450 ms), CM/JM/CJ on
+  V.21. A CM or JM without V.34, or a V.32 calling modem (1800 Hz AA),
+  hands the call to the V.32bis pump.
+- **Phase 2:** INFO0/INFO1 on the 600 baud DPSK control channel, tones A/B
+  and their reversals for the round trip delay, and line probing with L1/L2
+  (21 tones, 150 Hz apart). The probe gives the SNR after equalization for
+  each symbol rate, from the received level of each tone and the noise
+  between successive periods (insensitive to clock offsets). The answerer
+  picks the symbol rate that allows the highest data rate at both ends.
+- **Phases 3 and 4:** S, S-bar, PP, TRN, J, J', MP, E as the original library
+  sends them. TRN starts with a cleared scrambler (the original's receiver
+  trains on a copy of it). The receiver solves the equalizer by least
+  squares over 1500 TRN symbols, since LMS is far too slow for the accuracy
+  33600 bit/s needs on a band limited line. Two solutions in phase 3 and one
+  in phase 4 measure the sample clock offset from the drift of the
+  equalizer's delay. From then on the timing is decision directed: the error
+  against the slope of the equalizer output, for any constellation.
+- **Data mode:** shell mapping, the superconstellation with expanded
+  shaping, differential encoding, the 16 state 4D trellis code, high and
+  low mapping frames and the superframe sync inversions, at every rate and
+  symbol rate of Table 10 except the auxiliary channel ones. As the original
+  library does: the trellis output of a 4D symbol is the low bit of the
+  encoder state before that symbol, and the inversion pattern starts at its
+  bit 2J - 2. The receiver decides on the nearest points (no Viterbi
+  decoder yet). Neither side asks for precoding, non-linear encoding or
+  pre-emphasis; when the remote asks for them they are not applied.
+
+Not implemented: the echo canceller for V.34 (it needs a line without
+near-end echo, as VoIP gives), precoding, pre-emphasis, the 32 and 64 state
+trellis codes, the auxiliary channel, rate renegotiation and retrains.
 
 ### Fax (class 1)
 
@@ -73,10 +109,12 @@ equalizer of the last long train at the same rate.
 
 ### How the QAM receiver works
 
-1. Band-pass filter, then down-conversion to complex baseband.
-2. Root raised cosine matched filter (alpha 0.75), then AGC.
-3. Cubic interpolator driven by a Gardner timing loop. It tracks about
-   ±300 ppm of clock offset between the two ends.
+1. Down-conversion to complex baseband.
+2. Root raised cosine matched filter, evaluated at the T/2 sampling
+   instants themselves (from a finely tabulated pulse, no interpolator),
+   then AGC.
+3. Gardner timing loop. It tracks about ±300 ppm of clock offset between
+   the two ends.
 4. T/2 spaced normalized LMS equalizer.
 5. Decision-directed carrier PLL.
 
@@ -98,10 +136,15 @@ ARM and other architectures, and links with `-lm`.
     make -C dsp/test interop   # calls between the original library and this one (needs gcc -m32)
     make -C dsp/test fax_interop   # class 1 fax calls, the same way
 
-`dsp_loopback <dp> [snr dB] [seconds] [srate] [line gain] [clock ppm]` runs a
-caller and an answerer through a simulated line with delay, a low-pass
-filter, white noise and an optional sample clock offset. It then checks the
-bit error rate in both directions.
+`dsp_loopback <dp> [snr dB] [seconds] [srate] [line gain] [clock ppm]
+[echo dB]` runs a caller and an answerer through a simulated line with
+delay, a low-pass filter (`FLAT=1` leaves it out), white noise and an
+optional sample clock offset. It then checks the bit error rate in both
+directions. `DUMP=<prefix>` records what each side hears.
+
+V.34 between two open modems (`dsp_loopback 8 ...`): 33600 bit/s at 50 dB
+on a flat line, 31200 at 40 dB with the low-pass filter (also with ±80 ppm
+clock offset), 28800 at 35 dB, 21600 at 30 dB.
 
 `interop` connects two `modem_half` processes with pipes. One process is
 linked with `dsplibs.o` and the other with this code. Each call goes through
@@ -110,6 +153,7 @@ directions. Results at the time of writing:
 
 | `AT+MS=` | original caller → open answerer | open caller → original answerer |
 |---|---|---|
+| 34 (V.34) | CONNECT 33600 | CONNECT 33600 |
 | 132 (V.32bis) | CONNECT 14400 | CONNECT 14400 |
 | 122 (V.22bis) | CONNECT 2400 | CONNECT 2400 |
 | 22 (V.22) | CONNECT 1200 | CONNECT 1200 |
@@ -140,7 +184,9 @@ page without ECM survives that). Its V.27ter training also contains stray
 one fax modulation over the simulated line. The V.17 short train codes run
 a long train first, so the receiver has an equalizer to start from.
 
-Known limitation: the original library in its default V.92 mode does
-V.8 with automode off. Its CM message offers only V.34, V.90 and V.32bis,
-not V.22bis, so it cannot connect to this implementation. Set `AT+MS=122`
-on that side.
+The original library in its default V.92 mode does V.8 with automode off,
+and connects to this implementation at V.34.
+
+`MODEM_REC=<prefix>` makes `modem_half` record its line input and output
+(`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
+interop scripts run the modems with.

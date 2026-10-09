@@ -260,8 +260,18 @@ int main(int argc, char **argv)
 	long t, total = (long)(secs * srate);
 	int i, k, ret, fail = 0, id2;
 
+	FILE *dump_a = NULL, *dump_c = NULL;
+
 	if (getenv("DSP_DEBUG"))
 		dsplibs_debug_level = atoi(getenv("DSP_DEBUG"));
+	if (getenv("DUMP")) {
+		/* what each side hears: DUMP.a (answerer), DUMP.c (caller) */
+		char name[256];
+		snprintf(name, sizeof(name), "%s.a", getenv("DUMP"));
+		dump_a = fopen(name, "wb");
+		snprintf(name, sizeof(name), "%s.c", getenv("DUMP"));
+		dump_c = fopen(name, "wb");
+	}
 	srand(1);
 	for (k = 0; k < 2; k++) {
 		fake[k] = calloc(1, sizeof(struct modem) + 64);
@@ -286,6 +296,12 @@ int main(int argc, char **argv)
 	biquad_bandpass(&echo_fa, 1500, 0.5f, srate);
 	biquad_bandpass(&echo_fc, 1500, 0.5f, srate);
 	biquad_lowpass(&to_c.tilt, 3000, 0.6f, srate);
+	if (getenv("FLAT")) {
+		/* no band limitation */
+		memset(&to_a.tilt, 0, sizeof(to_a.tilt));
+		memset(&to_c.tilt, 0, sizeof(to_c.tilt));
+		to_a.tilt.b0 = to_c.tilt.b0 = 1;
+	}
 
 	sides[0].dp = ops[DP_CALLPROG]->create(fake[0], DP_CALLPROG, 1, srate, FRAG,
 					       ops[DP_CALLPROG]);
@@ -349,6 +365,10 @@ int main(int argc, char **argv)
 			echo_pos = (echo_pos + 1) & 63;
 			a_in[i] = dsp_clip16(line_run(&to_a, c_out[i]) + echo_gain * ea);
 			c_in[i] = dsp_clip16(line_run(&to_c, a_out[i]) + echo_gain * ec);
+		}
+		if (dump_a) {
+			fwrite(a_in, sizeof(a_in[0]), FRAG, dump_a);
+			fwrite(c_in, sizeof(c_in[0]), FRAG, dump_c);
 		}
 	}
 

@@ -11,7 +11,7 @@ By default slmodemd links Smart Link's binary-only i386 DSP library (`slmodemd/d
 
     make DSPLIBS=open
 
-It implements V.32bis (14400 bps), V.32, V.22bis, V.22, Bell 212A, V.23, V.21 and Bell 103, class 1 fax (V.17, V.29, V.27ter and V.21 HDLC), call progress, caller ID and voice.  It does not implement V.34 or V.90/V.92.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md) for details and tests.
+It implements V.8 and V.34 (up to 33600 bps), V.32bis (14400 bps), V.32, V.22bis, V.22, Bell 212A, V.23, V.21 and Bell 103, class 1 fax (V.17, V.29, V.27ter and V.21 HDLC), call progress, caller ID and voice.  It does not implement V.90/V.92.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md) for details and tests.
 
 ## How it Works
 Traditional “controller-based” modems generally used a microcontroller and a DSP to handle all aspects of modem communication on the device itself.  Later, so-called “Winmodems” were introduced that allowed for field-programmable DSPs and moved the controller and other functionality into software running on the host PC.  This was followed by “pure software” modems that moved DSP functionality to the host as well.  The physical hardware of these softmodems was only used to connect to the phone network, and all processing was done in software. 

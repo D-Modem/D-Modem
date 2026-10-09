@@ -11,8 +11,9 @@
 
 #include "dsp.h"
 
-#define QAM_MAX_SPAN 8          /* pulse half length, symbols */
+#define QAM_MAX_SPAN 16         /* pulse half length, symbols */
 #define QAM_PULSE_RES 64        /* pulse table points per symbol */
+#define QAM_MF_RES 64           /* receive filter table points per sample */
 #define QAM_MAX_EQ 64           /* T/2 spaced equalizer taps */
 
 /*
@@ -58,10 +59,10 @@ struct qam_rx {
 	float agc_gain;
 	int agc_hold;           /* keep the gain fixed */
 	/* timing */
-	cplx hist[4];
 	float t_next, t_adj;
 	float kt_p, kt_i, kt_gi;  /* proportional gain, integrator range and gain */
-	int timing_hold;
+	int timing_hold;        /* no timing corrections (but the frequency) */
+	int timing_freeze;      /* none at all */
 	int half;
 	cplx mid, prev_sym;
 	/* equalizer and carrier */

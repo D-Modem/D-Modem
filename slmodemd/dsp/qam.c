@@ -87,20 +87,24 @@ int qam_rx_init(struct qam_rx *q, int srate, float carrier, float baud,
 	q->sps = srate / baud;
 	osc_set_freq(&q->lo, -carrier, srate);
 	q->mf_len = (int)(2 * span * q->sps) | 1;
-	q->mf = calloc(q->mf_len, sizeof(float));
-	q->mf_buf = calloc(q->mf_len, sizeof(cplx));
+	/* the matched filter is evaluated at the T/2 instants themselves,
+	   from a table of QAM_MF_RES points per sample */
+	q->mf = calloc((q->mf_len + 2) * QAM_MF_RES + 2, sizeof(float));
+	/* the last mf_len + 1 samples, twice */
+	q->mf_buf = calloc(2 * (q->mf_len + 1), sizeof(cplx));
 	if (!q->mf || !q->mf_buf) {
 		qam_rx_free(q);
 		return -1;
 	}
 	for (i = 0, sum = 0; i < q->mf_len; i++) {
-		q->mf[i] = rrc_pulse((i - q->mf_len / 2) / q->sps, alpha);
-		sum += q->mf[i] * q->mf[i];
+		float h = rrc_pulse((i - q->mf_len / 2) / q->sps, alpha);
+		sum += h * h;
 	}
-	for (i = 0; i < q->mf_len; i++)
-		q->mf[i] /= sqrtf(sum);
+	for (i = 0; i < (q->mf_len + 2) * QAM_MF_RES + 2; i++)
+		q->mf[i] = rrc_pulse(((float)i / QAM_MF_RES - 1 -
+				      q->mf_len / 2) / q->sps, alpha) / sqrtf(sum);
 	q->power_alpha = 1.0f / (0.02f * srate);
-	q->agc_alpha = 1.0f / (0.03f * srate);
+	q->agc_alpha = 1.0f / (0.03f * 2 * baud);
 	/* the mean power of the matched filter output is lower than at the
 	   symbol instants by the roll off */
 	q->agc_target = target_power * (1 - alpha / 4);
@@ -131,46 +135,41 @@ void qam_rx_reset(struct qam_rx *q)
 
 int qam_rx_sample(struct qam_rx *q, float x)
 {
-	cplx b, y;
-	int i, j, ret = 0;
+	cplx b;
+	int i, ret = 0;
 
 	q->power += q->power_alpha * (x * x - q->power);
 
 	b = cplx_scale(osc_next_cplx(&q->lo), x);
-	q->mf_buf[q->mf_pos] = b;
-	y = cplx_make(0, 0);
-	for (i = 0, j = q->mf_pos; i < q->mf_len; i++) {
-		y.re += q->mf[i] * q->mf_buf[j].re;
-		y.im += q->mf[i] * q->mf_buf[j].im;
-		if (--j < 0)
-			j = q->mf_len - 1;
-	}
-	if (++q->mf_pos >= q->mf_len)
-		q->mf_pos = 0;
-
-	if (!q->agc_hold) {
-		q->agc_pwr += q->agc_alpha * (cplx_pow(y) - q->agc_pwr);
-		q->agc_gain = q->agc_pwr > 1e-3f ?
-			sqrtf(q->agc_target / q->agc_pwr) : 0;
-	}
-	y = cplx_scale(y, q->agc_gain);
-
-	memmove(q->hist, q->hist + 1, 3 * sizeof(cplx));
-	q->hist[3] = y;
+	/* newest sample at mf_buf[mf_pos], kept twice for a contiguous run */
+	if (--q->mf_pos < 0)
+		q->mf_pos = q->mf_len;
+	q->mf_buf[q->mf_pos] = q->mf_buf[q->mf_pos + q->mf_len + 1] = b;
 
 	q->t_next -= 1;
 	while (q->t_next <= 0) {
-		/* cubic Lagrange interpolation between hist[1] and hist[2] */
-		float m = 1 + q->t_next;
-		float c0 = -m * (m - 1) * (m - 2) / 6;
-		float c1 = (m + 1) * (m - 1) * (m - 2) / 2;
-		float c2 = -(m + 1) * m * (m - 2) / 2;
-		float c3 = (m + 1) * m * (m - 1) / 6;
-		cplx s;
-		s.re = c0 * q->hist[0].re + c1 * q->hist[1].re +
-			c2 * q->hist[2].re + c3 * q->hist[3].re;
-		s.im = c0 * q->hist[0].im + c1 * q->hist[1].im +
-			c2 * q->hist[2].im + c3 * q->hist[3].im;
+		/* the matched filter output at t_next (<= 0) samples before
+		   the previous sample (the latency the handshake timings
+		   were tuned with) */
+		const cplx *buf = q->mf_buf + q->mf_pos + 1;
+		float p = (1 + q->t_next) * QAM_MF_RES, f;
+		int k;
+		cplx s = { 0, 0 };
+		if (p < 0)
+			p = 0;
+		k = (int)p;
+		f = p - k;
+		for (i = 0; i < q->mf_len; i++, k += QAM_MF_RES) {
+			float h = q->mf[k] + f * (q->mf[k + 1] - q->mf[k]);
+			s.re += h * buf[i].re;
+			s.im += h * buf[i].im;
+		}
+		if (!q->agc_hold) {
+			q->agc_pwr += q->agc_alpha * (cplx_pow(s) - q->agc_pwr);
+			q->agc_gain = q->agc_pwr > 1e-3f ?
+				sqrtf(q->agc_target / q->agc_pwr) : 0;
+		}
+		s = cplx_scale(s, q->agc_gain);
 
 		memmove(q->eq_buf + 1, q->eq_buf, (q->eq_len - 1) * sizeof(cplx));
 		q->eq_buf[0] = s;
@@ -178,7 +177,7 @@ int qam_rx_sample(struct qam_rx *q, float x)
 
 		if (q->half) {
 			cplx out = { 0, 0 };
-			if (!q->timing_hold) {
+			if (!q->timing_hold && !q->timing_freeze) {
 				/* Gardner timing error detector */
 				float e = (q->mid.re * (q->prev_sym.re - s.re) +
 					   q->mid.im * (q->prev_sym.im - s.im)) /
@@ -194,7 +193,8 @@ int qam_rx_sample(struct qam_rx *q, float x)
 					q->t_adj = -q->kt_i;
 				q->t_next += q->kt_p * e;
 			}
-			q->t_next += q->t_adj;
+			if (!q->timing_freeze)
+				q->t_next += q->t_adj;
 			q->prev_sym = s;
 			q->y = s;
 			for (i = 0; i < q->eq_len; i++)
