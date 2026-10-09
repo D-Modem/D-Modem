@@ -95,9 +95,12 @@ int modem_debug_log_data(struct modem *m, unsigned id, const void *data, int cou
 
 /* printing */
 
+/* a program that embeds the modem (dmodem.h) takes the lines itself */
+void (*modem_debug_hook)(const char *line);
+
 static int debug_vprintf(unsigned level, const char *fmt, va_list args)
 {
-	static char debug_temp[512];
+	char debug_temp[512];
         struct timeval tv;
         int i, len;
 	gettimeofday(&tv,NULL);
@@ -107,8 +110,12 @@ static int debug_vprintf(unsigned level, const char *fmt, va_list args)
 	if(modem_debug_logging)
 		modem_debug_log_data(0,
 				     MODEM_DBG_PRINT_MSG,debug_temp,len + i);
-	if(level <= modem_debug_level)
-		fprintf( stderr, "%s", debug_temp);
+	if(level <= modem_debug_level) {
+		if (modem_debug_hook)
+			modem_debug_hook(debug_temp + i);
+		else
+			fprintf( stderr, "%s", debug_temp);
+	}
         return len;
 }
 

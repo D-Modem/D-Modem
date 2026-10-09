@@ -329,6 +329,10 @@ static cplx abcd_point(struct v32_dp *v, int k)
 	return v32_abcd[k];
 }
 
+/* B1: the data mode starts with scrambled binary ones for 128 symbols
+   (V.32bis 5.4), the remote's receiver may train on them */
+#define V32_B1_SYMS 128
+
 static cplx v32_tx_word_symbol(struct v32_dp *v, unsigned word, int data)
 {
 	int b[2], k, q;
@@ -336,7 +340,8 @@ static cplx v32_tx_word_symbol(struct v32_dp *v, unsigned word, int data)
 		int bit;
 		if (data) {
 			u8 x = 1;
-			modem_get_bits(v->modem, 1, &x, 1);
+			if (v->tx_syms >= V32_B1_SYMS)
+				modem_get_bits(v->modem, 1, &x, 1);
 			bit = x & 1;
 		} else {
 			bit = (word >> (15 - v->tx_word_bit)) & 1;
@@ -357,7 +362,10 @@ static cplx v32_tx_data_symbol(struct v32_dp *v)
 
 	if (r->nbits == 2)
 		return v32_tx_word_symbol(v, 0, 1);
-	modem_get_bits(v->modem, 1, bits, r->nbits);
+	if (v->tx_syms < V32_B1_SYMS)
+		memset(bits, 1, r->nbits);
+	else
+		modem_get_bits(v->modem, 1, bits, r->nbits);
 	for (k = 0; k < r->nbits; k++)
 		q |= scramble(&v->tx_scr, v->tx_scr_tap, bits[k] & 1) << k;
 	idx = trellis_encode(&v->tx_trellis, q, r->nbits);

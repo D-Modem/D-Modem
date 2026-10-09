@@ -20,6 +20,7 @@
  */
 
 #include <math.h>
+#include <pthread.h>
 #include <string.h>
 
 #include "v34.h"
@@ -457,7 +458,6 @@ cplx v34_dtx_symbol(struct v34_dtx *d, unsigned *scr, int tap)
  *    receiver
  */
 
-static int lookup_init;
 /* rotation << 9 | index of each odd point with |x|, |y| <= 45 */
 static short lookup[46][46];
 
@@ -471,7 +471,6 @@ static void make_lookup(void)
 			rotate(&x, &y, k);
 			lookup[(x + 45) / 2][(y + 45) / 2] = (short)(k << 9 | i);
 		}
-	lookup_init = 1;
 }
 
 static void v34_viterbi_init(struct v34_drx *d);
@@ -480,8 +479,10 @@ void v34_drx_init(struct v34_drx *d, const struct v34_dparm *p)
 {
 	memset(d, 0, sizeof(*d));
 	d->p = *p;
-	if (!lookup_init)
-		make_lookup();
+	{
+		static pthread_once_t once = PTHREAD_ONCE_INIT;
+		pthread_once(&once, make_lookup);
+	}
 	v34_viterbi_init(d);
 }
 

@@ -224,6 +224,7 @@ struct info1a {
 struct v34_ec {
 	float *hist, *wn, *wf;
 	float *rxh;             /* received samples, for the delay search */
+	float *corr, *win;      /* scratch of the search */
 	int pos, rpos;
 	int on, far_on, far_delay, trained;
 	long n, since, filled, far_since;
@@ -1021,7 +1022,10 @@ static int ec_init(struct v34_ec *e)
 	e->wn = calloc(EC_NEAR_LEN, sizeof(float));
 	e->wf = calloc(EC_FAR_LEN, sizeof(float));
 	e->rxh = calloc(EC_SEARCH, sizeof(float));
-	return e->hist && e->wn && e->wf && e->rxh ? 0 : -1;
+	e->corr = calloc(EC_HIST, sizeof(float));
+	e->win = calloc(EC_HIST, sizeof(float));
+	return e->hist && e->wn && e->wf && e->rxh && e->corr && e->win ?
+		0 : -1;
 }
 
 static void ec_free(struct v34_ec *e)
@@ -1030,7 +1034,9 @@ static void ec_free(struct v34_ec *e)
 	free(e->wn);
 	free(e->wf);
 	free(e->rxh);
-	e->hist = e->wn = e->wf = e->rxh = NULL;
+	free(e->corr);
+	free(e->win);
+	e->hist = e->wn = e->wf = e->rxh = e->corr = e->win = NULL;
 }
 
 /* where the far echo is: the received signal of the last EC_SEARCH
@@ -1057,7 +1063,7 @@ static void ec_search(struct v34_ec *e)
 		e->far_on = 0;
 		return;
 	}
-	static float corr[EC_HIST], win[EC_HIST];
+	float *corr = e->corr, *win = e->win;
 
 	for (d = 0; d < n; d++) {
 		c = 0;
@@ -2160,7 +2166,8 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	v->v90 = (id == DP_V90 || id == DP_V92) && v->line_rate == 8000;
 	/* the G.711 law of the network (D-Modem knows it from the codec of
 	   the call) */
-	v->alaw = getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
+	v->alaw = v->rt && v->rt->law ? v->rt->law == 2 :
+		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
 	v->dp.modem = m;
 	v->dp.op = op;
 	v->dp.dp_data = v;

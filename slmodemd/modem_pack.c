@@ -265,8 +265,14 @@ int modem_detector_put_bits(struct modem *m, int nbits, u8 *bit_buf, int bit_cnt
 			if (ch == HDLC_FLAG) {
 				PACK_DBG("hdlc flag detected.\n");
 				d->ec_enable = 1;
-				m->bit_timer_func = detector_finish;
-				m->bit_timer = PATTERN_SIZE;
+				/* once: re-arming on every flag would hold
+				   the detector until the flags end, and the
+				   frame after them would be lost */
+				if (m->bit_timer_func != detector_finish ||
+				    m->bit_timer > PATTERN_SIZE) {
+					m->bit_timer_func = detector_finish;
+					m->bit_timer = PATTERN_SIZE;
+				}
 				continue;
 			}
 			if (!d->rx_count) {

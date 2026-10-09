@@ -66,7 +66,7 @@
 #define MDMEVENT_ESCAPE        0x02
 
 /* debug prints */
-#define MODEM_INFO(fmt,arg...) printf(fmt , ##arg) ; dprintf(fmt , ##arg)
+#define MODEM_INFO(fmt,arg...) { if (!modem_debug_hook) printf(fmt , ##arg) ; dprintf(fmt , ##arg) ; }
 #define MODEM_DBG(fmt,arg...) dprintf("%s: " fmt , m->name , ##arg)
 #define MODEM_ERR(fmt,arg...) eprintf("%s: " fmt , m->name , ##arg)
 
@@ -1838,6 +1838,18 @@ static int modem_check_escape(struct modem *m, const char *buf, int count)
 }
 
 
+
+/* for embedding (dmodem.c): 0 idle, 1 connecting, 2 online, 3 hanging up */
+int modem_link_state(struct modem *m)
+{
+	if (IS_STATE_IDLE(m->state))
+		return 0;
+	if (IS_STATE_ONLINE(m->state))
+		return 2;
+	if (IS_STATE_CONNECTING(m->state))
+		return 1;
+	return 3;
+}
 
 int modem_write(struct modem *m, const char *buffer, int count)
 {

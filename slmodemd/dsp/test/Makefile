@@ -9,7 +9,7 @@ SRCS := ../dsp_glue.c ../dsp_util.c ../dp_callprog.c ../dp_fsk.c ../dp_v22.c \
 	../dp_v34.c ../v34_tables.c ../v34_modem.c ../v34_data.c ../v90.c
 
 dsp_loopback: dsp_loopback.c $(SRCS) ../dsp.h ../qam.h ../v34.h ../v90.h
-	$(CC) $(CFLAGS) -o $@ dsp_loopback.c $(SRCS) -lm
+	$(CC) $(CFLAGS) -o $@ dsp_loopback.c $(SRCS) -lm -lpthread
 
 check: dsp_loopback fax_loopback
 	./dsp_loopback 132 40 20
@@ -58,7 +58,7 @@ half_blob: modem_half.c $(CORE) ../../dsplibs.o
 	$(CC) $(HALF_CFLAGS) -o $@ modem_half.c $(CORE) ../../dsplibs.o
 
 half_open: modem_half.c $(CORE) $(SRCS)
-	$(CC) $(HALF_CFLAGS) -o $@ modem_half.c $(CORE) $(SRCS) -lm
+	$(CC) $(HALF_CFLAGS) -o $@ modem_half.c $(CORE) $(SRCS) -lm -lpthread
 
 netsim: netsim.c ../dsp_util.c ../dsp.h
 	$(CC) $(CFLAGS) -o $@ netsim.c ../dsp_util.c -lm
@@ -74,7 +74,7 @@ half_blob8: modem_half.c $(CORE) ../../dsplibs.o
 	$(CC) $(HALF_CFLAGS) -DMODEM_RATE=8000 -o $@ modem_half.c $(CORE) ../../dsplibs.o
 
 half_open8: modem_half.c $(CORE) $(SRCS)
-	$(CC) $(HALF_CFLAGS) -DMODEM_RATE=8000 -o $@ modem_half.c $(CORE) $(SRCS) -lm
+	$(CC) $(HALF_CFLAGS) -DMODEM_RATE=8000 -o $@ modem_half.c $(CORE) $(SRCS) -lm -lpthread
 
 interop: half_blob half_open
 	for ms in 34 132 122 22 212 103 23; do \
@@ -83,6 +83,17 @@ interop: half_blob half_open
 	done
 
 .PHONY: interop
+
+# libdmodem (../../dmodem.h): pairs of its modems back to back in one
+# process, several pairs in threads at once
+../../libdmodem.a: FORCE
+	$(MAKE) -C ../.. libdmodem.a
+dmodem_pair: dmodem_pair.c ../../libdmodem.a ../../dmodem.h
+	$(CC) $(CFLAGS) -o $@ dmodem_pair.c ../../libdmodem.a -lm -lpthread
+libcheck: dmodem_pair
+	for ms in 22 122 32 132 34; do ./dmodem_pair +MS=$$ms 3 30 || exit 1; done
+
+.PHONY: libcheck FORCE
 
 FAX_SRCS := ../fax_modems.c ../qam.c ../qam_tables.c ../dsp_util.c ../dp_fsk.c
 

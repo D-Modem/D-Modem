@@ -52,6 +52,8 @@ struct dp_runtime {
 				   automode fallback skips it */
 	int v32_automode;       /* V.32bis started by the V.8/V.34 pump:
 				   keep the V.22bis fallback */
+	int law;                /* the G.711 network: 1 mu-law, 2 A-law, 0
+				   unknown (then $DSP_G711) */
 };
 
 /*

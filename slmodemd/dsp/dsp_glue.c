@@ -159,6 +159,14 @@ void *dp_runtime_create(struct modem *m)
 	return rt;
 }
 
+/* the G.711 law of the network (dmodem.c) */
+void dp_runtime_set_law(void *runtime, int law)
+{
+	struct dp_runtime *rt = runtime;
+	if (rt)
+		rt->law = law;
+}
+
 void dp_runtime_delete(void *runtime)
 {
 	free(runtime);

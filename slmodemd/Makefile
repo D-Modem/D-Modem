@@ -39,12 +39,16 @@ modem-objs:= \
 	modem_param.o modem_debug.o homolog_data.o
 dp-objs:= dp_sinus.o dp_dummy.o
 sysdep-objs:= sysdep_common.o
+dsp-objs-open:= dsp/dsp_glue.o dsp/dsp_util.o dsp/dp_callprog.o dsp/dp_fsk.o dsp/dp_v22.o \
+	dsp/dp_v32.o dsp/qam.o dsp/qam_tables.o dsp/fax_modems.o dsp/fax_class1.o \
+	dsp/dp_v34.o dsp/v34_tables.o dsp/v34_modem.o dsp/v34_data.o \
+	dsp/v90.o
 ifeq ($(DSPLIBS), open)
 dsp-objs:= dsp/dsp_glue.o dsp/dsp_util.o dsp/dp_callprog.o dsp/dp_fsk.o dsp/dp_v22.o \
 	dsp/dp_v32.o dsp/qam.o dsp/qam_tables.o dsp/fax_modems.o dsp/fax_class1.o \
 	dsp/dp_v34.o dsp/v34_tables.o dsp/v34_modem.o dsp/v34_data.o \
 	dsp/v90.o
-LFLAGS+= -lm
+LFLAGS+= -lm -lpthread
 else
 dsp-objs:= dsplibs.o
 endif
@@ -71,7 +75,26 @@ slmodemd:
 modem_test:
 	$(CC) -o modem_test modem_test.o $(all-objs) $(LFLAGS)
 
+# libdmodem.a: the modem core and the open data pumps at 8000 Hz as a
+# library (dmodem.h), for programs that bring their own audio
+LIB_SRCS:= modem.c modem_datafile.c modem_at.c modem_pack.c modem_ec.c \
+	modem_comp.c modem_param.c modem_debug.c homolog_data.c \
+	dp_sinus.c dp_dummy.c sysdep_common.c dmodem.c dmodem_timer.c \
+	$(patsubst %.o,%.c,$(filter dsp/%,$(subst dsplibs.o,,$(dsp-objs-open))))
+LIB_OBJS:= $(patsubst %.c,lib/%.o,$(LIB_SRCS))
+# the library has no binary-only parts: native, whatever CC the blob needs
+LIB_CC ?= gcc
+LIB_CFLAGS:= -Wall -g -O2 -fPIC -I. -DCONFIG_DEBUG_MODEM -DMODEM_RATE=8000
+
+lib/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(LIB_CC) $(LIB_CFLAGS) -c $< -o $@
+
+libdmodem.a: $(LIB_OBJS)
+	$(AR) rcs $@ $^
+
 clean:
+	$(RM) -r lib libdmodem.a
 	$(RM) slmodemd modem_test modem_main.o modem_cmdline.o modem_test.o $(modem-objs) $(dp-objs) $(sysdep-objs)
 	$(RM) dsp/*.o
 	$(RM) *~ *.orig *.rej

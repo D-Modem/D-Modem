@@ -56,8 +56,11 @@
 // fixme: speed is parameter
 #define _TMP_SPEED 28800
 // fixme: what is timeout vals should be (2sec?)???
-#define T401_TIMEOUT        _TMP_SPEED*2  /* noacks timeout (in ???) */
-#define T403_TIMEOUT        _TMP_SPEED*2  /* no frames timeout */
+/* the bit timer counts transmitted bits: 2 s at the link's rate (a
+   fixed count, 2 s at 28800, would be 48 s at 1200 bit/s) */
+#define _BITS_2S(m) ((m)->tx_rate ? (m)->tx_rate*2 : _TMP_SPEED*2)
+#define T401_TIMEOUT(m)     _BITS_2S(m)  /* noacks timeout */
+#define T403_TIMEOUT(m)     _BITS_2S(m)  /* no frames timeout */
 
 /* LAPM definitions */
 
@@ -106,18 +109,18 @@
 /* timers */
 #define T401_START(l) 	{ EC_DBG("T401 start.\n");\
                           (l)->rtx_count = 0; \
-			  (l)->modem->bit_timer = T401_TIMEOUT; \
+			  (l)->modem->bit_timer = T401_TIMEOUT((l)->modem); \
 			  (l)->modem->bit_timer_func = t401_timeout; }
 #define T401_STOP(l) 	{ EC_DBG("T401 stop.\n"); \
                           (l)->modem->bit_timer = 0; (l)->rtx_count = 0; }
 #if T403_IMPLEMENTED
 #define TIMER_START(l)  { EC_DBG("T403 stop, T401 start.\n"); \
                           (l)->rtx_count = 0; \
-                          (l)->modem->bit_timer = T401_TIMEOUT; \
+                          (l)->modem->bit_timer = T401_TIMEOUT((l)->modem); \
                           (l)->modem->bit_timer_func = t401_timeout; }
 #define TIMER_STOP(l)   { EC_DBG("T401 stop, T403 start.\n"); \
                           (l)->rtx_count = 0; \
-                          (l)->modem->bit_timer = T403_TIMEOUT; \
+                          (l)->modem->bit_timer = T403_TIMEOUT((l)->modem); \
                           (l)->modem->bit_timer_func = t403_timeout; }
 #else /* !T403 */
 #define TIMER_START(l) T401_START(l)
@@ -680,7 +683,7 @@ static void t401_timeout(struct modem *m)
 			break;
 		}
 	}
-	m->bit_timer      = T401_TIMEOUT;
+	m->bit_timer      = T401_TIMEOUT(m);
 	m->bit_timer_func = t401_timeout;
 }
 

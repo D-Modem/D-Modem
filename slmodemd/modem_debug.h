@@ -77,6 +77,9 @@ struct sllog_header {
 
 struct modem;
 
+/* NULL: the log goes to stderr; else each line to the hook */
+extern void (*modem_debug_hook)(const char *line);
+
 #ifdef CONFIG_DEBUG_MODEM
 
 extern unsigned modem_debug_level;

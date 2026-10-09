@@ -5,6 +5,7 @@
  */
 
 #include <math.h>
+#include <pthread.h>
 #include <string.h>
 
 #include "dsp.h"
@@ -203,7 +204,6 @@ float dtmf_gen_next(struct dtmf_gen *d)
 #define RS_LEN  480     /* prototype taps at 48 kHz */
 
 static float rs_h6[RS_LEN], rs_h5[RS_LEN];
-static int rs_ready;
 
 static double bessel_i0(double x)
 {
@@ -232,13 +232,16 @@ static void rs_design(float *h, int L)
 	}
 }
 
+static void rs_tables(void)
+{
+	rs_design(rs_h6, 6);
+	rs_design(rs_h5, 5);
+}
+
 int resampler_init(struct resampler *r, int L, int M)
 {
-	if (!rs_ready) {
-		rs_design(rs_h6, 6);
-		rs_design(rs_h5, 5);
-		rs_ready = 1;
-	}
+	static pthread_once_t once = PTHREAD_ONCE_INIT;
+	pthread_once(&once, rs_tables);
 	if (!((L == 6 && M == 5) || (L == 5 && M == 6)))
 		return -1;
 	memset(r, 0, sizeof(*r));
