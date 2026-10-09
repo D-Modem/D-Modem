@@ -124,6 +124,7 @@ struct v22_dp {
 	cplx last_y;
 	float rot_avg;          /* mean phase step per symbol of the input */
 	long s1_seen;           /* sample time when remote S1 was detected */
+	int sb1_seen;           /* remote scrambled ones at 1200 bit/s */
 	struct v22_scrambler rx_scr12, rx_scr24;
 };
 
@@ -600,6 +601,7 @@ static int v22_handshake(struct v22_dp *v)
 			v22_set_state(v, C_GAP);
 		} else if (v->run_sb1_12 >= MS2SYM(270)) {
 			/* answerer skipped the unscrambled ones (Bell 212A) */
+			v->sb1_seen = 1;
 			v22_set_state(v, C_V22_SB1);
 			v22_set_tx(v, TX_SB1_1200);
 		}
@@ -634,6 +636,7 @@ static int v22_handshake(struct v22_dp *v)
 			}
 		} else if (v->run_sb1_12 >= MS2SYM(270)) {
 			/* V.22 answerer: stay at 1200 bit/s */
+			v->sb1_seen = 1;
 			v22_set_state(v, C_V22_SB1);
 		}
 		break;
@@ -642,7 +645,11 @@ static int v22_handshake(struct v22_dp *v)
 			v22_set_state(v, V22_WAIT_RX);
 		break;
 	case C_V22_SB1:
-		if (ms >= 765 && v->run_sb1_12 >= MS2SYM(100))
+		/* the answerer's scrambled ones must have been seen; it may
+		   already send data by the end of our 765 ms */
+		if (v->run_sb1_12 >= MS2SYM(100))
+			v->sb1_seen = 1;
+		if (ms >= 765 && v->sb1_seen)
 			return v22_connect(v);
 		break;
 
@@ -698,6 +705,7 @@ static struct dp *v22_create(struct modem *m, enum DP_ID id,
 			     struct dp_operations *op)
 {
 	struct v22_dp *v;
+	struct dp_runtime *rt;
 	int i, s7, s10;
 	float sum;
 
@@ -751,7 +759,12 @@ static struct dp *v22_create(struct modem *m, enum DP_ID id,
 	v->carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate / 10;
 
 	v->tx_mode = TX_SILENCE;
-	if (!caller)
+	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+	if (!caller && rt && rt->ans_sent) {
+		/* automode fallback from V.32bis: the answer tone was sent */
+		rt->ans_sent = 0;
+		v->state = A_GAP;
+	} else if (!caller)
 		v->state = A_SILENCE;
 	else if (id == DP_B212) {
 		/* Bell 212A: answer the 2225 Hz tone with scrambled ones */
@@ -787,15 +800,8 @@ static struct dp_operations v22_operations = {
 	.hangup = v22_hangup,
 };
 
-/*
- *    The faster modulations of the original library (V.32bis, V.34,
- *    V.90, V.92) are not implemented.  The modem core selects DP_V8
- *    for the fast ones and DP_V32/DP_V32BIS directly; those requests
- *    fall back to V.22bis, like an automode modem talking to a slower
- *    peer.
- */
 static const enum DP_ID v22_ids[] = {
-	DP_V22, DP_V22BIS, DP_B212, DP_V8, DP_V32, DP_V32BIS,
+	DP_V22, DP_V22BIS, DP_B212,
 };
 
 int dp_v22_init(void)

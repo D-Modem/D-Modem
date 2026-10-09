@@ -7,6 +7,14 @@
  *    checks the bit error rate of the data phase in both directions.
  *
  *    usage: dsp_loopback <dp id> [snr_db] [seconds] [srate] [gain] [ppm]
+ *                        [echo_db]
+ *
+ *    CALLER_DP=<id> in the environment gives the caller another data
+ *    pump than the answerer (automode tests).
+ *
+ *    echo_db adds an echo of each modem's own signal to its input
+ *    (hybrid echo, about 2 ms delay) at that level relative to the
+ *    transmitted signal, e.g. -10.
  *
  */
 
@@ -45,6 +53,7 @@ struct side {
 	u8 *tx_bits, *rx_bits;
 	long ntx, nrx;
 	long connect_rx;
+	int dp_requested;
 };
 
 static struct dp_operations *ops[DP_MAX];
@@ -95,7 +104,9 @@ long modem_get_param(struct modem *m, unsigned name)
 long modem_set_param(struct modem *m, unsigned name, int val)
 {
 	struct side *s = side_of(m);
-	if (name == MDMPRM_TX_RATE)
+	if (name == MDMPRM_DP_REQUESTED)
+		s->dp_requested = val;
+	else if (name == MDMPRM_TX_RATE)
 		s->tx_rate = val;
 	else if (name == MDMPRM_RX_RATE)
 		s->rx_rate = val;
@@ -146,6 +157,7 @@ struct line {
 	struct biquad tilt;
 	/* sample clock offset: linear interpolation resampler */
 	double step;
+	float sig_pwr, ref_pwr;
 	float ring[1024];
 	long n;
 };
@@ -156,14 +168,20 @@ static float line_resample(struct line *l, float x)
 	   starts 256 samples behind the newest input */
 	double t = l->n * l->step - 256;
 	long i = (long)floor(t);
-	float f = (float)(t - i), a, b;
+	float f = (float)(t - i), y = 0;
+	int k;
 	l->ring[l->n & 1023] = x;
 	l->n++;
-	if (i < 0 || l->n - i > 1000)
+	if (i < 16 || l->n - i > 1000)
 		return 0;
-	a = l->ring[i & 1023];
-	b = l->ring[(i + 1) & 1023];
-	return a + f * (b - a);
+	/* 32 tap Blackman windowed sinc interpolation */
+	for (k = -15; k <= 16; k++) {
+		double d = k - f, w, sinc;
+		sinc = fabs(d) < 1e-9 ? 1 : sin(M_PI * d) / (M_PI * d);
+		w = 0.42 + 0.5 * cos(M_PI * d / 16.5) + 0.08 * cos(2 * M_PI * d / 16.5);
+		y += l->ring[(i + k) & 1023] * sinc * w;
+	}
+	return y;
 }
 
 static float line_run(struct line *l, float x)
@@ -174,7 +192,13 @@ static float line_run(struct line *l, float x)
 		l->pos = 0;
 	if (l->step != 1)
 		y = line_resample(l, y);
-	y = biquad_run(&l->tilt, y) * l->gain + l->noise * gauss();
+	y = biquad_run(&l->tilt, y) * l->gain;
+	/* noise relative to the actual signal power (slow average, held
+	   during silence) */
+	l->sig_pwr += (y * y - l->sig_pwr) / 2400.0f;
+	if (l->sig_pwr > 0.05f * l->ref_pwr)
+		l->ref_pwr = l->sig_pwr;
+	y += sqrtf(l->ref_pwr) * l->noise * gauss();
 	return y;
 }
 
@@ -208,8 +232,12 @@ static long count_errors(struct side *tx, struct side *rx, long *checked)
 		*checked = n;
 		return n / 2;
 	}
-	for (i = 0, best_err = 0; i < n && best + i < tx->ntx; i++)
-		best_err += tx->tx_bits[best + i] != rx->rx_bits[start_rx + i];
+	for (i = 0, best_err = 0; i < n && best + i < tx->ntx; i++) {
+		int e = tx->tx_bits[best + i] != rx->rx_bits[start_rx + i];
+		best_err += e;
+		if (e && getenv("SHOW_ERRORS"))
+			fprintf(stderr, "%s: bit error at %ld\n", rx->name, i);
+	}
 	*checked = i;
 	return best_err;
 }
@@ -222,10 +250,15 @@ int main(int argc, char **argv)
 	int srate = argc > 4 ? atoi(argv[4]) : 9600;
 	float gain = argc > 5 ? atof(argv[5]) : 0.5f;
 	float ppm = argc > 6 ? atof(argv[6]) : 0;
+	float echo_db = argc > 7 ? atof(argv[7]) : 0;
+	float echo_gain = echo_db < 0 ? powf(10, echo_db / 20) : 0;
+	float echo_a[64] = { 0 }, echo_c[64] = { 0 };
+	struct biquad echo_fa, echo_fc;
+	int echo_pos = 0;
 	s16 a_in[FRAG], a_out[FRAG], c_in[FRAG], c_out[FRAG];
 	struct line to_a, to_c;
 	long t, total = (long)(secs * srate);
-	int i, k, ret, fail = 0;
+	int i, k, ret, fail = 0, id2;
 
 	if (getenv("DSP_DEBUG"))
 		dsplibs_debug_level = atoi(getenv("DSP_DEBUG"));
@@ -247,10 +280,11 @@ int main(int argc, char **argv)
 	to_a.gain = to_c.gain = gain;
 	to_a.step = 1 + ppm * 1e-6;
 	to_c.step = 1 - ppm * 1e-6;
-	/* white noise relative to a DSP_TX_AMPLITUDE signal after the gain */
-	to_a.noise = to_c.noise = DSP_TX_AMPLITUDE / sqrtf(2) * gain *
-		powf(10, -snr / 20);
+	/* white noise at snr dB below the received signal power */
+	to_a.noise = to_c.noise = powf(10, -snr / 20);
 	biquad_lowpass(&to_a.tilt, 3000, 0.6f, srate);
+	biquad_bandpass(&echo_fa, 1500, 0.5f, srate);
+	biquad_bandpass(&echo_fc, 1500, 0.5f, srate);
 	biquad_lowpass(&to_c.tilt, 3000, 0.6f, srate);
 
 	sides[0].dp = ops[DP_CALLPROG]->create(fake[0], DP_CALLPROG, 1, srate, FRAG,
@@ -272,11 +306,22 @@ int main(int argc, char **argv)
 			case DPSTAT_OK:
 				break;
 			case DPSTAT_CHANGEDP:
-				printf("%6.2fs %s: change dp -> %d\n",
-				       (double)t / srate, s->name, id);
 				s->dp->op->delete(s->dp);
-				s->dp = ops[id]->create(fake[k], id, 1, srate,
-							FRAG, ops[id]);
+				if (k == 0 && s->dp_requested) {
+					/* automode change requested */
+					id2 = s->dp_requested;
+					s->dp_requested = 0;
+				} else if (k == 0)
+					id2 = getenv("CALLER_DP") ?
+						atoi(getenv("CALLER_DP")) : id;
+				else {
+					id2 = s->dp_requested;
+					s->dp_requested = 0;
+				}
+				printf("%6.2fs %s: dp -> %d\n",
+				       (double)t / srate, s->name, id2);
+				s->dp = ops[id2]->create(fake[k], id2, k == 0,
+							 srate, FRAG, ops[id2]);
 				break;
 			case DPSTAT_CONNECT:
 				s->connected = 1;
@@ -296,8 +341,14 @@ int main(int argc, char **argv)
 			}
 		}
 		for (i = 0; i < FRAG; i++) {
-			a_in[i] = dsp_clip16(line_run(&to_a, c_out[i]));
-			c_in[i] = dsp_clip16(line_run(&to_c, a_out[i]));
+			/* own signal echo: 20 sample delay, band limited */
+			float ea = biquad_run(&echo_fa, echo_a[(echo_pos + 44) & 63]);
+			float ec = biquad_run(&echo_fc, echo_c[(echo_pos + 44) & 63]);
+			echo_a[echo_pos] = a_out[i];
+			echo_c[echo_pos] = c_out[i];
+			echo_pos = (echo_pos + 1) & 63;
+			a_in[i] = dsp_clip16(line_run(&to_a, c_out[i]) + echo_gain * ea);
+			c_in[i] = dsp_clip16(line_run(&to_c, a_out[i]) + echo_gain * ec);
 		}
 	}
 

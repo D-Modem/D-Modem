@@ -48,6 +48,8 @@ struct dp_runtime {
 	struct modem *modem;
 	int answer_tone;
 	long answer_tone_end;   /* sample counter when the tone was seen */
+	int ans_sent;           /* the answer tone is already sent: an
+				   automode fallback skips it */
 };
 
 /*
@@ -187,6 +189,8 @@ int  dp_fsk_init(void);
 void dp_fsk_exit(void);
 int  dp_v22_init(void);
 void dp_v22_exit(void);
+int  dp_v32_init(void);
+void dp_v32_exit(void);
 
 /* DTMF generator used by the call progress pump and the voice object */
 struct dtmf_gen {
