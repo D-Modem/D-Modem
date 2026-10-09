@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "v34.h"
+#include "v90.h"
 
 #define V34_SRATE       9600
 #define V34_ALPHA       0.1f
@@ -286,8 +287,18 @@ int v34_rx_init(struct v34_rx *r, int baud, int high, int caller)
 			   V34_EQ_LEN, 2.0f);
 }
 
+/* the receiver of a V.90 digital modem: Ja instead of J */
+int v34_rx_v90(struct v34_rx *r)
+{
+	r->v90 = 1;
+	r->jabits = calloc(V90_JA_MAX, 1);
+	return r->jabits ? 0 : -1;
+}
+
 void v34_rx_free(struct v34_rx *r)
 {
+	free(r->jabits);
+	r->jabits = NULL;
 	free(r->ls_r);
 	free(r->ls_p);
 	r->ls_r = r->ls_p = NULL;
@@ -307,9 +318,44 @@ static int nearest4(cplx z)
 	return z.re < 0 ? (z.im < 0 ? 0 : 1) : (z.im < 0 ? 3 : 2);
 }
 
+/* Ja (V.90): DIL descriptors in MP style frames, repeated */
+static void rx_ja_bit(struct v34_rx *r, int bit)
+{
+	r->jabits[r->ja_n++] = bit;
+	if (r->ja_n == 50) {
+		r->ja_len = v90_dil_length(r->jabits, r->ja_n);
+		if (r->ja_len > V90_JA_MAX)
+			r->ja_n = 0;
+	}
+	if (r->ja_len > 0 && r->ja_n == r->ja_len) {
+		r->ja_n = 0;
+		if (v90_dil_parse(&r->dil, r->jabits, r->ja_len) == 0) {
+			if (!r->ev_ja)
+				DSP_DBG("v34 rx: Ja at symbol %ld: DIL N %d, "
+					"LSP %d, LTP %d\n", r->sym, r->dil.n,
+					r->dil.lsp, r->dil.ltp);
+			r->ev_ja = 1;
+		} else
+			DSP_DBG("v34 rx: Ja with bad CRC\n");
+	}
+}
+
 static void rx_bit(struct v34_rx *r, int bit)
 {
 	r->sr = (r->sr << 1) | bit;
+	if (r->v90 && r->jabits && !r->ev_ja && r->stage == V34_RX_TRN) {
+		if (r->ja_n)
+			rx_ja_bit(r, bit);
+		else if ((r->sr & 0x3FFFF) == 0x3FFFE) {
+			int i;
+			for (i = 0; i < 17; i++)
+				r->jabits[i] = 1;
+			r->jabits[17] = 0;
+			r->ja_n = 18;
+			r->ja_len = 0;
+		}
+		return;
+	}
 	if (r->mp_n) {
 		r->mpbits[r->mp_n++] = bit;
 		if (r->mp_n == 19)
@@ -681,8 +727,10 @@ static void rx_symbol(struct v34_rx *r)
 		break;
 	case V34_RX_S:
 		/* S-bar: reversed against two symbols ago */
-		if (b < 0.15f * p && cplx_pow(z) > 0.5f)
+		if (b < 0.15f * p && cplx_pow(z) > 0.5f) {
 			rx_set_stage(r, V34_RX_SBAR);
+			r->sbar_count++;
+		}
 		break;
 	case V34_RX_SBAR:
 		if (r->n == 16) {

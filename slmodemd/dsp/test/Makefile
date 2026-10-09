@@ -6,9 +6,9 @@ CC ?= gcc
 CFLAGS += -Wall -O2 -g -I.. -I../..
 SRCS := ../dsp_glue.c ../dsp_util.c ../dp_callprog.c ../dp_fsk.c ../dp_v22.c \
 	../dp_v32.c ../qam.c ../qam_tables.c ../fax_modems.c ../fax_class1.c \
-	../dp_v34.c ../v34_tables.c ../v34_modem.c ../v34_data.c
+	../dp_v34.c ../v34_tables.c ../v34_modem.c ../v34_data.c ../v90.c
 
-dsp_loopback: dsp_loopback.c $(SRCS) ../dsp.h ../qam.h ../v34.h
+dsp_loopback: dsp_loopback.c $(SRCS) ../dsp.h ../qam.h ../v34.h ../v90.h
 	$(CC) $(CFLAGS) -o $@ dsp_loopback.c $(SRCS) -lm
 
 check: dsp_loopback fax_loopback

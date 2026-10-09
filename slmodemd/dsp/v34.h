@@ -185,6 +185,14 @@ enum v34_rxstage {
 	V34_RX_DATA,
 };
 
+/* V.90: the DIL descriptor of Ja (Table 12/V.90) */
+struct v90_dil {
+	int n, lsp, ltp;
+	unsigned char sp[128], tp[128];
+	int h[8], ref[8];
+	unsigned char ucode[255];
+};
+
 typedef struct { double re, im; } lscplx;
 
 struct v34_rx {
@@ -220,6 +228,12 @@ struct v34_rx {
 	int j_count, ev_j, ev_jp, ev_s, ev_e;
 	int jword;
 	unsigned char mpbits[200];
+	/* V.90 digital modem: Ja carries the DIL descriptor */
+	int v90, ev_ja;
+	int sbar_count;         /* S to S-bar transitions seen */
+	unsigned char *jabits;
+	int ja_n, ja_len;
+	struct v90_dil dil;
 	int mp_n, mp_len;       /* collecting an MP frame */
 	int ones;               /* ones since the end of the last MP frame */
 	int after_mp;
@@ -238,6 +252,7 @@ int  v34_rx_init(struct v34_rx *r, int baud, int high, int caller);
 void v34_rx_free(struct v34_rx *r);
 void v34_rx_sample(struct v34_rx *r, float x);
 float v34_rx_precoder(const struct v34_rx *r, int h[6]);
+int   v34_rx_v90(struct v34_rx *r);
 void v34_rx_data(struct v34_rx *r, const struct v34_dparm *p,
 		 void (*put_bits)(void *, const unsigned char *, int), void *ctx);
 

@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "v34.h"
+#include "v90.h"
 
 #define V34_SRATE       9600
 #define CC_BAUD         600
@@ -124,6 +125,14 @@ enum v34_state {
 	P4_MP,
 	P4_E,
 	V34_DATA,
+	/* V.90 digital modem, phase 3 */
+	P3D_WAIT_JA,
+	P3D_PAUSE,
+	P3D_SD,         /* Sd, Sd-bar, TRN1d */
+	P3D_JD,
+	P3D_JDP,        /* Jd' (and DIL): until the remote's next S-bar */
+	P3D_DIL_END,    /* the current DIL segment */
+	P4D_START,
 };
 
 enum v34_txm {
@@ -216,6 +225,9 @@ struct v34_dp {
 	int v90;                /* offer V.90 as the digital modem */
 	int pcm;                /* V.90 agreed in V.8 */
 	int alaw;               /* the network's G.711 law */
+	struct v90_tx v90tx;    /* the PCM transmitter */
+	int pcm_tx;             /* our output from it */
+	int sbar_seen;
 	struct resampler rs_up, rs_down;
 	float fifo[V34_FIFO];   /* converted output, 8000 Hz */
 	int fifo_n;
@@ -1261,6 +1273,20 @@ static void v34_primary_start(struct v34_dp *v)
 	v->txm = TXM_PRIMARY;
 }
 
+/* V.90 phase 3: the remote's V.34 signals in, our PCM signals out */
+static int v90_start(struct v34_dp *v)
+{
+	v->baud_rx = v->rinfo1a.baud_ac;
+	if (v34_rx_init(&v->prx, v->baud_rx, 0, 1) || v34_rx_v90(&v->prx))
+		return -1;
+	v->prx_on = 1;
+	v->txm = TXM_SILENCE;
+	v90_tx_init(&v->v90tx, v->alaw, v->rinfo1a.uinfo);
+	v->pcm_tx = 1;
+	v34_set_state(v, P3D_WAIT_JA);
+	return 0;
+}
+
 static void v34_tx_next(struct v34_dp *v, enum v34_state s, enum v34_txseg seg)
 {
 	v34_set_state(v, s);
@@ -1640,7 +1666,9 @@ static int v34_handshake(struct v34_dp *v)
 				"%d, MD %d\n",
 				v34_bauds[v->rinfo1a.baud_ac].nominal,
 				v->rinfo1a.uinfo, v->rinfo1a.md);
-			return DPSTAT_ERROR;    /* XXX phase 3 */
+			if (v90_start(v))
+				return DPSTAT_ERROR;
+			break;
 		}
 		if (v->ev_info1) {
 			v->baud_tx = v->rinfo1a.baud_ca;
@@ -1738,6 +1766,58 @@ static int v34_handshake(struct v34_dp *v)
 		if (v->ptx.seg == V34_TX_TRN && v->ptx.n >= TRN4_LEN)
 			v34_mp_start(v);
 		break;
+
+	/* V.90 digital modem, phase 3 */
+	case P3D_WAIT_JA:
+		if (v->prx.ev_ja) {
+			v->v90tx.dil = v->prx.dil;
+			v34_set_state(v, P3D_PAUSE);
+		}
+		break;
+	case P3D_PAUSE:
+		/* the analogue modem stops Ja when it sees Sd */
+		if (c >= ms2samples(50, v->srate)) {
+			v34_set_state(v, P3D_SD);
+			v->v90tx.trn1d_len = 2400;      /* 300 ms */
+			v90_tx_segment(&v->v90tx, V90_SD);
+			v->prx.ev_s = 0;
+		}
+		break;
+	case P3D_SD:
+		if (v->v90tx.seg == V90_JD) {
+			v34_set_state(v, P3D_JD);
+			v->prx.ev_s = 0;
+		}
+		break;
+	case P3D_JD:
+		/* until the remote's S */
+		if (v->prx.ev_s) {
+			DSP_DBG("v34: V.90 S after %d Jd\n",
+				v->v90tx.jd_frames);
+			v90_tx_jd_end(&v->v90tx);
+			v34_set_state(v, P3D_JDP);
+			v->sbar_seen = v->prx.sbar_count;
+		}
+		break;
+	case P3D_JDP:
+		/* S-bar answers Jd'; with DIL a second S to S-bar ends it */
+		if (v->v90tx.next && !v->v90tx.dil.n)
+			v34_set_state(v, P4D_START);
+		else if (v->v90tx.seg == V90_DIL &&
+			 v->prx.sbar_count >= v->sbar_seen + 2) {
+			DSP_DBG("v34: V.90 DIL ends after %d rounds\n",
+				v->v90tx.dil_rounds);
+			v90_tx_dil_end(&v->v90tx);
+			v34_set_state(v, P3D_DIL_END);
+		}
+		break;
+	case P3D_DIL_END:
+		if (v->v90tx.next)
+			v34_set_state(v, P4D_START);
+		break;
+	case P4D_START:
+		DSP_DBG("v34: V.90 phase 4\n");
+		return DPSTAT_ERROR;    /* XXX */
 
 	/* phase 4, both */
 	case P4_MP:
@@ -1867,6 +1947,9 @@ static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 			memmove(v->fifo, v->fifo + 1,
 				--v->fifo_n * sizeof(v->fifo[0]));
 		}
+		/* V.90: exact PCM codes at 8000 Hz */
+		if (v->pcm_tx)
+			y = v90_tx_sample(&v->v90tx);
 		dst[i] = dsp_clip16(y);
 	}
 	return ret;
