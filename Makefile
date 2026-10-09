@@ -1,4 +1,4 @@
-PJSIP_DIR=pjproject-2.11.1
+PJSIP_DIR=pjproject-2.17
 PKG_CONFIG_PATH=pjsip.install/lib/pkgconfig
 
 all: d-modem slmodemd
