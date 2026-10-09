@@ -15,6 +15,19 @@ proto = sys.argv[3] if len(sys.argv) > 3 else ""
 d = os.path.dirname(os.path.abspath(__file__))
 ab_r, ab_w = os.pipe()   # A -> B
 ba_r, ba_w = os.pipe()   # B -> A
+# NET=<rate A>:<rate B>:<ulaw|alaw> puts the G.711 network in between
+# (netsim), e.g. NET=8000:9600:ulaw for an open modem at 8000 Hz calling
+# the original library at 9600 Hz
+net = os.environ.get("NET")
+if net:
+    ra, rb, law = net.split(":")
+    an_r, an_w = os.pipe()   # A -> network
+    na_r, na_w = os.pipe()   # network -> A
+    bn_r, bn_w = os.pipe()   # B -> network
+    nb_r, nb_w = os.pipe()   # network -> B
+    pn = subprocess.Popen([os.path.join(d, "netsim"), ra, rb, law, str(an_r), str(na_w),
+        str(bn_r), str(nb_w)], pass_fds=(an_r, na_w, bn_r, nb_w))
+    ba_r, ab_w, ab_r, ba_w = na_r, an_w, nb_r, bn_w
 def start(exe, name, rfd, wfd):
     def fds():
         a, b = os.dup(rfd), os.dup(wfd)

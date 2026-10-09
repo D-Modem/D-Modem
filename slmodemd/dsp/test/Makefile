@@ -60,6 +60,16 @@ half_blob: modem_half.c $(CORE) ../../dsplibs.o
 half_open: modem_half.c $(CORE) $(SRCS)
 	$(CC) $(HALF_CFLAGS) -o $@ modem_half.c $(CORE) $(SRCS) -lm
 
+netsim: netsim.c ../dsp_util.c ../dsp.h
+	$(CC) $(CFLAGS) -o $@ netsim.c ../dsp_util.c -lm
+
+# the same at 8000 Hz (the G.711 network's rate)
+half_blob8: modem_half.c $(CORE) ../../dsplibs.o
+	$(CC) $(HALF_CFLAGS) -DMODEM_RATE=8000 -o $@ modem_half.c $(CORE) ../../dsplibs.o
+
+half_open8: modem_half.c $(CORE) $(SRCS)
+	$(CC) $(HALF_CFLAGS) -DMODEM_RATE=8000 -o $@ modem_half.c $(CORE) $(SRCS) -lm
+
 interop: half_blob half_open
 	for ms in 34 132 122 22 212 103 23; do \
 		./interop.py ./half_blob ./half_open "ATX3;AT+MS=$$ms" || exit 1; \

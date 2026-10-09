@@ -82,7 +82,9 @@ enum MODEM_MODE {
  */
 
 #define MODEM_FORMAT MFMT_S16_LE
+#ifndef MODEM_RATE
 #define MODEM_RATE   9600 /* 8000 */
+#endif
 #define MODEM_FRAG   (MODEM_RATE/200)
 
 

@@ -4,3 +4,6 @@ half_open
 modemA.log
 modemB.log
 fax_loopback
+half_blob8
+half_open8
+netsim
