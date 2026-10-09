@@ -72,16 +72,21 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   equalizer's delay. From then on the timing is decision directed: the error
   against the slope of the equalizer output, for any constellation.
 - **Data mode:** shell mapping, the superconstellation with expanded
-  shaping, differential encoding, the 16 state 4D trellis code, high and
+  shaping, differential encoding, the 16, 32 and 64 state 4D trellis
+  codes (we ask for the 64 state one; the original library sends what it
+  is asked for and asks for 16), high and
   low mapping frames and the superframe sync inversions, at every rate and
   symbol rate of Table 10 except the auxiliary channel ones. As the original
   library does: the trellis output of a 4D symbol is the low bit of the
   encoder state before that symbol, and the inversion pattern starts at its
-  bit 2J - 2. The receiver runs a Viterbi decoder over the 16 states with
+  bit 2J - 2. The 32 and 64 state encoders take the same inputs as
+  the original's `Convolve32` and `Convolve64` tables. The receiver runs a
+  Viterbi decoder over the states of the code with
   a decision delay of 32 4D symbols (for the equalizer and timing it still
   takes the nearest point). It gains 3 to 4 dB over deciding on the nearest
-  points: with it the bit error rate stays below 1e-5 from an SNR of 3 dB per
-  bit per symbol plus 4 dB, at every symbol rate, and the rate selection
+  points: with the 16 state code the bit error rate stays below 1e-5 from
+  an SNR of 3 dB per bit per symbol plus 4 dB, at every symbol rate (the
+  32 and 64 state codes need 0.5 to 1 dB less), and the rate selection
   asks for 2 dB more than that. Neither side asks for precoding, non-linear encoding or
   pre-emphasis; when the remote asks for them they are not applied.
 
@@ -98,8 +103,8 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   echo of our own L1/L2 has nothing, and the reversal detector does not
   depend on the symbol timing.
 
-Not implemented: precoding, pre-emphasis, the 32 and 64 state trellis
-codes, the auxiliary channel, rate renegotiation and retrains.
+Not implemented: precoding, pre-emphasis, the auxiliary channel, rate
+renegotiation and retrains.
 
 ### Fax (class 1)
 

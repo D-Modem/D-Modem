@@ -1,19 +1,22 @@
 /*
  *
  *    v34_data.c - V.34 data mode (section 9/V.34): framing, shell
- *                 mapping, differential encoding, the 16 state 4D
- *                 trellis code and superframe synchronisation
+ *                 mapping, differential encoding, the 16, 32 and 64
+ *                 state 4D trellis codes and superframe
+ *                 synchronisation
  *
  *    Without precoding (the MP sequences carry zero coefficients) or
  *    non-linear encoding, as the original library negotiates it.  As it
  *    does:
  *    - the trellis output Y0 of a 4D symbol is the low bit of the
  *      encoder state before that symbol's labels are shifted in, with
- *      the state recursion of Figure 10/V.34
+ *      the state recursions of Figures 10 to 12/V.34 (for the 32 and
+ *      64 state codes the original's Convolve32/Convolve64 tables give
+ *      the same encoder inputs as Table 13/V.34)
  *    - the superframe inversion pattern starts at its bit 2J - 2 with
  *      the first 4D symbol of the data signal
  *
- *    The receiver decides on the nearest points (no Viterbi decoder).
+ *    The receiver decodes the trellis code with a Viterbi decoder.
  *
  */
 
@@ -32,9 +35,8 @@ static const unsigned char v34_subset[16] = {
 	0, 7, 4, 3, 5, 2, 1, 6, 4, 3, 0, 7, 1, 6, 5, 2
 };
 
-/* the bits that the labels of a 4D symbol feed into the 16 state
-   encoder: bit 0 into the first stage, bit 1 into the second and
-   third */
+/* the encoder inputs from the subset labels of a 4D symbol:
+   Y1 | Y2 << 1 | Y3 << 2 | Y4 << 3 */
 static int conv_in(int s0, int s1)
 {
 	static const unsigned char row[4][8] = {
@@ -43,15 +45,33 @@ static int conv_in(int s0, int s1)
 		{ 1, 1, 0, 0, 1, 1, 0, 0 },
 		{ 2, 3, 3, 2, 2, 3, 3, 2 },
 	};
-	return row[s0 & 3][s1];
+	return row[s0 & 3][s1] | (s0 & 2) << 1 | ((s0 ^ s1) & 4) << 1;
 }
 
-static int trellis_next(int st, int y)
+/* the next encoder state; its low bit is Y0 */
+static int trellis_next(int states, int st, int y)
 {
-	int t1 = st & 1;
-	int nt = st >> 1;
-	nt ^= (y & 1) | ((y >> 1) & 1) << 1 | ((y >> 1) & 1) << 2;
-	return nt ^ (t1 << 2) ^ (t1 << 3);
+	int y0 = st & 1, y1 = y & 1, y2 = (y >> 1) & 1;
+	int y3 = (y >> 2) & 1, y4 = (y >> 3) & 1;
+	int r[6], i;
+
+	switch (states) {
+	case 16:        /* Figure 10 */
+		return (st >> 1) ^ (y1 | y2 << 1 | y2 << 2) ^
+		       (y0 << 2) ^ (y0 << 3);
+	case 32:        /* Figure 11 */
+		return (st >> 1) ^ (y2 | y4 << 1 | y1 << 2 | y2 << 3 |
+				    y0 << 4);
+	}
+	/* Figure 12 */
+	for (i = 0; i < 6; i++)
+		r[i] = (st >> i) & 1;
+	return (r[1] ^ r[3] ^ y2) |
+	       r[0] << 1 |
+	       r[3] << 2 |
+	       (r[3] ^ y1 ^ r[4]) << 3 |
+	       (r[2] ^ y3 ^ (r[3] & y2) ^ r[4] ^ r[5]) << 4 |
+	       (y4 ^ r[4] ^ r[5] ^ (r[3] & (y1 ^ r[4]))) << 5;
 }
 
 static int subset_label(int x, int y)
@@ -160,6 +180,7 @@ int v34_data_params(struct v34_dparm *p, int baud, int n, int expanded)
 	if (!rt->b)
 		return -1;
 	p->rate = 2400 * n;
+	p->states = 16;
 	p->b = rt->b;
 	p->M = expanded ? rt->m_exp : rt->m_min;
 	p->J = v34_bauds[baud].J;
@@ -338,7 +359,8 @@ static void dtx_frame(struct v34_dtx *d, unsigned *scr, int tap)
 			lab[k] = subset_label(x[k], y[k]);
 			d->sym[2 * i + k] = cplx_make(p->g * x[k], p->g * y[k]);
 		}
-		d->state = trellis_next(d->state, conv_in(lab[0], lab[1]));
+		d->state = trellis_next(p->states, d->state,
+					conv_in(lab[0], lab[1]));
 		/* superframe synchronisation: the first 4D symbol of each
 		   half data frame */
 		if (++d->half >= 2 * p->P) {
@@ -528,49 +550,52 @@ static void v34_viterbi_init(struct v34_drx *d)
 static int viterbi_4d(struct v34_drx *d, const float da[8], const short ca[8],
 		      const float db[8], const short cb[8], short out[2])
 {
-	float gm[8], m2[V34_STATES], best;
-	short ga[8], gb[8];
-	int l0, l1, g, s, y, t = d->vt, bs, k;
+	float gm[32], m2[V34_STATES], best;
+	short ga[32], gb[32];
+	int states = d->p.states, l0, l1, g, s, y, t = d->vt, bs, k;
+	/* the 16 state code only uses Y1 and Y2 */
+	int ny = states == 16 ? 4 : 16;
 
 	/* the best pair of subsets for each trellis input and Y0 */
-	for (g = 0; g < 8; g++)
+	for (g = 0; g < 2 * ny; g++)
 		gm[g] = 1e30f;
 	for (l0 = 0; l0 < 8; l0++)
 		for (l1 = 0; l1 < 8; l1++) {
 			float m = da[l0] + db[l1];
-			g = conv_in(l0, l1) | ((l0 ^ l1) & 1) << 2;
+			g = (conv_in(l0, l1) & (ny - 1)) +
+			    ((l0 ^ l1) & 1) * ny;
 			if (m < gm[g]) {
 				gm[g] = m;
 				ga[g] = ca[l0];
 				gb[g] = cb[l1];
 			}
 		}
-	for (s = 0; s < V34_STATES; s++)
+	for (s = 0; s < states; s++)
 		m2[s] = 1e30f;
-	for (s = 0; s < V34_STATES; s++) {
+	for (s = 0; s < states; s++) {
 		/* U0 = Y0 ^ V0 (no precoding: C0 = 0) */
 		int y0 = (s ^ d->v0) & 1;
 		if (d->metric[s] >= 1e29f)
 			continue;
-		for (y = 0; y < 4; y++) {
-			int ns = trellis_next(s, y);
-			float m = d->metric[s] + gm[y | y0 << 2];
+		for (y = 0; y < ny; y++) {
+			int ns = trellis_next(states, s, y);
+			float m = d->metric[s] + gm[y + y0 * ny];
 			if (m < m2[ns]) {
 				m2[ns] = m;
 				d->prev[t][ns] = (unsigned char)s;
-				d->pa[t][ns] = ga[y | y0 << 2];
-				d->pb[t][ns] = gb[y | y0 << 2];
+				d->pa[t][ns] = ga[y + y0 * ny];
+				d->pb[t][ns] = gb[y + y0 * ny];
 			}
 		}
 	}
 	best = m2[0];
 	bs = 0;
-	for (s = 1; s < V34_STATES; s++)
+	for (s = 1; s < states; s++)
 		if (m2[s] < best) {
 			best = m2[s];
 			bs = s;
 		}
-	for (s = 0; s < V34_STATES; s++)
+	for (s = 0; s < states; s++)
 		d->metric[s] = m2[s] - best;
 
 	/* the superframe inversions, as the transmitter */

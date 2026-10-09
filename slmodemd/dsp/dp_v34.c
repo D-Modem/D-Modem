@@ -1237,21 +1237,32 @@ static int v34_data_setup(struct v34_dp *v)
 
 	ntx = v34_pick_rate(v->ptx.baud, v->caller ? ca : ac, mask);
 	nrx = v34_pick_rate(v->prx.baud, v->caller ? ac : ca, mask);
-	if (r->trellis || r->nonlinear || r->h[0] || r->h[1] || r->h[2] ||
+	if (r->nonlinear || r->h[0] || r->h[1] || r->h[2] ||
 	    r->h[3] || r->h[4] || r->h[5])
-		DSP_DBG("v34: remote asks for trellis %d, non-linear %d, "
-			"precoding: not supported\n", r->trellis, r->nonlinear);
-	if (!ntx || !nrx || v34_data_params(&p, v->ptx.baud, ntx, r->expanded))
+		DSP_DBG("v34: remote asks for non-linear %d, "
+			"precoding: not supported\n", r->nonlinear);
+	if (!ntx || !nrx || r->trellis > 2 || l->trellis > 2 ||
+	    v34_data_params(&p, v->ptx.baud, ntx, r->expanded))
 		return -1;
+	/* each MP asks for the trellis code of the other's transmitter */
+	p.states = 16 << r->trellis;
 	v34_tx_data(&v->ptx, &p, v34_get_bits, v);
 	v->rate_tx = p.rate;
 	if (v34_data_params(&p, v->prx.baud, nrx, l->expanded))
 		return -1;
+	p.states = 16 << l->trellis;
 	v34_rx_data(&v->prx, &p, v34_put_bits, v);
 	v->rate_rx = p.rate;
-	DSP_DBG("v34: data rates tx %d rx %d\n", v->rate_tx, v->rate_rx);
+	DSP_DBG("v34: data rates tx %d rx %d, trellis tx %d rx %d states\n",
+		v->rate_tx, v->rate_rx, 16 << r->trellis, 16 << l->trellis);
 	return 0;
 }
+
+/* the trellis code we ask the remote to send: 0, 1, 2 for 16, 32, 64
+   states */
+#ifndef V34_TRELLIS
+#define V34_TRELLIS 2
+#endif
 
 static void v34_mp_start(struct v34_dp *v)
 {
@@ -1261,6 +1272,7 @@ static void v34_mp_start(struct v34_dp *v)
 	mp->rate_ca = v->caller ? 14 : v->max_rate_rx;
 	mp->rate_ac = v->caller ? v->max_rate_rx : 14;
 	mp->expanded = 1;
+	mp->trellis = V34_TRELLIS;
 	mp->rate_mask = 0x3FFF;
 	mp->asym = 1;
 	v34_tx_next(v, P4_MP, V34_TX_MP);

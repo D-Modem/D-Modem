@@ -73,6 +73,7 @@ struct v34_dparm {
 				   per data frame, high frames among them */
 	float g;                /* half the point spacing, in units of the
 				   training points */
+	int states;             /* of the trellis code: 16, 32 or 64 */
 	unsigned long long g2[V34_G2_LEN], g4[V34_G4_LEN], z8[V34_Z8_LEN];
 };
 
@@ -94,7 +95,7 @@ struct v34_dtx {
 void v34_dtx_init(struct v34_dtx *d, const struct v34_dparm *p);
 cplx v34_dtx_symbol(struct v34_dtx *d, unsigned *scr, int tap);
 
-#define V34_STATES      16
+#define V34_STATES      64      /* at most */
 #define V34_TB          32      /* Viterbi decoding delay, 4D symbols */
 
 struct v34_drx {
