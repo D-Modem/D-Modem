@@ -81,9 +81,21 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   decoder yet). Neither side asks for precoding, non-linear encoding or
   pre-emphasis; when the remote asks for them they are not applied.
 
-Not implemented: the echo canceller for V.34 (it needs a line without
-near-end echo, as VoIP gives), precoding, pre-emphasis, the 32 and 64 state
-trellis codes, the auxiliary channel, rate renegotiation and retrains.
+- **Echo canceller:** real pass band NLMS on the line samples, structured
+  like the one in Agere's V.34 (`agrmodemlib.o`, read for reference): a
+  near end part over the last 27 ms of our signal and a far end part over
+  27 ms around the echo from the other end's hybrid, with one shared error.
+  Both train while our own phase 3 sequences go out and the remote is
+  silent (the caller waits for the answerer's J to stop), fast, then
+  slower. Where the far echo is gets measured: the near part's residual
+  is correlated with our scrambled signal at every delay up to 1.7 s (over
+  VoIP the echo comes back after the network delay). The tone detectors of
+  phase 2 listen exactly on a bin of the 64 sample probe period, where the
+  echo of our own L1/L2 has nothing, and the reversal detector does not
+  depend on the symbol timing.
+
+Not implemented: precoding, pre-emphasis, the 32 and 64 state trellis
+codes, the auxiliary channel, rate renegotiation and retrains.
 
 ### Fax (class 1)
 
@@ -144,7 +156,9 @@ directions. `DUMP=<prefix>` records what each side hears.
 
 V.34 between two open modems (`dsp_loopback 8 ...`): 33600 bit/s at 50 dB
 on a flat line, 31200 at 40 dB with the low-pass filter (also with ±80 ppm
-clock offset), 28800 at 35 dB, 21600 at 30 dB.
+clock offset, or with near and far echo 6 and 10 dB below our signal),
+28800 at 35 dB, 21600 at 30 dB. `[echo dB] [far echo dB]` add the echoes;
+`FAR_DELAY=<samples>` delays the far one (200 ms: still 31200 bit/s).
 
 `interop` connects two `modem_half` processes with pipes. One process is
 linked with `dsplibs.o` and the other with this code. Each call goes through

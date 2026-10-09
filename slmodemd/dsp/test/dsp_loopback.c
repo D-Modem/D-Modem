@@ -7,11 +7,14 @@
  *    checks the bit error rate of the data phase in both directions.
  *
  *    usage: dsp_loopback <dp id> [snr_db] [seconds] [srate] [gain] [ppm]
- *                        [echo_db]
+ *                        [echo_db] [far_echo_db]
  *
  *    CALLER_DP=<id> in the environment gives the caller another data
  *    pump than the answerer (automode tests).
  *
+ *    far_echo_db adds the echo from the far end's hybrid: each modem's
+ *    own signal after a round trip over the line (FAR_DELAY samples more
+ *    when set, as over VoIP)
  *    echo_db adds an echo of each modem's own signal to its input
  *    (hybrid echo, about 2 ms delay) at that level relative to the
  *    transmitted signal, e.g. -10.
@@ -255,6 +258,12 @@ int main(int argc, char **argv)
 	float echo_a[64] = { 0 }, echo_c[64] = { 0 };
 	struct biquad echo_fa, echo_fc;
 	int echo_pos = 0;
+	float far_db = argc > 8 ? atof(argv[8]) : 0;
+	float far_gain = far_db < 0 ? powf(10, far_db / 20) : 0;
+	int far_delay = getenv("FAR_DELAY") ? atoi(getenv("FAR_DELAY")) : 0;
+	static float far_a[1 << 15], far_c[1 << 15];
+	struct biquad far_fa, far_fc;
+	int far_pos = 0;
 	s16 a_in[FRAG], a_out[FRAG], c_in[FRAG], c_out[FRAG];
 	struct line to_a, to_c;
 	long t, total = (long)(secs * srate);
@@ -295,6 +304,10 @@ int main(int argc, char **argv)
 	biquad_lowpass(&to_a.tilt, 3000, 0.6f, srate);
 	biquad_bandpass(&echo_fa, 1500, 0.5f, srate);
 	biquad_bandpass(&echo_fc, 1500, 0.5f, srate);
+	biquad_bandpass(&far_fa, 1500, 0.4f, srate);
+	biquad_bandpass(&far_fc, 1500, 0.4f, srate);
+	if (far_delay > (1 << 15) - 200)
+		far_delay = (1 << 15) - 200;
 	biquad_lowpass(&to_c.tilt, 3000, 0.6f, srate);
 	if (getenv("FLAT")) {
 		/* no band limitation */
@@ -363,8 +376,17 @@ int main(int argc, char **argv)
 			echo_a[echo_pos] = a_out[i];
 			echo_c[echo_pos] = c_out[i];
 			echo_pos = (echo_pos + 1) & 63;
-			a_in[i] = dsp_clip16(line_run(&to_a, c_out[i]) + echo_gain * ea);
-			c_in[i] = dsp_clip16(line_run(&to_c, a_out[i]) + echo_gain * ec);
+			/* far echo: both line delays and the far hybrid */
+			int fd = to_a.len + to_c.len + 8 + far_delay;
+			float fa = biquad_run(&far_fa, far_a[(far_pos - fd) & 0x7FFF]);
+			float fc = biquad_run(&far_fc, far_c[(far_pos - fd) & 0x7FFF]);
+			far_a[far_pos] = a_out[i];
+			far_c[far_pos] = c_out[i];
+			far_pos = (far_pos + 1) & 0x7FFF;
+			a_in[i] = dsp_clip16(line_run(&to_a, c_out[i]) + echo_gain * ea +
+					     far_gain * gain * fa);
+			c_in[i] = dsp_clip16(line_run(&to_c, a_out[i]) + echo_gain * ec +
+					     far_gain * gain * fc);
 		}
 		if (dump_a) {
 			fwrite(a_in, sizeof(a_in[0]), FRAG, dump_a);

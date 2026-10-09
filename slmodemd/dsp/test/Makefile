@@ -27,6 +27,8 @@ check: dsp_loopback fax_loopback
 	./dsp_loopback 122 30 30 9600 2 -300
 	./dsp_loopback 122 30 30 9600 0.05 300
 	./dsp_loopback 8 30 20
+	./dsp_loopback 8 40 22 9600 0.5 0 -10 -15
+	FAR_DELAY=1920 ./dsp_loopback 8 40 22 9600 0.5 0 0 -15
 	./dsp_loopback 22 15 20
 	./dsp_loopback 212 15 20
 	./dsp_loopback 21 8 20

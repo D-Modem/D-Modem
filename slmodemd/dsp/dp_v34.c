@@ -140,6 +140,9 @@ struct cc_rx {
 	float phase_e[CC_SPS];
 	int best;
 	long n, last;           /* samples, at the last decision */
+	float dmin;
+	int rbit;               /* a tone reversal in the last symbol */
+	int ones;
 	float p;                /* |b|^2 of the last symbol */
 	int on, on_count;
 	int zeros;              /* '0' decisions in a row (tone) */
@@ -173,6 +176,21 @@ struct info1a {
 	int high, preemph, max_rate;
 	int baud_ac, baud_ca;
 	int freq_offset;
+};
+
+#define EC_NEAR_LEN     256     /* 27 ms */
+#define EC_FAR_LEN      256     /* 27 ms around the round trip delay */
+#define EC_HIST         16384   /* up to 1.7 s of round trip delay */
+#define EC_SEARCH       1024    /* samples correlated for the far echo */
+#define EC_TRACK_MU     0.0f
+
+struct v34_ec {
+	float *hist, *wn, *wf;
+	float *rxh;             /* received samples, for the delay search */
+	int pos, rpos;
+	int on, far_on, far_delay, trained;
+	long n, since, filled, far_since;
+	float mu, dbg_rx, dbg_err;
 };
 
 struct v34_dp {
@@ -235,6 +253,10 @@ struct v34_dp {
 	long rev_sent;          /* when our reversal went out */
 	/* the remote's L1/L2 */
 	struct goertzel probe_g[2];
+	/* the remote's tone A or B during our own L2: exactly on a bin of
+	   the 64 sample probe period, where the echo of L2 has nothing */
+	struct goertzel tone_g;
+	int tone_blocks;
 	float pblock_e;
 	int probe_blocks;
 	long l1_start;
@@ -245,6 +267,10 @@ struct v34_dp {
 	float snr_db;
 	float tone_db[26];      /* received level of each 150 Hz tone */
 	int rate_of_baud[V34_NBAUDS];   /* receivable rates (N), by probing */
+
+	/* echo canceller (from phase 3 on) */
+	struct v34_ec ec;
+	float last_tx;
 
 	/* phases 3, 4 and data */
 	struct v34_tx ptx;
@@ -634,6 +660,11 @@ static int cc_rx_sample(struct cc_rx *r, float x)
 	r->old[i] = b;
 	/* symbol timing: fast between frames (after the probing signals),
 	   slow within them */
+	/* the most reversed phase step of this symbol at any sampling
+	   phase: a reversal of a tone is clear at one of them, wherever the
+	   symbol timing is */
+	if (cplx_pow(b) > 0 && d.re < r->dmin * cplx_pow(b))
+		r->dmin = d.re / cplx_pow(b);
 	r->phase_e[i] += (r->frame_len > 0 ? 0.02f : 0.2f) *
 		(sqrtf(cplx_pow(d)) - r->phase_e[i]);
 	if (++r->pos == CC_SPS)
@@ -653,10 +684,33 @@ static int cc_rx_sample(struct cc_rx *r, float x)
 			r->on = 0;
 		if (r->p > 300.0f * 300.0f / 4)
 			bit = d.re < 0;
-		/* follow the symbol timing */
-		for (i = 0; i < CC_SPS; i++)
-			if (r->phase_e[i] > r->phase_e[r->best] * 1.2f)
-				r->best = i;
+		r->rbit = r->dmin < -0.5f;
+		r->dmin = 0;
+		/* follow the symbol timing, two samples per symbol at most:
+		   a jump would lose or repeat a decision (on a tone all
+		   phases look alike) */
+		{
+			int b = r->best, step;
+			float lo = r->phase_e[0];
+			for (i = 0; i < CC_SPS; i++) {
+				if (r->phase_e[i] > r->phase_e[b] * 1.2f)
+					b = i;
+				if (r->phase_e[i] < lo)
+					lo = r->phase_e[i];
+			}
+			/* only where the phase steps show the timing: on a
+			   tone all phases look alike, and the timing of the
+			   frames before has to stay for its reversal */
+			if (r->phase_e[b] < 1.5f * lo)
+				b = r->best;
+			step = (b - r->best + CC_SPS + CC_SPS / 2) % CC_SPS -
+				CC_SPS / 2;
+			if (step > 2)
+				step = 2;
+			else if (step < -2)
+				step = -2;
+			r->best = (r->best + step + CC_SPS) % CC_SPS;
+		}
 	}
 	r->n++;
 	return bit;
@@ -819,8 +873,17 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 			}
 		}
 	}
+	/* a reversal after a tone; its phase steps can fall into two
+	   decisions */
+	bit = r->rbit;
 	if (bit) {
-		r->rev_cand = r->zeros >= 6 ? v->total : 0;
+		if (r->zeros >= 6) {
+			r->rev_cand = v->total;
+			r->ones = 1;
+		} else if (r->rev_cand && r->ones == 1)
+			r->ones = 2;
+		else
+			r->rev_cand = 0;
 		r->zeros = 0;
 	} else {
 		if (r->rev_cand && r->zeros == 0) {
@@ -832,6 +895,196 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 		r->rev_cand = 0;
 		r->zeros++;
 	}
+}
+
+/*
+ *    echo canceller
+ *
+ *    Real pass band NLMS on the line samples, as the original V.34 modems
+ *    do it: a near end part over the last EC_NEAR_LEN transmitted samples
+ *    and a far end part over EC_FAR_LEN samples around the round trip
+ *    delay (the echo from the other end's hybrid; over VoIP it comes back
+ *    after the network delay).  Both share one error.  They train while
+ *    we send our phase 3 sequences and the remote is silent, fast, then
+ *    slower, and track slowly in full duplex.
+ */
+static int ec_init(struct v34_ec *e)
+{
+	memset(e, 0, sizeof(*e));
+	e->hist = calloc(EC_HIST, sizeof(float));
+	e->wn = calloc(EC_NEAR_LEN, sizeof(float));
+	e->wf = calloc(EC_FAR_LEN, sizeof(float));
+	e->rxh = calloc(EC_SEARCH, sizeof(float));
+	return e->hist && e->wn && e->wf && e->rxh ? 0 : -1;
+}
+
+static void ec_free(struct v34_ec *e)
+{
+	free(e->hist);
+	free(e->wn);
+	free(e->wf);
+	free(e->rxh);
+	e->hist = e->wn = e->wf = e->rxh = NULL;
+}
+
+/* where the far echo is: the received signal of the last EC_SEARCH
+   samples against our (scrambled, nearly white) transmitted signal at
+   every delay beyond the near part.  The far part then covers
+   EC_FAR_LEN samples from a little before the strongest echo. */
+static int cmp_float(const void *a, const void *b)
+{
+	float x = *(const float *)a, y = *(const float *)b;
+	return x < y ? -1 : x > y;
+}
+
+static void ec_search(struct v34_ec *e)
+{
+	const int mask = EC_HIST - 1;
+	float best = 0, run = 0, c, floor;
+	int d, k, best_d = -1;
+	/* only where our signal has been sent */
+	long n = e->filled - EC_SEARCH;
+
+	if (n > EC_HIST - EC_SEARCH)
+		n = EC_HIST - EC_SEARCH;
+	if (n < 2 * EC_NEAR_LEN) {
+		e->far_on = 0;
+		return;
+	}
+	static float corr[EC_HIST], win[EC_HIST];
+
+	for (d = 0; d < n; d++) {
+		c = 0;
+		for (k = 0; k < EC_SEARCH; k++)
+			c += e->rxh[(e->rpos - k) & (EC_SEARCH - 1)] *
+			     e->hist[(e->pos - k - d) & mask];
+		corr[d] = c * c;
+	}
+	/* the echo energy in windows of 32 delays, beyond the near part */
+	for (d = 0; d < n; d++) {
+		run += corr[d];
+		if (d >= 32)
+			run -= corr[d - 32];
+		win[d] = run;
+		if (d >= EC_NEAR_LEN && run > best) {
+			best = run;
+			best_d = d - 16;
+		}
+	}
+	/* against the median window: the floor without any echo */
+	qsort(win, (size_t)n, sizeof(float), cmp_float);
+	floor = win[n / 2] + 1e-9f;
+	if (best_d < 0 || best < 16 * floor) {
+		e->far_on = 0;
+		DSP_DBG("v34: no far echo (best at %d, %.1f dB above the "
+			"floor)\n", best_d, 10 * log10f(best / floor));
+		return;
+	}
+	d = best_d - EC_FAR_LEN / 4;
+	if (d < EC_NEAR_LEN)
+		d = EC_NEAR_LEN;
+	if (d > EC_HIST - EC_FAR_LEN - 1)
+		d = EC_HIST - EC_FAR_LEN - 1;
+	e->far_delay = d;
+	e->far_on = 1;
+	e->far_since = 0;
+	DSP_DBG("v34: far echo at %d samples (%.1f dB above the floor)\n",
+		best_d, 10 * log10f(best / floor));
+}
+
+static float ec_run(struct v34_ec *e, float tx, float rx)
+{
+	const int mask = EC_HIST - 1;
+	float est = 0, en = 1, err, g, h;
+	int i, p;
+
+	e->pos = (e->pos + 1) & mask;
+	e->hist[e->pos] = tx;
+	e->filled++;
+	e->rpos = (e->rpos + 1) & (EC_SEARCH - 1);
+	if (!e->on) {
+		e->rxh[e->rpos] = rx;
+		return rx;
+	}
+	for (i = 0, p = e->pos; i < EC_NEAR_LEN; i++, p = (p - 1) & mask) {
+		h = e->hist[p];
+		est += e->wn[i] * h;
+		en += h * h;
+	}
+	if (e->far_on)
+		for (i = 0, p = (e->pos - e->far_delay) & mask; i < EC_FAR_LEN;
+		     i++, p = (p - 1) & mask) {
+			h = e->hist[p];
+			est += e->wf[i] * h;
+			en += h * h;
+		}
+	err = rx - est;
+	/* what the near part leaves, for the far echo search */
+	e->rxh[e->rpos] = err;
+	/* normalized by the energy in the taps; not on our own silence */
+	if (e->mu > 0 && en > 1e4f * (EC_NEAR_LEN + EC_FAR_LEN)) {
+		g = e->mu * err / en;
+		for (i = 0, p = e->pos; i < EC_NEAR_LEN; i++, p = (p - 1) & mask)
+			e->wn[i] += g * e->hist[p];
+		if (e->far_on)
+			for (i = 0, p = (e->pos - e->far_delay) & mask;
+			     i < EC_FAR_LEN; i++, p = (p - 1) & mask)
+				e->wf[i] += g * e->hist[p];
+	}
+	if (dsplibs_debug_level >= 6) {
+		e->dbg_rx += 0.001f * (rx * rx - e->dbg_rx);
+		e->dbg_err += 0.001f * (err * err - e->dbg_err);
+		if ((e->pos & 4095) == 0)
+			DSP_DBG("v34: echo canceller mu %.3f in %.0f out %.0f "
+				"(%.1f dB)\n", e->mu, e->dbg_rx, e->dbg_err,
+				10 * log10f((e->dbg_rx + 1) / (e->dbg_err + 1)));
+	}
+	return err;
+}
+
+/* the adaptation, per sample: train while our own phase 3 sequences go
+   out (the remote is silent then), then track */
+static void ec_schedule(struct v34_dp *v)
+{
+	struct v34_ec *e = &v->ec;
+	int ours = v->state == P3A_S || v->state == P3A_SBAR ||
+		v->state == P3A_PP || v->state == P3A_TRN ||
+		v->state == P3C_S || v->state == P3C_SBAR ||
+		v->state == P3C_PP || v->state == P3C_TRN;
+	int training;
+
+	if (ours && !e->on) {
+		e->on = 1;
+		e->n = e->since = e->filled = 0;
+		e->far_on = 0;
+		DSP_DBG("v34: echo canceller on\n");
+	}
+	if (ours)
+		e->since++;
+	/* the answerer sends its J until it has heard the caller's S */
+	training = ours && (!v->caller ||
+		e->since > v->rtd + ms2samples(150, v->srate));
+	if (training) {
+		e->n++;
+		/* the far echo is found after some of our signal went out
+		   (and came back) */
+		if (!e->far_on && (e->n == EC_SEARCH + ms2samples(50, v->srate) ||
+				   e->n == ms2samples(250, v->srate) ||
+				   e->n == ms2samples(500, v->srate) ||
+				   e->n == ms2samples(1000, v->srate)))
+			ec_search(e);
+		/* fast at first, also for a far part found late */
+		e->far_since++;
+		{
+			long t = e->n;
+			if (e->far_on && e->far_since < t)
+				t = e->far_since;
+			e->mu = t < ms2samples(300, v->srate) ? 0.5f :
+				t < ms2samples(600, v->srate) ? 0.2f : 0.05f;
+		}
+		e->trained = 1;
+	} else if (e->trained)
+		e->mu = EC_TRACK_MU;
 }
 
 static void pump_rx_sample(struct v34_dp *v, float x)
@@ -859,12 +1112,17 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 		return;
 	}
 	if (v->prx_on) {
+		ec_schedule(v);
+		x = ec_run(&v->ec, v->last_tx, x);
 		v34_rx_sample(&v->prx, x);
 		return;
 	}
 	bit = cc_rx_sample(&v->ccr, x);
 	if (bit >= 0)
 		cc_rx_bit(v, bit);
+	if (goertzel_run(&v->tone_g, x))
+		v->tone_blocks = v->tone_g.power > tone_power(150) ?
+			v->tone_blocks + 1 : 0;
 	k = probe_rx_sample(v, x);
 	if (k >= 0) {
 		v->probe_blocks = k ? v->probe_blocks + 1 : 0;
@@ -1148,7 +1406,7 @@ static int v34_handshake(struct v34_dp *v)
 		break;
 	case P2A_L2:
 		/* until the caller answers with B */
-		if (v->ccr.on || c >= ms2samples(2000, v->srate)) {
+		if (v->tone_blocks >= 3 || c >= ms2samples(2000, v->srate)) {
 			v34_set_state(v, P2A_A_50);
 			cc_tone(v);
 		}
@@ -1254,7 +1512,7 @@ static int v34_handshake(struct v34_dp *v)
 		}
 		break;
 	case P2C_L2:
-		if (v->ccr.on || c >= ms2samples(2000, v->srate)) {
+		if (v->tone_blocks >= 3 || c >= ms2samples(2000, v->srate)) {
 			v34_set_state(v, P2C_INFO1);
 			make_info1c(v, &v->cctx);
 			cc_send(v);
@@ -1452,6 +1710,7 @@ static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 		if (r != DPSTAT_OK)
 			ret = r;
 		dst[i] = dsp_clip16(pump_tx_sample(v));
+		v->last_tx = dst[i];
 		pump_rx_sample(v, src[i]);
 		if (v->state != V34_DATA && v->total >= v->timeout) {
 			DSP_DBG("v34: start-up timeout in state %d\n", v->state);
@@ -1490,11 +1749,17 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
 	v->carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate / 10;
 
+	if (ec_init(&v->ec)) {
+		ec_free(&v->ec);
+		free(v);
+		return NULL;
+	}
 	osc_set_freq(&v->ansam, 2100, srate);
 	osc_set_freq(&v->ansam_am, 15, srate);
 	v->ansam_sign = 1;
 	osc_set_freq(&v->ans_lo, -2100, srate);
 	goertzel_init(&v->aa_g, 1800, srate / 50, srate);
+	goertzel_init(&v->tone_g, caller ? 2400 : 1200, PROBE_PERIOD, srate);
 	goertzel_init(&v->probe_g[0], 1050, PROBE_PERIOD, srate);
 	goertzel_init(&v->probe_g[1], 3000, PROBE_PERIOD, srate);
 	probe_init(v);
@@ -1517,6 +1782,7 @@ static int v34_delete(struct dp *dp)
 	struct v34_dp *v = dp->dp_data;
 	if (v->prx_on)
 		v34_rx_free(&v->prx);
+	ec_free(&v->ec);
 	free(v);
 	return 0;
 }
