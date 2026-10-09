@@ -33,7 +33,7 @@ i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do
 done
 $ast -rx "pjsip show endpoints" | grep -E "Endpoint:.*modem"
 SIP_LOGIN=modem:modem@127.0.0.1:5070 SIP_LOG=$run/slmodemd.log \
-	"$here/sip_call.py" "$top/slmodemd/slmodemd" "$top/d-modem" 5551000 "$1"
+	"$here/sip_call.py" "$top/slmodemd/slmodemd" "${DMODEM:-$top/d-modem}" 5551000 "$1"
 r=$?
 sleep 2
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"

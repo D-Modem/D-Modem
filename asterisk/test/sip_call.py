@@ -31,14 +31,14 @@ srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", 2323)); srv.listen(1)
 threading.Thread(target=lambda: bbs_conn(srv.accept()[0]), daemon=True).start()
 
-p = subprocess.Popen([slmodemd, "-d1", "-e", dmodem], stdout=subprocess.PIPE,
+p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-d1", "-e", dmodem], stdout=subprocess.PIPE,
                      stderr=subprocess.STDOUT)
 log = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "wb")
 pty = None
 t0 = time.time()
 while time.time() - t0 < 10:
     l = p.stdout.readline()
-    log.write(l)
+    log.write(l); log.flush()
     m = re.search(rb"TTY is `(\S+)'", l)
     if m:
         pty = m.group(1).decode(); break
@@ -83,5 +83,7 @@ if ok:
     print("session: %s in %.1f s" % ("PASS" if ok else "FAIL", time.time() - t1))
     print("hangup:", "NO CARRIER" if expect(rb"NO CARRIER", 30) else "none")
 p.terminate()
+if not ok:
+    print("modem said:", buf[-300:])
 print("PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)

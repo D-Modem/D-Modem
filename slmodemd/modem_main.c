@@ -636,6 +636,8 @@ static int socket_start (struct modem *m)
 		snprintf(str,sizeof(str),"%d",sockets[0]);
 		close(sockets[1]);
 		execl(modem_exec,modem_exec,m->dial_string,str,NULL);
+		perror(modem_exec);
+		_exit(127);
 	} else {
 		close(sockets[0]);
 		dev->fd = sockets[1];
