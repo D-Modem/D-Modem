@@ -87,8 +87,18 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   points: with the 16 state code the bit error rate stays below 1e-5 from
   an SNR of 3 dB per bit per symbol plus 4 dB, at every symbol rate (the
   32 and 64 state codes need 0.5 to 1 dB less), and the rate selection
-  asks for 2 dB more than that. Neither side asks for precoding, non-linear encoding or
-  pre-emphasis; when the remote asks for them they are not applied.
+  asks for 2 dB more than that.
+- **Precoding** (9.6.2/V.34): the transmitter precodes with the
+  coefficients the remote's MP asks for. The receiver asks for them when
+  they gain at least 1 dB: the third order linear predictor of the
+  equalizer's error after training, so that the error through 1 + H(z) is
+  white. In data mode its equalizer then includes 1 + H(z), decides on the
+  channel output points y(n) over the whole grid, and runs a copy of the
+  remote's precoder on the decided points to recover u(n). The original
+  library precodes when asked, and its signal decodes without errors with
+  the coefficients we compute and with stronger ones.
+- Non-linear encoding and pre-emphasis are neither asked for nor applied
+  when the remote asks for them.
 
 - **Echo canceller:** real pass band NLMS on the line samples, structured
   like the one in Agere's V.34 (`agrmodemlib.o`, read for reference): a
@@ -103,8 +113,8 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   echo of our own L1/L2 has nothing, and the reversal detector does not
   depend on the symbol timing.
 
-Not implemented: precoding, pre-emphasis, the auxiliary channel, rate
-renegotiation and retrains.
+Not implemented: non-linear encoding, pre-emphasis, the auxiliary
+channel, rate renegotiation and retrains.
 
 ### Fax (class 1)
 

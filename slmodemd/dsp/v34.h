@@ -74,11 +74,23 @@ struct v34_dparm {
 	float g;                /* half the point spacing, in units of the
 				   training points */
 	int states;             /* of the trellis code: 16, 32 or 64 */
+	int h[6];               /* precoding coefficients, 14 fractional
+				   bits: h(1) re, im, h(2) re, ... */
+	int precode, w;         /* h is not zero; c(n) in multiples of
+				   2^w */
 	unsigned long long g2[V34_G2_LEN], g4[V34_G4_LEN], z8[V34_Z8_LEN];
 };
 
 /* n: the rate in units of 2400 bit/s; returns -1 when not allowed */
 int v34_data_params(struct v34_dparm *p, int baud, int n, int expanded);
+/* precoding with the coefficients of an MP sequence */
+void v34_data_precode(struct v34_dparm *p, const int h[6]);
+
+/* the precoder's tap delay line (9.6.2/V.34) */
+struct v34_precoder {
+	int x[3][2];            /* x(n - 1) .. x(n - 3), units of 2^-7 */
+	int p[2], c[2];         /* p(n) (units of 2^-7) and c(n) */
+};
 
 struct v34_dtx {
 	struct v34_dparm p;
@@ -88,6 +100,7 @@ struct v34_dtx {
 	int z, state, v0;       /* differential, trellis and sync state */
 	int half, pat;          /* 4D symbols in the half data frame, sync
 				   pattern position */
+	struct v34_precoder pc;
 	cplx sym[8];
 	int pos;
 };
@@ -108,12 +121,13 @@ struct v34_drx {
 	/* Viterbi decoder */
 	float metric[V34_STATES];
 	unsigned char prev[V34_TB][V34_STATES];
-	short pa[V34_TB][V34_STATES], pb[V34_TB][V34_STATES];
+	int pa[V34_TB][V34_STATES], pb[V34_TB][V34_STATES];
 	int vt, vn;
 	int half, pat, v0;      /* superframe inversions, as the transmitter */
 	int half2;              /* the first 2D symbol of a 4D one is in: */
 	float da[8];
-	short ca[8];
+	int ca[8];
+	struct v34_precoder pc; /* the receiver's copy of the precoder */
 };
 
 void v34_drx_init(struct v34_drx *d, const struct v34_dparm *p);
@@ -213,12 +227,17 @@ struct v34_rx {
 	struct v34_mp mp;       /* the remote's MP */
 	long mp_end;            /* symbol of the end of the last MP frame */
 	struct v34_drx drx;     /* data mode, when data_on */
+	cplx last_d[3];         /* the last symbols before data mode */
+	double err_r[8];        /* error autocorrelation, lags 0 to 3 */
+	cplx err_h[3];
+	long err_n;
 	int data_on;
 };
 
 int  v34_rx_init(struct v34_rx *r, int baud, int high, int caller);
 void v34_rx_free(struct v34_rx *r);
 void v34_rx_sample(struct v34_rx *r, float x);
+float v34_rx_precoder(const struct v34_rx *r, int h[6]);
 void v34_rx_data(struct v34_rx *r, const struct v34_dparm *p,
 		 void (*put_bits)(void *, const unsigned char *, int), void *ctx);
 

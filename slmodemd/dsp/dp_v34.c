@@ -1237,20 +1237,21 @@ static int v34_data_setup(struct v34_dp *v)
 
 	ntx = v34_pick_rate(v->ptx.baud, v->caller ? ca : ac, mask);
 	nrx = v34_pick_rate(v->prx.baud, v->caller ? ac : ca, mask);
-	if (r->nonlinear || r->h[0] || r->h[1] || r->h[2] ||
-	    r->h[3] || r->h[4] || r->h[5])
-		DSP_DBG("v34: remote asks for non-linear %d, "
-			"precoding: not supported\n", r->nonlinear);
+	if (r->nonlinear)
+		DSP_DBG("v34: remote asks for non-linear encoding: "
+			"not supported\n");
 	if (!ntx || !nrx || r->trellis > 2 || l->trellis > 2 ||
 	    v34_data_params(&p, v->ptx.baud, ntx, r->expanded))
 		return -1;
 	/* each MP asks for the trellis code of the other's transmitter */
 	p.states = 16 << r->trellis;
+	v34_data_precode(&p, r->h);
 	v34_tx_data(&v->ptx, &p, v34_get_bits, v);
 	v->rate_tx = p.rate;
 	if (v34_data_params(&p, v->prx.baud, nrx, l->expanded))
 		return -1;
 	p.states = 16 << l->trellis;
+	v34_data_precode(&p, l->h);
 	v34_rx_data(&v->prx, &p, v34_put_bits, v);
 	v->rate_rx = p.rate;
 	DSP_DBG("v34: data rates tx %d rx %d, trellis tx %d rx %d states\n",
@@ -1264,6 +1265,11 @@ static int v34_data_setup(struct v34_dp *v)
 #define V34_TRELLIS 2
 #endif
 
+/* the least gain, in dB, for which we ask for precoding */
+#ifndef V34_PRECODE_MIN
+#define V34_PRECODE_MIN 1.0f
+#endif
+
 static void v34_mp_start(struct v34_dp *v)
 {
 	struct v34_mp *mp = &v->ptx.mp;
@@ -1275,6 +1281,15 @@ static void v34_mp_start(struct v34_dp *v)
 	mp->trellis = V34_TRELLIS;
 	mp->rate_mask = 0x3FFF;
 	mp->asym = 1;
+	/* precoding where it gains enough over the power of its dither */
+	{
+		float gain = v34_rx_precoder(&v->prx, mp->h);
+		DSP_DBG("v34: precoding would gain %.2f dB: h %d %d %d %d %d "
+			"%d\n", gain, mp->h[0], mp->h[1], mp->h[2], mp->h[3],
+			mp->h[4], mp->h[5]);
+		if (gain < V34_PRECODE_MIN)
+			memset(mp->h, 0, sizeof(mp->h));
+	}
 	v34_tx_next(v, P4_MP, V34_TX_MP);
 }
 

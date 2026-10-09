@@ -516,6 +516,10 @@ static void ls_window(struct v34_rx *r, cplx d, long start)
 			return;
 		qam_rx_recompute(&r->qam);
 		r->have_ls = 1;
+		/* the error of the new solution from here on */
+		memset(r->err_r, 0, sizeof(r->err_r));
+		memset(r->err_h, 0, sizeof(r->err_h));
+		r->err_n = 0;
 		r->c0 = eq_delay(r);
 		/* the sample clock offset from the delays of successive
 		   solutions: the input comes later when the equalizer delay
@@ -619,6 +623,25 @@ static int rx_level_ok(struct v34_rx *r)
 	return 1;
 }
 
+static void precode_eq(struct v34_rx *r, const struct v34_dparm *p);
+
+/* the autocorrelation of the equalizer's error, for the precoder */
+static void err_collect(struct v34_rx *r, cplx e)
+{
+	int k;
+	r->err_r[0] += cplx_pow(e);
+	for (k = 1; k <= 3; k++) {
+		cplx c = cplx_mulc(e, r->err_h[k - 1]);
+		r->err_r[2 * k] += c.re;
+		r->err_r[2 * k + 1] += c.im;
+	}
+	r->err_h[2] = r->err_h[1];
+	r->err_h[1] = r->err_h[0];
+	r->err_h[0] = e;
+	r->err_n++;
+}
+static cplx precode_start(struct v34_rx *r, cplx z);
+
 static void rx_symbol(struct v34_rx *r)
 {
 	cplx z = r->qam.z, d;
@@ -716,11 +739,21 @@ static void rx_symbol(struct v34_rx *r)
 			r->have_good = 1;
 		}
 		ls_train(r, d);
+		if (r->have_ls && rx_level_ok(r))
+			err_collect(r, cplx_sub(z, d));
+		r->last_d[2] = r->last_d[1];
+		r->last_d[1] = r->last_d[0];
+		r->last_d[0] = d;
 		rx_diff(r, z);
+		/* E is over: the next symbol is data */
+		if (r->stage == V34_RX_DATA && r->data_on && r->drx.p.precode)
+			precode_eq(r, &r->drx.p);
 		break;
 	case V34_RX_DATA:
 		if (r->data_on) {
 			float g2 = r->drx.p.g * r->drx.p.g;
+			if (r->drx.p.precode && r->n <= 3)
+				z = precode_start(r, z);
 			d = v34_drx_symbol(&r->drx, z, &r->scr, r->tap);
 			if (!rx_level_ok(r))
 				break;
@@ -736,6 +769,142 @@ static void rx_symbol(struct v34_rx *r)
 		}
 		break;
 	}
+}
+
+/* with precoding the equalizer gets the response 1 + H(z): its output is
+   the channel output y(n) of the remote's precoder plus whitened noise */
+static void precode_eq(struct v34_rx *r, const struct v34_dparm *p)
+{
+	cplx eq[QAM_MAX_EQ];
+	int i, k, len = r->qam.eq_len + 6;
+
+	if (len > QAM_MAX_EQ)
+		len = QAM_MAX_EQ;
+	for (i = 0; i < len; i++) {
+		eq[i] = i < r->qam.eq_len ? r->qam.eq[i] : cplx_make(0, 0);
+		for (k = 1; k <= 3; k++) {
+			cplx h = cplx_make(p->h[2 * k - 2] / 16384.0f,
+					   p->h[2 * k - 1] / 16384.0f);
+			if (i - 2 * k >= 0 && i - 2 * k < r->qam.eq_len)
+				eq[i] = cplx_add(eq[i],
+						 cplx_mul(h, r->qam.eq[i - 2 * k]));
+		}
+	}
+	memcpy(r->qam.eq, eq, len * sizeof(cplx));
+	r->qam.eq_len = len;
+}
+
+/* the precoder starts from zeros with B1: not the symbols before */
+static cplx precode_start(struct v34_rx *r, cplx z)
+{
+	const struct v34_dparm *p = &r->drx.p;
+	int k, n = (int)r->n - 1;
+
+	for (k = n + 1; k <= 3; k++) {
+		cplx h = cplx_make(p->h[2 * k - 2] / 16384.0f,
+				   p->h[2 * k - 1] / 16384.0f);
+		z = cplx_sub(z, cplx_mul(h, r->last_d[k - n - 1]));
+	}
+	return z;
+}
+
+/* the precoding coefficients to ask for (9.6.2/V.34): h(k) = -a(k), with
+   a(k) the third order linear predictor of the equalizer's error, so
+   that the error through 1 + H(z) is white.  Returns the gain in dB of
+   the decisions' SNR (0 when there is too little data to tell). */
+float v34_rx_precoder(const struct v34_rx *r, int h[6])
+{
+	typedef struct { double re, im; } dc;
+	dc R[4], A[3][4], a[3];
+	double eps, s;
+	int i, j, k;
+
+	memset(h, 0, 6 * sizeof(int));
+	if (r->err_n < 500 || r->err_r[0] <= 0)
+		return 0;
+	for (k = 0; k < 4; k++) {
+		R[k].re = r->err_r[2 * k] / r->err_n;
+		R[k].im = k ? r->err_r[2 * k + 1] / r->err_n : 0;
+	}
+	/* sum over k of a(k) R(j - k) = R(j), j = 1..3; R(-m) = R(m)* */
+	for (j = 0; j < 3; j++) {
+		for (k = 0; k < 3; k++) {
+			int m = j - k;
+			A[j][k].re = R[m < 0 ? -m : m].re;
+			A[j][k].im = m < 0 ? -R[-m].im : R[m].im;
+		}
+		A[j][3] = R[j + 1];
+	}
+	for (i = 0; i < 3; i++) {
+		int piv = i;
+		for (j = i + 1; j < 3; j++)
+			if (A[j][i].re * A[j][i].re + A[j][i].im * A[j][i].im >
+			    A[piv][i].re * A[piv][i].re + A[piv][i].im * A[piv][i].im)
+				piv = j;
+		for (k = 0; k < 4; k++) {
+			dc t = A[i][k];
+			A[i][k] = A[piv][k];
+			A[piv][k] = t;
+		}
+		s = A[i][i].re * A[i][i].re + A[i][i].im * A[i][i].im;
+		if (s <= 0)
+			return 0;
+		for (j = 0; j < 3; j++) {
+			dc f;
+			if (j == i)
+				continue;
+			/* f = A[j][i] / A[i][i] */
+			f.re = (A[j][i].re * A[i][i].re + A[j][i].im * A[i][i].im) / s;
+			f.im = (A[j][i].im * A[i][i].re - A[j][i].re * A[i][i].im) / s;
+			for (k = i; k < 4; k++) {
+				A[j][k].re -= f.re * A[i][k].re - f.im * A[i][k].im;
+				A[j][k].im -= f.re * A[i][k].im + f.im * A[i][k].re;
+			}
+		}
+	}
+	for (i = 0; i < 3; i++) {
+		s = A[i][i].re * A[i][i].re + A[i][i].im * A[i][i].im;
+		a[i].re = (A[i][3].re * A[i][i].re + A[i][3].im * A[i][i].im) / s;
+		a[i].im = (A[i][3].im * A[i][i].re - A[i][3].re * A[i][i].im) / s;
+	}
+	/* |y(n)| <= 255 (9.6.2/V.34) with points up to 45 and |x(n)| up to
+	   47 on each axis: at most 4 for the sum of |h| over the components */
+	s = 0;
+	for (k = 0; k < 3; k++)
+		s += fabs(a[k].re) + fabs(a[k].im);
+	if (s > 4)
+		for (k = 0; k < 3; k++) {
+			a[k].re *= 4 / s;
+			a[k].im *= 4 / s;
+		}
+	for (k = 0; k < 3; k++) {
+		double hr = -a[k].re, hi = -a[k].im;
+		hr = hr > 1.99 ? 1.99 : hr < -1.99 ? -1.99 : hr;
+		hi = hi > 1.99 ? 1.99 : hi < -1.99 ? -1.99 : hi;
+		h[2 * k] = (int)lrint(hr * 16384);
+		h[2 * k + 1] = (int)lrint(hi * 16384);
+		a[k].re = -h[2 * k] / 16384.0;
+		a[k].im = -h[2 * k + 1] / 16384.0;
+	}
+	/* the error power through 1 + H(z) with the coefficients sent:
+	   R(0) - 2 Re sum a(k)* R(k) + sum a(j) a(k)* R(k - j) */
+	eps = R[0].re;
+	for (k = 0; k < 3; k++)
+		eps -= 2 * (a[k].re * R[k + 1].re + a[k].im * R[k + 1].im);
+	for (j = 0; j < 3; j++)
+		for (k = 0; k < 3; k++) {
+			int m = k - j;
+			dc rr = R[m < 0 ? -m : m], p;
+			if (m < 0)
+				rr.im = -rr.im;
+			/* a(j) conj(a(k)) */
+			p.re = a[j].re * a[k].re + a[j].im * a[k].im;
+			p.im = a[j].im * a[k].re - a[j].re * a[k].im;
+			eps += p.re * rr.re - p.im * rr.im;
+		}
+	if (eps <= 0)
+		return 0;
+	return (float)(10 * log10(R[0].re / eps));
 }
 
 void v34_rx_data(struct v34_rx *r, const struct v34_dparm *p,

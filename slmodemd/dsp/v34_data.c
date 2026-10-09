@@ -5,9 +5,8 @@
  *                 state 4D trellis codes and superframe
  *                 synchronisation
  *
- *    Without precoding (the MP sequences carry zero coefficients) or
- *    non-linear encoding, as the original library negotiates it.  As it
- *    does:
+ *    With precoding when the remote asks for it (9.6.2/V.34), without
+ *    non-linear encoding.  As the original library does:
  *    - the trellis output Y0 of a 4D symbol is the low bit of the
  *      encoder state before that symbol's labels are shifted in, with
  *      the state recursions of Figures 10 to 12/V.34 (for the 32 and
@@ -201,7 +200,62 @@ int v34_data_params(struct v34_dparm *p, int baud, int n, int expanded)
 		pw = (p->r * pw + (p->P - p->r) * frame_power(p, p->K - 1)) / p->P;
 	/* the same power as the 4 point training signals */
 	p->g = (float)sqrt(2 / pw);
+	p->w = p->b < 56 ? 1 : 2;
 	return 0;
+}
+
+void v34_data_precode(struct v34_dparm *p, const int h[6])
+{
+	double pw = 2 / (p->g * p->g);
+	int i;
+
+	p->precode = 0;
+	for (i = 0; i < 6; i++) {
+		p->h[i] = h[i];
+		if (h[i])
+			p->precode = 1;
+	}
+	/* x(n) = u(n) + c(n) - p(n): u(n) plus a component uniform over
+	   a 2^w square; the same power as without precoding */
+	if (p->precode)
+		p->g = (float)sqrt(2 / (pw + (1 << 2 * p->w) / 6.0));
+}
+
+/* to the nearest multiple of 2^s; half way: to the smaller magnitude */
+static int round_shift(long long v, int s)
+{
+	return (int)((v + (1LL << (s - 1)) - 1 + (v < 0)) >> s);
+}
+
+/* x(n) = y(n) - p(n) goes in: p(n + 1) and c(n + 1) */
+static void precoder_push(const struct v34_dparm *p, struct v34_precoder *pc,
+			  int yr, int yi)
+{
+	long long qr = 0, qi = 0;
+	int k;
+
+	for (k = 2; k > 0; k--) {
+		pc->x[k][0] = pc->x[k - 1][0];
+		pc->x[k][1] = pc->x[k - 1][1];
+	}
+	pc->x[0][0] = yr * 128 - pc->p[0];
+	pc->x[0][1] = yi * 128 - pc->p[1];
+	for (k = 0; k < 3; k++) {
+		long long xr = pc->x[k][0], xi = pc->x[k][1];
+		int hr = p->h[2 * k], hi = p->h[2 * k + 1];
+		qr += xr * hr - xi * hi;
+		qi += xr * hi + xi * hr;
+	}
+	pc->p[0] = round_shift(qr, 14);
+	pc->p[1] = round_shift(qi, 14);
+	pc->c[0] = round_shift(pc->p[0], 7 + p->w) << p->w;
+	pc->c[1] = round_shift(pc->p[1], 7 + p->w) << p->w;
+}
+
+/* the bit of the modulo encoder (9.6.3.3) for c(n) */
+static int c_parity(const struct v34_precoder *pc)
+{
+	return ((pc->c[0] + pc->c[1]) >> 1) & 1;
 }
 
 static void shell_map(const struct v34_dparm *p, unsigned long r0, int m[8])
@@ -346,18 +400,34 @@ static void dtx_frame(struct v34_dtx *d, unsigned *scr, int tap)
 	}
 
 	for (i = 0; i < 4; i++) {
-		int x[2], y[2], k, rot, u0, lab[2];
-		u0 = (d->state ^ d->v0) & 1;
+		int x[2], y[2], k, rot, u0 = 0, c0 = 0, lab[2];
 		d->z = (d->z + (ib[i] >> 1)) & 3;
+		/* in the order of Table 11/V.34 */
 		for (k = 0; k < 2; k++) {
 			const signed char *v = v34_quarter[(m[2 * i + k] << p->q) +
 							   qb[2 * i + k]];
+			if (k) {
+				c0 ^= c_parity(&d->pc);
+				u0 = (d->state ^ d->v0 ^ c0) & 1;
+			} else
+				c0 = c_parity(&d->pc);
 			rot = k ? d->z + 2 * (ib[i] & 1) + u0 : d->z;
 			x[k] = v[0];
 			y[k] = v[1];
 			rotate(&x[k], &y[k], rot);
+			if (p->precode) {
+				int px = d->pc.p[0], py = d->pc.p[1];
+				/* y(n) = u(n) + c(n) */
+				x[k] += d->pc.c[0];
+				y[k] += d->pc.c[1];
+				precoder_push(p, &d->pc, x[k], y[k]);
+				d->sym[2 * i + k] =
+					cplx_make(p->g * (x[k] - px / 128.0f),
+						  p->g * (y[k] - py / 128.0f));
+			} else
+				d->sym[2 * i + k] = cplx_make(p->g * x[k],
+							      p->g * y[k]);
 			lab[k] = subset_label(x[k], y[k]);
-			d->sym[2 * i + k] = cplx_make(p->g * x[k], p->g * y[k]);
 		}
 		d->state = trellis_next(p->states, d->state,
 					conv_in(lab[0], lab[1]));
@@ -499,37 +569,44 @@ static void drx_frame(struct v34_drx *d, unsigned *scr, int tap)
  *    Viterbi decoder for the 16 state code
  */
 
-/* the nearest valid point of each 2D subset to z */
-static void subset_points(const struct v34_dparm *p, cplx z,
-			  float dist[8], short code[8])
-{
-	float u = z.re / p->g, v = z.im / p->g;
-	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
-	int dx, dy, i, lim = p->M << p->q;
+#define PACK(x, y)      ((int)(((x) & 0xFFFF) | (unsigned)(y) << 16))
+#define UNPACK_X(v)     ((short)((v) & 0xFFFF))
+#define UNPACK_Y(v)     ((v) >> 16)
 
-	/* outside the constellation: from its edge */
-	if (x0 > 45) x0 = 45;
-	if (x0 < -45) x0 = -45;
-	if (y0 > 45) y0 = 45;
-	if (y0 < -45) y0 = -45;
+/* the nearest point of each 2D subset to (u, v) (in units of the grid):
+   among the points in use, or with precoding on the whole grid */
+static void subset_points(const struct v34_dparm *p, float u, float v,
+			  float dist[8], int pt[8])
+{
+	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
+	int dx, dy, i, lim = p->M << p->q, edge = p->precode ? 261 : 45;
+
+	/* outside: from the edge */
+	if (x0 > edge) x0 = edge;
+	if (x0 < -edge) x0 = -edge;
+	if (y0 > edge) y0 = edge;
+	if (y0 < -edge) y0 = -edge;
 	for (i = 0; i < 8; i++) {
 		dist[i] = 1e30f;
-		code[i] = -1;
+		pt[i] = PACK(1, 1);
 	}
 	for (dx = -6; dx <= 6; dx += 2)
 		for (dy = -6; dy <= 6; dy += 2) {
-			int x = x0 + dx, y = y0 + dy, e, l;
+			int x = x0 + dx, y = y0 + dy, l;
 			float dd;
-			if (x < -45 || x > 45 || y < -45 || y > 45)
-				continue;
-			e = lookup[(x + 45) / 2][(y + 45) / 2];
-			if (e < 0 || (e & 511) >= lim)
-				continue;
+			if (!p->precode) {
+				int e;
+				if (x < -45 || x > 45 || y < -45 || y > 45)
+					continue;
+				e = lookup[(x + 45) / 2][(y + 45) / 2];
+				if (e < 0 || (e & 511) >= lim)
+					continue;
+			}
 			l = subset_label(x, y);
 			dd = (u - x) * (u - x) + (v - y) * (v - y);
 			if (dd < dist[l]) {
 				dist[l] = dd;
-				code[l] = (short)e;
+				pt[l] = PACK(x, y);
 			}
 		}
 }
@@ -537,8 +614,10 @@ static void subset_points(const struct v34_dparm *p, cplx z,
 static void v34_viterbi_init(struct v34_drx *d)
 {
 	int s;
+	/* the encoder starts at 0, but a receiver rotated by 90, 180 or
+	   270 degrees sees the code sequence of another start state */
 	for (s = 0; s < V34_STATES; s++)
-		d->metric[s] = s ? 1e30f : 0;   /* the encoder starts at 0 */
+		d->metric[s] = 0;
 	d->vt = d->vn = 0;
 	d->half = 0;
 	d->pat = 2 * d->p.J - 2;
@@ -547,11 +626,11 @@ static void v34_viterbi_init(struct v34_drx *d)
 
 /* one 4D symbol in; returns 1 with a decided pair of point codes, after
    the decoding delay */
-static int viterbi_4d(struct v34_drx *d, const float da[8], const short ca[8],
-		      const float db[8], const short cb[8], short out[2])
+static int viterbi_4d(struct v34_drx *d, const float da[8], const int ca[8],
+		      const float db[8], const int cb[8], int out[2])
 {
 	float gm[32], m2[V34_STATES], best;
-	short ga[32], gb[32];
+	int ga[32], gb[32];
 	int states = d->p.states, l0, l1, g, s, y, t = d->vt, bs, k;
 	/* the 16 state code only uses Y1 and Y2 */
 	int ny = states == 16 ? 4 : 16;
@@ -621,35 +700,61 @@ static int viterbi_4d(struct v34_drx *d, const float da[8], const short ca[8],
 	return 1;
 }
 
-static void drx_point(struct v34_drx *d, int code, unsigned *scr, int tap)
+/* a decided channel output point y(n): with precoding u(n) = y(n) - c(n),
+   as the transmitter's precoder had it */
+static void drx_point(struct v34_drx *d, int pt, unsigned *scr, int tap)
 {
-	d->e[d->pos++] = code;
+	int x = UNPACK_X(pt), y = UNPACK_Y(pt), e = -1;
+
+	if (d->p.precode) {
+		int cx = d->pc.c[0], cy = d->pc.c[1];
+		precoder_push(&d->p, &d->pc, x, y);
+		x -= cx;
+		y -= cy;
+	}
+	if (x >= -45 && x <= 45 && y >= -45 && y <= 45)
+		e = lookup[(x + 45) / 2][(y + 45) / 2];
+	d->e[d->pos++] = e < 0 ? 0 : e;
 	if (d->pos == 8) {
 		drx_frame(d, scr, tap);
 		d->pos = 0;
 	}
 }
 
-/* z: the equalized symbol, in units of the training points; returns
-   the (tentative) decided point for the adaptation */
+/* z: the equalized symbol, in units of the training points (with
+   precoding: equalized to 1 + H(z)); returns the (tentative) decided
+   point for the adaptation */
 cplx v34_drx_symbol(struct v34_drx *d, cplx z, unsigned *scr, int tap)
 {
-	int x, y;
-	short out[2];
+	const struct v34_dparm *p = &d->p;
+	float u = z.re / p->g, v = z.im / p->g;
+	cplx ret;
+	int out[2];
 
-	decide(&d->p, z, &x, &y);
+	if (p->precode) {
+		/* z is y(n) + noise (the receiver's equalizer includes
+		   1 + H(z)): the nearest point of the grid */
+		float yu = 2 * floorf(u / 2) + 1, yv = 2 * floorf(v / 2) + 1;
+		yu = yu > 261 ? 261 : yu < -261 ? -261 : yu;
+		yv = yv > 261 ? 261 : yv < -261 ? -261 : yv;
+		ret = cplx_make(p->g * yu, p->g * yv);
+	} else {
+		int x, y;
+		decide(p, z, &x, &y);
+		ret = cplx_make(p->g * x, p->g * y);
+	}
 	if (!d->half2) {
-		subset_points(&d->p, z, d->da, d->ca);
+		subset_points(p, u, v, d->da, d->ca);
 		d->half2 = 1;
 	} else {
 		float db[8];
-		short cb[8];
-		subset_points(&d->p, z, db, cb);
+		int cb[8];
+		subset_points(p, u, v, db, cb);
 		d->half2 = 0;
 		if (viterbi_4d(d, d->da, d->ca, db, cb, out)) {
-			drx_point(d, out[0] < 0 ? 0 : out[0], scr, tap);
-			drx_point(d, out[1] < 0 ? 0 : out[1], scr, tap);
+			drx_point(d, out[0], scr, tap);
+			drx_point(d, out[1], scr, tap);
 		}
 	}
-	return cplx_make(d->p.g * x, d->p.g * y);
+	return ret;
 }
