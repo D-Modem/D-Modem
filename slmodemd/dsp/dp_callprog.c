@@ -63,8 +63,9 @@ struct callprog_dp {
 	int cpt_run;            /* blocks in the current on/off run */
 	int busy_cycles;
 
-	/* V.25 calling tone */
+	/* V.25 calling tone, or the T.30 CNG of a fax call */
 	int calling_tone;
+	int fax;
 	struct osc ct;
 };
 
@@ -121,7 +122,8 @@ static struct dp *callprog_create(struct modem *m, enum DP_ID id,
 	c->timeout = (long)(v > 0 ? v : 50) * srate;
 
 	c->calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
-	osc_set_freq(&c->ct, 1300, srate);
+	c->fax = m->mode == MODEM_MODE_FAX;
+	osc_set_freq(&c->ct, c->fax ? 1100 : 1300, srate);
 
 	/* like the original, X2/X4 insist on a dial tone even when there
 	   is nothing to dial (D-Modem users run ATX3 for SIP lines) */
@@ -292,9 +294,15 @@ static int callprog_process(struct dp *dp, void *in, void *out, int cnt)
 			y = cp_dial_sample(c);
 			break;
 		case CP_WAIT_ANSWER:
-			if (c->calling_tone && c->count >= ms2samples(500, c->srate) &&
-			    (c->count % ms2samples(2500, c->srate)) <
-			    ms2samples(600, c->srate))
+			if (c->fax) {
+				/* CNG: 0.5 s of 1100 Hz every 3.5 s */
+				if (c->count % ms2samples(3500, c->srate) <
+				    ms2samples(500, c->srate))
+					y = 0.5f * DSP_TX_AMPLITUDE * osc_next(&c->ct);
+			} else if (c->calling_tone &&
+				   c->count >= ms2samples(500, c->srate) &&
+				   (c->count % ms2samples(2500, c->srate)) <
+				   ms2samples(600, c->srate))
 				y = 0.5f * DSP_TX_AMPLITUDE * osc_next(&c->ct);
 			if (c->count >= c->timeout && ret == DPSTAT_OK) {
 				DSP_DBG("callprog: no answer\n");

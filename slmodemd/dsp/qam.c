@@ -387,3 +387,13 @@ float echo_run(struct echo_canceller *e, float tx, float rx, float mu)
 	}
 	return err;
 }
+
+void qam_rx_recompute(struct qam_rx *q)
+{
+	cplx out = { 0, 0 };
+	int i;
+	for (i = 0; i < q->eq_len; i++)
+		out = cplx_add(out, cplx_mul(q->eq[i], q->eq_buf[i]));
+	q->eq_out = out;
+	q->z = cplx_mul(out, q->rot);
+}

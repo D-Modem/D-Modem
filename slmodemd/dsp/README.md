@@ -13,7 +13,7 @@ against it unchanged:
 | `RD_*` | Ring detector for snooping codecs (low frequency, high amplitude bursts) |
 | `CID_*` | Caller ID: Bell 202 FSK, SDMF and MDMF, formatted (`AT+VCID=1`) or raw hex |
 | `VOICE_*` | IS-101 style voice: 8 bit linear at 8000 Hz with `<DLE>` shielding, `+VTS` tones and DTMF |
-| `FAX_*`, `FAX_class1_command` | Stubs. Fax is **not** implemented |
+| `FAX_*`, `FAX_class1_command` | T.31 class 1 fax (`AT+FCLASS=1`): V.21 HDLC, V.27ter, V.29 and V.17 (see [Fax](#fax-class-1)) |
 
 ## Data pumps
 
@@ -26,15 +26,50 @@ against it unchanged:
 | 22 | ITU V.22, 1200 bit/s DPSK | |
 | 212 | Bell 212A, 1200 bit/s DPSK | 2225 Hz answer tone, scrambled ones handshake |
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | Full S1 handshake, falls back to V.22 |
-| 8, 32, 132 | (V.8, V.32, V.32bis) | Not implemented. These IDs map to V.22bis so the default `AT+MS=92` setting (the core starts the V.8 pump for it) still connects |
+| 32 | ITU V.32, 4800/9600 bit/s | Uncoded 4800, trellis coded 9600, echo canceller |
+| 132 | ITU V.32bis, 4800 to 14400 bit/s | Rate chosen from the measured training quality |
+| 8, 34, 90, 92 | (V.8, V.34, V.90, V.92) | Served by the V.32bis pump in automode: it answers or calls as V.32bis and falls back to V.22bis/V.22 when the other end is not V.32 |
 
-V.32bis, V.34, V.90, V.92, K56flex, V.8/V.8bis and fax modulations
-(V.27ter, V.29, V.17) are **not** reimplemented. `AT+MS=34`, `90` and `92`
-are refused with `ERROR` because no pump is registered for them. With the
-default `AT+MS=92`, the modem connects at V.22bis or lower.
+V.34, V.90, V.92, K56flex and V.8/V.8bis negotiation are **not**
+reimplemented. With the default `AT+MS=92`, the modem connects at V.32bis
+or lower.
 
 The V.22/V.22bis constellation, quadrant coding and phase tables come from
-the original library's `SMCv22_*` and `DECv22_*` tables.
+the original library's `SMCv22_*` and `DECv22_*` tables, and the V.32bis
+constellations from its `VTBv32_*` tables.
+
+### V.32 / V.32bis
+
+`dp_v32.c` runs the start-up sequence the way the original library does it
+(worked out from recordings of it): answer tone, the AA/AC/CA/CC round trip
+delay measurement, S, S-bar and TRN (256 two point symbols, then four point
+symbols, from the original's fixed scrambler seeds), the R1/R2/R3 rate
+words and E. The receivers train an NLMS echo canceller while their own
+TRN goes out. Each side offers the rates its training quality supports
+(14400 from about 25 dB SNR, 12000 from 22 dB, 9600 from 19 dB, 7200 from
+16 dB, else 4800).
+
+### Fax (class 1)
+
+`fax_class1.c` implements the T.31 class 1 commands on top of the
+modulations in `fax_modems.c`:
+
+| Command | |
+|---|---|
+| `+FTH=3` / `+FRH=3` | V.21 channel 2 HDLC frames: flags, bit stuffing, CRC-16, `<DLE>` shielding, `OK`/`ERROR` per received frame |
+| `+FTM=` / `+FRM=` | 24, 48 (V.27ter), 72, 96 (V.29), 73, 74, 97, 98, 121, 122, 145, 146 (V.17, long and short train) |
+| `+FTS=` / `+FRS=` | Silence for / wait for silence of n * 10 ms |
+
+The answering side sends CED (2100 Hz for 3 s) and then starts `+FTH=3` by
+itself; the calling side sends CNG while it waits for an answer and starts
+`+FRH=3` when the answer tone is heard. Any character from the DTE stops
+`+FRH`/`+FRM` once they reported `CONNECT`.
+
+The receivers find the training by matching the received phase steps
+against the known sequence. The V.29 and V.27ter training sequences repeat
+every 127 symbols, so the end of the alternations before them tells which
+repetition is being received. A V.17 short train continues from the
+equalizer of the last long train at the same rate.
 
 ### How the QAM receiver works
 
@@ -61,6 +96,7 @@ ARM and other architectures, and links with `-lm`.
 
     make -C dsp/test check     # back-to-back pumps through a simulated line
     make -C dsp/test interop   # calls between the original library and this one (needs gcc -m32)
+    make -C dsp/test fax_interop   # class 1 fax calls, the same way
 
 `dsp_loopback <dp> [snr dB] [seconds] [srate] [line gain] [clock ppm]` runs a
 caller and an answerer through a simulated line with delay, a low-pass
@@ -74,12 +110,35 @@ directions. Results at the time of writing:
 
 | `AT+MS=` | original caller → open answerer | open caller → original answerer |
 |---|---|---|
+| 132 (V.32bis) | CONNECT 14400 | CONNECT 14400 |
 | 122 (V.22bis) | CONNECT 2400 | CONNECT 2400 |
 | 22 (V.22) | CONNECT 1200 | CONNECT 1200 |
 | 212 (Bell 212A) | CONNECT 1200 | CONNECT 1200 |
 | 103 (Bell 103) | CONNECT 300 | CONNECT 300 |
 | 23 (V.23) | CONNECT 1200 | CONNECT 1200 |
 | 21 (V.21) | CONNECT 300 | fails: the original V.21 answerer only sends 2225 Hz and does not connect to itself either |
+
+`fax_interop` does the same with `AT+FCLASS=1`. `fax_interop.py` plays
+the T.30 side of both fax machines: CSI/DIS, DCS, TCF, CFR, one page (for
+V.17 with the short train), EOP, MCF and DCN. The modems run in real time
+so that the script keeps up with the T.30 timers. Results at the time of
+writing:
+
+| Modulation | original sender → open receiver | open sender → original receiver |
+|---|---|---|
+| V.27ter 2400, 4800 | pass | pass |
+| V.29 7200, 9600 | pass | pass |
+| V.17 7200, 9600 (long and short train) | pass | pass |
+| V.17 12000, 14400 | fails: the original transmitter's signal has no usable constellation at these rates (it cannot receive itself either) | pass |
+
+The original library makes a few bit errors with some of its own signals,
+so `fax_interop.py` accepts a page with a bit error rate below 1e-3 (a fax
+page without ECM survives that). Its V.27ter training also contains stray
+180 degree phase flips, which the open receiver follows.
+
+`fax_loopback <mod> [snr dB] [bits] [srate]` sends random data through
+one fax modulation over the simulated line. The V.17 short train codes run
+a long train first, so the receiver has an equalizer to start from.
 
 Known limitation: the original library in its default V.92 mode does
 V.8 with automode off. Its CM message offers only V.34, V.90 and V.32bis,

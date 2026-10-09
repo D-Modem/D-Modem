@@ -5,12 +5,12 @@
 CC ?= gcc
 CFLAGS += -Wall -O2 -g -I.. -I../..
 SRCS := ../dsp_glue.c ../dsp_util.c ../dp_callprog.c ../dp_fsk.c ../dp_v22.c \
-	../dp_v32.c ../qam.c ../qam_tables.c
+	../dp_v32.c ../qam.c ../qam_tables.c ../fax_modems.c ../fax_class1.c
 
 dsp_loopback: dsp_loopback.c $(SRCS) ../dsp.h ../qam.h
 	$(CC) $(CFLAGS) -o $@ dsp_loopback.c $(SRCS) -lm
 
-check: dsp_loopback
+check: dsp_loopback fax_loopback
 	./dsp_loopback 132 40 20
 	./dsp_loopback 132 25 20
 	./dsp_loopback 132 30 20 8000
@@ -31,9 +31,14 @@ check: dsp_loopback
 	./dsp_loopback 21 8 20
 	./dsp_loopback 23 12 30
 	./dsp_loopback 103 8 20 9600 0.5 300
+	for m in 24 48 72 73 74 96 97 98 121 122 145 146; do \
+		./fax_loopback $$m 30 || exit 1; done
+	./fax_loopback 48 20
+	./fax_loopback 96 25
+	./fax_loopback 98 25 20000 8000
 
 clean:
-	rm -f dsp_loopback half_blob half_open modemA.log modemB.log
+	rm -f dsp_loopback fax_loopback half_blob half_open modemA.log modemB.log
 
 .PHONY: check clean
 
@@ -58,3 +63,19 @@ interop: half_blob half_open
 	done
 
 .PHONY: interop
+
+FAX_SRCS := ../fax_modems.c ../qam.c ../qam_tables.c ../dsp_util.c ../dp_fsk.c
+
+fax_loopback: fax_loopback.c $(FAX_SRCS) ../dsp.h ../qam.h ../fax.h
+	$(CC) $(CFLAGS) -o $@ fax_loopback.c $(FAX_SRCS) -lm
+
+# class 1 fax calls between the original library and this one, in real
+# time (about 25 s each); see fax_interop.py
+FAX_MODS ?= 24 48 72 96 73 97
+fax_interop: half_blob half_open
+	for m in $(FAX_MODS); do \
+		./fax_interop.py ./half_blob ./half_open $$m || exit 1; \
+		./fax_interop.py ./half_open ./half_blob $$m || exit 1; \
+	done
+
+.PHONY: fax_interop

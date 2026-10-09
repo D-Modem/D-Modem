@@ -626,31 +626,3 @@ int VOICE_process(void *obj, void *in, void *out, int count)
 	v->pending = 0;
 	return status;
 }
-
-
-/*
- *    Fax: class 1 fax modulations (V.27ter, V.29, V.17 and V.21 HDLC)
- *    are not implemented by this library.
- */
-
-void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
-{
-	DSP_DBG("fax: not supported\n");
-	return NULL;
-}
-
-void FAX_delete(void *obj)
-{
-	free(obj);
-}
-
-int FAX_process(void *obj, void *in, void *out, int count)
-{
-	memset(out, 0, count * sizeof(s16));
-	return FAX_STATUS_ERROR;
-}
-
-int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
-{
-	return -1;
-}

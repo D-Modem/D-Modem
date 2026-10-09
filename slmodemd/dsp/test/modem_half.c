@@ -63,6 +63,7 @@
 #include <sys/ioctl.h>
 
 #include <modem.h>
+#include <sys/time.h>
 #include <modem_debug.h>
 
 #define INFO(fmt,args...) fprintf(stderr, fmt , ##args );
@@ -100,11 +101,17 @@ struct modem_test {
 	unsigned close_count;
 };
 
+static void pace_clock(struct modem_test *t, int samples);
+
+
 
 #define CLOSE_COUNT_MAX 100
 
 /* static data */
 static char inbuf[4096];
+#define HALF_FRAME 48           /* samples, 5 ms at 9600 Hz */
+static char pend[8192];
+static int npend;
 static char outbuf[4096];
 
 
@@ -265,7 +272,9 @@ static int modem_test_run(struct modem_test *modems)
 		for( t = modems ; t->modem ; t++ ) {
 			if(FD_ISSET(t->in,&rset)) {
 				//DBG("dev read...\n");
-				count = read(t->in,inbuf,sizeof(inbuf)/2);
+				/* the modem core wants whole periods: pass the
+				   line samples on in frames of HALF_FRAME */
+				count = read(t->in,pend + npend,sizeof(pend) - npend);
 				if(count < 0) {
 					ERR("dev read: %s\n",strerror(errno));
 					return -1;
@@ -274,6 +283,15 @@ static int modem_test_run(struct modem_test *modems)
 					DBG("dev read = 0\n");
 					continue;
 				}
+				npend += count;
+				count = npend / (HALF_FRAME * 2) * (HALF_FRAME * 2);
+				if (count > sizeof(inbuf) / (HALF_FRAME * 2) * (HALF_FRAME * 2))
+					count = sizeof(inbuf) / (HALF_FRAME * 2) * (HALF_FRAME * 2);
+				if (count == 0)
+					continue;
+				memcpy(inbuf, pend, count);
+				memmove(pend, pend + count, npend - count);
+				npend -= count;
 				in = inbuf;
 				if(t->modem->update_delay < 0) {
 					if ( -t->modem->update_delay >= count/2) {
@@ -290,6 +308,7 @@ static int modem_test_run(struct modem_test *modems)
 				}
 				if(t->started) {
 					modem_process(t->modem,in,outbuf,count>>1);
+					pace_clock(t, count>>1);
 				}
 				else {
 					memset(outbuf,0,count);
@@ -373,6 +392,31 @@ static int modem_test_run(struct modem_test *modems)
 	return 0;
 }
 
+
+/* MODEM_REALTIME=1: run no faster than the sample clock, so that a
+   DTE program (fax) can keep up with the protocol timers */
+static void pace_clock(struct modem_test *t, int samples)
+{
+	static int on = -1;
+	static double start, done;
+	struct timeval tv;
+	double now, ahead;
+	if (on < 0)
+		on = getenv("MODEM_REALTIME") != NULL;
+	if (!on)
+		return;
+	gettimeofday(&tv, NULL);
+	now = tv.tv_sec + tv.tv_usec * 1e-6;
+	if (done == 0 || now - start - done / t->modem->srate > 0.5) {
+		/* (re)start the clock after a pause */
+		start = now;
+		done = 0;
+	}
+	done += samples;
+	ahead = start + done / t->modem->srate - now;
+	if (ahead > 0.002)
+		usleep(ahead * 1e6);
+}
 
 static int modem_test_init(struct modem_test *t, const char *name, int in, int out)
 {

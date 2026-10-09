@@ -85,6 +85,8 @@ void  qam_rx_reset(struct qam_rx *q);   /* eq to centre tap, PLL to 0 */
 int   qam_rx_sample(struct qam_rx *q, float x);
 /* adapt equalizer (mu, normalized) and carrier loop toward decision d */
 void  qam_rx_adapt(struct qam_rx *q, cplx d, float mu, float k1, float k2);
+/* recompute the current output after the equalizer was replaced */
+void  qam_rx_recompute(struct qam_rx *q);
 /* rotate the carrier phase so that the current output points at d */
 void  qam_rx_align_phase(struct qam_rx *q, cplx d);
 

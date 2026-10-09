@@ -41,7 +41,7 @@ dp-objs:= dp_sinus.o dp_dummy.o
 sysdep-objs:= sysdep_common.o
 ifeq ($(DSPLIBS), open)
 dsp-objs:= dsp/dsp_glue.o dsp/dsp_util.o dsp/dp_callprog.o dsp/dp_fsk.o dsp/dp_v22.o \
-	dsp/dp_v32.o dsp/qam.o dsp/qam_tables.o
+	dsp/dp_v32.o dsp/qam.o dsp/qam_tables.o dsp/fax_modems.o dsp/fax_class1.o
 LFLAGS+= -lm
 else
 dsp-objs:= dsplibs.o

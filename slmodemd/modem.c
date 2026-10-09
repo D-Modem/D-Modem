@@ -1522,6 +1522,11 @@ static void modem_fax_process(struct modem *m, void *in, void *out, int count)
 			modem_report_result(m, RESULT_NOCARRIER);
 			m->command = 1;
 			break;
+		case FAX_STATUS_FRAME_ERROR:
+			modem_set_state(m, STATE_COMMAND_ONLINE);
+			modem_report_result(m, RESULT_ERROR);
+			m->command = 1;
+			break;
 		case FAX_STATUS_ERROR:
 			modem_update_status(m, STATUS_ERROR);
 			break;

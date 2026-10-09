@@ -377,6 +377,7 @@ struct dsp_info {
 #define FAX_STATUS_ERROR     2
 #define FAX_STATUS_CONNECT   3
 #define FAX_STATUS_NOCARRIER 4
+#define FAX_STATUS_FRAME_ERROR 5 /* ERROR result, stay connected */
 
 enum FAX_CMD {
 	FAX_CMD_FTS,
