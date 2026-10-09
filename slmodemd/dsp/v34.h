@@ -231,6 +231,9 @@ struct v34_rx {
 	/* V.90 digital modem: Ja carries the DIL descriptor */
 	int v90, ev_ja;
 	int sbar_count;         /* S to S-bar transitions seen */
+	/* and CP in phase 4 */
+	int ev_cpt, ev_cp, ev_cpack;
+	unsigned char cpraw[1800];      /* the last good CP frame */
 	unsigned char *jabits;
 	int ja_n, ja_len;
 	struct v90_dil dil;

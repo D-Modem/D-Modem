@@ -311,6 +311,7 @@ static void rx_set_stage(struct v34_rx *r, enum v34_rxstage s)
 	r->stage = s;
 	r->n = 0;
 	r->ls_n = 0;
+	r->ja_n = 0;            /* no frame across a new signal */
 }
 
 static int nearest4(cplx z)
@@ -330,19 +331,111 @@ static void rx_ja_bit(struct v34_rx *r, int bit)
 	if (r->ja_len > 0 && r->ja_n == r->ja_len) {
 		r->ja_n = 0;
 		if (v90_dil_parse(&r->dil, r->jabits, r->ja_len) == 0) {
-			if (!r->ev_ja)
+			if (!r->ev_ja) {
+				int i;
 				DSP_DBG("v34 rx: Ja at symbol %ld: DIL N %d, "
 					"LSP %d, LTP %d\n", r->sym, r->dil.n,
 					r->dil.lsp, r->dil.ltp);
+				for (i = 0; i < 8; i++)
+					DSP_DBG("v34 rx: DIL H%d %d REF%d %d\n",
+						i + 1, r->dil.h[i], i + 1,
+						r->dil.ref[i]);
+				for (i = 0; i < r->dil.n; i += 16)
+					DSP_DBG("v34 rx: DIL Ucodes %d: %d %d %d %d "
+						"%d %d %d %d %d %d %d %d %d %d "
+						"%d %d\n", i,
+						r->dil.ucode[i], r->dil.ucode[i + 1],
+						r->dil.ucode[i + 2], r->dil.ucode[i + 3],
+						r->dil.ucode[i + 4], r->dil.ucode[i + 5],
+						r->dil.ucode[i + 6], r->dil.ucode[i + 7],
+						r->dil.ucode[i + 8], r->dil.ucode[i + 9],
+						r->dil.ucode[i + 10], r->dil.ucode[i + 11],
+						r->dil.ucode[i + 12], r->dil.ucode[i + 13],
+						r->dil.ucode[i + 14], r->dil.ucode[i + 15]);
+				for (i = 0; i < r->dil.lsp; i += 40) {
+					char sp[41], tp[41];
+					int k;
+					for (k = 0; k < 40; k++) {
+						sp[k] = '0' + r->dil.sp[i + k];
+						tp[k] = '0' + r->dil.tp[i + k];
+					}
+					sp[40] = tp[40] = 0;
+					DSP_DBG("v34 rx: DIL SP %s TP %s\n", sp, tp);
+				}
+			}
 			r->ev_ja = 1;
 		} else
 			DSP_DBG("v34 rx: Ja with bad CRC\n");
 	}
 }
 
+/* CP (V.90): MP style frames of a length given by the number of
+   constellations they carry */
+static void rx_cp_bit(struct v34_rx *r, int bit)
+{
+	if (r->ja_n < V90_JA_MAX)
+		r->jabits[r->ja_n++] = bit;
+	if (r->ja_n == 129) {
+		r->ja_len = v90_cp_length(r->jabits, r->ja_n);
+		if (r->ja_len <= 0 || r->ja_len > (int)sizeof(r->cpraw))
+			r->ja_n = 0;
+	}
+	if (r->ja_len > 0 && r->ja_n == r->ja_len) {
+		struct v90_cp cp;
+		r->ja_n = 0;
+		if (v90_cp_parse(&cp, r->jabits, r->ja_len) == 0) {
+			if (!(cp.cp ? r->ev_cp : r->ev_cpt) ||
+			    (cp.ack && !r->ev_cpack))
+				DSP_DBG("v34 rx: CP%s%s at symbol %ld: drn %d "
+					"Sr %d ld %d, %d constellations, "
+					"mask %04x\n", cp.cp ? "" : "t",
+					cp.ack ? "'" : "", r->sym, cp.drn,
+					cp.sr, cp.ld, cp.ncon, cp.rate_mask);
+			memcpy(r->cpraw, r->jabits, r->ja_len);
+			if (cp.cp) {
+				r->ev_cp = 1;
+				if (cp.ack)
+					r->ev_cpack = 1;
+			} else
+				r->ev_cpt = 1;
+			/* E may follow CP' (after CPt comes SCR: ones) */
+			r->after_mp = cp.cp;
+			r->mp_end = r->sym;
+			r->ones = 0;
+		} else
+			DSP_DBG("v34 rx: CP with bad CRC\n");
+	}
+}
+
 static void rx_bit(struct v34_rx *r, int bit)
 {
 	r->sr = (r->sr << 1) | bit;
+	if (r->v90 && r->ev_ja && r->stage == V34_RX_TRN) {
+		if (r->ja_n) {
+			rx_cp_bit(r, bit);
+			return;
+		}
+		if ((r->sr & 0x3FFFF) == 0x3FFFE) {
+			int i;
+			for (i = 0; i < 17; i++)
+				r->jabits[i] = 1;
+			r->jabits[17] = 0;
+			r->ja_n = 18;
+			r->ja_len = 0;
+			r->after_mp = 0;
+			return;
+		}
+		if (r->after_mp) {
+			/* E: 20 ones after CP' */
+			r->ones = bit ? r->ones + 1 : 0;
+			if (r->ones == 20) {
+				r->ev_e = 1;
+				DSP_DBG("v34 rx: E at symbol %ld\n", r->sym);
+				rx_set_stage(r, V34_RX_DATA);
+			}
+		}
+		return;
+	}
 	if (r->v90 && r->jabits && !r->ev_ja && r->stage == V34_RX_TRN) {
 		if (r->ja_n)
 			rx_ja_bit(r, bit);

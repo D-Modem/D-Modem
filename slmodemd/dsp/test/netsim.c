@@ -21,6 +21,7 @@ unsigned int dsplibs_debug_level = 0;
 int dsplibs_debug_printf(const char *fmt, ...) { return 0; }
 
 static int alaw;
+static float gain = 1;
 
 /* G.711 (the usual reference algorithms) */
 static int seg_search(int v, const short *t)
@@ -102,9 +103,58 @@ static int g711(int x)
 	return alaw ? alaw2lin(lin2alaw(x)) : ulaw2lin(lin2ulaw(x));
 }
 
+/* 8000 -> 9600 Hz like a codec on an analogue line: a raised cosine
+   (Nyquist at 4000 Hz, roll-off 0.15) at 48 kHz, so that the PCM
+   samples stay free of intersymbol interference; the converter of
+   dsp_util cuts below 4000 Hz, which takes away part of the PCM signal */
+#define RC_TAPS 240             /* per phase, 6 phases: 30 ms */
+struct rc_up {
+	float h[6][RC_TAPS];
+	float hist[2 * RC_TAPS];
+	int pos, t;
+};
+
+static void rc_init(struct rc_up *r)
+{
+	const double a = getenv("NET_RC") ? atof(getenv("NET_RC")) : 0.15;
+	const double fs = 8000;
+	int n, len = 6 * RC_TAPS;
+	memset(r, 0, sizeof(*r));
+	for (n = 0; n < len; n++) {
+		double t = (n - len / 2) / 48000.0, x = fs * t, h;
+		double d = 1 - (2 * a * x) * (2 * a * x);
+		h = x == 0 ? 1 : sin(M_PI * x) / (M_PI * x);
+		h *= fabs(d) < 1e-9 ? M_PI / 4 : cos(M_PI * a * x) / d;
+		/* Hann window */
+		h *= 0.5 - 0.5 * cos(2 * M_PI * (n + 0.5) / len);
+		r->h[n % 6][n / 6] = (float)h;
+	}
+}
+
+/* one 8000 Hz sample in, 1 or 2 samples at 9600 Hz out */
+static int rc_run(struct rc_up *r, float x, float *out)
+{
+	int n = 0;
+	if (--r->pos < 0)
+		r->pos = RC_TAPS - 1;
+	r->hist[r->pos] = r->hist[r->pos + RC_TAPS] = x;
+	while (r->t < 6) {
+		const float *h = r->h[r->t], *b = r->hist + r->pos;
+		float y = 0;
+		int k;
+		for (k = 0; k < RC_TAPS; k++)
+			y += h[k] * b[k];
+		out[n++] = y;
+		r->t += 5;
+	}
+	r->t -= 6;
+	return n;
+}
+
 struct dir {
 	int in, out, rate_in, rate_out;
 	struct resampler rs;
+	struct rc_up rc;
 	short obuf[8192];
 	int on;
 };
@@ -124,8 +174,9 @@ static int run(struct dir *d)
 			continue;
 		}
 		if (d->rate_in == 8000) {
-			/* the network, then the far codec */
-			m = resampler_run(&d->rs, g711(ibuf[i]), y);
+			/* the network, then the far codec (with the
+			   analogue loss or gain NET_GAIN on the way) */
+			m = rc_run(&d->rc, g711(ibuf[i]) * gain, y);
 			for (k = 0; k < m; k++)
 				d->obuf[o++] = (short)(y[k] > 32767 ? 32767 :
 						       y[k] < -32768 ? -32768 : y[k]);
@@ -174,6 +225,8 @@ int main(int argc, char **argv)
 	ra = atoi(argv[1]);
 	rb = atoi(argv[2]);
 	alaw = !strcmp(argv[3], "alaw");
+	if (getenv("NET_GAIN"))
+		gain = atof(getenv("NET_GAIN"));
 	memset(d, 0, sizeof(d));
 	/* A -> B */
 	d[0].in = atoi(argv[4]);
@@ -193,6 +246,7 @@ int main(int argc, char **argv)
 				d[k].rate_in, d[k].rate_out);
 			return 1;
 		}
+		rc_init(&d[k].rc);
 		p[k].fd = d[k].in;
 		p[k].events = POLLIN;
 	}

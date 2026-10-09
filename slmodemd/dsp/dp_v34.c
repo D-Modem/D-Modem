@@ -50,6 +50,17 @@
 
 /* our CM / JM: V-series data call, V.34 and V.32, LAPM, PSTN access */
 static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x11, 0x10, 0x2a, 0x0d };
+/* the trellis code we ask the remote to send: 0, 1, 2 for 16, 32, 64
+   states */
+#ifndef V34_TRELLIS
+#define V34_TRELLIS 2
+#endif
+
+/* the least gain, in dB, for which we ask for precoding */
+#ifndef V34_PRECODE_MIN
+#define V34_PRECODE_MIN 1.0f
+#endif
+
 #define V8_MOD1_V34     0x40    /* in the first modulation octet */
 #define V8_MOD1_PCM     0x20    /* a PCM modem availability octet follows */
 #define V8_CAT_MOD      0x05    /* category tags (bits 0 to 4) */
@@ -133,7 +144,12 @@ enum v34_state {
 	P3D_JDP,        /* Jd' (and DIL): until the remote's next S-bar */
 	P3D_DIL_END,    /* the current DIL segment */
 	P4D_START,
+	P4D_RI,         /* until CPt */
+	P4D_TRAIN,      /* TRN2d, MP, MP', Ed, B1d (the frame source) */
 };
+
+/* what the digital modem's encoder sends in phase 4 and data mode */
+enum v90_fmode { F_TRN, F_MP, F_ED, F_B1, F_DATA };
 
 enum v34_txm {
 	TXM_SILENCE,
@@ -228,6 +244,13 @@ struct v34_dp {
 	struct v90_tx v90tx;    /* the PCM transmitter */
 	int pcm_tx;             /* our output from it */
 	int sbar_seen;
+	struct v90_cp cpt, cp;  /* the analogue modem's CPt and CP */
+	enum v90_fmode fmode;   /* phase 4: the encoder's frames */
+	long fcount;
+	unsigned char mpb[256]; /* our MP, filled to whole frames */
+	int mp_len, mp_pos, mp_ack, mp_ack_sent;
+	int D;                  /* bits per data frame */
+	int up_n;               /* upstream rate, 2400 bit/s units */
 	struct resampler rs_up, rs_down;
 	float fifo[V34_FIFO];   /* converted output, 8000 Hz */
 	int fifo_n;
@@ -1277,6 +1300,8 @@ static void v34_primary_start(struct v34_dp *v)
 static int v90_start(struct v34_dp *v)
 {
 	v->baud_rx = v->rinfo1a.baud_ac;
+	if (v->rate_of_baud[v->baud_rx])
+		v->max_rate_rx = v->rate_of_baud[v->baud_rx];
 	if (v34_rx_init(&v->prx, v->baud_rx, 0, 1) || v34_rx_v90(&v->prx))
 		return -1;
 	v->prx_on = 1;
@@ -1284,6 +1309,105 @@ static int v90_start(struct v34_dp *v)
 	v90_tx_init(&v->v90tx, v->alaw, v->rinfo1a.uinfo);
 	v->pcm_tx = 1;
 	v34_set_state(v, P3D_WAIT_JA);
+	return 0;
+}
+
+static void v34_put_bits(void *ctx, const unsigned char *bits, int n);
+
+/* our MP (Table 16/V.90), filled to whole data frames */
+static void v90_make_mp(struct v34_dp *v, int ack)
+{
+	int h[6];
+	float gain = v34_rx_precoder(&v->prx, h);
+	if (gain < V34_PRECODE_MIN)
+		memset(h, 0, sizeof(h));
+	v->mp_len = v90_mp_build(v->mpb, v->max_rate_rx, V34_TRELLIS, 1, ack,
+				 0x1FFF, h);
+	while (v->mp_len % v->D)
+		v->mpb[v->mp_len++] = 0;
+	v->mp_pos = 0;
+	v->mp_ack = ack;
+}
+
+/* the next D bits of the digital modem's data frames */
+static void v90_get_frame(void *ctx, struct v90_tx *t, unsigned char *b,
+			  int *last)
+{
+	struct v34_dp *v = ctx;
+	int D = v->D;
+
+	if (v->fmode == F_B1 && v->fcount == 0) {
+		/* B1d with the data mode parameters, from cleared
+		   scrambler, signs and shaping filter */
+		v->D = D = v->cp.drn + 20;
+		v90_enc_init(&t->enc, &v->cp, v->D, t->lin);
+	}
+
+	v->fcount++;
+	switch (v->fmode) {
+	case F_TRN:
+		memset(b, 1, D);
+		/* TRN2d: 2160 symbols, then MP */
+		if (v->fcount >= 360) {
+			v->fmode = F_MP;
+			v90_make_mp(v, v->prx.ev_cp);
+		}
+		break;
+	case F_MP:
+		memcpy(b, v->mpb + v->mp_pos, D);
+		v->mp_pos += D;
+		if (v->mp_pos >= v->mp_len) {
+			if (v->mp_ack)
+				v->mp_ack_sent = 1;
+			if (v->mp_ack_sent && (v->prx.ev_cpack || v->prx.ev_e)) {
+				v->fmode = F_ED;
+				v->fcount = 0;
+			} else
+				v90_make_mp(v, v->prx.ev_cp);
+		}
+		break;
+	case F_ED:
+		/* Ed: 2 frames of zeros; the encoder starts again after */
+		memset(b, 0, D);
+		if (v->fcount >= 2) {
+			*last = 1;
+			v->fmode = F_B1;
+			v->fcount = 0;
+		}
+		break;
+	case F_B1:
+		memset(b, 1, D);
+		if (v->fcount >= 48)
+			v->fmode = F_DATA;
+		break;
+	case F_DATA:
+		memset(b, 1, D);
+		modem_get_bits(v->modem, 1, b, D);
+		break;
+	}
+}
+
+/* the upstream data mode, as our MP asked for it */
+static int v90_data_setup(struct v34_dp *v)
+{
+	struct v34_dparm p;
+	int h[6], n, mask = v->cp.rate_mask & 0x1FFF;
+	float gain = v34_rx_precoder(&v->prx, h);
+
+	if (gain < V34_PRECODE_MIN)
+		memset(h, 0, sizeof(h));
+	for (n = v->max_rate_rx; n >= 2; n--)
+		if ((mask >> (n - 2)) & 1 && v34_rates[v->baud_rx][n - 1].b)
+			break;
+	if (n < 2 || v34_data_params(&p, v->baud_rx, n, 1))
+		return -1;
+	p.states = 16 << V34_TRELLIS;
+	v34_data_precode(&p, h);
+	v34_rx_data(&v->prx, &p, v34_put_bits, v);
+	v->up_n = n;
+	v->rate_rx = p.rate;
+	v->rate_tx = (v->cp.drn + 20) * 8000 / 6;
+	DSP_DBG("v34: V.90 rates: down %d, up %d\n", v->rate_tx, v->rate_rx);
 	return 0;
 }
 
@@ -1349,16 +1473,7 @@ static int v34_data_setup(struct v34_dp *v)
 	return 0;
 }
 
-/* the trellis code we ask the remote to send: 0, 1, 2 for 16, 32, 64
-   states */
-#ifndef V34_TRELLIS
-#define V34_TRELLIS 2
-#endif
 
-/* the least gain, in dB, for which we ask for precoding */
-#ifndef V34_PRECODE_MIN
-#define V34_PRECODE_MIN 1.0f
-#endif
 
 static void v34_mp_start(struct v34_dp *v)
 {
@@ -1816,8 +1931,51 @@ static int v34_handshake(struct v34_dp *v)
 			v34_set_state(v, P4D_START);
 		break;
 	case P4D_START:
-		DSP_DBG("v34: V.90 phase 4\n");
-		return DPSTAT_ERROR;    /* XXX */
+		/* Ri until CPt */
+		v90_tx_segment(&v->v90tx, V90_RI);
+		v34_set_state(v, P4D_RI);
+		break;
+	case P4D_RI:
+		if (v->prx.ev_cpt && v->v90tx.n >= 192 && !v->v90tx.ri_end) {
+			v90_cp_parse(&v->cpt, v->prx.cpraw,
+				     v90_cp_length(v->prx.cpraw, 129));
+			v->D = v->cpt.drn + 8;
+			if (v90_enc_init(&v->v90tx.enc, &v->cpt, v->D,
+					 v->v90tx.lin)) {
+				DSP_DBG("v34: V.90 CPt does not fit\n");
+				return DPSTAT_ERROR;
+			}
+			v->v90tx.get_frame = v90_get_frame;
+			v->v90tx.ctx = v;
+			v->fmode = F_TRN;
+			v->fcount = 0;
+			v->mp_ack_sent = 0;
+			v90_tx_ri_end(&v->v90tx);
+			DSP_DBG("v34: V.90 CPt: D %d, K %d, M %d %d %d %d %d "
+				"%d, Sr %d, ld %d\n", v->D, v->v90tx.enc.K,
+				v->v90tx.enc.M[0], v->v90tx.enc.M[1],
+				v->v90tx.enc.M[2], v->v90tx.enc.M[3],
+				v->v90tx.enc.M[4], v->v90tx.enc.M[5],
+				v->cpt.sr, v->cpt.ld);
+			v34_set_state(v, P4D_TRAIN);
+		}
+		break;
+	case P4D_TRAIN:
+		if (v->prx.ev_cp && !v->up_n) {
+			v90_cp_parse(&v->cp, v->prx.cpraw,
+				     v90_cp_length(v->prx.cpraw, 129));
+			if (v90_data_setup(v))
+				return v34_fallback(v, "no common upstream rate");
+		}
+		if (v->fmode == F_DATA && v->prx.ev_e) {
+			v34_set_state(v, V34_DATA);
+			modem_set_param(v->modem, MDMPRM_TX_RATE, v->rate_tx);
+			modem_set_param(v->modem, MDMPRM_RX_RATE, v->rate_rx);
+			DSP_DBG("v34: V.90 connect %d/%d\n", v->rate_tx,
+				v->rate_rx);
+			return DPSTAT_CONNECT;
+		}
+		break;
 
 	/* phase 4, both */
 	case P4_MP:
@@ -1978,6 +2136,9 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	v->dp.id = id;
 	/* a V.90 digital modem needs the 8000 Hz G.711 network */
 	v->v90 = (id == DP_V90 || id == DP_V92) && v->line_rate == 8000;
+	/* the G.711 law of the network (D-Modem knows it from the codec of
+	   the call) */
+	v->alaw = getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
 	v->dp.modem = m;
 	v->dp.op = op;
 	v->dp.dp_data = v;

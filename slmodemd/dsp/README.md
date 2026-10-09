@@ -28,10 +28,12 @@ against it unchanged:
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | Full S1 handshake, falls back to V.22 |
 | 32 | ITU V.32, 4800/9600 bit/s | Uncoded 4800, trellis coded 9600, echo canceller |
 | 132 | ITU V.32bis, 4800 to 14400 bit/s | Rate chosen from the measured training quality |
-| 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. V.90 and V.92 are not implemented and run as V.34 |
+| 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s; V.90 as the digital modem | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. With 90 or 92 on an 8000 Hz G.711 line: V.90 as the digital modem, 28000 to 56000 bit/s downstream (see [V.90](#v90-digital-modem)) |
 
-V.90, V.92, K56flex and V.8bis are **not** reimplemented. With the default
-`AT+MS=92` the modem connects at V.34 or lower.
+V.90 is there as the **digital** modem only (the server side, as on a
+G.711 VoIP line); the analogue side of V.90, V.92, K56flex and V.8bis are
+not. With the default `AT+MS=92` at 9600 Hz the modem connects at V.34 or
+lower.
 
 The V.22/V.22bis constellation, quadrant coding and phase tables come from
 the original library's `SMCv22_*` and `DECv22_*` tables, and the V.32bis
@@ -116,6 +118,35 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
 Not implemented: non-linear encoding, pre-emphasis, the auxiliary
 channel, rate renegotiation and retrains.
 
+### V.90 digital modem
+
+`v90.c` is the digital modem's PCM transmitter, `dp_v34.c` runs its
+start-up on top of the V.34 pump. The modem has to run at 8000 Hz on a
+G.711 network (`MODEM_RATE=8000`): the pump sends exact codewords, as
+their linear values, that the network's encoder passes on unchanged. The
+law is mu-law, or A-law with `DSP_G711=alaw`.
+
+- **Phases 1 and 2:** PCM availability (digital) in CM or JM, then the
+  part of the V.34 call modem whichever side called: INFO0d, tone B,
+  probing, INFO1d; INFO1a asks for V.90 (symbol rate 6, UINFO) or V.34.
+- **Phase 3:** the analogue modem's S, PP, TRN and Ja (with the DIL
+  descriptor) go into the V.34 receiver; Sd, TRN1d, Jd, Jd' and the DIL
+  it asked for come out as PCM.
+- **Phase 4:** CPt, CP and E come in; Ri, TRN2d, MP, Ed and B1d go out
+  through the encoder with the CPt and then the CP constellations.
+- **Data mode:** the encoder of 5.4/V.90: modulus encoder, mappers, sign
+  coding and the spectral shaper with its look-ahead (the exact choice of
+  5.4.5.5: the analogue modem checks TRN2d against it). Upstream is the
+  V.34 data mode receiver, with the trellis code and precoding our MP asks
+  for.
+
+The original library, as an analogue V.90 modem calling through the
+simulated network (`make -C dsp/test v90_interop`), connects at 56000
+bit/s downstream and 31200 upstream, mu-law and A-law. Its own debug
+output (its `edprintf` lines are hidden behind a key) helped: it reports
+the levels it measures in the DIL, the digital pad it concludes and why
+it retrains.
+
 ### Fax (class 1)
 
 `fax_class1.c` implements the T.31 class 1 commands on top of the
@@ -195,6 +226,13 @@ directions. Results at the time of writing:
 | 103 (Bell 103) | CONNECT 300 | CONNECT 300 |
 | 23 (V.23) | CONNECT 1200 | CONNECT 1200 |
 | 21 (V.21) | CONNECT 300 | fails: the original V.21 answerer only sends 2225 Hz and does not connect to itself either |
+
+`NET=<rate A>:<rate B>:<ulaw|alaw>` puts `netsim`, a simulated G.711
+network, between the two: each direction goes through the law at 8000 Hz,
+and to a modem at 9600 Hz through a converter that acts like a codec on
+an analogue line (a raised cosine at 4000 Hz, so that PCM samples stay
+free of intersymbol interference). `half_blob8`/`half_open8` are the
+modems at 8000 Hz (the original library does not work at 8000 Hz).
 
 `fax_interop` does the same with `AT+FCLASS=1`. `fax_interop.py` plays
 the T.30 side of both fax machines: CSI/DIS, DCS, TCF, CFR, one page (for

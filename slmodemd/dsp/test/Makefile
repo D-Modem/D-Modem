@@ -63,6 +63,12 @@ half_open: modem_half.c $(CORE) $(SRCS)
 netsim: netsim.c ../dsp_util.c ../dsp.h
 	$(CC) $(CFLAGS) -o $@ netsim.c ../dsp_util.c -lm
 
+# V.90: the original library (analogue modem) calls the open one
+# (digital modem, 8000 Hz) through the simulated G.711 network
+v90_interop: half_blob half_open8 netsim
+	NET=9600:8000:ulaw ./interop.py ./half_blob ./half_open8 "ATX3;AT+MS=90"
+	DSP_G711=alaw NET=9600:8000:alaw ./interop.py ./half_blob ./half_open8 "ATX3;AT+MS=90"
+
 # the same at 8000 Hz (the G.711 network's rate)
 half_blob8: modem_half.c $(CORE) ../../dsplibs.o
 	$(CC) $(HALF_CFLAGS) -DMODEM_RATE=8000 -o $@ modem_half.c $(CORE) ../../dsplibs.o
