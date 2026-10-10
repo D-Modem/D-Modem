@@ -5,10 +5,11 @@
 # tests (../dsp/test).
 
 set(DMODEM_CORE_SRCS
-	modem.cpp modem_datafile.cpp modem_at.cpp modem_timer.cpp modem_pack.cpp
-	modem_ec.cpp modem_comp.cpp modem_param.cpp modem_debug.cpp homolog_data.cpp
-	sysdep_common.cpp)
+	modem.cpp modem_datafile.cpp modem_at.cpp modem_timer.cpp
+	modem_param.cpp modem_debug.cpp homolog_data.cpp sysdep_common.cpp)
 list(TRANSFORM DMODEM_CORE_SRCS PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
+# the data link layer (../link) comes with the core
+list(APPEND DMODEM_CORE_SRCS ${DMODEM_LINK_SRCS})
 # for the test programs in ../dsp/test
 set(DMODEM_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
 set(DMODEM_CORE_SRCS ${DMODEM_CORE_SRCS} PARENT_SCOPE)
@@ -19,7 +20,7 @@ if(DMODEM_SLMODEMD)
 	add_executable(slmodemd modem_main.cpp modem_cmdline.cpp sip.cpp
 		${DMODEM_CORE_SRCS} ${DMODEM_DSP_SRCS})
 	target_include_directories(slmodemd PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-		${DMODEM_DSP_DIR})
+		${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR})
 	target_compile_definitions(slmodemd PRIVATE CONFIG_DEBUG_MODEM
 		MODEM_RATE=8000)
 	target_compile_options(slmodemd PRIVATE -Wall -g -O2)
@@ -31,7 +32,7 @@ endif()
 add_executable(modem_test modem_test.cpp modem_cmdline.cpp
 	${DMODEM_CORE_SRCS} ${DMODEM_DSP_SRCS})
 target_include_directories(modem_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-	${DMODEM_DSP_DIR})
+	${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR})
 target_compile_definitions(modem_test PRIVATE CONFIG_DEBUG_MODEM)
 target_compile_options(modem_test PRIVATE -Wall -g -O)
 target_link_libraries(modem_test PRIVATE m pthread)
@@ -43,7 +44,7 @@ add_library(dmodem STATIC
 	${_lib_core} dmodem.cpp dmodem_timer.cpp dmodem_fax.cpp
 	${DMODEM_T30_SRCS} ${DMODEM_DSP_SRCS})
 target_include_directories(dmodem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-	PRIVATE ${DMODEM_DSP_DIR})
+	PRIVATE ${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR})
 target_compile_definitions(dmodem PRIVATE CONFIG_DEBUG_MODEM MODEM_RATE=8000)
 target_compile_options(dmodem PRIVATE -Wall -g -O2)
 set_target_properties(dmodem PROPERTIES POSITION_INDEPENDENT_CODE ON)

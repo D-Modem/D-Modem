@@ -1,0 +1,155 @@
+/*
+ *
+ *    link.h - the data link layer of the modem: what goes on between the
+ *             DTE's characters and the data pump's bits
+ *
+ *    After the data pump connects, Link runs the V.42 detection phase
+ *    (ODP/ADP, or the HDLC flags of a modem that skips it), then either
+ *    V.42 LAPM error correction over HDLC frames, with V.42bis
+ *    compression when both modems agree on it, or plain asynchronous
+ *    characters (start bit, 8 data bits, stop bit).
+ *
+ *    The modem core is the Owner: it gives and takes the DTE's
+ *    characters, hears of the link's progress and gets its log lines.
+ *    The data pump calls get_bits() and put_bits().
+ *
+ *    The protocol code is Smart Link's slmodemd link layer (modem_pack,
+ *    modem_ec, modem_comp) as classes, with the same behaviour on the
+ *    line.
+ *
+ */
+
+#ifndef DMODEM_LINK_H
+#define DMODEM_LINK_H
+
+#include <stdint.h>
+
+#include "hdlc.h"
+#include "lapm.h"
+#include "v42bis.h"
+
+namespace dlink {
+
+/* what the link negotiates and what it is asked for */
+struct Config {
+	bool ec = false;                /* V.42 LAPM */
+	bool detect = false;            /* the V.42 detection phase */
+	int tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
+	int tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
+	int comp = 0;                   /* V.42bis: bit 0 decoder (what we
+					   receive), bit 1 encoder */
+	int dict_size = V42BIS_MAX_CODEWORDS;
+	int max_string = V42BIS_MAX_STRING;
+};
+
+enum class Status {
+	Detected,       /* the detection phase is over: LAPM or not (ec()) */
+	Up,             /* data can flow (LAPM connected, or async) */
+	Released,       /* LAPM disconnected */
+	Error,          /* LAPM or V.42bis failed */
+};
+
+class Owner {
+public:
+	/* the DTE's characters to send; 0 if none */
+	virtual int read_chars(uint8_t *buf, int n) = 0;
+	/* received characters for the DTE; returns how many it took */
+	virtual int write_chars(const uint8_t *buf, int n) = 0;
+	virtual void status(Status s) = 0;
+	/* the data pump's transmit rate (bit timers), 0 if not known */
+	virtual int tx_rate() { return 0; }
+	/* parameters agreed in an XID exchange */
+	virtual void negotiated(const Config &cfg) { (void)cfg; }
+	/* one line of debug output (without the modem's name) */
+	virtual void log(const char *line) { (void)line; }
+protected:
+	~Owner() = default;
+};
+
+class Link {
+public:
+	Link() = default;
+	~Link();
+	Link(const Link &) = delete;
+	Link &operator=(const Link &) = delete;
+
+	/* a call: allocate what cfg needs (V.42bis dictionaries); -1 on
+	   failure */
+	int init(Owner *owner, bool caller, const Config &cfg);
+	/* the end of the call */
+	void exit();
+
+	/* the data pump has connected: the detection phase (detect), then
+	   LAPM (ec, and the detection did not rule it out) or async */
+	void start(bool ec, bool detect);
+	/* we hang up: LAPM sends DISC */
+	void disconnect();
+	/* the data pump is not there (any more): marks out, nothing in */
+	void stop();
+	/* characters flow only while online (the DTE is in data mode) */
+	void set_online(bool on) { online_ = on; }
+
+	/* the data pump's bits: nbits bits in each byte of buf */
+	int get_bits(int nbits, uint8_t *buf, int n);
+	int put_bits(int nbits, const uint8_t *buf, int n);
+
+	const Config &config() const { return cfg_; }
+	bool ec() const { return cfg_.ec; }
+	/* V.42 frames not sent yet or not acknowledged */
+	bool tx_pending() const { return mode_ == Mode::Lapm &&
+						lapm_.tx_pending(); }
+	int tx_rate() const { return owner_->tx_rate(); }
+
+	/* for the parts */
+	void logf(const char *fmt, ...)
+		__attribute__ ((format (printf, 2, 3)));
+	void status(Status s);
+	void set_timer(long bits, void (*fn)(Link *)) {
+		timer_ = bits;
+		timer_fn_ = fn;
+	}
+	long timer() const { return timer_; }
+	void (*timer_fn() const)(Link *) { return timer_fn_; }
+	bool caller() const { return caller_; }
+	Config &cfg() { return cfg_; }
+	/* characters between the DTE and LAPM or the async framer,
+	   through V.42bis when it is on in that direction */
+	int read_chars(uint8_t *buf, int n);
+	int write_chars(const uint8_t *buf, int n);
+	/* LAPM's XID: what the remote wants (Config's V.42bis part) */
+	void update_config(const Config &remote);
+	/* LAPM keeps characters the DTE did not take; push them on */
+	bool push_pending = false;
+
+private:
+	enum class Mode { Idle, Detect, Lapm, Async };
+	void detected(bool ec);
+	int comp_read(uint8_t *buf, int n);
+	int comp_write(const uint8_t *buf, int n);
+	bool comp_flush_output();
+
+	Owner *owner_ = nullptr;
+	bool caller_ = false;
+	bool online_ = false;
+	Config cfg_;
+	Mode mode_ = Mode::Idle;
+	long timer_ = 0;
+	void (*timer_fn_)(Link *) = nullptr;
+
+	Detector det_;
+	Hdlc hdlc_;
+	Async async_;
+	Lapm lapm_;
+	V42bis enc_, dec_;
+	bool comp_ready_ = false;
+	/* decoded characters the DTE has not taken yet */
+	uint8_t dec_out_[256];
+	int dec_head_ = 0, dec_count_ = 0;
+
+	friend class Lapm;
+	friend class Detector;
+};
+
+} // namespace dlink
+
+#endif

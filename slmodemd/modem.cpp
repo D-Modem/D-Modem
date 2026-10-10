@@ -53,6 +53,7 @@
 #include <modem.h>
 #include <modem_debug.h>
 #include <dsplibs.h>
+#include <link.h>
 
 /* not in the original dsplibs.o (the interop tests link it) */
 extern "C" int dp_runtime_pcm(void *runtime) __attribute__((weak));
@@ -86,14 +87,49 @@ static int modem_stop (struct modem *);
 static struct dp_operations *get_dp_operations(enum DP_ID id);
 static int modem_get_chars(struct modem *m, char *buf, int n);
 static int modem_put_chars(struct modem *m, const char *buf, int n);
-static int modem_comp_get_chars(struct modem *m, char *buf, int n);
-static int modem_comp_put_chars(struct modem *m, const char *buf, int n);
 #ifdef MODEM_CONFIG_CID
 static int  modem_cid_start(struct modem *, unsigned timeout);
 #endif
 #ifdef MODEM_CONFIG_FAX
 static int modem_fax_start(struct modem *m);
 #endif
+
+/* the core's side of the data link layer: the DTE's characters, and
+   the link's progress as modem status */
+struct core_link final : public dlink::Owner {
+	struct modem *m;
+	int read_chars(uint8_t *buf, int n) override {
+		return modem_get_chars(m, (char *)buf, n);
+	}
+	int write_chars(const uint8_t *buf, int n) override {
+		return modem_put_chars(m, (const char *)buf, n);
+	}
+	void status(dlink::Status s) override {
+		switch (s) {
+		case dlink::Status::Detected:
+			modem_update_status(m, STATUS_PACK_LINK);
+			break;
+		case dlink::Status::Up:
+			modem_update_status(m, STATUS_EC_LINK);
+			break;
+		case dlink::Status::Released:
+			modem_update_status(m, STATUS_EC_RELEASE);
+			break;
+		case dlink::Status::Error:
+			modem_update_status(m, STATUS_EC_ERROR);
+			break;
+		}
+	}
+	int tx_rate() override { return (int)m->tx_rate; }
+	void negotiated(const dlink::Config &c) override {
+		m->cfg.comp = (u8)c.comp;
+		m->cfg.comp_dict_size = c.dict_size;
+		m->cfg.comp_max_string = c.max_string;
+	}
+	void log(const char *line) override {
+		dprintf("%s: %s\n", m->name, line);
+	}
+};
 
 /* global config data */
 const char *modem_default_country = NULL;
@@ -334,51 +370,39 @@ static int modem_set_state(struct modem *m, unsigned new_state)
 	case STATE_MODEM_IDLE:
 		MODEM_DBG("new state: MODEM_IDLE\n");
 		m->command = 1;
-		m->get_chars = 0;
-		m->put_chars = 0;
-		m->get_bits  = 0;
-		m->put_bits  = 0;
+		m->link->set_online(false);
+		m->link->stop();
 		break;
 	case STATE_DP_ESTAB:
 		MODEM_DBG("new state: DP_ESTAB\n");
 		m->command = 0;
-		m->get_chars = 0;
-		m->put_chars = 0;
-		m->get_bits  = 0;
-		m->put_bits  = 0;
+		m->link->set_online(false);
+		m->link->stop();
 		break;
 	case STATE_EC_ESTAB:
 		MODEM_DBG("new state: EC_ESTAB\n");
 		m->command = 0;
-		m->get_chars = 0;
-		m->put_chars = 0;
+		m->link->set_online(false);
 		break;
 	case STATE_MODEM_ONLINE:
 		MODEM_DBG("new state: MODEM_ONLINE\n");
 		m->command = 0;
-		m->put_chars = (m->cfg.ec && m->cfg.comp&0x1)
-			? modem_comp_put_chars : modem_put_chars;
-		m->get_chars = (m->cfg.ec && m->cfg.comp&0x2)
-			? modem_comp_get_chars : modem_get_chars;
+		m->link->set_online(true);
 		m->modem_info |= TIOCM_CD;
 		break;
 	case STATE_COMMAND_ONLINE:
 		MODEM_DBG("new state: COMMAND_ONLINE\n");
 		m->command = 1;
-		m->get_chars = 0;
-		m->put_chars = 0;
+		m->link->set_online(false);
 		break;
 	case STATE_EC_DISC:
 		MODEM_DBG("new state: EC_DISC\n");
-		m->get_chars = 0;
-		m->put_chars = 0;
+		m->link->set_online(false);
 		break;
 	case STATE_DP_DISC:
 		MODEM_DBG("new state: DP_DISC\n");
-		m->get_chars = 0;
-		m->put_chars = 0;
-		m->get_bits  = 0;
-		m->put_bits  = 0;
+		m->link->set_online(false);
+		m->link->stop();
 		break;
 	default:
 		MODEM_ERR("invalid state: %d\n", new_state);
@@ -417,7 +441,7 @@ static void modem_hup(struct modem *m, unsigned local)
 	case STATE_MODEM_ONLINE:
 	case STATE_COMMAND_ONLINE:
 		if(local && m->cfg.ec) {
-			modem_ec_stop(m);
+			m->link->disconnect();
 			modem_set_state(m,STATE_EC_DISC);
 		}
 		else {
@@ -463,33 +487,14 @@ void modem_update_status(struct modem *m, unsigned status)
 		if(NONEC_DP(m->dp->id))
 			m->cfg.ec = 0;
 		modem_set_state(m,STATE_EC_ESTAB);
-		/* start packer */
-		if(m->cfg.ec && m->cfg.ec_detector &&
-		   !QC_SKIP_EC_DETECTION(m) ) {
-			modem_detector_start(m);
-			m->get_bits = modem_detector_get_bits;
-			m->put_bits = modem_detector_put_bits;
-		}
-		else {  /* skip pack connect phase */
-			modem_update_status(m,STATUS_PACK_LINK);
-		}
+		/* the V.42 detection phase, then LAPM or async */
+		m->link->start(m->cfg.ec, m->cfg.ec_detector &&
+			       !QC_SKIP_EC_DETECTION(m));
 		break;
 	case STATUS_PACK_LINK:
+		/* LAPM or not: the link goes on by itself */
+		m->cfg.ec = m->link->ec();
 		MODEM_DBG("--> PACK LINK\n");
-		if(m->cfg.ec) {
-			/* start EC */
-			modem_hdlc_start(m);
-			m->get_bits = modem_hdlc_get_bits;
-			m->put_bits = modem_hdlc_put_bits;
-			modem_ec_start(m);
-		}
-		else {
-			/* start async, pass EC connect phase */
-			modem_async_start(m);
-			m->get_bits = modem_async_get_bits;
-			m->put_bits = modem_async_put_bits;
-			modem_update_status(m,STATUS_EC_LINK);
-		}
 		break;
 	/* case STATUS_CONNECT: */
 	case STATUS_EC_LINK:
@@ -528,41 +533,6 @@ void modem_update_status(struct modem *m, unsigned status)
 
 
 
-void modem_update_config(struct modem *m, struct modem_config *cfg)
-{
-	MODEM_DBG("modem update config...\n");
-#if 1
-#define PRINT_CONFIG(prm) MODEM_DBG(#prm " = %d (%d)\n",cfg->prm,m->cfg.prm)
-	PRINT_CONFIG(ec);
-	PRINT_CONFIG(ec_detector);
-	PRINT_CONFIG(ec_tx_win_size);
-	PRINT_CONFIG(ec_rx_win_size);
-	PRINT_CONFIG(ec_tx_info_size);
-	PRINT_CONFIG(ec_rx_info_size);
-	PRINT_CONFIG(comp);
-	PRINT_CONFIG(comp_dict_size);
-	PRINT_CONFIG(comp_max_string);
-#endif
-	// FIXME, FIXME, FIXME !!!
-#if 0	
-	if(cfg->ec) ; /* TBD: now ec reconfig is handled internally in EC */
-#endif
-	if(cfg->comp && m->cfg.comp) {
-		m->cfg.comp = cfg->comp;
-		if(!modem_comp_config(m,cfg->comp_dict_size,
-				      cfg->comp_max_string)) {
-			m->cfg.comp_dict_size  = cfg->comp_dict_size;
-			m->cfg.comp_max_string = cfg->comp_max_string;
-		}
-		else { /* config failed */
-			; /* TBD: probably try to renegotiate */
-		}
-	}
-	else
-		m->cfg.comp = 0;
-}
-
-
 /*
  *    Interrupt handlers and services
  *
@@ -571,27 +541,15 @@ void modem_update_config(struct modem *m, struct modem_config *cfg)
 /* get/put bits */
 int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
-	if(m->get_bits)
-		n = m->get_bits(m,nbits,buf,n);
-	else
-		memset(buf,0xff,n);
+	n = m->link->get_bits(nbits, buf, n);
 	modem_debug_log_data(m,MODEM_DBG_TX_BITS,buf,n);
-	/* process bit timer and packer */
-	if (m->bit_timer && (m->bit_timer -= nbits*n) <= 0) {
-		m->bit_timer = 0;
-		m->bit_timer_func(m);
-	}
-	// FIXME NOW: remove packer_process from modem to EC
-	if(m->packer_process)
-		m->packer_process(m,nbits*n);
 	return n;
 }
 
 int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
-	if(m->put_bits)
-		n = m->put_bits(m,nbits,buf,n);
-	modem_debug_log_data(m,MODEM_DBG_RX_BITS,buf,n);	
+	n = m->link->put_bits(nbits, buf, n);
+	modem_debug_log_data(m,MODEM_DBG_RX_BITS,buf,n);
 	return n;
 }
 
@@ -940,83 +898,6 @@ static int modem_put_chars(struct modem *m, const char *buf, int n)
 	return ret;
 }
 
-/* compressor get/put chars */
-/* fixme: unify interfaces: modem tx -> comp -> ec -> hdlc -->
-                            modem tx -> ec -> hdlc         -->
-                            modem tx -> async              -->
-			    modem tx --> raw output
-*/
-static int modem_comp_get_chars(struct modem *m, char *buf, int n)
-{
-	int ret = 0, cnt;
-	char ch;
-	while(ret < n) {
-		cnt = modem_get_chars(m,&ch,1);
-		if(cnt <= 0)
-			break;
-		cnt = modem_comp_encode(m,ch,buf+ret,n-ret);
-		if(cnt < 0) {
-			break;
-		}
-		ret += cnt;
-	}
-	if(ret < n) {
-		cnt =  modem_comp_flush_encoder(m,buf+ret,n-ret);
-		ret += cnt;
-	}
-	if(ret > 0) {
-		//MODEM_DBG("modem_comp_get_chars: %d(%d)...\n",ret,count);
-		modem_debug_log_data(m,MODEM_DBG_TX_DATA,buf,ret);
-	}
-	return ret;
-}
-
-static int comp_send_output(struct modem *m)
-{
-	int cnt;
-	if(m->comp.count > 0) {
-		cnt = modem_put_chars(m,m->comp.buf+m->comp.head,m->comp.count);
-		m->comp.count -= cnt;
-		m->comp.head += cnt;
-		if(m->comp.count > 0)
-			return 0;
-		else
-			m->comp.head = 0;
-	}
-	return 1;
-}
-
-static int modem_comp_put_chars(struct modem *m, const char *buf, int n)
-{
-	int i=0, cnt;
-	if(!comp_send_output(m))
-		return 0;
-	while(i<n) {
-		cnt = modem_comp_decode(m,buf[i++],m->comp.buf,sizeof(m->comp.buf));
-		if(cnt < 0) {
-			MODEM_DBG("decoder error. %d(%d)\n",i,n);
-			modem_update_status(m,STATUS_ERROR);
-			break;
-		}
-		m->comp.count += cnt;
-		if(!comp_send_output(m))
-			break;
-	}
-	if(i==n) {
-		cnt = modem_comp_flush_decoder(m,m->comp.buf,sizeof(m->comp.buf));
-		m->comp.count += cnt;
-		comp_send_output(m);
-	}
-	if(i>0) {
-		//MODEM_DBG("modem_comp_put_chars: %d...\n",i);
-		modem_debug_log_data(m,MODEM_DBG_RX_DATA,buf,i);
-	}
-	return i;
-}
-
-
-
-
 /*
  *    internal procedures
  *
@@ -1093,16 +974,16 @@ static void modem_setup_config(struct modem *m)
 {
 	m->cfg.ec = MODEM_EC_ENABLE(m);
 	m->cfg.ec_detector = MODEM_EC_DETECTOR(m);
-	m->cfg.ec_tx_win_size  = LAPM_MAX_WIN_SIZE;
-	m->cfg.ec_rx_win_size  = LAPM_MAX_WIN_SIZE;
-	m->cfg.ec_tx_info_size = LAPM_MAX_INFO_SIZE;
-	m->cfg.ec_rx_info_size = LAPM_MAX_INFO_SIZE;
+	m->cfg.ec_tx_win_size  = dlink::LAPM_MAX_WIN;
+	m->cfg.ec_rx_win_size  = dlink::LAPM_MAX_WIN;
+	m->cfg.ec_tx_info_size = dlink::LAPM_MAX_INFO;
+	m->cfg.ec_rx_info_size = dlink::LAPM_MAX_INFO;
 	if(m->cfg.ec && MODEM_COMP_ENABLE(m))
 		m->cfg.comp = 0x3; /* bi-directional v42bis */
 	else
 		m->cfg.comp = 0;
-	m->cfg.comp_dict_size  = COMP_MAX_CODEWORDS;
-	m->cfg.comp_max_string = COMP_MAX_STRING;
+	m->cfg.comp_dict_size  = dlink::V42BIS_MAX_CODEWORDS;
+	m->cfg.comp_max_string = dlink::V42BIS_MAX_STRING;
 
 	/* setup dsp data */
 	m->dsp_info.qc_lapm = m->cfg.ec && m->cfg.ec_detector ;
@@ -1147,12 +1028,20 @@ static int modem_start (struct modem *m)
 		goto error;
 	}
 
-	if ( m->cfg.ec && m->cfg.comp &&
-	     (ret = modem_comp_init(m)) )
-		goto error;
-	if ( m->cfg.ec &&
-	     (ret = modem_ec_init(m)))
-		goto error;
+	{
+		dlink::Config c;
+		c.ec = m->cfg.ec;
+		c.detect = m->cfg.ec_detector;
+		c.tx_win = m->cfg.ec_tx_win_size;
+		c.rx_win = m->cfg.ec_rx_win_size;
+		c.tx_info = m->cfg.ec_tx_info_size;
+		c.rx_info = m->cfg.ec_rx_info_size;
+		c.comp = m->cfg.comp;
+		c.dict_size = m->cfg.comp_dict_size;
+		c.max_string = m->cfg.comp_max_string;
+		if ((ret = m->link->init(m->link_owner, m->caller, c)))
+			goto error;
+	}
 
 	/* clear rings and all events */
 	TOTAL_RINGS_COUNT(m) = 0;
@@ -1192,9 +1081,7 @@ static int modem_stop (struct modem *m)
 	m->caller = 0;
 	m->command = 1;
 
-	// FIXME: If ec,comp were allocated handled inside _exit() - improve?
-	modem_ec_exit(m);
-	modem_comp_exit(m);
+	m->link->exit();
 
         if (m->dp) {
                 struct dp *dp;
@@ -1958,8 +1845,13 @@ struct modem *modem_create(struct modem_driver *drv, const char *name)
         m->dp = NULL;
 
 	MODEM_DBG("startup modem...\n");
+	m->link = new dlink::Link();
+	m->link_owner = new core_link();
+	m->link_owner->m = m;
 	m->xmit.buf = static_cast<unsigned char*>(malloc(XMIT_SIZE));
 	if ( !m->xmit.buf ) {
+		delete m->link;
+		delete m->link_owner;
 		free(m);
 		return NULL;
 	}
@@ -1991,6 +1883,8 @@ void modem_delete(struct modem *m)
 	m->xmit.buf = 0;
 
 	timer_del(&m->event_timer);
+	delete m->link;
+	delete m->link_owner;
 	free(m);
 }
 

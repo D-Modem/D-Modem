@@ -127,141 +127,9 @@ struct dp_driver {
 };
 
 
-/*
- *
- *    compressor definitions
- *
- */
-
-#define COMP_MAX_CODEWORDS 2048  /* dictionary size   */
-#define COMP_MAX_STRING    34    /* max string length */
-
-/* encoder and decoder states */
-enum COMP_MODE {TRANSPARENT,COMPRESSED};
-struct dict {
-	u8  ch;
-	u16 parent;
-	u16 child;
-	u16 next;
-};
-struct comp_state {
-	const char *name;
-	enum COMP_MODE mode;
-	int escape;        /* escape state: decoder only */
-	u16 update_at;     /* update dict. at node  */
-	u16 next_free;     /* next free dict entry */
-	u16 last_matched;  /* last matched dict entry */
-	u16 last_added;    /* last added dict entry */
-	u16 cw_size;       /* cw size */
-	u16 threshold;     /* cw size threshold */
-	u8  escape_char;   /* escape char value */
-	int max_string;    /* max string length */
-	int dict_size;     /* dictionary size */
-	struct dict *dict; /* dictionary */
-	/* fixme: union may be used? */
-	int bit_len;
-	u32 bit_data;
-	int flushed_len;   /* string length already sent */
-	int str_len;       /* string length */
-	u8  str_data[COMP_MAX_STRING];
-	/* test statistics info : encoder only */
-	u16 cmp_last; /* compressed bits per last TEST_SLICE chars */
-	u32 cmp_bits; /* total compressed bits */
-	u32 raw_bits; /* total non-compressed bits */
-	/* temporary */
-	int  olen;
-	int  ohead;
-	char obuf[1024];
-};
-
-
-extern int  modem_comp_init(struct modem *m);
-extern int  modem_comp_config(struct modem *m, int dict_size, int max_str);
-extern void modem_comp_exit(struct modem *m);
-
-extern int  modem_comp_encode(struct modem *m, u8 ch, char *buf, int n);
-extern int  modem_comp_decode(struct modem *m, u8 ch, char *buf, int n);
-extern int  modem_comp_flush_encoder(struct modem *m, char *buf, int n);
-extern int  modem_comp_flush_decoder(struct modem *m, char *buf, int n);
-
-/*
- *
- *    HDLC definitions
- *
- */
-
-typedef struct hdlc_frame {
-	struct hdlc_frame *next;
-	int count;
-	int size;
-	//u16 addr;
-	//u16 ctrl;
-	u16 fcs;
-	u8 *buf;
-} frame_t;
-
-
-
-/*
- *    LAPM definitions
- *
- */
-
-#define LAPM_MAX_WIN_SIZE    15  /* max supported winsize  */
-#define LAPM_MAX_INFO_SIZE  128  /* max supported infosize */
-
-#define LAPM_INFO_FRAMES    LAPM_MAX_WIN_SIZE + 1 /* number of info frames */
-#define LAPM_CTRL_FRAMES      8  /* number of ctrl frames */
-
-/* lapm state */
-struct lapm_state {
-        /* modem link */
-        struct modem *modem;
-        int state;
-        /* sub-states: may be optimized */
-        int config;
-        /* those DATA sub-states may be optimized */
-        int reject;
-        int busy;
-        int peer_busy;
-        u8  cmd_addr;
-        u8  rsp_addr;
-        u8 vs;
-        u8 va;
-        u8 vr;
-        int rtx_count; /* retransmission counter () */
-        unsigned int tx_win_size;
-        unsigned int rx_win_size;
-        unsigned int tx_info_size;
-        unsigned int rx_info_size;
-        frame_t *sent_info;
-        frame_t *tx_info;
-        frame_t *info_list;
-        frame_t *tx_ctrl;
-        frame_t *ctrl_list;
-        /* temporary: internal buffs */
-        /* rx buf (used when enter busy state) */
-        int rx_count;
-        int rx_head;
-        u8  rx_buf[LAPM_MAX_INFO_SIZE];
-        /* temporary: frames bufs */
-        struct {
-                frame_t frame;
-                u8 ctrl[4];
-                u8 info[LAPM_MAX_INFO_SIZE];
-        } info_buf[LAPM_INFO_FRAMES];
-        struct {
-                frame_t frame;
-                u8 ctrl[4];
-                u8 info[LAPM_MAX_INFO_SIZE];
-        } ctrl_buf[LAPM_CTRL_FRAMES];
-        /* temporary: debug counters: remove it */
-        int info_count; // debug
-        int tx_count;   // debug
-        int sent_count; // debug
-        int ctrl_count; // debug
-};
-
+/* the data link layer (link/): V.42 detection, LAPM, V.42bis, async */
+namespace dlink { class Link; }
+struct core_link;
 
 /* the parts of struct modem (C++ would nest them in it) */
 struct xmit_queue {
@@ -284,50 +152,6 @@ struct modem_config {
 	u8  comp;
 	int comp_dict_size;
 	int comp_max_string;
-};
-
-struct bits_state {
-	int bit;
-	u32 data;
-};
-
-struct async_state {
-	struct packer *packer;
-	int data_bits;
-	int stop_bits;
-	int parity;
-	int char_size;
-};
-
-struct detect_state {
-	int tx_count;
-	u8 tx_pattern[2];
-	int rx_count;
-	u8 rx_pattern[2];
-	int ec_enable;
-};
-
-struct hdlc_state {
-	struct hdlc_frame *tx_frame;
-	struct hdlc_frame *rx_frame;
-	int rx_error;
-	int rx_ones,tx_ones;
-	/* framer interface */
-	struct hdlc_frame *(*get_tx_frame)(void *framer);
-	void (*tx_complete)(void *framer, frame_t *fr);
-	void (*rx_complete)(void *framer, frame_t *fr);
-	void *framer;
-	/* temporary: internal bufs */
-	struct hdlc_frame _rx_frame;
-	u8 _rx_buf[512];
-};
-
-struct comp_struct {
-	// fixme: redo interface
-	int head,count;
-	char buf[256];
-	struct comp_state encoder;
-	struct comp_state decoder;
 };
 
 /* modem struct */
@@ -384,28 +208,9 @@ struct modem {
 	struct xmit_queue xmit;
 	/* run time configuration */
 	struct modem_config cfg;
-        /* modem packer */
-        int (*get_chars)(struct modem *m, char *buf, int n);
-        int (*put_chars)(struct modem *m, const char *buf, int n);
-	//int tx_window;
-	//int rx_window;
-	int bit_timer;
-	void (*bit_timer_func)(struct modem *m);
-	void (*packer_process)(struct modem *m, int bits);
-	struct bits_state pack,unpack;
-        int (*get_bits)(struct modem *m, int nbits, u8 *buf, int n);
-        int (*put_bits)(struct modem *m, int nbits, u8 *buf, int n);
-	union packer_union {
-		struct async_state async;
-		struct detect_state detector;
-		struct hdlc_state hdlc;
-	} packer;
-	/* error corrector */
-	union {
-		struct lapm_state lapm;
-	} ec;
-	/* compressor */
-	struct comp_struct comp;
+	/* the data link layer and the core's side of it */
+	dlink::Link *link;
+	struct core_link *link_owner;
         /* modem data pump interface */
         unsigned srate;
         unsigned format;
@@ -456,25 +261,8 @@ extern void modem_ring_signal(struct modem *m, int on);
 extern void modem_event  (struct modem *m);
 extern void modem_process(struct modem *m,void *in,void *out,int cnt);
 
-/* packers && EC */ // FIXME: improve interface
-extern void modem_async_start(struct modem *m);
-extern int  modem_async_get_bits(struct modem *m,int nbits,u8 *buf,int cnt);
-extern int  modem_async_put_bits(struct modem *m,int nbits,u8 *buf,int cnt);
-extern void modem_detector_start(struct modem *m);
-extern int  modem_detector_get_bits(struct modem *m,int nbits,u8 *buf,int cnt);
-extern int  modem_detector_put_bits(struct modem *m,int nbits,u8 *buf,int cnt);
-extern void modem_hdlc_start(struct modem *m);
-extern int  modem_hdlc_get_bits(struct modem *m,int nbits,u8 *buf,int cnt);
-extern int  modem_hdlc_put_bits(struct modem *m,int nbits,u8 *buf,int cnt);
-
-extern int  modem_ec_init(struct modem *m);
-extern void modem_ec_exit(struct modem *m);
-extern void modem_ec_start(struct modem *m);
-extern void modem_ec_stop(struct modem *m);
-
 /* status & config */
 extern void modem_update_status(struct modem *m, unsigned status);
-extern void modem_update_config(struct modem *m, struct modem_config *cfg);
 
 /* modem parameters access macros */
 #define CRLF_CHARS(m)     ((char *)((m)->sregs+SREG_CR_CHAR))
