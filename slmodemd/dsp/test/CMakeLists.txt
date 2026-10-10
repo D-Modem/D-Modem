@@ -170,11 +170,17 @@ endif()
 
 # --- interop: modem_half with the original library and with the open
 #     data pumps (32 bit like the blob), in real time through
-#     interop.py / fax_interop.py, with netsim for the G.711 network
-include(CheckCSourceCompiles)
+#     interop.py / fax_interop.py, with netsim for the G.711 network.
+#     The original library (dsplibs.o here, Smart Link's binary-only
+#     DSP library) is a 32 bit i386 object: -m32 on x86_64.
+set(DMODEM_M32 "")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+	set(DMODEM_M32 -m32)
+endif()
+include(CheckCXXSourceCompiles)
 set(CMAKE_REQUIRED_FLAGS "${DMODEM_M32}")
 set(CMAKE_REQUIRED_LINK_OPTIONS "${DMODEM_M32}")
-check_c_source_compiles("int main(void) { return 0; }" DMODEM_HAVE_M32)
+check_cxx_source_compiles("int main() { return 0; }" DMODEM_HAVE_M32)
 unset(CMAKE_REQUIRED_FLAGS)
 unset(CMAKE_REQUIRED_LINK_OPTIONS)
 if(NOT DMODEM_HAVE_M32 OR
@@ -189,7 +195,7 @@ foreach(_rate 9600 8000)
 			set(_n ${_n}8)
 		endif()
 		if(_kind STREQUAL "blob")
-			set(_d ${C}/dsplibs.o)
+			set(_d ${CMAKE_CURRENT_SOURCE_DIR}/dsplibs.o)
 			set(_l -no-pie -Wl,-z,noexecstack)
 		else()
 			set(_d ${_dsp})

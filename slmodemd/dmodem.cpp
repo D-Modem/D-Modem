@@ -28,7 +28,6 @@
 
 extern int  dp_dummy_init(void);
 extern int  dp_sinus_init(void);
-extern void dp_runtime_set_law(void *runtime, int law);
 extern void dmodem_run_timers(void *owner);
 extern void dmodem_set_time(unsigned long ticks);
 extern int  modem_answer(struct modem *m);

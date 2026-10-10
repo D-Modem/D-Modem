@@ -70,7 +70,6 @@ extern unsigned int modem_debug_logging;
 const char *modem_dev_name = NULL;
 const char *modem_default_dev_name = "/dev/slamr0";
 const char *modem_alsa_dev_name = "modem:1";
-const char *modem_exec = NULL;
 unsigned int modem_listen = 0;
 unsigned int need_realtime = 1;
 #ifdef MODEM_CONFIG_RING_DETECTOR
@@ -98,7 +97,6 @@ enum {
 	OPT_SHORTBUF,
 	OPT_DEBUG,
 	OPT_LOG,
-	OPT_EXEC,
 	OPT_LISTEN,
 	OPT_LAST
 };
@@ -130,8 +128,7 @@ static struct opt {
 	{'s',"shortbuffer","use short buffer (4 periods length)"},
 	{'d',"debug","debug level (developers only, for ./sl...)",OPTIONAL,INTEGER,"0"},
 	{'l',"log","logging mode",OPTIONAL,INTEGER,"5"},
-	{'e',"exec","path to external application that transmits audio over the socket (required)",MANDATORY,STRING,NULL},
-	{'L',"listen","keep the external application running to receive calls (RING, ATA or ATS0=n)"},
+	{'L',"listen","register with the SIP server and take calls in (RING, ATA or ATS0=n)"},
 	{}
 };
 
@@ -156,6 +153,10 @@ static void usage(const char *prog_name)
 		}
 		PR_INFO("\n");
 	}
+	PR_INFO("Environment:\n"
+		"  SIP_LOGIN=user:password@domain   the SIP account (required)\n"
+		"  SIP_PORT=port                    the local SIP port (5060)\n"
+		"  SIP_LOG_LEVEL=n                  pjsip's log level (4)\n");
 	exit(1);
 }
 
@@ -292,11 +293,6 @@ void modem_cmdline(int argc, char *argv[])
 	}
 	if(opt_list[OPT_LISTEN].found)
 		modem_listen = 1;
-	if(opt_list[OPT_EXEC].found) {
-		modem_exec = opt_list[OPT_EXEC].arg_val;
-	} else {
-		usage(prog_name);
-	}
 	if(!modem_dev_name) {
 		modem_dev_name = use_alsa ? modem_alsa_dev_name : modem_default_dev_name;
 	}

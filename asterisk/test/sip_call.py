@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# sip_call.py <slmodemd> <d-modem> <number> [AT commands]: D-Modem calls
+# sip_call.py <slmodemd> <number> [AT commands]: D-Modem (slmodemd) calls
 # <number> over SIP ($SIP_LOGIN) and plays the user of bbs_sim.py's BBS,
 # which this script serves on its TCP port as well.
 #
@@ -10,8 +10,8 @@
 # user; the BBS is on D-Modem's pty.
 import os, re, socket, subprocess, sys, threading, time, tty
 
-slmodemd, dmodem, number = sys.argv[1:4]
-at = sys.argv[4] if len(sys.argv) > 4 else ""
+slmodemd, number = sys.argv[1:3]
+at = sys.argv[3] if len(sys.argv) > 3 else ""
 LINES = [b"hello from the caller %d " % i + b"x" * 40 for i in range(20)]
 
 # the BBS
@@ -41,7 +41,7 @@ srv.bind(("127.0.0.1", 2323)); srv.listen(1)
 threading.Thread(target=lambda: bbs_conn(srv.accept()[0]), daemon=True).start()
 
 incoming = os.environ.get("SIP_IN")
-p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-d" + os.environ.get("SLMODEMD_DEBUG", "1"), "-e", dmodem] + (["-L"] if incoming else []), stdout=subprocess.PIPE,
+p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-d" + os.environ.get("SLMODEMD_DEBUG", "1")] + (["-L"] if incoming else []), stdout=subprocess.PIPE,
                      stderr=subprocess.STDOUT)
 log = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "wb")
 pty = None
@@ -114,7 +114,7 @@ if incoming:
         c.close()
     ut = threading.Thread(target=user, daemon=True); ut.start()
     ok = ok and cmd(b"ATS0=1") is not None
-    time.sleep(2)               # d-modem registers
+    time.sleep(2)               # slmodemd registers
     subprocess.Popen(incoming, shell=True)
     m = expect(rb"(CONNECT[^\r]*|NO CARRIER)\r\n", 90)
     print("answer:", m.group(1).decode() if m else "timeout")

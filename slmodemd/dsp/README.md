@@ -1,9 +1,11 @@
 # Open data pumps for slmodemd
 
-This directory is a C reimplementation of the interface that the binary-only
-`dsplibs.o` (Smart Link's DSP library) gives to the slmodemd modem core. It
-exports the same entry points, so the rest of slmodemd and D-Modem build
-against it unchanged:
+This directory is a reimplementation (C++) of the interface that the
+binary-only `dsplibs.o` (Smart Link's DSP library) gives to the slmodemd
+modem core, declared with C linkage in `../dsplibs.h`. It exports the same
+entry points, so the modem core builds against it unchanged. slmodemd and
+libdmodem use only this code; the original library, `test/dsplibs.o`, is
+kept as a test peer for the interop tests:
 
 | Entry point | What it does here |
 |---|---|
@@ -177,10 +179,12 @@ simulated network (`ctest -R interop_v90`), connects at 56000
 bit/s downstream and 31200 upstream, mu-law and A-law (A-law is
 marginal there: the original library retrains in phase 4 at times). Over
 SIP, through Asterisk and DModem (`asterisk/test/sip.sh AT+MS=90`, with
-`CODEC=alaw` for A-law), it connects at 56000/31200 in both laws. d-modem
-converts between the call's 8000 Hz and slmodemd's 9600 Hz itself: the
-resampler of pjmedia cuts below 4000 Hz, which takes away the part of the
-PCM signal the analogue modem recovers its timing from. Its own debug
+`CODEC=alaw` for A-law), it connected at 56000/31200 in both laws while
+slmodemd still ran the original library at 9600 Hz; its SIP side then did
+the 8000/9600 Hz conversion itself (the resampler of pjmedia cuts below
+4000 Hz, which takes away the part of the PCM signal the analogue modem
+recovers its timing from). slmodemd now runs at the call's 8000 Hz. The
+original library's own debug
 output (its `edprintf` lines are hidden behind a key) helped: it reports
 the levels it measures in the DIL, the digital pad it concludes and why
 it retrains.
@@ -232,19 +236,19 @@ are close to pure tones and would de-tune them.
 
 ## Building
 
-    cmake -B build -DDMODEM_DSPLIBS=open      # in the top directory
+    cmake -B build                            # in the top directory
     cmake --build build
 
-The default is still `DMODEM_DSPLIBS=blob`, which links the original `dsplibs.o`.
-The open build has no i386 requirement. It builds natively on x86_64,
-ARM and other architectures, and links with `-lm`.
+There is no i386 requirement. It builds natively on x86_64, ARM and other
+architectures, and links with `-lm`. Only the interop tests need a 32 bit
+compiler (`g++ -m32`), for the original library.
 
 ## Tests
 
     ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
     ctest --test-dir build -L interop   # calls between the original library and this one,
-                                        # data and class 1 fax, in real time (needs gcc -m32)
+                                        # data and class 1 fax, in real time (needs g++ -m32)
 
 The test programs are in `build/slmodemd/dsp/test/`; `interop.py` and
 `fax_interop.py` take the two modem programs as arguments (`NETSIM` and
@@ -264,7 +268,7 @@ at 38 dB, 28800 at 35 dB, 26400 at 33 dB, 24000 at 30 dB, 21600 at
 `FAR_DELAY=<samples>` delays the far one (200 ms: still 31200 bit/s).
 
 `interop` connects two `modem_half` processes with pipes. One process is
-linked with `dsplibs.o` and the other with this code. Each call goes through
+linked with `test/dsplibs.o` and the other with this code. Each call goes through
 the full modem core: AT commands, V.42/LAPM detection and data in both
 directions. Results at the time of writing:
 

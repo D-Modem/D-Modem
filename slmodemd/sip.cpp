@@ -1,0 +1,498 @@
+/*
+ * Copyright (C) 2021 Aon plc
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
+/*
+ *
+ *    sip.cpp - slmodemd's telephone line: the SIP user agent of the
+ *              former d-modem program (pjsua), now a part of slmodemd
+ *
+ *    pjsua runs its own threads: the SIP stack's, and the media clock
+ *    that moves the call's audio through the conference bridge, through
+ *    our port and the modem's audio socket, a frame of 20 ms at a time.
+ *    One more thread of ours does what the modem asks for (dial, answer)
+ *    and looks after the call: it rings the modem while a call waits,
+ *    and cleans up when the call or the modem's socket goes away.
+ *
+ */
+
+#include <errno.h>
+#include <poll.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <atomic>
+#include <deque>
+#include <mutex>
+#include <string>
+#include <thread>
+
+#include <pjsua-lib/pjsua.h>
+
+#include "sip.h"
+
+namespace sip {
+
+namespace {
+
+constexpr unsigned rate = 8000;
+constexpr unsigned frame_samples = rate / 50;   /* 20 ms */
+constexpr int frame_bytes = frame_samples * 2;
+
+/* the modem's side of the bridge */
+struct Port {
+	pjmedia_port base;
+	pj_timestamp timestamp;
+	std::atomic<int> sock{-1};
+};
+
+/* what the modem asks for, done in the service thread */
+struct Request {
+	enum Kind { DIAL, ANSWER } kind;
+	std::string number;
+	int fd;
+};
+
+Config cfg;
+Port port;
+pj_pool_t *pool;
+pj_caching_pool cpool;
+pjsua_acc_id acc_id = PJSUA_INVALID_ID;
+pjsua_conf_port_id conf_id = PJSUA_INVALID_ID;
+
+std::atomic<pjsua_call_id> cur_call{PJSUA_INVALID_ID};
+std::atomic<bool> ringing{false};       /* cur_call waits for ANSWER */
+std::atomic<bool> hangup_req{false};    /* the call or the socket ended */
+std::atomic<bool> cancel_req{false};    /* tell the modem: no more RING */
+std::atomic<int> call_law{0};
+
+std::mutex req_lock;
+std::deque<Request> requests;
+int wake[2] = {-1, -1};                 /* service thread wake up */
+int ctl[2] = {-1, -1};                  /* RING / CANCEL to the modem */
+std::thread service;
+std::atomic<bool> running{false};
+
+FILE *rec_rx, *rec_tx;
+
+/* calls into pjsua from a thread of ours */
+void pj_register_thread()
+{
+	static thread_local pj_thread_desc desc;
+	static thread_local pj_thread_t *thread;
+	if (!pj_thread_is_registered())
+		pj_thread_register("slmodemd", desc, &thread);
+}
+
+pj_status_t put_frame(pjmedia_port *, pjmedia_frame *frame)
+{
+	int fd = port.sock;
+	if (frame->type != PJMEDIA_FRAME_TYPE_AUDIO)
+		return PJ_SUCCESS;
+	if (rec_rx)
+		fwrite(frame->buf, 1, frame_bytes, rec_rx);
+	if (fd >= 0 && write(fd, frame->buf, frame_bytes) != frame_bytes)
+		hangup_req = true;
+	return PJ_SUCCESS;
+}
+
+pj_status_t get_frame(pjmedia_port *p, pjmedia_frame *frame)
+{
+	int fd = port.sock;
+	if (fd < 0 || read(fd, frame->buf, frame_bytes) != frame_bytes) {
+		if (fd >= 0)
+			hangup_req = true;
+		memset(frame->buf, 0, frame_bytes);
+	}
+	if (rec_tx)
+		fwrite(frame->buf, 1, frame_bytes, rec_tx);
+	frame->size = frame_bytes;
+	frame->timestamp.u64 = port.timestamp.u64;
+	frame->type = PJMEDIA_FRAME_TYPE_AUDIO;
+	port.timestamp.u64 += PJMEDIA_PIA_SPF(&p->info);
+	return PJ_SUCCESS;
+}
+
+void ctl_write(const char *msg)
+{
+	if (write(ctl[0], msg, strlen(msg)) < 0)
+		PJ_LOG(1, (__FILE__, "control socket: %s", strerror(errno)));
+}
+
+void wake_service()
+{
+	char c = 0;
+	if (write(wake[1], &c, 1) < 0)
+		PJ_LOG(1, (__FILE__, "wake up: %s", strerror(errno)));
+}
+
+void on_call_state(pjsua_call_id call_id, pjsip_event *)
+{
+	pjsua_call_info ci;
+	pjsua_call_get_info(call_id, &ci);
+	PJ_LOG(3, (__FILE__, "Call %d state=%.*s", call_id,
+		   (int)ci.state_text.slen, ci.state_text.ptr));
+	/* the service thread cleans up: the port leaves the bridge before
+	   its socket closes */
+	if (ci.state == PJSIP_INV_STATE_DISCONNECTED && call_id == cur_call) {
+		if (ringing)
+			cancel_req = true;
+		ringing = false;
+		hangup_req = true;
+		wake_service();
+	}
+}
+
+void on_call_media_state(pjsua_call_id call_id)
+{
+	pjsua_call_info ci;
+	pjsua_call_get_info(call_id, &ci);
+	if (ci.media_status != PJSUA_CALL_MEDIA_ACTIVE || call_id != cur_call)
+		return;
+	{
+		pjsua_stream_info si;
+		if (pjsua_call_get_stream_info(call_id, ci.media[0].index, &si) ==
+		    PJ_SUCCESS && si.type == PJMEDIA_TYPE_AUDIO) {
+			const pj_str_t &e = si.info.aud.fmt.encoding_name;
+			call_law = !pj_stricmp2(&e, "PCMA") ? 2 :
+				!pj_stricmp2(&e, "PCMU") ? 1 : 0;
+			PJ_LOG(3, (__FILE__, "Call %d codec %.*s", call_id,
+				   (int)e.slen, e.ptr));
+		}
+	}
+	if (conf_id == PJSUA_INVALID_ID) {
+		pjsua_conf_port_id id;
+		if (pjsua_conf_add_port(pool, &port.base, &id) != PJ_SUCCESS)
+			return;
+		pjsua_conf_connect(ci.conf_slot, id);
+		pjsua_conf_connect(id, ci.conf_slot);
+		conf_id = id;
+	}
+}
+
+/* a call comes in: ring the modem, or busy */
+void on_incoming_call(pjsua_acc_id, pjsua_call_id call_id, pjsip_rx_data *)
+{
+	if (!cfg.listen) {
+		pjsua_call_answer(call_id, 480, NULL, NULL);
+		return;
+	}
+	pjsua_call_id none = PJSUA_INVALID_ID;
+	if (!cur_call.compare_exchange_strong(none, call_id)) {
+		pjsua_call_answer(call_id, 486, NULL, NULL);
+		return;
+	}
+	ringing = true;
+	pjsua_call_answer(call_id, 180, NULL, NULL);
+	wake_service();
+}
+
+/* a new call's audio socket: a frame of silence first, for the delay the
+   modem expects (it answers each frame with one of its own) */
+void audio_attach(int fd)
+{
+	char buf[frame_bytes];
+	hangup_req = false;
+	call_law = 0;
+	port.timestamp.u64 = 0;
+	port.sock = fd;
+	memset(buf, 0, sizeof(buf));
+	if (write(fd, buf, sizeof(buf)) < 0)
+		hangup_req = true;
+}
+
+/* the end of a call, from either side */
+void call_cleanup()
+{
+	pjsua_call_id id = cur_call;
+	if (id != PJSUA_INVALID_ID)
+		pjsua_call_hangup(id, 0, NULL, NULL);
+	if (conf_id != PJSUA_INVALID_ID) {
+		pjsua_conf_remove_port(conf_id);
+		conf_id = PJSUA_INVALID_ID;
+	}
+	/* the bridge may still take a frame */
+	int fd = port.sock.exchange(-1);
+	if (fd >= 0)
+		close(fd);
+	cur_call = PJSUA_INVALID_ID;
+	ringing = false;
+	hangup_req = false;
+}
+
+void do_request(Request &r)
+{
+	if (r.kind == Request::ANSWER) {
+		if (!ringing || r.fd < 0) {
+			if (r.fd >= 0)
+				close(r.fd);    /* no call: NO CARRIER */
+			return;
+		}
+		ringing = false;
+		audio_attach(r.fd);
+		pjsua_call_answer(cur_call, 200, NULL, NULL);
+		return;
+	}
+	if (cur_call != PJSUA_INVALID_ID || r.fd < 0) {
+		if (r.fd >= 0)
+			close(r.fd);            /* busy */
+		return;
+	}
+	audio_attach(r.fd);
+	std::string uri = "sip:" + r.number + "@" + cfg.domain;
+	PJ_LOG(3, (__FILE__, "calling %s", uri.c_str()));
+	pj_str_t u = pj_str(&uri[0]);
+	pjsua_call_id id;
+	if (pjsua_call_make_call(acc_id, &u, 0, NULL, NULL, &id) == PJ_SUCCESS)
+		cur_call = id;
+	else
+		call_cleanup();
+}
+
+void service_loop()
+{
+	pj_register_thread();
+	pj_time_val next_ring = {0, 0};
+	while (running) {
+		struct pollfd p = {wake[0], POLLIN, 0};
+		if (poll(&p, 1, 200) > 0) {
+			char buf[64];
+			if (read(wake[0], buf, sizeof(buf)) < 0)
+				PJ_LOG(1, (__FILE__, "wake: %s", strerror(errno)));
+		}
+		for (;;) {
+			Request r;
+			{
+				std::lock_guard<std::mutex> l(req_lock);
+				if (requests.empty())
+					break;
+				r = requests.front();
+				requests.pop_front();
+			}
+			do_request(r);
+		}
+		if (cancel_req.exchange(false))
+			ctl_write("CANCEL\n");
+		pj_time_val now;
+		pj_gettimeofday(&now);
+		if (ringing && PJ_TIME_VAL_GTE(now, next_ring)) {
+			ctl_write("RING\n");
+			next_ring = now;
+			next_ring.sec += 3;
+		}
+		if (!ringing)
+			next_ring.sec = 0;
+		if (hangup_req && !ringing)
+			call_cleanup();
+	}
+	call_cleanup();
+}
+
+void post(Request r)
+{
+	{
+		std::lock_guard<std::mutex> l(req_lock);
+		requests.push_back(std::move(r));
+	}
+	wake_service();
+}
+
+bool check(pj_status_t status, const char *what)
+{
+	if (status == PJ_SUCCESS)
+		return true;
+	pjsua_perror(__FILE__, what, status);
+	return false;
+}
+
+/* G.711 only, mu-law first */
+void set_codecs()
+{
+	pjsua_codec_info codecs[32];
+	unsigned count = PJ_ARRAY_SIZE(codecs);
+	pjsua_enum_codecs(codecs, &count);
+	for (unsigned i = 0; i < count; i++) {
+		int pri = 0;
+		if (!pj_strcmp2(&codecs[i].codec_id, "PCMU/8000/1"))
+			pri = 2;
+		else if (!pj_strcmp2(&codecs[i].codec_id, "PCMA/8000/1"))
+			pri = 1;
+		pjsua_codec_set_priority(&codecs[i].codec_id, pri);
+	}
+}
+
+} // namespace
+
+bool config_from_env(Config &c, bool listen)
+{
+	/* SIP_LOGIN=user:password@domain */
+	static std::string login;
+	const char *e = getenv("SIP_LOGIN");
+	if (!e) {
+		fprintf(stderr, "SIP_LOGIN=user:password@domain is not set\n");
+		return false;
+	}
+	login = e;
+	size_t at = login.find('@'), colon = login.find(':');
+	if (at == std::string::npos || colon == std::string::npos ||
+	    colon > at) {
+		fprintf(stderr, "SIP_LOGIN: user:password@domain\n");
+		return false;
+	}
+	login[at] = 0;
+	login[colon] = 0;
+	c.user = login.c_str();
+	c.password = login.c_str() + colon + 1;
+	c.domain = login.c_str() + at + 1;
+	c.port = getenv("SIP_PORT") ? atoi(getenv("SIP_PORT")) : 5060;
+	c.listen = listen;
+	c.record = getenv("DMODEM_REC");
+	return true;
+}
+
+int start(const Config &config)
+{
+	cfg = config;
+	if (cfg.record) {
+		std::string n = cfg.record;
+		rec_rx = fopen((n + ".rx").c_str(), "wb");
+		rec_tx = fopen((n + ".tx").c_str(), "wb");
+	}
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, ctl) || pipe(wake)) {
+		perror("sip: socketpair");
+		return -1;
+	}
+
+	if (!check(pjsua_create(), "pjsua_create()"))
+		return -1;
+	{
+		pjsua_config c;
+		pjsua_logging_config log_cfg;
+		pjsua_media_config med_cfg;
+
+		pjsua_config_default(&c);
+		c.cb.on_call_media_state = &on_call_media_state;
+		c.cb.on_call_state = &on_call_state;
+		c.cb.on_incoming_call = &on_incoming_call;
+
+		pjsua_logging_config_default(&log_cfg);
+		log_cfg.console_level = getenv("SIP_LOG_LEVEL") ?
+			atoi(getenv("SIP_LOG_LEVEL")) : 4;
+
+		pjsua_media_config_default(&med_cfg);
+		med_cfg.no_vad = true;
+		med_cfg.ec_tail_len = 0;
+		/* a modem can't take samples slipping: a fixed 60 ms in the
+		   jitter buffer, never adapted down by discarding audio.  The
+		   far end often sends in step with what it receives, so its
+		   packets come right when the bridge takes a frame, and a
+		   buffer of one frame would run dry and fill in (a slip of a
+		   frame) on any jitter */
+		med_cfg.jb_max = 2000;
+		med_cfg.jb_init = 60;
+		med_cfg.jb_min_pre = 60;
+		med_cfg.jb_max_pre = 60;
+		med_cfg.jb_discard_algo = PJMEDIA_JB_DISCARD_NONE;
+		/* the bridge in frames of the modem (20 ms) at the rate of
+		   the call: nothing resampled, so that V.90's PCM codes pass
+		   unchanged */
+		med_cfg.audio_frame_ptime = 20;
+		med_cfg.clock_rate = rate;
+
+		if (!check(pjsua_init(&c, &log_cfg, &med_cfg), "pjsua_init()"))
+			return -1;
+	}
+	pjsua_set_ec(0, 0);
+	pjsua_set_null_snd_dev();
+	set_codecs();
+	{
+		pjsua_transport_config c;
+		pjsua_transport_config_default(&c);
+		c.port = cfg.port;
+		if (!check(pjsua_transport_create(PJSIP_TRANSPORT_UDP, &c, NULL),
+			   "creating the transport"))
+			return -1;
+	}
+
+	pj_caching_pool_init(&cpool, NULL, 1024 * 1024);
+	pool = pj_pool_create(&cpool.factory, "sip", 4000, 4000, NULL);
+	pj_str_t name = pj_str(const_cast<char *>("dmodem"));
+	pjmedia_port_info_init(&port.base.info, &name,
+			       PJMEDIA_SIG_CLASS_PORT_AUD('D', 'M'), rate, 1,
+			       16, frame_samples);
+	port.base.put_frame = put_frame;
+	port.base.get_frame = get_frame;
+
+	if (!check(pjsua_start(), "pjsua_start()"))
+		return -1;
+	{
+		pjsua_acc_config c;
+		std::string id = std::string("sip:") + cfg.user + "@" + cfg.domain;
+		std::string reg = std::string("sip:") + cfg.domain;
+		pjsua_acc_config_default(&c);
+		pj_strdup2(pool, &c.id, id.c_str());
+		pj_strdup2(pool, &c.reg_uri, reg.c_str());
+		/* registered to be reached when listening */
+		c.register_on_acc_add = cfg.listen;
+		c.cred_count = 1;
+		c.cred_info[0].realm = pj_str(const_cast<char *>("*"));
+		c.cred_info[0].scheme = pj_str(const_cast<char *>("digest"));
+		pj_strdup2(pool, &c.cred_info[0].username, cfg.user);
+		c.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
+		pj_strdup2(pool, &c.cred_info[0].data, cfg.password);
+		if (!check(pjsua_acc_add(&c, PJ_TRUE, &acc_id), "adding the account"))
+			return -1;
+	}
+
+	running = true;
+	service = std::thread(service_loop);
+	return ctl[1];
+}
+
+void stop()
+{
+	if (running.exchange(false)) {
+		wake_service();
+		service.join();
+	}
+	pjsua_destroy();
+	if (rec_rx)
+		fclose(rec_rx);
+	if (rec_tx)
+		fclose(rec_tx);
+	rec_rx = rec_tx = NULL;
+}
+
+void dial(const char *number, int audio_fd)
+{
+	post(Request{Request::DIAL, number ? number : "", audio_fd});
+}
+
+void answer(int audio_fd)
+{
+	post(Request{Request::ANSWER, "", audio_fd});
+}
+
+int law()
+{
+	return call_law;
+}
+
+} // namespace sip

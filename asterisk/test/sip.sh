@@ -1,6 +1,6 @@
 #!/bin/sh
-# sip.sh [AT commands, ';' separated]: D-Modem (slmodemd and d-modem, built
-# in ../..) calls DModem(bbs) over SIP in a private Asterisk (installed
+# sip.sh [AT commands, ';' separated]: D-Modem (slmodemd, built in ../..)
+# calls DModem(bbs) over SIP in a private Asterisk (installed
 # with chan_pjsip; app_dmodem.so from the CMake build), or with INCOMING=1 answers
 # DModem(term,o)'s call; see sip_call.py
 here=$(cd "$(dirname "$0")" && pwd)
@@ -54,7 +54,7 @@ export SIP_LOGIN=modem:modem@127.0.0.1:5070 SIP_LOG=$run/slmodemd.log
 if [ -n "$INCOMING" ]; then
 	export SIP_IN="$ast -rx 'channel originate PJSIP/modem extension s@modem-call'"
 fi
-"$here/sip_call.py" "$build/slmodemd/slmodemd" "${DMODEM:-$build/d-modem}" 5551000 "$1"
+"$here/sip_call.py" "$build/slmodemd/slmodemd" 5551000 "$1"
 r=$?
 sleep 2
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"

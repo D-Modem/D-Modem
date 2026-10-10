@@ -83,6 +83,7 @@
 #include <modem.h>
 #include <modem_debug.h>
 #include "dsplibs.h"
+#include "sip.h"
 
 #define INFO(fmt,args...) fprintf(stderr, fmt , ##args );
 #define ERR(fmt,args...) fprintf(stderr, "error: " fmt , ##args );
@@ -113,7 +114,6 @@ extern unsigned int need_realtime;
 extern const char *modem_group;
 extern mode_t modem_perm;
 extern unsigned int use_short_buffer;
-extern const char *modem_exec;
 extern unsigned int modem_listen;
 
 /* listen mode (-L): the external application runs all the time, takes
@@ -622,66 +622,13 @@ struct modem_driver mdm_modem_driver = {
         .ioctl = modemap_ioctl,
 };
 
-/* a message to the listening application, with an fd to pass */
-static int ctl_send(const char *msg, int fd)
-{
-	struct msghdr mh;
-	struct iovec iov;
-	char cbuf[CMSG_SPACE(sizeof(int))];
-
-	memset(&mh, 0, sizeof(mh));
-	iov.iov_base = (void *)msg;
-	iov.iov_len = strlen(msg);
-	mh.msg_iov = &iov;
-	mh.msg_iovlen = 1;
-	if (fd >= 0) {
-		struct cmsghdr *c;
-		memset(cbuf, 0, sizeof(cbuf));
-		mh.msg_control = cbuf;
-		mh.msg_controllen = sizeof(cbuf);
-		c = CMSG_FIRSTHDR(&mh);
-		c->cmsg_level = SOL_SOCKET;
-		c->cmsg_type = SCM_RIGHTS;
-		c->cmsg_len = CMSG_LEN(sizeof(int));
-		memcpy(CMSG_DATA(c), &fd, sizeof(int));
-	}
-	return sendmsg(ctl_fd, &mh, 0) == (ssize_t)iov.iov_len ? 0 : -1;
-}
-
-static void listen_start(void)
-{
-	int sockets[2];
-	pid_t pid;
-
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
-		perror("socketpair");
-		exit(-1);
-	}
-	pid = fork();
-	if (pid == -1) {
-		perror("fork");
-		exit(-1);
-	}
-	if (pid == 0) {
-		char str[16];
-		snprintf(str, sizeof(str), "%d", sockets[0]);
-		close(sockets[1]);
-		execl(modem_exec, modem_exec, "--listen", str, NULL);
-		perror(modem_exec);
-		_exit(127);
-	}
-	close(sockets[0]);
-	ctl_fd = sockets[1];
-	DBG("listening through %s (pid %d)\n", modem_exec, (int)pid);
-}
-
-/* RING and CANCEL lines from the listening application */
+/* RING and CANCEL lines from the SIP user agent (sip.cpp) */
 static int ctl_read(struct modem *m)
 {
 	char *nl;
 	int n = read(ctl_fd, ctl_buf + ctl_len, sizeof(ctl_buf) - 1 - ctl_len);
 	if (n <= 0) {
-		ERR("%s (listening) has gone\n", modem_exec);
+		ERR("the SIP user agent has gone\n");
 		return -1;
 	}
 	ctl_len += n;
@@ -701,13 +648,17 @@ static int ctl_read(struct modem *m)
 	return 0;
 }
 
-/* the audio socket to the external application is up: prime it */
+/* the G.711 law of the call, once known, for the data pumps (V.90) */
+static int law_set;
+
+/* the call's audio socket is up: prime it with a frame (20 ms) */
 static int socket_started(struct device_struct *dev, int fd)
 {
 	int ret;
 	dev->fd = fd;
 	dev->delay = 0;
-	ret = 192*2;
+	law_set = 0;
+	ret = MODEM_RATE / 50 * 2;
 	memset(outbuf, 0 , ret);
 	ret = write(dev->fd, outbuf, ret);
 	DBG("done delay thing\n");
@@ -720,49 +671,21 @@ static int socket_started(struct device_struct *dev, int fd)
 	return 0;
 }
 
+/* a call: the SIP user agent gets one end of its audio socket */
 static int socket_start (struct modem *m)
 {
 	struct device_struct *dev = static_cast<device_struct*>(m->dev_data);
-	int ret;
+	int sockets[2];
 	DBG("socket_start...\n");
 
-	int sockets[2];
-
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
-		perror("socketpair");
-		exit(-1);
+		ERR("socketpair: %s\n", strerror(errno));
+		return -1;
 	}
-
-	if (modem_listen) {
-		char msg[160];
-		if (m->caller)
-			snprintf(msg, sizeof(msg), "DIAL %s\n", m->dial_string);
-		else
-			snprintf(msg, sizeof(msg), "ANSWER\n");
-		ret = ctl_send(msg, sockets[0]);
-		close(sockets[0]);
-		if (ret) {
-			ERR("cannot pass the call to %s\n", modem_exec);
-			close(sockets[1]);
-			return -1;
-		}
-		return socket_started(dev, sockets[1]);
-	}
-
-	pid_t pid = fork();
-	if (pid == -1) {
-		perror("fork");
-		exit(-1);
-	}
-	if (pid == 0) { // child
-		char str[16];
-		snprintf(str,sizeof(str),"%d",sockets[0]);
-		close(sockets[1]);
-		execl(modem_exec,modem_exec,m->dial_string,str,NULL);
-		perror(modem_exec);
-		_exit(127);
-	}
-	close(sockets[0]);
+	if (m->caller)
+		sip::dial(m->dial_string, sockets[0]);
+	else
+		sip::answer(sockets[0]);
 	return socket_started(dev, sockets[1]);
 }
 
@@ -772,14 +695,11 @@ static int socket_stop (struct modem *m)
 	DBG("socket_stop...\n");
 	close(dev->fd);
 	dev->fd = -1;
-	if (!modem_listen)
-		wait(NULL); // for exec'ed child
 	return 0;
 }
 
 static int socket_ioctl(struct modem *m, unsigned int cmd, unsigned long arg)
 {
-	struct device_struct *dev = static_cast<device_struct*>(m->dev_data);
 	int ret = 0;
 	DBG("socket_ioctl: cmd %x, arg %lx...\n",cmd,arg);
 	if (cmd == MDMCTL_SETFRAG)
@@ -792,27 +712,12 @@ static int socket_ioctl(struct modem *m, unsigned int cmd, unsigned long arg)
 	case MDMCTL_CODECTYPE:
 		ret = 4; // CODEC_STLC7550; XXX this worked fine as 0 (CODEC_UNKNOWN)...
 		break;
-	case MDMCTL_IODELAY: // kernel module returns s->delay + ST7554_HW_IODELAY (48)
-		/* the DSP times the V.34 handshake with this (its L1 after
-		   the answerer's tone A reversal): with 0 the calling modem
-		   gives up phase 2 and starts over.  Over d-modem (192
-		   samples queued, dev->delay) V.34 connected 5 times in 5
-		   with 128, 2 in 4 with 144, 1 in 4 with 112, 0 in 4 with 96,
-		   120, 160 and 192; 128 is what the modem_half test harness
-		   reports for its own 128 sample queue.  The V.32 pump uses
-		   it differently (its turn around delay): over d-modem V.32bis
-		   kept its data 3 times in 3 with 0, never with 128 */
+	case MDMCTL_IODELAY:
+		/* the open data pumps take the delay as it comes */
 		ret = 0;
-		if (m->dp && (m->dp->id == DP_V8 || m->dp->id == DP_V34 ||
-			      m->dp->id == DP_V34BIS || m->dp->id == DP_V90 ||
-			      m->dp->id == DP_V90_NO_V8BIS ||
-			      m->dp->id == DP_V92))
-			ret = dev->delay > 64 ? dev->delay - 64 : 0;
-		if (getenv("SLMODEMD_IODELAY"))
-			ret = atoi(getenv("SLMODEMD_IODELAY"));
 		break;
 	case MDMCTL_HOOKSTATE: // 0 = on, 1 = off
-	case MDMCTL_SPEED: // sample rate (9600)
+	case MDMCTL_SPEED: // sample rate
 	case MDMCTL_GETFMTS:
 	case MDMCTL_SETFMT:
 	case MDMCTL_SETFRAGMENT: // (30)
@@ -1102,6 +1007,10 @@ static int modem_run(struct modem *m, struct device_struct *dev)
 				m->update_delay = 0;
 			}
 
+			if (!law_set && m->dp_runtime && sip::law()) {
+				dp_runtime_set_law(m->dp_runtime, sip::law());
+				law_set = 1;
+			}
 			modem_process(m,inbuf,outbuf,count);
 			if (dev->fd == -1) {
 				DBG("closed connection to child socket process\n");
@@ -1234,7 +1143,9 @@ int modem_main(const char *dev_name)
 
 	if (need_realtime) {
 		struct sched_param prm;
-		if(mlockall(MCL_CURRENT|MCL_FUTURE)) {
+		/* not MCL_FUTURE: the SIP user agent's pools grow while it
+		   runs, beyond what an unprivileged process may lock */
+		if(mlockall(MCL_CURRENT)) {
 			ERR("mlockall: %s\n",strerror(errno));
 		}
 		prm.sched_priority = sched_get_priority_max(SCHED_FIFO);
@@ -1290,11 +1201,22 @@ int modem_main(const char *dev_name)
 	INFO("Use `%s' as modem device, Ctrl+C for termination.\n",
 	     *link_name ? link_name : m->pty_name);
 
-	if (modem_listen)
-		listen_start();
+	{
+		sip::Config cfg;
+		if (!sip::config_from_env(cfg, modem_listen))
+			exit(-1);
+		ctl_fd = sip::start(cfg);
+		if (ctl_fd < 0) {
+			ERR("cannot start the SIP user agent\n");
+			exit(-1);
+		}
+		DBG("SIP: %s@%s%s\n", cfg.user, cfg.domain,
+		    cfg.listen ? ", listening" : "");
+	}
 
 	/* main loop here */
 	ret = modem_run(m,&device);
+	sip::stop();
 
 	datafile_save_info(path_name,&m->dsp_info);
 

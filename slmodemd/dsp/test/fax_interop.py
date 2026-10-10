@@ -26,7 +26,7 @@ def start(exe, name, rfd, wfd):
         os.dup2(a, 3); os.dup2(b, 4)
     # the DTE (this script) has to keep up with the T.30 timers
     env = dict(os.environ, MODEM_NAME=name, MODEM_REALTIME="1")
-    return subprocess.Popen([exe, "--debug=3", "-e", "unused"], stdout=subprocess.PIPE,
+    return subprocess.Popen([exe, "--debug=3"], stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, preexec_fn=fds, close_fds=False, env=env)
 if os.environ.get("RECORD"):
     # RECORD=<dir>: record the line in both directions (16 bit, 9600 Hz)

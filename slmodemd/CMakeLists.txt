@@ -1,5 +1,7 @@
-# slmodemd (the modem daemon behind a pty), modem_test, and libdmodem (the
-# modem core and the open data pumps at 8000 Hz as a library, dmodem.h)
+# slmodemd (the modem daemon behind a pty, on SIP calls), modem_test, and
+# libdmodem (the modem core and the open data pumps at 8000 Hz as a
+# library, dmodem.h).  Smart Link's original DSP library, dsplibs.o, is
+# only in the interop tests (dsp/test).
 
 set(DMODEM_CORE_SRCS
 	modem.cpp modem_datafile.cpp modem_at.cpp modem_timer.cpp modem_pack.cpp
@@ -14,43 +16,26 @@ set(DMODEM_DSP_SRCS
 set(DMODEM_CORE_SRCS ${DMODEM_CORE_SRCS} PARENT_SCOPE)
 set(DMODEM_DSP_SRCS ${DMODEM_DSP_SRCS} PARENT_SCOPE)
 
-# the original data pumps are a 32 bit i386 object
-set(DMODEM_M32 "")
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
-	set(DMODEM_M32 -m32)
-endif()
-set(DMODEM_M32 ${DMODEM_M32} PARENT_SCOPE)
-
-if(DMODEM_DSPLIBS STREQUAL "blob")
-	if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|i.86)$")
-		message(FATAL_ERROR "dsplibs.o is i386 code: use -DDMODEM_DSPLIBS=open")
-	endif()
-	set(_dsp ${CMAKE_CURRENT_SOURCE_DIR}/dsplibs.o)
-	set(_arch ${DMODEM_M32})
-	# its code is not position independent and its object asks for an
-	# executable stack it does not need
-	set(_blob_link -no-pie -Wl,-z,noexecstack)
-elseif(DMODEM_DSPLIBS STREQUAL "open")
-	set(_dsp ${DMODEM_DSP_SRCS})
-	set(_arch "")
-else()
-	message(FATAL_ERROR "DMODEM_DSPLIBS: blob or open")
+if(DMODEM_SLMODEMD)
+	# the modem daemon: the core and the open data pumps at the rate of
+	# the call (8000 Hz), its SIP user agent (sip.cpp) and a pty
+	add_executable(slmodemd modem_main.cpp modem_cmdline.cpp sip.cpp
+		${DMODEM_CORE_SRCS} ${DMODEM_DSP_SRCS})
+	target_include_directories(slmodemd PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	target_compile_definitions(slmodemd PRIVATE CONFIG_DEBUG_MODEM
+		MODEM_RATE=8000)
+	target_compile_options(slmodemd PRIVATE -Wall -g -O2)
+	target_link_libraries(slmodemd PRIVATE pjproject m pthread)
+	install(TARGETS slmodemd RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
 endif()
 
-foreach(_exe slmodemd modem_test)
-	if(_exe STREQUAL "slmodemd")
-		set(_main modem_main.cpp)
-	else()
-		set(_main modem_test.cpp)
-	endif()
-	add_executable(${_exe} ${_main} modem_cmdline.cpp ${DMODEM_CORE_SRCS} ${_dsp})
-	target_include_directories(${_exe} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-	target_compile_definitions(${_exe} PRIVATE CONFIG_DEBUG_MODEM)
-	target_compile_options(${_exe} PRIVATE -Wall -g -O ${_arch})
-	target_link_options(${_exe} PRIVATE ${_arch} ${_blob_link})
-	target_link_libraries(${_exe} PRIVATE m pthread)
-endforeach()
-install(TARGETS slmodemd RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+# modem_test: the modem simulator of the original slmodemd sources
+add_executable(modem_test modem_test.cpp modem_cmdline.cpp
+	${DMODEM_CORE_SRCS} ${DMODEM_DSP_SRCS})
+target_include_directories(modem_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(modem_test PRIVATE CONFIG_DEBUG_MODEM)
+target_compile_options(modem_test PRIVATE -Wall -g -O)
+target_link_libraries(modem_test PRIVATE m pthread)
 
 # the library brings its own timers (dmodem_timer.cpp, no signals)
 set(_lib_core ${DMODEM_CORE_SRCS})

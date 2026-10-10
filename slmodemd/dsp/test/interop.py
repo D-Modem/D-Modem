@@ -36,7 +36,7 @@ def start(exe, name, rfd, wfd):
         a, b = os.dup(rfd), os.dup(wfd)
         os.dup2(a, 3); os.dup2(b, 4)
     env = dict(os.environ, MODEM_NAME=name)
-    return subprocess.Popen([exe, "--debug=" + os.environ.get("DBG", "3"), "-e", "unused"], stdout=subprocess.PIPE,
+    return subprocess.Popen([exe, "--debug=" + os.environ.get("DBG", "3")], stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, preexec_fn=fds, close_fds=False, env=env)
 pa = start(exe_a, "modemA", ba_r, ab_w)
 pb = start(exe_b, "modemB", ab_r, ba_w)

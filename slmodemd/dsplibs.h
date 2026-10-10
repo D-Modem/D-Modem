@@ -34,6 +34,8 @@ extern void prop_dp_exit(void);
 /* state shared by the data pumps of a modem */
 extern void *dp_runtime_create(struct modem *m);
 extern void  dp_runtime_delete(void *runtime);
+/* the G.711 law of the network (1 mu-law, 2 A-law): the open pumps only */
+extern void  dp_runtime_set_law(void *runtime, int law);
 /* the DC remover */
 extern void *dcr_create(void);
 extern void  dcr_delete(void *dcr);

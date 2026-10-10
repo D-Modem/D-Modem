@@ -816,8 +816,12 @@ static int cc_rx_sample(struct cc_rx *r, float x)
 		if (r->p > 300.0f * 300.0f / 4)
 			bit = d.re < 0;
 		r->rbit = r->dmin < -0.5f;
-		/* a retrain has no INFO0 to find the timing with: the
-		   remote's symbols end where its tone reverses most clearly */
+		/* the remote's symbols end where its tone reverses most
+		   clearly: the timing from there at once, outside a frame
+		   (after INFO0, see cc_rx_bit).  The remote's symbol clock
+		   stops while it sends L1/L2, so an INFO1 frame after them
+		   comes at a new phase, and a retrain has no INFO0 to find
+		   the timing with */
 		if (r->snap && r->rmin < -0.8f && r->frame_len <= 0) {
 			int e = (r->rmin_pos - r->best + CC_SPS + CC_SPS / 2) %
 				CC_SPS - CC_SPS / 2;
@@ -993,6 +997,7 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 				if (!v->ev_info0) {
 					parse_info0(&v->rinfo0, r->frame);
 					v->ev_info0 = 1;
+					r->snap = 1;
 					DSP_DBG("v34: INFO0 rates %02x 3429 %d "
 						"diff %d\n", v->rinfo0.rates,
 						v->rinfo0.allow_3429,
