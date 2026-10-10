@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "pump.h"
 #include "qam.h"
 
 namespace dsp {
@@ -136,7 +137,7 @@ enum v32_rxp {
 };
 
 /* narrow band tone tracker for AA / AC and their phase reversals */
-struct tone_trk {
+struct ToneTrk {
 	Osc lo;
 	cplx lp1, lp2;
 	float a;
@@ -145,10 +146,16 @@ struct tone_trk {
 	int on;
 	long on_count;
 	int hold;
+
+	void init(float freq, int srate);
+	int run(float x, float in_power, int srate);
 };
 
-struct v32_dp {
-	struct dp dp;
+struct V32Pump : Pump {
+	static constexpr const char *name = "V.32/V.32bis data pump";
+
+	~V32Pump() { cleanup(); }
+
 	struct modem *modem;
 	struct dp_runtime *rt;
 	int srate;
@@ -181,8 +188,8 @@ struct v32_dp {
 	EchoCanceller ec;
 	float ec_mu;
 	QamRx rx;
-	struct tone_trk aa, ac, usb1, ans2100;
-	struct tone_trk v21m, v23m;     /* FSK answerers' marks */
+	ToneTrk aa, ac, usb1, ans2100;
+	ToneTrk v21m, v23m;     /* FSK answerers' marks */
 	int carrier;
 	long carrier_run;
 	enum v32_rxp rxp;
@@ -208,8 +215,30 @@ struct v32_dp {
 	long retrain_at;        /* test: our own retrain this far (samples)
 				   into the data, $DSP_V32_RETRAIN ms */
 	unsigned r_word;        /* last R word received */
-};
 
+	cplx tx_symbol();
+	void set_tx(enum v32_txm m);
+	cplx tx_word_symbol(unsigned word, int data);
+	cplx tx_data_symbol();
+	void rx_reset();
+	void rx_word_bit(int bit);
+	void rx_symbol();
+	void rx_sample(float x);
+	void set_state(enum v32_state s);
+	void start_word(enum v32_txm m, unsigned w);
+	int connect();
+	void retrain();
+	int fallback_to(enum DP_ID id, const char *mode);
+	int fallback();
+	unsigned quality_caps();
+	const struct v32_rate *choose(unsigned w);
+	int handshake();
+	cplx abcd_point(int k);
+	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
+	void cleanup();
+	int process(void *in, void *out, int cnt) override;
+	int hangup() override;
+};
 
 /*
  *    helpers
@@ -271,68 +300,67 @@ static unsigned final_word(const struct v32_rate *r)
 	return RB_B4 | RB_SYNC | r->bits;
 }
 
-static void tone_init(struct tone_trk *t, float freq, int srate)
+void ToneTrk::init(float freq, int srate)
 {
-	memset(t, 0, sizeof(*t));
-	t->lo.set_freq(-freq, srate);
-	t->a = 1.0f / (0.0015f * srate);
-	t->lag = srate / 100;   /* compare with 10 ms ago */
-	if (t->lag > 127)
-		t->lag = 127;
+	memset(this, 0, sizeof(*this));
+	lo.set_freq(-freq, srate);
+	a = 1.0f / (0.0015f * srate);
+	lag = srate / 100;   /* compare with 10 ms ago */
+	if (lag > 127)
+		lag = 127;
 }
 
 /* returns 1 on a phase reversal; the tone has to carry a fair part of
    the total input power (in_power), noise alone does not turn it on */
-static int tone_run(struct tone_trk *t, float x, float in_power, int srate)
+int ToneTrk::run(float x, float in_power, int srate)
 {
-	cplx v = cplx_scale(t->lo.next_cplx(), x), old;
+	cplx v = cplx_scale(lo.next_cplx(), x), old;
 	float p, po;
 	int rev = 0;
 
-	t->lp1.re += t->a * (v.re - t->lp1.re);
-	t->lp1.im += t->a * (v.im - t->lp1.im);
-	t->lp2.re += t->a * (t->lp1.re - t->lp2.re);
-	t->lp2.im += t->a * (t->lp1.im - t->lp2.im);
-	old = t->hist[(t->pos - t->lag) & 127];
-	t->hist[t->pos++ & 127] = t->lp2;
-	p = cplx_pow(t->lp2);
+	lp1.re += a * (v.re - lp1.re);
+	lp1.im += a * (v.im - lp1.im);
+	lp2.re += a * (lp1.re - lp2.re);
+	lp2.im += a * (lp1.im - lp2.im);
+	old = hist[(pos - lag) & 127];
+	hist[pos++ & 127] = lp2;
+	p = cplx_pow(lp2);
 	po = cplx_pow(old);
 	/* tone amplitude A gives |lp|^2 = A^2 / 4 */
 	if (p > 120.0f * 120.0f / 4 && 2 * p > 0.15f * in_power)
-		t->on_count = t->on_count > 0 ? t->on_count + 1 : 1;
+		on_count = on_count > 0 ? on_count + 1 : 1;
 	else
-		t->on_count = t->on_count < 0 ? t->on_count - 1 : -1;
+		on_count = on_count < 0 ? on_count - 1 : -1;
 	/* 20 ms to switch on or off: a phase reversal dips the level */
-	if (t->on_count > srate / 50)
-		t->on = 1;
-	else if (t->on_count < -srate / 50)
-		t->on = 0;
-	if (t->hold > 0)
-		t->hold--;
-	else if (t->on && po > p * 0.25f && p > po * 0.25f) {
-		cplx c = cplx_mulc(t->lp2, old);
+	if (on_count > srate / 50)
+		on = 1;
+	else if (on_count < -srate / 50)
+		on = 0;
+	if (hold > 0)
+		hold--;
+	else if (on && po > p * 0.25f && p > po * 0.25f) {
+		cplx c = cplx_mulc(lp2, old);
 		if (c.re < -0.7f * sqrtf(p * po)) {
 			rev = 1;
-			t->hold = srate / 20;
+			hold = srate / 20;
 		}
 	}
 	return rev;
 }
 
-
 /*
  *    transmitter (runs at the symbol rate)
  */
 
-static void v32_set_tx(struct v32_dp *v, enum v32_txm m)
+void V32Pump::set_tx(enum v32_txm m)
 {
-	v->txm = m;
-	v->tx_syms = 0;
+	txm = m;
+	tx_syms = 0;
 }
 
-static cplx abcd_point(struct v32_dp *v, int k)
+cplx V32Pump::abcd_point(int k)
 {
-	v->tx_last_abcd = k;
+	tx_last_abcd = k;
 	return v32_abcd[k];
 }
 
@@ -340,471 +368,473 @@ static cplx abcd_point(struct v32_dp *v, int k)
    (V.32bis 5.4), the remote's receiver may train on them */
 #define V32_B1_SYMS 128
 
-static cplx v32_tx_word_symbol(struct v32_dp *v, unsigned word, int data)
+cplx V32Pump::tx_word_symbol(unsigned word, int data)
 {
 	int b[2], k, q;
 	for (k = 0; k < 2; k++) {
 		int bit;
 		if (data) {
 			u8 x = 1;
-			if (v->tx_syms >= V32_B1_SYMS)
-				modem_get_bits(v->modem, 1, &x, 1);
+			if (tx_syms >= V32_B1_SYMS)
+				modem_get_bits(modem, 1, &x, 1);
 			bit = x & 1;
 		} else {
-			bit = (word >> (15 - v->tx_word_bit)) & 1;
-			v->tx_word_bit = (v->tx_word_bit + 1) & 15;
+			bit = (word >> (15 - tx_word_bit)) & 1;
+			tx_word_bit = (tx_word_bit + 1) & 15;
 		}
-		b[k] = scramble(&v->tx_scr, v->tx_scr_tap, bit);
+		b[k] = scramble(&tx_scr, tx_scr_tap, bit);
 	}
 	q = b[0] | b[1] << 1;
-	v->tx_4800 = v32_4800_enc[v->tx_4800][q];
-	return v32_points_4800[v->tx_4800];
+	tx_4800 = v32_4800_enc[tx_4800][q];
+	return v32_points_4800[tx_4800];
 }
 
-static cplx v32_tx_data_symbol(struct v32_dp *v)
+cplx V32Pump::tx_data_symbol()
 {
-	const struct v32_rate *r = v->tx_rate;
+	const struct v32_rate *r = tx_rate;
 	int q = 0, k, idx;
 	u8 bits[6];
 
 	if (r->nbits == 2)
-		return v32_tx_word_symbol(v, 0, 1);
-	if (v->tx_syms < V32_B1_SYMS)
+		return tx_word_symbol(0, 1);
+	if (tx_syms < V32_B1_SYMS)
 		memset(bits, 1, r->nbits);
 	else
-		modem_get_bits(v->modem, 1, bits, r->nbits);
+		modem_get_bits(modem, 1, bits, r->nbits);
 	for (k = 0; k < r->nbits; k++)
-		q |= scramble(&v->tx_scr, v->tx_scr_tap, bits[k] & 1) << k;
-	idx = v->tx_trellis.encode(q, r->nbits);
+		q |= scramble(&tx_scr, tx_scr_tap, bits[k] & 1) << k;
+	idx = tx_trellis.encode(q, r->nbits);
 	return r->points[idx];
 }
 
-static cplx v32_get_symbol(void *ctx)
+cplx V32Pump::tx_symbol()
 {
-	struct v32_dp *v = static_cast<v32_dp*>(ctx);
 	cplx z = { 0, 0 };
 	int b1, b2;
 
-	switch (v->txm) {
+	switch (txm) {
 	case TXM_SILENCE:
 	case TXM_ANS:
 		break;
 	case TXM_AA:
-		z = abcd_point(v, 0);
+		z = abcd_point(0);
 		break;
 	case TXM_CC:
-		z = abcd_point(v, 2);
+		z = abcd_point(2);
 		break;
 	case TXM_AC:
-		if (v->tx_reverse)
-			v->tx_reverse = 0;
+		if (tx_reverse)
+			tx_reverse = 0;
 		else
-			v->tx_ac_phase ^= 1;
-		z = abcd_point(v, v->tx_ac_phase ? 2 : 0);
+			tx_ac_phase ^= 1;
+		z = abcd_point(tx_ac_phase ? 2 : 0);
 		break;
 	case TXM_S:
-		z = abcd_point(v, v->tx_syms & 1);
+		z = abcd_point(tx_syms & 1);
 		break;
 	case TXM_SBAR:
-		z = abcd_point(v, 2 + (v->tx_syms & 1));
+		z = abcd_point(2 + (tx_syms & 1));
 		break;
 	case TXM_TRN2:
-		z = abcd_point(v, scramble(&v->tx_scr, v->tx_scr_tap, 1) ? 2 : 0);
+		z = abcd_point(scramble(&tx_scr, tx_scr_tap, 1) ? 2 : 0);
 		break;
 	case TXM_TRN4:
-		b1 = scramble(&v->tx_scr, v->tx_scr_tap, 1);
-		b2 = scramble(&v->tx_scr, v->tx_scr_tap, 1);
-		z = abcd_point(v, trn_dibit_abcd[b1 << 1 | b2]);
-		v->tx_4800 = abcd_to_4800[v->tx_last_abcd];
+		b1 = scramble(&tx_scr, tx_scr_tap, 1);
+		b2 = scramble(&tx_scr, tx_scr_tap, 1);
+		z = abcd_point(trn_dibit_abcd[b1 << 1 | b2]);
+		tx_4800 = abcd_to_4800[tx_last_abcd];
 		break;
 	case TXM_R:
 	case TXM_E:
-		z = v32_tx_word_symbol(v, v->tx_word, 0);
+		z = tx_word_symbol(tx_word, 0);
 		break;
 	case TXM_DATA:
-		z = v32_tx_data_symbol(v);
+		z = tx_data_symbol();
 		break;
 	}
-	v->tx_syms++;
+	tx_syms++;
 	return z;
 }
 
+static cplx v32_get_symbol(void *ctx)
+{
+	return static_cast<V32Pump*>(ctx)->tx_symbol();
+}
 
 /*
  *    receiver
  */
 
-static void v32_rx_reset(struct v32_dp *v)
+void V32Pump::rx_reset()
 {
-	v->rx.reset();
-	v->rxp = RX_IDLE;
-	v->run_s = 0;
-	v->rx_nbits = 0;
-	v->rx_e_seen = 0;
+	rx.reset();
+	rxp = RX_IDLE;
+	run_s = 0;
+	rx_nbits = 0;
+	rx_e_seen = 0;
 }
 
-static void v32_rx_word_bit(struct v32_dp *v, int bit)
+void V32Pump::rx_word_bit(int bit)
 {
 	unsigned w;
 
-	v->rx_bits = (v->rx_bits << 1) | (bit & 1);
-	if (++v->rx_nbits < 32)
+	rx_bits = (rx_bits << 1) | (bit & 1);
+	if (++rx_nbits < 32)
 		return;
-	w = v->rx_bits & 0xffff;
+	w = rx_bits & 0xffff;
 	if ((w & RB_SYNC) != RB_SYNC)
 		return;
-	if ((w & RB_HEADER) == 0 && (v->rx_bits >> 16) == w &&
-	    (w & RB_RATES) && v->rxp == RX_R && w == v->rx_r_word) {
+	if ((w & RB_HEADER) == 0 && (rx_bits >> 16) == w &&
+	    (w & RB_RATES) && rxp == RX_R && w == rx_r_word) {
 		/* E has to come on the same 16 bit boundaries as R; follow
 		   them, a clock offset can slip a symbol */
-		v->rx_word_align = v->rx_nbits & 15;
-	} else if ((w & RB_HEADER) == 0 && (v->rx_bits >> 16) == w &&
-	    (w & RB_RATES) && w != v->rx_r_word) {
-		v->rx_word_align = v->rx_nbits & 15;
-		v->rx_r_word = w;
-		v->r_word = w;
-		DSP_DBG("v32: rx quality: mse %.4f (%.1f dB)\n", v->rx_mse,
-			-10 * log10f(v->rx_mse + 1e-6f));
-		v->ev_r = 1;
-		v->rxp = RX_R;
+		rx_word_align = rx_nbits & 15;
+	} else if ((w & RB_HEADER) == 0 && (rx_bits >> 16) == w &&
+	    (w & RB_RATES) && w != rx_r_word) {
+		rx_word_align = rx_nbits & 15;
+		rx_r_word = w;
+		r_word = w;
+		DSP_DBG("v32: rx quality: mse %.4f (%.1f dB)\n", rx_mse,
+			-10 * log10f(rx_mse + 1e-6f));
+		ev_r = 1;
+		rxp = RX_R;
 		DSP_DBG("v32: R word %04X\n", w);
-	} else if (v->rxp == RX_R && (w & RB_HEADER) == RB_HEADER &&
-		   (v->rx_nbits & 15) == v->rx_word_align &&
+	} else if (rxp == RX_R && (w & RB_HEADER) == RB_HEADER &&
+		   (rx_nbits & 15) == rx_word_align &&
 		   rate_of_word(w) && (w & RB_RATES) == rate_of_word(w)->bits &&
-		   v->rx_mse < 0.1f && !v->rx_e_seen) {
-		v->rx_e_seen = 1;
-		v->rx_rate = rate_of_word(w);
-		v->ev_e = 1;
-		v->rxp = RX_DATA;
-		v->vit.init(v->rx_rate->points, v->rx_rate->nbits);
+		   rx_mse < 0.1f && !rx_e_seen) {
+		rx_e_seen = 1;
+		rx_rate = rate_of_word(w);
+		ev_e = 1;
+		rxp = RX_DATA;
+		vit.init(rx_rate->points, rx_rate->nbits);
 		/* trained: slow timing loop, its jitter hurts the dense
 		   constellations */
-		v->rx.kt_p = 0.004f * v->rx.sps;
-		v->rx.kt_gi = 0.003f;
-		DSP_DBG("v32: E word %04X, rx rate %d\n", w, v->rx_rate->bps);
+		rx.kt_p = 0.004f * rx.sps;
+		rx.kt_gi = 0.003f;
+		DSP_DBG("v32: E word %04X, rx rate %d\n", w, rx_rate->bps);
 	}
 }
 
-static void v32_rx_symbol(struct v32_dp *v)
+void V32Pump::rx_symbol()
 {
-	cplx z = v->rx.z, d, st;
+	cplx z = rx.z, d, st;
 	int k, q, sgn;
 	float a;
 
 	/* while we send our own training the line carries mostly our echo
 	   (the echo canceller is still learning): don't listen */
-	if (v->txm == TXM_S || v->txm == TXM_SBAR ||
-	    v->txm == TXM_TRN2 || v->txm == TXM_TRN4) {
-		v->run_s = 0;
-		v->last_z = z;
+	if (txm == TXM_S || txm == TXM_SBAR ||
+	    txm == TXM_TRN2 || txm == TXM_TRN4) {
+		run_s = 0;
+		last_z = z;
 		return;
 	}
 
 	/* signal quality: mean squared distance to the ABCD grid */
-	if (v->rxp != RX_DATA) {
+	if (rxp != RX_DATA) {
 		k = nearest_abcd(z);
-		v->rx_mse += 0.05f * (cplx_pow(cplx_sub(z, v32_abcd[k])) /
-				      V32_POWER - v->rx_mse);
+		rx_mse += 0.05f * (cplx_pow(cplx_sub(z, v32_abcd[k])) /
+				      V32_POWER - rx_mse);
 	}
 
 	/* S: steps of +-90 degrees with alternating sign; the first
 	   S-bar symbol (C) repeats the sign.  S can start over at any
 	   time before data (a new training). */
-	if (v->rxp != RX_DATA) {
-		st = cplx_mulc(z, v->last_z);
+	if (rxp != RX_DATA) {
+		st = cplx_mulc(z, last_z);
 		a = atan2f(st.im, st.re);
 		sgn = a > 0 ? 1 : -1;
-		if (fabsf(a) > 0.9f && fabsf(a) < 2.2f && v->carrier) {
-			if (sgn != v->last_sgn) {
-				if (++v->run_s >= 24 && v->rxp != RX_S) {
+		if (fabsf(a) > 0.9f && fabsf(a) < 2.2f && carrier) {
+			if (sgn != last_sgn) {
+				if (++run_s >= 24 && rxp != RX_S) {
 					/* whatever was learned on silence or
 					   noise is useless: start over */
-					if (v->rxp != RX_IDLE)
-						v->rx.reset();
-					v->rxp = RX_S;
-					v->ev_s = 1;
+					if (rxp != RX_IDLE)
+						rx.reset();
+					rxp = RX_S;
+					ev_s = 1;
 					DSP_DBG("v32: S detected\n");
 				}
-			} else if (v->rxp == RX_S && v->run_s >= 24) {
+			} else if (rxp == RX_S && run_s >= 24) {
 				/* S-bar: this symbol is C */
-				v->rx.align_phase(v32_abcd[2]);
-				v->rxp = RX_TRN;
-				v->rx_4800 = abcd_to_4800[2];
-				v->rx_nbits = 0;
-				v->rx_r_word = 0;
-				v->run_s = 0;
+				rx.align_phase(v32_abcd[2]);
+				rxp = RX_TRN;
+				rx_4800 = abcd_to_4800[2];
+				rx_nbits = 0;
+				rx_r_word = 0;
+				run_s = 0;
 				DSP_DBG("v32: S-bar detected\n");
 			} else
-				v->run_s = 0;
+				run_s = 0;
 		} else
-			v->run_s = 0;
-		v->last_sgn = sgn;
+			run_s = 0;
+		last_sgn = sgn;
 		/* noise can hide the S to S-bar step: once S is clearly over,
 		   go on with the training anyway (everything after it is
 		   differential, the absolute phase is not needed) */
-		if (v->rxp == RX_S) {
-			if (v->run_s >= 24)
-				v->s_miss = 0;
-			else if (++v->s_miss >= 24) {
-				v->rxp = RX_TRN;
-				v->rx_nbits = 0;
-				v->rx_r_word = 0;
+		if (rxp == RX_S) {
+			if (run_s >= 24)
+				s_miss = 0;
+			else if (++s_miss >= 24) {
+				rxp = RX_TRN;
+				rx_nbits = 0;
+				rx_r_word = 0;
 				DSP_DBG("v32: end of S\n");
 			}
 		}
 	}
 
-	switch (v->rxp) {
+	switch (rxp) {
 	case RX_IDLE:
 	case RX_S:
 		/* keep the phase locked on the ABCD grid, no eq training on
 		   the two tone S signal */
 		k = nearest_abcd(z);
-		v->rx.adapt(v32_abcd[k], 0, 0.05f, 0);
+		rx.adapt(v32_abcd[k], 0, 0.05f, 0);
 		break;
 	case RX_TRN:
 	case RX_R:
 		k = nearest_abcd(z);
 		/* no training on noise while the remote is silent */
-		if (v->rx_mse < 0.15f)
-			v->rx.adapt(v32_abcd[k], 0.02f, 0.05f, 0.0005f);
+		if (rx_mse < 0.15f)
+			rx.adapt(v32_abcd[k], 0.02f, 0.05f, 0.0005f);
 		else
-			v->rx.adapt(v32_abcd[k], 0.002f, 0.05f, 0);
+			rx.adapt(v32_abcd[k], 0.002f, 0.05f, 0);
 		/* 4800 bit/s decoding for the R and E words */
 		q = abcd_to_4800[k];
 		for (k = 0; k < 4; k++)
-			if (v32_4800_enc[v->rx_4800][k] == q)
+			if (v32_4800_enc[rx_4800][k] == q)
 				break;
-		v->rx_4800 = q;
-		v32_rx_word_bit(v, descramble(&v->rx_scr, v->rx_scr_tap, k & 1));
-		v32_rx_word_bit(v, descramble(&v->rx_scr, v->rx_scr_tap, k >> 1));
-		if (v->rxp == RX_DATA)
-			v->vit.last_y12 = 0;
+		rx_4800 = q;
+		rx_word_bit(descramble(&rx_scr, rx_scr_tap, k & 1));
+		rx_word_bit(descramble(&rx_scr, rx_scr_tap, k >> 1));
+		if (rxp == RX_DATA)
+			vit.last_y12 = 0;
 		break;
 	case RX_DATA:
 		{
-			const struct v32_rate *r = v->rx_rate;
+			const struct v32_rate *r = rx_rate;
 			u8 bits[6];
 			int n = r->nbits;
 			k = nearest_point(r->points, 1 << (n == 2 ? 2 : n + 1), z);
 			d = r->points[k];
-			v->rx_mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / V32_POWER -
-					      v->rx_mse);
-			if (v->rx.symbols % 50 == 0)
+			rx_mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / V32_POWER -
+					      rx_mse);
+			if (rx.symbols % 50 == 0)
 				DSP_TRACE("%s data mse %.4f t %.3f tadj %.5f th %.2f dth %.5f\n",
-					  v->caller ? "C" : "A", v->rx_mse, v->rx.t_next,
-					  v->rx.t_adj, v->rx.theta, v->rx.dtheta);
-			v->rx.adapt(d, 0.004f, 0.02f, 0.0002f);
+					  caller ? "C" : "A", rx_mse, rx.t_next,
+					  rx.t_adj, rx.theta, rx.dtheta);
+			rx.adapt(d, 0.004f, 0.02f, 0.0002f);
 			if (n == 2) {
 				for (q = 0; q < 4; q++)
-					if (v32_4800_enc[v->rx_4800][q] == k)
+					if (v32_4800_enc[rx_4800][q] == k)
 						break;
-				v->rx_4800 = k;
+				rx_4800 = k;
 			} else
-				q = v->vit.decode(z, NULL);
-			if (q >= 0 && v->state == V32_DATA) {
+				q = vit.decode(z, NULL);
+			if (q >= 0 && state == V32_DATA) {
 				for (k = 0; k < n; k++)
-					bits[k] = descramble(&v->rx_scr,
-							     v->rx_scr_tap, q >> k);
-				modem_put_bits(v->modem, 1, bits, n);
+					bits[k] = descramble(&rx_scr,
+							     rx_scr_tap, q >> k);
+				modem_put_bits(modem, 1, bits, n);
 			} else if (q >= 0)
 				for (k = 0; k < n; k++)
-					descramble(&v->rx_scr, v->rx_scr_tap, q >> k);
+					descramble(&rx_scr, rx_scr_tap, q >> k);
 		}
 		break;
 	}
-	v->last_z = z;
+	last_z = z;
 }
 
-static void v32_rx_sample(struct v32_dp *v, float x)
+void V32Pump::rx_sample(float x)
 {
-	x = v->ec.run(v->last_tx, x, v->ec_mu);
+	x = ec.run(last_tx, x, ec_mu);
 
-	if (tone_run(&v->ac, x, v->rx.power, v->srate) && v->caller)
-		v->ev_rev = 1;
-	if (tone_run(&v->aa, x, v->rx.power, v->srate) && !v->caller)
-		v->ev_rev = 1;
-	tone_run(&v->usb1, x, v->rx.power, v->srate);
-	tone_run(&v->ans2100, x, v->rx.power, v->srate);
-	if (v->caller && v->automode) {
-		tone_run(&v->v21m, x, v->rx.power, v->srate);
-		tone_run(&v->v23m, x, v->rx.power, v->srate);
+	if (ac.run(x, rx.power, srate) && caller)
+		ev_rev = 1;
+	if (aa.run(x, rx.power, srate) && !caller)
+		ev_rev = 1;
+	usb1.run(x, rx.power, srate);
+	ans2100.run(x, rx.power, srate);
+	if (caller && automode) {
+		v21m.run(x, rx.power, srate);
+		v23m.run(x, rx.power, srate);
 	}
-	v->ev_ac = v->ac.on;
-	v->ev_aa = v->aa.on;
+	ev_ac = ac.on;
+	ev_aa = aa.on;
 	/* V.22 unscrambled ones (2250 Hz), not the 2100 Hz answer tone */
-	v->ev_usb1 = v->usb1.on && !v->ac.on &&
-		cplx_pow(v->usb1.lp2) > 4 * cplx_pow(v->ans2100.lp2);
+	ev_usb1 = usb1.on && !ac.on &&
+		cplx_pow(usb1.lp2) > 4 * cplx_pow(ans2100.lp2);
 
-	if (v->rx.sample(x))
-		v32_rx_symbol(v);
+	if (rx.sample(x))
+		rx_symbol();
 
-	if (!v->carrier && v->rx.power > tone_power(150)) {
-		v->carrier = 1;
-		if (v->rxp == RX_IDLE)
-			v->rx.reset();
-	} else if (v->carrier && v->rx.power < tone_power(90)) {
-		v->carrier = 0;
-		if (v->rxp != RX_DATA)
-			v32_rx_reset(v);
+	if (!carrier && rx.power > tone_power(150)) {
+		carrier = 1;
+		if (rxp == RX_IDLE)
+			rx.reset();
+	} else if (carrier && rx.power < tone_power(90)) {
+		carrier = 0;
+		if (rxp != RX_DATA)
+			rx_reset();
 	}
-	if (v->carrier)
-		v->carrier_run = v->carrier_run > 0 ? v->carrier_run + 1 : 1;
+	if (carrier)
+		carrier_run = carrier_run > 0 ? carrier_run + 1 : 1;
 	else
-		v->carrier_run = v->carrier_run < 0 ? v->carrier_run - 1 : -1;
+		carrier_run = carrier_run < 0 ? carrier_run - 1 : -1;
 }
-
 
 /*
  *    handshake
  */
 
-static void v32_set_state(struct v32_dp *v, enum v32_state s)
+void V32Pump::set_state(enum v32_state s)
 {
-	DSP_DBG("v32: state %d -> %d at %ld ms\n", v->state, s,
-		v->total * 1000 / v->srate);
-	v->state = s;
-	v->count = 0;
+	DSP_DBG("v32: state %d -> %d at %ld ms\n", state, s,
+		total * 1000 / srate);
+	state = s;
+	count = 0;
 }
 
-static void v32_start_word(struct v32_dp *v, enum v32_txm m, unsigned w)
+void V32Pump::start_word(enum v32_txm m, unsigned w)
 {
-	v->tx_word = w;
-	v->tx_word_bit = 0;
-	v32_set_tx(v, m);
+	tx_word = w;
+	tx_word_bit = 0;
+	set_tx(m);
 }
 
-static int v32_connect(struct v32_dp *v)
+int V32Pump::connect()
 {
-	v32_set_state(v, V32_DATA);
-	modem_set_param(v->modem, MDMPRM_TX_RATE, v->tx_rate->bps);
-	modem_set_param(v->modem, MDMPRM_RX_RATE, v->rx_rate->bps);
-	if (v->retraining) {
+	set_state(V32_DATA);
+	modem_set_param(modem, MDMPRM_TX_RATE, tx_rate->bps);
+	modem_set_param(modem, MDMPRM_RX_RATE, rx_rate->bps);
+	if (retraining) {
 		/* the link goes on (V.42 knows nothing of it) */
-		v->retraining = 0;
-		DSP_DBG("v32: retrained, %d/%d\n", v->tx_rate->bps,
-			v->rx_rate->bps);
+		retraining = 0;
+		DSP_DBG("v32: retrained, %d/%d\n", tx_rate->bps,
+			rx_rate->bps);
 		return DPSTAT_OK;
 	}
-	DSP_DBG("v32: connect %d/%d\n", v->tx_rate->bps, v->rx_rate->bps);
+	DSP_DBG("v32: connect %d/%d\n", tx_rate->bps, rx_rate->bps);
 	return DPSTAT_CONNECT;
 }
 
 /* a retrain (V.32 5.5): the start-up again from AA / AC, the caller's
    from AA, the answerer's from AC; whoever starts it, the other modem
    answers the same way when it hears the signal */
-static void v32_retrain(struct v32_dp *v)
+void V32Pump::retrain()
 {
-	DSP_DBG("v32: retrain %d (%s)\n", ++v->retrains,
-		v->caller ? "AA" : "AC");
-	v->retraining = 1;
-	v->automode = 0;                /* no falling back now */
-	v32_rx_reset(v);
-	v->ev_rev = v->ev_r = v->ev_e = v->ev_s = 0;
-	v->timeout = v->total + ms2samples(15000, v->srate);
-	v->tx_syms = 0;
-	if (v->caller) {
-		v32_set_state(v, C_AA);
-		v32_set_tx(v, TXM_AA);
+	DSP_DBG("v32: retrain %d (%s)\n", ++retrains,
+		caller ? "AA" : "AC");
+	retraining = 1;
+	automode = 0;                /* no falling back now */
+	rx_reset();
+	ev_rev = ev_r = ev_e = ev_s = 0;
+	timeout = total + ms2samples(15000, srate);
+	tx_syms = 0;
+	if (caller) {
+		set_state(C_AA);
+		set_tx(TXM_AA);
 	} else {
-		v32_set_state(v, A_AC);
-		v32_set_tx(v, TXM_AC);
+		set_state(A_AC);
+		set_tx(TXM_AC);
 	}
 }
 
-static int v32_fallback_to(struct v32_dp *v, enum DP_ID id, const char *name)
+int V32Pump::fallback_to(enum DP_ID id, const char *mode)
 {
-	DSP_DBG("v32: remote is not V.32, falling back to %s\n", name);
-	if (v->rt && !v->caller)
-		v->rt->ans_sent = 1;
-	modem_set_param(v->modem, MDMPRM_DP_REQUESTED, id);
+	DSP_DBG("v32: remote is not V.32, falling back to %s\n", mode);
+	if (rt && !caller)
+		rt->ans_sent = 1;
+	modem_set_param(modem, MDMPRM_DP_REQUESTED, id);
 	return DPSTAT_CHANGEDP;
 }
 
-static int v32_fallback(struct v32_dp *v)
+int V32Pump::fallback()
 {
-	return v32_fallback_to(v, DP_V22BIS, "V.22bis");
+	return fallback_to(DP_V22BIS, "V.22bis");
 }
 
 /* the rates our receiver can take, judged by the decision error on
    the training signal (4 points) */
-static unsigned v32_quality_caps(struct v32_dp *v)
+unsigned V32Pump::quality_caps()
 {
 	static const float min_snr[] = { 25, 22, 19, 16, 0 };
-	float snr = -10 * log10f(v->rx_mse + 1e-6f);
-	unsigned caps = 0;
+	float snr = -10 * log10f(rx_mse + 1e-6f);
+	unsigned caps_ = 0;
 	int i;
 	for (i = 0; i < V32_NRATES; i++)
 		if (snr >= min_snr[i])
-			caps |= v32_rates[i].bits;
+			caps_ |= v32_rates[i].bits;
 	/* TCM is shared by the trellis rates */
-	if (caps & (RB_7200 | RB_9600 | RB_12000 | RB_14400))
-		caps |= RB_TCM;
-	return v->caps & (caps | RB_4800);
+	if (caps_ & (RB_7200 | RB_9600 | RB_12000 | RB_14400))
+		caps_ |= RB_TCM;
+	return caps & (caps_ | RB_4800);
 }
 
 /* the best common rate of our capabilities and the remote's word */
-static const struct v32_rate *v32_choose(struct v32_dp *v, unsigned w)
+const struct v32_rate *V32Pump::choose(unsigned w)
 {
-	return rate_of_word(w & v32_quality_caps(v));
+	return rate_of_word(w & quality_caps());
 }
 
 /* called once per transmitted symbol, before the symbol is made */
-static int v32_handshake(struct v32_dp *v)
+int V32Pump::handshake()
 {
-	long sym = v->tx_syms;
+	long sym = tx_syms;
 	const struct v32_rate *r;
 
-	switch (v->state) {
+	switch (state) {
 	/* answering modem */
 	case A_SILENCE:
-		if (v->count >= ms2samples(1000, v->srate)) {
-			v32_set_state(v, A_ANS);
-			v32_set_tx(v, TXM_ANS);
+		if (count >= ms2samples(1000, srate)) {
+			set_state(A_ANS);
+			set_tx(TXM_ANS);
 		}
 		break;
 	case A_ANS:
-		if (v->count >= ms2samples(3300, v->srate)) {
-			v32_set_state(v, A_GAP);
-			v32_set_tx(v, TXM_SILENCE);
+		if (count >= ms2samples(3300, srate)) {
+			set_state(A_GAP);
+			set_tx(TXM_SILENCE);
 		}
 		break;
 	case A_GAP:
-		if (v->count >= ms2samples(75, v->srate)) {
-			v32_set_state(v, A_AC);
-			v32_set_tx(v, TXM_AC);
+		if (count >= ms2samples(75, srate)) {
+			set_state(A_AC);
+			set_tx(TXM_AC);
 		}
 		break;
 	case A_AC:
 		/* AC for at least 128 symbols and until AA is heard */
-		if (sym >= 128 && v->ev_aa) {
-			v32_set_state(v, A_CA);
-			v->tx_reverse = 1;
-			v->ev_rev = 0;
-		} else if (v->automode && v->count >= ms2samples(3000, v->srate))
-			return v32_fallback(v);
+		if (sym >= 128 && ev_aa) {
+			set_state(A_CA);
+			tx_reverse = 1;
+			ev_rev = 0;
+		} else if (automode && count >= ms2samples(3000, srate))
+			return fallback();
 		break;
 	case A_CA:
 		/* the caller answers with CC */
-		if (v->ev_rev) {
-			v->ev_rev = 0;
-			v32_set_state(v, A_AC2);
-			v->tx_reverse = 1;
-			v->tx_syms = 0;
-		} else if (v->count >= ms2samples(2000, v->srate))
+		if (ev_rev) {
+			ev_rev = 0;
+			set_state(A_AC2);
+			tx_reverse = 1;
+			tx_syms = 0;
+		} else if (count >= ms2samples(2000, srate))
 			return DPSTAT_ERROR;
 		break;
 	case A_AC2:
 		if (sym >= 64) {
-			v32_set_state(v, A_QUIET);
-			v32_set_tx(v, TXM_SILENCE);
+			set_state(A_QUIET);
+			set_tx(TXM_SILENCE);
 		}
 		break;
 	case A_QUIET:
 		if (sym >= 16) {
-			v32_set_state(v, A_TRAIN1);
-			v32_set_tx(v, TXM_S);
-			v->ev_s = 0;
+			set_state(A_TRAIN1);
+			set_tx(TXM_S);
+			ev_s = 0;
 		}
 		break;
 	case A_TRAIN1:
@@ -812,99 +842,99 @@ static int v32_handshake(struct v32_dp *v)
 	case C_TRAIN:
 		/* S, S-bar, TRN; our echo canceller learns while the remote
 		   is silent */
-		if (v->txm == TXM_S && sym >= 256)
-			v32_set_tx(v, TXM_SBAR);
-		else if (v->txm == TXM_SBAR && sym >= 16) {
-			v32_set_tx(v, TXM_TRN2);
-			if (v->state != A_TRAIN2)
-				v->ec_mu = 0.05f;
+		if (txm == TXM_S && sym >= 256)
+			set_tx(TXM_SBAR);
+		else if (txm == TXM_SBAR && sym >= 16) {
+			set_tx(TXM_TRN2);
+			if (state != A_TRAIN2)
+				ec_mu = 0.05f;
 			/* TRN starts from a fixed scrambler state (as found
 			   in recordings of the original library, whose
 			   receiver trains on the exact sequence) */
-			v->tx_scr = v->caller ? 0x673800 : 0x0FF800;
+			tx_scr = caller ? 0x673800 : 0x0FF800;
 		}
-		else if (v->txm == TXM_TRN2 && sym >= 256) {
-			v32_set_tx(v, TXM_TRN4);
+		else if (txm == TXM_TRN2 && sym >= 256) {
+			set_tx(TXM_TRN4);
 			/* and so does the 4 point part */
-			v->tx_scr = v->caller ? 0x221837 : 0x683C9F;
-			if (v->state != A_TRAIN2)
-				v->ec_mu = 0.05f;
-		} else if (v->txm == TXM_TRN4 && sym >= V32_TRN_LEN) {
-			if (v->ec_mu > 0) {
-				float erle = v->ec.judge();
+			tx_scr = caller ? 0x221837 : 0x683C9F;
+			if (state != A_TRAIN2)
+				ec_mu = 0.05f;
+		} else if (txm == TXM_TRN4 && sym >= V32_TRN_LEN) {
+			if (ec_mu > 0) {
+				float erle = ec.judge();
 				DSP_DBG("v32: echo canceller took %.1f dB "
-					"away%s\n", erle, v->ec.off ? ": off" : "");
+					"away%s\n", erle, ec.off ? ": off" : "");
 			}
-			v->ec_mu = 0;
-			if (v->state == A_TRAIN1) {
-				v32_set_state(v, A_R1);
-				v32_start_word(v, TXM_R, RB_B4 | RB_SYNC | v->caps);
-			} else if (v->state == A_TRAIN2) {
-				v32_set_state(v, A_R3);
-				v32_start_word(v, TXM_R, final_word(v->tx_rate));
-				v->ev_e = 0;
+			ec_mu = 0;
+			if (state == A_TRAIN1) {
+				set_state(A_R1);
+				start_word(TXM_R, RB_B4 | RB_SYNC | caps);
+			} else if (state == A_TRAIN2) {
+				set_state(A_R3);
+				start_word(TXM_R, final_word(tx_rate));
+				ev_e = 0;
 			} else {
-				v32_set_state(v, C_R2);
-				v32_start_word(v, TXM_R, RB_B4 | RB_SYNC |
-					       (v->r_word & v->r2_caps));
-				v->ev_r = 0;
+				set_state(C_R2);
+				start_word(TXM_R, RB_B4 | RB_SYNC |
+					       (r_word & r2_caps));
+				ev_r = 0;
 			}
 		}
 		break;
 	case A_R1:
 		/* R1 until the caller starts its training */
-		if (v->ev_s && v->tx_word_bit == 0) {
-			v32_set_state(v, A_WAIT_R2);
-			v32_set_tx(v, TXM_SILENCE);
-			v->ev_r = 0;
+		if (ev_s && tx_word_bit == 0) {
+			set_state(A_WAIT_R2);
+			set_tx(TXM_SILENCE);
+			ev_r = 0;
 		}
 		break;
 	case A_WAIT_R2:
-		if (v->ev_r) {
-			v->ev_r = 0;
-			r = v32_choose(v, v->r_word);
+		if (ev_r) {
+			ev_r = 0;
+			r = choose(r_word);
 			if (!r) {
-				DSP_DBG("v32: no common rate in %04X\n", v->r_word);
+				DSP_DBG("v32: no common rate in %04X\n", r_word);
 				return DPSTAT_ERROR;
 			}
-			v->tx_rate = r;
-			v32_set_state(v, A_TRAIN2);
-			v32_set_tx(v, TXM_S);
+			tx_rate = r;
+			set_state(A_TRAIN2);
+			set_tx(TXM_S);
 		}
 		break;
 	case A_R3:
-		if (v->ev_e && v->tx_word_bit == 0) {
-			v32_set_state(v, A_E);
-			v32_start_word(v, TXM_E, final_word(v->tx_rate) | RB_HEADER);
+		if (ev_e && tx_word_bit == 0) {
+			set_state(A_E);
+			start_word(TXM_E, final_word(tx_rate) | RB_HEADER);
 		}
 		break;
 	case A_E:
 	case C_E:
-		if (v->txm == TXM_E && sym >= 8) {
-			v32_set_tx(v, TXM_DATA);
-			v->tx_trellis.diff = 0;
-			v->tx_trellis.conv = 0;
+		if (txm == TXM_E && sym >= 8) {
+			set_tx(TXM_DATA);
+			tx_trellis.diff = 0;
+			tx_trellis.conv = 0;
 		}
-		if (v->txm == TXM_DATA && v->rxp == RX_DATA)
-			return v32_connect(v);
+		if (txm == TXM_DATA && rxp == RX_DATA)
+			return connect();
 		break;
 
 	/* calling modem */
 	case C_AA:
-		if (v->ev_rev && v->ev_ac) {
-			v->ev_rev = 0;
-			v32_set_state(v, C_AA_DELAY);
-			v->tx_syms = 0;
-		} else if (v->automode && v->ev_usb1 &&
-			   v->usb1.on_count > ms2samples(100, v->srate))
-			return v32_fallback(v);
+		if (ev_rev && ev_ac) {
+			ev_rev = 0;
+			set_state(C_AA_DELAY);
+			tx_syms = 0;
+		} else if (automode && ev_usb1 &&
+			   usb1.on_count > ms2samples(100, srate))
+			return fallback();
 		/* an FSK answerer's steady mark after its answer tone */
-		else if (v->automode &&
-			 v->v21m.on_count > ms2samples(300, v->srate))
-			return v32_fallback_to(v, DP_V21, "V.21");
-		else if (v->automode && !v->ans2100.on &&
-			 v->v23m.on_count > ms2samples(300, v->srate))
-			return v32_fallback_to(v, DP_V23, "V.23");
+		else if (automode &&
+			 v21m.on_count > ms2samples(300, srate))
+			return fallback_to(DP_V21, "V.21");
+		else if (automode && !ans2100.on &&
+			 v23m.on_count > ms2samples(300, srate))
+			return fallback_to(DP_V23, "V.23");
 		break;
 	case C_AA_DELAY:
 		/* CC goes out 64 symbols after the reversal; our detector
@@ -912,126 +942,115 @@ static int v32_handshake(struct v32_dp *v)
 		   round trip delay from this, and the original library fails
 		   its training when the estimate is too long. */
 		if (sym >= 38) {
-			v32_set_state(v, C_CC);
-			v32_set_tx(v, TXM_CC);
-			v->ev_rev = 0;
+			set_state(C_CC);
+			set_tx(TXM_CC);
+			ev_rev = 0;
 		}
 		break;
 	case C_CC:
-		if (v->ev_rev) {
-			v32_set_state(v, C_WAIT_R1);
-			v32_set_tx(v, TXM_SILENCE);
-			v->ev_r = 0;
-		} else if (v->count >= ms2samples(2000, v->srate))
+		if (ev_rev) {
+			set_state(C_WAIT_R1);
+			set_tx(TXM_SILENCE);
+			ev_r = 0;
+		} else if (count >= ms2samples(2000, srate))
 			return DPSTAT_ERROR;
 		break;
 	case C_WAIT_R1:
-		if (v->ev_r) {
-			v->ev_r = 0;
-			v->r2_caps = v32_quality_caps(v);
-			DSP_DBG("v32: rates we can receive: %04X\n", v->r2_caps);
-			v32_set_state(v, C_TRAIN);
-			v32_set_tx(v, TXM_S);
+		if (ev_r) {
+			ev_r = 0;
+			r2_caps = quality_caps();
+			DSP_DBG("v32: rates we can receive: %04X\n", r2_caps);
+			set_state(C_TRAIN);
+			set_tx(TXM_S);
 		}
 		break;
 	case C_R2:
 		/* R2 until R3 arrives */
-		if (v->ev_r && v->tx_word_bit == 0) {
-			v->ev_r = 0;
-			r = v32_choose(v, v->r_word);
+		if (ev_r && tx_word_bit == 0) {
+			ev_r = 0;
+			r = choose(r_word);
 			DSP_DBG("v32: R word %04X in R2 (choice %04X)\n",
-				v->r_word, r ? r->bits : 0);
-			if (!r || (v->r_word & RB_RATES) != r->bits) {
+				r_word, r ? r->bits : 0);
+			if (!r || (r_word & RB_RATES) != r->bits) {
 				/* not a final rate word yet (R1 repeated) */
 				break;
 			}
-			v->tx_rate = r;
-			v32_set_state(v, C_E);
-			v32_start_word(v, TXM_E, final_word(r) | RB_HEADER);
+			tx_rate = r;
+			set_state(C_E);
+			start_word(TXM_E, final_word(r) | RB_HEADER);
 		}
 		break;
 
 	case V32_DATA:
 		/* the remote retrains: AA from a caller, AC from an
 		   answerer (scrambled data has no such tone) */
-		if ((!v->caller && v->ev_aa && !v->ev_ac) ||
-		    (v->caller && v->ev_ac))
-			v32_retrain(v);
-		else if (v->retrain_at && v->count >= v->retrain_at &&
-			 !v->retrains) {
-			v32_retrain(v);
+		if ((!caller && ev_aa && !ev_ac) ||
+		    (caller && ev_ac))
+			retrain();
+		else if (retrain_at && count >= retrain_at &&
+			 !retrains) {
+			retrain();
 		}
 		break;
 	}
 	return DPSTAT_OK;
 }
 
-static int v32_process(struct dp *dp, void *in, void *out, int cnt)
+int V32Pump::process(void *in, void *out, int cnt)
 {
-	struct v32_dp *v = static_cast<v32_dp*>(dp->dp_data);
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 	int ret = DPSTAT_OK, r, i;
 	float y;
 
 	for (i = 0; i < cnt; i++) {
 		/* the handshake acts on symbol boundaries */
-		if (v->txm != TXM_ANS && v->tx.t + 1.0f / v->tx.sps >= 1) {
-			r = v32_handshake(v);
+		if (txm != TXM_ANS && tx.t + 1.0f / tx.sps >= 1) {
+			r = handshake();
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 				return r;
 			if (r != DPSTAT_OK)
 				ret = r;
-		} else if (v->txm == TXM_ANS || v->txm == TXM_SILENCE) {
-			r = v32_handshake(v);
+		} else if (txm == TXM_ANS || txm == TXM_SILENCE) {
+			r = handshake();
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 				return r;
 		}
 
-		if (v->txm == TXM_ANS)
-			y = DSP_TX_AMPLITUDE * v->ans.next();
+		if (txm == TXM_ANS)
+			y = DSP_TX_AMPLITUDE * ans.next();
 		else
-			y = v->tx.sample();
-		v->last_tx = y;
+			y = tx.sample();
+		last_tx = y;
 		dst[i] = dsp_clip16(y);
 
-		v32_rx_sample(v, src[i]);
+		rx_sample(src[i]);
 
-		if (v->state == V32_DATA) {
-			if (-v->carrier_run >= v->carrier_loss) {
+		if (state == V32_DATA) {
+			if (-carrier_run >= carrier_loss) {
 				DSP_DBG("v32: carrier lost\n");
 				return DPSTAT_ERROR;
 			}
-		} else if (v->total >= v->timeout) {
-			DSP_DBG("v32: handshake timeout in state %d\n", v->state);
+		} else if (total >= timeout) {
+			DSP_DBG("v32: handshake timeout in state %d\n", state);
 			return DPSTAT_ERROR;
 		}
-		v->count++;
-		v->total++;
+		count++;
+		total++;
 	}
 	return ret;
 }
 
-static struct dp *v32_create(struct modem *m, enum DP_ID id,
-			     int caller, int srate, int max_frag,
-			     struct dp_operations *op)
+int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
-	struct v32_dp *v;
 	int s7, s10, i;
 	long min_rate, max_rate;
 
-	v = static_cast<v32_dp*>(calloc(1, sizeof(*v)));
-	if (!v)
-		return NULL;
-	v->dp.id = id;
-	v->dp.modem = m;
-	v->dp.op = op;
-	v->dp.dp_data = v;
-	v->modem = m;
-	v->srate = srate;
-	v->caller = caller;
-	v->rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
-	v->automode = (id != DP_V32 && id != DP_V32BIS) ||
-		(v->rt && v->rt->v32_automode);
+	modem = m;
+	srate = srate_;
+	caller = caller_;
+	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+	automode = (id != DP_V32 && id != DP_V32BIS) ||
+		(rt && rt->v32_automode);
 
 	/* rates we offer */
 	min_rate = modem_get_param(m, MDMPRM_MIN_RATE);
@@ -1044,86 +1063,71 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 			continue;
 		if (min_rate > 0 && r->bps < min_rate)
 			continue;
-		v->caps |= r->bits;
+		caps |= r->bits;
 	}
-	if (!v->caps)
-		v->caps = RB_4800;
+	if (!caps)
+		caps = RB_4800;
 
-	v->tx.init(srate, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
+	tx.init(srate_, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
 		    sqrtf(V32_POWER), V32_TX_AMPLITUDE);
-	v->tx.get_symbol = v32_get_symbol;
-	v->tx.ctx = v;
+	tx.get_symbol = v32_get_symbol;
+	tx.ctx = this;
 	/* symbol centres a quarter symbol off the sample grid: the
 	   original library's receiver fails to train at some timing
 	   phases, this one works for all its rates */
-	v->tx.t = 0.25f;
-	v->ans.set_freq(2100, srate);
-	if (v->rx.init(srate, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
+	tx.t = 0.25f;
+	ans.set_freq(2100, srate_);
+	if (rx.init(srate_, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
 			V32_EQ_LEN, V32_POWER) ||
-	    v->ec.init(V32_EC_LEN)) {
-		v->rx.release();
-		v->ec.release();
-		free(v);
-		return NULL;
-	}
-	tone_init(&v->aa, 1800, srate);
-	tone_init(&v->ac, 600, srate);
-	tone_init(&v->usb1, 2250, srate);
-	tone_init(&v->ans2100, 2100, srate);
-	tone_init(&v->v21m, 1650, srate);
-	tone_init(&v->v23m, 1300, srate);
+	    ec.init(V32_EC_LEN))
+		return -1;
+	aa.init(1800, srate_);
+	ac.init(600, srate_);
+	usb1.init(2250, srate_);
+	ans2100.init(2100, srate_);
+	v21m.init(1650, srate_);
+	v23m.init(1300, srate_);
 
 	/* the caller scrambles with GPC, the answerer with GPA */
-	v->tx_scr_tap = caller ? 18 : 5;
-	v->rx_scr_tap = caller ? 5 : 18;
-	v->tx_rate = &v32_rates[V32_NRATES - 1];
-	v->rx_rate = v->tx_rate;
+	tx_scr_tap = caller_ ? 18 : 5;
+	rx_scr_tap = caller_ ? 5 : 18;
+	tx_rate = &v32_rates[V32_NRATES - 1];
+	rx_rate = tx_rate;
 
 	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
 	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
-	v->timeout = (long)(s7 > 0 ? s7 : 50) * srate;
-	v->carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate / 10;
+	timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
+	carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;
 	if (getenv("DSP_V32_RETRAIN"))
-		v->retrain_at = ms2samples(atoi(getenv("DSP_V32_RETRAIN")), srate);
+		retrain_at = ms2samples(atoi(getenv("DSP_V32_RETRAIN")), srate_);
 
-	if (caller) {
-		v->state = C_AA;
-		v->txm = TXM_AA;
-	} else if (v->rt && v->rt->ans_sent) {
+	if (caller_) {
+		state = C_AA;
+		txm = TXM_AA;
+	} else if (rt && rt->ans_sent) {
 		/* from V.8: the answer tone (ANSam) is already sent */
-		v->rt->ans_sent = 0;
-		v->state = A_GAP;
-		v->txm = TXM_SILENCE;
+		rt->ans_sent = 0;
+		state = A_GAP;
+		txm = TXM_SILENCE;
 	} else {
-		v->state = A_SILENCE;
-		v->txm = TXM_SILENCE;
+		state = A_SILENCE;
+		txm = TXM_SILENCE;
 	}
 	DSP_DBG("v32: create %s (dp %d), rates %04X, srate %d\n",
-		caller ? "caller" : "answerer", id, v->caps, srate);
-	return &v->dp;
-}
-
-static int v32_delete(struct dp *dp)
-{
-	struct v32_dp *v = static_cast<v32_dp*>(dp->dp_data);
-	v->rx.release();
-	v->ec.release();
-	free(v);
+		caller_ ? "caller" : "answerer", id, caps, srate_);
 	return 0;
 }
 
-static int v32_hangup(struct dp *dp)
+void V32Pump::cleanup()
+{
+	rx.release();
+	ec.release();
+}
+
+int V32Pump::hangup()
 {
 	return 0;
 }
-
-static struct dp_operations v32_operations = {
-	.name = "V.32/V.32bis data pump",
-	.create = v32_create,
-	.destroy = v32_delete,
-	.process = v32_process,
-	.hangup = v32_hangup,
-};
 
 /* the V.8/V.34 pump (dp_v34.cpp) hands over to this one, with the
    V.22bis fallback, when the remote modem does not do V.34 */
@@ -1133,7 +1137,7 @@ int dp_v32_init(void)
 {
 	unsigned i;
 	for (i = 0; i < sizeof(v32_ids) / sizeof(v32_ids[0]); i++)
-		modem_dp_register(v32_ids[i], &v32_operations);
+		modem_dp_register(v32_ids[i], &PumpOps<V32Pump>::ops);
 	return 0;
 }
 
@@ -1141,7 +1145,7 @@ void dp_v32_exit(void)
 {
 	unsigned i;
 	for (i = 0; i < sizeof(v32_ids) / sizeof(v32_ids[0]); i++)
-		modem_dp_deregister(v32_ids[i], &v32_operations);
+		modem_dp_deregister(v32_ids[i], &PumpOps<V32Pump>::ops);
 }
 
 } // namespace dsp
