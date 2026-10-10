@@ -127,7 +127,7 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 	timeout = (long)(v > 0 ? v : 50) * srate_;
 
 	calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
-	fax = m->mode == MODEM_MODE_FAX;
+	fax = modem_get_param(m, MDMPRM_MODE) == MODEM_MODE_FAX;
 	ct.set_freq(fax ? 1100 : 1300, srate_);
 
 	/* like the original, X2/X4 insist on a dial tone even when there

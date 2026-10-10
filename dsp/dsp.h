@@ -13,7 +13,10 @@
 #ifndef __DSP_H__
 #define __DSP_H__
 
-#include <modem.h>
+/* the interface to the modem core: the data pumps register and exchange
+   bits through modem_dp.h, read and set parameters through modem_param.h,
+   and dsplibs.h is the rest of the library's interface (both ways) */
+#include <modem_dp.h>
 #include <modem_param.h>
 #include <dsplibs.h>
 

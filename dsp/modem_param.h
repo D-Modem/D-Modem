@@ -191,6 +191,8 @@ enum MODEM_PARAMETER_NAMES {
 	//GetCallWaitingIntegrationTimeMiliSec,
 	//GetCallWaitingThresholdPercentage,
 	//GetDialStringAfterFlash(char *dialString);
+	/* not in the original library's interface */
+	MDMPRM_MODE,            /* enum MODEM_MODE: data, fax, voice */
 	MDMPRM_LAST
 };
 

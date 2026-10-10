@@ -41,8 +41,12 @@
  *
  */
 
-#include <modem.h>
-#include <modem_debug.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "dsp.h"
+
+#define dprintf(fmt...) DSP_DBG(fmt)
 
 #ifdef __KERNEL__
 #define malloc(size) kmalloc(size,GFP_KERNEL)

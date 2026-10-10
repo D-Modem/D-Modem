@@ -60,6 +60,13 @@ typedef __int16_t s16;
 typedef __int32_t s32;
 #endif /* !__KERNEL__ */
 
+/* what the modem is doing (MDMPRM_MODE) */
+enum MODEM_MODE {
+	MODEM_MODE_DATA = 0,
+	MODEM_MODE_FAX  = 1,
+	MODEM_MODE_VOICE = 8
+};
+
 /* hook states */
 #define MODEM_HOOK_ON       0
 #define MODEM_HOOK_OFF      1

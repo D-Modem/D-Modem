@@ -41,8 +41,12 @@
  *
  */
 
-#include <modem.h>
-#include <modem_debug.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "dsp.h"
+
+#define dprintf(fmt...) DSP_DBG(fmt)
 
 
 #define DUMMY_SKIP     100
@@ -56,7 +60,7 @@ struct dummy_dp {
 	unsigned long count;
 	unsigned long linked;
 	u8 buf[1024];
-	void *dcr;
+	int pcm_was;            /* the runtime's "no DC removal" before */
 };
 
 static struct dp *dummy_create(struct modem *m, enum DP_ID id,
@@ -71,8 +75,16 @@ static struct dp *dummy_create(struct modem *m, enum DP_ID id,
 	d->dp.modem = m;
 	d->dp.op = op;
 	d->dp.dp_data = d;
-	d->dcr = m->dcr;
-	m->dcr = NULL;
+	/* its 0/1 bits on the line are not DC free: the core must not
+	   take the DC out while it runs */
+	{
+		dsp::dp_runtime *rt = (dsp::dp_runtime *)
+			modem_get_param(m, MDMPRM_DPRUNTIME);
+		if (rt) {
+			d->pcm_was = rt->pcm;
+			rt->pcm = 1;
+		}
+	}
 	return (struct dp *)d;
 }
 
@@ -80,7 +92,12 @@ static int dummy_delete(struct dp *dp)
 {
 	struct dummy_dp *d = (struct dummy_dp *)dp;
 	dprintf("dummy_delete...\n");
-	dp->modem->dcr = d->dcr;
+	{
+		dsp::dp_runtime *rt = (dsp::dp_runtime *)
+			modem_get_param(dp->modem, MDMPRM_DPRUNTIME);
+		if (rt)
+			rt->pcm = d->pcm_was;
+	}
 	free(d);
 	return 0;
 }
@@ -88,7 +105,7 @@ static int dummy_delete(struct dp *dp)
 static int dummy_process(struct dp *dp, void *in, void *out, int cnt)
 {
 	struct dummy_dp *d = (struct dummy_dp *)dp;
-	int n = cnt << MFMT_SHIFT(dp->modem->format);
+	int n = cnt * (int)sizeof(s16);    /* the core's samples */
 	s16 *s;
 	int i;
 	d->count++;

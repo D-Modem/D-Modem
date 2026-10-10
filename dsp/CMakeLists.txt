@@ -1,12 +1,15 @@
 # The open data pumps (C++): the modulations, V.8, V.34, V.90, V.91, class 1
 # fax, and the slmodemd pumps without a modulation (dp_dummy, dp_sinus).
-# They plug into the modem core of slmodemd behind the C interface of Smart
-# Link's original library (../slmodemd/dsplibs.h) and the core's modem.h,
-# so they are compiled with each program that links them (the core's
-# MODEM_RATE differs between them): these lists name the sources.
+# They plug into a modem core through the interface in this directory,
+# the one Smart Link's original library has: modem_dp.h (registration,
+# bits), modem_param.h (parameters), dsplibs.h (the rest) and
+# modem_defs.h.  They do not include the core's own headers.
 #
-#   DMODEM_DSP_SRCS   the data pumps and the class 1 fax
-#   DMODEM_T30_SRCS   the T.30 fax machine and the T.4/T.6 and TIFF code
+#   dmodem_dsp        object library: the data pumps and the class 1 fax
+#   dmodem_t30        object library: the T.30 fax machine, T.4/T.6, TIFF
+#   DMODEM_DSP_SRCS,  the same as source lists, for the 32 bit interop
+#   DMODEM_T30_SRCS   test programs
+#   DMODEM_DSP_DIR
 
 set(DMODEM_DSP_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(_dsp
@@ -17,6 +20,14 @@ set(_dsp
 list(TRANSFORM _dsp PREPEND ${DMODEM_DSP_DIR}/)
 set(_t30 t30.cpp t4.cpp tiff.cpp)
 list(TRANSFORM _t30 PREPEND ${DMODEM_DSP_DIR}/)
+
+foreach(_lib dsp t30)
+	add_library(dmodem_${_lib} OBJECT ${_${_lib}})
+	target_include_directories(dmodem_${_lib} PUBLIC ${DMODEM_DSP_DIR})
+	target_compile_options(dmodem_${_lib} PRIVATE -Wall -g -O2)
+	set_target_properties(dmodem_${_lib} PROPERTIES
+		POSITION_INDEPENDENT_CODE ON)
+endforeach()
 
 set(DMODEM_DSP_DIR ${DMODEM_DSP_DIR} PARENT_SCOPE)
 set(DMODEM_DSP_SRCS ${_dsp} PARENT_SCOPE)

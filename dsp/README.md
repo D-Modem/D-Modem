@@ -2,10 +2,22 @@
 
 This directory is a reimplementation (C++) of the interface that the
 binary-only `dsplibs.o` (Smart Link's DSP library) gives to the slmodemd
-modem core, declared with C linkage in `../slmodemd/dsplibs.h`. It exports the same
-entry points, so the modem core builds against it unchanged. slmodemd and
-libdmodem use only this code; the original library, `test/dsplibs.o`, is
-kept as a test peer for the interop tests:
+modem core. It exports the same entry points, so the modem core builds
+against it unchanged. slmodemd and libdmodem use only this code; the
+original library, `test/dsplibs.o`, is kept as a test peer for the
+interop tests.
+
+The interface between the data pumps and a modem core is in this
+directory, with C linkage, as the original library has it:
+`modem_dp.h` (pumps register with `modem_dp_register` and exchange bits
+with `modem_get_bits`/`modem_put_bits`), `modem_param.h` (the core's
+parameters and S-registers by number), `dsplibs.h` (the library's other
+entry points, and what the core gives it: tty I/O, debug output, memory)
+and `modem_defs.h` (types and constants). The pumps hold a
+`struct modem *` only as a handle and include none of the core's own
+headers; `dsp/` compiles with nothing else on the include path. The
+interface has one addition the original library does not use:
+`MDMPRM_MODE` (data, fax or voice).
 
 | Entry point | What it does here |
 |---|---|
@@ -320,7 +332,7 @@ are close to pure tones and would de-tune them.
 ## Code structure
 
 Everything here is in `namespace dsp`, except the C entry points of
-`../slmodemd/dsplibs.h`, which keep C linkage for the modem core.
+`dsplibs.h`, which keep C linkage for the modem core.
 
 - **Data pumps** derive from `Pump` (`pump.h`): `CallProgPump`, `FskPump`,
   `V22Pump`, `V32Pump` and `V34Pump` (which is also V.8 and V.90). A pump

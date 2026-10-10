@@ -57,11 +57,6 @@ extern "C" {
 
 
 /* modem modes */
-enum MODEM_MODE {
-	MODEM_MODE_DATA = 0,
-	MODEM_MODE_FAX  = 1,
-	MODEM_MODE_VOICE = 8
-};
 
 
 /* modem status */

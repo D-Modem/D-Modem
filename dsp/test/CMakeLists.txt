@@ -10,7 +10,8 @@
 set(S ${DMODEM_DSP_DIR})
 set(C ${DMODEM_CORE_DIR})
 set(_dsp ${DMODEM_DSP_SRCS})
-set(_core ${DMODEM_CORE_SRCS})
+# the 32 bit programs compile the core with the link layer
+set(_core ${DMODEM_CORE_SRCS} ${DMODEM_LINK_SRCS})
 set(_fax ${S}/fax_modems.cpp ${S}/qam.cpp ${S}/qam_tables.cpp ${S}/dsp_util.cpp
 	${S}/dp_fsk.cpp)
 
@@ -21,7 +22,8 @@ function(dmodem_test_exe name)
 	target_link_libraries(${name} PRIVATE m pthread)
 endfunction()
 
-dmodem_test_exe(dsp_loopback dsp_loopback.cpp ${_dsp})
+dmodem_test_exe(dsp_loopback dsp_loopback.cpp)
+target_link_libraries(dsp_loopback PRIVATE dmodem_dsp)
 dmodem_test_exe(fax_loopback fax_loopback.cpp ${_fax})
 dmodem_test_exe(netsim netsim.cpp ${S}/dsp_util.cpp)
 dmodem_test_exe(t4_test t4_test.cpp ${S}/t4.cpp ${S}/tiff.cpp)
@@ -233,7 +235,7 @@ foreach(_rate 9600 8000)
 			set(_l "")
 		endif()
 		add_executable(${_n} modem_half.cpp ${C}/modem_cmdline.cpp ${_core} ${_d})
-		target_include_directories(${_n} PRIVATE ${C} ${DMODEM_LINK_DIR})
+		target_include_directories(${_n} PRIVATE ${C} ${S} ${DMODEM_LINK_DIR})
 		target_compile_definitions(${_n} PRIVATE CONFIG_DEBUG_MODEM
 			MODEM_RATE=${_rate})
 		target_compile_options(${_n} PRIVATE ${DMODEM_M32} -w -g -O)

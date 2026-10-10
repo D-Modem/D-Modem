@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "../dsp.h"
+#include <modem.h>     /* it plays the modem core */
 #include "dsplibs.h"
 
 using namespace dsp;
