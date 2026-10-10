@@ -1,15 +1,22 @@
 # D-Modem
 Connect to dialup modems over VoIP using SIP, no modem hardware required.
 
-https://www.aon.com/cyber-solutions/aon_cyber_labs/introducing-d-modem-a-software-sip-modem/
-
 ## Building
-You'll need Linux and a working 32-bit development environment (gcc -m32 needs to work, Debian-based systems can install libc6-dev-i386), along with PJSIP's dependencies (OpenSSL).  Then run 'make' from the top-level directory.
+You'll need Linux, CMake (3.16 or later), a C compiler, git and pjproject's dependencies (OpenSSL, uuid).  The default build links Smart Link's binary-only i386 DSP library, so it also needs a working 32-bit environment (`gcc -m32`; Debian-based systems can install `gcc-multilib`).
+
+    cmake -B build
+    cmake --build build
+
+This builds `build/slmodemd/slmodemd`, `build/d-modem`, `build/slmodemd/libdmodem.a` and, when Asterisk's headers are installed, `build/asterisk/app_dmodem.so`.  `cmake --install build` installs them.
+
+pjproject (PJSIP) is not part of this repository.  CMake uses an installed one (`pkg-config libpjproject`); without one it clones the pinned release (2.17) once and builds it in the build directory.  `-DDMODEM_PJPROJECT=system` requires an installed pjproject, `-DDMODEM_PJPROJECT=fetch` always builds the pinned one, and `-DDMODEM_PJPROJECT_TAG=...` picks another release.
+
+Tests: `ctest --test-dir build -L quick` runs the fast ones (a few seconds); `-L spandsp` (with libspandsp-dev) and `-L interop` (with the binary library, in real time) are longer.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md).
 
 ### Open source DSP (optional)
 By default slmodemd links Smart Link's binary-only i386 DSP library (`slmodemd/dsplibs.o`).  `slmodemd/dsp/` contains a C reimplementation of its interface that builds on any architecture and needs no 32-bit environment:
 
-    make DSPLIBS=open
+    cmake -B build -DDMODEM_DSPLIBS=open
 
 It implements V.8 and V.34 (up to 33600 bps), V.32bis (14400 bps), V.32, V.22bis, V.22, Bell 212A, V.23, V.21 and Bell 103, class 1 fax (V.17, V.29, V.27ter and V.21 HDLC), call progress, caller ID and voice.  It implements V.90 only as the digital modem (on an 8000 Hz G.711 line), not V.92.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md) for details and tests.
 
@@ -33,7 +40,7 @@ After they have been built, you will need to configure SIP account information i
     # export SIP_LOGIN=username:password@sip.example.com
 Next, run slmodemd, passing the path to d-modem in the -e option.  Use -d<level> for debug logging. 
 
-    # ./slmodemd/slmodemd -d9 -e ./d-modem
+    # ./build/slmodemd/slmodemd -d9 -e ./build/d-modem
     SmartLink Soft Modem: version 2.9.11 Oct 28 2021 16:51:30 
     symbolic link `/dev/ttySL0' -> `/dev/pts/3' created. 
     modem `slamr0' created. TTY is `/dev/pts/3' 
@@ -58,7 +65,7 @@ By default the modem negotiates the best common modulation (V.8, then V.34 at up
 ### Receiving calls
 With `-L` (listen), slmodemd keeps d-modem running, registered with the SIP server, so that calls to the account reach the modem: it reports `RING`, and answers on `ATA` or by itself after `ATS0=n` rings.  Dialing works as before in this mode.
 
-    # ./slmodemd/slmodemd -L -e ./d-modem
+    # ./build/slmodemd/slmodemd -L -e ./build/d-modem
 
 ### Dialing
 Finally, dial the number of the target system.  Below shows a connection to the NIST atomic clock: 
@@ -84,4 +91,5 @@ Finally, dial the number of the target system.  Below shows a connection to the 
 - The serial interface could be replaced with stdio or a socket, and common AT configuration options could be exposed as command line options 
 
 
-Copyright 2021 Aon plc
+## Acknowledgements
+D-Modem was created by Aon's Cyber Labs in 2021, who published it with the article [Introducing D-Modem: A Software SIP Modem](https://www.aon.com/cyber-solutions/aon_cyber_labs/introducing-d-modem-a-software-sip-modem/).  This project builds on their code (slmodemd's socket interface and d-modem); their copyright notices remain in the source files they wrote.  The modem daemon itself is Smart Link's `slmodemd` (from Debian's sl-modem-daemon package), and SIP is handled by [pjproject](https://github.com/pjsip/pjproject).
