@@ -1,0 +1,44 @@
+# Build both variants of the data pumps and run the offline tests.  The
+# realtime interop tests (ctest -L interop) are left out: they take a
+# quarter of an hour and depend on the runner's timing.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        dsplibs: [blob, open]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config libssl-dev uuid-dev \
+            libspandsp-dev libtiff-tools asterisk-dev
+          if [ "${{ matrix.dsplibs }}" = blob ]; then
+            sudo apt-get install -y --no-install-recommends gcc-multilib
+          fi
+
+      # pjproject is fetched and built while configuring: keep it
+      - name: pjproject cache
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/pjproject-install
+          key: pjproject-2.17-${{ runner.os }}-${{ hashFiles('cmake/pjproject.cmake') }}
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DDMODEM_DSPLIBS=${{ matrix.dsplibs }} -DDMODEM_WERROR=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Tests
+        run: ctest --test-dir build -L "quick|spandsp" -j4 --output-on-failure

@@ -14,6 +14,7 @@
 #   DMODEM_D_MODEM     build d-modem (needs pjproject)
 #   DMODEM_ASTERISK    build app_dmodem when Asterisk's headers are found
 #   DMODEM_TESTS       build the test programs and register them with ctest
+#   DMODEM_WERROR      warnings are errors (as in CI)
 cmake_minimum_required(VERSION 3.16)
 project(dmodem C)
 
@@ -24,6 +25,11 @@ set_property(CACHE DMODEM_PJPROJECT PROPERTY STRINGS auto system fetch)
 option(DMODEM_D_MODEM "Build d-modem (SIP, needs pjproject)" ON)
 option(DMODEM_ASTERISK "Build app_dmodem when Asterisk's headers are found" ON)
 option(DMODEM_TESTS "Build the test programs (ctest)" ON)
+option(DMODEM_WERROR "Treat compiler warnings as errors (CI)" OFF)
+
+if(DMODEM_WERROR)
+	add_compile_options(-Werror)
+endif()
 
 include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
