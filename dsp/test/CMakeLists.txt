@@ -17,7 +17,8 @@ set(_fax ${S}/fax_modems.cpp ${S}/qam.cpp ${S}/qam_tables.cpp ${S}/dsp_util.cpp
 
 function(dmodem_test_exe name)
 	add_executable(${name} ${ARGN})
-	target_include_directories(${name} PRIVATE ${S} ${C} ${DMODEM_LINK_DIR})
+	target_include_directories(${name} PRIVATE ${S} ${C} ${DMODEM_LINK_DIR}
+		${DMODEM_CORE_NEW_DIR})
 	target_compile_options(${name} PRIVATE -Wall -O2 -g)
 	target_link_libraries(${name} PRIVATE m pthread)
 endfunction()
@@ -235,7 +236,8 @@ foreach(_rate 9600 8000)
 			set(_l "")
 		endif()
 		add_executable(${_n} modem_half.cpp ${C}/modem_cmdline.cpp ${_core} ${_d})
-		target_include_directories(${_n} PRIVATE ${C} ${S} ${DMODEM_LINK_DIR})
+		target_include_directories(${_n} PRIVATE ${C} ${S} ${DMODEM_LINK_DIR}
+			${DMODEM_CORE_NEW_DIR})
 		target_compile_definitions(${_n} PRIVATE CONFIG_DEBUG_MODEM
 			MODEM_RATE=${_rate})
 		target_compile_options(${_n} PRIVATE ${DMODEM_M32} -w -g -O)

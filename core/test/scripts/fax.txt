@@ -1,0 +1,43 @@
+# class 1 fax: A calls, B answers; B sends CSI and DIS with V.21 HDLC, A
+# receives them and answers with DCS; then TCF at 9600 (V.29)
+A ATE0X3+FCLASS=1\r
+B ATE0+FCLASS=1\r
+B ATA\r
+A ATD\r
+until B CONNECT 10000
+B \xff\x03\x40\x20\x20\x20\x20\x34\x33\x32\x31\x10\x03
+until B CONNECT 5000
+B \xff\x13\x80\x00\xce\xf4\x80\x80\x81\x80\x80\x80\x18\x10\x03
+until A CONNECT 20000
+until A \x10\x03 5000
+until A OK 2000
+A AT+FRH=3\r
+until A \x10\x03 5000
+until B OK 5000
+until A OK 2000
+B AT+FRH=3\r
+A AT+FTH=3\r
+until A CONNECT 2000
+A \xff\x13\x83\x00\xc6\x74\x10\x03
+until A OK 5000
+until B \x10\x03 5000
+until B OK 2000
+B AT+FRM=96\r
+A AT+FTS=8\r
+until A OK 2000
+A AT+FTM=96\r
+until A CONNECT 2000
+A \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10\x03
+until B CONNECT 5000
+until A OK 5000
+until B NO CARRIER 5000
+A AT+FRH=3\r
+B AT+FTH=3\r
+until B CONNECT 2000
+B \xff\x13\x84\x10\x03
+until B OK 5000
+until A OK 5000
+A ATH\r
+B ATH\r
+run 1000
+state

@@ -6,8 +6,11 @@
 
 set(DMODEM_CORE_SRCS
 	modem.cpp modem_datafile.cpp modem_at.cpp modem_timer.cpp
-	modem_param.cpp modem_debug.cpp homolog_data.cpp sysdep_common.cpp)
+	modem_param.cpp modem_debug.cpp sysdep_common.cpp)
 list(TRANSFORM DMODEM_CORE_SRCS PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
+# the country parameters are the new core's (../core)
+list(APPEND DMODEM_CORE_SRCS ${DMODEM_CORE_NEW_DIR}/homolog_data.cpp)
+include_directories(${DMODEM_CORE_NEW_DIR})
 # for the test programs in ../dsp/test
 set(DMODEM_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
 set(DMODEM_CORE_SRCS ${DMODEM_CORE_SRCS} PARENT_SCOPE)

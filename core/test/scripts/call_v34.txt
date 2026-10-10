@@ -1,0 +1,18 @@
+# V.34 (the default AT+MS=92 starts V.8): connect messages of AT&A7,
+# data, our hangup by ATH after the escape
+A ATE0&A7X3\r
+B ATE0&A7\r
+B ATA\r
+A ATD123\r
+until A CONNECT 40000
+until B CONNECT 2000
+state
+send B 5000
+send A 5000
+run 6000
+A +++
+run 1000
+A ATH\r
+until B NO CARRIER 10000
+until A OK 5000
+state

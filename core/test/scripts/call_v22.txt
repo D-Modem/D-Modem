@@ -1,0 +1,29 @@
+# V.22bis, then V.21 (no V.42), without echo, with numeric results
+A ATE0V0X3+MS=122\r
+B ATE0+MS=122,0\r
+B ATA\r
+A ATD\r
+until A 1\r 30000
+until B CONNECT 2000
+state
+send A 600
+send B 600
+run 4000
+hangup A
+until B NO CARRIER 10000
+run 500
+state
+A AT+MS=21,0\r
+B AT+MS=21,0\r
+B ATA\r
+A ATDT5551234\r
+until A 1\r 30000
+until B CONNECT 2000
+state
+send A 200
+send B 200
+run 5000
+hangup B
+until A 3\r 10000
+run 500
+state

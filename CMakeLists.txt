@@ -44,6 +44,7 @@ if(DMODEM_TESTS)
 endif()
 add_subdirectory(link)
 add_subdirectory(dsp)
+add_subdirectory(core)
 add_subdirectory(slmodemd)
 
 if(DMODEM_ASTERISK)
@@ -52,4 +53,5 @@ endif()
 
 if(DMODEM_TESTS)
 	add_subdirectory(dsp/test)
+	add_subdirectory(core/test)
 endif()

@@ -1,0 +1,28 @@
+# V.32bis with V.42 and V.42bis: dial, answer, data both ways, the
+# escape, back online, the remote hangs up
+A ATE0X3+MS=132\r
+B ATE0+MS=132\r
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 1000
+state
+send A 3000
+send B 2000
+run 4000
+# the escape: a guard time, +++, a guard time
+run 1000
+A +++
+run 1200
+A ATI0\r
+A ATO\r
+run 500
+send A 500
+run 2000
+B +++
+run 1000
+B ATH\r
+until A NO CARRIER 10000
+until B OK 5000
+state
+run 500

@@ -1,0 +1,35 @@
+# a call nobody answers: a key aborts the dialing, ATDL dials again, ATH;
+# S7 (wait for carrier) runs out
+A ATE0X3+MS=132\r
+A ATD555\r
+run 2000
+A x
+until A NO CARRIER 1000
+A ATDL\r
+run 1500
+A ATH\r
+until A NO CARRIER 1000
+run 500
+A ATS7=3D\r
+until A NO 20000
+run 500
+A ATS7?\r
+A ATZ\r
+# hang up while connecting, at each side
+A ATE0X3+MS=32\r
+B ATE0+MS=32\r
+B ATA\r
+A ATD\r
+run 3000
+B ATH\r
+until B NO CARRIER 2000
+until A NO CARRIER 30000
+run 500
+B ATA\r
+A ATD\r
+run 5000
+hangup A
+until A NO CARRIER 2000
+until B NO CARRIER 30000
+run 500
+state

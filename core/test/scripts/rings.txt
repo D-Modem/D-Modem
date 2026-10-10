@@ -1,0 +1,48 @@
+# rings: a SIP call that rings and goes away, one that is answered at the
+# second ring (ATS0=2); ring signals on the line (their cadence)
+A ATE0X3+MS=132\r
+B ATE0S0=2+MS=132\r
+signal B
+run 3000
+cancel B
+run 1000
+signal B
+run 3000
+A ATD\r
+signal B
+until B CONNECT 30000
+until A CONNECT 2000
+state
+run 1000
+B +++
+run 1000
+B ATH\r
+until A NO CARRIER 10000
+run 1000
+# the line rings (the cadence decides), no auto answer
+B ATS0=0\r
+ring B
+run 4000
+ring B
+run 4000
+B ATS1?\r
+run 8000
+B ATS1?\r
+ring B
+run 300
+ring B
+run 8000
+B ATS1?\r
+# auto answer at the second ring on the line; A calls meanwhile
+B ATS0=2\r
+ring B
+run 4000
+A ATD\r
+ring B
+until B CONNECT 30000
+until A CONNECT 2000
+state
+hangup A
+until B NO CARRIER 10000
+run 500
+state
