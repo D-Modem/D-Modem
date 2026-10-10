@@ -192,7 +192,15 @@ The receivers find the training by matching the received phase steps
 against the known sequence. The V.29 and V.27ter training sequences repeat
 every 127 symbols, so the end of the alternations before them tells which
 repetition is being received. A V.17 short train continues from the
-equalizer of the last long train at the same rate.
+equalizer of the last long train at the same rate. The original library
+sends the 64 symbol bridge after a short train as after a long one,
+spandsp goes on with the scrambled ones at once: the first symbols after
+the training tell which. In data mode the V.17 receiver follows a clear
+error in the data's power (6 % or more, over some 500 symbols): the
+original library's constellation comes about 1.4 dB below its training.
+
+`make spandsp_check` (with libspandsp-dev) puts spandsp's V.17 transmitter
+and T.4 encoder, as Asterisk's `SendFAX` uses them, into these receivers.
 
 ### How the QAM receiver works
 
@@ -273,7 +281,8 @@ writing:
 | V.27ter 2400, 4800 | pass | pass |
 | V.29 7200, 9600 | pass | pass |
 | V.17 7200, 9600 (long and short train) | pass | pass |
-| V.17 12000, 14400 | fails: the original transmitter's signal has no usable constellation at these rates (it cannot receive itself either) | pass |
+| V.17 12000 | pass | pass |
+| V.17 14400 | fails: the original transmitter's signal is too noisy at this rate (it cannot receive itself either) | pass |
 
 The original library makes a few bit errors with some of its own signals,
 so `fax_interop.py` accepts a page with a bit error rate below 1e-3 (a fax

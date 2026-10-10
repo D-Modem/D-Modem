@@ -48,7 +48,7 @@ check: dsp_loopback fax_loopback
 	./fax_loopback 98 25 20000 8000
 
 clean:
-	rm -f dsp_loopback fax_loopback half_blob half_open modemA.log modemB.log
+	rm -f spandsp_v17 t4_spandsp dsp_loopback fax_loopback half_blob half_open modemA.log modemB.log
 
 .PHONY: check clean
 
@@ -136,6 +136,27 @@ FAX_SRCS := ../fax_modems.c ../qam.c ../qam_tables.c ../dsp_util.c ../dp_fsk.c
 
 fax_loopback: fax_loopback.c $(FAX_SRCS) ../dsp.h ../qam.h ../fax.h
 	$(CC) $(CFLAGS) -o $@ fax_loopback.c $(FAX_SRCS) -lm
+
+# spandsp's V.17 transmitter (libspandsp-dev) into our receiver, long and
+# short train, through mu-law
+spandsp_v17: spandsp_v17.c spandsp_tx.c $(FAX_SRCS) ../dsp.h ../qam.h ../fax.h
+	$(CC) $(CFLAGS) -o $@ spandsp_v17.c spandsp_tx.c $(FAX_SRCS) -lspandsp -lm
+
+# spandsp's T.4 encoder (as in SendFAX) into our line receiver
+t4_spandsp: t4_spandsp.c spandsp_tx.c ../t4.c ../tiff.c ../t4.h
+	$(CC) $(CFLAGS) -o $@ t4_spandsp.c spandsp_tx.c ../t4.c ../tiff.c -lspandsp -lm
+
+# a fax page's bits (MR, with and without fill) over spandsp's V.17 as well
+spandsp_check: spandsp_v17 t4_spandsp t4_test
+	mkdir -p $(FAXTMP)
+	./t4_test light $(FAXTMP)/light.tif
+	for r in 14400 12000 9600 7200; do ./spandsp_v17 $$r || exit 1; done
+	for e in 1 2; do for m in 0 144; do \
+		./t4_spandsp $(FAXTMP)/light.tif $$e $$m || exit 1; done; done
+	for m in 0 144; do T4_FILE=$(FAXTMP)/light.tif T4_MIN=$$m \
+		./spandsp_v17 14400 || exit 1; done
+
+.PHONY: spandsp_check
 
 # class 1 fax calls between the original library and this one, in real
 # time (about 25 s each); see fax_interop.py

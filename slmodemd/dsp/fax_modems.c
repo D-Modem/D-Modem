@@ -694,6 +694,41 @@ static void rx_data_symbol(struct fax_rx *r)
 		}
 	}
 	r->mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / mod_power(r->mod) - r->mse);
+	r->zpow += 0.01f * (cplx_pow(z) - r->zpow);
+	/* V.17: the original library's data constellation comes some 1.4 dB
+	   below its training; decisions on the dense rates then miss and
+	   the equalizer cannot pull the gain back.  Scrambled data has the
+	   constellation's mean power: follow it. */
+	/* slowly: the power of a few hundred data symbols wanders by some
+	   per cent, and every step disturbs a good signal */
+	if (r->data_sym == 150)
+		r->zpow_slow = r->zpow;
+	r->zpow_slow += 0.002f * (cplx_pow(z) - r->zpow_slow);
+	if (is_v17(r->mod) && r->data_sym >= 600 && (r->data_sym & 255) == 0 &&
+	    r->zpow_slow > r->mse * mod_power(r->mod)) {
+		/* the signal's part of the power: less the noise around the
+		   decisions */
+		float f = sqrtf(mod_power(r->mod) /
+				(r->zpow_slow - r->mse * mod_power(r->mod)));
+		/* only a clear error */
+		if (fabsf(f - 1) > 0.06f) {
+			f = 1 + 0.5f * (f - 1);
+			if (f > 1.1f)
+				f = 1.1f;
+			if (f < 0.9f)
+				f = 0.9f;
+			for (k = 0; k < r->qam.eq_len; k++)
+				r->qam.eq[k] = cplx_scale(r->qam.eq[k], f);
+			r->zpow *= f * f;
+			r->zpow_slow *= f * f;
+			DSP_DBG("fax rx: gain %.3f at symbol %ld\n", f,
+				(long)r->data_sym);
+		}
+	}
+	if (r->data_sym % 2400 == 0)
+		DSP_DBG("fax rx: data mse %.5f (%.1f dB), power %.3f of the "
+			"constellation's\n", r->mse, -10 * log10f(r->mse + 1e-9f),
+			r->zpow / mod_power(r->mod));
 	/* the timing loop slows down once it has surely settled (a short
 	   train leaves it little time) */
 	if (r->data_sym == 1000) {
@@ -819,11 +854,32 @@ static void rx_symbol(struct fax_rx *r)
 			qam_rx_align_phase(&r->qam, ref_point(r, k));
 			r->seg_sym = k + 1;
 			r->stage = RXS_TRAIN;
+			r->bridge_hits = 0;
 			DSP_DBG("fax rx: training found at %d\n", k);
 		}
 		break;
 	case RXS_TRAIN: {
 		cplx d = ref_point(r, r->seg_sym);
+		int trn = trn_len(r->mod, r->short_train);
+		/* V.17 short train: the original library sends the 64 symbol
+		   bridge as after a long train, spandsp goes on with the
+		   scrambled ones (segment 4) at once.  Its first symbols tell;
+		   without the bridge they are data, and a few of the 48 ones
+		   are not missed. */
+		if (is_v17(r->mod) && r->short_train &&
+		    r->seg_sym >= trn && r->seg_sym < trn + 8) {
+			if (cplx_pow(cplx_sub(z, d)) < 0.2f * cplx_pow(d))
+				r->bridge_hits++;
+			if (++r->seg_sym == trn + 8 && r->bridge_hits < 6) {
+				DSP_DBG("fax rx: short train without the "
+					"bridge\n");
+				r->stage = RXS_DATA;
+				r->data_sym = 8;
+				r->vit.last_y12 = 0;
+				DSP_DBG("fax rx: data\n");
+			}
+			break;
+		}
 		/* the original library's V.27ter training has stray 180
 		   degree flips: follow them, its points are all on one axis */
 		if (is_v27(r->mod) &&

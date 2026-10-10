@@ -155,7 +155,10 @@ faster than real time, which they don't mind.
 
 `test/fax.sh` sends a two page fax from `DModemSendFax` to `DModem()`
 (which has to notice the fax machine) and to `DModemReceiveFax`, and
-compares what came with what went.
+compares what came with what went.  `test/fax_spandsp.sh` does the same
+against Asterisk's own fax (`res_fax_spandsp`): `SendFAX` to `DModem()`
+and to `DModemReceiveFax`, and `DModemSendFax` to `ReceiveFAX`, all at
+14400 bit/s (`CASES`, `FAX_MAX_RATE`, `DMODEM_DEBUG` in the script).
 
 ## Debugging
 

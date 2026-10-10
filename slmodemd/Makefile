@@ -87,9 +87,13 @@ LIB_OBJS:= $(patsubst %.c,lib/%.o,$(LIB_SRCS))
 LIB_CC ?= gcc
 LIB_CFLAGS:= -Wall -g -O2 -fPIC -I. -DCONFIG_DEBUG_MODEM -DMODEM_RATE=8000
 
+# -MMD: the objects follow the headers (struct layouts shared with
+# app_dmodem must not go stale)
 lib/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(LIB_CC) $(LIB_CFLAGS) -c $< -o $@
+	$(LIB_CC) $(LIB_CFLAGS) -MMD -MP -c $< -o $@
+
+-include $(LIB_OBJS:.o=.d)
 
 libdmodem.a: $(LIB_OBJS)
 	$(AR) rcs $@ $^

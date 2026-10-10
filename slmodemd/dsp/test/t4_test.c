@@ -71,7 +71,21 @@ static int compare(const char *a, const char *b)
 		    memcmp(pa.bits, pb.bits, (size_t)pa.rows * T4_STRIDE(T4_WIDTH))) {
 			int y, diff = 0;
 			for (y = 0; y < pa.rows && y < pb.rows; y++)
-				diff += memcmp(pa.bits + (size_t)y * 216, pb.bits + (size_t)y * 216, 216) != 0;
+				if (memcmp(pa.bits + (size_t)y * 216,
+					   pb.bits + (size_t)y * 216, 216)) {
+					int x, nx = 0, x0 = -1;
+					for (x = 0; x < 1728; x++)
+						if (((pa.bits[(size_t)y * 216 + x / 8] ^
+						      pb.bits[(size_t)y * 216 + x / 8]) >> (7 - x % 8)) & 1) {
+							nx++;
+							if (x0 < 0)
+								x0 = x;
+						}
+					if (!diff)
+						printf("page %d: row %d differs first, in %d "
+						       "pixels from x %d\n", n, y, nx, x0);
+					diff++;
+				}
 			printf("page %d differs: rows %d/%d fine %d/%d, %d rows differ\n",
 			       n, pa.rows, pb.rows, pa.fine, pb.fine, diff);
 			bad++;

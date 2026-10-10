@@ -102,6 +102,8 @@ struct fax_rx {
 	int have_good, have_new;
 	float mem_gain;
 	int use_mem;
+	int bridge_hits;        /* V.17 short train: the bridge is there? */
+	float zpow, zpow_slow;  /* received data power */
 	fax_put_bit_t put_bit;
 	void *ctx;
 };
