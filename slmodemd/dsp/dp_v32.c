@@ -200,6 +200,10 @@ struct v32_dp {
 
 	/* events from the receiver to the handshake */
 	int ev_aa, ev_ac, ev_rev, ev_s, ev_r, ev_e, ev_usb1;
+	int retraining;         /* a retrain in data mode (no new CONNECT) */
+	int retrains;
+	long retrain_at;        /* test: our own retrain this far (samples)
+				   into the data, $DSP_V32_RETRAIN ms */
 	unsigned r_word;        /* last R word received */
 };
 
@@ -668,8 +672,37 @@ static int v32_connect(struct v32_dp *v)
 	v32_set_state(v, V32_DATA);
 	modem_set_param(v->modem, MDMPRM_TX_RATE, v->tx_rate->bps);
 	modem_set_param(v->modem, MDMPRM_RX_RATE, v->rx_rate->bps);
+	if (v->retraining) {
+		/* the link goes on (V.42 knows nothing of it) */
+		v->retraining = 0;
+		DSP_DBG("v32: retrained, %d/%d\n", v->tx_rate->bps,
+			v->rx_rate->bps);
+		return DPSTAT_OK;
+	}
 	DSP_DBG("v32: connect %d/%d\n", v->tx_rate->bps, v->rx_rate->bps);
 	return DPSTAT_CONNECT;
+}
+
+/* a retrain (V.32 5.5): the start-up again from AA / AC, the caller's
+   from AA, the answerer's from AC; whoever starts it, the other modem
+   answers the same way when it hears the signal */
+static void v32_retrain(struct v32_dp *v)
+{
+	DSP_DBG("v32: retrain %d (%s)\n", ++v->retrains,
+		v->caller ? "AA" : "AC");
+	v->retraining = 1;
+	v->automode = 0;                /* no falling back now */
+	v32_rx_reset(v);
+	v->ev_rev = v->ev_r = v->ev_e = v->ev_s = 0;
+	v->timeout = v->total + ms2samples(15000, v->srate);
+	v->tx_syms = 0;
+	if (v->caller) {
+		v32_set_state(v, C_AA);
+		v32_set_tx(v, TXM_AA);
+	} else {
+		v32_set_state(v, A_AC);
+		v32_set_tx(v, TXM_AC);
+	}
 }
 
 static int v32_fallback(struct v32_dp *v)
@@ -893,6 +926,15 @@ static int v32_handshake(struct v32_dp *v)
 		break;
 
 	case V32_DATA:
+		/* the remote retrains: AA from a caller, AC from an
+		   answerer (scrambled data has no such tone) */
+		if ((!v->caller && v->ev_aa && !v->ev_ac) ||
+		    (v->caller && v->ev_ac))
+			v32_retrain(v);
+		else if (v->retrain_at && v->count >= v->retrain_at &&
+			 !v->retrains) {
+			v32_retrain(v);
+		}
 		break;
 	}
 	return DPSTAT_OK;
@@ -1013,6 +1055,8 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
 	v->timeout = (long)(s7 > 0 ? s7 : 50) * srate;
 	v->carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate / 10;
+	if (getenv("DSP_V32_RETRAIN"))
+		v->retrain_at = ms2samples(atoi(getenv("DSP_V32_RETRAIN")), srate);
 
 	if (caller) {
 		v->state = C_AA;

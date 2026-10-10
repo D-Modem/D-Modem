@@ -688,10 +688,15 @@ static int socket_ioctl(struct modem *m, unsigned int cmd, unsigned long arg)
 		   samples queued, dev->delay) V.34 connected 5 times in 5
 		   with 128, 2 in 4 with 144, 1 in 4 with 112, 0 in 4 with 96,
 		   120, 160 and 192; 128 is what the modem_half test harness
-		   reports for its own 128 sample queue */
-		ret = dev->delay > 64 ? dev->delay - 64 : 0;
-		if (getenv("SLMODEMD_IODELAY"))
-			ret = atoi(getenv("SLMODEMD_IODELAY"));
+		   reports for its own 128 sample queue.  The V.32 pump uses
+		   it differently (its turn around delay): over d-modem V.32bis
+		   kept its data 3 times in 3 with 0, never with 128 */
+		ret = 0;
+		if (m->dp && (m->dp->id == DP_V8 || m->dp->id == DP_V34 ||
+			      m->dp->id == DP_V34BIS || m->dp->id == DP_V90 ||
+			      m->dp->id == DP_V90_NO_V8BIS ||
+			      m->dp->id == DP_V92))
+			ret = dev->delay > 64 ? dev->delay - 64 : 0;
 		if (getenv("SLMODEMD_IODELAY"))
 			ret = atoi(getenv("SLMODEMD_IODELAY"));
 		break;

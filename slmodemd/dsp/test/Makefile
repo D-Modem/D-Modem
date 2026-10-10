@@ -92,6 +92,8 @@ dmodem_pair: dmodem_pair.c ../../libdmodem.a ../../dmodem.h
 	$(CC) $(CFLAGS) -o $@ dmodem_pair.c ../../libdmodem.a -lm -lpthread
 libcheck: dmodem_pair
 	for ms in 22 122 32 132 34; do ./dmodem_pair +MS=$$ms 3 30 || exit 1; done
+	# a V.32bis retrain in the middle of the data (V.42 carries on)
+	DSP_V32_RETRAIN=1500 ./dmodem_pair +MS=132 1 30
 
 .PHONY: libcheck FORCE
 

@@ -205,39 +205,63 @@ static float line_run(struct line *l, float x)
 	return y;
 }
 
-/* best alignment of rx against tx, returns bit errors over 'n' bits */
+/* where rx bit r lines up with the transmitted bits (searching from
+   tx bit "from"), -1 if nowhere */
+static long find_alignment(struct side *tx, struct side *rx, long r,
+			   long from)
+{
+	long off, i;
+	if (from < 0)
+		from = 0;
+	for (off = from; off + 128 < tx->ntx; off++) {
+		long err = 0;
+		for (i = 0; i < 128 && err < 32 && r + i < rx->nrx; i++)
+			err += tx->tx_bits[off + i] != rx->rx_bits[r + i];
+		if (err < 8)
+			return off;
+	}
+	return -1;
+}
+
+static long resyncs;
+
+/* bit errors over the bits received after the connection (after
+   a retrain, which loses bits, the alignment is found again) */
 static long count_errors(struct side *tx, struct side *rx, long *checked)
 {
-	long best = -1, best_err = 0, off, i, n;
+	long best, best_err = 0, i, n, run = 0, gap;
 	long skip = (rx->nrx - rx->connect_rx) / 4;
 	long start_rx = rx->connect_rx + (skip < 2000 ? skip : 2000);
 	n = rx->nrx - start_rx - 64;
-	if (n <= 0) {
-		*checked = 0;
-		return 0;
-	}
+	*checked = 0;
 	if (n > 200000)
 		n = 200000;
-	if (n < 300) {
-		*checked = 0;
+	if (n < 300)
 		return 0;
-	}
-	for (off = 0; off + n < tx->ntx && off < tx->ntx; off++) {
-		long err = 0;
-		for (i = 0; i < 128 && err < 32; i++)
-			err += tx->tx_bits[off + i] != rx->rx_bits[start_rx + i];
-		if (err < 8) {
-			best = off;
-			break;
-		}
-	}
+	best = find_alignment(tx, rx, start_rx, 0);
 	if (best < 0) {
 		*checked = n;
 		return n / 2;
 	}
-	for (i = 0, best_err = 0; i < n && best + i < tx->ntx; i++) {
+	for (i = 0; i < n && best + i < tx->ntx; i++) {
 		int e = tx->tx_bits[best + i] != rx->rx_bits[start_rx + i];
 		best_err += e;
+		/* errors at random for 64 bits: lost or gained bits */
+		run = e ? run + 1 : (run > 0 ? run - 1 : 0);
+		if (run > 24) {
+			long r = start_rx + i + 1, nb;
+			nb = find_alignment(tx, rx, r, best + i - 64 * 1024);
+			if (nb >= 0) {
+				resyncs++;
+				gap = nb - (best + i + 1);
+				best = nb - (i + 1);
+				best_err -= run;        /* the bits of the slip */
+				run = 0;
+				if (getenv("SHOW_ERRORS"))
+					fprintf(stderr, "%s: realigned by %ld bits at %ld\n",
+						rx->name, gap, i);
+			}
+		}
 		if (e && getenv("SHOW_ERRORS"))
 			fprintf(stderr, "%s: bit error at %ld\n", rx->name, i);
 	}
@@ -401,9 +425,13 @@ int main(int argc, char **argv)
 			fail = 1;
 			continue;
 		}
+		resyncs = 0;
 		err = count_errors(&sides[1 - k], &sides[k], &n);
-		printf("%s: received %ld bits, checked %ld, errors %ld (BER %.2e)\n",
+		printf("%s: received %ld bits, checked %ld, errors %ld (BER %.2e)",
 		       sides[k].name, sides[k].nrx, n, err, n ? (double)err / n : 1.0);
+		if (resyncs)
+			printf(", realigned %ld times", resyncs);
+		printf("\n");
 		if (n == 0 || (double)err / n > 1e-3)
 			fail = 1;
 	}
