@@ -41,6 +41,37 @@ V.90 as the digital (server) modem: up to 56000 bit/s downstream to a
 V.90 client modem when the call is G.711 end to end.  The module has no
 binary-only parts.
 
+## Fax
+
+The module is also a group 3 fax machine of its own (T.30 on V.17, V.29
+and V.27ter, 2400 to 14400 bit/s, pages in MH or MR coding, TIFF files;
+no error correction mode yet), an alternative to Asterisk's `res_fax`
+with spandsp:
+
+- `DModem()` receives faxes by itself: when the calling machine's CNG
+  tone comes before a modem connection, the call goes to the fax
+  receiver, which writes `<fax_dir>/<date>-<time>-<caller>-<uniqueid>.tif`
+  (`fax = no` in the profile turns this off).  `DMODEMSTATUS` is then
+  `FAX`.
+- `DModemReceiveFax(file[,ident])` answers as a fax machine and receives
+  into the file.
+- `DModemSendFax(file[,ident])` sends a TIFF file on a call placed to a
+  fax machine, e.g.
+
+  ```
+  channel originate PJSIP/5551234@trunk application DModemSendFax /var/spool/fax/doc.tif
+  ```
+
+  Any TIFF of 1 bit pels goes: uncompressed, G3 1D/2D or G4, of any width
+  (fitted to the fax's 1728 pels) and resolution (standard, fine;
+  superfine is halved).  `gs -sDEVICE=tiffg4 -r204x196 -o doc.tif doc.pdf`
+  makes one from a PDF.
+
+They set `DMODEMFAXSTATUS` (`SUCCESS` or `FAILED`), `DMODEMFAXRESULT`
+(why), `DMODEMFAXPAGES`, `DMODEMFAXRATE`, `DMODEMFAXREMOTE` (the other
+machine's number) and `DMODEMFAXFILE`.  `fax_dir`, `fax_ident` (our
+number) and `fax_max_rate` are set in `[general]` or per profile.
+
 ## The channel
 
 The modem needs the line's audio as it is, so:
@@ -121,6 +152,10 @@ LAW=alaw test/run.sh              # on A-law
 
 A Local channel has no clock: the two modems run sample for sample
 faster than real time, which they don't mind.
+
+`test/fax.sh` sends a two page fax from `DModemSendFax` to `DModem()`
+(which has to notice the fax machine) and to `DModemReceiveFax`, and
+compares what came with what went.
 
 ## Debugging
 

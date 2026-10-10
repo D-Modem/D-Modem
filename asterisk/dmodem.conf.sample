@@ -16,7 +16,17 @@
 ;                    the channel's)
 ;   timeout = 60     seconds for the modems to connect
 ;
+;   fax = yes        a fax machine calling (its CNG tone) is received
+;                    as a fax (into fax_dir) instead of by the modem
+;
 ; The server or program sees nothing until the modems are connected.
+;
+; Fax, here for all, or per profile:
+;   fax_dir = /var/spool/asterisk/fax    where received faxes go
+;   fax_ident = +1 555 0100              our number (CSI / TSI)
+;   fax_max_rate = 14400                 9600, 7200, 4800, 2400 to go slower
+; DModemSendFax(file[,ident]) and DModemReceiveFax(file[,ident]) use these
+; of [general].
 
 [general]
 ; the modem's log on the console (verbose 5): 0 errors only, 1 the modem
