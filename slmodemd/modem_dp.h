@@ -58,7 +58,7 @@ struct dp_operations {
 	struct dp *(*create)(struct modem *, enum DP_ID id,
 			     int caller, int srate, int max_frag,
 			     struct dp_operations *);
-	int (*delete)(struct dp *);
+	int (*destroy)(struct dp *);
 	int (*process)(struct dp *, void *in, void *out, int cnt);
 	int (*hangup)(struct dp *);
 };

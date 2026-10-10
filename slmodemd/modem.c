@@ -1086,7 +1086,7 @@ static void do_modem_change_dp (struct modem *m)
 	}
 
         if ( old ) {
-                old->op->delete(old);
+                old->op->destroy(old);
         }
 
 }
@@ -1215,7 +1215,7 @@ static int modem_stop (struct modem *m)
                 struct dp *dp;
                 dp = m->dp;
                 m->dp = 0;
-                if(dp) dp->op->delete(dp);
+                if(dp) dp->op->destroy(dp);
         }
 	if (m->dp_runtime) {
 		dp_runtime_delete(m->dp_runtime);

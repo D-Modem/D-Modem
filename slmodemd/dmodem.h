@@ -14,6 +14,8 @@
  *    to the network's G.711 encoder unchanged: give the law in the
  *    configuration.
  *
+ *    C++: dmodem.hpp wraps this in classes.
+ *
  *    DTE: a file descriptor the modem reads its DTE's data and commands
  *    from and writes its responses and received data to: the master of a
  *    pty (pppd on the slave), or one end of a socketpair.  Non-blocking.
@@ -22,6 +24,10 @@
 
 #ifndef DMODEM_H
 #define DMODEM_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define DMODEM_RATE     8000
 
@@ -114,5 +120,9 @@ void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s);
 void dmodem_fax_hangup(struct dmodem_fax *f);
 /* also closes the received file (none if no page came) */
 void dmodem_fax_destroy(struct dmodem_fax *f);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

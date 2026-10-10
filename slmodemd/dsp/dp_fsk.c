@@ -416,7 +416,7 @@ static int fsk_process(struct dp *dp, void *in, void *out, int cnt)
 static struct dp_operations fsk_operations = {
 	.name = "FSK (V.21/V.23/Bell103) data pump",
 	.create = fsk_create,
-	.delete = fsk_delete,
+	.destroy = fsk_delete,
 	.process = fsk_process,
 	.hangup = fsk_hangup,
 };

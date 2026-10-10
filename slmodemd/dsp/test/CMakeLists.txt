@@ -28,6 +28,8 @@ dmodem_test_exe(t4_test t4_test.c ${S}/t4.c ${S}/tiff.c)
 dmodem_test_exe(fax_pair fax_pair.c ${S}/t30.c ${S}/t4.c ${S}/tiff.c ${_fax})
 dmodem_test_exe(dmodem_pair dmodem_pair.c)
 target_link_libraries(dmodem_pair PRIVATE dmodem)
+dmodem_test_exe(dmodem_cxx dmodem_cxx.cpp)
+target_link_libraries(dmodem_cxx PRIVATE dmodem)
 dmodem_test_exe(dmodem_fax_test dmodem_fax_test.c)
 target_link_libraries(dmodem_fax_test PRIVATE dmodem)
 
@@ -76,6 +78,9 @@ foreach(_ms 22 122 32 132 34)
 	add_test(NAME dmodem_pair_${_ms} COMMAND dmodem_pair +MS=${_ms} 3 30)
 	set_tests_properties(dmodem_pair_${_ms} PROPERTIES LABELS quick)
 endforeach()
+# the same through the C++ classes of dmodem.hpp
+add_test(NAME dmodem_cxx COMMAND dmodem_cxx +MS=132 20)
+set_tests_properties(dmodem_cxx PROPERTIES LABELS quick)
 # a V.32bis retrain in the middle of the data (V.42 carries on)
 add_test(NAME dmodem_pair_v32_retrain COMMAND dmodem_pair +MS=132 1 30)
 set_tests_properties(dmodem_pair_v32_retrain PROPERTIES LABELS quick

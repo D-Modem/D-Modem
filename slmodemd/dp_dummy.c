@@ -134,7 +134,7 @@ static int dummy_process(struct dp *dp, void *in, void *out, int cnt)
 static struct dp_operations dummy_operations = {
 	name : "Dummy DataPump driver",
 	create: dummy_create,
-	delete: dummy_delete,
+	destroy: dummy_delete,
 	process:dummy_process
 };
 

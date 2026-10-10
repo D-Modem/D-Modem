@@ -2442,7 +2442,7 @@ static int v34_hangup(struct dp *dp)
 static struct dp_operations v34_operations = {
 	.name = "V.8/V.34 data pump",
 	.create = v34_create,
-	.delete = v34_delete,
+	.destroy = v34_delete,
 	.process = v34_process,
 	.hangup = v34_hangup,
 };

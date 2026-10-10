@@ -16,7 +16,11 @@
 #   DMODEM_TESTS       build the test programs and register them with ctest
 #   DMODEM_WERROR      warnings are errors (as in CI)
 cmake_minimum_required(VERSION 3.16)
-project(dmodem C)
+project(dmodem C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(DMODEM_DSPLIBS "blob" CACHE STRING "slmodemd's data pumps: blob or open")
 set_property(CACHE DMODEM_DSPLIBS PROPERTY STRINGS blob open)

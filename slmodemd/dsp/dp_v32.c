@@ -1118,7 +1118,7 @@ static int v32_hangup(struct dp *dp)
 static struct dp_operations v32_operations = {
 	.name = "V.32/V.32bis data pump",
 	.create = v32_create,
-	.delete = v32_delete,
+	.destroy = v32_delete,
 	.process = v32_process,
 	.hangup = v32_hangup,
 };

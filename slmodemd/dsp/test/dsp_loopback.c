@@ -359,7 +359,7 @@ int main(int argc, char **argv)
 			case DPSTAT_OK:
 				break;
 			case DPSTAT_CHANGEDP:
-				s->dp->op->delete(s->dp);
+				s->dp->op->destroy(s->dp);
 				if (k == 0 && s->dp_requested) {
 					/* automode change requested */
 					id2 = s->dp_requested;
@@ -387,7 +387,7 @@ int main(int argc, char **argv)
 			default:
 				printf("%6.2fs %s: dp status %d\n",
 				       (double)t / srate, s->name, ret);
-				s->dp->op->delete(s->dp);
+				s->dp->op->destroy(s->dp);
 				s->dp = NULL;
 				fail = 1;
 				break;

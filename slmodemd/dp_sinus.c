@@ -114,7 +114,7 @@ static int sin_run(struct dp *dp, void *in, void *out, int cnt)
 static struct dp_operations sin_operations = {
 	name : "Sinus DP driver",
 	create: sin_create,
-	delete: sin_delete,
+	destroy: sin_delete,
 	process:sin_run
 };
 

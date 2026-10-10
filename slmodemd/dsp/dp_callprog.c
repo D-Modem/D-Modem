@@ -335,7 +335,7 @@ static int callprog_process(struct dp *dp, void *in, void *out, int cnt)
 static struct dp_operations callprog_operations = {
 	.name = "Call progress",
 	.create = callprog_create,
-	.delete = callprog_delete,
+	.destroy = callprog_delete,
 	.process = callprog_process,
 };
 
