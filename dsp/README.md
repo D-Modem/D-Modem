@@ -302,12 +302,19 @@ against the known sequence. The V.29 and V.27ter training sequences repeat
 every 127 symbols, so the end of the alternations before them tells which
 repetition is being received. A V.17 short train continues from the
 equalizer of the last long train at the same rate. After a short train
-spandsp goes on with the scrambled ones at once, without the 64 symbol
-bridge of a long train; a recording of the original library's page
-decodes the same way. This transmitter sends the bridge (the original
-receiver takes our pages more often with it than without, see the open
-problem below), and the receiver takes either: the first symbols after
-the training tell which. In data mode the V.17 receiver follows a clear
+the original library and spandsp go on with the scrambled ones (segment
+4) at once, without the 64 symbol bridge of a long train; so does this
+transmitter, with the trellis encoder in the state the original library
+starts segment 4 from (its receiver expects it). Its segment 4 is 240
+symbols (the original library sends 144) and 80 symbols of ones follow
+the data: the original receiver, depending on where its 20 ms frames
+fall, starts the data before it has converged and ends it early, and
+the ones take both. The receiver takes a short train with or without the
+bridge: the first symbols after the training tell which. During a bridge
+it decides on the nearest training point instead of the known sequence:
+the Agere modem's bridge is not that sequence, and following the wrong
+points wound the carrier loop up to a frequency offset of some 3 Hz that
+spoiled the first seconds of the data. In data mode the V.17 receiver follows a clear
 error in the data's power (6 % or more, over some 500 symbols): the
 original library's constellation comes about 1.4 dB below its training.
 
@@ -434,18 +441,7 @@ writing:
 |---|---|---|
 | V.27ter 2400, 4800 | pass | pass |
 | V.29 7200, 9600 | pass | pass |
-| V.17 7200, 9600, 12000 (long train for TCF, short for the page) | pass | about half the calls: the page is lost (see below) |
-| V.17 14400 | fails: the original transmitter's signal is too noisy at this rate (it cannot receive itself either) | as above |
-
-Open problem: the original receiver takes our V.17 TCF (long train) every
-time but loses about half of our pages (short train): "V17 Dec error too
-big" some 60 ms into the data. It takes its own short trains every time,
-and the Agere modem takes ours. What differs from the original transmitter:
-it sends 200 ms of 1800 Hz (the training point C) and 20 ms of silence
-before every V.17 signal, and, decoded from a recording, no bridge after a
-short TRN (segment 4 at once). Neither the tone, nor dropping the bridge, nor the start of the
-differential encoder, nor a symbol clock that runs through the call made
-the pages pass more often; with no bridge fewer pass.
+| V.17 7200, 9600, 12000, 14400 (long train for TCF, short for the page) | pass | pass |
 
 The original library makes a few bit errors with some of its own signals,
 so `fax_interop.py` accepts a page with a bit error rate below 1e-3 (a fax
@@ -471,10 +467,8 @@ open modem. Results at the time of writing:
 | V23C / 23, V21 / 21, B103 / 103 | CONNECT 1200/75, 300, 300 | the same |
 | V90 / 90 (ours as the digital modem), mu-law and A-law | CONNECT 46666 | - |
 
-Class 1 fax at 8000 Hz (`agere_fax_*`): V.27ter, V.29 and V.17 7200 pass
-both ways. With V.17 at 9600 and 12000 our receiver gets the Agere
-transmitter's TCF at only some 14 dB SNR and the TCF fails; the page at
-12000 from us to it fails too.
+Class 1 fax at 8000 Hz (`agere_fax_*`): V.27ter, V.29 and V.17 (7200 to
+14400, short train pages) pass both ways.
 
 The original library in its default V.92 mode does V.8 with automode off,
 and connects to this implementation at V.34.

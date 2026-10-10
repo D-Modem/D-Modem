@@ -98,7 +98,7 @@ static int run(enum fax_mod mod, int short_train, int srate, int code,
 	rx.save(mem);
 	rx.release();
 	/* the offset with the fewest errors in the first 256 bits */
-	for (off = 0, err = 64; off < 200 && off + 256 <= nrx; off++) {
+	for (off = 0, err = 64; off < 2000 && off + 256 <= nrx; off++) {
 		long e = 0;
 		for (i = 0; i < 256; i++)
 			e += rxb[off + i] != txb[i];

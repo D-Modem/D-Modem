@@ -295,7 +295,7 @@ add_test(NAME interop_v90_alaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 set_tests_properties(interop_v90_alaw PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:alaw;DSP_G711=alaw")
 # class 1 fax calls both ways
-foreach(_m 24 48 72 96 73 97 121 122)
+foreach(_m 24 48 72 96 73 97 121 122 145)
 	add_test(NAME fax_interop_${_m}_blob_sends COMMAND ${Python3_EXECUTABLE}
 		${_py}/fax_interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open> ${_m})
 	add_test(NAME fax_interop_${_m}_open_sends COMMAND ${Python3_EXECUTABLE}
@@ -336,9 +336,8 @@ if(TARGET half_agere)
 			ENVIRONMENT
 			"${_env};NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
 	endforeach()
-	# class 1 fax both ways at 8000 Hz (V.17 from 9600 bit/s up does not
-	# work with the Agere modem yet)
-	foreach(_m 24 48 72 96 73)
+	# class 1 fax both ways at 8000 Hz
+	foreach(_m 24 48 72 96 73 97 121 122 145)
 		add_test(NAME agere_fax_${_m}_agere_sends COMMAND
 			${Python3_EXECUTABLE} ${_py}/fax_interop.py
 			$<TARGET_FILE:half_agere> $<TARGET_FILE:half_open8> ${_m})

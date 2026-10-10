@@ -329,14 +329,20 @@ static cplx fax_tx_symbol(void *ctx)
 		break;
 	case SEG_TRN:
 		if (t->seg_sym >= trn_len(t->mod, t->short_train))
-			t->next_segment(is_v17(t->mod) ? SEG_BRIDGE : SEG_ONES);
+			t->next_segment(is_v17(t->mod) && !t->short_train ?
+					SEG_BRIDGE : SEG_ONES);
 		break;
 	case SEG_BRIDGE:
 		if (t->seg_sym >= 64)
 			t->next_segment(SEG_ONES);
 		break;
 	case SEG_ONES:
-		if (t->seg_sym >= ones_len(t->mod))
+		/* after a short train the original library sends 144 (60
+		   ms), and its receiver needs them: depending on where its
+		   20 ms frames fall it starts the data early, with up to 200
+		   symbols to converge at 14400.  100 ms of them cover that. */
+		if (t->seg_sym >= (is_v17(t->mod) && t->short_train ? 240 :
+				    ones_len(t->mod)))
 			t->next_segment(SEG_DATA);
 		break;
 	case SEG_DATA:
@@ -344,7 +350,9 @@ static cplx fax_tx_symbol(void *ctx)
 			t->next_segment(SEG_SHUTDOWN);
 		break;
 	case SEG_SHUTDOWN:
-		if (t->seg_sym >= 32)
+		/* V.17: 20 ms more of ones, the original library's receiver
+		   may lose the end of the data with its last frame */
+		if (t->seg_sym >= (is_v17(t->mod) ? 80 : 32))
 			t->next_segment(SEG_TAIL);
 		break;
 	case SEG_TAIL:
@@ -430,7 +438,11 @@ void FaxTx::init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t 
 	qam.ctx = this;
 	if (is_v17(mod_)) {
 		scr = 0x2ECDD5;
-		trellis.diff = short_train_ ? 0 : 1;
+		/* after a short train the original library goes on with
+		   segment 4 at once, without the bridge, its trellis encoder
+		   in this state (its receiver expects it) */
+		trellis.diff = short_train_ ? 3 : 1;
+		trellis.conv = short_train_ ? 7 : 0;
 		seg = SEG_ABAB;
 	} else if (is_v29(mod_)) {
 		tscr = 0x2A;
@@ -860,11 +872,11 @@ void FaxRx::symbol()
 	case RXS_TRAIN: {
 		cplx d = ref_point(seg_sym);
 		int trn = trn_len(mod, short_train);
-		/* V.17 short train: the original library sends the 64 symbol
-		   bridge as after a long train, spandsp goes on with the
-		   scrambled ones (segment 4) at once.  Its first symbols tell;
-		   without the bridge they are data, and a few of the 48 ones
-		   are not missed. */
+		/* V.17 short train: some modems send the 64 symbol bridge as
+		   after a long train, the original library and spandsp go on
+		   with the scrambled ones (segment 4) at once.  Its first
+		   symbols tell; without the bridge they are data, and a few
+		   of the ones are not missed. */
 		if (is_v17(mod) && short_train &&
 		    seg_sym >= trn && seg_sym < trn + 8) {
 			if (cplx_pow(cplx_sub(z, d)) < 0.2f * cplx_pow(d))
@@ -879,6 +891,12 @@ void FaxRx::symbol()
 			}
 			break;
 		}
+		/* V.17 bridge: Agere's is not the one of the reference, and
+		   a wrong reference winds the carrier loop up to a frequency
+		   offset of some hertz.  Its points are A, B, C or D, so the
+		   nearest one is the decision. */
+		if (is_v17(mod) && seg_sym >= trn)
+			d = v32_abcd[state_of(z)];
 		/* the original library's V.27ter training has stray 180
 		   degree flips: follow them, its points are all on one axis */
 		if (is_v27(mod) &&
