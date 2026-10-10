@@ -31,6 +31,7 @@
 #include "pump.h"
 #include "v34.h"
 #include "v90.h"
+#include "v91.h"
 
 namespace dsp {
 
@@ -73,6 +74,7 @@ static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x11, 0x10, 0x2a, 0x0d
 #define V8_ACCESS_DIGITAL 0x80
 #define V8_PCM_ANALOGUE 0x20    /* V.90 / V.92 analogue modem */
 #define V8_PCM_DIGITAL  0x40    /* V.90 / V.92 digital modem */
+#define V8_PCM_V91      0x80
 /* INFO0d: our phase 2 level (V34_LEVEL) is about -14 dBm0, the PCM
    constellations may go up to -12 dBm0 */
 #define V90_P2_POWER    8       /* -6 - n dBm0 */
@@ -153,6 +155,8 @@ enum v34_state {
 	P4D_START,
 	P4D_RI,         /* until CPt */
 	P4D_TRAIN,      /* TRN2d, MP, MP', Ed, B1d (the frame source) */
+	/* V.91 (v91.cpp) from the end of V.8 on */
+	V91_RUN,
 };
 
 /* what the digital modem's encoder sends in phase 4 and data mode */
@@ -276,6 +280,9 @@ struct V34Pump : Pump {
 	int line_rate;          /* 9600, or 8000 through the converters */
 	int v90;                /* offer V.90 as the digital modem */
 	int pcm;                /* V.90 agreed in V.8 */
+	int v91;                /* offer V.91 */
+	int v91_on;             /* V.91 agreed in V.8 */
+	V91 v91m;
 	int alaw;               /* the network's G.711 law */
 	V90Tx v90tx;    /* the PCM transmitter */
 	int pcm_tx;             /* our output from it */
@@ -399,6 +406,9 @@ struct V34Pump : Pump {
 	void v8_make_msg(BitQ *q);
 	int v8_remote_v34();
 	int v8_v90();
+	int v8_v91();
+	void v91_start();
+	int v91_escape();
 	void v8_rx_bit(int bit);
 	void ans_analyse(float x);
 	float ans_am_depth();
@@ -635,12 +645,20 @@ int V34Pump::v8_remote_cat(int tag)
    availability category and a digital network connection. */
 void V34Pump::v8_make_msg(BitQ *q)
 {
-	int i, pcm_ = v90;
+	int i, pcm_ = (v90 ? V8_PCM_DIGITAL : 0) | (v91 ? V8_PCM_V91 : 0);
 	q->reset();
 	q->put(0x3FF, 10);
-	/* in a JM only when the CM had an analogue V.90 modem */
-	if (!caller && (v8_remote_cat(V8_CAT_PCM) & V8_PCM_ANALOGUE) == 0)
-		pcm_ = 0;
+	/* in a JM what both have: V.90 when the CM had an analogue V.90
+	   modem, V.91 when it had V.91 */
+	if (!caller) {
+		int c = v8_remote_cat(V8_CAT_PCM);
+		if (c < 0)
+			c = 0;
+		if (!(c & V8_PCM_ANALOGUE))
+			pcm_ &= ~V8_PCM_DIGITAL;
+		if (!(c & V8_PCM_V91))
+			pcm_ &= ~V8_PCM_V91;
+	}
 	for (i = 0; i < (int)sizeof(v8_msg); i++) {
 		int c = v8_msg[i];
 		if (pcm_ && (c & 0x1F) == V8_CAT_MOD)
@@ -650,7 +668,7 @@ void V34Pump::v8_make_msg(BitQ *q)
 		q->put_octet(c);
 	}
 	if (pcm_)
-		q->put_octet(V8_CAT_PCM | V8_PCM_DIGITAL);
+		q->put_octet(V8_CAT_PCM | pcm_);
 	v8tx_repeat = 1;
 }
 
@@ -674,6 +692,13 @@ int V34Pump::v8_v90()
 {
 	int c = v8_remote_cat(V8_CAT_PCM);
 	return v90 && c >= 0 && (c & V8_PCM_ANALOGUE) != 0;
+}
+
+/* V.91: both offer it (and the remote is not an analogue V.90 modem) */
+int V34Pump::v8_v91()
+{
+	int c = v8_remote_cat(V8_CAT_PCM);
+	return v91 && !v8_v90() && c >= 0 && (c & V8_PCM_V91) != 0;
 }
 
 void V34Pump::v8_rx_bit(int bit)
@@ -1697,6 +1722,41 @@ void V34Pump::retrain(const char *why)
 	set_state(V34_RT_SILENCE);
 }
 
+/* V.91 after V.8: v91.cpp from here on, at 8000 Hz */
+void V34Pump::v91_start()
+{
+	const char *k = getenv("DSP_V91_K");
+	DSP_DBG("v34: V.91\n");
+	v91m.init(alaw, caller, k ? atoi(k) : 0, getenv("DSP_V91_CC") != NULL);
+	v91m.get_bits = v34_get_bits;
+	v91m.put_bits = v34_put_bits;
+	v91m.ctx = this;
+	if (rt)
+		rt->pcm = 1;
+	set_state(V91_RUN);
+}
+
+/* 8.3/V.91: V.34 from phase 2 on instead */
+int V34Pump::v91_escape()
+{
+	DSP_DBG("v34: V.91 does not work, V.34\n");
+	v91_on = 0;
+	if (rt)
+		rt->pcm = 0;
+	if (caller) {
+		set_state(P2C_INFO0);
+		cc.init(srate, 1200, CC_BAUD, 0.5f, 4, 1, V34_TONE_AMP);
+	} else {
+		set_state(P2A_INFO0);
+		cc.init(srate, 2400, CC_BAUD, 0.5f, 4, 1, V34_TONE_AMP);
+	}
+	cc.get_symbol = cc_symbol;
+	cc.ctx = this;
+	make_info0(&cctx);
+	cc_send();
+	return 0;
+}
+
 int V34Pump::handshake()
 {
 	long c = count;
@@ -1714,6 +1774,7 @@ int V34Pump::handshake()
 			if (!v8_remote_v34())
 				return fallback("no V.34 in CM");
 			pcm = v8_v90();
+			v91_on = v8_v91();
 			set_state(V8A_JM);
 			/* the caller's INFO0c follows its CJ by only 75 ms:
 			   listen for it already; with V.90 the analogue
@@ -1735,6 +1796,10 @@ int V34Pump::handshake()
 		}
 		break;
 	case V8A_GAP:
+		if (c >= ms2samples(75, srate) && v91_on) {
+			v91_start();
+			break;
+		}
 		if (c >= ms2samples(75, srate) && pcm) {
 			/* the digital modem of V.90 takes the part of the
 			   V.34 call modem from phase 2 on */
@@ -1781,6 +1846,7 @@ int V34Pump::handshake()
 			if (!v8_remote_v34())
 				return fallback("no V.34 in JM");
 			pcm = v8_v90();
+			v91_on = v8_v91();
 			if (pcm)
 				DSP_DBG("v34: V.90 with us as the digital modem\n");
 			set_state(V8C_CJ);
@@ -1796,7 +1862,13 @@ int V34Pump::handshake()
 			txm = TXM_SILENCE;
 		}
 		break;
+	case V91_RUN:           /* process() runs it */
+		break;
 	case V8C_GAP:
+		if (c >= ms2samples(75, srate) && v91_on) {
+			v91_start();
+			break;
+		}
 		if (c >= ms2samples(75, srate)) {
 			set_state(P2C_INFO0);
 			cc.init(srate, 1200, CC_BAUD, 0.5f, 4, 1,
@@ -2345,6 +2417,23 @@ int V34Pump::process(void *in, void *out, int cnt)
 	float y, up[2], down[2], pcm_ = 0;
 
 	for (i = 0; i < cnt; i++) {
+		if (state == V91_RUN) {
+			int y91, ev = v91m.sample(src[i], &y91);
+			dst[i] = (s16)y91;
+			if (ev == V91_CONNECT) {
+				rate_tx = (v91m.cp_rx.drn + 20) * 8000 / 6;
+				rate_rx = (v91m.our_drn + 20) * 8000 / 6;
+				modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
+				modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+				DSP_DBG("v34: V.91 connect %d/%d\n", rate_tx,
+					rate_rx);
+				ret = DPSTAT_CONNECT;
+			} else if (ev == V91_FAIL)
+				return DPSTAT_ERROR;
+			else if (ev == V91_ESCAPE)
+				v91_escape();
+			continue;
+		}
 		if (line_rate == V34_SRATE) {
 			r = sample(src[i], &y, NULL);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
@@ -2412,6 +2501,10 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	fifo_n = 2;          /* so that it never runs dry */
 	/* a V.90 digital modem needs the 8000 Hz G.711 network */
 	v90 = (id == DP_V90 || id == DP_V92) && line_rate == 8000;
+	/* V.91 with another digital modem: DSP_V91=0 leaves it out */
+	v91 = (id == DP_V90 || id == DP_V92 || id == DP_V91) &&
+		line_rate == 8000 &&
+		!(getenv("DSP_V91") && !atoi(getenv("DSP_V91")));
 	/* the G.711 law of the network (D-Modem knows it from the codec of
 	   the call) */
 	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
@@ -2461,13 +2554,15 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 
 void V34Pump::cleanup()
 {
+	if (rt)
+		rt->pcm = 0;
 	if (prx_on)
 		prx.release();
 }
 
 /* DP_V8 is what the modem core starts for the default (fastest) mode;
    V.90 and V.92 are not implemented, they start V.34 as well */
-static const enum DP_ID v34_ids[] = { DP_V8, DP_V34, DP_V90, DP_V92 };
+static const enum DP_ID v34_ids[] = { DP_V8, DP_V34, DP_V90, DP_V91, DP_V92 };
 
 int dp_v34_init(void)
 {

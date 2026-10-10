@@ -99,6 +99,37 @@ foreach(_side both a c)
 		LABELS quick ENVIRONMENT DSP_V34_RETRAIN=${_t})
 endforeach()
 
+# --- quick: V.91 between two of them on a G.711 network (DMODEM_NET): as
+#     it is, with robbed bits, a 3 dB pad, mu-law to A-law; the DIL shows
+#     the receiver which codes come through
+foreach(_net g711 rbs pad xlaw)
+	add_test(NAME dmodem_pair_v91_${_net} COMMAND dmodem_pair +MS=91 1 25)
+	set_tests_properties(dmodem_pair_v91_${_net} PROPERTIES LABELS quick
+		ENVIRONMENT "DMODEM_NET=${_net};DMODEM_RATE=60000")
+endforeach()
+add_test(NAME dmodem_pair_v91_alaw COMMAND dmodem_pair +MS=91 1 25)
+set_tests_properties(dmodem_pair_v91_alaw PROPERTIES LABELS quick
+	ENVIRONMENT "DMODEM_NET=g711;DMODEM_LAW=alaw;DMODEM_RATE=62666")
+# the default AT+MS=92, and K56flex's AT+MS=56 (V.90), find V.91 as well;
+# 200 kB that do not compress
+add_test(NAME dmodem_pair_v91_bulk COMMAND dmodem_pair +MS=92 1 60)
+set_tests_properties(dmodem_pair_v91_bulk PROPERTIES LABELS quick
+	ENVIRONMENT "DMODEM_NET=g711;DMODEM_RATE=62666;DMODEM_BULK=200000")
+add_test(NAME dmodem_pair_ms56 COMMAND dmodem_pair +MS=56 1 25)
+set_tests_properties(dmodem_pair_ms56 PROPERTIES LABELS quick
+	ENVIRONMENT "DMODEM_NET=g711")
+# a retrain by the caller in the data (V.42 carries on); the control
+# channel; one modem silent in V.91: both escape to V.34
+add_test(NAME dmodem_pair_v91_retrain COMMAND dmodem_pair +MS=91 1 30)
+set_tests_properties(dmodem_pair_v91_retrain PROPERTIES LABELS quick
+	ENVIRONMENT "DMODEM_NET=g711;DSP_V91_RETRAIN=3000c")
+add_test(NAME dmodem_pair_v91_cc COMMAND dmodem_pair +MS=91 1 25)
+set_tests_properties(dmodem_pair_v91_cc PROPERTIES LABELS quick
+	ENVIRONMENT "DMODEM_NET=rbs;DSP_V91_CC=1;DMODEM_RATE=60000")
+add_test(NAME dmodem_pair_v91_escape COMMAND dmodem_pair +MS=91 1 35)
+set_tests_properties(dmodem_pair_v91_escape PROPERTIES LABELS quick
+	ENVIRONMENT "DMODEM_NET=g711;DSP_V91_MUTE=a;DMODEM_RATE=33600")
+
 # --- quick: fax, the page coding against libtiff (tiffcp), two T.30
 #     machines back to back at each rate, libdmodem's fax (CNG hand-over)
 set(_ft ${CMAKE_CURRENT_BINARY_DIR}/fax)

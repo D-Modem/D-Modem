@@ -14,7 +14,7 @@ pjproject (PJSIP) is not part of this repository.  CMake uses an installed one (
 Tests: `ctest --test-dir build -L quick` runs the fast ones (a few seconds); `-L spandsp` (with libspandsp-dev) and `-L interop` are longer.  The interop tests run the modem against Smart Link's original binary-only i386 DSP library (`slmodemd/dsp/test/dsplibs.o`), kept only as a test peer; they need a 32-bit build environment (`g++ -m32`; Debian-based systems can install `g++-multilib`) and are skipped without one.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md).
 
 ### DSP
-The modem's signal processing is open source, in `slmodemd/dsp/` (C++, behind the C interface of Smart Link's original binary-only library that slmodemd was written for, `slmodemd/dsplibs.h`); it builds on any architecture.  It implements V.8 and V.34 (up to 33600 bps), V.32bis (14400 bps), V.32, V.22bis, V.22, Bell 212A, V.23, V.21 and Bell 103, class 1 fax (V.17, V.29, V.27ter and V.21 HDLC), call progress, caller ID and voice.  It implements V.90 only as the digital modem (on an 8000 Hz G.711 line), not V.92.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md) for details and tests.
+The modem's signal processing is open source, in `slmodemd/dsp/` (C++, behind the C interface of Smart Link's original binary-only library that slmodemd was written for, `slmodemd/dsplibs.h`); it builds on any architecture.  It implements V.8 and V.34 (up to 33600 bps), V.32bis (14400 bps), V.32, V.22bis, V.22, Bell 212A, V.23, V.21 and Bell 103, class 1 fax (V.17, V.29, V.27ter and V.21 HDLC), call progress, caller ID and voice.  It implements V.90 only as the digital modem (on an 8000 Hz G.711 line), not V.92, and V.91 between two digital modems (up to 62667 bps both ways).  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md) for details and tests.
 
 ### Asterisk module
 `asterisk/` has `app_dmodem`, a dialplan application that answers a call on an Asterisk channel with the open modem and hands the connection to a BBS (TCP) or a program on a pty such as pppd, per profile in `dmodem.conf`.  It is built on `libdmodem` (`slmodemd/dmodem.h`, and `slmodemd/dmodem.hpp` with C++ classes for it), the modem core and open DSP as a library.  See [asterisk/README.md](asterisk/README.md).
@@ -77,10 +77,10 @@ Finally, dial the number of the target system.  Below shows a connection to the 
     59515 21-10-28 21:40:23 11 0 -.1 045.0 UTC(NIST) *
  
 ## Known Issues / Future Work
-- For a server answering many calls (a BBS, PPP dial-in or fax), the Asterisk module in `asterisk/` is the better fit than `slmodemd -L`: it answers with the open modem at V.90 (as the digital modem, up to 56000 bps downstream), V.34, V.32bis, V.22bis, V.22 or V.21.
+- For a server answering many calls (a BBS, PPP dial-in or fax), the Asterisk module in `asterisk/` is the better fit than `slmodemd -L`: it answers with the open modem at V.91 (another digital modem calling, up to 62667 bps both ways), V.90 (as the digital modem, up to 56000 bps downstream), V.34, V.32bis, V.22bis, V.22 or V.21.
 - Tested over SIP against a local Asterisk only, not yet through real PSTN gateways.
 - V.34 rate renegotiation during a call (the modem retrains instead, after a line hit or when its error rate climbs), and V.92, are not implemented.
-- V.90 needs an analogue modem at the other end: slmodemd is always on the digital side of the network, and two digital modems (D-Modem calling the Asterisk module, say) connect at V.34.
+- V.90 needs an analogue modem at the other end: slmodemd is always on the digital side of the network. Two digital modems (D-Modem calling the Asterisk module, or another D-Modem) connect at V.91 instead: up to 62667 bps both ways on a clean G.711 call (about 58700 bps of data through V.42), less where the network robs bits or adds a pad; `AT+MS=91` asks for V.91 (or V.34), the default `AT+MS=92` offers it with V.90.
 - When a calling modem tries V.34 and V.32bis before V.22bis (a V.8 caller against `AT+MS=122`), slmodemd may answer at 1200 instead of 2400.
 - The serial interface could be replaced with stdio or a socket, and common AT configuration options could be exposed as command line options 
 

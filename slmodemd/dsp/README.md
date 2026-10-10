@@ -30,11 +30,13 @@ kept as a test peer for the interop tests:
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | Full S1 handshake, falls back to V.22 |
 | 32 | ITU V.32, 4800/9600 bit/s | Uncoded 4800, trellis coded 9600, echo canceller |
 | 132 | ITU V.32bis, 4800 to 14400 bit/s | Rate chosen from the measured training quality |
+| 91 | ITU V.91, 28000 to 62667 bit/s both ways | Two digital modems on an 8000 Hz G.711 line; V.8, then V.34 if V.91 does not start (see [V.91](#v91-digital-to-digital)). 90 and 92 offer it as well |
 | 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s; V.90 as the digital modem | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. With 90 or 92 on an 8000 Hz G.711 line: V.90 as the digital modem, 28000 to 56000 bit/s downstream (see [V.90](#v90-digital-modem)) |
 
 V.90 is there as the **digital** modem only (the server side, as on a
 G.711 VoIP line); the analogue side of V.90, V.92, K56flex and V.8bis are
-not. With the default `AT+MS=92` at 9600 Hz the modem connects at V.34 or
+not (`AT+MS=56`, K56flex, runs V.90). Between two digital modems V.91 (see
+[V.91](#v91-digital-to-digital)) takes the place of V.90. With the default `AT+MS=92` at 9600 Hz the modem connects at V.34 or
 lower.
 
 The V.22/V.22bis constellation, quadrant coding and phase tables come from
@@ -188,6 +190,60 @@ original library's own debug
 output (its `edprintf` lines are hidden behind a key) helped: it reports
 the levels it measures in the DIL, the digital pad it concludes and why
 it retrains.
+
+### V.91 digital to digital
+
+`v91.cpp` is ITU-T V.91 (05/99), started by the V.34 pump when both CM and
+JM have V.91 in their PCM modem availability octet (b7): two digital
+modems, as D-Modem calling D-Modem or the Asterisk module over SIP. Both
+send PCM codes; both run the same start-up (8.2.1/V.91):
+
+- **Ez, INFO, INFO':** INFO (Table 6/V.91) coded differentially into the
+  sign of Ucode 66; INFO' once the remote's INFO is in. We always ask for
+  the default DIL (Table 5/V.91) and never for transparent mode (through
+  pjsua's 16 bit linear audio the mu-law codes +0 and -0 are one).
+- **Eu, or J, PHIL and Em:** the DIL the remote asked for: the default one
+  after Eu, or the one described in its J (Table 12/V.90, as V.90's Ja)
+  after Em.
+- **DIL:** the receiver notes, for each of the 6 data frame intervals,
+  the value each code and sign arrives as. A code is usable when both of
+  its signs arrive the same each time, different from each other and from
+  the codes kept already; where codes become one (robbed bits, a pad, a
+  conversion between the laws), one of them is kept. Those are the
+  constellations it asks for in CP, and data are decoded by the nearest
+  of their received values.
+- **SCR, CP, CP', Es, B1:** CP has the layout of V.90's CP (Table 4/V.91),
+  with the rate the receiver can take: K bits through the modulus encoder,
+  K up to 41 (62667 bit/s; 64000 would need all 128 codes, and
+  transparent mode).
+- **Data mode:** the V.90 encoder with Sr = 0 and S = 6, and its inverse.
+  The control channel (bit 27 of INFO, every 64th frame's sign bits) is
+  sent when the remote asks for it (`DSP_V91_CC=1` asks).
+- **Retrain:** a retrain is INFO again: the modem sends it when more than
+  5% of the symbols in a second are off the constellation, and answers the
+  remote's INFO in the data. V.42 carries on.
+- **Escape to V.34:** no INFO' in 1.5 s or no B1 in 10 s: V.34 phase 2
+  from INFO0 on (8.3/V.91).
+
+The core's DC remover leaves the received codes alone while V.91 runs
+(`dp_runtime_pcm`). `DSP_V91=0` leaves V.91 out of V.8, `DSP_V91_K`
+limits K.
+
+`dmodem_pair` puts a G.711 network between the two modems with
+`DMODEM_NET` (`ctest -R v91`):
+
+| `DMODEM_NET` | Codes per interval | Rate |
+|---|---|---|
+| `g711`, mu-law | 124 (+0 and -0 are one) | 62667 |
+| `g711`, A-law | 125 | 62667 |
+| `rbs` (LSB of every 6th octet set) | 124 and once 62 | 61333 |
+| `pad` (3 dB), mu-law / A-law | 99 / 105 | 60000 / 61333 |
+| `xlaw` (mu-law to A-law) | 117 | 62667 |
+
+Through V.42, 200 kB that do not compress go across at about 58700 bit/s
+(V.34 at 33600: 31400). Over SIP, `asterisk/test/sip.sh` (slmodemd calling
+DModem in Asterisk, also with `CODEC=alaw` and `INCOMING=1`) connects at
+62666/62666.
 
 ### Fax (class 1)
 

@@ -183,6 +183,12 @@ void dp_runtime_set_law(void *runtime, int law)
 		rt->law = law;
 }
 
+int dp_runtime_pcm(void *runtime)
+{
+	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
+	return rt ? rt->pcm : 0;
+}
+
 void dp_runtime_delete(void *runtime)
 {
 	delete static_cast<struct dp_runtime *>(runtime);

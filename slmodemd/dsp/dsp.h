@@ -55,6 +55,8 @@ struct dp_runtime {
 				   keep the V.22bis fallback */
 	int law;                /* the G.711 network: 1 mu-law, 2 A-law, 0
 				   unknown (then $DSP_G711) */
+	int pcm;                /* V.91: the received codes as they are
+				   (no DC removal) */
 };
 
 /*

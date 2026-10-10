@@ -54,6 +54,9 @@
 #include <modem_debug.h>
 #include <dsplibs.h>
 
+/* not in the original dsplibs.o (the interop tests link it) */
+extern "C" int dp_runtime_pcm(void *runtime) __attribute__((weak));
+
 
 #define XMIT_SIZE 4096
 
@@ -161,6 +164,7 @@ struct dp_driver modem_dp_drivers[] = {
         {DP_K56,"K56Flex","56"},
         {DP_V8BIS,"V8bis"},
         {DP_V90,"V90","90"},
+        {DP_V91,"V91","91"},
         {DP_V92,"V92","92"},
         {DP_SINUS,"Sinus"},
         {}
@@ -647,8 +651,9 @@ static void modem_dp_process(struct modem *m,void *in,void *out,int count)
 
 void modem_process(struct modem *m,void *in,void *out,int count)
 {
-	/* clean DC */
-	dcr_process(m->dcr,in,count);
+	/* clean DC (not from PCM codes) */
+	if (!(dp_runtime_pcm && dp_runtime_pcm(m->dp_runtime)))
+		dcr_process(m->dcr,in,count);
 	modem_debug_log_data(m,MODEM_DBG_RX_SAMPLES,in,count<<MFMT_SHIFT(m->format));
 	if(m->process)
 		m->process(m,in,out,count);
@@ -1017,7 +1022,8 @@ static int modem_comp_put_chars(struct modem *m, const char *buf, int n)
  *
  */
 
-#define IS_FAST_DP(id) (id == DP_V34 || id == DP_V90 || id == DP_V92)
+#define IS_FAST_DP(id) (id == DP_V34 || id == DP_V90 || id == DP_V91 || \
+			id == DP_V92)
 
 static void do_modem_change_dp (struct modem *m)
 {

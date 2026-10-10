@@ -36,6 +36,8 @@ extern void *dp_runtime_create(struct modem *m);
 extern void  dp_runtime_delete(void *runtime);
 /* the G.711 law of the network (1 mu-law, 2 A-law): the open pumps only */
 extern void  dp_runtime_set_law(void *runtime, int law);
+/* 1 while a pump takes the line's exact PCM codes (V.91): no DC removal */
+extern int   dp_runtime_pcm(void *runtime);
 /* the DC remover */
 extern void *dcr_create(void);
 extern void  dcr_delete(void *dcr);

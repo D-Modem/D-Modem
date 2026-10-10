@@ -11,7 +11,7 @@ set(DMODEM_DSP_SRCS
 	dsp/dsp_glue.cpp dsp/dsp_util.cpp dsp/dp_callprog.cpp dsp/dp_fsk.cpp
 	dsp/dp_v22.cpp dsp/dp_v32.cpp dsp/qam.cpp dsp/qam_tables.cpp dsp/fax_modems.cpp
 	dsp/fax_class1.cpp dsp/dp_v34.cpp dsp/v34_tables.cpp dsp/v34_modem.cpp
-	dsp/v34_data.cpp dsp/v90.cpp)
+	dsp/v34_data.cpp dsp/v90.cpp dsp/v91.cpp)
 # for the test programs in dsp/test
 set(DMODEM_CORE_SRCS ${DMODEM_CORE_SRCS} PARENT_SCOPE)
 set(DMODEM_DSP_SRCS ${DMODEM_DSP_SRCS} PARENT_SCOPE)
