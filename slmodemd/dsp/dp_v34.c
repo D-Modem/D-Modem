@@ -2166,6 +2166,7 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	v->v90 = (id == DP_V90 || id == DP_V92) && v->line_rate == 8000;
 	/* the G.711 law of the network (D-Modem knows it from the codec of
 	   the call) */
+	v->rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
 	v->alaw = v->rt && v->rt->law ? v->rt->law == 2 :
 		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
 	v->dp.modem = m;
@@ -2174,7 +2175,6 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	v->modem = m;
 	v->srate = srate;
 	v->caller = caller;
-	v->rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
 	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
 	v->timeout = (long)(s7 > 0 ? s7 : 50) * srate;
 	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
