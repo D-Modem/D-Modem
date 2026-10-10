@@ -314,7 +314,10 @@ bridge: the first symbols after the training tell which. During a bridge
 it decides on the nearest training point instead of the known sequence:
 the Agere modem's bridge is not that sequence, and following the wrong
 points wound the carrier loop up to a frequency offset of some 3 Hz that
-spoiled the first seconds of the data. In data mode the V.17 receiver follows a clear
+spoiled the first seconds of the data. V.27ter, too, leads the data
+with 100 ms of ones (the original library sends some 60 ms): with the 8
+symbols of the standard its receiver lost the start of a page now and
+then. In data mode the V.17 receiver follows a clear
 error in the data's power (6 % or more, over some 500 symbols): the
 original library's constellation comes about 1.4 dB below its training.
 

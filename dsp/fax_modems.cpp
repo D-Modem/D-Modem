@@ -337,11 +337,14 @@ static cplx fax_tx_symbol(void *ctx)
 			t->next_segment(SEG_ONES);
 		break;
 	case SEG_ONES:
-		/* after a short train the original library sends 144 (60
-		   ms), and its receiver needs them: depending on where its
-		   20 ms frames fall it starts the data early, with up to 200
-		   symbols to converge at 14400.  100 ms of them cover that. */
-		if (t->seg_sym >= (is_v17(t->mod) && t->short_train ? 240 :
+		/* after a V.17 short train and with V.27ter the original
+		   library sends some 60 ms of ones, and its receiver needs
+		   them: depending on where its 20 ms frames fall it starts
+		   the data early, with up to 200 symbols to converge at
+		   14400.  100 ms of them cover that. */
+		if (t->seg_sym >= ((is_v17(t->mod) && t->short_train) ||
+				    is_v27(t->mod) ?
+				    (int)mod_baud(t->mod) / 10 :
 				    ones_len(t->mod)))
 			t->next_segment(SEG_DATA);
 		break;
