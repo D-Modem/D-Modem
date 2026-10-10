@@ -181,7 +181,6 @@ struct FskPump : Pump {
 	float tx_sample(int data);
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
 	int process(void *in, void *out, int cnt) override;
-	int hangup() override;
 };
 
 void FskPump::set_state(enum fsk_state state_)
@@ -248,11 +247,6 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	}
 	DSP_DBG("%s: create %s, srate %d\n", par_->name,
 		caller_ ? "caller" : "answerer", srate_);
-	return 0;
-}
-
-int FskPump::hangup()
-{
 	return 0;
 }
 

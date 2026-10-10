@@ -158,7 +158,6 @@ struct V22Pump : Pump {
 	int handshake();
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
 	int process(void *in, void *out, int cnt) override;
-	int hangup() override;
 };
 
 /* quadrant change for the first dibit (Q1 Q2, Q1 first in time) */
@@ -844,11 +843,6 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		state = C_WAIT_USB1;
 	DSP_DBG("%s: create %s (dp %d), srate %d\n", mode_name(),
 		caller_ ? "caller" : "answerer", id, srate_);
-	return 0;
-}
-
-int V22Pump::hangup()
-{
 	return 0;
 }
 

@@ -237,7 +237,6 @@ struct V32Pump : Pump {
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
 	void cleanup();
 	int process(void *in, void *out, int cnt) override;
-	int hangup() override;
 };
 
 /*
@@ -1122,11 +1121,6 @@ void V32Pump::cleanup()
 {
 	rx.release();
 	ec.release();
-}
-
-int V32Pump::hangup()
-{
-	return 0;
 }
 
 /* the V.8/V.34 pump (dp_v34.cpp) hands over to this one, with the

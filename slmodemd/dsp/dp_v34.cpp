@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "pump.h"
 #include "v34.h"
 #include "v90.h"
 
@@ -264,8 +265,11 @@ struct V34Echo {
 
 #define V34_FIFO        8
 
-struct v34_dp {
-	struct dp dp;
+struct V34Pump : Pump {
+	static constexpr const char *name = "V.8/V.34 data pump";
+
+	~V34Pump() { cleanup(); }
+
 	struct modem *modem;
 	struct dp_runtime *rt;
 	int srate;              /* of the pump: 9600 */
@@ -385,16 +389,59 @@ struct v34_dp {
 	int retraining;         /* back to data mode without a new CONNECT */
 	int retrains;
 	long retrain_at;        /* test: our own retrain this far (samples) */
+
+	void set_state(enum v34_state s);
+	void make_info0(BitQ *q);
+	void make_info1c(BitQ *q);
+	void make_info1a(BitQ *q);
+	int info_expected();
+	int v8_remote_cat(int tag);
+	void v8_make_msg(BitQ *q);
+	int v8_remote_v34();
+	int v8_v90();
+	void v8_rx_bit(int bit);
+	void ans_analyse(float x);
+	float ans_am_depth();
+	void cc_tone();
+	void cc_send();
+	int cc_busy();
+	void cc_silence();
+	long rev_on_line();
+	void probe_init();
+	int probe_rx_sample(float x);
+	void probe_collect(float x);
+	int probe_analyse();
+	void cc_rx_bit(int bit);
+	void ec_schedule();
+	void rt_tone(float x);
+	void pump_rx_sample(float x);
+	int fallback(const char *why);
+	void choose_bauds();
+	void primary_start();
+	int v90_start();
+	void v90_make_mp(int ack);
+	int v90_data_setup();
+	void tx_next(enum v34_state s, enum v34_txseg seg);
+	int data_setup();
+	void mp_start();
+	int fsk_bit_edge();
+	void retrain(const char *why);
+	int handshake();
+	float pump_tx_sample();
+	int sample(float x, float *y, const float *ref);
+	void start_probe();
+	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
+	void cleanup();
+	int process(void *in, void *out, int cnt) override;
 };
 
-static void v34_set_state(struct v34_dp *v, enum v34_state s)
+void V34Pump::set_state(enum v34_state s)
 {
-	DSP_DBG("v34: state %d -> %d at %ld ms\n", v->state, s,
-		v->total * 1000 / v->srate);
-	v->state = s;
-	v->count = 0;
+	DSP_DBG("v34: state %d -> %d at %ld ms\n", state, s,
+		total * 1000 / srate);
+	state = s;
+	count = 0;
 }
-
 
 /*
  *    bit queues and INFO sequences
@@ -429,7 +476,7 @@ void BitQ::info_end()
 	put(0xF, 4);
 }
 
-static void make_info0(struct v34_dp *v, BitQ *q)
+void V34Pump::make_info0(BitQ *q)
 {
 	q->info_start();
 	q->put(1, 1);        /* 2743 */
@@ -446,19 +493,19 @@ static void make_info0(struct v34_dp *v, BitQ *q)
 	q->put(1, 1);        /* 1664 point constellations */
 	q->put(0, 2);        /* internal clock */
 	q->put(0, 1);        /* acknowledge */
-	if (v->pcm) {
+	if (pcm) {
 		/* INFO0d, Table 7/V.90 */
 		q->put(V90_P2_POWER, 4);
 		q->put(V90_MAX_POWER, 5);
 		q->put(0, 1);        /* power at the terminals */
-		q->put(v->alaw, 1);
+		q->put(alaw, 1);
 		q->put(1, 1);        /* upstream at 3429 */
 		q->put(0, 1);
 	}
 	q->info_end();
 }
 
-static void make_info1c(struct v34_dp *v, BitQ *q)
+void V34Pump::make_info1c(BitQ *q)
 {
 	int i;
 	q->info_start();
@@ -466,8 +513,8 @@ static void make_info1c(struct v34_dp *v, BitQ *q)
 	q->put(0, 3);
 	q->put(0, 7);        /* no MD */
 	for (i = 0; i < V34_NBAUDS; i++) {
-		int rate = v->rate_of_baud[i];
-		if (!(v->rinfo0.rates & (1 << 2)) && i == V34_BAUD_3429)
+		int rate = rate_of_baud[i];
+		if (!(rinfo0.rates & (1 << 2)) && i == V34_BAUD_3429)
 			rate = 0;
 		q->put(0, 1);        /* low carrier */
 		q->put(0, 4);        /* no pre-emphasis */
@@ -477,17 +524,17 @@ static void make_info1c(struct v34_dp *v, BitQ *q)
 	q->info_end();
 }
 
-static void make_info1a(struct v34_dp *v, BitQ *q)
+void V34Pump::make_info1a(BitQ *q)
 {
 	q->info_start();
 	q->put(0, 3);
 	q->put(0, 3);
 	q->put(0, 7);        /* no MD */
-	q->put(v->high_rx, 1);
+	q->put(high_rx, 1);
 	q->put(0, 4);        /* no pre-emphasis */
-	q->put(v->max_rate_rx, 4);
-	q->put(v->baud_tx, 3);       /* answerer -> caller */
-	q->put(v->baud_rx, 3);       /* caller -> answerer */
+	q->put(max_rate_rx, 4);
+	q->put(baud_tx, 3);       /* answerer -> caller */
+	q->put(baud_rx, 3);       /* caller -> answerer */
 	q->put(0, 10);
 	q->info_end();
 }
@@ -555,13 +602,12 @@ void Info1a::parse(const unsigned char *b)
 }
 
 /* the length of the INFO frame we expect next, up to the end of its CRC */
-static int info_expected(struct v34_dp *v)
+int V34Pump::info_expected()
 {
-	if (!v->ev_info0)
+	if (!ev_info0)
 		return 29 + 16;
-	return v->caller ? 50 + 16 : 89 + 16;
+	return caller ? 50 + 16 : 89 + 16;
 }
-
 
 /*
  *    V.8
@@ -575,37 +621,37 @@ void BitQ::put_octet(unsigned char c)
 }
 
 /* the remote's octet of a V.8 category (tag in the low 4 bits), or -1 */
-static int v8_remote_cat(struct v34_dp *v, int tag)
+int V34Pump::v8_remote_cat(int tag)
 {
 	int i;
-	for (i = 1; i < v->v8_remote_n; i++)
-		if ((v->v8_remote[i] & 0x1F) == tag)
-			return v->v8_remote[i];
+	for (i = 1; i < v8_remote_n; i++)
+		if ((v8_remote[i] & 0x1F) == tag)
+			return v8_remote[i];
 	return -1;
 }
 
 /* CM (caller) or JM (answerer); a JM repeats what both modems have.  As a
    V.90 digital modem: PCM in the modulation octet, the PCM modem
    availability category and a digital network connection. */
-static void v8_make_msg(struct v34_dp *v, BitQ *q)
+void V34Pump::v8_make_msg(BitQ *q)
 {
-	int i, pcm = v->v90;
+	int i, pcm_ = v90;
 	q->reset();
 	q->put(0x3FF, 10);
 	/* in a JM only when the CM had an analogue V.90 modem */
-	if (!v->caller && (v8_remote_cat(v, V8_CAT_PCM) & V8_PCM_ANALOGUE) == 0)
-		pcm = 0;
+	if (!caller && (v8_remote_cat(V8_CAT_PCM) & V8_PCM_ANALOGUE) == 0)
+		pcm_ = 0;
 	for (i = 0; i < (int)sizeof(v8_msg); i++) {
 		int c = v8_msg[i];
-		if (pcm && (c & 0x1F) == V8_CAT_MOD)
+		if (pcm_ && (c & 0x1F) == V8_CAT_MOD)
 			c |= V8_MOD1_PCM;
-		if (pcm && (c & 0x1F) == V8_CAT_ACCESS)
+		if (pcm_ && (c & 0x1F) == V8_CAT_ACCESS)
 			c |= V8_ACCESS_DIGITAL;
 		q->put_octet(c);
 	}
-	if (pcm)
+	if (pcm_)
 		q->put_octet(V8_CAT_PCM | V8_PCM_DIGITAL);
-	v->v8tx_repeat = 1;
+	v8tx_repeat = 1;
 }
 
 void BitQ::make_cj()
@@ -617,89 +663,88 @@ void BitQ::make_cj()
 }
 
 /* is V.34 in the remote's CM / JM? */
-static int v8_remote_v34(struct v34_dp *v)
+int V34Pump::v8_remote_v34()
 {
-	int c = v8_remote_cat(v, V8_CAT_MOD);
+	int c = v8_remote_cat(V8_CAT_MOD);
 	return c >= 0 && (c & V8_MOD1_V34) != 0;
 }
 
 /* V.90 with us as the digital modem: both offer it */
-static int v8_v90(struct v34_dp *v)
+int V34Pump::v8_v90()
 {
-	int c = v8_remote_cat(v, V8_CAT_PCM);
-	return v->v90 && c >= 0 && (c & V8_PCM_ANALOGUE) != 0;
+	int c = v8_remote_cat(V8_CAT_PCM);
+	return v90 && c >= 0 && (c & V8_PCM_ANALOGUE) != 0;
 }
 
-static void v8_rx_bit(struct v34_dp *v, int bit)
+void V34Pump::v8_rx_bit(int bit)
 {
-	v->v8_sr = (v->v8_sr >> 1) | ((unsigned)bit << 19);
+	v8_sr = (v8_sr >> 1) | ((unsigned)bit << 19);
 	/* ten ones, then the CM/JM sync octet framed */
-	if (v->v8_sr == 0xF03FF) {
-		if (v->v8_sync && v->v8_n > 1 && !v->v8_ok) {
-			if (v->v8_n == v->v8_last_n &&
-			    !memcmp(v->v8_rx, v->v8_last, v->v8_n)) {
-				v->v8_ok = 1;
-				memcpy(v->v8_remote, v->v8_rx, v->v8_n);
-				v->v8_remote_n = v->v8_n;
+	if (v8_sr == 0xF03FF) {
+		if (v8_sync && v8_n > 1 && !v8_ok) {
+			if (v8_n == v8_last_n &&
+			    !memcmp(v8_rx, v8_last, v8_n)) {
+				v8_ok = 1;
+				memcpy(v8_remote, v8_rx, v8_n);
+				v8_remote_n = v8_n;
 				DSP_DBG("v34: V.8 %s received, %d octets:"
 					" %02x %02x %02x %02x %02x %02x %02x %02x"
-					" %02x %02x\n", v->caller ? "JM" : "CM",
-					v->v8_n, v->v8_rx[0], v->v8_rx[1],
-					v->v8_rx[2], v->v8_rx[3], v->v8_rx[4],
-					v->v8_rx[5], v->v8_rx[6], v->v8_rx[7],
-					v->v8_rx[8], v->v8_rx[9]);
+					" %02x %02x\n", caller ? "JM" : "CM",
+					v8_n, v8_rx[0], v8_rx[1],
+					v8_rx[2], v8_rx[3], v8_rx[4],
+					v8_rx[5], v8_rx[6], v8_rx[7],
+					v8_rx[8], v8_rx[9]);
 			}
-			memcpy(v->v8_last, v->v8_rx, v->v8_n);
-			v->v8_last_n = v->v8_n;
+			memcpy(v8_last, v8_rx, v8_n);
+			v8_last_n = v8_n;
 		}
-		v->v8_sync = 1;
-		v->v8_n = 0;
-		v->v8_bits = 0;
-		v->v8_rx[v->v8_n++] = 0xE0;
+		v8_sync = 1;
+		v8_n = 0;
+		v8_bits = 0;
+		v8_rx[v8_n++] = 0xE0;
 		return;
 	}
-	if (!v->v8_sync)
+	if (!v8_sync)
 		return;
-	if (++v->v8_bits >= 10 && (v->v8_sr & 0x80400) == 0x80000) {
-		unsigned char c = (v->v8_sr >> 11) & 0xFF;
-		v->v8_bits = 0;
+	if (++v8_bits >= 10 && (v8_sr & 0x80400) == 0x80000) {
+		unsigned char c = (v8_sr >> 11) & 0xFF;
+		v8_bits = 0;
 		if (c == 0) {
-			if (++v->v8_zeros >= 3)
-				v->v8_cj = 1;
+			if (++v8_zeros >= 3)
+				v8_cj = 1;
 		} else
-			v->v8_zeros = 0;
-		if (v->v8_n < (int)sizeof(v->v8_rx))
-			v->v8_rx[v->v8_n++] = c;
+			v8_zeros = 0;
+		if (v8_n < (int)sizeof(v8_rx))
+			v8_rx[v8_n++] = c;
 	}
 }
 
 /* ANSam: 15 Hz amplitude modulation of the 2100 Hz answer tone */
-static void ans_analyse(struct v34_dp *v, float x)
+void V34Pump::ans_analyse(float x)
 {
 	const float a = 1.0f / (0.004f * V34_SRATE);
-	cplx z = cplx_scale(v->ans_lo.next_cplx(), x);
+	cplx z = cplx_scale(ans_lo.next_cplx(), x);
 	float e, w;
-	v->ans_lp1.re += a * (z.re - v->ans_lp1.re);
-	v->ans_lp1.im += a * (z.im - v->ans_lp1.im);
-	v->ans_lp2.re += a * (v->ans_lp1.re - v->ans_lp2.re);
-	v->ans_lp2.im += a * (v->ans_lp1.im - v->ans_lp2.im);
-	e = sqrtf(cplx_pow(v->ans_lp2));
-	w = 2 * (float)M_PI * 15 * v->env_n / V34_SRATE;
-	v->env_sum += e;
-	v->env15_re += e * cosf(w);
-	v->env15_im += e * sinf(w);
-	v->env_n++;
+	ans_lp1.re += a * (z.re - ans_lp1.re);
+	ans_lp1.im += a * (z.im - ans_lp1.im);
+	ans_lp2.re += a * (ans_lp1.re - ans_lp2.re);
+	ans_lp2.im += a * (ans_lp1.im - ans_lp2.im);
+	e = sqrtf(cplx_pow(ans_lp2));
+	w = 2 * (float)M_PI * 15 * env_n / V34_SRATE;
+	env_sum += e;
+	env15_re += e * cosf(w);
+	env15_im += e * sinf(w);
+	env_n++;
 }
 
 /* the depth of the 15 Hz modulation, 0.2 for ANSam */
-static float ans_am_depth(struct v34_dp *v)
+float V34Pump::ans_am_depth()
 {
-	if (v->env_sum <= 0)
+	if (env_sum <= 0)
 		return 0;
-	return 2 * sqrt(v->env15_re * v->env15_re + v->env15_im * v->env15_im) /
-		v->env_sum;
+	return 2 * sqrt(env15_re * env15_re + env15_im * env15_im) /
+		env_sum;
 }
-
 
 /*
  *    control channel
@@ -707,7 +752,7 @@ static float ans_am_depth(struct v34_dp *v)
 
 static cplx cc_symbol(void *ctx)
 {
-	struct v34_dp *v = static_cast<v34_dp*>(ctx);
+	V34Pump *v = static_cast<V34Pump*>(ctx);
 	cplx z = { 0, 0 };
 	if (v->cctx.pos < v->cctx.n) {
 		if (v->cctx.b[v->cctx.pos++])
@@ -723,38 +768,38 @@ static cplx cc_symbol(void *ctx)
 }
 
 /* start the tone (A or B), or keep it going */
-static void cc_tone(struct v34_dp *v)
+void V34Pump::cc_tone()
 {
-	if (v->txm != TXM_CC || v->cc_sym == 0) {
-		v->cc_sym = 1;
-		v->txm = TXM_CC;
+	if (txm != TXM_CC || cc_sym == 0) {
+		cc_sym = 1;
+		txm = TXM_CC;
 	}
 }
 
-static void cc_send(struct v34_dp *v)
+void V34Pump::cc_send()
 {
-	cc_tone(v);
-	v->cctx.pos = 0;
+	cc_tone();
+	cctx.pos = 0;
 }
 
-static int cc_busy(struct v34_dp *v)
+int V34Pump::cc_busy()
 {
-	return v->cctx.pos < v->cctx.n || v->cc_rev;
+	return cctx.pos < cctx.n || cc_rev;
 }
 
 /* zero symbols: the pulses in flight die away */
-static void cc_silence(struct v34_dp *v)
+void V34Pump::cc_silence()
 {
-	v->cc_sym = 0;
+	cc_sym = 0;
 }
 
 /* our last reversal has been on the line for this long */
-static long rev_on_line(struct v34_dp *v)
+long V34Pump::rev_on_line()
 {
-	return v->cc_rev ? -1 : v->total - v->rev_sent - CC_TX_DELAY;
+	return cc_rev ? -1 : total - rev_sent - CC_TX_DELAY;
 }
 
-static void probe_init(struct v34_dp *v)
+void V34Pump::probe_init()
 {
 	/* V.34 Table 11: 150 Hz multiples, without 900, 1200, 1800 and
 	   2400 Hz (the control channel carriers and their neighbours) */
@@ -770,20 +815,20 @@ static void probe_init(struct v34_dp *v)
 		for (k = 0; k < (int)sizeof(f) / (int)sizeof(f[0]); k++)
 			x += (inv[k] ? -1 : 1) *
 				cos(2 * M_PI * f[k] * i / V34_SRATE);
-		v->probe[i] = x;
+		probe[i] = x;
 		e += x * x;
 	}
 	e = sqrt(e / PROBE_PERIOD);
 	for (i = 0; i < PROBE_PERIOD; i++)
-		v->probe[i] *= V34_LEVEL / e;
+		probe[i] *= V34_LEVEL / e;
 }
 
-static void probe_start(struct v34_dp *v)
+void V34Pump::start_probe()
 {
-	v->txm = TXM_PROBE;
-	v->probe_pos = 0;
-	v->probe_gain = 2;      /* L1: 6 dB up */
-	v->probe_start = v->total;
+	txm = TXM_PROBE;
+	probe_pos = 0;
+	probe_gain = 2;      /* L1: 6 dB up */
+	probe_start = total;
 }
 
 void CcRx::init(float fc)
@@ -885,33 +930,33 @@ int CcRx::sample(float x)
 /* the remote's L1/L2, once per sample: returns -1, or at the end of a
    block of one period whether two of the probe tones are clearly there
    (each carries 1/21 of the power) */
-static int probe_rx_sample(struct v34_dp *v, float x)
+int V34Pump::probe_rx_sample(float x)
 {
 	float e;
 	int on;
-	v->pblock_e += x * x;
-	v->probe_g[0].run(x);
-	if (!v->probe_g[1].run(x))
+	pblock_e += x * x;
+	probe_g[0].run(x);
+	if (!probe_g[1].run(x))
 		return -1;
-	e = v->pblock_e / PROBE_PERIOD;
-	v->pblock_e = 0;
-	on = e > tone_power(300) && v->probe_g[0].power > e / 60 &&
-		v->probe_g[1].power > e / 60;
+	e = pblock_e / PROBE_PERIOD;
+	pblock_e = 0;
+	on = e > tone_power(300) && probe_g[0].power > e / 60 &&
+		probe_g[1].power > e / 60;
 	return on;
 }
 
 /* collect one sample of the remote's L2 */
-static void probe_collect(struct v34_dp *v, float x)
+void V34Pump::probe_collect(float x)
 {
-	int i = v->pcount % PROBE_PERIOD;
-	v->pacc[i] += x;
-	v->ptotal += (double)x * x;
+	int i = pcount % PROBE_PERIOD;
+	pacc[i] += x;
+	ptotal += (double)x * x;
 	/* the noise from the differences of successive periods: a sample
 	   clock offset does not count as noise then */
-	if (v->pcount >= PROBE_PERIOD)
-		v->pdiff += (double)(x - v->pprev[i]) * (x - v->pprev[i]);
-	v->pprev[i] = x;
-	v->pcount++;
+	if (pcount >= PROBE_PERIOD)
+		pdiff += (double)(x - pprev[i]) * (x - pprev[i]);
+	pprev[i] = x;
+	pcount++;
 }
 
 static const int v34_max_rate_of_baud[V34_NBAUDS] = { 9, 11, 11, 12, 13, 14 };
@@ -921,28 +966,28 @@ static const int v34_max_rate_of_baud[V34_NBAUDS] = { 9, 11, 11, 12, 13, 14 };
    allow; returns the best */
 #define PROBE_MARGIN 2	/* dB */
 
-static int probe_analyse(struct v34_dp *v)
+int V34Pump::probe_analyse()
 {
-	double periods = (double)v->pcount / PROBE_PERIOD, pt, pn, ptone[26];
+	double periods = (double)pcount / PROBE_PERIOD, pt, pn, ptone[26];
 	int i, k, n, b, best = 1;
 
-	memset(v->rate_of_baud, 0, sizeof(v->rate_of_baud));
+	memset(rate_of_baud, 0, sizeof(rate_of_baud));
 	if (periods < 4)
 		return 1;
-	pt = v->ptotal / v->pcount;
-	pn = v->pdiff / (v->pcount - PROBE_PERIOD) / 2;
+	pt = ptotal / pcount;
+	pn = pdiff / (pcount - PROBE_PERIOD) / 2;
 	if (pn < pt * 1e-6)
 		pn = pt * 1e-6;
-	v->snr_db = 10 * log10((pt - pn) / pn);
+	snr_db = 10 * log10((pt - pn) / pn);
 	for (k = 1; k <= 25; k++) {
 		double re = 0, im = 0;
 		for (i = 0; i < PROBE_PERIOD; i++) {
-			double m = v->pacc[i] / periods;
+			double m = pacc[i] / periods;
 			re += m * cos(2 * M_PI * k * i / PROBE_PERIOD);
 			im += m * sin(2 * M_PI * k * i / PROBE_PERIOD);
 		}
 		ptone[k] = (re * re + im * im) * 2 / (PROBE_PERIOD * PROBE_PERIOD);
-		v->tone_db[k] = 10 * log10(ptone[k] + 1e-3);
+		tone_db[k] = 10 * log10(ptone[k] + 1e-3);
 	}
 	for (b = 0; b < V34_NBAUDS; b++) {
 		float rs = v34_symbol_rate(b), fc = v34_carrier(b, 0);
@@ -969,13 +1014,13 @@ static int probe_analyse(struct v34_dp *v)
 		for (n = v34_max_rate_of_baud[b];
 		     n > 1 && snr < 3 * 2400.0 * n / rs + 4 + PROBE_MARGIN; n--)
 			;
-		v->rate_of_baud[b] = n;
+		rate_of_baud[b] = n;
 		DSP_DBG("v34: probe %d baud: SNR %.1f dB -> %d bit/s\n",
 			(int)(rs + 0.5f), snr, n * 2400);
 		if (n > best)
 			best = n;
 	}
-	DSP_DBG("v34: probe SNR %.1f dB\n", v->snr_db);
+	DSP_DBG("v34: probe SNR %.1f dB\n", snr_db);
 	return best;
 }
 
@@ -983,24 +1028,24 @@ static int probe_analyse(struct v34_dp *v)
  *    receiver
  */
 
-static void cc_rx_bit(struct v34_dp *v, int bit)
+void V34Pump::cc_rx_bit(int bit)
 {
-	CcRx *r = &v->ccr;
+	CcRx *r = &ccr;
 
 	if (dsplibs_debug_level >= 6)
-		DSP_DBG("v34: cc %s %ld %d p %.0f t %d\n", v->caller ? "C" : "A",
-			v->total * 1000 / v->srate, bit, r->p, r->best);
+		DSP_DBG("v34: cc %s %ld %d p %.0f t %d\n", caller ? "C" : "A",
+			total * 1000 / srate, bit, r->p, r->best);
 	r->sr = (r->sr << 1) | bit;
 	r->hist[r->hist_n++ % CC_HIST] = bit;
 	if (r->frame_len > 0)
 		r->frame_len--;
 	/* a frame sync: slow timing adaptation for the rest of the frame */
 	if ((r->sr & 0xFF) == 0x72)
-		r->frame_len = info_expected(v);
+		r->frame_len = info_expected();
 	/* whether the last bits are a frame (fill, sync, CRC): the timing
 	   may need a few of the fill bits after the probing signals */
-	if (!v->ev_info1) {
-		int len = info_expected(v), i, ok;
+	if (!ev_info1) {
+		int len = info_expected(), i, ok;
 		if (r->hist_n >= len - 3) {
 			for (i = 0; i < len; i++)
 				r->frame[i] = i < 4 ? 1 :
@@ -1010,34 +1055,34 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 				ok = r->frame[i] == ((0x72 >> (11 - i)) & 1);
 			if (ok) {
 				/* no reversals within the frame */
-				if (v->ev_rev && v->total - v->rev_time <
+				if (ev_rev && total - rev_time <
 				    (long)len * CC_SPS)
-					v->ev_rev = 0;
+					ev_rev = 0;
 				r->zeros = 0;
 				r->rev_cand = 0;
 				r->hist_n = 0;
-				if (!v->ev_info0) {
-					v->rinfo0.parse(r->frame);
-					v->ev_info0 = 1;
+				if (!ev_info0) {
+					rinfo0.parse(r->frame);
+					ev_info0 = 1;
 					r->snap = 1;
 					DSP_DBG("v34: INFO0 rates %02x 3429 %d "
-						"diff %d\n", v->rinfo0.rates,
-						v->rinfo0.allow_3429,
-						v->rinfo0.max_diff);
+						"diff %d\n", rinfo0.rates,
+						rinfo0.allow_3429,
+						rinfo0.max_diff);
 				} else {
-					if (v->caller)
-						v->rinfo1a.parse(r->frame);
+					if (caller)
+						rinfo1a.parse(r->frame);
 					else {
 						int b;
-						v->rinfo1c.parse(r->frame);
+						rinfo1c.parse(r->frame);
 						for (b = 0; b < V34_NBAUDS; b++)
 							DSP_DBG("v34: INFO1c baud %d high %d "
 								"preemph %d rate %d\n", b,
-								v->rinfo1c.r[b].high,
-								v->rinfo1c.r[b].preemph,
-								v->rinfo1c.r[b].max_rate);
+								rinfo1c.r[b].high,
+								rinfo1c.r[b].preemph,
+								rinfo1c.r[b].max_rate);
 					}
-					v->ev_info1 = 1;
+					ev_info1 = 1;
 					DSP_DBG("v34: INFO1 received\n");
 				}
 				return;
@@ -1049,7 +1094,7 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 	bit = r->rbit;
 	if (bit) {
 		if (r->zeros >= 6) {
-			r->rev_cand = v->total;
+			r->rev_cand = total;
 			r->ones = 1;
 		} else if (r->rev_cand && r->ones == 1)
 			r->ones = 2;
@@ -1058,10 +1103,10 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 		r->zeros = 0;
 	} else {
 		if (r->rev_cand && r->zeros == 0) {
-			v->ev_rev = 1;
-			v->rev_time = r->rev_cand;
+			ev_rev = 1;
+			rev_time = r->rev_cand;
 			DSP_DBG("v34: reversal at %ld ms\n",
-				r->rev_cand * 1000 / v->srate);
+				r->rev_cand * 1000 / srate);
 		}
 		r->rev_cand = 0;
 		r->zeros++;
@@ -1205,15 +1250,15 @@ float V34Echo::run(float tx, float rx)
 
 /* the adaptation, per sample: train while our own phase 3 sequences go
    out (the remote is silent then), then track */
-static void ec_schedule(struct v34_dp *v)
+void V34Pump::ec_schedule()
 {
-	V34Echo *e = &v->ec;
-	int ours = v->state == P3A_S || v->state == P3A_SBAR ||
-		v->state == P3A_PP || v->state == P3A_TRN ||
-		v->state == P3C_S || v->state == P3C_SBAR ||
-		v->state == P3C_PP || v->state == P3C_TRN ||
+	V34Echo *e = &ec;
+	int ours = state == P3A_S || state == P3A_SBAR ||
+		state == P3A_PP || state == P3A_TRN ||
+		state == P3C_S || state == P3C_SBAR ||
+		state == P3C_PP || state == P3C_TRN ||
 		/* V.90: Sd to Jd, the analogue modem is silent after Ja */
-		v->state == P3D_SD || v->state == P3D_JD;
+		state == P3D_SD || state == P3D_JD;
 	int training;
 
 	if (ours && !e->on) {
@@ -1227,16 +1272,16 @@ static void ec_schedule(struct v34_dp *v)
 	if (ours)
 		e->since++;
 	/* the answerer sends its J until it has heard the caller's S */
-	training = ours && (!v->caller ||
-		e->since > v->rtd + ms2samples(150, v->srate));
+	training = ours && (!caller ||
+		e->since > rtd + ms2samples(150, srate));
 	if (training) {
 		e->n++;
 		/* the far echo is found after some of our signal went out
 		   (and came back) */
-		if (!e->far_on && (e->n == EC_SEARCH + ms2samples(50, v->srate) ||
-				   e->n == ms2samples(250, v->srate) ||
-				   e->n == ms2samples(500, v->srate) ||
-				   e->n == ms2samples(1000, v->srate)))
+		if (!e->far_on && (e->n == EC_SEARCH + ms2samples(50, srate) ||
+				   e->n == ms2samples(250, srate) ||
+				   e->n == ms2samples(500, srate) ||
+				   e->n == ms2samples(1000, srate)))
 			e->search();
 		/* fast at first, also for a far part found late */
 		e->far_since++;
@@ -1244,8 +1289,8 @@ static void ec_schedule(struct v34_dp *v)
 			long t = e->n;
 			if (e->far_on && e->far_since < t)
 				t = e->far_since;
-			e->mu = t < ms2samples(300, v->srate) ? 0.5f :
-				t < ms2samples(600, v->srate) ? 0.2f : 0.05f;
+			e->mu = t < ms2samples(300, srate) ? 0.5f :
+				t < ms2samples(600, srate) ? 0.2f : 0.05f;
 		}
 		e->trained = 1;
 	} else if (e->trained) {
@@ -1266,184 +1311,183 @@ static void ec_schedule(struct v34_dp *v)
 
 /* the remote's tone A / B, not data: nearly all the power in its bin
    (data spreads over some 20) */
-static void rt_tone(struct v34_dp *v, float x)
+void V34Pump::rt_tone(float x)
 {
-	v->rt_e += x * x;
-	v->own_g.run(x);
-	if (v->rt_g.run(x)) {
+	rt_e += x * x;
+	own_g.run(x);
+	if (rt_g.run(x)) {
 		/* without the echo of our own tone */
-		float e = v->rt_e / PROBE_PERIOD - v->own_g.power;
-		v->rt_e = 0;
-		v->rt_blocks = e > tone_power(150) && v->rt_g.power > 0.6f * e ?
-			v->rt_blocks + 1 : 0;
-		if (dsplibs_debug_level >= 5 && v->retraining)
+		float e = rt_e / PROBE_PERIOD - own_g.power;
+		rt_e = 0;
+		rt_blocks = e > tone_power(150) && rt_g.power > 0.6f * e ?
+			rt_blocks + 1 : 0;
+		if (dsplibs_debug_level >= 5 && retraining)
 			DSP_DBG("v34: rt %ld e %.0f tone %.0f own %.0f\n",
-				v->total * 1000 / v->srate, e, v->rt_g.power,
-				v->own_g.power);
-		if (v->rt_blocks >= 5 && !v->rt_heard) {
-			v->rt_heard = 1;
-			DSP_DBG("v34: tone %s heard\n", v->caller ? "A" : "B");
+				total * 1000 / srate, e, rt_g.power,
+				own_g.power);
+		if (rt_blocks >= 5 && !rt_heard) {
+			rt_heard = 1;
+			DSP_DBG("v34: tone %s heard\n", caller ? "A" : "B");
 		}
 	}
 }
 
-static void pump_rx_sample(struct v34_dp *v, float x)
+void V34Pump::pump_rx_sample(float x)
 {
 	int bit, k;
 
-	if (v->state < P2A_INFO0) {
-		bit = v->v21.run(x);
-		if (bit >= 0 && v->v21.carrier)
-			v8_rx_bit(v, bit);
-		if (v->state == V8A_JM || v->state == V8A_GAP ||
-		    v->state == V8C_CJ || v->state == V8C_GAP) {
-			bit = v->ccr.sample(x);
+	if (state < P2A_INFO0) {
+		bit = v21.run(x);
+		if (bit >= 0 && v21.carrier)
+			v8_rx_bit(bit);
+		if (state == V8A_JM || state == V8A_GAP ||
+		    state == V8C_CJ || state == V8C_GAP) {
+			bit = ccr.sample(x);
 			if (bit >= 0)
-				cc_rx_bit(v, bit);
+				cc_rx_bit(bit);
 		}
-		if (v->state == V8C_LISTEN)
-			ans_analyse(v, x);
-		if (v->aa_g.run(x)) {
-			if (v->aa_g.power > tone_power(300))
-				v->aa_blocks++;
+		if (state == V8C_LISTEN)
+			ans_analyse(x);
+		if (aa_g.run(x)) {
+			if (aa_g.power > tone_power(300))
+				aa_blocks++;
 			else
-				v->aa_blocks = 0;
+				aa_blocks = 0;
 		}
 		return;
 	}
-	if (v->prx_on) {
-		ec_schedule(v);
-		if (!v->ec.bypass)
-			x = v->ec.run(v->last_tx, x);
-		v->prx.sample(x);
-		if (v->state == V34_DATA)
-			rt_tone(v, x);
+	if (prx_on) {
+		ec_schedule();
+		if (!ec.bypass)
+			x = ec.run(last_tx, x);
+		prx.sample(x);
+		if (state == V34_DATA)
+			rt_tone(x);
 		return;
 	}
-	if (v->retraining)
-		rt_tone(v, x);
-	bit = v->ccr.sample(x);
+	if (retraining)
+		rt_tone(x);
+	bit = ccr.sample(x);
 	if (bit >= 0)
-		cc_rx_bit(v, bit);
-	if (v->tone_g.run(x))
-		v->tone_blocks = v->tone_g.power > tone_power(150) ?
-			v->tone_blocks + 1 : 0;
-	k = probe_rx_sample(v, x);
+		cc_rx_bit(bit);
+	if (tone_g.run(x))
+		tone_blocks = tone_g.power > tone_power(150) ?
+			tone_blocks + 1 : 0;
+	k = probe_rx_sample(x);
 	if (k >= 0) {
-		v->probe_blocks = k ? v->probe_blocks + 1 : 0;
-		if (v->probe_blocks == 2 && !v->l1_start &&
-		    (v->state == P2A_SILENCE || v->state == P2C_SILENCE)) {
-			v->l1_start = v->total - 2 * PROBE_PERIOD;
+		probe_blocks = k ? probe_blocks + 1 : 0;
+		if (probe_blocks == 2 && !l1_start &&
+		    (state == P2A_SILENCE || state == P2C_SILENCE)) {
+			l1_start = total - 2 * PROBE_PERIOD;
 			DSP_DBG("v34: remote L1 at %ld ms\n",
-				v->l1_start * 1000 / v->srate);
+				l1_start * 1000 / srate);
 		}
 	}
 	/* measure L2: from 20 ms after L1 to the end of our wait */
-	if (v->l1_start && v->total - v->l1_start >= ms2samples(180, v->srate) &&
-	    v->total - v->l1_start < ms2samples(460, v->srate))
-		probe_collect(v, x);
+	if (l1_start && total - l1_start >= ms2samples(180, srate) &&
+	    total - l1_start < ms2samples(460, srate))
+		probe_collect(x);
 }
-
 
 /*
  *    handshake, once per sample
  */
 
-static int v34_fallback(struct v34_dp *v, const char *why)
+int V34Pump::fallback(const char *why)
 {
-	if (v->caller && v->rt && v->rt->answer_tone == ANSTONE_2225) {
+	if (caller && rt && rt->answer_tone == ANSTONE_2225) {
 		/* a Bell answerer: 212A (or 103, see dp_v22.cpp) */
 		DSP_DBG("v34: %s, Bell answer tone: Bell 212A\n", why);
-		modem_set_param(v->modem, MDMPRM_DP_REQUESTED, DP_B212);
+		modem_set_param(modem, MDMPRM_DP_REQUESTED, DP_B212);
 		return DPSTAT_CHANGEDP;
 	}
 	DSP_DBG("v34: %s, falling back to V.32bis\n", why);
-	if (v->rt) {
-		v->rt->v32_automode = 1;
-		if (!v->caller)
-			v->rt->ans_sent = 1;
+	if (rt) {
+		rt->v32_automode = 1;
+		if (!caller)
+			rt->ans_sent = 1;
 	}
-	modem_set_param(v->modem, MDMPRM_DP_REQUESTED, DP_V32BIS);
+	modem_set_param(modem, MDMPRM_DP_REQUESTED, DP_V32BIS);
 	return DPSTAT_CHANGEDP;
 }
 
 /* the answerer picks the symbol rates: the fastest both modems allow */
-static void choose_bauds(struct v34_dp *v)
+void V34Pump::choose_bauds()
 {
 	int b, best = V34_BAUD_2400, best_rate = 0;
 
-	probe_analyse(v);
+	probe_analyse();
 	for (b = V34_BAUD_2400; b <= V34_BAUD_3429; b++) {
-		int rate = v->rate_of_baud[b];
-		if (b == V34_BAUD_3429 && !v->rinfo0.allow_3429)
+		int rate = rate_of_baud[b];
+		if (b == V34_BAUD_3429 && !rinfo0.allow_3429)
 			continue;
 		if (b == V34_BAUD_2743 || b == V34_BAUD_2800)
 			continue;
 		/* the caller can receive at most this */
-		if (v->rinfo1c.r[b].max_rate < rate)
-			rate = v->rinfo1c.r[b].max_rate;
+		if (rinfo1c.r[b].max_rate < rate)
+			rate = rinfo1c.r[b].max_rate;
 		if (rate >= best_rate) {
 			best_rate = rate;
 			best = b;
 		}
 	}
-	v->baud_tx = v->baud_rx = best;
-	v->max_rate_rx = v->rate_of_baud[best] ? v->rate_of_baud[best] : 1;
+	baud_tx = baud_rx = best;
+	max_rate_rx = rate_of_baud[best] ? rate_of_baud[best] : 1;
 }
 
 /* the primary channel at the agreed symbol rates */
-static void v34_primary_start(struct v34_dp *v)
+void V34Pump::primary_start()
 {
 	/* the carriers as the receiving modems asked for them in INFO1c
 	   (answerer -> caller) and INFO1a (caller -> answerer) */
-	int high = v->caller ? v->high_tx : v->rinfo1c.r[v->baud_tx].high;
-	v->ptx.init(v->baud_tx, high, v->caller);
-	v->prx.init(v->baud_rx, v->caller ? 0 : v->high_rx,
-		    v->caller);
-	v->prx_on = 1;
-	v->txm = TXM_PRIMARY;
+	int high = caller ? high_tx : rinfo1c.r[baud_tx].high;
+	ptx.init(baud_tx, high, caller);
+	prx.init(baud_rx, caller ? 0 : high_rx,
+		    caller);
+	prx_on = 1;
+	txm = TXM_PRIMARY;
 }
 
 /* V.90 phase 3: the remote's V.34 signals in, our PCM signals out */
-static int v90_start(struct v34_dp *v)
+int V34Pump::v90_start()
 {
-	v->baud_rx = v->rinfo1a.baud_ac;
-	if (v->rate_of_baud[v->baud_rx])
-		v->max_rate_rx = v->rate_of_baud[v->baud_rx];
-	if (v->prx.init(v->baud_rx, 0, 1) || v->prx.set_v90())
+	baud_rx = rinfo1a.baud_ac;
+	if (rate_of_baud[baud_rx])
+		max_rate_rx = rate_of_baud[baud_rx];
+	if (prx.init(baud_rx, 0, 1) || prx.set_v90())
 		return -1;
-	v->prx_on = 1;
-	v->txm = TXM_SILENCE;
-	v->v90tx.init(v->alaw, v->rinfo1a.uinfo);
-	v->pcm_tx = 1;
-	v34_set_state(v, P3D_WAIT_JA);
+	prx_on = 1;
+	txm = TXM_SILENCE;
+	v90tx.init(alaw, rinfo1a.uinfo);
+	pcm_tx = 1;
+	set_state(P3D_WAIT_JA);
 	return 0;
 }
 
 static void v34_put_bits(void *ctx, const unsigned char *bits, int n);
 
 /* our MP (Table 16/V.90), filled to whole data frames */
-static void v90_make_mp(struct v34_dp *v, int ack)
+void V34Pump::v90_make_mp(int ack)
 {
 	int h[6];
-	float gain = v->prx.precoder(h);
+	float gain = prx.precoder(h);
 	DSP_DBG("v34: V.90 precoding would gain %.2f dB: h %d %d %d %d %d %d\n",
 		gain, h[0], h[1], h[2], h[3], h[4], h[5]);
 	if (gain < V34_PRECODE_MIN)
 		memset(h, 0, sizeof(h));
-	v->mp_len = v90_mp_build(v->mpb, v->max_rate_rx, V34_TRELLIS, 1, ack,
+	mp_len = v90_mp_build(mpb, max_rate_rx, V34_TRELLIS, 1, ack,
 				 0x1FFF, h);
-	while (v->mp_len % v->D)
-		v->mpb[v->mp_len++] = 0;
-	v->mp_pos = 0;
-	v->mp_ack = ack;
+	while (mp_len % D)
+		mpb[mp_len++] = 0;
+	mp_pos = 0;
+	mp_ack = ack;
 }
 
 /* the next D bits of the digital modem's data frames */
 static void v90_get_frame(void *ctx, V90Tx *t, unsigned char *b,
 			  int *last)
 {
-	struct v34_dp *v = static_cast<v34_dp*>(ctx);
+	V34Pump *v = static_cast<V34Pump*>(ctx);
 	int D = v->D;
 
 	if (v->fmode == F_B1 && v->fcount == 0) {
@@ -1460,7 +1504,7 @@ static void v90_get_frame(void *ctx, V90Tx *t, unsigned char *b,
 		/* TRN2d: 2160 symbols, then MP */
 		if (v->fcount >= 360) {
 			v->fmode = F_MP;
-			v90_make_mp(v, v->prx.ev_cp);
+			v->v90_make_mp(v->prx.ev_cp);
 		}
 		break;
 	case F_MP:
@@ -1473,7 +1517,7 @@ static void v90_get_frame(void *ctx, V90Tx *t, unsigned char *b,
 				v->fmode = F_ED;
 				v->fcount = 0;
 			} else
-				v90_make_mp(v, v->prx.ev_cp);
+				v->v90_make_mp(v->prx.ev_cp);
 		}
 		break;
 	case F_ED:
@@ -1498,33 +1542,33 @@ static void v90_get_frame(void *ctx, V90Tx *t, unsigned char *b,
 }
 
 /* the upstream data mode, as our MP asked for it */
-static int v90_data_setup(struct v34_dp *v)
+int V34Pump::v90_data_setup()
 {
 	V34Params p;
-	int h[6], n, mask = v->cp.rate_mask & 0x1FFF;
-	float gain = v->prx.precoder(h);
+	int h[6], n, mask = cp.rate_mask & 0x1FFF;
+	float gain = prx.precoder(h);
 
 	if (gain < V34_PRECODE_MIN)
 		memset(h, 0, sizeof(h));
-	for (n = v->max_rate_rx; n >= 2; n--)
-		if ((mask >> (n - 2)) & 1 && v34_rates[v->baud_rx][n - 1].b)
+	for (n = max_rate_rx; n >= 2; n--)
+		if ((mask >> (n - 2)) & 1 && v34_rates[baud_rx][n - 1].b)
 			break;
-	if (n < 2 || p.init(v->baud_rx, n, 1))
+	if (n < 2 || p.init(baud_rx, n, 1))
 		return -1;
 	p.states = 16 << V34_TRELLIS;
 	p.set_precoder(h);
-	v->prx.start_data(&p, v34_put_bits, v);
-	v->up_n = n;
-	v->rate_rx = p.rate;
-	v->rate_tx = (v->cp.drn + 20) * 8000 / 6;
-	DSP_DBG("v34: V.90 rates: down %d, up %d\n", v->rate_tx, v->rate_rx);
+	prx.start_data(&p, v34_put_bits, this);
+	up_n = n;
+	rate_rx = p.rate;
+	rate_tx = (cp.drn + 20) * 8000 / 6;
+	DSP_DBG("v34: V.90 rates: down %d, up %d\n", rate_tx, rate_rx);
 	return 0;
 }
 
-static void v34_tx_next(struct v34_dp *v, enum v34_state s, enum v34_txseg seg)
+void V34Pump::tx_next(enum v34_state s, enum v34_txseg seg)
 {
-	v34_set_state(v, s);
-	v->ptx.segment(seg);
+	set_state(s);
+	ptx.segment(seg);
 }
 
 /* the fastest rate allowed by both MP sequences at the symbol rate */
@@ -1539,79 +1583,77 @@ static int v34_pick_rate(int baud, int max, int mask)
 
 static void v34_get_bits(void *ctx, unsigned char *bits, int n)
 {
-	struct v34_dp *v = static_cast<v34_dp*>(ctx);
+	V34Pump *v = static_cast<V34Pump*>(ctx);
 	memset(bits, 1, n);
 	modem_get_bits(v->modem, 1, bits, n);
 }
 
 static void v34_put_bits(void *ctx, const unsigned char *bits, int n)
 {
-	struct v34_dp *v = static_cast<v34_dp*>(ctx);
+	V34Pump *v = static_cast<V34Pump*>(ctx);
 	modem_put_bits(v->modem, 1, (u8 *)bits, n);
 }
 
 /* both MP sequences are known: set up the data mode */
-static int v34_data_setup(struct v34_dp *v)
+int V34Pump::data_setup()
 {
-	const V34Mp *l = &v->ptx.mp, *r = &v->prx.mp;
+	const V34Mp *l = &ptx.mp, *r = &prx.mp;
 	int mask = l->rate_mask & r->rate_mask, ntx, nrx;
 	int ca = l->rate_ca < r->rate_ca ? l->rate_ca : r->rate_ca;
 	int ac = l->rate_ac < r->rate_ac ? l->rate_ac : r->rate_ac;
 	V34Params p;
 
-	ntx = v34_pick_rate(v->ptx.baud, v->caller ? ca : ac, mask);
-	nrx = v34_pick_rate(v->prx.baud, v->caller ? ac : ca, mask);
+	ntx = v34_pick_rate(ptx.baud, caller ? ca : ac, mask);
+	nrx = v34_pick_rate(prx.baud, caller ? ac : ca, mask);
 	if (r->nonlinear)
 		DSP_DBG("v34: remote asks for non-linear encoding: "
 			"not supported\n");
 	if (!ntx || !nrx || r->trellis > 2 || l->trellis > 2 ||
-	    p.init(v->ptx.baud, ntx, r->expanded))
+	    p.init(ptx.baud, ntx, r->expanded))
 		return -1;
 	/* each MP asks for the trellis code of the other's transmitter */
 	p.states = 16 << r->trellis;
 	p.set_precoder(r->h);
-	v->ptx.start_data(&p, v34_get_bits, v);
-	v->rate_tx = p.rate;
-	if (p.init(v->prx.baud, nrx, l->expanded))
+	ptx.start_data(&p, v34_get_bits, this);
+	rate_tx = p.rate;
+	if (p.init(prx.baud, nrx, l->expanded))
 		return -1;
 	p.states = 16 << l->trellis;
 	p.set_precoder(l->h);
-	v->prx.start_data(&p, v34_put_bits, v);
-	v->rate_rx = p.rate;
+	prx.start_data(&p, v34_put_bits, this);
+	rate_rx = p.rate;
 	DSP_DBG("v34: data rates tx %d rx %d, trellis tx %d rx %d states\n",
-		v->rate_tx, v->rate_rx, 16 << r->trellis, 16 << l->trellis);
+		rate_tx, rate_rx, 16 << r->trellis, 16 << l->trellis);
 	return 0;
 }
 
-
-
-static void v34_mp_start(struct v34_dp *v)
+void V34Pump::mp_start()
 {
-	V34Mp *mp = &v->ptx.mp;
+	V34Mp *mp = &ptx.mp;
 	memset(mp, 0, sizeof(*mp));
 	mp->type = 1;
-	mp->rate_ca = v->caller ? 14 : v->max_rate_rx;
-	mp->rate_ac = v->caller ? v->max_rate_rx : 14;
+	mp->rate_ca = caller ? 14 : max_rate_rx;
+	mp->rate_ac = caller ? max_rate_rx : 14;
 	mp->expanded = 1;
 	mp->trellis = V34_TRELLIS;
 	mp->rate_mask = 0x3FFF;
 	mp->asym = 1;
 	/* precoding where it gains enough over the power of its dither */
 	{
-		float gain = v->prx.precoder(mp->h);
+		float gain = prx.precoder(mp->h);
 		DSP_DBG("v34: precoding would gain %.2f dB: h %d %d %d %d %d "
 			"%d\n", gain, mp->h[0], mp->h[1], mp->h[2], mp->h[3],
 			mp->h[4], mp->h[5]);
 		if (gain < V34_PRECODE_MIN)
 			memset(mp->h, 0, sizeof(mp->h));
 	}
-	v34_tx_next(v, P4_MP, V34_TX_MP);
+	tx_next(P4_MP, V34_TX_MP);
 }
 
 /* the transmitter takes the next V.8 bit with this sample */
-static int fsk_bit_edge(struct v34_dp *v)
+int V34Pump::fsk_bit_edge()
 {
-	return v->fsk_phase + 300.0f / v->srate >= 1;
+	return fsk_phase + 300.0f / srate >= 1;
 }
 
 /* a retrain: both modems go back to phase 2 at tones A and B
@@ -1619,591 +1661,591 @@ static int fsk_bit_edge(struct v34_dp *v)
    primary channel anew; whoever starts it with silence and its tone, the
    other modem answers the same way when it loses the data signal or
    hears the tone */
-static void v34_retrain(struct v34_dp *v, const char *why)
+void V34Pump::retrain(const char *why)
 {
-	DSP_DBG("v34: retrain %d (%s)\n", ++v->retrains, why);
-	v->retraining = 1;
-	if (v->prx_on) {
-		v->prx.release();
-		v->prx_on = 0;
+	DSP_DBG("v34: retrain %d (%s)\n", ++retrains, why);
+	retraining = 1;
+	if (prx_on) {
+		prx.release();
+		prx_on = 0;
 	}
-	v->txm = TXM_SILENCE;
-	v->ec.on = 0;
+	txm = TXM_SILENCE;
+	ec.on = 0;
 	/* the control channel as after INFO0 */
-	v->ccr.init(v->caller ? 2400 : 1200);
-	v->ccr.snap = 1;
-	v->cctx.pos = v->cctx.n;
-	v->cc_rev = 0;
-	v->cc_sym = 0;
-	v->ev_info1 = v->ev_rev = 0;
-	v->rtd = 0;
+	ccr.init(caller ? 2400 : 1200);
+	ccr.snap = 1;
+	cctx.pos = cctx.n;
+	cc_rev = 0;
+	cc_sym = 0;
+	ev_info1 = ev_rev = 0;
+	rtd = 0;
 	/* the probing */
-	v->tone_g.init(v->caller ? 2400 : 1200, PROBE_PERIOD,
-		      v->srate);
-	v->probe_g[0].init(1050, PROBE_PERIOD, v->srate);
-	v->probe_g[1].init(3000, PROBE_PERIOD, v->srate);
-	v->tone_blocks = v->probe_blocks = 0;
-	v->pblock_e = 0;
-	v->l1_start = 0;
-	memset(v->pacc, 0, sizeof(v->pacc));
-	memset(v->pprev, 0, sizeof(v->pprev));
-	v->ptotal = v->pdiff = 0;
-	v->pcount = 0;
-	v->rt_blocks = v->rt_heard = 0;
-	v->lost = v->bad = 0;
-	v->timeout = v->total + ms2samples(15000, v->srate);
-	v34_set_state(v, V34_RT_SILENCE);
+	tone_g.init(caller ? 2400 : 1200, PROBE_PERIOD,
+		      srate);
+	probe_g[0].init(1050, PROBE_PERIOD, srate);
+	probe_g[1].init(3000, PROBE_PERIOD, srate);
+	tone_blocks = probe_blocks = 0;
+	pblock_e = 0;
+	l1_start = 0;
+	memset(pacc, 0, sizeof(pacc));
+	memset(pprev, 0, sizeof(pprev));
+	ptotal = pdiff = 0;
+	pcount = 0;
+	rt_blocks = rt_heard = 0;
+	lost = bad = 0;
+	timeout = total + ms2samples(15000, srate);
+	set_state(V34_RT_SILENCE);
 }
 
-static int v34_handshake(struct v34_dp *v)
+int V34Pump::handshake()
 {
-	long c = v->count;
+	long c = count;
 
-	switch (v->state) {
+	switch (state) {
 	/* V.8 answerer */
 	case V8A_SILENCE:
-		if (c >= ms2samples(1000, v->srate)) {
-			v34_set_state(v, V8A_ANSAM);
-			v->txm = TXM_ANSAM;
+		if (c >= ms2samples(1000, srate)) {
+			set_state(V8A_ANSAM);
+			txm = TXM_ANSAM;
 		}
 		break;
 	case V8A_ANSAM:
-		if (v->v8_ok) {
-			if (!v8_remote_v34(v))
-				return v34_fallback(v, "no V.34 in CM");
-			v->pcm = v8_v90(v);
-			v34_set_state(v, V8A_JM);
+		if (v8_ok) {
+			if (!v8_remote_v34())
+				return fallback("no V.34 in CM");
+			pcm = v8_v90();
+			set_state(V8A_JM);
 			/* the caller's INFO0c follows its CJ by only 75 ms:
 			   listen for it already; with V.90 the analogue
 			   modem's INFO0a */
-			v->ccr.init(v->pcm ? 2400 : 1200);
-			v8_make_msg(v, &v->v8tx);
-			v->fsk.init(1650, 1850, V34_TONE_AMP, v->srate);
-			v->fsk_phase = 1;
-			v->txm = TXM_FSK;
-		} else if (v->aa_blocks >= 10)
-			return v34_fallback(v, "V.32 caller");
-		else if (c >= ms2samples(5000, v->srate))
-			return v34_fallback(v, "no CM");
+			ccr.init(pcm ? 2400 : 1200);
+			v8_make_msg(&v8tx);
+			fsk.init(1650, 1850, V34_TONE_AMP, srate);
+			fsk_phase = 1;
+			txm = TXM_FSK;
+		} else if (aa_blocks >= 10)
+			return fallback("V.32 caller");
+		else if (c >= ms2samples(5000, srate))
+			return fallback("no CM");
 		break;
 	case V8A_JM:
-		if (v->v8_cj) {
-			v34_set_state(v, V8A_GAP);
-			v->txm = TXM_SILENCE;
+		if (v8_cj) {
+			set_state(V8A_GAP);
+			txm = TXM_SILENCE;
 		}
 		break;
 	case V8A_GAP:
-		if (c >= ms2samples(75, v->srate) && v->pcm) {
+		if (c >= ms2samples(75, srate) && pcm) {
 			/* the digital modem of V.90 takes the part of the
 			   V.34 call modem from phase 2 on */
 			DSP_DBG("v34: V.90 with us as the digital modem\n");
-			v->caller = 1;
-			v->tone_g.init(2400, PROBE_PERIOD,
-				      v->srate);
-			v34_set_state(v, V8C_GAP);
-			v->count = c = ms2samples(75, v->srate);
+			caller = 1;
+			tone_g.init(2400, PROBE_PERIOD,
+				      srate);
+			set_state(V8C_GAP);
+			count = c = ms2samples(75, srate);
 		}
-		if (c >= ms2samples(75, v->srate) && !v->pcm) {
-			v34_set_state(v, P2A_INFO0);
-			v->cc.init(v->srate, 2400, CC_BAUD, 0.5f, 4, 1,
+		if (c >= ms2samples(75, srate) && !pcm) {
+			set_state(P2A_INFO0);
+			cc.init(srate, 2400, CC_BAUD, 0.5f, 4, 1,
 				    V34_TONE_AMP);
-			v->cc.get_symbol = cc_symbol;
-			v->cc.ctx = v;
-			make_info0(v, &v->cctx);
-			cc_send(v);
+			cc.get_symbol = cc_symbol;
+			cc.ctx = this;
+			make_info0(&cctx);
+			cc_send();
 		}
 		break;
 
 	/* V.8 caller */
 	case V8C_LISTEN:
-		if (c >= ms2samples(500, v->srate)) {
-			float d = ans_am_depth(v);
+		if (c >= ms2samples(500, srate)) {
+			float d = ans_am_depth();
 			DSP_DBG("v34: answer tone AM depth %.2f\n", d);
 			if (d < 0.1f)
-				return v34_fallback(v, "answer tone is not ANSam");
-			v34_set_state(v, V8C_WAIT);
+				return fallback("answer tone is not ANSam");
+			set_state(V8C_WAIT);
 		}
 		break;
 	case V8C_WAIT:
-		if (v->total >= ms2samples(1000, v->srate)) {
-			v34_set_state(v, V8C_CM);
-			v8_make_msg(v, &v->v8tx);
-			v->fsk.init(980, 1180, V34_TONE_AMP, v->srate);
-			v->fsk_phase = 1;
-			v->txm = TXM_FSK;
+		if (total >= ms2samples(1000, srate)) {
+			set_state(V8C_CM);
+			v8_make_msg(&v8tx);
+			fsk.init(980, 1180, V34_TONE_AMP, srate);
+			fsk_phase = 1;
+			txm = TXM_FSK;
 		}
 		break;
 	case V8C_CM:
 		/* finish the octet, then CJ */
-		if (v->v8_ok && fsk_bit_edge(v) && v->v8tx.pos % 10 == 0) {
-			if (!v8_remote_v34(v))
-				return v34_fallback(v, "no V.34 in JM");
-			v->pcm = v8_v90(v);
-			if (v->pcm)
+		if (v8_ok && fsk_bit_edge() && v8tx.pos % 10 == 0) {
+			if (!v8_remote_v34())
+				return fallback("no V.34 in JM");
+			pcm = v8_v90();
+			if (pcm)
 				DSP_DBG("v34: V.90 with us as the digital modem\n");
-			v34_set_state(v, V8C_CJ);
-			v->v8tx.make_cj();
-			v->v8tx_repeat = 0;
-			v->ccr.init(2400);
-		} else if (c >= ms2samples(5000, v->srate))
-			return v34_fallback(v, "no JM");
+			set_state(V8C_CJ);
+			v8tx.make_cj();
+			v8tx_repeat = 0;
+			ccr.init(2400);
+		} else if (c >= ms2samples(5000, srate))
+			return fallback("no JM");
 		break;
 	case V8C_CJ:
-		if (v->v8tx.pos >= v->v8tx.n && fsk_bit_edge(v)) {
-			v34_set_state(v, V8C_GAP);
-			v->txm = TXM_SILENCE;
+		if (v8tx.pos >= v8tx.n && fsk_bit_edge()) {
+			set_state(V8C_GAP);
+			txm = TXM_SILENCE;
 		}
 		break;
 	case V8C_GAP:
-		if (c >= ms2samples(75, v->srate)) {
-			v34_set_state(v, P2C_INFO0);
-			v->cc.init(v->srate, 1200, CC_BAUD, 0.5f, 4, 1,
+		if (c >= ms2samples(75, srate)) {
+			set_state(P2C_INFO0);
+			cc.init(srate, 1200, CC_BAUD, 0.5f, 4, 1,
 				    V34_TONE_AMP);
-			v->cc.get_symbol = cc_symbol;
-			v->cc.ctx = v;
-			make_info0(v, &v->cctx);
-			cc_send(v);
+			cc.get_symbol = cc_symbol;
+			cc.ctx = this;
+			make_info0(&cctx);
+			cc_send();
 		}
 		break;
 
 	/* phase 2 answerer */
 	case P2A_INFO0:
-		if (!cc_busy(v))
-			v34_set_state(v, P2A_A);
+		if (!cc_busy())
+			set_state(P2A_A);
 		break;
 	case P2A_A:
 		/* in a retrain: once the caller's B has been there a while,
 		   and A as long (200 ms, as the original modems): the caller
 		   takes a reversal only after it has heard A */
-		if (v->retraining && (v->rt_blocks < 15 ||
-				      c < ms2samples(200, v->srate))) {
-			if (c >= ms2samples(3000, v->srate)) {
+		if (retraining && (rt_blocks < 15 ||
+				      c < ms2samples(200, srate))) {
+			if (c >= ms2samples(3000, srate)) {
 				DSP_DBG("v34: retrain: no tone B\n");
 				return DPSTAT_ERROR;
 			}
 			break;
 		}
-		if (c >= ms2samples(50, v->srate) && v->ev_info0) {
-			v34_set_state(v, P2A_ABAR);
-			v->cc_rev = 1;
-			v->ev_rev = 0;
+		if (c >= ms2samples(50, srate) && ev_info0) {
+			set_state(P2A_ABAR);
+			cc_rev = 1;
+			ev_rev = 0;
 		}
 		break;
 	case P2A_ABAR:
-		if (v->ev_rev && v->rev_time > v->rev_sent) {
-			v->rtd = v->rev_time - v->rev_sent - CC_TX_DELAY -
-				CC_RX_DELAY - ms2samples(40, v->srate);
+		if (ev_rev && rev_time > rev_sent) {
+			rtd = rev_time - rev_sent - CC_TX_DELAY -
+				CC_RX_DELAY - ms2samples(40, srate);
 			DSP_DBG("v34: round trip %ld ms\n",
-				v->rtd * 1000 / v->srate);
-			v34_set_state(v, P2A_ABAR_40);
-			v->count = v->total - v->rev_time;
+				rtd * 1000 / srate);
+			set_state(P2A_ABAR_40);
+			count = total - rev_time;
 		}
 		break;
 	case P2A_ABAR_40:
 		if (c >= REV_WAIT) {
-			v34_set_state(v, P2A_A_10);
-			v->cc_rev = 1;
+			set_state(P2A_A_10);
+			cc_rev = 1;
 		}
 		break;
 	case P2A_A_10:
-		if (rev_on_line(v) >= ms2samples(10, v->srate)) {
-			v34_set_state(v, P2A_L1);
-			probe_start(v);
+		if (rev_on_line() >= ms2samples(10, srate)) {
+			set_state(P2A_L1);
+			start_probe();
 		}
 		break;
 	case P2A_L1:
-		if (c >= ms2samples(160, v->srate)) {
-			v34_set_state(v, P2A_L2);
-			v->probe_gain = 1;
+		if (c >= ms2samples(160, srate)) {
+			set_state(P2A_L2);
+			probe_gain = 1;
 		}
 		break;
 	case P2A_L2:
 		/* until the caller answers with B */
-		if (v->tone_blocks >= 3 || c >= ms2samples(2000, v->srate)) {
-			v34_set_state(v, P2A_A_50);
-			cc_tone(v);
+		if (tone_blocks >= 3 || c >= ms2samples(2000, srate)) {
+			set_state(P2A_A_50);
+			cc_tone();
 		}
 		break;
 	case P2A_A_50:
-		if (c >= ms2samples(50, v->srate)) {
-			v34_set_state(v, P2A_ABAR_10);
-			v->cc_rev = 1;
+		if (c >= ms2samples(50, srate)) {
+			set_state(P2A_ABAR_10);
+			cc_rev = 1;
 		}
 		break;
 	case P2A_ABAR_10:
-		if (rev_on_line(v) >= ms2samples(10, v->srate)) {
-			v34_set_state(v, P2A_SILENCE);
-			cc_silence(v);
+		if (rev_on_line() >= ms2samples(10, srate)) {
+			set_state(P2A_SILENCE);
+			cc_silence();
 		}
 		break;
 	case P2A_SILENCE:
-		if (v->l1_start && v->total - v->l1_start >=
-		    ms2samples(465, v->srate)) {
-			v34_set_state(v, P2A_A2);
-			cc_tone(v);
+		if (l1_start && total - l1_start >=
+		    ms2samples(465, srate)) {
+			set_state(P2A_A2);
+			cc_tone();
 		}
 		break;
 	case P2A_A2:
-		if (v->ev_info1) {
-			choose_bauds(v);
-			v34_set_state(v, P2A_INFO1);
-			make_info1a(v, &v->cctx);
-			cc_send(v);
+		if (ev_info1) {
+			choose_bauds();
+			set_state(P2A_INFO1);
+			make_info1a(&cctx);
+			cc_send();
 		}
 		break;
 	case P2A_INFO1:
-		if (!cc_busy(v)) {
-			cc_silence(v);
-			v34_set_state(v, P3A_SILENCE);
-			v34_primary_start(v);
+		if (!cc_busy()) {
+			cc_silence();
+			set_state(P3A_SILENCE);
+			primary_start();
 		}
 		break;
 
 	/* phase 2 caller */
 	case P2C_INFO0:
-		if (!cc_busy(v)) {
-			v34_set_state(v, P2C_B);
-			v->ev_rev = 0;
+		if (!cc_busy()) {
+			set_state(P2C_B);
+			ev_rev = 0;
 		}
 		break;
 	case P2C_B:
-		if (v->retraining && !v->rt_heard) {
+		if (retraining && !rt_heard) {
 			/* a reversal counts when the tone is there around it
 			   (an answerer may reverse A after 200 ms, heard or
 			   not); without, it was the remote's data */
-			if (v->ev_rev && v->total - v->rev_time >
-			    ms2samples(100, v->srate))
-				v->ev_rev = 0;
-			if (c >= ms2samples(3000, v->srate)) {
+			if (ev_rev && total - rev_time >
+			    ms2samples(100, srate))
+				ev_rev = 0;
+			if (c >= ms2samples(3000, srate)) {
 				DSP_DBG("v34: retrain: no tone A\n");
 				return DPSTAT_ERROR;
 			}
 			break;
 		}
-		if (v->ev_info0 && v->ev_rev) {
-			v34_set_state(v, P2C_B_40);
-			v->count = v->total - v->rev_time;
+		if (ev_info0 && ev_rev) {
+			set_state(P2C_B_40);
+			count = total - rev_time;
 		}
 		break;
 	case P2C_B_40:
 		if (c >= REV_WAIT) {
-			v34_set_state(v, P2C_BBAR_10);
-			v->cc_rev = 1;
-			v->ev_rev = 0;
+			set_state(P2C_BBAR_10);
+			cc_rev = 1;
+			ev_rev = 0;
 		}
 		break;
 	case P2C_BBAR_10:
-		if (rev_on_line(v) >= ms2samples(10, v->srate)) {
-			v34_set_state(v, P2C_SILENCE);
-			cc_silence(v);
+		if (rev_on_line() >= ms2samples(10, srate)) {
+			set_state(P2C_SILENCE);
+			cc_silence();
 		}
 		break;
 	case P2C_SILENCE:
-		if (v->ev_rev && !v->rtd) {
-			v->rtd = v->rev_time - v->rev_sent - CC_TX_DELAY -
-				CC_RX_DELAY - ms2samples(40, v->srate);
+		if (ev_rev && !rtd) {
+			rtd = rev_time - rev_sent - CC_TX_DELAY -
+				CC_RX_DELAY - ms2samples(40, srate);
 			DSP_DBG("v34: round trip %ld ms\n",
-				v->rtd * 1000 / v->srate);
+				rtd * 1000 / srate);
 		}
-		if (v->l1_start && v->total - v->l1_start >=
-		    ms2samples(465, v->srate)) {
-			v->max_rate_rx = probe_analyse(v);
-			v34_set_state(v, P2C_B2);
-			cc_tone(v);
-			v->ev_rev = 0;
+		if (l1_start && total - l1_start >=
+		    ms2samples(465, srate)) {
+			max_rate_rx = probe_analyse();
+			set_state(P2C_B2);
+			cc_tone();
+			ev_rev = 0;
 		}
 		break;
 	case P2C_B2:
-		if (v->ev_rev) {
-			v34_set_state(v, P2C_B2_40);
-			v->count = v->total - v->rev_time;
+		if (ev_rev) {
+			set_state(P2C_B2_40);
+			count = total - rev_time;
 		}
 		break;
 	case P2C_B2_40:
 		if (c >= REV_WAIT) {
-			v34_set_state(v, P2C_BBAR2_10);
-			v->cc_rev = 1;
+			set_state(P2C_BBAR2_10);
+			cc_rev = 1;
 		}
 		break;
 	case P2C_BBAR2_10:
-		if (rev_on_line(v) >= ms2samples(10, v->srate)) {
-			v34_set_state(v, P2C_L1);
-			probe_start(v);
+		if (rev_on_line() >= ms2samples(10, srate)) {
+			set_state(P2C_L1);
+			start_probe();
 		}
 		break;
 	case P2C_L1:
-		if (c >= ms2samples(160, v->srate)) {
-			v34_set_state(v, P2C_L2);
-			v->probe_gain = 1;
+		if (c >= ms2samples(160, srate)) {
+			set_state(P2C_L2);
+			probe_gain = 1;
 		}
 		break;
 	case P2C_L2:
-		if (v->tone_blocks >= 3 || c >= ms2samples(2000, v->srate)) {
-			v34_set_state(v, P2C_INFO1);
-			make_info1c(v, &v->cctx);
-			cc_send(v);
+		if (tone_blocks >= 3 || c >= ms2samples(2000, srate)) {
+			set_state(P2C_INFO1);
+			make_info1c(&cctx);
+			cc_send();
 		}
 		break;
 	case P2C_INFO1:
-		if (!cc_busy(v)) {
-			cc_silence(v);
-			v34_set_state(v, P2C_WAIT_INFO1);
+		if (!cc_busy()) {
+			cc_silence();
+			set_state(P2C_WAIT_INFO1);
 		}
 		break;
 	case P2C_WAIT_INFO1:
-		if (v->ev_info1 && v->pcm && v->rinfo1a.baud_ca == 6) {
+		if (ev_info1 && pcm && rinfo1a.baud_ca == 6) {
 			DSP_DBG("v34: INFO1a: V.90, upstream %d baud, UINFO "
 				"%d, MD %d\n",
-				v34_bauds[v->rinfo1a.baud_ac].nominal,
-				v->rinfo1a.uinfo, v->rinfo1a.md);
-			if (v90_start(v))
+				v34_bauds[rinfo1a.baud_ac].nominal,
+				rinfo1a.uinfo, rinfo1a.md);
+			if (v90_start())
 				return DPSTAT_ERROR;
 			break;
 		}
-		if (v->ev_info1) {
-			v->baud_tx = v->rinfo1a.baud_ca;
-			v->baud_rx = v->rinfo1a.baud_ac;
-			v->high_tx = v->rinfo1a.high;
-			v->preemph_tx = v->rinfo1a.preemph;
-			if (v->rate_of_baud[v->baud_rx])
-				v->max_rate_rx = v->rate_of_baud[v->baud_rx];
+		if (ev_info1) {
+			baud_tx = rinfo1a.baud_ca;
+			baud_rx = rinfo1a.baud_ac;
+			high_tx = rinfo1a.high;
+			preemph_tx = rinfo1a.preemph;
+			if (rate_of_baud[baud_rx])
+				max_rate_rx = rate_of_baud[baud_rx];
 			DSP_DBG("v34: symbol rates %d/%d\n",
-				v34_bauds[v->baud_tx].nominal,
-				v34_bauds[v->baud_rx].nominal);
-			v34_set_state(v, P3C_WAIT);
-			v34_primary_start(v);
+				v34_bauds[baud_tx].nominal,
+				v34_bauds[baud_rx].nominal);
+			set_state(P3C_WAIT);
+			primary_start();
 		}
 		break;
 
 	/* phase 3 answerer */
 	case P3A_SILENCE:
-		if (c >= ms2samples(125, v->srate))
-			v34_tx_next(v, P3A_S, V34_TX_S);
+		if (c >= ms2samples(125, srate))
+			tx_next(P3A_S, V34_TX_S);
 		break;
 	case P3A_S:
-		if (v->ptx.n >= 128)
-			v34_tx_next(v, P3A_SBAR, V34_TX_SBAR);
+		if (ptx.n >= 128)
+			tx_next(P3A_SBAR, V34_TX_SBAR);
 		break;
 	case P3A_SBAR:
-		if (v->ptx.n >= 16)
-			v34_tx_next(v, P3A_PP, V34_TX_PP);
+		if (ptx.n >= 16)
+			tx_next(P3A_PP, V34_TX_PP);
 		break;
 	case P3A_PP:
-		if (v->ptx.n >= 288)
-			v34_tx_next(v, P3A_TRN, V34_TX_TRN);
+		if (ptx.n >= 288)
+			tx_next(P3A_TRN, V34_TX_TRN);
 		break;
 	case P3A_TRN:
-		if (v->ptx.n >= TRN3_LEN) {
-			v34_tx_next(v, P3A_J, V34_TX_J);
-			v->prx.ev_s = 0;
+		if (ptx.n >= TRN3_LEN) {
+			tx_next(P3A_J, V34_TX_J);
+			prx.ev_s = 0;
 		}
 		break;
 	case P3A_J:
 		/* until the caller's S */
-		if (v->prx.ev_s && v->ptx.n % 8 == 0)
-			v34_tx_next(v, P3A_WAIT, V34_TX_SILENCE);
+		if (prx.ev_s && ptx.n % 8 == 0)
+			tx_next(P3A_WAIT, V34_TX_SILENCE);
 		break;
 	case P3A_WAIT:
 		/* until the caller's J */
-		if (v->prx.ev_j)
-			v34_tx_next(v, P4A_S, V34_TX_S);
+		if (prx.ev_j)
+			tx_next(P4A_S, V34_TX_S);
 		break;
 	case P4A_S:
-		if (v->ptx.n >= 128)
-			v34_tx_next(v, P4A_SBAR, V34_TX_SBAR);
+		if (ptx.n >= 128)
+			tx_next(P4A_SBAR, V34_TX_SBAR);
 		break;
 	case P4A_SBAR:
-		if (v->ptx.n >= 16)
-			v34_tx_next(v, P4A_TRN, V34_TX_TRN);
+		if (ptx.n >= 16)
+			tx_next(P4A_TRN, V34_TX_TRN);
 		break;
 	case P4A_TRN:
-		if (v->ptx.n >= TRN4_LEN)
-			v34_mp_start(v);
+		if (ptx.n >= TRN4_LEN)
+			mp_start();
 		break;
 
 	/* phase 3 caller */
 	case P3C_WAIT:
 		/* the answerer's training has trained our receiver, and it
 		   listens from its J on */
-		if (v->prx.stage == V34_RX_TRN && v->prx.ev_j)
-			v34_tx_next(v, P3C_S, V34_TX_S);
+		if (prx.stage == V34_RX_TRN && prx.ev_j)
+			tx_next(P3C_S, V34_TX_S);
 		break;
 	case P3C_S:
-		if (v->ptx.n >= 128)
-			v34_tx_next(v, P3C_SBAR, V34_TX_SBAR);
+		if (ptx.n >= 128)
+			tx_next(P3C_SBAR, V34_TX_SBAR);
 		break;
 	case P3C_SBAR:
-		if (v->ptx.n >= 16)
-			v34_tx_next(v, P3C_PP, V34_TX_PP);
+		if (ptx.n >= 16)
+			tx_next(P3C_PP, V34_TX_PP);
 		break;
 	case P3C_PP:
-		if (v->ptx.n >= 288)
-			v34_tx_next(v, P3C_TRN, V34_TX_TRN);
+		if (ptx.n >= 288)
+			tx_next(P3C_TRN, V34_TX_TRN);
 		break;
 	case P3C_TRN:
-		if (v->ptx.n >= TRN3_LEN) {
-			v34_tx_next(v, P3C_J, V34_TX_J);
-			v->prx.ev_s = 0;
-			v->prx.ev_j = v->prx.j_count = 0;
+		if (ptx.n >= TRN3_LEN) {
+			tx_next(P3C_J, V34_TX_J);
+			prx.ev_s = 0;
+			prx.ev_j = prx.j_count = 0;
 		}
 		break;
 	case P3C_J:
 		/* until the answerer's S of phase 4, then J' and TRN */
-		if (v->prx.ev_s && v->ptx.n % 8 == 0)
-			v34_tx_next(v, P4C_TRN, V34_TX_JP);
+		if (prx.ev_s && ptx.n % 8 == 0)
+			tx_next(P4C_TRN, V34_TX_JP);
 		break;
 	case P4C_TRN:
-		if (v->ptx.seg == V34_TX_TRN && v->ptx.n >= TRN4_LEN)
-			v34_mp_start(v);
+		if (ptx.seg == V34_TX_TRN && ptx.n >= TRN4_LEN)
+			mp_start();
 		break;
 
 	/* V.90 digital modem, phase 3 */
 	case P3D_WAIT_JA:
-		if (v->prx.ev_ja) {
-			v->v90tx.dil = v->prx.dil;
-			v34_set_state(v, P3D_PAUSE);
+		if (prx.ev_ja) {
+			v90tx.dil = prx.dil;
+			set_state(P3D_PAUSE);
 		}
 		break;
 	case P3D_PAUSE:
 		/* the analogue modem stops Ja when it sees Sd */
-		if (c >= ms2samples(50, v->srate)) {
-			v34_set_state(v, P3D_SD);
-			v->v90tx.trn1d_len = 2400;      /* 300 ms */
-			v->v90tx.segment(V90_SD);
-			v->prx.ev_s = 0;
+		if (c >= ms2samples(50, srate)) {
+			set_state(P3D_SD);
+			v90tx.trn1d_len = 2400;      /* 300 ms */
+			v90tx.segment(V90_SD);
+			prx.ev_s = 0;
 		}
 		break;
 	case P3D_SD:
-		if (v->v90tx.seg == V90_JD) {
-			v34_set_state(v, P3D_JD);
-			v->prx.ev_s = 0;
+		if (v90tx.seg == V90_JD) {
+			set_state(P3D_JD);
+			prx.ev_s = 0;
 		}
 		break;
 	case P3D_JD:
 		/* until the remote's S */
-		if (v->prx.ev_s) {
+		if (prx.ev_s) {
 			DSP_DBG("v34: V.90 S after %d Jd\n",
-				v->v90tx.jd_frames);
-			v->v90tx.end_jd();
-			v34_set_state(v, P3D_JDP);
-			v->sbar_seen = v->prx.sbar_count;
+				v90tx.jd_frames);
+			v90tx.end_jd();
+			set_state(P3D_JDP);
+			sbar_seen = prx.sbar_count;
 			/* the analogue modem may send TRN1a instead of
 			   silence while it takes in the DIL */
-			v->prx.s_in_trn = 1;
+			prx.s_in_trn = 1;
 		}
 		break;
 	case P3D_JDP:
 		/* S-bar answers Jd'; with DIL a second S to S-bar ends it */
-		if (v->v90tx.next && !v->v90tx.dil.n)
-			v34_set_state(v, P4D_START);
-		else if (v->v90tx.seg == V90_DIL &&
-			 v->prx.sbar_count >= v->sbar_seen + 2) {
+		if (v90tx.next && !v90tx.dil.n)
+			set_state(P4D_START);
+		else if (v90tx.seg == V90_DIL &&
+			 prx.sbar_count >= sbar_seen + 2) {
 			DSP_DBG("v34: V.90 DIL ends after %d rounds\n",
-				v->v90tx.dil_rounds);
-			v->prx.s_in_trn = 0;
-			v->v90tx.end_dil();
-			v34_set_state(v, P3D_DIL_END);
+				v90tx.dil_rounds);
+			prx.s_in_trn = 0;
+			v90tx.end_dil();
+			set_state(P3D_DIL_END);
 		}
 		break;
 	case P3D_DIL_END:
-		if (v->v90tx.next)
-			v34_set_state(v, P4D_START);
+		if (v90tx.next)
+			set_state(P4D_START);
 		break;
 	case P4D_START:
 		/* Ri until CPt */
-		v->v90tx.segment(V90_RI);
-		v34_set_state(v, P4D_RI);
+		v90tx.segment(V90_RI);
+		set_state(P4D_RI);
 		break;
 	case P4D_RI:
-		if (v->prx.ev_cpt && v->v90tx.n >= 192 && !v->v90tx.ri_end) {
-			v->cpt.parse(v->prx.cpraw,
-				     v90_cp_length(v->prx.cpraw, 129));
-			v->D = v->cpt.drn + 8;
-			if (v->v90tx.enc.init(&v->cpt, v->D,
-					 v->v90tx.lin)) {
+		if (prx.ev_cpt && v90tx.n >= 192 && !v90tx.ri_end) {
+			cpt.parse(prx.cpraw,
+				     v90_cp_length(prx.cpraw, 129));
+			D = cpt.drn + 8;
+			if (v90tx.enc.init(&cpt, D,
+					 v90tx.lin)) {
 				DSP_DBG("v34: V.90 CPt does not fit\n");
 				return DPSTAT_ERROR;
 			}
-			v->v90tx.get_frame = v90_get_frame;
-			v->v90tx.ctx = v;
-			v->fmode = F_TRN;
-			v->fcount = 0;
-			v->mp_ack_sent = 0;
-			v->v90tx.end_ri();
+			v90tx.get_frame = v90_get_frame;
+			v90tx.ctx = this;
+			fmode = F_TRN;
+			fcount = 0;
+			mp_ack_sent = 0;
+			v90tx.end_ri();
 			DSP_DBG("v34: V.90 CPt: D %d, K %d, M %d %d %d %d %d "
-				"%d, Sr %d, ld %d\n", v->D, v->v90tx.enc.K,
-				v->v90tx.enc.M[0], v->v90tx.enc.M[1],
-				v->v90tx.enc.M[2], v->v90tx.enc.M[3],
-				v->v90tx.enc.M[4], v->v90tx.enc.M[5],
-				v->cpt.sr, v->cpt.ld);
+				"%d, Sr %d, ld %d\n", D, v90tx.enc.K,
+				v90tx.enc.M[0], v90tx.enc.M[1],
+				v90tx.enc.M[2], v90tx.enc.M[3],
+				v90tx.enc.M[4], v90tx.enc.M[5],
+				cpt.sr, cpt.ld);
 			{
 				char buf[400];
 				int i, n = 0;
-				for (i = 0; i < v->v90tx.enc.M[0] && n < 380; i++)
+				for (i = 0; i < v90tx.enc.M[0] && n < 380; i++)
 					n += sprintf(buf + n, " %d",
-						     v->v90tx.enc.ucode[0][i]);
+						     v90tx.enc.ucode[0][i]);
 				DSP_DBG("v34: V.90 CPt ucodes%s; shaper a1 %d a2 %d b1 %d b2 %d\n",
-					buf, v->cpt.a1, v->cpt.a2, v->cpt.b1, v->cpt.b2);
+					buf, cpt.a1, cpt.a2, cpt.b1, cpt.b2);
 			}
-			v34_set_state(v, P4D_TRAIN);
+			set_state(P4D_TRAIN);
 		}
 		break;
 	case P4D_TRAIN:
-		if (v->prx.ev_cp && !v->up_n) {
-			v->cp.parse(v->prx.cpraw,
-				     v90_cp_length(v->prx.cpraw, 129));
-			if (v90_data_setup(v))
-				return v34_fallback(v, "no common upstream rate");
+		if (prx.ev_cp && !up_n) {
+			cp.parse(prx.cpraw,
+				     v90_cp_length(prx.cpraw, 129));
+			if (v90_data_setup())
+				return fallback("no common upstream rate");
 		}
-		if (v->fmode == F_DATA && v->prx.ev_e) {
-			v34_set_state(v, V34_DATA);
-			modem_set_param(v->modem, MDMPRM_TX_RATE, v->rate_tx);
-			modem_set_param(v->modem, MDMPRM_RX_RATE, v->rate_rx);
-			DSP_DBG("v34: V.90 connect %d/%d\n", v->rate_tx,
-				v->rate_rx);
+		if (fmode == F_DATA && prx.ev_e) {
+			set_state(V34_DATA);
+			modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
+			modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+			DSP_DBG("v34: V.90 connect %d/%d\n", rate_tx,
+				rate_rx);
 			return DPSTAT_CONNECT;
 		}
 		break;
 
 	/* phase 4, both */
 	case P4_MP:
-		if (v->prx.ev_mp && !v->ptx.ack_mp) {
+		if (prx.ev_mp && !ptx.ack_mp) {
 			/* before the remote's E: its data follows at once */
-			if (v34_data_setup(v))
-				return v34_fallback(v, "no common data rate");
-			v->ptx.ack_mp = 1;
+			if (data_setup())
+				return fallback("no common data rate");
+			ptx.ack_mp = 1;
 		}
 		/* E after a complete MP' once the remote has acknowledged
 		   ours */
-		if (v->prx.ev_mp && v->prx.mp.ack && v->ptx.mp_sent >= 1 &&
-		    v->ptx.mp.ack && v->ptx.pos >= v->ptx.nbits)
-			v34_tx_next(v, P4_E, V34_TX_E);
+		if (prx.ev_mp && prx.mp.ack && ptx.mp_sent >= 1 &&
+		    ptx.mp.ack && ptx.pos >= ptx.nbits)
+			tx_next(P4_E, V34_TX_E);
 		break;
 	case P4_E:
-		if (v->ptx.seg == V34_TX_DATA && v->prx.ev_e) {
-			v34_set_state(v, V34_DATA);
-			modem_set_param(v->modem, MDMPRM_TX_RATE, v->rate_tx);
-			modem_set_param(v->modem, MDMPRM_RX_RATE, v->rate_rx);
-			v->rt_blocks = 0;
-			v->lost = 0;
-			if (v->retraining) {
+		if (ptx.seg == V34_TX_DATA && prx.ev_e) {
+			set_state(V34_DATA);
+			modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
+			modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+			rt_blocks = 0;
+			lost = 0;
+			if (retraining) {
 				/* the link goes on (V.42 knows nothing of it) */
-				v->retraining = 0;
-				DSP_DBG("v34: retrained, %d/%d\n", v->rate_tx,
-					v->rate_rx);
+				retraining = 0;
+				DSP_DBG("v34: retrained, %d/%d\n", rate_tx,
+					rate_rx);
 				break;
 			}
-			DSP_DBG("v34: connect %d/%d\n", v->rate_tx, v->rate_rx);
+			DSP_DBG("v34: connect %d/%d\n", rate_tx, rate_rx);
 			return DPSTAT_CONNECT;
 		}
 		break;
 	case V34_DATA:
-		if (v->prx.on)
-			v->lost = 0;
+		if (prx.on)
+			lost = 0;
 		else
-			v->lost++;
-		if (v->pcm) {
-			if (v->lost >= v->carrier_loss) {
+			lost++;
+		if (pcm) {
+			if (lost >= carrier_loss) {
 				DSP_DBG("v34: carrier lost\n");
 				return DPSTAT_ERROR;
 			}
@@ -2212,66 +2254,66 @@ static int v34_handshake(struct v34_dp *v)
 		/* the data far worse than its rate needs (the mse is in
 		   units of the signal points' spacing, the same for all
 		   rates) */
-		if (v->prx.data_on && v->prx.mse > V34_RETRAIN_MSE)
-			v->bad++;
+		if (prx.data_on && prx.mse > V34_RETRAIN_MSE)
+			bad++;
 		else
-			v->bad = 0;
-		if (v->rt_blocks >= 6)
-			v34_retrain(v, v->caller ? "tone A" : "tone B");
-		else if (v->bad >= ms2samples(1000, v->srate) &&
-			 c >= ms2samples(5000, v->srate))
+			bad = 0;
+		if (rt_blocks >= 6)
+			retrain(caller ? "tone A" : "tone B");
+		else if (bad >= ms2samples(1000, srate) &&
+			 c >= ms2samples(5000, srate))
 			/* (not in a loop on a line that stays marginal) */
-			v34_retrain(v, "errors");
-		else if (v->lost >= ms2samples(30, v->srate))
-			v34_retrain(v, "signal lost");
-		else if (v->retrain_at && c >= v->retrain_at && !v->retrains)
-			v34_retrain(v, "test");
+			retrain("errors");
+		else if (lost >= ms2samples(30, srate))
+			retrain("signal lost");
+		else if (retrain_at && c >= retrain_at && !retrains)
+			retrain("test");
 		break;
 	case V34_RT_SILENCE:
-		if (c >= ms2samples(70, v->srate)) {
-			v34_set_state(v, v->caller ? P2C_B : P2A_A);
-			cc_tone(v);
+		if (c >= ms2samples(70, srate)) {
+			set_state(caller ? P2C_B : P2A_A);
+			cc_tone();
 		}
 		break;
 	}
 	return DPSTAT_OK;
 }
 
-static float pump_tx_sample(struct v34_dp *v)
+float V34Pump::pump_tx_sample()
 {
 	float y = 0;
 
-	switch (v->txm) {
+	switch (txm) {
 	case TXM_SILENCE:
 		break;
 	case TXM_ANSAM:
 		/* 15 Hz, 20 % amplitude modulation, reversals every 450 ms */
-		if (v->count % ms2samples(450, v->srate) == 0 && v->count)
-			v->ansam_sign = -v->ansam_sign;
-		y = v->ansam_sign * ANSAM_AMP * (1 + 0.2f * v->ansam_am.next()) *
-			v->ansam.next();
+		if (count % ms2samples(450, srate) == 0 && count)
+			ansam_sign = -ansam_sign;
+		y = ansam_sign * ANSAM_AMP * (1 + 0.2f * ansam_am.next()) *
+			ansam.next();
 		break;
 	case TXM_FSK:
-		v->fsk_phase += 300.0f / v->srate;
-		if (v->fsk_phase >= 1) {
-			v->fsk_phase -= 1;
-			if (v->v8tx.pos >= v->v8tx.n && v->v8tx_repeat)
-				v->v8tx.pos = 0;
-			v->fsk_bit = v->v8tx.pos < v->v8tx.n ?
-				v->v8tx.b[v->v8tx.pos++] : 1;
+		fsk_phase += 300.0f / srate;
+		if (fsk_phase >= 1) {
+			fsk_phase -= 1;
+			if (v8tx.pos >= v8tx.n && v8tx_repeat)
+				v8tx.pos = 0;
+			fsk_bit = v8tx.pos < v8tx.n ?
+				v8tx.b[v8tx.pos++] : 1;
 		}
-		y = v->fsk.next(v->fsk_bit);
+		y = fsk.next(fsk_bit);
 		break;
 	case TXM_CC:
-		y = v->cc.sample();
+		y = cc.sample();
 		break;
 	case TXM_PROBE:
-		y = v->probe_gain * v->probe[v->probe_pos];
-		if (++v->probe_pos == PROBE_PERIOD)
-			v->probe_pos = 0;
+		y = probe_gain * probe[probe_pos];
+		if (++probe_pos == PROBE_PERIOD)
+			probe_pos = 0;
 		break;
 	case TXM_PRIMARY:
-		y = v->ptx.sample();
+		y = ptx.sample();
 		break;
 	}
 	return y;
@@ -2279,33 +2321,32 @@ static float pump_tx_sample(struct v34_dp *v)
 
 /* one sample at 9600 Hz each way; ref: what goes out on the line instead
    (the PCM signal, for the echo canceller) */
-static int v34_sample(struct v34_dp *v, float x, float *y, const float *ref)
+int V34Pump::sample(float x, float *y, const float *ref)
 {
-	int r = v34_handshake(v);
+	int r = handshake();
 	if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 		return r;
-	*y = dsp_clip16(pump_tx_sample(v));
-	v->last_tx = ref ? *ref : *y;
-	pump_rx_sample(v, x);
-	if (v->state != V34_DATA && v->total >= v->timeout) {
-		DSP_DBG("v34: start-up timeout in state %d\n", v->state);
+	*y = dsp_clip16(pump_tx_sample());
+	last_tx = ref ? *ref : *y;
+	pump_rx_sample(x);
+	if (state != V34_DATA && total >= timeout) {
+		DSP_DBG("v34: start-up timeout in state %d\n", state);
 		return DPSTAT_ERROR;
 	}
-	v->count++;
-	v->total++;
+	count++;
+	total++;
 	return r;
 }
 
-static int v34_process(struct dp *dp, void *in, void *out, int cnt)
+int V34Pump::process(void *in, void *out, int cnt)
 {
-	struct v34_dp *v = static_cast<v34_dp*>(dp->dp_data);
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 	int ret = DPSTAT_OK, r, i, k, n;
-	float y, up[2], down[2], pcm = 0;
+	float y, up[2], down[2], pcm_ = 0;
 
 	for (i = 0; i < cnt; i++) {
-		if (v->line_rate == V34_SRATE) {
-			r = v34_sample(v, src[i], &y, NULL);
+		if (line_rate == V34_SRATE) {
+			r = sample(src[i], &y, NULL);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 				return r;
 			if (r != DPSTAT_OK)
@@ -2314,141 +2355,115 @@ static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 			continue;
 		}
 		/* an 8000 Hz line: the pump runs at 9600 Hz in between */
-		if (v->pcm_tx) {
+		if (pcm_tx) {
 			/* V.90: exact PCM codes at 8000 Hz; at 9600 Hz for the
 			   echo canceller */
 			float ref[2];
 			int m;
-			pcm = v->v90tx.sample();
-			m = v->rs_ref.run(pcm, ref);
-			for (k = 0; k < m && v->ref_n < V34_FIFO; k++)
-				v->ref_fifo[v->ref_n++] = ref[k];
+			pcm_ = v90tx.sample();
+			m = rs_ref.run(pcm_, ref);
+			for (k = 0; k < m && ref_n < V34_FIFO; k++)
+				ref_fifo[ref_n++] = ref[k];
 		}
-		n = v->rs_up.run(src[i], up);
+		n = rs_up.run(src[i], up);
 		for (k = 0; k < n; k++) {
 			float rf = 0;
-			if (v->pcm_tx && v->ref_n) {
-				rf = v->ref_fifo[0];
-				memmove(v->ref_fifo, v->ref_fifo + 1,
-					--v->ref_n * sizeof(float));
+			if (pcm_tx && ref_n) {
+				rf = ref_fifo[0];
+				memmove(ref_fifo, ref_fifo + 1,
+					--ref_n * sizeof(float));
 			}
-			r = v34_sample(v, up[k], &y, v->pcm_tx ? &rf : NULL);
+			r = sample(up[k], &y, pcm_tx ? &rf : NULL);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 				return r;
 			if (r != DPSTAT_OK)
 				ret = r;
-			if (v->rs_down.run(y, down) &&
-			    v->fifo_n < V34_FIFO)
-				v->fifo[v->fifo_n++] = down[0];
+			if (rs_down.run(y, down) &&
+			    fifo_n < V34_FIFO)
+				fifo[fifo_n++] = down[0];
 		}
 		y = 0;
-		if (v->fifo_n) {
-			y = v->fifo[0];
-			memmove(v->fifo, v->fifo + 1,
-				--v->fifo_n * sizeof(v->fifo[0]));
+		if (fifo_n) {
+			y = fifo[0];
+			memmove(fifo, fifo + 1,
+				--fifo_n * sizeof(fifo[0]));
 		}
-		if (v->pcm_tx)
-			y = pcm;
+		if (pcm_tx)
+			y = pcm_;
 		dst[i] = dsp_clip16(y);
 	}
 	return ret;
 }
 
-static struct dp *v34_create(struct modem *m, enum DP_ID id,
-			     int caller, int srate, int max_frag,
-			     struct dp_operations *op)
+int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
-	struct v34_dp *v;
 	int s7, s10;
 
-	if (srate != V34_SRATE && srate != 8000) {
-		DSP_DBG("v34: sample rate %d not supported\n", srate);
-		return NULL;
+	if (srate_ != V34_SRATE && srate_ != 8000) {
+		DSP_DBG("v34: sample rate %d not supported\n", srate_);
+		return -1;
 	}
-	v = static_cast<v34_dp*>(calloc(1, sizeof(*v)));
-	if (!v)
-		return NULL;
 	/* at 8000 Hz through sample rate converters */
-	v->line_rate = srate;
-	srate = V34_SRATE;
-	v->rs_up.init(6, 5);
-	v->rs_down.init(5, 6);
-	v->rs_ref.init(6, 5);
-	v->fifo_n = 2;          /* so that it never runs dry */
-	v->dp.id = id;
+	line_rate = srate_;
+	srate_ = V34_SRATE;
+	rs_up.init(6, 5);
+	rs_down.init(5, 6);
+	rs_ref.init(6, 5);
+	fifo_n = 2;          /* so that it never runs dry */
 	/* a V.90 digital modem needs the 8000 Hz G.711 network */
-	v->v90 = (id == DP_V90 || id == DP_V92) && v->line_rate == 8000;
+	v90 = (id == DP_V90 || id == DP_V92) && line_rate == 8000;
 	/* the G.711 law of the network (D-Modem knows it from the codec of
 	   the call) */
-	v->rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
-	v->alaw = v->rt && v->rt->law ? v->rt->law == 2 :
+	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+	alaw = rt && rt->law ? rt->law == 2 :
 		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
-	v->dp.modem = m;
-	v->dp.op = op;
-	v->dp.dp_data = v;
-	v->modem = m;
-	v->srate = srate;
-	v->caller = caller;
+	modem = m;
+	srate = srate_;
+	caller = caller_;
 	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
-	v->timeout = (long)(s7 > 0 ? s7 : 50) * srate;
+	timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
 	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
-	v->carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate / 10;
+	carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;
 
-	v->ec.init();
-	v->ansam.set_freq(2100, srate);
-	v->ansam_am.set_freq(15, srate);
-	v->ansam_sign = 1;
-	v->ans_lo.set_freq(-2100, srate);
-	v->aa_g.init(1800, srate / 50, srate);
-	v->tone_g.init(caller ? 2400 : 1200, PROBE_PERIOD, srate);
-	v->rt_g.init(caller ? 2400 : 1200, PROBE_PERIOD, srate);
-	v->own_g.init(caller ? 1200 : 2400, PROBE_PERIOD, srate);
+	ec.init();
+	ansam.set_freq(2100, srate_);
+	ansam_am.set_freq(15, srate_);
+	ansam_sign = 1;
+	ans_lo.set_freq(-2100, srate_);
+	aa_g.init(1800, srate_ / 50, srate_);
+	tone_g.init(caller_ ? 2400 : 1200, PROBE_PERIOD, srate_);
+	rt_g.init(caller_ ? 2400 : 1200, PROBE_PERIOD, srate_);
+	own_g.init(caller_ ? 1200 : 2400, PROBE_PERIOD, srate_);
 	/* test: DSP_V34_RETRAIN=<ms in data mode>[a|c], c or a: only the
 	   caller or the answerer starts it */
 	if (getenv("DSP_V34_RETRAIN")) {
 		const char *e = getenv("DSP_V34_RETRAIN");
 		const char *side = e + strspn(e, "0123456789");
-		if (!*side || *side == (caller ? 'c' : 'a'))
-			v->retrain_at = ms2samples(atoi(e), srate);
+		if (!*side || *side == (caller_ ? 'c' : 'a'))
+			retrain_at = ms2samples(atoi(e), srate_);
 	}
-	v->probe_g[0].init(1050, PROBE_PERIOD, srate);
-	v->probe_g[1].init(3000, PROBE_PERIOD, srate);
-	probe_init(v);
-	if (caller) {
+	probe_g[0].init(1050, PROBE_PERIOD, srate_);
+	probe_g[1].init(3000, PROBE_PERIOD, srate_);
+	probe_init();
+	if (caller_) {
 		/* the answer tone was heard: CM goes back on V.21 channel 1,
 		   JM comes on channel 2 */
-		v->v21.init(1650, 1850, 300, srate);
-		v->state = V8C_LISTEN;
+		v21.init(1650, 1850, 300, srate_);
+		state = V8C_LISTEN;
 	} else {
-		v->v21.init(980, 1180, 300, srate);
-		v->state = V8A_SILENCE;
+		v21.init(980, 1180, 300, srate_);
+		state = V8A_SILENCE;
 	}
-	v->txm = TXM_SILENCE;
-	DSP_DBG("v34: create %s (dp %d)\n", caller ? "caller" : "answerer", id);
-	return &v->dp;
-}
-
-static int v34_delete(struct dp *dp)
-{
-	struct v34_dp *v = static_cast<v34_dp*>(dp->dp_data);
-	if (v->prx_on)
-		v->prx.release();
-	free(v);
+	txm = TXM_SILENCE;
+	DSP_DBG("v34: create %s (dp %d)\n", caller_ ? "caller" : "answerer", id);
 	return 0;
 }
 
-static int v34_hangup(struct dp *dp)
+void V34Pump::cleanup()
 {
-	return 0;
+	if (prx_on)
+		prx.release();
 }
-
-static struct dp_operations v34_operations = {
-	.name = "V.8/V.34 data pump",
-	.create = v34_create,
-	.destroy = v34_delete,
-	.process = v34_process,
-	.hangup = v34_hangup,
-};
 
 /* DP_V8 is what the modem core starts for the default (fastest) mode;
    V.90 and V.92 are not implemented, they start V.34 as well */
@@ -2458,7 +2473,7 @@ int dp_v34_init(void)
 {
 	int i;
 	for (i = 0; i < (int)(sizeof(v34_ids) / sizeof(v34_ids[0])); i++)
-		modem_dp_register(v34_ids[i], &v34_operations);
+		modem_dp_register(v34_ids[i], &PumpOps<V34Pump>::ops);
 	return 0;
 }
 
@@ -2466,7 +2481,7 @@ void dp_v34_exit(void)
 {
 	int i;
 	for (i = 0; i < (int)(sizeof(v34_ids) / sizeof(v34_ids[0])); i++)
-		modem_dp_deregister(v34_ids[i], &v34_operations);
+		modem_dp_deregister(v34_ids[i], &PumpOps<V34Pump>::ops);
 }
 
 } // namespace dsp
