@@ -20,6 +20,7 @@
 
 #include "asterisk.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -35,9 +36,11 @@
 #include "asterisk/config.h"
 #include "asterisk/format_cache.h"
 #include "asterisk/frame.h"
+#include "asterisk/localtime.h"
 #include "asterisk/logger.h"
 #include "asterisk/module.h"
 #include "asterisk/pbx.h"
+#include "asterisk/paths.h"
 #include "asterisk/strings.h"
 #include "asterisk/utils.h"
 
@@ -107,6 +110,14 @@ static const char descrip[] =
 
 enum mode { MODE_TCP, MODE_EXEC };
 
+/* fax: [general] has the defaults, a profile its own */
+struct fax_settings {
+	int on;                 /* DModem(): a fax caller is received */
+	char dir[256];          /* ... into this directory */
+	char ident[21];         /* our number (CSI / TSI) */
+	int max_bps;
+};
+
 struct profile {
 	enum mode mode;
 	char host[256];
@@ -115,6 +126,7 @@ struct profile {
 	char init[128];         /* extra AT commands, e.g. +MS=34 */
 	enum dmodem_law law;    /* DMODEM_LAW_UNKNOWN: the channel's */
 	int timeout;            /* seconds to connect */
+	struct fax_settings fax;
 };
 
 /* the bytes between the modem and the server or program */
@@ -137,6 +149,52 @@ static void log_line(const char *line)
 		ast_verb(5, "dmodem: %s", line);
 }
 
+static void fax_defaults(struct fax_settings *f)
+{
+	f->on = 1;
+	snprintf(f->dir, sizeof(f->dir), "%s/fax", ast_config_AST_SPOOL_DIR);
+	f->ident[0] = 0;
+	f->max_bps = 14400;
+}
+
+/* a fax option; 0 if it is something else */
+static int fax_option(struct fax_settings *f, const char *name,
+		      const char *value)
+{
+	if (!strcasecmp(name, "fax"))
+		f->on = ast_true(value);
+	else if (!strcasecmp(name, "fax_dir"))
+		ast_copy_string(f->dir, value, sizeof(f->dir));
+	else if (!strcasecmp(name, "fax_ident"))
+		ast_copy_string(f->ident, value, sizeof(f->ident));
+	else if (!strcasecmp(name, "fax_max_rate"))
+		f->max_bps = atoi(value);
+	else
+		return 0;
+	return 1;
+}
+
+static void load_fax_general(struct ast_config *cfg, struct fax_settings *f)
+{
+	struct ast_variable *v;
+	fax_defaults(f);
+	for (v = ast_variable_browse(cfg, "general"); v; v = v->next)
+		fax_option(f, v->name, v->value);
+}
+
+/* the fax settings of [general] alone (for DModemSendFax/ReceiveFax) */
+static void load_fax_settings(struct fax_settings *f)
+{
+	struct ast_flags flags = { 0 };
+	struct ast_config *cfg = ast_config_load2(config_file, "app_dmodem",
+						  flags);
+	fax_defaults(f);
+	if (cfg && cfg != CONFIG_STATUS_FILEINVALID) {
+		load_fax_general(cfg, f);
+		ast_config_destroy(cfg);
+	}
+}
+
 static int load_profile(const char *name, struct profile *p)
 {
 	struct ast_flags flags = { 0 };
@@ -156,7 +214,10 @@ static int load_profile(const char *name, struct profile *p)
 		ast_config_destroy(cfg);
 		return -1;
 	}
+	load_fax_general(cfg, &p->fax);
 	for (v = ast_variable_browse(cfg, name); v; v = v->next) {
+		if (fax_option(&p->fax, v->name, v->value))
+			continue;
 		if (!strcasecmp(v->name, "mode")) {
 			if (!strcasecmp(v->value, "tcp"))
 				p->mode = MODE_TCP;
@@ -343,6 +404,128 @@ static int line_io(struct ast_channel *chan, struct dmodem *d,
 	return n;
 }
 
+/*
+ *    fax
+ */
+
+/* where a received fax goes: <dir>/<date>-<time>-<caller>-<uniqueid>.tif */
+static void fax_file_name(struct ast_channel *chan, const char *dir,
+			  char *path, size_t len)
+{
+	char when[32], caller[32] = "", id[64];
+	const char *num = S_COR(ast_channel_caller(chan)->id.number.valid,
+				ast_channel_caller(chan)->id.number.str, "");
+	struct timeval now = ast_tvnow();
+	struct ast_tm tm;
+	size_t k, n = 0;
+
+	ast_localtime(&now, &tm, NULL);
+	ast_strftime(when, sizeof(when), "%Y%m%d-%H%M%S", &tm);
+	for (k = 0; num[k] && n < sizeof(caller) - 1; k++)
+		if (isalnum((unsigned char)num[k]) || num[k] == '+')
+			caller[n++] = num[k];
+	caller[n] = 0;
+	ast_copy_string(id, ast_channel_uniqueid(chan), sizeof(id));
+	for (k = 0; id[k]; k++)
+		if (!isalnum((unsigned char)id[k]) && id[k] != '.')
+			id[k] = '_';
+	snprintf(path, len, "%s/%s-%s-%s.tif", dir, when,
+		 *caller ? caller : "unknown", id);
+}
+
+/* a fax call on the channel until it ends; -1 if the channel hung up */
+static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
+		   enum dmodem_law law, enum dmodem_fax_dir dir,
+		   const char *file, const struct fax_settings *fs,
+		   unsigned char *out)
+{
+	struct dmodem_fax_config cfg = { 0 };
+	struct dmodem_fax_status st = { 0 };
+	struct dmodem_fax *f;
+	const char *name = ast_channel_name(chan);
+	char buf[32];
+	int res = 0;
+
+	cfg.law = law;
+	cfg.dir = dir;
+	cfg.file = file;
+	cfg.ident = fs->ident;
+	cfg.max_bps = fs->max_bps;
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXFILE", file);
+	f = dmodem_fax_create(&cfg);
+	if (!f) {
+		ast_log(LOG_WARNING, "%s: cannot %s fax file %s\n", name,
+			dir == DMODEM_FAX_SEND ? "read" : "use", file);
+		pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS", "FAILED");
+		pbx_builtin_setvar_helper(chan, "DMODEMFAXRESULT",
+					  "no document");
+		return 0;
+	}
+	ast_verb(3, "%s: DModem fax: %s %s\n", name,
+		 dir == DMODEM_FAX_SEND ? "sending" : "receiving", file);
+	for (;;) {
+		struct ast_frame *fr;
+		int n = ast_waitfor(chan, IDLE_MS);
+
+		if (n < 0 || (n > 0 && !(fr = ast_read(chan)))) {
+			dmodem_fax_hangup(f);
+			res = -1;
+			break;
+		}
+		if (n == 0) {
+			unsigned char sil[160];
+			struct ast_frame wf = { .frametype = AST_FRAME_VOICE,
+						.src = app };
+			memset(sil, law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF,
+			       sizeof(sil));
+			dmodem_fax_process_g711(f, sil, out + AST_FRIENDLY_OFFSET,
+						sizeof(sil));
+			wf.subclass.format = fmt;
+			wf.data.ptr = out + AST_FRIENDLY_OFFSET;
+			wf.offset = AST_FRIENDLY_OFFSET;
+			wf.datalen = wf.samples = sizeof(sil);
+			ast_write(chan, &wf);
+		} else {
+			if (fr->frametype == AST_FRAME_VOICE &&
+			    fr->datalen > 0 &&
+			    ast_format_cmp(fr->subclass.format, fmt) ==
+			    AST_FORMAT_CMP_EQUAL) {
+				struct ast_frame wf = {
+					.frametype = AST_FRAME_VOICE,
+					.src = app };
+				int len = fr->datalen;
+				if (len > LINE_MAX_SAMPLES)
+					len = LINE_MAX_SAMPLES;
+				dmodem_fax_process_g711(f, fr->data.ptr,
+					out + AST_FRIENDLY_OFFSET, len);
+				wf.subclass.format = fmt;
+				wf.data.ptr = out + AST_FRIENDLY_OFFSET;
+				wf.offset = AST_FRIENDLY_OFFSET;
+				wf.datalen = wf.samples = len;
+				ast_write(chan, &wf);
+			}
+			ast_frfree(fr);
+		}
+		dmodem_fax_status(f, &st);
+		if (st.done)
+			break;
+	}
+	dmodem_fax_status(f, &st);
+	dmodem_fax_destroy(f);
+	ast_verb(3, "%s: DModem fax %s: %s, %d pages at %d bit/s, remote '%s'\n",
+		 name, dir == DMODEM_FAX_SEND ? "sent" : "received", st.result,
+		 st.pages, st.bps, st.remote_ident);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS",
+				  st.ok ? "SUCCESS" : "FAILED");
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXRESULT", st.result);
+	snprintf(buf, sizeof(buf), "%d", st.pages);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXPAGES", buf);
+	snprintf(buf, sizeof(buf), "%d", st.bps);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXRATE", buf);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXREMOTE", st.remote_ident);
+	return res;
+}
+
 static int dmodem_exec(struct ast_channel *chan, const char *data)
 {
 	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(profile); AST_APP_ARG(options););
@@ -449,6 +632,24 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 		dmodem_status(d, &st);
 		if (!online) {
 			drain(dte[1]);
+			if (!orig && p.fax.on && st.fax_caller) {
+				/* a fax machine calling: a fax receiver
+				   instead of the modem */
+				char path[1024];
+				dmodem_destroy(d);
+				d = NULL;
+				ast_mkdir(p.fax.dir, 0755);
+				fax_file_name(chan, p.fax.dir, path,
+					      sizeof(path));
+				ast_verb(3, "%s: DModem: a fax machine is calling\n",
+					 name);
+				status = "FAX";
+				if (run_fax(chan, fmt, cfg.law,
+					    DMODEM_FAX_RECEIVE, path, &p.fax,
+					    out) < 0)
+					res = -1;
+				break;
+			}
 			if (st.link == DMODEM_ONLINE) {
 				online = 1;
 				snprintf(rate, sizeof(rate), "%u/%u",
@@ -522,6 +723,66 @@ out:
 	return res;
 }
 
+static const char app_send[] = "DModemSendFax";
+static const char send_synopsis[] = "Send a fax (TIFF file) with DModem's fax";
+static const char send_descrip[] =
+	"  DModemSendFax(file[,ident]): sends the TIFF file as a group 3 fax\n"
+	"on a call placed to a fax machine (it waits for the machine's DIS).\n"
+	"ident: our number (TSI), else fax_ident of dmodem.conf [general].\n"
+	"  Sets DMODEMFAXSTATUS (SUCCESS or FAILED), DMODEMFAXRESULT,\n"
+	"DMODEMFAXPAGES, DMODEMFAXRATE, DMODEMFAXREMOTE, DMODEMFAXFILE.\n";
+static const char app_recv[] = "DModemReceiveFax";
+static const char recv_synopsis[] = "Receive a fax into a TIFF file with DModem's fax";
+static const char recv_descrip[] =
+	"  DModemReceiveFax(file[,ident]): answers the call as a group 3 fax\n"
+	"machine and writes what it receives to the TIFF file (none if no page\n"
+	"came).  ident: our number (CSI), else fax_ident of [general].\n"
+	"  Sets the same variables as DModemSendFax.  DModem() receives faxes\n"
+	"by itself when a fax machine calls (fax = yes, the default).\n";
+
+static int fax_exec(struct ast_channel *chan, const char *data,
+		    enum dmodem_fax_dir dir)
+{
+	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(file); AST_APP_ARG(ident););
+	struct fax_settings fs;
+	enum dmodem_law law;
+	struct ast_format *fmt;
+	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];
+	char *parse = ast_strdupa(S_OR(data, ""));
+
+	AST_STANDARD_APP_ARGS(args, parse);
+	if (ast_strlen_zero(args.file)) {
+		ast_log(LOG_WARNING, "%s needs a file name\n",
+			dir == DMODEM_FAX_SEND ? app_send : app_recv);
+		pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS", "FAILED");
+		return 0;
+	}
+	load_fax_settings(&fs);
+	if (!ast_strlen_zero(args.ident))
+		ast_copy_string(fs.ident, args.ident, sizeof(fs.ident));
+	law = channel_law(chan);
+	fmt = law == DMODEM_LAW_ALAW ? ast_format_alaw : ast_format_ulaw;
+	if (ast_channel_state(chan) != AST_STATE_UP && ast_answer(chan))
+		return -1;
+	if (ast_set_read_format(chan, fmt) || ast_set_write_format(chan, fmt)) {
+		ast_log(LOG_WARNING, "%s: cannot set %s\n",
+			ast_channel_name(chan), ast_format_get_name(fmt));
+		pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS", "FAILED");
+		return 0;
+	}
+	return run_fax(chan, fmt, law, dir, args.file, &fs, out);
+}
+
+static int send_exec(struct ast_channel *chan, const char *data)
+{
+	return fax_exec(chan, data, DMODEM_FAX_SEND);
+}
+
+static int recv_exec(struct ast_channel *chan, const char *data)
+{
+	return fax_exec(chan, data, DMODEM_FAX_RECEIVE);
+}
+
 static void load_general(void)
 {
 	struct ast_flags flags = { 0 };
@@ -538,7 +799,10 @@ static void load_general(void)
 
 static int unload_module(void)
 {
-	return ast_unregister_application(app);
+	int r = ast_unregister_application(app);
+	r |= ast_unregister_application(app_send);
+	r |= ast_unregister_application(app_recv);
+	return r;
 }
 
 static int load_module(void)
@@ -548,8 +812,14 @@ static int load_module(void)
 	load_general();
 	/* built out of the tree, the XML documentation is not in Asterisk's:
 	   the text here for "core show application DModem" */
-	if (ast_register_application(app, dmodem_exec, synopsis, descrip))
+	if (ast_register_application(app, dmodem_exec, synopsis, descrip) ||
+	    ast_register_application(app_send, send_exec, send_synopsis,
+				     send_descrip) ||
+	    ast_register_application(app_recv, recv_exec, recv_synopsis,
+				     recv_descrip)) {
+		unload_module();
 		return AST_MODULE_LOAD_DECLINE;
+	}
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
@@ -559,7 +829,7 @@ static int reload_module(void)
 	return 0;
 }
 
-AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Software data modem (BBS, PPP)",
+AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, "Software data modem and fax (BBS, PPP, G3 fax)",
 	.support_level = AST_MODULE_SUPPORT_EXTENDED,
 	.load = load_module,
 	.unload = unload_module,
