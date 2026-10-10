@@ -41,21 +41,21 @@ int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n) { return n; }
 int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n) { return n; }
 
 struct doc {
-	struct tiff_in in;
-	struct tiff_out out;
+	TiffIn in;
+	TiffOut out;
 	int pages;
 };
 
-static int next_page(void *ctx, struct t4_page *p)
+static int next_page(void *ctx, T4Page *p)
 {
 	struct doc *d = static_cast<doc*>(ctx);
-	return tiff_in_page(&d->in, p);
+	return d->in.read_page(p);
 }
 
-static void page_received(void *ctx, struct t4_page *p)
+static void page_received(void *ctx, T4Page *p)
 {
 	struct doc *d = static_cast<doc*>(ctx);
-	tiff_out_page(&d->out, p);
+	d->out.write_page(p);
 	d->pages++;
 }
 
@@ -85,7 +85,7 @@ int main(int argc, char **argv)
 {
 	struct doc tx = { 0 }, rx = { 0 };
 	struct t30_config c = { 0 };
-	struct t30 *a, *b;
+	T30 *a, *b;
 	struct t30_status sa, sb;
 	short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
 	double sigma = 0;
@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "usage: fax_pair <in.tif> <out.tif> [bit/s] [snr]\n");
 		return 2;
 	}
-	if (tiff_in_open(&tx.in, argv[1]) || tiff_out_open(&rx.out, argv[2])) {
+	if (tx.in.open(argv[1]) || rx.out.open(argv[2])) {
 		fprintf(stderr, "cannot open the files\n");
 		return 2;
 	}
@@ -130,8 +130,8 @@ int main(int argc, char **argv)
 		if (sa.result != T30_RUNNING && sb.result != T30_RUNNING)
 			break;
 	}
-	tiff_out_close(&rx.out);
-	tiff_in_close(&tx.in);
+	rx.out.close();
+	tx.in.close();
 	printf("sender: %s, %d pages at %d bit/s, remote '%s'\n",
 	       t30_result_text(sa.result), sa.pages, sa.bps, sa.remote_ident);
 	printf("receiver: %s, %d pages, remote '%s', %.1f s\n",

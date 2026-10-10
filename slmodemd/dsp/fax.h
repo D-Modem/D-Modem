@@ -38,7 +38,7 @@ typedef void (*fax_put_bit_t)(void *ctx, int bit);
 
 #define FAX_MAX_TRN 3100
 
-struct fax_tx {
+struct FaxTx {
 	enum fax_mod mod;
 	int short_train;
 	int srate;
@@ -57,13 +57,18 @@ struct fax_tx {
 	void *ctx;
 	int ending;
 	int done;
+
+	int data_bit();
+	cplx data_symbol();
+	void next_segment(int seg_);
+	void init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t get_bit_, void *ctx_);
+	float sample();
 };
 
-void  fax_tx_init(struct fax_tx *t, enum fax_mod mod, int short_train,
-		  int srate, fax_get_bit_t get_bit, void *ctx);
-float fax_tx_sample(struct fax_tx *t);
 
-struct fax_rx {
+struct FaxRxMemory;
+
+struct FaxRx {
 	enum fax_mod mod;
 	int short_train;
 	int srate;
@@ -108,23 +113,31 @@ struct fax_rx {
 	float zpow, zpow_slow;  /* received data power */
 	fax_put_bit_t put_bit;
 	void *ctx;
+
+	int state_of(cplx z);
+	int point_state(cplx p);
+	cplx ref_point(int k);
+	int make_reference();
+	int init(enum fax_mod mod_, int short_train_, int srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem);
+	void save(FaxRxMemory *mem);
+	void release();
+	void bits_out(int q, int n, int msb_first);
+	void data_symbol();
+	int window_match(int k);
+	void track_alternations(cplx z);
+	void symbol();
+	void sample(float x);
 };
 
 /* what a V.17 short train needs from the previous long train */
-struct fax_rx_memory {
+struct FaxRxMemory {
 	enum fax_mod mod;
 	cplx eq[QAM_MAX_EQ];
 	float agc_gain;
 	int valid;
 };
 
-int  fax_rx_init(struct fax_rx *r, enum fax_mod mod, int short_train,
-		 int srate, fax_put_bit_t put_bit, void *ctx,
-		 const struct fax_rx_memory *mem);
 /* keep the trained equalizer for a later short train */
-void fax_rx_save(struct fax_rx *r, struct fax_rx_memory *mem);
-void fax_rx_free(struct fax_rx *r);
-void fax_rx_sample(struct fax_rx *r, float x);
 
 /* transmit levels (rms) of the fax signals, as the original library's */
 #define FAX_CED_RMS 4525.0f

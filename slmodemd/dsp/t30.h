@@ -41,9 +41,9 @@ struct t30_config {
 	int max_bps;            /* 14400 (V.17), 9600 (V.29), 4800 (V.27) */
 	int srate;              /* sample rate of the audio (8000) */
 	/* sending: the next page, 1; no more, 0 */
-	int  (*next_page)(void *ctx, struct t4_page *page);
+	int  (*next_page)(void *ctx, T4Page *page);
 	/* receiving: a page that came; it stays the caller's to free */
-	void (*page_received)(void *ctx, struct t4_page *page);
+	void (*page_received)(void *ctx, T4Page *page);
 	void *ctx;
 };
 
@@ -56,15 +56,15 @@ struct t30_status {
 	const char *phase;      /* what it is doing, for the log */
 };
 
-struct t30;
+struct T30;
 
-struct t30 *t30_create(const struct t30_config *cfg);
-void t30_free(struct t30 *t);
+T30 *t30_create(const struct t30_config *cfg);
+void t30_free(T30 *t);
 /* audio: n samples in and n out, 16 bit linear */
-void t30_process(struct t30 *t, const short *in, short *out, int n);
-void t30_get_status(struct t30 *t, struct t30_status *s);
+void t30_process(T30 *t, const short *in, short *out, int n);
+void t30_get_status(T30 *t, struct t30_status *s);
 /* the far end hung up */
-void t30_hangup(struct t30 *t);
+void t30_hangup(T30 *t);
 
 } // namespace dsp
 

@@ -17,11 +17,11 @@
 using namespace dsp;
 
 struct dmodem_fax {
-	struct t30 *t30;
+	T30 *t30;
 	enum dmodem_law law;
 	int sending;
-	struct tiff_in in;
-	struct tiff_out out;
+	TiffIn in;
+	TiffOut out;
 	int out_open;
 	int pages_written;
 	int file_error;
@@ -32,23 +32,23 @@ struct dmodem_fax {
 extern int dmodem_g711_decode(int alaw, unsigned char c);
 extern unsigned char dmodem_g711_encode(int alaw, int x);
 
-static int next_page(void *ctx, struct t4_page *p)
+static int next_page(void *ctx, T4Page *p)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
-	return tiff_in_page(&f->in, p) == 1 ? 1 : 0;
+	return f->in.read_page(p) == 1 ? 1 : 0;
 }
 
-static void page_received(void *ctx, struct t4_page *p)
+static void page_received(void *ctx, T4Page *p)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	if (!f->out_open) {
-		if (tiff_out_open(&f->out, f->path)) {
+		if (f->out.open(f->path)) {
 			f->file_error = 1;
 			return;
 		}
 		f->out_open = 1;
 	}
-	if (tiff_out_page(&f->out, p))
+	if (f->out.write_page(p))
 		f->file_error = 1;
 	else
 		f->pages_written++;
@@ -68,7 +68,7 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 	f->law = cfg->law;
 	f->sending = cfg->dir == DMODEM_FAX_SEND;
 	snprintf(f->path, sizeof(f->path), "%s", cfg->file);
-	if (f->sending && tiff_in_open(&f->in, f->path)) {
+	if (f->sending && f->in.open(f->path)) {
 		free(f);
 		return NULL;
 	}
@@ -82,7 +82,7 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 	f->t30 = t30_create(&c);
 	if (!f->t30) {
 		if (f->sending)
-			tiff_in_close(&f->in);
+			f->in.close();
 		free(f);
 		return NULL;
 	}
@@ -140,8 +140,8 @@ void dmodem_fax_destroy(struct dmodem_fax *f)
 		return;
 	t30_free(f->t30);
 	if (f->sending)
-		tiff_in_close(&f->in);
+		f->in.close();
 	if (f->out_open)
-		tiff_out_close(&f->out);
+		f->out.close();
 	free(f);
 }

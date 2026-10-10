@@ -168,72 +168,72 @@ static void trees_build(void)
  *    pages and bit strings
  */
 
-int t4_page_init(struct t4_page *p, int width, int fine)
+int T4Page::init(int width_, int fine_)
 {
-	memset(p, 0, sizeof(*p));
-	p->width = width;
-	p->fine = fine;
+	memset(this, 0, sizeof(*this));
+	width = width_;
+	fine = fine_;
 	return 0;
 }
 
-void t4_page_free(struct t4_page *p)
+void T4Page::release()
 {
-	free(p->bits);
-	p->bits = NULL;
-	p->rows = p->cap = 0;
+	free(bits);
+	bits = NULL;
+	rows = cap = 0;
 }
 
-unsigned char *t4_page_add_row(struct t4_page *p, const unsigned char *row)
+unsigned char *T4Page::add_row(const unsigned char *row)
 {
-	int stride = T4_STRIDE(p->width);
+	int stride = T4_STRIDE(width);
 	unsigned char *r;
-	if (p->rows == p->cap) {
-		int cap = p->cap ? p->cap * 2 : 1200;
-		unsigned char *b = static_cast<unsigned char*>(realloc(p->bits, (size_t)cap * stride));
+	if (rows == cap) {
+		int cap_ = cap ? cap * 2 : 1200;
+		unsigned char *b = static_cast<unsigned char*>(realloc(bits, (size_t)cap_ * stride));
 		if (!b)
 			return NULL;
-		p->bits = b;
-		p->cap = cap;
+		bits = b;
+		cap = cap_;
 	}
-	r = p->bits + (size_t)p->rows * stride;
+	r = bits + (size_t)rows * stride;
 	if (row)
 		memcpy(r, row, stride);
-	else if (p->rows)
+	else if (rows)
 		memcpy(r, r - stride, stride);
 	else
 		memset(r, 0, stride);
-	p->rows++;
+	rows++;
 	return r;
 }
 
-void t4_bits_put(struct t4_bits *b, unsigned code, int len)
+void T4Bits::put(unsigned code, int len)
 {
 	while (len-- > 0) {
-		if (b->n == b->cap * 8) {
-			size_t cap = b->cap ? b->cap * 2 : 4096;
-			unsigned char *nb = static_cast<unsigned char*>(realloc(b->buf, cap));
+		if (n == cap * 8) {
+			size_t cap_ = cap ? cap * 2 : 4096;
+			unsigned char *nb = static_cast<unsigned char*>(realloc(buf, cap_));
 			if (!nb)
 				return;
-			memset(nb + b->cap, 0, cap - b->cap);
-			b->buf = nb;
-			b->cap = cap;
+			memset(nb + cap, 0, cap_ - cap);
+			buf = nb;
+			cap = cap_;
 		}
 		if ((code >> len) & 1)
-			b->buf[b->n >> 3] |= 0x80 >> (b->n & 7);
-		b->n++;
+			buf[n >> 3] |= 0x80 >> (n & 7);
+		n++;
 	}
 }
 
-void t4_bits_free(struct t4_bits *b)
+void T4Bits::release()
 {
-	free(b->buf);
-	memset(b, 0, sizeof(*b));
+	free(buf);
+	memset(this, 0, sizeof(*this));
 }
 
-static void put_code(struct t4_bits *b, const char *bits)
+void T4Bits::put_code(const char *bits)
 {
 	for (; *bits; bits++)
-		t4_bits_put(b, *bits - '0', 1);
+		put(*bits - '0', 1);
 }
 
 static const char *code_of(const struct code *t, int run)
@@ -284,54 +284,53 @@ static void row_from_changes(unsigned char *row, int width, const int *ch,
  *    the MH encoder
  */
 
-static void put_run(struct t4_bits *b, int run, int black)
+void T4Bits::put_run(int run, int black)
 {
 	const struct code *t = black ? black_codes : white_codes;
 	while (run >= 2560) {
-		put_code(b, code_of(ext_codes, 2560));
+		put_code(code_of(ext_codes, 2560));
 		run -= 2560;
 	}
 	if (run >= 64) {
 		int m = run / 64 * 64;
-		put_code(b, m > 1728 ? code_of(ext_codes, m) : code_of(t, m));
+		put_code(m > 1728 ? code_of(ext_codes, m) : code_of(t, m));
 		run -= m;
 	}
-	put_code(b, code_of(t, run));
+	put_code(code_of(t, run));
 }
 
-static void put_eol(struct t4_bits *b, int align)
+void T4Bits::put_eol(int align)
 {
 	if (align)
-		while ((b->n + EOL_BITS) % 8)
-			t4_bits_put(b, 0, 1);
-	t4_bits_put(b, 1, EOL_BITS);
+		while ((n + EOL_BITS) % 8)
+			put(0, 1);
+	put(1, EOL_BITS);
 }
 
-void t4_encode_mh(const struct t4_page *p, struct t4_bits *out,
-		  int min_bits, int align, int rtc)
+void T4Page::encode_mh(T4Bits *out, int min_bits, int align, int rtc) const
 {
-	int stride = T4_STRIDE(p->width), y, k;
-	int *ch = static_cast<int*>(malloc((p->width + 2) * sizeof(int)));
+	int stride = T4_STRIDE(width), y, k;
+	int *ch = static_cast<int*>(malloc((width + 2) * sizeof(int)));
 
 	if (!ch)
 		return;
-	for (y = 0; y < p->rows; y++) {
+	for (y = 0; y < rows; y++) {
 		size_t start = out->n;
 		int n, a0 = 0;
-		put_eol(out, align);
-		n = row_changes(p->bits + (size_t)y * stride, p->width, ch);
+		out->put_eol(align);
+		n = row_changes(bits + (size_t)y * stride, width, ch);
 		for (k = 0; k <= n; k++) {
-			int end = k < n ? ch[k] : p->width;
-			put_run(out, end - a0, k & 1);
+			int end = k < n ? ch[k] : width;
+			out->put_run(end - a0, k & 1);
 			a0 = end;
 		}
 		/* fill up to the minimum line time (counted from the EOL) */
 		while (out->n - start < (size_t)min_bits)
-			t4_bits_put(out, 0, 1);
+			out->put(0, 1);
 	}
 	if (rtc)
 		for (k = 0; k < 6; k++)
-			put_eol(out, align);
+			out->put_eol(align);
 	free(ch);
 }
 
@@ -340,28 +339,34 @@ void t4_encode_mh(const struct t4_page *p, struct t4_bits *out,
  *    decoders
  */
 
-struct reader {
+struct T4Reader {
 	const unsigned char *data;
 	size_t pos, end;                /* bits */
 	int msb_first;
+
+	int bit();
+	int code(const struct tree *t);
+	int run_length(int black);
+	int decode_1d(int width, int *ch);
+	int decode_2d(int width, const int *ref, int nref, int *ch);
 };
 
-static int rd_bit(struct reader *r)
+int T4Reader::bit()
 {
 	int b;
-	if (r->pos >= r->end)
+	if (pos >= end)
 		return -1;
-	b = r->data[r->pos >> 3];
-	b = r->msb_first ? b >> (7 - (r->pos & 7)) : b >> (r->pos & 7);
-	r->pos++;
+	b = data[pos >> 3];
+	b = msb_first ? b >> (7 - (pos & 7)) : b >> (pos & 7);
+	pos++;
 	return b & 1;
 }
 
-static int rd_code(struct reader *r, const struct tree *t)
+int T4Reader::code(const struct tree *t)
 {
 	int node = 0, b;
 	do {
-		if ((b = rd_bit(r)) < 0)
+		if ((b = bit()) < 0)
 			return -1;
 		node = t->next[node][b];
 		if (!node)
@@ -371,12 +376,12 @@ static int rd_code(struct reader *r, const struct tree *t)
 }
 
 /* a run of one colour: make-up codes, then a terminating one */
-static int rd_run(struct reader *r, int black)
+int T4Reader::run_length(int black)
 {
 	const struct tree *t = black ? &black_tree : &white_tree;
 	int run = 0, v;
 	do {
-		v = rd_code(r, t);
+		v = code(t);
 		if (v < 0)
 			return v;
 		run += v;
@@ -385,11 +390,11 @@ static int rd_run(struct reader *r, int black)
 }
 
 /* one MH row into ch; the number of changes, -1 on an error */
-static int decode_1d(struct reader *r, int width, int *ch)
+int T4Reader::decode_1d(int width, int *ch)
 {
 	int x = 0, n = 0, black = 0, run;
 	while (x < width) {
-		run = rd_run(r, black);
+		run = run_length(black);
 		if (run < 0)
 			return -1;
 		x += run;
@@ -405,8 +410,7 @@ static int decode_1d(struct reader *r, int width, int *ch)
 
 /* one row two dimensionally, against the nref changes of the row above
    (ref[nref], ref[nref + 1] are the width) */
-static int decode_2d(struct reader *r, int width, const int *ref, int nref,
-		     int *ch)
+int T4Reader::decode_2d(int width, const int *ref, int nref, int *ch)
 {
 	int a0 = -1, colour = 0, n = 0, b1, b2, i, mode;
 
@@ -418,7 +422,7 @@ static int decode_2d(struct reader *r, int width, const int *ref, int nref,
 				break;
 		b1 = i < nref ? ref[i] : width;
 		b2 = i + 1 < nref ? ref[i + 1] : width;
-		mode = rd_code(r, &mode_tree);
+		mode = code(&mode_tree);
 		if (mode < 0)
 			return -1;
 		if (mode == M_PASS) {
@@ -427,8 +431,8 @@ static int decode_2d(struct reader *r, int width, const int *ref, int nref,
 			a0 = b2;
 		} else if (mode == M_HORIZ) {
 			int x = a0 < 0 ? 0 : a0, r1, r2;
-			r1 = rd_run(r, colour);
-			r2 = r1 < 0 ? -1 : rd_run(r, !colour);
+			r1 = run_length(colour);
+			r2 = r1 < 0 ? -1 : run_length(!colour);
 			if (r1 < 0 || r2 < 0 || x + r1 + r2 > width)
 				return -1;
 			ch[n++] = x + r1;
@@ -457,112 +461,112 @@ static int decode_2d(struct reader *r, int width, const int *ref, int nref,
  *    receiving, bit by bit, with EOLs
  */
 
-void t4_rx_init(struct t4_rx *r, struct t4_page *page, int mr)
+void T4Rx::init(T4Page *page_, int mr_)
 {
 	pthread_once(&trees_once, trees_build);
-	memset(r, 0, sizeof(*r));
-	r->page = page;
-	r->width = page->width;
-	r->mr = mr;
-	r->ref = static_cast<unsigned char*>(calloc(1, T4_STRIDE(r->width)));
+	memset(this, 0, sizeof(*this));
+	page = page_;
+	width = page_->width;
+	mr = mr_;
+	ref = static_cast<unsigned char*>(calloc(1, T4_STRIDE(width)));
 }
 
-void t4_rx_free(struct t4_rx *r)
+void T4Rx::release()
 {
-	t4_bits_free(&r->line);
-	free(r->ref);
-	r->ref = NULL;
+	line.release();
+	free(ref);
+	ref = NULL;
 }
 
-static int line_empty(const struct t4_bits *b)
+int T4Bits::line_empty() const
 {
 	size_t k;
-	for (k = 0; k < (b->n + 7) / 8; k++)
-		if (b->buf[k])
+	for (k = 0; k < (n + 7) / 8; k++)
+		if (buf[k])
 			return 0;
 	return 1;
 }
 
 /* the bits of a row, between two EOLs */
-static void rx_row(struct t4_rx *r, int two_d)
+void T4Rx::row(int two_d)
 {
-	int w = r->width, n, nref;
-	int *ch = static_cast<int*>(malloc((w + 4) * sizeof(int))), *ref = NULL;
-	struct reader rd = { r->line.buf, 0, r->line.n, 1 };
+	int w = width, n, nref;
+	int *ch = static_cast<int*>(malloc((w + 4) * sizeof(int))), *ref_ = NULL;
+	T4Reader rd = { line.buf, 0, line.n, 1 };
 	unsigned char *row;
 
 	if (!ch)
 		return;
 	if (two_d) {
-		ref = static_cast<int*>(malloc((w + 4) * sizeof(int)));
-		nref = row_changes(r->ref, w, ref);
-		n = ref ? decode_2d(&rd, w, ref, nref, ch) : -1;
+		ref_ = static_cast<int*>(malloc((w + 4) * sizeof(int)));
+		nref = row_changes(ref, w, ref_);
+		n = ref_ ? rd.decode_2d(w, ref_, nref, ch) : -1;
 	} else {
-		n = decode_1d(&rd, w, ch);
+		n = rd.decode_1d(w, ch);
 	}
 	if (n < 0) {
 		/* a bad row: the one above again */
-		r->page->bad_rows++;
-		t4_page_add_row(r->page, r->page->rows ? NULL : r->ref);
+		page->bad_rows++;
+		page->add_row(page->rows ? NULL : ref);
 	} else {
-		row = t4_page_add_row(r->page, NULL);
+		row = page->add_row(NULL);
 		if (row) {
 			row_from_changes(row, w, ch, n);
-			memcpy(r->ref, row, T4_STRIDE(w));
+			memcpy(ref, row, T4_STRIDE(w));
 		}
 	}
 	free(ch);
-	free(ref);
+	free(ref_);
 }
 
-int t4_rx_bit(struct t4_rx *r, int bit)
+int T4Rx::bit(int bit)
 {
-	if (r->done)
+	if (done)
 		return 1;
-	if (r->tag_pending) {
+	if (tag_pending) {
 		/* MR: after the EOL, 1 for a one dimensional row */
-		r->tag_pending = 0;
-		r->next_2d = !bit;
+		tag_pending = 0;
+		next_2d = !bit;
 		return 0;
 	}
 	if (!bit) {
-		r->zeros++;
-		t4_bits_put(&r->line, 0, 1);
+		zeros++;
+		line.put(0, 1);
 		return 0;
 	}
-	if (r->zeros >= EOL_BITS - 1) {
+	if (zeros >= EOL_BITS - 1) {
 		/* an EOL: the row before it is complete (the zeros before
 		   it stay: the last code of the row may end in some, and the
 		   decoder stops at the width) */
-		if (r->started && r->line.n && !line_empty(&r->line)) {
-			rx_row(r, r->mr && r->next_2d);
-			r->eols = 1;
+		if (started && line.n && !line.line_empty()) {
+			row(mr && next_2d);
+			eols = 1;
 		} else {
-			r->eols++;
+			eols++;
 		}
-		memset(r->line.buf, 0, r->line.cap);
-		r->line.n = 0;
-		r->started = 1;
-		r->zeros = 0;
-		if (r->mr)
-			r->tag_pending = 1;
-		if (r->eols >= 6) {             /* RTC */
-			r->done = 1;
+		memset(line.buf, 0, line.cap);
+		line.n = 0;
+		started = 1;
+		zeros = 0;
+		if (mr)
+			tag_pending = 1;
+		if (eols >= 6) {             /* RTC */
+			done = 1;
 			return 1;
 		}
 		return 0;
 	}
-	r->zeros = 0;
-	if (r->started)
-		t4_bits_put(&r->line, 1, 1);
+	zeros = 0;
+	if (started)
+		line.put(1, 1);
 	return 0;
 }
 
-void t4_rx_end(struct t4_rx *r)
+void T4Rx::end()
 {
-	if (!r->done && r->started && r->line.n && !line_empty(&r->line))
-		rx_row(r, r->mr && r->next_2d);
-	r->done = 1;
+	if (!done && started && line.n && !line.line_empty())
+		row(mr && next_2d);
+	done = 1;
 }
 
 
@@ -570,25 +574,24 @@ void t4_rx_end(struct t4_rx *r)
  *    whole pages from a buffer (TIFF)
  */
 
-int t4_decode(struct t4_page *p, const unsigned char *data, size_t len,
-	      int compression, int t4opts, int msb_first, int rows)
+int T4Page::decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, int rows_)
 {
-	int w = p->width, n, nref, y = 0;
+	int w = width, n, nref, y = 0;
 	int *ch, *ref;
 	unsigned char *row;
-	struct reader rd = { data, 0, len * 8, msb_first };
+	T4Reader rd = { data, 0, len * 8, msb_first };
 
 	pthread_once(&trees_once, trees_build);
 	if (compression == 3) {
 		/* with EOLs: as on the line */
-		struct t4_rx rx;
+		T4Rx rx;
 		size_t i;
-		t4_rx_init(&rx, p, t4opts & 1);
-		for (i = 0; i < rd.end && (!rows || p->rows < rows); i++)
-			if (t4_rx_bit(&rx, rd_bit(&rd)))
+		rx.init(this, t4opts & 1);
+		for (i = 0; i < rd.end && (!rows_ || rows < rows_); i++)
+			if (rx.bit(rd.bit()))
 				break;
-		t4_rx_end(&rx);
-		t4_rx_free(&rx);
+		rx.end();
+		rx.release();
 		return 0;
 	}
 	ch = static_cast<int*>(malloc((w + 4) * sizeof(int)));
@@ -600,16 +603,16 @@ int t4_decode(struct t4_page *p, const unsigned char *data, size_t len,
 	}
 	ref[0] = ref[1] = w;            /* white above the first row */
 	nref = 0;
-	while (!rows || y < rows) {
+	while (!rows_ || y < rows_) {
 		if (compression == 2) {
-			n = decode_1d(&rd, w, ch);
+			n = rd.decode_1d(w, ch);
 			rd.pos = (rd.pos + 7) / 8 * 8;  /* rows byte aligned */
 		} else {
-			n = decode_2d(&rd, w, ref, nref, ch);
+			n = rd.decode_2d(w, ref, nref, ch);
 		}
 		if (n < 0)
 			break;                  /* the end (EOFB) or an error */
-		row = t4_page_add_row(p, NULL);
+		row = add_row(NULL);
 		if (!row)
 			break;
 		row_from_changes(row, w, ch, n);

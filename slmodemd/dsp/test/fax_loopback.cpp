@@ -72,31 +72,31 @@ static float noise;
 
 /* one transmission; returns 0 when all bits arrived intact */
 static int run(enum fax_mod mod, int short_train, int srate, int code,
-	       struct fax_rx_memory *mem)
+	       FaxRxMemory *mem)
 {
-	struct fax_tx tx;
-	struct fax_rx rx;
+	FaxTx tx;
+	FaxRx rx;
 	float delay[64] = { 0 };
 	long n, best = -1, err = 0, i, off;
 
 	ntx = nrx = 0;
-	fax_tx_init(&tx, mod, short_train, srate, get_bit, NULL);
-	if (fax_rx_init(&rx, mod, short_train, srate, put_bit, NULL, mem))
+	tx.init(mod, short_train, srate, get_bit, NULL);
+	if (rx.init(mod, short_train, srate, put_bit, NULL, mem))
 		return 2;
 	/* a little silence, the signal, silence */
 	for (n = 0; n < srate * 120L; n++) {
-		float y = n > srate / 10 ? fax_tx_sample(&tx) : 0;
+		float y = n > srate / 10 ? tx.sample() : 0;
 		float x = delay[n & 63];
 		delay[n & 63] = y;
 		x = tilt.run(x) * 0.5f + noise * gauss();
-		{ int oc = rx.carrier; fax_rx_sample(&rx, x);
+		{ int oc = rx.carrier; rx.sample(x);
 		  if (getenv("TRACE_CD") && oc != rx.carrier)
 			fprintf(stderr, "%.3f carrier %d det %.0f level %.0f floor %.0f\n", (double)n / srate, rx.carrier, rx.det_pwr, rx.det_level, rx.det_floor); }
 		if (tx.done && n % srate == 0 && !rx.carrier)
 			break;
 	}
-	fax_rx_save(&rx, mem);
-	fax_rx_free(&rx);
+	rx.save(mem);
+	rx.release();
 	/* the offset with the fewest errors in the first 256 bits */
 	for (off = 0, err = 64; off < 200 && off + 256 <= nrx; off++) {
 		long e = 0;
@@ -130,7 +130,7 @@ int main(int argc, char **argv)
 	int srate = argc > 4 ? atoi(argv[4]) : 9600;
 	enum fax_mod mod;
 	int short_train, ret = 0;
-	struct fax_rx_memory mem;
+	FaxRxMemory mem;
 
 	maxbits = argc > 3 ? atol(argv[3]) : 20000;
 	if (getenv("DSP_DEBUG"))

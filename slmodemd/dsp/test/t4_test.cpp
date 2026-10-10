@@ -14,7 +14,7 @@
 
 using namespace dsp;
 
-static void set(struct t4_page *p, int x, int y)
+static void set(T4Page *p, int x, int y)
 {
 	if (x >= 0 && x < p->width && y >= 0 && y < p->rows)
 		p->bits[(size_t)y * T4_STRIDE(p->width) + (x >> 3)] |= 0x80 >> (x & 7);
@@ -24,13 +24,13 @@ static void set(struct t4_page *p, int x, int y)
    checkerboard, single pels, runs reaching the edges */
 static int letters = 4000;
 
-static void test_page(struct t4_page *p, int fine, int seed)
+static void test_page(T4Page *p, int fine, int seed)
 {
 	int y, x, k, rows = fine ? 2200 : 1100;
 	srand(seed);
-	t4_page_init(p, T4_WIDTH, fine);
+	p->init(T4_WIDTH, fine);
 	for (y = 0; y < rows; y++)
-		t4_page_add_row(p, NULL);
+		p->add_row(NULL);
 	for (k = 0; k < letters; k++) {         /* "letters" */
 		int x0 = rand() % T4_WIDTH, y0 = rand() % rows;
 		int w = 2 + rand() % 18, h = 2 + rand() % 30;
@@ -55,17 +55,17 @@ static void test_page(struct t4_page *p, int fine, int seed)
 
 static int compare(const char *a, const char *b)
 {
-	struct tiff_in ta, tb;
-	struct t4_page pa, pb;
+	TiffIn ta, tb;
+	T4Page pa, pb;
 	int n = 0, bad = 0, ra, rb;
 
-	if (tiff_in_open(&ta, a) || tiff_in_open(&tb, b)) {
+	if (ta.open(a) || tb.open(b)) {
 		fprintf(stderr, "cannot open\n");
 		return 2;
 	}
 	for (;;) {
-		ra = tiff_in_page(&ta, &pa);
-		rb = tiff_in_page(&tb, &pb);
+		ra = ta.read_page(&pa);
+		rb = tb.read_page(&pb);
 		if (ra != 1 || rb != 1)
 			break;
 		n++;
@@ -92,16 +92,16 @@ static int compare(const char *a, const char *b)
 			       n, pa.rows, pb.rows, pa.fine, pb.fine, diff);
 			bad++;
 		}
-		t4_page_free(&pa);
-		t4_page_free(&pb);
+		pa.release();
+		pb.release();
 	}
 	if (ra != rb) {
 		printf("page counts differ (%d %d)\n", ra, rb);
 		bad++;
 	}
 	printf("%d pages compared: %s\n", n, bad ? "FAIL" : "PASS");
-	tiff_in_close(&ta);
-	tiff_in_close(&tb);
+	ta.close();
+	tb.close();
 	return bad ? 1 : 0;
 }
 
@@ -112,17 +112,17 @@ int main(int argc, char **argv)
 		argv[1] = const_cast<char *>("write");
 	}
 	if (argc == 3 && !strcmp(argv[1], "write")) {
-		struct tiff_out t;
-		struct t4_page p;
-		if (tiff_out_open(&t, argv[2]))
+		TiffOut t;
+		T4Page p;
+		if (t.open(argv[2]))
 			return 2;
 		test_page(&p, 0, 1);
-		tiff_out_page(&t, &p);
-		t4_page_free(&p);
+		t.write_page(&p);
+		p.release();
 		test_page(&p, 1, 2);
-		tiff_out_page(&t, &p);
-		t4_page_free(&p);
-		return tiff_out_close(&t) ? 2 : 0;
+		t.write_page(&p);
+		p.release();
+		return t.close() ? 2 : 0;
 	}
 	if (argc == 4 && !strcmp(argv[1], "compare"))
 		return compare(argv[2], argv[3]);

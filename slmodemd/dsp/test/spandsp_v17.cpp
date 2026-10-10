@@ -78,10 +78,10 @@ static void put_bit(void *ctx, int bit)
 
 static int ulaw;
 
-static int run(int bps, int short_train, struct fax_rx_memory *mem)
+static int run(int bps, int short_train, FaxRxMemory *mem)
 {
 	void *tx;
-	struct fax_rx rx;
+	FaxRx rx;
 	enum fax_mod mod;
 	int st;
 	long n, i, off, best = -1000, err = 64;
@@ -99,7 +99,7 @@ static int run(int bps, int short_train, struct fax_rx_memory *mem)
 			  bps == 9600 ? (short_train ? 98 : 97) :
 			  (short_train ? 74 : 73), &mod, &st);
 	tx = sp_v17_tx(bps, short_train, get_bit, NULL);
-	if (fax_rx_init(&rx, mod, short_train, 8000, put_bit, NULL, mem))
+	if (rx.init(mod, short_train, 8000, put_bit, NULL, mem))
 		return 2;
 	/* silence, the signal, silence */
 	for (n = 0; n < 8000L * 120 / 160; n++) {
@@ -110,13 +110,13 @@ static int run(int bps, int short_train, struct fax_rx_memory *mem)
 			int x = amp[k];
 			if (ulaw)
 				x = sp_ulaw(x);
-			fax_rx_sample(&rx, x);
+			rx.sample(x);
 		}
 		if (len < 160 && n > 5 && !rx.carrier)
 			break;
 	}
-	fax_rx_save(&rx, mem);
-	fax_rx_free(&rx);
+	rx.save(mem);
+	rx.release();
 	sp_v17_free(tx);
 	/* aligned on bits a little in (ALIGN_AT): the start may be lost */
 	long at = getenv("ALIGN_AT") ? atol(getenv("ALIGN_AT")) : 0;
@@ -159,7 +159,7 @@ static int run(int bps, int short_train, struct fax_rx_memory *mem)
 int main(int argc, char **argv)
 {
 	int bps = argc > 1 ? atoi(argv[1]) : 14400, r;
-	struct fax_rx_memory mem;
+	FaxRxMemory mem;
 
 	maxbits = argc > 2 ? atol(argv[2]) : 200000;
 	ulaw = argc > 3 ? atoi(argv[3]) : 1;

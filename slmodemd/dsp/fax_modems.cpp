@@ -252,60 +252,60 @@ static int v29_trn_bit(unsigned *reg)
  *    transmitter
  */
 
-static int tx_data_bit(struct fax_tx *t)
+int FaxTx::data_bit()
 {
 	int b;
-	if (t->seg != SEG_DATA)
+	if (seg != SEG_DATA)
 		return 1;
-	b = t->get_bit(t->ctx);
+	b = get_bit(ctx);
 	if (b == FAX_BIT_END) {
-		t->ending = 1;
+		ending = 1;
 		return 1;
 	}
 	return b & 1;
 }
 
-static cplx tx_data_symbol(struct fax_tx *t)
+cplx FaxTx::data_symbol()
 {
-	int n = data_bits(t->mod), q = 0, k, amp = 0, bits;
+	int n = data_bits(mod), q = 0, k, amp = 0, bits;
 
-	if (is_v17(t->mod)) {
+	if (is_v17(mod)) {
 		for (k = 0; k < n; k++)
-			q |= scr23(&t->scr, tx_data_bit(t)) << k;
-		return v17_points(t->mod)[t->trellis.encode(q, n)];
+			q |= scr23(&scr, data_bit()) << k;
+		return v17_points(mod)[trellis.encode(q, n)];
 	}
-	if (is_v29(t->mod)) {
-		if (t->mod == FM_V29_9600 && scr23(&t->scr, tx_data_bit(t)))
+	if (is_v29(mod)) {
+		if (mod == FM_V29_9600 && scr23(&scr, data_bit()))
 			amp = 8;
-		bits = scr23(&t->scr, tx_data_bit(t));
-		bits = (bits << 1) | scr23(&t->scr, tx_data_bit(t));
-		if (t->mod == FM_V29_4800)
+		bits = scr23(&scr, data_bit());
+		bits = (bits << 1) | scr23(&scr, data_bit());
+		if (mod == FM_V29_4800)
 			bits = steps_4[bits];
 		else
-			bits = steps_8[(bits << 1) | scr23(&t->scr, tx_data_bit(t))];
-		t->state = (t->state + bits) & 7;
-		return v29_points[amp | t->state];
+			bits = steps_8[(bits << 1) | scr23(&scr, data_bit())];
+		state = (state + bits) & 7;
+		return v29_points[amp | state];
 	}
 	/* V.27ter */
-	bits = scr7(&t->scr, &t->scr_count, tx_data_bit(t));
-	bits = (bits << 1) | scr7(&t->scr, &t->scr_count, tx_data_bit(t));
-	if (t->mod == FM_V27_4800)
-		bits = steps_8[(bits << 1) | scr7(&t->scr, &t->scr_count, tx_data_bit(t))];
+	bits = scr7(&scr, &scr_count, data_bit());
+	bits = (bits << 1) | scr7(&scr, &scr_count, data_bit());
+	if (mod == FM_V27_4800)
+		bits = steps_8[(bits << 1) | scr7(&scr, &scr_count, data_bit())];
 	else
 		bits = steps_4[bits];
-	t->state = (t->state + bits) & 7;
-	return v27_points[t->state];
+	state = (state + bits) & 7;
+	return v27_points[state];
 }
 
-static void tx_next_seg(struct fax_tx *t, int seg)
+void FaxTx::next_segment(int seg_)
 {
-	t->seg = seg;
-	t->seg_sym = 0;
+	seg = seg_;
+	seg_sym = 0;
 }
 
 static cplx fax_tx_symbol(void *ctx)
 {
-	struct fax_tx *t = static_cast<fax_tx*>(ctx);
+	FaxTx *t = static_cast<FaxTx*>(ctx);
 	cplx z = { 0, 0 };
 	int b1, b2, off, shift;
 
@@ -313,43 +313,43 @@ static cplx fax_tx_symbol(void *ctx)
 	switch (t->seg) {
 	case SEG_CARRIER:
 		if (t->seg_sym >= 320)
-			tx_next_seg(t, SEG_SILENCE);
+			t->next_segment(SEG_SILENCE);
 		break;
 	case SEG_SILENCE:
 		if (t->seg_sym >= (is_v27(t->mod) ? 32 : 48))
-			tx_next_seg(t, is_v27(t->mod) ? SEG_REVERSALS : SEG_ABAB);
+			t->next_segment(is_v27(t->mod) ? SEG_REVERSALS : SEG_ABAB);
 		break;
 	case SEG_REVERSALS:
 		if (t->seg_sym >= 50)
-			tx_next_seg(t, SEG_TRN);
+			t->next_segment(SEG_TRN);
 		break;
 	case SEG_ABAB:
 		if (t->seg_sym >= (is_v17(t->mod) ? 256 : 128))
-			tx_next_seg(t, SEG_TRN);
+			t->next_segment(SEG_TRN);
 		break;
 	case SEG_TRN:
 		if (t->seg_sym >= trn_len(t->mod, t->short_train))
-			tx_next_seg(t, is_v17(t->mod) ? SEG_BRIDGE : SEG_ONES);
+			t->next_segment(is_v17(t->mod) ? SEG_BRIDGE : SEG_ONES);
 		break;
 	case SEG_BRIDGE:
 		if (t->seg_sym >= 64)
-			tx_next_seg(t, SEG_ONES);
+			t->next_segment(SEG_ONES);
 		break;
 	case SEG_ONES:
 		if (t->seg_sym >= ones_len(t->mod))
-			tx_next_seg(t, SEG_DATA);
+			t->next_segment(SEG_DATA);
 		break;
 	case SEG_DATA:
 		if (t->ending)
-			tx_next_seg(t, SEG_SHUTDOWN);
+			t->next_segment(SEG_SHUTDOWN);
 		break;
 	case SEG_SHUTDOWN:
 		if (t->seg_sym >= 32)
-			tx_next_seg(t, SEG_TAIL);
+			t->next_segment(SEG_TAIL);
 		break;
 	case SEG_TAIL:
 		if (t->seg_sym >= 48) {
-			tx_next_seg(t, SEG_DONE);
+			t->next_segment(SEG_DONE);
 			t->done = 1;
 		}
 		break;
@@ -396,7 +396,7 @@ static cplx fax_tx_symbol(void *ctx)
 	case SEG_ONES:
 	case SEG_DATA:
 	case SEG_SHUTDOWN:
-		z = tx_data_symbol(t);
+		z = t->data_symbol();
 		break;
 	default:
 		break;
@@ -405,62 +405,61 @@ static cplx fax_tx_symbol(void *ctx)
 	return z;
 }
 
-void fax_tx_init(struct fax_tx *t, enum fax_mod mod, int short_train,
-		 int srate, fax_get_bit_t get_bit, void *ctx)
+void FaxTx::init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t get_bit_, void *ctx_)
 {
-	memset(t, 0, sizeof(*t));
-	t->mod = mod;
-	t->short_train = short_train;
-	t->srate = srate;
-	t->get_bit = get_bit;
-	t->ctx = ctx;
-	if (mod == FM_V21) {
-		t->fsk.init(1650, 1850, fax_tx_rms(mod) * 1.41421f, srate);
-		t->bit_inc = 300.0f / srate;
-		t->fsk_bit = 1;
-		t->seg = SEG_DATA;
+	memset(this, 0, sizeof(*this));
+	mod = mod_;
+	short_train = short_train_;
+	srate = srate_;
+	get_bit = get_bit_;
+	ctx = ctx_;
+	if (mod_ == FM_V21) {
+		fsk.init(1650, 1850, fax_tx_rms(mod_) * 1.41421f, srate_);
+		bit_inc = 300.0f / srate_;
+		fsk_bit = 1;
+		seg = SEG_DATA;
 		return;
 	}
-	t->qam.init(srate, mod_carrier(mod), mod_baud(mod),
-		    mod_alpha(mod), 6, sqrtf(mod_power(mod)),
-		    fax_tx_rms(mod) * 1.41421f);
+	qam.init(srate_, mod_carrier(mod_), mod_baud(mod_),
+		    mod_alpha(mod_), 6, sqrtf(mod_power(mod_)),
+		    fax_tx_rms(mod_) * 1.41421f);
 	/* the receivers of the original library want the symbols at this
 	   phase of the sample clock (as with V.32) */
-	t->qam.t = is_v17(mod) ? 0.25f : 0.5f;
-	t->qam.get_symbol = fax_tx_symbol;
-	t->qam.ctx = t;
-	if (is_v17(mod)) {
-		t->scr = 0x2ECDD5;
-		t->trellis.diff = short_train ? 0 : 1;
-		t->seg = SEG_ABAB;
-	} else if (is_v29(mod)) {
-		t->tscr = 0x2A;
-		t->seg = SEG_SILENCE;
+	qam.t = is_v17(mod_) ? 0.25f : 0.5f;
+	qam.get_symbol = fax_tx_symbol;
+	qam.ctx = this;
+	if (is_v17(mod_)) {
+		scr = 0x2ECDD5;
+		trellis.diff = short_train_ ? 0 : 1;
+		seg = SEG_ABAB;
+	} else if (is_v29(mod_)) {
+		tscr = 0x2A;
+		seg = SEG_SILENCE;
 	} else {
-		t->scr = 0x3C;
-		t->seg = SEG_CARRIER;
+		scr = 0x3C;
+		seg = SEG_CARRIER;
 	}
 }
 
-float fax_tx_sample(struct fax_tx *t)
+float FaxTx::sample()
 {
-	if (t->done)
+	if (done)
 		return 0;
-	if (t->mod == FM_V21) {
-		t->bit_phase += t->bit_inc;
-		if (t->bit_phase >= 1) {
+	if (mod == FM_V21) {
+		bit_phase += bit_inc;
+		if (bit_phase >= 1) {
 			int b;
-			t->bit_phase -= 1;
-			b = t->get_bit(t->ctx);
+			bit_phase -= 1;
+			b = get_bit(ctx);
 			if (b == FAX_BIT_END) {
-				t->done = 1;
+				done = 1;
 				return 0;
 			}
-			t->fsk_bit = b & 1;
+			fsk_bit = b & 1;
 		}
-		return t->fsk.next(t->fsk_bit);
+		return fsk.next(fsk_bit);
 	}
-	return t->qam.sample();
+	return qam.sample();
 }
 
 
@@ -474,9 +473,9 @@ enum {
 	RXS_DATA,
 };
 
-static int state_of(struct fax_rx *r, cplx z)
+int FaxRx::state_of(cplx z)
 {
-	if (is_v17(r->mod)) {
+	if (is_v17(mod)) {
 		int k, best = 0;
 		float bd = 1e30f;
 		for (k = 0; k < 4; k++) {
@@ -492,20 +491,20 @@ static int state_of(struct fax_rx *r, cplx z)
 }
 
 /* the absolute phase state of a training point */
-static int point_state(struct fax_rx *r, cplx p)
+int FaxRx::point_state(cplx p)
 {
-	return state_of(r, p);
+	return state_of(p);
 }
 
-static cplx ref_point(struct fax_rx *r, int k)
+cplx FaxRx::ref_point(int k)
 {
-	int s = r->ref[k];
-	if (is_v17(r->mod))
+	int s = ref[k];
+	if (is_v17(mod))
 		return v32_abcd[s];
-	if (is_v29(r->mod)) {
+	if (is_v29(mod)) {
 		/* the C/D points of this rate */
-		int off = v29_offset(r->mod);
-		return s == point_state(r, v29_cdcd[off]) ?
+		int off = v29_offset(mod);
+		return s == point_state(v29_cdcd[off]) ?
 			v29_cdcd[off] : v29_cdcd[off + 1];
 	}
 	return v27_points[s];
@@ -513,133 +512,131 @@ static cplx ref_point(struct fax_rx *r, int k)
 
 /* the training symbols as phase states, and the scrambler state at the
    start of the data path */
-static int make_reference(struct fax_rx *r)
+int FaxRx::make_reference()
 {
-	int n = trn_len(r->mod, r->short_train), k, b1, b2, shift, state = 0;
-	unsigned scr = 0, tscr = 0x2A;
+	int n = trn_len(mod, short_train), k, b1, b2, shift, state_ = 0;
+	unsigned scr_ = 0, tscr = 0x2A;
 	int count = 0;
-	signed char *ref;
+	signed char *ref_;
 
-	if (is_v17(r->mod))
+	if (is_v17(mod))
 		n += 64;                /* the bridge is known as well */
-	ref = r->ref = static_cast<signed char*>(malloc(n));
-	if (!ref)
+	ref_ = ref = static_cast<signed char*>(malloc(n));
+	if (!ref_)
 		return -1;
-	r->ref_len = n;
-	if (is_v17(r->mod)) {
-		scr = 0x2ECDD5;
+	ref_len = n;
+	if (is_v17(mod)) {
+		scr_ = 0x2ECDD5;
 		for (k = 0; k < n; k++) {
-			if (k < trn_len(r->mod, r->short_train)) {
-				b1 = scr23(&scr, 1);
-				b2 = scr23(&scr, 1);
-				state = cdba_to_abcd[b1 << 1 | b2];
+			if (k < trn_len(mod, short_train)) {
+				b1 = scr23(&scr_, 1);
+				b2 = scr23(&scr_, 1);
+				state_ = cdba_to_abcd[b1 << 1 | b2];
 			} else {
-				shift = ((k - trn_len(r->mod, r->short_train)) & 7) << 1;
-				b1 = scr23(&scr, V17_BRIDGE_WORD >> shift);
-				b2 = scr23(&scr, V17_BRIDGE_WORD >> (shift + 1));
-				state = (state + dibit_to_step[b1 << 1 | b2]) & 3;
+				shift = ((k - trn_len(mod, short_train)) & 7) << 1;
+				b1 = scr23(&scr_, V17_BRIDGE_WORD >> shift);
+				b2 = scr23(&scr_, V17_BRIDGE_WORD >> (shift + 1));
+				state_ = (state_ + dibit_to_step[b1 << 1 | b2]) & 3;
 			}
-			ref[k] = state;
+			ref_[k] = state_;
 		}
-		r->scr = scr;
-	} else if (is_v29(r->mod)) {
-		int off = v29_offset(r->mod);
+		scr = scr_;
+	} else if (is_v29(mod)) {
+		int off = v29_offset(mod);
 		for (k = 0; k < n; k++)
-			ref[k] = point_state(r, v29_cdcd[off + v29_trn_bit(&tscr)]);
-		r->scr = 0;
+			ref_[k] = point_state(v29_cdcd[off + v29_trn_bit(&tscr)]);
+		scr = 0;
 	} else {
 		/* the regular reversals leave the state at 50 * 4 = 0 mod 8 */
-		scr = 0x3C;
+		scr_ = 0x3C;
 		for (k = 0; k < n; k++) {
-			b1 = scr7(&scr, &count, 1);
-			scr7(&scr, &count, 1);
-			scr7(&scr, &count, 1);
-			state = (state + (b1 << 2)) & 7;
-			ref[k] = state;
+			b1 = scr7(&scr_, &count, 1);
+			scr7(&scr_, &count, 1);
+			scr7(&scr_, &count, 1);
+			state_ = (state_ + (b1 << 2)) & 7;
+			ref_[k] = state_;
 		}
-		r->scr = scr;
-		r->scr_count = count;
+		scr = scr_;
+		scr_count = count;
 	}
 	return 0;
 }
 
-int fax_rx_init(struct fax_rx *r, enum fax_mod mod, int short_train,
-		int srate, fax_put_bit_t put_bit, void *ctx,
-		const struct fax_rx_memory *mem)
+int FaxRx::init(enum fax_mod mod_, int short_train_, int srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem)
 {
-	memset(r, 0, sizeof(*r));
-	r->mod = mod;
-	r->short_train = short_train;
-	r->srate = srate;
-	r->put_bit = put_bit;
-	r->ctx = ctx;
-	if (mod == FM_V21) {
-		r->fsk.init(1650, 1850, 300, srate);
+	memset(this, 0, sizeof(*this));
+	mod = mod_;
+	short_train = short_train_;
+	srate = srate_;
+	put_bit = put_bit_;
+	ctx = ctx_;
+	if (mod_ == FM_V21) {
+		fsk.init(1650, 1850, 300, srate_);
 		return 0;
 	}
-	if (r->qam.init(srate, mod_carrier(mod), mod_baud(mod),
-			mod_alpha(mod), 6, 32, mod_power(mod)))
+	if (qam.init(srate_, mod_carrier(mod_), mod_baud(mod_),
+			mod_alpha(mod_), 6, 32, mod_power(mod_)))
 		return -1;
-	r->det_alpha = 1.0f / (0.005f * srate);
-	r->det_hold = srate / 25;       /* learn the noise floor first */
-	r->det_floor = 1e12f;
-	r->agc_alpha = r->qam.agc_alpha;
-	r->alt_end = -1;
-	r->nstates = is_v17(mod) ? 4 : 8;
-	if (make_reference(r)) {
-		r->qam.release();
+	det_alpha = 1.0f / (0.005f * srate_);
+	det_hold = srate_ / 25;       /* learn the noise floor first */
+	det_floor = 1e12f;
+	agc_alpha = qam.agc_alpha;
+	alt_end = -1;
+	nstates = is_v17(mod_) ? 4 : 8;
+	if (make_reference()) {
+		qam.release();
 		return -1;
 	}
-	if (is_v17(mod))
-		r->vit.init(v17_points(mod), data_bits(mod));
+	if (is_v17(mod_))
+		vit.init(v17_points(mod_), data_bits(mod_));
 	/* a short train only touches up what the long one learned */
-	if (short_train && mem && mem->valid && is_v17(mem->mod)) {
-		memcpy(r->mem_eq, mem->eq, sizeof(r->mem_eq));
-		r->mem_gain = mem->agc_gain;
-		r->use_mem = 1;
+	if (short_train_ && mem && mem->valid && is_v17(mem->mod)) {
+		memcpy(mem_eq, mem->eq, sizeof(mem_eq));
+		mem_gain = mem->agc_gain;
+		use_mem = 1;
 	}
 	return 0;
 }
 
-void fax_rx_save(struct fax_rx *r, struct fax_rx_memory *mem)
+void FaxRx::save(FaxRxMemory *mem)
 {
-	if (!is_v17(r->mod) || !r->have_good)
+	if (!is_v17(mod) || !have_good)
 		return;
-	mem->mod = r->mod;
-	memcpy(mem->eq, r->good_eq, sizeof(mem->eq));
-	mem->agc_gain = r->good_gain;
+	mem->mod = mod;
+	memcpy(mem->eq, good_eq, sizeof(mem->eq));
+	mem->agc_gain = good_gain;
 	mem->valid = 1;
 }
 
-void fax_rx_free(struct fax_rx *r)
+void FaxRx::release()
 {
-	if (r->mod == FM_V21 || r->mod == FM_NONE)
+	if (mod == FM_V21 || mod == FM_NONE)
 		return;
-	r->qam.release();
-	free(r->ref);
-	r->ref = NULL;
+	qam.release();
+	free(ref);
+	ref = NULL;
 }
 
-static void rx_bits_out(struct fax_rx *r, int q, int n, int msb_first)
+void FaxRx::bits_out(int q, int n, int msb_first)
 {
 	int k;
 	for (k = 0; k < n; k++) {
 		int bit = msb_first ? (q >> (n - 1 - k)) & 1 : (q >> k) & 1;
-		bit = is_v27(r->mod) ? descr7(&r->scr, &r->scr_count, bit) :
-			descr23(&r->scr, bit);
-		if (r->trained)
-			r->put_bit(r->ctx, bit);
+		bit = is_v27(mod) ? descr7(&scr, &scr_count, bit) :
+			descr23(&scr, bit);
+		if (trained)
+			put_bit(ctx, bit);
 	}
 }
 
-static void rx_data_symbol(struct fax_rx *r)
+void FaxRx::data_symbol()
 {
-	cplx z = r->qam.z, d;
-	int n = data_bits(r->mod), k, best, phase, dp, bits;
+	cplx z = qam.z, d;
+	int n = data_bits(mod), k, best, phase, dp, bits;
 	float bd;
 
-	if (is_v17(r->mod)) {
-		const cplx *pts = v17_points(r->mod);
+	if (is_v17(mod)) {
+		const cplx *pts = v17_points(mod);
 		int q;
 		for (k = 0, best = 0, bd = 1e30f; k < (1 << (n + 1)); k++) {
 			float e = cplx_pow(cplx_sub(z, pts[k]));
@@ -649,20 +646,20 @@ static void rx_data_symbol(struct fax_rx *r)
 			}
 		}
 		d = pts[best];
-		q = r->vit.decode(z, NULL);
-		r->data_sym++;
+		q = vit.decode(z, NULL);
+		data_sym++;
 		if (q >= 0) {
 			/* symbols leave the decoder VITERBI_DEPTH - 1 late */
-			if (r->data_sym - (VITERBI_DEPTH - 1) > ones_len(r->mod))
-				r->trained = 1;
-			rx_bits_out(r, q, n, 0);
+			if (data_sym - (VITERBI_DEPTH - 1) > ones_len(mod))
+				trained = 1;
+			bits_out(q, n, 0);
 		}
 	} else {
-		const cplx *pts = is_v29(r->mod) ? v29_points : v27_points;
-		int npts = r->mod == FM_V29_9600 ? 16 : 8;
+		const cplx *pts = is_v29(mod) ? v29_points : v27_points;
+		int npts = mod == FM_V29_9600 ? 16 : 8;
 		for (k = 0, best = 0, bd = 1e30f; k < npts; k++) {
 			float e;
-			if (r->mod == FM_V29_4800 && (k & 1))
+			if (mod == FM_V29_4800 && (k & 1))
 				continue;
 			e = cplx_pow(cplx_sub(z, pts[k]));
 			if (e < bd) {
@@ -672,46 +669,46 @@ static void rx_data_symbol(struct fax_rx *r)
 		}
 		d = pts[best];
 		phase = best & 7;
-		dp = (phase - r->state) & 7;
-		r->state = phase;
-		if (++r->data_sym > ones_len(r->mod))
-			r->trained = 1;
-		if (n == 2 && r->mod != FM_V27_2400) {
+		dp = (phase - state) & 7;
+		state = phase;
+		if (++data_sym > ones_len(mod))
+			trained = 1;
+		if (n == 2 && mod != FM_V27_2400) {
 			/* V.29 4800 */
 			for (bits = 0; bits < 4 && steps_4[bits] != dp; bits++)
 				;
-			rx_bits_out(r, bits & 3, 2, 1);
-		} else if (r->mod == FM_V27_2400) {
+			bits_out(bits & 3, 2, 1);
+		} else if (mod == FM_V27_2400) {
 			for (bits = 0; bits < 4 && steps_4[bits] != dp; bits++)
 				;
-			rx_bits_out(r, bits & 3, 2, 1);
+			bits_out(bits & 3, 2, 1);
 		} else {
 			for (bits = 0; bits < 8 && steps_8[bits] != dp; bits++)
 				;
 			bits &= 7;
-			if (r->mod == FM_V29_9600)
-				rx_bits_out(r, (best >> 3) << 3 | bits, 4, 1);
+			if (mod == FM_V29_9600)
+				bits_out((best >> 3) << 3 | bits, 4, 1);
 			else
-				rx_bits_out(r, bits, 3, 1);
+				bits_out(bits, 3, 1);
 		}
 	}
-	r->mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / mod_power(r->mod) - r->mse);
-	r->zpow += 0.01f * (cplx_pow(z) - r->zpow);
+	mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / mod_power(mod) - mse);
+	zpow += 0.01f * (cplx_pow(z) - zpow);
 	/* V.17: the original library's data constellation comes some 1.4 dB
 	   below its training; decisions on the dense rates then miss and
 	   the equalizer cannot pull the gain back.  Scrambled data has the
 	   constellation's mean power: follow it. */
 	/* slowly: the power of a few hundred data symbols wanders by some
 	   per cent, and every step disturbs a good signal */
-	if (r->data_sym == 150)
-		r->zpow_slow = r->zpow;
-	r->zpow_slow += 0.002f * (cplx_pow(z) - r->zpow_slow);
-	if (is_v17(r->mod) && r->data_sym >= 600 && (r->data_sym & 255) == 0 &&
-	    r->zpow_slow > r->mse * mod_power(r->mod)) {
+	if (data_sym == 150)
+		zpow_slow = zpow;
+	zpow_slow += 0.002f * (cplx_pow(z) - zpow_slow);
+	if (is_v17(mod) && data_sym >= 600 && (data_sym & 255) == 0 &&
+	    zpow_slow > mse * mod_power(mod)) {
 		/* the signal's part of the power: less the noise around the
 		   decisions */
-		float f = sqrtf(mod_power(r->mod) /
-				(r->zpow_slow - r->mse * mod_power(r->mod)));
+		float f = sqrtf(mod_power(mod) /
+				(zpow_slow - mse * mod_power(mod)));
 		/* only a clear error */
 		if (fabsf(f - 1) > 0.06f) {
 			f = 1 + 0.5f * (f - 1);
@@ -719,126 +716,126 @@ static void rx_data_symbol(struct fax_rx *r)
 				f = 1.1f;
 			if (f < 0.9f)
 				f = 0.9f;
-			for (k = 0; k < r->qam.eq_len; k++)
-				r->qam.eq[k] = cplx_scale(r->qam.eq[k], f);
-			r->zpow *= f * f;
-			r->zpow_slow *= f * f;
+			for (k = 0; k < qam.eq_len; k++)
+				qam.eq[k] = cplx_scale(qam.eq[k], f);
+			zpow *= f * f;
+			zpow_slow *= f * f;
 			DSP_DBG("fax rx: gain %.3f at symbol %ld\n", f,
-				(long)r->data_sym);
+				(long)data_sym);
 		}
 	}
-	if (r->data_sym % 2400 == 0)
+	if (data_sym % 2400 == 0)
 		DSP_DBG("fax rx: data mse %.5f (%.1f dB), power %.3f of the "
-			"constellation's\n", r->mse, -10 * log10f(r->mse + 1e-9f),
-			r->zpow / mod_power(r->mod));
+			"constellation's\n", mse, -10 * log10f(mse + 1e-9f),
+			zpow / mod_power(mod));
 	/* the timing loop slows down once it has surely settled (a short
 	   train leaves it little time) */
-	if (r->data_sym == 1000) {
-		r->qam.kt_p = 0.005f * r->qam.sps;
-		r->qam.kt_gi = 0.003f;
+	if (data_sym == 1000) {
+		qam.kt_p = 0.005f * qam.sps;
+		qam.kt_gi = 0.003f;
 	}
 	/* nothing to learn once the carrier is gone */
-	if (r->carrier)
+	if (carrier)
 		/* the training of V.29 and V.27ter only covers one axis: the
 		   equalizer still learns fast at the start of the data */
-		r->qam.adapt(d, is_v17(r->mod) ? 0.005f :
-			     r->data_sym < 100 ? 0.03f :
-			     r->data_sym < 300 ? 0.015f : 0.005f, 0.02f, 0.0002f);
+		qam.adapt(d, is_v17(mod) ? 0.005f :
+			     data_sym < 100 ? 0.03f :
+			     data_sym < 300 ? 0.015f : 0.005f, 0.02f, 0.0002f);
 	/* keep a copy of a good equalizer for a later short train (the
 	   end of the signal would spoil the live one) */
-	r->mse_fast += 0.1f * (cplx_pow(cplx_sub(z, d)) / mod_power(r->mod) -
-			       r->mse_fast);
-	if (r->data_sym == 1)
-		r->data_power = r->qam.power;
-	if (is_v17(r->mod) && r->mse < 0.01f && r->mse_fast < 0.01f &&
-	    r->qam.power > 0.5f * r->data_power && (r->data_sym & 127) == 0) {
+	mse_fast += 0.1f * (cplx_pow(cplx_sub(z, d)) / mod_power(mod) -
+			       mse_fast);
+	if (data_sym == 1)
+		data_power = qam.power;
+	if (is_v17(mod) && mse < 0.01f && mse_fast < 0.01f &&
+	    qam.power > 0.5f * data_power && (data_sym & 127) == 0) {
 		/* the newest copy may already see the end of the signal, the
 		   saved one is the copy before it */
-		memcpy(r->good_eq, r->new_eq, sizeof(r->good_eq));
-		r->good_gain = r->new_gain;
-		r->have_good = r->have_new;
-		memcpy(r->new_eq, r->qam.eq, sizeof(r->new_eq));
-		r->new_gain = r->qam.agc_gain;
-		r->have_new = 1;
+		memcpy(good_eq, new_eq, sizeof(good_eq));
+		good_gain = new_gain;
+		have_good = have_new;
+		memcpy(new_eq, qam.eq, sizeof(new_eq));
+		new_gain = qam.agc_gain;
+		have_new = 1;
 	}
 }
 
 /* how well the last 32 phase steps fit the reference ending at symbol k */
-static int window_match(struct fax_rx *r, int k)
+int FaxRx::window_match(int k)
 {
 	int i, match = 0;
 	for (i = 0; i < 32; i++)
-		match += r->steps[i] == ((r->ref[k - 31 + i] - r->ref[k - 32 + i]) &
-					 (r->nstates - 1));
+		match += steps[i] == ((ref[k - 31 + i] - ref[k - 32 + i]) &
+					 (nstates - 1));
 	return match;
 }
 
 /* the V.29 and V.27ter training sequences repeat every 127 symbols: the
    end of the alternations / reversals before them tells which period is
    being received */
-static void track_alternations(struct fax_rx *r, cplx z)
+void FaxRx::track_alternations(cplx z)
 {
-	float d1 = cplx_pow(cplx_sub(z, r->zh[0]));
-	float d2 = cplx_pow(cplx_sub(z, r->zh[1]));
+	float d1 = cplx_pow(cplx_sub(z, zh[0]));
+	float d2 = cplx_pow(cplx_sub(z, zh[1]));
 	if (d2 < 0.25f * d1) {
-		r->alt_run++;
+		alt_run++;
 	} else {
-		if (r->alt_run >= 16)
-			r->alt_end = r->onset;
-		r->alt_run = 0;
+		if (alt_run >= 16)
+			alt_end = onset;
+		alt_run = 0;
 	}
-	r->zh[1] = r->zh[0];
-	r->zh[0] = z;
+	zh[1] = zh[0];
+	zh[0] = z;
 }
 
-static void rx_symbol(struct fax_rx *r)
+void FaxRx::symbol()
 {
-	cplx z = r->qam.z;
+	cplx z = qam.z;
 	int s, k, match;
 
-	switch (r->stage) {
+	switch (stage) {
 	case RXS_SEARCH:
-		if (r->carrier && ++r->onset == 6)
-			r->qam.timing_hold = 0;
-		if (r->onset == 48)
-			r->qam.agc_alpha = r->agc_alpha;
+		if (carrier && ++onset == 6)
+			qam.timing_hold = 0;
+		if (onset == 48)
+			qam.agc_alpha = agc_alpha;
 		/* on the alternations, the symbol samples are the strong
 		   ones; when the mid samples are, the timing started half a
 		   symbol off, where the timing loop is slow to leave */
-		if (r->onset > 8 && r->onset <= 24) {
-			r->sym_pow += cplx_pow(r->qam.y);
-			r->mid_pow += cplx_pow(r->qam.mid);
+		if (onset > 8 && onset <= 24) {
+			sym_pow += cplx_pow(qam.y);
+			mid_pow += cplx_pow(qam.mid);
 		}
-		if (r->onset == 24 && r->mid_pow > 1.5f * r->sym_pow) {
-			r->qam.half ^= 1;
+		if (onset == 24 && mid_pow > 1.5f * sym_pow) {
+			qam.half ^= 1;
 			DSP_DBG("fax rx: timing moved half a symbol\n");
 		}
-		track_alternations(r, z);
-		s = state_of(r, z);
-		memmove(r->steps, r->steps + 1, 31 * sizeof(int));
-		r->steps[31] = (s - r->last_state) & (r->nstates - 1);
-		r->last_state = s;
-		if (r->nsteps < 32)
-			r->nsteps++;
+		track_alternations(z);
+		s = state_of(z);
+		memmove(steps, steps + 1, 31 * sizeof(int));
+		steps[31] = (s - last_state) & (nstates - 1);
+		last_state = s;
+		if (nsteps < 32)
+			nsteps++;
 		/* hold the phase on the training grid */
-		r->qam.adapt(is_v17(r->mod) ? v32_abcd[s] :
-			     cplx_scale(v27_points[s], sqrtf(mod_power(r->mod) / 2)),
+		qam.adapt(is_v17(mod) ? v32_abcd[s] :
+			     cplx_scale(v27_points[s], sqrtf(mod_power(mod) / 2)),
 			     0, 0.05f, 0);
-		if (r->nsteps < 32 || !r->carrier)
+		if (nsteps < 32 || !carrier)
 			break;
 		{
 			/* where in the training is this symbol? */
 			int lo = 32, hi = 32, best = 32, m;
-			if (r->alt_end >= 0) {
-				lo = r->onset - r->alt_end - 4;
-				hi = r->onset - r->alt_end + 8;
+			if (alt_end >= 0) {
+				lo = onset - alt_end - 4;
+				hi = onset - alt_end + 8;
 				if (lo < 32)
 					lo = 32;
-				if (hi > r->ref_len - 2)
-					hi = r->ref_len - 2;
+				if (hi > ref_len - 2)
+					hi = ref_len - 2;
 			}
 			for (k = lo, match = -1; k <= hi; k++)
-				if ((m = window_match(r, k)) > match) {
+				if ((m = window_match(k)) > match) {
 					match = m;
 					best = k;
 				}
@@ -846,129 +843,129 @@ static void rx_symbol(struct fax_rx *r)
 		}
 		if (match >= 29) {
 			/* this symbol is reference symbol k */
-			if (r->use_mem) {
+			if (use_mem) {
 				/* short train: continue with the equalizer of
 				   the long train, timing has settled by now */
-				memcpy(r->qam.eq, r->mem_eq, sizeof(r->qam.eq));
-				r->qam.recompute();
+				memcpy(qam.eq, mem_eq, sizeof(qam.eq));
+				qam.recompute();
 				DSP_DBG("fax rx: equalizer of the long train\n");
 			}
-			r->qam.align_phase(ref_point(r, k));
-			r->seg_sym = k + 1;
-			r->stage = RXS_TRAIN;
-			r->bridge_hits = 0;
+			qam.align_phase(ref_point(k));
+			seg_sym = k + 1;
+			stage = RXS_TRAIN;
+			bridge_hits = 0;
 			DSP_DBG("fax rx: training found at %d\n", k);
 		}
 		break;
 	case RXS_TRAIN: {
-		cplx d = ref_point(r, r->seg_sym);
-		int trn = trn_len(r->mod, r->short_train);
+		cplx d = ref_point(seg_sym);
+		int trn = trn_len(mod, short_train);
 		/* V.17 short train: the original library sends the 64 symbol
 		   bridge as after a long train, spandsp goes on with the
 		   scrambled ones (segment 4) at once.  Its first symbols tell;
 		   without the bridge they are data, and a few of the 48 ones
 		   are not missed. */
-		if (is_v17(r->mod) && r->short_train &&
-		    r->seg_sym >= trn && r->seg_sym < trn + 8) {
+		if (is_v17(mod) && short_train &&
+		    seg_sym >= trn && seg_sym < trn + 8) {
 			if (cplx_pow(cplx_sub(z, d)) < 0.2f * cplx_pow(d))
-				r->bridge_hits++;
-			if (++r->seg_sym == trn + 8 && r->bridge_hits < 6) {
+				bridge_hits++;
+			if (++seg_sym == trn + 8 && bridge_hits < 6) {
 				DSP_DBG("fax rx: short train without the "
 					"bridge\n");
-				r->stage = RXS_DATA;
-				r->data_sym = 8;
-				r->vit.last_y12 = 0;
+				stage = RXS_DATA;
+				data_sym = 8;
+				vit.last_y12 = 0;
 				DSP_DBG("fax rx: data\n");
 			}
 			break;
 		}
 		/* the original library's V.27ter training has stray 180
 		   degree flips: follow them, its points are all on one axis */
-		if (is_v27(r->mod) &&
+		if (is_v27(mod) &&
 		    cplx_pow(cplx_add(z, d)) < cplx_pow(cplx_sub(z, d)))
 			d = cplx_scale(d, -1);
-		r->qam.adapt(d, 0.02f, 0.05f, 0.0005f);
-		if (++r->seg_sym >= r->ref_len) {
-			r->stage = RXS_DATA;
-			r->data_sym = 0;
+		qam.adapt(d, 0.02f, 0.05f, 0.0005f);
+		if (++seg_sym >= ref_len) {
+			stage = RXS_DATA;
+			data_sym = 0;
 			/* the data path continues from the last training
 			   state (V.27ter, V.17 bridge) or from 0 (V.29) */
-			if (is_v17(r->mod))
-				r->vit.last_y12 = r->short_train ? 0 : 1;
-			else if (is_v27(r->mod))
-				r->state = state_of(r, d);
+			if (is_v17(mod))
+				vit.last_y12 = short_train ? 0 : 1;
+			else if (is_v27(mod))
+				state = state_of(d);
 			else
-				r->state = 0;
+				state = 0;
 			DSP_DBG("fax rx: data\n");
 		}
 		break;
 	}
 	case RXS_DATA:
-		rx_data_symbol(r);
+		data_symbol();
 		break;
 	}
 }
 
-void fax_rx_sample(struct fax_rx *r, float x)
+void FaxRx::sample(float x)
 {
-	if (r->mod == FM_V21) {
-		int bit = r->fsk.run(x);
-		r->carrier = r->fsk.carrier;
-		r->trained = r->carrier;
-		if (bit >= 0 && r->carrier)
-			r->put_bit(r->ctx, bit);
+	if (mod == FM_V21) {
+		int bit = fsk.run(x);
+		carrier = fsk.carrier;
+		trained = carrier;
+		if (bit >= 0 && carrier)
+			put_bit(ctx, bit);
 		return;
 	}
-	if (r->qam.sample(x))
-		rx_symbol(r);
+	if (qam.sample(x))
+		symbol();
 	/* the 20 ms power of the demodulator would bridge the short gap
 	   between V.21 and the training */
-	r->det_pwr += r->det_alpha * (x * x - r->det_pwr);
+	det_pwr += det_alpha * (x * x - det_pwr);
 	/* thresholds relative to the noise floor and the signal level */
-	if (r->carrier)
-		r->det_level += 0.001f * (r->det_pwr - r->det_level);
-	else if (r->det_hold > 0) {
+	if (carrier)
+		det_level += 0.001f * (det_pwr - det_level);
+	else if (det_hold > 0) {
 		/* the end of a signal dies away: its minimum so far */
-		if (r->det_pwr < r->det_floor)
-			r->det_floor = r->det_pwr;
+		if (det_pwr < det_floor)
+			det_floor = det_pwr;
 	} else
-		r->det_floor += 0.002f * (r->det_pwr - r->det_floor);
-	if (r->det_hold > 0)
-		r->det_hold--;
-	if (!r->carrier && r->det_pwr > tone_power(150) &&
-	    r->det_pwr > 4 * r->det_floor && r->det_hold < r->srate / 100) {
-		r->carrier = 1;
-		r->det_level = r->det_pwr;
-		if (r->stage == RXS_SEARCH) {
+		det_floor += 0.002f * (det_pwr - det_floor);
+	if (det_hold > 0)
+		det_hold--;
+	if (!carrier && det_pwr > tone_power(150) &&
+	    det_pwr > 4 * det_floor && det_hold < srate / 100) {
+		carrier = 1;
+		det_level = det_pwr;
+		if (stage == RXS_SEARCH) {
 			/* acquire the level quickly, and hold the timing
 			   until it is known */
-			r->qam.reset();
-			r->qam.agc_pwr = 0;
-			r->qam.agc_alpha = 1.0f / (0.003f * r->srate);
-			r->qam.timing_hold = 1;
-			r->onset = 0;
-			r->alt_run = 0;
-			r->alt_end = -1;
-			r->sym_pow = r->mid_pow = 0;
+			qam.reset();
+			qam.agc_pwr = 0;
+			qam.agc_alpha = 1.0f / (0.003f * srate);
+			qam.timing_hold = 1;
+			onset = 0;
+			alt_run = 0;
+			alt_end = -1;
+			sym_pow = mid_pow = 0;
 		}
-	} else if (r->carrier && (r->det_pwr < tone_power(100) ||
-				  r->det_pwr < 0.06f * r->det_level)) {
-		r->carrier = 0;
+	} else if (carrier && (det_pwr < tone_power(100) ||
+				  det_pwr < 0.06f * det_level)) {
+		carrier = 0;
 		/* the end of the signal dies away (V.27ter has only 20 ms
 		   of silence before its training) */
-		r->det_hold = r->srate / 50;
-		r->det_floor = r->det_pwr;
-		r->qam.agc_alpha = r->agc_alpha;
-		r->qam.timing_hold = 0;
-		if (r->stage != RXS_DATA) {
-			r->stage = RXS_SEARCH;
-			r->nsteps = 0;
+		det_hold = srate / 50;
+		det_floor = det_pwr;
+		qam.agc_alpha = agc_alpha;
+		qam.timing_hold = 0;
+		if (stage != RXS_DATA) {
+			stage = RXS_SEARCH;
+			nsteps = 0;
 		}
 	}
-	if (r->carrier)
-		r->carrier_run = r->carrier_run > 0 ? r->carrier_run + 1 : 1;
+	if (carrier)
+		carrier_run = carrier_run > 0 ? carrier_run + 1 : 1;
 	else
-		r->carrier_run = r->carrier_run < 0 ? r->carrier_run - 1 : -1;
+		carrier_run = carrier_run < 0 ? carrier_run - 1 : -1;
 }
 
 } // namespace dsp

@@ -16,30 +16,42 @@ namespace dsp {
 
 /* a page: rows of width bits, 1 = black, the first pel in the top bit
    of the first byte */
-struct t4_page {
+struct T4Bits;
+
+struct T4Page {
 	int width, rows, cap;
 	int fine;                       /* 196 lines per inch (else 98) */
 	unsigned char *bits;
 	int bad_rows;                   /* received with errors */
+
+	int init(int width_, int fine_);
+	void release();
+	unsigned char *add_row(const unsigned char *row);
+	void encode_mh(T4Bits *out, int min_bits, int align, int rtc) const;
+	int decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, int rows_);
+
+	void fit(const T4Page *src, int row_step);
 };
 
 #define T4_STRIDE(w)    (((w) + 7) / 8)
 
-int  t4_page_init(struct t4_page *p, int width, int fine);
-void t4_page_free(struct t4_page *p);
 /* a row added at the bottom; NULL: a copy of the last one (white for
    the first) */
-unsigned char *t4_page_add_row(struct t4_page *p, const unsigned char *row);
 
 /* a growing string of bits, in the order they go out */
-struct t4_bits {
+struct T4Bits {
 	unsigned char *buf;
 	size_t n, cap;                  /* bits */
+
+	void put(unsigned code, int len);
+	void release();
+	void put_code(const char *bits);
+	void put_run(int run, int black);
+	void put_eol(int align);
+	int line_empty() const;
 };
 
-void t4_bits_put(struct t4_bits *b, unsigned code, int len);
-void t4_bits_free(struct t4_bits *b);
-static inline int t4_bits_get(const struct t4_bits *b, size_t i)
+static inline int t4_bits_get(const T4Bits *b, size_t i)
 {
 	return (b->buf[i >> 3] >> (7 - (i & 7))) & 1;
 }
@@ -47,14 +59,12 @@ static inline int t4_bits_get(const struct t4_bits *b, size_t i)
 /* a page in MH (one dimensional) coding: an EOL before each row, rows
    padded with fill to at least min_bits, RTC at the end (rtc), EOLs
    ending on a byte boundary (align, as TIFF's T4Options bit 2) */
-void t4_encode_mh(const struct t4_page *p, struct t4_bits *out,
-		  int min_bits, int align, int rtc);
 
 /* a page coming in bit by bit, as on the line (MH or MR with EOLs) */
-struct t4_rx {
+struct T4Rx {
 	int width, mr;
-	struct t4_page *page;
-	struct t4_bits line;            /* bits of the row being received */
+	T4Page *page;
+	T4Bits line;            /* bits of the row being received */
 	int zeros;                      /* zeros in a row (an EOL coming) */
 	int eols;                       /* EOLs in a row with nothing in
 					   between (6: RTC) */
@@ -63,46 +73,52 @@ struct t4_rx {
 	int tag_pending;
 	int done;
 	unsigned char *ref;             /* the last good row */
+
+	void init(T4Page *page_, int mr_);
+	void release();
+	void row(int two_d);
+	int bit(int bit);
+	void end();
 };
 
-void t4_rx_init(struct t4_rx *r, struct t4_page *page, int mr);
 /* one bit; 1 once the page has ended (RTC) */
-int  t4_rx_bit(struct t4_rx *r, int bit);
 /* the end of the data without RTC (the carrier went): the last row */
-void t4_rx_end(struct t4_rx *r);
-void t4_rx_free(struct t4_rx *r);
 
 /* a whole page from a buffer: compression as TIFF's (2 MH without EOLs,
    3 T.4 with EOLs, 1D or, t4opts & 1, 2D; 4 T.6), msb_first as TIFF's
    FillOrder 1; rows: how many to expect (0: until the end of data) */
-int t4_decode(struct t4_page *p, const unsigned char *data, size_t len,
-	      int compression, int t4opts, int msb_first, int rows);
 
 /* TIFF-F: pages appended to a file, written at the end */
-struct tiff_out {
+struct TiffOut {
 	void *f;
 	int pages;
 	long last_ifd_next;             /* where to link the next page */
+
+	int open(const char *path);
+	int write_page(const T4Page *p);
+	int close();
 };
 
-int  tiff_out_open(struct tiff_out *t, const char *path);
-int  tiff_out_page(struct tiff_out *t, const struct t4_page *p);
-int  tiff_out_close(struct tiff_out *t);
 
 /* the pages of a TIFF file, read one at a time */
-struct tiff_in {
+struct TiffIn {
 	unsigned char *data;
 	size_t len;
 	int big_endian;
 	unsigned long next_ifd;
 	int page;
+
+	unsigned get16(unsigned long at) const;
+	unsigned long get32(unsigned long at) const;
+	int open(const char *path);
+	void close();
+	unsigned long tag_value(unsigned long e, unsigned long index) const;
+	double tag_rational(unsigned long e) const;
+	int read_page(T4Page *p);
 };
 
-int  tiff_in_open(struct tiff_in *t, const char *path);
 /* the next page (scaled to T4_WIDTH if narrower or wider); 0 when there
    are no more, -1 on an error */
-int  tiff_in_page(struct tiff_in *t, struct t4_page *p);
-void tiff_in_close(struct tiff_in *t);
 
 } // namespace dsp
 

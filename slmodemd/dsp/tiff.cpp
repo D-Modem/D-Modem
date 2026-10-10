@@ -31,19 +31,19 @@ static void put32(unsigned char *p, unsigned long v)
 	put16(p + 2, (v >> 16) & 0xffff);
 }
 
-int tiff_out_open(struct tiff_out *t, const char *path)
+int TiffOut::open(const char *path)
 {
 	unsigned char h[8] = { 'I', 'I', 42, 0, 0, 0, 0, 0 };
-	memset(t, 0, sizeof(*t));
-	t->f = fopen(path, "wb");
-	if (!t->f)
+	memset(this, 0, sizeof(*this));
+	f = fopen(path, "wb");
+	if (!f)
 		return -1;
-	if (fwrite(h, 1, 8, static_cast<FILE*>(t->f)) != 8) {
-		fclose(static_cast<FILE*>(t->f));
-		t->f = NULL;
+	if (fwrite(h, 1, 8, static_cast<FILE*>(f)) != 8) {
+		fclose(static_cast<FILE*>(f));
+		f = NULL;
 		return -1;
 	}
-	t->last_ifd_next = 4;           /* the header's first IFD offset */
+	last_ifd_next = 4;           /* the header's first IFD offset */
 	return 0;
 }
 
@@ -62,29 +62,29 @@ static unsigned char *entry(unsigned char *e, unsigned tag, unsigned type,
 	return e + 12;
 }
 
-int tiff_out_page(struct tiff_out *t, const struct t4_page *p)
+int TiffOut::write_page(const T4Page *p)
 {
-	FILE *f = static_cast<FILE*>(t->f);
-	struct t4_bits b = { 0 };
+	FILE *f_ = static_cast<FILE*>(f);
+	T4Bits b = { 0 };
 	unsigned char ifd[2 + 20 * 12 + 4 + 16], *e = ifd + 2, link[4];
 	long data_at, ifd_at, res_at;
 	size_t len;
 	int n = 0;
 
-	if (!f)
+	if (!f_)
 		return -1;
-	t4_encode_mh(p, &b, 0, 1, 0);
+	p->encode_mh(&b, 0, 1, 0);
 	len = (b.n + 7) / 8;
-	fseek(f, 0, SEEK_END);
-	data_at = ftell(f);
-	if (len && fwrite(b.buf, 1, len, f) != len) {
-		t4_bits_free(&b);
+	fseek(f_, 0, SEEK_END);
+	data_at = ftell(f_);
+	if (len && fwrite(b.buf, 1, len, f_) != len) {
+		b.release();
 		return -1;
 	}
-	t4_bits_free(&b);
-	if (ftell(f) & 1)
-		fputc(0, f);                    /* IFDs on a word boundary */
-	ifd_at = ftell(f);
+	b.release();
+	if (ftell(f_) & 1)
+		fputc(0, f_);                    /* IFDs on a word boundary */
+	ifd_at = ftell(f_);
 	res_at = ifd_at + 2 + 18 * 12 + 4;
 
 	e = entry(e, 254, T_LONG, 1, 2), n++;           /* a page */
@@ -107,7 +107,7 @@ int tiff_out_page(struct tiff_out *t, const struct t4_page *p)
 	put16(e, 297);                                  /* page number */
 	put16(e + 2, T_SHORT);
 	put32(e + 4, 2);
-	put16(e + 8, t->pages);
+	put16(e + 8, pages);
 	put16(e + 10, 0);
 	e += 12, n++;
 	put16(ifd, n);
@@ -118,25 +118,25 @@ int tiff_out_page(struct tiff_out *t, const struct t4_page *p)
 	put32(e + 8, p->fine ? 196 : 98);
 	put32(e + 12, 1);
 	e += 16;
-	if (fwrite(ifd, 1, e - ifd, f) != (size_t)(e - ifd))
+	if (fwrite(ifd, 1, e - ifd, f_) != (size_t)(e - ifd))
 		return -1;
 
 	/* link it in */
 	put32(link, ifd_at);
-	fseek(f, t->last_ifd_next, SEEK_SET);
-	if (fwrite(link, 1, 4, f) != 4)
+	fseek(f_, last_ifd_next, SEEK_SET);
+	if (fwrite(link, 1, 4, f_) != 4)
 		return -1;
-	t->last_ifd_next = ifd_at + 2 + n * 12;
-	t->pages++;
+	last_ifd_next = ifd_at + 2 + n * 12;
+	pages++;
 	return 0;
 }
 
-int tiff_out_close(struct tiff_out *t)
+int TiffOut::close()
 {
 	int r = 0;
-	if (t->f) {
-		r = fclose(static_cast<FILE*>(t->f)) ? -1 : 0;
-		t->f = NULL;
+	if (f) {
+		r = fclose(static_cast<FILE*>(f)) ? -1 : 0;
+		f = NULL;
 	}
 	return r;
 }
@@ -146,148 +146,146 @@ int tiff_out_close(struct tiff_out *t)
  *    reading
  */
 
-static unsigned get16(const struct tiff_in *t, unsigned long at)
+unsigned TiffIn::get16(unsigned long at) const
 {
-	const unsigned char *p = t->data + at;
-	if (at + 2 > t->len)
+	const unsigned char *p = data + at;
+	if (at + 2 > len)
 		return 0;
-	return t->big_endian ? (p[0] << 8) | p[1] : p[0] | (p[1] << 8);
+	return big_endian ? (p[0] << 8) | p[1] : p[0] | (p[1] << 8);
 }
 
-static unsigned long get32(const struct tiff_in *t, unsigned long at)
+unsigned long TiffIn::get32(unsigned long at) const
 {
-	if (at + 4 > t->len)
+	if (at + 4 > len)
 		return 0;
-	return t->big_endian ?
-		((unsigned long)get16(t, at) << 16) | get16(t, at + 2) :
-		get16(t, at) | ((unsigned long)get16(t, at + 2) << 16);
+	return big_endian ?
+		((unsigned long)get16(at) << 16) | get16(at + 2) :
+		get16(at) | ((unsigned long)get16(at + 2) << 16);
 }
 
-int tiff_in_open(struct tiff_in *t, const char *path)
+int TiffIn::open(const char *path)
 {
 	FILE *f = fopen(path, "rb");
-	long len;
+	long len_;
 
-	memset(t, 0, sizeof(*t));
+	memset(this, 0, sizeof(*this));
 	if (!f)
 		return -1;
 	fseek(f, 0, SEEK_END);
-	len = ftell(f);
+	len_ = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	if (len < 8 || !(t->data = static_cast<unsigned char*>(malloc(len))) ||
-	    fread(t->data, 1, len, f) != (size_t)len) {
+	if (len_ < 8 || !(data = static_cast<unsigned char*>(malloc(len_))) ||
+	    fread(data, 1, len_, f) != (size_t)len_) {
 		fclose(f);
-		free(t->data);
-		t->data = NULL;
+		free(data);
+		data = NULL;
 		return -1;
 	}
 	fclose(f);
-	t->len = len;
-	if (t->data[0] == 'M' && t->data[1] == 'M')
-		t->big_endian = 1;
-	else if (t->data[0] != 'I' || t->data[1] != 'I') {
-		tiff_in_close(t);
+	len = len_;
+	if (data[0] == 'M' && data[1] == 'M')
+		big_endian = 1;
+	else if (data[0] != 'I' || data[1] != 'I') {
+		close();
 		return -1;
 	}
-	if (get16(t, 2) != 42) {
-		tiff_in_close(t);
+	if (get16(2) != 42) {
+		close();
 		return -1;
 	}
-	t->next_ifd = get32(t, 4);
+	next_ifd = get32(4);
 	return 0;
 }
 
-void tiff_in_close(struct tiff_in *t)
+void TiffIn::close()
 {
-	free(t->data);
-	t->data = NULL;
+	free(data);
+	data = NULL;
 }
 
 /* a tag's value: the index-th one of an array of SHORTs or LONGs */
-static unsigned long tag_value(const struct tiff_in *t, unsigned long e,
-			       unsigned long index)
+unsigned long TiffIn::tag_value(unsigned long e, unsigned long index) const
 {
-	unsigned type = get16(t, e + 2);
-	unsigned long count = get32(t, e + 4), at = e + 8;
+	unsigned type = get16(e + 2);
+	unsigned long count = get32(e + 4), at = e + 8;
 	int size = type == T_SHORT ? 2 : 4;
 
 	if (index >= count)
 		return 0;
 	if (count * size > 4)
-		at = get32(t, e + 8);
+		at = get32(e + 8);
 	at += index * size;
-	return type == T_SHORT ? get16(t, at) : get32(t, at);
+	return type == T_SHORT ? get16(at) : get32(at);
 }
 
-static double tag_rational(const struct tiff_in *t, unsigned long e)
+double TiffIn::tag_rational(unsigned long e) const
 {
-	unsigned long at = get32(t, e + 8), d;
-	if (get16(t, e + 2) != T_RATIONAL)
-		return tag_value(t, e, 0);
-	d = get32(t, at + 4);
-	return d ? (double)get32(t, at) / d : 0;
+	unsigned long at = get32(e + 8), d;
+	if (get16(e + 2) != T_RATIONAL)
+		return tag_value(e, 0);
+	d = get32(at + 4);
+	return d ? (double)get32(at) / d : 0;
 }
 
 /* a page of another width (or resolution) to the fax's */
-static void fit_page(struct t4_page *dst, const struct t4_page *src,
-		     int row_step)
+void T4Page::fit(const T4Page *src, int row_step)
 {
-	int y, x, ss = T4_STRIDE(src->width), ds = T4_STRIDE(dst->width);
+	int y, x, ss = T4_STRIDE(src->width), ds = T4_STRIDE(width);
 	unsigned char *row = static_cast<unsigned char*>(calloc(1, ds));
 	if (!row)
 		return;
 	for (y = 0; y < src->rows; y += row_step) {
 		const unsigned char *s = src->bits + (size_t)y * ss;
 		memset(row, 0, ds);
-		for (x = 0; x < dst->width; x++) {
+		for (x = 0; x < width; x++) {
 			int sx;
-			if (src->width > dst->width)
-				sx = (int)((long)x * src->width / dst->width);
+			if (src->width > width)
+				sx = (int)((long)x * src->width / width);
 			else
-				sx = x - (dst->width - src->width) / 2;
+				sx = x - (width - src->width) / 2;
 			if (sx >= 0 && sx < src->width &&
 			    (s[sx >> 3] & (0x80 >> (sx & 7))))
 				row[x >> 3] |= 0x80 >> (x & 7);
 		}
-		t4_page_add_row(dst, row);
+		add_row(row);
 	}
 	free(row);
 }
 
-int tiff_in_page(struct tiff_in *t, struct t4_page *p)
+int TiffIn::read_page(T4Page *p)
 {
-	unsigned long e, ifd = t->next_ifd, nstrips = 0, so_e = 0, sc_e = 0;
+	unsigned long e, ifd = next_ifd, nstrips = 0, so_e = 0, sc_e = 0;
 	unsigned long width = 0, rows = 0, rps = 0, bps = 1, comp = 1;
 	unsigned long photo = 0, fill = 1, t4opts = 0, unit = 2, s, k;
 	double yres = 98;
 	unsigned n, i;
-	struct t4_page src;
+	T4Page src;
 	int stride, fine, step = 1;
 
 	if (!ifd)
 		return 0;
-	if (ifd + 2 > t->len)
+	if (ifd + 2 > len)
 		return -1;
-	n = get16(t, ifd);
+	n = get16(ifd);
 	for (i = 0; i < n; i++) {
 		e = ifd + 2 + i * 12;
-		switch (get16(t, e)) {
-		case 256: width = tag_value(t, e, 0); break;
-		case 257: rows = tag_value(t, e, 0); break;
-		case 258: bps = tag_value(t, e, 0); break;
-		case 259: comp = tag_value(t, e, 0); break;
-		case 262: photo = tag_value(t, e, 0); break;
-		case 266: fill = tag_value(t, e, 0); break;
-		case 273: so_e = e; nstrips = get32(t, e + 4); break;
-		case 278: rps = tag_value(t, e, 0); break;
+		switch (get16(e)) {
+		case 256: width = tag_value(e, 0); break;
+		case 257: rows = tag_value(e, 0); break;
+		case 258: bps = tag_value(e, 0); break;
+		case 259: comp = tag_value(e, 0); break;
+		case 262: photo = tag_value(e, 0); break;
+		case 266: fill = tag_value(e, 0); break;
+		case 273: so_e = e; nstrips = get32(e + 4); break;
+		case 278: rps = tag_value(e, 0); break;
 		case 279: sc_e = e; break;
-		case 283: yres = tag_rational(t, e); break;
-		case 292: t4opts = tag_value(t, e, 0); break;
-		case 296: unit = tag_value(t, e, 0); break;
+		case 283: yres = tag_rational(e); break;
+		case 292: t4opts = tag_value(e, 0); break;
+		case 296: unit = tag_value(e, 0); break;
 		}
 	}
-	t->next_ifd = get32(t, ifd + 2 + n * 12);
-	t->page++;
+	next_ifd = get32(ifd + 2 + n * 12);
+	page++;
 	if (!width || width > 10000 || bps != 1 || !so_e || !sc_e ||
 	    (comp != 1 && comp != 2 && comp != 3 && comp != 4))
 		return -1;
@@ -299,21 +297,21 @@ int tiff_in_page(struct tiff_in *t, struct t4_page *p)
 	if (yres > 300)
 		step = 2;                       /* superfine: every other row */
 
-	t4_page_init(&src, (int)width, fine);
+	src.init((int)width, fine);
 	stride = T4_STRIDE(width);
 	for (s = 0; s < nstrips; s++) {
-		unsigned long off = tag_value(t, so_e, s);
-		unsigned long len = tag_value(t, sc_e, s);
+		unsigned long off = tag_value(so_e, s);
+		unsigned long len_ = tag_value(sc_e, s);
 		unsigned long want = rows - src.rows < rps ? rows - src.rows : rps;
-		if (off >= t->len)
+		if (off >= len)
 			break;
-		if (off + len > t->len)
-			len = t->len - off;
+		if (off + len_ > len)
+			len_ = len - off;
 		if (comp == 1) {
-			for (k = 0; k < want && (k + 1) * stride <= len; k++)
-				t4_page_add_row(&src, t->data + off + k * stride);
+			for (k = 0; k < want && (k + 1) * stride <= len_; k++)
+				src.add_row(data + off + k * stride);
 		} else {
-			t4_decode(&src, t->data + off, len, (int)comp,
+			src.decode(data + off, len_, (int)comp,
 				  (int)t4opts, fill != 2, (int)want);
 		}
 	}
@@ -333,14 +331,14 @@ int tiff_in_page(struct tiff_in *t, struct t4_page *p)
 			src.bits[j] ^= 0xff;
 	}
 
-	t4_page_init(p, T4_WIDTH, fine);
+	p->init(T4_WIDTH, fine);
 	if (src.width == T4_WIDTH && step == 1) {
 		*p = src;
 		p->fine = fine;
 		return 1;
 	}
-	fit_page(p, &src, step);
-	t4_page_free(&src);
+	p->fit(&src, step);
+	src.release();
 	return 1;
 }
 

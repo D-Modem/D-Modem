@@ -108,7 +108,7 @@ struct frame {
 	int len;                        /* without the FCS */
 };
 
-struct t30 {
+struct T30 {
 	struct t30_config cfg;
 	int srate;
 	enum state state, after_tx;     /* where to go when the frames went */
@@ -120,21 +120,21 @@ struct t30 {
 
 	/* the transmitter: frames, a modem or a tone */
 	int tx_on;
-	struct fax_tx tx;
+	FaxTx tx;
 	struct frame frames[MAX_FRAMES];
 	int nframes, cur_frame, cur_pos, cur_bit, ones;
 	int flags_left, closing, preamble;
 	long gap;                       /* S_GAP: samples left */
-	void (*after_gap)(struct t30 *t);
+	void (T30::*after_gap)();
 	long tcf_bits;                  /* to send */
-	struct t4_bits page_bits;
+	T4Bits page_bits;
 	size_t page_pos;
 
 	/* receivers: V.21 for frames, a fast one for TCF and pages */
-	struct fax_rx v21;
-	struct fax_rx fast;
+	FaxRx v21;
+	FaxRx fast;
 	int fast_on;
-	struct fax_rx_memory mem;
+	FaxRxMemory mem;
 	unsigned char rbits[RX_FRAME_MAX * 9];
 	int rnbits, rones;
 	unsigned char msg[MAX_FRAMES * 2][RX_FRAME_MAX];
@@ -150,7 +150,7 @@ struct t30 {
 	char remote_ident[21];
 
 	/* sending */
-	struct t4_page page, next;
+	T4Page page, next;
 	int have_page, have_next;
 	int page_tries;
 	int last_post;                  /* MPS, EOM, EOP */
@@ -158,14 +158,48 @@ struct t30 {
 	int need_retrain;
 
 	/* receiving */
-	struct t4_page rx_page;
-	struct t4_rx t4rx;
+	T4Page rx_page;
+	T4Rx t4rx;
 	int rx_page_on;
 	int page_ok;
 	int eop_acked;                  /* MCF to an EOP sent: all came */
 	long zero_run, max_zero_run, tcf_trained;
 
 	int pages;
+
+	void set_state(enum state s);
+	void start_timer(int ms);
+	void stop_fast();
+	void start_fast(int short_train);
+	void restart_v21();
+	void add_frame(int fcf, const unsigned char *fif, int len);
+	void send_frames(enum state next_);
+	void new_frames();
+	void gap_then(int ms, void (T30::*f)());
+	void finish(enum t30_result r);
+	void send_dcn(enum t30_result r);
+	void send_dis();
+	void start_page_rx();
+	void page_done();
+	void tcf_done();
+	void got_dcs(const unsigned char *fif, int len);
+	void rx_message();
+	void encode_page();
+	void send_tcf();
+	void send_dcs();
+	void send_page();
+	int load_next();
+	void send_post_page();
+	int choose();
+	void next_page_or_end();
+	void page_settings();
+	void sender_message();
+	void frame_end();
+	void on_timeout();
+	void tx_done();
+	float tone(float freq);
+	float tx_sample();
+	void rx_sample(float x);
 };
 
 
@@ -252,51 +286,49 @@ static void get_ident(char *id, const unsigned char *d, int len)
  *    the transmitter
  */
 
-static void set_state(struct t30 *t, enum state s)
+void T30::set_state(enum state s)
 {
-	DSP_DBG("t30: %s -> %s\n", state_name[t->state], state_name[s]);
-	t->state = s;
-	t->count = 0;
-	t->timer = 0;
+	DSP_DBG("t30: %s -> %s\n", state_name[state], state_name[s]);
+	state = s;
+	count = 0;
+	timer = 0;
 }
 
-static void start_timer(struct t30 *t, int ms)
+void T30::start_timer(int ms)
 {
-	t->timer = ms2samples(ms, t->srate);
+	timer = ms2samples(ms, srate);
 }
 
 static void page_bit(void *ctx, int bit);
 
-static void stop_fast(struct t30 *t)
+void T30::stop_fast()
 {
-	if (t->fast_on) {
-		fax_rx_save(&t->fast, &t->mem);
-		fax_rx_free(&t->fast);
+	if (fast_on) {
+		fast.save(&mem);
+		fast.release();
 	}
-	t->fast_on = 0;
+	fast_on = 0;
 }
 
-static void start_fast(struct t30 *t, int short_train)
+void T30::start_fast(int short_train)
 {
-	stop_fast(t);
-	if (!fax_rx_init(&t->fast, rates[t->rate].mod, short_train, t->srate,
-			 page_bit, t, &t->mem))
-		t->fast_on = 1;
+	stop_fast();
+	if (!fast.init(rates[rate].mod, short_train, srate,
+			 page_bit, this, &mem))
+		fast_on = 1;
 }
 
-static void restart_v21(struct t30 *t);
 
-static void add_frame(struct t30 *t, int fcf, const unsigned char *fif,
-		      int len)
+void T30::add_frame(int fcf, const unsigned char *fif, int len)
 {
 	struct frame *f;
-	if (t->nframes == MAX_FRAMES)
+	if (nframes == MAX_FRAMES)
 		return;
-	f = &t->frames[t->nframes++];
+	f = &frames[nframes++];
 	f->data[0] = HDLC_ADDR;
 	f->data[1] = HDLC_CTRL;
 	/* the lowest bit says who sent it (the one that got the DIS) */
-	f->data[2] = (unsigned char)(fcf | (t->cfg.sending ? 1 : 0));
+	f->data[2] = (unsigned char)(fcf | (cfg.sending ? 1 : 0));
 	if (len > FRAME_MAX - 3)
 		len = FRAME_MAX - 3;
 	if (len)
@@ -320,7 +352,7 @@ static unsigned crc16(const unsigned char *p, int n)
    and bit stuffing, closing flags */
 static int frames_get_bit(void *ctx)
 {
-	struct t30 *t = static_cast<t30*>(ctx);
+	T30 *t = static_cast<T30*>(ctx);
 	struct frame *f;
 	int bit;
 
@@ -356,61 +388,61 @@ static int frames_get_bit(void *ctx)
 }
 
 /* send the frames added; then on to state next */
-static void send_frames(struct t30 *t, enum state next)
+void T30::send_frames(enum state next_)
 {
 	int k;
-	for (k = 0; k < t->nframes; k++) {
-		struct frame *f = &t->frames[k];
+	for (k = 0; k < nframes; k++) {
+		struct frame *f = &frames[k];
 		unsigned crc;
-		if (k == t->nframes - 1)
+		if (k == nframes - 1)
 			f->data[1] |= HDLC_FINAL;
 		crc = crc16(f->data, f->len) ^ 0xffff;
 		f->data[f->len] = crc & 0xff;
 		f->data[f->len + 1] = crc >> 8;
 	}
-	t->cur_frame = t->cur_pos = t->cur_bit = t->ones = 0;
-	t->closing = 0;
+	cur_frame = cur_pos = cur_bit = ones = 0;
+	closing = 0;
 	/* a second of flags first (T.30 5.3.1) */
-	t->flags_left = (int)(1.0 * 300) / 8 * 8;
-	fax_tx_init(&t->tx, FM_V21, 0, t->srate, frames_get_bit, t);
-	t->tx_on = 1;
-	t->after_tx = next;
-	set_state(t, S_TX_FRAMES);
-	DSP_DBG("t30: send %d frames, fcf %02x\n", t->nframes,
-		t->frames[t->nframes - 1].data[2]);
+	flags_left = (int)(1.0 * 300) / 8 * 8;
+	tx.init(FM_V21, 0, srate, frames_get_bit, this);
+	tx_on = 1;
+	after_tx = next_;
+	set_state(S_TX_FRAMES);
+	DSP_DBG("t30: send %d frames, fcf %02x\n", nframes,
+		frames[nframes - 1].data[2]);
 }
 
-static void new_frames(struct t30 *t)
+void T30::new_frames()
 {
-	t->nframes = 0;
+	nframes = 0;
 }
 
 /* silence, then f */
-static void gap_then(struct t30 *t, int ms, void (*f)(struct t30 *t))
+void T30::gap_then(int ms, void (T30::*f)())
 {
-	set_state(t, S_GAP);
-	t->gap = ms2samples(ms, t->srate);
-	t->after_gap = f;
+	set_state(S_GAP);
+	gap = ms2samples(ms, srate);
+	after_gap = f;
 }
 
-static void finish(struct t30 *t, enum t30_result r)
+void T30::finish(enum t30_result r)
 {
-	if (t->result == T30_RUNNING) {
-		t->result = r;
+	if (result == T30_RUNNING) {
+		result = r;
 		DSP_DBG("t30: finished: %s\n", t30_result_text(r));
 	}
-	stop_fast(t);
-	set_state(t, S_DONE);
+	stop_fast();
+	set_state(S_DONE);
 }
 
 /* a DCN, then the end */
-static void send_dcn(struct t30 *t, enum t30_result r)
+void T30::send_dcn(enum t30_result r)
 {
-	if (t->result == T30_RUNNING)
-		t->result = r;
-	new_frames(t);
-	add_frame(t, FCF_DCN, NULL, 0);
-	send_frames(t, S_DONE);
+	if (result == T30_RUNNING)
+		result = r;
+	new_frames();
+	add_frame(FCF_DCN, NULL, 0);
+	send_frames(S_DONE);
 }
 
 
@@ -418,15 +450,15 @@ static void send_dcn(struct t30 *t, enum t30_result r)
  *    receiving: the answering machine
  */
 
-static void send_dis(struct t30 *t)
+void T30::send_dis()
 {
 	unsigned char fif[4] = { 0 }, id[20];
 
 	set_bit(fif, 10);                       /* receives */
 	/* V.27ter, V.29 and V.17 as far as the configuration goes */
-	if (t->cfg.max_bps > 9600) {
+	if (cfg.max_bps > 9600) {
 		set_bit(fif, 11), set_bit(fif, 12), set_bit(fif, 14);
-	} else if (t->cfg.max_bps >= 7200) {
+	} else if (cfg.max_bps >= 7200) {
 		set_bit(fif, 11), set_bit(fif, 12);
 	} else {
 		set_bit(fif, 12);
@@ -435,30 +467,30 @@ static void send_dis(struct t30 *t)
 	set_bit(fif, 16);                       /* MR */
 	set_bit(fif, 19);                       /* any length */
 	set_bit(fif, 21), set_bit(fif, 22), set_bit(fif, 23);   /* 0 ms */
-	new_frames(t);
-	add_frame(t, FCF_CSI, id, put_ident(id, t->cfg.ident));
-	add_frame(t, FCF_DIS, fif, 3);
-	send_frames(t, S_WAIT_DCS);
+	new_frames();
+	add_frame(FCF_CSI, id, put_ident(id, cfg.ident));
+	add_frame(FCF_DIS, fif, 3);
+	send_frames(S_WAIT_DCS);
 }
 
-static void start_page_rx(struct t30 *t)
+void T30::start_page_rx()
 {
-	int v17 = rates[t->rate].family == 2;
-	if (t->rx_page_on) {
-		t4_rx_free(&t->t4rx);
-		t4_page_free(&t->rx_page);
+	int v17 = rates[rate].family == 2;
+	if (rx_page_on) {
+		t4rx.release();
+		rx_page.release();
 	}
-	t4_page_init(&t->rx_page, T4_WIDTH, t->fine);
-	t4_rx_init(&t->t4rx, &t->rx_page, t->mr);
-	t->rx_page_on = 1;
-	start_fast(t, v17);
-	set_state(t, S_RX_PAGE);
-	start_timer(t, T2_MS * 2);
+	rx_page.init(T4_WIDTH, fine);
+	t4rx.init(&rx_page, mr);
+	rx_page_on = 1;
+	start_fast(v17);
+	set_state(S_RX_PAGE);
+	start_timer(T2_MS * 2);
 }
 
 static void page_bit(void *ctx, int bit)
 {
-	struct t30 *t = static_cast<t30*>(ctx);
+	T30 *t = static_cast<T30*>(ctx);
 	if (t->state == S_RX_TCF) {
 		if (bit) {
 			t->zero_run = 0;
@@ -467,49 +499,49 @@ static void page_bit(void *ctx, int bit)
 		}
 		t->tcf_trained = 1;
 	} else if (t->state == S_RX_PAGE && t->rx_page_on) {
-		t4_rx_bit(&t->t4rx, bit);
+		t->t4rx.bit(bit);
 	}
 }
 
 /* the response to the page: MCF if it came, RTN if not */
-static void page_done(struct t30 *t)
+void T30::page_done()
 {
-	struct t4_page *p = &t->rx_page;
-	t4_rx_end(&t->t4rx);
-	t->page_ok = p->rows > 100 && p->bad_rows * 20 < p->rows;
+	T4Page *p = &rx_page;
+	t4rx.end();
+	page_ok = p->rows > 100 && p->bad_rows * 20 < p->rows;
 	DSP_DBG("t30: page of %d rows, %d bad: %s\n", p->rows, p->bad_rows,
-		t->page_ok ? "ok" : "bad");
-	if (t->page_ok) {
-		t->pages++;
-		if (t->cfg.page_received)
-			t->cfg.page_received(t->cfg.ctx, p);
+		page_ok ? "ok" : "bad");
+	if (page_ok) {
+		pages++;
+		if (cfg.page_received)
+			cfg.page_received(cfg.ctx, p);
 	}
-	t4_rx_free(&t->t4rx);
-	t4_page_free(p);
-	t->rx_page_on = 0;
-	stop_fast(t);
-	set_state(t, S_WAIT_POST);
-	start_timer(t, T2_MS);
+	t4rx.release();
+	p->release();
+	rx_page_on = 0;
+	stop_fast();
+	set_state(S_WAIT_POST);
+	start_timer(T2_MS);
 }
 
-static void tcf_done(struct t30 *t)
+void T30::tcf_done()
 {
-	int bps = rates[t->rate].bps;
-	int ok = t->max_zero_run >= bps * 3 / 4;        /* 750 ms */
+	int bps = rates[rate].bps;
+	int ok = max_zero_run >= bps * 3 / 4;        /* 750 ms */
 	DSP_DBG("t30: TCF: %ld zeros in a row (of %d): %s\n",
-		t->max_zero_run, bps * 3 / 2, ok ? "ok" : "failed");
-	stop_fast(t);
-	new_frames(t);
-	add_frame(t, ok ? FCF_CFR : FCF_FTT, NULL, 0);
+		max_zero_run, bps * 3 / 2, ok ? "ok" : "failed");
+	stop_fast();
+	new_frames();
+	add_frame(ok ? FCF_CFR : FCF_FTT, NULL, 0);
 	if (ok) {
-		t->tries = 0;
-		send_frames(t, S_RX_PAGE);      /* start_page_rx after */
+		tries = 0;
+		send_frames(S_RX_PAGE);      /* start_page_rx after */
 	} else {
-		send_frames(t, S_WAIT_DCS);
+		send_frames(S_WAIT_DCS);
 	}
 }
 
-static void got_dcs(struct t30 *t, const unsigned char *fif, int len)
+void T30::got_dcs(const unsigned char *fif, int len)
 {
 	unsigned v = get_bit(fif, len, 11) | get_bit(fif, len, 12) << 1 |
 		     get_bit(fif, len, 13) << 2 | get_bit(fif, len, 14) << 3;
@@ -521,54 +553,54 @@ static void got_dcs(struct t30 *t, const unsigned char *fif, int len)
 		DSP_DBG("t30: DCS with unknown rate %x\n", v);
 		return;
 	}
-	t->rate = k;
-	t->fine = get_bit(fif, len, 15);
-	t->mr = get_bit(fif, len, 16);
+	rate = k;
+	fine = get_bit(fif, len, 15);
+	mr = get_bit(fif, len, 16);
 	DSP_DBG("t30: DCS: %d bit/s, %s, %s\n", rates[k].bps,
-		t->fine ? "fine" : "standard", t->mr ? "MR" : "MH");
+		fine ? "fine" : "standard", mr ? "MR" : "MH");
 	/* the training check follows on the fast modulation */
-	t->zero_run = t->max_zero_run = t->tcf_trained = 0;
-	memset(&t->mem, 0, sizeof(t->mem));
-	start_fast(t, 0);
-	set_state(t, S_RX_TCF);
-	start_timer(t, T4_MS + 1500);
+	zero_run = max_zero_run = tcf_trained = 0;
+	memset(&mem, 0, sizeof(mem));
+	start_fast(0);
+	set_state(S_RX_TCF);
+	start_timer(T4_MS + 1500);
 }
 
-static void rx_message(struct t30 *t)
+void T30::rx_message()
 {
-	int k, fcf = 0, last = t->nmsg - 1;
+	int k, fcf = 0, last = nmsg - 1;
 	const unsigned char *fif = NULL;
 	int fif_len = 0;
 
 	/* the identity, then the command */
-	for (k = 0; k < t->nmsg; k++) {
-		int f = t->msg[k][2] & 0xfe;
-		if ((f == FCF_TSI || f == FCF_CSI) && t->msg_len[k] > 3)
-			get_ident(t->remote_ident, t->msg[k] + 3,
-				  t->msg_len[k] - 3);
+	for (k = 0; k < nmsg; k++) {
+		int f = msg[k][2] & 0xfe;
+		if ((f == FCF_TSI || f == FCF_CSI) && msg_len[k] > 3)
+			get_ident(remote_ident, msg[k] + 3,
+				  msg_len[k] - 3);
 	}
-	fcf = t->msg[last][2] & 0xfe;
-	fif = t->msg[last] + 3;
-	fif_len = t->msg_len[last] - 3;
-	DSP_DBG("t30: received fcf %02x (%d frames) in %s\n", fcf, t->nmsg,
-		state_name[t->state]);
+	fcf = msg[last][2] & 0xfe;
+	fif = msg[last] + 3;
+	fif_len = msg_len[last] - 3;
+	DSP_DBG("t30: received fcf %02x (%d frames) in %s\n", fcf, nmsg,
+		state_name[state]);
 
 	if (fcf == FCF_DCN) {
-		stop_fast(t);
-		if (t->cfg.sending)
-			finish(t, T30_ERR_HANGUP);
+		stop_fast();
+		if (cfg.sending)
+			finish(T30_ERR_HANGUP);
 		else
-			finish(t, t->pages ? T30_OK : T30_ERR_HANGUP);
+			finish(pages ? T30_OK : T30_ERR_HANGUP);
 		return;
 	}
-	if (t->cfg.sending) {
+	if (cfg.sending) {
 		/* the calling machine */
 		switch (fcf) {
 		case FCF_DIS:
-			if (fif_len > (int)sizeof(t->dis))
-				fif_len = sizeof(t->dis);
-			memcpy(t->dis, fif, fif_len);
-			t->dis_len = fif_len;
+			if (fif_len > (int)sizeof(dis))
+				fif_len = sizeof(dis);
+			memcpy(dis, fif, fif_len);
+			dis_len = fif_len;
 			break;
 		}
 		return;         /* the rest in the sender's own handler */
@@ -577,27 +609,27 @@ static void rx_message(struct t30 *t)
 	/* the answering machine */
 	switch (fcf) {
 	case FCF_DCS:
-		got_dcs(t, fif, fif_len);
+		got_dcs(fif, fif_len);
 		break;
 	case FCF_MPS: case FCF_EOP: case FCF_EOM:
 	case FCF_PRI_MPS: case FCF_PRI_EOP: case FCF_PRI_EOM:
-		if (t->state == S_RX_PAGE && t->rx_page_on) {
+		if (state == S_RX_PAGE && rx_page_on) {
 			/* the page ended without our seeing the carrier go */
-			page_done(t);
+			page_done();
 		}
-		new_frames(t);
-		add_frame(t, t->page_ok ? FCF_MCF : FCF_RTN, NULL, 0);
-		if (!t->page_ok)
-			send_frames(t, S_WAIT_DCS);     /* it retrains */
+		new_frames();
+		add_frame(page_ok ? FCF_MCF : FCF_RTN, NULL, 0);
+		if (!page_ok)
+			send_frames(S_WAIT_DCS);     /* it retrains */
 		else if (fcf == FCF_MPS || fcf == FCF_PRI_MPS)
-			send_frames(t, S_RX_PAGE);
+			send_frames(S_RX_PAGE);
 		else if (fcf == FCF_EOP || fcf == FCF_PRI_EOP) {
-			t->eop_acked = 1;
-			send_frames(t, S_WAIT_DCN);
+			eop_acked = 1;
+			send_frames(S_WAIT_DCN);
 		}
 		else
-			send_frames(t, S_CED);          /* EOM: phase B again */
-		t->page_ok = 0;
+			send_frames(S_CED);          /* EOM: phase B again */
+		page_ok = 0;
 		break;
 	default:
 		break;
@@ -609,17 +641,17 @@ static void rx_message(struct t30 *t)
  *    sending: the calling machine
  */
 
-static void encode_page(struct t30 *t)
+void T30::encode_page()
 {
-	int bps = rates[t->rate].bps;
-	t4_bits_free(&t->page_bits);
-	t4_encode_mh(&t->page, &t->page_bits, t->min_ms * bps / 1000, 0, 1);
-	t->page_pos = 0;
+	int bps = rates[rate].bps;
+	page_bits.release();
+	page.encode_mh(&page_bits, min_ms * bps / 1000, 0, 1);
+	page_pos = 0;
 }
 
 static int page_get_bit(void *ctx)
 {
-	struct t30 *t = static_cast<t30*>(ctx);
+	T30 *t = static_cast<T30*>(ctx);
 	if (t->page_pos >= t->page_bits.n)
 		return FAX_BIT_END;
 	return t4_bits_get(&t->page_bits, t->page_pos++);
@@ -627,194 +659,194 @@ static int page_get_bit(void *ctx)
 
 static int tcf_get_bit(void *ctx)
 {
-	struct t30 *t = static_cast<t30*>(ctx);
+	T30 *t = static_cast<T30*>(ctx);
 	if (t->tcf_bits <= 0)
 		return FAX_BIT_END;
 	t->tcf_bits--;
 	return 0;
 }
 
-static void send_tcf(struct t30 *t)
+void T30::send_tcf()
 {
-	t->tcf_bits = rates[t->rate].bps * 3 / 2;       /* 1.5 s */
-	fax_tx_init(&t->tx, rates[t->rate].mod, 0, t->srate, tcf_get_bit, t);
-	t->tx_on = 1;
-	set_state(t, S_TCF);
+	tcf_bits = rates[rate].bps * 3 / 2;       /* 1.5 s */
+	tx.init(rates[rate].mod, 0, srate, tcf_get_bit, this);
+	tx_on = 1;
+	set_state(S_TCF);
 }
 
-static void send_dcs(struct t30 *t)
+void T30::send_dcs()
 {
 	unsigned char fif[3] = { 0 }, id[20];
-	unsigned v = rates[t->rate].bits;
+	unsigned v = rates[rate].bits;
 
 	set_bit(fif, 10);
 	if (v & 1) set_bit(fif, 11);
 	if (v & 2) set_bit(fif, 12);
 	if (v & 4) set_bit(fif, 13);
 	if (v & 8) set_bit(fif, 14);
-	if (t->fine)
+	if (fine)
 		set_bit(fif, 15);
-	if (get_bit(t->dis, t->dis_len, 19))
+	if (get_bit(dis, dis_len, 19))
 		set_bit(fif, 19);               /* any length */
-	dcs_min_ms(fif, t->min_ms);
-	DSP_DBG("t30: DCS: %d bit/s, %s, min scan %d ms\n", rates[t->rate].bps,
-		t->fine ? "fine" : "standard", t->min_ms);
-	new_frames(t);
-	add_frame(t, FCF_TSI, id, put_ident(id, t->cfg.ident));
-	add_frame(t, FCF_DCS, fif, 3);
-	send_frames(t, S_TCF);          /* the TCF after a gap */
+	dcs_min_ms(fif, min_ms);
+	DSP_DBG("t30: DCS: %d bit/s, %s, min scan %d ms\n", rates[rate].bps,
+		fine ? "fine" : "standard", min_ms);
+	new_frames();
+	add_frame(FCF_TSI, id, put_ident(id, cfg.ident));
+	add_frame(FCF_DCS, fif, 3);
+	send_frames(S_TCF);          /* the TCF after a gap */
 }
 
-static void send_page(struct t30 *t)
+void T30::send_page()
 {
-	encode_page(t);
-	DSP_DBG("t30: page %d: %d rows, %zu bits\n", t->pages + 1,
-		t->page.rows, t->page_bits.n);
-	fax_tx_init(&t->tx, rates[t->rate].mod,
-		    rates[t->rate].family == 2, t->srate, page_get_bit, t);
-	t->tx_on = 1;
-	set_state(t, S_PAGE);
+	encode_page();
+	DSP_DBG("t30: page %d: %d rows, %zu bits\n", pages + 1,
+		page.rows, page_bits.n);
+	tx.init(rates[rate].mod,
+		    rates[rate].family == 2, srate, page_get_bit, this);
+	tx_on = 1;
+	set_state(S_PAGE);
 }
 
-static int load_next(struct t30 *t)
+int T30::load_next()
 {
-	if (t->have_next)
+	if (have_next)
 		return 1;
-	if (t->cfg.next_page && t->cfg.next_page(t->cfg.ctx, &t->next) == 1)
-		t->have_next = 1;
-	return t->have_next;
+	if (cfg.next_page && cfg.next_page(cfg.ctx, &next) == 1)
+		have_next = 1;
+	return have_next;
 }
 
-static void send_post_page(struct t30 *t)
+void T30::send_post_page()
 {
-	int more = load_next(t);
+	int more = load_next();
 	/* another resolution needs another DCS: EOM, then phase B again */
-	t->last_post = !more ? FCF_EOP :
-		(t->next.fine != 0) != (t->fine != 0) ? FCF_EOM : FCF_MPS;
-	new_frames(t);
-	add_frame(t, t->last_post, NULL, 0);
-	send_frames(t, S_WAIT_MCF);
+	last_post = !more ? FCF_EOP :
+		(next.fine != 0) != (fine != 0) ? FCF_EOM : FCF_MPS;
+	new_frames();
+	add_frame(last_post, NULL, 0);
+	send_frames(S_WAIT_MCF);
 }
 
 /* the DIS came: what the call can do */
-static int choose(struct t30 *t)
+int T30::choose()
 {
 	int k;
 	for (k = 0; k < NRATES; k++)
-		if (rates[k].bps <= t->cfg.max_bps &&
-		    dis_rate_ok(t->dis, t->dis_len, &rates[k]))
+		if (rates[k].bps <= cfg.max_bps &&
+		    dis_rate_ok(dis, dis_len, &rates[k]))
 			break;
 	if (k == NRATES)
 		return -1;
-	t->rate = k;
-	t->min_ms = dis_min_ms(t->dis, t->dis_len);
+	rate = k;
+	min_ms = dis_min_ms(dis, dis_len);
 	return 0;
 }
 
-static void next_page_or_end(struct t30 *t)
+void T30::next_page_or_end()
 {
-	if (t->have_page)
-		t4_page_free(&t->page);
-	t->have_page = 0;
-	if (t->have_next) {
-		t->page = t->next;
-		t->have_page = 1;
-		t->have_next = 0;
+	if (have_page)
+		page.release();
+	have_page = 0;
+	if (have_next) {
+		page = next;
+		have_page = 1;
+		have_next = 0;
 	}
 }
 
 /* the page settings to tell in the DCS */
-static void page_settings(struct t30 *t)
+void T30::page_settings()
 {
-	t->fine = t->page.fine && get_bit(t->dis, t->dis_len, 15);
-	if (t->page.fine && !t->fine) {
+	fine = page.fine && get_bit(dis, dis_len, 15);
+	if (page.fine && !fine) {
 		/* the remote takes only standard: every other row */
-		struct t4_page p;
-		int y, s = T4_STRIDE(t->page.width);
-		t4_page_init(&p, t->page.width, 0);
-		for (y = 0; y < t->page.rows; y += 2)
-			t4_page_add_row(&p, t->page.bits + (size_t)y * s);
-		t4_page_free(&t->page);
-		t->page = p;
+		T4Page p;
+		int y, s = T4_STRIDE(page.width);
+		p.init(page.width, 0);
+		for (y = 0; y < page.rows; y += 2)
+			p.add_row(page.bits + (size_t)y * s);
+		page.release();
+		page = p;
 	}
 }
 
-static void sender_message(struct t30 *t)
+void T30::sender_message()
 {
-	int fcf = t->msg[t->nmsg - 1][2] & 0xfe;
+	int fcf = msg[nmsg - 1][2] & 0xfe;
 
-	switch (t->state) {
+	switch (state) {
 	case S_CNG:
 		if (fcf != FCF_DIS)
 			break;
-		t->t1 = 0;
-		if (choose(t)) {
-			send_dcn(t, T30_ERR_INCOMPATIBLE);
+		t1 = 0;
+		if (choose()) {
+			send_dcn(T30_ERR_INCOMPATIBLE);
 			break;
 		}
-		if (!t->have_page && !load_next(t)) {
-			send_dcn(t, T30_ERR_DOCUMENT);
+		if (!have_page && !load_next()) {
+			send_dcn(T30_ERR_DOCUMENT);
 			break;
 		}
-		if (!t->have_page)
-			next_page_or_end(t);
-		page_settings(t);
-		t->tries = 0;
-		gap_then(t, RESPONSE_GAP_MS, send_dcs);
+		if (!have_page)
+			next_page_or_end();
+		page_settings();
+		tries = 0;
+		gap_then(RESPONSE_GAP_MS, &T30::send_dcs);
 		break;
 	case S_WAIT_CFR:
 		if (fcf == FCF_CFR) {
-			t->tries = 0;
-			t->page_tries = 0;
-			gap_then(t, RESPONSE_GAP_MS, send_page);
+			tries = 0;
+			page_tries = 0;
+			gap_then(RESPONSE_GAP_MS, &T30::send_page);
 		} else if (fcf == FCF_FTT) {
 			/* a lower rate the remote has */
 			int k;
-			for (k = t->rate + 1; k < NRATES; k++)
-				if (dis_rate_ok(t->dis, t->dis_len, &rates[k]))
+			for (k = rate + 1; k < NRATES; k++)
+				if (dis_rate_ok(dis, dis_len, &rates[k]))
 					break;
 			if (k == NRATES) {
-				send_dcn(t, T30_ERR_TRAINING);
+				send_dcn(T30_ERR_TRAINING);
 				break;
 			}
-			t->rate = k;
-			t->tries = 0;
-			gap_then(t, RESPONSE_GAP_MS, send_dcs);
+			rate = k;
+			tries = 0;
+			gap_then(RESPONSE_GAP_MS, &T30::send_dcs);
 		} else if (fcf == FCF_DIS) {
 			/* it didn't get our DCS */
-			gap_then(t, RESPONSE_GAP_MS, send_dcs);
+			gap_then(RESPONSE_GAP_MS, &T30::send_dcs);
 		}
 		break;
 	case S_WAIT_MCF:
 		if (fcf == FCF_MCF || fcf == FCF_RTP || fcf == FCF_PIP) {
-			t->pages++;
-			t->tries = 0;
-			t->page_tries = 0;
-			next_page_or_end(t);
-			if (t->last_post == FCF_EOP) {
-				send_dcn(t, T30_OK);
-			} else if (t->last_post == FCF_EOM) {
+			pages++;
+			tries = 0;
+			page_tries = 0;
+			next_page_or_end();
+			if (last_post == FCF_EOP) {
+				send_dcn(T30_OK);
+			} else if (last_post == FCF_EOM) {
 				/* the receiver sends a DIS again */
-				t->cng = 0;
-				set_state(t, S_CNG);
-				start_timer(t, T1_MS);
+				cng = 0;
+				set_state(S_CNG);
+				start_timer(T1_MS);
 			} else if (fcf == FCF_MCF) {
-				page_settings(t);
-				gap_then(t, RESPONSE_GAP_MS, send_page);
+				page_settings();
+				gap_then(RESPONSE_GAP_MS, &T30::send_page);
 			} else {
-				page_settings(t);
-				gap_then(t, RESPONSE_GAP_MS, send_dcs);
+				page_settings();
+				gap_then(RESPONSE_GAP_MS, &T30::send_dcs);
 			}
 		} else if (fcf == FCF_RTN || fcf == FCF_PIN) {
 			/* send it again, after training again */
-			if (++t->page_tries >= TRIES) {
-				send_dcn(t, T30_ERR_PAGE);
+			if (++page_tries >= TRIES) {
+				send_dcn(T30_ERR_PAGE);
 				break;
 			}
-			t->tries = 0;
-			gap_then(t, RESPONSE_GAP_MS, send_dcs);
+			tries = 0;
+			gap_then(RESPONSE_GAP_MS, &T30::send_dcs);
 		} else if (fcf == FCF_CRP) {
-			gap_then(t, RESPONSE_GAP_MS, send_post_page);
+			gap_then(RESPONSE_GAP_MS, &T30::send_post_page);
 		}
 		break;
 	default:
@@ -827,36 +859,36 @@ static void sender_message(struct t30 *t)
  *    the V.21 receiver: HDLC frames into messages
  */
 
-static void frame_end(struct t30 *t)
+void T30::frame_end()
 {
-	int n = t->rnbits - 7, k, len;
+	int n = rnbits - 7, k, len;
 	unsigned char *d;
 
-	t->rnbits = 0;
+	rnbits = 0;
 	if (n < 32 || n % 8 || n / 8 > RX_FRAME_MAX)
 		return;
 	len = n / 8;
-	if (t->nmsg >= MAX_FRAMES * 2)
+	if (nmsg >= MAX_FRAMES * 2)
 		return;
-	d = t->msg[t->nmsg];
+	d = msg[nmsg];
 	for (k = 0; k < len; k++) {
 		int b, v = 0;
 		for (b = 0; b < 8; b++)
-			v |= t->rbits[k * 8 + b] << b;
+			v |= rbits[k * 8 + b] << b;
 		d[k] = v;
 	}
 	if (crc16(d, len) != 0xf0b8 || d[0] != HDLC_ADDR) {
 		DSP_DBG("t30: frame of %d bytes with a bad FCS\n", len);
 		return;
 	}
-	t->msg_len[t->nmsg++] = len - 2;
+	msg_len[nmsg++] = len - 2;
 	if (d[1] & HDLC_FINAL)
-		t->msg_ready = 1;
+		msg_ready = 1;
 }
 
 static void v21_bit(void *ctx, int bit)
 {
-	struct t30 *t = static_cast<t30*>(ctx);
+	T30 *t = static_cast<T30*>(ctx);
 	if (bit) {
 		if (++t->rones > 6) {           /* idle or abort */
 			t->rnbits = 0;
@@ -864,7 +896,7 @@ static void v21_bit(void *ctx, int bit)
 		}
 	} else {
 		if (t->rones == 6) {            /* a flag */
-			frame_end(t);
+			t->frame_end();
 			t->rones = 0;
 			return;
 		}
@@ -878,12 +910,12 @@ static void v21_bit(void *ctx, int bit)
 		t->rbits[t->rnbits++] = bit;
 }
 
-static void restart_v21(struct t30 *t)
+void T30::restart_v21()
 {
-	fax_rx_init(&t->v21, FM_V21, 0, t->srate, v21_bit, t, NULL);
-	t->rnbits = t->rones = 0;
-	t->nmsg = 0;
-	t->msg_ready = 0;
+	v21.init(FM_V21, 0, srate, v21_bit, this, NULL);
+	rnbits = rones = 0;
+	nmsg = 0;
+	msg_ready = 0;
 }
 
 
@@ -891,41 +923,41 @@ static void restart_v21(struct t30 *t)
  *    the machine
  */
 
-static void on_timeout(struct t30 *t)
+void T30::on_timeout()
 {
-	switch (t->state) {
+	switch (state) {
 	case S_WAIT_DCS:
 		/* no answer to the DIS: again, for T1 */
-		if (++t->tries >= T1_MS / (T4_MS + 2000))
-			send_dcn(t, T30_ERR_NO_RESPONSE);
+		if (++tries >= T1_MS / (T4_MS + 2000))
+			send_dcn(T30_ERR_NO_RESPONSE);
 		else
-			send_dis(t);
+			send_dis();
 		break;
 	case S_RX_TCF:
 		/* the training check never came right */
-		tcf_done(t);
+		tcf_done();
 		break;
 	case S_RX_PAGE:
 	case S_WAIT_POST:
-		send_dcn(t, T30_ERR_NO_RESPONSE);
+		send_dcn(T30_ERR_NO_RESPONSE);
 		break;
 	case S_WAIT_DCN:
-		finish(t, T30_OK);
+		finish(T30_OK);
 		break;
 	case S_CNG:
-		send_dcn(t, T30_ERR_NO_RESPONSE);
+		send_dcn(T30_ERR_NO_RESPONSE);
 		break;
 	case S_WAIT_CFR:
-		if (++t->tries >= TRIES)
-			send_dcn(t, T30_ERR_NO_RESPONSE);
+		if (++tries >= TRIES)
+			send_dcn(T30_ERR_NO_RESPONSE);
 		else
-			gap_then(t, 0, send_dcs);
+			gap_then(0, &T30::send_dcs);
 		break;
 	case S_WAIT_MCF:
-		if (++t->tries >= TRIES)
-			send_dcn(t, T30_ERR_NO_RESPONSE);
+		if (++tries >= TRIES)
+			send_dcn(T30_ERR_NO_RESPONSE);
 		else
-			gap_then(t, 0, send_post_page);
+			gap_then(0, &T30::send_post_page);
 		break;
 	default:
 		break;
@@ -933,72 +965,72 @@ static void on_timeout(struct t30 *t)
 }
 
 /* the transmitter finished */
-static void tx_done(struct t30 *t)
+void T30::tx_done()
 {
-	t->tx_on = 0;
-	restart_v21(t);
-	switch (t->state) {
+	tx_on = 0;
+	restart_v21();
+	switch (state) {
 	case S_TX_FRAMES:
-		if (t->after_tx == S_DONE) {
-			finish(t, t->result == T30_RUNNING ? T30_OK : t->result);
-		} else if (t->after_tx == S_TCF) {
-			gap_then(t, RESPONSE_GAP_MS, send_tcf);
-		} else if (t->after_tx == S_RX_PAGE) {
-			start_page_rx(t);
-		} else if (t->after_tx == S_CED) {
-			gap_then(t, RESPONSE_GAP_MS, send_dis);
+		if (after_tx == S_DONE) {
+			finish(result == T30_RUNNING ? T30_OK : result);
+		} else if (after_tx == S_TCF) {
+			gap_then(RESPONSE_GAP_MS, &T30::send_tcf);
+		} else if (after_tx == S_RX_PAGE) {
+			start_page_rx();
+		} else if (after_tx == S_CED) {
+			gap_then(RESPONSE_GAP_MS, &T30::send_dis);
 		} else {
-			set_state(t, t->after_tx);
-			start_timer(t, t->after_tx == S_WAIT_DCN ? T2_MS :
-				    t->after_tx == S_WAIT_DCS ? T4_MS : T4_MS);
+			set_state(after_tx);
+			start_timer(after_tx == S_WAIT_DCN ? T2_MS :
+				    after_tx == S_WAIT_DCS ? T4_MS : T4_MS);
 		}
 		break;
 	case S_TCF:
-		set_state(t, S_WAIT_CFR);
-		start_timer(t, T4_MS);
+		set_state(S_WAIT_CFR);
+		start_timer(T4_MS);
 		break;
 	case S_PAGE:
-		gap_then(t, RESPONSE_GAP_MS, send_post_page);
+		gap_then(RESPONSE_GAP_MS, &T30::send_post_page);
 		break;
 	default:
 		break;
 	}
 }
 
-static float tone(struct t30 *t, float freq)
+float T30::tone(float freq)
 {
 	return FAX_CED_RMS * 1.41421f *
-		sinf(2 * (float)M_PI * freq * t->count / t->srate);
+		sinf(2 * (float)M_PI * freq * count / srate);
 }
 
-static float tx_sample(struct t30 *t)
+float T30::tx_sample()
 {
 	float y = 0;
-	long c = t->count;
+	long c = count;
 
-	if (t->tx_on) {
-		y = fax_tx_sample(&t->tx);
-		if (t->tx.done)
-			tx_done(t);
+	if (tx_on) {
+		y = tx.sample();
+		if (tx.done)
+			tx_done();
 		return y;
 	}
-	switch (t->state) {
+	switch (state) {
 	case S_CNG:
 		/* 1100 Hz, 0.5 s on, 3 s off */
-		if (t->cng && c % ms2samples(3500, t->srate) < ms2samples(500, t->srate))
-			y = tone(t, 1100) * 0.5f;
+		if (cng && c % ms2samples(3500, srate) < ms2samples(500, srate))
+			y = tone(1100) * 0.5f;
 		break;
 	case S_CED:
 		/* 200 ms of silence, 3 s of 2100 Hz, then 75 ms silence */
-		if (c >= ms2samples(200, t->srate) &&
-		    c < ms2samples(3200, t->srate))
-			y = tone(t, 2100);
-		else if (c >= ms2samples(3275, t->srate))
-			send_dis(t);
+		if (c >= ms2samples(200, srate) &&
+		    c < ms2samples(3200, srate))
+			y = tone(2100);
+		else if (c >= ms2samples(3275, srate))
+			send_dis();
 		break;
 	case S_GAP:
-		if (--t->gap <= 0)
-			t->after_gap(t);
+		if (--gap <= 0)
+			(this->*after_gap)();
 		break;
 	default:
 		break;
@@ -1006,69 +1038,69 @@ static float tx_sample(struct t30 *t)
 	return y;
 }
 
-static void rx_sample(struct t30 *t, float x)
+void T30::rx_sample(float x)
 {
-	if (t->tx_on || t->state == S_DONE)
+	if (tx_on || state == S_DONE)
 		return;
-	fax_rx_sample(&t->v21, x);
-	if (t->fast_on) {
-		fax_rx_sample(&t->fast, x);
-		if (t->state == S_RX_TCF && t->tcf_trained &&
-		    !t->fast.carrier) {
-			tcf_done(t);
-		} else if (t->state == S_RX_PAGE && t->fast.trained &&
-			   t->fast.carrier_run < -ms2samples(100, t->srate)) {
-			page_done(t);
-		} else if (t->state == S_RX_PAGE && t->fast.trained &&
-			   t->rx_page_on && t->t4rx.done) {
+	v21.sample(x);
+	if (fast_on) {
+		fast.sample(x);
+		if (state == S_RX_TCF && tcf_trained &&
+		    !fast.carrier) {
+			tcf_done();
+		} else if (state == S_RX_PAGE && fast.trained &&
+			   fast.carrier_run < -ms2samples(100, srate)) {
+			page_done();
+		} else if (state == S_RX_PAGE && fast.trained &&
+			   rx_page_on && t4rx.done) {
 			/* RTC: the rest is no page */
-			page_done(t);
-		} else if (t->state == S_RX_PAGE && t->fast.trained) {
+			page_done();
+		} else if (state == S_RX_PAGE && fast.trained) {
 			/* the page may take minutes: the timer only for
 			   the start of it */
-			start_timer(t, T2_MS);
+			start_timer(T2_MS);
 		}
 	}
-	if (t->msg_ready ||
-	    (t->nmsg && !t->v21.carrier && t->rnbits == 0)) {
+	if (msg_ready ||
+	    (nmsg && !v21.carrier && rnbits == 0)) {
 		/* a whole message (or what came before the carrier went) */
-		if (t->nmsg) {
-			if (t->cfg.sending) {
-				rx_message(t);
-				if (t->state != S_DONE)
-					sender_message(t);
+		if (nmsg) {
+			if (cfg.sending) {
+				rx_message();
+				if (state != S_DONE)
+					sender_message();
 			} else {
-				rx_message(t);
+				rx_message();
 			}
 		}
-		t->nmsg = 0;
-		t->msg_ready = 0;
+		nmsg = 0;
+		msg_ready = 0;
 	}
 }
 
-void t30_process(struct t30 *t, const short *in, short *out, int n)
+void t30_process(T30 *t, const short *in, short *out, int n)
 {
 	int i;
 	for (i = 0; i < n; i++) {
 		float x = in ? in[i] : 0;
 		float y = 0;
 		if (t->state != S_DONE) {
-			y = tx_sample(t);
-			rx_sample(t, x);
+			y = t->tx_sample();
+			t->rx_sample(x);
 			t->count++;
 			if (t->timer && --t->timer == 0)
-				on_timeout(t);
+				t->on_timeout();
 			if (t->t1 && --t->t1 == 0 && t->state == S_CNG)
-				finish(t, T30_ERR_NO_FAX);
+				t->finish(T30_ERR_NO_FAX);
 		}
 		if (out)
 			out[i] = dsp_clip16(y);
 	}
 }
 
-struct t30 *t30_create(const struct t30_config *cfg)
+T30 *t30_create(const struct t30_config *cfg)
 {
-	struct t30 *t = static_cast<t30*>(calloc(1, sizeof(*t)));
+	T30 *t = static_cast<T30*>(calloc(1, sizeof(*t)));
 	if (!t)
 		return NULL;
 	t->cfg = *cfg;
@@ -1076,40 +1108,40 @@ struct t30 *t30_create(const struct t30_config *cfg)
 	if (!t->cfg.max_bps)
 		t->cfg.max_bps = 14400;
 	t->result = T30_RUNNING;
-	restart_v21(t);
+	t->restart_v21();
 	if (cfg->sending) {
-		set_state(t, S_CNG);
+		t->set_state(S_CNG);
 		t->cng = 1;
 		t->t1 = ms2samples(T1_MS, t->srate);
 		/* the first page now: no document, no call */
-		if (!load_next(t))
-			finish(t, T30_ERR_DOCUMENT);
+		if (!t->load_next())
+			t->finish(T30_ERR_DOCUMENT);
 		else
-			next_page_or_end(t);
+			t->next_page_or_end();
 	} else {
-		set_state(t, S_CED);
+		t->set_state(S_CED);
 	}
 	return t;
 }
 
-void t30_free(struct t30 *t)
+void t30_free(T30 *t)
 {
 	if (!t)
 		return;
-	stop_fast(t);
+	t->stop_fast();
 	if (t->rx_page_on) {
-		t4_rx_free(&t->t4rx);
-		t4_page_free(&t->rx_page);
+		t->t4rx.release();
+		t->rx_page.release();
 	}
 	if (t->have_page)
-		t4_page_free(&t->page);
+		t->page.release();
 	if (t->have_next)
-		t4_page_free(&t->next);
-	t4_bits_free(&t->page_bits);
+		t->next.release();
+	t->page_bits.release();
 	free(t);
 }
 
-void t30_get_status(struct t30 *t, struct t30_status *s)
+void t30_get_status(T30 *t, struct t30_status *s)
 {
 	memset(s, 0, sizeof(*s));
 	s->result = t->result;
@@ -1120,13 +1152,13 @@ void t30_get_status(struct t30 *t, struct t30_status *s)
 	s->phase = state_name[t->state];
 }
 
-void t30_hangup(struct t30 *t)
+void t30_hangup(T30 *t)
 {
 	/* the sender may hang up as soon as its DCN is out, before the end
 	   of it got here: the document is complete once its EOP had our
 	   MCF */
 	if (t->state != S_DONE)
-		finish(t, !t->cfg.sending && t->eop_acked ? T30_OK :
+		t->finish(!t->cfg.sending && t->eop_acked ? T30_OK :
 		       T30_ERR_HANGUP);
 }
 
