@@ -1350,7 +1350,10 @@ void V34Pump::rt_tone(float x)
 		/* without the echo of our own tone */
 		float e = rt_e / PROBE_PERIOD - own_g.power;
 		rt_e = 0;
-		rt_blocks = e > tone_power(150) && rt_g.power > 0.6f * e ?
+		/* the Agere modem's tone A when it asks for a retrain in
+		   V.90 has as much again at 1800 Hz */
+		rt_blocks = e > tone_power(150) &&
+			rt_g.power > (pcm ? 0.4f : 0.6f) * e ?
 			rt_blocks + 1 : 0;
 		if (dsplibs_debug_level >= 5 && retraining)
 			DSP_DBG("v34: rt %ld e %.0f tone %.0f own %.0f\n",
@@ -1748,7 +1751,8 @@ void V34Pump::retrain(const char *why)
 	pcount = 0;
 	rt_blocks = rt_heard = 0;
 	lost = bad = 0;
-	timeout = total + ms2samples(15000, srate);
+	/* V.90's phase 3 (Jd, the DIL) takes about 8 s more */
+	timeout = total + ms2samples(pcm ? 30000 : 15000, srate);
 	set_state(V34_RT_SILENCE);
 }
 
