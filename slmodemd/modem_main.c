@@ -683,12 +683,13 @@ static int socket_ioctl(struct modem *m, unsigned int cmd, unsigned long arg)
 		break;
 	case MDMCTL_IODELAY: // kernel module returns s->delay + ST7554_HW_IODELAY (48)
 		/* the DSP times the V.34 handshake with this (its L1 after
-		   the answerer's tone A reversal): 0 makes it give up phase 2
-		   and start over.  The delay is the samples queued towards
-		   the line, as the kernel driver's s->delay; when the DSP
-		   asks, it has trimmed them (update_delay) to about 140, and
-		   over d-modem it connects with 128 to 160 */
-		ret = dev->delay;
+		   the answerer's tone A reversal): with 0 the calling modem
+		   gives up phase 2 and starts over.  Over d-modem (192
+		   samples queued, dev->delay) V.34 connected 5 times in 5
+		   with 128, 2 in 4 with 144, 1 in 4 with 112, 0 in 4 with 96,
+		   120, 160 and 192; 128 is what the modem_half test harness
+		   reports for its own 128 sample queue */
+		ret = dev->delay > 64 ? dev->delay - 64 : 0;
 		if (getenv("SLMODEMD_IODELAY"))
 			ret = atoi(getenv("SLMODEMD_IODELAY"));
 		if (getenv("SLMODEMD_IODELAY"))
