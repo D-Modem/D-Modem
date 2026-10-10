@@ -857,6 +857,17 @@ static void rx_symbol(struct v34_rx *r)
 		}
 		break;
 	case V34_RX_TRN:
+		/* V.90: S straight after TRN (scrambled TRN repeats
+		   every other symbol only by chance) */
+		if (r->s_in_trn && r->s_score < 0.05f) {
+			if (++r->s_count >= 24) {
+				r->ev_s = 1;
+				DSP_DBG("v34 rx: S in TRN at symbol %ld\n", r->sym);
+				rx_set_stage(r, V34_RX_S);
+				break;
+			}
+		} else
+			r->s_count = 0;
 		d = v34_trn4[nearest4(z)];
 		e = cplx_pow(cplx_sub(z, d)) / 2;
 		r->mse += 0.01f * (e - r->mse);

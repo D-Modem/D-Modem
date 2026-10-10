@@ -227,8 +227,10 @@ struct v34_ec {
 	float *corr, *win;      /* scratch of the search */
 	int pos, rpos;
 	int on, far_on, far_delay, trained;
+	int judged, bypass;     /* the echo was measured; none: off */
 	long n, since, filled, far_since;
 	float mu, dbg_rx, dbg_err;
+	float pw_rx, pw_err;    /* in and out while training */
 };
 
 #define V34_FIFO        8
@@ -1143,6 +1145,10 @@ static float ec_run(struct v34_ec *e, float tx, float rx)
 			     i < EC_FAR_LEN; i++, p = (p - 1) & mask)
 				e->wf[i] += g * e->hist[p];
 	}
+	if (e->mu > 0) {
+		e->pw_rx += 0.001f * (rx * rx - e->pw_rx);
+		e->pw_err += 0.001f * (err * err - e->pw_err);
+	}
 	if (dsplibs_debug_level >= 6) {
 		e->dbg_rx += 0.001f * (rx * rx - e->dbg_rx);
 		e->dbg_err += 0.001f * (err * err - e->dbg_err);
@@ -1171,6 +1177,8 @@ static void ec_schedule(struct v34_dp *v)
 		e->on = 1;
 		e->n = e->since = e->filled = 0;
 		e->far_on = 0;
+		e->judged = e->bypass = 0;
+		e->pw_rx = e->pw_err = 0;
 		DSP_DBG("v34: echo canceller on\n");
 	}
 	if (ours)
@@ -1197,8 +1205,20 @@ static void ec_schedule(struct v34_dp *v)
 				t < ms2samples(600, v->srate) ? 0.2f : 0.05f;
 		}
 		e->trained = 1;
-	} else if (e->trained)
+	} else if (e->trained) {
 		e->mu = EC_TRACK_MU;
+		/* what the training took away: with no echo to cancel
+		   (a 4-wire network, or the remote did not stay silent)
+		   the canceller would only add noise */
+		if (!e->judged) {
+			float erle = 10 * log10f((e->pw_rx + 1) /
+						 (e->pw_err + 1));
+			e->judged = 1;
+			e->bypass = erle < 6;
+			DSP_DBG("v34: echo canceller took %.1f dB away%s\n",
+				erle, e->bypass ? ": off" : "");
+		}
+	}
 }
 
 static void pump_rx_sample(struct v34_dp *v, float x)
@@ -1227,7 +1247,8 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 	}
 	if (v->prx_on) {
 		ec_schedule(v);
-		x = ec_run(&v->ec, v->last_tx, x);
+		if (!v->ec.bypass)
+			x = ec_run(&v->ec, v->last_tx, x);
 		v34_rx_sample(&v->prx, x);
 		return;
 	}
@@ -1330,6 +1351,8 @@ static void v90_make_mp(struct v34_dp *v, int ack)
 {
 	int h[6];
 	float gain = v34_rx_precoder(&v->prx, h);
+	DSP_DBG("v34: V.90 precoding would gain %.2f dB: h %d %d %d %d %d %d\n",
+		gain, h[0], h[1], h[2], h[3], h[4], h[5]);
 	if (gain < V34_PRECODE_MIN)
 		memset(h, 0, sizeof(h));
 	v->mp_len = v90_mp_build(v->mpb, v->max_rate_rx, V34_TRELLIS, 1, ack,
@@ -1923,6 +1946,9 @@ static int v34_handshake(struct v34_dp *v)
 			v90_tx_jd_end(&v->v90tx);
 			v34_set_state(v, P3D_JDP);
 			v->sbar_seen = v->prx.sbar_count;
+			/* the analogue modem may send TRN1a instead of
+			   silence while it takes in the DIL */
+			v->prx.s_in_trn = 1;
 		}
 		break;
 	case P3D_JDP:
@@ -1933,6 +1959,7 @@ static int v34_handshake(struct v34_dp *v)
 			 v->prx.sbar_count >= v->sbar_seen + 2) {
 			DSP_DBG("v34: V.90 DIL ends after %d rounds\n",
 				v->v90tx.dil_rounds);
+			v->prx.s_in_trn = 0;
 			v90_tx_dil_end(&v->v90tx);
 			v34_set_state(v, P3D_DIL_END);
 		}
