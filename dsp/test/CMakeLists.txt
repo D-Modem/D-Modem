@@ -7,10 +7,10 @@
 #             gcc -m32 on x86_64); long
 #
 #   ctest --test-dir build -L quick
-set(S ${CMAKE_CURRENT_SOURCE_DIR}/..)
-set(C ${CMAKE_CURRENT_SOURCE_DIR}/../..)
-list(TRANSFORM DMODEM_DSP_SRCS PREPEND ${C}/ OUTPUT_VARIABLE _dsp)
-list(TRANSFORM DMODEM_CORE_SRCS PREPEND ${C}/ OUTPUT_VARIABLE _core)
+set(S ${DMODEM_DSP_DIR})
+set(C ${DMODEM_CORE_DIR})
+set(_dsp ${DMODEM_DSP_SRCS})
+set(_core ${DMODEM_CORE_SRCS})
 set(_fax ${S}/fax_modems.cpp ${S}/qam.cpp ${S}/qam_tables.cpp ${S}/dsp_util.cpp
 	${S}/dp_fsk.cpp)
 

@@ -35,7 +35,7 @@ BBS or ISP.
 
 The modem is `libdmodem` ([../slmodemd/dmodem.h](../slmodemd/dmodem.h)):
 the slmodemd modem core (AT commands, V.42 error correction, V.42bis
-compression) with the open data pumps of `slmodemd/dsp`.  It answers
+compression) with the open data pumps of `dsp`.  It answers
 V.21, V.22, V.22bis, V.23, Bell 103/212A, V.32, V.32bis and V.34, and
 V.90 as the digital (server) modem: up to 56000 bit/s downstream to a
 V.90 client modem when the call is G.711 end to end.  The module has no
@@ -169,6 +169,6 @@ and to `DModemReceiveFax`, and `DModemSendFax` to `ReceiveFAX`, all at
 
 `debug = 3` in `[general]` and `core set verbose 5` show the modem's
 handshake on the console.  The same modem runs outside Asterisk in
-`slmodemd/dsp/test/dmodem_pair` (two modems of the library back to back)
+`dsp/test/dmodem_pair` (two modems of the library back to back)
 and, as slmodemd, against the original binary library in
-`slmodemd/dsp/test/interop.py`.
+`dsp/test/interop.py`.

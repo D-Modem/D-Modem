@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 #include "dmodem.h"
-#include "dsp/t30.h"
+#include "t30.h"
 
 using namespace dsp;
 

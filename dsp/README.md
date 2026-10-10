@@ -2,7 +2,7 @@
 
 This directory is a reimplementation (C++) of the interface that the
 binary-only `dsplibs.o` (Smart Link's DSP library) gives to the slmodemd
-modem core, declared with C linkage in `../dsplibs.h`. It exports the same
+modem core, declared with C linkage in `../slmodemd/dsplibs.h`. It exports the same
 entry points, so the modem core builds against it unchanged. slmodemd and
 libdmodem use only this code; the original library, `test/dsplibs.o`, is
 kept as a test peer for the interop tests:
@@ -289,9 +289,12 @@ The receivers find the training by matching the received phase steps
 against the known sequence. The V.29 and V.27ter training sequences repeat
 every 127 symbols, so the end of the alternations before them tells which
 repetition is being received. A V.17 short train continues from the
-equalizer of the last long train at the same rate. The original library
-sends the 64 symbol bridge after a short train as after a long one,
-spandsp goes on with the scrambled ones at once: the first symbols after
+equalizer of the last long train at the same rate. After a short train
+spandsp goes on with the scrambled ones at once, without the 64 symbol
+bridge of a long train; a recording of the original library's page
+decodes the same way. This transmitter sends the bridge (the original
+receiver takes our pages more often with it than without, see the open
+problem below), and the receiver takes either: the first symbols after
 the training tell which. In data mode the V.17 receiver follows a clear
 error in the data's power (6 % or more, over some 500 symbols): the
 original library's constellation comes about 1.4 dB below its training.
@@ -317,7 +320,7 @@ are close to pure tones and would de-tune them.
 ## Code structure
 
 Everything here is in `namespace dsp`, except the C entry points of
-`../dsplibs.h`, which keep C linkage for the modem core.
+`../slmodemd/dsplibs.h`, which keep C linkage for the modem core.
 
 - **Data pumps** derive from `Pump` (`pump.h`): `CallProgPump`, `FskPump`,
   `V22Pump`, `V32Pump` and `V34Pump` (which is also V.8 and V.90). A pump
@@ -338,6 +341,9 @@ Everything here is in `namespace dsp`, except the C entry points of
 - **The other library objects**, `DcRemover`, `RingDetector`, `CallerId`
   and `Voice` (`dsp_glue.cpp`), are classes behind their C entry points
   (`dcr_*`, `RD_*`, `CID_*`, `VOICE_*`).
+- **slmodemd's own pumps without a modulation**, `dp_dummy.cpp` (the
+  `DP_DUMMY` test pump) and `dp_sinus.cpp` (`DP_SINUS`, a test tone), are
+  Smart Link's C code as it came with slmodemd, registered the same way.
 
 The conversion from C structs and functions kept the output the same to
 the byte: every quick test produces the same debug log before and after.
@@ -361,9 +367,9 @@ compiler (`g++ -m32`), for the original library.
 
 The interop and agere calls run in real time and mostly wait, so they run
 side by side (`-j`); each writes its modem logs to
-`build/slmodemd/dsp/test/logs/<test>/`.
+`build/dsp/test/logs/<test>/`.
 
-The test programs are in `build/slmodemd/dsp/test/`; `interop.py` and
+The test programs are in `build/dsp/test/`; `interop.py` and
 `fax_interop.py` take the two modem programs as arguments (`NETSIM` and
 `LOG_DIR` in the environment for netsim and the logs).
 
@@ -424,8 +430,8 @@ time but loses about half of our pages (short train): "V17 Dec error too
 big" some 60 ms into the data. It takes its own short trains every time,
 and the Agere modem takes ours. What differs from the original transmitter:
 it sends 200 ms of 1800 Hz (the training point C) and 20 ms of silence
-before every V.17 signal, and no bridge after a short TRN (segment 4 at
-once). Neither the tone, nor dropping the bridge, nor the start of the
+before every V.17 signal, and, decoded from a recording, no bridge after a
+short TRN (segment 4 at once). Neither the tone, nor dropping the bridge, nor the start of the
 differential encoder, nor a symbol clock that runs through the call made
 the pages pass more often; with no bridge fewer pass.
 
