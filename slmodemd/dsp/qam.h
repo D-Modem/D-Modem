@@ -129,8 +129,14 @@ struct echo_canceller {
 	float *hist;
 	int pos;
 	float tx_power;
+	float pw_rx, pw_err;    /* in and out while it adapts */
+	int training, off;
 };
 int   echo_init(struct echo_canceller *e, int len);
+/* the end of the training: what did it take away (dB)?  Below 6 dB there
+   was no echo to cancel (a 4-wire network, or the remote was not silent)
+   and the canceller stays off rather than add noise */
+float echo_judge(struct echo_canceller *e);
 void  echo_free(struct echo_canceller *e);
 /* returns rx with the echo of the transmitted signal removed; adapts
    when mu > 0 */

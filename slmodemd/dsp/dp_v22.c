@@ -663,6 +663,18 @@ static int v22_handshake(struct v22_dp *v)
 			v->sb1_seen = 1;
 		if (ms >= 765 && v->sb1_seen)
 			return v22_connect(v);
+		/* a Bell 103 answerer only keeps its 2225 Hz mark */
+		if (v->dp.id == DP_B212 && !v->sb1_seen && ms >= 1500) {
+			struct dp_runtime *rt = (struct dp_runtime *)
+				modem_get_param(v->modem, MDMPRM_DPRUNTIME);
+			DSP_DBG("%s: no 212A answer, falling back to Bell 103\n",
+				v22_name(v));
+			/* the answerer's mark is there already */
+			if (rt)
+				rt->ans_sent = 1;
+			modem_set_param(v->modem, MDMPRM_DP_REQUESTED, DP_B103);
+			return DPSTAT_CHANGEDP;
+		}
 		break;
 
 	case V22_WAIT_RX:

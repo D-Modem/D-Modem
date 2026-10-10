@@ -180,6 +180,7 @@ struct v32_dp {
 	float ec_mu;
 	struct qam_rx rx;
 	struct tone_trk aa, ac, usb1, ans2100;
+	struct tone_trk v21m, v23m;     /* FSK answerers' marks */
 	int carrier;
 	long carrier_run;
 	enum v32_rxp rxp;
@@ -623,6 +624,10 @@ static void v32_rx_sample(struct v32_dp *v, float x)
 		v->ev_rev = 1;
 	tone_run(&v->usb1, x, v->rx.power, v->srate);
 	tone_run(&v->ans2100, x, v->rx.power, v->srate);
+	if (v->caller && v->automode) {
+		tone_run(&v->v21m, x, v->rx.power, v->srate);
+		tone_run(&v->v23m, x, v->rx.power, v->srate);
+	}
 	v->ev_ac = v->ac.on;
 	v->ev_aa = v->aa.on;
 	/* V.22 unscrambled ones (2250 Hz), not the 2100 Hz answer tone */
@@ -705,13 +710,18 @@ static void v32_retrain(struct v32_dp *v)
 	}
 }
 
-static int v32_fallback(struct v32_dp *v)
+static int v32_fallback_to(struct v32_dp *v, enum DP_ID id, const char *name)
 {
-	DSP_DBG("v32: remote is not V.32, falling back to V.22bis\n");
+	DSP_DBG("v32: remote is not V.32, falling back to %s\n", name);
 	if (v->rt && !v->caller)
 		v->rt->ans_sent = 1;
-	modem_set_param(v->modem, MDMPRM_DP_REQUESTED, DP_V22BIS);
+	modem_set_param(v->modem, MDMPRM_DP_REQUESTED, id);
 	return DPSTAT_CHANGEDP;
+}
+
+static int v32_fallback(struct v32_dp *v)
+{
+	return v32_fallback_to(v, DP_V22BIS, "V.22bis");
 }
 
 /* the rates our receiver can take, judged by the decision error on
@@ -818,6 +828,11 @@ static int v32_handshake(struct v32_dp *v)
 			if (v->state != A_TRAIN2)
 				v->ec_mu = 0.05f;
 		} else if (v->txm == TXM_TRN4 && sym >= V32_TRN_LEN) {
+			if (v->ec_mu > 0) {
+				float erle = echo_judge(&v->ec);
+				DSP_DBG("v32: echo canceller took %.1f dB "
+					"away%s\n", erle, v->ec.off ? ": off" : "");
+			}
 			v->ec_mu = 0;
 			if (v->state == A_TRAIN1) {
 				v32_set_state(v, A_R1);
@@ -881,6 +896,13 @@ static int v32_handshake(struct v32_dp *v)
 		} else if (v->automode && v->ev_usb1 &&
 			   v->usb1.on_count > ms2samples(100, v->srate))
 			return v32_fallback(v);
+		/* an FSK answerer's steady mark after its answer tone */
+		else if (v->automode &&
+			 v->v21m.on_count > ms2samples(300, v->srate))
+			return v32_fallback_to(v, DP_V21, "V.21");
+		else if (v->automode && !v->ans2100.on &&
+			 v->v23m.on_count > ms2samples(300, v->srate))
+			return v32_fallback_to(v, DP_V23, "V.23");
 		break;
 	case C_AA_DELAY:
 		/* CC goes out 64 symbols after the reversal; our detector
@@ -915,6 +937,8 @@ static int v32_handshake(struct v32_dp *v)
 		if (v->ev_r && v->tx_word_bit == 0) {
 			v->ev_r = 0;
 			r = v32_choose(v, v->r_word);
+			DSP_DBG("v32: R word %04X in R2 (choice %04X)\n",
+				v->r_word, r ? r->bits : 0);
 			if (!r || (v->r_word & RB_RATES) != r->bits) {
 				/* not a final rate word yet (R1 repeated) */
 				break;
@@ -1044,6 +1068,8 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 	tone_init(&v->ac, 600, srate);
 	tone_init(&v->usb1, 2250, srate);
 	tone_init(&v->ans2100, 2100, srate);
+	tone_init(&v->v21m, 1650, srate);
+	tone_init(&v->v23m, 1300, srate);
 
 	/* the caller scrambles with GPC, the answerer with GPA */
 	v->tx_scr_tap = caller ? 18 : 5;

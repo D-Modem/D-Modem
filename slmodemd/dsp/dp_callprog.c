@@ -53,6 +53,9 @@ struct callprog_dp {
 	float block_energy;
 	struct cp_tone dialtone[3];     /* 350, 440, 425 Hz */
 	struct cp_tone ans2100, ans2225, usb1;
+	/* 2225 Hz (Bell) and 2250 Hz (V.22 unscrambled ones) are too
+	   close for the blocks: 200 ms ones tell them apart */
+	struct goertzel fine2225, fine2250;
 	int need_dialtone;
 	int dialtone_blocks;
 
@@ -106,6 +109,8 @@ static struct dp *callprog_create(struct modem *m, enum DP_ID id,
 	goertzel_init(&c->ans2100.g, 2100, c->block_len, srate);
 	goertzel_init(&c->ans2225.g, 2225, c->block_len, srate);
 	goertzel_init(&c->usb1.g, 2250, c->block_len, srate);
+	goertzel_init(&c->fine2225, 2225, srate / 5, srate);
+	goertzel_init(&c->fine2250, 2250, srate / 5, srate);
 	biquad_bandpass(&c->cpt_bp, 480, 1.2f, srate);
 
 	v = modem_get_sreg(m, SREG_DTMF_DURATION);
@@ -177,10 +182,16 @@ static int cp_block(struct callprog_dp *c)
 	if (cp_tone_block(&c->ans2100, bp, min) >= 300 / BLOCK_MS ||
 	    cp_tone_block(&c->ans2225, bp, min) >= 300 / BLOCK_MS ||
 	    cp_tone_block(&c->usb1, bp, min) >= 300 / BLOCK_MS) {
-		int tone = c->ans2225.blocks >= 300 / BLOCK_MS ? ANSTONE_2225 :
+		int tone = c->ans2225.blocks >= 300 / BLOCK_MS &&
+			c->fine2225.power > c->fine2250.power ? ANSTONE_2225 :
 			ANSTONE_2100;
 		DSP_DBG("callprog: answer tone %s detected\n",
 			tone == ANSTONE_2225 ? "2225" : "2100");
+		/* the runtime comes with modem_start(), after we were
+		   created for a dial */
+		if (!c->rt)
+			c->rt = (struct dp_runtime *)
+				modem_get_param(c->modem, MDMPRM_DPRUNTIME);
 		if (c->rt) {
 			c->rt->answer_tone = tone;
 			c->rt->answer_tone_end = c->total;
@@ -266,6 +277,8 @@ static int callprog_process(struct dp *dp, void *in, void *out, int cnt)
 		goertzel_run(&c->ans2100.g, x);
 		goertzel_run(&c->ans2225.g, x);
 		goertzel_run(&c->usb1.g, x);
+		goertzel_run(&c->fine2225, x);
+		goertzel_run(&c->fine2250, x);
 		b = biquad_run(&c->cpt_bp, x);
 		c->cpt_energy += b * b;
 		c->block_energy += x * x;

@@ -24,6 +24,7 @@
  */
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1281,6 +1282,12 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 
 static int v34_fallback(struct v34_dp *v, const char *why)
 {
+	if (v->caller && v->rt && v->rt->answer_tone == ANSTONE_2225) {
+		/* a Bell answerer: 212A (or 103, see dp_v22.c) */
+		DSP_DBG("v34: %s, Bell answer tone: Bell 212A\n", why);
+		modem_set_param(v->modem, MDMPRM_DP_REQUESTED, DP_B212);
+		return DPSTAT_CHANGEDP;
+	}
 	DSP_DBG("v34: %s, falling back to V.32bis\n", why);
 	if (v->rt) {
 		v->rt->v32_automode = 1;

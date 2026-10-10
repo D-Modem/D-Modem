@@ -6,7 +6,8 @@
 #
 #     interop.py <caller exe> <answerer exe> ["ATX3;AT+MS=122"]
 #
-# Both modems get the ';' separated AT commands, then modemB answers,
+# Both modems get the ';' separated AT commands (PROTO_B=... gives modemB
+# its own, e.g. an older modulation to answer with), then modemB answers,
 # modemA dials, data is exchanged both ways and checked.  The modem logs
 # are written next to this script (modemA.log, modemB.log).
 import os, re, select, subprocess, sys, time, tty, threading
@@ -70,7 +71,8 @@ for k in fd:
     if not wait(k, b"OK", 5): print(k, buf[k]); done(False)
     buf[k] = b""
 for k in fd:
-    for c in [x for x in proto.split(";") if x]:
+    pr = os.environ.get("PROTO_B", proto) if k == "modemB" else proto
+    for c in [x for x in pr.split(";") if x]:
         cmd(k, c)
         if not wait(k, b"OK|ERROR", 5) or b"ERROR" in buf[k]: print(k, c, buf[k]); done(False)
         buf[k] = b""

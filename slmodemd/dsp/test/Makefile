@@ -21,6 +21,12 @@ check: dsp_loopback fax_loopback
 	./dsp_loopback 32 30 20
 	CALLER_DP=122 ./dsp_loopback 8 30 25
 	CALLER_DP=8 ./dsp_loopback 22 30 25
+	CALLER_DP=8 ./dsp_loopback 21 30 25
+	CALLER_DP=8 ./dsp_loopback 23 30 25
+	CALLER_DP=8 ./dsp_loopback 103 30 30
+	CALLER_DP=8 ./dsp_loopback 212 30 25
+	CALLER_DP=21 ./dsp_loopback 8 30 45
+	CALLER_DP=23 ./dsp_loopback 8 30 60
 	./dsp_loopback 122 40 20
 	./dsp_loopback 122 15 20
 	./dsp_loopback 122 30 20 8000

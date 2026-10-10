@@ -371,6 +371,13 @@ float echo_run(struct echo_canceller *e, float tx, float rx, float mu)
 	float est = 0, err, *h;
 	int i;
 
+	if (mu > 0 && !e->training) {
+		e->training = 1;
+		e->off = 0;
+		e->pw_rx = e->pw_err = 0;
+	}
+	if (e->off)
+		return rx;
 	/* history kept twice so that it can be read linearly */
 	if (--e->pos < 0)
 		e->pos = e->len - 1;
@@ -380,12 +387,27 @@ float echo_run(struct echo_canceller *e, float tx, float rx, float mu)
 	for (i = 0; i < e->len; i++)
 		est += e->w[i] * h[i];
 	err = rx - est;
+	if (mu > 0) {
+		e->pw_rx += 0.001f * (rx * rx - e->pw_rx);
+		e->pw_err += 0.001f * (err * err - e->pw_err);
+	}
 	if (mu > 0 && e->tx_power > 1) {
 		float g = mu * err / (e->len * e->tx_power);
 		for (i = 0; i < e->len; i++)
 			e->w[i] += g * h[i];
 	}
 	return err;
+}
+
+float echo_judge(struct echo_canceller *e)
+{
+	float erle = 10 * log10f((e->pw_rx + 1) / (e->pw_err + 1));
+	e->training = 0;
+	if (erle < 6) {
+		e->off = 1;
+		memset(e->w, 0, e->len * sizeof(*e->w));
+	}
+	return erle;
 }
 
 void qam_rx_recompute(struct qam_rx *q)

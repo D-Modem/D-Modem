@@ -4,6 +4,7 @@
  *    their DTE socketpairs; several pairs in threads at once.
  *
  *    dmodem_pair [AT+MS=34] [pairs] [seconds]
+ *    DMODEM_LAW=alaw: the modems on an A-law line
  */
 
 #include <fcntl.h>
@@ -54,7 +55,8 @@ static void *run(void *arg)
 	nonblock(sa[0]); nonblock(sa[1]); nonblock(sb[0]); nonblock(sb[1]);
 	snprintf(init, sizeof(init), "ATE0Q1X3%s\r", p->ms);
 	c.init = init;
-	c.law = DMODEM_LAW_ULAW;
+	c.law = getenv("DMODEM_LAW") && !strcmp(getenv("DMODEM_LAW"), "alaw") ?
+		DMODEM_LAW_ALAW : DMODEM_LAW_ULAW;
 	c.name = "caller";
 	c.dte_fd = sa[0];
 	a = dmodem_create(&c);

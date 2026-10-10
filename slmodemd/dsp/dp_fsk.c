@@ -166,6 +166,12 @@ struct fsk_dp {
 	struct fsk_demod rx;
 	float tx_phase, tx_inc;
 	int tx_bit;
+	int automode;           /* answering after V.22bis: V.23 next */
+	/* the caller's check that the mark is really at its frequency:
+	   another answerer's (V.21's 1650 Hz for V.23's 1300) demodulates
+	   as a mark too */
+	struct goertzel g_mark, g_lo, g_hi;
+	int mark_true;
 };
 
 static void fsk_set_state(struct fsk_dp *f, enum fsk_state state)
@@ -208,15 +214,26 @@ static struct dp *fsk_create(struct modem *m, enum DP_ID id,
 	f->tx_inc = par->tx_baud / srate;
 	f->tx_bit = 1;
 	osc_set_freq(&f->ans, 2100, srate);
+	goertzel_init(&f->g_mark, par->rx_mark, srate / 100, srate);
+	goertzel_init(&f->g_lo, par->rx_mark - 350, srate / 100, srate);
+	goertzel_init(&f->g_hi, par->rx_mark + 350, srate / 100, srate);
 
 	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
 	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
 	f->timeout = (long)(s7 > 0 ? s7 : 50) * srate;
 	f->carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate / 10;
 
-	if (caller)
+	if (caller) {
+		struct dp_runtime *rt = (struct dp_runtime *)
+			modem_get_param(m, MDMPRM_DPRUNTIME);
 		f->state = FSK_WAIT_CARRIER;
-	else {
+		if (rt && rt->ans_sent && id == DP_B103) {
+			/* Bell 212A fell back: the answerer's 2225 Hz mark
+			   was heard, answer it at once */
+			rt->ans_sent = 0;
+			f->state = FSK_TRAIN;
+		}
+	} else {
 		struct dp_runtime *rt = (struct dp_runtime *)
 			modem_get_param(m, MDMPRM_DPRUNTIME);
 		f->state = FSK_ANS_SILENCE;
@@ -224,6 +241,7 @@ static struct dp *fsk_create(struct modem *m, enum DP_ID id,
 			/* automode fallback: the answer tone was sent */
 			rt->ans_sent = 0;
 			f->state = FSK_ANS_GAP;
+			f->automode = 1;
 		}
 	}
 	DSP_DBG("%s: create %s, srate %d\n", par->name,
@@ -273,7 +291,13 @@ static int fsk_process(struct dp *dp, void *in, void *out, int cnt)
 		else
 			f->carrier_count = f->carrier_count < 0 ? f->carrier_count - 1 : -1;
 
-		if (f->rx.carrier && f->rx.last_dec)
+		goertzel_run(&f->g_lo, src[i]);
+		goertzel_run(&f->g_hi, src[i]);
+		if (goertzel_run(&f->g_mark, src[i]))
+			f->mark_true = f->g_mark.power > 4 * f->g_lo.power &&
+				f->g_mark.power > 4 * f->g_hi.power;
+		if (f->rx.carrier && f->rx.last_dec &&
+		    (!f->caller || f->state != FSK_WAIT_CARRIER || f->mark_true))
 			f->mark_count++;
 		else
 			f->mark_count = 0;
@@ -316,6 +340,22 @@ static int fsk_process(struct dp *dp, void *in, void *out, int cnt)
 				DSP_DBG("%s: connect %d/%d\n", f->par->name,
 					(int)f->par->tx_baud, (int)f->par->rx_baud);
 				ret = DPSTAT_CONNECT;
+			} else if (!f->caller && f->automode &&
+				   f->dp.id == DP_V21 &&
+				   f->count >= ms2samples(3000, f->srate) &&
+				   !f->rx.carrier) {
+				/* no V.21 caller: a V.23 one waits for our
+				   1300 Hz mark */
+				struct dp_runtime *rt = (struct dp_runtime *)
+					modem_get_param(f->modem,
+							MDMPRM_DPRUNTIME);
+				DSP_DBG("%s: no answer, falling back to V.23\n",
+					f->par->name);
+				if (rt)
+					rt->ans_sent = 1;
+				modem_set_param(f->modem, MDMPRM_DP_REQUESTED,
+						DP_V23);
+				return DPSTAT_CHANGEDP;
 			}
 			break;
 		case FSK_DATA:
