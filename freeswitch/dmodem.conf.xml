@@ -1,0 +1,61 @@
+<!--
+  dmodem.conf.xml: mod_dmodem's configuration (autoload_configs/)
+
+  <settings> holds the module's defaults, each <profile> what the dmodem
+  application does with a call:
+
+    <action application="dmodem" data="bbs"/>
+
+  and dmodem_send_fax / dmodem_receive_fax take <settings>.
+-->
+<configuration name="dmodem.conf" description="DModem software modem">
+  <settings>
+    <!-- the modem's debug output (0 none, 1 the connection, 3 the
+         handshake, 5 everything) at the DEBUG log level -->
+    <param name="debug" value="0"/>
+
+    <!-- the jitter buffer the applications put on the channel, in ms (0:
+         none; a channel's own jitterbuffer_msec takes precedence): without
+         one, a packet a few ms late costs the modem a frame -->
+    <param name="jitter-buffer" value="60"/>
+
+    <!-- fax: dmodem receives a fax machine's call into
+         <fax-dir>/<date>-<time>-<caller>-<uuid>.tif (fax: false turns
+         this off); fax-ident is our number (CSI, TSI) -->
+    <!-- <param name="fax" value="true"/> -->
+    <!-- <param name="fax-dir" value="/var/lib/freeswitch/storage/fax"/> -->
+    <!-- <param name="fax-ident" value="+1 555 0100"/> -->
+    <!-- <param name="fax-max-rate" value="14400"/> -->
+  </settings>
+
+  <profiles>
+    <!-- the data to a TCP server: a BBS, a telnet host -->
+    <profile name="bbs">
+      <param name="mode" value="tcp"/>
+      <param name="host" value="127.0.0.1"/>
+      <param name="port" value="2323"/>
+    </profile>
+
+    <!-- the data to a program on a pty, here pppd: dial-up IP.  The
+         program has DMODEM_CHANNEL, DMODEM_UUID, DMODEM_PROFILE,
+         DMODEM_RATE and DMODEM_CALLERID in its environment. -->
+    <profile name="ppp">
+      <param name="mode" value="exec"/>
+      <param name="command" value="exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:192.168.77.2"/>
+    </profile>
+
+    <!-- every option:
+    <profile name="example">
+      <param name="mode" value="tcp"/>        tcp or exec
+      <param name="host" value="bbs.example.org"/>
+      <param name="port" value="23"/>
+      <param name="command" value="exec /usr/sbin/pppd ..."/>
+      <param name="init" value="+MS=34"/>     more AT commands for the modem
+      <param name="law" value="auto"/>        ulaw, alaw or auto (the channel's codec)
+      <param name="timeout" value="60"/>      seconds for the modems to connect
+      <param name="jitter-buffer" value="60"/> ms, as in settings
+      <param name="fax" value="true"/>        and the fax settings, as above
+    </profile>
+    -->
+  </profiles>
+</configuration>

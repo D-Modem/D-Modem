@@ -26,6 +26,7 @@ set(DMODEM_PJPROJECT "auto" CACHE STRING "pjproject: auto, system or fetch")
 set_property(CACHE DMODEM_PJPROJECT PROPERTY STRINGS auto system fetch)
 option(DMODEM_SLMODEMD "Build slmodemd (SIP, needs pjproject)" ON)
 option(DMODEM_ASTERISK "Build app_dmodem when Asterisk's headers are found" ON)
+option(DMODEM_FREESWITCH "Build mod_dmodem when FreeSWITCH is found" ON)
 option(DMODEM_TESTS "Build the test programs (ctest)" ON)
 option(DMODEM_WERROR "Treat compiler warnings as errors (CI)" OFF)
 
@@ -49,6 +50,9 @@ add_subdirectory(slmodemd)
 
 if(DMODEM_ASTERISK)
 	add_subdirectory(asterisk)
+endif()
+if(DMODEM_FREESWITCH)
+	add_subdirectory(freeswitch)
 endif()
 
 if(DMODEM_TESTS)

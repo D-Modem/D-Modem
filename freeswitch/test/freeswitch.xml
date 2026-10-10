@@ -1,0 +1,185 @@
+<?xml version="1.0"?>
+<!-- the tests' FreeSWITCH (fs.sh): one SIP profile on 127.0.0.1:5080 that
+     takes any call and registration, G.711 only, the dialplan of the
+     tests, mod_dmodem's profiles.  vars.xml: run, test, dmodem_debug,
+     fax_max_rate, term_init (fs.sh writes it). -->
+<document type="freeswitch/xml">
+  <X-PRE-PROCESS cmd="include" data="vars.xml"/>
+
+  <section name="configuration" description="Various Configuration">
+    <configuration name="switch.conf" description="Core Configuration">
+      <settings>
+        <param name="max-sessions" value="100"/>
+        <param name="sessions-per-second" value="100"/>
+        <param name="rtp-start-port" value="17000"/>
+        <param name="rtp-end-port" value="17999"/>
+        <param name="loglevel" value="debug"/>
+        <param name="colorize-console" value="false"/>
+      </settings>
+    </configuration>
+
+    <configuration name="modules.conf" description="Modules">
+      <modules>
+        <load module="mod_logfile"/>
+        <load module="mod_event_socket"/>
+        <load module="mod_commands"/>
+        <load module="mod_dptools"/>
+        <load module="mod_dialplan_xml"/>
+        <load module="mod_sofia"/>
+        <load module="mod_spandsp"/>
+        <load module="mod_dmodem"/>
+      </modules>
+    </configuration>
+
+    <configuration name="logfile.conf" description="File Logging">
+      <settings>
+        <param name="rotate-on-hup" value="true"/>
+      </settings>
+      <profiles>
+        <profile name="default">
+          <settings>
+            <param name="rollover" value="0"/>
+          </settings>
+          <mappings>
+            <map name="all" value="debug,info,notice,warning,err,crit,alert"/>
+          </mappings>
+        </profile>
+      </profiles>
+    </configuration>
+
+    <configuration name="event_socket.conf" description="Socket Client">
+      <settings>
+        <param name="listen-ip" value="127.0.0.1"/>
+        <param name="listen-port" value="8022"/>
+        <param name="password" value="dmodem"/>
+      </settings>
+    </configuration>
+
+    <configuration name="sofia.conf" description="sofia Endpoint">
+      <global_settings>
+        <param name="log-level" value="0"/>
+      </global_settings>
+      <profiles>
+        <profile name="modem">
+          <settings>
+            <param name="context" value="modem-in"/>
+            <param name="dialplan" value="XML"/>
+            <param name="sip-ip" value="127.0.0.1"/>
+            <param name="rtp-ip" value="127.0.0.1"/>
+            <param name="ext-sip-ip" value="127.0.0.1"/>
+            <param name="ext-rtp-ip" value="127.0.0.1"/>
+            <param name="sip-port" value="5080"/>
+            <param name="inbound-codec-prefs" value="PCMU,PCMA"/>
+            <param name="outbound-codec-prefs" value="PCMU,PCMA"/>
+            <param name="auth-calls" value="false"/>
+            <param name="accept-blind-reg" value="true"/>
+            <param name="accept-blind-auth" value="true"/>
+            <param name="suppress-cng" value="true"/>
+            <param name="rtp-timer-name" value="soft"/>
+            <param name="manage-presence" value="false"/>
+            <param name="force-register-domain" value="127.0.0.1"/>
+          </settings>
+        </profile>
+      </profiles>
+    </configuration>
+
+    <configuration name="spandsp.conf" description="SpanDSP config">
+      <fax-settings>
+        <param name="use-ecm" value="false"/>
+        <param name="verbose" value="false"/>
+        <param name="disable-v17" value="false"/>
+        <param name="ident" value="+1 555 0177"/>
+        <!-- no page header: the pages must come as they went -->
+        <param name="header" value="_undef_"/>
+        <param name="spool-dir" value="$${run}/tmp"/>
+        <param name="file-prefix" value="spandsp"/>
+      </fax-settings>
+    </configuration>
+
+    <configuration name="dmodem.conf" description="DModem software modem">
+      <settings>
+        <param name="debug" value="$${dmodem_debug}"/>
+        <param name="fax-dir" value="$${run}/fax"/>
+        <param name="fax-ident" value="+1 555 0199"/>
+        <param name="fax-max-rate" value="$${fax_max_rate}"/>
+      </settings>
+      <profiles>
+        <!-- the test BBS (asterisk/test/bbs_sim.py) -->
+        <profile name="bbs">
+          <param name="mode" value="tcp"/>
+          <param name="host" value="127.0.0.1"/>
+          <param name="port" value="2323"/>
+        </profile>
+        <!-- the calling modem: its data to the user's terminal -->
+        <profile name="term">
+          <param name="mode" value="tcp"/>
+          <param name="host" value="127.0.0.1"/>
+          <param name="port" value="2324"/>
+          <param name="init" value="$${term_init}"/>
+        </profile>
+        <!-- the BBS on A-law: on a PCMU channel, FreeSWITCH transcodes
+             (run.sh AT+MS=34 bbsalaw) -->
+        <profile name="bbsalaw">
+          <param name="mode" value="tcp"/>
+          <param name="host" value="127.0.0.1"/>
+          <param name="port" value="2323"/>
+          <param name="law" value="alaw"/>
+        </profile>
+        <!-- the same BBS as a program on the pty -->
+        <profile name="bbsexec">
+          <param name="mode" value="exec"/>
+          <param name="command" value="exec python3 -I &quot;$DMODEM_TEST/bbs_sim.py&quot; --stdio"/>
+        </profile>
+      </profiles>
+    </configuration>
+  </section>
+
+  <section name="dialplan" description="Regex/XML Dialplan">
+    <context name="modem-in">
+      <!-- run.sh: the answering modem -->
+      <extension name="answer">
+        <condition field="destination_number" expression="^answer-(\w+)$">
+          <action application="dmodem" data="$1"/>
+          <action application="log" data="INFO ANSWERER dmodem_status=${dmodem_status} dmodem_rate=${dmodem_rate}"/>
+          <action application="hangup"/>
+        </condition>
+      </extension>
+
+      <!-- fax.sh: dmodem noticing a fax machine, and the fax applications -->
+      <extension name="fax-auto">
+        <condition field="destination_number" expression="^fax-auto$">
+          <action application="dmodem" data="bbs"/>
+        </condition>
+      </extension>
+      <extension name="fax-recv">
+        <condition field="destination_number" expression="^fax-recv$">
+          <action application="dmodem_receive_fax" data="$${run}/received.tif +1 555 0199"/>
+        </condition>
+      </extension>
+      <!-- fax_spandsp.sh: FreeSWITCH's own fax (mod_spandsp) -->
+      <extension name="sp-recv">
+        <condition field="destination_number" expression="^sp-recv$">
+          <!-- as dmodem does: a packet a few ms late would cost the
+               receiver a frame -->
+          <action application="set" data="jitterbuffer_msec=60"/>
+          <action application="set" data="rtp_jitter_buffer_plc=false"/>
+          <action application="answer"/>
+          <action application="rxfax" data="$${run}/spandsp.tif"/>
+        </condition>
+      </extension>
+
+      <!-- sip.sh: D-Modem (slmodemd) calls any number -->
+      <extension name="number">
+        <condition field="destination_number" expression="^\d+$">
+          <action application="dmodem" data="bbs"/>
+          <action application="log" data="INFO ANSWERER dmodem_status=${dmodem_status} dmodem_rate=${dmodem_rate}"/>
+          <action application="hangup"/>
+        </condition>
+      </extension>
+    </context>
+  </section>
+
+  <section name="directory" description="User Directory">
+    <domain name="127.0.0.1"/>
+  </section>
+</document>
