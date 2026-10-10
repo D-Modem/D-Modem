@@ -1995,6 +1995,15 @@ static int v34_handshake(struct v34_dp *v)
 				v->v90tx.enc.M[2], v->v90tx.enc.M[3],
 				v->v90tx.enc.M[4], v->v90tx.enc.M[5],
 				v->cpt.sr, v->cpt.ld);
+			{
+				char buf[400];
+				int i, n = 0;
+				for (i = 0; i < v->v90tx.enc.M[0] && n < 380; i++)
+					n += sprintf(buf + n, " %d",
+						     v->v90tx.enc.ucode[0][i]);
+				DSP_DBG("v34: V.90 CPt ucodes%s; shaper a1 %d a2 %d b1 %d b2 %d\n",
+					buf, v->cpt.a1, v->cpt.a2, v->cpt.b1, v->cpt.b2);
+			}
 			v34_set_state(v, P4D_TRAIN);
 		}
 		break;

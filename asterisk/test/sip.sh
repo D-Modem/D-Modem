@@ -6,7 +6,13 @@ here=$(cd "$(dirname "$0")" && pwd)
 top=$here/../..
 run=${TMPDIR:-/tmp}/dmodem-sip-test
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod"
-cp "$here/pjsip.conf" "$run/etc/"
+# CODEC=alaw (or ulaw): the call in that law only
+if [ -n "$CODEC" ]; then
+	sed "/^allow = /d; s/^disallow = all/disallow = all\nallow = $CODEC/" \
+		"$here/pjsip.conf" > "$run/etc/pjsip.conf"
+else
+	cp "$here/pjsip.conf" "$run/etc/"
+fi
 # RECORD=1: the call's audio both ways in $run/rx.ulaw (from D-Modem) and
 # $run/tx.ulaw (to it)
 if [ -n "$RECORD" ]; then

@@ -58,7 +58,9 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
 
 - **V.8:** ANSam (2100 Hz, 15 Hz AM, reversals every 450 ms), CM/JM/CJ on
   V.21. A CM or JM without V.34, or a V.32 calling modem (1800 Hz AA),
-  hands the call to the V.32bis pump.
+  hands the call to the V.32bis pump. As in V.32bis Annex A, that falls
+  back to V.22bis after 3 s, and V.22bis to V.21 after 3 s more of
+  unanswered USB1 (a V.21 caller waits for the answerer's mark).
 - **Phase 2:** INFO0/INFO1 on the 600 baud DPSK control channel, tones A/B
   and their reversals for the round trip delay, and line probing with L1/L2
   (21 tones, 150 Hz apart). The probe gives the SNR after equalization for
@@ -131,7 +133,9 @@ law is mu-law, or A-law with `DSP_G711=alaw`.
   probing, INFO1d; INFO1a asks for V.90 (symbol rate 6, UINFO) or V.34.
 - **Phase 3:** the analogue modem's S, PP, TRN and Ja (with the DIL
   descriptor) go into the V.34 receiver; Sd, TRN1d, Jd, Jd' and the DIL
-  it asked for come out as PCM.
+  it asked for come out as PCM. While it takes in the DIL the analogue
+  modem is silent or sends TRN1a; the S that ends the DIL is looked for
+  after either.
 - **Phase 4:** CPt, CP and E come in; Ri, TRN2d, MP, Ed and B1d go out
   through the encoder with the CPt and then the CP constellations.
 - **Data mode:** the encoder of 5.4/V.90: modulus encoder, mappers, sign
@@ -139,15 +143,23 @@ law is mu-law, or A-law with `DSP_G711=alaw`.
   5.4.5.5: the analogue modem checks TRN2d against it). Upstream is the
   V.34 data mode receiver, with the trellis code and precoding our MP asks
   for. The echo canceller takes our PCM signal (converted to 9600 Hz)
-  and trains while Sd, TRN1d and Jd go out (the analogue modem is silent
-  then). With the hybrid echo of netsim 20 dB down, or 12 dB down after
+  and trains while Sd, TRN1d and Jd go out (the analogue modem is meant
+  to be silent then). It stays off unless that training took at least
+  6 dB away: on a 4-wire network there is no echo, and a canceller
+  trained on the remote's signal would add noise. With the hybrid echo of netsim 20 dB down, or 12 dB down after
   200 ms, calls still connect at 56000/31200; 12 dB down after 20 ms is
   too much at times: the echo of the DIL's loudest codes hides the
   analogue modem's S.
 
 The original library, as an analogue V.90 modem calling through the
 simulated network (`make -C dsp/test v90_interop`), connects at 56000
-bit/s downstream and 31200 upstream, mu-law and A-law. Its own debug
+bit/s downstream and 31200 upstream, mu-law and A-law (A-law is
+marginal there: the original library retrains in phase 4 at times). Over
+SIP, through Asterisk and DModem (`asterisk/test/sip.sh AT+MS=90`, with
+`CODEC=alaw` for A-law), it connects at 56000/31200 in both laws. d-modem
+converts between the call's 8000 Hz and slmodemd's 9600 Hz itself: the
+resampler of pjmedia cuts below 4000 Hz, which takes away the part of the
+PCM signal the analogue modem recovers its timing from. Its own debug
 output (its `edprintf` lines are hidden behind a key) helped: it reports
 the levels it measures in the DIL, the digital pad it concludes and why
 it retrains.
