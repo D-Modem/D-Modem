@@ -160,6 +160,7 @@ struct t30 {
 	struct t4_rx t4rx;
 	int rx_page_on;
 	int page_ok;
+	int eop_acked;                  /* MCF to an EOP sent: all came */
 	long zero_run, max_zero_run, tcf_trained;
 
 	int pages;
@@ -588,8 +589,10 @@ static void rx_message(struct t30 *t)
 			send_frames(t, S_WAIT_DCS);     /* it retrains */
 		else if (fcf == FCF_MPS || fcf == FCF_PRI_MPS)
 			send_frames(t, S_RX_PAGE);
-		else if (fcf == FCF_EOP || fcf == FCF_PRI_EOP)
+		else if (fcf == FCF_EOP || fcf == FCF_PRI_EOP) {
+			t->eop_acked = 1;
 			send_frames(t, S_WAIT_DCN);
+		}
 		else
 			send_frames(t, S_CED);          /* EOM: phase B again */
 		t->page_ok = 0;
@@ -1117,9 +1120,12 @@ void t30_get_status(struct t30 *t, struct t30_status *s)
 
 void t30_hangup(struct t30 *t)
 {
+	/* the sender may hang up as soon as its DCN is out, before the end
+	   of it got here: the document is complete once its EOP had our
+	   MCF */
 	if (t->state != S_DONE)
-		finish(t, t->pages && !t->cfg.sending &&
-		       t->state == S_WAIT_DCN ? T30_OK : T30_ERR_HANGUP);
+		finish(t, !t->cfg.sending && t->eop_acked ? T30_OK :
+		       T30_ERR_HANGUP);
 }
 
 const char *t30_result_text(enum t30_result r)
