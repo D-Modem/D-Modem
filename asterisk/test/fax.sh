@@ -8,7 +8,7 @@
 # the received ones must be the same.
 here=$(cd "$(dirname "$0")" && pwd)
 t4=$here/../../slmodemd/dsp/test/t4_test
-run=${TMPDIR:-/tmp}/dmodem-fax-test
+run=${TMPDIR:-/tmp}/dmodem-fax-test.$$
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod" "$run/fax"
 [ -x "$t4" ] || make -C "$here/../../slmodemd/dsp/test" t4_test >/dev/null || exit 1
 "$t4" light "$run/doc.tif" || exit 1
