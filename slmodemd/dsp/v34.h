@@ -152,7 +152,7 @@ enum v34_txseg {
 };
 
 struct v34_tx {
-	struct qam_tx qam;
+	QamTx qam;
 	int baud;
 	unsigned scr;
 	int tap;
@@ -198,7 +198,7 @@ struct v90_dil {
 typedef struct { double re, im; } lscplx;
 
 struct v34_rx {
-	struct qam_rx qam;
+	QamRx qam;
 	int baud;
 	int tap;                /* the remote's scrambler */
 	int phase4;             /* the next S starts phase 4 (no PP) */

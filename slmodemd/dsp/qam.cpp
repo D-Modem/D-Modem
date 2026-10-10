@@ -18,58 +18,58 @@ namespace dsp {
  *    transmitter
  */
 
-void qam_tx_init(struct qam_tx *q, int srate, float carrier, float baud,
-		 float alpha, int span, float rms_symbol, float amplitude)
+void QamTx::init(int srate_, float carrier_, float baud,
+		 float alpha, int span_, float rms_symbol, float amplitude)
 {
 	int i, n;
 
-	memset(q, 0, sizeof(*q));
-	q->srate = srate;
-	q->sps = srate / baud;
-	q->span = span > QAM_MAX_SPAN ? QAM_MAX_SPAN : span;
-	n = 2 * q->span * QAM_PULSE_RES;
+	memset(this, 0, sizeof(*this));
+	srate = srate_;
+	sps = srate_ / baud;
+	span = span_ > QAM_MAX_SPAN ? QAM_MAX_SPAN : span_;
+	n = 2 * span * QAM_PULSE_RES;
 	for (i = 0; i <= n + 1; i++)
-		q->pulse[i] = rrc_pulse((float)i / QAM_PULSE_RES - q->span, alpha);
+		pulse[i] = rrc_pulse((float)i / QAM_PULSE_RES - span, alpha);
 	/* unit energy pulses: the pass band rms is amplitude / sqrt(2) */
-	q->scale = amplitude / rms_symbol;
-	q->carrier.set_freq(carrier, srate);
+	scale = amplitude / rms_symbol;
+	carrier.set_freq(carrier_, srate_);
 }
 
-void qam_tx_flush(struct qam_tx *q)
+void QamTx::flush()
 {
-	memset(q->sym, 0, sizeof(q->sym));
+	memset(sym, 0, sizeof(sym));
 }
 
-static float qam_pulse(struct qam_tx *q, float t)
+float QamTx::pulse_at(float t_)
 {
-	float p = (t + q->span) * QAM_PULSE_RES;
+	float p = (t_ + span) * QAM_PULSE_RES;
 	int i;
-	if (p < 0 || p >= 2 * q->span * QAM_PULSE_RES)
+	if (p < 0 || p >= 2 * span * QAM_PULSE_RES)
 		return 0;
 	i = (int)p;
 	p -= i;
-	return q->pulse[i] + p * (q->pulse[i + 1] - q->pulse[i]);
+	return pulse[i] + p * (pulse[i + 1] - pulse[i]);
 }
 
-float qam_tx_sample(struct qam_tx *q)
+float QamTx::sample()
 {
 	cplx s = { 0, 0 }, c;
 	int k;
 
-	q->t += 1.0f / q->sps;
-	if (q->t >= 1) {
-		q->t -= 1;
-		memmove(q->sym + 1, q->sym,
-			(2 * q->span - 1) * sizeof(q->sym[0]));
-		q->sym[0] = q->get_symbol(q->ctx);
+	t += 1.0f / sps;
+	if (t >= 1) {
+		t -= 1;
+		memmove(sym + 1, sym,
+			(2 * span - 1) * sizeof(sym[0]));
+		sym[0] = get_symbol(ctx);
 	}
-	for (k = 0; k < 2 * q->span; k++) {
-		float g = qam_pulse(q, q->t + k - q->span);
-		s.re += g * q->sym[k].re;
-		s.im += g * q->sym[k].im;
+	for (k = 0; k < 2 * span; k++) {
+		float g = pulse_at(t + k - span);
+		s.re += g * sym[k].re;
+		s.im += g * sym[k].im;
 	}
-	c = q->carrier.next_cplx();
-	return q->scale * (s.re * c.re - s.im * c.im);
+	c = carrier.next_cplx();
+	return scale * (s.re * c.re - s.im * c.im);
 }
 
 
@@ -77,180 +77,180 @@ float qam_tx_sample(struct qam_tx *q)
  *    receiver
  */
 
-int qam_rx_init(struct qam_rx *q, int srate, float carrier, float baud,
-		float alpha, int span, int eq_len, float target_power)
+int QamRx::init(int srate_, float carrier, float baud_,
+		float alpha, int span, int eq_len_, float target_power)
 {
 	int i;
 	float sum;
 
-	memset(q, 0, sizeof(*q));
-	q->srate = srate;
-	q->baud = baud;
-	q->sps = srate / baud;
-	q->lo.set_freq(-carrier, srate);
-	q->mf_len = (int)(2 * span * q->sps) | 1;
+	memset(this, 0, sizeof(*this));
+	srate = srate_;
+	baud = baud_;
+	sps = srate_ / baud_;
+	lo.set_freq(-carrier, srate_);
+	mf_len = (int)(2 * span * sps) | 1;
 	/* the matched filter is evaluated at the T/2 instants themselves,
 	   from a table of QAM_MF_RES points per sample */
-	q->mf = static_cast<float*>(calloc((q->mf_len + 2) * QAM_MF_RES + 2, sizeof(float)));
+	mf = static_cast<float*>(calloc((mf_len + 2) * QAM_MF_RES + 2, sizeof(float)));
 	/* the last mf_len + 1 samples, twice */
-	q->mf_buf = static_cast<cplx*>(calloc(2 * (q->mf_len + 1), sizeof(cplx)));
-	if (!q->mf || !q->mf_buf) {
-		qam_rx_free(q);
+	mf_buf = static_cast<cplx*>(calloc(2 * (mf_len + 1), sizeof(cplx)));
+	if (!mf || !mf_buf) {
+		release();
 		return -1;
 	}
-	for (i = 0, sum = 0; i < q->mf_len; i++) {
-		float h = rrc_pulse((i - q->mf_len / 2) / q->sps, alpha);
+	for (i = 0, sum = 0; i < mf_len; i++) {
+		float h = rrc_pulse((i - mf_len / 2) / sps, alpha);
 		sum += h * h;
 	}
-	for (i = 0; i < (q->mf_len + 2) * QAM_MF_RES + 2; i++)
-		q->mf[i] = rrc_pulse(((float)i / QAM_MF_RES - 1 -
-				      q->mf_len / 2) / q->sps, alpha) / sqrtf(sum);
-	q->power_alpha = 1.0f / (0.02f * srate);
-	q->agc_alpha = 1.0f / (0.03f * 2 * baud);
+	for (i = 0; i < (mf_len + 2) * QAM_MF_RES + 2; i++)
+		mf[i] = rrc_pulse(((float)i / QAM_MF_RES - 1 -
+				      mf_len / 2) / sps, alpha) / sqrtf(sum);
+	power_alpha = 1.0f / (0.02f * srate_);
+	agc_alpha = 1.0f / (0.03f * 2 * baud_);
 	/* the mean power of the matched filter output is lower than at the
 	   symbol instants by the roll off */
-	q->agc_target = target_power * (1 - alpha / 4);
-	q->kt_p = 0.03f * q->sps;
-	q->kt_i = 0.001f * q->sps;
-	q->kt_gi = 0.03f;
-	q->eq_len = eq_len > QAM_MAX_EQ ? QAM_MAX_EQ : eq_len;
-	q->t_next = q->sps / 2;
-	qam_rx_reset(q);
+	agc_target = target_power * (1 - alpha / 4);
+	kt_p = 0.03f * sps;
+	kt_i = 0.001f * sps;
+	kt_gi = 0.03f;
+	eq_len = eq_len_ > QAM_MAX_EQ ? QAM_MAX_EQ : eq_len_;
+	t_next = sps / 2;
+	reset();
 	return 0;
 }
 
-void qam_rx_free(struct qam_rx *q)
+void QamRx::release()
 {
-	free(q->mf);
-	free(q->mf_buf);
-	q->mf = NULL;
-	q->mf_buf = NULL;
+	free(mf);
+	free(mf_buf);
+	mf = NULL;
+	mf_buf = NULL;
 }
 
-void qam_rx_reset(struct qam_rx *q)
+void QamRx::reset()
 {
-	memset(q->eq, 0, sizeof(q->eq));
-	q->eq[q->eq_len / 2 & ~1].re = 1;
-	q->theta = q->dtheta = 0;
-	q->t_adj = 0;
+	memset(eq, 0, sizeof(eq));
+	eq[eq_len / 2 & ~1].re = 1;
+	theta = dtheta = 0;
+	t_adj = 0;
 }
 
-int qam_rx_sample(struct qam_rx *q, float x)
+int QamRx::sample(float x)
 {
 	cplx b;
 	int i, ret = 0;
 
-	q->power += q->power_alpha * (x * x - q->power);
+	power += power_alpha * (x * x - power);
 
-	b = cplx_scale(q->lo.next_cplx(), x);
+	b = cplx_scale(lo.next_cplx(), x);
 	/* newest sample at mf_buf[mf_pos], kept twice for a contiguous run */
-	if (--q->mf_pos < 0)
-		q->mf_pos = q->mf_len;
-	q->mf_buf[q->mf_pos] = q->mf_buf[q->mf_pos + q->mf_len + 1] = b;
+	if (--mf_pos < 0)
+		mf_pos = mf_len;
+	mf_buf[mf_pos] = mf_buf[mf_pos + mf_len + 1] = b;
 
-	q->t_next -= 1;
-	while (q->t_next <= 0) {
+	t_next -= 1;
+	while (t_next <= 0) {
 		/* the matched filter output at t_next (<= 0) samples before
 		   the previous sample (the latency the handshake timings
 		   were tuned with) */
-		const cplx *buf = q->mf_buf + q->mf_pos + 1;
-		float p = (1 + q->t_next) * QAM_MF_RES, f;
+		const cplx *buf = mf_buf + mf_pos + 1;
+		float p = (1 + t_next) * QAM_MF_RES, f;
 		int k;
 		cplx s = { 0, 0 };
 		if (p < 0)
 			p = 0;
 		k = (int)p;
 		f = p - k;
-		for (i = 0; i < q->mf_len; i++, k += QAM_MF_RES) {
-			float h = q->mf[k] + f * (q->mf[k + 1] - q->mf[k]);
+		for (i = 0; i < mf_len; i++, k += QAM_MF_RES) {
+			float h = mf[k] + f * (mf[k + 1] - mf[k]);
 			s.re += h * buf[i].re;
 			s.im += h * buf[i].im;
 		}
-		if (!q->agc_hold) {
-			q->agc_pwr += q->agc_alpha * (cplx_pow(s) - q->agc_pwr);
-			q->agc_gain = q->agc_pwr > 1e-3f ?
-				sqrtf(q->agc_target / q->agc_pwr) : 0;
+		if (!agc_hold) {
+			agc_pwr += agc_alpha * (cplx_pow(s) - agc_pwr);
+			agc_gain = agc_pwr > 1e-3f ?
+				sqrtf(agc_target / agc_pwr) : 0;
 		}
-		s = cplx_scale(s, q->agc_gain);
+		s = cplx_scale(s, agc_gain);
 
-		memmove(q->eq_buf + 1, q->eq_buf, (q->eq_len - 1) * sizeof(cplx));
-		q->eq_buf[0] = s;
-		q->t_next += q->sps / 2;
+		memmove(eq_buf + 1, eq_buf, (eq_len - 1) * sizeof(cplx));
+		eq_buf[0] = s;
+		t_next += sps / 2;
 
-		if (q->half) {
+		if (half) {
 			cplx out = { 0, 0 };
-			if (!q->timing_hold && !q->timing_freeze) {
+			if (!timing_hold && !timing_freeze) {
 				/* Gardner timing error detector */
-				float e = (q->mid.re * (q->prev_sym.re - s.re) +
-					   q->mid.im * (q->prev_sym.im - s.im)) /
-					(q->agc_target + 1e-3f);
+				float e = (mid.re * (prev_sym.re - s.re) +
+					   mid.im * (prev_sym.im - s.im)) /
+					(agc_target + 1e-3f);
 				if (e > 1)
 					e = 1;
 				else if (e < -1)
 					e = -1;
-				q->t_adj += q->kt_gi * q->kt_i * e;
-				if (q->t_adj > q->kt_i)
-					q->t_adj = q->kt_i;
-				else if (q->t_adj < -q->kt_i)
-					q->t_adj = -q->kt_i;
-				q->t_next += q->kt_p * e;
+				t_adj += kt_gi * kt_i * e;
+				if (t_adj > kt_i)
+					t_adj = kt_i;
+				else if (t_adj < -kt_i)
+					t_adj = -kt_i;
+				t_next += kt_p * e;
 			}
-			if (!q->timing_freeze)
-				q->t_next += q->t_adj;
-			q->prev_sym = s;
-			q->y = s;
-			for (i = 0; i < q->eq_len; i++)
-				out = cplx_add(out, cplx_mul(q->eq[i], q->eq_buf[i]));
-			q->eq_out = out;
-			q->rot = cplx_make(cosf(q->theta), -sinf(q->theta));
-			q->z = cplx_mul(out, q->rot);
-			q->theta += q->dtheta;
-			q->theta = remainderf(q->theta, 2 * (float)M_PI);
-			q->symbols++;
+			if (!timing_freeze)
+				t_next += t_adj;
+			prev_sym = s;
+			y = s;
+			for (i = 0; i < eq_len; i++)
+				out = cplx_add(out, cplx_mul(eq[i], eq_buf[i]));
+			eq_out = out;
+			rot = cplx_make(cosf(theta), -sinf(theta));
+			z = cplx_mul(out, rot);
+			theta += dtheta;
+			theta = remainderf(theta, 2 * (float)M_PI);
+			symbols++;
 			ret = 1;
 		} else
-			q->mid = s;
-		q->half ^= 1;
+			mid = s;
+		half ^= 1;
 	}
 	return ret;
 }
 
-void qam_rx_adapt(struct qam_rx *q, cplx d, float mu, float k1, float k2)
+void QamRx::adapt(cplx d, float mu, float k1, float k2)
 {
 	float p = cplx_pow(d), perr;
 	int i;
 
 	if (p > 0 && (k1 > 0 || k2 > 0)) {
-		perr = (q->z.im * d.re - q->z.re * d.im) / p;
+		perr = (z.im * d.re - z.re * d.im) / p;
 		if (perr > 0.5f)
 			perr = 0.5f;
 		else if (perr < -0.5f)
 			perr = -0.5f;
-		q->theta += k1 * perr;
-		q->dtheta += k2 * perr;
-		if (q->dtheta > 0.05f)
-			q->dtheta = 0.05f;
-		else if (q->dtheta < -0.05f)
-			q->dtheta = -0.05f;
+		theta += k1 * perr;
+		dtheta += k2 * perr;
+		if (dtheta > 0.05f)
+			dtheta = 0.05f;
+		else if (dtheta < -0.05f)
+			dtheta = -0.05f;
 	}
 	if (mu > 0) {
 		float norm = 1e-3f;
-		cplx e = cplx_mulc(cplx_sub(d, q->z), q->rot);
-		for (i = 0; i < q->eq_len; i++)
-			norm += cplx_pow(q->eq_buf[i]);
+		cplx e = cplx_mulc(cplx_sub(d, z), rot);
+		for (i = 0; i < eq_len; i++)
+			norm += cplx_pow(eq_buf[i]);
 		mu /= norm;
-		for (i = 0; i < q->eq_len; i++) {
-			cplx g = cplx_mulc(e, q->eq_buf[i]);
-			q->eq[i].re += mu * g.re;
-			q->eq[i].im += mu * g.im;
+		for (i = 0; i < eq_len; i++) {
+			cplx g = cplx_mulc(e, eq_buf[i]);
+			eq[i].re += mu * g.re;
+			eq[i].im += mu * g.im;
 		}
 	}
 }
 
-void qam_rx_align_phase(struct qam_rx *q, cplx d)
+void QamRx::align_phase(cplx d)
 {
-	float a = atan2f(q->z.im, q->z.re) - atan2f(d.im, d.re);
-	q->theta = remainderf(q->theta + a, 2 * (float)M_PI);
+	float a = atan2f(z.im, z.re) - atan2f(d.im, d.re);
+	theta = remainderf(theta + a, 2 * (float)M_PI);
 }
 
 
@@ -264,33 +264,33 @@ static const unsigned char conv_next[8][4] = {
 	{ 2, 0, 1, 3 }, { 6, 5, 7, 4 }, { 3, 1, 0, 2 }, { 5, 6, 4, 7 },
 };
 
-int trellis_encode(struct trellis_enc *t, int q, int bits)
+int TrellisEnc::encode(int q, int bits)
 {
-	t->diff = (t->diff + (q & 3)) & 3;
-	t->conv = conv_next[t->conv][t->diff];
+	diff = (diff + (q & 3)) & 3;
+	conv = conv_next[conv][diff];
 	return ((q << 1) & 0x78 & ((1 << (bits + 1)) - 1)) |
-		(t->diff << 1) | ((t->conv >> 2) & 1);
+		(diff << 1) | ((conv >> 2) & 1);
 }
 
-void viterbi_init(struct viterbi *v, const cplx *points, int nbits)
+void Viterbi::init(const cplx *points_, int nbits_)
 {
-	memset(v, 0, sizeof(*v));
-	v->points = points;
-	v->nbits = nbits;
-	v->npoints = 1 << (nbits + 1);
+	memset(this, 0, sizeof(*this));
+	points = points_;
+	nbits = nbits_;
+	npoints = 1 << (nbits_ + 1);
 }
 
-int viterbi_decode(struct viterbi *v, cplx z, cplx *decided)
+int Viterbi::decode(cplx z, cplx *decided)
 {
 	float best_d[8], m[8];
-	int best_i[8], i, s, k, pos, ret = -1;
+	int best_i[8], i, s, k, pos_, ret = -1;
 	float bm;
 
 	/* nearest point of each of the 8 subsets (index bits 0-2) */
 	for (k = 0; k < 8; k++)
 		best_d[k] = 1e30f;
-	for (i = 0; i < v->npoints; i++) {
-		float d = cplx_pow(cplx_sub(z, v->points[i]));
+	for (i = 0; i < npoints; i++) {
+		float d = cplx_pow(cplx_sub(z, points[i]));
 		k = i & 7;
 		if (d < best_d[k]) {
 			best_d[k] = d;
@@ -298,18 +298,18 @@ int viterbi_decode(struct viterbi *v, cplx z, cplx *decided)
 		}
 	}
 
-	pos = v->pos;
+	pos_ = pos;
 	for (s = 0; s < 8; s++)
 		m[s] = 1e30f;
 	for (s = 0; s < 8; s++) {
 		for (k = 0; k < 4; k++) {
 			int ns = conv_next[s][k];
 			int sub = (k << 1) | ((ns >> 2) & 1);
-			float metric = v->metric[s] + best_d[sub];
-			if (metric < m[ns]) {
-				m[ns] = metric;
-				v->prev[pos][ns] = s;
-				v->path[pos][ns] = best_i[sub];
+			float metric_ = metric[s] + best_d[sub];
+			if (metric_ < m[ns]) {
+				m[ns] = metric_;
+				prev[pos_][ns] = s;
+				path[pos_][ns] = best_i[sub];
 			}
 		}
 	}
@@ -318,28 +318,28 @@ int viterbi_decode(struct viterbi *v, cplx z, cplx *decided)
 		if (m[s] < bm)
 			bm = m[s];
 	for (s = 0; s < 8; s++)
-		v->metric[s] = m[s] - bm;
+		metric[s] = m[s] - bm;
 
-	if (++v->filled >= VITERBI_DEPTH) {
+	if (++filled >= VITERBI_DEPTH) {
 		int idx, y12, q;
 		/* trace back from the best state */
 		for (s = 0, k = 0; k < 8; k++)
-			if (v->metric[k] == 0)
+			if (metric[k] == 0)
 				s = k;
-		for (i = 0, k = pos; i < VITERBI_DEPTH - 1; i++) {
-			s = v->prev[k][s];
+		for (i = 0, k = pos_; i < VITERBI_DEPTH - 1; i++) {
+			s = prev[k][s];
 			k = k ? k - 1 : VITERBI_DEPTH - 1;
 		}
-		idx = v->path[k][s];
+		idx = path[k][s];
 		if (decided)
-			*decided = v->points[idx];
+			*decided = points[idx];
 		y12 = (idx >> 1) & 3;
-		q = (y12 - v->last_y12) & 3;
-		v->last_y12 = y12;
+		q = (y12 - last_y12) & 3;
+		last_y12 = y12;
 		ret = q | ((idx >> 3) << 2);
-		v->filled = VITERBI_DEPTH;
+		filled = VITERBI_DEPTH;
 	}
-	v->pos = (pos + 1) % VITERBI_DEPTH;
+	pos = (pos_ + 1) % VITERBI_DEPTH;
 	return ret;
 }
 
@@ -348,78 +348,78 @@ int viterbi_decode(struct viterbi *v, cplx z, cplx *decided)
  *    echo canceller
  */
 
-int echo_init(struct echo_canceller *e, int len)
+int EchoCanceller::init(int len_)
 {
-	memset(e, 0, sizeof(*e));
-	e->len = len;
-	e->w = static_cast<float*>(calloc(len, sizeof(float)));
-	e->hist = static_cast<float*>(calloc(2 * len, sizeof(float)));
-	if (!e->w || !e->hist) {
-		echo_free(e);
+	memset(this, 0, sizeof(*this));
+	len = len_;
+	w = static_cast<float*>(calloc(len_, sizeof(float)));
+	hist = static_cast<float*>(calloc(2 * len_, sizeof(float)));
+	if (!w || !hist) {
+		release();
 		return -1;
 	}
 	return 0;
 }
 
-void echo_free(struct echo_canceller *e)
+void EchoCanceller::release()
 {
-	free(e->w);
-	free(e->hist);
-	e->w = e->hist = NULL;
+	free(w);
+	free(hist);
+	w = hist = NULL;
 }
 
-float echo_run(struct echo_canceller *e, float tx, float rx, float mu)
+float EchoCanceller::run(float tx, float rx, float mu)
 {
 	float est = 0, err, *h;
 	int i;
 
-	if (mu > 0 && !e->training) {
-		e->training = 1;
-		e->off = 0;
-		e->pw_rx = e->pw_err = 0;
+	if (mu > 0 && !training) {
+		training = 1;
+		off = 0;
+		pw_rx = pw_err = 0;
 	}
-	if (e->off)
+	if (off)
 		return rx;
 	/* history kept twice so that it can be read linearly */
-	if (--e->pos < 0)
-		e->pos = e->len - 1;
-	e->hist[e->pos] = e->hist[e->pos + e->len] = tx;
-	e->tx_power += 0.001f * (tx * tx - e->tx_power);
-	h = e->hist + e->pos;
-	for (i = 0; i < e->len; i++)
-		est += e->w[i] * h[i];
+	if (--pos < 0)
+		pos = len - 1;
+	hist[pos] = hist[pos + len] = tx;
+	tx_power += 0.001f * (tx * tx - tx_power);
+	h = hist + pos;
+	for (i = 0; i < len; i++)
+		est += w[i] * h[i];
 	err = rx - est;
 	if (mu > 0) {
-		e->pw_rx += 0.001f * (rx * rx - e->pw_rx);
-		e->pw_err += 0.001f * (err * err - e->pw_err);
+		pw_rx += 0.001f * (rx * rx - pw_rx);
+		pw_err += 0.001f * (err * err - pw_err);
 	}
-	if (mu > 0 && e->tx_power > 1) {
-		float g = mu * err / (e->len * e->tx_power);
-		for (i = 0; i < e->len; i++)
-			e->w[i] += g * h[i];
+	if (mu > 0 &&tx_power > 1) {
+		float g = mu * err / (len * tx_power);
+		for (i = 0; i < len; i++)
+			w[i] += g * h[i];
 	}
 	return err;
 }
 
-float echo_judge(struct echo_canceller *e)
+float EchoCanceller::judge()
 {
-	float erle = 10 * log10f((e->pw_rx + 1) / (e->pw_err + 1));
-	e->training = 0;
+	float erle = 10 * log10f((pw_rx + 1) / (pw_err + 1));
+	training = 0;
 	if (erle < 6) {
-		e->off = 1;
-		memset(e->w, 0, e->len * sizeof(*e->w));
+		off = 1;
+		memset(w, 0, len * sizeof(*w));
 	}
 	return erle;
 }
 
-void qam_rx_recompute(struct qam_rx *q)
+void QamRx::recompute()
 {
 	cplx out = { 0, 0 };
 	int i;
-	for (i = 0; i < q->eq_len; i++)
-		out = cplx_add(out, cplx_mul(q->eq[i], q->eq_buf[i]));
-	q->eq_out = out;
-	q->z = cplx_mul(out, q->rot);
+	for (i = 0; i < eq_len; i++)
+		out = cplx_add(out, cplx_mul(eq[i], eq_buf[i]));
+	eq_out = out;
+	z = cplx_mul(out, rot);
 }
 
 } // namespace dsp

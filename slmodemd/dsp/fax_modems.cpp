@@ -272,7 +272,7 @@ static cplx tx_data_symbol(struct fax_tx *t)
 	if (is_v17(t->mod)) {
 		for (k = 0; k < n; k++)
 			q |= scr23(&t->scr, tx_data_bit(t)) << k;
-		return v17_points(t->mod)[trellis_encode(&t->trellis, q, n)];
+		return v17_points(t->mod)[t->trellis.encode(q, n)];
 	}
 	if (is_v29(t->mod)) {
 		if (t->mod == FM_V29_9600 && scr23(&t->scr, tx_data_bit(t)))
@@ -421,7 +421,7 @@ void fax_tx_init(struct fax_tx *t, enum fax_mod mod, int short_train,
 		t->seg = SEG_DATA;
 		return;
 	}
-	qam_tx_init(&t->qam, srate, mod_carrier(mod), mod_baud(mod),
+	t->qam.init(srate, mod_carrier(mod), mod_baud(mod),
 		    mod_alpha(mod), 6, sqrtf(mod_power(mod)),
 		    fax_tx_rms(mod) * 1.41421f);
 	/* the receivers of the original library want the symbols at this
@@ -460,7 +460,7 @@ float fax_tx_sample(struct fax_tx *t)
 		}
 		return t->fsk.next(t->fsk_bit);
 	}
-	return qam_tx_sample(&t->qam);
+	return t->qam.sample();
 }
 
 
@@ -577,7 +577,7 @@ int fax_rx_init(struct fax_rx *r, enum fax_mod mod, int short_train,
 		r->fsk.init(1650, 1850, 300, srate);
 		return 0;
 	}
-	if (qam_rx_init(&r->qam, srate, mod_carrier(mod), mod_baud(mod),
+	if (r->qam.init(srate, mod_carrier(mod), mod_baud(mod),
 			mod_alpha(mod), 6, 32, mod_power(mod)))
 		return -1;
 	r->det_alpha = 1.0f / (0.005f * srate);
@@ -587,11 +587,11 @@ int fax_rx_init(struct fax_rx *r, enum fax_mod mod, int short_train,
 	r->alt_end = -1;
 	r->nstates = is_v17(mod) ? 4 : 8;
 	if (make_reference(r)) {
-		qam_rx_free(&r->qam);
+		r->qam.release();
 		return -1;
 	}
 	if (is_v17(mod))
-		viterbi_init(&r->vit, v17_points(mod), data_bits(mod));
+		r->vit.init(v17_points(mod), data_bits(mod));
 	/* a short train only touches up what the long one learned */
 	if (short_train && mem && mem->valid && is_v17(mem->mod)) {
 		memcpy(r->mem_eq, mem->eq, sizeof(r->mem_eq));
@@ -615,7 +615,7 @@ void fax_rx_free(struct fax_rx *r)
 {
 	if (r->mod == FM_V21 || r->mod == FM_NONE)
 		return;
-	qam_rx_free(&r->qam);
+	r->qam.release();
 	free(r->ref);
 	r->ref = NULL;
 }
@@ -649,7 +649,7 @@ static void rx_data_symbol(struct fax_rx *r)
 			}
 		}
 		d = pts[best];
-		q = viterbi_decode(&r->vit, z, NULL);
+		q = r->vit.decode(z, NULL);
 		r->data_sym++;
 		if (q >= 0) {
 			/* symbols leave the decoder VITERBI_DEPTH - 1 late */
@@ -741,7 +741,7 @@ static void rx_data_symbol(struct fax_rx *r)
 	if (r->carrier)
 		/* the training of V.29 and V.27ter only covers one axis: the
 		   equalizer still learns fast at the start of the data */
-		qam_rx_adapt(&r->qam, d, is_v17(r->mod) ? 0.005f :
+		r->qam.adapt(d, is_v17(r->mod) ? 0.005f :
 			     r->data_sym < 100 ? 0.03f :
 			     r->data_sym < 300 ? 0.015f : 0.005f, 0.02f, 0.0002f);
 	/* keep a copy of a good equalizer for a later short train (the
@@ -821,7 +821,7 @@ static void rx_symbol(struct fax_rx *r)
 		if (r->nsteps < 32)
 			r->nsteps++;
 		/* hold the phase on the training grid */
-		qam_rx_adapt(&r->qam, is_v17(r->mod) ? v32_abcd[s] :
+		r->qam.adapt(is_v17(r->mod) ? v32_abcd[s] :
 			     cplx_scale(v27_points[s], sqrtf(mod_power(r->mod) / 2)),
 			     0, 0.05f, 0);
 		if (r->nsteps < 32 || !r->carrier)
@@ -850,10 +850,10 @@ static void rx_symbol(struct fax_rx *r)
 				/* short train: continue with the equalizer of
 				   the long train, timing has settled by now */
 				memcpy(r->qam.eq, r->mem_eq, sizeof(r->qam.eq));
-				qam_rx_recompute(&r->qam);
+				r->qam.recompute();
 				DSP_DBG("fax rx: equalizer of the long train\n");
 			}
-			qam_rx_align_phase(&r->qam, ref_point(r, k));
+			r->qam.align_phase(ref_point(r, k));
 			r->seg_sym = k + 1;
 			r->stage = RXS_TRAIN;
 			r->bridge_hits = 0;
@@ -887,7 +887,7 @@ static void rx_symbol(struct fax_rx *r)
 		if (is_v27(r->mod) &&
 		    cplx_pow(cplx_add(z, d)) < cplx_pow(cplx_sub(z, d)))
 			d = cplx_scale(d, -1);
-		qam_rx_adapt(&r->qam, d, 0.02f, 0.05f, 0.0005f);
+		r->qam.adapt(d, 0.02f, 0.05f, 0.0005f);
 		if (++r->seg_sym >= r->ref_len) {
 			r->stage = RXS_DATA;
 			r->data_sym = 0;
@@ -919,7 +919,7 @@ void fax_rx_sample(struct fax_rx *r, float x)
 			r->put_bit(r->ctx, bit);
 		return;
 	}
-	if (qam_rx_sample(&r->qam, x))
+	if (r->qam.sample(x))
 		rx_symbol(r);
 	/* the 20 ms power of the demodulator would bridge the short gap
 	   between V.21 and the training */
@@ -942,7 +942,7 @@ void fax_rx_sample(struct fax_rx *r, float x)
 		if (r->stage == RXS_SEARCH) {
 			/* acquire the level quickly, and hold the timing
 			   until it is known */
-			qam_rx_reset(&r->qam);
+			r->qam.reset();
 			r->qam.agc_pwr = 0;
 			r->qam.agc_alpha = 1.0f / (0.003f * r->srate);
 			r->qam.timing_hold = 1;

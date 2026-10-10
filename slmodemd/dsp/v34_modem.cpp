@@ -233,7 +233,7 @@ void v34_tx_init(struct v34_tx *t, int baud, int high, int caller)
 {
 	memset(t, 0, sizeof(*t));
 	t->baud = baud;
-	qam_tx_init(&t->qam, V34_SRATE, v34_carrier(baud, high),
+	t->qam.init(V34_SRATE, v34_carrier(baud, high),
 		    v34_symbol_rate(baud), V34_ALPHA, V34_SPAN, 1.41421f,
 		    V34_PRIMARY_RMS * 1.41421f);
 	t->qam.get_symbol = tx_symbol;
@@ -266,7 +266,7 @@ void v34_tx_data(struct v34_tx *t, const struct v34_dparm *p,
 
 float v34_tx_sample(struct v34_tx *t)
 {
-	return qam_tx_sample(&t->qam);
+	return t->qam.sample();
 }
 
 
@@ -284,7 +284,7 @@ int v34_rx_init(struct v34_rx *r, int baud, int high, int caller)
 	r->ls_p = static_cast<lscplx*>(calloc(V34_EQ_LEN, sizeof(*r->ls_p)));
 	if (!r->ls_r || !r->ls_p)
 		return -1;
-	return qam_rx_init(&r->qam, V34_SRATE, v34_carrier(baud, high),
+	return r->qam.init(V34_SRATE, v34_carrier(baud, high),
 			   v34_symbol_rate(baud), V34_ALPHA, V34_SPAN,
 			   V34_EQ_LEN, 2.0f);
 }
@@ -304,7 +304,7 @@ void v34_rx_free(struct v34_rx *r)
 	free(r->ls_r);
 	free(r->ls_p);
 	r->ls_r = r->ls_p = NULL;
-	qam_rx_free(&r->qam);
+	r->qam.release();
 }
 
 static void rx_set_stage(struct v34_rx *r, enum v34_rxstage s)
@@ -655,7 +655,7 @@ static void ls_window(struct v34_rx *r, cplx d, long start)
 		long sym = r->qam.symbols - LS_LEN / 2;
 		if (ls_solve(r))
 			return;
-		qam_rx_recompute(&r->qam);
+		r->qam.recompute();
 		r->have_ls = 1;
 		/* the error of the new solution from here on */
 		memset(r->err_r, 0, sizeof(r->err_r));
@@ -848,7 +848,7 @@ static void rx_symbol(struct v34_rx *r)
 			break;
 		}
 		d = cplx_scale(v34_pp(r->n - 1 + r->pp_off), 1.41421f);
-		qam_rx_adapt(&r->qam, d, 0.02f, 0.05f, 0.0005f);
+		r->qam.adapt(d, 0.02f, 0.05f, 0.0005f);
 		if (r->n == 288 - r->pp_off) {
 			rx_set_stage(r, V34_RX_TRN);
 			r->phase4 = 1;
@@ -879,10 +879,10 @@ static void rx_symbol(struct v34_rx *r)
 			/* finer once the equalizer was solved */
 			if (r->timing_fixed && r->have_ls) {
 				timing_dd(r, d);
-				qam_rx_adapt(&r->qam, d, 0.01f, 0.02f, 0.0002f);
+				r->qam.adapt(d, 0.01f, 0.02f, 0.0002f);
 			}
 			else
-				qam_rx_adapt(&r->qam, d, 0.01f, 0.05f, 0.001f);
+				r->qam.adapt(d, 0.01f, 0.05f, 0.001f);
 			if (r->n == 1000) {
 				r->qam.kt_p *= 0.2f;
 				r->qam.kt_gi *= 0.2f;
@@ -917,7 +917,7 @@ static void rx_symbol(struct v34_rx *r)
 			e = cplx_pow(cplx_sub(z, d)) / g2;
 			r->mse += 0.01f * (e - r->mse);
 			timing_dd(r, d);
-			qam_rx_adapt(&r->qam, d, 0.004f, 0.02f, 0.0002f);
+			r->qam.adapt(d, 0.004f, 0.02f, 0.0002f);
 			if (r->n % 2000 == 0)
 				DSP_DBG("v34 rx%d: data mse %.3f\n", r->tap, r->mse);
 		}
@@ -1076,7 +1076,7 @@ void v34_rx_sample(struct v34_rx *r, float x)
 	int on;
 	/* the timing must not wander on the noise between the signals */
 	r->qam.timing_freeze = !r->on || r->timing_fixed;
-	if (!qam_rx_sample(&r->qam, x))
+	if (!r->qam.sample(x))
 		return;
 	/* the sample clock offset, also through the silences */
 	if (r->timing_fixed)

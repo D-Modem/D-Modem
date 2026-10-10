@@ -22,7 +22,7 @@ namespace dsp {
  *    transmitter: pulse shaping and modulation of complex symbols;
  *    get_symbol() is called at the symbol rate
  */
-struct qam_tx {
+struct QamTx {
 	int srate;
 	float sps;
 	float t;
@@ -33,20 +33,22 @@ struct qam_tx {
 	float pulse[2 * QAM_MAX_SPAN * QAM_PULSE_RES + 2];
 	cplx (*get_symbol)(void *ctx);
 	void *ctx;
-};
 
-void  qam_tx_init(struct qam_tx *q, int srate, float carrier, float baud,
-		  float alpha, int span, float rms_symbol, float amplitude);
-float qam_tx_sample(struct qam_tx *q);
-void  qam_tx_flush(struct qam_tx *q);   /* forget symbols in flight */
+	void  init(int srate, float carrier, float baud, float alpha, int span,
+		   float rms_symbol, float amplitude);
+	float sample();
+	void  flush();          /* forget symbols in flight */
+private:
+	float pulse_at(float t);
+};
 
 /*
  *    receiver: down conversion, matched filter, AGC, Gardner timing,
  *    T/2 spaced equalizer and carrier phase rotation.  The caller
  *    decides on each symbol (slicer or known training symbol) and
- *    calls qam_rx_adapt() with that decision.
+ *    calls adapt() with that decision.
  */
-struct qam_rx {
+struct QamRx {
 	int srate;
 	float sps;
 	float baud;
@@ -78,34 +80,36 @@ struct qam_rx {
 	cplx z;                 /* rotated equalizer output */
 	cplx rot;
 	long symbols;
-};
 
-int   qam_rx_init(struct qam_rx *q, int srate, float carrier, float baud,
-		  float alpha, int span, int eq_len, float target_power);
-void  qam_rx_free(struct qam_rx *q);
-void  qam_rx_reset(struct qam_rx *q);   /* eq to centre tap, PLL to 0 */
-/* returns 1 when a new symbol is available in q->z */
-int   qam_rx_sample(struct qam_rx *q, float x);
-/* adapt equalizer (mu, normalized) and carrier loop toward decision d */
-void  qam_rx_adapt(struct qam_rx *q, cplx d, float mu, float k1, float k2);
-/* recompute the current output after the equalizer was replaced */
-void  qam_rx_recompute(struct qam_rx *q);
-/* rotate the carrier phase so that the current output points at d */
-void  qam_rx_align_phase(struct qam_rx *q, cplx d);
+	int   init(int srate, float carrier, float baud, float alpha, int span,
+		   int eq_len, float target_power);
+	void  release();        /* the buffers init took */
+	void  reset();          /* eq to centre tap, PLL to 0 */
+	/* returns 1 when a new symbol is available in z */
+	int   sample(float x);
+	/* adapt equalizer (mu, normalized) and carrier loop toward
+	   decision d */
+	void  adapt(cplx d, float mu, float k1, float k2);
+	/* recompute the current output after the equalizer was replaced */
+	void  recompute();
+	/* rotate the carrier phase so that the current output points at d */
+	void  align_phase(cplx d);
+};
 
 /*
  *    V.17 / V.32bis trellis code (8 state, rotationally invariant)
  */
-struct trellis_enc {
+struct TrellisEnc {
 	int diff;
 	int conv;
+
+	/* q: the scrambled bits of one symbol (Q1 first in bit 0); returns
+	   the constellation index (bit 0 Y0, bits 1-2 Y1Y2, bits 3.. Q3...) */
+	int encode(int q, int bits);
 };
-/* q: the scrambled bits of one symbol (Q1 first in bit 0); returns the
-   constellation index (bit 0 Y0, bits 1-2 Y1Y2, bits 3.. Q3...) */
-int trellis_encode(struct trellis_enc *t, int q, int bits);
 
 #define VITERBI_DEPTH 16
-struct viterbi {
+struct Viterbi {
 	int nbits;              /* bits per symbol */
 	const cplx *points;     /* constellation, indexed like trellis_encode */
 	int npoints;
@@ -116,16 +120,17 @@ struct viterbi {
 	int pos;
 	int filled;
 	int last_y12;           /* differential decoder state */
+
+	void init(const cplx *points, int nbits);
+	/* feed one received point; returns the decoded data bits (Q1 in bit
+	   0) of the symbol VITERBI_DEPTH-1 periods ago, or -1 while filling */
+	int  decode(cplx z, cplx *decided);
 };
-void viterbi_init(struct viterbi *v, const cplx *points, int nbits);
-/* feed one received point; returns the decoded data bits (Q1 in bit 0)
-   of the symbol VITERBI_DEPTH-1 periods ago, or -1 while filling */
-int  viterbi_decode(struct viterbi *v, cplx z, cplx *decided);
 
 /*
  *    line echo canceller (real pass band, NLMS)
  */
-struct echo_canceller {
+struct EchoCanceller {
 	int len;
 	float *w;
 	float *hist;
@@ -133,16 +138,17 @@ struct echo_canceller {
 	float tx_power;
 	float pw_rx, pw_err;    /* in and out while it adapts */
 	int training, off;
+
+	int   init(int len);
+	/* the end of the training: what did it take away (dB)?  Below 6 dB
+	   there was no echo to cancel (a 4-wire network, or the remote was
+	   not silent) and the canceller stays off rather than add noise */
+	float judge();
+	void  release();        /* the buffers init took */
+	/* returns rx with the echo of the transmitted signal removed; adapts
+	   when mu > 0 */
+	float run(float tx, float rx, float mu);
 };
-int   echo_init(struct echo_canceller *e, int len);
-/* the end of the training: what did it take away (dB)?  Below 6 dB there
-   was no echo to cancel (a 4-wire network, or the remote was not silent)
-   and the canceller stays off rather than add noise */
-float echo_judge(struct echo_canceller *e);
-void  echo_free(struct echo_canceller *e);
-/* returns rx with the echo of the transmitted signal removed; adapts
-   when mu > 0 */
-float echo_run(struct echo_canceller *e, float tx, float rx, float mu);
 
 /*
  *    constellations built from the original library's tables

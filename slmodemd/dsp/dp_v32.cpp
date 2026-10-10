@@ -161,7 +161,7 @@ struct v32_dp {
 	unsigned r2_caps;       /* caller: rates in R2 */
 
 	/* transmitter */
-	struct qam_tx tx;
+	QamTx tx;
 	enum v32_txm txm;
 	long tx_syms;           /* symbols sent in the current tx state */
 	int tx_ac_phase;
@@ -172,15 +172,15 @@ struct v32_dp {
 	int tx_last_abcd;
 	unsigned tx_word;
 	int tx_word_bit;
-	struct trellis_enc tx_trellis;
+	TrellisEnc tx_trellis;
 	const struct v32_rate *tx_rate;
 	Osc ans;
 	float last_tx;
 
 	/* receiver */
-	struct echo_canceller ec;
+	EchoCanceller ec;
 	float ec_mu;
-	struct qam_rx rx;
+	QamRx rx;
 	struct tone_trk aa, ac, usb1, ans2100;
 	struct tone_trk v21m, v23m;     /* FSK answerers' marks */
 	int carrier;
@@ -198,7 +198,7 @@ struct v32_dp {
 	float rx_mse;
 	int rx_e_seen;
 	const struct v32_rate *rx_rate;
-	struct viterbi vit;
+	Viterbi vit;
 	int rx_dbits;           /* data bits per symbol */
 
 	/* events from the receiver to the handshake */
@@ -375,7 +375,7 @@ static cplx v32_tx_data_symbol(struct v32_dp *v)
 		modem_get_bits(v->modem, 1, bits, r->nbits);
 	for (k = 0; k < r->nbits; k++)
 		q |= scramble(&v->tx_scr, v->tx_scr_tap, bits[k] & 1) << k;
-	idx = trellis_encode(&v->tx_trellis, q, r->nbits);
+	idx = v->tx_trellis.encode(q, r->nbits);
 	return r->points[idx];
 }
 
@@ -436,7 +436,7 @@ static cplx v32_get_symbol(void *ctx)
 
 static void v32_rx_reset(struct v32_dp *v)
 {
-	qam_rx_reset(&v->rx);
+	v->rx.reset();
 	v->rxp = RX_IDLE;
 	v->run_s = 0;
 	v->rx_nbits = 0;
@@ -476,7 +476,7 @@ static void v32_rx_word_bit(struct v32_dp *v, int bit)
 		v->rx_rate = rate_of_word(w);
 		v->ev_e = 1;
 		v->rxp = RX_DATA;
-		viterbi_init(&v->vit, v->rx_rate->points, v->rx_rate->nbits);
+		v->vit.init(v->rx_rate->points, v->rx_rate->nbits);
 		/* trained: slow timing loop, its jitter hurts the dense
 		   constellations */
 		v->rx.kt_p = 0.004f * v->rx.sps;
@@ -520,14 +520,14 @@ static void v32_rx_symbol(struct v32_dp *v)
 					/* whatever was learned on silence or
 					   noise is useless: start over */
 					if (v->rxp != RX_IDLE)
-						qam_rx_reset(&v->rx);
+						v->rx.reset();
 					v->rxp = RX_S;
 					v->ev_s = 1;
 					DSP_DBG("v32: S detected\n");
 				}
 			} else if (v->rxp == RX_S && v->run_s >= 24) {
 				/* S-bar: this symbol is C */
-				qam_rx_align_phase(&v->rx, v32_abcd[2]);
+				v->rx.align_phase(v32_abcd[2]);
 				v->rxp = RX_TRN;
 				v->rx_4800 = abcd_to_4800[2];
 				v->rx_nbits = 0;
@@ -560,16 +560,16 @@ static void v32_rx_symbol(struct v32_dp *v)
 		/* keep the phase locked on the ABCD grid, no eq training on
 		   the two tone S signal */
 		k = nearest_abcd(z);
-		qam_rx_adapt(&v->rx, v32_abcd[k], 0, 0.05f, 0);
+		v->rx.adapt(v32_abcd[k], 0, 0.05f, 0);
 		break;
 	case RX_TRN:
 	case RX_R:
 		k = nearest_abcd(z);
 		/* no training on noise while the remote is silent */
 		if (v->rx_mse < 0.15f)
-			qam_rx_adapt(&v->rx, v32_abcd[k], 0.02f, 0.05f, 0.0005f);
+			v->rx.adapt(v32_abcd[k], 0.02f, 0.05f, 0.0005f);
 		else
-			qam_rx_adapt(&v->rx, v32_abcd[k], 0.002f, 0.05f, 0);
+			v->rx.adapt(v32_abcd[k], 0.002f, 0.05f, 0);
 		/* 4800 bit/s decoding for the R and E words */
 		q = abcd_to_4800[k];
 		for (k = 0; k < 4; k++)
@@ -594,14 +594,14 @@ static void v32_rx_symbol(struct v32_dp *v)
 				DSP_TRACE("%s data mse %.4f t %.3f tadj %.5f th %.2f dth %.5f\n",
 					  v->caller ? "C" : "A", v->rx_mse, v->rx.t_next,
 					  v->rx.t_adj, v->rx.theta, v->rx.dtheta);
-			qam_rx_adapt(&v->rx, d, 0.004f, 0.02f, 0.0002f);
+			v->rx.adapt(d, 0.004f, 0.02f, 0.0002f);
 			if (n == 2) {
 				for (q = 0; q < 4; q++)
 					if (v32_4800_enc[v->rx_4800][q] == k)
 						break;
 				v->rx_4800 = k;
 			} else
-				q = viterbi_decode(&v->vit, z, NULL);
+				q = v->vit.decode(z, NULL);
 			if (q >= 0 && v->state == V32_DATA) {
 				for (k = 0; k < n; k++)
 					bits[k] = descramble(&v->rx_scr,
@@ -618,7 +618,7 @@ static void v32_rx_symbol(struct v32_dp *v)
 
 static void v32_rx_sample(struct v32_dp *v, float x)
 {
-	x = echo_run(&v->ec, v->last_tx, x, v->ec_mu);
+	x = v->ec.run(v->last_tx, x, v->ec_mu);
 
 	if (tone_run(&v->ac, x, v->rx.power, v->srate) && v->caller)
 		v->ev_rev = 1;
@@ -636,13 +636,13 @@ static void v32_rx_sample(struct v32_dp *v, float x)
 	v->ev_usb1 = v->usb1.on && !v->ac.on &&
 		cplx_pow(v->usb1.lp2) > 4 * cplx_pow(v->ans2100.lp2);
 
-	if (qam_rx_sample(&v->rx, x))
+	if (v->rx.sample(x))
 		v32_rx_symbol(v);
 
 	if (!v->carrier && v->rx.power > tone_power(150)) {
 		v->carrier = 1;
 		if (v->rxp == RX_IDLE)
-			qam_rx_reset(&v->rx);
+			v->rx.reset();
 	} else if (v->carrier && v->rx.power < tone_power(90)) {
 		v->carrier = 0;
 		if (v->rxp != RX_DATA)
@@ -831,7 +831,7 @@ static int v32_handshake(struct v32_dp *v)
 				v->ec_mu = 0.05f;
 		} else if (v->txm == TXM_TRN4 && sym >= V32_TRN_LEN) {
 			if (v->ec_mu > 0) {
-				float erle = echo_judge(&v->ec);
+				float erle = v->ec.judge();
 				DSP_DBG("v32: echo canceller took %.1f dB "
 					"away%s\n", erle, v->ec.off ? ": off" : "");
 			}
@@ -990,7 +990,7 @@ static int v32_process(struct dp *dp, void *in, void *out, int cnt)
 		if (v->txm == TXM_ANS)
 			y = DSP_TX_AMPLITUDE * v->ans.next();
 		else
-			y = qam_tx_sample(&v->tx);
+			y = v->tx.sample();
 		v->last_tx = y;
 		dst[i] = dsp_clip16(y);
 
@@ -1049,7 +1049,7 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 	if (!v->caps)
 		v->caps = RB_4800;
 
-	qam_tx_init(&v->tx, srate, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
+	v->tx.init(srate, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
 		    sqrtf(V32_POWER), V32_TX_AMPLITUDE);
 	v->tx.get_symbol = v32_get_symbol;
 	v->tx.ctx = v;
@@ -1058,11 +1058,11 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 	   phases, this one works for all its rates */
 	v->tx.t = 0.25f;
 	v->ans.set_freq(2100, srate);
-	if (qam_rx_init(&v->rx, srate, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
+	if (v->rx.init(srate, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
 			V32_EQ_LEN, V32_POWER) ||
-	    echo_init(&v->ec, V32_EC_LEN)) {
-		qam_rx_free(&v->rx);
-		echo_free(&v->ec);
+	    v->ec.init(V32_EC_LEN)) {
+		v->rx.release();
+		v->ec.release();
 		free(v);
 		return NULL;
 	}
@@ -1106,8 +1106,8 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 static int v32_delete(struct dp *dp)
 {
 	struct v32_dp *v = static_cast<v32_dp*>(dp->dp_data);
-	qam_rx_free(&v->rx);
-	echo_free(&v->ec);
+	v->rx.release();
+	v->ec.release();
 	free(v);
 	return 0;
 }

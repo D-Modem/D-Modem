@@ -42,7 +42,7 @@ struct fax_tx {
 	enum fax_mod mod;
 	int short_train;
 	int srate;
-	struct qam_tx qam;
+	QamTx qam;
 	FskMod fsk;
 	float bit_phase, bit_inc;       /* V.21 bit clock */
 	int fsk_bit;
@@ -52,7 +52,7 @@ struct fax_tx {
 	int scr_count;                  /* V.27ter repeat pattern guard */
 	unsigned tscr;                  /* V.29 training scrambler */
 	int state;                      /* differential phase state */
-	struct trellis_enc trellis;
+	TrellisEnc trellis;
 	fax_get_bit_t get_bit;
 	void *ctx;
 	int ending;
@@ -67,7 +67,7 @@ struct fax_rx {
 	enum fax_mod mod;
 	int short_train;
 	int srate;
-	struct qam_rx qam;
+	QamRx qam;
 	FskDemod fsk;
 	int nstates;                    /* phase states for training sync */
 	int stage;
@@ -81,7 +81,7 @@ struct fax_rx {
 	unsigned scr;
 	int scr_count;
 	int state;
-	struct viterbi vit;
+	Viterbi vit;
 	long data_sym;                  /* trellis symbols fed to the decoder */
 	float mse, mse_fast;
 	float data_power;

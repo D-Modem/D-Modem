@@ -282,7 +282,7 @@ struct v34_dp {
 	int fsk_bit;
 	struct bitq v8tx;
 	int v8tx_repeat;        /* restart the message when it is done */
-	struct qam_tx cc;
+	QamTx cc;
 	float cc_sym;           /* +-1, 0: silence */
 	int cc_rev;             /* reverse at the next symbol */
 	struct bitq cctx;       /* INFO bits, a 1 reverses the phase */
@@ -1704,7 +1704,7 @@ static int v34_handshake(struct v34_dp *v)
 		}
 		if (c >= ms2samples(75, v->srate) && !v->pcm) {
 			v34_set_state(v, P2A_INFO0);
-			qam_tx_init(&v->cc, v->srate, 2400, CC_BAUD, 0.5f, 4, 1,
+			v->cc.init(v->srate, 2400, CC_BAUD, 0.5f, 4, 1,
 				    V34_TONE_AMP);
 			v->cc.get_symbol = cc_symbol;
 			v->cc.ctx = v;
@@ -1756,7 +1756,7 @@ static int v34_handshake(struct v34_dp *v)
 	case V8C_GAP:
 		if (c >= ms2samples(75, v->srate)) {
 			v34_set_state(v, P2C_INFO0);
-			qam_tx_init(&v->cc, v->srate, 1200, CC_BAUD, 0.5f, 4, 1,
+			v->cc.init(v->srate, 1200, CC_BAUD, 0.5f, 4, 1,
 				    V34_TONE_AMP);
 			v->cc.get_symbol = cc_symbol;
 			v->cc.ctx = v;
@@ -2262,7 +2262,7 @@ static float pump_tx_sample(struct v34_dp *v)
 		y = v->fsk.next(v->fsk_bit);
 		break;
 	case TXM_CC:
-		y = qam_tx_sample(&v->cc);
+		y = v->cc.sample();
 		break;
 	case TXM_PROBE:
 		y = v->probe_gain * v->probe[v->probe_pos];
