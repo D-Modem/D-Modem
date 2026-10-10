@@ -83,6 +83,8 @@ cmd("modemB", "ATA"); cmd("modemA", "ATD")
 ok = wait("modemA", b"(CONNECT[^\r]*|NO CARRIER|NO ANSWER|BUSY)\r", 90) and wait("modemB", b"(CONNECT[^\r]*|NO CARRIER)\r", 15)
 print("A:", buf["modemA"]); print("B:", buf["modemB"])
 if not (b"CONNECT" in buf["modemA"] and b"CONNECT" in buf["modemB"]): done(False)
+# the slowest direction sets how long the data takes (V.23: 75 bit/s)
+rate = min([int(r) for r in re.findall(rb"CONNECT (\d+)", buf["modemA"] + buf["modemB"])] or [1200])
 buf = {k: b"" for k in fd}
 msg_a = bytes(range(32, 127)) * 4 + b"\r\n"
 msg_b = b"The quick brown fox jumps over the lazy dog. " * 8
@@ -102,7 +104,8 @@ if stream:
     msg_a, msg_b = sent_a, sent_b
 else:
     os.write(fd["modemA"], msg_a); os.write(fd["modemB"], msg_b)
-end = time.time() + 40 + stream
+# 10 bits a character, and half as much again for V.42 framing
+end = time.time() + 40 + stream + 15.0 * max(len(msg_a), len(msg_b)) / rate
 while time.time() < end and (len(buf["modemB"]) < len(msg_a) or len(buf["modemA"]) < len(msg_b)):
     pump(0.2)
 print("A received %d/%d ok=%s" % (len(buf["modemA"]), len(msg_b), buf["modemA"] == msg_b))

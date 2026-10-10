@@ -193,8 +193,17 @@ law is mu-law, or A-law with `DSP_G711=alaw`.
 
 The original library, as an analogue V.90 modem calling through the
 simulated network (`ctest -R interop_v90`), connects at 56000
-bit/s downstream and 31200 upstream, mu-law and A-law (A-law is
-marginal there: the original library retrains in phase 4 at times). Over
+bit/s downstream and 31200 upstream, mu-law and A-law. Whether its
+phase 4 check passes (the ratio of its equalizer's error before and after
+TRN2d, limit about 1.5) depends on where the segments fall in its blocks:
+the same call passes or fails every time, and a few samples more or less
+anywhere change that. When it fails, it asks for a retrain (silence and
+tone A) and the digital modem follows it back to phase 2 at the tones,
+like a V.34 retrain; the second training passes. The Agere modem as the
+analogue modem (`ctest -R agere_v90`) connects at 46666 bit/s downstream;
+it trains on TRN1d for 0.6 s and decides on it for another 0.9 s before
+it looks for Jd, so TRN1d lasts 1 s (it was 300 ms, enough for the
+original library only). Over
 SIP, through Asterisk and DModem (`asterisk/test/sip.sh AT+MS=90`, with
 `CODEC=alaw` for A-law), it connected at 56000/31200 in both laws while
 slmodemd still ran the original library at 9600 Hz; its SIP side then did
@@ -407,9 +416,18 @@ writing:
 |---|---|---|
 | V.27ter 2400, 4800 | pass | pass |
 | V.29 7200, 9600 | pass | pass |
-| V.17 7200, 9600 (long and short train) | pass | pass |
-| V.17 12000 | pass | pass |
-| V.17 14400 | fails: the original transmitter's signal is too noisy at this rate (it cannot receive itself either) | pass |
+| V.17 7200, 9600, 12000 (long train for TCF, short for the page) | pass | about half the calls: the page is lost (see below) |
+| V.17 14400 | fails: the original transmitter's signal is too noisy at this rate (it cannot receive itself either) | as above |
+
+Open problem: the original receiver takes our V.17 TCF (long train) every
+time but loses about half of our pages (short train): "V17 Dec error too
+big" some 60 ms into the data. It takes its own short trains every time,
+and the Agere modem takes ours. What differs from the original transmitter:
+it sends 200 ms of 1800 Hz (the training point C) and 20 ms of silence
+before every V.17 signal, and no bridge after a short TRN (segment 4 at
+once). Neither the tone, nor dropping the bridge, nor the start of the
+differential encoder, nor a symbol clock that runs through the call made
+the pages pass more often; with no bridge fewer pass.
 
 The original library makes a few bit errors with some of its own signals,
 so `fax_interop.py` accepts a page with a bit error rate below 1e-3 (a fax
@@ -419,6 +437,26 @@ page without ECM survives that). Its V.27ter training also contains stray
 `fax_loopback <mod> [snr dB] [bits] [srate]` sends random data through
 one fax modulation over the simulated line. The V.17 short train codes run
 a long train first, so the receiver has an equalizer to start from.
+
+### Against the Agere soft modem
+
+`half_agere` runs the Agere Systems soft modem library (`test/agrsm_core.o`
+of agrsm 2.1.40, i386) in user space on an emulated Intel ICH modem
+controller and Si3038 codec; `ctest -L agere -j8` calls it from and to the
+open modem. Results at the time of writing:
+
+| Agere `AT+MS=` / ours | Agere caller → open answerer | open caller → Agere answerer |
+|---|---|---|
+| V34 / 34 | CONNECT 33600 (our transmitter; we receive at 24000) | CONNECT 33600 / 24000 |
+| V32B / 132, V32 / 32 | CONNECT 14400, 9600 | CONNECT 14400, 9600 |
+| V22B / 122, V22 / 22, B212 / 212 | CONNECT 2400, 1200, 1200 | the same |
+| V23C / 23, V21 / 21, B103 / 103 | CONNECT 1200/75, 300, 300 | the same |
+| V90 / 90 (ours as the digital modem), mu-law and A-law | CONNECT 46666 | - |
+
+Class 1 fax at 8000 Hz (`agere_fax_*`): V.27ter, V.29 and V.17 7200 pass
+both ways. With V.17 at 9600 and 12000 our receiver gets the Agere
+transmitter's TCF at only some 14 dB SNR and the TCF fails; the page at
+12000 from us to it fails too.
 
 The original library in its default V.92 mode does V.8 with automode off,
 and connects to this implementation at V.34.

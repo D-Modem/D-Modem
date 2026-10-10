@@ -218,9 +218,16 @@ static int run(struct dir *d, int a_out, int a_in)
 			/* the network, then the far codec (with the
 			   analogue loss or gain NET_GAIN on the way) */
 			m = rc_run(&d->rc, g711(ibuf[i]) * gain, y);
-			for (k = 0; k < m; k++)
+			for (k = 0; k < m; k++) {
+				static long clipped;
+				if ((y[k] > 32767 || y[k] < -32768) &&
+				    ++clipped && !(clipped & (clipped - 1)))
+					fprintf(stderr, "netsim: %ld samples "
+						"clipped at the far codec\n",
+						clipped);
 				d->obuf[o++] = (short)(y[k] > 32767 ? 32767 :
 						       y[k] < -32768 ? -32768 : y[k]);
+			}
 		} else {
 			m = d->rs.run(ibuf[i] * gain_up, y);
 			for (k = 0; k < m; k++)

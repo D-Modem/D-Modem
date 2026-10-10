@@ -1,7 +1,7 @@
 # Build everything (with the 32 bit interop test programs, against the
 # original DSP library) and run the offline tests.  The realtime interop
-# tests (ctest -L interop) are left out: they take a quarter of an hour
-# and depend on the runner's timing.
+# tests (ctest -L "interop|agere" -j8, about 2 minutes) are left out: they
+# depend on the runner's timing.
 name: CI
 
 on:

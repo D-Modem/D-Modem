@@ -394,6 +394,7 @@ struct V34Pump : Pump {
 	int rt_heard;           /* the tone has been there a while */
 	long bad;               /* data mode: samples with a poor mse */
 	int retraining;         /* back to data mode without a new CONNECT */
+	int connected;          /* CONNECT has been reported */
 	int retrains;
 	long retrain_at;        /* test: our own retrain this far (samples) */
 
@@ -436,6 +437,11 @@ struct V34Pump : Pump {
 	void mp_start();
 	int fsk_bit_edge();
 	void retrain(const char *why);
+	/* the digital modem in V.90 phases 3 and 4 */
+	int v90_digital() const
+	{
+		return state >= P3D_WAIT_JA && state <= P4D_TRAIN;
+	}
 	int handshake();
 	float pump_tx_sample();
 	int sample(float x, float *y, const float *ref);
@@ -1386,7 +1392,7 @@ void V34Pump::pump_rx_sample(float x)
 		if (!ec.bypass)
 			x = ec.run(last_tx, x);
 		prx.sample(x);
-		if (state == V34_DATA)
+		if (state == V34_DATA || v90_digital())
 			rt_tone(x);
 		return;
 	}
@@ -1496,8 +1502,10 @@ void V34Pump::v90_make_mp(int ack)
 {
 	int h[6];
 	float gain = prx.precoder(h);
-	DSP_DBG("v34: V.90 precoding would gain %.2f dB: h %d %d %d %d %d %d\n",
-		gain, h[0], h[1], h[2], h[3], h[4], h[5]);
+	if (!mp_len || ack != mp_ack)
+		DSP_DBG("v34: V.90 precoding would gain %.2f dB: h %d %d %d "
+			"%d %d %d\n", gain, h[0], h[1], h[2], h[3], h[4],
+			h[5]);
 	if (gain < V34_PRECODE_MIN)
 		memset(h, 0, sizeof(h));
 	mp_len = v90_mp_build(mpb, max_rate_rx, V34_TRELLIS, 1, ack,
@@ -1709,6 +1717,14 @@ void V34Pump::retrain(const char *why)
 		prx_on = 0;
 	}
 	txm = TXM_SILENCE;
+	/* V.90: V.34 signals again until the next INFO1a */
+	if (pcm_tx) {
+		pcm_tx = 0;
+		ref_n = 0;
+		v90tx.seg = V90_SILENCE;
+		up_n = 0;
+		mp_len = 0;
+	}
 	ec.on = 0;
 	/* the control channel as after INFO0 */
 	ccr.init(caller ? 2400 : 1200);
@@ -1775,6 +1791,11 @@ int V34Pump::handshake()
 {
 	long c = count;
 
+	/* V.90: the analogue modem asks for a retrain in phase 3 or 4 with
+	   silence and its tone A (it is the V.34 answerer in phase 2) */
+	if (v90_digital() && rt_blocks >= 6)
+		retrain("tone A");
+
 	switch (state) {
 	/* V.8 answerer */
 	case V8A_SILENCE:
@@ -1821,6 +1842,9 @@ int V34Pump::handshake()
 			caller = 1;
 			tone_g.init(2400, PROBE_PERIOD,
 				      srate);
+			/* a retrain: the analogue modem's tone A, ours B */
+			rt_g.init(2400, PROBE_PERIOD, srate);
+			own_g.init(1200, PROBE_PERIOD, srate);
 			set_state(V8C_GAP);
 			count = c = ms2samples(75, srate);
 		}
@@ -2200,7 +2224,10 @@ int V34Pump::handshake()
 		/* the analogue modem stops Ja when it sees Sd */
 		if (c >= ms2samples(50, srate)) {
 			set_state(P3D_SD);
-			v90tx.trn1d_len = 2400;      /* 300 ms */
+			/* the Agere modem trains on TRN1d for 0.6 s and
+			   then decides on it for 0.9 s before it looks for
+			   Jd; the original library takes 0.3 s */
+			v90tx.trn1d_len = 8000;      /* 1 s */
 			v90tx.segment(V90_SD);
 			prx.ev_s = 0;
 		}
@@ -2291,6 +2318,16 @@ int V34Pump::handshake()
 			set_state(V34_DATA);
 			modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
 			modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+			rt_blocks = 0;
+			lost = 0;
+			if (retraining && connected) {
+				retraining = 0;
+				DSP_DBG("v34: V.90 retrained, %d/%d\n",
+					rate_tx, rate_rx);
+				break;
+			}
+			retraining = 0;
+			connected = 1;
 			DSP_DBG("v34: V.90 connect %d/%d\n", rate_tx,
 				rate_rx);
 			return DPSTAT_CONNECT;
@@ -2318,13 +2355,15 @@ int V34Pump::handshake()
 			modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
 			rt_blocks = 0;
 			lost = 0;
-			if (retraining) {
+			if (retraining && connected) {
 				/* the link goes on (V.42 knows nothing of it) */
 				retraining = 0;
 				DSP_DBG("v34: retrained, %d/%d\n", rate_tx,
 					rate_rx);
 				break;
 			}
+			retraining = 0;
+			connected = 1;
 			DSP_DBG("v34: connect %d/%d\n", rate_tx, rate_rx);
 			return DPSTAT_CONNECT;
 		}
@@ -2335,6 +2374,10 @@ int V34Pump::handshake()
 		else
 			lost++;
 		if (pcm) {
+			if (rt_blocks >= 6) {
+				retrain("tone A");
+				break;
+			}
 			if (lost >= carrier_loss) {
 				DSP_DBG("v34: carrier lost\n");
 				return DPSTAT_ERROR;
@@ -2579,7 +2622,8 @@ void V34Pump::cleanup()
 }
 
 /* DP_V8 is what the modem core starts for the default (fastest) mode;
-   V.90 and V.92 are not implemented, they start V.34 as well */
+   V.90 (the digital modem) and V.91 run from V.8 on this pump too, and
+   V.92 starts it as well (V.90 or V.34) */
 static const enum DP_ID v34_ids[] = { DP_V8, DP_V34, DP_V90, DP_V91, DP_V92 };
 
 int dp_v34_init(void)

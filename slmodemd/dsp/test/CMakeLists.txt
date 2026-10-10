@@ -304,8 +304,8 @@ endforeach()
 # the Agere soft modem (8000 Hz) and the open modem (9600 Hz) call each
 # other; AT+MS takes names there (B103, V21, ..., V34)
 if(TARGET half_agere)
-	foreach(_p B103:103 V21:21 B212:212 V22:22 V22B:122 V32:32 V32B:132
-		   V34:34)
+	foreach(_p B103:103 V21:21 V23C:23 B212:212 V22:22 V22B:122 V32:32
+		   V32B:132 V34:34)
 		string(REPLACE ":" ";" _p ${_p})
 		list(GET _p 0 _a)
 		list(GET _p 1 _ms)
@@ -323,6 +323,29 @@ if(TARGET half_agere)
 		set_tests_properties(agere_${_ms}_open_calls PROPERTIES
 			LABELS agere ENVIRONMENT
 			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
+	endforeach()
+	# V.90: the Agere modem as the analogue modem, the open one as the
+	# digital modem (both at 8000 Hz)
+	foreach(_law ulaw alaw)
+		add_test(NAME agere_v90_${_law} COMMAND ${Python3_EXECUTABLE}
+			${_py}/interop.py $<TARGET_FILE:half_agere>
+			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
+		set_tests_properties(agere_v90_${_law} PROPERTIES LABELS agere
+			ENVIRONMENT
+			"${_env};NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
+	endforeach()
+	# class 1 fax both ways at 8000 Hz (V.17 from 9600 bit/s up does not
+	# work with the Agere modem yet)
+	foreach(_m 24 48 72 96 73)
+		add_test(NAME agere_fax_${_m}_agere_sends COMMAND
+			${Python3_EXECUTABLE} ${_py}/fax_interop.py
+			$<TARGET_FILE:half_agere> $<TARGET_FILE:half_open8> ${_m})
+		add_test(NAME agere_fax_${_m}_open_sends COMMAND
+			${Python3_EXECUTABLE} ${_py}/fax_interop.py
+			$<TARGET_FILE:half_open8> $<TARGET_FILE:half_agere> ${_m})
+		set_tests_properties(agere_fax_${_m}_agere_sends
+			agere_fax_${_m}_open_sends PROPERTIES LABELS agere
+			ENVIRONMENT "${_env}")
 	endforeach()
 endif()
 
