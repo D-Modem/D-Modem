@@ -1039,6 +1039,11 @@ static void do_modem_change_dp (struct modem *m)
 		id = dp_id;
 		if(dp_id == 0) {
 			dp_id = MODEM_DP(m);
+			/* K56flex is not there (Rockwell's pre-V.90 PCM
+			   modem): AT+MS=56 runs V.90, which K56flex modems
+			   mostly got as an upgrade, else V.34 */
+			if (dp_id == DP_K56)
+				dp_id = DP_V90;
 			id = IS_FAST_DP(dp_id) ? DP_V8 : dp_id;
 		}
 
