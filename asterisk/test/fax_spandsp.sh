@@ -13,7 +13,7 @@ rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib"
 [ -x "$t4" ] || make -C "$here/../../slmodemd/dsp/test" t4_test >/dev/null || exit 1
 "$t4" light "$run/doc.tif" || exit 1
 cp "$here/modules.conf" "$run/etc/"
-printf 'load = res_clioriginate.so\nload = res_fax.so\nload = res_fax_spandsp.so\n' >> "$run/etc/modules.conf"
+printf 'load = res_clioriginate.so\nload = res_timing_timerfd.so\nload = res_fax.so\nload = res_fax_spandsp.so\n' >> "$run/etc/modules.conf"
 cp "$here/extensions.conf" "$run/etc/"
 sed "s|^\[general\]|[general]\nfax_dir = $run/fax\nfax_ident = +1 555 0199|" "$here/dmodem.conf" > "$run/etc/dmodem.conf"
 for m in /usr/lib/asterisk/modules/*.so; do ln -s "$m" "$run/mod/"; done
