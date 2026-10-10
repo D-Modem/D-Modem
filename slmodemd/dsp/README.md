@@ -234,6 +234,34 @@ The equalizer and the PLL's frequency term only train on scrambled
 signals. The unscrambled handshake sequences (ANS, unscrambled ones, S1)
 are close to pure tones and would de-tune them.
 
+## Code structure
+
+Everything here is in `namespace dsp`, except the C entry points of
+`../dsplibs.h`, which keep C linkage for the modem core.
+
+- **Data pumps** derive from `Pump` (`pump.h`): `CallProgPump`, `FskPump`,
+  `V22Pump`, `V32Pump` and `V34Pump` (which is also V.8 and V.90). A pump
+  has a static `name`, `start()` (what was the create function: 0, or -1
+  if it cannot run), `process()`, and optionally `hangup()` and a
+  destructor. `PumpOps<T>::ops` is the table registered with the modem
+  core (`modem_dp_register`). A pump is allocated with `new T()`, so
+  members start at zero, as they did with `calloc`.
+- **Building blocks** are small classes of plain data with methods:
+  `Osc`, `Biquad`, `Goertzel`, `PowerMeter`, `Resampler`, `FskMod`,
+  `FskDemod`, `DtmfGen`, `QamTx`, `QamRx`, `TrellisEnc`, `Viterbi`,
+  `EchoCanceller`, the V.34 and V.90 blocks (`V34Tx`, `V34Rx`,
+  `V34DataTx`, `V34DataRx`, `V34Precoder`, `V90Enc` and others), and the
+  fax side (`FaxTx`, `FaxRx`, `Fax`, `T30`, `T4Page`, `T4Rx`, `TiffIn`,
+  `TiffOut`). They have no constructors: `init()` sets one up and, when
+  it owns memory, `release()` frees it. Being plain data, they can live
+  inside a pump that is created zeroed.
+- **The other library objects**, `DcRemover`, `RingDetector`, `CallerId`
+  and `Voice` (`dsp_glue.cpp`), are classes behind their C entry points
+  (`dcr_*`, `RD_*`, `CID_*`, `VOICE_*`).
+
+The conversion from C structs and functions kept the output the same to
+the byte: every quick test produces the same debug log before and after.
+
 ## Building
 
     cmake -B build                            # in the top directory
