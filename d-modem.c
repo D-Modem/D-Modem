@@ -186,7 +186,12 @@ int main(int argc, char *argv[]) {
 		med_cfg.ec_tail_len = 0;
 		med_cfg.jb_max = 2000;
 //		med_cfg.jb_init = 200;
-		med_cfg.audio_frame_ptime = 5;
+		/* the conference bridge in frames of the modem's port (20
+		   ms): with smaller ones, where the port's frame falls among
+		   them changes from call to call, and so does the delay the
+		   modem sees from its transmitter to its receiver (V.34
+		   phase 2 depends on it, see MDMCTL_IODELAY in slmodemd) */
+		med_cfg.audio_frame_ptime = 20;
 		if (getenv("DMODEM_CLOCK"))
 			med_cfg.clock_rate = atoi(getenv("DMODEM_CLOCK"));
 		if (getenv("DMODEM_PTIME"))
