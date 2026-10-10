@@ -877,6 +877,7 @@ int V32Pump::handshake()
 				start_word(TXM_R, RB_B4 | RB_SYNC |
 					       (r_word & r2_caps));
 				ev_r = 0;
+				ev_s = 0;
 			}
 		}
 		break;
@@ -970,10 +971,11 @@ int V32Pump::handshake()
 			r = choose(r_word);
 			DSP_DBG("v32: R word %04X in R2 (choice %04X)\n",
 				r_word, r ? r->bits : 0);
-			if (!r || (r_word & RB_RATES) != r->bits) {
-				/* not a final rate word yet (R1 repeated) */
+			/* R1 repeated, until the answerer's second training;
+			   after it R3, which may name all the common rates
+			   (Agere's does): the fastest of them */
+			if (!r || (!ev_s && (r_word & RB_RATES) != r->bits))
 				break;
-			}
 			tx_rate = r;
 			set_state(C_E);
 			start_word(TXM_E, final_word(r) | RB_HEADER);
