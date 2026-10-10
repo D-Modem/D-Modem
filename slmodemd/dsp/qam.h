@@ -11,9 +11,7 @@
 
 #include "dsp.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace dsp {
 
 #define QAM_MAX_SPAN 16         /* pulse half length, symbols */
 #define QAM_PULSE_RES 64        /* pulse table points per symbol */
@@ -30,7 +28,7 @@ struct qam_tx {
 	float t;
 	int span;
 	cplx sym[2 * QAM_MAX_SPAN];
-	struct osc carrier;
+	Osc carrier;
 	float scale;
 	float pulse[2 * QAM_MAX_SPAN * QAM_PULSE_RES + 2];
 	cplx (*get_symbol)(void *ctx);
@@ -52,7 +50,7 @@ struct qam_rx {
 	int srate;
 	float sps;
 	float baud;
-	struct osc lo;
+	Osc lo;
 	float *mf;
 	cplx *mf_buf;
 	int mf_len, mf_pos;
@@ -157,8 +155,6 @@ extern const cplx v32_points_14400[128];
 extern const cplx v32_points_4800[4];
 extern const cplx v32_abcd[4];
 
-#ifdef __cplusplus
-}
-#endif
+} // namespace dsp
 
 #endif /* __QAM_H__ */

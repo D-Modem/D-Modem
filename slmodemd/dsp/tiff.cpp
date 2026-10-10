@@ -12,6 +12,8 @@
 
 #include "t4.h"
 
+namespace dsp {
+
 
 /*
  *    writing
@@ -341,3 +343,5 @@ int tiff_in_page(struct tiff_in *t, struct t4_page *p)
 	t4_page_free(&src);
 	return 1;
 }
+
+} // namespace dsp

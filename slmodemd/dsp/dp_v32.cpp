@@ -33,6 +33,8 @@
 
 #include "qam.h"
 
+namespace dsp {
+
 #define V32_BAUD        2400
 #define V32_ALPHA       0.25f
 #define V32_SPAN        6
@@ -135,7 +137,7 @@ enum v32_rxp {
 
 /* narrow band tone tracker for AA / AC and their phase reversals */
 struct tone_trk {
-	struct osc lo;
+	Osc lo;
 	cplx lp1, lp2;
 	float a;
 	cplx hist[128];
@@ -172,7 +174,7 @@ struct v32_dp {
 	int tx_word_bit;
 	struct trellis_enc tx_trellis;
 	const struct v32_rate *tx_rate;
-	struct osc ans;
+	Osc ans;
 	float last_tx;
 
 	/* receiver */
@@ -272,7 +274,7 @@ static unsigned final_word(const struct v32_rate *r)
 static void tone_init(struct tone_trk *t, float freq, int srate)
 {
 	memset(t, 0, sizeof(*t));
-	osc_set_freq(&t->lo, -freq, srate);
+	t->lo.set_freq(-freq, srate);
 	t->a = 1.0f / (0.0015f * srate);
 	t->lag = srate / 100;   /* compare with 10 ms ago */
 	if (t->lag > 127)
@@ -283,7 +285,7 @@ static void tone_init(struct tone_trk *t, float freq, int srate)
    the total input power (in_power), noise alone does not turn it on */
 static int tone_run(struct tone_trk *t, float x, float in_power, int srate)
 {
-	cplx v = cplx_scale(osc_next_cplx(&t->lo), x), old;
+	cplx v = cplx_scale(t->lo.next_cplx(), x), old;
 	float p, po;
 	int rev = 0;
 
@@ -986,7 +988,7 @@ static int v32_process(struct dp *dp, void *in, void *out, int cnt)
 		}
 
 		if (v->txm == TXM_ANS)
-			y = DSP_TX_AMPLITUDE * osc_next(&v->ans);
+			y = DSP_TX_AMPLITUDE * v->ans.next();
 		else
 			y = qam_tx_sample(&v->tx);
 		v->last_tx = y;
@@ -1055,7 +1057,7 @@ static struct dp *v32_create(struct modem *m, enum DP_ID id,
 	   original library's receiver fails to train at some timing
 	   phases, this one works for all its rates */
 	v->tx.t = 0.25f;
-	osc_set_freq(&v->ans, 2100, srate);
+	v->ans.set_freq(2100, srate);
 	if (qam_rx_init(&v->rx, srate, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
 			V32_EQ_LEN, V32_POWER) ||
 	    echo_init(&v->ec, V32_EC_LEN)) {
@@ -1141,3 +1143,5 @@ void dp_v32_exit(void)
 	for (i = 0; i < sizeof(v32_ids) / sizeof(v32_ids[0]); i++)
 		modem_dp_deregister(v32_ids[i], &v32_operations);
 }
+
+} // namespace dsp

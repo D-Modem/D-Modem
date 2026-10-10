@@ -17,6 +17,8 @@
 
 #include "dsp.h"
 
+namespace dsp {
+
 #define BLOCK_MS 10
 
 enum cp_state {
@@ -27,7 +29,7 @@ enum cp_state {
 };
 
 struct cp_tone {
-	struct goertzel g;
+	Goertzel g;
 	int blocks;             /* consecutive blocks where the tone is on */
 };
 
@@ -46,7 +48,7 @@ struct callprog_dp {
 	long dial_on, dial_off;
 	long digit_left, pause_left;
 	int digit_on;
-	struct dtmf_gen dtmf;
+	DtmfGen dtmf;
 
 	/* tone detectors on BLOCK_MS blocks */
 	int block_len, block_n;
@@ -55,12 +57,12 @@ struct callprog_dp {
 	struct cp_tone ans2100, ans2225, usb1;
 	/* 2225 Hz (Bell) and 2250 Hz (V.22 unscrambled ones) are too
 	   close for the blocks: 200 ms ones tell them apart */
-	struct goertzel fine2225, fine2250;
+	Goertzel fine2225, fine2250;
 	int need_dialtone;
 	int dialtone_blocks;
 
 	/* busy tone cadence detector */
-	struct biquad cpt_bp;
+	Biquad cpt_bp;
 	float cpt_energy;
 	int cpt_on;
 	int cpt_run;            /* blocks in the current on/off run */
@@ -69,7 +71,7 @@ struct callprog_dp {
 	/* V.25 calling tone, or the T.30 CNG of a fax call */
 	int calling_tone;
 	int fax;
-	struct osc ct;
+	Osc ct;
 };
 
 static void cp_set_state(struct callprog_dp *c, enum cp_state state)
@@ -105,13 +107,13 @@ static struct dp *callprog_create(struct modem *m, enum DP_ID id,
 
 	c->block_len = srate * BLOCK_MS / 1000;
 	for (i = 0; i < 3; i++)
-		goertzel_init(&c->dialtone[i].g, dt_freq[i], c->block_len, srate);
-	goertzel_init(&c->ans2100.g, 2100, c->block_len, srate);
-	goertzel_init(&c->ans2225.g, 2225, c->block_len, srate);
-	goertzel_init(&c->usb1.g, 2250, c->block_len, srate);
-	goertzel_init(&c->fine2225, 2225, srate / 5, srate);
-	goertzel_init(&c->fine2250, 2250, srate / 5, srate);
-	biquad_bandpass(&c->cpt_bp, 480, 1.2f, srate);
+		c->dialtone[i].g.init(dt_freq[i], c->block_len, srate);
+	c->ans2100.g.init(2100, c->block_len, srate);
+	c->ans2225.g.init(2225, c->block_len, srate);
+	c->usb1.g.init(2250, c->block_len, srate);
+	c->fine2225.init(2225, srate / 5, srate);
+	c->fine2250.init(2250, srate / 5, srate);
+	c->cpt_bp.bandpass(480, 1.2f, srate);
 
 	v = modem_get_sreg(m, SREG_DTMF_DURATION);
 	c->dial_on = ms2samples(v > 40 ? v : 95, srate);
@@ -128,7 +130,7 @@ static struct dp *callprog_create(struct modem *m, enum DP_ID id,
 
 	c->calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
 	c->fax = m->mode == MODEM_MODE_FAX;
-	osc_set_freq(&c->ct, c->fax ? 1100 : 1300, srate);
+	c->ct.set_freq(c->fax ? 1100 : 1300, srate);
 
 	/* like the original, X2/X4 insist on a dial tone even when there
 	   is nothing to dial (D-Modem users run ATX3 for SIP lines) */
@@ -238,7 +240,7 @@ static float cp_dial_sample(struct callprog_dp *c)
 					c->digit_on = 0;
 					c->digit_left = c->dial_off;
 				}
-				return dtmf_gen_next(&c->dtmf);
+				return c->dtmf.next();
 			}
 			return 0;
 		}
@@ -253,7 +255,7 @@ static float cp_dial_sample(struct callprog_dp *c)
 			c->pause_left = (long)(s8 > 0 ? s8 : 2) * c->srate;
 		} else if (ch == 'W' || ch == 'w') {
 			c->pause_left = 2L * c->srate;
-		} else if (!dtmf_gen_set(&c->dtmf, ch, c->srate)) {
+		} else if (!c->dtmf.set(ch, c->srate)) {
 			c->digit_on = 1;
 			c->digit_left = c->dial_on;
 		}
@@ -273,13 +275,13 @@ static int callprog_process(struct dp *dp, void *in, void *out, int cnt)
 		int k;
 
 		for (k = 0; k < 3; k++)
-			goertzel_run(&c->dialtone[k].g, x);
-		goertzel_run(&c->ans2100.g, x);
-		goertzel_run(&c->ans2225.g, x);
-		goertzel_run(&c->usb1.g, x);
-		goertzel_run(&c->fine2225, x);
-		goertzel_run(&c->fine2250, x);
-		b = biquad_run(&c->cpt_bp, x);
+			c->dialtone[k].g.run(x);
+		c->ans2100.g.run(x);
+		c->ans2225.g.run(x);
+		c->usb1.g.run(x);
+		c->fine2225.run(x);
+		c->fine2250.run(x);
+		b = c->cpt_bp.run(x);
 		c->cpt_energy += b * b;
 		c->block_energy += x * x;
 		if (++c->block_n >= c->block_len) {
@@ -311,12 +313,12 @@ static int callprog_process(struct dp *dp, void *in, void *out, int cnt)
 				/* CNG: 0.5 s of 1100 Hz every 3.5 s */
 				if (c->count % ms2samples(3500, c->srate) <
 				    ms2samples(500, c->srate))
-					y = 0.5f * DSP_TX_AMPLITUDE * osc_next(&c->ct);
+					y = 0.5f * DSP_TX_AMPLITUDE * c->ct.next();
 			} else if (c->calling_tone &&
 				   c->count >= ms2samples(500, c->srate) &&
 				   (c->count % ms2samples(2500, c->srate)) <
 				   ms2samples(600, c->srate))
-				y = 0.5f * DSP_TX_AMPLITUDE * osc_next(&c->ct);
+				y = 0.5f * DSP_TX_AMPLITUDE * c->ct.next();
 			if (c->count >= c->timeout && ret == DPSTAT_OK) {
 				DSP_DBG("callprog: no answer\n");
 				ret = DPSTAT_NOANSWER;
@@ -348,3 +350,5 @@ void dp_callprog_exit(void)
 {
 	modem_dp_deregister(DP_CALLPROG, &callprog_operations);
 }
+
+} // namespace dsp

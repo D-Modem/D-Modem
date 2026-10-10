@@ -14,6 +14,8 @@
 #include "dsp.h"
 #include <dsplibs.h>
 
+using namespace dsp;
+
 
 
 /*
@@ -183,7 +185,7 @@ void dp_runtime_delete(void *runtime)
 struct ring_detector {
 	struct modem *modem;
 	int srate;
-	struct biquad lp;
+	Biquad lp;
 	float env;
 	float env_decay;
 	int on;
@@ -200,7 +202,7 @@ void *RD_create(struct modem *m, unsigned rate)
 		return NULL;
 	r->modem = m;
 	r->srate = rate;
-	biquad_lowpass(&r->lp, 80, 0.707f, rate);
+	r->lp.lowpass(80, 0.707f, rate);
 	r->env_decay = 1.0f / (0.1f * rate);
 	return r;
 }
@@ -217,7 +219,7 @@ int RD_process(void *obj, void *in, int count)
 	int i, ret = 0;
 
 	for (i = 0; i < count; i++) {
-		float x = biquad_run(&r->lp, s[i]);
+		float x = r->lp.run(s[i]);
 		int sign = x > 0;
 		float a = fabsf(x);
 
@@ -281,7 +283,7 @@ void RD_ring_details(void *obj, long *freq, long *duration)
 struct cid {
 	struct modem *modem;
 	unsigned format;
-	struct fsk_demod fsk;
+	FskDemod fsk;
 	/* UART */
 	int in_char, nbits;
 	unsigned shift;
@@ -298,7 +300,7 @@ void *CID_create(struct modem *m, unsigned rate, unsigned cid_val)
 		return NULL;
 	c->modem = m;
 	c->format = cid_val;
-	fsk_demod_init(&c->fsk, 1200, 2200, 1200, rate);
+	c->fsk.init(1200, 2200, 1200, rate);
 	DSP_DBG("cid: create, format %u\n", cid_val);
 	return c;
 }
@@ -400,7 +402,7 @@ int CID_process(void *obj, void *in, int count)
 	int i, bit, r;
 
 	for (i = 0; i < count; i++) {
-		bit = fsk_demod_run(&c->fsk, s[i]);
+		bit = c->fsk.run(s[i]);
 		if (bit < 0 || !c->fsk.carrier)
 			continue;
 		if (!c->in_char) {
@@ -457,9 +459,9 @@ struct voice {
 	int tx_end;
 	/* tones */
 	long tone_left;
-	struct osc t1, t2;
+	Osc t1, t2;
 	int tone2;
-	struct dtmf_gen dtmf;
+	DtmfGen dtmf;
 	int tone_dtmf;
 };
 
@@ -510,11 +512,11 @@ int VOICE_command(void *obj, enum VOICE_CMD cmd)
 		v->tone_left = (long)vi->tone_duration * v->srate / 100;
 		v->tone_dtmf = cmd == VOICE_CMD_DTMF;
 		if (v->tone_dtmf) {
-			if (dtmf_gen_set(&v->dtmf, vi->dtmf_symbol, v->srate))
+			if (v->dtmf.set(vi->dtmf_symbol, v->srate))
 				v->tone_left = 0;
 		} else {
-			osc_set_freq(&v->t1, vi->tone1_freq, v->srate);
-			osc_set_freq(&v->t2, vi->tone2_freq, v->srate);
+			v->t1.set_freq(vi->tone1_freq, v->srate);
+			v->t2.set_freq(vi->tone2_freq, v->srate);
 			v->tone2 = vi->tone2_freq != 0;
 		}
 		if (!v->tone_left)
@@ -575,12 +577,12 @@ int VOICE_process(void *obj, void *in, void *out, int count)
 
 		if (v->tone_left > 0) {
 			if (v->tone_dtmf)
-				y = dtmf_gen_next(&v->dtmf);
+				y = v->dtmf.next();
 			else {
-				y = DSP_TX_AMPLITUDE * osc_next(&v->t1);
+				y = DSP_TX_AMPLITUDE * v->t1.next();
 				if (v->tone2)
 					y = 0.5f * y + 0.5f * DSP_TX_AMPLITUDE *
-						osc_next(&v->t2);
+						v->t2.next();
 			}
 			if (--v->tone_left == 0)
 				v->pending = VOICE_STATUS_OK;

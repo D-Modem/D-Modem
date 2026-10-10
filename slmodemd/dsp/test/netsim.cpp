@@ -17,6 +17,8 @@
 #include <unistd.h>
 #include "dsp.h"
 
+using namespace dsp;
+
 unsigned int dsplibs_debug_level = 0;
 int dsplibs_debug_printf(const char *fmt, ...) { return 0; }
 
@@ -166,7 +168,7 @@ static int rc_run(struct rc_up *r, float x, float *out)
 
 struct dir {
 	int in, out, rate_in, rate_out;
-	struct resampler rs;
+	Resampler rs;
 	struct rc_up rc;
 	short obuf[8192];
 	int on;
@@ -219,7 +221,7 @@ static int run(struct dir *d, int a_out, int a_in)
 				d->obuf[o++] = (short)(y[k] > 32767 ? 32767 :
 						       y[k] < -32768 ? -32768 : y[k]);
 		} else {
-			m = resampler_run(&d->rs, ibuf[i], y);
+			m = d->rs.run(ibuf[i], y);
 			for (k = 0; k < m; k++)
 				d->obuf[o++] = (short)g711((int)lrintf(y[k]));
 		}
@@ -299,7 +301,7 @@ int main(int argc, char **argv)
 	d[1].rate_out = ra;
 	for (k = 0; k < 2; k++) {
 		if (d[k].rate_in != d[k].rate_out &&
-		    resampler_init(&d[k].rs, d[k].rate_out / 1600,
+		    d[k].rs.init(d[k].rate_out / 1600,
 				   d[k].rate_in / 1600)) {
 			fprintf(stderr, "netsim: rates %d/%d\n",
 				d[k].rate_in, d[k].rate_out);

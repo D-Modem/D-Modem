@@ -8,6 +8,8 @@
 
 #include "v34.h"
 
+namespace dsp {
+
 const struct v34_baud v34_bauds[V34_NBAUDS] = {
 	/* nominal, a, c, carrier d/e low, high, J, P */
 	{ 2400,  1, 1, { 2, 3 }, { 3, 4 }, 7, 12 },
@@ -120,3 +122,5 @@ unsigned v34_crc_bits(const unsigned char *bits, int n, unsigned crc)
 	}
 	return crc;
 }
+
+} // namespace dsp

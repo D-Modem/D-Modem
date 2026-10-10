@@ -11,6 +11,8 @@
 
 #include "qam.h"
 
+namespace dsp {
+
 
 /*
  *    transmitter
@@ -30,7 +32,7 @@ void qam_tx_init(struct qam_tx *q, int srate, float carrier, float baud,
 		q->pulse[i] = rrc_pulse((float)i / QAM_PULSE_RES - q->span, alpha);
 	/* unit energy pulses: the pass band rms is amplitude / sqrt(2) */
 	q->scale = amplitude / rms_symbol;
-	osc_set_freq(&q->carrier, carrier, srate);
+	q->carrier.set_freq(carrier, srate);
 }
 
 void qam_tx_flush(struct qam_tx *q)
@@ -66,7 +68,7 @@ float qam_tx_sample(struct qam_tx *q)
 		s.re += g * q->sym[k].re;
 		s.im += g * q->sym[k].im;
 	}
-	c = osc_next_cplx(&q->carrier);
+	c = q->carrier.next_cplx();
 	return q->scale * (s.re * c.re - s.im * c.im);
 }
 
@@ -85,7 +87,7 @@ int qam_rx_init(struct qam_rx *q, int srate, float carrier, float baud,
 	q->srate = srate;
 	q->baud = baud;
 	q->sps = srate / baud;
-	osc_set_freq(&q->lo, -carrier, srate);
+	q->lo.set_freq(-carrier, srate);
 	q->mf_len = (int)(2 * span * q->sps) | 1;
 	/* the matched filter is evaluated at the T/2 instants themselves,
 	   from a table of QAM_MF_RES points per sample */
@@ -140,7 +142,7 @@ int qam_rx_sample(struct qam_rx *q, float x)
 
 	q->power += q->power_alpha * (x * x - q->power);
 
-	b = cplx_scale(osc_next_cplx(&q->lo), x);
+	b = cplx_scale(q->lo.next_cplx(), x);
 	/* newest sample at mf_buf[mf_pos], kept twice for a contiguous run */
 	if (--q->mf_pos < 0)
 		q->mf_pos = q->mf_len;
@@ -419,3 +421,5 @@ void qam_rx_recompute(struct qam_rx *q)
 	q->eq_out = out;
 	q->z = cplx_mul(out, q->rot);
 }
+
+} // namespace dsp

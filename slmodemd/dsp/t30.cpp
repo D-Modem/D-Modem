@@ -27,6 +27,8 @@
 #include "fax.h"
 #include "t30.h"
 
+namespace dsp {
+
 /* frame control fields as they come off the line (T.30 5.3.6); the
    lowest bit is set in frames of the machine that received the DIS */
 enum {
@@ -1144,3 +1146,5 @@ const char *t30_result_text(enum t30_result r)
 	}
 	return "?";
 }
+
+} // namespace dsp

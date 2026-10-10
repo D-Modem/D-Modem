@@ -12,6 +12,8 @@
 
 #include "t4.h"
 
+using namespace dsp;
+
 static void set(struct t4_page *p, int x, int y)
 {
 	if (x >= 0 && x < p->width && y >= 0 && y < p->rows)

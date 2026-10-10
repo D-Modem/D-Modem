@@ -22,6 +22,8 @@
 
 #include "dsp.h"
 
+namespace dsp {
+
 #define V22_BAUD      600
 #define V22_ALPHA     0.75f
 #define V22_SPAN      3                 /* pulse half length, symbols */
@@ -75,7 +77,7 @@ struct v22_dp {
 	   answerer's 2225 Hz mark and answers with its own, 1270 Hz: 100 ms
 	   of it before its data (only a pure tone, a V.22 caller never
 	   sends one) */
-	struct goertzel g1270, g1070;
+	Goertzel g1270, g1070;
 	float blk_energy;
 	int bell_blocks;
 	enum v22_state state;
@@ -90,19 +92,19 @@ struct v22_dp {
 	cplx tx_sym[2 * V22_SPAN];
 	int tx_quad;
 	int tx_s1_phase;
-	struct v22_scrambler tx_scr;
-	struct osc tx_carrier;
-	struct osc ans;
+	V22Scrambler tx_scr;
+	Osc tx_carrier;
+	Osc ans;
 	float tx_scale;
 	float pulse[2 * V22_SPAN * V22_PULSE_RES + 2];
 
 	/* receiver front end */
-	struct biquad rx_bp;
-	struct osc rx_lo;
+	Biquad rx_bp;
+	Osc rx_lo;
 	float *mf;              /* matched filter taps */
 	cplx *mf_buf;
 	int mf_len, mf_pos;
-	struct power_meter in_pwr;
+	PowerMeter in_pwr;
 	int carrier;
 	long carrier_run;       /* >0 samples with, <0 without carrier */
 	float agc_pwr, agc_alpha;
@@ -133,7 +135,7 @@ struct v22_dp {
 	float rot_avg;          /* mean phase step per symbol of the input */
 	long s1_seen;           /* sample time when remote S1 was detected */
 	int sb1_seen;           /* remote scrambled ones at 1200 bit/s */
-	struct v22_scrambler rx_scr12, rx_scr24;
+	V22Scrambler rx_scr12, rx_scr24;
 };
 
 /* quadrant change for the first dibit (Q1 Q2, Q1 first in time) */
@@ -205,7 +207,7 @@ static cplx v22_tx_symbol(struct v22_dp *v)
 		break;
 	}
 	for (i = 0; i < n; i++)
-		bits[i] = v22_scramble(&v->tx_scr, bits[i] & 1);
+		bits[i] = v->tx_scr.scramble(bits[i] & 1);
 	dibit = bits[0] << 1 | bits[1];
 	if (n == 4)
 		q34 = bits[2] << 1 | bits[3];
@@ -232,7 +234,7 @@ static float v22_tx_sample(struct v22_dp *v)
 	if (v->tx_mode == TX_ANSTONE) {
 		v->tx_t = 0;
 		memset(v->tx_sym, 0, sizeof(v->tx_sym));
-		return DSP_TX_AMPLITUDE * osc_next(&v->ans);
+		return DSP_TX_AMPLITUDE * v->ans.next();
 	}
 
 	v->tx_t += 1.0f / v->sps;
@@ -248,7 +250,7 @@ static float v22_tx_sample(struct v22_dp *v)
 		s.re += g * v->tx_sym[k].re;
 		s.im += g * v->tx_sym[k].im;
 	}
-	c = osc_next_cplx(&v->tx_carrier);
+	c = v->tx_carrier.next_cplx();
 	return v->tx_scale * (s.re * c.re - s.im * c.im);
 }
 
@@ -290,18 +292,18 @@ static void v22_rx_bits(struct v22_dp *v, int dquad, int q34_16)
 	v->last_dibit = dibit;
 
 	/* 1200 bit/s path */
-	bits[0] = v22_descramble(&v->rx_scr12, b0);
-	bits[1] = v22_descramble(&v->rx_scr12, b1);
+	bits[0] = v->rx_scr12.descramble(b0);
+	bits[1] = v->rx_scr12.descramble(b1);
 	ones12 = bits[0] & bits[1];
 	v->run_sb1_12 = ones12 ? v->run_sb1_12 + 1 : 0;
 
 	/* 2400 bit/s path */
 	{
 		u8 b24[4];
-		b24[0] = v22_descramble(&v->rx_scr24, b0);
-		b24[1] = v22_descramble(&v->rx_scr24, b1);
-		b24[2] = v22_descramble(&v->rx_scr24, q34_16 >> 1);
-		b24[3] = v22_descramble(&v->rx_scr24, q34_16 & 1);
+		b24[0] = v->rx_scr24.descramble(b0);
+		b24[1] = v->rx_scr24.descramble(b1);
+		b24[2] = v->rx_scr24.descramble(q34_16 >> 1);
+		b24[3] = v->rx_scr24.descramble(q34_16 & 1);
 		ones24 = b24[0] & b24[1] & b24[2] & b24[3];
 		v->run_sb1_24 = ones24 ? v->run_sb1_24 + 1 : 0;
 		DSP_TRACE("%s: b24 %d%d%d%d run %d\n", v->caller ? "C" : "A",
@@ -425,8 +427,8 @@ static void v22_rx_sample(struct v22_dp *v, float x)
 	float g, mu;
 
 	/* carrier detector on the band passed input */
-	x = biquad_run(&v->rx_bp, x);
-	power_meter_run(&v->in_pwr, x);
+	x = v->rx_bp.run(x);
+	v->in_pwr.run(x);
 	if (!v->carrier && v->in_pwr.power > tone_power(180)) {
 		v->carrier = 1;
 		v22_rx_reset(v);
@@ -441,7 +443,7 @@ static void v22_rx_sample(struct v22_dp *v, float x)
 		v->carrier_run = v->carrier_run < 0 ? v->carrier_run - 1 : -1;
 
 	/* down conversion and matched filter */
-	b = cplx_scale(osc_next_cplx(&v->rx_lo), x);
+	b = cplx_scale(v->rx_lo.next_cplx(), x);
 	v->mf_buf[v->mf_pos] = b;
 	y = cplx_make(0, 0);
 	for (i = 0, j = v->mf_pos; i < v->mf_len; i++) {
@@ -723,8 +725,8 @@ static int v22_process(struct dp *dp, void *in, void *out, int cnt)
 		v22_rx_sample(v, src[i]);
 		if (v->automode) {
 			v->blk_energy += (float)src[i] * src[i];
-			goertzel_run(&v->g1070, src[i]);
-			if (goertzel_run(&v->g1270, src[i])) {
+			v->g1070.run(src[i]);
+			if (v->g1270.run(src[i])) {
 				/* most of the power in that one tone */
 				float mean = v->blk_energy / v->g1270.len;
 				/* mark and space: Bell 103's originate band */
@@ -784,12 +786,12 @@ static struct dp *v22_create(struct modem *m, enum DP_ID id,
 		v->pulse[i] = rrc_pulse((float)i / V22_PULSE_RES - V22_SPAN, V22_ALPHA);
 	/* passband rms of DSP_TX_AMPLITUDE/sqrt(2) for unit energy pulses */
 	v->tx_scale = DSP_TX_AMPLITUDE / sqrtf(V22_SYM_POWER);
-	osc_set_freq(&v->tx_carrier, caller ? 1200 : 2400, srate);
-	osc_set_freq(&v->ans, id == DP_B212 ? 2225 : 2100, srate);
+	v->tx_carrier.set_freq(caller ? 1200 : 2400, srate);
+	v->ans.set_freq(id == DP_B212 ? 2225 : 2100, srate);
 	v->tx_rate = 1200;
 
-	biquad_bandpass(&v->rx_bp, caller ? 2400 : 1200, 1.0f, srate);
-	osc_set_freq(&v->rx_lo, caller ? -2400 : -1200, srate);
+	v->rx_bp.bandpass(caller ? 2400 : 1200, 1.0f, srate);
+	v->rx_lo.set_freq(caller ? -2400 : -1200, srate);
 	v->mf_len = (int)(2 * V22_SPAN * v->sps) | 1;
 	v->mf = static_cast<float*>(calloc(v->mf_len, sizeof(float)));
 	v->mf_buf = static_cast<cplx*>(calloc(v->mf_len, sizeof(cplx)));
@@ -805,7 +807,7 @@ static struct dp *v22_create(struct modem *m, enum DP_ID id,
 	}
 	for (i = 0; i < v->mf_len; i++)
 		v->mf[i] /= sqrtf(sum);
-	power_meter_init(&v->in_pwr, 0.03f, srate);
+	v->in_pwr.init(0.03f, srate);
 	v->agc_alpha = 1.0f / (0.05f * srate);
 	v->t_next = v->sps / 2;
 	v->rx_rate = 1200;
@@ -822,8 +824,8 @@ static struct dp *v22_create(struct modem *m, enum DP_ID id,
 		/* automode fallback from V.32bis: the answer tone was sent */
 		rt->ans_sent = 0;
 		v->automode = 1;
-		goertzel_init(&v->g1270, 1270, srate / 50, srate);
-		goertzel_init(&v->g1070, 1070, srate / 50, srate);
+		v->g1270.init(1270, srate / 50, srate);
+		v->g1070.init(1070, srate / 50, srate);
 		v->state = A_GAP;
 	} else if (!caller)
 		v->state = A_SILENCE;
@@ -879,3 +881,5 @@ void dp_v22_exit(void)
 	for (i = 0; i < sizeof(v22_ids) / sizeof(v22_ids[0]); i++)
 		modem_dp_deregister(v22_ids[i], &v22_operations);
 }
+
+} // namespace dsp

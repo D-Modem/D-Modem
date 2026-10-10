@@ -14,6 +14,8 @@
 
 #include "../fax.h"
 
+using namespace dsp;
+
 unsigned int dsplibs_debug_level = 0;
 
 int dsplibs_debug_printf(const char *fmt, ...)

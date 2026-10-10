@@ -25,6 +25,8 @@
 
 #include "v34.h"
 
+namespace dsp {
+
 /* 0x5FEE, least significant bit first: the superframe inversions */
 static const unsigned char v34_sync_pattern[16] = {
 	0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0
@@ -759,3 +761,5 @@ cplx v34_drx_symbol(struct v34_drx *d, cplx z, unsigned *scr, int tap)
 	}
 	return ret;
 }
+
+} // namespace dsp

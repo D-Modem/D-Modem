@@ -17,6 +17,8 @@
 #include "t30.h"
 #include "../fax.h"
 
+using namespace dsp;
+
 /* the DSP's log, as the modem core has it */
 unsigned int dsplibs_debug_level = 0;
 

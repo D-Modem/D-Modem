@@ -9,9 +9,7 @@
 
 #include "qam.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace dsp {
 
 /* symbol rates, in the order of the INFO and MP fields */
 enum {
@@ -269,8 +267,6 @@ void v34_rx_data(struct v34_rx *r, const struct v34_dparm *p,
    as used by the INFO and MP sequences */
 unsigned v34_crc_bits(const unsigned char *bits, int n, unsigned crc);
 
-#ifdef __cplusplus
-}
-#endif
+} // namespace dsp
 
 #endif /* __V34_H__ */

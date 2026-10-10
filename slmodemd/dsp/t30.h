@@ -15,9 +15,7 @@
 
 #include "t4.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace dsp {
 
 /* how a fax call ended */
 enum t30_result {
@@ -68,8 +66,6 @@ void t30_get_status(struct t30 *t, struct t30_status *s);
 /* the far end hung up */
 void t30_hangup(struct t30 *t);
 
-#ifdef __cplusplus
-}
-#endif
+} // namespace dsp
 
 #endif /* __T30_H__ */

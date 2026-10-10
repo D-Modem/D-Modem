@@ -10,9 +10,7 @@
 
 #include "qam.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace dsp {
 
 enum fax_mod {
 	FM_NONE,
@@ -45,7 +43,7 @@ struct fax_tx {
 	int short_train;
 	int srate;
 	struct qam_tx qam;
-	struct fsk_mod fsk;
+	FskMod fsk;
 	float bit_phase, bit_inc;       /* V.21 bit clock */
 	int fsk_bit;
 	int seg;                        /* training segment */
@@ -70,7 +68,7 @@ struct fax_rx {
 	int short_train;
 	int srate;
 	struct qam_rx qam;
-	struct fsk_demod fsk;
+	FskDemod fsk;
 	int nstates;                    /* phase states for training sync */
 	int stage;
 	long seg_sym;
@@ -132,8 +130,6 @@ void fax_rx_sample(struct fax_rx *r, float x);
 #define FAX_CED_RMS 4525.0f
 float fax_tx_rms(enum fax_mod mod);
 
-#ifdef __cplusplus
-}
-#endif
+} // namespace dsp
 
 #endif /* __FAX_H__ */

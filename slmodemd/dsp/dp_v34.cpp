@@ -31,6 +31,8 @@
 #include "v34.h"
 #include "v90.h"
 
+namespace dsp {
+
 #define V34_SRATE       9600
 #define CC_BAUD         600
 #define CC_SPS          16      /* samples per control channel symbol */
@@ -173,7 +175,7 @@ struct bitq {
 #define CC_HIST         128
 
 struct cc_rx {
-	struct osc lo;
+	Osc lo;
 	cplx box[CC_SPS], old[CC_SPS];
 	cplx acc;
 	int pos;
@@ -261,10 +263,10 @@ struct v34_dp {
 	int mp_len, mp_pos, mp_ack, mp_ack_sent;
 	int D;                  /* bits per data frame */
 	int up_n;               /* upstream rate, 2400 bit/s units */
-	struct resampler rs_up, rs_down;
+	Resampler rs_up, rs_down;
 	float fifo[V34_FIFO];   /* converted output, 8000 Hz */
 	int fifo_n;
-	struct resampler rs_ref;        /* V.90: our PCM signal at 9600 Hz */
+	Resampler rs_ref;        /* V.90: our PCM signal at 9600 Hz */
 	float ref_fifo[V34_FIFO];
 	int ref_n;
 	int caller;
@@ -273,9 +275,9 @@ struct v34_dp {
 
 	/* transmitter */
 	enum v34_txm txm;
-	struct osc ansam, ansam_am;
+	Osc ansam, ansam_am;
 	float ansam_sign;
-	struct fsk_mod fsk;
+	FskMod fsk;
 	float fsk_phase;
 	int fsk_bit;
 	struct bitq v8tx;
@@ -291,7 +293,7 @@ struct v34_dp {
 	long probe_start;
 
 	/* V.8 receiver */
-	struct fsk_demod v21;
+	FskDemod v21;
 	unsigned v8_sr;         /* bit window, newest in bit 19 */
 	int v8_sync;
 	int v8_bits;
@@ -303,12 +305,12 @@ struct v34_dp {
 	unsigned char v8_remote[32];
 	int v8_remote_n;
 	/* answer tone analysis (caller) */
-	struct osc ans_lo;
+	Osc ans_lo;
 	cplx ans_lp1, ans_lp2;
 	double env_sum, env15_re, env15_im;
 	long env_n;
 	/* V.32 / V.22 callers during ANSam */
-	struct goertzel aa_g;
+	Goertzel aa_g;
 	int aa_blocks;
 
 	/* phase 2 receiver */
@@ -321,10 +323,10 @@ struct v34_dp {
 	long rtd;               /* round trip delay, samples */
 	long rev_sent;          /* when our reversal went out */
 	/* the remote's L1/L2 */
-	struct goertzel probe_g[2];
+	Goertzel probe_g[2];
 	/* the remote's tone A or B during our own L2: exactly on a bin of
 	   the 64 sample probe period, where the echo of L2 has nothing */
-	struct goertzel tone_g;
+	Goertzel tone_g;
 	int tone_blocks;
 	float pblock_e;
 	int probe_blocks;
@@ -355,7 +357,7 @@ struct v34_dp {
 	long carrier_loss, lost;
 
 	/* retrain: the remote's tone A / B in data mode */
-	struct goertzel rt_g, own_g;    /* the remote's tone, the echo of ours */
+	Goertzel rt_g, own_g;    /* the remote's tone, the echo of ours */
 	float rt_e;
 	int rt_blocks;
 	int rt_heard;           /* the tone has been there a while */
@@ -655,7 +657,7 @@ static void v8_rx_bit(struct v34_dp *v, int bit)
 static void ans_analyse(struct v34_dp *v, float x)
 {
 	const float a = 1.0f / (0.004f * V34_SRATE);
-	cplx z = cplx_scale(osc_next_cplx(&v->ans_lo), x);
+	cplx z = cplx_scale(v->ans_lo.next_cplx(), x);
 	float e, w;
 	v->ans_lp1.re += a * (z.re - v->ans_lp1.re);
 	v->ans_lp1.im += a * (z.im - v->ans_lp1.im);
@@ -767,13 +769,13 @@ static void probe_start(struct v34_dp *v)
 static void cc_rx_init(struct cc_rx *r, float fc)
 {
 	memset(r, 0, sizeof(*r));
-	osc_set_freq(&r->lo, -fc, V34_SRATE);
+	r->lo.set_freq(-fc, V34_SRATE);
 }
 
 /* one sample; returns -1, or a decision (0/1) at a symbol centre */
 static int cc_rx_sample(struct cc_rx *r, float x)
 {
-	cplx z = cplx_scale(osc_next_cplx(&r->lo), x), b, d, o;
+	cplx z = cplx_scale(r->lo.next_cplx(), x), b, d, o;
 	int i = r->pos, bit = -1;
 	r->acc = cplx_add(r->acc, cplx_sub(z, r->box[i]));
 	r->box[i] = z;
@@ -868,8 +870,8 @@ static int probe_rx_sample(struct v34_dp *v, float x)
 	float e;
 	int on;
 	v->pblock_e += x * x;
-	goertzel_run(&v->probe_g[0], x);
-	if (!goertzel_run(&v->probe_g[1], x))
+	v->probe_g[0].run(x);
+	if (!v->probe_g[1].run(x))
 		return -1;
 	e = v->pblock_e / PROBE_PERIOD;
 	v->pblock_e = 0;
@@ -1266,8 +1268,8 @@ static void ec_schedule(struct v34_dp *v)
 static void rt_tone(struct v34_dp *v, float x)
 {
 	v->rt_e += x * x;
-	goertzel_run(&v->own_g, x);
-	if (goertzel_run(&v->rt_g, x)) {
+	v->own_g.run(x);
+	if (v->rt_g.run(x)) {
 		/* without the echo of our own tone */
 		float e = v->rt_e / PROBE_PERIOD - v->own_g.power;
 		v->rt_e = 0;
@@ -1289,7 +1291,7 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 	int bit, k;
 
 	if (v->state < P2A_INFO0) {
-		bit = fsk_demod_run(&v->v21, x);
+		bit = v->v21.run(x);
 		if (bit >= 0 && v->v21.carrier)
 			v8_rx_bit(v, bit);
 		if (v->state == V8A_JM || v->state == V8A_GAP ||
@@ -1300,7 +1302,7 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 		}
 		if (v->state == V8C_LISTEN)
 			ans_analyse(v, x);
-		if (goertzel_run(&v->aa_g, x)) {
+		if (v->aa_g.run(x)) {
 			if (v->aa_g.power > tone_power(300))
 				v->aa_blocks++;
 			else
@@ -1322,7 +1324,7 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 	bit = cc_rx_sample(&v->ccr, x);
 	if (bit >= 0)
 		cc_rx_bit(v, bit);
-	if (goertzel_run(&v->tone_g, x))
+	if (v->tone_g.run(x))
 		v->tone_blocks = v->tone_g.power > tone_power(150) ?
 			v->tone_blocks + 1 : 0;
 	k = probe_rx_sample(v, x);
@@ -1635,10 +1637,10 @@ static void v34_retrain(struct v34_dp *v, const char *why)
 	v->ev_info1 = v->ev_rev = 0;
 	v->rtd = 0;
 	/* the probing */
-	goertzel_init(&v->tone_g, v->caller ? 2400 : 1200, PROBE_PERIOD,
+	v->tone_g.init(v->caller ? 2400 : 1200, PROBE_PERIOD,
 		      v->srate);
-	goertzel_init(&v->probe_g[0], 1050, PROBE_PERIOD, v->srate);
-	goertzel_init(&v->probe_g[1], 3000, PROBE_PERIOD, v->srate);
+	v->probe_g[0].init(1050, PROBE_PERIOD, v->srate);
+	v->probe_g[1].init(3000, PROBE_PERIOD, v->srate);
 	v->tone_blocks = v->probe_blocks = 0;
 	v->pblock_e = 0;
 	v->l1_start = 0;
@@ -1675,7 +1677,7 @@ static int v34_handshake(struct v34_dp *v)
 			   modem's INFO0a */
 			cc_rx_init(&v->ccr, v->pcm ? 2400 : 1200);
 			v8_make_msg(v, &v->v8tx);
-			fsk_mod_init(&v->fsk, 1650, 1850, V34_TONE_AMP, v->srate);
+			v->fsk.init(1650, 1850, V34_TONE_AMP, v->srate);
 			v->fsk_phase = 1;
 			v->txm = TXM_FSK;
 		} else if (v->aa_blocks >= 10)
@@ -1695,7 +1697,7 @@ static int v34_handshake(struct v34_dp *v)
 			   V.34 call modem from phase 2 on */
 			DSP_DBG("v34: V.90 with us as the digital modem\n");
 			v->caller = 1;
-			goertzel_init(&v->tone_g, 2400, PROBE_PERIOD,
+			v->tone_g.init(2400, PROBE_PERIOD,
 				      v->srate);
 			v34_set_state(v, V8C_GAP);
 			v->count = c = ms2samples(75, v->srate);
@@ -1725,7 +1727,7 @@ static int v34_handshake(struct v34_dp *v)
 		if (v->total >= ms2samples(1000, v->srate)) {
 			v34_set_state(v, V8C_CM);
 			v8_make_msg(v, &v->v8tx);
-			fsk_mod_init(&v->fsk, 980, 1180, V34_TONE_AMP, v->srate);
+			v->fsk.init(980, 1180, V34_TONE_AMP, v->srate);
 			v->fsk_phase = 1;
 			v->txm = TXM_FSK;
 		}
@@ -2245,8 +2247,8 @@ static float pump_tx_sample(struct v34_dp *v)
 		/* 15 Hz, 20 % amplitude modulation, reversals every 450 ms */
 		if (v->count % ms2samples(450, v->srate) == 0 && v->count)
 			v->ansam_sign = -v->ansam_sign;
-		y = v->ansam_sign * ANSAM_AMP * (1 + 0.2f * osc_next(&v->ansam_am)) *
-			osc_next(&v->ansam);
+		y = v->ansam_sign * ANSAM_AMP * (1 + 0.2f * v->ansam_am.next()) *
+			v->ansam.next();
 		break;
 	case TXM_FSK:
 		v->fsk_phase += 300.0f / v->srate;
@@ -2257,7 +2259,7 @@ static float pump_tx_sample(struct v34_dp *v)
 			v->fsk_bit = v->v8tx.pos < v->v8tx.n ?
 				v->v8tx.b[v->v8tx.pos++] : 1;
 		}
-		y = fsk_mod_next(&v->fsk, v->fsk_bit);
+		y = v->fsk.next(v->fsk_bit);
 		break;
 	case TXM_CC:
 		y = qam_tx_sample(&v->cc);
@@ -2317,11 +2319,11 @@ static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 			float ref[2];
 			int m;
 			pcm = v90_tx_sample(&v->v90tx);
-			m = resampler_run(&v->rs_ref, pcm, ref);
+			m = v->rs_ref.run(pcm, ref);
 			for (k = 0; k < m && v->ref_n < V34_FIFO; k++)
 				v->ref_fifo[v->ref_n++] = ref[k];
 		}
-		n = resampler_run(&v->rs_up, src[i], up);
+		n = v->rs_up.run(src[i], up);
 		for (k = 0; k < n; k++) {
 			float rf = 0;
 			if (v->pcm_tx && v->ref_n) {
@@ -2334,7 +2336,7 @@ static int v34_process(struct dp *dp, void *in, void *out, int cnt)
 				return r;
 			if (r != DPSTAT_OK)
 				ret = r;
-			if (resampler_run(&v->rs_down, y, down) &&
+			if (v->rs_down.run(y, down) &&
 			    v->fifo_n < V34_FIFO)
 				v->fifo[v->fifo_n++] = down[0];
 		}
@@ -2368,9 +2370,9 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	/* at 8000 Hz through sample rate converters */
 	v->line_rate = srate;
 	srate = V34_SRATE;
-	resampler_init(&v->rs_up, 6, 5);
-	resampler_init(&v->rs_down, 5, 6);
-	resampler_init(&v->rs_ref, 6, 5);
+	v->rs_up.init(6, 5);
+	v->rs_down.init(5, 6);
+	v->rs_ref.init(6, 5);
 	v->fifo_n = 2;          /* so that it never runs dry */
 	v->dp.id = id;
 	/* a V.90 digital modem needs the 8000 Hz G.711 network */
@@ -2396,14 +2398,14 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 		free(v);
 		return NULL;
 	}
-	osc_set_freq(&v->ansam, 2100, srate);
-	osc_set_freq(&v->ansam_am, 15, srate);
+	v->ansam.set_freq(2100, srate);
+	v->ansam_am.set_freq(15, srate);
 	v->ansam_sign = 1;
-	osc_set_freq(&v->ans_lo, -2100, srate);
-	goertzel_init(&v->aa_g, 1800, srate / 50, srate);
-	goertzel_init(&v->tone_g, caller ? 2400 : 1200, PROBE_PERIOD, srate);
-	goertzel_init(&v->rt_g, caller ? 2400 : 1200, PROBE_PERIOD, srate);
-	goertzel_init(&v->own_g, caller ? 1200 : 2400, PROBE_PERIOD, srate);
+	v->ans_lo.set_freq(-2100, srate);
+	v->aa_g.init(1800, srate / 50, srate);
+	v->tone_g.init(caller ? 2400 : 1200, PROBE_PERIOD, srate);
+	v->rt_g.init(caller ? 2400 : 1200, PROBE_PERIOD, srate);
+	v->own_g.init(caller ? 1200 : 2400, PROBE_PERIOD, srate);
 	/* test: DSP_V34_RETRAIN=<ms in data mode>[a|c], c or a: only the
 	   caller or the answerer starts it */
 	if (getenv("DSP_V34_RETRAIN")) {
@@ -2412,16 +2414,16 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 		if (!*side || *side == (caller ? 'c' : 'a'))
 			v->retrain_at = ms2samples(atoi(e), srate);
 	}
-	goertzel_init(&v->probe_g[0], 1050, PROBE_PERIOD, srate);
-	goertzel_init(&v->probe_g[1], 3000, PROBE_PERIOD, srate);
+	v->probe_g[0].init(1050, PROBE_PERIOD, srate);
+	v->probe_g[1].init(3000, PROBE_PERIOD, srate);
 	probe_init(v);
 	if (caller) {
 		/* the answer tone was heard: CM goes back on V.21 channel 1,
 		   JM comes on channel 2 */
-		fsk_demod_init(&v->v21, 1650, 1850, 300, srate);
+		v->v21.init(1650, 1850, 300, srate);
 		v->state = V8C_LISTEN;
 	} else {
-		fsk_demod_init(&v->v21, 980, 1180, 300, srate);
+		v->v21.init(980, 1180, 300, srate);
 		v->state = V8A_SILENCE;
 	}
 	v->txm = TXM_SILENCE;
@@ -2470,3 +2472,5 @@ void dp_v34_exit(void)
 	for (i = 0; i < (int)(sizeof(v34_ids) / sizeof(v34_ids[0])); i++)
 		modem_dp_deregister(v34_ids[i], &v34_operations);
 }
+
+} // namespace dsp

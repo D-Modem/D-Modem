@@ -17,6 +17,8 @@
 
 #include "../fax.h"
 
+using namespace dsp;
+
 unsigned int dsplibs_debug_level = 0;
 
 int dsplibs_debug_printf(const char *fmt, ...)
@@ -65,7 +67,7 @@ static double gauss(void)
 	return sqrt(-2 * log(u)) * cos(2 * M_PI * v);
 }
 
-static struct biquad tilt;
+static Biquad tilt;
 static float noise;
 
 /* one transmission; returns 0 when all bits arrived intact */
@@ -86,7 +88,7 @@ static int run(enum fax_mod mod, int short_train, int srate, int code,
 		float y = n > srate / 10 ? fax_tx_sample(&tx) : 0;
 		float x = delay[n & 63];
 		delay[n & 63] = y;
-		x = biquad_run(&tilt, x) * 0.5f + noise * gauss();
+		x = tilt.run(x) * 0.5f + noise * gauss();
 		{ int oc = rx.carrier; fax_rx_sample(&rx, x);
 		  if (getenv("TRACE_CD") && oc != rx.carrier)
 			fprintf(stderr, "%.3f carrier %d det %.0f level %.0f floor %.0f\n", (double)n / srate, rx.carrier, rx.det_pwr, rx.det_level, rx.det_floor); }
@@ -142,7 +144,7 @@ int main(int argc, char **argv)
 	srand(1);
 	memset(&mem, 0, sizeof(mem));
 	noise = fax_tx_rms(mod) * 0.5f * powf(10, -snr / 20);
-	biquad_lowpass(&tilt, 3000, 0.6f, srate);
+	tilt.lowpass(3000, 0.6f, srate);
 	if (short_train)
 		ret = run(mod, 0, srate, code - 1, &mem);
 	ret |= run(mod, short_train, srate, code, &mem);

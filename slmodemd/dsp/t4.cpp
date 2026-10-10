@@ -14,6 +14,8 @@
 
 #include "t4.h"
 
+namespace dsp {
+
 
 /*
  *    the code tables (T.4 Tables 1-4), as the bits go out
@@ -620,3 +622,5 @@ int t4_decode(struct t4_page *p, const unsigned char *data, size_t len,
 	free(ref);
 	return 0;
 }
+
+} // namespace dsp

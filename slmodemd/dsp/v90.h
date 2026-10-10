@@ -9,9 +9,7 @@
 
 #include "v34.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace dsp {
 
 #define V90_JA_MAX      2800    /* bits of a DIL descriptor at most */
 
@@ -132,8 +130,6 @@ int  v90_ucode_octet(int alaw, int ucode, int positive);
 int  v90_dil_length(const unsigned char *b, int n);
 int  v90_dil_parse(struct v90_dil *d, const unsigned char *b, int len);
 
-#ifdef __cplusplus
-}
-#endif
+} // namespace dsp
 
 #endif

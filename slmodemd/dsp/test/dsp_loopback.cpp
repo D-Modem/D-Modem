@@ -30,6 +30,8 @@
 #include "../dsp.h"
 #include "dsplibs.h"
 
+using namespace dsp;
+
 #define FRAG 48
 #define MAX_BITS (1 << 20)
 
@@ -158,7 +160,7 @@ struct line {
 	float delay[256];
 	int pos, len;
 	float gain, noise;
-	struct biquad tilt;
+	Biquad tilt;
 	/* sample clock offset: linear interpolation resampler */
 	double step;
 	float sig_pwr, ref_pwr;
@@ -196,7 +198,7 @@ static float line_run(struct line *l, float x)
 		l->pos = 0;
 	if (l->step != 1)
 		y = line_resample(l, y);
-	y = biquad_run(&l->tilt, y) * l->gain;
+	y = l->tilt.run(y) * l->gain;
 	/* noise relative to the actual signal power (slow average, held
 	   during silence) */
 	l->sig_pwr += (y * y - l->sig_pwr) / 2400.0f;
@@ -281,13 +283,13 @@ int main(int argc, char **argv)
 	float echo_db = argc > 7 ? atof(argv[7]) : 0;
 	float echo_gain = echo_db < 0 ? powf(10, echo_db / 20) : 0;
 	float echo_a[64] = { 0 }, echo_c[64] = { 0 };
-	struct biquad echo_fa, echo_fc;
+	Biquad echo_fa, echo_fc;
 	int echo_pos = 0;
 	float far_db = argc > 8 ? atof(argv[8]) : 0;
 	float far_gain = far_db < 0 ? powf(10, far_db / 20) : 0;
 	int far_delay = getenv("FAR_DELAY") ? atoi(getenv("FAR_DELAY")) : 0;
 	static float far_a[1 << 15], far_c[1 << 15];
-	struct biquad far_fa, far_fc;
+	Biquad far_fa, far_fc;
 	int far_pos = 0;
 	s16 a_in[FRAG], a_out[FRAG], c_in[FRAG], c_out[FRAG];
 	struct line to_a, to_c;
@@ -326,14 +328,14 @@ int main(int argc, char **argv)
 	to_c.step = 1 - ppm * 1e-6;
 	/* white noise at snr dB below the received signal power */
 	to_a.noise = to_c.noise = powf(10, -snr / 20);
-	biquad_lowpass(&to_a.tilt, 3000, 0.6f, srate);
-	biquad_bandpass(&echo_fa, 1500, 0.5f, srate);
-	biquad_bandpass(&echo_fc, 1500, 0.5f, srate);
-	biquad_bandpass(&far_fa, 1500, 0.4f, srate);
-	biquad_bandpass(&far_fc, 1500, 0.4f, srate);
+	to_a.tilt.lowpass(3000, 0.6f, srate);
+	echo_fa.bandpass(1500, 0.5f, srate);
+	echo_fc.bandpass(1500, 0.5f, srate);
+	far_fa.bandpass(1500, 0.4f, srate);
+	far_fc.bandpass(1500, 0.4f, srate);
 	if (far_delay > (1 << 15) - 200)
 		far_delay = (1 << 15) - 200;
-	biquad_lowpass(&to_c.tilt, 3000, 0.6f, srate);
+	to_c.tilt.lowpass(3000, 0.6f, srate);
 	if (getenv("FLAT")) {
 		/* no band limitation */
 		memset(&to_a.tilt, 0, sizeof(to_a.tilt));
@@ -396,15 +398,15 @@ int main(int argc, char **argv)
 		}
 		for (i = 0; i < FRAG; i++) {
 			/* own signal echo: 20 sample delay, band limited */
-			float ea = biquad_run(&echo_fa, echo_a[(echo_pos + 44) & 63]);
-			float ec = biquad_run(&echo_fc, echo_c[(echo_pos + 44) & 63]);
+			float ea = echo_fa.run(echo_a[(echo_pos + 44) & 63]);
+			float ec = echo_fc.run(echo_c[(echo_pos + 44) & 63]);
 			echo_a[echo_pos] = a_out[i];
 			echo_c[echo_pos] = c_out[i];
 			echo_pos = (echo_pos + 1) & 63;
 			/* far echo: both line delays and the far hybrid */
 			int fd = to_a.len + to_c.len + 8 + far_delay;
-			float fa = biquad_run(&far_fa, far_a[(far_pos - fd) & 0x7FFF]);
-			float fc = biquad_run(&far_fc, far_c[(far_pos - fd) & 0x7FFF]);
+			float fa = far_fa.run(far_a[(far_pos - fd) & 0x7FFF]);
+			float fc = far_fc.run(far_c[(far_pos - fd) & 0x7FFF]);
 			far_a[far_pos] = a_out[i];
 			far_c[far_pos] = c_out[i];
 			far_pos = (far_pos + 1) & 0x7FFF;

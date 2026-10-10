@@ -6,6 +6,8 @@
 
 #include "qam.h"
 
+namespace dsp {
+
 
 /*
  *    constellations: the original library's VTBv32_* tables, indexed
@@ -94,3 +96,5 @@ const cplx v32_abcd[4] = {
 const cplx v32_points_4800[4] = {
 	{ -6, -2 }, { -2, 6 }, { 2, -6 }, { 6, 2 },
 };
+
+} // namespace dsp

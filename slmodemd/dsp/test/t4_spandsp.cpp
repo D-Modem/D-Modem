@@ -10,6 +10,8 @@
 
 #include "../t4.h"
 
+using namespace dsp;
+
 void *sp_t4_tx(const char *file, int page, int encoding, int min_bits);
 int sp_t4_bit(void *s);
 

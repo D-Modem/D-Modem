@@ -23,6 +23,8 @@
 
 #include "v90.h"
 
+namespace dsp {
+
 /* G.711 decoders */
 static int ulaw2lin(int u)
 {
@@ -653,3 +655,5 @@ int v90_enc_pop(struct v90_enc *e, int out[6])
 	memmove(e->outq, e->outq + 1, --e->outn * sizeof(e->outq[0]));
 	return 1;
 }
+
+} // namespace dsp

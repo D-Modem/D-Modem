@@ -18,6 +18,8 @@
 #include "fax.h"
 #include <dsplibs.h>
 
+using namespace dsp;
+
 
 #define DLE 0x10
 #define ETX 0x03

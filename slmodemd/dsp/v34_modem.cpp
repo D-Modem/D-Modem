@@ -25,6 +25,8 @@
 #include "v34.h"
 #include "v90.h"
 
+namespace dsp {
+
 #define V34_SRATE       9600
 #define V34_ALPHA       0.1f
 #define V34_SPAN        16
@@ -1090,3 +1092,5 @@ void v34_rx_sample(struct v34_rx *r, float x)
 	if (on)
 		rx_symbol(r);
 }
+
+} // namespace dsp

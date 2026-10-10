@@ -10,30 +10,32 @@
 
 #include "dsp.h"
 
+namespace dsp {
+
 
 /*
  *    oscillator
  */
 
-void osc_set_freq(struct osc *o, float freq, int srate)
+void Osc::set_freq(float freq, int srate)
 {
-	o->inc = (double)freq / srate;
+	inc = (double)freq / srate;
 }
 
-float osc_next(struct osc *o)
+float Osc::next()
 {
-	float v = (float)sin(2 * M_PI * o->phase);
-	o->phase += o->inc;
-	o->phase -= floor(o->phase);
+	float v = (float)sin(2 * M_PI * phase);
+	phase += inc;
+	phase -= floor(phase);
 	return v;
 }
 
-cplx osc_next_cplx(struct osc *o)
+cplx Osc::next_cplx()
 {
-	double a = 2 * M_PI * o->phase;
+	double a = 2 * M_PI * phase;
 	cplx v = cplx_make((float)cos(a), (float)sin(a));
-	o->phase += o->inc;
-	o->phase -= floor(o->phase);
+	phase += inc;
+	phase -= floor(phase);
 	return v;
 }
 
@@ -42,40 +44,38 @@ cplx osc_next_cplx(struct osc *o)
  *    biquads (RBJ audio EQ cookbook forms)
  */
 
-static void biquad_set(struct biquad *f, double b0, double b1, double b2,
-		       double a0, double a1, double a2)
+void Biquad::set(double nb0, double nb1, double nb2, double a0, double na1,
+		 double na2)
 {
-	f->b0 = b0 / a0;
-	f->b1 = b1 / a0;
-	f->b2 = b2 / a0;
-	f->a1 = a1 / a0;
-	f->a2 = a2 / a0;
-	f->z1 = f->z2 = 0;
+	b0 = nb0 / a0;
+	b1 = nb1 / a0;
+	b2 = nb2 / a0;
+	a1 = na1 / a0;
+	a2 = na2 / a0;
+	z1 = z2 = 0;
 }
 
-void biquad_bandpass(struct biquad *f, float freq, float q, int srate)
-{
-	double w = 2 * M_PI * freq / srate;
-	double alpha = sin(w) / (2 * q);
-	biquad_set(f, alpha, 0, -alpha, 1 + alpha, -2 * cos(w), 1 - alpha);
-}
-
-void biquad_lowpass(struct biquad *f, float freq, float q, int srate)
+void Biquad::bandpass(float freq, float q, int srate)
 {
 	double w = 2 * M_PI * freq / srate;
 	double alpha = sin(w) / (2 * q);
-	double c = cos(w);
-	biquad_set(f, (1 - c) / 2, 1 - c, (1 - c) / 2,
-		   1 + alpha, -2 * c, 1 - alpha);
+	set(alpha, 0, -alpha, 1 + alpha, -2 * cos(w), 1 - alpha);
 }
 
-void biquad_highpass(struct biquad *f, float freq, float q, int srate)
+void Biquad::lowpass(float freq, float q, int srate)
 {
 	double w = 2 * M_PI * freq / srate;
 	double alpha = sin(w) / (2 * q);
 	double c = cos(w);
-	biquad_set(f, (1 + c) / 2, -(1 + c), (1 + c) / 2,
-		   1 + alpha, -2 * c, 1 - alpha);
+	set((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + alpha, -2 * c, 1 - alpha);
+}
+
+void Biquad::highpass(float freq, float q, int srate)
+{
+	double w = 2 * M_PI * freq / srate;
+	double alpha = sin(w) / (2 * q);
+	double c = cos(w);
+	set((1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + alpha, -2 * c, 1 - alpha);
 }
 
 
@@ -83,35 +83,34 @@ void biquad_highpass(struct biquad *f, float freq, float q, int srate)
  *    Goertzel
  */
 
-void goertzel_init(struct goertzel *g, float freq, int len, int srate)
+void Goertzel::init(float freq, int block, int srate)
 {
-	memset(g, 0, sizeof(*g));
-	g->coef = 2 * cos(2 * M_PI * freq / srate);
-	g->len = len;
+	*this = Goertzel();
+	coef = 2 * cos(2 * M_PI * freq / srate);
+	len = block;
 }
 
-int goertzel_run(struct goertzel *g, float x)
+int Goertzel::run(float x)
 {
-	float s = x + g->coef * g->s1 - g->s2;
-	g->s2 = g->s1;
-	g->s1 = s;
-	if (++g->n < g->len)
+	float s = x + coef * s1 - s2;
+	s2 = s1;
+	s1 = s;
+	if (++n < len)
 		return 0;
 	/* |X(k)|^2 scaled so that a sine of amplitude A gives A^2/2 */
-	g->power = (g->s1 * g->s1 + g->s2 * g->s2 - g->coef * g->s1 * g->s2)
-		* 2 / ((float)g->len * g->len);
-	g->s1 = g->s2 = 0;
-	g->n = 0;
+	power = (s1 * s1 + s2 * s2 - coef * s1 * s2) * 2 / ((float)len * len);
+	s1 = s2 = 0;
+	n = 0;
 	return 1;
 }
 
 
-void power_meter_init(struct power_meter *p, float time_const_sec, int srate)
+void PowerMeter::init(float time_const_sec, int srate)
 {
-	p->alpha = 1.0f / (time_const_sec * srate);
-	if (p->alpha > 1)
-		p->alpha = 1;
-	p->power = 0;
+	alpha = 1.0f / (time_const_sec * srate);
+	if (alpha > 1)
+		alpha = 1;
+	power = 0;
 }
 
 
@@ -121,27 +120,27 @@ void power_meter_init(struct power_meter *p, float time_const_sec, int srate)
  *    the next bit on both sides.
  */
 
-int v22_scramble(struct v22_scrambler *s, int bit)
+int V22Scrambler::scramble(int bit)
 {
-	int out = (bit ^ (s->reg >> 13) ^ (s->reg >> 16)) & 1;
-	if (s->ones >= 64) {
+	int out = (bit ^ (reg >> 13) ^ (reg >> 16)) & 1;
+	if (ones >= 64) {
 		out ^= 1;
-		s->ones = 0;
+		ones = 0;
 	}
-	s->ones = out ? s->ones + 1 : 0;
-	s->reg = (s->reg << 1) | out;
+	ones = out ? ones + 1 : 0;
+	reg = (reg << 1) | out;
 	return out;
 }
 
-int v22_descramble(struct v22_scrambler *s, int bit)
+int V22Scrambler::descramble(int bit)
 {
-	int out = (bit ^ (s->reg >> 13) ^ (s->reg >> 16)) & 1;
-	if (s->ones >= 64) {
+	int out = (bit ^ (reg >> 13) ^ (reg >> 16)) & 1;
+	if (ones >= 64) {
 		out ^= 1;
-		s->ones = 0;
+		ones = 0;
 	}
-	s->ones = bit ? s->ones + 1 : 0;
-	s->reg = (s->reg << 1) | (bit & 1);
+	ones = bit ? ones + 1 : 0;
+	reg = (reg << 1) | (bit & 1);
 	return out;
 }
 
@@ -174,7 +173,7 @@ static const char dtmf_keys[] = "123A456B789C*0#D";
 static const float dtmf_lo[] = { 697, 770, 852, 941 };
 static const float dtmf_hi[] = { 1209, 1336, 1477, 1633 };
 
-int dtmf_gen_set(struct dtmf_gen *d, char digit, int srate)
+int DtmfGen::set(char digit, int srate)
 {
 	const char *p;
 	int i;
@@ -184,18 +183,18 @@ int dtmf_gen_set(struct dtmf_gen *d, char digit, int srate)
 	if (!p || !digit)
 		return -1;
 	i = p - dtmf_keys;
-	memset(d, 0, sizeof(*d));
-	osc_set_freq(&d->lo, dtmf_lo[i / 4], srate);
-	osc_set_freq(&d->hi, dtmf_hi[i % 4], srate);
+	*this = DtmfGen();
+	lo.set_freq(dtmf_lo[i / 4], srate);
+	hi.set_freq(dtmf_hi[i % 4], srate);
 	/* high group 2 dB above low group (twist), about -8 dBFS total */
-	d->amp_lo = 6000;
-	d->amp_hi = 7550;
+	amp_lo = 6000;
+	amp_hi = 7550;
 	return 0;
 }
 
-float dtmf_gen_next(struct dtmf_gen *d)
+float DtmfGen::next()
 {
-	return d->amp_lo * osc_next(&d->lo) + d->amp_hi * osc_next(&d->hi);
+	return amp_lo * lo.next() + amp_hi * hi.next();
 }
 
 /*
@@ -238,36 +237,38 @@ static void rs_tables(void)
 	rs_design(rs_h5, 5);
 }
 
-int resampler_init(struct resampler *r, int L, int M)
+int Resampler::init(int up, int down)
 {
 	static pthread_once_t once = PTHREAD_ONCE_INIT;
 	pthread_once(&once, rs_tables);
-	if (!((L == 6 && M == 5) || (L == 5 && M == 6)))
+	if (!((up == 6 && down == 5) || (up == 5 && down == 6)))
 		return -1;
-	memset(r, 0, sizeof(*r));
-	r->L = L;
-	r->M = M;
-	r->taps = RS_LEN / L;
-	r->h = L == 6 ? rs_h6 : rs_h5;
+	*this = Resampler();
+	L = up;
+	M = down;
+	taps = RS_LEN / L;
+	h = L == 6 ? rs_h6 : rs_h5;
 	return 0;
 }
 
-int resampler_run(struct resampler *r, float x, float out[2])
+int Resampler::run(float x, float out[2])
 {
 	int n = 0;
 	/* the history twice over, so that it reads as one block */
-	if (--r->pos < 0)
-		r->pos = r->taps - 1;
-	r->hist[r->pos] = r->hist[r->pos + r->taps] = x;
-	while (r->t < r->L) {
-		const float *h = r->h + r->t * r->taps, *b = r->hist + r->pos;
+	if (--pos < 0)
+		pos = taps - 1;
+	hist[pos] = hist[pos + taps] = x;
+	while (t < L) {
+		const float *hp = h + t * taps, *b = hist + pos;
 		float y = 0;
 		int k;
-		for (k = 0; k < r->taps; k++)
-			y += h[k] * b[k];
+		for (k = 0; k < taps; k++)
+			y += hp[k] * b[k];
 		out[n++] = y;
-		r->t += r->M;
+		t += M;
 	}
-	r->t -= r->L;
+	t -= L;
 	return n;
 }
+
+} // namespace dsp

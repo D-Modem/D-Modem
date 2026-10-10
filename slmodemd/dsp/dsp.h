@@ -15,15 +15,12 @@
 
 #include <modem.h>
 #include <modem_param.h>
+#include <dsplibs.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace dsp {
 
-/* debug output, routed through modem_debug.cpp like the original blob */
-extern unsigned int dsplibs_debug_level;
-extern int dsplibs_debug_printf(const char *fmt, ...);
-
+/* debug output (dsplibs_debug_printf), routed through modem_debug.cpp like
+   the original blob */
 #define DSP_DBG(fmt, arg...) do { if (dsplibs_debug_level > 1) \
 	dsplibs_debug_printf("dsp: " fmt, ##arg); } while (0)
 /* per symbol traces, only for development */
@@ -82,60 +79,74 @@ static inline cplx cplx_mulc(cplx a, cplx b) /* a * conj(b) */
 static inline cplx cplx_scale(cplx a, float s) { return cplx_make(a.re * s, a.im * s); }
 static inline float cplx_pow(cplx a) { return a.re * a.re + a.im * a.im; }
 
+/*
+ *    The building blocks below are classes with plain data: an object of
+ *    one is ready to use zeroed (as part of a pump allocated with calloc)
+ *    and is set up by its init method.
+ */
+
 /* sine oscillator with phase continuity across frequency changes */
-struct osc {
+struct Osc {
 	double phase;   /* cycles, 0..1 */
 	double inc;     /* cycles per sample */
+
+	void  set_freq(float freq, int srate);
+	float next();           /* sin(), then advance */
+	cplx  next_cplx();      /* exp(j phase), then advance */
 };
-void  osc_set_freq(struct osc *o, float freq, int srate);
-float osc_next(struct osc *o);          /* sin(), then advance */
-cplx  osc_next_cplx(struct osc *o);     /* exp(j phase), then advance */
 
 /* second order IIR section */
-struct biquad {
+struct Biquad {
 	float b0, b1, b2, a1, a2;
 	float z1, z2;
+
+	void bandpass(float freq, float q, int srate);
+	void lowpass(float freq, float q, int srate);
+	void highpass(float freq, float q, int srate);
+	float run(float x)
+	{
+		float y = b0 * x + z1;
+		z1 = b1 * x - a1 * y + z2;
+		z2 = b2 * x - a2 * y;
+		return y;
+	}
+private:
+	void set(double b0, double b1, double b2, double a0, double a1,
+		 double a2);
 };
-void  biquad_bandpass(struct biquad *f, float freq, float q, int srate);
-void  biquad_lowpass(struct biquad *f, float freq, float q, int srate);
-void  biquad_highpass(struct biquad *f, float freq, float q, int srate);
-static inline float biquad_run(struct biquad *f, float x)
-{
-	float y = f->b0 * x + f->z1;
-	f->z1 = f->b1 * x - f->a1 * y + f->z2;
-	f->z2 = f->b2 * x - f->a2 * y;
-	return y;
-}
 
 /* block Goertzel tone power estimator */
-struct goertzel {
+struct Goertzel {
 	float coef;
 	float s1, s2;
 	int n, len;
 	float power;    /* last complete block: mean square of the tone */
+
+	void init(float freq, int len, int srate);
+	int  run(float x);      /* 1 when a block is complete */
 };
-void goertzel_init(struct goertzel *g, float freq, int len, int srate);
-int  goertzel_run(struct goertzel *g, float x); /* 1 when a block is complete */
 
 /* single pole power tracker */
-struct power_meter {
+struct PowerMeter {
 	float alpha;
 	float power;
+
+	void init(float time_const_sec, int srate);
+	float run(float x)
+	{
+		power += alpha * (x * x - power);
+		return power;
+	}
 };
-void power_meter_init(struct power_meter *p, float time_const_sec, int srate);
-static inline float power_meter_run(struct power_meter *p, float x)
-{
-	p->power += p->alpha * (x * x - p->power);
-	return p->power;
-}
 
 /* V.22 / V.22bis scrambler (1 + x^-14 + x^-17) */
-struct v22_scrambler {
+struct V22Scrambler {
 	unsigned reg;
 	int ones;
+
+	int scramble(int bit);
+	int descramble(int bit);
 };
-int v22_scramble(struct v22_scrambler *s, int bit);
-int v22_descramble(struct v22_scrambler *s, int bit);
 
 /* root raised cosine impulse response, t in symbol periods */
 float rrc_pulse(float t, float alpha);
@@ -143,16 +154,17 @@ float rrc_pulse(float t, float alpha);
 /* rational sample rate converter L/M (polyphase FIR, 70 dB stop band,
    cut off at 0.484 of the lower of the two rates) */
 #define RESAMPLER_MAX_TAPS 100
-struct resampler {
+struct Resampler {
 	int L, M, taps, t;
 	const float *h;         /* L * taps, phase major */
 	float hist[2 * RESAMPLER_MAX_TAPS];
 	int pos;
+
+	/* 8000 <-> 9600 Hz: (L, M) = (6, 5) or (5, 6) */
+	int init(int L, int M);
+	/* one input sample in; returns the number of outputs (0 to 2) */
+	int run(float x, float out[2]);
 };
-/* 8000 <-> 9600 Hz: (L, M) = (6, 5) or (5, 6) */
-int  resampler_init(struct resampler *r, int L, int M);
-/* one input sample in; returns the number of outputs (0 to 2) */
-int  resampler_run(struct resampler *r, float x, float out[2]);
 
 /* dB helper: power of a sine of amplitude 'a' */
 static inline float tone_power(float a) { return a * a / 2; }
@@ -163,24 +175,25 @@ static inline long ms2samples(int ms, int srate) { return (long)ms * srate / 100
 /*
  *    FSK modulator / demodulator (dp_fsk.cpp), also used for caller ID
  */
-struct fsk_mod {
-	struct osc osc;
+struct FskMod {
+	Osc osc;
 	float mark, space;
 	float amp;
 	int srate;
-};
-void  fsk_mod_init(struct fsk_mod *f, float mark, float space, float amp, int srate);
-float fsk_mod_next(struct fsk_mod *f, int bit);
 
-struct fsk_demod {
+	void  init(float mark, float space, float amp, int srate);
+	float next(int bit);
+};
+
+struct FskDemod {
 	int srate;
 	float sign;             /* +1 if mark is above space */
 	float half_shift;
-	struct biquad pre;      /* channel band pass */
-	struct osc lo;          /* down converter */
-	struct biquad lp_re[2], lp_im[2];
+	Biquad pre;             /* channel band pass */
+	Osc lo;                 /* down converter */
+	Biquad lp_re[2], lp_im[2];
 	cplx prev;
-	struct power_meter pwr; /* base band power */
+	PowerMeter pwr;         /* base band power */
 	float dev_avg;          /* average |frequency deviation| */
 	float dev_alpha;
 	float on_level, off_level;
@@ -188,19 +201,11 @@ struct fsk_demod {
 	/* bit clock recovery */
 	float bit_phase, bit_inc, bit_gain;
 	int last_dec;
-};
-void fsk_demod_init(struct fsk_demod *f, float mark, float space, float baud,
-		    int srate);
-/* returns the recovered bit (0/1) at the bit center, or -1 */
-int  fsk_demod_run(struct fsk_demod *f, float x);
 
-/*
- *    entry points used by the modem core (dsp_glue.cpp)
- */
-int   prop_dp_init(void);
-void  prop_dp_exit(void);
-void *dp_runtime_create(struct modem *m);
-void  dp_runtime_delete(void *runtime);
+	void init(float mark, float space, float baud, int srate);
+	/* returns the recovered bit (0/1) at the bit center, or -1 */
+	int  run(float x);
+};
 
 /*
  *    data pump registration helpers
@@ -217,12 +222,13 @@ int  dp_v34_init(void);
 void dp_v34_exit(void);
 
 /* DTMF generator used by the call progress pump and the voice object */
-struct dtmf_gen {
-	struct osc lo, hi;
+struct DtmfGen {
+	Osc lo, hi;
 	float amp_lo, amp_hi;
+
+	int   set(char digit, int srate);
+	float next();
 };
-int  dtmf_gen_set(struct dtmf_gen *d, char digit, int srate);
-float dtmf_gen_next(struct dtmf_gen *d);
 
 /* sample format helpers: the modem core always uses S16_LE */
 static inline s16 dsp_clip16(float x)
@@ -234,8 +240,6 @@ static inline s16 dsp_clip16(float x)
 	return (s16)x;
 }
 
-#ifdef __cplusplus
-}
-#endif
+} // namespace dsp
 
 #endif /* __DSP_H__ */

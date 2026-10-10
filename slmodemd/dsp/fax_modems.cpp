@@ -19,6 +19,8 @@
 
 #include "fax.h"
 
+namespace dsp {
+
 enum {
 	SEG_CARRIER,            /* V.27ter: unmodulated carrier */
 	SEG_SILENCE,
@@ -413,7 +415,7 @@ void fax_tx_init(struct fax_tx *t, enum fax_mod mod, int short_train,
 	t->get_bit = get_bit;
 	t->ctx = ctx;
 	if (mod == FM_V21) {
-		fsk_mod_init(&t->fsk, 1650, 1850, fax_tx_rms(mod) * 1.41421f, srate);
+		t->fsk.init(1650, 1850, fax_tx_rms(mod) * 1.41421f, srate);
 		t->bit_inc = 300.0f / srate;
 		t->fsk_bit = 1;
 		t->seg = SEG_DATA;
@@ -456,7 +458,7 @@ float fax_tx_sample(struct fax_tx *t)
 			}
 			t->fsk_bit = b & 1;
 		}
-		return fsk_mod_next(&t->fsk, t->fsk_bit);
+		return t->fsk.next(t->fsk_bit);
 	}
 	return qam_tx_sample(&t->qam);
 }
@@ -572,7 +574,7 @@ int fax_rx_init(struct fax_rx *r, enum fax_mod mod, int short_train,
 	r->put_bit = put_bit;
 	r->ctx = ctx;
 	if (mod == FM_V21) {
-		fsk_demod_init(&r->fsk, 1650, 1850, 300, srate);
+		r->fsk.init(1650, 1850, 300, srate);
 		return 0;
 	}
 	if (qam_rx_init(&r->qam, srate, mod_carrier(mod), mod_baud(mod),
@@ -910,7 +912,7 @@ static void rx_symbol(struct fax_rx *r)
 void fax_rx_sample(struct fax_rx *r, float x)
 {
 	if (r->mod == FM_V21) {
-		int bit = fsk_demod_run(&r->fsk, x);
+		int bit = r->fsk.run(x);
 		r->carrier = r->fsk.carrier;
 		r->trained = r->carrier;
 		if (bit >= 0 && r->carrier)
@@ -968,3 +970,5 @@ void fax_rx_sample(struct fax_rx *r, float x)
 	else
 		r->carrier_run = r->carrier_run < 0 ? r->carrier_run - 1 : -1;
 }
+
+} // namespace dsp

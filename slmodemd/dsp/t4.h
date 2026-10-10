@@ -10,9 +10,7 @@
 
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace dsp {
 
 #define T4_WIDTH        1728    /* A4 at 204 pels per inch */
 
@@ -106,8 +104,6 @@ int  tiff_in_open(struct tiff_in *t, const char *path);
 int  tiff_in_page(struct tiff_in *t, struct t4_page *p);
 void tiff_in_close(struct tiff_in *t);
 
-#ifdef __cplusplus
-}
-#endif
+} // namespace dsp
 
 #endif /* __T4_H__ */

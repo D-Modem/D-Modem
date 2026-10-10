@@ -14,6 +14,8 @@
 #include "dmodem.h"
 #include "dsp/t30.h"
 
+using namespace dsp;
+
 struct dmodem_fax {
 	struct t30 *t30;
 	enum dmodem_law law;
