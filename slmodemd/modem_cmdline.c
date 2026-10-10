@@ -71,6 +71,7 @@ const char *modem_dev_name = NULL;
 const char *modem_default_dev_name = "/dev/slamr0";
 const char *modem_alsa_dev_name = "modem:1";
 const char *modem_exec = NULL;
+unsigned int modem_listen = 0;
 unsigned int need_realtime = 1;
 #ifdef MODEM_CONFIG_RING_DETECTOR
 unsigned int ring_detector = 0;
@@ -98,6 +99,7 @@ enum {
 	OPT_DEBUG,
 	OPT_LOG,
 	OPT_EXEC,
+	OPT_LISTEN,
 	OPT_LAST
 };
 
@@ -126,6 +128,7 @@ static struct opt {
 	{'d',"debug","debug level (developers only, for ./sl...)",OPTIONAL,INTEGER,"0"},
 	{'l',"log","logging mode",OPTIONAL,INTEGER,"5"},
 	{'e',"exec","path to external application that transmits audio over the socket (required)",MANDATORY,STRING,NULL},
+	{'L',"listen","keep the external application running to receive calls (RING, ATA or ATS0=n)"},
 	{}
 };
 
@@ -284,6 +287,8 @@ void modem_cmdline(int argc, char *argv[])
 		   (val= strtol(opt_list[OPT_LOG].arg_val,NULL,0)) > 0 )
 			modem_debug_logging = val;
 	}
+	if(opt_list[OPT_LISTEN].found)
+		modem_listen = 1;
 	if(opt_list[OPT_EXEC].found) {
 		modem_exec = opt_list[OPT_EXEC].arg_val;
 	} else {

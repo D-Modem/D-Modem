@@ -1,7 +1,8 @@
 #!/bin/sh
 # sip.sh [AT commands, ';' separated]: D-Modem (slmodemd and d-modem, built
 # in ../..) calls DModem(bbs) over SIP in a private Asterisk (installed
-# with chan_pjsip, app_dmodem.so built in ..); see sip_call.py
+# with chan_pjsip, app_dmodem.so built in ..), or with INCOMING=1 answers
+# DModem(term,o)'s call; see sip_call.py
 here=$(cd "$(dirname "$0")" && pwd)
 top=$here/../..
 run=${TMPDIR:-/tmp}/dmodem-sip-test
@@ -48,6 +49,10 @@ i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do
 done
 $ast -rx "pjsip show endpoints" | grep -E "Endpoint:.*modem"
 export SIP_LOGIN=modem:modem@127.0.0.1:5070 SIP_LOG=$run/slmodemd.log
+# INCOMING=1: Asterisk calls D-Modem (slmodemd -L), DModem(term,o) calls
+if [ -n "$INCOMING" ]; then
+	export SIP_IN="$ast -rx 'channel originate PJSIP/modem extension s@modem-call'"
+fi
 "$here/sip_call.py" "$top/slmodemd/slmodemd" "${DMODEM:-$top/d-modem}" 5551000 "$1"
 r=$?
 sleep 2

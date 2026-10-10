@@ -50,11 +50,17 @@ Because there isn’t any dial tone on our SIP connection, you’ll need to disa
     atx3 
     OK
 
-To successfully connect, you will likely need to manually select a modulation and data rate.  In our testing, V.32bis (14.4kbps) and below appears to be the most reliable, though V.34 (33.6kbps) connections are sometimes successful.  For example, the following command selects V.32bis with a data rate of 4800 – 9600 bps.  Refer to the manual for further details. 
+By default the modem negotiates the best common modulation (V.8, then V.34 at up to 33.6kbps, falling back to V.32bis and below).  d-modem keeps the call's audio free of sample slips (a fixed jitter buffer, its own 8000/9600 Hz conversion), which V.34 needs; over a clean G.711 path (the tests in `asterisk/test`) V.34 connects at 33600.  A real PSTN gateway adds its own impairments, so you may still want to select a modulation and data rate manually.  For example, the following command selects V.32bis with a data rate of 4800 – 9600 bps.  Refer to the manual for further details. 
 
     at+ms=132,0,4800,9600 
     OK
 
+### Receiving calls
+With `-L` (listen), slmodemd keeps d-modem running, registered with the SIP server, so that calls to the account reach the modem: it reports `RING`, and answers on `ATA` or by itself after `ATS0=n` rings.  Dialing works as before in this mode.
+
+    # ./slmodemd/slmodemd -L -e ./d-modem
+
+### Dialing
 Finally, dial the number of the target system.  Below shows a connection to the NIST atomic clock: 
 
     atd303-494-4774 
@@ -72,10 +78,10 @@ Finally, dial the number of the target system.  Below shows a connection to the 
     59515 21-10-28 21:40:23 11 0 -.1 045.0 UTC(NIST) *
  
 ## Known Issues / Future Work
-- Connections are unreliable, and it is currently difficult to connect at speeds higher than 14.4kbps or so.  It might be possible to improve this by disabling/reconfiguring PJSIP’s jitter buffer. 
-- Additional logging/error handling is needed 
+- For a server answering many calls (a BBS, PPP dial-in or fax), the Asterisk module in `asterisk/` is the better fit than `slmodemd -L`: it answers with the open modem at V.90 (as the digital modem, up to 56000 bps downstream), V.34, V.32bis, V.22bis, V.22 or V.21.
+- Tested over SIP against a local Asterisk only, not yet through real PSTN gateways.
+- V.34 retrains and rate renegotiation during a call, and V.92, are not implemented in the open DSP.
 - The serial interface could be replaced with stdio or a socket, and common AT configuration options could be exposed as command line options 
-- There is currently no support for receiving calls 
 
 
 Copyright 2021 Aon plc

@@ -113,6 +113,14 @@ extern const char *modem_group;
 extern mode_t modem_perm;
 extern unsigned int use_short_buffer;
 extern const char *modem_exec;
+extern unsigned int modem_listen;
+
+/* listen mode (-L): the external application runs all the time, takes
+   calls in and makes them; this socket carries its RING (and CANCEL) and
+   our DIAL <number> or ANSWER, each with the call's audio socket */
+static int ctl_fd = -1;
+static char ctl_buf[256];
+static int ctl_len;
 
 
 struct device_struct {
@@ -613,6 +621,85 @@ struct modem_driver mdm_modem_driver = {
         .ioctl = modemap_ioctl,
 };
 
+/* a message to the listening application, with an fd to pass */
+static int ctl_send(const char *msg, int fd)
+{
+	struct msghdr mh;
+	struct iovec iov;
+	char cbuf[CMSG_SPACE(sizeof(int))];
+
+	memset(&mh, 0, sizeof(mh));
+	iov.iov_base = (void *)msg;
+	iov.iov_len = strlen(msg);
+	mh.msg_iov = &iov;
+	mh.msg_iovlen = 1;
+	if (fd >= 0) {
+		struct cmsghdr *c;
+		memset(cbuf, 0, sizeof(cbuf));
+		mh.msg_control = cbuf;
+		mh.msg_controllen = sizeof(cbuf);
+		c = CMSG_FIRSTHDR(&mh);
+		c->cmsg_level = SOL_SOCKET;
+		c->cmsg_type = SCM_RIGHTS;
+		c->cmsg_len = CMSG_LEN(sizeof(int));
+		memcpy(CMSG_DATA(c), &fd, sizeof(int));
+	}
+	return sendmsg(ctl_fd, &mh, 0) == (ssize_t)iov.iov_len ? 0 : -1;
+}
+
+static void listen_start(void)
+{
+	int sockets[2];
+	pid_t pid;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
+		perror("socketpair");
+		exit(-1);
+	}
+	pid = fork();
+	if (pid == -1) {
+		perror("fork");
+		exit(-1);
+	}
+	if (pid == 0) {
+		char str[16];
+		snprintf(str, sizeof(str), "%d", sockets[0]);
+		close(sockets[1]);
+		execl(modem_exec, modem_exec, "--listen", str, NULL);
+		perror(modem_exec);
+		_exit(127);
+	}
+	close(sockets[0]);
+	ctl_fd = sockets[1];
+	DBG("listening through %s (pid %d)\n", modem_exec, (int)pid);
+}
+
+/* RING and CANCEL lines from the listening application */
+static int ctl_read(struct modem *m)
+{
+	char *nl;
+	int n = read(ctl_fd, ctl_buf + ctl_len, sizeof(ctl_buf) - 1 - ctl_len);
+	if (n <= 0) {
+		ERR("%s (listening) has gone\n", modem_exec);
+		return -1;
+	}
+	ctl_len += n;
+	ctl_buf[ctl_len] = 0;
+	while ((nl = strchr(ctl_buf, '\n'))) {
+		*nl = 0;
+		DBG("listen: %s\n", ctl_buf);
+		if (!strcmp(ctl_buf, "RING"))
+			modem_ring_signal(m, 1);
+		else if (!strcmp(ctl_buf, "CANCEL"))
+			modem_ring_signal(m, 0);
+		ctl_len -= nl + 1 - ctl_buf;
+		memmove(ctl_buf, nl + 1, ctl_len + 1);
+	}
+	if (ctl_len == sizeof(ctl_buf) - 1)
+		ctl_len = 0;
+	return 0;
+}
+
 static int socket_start (struct modem *m)
 {
 	struct device_struct *dev = m->dev_data;
@@ -624,6 +711,22 @@ static int socket_start (struct modem *m)
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
 		perror("socketpair");
 		exit(-1);
+	}
+
+	if (modem_listen) {
+		char msg[160];
+		if (m->caller)
+			snprintf(msg, sizeof(msg), "DIAL %s\n", m->dial_string);
+		else
+			snprintf(msg, sizeof(msg), "ANSWER\n");
+		ret = ctl_send(msg, sockets[0]);
+		close(sockets[0]);
+		if (ret) {
+			ERR("cannot pass the call to %s\n", modem_exec);
+			close(sockets[1]);
+			return -1;
+		}
+		goto started;
 	}
 
 	pid_t pid = fork();
@@ -640,6 +743,7 @@ static int socket_start (struct modem *m)
 		_exit(127);
 	} else {
 		close(sockets[0]);
+started:
 		dev->fd = sockets[1];
 		dev->delay = 0;
 		ret = 192*2;
@@ -662,7 +766,8 @@ static int socket_stop (struct modem *m)
 	DBG("socket_stop...\n");
 	close(dev->fd);
 	dev->fd = -1;
-	wait(NULL); // for exec'ed child
+	if (!modem_listen)
+		wait(NULL); // for exec'ed child
 	return 0;
 }
 
@@ -913,6 +1018,10 @@ static int modem_run(struct modem *m, struct device_struct *dev)
 
 		FD_SET(dev->fd,&eset);
 		max_fd = dev->fd;
+		if (ctl_fd >= 0) {
+			FD_SET(ctl_fd, &rset);
+			if (ctl_fd > max_fd) max_fd = ctl_fd;
+		}
 		
 		if(pty_closed && close_count > 0) {
 			if(!m->started ||
@@ -935,6 +1044,9 @@ static int modem_run(struct modem *m, struct device_struct *dev)
 
 		if ( ret == 0 )
 			continue;
+
+		if (ctl_fd >= 0 && FD_ISSET(ctl_fd, &rset) && ctl_read(m) < 0)
+			return -1;
 
 		if(FD_ISSET(dev->fd, &eset)) {
 			unsigned stat;
@@ -1171,6 +1283,9 @@ int modem_main(const char *dev_name)
 
 	INFO("Use `%s' as modem device, Ctrl+C for termination.\n",
 	     *link_name ? link_name : m->pty_name);
+
+	if (modem_listen)
+		listen_start();
 
 	/* main loop here */
 	ret = modem_run(m,&device);

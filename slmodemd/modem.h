@@ -431,6 +431,7 @@ extern void modem_hangup(struct modem *m);
 extern void modem_update_termios(struct modem *m, struct termios *tios);
 extern void modem_error  (struct modem *m);
 extern void modem_ring   (struct modem *m);
+extern void modem_ring_signal(struct modem *m, int on);
 extern void modem_event  (struct modem *m);
 extern void modem_process(struct modem *m,void *in,void *out,int cnt);
 

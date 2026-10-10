@@ -805,6 +805,30 @@ void modem_ring(struct modem *m)
 }
 
 
+/* a ring from a source that knows it is one (an incoming SIP call):
+   no cadence to check; on = 0 when the caller gave up */
+void modem_ring_signal(struct modem *m, int on)
+{
+	if (!on) {
+		MODEM_DBG("ring cancel...\n");
+		TOTAL_RINGS_COUNT(m) = 0;
+		m->ring_count = 0;
+		return;
+	}
+	if (m->state != STATE_MODEM_IDLE || m->started)
+		return;
+	TOTAL_RINGS_COUNT(m)++;
+	if (TOTAL_RINGS_COUNT(m) == 1)
+		modem_put_chars(m, CRLF_CHARS(m), 2);
+	modem_report_result(m, RESULT_RING);
+	if (ANSWER_AFTER_RINGS(m) &&
+	    TOTAL_RINGS_COUNT(m) >= ANSWER_AFTER_RINGS(m)) {
+		TOTAL_RINGS_COUNT(m) = 0;
+		modem_answer(m);
+	}
+}
+
+
 void modem_error(struct modem *m)
 {
 	MODEM_DBG("modem error...\n");

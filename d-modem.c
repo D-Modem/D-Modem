@@ -24,6 +24,8 @@
 #include <errno.h>
 #include <math.h>
 #include <string.h>
+#include <poll.h>
+#include <sys/socket.h>
 
 #include <pjsua-lib/pjsua.h>
 
@@ -129,7 +131,30 @@ static void rs_run_down(const short *in, short *out)
 		down.t -= 5;
 	}
 }
+static void rs_reset(void)
+{
+	memset(up.hist, 0, sizeof(up.hist));
+	memset(down.hist, 0, sizeof(down.hist));
+	up.pos = up.t = down.pos = down.t = 0;
+}
+
 static bool destroying = false;
+
+/*
+ * listen mode (d-modem --listen <fd>, from slmodemd -L): registered, it
+ * takes calls in as well as making them.  On the control socket it sends
+ * RING (every 3 s while a call waits) and CANCEL (the caller gave up), and
+ * gets ANSWER or DIAL <number>, each with the call's audio socket.  A call
+ * ends with that socket: whichever side closes it.
+ */
+static bool listen_mode = false;
+static int ctl_fd = -1;
+static volatile pjsua_call_id cur_call = PJSUA_INVALID_ID;
+static volatile bool ringing = false;      /* cur_call waits for ANSWER */
+static volatile bool hangup_req = false;   /* the audio socket failed */
+static volatile bool cancel_req = false;   /* tell slmodemd: no more RING */
+static pjsua_conf_port_id conf_id = PJSUA_INVALID_ID;
+
 /* DMODEM_REC=<prefix>: the audio to and from slmodemd, 16 bit at 9600 Hz,
    in <prefix>.rx (from the call) and <prefix>.tx (to the call) */
 static FILE *rec_rx, *rec_tx;
@@ -152,8 +177,13 @@ static pj_status_t dmodem_put_frame(pjmedia_port *this_port, pjmedia_frame *fram
 		rs_run_up(frame->buf, buf);
 		if (rec_rx)
 			fwrite(buf, 1, sizeof(buf), rec_rx);
+		if (sm->sock < 0)
+			return PJ_SUCCESS;
 		if (write(sm->sock, buf, sizeof(buf)) != sizeof(buf)) {
-			error_exit("error writing frame",0);
+			if (listen_mode)
+				hangup_req = true;
+			else
+				error_exit("error writing frame",0);
 		}
 	}
 
@@ -164,8 +194,12 @@ static pj_status_t dmodem_get_frame(pjmedia_port *this_port, pjmedia_frame *fram
 	struct dmodem *sm = (struct dmodem *)this_port;
 	short buf[192];
 
-	if (read(sm->sock, buf, sizeof(buf)) != sizeof(buf)) {
-		error_exit("error reading frame",0);
+	if (sm->sock < 0 ||
+	    read(sm->sock, buf, sizeof(buf)) != sizeof(buf)) {
+		if (!listen_mode)
+			error_exit("error reading frame",0);
+		hangup_req = true;
+		memset(buf, 0, sizeof(buf));
 	}
 	if (rec_tx)
 		fwrite(buf, 1, sizeof(buf), rec_tx);
@@ -195,6 +229,17 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e) {
 				(int)ci.state_text.slen,
 				ci.state_text.ptr));
 
+	if (ci.state == PJSIP_INV_STATE_DISCONNECTED && listen_mode) {
+		/* the main loop cleans up (the port leaves the bridge
+		   before its socket closes) */
+		if (call_id == cur_call) {
+			if (ringing)
+				cancel_req = true;
+			ringing = false;
+			hangup_req = true;
+		}
+		return;
+	}
 	if (ci.state == PJSIP_INV_STATE_DISCONNECTED) {
 		close(port.sock);
 		if (!destroying) {
@@ -219,13 +264,153 @@ static void on_call_media_state(pjsua_call_id call_id) {
 			pjsua_conf_add_port(pool, &port.base, &port_id);
 			pjsua_conf_connect(ci.conf_slot, port_id);
 			pjsua_conf_connect(port_id, ci.conf_slot);
+			conf_id = port_id;
 			done = 1;
 		}
-	} else {
+	} else if (!listen_mode) {
 		done = 0;
 	}
 }
 
+
+/* a call comes in: ring slmodemd, or busy when there is one already */
+static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
+			     pjsip_rx_data *rdata) {
+	PJ_UNUSED_ARG(acc_id);
+	PJ_UNUSED_ARG(rdata);
+	if (cur_call != PJSUA_INVALID_ID) {
+		pjsua_call_answer(call_id, 486, NULL, NULL);
+		return;
+	}
+	cur_call = call_id;
+	ringing = true;
+	pjsua_call_answer(call_id, 180, NULL, NULL);
+}
+
+static void ctl_write(const char *msg) {
+	if (write(ctl_fd, msg, strlen(msg)) < 0)
+		PJ_LOG(1,(__FILE__, "control socket: %s", strerror(errno)));
+}
+
+/* the call's audio socket comes with the message */
+static int ctl_recv(char *buf, int size, int *fd) {
+	struct msghdr mh;
+	struct iovec iov;
+	char cbuf[CMSG_SPACE(sizeof(int))];
+	struct cmsghdr *c;
+	ssize_t n;
+
+	memset(&mh, 0, sizeof(mh));
+	iov.iov_base = buf;
+	iov.iov_len = size - 1;
+	mh.msg_iov = &iov;
+	mh.msg_iovlen = 1;
+	mh.msg_control = cbuf;
+	mh.msg_controllen = sizeof(cbuf);
+	*fd = -1;
+	n = recvmsg(ctl_fd, &mh, 0);
+	if (n <= 0)
+		return -1;
+	buf[n] = 0;
+	for (c = CMSG_FIRSTHDR(&mh); c; c = CMSG_NXTHDR(&mh, c))
+		if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS)
+			memcpy(fd, CMSG_DATA(c), sizeof(int));
+	return 0;
+}
+
+/* a new call's audio socket: the delay slmodemd expects goes first */
+static void audio_attach(int fd) {
+	char buf[384];
+	rs_reset();
+	hangup_req = false;
+	port.timestamp.u64 = 0;
+	port.sock = fd;
+	memset(buf, 0, sizeof(buf));
+	if (write(fd, buf, sizeof(buf)) < 0)
+		hangup_req = true;
+}
+
+/* the end of a call, from either side */
+static void call_cleanup(void) {
+	if (cur_call != PJSUA_INVALID_ID)
+		pjsua_call_hangup(cur_call, 0, NULL, NULL);
+	if (conf_id != PJSUA_INVALID_ID) {
+		pjsua_conf_remove_port(conf_id);
+		conf_id = PJSUA_INVALID_ID;
+	}
+	if (port.sock >= 0) {
+		/* the bridge may still take a frame */
+		int fd = port.sock;
+		port.sock = -1;
+		close(fd);
+	}
+	cur_call = PJSUA_INVALID_ID;
+	ringing = false;
+	hangup_req = false;
+}
+
+static void listen_loop(pjsua_acc_id acc_id, const char *sip_domain) {
+	pj_time_val next_ring = { 0, 0 };
+
+	for (;;) {
+		struct pollfd p = { ctl_fd, POLLIN, 0 };
+		pj_time_val now;
+		int r = poll(&p, 1, 200);
+
+		if (r > 0) {
+			char msg[160];
+			int fd;
+			if (ctl_recv(msg, sizeof(msg), &fd) < 0) {
+				PJ_LOG(3,(__FILE__, "slmodemd has gone"));
+				break;
+			}
+			if (!strncmp(msg, "ANSWER", 6)) {
+				if (ringing && fd >= 0) {
+					ringing = false;
+					audio_attach(fd);
+					pjsua_call_answer(cur_call, 200, NULL, NULL);
+				} else if (fd >= 0)
+					close(fd);      /* no call: NO CARRIER */
+			} else if (!strncmp(msg, "DIAL ", 5)) {
+				char uri[256], *nl = strchr(msg, '\n');
+				pj_str_t u;
+				pjsua_call_id id;
+				if (nl)
+					*nl = 0;
+				if (cur_call != PJSUA_INVALID_ID || fd < 0) {
+					if (fd >= 0)
+						close(fd);      /* busy */
+					continue;
+				}
+				audio_attach(fd);
+				snprintf(uri, sizeof(uri), "sip:%s@%s", msg + 5,
+					 sip_domain);
+				printf("calling %s\n", uri);
+				u = pj_str(uri);
+				if (pjsua_call_make_call(acc_id, &u, 0, NULL, NULL,
+							 &id) == PJ_SUCCESS)
+					cur_call = id;
+				else
+					call_cleanup();
+			} else if (fd >= 0)
+				close(fd);
+		}
+		if (cancel_req) {
+			cancel_req = false;
+			ctl_write("CANCEL\n");
+		}
+		pj_gettimeofday(&now);
+		if (ringing && PJ_TIME_VAL_GTE(now, next_ring)) {
+			ctl_write("RING\n");
+			next_ring = now;
+			next_ring.sec += 3;
+		}
+		if (!ringing)
+			next_ring.sec = 0;
+		if (hangup_req && !ringing)
+			call_cleanup();
+	}
+}
 
 int main(int argc, char *argv[]) {
 	pjsua_acc_id acc_id;
@@ -233,6 +418,10 @@ int main(int argc, char *argv[]) {
 
 	if (argc != 3) {
 		return -1;
+	}
+	if (!strcmp(argv[1], "--listen")) {
+		listen_mode = true;
+		ctl_fd = atoi(argv[2]);
 	}
 
 	signal(SIGPIPE,SIG_IGN);
@@ -274,6 +463,7 @@ int main(int argc, char *argv[]) {
 		pjsua_config_default(&cfg);
 		cfg.cb.on_call_media_state = &on_call_media_state;
 		cfg.cb.on_call_state = &on_call_state;
+		cfg.cb.on_incoming_call = &on_incoming_call;
 
 		pjsua_logging_config_default(&log_cfg);
 		log_cfg.console_level = 4;
@@ -345,7 +535,8 @@ int main(int argc, char *argv[]) {
 	pj_str_t name = pj_str("dmodem");
 	
 	memset(&port,0,sizeof(port));
-	port.sock = atoi(argv[2]); // inherited from parent
+	/* inherited from parent; in listen mode, one per call */
+	port.sock = listen_mode ? -1 : atoi(argv[2]);
 	rs_init();
 	pjmedia_port_info_init(&port.base.info, &name, SIGNATURE, 8000, 1, 16, 160);
 	port.base.put_frame = dmodem_put_frame;
@@ -354,7 +545,8 @@ int main(int argc, char *argv[]) {
 
 	char buf[384];
 	memset(buf,0,sizeof(buf));
-	write(port.sock, buf, sizeof(buf));
+	if (!listen_mode)
+		write(port.sock, buf, sizeof(buf));
 
 	/* Initialization is done, now start pjsua */
 	status = pjsua_start();
@@ -367,7 +559,8 @@ int main(int argc, char *argv[]) {
 		pj_strdup2(pool,&cfg.id,buf);
 		snprintf(buf,sizeof(buf),"sip:%s",sip_domain);
 		pj_strdup2(pool,&cfg.reg_uri,buf);
-		cfg.register_on_acc_add = false;
+		/* registered to be reached in listen mode */
+		cfg.register_on_acc_add = listen_mode;
 		cfg.cred_count = 1;
 		cfg.cred_info[0].realm = pj_str("*");
 		cfg.cred_info[0].scheme = pj_str("digest");
@@ -377,6 +570,14 @@ int main(int argc, char *argv[]) {
 
 		status = pjsua_acc_add(&cfg, PJ_TRUE, &acc_id);
 		if (status != PJ_SUCCESS) error_exit("Error adding account", status);
+	}
+
+	if (listen_mode) {
+		listen_loop(acc_id, sip_domain);
+		call_cleanup();
+		destroying = true;
+		pjsua_destroy();
+		return 0;
 	}
 
 	snprintf(buf,sizeof(buf),"sip:%s@%s",dialstr,sip_domain);
