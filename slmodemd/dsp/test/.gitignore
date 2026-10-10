@@ -1,15 +1,3 @@
-dsp_loopback
-half_blob
-half_open
+# logs of interop.py / fax_interop.py run by hand (LOG_DIR unset)
 modemA.log
 modemB.log
-fax_loopback
-half_blob8
-half_open8
-netsim
-dmodem_pair
-t4_test
-fax_pair
-dmodem_fax_test
-spandsp_v17
-t4_spandsp

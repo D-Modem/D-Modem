@@ -1,17 +1,19 @@
 #!/bin/sh
 # fax_spandsp.sh: faxes between DModem's fax and Asterisk's own (res_fax
 # with spandsp, SendFAX / ReceiveFAX) over a Local channel in a private
-# Asterisk (installed with res_fax_spandsp, app_dmodem.so built in ..):
+# Asterisk (installed with res_fax_spandsp, app_dmodem.so from the CMake build):
 #   1. SendFAX calls DModem(bbs), which sees the CNG and receives
 #   2. SendFAX calls DModemReceiveFax
 #   3. DModemSendFax calls ReceiveFAX
 # Each received document must be the one sent.  CASES="2 3" runs only
 # those; DMODEM_DEBUG=3 for the DSP traces in console.log.
 here=$(cd "$(dirname "$0")" && pwd)
-t4=$here/../../slmodemd/dsp/test/t4_test
+# the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
+build=${DMODEM_BUILD:-$here/../../build}
+t4=$build/slmodemd/dsp/test/t4_test
 run=${TMPDIR:-/tmp}/dmodem-faxsp-test.$$
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod" "$run/fax"
-[ -x "$t4" ] || make -C "$here/../../slmodemd/dsp/test" t4_test >/dev/null || exit 1
+[ -x "$t4" ] || { echo "build first: cmake --build $build" >&2; exit 1; }
 "$t4" light "$run/doc.tif" || exit 1
 cp "$here/modules.conf" "$run/etc/"
 printf 'load = res_clioriginate.so\nload = res_timing_timerfd.so\nload = res_fax.so\nload = res_fax_spandsp.so\n' >> "$run/etc/modules.conf"
@@ -21,7 +23,7 @@ sed -e "s|^\[general\]|[general]\nfax_dir = $run/fax\nfax_ident = +1 555 0199|" 
 # FAX_MAX_RATE=9600: DModem's fax no faster
 [ -n "$FAX_MAX_RATE" ] && sed -i "s|^\[general\]|[general]\nfax_max_rate = $FAX_MAX_RATE|" "$run/etc/dmodem.conf"
 for m in /usr/lib/asterisk/modules/*.so; do ln -s "$m" "$run/mod/"; done
-ln -sf "$here/../app_dmodem.so" "$run/mod/app_dmodem.so"
+ln -sf "$build/asterisk/app_dmodem.so" "$run/mod/app_dmodem.so"
 cat > "$run/etc/asterisk.conf" <<EOT
 [directories]
 astetcdir => $run/etc

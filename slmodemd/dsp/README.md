@@ -160,7 +160,7 @@ law is mu-law, or A-law with `DSP_G711=alaw`.
   analogue modem's S.
 
 The original library, as an analogue V.90 modem calling through the
-simulated network (`make -C dsp/test v90_interop`), connects at 56000
+simulated network (`ctest -R interop_v90`), connects at 56000
 bit/s downstream and 31200 upstream, mu-law and A-law (A-law is
 marginal there: the original library retrains in phase 4 at times). Over
 SIP, through Asterisk and DModem (`asterisk/test/sip.sh AT+MS=90`, with
@@ -199,7 +199,7 @@ the training tell which. In data mode the V.17 receiver follows a clear
 error in the data's power (6 % or more, over some 500 symbols): the
 original library's constellation comes about 1.4 dB below its training.
 
-`make spandsp_check` (with libspandsp-dev) puts spandsp's V.17 transmitter
+`ctest -L spandsp` (with libspandsp-dev) puts spandsp's V.17 transmitter
 and T.4 encoder, as Asterisk's `SendFAX` uses them, into these receivers.
 
 ### How the QAM receiver works
@@ -219,17 +219,23 @@ are close to pure tones and would de-tune them.
 
 ## Building
 
-    make DSPLIBS=open          # in slmodemd/ or at the top level
+    cmake -B build -DDMODEM_DSPLIBS=open      # in the top directory
+    cmake --build build
 
-The default is still `DSPLIBS=blob`, which links the original `dsplibs.o`.
+The default is still `DMODEM_DSPLIBS=blob`, which links the original `dsplibs.o`.
 The open build has no i386 requirement. It builds natively on x86_64,
 ARM and other architectures, and links with `-lm`.
 
 ## Tests
 
-    make -C dsp/test check     # back-to-back pumps through a simulated line
-    make -C dsp/test interop   # calls between the original library and this one (needs gcc -m32)
-    make -C dsp/test fax_interop   # class 1 fax calls, the same way
+    ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
+    ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
+    ctest --test-dir build -L interop   # calls between the original library and this one,
+                                        # data and class 1 fax, in real time (needs gcc -m32)
+
+The test programs are in `build/slmodemd/dsp/test/`; `interop.py` and
+`fax_interop.py` take the two modem programs as arguments (`NETSIM` and
+`LOG_DIR` in the environment for netsim and the logs).
 
 `dsp_loopback <dp> [snr dB] [seconds] [srate] [line gain] [clock ppm]
 [echo dB]` runs a caller and an answerer through a simulated line with

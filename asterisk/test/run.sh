@@ -1,8 +1,10 @@
 #!/bin/sh
 # run.sh [AT+MS=.. [answering profile]]: a call between two DModem() over a Local channel in a
-# private Asterisk (installed, with app_dmodem.so built in ..), see bbs_sim.py
+# private Asterisk (installed, with app_dmodem.so from the CMake build), see bbs_sim.py
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
+# the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
+build=${DMODEM_BUILD:-$here/../../build}
 run=${TMPDIR:-/tmp}/dmodem-ast-test
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod"
 cp "$here/modules.conf" "$run/etc/"
@@ -14,7 +16,7 @@ sed -e "${LAW:+s/^\(\[[a-z]*\]\)\$/\1\nlaw = $LAW/}" \
     -e "s/^\[term\]/[term]\ninit = ${1:-}/" \
     "$here/dmodem.conf" > "$run/etc/dmodem.conf"
 for m in /usr/lib/asterisk/modules/*.so; do ln -s "$m" "$run/mod/"; done
-ln -sf "$here/../app_dmodem.so" "$run/mod/app_dmodem.so"
+ln -sf "$build/asterisk/app_dmodem.so" "$run/mod/app_dmodem.so"
 cat > "$run/etc/asterisk.conf" <<EOT
 [directories]
 astetcdir => $run/etc

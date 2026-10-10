@@ -26,7 +26,7 @@ if net:
     na_r, na_w = os.pipe()   # network -> A
     bn_r, bn_w = os.pipe()   # B -> network
     nb_r, nb_w = os.pipe()   # network -> B
-    pn = subprocess.Popen([os.path.join(d, "netsim"), ra, rb, law, str(an_r), str(na_w),
+    pn = subprocess.Popen([os.environ.get("NETSIM", os.path.join(d, "netsim")), ra, rb, law, str(an_r), str(na_w),
         str(bn_r), str(nb_w)], pass_fds=(an_r, na_w, bn_r, nb_w))
     ba_r, ab_w, ab_r, ba_w = na_r, an_w, nb_r, bn_w
 def start(exe, name, rfd, wfd):
@@ -46,7 +46,7 @@ for k, p in (("modemA", pa), ("modemB", pb)):
         m = re.search(r"created (\S+): (\S+)", line)
         if m:
             ptys[k] = m.group(2); break
-    lf = open(os.path.join(d, k + ".log"), "wb")
+    lf = open(os.path.join(os.environ.get("LOG_DIR", d), k + ".log"), "wb")
     threading.Thread(target=lambda p=p, lf=lf: [(lf.write(l), lf.flush()) for l in p.stdout], daemon=True).start()
 fd = {k: os.open(v, os.O_RDWR | os.O_NOCTTY) for k, v in ptys.items()}
 for f in fd.values(): tty.setraw(f)

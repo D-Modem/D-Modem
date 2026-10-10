@@ -1,2 +1,2 @@
-d-modem
-pjsip.install/
+# CMake build directories (cmake -B build)
+build*/

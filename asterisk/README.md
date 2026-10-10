@@ -97,18 +97,23 @@ The modem needs the line's audio as it is, so:
 
 ## Building
 
-The module builds outside the Asterisk tree, against the headers of an
-installed Asterisk of the same version (`make install-headers` after
-building Asterisk, or a distribution's `asterisk-dev` package):
+The module builds outside the Asterisk tree, with the rest of D-Modem,
+against the headers of an installed Asterisk of the same version (`make
+install-headers` after building Asterisk, or a distribution's
+`asterisk-dev` package); without them CMake skips it:
 
 ```
-cd asterisk
-make                        # also builds ../slmodemd/libdmodem.a
-make install                # module, and dmodem.conf if there is none
+cmake -B build                      # in the top directory
+cmake --build build --target app_dmodem
+cmake --install build               # the module, and dmodem.conf.sample
 asterisk -rx "module load app_dmodem.so"
 ```
 
-`make ASTINC=/opt/asterisk/include` for headers elsewhere.  Each call
+`-DASTERISK_INCLUDE_DIR=/opt/asterisk/include` for headers elsewhere,
+`-DASTERISK_MODULES_DIR=...` and `-DASTERISK_CONF_DIR=...` for where
+`cmake --install` puts the module and the sample configuration.  The
+test scripts in `test/` take the binaries from `build/` (`DMODEM_BUILD`
+for another build directory).  Each call
 runs its modem in the channel's own thread; there is no limit on the
 number of calls other than CPU (a V.34 or V.90 call takes a few percent
 of a core).

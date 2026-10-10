@@ -1,23 +1,25 @@
 #!/bin/sh
 # fax.sh: faxes between DModem's applications over a Local channel in a
-# private Asterisk (installed, app_dmodem.so built in ..):
+# private Asterisk (installed, app_dmodem.so from the CMake build):
 #   1. DModemSendFax calls DModem(bbs), which sees the CNG and receives
 #      the fax into fax_dir by itself
 #   2. DModemSendFax calls DModemReceiveFax(file)
 # The document is the two page test file of slmodemd/dsp/test/t4_test;
 # the received ones must be the same.
 here=$(cd "$(dirname "$0")" && pwd)
-t4=$here/../../slmodemd/dsp/test/t4_test
+# the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
+build=${DMODEM_BUILD:-$here/../../build}
+t4=$build/slmodemd/dsp/test/t4_test
 run=${TMPDIR:-/tmp}/dmodem-fax-test.$$
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod" "$run/fax"
-[ -x "$t4" ] || make -C "$here/../../slmodemd/dsp/test" t4_test >/dev/null || exit 1
+[ -x "$t4" ] || { echo "build first: cmake --build $build" >&2; exit 1; }
 "$t4" light "$run/doc.tif" || exit 1
 cp "$here/modules.conf" "$run/etc/"
 echo "load = res_clioriginate.so" >> "$run/etc/modules.conf"
 cp "$here/extensions.conf" "$run/etc/"
 sed "s|^\[general\]|[general]\nfax_dir = $run/fax\nfax_ident = +1 555 0199|" "$here/dmodem.conf" > "$run/etc/dmodem.conf"
 for m in /usr/lib/asterisk/modules/*.so; do ln -s "$m" "$run/mod/"; done
-ln -sf "$here/../app_dmodem.so" "$run/mod/app_dmodem.so"
+ln -sf "$build/asterisk/app_dmodem.so" "$run/mod/app_dmodem.so"
 cat > "$run/etc/asterisk.conf" <<EOT
 [directories]
 astetcdir => $run/etc

@@ -53,7 +53,7 @@ for k, p in (("A", pa), ("B", pb)):
         m = re.search(r"created (\S+): (\S+)", line)
         if m:
             ptys[k] = m.group(2); break
-    lf = open(os.path.join(d, "modem%s.log" % k), "wb")
+    lf = open(os.path.join(os.environ.get("LOG_DIR", d), "modem%s.log" % k), "wb")
     threading.Thread(target=lambda p=p, lf=lf: [(lf.write(l), lf.flush()) for l in p.stdout], daemon=True).start()
 fd = {k: os.open(v, os.O_RDWR | os.O_NOCTTY) for k, v in ptys.items()}
 for f in fd.values(): tty.setraw(f)

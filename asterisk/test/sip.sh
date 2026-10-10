@@ -1,10 +1,11 @@
 #!/bin/sh
 # sip.sh [AT commands, ';' separated]: D-Modem (slmodemd and d-modem, built
 # in ../..) calls DModem(bbs) over SIP in a private Asterisk (installed
-# with chan_pjsip, app_dmodem.so built in ..), or with INCOMING=1 answers
+# with chan_pjsip; app_dmodem.so from the CMake build), or with INCOMING=1 answers
 # DModem(term,o)'s call; see sip_call.py
 here=$(cd "$(dirname "$0")" && pwd)
-top=$here/../..
+# the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
+build=${DMODEM_BUILD:-$here/../../build}
 run=${TMPDIR:-/tmp}/dmodem-sip-test
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod"
 # CODEC=alaw (or ulaw): the call in that law only
@@ -25,7 +26,7 @@ fi
 sed "s/^debug = .*/debug = ${DMODEM_DEBUG:-1}/" "$here/dmodem.conf" > "$run/etc/dmodem.conf"
 printf '[modules]\nautoload = yes\nnoload = chan_sip.so\n' > "$run/etc/modules.conf"
 for m in /usr/lib/asterisk/modules/*.so; do ln -s "$m" "$run/mod/"; done
-ln -sf "$here/../app_dmodem.so" "$run/mod/app_dmodem.so"
+ln -sf "$build/asterisk/app_dmodem.so" "$run/mod/app_dmodem.so"
 cat > "$run/etc/asterisk.conf" <<EOT
 [directories]
 astetcdir => $run/etc
@@ -53,7 +54,7 @@ export SIP_LOGIN=modem:modem@127.0.0.1:5070 SIP_LOG=$run/slmodemd.log
 if [ -n "$INCOMING" ]; then
 	export SIP_IN="$ast -rx 'channel originate PJSIP/modem extension s@modem-call'"
 fi
-"$here/sip_call.py" "$top/slmodemd/slmodemd" "${DMODEM:-$top/d-modem}" 5551000 "$1"
+"$here/sip_call.py" "$build/slmodemd/slmodemd" "${DMODEM:-$build/d-modem}" 5551000 "$1"
 r=$?
 sleep 2
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"
