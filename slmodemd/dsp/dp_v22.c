@@ -70,6 +70,7 @@ struct v22_dp {
 	int caller;
 	int bis;                /* we offer V.22bis */
 	int remote_bis;         /* remote sent S1 */
+	int automode;           /* fallen back from V.32bis: V.21 next */
 	enum v22_state state;
 	long count, total;      /* samples in state / since creation */
 	long timeout, carrier_loss;
@@ -570,6 +571,17 @@ static int v22_handshake(struct v22_dp *v)
 		} else if (v->run_sb1_12 >= MS2SYM(270)) {
 			v22_set_state(v, A_V22_SB1);
 			v22_set_tx(v, TX_SB1_1200);
+		} else if (v->automode && ms >= 3000) {
+			/* no V.22 caller: a V.21 one waits for our mark
+			   (V.32bis Annex A) */
+			struct dp_runtime *rt = (struct dp_runtime *)
+				modem_get_param(v->modem, MDMPRM_DPRUNTIME);
+			DSP_DBG("%s: no answer, falling back to V.21\n",
+				v22_name(v));
+			if (rt)
+				rt->ans_sent = 1;
+			modem_set_param(v->modem, MDMPRM_DP_REQUESTED, DP_V21);
+			return DPSTAT_CHANGEDP;
 		}
 		break;
 	case A_S1:
@@ -682,6 +694,11 @@ static int v22_process(struct dp *dp, void *in, void *out, int cnt)
 	for (i = 0; i < cnt; i++) {
 		v22_rx_sample(v, src[i]);
 		r = v22_handshake(v);
+		if (r == DPSTAT_CHANGEDP) {
+			/* the rest of the block goes out silent */
+			memset(dst + i, 0, (cnt - i) * sizeof(*dst));
+			return r;
+		}
 		if (r != DPSTAT_OK)
 			ret = r;
 		if (v->state == V22_DATA) {
@@ -763,6 +780,7 @@ static struct dp *v22_create(struct modem *m, enum DP_ID id,
 	if (!caller && rt && rt->ans_sent) {
 		/* automode fallback from V.32bis: the answer tone was sent */
 		rt->ans_sent = 0;
+		v->automode = 1;
 		v->state = A_GAP;
 	} else if (!caller)
 		v->state = A_SILENCE;

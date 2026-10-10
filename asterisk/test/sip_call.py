@@ -77,13 +77,16 @@ print("dial:", m.group(1).decode() if m else "timeout")
 ok = ok and m is not None and m.group(1).startswith(b"CONNECT")
 if ok:
     t1 = time.time()
-    ok = expect(rb"Welcome to the test BBS\r\n", 30) is not None
+    # the timeouts are for 2400 bit/s and up
+    rate = re.match(rb"CONNECT (\d+)", m.group(1))
+    slow = max(1, 2400 // int(rate.group(1))) if rate else 1
+    ok = expect(rb"Welcome to the test BBS\r\n", 30 * slow) is not None
     for l in LINES:
         os.write(fd, l + b"\r\n")
     for l in LINES:
-        ok = ok and expect(re.escape(l.upper() + b"\r\n"), 60) is not None
+        ok = ok and expect(re.escape(l.upper() + b"\r\n"), 60 * slow) is not None
     os.write(fd, b"BYE\r\n")
-    ok = ok and expect(rb"Goodbye\r\n", 30) is not None
+    ok = ok and expect(rb"Goodbye\r\n", 30 * slow) is not None
     print("session: %s in %.1f s" % ("PASS" if ok else "FAIL", time.time() - t1))
     print("hangup:", "NO CARRIER" if expect(rb"NO CARRIER", 30) else "none")
 p.terminate()

@@ -34,6 +34,7 @@ int modem_dp_register(enum DP_ID id, struct dp_operations *op) { return 0; }
 void modem_dp_deregister(enum DP_ID id, struct dp_operations *op) {}
 int modem_get_sreg(struct modem *m, unsigned int num) { return 0; }
 long modem_set_param(struct modem *m, unsigned name, int val) { return 0; }
+long modem_get_param(struct modem *m, unsigned name) { return 0; }
 int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n) { return n; }
 int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n) { return n; }
 

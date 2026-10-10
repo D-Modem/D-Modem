@@ -216,8 +216,16 @@ static struct dp *fsk_create(struct modem *m, enum DP_ID id,
 
 	if (caller)
 		f->state = FSK_WAIT_CARRIER;
-	else
+	else {
+		struct dp_runtime *rt = (struct dp_runtime *)
+			modem_get_param(m, MDMPRM_DPRUNTIME);
 		f->state = FSK_ANS_SILENCE;
+		if (rt && rt->ans_sent) {
+			/* automode fallback: the answer tone was sent */
+			rt->ans_sent = 0;
+			f->state = FSK_ANS_GAP;
+		}
+	}
 	DSP_DBG("%s: create %s, srate %d\n", par->name,
 		caller ? "caller" : "answerer", srate);
 	return &f->dp;
@@ -311,7 +319,11 @@ static int fsk_process(struct dp *dp, void *in, void *out, int cnt)
 			}
 			break;
 		case FSK_DATA:
-			y = fsk_tx_sample(f, 1);
+			/* the answerer keeps its mark for a second: the
+			   caller links up only 0.8 s after it starts its own
+			   carrier and would miss the first characters */
+			y = fsk_tx_sample(f, f->caller ||
+					  f->count >= ms2samples(1000, f->srate));
 			if (bit >= 0 && f->rx.carrier) {
 				u8 b = bit;
 				modem_put_bits(f->modem, 1, &b, 1);
