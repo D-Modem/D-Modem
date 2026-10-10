@@ -97,8 +97,9 @@ static void *run(void *arg)
 		/* a line of text each way every second once online */
 		if (online && i > online + 50 && (i - online) % 50 == 0 &&
 		    sent < 5) {
-			write(sa[1], msg, strlen(msg));
-			write(sb[1], msg, strlen(msg));
+			if (write(sa[1], msg, strlen(msg)) < 0 ||
+			    write(sb[1], msg, strlen(msg)) < 0)
+				perror("write");
 			sent++;
 		}
 		while ((n = read(sa[1], got_a + na, sizeof(got_a) - na)) > 0)

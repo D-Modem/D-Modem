@@ -107,7 +107,8 @@ static int modem_test_start (struct modem *m)
 	t->delay = 256;
 	t->started = 1;
 	memset(outbuf,0,t->delay);
-	write(t->out,outbuf,t->delay);
+	if (write(t->out,outbuf,t->delay) != t->delay)
+		return -1;
 	return 0;
 }
 

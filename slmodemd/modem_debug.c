@@ -44,6 +44,7 @@
 
 /*****************************************************************************/
 
+#include <stdint.h>
 #include <stdarg.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -72,7 +73,7 @@ int modem_debug_log_data(struct modem *m, unsigned id, const void *data, int cou
 	struct sllog_header hdr;
 	int ret = 0;
 	if(id <= modem_debug_logging && modem_log_fd > 0) {
-		hdr.modem_id = (unsigned)m ;
+		hdr.modem_id = (unsigned)(uintptr_t)m ;
                 hdr.id = id;
                 hdr.length = count;
 		ret = write(modem_log_fd,&hdr,sizeof(hdr));

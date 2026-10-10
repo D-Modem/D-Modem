@@ -829,11 +829,11 @@ static void push_rest_data(struct modem *m, int bits)
 /* info frame process */
 static int rx_info(struct lapm_state *l, frame_t *f)
 {
-	int ret = 0, n;
+	int ret = 0;
 	//LAPM_PRINT_FRAME("rx_info",1,f);
 
 	/* ack I frames: nr -1 */
-	n = ack_info(l,FRAME_NR(f));
+	ack_info(l,FRAME_NR(f));
 	/* busy */
 	if (l->busy) {
 		if(FRAME_I_PF(f)) /* 8.4.7 */
@@ -889,7 +889,6 @@ static int rx_info(struct lapm_state *l, frame_t *f)
 
 static void rx_super_cmd(struct lapm_state *l, frame_t *f)
 {
-	int n;
 	//LAPM_PRINT_FRAME("rx super:",1,f);
 
 	/* note 8.4.7:
@@ -898,7 +897,7 @@ static void rx_super_cmd(struct lapm_state *l, frame_t *f)
 	case FRAME_S_RR:
 		/* clear peer_busy state */
 		l->peer_busy = 0;
-		n = ack_info(l,FRAME_NR(f));
+		ack_info(l,FRAME_NR(f));
 		/* p=1 may be used for status checking */
 		if (FRAME_S_PF(f) || !tx_info(l)) {
 			if (l->busy)
@@ -910,7 +909,7 @@ static void rx_super_cmd(struct lapm_state *l, frame_t *f)
 	case FRAME_S_RNR:
 		/* going to peer_busy state */
 		l->peer_busy = 1;
-		n = ack_info(l,FRAME_NR(f));
+		ack_info(l,FRAME_NR(f));
 		/* if p=1 may be used for status checking ?? */
 		if (FRAME_S_PF(f)) {
 			if (l->busy)
@@ -922,7 +921,7 @@ static void rx_super_cmd(struct lapm_state *l, frame_t *f)
 	case FRAME_S_REJ:
 		/* clear peer_busy state */
 		l->peer_busy = 0;
-		n = ack_info(l,FRAME_NR(f));
+		ack_info(l,FRAME_NR(f));
 		if (!l->rtx_count) {
 			TIMER_STOP(l);
 			reject_info(l);
@@ -947,7 +946,6 @@ static void rx_super_cmd(struct lapm_state *l, frame_t *f)
 
 static void rx_super_rsp(struct lapm_state *l, frame_t *f)
 {
-	int n;
 	//LAPM_PRINT_FRAME("rx_super",0,f);
 
 	if (!l->rtx_count && FRAME_S_PF(f)) {
@@ -958,7 +956,7 @@ static void rx_super_rsp(struct lapm_state *l, frame_t *f)
 	switch(FRAME_CTRL(f)) {
 	case FRAME_S_RR:
 		l->peer_busy = 0;
-		n = ack_info(l,FRAME_NR(f));
+		ack_info(l,FRAME_NR(f));
 		if (l->rtx_count && FRAME_S_PF(f)) {
 			reject_info(l);
 			TIMER_STOP(l);
@@ -966,7 +964,7 @@ static void rx_super_rsp(struct lapm_state *l, frame_t *f)
 		break;
 	case FRAME_S_RNR:
 		l->peer_busy = 1;
-		n = ack_info(l,FRAME_NR(f));
+		ack_info(l,FRAME_NR(f));
 		if (l->rtx_count && FRAME_S_PF(f)) {
 			reject_info(l);
 			TIMER_STOP(l); // fixme: need stop even on RNR ??
@@ -976,7 +974,7 @@ static void rx_super_rsp(struct lapm_state *l, frame_t *f)
 		break;
 	case FRAME_S_REJ:
 		l->peer_busy = 0;
-		n = ack_info(l,FRAME_NR(f));
+		ack_info(l,FRAME_NR(f));
 		if (!l->rtx_count || FRAME_S_PF(f)) {
 			reject_info(l);
 			TIMER_STOP(l);
