@@ -60,8 +60,11 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   V.21. A CM or JM without V.34, or a V.32 calling modem (1800 Hz AA),
   hands the call to the V.32bis pump. As in V.32bis Annex A, that falls
   back to V.22bis after 3 s, and V.22bis to V.21 after 3 s more of
-  unanswered USB1, and V.21 to V.23 after 3 s more (V.21 and V.23
-  callers wait for the answerer's mark).
+  unanswered USB1, V.21 to V.23 and V.23 to Bell 103 after 3 s more
+  each (FSK callers wait for the answerer's mark). A Bell 103 caller
+  usually takes V.22's unscrambled ones (2250 Hz) for its answerer's
+  2225 Hz mark and answers with its own (1270 Hz): 100 ms of that tone
+  in any of these stages switches to Bell 103 at once.
 - **Calling automode:** a 2225 Hz answer tone (told from V.22's 2250 Hz
   unscrambled ones over 200 ms) means a Bell answerer: Bell 212A, and Bell
   103 when no scrambled ones come back within 1.5 s. After a 2100 Hz tone

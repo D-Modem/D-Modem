@@ -166,7 +166,11 @@ struct fsk_dp {
 	struct fsk_demod rx;
 	float tx_phase, tx_inc;
 	int tx_bit;
-	int automode;           /* answering after V.22bis: V.23 next */
+	int automode;           /* answering after V.22bis: V.23, Bell 103
+				   next */
+	struct goertzel g1270, g1070;  /* a Bell 103 caller's mark */
+	float blk_energy;
+	int bell_blocks;
 	/* the caller's check that the mark is really at its frequency:
 	   another answerer's (V.21's 1650 Hz for V.23's 1300) demodulates
 	   as a mark too */
@@ -242,6 +246,8 @@ static struct dp *fsk_create(struct modem *m, enum DP_ID id,
 			rt->ans_sent = 0;
 			f->state = FSK_ANS_GAP;
 			f->automode = 1;
+			goertzel_init(&f->g1270, 1270, srate / 50, srate);
+			goertzel_init(&f->g1070, 1070, srate / 50, srate);
 		}
 	}
 	DSP_DBG("%s: create %s, srate %d\n", par->name,
@@ -291,6 +297,18 @@ static int fsk_process(struct dp *dp, void *in, void *out, int cnt)
 		else
 			f->carrier_count = f->carrier_count < 0 ? f->carrier_count - 1 : -1;
 
+		if (f->automode && !f->caller) {
+			f->blk_energy += (float)src[i] * src[i];
+			goertzel_run(&f->g1070, src[i]);
+			if (goertzel_run(&f->g1270, src[i])) {
+				float mean = f->blk_energy / f->g1270.len;
+				/* mark and space: Bell 103's originate band */
+				f->bell_blocks = f->g1270.power + f->g1070.power > 0.6f * mean &&
+					mean > tone_power(150) ?
+					f->bell_blocks + 1 : 0;
+				f->blk_energy = 0;
+			}
+		}
 		goertzel_run(&f->g_lo, src[i]);
 		goertzel_run(&f->g_hi, src[i]);
 		if (goertzel_run(&f->g_mark, src[i]))
@@ -331,8 +349,11 @@ static int fsk_process(struct dp *dp, void *in, void *out, int cnt)
 			/* the caller already saw the answerer's steady mark,
 			   which may be data by now; the answerer waits for
 			   the caller's mark */
+			/* (a Bell 103 caller found in automode may be online
+			   already, sending data: its carrier will do) */
 			if (f->count >= ms2samples(200, f->srate) &&
-			    (f->caller ? f->carrier_count : f->mark_count) >=
+			    (f->caller || (f->automode && f->dp.id == DP_B103) ?
+			     f->carrier_count : f->mark_count) >=
 			    ms2samples(150, f->srate)) {
 				fsk_set_state(f, FSK_DATA);
 				modem_set_param(f->modem, MDMPRM_TX_RATE, (int)f->par->tx_baud);
@@ -341,20 +362,26 @@ static int fsk_process(struct dp *dp, void *in, void *out, int cnt)
 					(int)f->par->tx_baud, (int)f->par->rx_baud);
 				ret = DPSTAT_CONNECT;
 			} else if (!f->caller && f->automode &&
-				   f->dp.id == DP_V21 &&
-				   f->count >= ms2samples(3000, f->srate) &&
-				   !f->rx.carrier) {
-				/* no V.21 caller: a V.23 one waits for our
-				   1300 Hz mark */
+				   f->dp.id != DP_B103 &&
+				   (f->bell_blocks >= 5 ||
+				    (f->count >= ms2samples(3000, f->srate) &&
+				     !f->rx.carrier))) {
+				/* a Bell 103 caller's mark; or no caller:
+				   after V.21 a V.23 one waits for our 1300 Hz
+				   mark, after V.23 a Bell 103 one for 2225 Hz */
 				struct dp_runtime *rt = (struct dp_runtime *)
 					modem_get_param(f->modem,
 							MDMPRM_DPRUNTIME);
-				DSP_DBG("%s: no answer, falling back to V.23\n",
-					f->par->name);
+				enum DP_ID next = f->bell_blocks >= 5 ||
+					f->dp.id == DP_V23 ? DP_B103 : DP_V23;
+				DSP_DBG("%s: %s, falling back to %s\n",
+					f->par->name, f->bell_blocks >= 5 ?
+					"Bell 103 caller" : "no answer",
+					next == DP_B103 ? "Bell 103" : "V.23");
 				if (rt)
 					rt->ans_sent = 1;
 				modem_set_param(f->modem, MDMPRM_DP_REQUESTED,
-						DP_V23);
+						next);
 				return DPSTAT_CHANGEDP;
 			}
 			break;

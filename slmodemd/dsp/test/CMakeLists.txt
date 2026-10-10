@@ -51,7 +51,7 @@ add_test(NAME loopback_far_echo_voip COMMAND dsp_loopback 8 40 22 9600 0.5 0 0 -
 set_tests_properties(loopback_far_echo_voip PROPERTIES LABELS quick
 	ENVIRONMENT FAR_DELAY=1920)
 foreach(_c "122 8 25" "8 22 25" "8 21 25" "8 23 25" "8 103 30" "8 212 25"
-	"21 8 45" "23 8 60")
+	"21 8 45" "23 8 60" "103 8 45")
 	# caller's pump, answerer's pump, seconds
 	separate_arguments(_a UNIX_COMMAND "${_c}")
 	list(POP_FRONT _a _caller)

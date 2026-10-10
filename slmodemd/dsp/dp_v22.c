@@ -71,6 +71,13 @@ struct v22_dp {
 	int bis;                /* we offer V.22bis */
 	int remote_bis;         /* remote sent S1 */
 	int automode;           /* fallen back from V.32bis: V.21 next */
+	/* a Bell 103 caller takes our unscrambled ones (2250 Hz) for its
+	   answerer's 2225 Hz mark and answers with its own, 1270 Hz: 100 ms
+	   of it before its data (only a pure tone, a V.22 caller never
+	   sends one) */
+	struct goertzel g1270, g1070;
+	float blk_energy;
+	int bell_blocks;
 	enum v22_state state;
 	long count, total;      /* samples in state / since creation */
 	long timeout, carrier_loss;
@@ -571,6 +578,15 @@ static int v22_handshake(struct v22_dp *v)
 		} else if (v->run_sb1_12 >= MS2SYM(270)) {
 			v22_set_state(v, A_V22_SB1);
 			v22_set_tx(v, TX_SB1_1200);
+		} else if (v->automode && v->bell_blocks >= 5) {
+			struct dp_runtime *rt = (struct dp_runtime *)
+				modem_get_param(v->modem, MDMPRM_DPRUNTIME);
+			DSP_DBG("%s: Bell 103 caller, falling back to it\n",
+				v22_name(v));
+			if (rt)
+				rt->ans_sent = 1;
+			modem_set_param(v->modem, MDMPRM_DP_REQUESTED, DP_B103);
+			return DPSTAT_CHANGEDP;
 		} else if (v->automode && ms >= 3000) {
 			/* no V.22 caller: a V.21 one waits for our mark
 			   (V.32bis Annex A) */
@@ -705,6 +721,19 @@ static int v22_process(struct dp *dp, void *in, void *out, int cnt)
 
 	for (i = 0; i < cnt; i++) {
 		v22_rx_sample(v, src[i]);
+		if (v->automode) {
+			v->blk_energy += (float)src[i] * src[i];
+			goertzel_run(&v->g1070, src[i]);
+			if (goertzel_run(&v->g1270, src[i])) {
+				/* most of the power in that one tone */
+				float mean = v->blk_energy / v->g1270.len;
+				/* mark and space: Bell 103's originate band */
+				v->bell_blocks = v->g1270.power + v->g1070.power > 0.6f * mean &&
+					mean > tone_power(150) ?
+					v->bell_blocks + 1 : 0;
+				v->blk_energy = 0;
+			}
+		}
 		r = v22_handshake(v);
 		if (r == DPSTAT_CHANGEDP) {
 			/* the rest of the block goes out silent */
@@ -793,6 +822,8 @@ static struct dp *v22_create(struct modem *m, enum DP_ID id,
 		/* automode fallback from V.32bis: the answer tone was sent */
 		rt->ans_sent = 0;
 		v->automode = 1;
+		goertzel_init(&v->g1270, 1270, srate / 50, srate);
+		goertzel_init(&v->g1070, 1070, srate / 50, srate);
 		v->state = A_GAP;
 	} else if (!caller)
 		v->state = A_SILENCE;
