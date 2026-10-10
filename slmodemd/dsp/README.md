@@ -128,8 +128,18 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   echo of our own L1/L2 has nothing, and the reversal detector does not
   depend on the symbol timing.
 
+Retrains: in data mode a modem that loses the remote's signal for 30 ms,
+hears its tone A or B instead of data, or sees its error (mse) stay above
+what any rate needs for a second goes back to phase 2 at the tones (70 ms
+of silence, then A or B; INFO0 stands), probes the line again and trains
+anew; the link (V.42) carries on at the new rates without a new CONNECT.
+As there is no INFO0 to find the control channel's symbol timing with,
+the receiver takes it from the tone reversals. `DSP_V34_RETRAIN=<ms>[a|c]`
+makes the answerer (a), the caller (c) or both start one after that long
+in data mode (a test).
+
 Not implemented: non-linear encoding, pre-emphasis, the auxiliary
-channel, rate renegotiation and retrains.
+channel and rate renegotiation.
 
 ### V.90 digital modem
 

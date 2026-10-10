@@ -6,6 +6,8 @@
 #
 #     interop.py <caller exe> <answerer exe> ["ATX3;AT+MS=122"]
 #
+# STREAM=<s> keeps data flowing for that long (see netsim's NET_DROP and
+# NET_STEP for line hits in the middle).
 # Both modems get the ';' separated AT commands (PROTO_B=... gives modemB
 # its own, e.g. an older modulation to answer with), then modemB answers,
 # modemA dials, data is exchanged both ways and checked.  The modem logs
@@ -83,8 +85,23 @@ if not (b"CONNECT" in buf["modemA"] and b"CONNECT" in buf["modemB"]): done(False
 buf = {k: b"" for k in fd}
 msg_a = bytes(range(32, 127)) * 4 + b"\r\n"
 msg_b = b"The quick brown fox jumps over the lazy dog. " * 8
-os.write(fd["modemA"], msg_a); os.write(fd["modemB"], msg_b)
-end = time.time() + 40
+# STREAM=<s>: keep the data going both ways for that long (a line hit,
+# NET_DROP or NET_STEP, can come in the middle), then check all of it
+stream = float(os.environ.get("STREAM", "0"))
+if stream:
+    sent_a = sent_b = b""
+    t_end = time.time() + stream
+    n = 0
+    while time.time() < t_end:
+        line = b"%06d " % n
+        os.write(fd["modemA"], line + msg_a); sent_a += line + msg_a
+        os.write(fd["modemB"], line + msg_b); sent_b += line + msg_b
+        n += 1
+        pump(0.5)
+    msg_a, msg_b = sent_a, sent_b
+else:
+    os.write(fd["modemA"], msg_a); os.write(fd["modemB"], msg_b)
+end = time.time() + 40 + stream
 while time.time() < end and (len(buf["modemB"]) < len(msg_a) or len(buf["modemA"]) < len(msg_b)):
     pump(0.2)
 print("A received %d/%d ok=%s" % (len(buf["modemA"]), len(msg_b), buf["modemA"] == msg_b))

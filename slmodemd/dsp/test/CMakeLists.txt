@@ -80,6 +80,19 @@ endforeach()
 add_test(NAME dmodem_pair_v32_retrain COMMAND dmodem_pair +MS=132 1 30)
 set_tests_properties(dmodem_pair_v32_retrain PROPERTIES LABELS quick
 	ENVIRONMENT DSP_V32_RETRAIN=1500)
+# V.34 retrains in the middle of the data: started by both modems, by the
+# answerer or the caller alone (the other one follows)
+foreach(_side both a c)
+	if(_side STREQUAL "both")
+		set(_t 3000)
+	else()
+		set(_t 3000${_side})
+	endif()
+	add_test(NAME dmodem_pair_v34_retrain_${_side}
+		COMMAND dmodem_pair +MS=34 1 60)
+	set_tests_properties(dmodem_pair_v34_retrain_${_side} PROPERTIES
+		LABELS quick ENVIRONMENT DSP_V34_RETRAIN=${_t})
+endforeach()
 
 # --- quick: fax, the page coding against libtiff (tiffcp), two T.30
 #     machines back to back at each rate, libdmodem's fax (CNG hand-over)
@@ -203,6 +216,17 @@ foreach(_ms 34 132 122 22 212 103 23)
 	set_tests_properties(interop_${_ms}_blob_calls interop_${_ms}_open_calls
 		PROPERTIES LABELS interop ENVIRONMENT "${_env}" RUN_SERIAL ON)
 endforeach()
+# V.34 through a line hit (300 ms of silence both ways) in the middle of
+# the data: both modems retrain, V.42 carries on
+add_test(NAME interop_34_hit_blob_calls COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open>
+	"ATX3;AT+MS=34")
+add_test(NAME interop_34_hit_open_calls COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob>
+	"ATX3;AT+MS=34")
+set_tests_properties(interop_34_hit_blob_calls interop_34_hit_open_calls
+	PROPERTIES LABELS interop RUN_SERIAL ON ENVIRONMENT
+	"${_env};NET=9600:9600:ulaw;STREAM=25;NET_DROP=20:300")
 # V.90: the original library (analogue modem) calls the open one (digital
 # modem, 8000 Hz) through the simulated G.711 network
 add_test(NAME interop_v90_ulaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py

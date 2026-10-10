@@ -87,7 +87,7 @@ Finally, dial the number of the target system.  Below shows a connection to the 
 ## Known Issues / Future Work
 - For a server answering many calls (a BBS, PPP dial-in or fax), the Asterisk module in `asterisk/` is the better fit than `slmodemd -L`: it answers with the open modem at V.90 (as the digital modem, up to 56000 bps downstream), V.34, V.32bis, V.22bis, V.22 or V.21.
 - Tested over SIP against a local Asterisk only, not yet through real PSTN gateways.
-- V.34 retrains and rate renegotiation during a call, and V.92, are not implemented in the open DSP.
+- V.34 rate renegotiation during a call (the open DSP retrains instead, after a line hit or when its error rate climbs), and V.92, are not implemented in the open DSP.
 - The serial interface could be replaced with stdio or a socket, and common AT configuration options could be exposed as command line options 
 
 

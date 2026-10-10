@@ -24,6 +24,11 @@ static int alaw;
 static int plain;       /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
 			   resampler of dsp_util, not the raised cosine */
 static float gain = 1;
+/* NET_DROP=<at s>:<ms>: the line goes silent both ways for a while (a
+   hit); NET_STEP=<at s>:<dB>: its loss changes for good (a reroute) */
+static float drop_at = -1, drop_ms, step_at = -1, step_g = 1;
+/* NET_NOISE=<at s>:<rms>: white noise from then on, both ways */
+static float noise_at = -1, noise_rms;
 /* NET_DELAY=<ms>: see main().
    NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
    back towards B */
@@ -165,6 +170,7 @@ struct dir {
 	struct rc_up rc;
 	short obuf[8192];
 	int on;
+	long nin;               /* input samples so far */
 };
 
 /* samples of one direction: to 8000 Hz G.711 and on */
@@ -177,6 +183,20 @@ static int run(struct dir *d, int a_out, int a_in)
 		return n == 0 || errno != EINTR ? -1 : 0;
 	n /= 2;
 	for (i = 0; i < n; i++) {
+		float t = (float)d->nin++ / d->rate_in;
+		if (drop_at >= 0 && t >= drop_at && t < drop_at + drop_ms / 1000)
+			ibuf[i] = 0;
+		if (step_at >= 0 && t >= step_at)
+			ibuf[i] = (short)lrintf(ibuf[i] * step_g);
+		if (noise_at >= 0 && t >= noise_at) {
+			/* Gaussian (Box-Muller) */
+			double u1 = (rand() + 1.0) / (RAND_MAX + 2.0);
+			double u2 = rand() / (RAND_MAX + 1.0);
+			double x = ibuf[i] + noise_rms *
+				sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
+			ibuf[i] = (short)(x > 32767 ? 32767 : x < -32768 ?
+					  -32768 : lrint(x));
+		}
 		/* A sends its sample k as it receives its sample k: the
 		   hybrid's echo comes in A's own sample clock */
 		if (a_out && echo_g) {
@@ -249,6 +269,15 @@ int main(int argc, char **argv)
 	plain = getenv("NET_PLAIN") != NULL;
 	if (getenv("NET_GAIN"))
 		gain = atof(getenv("NET_GAIN"));
+	if (getenv("NET_DROP"))
+		sscanf(getenv("NET_DROP"), "%f:%f", &drop_at, &drop_ms);
+	if (getenv("NET_NOISE"))
+		sscanf(getenv("NET_NOISE"), "%f:%f", &noise_at, &noise_rms);
+	if (getenv("NET_STEP")) {
+		float db = 0;
+		sscanf(getenv("NET_STEP"), "%f:%f", &step_at, &db);
+		step_g = powf(10, db / 20);
+	}
 	if (getenv("NET_ECHO")) {
 		float db = 0, ms = 0;
 		sscanf(getenv("NET_ECHO"), "%f:%f", &db, &ms);

@@ -75,6 +75,8 @@ static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x11, 0x10, 0x2a, 0x0d
 #define V90_P2_POWER    8       /* -6 - n dBm0 */
 #define V90_MAX_POWER   23      /* -0.5 - n / 2 dBm0 */
 #define V8_MOD2_V32     0x01    /* in the first extension octet */
+/* data mode mse (signal point spacing 2) that calls for a retrain */
+#define V34_RETRAIN_MSE 0.25f
 
 enum v34_state {
 	/* V.8 answerer */
@@ -137,6 +139,7 @@ enum v34_state {
 	P4_MP,
 	P4_E,
 	V34_DATA,
+	V34_RT_SILENCE, /* a retrain: silence, then phase 2 from tone A / B */
 	/* V.90 digital modem, phase 3 */
 	P3D_WAIT_JA,
 	P3D_PAUSE,
@@ -178,6 +181,9 @@ struct cc_rx {
 	int best;
 	long n, last;           /* samples, at the last decision */
 	float dmin;
+	float rmin;             /* the most reversed step of a steady tone */
+	int rmin_pos;           /* at this sampling phase */
+	int snap;               /* set the timing at a tone reversal */
 	int rbit;               /* a tone reversal in the last symbol */
 	int ones;
 	float p;                /* |b|^2 of the last symbol */
@@ -347,6 +353,16 @@ struct v34_dp {
 	int max_rate_tx, max_rate_rx;
 	int rate_tx, rate_rx;   /* data mode, bit/s */
 	long carrier_loss, lost;
+
+	/* retrain: the remote's tone A / B in data mode */
+	struct goertzel rt_g, own_g;    /* the remote's tone, the echo of ours */
+	float rt_e;
+	int rt_blocks;
+	int rt_heard;           /* the tone has been there a while */
+	long bad;               /* data mode: samples with a poor mse */
+	int retraining;         /* back to data mode without a new CONNECT */
+	int retrains;
+	long retrain_at;        /* test: our own retrain this far (samples) */
 };
 
 static void v34_set_state(struct v34_dp *v, enum v34_state s)
@@ -757,12 +773,13 @@ static void cc_rx_init(struct cc_rx *r, float fc)
 /* one sample; returns -1, or a decision (0/1) at a symbol centre */
 static int cc_rx_sample(struct cc_rx *r, float x)
 {
-	cplx z = cplx_scale(osc_next_cplx(&r->lo), x), b, d;
+	cplx z = cplx_scale(osc_next_cplx(&r->lo), x), b, d, o;
 	int i = r->pos, bit = -1;
 	r->acc = cplx_add(r->acc, cplx_sub(z, r->box[i]));
 	r->box[i] = z;
 	b = cplx_scale(r->acc, 1.0f / CC_SPS);
-	d = cplx_mulc(b, r->old[i]);
+	o = r->old[i];
+	d = cplx_mulc(b, o);
 	r->old[i] = b;
 	/* symbol timing: fast between frames (after the probing signals),
 	   slow within them */
@@ -771,6 +788,14 @@ static int cc_rx_sample(struct cc_rx *r, float x)
 	   symbol timing is */
 	if (cplx_pow(b) > 0 && d.re < r->dmin * cplx_pow(b))
 		r->dmin = d.re / cplx_pow(b);
+	if (r->snap && cplx_pow(b) > 300.0f * 300.0f / 4 &&
+	    cplx_pow(o) > 300.0f * 300.0f / 4) {
+		float c = d.re / sqrtf(cplx_pow(b) * cplx_pow(o));
+		if (c < r->rmin) {
+			r->rmin = c;
+			r->rmin_pos = i;
+		}
+	}
 	r->phase_e[i] += (r->frame_len > 0 ? 0.02f : 0.2f) *
 		(sqrtf(cplx_pow(d)) - r->phase_e[i]);
 	if (++r->pos == CC_SPS)
@@ -791,7 +816,16 @@ static int cc_rx_sample(struct cc_rx *r, float x)
 		if (r->p > 300.0f * 300.0f / 4)
 			bit = d.re < 0;
 		r->rbit = r->dmin < -0.5f;
+		/* a retrain has no INFO0 to find the timing with: the
+		   remote's symbols end where its tone reverses most clearly */
+		if (r->snap && r->rmin < -0.8f && r->frame_len <= 0) {
+			int e = (r->rmin_pos - r->best + CC_SPS + CC_SPS / 2) %
+				CC_SPS - CC_SPS / 2;
+			if (e > 2 || e < -2)
+				r->best = r->rmin_pos;
+		}
 		r->dmin = 0;
+		r->rmin = 0;
 		/* follow the symbol timing, two samples per symbol at most:
 		   a jump would lose or repeat a decision (on a tone all
 		   phases look alike) */
@@ -928,8 +962,8 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 	struct cc_rx *r = &v->ccr;
 
 	if (dsplibs_debug_level >= 6)
-		DSP_DBG("v34: cc %s %ld %d p %.0f\n", v->caller ? "C" : "A",
-			v->total * 1000 / v->srate, bit, r->p);
+		DSP_DBG("v34: cc %s %ld %d p %.0f t %d\n", v->caller ? "C" : "A",
+			v->total * 1000 / v->srate, bit, r->p, r->best);
 	r->sr = (r->sr << 1) | bit;
 	r->hist[r->hist_n++ % CC_HIST] = bit;
 	if (r->frame_len > 0)
@@ -1222,6 +1256,29 @@ static void ec_schedule(struct v34_dp *v)
 	}
 }
 
+/* the remote's tone A / B, not data: nearly all the power in its bin
+   (data spreads over some 20) */
+static void rt_tone(struct v34_dp *v, float x)
+{
+	v->rt_e += x * x;
+	goertzel_run(&v->own_g, x);
+	if (goertzel_run(&v->rt_g, x)) {
+		/* without the echo of our own tone */
+		float e = v->rt_e / PROBE_PERIOD - v->own_g.power;
+		v->rt_e = 0;
+		v->rt_blocks = e > tone_power(150) && v->rt_g.power > 0.6f * e ?
+			v->rt_blocks + 1 : 0;
+		if (dsplibs_debug_level >= 5 && v->retraining)
+			DSP_DBG("v34: rt %ld e %.0f tone %.0f own %.0f\n",
+				v->total * 1000 / v->srate, e, v->rt_g.power,
+				v->own_g.power);
+		if (v->rt_blocks >= 5 && !v->rt_heard) {
+			v->rt_heard = 1;
+			DSP_DBG("v34: tone %s heard\n", v->caller ? "A" : "B");
+		}
+	}
+}
+
 static void pump_rx_sample(struct v34_dp *v, float x)
 {
 	int bit, k;
@@ -1251,8 +1308,12 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 		if (!v->ec.bypass)
 			x = ec_run(&v->ec, v->last_tx, x);
 		v34_rx_sample(&v->prx, x);
+		if (v->state == V34_DATA)
+			rt_tone(v, x);
 		return;
 	}
+	if (v->retraining)
+		rt_tone(v, x);
 	bit = cc_rx_sample(&v->ccr, x);
 	if (bit >= 0)
 		cc_rx_bit(v, bit);
@@ -1545,6 +1606,47 @@ static int fsk_bit_edge(struct v34_dp *v)
 	return v->fsk_phase + 300.0f / v->srate >= 1;
 }
 
+/* a retrain: both modems go back to phase 2 at tones A and B
+   (the INFO0 sequences stand), probe the line again and train the
+   primary channel anew; whoever starts it with silence and its tone, the
+   other modem answers the same way when it loses the data signal or
+   hears the tone */
+static void v34_retrain(struct v34_dp *v, const char *why)
+{
+	DSP_DBG("v34: retrain %d (%s)\n", ++v->retrains, why);
+	v->retraining = 1;
+	if (v->prx_on) {
+		v34_rx_free(&v->prx);
+		v->prx_on = 0;
+	}
+	v->txm = TXM_SILENCE;
+	v->ec.on = 0;
+	/* the control channel as after INFO0 */
+	cc_rx_init(&v->ccr, v->caller ? 2400 : 1200);
+	v->ccr.snap = 1;
+	v->cctx.pos = v->cctx.n;
+	v->cc_rev = 0;
+	v->cc_sym = 0;
+	v->ev_info1 = v->ev_rev = 0;
+	v->rtd = 0;
+	/* the probing */
+	goertzel_init(&v->tone_g, v->caller ? 2400 : 1200, PROBE_PERIOD,
+		      v->srate);
+	goertzel_init(&v->probe_g[0], 1050, PROBE_PERIOD, v->srate);
+	goertzel_init(&v->probe_g[1], 3000, PROBE_PERIOD, v->srate);
+	v->tone_blocks = v->probe_blocks = 0;
+	v->pblock_e = 0;
+	v->l1_start = 0;
+	memset(v->pacc, 0, sizeof(v->pacc));
+	memset(v->pprev, 0, sizeof(v->pprev));
+	v->ptotal = v->pdiff = 0;
+	v->pcount = 0;
+	v->rt_blocks = v->rt_heard = 0;
+	v->lost = v->bad = 0;
+	v->timeout = v->total + ms2samples(15000, v->srate);
+	v34_set_state(v, V34_RT_SILENCE);
+}
+
 static int v34_handshake(struct v34_dp *v)
 {
 	long c = v->count;
@@ -1662,6 +1764,17 @@ static int v34_handshake(struct v34_dp *v)
 			v34_set_state(v, P2A_A);
 		break;
 	case P2A_A:
+		/* in a retrain: once the caller's B has been there a while,
+		   and A as long (200 ms, as the original modems): the caller
+		   takes a reversal only after it has heard A */
+		if (v->retraining && (v->rt_blocks < 15 ||
+				      c < ms2samples(200, v->srate))) {
+			if (c >= ms2samples(3000, v->srate)) {
+				DSP_DBG("v34: retrain: no tone B\n");
+				return DPSTAT_ERROR;
+			}
+			break;
+		}
 		if (c >= ms2samples(50, v->srate) && v->ev_info0) {
 			v34_set_state(v, P2A_ABAR);
 			v->cc_rev = 1;
@@ -1746,6 +1859,19 @@ static int v34_handshake(struct v34_dp *v)
 		}
 		break;
 	case P2C_B:
+		if (v->retraining && !v->rt_heard) {
+			/* a reversal counts when the tone is there around it
+			   (an answerer may reverse A after 200 ms, heard or
+			   not); without, it was the remote's data */
+			if (v->ev_rev && v->total - v->rev_time >
+			    ms2samples(100, v->srate))
+				v->ev_rev = 0;
+			if (c >= ms2samples(3000, v->srate)) {
+				DSP_DBG("v34: retrain: no tone A\n");
+				return DPSTAT_ERROR;
+			}
+			break;
+		}
 		if (v->ev_info0 && v->ev_rev) {
 			v34_set_state(v, P2C_B_40);
 			v->count = v->total - v->rev_time;
@@ -2050,6 +2176,15 @@ static int v34_handshake(struct v34_dp *v)
 			v34_set_state(v, V34_DATA);
 			modem_set_param(v->modem, MDMPRM_TX_RATE, v->rate_tx);
 			modem_set_param(v->modem, MDMPRM_RX_RATE, v->rate_rx);
+			v->rt_blocks = 0;
+			v->lost = 0;
+			if (v->retraining) {
+				/* the link goes on (V.42 knows nothing of it) */
+				v->retraining = 0;
+				DSP_DBG("v34: retrained, %d/%d\n", v->rate_tx,
+					v->rate_rx);
+				break;
+			}
 			DSP_DBG("v34: connect %d/%d\n", v->rate_tx, v->rate_rx);
 			return DPSTAT_CONNECT;
 		}
@@ -2057,9 +2192,37 @@ static int v34_handshake(struct v34_dp *v)
 	case V34_DATA:
 		if (v->prx.on)
 			v->lost = 0;
-		else if (++v->lost >= v->carrier_loss) {
-			DSP_DBG("v34: carrier lost\n");
-			return DPSTAT_ERROR;
+		else
+			v->lost++;
+		if (v->pcm) {
+			if (v->lost >= v->carrier_loss) {
+				DSP_DBG("v34: carrier lost\n");
+				return DPSTAT_ERROR;
+			}
+			break;
+		}
+		/* the data far worse than its rate needs (the mse is in
+		   units of the signal points' spacing, the same for all
+		   rates) */
+		if (v->prx.data_on && v->prx.mse > V34_RETRAIN_MSE)
+			v->bad++;
+		else
+			v->bad = 0;
+		if (v->rt_blocks >= 6)
+			v34_retrain(v, v->caller ? "tone A" : "tone B");
+		else if (v->bad >= ms2samples(1000, v->srate) &&
+			 c >= ms2samples(5000, v->srate))
+			/* (not in a loop on a line that stays marginal) */
+			v34_retrain(v, "errors");
+		else if (v->lost >= ms2samples(30, v->srate))
+			v34_retrain(v, "signal lost");
+		else if (v->retrain_at && c >= v->retrain_at && !v->retrains)
+			v34_retrain(v, "test");
+		break;
+	case V34_RT_SILENCE:
+		if (c >= ms2samples(70, v->srate)) {
+			v34_set_state(v, v->caller ? P2C_B : P2A_A);
+			cc_tone(v);
 		}
 		break;
 	}
@@ -2234,6 +2397,16 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	osc_set_freq(&v->ans_lo, -2100, srate);
 	goertzel_init(&v->aa_g, 1800, srate / 50, srate);
 	goertzel_init(&v->tone_g, caller ? 2400 : 1200, PROBE_PERIOD, srate);
+	goertzel_init(&v->rt_g, caller ? 2400 : 1200, PROBE_PERIOD, srate);
+	goertzel_init(&v->own_g, caller ? 1200 : 2400, PROBE_PERIOD, srate);
+	/* test: DSP_V34_RETRAIN=<ms in data mode>[a|c], c or a: only the
+	   caller or the answerer starts it */
+	if (getenv("DSP_V34_RETRAIN")) {
+		const char *e = getenv("DSP_V34_RETRAIN");
+		const char *side = e + strspn(e, "0123456789");
+		if (!*side || *side == (caller ? 'c' : 'a'))
+			v->retrain_at = ms2samples(atoi(e), srate);
+	}
 	goertzel_init(&v->probe_g[0], 1050, PROBE_PERIOD, srate);
 	goertzel_init(&v->probe_g[1], 3000, PROBE_PERIOD, srate);
 	probe_init(v);
