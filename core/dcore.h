@@ -141,6 +141,7 @@ public:
 	   acknowledged) */
 	bool tx_pending() const;
 	int xmit_count() const { return xmit_count_; }
+	bool link_tx_pending() const;
 	/* the pumps' state shared over a call (dsplibs.h), and what they
 	   learn of the line over calls (the program keeps it) */
 	void *dp_runtime() const { return dp_runtime_; }

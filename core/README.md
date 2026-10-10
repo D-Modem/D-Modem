@@ -33,11 +33,13 @@ characters and the pumps' bits. `log.cpp` has the debug output (stderr or
 a hook, and the binary `slmodem.log`).
 
 The behaviour is that of Smart Link's slmodemd core (`modem.c`,
-`modem_at.c`, `modem_param.c`), which `../slmodemd` still has: the same
-commands, responses, states and timing. Differences:
+`modem_at.c`, `modem_param.c`): the same commands, responses, states and
+timing. slmodemd, libdmodem (`dmodem.h`) and modem_test run on it; the old
+core is left only for the tests that need it (the original DSP library
+calls into it). Differences:
 
 - the version banner is the program's to print (`Modem::product`,
-  `version`);
+  `version`; slmodemd and modem_test print it at the start);
 - `AT&A1` in fax mode prints `Modulation: NONE` (the old core dereferenced
   a null data pump there).
 

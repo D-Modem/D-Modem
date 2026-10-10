@@ -28,7 +28,8 @@
 #include <string.h>
 
 #include "../dsp.h"
-#include <modem.h>     /* it plays the modem core */
+#include "modem_dp.h"  /* it plays the modem core */
+#include "modem_param.h"
 #include "dsplibs.h"
 
 using namespace dsp;
@@ -65,6 +66,11 @@ struct side {
 
 static struct dp_operations *ops[256];   /* by id: DP_MAX is below some ids */
 static struct side sides[2];
+/* the pumps' struct modem: only its address matters here */
+struct modem {
+	int side;
+};
+static struct modem fake_modems[2] = { { 0 }, { 1 } };
 static struct modem *fake[2];
 
 static struct side *side_of(struct modem *m)
@@ -311,7 +317,7 @@ int main(int argc, char **argv)
 	}
 	srand(1);
 	for (k = 0; k < 2; k++) {
-		fake[k] = static_cast<modem*>(calloc(1, sizeof(struct modem) + 64));
+		fake[k] = &fake_modems[k];
 		sides[k].name = k ? "answerer" : "caller";
 		sides[k].rt = static_cast<dp_runtime*>(dp_runtime_create(fake[k]));
 		sides[k].prbs = k ? 0x1234567 : 0x7654321;

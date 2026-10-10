@@ -427,6 +427,11 @@ bool Modem::tx_pending() const
 	return xmit_count_ > 0 || link_->tx_pending();
 }
 
+bool Modem::link_tx_pending() const
+{
+	return link_->tx_pending();
+}
+
 /*
  *    the data pumps
  */

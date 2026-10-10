@@ -229,15 +229,21 @@ foreach(_rate 9600 8000)
 			set(_n ${_n}8)
 		endif()
 		if(_kind STREQUAL "blob")
-			set(_d ${CMAKE_CURRENT_SOURCE_DIR}/dsplibs.o)
+			# the original library calls into slmodemd's old core
+			add_executable(${_n} modem_half_legacy.cpp
+				${C}/modem_cmdline.cpp ${_core}
+				${CMAKE_CURRENT_SOURCE_DIR}/dsplibs.o)
+			target_include_directories(${_n} PRIVATE ${C} ${S}
+				${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
 			set(_l -no-pie -Wl,-z,noexecstack)
 		else()
-			set(_d ${_dsp})
+			# the open data pumps on the modem core
+			add_executable(${_n} modem_half.cpp ${DMODEM_FRONT_SRCS}
+				${DMODEM_CORE_NEW_SRCS} ${DMODEM_LINK_SRCS} ${_dsp})
+			target_include_directories(${_n} PRIVATE ${C} ${S}
+				${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
 			set(_l "")
 		endif()
-		add_executable(${_n} modem_half.cpp ${C}/modem_cmdline.cpp ${_core} ${_d})
-		target_include_directories(${_n} PRIVATE ${C} ${S} ${DMODEM_LINK_DIR}
-			${DMODEM_CORE_NEW_DIR})
 		target_compile_definitions(${_n} PRIVATE CONFIG_DEBUG_MODEM
 			MODEM_RATE=${_rate})
 		target_compile_options(${_n} PRIVATE ${DMODEM_M32} -w -g -O)
