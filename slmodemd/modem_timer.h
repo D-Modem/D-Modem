@@ -44,6 +44,10 @@
 #ifndef __MODEM_TIMER_H__
 #define __MODEM_TIMER_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 #define MODEM_HZ 100
 
@@ -66,5 +70,9 @@ extern int timer_add(struct timer *t);
 extern int timer_del(struct timer *t);
 
 extern int modem_timer_init(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __MODEM_TIMER_H__ */

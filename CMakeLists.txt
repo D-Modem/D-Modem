@@ -42,7 +42,7 @@ add_subdirectory(slmodemd)
 
 if(DMODEM_D_MODEM)
 	include(pjproject)
-	add_executable(d-modem d-modem.c)
+	add_executable(d-modem d-modem.cpp)
 	target_link_libraries(d-modem PRIVATE pjproject m)
 	install(TARGETS d-modem RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()

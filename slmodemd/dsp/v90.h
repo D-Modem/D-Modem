@@ -9,6 +9,10 @@
 
 #include "v34.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define V90_JA_MAX      2800    /* bits of a DIL descriptor at most */
 
 struct v90_tx;
@@ -127,5 +131,9 @@ int  v90_ucode_octet(int alaw, int ucode, int positive);
    the frame length once the bits up to 49 are in, -1 before */
 int  v90_dil_length(const unsigned char *b, int n);
 int  v90_dil_parse(struct v90_dil *d, const unsigned char *b, int len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

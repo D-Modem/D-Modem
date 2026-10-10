@@ -16,7 +16,11 @@
 #include <modem.h>
 #include <modem_param.h>
 
-/* debug output, routed through modem_debug.c like the original blob */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* debug output, routed through modem_debug.cpp like the original blob */
 extern unsigned int dsplibs_debug_level;
 extern int dsplibs_debug_printf(const char *fmt, ...);
 
@@ -57,7 +61,7 @@ struct dp_runtime {
 };
 
 /*
- *    small DSP helpers (dsp_util.c)
+ *    small DSP helpers (dsp_util.cpp)
  */
 
 typedef struct {
@@ -157,7 +161,7 @@ static inline float tone_power(float a) { return a * a / 2; }
 static inline long ms2samples(int ms, int srate) { return (long)ms * srate / 1000; }
 
 /*
- *    FSK modulator / demodulator (dp_fsk.c), also used for caller ID
+ *    FSK modulator / demodulator (dp_fsk.cpp), also used for caller ID
  */
 struct fsk_mod {
 	struct osc osc;
@@ -191,7 +195,7 @@ void fsk_demod_init(struct fsk_demod *f, float mark, float space, float baud,
 int  fsk_demod_run(struct fsk_demod *f, float x);
 
 /*
- *    entry points used by the modem core (dsp_glue.c)
+ *    entry points used by the modem core (dsp_glue.cpp)
  */
 int   prop_dp_init(void);
 void  prop_dp_exit(void);
@@ -229,5 +233,9 @@ static inline s16 dsp_clip16(float x)
 		return -32768;
 	return (s16)x;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __DSP_H__ */

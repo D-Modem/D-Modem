@@ -44,6 +44,10 @@
 #ifndef __MODEM_DEBUG_H__
 #define __MODEM_DEBUG_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 /* constant definitions */
 enum MODEM_LOG_CATEGORIES {
@@ -102,6 +106,10 @@ extern int modem_debug_log_data(struct modem *m, unsigned id, const void *, int)
 extern int  modem_debug_init(const char *suffix);
 extern void modem_debug_exit();
 
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __MODEM_DEBUG_H__ */
 

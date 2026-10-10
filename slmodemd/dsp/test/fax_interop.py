@@ -9,7 +9,7 @@
 # The sender dials, the receiver answers.  CSI/DIS, DCS, TCF, CFR, one
 # page at <mod> (V.17 codes: the page uses the short train of the same
 # rate), EOP, MCF and DCN are exchanged and the page data is checked.
-# The modems run in real time (MODEM_REALTIME in modem_half.c).
+# The modems run in real time (MODEM_REALTIME in modem_half.cpp).
 #
 # LOGDIR=<dir> puts modemA.log / modemB.log there (default: next to this
 # script), RECORD=<dir> records the line audio both ways.

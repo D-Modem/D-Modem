@@ -2,7 +2,7 @@
 Connect to dialup modems over VoIP using SIP, no modem hardware required.
 
 ## Building
-You'll need Linux, CMake (3.16 or later), a C compiler, git and pjproject's dependencies (OpenSSL, uuid).  The default build links Smart Link's binary-only i386 DSP library, so it also needs a working 32-bit environment (`gcc -m32`; Debian-based systems can install `gcc-multilib`).
+You'll need Linux, CMake (3.16 or later), a C++17 compiler (and a C compiler for the Asterisk module), git and pjproject's dependencies (OpenSSL, uuid).  The default build links Smart Link's binary-only i386 DSP library, so it also needs a working 32-bit environment (`g++ -m32`; Debian-based systems can install `g++-multilib`).
 
     cmake -B build
     cmake --build build
@@ -14,7 +14,7 @@ pjproject (PJSIP) is not part of this repository.  CMake uses an installed one (
 Tests: `ctest --test-dir build -L quick` runs the fast ones (a few seconds); `-L spandsp` (with libspandsp-dev) and `-L interop` (with the binary library, in real time) are longer.  See [slmodemd/dsp/README.md](slmodemd/dsp/README.md).
 
 ### Open source DSP (optional)
-By default slmodemd links Smart Link's binary-only i386 DSP library (`slmodemd/dsplibs.o`).  `slmodemd/dsp/` contains a C reimplementation of its interface that builds on any architecture and needs no 32-bit environment:
+By default slmodemd links Smart Link's binary-only i386 DSP library (`slmodemd/dsplibs.o`).  `slmodemd/dsp/` contains a reimplementation of its interface (C++, behind the library's C interface, `slmodemd/dsplibs.h`) that builds on any architecture and needs no 32-bit environment:
 
     cmake -B build -DDMODEM_DSPLIBS=open
 

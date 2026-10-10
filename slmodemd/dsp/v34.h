@@ -9,6 +9,10 @@
 
 #include "qam.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* symbol rates, in the order of the INFO and MP fields */
 enum {
 	V34_BAUD_2400,
@@ -57,7 +61,7 @@ struct v34_mp {
 };
 
 /*
- *    data mode (v34_data.c)
+ *    data mode (v34_data.cpp)
  */
 #define V34_MAX_RINGS   18
 #define V34_G2_LEN      (2 * V34_MAX_RINGS - 1)
@@ -134,7 +138,7 @@ void v34_drx_init(struct v34_drx *d, const struct v34_dparm *p);
 cplx v34_drx_symbol(struct v34_drx *d, cplx z, unsigned *scr, int tap);
 
 /*
- *    primary channel transmitter (v34_modem.c)
+ *    primary channel transmitter (v34_modem.cpp)
  */
 enum v34_txseg {
 	V34_TX_SILENCE,
@@ -264,5 +268,9 @@ void v34_rx_data(struct v34_rx *r, const struct v34_dparm *p,
 /* CRC-16 (x^16 + x^12 + x^5 + 1, preset to ones) over bits in time order,
    as used by the INFO and MP sequences */
 unsigned v34_crc_bits(const unsigned char *bits, int n, unsigned crc);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __V34_H__ */

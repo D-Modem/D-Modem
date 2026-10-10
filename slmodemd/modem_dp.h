@@ -43,6 +43,10 @@
 
 #include <modem_defs.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 /*
  *    type definitions
@@ -86,6 +90,10 @@ extern int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n);
 extern int  modem_dp_register(enum DP_ID id, struct dp_operations *op);
 extern void modem_dp_deregister(enum DP_ID id, struct dp_operations *op);
 
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __MODEM_DP_H__ */
 

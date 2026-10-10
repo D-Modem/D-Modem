@@ -47,6 +47,10 @@
 #ifndef __MODEM_HOMOLOG_H__
 #define __MODEM_HOMOLOG_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 /* homologation parameters struct */
 struct homolog_params {
@@ -107,5 +111,9 @@ struct homolog_set {
 
 /* 'nulled'-terminated homologation array */
 extern const struct homolog_set homolog_set[];
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __MODEM_HOMOLOG_H__ */

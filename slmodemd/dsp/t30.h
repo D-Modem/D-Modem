@@ -1,7 +1,7 @@
 /*
  *
  *    t30.h - a fax machine: the ITU-T T.30 procedure for group 3 fax on
- *            the fax modulations of fax_modems.c, with the pages in
+ *            the fax modulations of fax_modems.cpp, with the pages in
  *            T.4 coding (t4.h)
  *
  *    The calling machine sends the document, the answering one receives
@@ -14,6 +14,10 @@
 #define __T30_H__
 
 #include "t4.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* how a fax call ended */
 enum t30_result {
@@ -63,5 +67,9 @@ void t30_process(struct t30 *t, const short *in, short *out, int n);
 void t30_get_status(struct t30 *t, struct t30_status *s);
 /* the far end hung up */
 void t30_hangup(struct t30 *t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __T30_H__ */

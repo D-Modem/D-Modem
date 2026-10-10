@@ -41,7 +41,7 @@ constellations from its `VTBv32_*` tables.
 
 ### V.32 / V.32bis
 
-`dp_v32.c` runs the start-up sequence the way the original library does it
+`dp_v32.cpp` runs the start-up sequence the way the original library does it
 (worked out from recordings of it): answer tone, the AA/AC/CA/CC round trip
 delay measurement, S, S-bar and TRN (256 two point symbols, then four point
 symbols, from the original's fixed scrambler seeds), the R1/R2/R3 rate
@@ -52,8 +52,8 @@ TRN goes out. Each side offers the rates its training quality supports
 
 ### V.8 and V.34
 
-`dp_v34.c` runs the start-up, `v34_modem.c` the primary channel training
-signals and receiver, `v34_data.c` the data mode, `v34_tables.c` the
+`dp_v34.cpp` runs the start-up, `v34_modem.cpp` the primary channel training
+signals and receiver, `v34_data.cpp` the data mode, `v34_tables.cpp` the
 constants (the superconstellation, Table 10 rates, the PP sequence).
 
 - **V.8:** ANSam (2100 Hz, 15 Hz AM, reversals every 450 ms), CM/JM/CJ on
@@ -143,7 +143,7 @@ channel and rate renegotiation.
 
 ### V.90 digital modem
 
-`v90.c` is the digital modem's PCM transmitter, `dp_v34.c` runs its
+`v90.cpp` is the digital modem's PCM transmitter, `dp_v34.cpp` runs its
 start-up on top of the V.34 pump. The modem has to run at 8000 Hz on a
 G.711 network (`MODEM_RATE=8000`): the pump sends exact codewords, as
 their linear values, that the network's encoder passes on unchanged. The
@@ -187,8 +187,8 @@ it retrains.
 
 ### Fax (class 1)
 
-`fax_class1.c` implements the T.31 class 1 commands on top of the
-modulations in `fax_modems.c`:
+`fax_class1.cpp` implements the T.31 class 1 commands on top of the
+modulations in `fax_modems.cpp`:
 
 | Command | |
 |---|---|

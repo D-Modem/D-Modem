@@ -10,6 +10,10 @@
 
 #include "qam.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum fax_mod {
 	FM_NONE,
 	FM_V21,
@@ -127,5 +131,9 @@ void fax_rx_sample(struct fax_rx *r, float x);
 /* transmit levels (rms) of the fax signals, as the original library's */
 #define FAX_CED_RMS 4525.0f
 float fax_tx_rms(enum fax_mod mod);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __FAX_H__ */

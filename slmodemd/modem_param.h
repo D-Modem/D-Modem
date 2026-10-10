@@ -44,6 +44,10 @@
 #ifndef __MODEM_PARAM_H__
 #define __MODEM_PARAM_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* param names */
 enum MODEM_PARAMETER_NAMES {
 	MDMPRM_NONE,
@@ -197,6 +201,10 @@ extern long modem_get_param(struct modem *m, unsigned param);
 extern long modem_set_param(struct modem *m, unsigned name, int val);
 
 extern long modem_get_sreg_param(struct modem *m, unsigned sreg_param);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __MODEM_PARAM_H__ */
 

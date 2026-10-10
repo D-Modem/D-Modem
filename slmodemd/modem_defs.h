@@ -47,6 +47,10 @@
 
 #include <sys/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef __uint8_t  u8;
 typedef __uint16_t u16;
 typedef __uint32_t u32;
@@ -439,6 +443,10 @@ struct modem;
 extern int modem_get_sreg(struct modem *m, unsigned int num);
 extern int modem_set_sreg(struct modem *m, unsigned int num, int val);
 
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __MODEM_DEFS_H__ */
 

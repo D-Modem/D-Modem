@@ -10,6 +10,10 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define T4_WIDTH        1728    /* A4 at 204 pels per inch */
 
 /* a page: rows of width bits, 1 = black, the first pel in the top bit
@@ -101,5 +105,9 @@ int  tiff_in_open(struct tiff_in *t, const char *path);
    are no more, -1 on an error */
 int  tiff_in_page(struct tiff_in *t, struct t4_page *p);
 void tiff_in_close(struct tiff_in *t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __T4_H__ */

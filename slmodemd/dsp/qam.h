@@ -11,6 +11,10 @@
 
 #include "dsp.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define QAM_MAX_SPAN 16         /* pulse half length, symbols */
 #define QAM_PULSE_RES 64        /* pulse table points per symbol */
 #define QAM_MF_RES 64           /* receive filter table points per sample */
@@ -152,5 +156,9 @@ extern const cplx v32_points_12000[64];
 extern const cplx v32_points_14400[128];
 extern const cplx v32_points_4800[4];
 extern const cplx v32_abcd[4];
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __QAM_H__ */
