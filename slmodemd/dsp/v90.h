@@ -13,7 +13,7 @@ namespace dsp {
 
 #define V90_JA_MAX      2800    /* bits of a DIL descriptor at most */
 
-struct v90_tx;
+struct V90Tx;
 
 enum v90_seg {
 	V90_SILENCE,
@@ -30,15 +30,10 @@ enum v90_seg {
 
 
 
-void v90_tx_init(struct v90_tx *t, int alaw, int uinfo);
-void v90_tx_segment(struct v90_tx *t, enum v90_seg seg);
-void v90_tx_jd_end(struct v90_tx *t);
-void v90_tx_dil_end(struct v90_tx *t);
-void v90_tx_ri_end(struct v90_tx *t);
-int  v90_tx_sample(struct v90_tx *t);   /* the next PCM sample (linear) */
+int  v90_tx_sample(V90Tx *t);   /* the next PCM sample (linear) */
 
 /* CP (Table 14/V.90): the analogue modem's constellation parameters */
-struct v90_cp {
+struct V90Cp {
 	int cp;                 /* 0: CPt, 1: CP */
 	int drn, silence, sr, ack, alaw;
 	int rate_mask;          /* analogue -> digital, bit 0: 4800 */
@@ -47,6 +42,8 @@ struct v90_cp {
 	int con[6];             /* constellation of each frame interval */
 	int ncon;
 	unsigned char mask[6][128];     /* by Ucode */
+
+	int parse(const unsigned char *b, int len);
 };
 
 /* the data mode encoder (5.4/V.90), for TRN2d, MP, Ed, B1d and data.  The
@@ -58,7 +55,7 @@ struct v90_shf {
 	int fs, mag[6], p;              /* magnitudes, p' bits */
 	int last;                       /* no look-ahead past it */
 };
-struct v90_enc {
+struct V90Enc {
 	int K, S, sr, ld;
 	int M[6];
 	unsigned char ucode[6][128];    /* label -> Ucode, largest first */
@@ -73,9 +70,16 @@ struct v90_enc {
 	int qn;
 	int sign_acc, mag_acc[6], nsh;  /* the data frame being decided */
 	int outq[4][6], outn;           /* data frames ready to go */
+
+	int init(const V90Cp *cp, int D, const int *lin_);
+	double shape_metric(const int *mag, int n, int signs, double *f) const;
+	double best_path(int k, int depth, int Q_, int tprev, const double *f) const;
+	void decide_frame(int depth);
+	void push(const unsigned char *bits, int last_);
+	int pop(int out[6]);
 };
 
-struct v90_tx {
+struct V90Tx {
 	int alaw;
 	int lin[128];           /* Ucode -> linear value, positive */
 	enum v90_seg seg;
@@ -89,33 +93,38 @@ struct v90_tx {
 	int nbits, pos;
 	int jd_end;             /* complete the Jd frame, then Jd' */
 	int jd_frames;          /* Jd frames sent */
-	struct v90_dil dil;
+	V90Dil dil;
 	int dil_seg, dil_k, dil_end, dil_rounds;
 	int next;               /* after Jd' / DIL: 1 when the next
 				   segment may start */
 	long trn1d_len;         /* then Jd */
 	int ri_end;
 	/* phase 4 and data: frames of D bits through the encoder */
-	struct v90_enc enc;
-	void (*get_frame)(void *ctx, struct v90_tx *t, unsigned char *bits,
+	V90Enc enc;
+	void (*get_frame)(void *ctx, V90Tx *t, unsigned char *bits,
 			  int *last);
 	void *ctx;
 	int out[6], opos;
+
+	void make_jd();
+	void init(int alaw_, int uinfo_);
+	void segment(enum v90_seg seg_);
+	void end_jd();
+	void end_dil();
+	void end_ri();
+	int diff_bit(int bit);
+	int dil_sample();
+	int sample();
 };
 
 /* D = S + K bits per data frame of 6 symbols; returns -1 when the
    constellations cannot carry K bits.  Scrambler, sign coding and shaping
    filter start from zero. */
-int  v90_enc_init(struct v90_enc *e, const struct v90_cp *cp, int D,
-		  const int *lin);
 /* the next data frame of D bits (scrambled here); last: no look-ahead
    past it (the encoder starts again after it) */
-void v90_enc_push(struct v90_enc *e, const unsigned char *bits, int last);
 /* a data frame of 6 linear values, when one is ready */
-int  v90_enc_pop(struct v90_enc *e, int out[6]);
 
 int  v90_cp_length(const unsigned char *b, int n);
-int  v90_cp_parse(struct v90_cp *cp, const unsigned char *b, int len);
 
 /* MP of the digital modem (Table 16/V.90); returns its length in bits */
 int  v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
@@ -128,7 +137,6 @@ int  v90_ucode_octet(int alaw, int ucode, int positive);
 /* the DIL descriptor in the bits of Ja (from its frame sync on); returns
    the frame length once the bits up to 49 are in, -1 before */
 int  v90_dil_length(const unsigned char *b, int n);
-int  v90_dil_parse(struct v90_dil *d, const unsigned char *b, int len);
 
 } // namespace dsp
 

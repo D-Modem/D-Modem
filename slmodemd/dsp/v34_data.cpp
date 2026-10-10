@@ -97,72 +97,72 @@ static void rotate(int *x, int *y, int k)
  *    parameters and shell mapping (9.2, 9.4/V.34)
  */
 
-static int shell_tables(struct v34_dparm *p)
+int V34Params::shell_tables()
 {
-	int M = p->M, i, j;
-	if (M < 1 || 2 * M - 1 > V34_G2_LEN || 8 * M - 6 > V34_Z8_LEN)
+	int M_ = M, i, j;
+	if (M_ < 1 || 2 * M_ - 1 > V34_G2_LEN || 8 * M_ - 6 > V34_Z8_LEN)
 		return -1;
-	memset(p->g2, 0, sizeof(p->g2));
-	memset(p->g4, 0, sizeof(p->g4));
-	for (i = 0; i < M; i++)
-		for (j = 0; j < M; j++)
-			p->g2[i + j]++;
-	for (i = 0; i < 2 * M - 1; i++)
-		for (j = 0; j < 2 * M - 1; j++)
-			p->g4[i + j] += p->g2[i] * p->g2[j];
-	p->z8[0] = 0;
-	for (i = 0; i < 8 * M - 7; i++) {
+	memset(g2, 0, sizeof(g2));
+	memset(g4, 0, sizeof(g4));
+	for (i = 0; i < M_; i++)
+		for (j = 0; j < M_; j++)
+			g2[i + j]++;
+	for (i = 0; i < 2 * M_ - 1; i++)
+		for (j = 0; j < 2 * M_ - 1; j++)
+			g4[i + j] += g2[i] * g2[j];
+	z8[0] = 0;
+	for (i = 0; i < 8 * M_ - 7; i++) {
 		unsigned long long g8 = 0;
 		for (j = 0; j <= i; j++)
-			if (j < 4 * M - 3 && i - j < 4 * M - 3)
-				g8 += p->g4[j] * p->g4[i - j];
-		p->z8[i + 1] = p->z8[i] + g8;
+			if (j < 4 * M_ - 3 && i - j < 4 * M_ - 3)
+				g8 += g4[j] * g4[i - j];
+		z8[i + 1] = z8[i] + g8;
 	}
 	return 0;
 }
 
-static unsigned long long g2p(const struct v34_dparm *p, int i)
+unsigned long long V34Params::g2p(int i) const
 {
-	return i >= 0 && i < 2 * p->M - 1 ? p->g2[i] : 0;
+	return i >= 0 && i < 2 * M - 1 ? g2[i] : 0;
 }
 
-static unsigned long long g4p(const struct v34_dparm *p, int i)
+unsigned long long V34Params::g4p(int i) const
 {
-	return i >= 0 && i < 4 * p->M - 3 ? p->g4[i] : 0;
+	return i >= 0 && i < 4 * M - 3 ? g4[i] : 0;
 }
 
 /* the mean power of the points of a frame with k shell mapping bits */
-static double frame_power(const struct v34_dparm *p, int k)
+double V34Params::frame_power(int k) const
 {
-	int M = p->M, a, m, i;
+	int M_ = M, a, m, i;
 	double ringp[V34_MAX_RINGS], left = ldexp(1, k), e = 0;
 	double g7[8 * V34_MAX_RINGS];
 
-	for (m = 0; m < M; m++) {
+	for (m = 0; m < M_; m++) {
 		double s = 0;
-		for (i = 0; i < 1 << p->q; i++) {
-			const signed char *v = v34_quarter[(m << p->q) + i];
+		for (i = 0; i < 1 << q; i++) {
+			const signed char *v = v34_quarter[(m << q) + i];
 			s += v[0] * v[0] + v[1] * v[1];
 		}
-		ringp[m] = s / (1 << p->q);
+		ringp[m] = s / (1 << q);
 	}
 	if (k == 0)
 		return ringp[0];
 	/* 7-tuples of rings by their sum */
-	for (a = 0; a <= 7 * (M - 1); a++) {
+	for (a = 0; a <= 7 * (M_ - 1); a++) {
 		g7[a] = 0;
 		for (i = 0; i <= a; i++) {
 			double g3 = 0;
-			for (m = 0; m < M && m <= a - i; m++)
-				g3 += (double)g2p(p, a - i - m);
-			g7[a] += (double)g4p(p, i) * g3;
+			for (m = 0; m < M_ && m <= a - i; m++)
+				g3 += (double)g2p(a - i - m);
+			g7[a] += (double)g4p(i) * g3;
 		}
 	}
-	for (a = 0; a <= 8 * (M - 1) && left > 0; a++) {
-		double g8 = (double)(p->z8[a + 1] - p->z8[a]), take, ea = 0;
+	for (a = 0; a <= 8 * (M_ - 1) && left > 0; a++) {
+		double g8 = (double)(z8[a + 1] - z8[a]), take, ea = 0;
 		take = g8 < left ? g8 : left;
-		for (m = 0; m < M && m <= a; m++)
-			if (a - m <= 7 * (M - 1))
+		for (m = 0; m < M_ && m <= a; m++)
+			if (a - m <= 7 * (M_ - 1))
 				ea += g7[a - m] * ringp[m];
 		e += take * ea / g8;
 		left -= take;
@@ -170,58 +170,58 @@ static double frame_power(const struct v34_dparm *p, int k)
 	return e / ldexp(1, k);
 }
 
-int v34_data_params(struct v34_dparm *p, int baud, int n, int expanded)
+int V34Params::init(int baud, int n, int expanded)
 {
 	const struct v34_rate *rt;
 	double pw;
 
-	memset(p, 0, sizeof(*p));
+	memset(this, 0, sizeof(*this));
 	if (baud < 0 || baud >= V34_NBAUDS || n < 1 || n > 14)
 		return -1;
 	rt = &v34_rates[baud][n - 1];
 	if (!rt->b)
 		return -1;
-	p->rate = 2400 * n;
-	p->states = 16;
-	p->b = rt->b;
-	p->M = expanded ? rt->m_exp : rt->m_min;
-	p->J = v34_bauds[baud].J;
-	p->P = v34_bauds[baud].P;
-	if (p->b > 12) {
-		p->K = p->b - 12;
-		while (p->K >= 32) {
-			p->K -= 8;
-			p->q++;
+	rate = 2400 * n;
+	states = 16;
+	b = rt->b;
+	M = expanded ? rt->m_exp : rt->m_min;
+	J = v34_bauds[baud].J;
+	P = v34_bauds[baud].P;
+	if (b > 12) {
+		K = b - 12;
+		while (K >= 32) {
+			K -= 8;
+			q++;
 		}
 	}
 	/* high mapping frames per data frame (8.2/V.34) */
-	p->r = p->rate * 28 / (p->J * 100) - (p->b - 1) * p->P;
-	if (shell_tables(p) || (p->M << p->q) > 416)
+	r = rate * 28 / (J * 100) - (b - 1) * P;
+	if (shell_tables() || (M << q) > 416)
 		return -1;
-	pw = frame_power(p, p->K);
-	if (p->b > 12)
-		pw = (p->r * pw + (p->P - p->r) * frame_power(p, p->K - 1)) / p->P;
+	pw = frame_power(K);
+	if (b > 12)
+		pw = (r * pw + (P - r) * frame_power(K - 1)) / P;
 	/* the same power as the 4 point training signals */
-	p->g = (float)sqrt(2 / pw);
-	p->w = p->b < 56 ? 1 : 2;
+	g = (float)sqrt(2 / pw);
+	w = b < 56 ? 1 : 2;
 	return 0;
 }
 
-void v34_data_precode(struct v34_dparm *p, const int h[6])
+void V34Params::set_precoder(const int h_[6])
 {
-	double pw = 2 / (p->g * p->g);
+	double pw = 2 / (g * g);
 	int i;
 
-	p->precode = 0;
+	precode = 0;
 	for (i = 0; i < 6; i++) {
-		p->h[i] = h[i];
-		if (h[i])
-			p->precode = 1;
+		h[i] = h_[i];
+		if (h_[i])
+			precode = 1;
 	}
 	/* x(n) = u(n) + c(n) - p(n): u(n) plus a component uniform over
 	   a 2^w square; the same power as without precoding */
-	if (p->precode)
-		p->g = (float)sqrt(2 / (pw + (1 << 2 * p->w) / 6.0));
+	if (precode)
+		g = (float)sqrt(2 / (pw + (1 << 2 * w) / 6.0));
 }
 
 /* to the nearest multiple of 2^s; half way: to the smaller magnitude */
@@ -231,8 +231,7 @@ static int round_shift(long long v, int s)
 }
 
 /* x(n) = y(n) - p(n) goes in: p(n + 1) and c(n + 1) */
-static void precoder_push(const struct v34_dparm *p, struct v34_precoder *pc,
-			  int yr, int yi)
+void V34Params::precoder_push(V34Precoder *pc, int yr, int yi) const
 {
 	long long qr = 0, qi = 0;
 	int k;
@@ -245,100 +244,100 @@ static void precoder_push(const struct v34_dparm *p, struct v34_precoder *pc,
 	pc->x[0][1] = yi * 128 - pc->p[1];
 	for (k = 0; k < 3; k++) {
 		long long xr = pc->x[k][0], xi = pc->x[k][1];
-		int hr = p->h[2 * k], hi = p->h[2 * k + 1];
+		int hr = h[2 * k], hi = h[2 * k + 1];
 		qr += xr * hr - xi * hi;
 		qi += xr * hi + xi * hr;
 	}
 	pc->p[0] = round_shift(qr, 14);
 	pc->p[1] = round_shift(qi, 14);
-	pc->c[0] = round_shift(pc->p[0], 7 + p->w) << p->w;
-	pc->c[1] = round_shift(pc->p[1], 7 + p->w) << p->w;
+	pc->c[0] = round_shift(pc->p[0], 7 + w) << w;
+	pc->c[1] = round_shift(pc->p[1], 7 + w) << w;
 }
 
 /* the bit of the modulo encoder (9.6.3.3) for c(n) */
-static int c_parity(const struct v34_precoder *pc)
+int V34Precoder::c_parity() const
 {
-	return ((pc->c[0] + pc->c[1]) >> 1) & 1;
+	return ((c[0] + c[1]) >> 1) & 1;
 }
 
-static void shell_map(const struct v34_dparm *p, unsigned long r0, int m[8])
+void V34Params::shell_map(unsigned long r0, int m[8]) const
 {
 	unsigned long long r1, r2, r3, r4, r5, t;
-	int a, b, c, d, e, f, g, h, M = p->M;
+	int a, b_, c, d, e, f, g_, h_, M_ = M;
 
-	for (a = 1; a < 8 * M - 6 && p->z8[a] <= r0; a++)
+	for (a = 1; a < 8 * M_ - 6 && z8[a] <= r0; a++)
 		;
 	a--;
-	r1 = r0 - p->z8[a];
-	for (b = 0; ; b++) {
-		t = g4p(p, b) * g4p(p, a - b);
+	r1 = r0 - z8[a];
+	for (b_ = 0; ; b_++) {
+		t = g4p(b_) * g4p(a - b_);
 		if (r1 < t)
 			break;
 		r1 -= t;
 	}
-	r2 = r1 % g4p(p, b);
-	r3 = r1 / g4p(p, b);
+	r2 = r1 % g4p(b_);
+	r3 = r1 / g4p(b_);
 	for (c = 0; ; c++) {
-		t = g2p(p, c) * g2p(p, b - c);
+		t = g2p(c) * g2p(b_ - c);
 		if (r2 < t)
 			break;
 		r2 -= t;
 	}
 	r4 = r2;
 	for (d = 0; ; d++) {
-		t = g2p(p, d) * g2p(p, a - b - d);
+		t = g2p(d) * g2p(a - b_ - d);
 		if (r3 < t)
 			break;
 		r3 -= t;
 	}
 	r5 = r3;
-	e = (int)(r4 % g2p(p, c));
-	f = (int)(r4 / g2p(p, c));
-	g = (int)(r5 % g2p(p, d));
-	h = (int)(r5 / g2p(p, d));
+	e = (int)(r4 % g2p(c));
+	f = (int)(r4 / g2p(c));
+	g_ = (int)(r5 % g2p(d));
+	h_ = (int)(r5 / g2p(d));
 #define PAIR(i, sum, v) do { \
-		if ((sum) < M) { m[i] = (v); m[(i) + 1] = (sum) - (v); } \
-		else { m[(i) + 1] = M - 1 - (v); m[i] = (sum) - m[(i) + 1]; } \
+		if ((sum) < M_) { m[i] = (v); m[(i) + 1] = (sum) - (v); } \
+		else { m[(i) + 1] = M_ - 1 - (v); m[i] = (sum) - m[(i) + 1]; } \
 	} while (0)
 	PAIR(0, c, e);
-	PAIR(2, b - c, f);
-	PAIR(4, d, g);
-	PAIR(6, a - b - d, h);
+	PAIR(2, b_ - c, f);
+	PAIR(4, d, g_);
+	PAIR(6, a - b_ - d, h_);
 #undef PAIR
 }
 
-static int pair_index(const struct v34_dparm *p, int x, int y)
+int V34Params::pair_index(int x, int y) const
 {
-	return x + y < p->M ? x : p->M - 1 - y;
+	return x + y < M ? x : M - 1 - y;
 }
 
-static unsigned long shell_demap(const struct v34_dparm *p, const int m[8])
+unsigned long V34Params::shell_demap(const int m[8]) const
 {
-	int a = 0, b, c, d, i;
-	unsigned long long r;
+	int a = 0, b_, c, d, i;
+	unsigned long long r_;
 
 	for (i = 0; i < 8; i++)
 		a += m[i];
-	b = m[0] + m[1] + m[2] + m[3];
+	b_ = m[0] + m[1] + m[2] + m[3];
 	c = m[0] + m[1];
 	d = m[4] + m[5];
-	r = p->z8[a];
-	for (i = 0; i < b; i++)
-		r += g4p(p, i) * g4p(p, a - i);
+	r_ = z8[a];
+	for (i = 0; i < b_; i++)
+		r_ += g4p(i) * g4p(a - i);
 	/* r1 = r2 + r3 g4(b) */
 	{
 		unsigned long long r2 = 0, r3 = 0;
 		for (i = 0; i < c; i++)
-			r2 += g2p(p, i) * g2p(p, b - i);
-		r2 += pair_index(p, m[0], m[1]) +
-			(unsigned long long)pair_index(p, m[2], m[3]) * g2p(p, c);
+			r2 += g2p(i) * g2p(b_ - i);
+		r2 += pair_index(m[0], m[1]) +
+			(unsigned long long)pair_index(m[2], m[3]) * g2p(c);
 		for (i = 0; i < d; i++)
-			r3 += g2p(p, i) * g2p(p, a - b - i);
-		r3 += pair_index(p, m[4], m[5]) +
-			(unsigned long long)pair_index(p, m[6], m[7]) * g2p(p, d);
-		r += r2 + r3 * g4p(p, b);
+			r3 += g2p(i) * g2p(a - b_ - i);
+		r3 += pair_index(m[4], m[5]) +
+			(unsigned long long)pair_index(m[6], m[7]) * g2p(d);
+		r_ += r2 + r3 * g4p(b_);
 	}
-	return (unsigned long)r;
+	return (unsigned long)r_;
 }
 
 
@@ -346,36 +345,36 @@ static unsigned long shell_demap(const struct v34_dparm *p, const int m[8])
  *    transmitter
  */
 
-void v34_dtx_init(struct v34_dtx *d, const struct v34_dparm *p)
+void V34DataTx::init(const V34Params *p_)
 {
-	memset(d, 0, sizeof(*d));
-	d->p = *p;
-	d->pat = 2 * p->J - 2;
-	d->v0 = v34_sync_pattern[d->pat];
-	d->pos = 8;
+	memset(this, 0, sizeof(*this));
+	p = *p_;
+	pat = 2 * p_->J - 2;
+	v0 = v34_sync_pattern[pat];
+	pos = 8;
 }
 
-static void dtx_frame(struct v34_dtx *d, unsigned *scr, int tap)
+void V34DataTx::encode_frame(unsigned *scr, int tap)
 {
-	const struct v34_dparm *p = &d->p;
+	const V34Params *p_ = &p;
 	unsigned char bits[V34_MAX_B];
-	int bb = p->b, kk = p->K, n = 0, i, j, m[8], ib[4], qb[8];
+	int bb = p_->b, kk = p_->K, n = 0, i, j, m[8], ib[4], qb[8];
 	unsigned long r0 = 0;
 
-	d->sbc += p->r;
-	if (d->sbc >= p->P)
-		d->sbc -= p->P;
+	sbc += p_->r;
+	if (sbc >= p_->P)
+		sbc -= p_->P;
 	else if (bb > 12) {
 		bb--;
 		kk--;
 	}
-	d->get_bits(d->ctx, bits, bb);
+	get_bits(ctx, bits, bb);
 	for (i = 0; i < bb; i++) {
 		int b = (bits[i] ^ (*scr >> (tap - 1)) ^ (*scr >> 22)) & 1;
 		*scr = (*scr << 1) | b;
 		bits[i] = b;
 	}
-	if (p->K) {
+	if (p_->K) {
 		for (i = 0; i < kk; i++)
 			r0 |= (unsigned long)bits[n++] << i;
 		for (i = 0; i < 4; i++) {
@@ -383,12 +382,12 @@ static void dtx_frame(struct v34_dtx *d, unsigned *scr, int tap)
 			n += 3;
 			for (j = 0; j < 2; j++) {
 				int k, v = 0;
-				for (k = 0; k < p->q; k++)
+				for (k = 0; k < p_->q; k++)
 					v |= bits[n++] << k;
 				qb[2 * i + j] = v;
 			}
 		}
-		shell_map(p, r0, m);
+		p_->shell_map(r0, m);
 	} else {
 		/* 9.3.2/V.34: 3 I bits in the first b - 8 4D symbols, 2 in
 		   the others */
@@ -404,55 +403,55 @@ static void dtx_frame(struct v34_dtx *d, unsigned *scr, int tap)
 
 	for (i = 0; i < 4; i++) {
 		int x[2], y[2], k, rot, u0 = 0, c0 = 0, lab[2];
-		d->z = (d->z + (ib[i] >> 1)) & 3;
+		z = (z + (ib[i] >> 1)) & 3;
 		/* in the order of Table 11/V.34 */
 		for (k = 0; k < 2; k++) {
-			const signed char *v = v34_quarter[(m[2 * i + k] << p->q) +
+			const signed char *v = v34_quarter[(m[2 * i + k] << p_->q) +
 							   qb[2 * i + k]];
 			if (k) {
-				c0 ^= c_parity(&d->pc);
-				u0 = (d->state ^ d->v0 ^ c0) & 1;
+				c0 ^= pc.c_parity();
+				u0 = (state ^ v0 ^ c0) & 1;
 			} else
-				c0 = c_parity(&d->pc);
-			rot = k ? d->z + 2 * (ib[i] & 1) + u0 : d->z;
+				c0 = pc.c_parity();
+			rot = k ? z + 2 * (ib[i] & 1) + u0 : z;
 			x[k] = v[0];
 			y[k] = v[1];
 			rotate(&x[k], &y[k], rot);
-			if (p->precode) {
-				int px = d->pc.p[0], py = d->pc.p[1];
+			if (p_->precode) {
+				int px = pc.p[0], py = pc.p[1];
 				/* y(n) = u(n) + c(n) */
-				x[k] += d->pc.c[0];
-				y[k] += d->pc.c[1];
-				precoder_push(p, &d->pc, x[k], y[k]);
-				d->sym[2 * i + k] =
-					cplx_make(p->g * (x[k] - px / 128.0f),
-						  p->g * (y[k] - py / 128.0f));
+				x[k] += pc.c[0];
+				y[k] += pc.c[1];
+				p_->precoder_push(&pc, x[k], y[k]);
+				sym[2 * i + k] =
+					cplx_make(p_->g * (x[k] - px / 128.0f),
+						  p_->g * (y[k] - py / 128.0f));
 			} else
-				d->sym[2 * i + k] = cplx_make(p->g * x[k],
-							      p->g * y[k]);
+				sym[2 * i + k] = cplx_make(p_->g * x[k],
+							      p_->g * y[k]);
 			lab[k] = subset_label(x[k], y[k]);
 		}
-		d->state = trellis_next(p->states, d->state,
+		state = trellis_next(p_->states, state,
 					conv_in(lab[0], lab[1]));
 		/* superframe synchronisation: the first 4D symbol of each
 		   half data frame */
-		if (++d->half >= 2 * p->P) {
-			d->half = 0;
-			if (++d->pat >= 2 * p->J)
-				d->pat = 0;
-			d->v0 = v34_sync_pattern[d->pat];
+		if (++half >= 2 * p_->P) {
+			half = 0;
+			if (++pat >= 2 * p_->J)
+				pat = 0;
+			v0 = v34_sync_pattern[pat];
 		} else
-			d->v0 = 0;
+			v0 = 0;
 	}
 }
 
-cplx v34_dtx_symbol(struct v34_dtx *d, unsigned *scr, int tap)
+cplx V34DataTx::symbol(unsigned *scr, int tap)
 {
-	if (d->pos >= 8) {
-		dtx_frame(d, scr, tap);
-		d->pos = 0;
+	if (pos >= 8) {
+		encode_frame(scr, tap);
+		pos = 0;
 	}
-	return d->sym[d->pos++];
+	return sym[pos++];
 }
 
 
@@ -475,25 +474,24 @@ static void make_lookup(void)
 		}
 }
 
-static void v34_viterbi_init(struct v34_drx *d);
 
-void v34_drx_init(struct v34_drx *d, const struct v34_dparm *p)
+void V34DataRx::init(const V34Params *p_)
 {
-	memset(d, 0, sizeof(*d));
-	d->p = *p;
+	memset(this, 0, sizeof(*this));
+	p = *p_;
 	{
 		static pthread_once_t once = PTHREAD_ONCE_INIT;
 		pthread_once(&once, make_lookup);
 	}
-	v34_viterbi_init(d);
+	viterbi_init();
 }
 
 /* the nearest point of the constellation in use */
-static int decide(const struct v34_dparm *p, cplx z, int *px, int *py)
+int V34Params::decide(cplx z, int *px, int *py) const
 {
-	float u = z.re / p->g, v = z.im / p->g, best = 1e9f;
+	float u = z.re / g, v = z.im / g, best = 1e9f;
 	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
-	int dx, dy, ret = -1, lim = p->M << p->q;
+	int dx, dy, ret = -1, lim = M << q;
 
 	for (dx = -2; dx <= 2; dx += 2)
 		for (dy = -2; dy <= 2; dy += 2) {
@@ -515,48 +513,48 @@ static int decide(const struct v34_dparm *p, cplx z, int *px, int *py)
 	if (ret < 0) {
 		/* far outside: the outermost points nearby */
 		float s = 45 / (fabsf(u) > fabsf(v) ? fabsf(u) : fabsf(v));
-		cplx w = cplx_make(z.re * s * 0.9f, z.im * s * 0.9f);
+		cplx wz = cplx_make(z.re * s * 0.9f, z.im * s * 0.9f);
 		if (s < 1)
-			return decide(p, w, px, py);
+			return decide(wz, px, py);
 		*px = *py = 1;
 		return 0;
 	}
 	return ret;
 }
 
-static void drx_frame(struct v34_drx *d, unsigned *scr, int tap)
+void V34DataRx::decode_frame(unsigned *scr, int tap)
 {
-	const struct v34_dparm *p = &d->p;
+	const V34Params *p_ = &p;
 	unsigned char bits[V34_MAX_B];
-	int bb = p->b, kk = p->K, n = 0, i, j, m[8];
+	int bb = p_->b, kk = p_->K, n = 0, i, j, m[8];
 	unsigned long r0;
 
-	d->sbc += p->r;
-	if (d->sbc >= p->P)
-		d->sbc -= p->P;
+	sbc += p_->r;
+	if (sbc >= p_->P)
+		sbc -= p_->P;
 	else if (bb > 12) {
 		bb--;
 		kk--;
 	}
 	for (i = 0; i < 8; i++)
-		m[i] = (d->e[i] & 511) >> p->q;
-	if (p->K) {
-		r0 = shell_demap(p, m);
+		m[i] = (e[i] & 511) >> p_->q;
+	if (p_->K) {
+		r0 = p_->shell_demap(m);
 		for (i = 0; i < kk; i++)
 			bits[n++] = (r0 >> i) & 1;
 	}
 	for (i = 0; i < 4; i++) {
-		int re = d->e[2 * i] >> 9, ro = d->e[2 * i + 1] >> 9;
-		int i32 = (re - d->z) & 3, rel = (ro - re) & 3;
-		int nb = p->K || i < bb - 8 ? 3 : 2;
-		d->z = re;
+		int re = e[2 * i] >> 9, ro = e[2 * i + 1] >> 9;
+		int i32 = (re - z) & 3, rel = (ro - re) & 3;
+		int nb = p_->K || i < bb - 8 ? 3 : 2;
+		z = re;
 		bits[n++] = rel >> 1;
 		bits[n++] = i32 & 1;
 		if (nb == 3)
 			bits[n++] = i32 >> 1;
-		for (j = 0; j < 2 && p->K; j++) {
-			int k, v = d->e[2 * i + j] & ((1 << p->q) - 1);
-			for (k = 0; k < p->q; k++)
+		for (j = 0; j < 2 && p_->K; j++) {
+			int k, v = e[2 * i + j] & ((1 << p_->q) - 1);
+			for (k = 0; k < p_->q; k++)
 				bits[n++] = (v >> k) & 1;
 		}
 	}
@@ -565,7 +563,7 @@ static void drx_frame(struct v34_drx *d, unsigned *scr, int tap)
 		bits[i] = (b ^ (*scr >> (tap - 1)) ^ (*scr >> 22)) & 1;
 		*scr = (*scr << 1) | b;
 	}
-	d->put_bits(d->ctx, bits, n);
+	put_bits(ctx, bits, n);
 }
 
 /*
@@ -578,11 +576,10 @@ static void drx_frame(struct v34_drx *d, unsigned *scr, int tap)
 
 /* the nearest point of each 2D subset to (u, v) (in units of the grid):
    among the points in use, or with precoding on the whole grid */
-static void subset_points(const struct v34_dparm *p, float u, float v,
-			  float dist[8], int pt[8])
+void V34Params::subset_points(float u, float v, float dist[8], int pt[8]) const
 {
 	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
-	int dx, dy, i, lim = p->M << p->q, edge = p->precode ? 261 : 45;
+	int dx, dy, i, lim = M << q, edge = precode ? 261 : 45;
 
 	/* outside: from the edge */
 	if (x0 > edge) x0 = edge;
@@ -597,7 +594,7 @@ static void subset_points(const struct v34_dparm *p, float u, float v,
 		for (dy = -6; dy <= 6; dy += 2) {
 			int x = x0 + dx, y = y0 + dy, l;
 			float dd;
-			if (!p->precode) {
+			if (!precode) {
 				int e;
 				if (x < -45 || x > 45 || y < -45 || y > 45)
 					continue;
@@ -614,27 +611,26 @@ static void subset_points(const struct v34_dparm *p, float u, float v,
 		}
 }
 
-static void v34_viterbi_init(struct v34_drx *d)
+void V34DataRx::viterbi_init()
 {
 	int s;
 	/* the encoder starts at 0, but a receiver rotated by 90, 180 or
 	   270 degrees sees the code sequence of another start state */
 	for (s = 0; s < V34_STATES; s++)
-		d->metric[s] = 0;
-	d->vt = d->vn = 0;
-	d->half = 0;
-	d->pat = 2 * d->p.J - 2;
-	d->v0 = v34_sync_pattern[d->pat];
+		metric[s] = 0;
+	vt = vn = 0;
+	half = 0;
+	pat = 2 * p.J - 2;
+	v0 = v34_sync_pattern[pat];
 }
 
 /* one 4D symbol in; returns 1 with a decided pair of point codes, after
    the decoding delay */
-static int viterbi_4d(struct v34_drx *d, const float da[8], const int ca[8],
-		      const float db[8], const int cb[8], int out[2])
+int V34DataRx::viterbi_4d(const float da_[8], const int ca_[8], const float db[8], const int cb[8], int out[2])
 {
 	float gm[32], m2[V34_STATES], best;
 	int ga[32], gb[32];
-	int states = d->p.states, l0, l1, g, s, y, t = d->vt, bs, k;
+	int states = p.states, l0, l1, g, s, y, t = vt, bs, k;
 	/* the 16 state code only uses Y1 and Y2 */
 	int ny = states == 16 ? 4 : 16;
 
@@ -643,12 +639,12 @@ static int viterbi_4d(struct v34_drx *d, const float da[8], const int ca[8],
 		gm[g] = 1e30f;
 	for (l0 = 0; l0 < 8; l0++)
 		for (l1 = 0; l1 < 8; l1++) {
-			float m = da[l0] + db[l1];
+			float m = da_[l0] + db[l1];
 			g = (conv_in(l0, l1) & (ny - 1)) +
 			    ((l0 ^ l1) & 1) * ny;
 			if (m < gm[g]) {
 				gm[g] = m;
-				ga[g] = ca[l0];
+				ga[g] = ca_[l0];
 				gb[g] = cb[l1];
 			}
 		}
@@ -656,17 +652,17 @@ static int viterbi_4d(struct v34_drx *d, const float da[8], const int ca[8],
 		m2[s] = 1e30f;
 	for (s = 0; s < states; s++) {
 		/* U0 = Y0 ^ V0 (no precoding: C0 = 0) */
-		int y0 = (s ^ d->v0) & 1;
-		if (d->metric[s] >= 1e29f)
+		int y0 = (s ^ v0) & 1;
+		if (metric[s] >= 1e29f)
 			continue;
 		for (y = 0; y < ny; y++) {
 			int ns = trellis_next(states, s, y);
-			float m = d->metric[s] + gm[y + y0 * ny];
+			float m = metric[s] + gm[y + y0 * ny];
 			if (m < m2[ns]) {
 				m2[ns] = m;
-				d->prev[t][ns] = (unsigned char)s;
-				d->pa[t][ns] = ga[y + y0 * ny];
-				d->pb[t][ns] = gb[y + y0 * ny];
+				prev[t][ns] = (unsigned char)s;
+				pa[t][ns] = ga[y + y0 * ny];
+				pb[t][ns] = gb[y + y0 * ny];
 			}
 		}
 	}
@@ -678,85 +674,85 @@ static int viterbi_4d(struct v34_drx *d, const float da[8], const int ca[8],
 			bs = s;
 		}
 	for (s = 0; s < states; s++)
-		d->metric[s] = m2[s] - best;
+		metric[s] = m2[s] - best;
 
 	/* the superframe inversions, as the transmitter */
-	if (++d->half >= 2 * d->p.P) {
-		d->half = 0;
-		if (++d->pat >= 2 * d->p.J)
-			d->pat = 0;
-		d->v0 = v34_sync_pattern[d->pat];
+	if (++half >= 2 * p.P) {
+		half = 0;
+		if (++pat >= 2 * p.J)
+			pat = 0;
+		v0 = v34_sync_pattern[pat];
 	} else
-		d->v0 = 0;
+		v0 = 0;
 
-	d->vt = (t + 1) % V34_TB;
-	if (++d->vn < V34_TB)
+	vt = (t + 1) % V34_TB;
+	if (++vn < V34_TB)
 		return 0;
 	/* trace back from the best state to the oldest symbol kept */
 	s = bs;
 	for (k = 0; k < V34_TB - 1; k++) {
-		s = d->prev[t][s];
+		s = prev[t][s];
 		t = (t + V34_TB - 1) % V34_TB;
 	}
-	out[0] = d->pa[t][s];
-	out[1] = d->pb[t][s];
+	out[0] = pa[t][s];
+	out[1] = pb[t][s];
 	return 1;
 }
 
 /* a decided channel output point y(n): with precoding u(n) = y(n) - c(n),
    as the transmitter's precoder had it */
-static void drx_point(struct v34_drx *d, int pt, unsigned *scr, int tap)
+void V34DataRx::point(int pt, unsigned *scr, int tap)
 {
-	int x = UNPACK_X(pt), y = UNPACK_Y(pt), e = -1;
+	int x = UNPACK_X(pt), y = UNPACK_Y(pt), e_ = -1;
 
-	if (d->p.precode) {
-		int cx = d->pc.c[0], cy = d->pc.c[1];
-		precoder_push(&d->p, &d->pc, x, y);
+	if (p.precode) {
+		int cx = pc.c[0], cy = pc.c[1];
+		p.precoder_push(&pc, x, y);
 		x -= cx;
 		y -= cy;
 	}
 	if (x >= -45 && x <= 45 && y >= -45 && y <= 45)
-		e = lookup[(x + 45) / 2][(y + 45) / 2];
-	d->e[d->pos++] = e < 0 ? 0 : e;
-	if (d->pos == 8) {
-		drx_frame(d, scr, tap);
-		d->pos = 0;
+		e_ = lookup[(x + 45) / 2][(y + 45) / 2];
+	e[pos++] = e_ < 0 ? 0 : e_;
+	if (pos == 8) {
+		decode_frame(scr, tap);
+		pos = 0;
 	}
 }
 
 /* z: the equalized symbol, in units of the training points (with
    precoding: equalized to 1 + H(z)); returns the (tentative) decided
    point for the adaptation */
-cplx v34_drx_symbol(struct v34_drx *d, cplx z, unsigned *scr, int tap)
+cplx V34DataRx::symbol(cplx z_, unsigned *scr, int tap)
 {
-	const struct v34_dparm *p = &d->p;
-	float u = z.re / p->g, v = z.im / p->g;
+	const V34Params *p_ = &p;
+	float u = z_.re / p_->g, v = z_.im / p_->g;
 	cplx ret;
 	int out[2];
 
-	if (p->precode) {
+	if (p_->precode) {
 		/* z is y(n) + noise (the receiver's equalizer includes
 		   1 + H(z)): the nearest point of the grid */
 		float yu = 2 * floorf(u / 2) + 1, yv = 2 * floorf(v / 2) + 1;
 		yu = yu > 261 ? 261 : yu < -261 ? -261 : yu;
 		yv = yv > 261 ? 261 : yv < -261 ? -261 : yv;
-		ret = cplx_make(p->g * yu, p->g * yv);
+		ret = cplx_make(p_->g * yu, p_->g * yv);
 	} else {
 		int x, y;
-		decide(p, z, &x, &y);
-		ret = cplx_make(p->g * x, p->g * y);
+		p_->decide(z_, &x, &y);
+		ret = cplx_make(p_->g * x, p_->g * y);
 	}
-	if (!d->half2) {
-		subset_points(p, u, v, d->da, d->ca);
-		d->half2 = 1;
+	if (!half2) {
+		p_->subset_points(u, v, da, ca);
+		half2 = 1;
 	} else {
 		float db[8];
 		int cb[8];
-		subset_points(p, u, v, db, cb);
-		d->half2 = 0;
-		if (viterbi_4d(d, d->da, d->ca, db, cb, out)) {
-			drx_point(d, out[0], scr, tap);
-			drx_point(d, out[1], scr, tap);
+		p_->subset_points(u, v, db, cb);
+		half2 = 0;
+		if (viterbi_4d(da, ca, db, cb, out)) {
+			point(out[0], scr, tap);
+			point(out[1], scr, tap);
 		}
 	}
 	return ret;

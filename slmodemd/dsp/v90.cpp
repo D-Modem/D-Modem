@@ -81,210 +81,210 @@ static void put_bits(unsigned char *b, int *n, unsigned val, int nbits)
 
 /* Jd (Table 13/V.90): all the rates from 28 000 to 56 000 bit/s, CP, E
    and SCR on 4 points, look-ahead up to 1 */
-static void make_jd(struct v90_tx *t)
+void V90Tx::make_jd()
 {
 	unsigned crc = 0xFFFF;
-	int n = 0, i;
+	int n_ = 0, i;
 
-	put_bits(t->bits, &n, 0x1FFFF, 17);
-	put_bits(t->bits, &n, 0, 1);
-	put_bits(t->bits, &n, 0xFFFF, 16);      /* 28 000 to 48 000 */
-	put_bits(t->bits, &n, 0, 1);
-	put_bits(t->bits, &n, 0x7F, 6);         /* 49 333 to 56 000 */
-	put_bits(t->bits, &n, 0, 6);
-	put_bits(t->bits, &n, 0, 1);            /* 4 points in training */
-	put_bits(t->bits, &n, 0, 1);            /* and in renegotiation */
-	put_bits(t->bits, &n, 1, 2);            /* look-ahead */
-	put_bits(t->bits, &n, 0, 1);
+	put_bits(bits, &n_, 0x1FFFF, 17);
+	put_bits(bits, &n_, 0, 1);
+	put_bits(bits, &n_, 0xFFFF, 16);      /* 28 000 to 48 000 */
+	put_bits(bits, &n_, 0, 1);
+	put_bits(bits, &n_, 0x7F, 6);         /* 49 333 to 56 000 */
+	put_bits(bits, &n_, 0, 6);
+	put_bits(bits, &n_, 0, 1);            /* 4 points in training */
+	put_bits(bits, &n_, 0, 1);            /* and in renegotiation */
+	put_bits(bits, &n_, 1, 2);            /* look-ahead */
+	put_bits(bits, &n_, 0, 1);
 	for (i = 18; i < 51; i += 17)
-		crc = v34_crc_bits(t->bits + i, 16, crc);
+		crc = v34_crc_bits(bits + i, 16, crc);
 	for (i = 15; i >= 0; i--)
-		t->bits[n++] = (crc >> i) & 1;
-	put_bits(t->bits, &n, 0, 4);
-	t->nbits = n;
+		bits[n_++] = (crc >> i) & 1;
+	put_bits(bits, &n_, 0, 4);
+	nbits = n_;
 }
 
-void v90_tx_init(struct v90_tx *t, int alaw, int uinfo)
+void V90Tx::init(int alaw_, int uinfo_)
 {
 	int i;
-	memset(t, 0, sizeof(*t));
-	t->alaw = alaw;
+	memset(this, 0, sizeof(*this));
+	alaw = alaw_;
 	for (i = 0; i < 128; i++)
-		t->lin[i] = v90_ucode_linear(alaw, i);
-	t->uinfo = uinfo;
-	t->seg = V90_SILENCE;
-	t->sign = 1;
+		lin[i] = v90_ucode_linear(alaw_, i);
+	uinfo = uinfo_;
+	seg = V90_SILENCE;
+	sign = 1;
 }
 
-void v90_tx_segment(struct v90_tx *t, enum v90_seg seg)
+void V90Tx::segment(enum v90_seg seg_)
 {
-	t->seg = seg;
-	t->n = 0;
-	switch (seg) {
+	seg = seg_;
+	n = 0;
+	switch (seg_) {
 	case V90_SD:
-		t->sym = 0;
+		sym = 0;
 		break;
 	case V90_TRN1D:
-		t->scr = 0;
+		scr = 0;
 		break;
 	case V90_JD:
-		make_jd(t);
-		t->pos = 0;
-		t->jd_end = 0;
-		t->jd_frames = 0;
+		make_jd();
+		pos = 0;
+		jd_end = 0;
+		jd_frames = 0;
 		break;
 	case V90_JDP:
-		t->pos = 0;
+		pos = 0;
 		break;
 	case V90_RI:
-		t->ri_end = 0;
+		ri_end = 0;
 		break;
 	case V90_ENC:
-		t->opos = 6;
+		opos = 6;
 		break;
 	case V90_DIL:
-		t->dil_seg = t->dil_k = 0;
-		t->dil_end = 0;
-		t->dil_rounds = 0;
+		dil_seg = dil_k = 0;
+		dil_end = 0;
+		dil_rounds = 0;
 		break;
 	default:
 		break;
 	}
 }
 
-void v90_tx_jd_end(struct v90_tx *t)
+void V90Tx::end_jd()
 {
-	t->jd_end = 1;
+	jd_end = 1;
 }
 
-void v90_tx_dil_end(struct v90_tx *t)
+void V90Tx::end_dil()
 {
-	t->dil_end = 1;
+	dil_end = 1;
 }
 
-void v90_tx_ri_end(struct v90_tx *t)
+void V90Tx::end_ri()
 {
-	t->ri_end = 1;
+	ri_end = 1;
 }
 
 /* a bit, scrambled and coded into the sign of UINFO */
-static int diff_bit(struct v90_tx *t, int bit)
+int V90Tx::diff_bit(int bit)
 {
-	t->sign ^= scramble(&t->scr, bit);
-	return t->sign ? t->lin[t->uinfo] : -t->lin[t->uinfo];
+	sign ^= scramble(&scr, bit);
+	return sign ? lin[uinfo] : -lin[uinfo];
 }
 
-static int dil_sample(struct v90_tx *t)
+int V90Tx::dil_sample()
 {
-	const struct v90_dil *d = &t->dil;
-	int u = d->ucode[t->dil_seg], c = u >> 4, len = (d->h[c] + 1) * 6;
-	int k = t->dil_k, x;
+	const V90Dil *d = &dil;
+	int u = d->ucode[dil_seg], c = u >> 4, len = (d->h[c] + 1) * 6;
+	int k = dil_k, x;
 
-	x = d->tp[k % d->ltp] ? t->lin[u] : t->lin[d->ref[c]];
+	x = d->tp[k % d->ltp] ? lin[u] : lin[d->ref[c]];
 	if (!d->sp[k % d->lsp])
 		x = -x;
-	if (++t->dil_k >= len) {
-		t->dil_k = 0;
-		if (++t->dil_seg >= d->n) {
-			t->dil_seg = 0;
-			t->dil_rounds++;
+	if (++dil_k >= len) {
+		dil_k = 0;
+		if (++dil_seg >= d->n) {
+			dil_seg = 0;
+			dil_rounds++;
 		}
-		if (t->dil_end) {
-			t->seg = V90_SILENCE;
-			t->next = 1;
+		if (dil_end) {
+			seg = V90_SILENCE;
+			next = 1;
 		}
 	}
 	return x;
 }
 
-int v90_tx_sample(struct v90_tx *t)
+int V90Tx::sample()
 {
 	static const signed char sd[6] = { 1, 0, 1, -1, 0, -1 };
-	int x = 0, w = t->lin[(16 + t->uinfo) & 127], z = t->lin[0];
+	int x = 0, w = lin[(16 + uinfo) & 127], z = lin[0];
 
-	switch (t->seg) {
+	switch (seg) {
 	case V90_SILENCE:
 		break;
 	case V90_SD:
 	case V90_SDBAR: {
-		int k = t->sym % 6, s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
-		x = (sd[k] ? w : z) * (t->seg == V90_SD ? s : -s);
-		if (t->seg == V90_SD && t->n + 1 == 384)
-			v90_tx_segment(t, V90_SDBAR);
-		else if (t->seg == V90_SDBAR && t->n + 1 == 48)
-			v90_tx_segment(t, V90_TRN1D);
+		int k = sym % 6, s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
+		x = (sd[k] ? w : z) * (seg == V90_SD ? s : -s);
+		if (seg == V90_SD && n + 1 == 384)
+			segment(V90_SDBAR);
+		else if (seg == V90_SDBAR && n + 1 == 48)
+			segment(V90_TRN1D);
 		else
-			t->n++;
-		t->sym++;
+			n++;
+		sym++;
 		return x;
 	}
 	case V90_TRN1D:
-		t->sign = scramble(&t->scr, 1);
-		x = t->sign ? t->lin[t->uinfo] : -t->lin[t->uinfo];
-		if (t->trn1d_len && t->n + 1 >= t->trn1d_len &&
-		    (t->sym + 1) % 6 == 0) {
-			v90_tx_segment(t, V90_JD);
-			t->n--;
+		sign = scramble(&scr, 1);
+		x = sign ? lin[uinfo] : -lin[uinfo];
+		if (trn1d_len && n + 1 >= trn1d_len &&
+		    (sym + 1) % 6 == 0) {
+			segment(V90_JD);
+			n--;
 		}
 		break;
 	case V90_JD:
-		x = diff_bit(t, t->bits[t->pos]);
-		if (++t->pos == t->nbits) {
-			t->pos = 0;
-			t->jd_frames++;
-			if (t->jd_end) {
-				v90_tx_segment(t, V90_JDP);
-				t->n--;
+		x = diff_bit(bits[pos]);
+		if (++pos == nbits) {
+			pos = 0;
+			jd_frames++;
+			if (jd_end) {
+				segment(V90_JDP);
+				n--;
 			}
 		}
 		break;
 	case V90_JDP:
-		x = diff_bit(t, 0);
-		if (++t->pos == 12) {
-			if (t->dil.n)
-				v90_tx_segment(t, V90_DIL);
+		x = diff_bit(0);
+		if (++pos == 12) {
+			if (dil.n)
+				segment(V90_DIL);
 			else {
-				t->seg = V90_SILENCE;
-				t->next = 1;
+				seg = V90_SILENCE;
+				next = 1;
 			}
-			t->n--;
+			n--;
 		}
 		break;
 	case V90_DIL:
-		x = dil_sample(t);
+		x = dil_sample();
 		break;
 	case V90_RI:
 	case V90_RIBAR: {
 		/* + + + - - - of UINFO, Ri-bar the opposite */
-		int k = (int)(t->sym % 6), pos = k < 3;
-		if (t->seg == V90_RIBAR)
-			pos = !pos;
-		x = pos ? t->lin[t->uinfo] : -t->lin[t->uinfo];
-		if (t->seg == V90_RI && t->ri_end && k == 5) {
-			v90_tx_segment(t, V90_RIBAR);
-			t->n--;
-		} else if (t->seg == V90_RIBAR && t->n + 1 == 24) {
-			v90_tx_segment(t, V90_ENC);
-			t->n--;
+		int k = (int)(sym % 6), pos_ = k < 3;
+		if (seg == V90_RIBAR)
+			pos_ = !pos_;
+		x = pos_ ? lin[uinfo] : -lin[uinfo];
+		if (seg == V90_RI && ri_end && k == 5) {
+			segment(V90_RIBAR);
+			n--;
+		} else if (seg == V90_RIBAR && n + 1 == 24) {
+			segment(V90_ENC);
+			n--;
 		}
 		break;
 	}
 	case V90_ENC:
-		if (t->opos >= 6) {
+		if (opos >= 6) {
 			/* frames go in ahead of the shaper's decisions */
-			while (!v90_enc_pop(&t->enc, t->out)) {
-				unsigned char bits[48];
-				int last = 0;
-				t->get_frame(t->ctx, t, bits, &last);
-				v90_enc_push(&t->enc, bits, last);
+			while (!enc.pop(out)) {
+				unsigned char bits_[48];
+				int last_ = 0;
+				get_frame(ctx, this, bits_, &last_);
+				enc.push(bits_, last_);
 			}
-			t->opos = 0;
+			opos = 0;
 		}
-		x = t->out[t->opos++];
+		x = out[opos++];
 		break;
 	}
-	t->n++;
-	t->sym++;
+	n++;
+	sym++;
 	return x;
 }
 
@@ -327,7 +327,7 @@ int v90_dil_length(const unsigned char *b, int n)
 	return 204 + beta + (field(b, 18, 8) + 1) / 2 * 17;
 }
 
-int v90_dil_parse(struct v90_dil *d, const unsigned char *b, int len)
+int V90Dil::parse(const unsigned char *b, int len)
 {
 	unsigned crc = 0xFFFF;
 	int alpha, beta, i, end = len - 16;
@@ -338,19 +338,19 @@ int v90_dil_parse(struct v90_dil *d, const unsigned char *b, int len)
 		if (b[end + i] != ((crc >> (15 - i)) & 1))
 			return -1;
 	beta = dil_beta(b, &alpha);
-	d->n = field(b, 18, 8);
-	d->lsp = field(b, 35, 7) + 1;
-	d->ltp = field(b, 43, 7) + 1;
-	pattern(d->sp, b, 52, d->lsp);
-	pattern(d->tp, b, 52 + alpha, d->ltp);
+	n = field(b, 18, 8);
+	lsp = field(b, 35, 7) + 1;
+	ltp = field(b, 43, 7) + 1;
+	pattern(sp, b, 52, lsp);
+	pattern(tp, b, 52 + alpha, ltp);
 	for (i = 0; i < 8; i++) {
 		/* two 7 bit fields per 17 bit block */
 		int o = 52 + beta + 17 * (i / 2) + 8 * (i % 2);
-		d->h[i] = field(b, o, 7);
-		d->ref[i] = field(b, o + 68, 7);
+		h[i] = field(b, o, 7);
+		ref[i] = field(b, o + 68, 7);
 	}
-	for (i = 0; i < d->n; i++)
-		d->ucode[i] = field(b, 188 + beta + 17 * (i / 2) + 8 * (i % 2), 7);
+	for (i = 0; i < n; i++)
+		ucode[i] = field(b, 188 + beta + 17 * (i / 2) + 8 * (i % 2), 7);
 	return 0;
 }
 
@@ -381,7 +381,7 @@ int v90_cp_length(const unsigned char *b, int n)
 	return delta < 0 ? 0 : 289 + delta;
 }
 
-int v90_cp_parse(struct v90_cp *cp, const unsigned char *b, int len)
+int V90Cp::parse(const unsigned char *b, int len)
 {
 	static const int con_bit[6] = { 103, 107, 111, 115, 120, 124 };
 	unsigned crc = 0xFFFF;
@@ -392,28 +392,28 @@ int v90_cp_parse(struct v90_cp *cp, const unsigned char *b, int len)
 	for (i = 0; i < 16; i++)
 		if (b[end + i] != ((crc >> (15 - i)) & 1))
 			return -1;
-	memset(cp, 0, sizeof(*cp));
-	cp->cp = b[19];
-	cp->drn = field(b, 20, 5);
-	cp->silence = b[30];
-	cp->sr = field(b, 31, 2);
-	cp->ack = b[33];
-	cp->alaw = b[35];
-	cp->rate_mask = field(b, 36, 13);
-	cp->ld = field(b, 49, 2);
-	cp->a1 = (signed char)field(b, 69, 8);
-	cp->a2 = (signed char)field(b, 77, 8);
-	cp->b1 = (signed char)field(b, 86, 8);
-	cp->b2 = (signed char)field(b, 94, 8);
+	memset(this, 0, sizeof(*this));
+	cp = b[19];
+	drn = field(b, 20, 5);
+	silence = b[30];
+	sr = field(b, 31, 2);
+	ack = b[33];
+	alaw = b[35];
+	rate_mask = field(b, 36, 13);
+	ld = field(b, 49, 2);
+	a1 = (signed char)field(b, 69, 8);
+	a2 = (signed char)field(b, 77, 8);
+	b1 = (signed char)field(b, 86, 8);
+	b2 = (signed char)field(b, 94, 8);
 	for (i = 0; i < 6; i++) {
-		cp->con[i] = field(b, con_bit[i], 4);
-		if (cp->con[i] + 1 > cp->ncon)
-			cp->ncon = cp->con[i] + 1;
+		con[i] = field(b, con_bit[i], 4);
+		if (con[i] + 1 > ncon)
+			ncon = con[i] + 1;
 	}
-	for (j = 0; j < cp->ncon; j++)
+	for (j = 0; j < ncon; j++)
 		for (c = 0; c < 8; c++)
 			for (i = 0; i < 16; i++)
-				cp->mask[j][16 * c + i] =
+				mask[j][16 * c + i] =
 					b[136 + 136 * j + 17 * c + 1 + i];
 	return 0;
 }
@@ -466,56 +466,54 @@ int v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
  *    the data mode encoder (5.4/V.90)
  */
 
-int v90_enc_init(struct v90_enc *e, const struct v90_cp *cp, int D,
-		 const int *lin)
+int V90Enc::init(const V90Cp *cp, int D, const int *lin_)
 {
 	double prod = 1;
 	int i, u;
 
-	memset(e, 0, sizeof(*e));
-	e->sr = cp->sr;
-	e->ld = cp->ld;
-	e->S = 6 - cp->sr;
-	e->K = D - e->S;
-	e->lin = lin;
+	memset(this, 0, sizeof(*this));
+	sr = cp->sr;
+	ld = cp->ld;
+	S = 6 - cp->sr;
+	K = D - S;
+	lin = lin_;
 	for (i = 0; i < 6; i++) {
 		const unsigned char *m = cp->mask[cp->con[i]];
 		/* label 0 is the largest code */
 		for (u = 127; u >= 0; u--)
 			if (m[u])
-				e->ucode[i][e->M[i]++] = (unsigned char)u;
-		if (!e->M[i])
+				ucode[i][M[i]++] = (unsigned char)u;
+		if (!M[i])
 			return -1;
-		prod *= e->M[i];
+		prod *= M[i];
 	}
-	if (e->K < 1 || e->K > 63 || prod < (double)(1ULL << e->K))
+	if (K < 1 || K > 63 || prod < (double)(1ULL << K))
 		return -1;
-	e->a1 = cp->a1 / 64.0;
-	e->a2 = cp->a2 / 64.0;
-	e->b1 = cp->b1 / 64.0;
-	e->b2 = cp->b2 / 64.0;
+	a1 = cp->a1 / 64.0;
+	a2 = cp->a2 / 64.0;
+	b1 = cp->b1 / 64.0;
+	b2 = cp->b2 / 64.0;
 	return 0;
 }
 
 /* the shaping filter F(z) over a frame with the given signs, from the
    state f[3] (updated); returns the sum of v^2 */
-static double shape_metric(const struct v90_enc *e, const int *mag, int n,
-			   int signs, double *f)
+double V90Enc::shape_metric(const int *mag, int n, int signs, double *f) const
 {
-	double x1 = f[0], y1 = f[1], v1 = f[2], w = 0;
+	double x1_ = f[0], y1_ = f[1], v1_ = f[2], w = 0;
 	int i;
 	for (i = 0; i < n; i++) {
 		double x = signs >> i & 1 ? mag[i] : -mag[i];
-		double y = x - e->b1 * x1 + e->a1 * y1;
-		double v = y - e->b2 * y1 + e->a2 * v1;
+		double y = x - b1 * x1_ + a1 * y1_;
+		double v = y - b2 * y1_ + a2 * v1_;
 		w += v * v;
-		x1 = x;
-		y1 = y;
-		v1 = v;
+		x1_ = x;
+		y1_ = y;
+		v1_ = v;
 	}
-	f[0] = x1;
-	f[1] = y1;
-	f[2] = v1;
+	f[0] = x1_;
+	f[1] = y1_;
+	f[2] = v1_;
 	return w;
 }
 
@@ -530,18 +528,17 @@ static int rule_mask(int fs, int Q, int r)
 }
 
 /* the least metric of the rule sequences for frames k..depth from a state */
-static double best_path(const struct v90_enc *e, int k, int depth, int Q,
-			int tprev, const double *f)
+double V90Enc::best_path(int k, int depth, int Q_, int tprev, const double *f) const
 {
 	double best = 1e300;
 	int r;
 	for (r = 0; r < 2; r++) {
-		const struct v90_shf *s = &e->q[k];
-		int sg = (s->p ^ tprev) ^ rule_mask(s->fs, Q, r);
+		const struct v90_shf *s = &q[k];
+		int sg = (s->p ^ tprev) ^ rule_mask(s->fs, Q_, r);
 		double st[3] = { f[0], f[1], f[2] };
-		double w = shape_metric(e, s->mag, s->fs, sg, st);
+		double w = shape_metric(s->mag, s->fs, sg, st);
 		if (k < depth)
-			w += best_path(e, k + 1, depth, r, sg, st);
+			w += best_path(k + 1, depth, r, sg, st);
 		if (w < best)
 			best = w;
 	}
@@ -549,18 +546,18 @@ static double best_path(const struct v90_enc *e, int k, int depth, int Q,
 }
 
 /* decide the signs of the oldest shaping frame */
-static void decide_frame(struct v90_enc *e, int depth)
+void V90Enc::decide_frame(int depth)
 {
-	const struct v90_shf *s = &e->q[0];
-	double f[3] = { e->x1, e->y1, e->v1 }, bw = 1e300, bst[3] = { 0, 0, 0 };
+	const struct v90_shf *s = &q[0];
+	double f[3] = { x1, y1, v1 }, bw = 1e300, bst[3] = { 0, 0, 0 };
 	int r, best = 0, bsg = 0;
 
 	for (r = 0; r < 2; r++) {
-		int sg = (s->p ^ e->t_prev) ^ rule_mask(s->fs, e->Q, r);
+		int sg = (s->p ^ t_prev) ^ rule_mask(s->fs, Q, r);
 		double st[3] = { f[0], f[1], f[2] };
-		double w = shape_metric(e, s->mag, s->fs, sg, st);
+		double w = shape_metric(s->mag, s->fs, sg, st);
 		if (depth > 0)
-			w += best_path(e, 1, depth, r, sg, st);
+			w += best_path(1, depth, r, sg, st);
 		if (w < bw) {
 			bw = w;
 			best = r;
@@ -568,91 +565,91 @@ static void decide_frame(struct v90_enc *e, int depth)
 			memcpy(bst, st, sizeof(st));
 		}
 	}
-	e->Q = best;
-	e->t_prev = bsg;
-	e->x1 = bst[0];
-	e->y1 = bst[1];
-	e->v1 = bst[2];
+	Q = best;
+	t_prev = bsg;
+	x1 = bst[0];
+	y1 = bst[1];
+	v1 = bst[2];
 	/* into the data frame */
-	memcpy(e->mag_acc + e->nsh * s->fs, s->mag, s->fs * sizeof(int));
-	e->sign_acc |= bsg << (e->nsh * s->fs);
-	if (++e->nsh == e->sr) {
+	memcpy(mag_acc + nsh * s->fs, s->mag, s->fs * sizeof(int));
+	sign_acc |= bsg << (nsh * s->fs);
+	if (++nsh == sr) {
 		int i;
 		for (i = 0; i < 6; i++)
-			e->outq[e->outn][i] = e->sign_acc >> i & 1 ?
-				e->mag_acc[i] : -e->mag_acc[i];
-		e->outn++;
-		e->nsh = 0;
-		e->sign_acc = 0;
+			outq[outn][i] = sign_acc >> i & 1 ?
+				mag_acc[i] : -mag_acc[i];
+		outn++;
+		nsh = 0;
+		sign_acc = 0;
 	}
-	memmove(e->q, e->q + 1, --e->qn * sizeof(e->q[0]));
+	memmove(q, q + 1, --qn * sizeof(q[0]));
 }
 
-void v90_enc_push(struct v90_enc *e, const unsigned char *bits, int last)
+void V90Enc::push(const unsigned char *bits, int last_)
 {
 	unsigned char d[48];
 	unsigned long long r = 0;
-	int D = e->S + e->K, mag[6], i;
+	int D = S + K, mag[6], i;
 
 	for (i = 0; i < D; i++)
-		d[i] = (unsigned char)scramble(&e->scr, bits[i]);
-	for (i = e->K - 1; i >= 0; i--)
-		r = (r << 1) | d[e->S + i];
+		d[i] = (unsigned char)scramble(&scr, bits[i]);
+	for (i = K - 1; i >= 0; i--)
+		r = (r << 1) | d[S + i];
 	for (i = 0; i < 6; i++) {
-		int k = (int)(r % (unsigned)e->M[i]);
-		r /= (unsigned)e->M[i];
-		mag[i] = e->lin[e->ucode[i][k]];
+		int k = (int)(r % (unsigned)M[i]);
+		r /= (unsigned)M[i];
+		mag[i] = lin[ucode[i][k]];
 	}
-	if (e->sr == 0) {
+	if (sr == 0) {
 		/* 5.4.5.1: differential, no shaping */
-		int l = e->last;
+		int l = last;
 		for (i = 0; i < 6; i++) {
 			l ^= d[i];
-			e->outq[e->outn][i] = l ? mag[i] : -mag[i];
+			outq[outn][i] = l ? mag[i] : -mag[i];
 		}
-		e->last = l;
-		e->outn++;
+		last = l;
+		outn++;
 		return;
 	} else {
 		/* shaping frames of 6, 3 or 2 symbols; p' with the odd bit
 		   coded differentially (Tables 3 and 4/V.90) */
-		int fs = 6 / e->sr, f, k = 0;
-		for (f = 0; f < e->sr; f++) {
-			struct v90_shf *s = &e->q[e->qn++];
+		int fs = 6 / sr, f, k = 0;
+		for (f = 0; f < sr; f++) {
+			struct v90_shf *s = &q[qn++];
 			s->fs = fs;
 			s->p = 0;
-			s->last = last && f == e->sr - 1;
+			s->last = last_ && f == sr - 1;
 			memcpy(s->mag, mag + f * fs, fs * sizeof(int));
 			for (i = 1; i < fs; i++) {
 				int bit = d[k++];
 				if (i & 1) {
-					bit ^= e->last;
-					e->last = bit;
+					bit ^= last;
+					last = bit;
 				}
 				s->p |= bit << i;
 			}
 		}
 	}
 	/* decide what the look-ahead allows */
-	while (e->qn) {
-		int depth = e->ld, j;
-		for (j = 0; j < e->qn && j <= e->ld; j++)
-			if (e->q[j].last) {
+	while (qn) {
+		int depth = ld, j;
+		for (j = 0; j < qn && j <= ld; j++)
+			if (q[j].last) {
 				depth = j;
 				break;
 			}
-		if (depth >= e->qn)
+		if (depth >= qn)
 			break;
-		decide_frame(e, depth);
+		decide_frame(depth);
 	}
 }
 
-int v90_enc_pop(struct v90_enc *e, int out[6])
+int V90Enc::pop(int out[6])
 {
-	if (!e->outn)
+	if (!outn)
 		return 0;
-	memcpy(out, e->outq[0], 6 * sizeof(int));
-	memmove(e->outq, e->outq + 1, --e->outn * sizeof(e->outq[0]));
+	memcpy(out, outq[0], 6 * sizeof(int));
+	memmove(outq, outq + 1, --outn * sizeof(outq[0]));
 	return 1;
 }
 
