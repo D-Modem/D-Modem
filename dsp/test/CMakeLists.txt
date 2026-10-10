@@ -88,6 +88,15 @@ foreach(_ms 22 122 32 132 34)
 	add_test(NAME dmodem_pair_${_ms} COMMAND dmodem_pair +MS=${_ms} 3 30)
 	set_tests_properties(dmodem_pair_${_ms} PROPERTIES LABELS quick)
 endforeach()
+# a caller that tries V.34 and V.32bis first against an answerer of
+# +MS=122: it must find the caller's 100 ms of S1 and connect at 2400 (two
+# sample alignments of the two modems)
+foreach(_d 0 5)
+	add_test(NAME dmodem_pair_v8_to_122_d${_d} COMMAND dmodem_pair "" 1 30)
+	set_tests_properties(dmodem_pair_v8_to_122_d${_d} PROPERTIES
+		LABELS quick ENVIRONMENT
+		"DMODEM_MS_B=+MS=122;DMODEM_RATE=2400;DMODEM_DELAY=${_d}")
+endforeach()
 # the same through the C++ classes of dmodem.hpp
 add_test(NAME dmodem_cxx COMMAND dmodem_cxx +MS=132 20)
 set_tests_properties(dmodem_cxx PROPERTIES LABELS quick)

@@ -84,7 +84,6 @@ Finally, dial the number of the target system.  Below shows a connection to the 
 - Tested over SIP against a local Asterisk and a local FreeSWITCH only, not yet through real PSTN gateways.
 - V.34 rate renegotiation during a call (the modem retrains instead, after a line hit or when its error rate climbs), and V.92, are not implemented.
 - V.90 needs an analogue modem at the other end: slmodemd is always on the digital side of the network. Two digital modems (D-Modem calling the Asterisk module, or another D-Modem) connect at V.91 instead: up to 62667 bps both ways on a clean G.711 call (about 58700 bps of data through V.42), less where the network robs bits or adds a pad; `AT+MS=91` asks for V.91 (or V.34), the default `AT+MS=92` offers it with V.90.
-- When a calling modem tries V.34 and V.32bis before V.22bis (a V.8 caller against `AT+MS=122`), slmodemd may answer at 1200 instead of 2400.
 - The serial interface could be replaced with stdio or a socket, and common AT configuration options could be exposed as command line options 
 
 

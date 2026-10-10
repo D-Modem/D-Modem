@@ -337,7 +337,13 @@ and T.4 encoder, as Asterisk's `SendFAX` uses them, into these receivers.
 
 The equalizer and the PLL's frequency term only train on scrambled
 signals. The unscrambled handshake sequences (ANS, unscrambled ones, S1)
-are close to pure tones and would de-tune them.
+are close to pure tones and would de-tune them. The V.22bis receiver also
+tells unscrambled ones and S1 by the phase step from one symbol to the
+next, not by its decisions. S1 is two points 90 degrees apart, and while
+the carrier phase is near 45 degrees off they fall in the same quadrant,
+where the PLL's error averages out. The answerer has only the caller's
+100 ms of S1, and over SIP it took a V.22bis caller (one that had tried
+V.34 and V.32bis first) for V.22 at 1200 bit/s.
 
 ## Code structure
 

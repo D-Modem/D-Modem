@@ -5,6 +5,11 @@
  *
  *    dmodem_pair [AT+MS=34] [pairs] [seconds]
  *    DMODEM_LAW=alaw: the modems on an A-law line
+ *    DMODEM_DELAY=<samples>: the line from the caller to the answerer that
+ *      much longer (the linear line only): another sample alignment of
+ *      the two modems
+ *    DMODEM_MS_B=<AT commands>: the answerer's instead (e.g. +MS=122 against
+ *      a caller that tries V.34 and V.32bis first)
  *    DMODEM_NET: the digital network between them, as G.711 octets
  *      g711    as it is
  *      rbs     robbed bit signalling: the LSB of every 6th octet is 1
@@ -92,7 +97,9 @@ static void *run(void *arg)
 	struct dmodem *a, *b;
 	int sa[2], sb[2], i, frames = p->seconds * 50, online = 0;
 	short ab[FRAME] = { 0 }, ba[FRAME] = { 0 }, oa[FRAME], ob[FRAME];
-	char init[64], msg[] = "The quick brown fox jumps over the lazy dog.\r\n";
+	short held[FRAME] = { 0 };
+	int delay = getenv("DMODEM_DELAY") ? atoi(getenv("DMODEM_DELAY")) : 0;
+	char init[64], init_b[64], msg[] = "The quick brown fox jumps over the lazy dog.\r\n";
 	char got_a[4096], got_b[4096];
 	int na = 0, nb = 0, sent = 0;
 	unsigned char gab[FRAME], gba[FRAME], goa[FRAME], gob[FRAME];
@@ -116,10 +123,17 @@ static void *run(void *arg)
 	a = dmodem_create(&c);
 	c.name = "answerer";
 	c.dte_fd = sb[0];
+	if (getenv("DMODEM_MS_B")) {
+		snprintf(init_b, sizeof(init_b), "ATE0Q1X3%s\r",
+			 getenv("DMODEM_MS_B"));
+		c.init = init_b;
+	}
 	if (net == NET_XLAW)
 		c.law = DMODEM_LAW_ALAW;
 	law_b = c.law == DMODEM_LAW_ALAW;
 	b = dmodem_create(&c);
+	if (delay < 0 || delay >= FRAME)
+		delay = 0;
 	memset(gab, law_b ? 0xD5 : 0xFF, sizeof(gab));
 	memset(gba, law_a ? 0xD5 : 0xFF, sizeof(gba));
 	drain(sa[1]);
@@ -133,7 +147,11 @@ static void *run(void *arg)
 		if (net == NET_LINEAR) {
 			dmodem_process(a, ba, oa, FRAME);
 			dmodem_process(b, ab, ob, FRAME);
-			memcpy(ab, oa, sizeof(ab));
+			/* ab: the last <delay> samples of the previous frame,
+			   then this one's */
+			memcpy(ab, held, delay * sizeof(short));
+			memcpy(ab + delay, oa, (FRAME - delay) * sizeof(short));
+			memcpy(held, oa + FRAME - delay, delay * sizeof(short));
 			memcpy(ba, ob, sizeof(ba));
 		} else {
 			int k;

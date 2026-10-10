@@ -148,7 +148,7 @@ struct V22Pump : Pump {
 	cplx tx_symbol();
 	float tx_sample();
 	int slice(cplx z, cplx *d, int *q34);
-	void rx_bits(int dquad, int q34_16);
+	void rx_bits(int dquad, int q34_16, int dq_raw);
 	void eq_reset();
 	void rx_symbol(cplx y);
 	void rx_reset();
@@ -299,20 +299,28 @@ int V22Pump::slice(cplx z, cplx *d, int *q34)
 	return quad;
 }
 
-void V22Pump::rx_bits(int dquad, int q34_16)
+/* dquad: the quadrant change of the decisions; dq_raw: the phase change
+   from the last symbol, whatever the carrier phase (for the unscrambled
+   patterns) */
+void V22Pump::rx_bits(int dquad, int q34_16, int dq_raw)
 {
-	int dibit = quad2dibit[dquad];
+	int dibit = quad2dibit[dquad], raw = quad2dibit[dq_raw];
 	int b0 = dibit >> 1, b1 = dibit & 1;
 	int ones12, ones24;
 	u8 bits[4];
 
-	/* raw (unscrambled) patterns */
-	run_usb1 = dibit == 3 ? run_usb1 + 1 : 0;
-	if ((dibit == 0 && last_dibit == 3) || (dibit == 3 && last_dibit == 0))
+	/* raw (unscrambled) patterns, from the phase changes themselves: S1
+	   is two points 90 degrees apart, which the decisions put in the same
+	   quadrant while the carrier phase is near 45 degrees off, and there
+	   its error averages out (the receiver of the answerer, which has
+	   just the caller's 100 ms of S1 to find it in, took a V.22bis caller
+	   for V.22) */
+	run_usb1 = raw == 3 ? run_usb1 + 1 : 0;
+	if ((raw == 0 && last_dibit == 3) || (raw == 3 && last_dibit == 0))
 		run_s1++;
 	else
 		run_s1 = 0;
-	last_dibit = dibit;
+	last_dibit = raw;
 
 	/* 1200 bit/s path */
 	bits[0] = rx_scr12.descramble(b0);
@@ -348,14 +356,16 @@ void V22Pump::eq_reset()
 void V22Pump::rx_symbol(cplx y)
 {
 	cplx out = { 0, 0 }, z, d, e, rot;
-	int i, quad, q34, q34_16;
-	float perr;
+	int i, quad, q34, q34_16, dq_raw;
+	float perr, step;
 
 	/* unscrambled ones step exactly -90 degrees per symbol; this tells
 	   them from a 2225 Hz answer tone (-105 degrees) */
 	d = cplx_mulc(y, last_y);
 	last_y = y;
-	rot_avg += 0.1f * (atan2f(d.im, d.re) - rot_avg);
+	step = atan2f(d.im, d.re);
+	rot_avg += 0.1f * (step - rot_avg);
+	dq_raw = (int)lrintf(step / ((float)M_PI / 2)) & 3;
 
 	/* equalizer (the delay line was fed with both half symbols) */
 	for (i = 0; i < V22_EQ_LEN; i++)
@@ -430,7 +440,7 @@ void V22Pump::rx_symbol(cplx y)
 	}
 	dq2 = dq1;
 	dq1 = i;
-	rx_bits(i, q34_16);
+	rx_bits(i, q34_16, dq_raw);
 	rx_quad = quad;
 }
 
