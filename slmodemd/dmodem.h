@@ -42,7 +42,9 @@ struct dmodem_status {
 	enum dmodem_link link;
 	int offhook;
 	unsigned tx_rate, rx_rate;      /* bit/s, once online */
-	unsigned tx_pending;            /* DTE bytes not yet sent */
+	unsigned tx_pending;            /* DTE bytes not yet sent (or, with
+					   V.42, not acknowledged): 0 when
+					   all has reached the remote */
 	int fax_caller;                 /* a fax machine's CNG came before
 					   a connection: hand the call to a
 					   dmodem_fax */

@@ -397,5 +397,13 @@ void dmodem_status(struct dmodem *d, struct dmodem_status *s)
 	s->tx_rate = m->tx_rate;
 	s->rx_rate = m->rx_rate;
 	s->tx_pending = m->xmit.count;
+	{
+		/* V.42: frames not sent yet or not acknowledged (from the
+		   oldest unacknowledged to the next free one) */
+		struct lapm_state *l = &m->ec.lapm;
+		if (l->sent_info && l->info_list &&
+		    l->sent_info != l->info_list)
+			s->tx_pending++;
+	}
 	s->fax_caller = d->cng.bursts > 0 || d->cng.on_blocks >= 20;
 }
