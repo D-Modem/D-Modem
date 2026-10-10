@@ -8,16 +8,23 @@
 #
 #   ctest --test-dir build -L quick
 set(S ${DMODEM_DSP_DIR})
-set(C ${DMODEM_CORE_DIR})
 set(_dsp ${DMODEM_DSP_SRCS})
-# the 32 bit programs compile the core with the link layer
-set(_core ${DMODEM_CORE_SRCS} ${DMODEM_LINK_SRCS})
+# slmodemd's old C core (legacy/): Smart Link's original library calls
+# into it (half_blob), and core_script_old compares the new core with it
+set(DMODEM_LEGACY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/legacy)
+set(DMODEM_LEGACY_SRCS modem.cpp modem_datafile.cpp modem_at.cpp
+	modem_timer.cpp modem_param.cpp modem_debug.cpp sysdep_common.cpp)
+list(TRANSFORM DMODEM_LEGACY_SRCS PREPEND ${DMODEM_LEGACY_DIR}/)
+list(APPEND DMODEM_LEGACY_SRCS ${DMODEM_CORE_NEW_DIR}/homolog_data.cpp)
+set(DMODEM_LEGACY_DIR ${DMODEM_LEGACY_DIR} PARENT_SCOPE)
+set(DMODEM_LEGACY_SRCS ${DMODEM_LEGACY_SRCS} PARENT_SCOPE)
+set(C ${DMODEM_LEGACY_DIR})
 set(_fax ${S}/fax_modems.cpp ${S}/qam.cpp ${S}/qam_tables.cpp ${S}/dsp_util.cpp
 	${S}/dp_fsk.cpp)
 
 function(dmodem_test_exe name)
 	add_executable(${name} ${ARGN})
-	target_include_directories(${name} PRIVATE ${S} ${C} ${DMODEM_LINK_DIR}
+	target_include_directories(${name} PRIVATE ${S} ${DMODEM_LINK_DIR}
 		${DMODEM_CORE_NEW_DIR})
 	target_compile_options(${name} PRIVATE -Wall -O2 -g)
 	target_link_libraries(${name} PRIVATE m pthread)
@@ -230,8 +237,9 @@ foreach(_rate 9600 8000)
 		endif()
 		if(_kind STREQUAL "blob")
 			# the original library calls into slmodemd's old core
-			add_executable(${_n} modem_half_legacy.cpp
-				${C}/modem_cmdline.cpp ${_core}
+			add_executable(${_n} ${C}/modem_half.cpp
+				${C}/modem_cmdline.cpp ${DMODEM_LEGACY_SRCS}
+				${DMODEM_LINK_SRCS}
 				${CMAKE_CURRENT_SOURCE_DIR}/dsplibs.o)
 			target_include_directories(${_n} PRIVATE ${C} ${S}
 				${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
@@ -240,8 +248,9 @@ foreach(_rate 9600 8000)
 			# the open data pumps on the modem core
 			add_executable(${_n} modem_half.cpp ${DMODEM_FRONT_SRCS}
 				${DMODEM_CORE_NEW_SRCS} ${DMODEM_LINK_SRCS} ${_dsp})
-			target_include_directories(${_n} PRIVATE ${C} ${S}
-				${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
+			target_include_directories(${_n} PRIVATE
+				${DMODEM_FRONT_DIR} ${S} ${DMODEM_LINK_DIR}
+				${DMODEM_CORE_NEW_DIR})
 			set(_l "")
 		endif()
 		target_compile_definitions(${_n} PRIVATE CONFIG_DEBUG_MODEM

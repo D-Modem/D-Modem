@@ -34,9 +34,10 @@ a hook, and the binary `slmodem.log`).
 
 The behaviour is that of Smart Link's slmodemd core (`modem.c`,
 `modem_at.c`, `modem_param.c`): the same commands, responses, states and
-timing. slmodemd, libdmodem (`dmodem.h`) and modem_test run on it; the old
-core is left only for the tests that need it (the original DSP library
-calls into it). Differences:
+timing. slmodemd, libdmodem (`dmodem.h`) and modem_test run on it. The
+old core is in `../dsp/test/legacy/`, only for the tests that need it: the
+original DSP library calls into it, and `core_equiv_*` compare the two.
+Differences:
 
 - the version banner is the program's to print (`Modem::product`,
   `version`; slmodemd and modem_test print it at the start);

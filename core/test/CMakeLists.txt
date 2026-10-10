@@ -2,11 +2,12 @@
 # modems back to back on either core, and the transcripts must be the same
 # (core_equiv_*).  core_test tests the new core by itself.
 
-set(_old ${DMODEM_CORE_SRCS})
-list(REMOVE_ITEM _old ${DMODEM_CORE_DIR}/modem_timer.cpp)
+# the old core (../../dsp/test/legacy) on libdmodem's old timers
+set(_old ${DMODEM_LEGACY_SRCS})
+list(REMOVE_ITEM _old ${DMODEM_LEGACY_DIR}/modem_timer.cpp)
 add_executable(core_script_old script.cpp script_old.cpp ${_old}
-	${DMODEM_CORE_DIR}/dmodem_timer.cpp)
-target_include_directories(core_script_old PRIVATE ${DMODEM_CORE_DIR}
+	${DMODEM_LEGACY_DIR}/dmodem_timer.cpp)
+target_include_directories(core_script_old PRIVATE ${DMODEM_LEGACY_DIR}
 	${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
 target_compile_definitions(core_script_old PRIVATE CONFIG_DEBUG_MODEM
 	MODEM_RATE=8000)

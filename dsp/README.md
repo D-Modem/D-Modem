@@ -409,9 +409,10 @@ at 38 dB, 28800 at 35 dB, 26400 at 33 dB, 24000 at 30 dB, 21600 at
 `FAR_DELAY=<samples>` delays the far one (200 ms: still 31200 bit/s).
 
 `interop` connects two `modem_half` processes with pipes. One process is
-linked with `test/dsplibs.o` and the other with this code. Each call goes through
-the full modem core: AT commands, V.42/LAPM detection and data in both
-directions. Results at the time of writing:
+linked with `test/dsplibs.o` on slmodemd's old C core (`test/legacy/`: the
+original library calls into it), the other with this code on the modem
+core (`../core`). Each call goes through the full modem core: AT commands,
+V.42/LAPM detection and data in both directions. Results at the time of writing:
 
 | `AT+MS=` | original caller → open answerer | open caller → original answerer |
 |---|---|---|

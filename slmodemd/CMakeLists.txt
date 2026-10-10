@@ -3,27 +3,13 @@
 # (../core, dmodem_core) with the data pumps (../dsp, dmodem_dsp) and the
 # data link layer (../link, dmodem_link).
 #
-# The old C core of slmodemd (modem.cpp, modem_at.cpp, ...) is still here
-# for the tests that need it: Smart Link's original DSP library, a test
-# peer, calls into it (../dsp/test), and core_script_old compares the new
-# core with it (../core/test).
-#
-#   DMODEM_CORE_DIR, DMODEM_CORE_SRCS    the old core
-#   DMODEM_FRONT_SRCS                    the front ends' parts (options,
-#                                        pty, a modem on two descriptors)
-
-set(DMODEM_CORE_SRCS
-	modem.cpp modem_datafile.cpp modem_at.cpp modem_timer.cpp
-	modem_param.cpp modem_debug.cpp sysdep_common.cpp)
-list(TRANSFORM DMODEM_CORE_SRCS PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
-# the country parameters are the new core's (../core)
-list(APPEND DMODEM_CORE_SRCS ${DMODEM_CORE_NEW_DIR}/homolog_data.cpp)
-set(DMODEM_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
-set(DMODEM_CORE_SRCS ${DMODEM_CORE_SRCS} PARENT_SCOPE)
+#   DMODEM_FRONT_SRCS    the front ends' parts (options, pty, a modem on
+#                        two descriptors), for the 32 bit interop tests
 
 set(_front options.cpp pty.cpp datafile.cpp pipe_modem.cpp)
 list(TRANSFORM _front PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
 set(DMODEM_FRONT_SRCS ${_front} PARENT_SCOPE)
+set(DMODEM_FRONT_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
 add_library(dmodem_front OBJECT ${_front})
 target_link_libraries(dmodem_front PUBLIC dmodem_core)
 target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
