@@ -116,8 +116,23 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   remote's precoder on the decided points to recover u(n). The original
   library precodes when asked, and its signal decodes without errors with
   the coefficients we compute and with stronger ones.
-- Non-linear encoding and pre-emphasis are neither asked for nor applied
-  when the remote asks for them.
+- **Non-linear encoding** (9.7/V.34): when the remote's MP asks for it
+  (Θ = 0.3125; the Agere modem does, the original library does not), the
+  transmitter warps the precoded points and scales them back to the power
+  they had without it, as the note in 10.1.3 asks: by the square root of
+  the mean power of the constellation over that of its warped points,
+  computed the way `frame_power` computes the mean power. The Agere
+  receiver undoes that scale from a table of the same values (to 1/512)
+  before its non-linear decoder; without the scaling it decodes nothing
+  above 24000 bit/s. Our receiver does not ask for it.
+- **16 point training:** a J of 0x89B0 from the remote asks for TRN, MP and
+  E in the 16 point constellation in phase 4 (MP then takes 4 bits per
+  symbol, E is 5 symbols); the receiver accepts both J and the transmitter
+  follows the remote's. We send the 4 point J.
+- **Asymmetric rates:** both rates are kept only when both MPs set bit 50;
+  otherwise both directions take the lower one.
+- Pre-emphasis is neither asked for nor applied when the remote asks for
+  it.
 
 - **Echo canceller:** real pass band NLMS on the line samples, structured
   like the one in Agere's V.34 (`agrmodemlib.o`, read for reference): a
@@ -142,8 +157,8 @@ the receiver takes it from the tone reversals. `DSP_V34_RETRAIN=<ms>[a|c]`
 makes the answerer (a), the caller (c) or both start one after that long
 in data mode (a test).
 
-Not implemented: non-linear encoding, pre-emphasis, the auxiliary
-channel and rate renegotiation.
+Not implemented: pre-emphasis, non-linear decoding (we never ask for
+it), the auxiliary channel and rate renegotiation.
 
 ### V.90 digital modem
 
@@ -331,8 +346,13 @@ compiler (`g++ -m32`), for the original library.
 
     ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
-    ctest --test-dir build -L interop   # calls between the original library and this one,
-                                        # data and class 1 fax, in real time (needs g++ -m32)
+    ctest --test-dir build -L interop -j8   # calls between the original library and this one,
+                                            # data and class 1 fax, in real time (needs g++ -m32)
+    ctest --test-dir build -L agere -j8     # calls between the Agere soft modem and this one
+
+The interop and agere calls run in real time and mostly wait, so they run
+side by side (`-j`); each writes its modem logs to
+`build/slmodemd/dsp/test/logs/<test>/`.
 
 The test programs are in `build/slmodemd/dsp/test/`; `interop.py` and
 `fax_interop.py` take the two modem programs as arguments (`NETSIM` and

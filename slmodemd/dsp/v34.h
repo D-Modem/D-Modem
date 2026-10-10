@@ -85,12 +85,17 @@ struct V34Params {
 				   bits: h(1) re, im, h(2) re, ... */
 	int precode, w;         /* h is not zero; c(n) in multiples of
 				   2^w */
+	float theta;            /* non-linear encoder (9.7/V.34): 0 or
+				   0.3125, transmitter only */
+	float nl_gain;          /* after it: the power without it */
+	double pw_;             /* mean power of the points (integers) */
 	unsigned long long g2[V34_G2_LEN], g4[V34_G4_LEN], z8[V34_Z8_LEN];
 
 	int shell_tables();
 	unsigned long long g2p(int i) const;
 	unsigned long long g4p(int i) const;
-	double frame_power(int k) const;
+	double frame_power(int k, double theta = 0, double e0 = 1) const;
+	void set_nonlinear(double theta_);
 	int init(int baud, int n, int expanded);
 	void set_precoder(const int h_[6]);
 	void precoder_push(V34Precoder *pc, int yr, int yi) const;
@@ -184,6 +189,8 @@ struct V34Tx {
 	enum v34_txseg seg;
 	long n;                 /* symbols sent in this segment */
 	int idx;                /* last training point, for differential coding */
+	int trn16;              /* phase 4 TRN, MP and E of 16 points (the
+				   remote's J asked for them) */
 	unsigned char bits[200];
 	int nbits, pos;
 	V34Mp mp;       /* the MP we send */
@@ -256,6 +263,7 @@ struct V34Rx {
 	unsigned scr;
 	unsigned sr;            /* last decoded bits, newest in bit 0 */
 	int j_count, ev_j, ev_jp, ev_s, ev_e;
+	int j16;                /* the remote asked for 16 point TRN */
 	int jword;
 	unsigned char mpbits[200];
 	/* V.90 digital modem: Ja carries the DIL descriptor */

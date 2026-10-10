@@ -1628,14 +1628,23 @@ int V34Pump::data_setup()
 	int ac = l->rate_ac < r->rate_ac ? l->rate_ac : r->rate_ac;
 	V34Params p;
 
+	/* bit 50 of MP: one modem without asymmetric rates, one rate */
+	if (!l->asym || !r->asym) {
+		if (ca > ac)
+			ca = ac;
+		ac = ca;
+	}
+	DSP_DBG("v34: MP max rates (ours, the remote's): %d/%d, %d/%d, "
+		"asymmetric %d/%d, non-linear %d\n", l->rate_ca, l->rate_ac,
+		r->rate_ca, r->rate_ac, l->asym, r->asym, r->nonlinear);
 	ntx = v34_pick_rate(ptx.baud, caller ? ca : ac, mask);
 	nrx = v34_pick_rate(prx.baud, caller ? ac : ca, mask);
-	if (r->nonlinear)
-		DSP_DBG("v34: remote asks for non-linear encoding: "
-			"not supported\n");
 	if (!ntx || !nrx || r->trellis > 2 || l->trellis > 2 ||
 	    p.init(ptx.baud, ntx, r->expanded))
 		return -1;
+	/* the remote's receiver asks for the non-linear encoder */
+	if (r->nonlinear)
+		p.set_nonlinear(0.3125);
 	/* each MP asks for the trellis code of the other's transmitter */
 	p.states = 16 << r->trellis;
 	p.set_precoder(r->h);
@@ -1647,8 +1656,9 @@ int V34Pump::data_setup()
 	p.set_precoder(l->h);
 	prx.start_data(&p, v34_put_bits, this);
 	rate_rx = p.rate;
-	DSP_DBG("v34: data rates tx %d rx %d, trellis tx %d rx %d states\n",
-		rate_tx, rate_rx, 16 << r->trellis, 16 << l->trellis);
+	DSP_DBG("v34: data rates tx %d rx %d, trellis tx %d rx %d states%s\n",
+		rate_tx, rate_rx, 16 << r->trellis, 16 << l->trellis,
+		r->nonlinear ? ", non-linear tx" : "");
 	return 0;
 }
 
@@ -1657,6 +1667,10 @@ void V34Pump::mp_start()
 	V34Mp *mp = &ptx.mp;
 	memset(mp, 0, sizeof(*mp));
 	mp->type = 1;
+	/* test: DSP_V34_RX_MAX=<n> asks for at most n * 2400 bit/s */
+	if (getenv("DSP_V34_RX_MAX") && atoi(getenv("DSP_V34_RX_MAX")) > 0 &&
+	    max_rate_rx > atoi(getenv("DSP_V34_RX_MAX")))
+		max_rate_rx = atoi(getenv("DSP_V34_RX_MAX"));
 	mp->rate_ca = caller ? 14 : max_rate_rx;
 	mp->rate_ac = caller ? max_rate_rx : 14;
 	mp->expanded = 1;
@@ -2127,8 +2141,10 @@ int V34Pump::handshake()
 			tx_next(P4A_SBAR, V34_TX_SBAR);
 		break;
 	case P4A_SBAR:
-		if (ptx.n >= 16)
+		if (ptx.n >= 16) {
+			ptx.trn16 = prx.j16;
 			tx_next(P4A_TRN, V34_TX_TRN);
+		}
 		break;
 	case P4A_TRN:
 		if (ptx.n >= TRN4_LEN)
@@ -2163,8 +2179,10 @@ int V34Pump::handshake()
 		break;
 	case P3C_J:
 		/* until the answerer's S of phase 4, then J' and TRN */
-		if (prx.ev_s && ptx.n % 8 == 0)
+		if (prx.ev_s && ptx.n % 8 == 0) {
+			ptx.trn16 = prx.j16;
 			tx_next(P4C_TRN, V34_TX_JP);
+		}
 		break;
 	case P4C_TRN:
 		if (ptx.seg == V34_TX_TRN && ptx.n >= TRN4_LEN)

@@ -35,6 +35,7 @@ namespace dsp {
 #define V34_PRIMARY_RMS 2790.0f
 
 #define J_4POINT        0x8990
+#define J_16POINT       0x89B0  /* bit 5: TRN of 16 points in phase 4 */
 #define J_DASH          0x899F
 
 static int scramble(unsigned *reg, int tap, int bit)
@@ -158,6 +159,22 @@ static cplx tx_point(int idx)
 	return v34_trn4[idx & 3];
 }
 
+/* 16 point training (10.1.3.8/V.34, when the remote's J asks for it):
+   point q of the quarter-superconstellation, turned as tx_point() turns
+   point 0, at the average power of the 4 point signals */
+static cplx tx_point16(int idx, int q)
+{
+	const float s = 0.4472136f;     /* sqrt(2 / 10) */
+	cplx z = { v34_quarter[q & 3][0] * s, v34_quarter[q & 3][1] * s };
+	int k;
+	for (k = 0; k < ((idx + 2) & 3); k++) {
+		float x = z.re;         /* clockwise */
+		z.re = z.im;
+		z.im = -x;
+	}
+	return z;
+}
+
 int V34Tx::dibit(int b0, int b1)
 {
 	b0 = scramble(&scr, tap, b0);
@@ -188,6 +205,8 @@ static cplx tx_symbol(void *ctx)
 	case V34_TX_TRN:
 		t->idx = t->dibit(1, 1);
 		z = tx_point(t->idx);
+		if (t->trn16)
+			z = tx_point16(t->idx, t->dibit(1, 1));
 		break;
 	case V34_TX_J:
 	case V34_TX_JP:
@@ -208,6 +227,12 @@ static cplx tx_symbol(void *ctx)
 		t->pos += 2;
 		t->idx = (t->idx + k) & 3;
 		z = tx_point(t->idx);
+		if (t->trn16) {
+			/* MP lengths (88, 188) are whole 4 bit symbols */
+			z = tx_point16(t->idx, t->dibit(t->bits[t->pos],
+						       t->bits[t->pos + 1]));
+			t->pos += 2;
+		}
 		break;
 	case V34_TX_DATA:
 		if (t->data_on) {
@@ -218,13 +243,15 @@ static cplx tx_symbol(void *ctx)
 	case V34_TX_E:
 		t->idx = (t->idx + t->dibit(1, 1)) & 3;
 		z = tx_point(t->idx);
+		if (t->trn16)
+			z = tx_point16(t->idx, t->dibit(1, 1));
 		break;
 	}
 	t->n++;
 	/* J' and E are single sequences */
 	if (t->seg == V34_TX_JP && t->n == 8)
 		t->segment(V34_TX_TRN);
-	else if (t->seg == V34_TX_E && t->n == 10)
+	else if (t->seg == V34_TX_E && t->n == (t->trn16 ? 5 : 10))
 		t->segment(V34_TX_DATA);
 	return z;
 }
@@ -496,10 +523,13 @@ void V34Rx::got_bit(int bit)
 		after_mp = 0;
 		return;
 	}
-	if ((sr & 0xFFFF) == rev16(J_4POINT)) {
+	if ((sr & 0xFFFF) == rev16(J_4POINT) ||
+	    (sr & 0xFFFF) == rev16(J_16POINT)) {
 		if (++j_count >= 2 && !ev_j) {
 			ev_j = 1;
-			DSP_DBG("v34 rx: J at symbol %ld\n", sym);
+			j16 = (sr & 0xFFFF) == rev16(J_16POINT);
+			DSP_DBG("v34 rx: J at symbol %ld%s\n", sym,
+				j16 ? " (16 point TRN)" : "");
 		}
 	} else if ((sr & 0xFFFF) == rev16(J_DASH) && ev_j && !ev_jp) {
 		ev_jp = 1;

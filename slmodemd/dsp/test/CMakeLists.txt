@@ -259,7 +259,7 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(NOT Python3_FOUND)
 	return()
 endif()
-set(_env "NETSIM=$<TARGET_FILE:netsim>;LOG_DIR=${CMAKE_CURRENT_BINARY_DIR};MODEM_REALTIME=1")
+set(_env "NETSIM=$<TARGET_FILE:netsim>;MODEM_REALTIME=1")
 set(_py ${CMAKE_CURRENT_SOURCE_DIR})
 foreach(_ms 34 132 122 22 212 103 23)
 	add_test(NAME interop_${_ms}_blob_calls COMMAND ${Python3_EXECUTABLE}
@@ -269,7 +269,7 @@ foreach(_ms 34 132 122 22 212 103 23)
 		${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob>
 		"ATX3;AT+MS=${_ms}")
 	set_tests_properties(interop_${_ms}_blob_calls interop_${_ms}_open_calls
-		PROPERTIES LABELS interop ENVIRONMENT "${_env}" RUN_SERIAL ON)
+		PROPERTIES LABELS interop ENVIRONMENT "${_env}")
 endforeach()
 # V.34 through a line hit (300 ms of silence both ways) in the middle of
 # the data: both modems retrain, V.42 carries on
@@ -280,17 +280,17 @@ add_test(NAME interop_34_hit_open_calls COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob>
 	"ATX3;AT+MS=34")
 set_tests_properties(interop_34_hit_blob_calls interop_34_hit_open_calls
-	PROPERTIES LABELS interop RUN_SERIAL ON ENVIRONMENT
+	PROPERTIES LABELS interop ENVIRONMENT
 	"${_env};NET=9600:9600:ulaw;STREAM=25;NET_DROP=20:300")
 # V.90: the original library (analogue modem) calls the open one (digital
 # modem, 8000 Hz) through the simulated G.711 network
 add_test(NAME interop_v90_ulaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=90")
-set_tests_properties(interop_v90_ulaw PROPERTIES LABELS interop RUN_SERIAL ON
+set_tests_properties(interop_v90_ulaw PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw")
 add_test(NAME interop_v90_alaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=90")
-set_tests_properties(interop_v90_alaw PROPERTIES LABELS interop RUN_SERIAL ON
+set_tests_properties(interop_v90_alaw PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:alaw;DSP_G711=alaw")
 # class 1 fax calls both ways
 foreach(_m 24 48 72 96 73 97 121 122)
@@ -299,5 +299,40 @@ foreach(_m 24 48 72 96 73 97 121 122)
 	add_test(NAME fax_interop_${_m}_open_sends COMMAND ${Python3_EXECUTABLE}
 		${_py}/fax_interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob> ${_m})
 	set_tests_properties(fax_interop_${_m}_blob_sends fax_interop_${_m}_open_sends
-		PROPERTIES LABELS interop ENVIRONMENT "${_env}" RUN_SERIAL ON)
+		PROPERTIES LABELS interop ENVIRONMENT "${_env}")
+endforeach()
+# the Agere soft modem (8000 Hz) and the open modem (9600 Hz) call each
+# other; AT+MS takes names there (B103, V21, ..., V34)
+if(TARGET half_agere)
+	foreach(_p B103:103 V21:21 B212:212 V22:22 V22B:122 V32:32 V32B:132
+		   V34:34)
+		string(REPLACE ":" ";" _p ${_p})
+		list(GET _p 0 _a)
+		list(GET _p 1 _ms)
+		add_test(NAME agere_${_ms}_agere_calls COMMAND
+			${Python3_EXECUTABLE} ${_py}/interop.py
+			$<TARGET_FILE:half_agere> $<TARGET_FILE:half_open>
+			"ATX3;AT+MS=${_a}")
+		set_tests_properties(agere_${_ms}_agere_calls PROPERTIES
+			LABELS agere ENVIRONMENT
+			"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_ms}")
+		add_test(NAME agere_${_ms}_open_calls COMMAND
+			${Python3_EXECUTABLE} ${_py}/interop.py
+			$<TARGET_FILE:half_open> $<TARGET_FILE:half_agere>
+			"ATX3;AT+MS=${_ms}")
+		set_tests_properties(agere_${_ms}_open_calls PROPERTIES
+			LABELS agere ENVIRONMENT
+			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
+	endforeach()
+endif()
+
+# the calls run in real time and mostly wait, so they can run in parallel
+# (ctest -L interop -j8): each writes its modem logs to logs/<test>/
+get_property(_tests DIRECTORY PROPERTY TESTS)
+foreach(_t ${_tests})
+	get_test_property(${_t} LABELS _l)
+	if(_l MATCHES "interop|agere")
+		set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT
+			"LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/logs/${_t}")
+	endif()
 endforeach()

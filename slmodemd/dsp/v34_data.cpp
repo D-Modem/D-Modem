@@ -131,8 +131,10 @@ unsigned long long V34Params::g4p(int i) const
 	return i >= 0 && i < 4 * M - 3 ? g4[i] : 0;
 }
 
-/* the mean power of the points of a frame with k shell mapping bits */
-double V34Params::frame_power(int k) const
+/* the mean power of the points of a frame with k shell mapping bits;
+   with theta, of the points through the non-linear encoder (9.7/V.34)
+   for points of mean power e0 */
+double V34Params::frame_power(int k, double theta, double e0) const
 {
 	int M_ = M, a, m, i;
 	double ringp[V34_MAX_RINGS], left = ldexp(1, k), e = 0;
@@ -142,7 +144,10 @@ double V34Params::frame_power(int k) const
 		double s = 0;
 		for (i = 0; i < 1 << q; i++) {
 			const signed char *v = v34_quarter[(m << q) + i];
-			s += v[0] * v[0] + v[1] * v[1];
+			double e = v[0] * v[0] + v[1] * v[1], z;
+			z = theta * e / e0;
+			z = 1 + z / 6 + z * z / 120;
+			s += e * z * z;
 		}
 		ringp[m] = s / (1 << q);
 	}
@@ -183,6 +188,8 @@ int V34Params::init(int baud, int n, int expanded)
 		return -1;
 	rate = 2400 * n;
 	states = 16;
+	theta = 0;
+	nl_gain = 1;
 	b = rt->b;
 	M = expanded ? rt->m_exp : rt->m_min;
 	J = v34_bauds[baud].J;
@@ -203,8 +210,25 @@ int V34Params::init(int baud, int n, int expanded)
 		pw = (r * pw + (P - r) * frame_power(K - 1)) / P;
 	/* the same power as the 4 point training signals */
 	g = (float)sqrt(2 / pw);
+	pw_ = pw;
 	w = b < 56 ? 1 : 2;
 	return 0;
+}
+
+/* 9.7/V.34 with theta = 0.3125: the transmitter keeps its power (the
+   note in 10.1.3), the receiver scales back before decoding */
+void V34Params::set_nonlinear(double theta_)
+{
+	double pw;
+
+	theta = (float)theta_;
+	nl_gain = 1;
+	if (theta <= 0)
+		return;
+	pw = frame_power(K, theta, pw_);
+	if (b > 12)
+		pw = (r * pw + (P - r) * frame_power(K - 1, theta, pw_)) / P;
+	nl_gain = (float)sqrt(pw_ / pw);
 }
 
 void V34Params::set_precoder(const int h_[6])
@@ -354,6 +378,15 @@ void V34DataTx::init(const V34Params *p_)
 	pos = 8;
 }
 
+/* 9.7/V.34: x'(n) = (1 + z/6 + z^2/120) x(n), z = theta |x(n)|^2 over the
+   average energy of x(n); the points are g x(n) and g^2 times that
+   average is 2 */
+static cplx nonlinear(cplx s, float theta)
+{
+	float z = theta * (s.re * s.re + s.im * s.im) / 2;
+	return cplx_scale(s, 1 + z / 6 + z * z / 120);
+}
+
 void V34DataTx::encode_frame(unsigned *scr, int tap)
 {
 	const V34Params *p_ = &p;
@@ -429,6 +462,10 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 			} else
 				sym[2 * i + k] = cplx_make(p_->g * x[k],
 							      p_->g * y[k]);
+			if (p_->theta > 0)
+				sym[2 * i + k] = cplx_scale(
+					nonlinear(sym[2 * i + k], p_->theta),
+					p_->nl_gain);
 			lab[k] = subset_label(x[k], y[k]);
 		}
 		state = trellis_next(p_->states, state,
@@ -453,6 +490,7 @@ cplx V34DataTx::symbol(unsigned *scr, int tap)
 	}
 	return sym[pos++];
 }
+
 
 
 /*
