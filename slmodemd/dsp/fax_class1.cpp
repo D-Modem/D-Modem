@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <new>
+
 #include "fax.h"
 #include <dsplibs.h>
 
@@ -64,7 +66,7 @@ struct Fax {
 	/* bytes from the DTE */
 	int dle;
 	int eod;                /* <DLE><ETX> seen */
-	u8 *buf;                /* FTM data ring */
+	u8 buf[TX_BUF];         /* FTM data ring */
 	int head, tail;
 	int byte, nbits;
 
@@ -505,14 +507,9 @@ int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
 
 void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
 {
-	Fax *f = static_cast<Fax*>(calloc(1, sizeof(*f)));
+	Fax *f = new (std::nothrow) Fax();
 	if (!f)
 		return NULL;
-	f->buf = static_cast<u8*>(malloc(TX_BUF));
-	if (!f->buf) {
-		free(f);
-		return NULL;
-	}
 	f->modem = m;
 	f->srate = srate;
 	f->caller = caller;
@@ -533,8 +530,7 @@ void FAX_delete(void *obj)
 		return;
 	DSP_DBG("fax: delete\n");
 	f->stop_rx();
-	free(f->buf);
-	free(f);
+	delete f;
 }
 
 float Fax::ced_sample()

@@ -169,7 +169,7 @@ int dcr_process(void *obj, void *buf, int len)
 
 void *dp_runtime_create(struct modem *m)
 {
-	struct dp_runtime *rt = static_cast<dp_runtime*>(calloc(1, sizeof(*rt)));
+	struct dp_runtime *rt = new (std::nothrow) dp_runtime();
 	if (rt)
 		rt->modem = m;
 	return rt;
@@ -185,7 +185,7 @@ void dp_runtime_set_law(void *runtime, int law)
 
 void dp_runtime_delete(void *runtime)
 {
-	free(runtime);
+	delete static_cast<struct dp_runtime *>(runtime);
 }
 
 

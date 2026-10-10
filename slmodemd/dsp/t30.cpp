@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <new>
+
 #include "dsp.h"
 #include "fax.h"
 #include "t30.h"
@@ -1100,7 +1102,7 @@ void t30_process(T30 *t, const short *in, short *out, int n)
 
 T30 *t30_create(const struct t30_config *cfg)
 {
-	T30 *t = static_cast<T30*>(calloc(1, sizeof(*t)));
+	T30 *t = new (std::nothrow) T30();
 	if (!t)
 		return NULL;
 	t->cfg = *cfg;
@@ -1138,7 +1140,7 @@ void t30_free(T30 *t)
 	if (t->have_next)
 		t->next.release();
 	t->page_bits.release();
-	free(t);
+	delete t;
 }
 
 void t30_get_status(T30 *t, struct t30_status *s)
