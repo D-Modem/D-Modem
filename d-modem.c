@@ -184,8 +184,17 @@ int main(int argc, char *argv[]) {
 		pjsua_media_config_default(&med_cfg);
 		med_cfg.no_vad = true;
 		med_cfg.ec_tail_len = 0;
+		/* a modem can't take samples slipping: a fixed 60 ms in the
+		   jitter buffer, never adapted down by discarding audio.  The
+		   far end often sends in step with what it receives, so its
+		   packets come right when the bridge takes a frame, and a
+		   buffer of one frame would run dry and fill in (a slip of a
+		   frame) on any jitter */
 		med_cfg.jb_max = 2000;
-//		med_cfg.jb_init = 200;
+		med_cfg.jb_init = 60;
+		med_cfg.jb_min_pre = 60;
+		med_cfg.jb_max_pre = 60;
+		med_cfg.jb_discard_algo = PJMEDIA_JB_DISCARD_NONE;
 		/* the conference bridge in frames of the modem's port (20
 		   ms): with smaller ones, where the port's frame falls among
 		   them changes from call to call, and so does the delay the
