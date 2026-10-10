@@ -139,6 +139,7 @@ struct V22Pump : Pump {
 	float rot_avg;          /* mean phase step per symbol of the input */
 	long s1_seen;           /* sample time when remote S1 was detected */
 	int sb1_seen;           /* remote scrambled ones at 1200 bit/s */
+	long sb1_at;            /* when 270 ms of them were in */
 	V22Scrambler rx_scr12, rx_scr24;
 
 	const char *mode_name();
@@ -654,6 +655,7 @@ int V22Pump::handshake()
 		} else if (run_sb1_12 >= MS2SYM(270)) {
 			/* answerer skipped the unscrambled ones (Bell 212A) */
 			sb1_seen = 1;
+			sb1_at = total;
 			set_state(C_V22_SB1);
 			set_tx(TX_SB1_1200);
 		}
@@ -689,6 +691,7 @@ int V22Pump::handshake()
 		} else if (run_sb1_12 >= MS2SYM(270)) {
 			/* V.22 answerer: stay at 1200 bit/s */
 			sb1_seen = 1;
+			sb1_at = total;
 			set_state(C_V22_SB1);
 		}
 		break;
@@ -697,11 +700,14 @@ int V22Pump::handshake()
 			set_state(V22_WAIT_RX);
 		break;
 	case C_V22_SB1:
-		/* the answerer's scrambled ones must have been seen; it may
-		   already send data by the end of our 765 ms */
-		if (run_sb1_12 >= MS2SYM(100))
+		/* 6.3.1.2/V.22: data 765 ms after 270 ms of the answerer's
+		   scrambled ones (an answerer that waits for ours to time its
+		   own drops the call when data come sooner) */
+		if (!sb1_seen && run_sb1_12 >= MS2SYM(270)) {
 			sb1_seen = 1;
-		if (ms >= 765 && sb1_seen)
+			sb1_at = total;
+		}
+		if (sb1_seen && total - sb1_at >= ms2samples(765, srate))
 			return connect();
 		/* a Bell 103 answerer only keeps its 2225 Hz mark */
 		if (dp.id == DP_B212 && !sb1_seen && ms >= 1500) {
@@ -834,8 +840,9 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		state = A_GAP;
 	} else if (!caller_)
 		state = A_SILENCE;
-	else if (id == DP_B212) {
-		/* Bell 212A: answer the 2225 Hz tone with scrambled ones */
+	else if (id == DP_B212 && !(rt && rt->answer_tone == ANSTONE_2100)) {
+		/* Bell 212A: answer the 2225 Hz tone with scrambled ones (an
+		   ITU answer tone: the V.22 handshake, the same modulation) */
 		state = C_WAIT_USB1;
 		set_state(C_V22_SB1);
 		set_tx(TX_SB1_1200);

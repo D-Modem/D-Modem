@@ -242,6 +242,19 @@ foreach(_rate 9600 8000)
 	endforeach()
 endforeach()
 
+# the Agere Systems soft modem as another peer (half_agere.c): its library,
+# agrsm_core.o of agrsm-20070804
+set(DMODEM_AGERE_LIB "${CMAKE_CURRENT_SOURCE_DIR}/agrsm_core.o" CACHE
+	FILEPATH "agrsm_core.o of the Agere soft modem (interop tests)")
+if(EXISTS "${DMODEM_AGERE_LIB}")
+	add_executable(half_agere half_agere.c ${DMODEM_AGERE_LIB})
+	target_compile_options(half_agere PRIVATE ${DMODEM_M32} -g -O1)
+	target_link_options(half_agere PRIVATE ${DMODEM_M32} -no-pie
+		-Wl,-z,noexecstack)
+	target_link_libraries(half_agere PRIVATE m)
+	message(STATUS "tests: the Agere soft modem: ${DMODEM_AGERE_LIB}")
+endif()
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(NOT Python3_FOUND)
 	return()

@@ -26,6 +26,7 @@ static int alaw;
 static int plain;       /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
 			   resampler of dsp_util, not the raised cosine */
 static float gain = 1;
+static float gain_up = 1;    /* NET_GAIN_UP: on the way up from a 9600 Hz modem */
 /* NET_DROP=<at s>:<ms>: the line goes silent both ways for a while (a
    hit); NET_STEP=<at s>:<dB>: its loss changes for good (a reroute) */
 static float drop_at = -1, drop_ms, step_at = -1, step_g = 1;
@@ -221,7 +222,7 @@ static int run(struct dir *d, int a_out, int a_in)
 				d->obuf[o++] = (short)(y[k] > 32767 ? 32767 :
 						       y[k] < -32768 ? -32768 : y[k]);
 		} else {
-			m = d->rs.run(ibuf[i], y);
+			m = d->rs.run(ibuf[i] * gain_up, y);
 			for (k = 0; k < m; k++)
 				d->obuf[o++] = (short)g711((int)lrintf(y[k]));
 		}
@@ -271,6 +272,8 @@ int main(int argc, char **argv)
 	plain = getenv("NET_PLAIN") != NULL;
 	if (getenv("NET_GAIN"))
 		gain = atof(getenv("NET_GAIN"));
+	if (getenv("NET_GAIN_UP"))
+		gain_up = atof(getenv("NET_GAIN_UP"));
 	if (getenv("NET_DROP"))
 		sscanf(getenv("NET_DROP"), "%f:%f", &drop_at, &drop_ms);
 	if (getenv("NET_NOISE"))
