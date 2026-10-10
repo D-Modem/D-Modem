@@ -166,15 +166,22 @@ enum v34_txm {
 	TXM_PRIMARY,
 };
 
-struct bitq {
+struct BitQ {
 	unsigned char b[256];
 	int n, pos;
+
+	void reset();
+	void put(unsigned val, int nbits);
+	void info_start();
+	void info_end();
+	void put_octet(unsigned char c);
+	void make_cj();
 };
 
 /* control channel receiver: non-coherent DPSK at 600 baud */
 #define CC_HIST         128
 
-struct cc_rx {
+struct CcRx {
 	Osc lo;
 	cplx box[CC_SPS], old[CC_SPS];
 	cplx acc;
@@ -197,9 +204,12 @@ struct cc_rx {
 	unsigned char frame[128];
 	unsigned char hist[CC_HIST];
 	long hist_n;
+
+	void init(float fc);
+	int sample(float x);
 };
 
-struct info0 {
+struct Info0 {
 	int rates;              /* bit 0..: 2743, 2800, 3429, 3000L, 3000H, 3200L, 3200H */
 	int allow_3429;
 	int power_red;
@@ -208,20 +218,26 @@ struct info0 {
 	int c1664;
 	int clock;
 	int ack;
+
+	void parse(const unsigned char *b);
 };
 
-struct info1c {
+struct Info1c {
 	int power_red, add_power_red, md;
 	struct { int high, preemph, max_rate; } r[V34_NBAUDS];
 	int freq_offset;
+
+	void parse(const unsigned char *b);
 };
 
-struct info1a {
+struct Info1a {
 	int power_red, add_power_red, md;
 	int high, preemph, max_rate;
 	int baud_ac, baud_ca;   /* baud_ca 6: V.90 */
 	int uinfo;              /* V.90: the Ucode of the 2 point train */
 	int freq_offset;
+
+	void parse(const unsigned char *b);
 };
 
 #define EC_NEAR_LEN     256     /* 27 ms */
@@ -230,16 +246,20 @@ struct info1a {
 #define EC_SEARCH       1024    /* samples correlated for the far echo */
 #define EC_TRACK_MU     0.0f
 
-struct v34_ec {
-	float *hist, *wn, *wf;
-	float *rxh;             /* received samples, for the delay search */
-	float *corr, *win;      /* scratch of the search */
+struct V34Echo {
+	float hist[EC_HIST], wn[EC_NEAR_LEN], wf[EC_FAR_LEN];
+	float rxh[EC_SEARCH];   /* received samples, for the delay search */
+	float corr[EC_HIST], win[EC_HIST];      /* scratch of the search */
 	int pos, rpos;
 	int on, far_on, far_delay, trained;
 	int judged, bypass;     /* the echo was measured; none: off */
 	long n, since, filled, far_since;
 	float mu, dbg_rx, dbg_err;
 	float pw_rx, pw_err;    /* in and out while training */
+
+	void init();
+	void search();
+	float run(float tx, float rx);
 };
 
 #define V34_FIFO        8
@@ -280,12 +300,12 @@ struct v34_dp {
 	FskMod fsk;
 	float fsk_phase;
 	int fsk_bit;
-	struct bitq v8tx;
+	BitQ v8tx;
 	int v8tx_repeat;        /* restart the message when it is done */
 	QamTx cc;
 	float cc_sym;           /* +-1, 0: silence */
 	int cc_rev;             /* reverse at the next symbol */
-	struct bitq cctx;       /* INFO bits, a 1 reverses the phase */
+	BitQ cctx;       /* INFO bits, a 1 reverses the phase */
 	long cc_syms;
 	float probe[PROBE_PERIOD];
 	int probe_pos;
@@ -314,12 +334,12 @@ struct v34_dp {
 	int aa_blocks;
 
 	/* phase 2 receiver */
-	struct cc_rx ccr;
+	CcRx ccr;
 	int ev_info0, ev_info1, ev_rev;
 	long rev_time;
-	struct info0 rinfo0;
-	struct info1c rinfo1c;
-	struct info1a rinfo1a;
+	Info0 rinfo0;
+	Info1c rinfo1c;
+	Info1a rinfo1a;
 	long rtd;               /* round trip delay, samples */
 	long rev_sent;          /* when our reversal went out */
 	/* the remote's L1/L2 */
@@ -340,7 +360,7 @@ struct v34_dp {
 	int rate_of_baud[V34_NBAUDS];   /* receivable rates (N), by probing */
 
 	/* echo canceller (from phase 3 on) */
-	struct v34_ec ec;
+	V34Echo ec;
 	float last_tx;
 
 	/* phases 3, 4 and data */
@@ -380,96 +400,96 @@ static void v34_set_state(struct v34_dp *v, enum v34_state s)
  *    bit queues and INFO sequences
  */
 
-static void bq_reset(struct bitq *q)
+void BitQ::reset()
 {
-	q->n = q->pos = 0;
+	n = pos = 0;
 }
 
-static void bq_put(struct bitq *q, unsigned val, int nbits)
+void BitQ::put(unsigned val, int nbits)
 {
 	int i;
-	for (i = 0; i < nbits && q->n < (int)sizeof(q->b); i++)
-		q->b[q->n++] = (val >> i) & 1;
+	for (i = 0; i < nbits && n < (int)sizeof(b); i++)
+		b[n++] = (val >> i) & 1;
 }
 
 /* the fill bits, frame sync 01110010 (left first in time) */
-static void info_start(struct bitq *q)
+void BitQ::info_start()
 {
-	bq_reset(q);
-	bq_put(q, 0xF, 4);
-	bq_put(q, 0x4E, 8);     /* 01110010 sent from the left */
+	reset();
+	put(0xF, 4);
+	put(0x4E, 8);     /* 01110010 sent from the left */
 }
 
-static void info_end(struct bitq *q)
+void BitQ::info_end()
 {
-	unsigned crc = v34_crc_bits(q->b + 12, q->n - 12, 0xFFFF);
+	unsigned crc = v34_crc_bits(b + 12, n - 12, 0xFFFF);
 	int i;
 	for (i = 15; i >= 0; i--)
-		bq_put(q, (crc >> i) & 1, 1);
-	bq_put(q, 0xF, 4);
+		put((crc >> i) & 1, 1);
+	put(0xF, 4);
 }
 
-static void make_info0(struct v34_dp *v, struct bitq *q)
+static void make_info0(struct v34_dp *v, BitQ *q)
 {
-	info_start(q);
-	bq_put(q, 1, 1);        /* 2743 */
-	bq_put(q, 1, 1);        /* 2800 */
-	bq_put(q, 1, 1);        /* 3429 */
-	bq_put(q, 1, 1);        /* 3000 low carrier */
-	bq_put(q, 1, 1);        /* 3000 high carrier */
-	bq_put(q, 1, 1);        /* 3200 low carrier */
-	bq_put(q, 1, 1);        /* 3200 high carrier */
-	bq_put(q, 1, 1);        /* 3429 allowed */
-	bq_put(q, 0, 1);        /* power reduction */
-	bq_put(q, 0, 3);        /* symbol rate difference */
-	bq_put(q, 0, 1);        /* CME */
-	bq_put(q, 1, 1);        /* 1664 point constellations */
-	bq_put(q, 0, 2);        /* internal clock */
-	bq_put(q, 0, 1);        /* acknowledge */
+	q->info_start();
+	q->put(1, 1);        /* 2743 */
+	q->put(1, 1);        /* 2800 */
+	q->put(1, 1);        /* 3429 */
+	q->put(1, 1);        /* 3000 low carrier */
+	q->put(1, 1);        /* 3000 high carrier */
+	q->put(1, 1);        /* 3200 low carrier */
+	q->put(1, 1);        /* 3200 high carrier */
+	q->put(1, 1);        /* 3429 allowed */
+	q->put(0, 1);        /* power reduction */
+	q->put(0, 3);        /* symbol rate difference */
+	q->put(0, 1);        /* CME */
+	q->put(1, 1);        /* 1664 point constellations */
+	q->put(0, 2);        /* internal clock */
+	q->put(0, 1);        /* acknowledge */
 	if (v->pcm) {
 		/* INFO0d, Table 7/V.90 */
-		bq_put(q, V90_P2_POWER, 4);
-		bq_put(q, V90_MAX_POWER, 5);
-		bq_put(q, 0, 1);        /* power at the terminals */
-		bq_put(q, v->alaw, 1);
-		bq_put(q, 1, 1);        /* upstream at 3429 */
-		bq_put(q, 0, 1);
+		q->put(V90_P2_POWER, 4);
+		q->put(V90_MAX_POWER, 5);
+		q->put(0, 1);        /* power at the terminals */
+		q->put(v->alaw, 1);
+		q->put(1, 1);        /* upstream at 3429 */
+		q->put(0, 1);
 	}
-	info_end(q);
+	q->info_end();
 }
 
-static void make_info1c(struct v34_dp *v, struct bitq *q)
+static void make_info1c(struct v34_dp *v, BitQ *q)
 {
 	int i;
-	info_start(q);
-	bq_put(q, 0, 3);
-	bq_put(q, 0, 3);
-	bq_put(q, 0, 7);        /* no MD */
+	q->info_start();
+	q->put(0, 3);
+	q->put(0, 3);
+	q->put(0, 7);        /* no MD */
 	for (i = 0; i < V34_NBAUDS; i++) {
 		int rate = v->rate_of_baud[i];
 		if (!(v->rinfo0.rates & (1 << 2)) && i == V34_BAUD_3429)
 			rate = 0;
-		bq_put(q, 0, 1);        /* low carrier */
-		bq_put(q, 0, 4);        /* no pre-emphasis */
-		bq_put(q, rate, 4);
+		q->put(0, 1);        /* low carrier */
+		q->put(0, 4);        /* no pre-emphasis */
+		q->put(rate, 4);
 	}
-	bq_put(q, 0, 10);       /* frequency offset */
-	info_end(q);
+	q->put(0, 10);       /* frequency offset */
+	q->info_end();
 }
 
-static void make_info1a(struct v34_dp *v, struct bitq *q)
+static void make_info1a(struct v34_dp *v, BitQ *q)
 {
-	info_start(q);
-	bq_put(q, 0, 3);
-	bq_put(q, 0, 3);
-	bq_put(q, 0, 7);        /* no MD */
-	bq_put(q, v->high_rx, 1);
-	bq_put(q, 0, 4);        /* no pre-emphasis */
-	bq_put(q, v->max_rate_rx, 4);
-	bq_put(q, v->baud_tx, 3);       /* answerer -> caller */
-	bq_put(q, v->baud_rx, 3);       /* caller -> answerer */
-	bq_put(q, 0, 10);
-	info_end(q);
+	q->info_start();
+	q->put(0, 3);
+	q->put(0, 3);
+	q->put(0, 7);        /* no MD */
+	q->put(v->high_rx, 1);
+	q->put(0, 4);        /* no pre-emphasis */
+	q->put(v->max_rate_rx, 4);
+	q->put(v->baud_tx, 3);       /* answerer -> caller */
+	q->put(v->baud_rx, 3);       /* caller -> answerer */
+	q->put(0, 10);
+	q->info_end();
 }
 
 /* a field of an INFO frame, least significant bit first in time */
@@ -492,46 +512,46 @@ static int info_crc_ok(const unsigned char *b, int crc_pos)
 	return 1;
 }
 
-static void parse_info0(struct info0 *i, const unsigned char *b)
+void Info0::parse(const unsigned char *b)
 {
-	i->rates = bits_val(b, 12, 18);
-	i->allow_3429 = b[19];
-	i->power_red = b[20];
-	i->max_diff = bits_val(b, 21, 23);
-	i->cme = b[24];
-	i->c1664 = b[25];
-	i->clock = bits_val(b, 26, 27);
-	i->ack = b[28];
+	rates = bits_val(b, 12, 18);
+	allow_3429 = b[19];
+	power_red = b[20];
+	max_diff = bits_val(b, 21, 23);
+	cme = b[24];
+	c1664 = b[25];
+	clock = bits_val(b, 26, 27);
+	ack = b[28];
 }
 
-static void parse_info1c(struct info1c *i, const unsigned char *b)
+void Info1c::parse(const unsigned char *b)
 {
 	int k;
-	i->power_red = bits_val(b, 12, 14);
-	i->add_power_red = bits_val(b, 15, 17);
-	i->md = bits_val(b, 18, 24);
+	power_red = bits_val(b, 12, 14);
+	add_power_red = bits_val(b, 15, 17);
+	md = bits_val(b, 18, 24);
 	for (k = 0; k < V34_NBAUDS; k++) {
 		int o = 25 + 9 * k;
-		i->r[k].high = b[o];
-		i->r[k].preemph = bits_val(b, o + 1, o + 4);
-		i->r[k].max_rate = bits_val(b, o + 5, o + 8);
+		r[k].high = b[o];
+		r[k].preemph = bits_val(b, o + 1, o + 4);
+		r[k].max_rate = bits_val(b, o + 5, o + 8);
 	}
-	i->freq_offset = bits_val(b, 79, 88);
+	freq_offset = bits_val(b, 79, 88);
 }
 
-static void parse_info1a(struct info1a *i, const unsigned char *b)
+void Info1a::parse(const unsigned char *b)
 {
-	i->power_red = bits_val(b, 12, 14);
-	i->add_power_red = bits_val(b, 15, 17);
-	i->md = bits_val(b, 18, 24);
-	i->high = b[25];
-	i->preemph = bits_val(b, 26, 29);
-	i->max_rate = bits_val(b, 30, 33);
-	i->baud_ac = bits_val(b, 34, 36);
-	i->baud_ca = bits_val(b, 37, 39);
+	power_red = bits_val(b, 12, 14);
+	add_power_red = bits_val(b, 15, 17);
+	md = bits_val(b, 18, 24);
+	high = b[25];
+	preemph = bits_val(b, 26, 29);
+	max_rate = bits_val(b, 30, 33);
+	baud_ac = bits_val(b, 34, 36);
+	baud_ca = bits_val(b, 37, 39);
 	/* Table 10/V.90 */
-	i->uinfo = i->baud_ca == 6 ? bits_val(b, 25, 31) : 0;
-	i->freq_offset = bits_val(b, 40, 49);
+	uinfo = baud_ca == 6 ? bits_val(b, 25, 31) : 0;
+	freq_offset = bits_val(b, 40, 49);
 }
 
 /* the length of the INFO frame we expect next, up to the end of its CRC */
@@ -547,11 +567,11 @@ static int info_expected(struct v34_dp *v)
  *    V.8
  */
 
-static void v8_put_octet(struct bitq *q, unsigned char c)
+void BitQ::put_octet(unsigned char c)
 {
-	bq_put(q, 0, 1);
-	bq_put(q, c, 8);
-	bq_put(q, 1, 1);
+	put(0, 1);
+	put(c, 8);
+	put(1, 1);
 }
 
 /* the remote's octet of a V.8 category (tag in the low 4 bits), or -1 */
@@ -567,11 +587,11 @@ static int v8_remote_cat(struct v34_dp *v, int tag)
 /* CM (caller) or JM (answerer); a JM repeats what both modems have.  As a
    V.90 digital modem: PCM in the modulation octet, the PCM modem
    availability category and a digital network connection. */
-static void v8_make_msg(struct v34_dp *v, struct bitq *q)
+static void v8_make_msg(struct v34_dp *v, BitQ *q)
 {
 	int i, pcm = v->v90;
-	bq_reset(q);
-	bq_put(q, 0x3FF, 10);
+	q->reset();
+	q->put(0x3FF, 10);
 	/* in a JM only when the CM had an analogue V.90 modem */
 	if (!v->caller && (v8_remote_cat(v, V8_CAT_PCM) & V8_PCM_ANALOGUE) == 0)
 		pcm = 0;
@@ -581,19 +601,19 @@ static void v8_make_msg(struct v34_dp *v, struct bitq *q)
 			c |= V8_MOD1_PCM;
 		if (pcm && (c & 0x1F) == V8_CAT_ACCESS)
 			c |= V8_ACCESS_DIGITAL;
-		v8_put_octet(q, c);
+		q->put_octet(c);
 	}
 	if (pcm)
-		v8_put_octet(q, V8_CAT_PCM | V8_PCM_DIGITAL);
+		q->put_octet(V8_CAT_PCM | V8_PCM_DIGITAL);
 	v->v8tx_repeat = 1;
 }
 
-static void v8_make_cj(struct bitq *q)
+void BitQ::make_cj()
 {
-	bq_reset(q);
-	v8_put_octet(q, 0);
-	v8_put_octet(q, 0);
-	v8_put_octet(q, 0);
+	reset();
+	put_octet(0);
+	put_octet(0);
+	put_octet(0);
 }
 
 /* is V.34 in the remote's CM / JM? */
@@ -766,99 +786,99 @@ static void probe_start(struct v34_dp *v)
 	v->probe_start = v->total;
 }
 
-static void cc_rx_init(struct cc_rx *r, float fc)
+void CcRx::init(float fc)
 {
-	memset(r, 0, sizeof(*r));
-	r->lo.set_freq(-fc, V34_SRATE);
+	memset(this, 0, sizeof(*this));
+	lo.set_freq(-fc, V34_SRATE);
 }
 
 /* one sample; returns -1, or a decision (0/1) at a symbol centre */
-static int cc_rx_sample(struct cc_rx *r, float x)
+int CcRx::sample(float x)
 {
-	cplx z = cplx_scale(r->lo.next_cplx(), x), b, d, o;
-	int i = r->pos, bit = -1;
-	r->acc = cplx_add(r->acc, cplx_sub(z, r->box[i]));
-	r->box[i] = z;
-	b = cplx_scale(r->acc, 1.0f / CC_SPS);
-	o = r->old[i];
+	cplx z = cplx_scale(lo.next_cplx(), x), b, d, o;
+	int i = pos, bit = -1;
+	acc = cplx_add(acc, cplx_sub(z, box[i]));
+	box[i] = z;
+	b = cplx_scale(acc, 1.0f / CC_SPS);
+	o = old[i];
 	d = cplx_mulc(b, o);
-	r->old[i] = b;
+	old[i] = b;
 	/* symbol timing: fast between frames (after the probing signals),
 	   slow within them */
 	/* the most reversed phase step of this symbol at any sampling
 	   phase: a reversal of a tone is clear at one of them, wherever the
 	   symbol timing is */
-	if (cplx_pow(b) > 0 && d.re < r->dmin * cplx_pow(b))
-		r->dmin = d.re / cplx_pow(b);
-	if (r->snap && cplx_pow(b) > 300.0f * 300.0f / 4 &&
+	if (cplx_pow(b) > 0 && d.re < dmin * cplx_pow(b))
+		dmin = d.re / cplx_pow(b);
+	if (snap && cplx_pow(b) > 300.0f * 300.0f / 4 &&
 	    cplx_pow(o) > 300.0f * 300.0f / 4) {
 		float c = d.re / sqrtf(cplx_pow(b) * cplx_pow(o));
-		if (c < r->rmin) {
-			r->rmin = c;
-			r->rmin_pos = i;
+		if (c < rmin) {
+			rmin = c;
+			rmin_pos = i;
 		}
 	}
-	r->phase_e[i] += (r->frame_len > 0 ? 0.02f : 0.2f) *
-		(sqrtf(cplx_pow(d)) - r->phase_e[i]);
-	if (++r->pos == CC_SPS)
-		r->pos = 0;
-	if (i == r->best && r->n - r->last > CC_SPS / 2) {
+	phase_e[i] += (frame_len > 0 ? 0.02f : 0.2f) *
+		(sqrtf(cplx_pow(d)) - phase_e[i]);
+	if (++pos == CC_SPS)
+		pos = 0;
+	if (i == best && n - last > CC_SPS / 2) {
 		/* (once per symbol when the timing moves) */
-		r->last = r->n;
+		last = n;
 		/* tone amplitude A gives |b| = A / 2 */
-		r->p = cplx_pow(b);
-		if (r->p > 300.0f * 300.0f / 4)
-			r->on_count = r->on_count > 0 ? r->on_count + 1 : 1;
+		p = cplx_pow(b);
+		if (p > 300.0f * 300.0f / 4)
+			on_count = on_count > 0 ? on_count + 1 : 1;
 		else
-			r->on_count = r->on_count < 0 ? r->on_count - 1 : -1;
-		if (r->on_count >= 4)
-			r->on = 1;
-		else if (r->on_count <= -4)
-			r->on = 0;
-		if (r->p > 300.0f * 300.0f / 4)
+			on_count = on_count < 0 ? on_count - 1 : -1;
+		if (on_count >= 4)
+			on = 1;
+		else if (on_count <= -4)
+			on = 0;
+		if (p > 300.0f * 300.0f / 4)
 			bit = d.re < 0;
-		r->rbit = r->dmin < -0.5f;
+		rbit = dmin < -0.5f;
 		/* the remote's symbols end where its tone reverses most
 		   clearly: the timing from there at once, outside a frame
 		   (after INFO0, see cc_rx_bit).  The remote's symbol clock
 		   stops while it sends L1/L2, so an INFO1 frame after them
 		   comes at a new phase, and a retrain has no INFO0 to find
 		   the timing with */
-		if (r->snap && r->rmin < -0.8f && r->frame_len <= 0) {
-			int e = (r->rmin_pos - r->best + CC_SPS + CC_SPS / 2) %
+		if (snap && rmin < -0.8f && frame_len <= 0) {
+			int e = (rmin_pos - best + CC_SPS + CC_SPS / 2) %
 				CC_SPS - CC_SPS / 2;
 			if (e > 2 || e < -2)
-				r->best = r->rmin_pos;
+				best = rmin_pos;
 		}
-		r->dmin = 0;
-		r->rmin = 0;
+		dmin = 0;
+		rmin = 0;
 		/* follow the symbol timing, two samples per symbol at most:
 		   a jump would lose or repeat a decision (on a tone all
 		   phases look alike) */
 		{
-			int b = r->best, step;
-			float lo = r->phase_e[0];
+			int b = best, step;
+			float lo_ = phase_e[0];
 			for (i = 0; i < CC_SPS; i++) {
-				if (r->phase_e[i] > r->phase_e[b] * 1.2f)
+				if (phase_e[i] > phase_e[b] * 1.2f)
 					b = i;
-				if (r->phase_e[i] < lo)
-					lo = r->phase_e[i];
+				if (phase_e[i] < lo_)
+					lo_ = phase_e[i];
 			}
 			/* only where the phase steps show the timing: on a
 			   tone all phases look alike, and the timing of the
 			   frames before has to stay for its reversal */
-			if (r->phase_e[b] < 1.5f * lo)
-				b = r->best;
-			step = (b - r->best + CC_SPS + CC_SPS / 2) % CC_SPS -
+			if (phase_e[b] < 1.5f * lo_)
+				b = best;
+			step = (b - best + CC_SPS + CC_SPS / 2) % CC_SPS -
 				CC_SPS / 2;
 			if (step > 2)
 				step = 2;
 			else if (step < -2)
 				step = -2;
-			r->best = (r->best + step + CC_SPS) % CC_SPS;
+			best = (best + step + CC_SPS) % CC_SPS;
 		}
 	}
-	r->n++;
+	n++;
 	return bit;
 }
 
@@ -965,7 +985,7 @@ static int probe_analyse(struct v34_dp *v)
 
 static void cc_rx_bit(struct v34_dp *v, int bit)
 {
-	struct cc_rx *r = &v->ccr;
+	CcRx *r = &v->ccr;
 
 	if (dsplibs_debug_level >= 6)
 		DSP_DBG("v34: cc %s %ld %d p %.0f t %d\n", v->caller ? "C" : "A",
@@ -997,7 +1017,7 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 				r->rev_cand = 0;
 				r->hist_n = 0;
 				if (!v->ev_info0) {
-					parse_info0(&v->rinfo0, r->frame);
+					v->rinfo0.parse(r->frame);
 					v->ev_info0 = 1;
 					r->snap = 1;
 					DSP_DBG("v34: INFO0 rates %02x 3429 %d "
@@ -1006,10 +1026,10 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
 						v->rinfo0.max_diff);
 				} else {
 					if (v->caller)
-						parse_info1a(&v->rinfo1a, r->frame);
+						v->rinfo1a.parse(r->frame);
 					else {
 						int b;
-						parse_info1c(&v->rinfo1c, r->frame);
+						v->rinfo1c.parse(r->frame);
 						for (b = 0; b < V34_NBAUDS; b++)
 							DSP_DBG("v34: INFO1c baud %d high %d "
 								"preemph %d rate %d\n", b,
@@ -1059,28 +1079,9 @@ static void cc_rx_bit(struct v34_dp *v, int bit)
  *    we send our phase 3 sequences and the remote is silent, fast, then
  *    slower, and track slowly in full duplex.
  */
-static int ec_init(struct v34_ec *e)
+void V34Echo::init()
 {
-	memset(e, 0, sizeof(*e));
-	e->hist = static_cast<float*>(calloc(EC_HIST, sizeof(float)));
-	e->wn = static_cast<float*>(calloc(EC_NEAR_LEN, sizeof(float)));
-	e->wf = static_cast<float*>(calloc(EC_FAR_LEN, sizeof(float)));
-	e->rxh = static_cast<float*>(calloc(EC_SEARCH, sizeof(float)));
-	e->corr = static_cast<float*>(calloc(EC_HIST, sizeof(float)));
-	e->win = static_cast<float*>(calloc(EC_HIST, sizeof(float)));
-	return e->hist && e->wn && e->wf && e->rxh && e->corr && e->win ?
-		0 : -1;
-}
-
-static void ec_free(struct v34_ec *e)
-{
-	free(e->hist);
-	free(e->wn);
-	free(e->wf);
-	free(e->rxh);
-	free(e->corr);
-	free(e->win);
-	e->hist = e->wn = e->wf = e->rxh = e->corr = e->win = NULL;
+	memset(this, 0, sizeof(*this));
 }
 
 /* where the far echo is: the received signal of the last EC_SEARCH
@@ -1093,45 +1094,45 @@ static int cmp_float(const void *a, const void *b)
 	return x < y ? -1 : x > y;
 }
 
-static void ec_search(struct v34_ec *e)
+void V34Echo::search()
 {
 	const int mask = EC_HIST - 1;
 	float best = 0, run = 0, c, floor;
 	int d, k, best_d = -1;
 	/* only where our signal has been sent */
-	long n = e->filled - EC_SEARCH;
+	long n_ = filled - EC_SEARCH;
 
-	if (n > EC_HIST - EC_SEARCH)
-		n = EC_HIST - EC_SEARCH;
-	if (n < 2 * EC_NEAR_LEN) {
-		e->far_on = 0;
+	if (n_ > EC_HIST - EC_SEARCH)
+		n_ = EC_HIST - EC_SEARCH;
+	if (n_ < 2 * EC_NEAR_LEN) {
+		far_on = 0;
 		return;
 	}
-	float *corr = e->corr, *win = e->win;
+	float *corr_ = corr, *win_ = win;
 
-	for (d = 0; d < n; d++) {
+	for (d = 0; d < n_; d++) {
 		c = 0;
 		for (k = 0; k < EC_SEARCH; k++)
-			c += e->rxh[(e->rpos - k) & (EC_SEARCH - 1)] *
-			     e->hist[(e->pos - k - d) & mask];
-		corr[d] = c * c;
+			c += rxh[(rpos - k) & (EC_SEARCH - 1)] *
+			     hist[(pos - k - d) & mask];
+		corr_[d] = c * c;
 	}
 	/* the echo energy in windows of 32 delays, beyond the near part */
-	for (d = 0; d < n; d++) {
-		run += corr[d];
+	for (d = 0; d < n_; d++) {
+		run += corr_[d];
 		if (d >= 32)
-			run -= corr[d - 32];
-		win[d] = run;
+			run -= corr_[d - 32];
+		win_[d] = run;
 		if (d >= EC_NEAR_LEN && run > best) {
 			best = run;
 			best_d = d - 16;
 		}
 	}
 	/* against the median window: the floor without any echo */
-	qsort(win, (size_t)n, sizeof(float), cmp_float);
-	floor = win[n / 2] + 1e-9f;
+	qsort(win_, (size_t)n_, sizeof(float), cmp_float);
+	floor = win_[n_ / 2] + 1e-9f;
 	if (best_d < 0 || best < 16 * floor) {
-		e->far_on = 0;
+		far_on = 0;
 		DSP_DBG("v34: no far echo (best at %d, %.1f dB above the "
 			"floor)\n", best_d, 10 * log10f(best / floor));
 		return;
@@ -1141,63 +1142,63 @@ static void ec_search(struct v34_ec *e)
 		d = EC_NEAR_LEN;
 	if (d > EC_HIST - EC_FAR_LEN - 1)
 		d = EC_HIST - EC_FAR_LEN - 1;
-	e->far_delay = d;
-	e->far_on = 1;
-	e->far_since = 0;
+	far_delay = d;
+	far_on = 1;
+	far_since = 0;
 	DSP_DBG("v34: far echo at %d samples (%.1f dB above the floor)\n",
 		best_d, 10 * log10f(best / floor));
 }
 
-static float ec_run(struct v34_ec *e, float tx, float rx)
+float V34Echo::run(float tx, float rx)
 {
 	const int mask = EC_HIST - 1;
 	float est = 0, en = 1, err, g, h;
 	int i, p;
 
-	e->pos = (e->pos + 1) & mask;
-	e->hist[e->pos] = tx;
-	e->filled++;
-	e->rpos = (e->rpos + 1) & (EC_SEARCH - 1);
-	if (!e->on) {
-		e->rxh[e->rpos] = rx;
+	pos = (pos + 1) & mask;
+	hist[pos] = tx;
+	filled++;
+	rpos = (rpos + 1) & (EC_SEARCH - 1);
+	if (!on) {
+		rxh[rpos] = rx;
 		return rx;
 	}
-	for (i = 0, p = e->pos; i < EC_NEAR_LEN; i++, p = (p - 1) & mask) {
-		h = e->hist[p];
-		est += e->wn[i] * h;
+	for (i = 0, p = pos; i < EC_NEAR_LEN; i++, p = (p - 1) & mask) {
+		h = hist[p];
+		est += wn[i] * h;
 		en += h * h;
 	}
-	if (e->far_on)
-		for (i = 0, p = (e->pos - e->far_delay) & mask; i < EC_FAR_LEN;
+	if (far_on)
+		for (i = 0, p = (pos - far_delay) & mask; i < EC_FAR_LEN;
 		     i++, p = (p - 1) & mask) {
-			h = e->hist[p];
-			est += e->wf[i] * h;
+			h = hist[p];
+			est += wf[i] * h;
 			en += h * h;
 		}
 	err = rx - est;
 	/* what the near part leaves, for the far echo search */
-	e->rxh[e->rpos] = err;
+	rxh[rpos] = err;
 	/* normalized by the energy in the taps; not on our own silence */
-	if (e->mu > 0 && en > 1e4f * (EC_NEAR_LEN + EC_FAR_LEN)) {
-		g = e->mu * err / en;
-		for (i = 0, p = e->pos; i < EC_NEAR_LEN; i++, p = (p - 1) & mask)
-			e->wn[i] += g * e->hist[p];
-		if (e->far_on)
-			for (i = 0, p = (e->pos - e->far_delay) & mask;
+	if (mu > 0 && en > 1e4f * (EC_NEAR_LEN + EC_FAR_LEN)) {
+		g = mu * err / en;
+		for (i = 0, p = pos; i < EC_NEAR_LEN; i++, p = (p - 1) & mask)
+			wn[i] += g * hist[p];
+		if (far_on)
+			for (i = 0, p = (pos - far_delay) & mask;
 			     i < EC_FAR_LEN; i++, p = (p - 1) & mask)
-				e->wf[i] += g * e->hist[p];
+				wf[i] += g * hist[p];
 	}
-	if (e->mu > 0) {
-		e->pw_rx += 0.001f * (rx * rx - e->pw_rx);
-		e->pw_err += 0.001f * (err * err - e->pw_err);
+	if (mu > 0) {
+		pw_rx += 0.001f * (rx * rx - pw_rx);
+		pw_err += 0.001f * (err * err - pw_err);
 	}
 	if (dsplibs_debug_level >= 6) {
-		e->dbg_rx += 0.001f * (rx * rx - e->dbg_rx);
-		e->dbg_err += 0.001f * (err * err - e->dbg_err);
-		if ((e->pos & 4095) == 0)
+		dbg_rx += 0.001f * (rx * rx - dbg_rx);
+		dbg_err += 0.001f * (err * err - dbg_err);
+		if ((pos & 4095) == 0)
 			DSP_DBG("v34: echo canceller mu %.3f in %.0f out %.0f "
-				"(%.1f dB)\n", e->mu, e->dbg_rx, e->dbg_err,
-				10 * log10f((e->dbg_rx + 1) / (e->dbg_err + 1)));
+				"(%.1f dB)\n", mu, dbg_rx, dbg_err,
+				10 * log10f((dbg_rx + 1) / (dbg_err + 1)));
 	}
 	return err;
 }
@@ -1206,7 +1207,7 @@ static float ec_run(struct v34_ec *e, float tx, float rx)
    out (the remote is silent then), then track */
 static void ec_schedule(struct v34_dp *v)
 {
-	struct v34_ec *e = &v->ec;
+	V34Echo *e = &v->ec;
 	int ours = v->state == P3A_S || v->state == P3A_SBAR ||
 		v->state == P3A_PP || v->state == P3A_TRN ||
 		v->state == P3C_S || v->state == P3C_SBAR ||
@@ -1236,7 +1237,7 @@ static void ec_schedule(struct v34_dp *v)
 				   e->n == ms2samples(250, v->srate) ||
 				   e->n == ms2samples(500, v->srate) ||
 				   e->n == ms2samples(1000, v->srate)))
-			ec_search(e);
+			e->search();
 		/* fast at first, also for a far part found late */
 		e->far_since++;
 		{
@@ -1296,7 +1297,7 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 			v8_rx_bit(v, bit);
 		if (v->state == V8A_JM || v->state == V8A_GAP ||
 		    v->state == V8C_CJ || v->state == V8C_GAP) {
-			bit = cc_rx_sample(&v->ccr, x);
+			bit = v->ccr.sample(x);
 			if (bit >= 0)
 				cc_rx_bit(v, bit);
 		}
@@ -1313,7 +1314,7 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 	if (v->prx_on) {
 		ec_schedule(v);
 		if (!v->ec.bypass)
-			x = ec_run(&v->ec, v->last_tx, x);
+			x = v->ec.run(v->last_tx, x);
 		v->prx.sample(x);
 		if (v->state == V34_DATA)
 			rt_tone(v, x);
@@ -1321,7 +1322,7 @@ static void pump_rx_sample(struct v34_dp *v, float x)
 	}
 	if (v->retraining)
 		rt_tone(v, x);
-	bit = cc_rx_sample(&v->ccr, x);
+	bit = v->ccr.sample(x);
 	if (bit >= 0)
 		cc_rx_bit(v, bit);
 	if (v->tone_g.run(x))
@@ -1629,7 +1630,7 @@ static void v34_retrain(struct v34_dp *v, const char *why)
 	v->txm = TXM_SILENCE;
 	v->ec.on = 0;
 	/* the control channel as after INFO0 */
-	cc_rx_init(&v->ccr, v->caller ? 2400 : 1200);
+	v->ccr.init(v->caller ? 2400 : 1200);
 	v->ccr.snap = 1;
 	v->cctx.pos = v->cctx.n;
 	v->cc_rev = 0;
@@ -1675,7 +1676,7 @@ static int v34_handshake(struct v34_dp *v)
 			/* the caller's INFO0c follows its CJ by only 75 ms:
 			   listen for it already; with V.90 the analogue
 			   modem's INFO0a */
-			cc_rx_init(&v->ccr, v->pcm ? 2400 : 1200);
+			v->ccr.init(v->pcm ? 2400 : 1200);
 			v8_make_msg(v, &v->v8tx);
 			v->fsk.init(1650, 1850, V34_TONE_AMP, v->srate);
 			v->fsk_phase = 1;
@@ -1741,9 +1742,9 @@ static int v34_handshake(struct v34_dp *v)
 			if (v->pcm)
 				DSP_DBG("v34: V.90 with us as the digital modem\n");
 			v34_set_state(v, V8C_CJ);
-			v8_make_cj(&v->v8tx);
+			v->v8tx.make_cj();
 			v->v8tx_repeat = 0;
-			cc_rx_init(&v->ccr, 2400);
+			v->ccr.init(2400);
 		} else if (c >= ms2samples(5000, v->srate))
 			return v34_fallback(v, "no JM");
 		break;
@@ -2393,11 +2394,7 @@ static struct dp *v34_create(struct modem *m, enum DP_ID id,
 	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
 	v->carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate / 10;
 
-	if (ec_init(&v->ec)) {
-		ec_free(&v->ec);
-		free(v);
-		return NULL;
-	}
+	v->ec.init();
 	v->ansam.set_freq(2100, srate);
 	v->ansam_am.set_freq(15, srate);
 	v->ansam_sign = 1;
@@ -2436,7 +2433,6 @@ static int v34_delete(struct dp *dp)
 	struct v34_dp *v = static_cast<v34_dp*>(dp->dp_data);
 	if (v->prx_on)
 		v->prx.release();
-	ec_free(&v->ec);
 	free(v);
 	return 0;
 }
