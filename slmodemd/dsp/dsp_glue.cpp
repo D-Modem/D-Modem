@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <new>
+
 #include "dsp.h"
 #include <dsplibs.h>
 
@@ -52,7 +54,7 @@ void prop_dp_exit(void)
 #define DCR_SUBTRACT 0x2
 #define DCR_TRACK    0x4
 
-struct dcr {
+struct DcRemover {
 	unsigned flags;
 	int state;
 	s16 dc;
@@ -60,11 +62,14 @@ struct dcr {
 	int sum;
 	int count;
 	int skip_len, init_len, update_len;
+
+	void reset();
+	int process(void *buf, int len);
 };
 
 void *dcr_create(void)
 {
-	struct dcr *d = static_cast<dcr*>(calloc(1, sizeof(*d)));
+	DcRemover *d = new (std::nothrow) DcRemover();
 	if (!d)
 		return NULL;
 	d->flags = DCR_ENABLE | DCR_SUBTRACT | DCR_TRACK;
@@ -78,73 +83,83 @@ void *dcr_create(void)
 
 void dcr_delete(void *obj)
 {
-	free(obj);
+	delete static_cast<DcRemover*>(obj);
+}
+
+void DcRemover::reset()
+{
+	dc = 0;
+	sum = 0;
+	count = 0;
 }
 
 void dcr_reset(void *obj)
 {
-	struct dcr *d = static_cast<dcr*>(obj);
-	d->dc = 0;
-	d->sum = 0;
-	d->count = 0;
+	static_cast<DcRemover*>(obj)->reset();
 }
 
-int dcr_process(void *obj, void *buf, int len)
+int DcRemover::process(void *buf, int len)
 {
-	struct dcr *d = static_cast<dcr*>(obj);
 	s16 *s = static_cast<s16*>(buf);
 	int ret = 0, i;
 
-	if (!d || !(d->flags & DCR_ENABLE))
+	if (!(flags & DCR_ENABLE))
 		return 0;
-	if (d->state >= 2) {
+	if (state >= 2) {
 		/* ignore muted buffers once running */
 		for (i = 0; i < len && !s[i]; i++)
 			;
 		if (i == len)
 			return 0;
 	}
-	switch (d->state) {
+	switch (state) {
 	case 0:
-		d->count += len;
-		if (d->count >= d->skip_len) {
-			d->state = 1;
-			d->count = 0;
-			d->sum = 0;
+		count += len;
+		if (count >= skip_len) {
+			state = 1;
+			count = 0;
+			sum = 0;
 		}
 		break;
 	case 1:
 		for (i = 0; i < len; i++)
-			d->sum += s[i];
-		d->count += len;
-		if (d->count >= d->init_len) {
-			d->dc = d->sum / d->count;
-			DSP_DBG("dcr: dc %d\n", d->dc);
-			d->state = (d->flags & DCR_TRACK) ? 2 : 3;
-			d->sum = 0;
-			d->count = 0;
+			sum += s[i];
+		count += len;
+		if (count >= init_len) {
+			dc = sum / count;
+			DSP_DBG("dcr: dc %d\n", dc);
+			state = (flags & DCR_TRACK) ? 2 : 3;
+			sum = 0;
+			count = 0;
 		}
 		break;
 	case 2:
 		for (i = 0; i < len; i++)
-			d->sum += s[i];
-		d->count += len;
-		if (d->count >= d->update_len) {
-			d->dc = (d->dc * 0x7333 + (d->sum / d->count) * 0xccd +
+			sum += s[i];
+		count += len;
+		if (count >= update_len) {
+			dc = (dc * 0x7333 + (sum / count) * 0xccd +
 				 0x4000) >> 15;
-			d->sum = 0;
-			d->count = 0;
+			sum = 0;
+			count = 0;
 		}
 		break;
 	default:
 		break;
 	}
-	if (abs(d->dc) >= d->threshold)
+	if (abs(dc) >= threshold)
 		ret = 1;
-	if (d->flags & DCR_SUBTRACT && d->dc)
+	if (flags & DCR_SUBTRACT && dc)
 		for (i = 0; i < len; i++)
-			s[i] = dsp_clip16((float)s[i] - d->dc);
+			s[i] = dsp_clip16((float)s[i] - dc);
 	return ret;
+}
+
+int dcr_process(void *obj, void *buf, int len)
+{
+	if (!obj)
+		return 0;
+	return static_cast<DcRemover*>(obj)->process(buf, len);
 }
 
 
@@ -182,7 +197,7 @@ void dp_runtime_delete(void *runtime)
  *    ms of the finished burst.
  */
 
-struct ring_detector {
+struct RingDetector {
 	struct modem *modem;
 	int srate;
 	Biquad lp;
@@ -193,11 +208,14 @@ struct ring_detector {
 	int last_sign;
 	long crossings;
 	long freq, duration;
+
+	int process(void *in, int count);
+	void details(long *freq_, long *duration_);
 };
 
 void *RD_create(struct modem *m, unsigned rate)
 {
-	struct ring_detector *r = static_cast<ring_detector*>(calloc(1, sizeof(*r)));
+	RingDetector *r = new (std::nothrow) RingDetector();
 	if (!r)
 		return NULL;
 	r->modem = m;
@@ -209,66 +227,74 @@ void *RD_create(struct modem *m, unsigned rate)
 
 void RD_delete(void *obj)
 {
-	free(obj);
+	delete static_cast<RingDetector*>(obj);
 }
 
-int RD_process(void *obj, void *in, int count)
+int RingDetector::process(void *in, int count)
 {
-	struct ring_detector *r = static_cast<ring_detector*>(obj);
 	s16 *s = static_cast<s16*>(in);
 	int i, ret = 0;
 
 	for (i = 0; i < count; i++) {
-		float x = r->lp.run(s[i]);
+		float x = lp.run(s[i]);
 		int sign = x > 0;
 		float a = fabsf(x);
 
-		if (a > r->env)
-			r->env = a;
+		if (a > env)
+			env = a;
 		else
-			r->env -= r->env_decay * r->env;
-		if (sign != r->last_sign && a > 100) {
-			r->crossings++;
-			r->last_sign = sign;
+			env -= env_decay * env;
+		if (sign != last_sign && a > 100) {
+			crossings++;
+			last_sign = sign;
 		}
-		if (!r->on) {
-			if (r->env > 4000) {
-				if (++r->on_samples > ms2samples(50, r->srate)) {
-					r->on = 1;
-					r->off_samples = 0;
-					r->crossings = 0;
-					r->freq = 0;
-					r->duration = 0;
+		if (!on) {
+			if (env > 4000) {
+				if (++on_samples > ms2samples(50, srate)) {
+					on = 1;
+					off_samples = 0;
+					crossings = 0;
+					freq = 0;
+					duration = 0;
 					ret = 1;
 				}
 			} else
-				r->on_samples = 0;
+				on_samples = 0;
 		} else {
-			r->on_samples++;
-			if (r->env < 1500) {
-				if (++r->off_samples > ms2samples(150, r->srate)) {
-					long len = r->on_samples - r->off_samples;
-					r->on = 0;
-					r->on_samples = 0;
-					r->duration = len * 1000 / r->srate;
-					r->freq = len > 0 ?
-						r->crossings * r->srate / (2 * len) : 1;
-					if (r->freq <= 0)
-						r->freq = 1;
+			on_samples++;
+			if (env < 1500) {
+				if (++off_samples > ms2samples(150, srate)) {
+					long len = on_samples - off_samples;
+					on = 0;
+					on_samples = 0;
+					duration = len * 1000 / srate;
+					freq = len > 0 ?
+						crossings * srate / (2 * len) : 1;
+					if (freq <= 0)
+						freq = 1;
 					ret = 1;
 				}
 			} else
-				r->off_samples = 0;
+				off_samples = 0;
 		}
 	}
 	return ret;
 }
 
+int RD_process(void *obj, void *in, int count)
+{
+	return static_cast<RingDetector*>(obj)->process(in, count);
+}
+
+void RingDetector::details(long *freq_, long *duration_)
+{
+	*freq_ = freq;
+	*duration_ = duration;
+}
+
 void RD_ring_details(void *obj, long *freq, long *duration)
 {
-	struct ring_detector *r = static_cast<ring_detector*>(obj);
-	*freq = r->freq;
-	*duration = r->duration;
+	static_cast<RingDetector*>(obj)->details(freq, duration);
 }
 
 
@@ -280,7 +306,7 @@ void RD_ring_details(void *obj, long *freq, long *duration)
 
 #define CID_MAX_MSG 258
 
-struct cid {
+struct CallerId {
 	struct modem *modem;
 	unsigned format;
 	FskDemod fsk;
@@ -291,11 +317,17 @@ struct cid {
 	/* message */
 	u8 msg[CID_MAX_MSG];
 	int len;
+
+	void send(const char *s);
+	void field(const char *tag, const u8 *p, int n);
+	void report();
+	int byte(u8 b);
+	int process(void *in, int count);
 };
 
 void *CID_create(struct modem *m, unsigned rate, unsigned cid_val)
 {
-	struct cid *c = static_cast<cid*>(calloc(1, sizeof(*c)));
+	CallerId *c = new (std::nothrow) CallerId();
 	if (!c)
 		return NULL;
 	c->modem = m;
@@ -307,15 +339,15 @@ void *CID_create(struct modem *m, unsigned rate, unsigned cid_val)
 
 void CID_delete(void *obj)
 {
-	free(obj);
+	delete static_cast<CallerId*>(obj);
 }
 
-static void cid_send(struct cid *c, const char *s)
+void CallerId::send(const char *s)
 {
-	modem_send_to_tty(c->modem, s, strlen(s));
+	modem_send_to_tty(modem, s, strlen(s));
 }
 
-static void cid_field(struct cid *c, const char *tag, const u8 *p, int n)
+void CallerId::field(const char *tag, const u8 *p, int n)
 {
 	char buf[128];
 	int k = snprintf(buf, sizeof(buf), "%s = ", tag);
@@ -324,31 +356,31 @@ static void cid_field(struct cid *c, const char *tag, const u8 *p, int n)
 	buf[k++] = '\r';
 	buf[k++] = '\n';
 	buf[k] = 0;
-	cid_send(c, buf);
+	send(buf);
 }
 
-static void cid_report(struct cid *c)
+void CallerId::report()
 {
-	const u8 *p = c->msg + 2;
-	int n = c->msg[1];
+	const u8 *p = msg + 2;
+	int n = msg[1];
 	char buf[8];
 
-	cid_send(c, "\r\n");
-	if (c->format != 1) {
+	send("\r\n");
+	if (format != 1) {
 		int i;
-		cid_send(c, "MESG = ");
-		for (i = 0; i < c->len; i++) {
-			sprintf(buf, "%02X", c->msg[i]);
-			cid_send(c, buf);
+		send("MESG = ");
+		for (i = 0; i < len; i++) {
+			sprintf(buf, "%02X", msg[i]);
+			send(buf);
 		}
-		cid_send(c, "\r\n");
+		send("\r\n");
 		return;
 	}
-	if (c->msg[0] == 0x04) {        /* SDMF: MMDDHHMM number */
+	if (msg[0] == 0x04) {        /* SDMF: MMDDHHMM number */
 		if (n >= 8) {
-			cid_field(c, "DATE", p, 4);
-			cid_field(c, "TIME", p + 4, 4);
-			cid_field(c, "NMBR", p + 8, n - 8);
+			field("DATE", p, 4);
+			field("TIME", p + 4, 4);
+			field("NMBR", p + 8, n - 8);
 		}
 		return;
 	}
@@ -359,14 +391,14 @@ static void cid_report(struct cid *c)
 		switch (t) {
 		case 0x01:
 			if (l >= 8) {
-				cid_field(c, "DATE", p + 2, 4);
-				cid_field(c, "TIME", p + 6, 4);
+				field("DATE", p + 2, 4);
+				field("TIME", p + 6, 4);
 			}
 			break;
-		case 0x02: cid_field(c, "NMBR", p + 2, l); break;
-		case 0x04: cid_field(c, "NMBR", (const u8 *)"O", 1); break;
-		case 0x07: cid_field(c, "NAME", p + 2, l); break;
-		case 0x08: cid_field(c, "NAME", (const u8 *)"O", 1); break;
+		case 0x02: field("NMBR", p + 2, l); break;
+		case 0x04: field("NMBR", (const u8 *)"O", 1); break;
+		case 0x07: field("NAME", p + 2, l); break;
+		case 0x08: field("NAME", (const u8 *)"O", 1); break;
 		default: break;
 		}
 		p += l + 2;
@@ -375,66 +407,70 @@ static void cid_report(struct cid *c)
 }
 
 /* returns 0 to continue, 1 when a message was reported, -1 on error */
-static int cid_byte(struct cid *c, u8 b)
+int CallerId::byte(u8 b)
 {
 	int i;
 	u8 sum = 0;
 
-	if (c->len == 0 && b != 0x04 && b != 0x80)
+	if (len == 0 && b != 0x04 && b != 0x80)
 		return 0;
-	c->msg[c->len++] = b;
-	if (c->len < 2 || c->len < c->msg[1] + 3)
+	msg[len++] = b;
+	if (len < 2 || len < msg[1] + 3)
 		return 0;
-	for (i = 0; i < c->len; i++)
-		sum += c->msg[i];
+	for (i = 0; i < len; i++)
+		sum += msg[i];
 	if (sum) {
 		DSP_DBG("cid: checksum error\n");
 		return -1;
 	}
-	cid_report(c);
+	report();
 	return 1;
 }
 
-int CID_process(void *obj, void *in, int count)
+int CallerId::process(void *in, int count)
 {
-	struct cid *c = static_cast<cid*>(obj);
 	s16 *s = static_cast<s16*>(in);
 	int i, bit, r;
 
 	for (i = 0; i < count; i++) {
-		bit = c->fsk.run(s[i]);
-		if (bit < 0 || !c->fsk.carrier)
+		bit = fsk.run(s[i]);
+		if (bit < 0 || !fsk.carrier)
 			continue;
-		if (!c->in_char) {
+		if (!in_char) {
 			/* start bit after the mark preamble */
 			if (bit) {
-				c->marks++;
+				marks++;
 				continue;
 			}
-			if (c->marks < 10 && c->len == 0)
+			if (marks < 10 && len == 0)
 				continue;
-			c->in_char = 1;
-			c->nbits = 0;
-			c->shift = 0;
+			in_char = 1;
+			nbits = 0;
+			shift = 0;
 			continue;
 		}
-		if (c->nbits < 8) {
-			c->shift |= bit << c->nbits;
-			c->nbits++;
+		if (nbits < 8) {
+			shift |= bit << nbits;
+			nbits++;
 			continue;
 		}
 		/* stop bit */
-		c->in_char = 0;
-		c->marks = 0;
+		in_char = 0;
+		marks = 0;
 		if (!bit)
 			continue;       /* framing error */
-		r = cid_byte(c, c->shift);
+		r = byte(shift);
 		if (r)
 			return r;
-		if (c->len >= CID_MAX_MSG)
+		if (len >= CID_MAX_MSG)
 			return -1;
 	}
 	return 0;
+}
+
+int CID_process(void *obj, void *in, int count)
+{
+	return static_cast<CallerId*>(obj)->process(in, count);
 }
 
 
@@ -447,7 +483,7 @@ int CID_process(void *obj, void *in, int count)
 #define ETX 0x03
 #define DC4 0x14   /* <DLE><DC4> could be sent by the DTE as well */
 
-struct voice {
+struct Voice {
 	struct modem *modem;
 	int srate;
 	unsigned state;
@@ -463,11 +499,16 @@ struct voice {
 	int tone2;
 	DtmfGen dtmf;
 	int tone_dtmf;
+
+	struct voice_info *info();
+	int get_tx_sample(float *x);
+	int command(enum VOICE_CMD cmd);
+	int process(void *in, void *out, int count);
 };
 
 void *VOICE_create(struct modem *m, unsigned srate)
 {
-	struct voice *v = static_cast<voice*>(calloc(1, sizeof(*v)));
+	Voice *v = new (std::nothrow) Voice();
 	if (!v)
 		return NULL;
 	v->modem = m;
@@ -480,68 +521,72 @@ void *VOICE_create(struct modem *m, unsigned srate)
 void VOICE_delete(void *obj)
 {
 	DSP_DBG("voice: VOICE_delete...\n");
-	free(obj);
+	delete static_cast<Voice*>(obj);
 }
 
-static struct voice_info *voice_info(struct voice *v)
+struct voice_info *Voice::info()
 {
-	return (struct voice_info *)modem_get_param(v->modem, MDMPRM_VOICEINFO);
+	return (struct voice_info *)modem_get_param(modem, MDMPRM_VOICEINFO);
 }
 
-int VOICE_command(void *obj, enum VOICE_CMD cmd)
+int Voice::command(enum VOICE_CMD cmd)
 {
-	struct voice *v = static_cast<voice*>(obj);
-	struct voice_info *vi = voice_info(v);
+	struct voice_info *vi = info();
 
 	DSP_DBG("voice: command %d\n", cmd);
 	switch (cmd) {
 	case VOICE_CMD_STATE_RX:
 	case VOICE_CMD_STATE_TX:
 	case VOICE_CMD_STATE_DUPLEX:
-		v->state = cmd == VOICE_CMD_STATE_RX ? VOICE_STATE_RX :
+		state = cmd == VOICE_CMD_STATE_RX ? VOICE_STATE_RX :
 			cmd == VOICE_CMD_STATE_TX ? VOICE_STATE_TX :
 			VOICE_STATE_DUPLEX;
-		v->dle = 0;
-		v->tx_end = 0;
-		v->pending = VOICE_STATUS_CONNECT;
+		dle = 0;
+		tx_end = 0;
+		pending = VOICE_STATUS_CONNECT;
 		return 0;
 	case VOICE_CMD_BEEP:
 	case VOICE_CMD_DTMF:
 		if (!vi)
 			return -1;
-		v->tone_left = (long)vi->tone_duration * v->srate / 100;
-		v->tone_dtmf = cmd == VOICE_CMD_DTMF;
-		if (v->tone_dtmf) {
-			if (v->dtmf.set(vi->dtmf_symbol, v->srate))
-				v->tone_left = 0;
+		tone_left = (long)vi->tone_duration * srate / 100;
+		tone_dtmf = cmd == VOICE_CMD_DTMF;
+		if (tone_dtmf) {
+			if (dtmf.set(vi->dtmf_symbol, srate))
+				tone_left = 0;
 		} else {
-			v->t1.set_freq(vi->tone1_freq, v->srate);
-			v->t2.set_freq(vi->tone2_freq, v->srate);
-			v->tone2 = vi->tone2_freq != 0;
+			t1.set_freq(vi->tone1_freq, srate);
+			t2.set_freq(vi->tone2_freq, srate);
+			tone2 = vi->tone2_freq != 0;
 		}
-		if (!v->tone_left)
-			v->pending = VOICE_STATUS_OK;
+		if (!tone_left)
+			pending = VOICE_STATUS_OK;
 		return 0;
 	case VOICE_CMD_ABORT:
 	case VOICE_CMD_STATE_COMMAND:
-		v->state = VOICE_STATE_COMMAND;
-		v->tone_left = 0;
-		v->pending = VOICE_STATUS_OK;
+		state = VOICE_STATE_COMMAND;
+		tone_left = 0;
+		pending = VOICE_STATUS_OK;
 		return 0;
 	default:
 		return -1;
 	}
 }
 
-static int voice_get_tx_sample(struct voice *v, float *x)
+int VOICE_command(void *obj, enum VOICE_CMD cmd)
+{
+	return static_cast<Voice*>(obj)->command(cmd);
+}
+
+int Voice::get_tx_sample(float *x)
 {
 	char ch;
-	while (!v->tx_end && modem_recv_from_tty(v->modem, &ch, 1) == 1) {
+	while (!tx_end && modem_recv_from_tty(modem, &ch, 1) == 1) {
 		u8 c = ch;
-		if (v->dle) {
-			v->dle = 0;
+		if (dle) {
+			dle = 0;
 			if (c == ETX) {
-				v->tx_end = 1;
+				tx_end = 1;
 				break;
 			}
 			if (c == DLE) {
@@ -549,13 +594,13 @@ static int voice_get_tx_sample(struct voice *v, float *x)
 				return 1;
 			}
 			if (c == '!' || c == 0x18) {    /* abort, <CAN> */
-				v->tx_end = 1;
+				tx_end = 1;
 				break;
 			}
 			continue;
 		}
 		if (c == DLE) {
-			v->dle = 1;
+			dle = 1;
 			continue;
 		}
 		*x = ((int)c - 128) * 256.0f;
@@ -564,53 +609,52 @@ static int voice_get_tx_sample(struct voice *v, float *x)
 	return 0;
 }
 
-int VOICE_process(void *obj, void *in, void *out, int count)
+int Voice::process(void *in, void *out, int count)
 {
-	struct voice *v = static_cast<voice*>(obj);
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
-	double step = 8000.0 / v->srate;
+	double step = 8000.0 / srate;
 	char rxbuf[512];
 	int nrx = 0, i, status;
 
 	for (i = 0; i < count; i++) {
 		float y = 0;
 
-		if (v->tone_left > 0) {
-			if (v->tone_dtmf)
-				y = v->dtmf.next();
+		if (tone_left > 0) {
+			if (tone_dtmf)
+				y = dtmf.next();
 			else {
-				y = DSP_TX_AMPLITUDE * v->t1.next();
-				if (v->tone2)
+				y = DSP_TX_AMPLITUDE * t1.next();
+				if (tone2)
 					y = 0.5f * y + 0.5f * DSP_TX_AMPLITUDE *
-						v->t2.next();
+						t2.next();
 			}
-			if (--v->tone_left == 0)
-				v->pending = VOICE_STATUS_OK;
-		} else if (v->state & VOICE_STATE_TX && !v->tx_end) {
+			if (--tone_left == 0)
+				pending = VOICE_STATUS_OK;
+		} else if (state & VOICE_STATE_TX && !tx_end) {
 			/* linear interpolation from 8000 Hz */
-			v->tx_pos += step;
-			while (v->tx_pos >= 1) {
+			tx_pos += step;
+			while (tx_pos >= 1) {
 				float x;
-				v->tx_pos -= 1;
-				v->tx_prev = v->tx_cur;
-				if (voice_get_tx_sample(v, &x))
-					v->tx_cur = x;
-				else if (v->tx_end) {
+				tx_pos -= 1;
+				tx_prev = tx_cur;
+				if (get_tx_sample(&x))
+					tx_cur = x;
+				else if (tx_end) {
 					DSP_DBG("voice: dle command: ETX\n");
-					v->state &= ~VOICE_STATE_TX;
-					v->pending = VOICE_STATUS_OK;
+					state &= ~VOICE_STATE_TX;
+					pending = VOICE_STATUS_OK;
 					break;
 				}
 			}
-			y = v->tx_prev + (float)v->tx_pos * (v->tx_cur - v->tx_prev);
+			y = tx_prev + (float)tx_pos * (tx_cur - tx_prev);
 		}
 		dst[i] = dsp_clip16(y);
 
-		if (v->state & VOICE_STATE_RX) {
-			v->rx_pos += step;
-			if (v->rx_pos >= 1) {
+		if (state & VOICE_STATE_RX) {
+			rx_pos += step;
+			if (rx_pos >= 1) {
 				int c = (src[i] >> 8) + 128;
-				v->rx_pos -= 1;
+				rx_pos -= 1;
 				if (nrx < (int)sizeof(rxbuf) - 2) {
 					rxbuf[nrx++] = c;
 					if (c == DLE)
@@ -620,20 +664,26 @@ int VOICE_process(void *obj, void *in, void *out, int count)
 		}
 	}
 	if (nrx)
-		modem_send_to_tty(v->modem, rxbuf, nrx);
+		modem_send_to_tty(modem, rxbuf, nrx);
 
 	/* any character from the DTE ends receive only mode */
-	if (v->state == VOICE_STATE_RX) {
+	if (state == VOICE_STATE_RX) {
 		char ch;
-		if (modem_recv_from_tty(v->modem, &ch, 1) == 1) {
+		if (modem_recv_from_tty(modem, &ch, 1) == 1) {
 			static const char end[2] = { DLE, ETX };
-			modem_send_to_tty(v->modem, end, 2);
-			v->state = VOICE_STATE_COMMAND;
-			v->pending = VOICE_STATUS_OK;
+			modem_send_to_tty(modem, end, 2);
+			state = VOICE_STATE_COMMAND;
+			pending = VOICE_STATUS_OK;
 		}
 	}
 
-	status = v->pending;
-	v->pending = 0;
+	status = pending;
+	pending = 0;
 	return status;
 }
+
+int VOICE_process(void *obj, void *in, void *out, int count)
+{
+	return static_cast<Voice*>(obj)->process(in, out, count);
+}
+
