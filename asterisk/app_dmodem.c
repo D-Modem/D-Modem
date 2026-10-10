@@ -351,8 +351,11 @@ static int relay(int from, int to, struct pipe_buf *b)
 		n = read(from, b->data + b->len, sizeof(b->data) - b->len);
 		if (n > 0)
 			b->len += n;
-		else if (n == 0 || (errno != EAGAIN && errno != EINTR))
+		else if (n == 0 || (errno != EAGAIN && errno != EINTR)) {
 			eof = 1;        /* a pty master reads EIO at the end */
+			ast_verb(4, "dmodem: fd %d read %d (%s)\n", from, n,
+				 n ? strerror(errno) : "end of file");
+		}
 	}
 	if (b->len > 0) {
 		n = write(to, b->data, b->len);
@@ -676,6 +679,8 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 					status = "ERROR";
 					break;
 				}
+				ast_verb(4, "%s: DModem: server fd %d, dte fds %d %d\n",
+					 name, host, dte[0], dte[1]);
 			} else if (st.link == DMODEM_IDLE ||
 				   st.link == DMODEM_HANGUP ||
 				   samples > deadline) {
@@ -690,8 +695,13 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			break;
 		}
 		if (closing < 0) {
-			if (relay(host, dte[1], &to_line) < 0)
+			if (relay(host, dte[1], &to_line) < 0) {
+				ast_debug(1, "%s: the server closed (%s)\n",
+					  name, strerror(errno));
+				ast_verb(4, "%s: DModem: the server or program ended the session\n",
+					 name);
 				closing = samples;
+			}
 			continue;
 		}
 		/* the server is gone: once what it sent last is on the
@@ -701,6 +711,9 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 		     samples - closing > DMODEM_RATE) ||
 		    samples - closing > 30 * DMODEM_RATE) {
 			status = "LOCAL";
+			if (to_line.len || st.tx_pending)
+				ast_log(LOG_WARNING, "%s: %d bytes not sent at the hangup\n",
+					name, to_line.len + (int)st.tx_pending);
 			break;
 		}
 	}

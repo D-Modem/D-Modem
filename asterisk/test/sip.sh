@@ -34,7 +34,7 @@ astlogdir => $run/log
 [options]
 EOT
 ast="asterisk -C $run/etc/asterisk.conf"
-$ast -f -n -vvvvv > "$run/console.log" 2>&1 &
+$ast -f -n -T -vvvvv > "$run/console.log" 2>&1 &
 pid=$!
 trap 'kill $pid 2>/dev/null' EXIT
 i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do

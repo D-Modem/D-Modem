@@ -11,16 +11,20 @@ LINES = [b"hello from the caller %d " % i + b"x" * 40 for i in range(20)]
 
 # the BBS
 def bbs_conn(conn):
+    print("bbs: connected at %.3f" % time.time(), flush=True)
     conn.sendall(b"Welcome to the test BBS\r\n")
     buf = b""
     while True:
         d = conn.recv(4096)
         if not d:
+            print("bbs: the modem side closed at %.3f" % time.time(), flush=True)
             return
         buf += d
+        print("bbs: %d bytes at %.3f: %r" % (len(d), time.time(), d[:40]), flush=True)
         while b"\r\n" in buf:
             line, buf = buf.split(b"\r\n", 1)
             if line == b"BYE":
+                print("bbs: BYE at %.3f" % time.time(), flush=True)
                 conn.sendall(b"Goodbye\r\n")
                 time.sleep(0.5)
                 conn.close()
