@@ -38,12 +38,19 @@ extern unsigned int dsplibs_debug_level;
 #define ENOIOCTLCMD 515
 #endif
 
+/* a calling fax machine's CNG: 1100 Hz, 0.5 s on, 3 s off */
+struct cng_detect {
+	float s1, s2, energy;
+	int n, on_blocks, bursts;
+};
+
 struct dmodem {
 	struct modem *m;
 	enum dmodem_law law;
 	int law_set;
 	unsigned long long samples;     /* the modem's clock: its audio */
 	char name[32];
+	struct cng_detect cng;
 };
 
 /*
@@ -159,6 +166,48 @@ static int alaw2lin(unsigned char a)
 	else
 		t = (t + 0x108) << (seg - 1);
 	return (a & 0x80) ? t : -t;
+}
+
+int dmodem_g711_decode(int alaw, unsigned char c)
+{
+	return alaw ? alaw2lin(c) : ulaw2lin(c);
+}
+
+unsigned char dmodem_g711_encode(int alaw, int x)
+{
+	return alaw ? lin2alaw(x) : lin2ulaw(x);
+}
+
+/* 20 ms blocks: most of the power at 1100 Hz for 400 ms or more is a
+   CNG burst (a voice or a modem doesn't hold one pure tone) */
+#define CNG_BLOCK       160
+#define CNG_COEF        1.298896f       /* 2 cos(2 pi 1100 / 8000) */
+
+static void cng_sample(struct cng_detect *c, float x)
+{
+	float s = x + CNG_COEF * c->s1 - c->s2;
+	c->s2 = c->s1;
+	c->s1 = s;
+	c->energy += x * x;
+	if (++c->n < CNG_BLOCK)
+		return;
+	{
+		float tone = c->s1 * c->s1 + c->s2 * c->s2 -
+			CNG_COEF * c->s1 * c->s2;
+		/* the tone's share of the block's energy */
+		float share = c->energy > 0 ?
+			2 * tone / (CNG_BLOCK * c->energy) : 0;
+		int on = share > 0.6f && c->energy / CNG_BLOCK > 100 * 100;
+		if (on) {
+			c->on_blocks++;
+		} else {
+			if (c->on_blocks >= 20 && c->on_blocks <= 33)
+				c->bursts++;
+			c->on_blocks = 0;
+		}
+	}
+	c->s1 = c->s2 = c->energy = 0;
+	c->n = 0;
 }
 
 /*
@@ -281,6 +330,13 @@ void dmodem_process(struct dmodem *d, const short *in, short *out, int n)
 		dp_runtime_set_law(m->dp_runtime, d->law);
 		d->law_set = 1;
 	}
+	/* a fax machine calling, while there is no connection (before the
+	   modem, which may use the samples in as its scratch) */
+	if (modem_link_state(m) != DMODEM_ONLINE) {
+		int i;
+		for (i = 0; i < n; i++)
+			cng_sample(&d->cng, in[i]);
+	}
 	if (m->started)
 		modem_process(m, (void *)in, out, n);
 	else
@@ -341,4 +397,5 @@ void dmodem_status(struct dmodem *d, struct dmodem_status *s)
 	s->tx_rate = m->tx_rate;
 	s->rx_rate = m->rx_rate;
 	s->tx_pending = m->xmit.count;
+	s->fax_caller = d->cng.bursts > 0 || d->cng.on_blocks >= 20;
 }

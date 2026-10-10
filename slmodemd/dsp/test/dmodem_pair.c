@@ -23,6 +23,7 @@ struct pair {
 	const char *ms;
 	int seconds;
 	int ok;
+	int fax_seen;
 };
 
 static int nonblock(int fd)
@@ -76,6 +77,13 @@ static void *run(void *arg)
 		dmodem_poll_dte(b);
 		dmodem_status(a, &s1);
 		dmodem_status(b, &s2);
+		/* a data call must never look like a fax machine calling */
+		if (s1.fax_caller || s2.fax_caller) {
+			if (!p->fax_seen)
+				printf("pair %d: fax CNG seen in a data call\n",
+				       p->id);
+			p->fax_seen = 1;
+		}
 		if (!online && s1.link == DMODEM_ONLINE &&
 		    s2.link == DMODEM_ONLINE) {
 			online = i;
@@ -96,7 +104,7 @@ static void *run(void *arg)
 		while ((n = read(sb[1], got_b + nb, sizeof(got_b) - nb)) > 0)
 			nb += n;
 	}
-	p->ok = sent == 5 && na == 5 * (int)strlen(msg) &&
+	p->ok = !p->fax_seen && sent == 5 && na == 5 * (int)strlen(msg) &&
 		nb == 5 * (int)strlen(msg) &&
 		!memcmp(got_a, msg, strlen(msg)) && !memcmp(got_b, msg, strlen(msg));
 	if (!p->ok) printf("a: [%.*s]\nb: [%.*s]\n", na, got_a, nb, got_b);
@@ -116,6 +124,7 @@ int main(int argc, char **argv)
 	dmodem_init();
 	if (getenv("DMODEM_DEBUG"))
 		dmodem_set_debug(atoi(getenv("DMODEM_DEBUG")));
+	memset(p, 0, sizeof(p));
 	for (i = 0; i < n && i < 16; i++) {
 		p[i].id = i;
 		p[i].ms = argc > 1 ? argv[1] : "";

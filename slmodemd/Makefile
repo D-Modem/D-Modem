@@ -80,6 +80,7 @@ modem_test:
 LIB_SRCS:= modem.c modem_datafile.c modem_at.c modem_pack.c modem_ec.c \
 	modem_comp.c modem_param.c modem_debug.c homolog_data.c \
 	dp_sinus.c dp_dummy.c sysdep_common.c dmodem.c dmodem_timer.c \
+	dmodem_fax.c dsp/t30.c dsp/t4.c dsp/tiff.c \
 	$(patsubst %.o,%.c,$(filter dsp/%,$(subst dsplibs.o,,$(dsp-objs-open))))
 LIB_OBJS:= $(patsubst %.c,lib/%.o,$(LIB_SRCS))
 # the library has no binary-only parts: native, whatever CC the blob needs

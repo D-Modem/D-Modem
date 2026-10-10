@@ -43,6 +43,9 @@ struct dmodem_status {
 	int offhook;
 	unsigned tx_rate, rx_rate;      /* bit/s, once online */
 	unsigned tx_pending;            /* DTE bytes not yet sent */
+	int fax_caller;                 /* a fax machine's CNG came before
+					   a connection: hand the call to a
+					   dmodem_fax */
 };
 
 struct dmodem;
@@ -71,5 +74,43 @@ void dmodem_set_debug(int level);
 /* the log lines go to fn (NULL: stderr); for all the modems, set it
    before the first one */
 void dmodem_set_log(void (*fn)(const char *line));
+
+/*
+ *    fax calls: a group 3 fax machine (T.30, V.17/V.29/V.27ter, no ECM)
+ *    that sends a TIFF file (calling) or receives one (answering)
+ */
+
+enum dmodem_fax_dir { DMODEM_FAX_RECEIVE, DMODEM_FAX_SEND };
+
+struct dmodem_fax_config {
+	enum dmodem_law law;
+	enum dmodem_fax_dir dir;
+	const char *file;               /* the TIFF to send, or to write */
+	const char *ident;              /* our number (TSI/CSI), 20 chars */
+	int max_bps;                    /* 14400 if 0 */
+};
+
+struct dmodem_fax_status {
+	int done, ok;
+	int pages;                      /* sent or received */
+	int bps, fine;
+	char remote_ident[21];
+	const char *result;             /* how it ended (or "in progress") */
+	const char *phase;
+};
+
+struct dmodem_fax;
+
+/* NULL if the file to send can't be read */
+struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg);
+void dmodem_fax_process(struct dmodem_fax *f, const short *in, short *out,
+			int n);
+void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
+			     unsigned char *out, int n);
+void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s);
+/* the call went away */
+void dmodem_fax_hangup(struct dmodem_fax *f);
+/* also closes the received file (none if no page came) */
+void dmodem_fax_destroy(struct dmodem_fax *f);
 
 #endif

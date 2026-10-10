@@ -95,6 +95,35 @@ libcheck: dmodem_pair
 
 .PHONY: libcheck FORCE
 
+# fax: the page coding against libtiff (tiffcp), two T.30 machines back
+# to back at each rate, and libdmodem's fax with the CNG hand-over
+FAX_T30 := ../t30.c ../t4.c ../tiff.c ../fax_modems.c ../dp_fsk.c ../qam.c \
+	../qam_tables.c ../dsp_util.c
+FAXTMP ?= /tmp/dmodem-faxcheck
+
+t4_test: t4_test.c ../t4.c ../tiff.c ../t4.h
+	$(CC) $(CFLAGS) -o $@ t4_test.c ../t4.c ../tiff.c -lpthread
+fax_pair: fax_pair.c $(FAX_T30) ../t30.h ../t4.h ../fax.h
+	$(CC) $(CFLAGS) -o $@ fax_pair.c $(FAX_T30) -lm -lpthread
+dmodem_fax_test: dmodem_fax_test.c ../../libdmodem.a ../../dmodem.h
+	$(CC) $(CFLAGS) -o $@ dmodem_fax_test.c ../../libdmodem.a -lm -lpthread
+
+faxcheck: t4_test fax_pair dmodem_fax_test
+	mkdir -p $(FAXTMP)
+	./t4_test write $(FAXTMP)/doc.tif
+	./t4_test light $(FAXTMP)/light.tif
+	for c in none g3:1d g3:2d g4; do \
+		tiffcp -c $$c $(FAXTMP)/doc.tif $(FAXTMP)/lib.tif && \
+		./t4_test compare $(FAXTMP)/doc.tif $(FAXTMP)/lib.tif || exit 1; done
+	for r in 14400 12000 9600 7200 4800 2400; do \
+		./fax_pair $(FAXTMP)/light.tif $(FAXTMP)/rx.tif $$r && \
+		./t4_test compare $(FAXTMP)/light.tif $(FAXTMP)/rx.tif || exit 1; done
+	for law in ulaw alaw; do \
+		./dmodem_fax_test $(FAXTMP)/light.tif $(FAXTMP)/rx.tif $$law && \
+		./t4_test compare $(FAXTMP)/light.tif $(FAXTMP)/rx.tif || exit 1; done
+
+.PHONY: faxcheck
+
 FAX_SRCS := ../fax_modems.c ../qam.c ../qam_tables.c ../dsp_util.c ../dp_fsk.c
 
 fax_loopback: fax_loopback.c $(FAX_SRCS) ../dsp.h ../qam.h ../fax.h
