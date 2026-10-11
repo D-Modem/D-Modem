@@ -447,6 +447,7 @@ so our answer to RM is not tested.
 | `interop_v92_fpe`: ours after 3 s, to drn 6 | 56000/30666, data without errors |
 | ours, rate from the mse (u-law) | 36000 or 37333 |
 | ours to drn 6, A-law | 56000/30666 |
+| noise upstream from 26 s to 40 s (60 rms) | renegotiation down to 24000; a minute later, fast parameter exchange up to 33333 |
 
 The original library starts renegotiations of its own when the line gets
 worse downstream (in netsim: `NET_NOISE_DIR=bacodes`, noise added to the
