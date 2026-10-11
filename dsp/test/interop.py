@@ -88,6 +88,29 @@ rate = min([int(r) for r in re.findall(rb"CONNECT (\d+)", buf["modemA"] + buf["m
 buf = {k: b"" for k in fd}
 msg_a = bytes(range(32, 127)) * 4 + b"\r\n"
 msg_b = b"The quick brown fox jumps over the lazy dog. " * 8
+# BULK=<octets>: that much each way instead, text, binary octets, long
+# repeats and noise in turn (what a compressor has to get right: its
+# dictionary filling up, 8 bit characters, string extensions, and the
+# Agere modem's switch to transparent mode on what does not compress);
+# no XON/XOFF octets
+def bulk(n, seed):
+    import random
+    r = random.Random(seed)
+    words = [b"modem", b"line", b"the", b"of", b"compression", b"V.44",
+             b"dictionary", b"history", b"string", b"codeword", b"data"]
+    out = b""
+    while len(out) < n:
+        kind = len(out) // 2048 % 4
+        if kind == 0:
+            out += b" ".join(r.choice(words) for _ in range(300)) + b"\r\n"
+        elif kind == 1:
+            out += bytes(r.randrange(128, 256) for _ in range(1024))
+        elif kind == 2:
+            out += bytes(r.choice(b"abc") for _ in range(16)) * 64
+        else:
+            out += bytes(r.randrange(256) for _ in range(2048))
+    return bytes(c for c in out if c not in (0x11, 0x13))[:n]
+bulk_n = int(os.environ.get("BULK", "0"))
 # STREAM=<s>: keep the data going both ways for that long (a line hit,
 # NET_DROP or NET_STEP, can come in the middle), then check all of it
 stream = float(os.environ.get("STREAM", "0"))
@@ -102,6 +125,19 @@ if stream:
         n += 1
         pump(0.5)
     msg_a, msg_b = sent_a, sent_b
+elif bulk_n:
+    msg_a, msg_b = bulk(bulk_n, 1), bulk(bulk_n, 2)
+    todo = {"modemA": msg_a, "modemB": msg_b}
+    for f in fd.values(): os.set_blocking(f, False)
+    while any(todo.values()):
+        for k in fd:
+            if todo[k]:
+                try:
+                    w = os.write(fd[k], todo[k][:1024])
+                    todo[k] = todo[k][w:]
+                except BlockingIOError:
+                    pass
+        pump(0.05)
 else:
     os.write(fd["modemA"], msg_a); os.write(fd["modemB"], msg_b)
 # 10 bits a character, and half as much again for V.42 framing

@@ -184,7 +184,7 @@ public:
 		ST_NODIALTONE, ST_BUSY, ST_NOANSWER,
 	};
 	void update_status(Status s);
-	void negotiated(int comp, int dict_size, int max_string);
+	void negotiated(int comp, bool v44, int dict_size, int max_string);
 	void logf(const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
 
 	/* the version and the name ATI shows */
@@ -318,6 +318,7 @@ private:
 		bool ec, ec_detector;
 		int tx_win, rx_win, tx_info, rx_info;
 		int comp, dict_size, max_string;
+		bool v44;               /* V.44 rather than V.42bis */
 	} cfg_ = {};
 	dlink::Link *link_ = nullptr;
 	LinkOwner *link_owner_ = nullptr;

@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
+
 #include "link.h"
 
 namespace dlink {
@@ -34,6 +36,18 @@ int Link::init(Owner *owner, bool caller, const Config &cfg)
 			enc_.exit();
 			return -1;
 		}
+		if (cfg.v44 &&
+		    (enc44_.init(cfg.v44_codewords, cfg.v44_max_string,
+				 cfg.v44_history) ||
+		     dec44_.init(cfg.v44_codewords, cfg.v44_max_string,
+				 cfg.v44_history))) {
+			enc_.exit();
+			dec_.exit();
+			enc44_.exit();
+			return -1;
+		}
+	} else {
+		cfg_.v44 = false;
 	}
 	if (cfg.ec)
 		lapm_.init(this, cfg.tx_win, cfg.rx_win, cfg.tx_info,
@@ -46,6 +60,8 @@ void Link::exit()
 	lapm_.exit();
 	enc_.exit();
 	dec_.exit();
+	enc44_.exit();
+	dec44_.exit();
 	mode_ = Mode::Idle;
 	timer_ = 0;
 	push_pending = false;
@@ -149,10 +165,29 @@ int Link::put_bits(int nbits, const uint8_t *buf, int n)
 	return n;
 }
 
-/* XID: the remote's V.42bis parameters (6.4/V.42bis), ours if it asks
-   for none */
+/* XID: V.44 if both have it (the smaller of the two modems' parameters,
+   the same both ways), else the remote's V.42bis parameters (6.4/V.42bis),
+   ours if it asks for none */
 void Link::update_config(const Config &remote)
 {
+	if (remote.comp && cfg_.comp && remote.v44 && cfg_.v44 &&
+	    enc44_.ready()) {
+		int n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
+		int n7 = std::min(cfg_.v44_max_string, remote.v44_max_string);
+		int n8 = std::min(cfg_.v44_history, remote.v44_history);
+		if (!enc44_.config(n2, n7, n8) && !dec44_.config(n2, n7, n8)) {
+			cfg_.comp = remote.comp;
+			cfg_.v44_codewords = n2;
+			cfg_.v44_max_string = n7;
+			cfg_.v44_history = n8;
+			logf("v44: %d codewords, strings of %d, history %d",
+			     n2, n7, n8);
+			owner_->negotiated(cfg_);
+			return;
+		}
+		logf("err: v44: setup failed (%d/%d/%d).", n2, n7, n8);
+	}
+	cfg_.v44 = false;
 	if (remote.comp && cfg_.comp) {
 		cfg_.comp = remote.comp;
 		if (!enc_.config(remote.dict_size, remote.max_string) &&
@@ -177,7 +212,8 @@ int Link::read_chars(uint8_t *buf, int n)
 {
 	if (!online_)
 		return 0;
-	if (cfg_.ec && cfg_.comp & 2 && enc_.ready())
+	if (cfg_.ec && cfg_.comp & 2 &&
+	    (cfg_.v44 ? enc44_.ready() : enc_.ready()))
 		return comp_read(buf, n);
 	return owner_->read_chars(buf, n);
 }
@@ -186,40 +222,60 @@ int Link::write_chars(const uint8_t *buf, int n)
 {
 	if (!online_)
 		return 0;
-	if (cfg_.ec && cfg_.comp & 1 && dec_.ready())
+	if (cfg_.ec && cfg_.comp & 1 &&
+	    (cfg_.v44 ? dec44_.ready() : dec_.ready()))
 		return comp_write(buf, n);
 	return owner_->write_chars(buf, n);
 }
 
+int Link::comp_read(uint8_t *buf, int n)
+{
+	return cfg_.v44 ? comp_read_with(enc44_, buf, n) :
+		comp_read_with(enc_, buf, n);
+}
+
+int Link::comp_write(const uint8_t *buf, int n)
+{
+	return cfg_.v44 ? comp_write_with(dec44_, buf, n) :
+		comp_write_with(dec_, buf, n);
+}
+
+bool Link::comp_flush_output()
+{
+	return cfg_.v44 ? comp_flush_with(dec44_) : comp_flush_with(dec_);
+}
+
 /* the DTE's characters through the encoder: as many as fit, then a
    flush when the DTE has no more */
-int Link::comp_read(uint8_t *buf, int n)
+template <class E>
+int Link::comp_read_with(E &enc, uint8_t *buf, int n)
 {
 	int ret = 0;
 	uint8_t ch;
 	while (ret < n) {
-		ret += enc_.out(buf + ret, n - ret);
+		ret += enc.out(buf + ret, n - ret);
 		if (ret == n)
 			break;
 		if (owner_->read_chars(&ch, 1) != 1)
 			break;
-		enc_.encode(ch);
+		enc.encode(ch);
 	}
 	if (ret < n) {
-		enc_.flush_encoder();
-		ret += enc_.out(buf + ret, n - ret);
+		enc.flush_encoder();
+		ret += enc.out(buf + ret, n - ret);
 	}
 	return ret;
 }
 
 /* decoded characters to the DTE; false while it has not taken them
    all */
-bool Link::comp_flush_output()
+template <class D>
+bool Link::comp_flush_with(D &dec)
 {
 	for (;;) {
 		if (!dec_count_) {
 			dec_head_ = 0;
-			dec_count_ = dec_.out(dec_out_, sizeof(dec_out_));
+			dec_count_ = dec.out(dec_out_, sizeof(dec_out_));
 			if (!dec_count_)
 				return true;
 		}
@@ -233,13 +289,14 @@ bool Link::comp_flush_output()
 
 /* received characters through the decoder; returns how many it took
    (LAPM keeps the rest until the DTE takes the output) */
-int Link::comp_write(const uint8_t *buf, int n)
+template <class D>
+int Link::comp_write_with(D &dec, const uint8_t *buf, int n)
 {
 	int i = 0;
 	if (!comp_flush_output())
 		return 0;
 	while (i < n) {
-		if (dec_.decode(buf[i++]) < 0) {
+		if (dec.decode(buf[i++]) < 0) {
 			logf("decoder error. %d(%d)", i, n);
 			status(Status::Error);
 			break;
@@ -248,7 +305,7 @@ int Link::comp_write(const uint8_t *buf, int n)
 			break;
 	}
 	if (i == n) {
-		dec_.flush_decoder();
+		dec.flush_decoder();
 		comp_flush_output();
 	}
 	return i;

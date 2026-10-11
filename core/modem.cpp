@@ -99,7 +99,7 @@ struct LinkOwner final : public dlink::Owner {
 	}
 	int tx_rate() override { return (int)m->tx_rate(); }
 	void negotiated(const dlink::Config &c) override {
-		m->negotiated(c.comp, c.dict_size, c.max_string);
+		m->negotiated(c.comp, c.v44, c.dict_size, c.max_string);
 	}
 	void log(const char *line) override {
 		m->logf("%s\n", line);
@@ -218,7 +218,8 @@ void Modem::report(Result code)
 			}
 			if ((mask & 3) == 3) {
 				put_chars("Compression: ", 13);
-				puts(cfg_.ec && cfg_.comp ? "V42bis" : none);
+				puts(!(cfg_.ec && cfg_.comp) ? none :
+				     cfg_.v44 ? "V44" : "V42bis");
 				crlf();
 			}
 			if (mask & 4 && tx_rate_) {
@@ -404,9 +405,10 @@ void Modem::update_status(Status status)
 	}
 }
 
-void Modem::negotiated(int comp, int dict_size, int max_string)
+void Modem::negotiated(int comp, bool v44, int dict_size, int max_string)
 {
 	cfg_.comp = comp;
+	cfg_.v44 = v44;
 	cfg_.dict_size = dict_size;
 	cfg_.max_string = max_string;
 }
@@ -841,6 +843,7 @@ void Modem::setup_config()
 		cfg_.comp = 0;
 	cfg_.dict_size = dlink::V42BIS_MAX_CODEWORDS;
 	cfg_.max_string = dlink::V42BIS_MAX_STRING;
+	cfg_.v44 = false;
 	dsp_info_.qc_lapm = cfg_.ec && cfg_.ec_detector;
 }
 

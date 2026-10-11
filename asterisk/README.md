@@ -34,7 +34,7 @@ DModem(isp,o)`; the profile's server or program then talks to the remote
 BBS or ISP.
 
 The modem is `libdmodem` ([../slmodemd/dmodem.h](../slmodemd/dmodem.h)):
-the slmodemd modem core (AT commands, V.42 error correction, V.42bis
+the slmodemd modem core (AT commands, V.42 error correction, V.44 or V.42bis
 compression) with the open data pumps of `dsp`.  It answers
 V.21, V.22, V.22bis, V.23, Bell 103/212A, V.32, V.32bis and V.34, and
 V.90 as the digital (server) modem: up to 56000 bit/s downstream to a
@@ -128,7 +128,7 @@ of a core).
 ## What the server or program sees
 
 Nothing until the modems are connected; then the bytes from the remote
-modem, after V.42 and V.42bis.  The server or program ending its side
+modem, after V.42 and V.44 or V.42bis.  The server or program ending its side
 (closing the socket, the program exiting) hangs up the call once what it
 sent last is on the line; the remote modem hanging up closes the socket
 or hangs up the pty (SIGHUP).

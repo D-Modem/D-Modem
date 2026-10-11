@@ -123,6 +123,7 @@ struct core_link final : public dlink::Owner {
 	int tx_rate() override { return (int)m->tx_rate; }
 	void negotiated(const dlink::Config &c) override {
 		m->cfg.comp = (u8)c.comp;
+		m->cfg.comp_v44 = c.v44;
 		m->cfg.comp_dict_size = c.dict_size;
 		m->cfg.comp_max_string = c.max_string;
 	}
@@ -308,7 +309,8 @@ static void modem_report_result(struct modem *m, enum MODEM_RESULT code)
 			}
 			if((msg_mask&3) == 3) {
 				modem_put_chars(m,"Compression: ",13);
-				msg = (m->cfg.ec && m->cfg.comp)? "V42bis" : none_str;
+				msg = !(m->cfg.ec && m->cfg.comp) ? none_str :
+					m->cfg.comp_v44 ? "V44" : "V42bis";
 				modem_put_chars(m,msg,strlen(msg));
 				modem_put_chars(m,CRLF_CHARS(m),2);
 			}
@@ -978,6 +980,7 @@ static void modem_setup_config(struct modem *m)
 	m->cfg.ec_rx_win_size  = dlink::LAPM_MAX_WIN;
 	m->cfg.ec_tx_info_size = dlink::LAPM_MAX_INFO;
 	m->cfg.ec_rx_info_size = dlink::LAPM_MAX_INFO;
+	m->cfg.comp_v44 = 0;
 	if(m->cfg.ec && MODEM_COMP_ENABLE(m))
 		m->cfg.comp = 0x3; /* bi-directional v42bis */
 	else

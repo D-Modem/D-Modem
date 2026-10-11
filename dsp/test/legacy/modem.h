@@ -145,6 +145,7 @@ struct modem_config {
 	u16 ec_rx_info_size;
 	/* compressor params */
 	u8  comp;
+	u8  comp_v44;           /* V.44 rather than V.42bis */
 	int comp_dict_size;
 	int comp_max_string;
 };

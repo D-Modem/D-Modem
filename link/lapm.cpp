@@ -37,6 +37,8 @@
 
 #include <string.h>
 
+#include <algorithm>
+
 #include "link.h"
 
 namespace dlink {
@@ -64,6 +66,14 @@ enum {
 	PI_V42BIS_REQUEST = 0x01,
 	PI_V42BIS_CW_NUMBER = 0x02,
 	PI_V42BIS_MAX_STRING = 0x03,
+	/* V.44: the user data subfield, to the end of the frame */
+	GI_USER_DATA = 0xff,
+	PI_V44_SET_ID = 0x40,           /* "V44" */
+	PI_V44_C0 = 0x41,               /* the method: 0, stream */
+	PI_V44_P0 = 0x42,               /* the directions, as V.42bis P0 */
+	PI_V44_N2T = 0x43, PI_V44_N2R = 0x44,   /* codewords */
+	PI_V44_N7T = 0x45, PI_V44_N7R = 0x46,   /* the longest string */
+	PI_V44_N8T = 0x47, PI_V44_N8R = 0x48,   /* the history */
 };
 
 static int frame_type(const Frame *f)
@@ -161,6 +171,47 @@ static void set_param(unsigned &param, unsigned value, unsigned dflt)
 		param = value;
 }
 
+/* the V.44 parameters of the user data subfield; the smaller of each
+   pair (we use the same both ways) */
+static void rx_v44(Config &cfg, const uint8_t *p, int len)
+{
+	bool v44 = false;
+	int dir = 0;
+	cfg.v44_codewords = cfg.v44_max_string = cfg.v44_history = 1 << 30;
+	while (len >= 2) {
+		uint8_t pid = p[0], plen = p[1];
+		p += 2;
+		len -= 2 + plen;
+		if (len < 0)
+			break;
+		int v = (int)get_be(p, plen);
+		switch (pid) {
+		case PI_V44_SET_ID:
+			v44 = plen == 3 && !memcmp(p, "V44", 3);
+			break;
+		case PI_V44_P0:
+			dir = v;
+			break;
+		case PI_V44_N2T: case PI_V44_N2R:
+			cfg.v44_codewords = std::min(cfg.v44_codewords, v);
+			break;
+		case PI_V44_N7T: case PI_V44_N7R:
+			cfg.v44_max_string = std::min(cfg.v44_max_string, v);
+			break;
+		case PI_V44_N8T: case PI_V44_N8R:
+			cfg.v44_history = std::min(cfg.v44_history, v);
+			break;
+		default:
+			break;
+		}
+		p += plen;
+	}
+	if (v44 && dir) {
+		cfg.v44 = true;
+		cfg.comp = dir;
+	}
+}
+
 void Lapm::rx_xid(Frame *f)
 {
 	/* what the remote asks for; V.42bis off unless it asks */
@@ -170,6 +221,7 @@ void Lapm::rx_xid(Frame *f)
 	cfg.comp = 0;
 	cfg.dict_size = 512;
 	cfg.max_string = 6;
+	cfg.v44 = false;
 	const uint8_t *buf = f->buf + 2;
 	int len = f->count - 2;
 
@@ -179,6 +231,10 @@ void Lapm::rx_xid(Frame *f)
 	len--;
 	while (len > 0) {
 		uint8_t gid = buf[0];
+		if (gid == GI_USER_DATA) {
+			rx_v44(cfg, buf + 1, len - 1);
+			break;
+		}
 		int glen = buf[1] << 8 | buf[2];
 		buf += 3;
 		len -= 3 + glen;
@@ -241,7 +297,7 @@ void Lapm::rx_xid(Frame *f)
 
 int Lapm::tx_xid(uint8_t addr)
 {
-	const int size = 2 + 1 + (3 + 19) + (3 + 15);
+	const int size = 2 + 1 + (3 + 19) + (3 + 15) + 34;
 	Frame *f = ctrl_frame();
 	if (!f) {
 		EC_ERR("tx_xid: cannot alloc frame.");
@@ -284,8 +340,12 @@ int Lapm::tx_xid(uint8_t addr)
 	*buf++ = 1;
 	*buf++ = (uint8_t)rx_win_;
 	len += glen;
+	/* the command offers V.42bis and V.44; the response has what was
+	   agreed */
+	bool response = addr == rsp_addr_;
+	bool v44 = c.comp && c.v44;
 	/* V.42bis */
-	if (c.comp) {
+	if (c.comp && !(response && v44)) {
 		*buf++ = GI_PRIVATE_NEGOTIATION;
 		glen = 15;
 		*buf++ = (uint8_t)(glen >> 8);
@@ -307,6 +367,39 @@ int Lapm::tx_xid(uint8_t addr)
 		*buf++ = 1;
 		*buf++ = (uint8_t)c.max_string;
 		len += glen;
+	}
+	/* V.44, as the Agere modem has it */
+	if (v44) {
+		*buf++ = GI_USER_DATA;
+		*buf++ = PI_V44_SET_ID;
+		*buf++ = 3;
+		*buf++ = 'V';
+		*buf++ = '4';
+		*buf++ = '4';
+		*buf++ = PI_V44_C0;
+		*buf++ = 1;
+		*buf++ = 0;                     /* the stream method */
+		*buf++ = PI_V44_P0;
+		*buf++ = 1;
+		*buf++ = (uint8_t)c.comp;
+		for (int k = 0; k < 2; k++) {
+			*buf++ = (uint8_t)(PI_V44_N2T + k);
+			*buf++ = 2;
+			*buf++ = (uint8_t)(c.v44_codewords >> 8);
+			*buf++ = (uint8_t)c.v44_codewords;
+		}
+		for (int k = 0; k < 2; k++) {
+			*buf++ = (uint8_t)(PI_V44_N7T + k);
+			*buf++ = 1;
+			*buf++ = (uint8_t)c.v44_max_string;
+		}
+		for (int k = 0; k < 2; k++) {
+			*buf++ = (uint8_t)(PI_V44_N8T + k);
+			*buf++ = 2;
+			*buf++ = (uint8_t)(c.v44_history >> 8);
+			*buf++ = (uint8_t)c.v44_history;
+		}
+		len += 34;
 	}
 	if (len > size) {
 		EC_ERR("tx_xid: result length(%d)  > size (%d).", len, size);

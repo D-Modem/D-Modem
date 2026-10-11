@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "link.h"
+#include "v44.h"
 
 using namespace dlink;
 
@@ -57,6 +58,94 @@ static std::vector<uint8_t> noise(size_t n)
 	return v;
 }
 
+
+/*
+ *    V.44
+ *
+ */
+
+static std::vector<uint8_t> v44_roundtrip(const char *name,
+					  const std::vector<uint8_t> &in,
+					  int n2, int n7, int n8,
+					  int flush_every)
+{
+	V44 enc, dec;
+	std::vector<uint8_t> line, out;
+	uint8_t buf[2048];
+	int n;
+
+	CHECK(!enc.init(n2, n7, n8) && !dec.init(n2, n7, n8), "init");
+	for (size_t i = 0; i < in.size(); i++) {
+		enc.encode(in[i]);
+		if (flush_every && (i + 1) % flush_every == 0)
+			enc.flush_encoder();
+		while ((n = enc.out(buf, sizeof(buf))) > 0)
+			line.insert(line.end(), buf, buf + n);
+	}
+	enc.flush_encoder();
+	while ((n = enc.out(buf, sizeof(buf))) > 0)
+		line.insert(line.end(), buf, buf + n);
+	for (uint8_t c : line) {
+		CHECK(dec.decode(c) >= 0, "%s: decode error", name);
+		while ((n = dec.out(buf, sizeof(buf))) > 0)
+			out.insert(out.end(), buf, buf + n);
+	}
+	CHECK(out == in, "%s: %zu in, %zu out", name, in.size(), out.size());
+	printf("  %s: %zu -> %zu octets\n", name, in.size(), line.size());
+	return line;
+}
+
+static void test_v44()
+{
+	std::vector<uint8_t> t = text(200000), z = noise(50000);
+	std::vector<uint8_t> rep, line;
+	for (int i = 0; i < 30000; i++)
+		rep.push_back("abababababababababcabcabcabc"[i % 28]);
+	line = v44_roundtrip("text", t, 4096, 255, 12288, 0);
+	CHECK(line.size() < t.size() / 2, "text: %zu octets", line.size());
+	v44_roundtrip("text, flush every 100", t, 4096, 255, 12288, 100);
+	v44_roundtrip("text, flush every one", text(5000), 4096, 255, 12288, 1);
+	v44_roundtrip("text, 256 codewords, strings of 32, history 512", t,
+		      256, 32, 512, 0);
+	v44_roundtrip("text, 1024 codewords, strings of 100", t, 1024, 100,
+		      4096, 37);
+	v44_roundtrip("noise (8 bit ordinals)", z, 4096, 255, 12288, 0);
+	v44_roundtrip("repeats (extensions)", rep, 4096, 255, 12288, 0);
+	std::vector<uint8_t> mixed = text(30000);
+	std::vector<uint8_t> z2 = noise(30000);
+	mixed.insert(mixed.end(), z2.begin(), z2.end());
+	std::vector<uint8_t> t2 = text(30000);
+	mixed.insert(mixed.end(), t2.begin(), t2.end());
+	v44_roundtrip("text, noise, text", mixed, 4096, 255, 12288, 0);
+
+	/* transparent mode (the decoder only): ETM, then octets with the
+	   escape character 0 (EID: the character; ECM: compressed again,
+	   from the start) */
+	V44 dec;
+	CHECK(!dec.init(4096, 255, 12288), "init");
+	std::vector<uint8_t> s;
+	/* 1 000000 (ETM, 6 bits), then the rest of the octet */
+	s.push_back(0x01);
+	s.push_back('h');
+	s.push_back('i');
+	s.push_back(0x00);              /* EID: a 0 */
+	s.push_back(0x01);
+	s.push_back(0x33);              /* the escape is 0x33 now: ECM */
+	s.push_back(0x00);
+	/* compressed: ordinal 'A' (0 + 7 bits), then FLUSH (1 + 000001) */
+	s.push_back((uint8_t)(('A' << 1) & 0xff));
+	s.push_back((uint8_t)(1 | 1 << 1));
+	std::vector<uint8_t> o;
+	uint8_t buf[64];
+	int n;
+	for (uint8_t c : s)
+		CHECK(dec.decode(c) >= 0, "transparent: decode error");
+	while ((n = dec.out(buf, sizeof(buf))) > 0)
+		o.insert(o.end(), buf, buf + n);
+	std::vector<uint8_t> want = { 'h', 'i', 0, 'A' };
+	CHECK(o == want, "transparent: %zu octets", o.size());
+	printf("  transparent mode, EID, ECM: ok\n");
+}
 
 /*
  *    V.42bis
@@ -288,12 +377,13 @@ struct Pair {
 	}
 };
 
-static Config lapm_config(int comp)
+static Config lapm_config(int comp, bool v44 = true)
 {
 	Config c;
 	c.ec = true;
 	c.detect = true;
 	c.comp = comp;
+	c.v44 = v44;
 	return c;
 }
 
@@ -330,15 +420,35 @@ static void test_lapm()
 	CHECK(p.lc.ec() && p.la.ec(), "LAPM chosen");
 	CHECK(p.dc.up && p.da.up, "LAPM up");
 	CHECK(p.lc.config().comp == 3 && p.la.config().comp == 3,
-	      "V.42bis both ways (%d, %d)", p.lc.config().comp,
+	      "compression both ways (%d, %d)", p.lc.config().comp,
 	      p.la.config().comp);
-	transfer("lapm + v42bis, text", p, 60000, 40000, 9600 * 60);
+	CHECK(p.lc.config().v44 && p.la.config().v44, "V.44 (%d, %d)",
+	      p.lc.config().v44, p.la.config().v44);
+	transfer("lapm + v44, text", p, 60000, 40000, 9600 * 60);
 	/* compression: well above the line rate */
-	transfer("lapm + v42bis, noise", p, 5000, 5000, 9600 * 20, false);
+	transfer("lapm + v44, noise", p, 5000, 5000, 9600 * 20, false);
 	p.lc.disconnect();
 	p.run(9600 * 2);
 	CHECK(p.da.released, "answerer released after DISC");
 	CHECK(p.dc.released, "caller released after UA");
+}
+
+/* V.42bis when one of them has no V.44 (as the caller, as the
+   answerer) */
+static void test_lapm_v42bis()
+{
+	for (int side = 0; side < 2; side++) {
+		Pair p(lapm_config(3, side == 1), lapm_config(3, side == 0));
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(p.dc.up && p.da.up, "LAPM up");
+		CHECK(p.lc.config().comp == 3 && p.la.config().comp == 3 &&
+		      !p.lc.config().v44 && !p.la.config().v44,
+		      "V.42bis both ways");
+		transfer(side ? "lapm + v42bis (answerer without V.44)" :
+			 "lapm + v42bis (caller without V.44)", p, 60000,
+			 40000, 9600 * 60);
+	}
 }
 
 static void test_lapm_nocomp()
@@ -406,10 +516,12 @@ int main(int argc, char **argv)
 {
 	struct { const char *name; void (*fn)(); } tests[] = {
 		{ "v42bis", test_v42bis },
+		{ "v44", test_v44 },
 		{ "hdlc", test_hdlc },
 		{ "async", test_async },
 		{ "v14", test_v14 },
 		{ "lapm", test_lapm },
+		{ "lapm_v42bis", test_lapm_v42bis },
 		{ "lapm_nocomp", test_lapm_nocomp },
 		{ "lapm_errors", test_lapm_errors },
 		{ "lapm_busy", test_lapm_busy },

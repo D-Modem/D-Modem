@@ -55,7 +55,7 @@ the comma form needs no quoting; an application argument with a space
 does, as in `'&dmodem_send_fax(/tmp/doc.tif +1 555 0100)'`.
 
 The modem is `libdmodem` ([../slmodemd/dmodem.h](../slmodemd/dmodem.h)):
-the slmodemd modem core (AT commands, V.42 error correction, V.42bis
+the slmodemd modem core (AT commands, V.42 error correction, V.44 or V.42bis
 compression) with the open data pumps of `dsp`. It supports:
 - V.21, V.22, V.22bis, V.23, Bell 103 and 212A, V.32, V.32bis and V.34;
 - V.90 as the digital (server) modem: up to 56000 bit/s downstream to a
@@ -167,7 +167,7 @@ percent of a core.
 ## What the server or program sees
 
 Nothing until the modems are connected. Then it gets the bytes from the
-remote modem, after V.42 and V.42bis.
+remote modem, after V.42 and V.44 or V.42bis.
 
 When the server or program ends its side (closes the socket, or the
 program exits), the call hangs up once what it sent last is on the line.

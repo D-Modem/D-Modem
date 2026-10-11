@@ -5,7 +5,7 @@
  *
  *    After the data pump connects, Link runs the V.42 detection phase
  *    (ODP/ADP, or the HDLC flags of a modem that skips it), then either
- *    V.42 LAPM error correction over HDLC frames, with V.42bis
+ *    V.42 LAPM error correction over HDLC frames, with V.44 or V.42bis
  *    compression when both modems agree on it, or plain asynchronous
  *    characters (start bit, 8 data bits, stop bit).
  *
@@ -27,6 +27,7 @@
 #include "hdlc.h"
 #include "lapm.h"
 #include "v42bis.h"
+#include "v44.h"
 
 namespace dlink {
 
@@ -40,6 +41,12 @@ struct Config {
 					   receive), bit 1 encoder */
 	int dict_size = V42BIS_MAX_CODEWORDS;
 	int max_string = V42BIS_MAX_STRING;
+	/* V.44 offered with compression; after XID: it, rather than
+	   V.42bis, is what the call has */
+	bool v44 = true;
+	int v44_codewords = V44_MAX_CODEWORDS;
+	int v44_max_string = V44_MAX_STRING;
+	int v44_history = V44_MAX_HISTORY;
 };
 
 enum class Status {
@@ -127,6 +134,10 @@ private:
 	int comp_read(uint8_t *buf, int n);
 	int comp_write(const uint8_t *buf, int n);
 	bool comp_flush_output();
+	template <class E> int comp_read_with(E &enc, uint8_t *buf, int n);
+	template <class D> int comp_write_with(D &dec, const uint8_t *buf,
+					       int n);
+	template <class D> bool comp_flush_with(D &dec);
 
 	Owner *owner_ = nullptr;
 	bool caller_ = false;
@@ -141,6 +152,7 @@ private:
 	Async async_;
 	Lapm lapm_;
 	V42bis enc_, dec_;
+	V44 enc44_, dec44_;
 	bool comp_ready_ = false;
 	/* decoded characters the DTE has not taken yet */
 	uint8_t dec_out_[256];

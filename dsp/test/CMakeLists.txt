@@ -386,6 +386,21 @@ if(TARGET half_agere)
 			LABELS agere ENVIRONMENT
 			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
 	endforeach()
+	# V.44 both ways (the Agere modem offers it): 60000 octets each
+	# way of text, binary, repeats and noise, which it sends in
+	# transparent mode now and then
+	add_test(NAME agere_v44_agere_calls COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_agere>
+		$<TARGET_FILE:half_open> "ATX3;AT+MS=V34")
+	set_tests_properties(agere_v44_agere_calls PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=34;BULK=60000")
+	add_test(NAME agere_v44_open_calls COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_open>
+		$<TARGET_FILE:half_agere> "ATX3;AT+MS=34")
+	set_tests_properties(agere_v44_open_calls PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=V34;BULK=60000")
 	# V.90: the Agere modem as the analogue modem, the open one as the
 	# digital modem (both at 8000 Hz)
 	foreach(_law ulaw alaw)

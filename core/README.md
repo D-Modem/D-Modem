@@ -28,7 +28,7 @@ line's samples while the modem is started (`process()`), and calls
 The data pumps (`../dsp`) see the core through their C interface
 (`interface.cpp`: `modem_dp.h`, `modem_param.h`, `dsplibs.h`): a
 `struct modem` that leads back to the `Modem`. The data link layer
-(`../link`: V.42 detection, LAPM, V.42bis, async) runs between the DTE's
+(`../link`: V.42 detection, LAPM, V.44, V.42bis, async) runs between the DTE's
 characters and the pumps' bits. `log.cpp` has the debug output (stderr or
 a hook, and the binary `slmodem.log`).
 
