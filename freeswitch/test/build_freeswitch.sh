@@ -44,10 +44,11 @@ fi
 
 cd freeswitch
 [ -x configure ] || ./bootstrap.sh -j
-# the modules: no signalwire (libks), verto, video or languages
+# the modules: no signalwire (libks), verto, video, languages or
+# PostgreSQL (mod_pgsql does not build with libpq 17)
 for m in applications/mod_signalwire endpoints/mod_verto languages/mod_lua \
 	applications/mod_av formats/mod_shout applications/mod_cv \
-	endpoints/mod_skinny codecs/mod_opus; do
+	endpoints/mod_skinny codecs/mod_opus databases/mod_pgsql; do
 	sed -i "s|^$m\$|#$m|" modules.conf
 done
 ./configure -q --prefix="$prefix" --disable-libvpx --disable-libyuv \

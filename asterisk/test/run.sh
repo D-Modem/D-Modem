@@ -21,6 +21,13 @@ astmod=${AST_MODULES:-$(pkg-config --variable=modulesdir asterisk 2>/dev/null ||
 for d in /usr/lib/*/asterisk/modules /usr/lib/asterisk/modules; do
 	[ -n "$astmod" ] || [ ! -d "$d" ] || astmod=$d
 done
+# its data, the XML documentation it needs to start (AST_DATA, else
+# Debian's or the default place)
+astdata=${AST_DATA:-}
+for d in /usr/share/asterisk /var/lib/asterisk; do
+	[ -n "$astdata" ] || [ ! -f "$d/documentation/core-en_US.xml" ] ||
+		astdata=$d
+done
 for m in "$astmod"/*.so; do ln -s "$m" "$run/mod/"; done
 ln -sf "$build/asterisk/app_dmodem.so" "$run/mod/app_dmodem.so"
 cat > "$run/etc/asterisk.conf" <<EOT
@@ -30,7 +37,7 @@ astmoddir => $run/mod
 astvarlibdir => $run/lib
 astdbdir => $run/lib
 astkeydir => $run/lib
-astdatadir => /var/lib/asterisk
+astdatadir => ${astdata:-/var/lib/asterisk}
 astagidir => $run/lib
 astspooldir => $run/spool
 astrundir => $run/run
@@ -41,7 +48,9 @@ ast="asterisk -C $run/etc/asterisk.conf"
 $ast -f -n -vvvvv > "$run/console.log" 2>&1 &
 pid=$!
 trap 'kill $pid 2>/dev/null' EXIT
-i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do sleep 0.5; i=$((i+1)); [ $i -lt 40 ]; done
+i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do
+	sleep 0.5; i=$((i+1)); [ $i -lt 40 ] || { tail "$run/console.log"; exit 1; }
+done
 $ast -rx "module show like dmodem"
 "$here/bbs_sim.py" 150 &
 sim=$!
