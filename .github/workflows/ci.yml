@@ -1,7 +1,13 @@
-# Build everything (with the 32 bit interop test programs, against the
-# original DSP library) and run the offline tests.  The realtime interop
+# build: everything (with the 32 bit interop test programs, against the
+# original DSP library) and the offline tests.  The realtime interop
 # tests (ctest -L "interop|agere" -j8, about 2 minutes) are left out: they
 # depend on the runner's timing.
+#
+# asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
+# in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
+# source by freeswitch/test/build_freeswitch.sh, cached): calls between
+# two modems of the module, D-Modem (slmodemd) over SIP both ways, and
+# faxes, also against their own fax (spandsp).
 name: CI
 
 on:
@@ -36,3 +42,104 @@ jobs:
 
       - name: Tests
         run: ctest --test-dir build -L "quick|spandsp" -j4 --output-on-failure
+
+  asterisk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config g++ libssl-dev uuid-dev \
+            libtiff-tools asterisk asterisk-modules asterisk-dev python3
+          # the tests run an Asterisk of their own
+          sudo systemctl stop asterisk || true
+
+      - name: pjproject cache
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/pjproject-install
+          key: pjproject-2.17-${{ runner.os }}-${{ hashFiles('cmake/pjproject.cmake') }}
+
+      - name: Build
+        run: |
+          cmake -B build -G Ninja -DDMODEM_WERROR=ON
+          cmake --build build
+
+      - name: Calls
+        run: |
+          timeout 300 asterisk/test/run.sh
+          timeout 300 asterisk/test/run.sh AT+MS=132
+          LAW=alaw timeout 300 asterisk/test/run.sh
+          timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
+
+      - name: SIP (D-Modem)
+        run: |
+          timeout 300 asterisk/test/sip.sh
+          INCOMING=1 timeout 300 asterisk/test/sip.sh
+
+      - name: Fax
+        run: |
+          timeout 900 asterisk/test/fax.sh
+          timeout 900 asterisk/test/fax_spandsp.sh
+
+  freeswitch:
+    runs-on: ubuntu-24.04
+    env:
+      FS_PREFIX: /home/runner/freeswitch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config g++ libssl-dev uuid-dev \
+            libtiff-tools python3 build-essential autoconf automake \
+            libtool libtool-bin yasm libcurl4-openssl-dev libpcre3-dev \
+            libspeex-dev libspeexdsp-dev libsqlite3-dev libedit-dev \
+            libldns-dev libjpeg-dev libtiff-dev libsndfile1-dev \
+            zlib1g-dev libpq-dev
+
+      - name: FreeSWITCH cache
+        id: fs-cache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/freeswitch
+          key: freeswitch-1.10.12-${{ runner.os }}-${{ hashFiles('freeswitch/test/build_freeswitch.sh') }}
+
+      - name: FreeSWITCH
+        if: steps.fs-cache.outputs.cache-hit != 'true'
+        run: |
+          SRC=/tmp/fs-src freeswitch/test/build_freeswitch.sh $FS_PREFIX
+
+      - name: pjproject cache
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/pjproject-install
+          key: pjproject-2.17-${{ runner.os }}-${{ hashFiles('cmake/pjproject.cmake') }}
+
+      - name: Build
+        run: |
+          cmake -B build -G Ninja -DDMODEM_WERROR=ON \
+            -DFREESWITCH_PKGCONFIG=$FS_PREFIX/lib/pkgconfig
+          cmake --build build
+          test -f build/freeswitch/mod_dmodem.so
+
+      - name: Calls
+        run: |
+          timeout 300 freeswitch/test/run.sh
+          timeout 300 freeswitch/test/run.sh AT+MS=132
+          LAW=alaw timeout 300 freeswitch/test/run.sh
+          timeout 300 freeswitch/test/run.sh AT+MS=34 bbsalaw
+          timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
+
+      - name: SIP (D-Modem)
+        run: |
+          timeout 300 freeswitch/test/sip.sh
+          INCOMING=1 timeout 300 freeswitch/test/sip.sh
+
+      - name: Fax
+        run: timeout 1200 freeswitch/test/fax.sh

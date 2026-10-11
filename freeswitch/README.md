@@ -158,7 +158,10 @@ start. Other locations:
 
 It was tested with FreeSWITCH 1.10.12 built from source (sofia-sip, and
 the spandsp of FreeSWITCH's own repository at the commit its 1.10.12
-build uses, which `mod_spandsp` needs).
+build uses, which `mod_spandsp` needs). `test/build_freeswitch.sh <prefix>`
+builds that, with the modules the tests need, into `<prefix>` (as CI
+does); then `-DFREESWITCH_PKGCONFIG=<prefix>/lib/pkgconfig`, and
+`FS_PREFIX=<prefix>` for the test scripts.
 
 Each call runs its modem in the session's own thread. There is no limit
 on the number of calls other than CPU: a V.34 or V.90 call takes a few

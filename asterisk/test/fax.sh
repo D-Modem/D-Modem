@@ -18,7 +18,13 @@ cp "$here/modules.conf" "$run/etc/"
 echo "load = res_clioriginate.so" >> "$run/etc/modules.conf"
 cp "$here/extensions.conf" "$run/etc/"
 sed "s|^\[general\]|[general]\nfax_dir = $run/fax\nfax_ident = +1 555 0199|" "$here/dmodem.conf" > "$run/etc/dmodem.conf"
-for m in /usr/lib/asterisk/modules/*.so; do ln -s "$m" "$run/mod/"; done
+# Asterisk's modules (AST_MODULES, else where asterisk.pc says, else
+# Debian's or the default place)
+astmod=${AST_MODULES:-$(pkg-config --variable=modulesdir asterisk 2>/dev/null || true)}
+for d in /usr/lib/*/asterisk/modules /usr/lib/asterisk/modules; do
+	[ -n "$astmod" ] || [ ! -d "$d" ] || astmod=$d
+done
+for m in "$astmod"/*.so; do ln -s "$m" "$run/mod/"; done
 ln -sf "$build/asterisk/app_dmodem.so" "$run/mod/app_dmodem.so"
 cat > "$run/etc/asterisk.conf" <<EOT
 [directories]

@@ -17,6 +17,11 @@ message(STATUS "app_dmodem: Asterisk headers in ${ASTERISK_INCLUDE_DIR}")
 
 find_package(PkgConfig QUIET)
 set(_modules_dir /usr/lib/asterisk/modules)
+if(CMAKE_LIBRARY_ARCHITECTURE AND
+   EXISTS /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/asterisk/modules)
+	# Debian's and Ubuntu's packages
+	set(_modules_dir /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/asterisk/modules)
+endif()
 if(PKG_CONFIG_FOUND)
 	pkg_get_variable(_pc_modules asterisk modulesdir)
 	if(_pc_modules)

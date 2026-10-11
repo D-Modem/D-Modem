@@ -27,7 +27,11 @@ fs_start() {
 		"$run/storage" "$run/fax" "$run/tmp"
 	[ -f "$build/freeswitch/mod_dmodem.so" ] ||
 		{ echo "build first: cmake --build $build" >&2; exit 1; }
-	for m in "$FS_PREFIX"/mod/*.so; do ln -s "$m" "$run/mod/"; done
+	# its modules: <prefix>/mod, or lib/freeswitch/mod (a prefix other than
+	# /usr/local/freeswitch has that layout)
+	fsmod=$FS_PREFIX/mod
+	[ -d "$fsmod" ] || fsmod=$FS_PREFIX/lib/freeswitch/mod
+	for m in "$fsmod"/*.so; do ln -s "$m" "$run/mod/"; done
 	ln -sf "$build/freeswitch/mod_dmodem.so" "$run/mod/mod_dmodem.so"
 	{
 		echo "<X-PRE-PROCESS cmd=\"set\" data=\"run=$run\"/>"
