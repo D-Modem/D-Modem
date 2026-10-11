@@ -312,8 +312,8 @@ INFO1a. The upstream rate comes from the mse of the training in phase 3
 instead of the probing. `DSP_V92_SHORT2=0` does not ask for it. With
 quick connect and short phase 2 the Agere modem's second call connects
 in 17.5 s instead of 22.5 s (it asks for a shorter DIL as well).
-Modem-on-hold and V.92's fast parameter exchange are not implemented;
-rate renegotiation is, with PCM upstream (below).
+Modem-on-hold is not implemented; rate renegotiation and fast parameter
+exchange are, with PCM upstream (below).
 
 ### V.92 PCM upstream
 
@@ -396,8 +396,7 @@ and more when LC is less than 2M.
 Through netsim's converters the fit's error is 34.5 dB below the signal,
 which gives 36000 bit/s upstream (V.34's is 31200 there; 38667 makes a
 few errors); a prefilter that shapes the analogue modem's spectrum is
-not designed yet. In data mode the analogue modem's tone A retrains;
-fast parameter exchange is not there. The echo canceller (the V.34 pump's,
+not designed yet. In data mode the analogue modem's tone A retrains. The echo canceller (the V.34 pump's,
 trained while we send Sd to Jd) could not be tested: netsim's echo
 (`NET_ECHO`) through its 9600 Hz converters is not one an 8000 Hz
 canceller cancels, for V.90 either.
@@ -422,6 +421,32 @@ retrains.
 |---|---|
 | ours after 3 s of data, to drn 6 | 56000/36000, then 56000/30666 |
 | noise up from 26 s (60 rms, `NET_NOISE_DIR=ab`) | ours on its own: 56000/24000 |
+
+Fast parameter exchange (9.9/V.92): new rates without training, all in
+the data mode modulation. Ours: Rf (R of + + - - in 12 symbols, the data
+constellation's largest codes, 384 symbols) and Rf-bar (24) on a data
+frame boundary, then, from cleared scrambler, signs and shaping filter,
+SUVd, CPd, SUVd', Ed and B1d at the CPu we get. Its CPd keeps the
+precoder and takes the rate from the data mode mse (with the margin of
+the training's); `DSP_V92_FPE=<ms>[:<drn>]` starts one that far into data
+mode (to that rate). The receiver finds the analogue modem's RM and RM'
+among the decided classes (Table 25/V.92: the largest and the smallest,
+in pairs), takes SUVu, CPu, SUVu' and E2u from the data decoder (its
+descrambler and sign from zero again), then FB1u, 48 frames at the old
+parameters, and B1u at the new CPd: the front end and the delayed
+decisions switch at that symbol. To the original library ours takes
+0.5 s (a renegotiation about 2): B1d without errors, B1u with a few in
+its first two frames, as after a renegotiation. Our renegotiations go
+up by fast parameter exchange (the same line with less noise), down by
+renegotiation (train again). The original library answers ours but
+starts none (its `V92Modulator::initiateFPE` is only called on our Rf),
+so our answer to RM is not tested.
+
+| Test | Result |
+|---|---|
+| `interop_v92_fpe`: ours after 3 s, to drn 6 | 56000/30666, data without errors |
+| ours, rate from the mse (u-law) | 36000 or 37333 |
+| ours to drn 6, A-law | 56000/30666 |
 
 The original library starts renegotiations of its own when the line gets
 worse downstream (in netsim: `NET_NOISE_DIR=bacodes`, noise added to the

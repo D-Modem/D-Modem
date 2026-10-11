@@ -418,7 +418,38 @@ int V90Tx::sample()
 		}
 		break;
 	}
+	case V90_RF:
+	case V90_RFBAR: {
+		/* + + - - of each interval's largest data mode code, the
+		   bar the opposite (8.8.4/V.92) */
+		int k = (int)(sym % 6), pos_ = (n & 3) < 2;
+		if (seg == V90_RFBAR)
+			pos_ = !pos_;
+		x = pos_ ? lin[rd_code[k]] : -lin[rd_code[k]];
+		if (seg == V90_RF && n + 1 == 384) {
+			segment(V90_RFBAR);
+			n--;
+		} else if (seg == V90_RFBAR && n + 1 == 24) {
+			segment(V90_ENC);
+			n--;
+		}
+		break;
+	}
 	case V90_ENC:
+		if (opos >= 6 && rf_req) {
+			/* Rf (V.92's fast parameter exchange), on the
+			   boundary of a data frame */
+			int k;
+			rf_req = 0;
+			for (k = 0; k < 6; k++)
+				rd_code[k] = enc.ucode[k][0];
+			/* SUVd follows Rf-bar at once: no data frames from
+			   before (get_frame starts the encoder again) */
+			enc.outn = enc.qn = 0;
+			segment(V90_RF);
+			x = lin[rd_code[(int)(sym % 6)]];
+			break;
+		}
 		if (opos >= 6 && rd_req) {
 			/* Rd (V.92's rate renegotiation), on the boundary of
 			   a data frame; the encoder starts again after it */

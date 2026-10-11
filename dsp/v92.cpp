@@ -669,7 +669,7 @@ void V92Up::frame_bits(int bit)
 		}
 		return;
 	}
-	if (rx == V92R_TRN2) {
+	if (rx == V92R_TRN2 || fpe_rx == 3) {
 		if (fr.b[18]) {
 			/* SUVu */
 			if (!got_suvu)
@@ -817,6 +817,8 @@ void V92Up::symbol(float y)
 			dscr = 0;
 			dprev = 0;
 			dframes = derrs = 0;
+			dsn = ddn = 0;
+			fpe_rx = fpe_sw = 0;
 			dmse = 0;
 			vi = 0;
 			vt = vn = 0;
@@ -894,6 +896,139 @@ void V92Up::rn_tx_start()
 	if (rx == V92R_DATA || rx == V92R_RN_RU || rx == V92R_RN_WAIT)
 		got_suvu = got_cpu = got_ack = got_e2u = 0;
 	rn_rxd = 0;
+}
+
+/* a fast parameter exchange (9.9/V.92), ours or in answer to RM, RM':
+   Rf, Rf-bar, then SUVd, CPd, SUVd', Ed and B1d in the data mode
+   modulation, from cleared scrambler, signs and shaping filter */
+void V92Up::fpe_tx_start()
+{
+	DSP_DBG("v92: Rf\n");
+	tx.rf_req = 1;
+	fpe = fpe_rf = 1;
+	fpe_req = 0;
+	rn_rxd = 0;
+	if (!rn) {
+		rn = 1;
+		rn_at = n;
+	}
+	fpe_design(fpe_drn);
+	fpe_drn = 0;
+	fpe_tx_init = 1;
+	fmode = V92F_SEQ;
+	fcount = 0;
+	ack_sent = cpd_sent = 0;
+	if (fpe_rx < 3)
+		got_suvu = got_cpu = got_ack = got_e2u = 0;
+	make_seq(0, 0);
+	tstep = 8;
+}
+
+/* the CPd of a fast parameter exchange: the precoder stays, the rate
+   comes from the data mode mse (drn: that one, a test) */
+void V92Up::fpe_design(int drn)
+{
+	/* (the signal has unit power, as in the training's fit) */
+	double e2 = dmse, sb = 0, msa = 0;
+	int d, M = 8, lc = 0, j, k;
+
+	if (b_frozen)
+		for (j = 0; j < cpd.len[1]; j++)
+			sb += fabs(cpd.coef[1][j]) / 16384.0;
+	for (d = 19; d >= 1; d--) {
+		int K = 2 * (d + 17);
+		double ms0 = 0, ms3;
+		if (up_mask && !((up_mask >> (d - 1)) & 1))
+			continue;
+		M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
+		if (b_frozen) {
+			ms0 = (double)M * M / 3;
+			ms3 = 4.0 * M * M / 3;
+		} else {
+			for (k = 0; k < M; k++) {
+				int a = 2 * k + 1, bb = 2 * (M - k) - 1;
+				ms0 += (a < bb ? a * a : bb * bb);
+			}
+			ms0 /= M;
+			ms3 = (4.0 * M * M - 1) / 3;
+		}
+		msa = (9 * ms0 + 3 * ms3) / 12;
+		lc = (int)ceil(M * (1 + sb)) + 2;
+		if (lc < 2 * M)
+			lc = 2 * M;
+		lc += lc & 1;
+		if (lc > V92_LC_MAX)
+			continue;
+		if (drn ? d == drn : msa * e2 * margin_used <= 1)
+			break;
+	}
+	if (d < 1) {
+		d = 1;
+		M = 8;
+		msa = 37;
+		lc = 2 * M;
+	}
+	cpd_fpe = cpd;
+	cpd_fpe.drn = d;
+	for (j = 0; j < 12; j++)
+		cpd_fpe.M[j] = M;
+	cpd_fpe.lc[0] = lc;
+	for (j = 0; j < lc; j++)
+		cpd_fpe.pts[0][j] = (2 * j + 1) * 16;
+	cpd_fpe.g = 1 / (16 * sqrt(msa));
+	cpd_fpe.ack = 0;
+	DSP_DBG("v92: FPE CPd: %d bit/s, M %d, %d points (data mse %.5f)\n",
+		(d + 17) * 8000 / 6, M, 2 * lc, e2);
+}
+
+/* RM and RM' in data mode (Tables 25 and 26/V.92: the largest and the
+   smallest class, in pairs), and the SUVu after them; 1 for a frame
+   that carries no bits */
+int V92Up::fpe_frame(const V92Cpd *c)
+{
+	static const char pat[11] = { 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0 };
+	int j, rm = 1, rmp = 1;
+
+	for (j = 0; j < 11; j++) {
+		rm &= dk[j] == (pat[j] ? c->M[j] - 1 : 0);
+		rmp &= dk[j] == (pat[j] ? 0 : c->M[j] - 1);
+	}
+	switch (fpe_rx) {
+	case 0:
+		if (rx != V92R_DATA || dframes <= 48)
+			return 0;
+		fpe_rm = rm ? fpe_rm + 1 : 0;
+		if (fpe_rm >= 2) {
+			DSP_DBG("v92: RM at symbol %ld\n", sym);
+			fpe_rx = 1;
+			fpe = 1;
+			if (!rn) {
+				rn = 1;
+				rn_at = n;
+			}
+		}
+		return rm;
+	case 1:
+		if (rmp) {
+			DSP_DBG("v92: RM' at symbol %ld\n", sym);
+			fpe_rx = 2;
+		}
+		return 1;
+	case 2:
+		if (rmp)
+			return 1;
+		/* SUVu: the analogue modem's scrambler and differential
+		   encoder start from zero */
+		DSP_DBG("v92: FPE: SUVu from symbol %ld\n", sym);
+		fpe_rx = 3;
+		dscr = 0;
+		dprev = 0;
+		fr.init(V92F_CP);
+		got_suvu = got_cpu = got_ack = got_e2u = 0;
+		frame_zero = 0;
+		return 0;
+	}
+	return 0;
 }
 
 /*
@@ -1033,6 +1168,14 @@ void V92Up::trellis_frame()
 
 void V92Up::data_symbol(float y)
 {
+	/* a fast parameter exchange: B1u on the new CPd */
+	if (fpe_rx == 4 && !fpe_sw && dsn == fpe_b1) {
+		cpd_old = cpd;
+		cpd = cpd_fpe;
+		fpe_sw = 1;
+		DSP_DBG("v92: FPE: B1u at symbol %ld\n", sym);
+	}
+	dsn++;
 	int i = (int)(sym % 12), lc = cpd.lc[0];
 	/* in grid units: a point is (2 eta + 1) * 16 * G */
 	float u = (float)(y / (16 * cpd.g)), t, err;
@@ -1060,10 +1203,15 @@ void V92Up::data_symbol(float y)
 		if (rn_low >= 4000 ||
 		    (rn_high >= 80000 && n - rn_last >= 8000L * 60 &&
 		     cpd.drn < 19)) {
-			DSP_DBG("v92: margin %.1f against %.1f: renegotiate "
-				"%s\n", q, margin_used,
-				rn_low ? "down" : "up");
-			rn_req = 1;
+			DSP_DBG("v92: margin %.1f against %.1f: %s\n", q,
+				margin_used, rn_low ? "renegotiate down" :
+				"fast parameter exchange up");
+			/* down: the line changed, train anew; up: the
+			   same line with less noise, the rate alone */
+			if (rn_low)
+				rn_req = 1;
+			else
+				fpe_req = 1;
 			rn_low = rn_high = 0;
 		}
 	}
@@ -1085,7 +1233,12 @@ void V92Up::data_symbol(float y)
 /* a decided symbol, eta, of data frame interval vi */
 void V92Up::decided(int eta)
 {
-	int i = vi, M = cpd.M[i], K;
+	long idx = ddn++;
+	if (fpe_sw && idx >= fpe_b1)
+		fpe_sw = 0;
+	/* until B1u of a fast parameter exchange: the CPd before it */
+	const V92Cpd *c = fpe_sw ? &cpd_old : &cpd;
+	int i = vi, M = c->M[i], K;
 
 	vi = (vi + 1) % 12;
 	/* the class: eta = K + zM, and on the 4th symbol of a trellis
@@ -1099,14 +1252,17 @@ void V92Up::decided(int eta)
 	dk[i] = K;
 	if (i == 11) {
 		Big R, Mt, R2;
-		int j, nb = 2 * (cpd.drn + 17), sgn;
+		int j, nb = 2 * (c->drn + 17), sgn;
 		unsigned char bits[80];
+		/* RM and RM' carry no bits */
+		if (fpe_frame(c))
+			return;
 		R.set(0);
 		Mt.set(1);
 		for (j = 11; j >= 0; j--)
-			R.muladd(cpd.M[j], dk[j]);
+			R.muladd(c->M[j], dk[j]);
 		for (j = 0; j < 12; j++)
-			Mt.muladd(cpd.M[j], 0);
+			Mt.muladd(c->M[j], 0);
 		/* Mt - 1 */
 		R2.set(1);
 		R2.rsub(Mt);
@@ -1121,6 +1277,38 @@ void V92Up::decided(int eta)
 		dprev ^= sgn;
 		for (j = 0; j < nb; j++)
 			bits[j] = (unsigned char)gpa_descr(&dscr, R.bit(j));
+		if (fpe_rx == 3) {
+			/* SUVu, CPu, SUVu', then E2u: a frame of zeros */
+			int z = 0;
+			for (j = 0; j < nb; j++) {
+				frame_bits(bits[j]);
+				z += !bits[j];
+			}
+			/* (a frame of zeros is no SUVu or CPu: whatever
+			   the frame parser was in the middle of) */
+			if (z == nb && got_ack) {
+				fpe_rx = 4;
+				fpe_fb = 0;
+				derrs = 0;
+				/* 48 frames of FB1u, then B1u */
+				fpe_b1 = idx + 1 + 48 * 12;
+				DSP_DBG("v92: FPE: E2u\n");
+			}
+			return;
+		}
+		if (fpe_rx == 4) {
+			/* FB1u: ones, at the old parameters */
+			for (j = 0; j < nb; j++)
+				derrs += !bits[j];
+			if (++fpe_fb == 48) {
+				DSP_DBG("v92: FPE: FB1u, %ld zeros in %d bits\n",
+					derrs, 48 * nb);
+				fpe_rx = 5;
+				dframes = derrs = 0;
+				rn_rxd = 1;
+			}
+			return;
+		}
 		dframes++;
 		if (dframes <= 48) {
 			/* B1u: ones */
@@ -1143,6 +1331,8 @@ void V92Up::decided(int eta)
 				for (j = 0, z = 0; j < 4; j++)
 					z += b1z[j];
 				b1_bad = (derrs - z) * 20 > 44 * nb;
+				if (fpe_rx == 5)
+					fpe_rx = 0;
 			}
 		} else
 			put_bits(ctx, bits, nb);
@@ -1374,7 +1564,12 @@ void V92Up::design()
 
 void V92Up::make_seq(int cpd_, int ack)
 {
-	if (cpd_) {
+	if (cpd_ && fpe) {
+		cpd_fpe.ack = ack;
+		seq_len = cpd_fpe.build(seq, D);
+		cpd_sent++;
+		cpd_at = 0;
+	} else if (cpd_) {
 		if (!cpd.drn || cpd_new)
 			design();
 		cpd_new = 0;
@@ -1400,6 +1595,13 @@ static void v92_get_frame(void *ctx, V90Tx *t, unsigned char *bits,
 		v->rn_tx_init = 0;
 		v->D = v->cpt.drn + 8;
 		t->enc.init(&v->cpt, v->D, t->lin);
+	}
+	if (v->fpe_tx_init) {
+		/* after Rf: the data mode modulation, from cleared
+		   scrambler, signs and shaping filter */
+		v->fpe_tx_init = 0;
+		v->D = v->cpu.drn + 20;
+		t->enc.init(&v->cpu, v->D, t->lin);
 	}
 	if (v->fmode == V92F_B1 && v->fcount == 0) {
 		v->D = v->cpu.drn + 20;
@@ -1555,6 +1757,25 @@ int V92Up::tx_step()
 			rn_test_at = -1;
 			rn_req = 1;
 		}
+		/* test: DSP_V92_FPE=<ms>[:<drn>], our own fast parameter
+		   exchange that far into data (to that rate) */
+		if (!fpe_test_at && getenv("DSP_V92_FPE")) {
+			int ms = 0, d_ = 0;
+			sscanf(getenv("DSP_V92_FPE"), "%d:%d", &ms, &d_);
+			fpe_test_at = connect_n + 8L * ms;
+			fpe_drn = d_;
+		}
+		if (fpe_test_at > 0 && n >= fpe_test_at && !fpes &&
+		    rx == V92R_DATA && !rn) {
+			fpe_test_at = -1;
+			fpe_req = 1;
+		}
+		/* a fast parameter exchange: the analogue modem's (after
+		   RM'), or ours */
+		if ((fpe_rx >= 2 || fpe_req) && !fpe_rf && rx == V92R_DATA) {
+			fpe_tx_start();
+			break;
+		}
 		/* the analogue modem's (after its Ru-bar), or ours */
 		if (rx == V92R_RN_WAIT || (rn_req && rx == V92R_DATA))
 			rn_tx_start();
@@ -1586,9 +1807,17 @@ int V92Up::tx_step()
 			DSP_DBG("v92: B1u does not come through\n");
 			return V92_FAIL;
 		}
+		if (fpe && !fpe_rf && fpe_rx >= 2 && rx == V92R_DATA)
+			fpe_tx_start();
 		if (fmode == V92F_DATA && rx == V92R_DATA && rn_rxd &&
 		    dframes > 48) {
-			renegs++;
+			if (fpe) {
+				fpes++;
+				DSP_DBG("v92: fast parameter exchange %d "
+					"done\n", fpes);
+			} else
+				renegs++;
+			fpe = fpe_rf = fpe_req = 0;
 			rn = rn_req = rn_sent = 0;
 			rn_low = rn_high = 0;
 			rn_last = n;

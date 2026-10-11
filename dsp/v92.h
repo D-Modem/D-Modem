@@ -187,6 +187,24 @@ struct V92Up {
 	int rn_wait_suv2;       /* in it: until SUVu with bit 32 clear */
 	int rn_suv2;            /* that SUVu is in */
 	int rn_rxd;             /* its TRN2u has come */
+	/* fast parameter exchange (9.9/V.92): no training, the sequences
+	   in the data mode modulation */
+	int fpe;                /* one is going on */
+	int fpe_req;            /* we start one */
+	int fpe_rf;             /* our Rf has gone out (or is asked for) */
+	int fpe_sw;             /* the receiver's front end is on cpd_fpe,
+				   the decisions not yet */
+	int fpe_tx_init;        /* the encoder starts again on CPu */
+	int fpe_rx;             /* 1 RM, 2 RM', 3 SUVu to E2u, 4 FB1u,
+				   5 B1u */
+	int fpe_rm, fpe_fb;     /* frames of RM, of FB1u */
+	long fpe_b1;            /* B1u's first symbol (data symbols) */
+	long dsn, ddn;          /* data symbols in, decided */
+	V92Cpd cpd_fpe;         /* the new CPd */
+	V92Cpd cpd_old;         /* the decisions' until B1u */
+	int fpes;
+	int fpe_drn;            /* test: the rate it asks for */
+	long fpe_test_at;       /* test: ours, this far into data */
 	int rn_drn;             /* test: the rate it asks for */
 	long rn_test_at;        /* test: our own, this far into data */
 	long connect_n;         /* data from here on (samples) */
@@ -243,6 +261,9 @@ struct V92Up {
 	void decided(int eta);
 	void rn_rx_start();
 	void rn_tx_start();
+	void fpe_tx_start();
+	void fpe_design(int drn);
+	int fpe_frame(const V92Cpd *c);
 };
 
 } // namespace dsp

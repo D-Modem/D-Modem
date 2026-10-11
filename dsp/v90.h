@@ -34,6 +34,8 @@ enum v90_seg {
 	V90_SCR,        /* SCR, instead of DIL, until end_dil() */
 	V90_RD,         /* Rd (384), Rd-bar (24), then the encoder again */
 	V90_RDBAR,
+	V90_RF,         /* Rf (384), Rf-bar (24): + + - - (V.92 9.9) */
+	V90_RFBAR,
 };
 
 /* V.92: the Ucode of QTS for WXYZ of QC1a / QC2a (Table 2/V.92); -1 for
@@ -116,6 +118,7 @@ struct V90Tx {
 	int jp;                 /* Jp frames go out */
 	int jp_frac;            /* Jp: Su's extension, 1/65536 symbol */
 	int rd_req;             /* Rd at the next data frame */
+	int rf_req;             /* Rf at the next data frame */
 	int sil_req;            /* silence after the encoder's last frame */
 	int rd_code[6];         /* its codes */
 	int ri_end;

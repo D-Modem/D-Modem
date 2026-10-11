@@ -449,6 +449,13 @@ add_test(NAME interop_v92_reneg_noise COMMAND ${Python3_EXECUTABLE}
 	"ATX3;AT+MS=92")
 set_tests_properties(interop_v92_reneg_noise PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=15;BLOB_V92FULL=1;NET_NOISE=26:60;NET_NOISE_DIR=ab;EXPECT_B=V.92 renegotiated 56000/[23]")
+# fast parameter exchange (9.9/V.92): ours after 3 s of data, to 30 666
+# bit/s upstream (DSP_V92_FPE=<ms>:<drn>), in the data mode modulation
+add_test(NAME interop_v92_fpe COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_fpe PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_FPE=3000:6;EXPECT_B=(?s)fast parameter exchange 1 done.*V.92 renegotiated 56000/30666")
 # without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream
 add_test(NAME interop_v92_nopcmup COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
