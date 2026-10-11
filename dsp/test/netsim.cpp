@@ -6,7 +6,9 @@
  *    netsim <rate a> <rate b> <ulaw|alaw> <a in> <a out> <b in> <b out>
  *
  *    reads A's samples (16 bit) from fd <a in>, writes them to B on
- *    fd <b out>, and the other way round.
+ *    fd <b out>, and the other way round.  The impairments (NET_DROP,
+ *    NET_STEP, NET_NOISE, NET_FLOOR, NET_ECHO, NET_LOOP, ...) are
+ *    described where they are kept.
  */
 #include <errno.h>
 #include <math.h>
@@ -33,6 +35,42 @@ static float gain_up = 1;    /* NET_GAIN_UP: on the way up from a 9600 Hz modem 
 static float drop_at = -1, drop_ms, step_at = -1, step_g = 1;
 /* NET_NOISE=<at s>:<rms>: white noise from then on, both ways */
 static float noise_at = -1, noise_rms;
+/* NET_LOOP=<fraction>: on an 8000 Hz line, B's signal reaches A through
+   an analogue loop as A's codec samples it: a delay of that fraction of
+   a sample (windowed sinc) and a high pass at 300 Hz; else A gets B's
+   G.711 values as they are */
+#define LOOP_TAPS 32
+static float loop_h[LOOP_TAPS], loop_hist[2 * LOOP_TAPS];
+static int loop_on, loop_pos;
+static float loop_hp_x, loop_hp_y;
+
+static void loop_init(float frac)
+{
+	int n;
+	for (n = 0; n < LOOP_TAPS; n++) {
+		double t = n - LOOP_TAPS / 2 + 1 - frac;
+		double h = fabs(t) < 1e-9 ? 1 : sin(M_PI * t) / (M_PI * t);
+		h *= 0.5 - 0.5 * cos(2 * M_PI * (n + 0.5) / LOOP_TAPS);
+		loop_h[n] = (float)h;
+	}
+	loop_on = 1;
+}
+
+static float loop_run(float x)
+{
+	float y = 0, a = 0.79f;  /* exp(-2 pi 300 / 8000) */
+	int k;
+	if (--loop_pos < 0)
+		loop_pos = LOOP_TAPS - 1;
+	loop_hist[loop_pos] = loop_hist[loop_pos + LOOP_TAPS] = x;
+	for (k = 0; k < LOOP_TAPS; k++)
+		y += loop_h[k] * loop_hist[loop_pos + k];
+	/* one pole high pass */
+	loop_hp_y = a * (loop_hp_y + y - loop_hp_x);
+	loop_hp_x = y;
+	return loop_hp_y;
+}
+
 /* NET_FLOOR=<rms>: white noise all the time (NET_NOISE adds to it) */
 static float floor_rms;
 /* NET_SYNC=1: these times count from a SIGUSR1 (interop.py sends it at
@@ -228,7 +266,12 @@ static int run(struct dir *d, int a_out, int a_in)
 		if (a_out)
 			echo_r++;
 		if (d->rate_in == d->rate_out) {
-			d->obuf[o++] = (short)g711(ibuf[i]);
+			if (loop_on && a_in) {
+				float v = loop_run((float)g711(ibuf[i]));
+				d->obuf[o++] = (short)(v > 32767 ? 32767 :
+						       v < -32768 ? -32768 : v);
+			} else
+				d->obuf[o++] = (short)g711(ibuf[i]);
 			continue;
 		}
 		if (d->rate_in == 8000 && !plain) {
@@ -312,6 +355,8 @@ int main(int argc, char **argv)
 		sscanf(getenv("NET_DROP"), "%f:%f", &drop_at, &drop_ms);
 	if (getenv("NET_NOISE"))
 		sscanf(getenv("NET_NOISE"), "%f:%f", &noise_at, &noise_rms);
+	if (getenv("NET_LOOP"))
+		loop_init(atof(getenv("NET_LOOP")));
 	if (getenv("NET_FLOOR"))
 		floor_rms = atof(getenv("NET_FLOOR"));
 	if (getenv("NET_STEP")) {

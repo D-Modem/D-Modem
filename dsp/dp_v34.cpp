@@ -225,6 +225,11 @@ struct CcRx {
 	unsigned char frame[128];
 	unsigned char hist[CC_HIST];
 	long hist_n;
+	/* the decisions at every sampling phase, for INFO frames whatever
+	   the symbol timing does */
+	unsigned char ph[CC_SPS][CC_HIST];
+	long ph_n[CC_SPS];
+	int ph_last;            /* the phase of the last sample */
 
 	void init(float fc);
 	int sample(float x);
@@ -303,8 +308,7 @@ struct V34Pump : Pump {
 	int v92;                /* offer V.92 as the digital modem */
 	int v92_on;             /* both INFO0 said V.92 */
 	int short2;             /* and both asked for short phase 2 */
-	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=1): the
-				   Agere modem retrains in phase 3 after it */
+	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=0: not) */
 	V91 v91m;
 	int alaw;               /* the network's G.711 law */
 	V90Tx v90tx;    /* the PCM transmitter */
@@ -465,6 +469,8 @@ struct V34Pump : Pump {
 	void probe_collect(float x);
 	int probe_analyse();
 	void cc_rx_bit(int bit);
+	void cc_phase_frame();
+	void info_frame(CcRx *r);
 	void ec_schedule();
 	void rt_tone(float x);
 	void pump_rx_sample(float x);
@@ -976,6 +982,9 @@ int CcRx::sample(float x)
 	}
 	phase_e[i] += (frame_len > 0 ? 0.02f : 0.2f) *
 		(sqrtf(cplx_pow(d)) - phase_e[i]);
+	ph[i][ph_n[i]++ % CC_HIST] = cplx_pow(b) > 300.0f * 300.0f / 4 &&
+		d.re < 0;
+	ph_last = i;
 	if (++pos == CC_SPS)
 		pos = 0;
 	if (i == best && n - last > CC_SPS / 2) {
@@ -1139,6 +1148,79 @@ int V34Pump::probe_analyse()
  *    receiver
  */
 
+/* an INFO frame in r->frame (fill, sync, CRC good) */
+void V34Pump::info_frame(CcRx *r)
+{
+	int len = info_expected();
+
+	/* no reversals within the frame */
+	if (ev_rev && total - rev_time <
+	    (long)len * CC_SPS)
+		ev_rev = 0;
+	r->zeros = 0;
+	r->rev_cand = 0;
+	r->hist_n = 0;
+	memset(r->ph_n, 0, sizeof(r->ph_n));
+	if (!ev_info0) {
+		rinfo0.parse(r->frame);
+		ev_info0 = 1;
+		v92_on = pcm && v92 && rinfo0.v92;
+		short2 = v92_on && rinfo0.short2 &&
+			short2_ok && !retraining;
+		if (pcm)
+			DSP_DBG("v34: INFO0a V.92 %d, short "
+				"phase 2 %d%s\n", rinfo0.v92,
+				rinfo0.short2,
+				v92_on ? ": V.92" : "");
+		r->snap = 1;
+		DSP_DBG("v34: INFO0 rates %02x 3429 %d "
+			"diff %d\n", rinfo0.rates,
+			rinfo0.allow_3429,
+			rinfo0.max_diff);
+	} else {
+		if (caller)
+			rinfo1a.parse(r->frame);
+		else {
+			int b;
+			rinfo1c.parse(r->frame);
+			for (b = 0; b < V34_NBAUDS; b++)
+				DSP_DBG("v34: INFO1c baud %d high %d "
+					"preemph %d rate %d\n", b,
+					rinfo1c.r[b].high,
+					rinfo1c.r[b].preemph,
+					rinfo1c.r[b].max_rate);
+		}
+		ev_info1 = 1;
+		DSP_DBG("v34: INFO1 received\n");
+	}
+}
+
+/* a frame at the phase of the last sample: the frames do not depend on
+   the tracked symbol timing, which may slip at the start of one (the
+   remote's INFO1 comes at a new phase after its probing signals) */
+void V34Pump::cc_phase_frame()
+{
+	CcRx *r = &ccr;
+	int i = r->ph_last, len = info_expected(), k;
+	long n = r->ph_n[i];
+	const unsigned char *h = r->ph[i];
+
+	if (ev_info1 || n < len)
+		return;
+	for (k = 0; k < 8; k++)
+		if (h[(n - len + 4 + k) % CC_HIST] != ((0x72 >> (7 - k)) & 1))
+			return;
+	for (k = 0; k < len; k++)
+		r->frame[k] = k < 4 ? 1 : h[(n - len + k) % CC_HIST];
+	if (!info_crc_ok(r->frame, len - 16))
+		return;
+	if (dsplibs_debug_level >= 6)
+		DSP_DBG("v34: INFO frame at sampling phase %d (timing at "
+			"%d)\n", i, r->best);
+	r->frame_len = 0;
+	info_frame(r);
+}
+
 void V34Pump::cc_rx_bit(int bit)
 {
 	CcRx *r = &ccr;
@@ -1165,45 +1247,7 @@ void V34Pump::cc_rx_bit(int bit)
 			for (i = 4; i < 12 && ok; i++)
 				ok = r->frame[i] == ((0x72 >> (11 - i)) & 1);
 			if (ok) {
-				/* no reversals within the frame */
-				if (ev_rev && total - rev_time <
-				    (long)len * CC_SPS)
-					ev_rev = 0;
-				r->zeros = 0;
-				r->rev_cand = 0;
-				r->hist_n = 0;
-				if (!ev_info0) {
-					rinfo0.parse(r->frame);
-					ev_info0 = 1;
-					v92_on = pcm && v92 && rinfo0.v92;
-					short2 = v92_on && rinfo0.short2 &&
-						short2_ok && !retraining;
-					if (pcm)
-						DSP_DBG("v34: INFO0a V.92 %d, short "
-							"phase 2 %d%s\n", rinfo0.v92,
-							rinfo0.short2,
-							v92_on ? ": V.92" : "");
-					r->snap = 1;
-					DSP_DBG("v34: INFO0 rates %02x 3429 %d "
-						"diff %d\n", rinfo0.rates,
-						rinfo0.allow_3429,
-						rinfo0.max_diff);
-				} else {
-					if (caller)
-						rinfo1a.parse(r->frame);
-					else {
-						int b;
-						rinfo1c.parse(r->frame);
-						for (b = 0; b < V34_NBAUDS; b++)
-							DSP_DBG("v34: INFO1c baud %d high %d "
-								"preemph %d rate %d\n", b,
-								rinfo1c.r[b].high,
-								rinfo1c.r[b].preemph,
-								rinfo1c.r[b].max_rate);
-					}
-					ev_info1 = 1;
-					DSP_DBG("v34: INFO1 received\n");
-				}
+				info_frame(r);
 				return;
 			}
 		}
@@ -1468,6 +1512,7 @@ void V34Pump::pump_rx_sample(float x)
 			bit = ccr.sample(x);
 			if (bit >= 0)
 				cc_rx_bit(bit);
+			cc_phase_frame();
 		}
 		if (state == V8C_LISTEN)
 			ans_analyse(x);
@@ -1497,6 +1542,7 @@ void V34Pump::pump_rx_sample(float x)
 	bit = ccr.sample(x);
 	if (bit >= 0)
 		cc_rx_bit(bit);
+	cc_phase_frame();
 	if (tone_g.run(x))
 		tone_blocks = tone_g.power > tone_power(150) ?
 			tone_blocks + 1 : 0;
@@ -2937,7 +2983,8 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v92 = id == DP_V92 && v90 &&
 		!(getenv("DSP_V92") && !atoi(getenv("DSP_V92")));
 	qc_n = -1;
-	short2_ok = getenv("DSP_V92_SHORT2") && atoi(getenv("DSP_V92_SHORT2"));
+	short2_ok = !(getenv("DSP_V92_SHORT2") &&
+		      !atoi(getenv("DSP_V92_SHORT2")));
 	/* V.91 with another digital modem: DSP_V91=0 leaves it out */
 	v91 = (id == DP_V90 || id == DP_V92 || id == DP_V91) &&
 		line_rate == 8000 &&

@@ -90,7 +90,11 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   V.21 on a 1650 Hz mark or V.23 on a 1300 Hz mark. FSK callers check that
   the mark is at their own frequency (V.21's mark demodulates as a V.23
   one).
-- **Phase 2:** INFO0/INFO1 on the 600 baud DPSK control channel, tones A/B
+- **Phase 2:** INFO0/INFO1 on the 600 baud DPSK control channel (the
+  receiver looks for the frames, by their sync and CRC, at every
+  sampling phase, not only at the timing it follows: the remote's INFO1
+  comes at a new phase after its probing signals, and the timing could
+  slip at its start), tones A/B
   and their reversals for the round trip delay, and line probing with L1/L2
   (21 tones, 150 Hz apart). The probe gives the SNR after equalization for
   each symbol rate, from the received level of each tone and the noise
@@ -274,13 +278,21 @@ The original library sends QC1a on every call, the Agere modem (with
 `AT+PQC=0`) on a second call to a number it has connected to before.
 Both then connect at V.90.
 
-Short phase 2 (9.4/V.92, no probing, the upstream rate from the
-training in phase 3) is there, but only asked for with
-`DSP_V92_SHORT2=1`: after it the Agere modem asks for a shorter DIL from
-what it remembers and then retrains in phase 3 (tone A while Jd goes
-out), whatever the length of TRN1d. PCM upstream, modem-on-hold and
-V.92's rate renegotiation and fast parameter exchange are not
-implemented.
+Short phase 2 (9.4/V.92): when both modems ask for it, no probing and
+no INFO1d; the digital modem reverses B once A is there and B has been
+for 50 ms, measures the round trip from the reversal of A and waits for
+INFO1a. The upstream rate comes from the mse of the training in phase 3
+instead of the probing. `DSP_V92_SHORT2=0` does not ask for it. With
+quick connect and short phase 2 the Agere modem's second call connects
+in 17.5 s instead of 22.5 s (it asks for a shorter DIL as well).
+PCM upstream, modem-on-hold and V.92's rate renegotiation and fast
+parameter exchange are not implemented.
+
+The Agere modem's V.90 training failed at some delays of the line, in
+a pattern that repeats every 48 samples (its codec's blocks), with the
+line handing it our PCM values as they are, sample for sample. Through
+an analogue loop (netsim's `NET_LOOP`, a fraction of a sample of delay
+and a high pass) it trains at every delay; the Agere tests use that.
 
 ### V.91 digital to digital
 

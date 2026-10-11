@@ -377,6 +377,10 @@ void Modem::update_status(Status status)
 		break;
 	case ST_EC_LINK:
 		DBG("--> EC LINK\n");
+		/* the remote set the link up again (its SABME once more):
+		   the call goes on, CONNECT once */
+		if (state_ == ONLINE || state_ == COMMAND_ONLINE)
+			break;
 		set_state(ONLINE);
 		report(Result::Connect);
 		if (sregs_[SREG_SPEAKER_CONTROL] == 1)

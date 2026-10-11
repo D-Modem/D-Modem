@@ -460,13 +460,16 @@ if(TARGET half_agere)
 		ENVIRONMENT
 		"${_env};NET=8000:9600:ulaw;NET_SYNC=1;STREAM=40;NET_NOISE=10:300;PROTO_B=ATX3\;AT+MS=34")
 	# V.92 quick connect: the Agere modem (+PQC=0) remembers the line of
-	# the first call and starts the second with QC1a
+	# the first call and starts the second with QC1a, and short phase 2.
+	# NET_LOOP: our PCM signal reaches it through an analogue loop (on an
+	# ideal line, the same samples as ours, its V.90 training fails at
+	# some delays, every 48 samples)
 	add_test(NAME agere_v92_qc COMMAND ${Python3_EXECUTABLE}
 		${_py}/interop.py $<TARGET_FILE:half_agere>
 		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92;AT+PQC=0")
 	set_tests_properties(agere_v92_qc PROPERTIES LABELS agere
 		ENVIRONMENT
-		"${_env};NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=V.92 quick connect;PROTO_B=ATX3\;AT+MS=92")
+		"${_env};NET_LOOP=0.5;NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2;PROTO_B=ATX3\;AT+MS=92")
 	# V.90: the Agere modem as the analogue modem, the open one as the
 	# digital modem (both at 8000 Hz)
 	foreach(_law ulaw alaw)
@@ -475,7 +478,7 @@ if(TARGET half_agere)
 			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
 		set_tests_properties(agere_v90_${_law} PROPERTIES LABELS agere
 			ENVIRONMENT
-			"${_env};NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
+			"${_env};NET_LOOP=0.5;NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
 	endforeach()
 	# class 1 fax both ways at 8000 Hz
 	foreach(_m 24 48 72 96 73 97 121 122 145)
