@@ -44,9 +44,9 @@ binary-only parts.
 ## Fax
 
 The module is also a group 3 fax machine of its own (T.30 on V.17, V.29
-and V.27ter, 2400 to 14400 bit/s, pages in MH or MR coding, TIFF files;
-no error correction mode yet), an alternative to Asterisk's `res_fax`
-with spandsp:
+and V.27ter, 2400 to 14400 bit/s, pages in MH or MR coding, TIFF files,
+error correction mode when the other machine has it), an alternative to
+Asterisk's `res_fax` with spandsp:
 
 - `DModem()` receives faxes by itself: when the calling machine's CNG
   tone comes before a modem connection, the call goes to the fax
@@ -69,8 +69,15 @@ with spandsp:
 
 They set `DMODEMFAXSTATUS` (`SUCCESS` or `FAILED`), `DMODEMFAXRESULT`
 (why), `DMODEMFAXPAGES`, `DMODEMFAXRATE`, `DMODEMFAXREMOTE` (the other
-machine's number) and `DMODEMFAXFILE`.  `fax_dir`, `fax_ident` (our
-number) and `fax_max_rate` are set in `[general]` or per profile.
+machine's number), `DMODEMFAXECM` (`yes` when the call had error
+correction mode) and `DMODEMFAXFILE`.  `fax_dir`, `fax_ident` (our
+number), `fax_max_rate` and `fax_ecm` are set in `[general]` or per
+profile.
+
+In error correction mode (T.30 Annex A) the page goes in blocks of HDLC
+frames, and the receiving machine asks again for the frames a line hit
+spoiled: the page comes as it went, where without it the rows hit come
+damaged.  Both machines offer it (`fax_ecm = no` to go without).
 
 ## The channel
 

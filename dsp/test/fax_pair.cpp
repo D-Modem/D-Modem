@@ -5,7 +5,7 @@
  *    fax_pair <in.tif> <out.tif> [max bit/s] [snr dB]
  *
  *    The audio goes through G.711 (mu-law) both ways, with noise if an
- *    SNR is given.
+ *    SNR is given.  FAX_ECM=1: both machines with error correction mode.
  */
 
 #include <math.h>
@@ -106,6 +106,7 @@ int main(int argc, char **argv)
 		sigma = 3000 / pow(10, atof(argv[4]) / 20);   /* vs the signal */
 	c.srate = 8000;
 	c.max_bps = argc > 3 ? atoi(argv[3]) : 14400;
+	c.ecm = getenv("FAX_ECM") && atoi(getenv("FAX_ECM"));
 	c.sending = 1;
 	c.ident = "+1 555 0100";
 	c.next_page = next_page;
@@ -132,8 +133,9 @@ int main(int argc, char **argv)
 	}
 	rx.out.close();
 	tx.in.close();
-	printf("sender: %s, %d pages at %d bit/s, remote '%s'\n",
-	       t30_result_text(sa.result), sa.pages, sa.bps, sa.remote_ident);
+	printf("sender: %s, %d pages at %d bit/s%s, remote '%s'\n",
+	       t30_result_text(sa.result), sa.pages, sa.bps,
+	       sa.ecm ? " (ECM)" : "", sa.remote_ident);
 	printf("receiver: %s, %d pages, remote '%s', %.1f s\n",
 	       t30_result_text(sb.result), sb.pages, sb.remote_ident, n / 8000.0);
 	t30_free(a);

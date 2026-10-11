@@ -175,6 +175,21 @@ foreach(_r 14400 12000 9600 7200 4800 2400)
 	set_tests_properties(fax_pair_${_r} PROPERTIES LABELS quick
 		FIXTURES_REQUIRED fax_docs)
 endforeach()
+# error correction mode: the page in blocks of HDLC frames; on a line of
+# 19 dB the frames errors spoil are sent again (without ECM the page
+# comes with bad rows)
+foreach(_r 14400 9600)
+	add_test(NAME fax_pair_ecm_${_r} COMMAND sh -c
+		"$<TARGET_FILE:fax_pair> ${_ft}/doc.tif ${_ft}/rx_ecm_${_r}.tif ${_r} && \
+		 $<TARGET_FILE:t4_test> compare ${_ft}/doc.tif ${_ft}/rx_ecm_${_r}.tif")
+	set_tests_properties(fax_pair_ecm_${_r} PROPERTIES LABELS quick
+		FIXTURES_REQUIRED fax_docs ENVIRONMENT FAX_ECM=1)
+endforeach()
+add_test(NAME fax_pair_ecm_snr19 COMMAND sh -c
+	"$<TARGET_FILE:fax_pair> ${_ft}/light.tif ${_ft}/rx_ecm_19.tif 14400 19 && \
+	 $<TARGET_FILE:t4_test> compare ${_ft}/light.tif ${_ft}/rx_ecm_19.tif")
+set_tests_properties(fax_pair_ecm_snr19 PROPERTIES LABELS quick
+	FIXTURES_REQUIRED fax_docs ENVIRONMENT FAX_ECM=1)
 foreach(_law ulaw alaw)
 	add_test(NAME dmodem_fax_${_law} COMMAND sh -c
 		"$<TARGET_FILE:dmodem_fax_test> ${_ft}/light.tif ${_ft}/rx_${_law}.tif ${_law} && \
@@ -192,7 +207,11 @@ endif()
 if(SPANDSP_FOUND)
 	dmodem_test_exe(spandsp_v17 spandsp_v17.cpp spandsp_tx.cpp ${_fax})
 	dmodem_test_exe(t4_spandsp t4_spandsp.cpp spandsp_tx.cpp ${S}/t4.cpp ${S}/tiff.cpp)
-	foreach(_t spandsp_v17 t4_spandsp)
+	# our T.30 against spandsp's (fax_state_t), both ways, with and
+	# without error correction mode, ECM also with line hits
+	dmodem_test_exe(t30_spandsp t30_spandsp.cpp ${S}/t30.cpp ${S}/t4.cpp
+		${S}/tiff.cpp ${_fax})
+	foreach(_t spandsp_v17 t4_spandsp t30_spandsp)
 		target_include_directories(${_t} PRIVATE ${SPANDSP_INCLUDE_DIRS})
 		target_link_libraries(${_t} PRIVATE ${SPANDSP_LDFLAGS})
 	endforeach()
@@ -207,6 +226,21 @@ if(SPANDSP_FOUND)
 			set_tests_properties(t4_spandsp_${_e}_${_m} PROPERTIES
 				LABELS spandsp FIXTURES_REQUIRED fax_docs)
 		endforeach()
+	endforeach()
+	foreach(_d to from)
+		foreach(_e 0 1)
+			add_test(NAME t30_spandsp_${_d}_ecm${_e} COMMAND sh -c
+				"$<TARGET_FILE:t30_spandsp> ${_d} ${_ft}/light.tif ${_ft}/sp_${_d}_${_e}.tif ${_e} && \
+				 $<TARGET_FILE:t4_test> compare ${_ft}/light.tif ${_ft}/sp_${_d}_${_e}.tif")
+			set_tests_properties(t30_spandsp_${_d}_ecm${_e} PROPERTIES
+				LABELS spandsp FIXTURES_REQUIRED fax_docs)
+		endforeach()
+		# line hits: ECM sends the frames they spoil again
+		add_test(NAME t30_spandsp_${_d}_ecm_hits COMMAND sh -c
+			"$<TARGET_FILE:t30_spandsp> ${_d} ${_ft}/light.tif ${_ft}/sp_${_d}_h.tif 1 30 && \
+			 $<TARGET_FILE:t4_test> compare ${_ft}/light.tif ${_ft}/sp_${_d}_h.tif")
+		set_tests_properties(t30_spandsp_${_d}_ecm_hits PROPERTIES
+			LABELS spandsp FIXTURES_REQUIRED fax_docs)
 	endforeach()
 	foreach(_m 0 144)
 		add_test(NAME spandsp_v17_page_${_m} COMMAND spandsp_v17 14400)

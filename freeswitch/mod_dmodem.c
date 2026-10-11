@@ -50,6 +50,7 @@ struct fax_settings {
 	char dir[256];          /* ... into this directory */
 	char ident[21];         /* our number (CSI / TSI) */
 	int max_bps;
+	int ecm;                /* error correction mode offered */
 };
 
 /* <settings> and a profile: the jitter buffer (ms, 0 none) */
@@ -109,6 +110,7 @@ static void fax_defaults(struct fax_settings *f)
 		 SWITCH_GLOBAL_dirs.storage_dir, SWITCH_PATH_SEPARATOR);
 	f->ident[0] = 0;
 	f->max_bps = 14400;
+	f->ecm = 1;
 }
 
 /* a fax option; 0 if it is something else */
@@ -123,6 +125,8 @@ static int fax_option(struct fax_settings *f, const char *name,
 		switch_copy_string(f->ident, value, sizeof(f->ident));
 	else if (!strcasecmp(name, "fax-max-rate"))
 		f->max_bps = atoi(value);
+	else if (!strcasecmp(name, "fax-ecm"))
+		f->ecm = switch_true(value);
 	else
 		return 0;
 	return 1;
@@ -611,6 +615,7 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 	cfg.file = file;
 	cfg.ident = fs->ident;
 	cfg.max_bps = fs->max_bps;
+	cfg.no_ecm = !fs->ecm;
 	switch_channel_set_variable(channel, "dmodem_fax_file", file);
 	f = dmodem_fax_create(&cfg);
 	if (!f) {
@@ -643,9 +648,10 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 	dmodem_fax_destroy(f);
 	switch_log_printf(SWITCH_CHANNEL_CHANNEL_LOG(channel),
 			  SWITCH_LOG_INFO,
-			  "dmodem fax %s: %s, %d pages at %d bit/s, remote '%s'\n",
+			  "dmodem fax %s: %s, %d pages at %d bit/s%s, remote '%s'\n",
 			  dir == DMODEM_FAX_SEND ? "sent" : "received",
-			  st.result, st.pages, st.bps, st.remote_ident);
+			  st.result, st.pages, st.bps, st.ecm ? " (ECM)" : "",
+			  st.remote_ident);
 	switch_channel_set_variable(channel, "dmodem_fax_status",
 				    st.ok ? "SUCCESS" : "FAILED");
 	switch_channel_set_variable(channel, "dmodem_fax_result", st.result);
@@ -655,6 +661,8 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 					   st.bps);
 	switch_channel_set_variable(channel, "dmodem_fax_remote",
 				    st.remote_ident);
+	switch_channel_set_variable(channel, "dmodem_fax_ecm",
+				    st.ecm ? "true" : "false");
 	return res;
 }
 
@@ -944,7 +952,8 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_dmodem_load)
 		       "Sends the TIFF file as a group 3 fax on a call placed to a fax\n"
 		       "machine.  ident: our number (TSI), else fax-ident of dmodem.conf.\n"
 		       "Sets dmodem_fax_status (SUCCESS or FAILED), dmodem_fax_result,\n"
-		       "dmodem_fax_pages, dmodem_fax_rate, dmodem_fax_remote, dmodem_fax_file.\n",
+		       "dmodem_fax_pages, dmodem_fax_rate, dmodem_fax_remote, dmodem_fax_ecm,\n"
+		       "dmodem_fax_file.\n",
 		       send_fax_function, FAX_SYNTAX, SAF_NONE);
 	SWITCH_ADD_APP(app_interface, "dmodem_receive_fax",
 		       "Receive a fax into a TIFF file with DModem's fax",

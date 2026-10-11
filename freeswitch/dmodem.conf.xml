@@ -26,6 +26,8 @@
     <!-- <param name="fax-dir" value="/var/lib/freeswitch/storage/fax"/> -->
     <!-- <param name="fax-ident" value="+1 555 0100"/> -->
     <!-- <param name="fax-max-rate" value="14400"/> -->
+    <!-- error correction mode offered (false: without) -->
+    <!-- <param name="fax-ecm" value="true"/> -->
   </settings>
 
   <profiles>

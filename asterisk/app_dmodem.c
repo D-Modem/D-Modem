@@ -116,6 +116,7 @@ struct fax_settings {
 	char dir[256];          /* ... into this directory */
 	char ident[21];         /* our number (CSI / TSI) */
 	int max_bps;
+	int ecm;                /* error correction mode offered */
 };
 
 struct profile {
@@ -155,6 +156,7 @@ static void fax_defaults(struct fax_settings *f)
 	snprintf(f->dir, sizeof(f->dir), "%s/fax", ast_config_AST_SPOOL_DIR);
 	f->ident[0] = 0;
 	f->max_bps = 14400;
+	f->ecm = 1;
 }
 
 /* a fax option; 0 if it is something else */
@@ -169,6 +171,8 @@ static int fax_option(struct fax_settings *f, const char *name,
 		ast_copy_string(f->ident, value, sizeof(f->ident));
 	else if (!strcasecmp(name, "fax_max_rate"))
 		f->max_bps = atoi(value);
+	else if (!strcasecmp(name, "fax_ecm"))
+		f->ecm = ast_true(value);
 	else
 		return 0;
 	return 1;
@@ -454,6 +458,7 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	cfg.file = file;
 	cfg.ident = fs->ident;
 	cfg.max_bps = fs->max_bps;
+	cfg.no_ecm = !fs->ecm;
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXFILE", file);
 	f = dmodem_fax_create(&cfg);
 	if (!f) {
@@ -515,9 +520,9 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	}
 	dmodem_fax_status(f, &st);
 	dmodem_fax_destroy(f);
-	ast_verb(3, "%s: DModem fax %s: %s, %d pages at %d bit/s, remote '%s'\n",
+	ast_verb(3, "%s: DModem fax %s: %s, %d pages at %d bit/s%s, remote '%s'\n",
 		 name, dir == DMODEM_FAX_SEND ? "sent" : "received", st.result,
-		 st.pages, st.bps, st.remote_ident);
+		 st.pages, st.bps, st.ecm ? " (ECM)" : "", st.remote_ident);
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS",
 				  st.ok ? "SUCCESS" : "FAILED");
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXRESULT", st.result);
@@ -526,6 +531,7 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	snprintf(buf, sizeof(buf), "%d", st.bps);
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXRATE", buf);
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXREMOTE", st.remote_ident);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXECM", st.ecm ? "yes" : "no");
 	return res;
 }
 
@@ -743,7 +749,8 @@ static const char send_descrip[] =
 	"on a call placed to a fax machine (it waits for the machine's DIS).\n"
 	"ident: our number (TSI), else fax_ident of dmodem.conf [general].\n"
 	"  Sets DMODEMFAXSTATUS (SUCCESS or FAILED), DMODEMFAXRESULT,\n"
-	"DMODEMFAXPAGES, DMODEMFAXRATE, DMODEMFAXREMOTE, DMODEMFAXFILE.\n";
+	"DMODEMFAXPAGES, DMODEMFAXRATE, DMODEMFAXREMOTE, DMODEMFAXECM (yes\n"
+	"when the call had error correction mode), DMODEMFAXFILE.\n";
 static const char app_recv[] = "DModemReceiveFax";
 static const char recv_synopsis[] = "Receive a fax into a TIFF file with DModem's fax";
 static const char recv_descrip[] =

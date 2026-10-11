@@ -75,6 +75,7 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 	c.sending = f->sending;
 	c.ident = cfg->ident;
 	c.max_bps = cfg->max_bps ? cfg->max_bps : 14400;
+	c.ecm = !cfg->no_ecm;
 	c.srate = DMODEM_RATE;
 	c.next_page = next_page;
 	c.page_received = page_received;
@@ -123,6 +124,7 @@ void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s)
 	s->pages = ts.pages;
 	s->bps = ts.bps;
 	s->fine = ts.fine;
+	s->ecm = ts.ecm;
 	memcpy(s->remote_ident, ts.remote_ident, sizeof(s->remote_ident));
 	s->result = f->file_error ? t30_result_text(T30_ERR_FILE) :
 		t30_result_text(ts.result);

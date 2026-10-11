@@ -84,8 +84,9 @@ void dmodem_set_debug(int level);
 void dmodem_set_log(void (*fn)(const char *line));
 
 /*
- *    fax calls: a group 3 fax machine (T.30, V.17/V.29/V.27ter, no ECM)
- *    that sends a TIFF file (calling) or receives one (answering)
+ *    fax calls: a group 3 fax machine (T.30, V.17/V.29/V.27ter, error
+ *    correction mode when the other machine has it) that sends a TIFF
+ *    file (calling) or receives one (answering)
  */
 
 enum dmodem_fax_dir { DMODEM_FAX_RECEIVE, DMODEM_FAX_SEND };
@@ -96,6 +97,7 @@ struct dmodem_fax_config {
 	const char *file;               /* the TIFF to send, or to write */
 	const char *ident;              /* our number (TSI/CSI), 20 chars */
 	int max_bps;                    /* 14400 if 0 */
+	int no_ecm;                     /* without error correction mode */
 };
 
 struct dmodem_fax_status {
@@ -105,6 +107,8 @@ struct dmodem_fax_status {
 	char remote_ident[21];
 	const char *result;             /* how it ended (or "in progress") */
 	const char *phase;
+	int ecm;                        /* the call has error correction
+					   mode */
 };
 
 struct dmodem_fax;

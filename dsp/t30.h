@@ -5,8 +5,8 @@
  *            T.4 coding (t4.h)
  *
  *    The calling machine sends the document, the answering one receives
- *    it (no polling).  Error correction mode is not supported: the
- *    machines agree on a call without it.
+ *    it (no polling), with error correction mode (T.30 Annex A) when both
+ *    have it.
  *
  */
 
@@ -39,6 +39,7 @@ struct t30_config {
 	const char *ident;      /* our identity (TSI/CSI), up to 20 of
 				   0-9 + and space */
 	int max_bps;            /* 14400 (V.17), 9600 (V.29), 4800 (V.27) */
+	int ecm;                /* offer and take error correction mode */
 	int srate;              /* sample rate of the audio (8000) */
 	/* sending: the next page, 1; no more, 0 */
 	int  (*next_page)(void *ctx, T4Page *page);
@@ -52,6 +53,7 @@ struct t30_status {
 	int pages;              /* sent or received */
 	int bps;                /* the rate of the pages */
 	int fine;
+	int ecm;                /* the call has error correction mode */
 	char remote_ident[21];
 	const char *phase;      /* what it is doing, for the log */
 };

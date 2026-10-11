@@ -31,9 +31,9 @@ fax() {
 		sleep 1; i=$((i+1)); [ $i -lt ${FAX_WAIT:-300} ] || break
 	done
 	sleep 1
-	grep -E "dmodem fax (sent|received)|Fax processing|remote station|Fax successfully" "$log" |
+	grep -E "dmodem fax (sent|received)|Fax processing|remote station|Fax successfully|ECM" "$log" |
 		sed 's/^[^ ]* [^ ]* //' | tail -n +$((last+1))
-	last=$(grep -cE "dmodem fax (sent|received)|Fax processing|remote station|Fax successfully" "$log")
+	last=$(grep -cE "dmodem fax (sent|received)|Fax processing|remote station|Fax successfully|ECM" "$log")
 	f=$3
 	[ "$f" = auto ] && f=$(ls -t "$run"/fax/*.tif 2>/dev/null | head -1)
 	"$t4" compare "$run/doc.tif" "${f:-/nonexistent}" || r=1

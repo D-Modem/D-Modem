@@ -324,6 +324,28 @@ original library's constellation comes about 1.4 dB below its training.
 `ctest -L spandsp` (with libspandsp-dev) puts spandsp's V.17 transmitter
 and T.4 encoder, as Asterisk's `SendFAX` uses them, into these receivers.
 
+### Fax machine (T.30)
+
+`t30.cpp` is a group 3 fax machine on these modulations (libdmodem's fax,
+the modules' fax applications): the calling machine sends a document,
+the answering one receives it. With error correction mode (T.30 Annex A,
+T.4 Annex A), which both offer by default (DIS and DCS bit 27, frames of
+256 octets), the page goes as its MH coding in blocks of up to 256 HDLC
+frames (FCD) on the fast modulation, three RCP after each, then PPS on
+V.21 with the page and block counters; the receiver answers MCF or PPR
+with a map of the frames to send again. After four PPRs for a block the
+sender asks CTC (CTR) and goes on; it answers RNR with RR, and the
+receiver its RR, CTC and EOR as T.30 says. The receiver ends a block at
+its RCP: the V.17 short training of the next block starts from the
+receiver's state at the end of this one, and the V.21 PPS after it would
+spoil that.
+
+`fax_pair` puts two of them back to back (`FAX_ECM=1` for ECM, an SNR for
+noise: at 19 dB ECM sends a few frames again and the page comes right,
+without it two thousand rows come damaged); `t30_spandsp` (label
+`spandsp`) runs one against spandsp's fax machine both ways, with and
+without ECM, and with line hits.
+
 ### How the QAM receiver works
 
 1. Down-conversion to complex baseband.

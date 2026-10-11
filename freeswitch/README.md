@@ -68,7 +68,9 @@ The module has no binary-only parts.
 The module is also a group 3 fax machine:
 - T.30 on V.17, V.29 and V.27ter, 2400 to 14400 bit/s;
 - pages in MH or MR coding, TIFF files;
-- no error correction mode yet.
+- error correction mode (T.30 Annex A) when the other machine has it:
+  the page goes in blocks of HDLC frames, and the receiving machine asks
+  again for those a line hit spoiled, so the page comes as it went.
 
 It is an alternative to mod_spandsp's `txfax`/`rxfax`:
 
@@ -100,10 +102,12 @@ The fax applications set these channel variables:
 | `dmodem_fax_pages` | the pages |
 | `dmodem_fax_rate` | bit/s |
 | `dmodem_fax_remote` | the other machine's number |
+| `dmodem_fax_ecm` | `true` when the call had error correction mode |
 | `dmodem_fax_file` | the file |
 
-`fax-dir`, `fax-ident` (our number) and `fax-max-rate` go in `<settings>`
-or in a profile; the fax applications take `<settings>`.
+`fax-dir`, `fax-ident` (our number), `fax-max-rate` and `fax-ecm` (`false`
+to go without error correction mode) go in `<settings>` or in a profile;
+the fax applications take `<settings>`.
 
 ## The channel
 
@@ -221,7 +225,8 @@ their echoes and logs off; the BBS closing then hangs up the call.
 
 Each time it compares what came with what went. The `rxfax` leg gets a
 jitter buffer as well, for the same reason as the module's (see
-[The channel](#the-channel)), and mod_spandsp no page header.
+[The channel](#the-channel)), and mod_spandsp no page header and error
+correction mode, which the module then uses.
 
 ## Debugging
 

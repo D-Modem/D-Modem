@@ -1,7 +1,7 @@
 /*
  *
- *    t30.cpp - a group 3 fax machine (ITU-T T.30, without error correction
- *            mode) on the fax modulations of fax_modems.cpp
+ *    t30.cpp - a group 3 fax machine (ITU-T T.30, with or without error
+ *            correction mode) on the fax modulations of fax_modems.cpp
  *
  *    Control messages go as HDLC frames on V.21 channel 2, pages and the
  *    training check on V.27ter, V.29 or V.17.  The calling machine sends:
@@ -17,7 +17,14 @@
  *        ...
  *        DCN
  *
+ *    In error correction mode (T.30 Annex A, T.4 Annex A) the page goes in
+ *    blocks of up to 256 HDLC frames (FCD) on the fast modulation, each
+ *    block followed by RCP and then PPS on V.21: MCF if all frames came,
+ *    else PPR with a map of those to send again.
+ *
  */
+
+#include <vector>
 
 #include <math.h>
 #include <stdlib.h>
@@ -42,6 +49,12 @@ enum {
 	FCF_MCF = 0x8c, FCF_RTP = 0xcc, FCF_RTN = 0x4c,
 	FCF_PIP = 0xac, FCF_PIN = 0x2c,
 	FCF_DCN = 0xfa, FCF_CRP = 0x1a,
+	/* error correction mode */
+	FCF_PPS = 0xbe, FCF_PPR = 0xbc, FCF_RR = 0x6e, FCF_RNR = 0xec,
+	FCF_CTC = 0x12, FCF_CTR = 0xc4, FCF_EOR = 0xce, FCF_ERR = 0x1c,
+	FCF_NULL = 0x00,
+	/* on the fast modulation (T.4 Annex A) */
+	FCF_FCD = 0x06, FCF_RCP = 0x86,
 };
 
 #define HDLC_ADDR       0xff
@@ -59,6 +72,11 @@ enum {
 #define RESPONSE_GAP_MS 75      /* between a message and the answer */
 #define TRIES           3
 
+/* error correction mode */
+#define ECM_FRAMES      256     /* in a block at most */
+#define ECM_SIZE        256     /* octets in our frames */
+#define ECM_PPRS        4       /* PPRs for a block before CTC */
+#define ECM_RNRS        60      /* RNRs answered (T5: 60 s) */
 /* the fast modulations, best first, with their DCS rate bits (11-14 as
    bit 0-3) */
 static const struct rate {
@@ -87,12 +105,17 @@ enum state {
 	S_RX_PAGE,              /* after CFR or MCF */
 	S_WAIT_POST,            /* the post-page command */
 	S_WAIT_DCN,
+	S_RX_ECM,               /* a block of ECM frames */
+	S_WAIT_PPS,             /* the command after the block */
 	/* calling (sending) */
 	S_CNG,                  /* waiting for the DIS */
 	S_TCF,                  /* sending it */
 	S_WAIT_CFR,
 	S_PAGE,
 	S_WAIT_MCF,
+	S_ECM_TX,               /* sending a block */
+	S_WAIT_PPS_RESP,        /* MCF, PPR, RNR to our PPS */
+	S_WAIT_CTR,
 	/* both */
 	S_GAP,                  /* silence before the next transmission */
 	S_TX_FRAMES,
@@ -101,8 +124,10 @@ enum state {
 
 static const char *state_name[] = {
 	"idle", "CED", "wait DCS", "receive TCF", "receive page",
-	"wait post-page command", "wait DCN", "CNG", "send TCF", "wait CFR",
-	"send page", "wait MCF", "gap", "send frames", "done",
+	"wait post-page command", "wait DCN", "receive ECM block",
+	"wait PPS", "CNG", "send TCF", "wait CFR", "send page", "wait MCF",
+	"send ECM block", "wait PPS response", "wait CTR", "gap",
+	"send frames", "done",
 };
 
 struct frame {
@@ -169,6 +194,35 @@ struct T30 {
 
 	int pages;
 
+	/* error correction mode */
+	int ecm_on;                     /* this call has it */
+	int ecm_size;                   /* octets in a frame: 256 or 64 */
+	int ecm_page, ecm_block;        /* the counters of PPS (the pages of
+					   the call, the blocks of the page) */
+	int ecm_long_train;             /* after CTC */
+	/* sending */
+	std::vector<unsigned char> ecm_doc;     /* the page's coded data */
+	size_t ecm_doc_pos;             /* where the block starts */
+	int ecm_frames;                 /* in the block */
+	int ecm_last;                   /* the block ends the page */
+	unsigned char ecm_send[32];     /* frames to (re)send */
+	int ppr_count, rnr_count;
+	int etx_frame, etx_rcp;         /* the next frame to look at, RCPs */
+	unsigned char etx_buf[ECM_SIZE + 6];
+	int etx_len, etx_pos, etx_bit, etx_ones, etx_flags, etx_closing;
+	/* receiving */
+	std::vector<unsigned char> ecm_rx;      /* the block's frames */
+	short ecm_rx_len[ECM_FRAMES];   /* -1: not (yet) received */
+	int ecm_rx_frames;              /* in the block, -1: not known */
+	int ecm_rcp;
+	unsigned char hd_buf[ECM_SIZE + 8];     /* a frame coming */
+	int hd_len, hd_nbits, hd_ones, hd_bad;
+	unsigned hd_byte;
+	int last_resp;                  /* our last response, for RR */
+	unsigned char last_resp_fif[32];
+	int last_resp_len;
+	enum state last_resp_next;
+
 	void set_state(enum state s);
 	void start_timer(int ms);
 	void stop_fast();
@@ -199,6 +253,23 @@ struct T30 {
 	void frame_end();
 	void on_timeout();
 	void tx_done();
+	/* error correction mode */
+	int post_command();
+	void start_ecm_page();
+	void start_ecm_block();
+	void send_ecm_burst();
+	void send_pps();
+	void send_ctc();
+	void send_rr();
+	void ecm_frame_out();
+	void start_ecm_rx();
+	void ecm_block_end();
+	void ecm_hdlc_bit(int bit);
+	void ecm_frame_in(const unsigned char *d, int len);
+	void got_pps(const unsigned char *fif, int len);
+	void ecm_respond(int fcf, const unsigned char *fif, int len,
+			 enum state next_);
+	enum state ecm_page_end(int fcf2);
 	float tone(float freq);
 	float tx_sample();
 	void rx_sample(float x);
@@ -455,6 +526,7 @@ void T30::send_dcn(enum t30_result r)
 void T30::send_dis()
 {
 	unsigned char fif[4] = { 0 }, id[20];
+	int len = 3;
 
 	set_bit(fif, 10);                       /* receives */
 	/* V.27ter, V.29 and V.17 as far as the configuration goes */
@@ -469,9 +541,14 @@ void T30::send_dis()
 	set_bit(fif, 16);                       /* MR */
 	set_bit(fif, 19);                       /* any length */
 	set_bit(fif, 21), set_bit(fif, 22), set_bit(fif, 23);   /* 0 ms */
+	if (cfg.ecm) {
+		set_bit(fif, 24);               /* a fourth octet */
+		set_bit(fif, 27);               /* error correction mode */
+		len = 4;
+	}
 	new_frames();
 	add_frame(FCF_CSI, id, put_ident(id, cfg.ident));
-	add_frame(FCF_DIS, fif, 3);
+	add_frame(FCF_DIS, fif, len);
 	send_frames(S_WAIT_DCS);
 }
 
@@ -485,6 +562,15 @@ void T30::start_page_rx()
 	rx_page.init(T4_WIDTH, fine);
 	t4rx.init(&rx_page, mr);
 	rx_page_on = 1;
+	if (ecm_on) {
+		/* the blocks of the page */
+		ecm_block = 0;
+		ecm_rx_frames = -1;
+		for (int k = 0; k < ECM_FRAMES; k++)
+			ecm_rx_len[k] = -1;
+		start_ecm_rx();
+		return;
+	}
 	start_fast(v17);
 	set_state(S_RX_PAGE);
 	start_timer(T2_MS * 2);
@@ -502,6 +588,8 @@ static void page_bit(void *ctx, int bit)
 		t->tcf_trained = 1;
 	} else if (t->state == S_RX_PAGE && t->rx_page_on) {
 		t->t4rx.bit(bit);
+	} else if (t->state == S_RX_ECM) {
+		t->ecm_hdlc_bit(bit);
 	}
 }
 
@@ -558,8 +646,12 @@ void T30::got_dcs(const unsigned char *fif, int len)
 	rate = k;
 	fine = get_bit(fif, len, 15);
 	mr = get_bit(fif, len, 16);
-	DSP_DBG("t30: DCS: %d bit/s, %s, %s\n", rates[k].bps,
-		fine ? "fine" : "standard", mr ? "MR" : "MH");
+	ecm_on = cfg.ecm && get_bit(fif, len, 27);
+	ecm_size = get_bit(fif, len, 28) ? 64 : 256;
+	ecm_long_train = 0;
+	DSP_DBG("t30: DCS: %d bit/s, %s, %s%s\n", rates[k].bps,
+		fine ? "fine" : "standard", mr ? "MR" : "MH",
+		ecm_on ? ", ECM" : "");
 	/* the training check follows on the fast modulation */
 	zero_run = max_zero_run = tcf_trained = 0;
 	memset(&mem, 0, sizeof(mem));
@@ -612,6 +704,46 @@ void T30::rx_message()
 	switch (fcf) {
 	case FCF_DCS:
 		got_dcs(fif, fif_len);
+		break;
+	case FCF_PPS:
+		if (state == S_RX_ECM)
+			ecm_block_end();
+		got_pps(fif, fif_len);
+		break;
+	case FCF_CTC:
+		/* continue to correct, maybe at another rate: the frames
+		   again after a long training */
+		if (fif_len >= 2) {
+			unsigned v = (fif[1] >> 2) & 0xf;
+			for (k = 0; k < NRATES; k++)
+				if (rates[k].bits == v) {
+					rate = k;
+					break;
+				}
+		}
+		if (state == S_RX_ECM)
+			ecm_block_end();
+		ecm_long_train = 1;
+		ecm_respond(FCF_CTR, NULL, 0, S_RX_ECM);
+		break;
+	case FCF_EOR:
+		/* the sender gives up on the block: what came of it is
+		   lost; the page ends if it says so */
+		if (state == S_RX_ECM)
+			ecm_block_end();
+		for (k = 0; k < ECM_FRAMES; k++)
+			ecm_rx_len[k] = -1;
+		ecm_rx_frames = -1;
+		ecm_block++;
+		ecm_respond(FCF_ERR, NULL, 0,
+			    fif_len >= 1 && (fif[0] & 0xfe) != FCF_NULL ?
+			    ecm_page_end(fif[0] & 0xfe) : S_RX_ECM);
+		break;
+	case FCF_RR:
+		/* the sender missed our answer */
+		if (last_resp)
+			ecm_respond(last_resp, last_resp_fif, last_resp_len,
+				    last_resp_next);
 		break;
 	case FCF_MPS: case FCF_EOP: case FCF_EOM:
 	case FCF_PRI_MPS: case FCF_PRI_EOP: case FCF_PRI_EOM:
@@ -678,8 +810,9 @@ void T30::send_tcf()
 
 void T30::send_dcs()
 {
-	unsigned char fif[3] = { 0 }, id[20];
+	unsigned char fif[4] = { 0 }, id[20];
 	unsigned v = rates[rate].bits;
+	int len = 3;
 
 	set_bit(fif, 10);
 	if (v & 1) set_bit(fif, 11);
@@ -690,12 +823,19 @@ void T30::send_dcs()
 		set_bit(fif, 15);
 	if (get_bit(dis, dis_len, 19))
 		set_bit(fif, 19);               /* any length */
-	dcs_min_ms(fif, min_ms);
-	DSP_DBG("t30: DCS: %d bit/s, %s, min scan %d ms\n", rates[rate].bps,
-		fine ? "fine" : "standard", min_ms);
+	/* with ECM the rows need no fill */
+	dcs_min_ms(fif, ecm_on ? 0 : min_ms);
+	if (ecm_on) {
+		set_bit(fif, 24);
+		set_bit(fif, 27);               /* bit 28 0: 256 octets */
+		len = 4;
+	}
+	DSP_DBG("t30: DCS: %d bit/s, %s, min scan %d ms%s\n",
+		rates[rate].bps, fine ? "fine" : "standard",
+		ecm_on ? 0 : min_ms, ecm_on ? ", ECM" : "");
 	new_frames();
 	add_frame(FCF_TSI, id, put_ident(id, cfg.ident));
-	add_frame(FCF_DCS, fif, 3);
+	add_frame(FCF_DCS, fif, len);
 	send_frames(S_TCF);          /* the TCF after a gap */
 }
 
@@ -719,12 +859,18 @@ int T30::load_next()
 	return have_next;
 }
 
-void T30::send_post_page()
+/* what follows the page: EOP, MPS, or EOM (another resolution needs
+   another DCS: phase B again) */
+int T30::post_command()
 {
 	int more = load_next();
-	/* another resolution needs another DCS: EOM, then phase B again */
-	last_post = !more ? FCF_EOP :
+	return !more ? FCF_EOP :
 		(next.fine != 0) != (fine != 0) ? FCF_EOM : FCF_MPS;
+}
+
+void T30::send_post_page()
+{
+	last_post = post_command();
 	new_frames();
 	add_frame(last_post, NULL, 0);
 	send_frames(S_WAIT_MCF);
@@ -742,6 +888,8 @@ int T30::choose()
 		return -1;
 	rate = k;
 	min_ms = dis_min_ms(dis, dis_len);
+	ecm_on = cfg.ecm && get_bit(dis, dis_len, 27);
+	ecm_size = ECM_SIZE;
 	return 0;
 }
 
@@ -800,7 +948,9 @@ void T30::sender_message()
 		if (fcf == FCF_CFR) {
 			tries = 0;
 			page_tries = 0;
-			gap_then(RESPONSE_GAP_MS, &T30::send_page);
+			ecm_long_train = 0;
+			gap_then(RESPONSE_GAP_MS, ecm_on ? &T30::start_ecm_page :
+				 &T30::send_page);
 		} else if (fcf == FCF_FTT) {
 			/* a lower rate the remote has */
 			int k;
@@ -851,9 +1001,442 @@ void T30::sender_message()
 			gap_then(RESPONSE_GAP_MS, &T30::send_post_page);
 		}
 		break;
+	case S_WAIT_PPS_RESP:
+		if (fcf == FCF_MCF) {
+			tries = 0;
+			rnr_count = 0;
+			if (!ecm_last) {
+				/* the next block of the page */
+				ecm_doc_pos += (size_t)ecm_frames * ecm_size;
+				ecm_block++;
+				gap_then(RESPONSE_GAP_MS,
+					 &T30::start_ecm_block);
+				break;
+			}
+			/* the page is through */
+			pages++;
+			ecm_page++;
+			page_tries = 0;
+			next_page_or_end();
+			if (last_post == FCF_EOP) {
+				send_dcn(T30_OK);
+			} else if (last_post == FCF_EOM) {
+				cng = 0;
+				set_state(S_CNG);
+				start_timer(T1_MS);
+			} else {
+				page_settings();
+				gap_then(RESPONSE_GAP_MS,
+					 &T30::start_ecm_page);
+			}
+		} else if (fcf == FCF_PPR) {
+			int k, any = 0;
+			const unsigned char *map = msg[nmsg - 1] + 3;
+			int map_len = msg_len[nmsg - 1] - 3;
+			tries = 0;
+			rnr_count = 0;
+			memset(ecm_send, 0, sizeof(ecm_send));
+			for (k = 0; k < ecm_frames && k / 8 < map_len; k++)
+				if (map[k / 8] >> (k % 8) & 1) {
+					ecm_send[k / 8] |= 1 << (k % 8);
+					any = 1;
+				}
+			DSP_DBG("t30: PPR %d for block %d\n", ppr_count + 1,
+				ecm_block);
+			if (!any) {
+				/* nothing it lacks: ask again */
+				gap_then(RESPONSE_GAP_MS, &T30::send_pps);
+			} else if (++ppr_count >= ECM_PPRS) {
+				gap_then(RESPONSE_GAP_MS, &T30::send_ctc);
+			} else {
+				gap_then(RESPONSE_GAP_MS,
+					 &T30::send_ecm_burst);
+			}
+		} else if (fcf == FCF_RNR) {
+			/* not ready: ask again, for T5 */
+			if (++rnr_count >= ECM_RNRS)
+				send_dcn(T30_ERR_NO_RESPONSE);
+			else
+				gap_then(1000, &T30::send_rr);
+		} else if (fcf == FCF_CRP) {
+			gap_then(RESPONSE_GAP_MS, &T30::send_pps);
+		} else if (fcf == FCF_RTN || fcf == FCF_PIN) {
+			/* not an ECM receiver after all */
+			send_dcn(T30_ERR_PAGE);
+		}
+		break;
+	case S_WAIT_CTR:
+		if (fcf == FCF_CTR) {
+			tries = 0;
+			ppr_count = 0;
+			ecm_long_train = 1;
+			gap_then(RESPONSE_GAP_MS, &T30::send_ecm_burst);
+		}
+		break;
 	default:
 		break;
 	}
+}
+
+
+/*
+ *    error correction mode: sending
+ */
+
+/* the page coded (MH, no fill: ECM has no minimum row time), its bits
+   packed into octets in the order they go out, the first in the lowest
+   bit (T.4 A.3.6.2), then the first block */
+void T30::start_ecm_page()
+{
+	size_t k;
+	page_bits.release();
+	page.encode_mh(&page_bits, 0, 0, 1);
+	ecm_doc.assign((page_bits.n + 7) / 8, 0);
+	for (k = 0; k < page_bits.n; k++)
+		if (t4_bits_get(&page_bits, k))
+			ecm_doc[k / 8] |= 1 << (k % 8);
+	page_bits.release();
+	ecm_doc_pos = 0;
+	ecm_block = 0;
+	DSP_DBG("t30: page %d: %d rows, %zu octets in ECM\n", pages + 1,
+		page.rows, ecm_doc.size());
+	start_ecm_block();
+}
+
+void T30::start_ecm_block()
+{
+	size_t left = ecm_doc.size() - ecm_doc_pos;
+	size_t n = (left + ecm_size - 1) / ecm_size;
+	if (n == 0)
+		n = 1;
+	if (n > ECM_FRAMES)
+		n = ECM_FRAMES;
+	ecm_frames = (int)n;
+	ecm_last = ecm_doc_pos + n * ecm_size >= ecm_doc.size();
+	memset(ecm_send, 0, sizeof(ecm_send));
+	for (int k = 0; k < ecm_frames; k++)
+		ecm_send[k / 8] |= 1 << (k % 8);
+	ppr_count = 0;
+	rnr_count = 0;
+	send_ecm_burst();
+}
+
+/* the next frame to send into etx_buf: an FCD still to send, else RCP
+   three times (T.4 A.1); 0 when there is none */
+void T30::ecm_frame_out()
+{
+	unsigned crc;
+	etx_len = 0;
+	while (etx_frame < ecm_frames &&
+	       !(ecm_send[etx_frame / 8] >> (etx_frame % 8) & 1))
+		etx_frame++;
+	if (etx_frame < ecm_frames) {
+		size_t at = ecm_doc_pos + (size_t)etx_frame * ecm_size;
+		size_t n = at < ecm_doc.size() ? ecm_doc.size() - at : 0;
+		if (n > (size_t)ecm_size)
+			n = ecm_size;
+		etx_buf[0] = HDLC_ADDR;
+		etx_buf[1] = HDLC_CTRL;
+		etx_buf[2] = FCF_FCD;
+		etx_buf[3] = (unsigned char)etx_frame;
+		/* the last frame padded to the size, as most receivers
+		   expect */
+		memset(etx_buf + 4, 0, ecm_size);
+		if (n)
+			memcpy(etx_buf + 4, &ecm_doc[at], n);
+		etx_len = 4 + ecm_size;
+		etx_frame++;
+	} else if (etx_rcp < 3) {
+		etx_buf[0] = HDLC_ADDR;
+		etx_buf[1] = HDLC_CTRL;
+		etx_buf[2] = FCF_RCP;
+		etx_len = 3;
+		etx_rcp++;
+	} else {
+		return;
+	}
+	crc = crc16(etx_buf, etx_len) ^ 0xffff;
+	etx_buf[etx_len++] = crc & 0xff;
+	etx_buf[etx_len++] = crc >> 8;
+}
+
+/* HDLC on the fast modulation: flags, the frames with a flag between
+   them, closing flags */
+static int ecm_get_bit(void *ctx)
+{
+	T30 *t = static_cast<T30*>(ctx);
+	int bit;
+
+	if (t->etx_ones == 5) {
+		t->etx_ones = 0;
+		return 0;               /* stuffed */
+	}
+	if (t->etx_flags > 0) {
+		bit = (0x7e >> (7 - ((t->etx_flags - 1) & 7))) & 1;
+		t->etx_flags--;
+		t->etx_ones = 0;
+		return bit;
+	}
+	if (t->etx_pos >= t->etx_len) {
+		if (t->etx_closing)
+			return FAX_BIT_END;
+		t->ecm_frame_out();
+		t->etx_pos = t->etx_bit = 0;
+		if (!t->etx_len) {
+			t->etx_closing = 1;
+			t->etx_flags = 3 * 8;
+		} else {
+			t->etx_flags = 8;
+		}
+		return ecm_get_bit(ctx);
+	}
+	bit = (t->etx_buf[t->etx_pos] >> t->etx_bit) & 1;
+	if (++t->etx_bit == 8) {
+		t->etx_bit = 0;
+		t->etx_pos++;
+	}
+	t->etx_ones = bit ? t->etx_ones + 1 : 0;
+	return bit;
+}
+
+/* the frames of ecm_send, on the page's modulation (V.17: the short
+   training, but after CTC) */
+void T30::send_ecm_burst()
+{
+	int v17 = rates[rate].family == 2;
+	etx_frame = etx_rcp = 0;
+	etx_len = etx_pos = etx_bit = etx_ones = etx_closing = 0;
+	/* 200 ms of flags first */
+	etx_flags = rates[rate].bps / 5 / 8 * 8;
+	tx.init(rates[rate].mod, v17 && !ecm_long_train, srate, ecm_get_bit,
+		this);
+	ecm_long_train = 0;
+	tx_on = 1;
+	set_state(S_ECM_TX);
+	DSP_DBG("t30: ECM page %d block %d: %d frames%s\n", ecm_page,
+		ecm_block, ecm_frames, ppr_count ? " (again)" : "");
+}
+
+/* PPS: the command after the block, the page and block counters, the
+   frames in the block less one (T.30 A.4.3) */
+void T30::send_pps()
+{
+	unsigned char fif[4];
+	if (ecm_last)
+		last_post = post_command();
+	fif[0] = ecm_last ? (unsigned char)(last_post | (cfg.sending ? 1 : 0)) :
+		FCF_NULL;
+	fif[1] = (unsigned char)ecm_page;
+	fif[2] = (unsigned char)ecm_block;
+	fif[3] = (unsigned char)(ecm_frames - 1);
+	new_frames();
+	add_frame(FCF_PPS, fif, 4);
+	send_frames(S_WAIT_PPS_RESP);
+}
+
+/* continue to correct, at the same rate: the frames still missing after
+   CTR */
+void T30::send_ctc()
+{
+	unsigned char fif[2];
+	fif[0] = 0;
+	fif[1] = (unsigned char)(rates[rate].bits << 2);
+	new_frames();
+	add_frame(FCF_CTC, fif, 2);
+	send_frames(S_WAIT_CTR);
+}
+
+void T30::send_rr()
+{
+	new_frames();
+	add_frame(FCF_RR, NULL, 0);
+	send_frames(S_WAIT_PPS_RESP);
+}
+
+
+/*
+ *    error correction mode: receiving
+ */
+
+void T30::start_ecm_rx()
+{
+	int v17 = rates[rate].family == 2;
+	hd_len = hd_nbits = hd_ones = hd_bad = 0;
+	hd_byte = 0;
+	ecm_rcp = 0;
+	start_fast(v17 && !ecm_long_train);
+	ecm_long_train = 0;
+	set_state(S_RX_ECM);
+	start_timer(T2_MS * 2);
+}
+
+/* the block's carrier went (or RCP came): the command follows on V.21 */
+void T30::ecm_block_end()
+{
+	stop_fast();
+	set_state(S_WAIT_PPS);
+	start_timer(T2_MS);
+}
+
+/* a frame off the fast modulation, FCS checked */
+void T30::ecm_frame_in(const unsigned char *d, int len)
+{
+	if (d[0] != HDLC_ADDR || len < 3)
+		return;
+	if ((d[2] & 0xfe) == FCF_FCD && len >= 5) {
+		int fn = d[3], n = len - 4;
+		if (n > ECM_SIZE)
+			n = ECM_SIZE;
+		memcpy(&ecm_rx[(size_t)fn * ECM_SIZE], d + 4, n);
+		ecm_rx_len[fn] = (short)n;
+	} else if ((d[2] & 0xfe) == FCF_RCP) {
+		if (!ecm_rcp++)
+			DSP_DBG("t30: RCP\n");
+	}
+}
+
+/* the bits of the fast modulation in ECM: HDLC, flags, stuffing */
+void T30::ecm_hdlc_bit(int bit)
+{
+	if (bit) {
+		if (++hd_ones > 6) {            /* idle or abort */
+			hd_len = hd_nbits = 0;
+			hd_bad = 0;
+			return;
+		}
+	} else {
+		if (hd_ones == 6) {             /* a flag: the frame ends */
+			/* the flag's 0111111 went in already: a whole
+			   number of octets before it */
+			if (hd_nbits == 7 && !hd_bad && hd_len >= 5 &&
+			    crc16(hd_buf, hd_len) == 0xf0b8)
+				ecm_frame_in(hd_buf, hd_len - 2);
+			hd_len = hd_nbits = hd_ones = hd_bad = 0;
+			hd_byte = 0;
+			return;
+		}
+		if (hd_ones == 5) {             /* stuffed */
+			hd_ones = 0;
+			return;
+		}
+		hd_ones = 0;
+	}
+	hd_byte |= (unsigned)bit << hd_nbits;
+	if (++hd_nbits == 8) {
+		if (hd_len < (int)sizeof(hd_buf))
+			hd_buf[hd_len++] = (unsigned char)hd_byte;
+		else
+			hd_bad = 1;
+		hd_nbits = 0;
+		hd_byte = 0;
+	}
+}
+
+/* a response to the sender, remembered for its RR */
+void T30::ecm_respond(int fcf, const unsigned char *fif, int len,
+		      enum state next_)
+{
+	last_resp = fcf;
+	last_resp_len = len;
+	if (len)
+		memcpy(last_resp_fif, fif, len);
+	last_resp_next = next_;
+	new_frames();
+	add_frame(fcf, fif, len);
+	send_frames(next_);
+}
+
+/* the page is complete (PPS or EOR with MPS, EOP, EOM): to the page's
+   receiver; the state after our answer */
+enum state T30::ecm_page_end(int fcf2)
+{
+	T4Page *p = &rx_page;
+	if (rx_page_on) {
+		t4rx.end();
+		page_ok = p->rows > 0 && p->bad_rows * 20 < p->rows;
+		DSP_DBG("t30: ECM page of %d rows, %d bad: %s\n", p->rows,
+			p->bad_rows, page_ok ? "ok" : "bad");
+		if (page_ok) {
+			pages++;
+			if (cfg.page_received)
+				cfg.page_received(cfg.ctx, p);
+		}
+		t4rx.release();
+		p->release();
+		rx_page_on = 0;
+	}
+	ecm_page++;
+	if (fcf2 == FCF_MPS || fcf2 == FCF_PRI_MPS)
+		return S_RX_PAGE;
+	if (fcf2 == FCF_EOP || fcf2 == FCF_PRI_EOP) {
+		eop_acked = 1;
+		return S_WAIT_DCN;
+	}
+	return S_CED;                   /* EOM: phase B again */
+}
+
+void T30::got_pps(const unsigned char *fif, int len)
+{
+	unsigned char map[32];
+	int fcf2, page_no, block, n, k, missing = 0;
+
+	if (len < 4) {
+		DSP_DBG("t30: PPS of %d octets\n", len);
+		return;
+	}
+	fcf2 = fif[0] & 0xfe;
+	page_no = fif[1];
+	block = fif[2];
+	n = fif[3] + 1;
+	DSP_DBG("t30: PPS %02x page %d block %d, %d frames\n", fcf2, page_no,
+		block, n);
+	if (page_no != (ecm_page & 0xff) || block != (ecm_block & 0xff)) {
+		/* the sender missed our MCF to the last block: again */
+		if (last_resp == FCF_MCF &&
+		    ((page_no == (ecm_page & 0xff) &&
+		      block == ((ecm_block - 1) & 0xff)) ||
+		     (page_no == ((ecm_page - 1) & 0xff) && ecm_block == 0))) {
+			ecm_respond(FCF_MCF, NULL, 0, last_resp_next);
+			return;
+		}
+		DSP_DBG("t30: PPS for page %d block %d, not %d/%d\n",
+			page_no, block, ecm_page & 0xff, ecm_block & 0xff);
+		send_dcn(T30_ERR_PAGE);
+		return;
+	}
+	/* the frame count: the block's on its first PPS, maybe only the
+	   burst's on the later ones */
+	if (n > ecm_rx_frames)
+		ecm_rx_frames = n;
+	memset(map, 0, sizeof(map));
+	for (k = 0; k < ecm_rx_frames; k++)
+		if (ecm_rx_len[k] < 0) {
+			map[k / 8] |= 1 << (k % 8);
+			missing++;
+		}
+	if (missing) {
+		DSP_DBG("t30: %d of %d frames missing: PPR\n", missing,
+			ecm_rx_frames);
+		ecm_respond(FCF_PPR, map, 32, S_RX_ECM);
+		return;
+	}
+	/* the block to the page, bit by bit as on the line */
+	for (k = 0; k < ecm_rx_frames && rx_page_on && !t4rx.done; k++) {
+		const unsigned char *d = &ecm_rx[(size_t)k * ECM_SIZE];
+		for (int i = 0; i < ecm_rx_len[k] * 8 && !t4rx.done; i++)
+			t4rx.bit(d[i / 8] >> (i % 8) & 1);
+	}
+	for (k = 0; k < ECM_FRAMES; k++)
+		ecm_rx_len[k] = -1;
+	ecm_rx_frames = -1;
+	ecm_block++;
+	if (fcf2 == FCF_NULL) {
+		ecm_respond(FCF_MCF, NULL, 0, S_RX_ECM);
+		return;
+	}
+	/* the frames came without errors: MCF, whatever the page */
+	enum state next_ = ecm_page_end(fcf2);
+	ecm_respond(FCF_MCF, NULL, 0, next_);
 }
 
 
@@ -941,7 +1524,13 @@ void T30::on_timeout()
 		break;
 	case S_RX_PAGE:
 	case S_WAIT_POST:
+	case S_WAIT_PPS:
 		send_dcn(T30_ERR_NO_RESPONSE);
+		break;
+	case S_RX_ECM:
+		/* no block, or the end of one went by: the command may still
+		   come */
+		ecm_block_end();
 		break;
 	case S_WAIT_DCN:
 		finish(T30_OK);
@@ -961,6 +1550,18 @@ void T30::on_timeout()
 		else
 			gap_then(0, &T30::send_post_page);
 		break;
+	case S_WAIT_PPS_RESP:
+		if (++tries >= TRIES)
+			send_dcn(T30_ERR_NO_RESPONSE);
+		else
+			gap_then(0, rnr_count ? &T30::send_rr : &T30::send_pps);
+		break;
+	case S_WAIT_CTR:
+		if (++tries >= TRIES)
+			send_dcn(T30_ERR_NO_RESPONSE);
+		else
+			gap_then(0, &T30::send_ctc);
+		break;
 	default:
 		break;
 	}
@@ -979,6 +1580,8 @@ void T30::tx_done()
 			gap_then(RESPONSE_GAP_MS, &T30::send_tcf);
 		} else if (after_tx == S_RX_PAGE) {
 			start_page_rx();
+		} else if (after_tx == S_RX_ECM) {
+			start_ecm_rx();
 		} else if (after_tx == S_CED) {
 			gap_then(RESPONSE_GAP_MS, &T30::send_dis);
 		} else {
@@ -993,6 +1596,9 @@ void T30::tx_done()
 		break;
 	case S_PAGE:
 		gap_then(RESPONSE_GAP_MS, &T30::send_post_page);
+		break;
+	case S_ECM_TX:
+		gap_then(RESPONSE_GAP_MS, &T30::send_pps);
 		break;
 	default:
 		break;
@@ -1061,6 +1667,15 @@ void T30::rx_sample(float x)
 			/* the page may take minutes: the timer only for
 			   the start of it */
 			start_timer(T2_MS);
+		} else if (state == S_RX_ECM &&
+			   (ecm_rcp || (fast.trained &&
+			    fast.carrier_run < -ms2samples(100, srate)))) {
+			/* RCP: the block is over, before the receiver can
+			   take the V.21 command after it for its signal
+			   (what it keeps trains the next block) */
+			ecm_block_end();
+		} else if (state == S_RX_ECM && fast.trained) {
+			start_timer(T2_MS);
 		}
 	}
 	if (msg_ready ||
@@ -1110,6 +1725,8 @@ T30 *t30_create(const struct t30_config *cfg)
 	if (!t->cfg.max_bps)
 		t->cfg.max_bps = 14400;
 	t->result = T30_RUNNING;
+	if (!cfg->sending && cfg->ecm)
+		t->ecm_rx.assign((size_t)ECM_FRAMES * ECM_SIZE, 0);
 	t->restart_v21();
 	if (cfg->sending) {
 		t->set_state(S_CNG);
@@ -1150,6 +1767,7 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->pages = t->pages;
 	s->bps = rates[t->rate].bps;
 	s->fine = t->fine;
+	s->ecm = t->ecm_on;
 	memcpy(s->remote_ident, t->remote_ident, sizeof(s->remote_ident));
 	s->phase = state_name[t->state];
 }

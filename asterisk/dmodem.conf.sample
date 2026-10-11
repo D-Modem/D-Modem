@@ -25,6 +25,7 @@
 ;   fax_dir = /var/spool/asterisk/fax    where received faxes go
 ;   fax_ident = +1 555 0100              our number (CSI / TSI)
 ;   fax_max_rate = 14400                 9600, 7200, 4800, 2400 to go slower
+;   fax_ecm = yes                        error correction mode offered
 ; DModemSendFax(file[,ident]) and DModemReceiveFax(file[,ident]) use these
 ; of [general].
 
