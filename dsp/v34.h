@@ -289,6 +289,9 @@ struct V34Rx {
 	cplx err_h[3];
 	long err_n;
 	int data_on;
+	/* rate renegotiation (11.6/V.34): the remote's S in data mode */
+	int ev_reneg;
+	float mse_mid, mse_old; /* data mode mse 64 and 128 symbols ago */
 
 	int init(int baud_, int high, int caller);
 	int set_v90();
@@ -308,6 +311,7 @@ struct V34Rx {
 	void timing_dd(cplx d);
 	int level_ok();
 	void precode_eq(const V34Params *p);
+	void reneg_s();
 	void err_collect(cplx e);
 	cplx precode_start(cplx z);
 	void symbol();

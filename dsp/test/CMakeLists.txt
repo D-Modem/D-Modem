@@ -117,6 +117,20 @@ foreach(_side both a c)
 	set_tests_properties(dmodem_pair_v34_retrain_${_side} PROPERTIES
 		LABELS quick ENVIRONMENT DSP_V34_RETRAIN=${_t})
 endforeach()
+# V.34 rate renegotiations (to 19200 bit/s, then back up a step at a
+# time while the margin allows): by both modems, the answerer or the
+# caller alone (the other one answers it)
+foreach(_side both a c)
+	if(_side STREQUAL "both")
+		set(_t 5000:8)
+	else()
+		set(_t 5000:8${_side})
+	endif()
+	add_test(NAME dmodem_pair_v34_reneg_${_side}
+		COMMAND dmodem_pair +MS=34 1 40)
+	set_tests_properties(dmodem_pair_v34_reneg_${_side} PROPERTIES
+		LABELS quick ENVIRONMENT DSP_V34_RENEG=${_t})
+endforeach()
 
 # --- quick: V.91 between two of them on a G.711 network (DMODEM_NET): as
 #     it is, with robbed bits, a 3 dB pad, mu-law to A-law; the DIL shows
@@ -344,6 +358,24 @@ add_test(NAME interop_34_hit_open_calls COMMAND ${Python3_EXECUTABLE}
 set_tests_properties(interop_34_hit_blob_calls interop_34_hit_open_calls
 	PROPERTIES LABELS interop ENVIRONMENT
 	"${_env};NET=9600:9600:ulaw;STREAM=25;NET_DROP=20:300")
+# V.34 rate renegotiation: the open modem starts one (and later goes back
+# up), the original library answers it; and two open modems on a noisy
+# line that gets 3 dB worse 10 s after CONNECT (NET_SYNC), each lowers
+# its receiving rate
+add_test(NAME interop_34_reneg_blob_calls COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open>
+	"ATX3;AT+MS=34")
+add_test(NAME interop_34_reneg_open_calls COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob>
+	"ATX3;AT+MS=34")
+set_tests_properties(interop_34_reneg_blob_calls interop_34_reneg_open_calls
+	PROPERTIES LABELS interop ENVIRONMENT
+	"${_env};NET=9600:9600:ulaw;NET_SYNC=1;STREAM=25;DSP_V34_RENEG=5000:8")
+add_test(NAME interop_34_noise COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_open>
+	"ATX3;AT+MS=34")
+set_tests_properties(interop_34_noise PROPERTIES LABELS interop ENVIRONMENT
+	"${_env};NET=9600:9600:ulaw;NET_SYNC=1;STREAM=30;NET_FLOOR=250;NET_NOISE=10:250")
 # V.90: the original library (analogue modem) calls the open one (digital
 # modem, 8000 Hz) through the simulated G.711 network
 add_test(NAME interop_v90_ulaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
@@ -401,6 +433,26 @@ if(TARGET half_agere)
 	set_tests_properties(agere_v44_open_calls PROPERTIES LABELS agere
 		ENVIRONMENT
 		"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=V34;BULK=60000")
+	# V.34 rate renegotiation started by the open modem, both ways;
+	# and the line much noisier 10 s after CONNECT: a retrain
+	add_test(NAME agere_34_reneg_agere_calls COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_agere>
+		$<TARGET_FILE:half_open> "ATX3;AT+MS=V34")
+	set_tests_properties(agere_34_reneg_agere_calls PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET=8000:9600:ulaw;NET_SYNC=1;STREAM=30;DSP_V34_RENEG=5000:8;PROTO_B=ATX3\;AT+MS=34")
+	add_test(NAME agere_34_reneg_open_calls COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_open>
+		$<TARGET_FILE:half_agere> "ATX3;AT+MS=34")
+	set_tests_properties(agere_34_reneg_open_calls PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET=9600:8000:ulaw;NET_SYNC=1;STREAM=30;DSP_V34_RENEG=5000:8;PROTO_B=ATX3\;AT+MS=V34")
+	add_test(NAME agere_34_noise COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_agere>
+		$<TARGET_FILE:half_open> "ATX3;AT+MS=V34")
+	set_tests_properties(agere_34_noise PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET=8000:9600:ulaw;NET_SYNC=1;STREAM=40;NET_NOISE=10:300;PROTO_B=ATX3\;AT+MS=34")
 	# V.90: the Agere modem as the analogue modem, the open one as the
 	# digital modem (both at 8000 Hz)
 	foreach(_law ulaw alaw)

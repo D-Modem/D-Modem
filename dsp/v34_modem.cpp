@@ -73,12 +73,13 @@ static void put_bits(unsigned char *b, int *n, unsigned val, int nbits)
 		b[(*n)++] = (val >> i) & 1;
 }
 
-/* the 16 bit fields between the start bits are covered by the CRC */
+/* the 16 bit fields between the start bits are covered by the CRC (at
+   bit 69 in type 0, 171 in type 1) */
 static unsigned mp_crc(const unsigned char *b, int len)
 {
 	unsigned crc = 0xFFFF;
-	int i;
-	for (i = 18; i < len - 18; i += 17)
+	int i, end = len == 188 ? 171 : 69;
+	for (i = 18; i + 17 <= end; i += 17)
 		crc = v34_crc_bits(b + i, 16, crc);
 	return crc;
 }
@@ -857,8 +858,10 @@ void V34Rx::symbol()
 			set_stage(phase4 ? V34_RX_TRN : V34_RX_PP);
 			idx = nearest4(z);
 			if (phase4 && have_good) {
-				/* the same channel as in phase 3 */
+				/* the same channel as in phase 3 (or in data
+				   mode, without the precoder's 1 + H(z)) */
 				memcpy(qam.eq, good_eq, sizeof(qam.eq));
+				qam.eq_len = V34_EQ_LEN;
 				mse = 0.05f;
 			}
 		}
@@ -929,6 +932,16 @@ void V34Rx::symbol()
 			precode_eq(&drx.p);
 		break;
 	case V34_RX_DATA:
+		/* the remote's S: a rate renegotiation (data never repeats
+		   every other symbol for long); 1 + H(z) keeps S periodic */
+		if (data_on && s_score < 0.05f && cplx_pow(z) > 0.5f &&
+		    cplx_pow(z2) > 0.5f) {
+			if (++s_count >= 24) {
+				reneg_s();
+				break;
+			}
+		} else
+			s_count = 0;
 		if (data_on) {
 			float g2 = drx.p.g * drx.p.g;
 			if (drx.p.precode && n <= 3)
@@ -943,11 +956,39 @@ void V34Rx::symbol()
 			mse += 0.01f * (e - mse);
 			timing_dd(d);
 			qam.adapt(d, 0.004f, 0.02f, 0.0002f);
+			/* the equalizer to go back to in a renegotiation (with
+			   precoding, the one from the training) */
+			if (!drx.p.precode && mse < 0.15f && (n & 255) == 0)
+				memcpy(good_eq, qam.eq, sizeof(good_eq));
+			if ((n & 63) == 0) {
+				mse_old = mse_mid;
+				mse_mid = mse;
+			}
 			if (n % 2000 == 0)
 				DSP_DBG("v34 rx%d: data mse %.3f\n", tap, mse);
 		}
 		break;
 	}
+}
+
+/* the remote's S in data mode: the data stops, S-bar, maybe TRN, then
+   MP, MP' and E follow as in phase 4, on the 4 point signals */
+void V34Rx::reneg_s()
+{
+	/* the mse of the data before S */
+	if (mse_old > 0)
+		mse = mse_old;
+	DSP_DBG("v34 rx: S in data mode at symbol %ld, mse %.3f\n", sym, mse);
+	data_on = 0;
+	mse_mid = mse_old = 0;
+	ev_reneg = ev_s = 1;
+	ev_mp = ev_e = 0;
+	mp_n = 0;
+	after_mp = 0;
+	ones = 0;
+	memset(&mp, 0, sizeof(mp));
+	s_count = 0;
+	set_stage(V34_RX_S);
 }
 
 /* with precoding the equalizer gets the response 1 + H(z): its output is

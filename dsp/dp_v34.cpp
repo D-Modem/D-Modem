@@ -82,6 +82,12 @@ static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x11, 0x10, 0x2a, 0x0d
 #define V8_MOD2_V32     0x01    /* in the first extension octet */
 /* data mode mse (signal point spacing 2) that calls for a retrain */
 #define V34_RETRAIN_MSE 0.25f
+/* rate renegotiation (11.6/V.34): the mse a rate runs at with a margin
+   (the probing's choice on a noisy line), the mse that calls for a
+   lower rate, and the most the next higher rate may expect to have */
+#define V34_RN_TARGET   0.12f
+#define V34_RN_DOWN     0.2f
+#define V34_RN_UP       0.08f
 
 enum v34_state {
 	/* V.8 answerer */
@@ -145,6 +151,10 @@ enum v34_state {
 	P4_E,
 	V34_DATA,
 	V34_RT_SILENCE, /* a retrain: silence, then phase 2 from tone A / B */
+	/* a rate renegotiation: S, S-bar, TRN, then P4_MP and P4_E */
+	V34_RN_S,
+	V34_RN_SBAR,
+	V34_RN_TRN,
 	/* V.90 digital modem, phase 3 */
 	P3D_WAIT_JA,
 	P3D_PAUSE,
@@ -397,6 +407,15 @@ struct V34Pump : Pump {
 	int connected;          /* CONNECT has been reported */
 	int retrains;
 	long retrain_at;        /* test: our own retrain this far (samples) */
+	/* rate renegotiation */
+	int renegotiating;
+	int renegs;
+	int rn_max;             /* the most we may ask for (the probing's) */
+	long rn_hi, rn_lo;      /* data mode: samples with an mse for a lower,
+				   a higher rate */
+	float mse_good;         /* data mode: the mse while it was fine */
+	long reneg_at;          /* test: our own renegotiation this far */
+	int reneg_to;           /* test: to this rate (N) */
 
 	void set_state(enum v34_state s);
 	void make_info0(BitQ *q);
@@ -437,6 +456,8 @@ struct V34Pump : Pump {
 	void mp_start();
 	int fsk_bit_edge();
 	void retrain(const char *why);
+	int reneg_rate(int up);
+	void renegotiate(const char *why, int n);
 	/* the digital modem in V.90 phases 3 and 4 */
 	int v90_digital() const
 	{
@@ -1395,7 +1416,7 @@ void V34Pump::pump_rx_sample(float x)
 		if (!ec.bypass)
 			x = ec.run(last_tx, x);
 		prx.sample(x);
-		if (state == V34_DATA || v90_digital())
+		if (state == V34_DATA || v90_digital() || renegotiating)
 			rt_tone(x);
 		return;
 	}
@@ -1715,6 +1736,7 @@ void V34Pump::retrain(const char *why)
 {
 	DSP_DBG("v34: retrain %d (%s)\n", ++retrains, why);
 	retraining = 1;
+	renegotiating = 0;
 	if (prx_on) {
 		prx.release();
 		prx_on = 0;
@@ -1754,6 +1776,45 @@ void V34Pump::retrain(const char *why)
 	/* V.90's phase 3 (Jd, the DIL) takes about 8 s more */
 	timeout = total + ms2samples(pcm ? 30000 : 15000, srate);
 	set_state(V34_RT_SILENCE);
+}
+
+/* the rate (N) to receive at after a renegotiation, from the data mode
+   mse: up < 0 lower (by as many steps as the mse asks for, at least
+   one), > 0 one higher, 0 whatever the mse says (when the remote
+   started it).  At the symbol rate, a step of 2400 bit/s takes about
+   3 dB per bit per symbol. */
+int V34Pump::reneg_rate(int up)
+{
+	float step = 3 * 2400.0f / v34_symbol_rate(prx.baud), mse = prx.mse;
+	int n = rate_rx / 2400, k;
+
+	if (up > 0 || (!up && mse * powf(10, step / 10) < V34_RN_UP))
+		return n < rn_max ? n + 1 : n;
+	if (up < 0 || mse > V34_RN_DOWN) {
+		k = (int)ceilf(10 * log10f(mse / V34_RN_TARGET) / step);
+		n -= k < 1 ? 1 : k;
+	}
+	return n < 1 ? 1 : n;
+}
+
+/* a rate renegotiation (11.6/V.34), by us or in answer to the remote's
+   S: S, S-bar, TRN, then MP with the new rate we can receive, MP', E
+   and data at the new rates, all with the equalizers as they are; the
+   link (V.42) carries on */
+void V34Pump::renegotiate(const char *why, int n)
+{
+	DSP_DBG("v34: renegotiation %d (%s): receive at most %d, mse %.3f\n",
+		++renegs, why, n * 2400, prx.mse);
+	renegotiating = 1;
+	max_rate_rx = n;
+	ptx.data_on = 0;
+	ptx.ack_mp = 0;
+	ptx.mp_sent = 0;
+	ptx.trn16 = 0;
+	rn_hi = rn_lo = bad = 0;
+	/* no E 2500 ms plus the round trips after S-bar: a retrain */
+	timeout = total + ms2samples(3000, srate) + 3 * rtd;
+	tx_next(V34_RN_S, V34_TX_S);
 }
 
 /* V.91 after V.8: v91.cpp from here on, at 8000 Hz */
@@ -1799,6 +1860,9 @@ int V34Pump::handshake()
 	   silence and its tone A (it is the V.34 answerer in phase 2) */
 	if (v90_digital() && rt_blocks >= 6)
 		retrain("tone A");
+	/* the remote retrains instead (11.6.2/V.34) */
+	if (renegotiating && rt_blocks >= 6)
+		retrain(caller ? "tone A" : "tone B");
 
 	switch (state) {
 	/* V.8 answerer */
@@ -2340,6 +2404,12 @@ int V34Pump::handshake()
 
 	/* phase 4, both */
 	case P4_MP:
+		/* a cleardown (11.7/V.34): MP with no rates */
+		if (renegotiating && prx.ev_mp && !prx.mp.rate_ca &&
+		    !prx.mp.rate_ac) {
+			DSP_DBG("v34: cleardown by the remote\n");
+			return DPSTAT_ERROR;
+		}
 		if (prx.ev_mp && !ptx.ack_mp) {
 			/* before the remote's E: its data follows at once */
 			if (data_setup())
@@ -2359,6 +2429,19 @@ int V34Pump::handshake()
 			modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
 			rt_blocks = 0;
 			lost = 0;
+			if (renegotiating) {
+				renegotiating = 0;
+				/* the remote's answering S, or its own */
+				prx.ev_reneg = 0;
+				DSP_DBG("v34: renegotiated, %d/%d\n", rate_tx,
+					rate_rx);
+				/* the remote does not let us go as high */
+				if (rate_rx / 2400 < max_rate_rx)
+					rn_max = rate_rx / 2400;
+				break;
+			}
+			/* a renegotiation may go back up to this */
+			rn_max = rate_rx / 2400;
 			if (retraining && connected) {
 				/* the link goes on (V.42 knows nothing of it) */
 				retraining = 0;
@@ -2395,8 +2478,39 @@ int V34Pump::handshake()
 			bad++;
 		else
 			bad = 0;
+		/* the mse for a lower rate, or one that leaves room for a
+		   higher one */
+		if (prx.data_on) {
+			float step = 3 * 2400.0f / v34_symbol_rate(prx.baud);
+			if (c < ms2samples(1000, srate))
+				mse_good = 0;
+			else if (!mse_good)
+				mse_good = prx.mse;
+			else if (prx.mse < V34_RN_DOWN)
+				mse_good += 1e-4f * (prx.mse - mse_good);
+			rn_hi = prx.mse > V34_RN_DOWN ? rn_hi + 1 : 0;
+			rn_lo = rate_rx / 2400 < rn_max &&
+				prx.mse * powf(10, step / 10) < V34_RN_UP ?
+				rn_lo + 1 : 0;
+		}
 		if (rt_blocks >= 6)
 			retrain(caller ? "tone A" : "tone B");
+		else if (prx.ev_reneg) {
+			prx.ev_reneg = 0;
+			renegotiate("the remote's S", reneg_rate(0));
+		} else if (rn_hi >= ms2samples(300, srate) &&
+			   c >= ms2samples(2000, srate) && rate_rx > 2400) {
+			/* the line got much worse (6 dB and more): both ways,
+			   most likely; a retrain probes it anew */
+			if (prx.mse > 4 * mse_good)
+				retrain("errors");
+			else
+				renegotiate("errors", reneg_rate(-1));
+		}
+		else if (rn_lo >= ms2samples(10000, srate))
+			renegotiate("margin", reneg_rate(1));
+		else if (reneg_at && c >= reneg_at && !renegs)
+			renegotiate("test", reneg_to);
 		else if (bad >= ms2samples(1000, srate) &&
 			 c >= ms2samples(5000, srate))
 			/* (not in a loop on a line that stays marginal) */
@@ -2405,6 +2519,21 @@ int V34Pump::handshake()
 			retrain("signal lost");
 		else if (retrain_at && c >= retrain_at && !retrains)
 			retrain("test");
+		break;
+	case V34_RN_S:
+		if (ptx.n >= 128)
+			tx_next(V34_RN_SBAR, V34_TX_SBAR);
+		break;
+	case V34_RN_SBAR:
+		if (ptx.n >= 16)
+			tx_next(V34_RN_TRN, V34_TX_TRN);
+		break;
+	case V34_RN_TRN:
+		/* MP once the remote's training has been there a while
+		   (both started theirs), at most 2 s */
+		if ((ptx.n >= 512 && prx.stage == V34_RX_TRN && prx.n >= 64) ||
+		    c >= ms2samples(2000, srate))
+			mp_start();
 		break;
 	case V34_RT_SILENCE:
 		if (c >= ms2samples(70, srate)) {
@@ -2466,6 +2595,8 @@ int V34Pump::sample(float x, float *y, const float *ref)
 	*y = dsp_clip16(pump_tx_sample());
 	last_tx = ref ? *ref : *y;
 	pump_rx_sample(x);
+	if (renegotiating && total >= timeout)
+		retrain("renegotiation timed out");
 	if (state != V34_DATA && total >= timeout) {
 		DSP_DBG("v34: start-up timeout in state %d\n", state);
 		return DPSTAT_ERROR;
@@ -2599,6 +2730,19 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		const char *side = e + strspn(e, "0123456789");
 		if (!*side || *side == (caller_ ? 'c' : 'a'))
 			retrain_at = ms2samples(atoi(e), srate_);
+	}
+	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
+	   renegotiation to N * 2400 bit/s (what we receive) */
+	if (getenv("DSP_V34_RENEG")) {
+		const char *e = getenv("DSP_V34_RENEG"), *side;
+		int n = 0;
+		if (strchr(e, ':'))
+			n = atoi(strchr(e, ':') + 1);
+		side = e + strcspn(e, "ac");
+		if (n > 0 && (!*side || *side == (caller_ ? 'c' : 'a'))) {
+			reneg_at = ms2samples(atoi(e), srate_);
+			reneg_to = n;
+		}
 	}
 	probe_g[0].init(1050, PROBE_PERIOD, srate_);
 	probe_g[1].init(3000, PROBE_PERIOD, srate_);

@@ -169,8 +169,30 @@ the receiver takes it from the tone reversals. `DSP_V34_RETRAIN=<ms>[a|c]`
 makes the answerer (a), the caller (c) or both start one after that long
 in data mode (a test).
 
+Rate renegotiation (11.6/V.34): a modem whose data mode mse stays
+above what its receiving rate runs at with a margin (0.2, in units of
+the signal points' spacing) for 300 ms asks for a lower one: S for 128
+symbols, S-bar, TRN, then MP with the new rate it can receive, MP', E
+and data at the new rates, with the equalizers as they are (the one
+from before the precoder's 1 + H(z) goes back in). It takes the rate
+down by as many steps as the mse asks for (about 3 dB per bit per
+symbol a step), and back up one step at a time, to the rate it
+started with, once the mse has left room for the next one for 10 s. A
+modem that hears the remote's S in data mode answers the same way,
+with the rate its own mse calls for. When the mse got worse by 6 dB
+and more the line has changed (both ways, most likely) and the modem
+retrains instead; it retrains as well when the renegotiation does not
+end with E within 3 s plus the round trips, or the remote sends its
+tone. An MP with no rates is a cleardown (11.7/V.34): the call ends.
+The original library and the Agere modem answer our renegotiations
+(the original library with type 0 MP); the Agere modem starts its own
+on errors. `DSP_V34_RENEG=<ms>:<N>[a|c]` makes the answerer (a), the
+caller (c) or both start one after that long in data mode, to receive
+at N * 2400 bit/s (a test).
+
 Not implemented: pre-emphasis, non-linear decoding (we never ask for
-it), the auxiliary channel and rate renegotiation.
+it), the auxiliary channel, starting a cleardown, and V.90's rate
+renegotiation (the digital modem retrains instead).
 
 ### V.90 digital modem
 

@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <math.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,12 @@ static float gain_up = 1;    /* NET_GAIN_UP: on the way up from a 9600 Hz modem 
 static float drop_at = -1, drop_ms, step_at = -1, step_g = 1;
 /* NET_NOISE=<at s>:<rms>: white noise from then on, both ways */
 static float noise_at = -1, noise_rms;
+/* NET_FLOOR=<rms>: white noise all the time (NET_NOISE adds to it) */
+static float floor_rms;
+/* NET_SYNC=1: these times count from a SIGUSR1 (interop.py sends it at
+   CONNECT) instead of from the start; nothing happens before it */
+static int sync_on;
+static volatile sig_atomic_t synced;
 /* NET_DELAY=<ms>: see main().
    NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
    back towards B */
@@ -174,6 +181,7 @@ struct dir {
 	short obuf[8192];
 	int on;
 	long nin;               /* input samples so far */
+	long t0;                /* NET_SYNC: nin at the SIGUSR1, -1 before */
 };
 
 /* samples of one direction: to 8000 Hz G.711 and on */
@@ -187,15 +195,24 @@ static int run(struct dir *d, int a_out, int a_in)
 	n /= 2;
 	for (i = 0; i < n; i++) {
 		float t = (float)d->nin++ / d->rate_in;
+		if (sync_on) {
+			if (synced && d->t0 < 0)
+				d->t0 = d->nin;
+			t = d->t0 < 0 ? -1e9f : (float)(d->nin - d->t0) /
+				d->rate_in;
+		}
 		if (drop_at >= 0 && t >= drop_at && t < drop_at + drop_ms / 1000)
 			ibuf[i] = 0;
 		if (step_at >= 0 && t >= step_at)
 			ibuf[i] = (short)lrintf(ibuf[i] * step_g);
-		if (noise_at >= 0 && t >= noise_at) {
+		if ((noise_at >= 0 && t >= noise_at) || floor_rms) {
 			/* Gaussian (Box-Muller) */
 			double u1 = (rand() + 1.0) / (RAND_MAX + 2.0);
 			double u2 = rand() / (RAND_MAX + 1.0);
-			double x = ibuf[i] + noise_rms *
+			float rms = noise_at >= 0 && t >= noise_at ?
+				sqrtf(noise_rms * noise_rms +
+				      floor_rms * floor_rms) : floor_rms;
+			double x = ibuf[i] + rms *
 				sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
 			ibuf[i] = (short)(x > 32767 ? 32767 : x < -32768 ?
 					  -32768 : lrint(x));
@@ -248,6 +265,12 @@ static int run(struct dir *d, int a_out, int a_in)
 	return 0;
 }
 
+static void on_sync(int sig)
+{
+	(void)sig;
+	synced = 1;
+}
+
 int main(int argc, char **argv)
 {
 	struct dir d[2];
@@ -277,6 +300,10 @@ int main(int argc, char **argv)
 	rb = atoi(argv[2]);
 	alaw = !strcmp(argv[3], "alaw");
 	plain = getenv("NET_PLAIN") != NULL;
+	if (getenv("NET_SYNC")) {
+		sync_on = 1;
+		signal(SIGUSR1, on_sync);
+	}
 	if (getenv("NET_GAIN"))
 		gain = atof(getenv("NET_GAIN"));
 	if (getenv("NET_GAIN_UP"))
@@ -285,6 +312,8 @@ int main(int argc, char **argv)
 		sscanf(getenv("NET_DROP"), "%f:%f", &drop_at, &drop_ms);
 	if (getenv("NET_NOISE"))
 		sscanf(getenv("NET_NOISE"), "%f:%f", &noise_at, &noise_rms);
+	if (getenv("NET_FLOOR"))
+		floor_rms = atof(getenv("NET_FLOOR"));
 	if (getenv("NET_STEP")) {
 		float db = 0;
 		sscanf(getenv("NET_STEP"), "%f:%f", &step_at, &db);
@@ -318,6 +347,7 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		rc_init(&d[k].rc);
+		d[k].t0 = -1;
 		p[k].fd = d[k].in;
 		p[k].events = POLLIN;
 	}

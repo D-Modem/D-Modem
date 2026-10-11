@@ -82,7 +82,7 @@ Finally, dial the number of the target system.  Below shows a connection to the 
 ## Known Issues / Future Work
 - For a server answering many calls (a BBS, PPP dial-in or fax), the Asterisk module in `asterisk/` or the FreeSWITCH module in `freeswitch/` is the better fit than `slmodemd -L`: it answers with the open modem at V.91 (another digital modem calling, up to 62667 bps both ways), V.90 (as the digital modem, up to 56000 bps downstream), V.34, V.32bis, V.22bis, V.22 or V.21.
 - Tested over SIP against a local Asterisk and a local FreeSWITCH only, not yet through real PSTN gateways.
-- V.34 rate renegotiation during a call (the modem retrains instead, after a line hit or when its error rate climbs), and V.92, are not implemented.
+- V.92 is not implemented. V.34 calls renegotiate their rates when the line gets a little worse or better, and retrain after a line hit or a large change; V.90 calls always retrain.
 - V.90 needs an analogue modem at the other end: slmodemd is always on the digital side of the network. Two digital modems (D-Modem calling the Asterisk module, or another D-Modem) connect at V.91 instead: up to 62667 bps both ways on a clean G.711 call (about 58700 bps of data through V.42), less where the network robs bits or adds a pad; `AT+MS=91` asks for V.91 (or V.34), the default `AT+MS=92` offers it with V.90.
 - The serial interface could be replaced with stdio or a socket, and common AT configuration options could be exposed as command line options 
 

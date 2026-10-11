@@ -83,6 +83,10 @@ cmd("modemB", "ATA"); cmd("modemA", "ATD")
 ok = wait("modemA", b"(CONNECT[^\r]*|NO CARRIER|NO ANSWER|BUSY)\r", 90) and wait("modemB", b"(CONNECT[^\r]*|NO CARRIER)\r", 15)
 print("A:", buf["modemA"]); print("B:", buf["modemB"])
 if not (b"CONNECT" in buf["modemA"] and b"CONNECT" in buf["modemB"]): done(False)
+# NET_SYNC: netsim's NET_DROP, NET_STEP and NET_NOISE times count from here
+if net and os.environ.get("NET_SYNC"):
+    import signal
+    pn.send_signal(signal.SIGUSR1)
 # the slowest direction sets how long the data takes (V.23: 75 bit/s)
 rate = min([int(r) for r in re.findall(rb"CONNECT (\d+)", buf["modemA"] + buf["modemB"])] or [1200])
 buf = {k: b"" for k in fd}
