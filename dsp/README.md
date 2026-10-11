@@ -47,7 +47,7 @@ interface has one addition the original library does not use:
 
 V.90 is there as the **digital** modem only (the server side, as on a
 G.711 VoIP line), with V.92's quick connect for V.92 analogue modems
-calling (see [V.92](#v92-quick-connect)) and, as an option, V.92's PCM
+calling (see [V.92](#v92-quick-connect)) and V.92's PCM
 upstream (see [PCM upstream](#v92-pcm-upstream)); the analogue side of
 V.90 and V.92, K56flex and V.8bis are not (`AT+MS=56`,
 K56flex, runs V.90). Between two digital modems V.91 (see
@@ -259,10 +259,9 @@ it retrains.
 ### V.92 quick connect
 
 With `AT+MS=92` (the default) at 8000 Hz the digital modem says V.92 in
-INFO0d (bit 27) and sends V.92's INFO1d, which tells the analogue modem
-that the channel has no PCM upstream (bit 70; `DSP_V92_PCMUP=1` offers
-it, see [PCM upstream](#v92-pcm-upstream)): it asks for V.90 or V.34
-upstream, and the call goes on as V.90. `DSP_V92=0` leaves V.92 out,
+INFO0d (bit 27) and sends V.92's INFO1d, which offers PCM upstream (bit
+70, see [PCM upstream](#v92-pcm-upstream)); without it the analogue modem
+asks for V.90 or V.34 upstream, and the call goes on as V.90. `DSP_V92=0` leaves V.92 out,
 `DSP_V92_QC=0` answers QC1a with V.8 instead of quick connect.
 
 Short phase 1 (9.2.4/V.92), answering: a QC1a ahead of CM (the
@@ -293,8 +292,8 @@ are not implemented.
 
 ### V.92 PCM upstream
 
-With `DSP_V92_PCMUP=1`, INFO1d says the channel can carry PCM upstream
-(bit 70). An analogue modem that wants it answers with the INFO1a of
+INFO1d says the channel can carry PCM upstream (bit 70;
+`DSP_V92_PCMUP=0` leaves it out). An analogue modem that wants it answers with the INFO1a of
 Table 18/V.92, and from there `V92Up` ([v92.cpp](v92.cpp)) runs phases 3
 and 4 of V.92 and the data mode on the network's 8000 Hz samples, as
 V.91 does; our side of it is V.90's PCM transmitter.
@@ -317,15 +316,33 @@ next Su-bar, the DIL it asked for (or SCR), Ri on CPt, Ri-bar on E1u,
 then TRN2d, SUVd, CPd (after SUVu), SUVd' (after CPu), Ed and B1d in
 CPt's and CPu's constellations through V.90's encoder.
 
-Our CPd asks for no precoding (each section of the precoder and the
-prefilter 4 taps, all 0 but z2(0) = 1), the same modulus M on all 12
-data frame intervals and one constellation of 4M points, (2j + 1) x 16:
-the analogue modem sends the point of least power of a class, and the
-receiver decides the point and takes its class (on the trellis frame's
-fourth symbol, its parity aside). The rate is the fastest whose half
-distance between points is at least sqrt(40) times TRN1u's rms error,
-of the rates in the analogue modem's DIL descriptor. `DSP_V92_UP_DRN=<n>`
-asks for (n + 17) x 8000 / 6 bit/s instead.
+Our CPd makes the analogue modem's precoder do what the equalizer's
+decision feedback did: p1 = -b (16 taps, Q1.14). Its precoder picks, of
+the points of a class, the one that keeps its output least, a modulo
+precoder: the output stays within the classes' spacing even where 1 / C(z)
+is not stable (as it is not here: the channel's edge at 4000 Hz puts a
+root of C on the unit circle). The receiver is then left with the feed
+forward taps (refitted by least squares to the TRN2u decisions with the
+feedback the precoder takes) and the points themselves, without decision
+feedback and its error propagation, and with the points in order for the
+trellis code: a Viterbi decoder (V.34's 64 state code on the pairs of
+symbols, 6.4.4/V.92) decides them before their classes. The rest of
+CPd: the same modulus M on all 12 data frame intervals, one constellation
+of points (2j + 1) x 16, as many as the precoder needs (M (1 + sum |b|)
+positive ones), the prefilter z2(0) = 1, and G for an output of unit
+power. The rate is the fastest whose half distance between points is at
+least sqrt(8) times the fit's rms error, of the rates in the analogue
+modem's DIL descriptor. The feedback taps may be shrunk (b_j g^j) when
+that lets a faster rate fit in 128 points. `DSP_V92_UP_DRN=<n>` asks for
+(n + 17) x 8000 / 6 bit/s instead; `DSP_V92_PRECODE=0` sends no precoder
+(decision feedback in the receiver, margin 40) and `DSP_V92_TRELLIS=0`
+does not decode the trellis code (16 or 32 choose that code).
+
+| at 36000 / 38667 bit/s (u-law) | B1u | data |
+|---|---|---|
+| precoding and trellis decoding | 0 / 0 errors | 0 / 15 HDLC errors in 10 s (64 states; 33 with 16) |
+| precoding only | 0 errors at 33333 | 14 HDLC errors at 33333 |
+| no precoding | fails at 33333 | |
 
 When the analogue modem retrains instead of sending INFO1a, or our phase
 3 or 4 fails, or B1u does not come through (more than 5 % of its bits),
@@ -338,21 +355,24 @@ object), and with our offer it retrains to V.34 upstream after INFO1d
 `half_blob` ([test/legacy/modem.cpp](test/legacy/modem.cpp)), and the
 library then does PCM upstream. Two things it needs of CPd: filter
 sections of a multiple of 4 taps (its FIR rounds the length down, and
-crashes on 0), and a constellation of more than 2M points (in 2M, it
-sends 0 on the trellis frame's fourth symbol for half of the classes).
+crashes on 0), and an even number of positive points, 2M at least: on
+the trellis frame's fourth symbol it looks for the point of a class up to
+2 (K + z M) + parity with z up to (LC - 1 - 2K) / 2M, rounded toward
+zero, which takes one point past its table (it sends 0) when LC is odd,
+and more when LC is less than 2M.
 
 | Test (`interop_v92_pcmup_*`) | Result |
 |---|---|
-| ulaw, alaw | V.92 connect, 56000 down, 25333 (u-law) or 26666 (A-law) up, B1u without errors |
+| ulaw, alaw | V.92 connect, 56000 down, 36000 up, B1u and 10 s of data without errors |
 | calls (two calls, quick connect) | both V.92 |
 | lite (the library as it is) | it retrains after INFO1d, we leave the offer out: V.90 |
 | fallback (44000 bit/s asked for) | B1u does not come through: retrain, V.90 |
 
-Through netsim's converters TRN1u's error is 34 dB below the signal,
-which allows less upstream (25333 bit/s) than V.34's 31200; so the offer
-is off by default. Neither the trellis decoding of the parity nor a
-precoder design (both would allow more) is there yet, nor V.92's retrains
-in data mode and rate renegotiation. The echo canceller (the V.34 pump's,
+Through netsim's converters the fit's error is 34.5 dB below the signal,
+which gives 36000 bit/s upstream (V.34's is 31200 there; 38667 makes a
+few errors); a prefilter that shapes the analogue modem's spectrum is
+not designed yet. In data mode the analogue modem's tone A retrains;
+V.92's rate renegotiation and fast parameter exchange are not there. The echo canceller (the V.34 pump's,
 trained while we send Sd to Jd) could not be tested: netsim's echo
 (`NET_ECHO`) through its 9600 Hz converters is not one an 8000 Hz
 canceller cancels, for V.90 either.

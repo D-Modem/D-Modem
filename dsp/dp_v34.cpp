@@ -3114,9 +3114,9 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		      !atoi(getenv("DSP_V92_SHORT2")));
 	/* quick connect: DSP_V92_QC=0 answers QC1a with V.8 instead */
 	qc_ok = !(getenv("DSP_V92_QC") && !atoi(getenv("DSP_V92_QC")));
-	/* PCM upstream: DSP_V92_PCMUP=1 offers it */
-	pcmup_ok = getenv("DSP_V92_PCMUP") &&
-		atoi(getenv("DSP_V92_PCMUP"));
+	/* PCM upstream: DSP_V92_PCMUP=0 does not offer it */
+	pcmup_ok = !(getenv("DSP_V92_PCMUP") &&
+		     !atoi(getenv("DSP_V92_PCMUP")));
 	/* V.91 with another digital modem: DSP_V91=0 leaves it out */
 	v91 = (id == DP_V90 || id == DP_V92 || id == DP_V91) &&
 		line_rate == 8000 &&

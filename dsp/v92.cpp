@@ -14,16 +14,17 @@
  *    feedback equalizer is fitted to TRN1u by least squares and follows
  *    the signal from then on by its decisions.
  *
- *    Our CPd asks for no precoding (the prefilter passes the signal as
- *    it is), a uniform modulus M on all 12 data frame intervals and one
- *    constellation of 4M equally spaced points: the analogue modem
- *    sends, of the points of a class, the one of least power, and the
- *    receiver decides the point and takes its class.  The trellis code's
- *    parity (on the fourth symbol of a trellis frame) is not used.
+ *    Our CPd hands the equalizer's feedback taps to the analogue modem's
+ *    precoder: it picks, of the points of a class, the one that keeps its
+ *    output least (a modulo precoder, so 1 / C(z) need not be stable),
+ *    and the receiver is left with the feed forward taps and the points
+ *    themselves.  A uniform modulus M on all 12 data frame intervals and
+ *    one constellation of equally spaced points; the trellis code (64
+ *    states) is decoded with a Viterbi decoder on the pairs of symbols.
  *
- *    The upstream rate comes from TRN1u's mean square error, with a
- *    margin for the errors' long tails (V92_MARGIN); a B1u that does not
- *    come through, or a failure before data, retrains to V.34 upstream.
+ *    The upstream rate comes from the fit's mean square error, with a
+ *    margin (V92_MARGIN_CODED); a B1u that does not come through, or a
+ *    failure before data, retrains to V.34 upstream.
  *
  *    The echo of our signal from the analogue modem's hybrid is the V.34
  *    pump's echo canceller's (dp_v34.cpp), trained while we send Sd to Jd
@@ -129,7 +130,7 @@ int V92Cpd::build(unsigned char *b, int fill) const
 	put_bits(b, &n, 0, 1);          /* CPd */
 	put_bits(b, &n, 7, 3);          /* all three parts */
 	put_bits(b, &n, drn, 5);
-	put_bits(b, &n, 0, 2);          /* 16 state trellis */
+	put_bits(b, &n, trellis, 2);
 	put_bits(b, &n, 0, 1);          /* E2u not extended */
 	put_bits(b, &n, 0, 3);
 	put_bits(b, &n, ack, 1);
@@ -141,18 +142,17 @@ int V92Cpd::build(unsigned char *b, int fill) const
 		put_bits(b, &n, M[i], 8);
 		put_bits(b, &n, M[i + 1], 8);
 	}
-	/* precoder and prefilter: all zero but z2(0); 4 taps each, as
-	   the original library's filters have a multiple of 4 taps (and
-	   fail on none) */
+	/* precoder and prefilter */
 	for (i = 0; i < 4; i++) {
 		put_bits(b, &n, 0, 1);
-		put_bits(b, &n, V92_TAPS, 9);
+		put_bits(b, &n, len[i], 9);
 		put_bits(b, &n, 0, 7);
 	}
-	for (i = 0; i < 4 * V92_TAPS; i++) {
-		put_bits(b, &n, 0, 1);
-		put_bits(b, &n, i == 2 * V92_TAPS ? 32767 : 0, 16);
-	}
+	for (i = 0; i < 4; i++)
+		for (j = 0; j < len[i]; j++) {
+			put_bits(b, &n, 0, 1);
+			put_bits(b, &n, (unsigned short)coef[i][j], 16);
+		}
 	/* constellations */
 	put_bits(b, &n, 0, 1);
 	for (i = 0; i < 4; i++)
@@ -449,8 +449,9 @@ void V92Up::adapt(long s, float err, float mu)
 	int i;
 	for (i = 0; i < V92_EQ_F; i++)
 		f[i] += g * err * at(buf, base + i);
-	for (i = 0; i < V92_EQ_B; i++)
-		b[i] -= mu / V92_EQ_B * err * dh[i];
+	if (!b_frozen)
+		for (i = 0; i < V92_EQ_B; i++)
+			b[i] -= mu / V92_EQ_B * err * dh[i];
 }
 
 static void push(float *dh, float t)
@@ -717,6 +718,7 @@ void V92Up::symbol(float y)
 		mse += 0.005 * (err * err - mse);
 		adapt(sym, err, 0.002f);
 		push(dh, t);
+		dring[sym & (V92_DR - 1)] = t;
 		if (i == 0)
 			frame_zero = 0;
 		bit2(d);
@@ -745,6 +747,7 @@ void V92Up::symbol(float y)
 		mse += 0.005 * (err * err - mse);
 		adapt(sym, err, 0.002f);
 		push(dh, t);
+		dring[sym & (V92_DR - 1)] = t;
 		if (i == 0)
 			frame_zero = 0;
 		bits4(s, m);
@@ -764,6 +767,10 @@ void V92Up::symbol(float y)
 			dprev = 0;
 			dframes = derrs = 0;
 			dmse = 0;
+			vi = 0;
+			vt = vn = 0;
+			for (int k = 0; k < 64; k++)
+				vmetric[k] = k ? 1e30f : 0;
 		}
 		break;
 	}
@@ -813,30 +820,143 @@ struct Big {
 	int bit(int k) const { return (w[k >> 5] >> (k & 31)) & 1; }
 };
 
-void V92Up::data_symbol(float y)
+/* the nearest point of each 2D subset to (u, v), in grid units (the
+   odd coordinates 2 eta + 1, up to lim) */
+static void subset_pts(float u, float v, int lim, float dist[8], int pt[8])
 {
-	int i = (int)(sym % 12), c = cpd.con[i % 6], lc = cpd.lc[c];
-	float u = (float)(y / cpd.g), best = 1e30f, t, err;
-	int eta = 0, e, K, M = cpd.M[i];
+	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
+	int dx, dy, i;
 
-	/* the nearest point */
-	for (e = -lc; e < lc; e++) {
-		float a = e >= 0 ? cpd.pts[c][e] : -cpd.pts[c][-1 - e];
-		float dd = (u - a) * (u - a);
-		if (dd < best) {
-			best = dd;
-			eta = e;
+	if (x0 > lim) x0 = lim;
+	if (x0 < -lim) x0 = -lim;
+	if (y0 > lim) y0 = lim;
+	if (y0 < -lim) y0 = -lim;
+	for (i = 0; i < 8; i++) {
+		dist[i] = 1e30f;
+		pt[i] = 0;
+	}
+	for (dx = -6; dx <= 6; dx += 2)
+		for (dy = -6; dy <= 6; dy += 2) {
+			int x = x0 + dx, y = y0 + dy, l;
+			float dd;
+			if (x < -lim || x > lim || y < -lim || y > lim)
+				continue;
+			l = v34_subset_label(x, y);
+			dd = (u - x) * (u - x) + (v - y) * (v - y);
+			if (dd < dist[l]) {
+				dist[l] = dd;
+				pt[l] = (x & 0xFFFF) | y << 16;
+			}
+		}
+}
+
+/* a trellis frame (tu[]) through the Viterbi decoder of the 16, 32 or 64
+   state code (6.4.4/V.92: V.34's, with the 4D symbol of two pairs of
+   symbols); the decided symbols after the decoding delay */
+void V92Up::trellis_frame()
+{
+	float da[8], db[8], gm[32], m2[64], best;
+	int ca[8], cb[8], ga[32], gb[32], l0, l1, g, st, y, t = vt, bs, k;
+	int lim = 2 * cpd.lc[0] - 1;
+	int states = 16 << cpd.trellis, ny = states == 16 ? 4 : 16;
+
+	subset_pts(tu[0], tu[1], lim, da, ca);
+	subset_pts(tu[2], tu[3], lim, db, cb);
+	for (g = 0; g < 2 * ny; g++)
+		gm[g] = 1e30f;
+	for (l0 = 0; l0 < 8; l0++)
+		for (l1 = 0; l1 < 8; l1++) {
+			float m = da[l0] + db[l1];
+			/* the encoder input (Y1 Y2, or Y1 to Y4), and Y0 */
+			g = (v34_conv_in(l0, l1) & (ny - 1)) +
+				((l0 ^ l1) & 1) * ny;
+			if (m < gm[g]) {
+				gm[g] = m;
+				ga[g] = ca[l0];
+				gb[g] = cb[l1];
+			}
+		}
+	for (st = 0; st < states; st++)
+		m2[st] = 1e30f;
+	for (st = 0; st < states; st++) {
+		int y0 = st & 1;
+		if (vmetric[st] >= 1e29f)
+			continue;
+		for (y = 0; y < ny; y++) {
+			int ns = v34_trellis_next(states, st, y);
+			float m = vmetric[st] + gm[y + y0 * ny];
+			if (m < m2[ns]) {
+				m2[ns] = m;
+				vprev[t][ns] = (unsigned char)st;
+				vpa[t][ns] = ga[y + y0 * ny];
+				vpb[t][ns] = gb[y + y0 * ny];
+			}
 		}
 	}
-	t = (float)(cpd.g * (eta >= 0 ? cpd.pts[c][eta] :
-			     -cpd.pts[c][-1 - eta]));
+	best = m2[0];
+	bs = 0;
+	for (st = 1; st < states; st++)
+		if (m2[st] < best) {
+			best = m2[st];
+			bs = st;
+		}
+	for (st = 0; st < states; st++)
+		vmetric[st] = m2[st] - best;
+	vt = (t + 1) % V92_VT;
+	if (++vn < V92_VT)
+		return;
+	st = bs;
+	for (k = 0; k < V92_VT - 1; k++) {
+		st = vprev[t][st];
+		t = (t + V92_VT - 1) % V92_VT;
+	}
+	/* the odd coordinates back to indices */
+	decided(((short)(vpa[t][st] & 0xFFFF) - 1) / 2);
+	decided(((vpa[t][st] >> 16) - 1) / 2);
+	decided(((short)(vpb[t][st] & 0xFFFF) - 1) / 2);
+	decided(((vpb[t][st] >> 16) - 1) / 2);
+}
+
+void V92Up::data_symbol(float y)
+{
+	int i = (int)(sym % 12), lc = cpd.lc[0];
+	/* in grid units: a point is (2 eta + 1) * 16 * G */
+	float u = (float)(y / (16 * cpd.g)), t, err;
+	int eta = (int)floorf(u / 2);
+
+	/* the nearest point (for the equalizer, and without trellis
+	   decoding the decision) */
+	if (eta < -lc)
+		eta = -lc;
+	if (eta > lc - 1)
+		eta = lc - 1;
+	t = (float)((2 * eta + 1) * 16 * cpd.g);
 	err = t - y;
 	dmse += 0.005 * (err * err - dmse);
 	/* decisions near the middle between two points */
 	if (fabsf(err) > 0.6f * 16 * cpd.g)
 		dfar++;
-	adapt(sym, err, 0.0005f);
-	push(dh, t);
+	/* faster than in training: the analogue modem's signal wanders a
+	   little (with A-law, slower steps let the mse double in 10 s) */
+	adapt(sym, err, 0.002f);
+	/* with precoding, the transmitter has taken the data symbols' own
+	   interference away: only that of those before B1u is left */
+	push(dh, b_frozen ? 0 : t);
+	if (!trellis_on) {
+		decided(eta);
+		return;
+	}
+	tu[i % 4] = u;
+	if (i % 4 == 3)
+		trellis_frame();
+}
+
+/* a decided symbol, eta, of data frame interval vi */
+void V92Up::decided(int eta)
+{
+	int i = vi, M = cpd.M[i], K;
+
+	vi = (vi + 1) % 12;
 	/* the class: eta = K + zM, and on the 4th symbol of a trellis
 	   frame 2K + 2zM + parity */
 	if (i % 4 == 3)
@@ -863,9 +983,9 @@ void V92Up::data_symbol(float y)
 			R.rsub(R2);
 		/* R > (Mt - 1) / 2, as 2R > Mt - 1 */
 		{
-			Big t = R;
-			t.muladd(2, 0);
-			sgn = t.cmp(R2) > 0;
+			Big tt = R;
+			tt.muladd(2, 0);
+			sgn = tt.cmp(R2) > 0;
 		}
 		dprev ^= sgn;
 		for (j = 0; j < nb; j++)
@@ -877,7 +997,13 @@ void V92Up::data_symbol(float y)
 			for (j = 0; j < nb; j++)
 				z += !bits[j];
 			derrs += z;
+			b1z[dframes - 1] = (unsigned char)z;
 			if (dframes == 48) {
+				char zs[200];
+				int q, o = 0;
+				for (q = 0; q < 48; q++)
+					o += sprintf(zs + o, " %d", b1z[q]);
+				DSP_DBG("v92: B1u zeros by frame:%s\n", zs);
 				DSP_DBG("v92: B1u: %ld zeros in %d bits, mse "
 					"%.4f\n", derrs, 48 * nb, dmse);
 				b1_bad = derrs * 20 > 48 * nb;
@@ -885,8 +1011,15 @@ void V92Up::data_symbol(float y)
 		} else
 			put_bits(ctx, bits, nb);
 		if ((dframes & 1023) == 0) {
-			DSP_DBG("v92: data frame %ld, mse %.4f, %ld uncertain"
-				"\n", dframes, dmse, dfar);
+			/* the feed forward taps' centre of gravity: the
+			   analogue modem's symbol timing against ours */
+			double c = 0, w = 0;
+			for (j = 0; j < V92_EQ_F; j++) {
+				c += j * f[j] * f[j];
+				w += f[j] * f[j];
+			}
+			DSP_DBG("v92: data frame %ld, mse %.4f, %ld uncertain, "
+				"taps at %.3f\n", dframes, dmse, dfar, c / w);
 			dfar = 0;
 		}
 	}
@@ -902,48 +1035,197 @@ void V92Up::data_symbol(float y)
    errors have longer tails than a normal distribution's: 1 % of the
    decisions are 0.6 of the half distance off, at 5.7 times the rms) */
 #define V92_MARGIN      40
+/* with precoding (no decision feedback in the receiver) and the trellis
+   code decoded: on netsim's u-law line 36000 bit/s go without errors at
+   an mse that asks for 9.3 (16 state code), 38667 make a few at 5.8 (half
+   as many with the 64 state code) */
+#define V92_MARGIN_CODED 8
+/* the precoder from our feedback taps shrunk by gamma^j (the points the
+   analogue modem needs reach M (1 + sum |b|), see design()); the feed
+   forward taps fitted to the last decisions with that feedback, by least
+   squares.  Returns -1 if there is no fit. */
+#define V92_FIT         1536
+int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
+{
+	static double A[V92_EQ_F * V92_EQ_F];
+	double v[V92_EQ_F], phi[V92_EQ_F], g = 1;
+	int i, j;
+	long s0 = sym - V92_FIT, sn;
+
+	for (j = 0; j < V92_EQ_B; j++) {
+		g *= gamma;
+		bg[j] = b[j] * g;
+	}
+	memset(A, 0, sizeof(A));
+	memset(v, 0, sizeof(v));
+	for (sn = s0; sn < sym; sn++) {
+		long base = eqL + sn - V92_EQ_PRE;
+		double t = dring[sn & (V92_DR - 1)];
+		for (j = 0; j < V92_EQ_B; j++)
+			t += bg[j] * dring[(sn - 1 - j) & (V92_DR - 1)];
+		for (i = 0; i < V92_EQ_F; i++)
+			phi[i] = at(buf, base + i);
+		for (i = 0; i < V92_EQ_F; i++) {
+			for (j = 0; j < V92_EQ_F; j++)
+				A[i * V92_EQ_F + j] += phi[i] * phi[j];
+			v[i] += phi[i] * t;
+		}
+	}
+	for (i = 0; i < V92_EQ_F; i++)
+		A[i * V92_EQ_F + i] *= 1 + 1e-6;
+	if (solve(A, v, fg, V92_EQ_F))
+		return -1;
+	*e2 = 0;
+	for (sn = s0; sn < sym; sn++) {
+		long base = eqL + sn - V92_EQ_PRE;
+		double t = dring[sn & (V92_DR - 1)], y = 0;
+		for (j = 0; j < V92_EQ_B; j++)
+			t += bg[j] * dring[(sn - 1 - j) & (V92_DR - 1)];
+		for (i = 0; i < V92_EQ_F; i++)
+			y += fg[i] * at(buf, base + i);
+		*e2 += (y - t) * (y - t);
+	}
+	*e2 /= V92_FIT;
+	return 0;
+}
+
 void V92Up::design()
 {
-	int drn, M = 8, i, j;
+	static const double gammas[] = { 1, 0.97, 0.94, 0.9, 0.85, 0.8,
+					 0.7, 0.6, 0.5 };
+#define NG      (int)(sizeof(gammas) / sizeof(gammas[0]))
+	double bgs[NG][V92_EQ_B], fgs[NG][V92_EQ_F], e2s[NG], sbs[NG];
+	int ng = 0, drn, M = 8, i, j, lc = 0, best = -1;
 	double msa = 0;
 	const char *fix = getenv("DSP_V92_UP_DRN");
+	int pre = !(getenv("DSP_V92_PRECODE") &&
+		    !atoi(getenv("DSP_V92_PRECODE")));
+	double margin;
 
-	for (drn = 19; drn >= 1; drn--) {
-		int K = 2 * (drn + 17), k;
+	trellis_on = !(getenv("DSP_V92_TRELLIS") &&
+		       !atoi(getenv("DSP_V92_TRELLIS")));
+
+	/* the precoders to choose from: our feedback taps, shrunk or not
+	   (the more, the fewer points the analogue modem needs, but the
+	   more of the channel's interference is left to the feed forward
+	   taps), each with its fit; without precoding, the training's */
+	if (pre && rx == V92R_TRN2 && sym - e2u_sym > V92_FIT + 32)
+		for (i = 0; i < NG; i++) {
+			if (precoder_fit(gammas[i], bgs[ng], fgs[ng],
+					 &e2s[ng]))
+				continue;
+			sbs[ng] = 0;
+			for (j = 0; j < V92_EQ_B; j++)
+				sbs[ng] += fabs(bgs[ng][j]);
+			DSP_DBG("v92: precoder %.2f: mse %.5f, sum |b| %.2f\n",
+				gammas[i], e2s[ng], sbs[ng]);
+			ng++;
+		}
+	if (!ng)
+		pre = 0;
+	margin = getenv("DSP_V92_MARGIN") ? atof(getenv("DSP_V92_MARGIN")) :
+		pre && trellis_on ? V92_MARGIN_CODED : V92_MARGIN;
+	for (drn = 19; drn >= 1 && best < 0; drn--) {
+		int K = 2 * (drn + 17), k, g;
 		double ms3 = 0, ms0 = 0;
 		if (up_mask && !((up_mask >> (drn - 1)) & 1))
 			continue;
 		M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
-		/* least power of a class (points 2j + 1), and all 2M
-		   points on the trellis frame's 4th symbol */
-		for (k = 0; k < M; k++) {
-			int a = 2 * k + 1, bb = 2 * (M - k) - 1;
-			ms0 += (a < bb ? a * a : bb * bb);
+		if (pre) {
+			/* the precoder's output: uniform over M points (2M
+			   on the trellis frame's 4th symbol) */
+			ms0 = (double)M * M / 3;
+			ms3 = 4.0 * M * M / 3;
+		} else {
+			/* least power of a class (points 2j + 1), and all
+			   2M points on the trellis frame's 4th symbol */
+			for (k = 0; k < M; k++) {
+				int a = 2 * k + 1, bb = 2 * (M - k) - 1;
+				ms0 += (a < bb ? a * a : bb * bb);
+			}
+			ms0 /= M;
+			ms3 = (4.0 * M * M - 1) / 3;
 		}
-		ms0 /= M;
-		ms3 = (4.0 * M * M - 1) / 3;
 		msa = (9 * ms0 + 3 * ms3) / 12;
-		if (fix ? drn == atoi(fix) : msa * mse_trn * V92_MARGIN <= 1)
-			break;
+		for (g = 0; g < (pre ? ng : 1); g++) {
+			double e2 = pre ? e2s[g] : mse_trn;
+			/* the points: with precoding the 4th symbol's reach
+			   M (1 + sum |b|); 2M at least, and an even number
+			   of positive ones (the original library takes one
+			   point too many on the 4th symbol otherwise) */
+			int l = (int)ceil(M * (1 + (pre ? sbs[g] : 0))) + 2;
+			if (l < 2 * M)
+				l = 2 * M;
+			l += l & 1;
+			if (l > V92_LC_MAX)
+				continue;
+			if (fix ? drn != atoi(fix) : msa * e2 * margin > 1)
+				continue;
+			if (best < 0 || (pre && e2 < e2s[best])) {
+				best = g;
+				lc = l;
+			}
+		}
 	}
-	if (drn < 1) {
+	drn++;
+	if (best < 0) {
+		/* the slowest, without precoding */
 		drn = 1;
 		M = 8;
 		msa = 37;
+		lc = 2 * M;
+		pre = 0;
+		best = 0;
 	}
 	memset(&cpd, 0, sizeof(cpd));
 	cpd.drn = drn;
 	for (i = 0; i < 12; i++)
 		cpd.M[i] = M;
-	/* 4M points: the original library finds no point of a class on
-	   the trellis frame's 4th symbol in 2M (it sends 0) */
+	/* precoder: our decision feedback (the receiver keeps its feed
+	   forward part); 4 taps at least in each section, as the original
+	   library's filters have a multiple of 4 taps (and fail on none) */
+	cpd.len[0] = 4;
+	cpd.len[1] = pre ? V92_EQ_B : 4;
+	cpd.len[2] = 4;
+	cpd.len[3] = 4;
+	cpd.coef[2][0] = 32767;
+	if (pre) {
+		memcpy(f, fgs[best], sizeof(f));
+		mse_trn = (float)e2s[best];
+		for (j = 0; j < V92_EQ_B; j++) {
+			long q = lrint(-bgs[best][j] * 16384);
+			q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
+			cpd.coef[1][j] = (short)q;
+			b[j] = -q / 16384.0;
+		}
+		b_frozen = 1;
+	}
 	cpd.ncon = 1;
-	cpd.lc[0] = 2 * M;
-	for (j = 0; j < 2 * M; j++)
+	cpd.lc[0] = lc;
+	for (j = 0; j < lc; j++)
 		cpd.pts[0][j] = (2 * j + 1) * 16;
 	cpd.g = 1 / (16 * sqrt(msa));
-	DSP_DBG("v92: CPd: %d bit/s, M %d, G %.5f (mse %.5f)\n",
-		(drn + 17) * 8000 / 6, M, cpd.g, mse_trn);
+	/* the 64 state code (DSP_V92_TRELLIS=16 or 32 for another, 0 for
+	   none decoded): at 38667 bit/s it makes half the errors of the
+	   16 state one */
+	cpd.trellis = 2;
+	if (getenv("DSP_V92_TRELLIS"))
+		cpd.trellis = atoi(getenv("DSP_V92_TRELLIS")) == 16 ? 0 :
+			atoi(getenv("DSP_V92_TRELLIS")) == 32 ? 1 : 2;
+	DSP_DBG("v92: CPd: %d bit/s, M %d, %d points, G %.5f (mse %.5f)%s, "
+		"%d state trellis%s\n", (drn + 17) * 8000 / 6, M, 2 * lc,
+		cpd.g, mse_trn, pre ? ", precoding" : "", 16 << cpd.trellis,
+		trellis_on ? "" : " (not decoded)");
+	if (pre)
+		DSP_DBG("v92: precoder p1 %d %d %d %d %d %d %d %d %d %d %d %d "
+			"%d %d %d %d (%.2f)\n", cpd.coef[1][0],
+			cpd.coef[1][1], cpd.coef[1][2], cpd.coef[1][3],
+			cpd.coef[1][4], cpd.coef[1][5], cpd.coef[1][6],
+			cpd.coef[1][7], cpd.coef[1][8], cpd.coef[1][9],
+			cpd.coef[1][10], cpd.coef[1][11], cpd.coef[1][12],
+			cpd.coef[1][13], cpd.coef[1][14], cpd.coef[1][15],
+			gammas[best]);
+#undef NG
 }
 
 void V92Up::make_seq(int cpd_, int ack)

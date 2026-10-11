@@ -325,6 +325,14 @@ struct V34Rx {
    as used by the INFO and MP sequences */
 unsigned v34_crc_bits(const unsigned char *bits, int n, unsigned crc);
 
+/* the trellis code (9.6.3/V.34): the subset label of a 2D point (odd
+   coordinates), the encoder input Y1 | Y2 << 1 | Y3 << 2 | Y4 << 3 of a
+   4D symbol from its two labels, and the next encoder state (16, 32 or 64
+   states; its low bit is Y0) */
+int v34_subset_label(int x, int y);
+int v34_conv_in(int s0, int s1);
+int v34_trellis_next(int states, int st, int y);
+
 } // namespace dsp
 
 #endif /* __V34_H__ */

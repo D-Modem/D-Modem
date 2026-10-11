@@ -27,10 +27,16 @@ struct V92Info1a {
 
 /* CPd (Table 30/V.92): the analogue modem's data mode parameters */
 #define V92_LC_MAX      128
+#define V92_PMAX        64      /* taps of a precoder or prefilter section */
 struct V92Cpd {
 	int drn;                /* (drn + 17) * 8000 / 6 bit/s */
 	int ack;
+	int trellis;            /* 0: 16 states, 1: 32, 2: 64 */
 	double g;               /* the gain after the prefilter */
+	/* LZ1, LP1, LZ2, LP2 and their coefficients: z1 and z2 in Q0.15,
+	   p1 and p2 in Q1.14 */
+	int len[4];
+	short coef[4][V92_PMAX];
 	int M[12];
 	int ncon;
 	int con[6];             /* constellation of intervals i and i + 6 */
@@ -81,6 +87,8 @@ enum {
 #define V92_EQ_PRE      8       /* of them, ahead of the main tap */
 #define V92_EQ_B        16      /* feedback taps */
 #define V92_EQ_N        (V92_EQ_F + V92_EQ_B)
+#define V92_VT          24      /* Viterbi decoding delay, trellis frames */
+#define V92_DR          4096    /* decisions kept */
 
 enum v92_rx {
 	V92R_RU,        /* Ru and its reversal */
@@ -139,6 +147,7 @@ struct V92Up {
 	/* the equalizer */
 	double f[V92_EQ_F], b[V92_EQ_B];
 	float dh[V92_EQ_B];     /* past decisions, newest first */
+	float dring[V92_DR];    /* the decisions, by symbol */
 	long t0;                /* the sample of TRN1u's first symbol (est.) */
 	long eqL;               /* the sample of symbol 0's main tap */
 	long sym;               /* the next symbol to equalize */
@@ -146,7 +155,8 @@ struct V92Up {
 	float pr;               /* received power, for the step size */
 	double mse;
 	int md_done;            /* MD is over */
-	float mse_trn;          /* after TRN1u's training */
+	float mse_trn;          /* after TRN1u's training (and, with the
+				   precoder, its fit) */
 	/* bits */
 	int last_d;             /* differential decoding */
 	unsigned dscr;          /* GPA descrambler */
@@ -160,10 +170,21 @@ struct V92Up {
 	int up_mask;            /* the analogue modem's rates, bit 0: 24 000 */
 	long e2u_sym;
 	/* data mode */
+	int b_frozen;           /* b is the precoder's (in CPd) */
+	int trellis_on;         /* Viterbi decoding of the trellis code */
+	float tu[4];            /* the symbols of a trellis frame, in grid
+				   units (2 eta + 1) */
+	float vmetric[64];
+	unsigned char vprev[V92_VT][64];
+	int vpa[V92_VT][64], vpb[V92_VT][64];
+	int vt, vn;
+	int vi;                 /* data frame interval of the next decided
+				   symbol */
 	int dk[12];
 	int dprev;              /* the modulus encoder's sign */
 	long dframes, derrs, dfar;
 	int b1_bad;
+	unsigned char b1z[48];
 	double dmse;
 
 	void init(int alaw_, const V92Info1a *ia_, const long *fclock,
@@ -181,6 +202,7 @@ struct V92Up {
 	int tx_step();
 	void make_seq(int cpd_, int ack);
 	void design();
+	int precoder_fit(double gamma, double *bg, double *fg, double *e2);
 	/* receiver */
 	void rx_sample(float x);
 	void tone_sample(float x);
@@ -192,6 +214,8 @@ struct V92Up {
 	void bits4(int s, int m);
 	void frame_bits(int bit);
 	void data_symbol(float y);
+	void trellis_frame();
+	void decided(int eta);
 };
 
 } // namespace dsp

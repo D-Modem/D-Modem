@@ -392,7 +392,7 @@ add_test(NAME interop_v92_qc COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=92")
 set_tests_properties(interop_v92_qc PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;EXPECT_B=V.92 quick connect")
-# V.92 PCM upstream (DSP_V92_PCMUP=1): the original library is a "V.92
+# V.92 PCM upstream: the original library is a "V.92
 # Lite" build, which retrains when INFO1d offers PCM upstream; BLOB_V92FULL
 # (legacy/modem.cpp) sets its full V.92 bit, and it then goes through
 # phases 3 and 4 of V.92 with us.  Lite: we answer its retrain without the
@@ -403,24 +403,30 @@ foreach(_law ulaw alaw)
 		${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 		"ATX3;AT+MS=92")
 	set_tests_properties(interop_v92_pcmup_${_law} PROPERTIES LABELS interop
-		ENVIRONMENT "${_env};NET=9600:8000:${_law};STREAM=3;BLOB_V92FULL=1;DSP_V92_PCMUP=1;EXPECT_B=V.92 connect")
+		ENVIRONMENT "${_env};NET=9600:8000:${_law};STREAM=10;BLOB_V92FULL=1;EXPECT_B=V.92 connect 56000/3[4-9]")
 endforeach()
 add_test(NAME interop_v92_pcmup_calls COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 	"ATX3;AT+MS=92")
 # (quick connect's timing does not take a busy machine: alone)
 set_tests_properties(interop_v92_pcmup_calls PROPERTIES LABELS interop
-	RUN_SERIAL TRUE ENVIRONMENT "${_env};NET=9600:8000:ulaw;CALLS=2;STREAM=3;BLOB_V92FULL=1;DSP_V92_PCMUP=1;EXPECT_B=(?s)V.92 connect.*V.92 connect")
+	RUN_SERIAL TRUE ENVIRONMENT "${_env};NET=9600:8000:ulaw;CALLS=2;STREAM=3;BLOB_V92FULL=1;EXPECT_B=(?s)V.92 connect.*V.92 connect")
 add_test(NAME interop_v92_pcmup_lite COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 	"ATX3;AT+MS=92")
 set_tests_properties(interop_v92_pcmup_lite PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;DSP_V92_PCMUP=1;EXPECT_B=(?s)no PCM upstream offer.*V.90 connect")
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;EXPECT_B=(?s)no PCM upstream offer.*V.90 connect")
 add_test(NAME interop_v92_pcmup_fallback COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 	"ATX3;AT+MS=92")
 set_tests_properties(interop_v92_pcmup_fallback PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;BLOB_V92FULL=1;DSP_V92_PCMUP=1;DSP_V92_UP_DRN=16;EXPECT_B=(?s)B1u does not come through.*V.90 connect")
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;BLOB_V92FULL=1;DSP_V92_UP_DRN=16;EXPECT_B=(?s)B1u does not come through.*V.90 connect")
+# without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream
+add_test(NAME interop_v92_nopcmup COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_nopcmup PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;BLOB_V92FULL=1;DSP_V92_PCMUP=0;EXPECT_B=V.90 connect")
 # class 1 fax calls both ways
 foreach(_m 24 48 72 96 73 97 121 122 145)
 	add_test(NAME fax_interop_${_m}_blob_sends COMMAND ${Python3_EXECUTABLE}

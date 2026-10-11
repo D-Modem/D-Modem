@@ -81,6 +81,14 @@ static int subset_label(int x, int y)
 	return v34_subset[((x - 1) & 6) / 2 + 2 * ((y - 1) & 6)];
 }
 
+/* for V.92's trellis code (6.4.4/V.92): the same converter and encoders */
+int v34_conv_in(int s0, int s1) { return conv_in(s0, s1); }
+int v34_trellis_next(int states, int st, int y)
+{
+	return trellis_next(states, st, y);
+}
+int v34_subset_label(int x, int y) { return subset_label(x, y); }
+
 /* clockwise by k quarter turns */
 static void rotate(int *x, int *y, int k)
 {
