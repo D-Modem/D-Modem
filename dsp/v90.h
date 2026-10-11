@@ -26,7 +26,15 @@ enum v90_seg {
 	V90_RI,         /* Ri until v90_tx_ri_end(), then Ri-bar (24) */
 	V90_RIBAR,
 	V90_ENC,        /* data frames from the encoder */
+	/* V.92 short phase 1 (8.3/V.92) */
+	V90_QTS,        /* QTS (768), QTS-bar (48), then ANSpcm */
+	V90_QTSBAR,
+	V90_ANSPCM,     /* until the next segment */
 };
+
+/* V.92: the Ucode of QTS for WXYZ of QC1a / QC2a (Table 2/V.92); -1 for
+   1111, a cleardown from on-hold */
+int  v92_uqts(int wxyz);
 
 
 
@@ -105,8 +113,18 @@ struct V90Tx {
 			  int *last);
 	void *ctx;
 	int out[6], opos;
+	/* V.92 short phase 1 */
+	int uqts;
+	short anspcm[301];      /* one period of ANSpcm, linear */
+	const long *fclock;     /* the line's symbol clock (the caller's
+				   count of symbols sent), null: no QTS */
+	long fbase;             /* its symbol at the start of QTS: the
+				   data frame interval is (*fclock - fbase)
+				   % 6 from there on */
 
 	void make_jd();
+	void anspcm_init(int level);    /* 0..3: -9.5 to -18 dBm0 */
+
 	void init(int alaw_, int uinfo_);
 	void segment(enum v90_seg seg_);
 	void end_jd();

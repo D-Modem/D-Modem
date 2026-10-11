@@ -68,7 +68,15 @@ def wait(k, pat, t):
     return False
 def cmd(k, s): os.write(fd[k], s.encode() + b"\r")
 def done(ok):
-    pa.kill(); pb.kill(); print("PASS" if ok else "FAIL"); sys.exit(0 if ok else 1)
+    pa.kill(); pb.kill()
+    # EXPECT_B=<regex>: modemB's log must have it as well (e.g. that the
+    # call took a certain path)
+    if ok and os.environ.get("EXPECT_B"):
+        time.sleep(0.5)
+        log_b = open(os.path.join(os.environ.get("LOG_DIR", d), "modemB.log"), "rb").read()
+        if not re.search(os.environ["EXPECT_B"].encode(), log_b):
+            print("modemB's log has no", os.environ["EXPECT_B"]); ok = False
+    print("PASS" if ok else "FAIL"); sys.exit(0 if ok else 1)
 for k in fd: cmd(k, "ATZ")
 for k in fd:
     if not wait(k, b"OK", 5): print(k, buf[k]); done(False)

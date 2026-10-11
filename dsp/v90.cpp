@@ -19,6 +19,7 @@
  *
  */
 
+#include <math.h>
 #include <string.h>
 
 #include "v90.h"
@@ -48,6 +49,39 @@ static int alaw2lin(int a)
 	else
 		t = (t + 0x108) << (seg - 1);
 	return (a & 0x80) ? t : -t;
+}
+
+/* G.711 encoders: mu-law from 14 bit, A-law from 13 bit linear values,
+   as the ANSpcm tables of V.92 (Tables 7 to 10/V.92) come out */
+static int lin2ulaw(int v)
+{
+	int mask = 0xFF, seg;
+	if (v < 0) {
+		v = -v;
+		mask = 0x7F;
+	}
+	v = (v > 8159 ? 8159 : v) + 33;
+	for (seg = 0; seg < 8 && v > (0x40 << seg) - 1; seg++)
+		;
+	if (seg == 8)
+		return 0x7F ^ mask;
+	return ((seg << 4) | ((v >> (seg + 1)) & 0xF)) ^ mask;
+}
+
+static int lin2alaw(int v)
+{
+	int mask = 0xD5, seg, a;
+	if (v < 0) {
+		v = -v;
+		mask = 0x55;
+	}
+	for (seg = 0; seg < 8 && v > (0x20 << seg) - 1; seg++)
+		;
+	if (seg == 8)
+		return 0x7F ^ mask;
+	a = seg << 4;
+	a |= seg < 2 ? (v >> 1) & 0xF : (v >> seg) & 0xF;
+	return a ^ mask;
 }
 
 /* Table 1/V.90: mu-law 0xFF - Ucode, A-law Ucode ^ 0xD5 for the positive
@@ -104,6 +138,30 @@ void V90Tx::make_jd()
 	nbits = n_;
 }
 
+int v92_uqts(int wxyz)
+{
+	static const signed char u[16] = { 61, 62, 63, 66, 67, 70, 71, 74,
+					   75, 78, 79, 82, 83, 86, 87, -1 };
+	return u[wxyz & 15];
+}
+
+/* ANSpcm (8.3.1/V.92): the 301 symbols of a 2100 Hz tone at one of the
+   levels of Table 6/V.92, quantized by G.711 */
+void V90Tx::anspcm_init(int level)
+{
+	static const short scl_u[4] = { 1334, 1000, 708, 500 };
+	static const short scl_a[4] = { 667, 500, 354, 250 };
+	double scl = alaw ? scl_a[level & 3] : scl_u[level & 3];
+	int k;
+	for (k = 0; k < 301; k++) {
+		double x = scl * sqrt(2.0) * cos(2 * M_PI * k * 79 / 301 +
+						  0.25 * M_PI / 301) + 0.5;
+		int v = (int)floor(x);
+		anspcm[k] = (short)(alaw ? alaw2lin(lin2alaw(v)) :
+				    ulaw2lin(lin2ulaw(v)));
+	}
+}
+
 void V90Tx::init(int alaw_, int uinfo_)
 {
 	int i;
@@ -146,6 +204,10 @@ void V90Tx::segment(enum v90_seg seg_)
 		dil_seg = dil_k = 0;
 		dil_end = 0;
 		dil_rounds = 0;
+		break;
+	case V90_QTS:
+		if (fclock)
+			fbase = *fclock;
 		break;
 	default:
 		break;
@@ -205,8 +267,32 @@ int V90Tx::sample()
 	switch (seg) {
 	case V90_SILENCE:
 		break;
+	case V90_QTS:
+	case V90_QTSBAR: {
+		/* as Sd, with V of Ucode UQTS: QTS 128 times, QTS-bar 8 */
+		int k = (int)(n % 6), s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
+		x = (sd[k] ? lin[uqts & 127] : z) *
+			(seg == V90_QTS ? s : -s);
+		if (seg == V90_QTS && n + 1 == 768)
+			segment(V90_QTSBAR);
+		else if (seg == V90_QTSBAR && n + 1 == 48)
+			segment(V90_ANSPCM);
+		else
+			n++;
+		return x;
+	}
+	case V90_ANSPCM:
+		/* a phase reversal every 3612 symbols */
+		x = anspcm[n % 301];
+		if ((n / 3612) & 1)
+			x = -x;
+		break;
 	case V90_SD:
 	case V90_SDBAR: {
+		/* after QTS: Sd starts in data frame interval 0 */
+		if (seg == V90_SD && n == 0 && fclock &&
+		    (*fclock - fbase) % 6)
+			return 0;
 		int k = sym % 6, s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
 		x = (sd[k] ? w : z) * (seg == V90_SD ? s : -s);
 		if (seg == V90_SD && n + 1 == 384)

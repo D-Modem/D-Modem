@@ -46,8 +46,10 @@ interface has one addition the original library does not use:
 | 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s; V.90 as the digital modem | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. With 90 or 92 on an 8000 Hz G.711 line: V.90 as the digital modem, 28000 to 56000 bit/s downstream (see [V.90](#v90-digital-modem)) |
 
 V.90 is there as the **digital** modem only (the server side, as on a
-G.711 VoIP line); the analogue side of V.90, V.92, K56flex and V.8bis are
-not (`AT+MS=56`, K56flex, runs V.90). Between two digital modems V.91 (see
+G.711 VoIP line), with V.92's quick connect for V.92 analogue modems
+calling (see [V.92](#v92-quick-connect)); the analogue side of V.90 and
+V.92, V.92's PCM upstream, K56flex and V.8bis are not (`AT+MS=56`,
+K56flex, runs V.90). Between two digital modems V.91 (see
 [V.91](#v91-digital-to-digital)) takes the place of V.90. With the default `AT+MS=92` at 9600 Hz the modem connects at V.34 or
 lower.
 
@@ -248,6 +250,37 @@ original library's own debug
 output (its `edprintf` lines are hidden behind a key) helped: it reports
 the levels it measures in the DIL, the digital pad it concludes and why
 it retrains.
+
+### V.92 quick connect
+
+With `AT+MS=92` (the default) at 8000 Hz the digital modem says V.92 in
+INFO0d (bit 27) and sends V.92's INFO1d, which tells the analogue modem
+that the channel has no PCM upstream (bit 70): it asks for V.90 or V.34
+upstream, and the call goes on as V.90. `DSP_V92=0` leaves V.92 out.
+
+Short phase 1 (9.2.4/V.92), answering: a QC1a ahead of CM (the
+analogue modem's frame on V.21(L), with the Ucode of QTS and LAPM)
+is answered with QCA1d on V.21(H) (ANSpcm at -12 dBm0), 75 ms of
+silence, QTS, QTS-bar and ANSpcm as PCM codes (Tables 7 to 10/V.92 come
+out of the G.711 quantization of Table 6). The analogue modem's TONEq
+(980 Hz) ends it; we wait for TONEq to end too, then 75 ms of silence
+and phase 2 as after V.8. Sd of phase 3 starts in data frame interval 0
+of QTS (8.3.6/V.92). Without TONEq within 2 s, V.8 after all. The
+analogue modem may come to phase 2 after our INFO0d is over (the
+original library does): once its INFO0a is in, INFO0d goes out once more
+with the acknowledgement.
+
+The original library sends QC1a on every call, the Agere modem (with
+`AT+PQC=0`) on a second call to a number it has connected to before.
+Both then connect at V.90.
+
+Short phase 2 (9.4/V.92, no probing, the upstream rate from the
+training in phase 3) is there, but only asked for with
+`DSP_V92_SHORT2=1`: after it the Agere modem asks for a shorter DIL from
+what it remembers and then retrains in phase 3 (tone A while Jd goes
+out), whatever the length of TRN1d. PCM upstream, modem-on-hold and
+V.92's rate renegotiation and fast parameter exchange are not
+implemented.
 
 ### V.91 digital to digital
 

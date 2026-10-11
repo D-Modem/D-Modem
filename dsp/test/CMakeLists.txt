@@ -386,6 +386,12 @@ add_test(NAME interop_v90_alaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=90")
 set_tests_properties(interop_v90_alaw PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:alaw;DSP_G711=alaw")
+# V.92 quick connect (short phase 1): the original library, a V.92
+# analogue modem, starts with QC1a; then V.90
+add_test(NAME interop_v92_qc COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
+	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=92")
+set_tests_properties(interop_v92_qc PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;EXPECT_B=V.92 quick connect")
 # class 1 fax calls both ways
 foreach(_m 24 48 72 96 73 97 121 122 145)
 	add_test(NAME fax_interop_${_m}_blob_sends COMMAND ${Python3_EXECUTABLE}
@@ -453,6 +459,14 @@ if(TARGET half_agere)
 	set_tests_properties(agere_34_noise PROPERTIES LABELS agere
 		ENVIRONMENT
 		"${_env};NET=8000:9600:ulaw;NET_SYNC=1;STREAM=40;NET_NOISE=10:300;PROTO_B=ATX3\;AT+MS=34")
+	# V.92 quick connect: the Agere modem (+PQC=0) remembers the line of
+	# the first call and starts the second with QC1a
+	add_test(NAME agere_v92_qc COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_agere>
+		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92;AT+PQC=0")
+	set_tests_properties(agere_v92_qc PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=V.92 quick connect;PROTO_B=ATX3\;AT+MS=92")
 	# V.90: the Agere modem as the analogue modem, the open one as the
 	# digital modem (both at 8000 Hz)
 	foreach(_law ulaw alaw)
