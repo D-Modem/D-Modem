@@ -85,6 +85,15 @@ jobs:
           timeout 900 asterisk/test/fax.sh
           timeout 900 asterisk/test/fax_spandsp.sh
 
+      - name: Logs of a failed step
+        if: failure()
+        run: |
+          for f in /tmp/dmodem-*/slmodemd.log /tmp/dmodem-*/console.log \
+                   /tmp/dmodem-*/log/freeswitch.log; do
+            [ -f "$f" ] || continue
+            echo "== $f"; tail -80 "$f"
+          done
+
   freeswitch:
     runs-on: ubuntu-24.04
     env:
@@ -143,3 +152,12 @@ jobs:
 
       - name: Fax
         run: timeout 1200 freeswitch/test/fax.sh
+
+      - name: Logs of a failed step
+        if: failure()
+        run: |
+          for f in /tmp/dmodem-*/slmodemd.log /tmp/dmodem-*/console.log \
+                   /tmp/dmodem-*/log/freeswitch.log; do
+            [ -f "$f" ] || continue
+            echo "== $f"; tail -80 "$f"
+          done

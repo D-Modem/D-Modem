@@ -382,7 +382,10 @@ int main(int argc, char *argv[])
 	signal(SIGTERM, mark_termination);
 	signal(SIGPIPE, SIG_IGN);
 
-	drop_privileges(opt.realtime);
+	/* started as root: on as SLMODEMD_USER; otherwise there is nothing
+	   to give up */
+	if (geteuid() == 0)
+		drop_privileges(opt.realtime);
 
 	INFO("Use `%s' as modem device, Ctrl+C for termination.\n",
 	     *s.pty.link() ? s.pty.link() : s.pty.name());
