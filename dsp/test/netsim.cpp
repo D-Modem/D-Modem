@@ -33,8 +33,16 @@ static float gain_up = 1;    /* NET_GAIN_UP: on the way up from a 9600 Hz modem 
 /* NET_DROP=<at s>:<ms>: the line goes silent both ways for a while (a
    hit); NET_STEP=<at s>:<dB>: its loss changes for good (a reroute) */
 static float drop_at = -1, drop_ms, step_at = -1, step_g = 1;
-/* NET_NOISE=<at s>:<rms>: white noise from then on, both ways */
-static float noise_at = -1, noise_rms;
+/* NET_NOISE=<at s>:<rms>[:<ramp s>[:<until s>]]: white noise from then
+   on (rising over the ramp, stopping at until), both ways */
+static float noise_at = -1, noise_rms, noise_ramp, noise_end = -1;
+/* NET_NOISE_QUIET=<ms>: the noise stops for good once the signal it is
+   added to has been silent that long (a V.92 rate renegotiation's
+   silent period: what follows it is to come through clean) */
+static float noise_quiet_ms;
+static long noise_quiet_n;
+static int noise_dir;           /* NET_NOISE_DIR: 1 A -> B only, 2 B -> A,
+				   3 B -> A on the codes */
 /* NET_LOOP=<fraction>: on an 8000 Hz line, B's signal reaches A through
    an analogue loop as A's codec samples it: a delay of that fraction of
    a sample (windowed sinc) and a high pass at 300 Hz; else A gets B's
@@ -222,10 +230,19 @@ struct dir {
 	long t0;                /* NET_SYNC: nin at the SIGUSR1, -1 before */
 };
 
+/* Gaussian (Box-Muller) */
+static double gauss()
+{
+	double u1 = (rand() + 1.0) / (RAND_MAX + 2.0);
+	double u2 = rand() / (RAND_MAX + 1.0);
+	return sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
+}
+
 /* samples of one direction: to 8000 Hz G.711 and on */
 static int run(struct dir *d, int a_out, int a_in)
 {
 	short ibuf[2048];
+	float noise;
 	int n = read(d->in, ibuf, sizeof(ibuf)), i, k, m, o = 0;
 	float y[2];
 	if (n <= 0)
@@ -243,15 +260,34 @@ static int run(struct dir *d, int a_out, int a_in)
 			ibuf[i] = 0;
 		if (step_at >= 0 && t >= step_at)
 			ibuf[i] = (short)lrintf(ibuf[i] * step_g);
-		if ((noise_at >= 0 && t >= noise_at) || floor_rms) {
-			/* Gaussian (Box-Muller) */
-			double u1 = (rand() + 1.0) / (RAND_MAX + 2.0);
-			double u2 = rand() / (RAND_MAX + 1.0);
-			float rms = noise_at >= 0 && t >= noise_at ?
-				sqrtf(noise_rms * noise_rms +
-				      floor_rms * floor_rms) : floor_rms;
-			double x = ibuf[i] + rms *
-				sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
+		/* the noise of an analogue line: on a 8000 Hz G.711
+		   signal on its way to a 9600 Hz modem it comes after the
+		   codec (below), not on the codes */
+		int noisy = noise_at >= 0 && t >= noise_at &&
+			(noise_end < 0 || t < noise_end);
+		noise = ((noisy || floor_rms) &&
+			 !(noise_dir == 1 && !a_out) &&
+			 !(noise_dir >= 2 && a_out)) ?
+			(noisy ?
+			 sqrtf(noise_rms * noise_rms *
+			       (noise_ramp > 0 && t - noise_at < noise_ramp ?
+				(t - noise_at) * (t - noise_at) /
+				(noise_ramp * noise_ramp) : 1) +
+			       floor_rms * floor_rms) :
+			 floor_rms) : 0;
+		if (noise && noisy && noise_quiet_ms > 0) {
+			noise_quiet_n = abs(ibuf[i]) <= 8 ?
+				noise_quiet_n + 1 : 0;
+			if (noise_quiet_n >= noise_quiet_ms * d->rate_in / 1000) {
+				noise_end = t;
+				fprintf(stderr, "netsim: noise off at %.2f s\n",
+					t);
+			}
+		}
+		if (noise && (noise_dir == 3 ||
+			      !(d->rate_in == 8000 && d->rate_out != 8000 &&
+				!plain))) {
+			double x = ibuf[i] + noise * gauss();
 			ibuf[i] = (short)(x > 32767 ? 32767 : x < -32768 ?
 					  -32768 : lrint(x));
 		}
@@ -279,6 +315,8 @@ static int run(struct dir *d, int a_out, int a_in)
 			   analogue loss or gain NET_GAIN on the way) */
 			m = rc_run(&d->rc, g711(ibuf[i]) * gain, y);
 			for (k = 0; k < m; k++) {
+				if (noise && noise_dir != 3)
+					y[k] += noise * (float)gauss();
 				static long clipped;
 				if ((y[k] > 32767 || y[k] < -32768) &&
 				    ++clipped && !(clipped & (clipped - 1)))
@@ -354,7 +392,14 @@ int main(int argc, char **argv)
 	if (getenv("NET_DROP"))
 		sscanf(getenv("NET_DROP"), "%f:%f", &drop_at, &drop_ms);
 	if (getenv("NET_NOISE"))
-		sscanf(getenv("NET_NOISE"), "%f:%f", &noise_at, &noise_rms);
+		sscanf(getenv("NET_NOISE"), "%f:%f:%f:%f", &noise_at,
+		       &noise_rms, &noise_ramp, &noise_end);
+	if (getenv("NET_NOISE_QUIET"))
+		noise_quiet_ms = atof(getenv("NET_NOISE_QUIET"));
+	if (getenv("NET_NOISE_DIR"))
+		noise_dir = !strcmp(getenv("NET_NOISE_DIR"), "ab") ? 1 :
+			!strcmp(getenv("NET_NOISE_DIR"), "ba") ? 2 :
+			!strcmp(getenv("NET_NOISE_DIR"), "bacodes") ? 3 : 0;
 	if (getenv("NET_LOOP"))
 		loop_init(atof(getenv("NET_LOOP")));
 	if (getenv("NET_FLOOR"))

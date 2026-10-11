@@ -80,6 +80,7 @@ enum {
 	V92_CONNECT,
 	V92_FAIL,
 	V92_RETRAIN,            /* the remote's tone A */
+	V92_RENEG,              /* data again after a rate renegotiation */
 };
 
 #define V92_BUF         16384   /* received samples kept */
@@ -103,9 +104,13 @@ enum v92_rx {
 	V92R_CPT,       /* TRN1u, CPt, E1u */
 	V92R_TRN2,      /* TRN2u, SUVu, CPu, E2u */
 	V92R_DATA,      /* B1u and data */
+	/* rate renegotiation (9.8/V.92) */
+	V92R_RN_RU,     /* Ru: its reversal */
+	V92R_RN_WAIT,   /* Ru-bar, until TRN2u */
 };
 
-enum v92_fmode { V92F_TRN, V92F_SEQ, V92F_ED, V92F_B1, V92F_DATA };
+enum v92_fmode { V92F_TRN, V92F_SEQ, V92F_ED, V92F_B1, V92F_DATA,
+		 V92F_SIL };     /* silence in a renegotiation */
 
 struct V92Up {
 	int alaw;
@@ -169,6 +174,26 @@ struct V92Up {
 	V90Dil dil;
 	int up_mask;            /* the analogue modem's rates, bit 0: 24 000 */
 	long e2u_sym;
+	/* rate renegotiation */
+	int rn;                 /* one is going on */
+	int rn_req;             /* we start one */
+	int rn_sent;            /* our Rd has been asked for */
+	int rn_tx_init;         /* the encoder starts on CPt again */
+	int cpd_new;            /* a new CPd for it */
+	long rn_trn;            /* the symbol of TRN2u's start */
+	long rn_at;             /* its start (samples) */
+	int renegs;
+	int rn_silence;         /* SUVu asked for a silent period */
+	int rn_wait_suv2;       /* in it: until SUVu with bit 32 clear */
+	int rn_suv2;            /* that SUVu is in */
+	int rn_rxd;             /* its TRN2u has come */
+	int rn_drn;             /* test: the rate it asks for */
+	long rn_test_at;        /* test: our own, this far into data */
+	long connect_n;         /* data from here on (samples) */
+	long rn_low, rn_high;   /* data symbols with too little, more than
+				   enough margin */
+	long rn_last;           /* the last one ended here (samples) */
+	double margin_used;     /* the margin of our CPd's rate */
 	/* data mode */
 	int b_frozen;           /* b is the precoder's (in CPd) */
 	int trellis_on;         /* Viterbi decoding of the trellis code */
@@ -216,6 +241,8 @@ struct V92Up {
 	void data_symbol(float y);
 	void trellis_frame();
 	void decided(int eta);
+	void rn_rx_start();
+	void rn_tx_start();
 };
 
 } // namespace dsp

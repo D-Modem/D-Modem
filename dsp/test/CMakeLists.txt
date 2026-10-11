@@ -421,6 +421,19 @@ add_test(NAME interop_v92_pcmup_fallback COMMAND ${Python3_EXECUTABLE}
 	"ATX3;AT+MS=92")
 set_tests_properties(interop_v92_pcmup_fallback PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;BLOB_V92FULL=1;DSP_V92_UP_DRN=16;EXPECT_B=(?s)B1u does not come through.*V.90 connect")
+# rate renegotiation (9.8/V.92): ours after 3 s of data, to 30 666 bit/s
+# upstream (DSP_V92_RENEG=<ms>:<drn>); and on its own when noise on the
+# way up eats the margin of our rate
+add_test(NAME interop_v92_reneg COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_reneg PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_RENEG=3000:6;EXPECT_B=V.92 renegotiated 56000/30666")
+add_test(NAME interop_v92_reneg_noise COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_reneg_noise PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=15;BLOB_V92FULL=1;NET_NOISE=26:60;NET_NOISE_DIR=ab;EXPECT_B=V.92 renegotiated 56000/[23]")
 # without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream
 add_test(NAME interop_v92_nopcmup COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>

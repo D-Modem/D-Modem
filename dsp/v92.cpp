@@ -539,6 +539,19 @@ void V92Up::tone_sample(float x)
 		rx = V92R_SU2;
 		DSP_DBG("v92: Su-bar reversal at %ld\n", rev_at);
 		break;
+	case V92R_RN_RU:
+		if (tone_n < 150)
+			break;
+		{
+			/* Ru starts on a data frame boundary, Ru-bar 384
+			   symbols later, TRN2u 24 after it */
+			long r = rev_at - eqL;
+			rn_trn = (r + 6) / 12 * 12 + 24;
+			rx = V92R_RN_WAIT;
+			DSP_DBG("v92: Ru-bar at symbol %ld, TRN2u at %ld\n", r,
+				rn_trn);
+		}
+		break;
 	case V92R_SU2:
 		revs = 3;
 		rx = V92R_TRN1B;
@@ -599,6 +612,9 @@ void V92Up::rx_sample(float x)
 	default:
 		break;
 	}
+	/* the analogue modem's Ru in data mode: a rate renegotiation */
+	if (rx == V92R_DATA && tone_n >= 150)
+		rn_rx_start();
 	if (trained)
 		while (eqL + sym + V92_EQ_F - V92_EQ_PRE - 1 <= n) {
 			symbol(equalize(sym));
@@ -659,6 +675,16 @@ void V92Up::frame_bits(int bit)
 			if (!got_suvu)
 				DSP_DBG("v92: SUVu at symbol %ld\n", sym);
 			got_suvu = 1;
+			if (fr.b[32] && rn && !rn_silence &&
+			    !rn_wait_suv2) {
+				rn_silence = 1;
+				DSP_DBG("v92: SUVu asks for silence\n");
+			}
+			if (!fr.b[32] && rn_wait_suv2 && !rn_suv2) {
+				rn_suv2 = 1;
+				DSP_DBG("v92: SUVu after the silence at "
+					"symbol %ld\n", sym);
+			}
 			if (fr.b[33] && !got_ack) {
 				got_ack = 1;
 				DSP_DBG("v92: SUVu' at symbol %ld\n", sym);
@@ -667,19 +693,31 @@ void V92Up::frame_bits(int bit)
 			V90Cp c;
 			if (v92_cp_parse(&c, fr.b, fr.len))
 				return;
-			if (!got_cpu)
+			if (!got_cpu || c.drn != cpu.drn ||
+			    memcmp(c.mask, cpu.mask, sizeof(c.mask))) {
+				int pts = 0;
+				for (int k = 0; k < 128; k++)
+					pts += c.mask[0][k];
 				DSP_DBG("v92: CPu at symbol %ld: drn %d, Sr %d, "
-					"ld %d, %d constellations\n", sym,
-					c.drn, c.sr, c.ld, c.ncon);
+					"ld %d, %d constellations (%d "
+					"points)\n", sym, c.drn, c.sr, c.ld,
+					c.ncon, pts);
+			}
 			cpu = c;
 			got_cpu = 1;
 			if (c.ack && !got_ack) {
 				got_ack = 1;
 				DSP_DBG("v92: CPu' at symbol %ld\n", sym);
 			}
-		} else if (fr.b[33] && !got_ack) {
-			got_ack = 1;
-			DSP_DBG("v92: CPus' at symbol %ld\n", sym);
+		} else if (field(fr.b, 19, 2) == 2) {
+			/* CPus: the digital modem's parameters as they are */
+			if (!got_cpu)
+				DSP_DBG("v92: CPus at symbol %ld\n", sym);
+			got_cpu = 1;
+			if (fr.b[33] && !got_ack) {
+				got_ack = 1;
+				DSP_DBG("v92: CPus' at symbol %ld\n", sym);
+			}
 		}
 	}
 }
@@ -759,7 +797,20 @@ void V92Up::symbol(float y)
 		}
 		/* E2u: a data frame of zeros, once the analogue modem has
 		   acknowledged our CPd */
-		if (i == 11 && got_ack && frame_zero == 24 && !fr.n) {
+		if (rn_wait_suv2) {
+			/* in the silent period: until SUVu with bit 32
+			   clear */
+		} else if (i == 11 && got_ack && frame_zero == 24 && !fr.n &&
+		    rn_silence) {
+			/* the silent period: TRN2u, then SUVu with bit 32
+			   clear (9.8.1.1.4) */
+			got_e2u = 1;
+			rn_wait_suv2 = 1;
+			e2u_sym = sym;
+			fr.init(V92F_CP);
+			DSP_DBG("v92: E2u before the silence at symbol %ld\n",
+				sym);
+		} else if (i == 11 && got_ack && frame_zero == 24 && !fr.n) {
 			got_e2u = 1;
 			DSP_DBG("v92: E2u at symbol %ld\n", sym);
 			rx = V92R_DATA;
@@ -777,9 +828,72 @@ void V92Up::symbol(float y)
 	case V92R_DATA:
 		data_symbol(y);
 		break;
+	case V92R_RN_WAIT:
+		if (sym >= rn_trn) {
+			/* TRN2u: phase 4 again (with decision feedback: no
+			   precoding until B1u) */
+			DSP_DBG("v92: TRN2u (renegotiation) at symbol %ld\n",
+				sym);
+			rx = V92R_TRN2;
+			rn_rxd = 1;
+			e2u_sym = sym;
+			fr.init(V92F_CP);
+			dscr2[0] = dscr2[1] = 0;
+			ones2[0] = ones2[1] = 0;
+			got_suvu = got_cpu = got_ack = got_e2u = 0;
+			frame_zero = 0;
+			symbol(y);
+			break;
+		}
+		/* fall through */
+	case V92R_RN_RU:
+		/* Ru and Ru-bar: 2 points, past the precoder */
+		d = y < 0;
+		t = d ? -1.0f : 1.0f;
+		push(dh, t);
+		dring[sym & (V92_DR - 1)] = t;
+		last_d = d;
+		break;
 	default:
 		break;
 	}
+}
+
+/* the analogue modem's Ru in data mode (9.8.1.2/V.92) */
+void V92Up::rn_rx_start()
+{
+	DSP_DBG("v92: Ru at symbol %ld: rate renegotiation\n", sym);
+	rx = V92R_RN_RU;
+	b_frozen = 0;
+	if (!rn) {
+		rn = 1;
+		rn_at = n;
+	}
+	tone_n = 0;
+	rev_n = 0;
+}
+
+/* our Rd and phase 4 again: TRN2d, SUVd, CPd, Ed, B1d */
+void V92Up::rn_tx_start()
+{
+	DSP_DBG("v92: Rd\n");
+	tx.rd_req = 1;
+	rn_sent = 1;
+	if (!rn) {
+		rn = 1;
+		rn_at = n;
+	}
+	fmode = V92F_TRN;
+	fcount = 0;
+	rn_tx_init = 1;
+	ack_sent = 0;
+	cpd_sent = 0;
+	cpd_new = 1;
+	tstep = 8;
+	/* the analogue modem's SUVu, CPu and E2u of this one are to come */
+	if (rx == V92R_DATA || rx == V92R_RN_RU || rx == V92R_RN_WAIT)
+		got_suvu = got_cpu = got_ack = got_e2u = 0;
+	rn_rxd = 0;
 }
 
 /*
@@ -936,6 +1050,23 @@ void V92Up::data_symbol(float y)
 	/* decisions near the middle between two points */
 	if (fabsf(err) > 0.6f * 16 * cpd.g)
 		dfar++;
+	/* the margin against the one our rate was chosen with: half of it
+	   for 0.5 s, renegotiate down; 2.5 times for 10 s (and a minute
+	   since the last), up (9.8/V.92) */
+	if (connected && !rn && dframes > 48) {
+		double q = 256 * cpd.g * cpd.g / (dmse + 1e-9);
+		rn_low = q < margin_used / 2 ? rn_low + 1 : 0;
+		rn_high = q > margin_used * 2.5 ? rn_high + 1 : 0;
+		if (rn_low >= 4000 ||
+		    (rn_high >= 80000 && n - rn_last >= 8000L * 60 &&
+		     cpd.drn < 19)) {
+			DSP_DBG("v92: margin %.1f against %.1f: renegotiate "
+				"%s\n", q, margin_used,
+				rn_low ? "down" : "up");
+			rn_req = 1;
+			rn_low = rn_high = 0;
+		}
+	}
 	/* faster than in training: the analogue modem's signal wanders a
 	   little (with A-law, slower steps let the mse double in 10 s) */
 	adapt(sym, err, 0.002f);
@@ -1006,7 +1137,12 @@ void V92Up::decided(int eta)
 				DSP_DBG("v92: B1u zeros by frame:%s\n", zs);
 				DSP_DBG("v92: B1u: %ld zeros in %d bits, mse "
 					"%.4f\n", derrs, 48 * nb, dmse);
-				b1_bad = derrs * 20 > 48 * nb;
+				/* from frame 4 on: after a renegotiation the
+				   original library's precoder starts from
+				   the data before it */
+				for (j = 0, z = 0; j < 4; j++)
+					z += b1z[j];
+				b1_bad = (derrs - z) * 20 > 44 * nb;
 			}
 		} else
 			put_bits(ctx, bits, nb);
@@ -1098,6 +1234,13 @@ void V92Up::design()
 	int ng = 0, drn, M = 8, i, j, lc = 0, best = -1;
 	double msa = 0;
 	const char *fix = getenv("DSP_V92_UP_DRN");
+	char fixb[16];
+
+	if (rn_drn) {
+		snprintf(fixb, sizeof(fixb), "%d", rn_drn);
+		fix = fixb;
+		rn_drn = 0;
+	}
 	int pre = !(getenv("DSP_V92_PRECODE") &&
 		    !atoi(getenv("DSP_V92_PRECODE")));
 	double margin;
@@ -1125,6 +1268,7 @@ void V92Up::design()
 		pre = 0;
 	margin = getenv("DSP_V92_MARGIN") ? atof(getenv("DSP_V92_MARGIN")) :
 		pre && trellis_on ? V92_MARGIN_CODED : V92_MARGIN;
+	margin_used = margin;
 	for (drn = 19; drn >= 1 && best < 0; drn--) {
 		int K = 2 * (drn + 17), k, g;
 		double ms3 = 0, ms0 = 0;
@@ -1231,8 +1375,9 @@ void V92Up::design()
 void V92Up::make_seq(int cpd_, int ack)
 {
 	if (cpd_) {
-		if (!cpd.drn)
+		if (!cpd.drn || cpd_new)
 			design();
+		cpd_new = 0;
 		cpd.ack = ack;
 		seq_len = cpd.build(seq, D);
 		cpd_sent++;
@@ -1250,6 +1395,12 @@ static void v92_get_frame(void *ctx, V90Tx *t, unsigned char *bits,
 {
 	V92Up *v = static_cast<V92Up*>(ctx);
 
+	if (v->rn_tx_init) {
+		/* after Rd: TRN2d and the rest on CPt's constellations */
+		v->rn_tx_init = 0;
+		v->D = v->cpt.drn + 8;
+		t->enc.init(&v->cpt, v->D, t->lin);
+	}
 	if (v->fmode == V92F_B1 && v->fcount == 0) {
 		v->D = v->cpu.drn + 20;
 		t->enc.init(&v->cpu, v->D, t->lin);
@@ -1276,19 +1427,29 @@ static void v92_get_frame(void *ctx, V90Tx *t, unsigned char *bits,
 			DSP_DBG("v92: Ed\n");
 			v->fmode = V92F_ED;
 			v->fcount = 0;
-		} else if (v->got_suvu &&
+		} else if (v->got_suvu && !v->rn_silence &&
 			   (!v->cpd_sent || (!v->got_ack && v->cpd_at > 400)))
 			v->make_seq(1, v->got_cpu);
 		else
-			v->make_seq(0, v->got_cpu);
+			/* with a silent period asked for: SUVd' (no CP
+			   before it) */
+			v->make_seq(0, v->rn_silence ? 1 : v->got_cpu);
 		break;
 	case V92F_ED:
 		memset(bits, 0, v->D);
 		if (v->fcount >= 2) {
 			*last = 1;
-			v->fmode = V92F_B1;
 			v->fcount = 0;
+			if (v->rn_silence) {
+				/* Ed, then silence (9.8.1.1.3) */
+				v->fmode = V92F_SIL;
+				t->sil_req = 1;
+			} else
+				v->fmode = V92F_B1;
 		}
+		break;
+	case V92F_SIL:
+		memset(bits, 0, v->D);
 		break;
 	case V92F_B1:
 		memset(bits, 1, v->D);
@@ -1373,10 +1534,73 @@ int V92Up::tx_step()
 		if (fmode == V92F_DATA && rx == V92R_DATA && dframes > 48 &&
 		    !connected) {
 			connected = 1;
+			connect_n = rn_last = n;
 			DSP_DBG("v92: connect %d/%d\n",
 				(cpu.drn + 20) * 8000 / 6,
 				(cpd.drn + 17) * 8000 / 6);
 			return V92_CONNECT;
+		}
+		if (!connected)
+			break;
+		/* test: DSP_V92_RENEG=<ms>[:<drn>], our own renegotiation
+		   that far into data (to that rate) */
+		if (!rn_test_at && getenv("DSP_V92_RENEG")) {
+			int ms = 0, d_ = 0;
+			sscanf(getenv("DSP_V92_RENEG"), "%d:%d", &ms, &d_);
+			rn_test_at = connect_n + 8L * ms;
+			rn_drn = d_;
+		}
+		if (rn_test_at > 0 && n >= rn_test_at && !renegs &&
+		    rx == V92R_DATA) {
+			rn_test_at = -1;
+			rn_req = 1;
+		}
+		/* the analogue modem's (after its Ru-bar), or ours */
+		if (rx == V92R_RN_WAIT || (rn_req && rx == V92R_DATA))
+			rn_tx_start();
+		break;
+	case 8:
+		/* renegotiation: as in phase 4 */
+		if (!rn_sent && rx == V92R_RN_WAIT)
+			rn_tx_start();
+		/* after the silence: Rt (training constellations), Rt-bar,
+		   SUVd and phase 4 (9.8.1.1.4) */
+		if (fmode == V92F_SIL && rn_suv2 && tx.seg == V90_SILENCE &&
+		    tx.sym % 6 == 0) {
+			int k;
+			DSP_DBG("v92: Rt\n");
+			for (k = 0; k < 6; k++)
+				tx.rd_code[k] = tx.enc.ucode[k][0];
+			tx.segment(V90_RD);
+			rn_silence = rn_wait_suv2 = rn_suv2 = 0;
+			rn_tx_init = 1;
+			fmode = V92F_SEQ;
+			fcount = 0;
+			ack_sent = cpd_sent = 0;
+			cpd_new = 1;
+			got_suvu = 1;
+			got_cpu = got_ack = got_e2u = 0;
+			make_seq(0, 0);
+		}
+		if (b1_bad) {
+			DSP_DBG("v92: B1u does not come through\n");
+			return V92_FAIL;
+		}
+		if (fmode == V92F_DATA && rx == V92R_DATA && rn_rxd &&
+		    dframes > 48) {
+			renegs++;
+			rn = rn_req = rn_sent = 0;
+			rn_low = rn_high = 0;
+			rn_last = n;
+			tstep = 7;
+			DSP_DBG("v92: renegotiated %d/%d\n",
+				(cpu.drn + 20) * 8000 / 6,
+				(cpd.drn + 17) * 8000 / 6);
+			return V92_RENEG;
+		}
+		if (n - rn_at > 8000L * 25) {
+			DSP_DBG("v92: renegotiation timeout (rx %d)\n", rx);
+			return V92_FAIL;
 		}
 		break;
 	}

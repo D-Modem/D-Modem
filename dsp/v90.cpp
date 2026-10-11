@@ -400,7 +400,46 @@ int V90Tx::sample()
 		}
 		break;
 	}
+	case V90_RD:
+	case V90_RDBAR: {
+		/* + + + - - - of each interval's largest code (Rd: of the
+		   data mode constellations, Rt: the training ones), the bar
+		   the opposite */
+		int k = (int)(sym % 6), pos_ = k < 3;
+		if (seg == V90_RDBAR)
+			pos_ = !pos_;
+		x = pos_ ? lin[rd_code[k]] : -lin[rd_code[k]];
+		if (seg == V90_RD && n + 1 == 384) {
+			segment(V90_RDBAR);
+			n--;
+		} else if (seg == V90_RDBAR && n + 1 == 24) {
+			segment(V90_ENC);
+			n--;
+		}
+		break;
+	}
 	case V90_ENC:
+		if (opos >= 6 && rd_req) {
+			/* Rd (V.92's rate renegotiation), on the boundary of
+			   a data frame; the encoder starts again after it */
+			int k;
+			rd_req = 0;
+			for (k = 0; k < 6; k++)
+				rd_code[k] = enc.ucode[k][0];
+			segment(V90_RD);
+			int k2 = (int)(sym % 6), p2 = k2 < 3;
+			x = p2 ? lin[rd_code[k2]] : -lin[rd_code[k2]];
+			break;
+		}
+		if (opos >= 6 && sil_req && !enc.pop(out)) {
+			/* silence, once the last frame (with no look-ahead
+			   past it) is out */
+			sil_req = 0;
+			segment(V90_SILENCE);
+			x = 0;
+			break;
+		} else if (opos >= 6 && sil_req)
+			opos = 0;
 		if (opos >= 6) {
 			/* frames go in ahead of the shaper's decisions */
 			while (!enc.pop(out)) {

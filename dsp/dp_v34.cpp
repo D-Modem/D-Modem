@@ -3021,14 +3021,21 @@ int V34Pump::process(void *in, void *out, int cnt)
 				DSP_DBG("v34: V.92 connect %d/%d\n", rate_tx,
 					rate_rx);
 				ret = DPSTAT_CONNECT;
+			} else if (ev == V92_RENEG) {
+				rate_tx = (v92u.cpu.drn + 20) * 8000 / 6;
+				rate_rx = (v92u.cpd.drn + 17) * 8000 / 6;
+				modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
+				modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+				DSP_DBG("v34: V.92 renegotiated %d/%d\n",
+					rate_tx, rate_rx);
 			} else if (ev == V92_FAIL || ev == V92_RETRAIN) {
-				/* before data, V.34 upstream next time */
+				/* before data, V.34 upstream next time; a
+				   renegotiation that fails retrains */
 				if (!v92u.connected) {
 					pcmup_ok = 0;
 					DSP_DBG("v34: no PCM upstream offer "
 						"from now on\n");
-				} else if (ev == V92_FAIL)
-					return DPSTAT_ERROR;
+				}
 				if (rt)
 					rt->pcm = 0;
 				retrain(ev == V92_FAIL ?

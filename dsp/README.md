@@ -287,8 +287,8 @@ INFO1a. The upstream rate comes from the mse of the training in phase 3
 instead of the probing. `DSP_V92_SHORT2=0` does not ask for it. With
 quick connect and short phase 2 the Agere modem's second call connects
 in 17.5 s instead of 22.5 s (it asks for a shorter DIL as well).
-Modem-on-hold and V.92's rate renegotiation and fast parameter exchange
-are not implemented.
+Modem-on-hold and V.92's fast parameter exchange are not implemented;
+rate renegotiation is, with PCM upstream (below).
 
 ### V.92 PCM upstream
 
@@ -372,10 +372,40 @@ Through netsim's converters the fit's error is 34.5 dB below the signal,
 which gives 36000 bit/s upstream (V.34's is 31200 there; 38667 makes a
 few errors); a prefilter that shapes the analogue modem's spectrum is
 not designed yet. In data mode the analogue modem's tone A retrains;
-V.92's rate renegotiation and fast parameter exchange are not there. The echo canceller (the V.34 pump's,
+fast parameter exchange is not there. The echo canceller (the V.34 pump's,
 trained while we send Sd to Jd) could not be tested: netsim's echo
 (`NET_ECHO`) through its 9600 Hz converters is not one an 8000 Hz
 canceller cancels, for V.90 either.
+
+Rate renegotiation (9.8/V.92), with PCM upstream: our Rd (R, + + + - - -,
+of each interval's largest data mode Ucode, 384 symbols, then R-bar for
+24, on a data frame boundary) answers the analogue modem's Ru and Ru-bar,
+or starts one of ours; TRN2d, SUVd and CPd go out on CPt's training
+constellations, and the receiver takes TRN2u 24 symbols after Ru-bar, on
+the data frames' grid, and runs phase 4 again (SUVu, CPu, E2u, B1u, a new
+CPd and precoder from TRN2u). Ours start when the margin of the data mode
+mse against the one our rate was chosen with drops below half for 0.5 s,
+or stays above 2.5 times for 10 s (a minute or more after the last one);
+`DSP_V92_RENEG=<ms>[:<drn>]` starts one that far into data mode (to that
+rate). When SUVu asks for a silent period (bit 32, Figure 18/V.92), Ed
+and then Ucode 0, keeping the data frames, until SUVu with bit 32 clear;
+then Rt (of CPt's constellations), Rt-bar and SUVd. A renegotiation that
+does not end in data within 25 s, or whose B1u does not come through,
+retrains.
+
+| Test (`interop_v92_reneg*`) | Result |
+|---|---|
+| ours after 3 s of data, to drn 6 | 56000/36000, then 56000/30666 |
+| noise up from 26 s (60 rms, `NET_NOISE_DIR=ab`) | ours on its own: 56000/24000 |
+
+The original library starts renegotiations of its own when the line gets
+worse downstream (in netsim: `NET_NOISE_DIR=bacodes`, noise added to the
+PCM codes) and asks for the silent period; we go through it, but the CPu
+it sends afterwards still has its earlier rate while its receiver
+expects the new one (B1d, it logs, has half its bits wrong), and it
+retrains with tone A. `NET_NOISE_QUIET=<ms>` stops netsim's noise when
+the signal it goes onto has been silent that long, to try that on a clean
+line; the call goes on after the retrain.
 
 The Agere modem's V.90 training failed at some delays of the line, in
 a pattern that repeats every 48 samples (its codec's blocks), with the
