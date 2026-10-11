@@ -32,6 +32,7 @@
 #include "v34.h"
 #include "v90.h"
 #include "v91.h"
+#include "v92.h"
 
 namespace dsp {
 
@@ -173,6 +174,7 @@ enum v34_state {
 	P4D_TRAIN,      /* TRN2d, MP, MP', Ed, B1d (the frame source) */
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
+	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
 };
 
 /* what the digital modem's encoder sends in phase 4 and data mode */
@@ -309,7 +311,13 @@ struct V34Pump : Pump {
 	int v92_on;             /* both INFO0 said V.92 */
 	int short2;             /* and both asked for short phase 2 */
 	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=0: not) */
+	int qc_ok;              /* we answer QC1a (DSP_V92_QC=0: not) */
 	V91 v91m;
+	int pcmup_ok;           /* we offer PCM upstream (V.92) */
+	int quiet_blocks;       /* phase 2: blocks without the remote's tone */
+	int p2_gap;             /* waiting for INFO1a: 1 tone, 2 then a gap */
+	int rt_info0;           /* retrain: 1 INFO0a in, 2 answered */
+	V92Up v92u;
 	int alaw;               /* the network's G.711 law */
 	V90Tx v90tx;    /* the PCM transmitter */
 	int pcm_tx;             /* our output from it */
@@ -455,6 +463,7 @@ struct V34Pump : Pump {
 	int v8_v90();
 	int v8_v91();
 	void v91_start();
+	void v92_start();
 	int v91_escape();
 	void v8_rx_bit(int bit);
 	void ans_analyse(float x);
@@ -471,6 +480,7 @@ struct V34Pump : Pump {
 	void cc_rx_bit(int bit);
 	void cc_phase_frame();
 	void info_frame(CcRx *r);
+	void rt_info0_frame(const unsigned char *h, long n);
 	void ec_schedule();
 	void rt_tone(float x);
 	void pump_rx_sample(float x);
@@ -507,6 +517,8 @@ void V34Pump::set_state(enum v34_state s)
 		total * 1000 / srate);
 	state = s;
 	count = 0;
+	if (s == P2C_WAIT_INFO1)
+		p2_gap = 0;
 }
 
 /*
@@ -588,8 +600,8 @@ void V34Pump::make_info1c(BitQ *q)
 		if (!(rinfo0.rates & (1 << 2)) && i == V34_BAUD_3429)
 			rate = 0;
 		/* low carrier; for 3429, V.92's INFO1d (Table 17/V.92)
-		   has bit 70 instead: no PCM upstream on this channel */
-		q->put(0, 1);
+		   has bit 70 instead: PCM upstream on this channel */
+		q->put(v92_on && pcmup_ok && i == V34_BAUD_3429, 1);
 		q->put(0, 4);        /* no pre-emphasis */
 		q->put(rate, 4);
 	}
@@ -1195,6 +1207,29 @@ void V34Pump::info_frame(CcRx *r)
 	}
 }
 
+/* INFO0a again during a retrain (the remote goes to phase 2 with it:
+   V.92's retrains, 11.5.1.1/V.34): the last INFO0 length of bits of a
+   history */
+void V34Pump::rt_info0_frame(const unsigned char *h, long n)
+{
+	unsigned char f[64];
+	int len = 29 + 16, k;
+
+	if (!retraining || !caller || !ev_info0 || ev_info1 || rt_info0 ||
+	    n < len)
+		return;
+	for (k = 0; k < len; k++)
+		f[k] = k < 4 ? 1 : h[(n - len + k) % CC_HIST];
+	for (k = 4; k < 12; k++)
+		if (f[k] != ((0x72 >> (11 - k)) & 1))
+			return;
+	if (!info_crc_ok(f, len - 16))
+		return;
+	rinfo0.parse(f);
+	rt_info0 = 1;
+	DSP_DBG("v34: INFO0a in the retrain\n");
+}
+
 /* a frame at the phase of the last sample: the frames do not depend on
    the tracked symbol timing, which may slip at the start of one (the
    remote's INFO1 comes at a new phase after its probing signals) */
@@ -1205,6 +1240,7 @@ void V34Pump::cc_phase_frame()
 	long n = r->ph_n[i];
 	const unsigned char *h = r->ph[i];
 
+	rt_info0_frame(h, n);
 	if (ev_info1 || n < len)
 		return;
 	for (k = 0; k < 8; k++)
@@ -1230,6 +1266,7 @@ void V34Pump::cc_rx_bit(int bit)
 			total * 1000 / srate, bit, r->p, r->best);
 	r->sr = (r->sr << 1) | bit;
 	r->hist[r->hist_n++ % CC_HIST] = bit;
+	rt_info0_frame(r->hist, r->hist_n);
 	if (r->frame_len > 0)
 		r->frame_len--;
 	/* a frame sync: slow timing adaptation for the rest of the frame */
@@ -1421,7 +1458,9 @@ void V34Pump::ec_schedule()
 		state == P3C_S || state == P3C_SBAR ||
 		state == P3C_PP || state == P3C_TRN ||
 		/* V.90: Sd to Jd, the analogue modem is silent after Ja */
-		state == P3D_SD || state == P3D_JD;
+		state == P3D_SD || state == P3D_JD ||
+		/* V.92 PCM upstream: the same, until Su */
+		(state == V92_RUN && v92u.ec_train());
 	int training;
 
 	if (ours && !e->on) {
@@ -1543,9 +1582,12 @@ void V34Pump::pump_rx_sample(float x)
 	if (bit >= 0)
 		cc_rx_bit(bit);
 	cc_phase_frame();
-	if (tone_g.run(x))
+	if (tone_g.run(x)) {
 		tone_blocks = tone_g.power > tone_power(150) ?
 			tone_blocks + 1 : 0;
+		quiet_blocks = tone_g.power < tone_power(30) ?
+			quiet_blocks + 1 : 0;
+	}
 	k = probe_rx_sample(x);
 	if (k >= 0) {
 		probe_blocks = k ? probe_blocks + 1 : 0;
@@ -1906,6 +1948,7 @@ void V34Pump::retrain(const char *why)
 	cc_rev = 0;
 	cc_sym = 0;
 	ev_info1 = ev_rev = 0;
+	rt_info0 = 0;
 	rtd = 0;
 	/* the probing */
 	tone_g.init(caller ? 2400 : 1200, PROBE_PERIOD,
@@ -1966,6 +2009,21 @@ void V34Pump::renegotiate(const char *why, int n)
 }
 
 /* V.91 after V.8: v91.cpp from here on, at 8000 Hz */
+/* V.92 PCM upstream: phases 3 and 4 and the data on the 8000 Hz samples,
+   in process() */
+void V34Pump::v92_start()
+{
+	V92Info1a ia;
+	ia.parse(ccr.frame);
+	v92u.init(alaw, &ia, v90tx.fclock, v90tx.fbase);
+	v92u.get_bits = v34_get_bits;
+	v92u.put_bits = v34_put_bits;
+	v92u.ctx = this;
+	if (rt)
+		rt->pcm = 1;
+	set_state(V92_RUN);
+}
+
 void V34Pump::v91_start()
 {
 	const char *k = getenv("DSP_V91_K");
@@ -2022,7 +2080,7 @@ int V34Pump::handshake()
 		break;
 	case V8A_ANSAM:
 		/* V.92's QC1a ahead of CM: short phase 1 (9.2.4.1/V.92) */
-		if (ev_qc && v92 && !qc_done && !v8_ok) {
+		if (ev_qc && v92 && qc_ok && !qc_done && !v8_ok) {
 			int wxyz = ((qc_frame >> 4) & 1) << 3 |
 				((qc_frame >> 6) & 1) << 2 |
 				((qc_frame >> 7) & 1) << 1 |
@@ -2214,6 +2272,7 @@ int V34Pump::handshake()
 		}
 		break;
 	case V91_RUN:           /* process() runs it */
+	case V92_RUN:
 		break;
 	case V8C_GAP:
 		if (c >= ms2samples(75, srate) && v91_on) {
@@ -2344,6 +2403,16 @@ int V34Pump::handshake()
 			cc_send();
 			break;
 		}
+		/* the remote's INFO0a in a retrain: ours, acknowledging
+		   it (11.8.1/V.34) */
+		if (retraining && rt_info0 == 1) {
+			rt_info0 = 2;
+			info0_again = 1;
+			set_state(P2C_INFO0);
+			make_info0(&cctx);
+			cc_send();
+			break;
+		}
 		if (retraining && !rt_heard) {
 			/* a reversal counts when the tone is there around it
 			   (an answerer may reverse A after 200 ms, heard or
@@ -2445,11 +2514,32 @@ int V34Pump::handshake()
 		}
 		break;
 	case P2C_WAIT_INFO1:
-		/* PCM upstream (Table 18/V.92), which we do not have: a
-		   full phase 2, where INFO1d says so */
+		/* the remote retrains instead of INFO1a (silence, then tone
+		   A): an analogue modem without PCM upstream may do so when
+		   INFO1d offers it (the original library's "V.92 Lite"); the
+		   next phase 2 goes without the offer */
+		if (p2_gap == 0 && tone_blocks >= 3)
+			p2_gap = 1;
+		if (p2_gap == 1 && quiet_blocks >= 8)
+			p2_gap = 2;
+		if (!ev_info1 && p2_gap == 2 && tone_blocks >= 15) {
+			if (v92_on && pcmup_ok) {
+				pcmup_ok = 0;
+				DSP_DBG("v34: no PCM upstream offer from now "
+					"on\n");
+			}
+			retrain("the remote retrains in phase 2");
+			break;
+		}
+		/* PCM upstream (Table 18/V.92); without our offer in
+		   INFO1d: a full phase 2, where INFO1d says so */
 		if (ev_info1 && pcm && rinfo1a.baud_ca == 6 &&
 		    rinfo1a.baud_ac == 6) {
-			retrain("PCM upstream asked for");
+			if (!v92_on || !pcmup_ok) {
+				retrain("PCM upstream asked for");
+				break;
+			}
+			v92_start();
 			break;
 		}
 		if (ev_info1 && pcm && rinfo1a.baud_ca == 6) {
@@ -2911,6 +3001,43 @@ int V34Pump::process(void *in, void *out, int cnt)
 				v91_escape();
 			continue;
 		}
+		if (state == V92_RUN) {
+			/* the echo of our signal from the analogue modem's
+			   hybrid, after the network's round trip */
+			float x92 = src[i];
+			int y92, ev;
+			ec_schedule();
+			if (ec.on && !ec.bypass)
+				x92 = ec.run(last_tx, x92);
+			ev = v92u.sample((int)lrintf(x92), &y92);
+			last_tx = (float)y92;
+			dst[i] = (s16)y92;
+			out_n++;
+			if (ev == V92_CONNECT) {
+				rate_tx = (v92u.cpu.drn + 20) * 8000 / 6;
+				rate_rx = (v92u.cpd.drn + 17) * 8000 / 6;
+				modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
+				modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+				DSP_DBG("v34: V.92 connect %d/%d\n", rate_tx,
+					rate_rx);
+				ret = DPSTAT_CONNECT;
+			} else if (ev == V92_FAIL || ev == V92_RETRAIN) {
+				/* before data, V.34 upstream next time */
+				if (!v92u.connected) {
+					pcmup_ok = 0;
+					DSP_DBG("v34: no PCM upstream offer "
+						"from now on\n");
+				} else if (ev == V92_FAIL)
+					return DPSTAT_ERROR;
+				if (rt)
+					rt->pcm = 0;
+				retrain(ev == V92_FAIL ?
+					"V.92 PCM upstream failed" : "tone A");
+				if (ev == V92_RETRAIN)
+					rt_heard = 1;
+			}
+			continue;
+		}
 		if (line_rate == V34_SRATE) {
 			r = sample(src[i], &y, NULL);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
@@ -2985,6 +3112,11 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	qc_n = -1;
 	short2_ok = !(getenv("DSP_V92_SHORT2") &&
 		      !atoi(getenv("DSP_V92_SHORT2")));
+	/* quick connect: DSP_V92_QC=0 answers QC1a with V.8 instead */
+	qc_ok = !(getenv("DSP_V92_QC") && !atoi(getenv("DSP_V92_QC")));
+	/* PCM upstream: DSP_V92_PCMUP=1 offers it */
+	pcmup_ok = getenv("DSP_V92_PCMUP") &&
+		atoi(getenv("DSP_V92_PCMUP"));
 	/* V.91 with another digital modem: DSP_V91=0 leaves it out */
 	v91 = (id == DP_V90 || id == DP_V92 || id == DP_V91) &&
 		line_rate == 8000 &&

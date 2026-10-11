@@ -30,6 +30,8 @@ enum v90_seg {
 	V90_QTS,        /* QTS (768), QTS-bar (48), then ANSpcm */
 	V90_QTSBAR,
 	V90_ANSPCM,     /* until the next segment */
+	/* V.92 PCM upstream (8.6/V.92) */
+	V90_SCR,        /* SCR, instead of DIL, until end_dil() */
 };
 
 /* V.92: the Ucode of QTS for WXYZ of QC1a / QC2a (Table 2/V.92); -1 for
@@ -106,6 +108,11 @@ struct V90Tx {
 	int next;               /* after Jd' / DIL: 1 when the next
 				   segment may start */
 	long trn1d_len;         /* then Jd */
+	/* V.92 PCM upstream: end_jd() goes to Jp first, and after Jp' comes
+	   SCR when there is no DIL */
+	int v92;
+	int jp;                 /* Jp frames go out */
+	int jp_frac;            /* Jp: Su's extension, 1/65536 symbol */
 	int ri_end;
 	/* phase 4 and data: frames of D bits through the encoder */
 	V90Enc enc;
@@ -123,6 +130,7 @@ struct V90Tx {
 				   % 6 from there on */
 
 	void make_jd();
+	void make_jp();
 	void anspcm_init(int level);    /* 0..3: -9.5 to -18 dBm0 */
 
 	void init(int alaw_, int uinfo_);

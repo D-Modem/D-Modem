@@ -47,8 +47,9 @@ interface has one addition the original library does not use:
 
 V.90 is there as the **digital** modem only (the server side, as on a
 G.711 VoIP line), with V.92's quick connect for V.92 analogue modems
-calling (see [V.92](#v92-quick-connect)); the analogue side of V.90 and
-V.92, V.92's PCM upstream, K56flex and V.8bis are not (`AT+MS=56`,
+calling (see [V.92](#v92-quick-connect)) and, as an option, V.92's PCM
+upstream (see [PCM upstream](#v92-pcm-upstream)); the analogue side of
+V.90 and V.92, K56flex and V.8bis are not (`AT+MS=56`,
 K56flex, runs V.90). Between two digital modems V.91 (see
 [V.91](#v91-digital-to-digital)) takes the place of V.90. With the default `AT+MS=92` at 9600 Hz the modem connects at V.34 or
 lower.
@@ -259,8 +260,10 @@ it retrains.
 
 With `AT+MS=92` (the default) at 8000 Hz the digital modem says V.92 in
 INFO0d (bit 27) and sends V.92's INFO1d, which tells the analogue modem
-that the channel has no PCM upstream (bit 70): it asks for V.90 or V.34
-upstream, and the call goes on as V.90. `DSP_V92=0` leaves V.92 out.
+that the channel has no PCM upstream (bit 70; `DSP_V92_PCMUP=1` offers
+it, see [PCM upstream](#v92-pcm-upstream)): it asks for V.90 or V.34
+upstream, and the call goes on as V.90. `DSP_V92=0` leaves V.92 out,
+`DSP_V92_QC=0` answers QC1a with V.8 instead of quick connect.
 
 Short phase 1 (9.2.4/V.92), answering: a QC1a ahead of CM (the
 analogue modem's frame on V.21(L), with the Ucode of QTS and LAPM)
@@ -285,8 +288,74 @@ INFO1a. The upstream rate comes from the mse of the training in phase 3
 instead of the probing. `DSP_V92_SHORT2=0` does not ask for it. With
 quick connect and short phase 2 the Agere modem's second call connects
 in 17.5 s instead of 22.5 s (it asks for a shorter DIL as well).
-PCM upstream, modem-on-hold and V.92's rate renegotiation and fast
-parameter exchange are not implemented.
+Modem-on-hold and V.92's rate renegotiation and fast parameter exchange
+are not implemented.
+
+### V.92 PCM upstream
+
+With `DSP_V92_PCMUP=1`, INFO1d says the channel can carry PCM upstream
+(bit 70). An analogue modem that wants it answers with the INFO1a of
+Table 18/V.92, and from there `V92Up` ([v92.cpp](v92.cpp)) runs phases 3
+and 4 of V.92 and the data mode on the network's 8000 Hz samples, as
+V.91 does; our side of it is V.90's PCM transmitter.
+
+The analogue modem sends PAM symbols at 8000 symbol/s, one per sample:
+- Ru and Su (a period of 6 symbols, 1333 Hz) are found by a sliding DFT
+  of 12 samples, their phase reversals between two of its windows;
+- TRN1u by its correlation with the known scrambled sequence, which is
+  the channel's impulse response and gives the symbol alignment (and,
+  for the second TRN1u, the data frame alignment);
+- a decision feedback equalizer (32 + 16 taps) is fitted to TRN1u by
+  least squares and follows the signal by its decisions;
+- Ja, CPt and E1u are 2 point signals, TRN2u, SUVu, CPu and E2u 4 point
+  (differential sign, scrambled).
+
+We send Sd, TRN1d, Jd, then Jp once Su, Su-bar and Su have been heard
+(Su-bar takes half a symbol, and Jp asks for half a symbol more: the
+analogue modem goes back to the phase of the first TRN1u), Jp' on the
+next Su-bar, the DIL it asked for (or SCR), Ri on CPt, Ri-bar on E1u,
+then TRN2d, SUVd, CPd (after SUVu), SUVd' (after CPu), Ed and B1d in
+CPt's and CPu's constellations through V.90's encoder.
+
+Our CPd asks for no precoding (each section of the precoder and the
+prefilter 4 taps, all 0 but z2(0) = 1), the same modulus M on all 12
+data frame intervals and one constellation of 4M points, (2j + 1) x 16:
+the analogue modem sends the point of least power of a class, and the
+receiver decides the point and takes its class (on the trellis frame's
+fourth symbol, its parity aside). The rate is the fastest whose half
+distance between points is at least sqrt(40) times TRN1u's rms error,
+of the rates in the analogue modem's DIL descriptor. `DSP_V92_UP_DRN=<n>`
+asks for (n + 17) x 8000 / 6 bit/s instead.
+
+When the analogue modem retrains instead of sending INFO1a, or our phase
+3 or 4 fails, or B1u does not come through (more than 5 % of its bits),
+the call retrains without the offer: V.90 with V.34 upstream.
+
+Smart Link's library is a "V.92 Lite" build: its runtime clears the bit
+that would let it use PCM upstream (byte 2, bit 7 of `dp_runtime_create`'s
+object), and with our offer it retrains to V.34 upstream after INFO1d
+("we got PCM upstream under V.92Lite"). `BLOB_V92FULL=1` sets the bit in
+`half_blob` ([test/legacy/modem.cpp](test/legacy/modem.cpp)), and the
+library then does PCM upstream. Two things it needs of CPd: filter
+sections of a multiple of 4 taps (its FIR rounds the length down, and
+crashes on 0), and a constellation of more than 2M points (in 2M, it
+sends 0 on the trellis frame's fourth symbol for half of the classes).
+
+| Test (`interop_v92_pcmup_*`) | Result |
+|---|---|
+| ulaw, alaw | V.92 connect, 56000 down, 25333 (u-law) or 26666 (A-law) up, B1u without errors |
+| calls (two calls, quick connect) | both V.92 |
+| lite (the library as it is) | it retrains after INFO1d, we leave the offer out: V.90 |
+| fallback (44000 bit/s asked for) | B1u does not come through: retrain, V.90 |
+
+Through netsim's converters TRN1u's error is 34 dB below the signal,
+which allows less upstream (25333 bit/s) than V.34's 31200; so the offer
+is off by default. Neither the trellis decoding of the parity nor a
+precoder design (both would allow more) is there yet, nor V.92's retrains
+in data mode and rate renegotiation. The echo canceller (the V.34 pump's,
+trained while we send Sd to Jd) could not be tested: netsim's echo
+(`NET_ECHO`) through its 9600 Hz converters is not one an 8000 Hz
+canceller cancels, for V.90 either.
 
 The Agere modem's V.90 training failed at some delays of the line, in
 a pattern that repeats every 48 samples (its codec's blocks), with the

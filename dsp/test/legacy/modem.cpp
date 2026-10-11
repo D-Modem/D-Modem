@@ -1030,6 +1030,12 @@ static int modem_start (struct modem *m)
 		ret = -1;
 		goto error;
 	}
+	/* Smart Link's library is a "V.92 Lite" build: its runtime has
+	   the full V.92 bit (byte 2, bit 7) clear, and the library then
+	   retrains to V.34 upstream when PCM upstream is selected.
+	   BLOB_V92FULL=1 sets the bit. */
+	if (getenv("BLOB_V92FULL") && atoi(getenv("BLOB_V92FULL")))
+		((unsigned char *)m->dp_runtime)[2] |= 0x80;
 
 	{
 		dlink::Config c;

@@ -138,6 +138,30 @@ void V90Tx::make_jd()
 	nbits = n_;
 }
 
+/* Jp (Table 22/V.92): the extension of Su, TRN2u on 4 points */
+void V90Tx::make_jp()
+{
+	unsigned crc = 0xFFFF;
+	int n_ = 0, i;
+
+	put_bits(bits, &n_, 0x1FFFF, 17);
+	put_bits(bits, &n_, 0, 1);
+	put_bits(bits, &n_, jp_frac & 0xFFFF, 16);
+	put_bits(bits, &n_, 0, 1);
+	put_bits(bits, &n_, 0, 12);
+	put_bits(bits, &n_, 1, 1);            /* Jp */
+	put_bits(bits, &n_, 0, 1);            /* 4 points in training */
+	put_bits(bits, &n_, 0, 1);            /* and in renegotiation */
+	put_bits(bits, &n_, 0, 1);
+	put_bits(bits, &n_, 0, 1);
+	for (i = 18; i < 51; i += 17)
+		crc = v34_crc_bits(bits + i, 16, crc);
+	for (i = 15; i >= 0; i--)
+		bits[n_++] = (crc >> i) & 1;
+	put_bits(bits, &n_, 0, 4);
+	nbits = n_;
+}
+
 int v92_uqts(int wxyz)
 {
 	static const signed char u[16] = { 61, 62, 63, 66, 67, 70, 71, 74,
@@ -190,6 +214,10 @@ void V90Tx::segment(enum v90_seg seg_)
 		pos = 0;
 		jd_end = 0;
 		jd_frames = 0;
+		jp = 0;
+		break;
+	case V90_SCR:
+		dil_end = 0;
 		break;
 	case V90_JDP:
 		pos = 0;
@@ -318,7 +346,12 @@ int V90Tx::sample()
 		if (++pos == nbits) {
 			pos = 0;
 			jd_frames++;
-			if (jd_end) {
+			if (jd_end && v92 && !jp) {
+				/* V.92: Jp until the next end_jd() */
+				make_jp();
+				jp = 1;
+				jd_end = 0;
+			} else if (jd_end) {
 				segment(V90_JDP);
 				n--;
 			}
@@ -329,6 +362,8 @@ int V90Tx::sample()
 		if (++pos == 12) {
 			if (dil.n)
 				segment(V90_DIL);
+			else if (v92)
+				segment(V90_SCR);
 			else {
 				seg = V90_SILENCE;
 				next = 1;
@@ -338,6 +373,16 @@ int V90Tx::sample()
 		break;
 	case V90_DIL:
 		x = dil_sample();
+		break;
+	case V90_SCR:
+		/* UINFO with the signs of scrambled ones, in whole data
+		   frames */
+		sign = scramble(&scr, 1);
+		x = sign ? lin[uinfo] : -lin[uinfo];
+		if (dil_end && (sym + 1) % 6 == 0) {
+			seg = V90_SILENCE;
+			next = 1;
+		}
 		break;
 	case V90_RI:
 	case V90_RIBAR: {

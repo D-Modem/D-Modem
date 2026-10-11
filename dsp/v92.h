@@ -1,0 +1,199 @@
+/*
+ *
+ *    v92.h - ITU-T V.92 PCM upstream, the digital modem: phases 3 and 4
+ *            and the data mode, after an INFO1a that asks for PCM upstream
+ *
+ *    The analogue modem sends PAM symbols at 8000 symbol/s, one per G.711
+ *    sample of the network; we send PCM codes as in V.90.
+ *
+ */
+
+#ifndef V92_H
+#define V92_H
+
+#include "v90.h"
+
+namespace dsp {
+
+/* INFO1a when the analogue modem asks for PCM upstream (Table 18/V.92) */
+struct V92Info1a {
+	int sections;           /* 3: z1, p1, p2 and z2 */
+	int ltot, lmax;         /* coefficients at most: in all, per section */
+	int md;                 /* MD, in 276 symbols */
+	int uinfo;
+
+	void parse(const unsigned char *b);
+};
+
+/* CPd (Table 30/V.92): the analogue modem's data mode parameters */
+#define V92_LC_MAX      128
+struct V92Cpd {
+	int drn;                /* (drn + 17) * 8000 / 6 bit/s */
+	int ack;
+	double g;               /* the gain after the prefilter */
+	int M[12];
+	int ncon;
+	int con[6];             /* constellation of intervals i and i + 6 */
+	int lc[6];              /* positive points of each constellation */
+	int pts[6][V92_LC_MAX]; /* their linear values, smallest first */
+
+	/* the bits, filled with zeros to whole frames of fill bits;
+	   returns their number */
+	int build(unsigned char *b, int fill) const;
+};
+
+/* SUVd (Table 31/V.92) */
+int  v92_suv_build(unsigned char *b, int ack, int fill);
+
+/* the analogue modem's DIL descriptor in Ja (Table 20/V.92): V.90's,
+   with its data signalling rate mask before the CRC; the length up to
+   the end of the CRC once 50 bits are in, -1 before */
+int  v92_dil_length(const unsigned char *b, int n);
+
+/* CPt and CPu (Table 23/V.92) into V.90's CP; -1 for a bad CRC */
+int  v92_cp_parse(V90Cp *cp, const unsigned char *b, int len);
+
+/* frames of 17 bit blocks after a sync of 17 ones, in the decoded bits
+   of the analogue modem */
+#define V92_FR_MAX      3000
+enum { V92F_DIL, V92F_CP };
+struct V92Frames {
+	int mode;
+	unsigned sr;
+	unsigned char b[V92_FR_MAX];
+	int n, len;
+
+	void init(int mode_);
+	/* 1 when a frame with a good CRC is in b (len bits) */
+	int bit(int x);
+};
+
+/* events of V92Up::sample() */
+enum {
+	V92_NONE,
+	V92_CONNECT,
+	V92_FAIL,
+	V92_RETRAIN,            /* the remote's tone A */
+};
+
+#define V92_BUF         16384   /* received samples kept */
+#define V92_EQ_F        32      /* feed-forward taps */
+#define V92_EQ_PRE      8       /* of them, ahead of the main tap */
+#define V92_EQ_B        16      /* feedback taps */
+#define V92_EQ_N        (V92_EQ_F + V92_EQ_B)
+
+enum v92_rx {
+	V92R_RU,        /* Ru and its reversal */
+	V92R_MD,
+	V92R_TRN1,      /* TRN1u: the equalizer is trained */
+	V92R_JA,
+	V92R_QUIET,     /* the analogue modem waits for Jd */
+	V92R_SU,        /* Su, Su-bar, Su: the phase */
+	V92R_SUBAR,
+	V92R_SU2,       /* Su until Jp, then Su-bar */
+	V92R_TRN1B,     /* the second TRN1u: the data frame alignment */
+	V92R_CPT,       /* TRN1u, CPt, E1u */
+	V92R_TRN2,      /* TRN2u, SUVu, CPu, E2u */
+	V92R_DATA,      /* B1u and data */
+};
+
+enum v92_fmode { V92F_TRN, V92F_SEQ, V92F_ED, V92F_B1, V92F_DATA };
+
+struct V92Up {
+	int alaw;
+	V92Info1a ia;
+	void (*get_bits)(void *ctx, unsigned char *bits, int n);
+	void (*put_bits)(void *ctx, const unsigned char *bits, int n);
+	void *ctx;
+	long n;                 /* samples since the start */
+	int connected;
+
+	/* transmitter */
+	V90Tx tx;
+	int tstep;
+	long tstep_at;
+	V90Cp cpt, cpu;         /* the analogue modem's CPt and CPu */
+	int D;                  /* bits per data frame of ours */
+	enum v92_fmode fmode;
+	long fcount;
+	unsigned char seq[3072];        /* SUVd or CPd, in whole frames */
+	int seq_len, seq_pos, seq_ack, seq_cpd;
+	int cpd_sent, ack_sent;
+	long cpd_at;            /* frames after our last CPd */
+	V92Cpd cpd;             /* ours */
+
+	/* receiver */
+	enum v92_rx rx;
+	float buf[V92_BUF];
+	/* the period 6 tones (Ru, Su) and their reversals */
+	float th[16];
+	cplx tbh[32];
+	unsigned char tcoh[32];
+	int tone_n, tone_miss, rev_n, rev_hold;
+	float rev_min;
+	long rev_cand, rev_at;
+	Goertzel ta_g;          /* tone A */
+	float ta_e;
+	int ta_blocks;
+	int revs;               /* reversals of Su so far */
+	/* the equalizer */
+	double f[V92_EQ_F], b[V92_EQ_B];
+	float dh[V92_EQ_B];     /* past decisions, newest first */
+	long t0;                /* the sample of TRN1u's first symbol (est.) */
+	long eqL;               /* the sample of symbol 0's main tap */
+	long sym;               /* the next symbol to equalize */
+	int trained;
+	float pr;               /* received power, for the step size */
+	double mse;
+	int md_done;            /* MD is over */
+	float mse_trn;          /* after TRN1u's training */
+	/* bits */
+	int last_d;             /* differential decoding */
+	unsigned dscr;          /* GPA descrambler */
+	int order;              /* TRN2u: 0 sign bit first, 1 the other */
+	unsigned dscr2[2];
+	long ones2[2];
+	V92Frames fr;
+	int got_ja, got_cpt, got_e1u, got_suvu, got_cpu, got_ack, got_e2u;
+	long frame_zero;        /* zero bits of the current data frame */
+	V90Dil dil;
+	int up_mask;            /* the analogue modem's rates, bit 0: 24 000 */
+	long e2u_sym;
+	/* data mode */
+	int dk[12];
+	int dprev;              /* the modulus encoder's sign */
+	long dframes, derrs, dfar;
+	int b1_bad;
+	double dmse;
+
+	void init(int alaw_, const V92Info1a *ia_, const long *fclock,
+		  long fbase);
+	int sample(int x, int *y);
+	/* the echo canceller may train: we send, the analogue modem is
+	   silent (Sd to Jd) */
+	int ec_train() const
+	{
+		return rx == V92R_QUIET && tstep >= 2 &&
+			tx.seg >= V90_SD && tx.seg <= V90_JD;
+	}
+
+	/* transmitter */
+	int tx_step();
+	void make_seq(int cpd_, int ack);
+	void design();
+	/* receiver */
+	void rx_sample(float x);
+	void tone_sample(float x);
+	int train(long start, int search_lo, int search_hi);
+	float equalize(long s);
+	void adapt(long s, float err, float mu);
+	void symbol(float y);
+	void bit2(int d);
+	void bits4(int s, int m);
+	void frame_bits(int bit);
+	void data_symbol(float y);
+};
+
+} // namespace dsp
+
+#endif

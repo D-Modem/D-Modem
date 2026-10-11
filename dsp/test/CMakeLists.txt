@@ -392,6 +392,35 @@ add_test(NAME interop_v92_qc COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=92")
 set_tests_properties(interop_v92_qc PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;EXPECT_B=V.92 quick connect")
+# V.92 PCM upstream (DSP_V92_PCMUP=1): the original library is a "V.92
+# Lite" build, which retrains when INFO1d offers PCM upstream; BLOB_V92FULL
+# (legacy/modem.cpp) sets its full V.92 bit, and it then goes through
+# phases 3 and 4 of V.92 with us.  Lite: we answer its retrain without the
+# offer, V.90.  A rate the line cannot carry (44 000): B1u does not come
+# through, we retrain to V.90.
+foreach(_law ulaw alaw)
+	add_test(NAME interop_v92_pcmup_${_law} COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+		"ATX3;AT+MS=92")
+	set_tests_properties(interop_v92_pcmup_${_law} PROPERTIES LABELS interop
+		ENVIRONMENT "${_env};NET=9600:8000:${_law};STREAM=3;BLOB_V92FULL=1;DSP_V92_PCMUP=1;EXPECT_B=V.92 connect")
+endforeach()
+add_test(NAME interop_v92_pcmup_calls COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+# (quick connect's timing does not take a busy machine: alone)
+set_tests_properties(interop_v92_pcmup_calls PROPERTIES LABELS interop
+	RUN_SERIAL TRUE ENVIRONMENT "${_env};NET=9600:8000:ulaw;CALLS=2;STREAM=3;BLOB_V92FULL=1;DSP_V92_PCMUP=1;EXPECT_B=(?s)V.92 connect.*V.92 connect")
+add_test(NAME interop_v92_pcmup_lite COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_pcmup_lite PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;DSP_V92_PCMUP=1;EXPECT_B=(?s)no PCM upstream offer.*V.90 connect")
+add_test(NAME interop_v92_pcmup_fallback COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_pcmup_fallback PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;BLOB_V92FULL=1;DSP_V92_PCMUP=1;DSP_V92_UP_DRN=16;EXPECT_B=(?s)B1u does not come through.*V.90 connect")
 # class 1 fax calls both ways
 foreach(_m 24 48 72 96 73 97 121 122 145)
 	add_test(NAME fax_interop_${_m}_blob_sends COMMAND ${Python3_EXECUTABLE}
@@ -468,7 +497,7 @@ if(TARGET half_agere)
 		${_py}/interop.py $<TARGET_FILE:half_agere>
 		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92;AT+PQC=0")
 	set_tests_properties(agere_v92_qc PROPERTIES LABELS agere
-		ENVIRONMENT
+		RUN_SERIAL TRUE ENVIRONMENT
 		"${_env};NET_LOOP=0.5;NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2;PROTO_B=ATX3\;AT+MS=92")
 	# V.90: the Agere modem as the analogue modem, the open one as the
 	# digital modem (both at 8000 Hz)
