@@ -178,7 +178,8 @@ enum v34_state {
 };
 
 /* what the digital modem's encoder sends in phase 4 and data mode */
-enum v90_fmode { F_TRN, F_MP, F_ED, F_B1, F_DATA };
+enum v90_fmode { F_TRN, F_MP, F_ED, F_B1, F_DATA,
+		  F_SIL };       /* silence in a renegotiation (CPs) */
 
 enum v34_txm {
 	TXM_SILENCE,
@@ -329,6 +330,11 @@ struct V34Pump : Pump {
 	int mp_len, mp_pos, mp_ack, mp_ack_sent;
 	int D;                  /* bits per data frame */
 	int up_n;               /* upstream rate, 2400 bit/s units */
+	/* V.90 rate renegotiation (9.6/V.90) */
+	int v90_rn_init;        /* the encoder starts on CPt again */
+	int v90_rd_wait;        /* Rd once the remote's S-bar is in */
+	int rn_sbar;            /* S-bar count at its S */
+	int sil_cp;             /* CP count when our silence began */
 	Resampler rs_up, rs_down;
 	float fifo[V34_FIFO];   /* converted output, 8000 Hz */
 	int fifo_n;
@@ -497,6 +503,8 @@ struct V34Pump : Pump {
 	void retrain(const char *why);
 	int reneg_rate(int up);
 	void renegotiate(const char *why, int n);
+	void v90_renegotiate(const char *why, int n, int remote);
+	void v90_rd_start();
 	/* the digital modem in V.90 phases 3 and 4 */
 	int v90_digital() const
 	{
@@ -1734,8 +1742,16 @@ static void v90_get_frame(void *ctx, V90Tx *t, unsigned char *b,
 			  int *last)
 {
 	V34Pump *v = static_cast<V34Pump*>(ctx);
-	int D = v->D;
+	int D;
 
+	if (v->v90_rn_init) {
+		/* after Rd or Rt: TRN2d, MP and Ed on CPt's
+		   constellations, from cleared scrambler and filters */
+		v->v90_rn_init = 0;
+		v->D = v->cpt.drn + 8;
+		t->enc.init(&v->cpt, v->D, t->lin);
+	}
+	D = v->D;
 	if (v->fmode == F_B1 && v->fcount == 0) {
 		/* B1d with the data mode parameters, from cleared
 		   scrambler, signs and shaping filter */
@@ -1771,9 +1787,19 @@ static void v90_get_frame(void *ctx, V90Tx *t, unsigned char *b,
 		memset(b, 0, D);
 		if (v->fcount >= 2) {
 			*last = 1;
-			v->fmode = F_B1;
 			v->fcount = 0;
+			if (v->prx.cp_silence) {
+				/* CPs': Ed, then silence until CP
+				   (9.6.1.2.5/V.90) */
+				v->fmode = F_SIL;
+				t->sil_req = 1;
+			} else
+				v->fmode = F_B1;
+			v->sil_cp = v->prx.cp_count;
 		}
+		break;
+	case F_SIL:
+		memset(b, 0, D);
 		break;
 	case F_B1:
 		memset(b, 1, D);
@@ -1937,6 +1963,8 @@ void V34Pump::retrain(const char *why)
 		pcm_tx = 0;
 		ref_n = 0;
 		v90tx.seg = V90_SILENCE;
+		v90tx.rd_req = v90tx.sil_req = 0;
+		v90_rn_init = v90_rd_wait = 0;
 		up_n = 0;
 		mp_len = 0;
 	}
@@ -2006,6 +2034,42 @@ void V34Pump::renegotiate(const char *why, int n)
 	/* no E 2500 ms plus the round trips after S-bar: a retrain */
 	timeout = total + ms2samples(3000, srate) + 3 * rtd;
 	tx_next(V34_RN_S, V34_TX_S);
+}
+
+/* a V.90 rate renegotiation (9.6/V.90), ours or in answer to the
+   analogue modem's S: Rd, Rd-bar (on a data frame boundary, after its
+   S-bar when it started), TRN2d, MP with the upstream rate we can
+   receive now, MP', Ed, B1d; the analogue modem sends S, S-bar, SCR, CP,
+   CP', E and B1.  Its CPs asks for a silent period first: Ed, silence
+   until CP, Rt, Rt-bar, MP. */
+void V34Pump::v90_renegotiate(const char *why, int n, int remote)
+{
+	DSP_DBG("v34: V.90 renegotiation %d (%s): upstream at most %d, mse "
+		"%.3f\n", ++renegs, why, n * 2400, prx.mse);
+	renegotiating = 1;
+	max_rate_rx = n;
+	up_n = 0;
+	mp_len = 0;
+	mp_ack_sent = 0;
+	prx.ev_cp = prx.ev_cpack = prx.ev_e = 0;
+	prx.cp_silence = 0;
+	rn_hi = rn_lo = bad = 0;
+	v90_rd_wait = remote;
+	rn_sbar = prx.sbar_count;
+	if (!remote)
+		v90_rd_start();
+	/* no E 5000 ms plus 2 round trips after Rd-bar: a retrain */
+	timeout = total + ms2samples(5500, srate) + 3 * rtd;
+	set_state(P4D_TRAIN);
+}
+
+void V34Pump::v90_rd_start()
+{
+	DSP_DBG("v34: V.90 Rd\n");
+	v90tx.rd_req = 1;
+	v90_rn_init = 1;
+	fmode = F_TRN;
+	fcount = 0;
 }
 
 /* V.91 after V.8: v91.cpp from here on, at 8000 Hz */
@@ -2747,6 +2811,32 @@ int V34Pump::handshake()
 		}
 		break;
 	case P4D_TRAIN:
+		/* a renegotiation the analogue modem started: Rd after its
+		   S-bar */
+		if (v90_rd_wait && prx.sbar_count != rn_sbar) {
+			v90_rd_wait = 0;
+			v90_rd_start();
+		}
+		/* after the silence it asked for: CP (bit 30 clear), then
+		   Rt (of CPt's constellations), Rt-bar, MP
+		   (9.6.1.2.6/V.90) */
+		if (fmode == F_SIL && v90tx.seg == V90_SILENCE &&
+		    prx.cp_count > sil_cp && !prx.cp_silence &&
+		    v90tx.sym % 6 == 0) {
+			int k;
+			DSP_DBG("v34: V.90 Rt\n");
+			for (k = 0; k < 6; k++)
+				v90tx.rd_code[k] = v90tx.enc.ucode[k][0];
+			v90tx.segment(V90_RD);
+			v90_rn_init = 1;
+			prx.ev_cpack = prx.ev_e = 0;
+			up_n = 0;
+			mp_ack_sent = 0;
+			fmode = F_MP;
+			fcount = 0;
+			v90_make_mp(1);
+			timeout = total + ms2samples(5500, srate) + 3 * rtd;
+		}
 		if (prx.ev_cp && !up_n) {
 			cp.parse(prx.cpraw,
 				     v90_cp_length(prx.cpraw, 129));
@@ -2759,6 +2849,16 @@ int V34Pump::handshake()
 			modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
 			rt_blocks = 0;
 			lost = 0;
+			if (renegotiating) {
+				renegotiating = 0;
+				prx.ev_reneg = 0;
+				DSP_DBG("v34: V.90 renegotiated %d/%d\n",
+					rate_tx, rate_rx);
+				if (rate_rx / 2400 < max_rate_rx)
+					rn_max = rate_rx / 2400;
+				break;
+			}
+			rn_max = rate_rx / 2400;
 			if (retraining && connected) {
 				retraining = 0;
 				DSP_DBG("v34: V.90 retrained, %d/%d\n",
@@ -2840,7 +2940,6 @@ int V34Pump::handshake()
 				DSP_DBG("v34: carrier lost\n");
 				return DPSTAT_ERROR;
 			}
-			break;
 		}
 		/* the data far worse than its rate needs (the mse is in
 		   units of the signal points' spacing, the same for all
@@ -2868,20 +2967,35 @@ int V34Pump::handshake()
 			retrain(caller ? "tone A" : "tone B");
 		else if (prx.ev_reneg) {
 			prx.ev_reneg = 0;
-			renegotiate("the remote's S", reneg_rate(0));
+			if (pcm)
+				v90_renegotiate("the remote's S",
+						reneg_rate(0), 1);
+			else
+				renegotiate("the remote's S", reneg_rate(0));
 		} else if (rn_hi >= ms2samples(300, srate) &&
 			   c >= ms2samples(2000, srate) && rate_rx > 2400) {
 			/* the line got much worse (6 dB and more): both ways,
 			   most likely; a retrain probes it anew */
 			if (prx.mse > 4 * mse_good)
 				retrain("errors");
+			else if (pcm)
+				v90_renegotiate("errors", reneg_rate(-1), 0);
 			else
 				renegotiate("errors", reneg_rate(-1));
 		}
-		else if (rn_lo >= ms2samples(10000, srate))
-			renegotiate("margin", reneg_rate(1));
-		else if (reneg_at && c >= reneg_at && !renegs)
-			renegotiate("test", reneg_to);
+		else if (rn_lo >= ms2samples(10000, srate)) {
+			if (pcm)
+				v90_renegotiate("margin", reneg_rate(1), 0);
+			else
+				renegotiate("margin", reneg_rate(1));
+		} else if (reneg_at && c >= reneg_at && !renegs) {
+			if (pcm)
+				v90_renegotiate("test", reneg_to, 0);
+			else
+				renegotiate("test", reneg_to);
+		} else if (pcm)
+			/* (carrier loss above) */
+			;
 		else if (bad >= ms2samples(1000, srate) &&
 			 c >= ms2samples(5000, srate))
 			/* (not in a loop on a line that stays marginal) */

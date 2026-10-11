@@ -386,6 +386,21 @@ add_test(NAME interop_v90_alaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=90")
 set_tests_properties(interop_v90_alaw PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:alaw;DSP_G711=alaw")
+# V.90 rate renegotiation (9.6/V.90): ours after 5 s of data, to 24 000
+# bit/s upstream; the library's own when noise on the PCM codes from 40 s
+# on worsens the downstream: it asks for a silent period (CPs), and the
+# noise stops with our silence (else it may pick 56000 again and the data
+# goes wrong)
+add_test(NAME interop_v90_reneg COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=90")
+set_tests_properties(interop_v90_reneg PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=15;DSP_V34_RENEG=5000:10;EXPECT_B=V.90 renegotiated [0-9]+/24000")
+add_test(NAME interop_v90_reneg_silence COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=90")
+set_tests_properties(interop_v90_reneg_silence PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=50;NET_NOISE=40:20:10;NET_NOISE_DIR=bacodes;NET_NOISE_QUIET=50;EXPECT_B=(?s)CPs'.*V.90 renegotiated")
 # V.92 quick connect (short phase 1): the original library, a V.92
 # analogue modem, starts with QC1a; then V.90
 add_test(NAME interop_v92_qc COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
@@ -528,6 +543,15 @@ if(TARGET half_agere)
 			ENVIRONMENT
 			"${_env};NET_LOOP=0.5;NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
 	endforeach()
+	# V.90 rate renegotiation: ours to 19 200 bit/s upstream (the Agere
+	# modem's own, as noise on the PCM codes rises, come too late for a
+	# test, if at all)
+	add_test(NAME agere_v90_reneg_open COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_agere>
+		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
+	set_tests_properties(agere_v90_reneg_open PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET_LOOP=0.5;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=15;DSP_V34_RENEG=5000:8;EXPECT_B=V.90 renegotiated [0-9]+/19200;PROTO_B=ATX3\;AT+MS=90")
 	# class 1 fax both ways at 8000 Hz
 	foreach(_m 24 48 72 96 73 97 121 122 145)
 		add_test(NAME agere_fax_${_m}_agere_sends COMMAND

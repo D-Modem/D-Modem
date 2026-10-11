@@ -273,6 +273,8 @@ struct V34Rx {
 				   analogue modem's TRN1a during DIL) */
 	/* and CP in phase 4 */
 	int ev_cpt, ev_cp, ev_cpack;
+	int cp_count;           /* good CP frames (not CPt) so far */
+	int cp_silence;         /* the last one asked for silence (CPs) */
 	unsigned char cpraw[1800];      /* the last good CP frame */
 	unsigned char *jabits;
 	int ja_n, ja_len;

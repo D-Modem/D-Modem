@@ -414,10 +414,12 @@ void V34Rx::cp_bit(int bit)
 		ja_n = 0;
 		if (cp.parse(jabits, ja_len) == 0) {
 			if (!(cp.cp ? ev_cp : ev_cpt) ||
-			    (cp.ack && !ev_cpack))
+			    (cp.ack && !ev_cpack) ||
+			    (cp.cp && cp.silence != cp_silence))
 				DSP_DBG("v34 rx: CP%s%s at symbol %ld: drn %d "
 					"Sr %d ld %d, %d constellations, "
-					"mask %04x\n", cp.cp ? "" : "t",
+					"mask %04x\n", cp.cp ? (cp.silence ?
+					"s" : "") : "t",
 					cp.ack ? "'" : "", sym, cp.drn,
 					cp.sr, cp.ld, cp.ncon, cp.rate_mask);
 			memcpy(cpraw, jabits, ja_len);
@@ -425,10 +427,14 @@ void V34Rx::cp_bit(int bit)
 				ev_cp = 1;
 				if (cp.ack)
 					ev_cpack = 1;
+				cp_count++;
+				cp_silence = cp.silence;
 			} else
 				ev_cpt = 1;
-			/* E may follow CP' (after CPt comes SCR: ones) */
-			after_mp = cp.cp;
+			/* E may follow CP' (after CPt comes SCR: ones, and
+			   after CPs' too: the analogue modem trains its echo
+			   canceller) */
+			after_mp = cp.cp && !cp.silence;
 			mp_end = sym;
 			ones = 0;
 		} else
@@ -983,6 +989,10 @@ void V34Rx::reneg_s()
 	mse_mid = mse_old = 0;
 	ev_reneg = ev_s = 1;
 	ev_mp = ev_e = 0;
+	/* V.90: CP, CP' and E of the renegotiation to come */
+	ev_cp = ev_cpack = 0;
+	cp_silence = 0;
+	ja_n = 0;
 	mp_n = 0;
 	after_mp = 0;
 	ones = 0;

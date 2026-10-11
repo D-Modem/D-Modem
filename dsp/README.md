@@ -198,8 +198,7 @@ caller (c) or both start one after that long in data mode, to receive
 at N * 2400 bit/s (a test).
 
 Not implemented: pre-emphasis, non-linear decoding (we never ask for
-it), the auxiliary channel, starting a cleardown, and V.90's rate
-renegotiation (the digital modem retrains instead).
+it), the auxiliary channel and starting a cleardown.
 
 ### V.90 digital modem
 
@@ -255,6 +254,32 @@ original library's own debug
 output (its `edprintf` lines are hidden behind a key) helped: it reports
 the levels it measures in the DIL, the digital pad it concludes and why
 it retrains.
+
+Rate renegotiation (9.6/V.90): the analogue modem sends S, S-bar, SCR
+and CP with the downstream rate it wants; we answer its S-bar with Rd
+(R of each interval's largest data mode Ucode, 384 symbols, R-bar for
+24, on a data frame boundary), TRN2d, MP with the upstream rate our mse
+allows, MP', Ed and B1d, the encoder on CPt's constellations until B1d.
+Ours start on the upstream mse as in V.34 (above), with Rd first;
+`DSP_V34_RENEG=<ms>:<N>` makes one (a test). A CPs (bit 30) asks for a
+silent period, to retrain the analogue modem's echo canceller: MP' until
+CPs', Ed, then Ucode 0, keeping the data frames, until a CP with bit 30
+clear; then Rt (CPt's largest Ucodes), Rt-bar and MP. No E 5 s after Rd
+(plus the round trips): a retrain.
+
+| Test | Result |
+|---|---|
+| `interop_v90_reneg`: ours after 5 s, upstream to 24000 | 56000/24000 |
+| `interop_v90_reneg_silence`: noise on the PCM codes from 40 s | the library's, with CPs and the silent period: 54666 or 50666 down, B1d without errors |
+| `agere_v90_reneg_open`: ours, upstream to 19200 | the Agere modem goes along |
+
+The original library renegotiates on its own when the downstream gets
+worse, always with the silent period; with the noise still there it now
+and then picks 56000 again, and its data then has errors (the test stops
+netsim's noise with our silence, `NET_NOISE_QUIET`). The Agere modem
+renegotiates on its own as well, without silence, a step down at a time
+as the noise rises (45333, 46666, 44000 in one call), but only after
+40 s or so, if at all: no test.
 
 ### V.92 quick connect
 
