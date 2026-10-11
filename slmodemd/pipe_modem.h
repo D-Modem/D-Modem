@@ -55,6 +55,7 @@ private:
 	int in_, out_;
 	int rate_;
 	int delay_ = 0;         /* bytes on their way */
+	bool lead_done_ = false;        /* the silence before the first call */
 	int pending_delay_ = 0; /* samples the pumps asked for, left */
 	char pend_[8192];
 	int npend_ = 0;

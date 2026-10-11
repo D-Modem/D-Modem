@@ -64,9 +64,16 @@ unsigned long PipeModem::now_ms()
 
 int PipeModem::start(dcore::Modem &)
 {
-	char zeros[256] = {};
+	char zeros[2048] = {};
 	DBG("modem_test_start...\n");
-	delay_ = sizeof(zeros);
+	/* silence ahead of the first call (PIPE_LEAD=<samples>, 128): once,
+	   as the line keeps it, so that every call has the same delay */
+	if (lead_done_)
+		return 0;
+	lead_done_ = true;
+	delay_ = getenv("PIPE_LEAD") ? 2 * atoi(getenv("PIPE_LEAD")) : 256;
+	if (delay_ > (int)sizeof(zeros))
+		delay_ = sizeof(zeros);
 	if (write(out_, zeros, delay_) != delay_)
 		return -1;
 	return 0;
@@ -75,7 +82,6 @@ int PipeModem::start(dcore::Modem &)
 int PipeModem::stop(dcore::Modem &)
 {
 	DBG("modem_test_stop...\n");
-	delay_ = 0;
 	return 0;
 }
 

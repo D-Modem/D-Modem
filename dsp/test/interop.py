@@ -79,10 +79,42 @@ for k in fd:
         cmd(k, c)
         if not wait(k, b"OK|ERROR", 5) or b"ERROR" in buf[k]: print(k, c, buf[k]); done(False)
         buf[k] = b""
-cmd("modemB", "ATA"); cmd("modemA", "ATD")
-ok = wait("modemA", b"(CONNECT[^\r]*|NO CARRIER|NO ANSWER|BUSY)\r", 90) and wait("modemB", b"(CONNECT[^\r]*|NO CARRIER)\r", 15)
-print("A:", buf["modemA"]); print("B:", buf["modemB"])
-if not (b"CONNECT" in buf["modemA"] and b"CONNECT" in buf["modemB"]): done(False)
+# CALLS=<n>: that many calls in a row, the data checked on the last one
+# (the modems may remember the line from the ones before, V.92's quick
+# connect); DIAL=<number> to dial
+for call in range(int(os.environ.get("CALLS", "1"))):
+    if call:
+        # hang up: escape both, ATH, wait for the line to clear
+        time.sleep(1.5)
+        for k in fd: os.write(fd[k], b"+++")
+        time.sleep(1.5)
+        for k in fd:
+            buf[k] = b""
+            cmd(k, "ATH")
+            if not wait(k, b"OK", 10): print(k, "ATH", buf[k]); done(False)
+        time.sleep(2)
+        # RESTART_B=1: modemB a new process for the next call
+        if os.environ.get("RESTART_B"):
+            pb.kill(); os.close(fd["modemB"])
+            pb = start(exe_b, "modemB2", ab_r, ba_w)
+            while True:
+                m = re.search(r"created (\S+): (\S+)", pb.stdout.readline().decode(errors="replace"))
+                if m: break
+            lf = open(os.path.join(os.environ.get("LOG_DIR", d), "modemB2.log"), "wb")
+            threading.Thread(target=lambda p=pb, lf=lf: [(lf.write(l), lf.flush()) for l in p.stdout], daemon=True).start()
+            fd["modemB"] = os.open(m.group(2), os.O_RDWR | os.O_NOCTTY); tty.setraw(fd["modemB"])
+            buf["modemB"] = b""
+            for c in ["ATZ"] + [x for x in os.environ.get("PROTO_B", proto).split(";") if x]:
+                cmd("modemB", c)
+                if not wait("modemB", b"OK", 5): print("modemB", c, buf["modemB"]); done(False)
+                buf["modemB"] = b""
+        buf = {k: b"" for k in fd}
+    cmd("modemB", "ATA"); cmd("modemA", "ATD" + os.environ.get("DIAL", ""))
+    t_call = time.time()
+    ok = wait("modemA", b"(CONNECT[^\r]*|NO CARRIER|NO ANSWER|BUSY)\r", 90) and wait("modemB", b"(CONNECT[^\r]*|NO CARRIER)\r", 15)
+    print("A:", buf["modemA"]); print("B:", buf["modemB"])
+    print("call %d: %.1f s to CONNECT" % (call + 1, time.time() - t_call))
+    if not (b"CONNECT" in buf["modemA"] and b"CONNECT" in buf["modemB"]): done(False)
 # NET_SYNC: netsim's NET_DROP, NET_STEP and NET_NOISE times count from here
 if net and os.environ.get("NET_SYNC"):
     import signal
