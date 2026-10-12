@@ -1110,7 +1110,7 @@ int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		txm = TXM_AA;
 	} else if (rt && rt->ans_sent) {
 		/* from V.8: the answer tone (ANSam) is already sent */
-		rt->ans_sent = 0;
+		rt->ans_sent = rt->after_v8 = 0;
 		state = A_GAP;
 		txm = TXM_SILENCE;
 	} else {

@@ -241,7 +241,12 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		struct dp_runtime *rt = (struct dp_runtime *)
 			modem_get_param(m, MDMPRM_DPRUNTIME);
 		state = FSK_ANS_SILENCE;
-		if (rt && rt->ans_sent) {
+		if (rt && rt->after_v8) {
+			/* after V.8: our mark at once, the caller's
+			   carrier comes */
+			rt->after_v8 = rt->ans_sent = 0;
+			state = FSK_TRAIN;
+		} else if (rt && rt->ans_sent) {
 			/* automode fallback: the answer tone was sent */
 			rt->ans_sent = 0;
 			state = FSK_ANS_GAP;

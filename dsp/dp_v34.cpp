@@ -504,6 +504,7 @@ struct V34Pump : Pump {
 	int v8_remote_v34();
 	int v8_remote_mod(int k);
 	int v8_choice();
+	int v8_handover();
 	int v8_v90();
 	int v8_v91();
 	void v91_start();
@@ -858,6 +859,30 @@ int V34Pump::v8_choice()
 	if (m3 & V8_MOD3_V21)
 		return DP_V21;
 	return 0;
+}
+
+static const char *v8_dp_name(int dp)
+{
+	return dp == DP_V32BIS ? "V.32bis" : dp == DP_V22BIS ? "V.22bis" :
+		dp == DP_V23 ? "V.23" : "V.21";
+}
+
+/* after CJ (the caller: sent, the answerer: 75 ms after it), the
+   modulation V.8 agreed on: its pump goes on from there (the answer
+   tone sent, no automode) */
+int V34Pump::v8_handover()
+{
+	if (rt) {
+		/* (calling, only the FSK pumps look at it: the V.32bis and
+		   V.22bis callers do not clear it for a later fallback) */
+		rt->after_v8 = !caller || v8_dp == DP_V21 || v8_dp == DP_V23;
+		if (!caller)
+			rt->ans_sent = 1;
+		else if (v8_dp == DP_V32BIS)
+			rt->v32_automode = 1;
+	}
+	modem_set_param(modem, MDMPRM_DP_REQUESTED, v8_dp);
+	return DPSTAT_CHANGEDP;
 }
 
 /* V.90 with us as the digital modem: both offer it */
@@ -2494,8 +2519,22 @@ int V34Pump::handshake()
 				DSP_DBG("v34: on hold: CM without modulations\n");
 				return DPSTAT_ERROR;
 			}
-			if (!v8_remote_v34())
-				return fallback("no V.34 in CM");
+			v8_dp = 0;
+			if (!v8_remote_v34()) {
+				/* JM (what both have), CJ, then the best of it
+				   (our CM's offer is all of them) */
+				v8_dp = v8_choice();
+				if (!v8_dp)
+					return fallback("no V.34 in CM");
+				DSP_DBG("v34: V.8 agreed on %s\n",
+					v8_dp_name(v8_dp));
+				set_state(V8A_JM);
+				v8_make_msg(&v8tx);
+				fsk.init(1650, 1850, V34_TONE_AMP, srate);
+				fsk_phase = 1;
+				txm = TXM_FSK;
+				break;
+			}
 			pcm = v8_v90();
 			v91_on = v8_v91();
 			set_state(V8A_JM);
@@ -2525,6 +2564,8 @@ int V34Pump::handshake()
 		}
 		break;
 	case V8A_GAP:
+		if (c >= ms2samples(75, srate) && v8_dp)
+			return v8_handover();
 		if (c >= ms2samples(75, srate) && v91_on) {
 			v91_start();
 			break;
@@ -2662,9 +2703,7 @@ int V34Pump::handshake()
 				if (!v8_dp)
 					return fallback("no V.34 in JM");
 				DSP_DBG("v34: V.8 agreed on %s\n",
-					v8_dp == DP_V32BIS ? "V.32bis" :
-					v8_dp == DP_V22BIS ? "V.22bis" :
-					v8_dp == DP_V23 ? "V.23" : "V.21");
+					v8_dp_name(v8_dp));
 				set_state(V8C_CJ);
 				v8tx.make_cj();
 				v8tx_repeat = 0;
@@ -2685,15 +2724,8 @@ int V34Pump::handshake()
 		if (v8tx.pos >= v8tx.n && fsk_bit_edge()) {
 			set_state(V8C_GAP);
 			txm = TXM_SILENCE;
-			if (v8_dp) {
-				if (v8_dp == DP_V32BIS && rt)
-					rt->v32_automode = 1;
-				if (rt)
-					rt->after_v8 = 1;
-				modem_set_param(modem, MDMPRM_DP_REQUESTED,
-						v8_dp);
-				return DPSTAT_CHANGEDP;
-			}
+			if (v8_dp)
+				return v8_handover();
 		}
 		break;
 	case V91_RUN:           /* process() runs it */

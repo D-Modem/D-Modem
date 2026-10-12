@@ -842,9 +842,11 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	tx_mode = TX_SILENCE;
 	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
 	if (!caller_ && rt && rt->ans_sent) {
-		/* automode fallback from V.32bis: the answer tone was sent */
+		/* automode fallback from V.32bis: the answer tone was sent
+		   (after V.8, agreed: no automode) */
 		rt->ans_sent = 0;
-		automode = 1;
+		automode = !rt->after_v8;
+		rt->after_v8 = 0;
 		g1270.init(1270, srate_ / 50, srate_);
 		g1070.init(1070, srate_ / 50, srate_);
 		state = A_GAP;

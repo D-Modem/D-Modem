@@ -80,7 +80,9 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   these, what the CM has. Calling, a JM without V.34 is answered with CJ
   and the call goes on in the best modulation the JM has (V.32bis,
   V.22bis, V.23, V.21; an FSK caller starts its carrier at once, the
-  answerer waits for it). Answering, a CM without V.34, or a V.32
+  answerer waits for it). Answering, a CM without V.34 gets its JM and,
+  after CJ and 75 ms, the best modulation of it, its pump without the
+  answer tone and without automode; a CM with none of ours, or a V.32
   calling modem (1800 Hz AA), hands the call to the V.32bis pump. As in V.32bis Annex A, that falls
   back to V.22bis after 3 s, and V.22bis to V.21 after 3 s more of
   unanswered USB1, V.21 to V.23 and V.23 to Bell 103 after 3 s more
@@ -1102,7 +1104,7 @@ the port accesses the harness does not know, `HSF_DEBUG=2` every access.
 | V32B,0 / 132 | CONNECT | CONNECT |
 | V22B / 122 | CONNECT | CONNECT |
 | V21,0 / 21 | CONNECT | - |
-| V21, V23C, V22B, V32B (automode) / 34 (V.8) | - | CONNECT: V.21, V.23, V.22bis, V.32bis |
+| V21, V23C, V22B, V32B (automode) / 34 (V.8) | CONNECT: V.21, V.23, V.22bis, V.32bis | CONNECT: V.21, V.23, V.22bis, V.32bis |
 | V90 / 90 (V.90, the open modem digital) | CONNECT 52000/33600 | - |
 | V92 / 92 (V.92, PCM upstream) | CONNECT 52000/41333 | - |
 
@@ -1127,7 +1129,8 @@ after the caller's mark (again also against itself, calling with
 to it. Our V.8 caller does: its CM now offers V.22bis, V.23 and V.21 as
 well, and a JM with one of these (the HSF modem's, answering with
 `+MS=V21` and so on) gets CJ and that modulation, the FSK caller's
-carrier first (as the HSF modem's own caller does).
+carrier first (as the HSF modem's own caller does). Answering, its CM up
+to one of these gets our JM of it and, after CJ, that modulation.
 
 Its V.32bis (and V.32) caller went silent after our answerer's AC/CA
 exchange and never answered our R1. Its own answerer, after the reversal
