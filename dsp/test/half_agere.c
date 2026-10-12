@@ -21,9 +21,9 @@
  *    Its serial side is a virtual 16550 (read_vuart_port and
  *    write_vuart_port) between it and the pty.
  *
- *    The library is not in this tree (its licence is Agere's); build with
- *    -DDMODEM_AGERE_LIB=<dir with agrsm_core.o> (agrsm-20070804: the
- *    object with LXHardwareInfoCreate weakened, as its Makefile makes it).
+ *    The library is test/agere/agrsm_core.o (agrsm-20070804: the object
+ *    with LXHardwareInfoCreate weakened, as its Makefile makes it);
+ *    -DDMODEM_AGERE_LIB=<path> for another copy of it.
  *    AGERE_DEBUG=1 prints its log and the port accesses we do not know.
  */
 

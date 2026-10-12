@@ -4,8 +4,8 @@ This directory is a reimplementation (C++) of the interface that the
 binary-only `dsplibs.o` (Smart Link's DSP library) gives to the slmodemd
 modem core. It exports the same entry points, so the modem core builds
 against it unchanged. slmodemd and libdmodem use only this code; the
-original library, `test/dsplibs.o`, is kept as a test peer for the
-interop tests.
+original library, `test/smartlink/dsplibs.o`, is kept as a test peer for
+the interop tests.
 
 The interface between the data pumps and a modem core is in this
 directory, with C linkage, as the original library has it:
@@ -843,8 +843,8 @@ at 38 dB, 28800 at 35 dB, 26400 at 33 dB, 24000 at 30 dB, 21600 at
 `FAR_DELAY=<samples>` delays the far one (200 ms: still 31200 bit/s).
 
 `interop` connects two `modem_half` processes with pipes. One process is
-linked with `test/dsplibs.o` on slmodemd's old C core (`test/legacy/`: the
-original library calls into it), the other with this code on the modem
+linked with `test/smartlink/dsplibs.o` on slmodemd's old C core
+(`test/legacy/`: the original library calls into it), the other with this code on the modem
 core (`../core`). Each call goes through the full modem core: AT commands,
 V.42/LAPM detection and data in both directions. Results at the time of writing:
 
@@ -892,8 +892,8 @@ train first, so the receiver has an equalizer to start from.
 
 ### Against the Agere soft modem
 
-`half_agere` runs the Agere Systems soft modem library (`test/agrsm_core.o`
-of agrsm 2.1.40, i386) in user space on an emulated Intel ICH modem
+`half_agere` runs the Agere Systems soft modem library
+(`test/agere/agrsm_core.o` of agrsm 2.1.40, i386) in user space on an emulated Intel ICH modem
 controller and Si3038 codec; `ctest -L agere -j8` calls it from and to the
 open modem. Results at the time of writing:
 
@@ -955,7 +955,7 @@ renamed `k_<name>` (`sm56_obj.cmake`) and provided by the harness, which
 emulates an Intel ICH modem controller with a Motorola "MOTf" codec on
 trapped port I/O, patches the module's few `current` reads, and resamples
 between the line's 8000 Hz and the codec's rate (7200 Hz idle, 9600 Hz
-for V.90). The module is `test/sm56.ko` as Motorola shipped it (sha256
+for V.90). The module is `test/sm56/sm56.ko` as Motorola shipped it (sha256
 `a757fd85...`; that build only, the patched places are checked); the
 build renames its imports into `sm56k.o`. `ctest -L sm56 -j8` runs the
 tests. `SM56_DEBUG=1` prints its `printk`s.

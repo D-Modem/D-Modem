@@ -81,7 +81,7 @@ endif()
 # --- interop: modem_half with the original library and with the open
 #     data pumps (32 bit like the blob), in real time through
 #     interop.py / fax_interop.py, with netsim for the G.711 network.
-#     The original library (dsplibs.o here, Smart Link's binary-only
+#     The original library (smartlink/dsplibs.o, Smart Link's binary-only
 #     DSP library) is a 32 bit i386 object: -m32 on x86_64.
 set(DMODEM_M32 "")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
@@ -109,7 +109,7 @@ foreach(_rate 9600 8000)
 			add_executable(${_n} ${C}/modem_half.cpp
 				${C}/modem_cmdline.cpp ${DMODEM_LEGACY_SRCS}
 				${DMODEM_LINK_SRCS}
-				${CMAKE_CURRENT_SOURCE_DIR}/dsplibs.o)
+				${CMAKE_CURRENT_SOURCE_DIR}/smartlink/dsplibs.o)
 			target_include_directories(${_n} PRIVATE ${C} ${S}
 				${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
 			set(_l -no-pie -Wl,-z,noexecstack)
@@ -132,7 +132,7 @@ endforeach()
 
 # the Agere Systems soft modem as another peer (half_agere.c): its library,
 # agrsm_core.o of agrsm-20070804
-set(DMODEM_AGERE_LIB "${CMAKE_CURRENT_SOURCE_DIR}/agrsm_core.o" CACHE
+set(DMODEM_AGERE_LIB "${CMAKE_CURRENT_SOURCE_DIR}/agere/agrsm_core.o" CACHE
 	FILEPATH "agrsm_core.o of the Agere soft modem (interop tests)")
 if(EXISTS "${DMODEM_AGERE_LIB}")
 	add_executable(half_agere half_agere.c ${DMODEM_AGERE_LIB})
@@ -154,7 +154,7 @@ endif()
 
 # Motorola's SM56 soft modem as a peer (half_sm56.c): sm56.ko of
 # sm56-06.09.05 for Fedora Core 3's kernel 2.6.9, its imports renamed
-set(DMODEM_SM56_KO "${CMAKE_CURRENT_SOURCE_DIR}/sm56.ko" CACHE
+set(DMODEM_SM56_KO "${CMAKE_CURRENT_SOURCE_DIR}/sm56/sm56.ko" CACHE
 	FILEPATH "sm56.ko of the Motorola SM56 soft modem (interop tests)")
 if(EXISTS "${DMODEM_SM56_KO}")
 	set(_sm56o ${CMAKE_CURRENT_BINARY_DIR}/sm56k.o)

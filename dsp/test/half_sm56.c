@@ -26,7 +26,7 @@
  *    mot_write, and its receive path into the tty's flip buffer, whose
  *    work we run): a tty_struct of 2.6.9 with only what it uses.
  *
- *    The module is test/sm56.ko as Motorola shipped it (sha256
+ *    The module is test/sm56/sm56.ko as Motorola shipped it (sha256
  *    a757fd85...; -DDMODEM_SM56_KO=<path> for another copy of it);
  *    sm56_obj.cmake renames its imports at build time.  It must be that
  *    build: the places patched are checked.  SM56_DEBUG=1 prints its printk
