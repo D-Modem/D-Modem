@@ -129,7 +129,7 @@ void PipeModem::pace(int samples)
 		usleep(ahead * 1e6);
 }
 
-int PipeModem::line()
+int PipeModem::line(bool rd)
 {
 	char inbuf[4096], outbuf[4096];
 	const int frame = HALF_FRAME * 2;
@@ -140,6 +140,8 @@ int PipeModem::line()
 		next_sync_ += sync_;
 		dte_input();
 	}
+	if (!rd)
+		goto pending;
 	count = read(in_, pend_ + npend_, sizeof(pend_) - npend_);
 	if (sync_ && count > 0) {
 		struct timeval tv;
@@ -159,6 +161,7 @@ int PipeModem::line()
 		return 0;
 	}
 	npend_ += count;
+pending:
 	count = npend_ / frame * frame;
 	if (count > (int)sizeof(inbuf) / frame * frame)
 		count = sizeof(inbuf) / frame * frame;
@@ -239,6 +242,10 @@ int PipeModem::line()
 		delay_ += n;
 		pending_delay_ -= n / 2;
 	}
+	/* PIPE_SYNC stops at its samples: on with what is left, else it
+	   may hold the line's last samples with nothing more to read */
+	if (sync_ && npend_ >= frame)
+		return line(false);
 	return 0;
 }
 

@@ -47,7 +47,8 @@ public:
 	unsigned long now_ms() override;
 
 private:
-	int line();             /* the line's audio is readable */
+	int line(bool rd = true);       /* the line's audio is readable (rd:
+					   read it; else what is left) */
 	void pace(int samples);
 
 	dcore::Modem *m_ = nullptr;

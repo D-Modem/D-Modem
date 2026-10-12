@@ -368,10 +368,16 @@ static int modem_test_run(struct modem_test *modems)
 				//DBG("dev read...\n");
 				/* the modem core wants whole periods: pass the
 				   line samples on in frames of HALF_FRAME */
+				int left = 0;
+			sync_again:
 				if (sync_n && line_samples >= next_sync) {
 					next_sync += sync_n;
 					if (sync_input(t) < 0)
 						return -1;
+				}
+				if (left) {
+					count = 0;
+					goto sync_left;
 				}
 				count = read(t->in,pend + npend,sizeof(pend) - npend);
 				if(count < 0) {
@@ -393,6 +399,7 @@ static int modem_test_run(struct modem_test *modems)
 					line_at = tv.tv_sec + tv.tv_usec * 1e-6;
 				}
 				npend += count;
+			sync_left:
 				count = npend / (HALF_FRAME * 2) * (HALF_FRAME * 2);
 				if (count > sizeof(inbuf) / (HALF_FRAME * 2) * (HALF_FRAME * 2))
 					count = sizeof(inbuf) / (HALF_FRAME * 2) * (HALF_FRAME * 2);
@@ -483,6 +490,13 @@ static int modem_test_run(struct modem_test *modems)
 					}
 					t->delay += t->modem->update_delay*2;
 					t->modem->update_delay = 0;
+				}
+				/* PIPE_SYNC stops at its samples: on with
+				   what is left, else it may hold the line's
+				   last samples with nothing more to read */
+				if (sync_n && npend >= HALF_FRAME * 2) {
+					left = 1;
+					goto sync_again;
 				}
 			}
 		}
