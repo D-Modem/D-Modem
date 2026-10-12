@@ -518,9 +518,8 @@ taps on the precoder's output made no difference). The grid mse rises
 from about 0.012 to 0.09 in some 40 s without errors; our renegotiation
 down waits until then (rms 0.3 of the half distance) and designs anew for
 the timing as it is: over 180 s that is a renegotiation every 37 to 40 s,
-2.1 s each, back at the same rate, and all the data through. With the prefilter we change the
-rate by renegotiation, not a fast parameter exchange: the analogue modem
-takes up the new constellation before B1u of one. In data mode the analogue modem's tone A retrains. The echo canceller (the V.34 pump's,
+2.1 s each, back at the same rate, and all the data through. In data
+mode the analogue modem's tone A retrains. The echo canceller (the V.34 pump's,
 trained while we send Sd to Jd) could not be tested: netsim's echo
 (`NET_ECHO`) through its 9600 Hz converters is not one an 8000 Hz
 canceller cancels, for V.90 either.
@@ -562,11 +561,29 @@ decisions switch at that symbol. To the original library ours takes
 0.5 s (a renegotiation about 2): B1d without errors, B1u with a few in
 its first two frames, as after a renegotiation. Our renegotiations go
 up by fast parameter exchange (the same line with less noise), down by
-renegotiation (train again); with the prefilter both by renegotiation
-(the library then sends SUVu', E2u and FB1u on the new constellation
-already, and starts its precoder and prefilter anew at SUVu, which our
-receiver does not follow: the test runs without the prefilter). The
-original library answers ours but
+renegotiation (train again).
+
+With the prefilter the original library does three things differently:
+
+- it starts its precoder and prefilter anew at SUVu (and at B1u). Its
+  long precoder makes RM' unreadable, so SUVu is taken by the time,
+  384T of RM and 24T of RM' after RM's start (9.9.2.2.2/V.92). The
+  receiver rebuilds the line signal before it from its decisions (the
+  precoder's output, through the prefilter) and takes it away as it does
+  TRN2u's before B1u;
+- once it has our CPd it sends SUVu', E2u and FB1u on the new points,
+  with the old moduli, and the rest of the CPd from B1u on. We see it in
+  the grid mse on the new points against the old, and slice on the new
+  ones from there;
+- so the new points have to suit the old moduli: as many, no further
+  apart (else its signal goes beyond its power and some classes of the
+  trellis frame's 4th symbol have no point). With the prefilter a fast
+  parameter exchange never goes down, then (a renegotiation does): up
+  when the margin allows the next rate, or at the rate it has.
+  `interop_v92_fpe_prefilter` asks for 30666 and gets the exchange at
+  38666, through to B1u and on with the data.
+
+The original library answers ours but
 starts none (its `V92Modulator::initiateFPE` is only called on our Rf),
 so our answer to RM is not tested.
 

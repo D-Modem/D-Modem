@@ -274,8 +274,7 @@ set_tests_properties(interop_v92_reneg_noise PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=15;BLOB_V92FULL=1;NET_NOISE=26:60;NET_NOISE_DIR=ab;EXPECT_B=V.92 renegotiated 56000/[23]")
 # fast parameter exchange (9.9/V.92): ours after 3 s of data, to 30 666
 # bit/s upstream (DSP_V92_FPE=<ms>:<drn>), in the data mode modulation.
-# Without the prefilter: with it the analogue modem takes up the new
-# constellation before B1u, and we renegotiate instead
+# Without the prefilter (below with it)
 add_test(NAME interop_v92_fpe COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 	"ATX3;AT+MS=92")
@@ -303,6 +302,14 @@ set_tests_properties(interop_v92_moh_request_ack PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=40;BLOB_V92FULL=1;NET_MOH=ack:1@22;MIDCALL_B=12:AT+PMHR=5\;WAIT 8;EXPECT_DROP=1;EXPECT_B=(?s)MHack, T1 10 s: the remote on hold for 5 s.*on hold, ANSam for 10 s.*on hold for T1: disconnect")
 set_tests_properties(interop_v92_moh_request_nack PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=35;BLOB_V92FULL=1;NET_MOH=nack@22;MIDCALL_B=12:AT+PMHR\;WAIT 3;EXPECT_DROP=1;EXPECT_B=(?s)MHnack: MHfrr.*on hold \\(reconnect\\), ANSam.*on hold for T1: disconnect")
+# and with the prefilter: not down (the original library sends SUVu' to
+# FB1u on the new points with the old moduli), so at the rate it has; the
+# library's sequence through to B1u, and the data goes on
+add_test(NAME interop_v92_fpe_prefilter COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_fpe_prefilter PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_FPE=3000:6;EXPECT_B=(?s)prefilter not down.*SUVu'.*fast parameter exchange 1 done.*V.92 renegotiated 56000/3[89]")
 # without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream
 add_test(NAME interop_v92_nopcmup COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>

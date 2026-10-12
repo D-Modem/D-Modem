@@ -32,6 +32,7 @@
  *
  */
 
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -436,6 +437,8 @@ float V92Up::equalize(long s)
 	int i;
 
 	if (pf_on) {
+		if (s == pf_rst)
+			pf_reset(s);
 		/* the point: the level at the delay, through the few taps
 		   that follow the timing */
 		for (i = 0; i < V92_PF_F; i++)
@@ -842,6 +845,8 @@ void V92Up::symbol(float y)
 					eqL += pf_d + V92_PF_F / 2 - ahead;
 				memset(pf_f, 0, sizeof(pf_f));
 				pf_f[V92_PF_F / 2] = 1 / pf_cd;
+				memset(pf_xr, 0, sizeof(pf_xr));
+				pf_rst = -1;
 				dmse_g = 0;
 			}
 			dscr = 0;
@@ -973,12 +978,23 @@ void V92Up::fpe_design(int drn)
 		if (d > 19 || (up_mask && !((up_mask >> (d - 1)) & 1)) ||
 		    !pf_rate(d))
 			d = cpd.drn;
+		/* the analogue modem sends SUVu', E2u and FB1u on the new
+		   points already, with the old moduli: the points of a
+		   lower rate (further apart) would take its signal beyond
+		   its power, and the old moduli need as many as before (on
+		   the trellis frame's 4th symbol it has no point for a
+		   class beyond them). Not down, then (a renegotiation) */
+		if (d < cpd.drn) {
+			DSP_DBG("v92: FPE: with the prefilter not down: at "
+				"%d bit/s\n", (cpd.drn + 17) * 8000 / 6);
+			d = cpd.drn;
+		}
 		cpd_fpe = cpd;
-		pf_cpd(&cpd_fpe, d);
+		int gap = pf_cpd(&cpd_fpe, d);
 		cpd_fpe.ack = 0;
 		DSP_DBG("v92: FPE CPd: %d bit/s, M %d, %d points (gap %d)\n",
 			(d + 17) * 8000 / 6, cpd_fpe.M[0], 2 * cpd_fpe.lc[0],
-			pf_gap[d]);
+			gap);
 		return;
 	}
 
@@ -1050,6 +1066,12 @@ int V92Up::fpe_frame(const V92Cpd *c)
 		fpe_rm = rm ? fpe_rm + 1 : 0;
 		if (fpe_rm >= 2) {
 			DSP_DBG("v92: RM at symbol %ld\n", sym);
+			/* SUVu follows 384T of RM and 24T of RM'
+			   (9.9.2.2.2/V.92), and the analogue modem starts
+			   its transmitter anew for it */
+			fpe_suv = ddn - 24 + 408;
+			if (pf_on)
+				pf_rst = sym - (dsn - 1 - fpe_suv);
 			fpe_rx = 1;
 			fpe = 1;
 			if (!rn) {
@@ -1059,6 +1081,13 @@ int V92Up::fpe_frame(const V92Cpd *c)
 		}
 		return rm;
 	case 1:
+		/* with the prefilter RM' is lost in the long precoder's
+		   change: by the time */
+		if (pf_on) {
+			if (ddn - 12 < fpe_suv)
+				return 1;
+			goto suvu;
+		}
 		if (rmp) {
 			DSP_DBG("v92: RM' at symbol %ld\n", sym);
 			fpe_rx = 2;
@@ -1067,10 +1096,13 @@ int V92Up::fpe_frame(const V92Cpd *c)
 	case 2:
 		if (rmp)
 			return 1;
+	suvu:
 		/* SUVu: the analogue modem's scrambler and differential
 		   encoder start from zero */
 		DSP_DBG("v92: FPE: SUVu from symbol %ld\n", sym);
 		fpe_rx = 3;
+		fpe_eo = fpe_en = 0;
+		fpe_early = 0;
 		dscr = 0;
 		dprev = 0;
 		fr.init(V92F_CP);
@@ -1218,11 +1250,15 @@ void V92Up::trellis_frame()
 
 void V92Up::data_symbol(float y)
 {
-	/* a fast parameter exchange: B1u on the new CPd */
-	if (fpe_rx == 4 && !fpe_sw && dsn == fpe_b1) {
-		cpd_old = cpd;
-		cpd = cpd_fpe;
-		fpe_sw = 1;
+	/* a fast parameter exchange: B1u on the new CPd (with the
+	   prefilter on it already, and the analogue modem's transmitter
+	   starts anew) */
+	if (fpe_rx == 4 && dsn == fpe_b1) {
+		if (!fpe_early) {
+			cpd_old = cpd;
+			cpd = cpd_fpe;
+			fpe_sw = 1;
+		}
 		DSP_DBG("v92: FPE: B1u at symbol %ld\n", sym);
 	}
 	dsn++;
@@ -1244,6 +1280,32 @@ void V92Up::data_symbol(float y)
 	eg = u - (2 * eta + 1);
 	dmse += 0.005 * (err * err - dmse);
 	dmse_g += 0.005 * (eg * eg - dmse_g);
+	/* with the prefilter: has the analogue modem taken up our new
+	   CPd? (the grid mse on it, against the old one's) */
+	if (pf_on && fpe_rx == 3 && cpd_sent && !fpe_early) {
+		float un = pf_grid(&cpd_fpe, y);
+		int en = (int)floorf(un / 2);
+		if (en < -cpd_fpe.lc[0])
+			en = -cpd_fpe.lc[0];
+		if (en > cpd_fpe.lc[0] - 1)
+			en = cpd_fpe.lc[0] - 1;
+		un -= 2 * en + 1;
+		fpe_eo += 0.05 * (eg * eg - fpe_eo);
+		fpe_en += 0.05 * (un * un - fpe_en);
+		if (fpe_en < 0.05 && fpe_eo > 4 * fpe_en) {
+			DSP_DBG("v92: FPE: the analogue modem on the new CPd "
+				"at symbol %ld (grid mse %.3f, %.3f on the "
+				"old)\n", sym, fpe_en, fpe_eo);
+			/* its points, that is: the frames keep the old
+			   moduli until B1u (its transmitter takes up the
+			   rest of the CPd there) */
+			fpe_early = 1;
+			cpd_old = cpd;
+			cpd = cpd_fpe;
+			fpe_sw = 1;
+			fpe_b1 = LONG_MAX;
+		}
+	}
 	/* decisions near the middle between two points */
 	if (fabsf(eg) > 0.6f)
 		dfar++;
@@ -1269,16 +1331,13 @@ void V92Up::data_symbol(float y)
 		     cpd.drn < 19)) {
 			DSP_DBG("v92: margin %.1f against %.1f: %s\n", q,
 				margin_used, rn_low ? "renegotiate down" :
-				pf_on ? "renegotiate up" :
 				"fast parameter exchange up");
 			/* down: the line changed, train anew; up: the
-			   same line with less noise, the rate alone (but
-			   with the prefilter, the analogue modem takes up
-			   the new constellation before B1u of a fast
-			   parameter exchange: train anew too) */
-			if (rn_low || pf_on)
+			   same line with less noise, the rate alone (with
+			   the prefilter if its design has the next rate) */
+			if (rn_low)
 				rn_req = 1;
-			else
+			else if (!pf_on || pf_rate(cpd.drn + 1))
 				fpe_req = 1;
 			rn_low = rn_high = 0;
 		}
@@ -1286,6 +1345,15 @@ void V92Up::data_symbol(float y)
 	/* faster than in training: the analogue modem's signal wanders a
 	   little (with A-law, slower steps let the mse double in 10 s) */
 	adapt(sym, err, 0.002f);
+	if (pf_on) {
+		/* the precoder's output, from the decision (for a new
+		   start of the analogue modem's transmitter) */
+		double xh = t, lim = 4.0 * cpd.pts[0][cpd.lc[0] - 1];
+		for (int k = 0; k < V92_PF_B && sym - 1 - k >= pf_s0; k++)
+			xh -= pf_b[k] * pf_xr[(sym - 1 - k) & (V92_PF_XR - 1)];
+		pf_xr[sym & (V92_PF_XR - 1)] =
+			xh > lim ? lim : xh < -lim ? -lim : xh;
+	}
 	/* with precoding, the transmitter has taken the data symbols' own
 	   interference away: only that of those before B1u is left */
 	push(dh, b_frozen ? 0 : t);
@@ -1352,16 +1420,16 @@ void V92Up::decided(int eta)
 				frame_bits(bits[j]);
 				z += !bits[j];
 			}
-			/* with the prefilter, SUVu' and E2u can go (the
-			   analogue modem's filters start anew for them):
-			   then FB1u, frames of ones (that no SUVu or CPu
-			   has, with a zero every 17 bits) */
 			if (z == nb && got_ack) {
 				fpe_rx = 4;
 				fpe_fb = 0;
 				derrs = 0;
-				/* 48 frames of FB1u, then B1u */
+				/* 48 frames of FB1u, then B1u (and with the
+				   prefilter, the analogue modem's transmitter
+				   anew) */
 				fpe_b1 = idx + 1 + 48 * 12;
+				if (pf_on)
+					pf_rst = sym - (dsn - 1 - fpe_b1);
 				DSP_DBG("v92: FPE: E2u\n");
 			}
 			return;
@@ -1996,6 +2064,23 @@ double V92Up::pf_sample(long k)
 	return r;
 }
 
+/* the analogue modem's transmitter starts anew at symbol r: what the
+   line still has of the signal before it is like TRN2u's before B1u,
+   its line signal rebuilt from the decisions */
+void V92Up::pf_reset(long r)
+{
+	for (long m = r - V92_CH_POST - V92_PF_F; m < r; m++) {
+		double v = 0;
+		for (int i = 0; i < V92_PF_W && m - i >= pf_s0; i++)
+			v += pf_w[i] * pf_xr[(m - i) & (V92_PF_XR - 1)];
+		dring[m & (V92_DR - 1)] = v;
+	}
+	pf_s0 = r;
+	pf_rst = -1;
+	DSP_DBG("v92: the analogue modem's transmitter anew at symbol %ld\n",
+		r);
+}
+
 /* with the prefilter: the margin to hold the line to is what B1u and
    the first data had (the simulation's mse is only a guide) */
 void V92Up::pf_margin()
@@ -2009,7 +2094,7 @@ void V92Up::pf_margin()
 }
 
 /* CPd for drn with the prefilter */
-void V92Up::pf_cpd(V92Cpd *c, int drn)
+int V92Up::pf_cpd(V92Cpd *c, int drn)
 {
 	int K = 2 * (drn + 17), M, lc, j;
 	double sb = 0;
@@ -2020,7 +2105,8 @@ void V92Up::pf_cpd(V92Cpd *c, int drn)
 		sb += fabs(pf_b[j]);
 	lc = (int)ceil(M * (1 + sb)) + 2;
 	lc += lc & 1;
-	pf_points(pf_gap[drn], lc, pts);
+	int gap = pf_gap[drn];
+	pf_points(gap, lc, pts);
 	int ack = c->ack;
 	memset(c, 0, sizeof(*c));
 	c->ack = ack;
@@ -2046,6 +2132,7 @@ void V92Up::pf_cpd(V92Cpd *c, int drn)
 	if (getenv("DSP_V92_TRELLIS"))
 		c->trellis = atoi(getenv("DSP_V92_TRELLIS")) == 16 ? 0 :
 			atoi(getenv("DSP_V92_TRELLIS")) == 32 ? 1 : 2;
+	return gap;
 }
 
 /* the design with the prefilter; 0 if there is none (the receiver's feed

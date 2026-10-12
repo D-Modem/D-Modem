@@ -207,6 +207,7 @@ struct V92Up {
 	int fpe_rx;             /* 1 RM, 2 RM', 3 SUVu to E2u, 4 FB1u,
 				   5 B1u */
 	int fpe_rm, fpe_fb;     /* frames of RM, of FB1u */
+	long fpe_suv;           /* the decision where SUVu begins */
 	long fpe_b1;            /* B1u's first symbol (data symbols) */
 	long dsn, ddn;          /* data symbols in, decided */
 	V92Cpd cpd_fpe;         /* the new CPd */
@@ -262,6 +263,18 @@ struct V92Up {
 	   follow the analogue modem's timing as it wanders */
 #define V92_PF_F        9
 	double pf_f[V92_PF_F];
+	/* the precoder's outputs rebuilt from the decisions, by symbol,
+	   and where the analogue modem's transmitter starts anew (in a
+	   fast parameter exchange) */
+#define V92_PF_XR       256
+	double pf_xr[V92_PF_XR];
+	long pf_rst;
+	/* with the prefilter the analogue modem takes up the new
+	   constellation of a fast parameter exchange once it has our CPd
+	   (SUVu', E2u and FB1u on it): the grid mse on the old one and on
+	   the new, and whether we did too */
+	double fpe_eo, fpe_en;
+	int fpe_early;
 
 	void init(int alaw_, const V92Info1a *ia_, const long *fclock,
 		  long fbase);
@@ -286,8 +299,9 @@ struct V92Up {
 		   double *mseg);
 	int pf_rate(int drn);
 	int pf_design(const char *fix);
-	void pf_cpd(V92Cpd *c, int drn);
+	int pf_cpd(V92Cpd *c, int drn);
 	void pf_margin();
+	void pf_reset(long r);
 	double pf_sample(long k);
 	float pf_grid(const V92Cpd *c, float r) const;
 	float pf_point(const V92Cpd *c, int eta) const;
