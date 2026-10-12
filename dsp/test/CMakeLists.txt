@@ -191,6 +191,37 @@ if(EXISTS "${DMODEM_PCTEL_DIR}/dsp.o" AND EXISTS "${DMODEM_PCTEL_DIR}/control.o"
 	message(STATUS "tests: the PCTel HSP soft modem: ${DMODEM_PCTEL_DIR}")
 endif()
 
+# Conexant's HSF soft modem as a peer (half_hsf.c): hsfmodem-7.80.02.06oem's
+# engine (hsfengine), its AC'97 ICH codec module (hsfmc97ich) and its
+# soft DAA module (hsfsoar), their sections renamed per object, and the
+# modem's .inf and country file for its NVM
+set(DMODEM_HSF_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hsf" CACHE
+	PATH "objects and NVM files of the HSF soft modem (interop tests)")
+if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
+	set(_hsfo "")
+	foreach(_b hsfengine hsfmc97ich hsfsoar)
+		set(_o ${CMAKE_CURRENT_BINARY_DIR}/${_b}_r.o)
+		add_custom_command(OUTPUT ${_o}
+			COMMAND ${CMAKE_COMMAND} -DIN=${DMODEM_HSF_DIR}/${_b}.o
+				-DOUT=${_o} -DNAME=${_b} -DOBJDUMP=${CMAKE_OBJDUMP}
+				-DOBJCOPY=${CMAKE_OBJCOPY}
+				-P ${CMAKE_CURRENT_SOURCE_DIR}/hsf_obj.cmake
+			DEPENDS ${DMODEM_HSF_DIR}/${_b}.o hsf_obj.cmake
+			COMMENT "${_b}.o's sections renamed")
+		list(APPEND _hsfo ${_o})
+	endforeach()
+	add_executable(half_hsf half_hsf.c ${_hsfo})
+	set_source_files_properties(${_hsfo} PROPERTIES EXTERNAL_OBJECT TRUE
+		GENERATED TRUE)
+	target_compile_definitions(half_hsf PRIVATE
+		HSF_NVM_DIR="${DMODEM_HSF_DIR}")
+	target_compile_options(half_hsf PRIVATE ${DMODEM_M32} -g -O1)
+	target_link_options(half_hsf PRIVATE ${DMODEM_M32} -no-pie
+		-Wl,-z,noexecstack)
+	target_link_libraries(half_hsf PRIVATE m)
+	message(STATUS "tests: the Conexant HSF soft modem: ${DMODEM_HSF_DIR}")
+endif()
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(NOT Python3_FOUND)
 	return()
@@ -632,12 +663,43 @@ if(TARGET half_pctel)
 		ENVIRONMENT "${_env};NET=9600:8000:ulaw;PROTO_B=ATX3")
 endif()
 
+# the HSF soft modem (8000 Hz) and the open modem (9600 Hz) call each
+# other: V.22bis and V.34 both ways, V.32bis with the open modem calling
+# and V.21 with the HSF modem calling (see the README for the calls that
+# fail)
+if(TARGET half_hsf)
+	foreach(_p V21,0:21:hsf V22B:122:both V32B,0:132:open V34:34:both)
+		string(REPLACE ":" ";" _p ${_p})
+		list(GET _p 0 _a)
+		list(GET _p 1 _ms)
+		list(GET _p 2 _who)
+		if(NOT _who STREQUAL "open")
+			add_test(NAME hsf_${_ms}_hsf_calls COMMAND
+				${Python3_EXECUTABLE} ${_py}/interop.py
+				$<TARGET_FILE:half_hsf> $<TARGET_FILE:half_open>
+				"ATX3;AT+MS=${_a}")
+			set_tests_properties(hsf_${_ms}_hsf_calls PROPERTIES
+				LABELS hsf ENVIRONMENT
+				"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_ms}")
+		endif()
+		if(NOT _who STREQUAL "hsf")
+			add_test(NAME hsf_${_ms}_open_calls COMMAND
+				${Python3_EXECUTABLE} ${_py}/interop.py
+				$<TARGET_FILE:half_open> $<TARGET_FILE:half_hsf>
+				"ATX3;AT+MS=${_ms}")
+			set_tests_properties(hsf_${_ms}_open_calls PROPERTIES
+				LABELS hsf ENVIRONMENT
+				"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
+		endif()
+	endforeach()
+endif()
+
 # the calls run in real time and mostly wait, so they can run in parallel
 # (ctest -L interop -j8): each writes its modem logs to logs/<test>/
 get_property(_tests DIRECTORY PROPERTY TESTS)
 foreach(_t ${_tests})
 	get_test_property(${_t} LABELS _l)
-	if(_l MATCHES "interop|agere|sm56|spanpeer|pctel")
+	if(_l MATCHES "interop|agere|sm56|spanpeer|pctel|hsf")
 		set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT
 			"LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/logs/${_t}")
 	endif()

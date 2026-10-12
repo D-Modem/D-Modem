@@ -1062,6 +1062,44 @@ it stops its CPt about 70 ms after our Ri ends and retrains with tone A;
 the call then connects at V.34 33600 (data both ways). Holding Ri longer
 after CPt does not change it. Open, and so is V.92.
 
+### Against the Conexant HSF soft modem
+
+`half_hsf` runs Conexant's HSF soft modem (Linuxant's hsfmodem
+7.80.02.06oem) in user space: its engine (`hsfengine`, the controller and
+the data pumps), its AC'97 ICH codec module (`hsfmc97ich`) and its soft
+DAA module (`hsfsoar`), the driver's i386 objects as they are in
+`test/hsf/`, with the modem's `.inf` and country file for its NVM. CMake
+renames each object's `.ctors` and `.gnu.linkonce.*` sections for the
+object (`hsf_obj.cmake`): each has the same C++ names and the linker
+would keep only one. The harness provides the engine's OS layer
+(`cnxthsf_7800206oem_Os*`: memory, timers on the line's clock, I/O ports,
+the interrupt) and its NVM (the `HKR` lines of the `.inf` and the
+country's of `hsf.cty`), and models what the modules drive: an ICH's
+AC'97 bus master (PCM in and out, pausing and resuming at the position it
+was at), a secondary MC'97 codec (Conexant, 0x4358/0x5429) at 15999 Hz
+and the SmartDAA behind its register 0x7a. The modem's `ComCtrl` is the
+DTE, on a pty. The engine reads the TSC: the harness traps `rdtsc`
+(`PR_SET_TSC`) and gives the line's time at 1000 MHz. `ctest -L hsf -j8`
+runs the tests; `HSF_DEBUG=1` prints the modem's own messages and
+the port accesses the harness does not know, `HSF_DEBUG=2` every access.
+
+| HSF `AT+MS=` / ours | HSF caller → open answerer | open caller → HSF answerer |
+|---|---|---|
+| V34 / 34 | CONNECT | CONNECT |
+| V32B,0 / 132 | - | CONNECT |
+| V22B / 122 | CONNECT | CONNECT |
+| V21,0 / 21 | CONNECT | - |
+
+The ICH module ran off its ring buffer every 3.27 s at first: a word of
+its device (offset 0x280, 2 once the engine runs) makes it add 8 samples
+to each position it reads past 700, as for a codec that runs fast; the
+harness clears it before each interrupt (`HSF_KEEP8=1` keeps it). Open:
+our V.21 caller (it answers, but we never connect), its V.32bis caller,
+and V.90 and V.92 with it as the analogue modem: V.90 got to data once
+over A-law (52000/33600), but now we miss its CJ after our JM (it goes
+on with INFO0a while we wait), and not with µ-law; V.92 does quick
+connect and asks for PCM upstream, which fails.
+
 `MODEM_REC=<prefix>` makes `modem_half` record its line input and output
 (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
 interop scripts run the modems with. `WAV=<file>` makes `interop.py` save
@@ -1077,8 +1115,8 @@ calls in between are in it as well. For example:
 
 `PIPE_SYNC=<samples>` (`half_open`, `half_blob`), `AGERE_SYNC=<samples>`
 (`half_agere`), `SM56_SYNC=<samples>` (`half_sm56`),
-`SPANDSP_SYNC=<samples>` (`half_spandsp`) and `PCTEL_SYNC=<samples>`
-(`half_pctel`) make a call repeat exactly from run to run: the modems take
+`SPANDSP_SYNC=<samples>` (`half_spandsp`), `PCTEL_SYNC=<samples>`
+(`half_pctel`) and `HSF_SYNC=<samples>` (`half_hsf`) make a call repeat exactly from run to run: the modems take
 the DTE's commands only every that many line samples (data, once
 connected, at once), run their timers
 between half frames and keep time by the line; without them, where the
