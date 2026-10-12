@@ -744,4 +744,21 @@ and connects to this implementation at V.34.
 
 `MODEM_REC=<prefix>` makes `modem_half` record its line input and output
 (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
-interop scripts run the modems with.
+interop scripts run the modems with. `WAV=<file>` makes `interop.py` save
+the call as audio: a stereo 16 bit WAV at 8000 Hz of the line where it
+crosses the simulated network (after G.711; A, the caller, to B left, B to
+A right), from the first dial to the end of the data (or of the call that
+failed). It needs `NET` (netsim writes it, `NET_WAV`); with `CALLS` the
+calls in between are in it as well. For example:
+
+    NETSIM=build/dsp/test/netsim NET=9600:8000:ulaw BLOB_V92FULL=1 \
+      WAV=call.wav python3 dsp/test/interop.py build/dsp/test/half_blob \
+      build/dsp/test/half_open8 "ATX3;AT+MS=92"
+
+`PIPE_SYNC=<samples>` (`half_open`, `half_blob`) and `AGERE_SYNC=<samples>`
+(`half_agere`) make a call repeat exactly from run to run: the modems take
+the DTE's commands only every that many line samples, run their timers
+between half frames and keep time by the line; without them, where the
+commands meet the line depends on the scheduler. `AGERE_SYNC_PHASE` and
+`BLOB_SYNC_PHASE` move one side within the period, to try the alignments
+one by one.

@@ -238,6 +238,87 @@ static double gauss()
 	return sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
 }
 
+/* NET_WAV=<file>: the line as it crosses the network (8000 Hz, after
+   G.711), A -> B left and B -> A right, from the first SIGUSR2 to the
+   second (interop.py: from the dial to the end of the data); the header
+   is kept up to date, so the file is whole wherever it stops */
+static FILE *wav;
+static volatile sig_atomic_t wav_sig;   /* SIGUSR2s so far */
+static short *wav_q[2];
+static long wav_n[2], wav_cap[2], wav_frames;
+
+static void wav_header(void)
+{
+	unsigned char h[44];
+	unsigned long data = (unsigned long)wav_frames * 4;
+	static const unsigned char fmt[16] = {
+		1, 0, 2, 0, 0x40, 0x1f, 0, 0,   /* PCM, 2 ch, 8000 Hz */
+		0, 0x7d, 0, 0, 4, 0, 16, 0 };   /* 32000 B/s, 4, 16 bit */
+	memcpy(h, "RIFF", 4);
+	h[4] = (data + 36) & 255; h[5] = (data + 36) >> 8 & 255;
+	h[6] = (data + 36) >> 16 & 255; h[7] = (data + 36) >> 24 & 255;
+	memcpy(h + 8, "WAVEfmt ", 8);
+	h[16] = 16; h[17] = h[18] = h[19] = 0;
+	memcpy(h + 20, fmt, 16);
+	memcpy(h + 36, "data", 4);
+	h[40] = data & 255; h[41] = data >> 8 & 255;
+	h[42] = data >> 16 & 255; h[43] = data >> 24 & 255;
+	fseek(wav, 0, SEEK_SET);
+	fwrite(h, 1, 44, wav);
+	fseek(wav, 0, SEEK_END);
+}
+
+/* a network sample of one direction (ch 0: A -> B) */
+static void wav_put(int ch, int v)
+{
+	if (!wav || wav_sig != 1)
+		return;
+	if (wav_n[ch] == wav_cap[ch]) {
+		wav_cap[ch] = wav_cap[ch] ? 2 * wav_cap[ch] : 8192;
+		wav_q[ch] = (short *)realloc(wav_q[ch],
+					     wav_cap[ch] * sizeof(short));
+	}
+	wav_q[ch][wav_n[ch]++] = (short)v;
+}
+
+/* both directions' samples so far, side by side; at the end, the one
+   behind padded with silence */
+static void wav_flush(int end)
+{
+	long n = wav_n[0] < wav_n[1] ? wav_n[0] : wav_n[1], i;
+	if (!wav)
+		return;
+	if (end)
+		n = wav_n[0] > wav_n[1] ? wav_n[0] : wav_n[1];
+	for (i = 0; i < n; i++) {
+		short f[2];
+		f[0] = i < wav_n[0] ? wav_q[0][i] : 0;
+		f[1] = i < wav_n[1] ? wav_q[1][i] : 0;
+		fwrite(f, 2, 2, wav);
+	}
+	wav_frames += n;
+	for (i = 0; i < 2; i++) {
+		long k = wav_n[i] > n ? wav_n[i] - n : 0;
+		memmove(wav_q[i], wav_q[i] + n, k * sizeof(short));
+		wav_n[i] = k;
+	}
+	if (n)
+		wav_header();
+	fflush(wav);
+	if (end) {
+		fclose(wav);
+		wav = NULL;
+		fprintf(stderr, "netsim: %.1f s of the line in NET_WAV\n",
+			wav_frames / 8000.0);
+	}
+}
+
+static void on_wav(int sig)
+{
+	(void)sig;
+	wav_sig++;
+}
+
 /* samples of one direction: to 8000 Hz G.711 and on */
 static int run(struct dir *d, int a_out, int a_in)
 {
@@ -308,11 +389,13 @@ static int run(struct dir *d, int a_out, int a_in)
 						       v < -32768 ? -32768 : v);
 			} else
 				d->obuf[o++] = (short)g711(ibuf[i]);
+			wav_put(!a_out, g711(ibuf[i]));
 			continue;
 		}
 		if (d->rate_in == 8000 && !plain) {
 			/* the network, then the far codec (with the
 			   analogue loss or gain NET_GAIN on the way) */
+			wav_put(!a_out, g711(ibuf[i]));
 			m = rc_run(&d->rc, g711(ibuf[i]) * gain, y);
 			for (k = 0; k < m; k++) {
 				if (noise && noise_dir != 3)
@@ -327,14 +410,21 @@ static int run(struct dir *d, int a_out, int a_in)
 						       y[k] < -32768 ? -32768 : y[k]);
 			}
 		} else {
+			if (d->rate_in == 8000)
+				wav_put(!a_out, g711(ibuf[i]));
 			m = d->rs.run(ibuf[i] * gain_up, y);
-			for (k = 0; k < m; k++)
+			for (k = 0; k < m; k++) {
 				d->obuf[o++] = (short)g711((int)lrintf(y[k]));
+				if (d->rate_out == 8000)
+					wav_put(!a_out, d->obuf[o - 1]);
+			}
 		}
 	}
 	if (a_in)
 		for (i = 0; i < o; i++)
 			echo_buf[echo_w++ % ECHO_MAX] = d->obuf[i];
+	if (wav)
+		wav_flush(wav_sig > 1);
 	for (i = 0; i < o * 2; ) {
 		k = write(d->out, (char *)d->obuf + i, o * 2 - i);
 		if (k < 0 && errno == EINTR)
@@ -381,6 +471,16 @@ int main(int argc, char **argv)
 	rb = atoi(argv[2]);
 	alaw = !strcmp(argv[3], "alaw");
 	plain = getenv("NET_PLAIN") != NULL;
+	if (getenv("NET_WAV")) {
+		wav = fopen(getenv("NET_WAV"), "wb");
+		if (!wav)
+			perror(getenv("NET_WAV"));
+		else {
+			wav_header();
+			signal(SIGUSR2, on_wav);
+			atexit([] { wav_flush(1); });
+		}
+	}
 	if (getenv("NET_SYNC")) {
 		sync_on = 1;
 		signal(SIGUSR1, on_sync);

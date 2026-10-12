@@ -28,6 +28,11 @@ if net:
     na_r, na_w = os.pipe()   # network -> A
     bn_r, bn_w = os.pipe()   # B -> network
     nb_r, nb_w = os.pipe()   # network -> B
+    # WAV=<file>: the line as it crosses the network (stereo, 8000 Hz:
+    # A -> B left, B -> A right), from the first dial to the end of the
+    # data (netsim's NET_WAV, started and ended with SIGUSR2)
+    if os.environ.get("WAV"):
+        os.environ["NET_WAV"] = os.path.abspath(os.environ["WAV"])
     pn = subprocess.Popen([os.environ.get("NETSIM", os.path.join(d, "netsim")), ra, rb, law, str(an_r), str(na_w),
         str(bn_r), str(nb_w)], pass_fds=(an_r, na_w, bn_r, nb_w))
     ba_r, ab_w, ab_r, ba_w = na_r, an_w, nb_r, bn_w
@@ -67,7 +72,15 @@ def wait(k, pat, t):
         if re.search(pat, buf[k]): return True
     return False
 def cmd(k, s): os.write(fd[k], s.encode() + b"\r")
+wav_marks = 0
+def wav_mark():
+    global wav_marks
+    if net and os.environ.get("WAV") and wav_marks < 2:
+        import signal
+        pn.send_signal(signal.SIGUSR2)
+        wav_marks += 1
 def done(ok):
+    if wav_marks == 1: wav_mark()   # (a call that failed: up to here)
     pa.kill(); pb.kill()
     # EXPECT_B=<regex>: modemB's log must have it as well (e.g. that the
     # call took a certain path)
@@ -117,6 +130,7 @@ for call in range(int(os.environ.get("CALLS", "1"))):
                 if not wait("modemB", b"OK", 5): print("modemB", c, buf["modemB"]); done(False)
                 buf["modemB"] = b""
         buf = {k: b"" for k in fd}
+    if not call: wav_mark()
     cmd("modemB", "ATA"); cmd("modemA", "ATD" + os.environ.get("DIAL", ""))
     t_call = time.time()
     ok = wait("modemA", b"(CONNECT[^\r]*|NO CARRIER|NO ANSWER|BUSY)\r", 90) and wait("modemB", b"(CONNECT[^\r]*|NO CARRIER)\r", 15)
@@ -188,6 +202,9 @@ else:
 end = time.time() + 40 + stream + 15.0 * max(len(msg_a), len(msg_b)) / rate
 while time.time() < end and (len(buf["modemB"]) < len(msg_a) or len(buf["modemA"]) < len(msg_b)):
     pump(0.2)
+wav_mark()
+if net and os.environ.get("WAV"):
+    print("wav:", os.environ["NET_WAV"])
 print("A received %d/%d ok=%s" % (len(buf["modemA"]), len(msg_b), buf["modemA"] == msg_b))
 print("B received %d/%d ok=%s" % (len(buf["modemB"]), len(msg_a), buf["modemB"] == msg_a))
 done(buf["modemA"] == msg_b and buf["modemB"] == msg_a)
