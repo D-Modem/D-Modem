@@ -502,10 +502,23 @@ analogue modem's timing as it wanders), less what the channel still has
 of the symbols before B1u, and decides on a grid on which point j is at
 2j + 1 (linear between the levels), for the same Viterbi decoder.
 Through netsim that is 38666 bit/s with mu-law, 40000 to 41333 with
-A-law. The grid mse rises from about 0.012 to 0.04 or so over the first
-half minute (the analogue modem's sampling, under a filter that is not
-adapted to it) without errors: our renegotiation down waits until it is
-0.09 (rms 0.3 of the half distance). With the prefilter we change the
+A-law.
+
+The design holds only as long as the analogue modem's transmitter keeps
+its timing against the network's codec. The original library slips: it
+locks its transmitter to its estimate of our clock, which is off by a few
+hundredths of a ppm (its log's "Timing Offset", +0.02 to -0.05 ppm; netsim
+has no offset at all), so its signal moves by some 0.005 samples in 40 s.
+Fitted to the data symbols, the channel changes by just that shift (about
+1 % by 40 s), and the network codec's samples stray from the levels: at
+levels 300 to 1000, 9 % of them come out on a neighbouring level at the
+start, 44 % after 40 s. That happens before the network's quantizer, so
+nothing in our receiver can take it back (more taps, faster LMS and
+taps on the precoder's output made no difference). The grid mse rises
+from about 0.012 to 0.09 in some 40 s without errors; our renegotiation
+down waits until then (rms 0.3 of the half distance) and designs anew for
+the timing as it is: over 180 s that is a renegotiation every 37 to 40 s,
+2.1 s each, back at the same rate, and all the data through. With the prefilter we change the
 rate by renegotiation, not a fast parameter exchange: the analogue modem
 takes up the new constellation before B1u of one. In data mode the analogue modem's tone A retrains. The echo canceller (the V.34 pump's,
 trained while we send Sd to Jd) could not be tested: netsim's echo

@@ -1253,10 +1253,12 @@ void V92Up::data_symbol(float y)
 	if (connected && !rn && dframes > 48) {
 		double q = pf_on ? 1 / (dmse_g + 1e-9) :
 			256 * cpd.g * cpd.g / (dmse + 1e-9);
-		/* with the prefilter the grid mse creeps up over the first
-		   half minute (the analogue modem's sampling wanders under
-		   our fixed filter) without errors: down only when that
-		   reaches decisions (rms 0.3 of the half distance) */
+		/* with the prefilter the grid mse creeps up (the analogue
+		   modem's transmitter slips against the network's clock,
+		   and the network's codec no longer gets its levels), a
+		   while without errors: down (a new design for the timing
+		   as it is now) only when that reaches decisions (rms 0.3
+		   of the half distance) */
 		double lo = margin_used / 2;
 		if (pf_on && lo > 1 / 0.09)
 			lo = 1 / 0.09;

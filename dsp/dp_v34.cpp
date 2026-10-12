@@ -3322,7 +3322,10 @@ int V34Pump::handshake()
 			   9.10.1.1/V.92): its tone A reversed, or its INFO0a.
 			   That retrain then, at once (it waits for our
 			   reversal): phase 2 from tone B */
-			if ((ev_rev && rt_heard) || rt_info0 == 1) {
+			if (!rt_heard)
+				/* (one before its tone is the data's end) */
+				ev_rev = 0;
+			if (ev_rev || rt_info0 == 1) {
 				DSP_DBG("v34: the remote retrains instead of "
 					"answering MHreq\n");
 				moh_req = 0;
