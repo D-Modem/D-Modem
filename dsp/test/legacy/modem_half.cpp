@@ -325,7 +325,10 @@ static int modem_test_run(struct modem_test *modems)
 				     t->close_count++ > CLOSE_COUNT_MAX )
 					t->close_count = 0;
 			}
-			else if ((!sync_n || line_idle()) &&
+			/* with PIPE_SYNC, commands only at the line's
+			   periods; data (online, state 5) at once */
+			else if ((!sync_n || line_idle() ||
+				  t->modem->state == 0x5) &&
 				 t->modem->xmit.size - t->modem->xmit.count > 0) {
 				FD_SET(t->modem->pty,&rset);
 				if(t->modem->pty > max_fd)

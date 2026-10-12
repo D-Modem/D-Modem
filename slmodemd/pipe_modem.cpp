@@ -305,7 +305,10 @@ int PipeModem::run(PipeModem **modems, int n)
 			FD_SET(p->in_, &rset);
 			if (p->in_ > max_fd)
 				max_fd = p->in_;
-			if ((!p->sync_ || p->line_idle()) &&
+			/* with PIPE_SYNC, commands only at the line's
+			   periods; data (carrier up) at once */
+			if ((!p->sync_ || p->line_idle() ||
+			     p->m_->carrier()) &&
 			    p->pty_.want_read(*p->m_)) {
 				FD_SET(p->pty_.fd(), &rset);
 				if (p->pty_.fd() > max_fd)

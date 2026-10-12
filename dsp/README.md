@@ -757,7 +757,8 @@ calls in between are in it as well. For example:
 
 `PIPE_SYNC=<samples>` (`half_open`, `half_blob`) and `AGERE_SYNC=<samples>`
 (`half_agere`) make a call repeat exactly from run to run: the modems take
-the DTE's commands only every that many line samples, run their timers
+the DTE's commands only every that many line samples (data, once
+connected, at once), run their timers
 between half frames and keep time by the line; without them, where the
 commands meet the line depends on the scheduler. `AGERE_SYNC_PHASE` and
 `BLOB_SYNC_PHASE` move one side within the period, to try the alignments

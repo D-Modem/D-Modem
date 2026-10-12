@@ -563,6 +563,28 @@ static int pty;
 static long sync_n, sync_phase, line_n; /* AGERE_SYNC_PHASE: at that
 						   sample of each period */
 
+/* online between its CONNECT and NO CARRIER or OK (the UART has no
+   DCD to tell) */
+static int online;
+static void result_scan(unsigned char c)
+{
+	static const char *const pat[] = { "CONNECT", "NO CARRIER",
+					   "\r\nOK\r\n" };
+	static unsigned at[3];
+	int i;
+
+	for (i = 0; i < 3; i++) {
+		if (c != (unsigned char)pat[i][at[i]])
+			at[i] = c == (unsigned char)pat[i][0];
+		else
+			at[i]++;
+		if (!pat[i][at[i]]) {
+			at[i] = 0;
+			online = i == 0;
+		}
+	}
+}
+
 static void uart_poll(void)
 {
 	unsigned char buf[256];
@@ -573,8 +595,12 @@ static void uart_poll(void)
 		buf[n++] = (unsigned char)read_vuart_port(UART_RX);
 	if (n && write(pty, buf, n) < 0)
 		LOG("pty write: %s\n", strerror(errno));
-	/* the DTE's input, while the modem takes it */
-	if (sync_n && line_n % sync_n != sync_phase)
+	if (sync_n)
+		for (k = 0; k < n; k++)
+			result_scan(buf[k]);
+	/* the DTE's input, while the modem takes it; only commands need
+	   the fixed timing, so data (online) goes in at once */
+	if (sync_n && line_n % sync_n != sync_phase && !online)
 		return;
 	for (k = 0; k < 64 && (read_vuart_port(UART_LSR) & 0x20); k++) {
 		unsigned char c;
