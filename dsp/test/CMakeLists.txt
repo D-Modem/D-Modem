@@ -80,7 +80,7 @@ endif()
 
 # --- interop: modem_half with the original library and with the open
 #     data pumps (32 bit like the blob), in real time through
-#     interop.py / fax_interop.py, with netsim for the G.711 network.
+#     interop_test (interop_call.cpp), with netsim for the G.711 network.
 #     The original library (smartlink/dsplibs.o, Smart Link's binary-only
 #     DSP library) is a 32 bit i386 object: -m32 on x86_64.
 set(DMODEM_M32 "")
@@ -222,495 +222,61 @@ if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 	message(STATUS "tests: the Conexant HSF soft modem: ${DMODEM_HSF_DIR}")
 endif()
 
-find_package(Python3 COMPONENTS Interpreter QUIET)
-if(NOT Python3_FOUND)
-	return()
-endif()
-set(_env "NETSIM=$<TARGET_FILE:netsim>;MODEM_REALTIME=1")
-set(_py ${CMAKE_CURRENT_SOURCE_DIR})
-foreach(_ms 34 132 122 22 212 103 23)
-	add_test(NAME interop_${_ms}_blob_calls COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open>
-		"ATX3;AT+MS=${_ms}")
-	add_test(NAME interop_${_ms}_open_calls COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob>
-		"ATX3;AT+MS=${_ms}")
-	set_tests_properties(interop_${_ms}_blob_calls interop_${_ms}_open_calls
-		PROPERTIES LABELS interop ENVIRONMENT "${_env}")
+# the interop tests: calls in real time between the open modem and each of
+# the modems above (interop_test.cpp, through interop_call.cpp: what a call
+# does is in its environment, NET for netsim's G.711 network, STREAM,
+# EXPECT_B, ...).  One test program a label, one more for the calls that
+# run alone; each call writes its modem logs to logs/<test>/.  The calls
+# run in real time and mostly wait, so they can run in parallel (ctest -L
+# interop -j8).  interop_call makes one by hand.
+add_library(interop_driver STATIC interop_call.cpp)
+target_compile_options(interop_driver PRIVATE -Wall -O2 -g)
+target_link_libraries(interop_driver PUBLIC pthread)
+dmodem_test_exe(interop_call interop_call_main.cpp)
+target_link_libraries(interop_call PRIVATE interop_driver)
+set(_progs "HALF_BLOB=\"$<TARGET_FILE:half_blob>\""
+	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
+	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
+foreach(_p agere sm56 spandsp pctel hsf)
+	if(TARGET half_${_p})
+		string(TOUPPER ${_p} _u)
+		list(APPEND _progs "HALF_${_u}=\"$<TARGET_FILE:half_${_p}>\"")
+	endif()
 endforeach()
-# V.34 through a line hit (300 ms of silence both ways) in the middle of
-# the data: both modems retrain, V.42 carries on
-add_test(NAME interop_34_hit_blob_calls COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open>
-	"ATX3;AT+MS=34")
-add_test(NAME interop_34_hit_open_calls COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob>
-	"ATX3;AT+MS=34")
-set_tests_properties(interop_34_hit_blob_calls interop_34_hit_open_calls
-	PROPERTIES LABELS interop ENVIRONMENT
-	"${_env};NET=9600:9600:ulaw;STREAM=25;NET_DROP=20:300")
-# V.34 rate renegotiation: the open modem starts one (and later goes back
-# up), the original library answers it; and two open modems on a noisy
-# line that gets 3 dB worse 10 s after CONNECT (NET_SYNC), each lowers
-# its receiving rate
-add_test(NAME interop_34_reneg_blob_calls COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open>
-	"ATX3;AT+MS=34")
-add_test(NAME interop_34_reneg_open_calls COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob>
-	"ATX3;AT+MS=34")
-set_tests_properties(interop_34_reneg_blob_calls interop_34_reneg_open_calls
-	PROPERTIES LABELS interop ENVIRONMENT
-	"${_env};NET=9600:9600:ulaw;NET_SYNC=1;STREAM=25;DSP_V34_RENEG=5000:8")
-add_test(NAME interop_34_noise COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_open>
-	"ATX3;AT+MS=34")
-set_tests_properties(interop_34_noise PROPERTIES LABELS interop ENVIRONMENT
-	"${_env};NET=9600:9600:ulaw;NET_SYNC=1;STREAM=30;NET_FLOOR=250;NET_NOISE=10:250")
-# V.90: the original library (analogue modem) calls the open one (digital
-# modem, 8000 Hz) through the simulated G.711 network.  NET_FLOOR: on a
-# line without any noise its phase 4 check (the error before and after
-# TRN2d corrects its levels from the DIL by a unit or two) fails, and it
-# retrains once for nothing; a floor of -81 dBFS keeps the check to what
-# it is for on a real line
-add_test(NAME interop_v90_ulaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
-	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=90")
-set_tests_properties(interop_v90_ulaw PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;NET_FLOOR=3")
-add_test(NAME interop_v90_alaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
-	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=90")
-set_tests_properties(interop_v90_alaw PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:alaw;DSP_G711=alaw")
-# V.90 rate renegotiation (9.6/V.90): ours after 5 s of data, to 24 000
-# bit/s upstream; the library's own when noise on the PCM codes from 40 s
-# on worsens the downstream: it asks for a silent period (CPs), and the
-# noise stops with our silence (else it may pick 56000 again and the data
-# goes wrong)
-add_test(NAME interop_v90_reneg COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=90")
-set_tests_properties(interop_v90_reneg PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;NET_FLOOR=3;STREAM=15;DSP_V34_RENEG=5000:10;EXPECT_B=V.90 renegotiated [0-9]+/24000")
-add_test(NAME interop_v90_reneg_silence COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=90")
-set_tests_properties(interop_v90_reneg_silence PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;NET_FLOOR=3;STREAM=50;NET_NOISE=40:20:10;NET_NOISE_DIR=bacodes;NET_NOISE_QUIET=50;EXPECT_B=(?s)CPs'.*V.90 renegotiated")
-# V.92 quick connect (short phase 1): the original library, a V.92
-# analogue modem, starts with QC1a; then V.90
-add_test(NAME interop_v92_qc COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
-	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=92")
-set_tests_properties(interop_v92_qc PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;EXPECT_B=V.92 quick connect")
-# V.92 PCM upstream: the original library is a "V.92
-# Lite" build, which retrains when INFO1d offers PCM upstream; BLOB_V92FULL
-# (legacy/modem.cpp) sets its full V.92 bit, and it then goes through
-# phases 3 and 4 of V.92 with us.  Lite: we answer its retrain without the
-# offer, V.90.  A rate the line cannot carry (44 000): B1u does not come
-# through, we retrain to V.90.  With the prefilter we design (6.4.2/V.92)
-# the rate is up to 38 666 (mu-law) and 40 000 (A-law); without it
-# (DSP_V92_PREFILTER=0), the precoder alone, 34 000 to 36 000.
-foreach(_law ulaw alaw)
-	add_test(NAME interop_v92_pcmup_${_law} COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-		"ATX3;AT+MS=92")
-	set_tests_properties(interop_v92_pcmup_${_law} PROPERTIES LABELS interop
-		ENVIRONMENT "${_env};NET=9600:8000:${_law};STREAM=10;BLOB_V92FULL=1;EXPECT_B=(?s)prefilter of 64 taps.*V.92 connect 56000/(3[89]|4[0-2])")
-endforeach()
-add_test(NAME interop_v92_pcmup_noprefilter COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_pcmup_noprefilter PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_PREFILTER=0;EXPECT_B=V.92 connect 56000/3[4-9]")
-add_test(NAME interop_v92_pcmup_calls COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-# (quick connect's timing does not take a busy machine: alone)
-set_tests_properties(interop_v92_pcmup_calls PROPERTIES LABELS interop
-	RUN_SERIAL TRUE ENVIRONMENT "${_env};NET=9600:8000:ulaw;CALLS=2;STREAM=3;BLOB_V92FULL=1;EXPECT_B=(?s)V.92 connect.*V.92 connect")
-add_test(NAME interop_v92_pcmup_lite COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_pcmup_lite PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;EXPECT_B=(?s)no PCM upstream offer.*V.90 connect")
-add_test(NAME interop_v92_pcmup_fallback COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_pcmup_fallback PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;BLOB_V92FULL=1;DSP_V92_UP_DRN=16;EXPECT_B=(?s)B1u does not come through.*V.90 connect")
-# rate renegotiation (9.8/V.92): ours after 3 s of data, to 30 666 bit/s
-# upstream (DSP_V92_RENEG=<ms>:<drn>); and on its own when noise on the
-# way up eats the margin of our rate
-add_test(NAME interop_v92_reneg COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_reneg PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_RENEG=3000:6;EXPECT_B=V.92 renegotiated 56000/30666")
-add_test(NAME interop_v92_reneg_noise COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_reneg_noise PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=15;BLOB_V92FULL=1;NET_NOISE=26:60;NET_NOISE_DIR=ab;EXPECT_B=V.92 renegotiated 56000/[23]")
-# fast parameter exchange (9.9/V.92): ours after 3 s of data, to 30 666
-# bit/s upstream (DSP_V92_FPE=<ms>:<drn>), in the data mode modulation.
-# Without the prefilter (below with it)
-add_test(NAME interop_v92_fpe COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_fpe PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_PREFILTER=0;DSP_V92_FPE=3000:6;EXPECT_B=(?s)fast parameter exchange 1 done.*V.92 renegotiated 56000/30666")
-# modem-on-hold asked for by us (AT+PMHR, 9.10.2.1/V.92) in the middle of
-# PCM upstream data: the original library answers our tone B with a
-# retrain, which we follow, and the data goes on
-add_test(NAME interop_v92_moh_request COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_moh_request PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=30;BLOB_V92FULL=1;MIDCALL_B=8:AT+PMHR\;WAIT 6;EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.92 retrained")
-# and with an analogue modem that answers it (netsim's NET_MOH stands in
-# for one from 22 s on: the original library does not): MHack, the remote
-# on hold for 5 s, ANSam; MHnack, MHfrr and ANSam. The original library
-# is cut off meanwhile and hangs up, so nothing comes back to ANSam and we
-# disconnect after T1 (10 s)
-foreach(_m ack nack)
-	add_test(NAME interop_v92_moh_request_${_m} COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-		"ATX3;AT+MS=92")
-endforeach()
-set_tests_properties(interop_v92_moh_request_ack PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=40;BLOB_V92FULL=1;NET_MOH=ack:1@22;MIDCALL_B=12:AT+PMHR=5\;WAIT 8;EXPECT_DROP=1;EXPECT_B=(?s)MHack, T1 10 s: the remote on hold for 5 s.*on hold, ANSam for 10 s.*on hold for T1: disconnect")
-set_tests_properties(interop_v92_moh_request_nack PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=35;BLOB_V92FULL=1;NET_MOH=nack@22;MIDCALL_B=12:AT+PMHR\;WAIT 3;EXPECT_DROP=1;EXPECT_B=(?s)MHnack: MHfrr.*on hold \\(reconnect\\), ANSam.*on hold for T1: disconnect")
-# and with the prefilter: not down (the original library sends SUVu' to
-# FB1u on the new points with the old moduli), so at the rate it has; the
-# library's sequence through to B1u, and the data goes on
-add_test(NAME interop_v92_fpe_prefilter COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_fpe_prefilter PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_FPE=3000:6;EXPECT_B=(?s)prefilter not down.*SUVu'.*fast parameter exchange 1 done.*V.92 renegotiated 56000/3[89]")
-# without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream
-add_test(NAME interop_v92_nopcmup COMMAND ${Python3_EXECUTABLE}
-	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
-	"ATX3;AT+MS=92")
-set_tests_properties(interop_v92_nopcmup PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=3;BLOB_V92FULL=1;DSP_V92_PCMUP=0;EXPECT_B=V.90 connect")
-# class 1 fax calls both ways
-foreach(_m 24 48 72 96 73 97 121 122 145)
-	add_test(NAME fax_interop_${_m}_blob_sends COMMAND ${Python3_EXECUTABLE}
-		${_py}/fax_interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open> ${_m})
-	add_test(NAME fax_interop_${_m}_open_sends COMMAND ${Python3_EXECUTABLE}
-		${_py}/fax_interop.py $<TARGET_FILE:half_open> $<TARGET_FILE:half_blob> ${_m})
-	set_tests_properties(fax_interop_${_m}_blob_sends fax_interop_${_m}_open_sends
-		PROPERTIES LABELS interop ENVIRONMENT "${_env}")
-endforeach()
-# the Agere soft modem (8000 Hz) and the open modem (9600 Hz) call each
-# other; AT+MS takes names there (B103, V21, ..., V34)
+function(interop_tests label)
+	cmake_parse_arguments(I "RUN_SERIAL" "" "" ${ARGN})
+	set(_n ${label}_test)
+	set(_serial 0)
+	if(I_RUN_SERIAL)
+		set(_n ${label}_serial_test)
+		set(_serial 1)
+	endif()
+	dmodem_test_exe(${_n} interop_test.cpp)
+	target_compile_definitions(${_n} PRIVATE ${_progs}
+		"NETSIM=\"$<TARGET_FILE:netsim>\""
+		"INTEROP_LOG_DIR=\"${CMAKE_CURRENT_BINARY_DIR}/logs\""
+		"INTEROP_LABEL=\"${label}\"" INTEROP_SERIAL=${_serial})
+	target_link_libraries(${_n} PRIVATE interop_driver)
+	if(I_RUN_SERIAL)
+		dmodem_gtest(${_n} LABELS ${label} RUN_SERIAL)
+	else()
+		dmodem_gtest(${_n} LABELS ${label})
+	endif()
+endfunction()
+# the original library (half_blob); (quick connect's timing does not take a
+# busy machine: interop_v92_pcmup_calls and agere_v92_qc alone)
+interop_tests(interop)
+interop_tests(interop RUN_SERIAL)
 if(TARGET half_agere)
-	foreach(_p B103:103 V21:21 V23C:23 B212:212 V22:22 V22B:122 V32:32
-		   V32B:132 V34:34)
-		string(REPLACE ":" ";" _p ${_p})
-		list(GET _p 0 _a)
-		list(GET _p 1 _ms)
-		add_test(NAME agere_${_ms}_agere_calls COMMAND
-			${Python3_EXECUTABLE} ${_py}/interop.py
-			$<TARGET_FILE:half_agere> $<TARGET_FILE:half_open>
-			"ATX3;AT+MS=${_a}")
-		set_tests_properties(agere_${_ms}_agere_calls PROPERTIES
-			LABELS agere ENVIRONMENT
-			"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_ms}")
-		add_test(NAME agere_${_ms}_open_calls COMMAND
-			${Python3_EXECUTABLE} ${_py}/interop.py
-			$<TARGET_FILE:half_open> $<TARGET_FILE:half_agere>
-			"ATX3;AT+MS=${_ms}")
-		set_tests_properties(agere_${_ms}_open_calls PROPERTIES
-			LABELS agere ENVIRONMENT
-			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
-	endforeach()
-	# V.44 both ways (the Agere modem offers it): 60000 octets each
-	# way of text, binary, repeats and noise, which it sends in
-	# transparent mode now and then
-	add_test(NAME agere_v44_agere_calls COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_agere>
-		$<TARGET_FILE:half_open> "ATX3;AT+MS=V34")
-	set_tests_properties(agere_v44_agere_calls PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=34;BULK=60000")
-	add_test(NAME agere_v44_open_calls COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_open>
-		$<TARGET_FILE:half_agere> "ATX3;AT+MS=34")
-	set_tests_properties(agere_v44_open_calls PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=V34;BULK=60000")
-	# V.34 rate renegotiation started by the open modem, both ways;
-	# and the line much noisier 10 s after CONNECT: a retrain
-	add_test(NAME agere_34_reneg_agere_calls COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_agere>
-		$<TARGET_FILE:half_open> "ATX3;AT+MS=V34")
-	set_tests_properties(agere_34_reneg_agere_calls PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET=8000:9600:ulaw;NET_SYNC=1;STREAM=30;DSP_V34_RENEG=5000:8;PROTO_B=ATX3\;AT+MS=34")
-	add_test(NAME agere_34_reneg_open_calls COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_open>
-		$<TARGET_FILE:half_agere> "ATX3;AT+MS=34")
-	set_tests_properties(agere_34_reneg_open_calls PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET=9600:8000:ulaw;NET_SYNC=1;STREAM=30;DSP_V34_RENEG=5000:8;PROTO_B=ATX3\;AT+MS=V34")
-	add_test(NAME agere_34_noise COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_agere>
-		$<TARGET_FILE:half_open> "ATX3;AT+MS=V34")
-	set_tests_properties(agere_34_noise PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET=8000:9600:ulaw;NET_SYNC=1;STREAM=40;NET_NOISE=10:300;PROTO_B=ATX3\;AT+MS=34")
-	# V.92 quick connect: the Agere modem (+PQC=0) remembers the line of
-	# the first call and starts the second with QC1a, and short phase 2.
-	# NET_LOOP: our PCM signal reaches it through an analogue loop (on an
-	# ideal line, the same samples as ours, its V.90 training fails at
-	# some delays, every 48 samples); not half a sample: then our sample
-	# instants fall exactly between its samples, and at some alignments
-	# (AGERE_SYNC_PHASE 96, 288) it takes 33333 bit/s downstream for
-	# 53333
-	add_test(NAME agere_v92_qc COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_agere>
-		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92;AT+PQC=0")
-	set_tests_properties(agere_v92_qc PROPERTIES LABELS agere
-		RUN_SERIAL TRUE ENVIRONMENT
-		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2;PROTO_B=ATX3\;AT+MS=92")
-	# V.90: the Agere modem as the analogue modem, the open one as the
-	# digital modem (both at 8000 Hz)
-	foreach(_law ulaw alaw)
-		add_test(NAME agere_v90_${_law} COMMAND ${Python3_EXECUTABLE}
-			${_py}/interop.py $<TARGET_FILE:half_agere>
-			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
-		set_tests_properties(agere_v90_${_law} PROPERTIES LABELS agere
-			ENVIRONMENT
-			"${_env};NET_LOOP=0.45;NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
-	endforeach()
-	# V.92 modem-on-hold: in the middle of the data the Agere modem asks
-	# for it (AT+PMHR), we grant 1 min (MHack), it comes back after 10 s
-	# (ATO): V.8, phase 2 to 4, and the data goes on (V.42 knows nothing
-	# of it); denied (MHnack), it asks for a fast reconnect (MHfrr)
-	foreach(_m grant deny)
-		add_test(NAME agere_v92_moh_${_m} COMMAND ${Python3_EXECUTABLE}
-			${_py}/interop.py $<TARGET_FILE:half_agere>
-			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
-	endforeach()
-	set_tests_properties(agere_v92_moh_grant PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=50;MIDCALL_A=8:AT+PMHR\;WAIT 10;EXPECT_B=(?s)MHack.*V.90 back from hold;PROTO_B=ATX3\;AT+MS=92")
-	set_tests_properties(agere_v92_moh_deny PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=40;DSP_V92_MOH=0;MIDCALL_A=8:AT+PMHR\;WAIT 5;EXPECT_B=(?s)MHnack.*MHfrr.*V.90 back from hold;PROTO_B=ATX3\;AT+MS=92")
-	# and ours (AT+PMHR on our side): the Agere modem takes our tone B
-	# for a retrain and reverses its tone A; we follow, and the data
-	# goes on after the retrain
-	add_test(NAME agere_v92_moh_request COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_agere>
-		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
-	set_tests_properties(agere_v92_moh_request PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=40;MIDCALL_B=8:AT+PMHR\;WAIT 6;EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.90 retrained;PROTO_B=ATX3\;AT+MS=92")
-	# at the alignment that took 33333 bit/s with half a sample of delay
-	add_test(NAME agere_v90_phase96 COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_agere>
-		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
-	set_tests_properties(agere_v90_phase96 PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET_LOOP=0.45;AGERE_SYNC_PHASE=96;NET=8000:8000:ulaw;DSP_G711=ulaw;EXPECT_B=V.90 connect 5[0-9]{4}/;PROTO_B=ATX3\;AT+MS=90")
-	# V.90 rate renegotiation: ours to 19 200 bit/s upstream (the Agere
-	# modem's own, as noise on the PCM codes rises, come too late for a
-	# test, if at all)
-	add_test(NAME agere_v90_reneg_open COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_agere>
-		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
-	set_tests_properties(agere_v90_reneg_open PROPERTIES LABELS agere
-		ENVIRONMENT
-		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=15;DSP_V34_RENEG=5000:8;EXPECT_B=V.90 renegotiated [0-9]+/19200;PROTO_B=ATX3\;AT+MS=90")
-	# class 1 fax both ways at 8000 Hz
-	foreach(_m 24 48 72 96 73 97 121 122 145)
-		add_test(NAME agere_fax_${_m}_agere_sends COMMAND
-			${Python3_EXECUTABLE} ${_py}/fax_interop.py
-			$<TARGET_FILE:half_agere> $<TARGET_FILE:half_open8> ${_m})
-		add_test(NAME agere_fax_${_m}_open_sends COMMAND
-			${Python3_EXECUTABLE} ${_py}/fax_interop.py
-			$<TARGET_FILE:half_open8> $<TARGET_FILE:half_agere> ${_m})
-		set_tests_properties(agere_fax_${_m}_agere_sends
-			agere_fax_${_m}_open_sends PROPERTIES LABELS agere
-			ENVIRONMENT "${_env}")
-	endforeach()
+	interop_tests(agere)
+	interop_tests(agere RUN_SERIAL)
 endif()
-
-# spandsp's modem (8000 Hz) and the open modem (9600 Hz) call each other
-# at each modulation it has (its own label: CI's "spandsp" are quick)
+# spandsp's modems (its own label: CI's "spandsp" are quick)
 if(TARGET half_spandsp)
-	foreach(_m 21 22 122 23 103)
-		add_test(NAME spandsp_${_m}_spandsp_calls COMMAND
-			${Python3_EXECUTABLE} ${_py}/interop.py
-			$<TARGET_FILE:half_spandsp> $<TARGET_FILE:half_open>
-			"ATX3;AT+MS=${_m}")
-		set_tests_properties(spandsp_${_m}_spandsp_calls PROPERTIES
-			LABELS spanpeer ENVIRONMENT
-			"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_m}")
-		add_test(NAME spandsp_${_m}_open_calls COMMAND
-			${Python3_EXECUTABLE} ${_py}/interop.py
-			$<TARGET_FILE:half_open> $<TARGET_FILE:half_spandsp>
-			"ATX3;AT+MS=${_m}")
-		set_tests_properties(spandsp_${_m}_open_calls PROPERTIES
-			LABELS spanpeer ENVIRONMENT
-			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_m}")
-	endforeach()
+	interop_tests(spanpeer)
 endif()
-
-# the Motorola SM56 soft modem (8000 Hz) and the open modem (9600 Hz)
-# call each other, as the Agere modem's tests
-if(TARGET half_sm56)
-	# (its automode off below V.34: +MS=V22 alone is an error.  Calling
-	# at V.22bis it is in automode: forced to V.22bis it takes the
-	# answer tone for unscrambled ones, see the README)
-	foreach(_p V21,0:21 V22,0:22 V22B,0:122 V32B,0:132 V34:34)
-		string(REPLACE ":" ";" _p ${_p})
-		list(GET _p 0 _a)
-		list(GET _p 1 _ms)
-		set(_c ${_a})
-		if(_ms STREQUAL "122")
-			set(_c V92)
-		endif()
-		add_test(NAME sm56_${_ms}_sm56_calls COMMAND
-			${Python3_EXECUTABLE} ${_py}/interop.py
-			$<TARGET_FILE:half_sm56> $<TARGET_FILE:half_open>
-			"ATX3;AT+MS=${_c}")
-		set_tests_properties(sm56_${_ms}_sm56_calls PROPERTIES
-			LABELS sm56 ENVIRONMENT
-			"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_ms}")
-		add_test(NAME sm56_${_ms}_open_calls COMMAND
-			${Python3_EXECUTABLE} ${_py}/interop.py
-			$<TARGET_FILE:half_open> $<TARGET_FILE:half_sm56>
-			"ATX3;AT+MS=${_ms}")
-		set_tests_properties(sm56_${_ms}_open_calls PROPERTIES
-			LABELS sm56 ENVIRONMENT
-			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
-	endforeach()
-	# V.90: the SM56 modem as the analogue modem, the open one as the
-	# digital modem (both at 8000 Hz; the SM56 modem's codec runs at
-	# 9600 Hz for it)
-	foreach(_law ulaw alaw)
-		add_test(NAME sm56_v90_${_law} COMMAND ${Python3_EXECUTABLE}
-			${_py}/interop.py $<TARGET_FILE:half_sm56>
-			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
-		set_tests_properties(sm56_v90_${_law} PROPERTIES LABELS sm56
-			ENVIRONMENT
-			"${_env};NET_LOOP=0.45;NET=8000:8000:${_law};DSP_G711=${_law};EXPECT_B=V.90 connect 5[0-9]{4}/;PROTO_B=ATX3\;AT+MS=90")
-	endforeach()
-	# V.92: its QC1a on the first call already; on the second, quick
-	# connect with short phase 2.  (Its upstream stays V.34: the
-	# module chooses PCM upstream only in quick connect's INFO1a, from
-	# an INFO1d flag its full phase 2 has cleared)
-	add_test(NAME sm56_v92_qc COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_sm56>
-		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
-	set_tests_properties(sm56_v92_qc PROPERTIES LABELS sm56
-		ENVIRONMENT
-		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2.*V.90 connect;PROTO_B=ATX3\;AT+MS=92")
-	# V.92 modem-on-hold: it asks (AT+PMHR), we grant it; it comes back
-	# with quick connect (a while after its ATO)
-	add_test(NAME sm56_v92_moh_grant COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_sm56>
-		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
-	set_tests_properties(sm56_v92_moh_grant PROPERTIES LABELS sm56
-		ENVIRONMENT
-		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=60;MIDCALL_A=8:AT+PMHR\;WAIT 10;EXPECT_B=(?s)MHreq: MHack.*V.92 quick connect.*V.90 back from hold;PROTO_B=ATX3\;AT+MS=92")
-	# and ours: as the Agere modem, it takes our tone B for a retrain's
-	# (it answers MHreq only where its phase 2 begins, in place of
-	# INFO0d, and one that knows nothing of it is no different until
-	# then)
-	add_test(NAME sm56_v92_moh_request COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_sm56>
-		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
-	set_tests_properties(sm56_v92_moh_request PROPERTIES LABELS sm56
-		ENVIRONMENT
-		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=40;MIDCALL_B=8:AT+PMHR\;WAIT 6;EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.90 retrained;PROTO_B=ATX3\;AT+MS=92")
-endif()
-
-# the PCTel HSP soft modem (8000 Hz) and the open modem (9600 Hz) call each
-# other.  Its pumps run its automode whatever +MS says (the controller
-# keeps the setting, but the modulation it gives the pumps is the same),
-# so only the calls its automode makes work: V.32bis and V.34 both ways,
-# and our V.22bis caller (see the README)
-if(TARGET half_pctel)
-	foreach(_p V32B,0:132 V34:34)
-		string(REPLACE ":" ";" _p ${_p})
-		list(GET _p 0 _a)
-		list(GET _p 1 _ms)
-		add_test(NAME pctel_${_ms}_pctel_calls COMMAND
-			${Python3_EXECUTABLE} ${_py}/interop.py
-			$<TARGET_FILE:half_pctel> $<TARGET_FILE:half_open>
-			"ATX3;AT+MS=${_a}")
-		set_tests_properties(pctel_${_ms}_pctel_calls PROPERTIES
-			LABELS pctel ENVIRONMENT
-			"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_ms}")
-		add_test(NAME pctel_${_ms}_open_calls COMMAND
-			${Python3_EXECUTABLE} ${_py}/interop.py
-			$<TARGET_FILE:half_open> $<TARGET_FILE:half_pctel>
-			"ATX3;AT+MS=${_ms}")
-		set_tests_properties(pctel_${_ms}_open_calls PROPERTIES
-			LABELS pctel ENVIRONMENT
-			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
-	endforeach()
-	add_test(NAME pctel_122_open_calls COMMAND ${Python3_EXECUTABLE}
-		${_py}/interop.py $<TARGET_FILE:half_open>
-		$<TARGET_FILE:half_pctel> "ATX3;AT+MS=122")
-	set_tests_properties(pctel_122_open_calls PROPERTIES LABELS pctel
-		ENVIRONMENT "${_env};NET=9600:8000:ulaw;PROTO_B=ATX3")
-endif()
-
-# the HSF soft modem (8000 Hz) and the open modem (9600 Hz) call each
-# other: V.22bis and V.34 both ways, V.32bis with the open modem calling
-# and V.21 with the HSF modem calling; V.90 with it as the analogue modem
-# (see the README for the calls that fail)
-if(TARGET half_hsf)
-	foreach(_p V21,0:21:hsf V22B:122:both V32B,0:132:open V34:34:both)
-		string(REPLACE ":" ";" _p ${_p})
-		list(GET _p 0 _a)
-		list(GET _p 1 _ms)
-		list(GET _p 2 _who)
-		if(NOT _who STREQUAL "open")
-			add_test(NAME hsf_${_ms}_hsf_calls COMMAND
-				${Python3_EXECUTABLE} ${_py}/interop.py
-				$<TARGET_FILE:half_hsf> $<TARGET_FILE:half_open>
-				"ATX3;AT+MS=${_a}")
-			set_tests_properties(hsf_${_ms}_hsf_calls PROPERTIES
-				LABELS hsf ENVIRONMENT
-				"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_ms}")
-		endif()
-		if(NOT _who STREQUAL "hsf")
-			add_test(NAME hsf_${_ms}_open_calls COMMAND
-				${Python3_EXECUTABLE} ${_py}/interop.py
-				$<TARGET_FILE:half_open> $<TARGET_FILE:half_hsf>
-				"ATX3;AT+MS=${_ms}")
-			set_tests_properties(hsf_${_ms}_open_calls PROPERTIES
-				LABELS hsf ENVIRONMENT
-				"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
-		endif()
-	endforeach()
-	# V.90: the HSF modem as the analogue modem, the open one as the
-	# digital modem
-	foreach(_law ulaw alaw)
-		add_test(NAME hsf_v90_${_law} COMMAND ${Python3_EXECUTABLE}
-			${_py}/interop.py $<TARGET_FILE:half_hsf>
-			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
-		set_tests_properties(hsf_v90_${_law} PROPERTIES LABELS hsf
-			ENVIRONMENT
-			"${_env};NET_LOOP=0.45;NET=8000:8000:${_law};DSP_G711=${_law};EXPECT_B=V.90 connect 5[0-9]{4}/;PROTO_B=ATX3\;AT+MS=90")
-	endforeach()
-endif()
-
-# the calls run in real time and mostly wait, so they can run in parallel
-# (ctest -L interop -j8): each writes its modem logs to logs/<test>/
-get_property(_tests DIRECTORY PROPERTY TESTS)
-foreach(_t ${_tests})
-	get_test_property(${_t} LABELS _l)
-	if(_l MATCHES "interop|agere|sm56|spanpeer|pctel|hsf")
-		set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT
-			"LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/logs/${_t}")
+foreach(_l sm56 pctel hsf)
+	if(TARGET half_${_l})
+		interop_tests(${_l})
 	endif()
 endforeach()

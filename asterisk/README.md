@@ -178,4 +178,4 @@ and to `DModemReceiveFax`, and `DModemSendFax` to `ReceiveFAX`, all at
 handshake on the console.  The same modem runs outside Asterisk in
 `dsp/test/dmodem_test` (two modems of the library back to back)
 and, as slmodemd, against the original binary library in
-`dsp/test/interop.py`.
+`dsp/test/interop_test` (`interop_call`).

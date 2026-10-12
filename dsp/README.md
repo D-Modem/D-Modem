@@ -357,7 +357,7 @@ look for them while we retrain and answer:
 The Agere modem asks for it with `AT+PMHR` (`+PMHR:5`: 1 min granted,
 `+PMHR:0` denied) and comes back with CM after `ATO`; denied, it asks for
 a fast reconnect. `agere_v92_moh_grant` and `_deny` do that in the
-middle of the data (`MIDCALL_A` of interop.py) and check all of it both
+middle of the data (`MIDCALL_A` of `interop_call`) and check all of it both
 ways.
 
 We ask for it too, with `AT+PMHR` in online command mode on a V.92
@@ -390,7 +390,7 @@ seconds into the line, once our tone B has been there 50 ms, it cuts the
 modem off both ways and sends tone A, then MHack or MHnack, until we go
 silent (on hold) or send ANSam, and gives the line back with ANSam.
 `interop_v92_moh_request_ack` (T1 10 s, `AT+PMHR=5`) and `_nack` check
-the sequence in our log (`EXPECT_DROP` of interop.py: the call is to
+the sequence in our log (`EXPECT_DROP` of `interop_call`: the call is to
 end): MHack, 5 s on hold, ANSam; MHnack, 300 ms of MHfrr, ANSam. The
 original library behind it has been cut off in a retrain and hangs up,
 so nothing comes back and we disconnect after T1: the way back (CM or
@@ -804,11 +804,13 @@ compiler (`g++ -m32`), for the original library.
     ctest --test-dir build -L interop -j8   # calls between the original library and this one,
                                             # data and class 1 fax, in real time (needs g++ -m32)
     ctest --test-dir build -L agere -j8     # calls between the Agere soft modem and this one
+                                            # (sm56, pctel, hsf, spanpeer: the other modems)
 
-The quick and spandsp tests are GoogleTest programs (the system's
-libgtest-dev, or fetched while configuring); ctest runs each of their
-cases as a test of its own, named `<suite>/<Test>.<case>/<parameters>`,
-e.g. `Line/PumpLoopback.DataBothWays/v34_echoes`. Run one by itself with
+All the tests are GoogleTest programs (the system's libgtest-dev, or
+fetched while configuring); ctest runs each of their cases as a test of
+its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
+`Line/PumpLoopback.DataBothWays/v34_echoes`, or for the calls
+`<label>.<call>`, e.g. `agere.agere_v92_qc`. Run one by itself with
 `ctest -R v34_echoes`, or the program with `--gtest_filter`:
 
 | Program | What |
@@ -819,14 +821,21 @@ e.g. `Line/PumpLoopback.DataBothWays/v34_echoes`. Run one by itself with
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one |
+| `interop_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test` (and `interop_serial_test`, `agere_serial_test`: the calls that run alone) | calls in real time between this modem and the others (`interop_test.cpp`: one table of the calls, each program a label's) |
 
 The interop and agere calls run in real time and mostly wait, so they run
 side by side (`-j`); each writes its modem logs to
 `build/dsp/test/logs/<test>/`.
 
-The test programs are in `build/dsp/test/`; `interop.py` and
-`fax_interop.py` take the two modem programs as arguments (`NETSIM` and
-`LOG_DIR` in the environment for netsim and the logs).
+The test programs are in `build/dsp/test/`. The calls go through
+`interop_call.cpp`; `interop_call` makes one by hand:
+
+    interop_call <caller> <answerer> ["ATX3;AT+MS=122"]
+    interop_call --fax <sender> <receiver> [mod] [AT setup]
+
+with the call's settings in the environment (`interop_call.h`: `NET`,
+`STREAM`, `CALLS`, `EXPECT_B`, ...; `NETSIM` for netsim and `LOG_DIR`
+for the logs, by default the current directory).
 
 `dsp_loopback <dp> [snr dB] [seconds] [srate] [line gain] [clock ppm]
 [echo dB]` runs a caller and an answerer through a simulated line with
@@ -869,10 +878,10 @@ sets an analogue gain on the way to the 9600 Hz modem, and
 `NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
 clock: what it receives comes back with what it sends).
 
-`fax_interop` does the same with `AT+FCLASS=1`. `fax_interop.py` plays
+`fax_interop` does the same with `AT+FCLASS=1`. `interop_call --fax` plays
 the T.30 side of both fax machines: CSI/DIS, DCS, TCF, CFR, one page (for
 V.17 with the short train), EOP, MCF and DCN. The modems run in real time
-so that the script keeps up with the T.30 timers. Results at the time of
+so that the driver keeps up with the T.30 timers. Results at the time of
 writing:
 
 | Modulation | original sender → open receiver | open sender → original receiver |
@@ -882,7 +891,7 @@ writing:
 | V.17 7200, 9600, 12000, 14400 (long train for TCF, short for the page) | pass | pass |
 
 The original library makes a few bit errors with some of its own signals,
-so `fax_interop.py` accepts a page with a bit error rate below 1e-3 (a fax
+so `interop_call --fax` accepts a page with a bit error rate below 1e-3 (a fax
 page without ECM survives that). Its V.27ter training also contains stray
 180 degree phase flips, which the open receiver follows.
 
@@ -1107,7 +1116,7 @@ and V.92: it does quick connect and asks for PCM upstream, which fails.
 
 `MODEM_REC=<prefix>` makes `modem_half` record its line input and output
 (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
-interop scripts run the modems with. `WAV=<file>` makes `interop.py` save
+interop calls run the modems with. `WAV=<file>` makes `interop_call` save
 the call as audio: a stereo 16 bit WAV at 8000 Hz of the line where it
 crosses the simulated network (after G.711; A, the caller, to B left, B to
 A right), from the first dial to the end of the data (or of the call that
@@ -1115,7 +1124,7 @@ failed). It needs `NET` (netsim writes it, `NET_WAV`); with `CALLS` the
 calls in between are in it as well. For example:
 
     NETSIM=build/dsp/test/netsim NET=9600:8000:ulaw BLOB_V92FULL=1 \
-      WAV=call.wav python3 dsp/test/interop.py build/dsp/test/half_blob \
+      WAV=call.wav build/dsp/test/interop_call build/dsp/test/half_blob \
       build/dsp/test/half_open8 "ATX3;AT+MS=92"
 
 `PIPE_SYNC=<samples>` (`half_open`, `half_blob`), `AGERE_SYNC=<samples>`

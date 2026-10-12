@@ -83,7 +83,7 @@ static float loop_run(float x)
 
 /* NET_FLOOR=<rms>: white noise all the time (NET_NOISE adds to it) */
 static float floor_rms;
-/* NET_SYNC=1: these times count from a SIGUSR1 (interop.py sends it at
+/* NET_SYNC=1: these times count from a SIGUSR1 (interop_call sends it at
    CONNECT) instead of from the start; nothing happens before it */
 static int sync_on;
 static volatile sig_atomic_t synced;
@@ -242,7 +242,7 @@ static double gauss()
 
 /* NET_WAV=<file>: the line as it crosses the network (8000 Hz, after
    G.711), A -> B left and B -> A right, from the first SIGUSR2 to the
-   second (interop.py: from the dial to the end of the data); the header
+   second (interop_call: from the dial to the end of the data); the header
    is kept up to date, so the file is whole wherever it stops */
 static FILE *wav;
 static volatile sig_atomic_t wav_sig;   /* SIGUSR2s so far */

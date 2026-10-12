@@ -2,11 +2,11 @@
  *
  *    modem_half.cpp - one modem (the open data pumps on the modem core)
  *                     whose line's audio is read from fd 3 and written to
- *                     fd 4, so that interop.py can put it back to back
+ *                     fd 4, so that interop_call can put it back to back
  *                     with a modem in another process: the original
  *                     library (modem_half_legacy.cpp) or the Agere modem
  *
- *    Prints "created <name>: <pty>" for the script.  MODEM_NAME names it,
+ *    Prints "created <name>: <pty>" for interop_call.  MODEM_NAME names it,
  *    MODEM_REALTIME=1 runs it no faster than the sample clock, and
  *    MODEM_REC=<prefix> records its line in <prefix>.in and .out.
  *

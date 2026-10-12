@@ -36,7 +36,7 @@
  *    modem_half.cpp - a single modem core whose line audio is read from
  *    fd 3 and written to fd 4, so that two processes (for example one
  *    linked with the original dsplibs.o and one with the open data
- *    pumps) can be connected back to back by interop.py.
+ *    pumps) can be connected back to back by interop_call.
  *
  *    Derived from modem_test.cpp.
  */
