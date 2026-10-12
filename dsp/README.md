@@ -1090,15 +1090,20 @@ the port accesses the harness does not know, `HSF_DEBUG=2` every access.
 | V22B / 122 | CONNECT | CONNECT |
 | V21,0 / 21 | CONNECT | - |
 
+V.90 with it as the analogue modem connects at 52000/33600 over µ-law
+and A-law. It failed at first: we waited for its CJ while it went on with
+INFO0a. It cuts its CM short for CJ and drops its carrier right after the
+last data bit of CJ's third zero octet, so the octet has no stop bit and
+our V.8 receiver counted only two. Two zero octets and the start bit and
+eight zero bits of a third now count as CJ (CM and JM never have two zero
+octets in a row).
+
 The ICH module ran off its ring buffer every 3.27 s at first: a word of
 its device (offset 0x280, 2 once the engine runs) makes it add 8 samples
 to each position it reads past 700, as for a codec that runs fast; the
 harness clears it before each interrupt (`HSF_KEEP8=1` keeps it). Open:
 our V.21 caller (it answers, but we never connect), its V.32bis caller,
-and V.90 and V.92 with it as the analogue modem: V.90 got to data once
-over A-law (52000/33600), but now we miss its CJ after our JM (it goes
-on with INFO0a while we wait), and not with µ-law; V.92 does quick
-connect and asks for PCM upstream, which fails.
+and V.92: it does quick connect and asks for PCM upstream, which fails.
 
 `MODEM_REC=<prefix>` makes `modem_half` record its line input and output
 (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the

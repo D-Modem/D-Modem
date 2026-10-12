@@ -895,7 +895,10 @@ void V34Pump::v8_rx_bit(int bit)
 			v8_zeros = 0;
 		if (v8_n < (int)sizeof(v8_rx))
 			v8_rx[v8_n++] = c;
-	}
+	} else if (v8_bits == 9 && v8_zeros == 2 && !(v8_sr & 0xFF800))
+		/* CJ's third zero octet without its stop bit: the HSF
+		   modem drops its carrier right after the last data bit */
+		v8_cj = 1;
 }
 
 /* ANSam: 15 Hz amplitude modulation of the 2100 Hz answer tone */

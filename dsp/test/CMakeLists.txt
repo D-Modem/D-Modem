@@ -665,8 +665,8 @@ endif()
 
 # the HSF soft modem (8000 Hz) and the open modem (9600 Hz) call each
 # other: V.22bis and V.34 both ways, V.32bis with the open modem calling
-# and V.21 with the HSF modem calling (see the README for the calls that
-# fail)
+# and V.21 with the HSF modem calling; V.90 with it as the analogue modem
+# (see the README for the calls that fail)
 if(TARGET half_hsf)
 	foreach(_p V21,0:21:hsf V22B:122:both V32B,0:132:open V34:34:both)
 		string(REPLACE ":" ";" _p ${_p})
@@ -691,6 +691,16 @@ if(TARGET half_hsf)
 				LABELS hsf ENVIRONMENT
 				"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
 		endif()
+	endforeach()
+	# V.90: the HSF modem as the analogue modem, the open one as the
+	# digital modem
+	foreach(_law ulaw alaw)
+		add_test(NAME hsf_v90_${_law} COMMAND ${Python3_EXECUTABLE}
+			${_py}/interop.py $<TARGET_FILE:half_hsf>
+			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
+		set_tests_properties(hsf_v90_${_law} PROPERTIES LABELS hsf
+			ENVIRONMENT
+			"${_env};NET_LOOP=0.45;NET=8000:8000:${_law};DSP_G711=${_law};EXPECT_B=V.90 connect 5[0-9]{4}/;PROTO_B=ATX3\;AT+MS=90")
 	endforeach()
 endif()
 
