@@ -1095,7 +1095,7 @@ the port accesses the harness does not know, `HSF_DEBUG=2` every access.
 | HSF `AT+MS=` / ours | HSF caller → open answerer | open caller → HSF answerer |
 |---|---|---|
 | V34 / 34 | CONNECT | CONNECT |
-| V32B,0 / 132 | - | CONNECT |
+| V32B,0 / 132 | CONNECT | CONNECT |
 | V22B / 122 | CONNECT | CONNECT |
 | V21,0 / 21 | CONNECT | - |
 | V90 / 90 (V.90, the open modem digital) | CONNECT 52000/33600 | - |
@@ -1113,8 +1113,14 @@ The ICH module ran off its ring buffer every 3.27 s at first: a word of
 its device (offset 0x280, 2 once the engine runs) makes it add 8 samples
 to each position it reads past 700, as for a codec that runs fast; the
 harness clears it before each interrupt (`HSF_KEEP8=1` keeps it). Open:
-our V.21 caller (it answers, but we never connect) and its V.32bis
-caller.
+our V.21 caller (it answers, but we never connect).
+
+Its V.32bis (and V.32) caller went silent after our answerer's AC/CA
+exchange and never answered our R1. Its own answerer, after the reversal
+that answers the caller's CC, keeps on with AC for 256 symbols before the
+silence and S; ours stopped after 64, and the HSF modem missed our S.
+With 128 or more it trains; we now send 256, as it does (the other
+modems do not mind).
 
 V.92 with PCM upstream connects (52000/41333, µ-law and A-law), with quick
 connect (it sends QC1a on the first call already) and without (`+PQC=3`).

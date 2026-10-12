@@ -421,8 +421,8 @@ std::vector<Call> calls()
 	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3" });
 
 	/* --- the HSF soft modem (8000 Hz) and the open modem (9600 Hz):
-	   V.22bis and V.34 both ways, V.32bis with the open modem calling
-	   and V.21 with the HSF modem calling; V.90 and V.92 (PCM upstream)
+	   V.22bis, V.32bis and V.34 both ways and V.21 with the HSF modem
+	   calling; V.90 and V.92 (PCM upstream)
 	   with it as the analogue modem (see the README for the calls that
 	   fail) */
 	struct Hsf {
@@ -431,7 +431,7 @@ std::vector<Call> calls()
 	};
 	for (auto h : { Hsf{ "V21,0", "21", true, false },
 			Hsf{ "V22B", "122", true, true },
-			Hsf{ "V32B,0", "132", false, true },
+			Hsf{ "V32B,0", "132", true, true },
 			Hsf{ "V34", "34", true, true } }) {
 		std::string a = std::string("ATX3;AT+MS=") + h.n;
 		std::string o = std::string("ATX3;AT+MS=") + h.ms;

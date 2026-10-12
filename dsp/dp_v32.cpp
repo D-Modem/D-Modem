@@ -824,7 +824,10 @@ int V32Pump::handshake()
 			return DPSTAT_ERROR;
 		break;
 	case A_AC2:
-		if (sym >= 64) {
+		/* AC after CC's reversal for 256 symbols, as the HSF
+		   modem's own answerer: calling, it misses our S (and never
+		   answers R1) after only 64 */
+		if (sym >= 256) {
 			set_state(A_QUIET);
 			set_tx(TXM_SILENCE);
 		}
