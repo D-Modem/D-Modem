@@ -188,11 +188,15 @@ add_test(NAME interop_34_noise COMMAND ${Python3_EXECUTABLE}
 set_tests_properties(interop_34_noise PROPERTIES LABELS interop ENVIRONMENT
 	"${_env};NET=9600:9600:ulaw;NET_SYNC=1;STREAM=30;NET_FLOOR=250;NET_NOISE=10:250")
 # V.90: the original library (analogue modem) calls the open one (digital
-# modem, 8000 Hz) through the simulated G.711 network
+# modem, 8000 Hz) through the simulated G.711 network.  NET_FLOOR: on a
+# line without any noise its phase 4 check (the error before and after
+# TRN2d corrects its levels from the DIL by a unit or two) fails, and it
+# retrains once for nothing; a floor of -81 dBFS keeps the check to what
+# it is for on a real line
 add_test(NAME interop_v90_ulaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=90")
 set_tests_properties(interop_v90_ulaw PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw")
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;NET_FLOOR=3")
 add_test(NAME interop_v90_alaw COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py
 	$<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8> "ATX3;AT+MS=90")
 set_tests_properties(interop_v90_alaw PROPERTIES LABELS interop
@@ -206,12 +210,12 @@ add_test(NAME interop_v90_reneg COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 	"ATX3;AT+MS=90")
 set_tests_properties(interop_v90_reneg PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=15;DSP_V34_RENEG=5000:10;EXPECT_B=V.90 renegotiated [0-9]+/24000")
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;NET_FLOOR=3;STREAM=15;DSP_V34_RENEG=5000:10;EXPECT_B=V.90 renegotiated [0-9]+/24000")
 add_test(NAME interop_v90_reneg_silence COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 	"ATX3;AT+MS=90")
 set_tests_properties(interop_v90_reneg_silence PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=50;NET_NOISE=40:20:10;NET_NOISE_DIR=bacodes;NET_NOISE_QUIET=50;EXPECT_B=(?s)CPs'.*V.90 renegotiated")
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;NET_FLOOR=3;STREAM=50;NET_NOISE=40:20:10;NET_NOISE_DIR=bacodes;NET_NOISE_QUIET=50;EXPECT_B=(?s)CPs'.*V.90 renegotiated")
 # V.92 quick connect (short phase 1): the original library, a V.92
 # analogue modem, starts with QC1a; then V.90
 add_test(NAME interop_v92_qc COMMAND ${Python3_EXECUTABLE} ${_py}/interop.py

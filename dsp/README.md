@@ -233,13 +233,24 @@ law is mu-law, or A-law with `DSP_G711=alaw`.
 
 The original library, as an analogue V.90 modem calling through the
 simulated network (`ctest -R interop_v90`), connects at 56000
-bit/s downstream and 31200 upstream, mu-law and A-law. Whether its
-phase 4 check passes (the ratio of its equalizer's error before and after
-TRN2d, limit about 1.5) depends on where the segments fall in its blocks:
-the same call passes or fails every time, and a few samples more or less
-anywhere change that. When it fails, it asks for a retrain (silence and
-tone A) and the digital modem follows it back to phase 2 at the tones,
-like a V.34 retrain; the second training passes. The Agere modem as the
+bit/s downstream and 31200 upstream, mu-law and A-law, on a line without
+noise. Its phase 4 check compares the error of its equalizer output
+against the levels it expects for TRN2d's codes over the first 7200
+symbols of TRN2d with that over the next 7200; in between, it replaces
+the levels it took from the DIL with those it measured in TRN2d. More
+than about 1.5 times the error before, and it retrains (silence and tone
+A; the digital modem follows it back to phase 2 at the tones, like a
+V.34 retrain). On a line without any noise the error is only a unit or
+two of its 16 bit scale, and its levels from the DIL are off by about
+that much (they are 4 times the G.711 values of the codes, give or take
+2), so with mu-law the check fails every time: 1.96 against 1.23, and
+1.78 on the second training, which it lets pass (one retrain at most).
+The codes come through as sent; any digital modem would do the same.
+With a noise floor of -81 dBFS (netsim's `NET_FLOOR=3`, still far below a
+real line's) the error is that of the noise, the ratio 1.2 to 1.3 at
+every alignment of the call in both laws, and the call connects at
+54666/31200 without the retrain, 15 s sooner; the mu-law V.90 tests use
+it. The Agere modem as the
 analogue modem (`ctest -R agere_v90`) connects at 46666 bit/s downstream;
 it trains on TRN1d for 0.6 s and decides on it for another 0.9 s before
 it looks for Jd, so TRN1d lasts 1 s (it was 300 ms, enough for the
