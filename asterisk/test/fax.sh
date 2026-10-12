@@ -4,12 +4,12 @@
 #   1. DModemSendFax calls DModem(bbs), which sees the CNG and receives
 #      the fax into fax_dir by itself
 #   2. DModemSendFax calls DModemReceiveFax(file)
-# The document is the two page test file of dsp/test/t4_test;
+# The document is the two page test file of dsp/test/fax_doc;
 # the received ones must be the same.
 here=$(cd "$(dirname "$0")" && pwd)
 # the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
 build=${DMODEM_BUILD:-$here/../../build}
-t4=$build/dsp/test/t4_test
+t4=$build/dsp/test/fax_doc
 run=${TMPDIR:-/tmp}/dmodem-fax-test.$$
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod" "$run/fax"
 [ -x "$t4" ] || { echo "build first: cmake --build $build" >&2; exit 1; }

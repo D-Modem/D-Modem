@@ -1,0 +1,226 @@
+/*
+ *    spandsp_test.cpp - spandsp (libspandsp) as Asterisk's SendFAX has it,
+ *    into our receivers: its V.17 transmitter into our fax receiver at
+ *    8000 Hz through G.711 mu-law, a long train (as for TCF), then a short
+ *    train with its equalizer (a page), PRBS bits or a fax page's; and its
+ *    T.4 encoder into our line receiver (t4_rx_bit), the rows the same.
+ *    spandsp's side is in spandsp_tx.cpp (its headers clash with ours);
+ *    our T.30 against spandsp's is t30_spandsp.cpp.
+ *
+ *    DSP_DEBUG=<level>   the DSP's log
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <string>
+#include <vector>
+
+#include "../fax.h"
+#include "fax_util.h"
+#include "t4.h"
+
+using namespace dsp;
+
+/* spandsp_tx.cpp */
+void *sp_v17_tx(int bps, int short_train, int (*get_bit)(void *), void *ctx);
+int sp_v17_samples(void *s, short *amp, int n);
+void sp_v17_free(void *s);
+int sp_ulaw(int x);
+int sp_end_of_data(void);
+void *sp_t4_tx(const char *file, int page, int encoding, int min_bits);
+int sp_t4_bit(void *s);
+
+/*
+ *    V.17
+ *
+ */
+
+struct V17 {
+	int bps;
+	int t4_min;     /* a fax page's bits (that many bits a row at
+			   least), -1: PRBS */
+};
+
+class SpandspV17 : public testing::TestWithParam<V17> {
+protected:
+	unsigned prbs = 0x1234567;
+	std::vector<unsigned char> txb, rxb;
+	long ntx = 0, nrx = 0, maxbits = 200000;
+	void *t4src = nullptr;
+	std::string page;
+
+	static int get_bit(void *ctx) {
+		SpandspV17 *t = static_cast<SpandspV17 *>(ctx);
+		int b;
+		if (t->ntx >= t->maxbits)
+			return sp_end_of_data();
+		if (t->t4src) {
+			b = sp_t4_bit(t->t4src);
+			if (b < 0) {
+				t->maxbits = t->ntx;
+				return sp_end_of_data();
+			}
+		} else {
+			b = ((t->prbs >> 22) ^ (t->prbs >> 17)) & 1;
+			t->prbs = (t->prbs << 1) | b;
+		}
+		t->txb[t->ntx++] = b;
+		return b;
+	}
+	static void put_bit(void *ctx, int bit) {
+		SpandspV17 *t = static_cast<SpandspV17 *>(ctx);
+		if (t->nrx < (long)t->rxb.size())
+			t->rxb[t->nrx++] = bit;
+	}
+	testing::AssertionResult run(int short_train, FaxRxMemory *mem);
+};
+
+testing::AssertionResult SpandspV17::run(int short_train, FaxRxMemory *mem)
+{
+	int bps = GetParam().bps, st;
+	const char *train = short_train ? "short train: " : "long train: ";
+	void *tx;
+	FaxRx rx;
+	enum fax_mod mod;
+	long n, i, off, best = -1000, err = 64;
+	short amp[160];
+
+	ntx = nrx = 0;
+	prbs = 0x1234567;
+	if (GetParam().t4_min >= 0) {
+		maxbits = 2000000;
+		t4src = sp_t4_tx(page.c_str(), 0, 2, GetParam().t4_min);
+		if (!t4src)
+			return testing::AssertionFailure() << "spandsp cannot read " << page;
+	}
+	txb.assign(maxbits, 0);
+	rxb.assign(2 * maxbits, 0);
+	fax_mod_from_code(bps == 14400 ? (short_train ? 146 : 145) :
+			  bps == 12000 ? (short_train ? 122 : 121) :
+			  bps == 9600 ? (short_train ? 98 : 97) :
+			  (short_train ? 74 : 73), &mod, &st);
+	tx = sp_v17_tx(bps, short_train, get_bit, this);
+	if (rx.init(mod, short_train, 8000, put_bit, this, mem))
+		return testing::AssertionFailure() << train << "receiver init";
+	/* silence, the signal, silence */
+	for (n = 0; n < 8000L * 120 / 160; n++) {
+		int k, len = n < 5 ? 0 : sp_v17_samples(tx, amp, 160);
+		for (k = len; k < 160; k++)
+			amp[k] = 0;
+		for (k = 0; k < 160; k++)
+			rx.sample(sp_ulaw(amp[k]));
+		if (len < 160 && n > 5 && !rx.carrier)
+			break;
+	}
+	rx.save(mem);
+	rx.release();
+	sp_v17_free(tx);
+	for (off = -3000; off < 3000 && off + 256 <= nrx; off++) {
+		long e = 0;
+		if (off < 0)
+			continue;
+		for (i = 0; i < 256; i++)
+			e += rxb[off + i] != txb[i];
+		if (e < err) {
+			err = e;
+			best = off;
+		}
+	}
+	if (best < -3000 || err >= 64)
+		return testing::AssertionFailure() << train << "sent " << ntx <<
+			", received " << nrx << ", no alignment";
+	long first = -1;
+	for (i = 0, err = 0; i < ntx && best + i < nrx; i++) {
+		if (best + i < 0)
+			continue;
+		if (rxb[best + i] != txb[i]) {
+			err++;
+			if (first < 0)
+				first = i;
+		}
+	}
+	if (err)
+		return testing::AssertionFailure() << train << "sent " << ntx <<
+			", compared " << i << ", errors " << err <<
+			" (the first at bit " << first << ", offset " << best << ")";
+	return testing::AssertionSuccess();
+}
+
+TEST_P(SpandspV17, IntoOurReceiver)
+{
+	FaxRxMemory mem;
+
+	if (getenv("DSP_DEBUG"))
+		dsplibs_debug_level = atoi(getenv("DSP_DEBUG"));
+	if (GetParam().t4_min >= 0) {
+		page = fax_file("page.tif");
+		ASSERT_TRUE(write_test_doc(page, true));
+	}
+	memset(&mem, 0, sizeof(mem));
+	EXPECT_TRUE(run(0, &mem));
+	EXPECT_TRUE(run(1, &mem));
+}
+
+INSTANTIATE_TEST_SUITE_P(Rates, SpandspV17, testing::Values(
+	V17{ 14400, -1 }, V17{ 12000, -1 }, V17{ 9600, -1 }, V17{ 7200, -1 },
+	/* a page, without and with fill bits */
+	V17{ 14400, 0 }, V17{ 14400, 144 }),
+	[](const testing::TestParamInfo<V17> &i) {
+		std::string n = std::to_string(i.param.bps);
+		if (i.param.t4_min >= 0)
+			n += "_page_min" + std::to_string(i.param.t4_min);
+		return n;
+	});
+
+/*
+ *    T.4
+ *
+ */
+
+struct T4Coding {
+	int encoding;   /* 1 MH, 2 MR */
+	int min_bits;   /* a row */
+};
+
+class SpandspT4 : public testing::TestWithParam<T4Coding> {};
+
+TEST_P(SpandspT4, IntoOurLineReceiver)
+{
+	std::string doc = fax_file("doc.tif");
+	TiffIn ti;
+	T4Page ref, got;
+	T4Rx rx;
+	int enc = GetParam().encoding, b, y, diff = 0, first = -1;
+	void *s;
+
+	ASSERT_TRUE(write_test_doc(doc, true));
+	ASSERT_EQ(ti.open(doc.c_str()), 0);
+	ASSERT_EQ(ti.read_page(&ref), 1);
+	s = sp_t4_tx(doc.c_str(), 0, enc, GetParam().min_bits);
+	ASSERT_NE(s, nullptr);
+	got.init(ref.width, ref.fine);
+	rx.init(&got, enc == 2);
+	while ((b = sp_t4_bit(s)) >= 0)
+		if (rx.bit(b))
+			break;
+	rx.end();
+	for (y = 0; y < ref.rows && y < got.rows; y++)
+		if (memcmp(ref.bits + (size_t)y * 216, got.bits + (size_t)y * 216, 216)) {
+			if (first < 0)
+				first = y;
+			diff++;
+		}
+	EXPECT_EQ(got.rows, ref.rows);
+	EXPECT_EQ(diff, 0) << "the first at row " << first;
+	ti.close();
+}
+
+INSTANTIATE_TEST_SUITE_P(Codings, SpandspT4, testing::Values(
+	T4Coding{ 1, 0 }, T4Coding{ 1, 144 }, T4Coding{ 2, 0 },
+	T4Coding{ 2, 144 }),
+	[](const testing::TestParamInfo<T4Coding> &i) {
+		return std::string(i.param.encoding == 1 ? "mh" : "mr") +
+			"_min" + std::to_string(i.param.min_bits);
+	});

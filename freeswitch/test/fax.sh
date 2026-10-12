@@ -7,12 +7,12 @@
 #   3. txfax (spandsp) calls dmodem bbs
 #   4. txfax calls dmodem_receive_fax
 #   5. dmodem_send_fax calls rxfax (spandsp)
-# The document is the two page test file of dsp/test/t4_test; each one
+# The document is the two page test file of dsp/test/fax_doc; each one
 # received must be the one sent.  CASES="2 5" runs only those;
 # FAX_MAX_RATE=9600: dmodem's fax no faster; DMODEM_DEBUG=3: the DSP
 # traces in freeswitch.log.
 . "$(dirname "$0")/fs.sh"
-t4=$build/dsp/test/t4_test
+t4=$build/dsp/test/fax_doc
 [ -x "$t4" ] || { echo "build first: cmake --build $build" >&2; exit 1; }
 fs_start fax
 "$t4" light "$run/doc.tif" || exit 1

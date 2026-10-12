@@ -38,7 +38,7 @@ V.42bis and the DTE are gone: a character could be lost when the encoder's
 pending output filled a frame exactly, and a decoder flush could overwrite
 decoded characters the DTE had not taken yet.
 
-`link_test` (`ctest -R link_test`) runs it without a modem: V.42bis and
+`link_test` (`ctest -R Link`, GoogleTest) runs it without a modem: V.42bis and
 V.44 round trips (text, noise, escape characters, repeats, small
 dictionaries, flushes), V.44's transparent mode, HDLC framing with a bit
 error, and two Links back to back bit by bit: detection, XID, V.44 both

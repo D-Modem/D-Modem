@@ -4,12 +4,12 @@
  *                    modem: V.42bis round trips, HDLC framing, and two
  *                    Links back to back, bit by bit
  *
- *    link_test            all of them
- *    link_test <name>     one (v42bis, hdlc, async, lapm, lapm_errors,
- *                         lapm_busy, lapm_nocomp, v14)
+ *    link_test                          all of them
+ *    link_test --gtest_filter=Link.Hdlc one
  *
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,16 +17,25 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "link.h"
 #include "v44.h"
 
 using namespace dlink;
 
-static int failures;
-
-#define CHECK(cond, ...) do { if (!(cond)) { failures++; \
-	printf("  FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); \
-	printf("\n"); } } while (0)
+/* a failed check, with a message in printf's format */
+static std::string fmt(const char *f, ...) __attribute__((format(printf, 1, 2)));
+static std::string fmt(const char *f, ...)
+{
+	char buf[256];
+	va_list ap;
+	va_start(ap, f);
+	vsnprintf(buf, sizeof(buf), f, ap);
+	va_end(ap);
+	return buf;
+}
+#define CHECK(cond, ...) EXPECT_TRUE(cond) << fmt(__VA_ARGS__)
 
 static unsigned rnd_state = 12345;
 static unsigned rnd()
@@ -95,8 +104,9 @@ static std::vector<uint8_t> v44_roundtrip(const char *name,
 	return line;
 }
 
-static void test_v44()
+TEST(Link, V44)
 {
+	rnd_state = 12345;
 	std::vector<uint8_t> t = text(200000), z = noise(50000);
 	std::vector<uint8_t> rep, line;
 	for (int i = 0; i < 30000; i++)
@@ -183,8 +193,9 @@ static void v42bis_roundtrip(const char *name, const std::vector<uint8_t> &in,
 	printf("  %s: %zu -> %zu octets\n", name, in.size(), line.size());
 }
 
-static void test_v42bis()
+TEST(Link, V42bis)
 {
+	rnd_state = 12345;
 	std::vector<uint8_t> t = text(200000), z = noise(50000);
 	std::vector<uint8_t> esc;
 	for (int i = 0; i < 20000; i++)
@@ -246,8 +257,9 @@ struct NullOwner : Owner {
 	void status(Status) override {}
 };
 
-static void test_hdlc()
+TEST(Link, Hdlc)
 {
+	rnd_state = 12345;
 	NullOwner o;
 	Link l;
 	l.init(&o, true, Config());
@@ -411,8 +423,9 @@ static void transfer(const char *name, Pair &p, size_t n_c, size_t n_a,
 			   " bit errors)").c_str() : "");
 }
 
-static void test_lapm()
+TEST(Link, Lapm)
 {
+	rnd_state = 12345;
 	Pair p(lapm_config(3), lapm_config(3));
 	p.start(true, true);
 	p.run(9600 * 3);
@@ -435,8 +448,9 @@ static void test_lapm()
 
 /* V.42bis when one of them has no V.44 (as the caller, as the
    answerer) */
-static void test_lapm_v42bis()
+TEST(Link, LapmV42bis)
 {
+	rnd_state = 12345;
 	for (int side = 0; side < 2; side++) {
 		Pair p(lapm_config(3, side == 1), lapm_config(3, side == 0));
 		p.start(true, true);
@@ -451,8 +465,9 @@ static void test_lapm_v42bis()
 	}
 }
 
-static void test_lapm_nocomp()
+TEST(Link, LapmNoCompression)
 {
+	rnd_state = 12345;
 	Pair p(lapm_config(0), lapm_config(3));
 	p.start(true, true);
 	p.run(9600 * 3);
@@ -463,8 +478,9 @@ static void test_lapm_nocomp()
 	transfer("lapm, no v42bis", p, 20000, 20000, 9600 * 60);
 }
 
-static void test_lapm_errors()
+TEST(Link, LapmBitErrors)
 {
+	rnd_state = 12345;
 	Pair p(lapm_config(3), lapm_config(3));
 	p.start(true, true);
 	p.run(9600 * 3);
@@ -476,8 +492,9 @@ static void test_lapm_errors()
 	CHECK(!p.dc.error && !p.da.error, "no link error");
 }
 
-static void test_lapm_busy()
+TEST(Link, LapmSlowDte)
 {
+	rnd_state = 12345;
 	Pair p(lapm_config(0), lapm_config(0));
 	p.start(true, true);
 	p.run(9600 * 3);
@@ -487,8 +504,9 @@ static void test_lapm_busy()
 	transfer("lapm, slow DTE", p, 20000, 2000, 9600 * 120);
 }
 
-static void test_async()
+TEST(Link, Async)
 {
+	rnd_state = 12345;
 	Config c;               /* no LAPM */
 	Pair p(c, c);
 	p.start(false, false);
@@ -500,8 +518,9 @@ static void test_async()
 
 /* the answerer offers LAPM, the caller does not (it sends no ODP): the
    answerer falls back to async after T400 */
-static void test_v14()
+TEST(Link, V14)
 {
+	rnd_state = 12345;
 	Config c;
 	Pair p(c, lapm_config(3));
 	p.start(false, true);
@@ -510,28 +529,4 @@ static void test_v14()
 	CHECK(p.dc.up && p.da.up, "both up (async)");
 	transfer("lapm answerer, async caller", p, 3000, 3000, 9600 * 10,
 		 false);
-}
-
-int main(int argc, char **argv)
-{
-	struct { const char *name; void (*fn)(); } tests[] = {
-		{ "v42bis", test_v42bis },
-		{ "v44", test_v44 },
-		{ "hdlc", test_hdlc },
-		{ "async", test_async },
-		{ "v14", test_v14 },
-		{ "lapm", test_lapm },
-		{ "lapm_v42bis", test_lapm_v42bis },
-		{ "lapm_nocomp", test_lapm_nocomp },
-		{ "lapm_errors", test_lapm_errors },
-		{ "lapm_busy", test_lapm_busy },
-	};
-	for (auto &t : tests) {
-		if (argc > 1 && strcmp(argv[1], t.name))
-			continue;
-		printf("%s\n", t.name);
-		t.fn();
-	}
-	printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);
-	return failures ? 1 : 0;
 }

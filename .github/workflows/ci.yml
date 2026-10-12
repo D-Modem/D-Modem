@@ -24,7 +24,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++ libssl-dev uuid-dev \
+            cmake ninja-build pkg-config g++ libssl-dev uuid-dev libgtest-dev \
             libspandsp-dev libtiff-tools asterisk-dev g++-multilib
 
       # pjproject is fetched and built while configuring: keep it
@@ -52,7 +52,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++ libssl-dev uuid-dev \
+            cmake ninja-build pkg-config g++ libssl-dev uuid-dev libgtest-dev \
             libtiff-tools asterisk asterisk-modules asterisk-dev python3
           # the tests run an Asterisk of their own
           sudo systemctl stop asterisk || true
@@ -105,7 +105,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++ libssl-dev uuid-dev \
+            cmake ninja-build pkg-config g++ libssl-dev uuid-dev libgtest-dev \
             libtiff-tools python3 build-essential autoconf automake \
             libtool libtool-bin yasm libcurl4-openssl-dev libpcre3-dev \
             libspeex-dev libspeexdsp-dev libsqlite3-dev libedit-dev \

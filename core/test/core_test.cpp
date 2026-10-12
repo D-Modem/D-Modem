@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include <dcore.h>
 #include <log.h>
 
@@ -23,11 +25,14 @@ extern "C" int prop_dp_init(void);
 using dcore::LinkState;
 using dcore::Modem;
 
-static int failures;
-
-#define CHECK(cond) do { if (!(cond)) { \
-	printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-	failures++; } } while (0)
+/* the data pumps, once for the program */
+static struct Pumps {
+	Pumps() {
+		dp_dummy_init();
+		dp_sinus_init();
+		prop_dp_init();
+	}
+} pumps;
 
 static unsigned long now;
 
@@ -79,46 +84,46 @@ static std::string cmd(Modem *m, Line &l, const char *s)
 	return l.out;
 }
 
-static void test_options()
+TEST(Core, Options)
 {
 	Line l;
 	Modem *m = make(l, "uk", "UK");
-	CHECK(m->ok());
-	CHECK(cmd(m, l, "ATI7\r") == "ATI7\r\r\nCountry: UK\r\nOK\r\n");
+	EXPECT_TRUE(m->ok());
+	EXPECT_EQ(cmd(m, l, "ATI7\r"), "ATI7\r\r\nCountry: UK\r\nOK\r\n");
 	delete m;
 	m = make(l, "xx", "NOWHERE");
-	CHECK(cmd(m, l, "ATE0I7\r") == "ATE0I7\r\r\nCountry: USA\r\nOK\r\n");
-	CHECK(m->sreg(SREG_ECHO) == 0);
-	CHECK(m->set_sreg(300, 1) == -1);
-	CHECK(m->sreg(300) == -1);
-	CHECK(m->next_timer_ms() == -1);
-	CHECK(m->link_state() == LinkState::Idle);
-	CHECK(!m->started());
+	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: USA\r\nOK\r\n");
+	EXPECT_EQ(m->sreg(SREG_ECHO), 0);
+	EXPECT_EQ(m->set_sreg(300, 1), -1);
+	EXPECT_EQ(m->sreg(300), -1);
+	EXPECT_EQ(m->next_timer_ms(), -1);
+	EXPECT_EQ(m->link_state(), LinkState::Idle);
+	EXPECT_TRUE(!m->started());
 	delete m;
 }
 
-static void test_failing_line()
+TEST(Core, FailingLine)
 {
 	Line l;
 	Modem *m = make(l, "fail");
 	l.fail_start = -1;
 	/* the call ends at once (NO CARRIER), the command fails */
-	CHECK(cmd(m, l, "ATE0X3D\r") ==
-	      "ATE0X3D\r\r\nNO CARRIER\r\nERROR\r\n");
-	CHECK(!m->started());
-	CHECK(m->link_state() == LinkState::Idle);
+	EXPECT_EQ(cmd(m, l, "ATE0X3D\r"),
+		  "ATE0X3D\r\r\nNO CARRIER\r\nERROR\r\n");
+	EXPECT_TRUE(!m->started());
+	EXPECT_EQ(m->link_state(), LinkState::Idle);
 	l.fail_start = 0;
 	l.fail_hook = 1;
-	CHECK(cmd(m, l, "ATA\r") == "NO CARRIER\r\nERROR\r\n");
-	CHECK(!m->started());
-	CHECK(cmd(m, l, "ATH1\r") == "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "ATA\r"), "NO CARRIER\r\nERROR\r\n");
+	EXPECT_TRUE(!m->started());
+	EXPECT_EQ(cmd(m, l, "ATH1\r"), "ERROR\r\n");
 	l.fail_hook = 0;
-	CHECK(cmd(m, l, "ATH1\r") == "OK\r\n");
-	CHECK(l.last_hook == MODEM_HOOK_OFF);
-	CHECK(cmd(m, l, "ATH\r") == "OK\r\n");
-	CHECK(l.last_hook == MODEM_HOOK_ON);
-	CHECK(cmd(m, l, "ATM2L2\r") == "OK\r\n");
-	CHECK(l.volume == 2);
+	EXPECT_EQ(cmd(m, l, "ATH1\r"), "OK\r\n");
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
+	EXPECT_EQ(cmd(m, l, "ATH\r"), "OK\r\n");
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
+	EXPECT_EQ(cmd(m, l, "ATM2L2\r"), "OK\r\n");
+	EXPECT_EQ(l.volume, 2);
 	delete m;
 }
 
@@ -186,24 +191,35 @@ static std::string data(char who, int n)
 	return d;
 }
 
-static void test_call(const char *ms, unsigned min_rate, int bytes)
+struct Call {
+	const char *ms;
+	unsigned min_rate;
+	int bytes;
+};
+
+class CoreCall : public testing::TestWithParam<Call> {};
+
+TEST_P(CoreCall, DataBothWaysAndHangup)
 {
+	const char *ms = GetParam().ms;
+	unsigned min_rate = GetParam().min_rate;
+	int bytes = GetParam().bytes;
 	Pair p(ms);
 	std::string da = data('a', bytes), db = data('b', bytes * 3 / 4);
 	size_t sa = 0, sb = 0;
 
-	CHECK(p.b->answer() == 0);
-	CHECK(p.a->dial("") == 0);
-	CHECK(p.a->link_state() == LinkState::Connecting);
-	CHECK(p.a->caller() && !p.b->caller());
-	CHECK(p.run_until([](Pair &q) {
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	EXPECT_EQ(p.a->link_state(), LinkState::Connecting);
+	EXPECT_TRUE(p.a->caller() && !p.b->caller());
+	ASSERT_TRUE(p.run_until([](Pair &q) {
 		return q.a->link_state() == LinkState::Online &&
 			q.b->link_state() == LinkState::Online; }, 40000));
 	printf("%s: online at %u/%u bit/s\n", ms, p.a->tx_rate(),
 	       p.a->rx_rate());
-	CHECK(p.a->tx_rate() >= min_rate && p.b->rx_rate() >= min_rate);
-	CHECK(p.a->carrier() && p.b->carrier());
-	CHECK(p.got_a.find("CONNECT") != std::string::npos);
+	EXPECT_TRUE(p.a->tx_rate() >= min_rate && p.b->rx_rate() >= min_rate);
+	EXPECT_TRUE(p.a->carrier() && p.b->carrier());
+	EXPECT_TRUE(p.got_a.find("CONNECT") != std::string::npos);
 	p.got_a.clear();
 	p.got_b.clear();
 	/* the data, both ways, as fast as the modems take it */
@@ -220,40 +236,39 @@ static void test_call(const char *ms, unsigned min_rate, int bytes)
 		if (p.got_b.size() >= da.size() && p.got_a.size() >= db.size())
 			break;
 	}
-	CHECK(p.got_b == da);
-	CHECK(p.got_a == db);
-	if (p.got_b != da || p.got_a != db)
-		printf("%s: got %zu/%zu and %zu/%zu bytes\n", ms,
-		       p.got_b.size(), da.size(), p.got_a.size(), db.size());
+	EXPECT_TRUE(p.got_b == da) << "B got " << p.got_b.size() << "/" <<
+		da.size() << " bytes";
+	EXPECT_TRUE(p.got_a == db) << "A got " << p.got_a.size() << "/" <<
+		db.size() << " bytes";
 	p.run_until([](Pair &q) {
 		return !q.a->tx_pending() && !q.b->tx_pending(); }, 5000);
-	CHECK(!p.a->tx_pending() && !p.b->tx_pending());
+	EXPECT_TRUE(!p.a->tx_pending() && !p.b->tx_pending());
 
 	/* the escape: guard time, +++, guard time; the timer says when */
 	p.run_until([](Pair &) { return false; }, 1100);
 	p.a->dte_input("+++", 3);
-	CHECK(p.a->next_timer_ms() > 400 && p.a->next_timer_ms() <= 500);
-	CHECK(p.run_until([](Pair &q) {
+	EXPECT_TRUE(p.a->next_timer_ms() > 400 && p.a->next_timer_ms() <= 500);
+	EXPECT_TRUE(p.run_until([](Pair &q) {
 		return q.got_a.find("OK") != std::string::npos; }, 1000));
-	CHECK(p.a->link_state() == LinkState::Online);
+	EXPECT_EQ(p.a->link_state(), LinkState::Online);
 	p.got_a.clear();
 	/* the remote hangs up; we hear NO CARRIER */
 	p.b->hangup_now();
-	CHECK(!p.b->started());
-	CHECK(p.b->link_state() == LinkState::Idle);
-	CHECK(p.run_until([](Pair &q) {
+	EXPECT_TRUE(!p.b->started());
+	EXPECT_EQ(p.b->link_state(), LinkState::Idle);
+	EXPECT_TRUE(p.run_until([](Pair &q) {
 		return !q.a->started(); }, 15000));
-	CHECK(p.a->link_state() == LinkState::Idle);
-	CHECK(!p.a->carrier());
-	CHECK(p.la.starts == 1 && p.la.stops == 1);
-	CHECK(p.got_a.find("NO CARRIER") != std::string::npos);
+	EXPECT_EQ(p.a->link_state(), LinkState::Idle);
+	EXPECT_TRUE(!p.a->carrier());
+	EXPECT_TRUE(p.la.starts == 1 && p.la.stops == 1);
+	EXPECT_TRUE(p.got_a.find("NO CARRIER") != std::string::npos);
 	if (getenv("SHOW"))
 		printf("A after the hangup: [%s]\n", p.got_a.c_str());
 }
 
 static int log_lines;
 
-static void test_log()
+TEST(Core, Log)
 {
 	dcore::log_set_hook([](const char *) { log_lines++; });
 	dcore::log_level = 1;
@@ -263,23 +278,13 @@ static void test_log()
 	delete m;
 	dcore::log_level = 0;
 	dcore::log_set_hook(nullptr);
-	CHECK(log_lines > 0);
+	EXPECT_TRUE(log_lines > 0);
 }
 
-int main()
-{
-	dp_dummy_init();
-	dp_sinus_init();
-	prop_dp_init();
-	test_options();
-	test_failing_line();
-	test_log();
-	test_call("+MS=132", 14400, 20000);
-	test_call("+MS=34", 28800, 40000);
-	test_call("+MS=22", 1200, 4000);
-	if (failures)
-		printf("%d FAILED\n", failures);
-	else
-		printf("PASS\n");
-	return failures != 0;
-}
+INSTANTIATE_TEST_SUITE_P(Pumps, CoreCall, testing::Values(
+	Call{ "+MS=132", 14400, 20000 },
+	Call{ "+MS=34", 28800, 40000 },
+	Call{ "+MS=22", 1200, 4000 }),
+	[](const testing::TestParamInfo<Call> &i) {
+		return std::string("ms") + (i.param.ms + 4);
+	});

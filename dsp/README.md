@@ -502,10 +502,10 @@ The core's DC remover leaves the received codes alone while V.91 runs
 (`dp_runtime_pcm`). `DSP_V91=0` leaves V.91 out of V.8, `DSP_V91_K`
 limits K.
 
-`dmodem_pair` puts a G.711 network between the two modems with
-`DMODEM_NET` (`ctest -R v91`):
+`dmodem_test` puts a G.711 network between the two modems
+(`ctest -R v91`):
 
-| `DMODEM_NET` | Codes per interval | Rate |
+| Network | Codes per interval | Rate |
 |---|---|---|
 | `g711`, mu-law | 124 (+0 and -0 are one) | 62667 |
 | `g711`, A-law | 125 | 62667 |
@@ -577,11 +577,12 @@ its RCP: the V.17 short training of the next block starts from the
 receiver's state at the end of this one, and the V.21 PPS after it would
 spoil that.
 
-`fax_pair` puts two of them back to back (`FAX_ECM=1` for ECM, an SNR for
-noise: at 19 dB ECM sends a few frames again and the page comes right,
-without it two thousand rows come damaged); `t30_spandsp` (label
-`spandsp`) runs one against spandsp's fax machine both ways, with and
-without ECM, and with line hits.
+`fax_test`'s `T30Pair` cases put two of them back to back, at each rate,
+with ECM, and with ECM on a noisy line (at 19 dB ECM sends a few frames
+again and the page comes right; without it two thousand rows come
+damaged); `spandsp_test`'s `T30Spandsp` cases (label `spandsp`) run one
+against spandsp's fax machine both ways, with and without ECM, and with
+line hits.
 
 ### How the QAM receiver works
 
@@ -652,6 +653,21 @@ compiler (`g++ -m32`), for the original library.
                                             # data and class 1 fax, in real time (needs g++ -m32)
     ctest --test-dir build -L agere -j8     # calls between the Agere soft modem and this one
 
+The quick and spandsp tests are GoogleTest programs (the system's
+libgtest-dev, or fetched while configuring); ctest runs each of their
+cases as a test of its own, named `<suite>/<Test>.<case>/<parameters>`,
+e.g. `Line/PumpLoopback.DataBothWays/v34_echoes`. Run one by itself with
+`ctest -R v34_echoes`, or the program with `--gtest_filter`:
+
+| Program | What |
+|---|---|
+| `pump_test` | the data pumps back to back (`loopback.cpp`): each modulation on clean and noisy lines, 8000 Hz, clock offsets, gains, echoes; the answering automode |
+| `dmodem_test` | libdmodem: pairs of its modems, retrains and renegotiations in the data, V.91 across G.711 networks, `dmodem.hpp` |
+| `dmodem_fax_test` | libdmodem's fax: a data modem answering hands the call to a fax receiver |
+| `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
+| `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
+| `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one |
+
 The interop and agere calls run in real time and mostly wait, so they run
 side by side (`-j`); each writes its modem logs to
 `build/dsp/test/logs/<test>/`.
@@ -664,7 +680,8 @@ The test programs are in `build/dsp/test/`; `interop.py` and
 [echo dB]` runs a caller and an answerer through a simulated line with
 delay, a low-pass filter (`FLAT=1` leaves it out), white noise and an
 optional sample clock offset. It then checks the bit error rate in both
-directions. `DUMP=<prefix>` records what each side hears.
+directions. `DUMP=<prefix>` records what each side hears. It is the
+simulation of `pump_test`, for trying a line from the command line.
 
 V.34 between two open modems (`dsp_loopback 8 ...`, with the low-pass
 filter, no bit errors): 33600 bit/s at 40 dB (also with ±80 ppm clock
@@ -717,9 +734,9 @@ so `fax_interop.py` accepts a page with a bit error rate below 1e-3 (a fax
 page without ECM survives that). Its V.27ter training also contains stray
 180 degree phase flips, which the open receiver follows.
 
-`fax_loopback <mod> [snr dB] [bits] [srate]` sends random data through
-one fax modulation over the simulated line. The V.17 short train codes run
-a long train first, so the receiver has an equalizer to start from.
+`fax_test`'s `FaxModulation` cases send random data through each fax
+modulation over a simulated line. The V.17 short train codes run a long
+train first, so the receiver has an equalizer to start from.
 
 ### Against the Agere soft modem
 

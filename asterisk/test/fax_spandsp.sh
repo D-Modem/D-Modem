@@ -10,7 +10,7 @@
 here=$(cd "$(dirname "$0")" && pwd)
 # the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
 build=${DMODEM_BUILD:-$here/../../build}
-t4=$build/dsp/test/t4_test
+t4=$build/dsp/test/fax_doc
 run=${TMPDIR:-/tmp}/dmodem-faxsp-test.$$
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod" "$run/fax"
 [ -x "$t4" ] || { echo "build first: cmake --build $build" >&2; exit 1; }

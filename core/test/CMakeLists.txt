@@ -1,6 +1,6 @@
 # The new core against the old one: core_script runs a script with two
 # modems back to back on either core, and the transcripts must be the same
-# (core_equiv_*).  core_test tests the new core by itself.
+# (core_equiv).  core_test tests the new core by itself.
 
 # the old core (../../dsp/test/legacy) on libdmodem's old timers
 set(_old ${DMODEM_LEGACY_SRCS})
@@ -20,18 +20,16 @@ target_compile_options(core_script_new PRIVATE -Wall -Wextra -g -O2)
 target_link_libraries(core_script_new PRIVATE dmodem_core dmodem_dsp
 	dmodem_link m)
 
-file(GLOB _scripts ${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.txt)
-foreach(_s ${_scripts})
-	get_filename_component(_n ${_s} NAME_WE)
-	add_test(NAME core_equiv_${_n} COMMAND sh -c
-		"$<TARGET_FILE:core_script_old> ${_s} > ${_n}.old && \
-		 $<TARGET_FILE:core_script_new> ${_s} > ${_n}.new && \
-		 diff ${_n}.old ${_n}.new")
-	set_tests_properties(core_equiv_${_n} PROPERTIES LABELS quick)
-endforeach()
+add_executable(core_equiv core_equiv.cpp)
+target_compile_options(core_equiv PRIVATE -Wall -Wextra -g -O2)
+target_compile_definitions(core_equiv PRIVATE
+	"SCRIPTS_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/scripts\""
+	"SCRIPT_OLD=\"$<TARGET_FILE:core_script_old>\""
+	"SCRIPT_NEW=\"$<TARGET_FILE:core_script_new>\"")
+add_dependencies(core_equiv core_script_old core_script_new)
+dmodem_gtest(core_equiv LABELS quick)
 
 add_executable(core_test core_test.cpp)
 target_compile_options(core_test PRIVATE -Wall -Wextra -g -O2)
 target_link_libraries(core_test PRIVATE dmodem_core dmodem_dsp dmodem_link m)
-add_test(NAME core_test COMMAND core_test)
-set_tests_properties(core_test PROPERTIES LABELS quick)
+dmodem_gtest(core_test LABELS quick)

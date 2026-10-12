@@ -36,7 +36,7 @@ The behaviour is that of Smart Link's slmodemd core (`modem.c`,
 `modem_at.c`, `modem_param.c`): the same commands, responses, states and
 timing. slmodemd, libdmodem (`dmodem.h`) and modem_test run on it. The
 old core is in `../dsp/test/legacy/`, only for the tests that need it: the
-original DSP library calls into it, and `core_equiv_*` compare the two.
+original DSP library calls into it, and `core_equiv` compares the two.
 Differences:
 
 - the version banner is the program's to print (`Modem::product`,
@@ -46,15 +46,15 @@ Differences:
 
 ## Tests
 
-    ctest --test-dir build -R core_
+    ctest --test-dir build -R Core
 
-- `core_equiv_*`: `core_script` runs a script (`test/scripts/`) with two
+- `core_equiv` (`CoreEquiv`): `core_script` runs a script (`test/scripts/`) with two
   modems back to back, once on this core and once on the old one, and the
   transcripts (what each modem tells its DTE, with the time to 20 ms) must
   be the same: the AT commands, calls at V.32bis, V.34/V.90 (`&A7`), V.22bis
   and V.21 with data both ways, the escape and `ATO`, hangups from either
   side and while connecting, rings and auto answer, no answer, class 1 fax
   (V.21 frames, a TCF at 9600), the voice commands.
-- `core_test`: this core by itself: its `Host` interface, a line that does
+- `core_test` (`Core`, `CoreCall`): this core by itself: its `Host` interface, a line that does
   not start or go off hook, the escape timer, the options, and calls at
   V.32bis, V.34 and V.22 with data both ways, byte for byte.
