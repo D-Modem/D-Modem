@@ -61,6 +61,7 @@
 #include <termios.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <poll.h>
 
 #include <modem.h>
 #include <sys/time.h>
@@ -187,6 +188,88 @@ void mark_termination(int signum)
 }
 
 
+/* the DTE's input to the modem: pty readable */
+static int pty_input(struct modem_test *t)
+{
+	struct termios termios;
+	int pty = t->modem->pty;
+	int count;
+
+	//DBG("pty read...\n");
+	/* check termios */
+	tcgetattr(pty,&termios);
+	if(memcmp(&termios,&t->modem->termios,
+		  sizeof(termios))) {
+		DBG("termios changed.\n");
+		modem_update_termios(t->modem, &termios);
+	}
+	/* read data */
+	count = t->modem->xmit.size - t->modem->xmit.count;
+	if(count == 0)
+		return 0;
+	if (count > sizeof(inbuf))
+		count = sizeof(inbuf);
+	count = read(pty,inbuf,count);
+	if(count < 0) {
+		if(errno == EAGAIN) {
+			DBG("pty read, errno = EAGAIN\n");
+			return 0;
+		}
+		if(errno == EIO) {
+			if(!t->pty_closed) {
+				DBG("pty closed.\n");
+				t->pty_closed = 1;
+				if(termios.c_cflag&HUPCL)
+					modem_hangup(t->modem);
+			}
+			t->close_count = 1;
+			//DBG("pty read, errno=EIO\n");
+			return 0;
+		}
+		else
+			ERR("pty read: %s\n",
+			    strerror(errno));
+		return -1;
+	}
+	else if (count == 0) {
+		DBG("pty read = 0\n");
+	}
+	t->pty_closed = 0;
+	//DBG("pty read %d\n",count);
+	count = modem_write(t->modem,inbuf,count);
+	if(count < 0) {
+		DBG("modem_write failed.\n");
+		return -1;
+	}
+	return 0;
+}
+
+/* PIPE_SYNC=<samples>: the DTE's input only every that many samples of the
+   line, so that a test's commands meet the line at the same samples every
+   time */
+static long sync_n, sync_phase, line_samples, next_sync;
+static double line_at;          /* when the line last had samples */
+
+/* no line samples for 0.5 s (no call yet, nothing flows): the DTE's
+   input as it comes */
+static int line_idle(void)
+{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec + tv.tv_usec * 1e-6 - line_at > 0.5;
+}
+
+/* at the sample: whatever the DTE has sent */
+static int sync_input(struct modem_test *t)
+{
+	struct pollfd p = { t->modem->pty, POLLIN, 0 };
+	if (t->modem->xmit.size - t->modem->xmit.count <= 0 ||
+	    poll(&p, 1, 0) <= 0)
+		return 0;
+	DBG("DTE input at line sample %ld\n", line_samples);
+	return pty_input(t);
+}
+
 static int modem_test_run(struct modem_test *modems)
 {
 	struct timeval tmo;
@@ -204,6 +287,17 @@ static int modem_test_run(struct modem_test *modems)
 	unsigned rcount = RING_ON;
 #endif
 
+
+	if (getenv("PIPE_SYNC")) {
+		sync_n = (atol(getenv("PIPE_SYNC")) + HALF_FRAME - 1) /
+			HALF_FRAME * HALF_FRAME;
+		/* BLOB_SYNC_PHASE: that much later in each period (the
+		   other half reads PIPE_SYNC as well) */
+		sync_phase = getenv("BLOB_SYNC_PHASE") ?
+			atol(getenv("BLOB_SYNC_PHASE")) / HALF_FRAME *
+			HALF_FRAME % sync_n : 0;
+		next_sync = sync_n + sync_phase;
+	}
 
 	while(keep_running) {
 
@@ -231,7 +325,8 @@ static int modem_test_run(struct modem_test *modems)
 				     t->close_count++ > CLOSE_COUNT_MAX )
 					t->close_count = 0;
 			}
-			else if (t->modem->xmit.size - t->modem->xmit.count > 0) {
+			else if ((!sync_n || line_idle()) &&
+				 t->modem->xmit.size - t->modem->xmit.count > 0) {
 				FD_SET(t->modem->pty,&rset);
 				if(t->modem->pty > max_fd)
 					max_fd = t->modem->pty;
@@ -273,6 +368,11 @@ static int modem_test_run(struct modem_test *modems)
 				//DBG("dev read...\n");
 				/* the modem core wants whole periods: pass the
 				   line samples on in frames of HALF_FRAME */
+				if (sync_n && line_samples >= next_sync) {
+					next_sync += sync_n;
+					if (sync_input(t) < 0)
+						return -1;
+				}
 				count = read(t->in,pend + npend,sizeof(pend) - npend);
 				if(count < 0) {
 					ERR("dev read: %s\n",strerror(errno));
@@ -282,15 +382,30 @@ static int modem_test_run(struct modem_test *modems)
 					DBG("dev read = 0\n");
 					continue;
 				}
+				if (sync_n) {
+					struct timeval tv;
+					/* the line runs again (a call): its
+					   periods from here */
+					if (line_idle())
+						next_sync = line_samples +
+							sync_n + sync_phase;
+					gettimeofday(&tv, NULL);
+					line_at = tv.tv_sec + tv.tv_usec * 1e-6;
+				}
 				npend += count;
 				count = npend / (HALF_FRAME * 2) * (HALF_FRAME * 2);
 				if (count > sizeof(inbuf) / (HALF_FRAME * 2) * (HALF_FRAME * 2))
 					count = sizeof(inbuf) / (HALF_FRAME * 2) * (HALF_FRAME * 2);
+				/* up to the next sample the DTE's input is
+				   taken at */
+				if (sync_n && count > (next_sync - line_samples) * 2)
+					count = (int)(next_sync - line_samples) * 2;
 				if (count == 0)
 					continue;
 				memcpy(inbuf, pend, count);
 				memmove(pend, pend + count, npend - count);
 				npend -= count;
+				line_samples += count / 2;
 				in = inbuf;
 				if(t->modem->update_delay < 0) {
 					if ( -t->modem->update_delay >= count/2) {
@@ -305,10 +420,34 @@ static int modem_test_run(struct modem_test *modems)
 					t->delay += t->modem->update_delay*2;
 					t->modem->update_delay = 0;
 				}
+				/* no faster than the clock between calls as
+				   well: the line's silence goes round */
+				pace_clock(t, count>>1);
 				if(t->started) {
 					static FILE *rec_in, *rec_out;
+					if (sync_n) {
+						/* a half frame at a time,
+						   with the modem's events in
+						   between: they meet the
+						   line at the same samples
+						   whatever the reads bring */
+						int k;
+						for (k = 0; k < count / 2;
+						     k += HALF_FRAME) {
+							int len = count / 2 - k < HALF_FRAME ?
+								count / 2 - k : HALF_FRAME;
+							if (t->started)
+								modem_process(t->modem,
+									in + 2 * k,
+									outbuf + 2 * k, len);
+							else
+								memset(outbuf + 2 * k, 0,
+								       2 * len);
+							if (t->modem->event)
+								modem_event(t->modem);
+						}
+					} else
 					modem_process(t->modem,in,outbuf,count>>1);
-					pace_clock(t, count>>1);
 					/* MODEM_REC=<prefix>: record <prefix>.in/.out */
 					if (getenv("MODEM_REC") && !rec_in) {
 						char name[256];
@@ -349,55 +488,9 @@ static int modem_test_run(struct modem_test *modems)
 		}
 
 		for( t = modems ; t->modem ; t++ ) {
-			int pty = t->modem->pty;
-			if(FD_ISSET(pty,&rset)) {
-				//DBG("pty read...\n");
-				/* check termios */
-				tcgetattr(pty,&termios);
-				if(memcmp(&termios,&t->modem->termios,
-					  sizeof(termios))) {
-					DBG("termios changed.\n");
-					modem_update_termios(t->modem, &termios);
-				}
-				/* read data */
-				count = t->modem->xmit.size - t->modem->xmit.count;
-				if(count == 0)
-					continue;
-				if (count > sizeof(inbuf))
-					count = sizeof(inbuf);
-				count = read(pty,inbuf,count);
-				if(count < 0) {
-					if(errno == EAGAIN) {
-						DBG("pty read, errno = EAGAIN\n");
-						continue;
-					}
-					if(errno == EIO) {
-						if(!t->pty_closed) {
-							DBG("pty closed.\n");
-							t->pty_closed = 1;
-							if(termios.c_cflag&HUPCL)
-								modem_hangup(t->modem);
-						}
-						t->close_count = 1;
-						//DBG("pty read, errno=EIO\n");
-						continue;
-					}
-					else
-						ERR("pty read: %s\n",
-						    strerror(errno));
-					return -1;
-				}
-				else if (count == 0) {
-					DBG("pty read = 0\n");
-				}
-				t->pty_closed = 0;
-				//DBG("pty read %d\n",count);
-				count = modem_write(t->modem,inbuf,count);
-				if(count < 0) {
-					DBG("modem_write failed.\n");
-					return -1;
-				}
-			}
+			if(FD_ISSET(t->modem->pty,&rset) &&
+			   pty_input(t) < 0)
+				return -1;
 		}
 	}
 

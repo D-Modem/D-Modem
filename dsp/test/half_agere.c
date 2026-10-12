@@ -557,6 +557,11 @@ int (*agr_rs_interrupt)(void);
 #define UART_LSR 5
 
 static int pty;
+/* AGERE_SYNC=<samples>: the DTE's input only every that many samples of
+   the line, so that a test's commands meet the line at the same samples
+   every time */
+static long sync_n, sync_phase, line_n; /* AGERE_SYNC_PHASE: at that
+						   sample of each period */
 
 static void uart_poll(void)
 {
@@ -569,6 +574,8 @@ static void uart_poll(void)
 	if (n && write(pty, buf, n) < 0)
 		LOG("pty write: %s\n", strerror(errno));
 	/* the DTE's input, while the modem takes it */
+	if (sync_n && line_n % sync_n != sync_phase)
+		return;
 	for (k = 0; k < 64 && (read_vuart_port(UART_LSR) & 0x20); k++) {
 		unsigned char c;
 		if (read(pty, &c, 1) != 1)
@@ -644,6 +651,9 @@ int main(int argc, char **argv)
 
 	(void)argc; (void)argv;
 	dbg = getenv("AGERE_DEBUG") ? atoi(getenv("AGERE_DEBUG")) : 0;
+	sync_n = getenv("AGERE_SYNC") ? (atol(getenv("AGERE_SYNC")) + 47) / 48 * 48 : 0;
+	sync_phase = getenv("AGERE_SYNC_PHASE") ?
+		atol(getenv("AGERE_SYNC_PHASE")) / 48 * 48 % (sync_n ? sync_n : 1) : 0;
 	setvbuf(stdout, NULL, _IONBF, 0);
 	codec_init();
 	pi.sr = po.sr = SR_DCH;
@@ -701,14 +711,15 @@ int main(int argc, char **argv)
 		n /= 2;
 		for (i = 0; i < n; i++) {
 			out[i] = line_sample(in[i]);
-			if ((i & 47) == 47)
+			if (++line_n % 48 == 0)
 				uart_poll();
 		}
 		if (write(4, out, n * 2) != n * 2)
 			break;
 		if (odd)
 			((char *)in)[0] = ((char *)in)[n * 2];
-		uart_poll();
+		if (!sync_n)
+			uart_poll();
 	}
 	return 0;
 }

@@ -6,6 +6,7 @@
  */
 
 #include <errno.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,6 +39,12 @@ PipeModem::PipeModem(const char *name, int rate, const char *country,
 	o.dev_name = name;
 	o.rate = rate;
 	o.country = country;
+	if (getenv("PIPE_SYNC")) {
+		/* whole half frames */
+		sync_ = (atol(getenv("PIPE_SYNC")) + HALF_FRAME - 1) /
+			HALF_FRAME * HALF_FRAME;
+		next_sync_ = sync_;
+	}
 	if (pty_.open() < 0)
 		exit(-1);
 	m_ = new dcore::Modem(*this, o);
@@ -58,6 +65,21 @@ PipeModem::~PipeModem()
 unsigned long PipeModem::now_ms()
 {
 	struct timespec ts;
+	if (sync_) {
+		/* the line's clock while it runs (the wall clock's while it
+		   does not), so that the timers meet it at the same samples */
+		long line_ms = (long)(samples_ * 1000 / rate_);
+		unsigned long t;
+		if (line_idle()) {
+			clock_gettime(CLOCK_MONOTONIC, &ts);
+			clock_off_ = (long)(ts.tv_sec * 1000L +
+					    ts.tv_nsec / 1000000) - line_ms;
+		}
+		t = (unsigned long)(line_ms + clock_off_);
+		if (t < last_ms_)
+			t = last_ms_;
+		return last_ms_ = t;
+	}
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return ts.tv_sec * 1000UL + ts.tv_nsec / 1000000;
 }
@@ -112,7 +134,21 @@ int PipeModem::line()
 	char inbuf[4096], outbuf[4096];
 	const int frame = HALF_FRAME * 2;
 	char *in = inbuf;
-	int count = read(in_, pend_ + npend_, sizeof(pend_) - npend_);
+	int count;
+
+	if (sync_ && samples_ >= next_sync_) {
+		next_sync_ += sync_;
+		dte_input();
+	}
+	count = read(in_, pend_ + npend_, sizeof(pend_) - npend_);
+	if (sync_ && count > 0) {
+		struct timeval tv;
+		/* the line runs again (a call): its periods from here */
+		if (line_idle())
+			next_sync_ = samples_ + sync_;
+		gettimeofday(&tv, NULL);
+		line_at_ = tv.tv_sec + tv.tv_usec * 1e-6;
+	}
 
 	if (count < 0) {
 		ERR("dev read: %s\n", strerror(errno));
@@ -126,11 +162,15 @@ int PipeModem::line()
 	count = npend_ / frame * frame;
 	if (count > (int)sizeof(inbuf) / frame * frame)
 		count = sizeof(inbuf) / frame * frame;
+	/* up to the next sample the DTE's input is taken at */
+	if (sync_ && count > (next_sync_ - samples_) * 2)
+		count = (int)(next_sync_ - samples_) * 2;
 	if (count == 0)
 		return 0;
 	memcpy(inbuf, pend_, count);
 	memmove(pend_, pend_ + count, npend_ - count);
 	npend_ -= count;
+	samples_ += count / 2;
 
 	pending_delay_ += m_->take_update_delay();
 	if (pending_delay_ < 0) {
@@ -146,9 +186,25 @@ int PipeModem::line()
 		delay_ += pending_delay_ * 2;
 		pending_delay_ = 0;
 	}
-	if (m_->started()) {
+	/* no faster than the clock between calls as well: the line's
+	   silence goes round and round */
+	pace(count / 2);
+	if (m_->started() && sync_) {
+		/* a half frame at a time, with the timers in between: they
+		   meet the line at the same samples whatever the reads
+		   bring */
+		for (int k = 0; k < count / 2; k += HALF_FRAME) {
+			int len = count / 2 - k < HALF_FRAME ?
+				count / 2 - k : HALF_FRAME;
+			if (m_->started())
+				m_->process((int16_t *)in + k,
+					    (int16_t *)outbuf + k, len);
+			else
+				memset(outbuf + 2 * k, 0, 2 * len);
+			m_->poll();
+		}
+	} else if (m_->started()) {
 		m_->process((int16_t *)in, (int16_t *)outbuf, count / 2);
-		pace(count / 2);
 		if (record_ && !rec_in_) {
 			char name[256];
 			snprintf(name, sizeof(name), "%s.in", record_);
@@ -197,6 +253,26 @@ void PipeModem::stop()
 	keep_running = 0;
 }
 
+/* PIPE_SYNC: no line samples for 0.5 s (no call yet, nothing flows): the
+   DTE's input as it comes */
+bool PipeModem::line_idle() const
+{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec + tv.tv_usec * 1e-6 - line_at_ > 0.5;
+}
+
+/* PIPE_SYNC: at the sample, whatever the DTE has sent */
+void PipeModem::dte_input()
+{
+	struct pollfd p = { pty_.fd(), POLLIN, 0 };
+	if (!pty_.want_read(*m_) || poll(&p, 1, 0) <= 0)
+		return;
+	DBG("DTE input at line sample %ld\n", samples_);
+	if (pty_.read(*m_) == Pty::CLOSED && pty_.hupcl())
+		m_->hangup();
+}
+
 int PipeModem::run(PipeModem **modems, int n)
 {
 	signal(SIGINT, mark_termination);
@@ -222,7 +298,8 @@ int PipeModem::run(PipeModem **modems, int n)
 			FD_SET(p->in_, &rset);
 			if (p->in_ > max_fd)
 				max_fd = p->in_;
-			if (p->pty_.want_read(*p->m_)) {
+			if ((!p->sync_ || p->line_idle()) &&
+			    p->pty_.want_read(*p->m_)) {
 				FD_SET(p->pty_.fd(), &rset);
 				if (p->pty_.fd() > max_fd)
 					max_fd = p->pty_.fd();

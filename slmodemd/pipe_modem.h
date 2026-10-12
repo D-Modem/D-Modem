@@ -60,6 +60,17 @@ private:
 	char pend_[8192];
 	int npend_ = 0;
 	bool realtime_ = false;
+	/* PIPE_SYNC=<samples>: the DTE's input only every that many samples
+	   of the line, and the timers on the line's clock, so that a test's
+	   commands meet the line at the same samples every time */
+	long sync_ = 0;
+	long samples_ = 0;      /* of the line, so far */
+	long next_sync_ = 0;
+	double line_at_ = 0;    /* when the line last had samples (s) */
+	long clock_off_ = 0;    /* now_ms() - the line's ms while idle */
+	unsigned long last_ms_ = 0;
+	bool line_idle() const;
+	void dte_input();
 	const char *record_ = nullptr;
 	void *rec_in_ = nullptr, *rec_out_ = nullptr;
 	double clock_start_ = 0, clock_done_ = 0;
