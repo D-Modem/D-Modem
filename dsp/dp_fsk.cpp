@@ -281,6 +281,9 @@ int FskPump::process(void *in, void *out, int cnt)
 	int ret = DPSTAT_OK;
 	int i, bit;
 
+	if (caller && !total && state == FSK_WAIT_CARRIER &&
+	    (dp.id == DP_V21 || dp.id == DP_V23) && dp_v8_first(modem, dp.id))
+		return DPSTAT_CHANGEDP;
 	for (i = 0; i < cnt; i++) {
 		float y = 0;
 

@@ -325,6 +325,8 @@ struct V34Pump : Pump {
 	int pcm;                /* V.90 agreed in V.8 */
 	int v91;                /* offer V.91 */
 	int v91_on;             /* V.91 agreed in V.8 */
+	int v8_low;             /* V.8 for this low speed modulation alone
+				   (rt->v8_for), else back to it */
 	int v8_dp;              /* the modulation agreed in V.8 when not
 				   V.34 (0: none in common) */
 	int v92;                /* offer V.92 as the digital modem */
@@ -505,6 +507,7 @@ struct V34Pump : Pump {
 	int v8_remote_mod(int k);
 	int v8_choice();
 	int v8_handover();
+	int v8_back(const char *why);
 	int v8_v90();
 	int v8_v91();
 	void v91_start();
@@ -800,6 +803,15 @@ void V34Pump::v8_make_msg(BitQ *q)
 			k = -1;
 		if (!caller && k >= 0)
 			c &= v8_remote_mod(k) | (k ? 0x18 : 0x1F);
+		/* for a low speed modulation alone: only its bit */
+		if (v8_low && k == 0)
+			c &= ~V8_MOD1_V34;
+		if (v8_low && k == 1)
+			c = 0x10 | (v8_low == DP_V22 || v8_low == DP_V22BIS ?
+				    V8_MOD2_V22 : 0);
+		if (v8_low && k == 2)
+			c = 0x10 | (v8_low == DP_V23 ? V8_MOD3_V23 :
+				    v8_low == DP_V21 ? V8_MOD3_V21 : 0);
 		if (pcm_ && (c & 0x1F) == V8_CAT_MOD)
 			c |= V8_MOD1_PCM;
 		if (pcm_ && (c & 0x1F) == V8_CAT_ACCESS)
@@ -850,6 +862,10 @@ int V34Pump::v8_remote_mod(int k)
 int V34Pump::v8_choice()
 {
 	int m2 = v8_remote_mod(1), m3 = v8_remote_mod(2);
+	if (v8_low)
+		return (v8_low == DP_V21 ? m3 & V8_MOD3_V21 :
+			v8_low == DP_V23 ? m3 & V8_MOD3_V23 :
+			m2 & V8_MOD2_V22) ? v8_low : 0;
 	if (m2 & V8_MOD2_V32)
 		return DP_V32BIS;
 	if (m2 & V8_MOD2_V22)
@@ -864,15 +880,26 @@ int V34Pump::v8_choice()
 static const char *v8_dp_name(int dp)
 {
 	return dp == DP_V32BIS ? "V.32bis" : dp == DP_V22BIS ? "V.22bis" :
-		dp == DP_V23 ? "V.23" : "V.21";
+		dp == DP_V22 ? "V.22" : dp == DP_V23 ? "V.23" : "V.21";
 }
 
 /* after CJ (the caller: sent, the answerer: 75 ms after it), the
    modulation V.8 agreed on: its pump goes on from there (the answer
    tone sent, no automode) */
+int V34Pump::v8_back(const char *why)
+{
+	DSP_DBG("v34: %s: back to %s without V.8\n", why,
+		v8_dp_name(v8_low));
+	if (rt)
+		rt->v8_for = 0;
+	modem_set_param(modem, MDMPRM_DP_REQUESTED, v8_low);
+	return DPSTAT_CHANGEDP;
+}
+
 int V34Pump::v8_handover()
 {
 	if (rt) {
+		rt->v8_for = 0;
 		/* (calling, only the FSK pumps look at it: the V.32bis and
 		   V.22bis callers do not clear it for a later fallback) */
 		rt->after_v8 = !caller || v8_dp == DP_V21 || v8_dp == DP_V23;
@@ -1947,6 +1974,8 @@ void V34Pump::pump_rx_sample(float x)
 
 int V34Pump::fallback(const char *why)
 {
+	if (v8_low)
+		return v8_back(why);
 	if (caller && rt && rt->answer_tone == ANSTONE_2225) {
 		/* a Bell answerer: 212A (or 103, see dp_v22.cpp) */
 		DSP_DBG("v34: %s, Bell answer tone: Bell 212A\n", why);
@@ -3775,6 +3804,9 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
 	alaw = rt && rt->law ? rt->law == 2 :
 		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
+	v8_low = caller_ && rt ? rt->v8_for : 0;
+	if (v8_low)
+		v90 = v91 = v92 = 0;
 	modem = m;
 	srate = srate_;
 	caller = caller_;

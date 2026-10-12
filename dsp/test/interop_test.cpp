@@ -480,6 +480,16 @@ std::vector<Call> calls()
 		      (!strcmp(ms, "21") ? "V.21" : !strcmp(ms, "23") ? "V.23" :
 		       !strcmp(ms, "122") ? "V.22bis" : "V.32bis") });
 	}
+	/* our forced low speed callers: on its ANSam, V.8 for that
+	   modulation alone (its answerer in automode up to it) */
+	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,
+		     const char *, const char *>>{ { "V21", "21", "300" },
+		     { "V23C", "23", "75" }, { "V22", "22", "1200" },
+		     { "V22B", "122", "2400" } })
+		add("hsf", std::string("hsf_low_") + ms + "_open_calls", "open",
+		    "hsf", std::string("ATX3;AT+MS=") + ms,
+		    { "NET=9600:8000:ulaw", std::string("DATA_RATE=") + rate,
+		      std::string("PROTO_B=ATX3;AT+MS=") + n });
 	/* V.92 with PCM upstream: it starts with quick connect (QC1a) on
 	   the first call already; and with it off (+PQC=3), V.8 */
 	for (std::string law : { "ulaw", "alaw" })

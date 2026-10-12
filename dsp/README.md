@@ -83,7 +83,12 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   answerer waits for it). Answering, a CM without V.34 gets its JM and,
   after CJ and 75 ms, the best modulation of it, its pump without the
   answer tone and without automode; a CM with none of ours, or a V.32
-  calling modem (1800 Hz AA), hands the call to the V.32bis pump. As in V.32bis Annex A, that falls
+  calling modem (1800 Hz AA), hands the call to the V.32bis pump.
+  A forced low speed caller (`AT+MS=21`, `23`, `22`, `122`) hands a
+  2100 Hz answer tone to the V.8 pump: ANSam gets a CM of that
+  modulation alone, and a JM with it CJ and that modulation; plain ANS,
+  no JM or a JM without it goes back to the caller as before
+  (`DSP_V8_LOWSPEED=0`: always so). As in V.32bis Annex A, that falls
   back to V.22bis after 3 s, and V.22bis to V.21 after 3 s more of
   unanswered USB1, V.21 to V.23 and V.23 to Bell 103 after 3 s more
   each (FSK callers wait for the answerer's mark). A Bell 103 caller
@@ -1126,8 +1131,9 @@ Its V.21 and V.23 answerers work only after V.8. Forced (`+MS=V21,0`,
 `V23C,0`) it stays silent after ATA, also against itself; in automode it
 sends ANSam and, when no CM comes, its 1650 Hz mark, but drops it 2 s
 after the caller's mark (again also against itself, calling with
-`+MS=V21,0`). So our V.21 caller (`AT+MS=21`, no V.8) does not connect
-to it. Our V.8 caller does: its CM now offers V.22bis, V.23 and V.21 as
+`+MS=V21,0`). So our V.21 caller (`AT+MS=21`) did not connect to it
+until it, too, used V.8 on its ANSam (for V.21 alone; V.22, V.22bis and
+V.23 the same). Our V.8 caller does: its CM now offers V.22bis, V.23 and V.21 as
 well, and a JM with one of these (the HSF modem's, answering with
 `+MS=V21` and so on) gets CJ and that modulation, the FSK caller's
 carrier first (as the HSF modem's own caller does). Answering, its CM up
