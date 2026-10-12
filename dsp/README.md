@@ -332,8 +332,33 @@ INFO1a. The upstream rate comes from the mse of the training in phase 3
 instead of the probing. `DSP_V92_SHORT2=0` does not ask for it. With
 quick connect and short phase 2 the Agere modem's second call connects
 in 17.5 s instead of 22.5 s (it asks for a shorter DIL as well).
-Modem-on-hold is not implemented; rate renegotiation and fast parameter
-exchange are, with PCM upstream (below).
+Rate renegotiation and fast parameter exchange are implemented, with PCM
+upstream (below), and modem-on-hold:
+
+### V.92 modem-on-hold
+
+When call waiting interrupts the analogue modem, it can ask us to hold
+the call (9.10/V.92): its tone A, as for a retrain, then MH sequences
+(Table 32/V.92: fill, frame sync, a 4 bit signal and 4 bits of
+information, CRC, on the modulation of INFO) instead of the reversal. We
+look for them while we retrain and answer:
+
+- MHreq with MHack and the time we hold the call, T1 (`DSP_V92_MOH=<code
+  of Table 33/V.92>`, 5 = 1 min by default, 13 no limit), or with MHnack
+  (`DSP_V92_MOH=0`). After MHack, when its tone has been there 100 ms or
+  silence 2 s, we send ANSam until T1 is over (then we disconnect) and
+  listen for QC1a or CM: phase 1 as the answering modem again, phases 2
+  to 4, and the data goes on without a new CONNECT (V.42's timers count
+  bits, so they wait too). A CM without modulations, or QC1a with UQTS
+  1111, clears down.
+- MHclrd with MHcda, then disconnect; MHfrr (also after our MHnack) with
+  ANSam and phase 1 at once; MHcda after our MHnack: disconnect.
+
+We do not ask for modem-on-hold ourselves. The Agere modem asks for it
+with `AT+PMHR` (`+PMHR:5`: 1 min granted, `+PMHR:0` denied) and comes
+back with CM after `ATO`; denied, it asks for a fast reconnect.
+`agere_v92_moh_grant` and `_deny` do that in the middle of the data
+(`MIDCALL_A` of interop.py) and check all of it both ways.
 
 ### V.92 PCM upstream
 

@@ -368,6 +368,21 @@ if(TARGET half_agere)
 			ENVIRONMENT
 			"${_env};NET_LOOP=0.45;NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
 	endforeach()
+	# V.92 modem-on-hold: in the middle of the data the Agere modem asks
+	# for it (AT+PMHR), we grant 1 min (MHack), it comes back after 10 s
+	# (ATO): V.8, phase 2 to 4, and the data goes on (V.42 knows nothing
+	# of it); denied (MHnack), it asks for a fast reconnect (MHfrr)
+	foreach(_m grant deny)
+		add_test(NAME agere_v92_moh_${_m} COMMAND ${Python3_EXECUTABLE}
+			${_py}/interop.py $<TARGET_FILE:half_agere>
+			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
+	endforeach()
+	set_tests_properties(agere_v92_moh_grant PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=50;MIDCALL_A=8:AT+PMHR\;WAIT 10;EXPECT_B=(?s)MHack.*V.90 back from hold;PROTO_B=ATX3\;AT+MS=92")
+	set_tests_properties(agere_v92_moh_deny PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=40;DSP_V92_MOH=0;MIDCALL_A=8:AT+PMHR\;WAIT 5;EXPECT_B=(?s)MHnack.*MHfrr.*V.90 back from hold;PROTO_B=ATX3\;AT+MS=92")
 	# at the alignment that took 33333 bit/s with half a sample of delay
 	add_test(NAME agere_v90_phase96 COMMAND ${Python3_EXECUTABLE}
 		${_py}/interop.py $<TARGET_FILE:half_agere>

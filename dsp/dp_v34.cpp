@@ -162,6 +162,9 @@ enum v34_state {
 	V34_RN_S,
 	V34_RN_SBAR,
 	V34_RN_TRN,
+	/* V.92 modem-on-hold (9.10/V.92): our response to the remote's MH
+	   sequence (MHack, MHnack, MHcda), repeated */
+	MOH_RESP,
 	/* V.90 digital modem, phase 3 */
 	P3D_WAIT_JA,
 	P3D_PAUSE,
@@ -200,7 +203,12 @@ struct BitQ {
 	void info_end();
 	void put_octet(unsigned char c);
 	void make_cj();
+	void make_mh(int sig, int info);
 };
+
+/* MH sequences (Table 32/V.92), bits 12:15 first bit first */
+enum { MH_REQ = 0x3, MH_ACK = 0x5, MH_NACK = 0x7, MH_CLRD = 0x9,
+       MH_CDA = 0xB, MH_FRR = 0xD };
 
 /* control channel receiver: non-coherent DPSK at 600 baud */
 #define CC_HIST         128
@@ -446,6 +454,15 @@ struct V34Pump : Pump {
 	int rt_heard;           /* the tone has been there a while */
 	long bad;               /* data mode: samples with a poor mse */
 	int retraining;         /* back to data mode without a new CONNECT */
+	/* modem-on-hold (9.10/V.92) */
+	int moh_t1;             /* the T1 code we grant (Table 33/V.92), 0:
+				   we deny it (DSP_V92_MOH) */
+	int ev_mh, mh_sig, mh_info;     /* an MH sequence came in */
+	long mh_seen;           /* when */
+	int moh_resp;           /* what we answer it with */
+	int moh_drop;           /* MHcda after our MHnack: disconnect */
+	long moh_end;           /* on hold (or reconnecting): disconnect then
+				   unless phase 1 has come */
 	int connected;          /* CONNECT has been reported */
 	int retrains;
 	long retrain_at;        /* test: our own retrain this far (samples) */
@@ -485,6 +502,10 @@ struct V34Pump : Pump {
 	void probe_collect(float x);
 	int probe_analyse();
 	void cc_rx_bit(int bit);
+	void mh_check(CcRx *r);
+	int mh_event();
+	void moh_respond(int sig);
+	void moh_hold(int secs);
 	void cc_phase_frame();
 	void info_frame(CcRx *r);
 	void rt_info0_frame(const unsigned char *h, long n);
@@ -1284,6 +1305,7 @@ void V34Pump::cc_rx_bit(int bit)
 	rt_info0_frame(r->hist, r->hist_n);
 	if (r->frame_len > 0)
 		r->frame_len--;
+	mh_check(r);
 	/* a frame sync: slow timing adaptation for the rest of the frame */
 	if ((r->sr & 0xFF) == 0x72)
 		r->frame_len = info_expected();
@@ -1326,6 +1348,144 @@ void V34Pump::cc_rx_bit(int bit)
 		r->rev_cand = 0;
 		r->zeros++;
 	}
+}
+
+/* V.92's MH sequences (Table 32/V.92): fill, frame sync, the signal
+   (4 bits), its information (4 bits), the CRC: 36 bits up to the CRC's
+   end, on the modulation of INFO */
+void V34Pump::mh_check(CcRx *r)
+{
+	unsigned char f[36];
+	int i;
+
+	if (r->hist_n < 36)
+		return;
+	for (i = 0; i < 36; i++)
+		f[i] = i < 4 ? 1 : r->hist[(r->hist_n - 36 + i) % CC_HIST];
+	for (i = 4; i < 12; i++)
+		if (f[i] != ((0x72 >> (11 - i)) & 1))
+			return;
+	if (!info_crc_ok(f, 20))
+		return;
+	ev_mh = 1;
+	mh_sig = f[12] << 3 | f[13] << 2 | f[14] << 1 | f[15];
+	mh_info = f[16] << 3 | f[17] << 2 | f[18] << 1 | f[19];
+	mh_seen = total;
+	if (dsplibs_debug_level >= 4)
+		DSP_DBG("v34: MH %x %x at %ld ms\n", mh_sig, mh_info,
+			total * 1000 / srate);
+}
+
+/* an MH sequence: fill, sync, the signal and its information (both
+   written first bit first in time, as in Table 32/V.92), CRC, fill */
+void BitQ::make_mh(int sig, int info)
+{
+	int i;
+	info_start();
+	for (i = 3; i >= 0; i--)
+		put((sig >> i) & 1, 1);
+	for (i = 3; i >= 0; i--)
+		put((info >> i) & 1, 1);
+	info_end();
+}
+
+static const char *mh_name(int sig)
+{
+	switch (sig) {
+	case MH_REQ: return "MHreq";
+	case MH_ACK: return "MHack";
+	case MH_NACK: return "MHnack";
+	case MH_CLRD: return "MHclrd";
+	case MH_CDA: return "MHcda";
+	case MH_FRR: return "MHfrr";
+	}
+	return "MH?";
+}
+
+/* the T1 of Table 33/V.92, in seconds (0: no limit) */
+static int moh_t1_secs(int code)
+{
+	static const short t[] = { 0, 10, 20, 30, 40, 60, 120, 180, 240, 360,
+				   480, 720, 960, 0 };
+	return code > 0 && code < 14 ? t[code] : 60;
+}
+
+/* an MH sequence from the remote, in a retrain (that is how it begins:
+   its tone A, then MH sequences instead of the reversal) or while we
+   answer one */
+int V34Pump::mh_event()
+{
+	int in_retrain = retraining && !prx_on &&
+		(state == V34_RT_SILENCE ||
+		 (state >= P2A_INFO0 && state <= P2C_WAIT_INFO1));
+
+	if (!connected || !v92 || (!in_retrain && state != MOH_RESP))
+		return DPSTAT_OK;
+	switch (mh_sig) {
+	case MH_REQ:
+		if (state == MOH_RESP)
+			break;
+		moh_respond(moh_t1 ? MH_ACK : MH_NACK);
+		break;
+	case MH_CLRD:
+		if (state != MOH_RESP || moh_resp != MH_CDA)
+			moh_respond(MH_CDA);
+		break;
+	case MH_FRR:
+		/* its fast reconnect: ANSam, phase 1 (9.10.2.3/V.92) */
+		if (state != MOH_RESP || moh_resp == MH_NACK) {
+			DSP_DBG("v34: MHfrr: fast reconnect\n");
+			moh_hold(10);
+		}
+		break;
+	case MH_CDA:
+		/* after our MHnack it would rather clear down */
+		if (state == MOH_RESP && moh_resp == MH_NACK) {
+			DSP_DBG("v34: MHcda: cleardown\n");
+			moh_drop = 1;
+		}
+		break;
+	}
+	return DPSTAT_OK;
+}
+
+void V34Pump::moh_respond(int sig)
+{
+	DSP_DBG("v34: %s: %s%s\n", mh_name(mh_sig), mh_name(sig),
+		sig == MH_ACK ? " (on hold)" : "");
+	moh_resp = sig;
+	moh_drop = 0;
+	cctx.make_mh(sig, sig == MH_ACK ? moh_t1 : sig);
+	cc_send();
+	rt_blocks = rt_heard = quiet_blocks = 0;
+	set_state(MOH_RESP);
+}
+
+/* on hold (or a fast reconnect): ANSam, and phase 1 as the answering
+   modem when the remote comes back (QC1a or CM), or a disconnect after
+   secs (0: no limit) */
+void V34Pump::moh_hold(int secs)
+{
+	DSP_DBG("v34: on hold%s, ANSam for %d s\n",
+		moh_resp == MH_ACK ? "" : " (reconnect)", secs);
+	moh_end = secs ? total + (long)secs * srate : -1;
+	/* phase 1 from scratch (9.10.2.1/V.92: what earlier phase 1
+	   signals said does not count) */
+	caller = 0;
+	pcm = 0;
+	v8_ok = v8_cj = v8_sync = 0;
+	v8_n = v8_last_n = 0;
+	ev_qc = qc_done = 0;
+	qc_n = -1;
+	aa_blocks = toneq_blocks = 0;
+	cc_silence();
+	cctx.pos = cctx.n;
+	ansam_sign = 1;
+	txm = TXM_ANSAM;
+	/* the start-up after it as after a retrain */
+	timeout = (moh_end > 0 ? moh_end : total + (long)srate * 86400) +
+		ms2samples(60000, srate);
+	set_state(V8A_ANSAM);
 }
 
 /*
@@ -2143,6 +2303,10 @@ int V34Pump::handshake()
 	/* the remote retrains instead (11.6.2/V.34) */
 	if (renegotiating && rt_blocks >= 6)
 		retrain(caller ? "tone A" : "tone B");
+	if (ev_mh) {
+		ev_mh = 0;
+		mh_event();
+	}
 
 	switch (state) {
 	/* V.8 answerer */
@@ -2187,6 +2351,12 @@ int V34Pump::handshake()
 			break;
 		}
 		if (v8_ok) {
+			/* back from hold with a CM of no modulations: a
+			   cleardown (9.10.2.1/V.92) */
+			if (moh_end && !v8_remote_v34()) {
+				DSP_DBG("v34: on hold: CM without modulations\n");
+				return DPSTAT_ERROR;
+			}
 			if (!v8_remote_v34())
 				return fallback("no V.34 in CM");
 			pcm = v8_v90();
@@ -2200,6 +2370,12 @@ int V34Pump::handshake()
 			fsk.init(1650, 1850, V34_TONE_AMP, srate);
 			fsk_phase = 1;
 			txm = TXM_FSK;
+		} else if (moh_end) {
+			/* on hold: until T1, for phase 1 only */
+			if (moh_end > 0 && total >= moh_end) {
+				DSP_DBG("v34: on hold for T1: disconnect\n");
+				return DPSTAT_ERROR;
+			}
 		} else if (aa_blocks >= 10)
 			return fallback("V.32 caller");
 		else if (c >= ms2samples(5000, srate))
@@ -2887,8 +3063,10 @@ int V34Pump::handshake()
 			rn_max = rate_rx / 2400;
 			if (retraining && connected) {
 				retraining = 0;
-				DSP_DBG("v34: V.90 retrained, %d/%d\n",
+				DSP_DBG("v34: V.90 %s, %d/%d\n", moh_end ?
+					"back from hold" : "retrained",
 					rate_tx, rate_rx);
+				moh_end = 0;
 				break;
 			}
 			retraining = 0;
@@ -2942,8 +3120,10 @@ int V34Pump::handshake()
 			if (retraining && connected) {
 				/* the link goes on (V.42 knows nothing of it) */
 				retraining = 0;
-				DSP_DBG("v34: retrained, %d/%d\n", rate_tx,
-					rate_rx);
+				DSP_DBG("v34: %s, %d/%d\n", moh_end ?
+					"back from hold" : "retrained",
+					rate_tx, rate_rx);
+				moh_end = 0;
 				break;
 			}
 			retraining = 0;
@@ -3045,6 +3225,43 @@ int V34Pump::handshake()
 		if ((ptx.n >= 512 && prx.stage == V34_RX_TRN && prx.n >= 64) ||
 		    c >= ms2samples(2000, srate))
 			mp_start();
+		break;
+	case MOH_RESP:
+		/* repeated, each right after the one before (9.10.1/V.92) */
+		if (!cc_busy()) {
+			cctx.make_mh(moh_resp,
+				     moh_resp == MH_ACK ? moh_t1 : moh_resp);
+			cc_send();
+		}
+		if (moh_drop)
+			return DPSTAT_ERROR;
+		switch (moh_resp) {
+		case MH_ACK:
+			/* then its tone for 100 ms or silence for 2 s: on hold
+			   (9.10.2.1/V.92) */
+			if (rt_blocks >= 15 || quiet_blocks >= 300)
+				moh_hold(moh_t1 == 13 ? 0 :
+					 moh_t1_secs(moh_t1));
+			else if (total - mh_seen >= ms2samples(35000, srate))
+				return DPSTAT_ERROR;
+			break;
+		case MH_CDA:
+			/* until its tone, silence, or no MHclrd for 200 ms
+			   (9.10.2.2/V.92) */
+			if (rt_blocks >= 15 || quiet_blocks >= 30 ||
+			    total - mh_seen >= ms2samples(200, srate)) {
+				DSP_DBG("v34: cleared down\n");
+				return DPSTAT_ERROR;
+			}
+			break;
+		case MH_NACK:
+			/* MHcda or MHfrr within 10 s */
+			if (c >= ms2samples(12000, srate)) {
+				DSP_DBG("v34: nothing after MHnack\n");
+				return DPSTAT_ERROR;
+			}
+			break;
+		}
 		break;
 	case V34_RT_SILENCE:
 		if (c >= ms2samples(70, srate)) {
@@ -3158,9 +3375,20 @@ int V34Pump::process(void *in, void *out, int cnt)
 				rate_rx = (v92u.cpd.drn + 17) * 8000 / 6;
 				modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
 				modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
-				DSP_DBG("v34: V.92 connect %d/%d\n", rate_tx,
-					rate_rx);
-				ret = DPSTAT_CONNECT;
+				if (retraining && connected) {
+					/* after a retrain, or back from hold:
+					   the link goes on */
+					DSP_DBG("v34: V.92 %s, %d/%d\n",
+						moh_end ? "back from hold" :
+						"retrained", rate_tx, rate_rx);
+				} else {
+					DSP_DBG("v34: V.92 connect %d/%d\n",
+						rate_tx, rate_rx);
+					ret = DPSTAT_CONNECT;
+				}
+				retraining = 0;
+				connected = 1;
+				moh_end = 0;
 			} else if (ev == V92_RENEG) {
 				rate_tx = (v92u.cpu.drn + 20) * 8000 / 6;
 				rate_rx = (v92u.cpd.drn + 17) * 8000 / 6;
@@ -3261,6 +3489,14 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		      !atoi(getenv("DSP_V92_SHORT2")));
 	/* quick connect: DSP_V92_QC=0 answers QC1a with V.8 instead */
 	qc_ok = !(getenv("DSP_V92_QC") && !atoi(getenv("DSP_V92_QC")));
+	/* modem-on-hold: DSP_V92_MOH=<T1 code, Table 33/V.92> we grant
+	   (1 10 s ... 12 16 min, 13 no limit; 0 denies it), 1 min if not
+	   given */
+	moh_t1 = getenv("DSP_V92_MOH") ? atoi(getenv("DSP_V92_MOH")) & 15 : 5;
+	if (moh_t1 > 13)
+		moh_t1 = 5;
+	ev_mh = moh_resp = moh_drop = 0;
+	moh_end = 0;
 	/* PCM upstream: DSP_V92_PCMUP=0 does not offer it */
 	pcmup_ok = !(getenv("DSP_V92_PCMUP") &&
 		     !atoi(getenv("DSP_V92_PCMUP")));
