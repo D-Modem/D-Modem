@@ -85,6 +85,7 @@ private:
 	Link *link_ = nullptr;
 	State state_ = IDLE;
 	bool config_ = false;   /* an XID exchange is going on */
+	bool was_up_ = false;   /* LAPM has been up in this call */
 	bool reject_ = false;
 	bool busy_ = false;     /* we cannot take more */
 	bool peer_busy_ = false;

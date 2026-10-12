@@ -432,6 +432,18 @@ void Lapm::t401_timeout(Link *link)
 	Lapm *l = &link->lapm_;
 	if (l->rtx_count_ > MAX_RTX) {
 		l->rtx_count_ = 0;
+		/* the originator's XID or SABME unanswered (N400 times)
+		   before LAPM was ever up: a remote without V.42 (we may go
+		   to LAPM without the detection phase), async then, not a
+		   wait for nothing */
+		if (!l->was_up_ && (l->config_ || l->state_ == ESTAB)) {
+			link->logf("no LAPM from the remote: async");
+			l->config_ = false;
+			l->state_ = IDLE;
+			link->set_timer(0, nullptr);
+			link->detected(false);
+			return;
+		}
 		switch (l->state_) {
 		case ESTAB:
 		case DISC:
@@ -691,6 +703,7 @@ void Lapm::rx_unnum_cmd(Frame *f)
 		state_ = DATA;
 		tx_unnum(rsp_addr_, (uint8_t)(U_UA | u_pf(f)));
 		timer_stop();
+		was_up_ = true;
 		link_->status(Status::Up);
 		break;
 	case U_UI:              /* break: not supported */
@@ -741,8 +754,10 @@ void Lapm::rx_unnum_rsp(Frame *f)
 			}
 			break;
 		case IDLE:
-			if (!u_pf(f))
+			if (!u_pf(f)) {
+				was_up_ = true;
 				link_->status(Status::Up);
+			}
 			break;
 		}
 		break;
@@ -754,6 +769,7 @@ void Lapm::rx_unnum_rsp(Frame *f)
 			state_ = DATA;
 			reset();
 			timer_stop();
+			was_up_ = true;
 			link_->status(Status::Up);
 			break;
 		case DISC:
@@ -827,6 +843,7 @@ bool Lapm::valid_data_state()
 	case ESTAB:
 		reset();
 		state_ = DATA;
+		was_up_ = true;
 		link_->status(Status::Up);
 		return true;
 	case DATA:
@@ -932,7 +949,7 @@ void Lapm::init(Link *link, int tx_win, int rx_win, int tx_info,
 {
 	link_ = link;
 	state_ = IDLE;
-	config_ = reject_ = busy_ = peer_busy_ = false;
+	config_ = reject_ = busy_ = peer_busy_ = was_up_ = false;
 	rtx_count_ = 0;
 	rx_count_ = rx_head_ = 0;
 	cmd_addr_ = link->caller() ? 0x3 : 0x1;

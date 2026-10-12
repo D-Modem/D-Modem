@@ -911,6 +911,41 @@ Class 1 fax at 8000 Hz (`agere_fax_*`): V.27ter, V.29 and V.17 (7200 to
 The original library in its default V.92 mode does V.8 with automode off,
 and connects to this implementation at V.34.
 
+### Against spandsp's data modems
+
+`half_spandsp` is a modem around spandsp's pumps (libspandsp 0.0.6, the
+one Asterisk and FreeSWITCH use): V.21, V.23, Bell 103 and V.22/V.22bis,
+asynchronous 8N1, a few AT commands, and V.8 by default. spandsp has no
+modem of its own: the `data_modems` of its later versions is a sketch,
+and their V.32bis (V.17's pumps with V.32's scramblers, no handshake) and
+V.34 (no data receiver yet) cannot connect. `ctest -L spanpeer -j8`
+(not in CI's `spandsp` label) calls it from and to the open modem at
+each modulation it has, with `AT+MS=` forced on both sides:
+
+| `AT+MS=` | spandsp caller → open answerer | open caller → spandsp answerer |
+|---|---|---|
+| 122 (V.22bis) | CONNECT 2400 | CONNECT 2400 (after our LAPM attempt, about 20 s) |
+| 22 (V.22) | CONNECT 1200 | CONNECT 1200 (the same) |
+| 23 (V.23) | CONNECT 1200/75 | CONNECT 1200/75 |
+| 21 (V.21), 103 (Bell 103) | CONNECT 300 | CONNECT 300 |
+
+It has no error correction, which found two faults in ours:
+
+- Our V.42 detection phase counted T400 (750 ms) in bits at a nominal
+  28800 bit/s: 9 s at 2400 bit/s, 18 s at 1200, 72 s at 300. It is at
+  the pump's rate now.
+- Our caller goes to LAPM without the detection phase (V.42 allows it),
+  and when the answerer has no V.42 it sent XID N400 times and then
+  waited for nothing. It now goes on in async (`LapmCallerAsyncRemote`).
+
+V.8 between the two does not connect yet: ours offers only V.34 and
+V.32bis in its CM, and as the answerer it goes to V.32bis automode on a
+CM without V.34 instead of sending a JM for the modulation both have.
+spandsp, for its part, sends a V.92 octet before its CM (a QC1a with all
+fields 0, which ours answers) even with V.92 off, and 0.0.6 sends the
+CM's modulations back in its JM unless the application trims them
+(`half_spandsp` does).
+
 ### Against the Motorola SM56 soft modem
 
 `half_sm56` runs Motorola's SM56 soft modem (`sm56.ko` of sm56-06.09.05,
@@ -992,7 +1027,8 @@ calls in between are in it as well. For example:
       build/dsp/test/half_open8 "ATX3;AT+MS=92"
 
 `PIPE_SYNC=<samples>` (`half_open`, `half_blob`), `AGERE_SYNC=<samples>`
-(`half_agere`) and `SM56_SYNC=<samples>` (`half_sm56`) make a call repeat exactly from run to run: the modems take
+(`half_agere`), `SM56_SYNC=<samples>` (`half_sm56`) and
+`SPANDSP_SYNC=<samples>` (`half_spandsp`) make a call repeat exactly from run to run: the modems take
 the DTE's commands only every that many line samples (data, once
 connected, at once), run their timers
 between half frames and keep time by the line; without them, where the

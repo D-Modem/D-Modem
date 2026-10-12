@@ -167,8 +167,10 @@ void Detector::finish(Link *link)
 
 void Detector::start(Link *link)
 {
-	/* T400 at a nominal 28800 bit/s */
-	const int rate = 28800;
+	/* T400 (750 ms) at the data pump's rate (a nominal 28800 bit/s
+	   if not known: 18 s at 1200 bit/s, longer than a remote without
+	   V.42 waits for our CONNECT) */
+	const int rate = link->tx_rate() ? link->tx_rate() : 28800;
 	link_ = link;
 	tx_count_ = 0;          /* mute */
 	rx_count_ = 0;

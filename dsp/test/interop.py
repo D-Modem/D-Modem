@@ -22,6 +22,7 @@ exe_a, exe_b = sys.argv[1], sys.argv[2]
 os.environ.setdefault("PIPE_SYNC", "4800")
 os.environ.setdefault("AGERE_SYNC", os.environ["PIPE_SYNC"])
 os.environ.setdefault("SM56_SYNC", os.environ["PIPE_SYNC"])
+os.environ.setdefault("SPANDSP_SYNC", os.environ["PIPE_SYNC"])
 proto = sys.argv[3] if len(sys.argv) > 3 else ""
 d = os.path.dirname(os.path.abspath(__file__))
 ab_r, ab_w = os.pipe()   # A -> B

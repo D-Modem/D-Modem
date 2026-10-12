@@ -143,6 +143,15 @@ if(EXISTS "${DMODEM_AGERE_LIB}")
 	message(STATUS "tests: the Agere soft modem: ${DMODEM_AGERE_LIB}")
 endif()
 
+# spandsp's data modems as a peer (half_spandsp.c): its V.21, V.23,
+# Bell 103 and V.22/V.22bis pumps (libspandsp 0.0.6, as Asterisk and
+# FreeSWITCH have it) in a modem of their own
+if(SPANDSP_FOUND)
+	add_executable(half_spandsp half_spandsp.c)
+	target_include_directories(half_spandsp PRIVATE ${SPANDSP_INCLUDE_DIRS})
+	target_link_libraries(half_spandsp PRIVATE ${SPANDSP_LDFLAGS} m)
+endif()
+
 # Motorola's SM56 soft modem as a peer (half_sm56.c): sm56.ko of
 # sm56-06.09.05 for Fedora Core 3's kernel 2.6.9, its imports renamed
 set(DMODEM_SM56_KO "${CMAKE_CURRENT_SOURCE_DIR}/sm56.ko" CACHE
@@ -483,6 +492,27 @@ if(TARGET half_agere)
 	endforeach()
 endif()
 
+# spandsp's modem (8000 Hz) and the open modem (9600 Hz) call each other
+# at each modulation it has (its own label: CI's "spandsp" are quick)
+if(TARGET half_spandsp)
+	foreach(_m 21 22 122 23 103)
+		add_test(NAME spandsp_${_m}_spandsp_calls COMMAND
+			${Python3_EXECUTABLE} ${_py}/interop.py
+			$<TARGET_FILE:half_spandsp> $<TARGET_FILE:half_open>
+			"ATX3;AT+MS=${_m}")
+		set_tests_properties(spandsp_${_m}_spandsp_calls PROPERTIES
+			LABELS spanpeer ENVIRONMENT
+			"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_m}")
+		add_test(NAME spandsp_${_m}_open_calls COMMAND
+			${Python3_EXECUTABLE} ${_py}/interop.py
+			$<TARGET_FILE:half_open> $<TARGET_FILE:half_spandsp>
+			"ATX3;AT+MS=${_m}")
+		set_tests_properties(spandsp_${_m}_open_calls PROPERTIES
+			LABELS spanpeer ENVIRONMENT
+			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_m}")
+	endforeach()
+endif()
+
 # the Motorola SM56 soft modem (8000 Hz) and the open modem (9600 Hz)
 # call each other, as the Agere modem's tests
 if(TARGET half_sm56)
@@ -558,7 +588,7 @@ endif()
 get_property(_tests DIRECTORY PROPERTY TESTS)
 foreach(_t ${_tests})
 	get_test_property(${_t} LABELS _l)
-	if(_l MATCHES "interop|agere|sm56")
+	if(_l MATCHES "interop|agere|sm56|spanpeer")
 		set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT
 			"LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/logs/${_t}")
 	endif()
