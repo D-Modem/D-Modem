@@ -920,9 +920,10 @@ renamed `k_<name>` (`sm56_obj.cmake`) and provided by the harness, which
 emulates an Intel ICH modem controller with a Motorola "MOTf" codec on
 trapped port I/O, patches the module's few `current` reads, and resamples
 between the line's 8000 Hz and the codec's rate (7200 Hz idle, 9600 Hz
-for V.90). The module is Motorola's and not in this tree: configure with
-`-DDMODEM_SM56_KO=<path to sm56.ko>` (that build only: the patched places
-are checked), then `ctest -L sm56 -j8`. `SM56_DEBUG=1` prints its
+for V.90). The module is `test/sm56.ko` as Motorola shipped it (sha256
+`a757fd85...`; that build only, the patched places are checked); the
+build renames its imports into `sm56k.o`. `ctest -L sm56 -j8` runs the
+tests. `SM56_DEBUG=1` prints its
 `printk`s.
 
 Its interrupt and deferred routine save the FPU (`fnsave`) to

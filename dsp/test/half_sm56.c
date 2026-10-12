@@ -26,10 +26,10 @@
  *    mot_write, and its receive path into the tty's flip buffer, whose
  *    work we run): a tty_struct of 2.6.9 with only what it uses.
  *
- *    The module is not in this tree (it is Motorola's); build with
- *    -DDMODEM_SM56_KO=<path to sm56.ko> (sm56_obj.cmake renames its
- *    imports).  It must be that build (sha256 a757fd85...): the places
- *    patched for "current" are checked.  SM56_DEBUG=1 prints its printk
+ *    The module is test/sm56.ko as Motorola shipped it (sha256
+ *    a757fd85...; -DDMODEM_SM56_KO=<path> for another copy of it);
+ *    sm56_obj.cmake renames its imports at build time.  It must be that
+ *    build: the places patched are checked.  SM56_DEBUG=1 prints its printk
  *    and the port accesses we do not know, 2 every port access.
  */
 
