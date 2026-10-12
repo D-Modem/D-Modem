@@ -2252,7 +2252,13 @@ int V34Pump::handshake()
 		break;
 	case QCA_ANSPCM:
 		/* TONEq: the analogue modem has heard ANSpcm (and checked
-		   it); within 2 s of QCA1d, or V.8 after all */
+		   it); within 2 s of QCA1d, or V.8 after all.  Not before
+		   ANSpcm: TONEq is V.21's low channel mark (980 Hz), and the
+		   end of the analogue modem's CM, as it stops for our QCA1d,
+		   has it as well (we cut QTS short, and the original library
+		   then hung, waiting for QTS-bar) */
+		if (v90tx.seg != V90_ANSPCM)
+			toneq_blocks = 0;
 		if (toneq_blocks >= 5) {
 			DSP_DBG("v34: TONEq heard\n");
 			v90tx.segment(V90_SILENCE);
