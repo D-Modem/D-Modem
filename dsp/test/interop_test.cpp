@@ -422,8 +422,9 @@ std::vector<Call> calls()
 
 	/* --- the HSF soft modem (8000 Hz) and the open modem (9600 Hz):
 	   V.22bis and V.34 both ways, V.32bis with the open modem calling
-	   and V.21 with the HSF modem calling; V.90 with it as the analogue
-	   modem (see the README for the calls that fail) */
+	   and V.21 with the HSF modem calling; V.90 and V.92 (PCM upstream)
+	   with it as the analogue modem (see the README for the calls that
+	   fail) */
 	struct Hsf {
 		const char *n, *ms;
 		bool hsf_calls, open_calls;
@@ -448,6 +449,20 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
 		      "DSP_G711=" + law, "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* V.92 with PCM upstream: it starts with quick connect (QC1a) on
+	   the first call already; and with it off (+PQC=3), V.8 */
+	for (std::string law : { "ulaw", "alaw" })
+		add("hsf", "hsf_v92_pcmup_" + law, "hsf", "open8",
+		    "ATX3;AT+MS=V92",
+		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
+		      "DSP_G711=" + law, "STREAM=10",
+		      "EXPECT_B=(?s)V.92 quick connect.*V.92 connect "
+		      "5[0-9]{4}/(3[4-9]|4[0-2])", "PROTO_B=ATX3;AT+MS=92" });
+	add("hsf", "hsf_v92_pcmup_noqc", "hsf", "open8",
+	    "ATX3;AT+MS=V92;AT+PQC=3",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "STREAM=10", "EXPECT_B=V.92 connect 5[0-9]{4}/(3[4-9]|4[0-2])",
+	      "PROTO_B=ATX3;AT+MS=92" });
 	return c;
 }
 

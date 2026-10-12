@@ -7,7 +7,8 @@
  *    on the network's 8000 Hz samples, as V.91 does.
  *
  *    The analogue modem's signals are PAM symbols, one per sample.  The
- *    receiver finds Ru and Su by their period of 6 symbols (1333 Hz), and
+ *    receiver finds Ru and Su by their period of 6 symbols (1333 Hz; Su
+ *    may also have Sd's shape, mostly 4000 Hz) and their reversals, and
  *    the two TRN1u by their known scrambled sequence: the correlation with
  *    it is the channel's impulse response, and gives the symbol (and,
  *    for the second TRN1u, the data frame) alignment.  A decision
@@ -491,19 +492,26 @@ void V92Up::tone_sample(float x)
 				     0.8660254f, 0.8660254f };
 	int k = (int)(n % 6), j, coh, h = (int)(n & 31);
 	cplx bb = cplx_make(0, 0);
-	float e = 0, d;
+	float e = 0, r = 0, d;
 
-	th[n & 15] = x;
+	th[n & 31] = x;
 	for (j = 0; j < TONE_W; j++) {
-		float v = th[(n - j) & 15];
+		float v = th[(n - j) & 31], u = v - th[(n - j - 6) & 31];
 		int kk = (k - j + 12) % 6;
 		bb.re += v * c6[kk];
 		bb.im += v * s6[kk];
 		e += v * v;
+		r += u * u;
 	}
 	tbh[h] = bb;
-	/* |B|^2 is E W / 2 for a sine of period 6 */
-	coh = e > TONE_MIN_E * 2 && cplx_pow(bb) > 0.6f * e * TONE_W / 2;
+	/* |B|^2 is E W / 2 for a sine of period 6.  Su may be Sd's shape
+	   instead, its energy mostly at 4000 Hz (the HSF modem's Su,
+	   Su-bar and the start of the Su after it, before it goes on at a
+	   lower level with a sine): while we send Jd (when Su comes), any
+	   signal of period 6 with some of its energy at 1333 Hz is one */
+	coh = e > TONE_MIN_E * 2 && (cplx_pow(bb) > 0.6f * e * TONE_W / 2 ||
+		(tx.seg == V90_JD && r < 0.02f * e &&
+		 cplx_pow(bb) > 0.08f * e * TONE_W / 2));
 	tcoh[h] = (unsigned char)coh;
 	if (coh) {
 		tone_n++;
@@ -512,6 +520,53 @@ void V92Up::tone_sample(float x)
 		tone_n = 0;
 	if (rev_hold > 0)
 		rev_hold--;
+	/* Su, Su-bar, Su: the HSF modem's Su-bar is 24 symbols, too short
+	   for the windows and the gap between them (its two reversals would
+	   be one); each period against Su's phase instead */
+	if (rx == V92R_SU || rx == V92R_SUBAR || rx == V92R_SU2) {
+		cplx b6 = cplx_make(0, 0);
+		float e6 = 0;
+		for (j = 0; j < 6; j++) {
+			float v = th[(n - j) & 31];
+			int kk = (k - j + 12) % 6;
+			b6.re += v * c6[kk];
+			b6.im += v * s6[kk];
+			e6 += v * v;
+		}
+		d = e6 > TONE_MIN_E && cplx_pow(b6) > 0.04f * e6 * 3 ?
+			(b6.re * su_ref.re + b6.im * su_ref.im) /
+			sqrtf(cplx_pow(b6) * cplx_pow(su_ref) + 1e-9f) : 0;
+		if (rx == V92R_SUBAR)
+			su_back = d > 0.5f ? su_back + 1 : 0;
+		else
+			su_back = d < -0.7f ? su_back + 1 : 0;
+		if (rx == V92R_SU && su_back >= 6) {
+			revs = 1;
+			rx = V92R_SUBAR;
+			rev_at = n - 8;
+			DSP_DBG("v92: Su reversal at %ld\n", rev_at);
+		} else if (rx == V92R_SUBAR && su_back >= TONE_W) {
+			revs = 2;
+			rx = V92R_SU2;
+			rev_at = n - TONE_W - 2;
+			/* the Su after it may be at another phase */
+			su_ref = b6;
+			DSP_DBG("v92: Su-bar reversal at %ld\n", rev_at);
+		} else if (rx == V92R_SU2 && su_back >= 6) {
+			/* after our Jp: Su-bar of 24 symbols, then TRN1u */
+			revs = 3;
+			rx = V92R_TRN1B;
+			rev_at = n - 8;
+			t0 = rev_at + 24;
+			DSP_DBG("v92: Su reversal after Jp at %ld\n", rev_at);
+		} else
+			return;
+		/* the windows' view of them is not another */
+		su_back = 0;
+		rev_n = 0;
+		rev_hold = 48;
+		return;
+	}
 	/* a reversal between the windows */
 	d = 0;
 	if (coh && tcoh[(n - TONE_W - TONE_GAP) & 31]) {
@@ -548,16 +603,6 @@ void V92Up::tone_sample(float x)
 		t0 = rev_at + 24;
 		rx = V92R_TRN1;
 		break;
-	case V92R_SU:
-		revs = 1;
-		rx = V92R_SUBAR;
-		DSP_DBG("v92: Su reversal at %ld\n", rev_at);
-		break;
-	case V92R_SUBAR:
-		revs = 2;
-		rx = V92R_SU2;
-		DSP_DBG("v92: Su-bar reversal at %ld\n", rev_at);
-		break;
 	case V92R_RN_RU:
 		if (tone_n < 150)
 			break;
@@ -570,12 +615,6 @@ void V92Up::tone_sample(float x)
 			DSP_DBG("v92: Ru-bar at symbol %ld, TRN2u at %ld\n", r,
 				rn_trn);
 		}
-		break;
-	case V92R_SU2:
-		revs = 3;
-		rx = V92R_TRN1B;
-		t0 = rev_at + 24;
-		DSP_DBG("v92: Su reversal after Jp at %ld\n", rev_at);
 		break;
 	default:
 		break;
@@ -613,6 +652,8 @@ void V92Up::rx_sample(float x)
 	case V92R_QUIET:
 		if (tone_n >= 96) {
 			DSP_DBG("v92: Su at %ld\n", n);
+			su_ref = tbh[n & 31];
+			su_back = 0;
 			rx = V92R_SU;
 		}
 		break;

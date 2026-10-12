@@ -148,7 +148,7 @@ struct V92Up {
 	enum v92_rx rx;
 	float buf[V92_BUF];
 	/* the period 6 tones (Ru, Su) and their reversals */
-	float th[16];
+	float th[32];
 	cplx tbh[32];
 	unsigned char tcoh[32];
 	int tone_n, tone_miss, rev_n, rev_hold;
@@ -158,6 +158,8 @@ struct V92Up {
 	float ta_e;
 	int ta_blocks;
 	int revs;               /* reversals of Su so far */
+	cplx su_ref;            /* Su's phase */
+	int su_back;            /* samples of Su-bar back in Su's phase */
 	/* the equalizer */
 	double f[V92_EQ_F], b[V92_EQ_B];
 	float dh[V92_EQ_B];     /* past decisions, newest first */

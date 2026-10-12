@@ -1098,6 +1098,8 @@ the port accesses the harness does not know, `HSF_DEBUG=2` every access.
 | V32B,0 / 132 | - | CONNECT |
 | V22B / 122 | CONNECT | CONNECT |
 | V21,0 / 21 | CONNECT | - |
+| V90 / 90 (V.90, the open modem digital) | CONNECT 52000/33600 | - |
+| V92 / 92 (V.92, PCM upstream) | CONNECT 52000/41333 | - |
 
 V.90 with it as the analogue modem connects at 52000/33600 over µ-law
 and A-law. It failed at first: we waited for its CJ while it went on with
@@ -1111,8 +1113,21 @@ The ICH module ran off its ring buffer every 3.27 s at first: a word of
 its device (offset 0x280, 2 once the engine runs) makes it add 8 samples
 to each position it reads past 700, as for a codec that runs fast; the
 harness clears it before each interrupt (`HSF_KEEP8=1` keeps it). Open:
-our V.21 caller (it answers, but we never connect), its V.32bis caller,
-and V.92: it does quick connect and asks for PCM upstream, which fails.
+our V.21 caller (it answers, but we never connect) and its V.32bis
+caller.
+
+V.92 with PCM upstream connects (52000/41333 over µ-law), with quick
+connect (it sends QC1a on the first call already) and without (`+PQC=3`).
+It failed at first in phase 3: we waited for its Su to reverse while it
+waited for our Jp. Its Su, Su-bar and Su come as one short burst (Su for
+144 symbols, Su-bar for only 24, then Su again until Jp), and its Su is
+of Sd's shape, period 6 but its energy mostly at 4000 Hz (with quick
+connect all of it; without, the Su it holds is a sine). Our receiver took
+only a sine of period 6 for Su and found reversals between two 12 symbol
+windows 6 apart, too far apart for a Su-bar of 24 symbols. While we send
+Jd, a signal of period 6 with some of its energy at 1333 Hz is Su now,
+and Su's reversals are each period's phase against Su's.
+
 
 `MODEM_REC=<prefix>` makes `modem_half` record its line input and output
 (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
