@@ -34,6 +34,8 @@ namespace interop {
  *   EXPECT_B=<regex>  modemB's log must have it ((?s) allowed, '.' takes
  *                     newlines anyway)
  *   EXPECT_DROP=1     the call is to end on the way: the data unchecked
+ *   DATA_RATE=<bit/s> the slowest direction's rate, when the CONNECTs do
+ *                     not say it
  *   NET_SYNC=1        netsim's line events count from CONNECT
  *   WAV=<file>        the line through netsim as a stereo WAV
  *   LOG_DIR=<dir>     modemA.log, modemB.log (default: the current dir)

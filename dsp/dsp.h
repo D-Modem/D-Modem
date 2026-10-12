@@ -56,6 +56,8 @@ struct dp_runtime {
 				   automode fallback skips it */
 	int v32_automode;       /* V.32bis started by the V.8/V.34 pump:
 				   keep the V.22bis fallback */
+	int after_v8;           /* the modulation was agreed in V.8: the
+				   caller starts at once after CJ */
 	int law;                /* the G.711 network: 1 mu-law, 2 A-law, 0
 				   unknown (then $DSP_G711) */
 	int pcm;                /* V.91: the received codes as they are

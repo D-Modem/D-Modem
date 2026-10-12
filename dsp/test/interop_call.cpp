@@ -652,6 +652,10 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			}
 		if (!rate)
 			rate = 1200;
+		/* DATA_RATE: when the CONNECTs say less (a modem that
+		   gives the DTE's rate; V.23's 75 bit/s back channel) */
+		if (atol(env("DATA_RATE", "0").c_str()))
+			rate = atol(env("DATA_RATE").c_str());
 		dte.buf[0].clear();
 		dte.buf[1].clear();
 

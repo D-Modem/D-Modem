@@ -76,8 +76,12 @@ signals and receiver, `v34_data.cpp` the data mode, `v34_tables.cpp` the
 constants (the superconstellation, Table 10 rates, the PP sequence).
 
 - **V.8:** ANSam (2100 Hz, 15 Hz AM, reversals every 450 ms), CM/JM/CJ on
-  V.21. A CM or JM without V.34, or a V.32 calling modem (1800 Hz AA),
-  hands the call to the V.32bis pump. As in V.32bis Annex A, that falls
+  V.21. Our CM offers V.34, V.32bis, V.22bis, V.23 and V.21; our JM, of
+  these, what the CM has. Calling, a JM without V.34 is answered with CJ
+  and the call goes on in the best modulation the JM has (V.32bis,
+  V.22bis, V.23, V.21; an FSK caller starts its carrier at once, the
+  answerer waits for it). Answering, a CM without V.34, or a V.32
+  calling modem (1800 Hz AA), hands the call to the V.32bis pump. As in V.32bis Annex A, that falls
   back to V.22bis after 3 s, and V.22bis to V.21 after 3 s more of
   unanswered USB1, V.21 to V.23 and V.23 to Bell 103 after 3 s more
   each (FSK callers wait for the answerer's mark). A Bell 103 caller
@@ -1098,6 +1102,7 @@ the port accesses the harness does not know, `HSF_DEBUG=2` every access.
 | V32B,0 / 132 | CONNECT | CONNECT |
 | V22B / 122 | CONNECT | CONNECT |
 | V21,0 / 21 | CONNECT | - |
+| V21, V23C, V22B, V32B (automode) / 34 (V.8) | - | CONNECT: V.21, V.23, V.22bis, V.32bis |
 | V90 / 90 (V.90, the open modem digital) | CONNECT 52000/33600 | - |
 | V92 / 92 (V.92, PCM upstream) | CONNECT 52000/41333 | - |
 
@@ -1112,8 +1117,17 @@ octets in a row).
 The ICH module ran off its ring buffer every 3.27 s at first: a word of
 its device (offset 0x280, 2 once the engine runs) makes it add 8 samples
 to each position it reads past 700, as for a codec that runs fast; the
-harness clears it before each interrupt (`HSF_KEEP8=1` keeps it). Open:
-our V.21 caller (it answers, but we never connect).
+harness clears it before each interrupt (`HSF_KEEP8=1` keeps it).
+
+Its V.21 and V.23 answerers work only after V.8. Forced (`+MS=V21,0`,
+`V23C,0`) it stays silent after ATA, also against itself; in automode it
+sends ANSam and, when no CM comes, its 1650 Hz mark, but drops it 2 s
+after the caller's mark (again also against itself, calling with
+`+MS=V21,0`). So our V.21 caller (`AT+MS=21`, no V.8) does not connect
+to it. Our V.8 caller does: its CM now offers V.22bis, V.23 and V.21 as
+well, and a JM with one of these (the HSF modem's, answering with
+`+MS=V21` and so on) gets CJ and that modulation, the FSK caller's
+carrier first (as the HSF modem's own caller does).
 
 Its V.32bis (and V.32) caller went silent after our answerer's AC/CA
 exchange and never answered our R1. Its own answerer, after the reversal

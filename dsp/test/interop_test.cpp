@@ -21,6 +21,7 @@
 
 #include <map>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -449,6 +450,18 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
 		      "DSP_G711=" + law, "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* V.8 (the open modem calling with AT+MS=34) agreeing on what the
+	   HSF modem answers with (its automode up to that modulation; its
+	   V.21 and V.23 answerers work only so: forced, +MS=V21,0, it is
+	   silent, and in automode it gives up on a caller without V.8) */
+	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,
+		     const char *, const char *>>{ { "V21", "21", "300" },
+		     { "V23C", "23", "75" }, { "V22B", "122", "2400" },
+		     { "V32B", "132", "14400" } })
+		add("hsf", std::string("hsf_v8_") + ms + "_open_calls", "open",
+		    "hsf", "ATX3;AT+MS=34",
+		    { "NET=9600:8000:ulaw", std::string("DATA_RATE=") + rate,
+		      std::string("PROTO_B=ATX3;AT+MS=") + n });
 	/* V.92 with PCM upstream: it starts with quick connect (QC1a) on
 	   the first call already; and with it off (+PQC=3), V.8 */
 	for (std::string law : { "ulaw", "alaw" })

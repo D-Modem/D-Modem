@@ -54,8 +54,9 @@ namespace dsp {
 #define CC_RX_DELAY     (13 * V34_SRATE / 1000)
 #define REV_WAIT        (ms2samples(40, V34_SRATE) - CC_TX_DELAY - CC_RX_DELAY)
 
-/* our CM / JM: V-series data call, V.34 and V.32, LAPM, PSTN access */
-static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x11, 0x10, 0x2a, 0x0d };
+/* our CM / JM: V-series data call; V.34, V.32bis, V.22bis, V.23 (duplex)
+   and V.21; LAPM, PSTN access (a JM: of the modulations, what both have) */
+static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x13, 0x94, 0x2a, 0x0d };
 /* the trellis code we ask the remote to send: 0, 1, 2 for 16, 32, 64
    states */
 #ifndef V34_TRELLIS
@@ -81,6 +82,9 @@ static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x11, 0x10, 0x2a, 0x0d
 #define V90_P2_POWER    8       /* -6 - n dBm0 */
 #define V90_MAX_POWER   23      /* -0.5 - n / 2 dBm0 */
 #define V8_MOD2_V32     0x01    /* in the first extension octet */
+#define V8_MOD2_V22     0x02
+#define V8_MOD3_V23     0x04    /* in the second (duplex) */
+#define V8_MOD3_V21     0x80
 /* data mode mse (signal point spacing 2) that calls for a retrain */
 #define V34_RETRAIN_MSE 0.25f
 /* rate renegotiation (11.6/V.34): the mse a rate runs at with a margin
@@ -321,6 +325,8 @@ struct V34Pump : Pump {
 	int pcm;                /* V.90 agreed in V.8 */
 	int v91;                /* offer V.91 */
 	int v91_on;             /* V.91 agreed in V.8 */
+	int v8_dp;              /* the modulation agreed in V.8 when not
+				   V.34 (0: none in common) */
 	int v92;                /* offer V.92 as the digital modem */
 	int v92_on;             /* both INFO0 said V.92 */
 	int short2;             /* and both asked for short phase 2 */
@@ -496,6 +502,8 @@ struct V34Pump : Pump {
 	int v8_remote_cat(int tag);
 	void v8_make_msg(BitQ *q);
 	int v8_remote_v34();
+	int v8_remote_mod(int k);
+	int v8_choice();
 	int v8_v90();
 	int v8_v91();
 	void v91_start();
@@ -766,7 +774,7 @@ int V34Pump::v8_remote_cat(int tag)
    availability category and a digital network connection. */
 void V34Pump::v8_make_msg(BitQ *q)
 {
-	int i, pcm_ = (v90 ? V8_PCM_DIGITAL : 0) | (v91 ? V8_PCM_V91 : 0);
+	int i, k, pcm_ = (v90 ? V8_PCM_DIGITAL : 0) | (v91 ? V8_PCM_V91 : 0);
 	q->reset();
 	q->put(0x3FF, 10);
 	/* in a JM what both have: V.90 when the CM had an analogue V.90
@@ -780,8 +788,17 @@ void V34Pump::v8_make_msg(BitQ *q)
 		if (!(c & V8_PCM_V91))
 			pcm_ &= ~V8_PCM_V91;
 	}
-	for (i = 0; i < (int)sizeof(v8_msg); i++) {
+	for (i = 0, k = -1; i < (int)sizeof(v8_msg); i++) {
 		int c = v8_msg[i];
+		/* the modulation octets: in a JM what the CM has too */
+		if ((c & 0x1F) == V8_CAT_MOD)
+			k = 0;
+		else if (k >= 0 && (c & 0x18) == 0x10)
+			k++;
+		else
+			k = -1;
+		if (!caller && k >= 0)
+			c &= v8_remote_mod(k) | (k ? 0x18 : 0x1F);
 		if (pcm_ && (c & 0x1F) == V8_CAT_MOD)
 			c |= V8_MOD1_PCM;
 		if (pcm_ && (c & 0x1F) == V8_CAT_ACCESS)
@@ -806,6 +823,41 @@ int V34Pump::v8_remote_v34()
 {
 	int c = v8_remote_cat(V8_CAT_MOD);
 	return c >= 0 && (c & V8_MOD1_V34) != 0;
+}
+
+/* the remote's modulation octet k (0: the first, 1, 2: its extension
+   octets), 0 when it has none */
+int V34Pump::v8_remote_mod(int k)
+{
+	int i, j = -1;
+	for (i = 1; i < v8_remote_n; i++) {
+		int c = v8_remote[i];
+		if ((c & 0x1F) == V8_CAT_MOD)
+			j = 0;
+		else if (j >= 0 && (c & 0x18) == 0x10)
+			j++;
+		else
+			j = -1;
+		if (j == k)
+			return c;
+	}
+	return 0;
+}
+
+/* without V.34: the modulation of a JM (the answerer has chosen what
+   both have), the best of it */
+int V34Pump::v8_choice()
+{
+	int m2 = v8_remote_mod(1), m3 = v8_remote_mod(2);
+	if (m2 & V8_MOD2_V32)
+		return DP_V32BIS;
+	if (m2 & V8_MOD2_V22)
+		return DP_V22BIS;
+	if (m3 & V8_MOD3_V23)
+		return DP_V23;
+	if (m3 & V8_MOD3_V21)
+		return DP_V21;
+	return 0;
 }
 
 /* V.90 with us as the digital modem: both offer it */
@@ -2603,8 +2655,21 @@ int V34Pump::handshake()
 	case V8C_CM:
 		/* finish the octet, then CJ */
 		if (v8_ok && fsk_bit_edge() && v8tx.pos % 10 == 0) {
-			if (!v8_remote_v34())
-				return fallback("no V.34 in JM");
+			v8_dp = 0;
+			if (!v8_remote_v34()) {
+				/* CJ, then what the JM has (9.2/V.8) */
+				v8_dp = v8_choice();
+				if (!v8_dp)
+					return fallback("no V.34 in JM");
+				DSP_DBG("v34: V.8 agreed on %s\n",
+					v8_dp == DP_V32BIS ? "V.32bis" :
+					v8_dp == DP_V22BIS ? "V.22bis" :
+					v8_dp == DP_V23 ? "V.23" : "V.21");
+				set_state(V8C_CJ);
+				v8tx.make_cj();
+				v8tx_repeat = 0;
+				break;
+			}
 			pcm = v8_v90();
 			v91_on = v8_v91();
 			if (pcm)
@@ -2620,6 +2685,15 @@ int V34Pump::handshake()
 		if (v8tx.pos >= v8tx.n && fsk_bit_edge()) {
 			set_state(V8C_GAP);
 			txm = TXM_SILENCE;
+			if (v8_dp) {
+				if (v8_dp == DP_V32BIS && rt)
+					rt->v32_automode = 1;
+				if (rt)
+					rt->after_v8 = 1;
+				modem_set_param(modem, MDMPRM_DP_REQUESTED,
+						v8_dp);
+				return DPSTAT_CHANGEDP;
+			}
 		}
 		break;
 	case V91_RUN:           /* process() runs it */

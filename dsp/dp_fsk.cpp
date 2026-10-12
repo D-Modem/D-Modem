@@ -226,7 +226,12 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		struct dp_runtime *rt = (struct dp_runtime *)
 			modem_get_param(m, MDMPRM_DPRUNTIME);
 		state = FSK_WAIT_CARRIER;
-		if (rt && rt->ans_sent && id == DP_B103) {
+		if (rt && rt->after_v8) {
+			/* after V.8's CJ the caller's carrier comes first
+			   (the answerer waits for it) */
+			rt->after_v8 = 0;
+			state = FSK_TRAIN;
+		} else if (rt && rt->ans_sent && id == DP_B103) {
 			/* Bell 212A fell back: the answerer's 2225 Hz mark
 			   was heard, answer it at once */
 			rt->ans_sent = 0;
