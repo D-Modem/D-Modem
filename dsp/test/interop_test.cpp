@@ -405,10 +405,7 @@ std::vector<Call> calls()
 	      "retrained", "PROTO_B=ATX3;AT+MS=92" });
 
 	/* --- the PCTel HSP soft modem (8000 Hz) and the open modem (9600
-	   Hz).  Its pumps run its automode whatever +MS says (the controller
-	   keeps the setting, but the modulation it gives the pumps is the
-	   same), so only the calls its automode makes work: V.32bis and
-	   V.34 both ways, and our V.22bis caller (see the README) */
+	   Hz): V.32bis and V.34 both ways with its +MS set to them */
 	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
 		     { "V32B,0", "132" }, { "V34", "34" } }) {
 		std::string a = std::string("ATX3;AT+MS=") + n;
@@ -418,8 +415,19 @@ std::vector<Call> calls()
 		add("pctel", std::string("pctel_") + ms + "_open_calls", "open",
 		    "pctel", o, { "NET=9600:8000:ulaw", "PROTO_B=" + a });
 	}
-	add("pctel", "pctel_122_open_calls", "open", "pctel", "ATX3;AT+MS=122",
-	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3" });
+	/* and in its automode (no +MS: forced to one of these its answerer
+	   is silent after its answer tone), V.21, V.22, V.22bis and V.23
+	   both ways against our forced ones */
+	for (const char *ms : { "21", "22", "122", "23" }) {
+		std::string o = std::string("ATX3;AT+MS=") + ms;
+		const char *rate = !strcmp(ms, "21") ? "DATA_RATE=300" :
+			!strcmp(ms, "23") ? "DATA_RATE=75" : "DATA_RATE=1200";
+		add("pctel", std::string("pctel_") + ms + "_open_calls", "open",
+		    "pctel", o, { "NET=9600:8000:ulaw", rate, "PROTO_B=ATX3" });
+		add("pctel", std::string("pctel_auto_") + ms + "_pctel_calls",
+		    "pctel", "open", "ATX3",
+		    { "NET=8000:9600:ulaw", rate, "PROTO_B=" + o });
+	}
 
 	/* --- the HSF soft modem (8000 Hz) and the open modem (9600 Hz):
 	   V.22bis, V.32bis and V.34 both ways and V.21 with the HSF modem

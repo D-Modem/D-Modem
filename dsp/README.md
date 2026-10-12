@@ -1049,20 +1049,21 @@ pump running (`curModem`).
 |---|---|---|
 | V34 / 34 | CONNECT (we receive at 24000) | CONNECT 24000 |
 | V32B,0 / 132 | CONNECT 14400 | CONNECT 14400 |
-| (its automode) / 122 | - | CONNECT 2400 |
+| (its automode) / 122 | CONNECT 2400 | CONNECT 2400 |
+| (its automode) / 22 | CONNECT 1200 | CONNECT 1200 |
+| (its automode) / 23 | CONNECT 1200/75 | CONNECT 1200/75 |
+| (its automode) / 21 | CONNECT 300 | CONNECT 300 |
 
 It reports the DTE's rate (115200) in its CONNECT. Against itself and
 the SM56 modem it connects at V.34 both ways (33600 with SM56).
 
-Its pumps run its automode whatever `+MS` says: `AT+MS=V21,0` is kept
-(`AT+MS?` gives it back), but the controller gives the pumps the same
-modulation for it as for `V34`, and after the answer tone they go on as
-for V.8 or V.32 (as the caller its V.32 AA, 1800 Hz). So it does not
-connect to our forced V.21, V.22 or V.23 answerer, and as the answerer
-it waits after its answer tone, as V.32's does, for a caller that waits
-for its carrier. Calling our V.22bis answerer, its 2400 bit/s connects at
-once on its side, while ours takes 10 s over it (by then it has given up
-V.42). These are open.
+Its low speed modulations work in its automode (no `+MS`), both ways
+against our forced V.21, V.22, V.22bis and V.23 modems (answering, it
+sends V.22bis's unscrambled ones after its answer tone). Forced to one of
+them (`+MS=V21,0` and so on) it does not: answering, it is silent after
+its answer tone. (These were open while the tests forced it; our V.22bis
+answerer, which once took 10 s over its V.22bis caller, connects in 8 s
+now.) With V.8 it always offers V.34, whatever `+MS` says.
 
 V.34 with it as the answerer failed at first: it retrained phase 2 instead
 of answering our INFO1c with INFO1a, every time. Its INFO decoder (state
