@@ -143,6 +143,28 @@ if(EXISTS "${DMODEM_AGERE_LIB}")
 	message(STATUS "tests: the Agere soft modem: ${DMODEM_AGERE_LIB}")
 endif()
 
+# Motorola's SM56 soft modem as a peer (half_sm56.c): sm56.ko of
+# sm56-06.09.05 for Fedora Core 3's kernel 2.6.9, its imports renamed
+set(DMODEM_SM56_KO "${CMAKE_CURRENT_SOURCE_DIR}/sm56.ko" CACHE
+	FILEPATH "sm56.ko of the Motorola SM56 soft modem (interop tests)")
+if(EXISTS "${DMODEM_SM56_KO}")
+	set(_sm56o ${CMAKE_CURRENT_BINARY_DIR}/sm56k.o)
+	add_custom_command(OUTPUT ${_sm56o}
+		COMMAND ${CMAKE_COMMAND} -DKO=${DMODEM_SM56_KO} -DOUT=${_sm56o}
+			-DNM=${CMAKE_NM} -DOBJCOPY=${CMAKE_OBJCOPY}
+			-P ${CMAKE_CURRENT_SOURCE_DIR}/sm56_obj.cmake
+		DEPENDS ${DMODEM_SM56_KO} sm56_obj.cmake
+		COMMENT "sm56.ko's imports renamed")
+	add_executable(half_sm56 half_sm56.c ${_sm56o})
+	set_source_files_properties(${_sm56o} PROPERTIES EXTERNAL_OBJECT TRUE
+		GENERATED TRUE)
+	target_compile_options(half_sm56 PRIVATE ${DMODEM_M32} -g -O1)
+	target_link_options(half_sm56 PRIVATE ${DMODEM_M32} -no-pie
+		-Wl,-z,noexecstack)
+	target_link_libraries(half_sm56 PRIVATE m)
+	message(STATUS "tests: the Motorola SM56 soft modem: ${DMODEM_SM56_KO}")
+endif()
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(NOT Python3_FOUND)
 	return()
@@ -461,12 +483,75 @@ if(TARGET half_agere)
 	endforeach()
 endif()
 
+# the Motorola SM56 soft modem (8000 Hz) and the open modem (9600 Hz)
+# call each other, as the Agere modem's tests
+if(TARGET half_sm56)
+	foreach(_p V21:21 V22:22 V22B:122 V32B:132 V34:34)
+		string(REPLACE ":" ";" _p ${_p})
+		list(GET _p 0 _a)
+		list(GET _p 1 _ms)
+		add_test(NAME sm56_${_ms}_sm56_calls COMMAND
+			${Python3_EXECUTABLE} ${_py}/interop.py
+			$<TARGET_FILE:half_sm56> $<TARGET_FILE:half_open>
+			"ATX3;AT+MS=${_a}")
+		set_tests_properties(sm56_${_ms}_sm56_calls PROPERTIES
+			LABELS sm56 ENVIRONMENT
+			"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_ms}")
+		add_test(NAME sm56_${_ms}_open_calls COMMAND
+			${Python3_EXECUTABLE} ${_py}/interop.py
+			$<TARGET_FILE:half_open> $<TARGET_FILE:half_sm56>
+			"ATX3;AT+MS=${_ms}")
+		set_tests_properties(sm56_${_ms}_open_calls PROPERTIES
+			LABELS sm56 ENVIRONMENT
+			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
+	endforeach()
+	# V.90: the SM56 modem as the analogue modem, the open one as the
+	# digital modem (both at 8000 Hz; the SM56 modem's codec runs at
+	# 9600 Hz for it)
+	foreach(_law ulaw alaw)
+		add_test(NAME sm56_v90_${_law} COMMAND ${Python3_EXECUTABLE}
+			${_py}/interop.py $<TARGET_FILE:half_sm56>
+			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
+		set_tests_properties(sm56_v90_${_law} PROPERTIES LABELS sm56
+			ENVIRONMENT
+			"${_env};NET_LOOP=0.45;NET=8000:8000:${_law};DSP_G711=${_law};EXPECT_B=V.90 connect 5[0-9]{4}/;PROTO_B=ATX3\;AT+MS=90")
+	endforeach()
+	# V.92: its QC1a on the first call already; on the second, quick
+	# connect with short phase 2.  (Its upstream stays V.34: the
+	# module chooses PCM upstream only in quick connect's INFO1a, from
+	# an INFO1d flag its full phase 2 has cleared)
+	add_test(NAME sm56_v92_qc COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_sm56>
+		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
+	set_tests_properties(sm56_v92_qc PROPERTIES LABELS sm56
+		ENVIRONMENT
+		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2.*V.90 connect;PROTO_B=ATX3\;AT+MS=92")
+	# V.92 modem-on-hold: it asks (AT+PMHR), we grant it; it comes back
+	# with quick connect (a while after its ATO)
+	add_test(NAME sm56_v92_moh_grant COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_sm56>
+		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
+	set_tests_properties(sm56_v92_moh_grant PROPERTIES LABELS sm56
+		ENVIRONMENT
+		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=60;MIDCALL_A=8:AT+PMHR\;WAIT 10;EXPECT_B=(?s)MHreq: MHack.*V.92 quick connect.*V.90 back from hold;PROTO_B=ATX3\;AT+MS=92")
+	# and ours: as the Agere modem, it takes our tone B for a retrain's
+	# (it answers MHreq only where its phase 2 begins, in place of
+	# INFO0d, and one that knows nothing of it is no different until
+	# then)
+	add_test(NAME sm56_v92_moh_request COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_sm56>
+		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
+	set_tests_properties(sm56_v92_moh_request PROPERTIES LABELS sm56
+		ENVIRONMENT
+		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=40;MIDCALL_B=8:AT+PMHR\;WAIT 6;EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.90 retrained;PROTO_B=ATX3\;AT+MS=92")
+endif()
+
 # the calls run in real time and mostly wait, so they can run in parallel
 # (ctest -L interop -j8): each writes its modem logs to logs/<test>/
 get_property(_tests DIRECTORY PROPERTY TESTS)
 foreach(_t ${_tests})
 	get_test_property(${_t} LABELS _l)
-	if(_l MATCHES "interop|agere")
+	if(_l MATCHES "interop|agere|sm56")
 		set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT
 			"LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/logs/${_t}")
 	endif()

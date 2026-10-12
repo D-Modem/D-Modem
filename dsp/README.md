@@ -911,6 +911,45 @@ Class 1 fax at 8000 Hz (`agere_fax_*`): V.27ter, V.29 and V.17 (7200 to
 The original library in its default V.92 mode does V.8 with automode off,
 and connects to this implementation at V.34.
 
+### Against the Motorola SM56 soft modem
+
+`half_sm56` runs Motorola's SM56 soft modem (`sm56.ko` of sm56-06.09.05,
+built for Fedora Core 3's kernel 2.6.9: controller and data pumps, V.92)
+in user space. The module is linked in as it is, its kernel imports
+renamed `k_<name>` (`sm56_obj.cmake`) and provided by the harness, which
+emulates an Intel ICH modem controller with a Motorola "MOTf" codec on
+trapped port I/O, patches the module's few `current` reads, and resamples
+between the line's 8000 Hz and the codec's rate (7200 Hz idle, 9600 Hz
+for V.90). The module is Motorola's and not in this tree: configure with
+`-DDMODEM_SM56_KO=<path to sm56.ko>` (that build only: the patched places
+are checked), then `ctest -L sm56 -j8`. `SM56_DEBUG=1` prints its
+`printk`s.
+
+| SM56 `AT+MS=` / ours | SM56 caller → open answerer | open caller → SM56 answerer |
+|---|---|---|
+| V34 / 34 | CONNECT 33600/LAPM | (see `sm56_34_open_calls`) |
+| V90 / 90 (ours as the digital modem), mu-law | CONNECT 50666/31200 | - |
+
+Its V.92: QC1a in V.8 on every call, and on the second call (`CALLS=2`)
+quick connect with short phase 2. Its upstream stays V.34: the module has
+PCM upstream (`UAPCMP3_*`), but chooses it only in quick connect's INFO1a
+(`SC_QC_Phase2_Set_Info_1A`), from INFO1d's PCM upstream bit, which its
+full phase 2 (`SC_Phase2_Create_Tone_A_Set_1A`) clears after reading it.
+Forced on, that path crashes the module (`SC_Modulate`).
+
+Modem-on-hold: its own request (`AT+PMHR`) we grant; it goes on hold
+and comes back with quick connect. Ours it takes for a retrain, as the
+Agere modem does. It answers MHreq only where its phase 2 begins, in place
+of INFO0d (`SC_Phase2_Detect_Info_0` looks for both). An MHreq sent at its
+retrain reversal does get an answer: MHnack with `+PMHT=0` (its default),
+and MHcda then clears the call down. With `+PMHT` set, it waits for an
+accept from its platform (the handset, `MO_HoldStatePlatformInput`). After
+MHfrr it does not reconnect with V.8, and expects something else after
+silence. Up to that point a remote that knows nothing of MH behaves the
+same way, and an MHreq at the reversal stalls the original library and the
+Agere modem (they take it for our reversal), so we keep the
+retrain-follow.
+
 `MODEM_REC=<prefix>` makes `modem_half` record its line input and output
 (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
 interop scripts run the modems with. `WAV=<file>` makes `interop.py` save
@@ -924,8 +963,8 @@ calls in between are in it as well. For example:
       WAV=call.wav python3 dsp/test/interop.py build/dsp/test/half_blob \
       build/dsp/test/half_open8 "ATX3;AT+MS=92"
 
-`PIPE_SYNC=<samples>` (`half_open`, `half_blob`) and `AGERE_SYNC=<samples>`
-(`half_agere`) make a call repeat exactly from run to run: the modems take
+`PIPE_SYNC=<samples>` (`half_open`, `half_blob`), `AGERE_SYNC=<samples>`
+(`half_agere`) and `SM56_SYNC=<samples>` (`half_sm56`) make a call repeat exactly from run to run: the modems take
 the DTE's commands only every that many line samples (data, once
 connected, at once), run their timers
 between half frames and keep time by the line; without them, where the

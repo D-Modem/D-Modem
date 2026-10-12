@@ -1,2 +1,6 @@
 # CMake build directories (cmake -B build)
 build*/
+
+# third-party modem objects for the interop tests (not ours to ship)
+dsp/test/agrsm_core.o
+dsp/test/sm56.ko
