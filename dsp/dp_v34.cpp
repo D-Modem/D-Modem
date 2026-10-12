@@ -18,8 +18,8 @@
  *              (on INFO1c), silence
  *    caller:   INFO0c, B, B-bar (40 ms after A-bar, 10 ms), silence,
  *              B (when the answerer's L2 is measured), B-bar (40 ms
- *              after A-bar, 10 ms), L1 (160 ms), L2 (until A), INFO1c,
- *              silence
+ *              after A-bar, 10 ms), L1 (160 ms), L2 (until A), B (two
+ *              symbols), INFO1c, silence
  *
  */
 
@@ -132,6 +132,7 @@ enum v34_state {
 	P2C_BBAR2_10,
 	P2C_L1,
 	P2C_L2,
+	P2C_B3,
 	P2C_INFO1,
 	P2C_WAIT_INFO1,
 	/* phases 3 and 4, answerer */
@@ -2849,6 +2850,16 @@ int V34Pump::handshake()
 		break;
 	case P2C_L2:
 		if (tone_blocks >= 3 || c >= ms2samples(2000, srate)) {
+			set_state(P2C_B3);
+			cc_tone();
+		}
+		break;
+	case P2C_B3:
+		/* B for two symbols, INFO1c's phase reference: straight
+		   after L2 its first bit would be a phase change from our
+		   last symbol before L1, and PCTel's answerer does not find
+		   the frame (it retrains phase 2 instead of INFO1a) */
+		if (c >= 2 * srate / CC_BAUD) {
 			set_state(P2C_INFO1);
 			make_info1c(&cctx);
 			cc_send();
