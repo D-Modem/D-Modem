@@ -925,10 +925,23 @@ for V.90). The module is Motorola's and not in this tree: configure with
 are checked), then `ctest -L sm56 -j8`. `SM56_DEBUG=1` prints its
 `printk`s.
 
+Its interrupt and deferred routine save the FPU (`fnsave`) to
+`.rodata.cst4` + 0x640 and + 0x644, which runs past that section into
+whatever the linker puts after it. With the module linked first, that is
+its own constants, and its V.90 interpolation then reads far outside its
+buffers. The harness points those four instructions at buffers of its own.
+
 | SM56 `AT+MS=` / ours | SM56 caller → open answerer | open caller → SM56 answerer |
 |---|---|---|
-| V34 / 34 | CONNECT 33600/LAPM | (see `sm56_34_open_calls`) |
-| V90 / 90 (ours as the digital modem), mu-law | CONNECT 50666/31200 | - |
+| V34,0 / 34 | CONNECT 33600/LAPM (we receive at 24000) | CONNECT 33600 / 24000 |
+| V32B,0 / 132 | CONNECT 14400 | CONNECT 14400 |
+| V22B,0 / 122 | NO CARRIER (our answerer gets to data, it does not) | CONNECT 2400 |
+| V22,0 / 22, V21,0 / 21 | CONNECT 1200, 300 | the same |
+| V90 / 90 (ours as the digital modem), mu-law and A-law | CONNECT 50666/31200 | - |
+
+Below V.34 its `+MS` wants automode off (`AT+MS=V22` alone is an
+error). Answering with automode on (its default), it goes off hook at
+`ATA` and stays silent; with `AT+MS=V34,0` it answers.
 
 Its V.92: QC1a in V.8 on every call, and on the second call (`CALLS=2`)
 quick connect with short phase 2. Its upstream stays V.34: the module has

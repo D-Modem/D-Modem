@@ -453,6 +453,18 @@ static void on_segv(int sig, siginfo_t *si, void *ctx)
 	default:
 		fprintf(stderr, "sm56: fault at %p (%02x %02x %02x), address %p\n",
 			(void *)ip, ip[0], ip[1], ip[2], si->si_addr);
+		if (dbg) {
+			char buf[4096];
+			int fd = open("/proc/self/maps", O_RDONLY), k;
+			while (fd >= 0 && (k = (int)read(fd, buf, sizeof(buf))) > 0)
+				if (write(2, buf, k) < 0)
+					break;
+			if (fd >= 0)
+				close(fd);
+			fprintf(stderr, "eax %x ebx %x ecx %x edx %x esi %x edi %x ebp %x esp %x\n",
+				(u32)g[REG_EAX], (u32)g[REG_EBX], (u32)g[REG_ECX], (u32)g[REG_EDX],
+				(u32)g[REG_ESI], (u32)g[REG_EDI], (u32)g[REG_EBP], (u32)g[REG_ESP]);
+		}
 		signal(sig, SIG_DFL);
 		return;
 	}
@@ -486,15 +498,35 @@ static void on_trap(int sig, siginfo_t *si, void *ctx)
 	g[REG_EIP] += 1;        /* (past the nop) */
 }
 
-/* its read-only data, writable as in the kernel: its interrupt saves
-   the FPU at .rodata.cst4 + 0x640 (past that section: a stray
-   relocation, harmless in a kernel where a module's memory is all
-   writable) */
-extern char etext[], __data_start[];
-static int rodata_writable(void)
+/* its interrupt and its deferred routine save the FPU (fnsave, 108
+   bytes) to .rodata.cst4 + 0x640 and + 0x644: past the end of that
+   section (0x648 bytes), into what follows it, and the linker merges and
+   reorders those constants, so what they overwrite depends on the link
+   (module first: its own constants, which its V.90 interpolation then
+   reads wrong).  Their own room for them instead: fnsave and frstor
+   pointed there */
+static const u32 fpu_at[] = { 0xb4db0, 0xb4dc4, 0xb4e75, 0xb4e85 };
+static byte fpu_save[2][128] __attribute__((aligned(16)));
+
+static int fpu_patch(void)
 {
-	uintptr_t lo = (uintptr_t)etext & ~4095u, hi = (uintptr_t)__data_start;
-	return mprotect((void *)lo, hi - lo, PROT_READ | PROT_WRITE | PROT_EXEC);
+	uintptr_t text = (uintptr_t)init_module - INIT_MODULE_AT;
+	unsigned i;
+
+	for (i = 0; i < sizeof(fpu_at) / sizeof(fpu_at[0]); i++) {
+		byte *p = (byte *)(text + fpu_at[i]);
+		u32 a = (u32)(uintptr_t)fpu_save[i / 2];
+		if (p[0] != 0xdd || (p[1] != 0x35 && p[1] != 0x25)) {
+			fprintf(stderr, "sm56: not the module expected (%x)\n",
+				fpu_at[i]);
+			return -1;
+		}
+		if (mprotect((void *)((uintptr_t)p & ~4095u), 8192,
+			     PROT_READ | PROT_WRITE | PROT_EXEC))
+			return -1;
+		memcpy(p + 2, &a, 4);
+	}
+	return 0;
 }
 
 static int current_patch(void)
@@ -896,7 +928,7 @@ static void dte_poll(void)
 	room = mot_writeroom(tty);
 	if (room <= 0)
 		return;
-	n = (int)read(pty, buf, room < (int)sizeof(buf) ? room : sizeof(buf));
+	n = (int)read(pty, buf, room < (int)sizeof(buf) ? (size_t)room : sizeof(buf));
 	if (n > 0 && mot_write(tty, 0, buf, n) != n)
 		LOG("mot_write: short\n");
 }
@@ -921,7 +953,7 @@ int main(int argc, char **argv)
 	sigaction(SIGSEGV, &sa, NULL);
 	sa.sa_sigaction = on_trap;
 	sigaction(SIGTRAP, &sa, NULL);
-	if (current_patch() || rodata_writable()) {
+	if (current_patch() || fpu_patch()) {
 		perror("sm56: mprotect");
 		return 1;
 	}
