@@ -1013,6 +1013,55 @@ same way, and an MHreq at the reversal stalls the original library and the
 Agere modem (they take it for our reversal), so we keep the
 retrain-follow.
 
+### Against the PCTel HSP soft modem
+
+`half_pctel` runs PCTel's HSP soft modem (pctel-0.9.7-9, "HSP56
+MicroModem ... K2.4.7.V92.001 (03/26/2003)": the Intel AMR build of its
+data pumps, `lib/amr/dsp.a`, and its controller, `lib/control.a`) in user
+space. Unlike the Agere and SM56 modems they need nothing of a kernel: the
+two objects (`test/pctel/dsp.o` and `control.o`, PCTel's files renamed)
+import only their hardware layer and the virtual UART's registers and
+queues, which the harness provides in C after the driver's `i8xxhal.s`
+and `vuart.s`. Its interrupt runs `dspMain()` and `modem_main()` once per
+block of codec samples: the pumps take the block with `RdASIC` and give
+theirs with `WrASIC`, at the rate and block size they set (7200 Hz and 24
+samples idle). `GlobalTimer` is the blocks' time in ms. `ctest -L pctel
+-j8` runs the tests. `PCTEL_DEBUG=1` prints what the HAL is asked and the
+controller's choice of pump (`sharedRam` + 0x1c, + 0x20) against the
+pump running (`curModem`).
+
+| PCTel `AT+MS=` / ours | PCTel caller → open answerer | open caller → PCTel answerer |
+|---|---|---|
+| V34 / 34 | CONNECT (we receive at 24000) | CONNECT 24000 |
+| V32B,0 / 132 | CONNECT 14400 | CONNECT 14400 |
+| (its automode) / 122 | - | CONNECT 2400 |
+
+It reports the DTE's rate (115200) in its CONNECT. Against itself and
+the SM56 modem it connects at V.34 both ways (33600 with SM56).
+
+Its pumps run its automode whatever `+MS` says: `AT+MS=V21,0` is kept
+(`AT+MS?` gives it back), but the controller gives the pumps the same
+modulation for it as for `V34`, and after the answer tone they go on as
+for V.8 or V.32 (as the caller its V.32 AA, 1800 Hz). So it does not
+connect to our forced V.21, V.22 or V.23 answerer, and as the answerer
+it waits after its answer tone, as V.32's does, for a caller that waits
+for its carrier. Calling our V.22bis answerer, its 2400 bit/s connects at
+once on its side, while ours takes 10 s over it (by then it has given up
+V.42). These are open.
+
+V.34 with it as the answerer failed at first: it retrained phase 2 instead
+of answering our INFO1c with INFO1a, every time. Its INFO decoder (state
+in `g34`) never found the frame's start: we went from L2 straight into
+INFO1c, so the frame's first bit was a phase change from our last
+control channel symbol before L1. We now send two symbols of B first, a
+phase reference (the Agere and SM56 modems and the original library did
+not mind either way).
+
+V.90 (it as the analogue modem) gets through phase 3 now, but in phase 4
+it stops its CPt about 70 ms after our Ri ends and retrains with tone A;
+the call then connects at V.34 33600 (data both ways). Holding Ri longer
+after CPt does not change it. Open, and so is V.92.
+
 `MODEM_REC=<prefix>` makes `modem_half` record its line input and output
 (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
 interop scripts run the modems with. `WAV=<file>` makes `interop.py` save
@@ -1027,8 +1076,9 @@ calls in between are in it as well. For example:
       build/dsp/test/half_open8 "ATX3;AT+MS=92"
 
 `PIPE_SYNC=<samples>` (`half_open`, `half_blob`), `AGERE_SYNC=<samples>`
-(`half_agere`), `SM56_SYNC=<samples>` (`half_sm56`) and
-`SPANDSP_SYNC=<samples>` (`half_spandsp`) make a call repeat exactly from run to run: the modems take
+(`half_agere`), `SM56_SYNC=<samples>` (`half_sm56`),
+`SPANDSP_SYNC=<samples>` (`half_spandsp`) and `PCTEL_SYNC=<samples>`
+(`half_pctel`) make a call repeat exactly from run to run: the modems take
 the DTE's commands only every that many line samples (data, once
 connected, at once), run their timers
 between half frames and keep time by the line; without them, where the

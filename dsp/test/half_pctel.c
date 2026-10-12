@@ -20,7 +20,8 @@
  *
  *    The objects are test/pctel/ as PCTel shipped them (renamed .o);
  *    -DDMODEM_PCTEL_DIR=<dir> for another copy.  PCTEL_DEBUG=1 prints
- *    what the HAL is asked.
+ *    what the HAL is asked, and the pump the controller asks for
+ *    (sharedRam + 0x1c, + 0x20) against the one running (curModem).
  */
 
 #define _GNU_SOURCE
@@ -49,6 +50,8 @@ extern void dspMain(void);
 extern void modem_main(void);
 extern void PctelInitCtrlVars(int country);
 extern u32 GlobalTimer;
+extern u32 sharedRam[];                 /* the controller's, to the pumps */
+extern u32 curModem, curMode;           /* the pumps' */
 
 /*
  *    time: the line's samples
@@ -329,6 +332,15 @@ static void block_done(void)
 	dspMain();
 	modem_main();
 	dte_out();
+	if (dbg) {
+		static u32 was[4];
+		u32 now[4] = { sharedRam[7], sharedRam[8], curModem, curMode };
+		if (memcmp(now, was, sizeof(now))) {
+			LOG("%u ms: dsp interface %u,%u, modem %u mode %u\n",
+			    GlobalTimer, now[0], now[1], now[2], now[3]);
+			memcpy(was, now, sizeof(was));
+		}
+	}
 }
 
 static void codec_sample(short adc)

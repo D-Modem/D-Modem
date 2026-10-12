@@ -600,12 +600,44 @@ if(TARGET half_sm56)
 		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=40;MIDCALL_B=8:AT+PMHR\;WAIT 6;EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.90 retrained;PROTO_B=ATX3\;AT+MS=92")
 endif()
 
+# the PCTel HSP soft modem (8000 Hz) and the open modem (9600 Hz) call each
+# other.  Its pumps run its automode whatever +MS says (the controller
+# keeps the setting, but the modulation it gives the pumps is the same),
+# so only the calls its automode makes work: V.32bis and V.34 both ways,
+# and our V.22bis caller (see the README)
+if(TARGET half_pctel)
+	foreach(_p V32B,0:132 V34:34)
+		string(REPLACE ":" ";" _p ${_p})
+		list(GET _p 0 _a)
+		list(GET _p 1 _ms)
+		add_test(NAME pctel_${_ms}_pctel_calls COMMAND
+			${Python3_EXECUTABLE} ${_py}/interop.py
+			$<TARGET_FILE:half_pctel> $<TARGET_FILE:half_open>
+			"ATX3;AT+MS=${_a}")
+		set_tests_properties(pctel_${_ms}_pctel_calls PROPERTIES
+			LABELS pctel ENVIRONMENT
+			"${_env};NET=8000:9600:ulaw;PROTO_B=ATX3\;AT+MS=${_ms}")
+		add_test(NAME pctel_${_ms}_open_calls COMMAND
+			${Python3_EXECUTABLE} ${_py}/interop.py
+			$<TARGET_FILE:half_open> $<TARGET_FILE:half_pctel>
+			"ATX3;AT+MS=${_ms}")
+		set_tests_properties(pctel_${_ms}_open_calls PROPERTIES
+			LABELS pctel ENVIRONMENT
+			"${_env};NET=9600:8000:ulaw;PROTO_B=ATX3\;AT+MS=${_a}")
+	endforeach()
+	add_test(NAME pctel_122_open_calls COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_open>
+		$<TARGET_FILE:half_pctel> "ATX3;AT+MS=122")
+	set_tests_properties(pctel_122_open_calls PROPERTIES LABELS pctel
+		ENVIRONMENT "${_env};NET=9600:8000:ulaw;PROTO_B=ATX3")
+endif()
+
 # the calls run in real time and mostly wait, so they can run in parallel
 # (ctest -L interop -j8): each writes its modem logs to logs/<test>/
 get_property(_tests DIRECTORY PROPERTY TESTS)
 foreach(_t ${_tests})
 	get_test_property(${_t} LABELS _l)
-	if(_l MATCHES "interop|agere|sm56|spanpeer")
+	if(_l MATCHES "interop|agere|sm56|spanpeer|pctel")
 		set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT
 			"LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/logs/${_t}")
 	endif()
