@@ -412,6 +412,8 @@ struct V34Pump : Pump {
 	Osc ans_lo;
 	cplx ans_lp1, ans_lp2;
 	double env_sum, env15_re, env15_im;
+	float ans_peak;          /* the answer tone's envelope at most */
+	int ans_gone;            /* samples of it below a third of that */
 	long env_n;
 	/* V.32 / V.22 callers during ANSam */
 	Goertzel aa_g;
@@ -1016,6 +1018,9 @@ void V34Pump::ans_analyse(float x)
 	ans_lp2.re += a * (ans_lp1.re - ans_lp2.re);
 	ans_lp2.im += a * (ans_lp1.im - ans_lp2.im);
 	e = sqrtf(cplx_pow(ans_lp2));
+	if (e > ans_peak)
+		ans_peak = e;
+	ans_gone = e < ans_peak / 3 ? ans_gone + 1 : 0;
 	w = 2 * (float)M_PI * 15 * env_n / V34_SRATE;
 	env_sum += e;
 	env15_re += e * cosf(w);
@@ -2705,6 +2710,11 @@ int V34Pump::handshake()
 
 	/* V.8 caller */
 	case V8C_LISTEN:
+		/* for a forced low speed caller: a tone that ends before
+		   500 ms (ANSam lasts 2.6 s at least) is ANS, and the
+		   answerer's modulation comes at once */
+		if (v8_low && ans_gone >= ms2samples(20, srate))
+			return v8_back("answer tone ended");
 		if (c >= ms2samples(500, srate)) {
 			float d = ans_am_depth();
 			DSP_DBG("v34: answer tone AM depth %.2f\n", d);

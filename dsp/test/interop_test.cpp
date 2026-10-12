@@ -480,8 +480,9 @@ std::vector<Call> calls()
 		      (!strcmp(ms, "21") ? "V.21" : !strcmp(ms, "23") ? "V.23" :
 		       !strcmp(ms, "122") ? "V.22bis" : "V.32bis") });
 	}
-	/* our forced low speed callers: on its ANSam, V.8 for that
-	   modulation alone (its answerer in automode up to it) */
+	/* our forced low speed callers against its answerer in automode up
+	   to their modulation: V.21 through V.8 on its ANSam (it answers
+	   V.21 only so), V.23, V.22 and V.22bis without */
 	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,
 		     const char *, const char *>>{ { "V21", "21", "300" },
 		     { "V23C", "23", "75" }, { "V22", "22", "1200" },

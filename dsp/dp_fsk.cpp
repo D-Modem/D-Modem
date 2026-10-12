@@ -168,6 +168,8 @@ struct FskPump : Pump {
 	int tx_bit;
 	int automode;           /* answering after V.22bis: V.23, Bell 103
 				   next */
+	int after_v8;           /* calling after V.8: the answerer's JM may
+				   still be in its channel */
 	Goertzel g1270, g1070;  /* a Bell 103 caller's mark */
 	float blk_energy;
 	int bell_blocks;
@@ -230,6 +232,7 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 			/* after V.8's CJ the caller's carrier comes first
 			   (the answerer waits for it) */
 			rt->after_v8 = 0;
+			after_v8 = 1;
 			state = FSK_TRAIN;
 		} else if (rt && rt->ans_sent && id == DP_B103) {
 			/* Bell 212A fell back: the answerer's 2225 Hz mark
@@ -281,8 +284,11 @@ int FskPump::process(void *in, void *out, int cnt)
 	int ret = DPSTAT_OK;
 	int i, bit;
 
+	/* V.21 only: after V.8 the PCTel modem takes V.23's 75 bit/s
+	   side as the answerer, the HSF modem the 1200 bit/s one, and both
+	   answer V.22, V.22bis and V.23 without V.8 */
 	if (caller && !total && state == FSK_WAIT_CARRIER &&
-	    (dp.id == DP_V21 || dp.id == DP_V23) && dp_v8_first(modem, dp.id))
+	    dp.id == DP_V21 && dp_v8_first(modem, dp.id))
 		return DPSTAT_CHANGEDP;
 	for (i = 0; i < cnt; i++) {
 		float y = 0;
@@ -347,10 +353,16 @@ int FskPump::process(void *in, void *out, int cnt)
 			   the caller's mark */
 			/* (a Bell 103 caller found in automode may be online
 			   already, sending data: its carrier will do) */
+			/* (after V.8 the caller too waits for the mark: the
+			   answerer's JM, in the same channel, is carrier;
+			   and 400 ms of it, the answerer starting its own as
+			   it starts listening to ours, which it needs 150
+			   ms of) */
 			if (count >= ms2samples(200, srate) &&
-			    (caller || (automode && dp.id == DP_B103) ?
+			    ((caller && !after_v8) ||
+			     (automode && dp.id == DP_B103) ?
 			     carrier_count : mark_count) >=
-			    ms2samples(150, srate)) {
+			    ms2samples(after_v8 ? 400 : 150, srate)) {
 				set_state(FSK_DATA);
 				modem_set_param(modem, MDMPRM_TX_RATE, (int)par->tx_baud);
 				modem_set_param(modem, MDMPRM_RX_RATE, (int)par->rx_baud);

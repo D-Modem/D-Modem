@@ -758,10 +758,6 @@ int V22Pump::process(void *in, void *out, int cnt)
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 	int ret = DPSTAT_OK, r, i;
 
-	if (caller && !total && state == C_WAIT_USB1 &&
-	    (dp.id == DP_V22 || dp.id == DP_V22BIS) &&
-	    dp_v8_first(modem, dp.id))
-		return DPSTAT_CHANGEDP;
 	for (i = 0; i < cnt; i++) {
 		rx_sample(src[i]);
 		if (automode) {

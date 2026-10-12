@@ -58,9 +58,9 @@ struct dp_runtime {
 				   keep the V.22bis fallback */
 	int after_v8;           /* the modulation was agreed in V.8: the
 				   caller starts at once after CJ */
-	int v8_for;             /* a forced V.21/V.23/V.22/V.22bis caller
-				   heard 2100 Hz: V.8 (if it is ANSam) for
-				   that modulation alone, then back to it */
+	int v8_for;             /* a forced V.21 caller heard 2100 Hz: V.8
+				   (if it is ANSam) for V.21 alone, then
+				   back to it */
 	int v8_tried;
 	int law;                /* the G.711 network: 1 mu-law, 2 A-law, 0
 				   unknown (then $DSP_G711) */
@@ -127,8 +127,8 @@ private:
 };
 
 /* block Goertzel tone power estimator */
-/* a forced low speed caller's first block: after a 2100 Hz answer tone,
-   once a call, to the V.8 pump (dsp_glue.cpp) */
+/* a forced V.21 caller's first block: after a 2100 Hz answer tone, once
+   a call, to the V.8 pump (dsp_glue.cpp) */
 int dp_v8_first(struct modem *m, enum DP_ID id);
 
 struct Goertzel {

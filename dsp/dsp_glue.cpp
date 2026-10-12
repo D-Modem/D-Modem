@@ -693,9 +693,9 @@ int VOICE_process(void *obj, void *in, void *out, int count)
 	return static_cast<Voice*>(obj)->process(in, out, count);
 }
 
-/* a forced low speed caller's first block: after a 2100 Hz answer tone,
-   once a call, to the V.8 pump (DSP_V8_LOWSPEED=0: not), which offers
-   that modulation alone if the tone is ANSam and else hands back */
+/* a forced V.21 caller's first block: after a 2100 Hz answer tone, once
+   a call, to the V.8 pump (DSP_V8_LOWSPEED=0: not), which offers V.21
+   alone if the tone is ANSam and else hands back */
 int dsp::dp_v8_first(struct modem *m, enum DP_ID id)
 {
 	struct dp_runtime *rt = (struct dp_runtime *)
