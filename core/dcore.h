@@ -253,6 +253,7 @@ private:
 	int at_Z(char *p, int *len);
 	int at_GCI(char *p, int *len);
 	int at_MS(char *p, int *len);
+	int at_PMH(char *p, int *len);
 	int at_FCLASS(char *p, int *len);
 	int at_CID(char *p, int *len);
 	int at_voice(char *p, int *len);
@@ -281,6 +282,9 @@ private:
 	unsigned rx_rate_ = 0, tx_rate_ = 0;
 	enum MODEM_MODE mode_ = MODEM_MODE_DATA;
 	unsigned min_rate_, max_rate_;
+	/* V.92 modem-on-hold: +PMH (0 on), +PMHT (the T1 code we grant),
+	   +PMHR (ours, until the pump takes it) */
+	int moh_off_ = 0, moh_timer_ = 5, moh_req_ = 0;
 	unsigned char sregs_[256] = {};
 	const struct homolog_set *homolog_ = nullptr;
 

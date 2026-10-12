@@ -1109,6 +1109,8 @@ int Modem::reset()
 	command_ = true;
 	min_rate_ = MODEM_MIN_RATE;
 	max_rate_ = MODEM_MAX_RATE;
+	moh_off_ = moh_req_ = 0;
+	moh_timer_ = 5;
 	sregs_init();
 	homolog_init(homolog_->id, nullptr);
 	set_mode(MODEM_MODE_DATA);

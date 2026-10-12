@@ -165,6 +165,10 @@ enum v34_state {
 	/* V.92 modem-on-hold (9.10/V.92): our response to the remote's MH
 	   sequence (MHack, MHnack, MHcda), repeated */
 	MOH_RESP,
+	/* and ours: tone B, then MHreq until MHack or MHnack; then MHfrr
+	   or MHcda after an MHnack */
+	MOH_REQ,
+	MOH_HELD,       /* the remote on hold: silence, then ANSam */
 	/* V.90 digital modem, phase 3 */
 	P3D_WAIT_JA,
 	P3D_PAUSE,
@@ -463,6 +467,13 @@ struct V34Pump : Pump {
 	int moh_drop;           /* MHcda after our MHnack: disconnect */
 	long moh_end;           /* on hold (or reconnecting): disconnect then
 				   unless phase 1 has come */
+	int moh_req;            /* what we send of ours: MHreq, then MHfrr or
+				   MHcda */
+	int moh_req_hold;       /* seconds we keep the remote on hold */
+	int moh_req_t1;         /* the T1 code of its MHack */
+	long moh_req_at;        /* test: ours this far into data mode */
+	long moh_req_n;         /* (samples of it so far) */
+	unsigned moh_poll;      /* when to look for the DTE's request */
 	int connected;          /* CONNECT has been reported */
 	int retrains;
 	long retrain_at;        /* test: our own retrain this far (samples) */
@@ -506,6 +517,8 @@ struct V34Pump : Pump {
 	int mh_event();
 	void moh_respond(int sig);
 	void moh_hold(int secs);
+	void moh_request(int hold_secs);
+	void moh_req_test();
 	void cc_phase_frame();
 	void info_frame(CcRx *r);
 	void rt_info0_frame(const unsigned char *h, long n);
@@ -1419,7 +1432,33 @@ int V34Pump::mh_event()
 		(state == V34_RT_SILENCE ||
 		 (state >= P2A_INFO0 && state <= P2C_WAIT_INFO1));
 
-	if (!connected || !v92 || (!in_retrain && state != MOH_RESP))
+	if (!connected || !v92)
+		return DPSTAT_OK;
+	if (state == MOH_REQ) {
+		/* the answer to ours (Table 34/V.92) */
+		if (moh_req == MH_REQ && mh_sig == MH_ACK) {
+			moh_req_t1 = mh_info;
+			DSP_DBG("v34: MHack, T1 %d s: the remote on hold for "
+				"%d s\n", moh_t1_secs(mh_info), moh_req_hold);
+			/* then our silence (9.10.2.1/V.92), for longer than
+			   a retrain's start-up may take */
+			cc_silence();
+			txm = TXM_SILENCE;
+			timeout = total + ms2samples(1000L * moh_req_hold +
+						     60000, srate);
+			set_state(MOH_HELD);
+		} else if (moh_req == MH_REQ && mh_sig == MH_NACK) {
+			/* denied: a fast reconnect (or a cleardown,
+			   with DSP_V92_MOH_REQ's hold time 0) */
+			moh_req = moh_req_hold ? MH_FRR : MH_CDA;
+			DSP_DBG("v34: MHnack: %s\n", mh_name(moh_req));
+			cctx.make_mh(moh_req, moh_req);
+			cc_send();
+			count = 0;
+		}
+		return DPSTAT_OK;
+	}
+	if (!in_retrain && state != MOH_RESP)
 		return DPSTAT_OK;
 	switch (mh_sig) {
 	case MH_REQ:
@@ -1486,6 +1525,45 @@ void V34Pump::moh_hold(int secs)
 	timeout = (moh_end > 0 ? moh_end : total + (long)srate * 86400) +
 		ms2samples(60000, srate);
 	set_state(V8A_ANSAM);
+}
+
+/* modem-on-hold of ours in data mode: the DTE's (+PMHR, the remote on
+   hold for its seconds), or test: DSP_V92_MOH_REQ=<ms>[:<s>], that far
+   into data mode (on hold for s seconds, default 10; 0: MHcda if it
+   denies it) */
+void V34Pump::moh_req_test()
+{
+	/* the DTE's (+PMHR), once a block */
+	if (moh_poll++ % 160 == 0 && connected && v92 && !retraining &&
+	    (state == V34_DATA || state == V92_RUN)) {
+		long secs = modem_get_param(modem, MDMPRM_MOH_REQ);
+		if (secs > 0) {
+			modem_set_param(modem, MDMPRM_MOH_REQ, 0);
+			moh_request((int)secs);
+			return;
+		}
+	}
+	/* (once a sample: V.92's data mode keeps no total) */
+	if (!moh_req_at || !connected || !v92 || retraining ||
+	    (state != V34_DATA && state != V92_RUN))
+		return;
+	if (++moh_req_n >= moh_req_at) {
+		moh_req_at = 0;
+		moh_request(moh_req_hold);
+	}
+}
+
+/* ours (9.10.2.1/V.92): out of data mode as for a retrain, tone B, then
+   MHreq (MOH_REQ); the remote on hold for hold_secs (at most its T1) if
+   it grants it */
+void V34Pump::moh_request(int hold_secs)
+{
+	retrain("modem-on-hold request");
+	moh_req = MH_REQ;
+	moh_req_hold = hold_secs;
+	moh_req_t1 = 0;
+	cc_tone();
+	set_state(MOH_REQ);
 }
 
 /*
@@ -2294,6 +2372,7 @@ int V34Pump::v91_escape()
 
 int V34Pump::handshake()
 {
+	moh_req_test();
 	long c = count;
 
 	/* V.90: the analogue modem asks for a retrain in phase 3 or 4 with
@@ -3226,6 +3305,59 @@ int V34Pump::handshake()
 		    c >= ms2samples(2000, srate))
 			mp_start();
 		break;
+	case MOH_REQ:
+		/* tone B for 600 ms (50 at least, 9.10.1/V.92: longer, so
+		   that a remote that answers it with a retrain's reversal
+		   has done so before the sequence, whose phase steps it
+		   would take for our reversal), then the sequence,
+		   repeated, until the answer (9.10.1.1/V.92) */
+		if (c >= ms2samples(600, srate) && !cc_busy()) {
+			cctx.make_mh(moh_req, moh_req);
+			cc_send();
+		}
+		if (moh_req == MH_REQ) {
+			/* the remote took our tone for a retrain's (it may,
+			   9.10.1.1/V.92): its tone A reversed, or its INFO0a.
+			   That retrain then, at once (it waits for our
+			   reversal): phase 2 from tone B */
+			if ((ev_rev && rt_heard) || rt_info0 == 1) {
+				DSP_DBG("v34: the remote retrains instead of "
+					"answering MHreq\n");
+				moh_req = 0;
+				set_state(P2C_B);
+				cc_tone();
+				break;
+			}
+			/* none in 2 s and a round trip: retrain */
+			if (c >= ms2samples(600 + 2500, srate)) {
+				DSP_DBG("v34: no answer to MHreq\n");
+				retrain("no answer to MHreq");
+			}
+		} else if (moh_req == MH_CDA) {
+			/* (what the remote asked for: once it is out) */
+			if (c >= ms2samples(500, srate)) {
+				DSP_DBG("v34: cleared down\n");
+				return DPSTAT_ERROR;
+			}
+		} else if (c >= ms2samples(300, srate)) {
+			/* MHfrr: then ANSam (9.10.2.3/V.92), phase 1 as
+			   the answering modem */
+			moh_resp = MH_NACK;
+			moh_hold(10);
+		}
+		break;
+	case MOH_HELD:
+		/* silent until we take the remote back, within its T1:
+		   ANSam, and phase 1 as after its own hold */
+		if (c >= ms2samples(1000L * moh_req_hold, srate) ||
+		    (moh_t1_secs(moh_req_t1) && moh_req_t1 != 13 &&
+		     c >= ms2samples(1000L * moh_t1_secs(moh_req_t1) - 2000,
+				     srate))) {
+			moh_resp = MH_ACK;
+			moh_hold(moh_req_t1 == 13 ? 0 :
+				 moh_t1_secs(moh_req_t1));
+		}
+		break;
 	case MOH_RESP:
 		/* repeated, each right after the one before (9.10.1/V.92) */
 		if (!cc_busy()) {
@@ -3358,6 +3490,9 @@ int V34Pump::process(void *in, void *out, int cnt)
 				v91_escape();
 			continue;
 		}
+		/* (handshake() does not run here; ours leaves V92_RUN) */
+		if (state == V92_RUN)
+			moh_req_test();
 		if (state == V92_RUN) {
 			/* the echo of our signal from the analogue modem's
 			   hybrid, after the network's round trip */
@@ -3489,11 +3624,17 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		      !atoi(getenv("DSP_V92_SHORT2")));
 	/* quick connect: DSP_V92_QC=0 answers QC1a with V.8 instead */
 	qc_ok = !(getenv("DSP_V92_QC") && !atoi(getenv("DSP_V92_QC")));
-	/* modem-on-hold: DSP_V92_MOH=<T1 code, Table 33/V.92> we grant
-	   (1 10 s ... 12 16 min, 13 no limit; 0 denies it), 1 min if not
-	   given */
-	moh_t1 = getenv("DSP_V92_MOH") ? atoi(getenv("DSP_V92_MOH")) & 15 : 5;
-	if (moh_t1 > 13)
+	/* modem-on-hold: the T1 code (Table 33/V.92) we grant, +PMHT's
+	   (0 with +PMH=1), or DSP_V92_MOH=<code> (1 10 s ... 12 16 min, 13
+	   no limit; 0 denies it); 1 min if neither says */
+	moh_t1 = getenv("DSP_V92_MOH") ? atoi(getenv("DSP_V92_MOH")) & 15 :
+		(int)modem_get_param(m, MDMPRM_MOH_T1);
+	if (getenv("DSP_V92_MOH_REQ")) {
+		const char *e = getenv("DSP_V92_MOH_REQ");
+		moh_req_at = ms2samples(atoi(e), srate_);
+		moh_req_hold = strchr(e, ':') ? atoi(strchr(e, ':') + 1) : 10;
+	}
+	if (moh_t1 < 0 || moh_t1 > 13)
 		moh_t1 = 5;
 	ev_mh = moh_resp = moh_drop = 0;
 	moh_end = 0;

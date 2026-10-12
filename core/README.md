@@ -5,9 +5,10 @@
 
 - **The AT command interpreter** (`at.cpp`): `A B D E H I L M N O P Q S T V X
   Y Z`, `&A &C &D &E &F &H &K &P &R &S`, `\A \N`, `%C %E`, `*B`, `#CID`,
-  `+MS +GCI +GMI +GMM +GMR +FCLASS +IFC`, class 1 fax (`+FTS +FRS +FTM +FRM
-  +FTH +FRH`) and voice (`+V...` in `+FCLASS=8`). Command lines are edited
-  (backspace), echoed, repeated with `A/`.
+  `+MS +GCI +GMI +GMM +GMR +FCLASS +IFC`, V.92 modem-on-hold (`+PMH +PMHT
+  +PMHR`), class 1 fax (`+FTS +FRS +FTM +FRM +FTH +FRH`) and voice
+  (`+V...` in `+FCLASS=8`). Command lines are edited (backspace), echoed,
+  repeated with `A/`.
 - **The S-registers**, the **result codes** (verbose or numeric, quiet, the
   connect messages of `&A` and `X`), and the **country parameters**
   (`homolog_data.cpp`, `+GCI`).

@@ -280,6 +280,14 @@ add_test(NAME interop_v92_fpe COMMAND ${Python3_EXECUTABLE}
 	"ATX3;AT+MS=92")
 set_tests_properties(interop_v92_fpe PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_PREFILTER=0;DSP_V92_FPE=3000:6;EXPECT_B=(?s)fast parameter exchange 1 done.*V.92 renegotiated 56000/30666")
+# modem-on-hold asked for by us (AT+PMHR, 9.10.2.1/V.92) in the middle of
+# PCM upstream data: the original library answers our tone B with a
+# retrain, which we follow, and the data goes on
+add_test(NAME interop_v92_moh_request COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_moh_request PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=30;BLOB_V92FULL=1;MIDCALL_B=8:AT+PMHR\;WAIT 6;EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.92 retrained")
 # without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream
 add_test(NAME interop_v92_nopcmup COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
@@ -392,6 +400,15 @@ if(TARGET half_agere)
 	set_tests_properties(agere_v92_moh_deny PROPERTIES LABELS agere
 		ENVIRONMENT
 		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=40;DSP_V92_MOH=0;MIDCALL_A=8:AT+PMHR\;WAIT 5;EXPECT_B=(?s)MHnack.*MHfrr.*V.90 back from hold;PROTO_B=ATX3\;AT+MS=92")
+	# and ours (AT+PMHR on our side): the Agere modem takes our tone B
+	# for a retrain and reverses its tone A; we follow, and the data
+	# goes on after the retrain
+	add_test(NAME agere_v92_moh_request COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_agere>
+		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92")
+	set_tests_properties(agere_v92_moh_request PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=40;MIDCALL_B=8:AT+PMHR\;WAIT 6;EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.90 retrained;PROTO_B=ATX3\;AT+MS=92")
 	# at the alignment that took 33333 bit/s with half a sample of delay
 	add_test(NAME agere_v90_phase96 COMMAND ${Python3_EXECUTABLE}
 		${_py}/interop.py $<TARGET_FILE:half_agere>

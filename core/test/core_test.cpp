@@ -17,6 +17,7 @@
 
 #include <dcore.h>
 #include <log.h>
+#include <modem_param.h>
 
 int dp_dummy_init(void);
 int dp_sinus_init(void);
@@ -124,6 +125,31 @@ TEST(Core, FailingLine)
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
 	EXPECT_EQ(cmd(m, l, "ATM2L2\r"), "OK\r\n");
 	EXPECT_EQ(l.volume, 2);
+	delete m;
+}
+
+/* V.92 modem-on-hold's commands: what we grant (+PMH, +PMHT, read by the
+   pump as MDMPRM_MOH_T1), and +PMHR, only online (in command mode) */
+TEST(Core, ModemOnHold)
+{
+	Line l;
+	Modem *m = make(l, "moh");
+	EXPECT_EQ(cmd(m, l, "ATE0+PMH?\r"), "ATE0+PMH?\r\r\n+PMH: 0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMHT?\r"), "+PMHT: 5\r\nOK\r\n");
+	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 5);
+	EXPECT_EQ(cmd(m, l, "AT+PMHT=?\r"), "+PMHT: (0-13)\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMHT=9\r"), "OK\r\n");
+	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 9);
+	EXPECT_EQ(cmd(m, l, "AT+PMHT=14\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMH=1\r"), "OK\r\n");
+	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 0);
+	EXPECT_EQ(cmd(m, l, "AT+PMH=2\r"), "ERROR\r\n");
+	/* without a call */
+	EXPECT_EQ(cmd(m, l, "AT+PMHR\r"), "ERROR\r\n");
+	EXPECT_EQ(m->get_param(MDMPRM_MOH_REQ), 0);
+	/* ATZ: granted again, 1 min */
+	EXPECT_EQ(cmd(m, l, "ATZ\r"), "OK\r\n");
+	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 5);
 	delete m;
 }
 

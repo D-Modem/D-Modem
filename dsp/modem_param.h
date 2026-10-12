@@ -193,6 +193,11 @@ enum MODEM_PARAMETER_NAMES {
 	//GetDialStringAfterFlash(char *dialString);
 	/* not in the original library's interface */
 	MDMPRM_MODE,            /* enum MODEM_MODE: data, fax, voice */
+	/* V.92 modem-on-hold (9.10/V.92): the T1 code (Table 33/V.92) we
+	   grant the remote, 0 none (+PMH, +PMHT); a request of ours
+	   (+PMHR), which the pump takes (sets to 0) */
+	MDMPRM_MOH_T1,
+	MDMPRM_MOH_REQ,
 	MDMPRM_LAST
 };
 

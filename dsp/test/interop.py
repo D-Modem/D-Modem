@@ -8,7 +8,8 @@
 #
 # STREAM=<s> keeps data flowing for that long (see netsim's NET_DROP and
 # NET_STEP for line hits in the middle); MIDCALL_A=<s>:<cmd>;... gives
-# modemA AT commands that far into it (e.g. V.92 modem-on-hold).
+# modemA AT commands that far into it (e.g. V.92 modem-on-hold; _B for
+# modemB).
 # Both modems get the ';' separated AT commands (PROTO_B=... gives modemB
 # its own, e.g. an older modulation to answer with), then modemB answers,
 # modemA dials, data is exchanged both ways and checked.  The modem logs
@@ -189,32 +190,43 @@ if stream:
     sent_a = sent_b = b""
     t_end = time.time() + stream
     n = 0
-    # MIDCALL_A=<s>:<cmd>;...: after s seconds, escape modemA, give it
-    # the commands (WAIT <s> sleeps), print what it says, then ATO
-    mid = os.environ.get("MIDCALL_A")
-    mid_at = time.time() + float(mid.split(":", 1)[0]) if mid else None
+    # MIDCALL_A=<s>:<cmd>;... (or _B): after s seconds, escape that
+    # modem, give it the commands (WAIT <s> sleeps), print what it says,
+    # then ATO
+    mids = {}
+    for k in ("modemA", "modemB"):
+        m = os.environ.get("MIDCALL_" + k[-1])
+        if m:
+            mids[k] = [time.time() + float(m.split(":", 1)[0]), m.split(":", 1)[1]]
     while time.time() < t_end:
-        if mid_at and time.time() >= mid_at:
-            mid_at = None
+        for k, m in mids.items():
+            if not m[0] or time.time() < m[0]:
+                continue
+            m[0] = None
+            name = "midcall " + k[-1]
             pump(1.2)
-            sent_b_len = len(buf["modemA"])
-            os.write(fd["modemA"], b"+++")
-            sent_a += b"+++"    # the remote gets it too
-            wait_from("modemA", b"OK\r", sent_b_len, 5)
-            for c in mid.split(":", 1)[1].split(";"):
+            kept = len(buf[k])
+            os.write(fd[k], b"+++")
+            # the remote gets it too
+            if k == "modemA":
+                sent_a += b"+++"
+            else:
+                sent_b += b"+++"
+            wait_from(k, b"OK\r", kept, 5)
+            for c in m[1].split(";"):
                 if c.startswith("WAIT "):
                     pump(float(c[5:]))
                     continue
-                mark = len(buf["modemA"])
-                cmd("modemA", c)
-                wait_from("modemA", b"(OK|ERROR|CONNECT[^\r]*|NO CARRIER)\r", mark, 30)
-                print("midcall A:", c, buf["modemA"][mark:])
-            mark = len(buf["modemA"])
-            cmd("modemA", "ATO")
-            wait_from("modemA", b"(CONNECT[^\r]*|NO CARRIER)\r", mark, 60)
-            print("midcall A: ATO", buf["modemA"][mark:])
-            # what the commands put in modemA's buffer is not data
-            buf["modemA"] = buf["modemA"][:sent_b_len]
+                mark = len(buf[k])
+                cmd(k, c)
+                wait_from(k, b"(OK|ERROR|CONNECT[^\r]*|NO CARRIER)\r", mark, 30)
+                print(name + ":", c, buf[k][mark:])
+            mark = len(buf[k])
+            cmd(k, "ATO")
+            wait_from(k, b"(CONNECT[^\r]*|NO CARRIER)\r", mark, 60)
+            print(name + ": ATO", buf[k][mark:])
+            # what the commands put in its buffer is not data
+            buf[k] = buf[k][:kept]
         line = b"%06d " % n
         os.write(fd["modemA"], line + msg_a); sent_a += line + msg_a
         os.write(fd["modemB"], line + msg_b); sent_b += line + msg_b

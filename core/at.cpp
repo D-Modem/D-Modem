@@ -337,6 +337,71 @@ int Modem::at_GCI(char *p, int *len)
 	return 0;
 }
 
+/* V.92 modem-on-hold (V.250's +PMH, +PMHT, +PMHR): +PMH=0 or 1 lets
+   the remote put us on hold or not, +PMHT=<0..13> is the T1 code we
+   grant (Table 33/V.92; 0 denies), +PMHR asks the remote to go on hold
+   (in online command mode, on a V.92 connection) */
+int Modem::at_PMH(char *p, int *len)
+{
+	char s[32];
+	int *v = &moh_off_, hi = 1;
+	const char *name = "+PMH";
+
+	*len = 0;
+	switch (toupper(*p)) {
+	case 'R':
+		/* (=<s>: how long we keep it on hold, 10 s otherwise) */
+		*len = 1;
+		if (state_ != COMMAND_ONLINE || !dp_ || dp_->id != DP_V92)
+			return -1;
+		moh_req_ = 10;
+		if (p[1] == '=' && isdigit((unsigned char)p[2])) {
+			char *end;
+			long n = strtol(p + 2, &end, 10);
+			if (n < 1 || n > 960)
+				return -1;
+			moh_req_ = (int)n;
+			*len += end - (p + 1);
+		}
+		return 0;
+	case 'T':
+		v = &moh_timer_;
+		hi = 13;
+		name = "+PMHT";
+		p++;
+		*len = 1;
+		break;
+	}
+	switch (*p) {
+	case '=':
+		if (p[1] == '?') {
+			snprintf(s, sizeof(s), "%s: (0-%d)", name, hi);
+			puts(s);
+			crlf();
+			*len += 2;
+			return 0;
+		}
+		if (!isdigit((unsigned char)p[1]))
+			return -1;
+		{
+			char *end;
+			long n = strtol(p + 1, &end, 10);
+			if (n < 0 || n > hi)
+				return -1;
+			*v = (int)n;
+			*len += end - p;
+		}
+		return 0;
+	case '?':
+		snprintf(s, sizeof(s), "%s: %d", name, *v);
+		puts(s);
+		crlf();
+		*len += 1;
+		return 0;
+	}
+	return -1;
+}
+
 int Modem::at_MS(char *p, int *len)
 {
 	char s[32];
@@ -888,6 +953,13 @@ int Modem::at_command(char *cmd)
 				c = toupper(*p++);
 				if (c == 'S')
 					ret = at_MS(p, &len);
+				break;
+			case 'P':
+				if (!toupper_strncmp(p, "MH", 2)) {
+					p += 2;
+					ret = at_PMH(p, &len);
+				} else
+					ret = -1;
 				break;
 			case 'V':
 				if (mode_ != MODEM_MODE_VOICE)

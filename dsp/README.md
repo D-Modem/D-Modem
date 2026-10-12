@@ -343,9 +343,9 @@ the call (9.10/V.92): its tone A, as for a retrain, then MH sequences
 information, CRC, on the modulation of INFO) instead of the reversal. We
 look for them while we retrain and answer:
 
-- MHreq with MHack and the time we hold the call, T1 (`DSP_V92_MOH=<code
+- MHreq with MHack and the time we hold the call, T1 (`AT+PMHT=<code
   of Table 33/V.92>`, 5 = 1 min by default, 13 no limit), or with MHnack
-  (`DSP_V92_MOH=0`). After MHack, when its tone has been there 100 ms or
+  (`AT+PMHT=0` or `AT+PMH=1`; `DSP_V92_MOH=<code>` overrides both). After MHack, when its tone has been there 100 ms or
   silence 2 s, we send ANSam until T1 is over (then we disconnect) and
   listen for QC1a or CM: phase 1 as the answering modem again, phases 2
   to 4, and the data goes on without a new CONNECT (V.42's timers count
@@ -354,11 +354,36 @@ look for them while we retrain and answer:
 - MHclrd with MHcda, then disconnect; MHfrr (also after our MHnack) with
   ANSam and phase 1 at once; MHcda after our MHnack: disconnect.
 
-We do not ask for modem-on-hold ourselves. The Agere modem asks for it
-with `AT+PMHR` (`+PMHR:5`: 1 min granted, `+PMHR:0` denied) and comes
-back with CM after `ATO`; denied, it asks for a fast reconnect.
-`agere_v92_moh_grant` and `_deny` do that in the middle of the data
-(`MIDCALL_A` of interop.py) and check all of it both ways.
+The Agere modem asks for it with `AT+PMHR` (`+PMHR:5`: 1 min granted,
+`+PMHR:0` denied) and comes back with CM after `ATO`; denied, it asks for
+a fast reconnect. `agere_v92_moh_grant` and `_deny` do that in the
+middle of the data (`MIDCALL_A` of interop.py) and check all of it both
+ways.
+
+We ask for it too, with `AT+PMHR` in online command mode on a V.92
+connection (`AT+PMHR=<s>`: hold the remote that long, 10 s otherwise;
+`DSP_V92_MOH_REQ=<ms>[:<s>]` asks that far into data mode): out of data
+mode as for a retrain, tone B for 600 ms, then MHreq repeated until the
+answer (9.10.2.1/V.92):
+
+- MHack: silence (the remote is on hold) for those seconds, or until 2 s
+  before its T1, then ANSam and phase 1 as the answering modem, as after
+  its own hold;
+- MHnack: MHfrr, and ANSam and phase 1 after it (with `=0` seconds of
+  `DSP_V92_MOH_REQ`, MHcda and a disconnect instead);
+- the remote's tone A reversed (or its INFO0a): it takes our tone for a
+  retrain's, which it may (9.10.1.1/V.92); we follow it into phase 2 at
+  once. The tone is long so that this comes before MHreq, whose phase
+  steps it would take for our reversal;
+- nothing in 2.5 s: a retrain.
+
+Neither the original library nor the Agere modem answers MHreq: both
+retrain (the library frames our MH sequences, but as INFO0 in its
+retrain, with a bad CRC; it looks for MH only in its own requests).
+`interop_v92_moh_request` (PCM upstream) and `agere_v92_moh_request`
+(V.90) ask for it in the middle of the data (`MIDCALL_B`) and check that
+the call goes on; the MHack and MHnack branches have no peer to test
+them against.
 
 ### V.92 PCM upstream
 

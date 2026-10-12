@@ -77,6 +77,10 @@ long Modem::get_param(unsigned name)
 		return (long)dp_runtime_;
 	case MDMPRM_MODE:
 		return mode_;
+	case MDMPRM_MOH_T1:
+		return moh_off_ ? 0 : moh_timer_;
+	case MDMPRM_MOH_REQ:
+		return moh_req_;
 	case MDMPRM_DSPINFO:
 		return (long)&dsp_info_;
 	case MDMPRM_VOICEINFO:
@@ -185,6 +189,9 @@ long Modem::set_param(unsigned name, int val)
 		break;
 	case MDMPRM_UPDATE_DELAY:
 		update_delay_ = val;
+		break;
+	case MDMPRM_MOH_REQ:
+		moh_req_ = val;
 		break;
 	case MDMPRM_HOOK_ON:
 		return host_.set_hook(*this, val ? MODEM_HOOK_ON :
