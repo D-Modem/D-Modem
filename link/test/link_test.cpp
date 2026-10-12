@@ -524,9 +524,28 @@ TEST(Link, V14)
 	Config c;
 	Pair p(c, lapm_config(3));
 	p.start(false, true);
-	p.run(9600 * 3);
-	CHECK(p.da.detected && !p.la.ec(), "answerer: no LAPM");
+	/* T400, 750 ms at the pump's rate */
+	p.run(9600);
+	CHECK(p.da.detected && !p.la.ec(), "answerer: no LAPM within 1 s");
+	p.run(9600 * 2);
 	CHECK(p.dc.up && p.da.up, "both up (async)");
 	transfer("lapm answerer, async caller", p, 3000, 3000, 9600 * 10,
+		 false);
+}
+
+/* the caller goes to LAPM without the detection phase (as after V.8), the
+   answerer has no V.42 at all: its XIDs unanswered N400 times, the caller
+   goes on in async */
+TEST(Link, LapmCallerAsyncRemote)
+{
+	rnd_state = 12345;
+	Config c;
+	Pair p(lapm_config(3), c);
+	p.start(false, false);          /* (the caller: LAPM, no detection) */
+	p.run(9600 * 8);
+	CHECK(!p.dc.up, "caller: not up while it tries LAPM");
+	p.run(9600 * 10);
+	CHECK(p.dc.up && !p.lc.ec(), "caller: async after N400 XIDs");
+	transfer("lapm caller, async answerer", p, 3000, 3000, 9600 * 10,
 		 false);
 }
