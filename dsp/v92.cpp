@@ -434,6 +434,14 @@ float V92Up::equalize(long s)
 	long base = eqL + s - V92_EQ_PRE;
 	double y = 0;
 	int i;
+
+	if (pf_on) {
+		/* the point: the level at the delay, through the few taps
+		   that follow the timing */
+		for (i = 0; i < V92_PF_F; i++)
+			y += pf_f[i] * pf_sample(s + pf_d + i - V92_PF_F / 2);
+		return (float)y;
+	}
 	for (i = 0; i < V92_EQ_F; i++)
 		y += f[i] * at(buf, base + i);
 	for (i = 0; i < V92_EQ_B; i++)
@@ -447,6 +455,14 @@ void V92Up::adapt(long s, float err, float mu)
 	long base = eqL + s - V92_EQ_PRE;
 	float g = mu / (V92_EQ_F * pr + 1);
 	int i;
+
+	if (pf_on) {
+		g = mu / (V92_PF_F * pr + 1);
+		for (i = 0; i < V92_PF_F; i++)
+			pf_f[i] += g * err *
+				pf_sample(s + pf_d + i - V92_PF_F / 2);
+		return;
+	}
 	for (i = 0; i < V92_EQ_F; i++)
 		f[i] += g * err * at(buf, base + i);
 	if (!b_frozen)
@@ -814,6 +830,20 @@ void V92Up::symbol(float y)
 			got_e2u = 1;
 			DSP_DBG("v92: E2u at symbol %ld\n", sym);
 			rx = V92R_DATA;
+			/* with the prefilter: the points at the delay, from
+			   B1u on */
+			if (pf) {
+				int ahead = V92_EQ_F - V92_EQ_PRE - 1;
+				pf_on = 1;
+				pf_eqL = eqL;
+				pf_s0 = sym + 1;
+				/* the taps reach V92_PF_F / 2 past the delay */
+				if (pf_d + V92_PF_F / 2 > ahead)
+					eqL += pf_d + V92_PF_F / 2 - ahead;
+				memset(pf_f, 0, sizeof(pf_f));
+				pf_f[V92_PF_F / 2] = 1 / pf_cd;
+				dmse_g = 0;
+			}
 			dscr = 0;
 			dprev = 0;
 			dframes = derrs = 0;
@@ -867,6 +897,10 @@ void V92Up::rn_rx_start()
 	DSP_DBG("v92: Ru at symbol %ld: rate renegotiation\n", sym);
 	rx = V92R_RN_RU;
 	b_frozen = 0;
+	if (pf_on) {
+		pf_on = 0;
+		eqL = pf_eqL;
+	}
 	if (!rn) {
 		rn = 1;
 		rn_at = n;
@@ -931,6 +965,22 @@ void V92Up::fpe_design(int drn)
 	/* (the signal has unit power, as in the training's fit) */
 	double e2 = dmse, sb = 0, msa = 0;
 	int d, M = 8, lc = 0, j, k;
+
+	if (pf) {
+		/* the prefilter and precoder stay: the next rate up, if the
+		   design has it (or the one asked for) */
+		d = drn ? drn : cpd.drn + 1;
+		if (d > 19 || (up_mask && !((up_mask >> (d - 1)) & 1)) ||
+		    !pf_rate(d))
+			d = cpd.drn;
+		cpd_fpe = cpd;
+		pf_cpd(&cpd_fpe, d);
+		cpd_fpe.ack = 0;
+		DSP_DBG("v92: FPE CPd: %d bit/s, M %d, %d points (gap %d)\n",
+			(d + 17) * 8000 / 6, cpd_fpe.M[0], 2 * cpd_fpe.lc[0],
+			pf_gap[d]);
+		return;
+	}
 
 	if (b_frozen)
 		for (j = 0; j < cpd.len[1]; j++)
@@ -1177,8 +1227,10 @@ void V92Up::data_symbol(float y)
 	}
 	dsn++;
 	int i = (int)(sym % 12), lc = cpd.lc[0];
-	/* in grid units: a point is (2 eta + 1) * 16 * G */
-	float u = (float)(y / (16 * cpd.g)), t, err;
+	/* in grid units: a point is (2 eta + 1) * 16 * G, or with the
+	   prefilter the G.711 levels, at 2 eta + 1 and linear between */
+	float u = pf_on ? pf_grid(&cpd, y) : (float)(y / (16 * cpd.g)), t,
+		err, eg;
 	int eta = (int)floorf(u / 2);
 
 	/* the nearest point (for the equalizer, and without trellis
@@ -1187,28 +1239,42 @@ void V92Up::data_symbol(float y)
 		eta = -lc;
 	if (eta > lc - 1)
 		eta = lc - 1;
-	t = (float)((2 * eta + 1) * 16 * cpd.g);
+	t = pf_on ? pf_point(&cpd, eta) : (float)((2 * eta + 1) * 16 * cpd.g);
 	err = t - y;
+	eg = u - (2 * eta + 1);
 	dmse += 0.005 * (err * err - dmse);
+	dmse_g += 0.005 * (eg * eg - dmse_g);
 	/* decisions near the middle between two points */
-	if (fabsf(err) > 0.6f * 16 * cpd.g)
+	if (fabsf(eg) > 0.6f)
 		dfar++;
 	/* the margin against the one our rate was chosen with: half of it
 	   for 0.5 s, renegotiate down; 2.5 times for 10 s (and a minute
 	   since the last), up (9.8/V.92) */
 	if (connected && !rn && dframes > 48) {
-		double q = 256 * cpd.g * cpd.g / (dmse + 1e-9);
-		rn_low = q < margin_used / 2 ? rn_low + 1 : 0;
+		double q = pf_on ? 1 / (dmse_g + 1e-9) :
+			256 * cpd.g * cpd.g / (dmse + 1e-9);
+		/* with the prefilter the grid mse creeps up over the first
+		   half minute (the analogue modem's sampling wanders under
+		   our fixed filter) without errors: down only when that
+		   reaches decisions (rms 0.3 of the half distance) */
+		double lo = margin_used / 2;
+		if (pf_on && lo > 1 / 0.09)
+			lo = 1 / 0.09;
+		rn_low = q < lo ? rn_low + 1 : 0;
 		rn_high = q > margin_used * 2.5 ? rn_high + 1 : 0;
 		if (rn_low >= 4000 ||
 		    (rn_high >= 80000 && n - rn_last >= 8000L * 60 &&
 		     cpd.drn < 19)) {
 			DSP_DBG("v92: margin %.1f against %.1f: %s\n", q,
 				margin_used, rn_low ? "renegotiate down" :
+				pf_on ? "renegotiate up" :
 				"fast parameter exchange up");
 			/* down: the line changed, train anew; up: the
-			   same line with less noise, the rate alone */
-			if (rn_low)
+			   same line with less noise, the rate alone (but
+			   with the prefilter, the analogue modem takes up
+			   the new constellation before B1u of a fast
+			   parameter exchange: train anew too) */
+			if (rn_low || pf_on)
 				rn_req = 1;
 			else
 				fpe_req = 1;
@@ -1284,8 +1350,10 @@ void V92Up::decided(int eta)
 				frame_bits(bits[j]);
 				z += !bits[j];
 			}
-			/* (a frame of zeros is no SUVu or CPu: whatever
-			   the frame parser was in the middle of) */
+			/* with the prefilter, SUVu' and E2u can go (the
+			   analogue modem's filters start anew for them):
+			   then FB1u, frames of ones (that no SUVu or CPu
+			   has, with a zero every 17 bits) */
 			if (z == nb && got_ack) {
 				fpe_rx = 4;
 				fpe_fb = 0;
@@ -1437,6 +1505,10 @@ void V92Up::design()
 
 	trellis_on = !(getenv("DSP_V92_TRELLIS") &&
 		       !atoi(getenv("DSP_V92_TRELLIS")));
+	/* the prefilter, if it works out (DSP_V92_PREFILTER=0: not) */
+	if (rx == V92R_TRN2 && sym - e2u_sym > V92_PF_FIT + 32 &&
+	    pf_design(fix))
+		return;
 
 	/* the precoders to choose from: our feedback taps, shrunk or not
 	   (the more, the fewer points the analogue modem needs, but the
@@ -1562,6 +1634,506 @@ void V92Up::design()
 #undef NG
 }
 
+/*
+ *    the prefilter design (6.4.2/V.92)
+ *
+ *    The channel from the analogue modem's transmitter to the network's
+ *    samples, ch, by least squares on TRN2u (the prefilter and the
+ *    precoder do not run yet then).  The prefilter, G z2 = w, makes
+ *    ch * w a response with its main tap 1 at a delay d, the precoder's
+ *    taps after it, and as little as can be elsewhere (with some |w|^2
+ *    for the noise); the precoder takes those taps away, and what the
+ *    network samples is the point itself.  So the points are G.711
+ *    levels, the quantizer does not add to them, and the receiver reads
+ *    the level at d.  The power, E (w * x)^2 <= 1 (as G says), sets how
+ *    far out the points go, and so their least gap; the rate is the
+ *    highest at which a simulation through ch and G.711, with the noise
+ *    the fit found beyond G.711's own, makes (almost) no errors.
+ */
+
+/* the channel: received sample at eqL + n = sum ch[j + PRE] x(n - j),
+   j = -V92_CH_PRE .. V92_CH_POST, from TRN2u's decisions; the fit's
+   error (*e2) and the part of it G.711's quantization explains (*q2) */
+int V92Up::ch_fit(double *e2, double *q2)
+{
+	static double A[V92_CH * V92_CH];
+	double v[V92_CH], phi[V92_CH];
+	long s0 = sym - V92_PF_FIT + V92_CH_POST, s1 = sym - 1 - V92_CH_PRE, sn;
+	long cnt = 0;
+	int i, j;
+
+	memset(A, 0, sizeof(A));
+	memset(v, 0, sizeof(v));
+	for (sn = s0; sn <= s1; sn++) {
+		double r = at(buf, eqL + sn);
+		for (j = 0; j < V92_CH; j++)
+			phi[j] = dring[(sn + V92_CH_PRE - j) & (V92_DR - 1)];
+		for (i = 0; i < V92_CH; i++) {
+			for (j = 0; j < V92_CH; j++)
+				A[i * V92_CH + j] += phi[i] * phi[j];
+			v[i] += phi[i] * r;
+		}
+	}
+	for (i = 0; i < V92_CH; i++)
+		A[i * V92_CH + i] *= 1 + 1e-6;
+	if (solve(A, v, ch, V92_CH))
+		return -1;
+	*e2 = *q2 = 0;
+	for (sn = s0; sn <= s1; sn++, cnt++) {
+		double r = at(buf, eqL + sn), y = 0, a = fabs(r);
+		int lo = 0, hi = 127, k;
+		for (j = 0; j < V92_CH; j++)
+			y += ch[j] * dring[(sn + V92_CH_PRE - j) & (V92_DR - 1)];
+		*e2 += (r - y) * (r - y);
+		/* the level's step */
+		while (lo < hi) {
+			int m = (lo + hi) / 2;
+			if (pf_lev[m] < a)
+				lo = m + 1;
+			else
+				hi = m;
+		}
+		k = lo;
+		double st = k < 127 ? pf_lev[k + 1] - pf_lev[k] :
+			pf_lev[k] - pf_lev[k - 1];
+		if (k > 0 && pf_lev[k] - pf_lev[k - 1] < st)
+			st = pf_lev[k] - pf_lev[k - 1];
+		*q2 += st * st / 12;
+	}
+	*e2 /= cnt;
+	*q2 /= cnt;
+	return 0;
+}
+
+/* the prefilter for ch: w, the delay d, the precoder's taps; *resid the
+   interference left (against the main tap's power) */
+int V92Up::pf_filter(double n0, double *resid)
+{
+	enum { K = V92_CH + V92_PF_W - 1 };
+	static double G[V92_PF_W * V92_PF_W], A[V92_PF_W * V92_PF_W];
+	double w[V92_PF_W], rhs[V92_PF_W], c[K], best = -1, hh = 0;
+	int i, j, k, d;
+
+	for (j = 0; j < V92_CH; j++)
+		hh += ch[j] * ch[j];
+	/* H(k, i) = ch[k - i]: G = H'H, Toeplitz */
+	for (i = 0; i < V92_PF_W; i++)
+		for (j = 0; j < V92_PF_W; j++) {
+			double t = 0;
+			int l = abs(i - j);
+			for (k = 0; k + l < V92_CH; k++)
+				t += ch[k] * ch[k + l];
+			G[i * V92_PF_W + j] = t;
+		}
+	for (d = 0; d <= 40; d++) {
+		int kd = d + V92_CH_PRE;
+		double J = 0, ww = 0, r = 0;
+		if (kd + V92_PF_B >= K)
+			break;
+		memcpy(A, G, sizeof(A));
+		/* the main tap and the precoder's are free */
+		for (k = kd; k <= kd + V92_PF_B; k++)
+			for (i = 0; i < V92_PF_W; i++) {
+				double hi_ = k - i >= 0 && k - i < V92_CH ?
+					ch[k - i] : 0;
+				if (hi_ == 0)
+					continue;
+				for (j = 0; j < V92_PF_W; j++)
+					if (k - j >= 0 && k - j < V92_CH)
+						A[i * V92_PF_W + j] -=
+							hi_ * ch[k - j];
+			}
+		for (i = 0; i < V92_PF_W; i++) {
+			A[i * V92_PF_W + i] += n0 * hh;
+			rhs[i] = kd - i >= 0 && kd - i < V92_CH ? ch[kd - i] : 0;
+		}
+		if (solve(A, rhs, w, V92_PF_W))
+			continue;
+		for (i = 0; i < V92_PF_W; i++)
+			r += (kd - i >= 0 && kd - i < V92_CH ? ch[kd - i] : 0) *
+				w[i];
+		if (fabs(r) < 1e-12)
+			continue;
+		for (i = 0; i < V92_PF_W; i++) {
+			w[i] /= r;
+			ww += w[i] * w[i];
+		}
+		for (k = 0; k < K; k++) {
+			c[k] = 0;
+			for (i = 0; i < V92_PF_W; i++)
+				if (k - i >= 0 && k - i < V92_CH)
+					c[k] += ch[k - i] * w[i];
+			if (k < kd || k > kd + V92_PF_B)
+				J += c[k] * c[k];
+		}
+		*resid = J;
+		J += n0 * hh * ww;
+		if (best < 0 || J < best) {
+			best = J;
+			pf_d = d;
+			memcpy(pf_w, w, sizeof(w));
+			for (k = 0; k < V92_PF_B; k++)
+				pf_b[k] = c[kd + 1 + k];
+		}
+	}
+	if (best < 0)
+		return -1;
+	/* what is left with the chosen one */
+	{
+		int kd = pf_d + V92_CH_PRE;
+		double J = 0;
+		for (k = 0; k < K; k++) {
+			double t = 0;
+			for (i = 0; i < V92_PF_W; i++)
+				if (k - i >= 0 && k - i < V92_CH)
+					t += ch[k - i] * pf_w[i];
+			if (k < kd || k > kd + V92_PF_B)
+				J += t * t;
+		}
+		*resid = J;
+	}
+	return 0;
+}
+
+/* lc positive points: G.711 levels, each gap at least gap (the first
+   from 0 at least half of it); 0 if the levels run out */
+int V92Up::pf_points(int gap, int lc, short *pts)
+{
+	int k, n = 0;
+	for (k = 0; k < 128 && n < lc; k++) {
+		int v = pf_lev[k];
+		if ((n == 0 && 2 * v >= gap && v > 0) ||
+		    (n > 0 && v - pts[n - 1] >= gap))
+			pts[n++] = (short)v;
+	}
+	return n == lc;
+}
+
+/* a value (in the points' units) in grid units: the point eta at
+   2 eta + 1, linear in between */
+float V92Up::pf_grid(const V92Cpd *c, float r) const
+{
+	const int *p = c->pts[0];
+	int lc = c->lc[0], lo = 0, hi = lc - 1;
+	float a = fabsf(r), u;
+
+	if (a < p[0])
+		u = a / p[0];
+	else if (a >= p[lc - 1])
+		u = 2 * lc - 1 + 2 * (a - p[lc - 1]) /
+			(float)(lc > 1 ? p[lc - 1] - p[lc - 2] : p[0]);
+	else {
+		while (hi - lo > 1) {
+			int m = (lo + hi) / 2;
+			if (p[m] <= a)
+				lo = m;
+			else
+				hi = m;
+		}
+		u = 2 * lo + 1 + 2 * (a - p[lo]) / (float)(p[hi] - p[lo]);
+	}
+	return r < 0 ? -u : u;
+}
+
+float V92Up::pf_point(const V92Cpd *c, int eta) const
+{
+	return eta >= 0 ? (float)c->pts[0][eta] : -(float)c->pts[0][-eta - 1];
+}
+
+/* nsym symbols of the design (modulus M, the points) through ch and
+   G.711: the transmitter's power (E (w * x)^2, 1 the most), the grid
+   mse; the symbol errors */
+int V92Up::pf_sim(int M, const short *pts, int lc, int nsym, double *pw,
+		  double *mseg)
+{
+	enum { NS = 4096 };
+	static double xs[NS], ts[NS];
+	static int want[NS];
+	V92Cpd c;
+	unsigned rnd = 12345;
+	int n, k, errs = 0, cnt = 0;
+	double p = 0;
+
+	if (nsym > NS)
+		nsym = NS;
+	c.lc[0] = lc;
+	for (k = 0; k < lc; k++)
+		c.pts[0][k] = pts[k];
+	for (n = 0; n < nsym; n++) {
+		double fb = 0, bestv = 0;
+		int K, par = 0, best = 0, found = 0, eta;
+		for (k = 0; k < V92_PF_B && n - 1 - k >= 0; k++)
+			fb += pf_b[k] * xs[n - 1 - k];
+		rnd = rnd * 1103515245 + 12345;
+		K = (int)((rnd >> 8) % (unsigned)M);
+		rnd = rnd * 1103515245 + 12345;
+		par = (rnd >> 16) & 1;
+		/* the class's point nearest the feedback: the least output */
+		for (eta = -lc; eta < lc; eta++) {
+			int in = n % 4 == 3 ?
+				((eta - 2 * K - par) % (2 * M) == 0) :
+				((eta - K) % M == 0);
+			double v = pf_point(&c, eta) - fb;
+			if (in && (!found || fabs(v) < fabs(bestv))) {
+				best = eta;
+				bestv = v;
+				found = 1;
+			}
+		}
+		xs[n] = bestv;
+		want[n] = best;
+	}
+	for (n = 0; n < nsym; n++) {
+		double t = 0;
+		for (k = 0; k < V92_PF_W && n - k >= 0; k++)
+			t += pf_w[k] * xs[n - k];
+		ts[n] = t;
+		p += t * t;
+	}
+	*pw = p / nsym;
+	*mseg = 0;
+	for (n = 64; n < nsym - 64; n++) {
+		long m = n + pf_d;
+		double r = 0, a, lev;
+		int j, lo = 0, hi = 127, eta;
+		float u;
+		for (j = -V92_CH_PRE; j <= V92_CH_POST; j++)
+			if (m - j >= 0 && m - j < nsym)
+				r += ch[j + V92_CH_PRE] * ts[m - j];
+		if (pf_noise > 0) {
+			double u1, u2;
+			rnd = rnd * 1103515245 + 12345;
+			u1 = ((rnd >> 8) + 1.0) / 16777217.0;
+			rnd = rnd * 1103515245 + 12345;
+			u2 = ((rnd >> 8) + 1.0) / 16777217.0;
+			r += pf_noise * sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
+		}
+		/* G.711: the nearest level */
+		a = fabs(r);
+		while (lo < hi) {
+			int mm = (lo + hi) / 2;
+			if (pf_lev[mm] < a)
+				lo = mm + 1;
+			else
+				hi = mm;
+		}
+		lev = pf_lev[lo];
+		if (lo > 0 && a - pf_lev[lo - 1] < lev - a)
+			lev = pf_lev[lo - 1];
+		u = pf_grid(&c, (float)((r < 0 ? -lev : lev) / pf_cd));
+		eta = (int)floorf(u / 2);
+		if (eta < -lc)
+			eta = -lc;
+		if (eta > lc - 1)
+			eta = lc - 1;
+		*mseg += (u - (2 * eta + 1)) * (u - (2 * eta + 1));
+		cnt++;
+		if (n % 4 == 3 ? (eta - want[n]) % (2 * M) != 0 :
+		    (eta - want[n]) % M != 0)
+			errs++;
+	}
+	*mseg /= cnt;
+	return errs;
+}
+
+/* whether drn can be had with the design: its points' least gap and
+   the grid mse in pf_gap[], pf_mseg[] */
+int V92Up::pf_rate(int drn)
+{
+	int K = 2 * (drn + 17), M, lc, lo = 8, hi = 2048, errs;
+	double sb = 0, pw, mg;
+	short pts[V92_LC_MAX];
+
+	pf_gap[drn] = 0;
+	M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
+	for (int k = 0; k < V92_PF_B; k++)
+		sb += fabs(pf_b[k]);
+	/* the trellis frame's 4th symbol: classes of 2M */
+	lc = (int)ceil(M * (1 + sb)) + 2;
+	lc += lc & 1;
+	if (lc > V92_LC_MAX)
+		return 0;
+	/* the widest gap within the power */
+	if (!pf_points(lo, lc, pts))
+		return 0;
+	pf_sim(M, pts, lc, 1000, &pw, &mg);
+	if (pw > 1)
+		return 0;
+	while (hi - lo > 8) {
+		int m = (lo + hi) / 2;
+		if (pf_points(m, lc, pts) &&
+		    (pf_sim(M, pts, lc, 1000, &pw, &mg), pw <= 1))
+			lo = m;
+		else
+			hi = m;
+	}
+	pf_points(lo, lc, pts);
+	errs = pf_sim(M, pts, lc, 4000, &pw, &mg);
+	DSP_TRACE("v92: prefilter %d bit/s: gap %d, %d points, power %.2f, "
+		  "%d errors, grid mse %.4f\n", (drn + 17) * 8000 / 6, lo,
+		  2 * lc, pw, errs, mg);
+	/* a few in 4000 the trellis code takes care of */
+	if (errs > 2)
+		return 0;
+	pf_gap[drn] = (short)lo;
+	pf_mseg[drn] = mg;
+	return 1;
+}
+
+/* the received sample of symbol k (relative to the channel's main tap),
+   less what the plain channel still has of the symbols before B1u (in
+   TRN2u's modulation) */
+double V92Up::pf_sample(long k)
+{
+	double r = at(buf, pf_eqL + k);
+	int j = (int)(k - pf_s0 + 1);
+	if (j < -V92_CH_PRE)
+		j = -V92_CH_PRE;
+	for (; j <= V92_CH_POST; j++)
+		r -= ch[j + V92_CH_PRE] * dring[(k - j) & (V92_DR - 1)];
+	return r;
+}
+
+/* with the prefilter: the margin to hold the line to is what B1u and
+   the first data had (the simulation's mse is only a guide) */
+void V92Up::pf_margin()
+{
+	if (!pf_on)
+		return;
+	double m = dmse_g > pf_mseg[cpd.drn] ? dmse_g : pf_mseg[cpd.drn];
+	margin_used = m > 0 ? 1 / m : 1e3;
+	DSP_DBG("v92: grid mse %.4f (simulated %.4f): margin %.1f\n", dmse_g,
+		pf_mseg[cpd.drn], margin_used);
+}
+
+/* CPd for drn with the prefilter */
+void V92Up::pf_cpd(V92Cpd *c, int drn)
+{
+	int K = 2 * (drn + 17), M, lc, j;
+	double sb = 0;
+	short pts[V92_LC_MAX];
+
+	M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
+	for (j = 0; j < V92_PF_B; j++)
+		sb += fabs(pf_b[j]);
+	lc = (int)ceil(M * (1 + sb)) + 2;
+	lc += lc & 1;
+	pf_points(pf_gap[drn], lc, pts);
+	int ack = c->ack;
+	memset(c, 0, sizeof(*c));
+	c->ack = ack;
+	c->drn = drn;
+	for (j = 0; j < 12; j++)
+		c->M[j] = M;
+	/* z1 and p2 unused, 4 taps (the original library's sections are
+	   of a multiple of 4 taps, and none fails) */
+	c->len[0] = 4;
+	c->len[1] = V92_PF_B;
+	c->len[2] = V92_PF_W;
+	c->len[3] = 4;
+	for (j = 0; j < V92_PF_B; j++)
+		c->coef[1][j] = pf_p1[j];
+	for (j = 0; j < V92_PF_W; j++)
+		c->coef[2][j] = pf_z2[j];
+	c->g = pf_g;
+	c->ncon = 1;
+	c->lc[0] = lc;
+	for (j = 0; j < lc; j++)
+		c->pts[0][j] = pts[j];
+	c->trellis = 2;
+	if (getenv("DSP_V92_TRELLIS"))
+		c->trellis = atoi(getenv("DSP_V92_TRELLIS")) == 16 ? 0 :
+			atoi(getenv("DSP_V92_TRELLIS")) == 32 ? 1 : 2;
+}
+
+/* the design with the prefilter; 0 if there is none (the receiver's feed
+   forward taps then) */
+int V92Up::pf_design(const char *fix)
+{
+	double e2, q2, hh = 0, resid, mx = 0, sb = 0;
+	int i, j, drn, g4;
+
+	pf = 0;
+	if (!pf_ok || ia.lmax < V92_PF_W ||
+	    ia.ltot < 8 + V92_PF_B + V92_PF_W)
+		return 0;
+	for (i = 0; i < 128; i++)
+		pf_lev[i] = (short)v90_ucode_linear(alaw, i);
+	for (i = 1; i < 128; i++)
+		for (j = i; j > 0 && pf_lev[j] < pf_lev[j - 1]; j--) {
+			short t = pf_lev[j];
+			pf_lev[j] = pf_lev[j - 1];
+			pf_lev[j - 1] = t;
+		}
+	if (ch_fit(&e2, &q2))
+		return 0;
+	for (j = 0; j < V92_CH; j++)
+		hh += ch[j] * ch[j];
+	/* the noise beyond G.711's, and the channel estimate's own error
+	   (as much again per tap as the fit's error over its symbols) */
+	pf_noise = sqrt((e2 > q2 ? e2 - q2 : 0) +
+			q2 * V92_CH / (V92_PF_FIT - V92_CH));
+	if (pf_filter(1e-3 + pf_noise * pf_noise / hh, &resid))
+		return 0;
+	/* as CPd says it: G (4 G in Q0.16) and z2 (Q0.15) */
+	for (i = 0; i < V92_PF_W; i++)
+		if (fabs(pf_w[i]) > mx)
+			mx = fabs(pf_w[i]);
+	g4 = (int)ceil(4 * mx * 65536 * 1.0001);
+	if (g4 < 1 || g4 > 65535)
+		return 0;
+	pf_g = g4 / (4 * 65536.0);
+	for (i = 0; i < V92_PF_W; i++) {
+		long q = lrint(pf_w[i] / pf_g * 32768);
+		q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
+		pf_z2[i] = (short)q;
+		pf_w[i] = pf_g * q / 32768;
+	}
+	/* the response with them, and the precoder for it */
+	{
+		int kd = pf_d + V92_CH_PRE;
+		double c[V92_CH + V92_PF_W];
+		for (int k = 0; k < V92_CH + V92_PF_W - 1; k++) {
+			c[k] = 0;
+			for (i = 0; i < V92_PF_W; i++)
+				if (k - i >= 0 && k - i < V92_CH)
+					c[k] += ch[k - i] * pf_w[i];
+		}
+		pf_cd = c[kd];
+		for (j = 0; j < V92_PF_B; j++) {
+			long q = lrint(-c[kd + 1 + j] / pf_cd * 16384);
+			q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
+			pf_p1[j] = (short)q;
+			pf_b[j] = -q / 16384.0;
+			sb += fabs(pf_b[j]);
+		}
+	}
+	DSP_DBG("v92: channel: SNR %.1f dB (G.711's alone %.1f dB, noise "
+		"%.1f rms); prefilter delay %d, interference %.1f dB, "
+		"sum |b| %.2f, G %.6f\n", 10 * log10(hh / e2),
+		10 * log10(hh / q2), pf_noise, pf_d, 10 * log10(resid), sb,
+		pf_g);
+	for (drn = 19; drn >= 1; drn--) {
+		if (up_mask && !((up_mask >> (drn - 1)) & 1))
+			continue;
+		if (fix && drn != atoi(fix))
+			continue;
+		if (pf_rate(drn))
+			break;
+	}
+	if (drn < 1)
+		return 0;
+	pf_cpd(&cpd, drn);
+	pf = 1;
+	margin_used = pf_mseg[drn] > 0 ? 1 / pf_mseg[drn] : 1e3;
+	DSP_DBG("v92: CPd: %d bit/s, M %d, %d points (gap %d, to %d), G %.6f, "
+		"prefilter of %d taps, precoder of %d, %d state trellis\n",
+		(drn + 17) * 8000 / 6, cpd.M[0], 2 * cpd.lc[0], pf_gap[drn],
+		cpd.pts[0][cpd.lc[0] - 1], cpd.g, V92_PF_W, V92_PF_B,
+		16 << cpd.trellis);
+	return 1;
+}
+
 void V92Up::make_seq(int cpd_, int ack)
 {
 	if (cpd_ && fpe) {
@@ -1630,7 +2202,11 @@ static void v92_get_frame(void *ctx, V90Tx *t, unsigned char *bits,
 			v->fmode = V92F_ED;
 			v->fcount = 0;
 		} else if (v->got_suvu && !v->rn_silence &&
-			   (!v->cpd_sent || (!v->got_ack && v->cpd_at > 400)))
+			   (!v->cpd_sent || (!v->got_ack && v->cpd_at > 400)) &&
+			   /* the prefilter's design wants more of TRN2u (and
+			      SUVu and CPu, which come in its modulation) */
+			   (v->cpd_sent || !v->pf_ok || v->rx != V92R_TRN2 ||
+			    v->sym - v->e2u_sym > V92_PF_FIT + 32))
 			v->make_seq(1, v->got_cpu);
 		else
 			/* with a silent period asked for: SUVd' (no CP
@@ -1737,6 +2313,7 @@ int V92Up::tx_step()
 		    !connected) {
 			connected = 1;
 			connect_n = rn_last = n;
+			pf_margin();
 			DSP_DBG("v92: connect %d/%d\n",
 				(cpu.drn + 20) * 8000 / 6,
 				(cpd.drn + 17) * 8000 / 6);
@@ -1825,6 +2402,7 @@ int V92Up::tx_step()
 			DSP_DBG("v92: renegotiated %d/%d\n",
 				(cpu.drn + 20) * 8000 / 6,
 				(cpd.drn + 17) * 8000 / 6);
+			pf_margin();
 			return V92_RENEG;
 		}
 		if (n - rn_at > 8000L * 25) {
@@ -1857,6 +2435,8 @@ void V92Up::init(int alaw_, const V92Info1a *ia_, const long *fclock,
 	rx = V92R_RU;
 	fr.init(V92F_DIL);
 	ta_g.init(2400, 64, 8000);
+	pf_ok = !(getenv("DSP_V92_PREFILTER") &&
+		  !atoi(getenv("DSP_V92_PREFILTER")));
 	DSP_DBG("v92: PCM upstream: filter sections %d, coefficients %d "
 		"(%d each), MD %d, UINFO %d\n", ia.sections, ia.ltot, ia.lmax,
 		ia.md, ia.uinfo);

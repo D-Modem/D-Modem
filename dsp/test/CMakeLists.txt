@@ -227,14 +227,21 @@ set_tests_properties(interop_v92_qc PROPERTIES LABELS interop
 # (legacy/modem.cpp) sets its full V.92 bit, and it then goes through
 # phases 3 and 4 of V.92 with us.  Lite: we answer its retrain without the
 # offer, V.90.  A rate the line cannot carry (44 000): B1u does not come
-# through, we retrain to V.90.
+# through, we retrain to V.90.  With the prefilter we design (6.4.2/V.92)
+# the rate is up to 38 666 (mu-law) and 40 000 (A-law); without it
+# (DSP_V92_PREFILTER=0), the precoder alone, 34 000 to 36 000.
 foreach(_law ulaw alaw)
 	add_test(NAME interop_v92_pcmup_${_law} COMMAND ${Python3_EXECUTABLE}
 		${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 		"ATX3;AT+MS=92")
 	set_tests_properties(interop_v92_pcmup_${_law} PROPERTIES LABELS interop
-		ENVIRONMENT "${_env};NET=9600:8000:${_law};STREAM=10;BLOB_V92FULL=1;EXPECT_B=V.92 connect 56000/3[4-9]")
+		ENVIRONMENT "${_env};NET=9600:8000:${_law};STREAM=10;BLOB_V92FULL=1;EXPECT_B=(?s)prefilter of 64 taps.*V.92 connect 56000/(3[89]|4[0-2])")
 endforeach()
+add_test(NAME interop_v92_pcmup_noprefilter COMMAND ${Python3_EXECUTABLE}
+	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+	"ATX3;AT+MS=92")
+set_tests_properties(interop_v92_pcmup_noprefilter PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_PREFILTER=0;EXPECT_B=V.92 connect 56000/3[4-9]")
 add_test(NAME interop_v92_pcmup_calls COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 	"ATX3;AT+MS=92")
@@ -265,12 +272,14 @@ add_test(NAME interop_v92_reneg_noise COMMAND ${Python3_EXECUTABLE}
 set_tests_properties(interop_v92_reneg_noise PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=15;BLOB_V92FULL=1;NET_NOISE=26:60;NET_NOISE_DIR=ab;EXPECT_B=V.92 renegotiated 56000/[23]")
 # fast parameter exchange (9.9/V.92): ours after 3 s of data, to 30 666
-# bit/s upstream (DSP_V92_FPE=<ms>:<drn>), in the data mode modulation
+# bit/s upstream (DSP_V92_FPE=<ms>:<drn>), in the data mode modulation.
+# Without the prefilter: with it the analogue modem takes up the new
+# constellation before B1u, and we renegotiate instead
 add_test(NAME interop_v92_fpe COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
 	"ATX3;AT+MS=92")
 set_tests_properties(interop_v92_fpe PROPERTIES LABELS interop
-	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_FPE=3000:6;EXPECT_B=(?s)fast parameter exchange 1 done.*V.92 renegotiated 56000/30666")
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=10;BLOB_V92FULL=1;DSP_V92_PREFILTER=0;DSP_V92_FPE=3000:6;EXPECT_B=(?s)fast parameter exchange 1 done.*V.92 renegotiated 56000/30666")
 # without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream
 add_test(NAME interop_v92_nopcmup COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>

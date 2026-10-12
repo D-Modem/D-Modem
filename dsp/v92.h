@@ -90,6 +90,14 @@ enum {
 #define V92_EQ_N        (V92_EQ_F + V92_EQ_B)
 #define V92_VT          24      /* Viterbi decoding delay, trellis frames */
 #define V92_DR          4096    /* decisions kept */
+/* the prefilter design: the channel estimate's taps ahead of and after
+   the main one, the prefilter's and the precoder's taps */
+#define V92_CH_PRE      24
+#define V92_CH_POST     40
+#define V92_CH          (V92_CH_PRE + 1 + V92_CH_POST)
+#define V92_PF_W        64
+#define V92_PF_B        32
+#define V92_PF_FIT      3584    /* TRN2u symbols for the channel */
 
 enum v92_rx {
 	V92R_RU,        /* Ru and its reversal */
@@ -129,7 +137,8 @@ struct V92Up {
 	int D;                  /* bits per data frame of ours */
 	enum v92_fmode fmode;
 	long fcount;
-	unsigned char seq[3072];        /* SUVd or CPd, in whole frames */
+	unsigned char seq[8192];        /* SUVd or CPd (one bit each), in whole
+					   frames */
 	int seq_len, seq_pos, seq_ack, seq_cpd;
 	int cpd_sent, ack_sent;
 	long cpd_at;            /* frames after our last CPd */
@@ -229,6 +238,30 @@ struct V92Up {
 	int b1_bad;
 	unsigned char b1z[48];
 	double dmse;
+	/* the prefilter design (DSP_V92_PREFILTER=0: the receiver's feed
+	   forward taps instead) */
+	int pf_ok;
+	int pf;                 /* our CPd has the prefilter */
+	int pf_on;              /* data mode: the receiver reads the levels */
+	double ch[V92_CH];      /* the channel from TRN2u */
+	double pf_w[V92_PF_W];  /* G times the prefilter, as sent */
+	double pf_b[V92_PF_B];  /* the precoder's taps, as sent */
+	short pf_z2[V92_PF_W];  /* CPd's z2, Q0.15 */
+	short pf_p1[V92_PF_B];  /* CPd's p1, Q1.14 */
+	double pf_g;            /* CPd's G */
+	int pf_d;               /* decision delay, symbols */
+	double pf_cd;           /* main tap of channel and prefilter */
+	double pf_noise;        /* rms beyond G.711's quantization */
+	long pf_s0;             /* the first symbol through the prefilter */
+	long pf_eqL;            /* eqL of the plain channel */
+	short pf_lev[128];      /* the G.711 levels, ascending */
+	short pf_gap[20];       /* by drn: the points' least gap, 0 none */
+	double pf_mseg[20];     /* by drn: the simulated mse, grid units */
+	double dmse_g;          /* data mode mse, grid units */
+	/* with the prefilter, a few receiver taps around the delay: they
+	   follow the analogue modem's timing as it wanders */
+#define V92_PF_F        9
+	double pf_f[V92_PF_F];
 
 	void init(int alaw_, const V92Info1a *ia_, const long *fclock,
 		  long fbase);
@@ -246,6 +279,18 @@ struct V92Up {
 	void make_seq(int cpd_, int ack);
 	void design();
 	int precoder_fit(double gamma, double *bg, double *fg, double *e2);
+	int ch_fit(double *e2, double *q2);
+	int pf_filter(double n0, double *resid);
+	int pf_points(int gap, int lc, short *pts);
+	int pf_sim(int M, const short *pts, int lc, int nsym, double *pw,
+		   double *mseg);
+	int pf_rate(int drn);
+	int pf_design(const char *fix);
+	void pf_cpd(V92Cpd *c, int drn);
+	void pf_margin();
+	double pf_sample(long k);
+	float pf_grid(const V92Cpd *c, float r) const;
+	float pf_point(const V92Cpd *c, int eta) const;
 	/* receiver */
 	void rx_sample(float x);
 	void tone_sample(float x);

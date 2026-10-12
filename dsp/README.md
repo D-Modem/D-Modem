@@ -433,15 +433,44 @@ and more when LC is less than 2M.
 
 | Test (`interop_v92_pcmup_*`) | Result |
 |---|---|
-| ulaw, alaw | V.92 connect, 56000 down, 36000 up, B1u and 10 s of data without errors |
+| ulaw, alaw | V.92 connect, 56000 down, 38666 / 40000 up (prefilter), B1u and 10 s of data without errors |
+| noprefilter (`DSP_V92_PREFILTER=0`) | 56000 down, 34000 to 36000 up |
 | calls (two calls, quick connect) | both V.92 |
 | lite (the library as it is) | it retrains after INFO1d, we leave the offer out: V.90 |
 | fallback (44000 bit/s asked for) | B1u does not come through: retrain, V.90 |
 
 Through netsim's converters the fit's error is 34.5 dB below the signal,
-which gives 36000 bit/s upstream (V.34's is 31200 there; 38667 makes a
-few errors); a prefilter that shapes the analogue modem's spectrum is
-not designed yet. In data mode the analogue modem's tone A retrains. The echo canceller (the V.34 pump's,
+which gives 36000 bit/s upstream with the precoder alone (V.34's is 31200
+there; 38667 makes a few errors).
+
+With the prefilter (6.4.2/V.92; `DSP_V92_PREFILTER=0` turns it off) the
+analogue modem's points are G.711's own levels, so that what reaches the
+network's codec is a level it passes unchanged. The design, from the
+last 3584 symbols of TRN2u:
+
+- the channel, ch (24 taps before the main one, 40 after), by least
+  squares from the TRN2u decisions to the received samples, and the noise
+  (the fit's error less the codec's quantisation, plus the fit's own
+  estimation error);
+- the prefilter w (64 taps, z2 in Q0.15 with 4G in Q0.16) that makes
+  ch * w monic at a delay d (searched up to 40), least squares over the
+  taps before d, and the precoder (32 taps, p1 in Q1.14) the taps after;
+- for each rate, the most widely spaced G.711 levels that keep the
+  prefilter's output power within 1 (M (1 + sum |b|) + 2 of them, even),
+  and a simulation of 4000 symbols of random data through ch, the noise
+  and the codec: the fastest rate with 2 errors or fewer.
+
+The receiver takes the sample at the delay through 9 taps (LMS, for the
+analogue modem's timing as it wanders), less what the channel still has
+of the symbols before B1u, and decides on a grid on which point j is at
+2j + 1 (linear between the levels), for the same Viterbi decoder.
+Through netsim that is 38666 bit/s with mu-law, 40000 to 41333 with
+A-law. The grid mse rises from about 0.012 to 0.04 or so over the first
+half minute (the analogue modem's sampling, under a filter that is not
+adapted to it) without errors: our renegotiation down waits until it is
+0.09 (rms 0.3 of the half distance). With the prefilter we change the
+rate by renegotiation, not a fast parameter exchange: the analogue modem
+takes up the new constellation before B1u of one. In data mode the analogue modem's tone A retrains. The echo canceller (the V.34 pump's,
 trained while we send Sd to Jd) could not be tested: netsim's echo
 (`NET_ECHO`) through its 9600 Hz converters is not one an 8000 Hz
 canceller cancels, for V.90 either.
@@ -464,7 +493,7 @@ retrains.
 
 | Test (`interop_v92_reneg*`) | Result |
 |---|---|
-| ours after 3 s of data, to drn 6 | 56000/36000, then 56000/30666 |
+| ours after 3 s of data, to drn 6 | 56000/38666, then 56000/30666 |
 | noise up from 26 s (60 rms, `NET_NOISE_DIR=ab`) | ours on its own: 56000/24000 |
 
 Fast parameter exchange (9.9/V.92): new rates without training, all in
@@ -483,7 +512,11 @@ decisions switch at that symbol. To the original library ours takes
 0.5 s (a renegotiation about 2): B1d without errors, B1u with a few in
 its first two frames, as after a renegotiation. Our renegotiations go
 up by fast parameter exchange (the same line with less noise), down by
-renegotiation (train again). The original library answers ours but
+renegotiation (train again); with the prefilter both by renegotiation
+(the library then sends SUVu', E2u and FB1u on the new constellation
+already, and starts its precoder and prefilter anew at SUVu, which our
+receiver does not follow: the test runs without the prefilter). The
+original library answers ours but
 starts none (its `V92Modulator::initiateFPE` is only called on our Rf),
 so our answer to RM is not tested.
 
