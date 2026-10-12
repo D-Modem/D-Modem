@@ -855,6 +855,19 @@ static void rs_push(struct rs *r, float x)
 }
 
 static struct rs up, down;      /* line to codec, codec to line */
+
+/* the codec's input noise (SM56_NOISE, rms; 5 by default, about -76 dB
+   of full scale): a line is never digitally silent, and the module's
+   answering automode needs it not to be: its frequency estimate stays
+   at its initial 1800 Hz on exact zeros, which it takes for a V.32
+   caller's AA, and it leaves ANSam for V.32's AC within 40 ms */
+static float noise_rms = 5;
+static float noise(void)
+{
+	static u32 x = 1;
+	x = x * 1664525u + 1013904223u;         /* (the same every run) */
+	return noise_rms * 3.4641f * ((float)(x >> 8) / (1 << 24) - 0.5f);
+}
 static double up_ph;            /* the next codec sample's time after the
 				   line's sample before the newest, in line
 				   samples */
@@ -880,7 +893,7 @@ static short line_sample(short in)
 	int irq_now;
 
 	/* the codec's samples due within this line sample */
-	rs_push(&up, in);
+	rs_push(&up, in + noise());
 	while (up_ph < 1) {
 		codec_sample(sat(rs_at(up.hist, up_ph, r > 1 ? 1 / r : 1)));
 		up_ph += r;
@@ -945,6 +958,8 @@ int main(int argc, char **argv)
 	/* SM56_RATE: the line's sample rate (8000) */
 	if (getenv("SM56_RATE"))
 		line_rate = atoi(getenv("SM56_RATE"));
+	if (getenv("SM56_NOISE"))
+		noise_rms = (float)atof(getenv("SM56_NOISE"));
 	sync_n = getenv("SM56_SYNC") ? (atol(getenv("SM56_SYNC")) + 47) / 48 * 48 : 0;
 	setvbuf(stdout, NULL, _IONBF, 0);
 	memset(&sa, 0, sizeof(sa));

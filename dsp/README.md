@@ -923,8 +923,7 @@ between the line's 8000 Hz and the codec's rate (7200 Hz idle, 9600 Hz
 for V.90). The module is `test/sm56.ko` as Motorola shipped it (sha256
 `a757fd85...`; that build only, the patched places are checked); the
 build renames its imports into `sm56k.o`. `ctest -L sm56 -j8` runs the
-tests. `SM56_DEBUG=1` prints its
-`printk`s.
+tests. `SM56_DEBUG=1` prints its `printk`s.
 
 Its interrupt and deferred routine save the FPU (`fnsave`) to
 `.rodata.cst4` + 0x640 and + 0x644, which runs past that section into
@@ -934,15 +933,30 @@ buffers. The harness points those four instructions at buffers of its own.
 
 | SM56 `AT+MS=` / ours | SM56 caller → open answerer | open caller → SM56 answerer |
 |---|---|---|
-| V34,0 / 34 | CONNECT 33600/LAPM (we receive at 24000) | CONNECT 33600 / 24000 |
+| V34 / 34 | CONNECT 33600/LAPM (we receive at 24000) | CONNECT 33600 / 24000 |
 | V32B,0 / 132 | CONNECT 14400 | CONNECT 14400 |
-| V22B,0 / 122 | NO CARRIER (our answerer gets to data, it does not) | CONNECT 2400 |
+| V92 (its automode) / 122; V22B,0 / 122 | CONNECT 2400/LAPM | CONNECT 2400 |
 | V22,0 / 22, V21,0 / 21 | CONNECT 1200, 300 | the same |
 | V90 / 90 (ours as the digital modem), mu-law and A-law | CONNECT 50666/31200 | - |
 
 Below V.34 its `+MS` wants automode off (`AT+MS=V22` alone is an
-error). Answering with automode on (its default), it goes off hook at
-`ATA` and stays silent; with `AT+MS=V34,0` it answers.
+error). Forced to V.22bis that way (`AT+MS=V22B,0`), it does not connect
+as the caller to a V.22bis answerer that sends the answer tone (ours, the
+Agere modem's): its unscrambled ones detector starts during the 2100 Hz
+tone and takes it for them, and it sends S1 456 ms after the tone ends.
+With the 75 ms silence of V.22bis that is while it already trains on the
+answerer's unscrambled ones, so it misses the answerer's S1 and goes on at
+1200 bit/s, sending S1 again every 2 s. With 600 ms of silence, or none
+(the original library answers without the tone), it connects at 2400. In
+its automode, its default, it calls our V.22bis answerer at 2400, so that
+is the test.
+
+The harness adds noise to the codec's input (`SM56_NOISE`, rms 5, about
+-76 dB of full scale): on exact zeros the module's frequency estimate
+stays at its initial 1800 Hz, which its answering automode takes for a
+V.32 caller's AA. It then leaves ANSam within 40 ms for V.32's AC, and
+a V.34 caller never hears an answer tone. Rms 3 is not enough; rms 10
+costs V.90 a step (45333).
 
 Its V.92: QC1a in V.8 on every call, and on the second call (`CALLS=2`)
 quick connect with short phase 2. Its upstream stays V.34: the module has
