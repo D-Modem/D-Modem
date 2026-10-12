@@ -1116,7 +1116,7 @@ harness clears it before each interrupt (`HSF_KEEP8=1` keeps it). Open:
 our V.21 caller (it answers, but we never connect) and its V.32bis
 caller.
 
-V.92 with PCM upstream connects (52000/41333 over µ-law), with quick
+V.92 with PCM upstream connects (52000/41333, µ-law and A-law), with quick
 connect (it sends QC1a on the first call already) and without (`+PQC=3`).
 It failed at first in phase 3: we waited for its Su to reverse while it
 waited for our Jp. Its Su, Su-bar and Su come as one short burst (Su for
