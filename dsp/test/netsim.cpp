@@ -19,6 +19,8 @@
 #include <string.h>
 #include <unistd.h>
 #include "dsp.h"
+#include "qam.h"
+#include "v34.h"
 
 using namespace dsp;
 
@@ -319,6 +321,119 @@ static void on_wav(int sig)
 	wav_sig++;
 }
 
+/* NET_MOH=ack[:<T1 code>]@<s> or nack@<s>: a V.92 analogue modem's answer
+   to the digital modem's modem-on-hold request (9.10.2.1/V.92), for the
+   modems we test with do not give one.  Once B's tone B (1200 Hz) has
+   been there 50 ms, s seconds or more into the line (phase 2 has tone B
+   too; before A answers it with a retrain's
+   tone A, from about 160 ms on), A is cut off both ways and this sends
+   its tone A for 150 ms, then MHack (T1 code, Table 33/V.92; 1 = 10 s by
+   default) or MHnack, repeated, until B is silent 200 ms (on hold) or
+   sends ANSam (2100 Hz, its fast reconnect after an MHnack); then
+   silence, and A gets the line back with B's ANSam. */
+static int moh_mode;            /* 0 off, 1 MHack, 2 MHnack */
+static float moh_at;
+static int moh_t1 = 1;
+static int moh_st;              /* 0 watching, 1 answering, 2 silent, 3 done */
+static int moh_tone, moh_quiet, moh_ans, moh_blk;
+static float moh_e, moh_g1200[3], moh_g2100[3];
+static QamTx moh_tx;
+static unsigned char moh_bits[40];
+static int moh_pos, moh_n;
+static long moh_syms;
+static float moh_sym = 1;
+
+static cplx moh_symbol(void *)
+{
+	cplx z = { 0, 0 };
+	/* 150 ms of the tone (90 symbols), then the sequence, repeated */
+	if (moh_syms++ >= 90) {
+		if (moh_pos == moh_n)
+			moh_pos = 0;
+		if (moh_bits[moh_pos++])
+			moh_sym = -moh_sym;
+	}
+	z.re = moh_sym;
+	return z;
+}
+
+/* Table 32/V.92: fill, frame sync, the signal and its information (first
+   bit first in time), the CRC of 10.1.2.3.2/V.34, fill */
+static void moh_make(int sig, int info)
+{
+	int i;
+	moh_n = 0;
+	for (i = 0; i < 4; i++)
+		moh_bits[moh_n++] = 1;
+	for (i = 7; i >= 0; i--)
+		moh_bits[moh_n++] = (0x72 >> i) & 1;
+	for (i = 3; i >= 0; i--)
+		moh_bits[moh_n++] = (sig >> i) & 1;
+	for (i = 3; i >= 0; i--)
+		moh_bits[moh_n++] = (info >> i) & 1;
+	unsigned crc = v34_crc_bits(moh_bits + 12, moh_n - 12, 0xFFFF);
+	for (i = 15; i >= 0; i--)
+		moh_bits[moh_n++] = (crc >> i) & 1;
+	for (i = 0; i < 4; i++)
+		moh_bits[moh_n++] = 1;
+	moh_pos = 0;
+}
+
+/* a Goertzel step at f; g: s1, s2, coefficient */
+static void moh_goertzel(float *g, float x)
+{
+	float s0 = x + g[2] * g[0] - g[1];
+	g[1] = g[0];
+	g[0] = s0;
+}
+
+static float moh_power(float *g)
+{
+	float p = g[0] * g[0] + g[1] * g[1] - g[2] * g[0] * g[1];
+	g[0] = g[1] = 0;
+	return p;
+}
+
+/* B's signal, on its way to A: what it does about the request */
+static void moh_watch(float x, int rate, float t)
+{
+	if (t < moh_at)
+		return;
+	int n = rate / 100;     /* 10 ms blocks */
+	if (!moh_g1200[2]) {
+		moh_g1200[2] = 2 * cosf(2 * (float)M_PI * 1200 / rate);
+		moh_g2100[2] = 2 * cosf(2 * (float)M_PI * 2100 / rate);
+	}
+	moh_e += x * x;
+	moh_goertzel(moh_g1200, x);
+	moh_goertzel(moh_g2100, x);
+	if (++moh_blk < n)
+		return;
+	/* the share of the block's energy at the tone */
+	float e = moh_e, t1200 = 2 * moh_power(moh_g1200) / n,
+		t2100 = 2 * moh_power(moh_g2100) / n;
+	moh_blk = 0;
+	moh_e = 0;
+	moh_tone = e > n * 1e4f && t1200 > 0.6f * e ? moh_tone + 1 : 0;
+	moh_ans = e > n * 1e4f && t2100 > 0.6f * e ? moh_ans + 1 : 0;
+	moh_quiet = e < n * 1e3f ? moh_quiet + 1 : 0;
+	if (moh_st == 0 && moh_tone >= 5) {
+		moh_st = 1;
+		moh_syms = 0;
+		moh_sym = 1;
+		moh_make(moh_mode == 1 ? 0x5 : 0x7,
+			 moh_mode == 1 ? moh_t1 : 0x7);
+		fprintf(stderr, "netsim: modem-on-hold request: %s\n",
+			moh_mode == 1 ? "MHack" : "MHnack");
+	} else if (moh_st == 1 && moh_quiet >= 20) {
+		moh_st = 2;
+		fprintf(stderr, "netsim: on hold\n");
+	} else if ((moh_st == 1 || moh_st == 2) && moh_ans >= 5) {
+		moh_st = 3;
+		fprintf(stderr, "netsim: ANSam: the line back to A\n");
+	}
+}
+
 /* samples of one direction: to 8000 Hz G.711 and on */
 static int run(struct dir *d, int a_out, int a_in)
 {
@@ -339,6 +454,12 @@ static int run(struct dir *d, int a_out, int a_in)
 		}
 		if (drop_at >= 0 && t >= drop_at && t < drop_at + drop_ms / 1000)
 			ibuf[i] = 0;
+		/* NET_MOH: A cut off, both ways, while it answers */
+		if (moh_mode && a_in)
+			moh_watch(ibuf[i], d->rate_in, t);
+		if (moh_st == 1 || moh_st == 2)
+			ibuf[i] = a_out && moh_st == 1 ?
+				(short)lrintf(moh_tx.sample()) : 0;
 		if (step_at >= 0 && t >= step_at)
 			ibuf[i] = (short)lrintf(ibuf[i] * step_g);
 		/* the noise of an analogue line: on a 8000 Hz G.711
@@ -502,6 +623,19 @@ int main(int argc, char **argv)
 			!strcmp(getenv("NET_NOISE_DIR"), "bacodes") ? 3 : 0;
 	if (getenv("NET_LOOP"))
 		loop_init(atof(getenv("NET_LOOP")));
+	if (getenv("NET_MOH")) {
+		const char *e = getenv("NET_MOH");
+		moh_mode = !strncmp(e, "ack", 3) ? 1 :
+			!strncmp(e, "nack", 4) ? 2 : 0;
+		if (moh_mode == 1 && e[3] == ':')
+			moh_t1 = atoi(e + 4) & 15;
+		if (strchr(e, '@'))
+			moh_at = atof(strchr(e, '@') + 1);
+		/* A's INFO modulation: 600 baud DPSK at 2400 Hz (the
+		   analogue modem answers in phase 2), at INFO's level */
+		moh_tx.init(ra, 2400, 600, 0.5f, 4, 1, 2988 * 1.41421f);
+		moh_tx.get_symbol = moh_symbol;
+	}
 	if (getenv("NET_FLOOR"))
 		floor_rms = atof(getenv("NET_FLOOR"));
 	if (getenv("NET_STEP")) {

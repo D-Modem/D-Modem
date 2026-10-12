@@ -2385,6 +2385,8 @@ int V34Pump::handshake()
 	if (ev_mh) {
 		ev_mh = 0;
 		mh_event();
+		/* (it may have started a state) */
+		c = count;
 	}
 
 	switch (state) {

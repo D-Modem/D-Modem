@@ -382,8 +382,20 @@ retrain (the library frames our MH sequences, but as INFO0 in its
 retrain, with a bad CRC; it looks for MH only in its own requests).
 `interop_v92_moh_request` (PCM upstream) and `agere_v92_moh_request`
 (V.90) ask for it in the middle of the data (`MIDCALL_B`) and check that
-the call goes on; the MHack and MHnack branches have no peer to test
-them against.
+the call goes on.
+
+For the MHack and MHnack branches netsim stands in for an analogue
+modem that answers (`NET_MOH=ack[:<T1 code>]@<s>` or `nack@<s>`): from s
+seconds into the line, once our tone B has been there 50 ms, it cuts the
+modem off both ways and sends tone A, then MHack or MHnack, until we go
+silent (on hold) or send ANSam, and gives the line back with ANSam.
+`interop_v92_moh_request_ack` (T1 10 s, `AT+PMHR=5`) and `_nack` check
+the sequence in our log (`EXPECT_DROP` of interop.py: the call is to
+end): MHack, 5 s on hold, ANSam; MHnack, 300 ms of MHfrr, ANSam. The
+original library behind it has been cut off in a retrain and hangs up,
+so nothing comes back and we disconnect after T1: the way back (CM or
+QC1a after our ANSam) is the same as after the analogue modem's own
+hold, which `agere_v92_moh_grant` tests.
 
 ### V.92 PCM upstream
 

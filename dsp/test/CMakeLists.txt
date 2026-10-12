@@ -40,7 +40,8 @@ target_link_libraries(dsp_loopback PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_test_exe(pump_test pump_test.cpp)
 target_link_libraries(pump_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_gtest(pump_test LABELS quick)
-dmodem_test_exe(netsim netsim.cpp ${S}/dsp_util.cpp)
+dmodem_test_exe(netsim netsim.cpp ${S}/dsp_util.cpp ${S}/qam.cpp
+	${S}/v34_tables.cpp)
 # the fax without a core: the modulations, T.4 and TIFF, two T.30 machines
 find_program(TIFFCP tiffcp)
 dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp ${S}/t30.cpp
@@ -288,6 +289,20 @@ add_test(NAME interop_v92_moh_request COMMAND ${Python3_EXECUTABLE}
 	"ATX3;AT+MS=92")
 set_tests_properties(interop_v92_moh_request PROPERTIES LABELS interop
 	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=30;BLOB_V92FULL=1;MIDCALL_B=8:AT+PMHR\;WAIT 6;EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.92 retrained")
+# and with an analogue modem that answers it (netsim's NET_MOH stands in
+# for one from 22 s on: the original library does not): MHack, the remote
+# on hold for 5 s, ANSam; MHnack, MHfrr and ANSam. The original library
+# is cut off meanwhile and hangs up, so nothing comes back to ANSam and we
+# disconnect after T1 (10 s)
+foreach(_m ack nack)
+	add_test(NAME interop_v92_moh_request_${_m} COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>
+		"ATX3;AT+MS=92")
+endforeach()
+set_tests_properties(interop_v92_moh_request_ack PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=40;BLOB_V92FULL=1;NET_MOH=ack:1@22;MIDCALL_B=12:AT+PMHR=5\;WAIT 8;EXPECT_DROP=1;EXPECT_B=(?s)MHack, T1 10 s: the remote on hold for 5 s.*on hold, ANSam for 10 s.*on hold for T1: disconnect")
+set_tests_properties(interop_v92_moh_request_nack PROPERTIES LABELS interop
+	ENVIRONMENT "${_env};NET=9600:8000:ulaw;STREAM=35;BLOB_V92FULL=1;NET_MOH=nack@22;MIDCALL_B=12:AT+PMHR\;WAIT 3;EXPECT_DROP=1;EXPECT_B=(?s)MHnack: MHfrr.*on hold \\(reconnect\\), ANSam.*on hold for T1: disconnect")
 # without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream
 add_test(NAME interop_v92_nopcmup COMMAND ${Python3_EXECUTABLE}
 	${_py}/interop.py $<TARGET_FILE:half_blob> $<TARGET_FILE:half_open8>

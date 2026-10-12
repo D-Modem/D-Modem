@@ -248,6 +248,11 @@ elif bulk_n:
         pump(0.05)
 else:
     os.write(fd["modemA"], msg_a); os.write(fd["modemB"], msg_b)
+# EXPECT_DROP=1: the call is to end on the way (EXPECT_B says how), the
+# data is not checked
+if os.environ.get("EXPECT_DROP"):
+    pump(1)
+    done(True)
 # 10 bits a character, and half as much again for V.42 framing
 end = time.time() + 40 + stream + 15.0 * max(len(msg_a), len(msg_b)) / rate
 while time.time() < end and (len(buf["modemB"]) < len(msg_a) or len(buf["modemA"]) < len(msg_b)):
