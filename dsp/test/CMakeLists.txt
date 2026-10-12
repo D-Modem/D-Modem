@@ -344,13 +344,16 @@ if(TARGET half_agere)
 	# the first call and starts the second with QC1a, and short phase 2.
 	# NET_LOOP: our PCM signal reaches it through an analogue loop (on an
 	# ideal line, the same samples as ours, its V.90 training fails at
-	# some delays, every 48 samples)
+	# some delays, every 48 samples); not half a sample: then our sample
+	# instants fall exactly between its samples, and at some alignments
+	# (AGERE_SYNC_PHASE 96, 288) it takes 33333 bit/s downstream for
+	# 53333
 	add_test(NAME agere_v92_qc COMMAND ${Python3_EXECUTABLE}
 		${_py}/interop.py $<TARGET_FILE:half_agere>
 		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V92;AT+PQC=0")
 	set_tests_properties(agere_v92_qc PROPERTIES LABELS agere
 		RUN_SERIAL TRUE ENVIRONMENT
-		"${_env};NET_LOOP=0.5;NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2;PROTO_B=ATX3\;AT+MS=92")
+		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;CALLS=2;DIAL=5551234;STREAM=3;EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2;PROTO_B=ATX3\;AT+MS=92")
 	# V.90: the Agere modem as the analogue modem, the open one as the
 	# digital modem (both at 8000 Hz)
 	foreach(_law ulaw alaw)
@@ -359,8 +362,15 @@ if(TARGET half_agere)
 			$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
 		set_tests_properties(agere_v90_${_law} PROPERTIES LABELS agere
 			ENVIRONMENT
-			"${_env};NET_LOOP=0.5;NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
+			"${_env};NET_LOOP=0.45;NET=8000:8000:${_law};DSP_G711=${_law};PROTO_B=ATX3\;AT+MS=90")
 	endforeach()
+	# at the alignment that took 33333 bit/s with half a sample of delay
+	add_test(NAME agere_v90_phase96 COMMAND ${Python3_EXECUTABLE}
+		${_py}/interop.py $<TARGET_FILE:half_agere>
+		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
+	set_tests_properties(agere_v90_phase96 PROPERTIES LABELS agere
+		ENVIRONMENT
+		"${_env};NET_LOOP=0.45;AGERE_SYNC_PHASE=96;NET=8000:8000:ulaw;DSP_G711=ulaw;EXPECT_B=V.90 connect 5[0-9]{4}/;PROTO_B=ATX3\;AT+MS=90")
 	# V.90 rate renegotiation: ours to 19 200 bit/s upstream (the Agere
 	# modem's own, as noise on the PCM codes rises, come too late for a
 	# test, if at all)
@@ -369,7 +379,7 @@ if(TARGET half_agere)
 		$<TARGET_FILE:half_open8> "ATX3;AT+MS=V90")
 	set_tests_properties(agere_v90_reneg_open PROPERTIES LABELS agere
 		ENVIRONMENT
-		"${_env};NET_LOOP=0.5;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=15;DSP_V34_RENEG=5000:8;EXPECT_B=V.90 renegotiated [0-9]+/19200;PROTO_B=ATX3\;AT+MS=90")
+		"${_env};NET_LOOP=0.45;NET=8000:8000:ulaw;DSP_G711=ulaw;STREAM=15;DSP_V34_RENEG=5000:8;EXPECT_B=V.90 renegotiated [0-9]+/19200;PROTO_B=ATX3\;AT+MS=90")
 	# class 1 fax both ways at 8000 Hz
 	foreach(_m 24 48 72 96 73 97 121 122 145)
 		add_test(NAME agere_fax_${_m}_agere_sends COMMAND

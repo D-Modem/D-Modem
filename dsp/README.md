@@ -301,6 +301,15 @@ analogue modem may come to phase 2 after our INFO0d is over (the
 original library does): once its INFO0a is in, INFO0d goes out once more
 with the acknowledgement.
 
+QC1a comes twice, and the analogue modem goes on with CM after it until
+it hears QCA1d. The first QC1a starts as the V.21 receiver picks up the
+carrier, so its sync is taken with fewer than its ten leading ones: the
+Agere modem kept sending CM when our QCA1d came only after the second
+one (at some delays of the line). If it misses QCA1d all the same, the
+CM it goes on with is answered with JM (V.8, full phase 2); TONEq, V.21's
+low channel mark, counts only after 128 ms without that channel's space,
+so that CM's runs of marks do not pass for it.
+
 The original library sends QC1a on every call, the Agere modem (with
 `AT+PQC=0`) on a second call to a number it has connected to before.
 Both then connect at V.90.
@@ -462,7 +471,14 @@ The Agere modem's V.90 training failed at some delays of the line, in
 a pattern that repeats every 48 samples (its codec's blocks), with the
 line handing it our PCM values as they are, sample for sample. Through
 an analogue loop (netsim's `NET_LOOP`, a fraction of a sample of delay
-and a high pass) it trains at every delay; the Agere tests use that.
+and a high pass) it trains at every delay; the Agere tests use that,
+with 0.45 of a sample. Not 0.5: with no clock offset and no noise, our
+sample instants then fall exactly between the Agere's samples, and at
+some alignments of the call to its codec's blocks (`AGERE_SYNC_PHASE`
+96 and 288 of 4800) it judges TRN2d badly and takes 33333 bit/s
+downstream instead of 53333. At 0.45 and 0.55 every alignment gets 53333
+or 54666, at 0.3 52000; the signal is the same, so this is the Agere
+receiver's tie, not ours (`agere_v90_phase96` keeps that alignment).
 
 ### V.91 digital to digital
 

@@ -384,6 +384,7 @@ struct V34Pump : Pump {
 	int qc_lapm;
 	int info0_again;        /* INFO0d sent again (after QC) */
 	Goertzel toneq_g;       /* TONEq, 980 Hz */
+	Goertzel toneq_space_g; /* V.21(L)'s space, 1180 Hz: CM, not TONEq */
 	int toneq_blocks;
 	int v8_remote_n;
 	/* answer tone analysis (caller) */
@@ -809,10 +810,16 @@ void V34Pump::v8_rx_bit(int bit)
 			qc_frame = f;
 		}
 	}
-	if (v8_sr == 0xAABFF) {
+	/* its sync, 0101010101, after the ten ones; of the first of the
+	   two, the receiver may have only the last few ones yet (the
+	   analogue modem starts QC1a right on ANSam's 1 s, and answers
+	   only a QCA1d to the first well: the Agere modem went on with
+	   CM when ours came after the second) */
+	if ((v8_sr & 0xFFFC0) == 0xAABC0 && qc_n < 0) {
 		if (dsplibs_debug_level >= 6)
-			DSP_DBG("v34: QC sync at %ld ms\n",
-				total * 1000 / srate);
+			DSP_DBG("v34: QC sync at %ld ms (%s ones)\n",
+				total * 1000 / srate,
+				(v8_sr & 0x3F) == 0x3F ? "ten" : "fewer");
 		qc_n = 0;
 		return;
 	}
@@ -1569,10 +1576,13 @@ void V34Pump::pump_rx_sample(float x)
 			else
 				aa_blocks = 0;
 		}
-		if ((state == QCA_ANSPCM || state == QCA_TONEQ) &&
-		    toneq_g.run(x))
-			toneq_blocks = toneq_g.power > tone_power(150) ?
-				toneq_blocks + 1 : 0;
+		if (state == QCA_ANSPCM || state == QCA_TONEQ) {
+			toneq_space_g.run(x);
+			if (toneq_g.run(x))
+				toneq_blocks = toneq_g.power > tone_power(150) &&
+					toneq_space_g.power < toneq_g.power / 10 ?
+					toneq_blocks + 1 : 0;
+		}
 		return;
 	}
 	if (prx_on) {
@@ -2246,20 +2256,30 @@ int V34Pump::handshake()
 			out_n--;
 			pcm_tx = 1;
 			toneq_g.init(980, PROBE_PERIOD, srate);
+			toneq_space_g.init(1180, PROBE_PERIOD, srate);
 			toneq_blocks = 0;
 			set_state(QCA_ANSPCM);
 		}
 		break;
 	case QCA_ANSPCM:
 		/* TONEq: the analogue modem has heard ANSpcm (and checked
-		   it); within 2 s of QCA1d, or V.8 after all.  Not before
-		   ANSpcm: TONEq is V.21's low channel mark (980 Hz), and the
-		   end of the analogue modem's CM, as it stops for our QCA1d,
-		   has it as well (we cut QTS short, and the original library
-		   then hung, waiting for QTS-bar) */
+		   it); within 2 s of QCA1d, or V.8 after all.  TONEq is
+		   V.21's low channel mark (980 Hz), so 128 ms of it without
+		   that channel's space (CM has runs of marks), and not
+		   before ANSpcm: the end of the analogue modem's CM, as it
+		   stops for our QCA1d, has it as well (we cut QTS short, and
+		   the original library then hung, waiting for QTS-bar) */
 		if (v90tx.seg != V90_ANSPCM)
 			toneq_blocks = 0;
-		if (toneq_blocks >= 5) {
+		if (v8_ok) {
+			/* CM: it missed our QCA1d and went on with V.8
+			   (9.2.1.1/V.92); answer that with JM */
+			DSP_DBG("v34: CM after QCA1d: V.8\n");
+			pcm_tx = 0;
+			v90tx.fclock = NULL;
+			txm = TXM_ANSAM;
+			set_state(V8A_ANSAM);
+		} else if (toneq_blocks >= 16) {
 			DSP_DBG("v34: TONEq heard\n");
 			v90tx.segment(V90_SILENCE);
 			/* the analogue modem's INFO0a follows its 75 ms of
