@@ -174,6 +174,23 @@ if(EXISTS "${DMODEM_SM56_KO}")
 	message(STATUS "tests: the Motorola SM56 soft modem: ${DMODEM_SM56_KO}")
 endif()
 
+# PCTel's HSP soft modem as a peer (half_pctel.c): pctel-0.9.7-9's Intel
+# AMR data pumps (lib/amr/dsp.a) and controller (lib/control.a), linked
+# as they are
+set(DMODEM_PCTEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/pctel" CACHE
+	PATH "dsp.o and control.o of the PCTel HSP soft modem (interop tests)")
+if(EXISTS "${DMODEM_PCTEL_DIR}/dsp.o" AND EXISTS "${DMODEM_PCTEL_DIR}/control.o")
+	add_executable(half_pctel half_pctel.c ${DMODEM_PCTEL_DIR}/dsp.o
+		${DMODEM_PCTEL_DIR}/control.o)
+	set_source_files_properties(${DMODEM_PCTEL_DIR}/dsp.o
+		${DMODEM_PCTEL_DIR}/control.o PROPERTIES EXTERNAL_OBJECT TRUE)
+	target_compile_options(half_pctel PRIVATE ${DMODEM_M32} -g -O1)
+	target_link_options(half_pctel PRIVATE ${DMODEM_M32} -no-pie
+		-Wl,-z,noexecstack)
+	target_link_libraries(half_pctel PRIVATE m)
+	message(STATUS "tests: the PCTel HSP soft modem: ${DMODEM_PCTEL_DIR}")
+endif()
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(NOT Python3_FOUND)
 	return()
