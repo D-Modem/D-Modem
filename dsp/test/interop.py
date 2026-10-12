@@ -14,6 +14,11 @@
 # are written next to this script (modemA.log, modemB.log).
 import os, re, select, subprocess, sys, time, tty, threading
 exe_a, exe_b = sys.argv[1], sys.argv[2]
+# the modems take the DTE's commands at fixed samples of the line
+# (PIPE_SYNC, AGERE_SYNC; 0: as they come), so that a call meets the
+# other modem at the same alignment every run
+os.environ.setdefault("PIPE_SYNC", "4800")
+os.environ.setdefault("AGERE_SYNC", os.environ["PIPE_SYNC"])
 proto = sys.argv[3] if len(sys.argv) > 3 else ""
 d = os.path.dirname(os.path.abspath(__file__))
 ab_r, ab_w = os.pipe()   # A -> B
@@ -105,10 +110,11 @@ for k in fd:
 # connect); DIAL=<number> to dial
 for call in range(int(os.environ.get("CALLS", "1"))):
     if call:
-        # hang up: escape both, ATH, wait for the line to clear
+        # hang up: escape both (their OK, after the guard time), ATH and
+        # its OK, then wait for the line to clear
         time.sleep(1.5)
-        for k in fd: os.write(fd[k], b"+++")
-        time.sleep(1.5)
+        for k in fd: buf[k] = b""; os.write(fd[k], b"+++")
+        for k in fd: wait(k, b"OK", 5)
         for k in fd:
             buf[k] = b""
             cmd(k, "ATH")
