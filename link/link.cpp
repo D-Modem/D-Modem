@@ -120,16 +120,30 @@ void Link::detected(bool ec)
 	}
 }
 
-/* the data pump is gone: marks out, bits in dropped (the bit timer is
-   left as it is) */
-void Link::stop()
+/* the detection phase ends without a result: its timer (T400, the
+   ADPs') must not report the link up after the hangup */
+void Link::end_detect()
 {
+	if (mode_ != Mode::Detect)
+		return;
+	timer_ = 0;
+	timer_fn_ = nullptr;
 	mode_ = Mode::Idle;
 }
 
-/* we hang up: LAPM sends DISC; nothing in the other modes */
+/* the data pump is gone: marks out, bits in dropped (LAPM's bit timer
+   is left as it is; the detection phase's ends) */
+void Link::stop()
+{
+	end_detect();
+	mode_ = Mode::Idle;
+}
+
+/* we hang up: LAPM sends DISC; the detection phase ends; nothing in the
+   other modes */
 void Link::disconnect()
 {
+	end_detect();
 	if (mode_ != Mode::Lapm)
 		return;
 	timer_ = 0;
@@ -184,18 +198,20 @@ int Link::put_bits(int nbits, const uint8_t *buf, int n)
 	return n;
 }
 
-/* XID: V.44 if both have it (the smaller of the two modems' parameters,
-   the same both ways), else the remote's V.42bis parameters (6.4/V.42bis),
-   ours if it asks for none */
+/* XID: the directions both modems want (remote's P0, already from our
+   side, and ours); V.44 if both have it, else V.42bis, either with the
+   smaller of the two modems' parameters, the same both ways (6.4/V.42bis);
+   no compression if they cannot be had */
 void Link::update_config(const Config &remote)
 {
-	if (remote.comp && cfg_.comp && remote.v44 && cfg_.v44 &&
-	    enc44_.ready()) {
+	int dir = remote.comp & cfg_.comp;
+
+	if (dir && remote.v44 && cfg_.v44 && enc44_.ready()) {
 		int n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
 		int n7 = std::min(cfg_.v44_max_string, remote.v44_max_string);
 		int n8 = std::min(cfg_.v44_history, remote.v44_history);
 		if (!enc44_.config(n2, n7, n8) && !dec44_.config(n2, n7, n8)) {
-			cfg_.comp = remote.comp;
+			cfg_.comp = dir;
 			cfg_.v44_codewords = n2;
 			cfg_.v44_max_string = n7;
 			cfg_.v44_history = n8;
@@ -207,17 +223,17 @@ void Link::update_config(const Config &remote)
 		logf("err: v44: setup failed (%d/%d/%d).", n2, n7, n8);
 	}
 	cfg_.v44 = false;
-	if (remote.comp && cfg_.comp) {
-		cfg_.comp = remote.comp;
-		if (!enc_.config(remote.dict_size, remote.max_string) &&
-		    !dec_.config(remote.dict_size, remote.max_string)) {
-			cfg_.dict_size = remote.dict_size;
-			cfg_.max_string = remote.max_string;
+	cfg_.comp = 0;
+	if (dir) {
+		int n2 = std::min(cfg_.dict_size, remote.dict_size);
+		int n7 = std::min(cfg_.max_string, remote.max_string);
+		if (!enc_.config(n2, n7) && !dec_.config(n2, n7)) {
+			cfg_.comp = dir;
+			cfg_.dict_size = n2;
+			cfg_.max_string = n7;
 		} else
-			logf("err: v42bis: setup failed (%d/%d).",
-			     remote.dict_size, remote.max_string);
-	} else
-		cfg_.comp = 0;
+			logf("err: v42bis: setup failed (%d/%d).", n2, n7);
+	}
 	owner_->negotiated(cfg_);
 }
 

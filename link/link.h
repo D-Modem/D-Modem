@@ -139,6 +139,7 @@ public:
 	bool push_pending = false;
 
 private:
+	void end_detect();
 	enum class Mode { Idle, Detect, Lapm, Async };
 	void detected(bool ec);
 	int comp_read(uint8_t *buf, int n);

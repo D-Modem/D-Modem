@@ -460,7 +460,7 @@ int Hdlc::put_bits(int nbits, const uint8_t *buf, int n)
 				else if (i)
 					link_->logf("hdlc frame integrity "
 						    "error.");
-				else if (f->count < 3)
+				else if (f->count < 4)  /* address, control, FCS */
 					link_->logf("hdlc frame size error.");
 				else if (f->fcs != GOOD_FCS)
 					link_->logf("hdlc frame fcs error.");

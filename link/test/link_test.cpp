@@ -237,6 +237,37 @@ TEST(Link, V42bis)
 }
 
 
+/* the decoder takes STEPUP up to log2(N2) bits a codeword and no
+   further (C-ERROR): with N2 = 2048, 9 -> 10 -> 11, not 12 */
+static int v42bis_stepups(int n)
+{
+	V42bis dec;
+	dec.init(2048, 34);
+	if (dec.decode(0) < 0 || dec.decode(0) < 0)   /* escape, ECM */
+		return -2;
+	uint32_t bits = 0;
+	int len = 0, size = 9, ret = 0;
+	for (int i = 0; i < n; i++) {
+		bits |= 2u << len;      /* STEPUP */
+		len += size++;
+		while (len >= 8 && ret >= 0) {
+			ret = dec.decode((uint8_t)bits);
+			bits >>= 8;
+			len -= 8;
+		}
+	}
+	if (len && ret >= 0)
+		ret = dec.decode((uint8_t)bits);
+	return ret;
+}
+
+TEST(Link, V42bisStepup)
+{
+	CHECK(v42bis_stepups(2) >= 0, "two STEPUPs (to 11 bits) taken");
+	CHECK(v42bis_stepups(3) < 0, "a third STEPUP (12 bits) is C-ERROR");
+}
+
+
 /*
  *    HDLC
  *
@@ -483,6 +514,40 @@ TEST(Link, Lapm)
 	CHECK(p.dc.released, "caller released after UA");
 }
 
+/* frames LAPM must drop: an I frame of two octets (no second control
+   octet; it crashed with a negative length) and one with 300 octets of
+   information, more than N401, while the DTE takes nothing (it ran past
+   the buffer kept for the DTE); the link goes on */
+TEST(Link, LapmBadFrames)
+{
+	rnd_state = 12345;
+	Pair p(lapm_config(0), lapm_config(0));
+	p.start(true, true);
+	p.run(9600 * 3);
+	CHECK(p.dc.up && p.da.up, "LAPM up");
+	NullOwner o;
+	Link l;
+	l.init(&o, true, Config());
+	Hdlc inj;
+	FrameSource src;
+	inj.start(&l);
+	inj.set_framer(&src, true);
+	src.tx.push_back({ 0x03, 0x00 });
+	std::vector<uint8_t> big(3 + 300, 0x55);
+	big[0] = 0x03;
+	big[1] = big[2] = 0x00;         /* N(S) 0, N(R) 0 */
+	src.tx.push_back(big);
+	p.da.accept = 0;
+	uint8_t bits[600];
+	for (int k = 0; k < 20; k++) {
+		inj.get_bits(1, bits, sizeof(bits));
+		p.la.put_bits(1, bits, sizeof(bits));
+	}
+	p.da.accept = 1 << 30;
+	CHECK(p.da.got.empty(), "nothing of them to the DTE");
+	transfer("lapm after bad frames", p, 2000, 2000, 9600 * 20);
+}
+
 /* V.42bis when one of them has no V.44 (as the caller, as the
    answerer) */
 TEST(Link, LapmV42bis)
@@ -516,19 +581,84 @@ TEST(Link, LapmNoCompression)
 	transfer("lapm, no v42bis", p, 20000, 20000, 9600 * 60);
 }
 
+/* one direction only: an answerer that only decodes (P0 counts from the
+   caller, the XID's initiator: it answers 1, which is the caller's
+   encoder); with V.42bis and with V.44 */
+TEST(Link, LapmOneDirection)
+{
+	rnd_state = 12345;
+	for (int v44 = 0; v44 < 2; v44++) {
+		Pair p(lapm_config(3, v44), lapm_config(1, v44));
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(p.dc.up && p.da.up, "LAPM up");
+		CHECK(p.lc.config().comp == 2 && p.la.config().comp == 1,
+		      "the caller compresses, the answerer decodes (%d, %d)",
+		      p.lc.config().comp, p.la.config().comp);
+		transfer(v44 ? "lapm, v44 caller to answerer only" :
+			 "lapm, v42bis caller to answerer only", p, 20000,
+			 20000, 9600 * 60);
+	}
+}
+
+/* V.42bis parameters: each the smaller of the two (6.4/V.42bis), also
+   when the caller's N2 is the larger and its N7 the smaller */
+TEST(Link, LapmV42bisParameters)
+{
+	rnd_state = 12345;
+	Config cc = lapm_config(3, false), ca = lapm_config(3, false);
+	cc.dict_size = 2048;
+	cc.max_string = 16;
+	ca.dict_size = 1024;
+	ca.max_string = 34;
+	Pair p(cc, ca);
+	p.start(true, true);
+	p.run(9600 * 3);
+	CHECK(p.dc.up && p.da.up, "LAPM up");
+	CHECK(p.lc.config().comp == 3 && p.la.config().comp == 3,
+	      "V.42bis both ways");
+	CHECK(p.lc.config().dict_size == 1024 &&
+	      p.la.config().dict_size == 1024 &&
+	      p.lc.config().max_string == 16 &&
+	      p.la.config().max_string == 16,
+	      "N2 1024, N7 16 on both (%d/%d, %d/%d)",
+	      p.lc.config().dict_size, p.lc.config().max_string,
+	      p.la.config().dict_size, p.la.config().max_string);
+	transfer("lapm, v42bis 1024/16", p, 20000, 20000, 9600 * 60);
+}
+
 /* bit errors: REJ and T401 recovery, and no link error */
 TEST(Link, LapmBitErrors)
 {
 	rnd_state = 12345;
-	Pair p(lapm_config(3), lapm_config(3));
-	p.start(true, true);
-	p.run(9600 * 3);
-	CHECK(p.dc.up && p.da.up, "LAPM up");
-	p.ber = 2e-4;
-	transfer("lapm + v42bis, bit errors 2e-4", p, 30000, 30000,
-		 9600 * 120);
-	CHECK(p.errors > 10, "errors were injected (%ld)", p.errors);
-	CHECK(!p.dc.error && !p.da.error, "no link error");
+	for (int v44 = 1; v44 >= 0; v44--) {
+		Pair p(lapm_config(3, v44), lapm_config(3, v44));
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(p.dc.up && p.da.up, "LAPM up");
+		p.ber = 2e-4;
+		transfer(v44 ? "lapm + v44, bit errors 2e-4" :
+			 "lapm + v42bis, bit errors 2e-4", p, 30000, 30000,
+			 9600 * 120);
+		CHECK(p.errors > 10, "errors were injected (%ld)", p.errors);
+		CHECK(!p.dc.error && !p.da.error, "no link error");
+	}
+}
+
+/* a hangup in the detection phase (the remote has no V.42: no ADP, so
+   T400 runs): the timer must not bring the link up afterwards */
+TEST(Link, DetectHangup)
+{
+	rnd_state = 12345;
+	Pair p(lapm_config(0), lapm_config(0));
+	p.la.start(true, true);         /* the answerer only: no ODPs */
+	std::vector<uint8_t> b(48);
+	for (int k = 0; k < 20; k++)
+		p.la.get_bits(1, b.data(), 48);
+	p.la.disconnect();
+	for (int k = 0; k < 9600 * 3 / 48; k++)
+		p.la.get_bits(1, b.data(), 48);
+	CHECK(!p.da.up && !p.da.detected, "no link after the hangup");
 }
 
 /* a DTE that takes 7 characters at a time: RNR, the rest later */

@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 
 #include <string>
@@ -62,9 +63,12 @@ static std::string unescape(const char *s)
 		case 'r': r += '\r'; break;
 		case 'n': r += '\n'; break;
 		case 'x': {
-			char h[3] = { s[1], s[2], 0 };
+			/* up to two hex digits, as many as there are */
+			char h[3] = { 0, 0, 0 };
+			for (int k = 0; k < 2 && isxdigit((unsigned char)s[1]);
+			     k++)
+				h[k] = *++s;
 			r += (char)strtoul(h, nullptr, 16);
-			s += 2;
 			break;
 		}
 		default: r += *s; break;

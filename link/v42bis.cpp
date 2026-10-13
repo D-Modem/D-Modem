@@ -214,11 +214,13 @@ int V42bis::decode(uint8_t in)
 				case CCW_STEPUP:
 					cw_size_++;
 					threshold_ <<= 1;
-					if (cw_size_ > (dict_size_ >> 3))
+					/* C2 up to log2(N2) (7.6/V.42bis) */
+					if (1 << (cw_size_ - 1) >= dict_size_)
 						return -1;      /* C-ERROR */
 					break;
 				default:
-					if (cw == next_free_)
+					if (cw == next_free_ ||
+					    cw >= (unsigned)dict_size_)
 						return -1;
 					ret += recv_data(cw);
 					if (update_at_) {

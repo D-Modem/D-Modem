@@ -358,7 +358,7 @@ bool V44::read_token(int *type, uint32_t *value)
 	if (b) {
 		if (stepup_) {
 			stepup_ = false;
-			if ((1u << c2_) > (uint32_t)n2_)
+			if ((1u << c2_) >= (uint32_t)n2_)
 				return true;            /* an error */
 			c2_++;
 		}

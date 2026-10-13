@@ -989,6 +989,9 @@ int Modem::stop_call()
 {
 	DBG("modem_stop..\n");
 	run_ = Run::None;
+	/* nothing due for this call may reach the next one (a caller ID
+	   stop armed between rings would end a dial 4 s in) */
+	later_ = Later::None;
 	if (started_) {
 		int ret = host_.stop(*this);
 		started_ = ret != 0;

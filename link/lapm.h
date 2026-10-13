@@ -73,7 +73,7 @@ private:
 	int tx_unnum(uint8_t addr, uint8_t ctrl);
 	int tx_super(uint8_t addr, uint8_t ctrl, int pf);
 	int tx_xid(uint8_t addr);
-	void rx_xid(Frame *f);
+	void rx_xid(Frame *f, bool response);
 	int tx_info();
 	int reject_info();
 	int ack_info(uint8_t nr);

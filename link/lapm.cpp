@@ -234,7 +234,15 @@ static void rx_v44(Config &cfg, const uint8_t *p, int len)
    remote's V.42bis private parameters and V.44 user data subfield to
    the Link (update_config()); without the general format identifier
    it is ignored */
-void Lapm::rx_xid(Frame *f)
+/* V.42bis's and V.44's P0 count from the XID's initiator (bit 0: the
+   initiator to the responder); Config::comp from us (bit 0: what we
+   receive): the same at the responder, swapped at the initiator */
+static int p0_swap(int p0)
+{
+	return (p0 >> 1 & 1) | (p0 & 1) << 1;
+}
+
+void Lapm::rx_xid(Frame *f, bool response)
 {
 	/* what the remote asks for; V.42bis off unless it asks */
 	Config cfg;
@@ -314,6 +322,9 @@ void Lapm::rx_xid(Frame *f)
 	cfg.rx_win = (int)rx_win_;
 	cfg.tx_info = (int)tx_info_;
 	cfg.rx_info = (int)rx_info_;
+	/* (a response: we sent the command) */
+	if (response)
+		cfg.comp = p0_swap(cfg.comp);
 	link_->update_config(cfg);
 }
 
@@ -333,6 +344,8 @@ int Lapm::tx_xid(uint8_t addr)
 	const Config &c = link_->cfg();
 	int len = 0, glen;
 	uint32_t v;
+	/* P0 from the initiator's side in a command (see p0_swap()) */
+	uint8_t p0 = (uint8_t)(addr == rsp_addr_ ? c.comp : p0_swap(c.comp));
 
 	*buf++ = addr;
 	*buf++ = U_XID;
@@ -384,7 +397,7 @@ int Lapm::tx_xid(uint8_t addr)
 		*buf++ = 0x32;
 		*buf++ = PI_V42BIS_REQUEST;
 		*buf++ = 1;
-		*buf++ = (uint8_t)c.comp;
+		*buf++ = p0;
 		*buf++ = PI_V42BIS_CW_NUMBER;
 		*buf++ = 2;
 		*buf++ = (uint8_t)(c.dict_size >> 8);
@@ -407,7 +420,7 @@ int Lapm::tx_xid(uint8_t addr)
 		*buf++ = 0;                     /* the stream method */
 		*buf++ = PI_V44_P0;
 		*buf++ = 1;
-		*buf++ = (uint8_t)c.comp;
+		*buf++ = p0;
 		for (int k = 0; k < 2; k++) {
 			*buf++ = (uint8_t)(PI_V44_N2T + k);
 			*buf++ = 2;
@@ -769,7 +782,7 @@ void Lapm::rx_unnum_cmd(Frame *f)
 		}
 		break;
 	case U_XID:
-		rx_xid(f);
+		rx_xid(f, false);
 		tx_xid(rsp_addr_);
 		break;
 	case U_TEST:            /* optional */
@@ -836,7 +849,7 @@ void Lapm::rx_unnum_rsp(Frame *f)
 		break;
 	case U_XID:
 		if (config_) {
-			rx_xid(f);
+			rx_xid(f, true);
 			config_ = false;
 			timer_stop();
 			if (state_ == IDLE)
@@ -922,8 +935,18 @@ bool Lapm::valid_data_state()
 void Lapm::rx_complete(Frame *f)
 {
 	bool cmd = frame_addr(f) == rsp_addr_;
+	/* I and S frames have two control octets, U frames one; an I frame
+	   no more information than our rx_buf_ holds (N401) */
+	if (f->count < 2 || (frame_type(f) != FRAME_U && f->count < 3)) {
+		EC_ERR("frame too short.");
+		return;
+	}
 	switch (frame_type(f)) {
 	case FRAME_I:
+		if (f->count - 3 > LAPM_MAX_INFO) {
+			EC_ERR("information field too long.");
+			break;
+		}
 		if (valid_data_state())
 			rx_info(f);
 		break;
