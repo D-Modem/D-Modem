@@ -1198,7 +1198,15 @@ to each position it reads past 700, as for a codec that runs fast; the
 harness clears it before each interrupt (`HSF_KEEP8=1` keeps it).
 
 Its V.21 and V.23 answerers work only after V.8. Forced (`+MS=V21,0`,
-`V23C,0`) it stays silent after ATA, also against itself; in automode it
+`V23C,0`) it stays silent after ATA: no answer tone and no mark for a
+minute, against our caller, the Agere, SM56, spandsp and PCTel modems'
+and its own (all of which wait for the answerer, as V.25 has them do),
+and against a 980 Hz V.21 originate mark put on the line from the start
+(netsim, as a test); also with another country (`+GCI`) or the rates
+given (`V21,0,300,300`), and `ATB` is not there. The harness is not the
+cause: forced, its V.22, V.22bis and V.32bis answerers work, its V.21
+caller does (the same FSK transmitter), and so do the V.21 and V.23
+answerers of its automode, through V.8. In automode it
 sends ANSam and, when no CM comes, its 1650 Hz mark, but drops it 2 s
 after the caller's mark (again also against itself, calling with
 `+MS=V21,0`). So our V.21 caller (`AT+MS=21`) did not connect to it
