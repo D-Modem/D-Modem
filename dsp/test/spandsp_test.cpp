@@ -176,6 +176,7 @@ INSTANTIATE_TEST_SUITE_P(Rates, SpandspV17, testing::Values(
 	V17{ 14400, -1 }, V17{ 12000, -1 }, V17{ 9600, -1 }, V17{ 7200, -1 },
 	/* a page, without and with fill bits */
 	V17{ 14400, 0 }, V17{ 14400, 144 }),
+	/* <bps>, and _page_min<bits> for a page */
 	[](const testing::TestParamInfo<V17> &i) {
 		std::string n = std::to_string(i.param.bps);
 		if (i.param.t4_min >= 0)
@@ -231,6 +232,7 @@ TEST_P(SpandspT4, IntoOurLineReceiver)
 INSTANTIATE_TEST_SUITE_P(Codings, SpandspT4, testing::Values(
 	T4Coding{ 1, 0 }, T4Coding{ 1, 144 }, T4Coding{ 2, 0 },
 	T4Coding{ 2, 144 }),
+	/* mh or mr, and _min<bits> */
 	[](const testing::TestParamInfo<T4Coding> &i) {
 		return std::string(i.param.encoding == 1 ? "mh" : "mr") +
 			"_min" + std::to_string(i.param.min_bits);

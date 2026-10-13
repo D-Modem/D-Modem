@@ -23,6 +23,7 @@
 
 using namespace dsp;
 
+/* DSP_DEBUG into the DSP's log level */
 static void debug_level()
 {
 	if (getenv("DSP_DEBUG"))
@@ -49,6 +50,8 @@ protected:
 	Biquad tilt;
 	float noise = 0;
 
+	/* the transmitter's next bit: PRBS 2^23-1, kept in txb; FAX_BIT_END
+	   after maxbits */
 	static int get_bit(void *ctx) {
 		FaxModulation *t = static_cast<FaxModulation *>(ctx);
 		int b;
@@ -59,6 +62,7 @@ protected:
 		t->txb[t->ntx++] = b;
 		return b;
 	}
+	/* a received bit into rxb (2 * maxbits at most) */
 	static void put_bit(void *ctx, int bit) {
 		FaxModulation *t = static_cast<FaxModulation *>(ctx);
 		if (t->nrx < 2 * t->maxbits)
@@ -70,6 +74,11 @@ protected:
 				     int srate, FaxRxMemory *mem);
 };
 
+/* 0.1 s of silence, the signal through a delay of 64 samples, the tilt,
+   a gain of 0.5 and the noise, and silence until the receiver loses
+   the carrier (120 s at most); the offset of the received bits with
+   the fewest errors in the first 256 sent (2000 at most), then every
+   bit sent must have come at it, the last 64 excepted */
 testing::AssertionResult FaxModulation::run(enum fax_mod mod, int short_train,
 					    int srate, FaxRxMemory *mem)
 {
@@ -118,6 +127,8 @@ testing::AssertionResult FaxModulation::run(enum fax_mod mod, int short_train,
 	return testing::AssertionSuccess();
 }
 
+/* a class 1 code at its SNR and sample rate, the noise relative to its
+   transmit level; a short train code after its long train */
 TEST_P(FaxModulation, BitsArriveIntact)
 {
 	const Loopback &p = GetParam();
@@ -142,6 +153,7 @@ TEST_P(FaxModulation, BitsArriveIntact)
 	EXPECT_TRUE(run(mod, short_train, p.srate, &mem));
 }
 
+/* m<code>, then _snr<dB> and _<rate> if not 30 dB and 9600 Hz */
 static std::string loopback_name(const testing::TestParamInfo<Loopback> &i)
 {
 	std::string n = "m" + std::to_string(i.param.code);
@@ -194,6 +206,8 @@ TEST(T4, TiffRoundTrip)
 /* libtiff (tiffcp) codes our document again each way; we read it */
 class T4Libtiff : public testing::TestWithParam<const char *> {};
 
+/* the document through tiffcp -c <coding>: the same pages (skipped
+   without tiffcp) */
 TEST_P(T4Libtiff, ReadsItsCoding)
 {
 	std::string doc = fax_file("doc.tif"), lib = fax_file("lib.tif");
@@ -209,6 +223,7 @@ TEST_P(T4Libtiff, ReadsItsCoding)
 
 INSTANTIATE_TEST_SUITE_P(Compression, T4Libtiff,
 	testing::Values("none", "g3:1d", "g3:2d", "g4"),
+	/* the coding's name, its ':' as '_' */
 	[](const testing::TestParamInfo<const char *> &i) {
 		std::string n = i.param;
 		for (char &c : n)
@@ -234,11 +249,13 @@ struct Doc {
 	TiffOut out;
 };
 
+/* the sender's next page (t30_config next_page): read_page's result */
 static int next_page(void *ctx, T4Page *p)
 {
 	return static_cast<Doc *>(ctx)->in.read_page(p);
 }
 
+/* a page received, into the receiver's TIFF */
 static void page_received(void *ctx, T4Page *p)
 {
 	static_cast<Doc *>(ctx)->out.write_page(p);
@@ -313,6 +330,7 @@ INSTANTIATE_TEST_SUITE_P(Rates, T30Pair, testing::Values(
 	Session{ 4800, false, 0, true }, Session{ 2400, false, 0, true },
 	Session{ 14400, true, 0, false }, Session{ 9600, true, 0, false },
 	Session{ 14400, true, 19, true }),
+	/* <bps>, then _ecm and _snr<dB> as the case has them */
 	[](const testing::TestParamInfo<Session> &i) {
 		std::string n = std::to_string(i.param.bps);
 		if (i.param.ecm)

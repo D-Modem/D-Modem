@@ -157,6 +157,7 @@ struct Modem {
 	std::string pty;
 	std::thread logger;
 
+	/* killed if still there */
 	~Modem() { stop(true); }
 
 	/* exe --debug=<debug> with rfd as its fd 3, wfd as fd 4, MODEM_NAME and
@@ -428,6 +429,7 @@ std::string bulk(size_t n, unsigned seed)
 				out += (char)rnd(256);
 		}
 	}
+	/* no XON (0x11) or XOFF (0x13): the modems' flow control */
 	out.erase(std::remove_if(out.begin(), out.end(), [](char c) {
 		return c == 0x11 || c == 0x13; }), out.end());
 	out.resize(std::min(out.size(), n));
@@ -827,6 +829,7 @@ struct Fail {
 	std::string msg;
 };
 
+/* the fax call failed: msg, thrown to fax_call's catch */
 [[noreturn]] void fail(const std::string &msg) { throw Fail{ msg }; }
 
 const char *const FAX_NAME[2] = { "A", "B" };
@@ -871,6 +874,7 @@ std::string unshield(const std::string &data, bool *ended, size_t *end)
 }
 
 struct FaxDte : Dte {
+	/* polls of 20 ms: the T.30 timing */
 	FaxDte() : Dte(0.02) {}
 
 	/* a result code: the text before it and the code ("" if none came),

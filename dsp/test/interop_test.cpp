@@ -41,6 +41,7 @@ struct Call {
 	bool serial = false;    /* not with other tests (ctest RUN_SERIAL) */
 };
 
+/* the modem programs built (HALF_* defined): the tables' names to paths */
 const std::map<std::string, const char *> &programs()
 {
 	static const std::map<std::string, const char *> p = {
@@ -65,9 +66,12 @@ const std::map<std::string, const char *> &programs()
 	return p;
 }
 
+/* every call of every label, in order */
 std::vector<Call> calls()
 {
 	std::vector<Call> c;
+	/* a call: label, name, the modems a (caller or fax sender) and b,
+	   the AT commands and the environment; the Call, for fax or serial */
 	auto add = [&c](const char *label, std::string name, const char *a,
 			const char *b, std::string proto,
 			std::vector<std::string> env = {}) {
@@ -384,7 +388,7 @@ std::vector<Call> calls()
 	   (9600 Hz) call each other, as the Agere modem's tests.  (Its
 	   automode is off below V.34: +MS=V22 alone is an error.  Calling
 	   at V.22bis it is in automode: forced to V.22bis it takes the
-	   answer tone for unscrambled ones, see the README) */
+	   answer tone for unscrambled ones, see docs/interop.md) */
 	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
 		     { "V21,0", "21" }, { "V22,0", "22" }, { "V22B,0", "122" },
 		     { "V32B,0", "132" }, { "V34", "34" } }) {
@@ -474,7 +478,7 @@ std::vector<Call> calls()
 	/* --- the HSF soft modem (8000 Hz) and the open modem (9600 Hz):
 	   V.22bis, V.32bis and V.34 both ways and V.21 with the HSF modem
 	   calling; V.90 and V.92 (PCM upstream)
-	   with it as the analogue modem (see the README for the calls that
+	   with it as the analogue modem (see docs/interop.md for the calls that
 	   fail) */
 	struct Hsf {
 		const char *n, *ms;
@@ -579,6 +583,7 @@ class Env {
 	std::vector<std::string> unset_;
 
 public:
+	/* NAME=value set, the old value (or none) kept */
 	void set(const std::string &kv)
 	{
 		size_t e = kv.find('=');
@@ -589,6 +594,7 @@ public:
 			unset_.push_back(k);
 		setenv(k.c_str(), kv.substr(e + 1).c_str(), 1);
 	}
+	/* the environment back as it was */
 	~Env()
 	{
 		for (auto &k : unset_)
@@ -602,8 +608,11 @@ class InteropCall : public testing::Test {
 	Call c_;
 
 public:
+	/* the test of call c */
 	explicit InteropCall(Call c) : c_(std::move(c)) {}
 
+	/* the call with its environment and NETSIM, MODEM_REALTIME=1 and its
+	   LOG_DIR set; it must go through */
 	void TestBody() override
 	{
 		Env env;

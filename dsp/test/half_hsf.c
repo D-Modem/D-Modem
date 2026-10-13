@@ -102,6 +102,7 @@ static byte pcidev[64];         /* the handle that stands for the pci_dev */
 
 static int line_rate = 8000;
 static unsigned long long line_n;       /* line samples so far */
+/* ms of line time */
 static unsigned long long now_ms(void) { return line_n * 1000 / line_rate; }
 static void run_time(unsigned ms);
 
@@ -136,6 +137,7 @@ static void on_segv(int sig, siginfo_t *si, void *ctx)
 	signal(sig, SIG_DFL);
 }
 
+/* rdtsc to fault into on_segv (PR_TSC_SIGSEGV); prctl's result */
 static int tsc_init(void)
 {
 	struct sigaction sa;
@@ -161,6 +163,7 @@ char *OS(OsStrnCpy)(char *d, char *s, size_t n) { return strncpy(d, s, n); }
 size_t OS(OsStrLen)(char *s) { return strlen(s); }
 int OS(OsToupper)(int c) { return toupper(c); }
 int OS(OsIsDigit)(int c) { return isdigit(c); }
+/* vsprintf */
 int OS(OsSprintf)(char *b, char *f, ...)
 {
 	va_list ap;
@@ -170,6 +173,7 @@ int OS(OsSprintf)(char *b, char *f, ...)
 	va_end(ap);
 	return n;
 }
+/* the modem's messages: with HSF_DEBUG */
 void OS(OsDebugPrintf)(const char *f, ...)
 {
 	va_list ap;
@@ -191,9 +195,11 @@ void OS(OsErrorPrintf)(const char *f, ...)
 }
 void OS(OsDebugBreakpoint)(const char *m) { LOG("breakpoint: %s\n", m); }
 
+/* atomics: plain; the new value */
 int OS(OsAtomicAdd)(int a, int *p) { return *p += a; }
 int OS(OsAtomicIncrement)(int *p) { return ++*p; }
 int OS(OsAtomicDecrement)(int *p) { return --*p; }
+/* *p = nw if it is old (pointers of 4 bytes only); whether it was */
 int OS(OsAtomicCompareAndSwapEx)(void *old, void *nw, void **p, int size)
 {
 	if (size == 4 || size == (int)sizeof(void *)) {
@@ -207,6 +213,7 @@ int OS(OsAtomicCompareAndSwapEx)(void *old, void *nw, void **p, int size)
 }
 
 static int dummy_handle;
+/* critical sections and locks: one handle, never contended */
 void *OS(OsCriticalSectionCreate)(void) { return &dummy_handle; }
 void OS(OsCriticalSectionDestroy)(void *h) { (void)h; }
 void OS(OsCriticalSectionAcquire)(void *h) { (void)h; }
@@ -217,6 +224,8 @@ void OS(OsLockLock)(void *h) { (void)h; }
 void OS(OsLockUnlock)(void *h) { (void)h; }
 int OS(OsLockTry)(void *h) { (void)h; return 1; }
 void OS(OsLockTryUnlock)(void *h) { (void)h; }
+/* one thread; the TSC at 1000 MHz; floating point free to use; the
+   module's calls without regparm */
 void *OS(OsGetCurrentThread)(void) { return (void *)1; }
 u32 OS(OsGetProcessorFreq)(void) { return 1000; }      /* MHz: the TSC's */
 int OS(OsFloatPrefix)(void) { return 0; }
@@ -250,6 +259,7 @@ struct timer {
 };
 static struct timer *timers;
 
+/* a timer, zeroed, on the list */
 static struct timer *timer_new(void)
 {
 	struct timer *t = calloc(1, sizeof(*t));
@@ -258,6 +268,7 @@ static struct timer *timer_new(void)
 	return t;
 }
 
+/* t off the list, freed */
 static void timer_free(struct timer *t)
 {
 	struct timer **pp;
@@ -269,6 +280,7 @@ static void timer_free(struct timer *t)
 	free(t);
 }
 
+/* a one-shot timer of ms, fn(data) when due; not armed */
 void *OS(OsCreateTimer)(u32 ms, void *fn, void *data)
 {
 	struct timer *t = timer_new();
@@ -277,14 +289,17 @@ void *OS(OsCreateTimer)(u32 ms, void *fn, void *data)
 	t->ref = data;
 	return t;
 }
+/* armed: due ms from now */
 void OS(OsSetTimer)(void *h)
 {
 	struct timer *t = h;
 	t->armed = 1;
 	t->due = now_ms() + t->ms;
 }
+/* disarmed; its time for the next OsSetTimer */
 void OS(OsCancelTimer)(void *h) { ((struct timer *)h)->armed = 0; }
 void OS(OsChangeTimerTimeOut)(void *h, u32 ms) { ((struct timer *)h)->ms = ms; }
+/* freed, or once its function returns if it is running */
 void OS(OsDestroyTimer)(void *h)
 {
 	struct timer *t = h;
@@ -294,6 +309,8 @@ void OS(OsDestroyTimer)(void *h)
 		timer_free(t);
 }
 
+/* a periodic timer of ms (0: stopped), fn(ref) every ms from now on;
+   *thread a dummy */
 void *OS(OsCreatePeriodicTimer)(u32 ms, void *fn, void *alloc, void *free_fn,
 				void *ref, void **thread)
 {
@@ -311,6 +328,8 @@ void *OS(OsCreatePeriodicTimer)(u32 ms, void *fn, void *alloc, void *free_fn,
 		*thread = (void *)1;
 	return t;
 }
+/* its period ms (0 stops it), the next ms from now (unless the same
+   period); whether it runs */
 int OS(OsSetPeriodicTimer)(void *h, u32 ms)
 {
 	struct timer *t = h;
@@ -322,16 +341,21 @@ int OS(OsSetPeriodicTimer)(void *h, u32 ms)
 	t->due = now_ms() + ms;
 	return ms != 0;
 }
+/* due now */
 void OS(OsImmediateTimeOut)(void *h)
 {
 	struct timer *t = h;
 	t->armed = 1;
 	t->due = now_ms();
 }
+/* as OsDestroyTimer */
 void OS(OsDestroyPeriodicTimer)(void *h) { OS(OsDestroyTimer)(h); }
 
+/* ms of line time */
 u32 OS(OsGetSystemTime)(void) { return (u32)now_ms(); }
 
+/* the armed timers due (not those running already) until none is: a
+   one-shot disarmed first, a periodic one due again ms after it ran */
 static void run_timers(void)
 {
 	struct timer *t;
@@ -358,15 +382,19 @@ static void run_timers(void)
 	}
 }
 
+/* ms of line time run */
 void OS(OsSleep)(u32 ms) { run_time(ms); }
 
 /* events: set by another context, which here is the time that runs while
    one waits */
 struct event { int flag; };
+/* an event: a flag */
 void *OS(OsEventCreate)(const char *name) { (void)name; return calloc(1, sizeof(struct event)); }
 void OS(OsEventDestroy)(void *h) { free(h); }
 long OS(OsEventSet)(void *h) { ((struct event *)h)->flag = 1; return 0; }
 long OS(OsEventClear)(void *h) { ((struct event *)h)->flag = 0; return 0; }
+/* the event, waiting for it a ms of line time at a time, ms at most;
+   0 set (and cleared), 1 timeout */
 int OS(OsEventWaitTime)(void *h, u32 ms)
 {
 	struct event *e = h;
@@ -384,6 +412,7 @@ int OS(OsEventWaitTime)(void *h, u32 ms)
  *    (a 32 bit process)
  */
 
+/* 4 kB << order, 64 kB aligned and zeroed; 1, 0 if none */
 int OS(OsMemDMAAllocate)(u32 order, void **phys, void **handle, void **buf)
 {
 	void *p = NULL;
@@ -396,6 +425,7 @@ int OS(OsMemDMAAllocate)(u32 order, void **phys, void **handle, void **buf)
 		*handle = p;
 	return 1;
 }
+/* and freed */
 int OS(OsMemDMAFree)(void *h, u32 order) { (void)order; free(h); return 1; }
 
 /*
@@ -415,6 +445,7 @@ static byte daa[0x80];
    read, the register below it) */
 static byte lsd[0x80];
 
+/* the Conexant codec's registers at reset: its IDs, line 1, 8000 Hz */
 static void codec_init(void)
 {
 	memset(codec, 0, sizeof(codec));
@@ -424,6 +455,7 @@ static void codec_init(void)
 	codec[0x7e] = 0x5429;           /* "T)" */
 }
 
+/* codec register r */
 static word codec_read(int r)
 {
 	r &= 0x7e;
@@ -436,6 +468,9 @@ static word codec_read(int r)
 	}
 }
 
+/* codec register r = v (the IDs read only): 0x7a reads or writes a
+   DAA register (DAA register 3 the line side chip's through 1), 0x40
+   is the codec's rate */
 static void codec_write(int r, word v)
 {
 	r &= 0x7e;
@@ -504,17 +539,23 @@ static u32 glob_cnt, glob_sta = 0x300;  /* primary and secondary ready */
 #define CR_FEIE  0x08
 #define CR_IOCE  0x10
 
+/* buffer descriptor i of b's list: the buffer's address, its length
+   in samples | IOC (bit 31) */
 static u32 *bd(struct bm *b, int i)
 {
 	return (u32 *)(uintptr_t)(b->bdbar + 8 * (i & 31));
 }
 
+/* the current descriptor's length into PICB, from its start */
 static void bm_load(struct bm *b)
 {
 	b->picb = (word)(bd(b, b->civ)[1] & 0xffff);
 	b->pos = 0;
 }
 
+/* a write of the control register: reset (RR), run (RPBM: on where it
+   was after a pause, from the current descriptor after a reset),
+   stop (DCH set) */
 static void bm_cr(struct bm *b, byte v)
 {
 	if (dbg > 1)
@@ -559,6 +600,7 @@ static void bm_cr(struct bm *b, byte v)
 	b->cr = v & 0x1f;
 }
 
+/* b's interrupt: a status bit whose enable is set */
 static int bm_irq(const struct bm *b)
 {
 	return ((b->sr & SR_BCIS) && (b->cr & CR_IOCE)) ||
@@ -566,6 +608,7 @@ static int bm_irq(const struct bm *b)
 		((b->sr & SR_FIFOE) && (b->cr & CR_FEIE));
 }
 
+/* GLOB_STA, its PCM in and out interrupt bits as the bus masters are */
 static u32 glob_status(void)
 {
 	return (glob_sta & ~6u) | (bm_irq(&pi) ? 2 : 0) | (bm_irq(&po) ? 4 : 0);
@@ -623,6 +666,8 @@ static short bm_sample(struct bm *b, short in)
 /* PCI configuration space */
 static u32 cfg[64];
 
+/* the controller's configuration space: its IDs, I/O and bus master
+   on, the modem class, the BARs, the IRQ */
 static void cfg_init(void)
 {
 	cfg[0x00 / 4] = 0x8086 | 0x2416u << 16;
@@ -634,12 +679,15 @@ static void cfg_init(void)
 	cfg[0x3c / 4] = IRQ | 2 << 8;
 }
 
+/* size bytes of configuration register r */
 static u32 cfg_read(unsigned r, int size)
 {
 	u32 v = cfg[(r >> 2) & 63] >> (8 * (r & 3));
 	return size == 4 ? v : size == 2 ? v & 0xffff : v & 0xff;
 }
 
+/* size bytes of register r = v; the BARs' sizing answered (256 and
+   128 bytes of I/O) */
 static void cfg_write(unsigned r, u32 v, int size)
 {
 	u32 mask = size == 4 ? 0xffffffff : size == 2 ? 0xffff : 0xff;
@@ -654,6 +702,7 @@ static void cfg_write(unsigned r, u32 v, int size)
 		(v & mask) << 8 * (r & 3);
 }
 
+/* the configuration space of the one device */
 void OS(OsPciReadConfigb)(void *d, byte o, byte *v) { (void)d; *v = (byte)cfg_read(o, 1); }
 void OS(OsPciReadConfigw)(void *d, byte o, word *v) { (void)d; *v = (word)cfg_read(o, 2); }
 void OS(OsPciReadConfigdw)(void *d, byte o, u32 *v) { (void)d; *v = cfg_read(o, 4); }
@@ -662,6 +711,7 @@ void OS(OsPciWriteConfigw)(void *d, byte o, word v) { (void)d; cfg_write(o, v, 2
 void OS(OsPciWriteConfigdw)(void *d, byte o, u32 v) { (void)d; cfg_write(o, v, 4); }
 
 struct pci_res { u32 addr, len; };
+/* its resources: no memory, NAMBAR and NABMBAR; 1 */
 int OS(OsGetPCIDeviceResources)(void *dev, struct pci_res *mem,
 				struct pci_res *io1, struct pci_res *io2, int bm)
 {
@@ -682,6 +732,7 @@ int OS(OsGetPCIDeviceResources)(void *dev, struct pci_res *mem,
 /* the interrupt: the module's handler, as Linux calls it */
 static int (*isr)(int irq, void *dev, void *regs);
 static void *isr_dev;
+/* its interrupt handler, for line_sample to call with devid; 1 */
 int OS(OsHookInterrupt)(void *dev, void *fn, void *devid)
 {
 	(void)dev;
@@ -689,9 +740,11 @@ int OS(OsHookInterrupt)(void *dev, void *fn, void *devid)
 	isr_dev = devid;
 	return 1;
 }
+/* and no more */
 void OS(OsUnhookInterrupt)(void *dev, void *devid) { (void)dev; (void)devid; isr = NULL; }
 
-/* port I/O */
+/* port I/O.  A read of size bytes: the secondary codec at NAMBAR + 0x80,
+   the bus masters', GLOB_CNT and GLOB_STA at NABMBAR; all ones elsewhere */
 static u32 io_in(unsigned a, int size)
 {
 	u32 v = 0xffffffff;
@@ -731,6 +784,7 @@ static u32 io_in(unsigned a, int size)
 	return v;
 }
 
+/* a port write of size bytes, as io_in has them */
 static void io_out(unsigned a, u32 v, int size)
 {
 	if (dbg > 1)
@@ -765,6 +819,7 @@ static void io_out(unsigned a, u32 v, int size)
 	LOG("out%d %04x = %x\n", size, a, v);
 }
 
+/* the module's port I/O */
 byte OS(OsIoPortReadb)(unsigned p) { return (byte)io_in(p, 1); }
 word OS(OsIoPortReadw)(unsigned p) { return (word)io_in(p, 2); }
 u32 OS(OsIoPortReadl)(unsigned p) { return io_in(p, 4); }
@@ -996,6 +1051,7 @@ static const struct { int code; const char *name; } cfg_names[] = {
 #define CFG_PROFILE_FACTORY 359
 #define CFG_OEM_DAATYPE     404
 
+/* the name of NVM value code (configtypes.h's CFGMGR_*), NULL if none */
 static const char *cfg_name(int code)
 {
 	unsigned i;
@@ -1013,6 +1069,7 @@ struct nvm_val {
 };
 static struct nvm_val *nvm_vals;
 
+/* the value at path, NULL if none */
 static struct nvm_val *nvm_find(const char *path)
 {
 	struct nvm_val *v;
@@ -1022,6 +1079,7 @@ static struct nvm_val *nvm_find(const char *path)
 	return NULL;
 }
 
+/* the value at path made text (a copy) */
 static void nvm_set(const char *path, const char *text)
 {
 	struct nvm_val *v = nvm_find(path);
@@ -1061,6 +1119,7 @@ static int nvm_bytes(const char *t, byte *out, int max)
 	return n;
 }
 
+/* the value's bytes all zero */
 static int nvm_zero(const char *t)
 {
 	byte b[4096];
@@ -1086,6 +1145,7 @@ static const char *const oem_keys[][2] = {
 	{ "MISC_VOICE_PARMS", "VOICE_CACHED_MISC_PARAMS" },
 };
 
+/* each from in s replaced by to, in place (4095 characters at most) */
 static void subst(char *s, const char *from, const char *to)
 {
 	char *p, buf[4096];
@@ -1105,6 +1165,7 @@ struct cty_ent {
 };
 static struct cty_ent *cty_ents;
 
+/* the Region (region 1) or Profile (0) entry idx, made if new */
 static struct cty_ent *cty_get(int region, const char *idx)
 {
 	struct cty_ent *e;
@@ -1119,6 +1180,7 @@ static struct cty_ent *cty_get(int region, const char *idx)
 	return e;
 }
 
+/* l ends in a backslash (spaces after it aside): continued */
 static int line_cont(const char *l)
 {
 	size_t n = strlen(l);
@@ -1127,6 +1189,10 @@ static int line_cont(const char *l)
 	return n && l[n - 1] == '\\';
 }
 
+/* the HKR lines of an .inf or .cty file as cvtinf.pl takes them: OEM
+   values (by their configuration names), Country, Region and Profile
+   ones into cty_ents; continuation lines joined; exits if file cannot
+   be read */
 static void nvm_load(const char *file)
 {
 	FILE *f = fopen(file, "r");
@@ -1300,6 +1366,7 @@ static const byte factory_profile[25] = {
 	0, 0, 43, 13, 10, 8, 2, 50, 2, 14, 95, 50, 0, 0, 70
 };
 
+/* code is a dynamic value (written at run time), kept in memory */
 static int nvm_dynamic(int code)
 {
 	switch (code) {
@@ -1316,6 +1383,8 @@ static int nvm_dynamic(int code)
 	}
 }
 
+/* country t35's value name (size bytes into buf), else its profile
+   ref's (0xff: none); whether there was one */
 static int cty_parm(int t35, byte ref, const char *name, void *buf, u32 size)
 {
 	char path[64];
@@ -1358,9 +1427,14 @@ static void nvm_country(int t35, byte *c)
 	LOG("nvm: country %04x, profile %02x\n", t35, ref);
 }
 
+/* the NVM: no handle of its own */
 void *OS(NVM_Open)(unsigned long dev) { return (void *)dev; }
 int OS(NVM_Close)(void *h) { (void)h; return 0; }
 
+/* value code into buf (*size bytes, the rest zeros; *size what there
+   was): the country structure (the T35 code in size), the dynamic
+   values (the USA and the factory profile by default), the .inf's;
+   0, 7 if none */
 int OS(NVM_Read)(void *h, int code, void *buf, u32 *size)
 {
 	const char *name;
@@ -1407,6 +1481,7 @@ int OS(NVM_Read)(void *h, int code, void *buf, u32 *size)
 	return 7;
 }
 
+/* value code = *size bytes of buf, in memory; 0 */
 int OS(NVM_Write)(void *h, int code, void *buf, u32 *size)
 {
 	struct nvm_dyn *d, **pp;
@@ -1440,6 +1515,8 @@ static long sync_n;
 
 /* online between its CONNECT and NO CARRIER or OK */
 static int online;
+/* the modem's output to the DTE, c by c: online from CONNECT, offline
+   from NO CARRIER or OK */
 static void result_scan(unsigned char c)
 {
 	static const char *const pat[] = { "CONNECT", "NO CARRIER",
@@ -1459,6 +1536,7 @@ static void result_scan(unsigned char c)
 	}
 }
 
+/* the modem's output (ComCtrl_Read) to the pty, all there is */
 static void dte_out(void)
 {
 	byte buf[1024];
@@ -1489,6 +1567,7 @@ static void dte_poll(void)
 		LOG("ComCtrl_Write: short\n");
 }
 
+/* ComCtrl's events (the serial driver's): logged only */
 static void event(void *ref, u32 mask)
 {
 	(void)ref;
@@ -1505,6 +1584,8 @@ static void event(void *ref, u32 mask)
 struct rs {
 	float hist[RS_TAPS];    /* the newest last */
 };
+/* the signal of h at f (0..1 or a little over) after its sample
+   RS_TAPS / 2 - 1, lowpass at cut (<= 1) of its Nyquist */
 static float rs_at(const float *h, double f, double cut)
 {
 	double y = 0;
@@ -1517,6 +1598,7 @@ static float rs_at(const float *h, double f, double cut)
 	}
 	return (float)y;
 }
+/* x in as the newest */
 static void rs_push(struct rs *r, float x)
 {
 	memmove(r->hist, r->hist + 1, (RS_TAPS - 1) * sizeof(float));
@@ -1535,11 +1617,15 @@ static float noise(void)
 }
 static double up_ph;
 
+/* x rounded and clipped to 16 bits */
 static short sat(double x)
 {
 	return (short)(x > 32767 ? 32767 : x < -32768 ? -32768 : lrint(x));
 }
 
+/* one codec sample each way through the bus masters (the DAA's
+   loopback: the DAC's back to the ADC); the DAC's into the downward
+   resampler */
 static void codec_sample(short adc)
 {
 	short dac = bm_sample(&po, 0);
@@ -1605,6 +1691,9 @@ static void run_time(unsigned ms)
  *    main loop
  */
 
+/* the rdtsc trap, the NVM, the devices, the engine's init and the
+   serial driver's open (115200 8N1, DTR, RTS); then the line from fd 3
+   to fd 4 a sample at a time, the DTE served every 48, until it ends */
 int main(int argc, char **argv)
 {
 	short in[480], out[480];

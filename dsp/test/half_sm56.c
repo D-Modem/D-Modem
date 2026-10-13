@@ -68,6 +68,7 @@ extern KAPI int mot_write(void *tty, int from_user, const void *buf, int count);
 extern KAPI int mot_writeroom(void *tty);
 
 #define PAGE_OFFSET 0x02000000u
+/* the address the module's bus address a stands for */
 static void *bus_to_virt(u32 a) { return (void *)(uintptr_t)(a + PAGE_OFFSET); }
 
 /*
@@ -86,6 +87,7 @@ static void line_idle(unsigned n);
 static word codec[0x80];
 static unsigned codec_rate = 8000;
 
+/* the Motorola codec's registers at reset: its IDs, line 1, 8000 Hz */
 static void codec_init(void)
 {
 	memset(codec, 0, sizeof(codec));
@@ -95,6 +97,7 @@ static void codec_init(void)
 	codec[0x7e] = 0x5466;           /* "Tf" */
 }
 
+/* codec register r */
 static word codec_read(int r)
 {
 	r &= 0x7e;
@@ -108,6 +111,7 @@ static word codec_read(int r)
 	}
 }
 
+/* codec register r = v (the IDs read only); 0x40 is the codec's rate */
 static void codec_write(int r, word v)
 {
 	r &= 0x7e;
@@ -151,17 +155,22 @@ static u32 glob_cnt, glob_sta = 0x300;  /* primary and secondary ready */
 #define CR_FEIE  0x08
 #define CR_IOCE  0x10
 
+/* buffer descriptor i of b's list: the buffer's bus address, its
+   length in samples | IOC (bit 31) */
 static u32 *bd(struct bm *b, int i)
 {
 	return (u32 *)bus_to_virt(b->bdbar + 8 * (i & 31));
 }
 
+/* the current descriptor's length into PICB, from its start */
 static void bm_load(struct bm *b)
 {
 	b->picb = (word)(bd(b, b->civ)[1] & 0xffff);
 	b->pos = 0;
 }
 
+/* a write of the control register: reset (RR), run (RPBM, from the
+   current descriptor), stop (DCH set) */
 static void bm_cr(struct bm *b, byte v)
 {
 	if (dbg > 1)
@@ -184,6 +193,7 @@ static void bm_cr(struct bm *b, byte v)
 	b->cr = v & 0x1f;
 }
 
+/* b's interrupt: a status bit whose enable is set */
 static int bm_irq(const struct bm *b)
 {
 	return ((b->sr & SR_BCIS) && (b->cr & CR_IOCE)) ||
@@ -191,6 +201,7 @@ static int bm_irq(const struct bm *b)
 		((b->sr & SR_FIFOE) && (b->cr & CR_FEIE));
 }
 
+/* GLOB_STA, its PCM in and out interrupt bits as the bus masters are */
 static u32 glob_status(void)
 {
 	return (glob_sta & ~6u) | (bm_irq(&pi) ? 2 : 0) | (bm_irq(&po) ? 4 : 0);
@@ -237,6 +248,8 @@ static short bm_sample(struct bm *b, short in)
 static u32 cf8;
 static u32 cfg[64];
 
+/* the controller's configuration space: its IDs, I/O and bus master
+   on, the modem class, the BARs, the IRQ */
 static void cfg_init(void)
 {
 	cfg[0x00 / 4] = 0x8086 | 0x2416u << 16;
@@ -248,6 +261,7 @@ static void cfg_init(void)
 	cfg[0x3c / 4] = IRQ | 2 << 8;
 }
 
+/* 0xcf8 addresses the controller (enabled, bus 0, 00:1f.6) */
 static int cfg_ours(void)
 {
 	return (cf8 & 0x80000000) && ((cf8 >> 16) & 0xff) == 0 &&
@@ -262,6 +276,8 @@ static int cfg_fn0(void)
 		((cf8 >> 8) & 0xff) == (DEVFN & ~7);
 }
 
+/* a read of size bytes at 0xcfc + off: the LPC bridge's IDs and
+   header type, the controller's registers, all ones for the rest */
 static u32 cfg_read(unsigned off, int size)
 {
 	u32 v;
@@ -277,6 +293,8 @@ static u32 cfg_read(unsigned off, int size)
 	return size == 4 ? v : size == 2 ? v & 0xffff : v & 0xff;
 }
 
+/* a write at 0xcfc + off, the controller's only; the BARs' sizing
+   answered (256 and 128 bytes of I/O) */
 static void cfg_write(unsigned off, u32 v, int size)
 {
 	unsigned r = (cf8 & 0xfc) + off;
@@ -299,6 +317,9 @@ static void cfg_write(unsigned off, u32 v, int size)
  *    port I/O
  */
 
+/* a port read of size bytes: PCI's configuration ports, the secondary
+   codec at NAMBAR + 0x80, the bus masters', GLOB_CNT and GLOB_STA at
+   NABMBAR; all ones elsewhere */
 static u32 io_in(unsigned a, int size)
 {
 	u32 v = 0xffffffff;
@@ -343,6 +364,7 @@ static u32 io_in(unsigned a, int size)
 	return v;
 }
 
+/* a port write of size bytes, as io_in has them */
 static void io_out(unsigned a, u32 v, int size)
 {
 	if (dbg > 1)
@@ -489,6 +511,7 @@ static u32 thread_info[16];
 static u32 task[0x800];
 static u32 task_signal[0x40];
 
+/* SIGTRAP at a patched place: eax our thread_info, on past the nop */
 static void on_trap(int sig, siginfo_t *si, void *ctx)
 {
 	ucontext_t *uc = (ucontext_t *)ctx;
@@ -508,6 +531,8 @@ static void on_trap(int sig, siginfo_t *si, void *ctx)
 static const u32 fpu_at[] = { 0xb4db0, 0xb4dc4, 0xb4e75, 0xb4e85 };
 static byte fpu_save[2][128] __attribute__((aligned(16)));
 
+/* fnsave and frstor at fpu_at pointed at fpu_save; -1 if the module is
+   not the one expected or its text cannot be written */
 static int fpu_patch(void)
 {
 	uintptr_t text = (uintptr_t)init_module - INIT_MODULE_AT;
@@ -529,6 +554,8 @@ static int fpu_patch(void)
 	return 0;
 }
 
+/* our thread_info and task; each and %esp,%eax at current_at made
+   int3, nop; -1 if the module is not the one expected */
 static int current_patch(void)
 {
 	uintptr_t text = (uintptr_t)init_module - INIT_MODULE_AT;
@@ -556,6 +583,7 @@ static int current_patch(void)
  *    the kernel
  */
 
+/* its printk: to stderr, SM56_DEBUG */
 int k_printk(const char *fmt, ...)
 {
 	va_list ap;
@@ -568,6 +596,7 @@ int k_printk(const char *fmt, ...)
 	}
 	return n;
 }
+/* the kernel's library and the like: the C library's, or nothing */
 KAPI void *k_memcpy(void *d, const void *s, size_t n) { return memcpy(d, s, n); }
 KAPI void *k_memset(void *d, int c, size_t n) { return memset(d, c, n); }
 KAPI void k_dump_stack(void) { LOG("dump_stack\n"); }
@@ -577,6 +606,7 @@ KAPI int k___cond_resched(void) { return 0; }
 u32 k_kernel_flag[8];
 unsigned char k__ctype[256];
 
+/* the kernel's _ctype (_U _L _D _C _P _S _X _SP) from the C library's */
 static void ctype_init(void)
 {
 	int c;
@@ -592,6 +622,8 @@ struct kcache { unsigned size; };
 static struct kcache kcache = { 1 << 17 };
 struct cache_sizes { unsigned size; void *cachep, *dmacachep; };
 struct cache_sizes k_malloc_sizes[32];
+/* kmalloc's size classes (32 bytes up), all one cache of 128 kB
+   objects */
 static void malloc_sizes_init(void)
 {
 	int i;
@@ -601,11 +633,14 @@ static void malloc_sizes_init(void)
 		k_malloc_sizes[i].dmacachep = &kcache;
 	}
 }
+/* an object of the cache, zeroed */
 KAPI void *k_kmem_cache_alloc(void *cachep, unsigned flags)
 {
 	(void)flags;
 	return calloc(1, ((struct kcache *)cachep)->size);
 }
+/* and the rest of its memory: calloc (64 bytes to spare), no I/O
+   mapped */
 KAPI void *k___kmalloc(size_t n, unsigned flags) { (void)flags; return calloc(1, n + 64); }
 KAPI void k_kfree(const void *p) { free((void *)p); }
 KAPI void *k_vmalloc(unsigned long n) { return calloc(1, n + 64); }
@@ -649,6 +684,8 @@ typedef KAPI void (*kfn)(unsigned long);
 #define T_EXPIRES(t) (*(unsigned long *)((t) + 0x08))
 #define T_FN(t) (*(kfn *)((t) + 0x28))
 #define T_DATA(t) (*(unsigned long *)((t) + 0x2c))
+/* timer t due at jiffies expires (on the list if not yet); 1 if it was
+   pending */
 KAPI int k___mod_timer(void *t, unsigned long expires)
 {
 	int i, free_i = -1;
@@ -665,6 +702,7 @@ KAPI int k___mod_timer(void *t, unsigned long expires)
 		fprintf(stderr, "sm56: too many timers\n");
 	return 0;
 }
+/* timer t off; 1 if it was pending */
 KAPI int k_del_timer(void *t)
 {
 	int i;
@@ -675,6 +713,7 @@ KAPI int k_del_timer(void *t)
 		}
 	return 0;
 }
+/* the timers due, each off and called */
 static void run_timers(void)
 {
 	int i;
@@ -691,11 +730,14 @@ static void run_timers(void)
 #define NTASKLETS 8
 static byte *tasklets[NTASKLETS];
 static int ntasklets;
+/* tasklet t to run after the interrupt (8 queued at most) */
 KAPI void k___tasklet_schedule(void *t)
 {
 	if (ntasklets < NTASKLETS)
 		tasklets[ntasklets++] = (byte *)t;
 }
+/* the tasklets queued, in order: their scheduled bit cleared, those
+   enabled (count 0) called with their data */
 static void run_tasklets(void)
 {
 	while (ntasklets) {
@@ -711,6 +753,7 @@ static void run_tasklets(void)
 typedef KAPI int (*kisr)(int irq, void *dev, void *regs);
 static kisr isr;
 static void *isr_dev;
+/* its interrupt handler, for line_sample to call */
 KAPI int k_request_irq(unsigned irq, void *handler, unsigned long flags,
 		       const char *name, void *dev)
 {
@@ -720,12 +763,14 @@ KAPI int k_request_irq(unsigned irq, void *handler, unsigned long flags,
 	isr_dev = dev;
 	return 0;
 }
+/* and no more */
 KAPI void k_free_irq(unsigned irq, void *dev) { (void)irq; (void)dev; isr = NULL; }
 
 /* PCI: the controller, for pci_find_device; its configuration space at
    0xcf8 (the module reads it there) */
 static byte pci_bus[0x100];
 static byte pci_dev[0x400];
+/* the controller, the first time 8086:2416 is asked for; NULL else */
 KAPI void *k_pci_find_device(unsigned vendor, unsigned device, void *from)
 {
 	LOG("pci_find_device %04x:%04x%s\n", vendor, device, from ? " (next)" : "");
@@ -743,10 +788,12 @@ KAPI void *k_pci_find_device(unsigned vendor, unsigned device, void *from)
 	*(u32 *)(pci_dev + 0x140) = NABMBAR + 0x7f;
 	return pci_dev;
 }
+/* bus mastering: on already */
 KAPI void k_pci_set_master(void *dev) { (void)dev; }
 
 /* the character devices and the tty driver */
 static void *tty_driver;
+/* its character devices: noted only */
 KAPI int k_register_chrdev(unsigned major, const char *name, void *fops)
 {
 	(void)fops;
@@ -758,6 +805,7 @@ KAPI int k_unregister_chrdev(unsigned major, const char *name)
 	(void)major; (void)name;
 	return 0;
 }
+/* its tty driver: kept; mot_open and mot_write are called directly */
 KAPI int k_tty_register_driver(void *d) { tty_driver = d; return 0; }
 KAPI int k_tty_unregister_driver(void *d) { (void)d; return 0; }
 
@@ -768,12 +816,14 @@ static byte tty[0x2000];
 static int pty;
 /* its termios (at 0x80): 115200 bit/s, 8N1, CREAD, CLOCAL, raw */
 static u32 termios[16] = { 0, 0, 010000 | 2 | 060 | 0200 | 04000, 0 };
+/* the flip buffer empty */
 static void flip_reset(void)
 {
 	*(byte **)(tty + 0x160) = tty + 0x170;
 	*(byte **)(tty + 0x164) = tty + 0x170 + 2 * TTY_FLIPBUF;
 	*(int *)(tty + 0x168) = 0;
 }
+/* the tty: zeros, our termios, an empty flip buffer */
 static void tty_init(void)
 {
 	memset(tty, 0, sizeof(tty));
@@ -787,6 +837,8 @@ static long sync_n;
 
 /* online between its CONNECT and NO CARRIER or OK */
 static int online;
+/* the modem's output to the DTE, c by c: online from CONNECT, offline
+   from NO CARRIER or OK */
 static void result_scan(unsigned char c)
 {
 	static const char *const pat[] = { "CONNECT", "NO CARRIER",
@@ -806,6 +858,7 @@ static void result_scan(unsigned char c)
 	}
 }
 
+/* the flip buffer's characters to the pty (and result_scan); empty */
 static void flip_push(void)
 {
 	int n = *(int *)(tty + 0x168), k;
@@ -815,6 +868,7 @@ static void flip_push(void)
 		result_scan(tty[0x170 + k]);
 	flip_reset();
 }
+/* the tty's flip buffer work at once; other work noted only */
 KAPI int k_schedule_delayed_work(void *work, unsigned long delay)
 {
 	(void)delay;
@@ -848,6 +902,7 @@ static float rs_at(const float *h, double f, double cut)
 	}
 	return (float)y;
 }
+/* x in as the newest */
 static void rs_push(struct rs *r, float x)
 {
 	memmove(r->hist, r->hist + 1, (RS_TAPS - 1) * sizeof(float));
@@ -872,11 +927,14 @@ static double up_ph;            /* the next codec sample's time after the
 				   line's sample before the newest, in line
 				   samples */
 
+/* x rounded and clipped to 16 bits */
 static short sat(double x)
 {
 	return (short)(x > 32767 ? 32767 : x < -32768 ? -32768 : lrint(x));
 }
 
+/* one codec sample each way through the bus masters; the DAC's into
+   the downward resampler */
 static void codec_sample(short adc)
 {
 	short dac = bm_sample(&po, 0);
@@ -886,6 +944,8 @@ static void codec_sample(short adc)
 
 /* one line sample each way */
 static int irq_was;
+/* one line sample each way through the resamplers; a jiffy each ms
+   and the timers due; the ISR and tasklets when an interrupt starts */
 static short line_sample(short in)
 {
 	double r = (double)line_rate / codec_rate;
@@ -919,6 +979,7 @@ static short line_sample(short in)
 	return sat(out);
 }
 
+/* n silent samples of the line */
 static void line_idle(unsigned n)
 {
 	while (n--)
@@ -946,6 +1007,9 @@ static void dte_poll(void)
 		LOG("mot_write: short\n");
 }
 
+/* the traps, the patches, the devices, init_module and mot_open; then
+   the line from fd 3 to fd 4 a sample at a time, the DTE polled every
+   48, until it ends */
 int main(int argc, char **argv)
 {
 	short in[480], out[480];

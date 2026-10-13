@@ -180,6 +180,7 @@ INSTANTIATE_TEST_SUITE_P(Calls, T30Spandsp, testing::Values(
 	Call{ true, false, 0 }, Call{ true, true, 0 }, Call{ true, true, 30 },
 	Call{ false, false, 0 }, Call{ false, true, 0 },
 	Call{ false, true, 30 }),
+	/* to or from (spandsp sending or receiving), _ecm, _hits */
 	[](const testing::TestParamInfo<Call> &i) {
 		return std::string(i.param.to ? "to" : "from") +
 			(i.param.ecm ? "_ecm" : "") +
