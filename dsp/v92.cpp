@@ -1054,7 +1054,8 @@ void V92Up::fpe_design(int drn)
 		/* the prefilter and precoder stay: the next rate up, if the
 		   design has it (or the one asked for) */
 		d = drn ? drn : cpd.drn + 1;
-		if (d > 19 || (up_mask && !((up_mask >> (d - 1)) & 1)) ||
+		if (d > (drn ? 19 : V92_DRN_MAX) ||
+		    (up_mask && !((up_mask >> (d - 1)) & 1)) ||
 		    !pf_rate(d))
 			d = cpd.drn;
 		/* the analogue modem sends SUVu', E2u and FB1u on the new
@@ -1442,7 +1443,7 @@ void V92Up::data_symbol(float y)
 		rn_high = q > margin_used * 2.5 ? rn_high + 1 : 0;
 		if (rn_low >= 4000 ||
 		    (rn_high >= 80000 && n - rn_last >= 8000L * 60 &&
-		     cpd.drn < 19)) {
+		     cpd.drn < V92_DRN_MAX)) {
 			DSP_DBG("v92: margin %.1f against %.1f: %s\n", q,
 				margin_used, rn_low ? "renegotiate down" :
 				"fast parameter exchange up");
@@ -1718,7 +1719,7 @@ void V92Up::design()
 	margin = getenv("DSP_V92_MARGIN") ? atof(getenv("DSP_V92_MARGIN")) :
 		pre && trellis_on ? V92_MARGIN_CODED : V92_MARGIN;
 	margin_used = margin;
-	for (drn = 19; drn >= 1 && best < 0; drn--) {
+	for (drn = fix ? 19 : V92_DRN_MAX; drn >= 1 && best < 0; drn--) {
 		int K = 2 * (drn + 17), k, g;
 		double ms3 = 0, ms0 = 0;
 		if (up_mask && !((up_mask >> (drn - 1)) & 1))
@@ -1748,6 +1749,8 @@ void V92Up::design()
 			   point too many on the 4th symbol otherwise) */
 			int l = (int)ceil(M * (1 + (pre ? sbs[g] : 0))) + 2;
 			if (l < 2 * M)
+				l = 2 * M;
+			if (getenv("TMP_LC_MIN"))
 				l = 2 * M;
 			l += l & 1;
 			if (l > V92_LC_MAX)
@@ -2512,7 +2515,7 @@ int V92Up::pf_design(const char *fix)
 		10 * log10(hh / q2), pf_noise, pf_echo, pf_d,
 		10 * log10(resid), sb,
 		pf_g);
-	for (drn = 19; drn >= 1; drn--) {
+	for (drn = fix ? 19 : V92_DRN_MAX; drn >= 1; drn--) {
 		if (up_mask && !((up_mask >> (drn - 1)) & 1))
 			continue;
 		if (fix && drn != atoi(fix))

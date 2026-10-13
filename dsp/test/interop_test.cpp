@@ -233,7 +233,7 @@ std::vector<Call> calls()
 		std::vector<std::string> e = { "NET=9600:8000:ulaw", "STREAM=10",
 			"BLOB_V92FULL=1", "BLOB_FPE_AT=4", "DSP_V92_SLIP=0",
 			"EXPECT_B=(?s)RM at.*fast parameter exchange 1 done.*"
-			"V.92 renegotiated 56000/3" };
+			"V.92 renegotiated 56000/(3[0-9]|4[01])" };
 		if (!pf)
 			e.push_back("DSP_V92_PREFILTER=0");
 		add("interop", pf ? "interop_v92_fpe_remote" :

@@ -517,7 +517,20 @@ and more when LC is less than 2M.
 | noprefilter (`DSP_V92_PREFILTER=0`) | 56000 down, 34000 to 36000 up |
 | calls (two calls, quick connect) | both V.92 |
 | lite (the library as it is) | it retrains after INFO1d, we leave the offer out: V.90 |
-| fallback (44000 bit/s asked for) | B1u does not come through: retrain, V.90 |
+| fallback (44000 bit/s asked for) | B1u does not come through: retrain, V.90 (its modulus encoder fails above 41333: see below) |
+
+Neither the original library nor the HSF modem can send more than 41333
+bit/s upstream, though both offer every rate in Ja: from 42666 (drn 15,
+K = 64 bits a data frame) B1u does not come through, with the points
+decided cleanly (mse as low as at 38666) and a third of the bits wrong,
+in bursts, not more of them at 48000 than at 46666. The library's own
+modulus encoder (`V92ModulusEncoder::progress`), run on random frames
+against our decoder, agrees on every frame up to drn 14 (K = 62) and
+on a fifth of them from drn 15 on: it works in signed 64 bits, and its
+digits come out negative. So we design for drn 14 at most
+(`V92_DRN_MAX`); `DSP_V92_UP_DRN` still asks for any rate. (The HSF
+modem's tests take some 22 s to CONNECT because they run in real time,
+`MODEM_REALTIME=1`; it connects at 41333 on the first try.)
 
 Through netsim's converters the fit's error is 34.5 dB below the signal,
 which gives 36000 bit/s upstream with the precoder alone (V.34's is 31200

@@ -27,6 +27,13 @@ struct V92Info1a {
 
 /* CPd (Table 30/V.92): the analogue modem's data mode parameters */
 #define V92_LC_MAX      128
+/* the fastest upstream rate we design for: drn 14, 41333 bit/s, K = 62
+   bits a data frame.  The original library's modulus encoder works in
+   signed 64 bits and sends garbage from K = 64 on (its own encoder run
+   against our decoder: no frame differs up to drn 14, 80 % from drn 15),
+   and the HSF modem fails there as well, though both offer every rate in
+   Ja (DSP_V92_UP_DRN still asks for any) */
+#define V92_DRN_MAX     14
 #define V92_PMAX        64      /* taps of a precoder or prefilter section */
 struct V92Cpd {
 	int drn;                /* (drn + 17) * 8000 / 6 bit/s */
