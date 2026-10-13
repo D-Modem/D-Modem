@@ -255,6 +255,17 @@ std::vector<Call> calls()
 		      "BLOB_V92FULL=1",
 		      "EXPECT_B=(?s)the prefilter for a slip.*fast parameter "
 		      "exchange 1 done.*V.92 renegotiated 56000/(3[89]|4[0-2])" });
+	/* after the slip's exchange our own (DSP_V92_FPE) to a rate the
+	   design does not have (48000): it stays at the rate with the CPd
+	   as it is (not from the first design's gap with the slip's
+	   precoder) */
+	add("interop", "interop_v92_slip_fpe", "blob", "open8",
+	    "ATX3;AT+MS=92",
+	    { "NET=9600:8000:ulaw", "STREAM=40", "BLOB_V92FULL=1",
+	      "DSP_V92_FPE=29000:19",
+	      "EXPECT_B=(?s)the prefilter for a slip.*fast parameter "
+	      "exchange 1 done.*FPE CPd: as it is.*fast parameter "
+	      "exchange 2 done" });
 	/* without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream */
 	add("interop", "interop_v92_nopcmup", "blob", "open8", "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=3", "BLOB_V92FULL=1",

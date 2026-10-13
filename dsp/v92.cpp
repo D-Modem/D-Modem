@@ -1147,8 +1147,22 @@ void V92Up::fpe_design(int drn)
 			d = cpd.drn;
 		}
 		cpd_fpe = cpd;
-		int gap = pf_cpd(&cpd_fpe, d);
 		cpd_fpe.ack = 0;
+		/* at the rate we have: the CPd as it is (the points stay,
+		   as the slip's design keeps them; pf_gap[] has the gap
+		   for the precoder of the first design, not this one) */
+		if (d == cpd.drn) {
+			DSP_DBG("v92: FPE CPd: as it is (%d bit/s)\n",
+				(d + 17) * 8000 / 6);
+			return;
+		}
+		/* up: pf_rate(d) has just found its gap */
+		int gap = pf_cpd(&cpd_fpe, d);
+		if (gap < 0) {
+			DSP_DBG("v92: FPE CPd: as it is (%d bit/s: the points "
+				"don't fit)\n", (d + 17) * 8000 / 6);
+			return;
+		}
 		DSP_DBG("v92: FPE CPd: %d bit/s, M %d, %d points (gap %d)\n",
 			(d + 17) * 8000 / 6, cpd_fpe.M[0], 2 * cpd_fpe.lc[0],
 			gap);
@@ -2496,7 +2510,10 @@ void V92Up::pf_margin()
 		pf_mseg[cpd.drn], margin_used);
 }
 
-/* CPd for drn with the prefilter */
+/* CPd for drn with the prefilter, from pf_rate(drn)'s gap for the
+   precoder as it is (pf_b); its gap, or -1 (c untouched) when the points
+   don't fit: more than V92_LC_MAX, or the levels run out at the gap (a
+   gap pf_rate() found for another precoder) */
 int V92Up::pf_cpd(V92Cpd *c, int drn)
 {
 	int K = 2 * (drn + 17), M, lc, j;
@@ -2509,7 +2526,8 @@ int V92Up::pf_cpd(V92Cpd *c, int drn)
 	lc = (int)ceil(M * (1 + sb)) + 2;
 	lc += lc & 1;
 	int gap = pf_gap[drn];
-	pf_points(gap, lc, pts);
+	if (lc > V92_LC_MAX || !gap || !pf_points(gap, lc, pts))
+		return -1;
 	int ack = c->ack;
 	memset(c, 0, sizeof(*c));
 	c->ack = ack;
@@ -2624,9 +2642,8 @@ int V92Up::pf_design(const char *fix)
 		if (pf_rate(drn))
 			break;
 	}
-	if (drn < 1)
+	if (drn < 1 || pf_cpd(&cpd, drn) < 0)
 		return 0;
-	pf_cpd(&cpd, drn);
 	pf = 1;
 	margin_used = pf_mseg[drn] > 0 ? 1 / pf_mseg[drn] : 1e3;
 	DSP_DBG("v92: CPd: %d bit/s, M %d, %d points (gap %d, to %d), G %.6f, "
@@ -2854,8 +2871,8 @@ int V92Up::tx_step()
 			fpe_test_at = connect_n + 8L * ms;
 			fpe_drn = d_;
 		}
-		if (fpe_test_at > 0 && n >= fpe_test_at && !fpes &&
-		    rx == V92R_DATA && !rn) {
+		if (fpe_test_at > 0 && n >= fpe_test_at && !fpe &&
+		    !fpe_req && rx == V92R_DATA && !rn) {
 			fpe_test_at = -1;
 			fpe_req = 1;
 		}

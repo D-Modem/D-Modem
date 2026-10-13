@@ -46,6 +46,7 @@ as it is.
 | `dsp/v90.cpp`, `v91.cpp` | A CP whose constellations cannot carry its rate (an empty mask, or drn too large for the 48-bit frames) gave a division by zero or a buffer overflow in the encoders. `V90Cp::usable()` checks a CP; such CPs (CP/CPt in V.90, CPu/CPus in V.92, CP in V.91) are now ignored where they are received, and the encoders' `init()` leave a harmless encoder when it fails |
 | `dsp/v92.cpp` | The least squares scratch matrices and the prefilter simulation's buffers were function `static`s, shared by calls in different threads (Asterisk, FreeSWITCH, libdmodem); now per call on the heap. The TRN1u reference is made once through `pthread_once` |
 | `dsp/v92.cpp` | A leftover `TMP_LC_MIN` test switch changed the constellation |
+| `dsp/v92.cpp` | A fast parameter exchange with the prefilter that stayed at its rate (after a slip's exchange had changed the precoder) built its CPd from the first design's gap with the new precoder's number of points; `pf_cpd()` ignored `pf_points()` failing and `lc` past `V92_LC_MAX`. At the rate it has the CPd now stays as it is, and `pf_cpd()` fails (the old CPd kept) when the points don't fit (`interop_v92_slip_fpe`) |
 | `dsp/v34_modem.cpp` | The Ja debug dump read past the DIL's arrays |
 | `dsp/v90.h` | `v90_tx_sample()` was declared but never defined |
 | `dsp/dp_fsk.cpp`, `dp_v22.cpp`, `dp_v32.cpp` | An early return (another pump, an error) left the rest of the output block unwritten: whatever the host's buffer held went to the line. The block is now cleared first |
@@ -95,11 +96,6 @@ bug*, *risk* (a failure needs unusual input or timing) or *cleanup*.
 
 ### V.34, V.90, V.92
 
-- **likely bug** — `v92.cpp` `pf_cpd()` uses `pf_gap` from an earlier
-  precoder after a slip FPE, ignores `pf_points()` failing and does not
-  check `lc <= V92_LC_MAX`: an uninitialized or overlong CPd can go out.
-  Re-run `pf_rate()` before `pf_cpd()` in `fpe_design()` and keep the old
-  CPd on failure.
 - **risk** (low confidence) — `v34_modem.cpp`: with precoding, a
   renegotiation without a good saved equalizer applies 1 + H(z) twice.
 - **risk** — the FSK, V.22 and V.32 answerers wait 1 s before the answer
