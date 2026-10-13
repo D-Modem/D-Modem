@@ -75,6 +75,17 @@ as it is.
 | `dsp/test/half_hsf.c` | The last character of a ';' comment in an .inf value was taken as a byte |
 | `asterisk/test/sip_call.py` | A traceback instead of FAIL when slmodemd gave no pty or went away |
 
+## Checked and left as they are
+
+- `dp_v34.cpp` `v90_start()`: in V.92's short phase 2 INFO1a's bit 33
+  names the analogue modem's carrier (Table 19/V.92), and we always
+  receive on the low one. The modems that set it send on the low one
+  all the same (the SM56 modem at 3200 baud, measured from the line;
+  the Agere modem at 3429, which has one carrier), and following the bit
+  makes the SM56 modem retrain. The bit is in the log ("says: high
+  carrier"), and `sm56_v92_qc` now fails on a retrain after short phase
+  2.
+
 ## Open
 
 Not fixed: they need a design decision, more than a local change, or a
@@ -83,9 +94,6 @@ bug*, *risk* (a failure needs unusual input or timing) or *cleanup*.
 
 ### V.34, V.90, V.92
 
-- **likely bug** — `dp_v34.cpp` `v90_start()`: in V.92's short phase 2
-  the analogue modem chooses its carrier and says so in INFO1a bit 33
-  (Table 19/V.92); we always use the low carrier.
 - **risk** — `dp_v34.cpp` `choose_bauds()` ignores INFO0c's 3429 and
   low/high carrier bits (11.2/V.34).
 - **likely bug** — `v92.cpp` `pf_cpd()` uses `pf_gap` from an earlier

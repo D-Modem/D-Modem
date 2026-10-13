@@ -583,6 +583,16 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				ok = false;
 			}
 		}
+		/* REJECT_B: and must not have this (e.g. a retrain the
+		   call can do without) */
+		if (ok && !env("REJECT_B").empty()) {
+			sleep_s(0.5);
+			if (log_has(log_dir + "/modemB.log", env("REJECT_B"))) {
+				say("modemB's log has %s\n",
+				    env("REJECT_B").c_str());
+				ok = false;
+			}
+		}
 		say("%s\n", ok ? "PASS" : "FAIL");
 		throw Done{ ok };
 	};

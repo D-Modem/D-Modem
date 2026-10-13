@@ -34,6 +34,7 @@ namespace interop {
  *                     data, give it the commands (WAIT <s> waits), ATO
  *   EXPECT_B=<regex>  modemB's log must have it ((?s) allowed, '.' takes
  *                     newlines anyway)
+ *   REJECT_B=<regex>  and must not have it
  *   EXPECT_DROP=1     the call is to end on the way: the data unchecked
  *   DATA_RATE=<bit/s> the slowest direction's rate, when the CONNECTs do
  *                     not say it

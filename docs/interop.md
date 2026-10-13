@@ -110,7 +110,13 @@ quick connect with short phase 2. Its upstream stays V.34: the module has
 PCM upstream (`UAPCMP3_*`), but chooses it only in quick connect's INFO1a
 (`SC_QC_Phase2_Set_Info_1A`), from INFO1d's PCM upstream bit, which its
 full phase 2 (`SC_Phase2_Create_Tone_A_Set_1A`) clears after reading it.
-Forced on, that path crashes the module (`SC_Modulate`).
+Forced on, that path crashes the module (`SC_Modulate`). Its short phase
+2's INFO1a (3200 baud) says high carrier (bit 33, Table 19/V.92), but it
+sends on the low one: its upstream's spectrum is centred at the same
+1850 Hz as after a full phase 2, where our INFO1d asked for the low
+carrier (1829 Hz; the high one is 1920). A receiver on the high carrier
+never finds its S, and it retrains (`sm56_v92_qc` fails on a retrain
+after short phase 2).
 
 Modem-on-hold: its own request (`AT+PMHR`) we grant; it goes on hold
 and comes back with quick connect. Ours it takes for a retrain, as the

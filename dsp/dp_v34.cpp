@@ -764,7 +764,10 @@ void Info1a::parse(const unsigned char *b)
 	power_red = bits_val(b, 12, 14);
 	add_power_red = bits_val(b, 15, 17);
 	md = bits_val(b, 18, 24);
-	high = b[25];
+	/* V.90/V.92 (bits 37:39 = 6): the analogue modem's carrier in bit
+	   33, which V.92's short phase 2 sets (Table 19/V.92; Tables
+	   10/V.90 and 18/V.92 have it 0) */
+	high = bits_val(b, 37, 39) == 6 ? b[33] : b[25];
 	preemph = bits_val(b, 26, 29);
 	max_rate = bits_val(b, 30, 33);
 	baud_ac = bits_val(b, 34, 36);
@@ -2152,6 +2155,12 @@ int V34Pump::v90_start()
 	baud_rx = rinfo1a.baud_ac;
 	if (rate_of_baud[baud_rx])
 		max_rate_rx = rate_of_baud[baud_rx];
+	/* the low carrier our INFO1d asked for.  In V.92's short phase 2
+	   (no INFO1d) INFO1a's bit 33 names the carrier (Table 19/V.92),
+	   but the modems that set it send on the low one all the same:
+	   the SM56 modem at 3200 baud (its signal centred where it is
+	   after a full phase 2, 90 Hz below the high carrier) and the
+	   Agere modem at 3429 (one carrier) */
 	if (prx.init(baud_rx, 0, 1) || prx.set_v90())
 		return -1;
 	prx_on = 1;
@@ -3205,9 +3214,11 @@ int V34Pump::handshake()
 			break;
 		}
 		if (ev_info1 && pcm && rinfo1a.baud_ca == 6) {
-			DSP_DBG("v34: INFO1a: V.90, upstream %d baud, UINFO "
-				"%d, MD %d\n",
+			DSP_DBG("v34: INFO1a: V.90, upstream %d baud%s, "
+				"UINFO %d, MD %d\n",
 				v34_bauds[rinfo1a.baud_ac].nominal,
+				short2 && rinfo1a.high ?
+				" (says: high carrier)" : "",
 				rinfo1a.uinfo, rinfo1a.md);
 			if (v90_start())
 				return DPSTAT_ERROR;
