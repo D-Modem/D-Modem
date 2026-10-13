@@ -91,11 +91,14 @@ static short dac[DAC_N];                /* the codec's samples out */
 static unsigned dac_head, dac_tail;
 static u32 gpio;
 
+/* the pumps' block in (afeRxPtr): the codec's last */
 void RdASIC(void)
 {
 	memcpy(afeRxPtr, rx_blk, blk * sizeof(short));
 }
 
+/* the pumps' block out (afeTxPtr) into the DAC's queue (what does not
+   fit is dropped) */
 void WrASIC(void)
 {
 	unsigned i;
@@ -108,6 +111,7 @@ void WrASIC(void)
 	}
 }
 
+/* the codec's rate by FreqTable index i (8000 Hz for another) */
 void SetSampleFreq(int i)
 {
 	unsigned r = i >= 0 && i < 8 ? freq_table[i] : 8000;
@@ -116,6 +120,8 @@ void SetSampleFreq(int i)
 	codec_rate = r;
 }
 
+/* samples a block: n (1 to 128, else 128); a block begun longer than
+   that is started again */
 void SetAsicBufSize(int n)
 {
 	n &= 0xff;
@@ -142,6 +148,7 @@ int ReadInport(void)
 	return 0;
 }
 
+/* the codec's gain: noted only */
 void SetCodecGain(int g)
 {
 	LOG("codec gain %#x\n", g);
@@ -156,12 +163,16 @@ int CheckLineCurrent(void)
 
 /* the DAA's registers (an Si3038 on the codec): no DAA but ours */
 static word si_reg[256];
+/* the DAA register SiRegValueW[0] asks for (bits 16..23) into
+   SiRegValueR[0], bit 31 set */
 void ReadSiReg(void)
 {
 	u32 r = (SiRegValueW[0] >> 16) & 0xff;
 	SiRegValueR[0] = (SiRegValueW[0] & 0xffff0000u) | 0x80000000u | si_reg[r];
 }
 
+/* SiNumReg DAA registers written: each its register in bits 16..23,
+   its value in 0..15 */
 void WriteSiReg(void)
 {
 	u32 i;
@@ -172,6 +183,7 @@ void WriteSiReg(void)
 	}
 }
 
+/* and the rest of the HAL: nothing to do */
 void WriteOutSiReg(void) {}
 void SiPatch(void) {}
 void RestartPt(void) {}
@@ -193,6 +205,8 @@ struct {
 } vuart_info __attribute__((aligned(32)));
 _Static_assert(sizeof(vuart_info) == 0x2018, "vuart_info");
 
+/* the UART after the driver's open: empty queues, 115200 bit/s 8N1,
+   DTR, RTS, OUT2 */
 static void vuart_init(void)
 {
 	memset(&vuart_info, 0, sizeof(vuart_info));
@@ -203,11 +217,13 @@ static void vuart_init(void)
 	COM_Vdll = 1;                   /* 115200 */
 }
 
+/* room in the DTE to modem queue */
 static int vuart_room(void)
 {
 	return 0x1000 - 2 - COM_TxQcount;
 }
 
+/* a DTE character into that queue */
 static void vuart_put(byte c)
 {
 	vuart_info.tx[vuart_info.tx_put] = c;
@@ -229,6 +245,8 @@ static long sync_n;
 
 /* online between its CONNECT and NO CARRIER or OK */
 static int online;
+/* the modem's output to the DTE, c by c: online from CONNECT, offline
+   from NO CARRIER or OK */
 static void result_scan(unsigned char c)
 {
 	static const char *const pat[] = { "CONNECT", "NO CARRIER",
@@ -304,6 +322,7 @@ static float rs_at(const float *h, double f, double cut)
 	}
 	return (float)y;
 }
+/* x in as the newest */
 static void rs_push(struct rs *r, float x)
 {
 	memmove(r->hist, r->hist + 1, (RS_TAPS - 1) * sizeof(float));
@@ -325,6 +344,7 @@ static double up_ph;            /* the next codec sample's time after the
 				   line's sample before the newest, in line
 				   samples */
 
+/* x rounded and clipped to 16 bits */
 static short sat(double x)
 {
 	return (short)(x > 32767 ? 32767 : x < -32768 ? -32768 : lrint(x));
@@ -351,6 +371,8 @@ static void block_done(void)
 	}
 }
 
+/* one codec sample each way: the DAC's next (0 if none) into the
+   downward resampler, adc into the block in; a full block's interrupt */
 static void codec_sample(short adc)
 {
 	short d = 0;
@@ -388,6 +410,8 @@ static short line_sample(short in)
  *    main loop
  */
 
+/* the HAL, UART and controller at startup, then the line from fd 3 to
+   fd 4 a sample at a time, the DTE polled every 48, until it ends */
 int main(int argc, char **argv)
 {
 	short in[480], out[480];

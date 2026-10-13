@@ -17,15 +17,22 @@ BBS_PORT, TERM_PORT = 2323, 2324
 LINES = [b"hello from the caller %d " % i + b"x" * 40 for i in range(20)]
 result = {}
 
+# a socket's sendall, recv and close on stdout and stdin (--stdio: the
+# BBS as DModem's program, on its pty)
 class Stdio:
+    # all of b, as many writes as it takes
     def sendall(self, b):
         while b:
             b = b[os.write(1, b):]
+    # up to n bytes; b"" at end of file
     def recv(self, n):
         return os.read(0, n)
+    # the pty stays: DModem hangs up when the program exits
     def close(self):
         pass
 
+# the BBS: the banner, then each line back in capitals, until BYE
+# (Goodbye, then the connection closed)
 def bbs(conn):
     conn.sendall(b"Welcome to the test BBS\r\n")
     buf = b""
@@ -43,6 +50,9 @@ def bbs(conn):
                 return
             conn.sendall(line.upper() + b"\r\n")
 
+# the user: reads the banner, sends LINES, checks their echoes, BYE and
+# Goodbye; ok, secs and bytes (each way) into result, then waits for the
+# connection to close (the call's end)
 def term(conn):
     f = conn.makefile("rb")
     t0 = time.time()
@@ -61,6 +71,8 @@ def term(conn):
     while conn.recv(4096):
         pass
 
+# one connection on 127.0.0.1:port (accept timeout: argv[1] s, else
+# 120), handed to fn
 def serve(port, fn):
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

@@ -15,6 +15,7 @@ at = sys.argv[3] if len(sys.argv) > 3 else ""
 LINES = [b"hello from the caller %d " % i + b"x" * 40 for i in range(20)]
 
 # the BBS
+# one connection: the banner, each line back in capitals, BYE ends it
 def bbs_conn(conn):
     print("bbs: connected at %.3f" % time.time(), flush=True)
     conn.sendall(b"Welcome to the test BBS\r\n")
@@ -52,11 +53,14 @@ while time.time() - t0 < 10:
     m = re.search(rb"TTY is `(\S+)'", l)
     if m:
         pty = m.group(1).decode(); break
+# the rest of slmodemd's output into the log
 threading.Thread(target=lambda: [log.write(l) or log.flush() for l in p.stdout],
                  daemon=True).start()
 fd = os.open(pty, os.O_RDWR | os.O_NOCTTY)
 tty.setraw(fd)
 buf = b""
+# the first match of pat in what the modem sent (read from the pty), buf
+# kept past it; None after t s
 def expect(pat, t):
     global buf
     end = time.time() + t
@@ -71,6 +75,7 @@ def expect(pat, t):
         except BlockingIOError:
             time.sleep(0.05)
     return None
+# AT command c, then expect(pat, t)
 def cmd(c, pat=rb"OK\r\n", t=5):
     os.write(fd, c + b"\r")
     return expect(pat, t)
@@ -84,6 +89,8 @@ if incoming:
     term.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     term.bind(("127.0.0.1", 2324)); term.listen(1); term.settimeout(120)
     user_ok = {}
+    # the user on the terminal port: the banner, LINES and their echoes,
+    # BYE and Goodbye; the result into user_ok
     def user():
         try:
             c, _ = term.accept()
@@ -91,6 +98,8 @@ if incoming:
             return
         c.settimeout(60)
         b = b""
+        # reads until pat is in b, b kept past it; False if the
+        # connection closes
         def want(pat):
             nonlocal b
             while not re.search(pat, b):

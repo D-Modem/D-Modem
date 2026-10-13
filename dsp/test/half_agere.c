@@ -98,6 +98,8 @@ static struct { int count; struct agr_instance_info slot[0x20]; } infos;
 #define NABMBAR 0x2000
 #define IRQ     11
 
+/* the library's hardware probe: one ICH4 AC'97 modem controller at our
+   NAMBAR, NABMBAR and IRQ; 0 */
 int LXHardwareInfoCreate(void **pp) fnatr;
 int LXHardwareInfoCreate(void **pp)
 {
@@ -121,6 +123,7 @@ int LXHardwareInfoCreate(void **pp)
 	*pp = &infos;
 	return 0;
 }
+/* nothing to free; 0 */
 int LXHardwareInfoDestroy(void **pp) fnatr;
 int LXHardwareInfoDestroy(void **pp) { (void)pp; return 0; }
 
@@ -150,7 +153,9 @@ static int timer_armed;
 static unsigned long long timer_at;
 #define TICK_US 4000                    /* a jiffy (HZ 250) */
 
+/* its timer off */
 fnatr void lt_init_timer(void) { timer_armed = 0; }
+/* its timer: due a jiffy (TICK_US of sample time) from now, once */
 fnatr void lt_add_timer(void (*fn)(unsigned long))
 {
 	if (!timer_fn)
@@ -159,7 +164,9 @@ fnatr void lt_add_timer(void (*fn)(unsigned long))
 	timer_armed = 1;
 	timer_at = now_us + TICK_US;
 }
+/* ms of sample time */
 fnatr u32 VMODEM_Get_System_Time(void) { return (u32)(clock_read() / 1000); }
+/* sample time as a timeval */
 fnatr void *x_do_gettimeofday(void *tv)
 {
 	struct timeval *t = (struct timeval *)tv;
@@ -172,6 +179,7 @@ static void delay_samples(unsigned n);
 /* a busy wait, interrupts on (LXHardwareStart waits for the first DMA
    interrupt so): the line runs on, silent */
 fnatr void x_ms_delay(unsigned ms) { delay_samples(ms * 8); }
+/* no I/O delay */
 fnatr void x__SLOW_DOWN_IO(void) {}
 
 /*
@@ -180,6 +188,7 @@ fnatr void x__SLOW_DOWN_IO(void) {}
 
 static word codec[0x80];
 
+/* the Si3038's registers at reset: its IDs, line 1, 8000 Hz */
 static void codec_init(void)
 {
 	memset(codec, 0, sizeof(codec));
@@ -190,6 +199,7 @@ static void codec_init(void)
 	codec[0x62] = 0x7000;           /* line side device: 7 */
 }
 
+/* codec register r */
 static word codec_read(int r)
 {
 	r &= 0x7e;
@@ -202,6 +212,8 @@ static word codec_read(int r)
 	}
 }
 
+/* codec register r = v: the IDs read only, the line side device kept 7,
+   a rate other than 8000 Hz said to be missing */
 static void codec_write(int r, word v)
 {
 	r &= 0x7e;
@@ -240,17 +252,22 @@ static u32 glob_cnt, glob_sta = 0x100;  /* the primary codec is ready */
 #define CR_FEIE  0x08
 #define CR_IOCE  0x10
 
+/* buffer descriptor i of b's list: the buffer's address, its length
+   in samples | IOC (bit 31) */
 static u32 *bd(struct bm *b, int i)
 {
 	return (u32 *)(unsigned long)(b->bdbar + 8 * (i & 31));
 }
 
+/* the current descriptor's length into PICB, from its start */
 static void bm_load(struct bm *b)
 {
 	b->picb = (word)(bd(b, b->civ)[1] & 0xffff);
 	b->pos = 0;
 }
 
+/* a write of the control register: reset (RR), run (RPBM, from the
+   current descriptor), stop (DCH set) */
 static void bm_cr(struct bm *b, byte v)
 {
 	if (dbg > 1)
@@ -273,6 +290,7 @@ static void bm_cr(struct bm *b, byte v)
 	b->cr = v & 0x1f;
 }
 
+/* b's interrupt: a status bit whose enable is set */
 static int bm_irq(const struct bm *b)
 {
 	return ((b->sr & SR_BCIS) && (b->cr & CR_IOCE)) ||
@@ -280,6 +298,7 @@ static int bm_irq(const struct bm *b)
 		((b->sr & SR_FIFOE) && (b->cr & CR_FEIE));
 }
 
+/* GLOB_STA, its PCM in and out interrupt bits as the bus masters are */
 static u32 glob_status(void)
 {
 	return (glob_sta & ~6u) | (bm_irq(&pi) ? 2 : 0) | (bm_irq(&po) ? 4 : 0);
@@ -320,6 +339,7 @@ static short bm_sample(struct bm *b, short in)
 }
 
 static u32 io_in2(unsigned a, int size);
+/* a port read of size bytes (logged with AGERE_DEBUG=2) */
 static u32 io_in(unsigned a, int size)
 {
 	u32 v = io_in2(a, size);
@@ -328,6 +348,8 @@ static u32 io_in(unsigned a, int size)
 	return v;
 }
 
+/* the codec's registers at NAMBAR; the bus masters', GLOB_CNT and
+   GLOB_STA at NABMBAR; all ones elsewhere */
 static u32 io_in2(unsigned a, int size)
 {
 	if (a >= NAMBAR && a < NAMBAR + 0x100)
@@ -357,6 +379,7 @@ static u32 io_in2(unsigned a, int size)
 	return size == 1 ? 0xff : size == 2 ? 0xffff : 0xffffffff;
 }
 
+/* a port write of size bytes, as io_in2 has them */
 static void io_out(unsigned a, u32 v, int size)
 {
 	if (dbg > 1)
@@ -385,6 +408,8 @@ static void io_out(unsigned a, u32 v, int size)
 	LOG("out%d %04x = %x\n", size, a, v);
 }
 
+/* the library's port I/O: absolute ports, and ModemReg* from
+   BaseAddress */
 fnatr byte agr_inp(unsigned a) { return (byte)io_in(a, 1); }
 fnatr word agr_inpw(unsigned a) { return (word)io_in(a, 2); }
 fnatr unsigned agr_inpl(unsigned a) { return io_in(a, 4); }
@@ -404,16 +429,20 @@ fnatr unsigned long ModemRegIn32(unsigned p) { return io_in(p + BaseAddress, 4);
  *    the operating system
  */
 
+/* memory: calloc'd; a bus address the pointer (a 32 bit process) */
 fnatr void *x_vmalloc(unsigned n) { return calloc(1, n); }
 fnatr void x_vfree(void *p) { free(p); }
 fnatr void *x_kmalloc(unsigned n) { return calloc(1, n); }
 fnatr void x_kfree(void *p) { free(p); }
 fnatr unsigned x_virt_to_bus(void *p) { return (unsigned)(unsigned long)p; }
+/* no memory mapped I/O: NULL */
 fnatr void *x_ioremap_nocache(unsigned a, unsigned n)
 {
 	LOG("ioremap %x %u\n", a, n);
 	return NULL;
 }
+/* unmapping, the interrupt flag and I/O regions: nothing to do (one
+   thread, every port ours) */
 fnatr void x_iounmap(void *p) { (void)p; }
 fnatr void x_save_flags(unsigned long *f) { *f = 0; }
 fnatr void x_restore_flags(unsigned long *f) { (void)f; }
@@ -429,6 +458,7 @@ fnatr void x_release_region(unsigned long s, unsigned long n) { (void)s; (void)n
 
 static void *isr_dev;
 static int isr_on;
+/* its interrupt: dev noted for LX_isr_handler, which raise_irq calls */
 int x_request_irq(unsigned irq, void *handler, unsigned long flags,
 		  const char *name, void *dev) fnatr;
 int x_request_irq(unsigned irq, void *handler, unsigned long flags,
@@ -440,6 +470,7 @@ int x_request_irq(unsigned irq, void *handler, unsigned long flags,
 	isr_on = 1;
 	return 0;
 }
+/* and no more */
 fnatr void x_free_irq(unsigned irq, void *dev) { (void)irq; (void)dev; isr_on = 0; }
 
 /* the bottom half: run after the ISR that queues it */
@@ -447,6 +478,7 @@ typedef void (*x_func_ptr)(void *);
 struct task { void *data; int queued; };
 static struct task *tasks[8];
 static int ntasks;
+/* a bottom half: task t for data (its function is LXHardwareBottomHalf) */
 void x_task_queue_init(void *t, x_func_ptr f, void *data) fnatr;
 void x_task_queue_init(void *t, x_func_ptr f, void *data)
 {
@@ -455,6 +487,7 @@ void x_task_queue_init(void *t, x_func_ptr f, void *data)
 	k->data = data;
 	k->queued = 0;
 }
+/* t to run after the ISR, once (8 queued at most) */
 fnatr void x_queue_task(void *t)
 {
 	struct task *k = (struct task *)t;
@@ -464,6 +497,7 @@ fnatr void x_queue_task(void *t)
 	}
 }
 
+/* the bottom halves queued, in order, each with its data */
 static void run_tasks(void)
 {
 	while (ntasks) {
@@ -474,6 +508,7 @@ static void run_tasks(void)
 	}
 }
 
+/* the C library's, by the kernel layer's names */
 fnatr char *x_strcpy(char *d, const char *s) { return strcpy(d, s); }
 fnatr char *x_strncpy(char *d, const char *s, int n) { return strncpy(d, s, n); }
 fnatr char *x_strcat(char *d, const char *s) { return strcat(d, s); }
@@ -495,6 +530,7 @@ int x_sprintf(char *buf, const char *fmt, ...)
 	return n;
 }
 
+/* its log: with AGERE_DEBUG; x_linux_dbg_print_crit's always */
 fnatr void linux_debug_message(byte *msg) { LOG("%s\n", msg); }
 void x_linux_dbg_print(const char *fmt, ...) fnatr;
 void x_linux_dbg_print(const char *fmt, ...)
@@ -515,6 +551,8 @@ void x_linux_dbg_print_crit(const char *fmt, ...)
 	va_end(ap);
 }
 
+/* PCI: there, but no device found and its configuration space zeros
+   (LXHardwareInfoCreate gives the hardware) */
 fnatr int x_pcibios_present(void) { return 1; }
 fnatr unsigned agr_pci_find_device(unsigned v, unsigned d, unsigned *irq)
 {
@@ -522,6 +560,7 @@ fnatr unsigned agr_pci_find_device(unsigned v, unsigned d, unsigned *irq)
 	(void)irq;
 	return 0;
 }
+/* a configuration space read: 0 */
 #define PCICFG(name, type) \
 	fnatr int name(byte bus, byte devfn, byte where, type *val) \
 	{ LOG(#name " %02x\n", where); (void)bus; (void)devfn; *val = 0; return 0; }
@@ -533,6 +572,7 @@ fnatr int x_pcibios_write_config_word(byte b, byte df, byte w, word v)
 fnatr int x_pcibios_write_config_dword(byte b, byte df, byte w, unsigned v)
 { (void)b; (void)df; (void)w; (void)v; return 0; }
 
+/* one CPU, no module counts, atomics plain */
 fnatr int x_smp_processor_id(void) { return 0; }
 fnatr int x_smp_num_cpus(void) { return 1; }
 fnatr void x_MOD_INC_USE_COUNT(void) {}
@@ -566,6 +606,8 @@ static long sync_n, sync_phase, line_n; /* AGERE_SYNC_PHASE: at that
 /* online between its CONNECT and NO CARRIER or OK (the UART has no
    DCD to tell) */
 static int online;
+/* the modem's output to the DTE, c by c: online from CONNECT, offline
+   from NO CARRIER or OK */
 static void result_scan(unsigned char c)
 {
 	static const char *const pat[] = { "CONNECT", "NO CARRIER",
@@ -585,6 +627,8 @@ static void result_scan(unsigned char c)
 	}
 }
 
+/* the UART's output to the pty, then the pty's input into the UART
+   while it has room (in command mode at AGERE_SYNC's phase only) */
 static void uart_poll(void)
 {
 	unsigned char buf[256];
@@ -611,6 +655,7 @@ static void uart_poll(void)
 	}
 }
 
+/* the serial driver's: polled instead */
 static int rs_interrupt(void)
 {
 	return 0;
@@ -621,6 +666,7 @@ static int rs_interrupt(void)
  */
 
 static long creeps;
+/* a sample's time without the line: the bus masters move on, silent */
 static void idle_sample(void)
 {
 	if (++creeps % 1000 == 1 && dbg > 1)
@@ -629,6 +675,8 @@ static void idle_sample(void)
 	bm_sample(&pi, 0);
 }
 
+/* the interrupt: the ISR and the bottom halves while GLOB_STA asks for
+   it (4 times at most) */
 static void raise_irq(void)
 {
 	int guard = 0;
@@ -643,12 +691,15 @@ static void raise_irq(void)
 }
 
 static short line_sample(short in);
+/* n silent samples of the line */
 static void delay_samples(unsigned n)
 {
 	while (n--)
 		line_sample(0);
 }
 
+/* one sample each way through the bus masters, the interrupt when one
+   starts to ask for it, the timer when due; the sample to the line */
 static short line_sample(short in)
 {
 	short out;
@@ -668,6 +719,9 @@ static short line_sample(short in)
 	return out;
 }
 
+/* the library's init and open, the UART as the serial driver sets it,
+   then the line from fd 3 to fd 4 a sample at a time, the UART polled
+   every 48 samples, until the line ends */
 int main(int argc, char **argv)
 {
 	unsigned char res[8] = { 0 };
