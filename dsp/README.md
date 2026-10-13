@@ -649,11 +649,25 @@ so our answer to RM is not tested.
 The original library starts renegotiations of its own when the line gets
 worse downstream (in netsim: `NET_NOISE_DIR=bacodes`, noise added to the
 PCM codes) and asks for the silent period; we go through it, but the CPu
-it sends afterwards still has its earlier rate while its receiver
-expects the new one (B1d, it logs, has half its bits wrong), and it
-retrains with tone A. `NET_NOISE_QUIET=<ms>` stops netsim's noise when
-the signal it goes onto has been silent that long, to try that on a clean
-line; the call goes on after the retrain.
+it sends afterwards has its earlier rate while its receiver expects one
+rate down, and 15 ms into B1d it retrains with tone A. Its own log (its
+`$!$` lines are `edprintf`'s, each byte two characters, a nibble plus
+a key that goes round 4 6 2 7 1 9 3 5 8 7, plus '0': `test/blob_log.py`
+decodes them) and its code have why: it builds the CPu's parameters (`setV92CPpckFromParamsInfo`) when
+its TRN2u ends, from the design it has then (56000), and after the
+silence designs again, "one rate down on silence rrn" (54666), for its
+receiver alone. The CPu it then sends, rebuilt when it gets our SUVd
+after the silence (`recivedPartTwoSilenceRrnSUV`: we send it, it takes
+it), still has the parameters of the first design. That is the library's
+own, whatever the digital modem does, and its new constellation is not
+in anything it sends: the call goes on after its retrain.
+`NET_NOISE_QUIET=<ms>` stops netsim's noise when the signal it goes onto
+has been silent that long, to try that on a clean line.
+
+A renegotiation of the analogue modem's in the middle of our fast
+parameter exchange (the original library gives one up so when the noise
+keeps it from reading our CPd) gives the exchange up: phase 4 from its
+TRN2u instead.
 
 The Agere modem's V.90 training failed at some delays of the line, in
 a pattern that repeats every 48 samples (its codec's blocks), with the

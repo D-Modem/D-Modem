@@ -957,6 +957,15 @@ void V92Up::rn_rx_start()
 		rn = 1;
 		rn_at = n;
 	}
+	/* in the middle of a fast parameter exchange (the original library
+	   gives ours up so when it cannot read our CPd): phase 4 again
+	   instead, its CPd from TRN2u */
+	if (fpe) {
+		DSP_DBG("v92: the fast parameter exchange given up\n");
+		fpe = fpe_rf = fpe_req = fpe_slip = fpe_tx_init = 0;
+		fpe_rx = fpe_sw = fpe_early = 0;
+		pf_new = 0;
+	}
 	tone_n = 0;
 	rev_n = 0;
 }
