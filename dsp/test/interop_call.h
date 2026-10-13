@@ -28,6 +28,7 @@ namespace interop {
  *   STREAM=<s>        keep the data going for that long, then check it
  *   BULK=<octets>     that much each way: text, binary, repeats, noise
  *   CALLS=<n>         that many calls, the data on the last; DIAL=<number>
+ *   HANGUP_WAIT=<s>   on hook between calls (2)
  *   RESTART_B=1       modemB a new process for each call after the first
  *   MIDCALL_A=<s>:<cmd>;...  (or _B) escape that modem s seconds into the
  *                     data, give it the commands (WAIT <s> waits), ATO

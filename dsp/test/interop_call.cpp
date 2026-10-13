@@ -542,6 +542,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		for (int k = 0; k < 2; k++)
 			dte.fd[k] = open_pty(m[k]->pty);
 		static const std::regex ok_re("OK"), ok_err("OK|ERROR"),
+			hung_re("OK|NO CARRIER"),
 			connect_a("(CONNECT[^\r]*|NO CARRIER|NO ANSWER|BUSY)\r"),
 			connect_b("(CONNECT[^\r]*|NO CARRIER)\r"),
 			ok_cr("OK\r"),
@@ -588,13 +589,16 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				for (int k = 0; k < 2; k++) {
 					dte.buf[k].clear();
 					dte.cmd(k, "ATH");
-					if (!dte.wait(k, ok_re, 10)) {
+					/* (PCTel's: NO CARRIER) */
+					if (!dte.wait(k, hung_re, 10)) {
 						say("%s ATH %s\n", NAME[k],
 						    show(dte.buf[k]).c_str());
 						done(false);
 					}
 				}
-				sleep_s(2);
+				/* HANGUP_WAIT: on hook that long (PCTel's
+				   second call stops in phase 2 after 2 s) */
+				sleep_s(atof(env("HANGUP_WAIT", "2").c_str()));
 				if (!env("RESTART_B").empty()) {
 					m[1]->stop(true);
 					close(dte.fd[1]);

@@ -1130,10 +1130,14 @@ which is V.34's 3429 baud times 3, 72000 / 7 Hz, and the harness ran it
 at 10287 Hz exactly, 125 ppm off the line's 8000 Hz. A V.90 analogue
 modem's sampling has to follow the network's clock; this one does not
 track such an offset. At 72000 / 7 Hz its CPt asks for drn 14 and the
-call trains. Asked for V.92 it connects with V.90 (no quick connect or
-PCM upstream offer on a first call); a second call is not tested (it
-answers ATH after +++ with NO CARRIER, which interop_call does not take
-for the hang up).
+call trains. Asked for V.92 it connects with V.90, with no quick connect
+or PCM upstream offer, on the first call and on a second one too. It
+answers ATH after +++ with NO CARRIER, which interop_call takes for the
+hang up as it does OK. On hook for the driver's usual 2 s its second
+call stops in phase 2 (its DSP never leaves the state after INFO0, and
+never switches its codec to 9600 Hz for it); with 3 s or more it trains
+(in real time, as the tests run; `HANGUP_WAIT`). `pctel_v90_calls` makes
+two calls on hook for 5 s between: 50666/33600 both.
 
 ### Against the Conexant HSF soft modem
 

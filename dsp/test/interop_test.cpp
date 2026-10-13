@@ -435,6 +435,13 @@ std::vector<Call> calls()
 		      "DSP_G711=" + law, "STREAM=5",
 		      "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* two calls (PCTel answers ATH with NO CARRIER, and wants more than
+	   2 s on hook before the next): V.90 again */
+	add("pctel", "pctel_v90_calls", "pctel", "open8", "ATX3;AT+MS=V90",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "STREAM=3", "CALLS=2", "HANGUP_WAIT=5",
+	      "EXPECT_B=(?s)V.90 connect 5[0-9]{4}/.*V.90 connect 5[0-9]{4}/",
+	      "PROTO_B=ATX3;AT+MS=90" });
 	/* and in its automode (no +MS: forced to one of these its answerer
 	   is silent after its answer tone), V.21, V.22, V.22bis and V.23
 	   both ways against our forced ones */
