@@ -89,7 +89,10 @@ static int sync_on;
 static volatile sig_atomic_t synced;
 /* NET_DELAY=<ms>: see main().
    NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
-   back towards B */
+   back towards B: what A received <ms> before, counted in A's samples
+   (from the line, before A's codec clips it); with a soft modem as A,
+   that has to be more than A sends ahead of what it receives (some
+   20 ms for the HSF), else some samples go without their echo */
 #define ECHO_MAX 16384
 static float echo_g, echo_buf[ECHO_MAX];
 static long echo_d, echo_w, echo_r;     /* samples to A, from A */
@@ -227,6 +230,8 @@ struct dir {
 	Resampler rs;
 	struct rc_up rc;
 	short obuf[8192];
+	float lbuf[8192];        /* the same on the line: the hybrid's echo
+				   (before A's codec clips it) */
 	int on;
 	long nin;               /* input samples so far */
 	long t0;                /* NET_SYNC: nin at the SIGUSR1, -1 before */
@@ -497,19 +502,34 @@ static int run(struct dir *d, int a_out, int a_in)
 		   hybrid's echo comes in A's own sample clock */
 		if (a_out && echo_g) {
 			long k = echo_r - echo_d;
-			if (k >= 0 && k < echo_w && echo_w - k < ECHO_MAX)
-				ibuf[i] = (short)lrintf(ibuf[i] + echo_g *
-							echo_buf[k % ECHO_MAX]);
+			static long early;
+			/* (A sends ahead of what it has received by more than
+			   the echo's delay: no echo then) */
+			if (k >= echo_w && ++early && !(early & (early - 1)))
+				fprintf(stderr, "netsim: %ld samples without "
+					"their echo (A sends %ld samples ahead; "
+					"NET_ECHO's delay is too short)\n",
+					early, k - echo_w + echo_d + 1);
+			if (k >= 0 && k < echo_w && echo_w - k < ECHO_MAX) {
+				/* the codec clips the sum */
+				long x = lrintf(ibuf[i] + echo_g *
+						echo_buf[k % ECHO_MAX]);
+				ibuf[i] = (short)(x > 32767 ? 32767 :
+						  x < -32768 ? -32768 : x);
+			}
 		}
 		if (a_out)
 			echo_r++;
 		if (d->rate_in == d->rate_out) {
 			if (loop_on && a_in) {
 				float v = loop_run((float)g711(ibuf[i]));
+				d->lbuf[o] = v;
 				d->obuf[o++] = (short)(v > 32767 ? 32767 :
 						       v < -32768 ? -32768 : v);
-			} else
+			} else {
+				d->lbuf[o] = (float)g711(ibuf[i]);
 				d->obuf[o++] = (short)g711(ibuf[i]);
+			}
 			wav_put(!a_out, g711(ibuf[i]));
 			continue;
 		}
@@ -527,6 +547,7 @@ static int run(struct dir *d, int a_out, int a_in)
 					fprintf(stderr, "netsim: %ld samples "
 						"clipped at the far codec\n",
 						clipped);
+				d->lbuf[o] = y[k];
 				d->obuf[o++] = (short)(y[k] > 32767 ? 32767 :
 						       y[k] < -32768 ? -32768 : y[k]);
 			}
@@ -535,7 +556,9 @@ static int run(struct dir *d, int a_out, int a_in)
 				wav_put(!a_out, g711(ibuf[i]));
 			m = d->rs.run(ibuf[i] * gain_up, y);
 			for (k = 0; k < m; k++) {
-				d->obuf[o++] = (short)g711((int)lrintf(y[k]));
+				d->obuf[o] = (short)g711((int)lrintf(y[k]));
+				d->lbuf[o] = d->obuf[o];
+				o++;
 				if (d->rate_out == 8000)
 					wav_put(!a_out, d->obuf[o - 1]);
 			}
@@ -543,7 +566,7 @@ static int run(struct dir *d, int a_out, int a_in)
 	}
 	if (a_in)
 		for (i = 0; i < o; i++)
-			echo_buf[echo_w++ % ECHO_MAX] = d->obuf[i];
+			echo_buf[echo_w++ % ECHO_MAX] = d->lbuf[i];
 	if (wav)
 		wav_flush(wav_sig > 1);
 	for (i = 0; i < o * 2; ) {

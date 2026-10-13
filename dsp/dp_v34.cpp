@@ -302,8 +302,11 @@ struct V34Echo {
 	int on, far_on, far_delay, trained;
 	int judged, bypass;     /* the echo was measured; none: off */
 	long n, since, filled, far_since;
-	float mu, dbg_rx, dbg_err;
+	float mu, dbg_rx, dbg_err, dbg_tx, dbg_est;
 	float pw_rx, pw_err;    /* in and out while training */
+	float es;               /* the error's short term power */
+	float pw_est;           /* the echo taken away */
+	long dt;                /* samples frozen for the remote's signal */
 
 	void init();
 	void search();
@@ -349,6 +352,7 @@ struct V34Pump : Pump {
 	long fcount;
 	unsigned char mpb[256]; /* our MP, filled to whole frames */
 	int mp_len, mp_pos, mp_ack, mp_ack_sent;
+	int mp_h[6];            /* V.90: the precoder our last MP asked for */
 	int D;                  /* bits per data frame */
 	int up_n;               /* upstream rate, 2400 bit/s units */
 	/* V.90 rate renegotiation (9.6/V.90) */
@@ -1787,8 +1791,19 @@ float V34Echo::run(float tx, float rx)
 			en += h * h;
 		}
 	err = rx - est;
+	pw_est += 0.001f * (est * est - pw_est);
 	/* what the near part leaves, for the far echo search */
 	rxh[rpos] = err;
+	/* the remote's signal (its Su at the end of our training) in the
+	   error: no adaptation on it and no part in the measured ERLE */
+	es += 0.03f * (err * err - es);
+	if (mu >= 0.05f && mu < 0.5f && es > 8 * pw_err + 1000) {
+		if (!dt++)
+			DSP_DBG("v34: echo canceller: the remote's signal "
+				"(%.0f rms against %.0f), adaptation off\n",
+				sqrtf(es), sqrtf(pw_err));
+		return err;
+	}
 	/* normalized by the energy in the taps; not on our own silence */
 	if (mu > 0 && en > 1e4f * (EC_NEAR_LEN + EC_FAR_LEN)) {
 		g = mu * err / en;
@@ -1806,10 +1821,14 @@ float V34Echo::run(float tx, float rx)
 	if (dsplibs_debug_level >= 6) {
 		dbg_rx += 0.001f * (rx * rx - dbg_rx);
 		dbg_err += 0.001f * (err * err - dbg_err);
+		dbg_tx += 0.001f * (tx * tx - dbg_tx);
+		dbg_est += 0.001f * (est * est - dbg_est);
 		if ((pos & 4095) == 0)
 			DSP_DBG("v34: echo canceller mu %.3f in %.0f out %.0f "
-				"(%.1f dB)\n", mu, dbg_rx, dbg_err,
-				10 * log10f((dbg_rx + 1) / (dbg_err + 1)));
+				"(%.1f dB), ours %.0f, the echo taken %.0f\n",
+				mu, dbg_rx, dbg_err,
+				10 * log10f((dbg_rx + 1) / (dbg_err + 1)),
+				dbg_tx, dbg_est);
 	}
 	return err;
 }
@@ -1833,8 +1852,9 @@ void V34Pump::ec_schedule()
 		e->on = 1;
 		e->n = e->since = e->filled = 0;
 		e->far_on = 0;
-		e->judged = e->bypass = 0;
-		e->pw_rx = e->pw_err = 0;
+		e->judged = e->bypass = e->trained = 0;
+		e->pw_rx = e->pw_err = e->es = e->pw_est = 0;
+		e->dt = 0;
 		DSP_DBG("v34: echo canceller on\n");
 	}
 	if (ours)
@@ -1870,7 +1890,14 @@ void V34Pump::ec_schedule()
 			float erle = 10 * log10f((e->pw_rx + 1) /
 						 (e->pw_err + 1));
 			e->judged = 1;
-			e->bypass = erle < 6;
+			/* V.90: the receiver's error so far had our echo
+			   in it; the precoder our MP asks for is to be found
+			   from what comes now */
+			if (v90_digital())
+				prx.err_reset();
+			/* (DSP_EC=0: off anyway, for tests) */
+			e->bypass = erle < 6 || (getenv("DSP_EC") &&
+						 !atoi(getenv("DSP_EC")));
 			DSP_DBG("v34: echo canceller took %.1f dB away%s\n",
 				erle, e->bypass ? ": off" : "");
 		}
@@ -2079,21 +2106,24 @@ static int v34_rate_of_mse(int baud, float mse)
 
 void V34Pump::v90_make_mp(int ack)
 {
-	int h[6];
-	float gain = prx.precoder(h);
 	if (!max_rate_rx) {
 		max_rate_rx = v34_rate_of_mse(baud_rx, prx.mse);
 		DSP_DBG("v34: upstream at most %d bit/s (mse %.5f)\n",
 			max_rate_rx * 2400, prx.mse);
 	}
-	if (!mp_len || ack != mp_ack)
-		DSP_DBG("v34: V.90 precoding would gain %.2f dB: h %d %d %d "
-			"%d %d %d\n", gain, h[0], h[1], h[2], h[3], h[4],
-			h[5]);
-	if (gain < V34_PRECODE_MIN)
-		memset(h, 0, sizeof(h));
+	/* the precoder once for the exchange: every MP of it asks for the
+	   same (the analogue modem may take the first, or the last), and
+	   the data mode receiver takes it */
+	if (!mp_len) {
+		float gain = prx.precoder(mp_h);
+		DSP_DBG("v34: V.90 precoding would gain %.2f dB (over %ld "
+			"symbols): h %d %d %d %d %d %d\n", gain, prx.err_n,
+			mp_h[0], mp_h[1], mp_h[2], mp_h[3], mp_h[4], mp_h[5]);
+		if (gain < V34_PRECODE_MIN)
+			memset(mp_h, 0, sizeof(mp_h));
+	}
 	mp_len = v90_mp_build(mpb, max_rate_rx, V34_TRELLIS, 1, ack,
-				 0x1FFF, h);
+				 0x1FFF, mp_h);
 	while (mp_len % D)
 		mpb[mp_len++] = 0;
 	mp_pos = 0;
@@ -2180,18 +2210,17 @@ static void v90_get_frame(void *ctx, V90Tx *t, unsigned char *b,
 int V34Pump::v90_data_setup()
 {
 	V34Params p;
-	int h[6], n, mask = cp.rate_mask & 0x1FFF;
-	float gain = prx.precoder(h);
+	int n, mask = cp.rate_mask & 0x1FFF;
 
-	if (gain < V34_PRECODE_MIN)
-		memset(h, 0, sizeof(h));
 	for (n = max_rate_rx; n >= 2; n--)
 		if ((mask >> (n - 2)) & 1 && v34_rates[baud_rx][n - 1].b)
 			break;
 	if (n < 2 || p.init(baud_rx, n, 1))
 		return -1;
 	p.states = 16 << V34_TRELLIS;
-	p.set_precoder(h);
+	/* the analogue modem precodes with what our last MP said, not
+	   with what the equalizer has adapted to since */
+	p.set_precoder(mp_h);
 	prx.start_data(&p, v34_put_bits, this);
 	up_n = n;
 	rate_rx = p.rate;
@@ -3276,6 +3305,7 @@ int V34Pump::handshake()
 			mp_ack_sent = 0;
 			fmode = F_MP;
 			fcount = 0;
+			mp_len = 0;
 			v90_make_mp(1);
 			timeout = total + ms2samples(5500, srate) + 3 * rtd;
 		}
@@ -3665,6 +3695,13 @@ int V34Pump::process(void *in, void *out, int cnt)
 			ec_schedule();
 			if (ec.on && !ec.bypass)
 				x92 = ec.run(last_tx, x92);
+			/* for the PCM upstream design: what the codec
+			   quantizes with the analogue modem's signal */
+			v92u.pf_echo = ec.on && !ec.bypass && ec.judged ?
+				sqrtf(ec.pw_est) : 0;
+			/* and what the canceller leaves of it */
+			v92u.pf_echo_res = v92u.pf_echo *
+				sqrtf((ec.pw_err + 1) / (ec.pw_rx + 1));
 			ev = v92u.sample((int)lrintf(x92), &y92);
 			last_tx = (float)y92;
 			dst[i] = (s16)y92;

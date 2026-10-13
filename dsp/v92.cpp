@@ -657,7 +657,10 @@ void V92Up::rx_sample(float x)
 		}
 		break;
 	case V92R_QUIET:
-		if (tone_n >= 96) {
+		/* (the analogue modem sends Su once it has heard our Jd:
+		   before, a tone is the echo of our own Sd) */
+		if (tone_n >= 96 &&
+		    !(tx.seg >= V90_SD && tx.seg <= V90_TRN1D)) {
 			DSP_DBG("v92: Su at %ld\n", n);
 			su_ref = tbh[n & 31];
 			su_back = 0;
@@ -2092,6 +2095,19 @@ int V92Up::pf_sim(int M, const short *pts, int lc, int nsym, double *pw,
 			u2 = ((rnd >> 8) + 1.0) / 16777217.0;
 			r += pf_noise * sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
 		}
+		/* our echo (Gaussian here) comes in before the codec and is
+		   taken away after it: what is left of it is the codec's
+		   quantization of the sum */
+		double ec = 0;
+		if (pf_echo > 0) {
+			double u1, u2;
+			rnd = rnd * 1103515245 + 12345;
+			u1 = ((rnd >> 8) + 1.0) / 16777217.0;
+			rnd = rnd * 1103515245 + 12345;
+			u2 = ((rnd >> 8) + 1.0) / 16777217.0;
+			ec = pf_echo * sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
+			r += ec;
+		}
 		/* G.711: the nearest level */
 		a = fabs(r);
 		while (lo < hi) {
@@ -2104,7 +2120,17 @@ int V92Up::pf_sim(int M, const short *pts, int lc, int nsym, double *pw,
 		lev = pf_lev[lo];
 		if (lo > 0 && a - pf_lev[lo - 1] < lev - a)
 			lev = pf_lev[lo - 1];
-		u = pf_grid(&c, (float)((r < 0 ? -lev : lev) / pf_cd));
+		/* (with what the canceller leaves of it) */
+		if (pf_echo_res > 0) {
+			double u1, u2;
+			rnd = rnd * 1103515245 + 12345;
+			u1 = ((rnd >> 8) + 1.0) / 16777217.0;
+			rnd = rnd * 1103515245 + 12345;
+			u2 = ((rnd >> 8) + 1.0) / 16777217.0;
+			ec -= pf_echo_res * sqrt(-2 * log(u1)) *
+				cos(2 * M_PI * u2);
+		}
+		u = pf_grid(&c, (float)(((r < 0 ? -lev : lev) - ec) / pf_cd));
 		eta = (int)floorf(u / 2);
 		if (eta < -lc)
 			eta = -lc;
@@ -2273,23 +2299,20 @@ void V92Up::pf_slip_sample()
 }
 
 /* the slope of the network codec's mean output at its input v, with the
-   noise (pf_noise rms, Gaussian) before it: its steps at the thresholds
-   between the levels, each in as far as the noise reaches it */
+   noise (pf_noise rms, Gaussian, and our echo) before it: its steps at
+   the thresholds between the levels, each in as far as the noise
+   reaches it */
 double V92Up::pf_qslope(double v) const
 {
-	double a = fabs(v), sg = pf_noise > 0.5 ? pf_noise : 0.5, k = 0;
-	int lo = 0, hi = 127, j;
+	double a = fabs(v), k = 0,
+		sg = sqrt(pf_noise * pf_noise + pf_echo * pf_echo);
+	if (sg < 0.5)
+		sg = 0.5;
+	int j;
 
-	while (lo < hi) {
-		int m = (lo + hi) / 2;
-		if (pf_lev[m] < a)
-			lo = m + 1;
-		else
-			hi = m;
-	}
 	/* the thresholds within 5 sigma on either side (and the one at
 	   zero, between -L0 and L0) */
-	for (j = lo > 8 ? lo - 8 : 0; j < 127 && j < lo + 8; j++) {
+	for (j = 0; j < 127; j++) {
 		double b = (pf_lev[j] + pf_lev[j + 1]) / 2.0,
 			z = (b - a) / sg;
 		if (fabs(z) < 5)
@@ -2484,9 +2507,10 @@ int V92Up::pf_design(const char *fix)
 	for (j = 0; j < V92_PF_B; j++)
 		sb += fabs(pf_b[j]);
 	DSP_DBG("v92: channel: SNR %.1f dB (G.711's alone %.1f dB, noise "
-		"%.1f rms); prefilter delay %d, interference %.1f dB, "
+		"%.1f rms, our echo %.0f rms); prefilter delay %d, interference %.1f dB, "
 		"sum |b| %.2f, G %.6f\n", 10 * log10(hh / e2),
-		10 * log10(hh / q2), pf_noise, pf_d, 10 * log10(resid), sb,
+		10 * log10(hh / q2), pf_noise, pf_echo, pf_d,
+		10 * log10(resid), sb,
 		pf_g);
 	for (drn = 19; drn >= 1; drn--) {
 		if (up_mask && !((up_mask >> (drn - 1)) & 1))

@@ -173,7 +173,11 @@ constants (the superconstellation, Table 10 rates, the PP sequence).
   27 ms around the echo from the other end's hybrid, with one shared error.
   Both train while our own phase 3 sequences go out and the remote is
   silent (the caller waits for the answerer's J to stop), fast, then
-  slower. Where the far echo is gets measured: the near part's residual
+  slower; once the error is well above what the training has left (the
+  remote's first signal, before we have seen it), they stop adapting, and
+  that is not counted in the echo it took away (with it counted, the
+  remote's Su made a canceller that had taken 35 dB away look like one of
+  3 dB, and switch off). After a retrain it trains again from the start. Where the far echo is gets measured: the near part's residual
   is correlated with our scrambled signal at every delay up to 1.7 s (over
   VoIP the echo comes back after the network delay). The tone detectors of
   phase 2 listen exactly on a bin of the 64 sample probe period, where the
@@ -243,7 +247,18 @@ law is mu-law, or A-law with `DSP_G711=alaw`.
   trained on the remote's signal would add noise. With the hybrid echo of netsim 20 dB down, or 12 dB down after
   200 ms, calls still connect at 56000/31200; 12 dB down after 20 ms is
   too much at times: the echo of the DIL's loudest codes hides the
-  analogue modem's S.
+  analogue modem's S. Our MP's precoding coefficients are found once per
+  exchange, from the equalizer's error since the echo canceller took
+  over (before, our echo colours the error, and the predictor reads a
+  gain of 3 to 6 dB into it), every MP of the exchange asks for the same
+  ones, and the data mode receiver takes those: the HSF modem keeps
+  what it was asked for first, and a receiver that worked out its own at
+  the start of the data mode (as it did) had an mse of 0.66 instead of
+  0.14 against it. Against the HSF modem with its hybrid's echo 20 dB
+  down after 50 ms (`hsf_v90_echo`) the canceller takes 30 dB away and
+  the call connects at 52000/33600 (at times after a retrain); 10 dB
+  down, the upstream renegotiates down to 28800 or below, the G.711
+  quantization of the echo with the upstream signal being part of it.
 
 The original library, as an analogue V.90 modem calling through the
 simulated network (`ctest -R interop_v90`), connects at 56000
@@ -571,10 +586,30 @@ exchange goes by unseen and it retrains.
 |---|---|
 | u-law, A-law | a fast parameter exchange for the slip (or more), the same rate after it, the data through |
 
-In data mode the analogue modem's tone A retrains. The echo canceller
-(the V.34 pump's, trained while we send Sd to Jd) could not be tested: netsim's echo
-(`NET_ECHO`) through its 9600 Hz converters is not one an 8000 Hz
-canceller cancels, for V.90 either.
+In data mode the analogue modem's tone A retrains.
+
+The echo canceller (the V.34 pump's, at 8000 Hz, trained while we send
+Sd to Jd) has the echo of the hybrid at the analogue modem's line to
+take away. It comes in before the network codec, and PCM upstream relies
+on the analogue modem's points arriving on the codec's levels: with
+echo, the codec quantizes the sum, and what is left once the canceller
+has taken the echo away is the codec's error on it, about a level step
+over the square root of 12 whatever the echo's level (some 26 rms at
+33333 bit/s already with the echo 30 dB down, against 5 without). The
+channel fit on TRN2u (not on the levels) does not see that, so the
+design's simulation of the network codec adds the echo (Gaussian, of the
+power the canceller takes away) before the codec and takes it away
+after, and what the canceller leaves of it after: its grid mse then
+comes out as data mode has it (0.042 simulated against 0.043, 0.039
+against 0.038, with the echo 30 and 20 dB down), and the rate with it.
+Su is only taken once we send Jd (the analogue modem sends it once it
+has heard Jd): before, a tone is the echo of our own Sd, which a long
+echo delay brings back after the canceller has started, but before it
+has found the far echo.
+
+| Test (`hsf_v92_echo`, HSF modem) | Result |
+|---|---|
+| its hybrid's echo 10 dB down after 50 ms | the canceller takes 34 dB away; V.92 connect 52000/29333 (28000 to 34666 at 20 ms, 30666 to 33333 20 to 30 dB down; without echo the same line has 41333 to 42666) |
 
 Rate renegotiation (9.8/V.92), with PCM upstream: our Rd (R, + + + - - -,
 of each interval's largest data mode Ucode, 384 symbols, then R-bar for
@@ -954,7 +989,12 @@ free of intersymbol interference). `half_blob8`/`half_open8` are the
 modems at 8000 Hz (the original library does not work at 8000 Hz). `NET_GAIN`
 sets an analogue gain on the way to the 9600 Hz modem, and
 `NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
-clock: what it receives comes back with what it sends).
+clock: what it receives comes back with what it sends; from the line,
+before its codec would clip it). The delay has to be more than the
+modem at A sends ahead of what it has received (some 20 ms for the HSF
+modem): netsim says how many samples went without their echo
+otherwise, and an echo with gaps in it is not one a canceller can
+learn.
 
 `fax_interop` does the same with `AT+FCLASS=1`. `interop_call --fax` plays
 the T.30 side of both fax machines: CSI/DIS, DCS, TCF, CFR, one page (for

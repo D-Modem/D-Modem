@@ -549,6 +549,22 @@ std::vector<Call> calls()
 	      "STREAM=10", "DSP_V92_FPE=3000", "DSP_V92_SLIP=0",
 	      "EXPECT_B=(?s)no RM: no fast parameter exchange.*V.92 "
 	      "renegotiated", "PROTO_B=ATX3;AT+MS=92" });
+	/* the echo of our signal from the hybrid at its line (8000 Hz,
+	   before the network codec): our echo canceller takes it away,
+	   and the PCM upstream design counts with the codec's
+	   quantization of it */
+	add("hsf", "hsf_v92_echo", "hsf", "open8", "ATX3;AT+MS=V92",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "NET_ECHO=-10:50", "STREAM=10",
+	      "EXPECT_B=(?s)far echo at.*echo canceller took [23][0-9]\\.[0-9] "
+	      "dB away\n.*V.92 connect 5[0-9]{4}/[23][0-9]{4}",
+	      "PROTO_B=ATX3;AT+MS=92" });
+	add("hsf", "hsf_v90_echo", "hsf", "open8", "ATX3;AT+MS=V90",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "NET_ECHO=-20:50", "STREAM=10",
+	      "EXPECT_B=(?s)far echo at.*echo canceller took [23][0-9]\\.[0-9] "
+	      "dB away\n.*V.90 (connect|retrained,) 5[0-9]{4}/",
+	      "PROTO_B=ATX3;AT+MS=90" });
 	add("hsf", "hsf_v92_pcmup_noqc", "hsf", "open8",
 	    "ATX3;AT+MS=V92;AT+PQC=3",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",

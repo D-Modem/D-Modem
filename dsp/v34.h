@@ -7,6 +7,7 @@
 #ifndef __V34_H__
 #define __V34_H__
 
+#include <string.h>
 #include "qam.h"
 
 namespace dsp {
@@ -318,6 +319,12 @@ struct V34Rx {
 	cplx precode_start(cplx z);
 	void symbol();
 	float precoder(int h[6]) const;
+	void err_reset()
+	{
+		memset(err_r, 0, sizeof(err_r));
+		memset(err_h, 0, sizeof(err_h));
+		err_n = 0;
+	}
 	void start_data(const V34Params *p, void (*put_bits)(void *, const unsigned char *, int), void *ctx);
 	void sample(float x);
 };

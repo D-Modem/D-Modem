@@ -261,6 +261,10 @@ struct V92Up {
 	int pf_d;               /* decision delay, symbols */
 	double pf_cd;           /* main tap of channel and prefilter */
 	double pf_noise;        /* rms beyond G.711's quantization */
+	double pf_echo;         /* rms of our echo before the network codec
+				   (the echo canceller's, taken away after
+				   it) */
+	double pf_echo_res;     /* rms of what the canceller leaves of it */
 	long pf_s0;             /* the first symbol through the prefilter */
 	long pf_eqL;            /* eqL of the plain channel */
 	short pf_lev[128];      /* the G.711 levels, ascending */
