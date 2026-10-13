@@ -217,6 +217,10 @@ struct V92Up {
 	V92Cpd cpd_fpe;         /* the new CPd */
 	V92Cpd cpd_old;         /* the decisions' until B1u */
 	int fpes;
+	long fpe_at;            /* our Rf asked for here (samples) */
+	int fpe_none;           /* no RM came to it: the analogue modem has
+				   no fast parameter exchange, renegotiations
+				   instead */
 	int fpe_drn;            /* test: the rate it asks for */
 	long fpe_test_at;       /* test: ours, this far into data */
 	int rn_drn;             /* test: the rate it asks for */

@@ -635,9 +635,21 @@ With the prefilter the original library does three things differently:
   `interop_v92_fpe_prefilter` asks for 30666 and gets the exchange at
   38666, through to B1u and on with the data.
 
-The original library answers ours but
-starts none (its `V92Modulator::initiateFPE` is only called on our Rf),
-so our answer to RM is not tested.
+The original library answers ours but starts none of its own: its
+`V92Modulator::initiateFPE` is only called on our Rf. `half_blob`'s
+`BLOB_FPE_AT=<s>` calls it that far into data mode (through its
+`VPcmFloModem`, which `vpcm_create` keeps at 0x3574 of the data pump, it
+the `V92Modulator` at 0x6124). Its RM comes without RM' (as with ours,
+SUVu by the time), with the prefilter a whole point off in every frame,
+as RM after our Rf does; the receiver takes RM with every class within
+one of it, ours or not. `interop_v92_fpe_remote` (and `_noprefilter`):
+its RM, our Rf, its SUVu, CPu, SUVu', E2u, FB1u and B1u, and the data
+goes on, µ-law and A-law.
+
+The HSF modem has none: our Rf gets no RM. A second after it with none,
+we give the exchange up for a renegotiation, and from then on in that
+call renegotiate instead (for the slip too: the renegotiation down once
+the decisions suffer); `hsf_v92_fpe`.
 
 | Test | Result |
 |---|---|

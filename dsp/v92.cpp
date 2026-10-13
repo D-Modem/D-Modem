@@ -1001,6 +1001,7 @@ void V92Up::fpe_tx_start()
 	DSP_DBG("v92: Rf\n");
 	tx.rf_req = 1;
 	fpe = fpe_rf = 1;
+	fpe_at = n;
 	fpe_req = 0;
 	rn_rxd = 0;
 	if (!rn) {
@@ -1140,12 +1141,12 @@ int V92Up::fpe_frame(const V92Cpd *c)
 		rmp += dk[j] == (pat[j] ? 0 : c->M[j] - 1);
 		near += dd <= 2;
 	}
-	/* with the prefilter, after our Rf: RM's line signal is a large
-	   one of period 4, and the analogue modem's timing slip takes its
-	   points a whole one off, the same way in every frame (data, at
-	   random, a little each): all 11 within one of RM's classes (data
-	   has them 1 in (M/3)^11) */
-	rm = rm >= 9 || (pf_on && fpe_rf && near == 11);
+	/* with the prefilter: RM's line signal is a large one of period
+	   4, and the analogue modem's timing slip takes its points a whole
+	   one off, the same way in every frame (data, at random, a little
+	   each): all 11 within one of RM's classes (data has them 1 in
+	   (M/3)^11, two frames running 1 in (M/3)^22) */
+	rm = rm >= 9 || (pf_on && near == 11);
 	rmp = rmp >= 9;
 	switch (fpe_rx) {
 	case 0:
@@ -1405,8 +1406,8 @@ void V92Up::data_symbol(float y)
 	   once they do) */
 	if (pf_on) {
 		sl_gm += (eg * eg - sl_gm) / 8000;
-		if (slip_ok && connected && !rn && !fpe_req && !pf_new &&
-		    sl_base > 0 && sl_gm > sl_base + 0.02 &&
+		if (slip_ok && !fpe_none && connected && !rn && !fpe_req &&
+		    !pf_new && sl_base > 0 && sl_gm > sl_base + 0.02 &&
 		    sl_n % 400 == 0) {
 			double g, t, x;
 			if (!pf_slip_fit(&g, &t, &x) &&
@@ -1445,7 +1446,7 @@ void V92Up::data_symbol(float y)
 			/* down: the line changed, train anew; up: the
 			   same line with less noise, the rate alone (with
 			   the prefilter if its design has the next rate) */
-			if (rn_low)
+			if (rn_low || fpe_none)
 				rn_req = 1;
 			else if (!pf_on || pf_rate(cpd.drn + 1))
 				fpe_req = 1;
@@ -2760,6 +2761,18 @@ int V92Up::tx_step()
 		}
 		if (fpe && !fpe_rf && fpe_rx >= 2 && rx == V92R_DATA)
 			fpe_tx_start();
+		/* our Rf with no RM a second after it (the HSF modem has
+		   none): a renegotiation instead, and from now on */
+		if (fpe && fpe_rf && !fpe_rx && rx == V92R_DATA &&
+		    n - fpe_at > 8000) {
+			DSP_DBG("v92: no RM: no fast parameter exchange, a "
+				"renegotiation instead\n");
+			fpe_none = 1;
+			fpe = fpe_rf = fpe_req = fpe_slip = fpe_tx_init = 0;
+			fpe_sw = fpe_early = 0;
+			pf_new = 0;
+			rn_tx_start();
+		}
 		if (fmode == V92F_DATA && rx == V92R_DATA && rn_rxd &&
 		    dframes > 48) {
 			if (fpe) {

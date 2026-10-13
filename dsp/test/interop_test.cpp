@@ -225,6 +225,21 @@ std::vector<Call> calls()
 	      "DSP_V92_FPE=3000:6",
 	      "EXPECT_B=(?s)prefilter not down.*SUVu'.*fast parameter "
 	      "exchange 1 done.*V.92 renegotiated 56000/3[89]" });
+	/* the original library's own fast parameter exchange (half_blob's
+	   BLOB_FPE_AT calls its initiateFPE, which nothing in it does on its
+	   own): its RM, our Rf, its SUVu to B1u, and the data goes on; with
+	   the prefilter and without */
+	for (int pf : { 1, 0 }) {
+		std::vector<std::string> e = { "NET=9600:8000:ulaw", "STREAM=10",
+			"BLOB_V92FULL=1", "BLOB_FPE_AT=4", "DSP_V92_SLIP=0",
+			"EXPECT_B=(?s)RM at.*fast parameter exchange 1 done.*"
+			"V.92 renegotiated 56000/3" };
+		if (!pf)
+			e.push_back("DSP_V92_PREFILTER=0");
+		add("interop", pf ? "interop_v92_fpe_remote" :
+		    "interop_v92_fpe_remote_noprefilter", "blob", "open8",
+		    "ATX3;AT+MS=92", e);
+	}
 	/* the original library's timing slips against the network's
 	   clock, and the prefilter's design with it: about every 35 s of
 	   line a design for the slip in a fast parameter exchange at the
@@ -527,6 +542,13 @@ std::vector<Call> calls()
 		      "DSP_G711=" + law, "STREAM=10",
 		      "EXPECT_B=(?s)V.92 quick connect.*V.92 connect "
 		      "5[0-9]{4}/(3[4-9]|4[0-2])", "PROTO_B=ATX3;AT+MS=92" });
+	/* it has no fast parameter exchange (no RM to our Rf): a
+	   renegotiation instead */
+	add("hsf", "hsf_v92_fpe", "hsf", "open8", "ATX3;AT+MS=V92",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "STREAM=10", "DSP_V92_FPE=3000", "DSP_V92_SLIP=0",
+	      "EXPECT_B=(?s)no RM: no fast parameter exchange.*V.92 "
+	      "renegotiated", "PROTO_B=ATX3;AT+MS=92" });
 	add("hsf", "hsf_v92_pcmup_noqc", "hsf", "open8",
 	    "ATX3;AT+MS=V92;AT+PQC=3",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
