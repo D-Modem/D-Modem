@@ -557,6 +557,7 @@ struct V34Pump : Pump {
 	int fsk_bit_edge();
 	void retrain(const char *why);
 	int reneg_rate(int up);
+	int rate_floor() const;
 	void renegotiate(const char *why, int n);
 	void v90_renegotiate(const char *why, int n, int remote);
 	void v90_rd_start();
@@ -1301,6 +1302,16 @@ void V34Pump::probe_collect(float x)
 /* the most N (2400 bit/s steps) at each symbol rate (Table 10/V.34) */
 static const int v34_max_rate_of_baud[V34_NBAUDS] = { 9, 11, 11, 12, 13, 14 };
 
+/* the least N at the symbol rate (Table 10/V.34): 2400 bit/s only at
+   2400 baud, 4800 at the others */
+static int v34_min_rate(int baud)
+{
+	int n;
+	for (n = 1; n < 14 && !v34_rates[baud][n - 1].b; n++)
+		;
+	return n;
+}
+
 /* over the SNR a rate needs, for the receiver's own impairments */
 #define PROBE_MARGIN 2	/* dB */
 
@@ -1355,6 +1366,10 @@ int V34Pump::probe_analyse()
 		for (n = v34_max_rate_of_baud[b];
 		     n > 1 && snr < 3 * 2400.0 * n / rs + 4 + PROBE_MARGIN; n--)
 			;
+		/* not even the symbol rate's least: none there (2400
+		   baud stays the last resort) */
+		if (n < v34_min_rate(b))
+			n = 0;
 		rate_of_baud[b] = n;
 		DSP_DBG("v34: probe %d baud: SNR %.1f dB -> %d bit/s\n",
 			(int)(rs + 0.5f), snr, n * 2400);
@@ -2103,13 +2118,17 @@ void V34Pump::choose_bauds()
 		/* the caller can receive at most this */
 		if (rinfo1c.r[b].max_rate < rate)
 			rate = rinfo1c.r[b].max_rate;
+		/* (none that the line or the caller allows) */
+		if (!rate)
+			continue;
 		if (rate >= best_rate) {
 			best_rate = rate;
 			best = b;
 		}
 	}
 	baud_tx = baud_rx = best;
-	max_rate_rx = rate_of_baud[best] ? rate_of_baud[best] : 1;
+	max_rate_rx = rate_of_baud[best] ? rate_of_baud[best] :
+		v34_min_rate(best);
 }
 
 /* the primary channel at the agreed symbol rates; -1 if the receiver
@@ -2164,7 +2183,8 @@ static int v34_rate_of_mse(int baud, float mse)
 	   dimension the mse counts */
 	snr = 10 * log10f(1 / mse);
 	for (n = v34_max_rate_of_baud[baud];
-	     n > 1 && snr < 3 * 2400.0 * n / rs + 4 + PROBE_MARGIN; n--)
+	     n > v34_min_rate(baud) &&
+	     snr < 3 * 2400.0 * n / rs + 4 + PROBE_MARGIN; n--)
 		;
 	return n;
 }
@@ -2180,6 +2200,9 @@ void V34Pump::v90_make_mp(int ack)
 		DSP_DBG("v34: upstream at most %d bit/s (mse %.5f)\n",
 			max_rate_rx * 2400, prx.mse);
 	}
+	/* (V.90's upstream starts at 4800 bit/s, Table 17/V.90) */
+	if (max_rate_rx < rate_floor())
+		max_rate_rx = rate_floor();
 	/* the precoder once for the exchange: every MP of it asks for the
 	   same (the analogue modem may take the first, or the last), and
 	   the data mode receiver takes it */
@@ -2385,6 +2408,9 @@ void V34Pump::mp_start()
 	if (getenv("DSP_V34_RX_MAX") && atoi(getenv("DSP_V34_RX_MAX")) > 0 &&
 	    max_rate_rx > atoi(getenv("DSP_V34_RX_MAX")))
 		max_rate_rx = atoi(getenv("DSP_V34_RX_MAX"));
+	/* (no less than the symbol rate has: no common rate else) */
+	if (max_rate_rx < rate_floor())
+		max_rate_rx = rate_floor();
 	mp->rate_ca = caller ? 14 : max_rate_rx;
 	mp->rate_ac = caller ? max_rate_rx : 14;
 	mp->expanded = 1;
@@ -2480,7 +2506,15 @@ int V34Pump::reneg_rate(int up)
 		k = (int)ceilf(10 * log10f(mse / V34_RN_TARGET) / step);
 		n -= k < 1 ? 1 : k;
 	}
-	return n < 1 ? 1 : n;
+	return n < rate_floor() ? rate_floor() : n;
+}
+
+/* the least N we may receive at: the symbol rate's least (Table
+   10/V.34), and 4800 bit/s for V.90's upstream (Table 17/V.90) */
+int V34Pump::rate_floor() const
+{
+	int lo = v34_min_rate(prx_on ? prx.baud : baud_rx);
+	return pcm_tx && lo < 2 ? 2 : lo;
 }
 
 /* a rate renegotiation (11.6/V.34), by us or in answer to the remote's
@@ -3406,8 +3440,14 @@ int V34Pump::handshake()
 		if (prx.ev_cp && !up_n) {
 			cp.parse(prx.cpraw,
 				     v90_cp_length(prx.cpraw, 129));
-			if (v90_data_setup())
+			if (v90_data_setup()) {
+				/* in a call: not V.32bis now */
+				if (connected) {
+					retrain("no common upstream rate");
+					break;
+				}
 				return fallback("no common upstream rate");
+			}
 		}
 		if (fmode == F_DATA && prx.ev_e) {
 			set_state(V34_DATA);
@@ -3451,8 +3491,14 @@ int V34Pump::handshake()
 		}
 		if (prx.ev_mp && !ptx.ack_mp) {
 			/* before the remote's E: its data follows at once */
-			if (data_setup())
+			if (data_setup()) {
+				/* in a call: not V.32bis now */
+				if (connected) {
+					retrain("no common data rate");
+					break;
+				}
 				return fallback("no common data rate");
+			}
 			ptx.ack_mp = 1;
 		}
 		/* E after a complete MP' once the remote has acknowledged
@@ -3545,8 +3591,10 @@ int V34Pump::handshake()
 		} else if (rn_hi >= ms2samples(300, srate) &&
 			   c >= ms2samples(2000, srate) && rate_rx > 2400) {
 			/* the line got much worse (6 dB and more): both ways,
-			   most likely; a retrain probes it anew */
-			if (prx.mse > 4 * mse_good)
+			   most likely; a retrain probes it anew, as it does
+			   when there is no lower rate at this symbol rate */
+			if (prx.mse > 4 * mse_good ||
+			    rate_rx / 2400 <= rate_floor())
 				retrain("errors");
 			else if (pcm)
 				v90_renegotiate("errors", reneg_rate(-1), 0);

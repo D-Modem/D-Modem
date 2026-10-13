@@ -41,6 +41,7 @@ as it is.
 |---|---|
 | `dsp/dp_v34.cpp` | INFO1a symbol rate codes past the table (6 or 7 where they are not allowed) indexed `v34_bauds[]`: now a retrain |
 | `dsp/dp_v34.cpp` | `primary_start()` ignored a failing `prx.init()` (out of memory): now DPSTAT_ERROR |
+| `dsp/dp_v34.cpp` | Rates went down to N = 1 at symbol rates without 2400 bit/s, and to N = 1 for V.90's upstream (it starts at 4800): on a noisy line V.34 chose 3429 baud at 2400 bit/s and failed (`v34_snr10`), and a renegotiation could start V.32bis in the middle of a call. Rates now stay at the symbol rate's least, a symbol rate without even that isn't offered, errors at the least rate retrain, and a call that is up retrains instead of falling back |
 | `dsp/v90.cpp`, `v91.cpp` | A CP whose constellations cannot carry its rate (an empty mask, or drn too large for the 48-bit frames) gave a division by zero or a buffer overflow in the encoders. `V90Cp::usable()` checks a CP; such CPs (CP/CPt in V.90, CPu/CPus in V.92, CP in V.91) are now ignored where they are received, and the encoders' `init()` leave a harmless encoder when it fails |
 | `dsp/v92.cpp` | The least squares scratch matrices and the prefilter simulation's buffers were function `static`s, shared by calls in different threads (Asterisk, FreeSWITCH, libdmodem); now per call on the heap. The TRN1u reference is made once through `pthread_once` |
 | `dsp/v92.cpp` | A leftover `TMP_LC_MIN` test switch changed the constellation |
@@ -82,12 +83,6 @@ bug*, *risk* (a failure needs unusual input or timing) or *cleanup*.
 
 ### V.34, V.90, V.92
 
-- **likely bug** — `dp_v34.cpp` `reneg_rate()`, `probe_analyse()`,
-  `v34_rate_of_mse()`: the rate can go down to N = 1 at a symbol rate
-  without 2400 bit/s, and V.90's upstream to N = 1 (it starts at 2).
-  `data_setup()` then fails and `fallback()` starts V.32bis in the middle
-  of a V.34 call. Clamp to the lowest N the symbol rate has, and in data
-  mode retrain instead of falling back.
 - **likely bug** — `dp_v34.cpp` `v90_start()`: in V.92's short phase 2
   the analogue modem chooses its carrier and says so in INFO1a bit 33
   (Table 19/V.92); we always use the low carrier.

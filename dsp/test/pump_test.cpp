@@ -84,6 +84,9 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v22bis_gain2_m300ppm", line(122, 30, 30, 9600, 2, -300) },
 	Pumps{ "v22bis_gain005_300ppm", line(122, 30, 30, 9600, 0.05f, 300) },
 	Pumps{ "v34", line(8, 30, 20) },
+	/* only 2400 baud carries data (2400 bit/s, which no other symbol
+	   rate has) */
+	Pumps{ "v34_snr10", line(8, 10, 25) },
 	Pumps{ "v34_echoes", line(8, 40, 22, 9600, 0.5f, 0, -10, -15) },
 	Pumps{ "v34_echoes_8000", line(8, 40, 22, 8000, 0.5f, 0, -10, -15) },
 	/* a far echo over VoIP */
