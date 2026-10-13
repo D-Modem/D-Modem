@@ -789,6 +789,9 @@ int V22Pump::process(void *in, void *out, int cnt)
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 	int ret = DPSTAT_OK, r, i;
 
+	/* silence where an early return (another pump, an error) leaves
+	   the block unwritten */
+	memset(dst, 0, cnt * sizeof(*dst));
 	for (i = 0; i < cnt; i++) {
 		rx_sample(src[i]);
 		if (automode) {
@@ -805,11 +808,8 @@ int V22Pump::process(void *in, void *out, int cnt)
 			}
 		}
 		r = handshake();
-		if (r == DPSTAT_CHANGEDP) {
-			/* the rest of the block goes out silent */
-			memset(dst + i, 0, (cnt - i) * sizeof(*dst));
-			return r;
-		}
+		if (r == DPSTAT_CHANGEDP)
+			return r;       /* the rest of the block silent */
 		if (r != DPSTAT_OK)
 			ret = r;
 		if (state == V22_DATA) {

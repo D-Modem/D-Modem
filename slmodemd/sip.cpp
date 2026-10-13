@@ -372,7 +372,8 @@ bool config_from_env(Config &c, bool listen)
 		return false;
 	}
 	login = e;
-	size_t at = login.find('@'), colon = login.find(':');
+	/* (the password may have an '@': the domain is after the last) */
+	size_t at = login.rfind('@'), colon = login.find(':');
 	if (at == std::string::npos || colon == std::string::npos ||
 	    colon > at) {
 		fprintf(stderr, "SIP_LOGIN: user:password@domain\n");

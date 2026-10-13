@@ -988,6 +988,8 @@ void FaxRx::sample(float x)
 		trained = carrier;
 		if (bit >= 0 && carrier)
 			put_bit(ctx, bit);
+		carrier_run = carrier ? (carrier_run > 0 ? carrier_run + 1 : 1) :
+			(carrier_run < 0 ? carrier_run - 1 : -1);
 		return;
 	}
 	if (qam.sample(x))

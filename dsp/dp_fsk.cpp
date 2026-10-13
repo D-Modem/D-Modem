@@ -305,6 +305,9 @@ int FskPump::process(void *in, void *out, int cnt)
 	int ret = DPSTAT_OK;
 	int i, bit;
 
+	/* silence where an early return (another pump, an error) leaves
+	   the block unwritten */
+	memset(dst, 0, cnt * sizeof(*dst));
 	/* V.21 only: after V.8 the PCTel modem takes V.23's 75 bit/s
 	   side as the answerer, the HSF modem the 1200 bit/s one, and both
 	   answer V.22, V.22bis and V.23 without V.8 */

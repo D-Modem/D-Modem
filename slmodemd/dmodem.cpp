@@ -267,11 +267,13 @@ int dmodem_answer(struct dmodem *d)
 }
 
 /* ATD<number>\r as the DTE's command line; 0 (how it goes is the
-   link's state) */
+   link's state), -1 for a number too long for a command line */
 int dmodem_dial(struct dmodem *d, const char *number)
 {
 	char cmd[128];
 	int n = snprintf(cmd, sizeof(cmd), "ATD%s\r", number);
+	if (n < 0 || n >= (int)sizeof(cmd))
+		return -1;
 	d->law_set = 0;
 	d->m->dte_input(cmd, n);
 	d->m->poll();

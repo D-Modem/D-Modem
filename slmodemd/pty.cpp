@@ -62,6 +62,8 @@ int Pty::open(const char *group, mode_t perm, const char *link)
 	pty = posix_openpt(O_RDWR | O_NOCTTY);
 	if (pty < 0 || grantpt(pty) < 0 || unlockpt(pty) < 0) {
 		ERR("getpt: %s\n", strerror(errno));
+		if (pty >= 0)
+			::close(pty);
 		return -1;
 	}
 	if (have_termios_)

@@ -34,10 +34,13 @@
  */
 
 #include <limits.h>
+#include <pthread.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+#include <vector>
 
 #include "dsp.h"
 #include "v92.h"
@@ -333,14 +336,19 @@ int V92Frames::bit(int x)
 static signed char trn_ref[TRN_NT];
 
 /* TRN1u: scrambled ones from a cleared scrambler, 0 positive */
-static void trn_ref_init()
+static void trn_ref_make()
 {
 	unsigned r = 0;
 	int m;
-	if (trn_ref[0])
-		return;
 	for (m = 0; m < TRN_NT; m++)
 		trn_ref[m] = gpa_scr(&r, 1) ? -1 : 1;
+}
+
+/* trn_ref, once for all calls (which may run in their own threads) */
+static void trn_ref_init()
+{
+	static pthread_once_t once = PTHREAD_ONCE_INIT;
+	pthread_once(&once, trn_ref_make);
 }
 
 /* received sample i, from the ring of V92_BUF */
@@ -392,7 +400,10 @@ static int solve(double *A, double *v, double *w, int dim)
    correlation with the known sequence, and fit the equalizer */
 int V92Up::train(long start, int lo, int hi)
 {
-	static double A[V92_EQ_N * V92_EQ_N];
+	/* (on the heap: per call, as calls run in their own threads,
+	   and too big for small thread stacks) */
+	std::vector<double> Av(V92_EQ_N * V92_EQ_N);
+	double *A = Av.data();
 	double v[V92_EQ_N], w[V92_EQ_N], phi[V92_EQ_N], e2 = 0;
 	double best = 0, c0 = 0;
 	int l, bl = lo, m, s, i, j;
@@ -412,7 +423,7 @@ int V92Up::train(long start, int lo, int hi)
 	DSP_DBG("v92: TRN1u at %+d (of %d..%d): main tap %.0f, %.0f%% of "
 		"the power\n", bl, lo, hi, best / TRN_NC,
 		100 * best * best / (TRN_NC * c0 + 1));
-	memset(A, 0, sizeof(A));
+	memset(A, 0, Av.size() * sizeof(*A));
 	memset(v, 0, sizeof(v));
 	for (s = 40; s < TRN_NT; s++) {
 		long base = eqL + s - V92_EQ_PRE;
@@ -815,6 +826,12 @@ void V92Up::frame_bits(int bit)
 			V90Cp c;
 			if (v92_cp_parse(&c, fr.b, fr.len))
 				return;
+			/* our encoder can't use it: no CPu */
+			if (!c.usable(c.drn + 20, 6 - c.sr)) {
+				DSP_DBG("v92: CPu with constellations that "
+					"can't carry drn %d\n", c.drn);
+				return;
+			}
 			if (!got_cpu || c.drn != cpu.drn ||
 			    memcmp(c.mask, cpu.mask, sizeof(c.mask))) {
 				int pts = 0;
@@ -832,7 +849,10 @@ void V92Up::frame_bits(int bit)
 				DSP_DBG("v92: CPu' at symbol %ld\n", sym);
 			}
 		} else if (field(fr.b, 19, 2) == 2) {
-			/* CPus: the digital modem's parameters as they are */
+			/* CPus: the digital modem's parameters as they are
+			   (none yet: nothing to keep) */
+			if (!cpu.usable(cpu.drn + 20, 6 - cpu.sr))
+				return;
 			if (!got_cpu)
 				DSP_DBG("v92: CPus at symbol %ld\n", sym);
 			got_cpu = 1;
@@ -1697,7 +1717,8 @@ void V92Up::decided(int eta)
 #define V92_FIT         1536
 int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 {
-	static double A[V92_EQ_F * V92_EQ_F];
+	std::vector<double> Av(V92_EQ_F * V92_EQ_F);   /* (as in train) */
+	double *A = Av.data();
 	double v[V92_EQ_F], phi[V92_EQ_F], g = 1;
 	int i, j;
 	long s0 = sym - V92_FIT, sn;
@@ -1706,7 +1727,7 @@ int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 		g *= gamma;
 		bg[j] = b[j] * g;
 	}
-	memset(A, 0, sizeof(A));
+	memset(A, 0, Av.size() * sizeof(*A));
 	memset(v, 0, sizeof(v));
 	for (sn = s0; sn < sym; sn++) {
 		long base = eqL + sn - V92_EQ_PRE;
@@ -1918,13 +1939,14 @@ void V92Up::design()
    error (*e2) and the part of it G.711's quantization explains (*q2) */
 int V92Up::ch_fit(double *e2, double *q2)
 {
-	static double A[V92_CH * V92_CH];
+	std::vector<double> Av(V92_CH * V92_CH);       /* (as in train) */
+	double *A = Av.data();
 	double v[V92_CH], phi[V92_CH];
 	long s0 = sym - V92_PF_FIT + V92_CH_POST, s1 = sym - 1 - V92_CH_PRE, sn;
 	long cnt = 0;
 	int i, j;
 
-	memset(A, 0, sizeof(A));
+	memset(A, 0, Av.size() * sizeof(*A));
 	memset(v, 0, sizeof(v));
 	for (sn = s0; sn <= s1; sn++) {
 		double r = at(buf, eqL + sn);
@@ -1972,7 +1994,9 @@ int V92Up::ch_fit(double *e2, double *q2)
 int V92Up::pf_filter(double n0, double *resid, int dfix)
 {
 	enum { K = V92_CH + V92_PF_W - 1 };
-	static double G[V92_PF_W * V92_PF_W], A[V92_PF_W * V92_PF_W];
+	/* (as in train) */
+	std::vector<double> Gv(V92_PF_W * V92_PF_W), Av(V92_PF_W * V92_PF_W);
+	double *G = Gv.data(), *A = Av.data();
 	double w[V92_PF_W], rhs[V92_PF_W], c[K], best = -1, hh = 0;
 	int i, j, k, d;
 
@@ -1992,7 +2016,7 @@ int V92Up::pf_filter(double n0, double *resid, int dfix)
 		double J = 0, ww = 0, r = 0;
 		if (kd + V92_PF_B >= K)
 			break;
-		memcpy(A, G, sizeof(A));
+		memcpy(A, G, Av.size() * sizeof(*A));
 		/* the main tap and the precoder's are free */
 		for (k = kd; k <= kd + V92_PF_B; k++)
 			for (i = 0; i < V92_PF_W; i++) {
@@ -2111,8 +2135,11 @@ int V92Up::pf_sim(int M, const short *pts, int lc, int nsym, double *pw,
 		  double *mseg)
 {
 	enum { NS = 4096 };
-	static double xs[NS], ts[NS];
-	static int want[NS];
+	/* (as in train) */
+	std::vector<double> xsv(NS), tsv(NS);
+	std::vector<int> wantv(NS);
+	double *xs = xsv.data(), *ts = tsv.data();
+	int *want = wantv.data();
 	V92Cpd c;
 	unsigned rnd = 12345;
 	int n, k, errs = 0, cnt = 0;

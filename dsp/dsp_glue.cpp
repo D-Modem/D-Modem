@@ -439,9 +439,15 @@ void CallerId::report()
 			}
 			break;
 		case 0x02: field("NMBR", p + 2, l); break;
-		case 0x04: field("NMBR", (const u8 *)"O", 1); break;
+		/* the reason there is none: 'O' (out of area) or 'P'
+		   (private) */
+		case 0x04:
+			field("NMBR", l >= 1 ? p + 2 : (const u8 *)"O", 1);
+			break;
 		case 0x07: field("NAME", p + 2, l); break;
-		case 0x08: field("NAME", (const u8 *)"O", 1); break;
+		case 0x08:
+			field("NAME", l >= 1 ? p + 2 : (const u8 *)"O", 1);
+			break;
 		default: break;
 		}
 		p += l + 2;

@@ -8,6 +8,7 @@
  *    DSP_DEBUG=<level>              the DSP's log
  */
 
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -222,15 +223,85 @@ TEST_P(T4Libtiff, ReadsItsCoding)
 }
 
 INSTANTIATE_TEST_SUITE_P(Compression, T4Libtiff,
-	testing::Values("none", "g3:1d", "g3:2d", "g4"),
-	/* the coding's name, its ':' as '_' */
+	/* also in strips of 16 rows (-r 16) */
+	testing::Values("none", "g3:1d", "g3:2d", "g4", "g3:1d -r 16",
+			"g3:2d -r 16"),
+	/* the coding's name, its ':' and ' -r ' as '_' */
 	[](const testing::TestParamInfo<const char *> &i) {
-		std::string n = i.param;
-		for (char &c : n)
-			if (c == ':')
-				c = '_';
+		std::string n;
+		for (const char *c = i.param; *c; c++)
+			if (isalnum((unsigned char)*c))
+				n += *c;
+			else if (n.back() != '_')
+				n += '_';
 		return n;
 	});
+
+/* MH bits, as written, into data (the first in the top bit) */
+static void put_bits(std::vector<unsigned char> &data, size_t &n, const char *bits)
+{
+	for (; *bits; bits++, n++) {
+		if (n / 8 >= data.size())
+			data.push_back(0);
+		if (*bits == '1')
+			data[n / 8] |= 0x80 >> (n % 8);
+	}
+}
+
+/* a row of runs of length 0, more than the row has pels: not a row
+   (and no write past the decoder's changes) */
+TEST(T4, ZeroRunsAreNoRow)
+{
+	std::vector<unsigned char> data;
+	size_t n = 0;
+	T4Page p;
+
+	for (int i = 0; i < 100; i++) {
+		put_bits(data, n, "00110101");         /* white 0 */
+		put_bits(data, n, "0000110111");       /* black 0 */
+	}
+	put_bits(data, n, "101010");                   /* white 16 */
+	ASSERT_EQ(p.init(16, 0), 0);
+	p.decode(data.data(), data.size(), 2, 0, 1, 1);
+	EXPECT_EQ(p.rows, 0);
+	p.release();
+}
+
+/* a page whose IFD links back to itself: one page, not the same one
+   again and again */
+TEST(T4, TiffIfdCycle)
+{
+	std::string doc = fax_file("cycle.tif");
+	TiffIn in;
+	T4Page p;
+	int pages = 0;
+	FILE *f;
+	unsigned char b[4];
+	unsigned long ifd, n;
+
+	ASSERT_TRUE(write_test_doc(doc, false));
+	/* the first IFD's next IFD: itself (the file is "II") */
+	ASSERT_TRUE((f = fopen(doc.c_str(), "r+b")) != NULL);
+	ASSERT_EQ(fseek(f, 4, SEEK_SET), 0);
+	ASSERT_EQ(fread(b, 1, 4, f), 4u);
+	ifd = b[0] | b[1] << 8 | b[2] << 16 | (unsigned long)b[3] << 24;
+	ASSERT_EQ(fseek(f, ifd, SEEK_SET), 0);
+	ASSERT_EQ(fread(b, 1, 2, f), 2u);
+	n = b[0] | b[1] << 8;
+	ASSERT_EQ(fseek(f, ifd + 2 + n * 12, SEEK_SET), 0);
+	for (int i = 0; i < 4; i++)
+		b[i] = ifd >> (8 * i);
+	ASSERT_EQ(fwrite(b, 1, 4, f), 4u);
+	fclose(f);
+
+	ASSERT_EQ(in.open(doc.c_str()), 0);
+	while (pages < 10 && in.read_page(&p) == 1) {
+		p.release();
+		pages++;
+	}
+	in.close();
+	EXPECT_EQ(pages, 1);
+}
 
 /*
  *    two T.30 machines back to back

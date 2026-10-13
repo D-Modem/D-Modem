@@ -128,6 +128,11 @@ testing::AssertionResult same_pages(const std::string &a,
 	if (ra != rb)
 		why += "page counts differ (" + std::to_string(ra) + " " +
 			std::to_string(rb) + ")";
+	/* (two broken or empty files are not the same document) */
+	if (ra < 0 || rb < 0)
+		why += "read error; ";
+	if (!n)
+		why += "no pages; ";
 	ta.close();
 	tb.close();
 	if (!why.empty())

@@ -268,8 +268,12 @@ static void *run(void *arg)
 	if (bulk && bulk_in < bulk)
 		p->failures.push_back("only " + std::to_string(bulk_in) + " of " +
 				      std::to_string(bulk) + " bulk bytes");
-	if (sent != 5 || na != 5 * len || nb != 5 * len ||
-	    memcmp(got_a, msg, len) || memcmp(got_b, msg, len))
+	std::string want;
+	for (int k = 0; k < 5; k++)
+		want += msg;
+	/* all five lines, each way (a retrain comes after the first) */
+	if (sent != 5 || std::string(got_a, na) != want ||
+	    std::string(got_b, nb) != want)
 		p->failures.push_back("text: " + std::to_string(sent) +
 			" lines sent, caller got [" + std::string(got_a, na) +
 			"], answerer got [" + std::string(got_b, nb) + "]");

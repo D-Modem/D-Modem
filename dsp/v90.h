@@ -44,7 +44,6 @@ int  v92_uqts(int wxyz);
 
 
 
-int  v90_tx_sample(V90Tx *t);   /* the next PCM sample (linear) */
 
 /* CP (Table 14/V.90): the analogue modem's constellation parameters */
 struct V90Cp {
@@ -58,6 +57,9 @@ struct V90Cp {
 	unsigned char mask[6][128];     /* by Ucode */
 
 	int parse(const unsigned char *b, int len);
+	/* whether the constellations carry data frames of D bits, S of
+	   them sign bits, as the encoders (at most 48 bits) take them */
+	int usable(int D, int S) const;
 };
 
 /* the data mode encoder (5.4/V.90), for TRN2d, MP, Ed, B1d and data.  The

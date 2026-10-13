@@ -56,6 +56,10 @@ while time.time() - t0 < 10:
 # the rest of slmodemd's output into the log
 threading.Thread(target=lambda: [log.write(l) or log.flush() for l in p.stdout],
                  daemon=True).start()
+if pty is None:
+    print("FAIL: slmodemd gave no pty")
+    p.terminate()
+    sys.exit(1)
 fd = os.open(pty, os.O_RDWR | os.O_NOCTTY)
 tty.setraw(fd)
 buf = b""
@@ -74,6 +78,8 @@ def expect(pat, t):
             buf += os.read(fd, 4096)
         except BlockingIOError:
             time.sleep(0.05)
+        except OSError:
+            return None     # slmodemd went away (EIO)
     return None
 # AT command c, then expect(pat, t)
 def cmd(c, pat=rb"OK\r\n", t=5):

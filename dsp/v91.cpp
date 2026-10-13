@@ -99,23 +99,24 @@ static void default_dil(V90Dil *d)
    carry K = D - 6 bits */
 int V91Enc::init(const V90Cp *cp, int D, const int *lin_)
 {
-	double prod = 1;
 	int i, u;
 
+	/* one point per interval and no bits until it works: an unusable
+	   CP gives silence, not a division by zero */
 	memset(this, 0, sizeof(*this));
-	K = D - 6;
 	lin = lin_;
+	for (i = 0; i < 6; i++)
+		M[i] = 1;
+	if (!cp->usable(D, 6))
+		return -1;
+	K = D - 6;
 	for (i = 0; i < 6; i++) {
 		const unsigned char *m = cp->mask[cp->con[i]];
+		M[i] = 0;
 		for (u = 127; u >= 0; u--)
 			if (m[u])
 				ucode[i][M[i]++] = (unsigned char)u;
-		if (!M[i])
-			return -1;
-		prod *= M[i];
 	}
-	if (K < 1 || K > 42 || prod < (double)(1ULL << K))
-		return -1;
 	return 0;
 }
 
@@ -679,10 +680,16 @@ int V91::cp_bit(int bit)
 		if (!got_cp)
 			DSP_DBG("v91: CP: drn %d, %d constellations, ack %d\n",
 				c.drn, c.ncon, c.ack);
-		cp_rx = c;
-		got_cp = 1;
-		if (c.ack)
-			got_cp_ack = 1;
+		/* one our encoder can't use is no CP: 8.3's timeouts
+		   follow */
+		if (!c.usable(c.drn + 20, 6)) {
+			DSP_DBG("v91: the remote's CP does not work\n");
+		} else {
+			cp_rx = c;
+			got_cp = 1;
+			if (c.ack)
+				got_cp_ack = 1;
+		}
 	}
 	if (cpn > 129 && cpn == cpframe) {
 		cpn = 0;

@@ -653,6 +653,29 @@ int V90Cp::parse(const unsigned char *b, int len)
 	return 0;
 }
 
+/* whether the constellations carry data frames of D bits, S of them sign
+   bits: none empty, enough points for the K = D - S modulus bits, and
+   frames that fit the encoders' 48 bits (a CP may pass its CRC and still
+   ask for more) */
+int V90Cp::usable(int D, int S) const
+{
+	double prod = 1;
+	int K = D - S, i, u, n;
+
+	if (D > 48 || K < 1 || S < 0)
+		return 0;
+	for (i = 0; i < 6; i++) {
+		if (con[i] < 0 || con[i] >= 6)
+			return 0;
+		for (u = n = 0; u < 128; u++)
+			n += mask[con[i]][u] != 0;
+		if (!n)
+			return 0;
+		prod *= n;
+	}
+	return prod >= (double)(1ULL << K);
+}
+
 /*
  *    MP of the digital modem (Table 16/V.90)
  */
@@ -707,27 +730,28 @@ int v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
    v90.h) */
 int V90Enc::init(const V90Cp *cp, int D, const int *lin_)
 {
-	double prod = 1;
 	int i, u;
 
+	/* one point per interval and no bits until it works: an unusable
+	   CP gives silence, not a division by zero */
 	memset(this, 0, sizeof(*this));
+	lin = lin_;
+	for (i = 0; i < 6; i++)
+		M[i] = 1;
+	if (!cp->usable(D, 6 - cp->sr))
+		return -1;
 	sr = cp->sr;
 	ld = cp->ld;
 	S = 6 - cp->sr;
 	K = D - S;
-	lin = lin_;
 	for (i = 0; i < 6; i++) {
 		const unsigned char *m = cp->mask[cp->con[i]];
 		/* label 0 is the largest code */
+		M[i] = 0;
 		for (u = 127; u >= 0; u--)
 			if (m[u])
 				ucode[i][M[i]++] = (unsigned char)u;
-		if (!M[i])
-			return -1;
-		prod *= M[i];
 	}
-	if (K < 1 || K > 63 || prod < (double)(1ULL << K))
-		return -1;
 	a1 = cp->a1 / 64.0;
 	a2 = cp->a2 / 64.0;
 	b1 = cp->b1 / 64.0;

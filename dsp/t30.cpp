@@ -701,7 +701,7 @@ void T30::rx_message()
 	}
 	fcf = msg[last][2] & 0xfe;
 	fif = msg[last] + 3;
-	fif_len = msg_len[last] - 3;
+	fif_len = msg_len[last] > 3 ? msg_len[last] - 3 : 0;
 	DSP_DBG("t30: received fcf %02x (%d frames) in %s\n", fcf, nmsg,
 		state_name[state]);
 
@@ -1410,6 +1410,9 @@ enum state T30::ecm_page_end(int fcf2)
 		rx_page_on = 0;
 	}
 	ecm_page++;
+	/* (a repeated PPS for the page's last block, after our MCF got
+	   lost, is page - 1, block 0: see got_pps()) */
+	ecm_block = 0;
 	if (fcf2 == FCF_MPS || fcf2 == FCF_PRI_MPS)
 		return S_RX_PAGE;
 	if (fcf2 == FCF_EOP || fcf2 == FCF_PRI_EOP) {
@@ -1498,7 +1501,8 @@ void T30::frame_end()
 	unsigned char *d;
 
 	rnbits = 0;
-	if (n < 32 || n % 8 || n / 8 > RX_FRAME_MAX)
+	/* address, control, FCF and FCS at least */
+	if (n < 40 || n % 8 || n / 8 > RX_FRAME_MAX)
 		return;
 	len = n / 8;
 	if (nmsg >= MAX_FRAMES * 2)

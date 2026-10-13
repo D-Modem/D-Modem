@@ -149,7 +149,8 @@ testing::AssertionResult SpandspV17::run(int short_train, FaxRxMemory *mem)
 				first = i;
 		}
 	}
-	if (err)
+	/* (also when the receiver stopped short of the end) */
+	if (err || i < ntx - 64)
 		return testing::AssertionFailure() << train << "sent " << ntx <<
 			", compared " << i << ", errors " << err <<
 			" (the first at bit " << first << ", offset " << best << ")";

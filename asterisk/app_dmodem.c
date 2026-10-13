@@ -81,6 +81,7 @@
 					<value name="REMOTE">The remote modem went away.</value>
 					<value name="LOCAL">The server or program ended the session.</value>
 					<value name="HANGUP">The channel hung up.</value>
+					<value name="FAX">A fax machine called (with fax receiving on in the profile): the fax receiver took the call.</value>
 					<value name="ERROR">Configuration or system error.</value>
 				</variable>
 				<variable name="DMODEMRATE">The connect rate, transmit/receive bit/s.</variable>
@@ -100,7 +101,7 @@ static const char descrip[] =
 	"the TCP server (mode=tcp) or the program on a pty (mode=exec) of the\n"
 	"profile in dmodem.conf ([default] if none is given).\n"
 	"  Options: o - originate: the modem calls instead of answering.\n"
-	"  Sets DMODEMSTATUS (NOCARRIER, REMOTE, LOCAL, HANGUP or ERROR) and\n"
+	"  Sets DMODEMSTATUS (NOCARRIER, REMOTE, LOCAL, HANGUP, FAX or ERROR) and\n"
 	"DMODEMRATE (transmit/receive bit/s).  The channel should be G.711\n"
 	"end to end, without echo cancellation, jitter buffer or silence\n"
 	"suppression.\n";
@@ -656,7 +657,10 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 		dmodem_poll_dte(d);
 		dmodem_status(d, &st);
 		if (!online) {
-			drain(dte[1]);
+			/* (not what the link delivered with ONLINE: the
+			   remote's first data) */
+			if (st.link != DMODEM_ONLINE)
+				drain(dte[1]);
 			if (!orig && p.fax.on && st.fax_caller) {
 				/* a fax machine calling: a fax receiver
 				   instead of the modem */

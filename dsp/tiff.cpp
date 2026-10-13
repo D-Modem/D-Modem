@@ -279,8 +279,14 @@ int TiffIn::read_page(T4Page *p)
 	T4Page src;
 	int stride, fine, step = 1;
 
-	if (!ifd)
+	/* none, or one read before: a chain that links back would give
+	   its pages again and again */
+	if (!ifd || page >= TIFF_MAX_PAGES)
 		return 0;
+	for (int i = 0; i < page; i++)
+		if (ifds[i] == ifd)
+			return 0;
+	ifds[page] = ifd;
 	if (ifd + 2 > len)
 		return -1;
 	n = get16(ifd);

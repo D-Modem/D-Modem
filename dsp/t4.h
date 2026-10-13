@@ -101,6 +101,9 @@ struct TiffOut {
 };
 
 
+/* the pages TiffIn reads from one file at most */
+#define TIFF_MAX_PAGES 1024
+
 /* the pages of a TIFF file, read one at a time */
 struct TiffIn {
 	unsigned char *data;
@@ -108,6 +111,9 @@ struct TiffIn {
 	int big_endian;
 	unsigned long next_ifd;
 	int page;
+	/* the IFDs read, for a chain that links back; plain data, as it
+	   sits in calloc()ed C structs */
+	unsigned long ifds[TIFF_MAX_PAGES];
 
 	unsigned get16(unsigned long at) const;
 	unsigned long get32(unsigned long at) const;

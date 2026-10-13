@@ -1053,6 +1053,9 @@ int V32Pump::process(void *in, void *out, int cnt)
 	int ret = DPSTAT_OK, r, i;
 	float y;
 
+	/* silence where an early return (another pump, an error) leaves
+	   the block unwritten */
+	memset(dst, 0, cnt * sizeof(*dst));
 	for (i = 0; i < cnt; i++) {
 		/* the handshake acts on symbol boundaries */
 		if (txm != TXM_ANS && tx.t + 1.0f / tx.sps >= 1) {

@@ -85,6 +85,7 @@ private:
 	void dte_input();
 	const char *record_ = nullptr;
 	void *rec_in_ = nullptr, *rec_out_ = nullptr;
+	bool rec_tried_ = false;        /* the files opened (or not) */
 	double clock_start_ = 0, clock_done_ = 0;
 };
 

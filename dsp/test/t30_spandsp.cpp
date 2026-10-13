@@ -83,6 +83,7 @@ TEST_P(T30Spandsp, SendsTheDocument)
 	long n, hit = 0;
 
 	ASSERT_TRUE(write_test_doc(in, true));
+	sp_done = -1;   /* (not the case before's) */
 	srand(1);
 	if (getenv("DSP_DEBUG"))
 		dsplibs_debug_level = atoi(getenv("DSP_DEBUG"));

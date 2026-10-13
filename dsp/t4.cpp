@@ -424,8 +424,12 @@ int T4Reader::decode_1d(int width, int *ch)
 		x += run;
 		if (x > width)
 			return -1;
-		if (x < width)
+		if (x < width) {
+			/* (runs of 0 one after another: ch has width + 4) */
+			if (n > width)
+				return -1;
 			ch[n++] = x;
+		}
 		black ^= 1;
 	}
 	ch[n] = ch[n + 1] = width;
@@ -527,8 +531,11 @@ void T4Rx::row(int two_d)
 		return;
 	if (two_d) {
 		ref_ = static_cast<int*>(malloc((w + 4) * sizeof(int)));
-		nref = row_changes(ref, w, ref_);
-		n = ref_ ? rd.decode_2d(w, ref_, nref, ch) : -1;
+		if (ref_) {
+			nref = row_changes(ref, w, ref_);
+			n = rd.decode_2d(w, ref_, nref, ch);
+		} else
+			n = -1;
 	} else {
 		n = rd.decode_1d(w, ch);
 	}
@@ -621,8 +628,9 @@ int T4Page::decode(const unsigned char *data, size_t len, int compression, int t
 		/* with EOLs: as on the line */
 		T4Rx rx;
 		size_t i;
+		int start = rows;       /* (the page's rows so far: strips) */
 		rx.init(this, t4opts & 1);
-		for (i = 0; i < rd.end && (!rows_ || rows < rows_); i++)
+		for (i = 0; i < rd.end && (!rows_ || rows - start < rows_); i++)
 			if (rx.bit(rd.bit()))
 				break;
 		rx.end();

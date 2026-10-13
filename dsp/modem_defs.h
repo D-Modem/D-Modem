@@ -133,7 +133,7 @@ enum codec_types {
 #define MFMT_IS_LE(x)      ((x)&MFMT_ORDER_LE)
 #define MFMT_BYTESSHIFT(x) ((x)&MFMT_SIZE_MASK)
 #define MFMT_SHIFT(x)      (MFMT_BYTESSHIFT(x))
-#define MFMT_BYTES(x)      (1<<MFMT_BYTESSHFIT(x))
+#define MFMT_BYTES(x)      (1<<MFMT_BYTESSHIFT(x))
 
 
 /* s-registers */

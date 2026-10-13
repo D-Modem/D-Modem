@@ -28,6 +28,11 @@ The project's overview, building and usage are in the top
 - [Interop against other soft modems](interop.md): Agere, spandsp,
   Motorola SM56, PCTel HSP, Conexant HSF
 
+## Review
+
+- [Code review (October 2026)](review.md): what was fixed, and the
+  findings still open
+
 ## References
 
 - [ITU-T Recommendations](specs/README.md): the ones implemented, with

@@ -783,7 +783,10 @@ SWITCH_STANDARD_APP(dmodem_function)
 		dmodem_poll_dte(d);
 		dmodem_status(d, &st);
 		if (!online) {
-			drain(dte[1]);
+			/* (not what the link delivered with ONLINE: the
+			   remote's first data) */
+			if (st.link != DMODEM_ONLINE)
+				drain(dte[1]);
 			if (!orig && p.fax.on && st.fax_caller) {
 				/* a fax machine calling: a fax receiver
 				   instead of the modem */

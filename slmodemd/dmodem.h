@@ -65,7 +65,8 @@ int  dmodem_init(void);
 struct dmodem *dmodem_create(const struct dmodem_config *cfg);
 /* hangs up a call still on, frees d (NULL is fine) */
 void dmodem_destroy(struct dmodem *d);
-/* answer the call now (as ATA); dial (as ATD<number>) */
+/* answer the call now (as ATA); dial (as ATD<number>; -1 if the number
+   is too long) */
 int  dmodem_answer(struct dmodem *d);
 int  dmodem_dial(struct dmodem *d, const char *number);
 /* n samples in, n samples out */

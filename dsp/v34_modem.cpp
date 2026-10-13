@@ -19,6 +19,7 @@
  */
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -382,6 +383,19 @@ static int nearest4(cplx z)
 	return z.re < 0 ? (z.im < 0 ? 0 : 1) : (z.im < 0 ? 3 : 2);
 }
 
+/* the debug log of a DIL's SP or TP bits, 40 to a line */
+static void ja_dump_bits(const char *what, const unsigned char *b, int n)
+{
+	for (int i = 0; i < n; i += 40) {
+		char line[41];
+		int k;
+		for (k = 0; k < 40 && i + k < n; k++)
+			line[k] = '0' + b[i + k];
+		line[k] = 0;
+		DSP_DBG("v34 rx: DIL %s %s\n", what, line);
+	}
+}
+
 /* Ja (V.90): DIL descriptors in MP style frames, repeated */
 void V34Rx::ja_bit(int bit)
 {
@@ -403,28 +417,19 @@ void V34Rx::ja_bit(int bit)
 					DSP_DBG("v34 rx: DIL H%d %d REF%d %d\n",
 						i + 1, dil.h[i], i + 1,
 						dil.ref[i]);
-				for (i = 0; i < dil.n; i += 16)
-					DSP_DBG("v34 rx: DIL Ucodes %d: %d %d %d %d "
-						"%d %d %d %d %d %d %d %d %d %d "
-						"%d %d\n", i,
-						dil.ucode[i], dil.ucode[i + 1],
-						dil.ucode[i + 2], dil.ucode[i + 3],
-						dil.ucode[i + 4], dil.ucode[i + 5],
-						dil.ucode[i + 6], dil.ucode[i + 7],
-						dil.ucode[i + 8], dil.ucode[i + 9],
-						dil.ucode[i + 10], dil.ucode[i + 11],
-						dil.ucode[i + 12], dil.ucode[i + 13],
-						dil.ucode[i + 14], dil.ucode[i + 15]);
-				for (i = 0; i < dil.lsp; i += 40) {
-					char sp[41], tp[41];
-					int k;
-					for (k = 0; k < 40; k++) {
-						sp[k] = '0' + dil.sp[i + k];
-						tp[k] = '0' + dil.tp[i + k];
-					}
-					sp[40] = tp[40] = 0;
-					DSP_DBG("v34 rx: DIL SP %s TP %s\n", sp, tp);
+				for (i = 0; i < dil.n; i += 16) {
+					char line[16 * 4 + 1];
+					int k, l = 0;
+					/* (no more than the DIL has) */
+					for (k = i; k < i + 16 && k < dil.n; k++)
+						l += snprintf(line + l, sizeof(line) - l,
+							      " %d", dil.ucode[k]);
+					line[l] = 0;
+					DSP_DBG("v34 rx: DIL Ucodes %d:%s\n", i, line);
 				}
+				/* SP and TP have their own lengths */
+				ja_dump_bits("SP", dil.sp, dil.lsp);
+				ja_dump_bits("TP", dil.tp, dil.ltp);
 			}
 			ev_ja = 1;
 		} else
@@ -445,8 +450,16 @@ void V34Rx::cp_bit(int bit)
 	}
 	if (ja_len > 0 && ja_n == ja_len) {
 		V90Cp cp;
+		int ok;
 		ja_n = 0;
-		if (cp.parse(jabits, ja_len) == 0) {
+		ok = cp.parse(jabits, ja_len) == 0;
+		if (ok && !cp.usable(cp.drn + (cp.cp ? 20 : 8), 6 - cp.sr)) {
+			/* our encoder can't use it: no CP (a retrain
+			   follows) */
+			DSP_DBG("v34 rx: CP%s with constellations that "
+				"can't carry drn %d\n", cp.cp ? "" : "t",
+				cp.drn);
+		} else if (ok) {
 			if (!(cp.cp ? ev_cp : ev_cpt) ||
 			    (cp.ack && !ev_cpack) ||
 			    (cp.cp && cp.silence != cp_silence))

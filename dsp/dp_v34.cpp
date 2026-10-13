@@ -547,7 +547,7 @@ struct V34Pump : Pump {
 	void pump_rx_sample(float x);
 	int fallback(const char *why);
 	void choose_bauds();
-	void primary_start();
+	int primary_start();
 	int v90_start();
 	void v90_make_mp(int ack);
 	int v90_data_setup();
@@ -2112,17 +2112,19 @@ void V34Pump::choose_bauds()
 	max_rate_rx = rate_of_baud[best] ? rate_of_baud[best] : 1;
 }
 
-/* the primary channel at the agreed symbol rates */
-void V34Pump::primary_start()
+/* the primary channel at the agreed symbol rates; -1 if the receiver
+   can't be set up (out of memory) */
+int V34Pump::primary_start()
 {
 	/* the carriers as the receiving modems asked for them in INFO1c
 	   (answerer -> caller) and INFO1a (caller -> answerer) */
 	int high = caller ? high_tx : rinfo1c.r[baud_tx].high;
 	ptx.init(baud_tx, high, caller);
-	prx.init(baud_rx, caller ? 0 : high_rx,
-		    caller);
+	if (prx.init(baud_rx, caller ? 0 : high_rx, caller))
+		return -1;
 	prx_on = 1;
 	txm = TXM_PRIMARY;
+	return 0;
 }
 
 /* V.90 phase 3: the remote's V.34 signals in, our PCM signals out */
@@ -2983,7 +2985,8 @@ int V34Pump::handshake()
 		if (!cc_busy()) {
 			cc_silence();
 			set_state(P3A_SILENCE);
-			primary_start();
+			if (primary_start())
+				return DPSTAT_ERROR;
 		}
 		break;
 
@@ -3145,6 +3148,17 @@ int V34Pump::handshake()
 			retrain("the remote retrains in phase 2");
 			break;
 		}
+		/* symbol rate codes past the table (6 only for PCM: both
+		   for V.92's upstream, downstream for V.90's): the CRC
+		   was right, the content isn't */
+		if (ev_info1 && !(pcm && rinfo1a.baud_ca == 6 &&
+				  rinfo1a.baud_ac == 6) &&
+		    (rinfo1a.baud_ac >= V34_NBAUDS ||
+		     (rinfo1a.baud_ca >= V34_NBAUDS &&
+		      !(pcm && rinfo1a.baud_ca == 6)))) {
+			retrain("INFO1a: no such symbol rate");
+			break;
+		}
 		/* PCM upstream (Table 18/V.92); without our offer in
 		   INFO1d: a full phase 2, where INFO1d says so */
 		if (ev_info1 && pcm && rinfo1a.baud_ca == 6 &&
@@ -3176,7 +3190,8 @@ int V34Pump::handshake()
 				v34_bauds[baud_tx].nominal,
 				v34_bauds[baud_rx].nominal);
 			set_state(P3C_WAIT);
-			primary_start();
+			if (primary_start())
+				return DPSTAT_ERROR;
 		}
 		break;
 

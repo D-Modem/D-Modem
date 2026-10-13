@@ -207,11 +207,12 @@ static int hdlc_get_bit(void *ctx)
 	Fax *f = static_cast<Fax*>(ctx);
 	int bit;
 
+	/* a stuffed zero, also after the FCS's last bit */
+	if (f->hones == 5) {
+		f->hones = 0;
+		return 0;
+	}
 	if (f->hsending) {
-		if (f->hones == 5) {            /* stuffed zero */
-			f->hones = 0;
-			return 0;
-		}
 		bit = (f->hsend[f->hsend_pos] >> f->hsend_bit) & 1;
 		if (++f->hsend_bit == 8) {
 			f->hsend_bit = 0;

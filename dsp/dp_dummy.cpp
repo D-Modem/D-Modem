@@ -72,6 +72,8 @@ static struct dp *dummy_create(struct modem *m, enum DP_ID id,
 	struct dummy_dp *d;
 	dprintf("dummy_create...\n");
 	d = static_cast<dummy_dp*>(malloc(sizeof(*d)));
+	if (!d)
+		return NULL;
 	memset(d,0,sizeof(*d));
 	d->dp.id   = id;
 	d->dp.modem = m;

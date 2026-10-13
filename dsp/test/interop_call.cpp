@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -57,6 +58,15 @@ std::string env(const char *name, const std::string &def = "")
 {
 	const char *v = getenv(name);
 	return v ? v : def;
+}
+
+/* in a child: SIGKILL when the driver (parent) dies, so that the modems
+   and netsim don't run on without it */
+void die_with(pid_t parent)
+{
+	prctl(PR_SET_PDEATHSIG, SIGKILL);
+	if (getppid() != parent)
+		_exit(1);
 }
 
 /* s in pieces at each sep (empty pieces kept) */
@@ -184,8 +194,10 @@ struct Modem {
 		argv.push_back((char *)dbg.c_str());
 		argv.push_back(nullptr);
 		Pipe o;
+		pid_t parent = getpid();
 		pid = fork();
 		if (pid == 0) {
+			die_with(parent);
 			int a = fcntl(rfd, F_DUPFD, 10);
 			int b = fcntl(wfd, F_DUPFD, 10);
 			dup2(o.w, 1);
@@ -241,17 +253,19 @@ struct Modem {
 	void stop(bool hard)
 	{
 		if (pid > 0) {
-			if (hard)
-				kill(pid, SIGKILL);
-			else {
+			pid_t r = 0;
+			if (!hard) {
 				kill(pid, SIGTERM);
 				double end = now() + 2;
 				while (now() < end &&
-				       waitpid(pid, nullptr, WNOHANG) == 0)
+				       (r = waitpid(pid, nullptr, WNOHANG)) == 0)
 					sleep_s(0.02);
-				kill(pid, SIGKILL);
 			}
-			waitpid(pid, nullptr, 0);
+			/* (once reaped, the pid may be another process's) */
+			if (r != pid) {
+				kill(pid, SIGKILL);
+				waitpid(pid, nullptr, 0);
+			}
 			pid = -1;
 		}
 		if (logger.joinable())
@@ -492,8 +506,10 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		for (auto &s : args)
 			argv.push_back((char *)s.c_str());
 		argv.push_back(nullptr);
+		pid_t parent = getpid();
 		pn = fork();
 		if (pn == 0) {
+			die_with(parent);
 			for (int f : { an.r, na.w, bn.r, nb.w })
 				cloexec(f, false);
 			if (netsim.find('/') != std::string::npos)
@@ -538,10 +554,15 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			/* netsim ends on its inputs' end (and writes its
 			   WAV then) */
 			double end = now() + 5;
-			while (now() < end && waitpid(pn, nullptr, WNOHANG) == 0)
+			pid_t r = 0;
+			while (now() < end &&
+			       (r = waitpid(pn, nullptr, WNOHANG)) == 0)
 				sleep_s(0.02);
-			kill(pn, SIGKILL);
-			waitpid(pn, nullptr, 0);
+			/* (once reaped, the pid may be another process's) */
+			if (r != pn) {
+				kill(pn, SIGKILL);
+				waitpid(pn, nullptr, 0);
+			}
 			pn = -1;
 		}
 	};
@@ -776,7 +797,15 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			size_t at[2] = { 0, 0 };
 			for (int f : dte.fd)
 				fcntl(f, F_SETFL, fcntl(f, F_GETFL) | O_NONBLOCK);
+			/* (as long as the wait for it below: a modem that
+			   stops taking data or goes away ends the call) */
+			double bulk_end = now() + 40 + 15.0 * bulk_n / rate;
 			while (at[0] < msg[0].size() || at[1] < msg[1].size()) {
+				if (now() > bulk_end) {
+					say("bulk: only %zu and %zu of %zu octets "
+					    "written\n", at[0], at[1], bulk_n);
+					done(false);
+				}
 				for (int k = 0; k < 2; k++)
 					if (at[k] < msg[k].size()) {
 						ssize_t w = write(dte.fd[k],
@@ -785,6 +814,12 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 							msg[k].size() - at[k]));
 						if (w > 0)
 							at[k] += w;
+						else if (w < 0 && errno != EAGAIN &&
+							 errno != EINTR) {
+							say("bulk: write to %c: %s\n",
+							    "AB"[k], strerror(errno));
+							done(false);
+						}
 					}
 				dte.pump(0.05);
 			}
@@ -1309,10 +1344,17 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		}
 	close(ab.w);
 	close(ba.w);
+	/* the read ends the modems had (ra.r, rb.r): a relay stuck writing
+	   to a modem that stopped reading gets EPIPE */
+	for (size_t k = 4; k < fds.size(); k += 2) {
+		close(fds[k]);
+		fds[k] = -1;
+	}
 	for (auto &t : relays)
 		t.join();
 	for (size_t k = 2; k < fds.size(); k++)
-		close(fds[k]);
+		if (fds[k] >= 0)
+			close(fds[k]);
 	return page_ok;
 }
 

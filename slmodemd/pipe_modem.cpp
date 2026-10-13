@@ -59,10 +59,10 @@ PipeModem::PipeModem(const char *name, int rate, const char *country,
 PipeModem::~PipeModem()
 {
 	delete m_;
-	if (rec_in_) {
+	if (rec_in_)
 		fclose((FILE *)rec_in_);
+	if (rec_out_)
 		fclose((FILE *)rec_out_);
-	}
 }
 
 /* the time in ms: the monotonic clock, or with PIPE_SYNC the line's */
@@ -169,8 +169,10 @@ int PipeModem::line(bool rd)
 		return -1;
 	}
 	if (count == 0) {
-		DBG("dev read = 0\n");
-		return 0;
+		/* the other end is gone: select() would find it readable
+		   for ever */
+		DBG("dev read = 0: the line's other end closed\n");
+		return -1;
 	}
 	npend_ += count;
 pending:
@@ -220,12 +222,22 @@ pending:
 		}
 	} else if (m_->started()) {
 		m_->process((int16_t *)in, (int16_t *)outbuf, count / 2);
-		if (record_ && !rec_in_) {
+		if (record_ && !rec_tried_) {
+			/* once: both files, or neither */
 			char name[256];
+			rec_tried_ = true;
 			snprintf(name, sizeof(name), "%s.in", record_);
 			rec_in_ = fopen(name, "wb");
 			snprintf(name, sizeof(name), "%s.out", record_);
 			rec_out_ = fopen(name, "wb");
+			if (!rec_in_ || !rec_out_) {
+				ERR("can't record to %s.in/.out\n", record_);
+				if (rec_in_)
+					fclose((FILE *)rec_in_);
+				if (rec_out_)
+					fclose((FILE *)rec_out_);
+				rec_in_ = rec_out_ = nullptr;
+			}
 		}
 		if (rec_in_ && rec_out_) {
 			fwrite(in, 1, count, (FILE *)rec_in_);

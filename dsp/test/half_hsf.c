@@ -1108,9 +1108,11 @@ static int nvm_bytes(const char *t, byte *out, int max)
 			out[n++] = (byte)*p;
 			continue;
 		}
-		if (*p == ';')          /* a comment to the end of the line */
+		if (*p == ';') {        /* a comment to the end of the line */
 			while (p[1] && p[1] != '\n')
 				p++;
+			continue;       /* (its last character is no byte) */
+		}
 		if (!isxdigit((byte)*p))
 			continue;
 		out[n++] = (byte)strtoul(p, (char **)&p, 16);
