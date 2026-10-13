@@ -30,8 +30,11 @@ namespace dsp {
 
 class Pump {
 public:
+	/* a derived pump's destructor frees what its start() took */
 	virtual ~Pump() {}
+	/* cnt s16 samples from the line in, cnt to it out: a DPSTAT_* */
 	virtual int process(void *in, void *out, int cnt) = 0;
+	/* the call is being hung up: nothing to do by default */
 	virtual int hangup() { return 0; }
 
 	struct dp dp;           /* what the modem core holds */
@@ -39,6 +42,8 @@ public:
 
 template <class T>
 struct PumpOps {
+	/* dp_operations.create: a zeroed T, its struct dp filled in, then
+	   T::start(); NULL when out of memory or start() fails */
 	static struct dp *create(struct modem *m, enum DP_ID id, int caller,
 				 int srate, int max_frag,
 				 struct dp_operations *op)
@@ -56,15 +61,18 @@ struct PumpOps {
 		}
 		return &p->dp;
 	}
+	/* dp_operations.destroy: deletes the pump (its destructor runs) */
 	static int destroy(struct dp *d)
 	{
 		delete static_cast<Pump *>(d->dp_data);
 		return 0;
 	}
+	/* dp_operations.process: the pump's process() */
 	static int process(struct dp *d, void *in, void *out, int cnt)
 	{
 		return static_cast<Pump *>(d->dp_data)->process(in, out, cnt);
 	}
+	/* dp_operations.hangup: the pump's hangup() */
 	static int hangup(struct dp *d)
 	{
 		return static_cast<Pump *>(d->dp_data)->hangup();

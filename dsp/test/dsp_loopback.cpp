@@ -24,6 +24,9 @@
 
 #include "loopback.h"
 
+/* one loopback run as the arguments and the environment say: both
+   sides' results, then PASS or FAIL (exit status 1: a side not ok or
+   a pump failed) */
 int main(int argc, char **argv)
 {
 	LoopbackConfig c;

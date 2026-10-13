@@ -63,6 +63,8 @@ struct dummy_dp {
 	int pcm_was;            /* the runtime's "no DC removal" before */
 };
 
+/* dp_operations.create: a zeroed pump; turns the core's DC removal off
+   (the runtime's pcm flag) for as long as it runs */
 static struct dp *dummy_create(struct modem *m, enum DP_ID id,
 			       int caller, int srate, int max_frag,
 			       struct dp_operations *op)
@@ -88,6 +90,7 @@ static struct dp *dummy_create(struct modem *m, enum DP_ID id,
 	return (struct dp *)d;
 }
 
+/* dp_operations.destroy: gives the pcm flag back and frees the pump */
 static int dummy_delete(struct dp *dp)
 {
 	struct dummy_dp *d = (struct dummy_dp *)dp;
@@ -102,6 +105,10 @@ static int dummy_delete(struct dp *dp)
 	return 0;
 }
 
+/* dp_operations.process, counted in blocks: silent for DUMMY_SKIP
+   blocks, then +-'A' samples until the remote's are heard (CONNECT), or
+   DPSTAT_ERROR after DUMMY_TIMEOUT; once linked one bit per sample each
+   way, in bit 0 of the samples */
 static int dummy_process(struct dp *dp, void *in, void *out, int cnt)
 {
 	struct dummy_dp *d = (struct dummy_dp *)dp;
@@ -157,11 +164,13 @@ static struct dp_operations dummy_operations = {
 
 
 
+/* registers the pump as DP_DUMMY: modem_dp_register()'s result */
 int dp_dummy_init(void)
 {
 	return modem_dp_register(DP_DUMMY,&dummy_operations);
 }
 
+/* deregisters it */
 void dp_dummy_exit(void)
 {
 	modem_dp_deregister(DP_DUMMY,&dummy_operations);

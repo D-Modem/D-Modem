@@ -76,6 +76,7 @@ static int trellis_next(int states, int st, int y)
 	       (y4 ^ r[4] ^ r[5] ^ (r[3] & (y1 ^ r[4]))) << 5;
 }
 
+/* the 2D subset label (0..7) of the point (x, y), odd coordinates */
 static int subset_label(int x, int y)
 {
 	return v34_subset[((x - 1) & 6) / 2 + 2 * ((y - 1) & 6)];
@@ -105,6 +106,10 @@ static void rotate(int *x, int *y, int k)
  *    parameters and shell mapping (9.2, 9.4/V.34)
  */
 
+/* the shell mapping tables of 9.4/V.34 for M rings: g2 and g4, the
+   numbers of ring pairs and quadruples with each sum, and z8, the number
+   of ring 8-tuples with a sum below each value; -1 when M is out of
+   range */
 int V34Params::shell_tables()
 {
 	int M_ = M, i, j;
@@ -129,11 +134,13 @@ int V34Params::shell_tables()
 	return 0;
 }
 
+/* g2(i), 0 outside the table */
 unsigned long long V34Params::g2p(int i) const
 {
 	return i >= 0 && i < 2 * M - 1 ? g2[i] : 0;
 }
 
+/* g4(i), 0 outside the table */
 unsigned long long V34Params::g4p(int i) const
 {
 	return i >= 0 && i < 4 * M - 3 ? g4[i] : 0;
@@ -183,6 +190,11 @@ double V34Params::frame_power(int k, double theta, double e0) const
 	return e / ldexp(1, k);
 }
 
+/* the data mode parameters at symbol rate baud (V34_BAUD_*) and n *
+   2400 bit/s, minimum or expanded shaping (Table 10/V.34): frame
+   sizes, the switching pattern, the point spacing at the training
+   power; 16 states, no precoding, no non-linear encoding.  Returns -1
+   when the rate is not allowed at that symbol rate. */
 int V34Params::init(int baud, int n, int expanded)
 {
 	const struct v34_rate *rt;
@@ -239,6 +251,9 @@ void V34Params::set_nonlinear(double theta_)
 	nl_gain = (float)sqrt(pw_ / pw);
 }
 
+/* precoding with the coefficients h_ of an MP sequence (14 fractional
+   bits; all zero: none), the point spacing g made smaller for the same
+   power */
 void V34Params::set_precoder(const int h_[6])
 {
 	double pw = 2 / (g * g);
@@ -292,6 +307,8 @@ int V34Precoder::c_parity() const
 	return ((c[0] + c[1]) >> 1) & 1;
 }
 
+/* the shell mapper (9.4/V.34): the rings m[0..7] of a mapping frame
+   from the value r0 of its shell mapping bits */
 void V34Params::shell_map(unsigned long r0, int m[8]) const
 {
 	unsigned long long r1, r2, r3, r4, r5, t;
@@ -327,6 +344,8 @@ void V34Params::shell_map(unsigned long r0, int m[8]) const
 	f = (int)(r4 / g2p(c));
 	g_ = (int)(r5 % g2p(d));
 	h_ = (int)(r5 / g2p(d));
+/* m[i], m[i + 1]: the pair of rings with index v among those with that
+   sum */
 #define PAIR(i, sum, v) do { \
 		if ((sum) < M_) { m[i] = (v); m[(i) + 1] = (sum) - (v); } \
 		else { m[(i) + 1] = M_ - 1 - (v); m[i] = (sum) - m[(i) + 1]; } \
@@ -338,11 +357,14 @@ void V34Params::shell_map(unsigned long r0, int m[8]) const
 #undef PAIR
 }
 
+/* the index of the ring pair (x, y) among those with its sum, as
+   shell_map() numbers them */
 int V34Params::pair_index(int x, int y) const
 {
 	return x + y < M ? x : M - 1 - y;
 }
 
+/* the inverse of shell_map(): r0 from the rings m[0..7] */
 unsigned long V34Params::shell_demap(const int m[8]) const
 {
 	int a = 0, b_, c, d, i;
@@ -377,6 +399,9 @@ unsigned long V34Params::shell_demap(const int m[8]) const
  *    transmitter
  */
 
+/* the data transmitter with the parameters p_: differential, trellis
+   and precoder states from zero, the superframe pattern from its bit
+   2J - 2, a new mapping frame at the first symbol */
 void V34DataTx::init(const V34Params *p_)
 {
 	memset(this, 0, sizeof(*this));
@@ -395,6 +420,11 @@ static cplx nonlinear(cplx s, float theta)
 	return cplx_scale(s, 1 + z / 6 + z * z / 120);
 }
 
+/* the 8 symbols of the next mapping frame into sym[]: high or low by
+   the switching pattern, its bits from get_bits() scrambled (scr, tap:
+   the primary channel's scrambler), shell mapped, coded differentially
+   and by the trellis code, precoded and through the non-linear encoder
+   as set */
 void V34DataTx::encode_frame(unsigned *scr, int tap)
 {
 	const V34Params *p_ = &p;
@@ -490,6 +520,8 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 	}
 }
 
+/* the next data symbol, in units of the training points: a new mapping
+   frame every 8 */
 cplx V34DataTx::symbol(unsigned *scr, int tap)
 {
 	if (pos >= 8) {
@@ -508,6 +540,7 @@ cplx V34DataTx::symbol(unsigned *scr, int tap)
 /* rotation << 9 | index of each odd point with |x|, |y| <= 45 */
 static short lookup[46][46];
 
+/* lookup[] from the quarter superconstellation and its rotations */
 static void make_lookup(void)
 {
 	int i, k;
@@ -521,6 +554,8 @@ static void make_lookup(void)
 }
 
 
+/* the data receiver with the parameters p_ (those of the remote's
+   transmitter) */
 void V34DataRx::init(const V34Params *p_)
 {
 	memset(this, 0, sizeof(*this));
@@ -532,7 +567,9 @@ void V34DataRx::init(const V34Params *p_)
 	viterbi_init();
 }
 
-/* the nearest point of the constellation in use */
+/* the nearest point of the constellation in use to z (in units of the
+   training points): its coordinates into *px, *py; returns its
+   rotation << 9 | index, as lookup[] */
 int V34Params::decide(cplx z, int *px, int *py) const
 {
 	float u = z.re / g, v = z.im / g, best = 1e9f;
@@ -568,6 +605,9 @@ int V34Params::decide(cplx z, int *px, int *py) const
 	return ret;
 }
 
+/* the bits of the mapping frame of the 8 decided points in e[]: shell
+   demapping, the differential decoding of the rotations, descrambling
+   (scr, tap), out through put_bits() */
 void V34DataRx::decode_frame(unsigned *scr, int tap)
 {
 	const V34Params *p_ = &p;
@@ -616,6 +656,7 @@ void V34DataRx::decode_frame(unsigned *scr, int tap)
  *    Viterbi decoder for the 16 state code
  */
 
+/* a point (x, y) as one int, and back */
 #define PACK(x, y)      ((int)(((x) & 0xFFFF) | (unsigned)(y) << 16))
 #define UNPACK_X(v)     ((short)((v) & 0xFFFF))
 #define UNPACK_Y(v)     ((v) >> 16)
@@ -657,6 +698,8 @@ void V34Params::subset_points(float u, float v, float dist[8], int pt[8]) const
 		}
 }
 
+/* the Viterbi decoder and the superframe pattern at the start of the
+   data signal */
 void V34DataRx::viterbi_init()
 {
 	int s;

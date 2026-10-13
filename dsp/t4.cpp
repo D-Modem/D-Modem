@@ -129,6 +129,7 @@ struct tree {
 static struct tree white_tree, black_tree, mode_tree;
 static pthread_once_t trees_once = PTHREAD_ONCE_INIT;
 
+/* the codes of a table into a decoding tree */
 static void tree_add(struct tree *t, const struct code *c)
 {
 	for (; c->bits; c++) {
@@ -147,6 +148,7 @@ static void tree_add(struct tree *t, const struct code *c)
 	}
 }
 
+/* the decoding trees from the tables (once, by pthread_once) */
 static void trees_build(void)
 {
 	struct tree *t[] = { &white_tree, &black_tree, &mode_tree };
@@ -168,6 +170,7 @@ static void trees_build(void)
  *    pages and bit strings
  */
 
+/* an empty page width_ pels wide; fine_: 196 lines per inch.  0 */
 int T4Page::init(int width_, int fine_)
 {
 	memset(this, 0, sizeof(*this));
@@ -176,6 +179,7 @@ int T4Page::init(int width_, int fine_)
 	return 0;
 }
 
+/* free the rows */
 void T4Page::release()
 {
 	free(bits);
@@ -183,6 +187,8 @@ void T4Page::release()
 	rows = cap = 0;
 }
 
+/* a row added at the bottom; NULL: a copy of the last one (white for
+   the first).  The new row in the page, NULL when out of memory */
 unsigned char *T4Page::add_row(const unsigned char *row)
 {
 	int stride = T4_STRIDE(width);
@@ -206,6 +212,8 @@ unsigned char *T4Page::add_row(const unsigned char *row)
 	return r;
 }
 
+/* the len lowest bits of code, the highest first (dropped when out of
+   memory) */
 void T4Bits::put(unsigned code, int len)
 {
 	while (len-- > 0) {
@@ -224,18 +232,21 @@ void T4Bits::put(unsigned code, int len)
 	}
 }
 
+/* free the bits, empty again */
 void T4Bits::release()
 {
 	free(buf);
 	memset(this, 0, sizeof(*this));
 }
 
+/* a code written as a string of '0' and '1' */
 void T4Bits::put_code(const char *bits)
 {
 	for (; *bits; bits++)
 		put(*bits - '0', 1);
 }
 
+/* the code of a run in a table, NULL if it has none */
 static const char *code_of(const struct code *t, int run)
 {
 	for (; t->bits; t++)
@@ -249,6 +260,7 @@ static const char *code_of(const struct code *t, int run)
  *    rows and their changing elements
  */
 
+/* pel x of a row: 1 for black */
 static int pel(const unsigned char *row, int x)
 {
 	return (row[x >> 3] >> (7 - (x & 7))) & 1;
@@ -267,6 +279,8 @@ static int row_changes(const unsigned char *row, int width, int *ch)
 	return n;
 }
 
+/* a row from its n changes: black from ch[0] to ch[1], from ch[2] to
+   ch[3] ..., to the right edge if n is odd */
 static void row_from_changes(unsigned char *row, int width, const int *ch,
 			     int n)
 {
@@ -284,6 +298,8 @@ static void row_from_changes(unsigned char *row, int width, const int *ch,
  *    the MH encoder
  */
 
+/* a run of one colour in MH: make-up codes (Table 3 for 1792 and up),
+   then the terminating code */
 void T4Bits::put_run(int run, int black)
 {
 	const struct code *t = black ? black_codes : white_codes;
@@ -299,6 +315,8 @@ void T4Bits::put_run(int run, int black)
 	put_code(code_of(t, run));
 }
 
+/* an EOL; align: fill zeros before it so that it ends on an octet
+   boundary */
 void T4Bits::put_eol(int align)
 {
 	if (align)
@@ -307,6 +325,9 @@ void T4Bits::put_eol(int align)
 	put(1, EOL_BITS);
 }
 
+/* the page in MH (one dimensional) coding: an EOL before each row, rows
+   padded with fill to at least min_bits, RTC at the end (rtc), EOLs
+   ending on a byte boundary (align, as TIFF's T4Options bit 2) */
 void T4Page::encode_mh(T4Bits *out, int min_bits, int align, int rtc) const
 {
 	int stride = T4_STRIDE(width), y, k;
@@ -351,6 +372,7 @@ struct T4Reader {
 	int decode_2d(int width, const int *ref, int nref, int *ch);
 };
 
+/* the next bit, -1 at the end of the data */
 int T4Reader::bit()
 {
 	int b;
@@ -362,6 +384,8 @@ int T4Reader::bit()
 	return b & 1;
 }
 
+/* a code of tree t: its value; -1 at the end of the data, -2 for bits
+   that are no code */
 int T4Reader::code(const struct tree *t)
 {
 	int node = 0, b;
@@ -461,6 +485,8 @@ int T4Reader::decode_2d(int width, const int *ref, int nref, int *ch)
  *    receiving, bit by bit, with EOLs
  */
 
+/* rows to add to page_ as they come; mr_: MR coding (a tag bit after
+   each EOL) */
 void T4Rx::init(T4Page *page_, int mr_)
 {
 	pthread_once(&trees_once, trees_build);
@@ -471,6 +497,7 @@ void T4Rx::init(T4Page *page_, int mr_)
 	ref = static_cast<unsigned char*>(calloc(1, T4_STRIDE(width)));
 }
 
+/* free the buffers (the page stays) */
 void T4Rx::release()
 {
 	line.release();
@@ -478,6 +505,7 @@ void T4Rx::release()
 	ref = NULL;
 }
 
+/* no 1 among the bits: nothing but fill */
 int T4Bits::line_empty() const
 {
 	size_t k;
@@ -519,6 +547,8 @@ void T4Rx::row(int two_d)
 	free(ref_);
 }
 
+/* one bit; 1 once the page has ended (RTC).  An EOL completes the row
+   before it */
 int T4Rx::bit(int bit)
 {
 	if (done)
@@ -562,6 +592,7 @@ int T4Rx::bit(int bit)
 	return 0;
 }
 
+/* the end of the data without RTC (the carrier went): the last row */
 void T4Rx::end()
 {
 	if (!done && started && line.n && !line.line_empty())
@@ -574,6 +605,10 @@ void T4Rx::end()
  *    whole pages from a buffer (TIFF)
  */
 
+/* a whole page from a buffer: compression as TIFF's (2 MH without EOLs,
+   3 T.4 with EOLs, 1D or, t4opts & 1, 2D; 4 T.6), msb_first as TIFF's
+   FillOrder 1; rows: how many to expect (0: until the end of data).
+   The rows are added to the page; 0, or -1 when out of memory */
 int T4Page::decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, int rows_)
 {
 	int w = width, n, nref, y = 0;

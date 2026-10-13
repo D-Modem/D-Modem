@@ -204,9 +204,15 @@ enum MODEM_PARAMETER_NAMES {
 
 struct modem;
 
+/* the value of a parameter (enum MODEM_PARAMETER_NAMES), -1 for an
+   unknown one; pointers (the dial string, the dp runtime) come cast to
+   long */
 extern long modem_get_param(struct modem *m, unsigned param);
+/* sets a parameter: 0 (the host's result for MDMPRM_HOOK_ON and
+   MDMPRM_PULSE_DIAL), or -1 for one that cannot be set */
 extern long modem_set_param(struct modem *m, unsigned name, int val);
 
+/* S-register sreg_param, like modem_get_sreg() */
 extern long modem_get_sreg_param(struct modem *m, unsigned sreg_param);
 
 #ifdef __cplusplus

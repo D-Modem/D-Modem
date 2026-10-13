@@ -34,11 +34,16 @@ struct QamTx {
 	cplx (*get_symbol)(void *ctx);
 	void *ctx;
 
+	/* carrier (Hz), baud, root raised cosine roll off alpha over span
+	   symbols each side; symbols of rms rms_symbol give a pass band rms
+	   of amplitude / sqrt(2) (that of a sine of amplitude amplitude) */
 	void  init(int srate, float carrier, float baud, float alpha, int span,
 		   float rms_symbol, float amplitude);
+	/* the next line sample (calls get_symbol at symbol boundaries) */
 	float sample();
 	void  flush();          /* forget symbols in flight */
 private:
+	/* the pulse at t symbol periods from its centre (interpolated) */
 	float pulse_at(float t);
 };
 
@@ -57,7 +62,7 @@ struct QamRx {
 	cplx *mf_buf;
 	int mf_len, mf_pos;
 	/* level */
-	float power;            /* input power (band passed, tc 20 ms) */
+	float power;            /* input power (tc 20 ms) */
 	float power_alpha;
 	float agc_pwr, agc_alpha, agc_target;
 	float agc_gain;
@@ -81,6 +86,9 @@ struct QamRx {
 	cplx rot;
 	long symbols;
 
+	/* carrier (Hz), baud, roll off alpha, matched filter span symbols
+	   each side, eq_len T/2 taps, AGC to target_power at the symbol
+	   instants; 0, or -1 when out of memory */
 	int   init(int srate, float carrier, float baud, float alpha, int span,
 		   int eq_len, float target_power);
 	void  release();        /* the buffers init took */
@@ -88,7 +96,8 @@ struct QamRx {
 	/* returns 1 when a new symbol is available in z */
 	int   sample(float x);
 	/* adapt equalizer (mu, normalized) and carrier loop toward
-	   decision d */
+	   decision d: k1 the phase gain, k2 the frequency gain (rad per
+	   symbol per radian of error), 0 leaves that part alone */
 	void  adapt(cplx d, float mu, float k1, float k2);
 	/* recompute the current output after the equalizer was replaced */
 	void  recompute();
@@ -121,6 +130,7 @@ struct Viterbi {
 	int filled;
 	int last_y12;           /* differential decoder state */
 
+	/* points: the 2^(nbits + 1) point constellation; clears the paths */
 	void init(const cplx *points, int nbits);
 	/* feed one received point; returns the decoded data bits (Q1 in bit
 	   0) of the symbol VITERBI_DEPTH-1 periods ago, or -1 while filling */
@@ -139,6 +149,7 @@ struct EchoCanceller {
 	float pw_rx, pw_err;    /* in and out while it adapts */
 	int training, off;
 
+	/* len taps (samples); 0, or -1 when out of memory */
 	int   init(int len);
 	/* the end of the training: what did it take away (dB)?  Below 6 dB
 	   there was no echo to cancel (a 4-wire network, or the remote was

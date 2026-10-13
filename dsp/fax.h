@@ -28,6 +28,7 @@ enum fax_mod {
 
 /* class 1 <mod> code -> modulation and training; returns 0 if unknown */
 int fax_mod_from_code(int code, enum fax_mod *mod, int *short_train);
+/* the data rate of a modulation, bit/s */
 int fax_mod_bps(enum fax_mod mod);
 
 /* the transmitter gets its data bits through this callback: 0/1, or
@@ -61,7 +62,9 @@ struct FaxTx {
 	int data_bit();
 	cplx data_symbol();
 	void next_segment(int seg_);
+	/* mod_ at srate_ samples/s, the data bits from get_bit_(ctx_) */
 	void init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t get_bit_, void *ctx_);
+	/* the next output sample; done is set at the end of the signal */
 	float sample();
 };
 
@@ -118,14 +121,20 @@ struct FaxRx {
 	int point_state(cplx p);
 	cplx ref_point(int k);
 	int make_reference();
+	/* mod_ at srate_ samples/s, the data bits to put_bit_(ctx_) once
+	   trained; mem: for a V.17 short train (may be NULL).  -1: no
+	   memory */
 	int init(enum fax_mod mod_, int short_train_, int srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem);
+	/* keep the trained equalizer for a later short train */
 	void save(FaxRxMemory *mem);
+	/* free what init took */
 	void release();
 	void bits_out(int q, int n, int msb_first);
 	void data_symbol();
 	int window_match(int k);
 	void track_alternations(cplx z);
 	void symbol();
+	/* an input sample; carrier and trained tell how it goes */
 	void sample(float x);
 };
 
@@ -136,8 +145,6 @@ struct FaxRxMemory {
 	float agc_gain;
 	int valid;
 };
-
-/* keep the trained equalizer for a later short train */
 
 /* transmit levels (rms) of the fax signals, as the original library's */
 #define FAX_CED_RMS 4525.0f

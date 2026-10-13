@@ -19,18 +19,21 @@ namespace dsp {
  *    writing
  */
 
+/* 16 and 32 bit values, little endian (the files we write are "II") */
 static void put16(unsigned char *p, unsigned v)
 {
 	p[0] = v & 0xff;
 	p[1] = (v >> 8) & 0xff;
 }
 
+/* a 32 bit one */
 static void put32(unsigned char *p, unsigned long v)
 {
 	put16(p, v & 0xffff);
 	put16(p + 2, (v >> 16) & 0xffff);
 }
 
+/* a new file at path, with the header; -1 on an error */
 int TiffOut::open(const char *path)
 {
 	unsigned char h[8] = { 'I', 'I', 42, 0, 0, 0, 0, 0 };
@@ -49,6 +52,8 @@ int TiffOut::open(const char *path)
 
 enum { T_SHORT = 3, T_LONG = 4, T_RATIONAL = 5 };
 
+/* an IFD entry at e, a single SHORT in the first half of the value
+   field; where the next one goes */
 static unsigned char *entry(unsigned char *e, unsigned tag, unsigned type,
 			    unsigned long count, unsigned long value)
 {
@@ -62,6 +67,9 @@ static unsigned char *entry(unsigned char *e, unsigned tag, unsigned type,
 	return e + 12;
 }
 
+/* a page appended: its rows in MH with byte aligned EOLs (one strip),
+   then its IFD with the resolutions, linked from the IFD before it.
+   0, or -1 on a write error */
 int TiffOut::write_page(const T4Page *p)
 {
 	FILE *f_ = static_cast<FILE*>(f);
@@ -131,6 +139,7 @@ int TiffOut::write_page(const T4Page *p)
 	return 0;
 }
 
+/* close the file; -1 if that failed */
 int TiffOut::close()
 {
 	int r = 0;
@@ -146,6 +155,7 @@ int TiffOut::close()
  *    reading
  */
 
+/* a 16 bit value at offset at, in the file's byte order; 0 beyond it */
 unsigned TiffIn::get16(unsigned long at) const
 {
 	const unsigned char *p = data + at;
@@ -154,6 +164,7 @@ unsigned TiffIn::get16(unsigned long at) const
 	return big_endian ? (p[0] << 8) | p[1] : p[0] | (p[1] << 8);
 }
 
+/* a 32 bit value at offset at, in the file's byte order; 0 beyond it */
 unsigned long TiffIn::get32(unsigned long at) const
 {
 	if (at + 4 > len)
@@ -163,6 +174,8 @@ unsigned long TiffIn::get32(unsigned long at) const
 		get16(at) | ((unsigned long)get16(at + 2) << 16);
 }
 
+/* the whole file at path into memory, its header checked; 0, or -1 if
+   it can't be read or isn't TIFF */
 int TiffIn::open(const char *path)
 {
 	FILE *f = fopen(path, "rb");
@@ -197,6 +210,7 @@ int TiffIn::open(const char *path)
 	return 0;
 }
 
+/* free the file's data */
 void TiffIn::close()
 {
 	free(data);
@@ -218,6 +232,7 @@ unsigned long TiffIn::tag_value(unsigned long e, unsigned long index) const
 	return type == T_SHORT ? get16(at) : get32(at);
 }
 
+/* a RATIONAL tag's value (a SHORT or LONG one's too) */
 double TiffIn::tag_rational(unsigned long e) const
 {
 	unsigned long at = get32(e + 8), d;
@@ -252,6 +267,8 @@ void T4Page::fit(const T4Page *src, int row_step)
 	free(row);
 }
 
+/* the next page (scaled to T4_WIDTH if narrower or wider, superfine to
+   fine); 1, 0 when there are no more, -1 on an error */
 int TiffIn::read_page(T4Page *p)
 {
 	unsigned long e, ifd = next_ifd, nstrips = 0, so_e = 0, sc_e = 0;

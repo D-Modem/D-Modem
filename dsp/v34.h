@@ -31,11 +31,13 @@ struct v34_baud {
 };
 extern const struct v34_baud v34_bauds[V34_NBAUDS];
 
+/* the symbol rate of V34_BAUD_* b, in symbols/s */
 static inline float v34_symbol_rate(int b)
 {
 	return 2400.0f * v34_bauds[b].a / v34_bauds[b].c;
 }
 
+/* the carrier of symbol rate b, low (0) or high (1), in Hz */
 static inline float v34_carrier(int b, int high)
 {
 	return v34_symbol_rate(b) * v34_bauds[b].d[high] / v34_bauds[b].e[high];
@@ -97,7 +99,9 @@ struct V34Params {
 	unsigned long long g4p(int i) const;
 	double frame_power(int k, double theta = 0, double e0 = 1) const;
 	void set_nonlinear(double theta_);
+	/* n: the rate in units of 2400 bit/s; returns -1 when not allowed */
 	int init(int baud, int n, int expanded);
+	/* precoding with the coefficients of an MP sequence */
 	void set_precoder(const int h_[6]);
 	void precoder_push(V34Precoder *pc, int yr, int yi) const;
 	void shell_map(unsigned long r0, int m[8]) const;
@@ -106,9 +110,6 @@ struct V34Params {
 	int decide(cplx z, int *px, int *py) const;
 	void subset_points(float u, float v, float dist[8], int pt[8]) const;
 };
-
-/* n: the rate in units of 2400 bit/s; returns -1 when not allowed */
-/* precoding with the coefficients of an MP sequence */
 
 /* the precoder's tap delay line (9.6.2/V.34) */
 struct V34Precoder {
@@ -206,8 +207,6 @@ struct V34Tx {
 	void start_data(const V34Params *p, void (*get_bits)(void *, unsigned char *, int), void *ctx);
 	float sample();
 };
-
-/* the data mode parameters, before the end of E */
 
 /*
  *    primary channel receiver
@@ -319,6 +318,7 @@ struct V34Rx {
 	cplx precode_start(cplx z);
 	void symbol();
 	float precoder(int h[6]) const;
+	/* clears the error autocorrelation that precoder() works from */
 	void err_reset()
 	{
 		memset(err_r, 0, sizeof(err_r));

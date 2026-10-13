@@ -18,6 +18,8 @@ namespace dsp {
  *    transmitter
  */
 
+/* pulse table and carrier; scale so that the symbols' rms rms_symbol
+   gives a pass band rms of amplitude / sqrt(2) */
 void QamTx::init(int srate_, float carrier_, float baud,
 		 float alpha, int span_, float rms_symbol, float amplitude)
 {
@@ -35,11 +37,14 @@ void QamTx::init(int srate_, float carrier_, float baud,
 	carrier.set_freq(carrier_, srate_);
 }
 
+/* the symbols still in the pulse shaping filter are dropped */
 void QamTx::flush()
 {
 	memset(sym, 0, sizeof(sym));
 }
 
+/* the root raised cosine pulse at t_ symbol periods from its centre,
+   linear interpolation in the table, 0 outside +-span */
 float QamTx::pulse_at(float t_)
 {
 	float p = (t_ + span) * QAM_PULSE_RES;
@@ -51,6 +56,9 @@ float QamTx::pulse_at(float t_)
 	return pulse[i] + p * (pulse[i + 1] - pulse[i]);
 }
 
+/* the next pass band sample: a new symbol from get_symbol() whenever t
+   wraps, the sum of the 2 * span symbols in flight (sym[k] went out k
+   periods ago, delayed by span), up converted (real part) */
 float QamTx::sample()
 {
 	cplx s = { 0, 0 }, c;
@@ -77,6 +85,9 @@ float QamTx::sample()
  *    receiver
  */
 
+/* allocates the matched filter table (QAM_MF_RES points per sample, unit
+   energy) and its delay line; sets the loop gains and the AGC target
+   (target_power less the roll off's share); 0, or -1 when out of memory */
 int QamRx::init(int srate_, float carrier, float baud_,
 		float alpha, int span, int eq_len_, float target_power)
 {
@@ -119,6 +130,7 @@ int QamRx::init(int srate_, float carrier, float baud_,
 	return 0;
 }
 
+/* frees the matched filter buffers (also after a failed init) */
 void QamRx::release()
 {
 	free(mf);
@@ -127,6 +139,8 @@ void QamRx::release()
 	mf_buf = NULL;
 }
 
+/* equalizer back to a single (even, centre) tap, carrier phase and
+   frequency and the timing integrator to 0; AGC and buffers are kept */
 void QamRx::reset()
 {
 	memset(eq, 0, sizeof(eq));
@@ -135,6 +149,11 @@ void QamRx::reset()
 	t_adj = 0;
 }
 
+/* one line sample x: power meter, down conversion, then at each T/2
+   instant the interpolated matched filter output, AGC, the equalizer
+   delay line; every second instant the Gardner timing update, the
+   equalizer output and its rotation by the carrier phase (y, eq_out, z,
+   rot).  Returns 1 when a new symbol is in z. */
 int QamRx::sample(float x)
 {
 	cplx b;
@@ -215,6 +234,10 @@ int QamRx::sample(float x)
 	return ret;
 }
 
+/* decision directed update toward d: carrier phase (k1) and frequency
+   (k2, clamped to +-0.05 rad per symbol) from the phase error of z, and
+   normalized LMS on the equalizer (mu) with the error rotated back to
+   the equalizer output */
 void QamRx::adapt(cplx d, float mu, float k1, float k2)
 {
 	float p = cplx_pow(d), perr;
@@ -247,6 +270,7 @@ void QamRx::adapt(cplx d, float mu, float k1, float k2)
 	}
 }
 
+/* turns theta so that the last output z points the way d does */
 void QamRx::align_phase(cplx d)
 {
 	float a = atan2f(z.im, z.re) - atan2f(d.im, d.re);
@@ -264,6 +288,9 @@ static const unsigned char conv_next[8][4] = {
 	{ 2, 0, 1, 3 }, { 6, 5, 7, 4 }, { 3, 1, 0, 2 }, { 5, 6, 4, 7 },
 };
 
+/* one symbol: Q1Q2 added to the differential state, which drives the
+   convolutional encoder; returns Y0 | Y1Y2 << 1 | Q3.. << 3 (bits data
+   bits per symbol) */
 int TrellisEnc::encode(int q, int bits)
 {
 	diff = (diff + (q & 3)) & 3;
@@ -272,6 +299,7 @@ int TrellisEnc::encode(int q, int bits)
 		(diff << 1) | ((conv >> 2) & 1);
 }
 
+/* a new decoder for the 2^(nbits_ + 1) points of points_ */
 void Viterbi::init(const cplx *points_, int nbits_)
 {
 	memset(this, 0, sizeof(*this));
@@ -280,6 +308,12 @@ void Viterbi::init(const cplx *points_, int nbits_)
 	npoints = 1 << (nbits_ + 1);
 }
 
+/* one received point z: branch metrics from the nearest point of each
+   of the 8 subsets, add compare select over the 8 states, then a trace
+   back of VITERBI_DEPTH - 1 symbols from the best state.  Returns the
+   data bits of that old symbol (Q1Q2 differentially decoded, Q3.. in
+   bits 2..), its point in *decided (if not NULL), or -1 while the paths
+   fill */
 int Viterbi::decode(cplx z, cplx *decided)
 {
 	float best_d[8], m[8];
@@ -348,6 +382,7 @@ int Viterbi::decode(cplx z, cplx *decided)
  *    echo canceller
  */
 
+/* len_ taps, all 0; 0, or -1 when out of memory */
 int EchoCanceller::init(int len_)
 {
 	memset(this, 0, sizeof(*this));
@@ -361,6 +396,7 @@ int EchoCanceller::init(int len_)
 	return 0;
 }
 
+/* frees the taps and the history (also after a failed init) */
 void EchoCanceller::release()
 {
 	free(w);
@@ -368,6 +404,10 @@ void EchoCanceller::release()
 	w = hist = NULL;
 }
 
+/* tx the sample we send, rx the one received at the same time: returns
+   rx less the echo estimate (rx itself while off); with mu > 0 it starts
+   or goes on with a training (NLMS normalized by the tx power) and
+   measures the power before and after for judge() */
 float EchoCanceller::run(float tx, float rx, float mu)
 {
 	float est = 0, err, *h;
@@ -401,6 +441,8 @@ float EchoCanceller::run(float tx, float rx, float mu)
 	return err;
 }
 
+/* the training is over: the echo return loss enhancement in dB; below
+   6 dB the taps are cleared and the canceller turned off */
 float EchoCanceller::judge()
 {
 	float erle = 10 * log10f((pw_rx + 1) / (pw_err + 1));
@@ -412,6 +454,7 @@ float EchoCanceller::judge()
 	return erle;
 }
 
+/* eq_out and z again from the current eq_buf, after eq was changed */
 void QamRx::recompute()
 {
 	cplx out = { 0, 0 };

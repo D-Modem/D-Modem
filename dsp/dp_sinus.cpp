@@ -74,6 +74,8 @@ struct sin_state {
 	unsigned phase;
 };
 
+/* dp_operations.create: a pump sending the table's sine (srate / 32 Hz,
+   amplitude SIN_AMPLITUDE); NULL when out of memory */
 static struct dp *sin_create(struct modem *m, enum DP_ID id,
 			     int caller, int srate, int max_frag,
 			     struct dp_operations *op)
@@ -93,6 +95,7 @@ static struct dp *sin_create(struct modem *m, enum DP_ID id,
 	return &s->dp;
 }
 
+/* dp_operations.destroy: frees the pump */
 static int sin_delete(struct dp *dp)
 {
 	struct sin_state *s = static_cast<sin_state*>(dp->dp_data);
@@ -101,6 +104,8 @@ static int sin_delete(struct dp *dp)
 	return 0;
 }
 
+/* dp_operations.process: cnt samples of the sine out, the input
+   ignored; always DPSTAT_OK */
 static int sin_run(struct dp *dp, void *in, void *out, int cnt)
 {
 	struct sin_state *s = static_cast<sin_state*>(dp->dp_data);
@@ -124,11 +129,13 @@ static struct dp_operations sin_operations = {
 
 
 
+/* registers the pump as DP_SINUS: modem_dp_register()'s result */
 int dp_sinus_init(void)
 {
 	return modem_dp_register(DP_SINUS,&sin_operations);
 }
 
+/* deregisters it */
 void dp_sinus_exit(void)
 {
 	modem_dp_deregister(DP_SINUS,&sin_operations);

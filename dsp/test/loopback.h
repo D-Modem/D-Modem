@@ -35,6 +35,7 @@ struct LoopbackSide {
 	long checked = 0, errors = 0, resyncs = 0;
 	/* connected, and a bit error rate of 1e-3 at most */
 	bool ok() const;
+	/* the side's result on one line, name first */
 	std::string text(const char *name) const;
 };
 
@@ -43,6 +44,8 @@ struct LoopbackResult {
 	LoopbackSide side[2];   /* the caller, the answerer */
 };
 
+/* the caller from call progress on and the answerer at cfg.dp, back to
+   back for cfg.secs of line time; their results */
 LoopbackResult loopback_run(const LoopbackConfig &cfg);
 
 #endif

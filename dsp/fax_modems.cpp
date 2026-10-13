@@ -62,6 +62,9 @@ static const cplx v29_cdcd[6] = {
 	{ 3, 0 }, { -3, 3 }, { 3, 0 }, { -1, 1 }, { 3, 0 }, { 0, 3 },
 };
 
+/* the T.31 class 1 <mod> code (3, 24 ... 146) to a modulation; the
+   V.17 codes one above a rate (74, 98, 122, 146) set short_train.  1, or
+   0 for a code that has none */
 int fax_mod_from_code(int code, enum fax_mod *mod, int *short_train)
 {
 	*short_train = 0;
@@ -84,6 +87,7 @@ int fax_mod_from_code(int code, enum fax_mod *mod, int *short_train)
 	return 1;
 }
 
+/* the data rate of a modulation, bit/s */
 int fax_mod_bps(enum fax_mod mod)
 {
 	static const int bps[] = { 0, 300, 2400, 4800, 4800, 7200, 9600,
@@ -91,6 +95,7 @@ int fax_mod_bps(enum fax_mod mod)
 	return bps[mod];
 }
 
+/* the transmit level of a modulation, rms in 16 bit sample units */
 float fax_tx_rms(enum fax_mod mod)
 {
 	switch (mod) {
@@ -104,10 +109,13 @@ float fax_tx_rms(enum fax_mod mod)
 	}
 }
 
+/* the modulation families */
 static int is_v17(enum fax_mod m) { return m >= FM_V17_7200; }
 static int is_v29(enum fax_mod m) { return m >= FM_V29_4800 && m <= FM_V29_9600; }
 static int is_v27(enum fax_mod m) { return m == FM_V27_2400 || m == FM_V27_4800; }
 
+/* data bits per symbol (V.17: those into the trellis encoder, which
+   adds one) */
 static int data_bits(enum fax_mod m)
 {
 	switch (m) {
@@ -124,6 +132,7 @@ static int data_bits(enum fax_mod m)
 	}
 }
 
+/* the V.17 constellation of a rate (the V.32 trellis coded ones) */
 static const cplx *v17_points(enum fax_mod m)
 {
 	switch (m) {
@@ -134,6 +143,7 @@ static const cplx *v17_points(enum fax_mod m)
 	}
 }
 
+/* where the points of a V.29 rate are in v29_abab[] and v29_cdcd[] */
 static int v29_offset(enum fax_mod m)
 {
 	return m == FM_V29_9600 ? 0 : m == FM_V29_7200 ? 2 : 4;
@@ -153,6 +163,7 @@ static float mod_power(enum fax_mod m)
 	}
 }
 
+/* the symbol rate, baud */
 static float mod_baud(enum fax_mod m)
 {
 	if (m == FM_V27_2400)
@@ -162,11 +173,13 @@ static float mod_baud(enum fax_mod m)
 	return 2400;
 }
 
+/* the carrier frequency, Hz */
 static float mod_carrier(enum fax_mod m)
 {
 	return is_v29(m) ? 1700 : 1800;
 }
 
+/* the roll-off of the raised cosine pulse */
 static float mod_alpha(enum fax_mod m)
 {
 	return is_v17(m) ? 0.25f : 0.5f;
@@ -182,6 +195,8 @@ static int trn_len(enum fax_mod m, int short_train)
 	return 1074;
 }
 
+/* the scrambled ones before the data, symbols (V.27ter segment 5,
+   V.29 and V.17 segment 4) */
 static int ones_len(enum fax_mod m)
 {
 	return is_v27(m) ? 8 : 48;
@@ -200,6 +215,7 @@ static int scr23(unsigned *reg, int bit)
 	return out;
 }
 
+/* its descrambler: a received bit in, the data bit out */
 static int descr23(unsigned *reg, int bit)
 {
 	int out = (bit ^ (*reg >> 17) ^ (*reg >> 22)) & 1;
@@ -223,6 +239,8 @@ static int scr7(unsigned *reg, int *count, int bit)
 	return out;
 }
 
+/* its descrambler, the guard counting on the received bits as the
+   scrambler's does on the sent ones */
 static int descr7(unsigned *reg, int *count, int bit)
 {
 	int out = (bit ^ (*reg >> 5) ^ (*reg >> 6)) & 1;
@@ -252,6 +270,8 @@ static int v29_trn_bit(unsigned *reg)
  *    transmitter
  */
 
+/* the next bit into the scrambler: the caller's in the data segment,
+   else a one; the caller's FAX_BIT_END sets ending (a one goes out) */
 int FaxTx::data_bit()
 {
 	int b;
@@ -265,6 +285,9 @@ int FaxTx::data_bit()
 	return b & 1;
 }
 
+/* the next symbol of the data path: the bits scrambled, then V.17
+   through the trellis encoder, V.29 and V.27ter as a phase change from
+   the last state (V.29 9600: the first bit picks the amplitude) */
 cplx FaxTx::data_symbol()
 {
 	int n = data_bits(mod), q = 0, k, amp = 0, bits;
@@ -297,12 +320,16 @@ cplx FaxTx::data_symbol()
 	return v27_points[state];
 }
 
+/* on to training segment seg_, counting its symbols from 0 */
 void FaxTx::next_segment(int seg_)
 {
 	seg = seg_;
 	seg_sym = 0;
 }
 
+/* QamTx callback: the next symbol.  The training segments one after
+   the other (their lengths in symbols), the ones, the data until the
+   caller's FAX_BIT_END, the shutdown ones and silence; done at the end */
 static cplx fax_tx_symbol(void *ctx)
 {
 	FaxTx *t = static_cast<FaxTx*>(ctx);
@@ -416,6 +443,9 @@ static cplx fax_tx_symbol(void *ctx)
 	return z;
 }
 
+/* a transmitter for mod_ at srate_ samples/s, short_train_ for the V.17
+   short training; get_bit_(ctx_) gives the data bits.  V.21 sends the
+   caller's bits from the start (the HDLC flags are the caller's) */
 void FaxTx::init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t get_bit_, void *ctx_)
 {
 	memset(this, 0, sizeof(*this));
@@ -456,6 +486,7 @@ void FaxTx::init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t 
 	}
 }
 
+/* the next output sample, 16 bit scale; 0 once done */
 float FaxTx::sample()
 {
 	if (done)
@@ -488,6 +519,8 @@ enum {
 	RXS_DATA,
 };
 
+/* the phase state of a received symbol: V.17 the nearest of A, B, C, D
+   (0-3), else the nearest multiple of 45 degrees (0-7) */
 int FaxRx::state_of(cplx z)
 {
 	if (is_v17(mod)) {
@@ -511,6 +544,7 @@ int FaxRx::point_state(cplx p)
 	return state_of(p);
 }
 
+/* the point reference symbol k is sent as */
 cplx FaxRx::ref_point(int k)
 {
 	int s = ref[k];
@@ -577,6 +611,10 @@ int FaxRx::make_reference()
 	return 0;
 }
 
+/* a receiver for mod_ at srate_ samples/s, short_train_ for the V.17
+   short training; put_bit_(ctx_) gets the descrambled data bits once it
+   has trained.  mem: what a V.17 long train left (may be NULL).  0, or
+   -1 when out of memory */
 int FaxRx::init(enum fax_mod mod_, int short_train_, int srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem)
 {
 	memset(this, 0, sizeof(*this));
@@ -613,6 +651,8 @@ int FaxRx::init(enum fax_mod mod_, int short_train_, int srate_, fax_put_bit_t p
 	return 0;
 }
 
+/* keep the trained equalizer for a later short train (V.17, when a good
+   one was seen; else mem stays as it was) */
 void FaxRx::save(FaxRxMemory *mem)
 {
 	if (!is_v17(mod) || !have_good)
@@ -623,6 +663,7 @@ void FaxRx::save(FaxRxMemory *mem)
 	mem->valid = 1;
 }
 
+/* free the demodulator and the reference */
 void FaxRx::release()
 {
 	if (mod == FM_V21 || mod == FM_NONE)
@@ -632,6 +673,8 @@ void FaxRx::release()
 	ref = NULL;
 }
 
+/* the n bits of a symbol's value q (the highest first if msb_first)
+   through the descrambler, to put_bit once trained */
 void FaxRx::bits_out(int q, int n, int msb_first)
 {
 	int k;
@@ -644,6 +687,9 @@ void FaxRx::bits_out(int q, int n, int msb_first)
 	}
 }
 
+/* a data symbol: the decision (V.17: the Viterbi decoder's, late), the
+   bits out, the error and power estimates, the V.17 gain correction, the
+   equalizer's adaptation and the copies of a good one for save() */
 void FaxRx::data_symbol()
 {
 	cplx z = qam.z, d;
@@ -803,6 +849,9 @@ void FaxRx::track_alternations(cplx z)
 	zh[0] = z;
 }
 
+/* a symbol from the demodulator: search for the training (the phase
+   steps against the reference, which gives the symbol's place in it and
+   the absolute phase), train on the known symbols, then the data */
 void FaxRx::symbol()
 {
 	cplx z = qam.z;
@@ -927,6 +976,10 @@ void FaxRx::symbol()
 	}
 }
 
+/* an input sample (16 bit scale): V.21 bits straight to put_bit, else
+   the demodulator and the carrier detector, on 6 dB over the noise
+   floor, off 12 dB under the signal; carrier_run counts the samples
+   since it changed, positive with a carrier, negative without */
 void FaxRx::sample(float x)
 {
 	if (mod == FM_V21) {

@@ -18,6 +18,9 @@
 
 #include "interop_call.h"
 
+/* a data call (interop::data_call) or with --fax a fax call
+   (interop::fax_call, modulation 96 and ATX3 by default); exit status
+   0 if it went through, 1 if not, 2 for the usage */
 int main(int argc, char *argv[])
 {
 	if (argc > 1 && !strcmp(argv[1], "--fax")) {

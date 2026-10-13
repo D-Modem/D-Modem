@@ -59,11 +59,16 @@ struct dp_operations {
 	const char *name;
 	int use_count;
 	/* dp interface */
+	/* a new pump for id, calling or answering, at srate samples/s,
+	   process() given at most max_frag samples; NULL if it cannot */
 	struct dp *(*create)(struct modem *, enum DP_ID id,
 			     int caller, int srate, int max_frag,
 			     struct dp_operations *);
+	/* frees the pump */
 	int (*destroy)(struct dp *);
+	/* cnt s16 samples in from the line, cnt out to it: a DPSTAT_* */
 	int (*process)(struct dp *, void *in, void *out, int cnt);
+	/* the call is being hung up (may be NULL) */
 	int (*hangup)(struct dp *);
 };
 
@@ -82,11 +87,13 @@ struct dp {
  *
  */
 
-/* bit interface */
+/* bit interface: n bytes of buf, nbits bits (LSB first) in each, to be
+   sent (get) or received (put) through the link layer; returns n */
 extern int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n);
 extern int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n);
 
-/* modem dp registration */
+/* modem dp registration: op becomes the driver of id (0, or -1 when id
+   is unknown or already taken); deregister forgets the driver of id */
 extern int  modem_dp_register(enum DP_ID id, struct dp_operations *op);
 extern void modem_dp_deregister(enum DP_ID id, struct dp_operations *op);
 

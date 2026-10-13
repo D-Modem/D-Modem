@@ -82,6 +82,7 @@ struct CallProgPump : Pump {
 	int process(void *in, void *out, int cnt) override;
 };
 
+/* to state_, count (samples in the state) from 0 */
 void CallProgPump::set_state(enum cp_state state_)
 {
 	DSP_DBG("callprog: state %d -> %d at %ld\n", state, state_, total);
@@ -89,6 +90,10 @@ void CallProgPump::set_state(enum cp_state state_)
 	count = 0;
 }
 
+/* sets up the detectors on BLOCK_MS blocks, the dial string and its
+   timings (S11 DTMF ms, S8 comma pause), dial tone wait (X2/X4), the
+   answer timeout (S7 s) and the calling tone (V.25 1300 Hz, or the 1100
+   Hz CNG in fax mode); forgets any answer tone in the runtime; 0 */
 int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, int max_frag)
 {
 	const char *dial_;
@@ -216,6 +221,9 @@ int CallProgPump::block()
 	return DPSTAT_OK;
 }
 
+/* the next dialing sample: DTMF digits (S11 ms on and off), ',' a
+   pause of S8 s, 'W' 2 s, other characters skipped; at the end of the
+   string to CP_WAIT_ANSWER */
 float CallProgPump::dial_sample()
 {
 	char ch;
@@ -255,6 +263,11 @@ float CallProgPump::dial_sample()
 	}
 }
 
+/* cnt samples: all the detectors on the input, then per state the dial
+   tone wait (DPSTAT_NODIALTONE after S6 s, 2 s at least), dialing, or
+   the wait for an answer with the calling tone (DPSTAT_NOANSWER after S7
+   s); block() adds DPSTAT_CHANGEDP or DPSTAT_BUSY.  The first non OK
+   status of the block is returned. */
 int CallProgPump::process(void *in, void *out, int cnt)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
@@ -325,11 +338,13 @@ int CallProgPump::process(void *in, void *out, int cnt)
 	return ret;
 }
 
+/* registers the pump as DP_CALLPROG: modem_dp_register()'s result */
 int dp_callprog_init(void)
 {
 	return modem_dp_register(DP_CALLPROG, &PumpOps<CallProgPump>::ops);
 }
 
+/* deregisters it */
 void dp_callprog_exit(void)
 {
 	modem_dp_deregister(DP_CALLPROG, &PumpOps<CallProgPump>::ops);

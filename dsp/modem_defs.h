@@ -127,6 +127,8 @@ enum codec_types {
 #define MFMT_U16_LE      (MFMT_SIZE_16|MFMT_UNSIGNED|MFMT_ORDER_LE)
 #define MFMT_U16_BE      (MFMT_SIZE_16|MFMT_UNSIGNED|MFMT_ORDER_BE)
 
+/* tests and sizes of a format: 16 bit, little endian, log2 and number
+   of bytes per sample */
 #define MFMT_IS_16BIT(x)   ((x)&MFMT_SIZE_16)
 #define MFMT_IS_LE(x)      ((x)&MFMT_ORDER_LE)
 #define MFMT_BYTESSHIFT(x) ((x)&MFMT_SIZE_MASK)
@@ -447,7 +449,10 @@ struct voice_info {
 
 struct modem;
 
+/* S-register num (enum S_REGISTER): its value (0..255), or -1 when out
+   of range */
 extern int modem_get_sreg(struct modem *m, unsigned int num);
+/* stores val (as a byte) in S-register num: 0, or -1 when out of range */
 extern int modem_set_sreg(struct modem *m, unsigned int num, int val);
 
 

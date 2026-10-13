@@ -280,11 +280,13 @@ struct T30 {
  *    bits of the facsimile information field
  */
 
+/* set a bit, numbered from 1 as in T.30 Table 2 */
 static void set_bit(unsigned char *fif, int bit)
 {
 	fif[(bit - 1) / 8] |= 1 << ((bit - 1) % 8);
 }
 
+/* a bit of a FIF of len octets; 0 beyond its end */
 static int get_bit(const unsigned char *fif, int len, int bit)
 {
 	if ((bit - 1) / 8 >= len)
@@ -339,6 +341,8 @@ static int put_ident(unsigned char *d, const char *id)
 	return 20;
 }
 
+/* a received CSI / TSI into id (21 octets): in reading order, the
+   spaces around it and anything not printable out */
 static void get_ident(char *id, const unsigned char *d, int len)
 {
 	int k, n = 0;
@@ -359,6 +363,7 @@ static void get_ident(char *id, const unsigned char *d, int len)
  *    the transmitter
  */
 
+/* to state s: its samples counted from 0, the timer off */
 void T30::set_state(enum state s)
 {
 	DSP_DBG("t30: %s -> %s\n", state_name[state], state_name[s]);
@@ -367,6 +372,7 @@ void T30::set_state(enum state s)
 	timer = 0;
 }
 
+/* on_timeout() in ms */
 void T30::start_timer(int ms)
 {
 	timer = ms2samples(ms, srate);
@@ -374,6 +380,7 @@ void T30::start_timer(int ms)
 
 static void page_bit(void *ctx, int bit);
 
+/* the fast receiver off, its V.17 equalizer kept in mem */
 void T30::stop_fast()
 {
 	if (fast_on) {
@@ -383,6 +390,8 @@ void T30::stop_fast()
 	fast_on = 0;
 }
 
+/* the fast receiver on at the call's rate (short_train: V.17 short
+   training, from what mem keeps); stays off when out of memory */
 void T30::start_fast(int short_train)
 {
 	stop_fast();
@@ -392,6 +401,8 @@ void T30::start_fast(int short_train)
 }
 
 
+/* a frame for the next message: address, control, fcf with our X bit
+   and len octets of fif (cut to what FRAME_MAX leaves) */
 void T30::add_frame(int fcf, const unsigned char *fif, int len)
 {
 	struct frame *f;
@@ -409,6 +420,7 @@ void T30::add_frame(int fcf, const unsigned char *fif, int len)
 	f->len = 3 + len;
 }
 
+/* CRC-16 CCITT as used by HDLC (reflected, init 0xffff) */
 static unsigned crc16(const unsigned char *p, int n)
 {
 	unsigned crc = 0xffff;
@@ -485,6 +497,7 @@ void T30::send_frames(enum state next_)
 		frames[nframes - 1].data[2]);
 }
 
+/* an empty message to add frames to */
 void T30::new_frames()
 {
 	nframes = 0;
@@ -498,6 +511,7 @@ void T30::gap_then(int ms, void (T30::*f)())
 	after_gap = f;
 }
 
+/* the end of the call, with result r unless one was set before */
 void T30::finish(enum t30_result r)
 {
 	if (result == T30_RUNNING) {
@@ -523,6 +537,8 @@ void T30::send_dcn(enum t30_result r)
  *    receiving: the answering machine
  */
 
+/* CSI and DIS: we receive, on V.27ter, V.29 and V.17 as far as max_bps
+   goes, fine, MR, any length, 0 ms scan time, ECM if configured */
 void T30::send_dis()
 {
 	unsigned char fif[4] = { 0 }, id[20];
@@ -552,6 +568,7 @@ void T30::send_dis()
 	send_frames(S_WAIT_DCS);
 }
 
+/* after our CFR or MCF: a new page coming (ECM: its first block) */
 void T30::start_page_rx()
 {
 	int v17 = rates[rate].family == 2;
@@ -576,6 +593,8 @@ void T30::start_page_rx()
 	start_timer(T2_MS * 2);
 }
 
+/* fast receiver callback: the bits of the TCF (the longest run of
+   zeros), of a page, or of an ECM block */
 static void page_bit(void *ctx, int bit)
 {
 	T30 *t = static_cast<T30*>(ctx);
@@ -614,6 +633,8 @@ void T30::page_done()
 	start_timer(T2_MS);
 }
 
+/* the end of the TCF: CFR if half of it (750 ms) came as zeros in a
+   row, else FTT */
 void T30::tcf_done()
 {
 	int bps = rates[rate].bps;
@@ -631,6 +652,8 @@ void T30::tcf_done()
 	}
 }
 
+/* a DCS: the rate and page settings the sender chose; the TCF follows
+   (a DCS with a rate we don't know is ignored) */
 void T30::got_dcs(const unsigned char *fif, int len)
 {
 	unsigned v = get_bit(fif, len, 11) | get_bit(fif, len, 12) << 1 |
@@ -660,6 +683,9 @@ void T30::got_dcs(const unsigned char *fif, int len)
 	start_timer(T4_MS + 1500);
 }
 
+/* a message came (its frames up to the final one): the remote's
+   identity, DCN, the DIS for the sender, and the answering machine's
+   handling of the sender's commands */
 void T30::rx_message()
 {
 	int k, fcf = 0, last = nmsg - 1;
@@ -775,6 +801,8 @@ void T30::rx_message()
  *    sending: the calling machine
  */
 
+/* the page in MH for the line: rows filled to the minimum scan line
+   time at the call's rate, RTC at the end */
 void T30::encode_page()
 {
 	int bps = rates[rate].bps;
@@ -783,6 +811,7 @@ void T30::encode_page()
 	page_pos = 0;
 }
 
+/* fast transmitter callback: the bits of the page */
 static int page_get_bit(void *ctx)
 {
 	T30 *t = static_cast<T30*>(ctx);
@@ -791,6 +820,7 @@ static int page_get_bit(void *ctx)
 	return t4_bits_get(&t->page_bits, t->page_pos++);
 }
 
+/* fast transmitter callback: the zeros of the TCF */
 static int tcf_get_bit(void *ctx)
 {
 	T30 *t = static_cast<T30*>(ctx);
@@ -800,6 +830,7 @@ static int tcf_get_bit(void *ctx)
 	return 0;
 }
 
+/* the training check: 1.5 s of zeros at the chosen rate */
 void T30::send_tcf()
 {
 	tcf_bits = rates[rate].bps * 3 / 2;       /* 1.5 s */
@@ -808,6 +839,8 @@ void T30::send_tcf()
 	set_state(S_TCF);
 }
 
+/* TSI and DCS: the rate, resolution, length and scan time chosen, and
+   ECM; the TCF follows */
 void T30::send_dcs()
 {
 	unsigned char fif[4] = { 0 }, id[20];
@@ -839,6 +872,7 @@ void T30::send_dcs()
 	send_frames(S_TCF);          /* the TCF after a gap */
 }
 
+/* the page on the fast modulation (V.17 with the short training) */
 void T30::send_page()
 {
 	encode_page();
@@ -850,6 +884,7 @@ void T30::send_page()
 	set_state(S_PAGE);
 }
 
+/* the next page of the document into next; 1 if there is one */
 int T30::load_next()
 {
 	if (have_next)
@@ -868,6 +903,7 @@ int T30::post_command()
 		(next.fine != 0) != (fine != 0) ? FCF_EOM : FCF_MPS;
 }
 
+/* the command after a page (EOP, MPS or EOM), MCF and the rest wanted */
 void T30::send_post_page()
 {
 	last_post = post_command();
@@ -893,6 +929,7 @@ int T30::choose()
 	return 0;
 }
 
+/* the next page (if any) becomes the one to send */
 void T30::next_page_or_end()
 {
 	if (have_page)
@@ -921,6 +958,8 @@ void T30::page_settings()
 	}
 }
 
+/* the calling machine: a message came, what follows from it in each
+   state */
 void T30::sender_message()
 {
 	int fcf = msg[nmsg - 1][2] & 0xfe;
@@ -1103,6 +1142,8 @@ void T30::start_ecm_page()
 	start_ecm_block();
 }
 
+/* the next block of the page from ecm_doc_pos: up to 256 frames, all
+   of them to send */
 void T30::start_ecm_block()
 {
 	size_t left = ecm_doc.size() - ecm_doc_pos;
@@ -1122,7 +1163,7 @@ void T30::start_ecm_block()
 }
 
 /* the next frame to send into etx_buf: an FCD still to send, else RCP
-   three times (T.4 A.1); 0 when there is none */
+   three times (T.4 A.1); etx_len 0 when there is none */
 void T30::ecm_frame_out()
 {
 	unsigned crc;
@@ -1246,6 +1287,7 @@ void T30::send_ctc()
 	send_frames(S_WAIT_CTR);
 }
 
+/* RR: is the receiver ready now (after its RNR) */
 void T30::send_rr()
 {
 	new_frames();
@@ -1258,6 +1300,8 @@ void T30::send_rr()
  *    error correction mode: receiving
  */
 
+/* a block of ECM frames coming on the fast modulation (V.17: the short
+   training, but after CTC) */
 void T30::start_ecm_rx()
 {
 	int v17 = rates[rate].family == 2;
@@ -1375,6 +1419,8 @@ enum state T30::ecm_page_end(int fcf2)
 	return S_CED;                   /* EOM: phase B again */
 }
 
+/* a PPS (T.30 A.4.3): PPR with the map of the frames missing, else MCF
+   and the block into the page, which ends if the PPS says so */
 void T30::got_pps(const unsigned char *fif, int len)
 {
 	unsigned char map[32];
@@ -1444,6 +1490,8 @@ void T30::got_pps(const unsigned char *fif, int len)
  *    the V.21 receiver: HDLC frames into messages
  */
 
+/* a flag ended a V.21 frame: into msg[] if whole octets with a good
+   FCS; the final bit makes the message ready */
 void T30::frame_end()
 {
 	int n = rnbits - 7, k, len;
@@ -1471,6 +1519,7 @@ void T30::frame_end()
 		msg_ready = 1;
 }
 
+/* V.21 receiver callback: HDLC flags, stuffed zeros and aborts */
 static void v21_bit(void *ctx, int bit)
 {
 	T30 *t = static_cast<T30*>(ctx);
@@ -1495,6 +1544,7 @@ static void v21_bit(void *ctx, int bit)
 		t->rbits[t->rnbits++] = bit;
 }
 
+/* a fresh V.21 receiver, no message pending */
 void T30::restart_v21()
 {
 	v21.init(FM_V21, 0, srate, v21_bit, this, NULL);
@@ -1508,6 +1558,7 @@ void T30::restart_v21()
  *    the machine
  */
 
+/* the timer ran out: a command again, or the end of the call */
 void T30::on_timeout()
 {
 	switch (state) {
@@ -1605,12 +1656,15 @@ void T30::tx_done()
 	}
 }
 
+/* a sample of a tone of freq Hz at the CED level, by the state's count */
 float T30::tone(float freq)
 {
 	return FAX_CED_RMS * 1.41421f *
 		sinf(2 * (float)M_PI * freq * count / srate);
 }
 
+/* the next output sample: the transmitter, else CNG, CED or silence;
+   the end of a gap starts what follows it */
 float T30::tx_sample()
 {
 	float y = 0;
@@ -1646,6 +1700,8 @@ float T30::tx_sample()
 	return y;
 }
 
+/* an input sample to the receivers (none while transmitting): the ends
+   of the TCF, a page or an ECM block, and the messages that came */
 void T30::rx_sample(float x)
 {
 	if (tx_on || state == S_DONE)
@@ -1695,6 +1751,8 @@ void T30::rx_sample(float x)
 	}
 }
 
+/* n samples of 16 bit audio in and out (in NULL: silence, out NULL:
+   none wanted), the timers by them */
 void t30_process(T30 *t, const short *in, short *out, int n)
 {
 	int i;
@@ -1715,6 +1773,8 @@ void t30_process(T30 *t, const short *in, short *out, int n)
 	}
 }
 
+/* a fax machine for one call; a sender with no first page ends at once
+   (T30_ERR_DOCUMENT).  NULL when out of memory */
 T30 *t30_create(const struct t30_config *cfg)
 {
 	T30 *t = new (std::nothrow) T30();
@@ -1743,6 +1803,7 @@ T30 *t30_create(const struct t30_config *cfg)
 	return t;
 }
 
+/* free the machine and the pages it holds */
 void t30_free(T30 *t)
 {
 	if (!t)
@@ -1760,6 +1821,7 @@ void t30_free(T30 *t)
 	delete t;
 }
 
+/* how the call goes, into s */
 void t30_get_status(T30 *t, struct t30_status *s)
 {
 	memset(s, 0, sizeof(*s));
@@ -1772,6 +1834,7 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->phase = state_name[t->state];
 }
 
+/* the far end hung up: the end of the call */
 void t30_hangup(T30 *t)
 {
 	/* the sender may hang up as soon as its DCN is out, before the end
@@ -1782,6 +1845,7 @@ void t30_hangup(T30 *t)
 		       T30_ERR_HANGUP);
 }
 
+/* a result for the log */
 const char *t30_result_text(enum t30_result r)
 {
 	switch (r) {

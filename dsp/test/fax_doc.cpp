@@ -12,6 +12,8 @@
 
 #include "fax_util.h"
 
+/* fax_doc write|light <tif> or compare <a> <b>: PASS or FAIL and why;
+   exit status 0, 1 (FAIL) or 2 (usage) */
 int main(int argc, char **argv)
 {
 	testing::AssertionResult r = testing::AssertionFailure();

@@ -31,6 +31,7 @@ enum t30_result {
 	T30_ERR_FILE,           /* the received document can't be written */
 };
 
+/* a result as text, for the log */
 const char *t30_result_text(enum t30_result r);
 
 struct t30_config {
@@ -60,10 +61,13 @@ struct t30_status {
 
 struct T30;
 
+/* a fax machine for one call (cfg is copied); NULL when out of memory */
 T30 *t30_create(const struct t30_config *cfg);
+/* free it, and the pages it still holds */
 void t30_free(T30 *t);
 /* audio: n samples in and n out, 16 bit linear */
 void t30_process(T30 *t, const short *in, short *out, int n);
+/* how the call goes (or went) */
 void t30_get_status(T30 *t, struct t30_status *s);
 /* the far end hung up */
 void t30_hangup(T30 *t);

@@ -38,6 +38,9 @@ namespace dsp {
 #define J_16POINT       0x89B0  /* bit 5: TRN of 16 points in phase 4 */
 #define J_DASH          0x899F
 
+/* the self-synchronising scrambler 1 + x^-tap + x^-23 (tap 18: GPC,
+   5: GPA) over the register of its last outputs, newest in bit 0;
+   returns the scrambled bit */
 static int scramble(unsigned *reg, int tap, int bit)
 {
 	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
@@ -45,6 +48,8 @@ static int scramble(unsigned *reg, int tap, int bit)
 	return out;
 }
 
+/* the descrambler of scramble(): the register keeps the received bits;
+   returns the descrambled bit */
 static int descramble(unsigned *reg, int tap, int bit)
 {
 	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
@@ -52,6 +57,7 @@ static int descramble(unsigned *reg, int tap, int bit)
 	return out;
 }
 
+/* the low 16 bits of w in reverse order */
 static unsigned rev16(unsigned w)
 {
 	unsigned r = 0;
@@ -66,6 +72,8 @@ static unsigned rev16(unsigned w)
  *    MP
  */
 
+/* appends the low nbits of val to b at *n (one bit per byte), least
+   significant bit first */
 static void put_bits(unsigned char *b, int *n, unsigned val, int nbits)
 {
 	int i;
@@ -84,6 +92,9 @@ static unsigned mp_crc(const unsigned char *b, int len)
 	return crc;
 }
 
+/* the bits of the MP frame (type 0: 88 bits, type 1 with the precoding
+   coefficients: 188), one per byte in time order, frame sync, start
+   bits, CRC and fill bits included; returns its length */
 int V34Mp::build(unsigned char *b) const
 {
 	int n = 0, i, len = type ? 188 : 88;
@@ -119,6 +130,7 @@ int V34Mp::build(unsigned char *b) const
 	return len;
 }
 
+/* the nbits wide field at bit first, least significant bit first */
 static int field(const unsigned char *b, int first, int nbits)
 {
 	int i, v = 0;
@@ -127,7 +139,9 @@ static int field(const unsigned char *b, int first, int nbits)
 	return v;
 }
 
-/* returns 0 when the frame is good */
+/* the fields of an MP frame of len (88 or 188) bits, from its frame sync
+   on; returns 0 when the frame is good, -1 (fields unchanged) on a bad
+   CRC */
 int V34Mp::parse(const unsigned char *b, int len)
 {
 	unsigned crc = mp_crc(b, len);
@@ -155,6 +169,7 @@ int V34Mp::parse(const unsigned char *b, int len)
  *    transmitter
  */
 
+/* point idx (0..3) of the 4 point training constellation */
 static cplx tx_point(int idx)
 {
 	return v34_trn4[idx & 3];
@@ -176,6 +191,7 @@ static cplx tx_point16(int idx, int q)
 	return z;
 }
 
+/* scrambles b0, then b1; returns them as b0 | b1 << 1 */
 int V34Tx::dibit(int b0, int b1)
 {
 	b0 = scramble(&scr, tap, b0);
@@ -183,6 +199,9 @@ int V34Tx::dibit(int b0, int b1)
 	return b0 | (b1 << 1);
 }
 
+/* the QamTx callback: the next symbol of the current segment, in units
+   of the training points (silence: 0); counts it in n, and goes on from
+   J' to TRN and from E to data at their ends */
 static cplx tx_symbol(void *ctx)
 {
 	V34Tx *t = static_cast<V34Tx*>(ctx);
@@ -257,6 +276,9 @@ static cplx tx_symbol(void *ctx)
 	return z;
 }
 
+/* the transmitter, silent, at symbol rate baud_ (V34_BAUD_*) on its low
+   or high carrier; the caller scrambles with GPC, the answerer with
+   GPA */
 void V34Tx::init(int baud_, int high, int caller)
 {
 	memset(this, 0, sizeof(*this));
@@ -270,6 +292,7 @@ void V34Tx::init(int baud_, int high, int caller)
 	seg = V34_TX_SILENCE;
 }
 
+/* the next segment, from its first symbol */
 void V34Tx::segment(enum v34_txseg seg_)
 {
 	DSP_DBG("v34 tx: segment %d -> %d after %ld symbols\n", seg, seg_, n);
@@ -283,6 +306,9 @@ void V34Tx::segment(enum v34_txseg seg_)
 		scr = 0;
 }
 
+/* the data mode parameters, before the end of E: the symbols after E
+   come from the data encoder, get_bits(ctx, ...) gives the bits of each
+   mapping frame */
 void V34Tx::start_data(const V34Params *p, void (*get_bits)(void *, unsigned char *, int), void *ctx)
 {
 	dtx.init(p);
@@ -291,6 +317,7 @@ void V34Tx::start_data(const V34Params *p, void (*get_bits)(void *, unsigned cha
 	data_on = 1;
 }
 
+/* the next line sample, at 9600 Hz */
 float V34Tx::sample()
 {
 	return qam.sample();
@@ -301,6 +328,9 @@ float V34Tx::sample()
  *    receiver
  */
 
+/* the receiver of the remote's signals at symbol rate baud_ on its low
+   or high carrier, waiting for S; caller: we are the caller, the remote
+   scrambles with GPA.  Returns -1 when out of memory */
 int V34Rx::init(int baud_, int high, int caller)
 {
 	memset(this, 0, sizeof(*this));
@@ -324,6 +354,7 @@ int V34Rx::set_v90()
 	return jabits ? 0 : -1;
 }
 
+/* frees what init() and set_v90() allocated */
 void V34Rx::release()
 {
 	free(jabits);
@@ -334,6 +365,8 @@ void V34Rx::release()
 	qam.release();
 }
 
+/* the next stage, its symbols counted from 0; a Ja or CP frame in
+   progress is dropped */
 void V34Rx::set_stage(enum v34_rxstage s)
 {
 	DSP_DBG("v34 rx: stage %d -> %d at symbol %ld\n", stage, s, sym);
@@ -343,6 +376,7 @@ void V34Rx::set_stage(enum v34_rxstage s)
 	ja_n = 0;            /* no frame across a new signal */
 }
 
+/* the index of the 4 point training point nearest to z: its quadrant */
 static int nearest4(cplx z)
 {
 	return z.re < 0 ? (z.im < 0 ? 0 : 1) : (z.im < 0 ? 3 : 2);
@@ -442,6 +476,9 @@ void V34Rx::cp_bit(int bit)
 	}
 }
 
+/* a descrambled bit after S-bar: Ja and CP frames (V.90), MP frames,
+   E (20 ones after an MP or CP' frame, which starts data mode), J
+   (twice, and whether it asks for 16 point TRN) and J' */
 void V34Rx::got_bit(int bit)
 {
 	sr = (sr << 1) | bit;
@@ -556,6 +593,8 @@ void V34Rx::diff_decode(cplx z)
 	got_bit(descramble(&scr, tap, d >> 1));
 }
 
+/* from the first 48 PP symbols: the offset (-4..4 symbols) at which
+   they match the PP sequence best into pp_off, and the carrier phase */
 void V34Rx::pp_align()
 {
 	cplx best = { 0, 0 };
@@ -585,6 +624,8 @@ void V34Rx::pp_align()
 
 #define LS_LEN          1500
 
+/* the equalizer input with the target d (the decided symbol) into the
+   normal equations R w = p of the least squares equalizer */
 void V34Rx::ls_collect(cplx d)
 {
 	const int n_ = V34_EQ_LEN;
@@ -604,7 +645,9 @@ void V34Rx::ls_collect(cplx d)
 	}
 }
 
-/* R w = p by Cholesky (R Hermitian, upper triangle collected) */
+/* R w = p by Cholesky (R Hermitian, upper triangle collected), with a
+   little diagonal loading, into the equalizer; returns -1 when R is not
+   positive definite.  ls_r is overwritten. */
 int V34Rx::ls_solve()
 {
 	const int n_ = V34_EQ_LEN;
@@ -676,6 +719,9 @@ int V34Rx::ls_solve()
    offset (the timing is fixed from the first on); phase 4: one more */
 #define LS_GAP          1600
 
+/* a least squares solution over TRN symbols start to start + LS_LEN - 1
+   (counted in ls_n): at its end the new equalizer, its delay and the
+   sample clock offset from the delay of the solution before */
 void V34Rx::ls_window(cplx d, long start)
 {
 	if (ls_n == start) {
@@ -708,6 +754,9 @@ void V34Rx::ls_window(cplx d, long start)
 	}
 }
 
+/* per TRN symbol, d its decision: in phase 3 the timing is fixed at
+   symbol 800 and two solutions follow, in phase 4 one from symbol
+   1200 */
 void V34Rx::ls_train(cplx d)
 {
 	ls_n++;
@@ -815,6 +864,9 @@ void V34Rx::err_collect(cplx e)
 	err_n++;
 }
 
+/* a symbol from the demodulator (qam.z): S detection, the training
+   stages of phases 3 and 4, and in data mode the decoder, the adaptation
+   and the remote's S of a renegotiation */
 void V34Rx::symbol()
 {
 	cplx z = qam.z, d;
@@ -1137,6 +1189,9 @@ float V34Rx::precoder(int h[6]) const
 	return (float)(10 * log10(R[0].re / eps));
 }
 
+/* the data mode parameters, before the end of E (precode_eq() applies
+   at its end): put_bits(ctx, ...) takes the bits of each mapping
+   frame */
 void V34Rx::start_data(const V34Params *p, void (*put_bits)(void *, const unsigned char *, int), void *ctx)
 {
 	drx.init(p);
@@ -1146,6 +1201,8 @@ void V34Rx::start_data(const V34Params *p, void (*put_bits)(void *, const unsign
 	data_on = 1;
 }
 
+/* a line sample at 9600 Hz: signal detection (its loss in training
+   goes back to waiting for S), and a symbol when one is complete */
 void V34Rx::sample(float x)
 {
 	int on_;

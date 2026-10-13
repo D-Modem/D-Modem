@@ -129,12 +129,14 @@ struct Fax {
  *    helpers
  */
 
+/* queue a FAX_STATUS_* result for FAX_process to return (4 at most) */
 void Fax::report_status(int status_)
 {
 	if (nstatus < 4)
 		status[nstatus++] = status_;
 }
 
+/* the data gathered for the DTE out to the tty */
 void Fax::out_flush()
 {
 	if (nout) {
@@ -143,6 +145,7 @@ void Fax::out_flush()
 	}
 }
 
+/* a byte to the DTE, a <DLE> doubled */
 void Fax::out_byte(u8 c)
 {
 	if (nout >= RX_OUT)
@@ -152,6 +155,7 @@ void Fax::out_byte(u8 c)
 	out[nout++] = c;
 }
 
+/* <DLE><ETX>, the end of the data, and everything out */
 void Fax::out_end()
 {
 	out[nout++] = DLE;
@@ -172,11 +176,13 @@ static unsigned crc16(const u8 *p, int n)
 	return crc;
 }
 
+/* the transmitter off at once */
 void Fax::stop_tx()
 {
 	tx_on = 0;
 }
 
+/* the receiver off, its V.17 equalizer kept for a later short train */
 void Fax::stop_rx()
 {
 	if (rx_on) {
@@ -192,6 +198,10 @@ void Fax::stop_rx()
  *    HDLC transmitter
  */
 
+/* FaxTx callback for +FTH: the flags (1 s of them first), the DTE's
+   frames with their FCS and the stuffed zeros, at least 8 flag bits
+   between them; after the final frame (P/F bit) closing flags, then
+   FAX_BIT_END.  A frame going out lets the DTE send the next one */
 static int hdlc_get_bit(void *ctx)
 {
 	Fax *f = static_cast<Fax*>(ctx);
@@ -252,6 +262,9 @@ static int hdlc_get_bit(void *ctx)
  *    HDLC receiver
  */
 
+/* a flag ended a frame: into the queue if it has whole octets (the
+   flag's 0111111 went into rbits too), at least 4, with its FCS
+   checked */
 void Fax::hdlc_frame_end()
 {
 	int n = rnbits - 7, k;
@@ -275,6 +288,7 @@ void Fax::hdlc_frame_end()
 	fhead = (fhead + 1) % FRAME_QUEUE;
 }
 
+/* FaxRx callback for +FRH: flags, stuffed zeros and aborts (7 ones) */
 static void hdlc_put_bit(void *ctx, int bit)
 {
 	Fax *f = static_cast<Fax*>(ctx);
@@ -306,6 +320,8 @@ static void hdlc_put_bit(void *ctx, int bit)
  *    FTM / FRM data
  */
 
+/* FaxTx callback for +FTM: the DTE's bytes, the lowest bit first; zeros
+   when it falls behind, FAX_BIT_END once <DLE><ETX> came */
 static int ftm_get_bit(void *ctx)
 {
 	Fax *f = static_cast<Fax*>(ctx);
@@ -327,6 +343,7 @@ static int ftm_get_bit(void *ctx)
 	return bit;
 }
 
+/* FaxRx callback for +FRM: bytes to the DTE, the first bit lowest */
 static void frm_put_bit(void *ctx, int bit)
 {
 	Fax *f = static_cast<Fax*>(ctx);
@@ -393,6 +410,7 @@ void Fax::read_dte()
  *    commands
  */
 
+/* transmit mod (the receiver stops); get_bit gives the bits */
 void Fax::start_tx(enum fax_mod mod, int short_train, fax_get_bit_t get_bit)
 {
 	stop_rx();
@@ -402,6 +420,8 @@ void Fax::start_tx(enum fax_mod mod, int short_train, fax_get_bit_t get_bit)
 	dle = 0;
 }
 
+/* receive mod, the bits to put_bit; a V.17 short train starts from the
+   last long one.  -1 when out of memory */
 int Fax::start_rx(enum fax_mod mod, int short_train, fax_put_bit_t put_bit)
 {
 	stop_rx();
@@ -414,6 +434,7 @@ int Fax::start_rx(enum fax_mod mod, int short_train, fax_put_bit_t put_bit)
 	return 0;
 }
 
+/* to state s, counting its samples from 0 */
 void Fax::set_state(enum c1_state s)
 {
 	DSP_DBG("fax: state %d -> %d\n", state, s);
@@ -421,6 +442,8 @@ void Fax::set_state(enum c1_state s)
 	count = 0;
 }
 
+/* +FTH=3: HDLC on V.21 channel 2, CONNECT at once for the first
+   frame */
 void Fax::begin_fth()
 {
 	stop_tx();
@@ -433,6 +456,8 @@ void Fax::begin_fth()
 	report_status(FAX_STATUS_CONNECT);
 }
 
+/* +FRH=3: HDLC from V.21 channel 2; CONNECT once flags come with a
+   carrier */
 void Fax::begin_frh()
 {
 	stop_tx();
@@ -445,6 +470,9 @@ void Fax::begin_frh()
 	}
 }
 
+/* a class 1 command (FAX_CMD_*); param: the T.31 <mod>, or the time in
+   10 ms for +FTS / +FRS.  1 when it started (the result codes come from
+   FAX_process), -1 for ERROR */
 int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
 {
 	Fax *f = static_cast<Fax*>(obj);
@@ -505,6 +533,9 @@ int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
  *    object
  */
 
+/* class 1 on modem m at srate samples/s once the call is up: the caller
+   receives the DIS, the answerer sends CED first.  NULL when out of
+   memory */
 void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
 {
 	Fax *f = new (std::nothrow) Fax();
@@ -523,6 +554,7 @@ void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
 	return f;
 }
 
+/* free what FAX_create made */
 void FAX_delete(void *obj)
 {
 	Fax *f = static_cast<Fax*>(obj);
@@ -533,6 +565,7 @@ void FAX_delete(void *obj)
 	delete f;
 }
 
+/* the answer tone (CED), by the samples since the answer */
 float Fax::ced_sample()
 {
 	/* 200 ms silence, 3 s of 2100 Hz, 75 ms silence */
@@ -542,6 +575,9 @@ float Fax::ced_sample()
 	return FAX_CED_RMS * 1.41421f * sinf(2 * (float)M_PI * 2100 * t / srate);
 }
 
+/* count samples of 16 bit audio in and out: the transmitter, the
+   receiver and the state of the command, the data to and from the DTE.
+   The next result (FAX_STATUS_*), or 0 */
 int FAX_process(void *obj, void *in, void *out, int count)
 {
 	Fax *f = static_cast<Fax*>(obj);

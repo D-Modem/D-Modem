@@ -18,6 +18,7 @@ namespace dsp {
  *    FSK modulator
  */
 
+/* mark m and space s (Hz), peak amplitude a, at rate samples/s */
 void FskMod::init(float m, float s, float a, int rate)
 {
 	*this = FskMod();
@@ -27,6 +28,8 @@ void FskMod::init(float m, float s, float a, int rate)
 	srate = rate;
 }
 
+/* the next sample of the mark (bit 1) or space (bit 0) tone, phase
+   continuous */
 float FskMod::next(int bit)
 {
 	osc.set_freq(bit ? mark : space, srate);
@@ -39,6 +42,9 @@ float FskMod::next(int bit)
  *    simple bit clock DPLL that locks to the data transitions.
  */
 
+/* mark and space (Hz), baud (bit/s): pre filter around the channel
+   centre, base band low pass of shift / 2 + 0.6 baud, carrier on and off
+   levels for 200 and 140 amplitude tones */
 void FskDemod::init(float mark, float space, float baud, int rate)
 {
 	float fc = (mark + space) / 2;
@@ -66,6 +72,9 @@ void FskDemod::init(float mark, float space, float baud, int rate)
 	dev_avg = half_shift * 4;
 }
 
+/* one sample x: updates carrier (on with level and a deviation near
+   +-shift / 2) and last_dec (1: mark); returns the bit decided at the
+   centre of a bit, or -1 */
 int FskDemod::run(float x)
 {
 	cplx z, d;
@@ -185,6 +194,7 @@ struct FskPump : Pump {
 	int process(void *in, void *out, int cnt) override;
 };
 
+/* to state_, count (samples in the state) from 0 */
 void FskPump::set_state(enum fsk_state state_)
 {
 	DSP_DBG("%s: state %d -> %d at %ld\n", par->name, state, state_, total);
@@ -192,6 +202,10 @@ void FskPump::set_state(enum fsk_state state_)
 	count = 0;
 }
 
+/* V.21, V.23 or Bell 103 by id, the channels by caller_; timeouts from
+   S7 and S10; the first state from the runtime (after V.8, after a Bell
+   212A or automode fallback the answer tone or the mark is already
+   there).  0, or -1 for another id. */
 int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
 	const struct fsk_params *par_;
@@ -263,6 +277,8 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	return 0;
 }
 
+/* the next transmit sample; at each bit boundary a new bit from the
+   link layer when data, else a mark */
 float FskPump::tx_sample(int data)
 {
 	tx_phase += tx_inc;
@@ -278,6 +294,11 @@ float FskPump::tx_sample(int data)
 	return tx.next(tx_bit);
 }
 
+/* cnt samples: the receiver and the detectors, then the handshake
+   (answerer: 1 s silence, 3.3 s of 2100 Hz, 75 ms gap; both: the mark
+   until the remote's carrier or mark is steady) and data.  Returns DPSTAT_CONNECT
+   once, DPSTAT_CHANGEDP for V.8 or an automode fallback,
+   DPSTAT_ERROR on a timeout (S7) or the loss of carrier (S10). */
 int FskPump::process(void *in, void *out, int cnt)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
@@ -420,6 +441,7 @@ int FskPump::process(void *in, void *out, int cnt)
 	return ret;
 }
 
+/* registers the pump as DP_V21, DP_V23 and DP_B103; 0 */
 int dp_fsk_init(void)
 {
 	modem_dp_register(DP_V21, &PumpOps<FskPump>::ops);
@@ -428,6 +450,7 @@ int dp_fsk_init(void)
 	return 0;
 }
 
+/* deregisters them */
 void dp_fsk_exit(void)
 {
 	modem_dp_deregister(DP_V21, &PumpOps<FskPump>::ops);

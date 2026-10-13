@@ -76,9 +76,13 @@ typedef struct {
 	float re, im;
 } cplx;
 
+/* the complex number re + j im */
 static inline cplx cplx_make(float re, float im) { cplx c = { re, im }; return c; }
+/* a + b */
 static inline cplx cplx_add(cplx a, cplx b) { return cplx_make(a.re + b.re, a.im + b.im); }
+/* a - b */
 static inline cplx cplx_sub(cplx a, cplx b) { return cplx_make(a.re - b.re, a.im - b.im); }
+/* a * b */
 static inline cplx cplx_mul(cplx a, cplx b)
 {
 	return cplx_make(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re);
@@ -87,7 +91,9 @@ static inline cplx cplx_mulc(cplx a, cplx b) /* a * conj(b) */
 {
 	return cplx_make(a.re * b.re + a.im * b.im, a.im * b.re - a.re * b.im);
 }
+/* a times the real s */
 static inline cplx cplx_scale(cplx a, float s) { return cplx_make(a.re * s, a.im * s); }
+/* the power |a|^2 */
 static inline float cplx_pow(cplx a) { return a.re * a.re + a.im * a.im; }
 
 /*
@@ -101,6 +107,8 @@ struct Osc {
 	double phase;   /* cycles, 0..1 */
 	double inc;     /* cycles per sample */
 
+	/* freq in Hz (negative: the other way round), srate in samples/s;
+	   the phase goes on from where it is */
 	void  set_freq(float freq, int srate);
 	float next();           /* sin(), then advance */
 	cplx  next_cplx();      /* exp(j phase), then advance */
@@ -111,9 +119,12 @@ struct Biquad {
 	float b0, b1, b2, a1, a2;
 	float z1, z2;
 
+	/* design for a centre or corner freq (Hz) and q at srate, and
+	   clear the state */
 	void bandpass(float freq, float q, int srate);
 	void lowpass(float freq, float q, int srate);
 	void highpass(float freq, float q, int srate);
+	/* one sample through the section (transposed direct form II) */
 	float run(float x)
 	{
 		float y = b0 * x + z1;
@@ -122,21 +133,23 @@ struct Biquad {
 		return y;
 	}
 private:
+	/* coefficients normalized by a0, state cleared */
 	void set(double b0, double b1, double b2, double a0, double a1,
 		 double a2);
 };
 
-/* block Goertzel tone power estimator */
 /* a forced V.21 caller's first block: after a 2100 Hz answer tone, once
    a call, to the V.8 pump (dsp_glue.cpp) */
 int dp_v8_first(struct modem *m, enum DP_ID id);
 
+/* block Goertzel tone power estimator */
 struct Goertzel {
 	float coef;
 	float s1, s2;
 	int n, len;
 	float power;    /* last complete block: mean square of the tone */
 
+	/* tone freq (Hz), block of len samples at srate */
 	void init(float freq, int len, int srate);
 	int  run(float x);      /* 1 when a block is complete */
 };
@@ -146,7 +159,9 @@ struct PowerMeter {
 	float alpha;
 	float power;
 
+	/* time constant in seconds at srate; power back to 0 */
 	void init(float time_const_sec, int srate);
+	/* one sample in, the running mean of x^2 out */
 	float run(float x)
 	{
 		power += alpha * (x * x - power);
@@ -159,7 +174,9 @@ struct V22Scrambler {
 	unsigned reg;
 	int ones;
 
+	/* one bit (0/1) in, the line bit out */
 	int scramble(int bit);
+	/* one line bit in, the data bit out */
 	int descramble(int bit);
 };
 
@@ -184,7 +201,7 @@ struct Resampler {
 /* dB helper: power of a sine of amplitude 'a' */
 static inline float tone_power(float a) { return a * a / 2; }
 
-/* timing helpers */
+/* timing helpers: ms milliseconds as a number of samples at srate */
 static inline long ms2samples(int ms, int srate) { return (long)ms * srate / 1000; }
 
 /*
@@ -196,7 +213,9 @@ struct FskMod {
 	float amp;
 	int srate;
 
+	/* mark and space in Hz, amp the peak sample value */
 	void  init(float mark, float space, float amp, int srate);
+	/* the next sample of the tone for bit (1 mark, 0 space) */
 	float next(int bit);
 };
 
@@ -217,13 +236,15 @@ struct FskDemod {
 	float bit_phase, bit_inc, bit_gain;
 	int last_dec;
 
+	/* mark and space in Hz, baud in bit/s */
 	void init(float mark, float space, float baud, int srate);
 	/* returns the recovered bit (0/1) at the bit center, or -1 */
 	int  run(float x);
 };
 
 /*
- *    data pump registration helpers
+ *    data pump registration helpers: *_init registers the pump's DP_IDs
+ *    with the modem core (prop_dp_init), *_exit takes them back
  */
 int  dp_callprog_init(void);
 void dp_callprog_exit(void);
@@ -241,11 +262,14 @@ struct DtmfGen {
 	Osc lo, hi;
 	float amp_lo, amp_hi;
 
+	/* 0-9, *, #, A-D (or a-d); -1 for anything else */
 	int   set(char digit, int srate);
+	/* the next sample of the dual tone */
 	float next();
 };
 
 /* sample format helpers: the modem core always uses S16_LE */
+/* x saturated to the s16 range (and truncated toward 0) */
 static inline s16 dsp_clip16(float x)
 {
 	if (x > 32767.0f)

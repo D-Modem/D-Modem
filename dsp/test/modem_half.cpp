@@ -28,6 +28,8 @@
 extern int dp_dummy_init(void);
 extern int dp_sinus_init(void);
 
+/* the modem (slmodemd's options: country, ...) on fds 3 and 4 until its
+   line ends; PipeModem::run's result */
 int main(int argc, char *argv[])
 {
 	slm::Options opt;

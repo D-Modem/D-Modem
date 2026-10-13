@@ -24,6 +24,7 @@ using namespace dsp;
  *    data pumps
  */
 
+/* registers all the open data pumps with the core; always 0 */
 int prop_dp_init(void)
 {
 	dp_callprog_init();
@@ -34,6 +35,7 @@ int prop_dp_init(void)
 	return 0;
 }
 
+/* deregisters them */
 void prop_dp_exit(void)
 {
 	dp_callprog_exit();
@@ -67,6 +69,9 @@ struct DcRemover {
 	int process(void *buf, int len);
 };
 
+/* a DC remover with the original's settings (the lengths in samples at
+   9600 Hz: 0.6 s skipped, 1 s initial average, 2 s updates; 3000 the
+   level reported as too much DC); NULL when out of memory */
 void *dcr_create(void)
 {
 	DcRemover *d = new (std::nothrow) DcRemover();
@@ -81,11 +86,13 @@ void *dcr_create(void)
 	return d;
 }
 
+/* frees a DC remover */
 void dcr_delete(void *obj)
 {
 	delete static_cast<DcRemover*>(obj);
 }
 
+/* forgets the estimate and the running sum (the state is kept) */
 void DcRemover::reset()
 {
 	dc = 0;
@@ -93,11 +100,15 @@ void DcRemover::reset()
 	count = 0;
 }
 
+/* DcRemover::reset() for the C interface (not in dsplibs.h) */
 void dcr_reset(void *obj)
 {
 	static_cast<DcRemover*>(obj)->reset();
 }
 
+/* len s16 samples in place: steps the estimator (skip, initial average,
+   then, while tracking, updates that ignore all zero buffers) and
+   subtracts the estimate; returns 1 when |dc| >= threshold, else 0 */
 int DcRemover::process(void *buf, int len)
 {
 	s16 *s = static_cast<s16*>(buf);
@@ -155,6 +166,7 @@ int DcRemover::process(void *buf, int len)
 	return ret;
 }
 
+/* DcRemover::process(), 0 without a remover */
 int dcr_process(void *obj, void *buf, int len)
 {
 	if (!obj)
@@ -167,6 +179,7 @@ int dcr_process(void *obj, void *buf, int len)
  *    runtime object shared by the data pumps of one call
  */
 
+/* a zeroed runtime for modem m, NULL when out of memory */
 void *dp_runtime_create(struct modem *m)
 {
 	struct dp_runtime *rt = new (std::nothrow) dp_runtime();
@@ -183,12 +196,14 @@ void dp_runtime_set_law(void *runtime, int law)
 		rt->law = law;
 }
 
+/* 1 while a pump takes the exact PCM codes (no DC removal), else 0 */
 int dp_runtime_pcm(void *runtime)
 {
 	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
 	return rt ? rt->pcm : 0;
 }
 
+/* frees the runtime */
 void dp_runtime_delete(void *runtime)
 {
 	delete static_cast<struct dp_runtime *>(runtime);
@@ -219,6 +234,8 @@ struct RingDetector {
 	void details(long *freq_, long *duration_);
 };
 
+/* a ring detector at rate Hz: 80 Hz low pass, envelope decaying with a
+   100 ms time constant; NULL when out of memory */
 void *RD_create(struct modem *m, unsigned rate)
 {
 	RingDetector *r = new (std::nothrow) RingDetector();
@@ -231,11 +248,17 @@ void *RD_create(struct modem *m, unsigned rate)
 	return r;
 }
 
+/* frees a ring detector */
 void RD_delete(void *obj)
 {
 	delete static_cast<RingDetector*>(obj);
 }
 
+/* count s16 samples: a burst starts after 50 ms of envelope above 4000
+   and ends after 150 ms below 1500; the frequency comes from the sign
+   changes of the filtered wave (at levels above 100) during it.
+   Returns 1 when a burst started or ended in this block (see
+   details()), else 0. */
 int RingDetector::process(void *in, int count)
 {
 	s16 *s = static_cast<s16*>(in);
@@ -287,17 +310,21 @@ int RingDetector::process(void *in, int count)
 	return ret;
 }
 
+/* RingDetector::process() for the C interface */
 int RD_process(void *obj, void *in, int count)
 {
 	return static_cast<RingDetector*>(obj)->process(in, count);
 }
 
+/* the last event: freq 0 for a start, else the burst's frequency (Hz)
+   and length (ms) */
 void RingDetector::details(long *freq_, long *duration_)
 {
 	*freq_ = freq;
 	*duration_ = duration;
 }
 
+/* RingDetector::details() for the C interface */
 void RD_ring_details(void *obj, long *freq, long *duration)
 {
 	static_cast<RingDetector*>(obj)->details(freq, duration);
@@ -331,6 +358,8 @@ struct CallerId {
 	int process(void *in, int count);
 };
 
+/* a caller ID receiver at rate Hz, cid_val the report format (1:
+   formatted fields); NULL when out of memory */
 void *CID_create(struct modem *m, unsigned rate, unsigned cid_val)
 {
 	CallerId *c = new (std::nothrow) CallerId();
@@ -343,16 +372,20 @@ void *CID_create(struct modem *m, unsigned rate, unsigned cid_val)
 	return c;
 }
 
+/* frees a caller ID receiver */
 void CID_delete(void *obj)
 {
 	delete static_cast<CallerId*>(obj);
 }
 
+/* the string s to the DTE */
 void CallerId::send(const char *s)
 {
 	modem_send_to_tty(modem, s, strlen(s));
 }
 
+/* "tag = value\r\n" to the DTE, value the n bytes at p, unprintable
+   ones as '?', cut to fit 128 bytes */
 void CallerId::field(const char *tag, const u8 *p, int n)
 {
 	char buf[128];
@@ -365,6 +398,10 @@ void CallerId::field(const char *tag, const u8 *p, int n)
 	send(buf);
 }
 
+/* the complete message in msg to the DTE: all of it in hex (MESG) for
+   format != 1, else DATE, TIME, NMBR and NAME from an SDMF message or
+   the MDMF parameters (0x01 date and time, 0x02 number, 0x04 number
+   absent, 0x07 name, 0x08 name absent) */
 void CallerId::report()
 {
 	const u8 *p = msg + 2;
@@ -433,6 +470,10 @@ int CallerId::byte(u8 b)
 	return 1;
 }
 
+/* count s16 samples through the FSK demodulator and an async 8N1
+   receiver (start bit only after 10 marks before the first byte, bytes
+   with framing errors dropped): 1 when a message was reported, -1 on a
+   checksum error or an overflow of msg, else 0 */
 int CallerId::process(void *in, int count)
 {
 	s16 *s = static_cast<s16*>(in);
@@ -474,6 +515,7 @@ int CallerId::process(void *in, int count)
 	return 0;
 }
 
+/* CallerId::process() for the C interface */
 int CID_process(void *obj, void *in, int count)
 {
 	return static_cast<CallerId*>(obj)->process(in, count);
@@ -512,6 +554,7 @@ struct Voice {
 	int process(void *in, void *out, int count);
 };
 
+/* a voice object at srate Hz in command state; NULL when out of memory */
 void *VOICE_create(struct modem *m, unsigned srate)
 {
 	Voice *v = new (std::nothrow) Voice();
@@ -524,17 +567,23 @@ void *VOICE_create(struct modem *m, unsigned srate)
 	return v;
 }
 
+/* frees a voice object */
 void VOICE_delete(void *obj)
 {
 	DSP_DBG("voice: VOICE_delete...\n");
 	delete static_cast<Voice*>(obj);
 }
 
+/* the core's voice settings (MDMPRM_VOICEINFO), may be NULL */
 struct voice_info *Voice::info()
 {
 	return (struct voice_info *)modem_get_param(modem, MDMPRM_VOICEINFO);
 }
 
+/* a +V command: receive, transmit or duplex streaming (CONNECT on the
+   next process()), a beep or a DTMF tone of tone_duration * 10 ms (OK
+   when it is over), abort or back to command state (OK); 0, or -1 for an
+   unknown command or a tone without voice settings */
 int Voice::command(enum VOICE_CMD cmd)
 {
 	struct voice_info *vi = info();
@@ -579,11 +628,16 @@ int Voice::command(enum VOICE_CMD cmd)
 	}
 }
 
+/* Voice::command() for the C interface */
 int VOICE_command(void *obj, enum VOICE_CMD cmd)
 {
 	return static_cast<Voice*>(obj)->command(cmd);
 }
 
+/* the next 8 bit unsigned sample from the DTE, <DLE> codes taken out
+   (<DLE><DLE> a 0x10 sample, <DLE><ETX>, <DLE>! and <DLE><CAN> end the
+   transmission: tx_end), as a 16 bit level in *x; returns 1 for a sample,
+   0 when there is none (yet or any more) */
 int Voice::get_tx_sample(float *x)
 {
 	char ch;
@@ -615,6 +669,11 @@ int Voice::get_tx_sample(float *x)
 	return 0;
 }
 
+/* count samples each way at srate: out a pending tone or the DTE's
+   samples (8000 Hz, linearly interpolated), in sent to the DTE as 8 bit
+   samples at 8000 Hz (<DLE> doubled); in receive only state any character
+   from the DTE ends it with <DLE><ETX>.  Returns the VOICE_STATUS_* due,
+   or 0. */
 int Voice::process(void *in, void *out, int count)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
@@ -688,6 +747,7 @@ int Voice::process(void *in, void *out, int count)
 	return status;
 }
 
+/* Voice::process() for the C interface */
 int VOICE_process(void *obj, void *in, void *out, int count)
 {
 	return static_cast<Voice*>(obj)->process(in, out, count);

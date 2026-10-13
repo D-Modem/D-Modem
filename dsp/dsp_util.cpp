@@ -17,11 +17,14 @@ namespace dsp {
  *    oscillator
  */
 
+/* freq Hz at srate samples/s: only the increment changes, so the phase
+   is continuous */
 void Osc::set_freq(float freq, int srate)
 {
 	inc = (double)freq / srate;
 }
 
+/* sin(2 pi phase), then one sample on */
 float Osc::next()
 {
 	float v = (float)sin(2 * M_PI * phase);
@@ -30,6 +33,7 @@ float Osc::next()
 	return v;
 }
 
+/* exp(j 2 pi phase), then one sample on */
 cplx Osc::next_cplx()
 {
 	double a = 2 * M_PI * phase;
@@ -44,6 +48,7 @@ cplx Osc::next_cplx()
  *    biquads (RBJ audio EQ cookbook forms)
  */
 
+/* stores the coefficients divided by a0 and clears the state */
 void Biquad::set(double nb0, double nb1, double nb2, double a0, double na1,
 		 double na2)
 {
@@ -55,6 +60,7 @@ void Biquad::set(double nb0, double nb1, double nb2, double a0, double na1,
 	z1 = z2 = 0;
 }
 
+/* band pass, 0 dB peak gain at freq Hz, bandwidth freq / q */
 void Biquad::bandpass(float freq, float q, int srate)
 {
 	double w = 2 * M_PI * freq / srate;
@@ -62,6 +68,7 @@ void Biquad::bandpass(float freq, float q, int srate)
 	set(alpha, 0, -alpha, 1 + alpha, -2 * cos(w), 1 - alpha);
 }
 
+/* low pass with its corner at freq Hz (q 0.707: Butterworth) */
 void Biquad::lowpass(float freq, float q, int srate)
 {
 	double w = 2 * M_PI * freq / srate;
@@ -70,6 +77,7 @@ void Biquad::lowpass(float freq, float q, int srate)
 	set((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + alpha, -2 * c, 1 - alpha);
 }
 
+/* high pass with its corner at freq Hz (q 0.707: Butterworth) */
 void Biquad::highpass(float freq, float q, int srate)
 {
 	double w = 2 * M_PI * freq / srate;
@@ -83,6 +91,7 @@ void Biquad::highpass(float freq, float q, int srate)
  *    Goertzel
  */
 
+/* a detector for freq Hz over blocks of block samples, state cleared */
 void Goertzel::init(float freq, int block, int srate)
 {
 	*this = Goertzel();
@@ -90,6 +99,9 @@ void Goertzel::init(float freq, int block, int srate)
 	len = block;
 }
 
+/* one sample in; at the end of a block power gets the tone's mean
+   square (A^2 / 2 for a sine of amplitude A at freq), the filter starts
+   over and 1 is returned, else 0 */
 int Goertzel::run(float x)
 {
 	float s = x + coef * s1 - s2;
@@ -105,6 +117,8 @@ int Goertzel::run(float x)
 }
 
 
+/* single pole smoothing with a time constant of time_const_sec at
+   srate (one sample at the least), power back to 0 */
 void PowerMeter::init(float time_const_sec, int srate)
 {
 	alpha = 1.0f / (time_const_sec * srate);
@@ -132,6 +146,8 @@ int V22Scrambler::scramble(int bit)
 	return out;
 }
 
+/* the inverse of scramble(): the line bit goes into the register, and
+   after 64 ones on the line the next output bit is inverted back */
 int V22Scrambler::descramble(int bit)
 {
 	int out = (bit ^ (reg >> 13) ^ (reg >> 16)) & 1;
@@ -149,6 +165,8 @@ int V22Scrambler::descramble(int bit)
  *    root raised cosine pulse with unit energy per symbol
  */
 
+/* t in symbol periods, alpha the roll off; the closed form, with its
+   limits at t = 0 and |t| = 1 / (4 alpha) */
 float rrc_pulse(float t, float alpha)
 {
 	double x;
@@ -173,6 +191,8 @@ static const char dtmf_keys[] = "123A456B789C*0#D";
 static const float dtmf_lo[] = { 697, 770, 852, 941 };
 static const float dtmf_hi[] = { 1209, 1336, 1477, 1633 };
 
+/* the tone pair of digit (0-9, *, #, A-D, a-d) at srate, from phase 0;
+   0, or -1 (state unchanged) when it is no DTMF digit */
 int DtmfGen::set(char digit, int srate)
 {
 	const char *p;
@@ -192,6 +212,7 @@ int DtmfGen::set(char digit, int srate)
 	return 0;
 }
 
+/* the next sample of the low and high group tones together */
 float DtmfGen::next()
 {
 	return amp_lo * lo.next() + amp_hi * hi.next();
@@ -204,6 +225,8 @@ float DtmfGen::next()
 
 static float rs_h6[RS_LEN], rs_h5[RS_LEN];
 
+/* the modified Bessel function I0(x), by its power series (40 terms),
+   for the Kaiser window */
 static double bessel_i0(double x)
 {
 	double s = 1, t = 1;
@@ -231,12 +254,15 @@ static void rs_design(float *h, int L)
 	}
 }
 
+/* both prototype tables, once (pthread_once from Resampler::init) */
 static void rs_tables(void)
 {
 	rs_design(rs_h6, 6);
 	rs_design(rs_h5, 5);
 }
 
+/* up / down must be 6/5 (8000 -> 9600 Hz) or 5/6 (9600 -> 8000 Hz):
+   0, else -1; the shared tables are built on the first call */
 int Resampler::init(int up, int down)
 {
 	static pthread_once_t once = PTHREAD_ONCE_INIT;
@@ -251,6 +277,8 @@ int Resampler::init(int up, int down)
 	return 0;
 }
 
+/* x into the history, then every output due before the next input:
+   phase t of the polyphase filter, t stepping by M modulo L */
 int Resampler::run(float x, float out[2])
 {
 	int n = 0;

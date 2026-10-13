@@ -12,6 +12,7 @@ using namespace dsp;
 
 unsigned int dsplibs_debug_level = 0;
 
+/* the DSP's log (DSP_DBG): to stderr */
 int dsplibs_debug_printf(const char *fmt, ...)
 {
 	va_list ap;
@@ -21,6 +22,8 @@ int dsplibs_debug_printf(const char *fmt, ...)
 	return 0;
 }
 
+/* the modem core's calls: no registry, S registers and parameters 0,
+   every bit asked for given and every bit given taken (n) */
 int modem_dp_register(enum DP_ID, struct dp_operations *) { return 0; }
 void modem_dp_deregister(enum DP_ID, struct dp_operations *) {}
 int modem_get_sreg(struct modem *, unsigned int) { return 0; }
