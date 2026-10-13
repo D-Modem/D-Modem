@@ -225,6 +225,17 @@ std::vector<Call> calls()
 	      "DSP_V92_FPE=3000:6",
 	      "EXPECT_B=(?s)prefilter not down.*SUVu'.*fast parameter "
 	      "exchange 1 done.*V.92 renegotiated 56000/3[89]" });
+	/* the original library's timing slips against the network's
+	   clock, and the prefilter's design with it: about every 35 s of
+	   line a design for the slip in a fast parameter exchange at the
+	   same rate (0.35 s), and the data goes on */
+	for (const char *law : { "ulaw", "alaw" })
+		add("interop", std::string("interop_v92_slip_") + law, "blob",
+		    "open8", "ATX3;AT+MS=92",
+		    { std::string("NET=9600:8000:") + law, "STREAM=30",
+		      "BLOB_V92FULL=1",
+		      "EXPECT_B=(?s)the prefilter for a slip.*fast parameter "
+		      "exchange 1 done.*V.92 renegotiated 56000/(3[89]|4[0-2])" });
 	/* without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream */
 	add("interop", "interop_v92_nopcmup", "blob", "open8", "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=3", "BLOB_V92FULL=1",

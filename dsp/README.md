@@ -529,12 +529,50 @@ levels 300 to 1000, 9 % of them come out on a neighbouring level at the
 start, 44 % after 40 s. That happens before the network's quantizer, so
 nothing in our receiver can take it back (more taps, faster LMS and
 taps on the precoder's output made no difference). The grid mse rises
-from about 0.012 to 0.09 in some 40 s without errors; our renegotiation
-down waits until then (rms 0.3 of the half distance) and designs anew for
-the timing as it is: over 180 s that is a renegotiation every 37 to 40 s,
-2.1 s each, back at the same rate, and all the data through. In data
-mode the analogue modem's tone A retrains. The echo canceller (the V.34 pump's,
-trained while we send Sd to Jd) could not be tested: netsim's echo
+from about 0.012 to 0.09 in some 40 s without errors.
+
+So the receiver follows the slip and the design is redone for it, at the
+same rate, in a fast parameter exchange (`DSP_V92_SLIP=0` turns that off).
+In data mode it rebuilds the line signal from its decisions (the
+precoder's output through the prefilter) and fits the residual of the
+received samples against the channel's output to two things: a gain, and
+the channel's derivative (band limited, from its taps), the slip. The fit
+forgets over a second. The network's codec passes a small change of its
+input only as far as the noise carries it across a threshold between two
+levels, so each sample's terms are weighed by the codec's mean slope there
+(the levels' steps under a Gaussian of the noise's rms); unweighed, the
+fit reads the slip about 0.6 of what it is and the design falls short.
+When the grid mse (over a second) is 0.02 above what it was 3 s into the
+design, and the fit has a slip of 0.001 samples or more, we start a fast
+parameter exchange: the channel moved by the fit (and on, at the slip's
+rate, by the second the fit lags and the 3000 symbols to B1u), the
+prefilter for it at the same delay, its precoder, and a CPd with them
+and the rate and points we have. The original library takes the new
+coefficients up when it gets our CPd (its log: the precoder reset "with
+cfg" before SUVu'); the receiver takes them up at B1u, where the analogue
+modem's transmitter starts anew (the line before it rebuilt with the old
+ones). Measured against netsim (the original library calling, 1500 s of
+line), u-law and A-law: one every 23 to 55 s (35 on average), 0.35 s from
+RM to B1u, B1u with errors in its first two frames as in any fast
+parameter exchange, no renegotiation and no retrain, and the residual
+back at its start (5.4 rms) after each. The slip is the original
+library's own and steady, -0.00015 samples/s (after a retrain of its own
+some five times that). A renegotiation down remains for a line that
+changes (noise: the fit does not have it).
+
+With the slip, RM's line signal (a large one of period 4) comes in a
+whole point off, the same way in every frame (A-law at a slip of 0.003:
+`0 34 1 35` for `35 35 0 0`), where random data only gets a larger mse.
+After our Rf the receiver takes RM with every class within one of it
+(and, any time, 9 of the 11 exact), else the original library's
+exchange goes by unseen and it retrains.
+
+| Test (`interop_v92_slip_*`, 30 s of data) | Result |
+|---|---|
+| u-law, A-law | a fast parameter exchange for the slip (or more), the same rate after it, the data through |
+
+In data mode the analogue modem's tone A retrains. The echo canceller
+(the V.34 pump's, trained while we send Sd to Jd) could not be tested: netsim's echo
 (`NET_ECHO`) through its 9600 Hz converters is not one an 8000 Hz
 canceller cancels, for V.90 either.
 

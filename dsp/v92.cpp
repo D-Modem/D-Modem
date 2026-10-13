@@ -440,6 +440,13 @@ float V92Up::equalize(long s)
 	if (pf_on) {
 		if (s == pf_rst)
 			pf_reset(s);
+		if (s == pf_new_at && pf_new) {
+			/* the design for the slip, from B1u on */
+			pf_rx_take();
+			pf_new = 0;
+			DSP_DBG("v92: the new prefilter and precoder at symbol "
+				"%ld\n", s);
+		}
 		/* the point: the level at the delay, through the few taps
 		   that follow the timing */
 		for (i = 0; i < V92_PF_F; i++)
@@ -884,8 +891,7 @@ void V92Up::symbol(float y)
 				/* the taps reach V92_PF_F / 2 past the delay */
 				if (pf_d + V92_PF_F / 2 > ahead)
 					eqL += pf_d + V92_PF_F / 2 - ahead;
-				memset(pf_f, 0, sizeof(pf_f));
-				pf_f[V92_PF_F / 2] = 1 / pf_cd;
+				pf_rx_take();
 				memset(pf_xr, 0, sizeof(pf_xr));
 				pf_rst = -1;
 				dmse_g = 0;
@@ -992,6 +998,9 @@ void V92Up::fpe_tx_start()
 		rn = 1;
 		rn_at = n;
 	}
+	/* (should the design fail, its CPd has the coefficients we have) */
+	if (fpe_slip)
+		pf_slip_design();
 	fpe_design(fpe_drn);
 	fpe_drn = 0;
 	fpe_tx_init = 1;
@@ -1012,6 +1021,22 @@ void V92Up::fpe_design(int drn)
 	double e2 = dmse, sb = 0, msa = 0;
 	int d, M = 8, lc = 0, j, k;
 
+	if (pf && fpe_slip) {
+		/* the design for the slip: its prefilter and precoder at
+		   the rate and points we have (a change of little more than
+		   a percent: as many points, the power and the trellis
+		   frame's classes as before) */
+		cpd_fpe = cpd;
+		for (j = 0; j < V92_PF_B; j++)
+			cpd_fpe.coef[1][j] = pf_p1[j];
+		for (j = 0; j < V92_PF_W; j++)
+			cpd_fpe.coef[2][j] = pf_z2[j];
+		cpd_fpe.g = pf_g;
+		cpd_fpe.ack = 0;
+		DSP_DBG("v92: FPE CPd: %d bit/s, the prefilter for the "
+			"slip\n", (cpd.drn + 17) * 8000 / 6);
+		return;
+	}
 	if (pf) {
 		/* the prefilter and precoder stay: the next rate up, if the
 		   design has it (or the one asked for) */
@@ -1094,12 +1119,25 @@ void V92Up::fpe_design(int drn)
 int V92Up::fpe_frame(const V92Cpd *c)
 {
 	static const char pat[11] = { 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0 };
-	int j, rm = 1, rmp = 1;
+	int j, rm = 0, rmp = 0, near = 0;
 
+	/* 9 of the 11 classes: the largest and the smallest are next to
+	   each other, a decision error turns one into the other (and data
+	   has 9 of them in place 1 in M^9) */
 	for (j = 0; j < 11; j++) {
-		rm &= dk[j] == (pat[j] ? c->M[j] - 1 : 0);
-		rmp &= dk[j] == (pat[j] ? 0 : c->M[j] - 1);
+		int t = pat[j] ? c->M[j] - 1 : 0,
+			dd = (dk[j] - t + c->M[j] + 1) % c->M[j];
+		rm += dk[j] == t;
+		rmp += dk[j] == (pat[j] ? 0 : c->M[j] - 1);
+		near += dd <= 2;
 	}
+	/* with the prefilter, after our Rf: RM's line signal is a large
+	   one of period 4, and the analogue modem's timing slip takes its
+	   points a whole one off, the same way in every frame (data, at
+	   random, a little each): all 11 within one of RM's classes (data
+	   has them 1 in (M/3)^11) */
+	rm = rm >= 9 || (pf_on && fpe_rf && near == 11);
+	rmp = rmp >= 9;
 	switch (fpe_rx) {
 	case 0:
 		if (rx != V92R_DATA || dframes <= 48)
@@ -1350,6 +1388,28 @@ void V92Up::data_symbol(float y)
 	/* decisions near the middle between two points */
 	if (fabsf(eg) > 0.6f)
 		dfar++;
+	/* with the prefilter: the analogue modem's timing slips (the
+	   residual's fit has it), and the grid mse (over a second) is up
+	   by 0.02 on what it was 3 s into the design: a design for the slip
+	   in a fast parameter exchange at the same rate, well before the
+	   decisions suffer (DSP_V92_SLIP=0: none, the renegotiation below
+	   once they do) */
+	if (pf_on) {
+		sl_gm += (eg * eg - sl_gm) / 8000;
+		if (slip_ok && connected && !rn && !fpe_req && !pf_new &&
+		    sl_base > 0 && sl_gm > sl_base + 0.02 &&
+		    sl_n % 400 == 0) {
+			double g, t, x;
+			if (!pf_slip_fit(&g, &t, &x) &&
+			    fabs(t) >= V92_SLIP_MIN && x >= 0.1) {
+				DSP_DBG("v92: slip %+.5f (gain %+.4f, %.0f %% "
+					"of the residual), grid mse %.4f against "
+					"%.4f: fast parameter exchange\n", t, g,
+					100 * x, sl_gm, sl_base);
+				fpe_slip = fpe_req = 1;
+			}
+		}
+	}
 	/* the margin against the one our rate was chosen with: half of it
 	   for 0.5 s, renegotiate down; 2.5 times for 10 s (and a minute
 	   since the last), up (9.8/V.92) */
@@ -1391,9 +1451,10 @@ void V92Up::data_symbol(float y)
 		   start of the analogue modem's transmitter) */
 		double xh = t, lim = 4.0 * cpd.pts[0][cpd.lc[0] - 1];
 		for (int k = 0; k < V92_PF_B && sym - 1 - k >= pf_s0; k++)
-			xh -= pf_b[k] * pf_xr[(sym - 1 - k) & (V92_PF_XR - 1)];
+			xh -= pf_rb[k] * pf_xr[(sym - 1 - k) & (V92_PF_XR - 1)];
 		pf_xr[sym & (V92_PF_XR - 1)] =
 			xh > lim ? lim : xh < -lim ? -lim : xh;
+		pf_slip_sample();
 	}
 	/* with precoding, the transmitter has taken the data symbols' own
 	   interference away: only that of those before B1u is left */
@@ -1469,8 +1530,10 @@ void V92Up::decided(int eta)
 				   prefilter, the analogue modem's transmitter
 				   anew) */
 				fpe_b1 = idx + 1 + 48 * 12;
-				if (pf_on)
+				if (pf_on) {
 					pf_rst = sym - (dsn - 1 - fpe_b1);
+					pf_new_at = pf_rst;
+				}
 				DSP_DBG("v92: FPE: E2u\n");
 			}
 			return;
@@ -1818,7 +1881,7 @@ int V92Up::ch_fit(double *e2, double *q2)
 
 /* the prefilter for ch: w, the delay d, the precoder's taps; *resid the
    interference left (against the main tap's power) */
-int V92Up::pf_filter(double n0, double *resid)
+int V92Up::pf_filter(double n0, double *resid, int dfix)
 {
 	enum { K = V92_CH + V92_PF_W - 1 };
 	static double G[V92_PF_W * V92_PF_W], A[V92_PF_W * V92_PF_W];
@@ -1836,7 +1899,7 @@ int V92Up::pf_filter(double n0, double *resid)
 				t += ch[k] * ch[k + l];
 			G[i * V92_PF_W + j] = t;
 		}
-	for (d = 0; d <= 40; d++) {
+	for (d = dfix < 0 ? 0 : dfix; d <= (dfix < 0 ? 40 : dfix); d++) {
 		int kd = d + V92_CH_PRE;
 		double J = 0, ww = 0, r = 0;
 		if (kd + V92_PF_B >= K)
@@ -2113,13 +2176,175 @@ void V92Up::pf_reset(long r)
 	for (long m = r - V92_CH_POST - V92_PF_F; m < r; m++) {
 		double v = 0;
 		for (int i = 0; i < V92_PF_W && m - i >= pf_s0; i++)
-			v += pf_w[i] * pf_xr[(m - i) & (V92_PF_XR - 1)];
+			v += pf_rw[i] * pf_xr[(m - i) & (V92_PF_XR - 1)];
 		dring[m & (V92_DR - 1)] = v;
 	}
 	pf_s0 = r;
 	pf_rst = -1;
 	DSP_DBG("v92: the analogue modem's transmitter anew at symbol %ld\n",
 		r);
+}
+
+/* the receiver takes up the design: its prefilter, precoder and main tap,
+   the few taps at the delay from the main tap, and the slip's fit from
+   nothing (against this channel) */
+void V92Up::pf_rx_take()
+{
+	memcpy(pf_rw, pf_w, sizeof(pf_rw));
+	memcpy(pf_rb, pf_b, sizeof(pf_rb));
+	pf_rcd = pf_cd;
+	memset(pf_f, 0, sizeof(pf_f));
+	pf_f[V92_PF_F / 2] = 1 / pf_rcd;
+	pf_new = 0;
+	/* the channel's derivative: band limited, d/dt of the sinc
+	   interpolation of its taps */
+	for (int j = 0; j < V92_CH; j++) {
+		double d = 0;
+		for (int m = 0; m < V92_CH; m++)
+			if (m != j)
+				d += ch[m] * ((j - m) & 1 ? -1.0 : 1.0) / (j - m);
+		pf_dch[j] = d;
+	}
+	sl_uu = sl_ud = sl_dd = sl_ue = sl_de = sl_ee = 0;
+	sl_n = 0;
+	sl_base = 0;
+	sl_gm = 0.02;
+}
+
+/* a data symbol decided (its precoder output in pf_xr): the line signal
+   (through the prefilter), and the received sample a channel's length
+   back against what the channel makes of it.  Forgetting over a second,
+   the residual's fit to the channel's output (a gain) and to its
+   derivative's (a slip of the analogue modem's timing) */
+void V92Up::pf_slip_sample()
+{
+	double v = 0, u = 0, d = 0, e, k;
+	const double lam = 1 - 1.0 / 8000;
+	int i, j;
+
+	for (i = 0; i < V92_PF_W && sym - i >= pf_s0; i++)
+		v += pf_rw[i] * pf_xr[(sym - i) & (V92_PF_XR - 1)];
+	pf_ln[sym & (V92_PF_XR - 1)] = v;
+	/* the line signal the sample has is all from pf_s0 on, and the
+	   decisions are the data's */
+	if (sym - V92_CH + 1 < pf_s0 || rn || fpe_rx || pf_new)
+		return;
+	for (j = 0; j < V92_CH; j++) {
+		double l = pf_ln[(sym - j) & (V92_PF_XR - 1)];
+		u += ch[j] * l;
+		d += pf_dch[j] * l;
+	}
+	e = pf_sample(sym - V92_CH_PRE) - u;
+	/* the network's codec passes a small change of its input only as
+	   far as the noise spreads it across its decision thresholds: the
+	   change, as it comes out of the codec */
+	k = pf_qslope(u);
+	u *= k;
+	d *= k;
+	sl_uu = lam * sl_uu + u * u;
+	sl_ud = lam * sl_ud + u * d;
+	sl_dd = lam * sl_dd + d * d;
+	sl_ue = lam * sl_ue + u * e;
+	sl_de = lam * sl_de + d * e;
+	sl_ee = lam * sl_ee + e * e;
+	sl_n++;
+	if (sl_n == 16000)
+		pf_slip_fit(&sl_g1, &sl_tau1, &sl_x1), sl_t1 = sym;
+	if (sl_n == 24000)
+		sl_base = sl_gm;
+	if (sl_n % 8000 == 0) {
+		double g, t, x;
+		if (!pf_slip_fit(&g, &t, &x))
+			DSP_TRACE("v92: slip: gain %+.4f, timing %+.5f, residual "
+				"%.1f rms, %.0f %% of it explained, grid mse "
+				"%.4f\n", g, t, sqrt(sl_ee * (1 - lam)),
+				100 * x, dmse_g);
+	}
+}
+
+/* the slope of the network codec's mean output at its input v, with the
+   noise (pf_noise rms, Gaussian) before it: its steps at the thresholds
+   between the levels, each in as far as the noise reaches it */
+double V92Up::pf_qslope(double v) const
+{
+	double a = fabs(v), sg = pf_noise > 0.5 ? pf_noise : 0.5, k = 0;
+	int lo = 0, hi = 127, j;
+
+	while (lo < hi) {
+		int m = (lo + hi) / 2;
+		if (pf_lev[m] < a)
+			lo = m + 1;
+		else
+			hi = m;
+	}
+	/* the thresholds within 5 sigma on either side (and the one at
+	   zero, between -L0 and L0) */
+	for (j = lo > 8 ? lo - 8 : 0; j < 127 && j < lo + 8; j++) {
+		double b = (pf_lev[j] + pf_lev[j + 1]) / 2.0,
+			z = (b - a) / sg;
+		if (fabs(z) < 5)
+			k += (pf_lev[j + 1] - pf_lev[j]) * exp(-z * z / 2);
+		z = (b + a) / sg;
+		if (z < 5)
+			k += (pf_lev[j + 1] - pf_lev[j]) * exp(-z * z / 2);
+	}
+	if (pf_lev[0] > 0 && a / sg < 5)
+		k += 2 * pf_lev[0] * exp(-a * a / (2 * sg * sg));
+	k /= sg * sqrt(2 * M_PI);
+	return k > 1.5 ? 1.5 : k;
+}
+
+/* the fit: the channel's gain and the slip (in samples), and how much of
+   the residual's power they take away */
+int V92Up::pf_slip_fit(double *gain, double *tau, double *expl)
+{
+	double det = sl_uu * sl_dd - sl_ud * sl_ud;
+	if (sl_n < 8000 || det <= 0 || sl_ee <= 0)
+		return -1;
+	*gain = (sl_ue * sl_dd - sl_de * sl_ud) / det;
+	*tau = (sl_de * sl_uu - sl_ue * sl_ud) / det;
+	*expl = (*gain * sl_ue + *tau * sl_de) / sl_ee;
+	return 0;
+}
+
+/* the design for the slip: the channel as it is now (the fit's gain and
+   slip on it), the prefilter for it at the same delay, and its
+   precoder; the receiver keeps the old ones until B1u */
+int V92Up::pf_slip_design()
+{
+	double g, t, x, hh = 0, resid, sb = 0;
+	double ch0[V92_CH];
+	int j;
+
+	if (pf_slip_fit(&g, &t, &x))
+		return -1;
+	/* the fit is a second behind (its forgetting), and B1u some 3000
+	   symbols ahead: the slip then, at its rate since 2 s into the
+	   design */
+	if (sym - sl_t1 > 8000)
+		t += (t - sl_tau1) / (sym - sl_t1) * (8000 + 3000);
+	memcpy(ch0, ch, sizeof(ch));
+	for (j = 0; j < V92_CH; j++) {
+		ch[j] = (1 + g) * ch[j] + t * pf_dch[j];
+		hh += ch[j] * ch[j];
+	}
+	if (pf_filter(1e-3 + pf_noise * pf_noise / hh, &resid, pf_d) ||
+	    pf_quant()) {
+		memcpy(ch, ch0, sizeof(ch));
+		memcpy(pf_w, pf_rw, sizeof(pf_w));
+		memcpy(pf_b, pf_rb, sizeof(pf_b));
+		pf_cd = pf_rcd;
+		return -1;
+	}
+	for (j = 0; j < V92_PF_B; j++)
+		sb += fabs(pf_b[j]);
+	pf_new = 1;
+	pf_new_at = -1;
+	DSP_DBG("v92: the prefilter for a slip of %+.5f (gain %+.4f, %.0f %% "
+		"of the residual): delay %d, interference %.1f dB, sum |b| "
+		"%.2f, G %.6f\n", t, g, 100 * x, pf_d, 10 * log10(resid), sb,
+		pf_g);
+	return 0;
 }
 
 /* with the prefilter: the margin to hold the line to is what B1u and
@@ -2176,12 +2401,51 @@ int V92Up::pf_cpd(V92Cpd *c, int drn)
 	return gap;
 }
 
+/* the prefilter and precoder as CPd says them: G (4 G in Q0.16), z2
+   (Q0.15), p1 (Q1.14), and pf_w, pf_b, pf_cd as they come out of them */
+int V92Up::pf_quant()
+{
+	double mx = 0;
+	int i, j, g4;
+
+	for (i = 0; i < V92_PF_W; i++)
+		if (fabs(pf_w[i]) > mx)
+			mx = fabs(pf_w[i]);
+	g4 = (int)ceil(4 * mx * 65536 * 1.0001);
+	if (g4 < 1 || g4 > 65535)
+		return -1;
+	pf_g = g4 / (4 * 65536.0);
+	for (i = 0; i < V92_PF_W; i++) {
+		long q = lrint(pf_w[i] / pf_g * 32768);
+		q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
+		pf_z2[i] = (short)q;
+		pf_w[i] = pf_g * q / 32768;
+	}
+	/* the response with them, and the precoder for it */
+	int kd = pf_d + V92_CH_PRE;
+	double c[V92_CH + V92_PF_W];
+	for (int k = 0; k < V92_CH + V92_PF_W - 1; k++) {
+		c[k] = 0;
+		for (i = 0; i < V92_PF_W; i++)
+			if (k - i >= 0 && k - i < V92_CH)
+				c[k] += ch[k - i] * pf_w[i];
+	}
+	pf_cd = c[kd];
+	for (j = 0; j < V92_PF_B; j++) {
+		long q = lrint(-c[kd + 1 + j] / pf_cd * 16384);
+		q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
+		pf_p1[j] = (short)q;
+		pf_b[j] = -q / 16384.0;
+	}
+	return 0;
+}
+
 /* the design with the prefilter; 0 if there is none (the receiver's feed
    forward taps then) */
 int V92Up::pf_design(const char *fix)
 {
-	double e2, q2, hh = 0, resid, mx = 0, sb = 0;
-	int i, j, drn, g4;
+	double e2, q2, hh = 0, resid, sb = 0;
+	int i, j, drn;
 
 	pf = 0;
 	if (!pf_ok || ia.lmax < V92_PF_W ||
@@ -2205,39 +2469,10 @@ int V92Up::pf_design(const char *fix)
 			q2 * V92_CH / (V92_PF_FIT - V92_CH));
 	if (pf_filter(1e-3 + pf_noise * pf_noise / hh, &resid))
 		return 0;
-	/* as CPd says it: G (4 G in Q0.16) and z2 (Q0.15) */
-	for (i = 0; i < V92_PF_W; i++)
-		if (fabs(pf_w[i]) > mx)
-			mx = fabs(pf_w[i]);
-	g4 = (int)ceil(4 * mx * 65536 * 1.0001);
-	if (g4 < 1 || g4 > 65535)
+	if (pf_quant())
 		return 0;
-	pf_g = g4 / (4 * 65536.0);
-	for (i = 0; i < V92_PF_W; i++) {
-		long q = lrint(pf_w[i] / pf_g * 32768);
-		q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
-		pf_z2[i] = (short)q;
-		pf_w[i] = pf_g * q / 32768;
-	}
-	/* the response with them, and the precoder for it */
-	{
-		int kd = pf_d + V92_CH_PRE;
-		double c[V92_CH + V92_PF_W];
-		for (int k = 0; k < V92_CH + V92_PF_W - 1; k++) {
-			c[k] = 0;
-			for (i = 0; i < V92_PF_W; i++)
-				if (k - i >= 0 && k - i < V92_CH)
-					c[k] += ch[k - i] * pf_w[i];
-		}
-		pf_cd = c[kd];
-		for (j = 0; j < V92_PF_B; j++) {
-			long q = lrint(-c[kd + 1 + j] / pf_cd * 16384);
-			q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
-			pf_p1[j] = (short)q;
-			pf_b[j] = -q / 16384.0;
-			sb += fabs(pf_b[j]);
-		}
-	}
+	for (j = 0; j < V92_PF_B; j++)
+		sb += fabs(pf_b[j]);
 	DSP_DBG("v92: channel: SNR %.1f dB (G.711's alone %.1f dB, noise "
 		"%.1f rms); prefilter delay %d, interference %.1f dB, "
 		"sum |b| %.2f, G %.6f\n", 10 * log10(hh / e2),
@@ -2524,7 +2759,10 @@ int V92Up::tx_step()
 					"done\n", fpes);
 			} else
 				renegs++;
-			fpe = fpe_rf = fpe_req = 0;
+			int slip_fpe = fpe_slip;
+			if (fpe_slip)
+				slips++;
+			fpe = fpe_rf = fpe_req = fpe_slip = 0;
 			rn = rn_req = rn_sent = 0;
 			rn_low = rn_high = 0;
 			rn_last = n;
@@ -2532,7 +2770,10 @@ int V92Up::tx_step()
 			DSP_DBG("v92: renegotiated %d/%d\n",
 				(cpu.drn + 20) * 8000 / 6,
 				(cpd.drn + 17) * 8000 / 6);
-			pf_margin();
+			/* (after one for the slip, the margin of the
+			   design) */
+			if (!slip_fpe)
+				pf_margin();
 			return V92_RENEG;
 		}
 		if (n - rn_at > 8000L * 25) {
@@ -2567,6 +2808,7 @@ void V92Up::init(int alaw_, const V92Info1a *ia_, const long *fclock,
 	ta_g.init(2400, 64, 8000);
 	pf_ok = !(getenv("DSP_V92_PREFILTER") &&
 		  !atoi(getenv("DSP_V92_PREFILTER")));
+	slip_ok = !(getenv("DSP_V92_SLIP") && !atoi(getenv("DSP_V92_SLIP")));
 	DSP_DBG("v92: PCM upstream: filter sections %d, coefficients %d "
 		"(%d each), MD %d, UINFO %d\n", ia.sections, ia.ltot, ia.lmax,
 		ia.md, ia.uinfo);

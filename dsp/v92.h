@@ -98,6 +98,8 @@ enum {
 #define V92_PF_W        64
 #define V92_PF_B        32
 #define V92_PF_FIT      3584    /* TRN2u symbols for the channel */
+#define V92_SLIP_MIN    0.001   /* the analogue modem's timing slip (in
+				   samples) a new prefilter design is for */
 
 enum v92_rx {
 	V92R_RU,        /* Ru and its reversal */
@@ -277,6 +279,27 @@ struct V92Up {
 	   the new, and whether we did too */
 	double fpe_eo, fpe_en;
 	int fpe_early;
+	/* the analogue modem's timing slip: the receiver's copies of the
+	   prefilter, the precoder and the main tap (a fast parameter
+	   exchange for the slip brings new ones in at B1u), the line
+	   signal rebuilt from the decisions, the channel's derivative, and
+	   the residual's least squares fit to the channel's output (gain)
+	   and to its derivative's (the slip), forgetting over a second */
+	double pf_rw[V92_PF_W], pf_rb[V92_PF_B], pf_rcd;
+	double pf_ln[V92_PF_XR];
+	double pf_dch[V92_CH];
+	double sl_uu, sl_ud, sl_dd, sl_ue, sl_de, sl_ee;
+	long sl_n;
+	double sl_gm;           /* the grid mse, over a second */
+	double sl_base;         /* it, 3 s into the design */
+	double sl_g1, sl_tau1, sl_x1;   /* the fit 2 s into it, */
+	long sl_t1;             /* at that symbol */
+	int fpe_slip;           /* this fast parameter exchange: the design
+				   for the slip, at the same rate */
+	int pf_new;             /* its prefilter and precoder: in at B1u */
+	long pf_new_at;         /* (that symbol, once known) */
+	int slips;
+	int slip_ok;            /* DSP_V92_SLIP=0: no design for the slip */
 
 	void init(int alaw_, const V92Info1a *ia_, const long *fclock,
 		  long fbase);
@@ -295,7 +318,13 @@ struct V92Up {
 	void design();
 	int precoder_fit(double gamma, double *bg, double *fg, double *e2);
 	int ch_fit(double *e2, double *q2);
-	int pf_filter(double n0, double *resid);
+	int pf_filter(double n0, double *resid, int dfix = -1);
+	int pf_quant();
+	void pf_rx_take();
+	void pf_slip_sample();
+	int pf_slip_fit(double *gain, double *tau, double *expl);
+	int pf_slip_design();
+	double pf_qslope(double v) const;
 	int pf_points(int gap, int lc, short *pts);
 	int pf_sim(int M, const short *pts, int lc, int nsym, double *pw,
 		   double *mseg);
