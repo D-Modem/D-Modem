@@ -8,6 +8,8 @@
  *    DSP_DEBUG=<level>   the pumps' log
  */
 
+#include <stdlib.h>
+
 #include <string>
 
 #include <gtest/gtest.h>
@@ -96,6 +98,49 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v21", line(21, 8, 20) },
 	Pumps{ "v23", line(23, 12, 30) },
 	Pumps{ "bell103_300ppm", line(103, 8, 20, 9600, 0.5f, 300) }), name);
+
+/* the caller's INFO0 offering only some of the symbol rates and carriers
+   (DSP_V34_INFO0=<bits 12:19>,c): the answerer keeps to them, and the
+   caller retrains on an INFO1a that does not */
+struct Info0Case {
+	const char *name;
+	const char *info0;      /* DSP_V34_INFO0 */
+	int max_rate;           /* the most at the symbol rate left */
+};
+
+/* (gtest prints a case by its name) */
+static void PrintTo(const Info0Case &c, std::ostream *os)
+{
+	*os << c.name;
+}
+
+class V34Info0 : public testing::TestWithParam<Info0Case> {};
+
+/* connected both ways, at a rate of the symbol rate left */
+TEST_P(V34Info0, AnswererKeepsToIt)
+{
+	setenv("DSP_V34_INFO0", GetParam().info0, 1);
+	LoopbackResult r = loopback_run(line(8, 40, 25));
+	unsetenv("DSP_V34_INFO0");
+
+	EXPECT_FALSE(r.dp_failed) << "a pump ended with an error";
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+	EXPECT_LE(r.side[0].tx_rate, GetParam().max_rate);
+	EXPECT_LE(r.side[0].rx_rate, GetParam().max_rate);
+}
+
+INSTANTIATE_TEST_SUITE_P(Caller, V34Info0, testing::Values(
+	/* 3429 allowed but not supported, 3000 and 3200 on the high
+	   carrier only: 3200 with the caller on the high carrier */
+	Info0Case{ "high_carrier", "d0,c", 31200 },
+	/* no 3429, the low carrier only */
+	Info0Case{ "low_carrier", "a8,c", 31200 },
+	/* neither carrier at 3000 or 3200, no 3429: 2400 baud */
+	Info0Case{ "2400_only", "80,c", 21600 }),
+	[](const testing::TestParamInfo<Info0Case> &i) {
+		return std::string(i.param.name);
+	});
 
 INSTANTIATE_TEST_SUITE_P(Automode, PumpLoopback, testing::Values(
 	Pumps{ "v22bis_to_v34", automode(122, 8, 25) },

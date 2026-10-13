@@ -462,6 +462,8 @@ struct V34Pump : Pump {
 	/* outcome */
 	int baud_tx, baud_rx;   /* symbol rate codes */
 	int high_tx, high_rx;
+	int info0_rates;        /* our INFO0's bits 12:19 (rates, carriers,
+				   3429 allowed): all, or a test's */
 	int preemph_tx;
 	int max_rate_tx, max_rate_rx;
 	int rate_tx, rate_rx;   /* data mode, bit/s */
@@ -631,14 +633,9 @@ void BitQ::info_end()
 void V34Pump::make_info0(BitQ *q)
 {
 	q->info_start();
-	q->put(1, 1);        /* 2743 */
-	q->put(1, 1);        /* 2800 */
-	q->put(1, 1);        /* 3429 */
-	q->put(1, 1);        /* 3000 low carrier */
-	q->put(1, 1);        /* 3000 high carrier */
-	q->put(1, 1);        /* 3200 low carrier */
-	q->put(1, 1);        /* 3200 high carrier */
-	q->put(1, 1);        /* 3429 allowed */
+	/* 2743, 2800, 3429; 3000 low and high carrier, 3200 low and high
+	   carrier; 3429 allowed */
+	q->put(info0_rates, 8);
 	q->put(0, 1);        /* power reduction */
 	q->put(0, 3);        /* symbol rate difference */
 	q->put(0, 1);        /* CME */
@@ -674,7 +671,9 @@ void V34Pump::make_info1c(BitQ *q)
 	q->put(0, 7);        /* no MD */
 	for (i = 0; i < V34_NBAUDS; i++) {
 		int rate = rate_of_baud[i];
-		if (!(rinfo0.rates & (1 << 2)) && i == V34_BAUD_3429)
+		/* (3429 only if both modems have it) */
+		if (!(rinfo0.rates & info0_rates & (1 << 2)) &&
+		    i == V34_BAUD_3429)
 			rate = 0;
 		/* low carrier; for 3429, V.92's INFO1d (Table 17/V.92)
 		   has bit 70 instead: PCM upstream on this channel */
@@ -2106,17 +2105,49 @@ int V34Pump::fallback(const char *why)
 	return DPSTAT_CHANGEDP;
 }
 
-/* the answerer picks the symbol rates: the fastest both modems allow */
+/* whether INFO0 bits 12:19 (rates) allow symbol rate b, and for our
+   transmitter its carrier high (-1: either, as for receiving) */
+static int v34_info0_allows(int rates, int b, int high)
+{
+	switch (b) {
+	case V34_BAUD_2743: return rates & 0x01;
+	case V34_BAUD_2800: return rates & 0x02;
+	case V34_BAUD_3429:
+		return (rates & 0x04) && (high < 0 || (rates & 0x80));
+	case V34_BAUD_3000:
+		return rates & (high < 0 ? 0x18 : high ? 0x10 : 0x08);
+	case V34_BAUD_3200:
+		return rates & (high < 0 ? 0x60 : high ? 0x40 : 0x20);
+	default: return 1;
+	}
+}
+
+/* the carrier the caller can transmit on at symbol rate b (INFO0c bits
+   15:18): 0 low (if it can), 1 high, -1 neither */
+static int v34_caller_carrier(int rates, int b)
+{
+	int low = b == V34_BAUD_3000 ? 0x08 : 0x20;
+	if (b != V34_BAUD_3000 && b != V34_BAUD_3200)
+		return 0;       /* (no choice there) */
+	return rates & low ? 0 : rates & (low << 1) ? 1 : -1;
+}
+
+/* the answerer picks the symbol rates: the fastest both modems allow,
+   at a carrier the caller can transmit on (11.2/V.34, Table 16/V.34) */
 void V34Pump::choose_bauds()
 {
-	int b, best = V34_BAUD_2400, best_rate = 0;
+	int b, best = V34_BAUD_2400, best_rate = 0, best_high = 0;
 
 	probe_analyse();
 	for (b = V34_BAUD_2400; b <= V34_BAUD_3429; b++) {
-		int rate = rate_of_baud[b];
-		if (b == V34_BAUD_3429 && !rinfo0.allow_3429)
+		int rate = rate_of_baud[b], high;
+		if (b == V34_BAUD_3429 && (!rinfo0.allow_3429 ||
+					   !(rinfo0.rates & 0x04)))
 			continue;
 		if (b == V34_BAUD_2743 || b == V34_BAUD_2800)
+			continue;
+		high = v34_caller_carrier(rinfo0.rates, b);
+		if (high < 0)
 			continue;
 		/* the caller can receive at most this */
 		if (rinfo1c.r[b].max_rate < rate)
@@ -2127,9 +2158,11 @@ void V34Pump::choose_bauds()
 		if (rate >= best_rate) {
 			best_rate = rate;
 			best = b;
+			best_high = high;
 		}
 	}
 	baud_tx = baud_rx = best;
+	high_rx = best_high;
 	max_rate_rx = rate_of_baud[best] ? rate_of_baud[best] :
 		v34_min_rate(best);
 }
@@ -3224,6 +3257,15 @@ int V34Pump::handshake()
 				return DPSTAT_ERROR;
 			break;
 		}
+		/* what our INFO0c ruled out (only a test's restricts it) */
+		if (ev_info1 &&
+		    (!v34_info0_allows(info0_rates, rinfo1a.baud_ca,
+				       rinfo1a.high) ||
+		     !v34_info0_allows(info0_rates, rinfo1a.baud_ac, -1))) {
+			retrain("INFO1a: a symbol rate or carrier our INFO0 "
+				"ruled out");
+			break;
+		}
 		if (ev_info1) {
 			baud_tx = rinfo1a.baud_ca;
 			baud_rx = rinfo1a.baud_ac;
@@ -3231,9 +3273,10 @@ int V34Pump::handshake()
 			preemph_tx = rinfo1a.preemph;
 			if (rate_of_baud[baud_rx])
 				max_rate_rx = rate_of_baud[baud_rx];
-			DSP_DBG("v34: symbol rates %d/%d\n",
+			DSP_DBG("v34: symbol rates %d/%d%s\n",
 				v34_bauds[baud_tx].nominal,
-				v34_bauds[baud_rx].nominal);
+				v34_bauds[baud_rx].nominal,
+				high_tx ? ", we send on the high carrier" : "");
 			set_state(P3C_WAIT);
 			if (primary_start())
 				return DPSTAT_ERROR;
@@ -4040,6 +4083,19 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		const char *side = e + strspn(e, "0123456789");
 		if (!*side || *side == (caller_ ? 'c' : 'a'))
 			retrain_at = ms2samples(atoi(e), srate_);
+	}
+	/* test: DSP_V34_INFO0=<hex>[,a|,c]: our INFO0's bits 12:19 (what
+	   it offers of the symbol rates and carriers), on both sides or
+	   only the answerer's or the caller's */
+	info0_rates = 0xFF;
+	if (getenv("DSP_V34_INFO0")) {
+		const char *e = getenv("DSP_V34_INFO0");
+		char *side;
+		long v = strtol(e, &side, 16);
+		if (*side == ',')
+			side++;
+		if (!*side || *side == (caller_ ? 'c' : 'a'))
+			info0_rates = (int)(v & 0xFF);
 	}
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
 	   renegotiation to N * 2400 bit/s (what we receive) */
