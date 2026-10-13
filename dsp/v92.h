@@ -22,6 +22,7 @@ struct V92Info1a {
 	int md;                 /* MD, in 276 symbols */
 	int uinfo;
 
+	/* from INFO1a's bits, one a byte */
 	void parse(const unsigned char *b);
 };
 
@@ -76,6 +77,7 @@ struct V92Frames {
 	unsigned char b[V92_FR_MAX];
 	int n, len;
 
+	/* cleared, for the frames of mode_ (V92F_DIL, V92F_CP) */
 	void init(int mode_);
 	/* 1 when a frame with a good CRC is in b (len bits) */
 	int bit(int x);
@@ -316,8 +318,10 @@ struct V92Up {
 	int slips;
 	int slip_ok;            /* DSP_V92_SLIP=0: no design for the slip */
 
+	/* the start after INFO1a; fclock and fbase as in V90Tx */
 	void init(int alaw_, const V92Info1a *ia_, const long *fclock,
 		  long fbase);
+	/* a network sample in (x) and out (*y), linear; a V92_ event */
 	int sample(int x, int *y);
 	/* the echo canceller may train: we send, the analogue modem is
 	   silent (Sd to Jd) */

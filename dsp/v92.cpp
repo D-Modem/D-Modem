@@ -44,6 +44,8 @@
 
 namespace dsp {
 
+/* the field of nbits bits from bit first on, b one bit a byte, least
+   significant bit first */
 static int field(const unsigned char *b, int first, int nbits)
 {
 	int i, v = 0;
@@ -52,6 +54,8 @@ static int field(const unsigned char *b, int first, int nbits)
 	return v;
 }
 
+/* nbits bits of val, least significant first, at b[*n] on (one bit a
+   byte); *n moves past them */
 static void put_bits(unsigned char *b, int *n, unsigned val, int nbits)
 {
 	int i;
@@ -70,6 +74,8 @@ static void put_crc(unsigned char *b, int *n)
 		b[(*n)++] = (crc >> i) & 1;
 }
 
+/* 1 if the last 16 of len bits are the CRC of the 17 bit blocks before
+   them (as put_crc() puts it), 0 if not */
 static int crc_ok(const unsigned char *b, int len)
 {
 	unsigned crc = 0xFFFF;
@@ -90,6 +96,8 @@ static int gpa_scr(unsigned *r, int bit)
 	return o;
 }
 
+/* its descrambler: the received bit into the register, the data bit
+   out */
 static int gpa_descr(unsigned *r, int bit)
 {
 	int o = (bit ^ (*r >> 4) ^ (*r >> 22)) & 1;
@@ -97,6 +105,9 @@ static int gpa_descr(unsigned *r, int bit)
 	return o;
 }
 
+/* INFO1a's PCM upstream fields (Table 18/V.92), b one bit a byte: the
+   filter sections, the coefficients in all and per section, MD's
+   length and UINFO */
 void V92Info1a::parse(const unsigned char *b)
 {
 	sections = field(b, 12, 2);
@@ -112,6 +123,8 @@ void V92Info1a::parse(const unsigned char *b)
 
 #define V92_TAPS        4       /* of each precoder and prefilter section */
 
+/* zeros after n bits up to a multiple of fill (none for fill 0);
+   returns the new count */
 static int fill_to(unsigned char *b, int n, int fill)
 {
 	while (fill > 0 && n % fill)
@@ -119,6 +132,11 @@ static int fill_to(unsigned char *b, int n, int fill)
 	return n;
 }
 
+/* CPd (Table 30/V.92) into b, one bit a byte: rate, trellis and ack, G
+   as 4 G in Q0.16 (1 to 65535), the 12 moduli, the lengths and the
+   coefficients of the 4 precoder and prefilter sections, the
+   constellations and their points, the CRC; filled with zeros to a
+   multiple of fill bits, returns the count */
 int V92Cpd::build(unsigned char *b, int fill) const
 {
 	int n = 0, i, j, g4 = (int)lrint(4 * g * 65536);
@@ -179,6 +197,9 @@ int V92Cpd::build(unsigned char *b, int fill) const
 	return fill_to(b, n, fill);
 }
 
+/* SUVd (Table 31/V.92) into b, one bit a byte: no silent period asked
+   for, ack in bit 33; filled to a multiple of fill bits, returns the
+   count */
 int v92_suv_build(unsigned char *b, int ack, int fill)
 {
 	int n = 0;
@@ -201,6 +222,8 @@ static int dil_beta(const unsigned char *b)
 	return (lsp + 15) / 16 * 17 + (ltp + 15) / 16 * 17;
 }
 
+/* Ja's length up to the end of its CRC from its first n bits (N, LSP
+   and LTP are in the first 50): the DIL, the rate mask; -1 before */
 int v92_dil_length(const unsigned char *b, int n)
 {
 	if (n < 50)
@@ -208,6 +231,9 @@ int v92_dil_length(const unsigned char *b, int n)
 	return 238 + dil_beta(b) + (field(b, 18, 8) + 1) / 2 * 17;
 }
 
+/* CPt or CPu of len bits (Table 23/V.92) into c: V.90's CP with a two
+   bit type at bit 19 and drn from bit 21; the masks of the ncon
+   constellations the frame intervals use.  -1 for a bad CRC */
 int v92_cp_parse(V90Cp *c, const unsigned char *b, int len)
 {
 	static const int con_bit[6] = { 103, 107, 111, 115, 120, 124 };
@@ -239,12 +265,19 @@ int v92_cp_parse(V90Cp *c, const unsigned char *b, int len)
 	return 0;
 }
 
+/* cleared, for the frames of mode_ (V92F_DIL: Ja; V92F_CP: CPt, CPu,
+   CPus and SUVu) */
 void V92Frames::init(int mode_)
 {
 	memset(this, 0, sizeof(*this));
 	mode = mode_;
 }
 
+/* a decoded bit: after a sync of 17 ones and a zero the frame goes
+   into b, its length from its header (Ja at bit 50 by its DIL; SUVu
+   and CPus 51; CPt and CPu at bit 129 by their constellations).
+   1 when a frame of len bits with a good CRC is in, -1 for one with a
+   bad CRC, 0 otherwise */
 int V92Frames::bit(int x)
 {
 	sr = (sr << 1) | (x & 1);
@@ -310,6 +343,7 @@ static void trn_ref_init()
 		trn_ref[m] = gpa_scr(&r, 1) ? -1 : 1;
 }
 
+/* received sample i, from the ring of V92_BUF */
 static inline float at(const float *buf, long i)
 {
 	return buf[i & (V92_BUF - 1)];
@@ -431,6 +465,12 @@ int V92Up::train(long start, int lo, int hi)
 	return 0;
 }
 
+/* the equalizer's output for symbol s: the feed forward taps on the
+   samples around eqL + s less the feedback of the past decisions; with
+   the prefilter the few taps at the delay on the samples less what is
+   left of the symbols before B1u, where the analogue modem's
+   transmitter starts anew (pf_rst) and the design for the slip comes
+   in (pf_new_at) */
 float V92Up::equalize(long s)
 {
 	long base = eqL + s - V92_EQ_PRE;
@@ -460,7 +500,10 @@ float V92Up::equalize(long s)
 	return (float)y;
 }
 
-/* LMS, then the decision t goes into the feedback */
+/* LMS on symbol s's taps, err the decision less the output, mu the step
+   (over the received power for the feed forward taps); the feedback
+   taps too unless the precoder has them (b_frozen).  The caller then
+   pushes the decision into the feedback */
 void V92Up::adapt(long s, float err, float mu)
 {
 	long base = eqL + s - V92_EQ_PRE;
@@ -481,6 +524,7 @@ void V92Up::adapt(long s, float err, float mu)
 			b[i] -= mu / V92_EQ_B * err * dh[i];
 }
 
+/* t into the past decisions, newest first */
 static void push(float *dh, float t)
 {
 	memmove(dh + 1, dh, (V92_EQ_B - 1) * sizeof(*dh));
@@ -492,6 +536,10 @@ static void push(float *dh, float t)
 #define TONE_W          12
 #define TONE_GAP        6
 
+/* sample x (sample n) through the tone detector: tone_n counts the
+   samples with the tone; Ru's reversal moves rx to MD or TRN1u (in a
+   renegotiation to the wait for TRN2u), and Su's, Su-bar's and the
+   second Su's (revs) to the second TRN1u */
 void V92Up::tone_sample(float x)
 {
 	static const float c6[6] = { 1, 0.5f, -0.5f, -1, -0.5f, 0.5f };
@@ -628,6 +676,10 @@ void V92Up::tone_sample(float x)
 	}
 }
 
+/* a received sample: into buf, through the tone detectors (Ru, Su and
+   tone A), the receiver's steps by sample (MD, the fits to the two
+   TRN1u, Su after the quiet), Ru in data mode for a renegotiation,
+   then every symbol whose samples are all in through the equalizer */
 void V92Up::rx_sample(float x)
 {
 	buf[n & (V92_BUF - 1)] = x;
@@ -812,6 +864,11 @@ void V92Up::bits4(int s, int m)
 	}
 }
 
+/* an equalized symbol y (sym) by the receiver's state: 2 points with
+   differential decoding (Ja, CPt, E1u), the 4 points of TRN2u, SUVu,
+   CPu and E2u (Table 28/V.92), the data mode, or Ru and Ru-bar of a
+   renegotiation until TRN2u (rn_trn).  E1u and E2u move it on, E2u
+   with the prefilter's receiver set up */
 void V92Up::symbol(float y)
 {
 	float t, err;
@@ -1214,7 +1271,9 @@ int V92Up::fpe_frame(const V92Cpd *c)
 struct Big {
 	unsigned w[4];          /* least significant first */
 
+	/* this = v */
 	void set(unsigned v) { memset(w, 0, sizeof(w)); w[0] = v; }
+	/* this = this * m + a, modulo 2^128 */
 	void muladd(unsigned m, unsigned a)
 	{
 		unsigned long long c = a;
@@ -1234,6 +1293,7 @@ struct Big {
 			w[i] = (unsigned)d;
 		}
 	}
+	/* -1, 0 or 1 as this is less than, equal to or more than a */
 	int cmp(const Big &a) const
 	{
 		for (int i = 3; i >= 0; i--)
@@ -1241,6 +1301,7 @@ struct Big {
 				return w[i] < a.w[i] ? -1 : 1;
 		return 0;
 	}
+	/* bit k, 0 the least significant */
 	int bit(int k) const { return (w[k >> 5] >> (k & 31)) & 1; }
 };
 
@@ -1341,6 +1402,13 @@ void V92Up::trellis_frame()
 	decided(((vpb[t][st] >> 16) - 1) / 2);
 }
 
+/* a data mode symbol, y the equalizer's output: the nearest point in
+   grid units (the equalizer's error, dmse, dmse_g), a fast parameter
+   exchange's CPd taken up (at B1u, or early once the analogue modem is
+   on its points), the checks of the slip and of the margin that ask
+   for a fast parameter exchange or a renegotiation, the precoder's
+   output rebuilt (prefilter), then the decision: at once, or by
+   trellis frames of 4 symbols through the Viterbi decoder */
 void V92Up::data_symbol(float y)
 {
 	/* a fast parameter exchange: B1u on the new CPd (with the
@@ -1671,6 +1739,12 @@ int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 	return 0;
 }
 
+/* our CPd, in cpd, from TRN2u: with the prefilter when pf_design() has
+   one; otherwise the fastest rate of up_mask whose points the mse (of
+   the precoder's fit, or TRN1u's without precoding) allows with the
+   margin, the precoder our feedback taps shrunk by one of gammas (the
+   receiver keeps that fit's feed forward taps, b_frozen), and the
+   trellis code.  DSP_V92_UP_DRN or rn_drn (a test) fix the rate */
 void V92Up::design()
 {
 	static const double gammas[] = { 1, 0.97, 0.94, 0.9, 0.85, 0.8,
@@ -1749,8 +1823,6 @@ void V92Up::design()
 			   point too many on the 4th symbol otherwise) */
 			int l = (int)ceil(M * (1 + (pre ? sbs[g] : 0))) + 2;
 			if (l < 2 * M)
-				l = 2 * M;
-			if (getenv("TMP_LC_MIN"))
 				l = 2 * M;
 			l += l & 1;
 			if (l > V92_LC_MAX)
@@ -2025,6 +2097,8 @@ float V92Up::pf_grid(const V92Cpd *c, float r) const
 	return r < 0 ? -u : u;
 }
 
+/* point eta (-lc to lc - 1) in the points' units: pts[eta], or less
+   pts[-eta - 1] for a negative one */
 float V92Up::pf_point(const V92Cpd *c, int eta) const
 {
 	return eta >= 0 ? (float)c->pts[0][eta] : -(float)c->pts[0][-eta - 1];
@@ -2536,6 +2610,10 @@ int V92Up::pf_design(const char *fix)
 	return 1;
 }
 
+/* the next sequence to send into seq, in whole frames of D bits: CPd
+   for cpd_ (a fast parameter exchange's, or ours, designed first if
+   there is none yet or a new one is due), SUVd otherwise; ack its
+   acknowledge bit */
 void V92Up::make_seq(int cpd_, int ack)
 {
 	if (cpd_ && fpe) {
@@ -2643,6 +2721,11 @@ static void v92_get_frame(void *ctx, V90Tx *t, unsigned char *bits,
 	}
 }
 
+/* the transmitter's and the call's steps, once a sample (tstep): after
+   Ja, Sd to Jd, Jp and Jp' at Su's reversals, DIL until CPt, then
+   phase 4 (TRN2d, SUVd, CPd, Ed, B1d) and data through V.90's encoder;
+   the connect after B1u, then renegotiations and fast parameter
+   exchanges (8), the tests and the timeouts.  Returns a V92_ event */
 int V92Up::tx_step()
 {
 	if (ta_blocks >= 10) {
@@ -2838,6 +2921,9 @@ int V92Up::tx_step()
 	return V92_NONE;
 }
 
+/* the start, after an INFO1a (ia_) that asks for PCM upstream: alaw_
+   the network's law, fclock and fbase the symbol clock for V.90's
+   transmitter (see V90Tx); the receiver waits for Ru */
 void V92Up::init(int alaw_, const V92Info1a *ia_, const long *fclock,
 		 long fbase)
 {
@@ -2863,6 +2949,8 @@ void V92Up::init(int alaw_, const V92Info1a *ia_, const long *fclock,
 		ia.md, ia.uinfo);
 }
 
+/* a network sample: x the one received, *y the one to send (both
+   linear); returns a V92_ event */
 int V92Up::sample(int x, int *y)
 {
 	int ev;
