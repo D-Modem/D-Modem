@@ -32,8 +32,10 @@ const char *core_kind = "old";
 
 namespace {
 
+/* the old core's driver: no device */
 int drv_start(struct modem *) { return 0; }
 int drv_stop(struct modem *) { return 0; }
+/* the ioctls the old core makes succeed, but its capabilities */
 int drv_ioctl(struct modem *, unsigned int cmd, unsigned long)
 {
 	switch (cmd) {
@@ -60,12 +62,15 @@ struct modem_driver driver = {
 	"core_script", drv_start, drv_stop, drv_ioctl,
 };
 
+/* slmodemd's old core (struct modem): its DTE a pipe, its timers on the
+   script's clock */
 struct OldCore final : public Core {
 	struct modem *m;
 	const unsigned long *clock;
 	int fds[2];
 	int16_t buf[4096];
 
+	/* a modem, its pty a pipe */
 	OldCore(const char *name, const unsigned long *ms) : clock(ms) {
 		enter();
 		m = modem_create(&driver, name);
@@ -78,19 +83,23 @@ struct OldCore final : public Core {
 		fcntl(fds[1], F_SETPIPE_SZ, 1 << 20);
 		m->pty = fds[1];
 	}
+	/* the modem and the pipe go */
 	~OldCore() override {
 		enter();
 		modem_delete(m);
 		close(fds[0]);
 		close(fds[1]);
 	}
+	/* the old core's time (10 ms ticks) from the script's clock */
 	void enter() { dmodem_set_time(*clock / 10); }
 
+	/* the Core on the old core's functions */
 	int dte_in(const char *b, int n) override {
 		enter();
 		return modem_write(m, b, n);
 	}
 	int dte_space() override { return m->xmit.size - m->xmit.count; }
+	/* what the pipe has */
 	std::string dte_out() override {
 		std::string s;
 		char b[4096];
@@ -105,6 +114,7 @@ struct OldCore final : public Core {
 		memcpy(buf, in, n * sizeof(*in));
 		modem_process(m, buf, out, n);
 	}
+	/* its timers, then its events */
 	void poll() override {
 		enter();
 		dmodem_run_timers(m);
@@ -131,11 +141,13 @@ struct OldCore final : public Core {
 
 } // namespace
 
+/* the old core's lines to stderr */
 static void log_line(const char *line)
 {
 	fputs(line, stderr);
 }
 
+/* the old core's log and level (CORE_DEBUG), the pumps, its timers */
 void core_init()
 {
 	/* the version banner and the log to stderr */
@@ -149,6 +161,7 @@ void core_init()
 	modem_timer_init();
 }
 
+/* a modem of the old core */
 Core *core_create(const char *name, const unsigned long *ms)
 {
 	return new OldCore(name, ms);

@@ -31,6 +31,7 @@ static std::string output(const std::string &cmd, int *status)
 	return out;
 }
 
+/* the scripts of SCRIPTS_DIR (their names without .txt), sorted */
 static std::vector<std::string> scripts()
 {
 	std::vector<std::string> v;
@@ -47,6 +48,7 @@ static std::vector<std::string> scripts()
 	return v;
 }
 
+/* one test per script: the two transcripts the same */
 class CoreEquiv : public testing::TestWithParam<std::string> {};
 
 TEST_P(CoreEquiv, SameTranscript)
