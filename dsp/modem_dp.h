@@ -87,8 +87,9 @@ struct dp {
  *
  */
 
-/* bit interface: n bytes of buf, nbits bits (LSB first) in each, to be
-   sent (get) or received (put) through the link layer; returns n */
+/* bit interface: n bytes of buf, nbits bits in each, to be
+   sent (get) or received (put) through the link layer; returns the
+   number of bytes done (n) */
 extern int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n);
 extern int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n);
 

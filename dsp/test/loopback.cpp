@@ -26,6 +26,7 @@ using namespace dsp;
 
 unsigned int dsplibs_debug_level = 0;
 
+/* the pumps' log (DSP_DEBUG): to stderr */
 int dsplibs_debug_printf(const char *fmt, ...)
 {
 	va_list ap;
@@ -60,22 +61,27 @@ struct modem {
 static struct modem fake_modems[2] = { { 0 }, { 1 } };
 static struct modem *fake[2];
 
+/* the side whose fake modem m is */
 static struct side *side_of(struct modem *m)
 {
 	return m == fake[0] ? &sides[0] : &sides[1];
 }
 
+/* a pump's operations by its id */
 int modem_dp_register(enum DP_ID id, struct dp_operations *op)
 {
 	ops[id] = op;
 	return 0;
 }
 
+/* and gone */
 void modem_dp_deregister(enum DP_ID id, struct dp_operations *op)
 {
 	ops[id] = NULL;
 }
 
+/* the S registers the pumps read: S7 50 s, S10 1.4 s, the DTMF
+   duration, the dial pause and dial tone wait; 0 for the rest */
 int modem_get_sreg(struct modem *m, unsigned int num)
 {
 	switch (num) {
@@ -90,6 +96,8 @@ int modem_get_sreg(struct modem *m, unsigned int num)
 
 static struct voice_info vinfo;
 
+/* the parameters the pumps read: the side's runtime, no dial string,
+   the voice info, the calling tone on; -1 for the rest */
 long modem_get_param(struct modem *m, unsigned name)
 {
 	switch (name) {
@@ -101,6 +109,8 @@ long modem_get_param(struct modem *m, unsigned name)
 	}
 }
 
+/* what the pumps tell the core: the pump they want next (automode)
+   and the rates */
 long modem_set_param(struct modem *m, unsigned name, int val)
 {
 	struct side *s = side_of(m);
@@ -113,6 +123,8 @@ long modem_set_param(struct modem *m, unsigned name, int val)
 	return 0;
 }
 
+/* n bits for the pump to send, one a byte: PRBS 2^23-1, the first
+   MAX_BITS kept in tx_bits; n */
 int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
 	struct side *s = side_of(m);
@@ -128,6 +140,7 @@ int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n)
 	return n;
 }
 
+/* n bits the pump received, the first MAX_BITS kept in rx_bits; n */
 int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
 	struct side *s = side_of(m);
@@ -138,11 +151,13 @@ int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n)
 	return n;
 }
 
+/* no DTE: what is sent is gone, nothing comes */
 int modem_send_to_tty(struct modem *m, const char *buf, int n) { return n; }
 int modem_recv_from_tty(struct modem *m, char *buf, int n) { return 0; }
 
 /* ---- line simulation ---- */
 
+/* Gaussian of unit power (Box-Muller) */
 static double gauss(void)
 {
 	double u = (rand() + 1.0) / (RAND_MAX + 2.0);
@@ -162,6 +177,8 @@ struct line {
 	long n;
 };
 
+/* x into the clock offset's resampler; the line at the drifting
+   position (l->step input samples an output), 0 at the start */
 static float line_resample(struct line *l, float x)
 {
 	/* one output per input, read at a slowly drifting position that
@@ -184,6 +201,8 @@ static float line_resample(struct line *l, float x)
 	return y;
 }
 
+/* one sample over a line: its delay (len samples), the clock offset,
+   the tilt, the gain, and noise at l->noise of the received rms */
 static float line_run(struct line *l, float x)
 {
 	float y = l->delay[l->pos];
@@ -266,6 +285,11 @@ static long count_errors(struct side *tx, struct side *rx, long *checked)
 	return best_err;
 }
 
+/* (loopback.h) the caller from DP_CALLPROG on (then cfg.caller_dp or
+   cfg.dp, or what automode asks for), the answerer at cfg.dp, FRAG
+   samples at a time each way through the two lines and the echoes for
+   cfg.secs; their CONNECTs and pump changes printed; then the bit
+   errors of what each side received after its CONNECT */
 LoopbackResult loopback_run(const LoopbackConfig &cfg)
 {
 	LoopbackResult res;
@@ -451,11 +475,14 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 	return res;
 }
 
+/* (loopback.h) connected, bits checked, a BER of 1e-3 at most */
 bool LoopbackSide::ok() const
 {
 	return connected && checked && (double)errors / checked <= 1e-3;
 }
 
+/* (loopback.h) "<name>: received ..., checked ..., errors ... (BER)",
+   and the realignments */
 std::string LoopbackSide::text(const char *name) const
 {
 	char buf[200];

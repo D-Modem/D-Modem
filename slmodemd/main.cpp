@@ -62,12 +62,14 @@ namespace {
 
 volatile sig_atomic_t keep_running = 1;
 
+/* SIGINT, SIGTERM: the main loop ends */
 void mark_termination(int signum)
 {
 	(void)signum;
 	keep_running = 0;
 }
 
+/* CLOCK_MONOTONIC in ms */
 unsigned long monotonic_ms()
 {
 	struct timespec ts;
@@ -84,6 +86,9 @@ struct Slmodemd final : public dcore::Host {
 	int pending_delay = 0;  /* the data pumps' delay change, left */
 	int law_set = 0;
 
+	/* off hook: a socketpair for the call's audio, one end to the SIP user
+	   agent (dial, or answer the call that rings), ours primed with 20 ms
+	   of silence; < 0 on failure */
 	int start(dcore::Modem &modem) override {
 		int sockets[2], ret;
 		DBG("socket_start...\n");
@@ -110,6 +115,7 @@ struct Slmodemd final : public dcore::Host {
 		delay = ret / 2;
 		return 0;
 	}
+	/* on hook: our end of the socket closed, which ends the call */
 	int stop(dcore::Modem &) override {
 		DBG("socket_stop...\n");
 		if (fd >= 0)
@@ -119,10 +125,13 @@ struct Slmodemd final : public dcore::Host {
 	}
 	/* the old driver's codec type (CODEC_STLC7550) */
 	int codec_type(dcore::Modem &) override { return CODEC_STLC7550; }
+	/* for ATI3 */
 	const char *driver_name() override { return "socket driver"; }
+	/* to the pty */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		return pty.write(buf, n);
 	}
+	/* the monotonic clock */
 	unsigned long now_ms() override { return monotonic_ms(); }
 
 	int run(int ctl_fd);
@@ -130,6 +139,7 @@ struct Slmodemd final : public dcore::Host {
 	int ctl_read(int ctl_fd);
 };
 
+/* ctl_read()'s partial line */
 char ctl_buf[256];
 int ctl_len;
 
@@ -217,6 +227,9 @@ int Slmodemd::audio()
 	return 0;
 }
 
+/* the main loop until SIGINT or SIGTERM: the timers, the SIP user
+   agent's control lines, the call's audio, the pty; 0, or -1 on an
+   error */
 int Slmodemd::run(int ctl_fd)
 {
 	while (keep_running) {
@@ -283,6 +296,8 @@ int Slmodemd::run(int ctl_fd)
 	return 0;
 }
 
+/* started as root: on as SLMODEMD_USER, after checking (realtime) that
+   the locked memory limit is enough; exits on any failure */
 void drop_privileges(bool realtime)
 {
 	struct passwd *pwd;
@@ -322,6 +337,8 @@ void drop_privileges(bool realtime)
 
 } // namespace
 
+/* slmodemd [option...] [device]: the modem on its pty, the line the SIP
+   user agent; the pumps' line data kept in /var/lib/slmodem/data.<name> */
 int main(int argc, char *argv[])
 {
 	slm::Options opt;

@@ -19,6 +19,8 @@ struct Pumps {
 	LoopbackConfig cfg;
 };
 
+/* the answerer's pump dp (the caller's too) on a line of snr dB for
+   secs of line time, and the rest of LoopbackConfig as given */
 static LoopbackConfig line(int dp, float snr, float secs, int srate = 9600,
 			   float gain = 0.5f, float ppm = 0, float echo_db = 0,
 			   float far_db = 0, int far_delay = 0)
@@ -46,6 +48,8 @@ static LoopbackConfig automode(int caller, int answerer, float secs)
 
 class PumpLoopback : public testing::TestWithParam<Pumps> {};
 
+/* one loopback run: no pump failed, both sides connected with a BER
+   of 1e-3 at most; the rates printed */
 TEST_P(PumpLoopback, DataBothWays)
 {
 	LoopbackResult r = loopback_run(GetParam().cfg);
@@ -58,6 +62,7 @@ TEST_P(PumpLoopback, DataBothWays)
 	       r.side[1].rx_rate);
 }
 
+/* the case's name for the test's */
 static std::string name(const testing::TestParamInfo<Pumps> &i)
 {
 	return i.param.name;

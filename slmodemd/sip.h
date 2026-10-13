@@ -31,6 +31,7 @@ bool config_from_env(Config &cfg, bool listen);
 /* start the user agent; returns the descriptor its RING and CANCEL lines
    come on (a call waits for ANSWER, or the caller gave up), or -1 */
 int start(const Config &cfg);
+/* the service thread ended (the call hung up), pjsua destroyed */
 void stop();
 
 /* hand a call its audio socket (taken over in any case): dial a number,

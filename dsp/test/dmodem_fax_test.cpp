@@ -18,6 +18,10 @@
 
 class DmodemFax : public testing::TestWithParam<enum dmodem_law> {};
 
+/* the fax sender calls a data modem answering, 20 ms frames of G.711
+   each way (15 minutes of line at most); once the modem says a fax
+   machine calls (fax_caller) a fax receiver takes its place on the
+   line; both must end well, the two pages sent the same as received */
 TEST_P(DmodemFax, DataModemHandsCallToFax)
 {
 	enum dmodem_law law = GetParam();
@@ -103,6 +107,7 @@ TEST_P(DmodemFax, DataModemHandsCallToFax)
 
 INSTANTIATE_TEST_SUITE_P(Law, DmodemFax,
 	testing::Values(DMODEM_LAW_ULAW, DMODEM_LAW_ALAW),
+	/* the cases' names: ulaw, alaw */
 	[](const testing::TestParamInfo<enum dmodem_law> &i) {
 		return std::string(i.param == DMODEM_LAW_ALAW ? "alaw" : "ulaw");
 	});

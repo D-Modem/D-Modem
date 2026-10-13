@@ -38,24 +38,28 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
+/* seconds on the steady clock */
 double now()
 {
 	return std::chrono::duration<double>(Clock::now().time_since_epoch())
 		.count();
 }
 
+/* sleeps s seconds (none if s <= 0) */
 void sleep_s(double s)
 {
 	if (s > 0)
 		std::this_thread::sleep_for(std::chrono::duration<double>(s));
 }
 
+/* the environment's name, def if unset */
 std::string env(const char *name, const std::string &def = "")
 {
 	const char *v = getenv(name);
 	return v ? v : def;
 }
 
+/* s in pieces at each sep (empty pieces kept) */
 std::vector<std::string> split(const std::string &s, char sep)
 {
 	std::vector<std::string> out;
@@ -69,6 +73,7 @@ std::vector<std::string> split(const std::string &s, char sep)
 	}
 }
 
+/* the ';' separated AT commands of s, the empty ones left out */
 std::vector<std::string> commands(const std::string &s)
 {
 	std::vector<std::string> out;
@@ -99,6 +104,7 @@ std::string show(const std::string &s)
 	return out + "'";
 }
 
+/* printf, flushed at once */
 void say(const char *fmt, ...)
 {
 	va_list ap;
@@ -113,6 +119,7 @@ struct Done {
 	bool ok;
 };
 
+/* dir and each directory above it made (those there already are fine) */
 void make_dirs(const std::string &dir)
 {
 	std::string p;
@@ -122,6 +129,7 @@ void make_dirs(const std::string &dir)
 	}
 }
 
+/* fd's FD_CLOEXEC on or off */
 void cloexec(int fd, bool on)
 {
 	int f = fcntl(fd, F_GETFD);
@@ -130,6 +138,7 @@ void cloexec(int fd, bool on)
 
 struct Pipe {
 	int r = -1, w = -1;
+	/* both ends close on exec; -1 if pipe2 fails */
 	Pipe()
 	{
 		int p[2];
@@ -150,6 +159,10 @@ struct Modem {
 
 	~Modem() { stop(true); }
 
+	/* exe --debug=<debug> with rfd as its fd 3, wfd as fd 4, MODEM_NAME and
+	   extra_env ahead of our environment; its pty from its "created" line
+	   (10 s at most), its output from then on into log_path by a thread;
+	   false if it has no pty */
 	bool start(const std::string &exe, const std::string &name, int rfd,
 		   int wfd, const std::string &debug,
 		   const std::vector<std::string> &extra_env,
@@ -248,6 +261,7 @@ struct Modem {
 	}
 };
 
+/* the modem's pty, raw (the DTE's end); -1 if it cannot be opened */
 int open_pty(const std::string &path)
 {
 	int fd = open(path.c_str(), O_RDWR | O_NOCTTY | O_CLOEXEC);
@@ -261,6 +275,7 @@ int open_pty(const std::string &path)
 	return fd;
 }
 
+/* s to fd, all of it unless a write fails */
 void write_all(int fd, const std::string &s)
 {
 	size_t i = 0;
@@ -280,7 +295,9 @@ struct Dte {
 	std::string buf[2];
 	double slice;           /* the longest poll */
 
+	/* polls of slice seconds at most; the fds set by the caller */
 	explicit Dte(double slice) : slice(slice) {}
+	/* the ptys closed */
 	~Dte()
 	{
 		for (int f : fd)
@@ -288,6 +305,7 @@ struct Dte {
 				close(f);
 	}
 
+	/* one poll of both ptys, t seconds at most; what came onto buf[] */
 	void pump_once(double t)
 	{
 		struct pollfd p[2] = { { fd[0], POLLIN, 0 },
@@ -314,8 +332,11 @@ struct Dte {
 		while (now() < end);
 	}
 
+	/* the command s (and CR) to modem k */
 	void cmd(int k, const std::string &s) { write_all(fd[k], s + "\r"); }
 
+	/* reads until modem k's output from mark on has pat, t seconds at
+	   most; whether it came */
 	bool wait_from(int k, const std::regex &pat, size_t mark, double t)
 	{
 		double end = now() + t;
@@ -329,6 +350,7 @@ struct Dte {
 		return false;
 	}
 
+	/* the same from the start of its buffer */
 	bool wait(int k, const std::regex &pat, double t)
 	{
 		return wait_from(k, pat, 0, t);
@@ -373,6 +395,7 @@ std::string bulk(size_t n, unsigned seed)
 		"compression", "V.44", "dictionary", "history", "string",
 		"codeword", "data" };
 	unsigned long long x = seed * 0x9E3779B97F4A7C15ull + 1;
+	/* 0 .. m - 1 (Knuth's MMIX LCG, its high bits) */
 	auto rnd = [&x](unsigned m) {
 		x = x * 6364136223846793005ull + 1442695040888963407ull;
 		return (unsigned)((x >> 33) % m);
@@ -413,6 +436,11 @@ std::string bulk(size_t n, unsigned seed)
 
 } // namespace
 
+/* (interop_call.h) the modems (through netsim with NET) set up with
+   ATZ and proto, CALLS calls of B answering and A dialing, then the
+   data (two lines, STREAM, or BULK) both ways and checked, EXPECT_B
+   in B's log; PASS or FAIL printed; the processes stopped and the fds
+   closed before it returns */
 bool data_call(const std::string &exe_a, const std::string &exe_b,
 	       const std::string &proto)
 {
@@ -483,12 +511,16 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 					std::make_unique<Modem>() };
 	int wav_marks = 0;
 	bool wav = pn > 0 && !env("WAV").empty();
+	/* NET_WAV's start (dial) or end (data done): SIGUSR2 to netsim, twice
+	   at most */
 	auto wav_mark = [&] {
 		if (wav && wav_marks < 2) {
 			kill(pn, SIGUSR2);
 			wav_marks++;
 		}
 	};
+	/* the modems killed, the ptys and pipes closed, netsim given 5 s to
+	   end on its inputs' end (and write its WAV), then killed */
 	auto cleanup = [&] {
 		for (auto &x : m)
 			x->stop(true);
@@ -511,6 +543,8 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			pn = -1;
 		}
 	};
+	/* the call's end: the modems killed, EXPECT_B checked if ok, PASS or
+	   FAIL; thrown as Done for the catch below (never returns) */
 	auto done = [&](bool ok) {
 		if (wav_marks == 1)
 			wav_mark();     /* a call that failed: up to here */
@@ -549,6 +583,8 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			result_re("(OK|ERROR|CONNECT[^\r]*|NO CARRIER)\r");
 		std::string proto_b = getenv("PROTO_B") ? env("PROTO_B") : proto;
 
+		/* modem k's AT commands (proto, or PROTO_B for B) one by
+		   one, each to say OK; done(false) otherwise */
 		auto setup = [&](int k) {
 			for (auto &c : commands(k ? proto_b : proto)) {
 				dte.cmd(k, c);
@@ -795,6 +831,8 @@ struct Fail {
 
 const char *const FAX_NAME[2] = { "A", "B" };
 
+/* data for the modem in class 1 data mode: each DLE doubled, DLE ETX
+   at its end */
 std::string shield(const std::string &data)
 {
 	std::string out;
@@ -858,6 +896,7 @@ struct FaxDte : Dte {
 	}
 };
 
+/* a class 1 result code (its CRLF before it optional) */
 const std::regex &fax_result()
 {
 	static const std::regex r(
@@ -868,6 +907,8 @@ const std::regex &fax_result()
 struct Fax {
 	FaxDte dte;
 
+	/* the command s to modem k and its result code (expect, else OK or
+	   ERROR), t seconds at most; "" if none came */
 	std::string cmd(int k, const std::string &s,
 			const std::regex *expect = nullptr, double t = 5)
 	{
@@ -920,6 +961,8 @@ struct Fax {
 		     std::to_string(dte.buf[k].size()) + " bytes)");
 	}
 
+	/* an HDLC frame of modem k (+FRH's data, its FCS last) and its result
+	   code in *r; 10 s at most, else fail */
 	std::string recv_frame(int k, std::string *r)
 	{
 		std::string fr = recv_until_etx(k, 10, r, "frame");
@@ -987,6 +1030,7 @@ struct Fax {
 		fail(std::string(FAX_NAME[rx]) + " did not get the frames");
 	}
 
+	/* s in hex, two digits an octet */
 	static std::string hex(const std::string &s)
 	{
 		std::string out;
@@ -999,6 +1043,7 @@ struct Fax {
 	}
 };
 
+/* the bits of data, each octet LSB first (as on the line) */
 std::vector<int> bits(const std::string &data)
 {
 	std::vector<int> out;
@@ -1008,6 +1053,7 @@ std::vector<int> bits(const std::string &data)
 	return out;
 }
 
+/* data into path (nothing if it cannot be made) */
 void write_file(const std::string &path, const std::string &data)
 {
 	FILE *f = fopen(path.c_str(), "wbe");
@@ -1019,6 +1065,11 @@ void write_file(const std::string &path, const std::string &data)
 
 } // namespace
 
+/* (interop_call.h) the driver plays T.30 for both modems: B answers
+   with CSI and DIS, A sends DCS and the TCF at mod's long train, B
+   answers CFR, A sends the page (4 s of bits at mod), EOP, MCF, DCN;
+   true if the page came with a bit error in 1000 at most (the last 64
+   bits may be missing) */
 bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 	      const std::string &setup)
 {
@@ -1038,6 +1089,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		Pipe ra, rb;
 		for (int f : { ra.r, ra.w, rb.r, rb.w })
 			fds.push_back(f);
+		/* src to dst until src ends, recorded into path as it goes */
 		auto relay = [](int src, int dst, std::string path) {
 			FILE *f = fopen(path.c_str(), "wbe");
 			char b[4096];

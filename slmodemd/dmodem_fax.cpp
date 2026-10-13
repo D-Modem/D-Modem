@@ -16,6 +16,7 @@
 
 using namespace dsp;
 
+/* a fax call: the T.30 machine and its TIFF file */
 struct dmodem_fax {
 	T30 *t30;
 	enum dmodem_law law;
@@ -32,12 +33,16 @@ struct dmodem_fax {
 extern int dmodem_g711_decode(int alaw, unsigned char c);
 extern unsigned char dmodem_g711_encode(int alaw, int x);
 
+/* T.30's next page to send: 1 with *p filled, 0 when there are no more
+   (or on an error) */
 static int next_page(void *ctx, T4Page *p)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	return f->in.read_page(p) == 1 ? 1 : 0;
 }
 
+/* a page received: into the TIFF file, opened at the first page; a
+   failure is kept in file_error (the call goes on) */
 static void page_received(void *ctx, T4Page *p)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
@@ -54,6 +59,9 @@ static void page_received(void *ctx, T4Page *p)
 		f->pages_written++;
 }
 
+/* the TIFF to send opened now, the one to receive into only when a page
+   comes; NULL without a file name, if the file to send can't be read or
+   if T.30 can't be made */
 struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 {
 	struct dmodem_fax *f;
@@ -90,12 +98,14 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 	return f;
 }
 
+/* n samples through T.30 */
 void dmodem_fax_process(struct dmodem_fax *f, const short *in, short *out,
 			int n)
 {
 	t30_process(f->t30, in, out, n);
 }
 
+/* G.711 octets through T.30, 160 at a time */
 void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
 			     unsigned char *out, int n)
 {
@@ -114,6 +124,7 @@ void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
 	}
 }
 
+/* T.30's status; a file error makes it a failure (T30_ERR_FILE) */
 void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s)
 {
 	struct t30_status ts;
@@ -131,11 +142,13 @@ void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s)
 	s->phase = ts.phase;
 }
 
+/* T.30 learns the far end has gone */
 void dmodem_fax_hangup(struct dmodem_fax *f)
 {
 	t30_hangup(f->t30);
 }
 
+/* T.30 freed, the files closed (NULL is fine) */
 void dmodem_fax_destroy(struct dmodem_fax *f)
 {
 	if (!f)

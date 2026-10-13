@@ -14,6 +14,8 @@ namespace slm {
 
 /* < 0 on failure (no file yet, a file of another size) */
 int datafile_load(const char *path, struct dsp_info *info);
+/* *info into the file (made if need be): the bytes written, < 0 on
+   failure */
 int datafile_save(const char *path, const struct dsp_info *info);
 
 } // namespace slm

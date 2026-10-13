@@ -154,6 +154,7 @@ struct ToneTrk {
 struct V32Pump : Pump {
 	static constexpr const char *name = "V.32/V.32bis data pump";
 
+	/* frees the receiver's and echo canceller's buffers */
 	~V32Pump() { cleanup(); }
 
 	struct modem *modem;
@@ -243,6 +244,8 @@ struct V32Pump : Pump {
  *    helpers
  */
 
+/* self synchronizing scrambler 1 + x^-tap + x^-23 (tap 18: the
+   caller's GPC, 5: the answerer's GPA); returns the line bit */
 static int scramble(unsigned *reg, int tap, int bit)
 {
 	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
@@ -250,6 +253,7 @@ static int scramble(unsigned *reg, int tap, int bit)
 	return out;
 }
 
+/* its inverse: the line bit in, the data bit out */
 static int descramble(unsigned *reg, int tap, int bit)
 {
 	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
@@ -257,6 +261,7 @@ static int descramble(unsigned *reg, int tap, int bit)
 	return out;
 }
 
+/* the index (A B C D: 0..3) of the training point nearest to z */
 static int nearest_abcd(cplx z)
 {
 	int k, best = 0;
@@ -271,6 +276,7 @@ static int nearest_abcd(cplx z)
 	return best;
 }
 
+/* the index of the point of pts[n] nearest to z */
 static int nearest_point(const cplx *pts, int n, cplx z)
 {
 	int k, best = 0;
@@ -285,6 +291,7 @@ static int nearest_point(const cplx *pts, int n, cplx z)
 	return best;
 }
 
+/* the fastest rate whose bits are all set in the rate word w, or NULL */
 static const struct v32_rate *rate_of_word(unsigned w)
 {
 	int i;
@@ -294,11 +301,14 @@ static const struct v32_rate *rate_of_word(unsigned w)
 	return NULL;
 }
 
+/* the rate word naming r alone (R3, and E with RB_HEADER added) */
 static unsigned final_word(const struct v32_rate *r)
 {
 	return RB_B4 | RB_SYNC | r->bits;
 }
 
+/* tracks a tone at freq Hz: two pole low pass of 1.5 ms after the down
+   conversion, phase compared with 10 ms ago */
 void ToneTrk::init(float freq, int srate)
 {
 	memset(this, 0, sizeof(*this));
@@ -351,12 +361,15 @@ int ToneTrk::run(float x, float in_power, int srate)
  *    transmitter (runs at the symbol rate)
  */
 
+/* transmit signal m from its first symbol (tx_syms 0) */
 void V32Pump::set_tx(enum v32_txm m)
 {
 	txm = m;
 	tx_syms = 0;
 }
 
+/* training point k (A B C D: 0..3), remembered for the 4800 coding
+   state that follows TRN */
 cplx V32Pump::abcd_point(int k)
 {
 	tx_last_abcd = k;
@@ -367,6 +380,9 @@ cplx V32Pump::abcd_point(int k)
    (V.32bis 5.4), the remote's receiver may train on them */
 #define V32_B1_SYMS 128
 
+/* one 4800 bit/s symbol (two scrambled bits, differentially coded):
+   the next two bits of the rate word word (MSB first), or with data two
+   bits from the link layer (ones during B1) */
 cplx V32Pump::tx_word_symbol(unsigned word, int data)
 {
 	int b[2], k, q;
@@ -388,6 +404,8 @@ cplx V32Pump::tx_word_symbol(unsigned word, int data)
 	return v32_points_4800[tx_4800];
 }
 
+/* one data symbol at tx_rate: nbits from the link layer (ones during
+   B1), scrambled, through the trellis encoder (7200 and up) */
 cplx V32Pump::tx_data_symbol()
 {
 	const struct v32_rate *r = tx_rate;
@@ -406,6 +424,9 @@ cplx V32Pump::tx_data_symbol()
 	return r->points[idx];
 }
 
+/* the next symbol of the current transmit signal (QamTx callback via
+   v32_get_symbol): AA, CC, AC/CA (with tx_reverse for a phase reversal),
+   S, S-bar, TRN, the rate words or data; counts tx_syms */
 cplx V32Pump::tx_symbol()
 {
 	cplx z = { 0, 0 };
@@ -455,6 +476,7 @@ cplx V32Pump::tx_symbol()
 	return z;
 }
 
+/* QamTx's get_symbol: ctx is the pump */
 static cplx v32_get_symbol(void *ctx)
 {
 	return static_cast<V32Pump*>(ctx)->tx_symbol();
@@ -464,6 +486,7 @@ static cplx v32_get_symbol(void *ctx)
  *    receiver
  */
 
+/* the receiver back to waiting for S (equalizer, PLL and word state) */
 void V32Pump::rx_reset()
 {
 	rx.reset();
@@ -473,6 +496,10 @@ void V32Pump::rx_reset()
 	rx_e_seen = 0;
 }
 
+/* one descrambled bit of the 4800 bit/s rate word stream: a new R word
+   (seen twice in a row) sets ev_r and r_word; E on the same 16 bit
+   boundaries, with one rate and a clean signal, sets ev_e and starts
+   the data receiver at that rate */
 void V32Pump::rx_word_bit(int bit)
 {
 	unsigned w;
@@ -515,6 +542,10 @@ void V32Pump::rx_word_bit(int bit)
 	}
 }
 
+/* one received symbol (rx.z): ignored while we train ourselves; S and
+   S-bar detection, training on the ABCD grid with the R / E word
+   decoding, or data decisions (4800 differential or Viterbi), adaption
+   and the descrambled bits to the link layer once in V32_DATA */
 void V32Pump::rx_symbol()
 {
 	cplx z = rx.z, d, st;
@@ -646,6 +677,9 @@ void V32Pump::rx_symbol()
 	last_z = z;
 }
 
+/* one received sample x: echo canceller, the tone trackers (AA / AC
+   and their reversals, V.22 unscrambled ones, 2100 Hz, FSK marks) as
+   ev_* events, the QAM receiver and the carrier detector */
 void V32Pump::rx_sample(float x)
 {
 	x = ec.run(last_tx, x, ec_mu);
@@ -688,6 +722,7 @@ void V32Pump::rx_sample(float x)
  *    handshake
  */
 
+/* to state s, count from 0 */
 void V32Pump::set_state(enum v32_state s)
 {
 	DSP_DBG("v32: state %d -> %d at %ld ms\n", state, s,
@@ -696,6 +731,8 @@ void V32Pump::set_state(enum v32_state s)
 	count = 0;
 }
 
+/* transmit signal m (TXM_R or TXM_E) repeating the word w from its
+   first bit */
 void V32Pump::start_word(enum v32_txm m, unsigned w)
 {
 	tx_word = w;
@@ -703,6 +740,8 @@ void V32Pump::start_word(enum v32_txm m, unsigned w)
 	set_tx(m);
 }
 
+/* to data, the rates to the core: DPSTAT_CONNECT, or DPSTAT_OK after a
+   retrain */
 int V32Pump::connect()
 {
 	set_state(V32_DATA);
@@ -741,6 +780,8 @@ void V32Pump::retrain()
 	}
 }
 
+/* hands over to the pump id (mode its name for the debug output); an
+   answerer's answer tone is marked as sent.  DPSTAT_CHANGEDP */
 int V32Pump::fallback_to(enum DP_ID id, const char *mode)
 {
 	DSP_DBG("v32: remote is not V.32, falling back to %s\n", mode);
@@ -750,6 +791,7 @@ int V32Pump::fallback_to(enum DP_ID id, const char *mode)
 	return DPSTAT_CHANGEDP;
 }
 
+/* fallback_to() V.22bis */
 int V32Pump::fallback()
 {
 	return fallback_to(DP_V22BIS, "V.22bis");
@@ -1000,6 +1042,11 @@ int V32Pump::handshake()
 	return DPSTAT_OK;
 }
 
+/* cnt samples: the handshake (at symbol boundaries, and every sample
+   in silence or the answer tone), the transmitter, the receiver.
+   Returns DPSTAT_CONNECT once, DPSTAT_CHANGEDP on a fallback,
+   DPSTAT_ERROR on a handshake failure or timeout (S7) or a loss of
+   carrier in data (S10). */
 int V32Pump::process(void *in, void *out, int cnt)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
@@ -1044,6 +1091,10 @@ int V32Pump::process(void *in, void *out, int cnt)
 	return ret;
 }
 
+/* V.32 (4800 and 9600 only) or V.32bis, the rates limited by +MS; the
+   transmitter, receiver, echo canceller and tone trackers; timeouts
+   from S7 and S10; an answerer after V.8 starts at the gap.  0, or -1
+   when out of memory. */
 int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
 	int s7, s10, i;
@@ -1122,6 +1173,7 @@ int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	return 0;
 }
 
+/* frees the buffers rx and ec took */
 void V32Pump::cleanup()
 {
 	rx.release();
@@ -1132,6 +1184,7 @@ void V32Pump::cleanup()
    V.22bis fallback, when the remote modem does not do V.34 */
 static const enum DP_ID v32_ids[] = { DP_V32, DP_V32BIS };
 
+/* registers the pump as DP_V32 and DP_V32BIS; 0 */
 int dp_v32_init(void)
 {
 	unsigned i;
@@ -1140,6 +1193,7 @@ int dp_v32_init(void)
 	return 0;
 }
 
+/* deregisters them */
 void dp_v32_exit(void)
 {
 	unsigned i;

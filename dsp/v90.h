@@ -20,10 +20,10 @@ enum v90_seg {
 	V90_SD,         /* Sd, 384 symbols, then Sd-bar (48), then TRN1d */
 	V90_SDBAR,
 	V90_TRN1D,      /* until the next segment, in whole data frames */
-	V90_JD,         /* Jd frames until v90_tx_jd_end() */
+	V90_JD,         /* Jd frames until end_jd() */
 	V90_JDP,        /* Jd', then DIL (or silence when N is 0) */
-	V90_DIL,        /* until v90_tx_dil_end() */
-	V90_RI,         /* Ri until v90_tx_ri_end(), then Ri-bar (24) */
+	V90_DIL,        /* until end_dil() */
+	V90_RI,         /* Ri until end_ri(), then Ri-bar (24) */
 	V90_RIBAR,
 	V90_ENC,        /* data frames from the encoder */
 	/* V.92 short phase 1 (8.3/V.92) */
@@ -85,11 +85,17 @@ struct V90Enc {
 	int sign_acc, mag_acc[6], nsh;  /* the data frame being decided */
 	int outq[4][6], outn;           /* data frames ready to go */
 
+	/* D = S + K bits per data frame of 6 symbols; returns -1 when the
+	   constellations cannot carry K bits.  Scrambler, sign coding and
+	   shaping filter start from zero. */
 	int init(const V90Cp *cp, int D, const int *lin_);
 	double shape_metric(const int *mag, int n, int signs, double *f) const;
 	double best_path(int k, int depth, int Q_, int tprev, const double *f) const;
 	void decide_frame(int depth);
+	/* the next data frame of D bits (scrambled here); last: no
+	   look-ahead past it (the encoder starts again after it) */
 	void push(const unsigned char *bits, int last_);
+	/* a data frame of 6 linear values, when one is ready */
 	int pop(int out[6]);
 };
 
@@ -151,13 +157,8 @@ struct V90Tx {
 	int sample();
 };
 
-/* D = S + K bits per data frame of 6 symbols; returns -1 when the
-   constellations cannot carry K bits.  Scrambler, sign coding and shaping
-   filter start from zero. */
-/* the next data frame of D bits (scrambled here); last: no look-ahead
-   past it (the encoder starts again after it) */
-/* a data frame of 6 linear values, when one is ready */
-
+/* the length of a CP frame up to the end of its CRC from its first 129
+   bits (0: not a CP frame, -1 before they are in) */
 int  v90_cp_length(const unsigned char *b, int n);
 
 /* MP of the digital modem (Table 16/V.90); returns its length in bits */

@@ -31,11 +31,13 @@ struct doc {
 	TiffOut out;
 };
 
+/* our sender's next page: read_page's result */
 static int next_page(void *ctx, T4Page *p)
 {
 	return static_cast<doc*>(ctx)->in.read_page(p);
 }
 
+/* a page our receiver got, into the TIFF */
 static void page_received(void *ctx, T4Page *p)
 {
 	static_cast<doc*>(ctx)->out.write_page(p);
@@ -43,6 +45,7 @@ static void page_received(void *ctx, T4Page *p)
 
 static int sp_done = -1;
 
+/* spandsp's phase E: its completion code into sp_done */
 static void phase_e(t30_state_t *s, void *user, int result)
 {
 	(void)s;
@@ -58,6 +61,10 @@ struct Call {
 
 class T30Spandsp : public testing::TestWithParam<Call> {};
 
+/* one call (10 minutes of line at most): spandsp's machine and ours
+   through mu-law both ways, the hits on both; spandsp told to end once
+   ours is done; both must say OK, with ECM as asked, two pages, the
+   same as sent */
 TEST_P(T30Spandsp, SendsTheDocument)
 {
 	const Call &call = GetParam();

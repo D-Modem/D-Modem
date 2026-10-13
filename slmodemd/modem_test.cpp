@@ -27,6 +27,7 @@ extern void dp_dummy_exit(void);
 extern int  dp_sinus_init(void);
 extern void dp_sinus_exit(void);
 
+/* modemA and modemB back to back on two pipes until SIGINT or SIGTERM */
 int main(int argc, char *argv[])
 {
 	slm::Options opt;

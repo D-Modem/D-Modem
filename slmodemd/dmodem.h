@@ -60,7 +60,10 @@ struct dmodem;
 
 /* once per process, before the first modem */
 int  dmodem_init(void);
+/* a modem on hook, cfg->init taken as the DTE's first commands; NULL on
+   failure.  cfg->dte_fd stays the caller's (destroy does not close it) */
 struct dmodem *dmodem_create(const struct dmodem_config *cfg);
+/* hangs up a call still on, frees d (NULL is fine) */
 void dmodem_destroy(struct dmodem *d);
 /* answer the call now (as ATA); dial (as ATD<number>) */
 int  dmodem_answer(struct dmodem *d);
@@ -74,6 +77,7 @@ void dmodem_process_g711(struct dmodem *d, const unsigned char *in,
 /* take what the DTE wrote (call it when dte_fd is readable, or with each
    block of samples); returns -1 when the DTE side is closed */
 int  dmodem_poll_dte(struct dmodem *d);
+/* the call's state now, into *s */
 void dmodem_status(struct dmodem *d, struct dmodem_status *s);
 /* hang up (as ATH) */
 void dmodem_hangup(struct dmodem *d);
@@ -115,10 +119,13 @@ struct dmodem_fax;
 
 /* NULL if the file to send can't be read */
 struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg);
+/* n samples in, n samples out (16 bit linear, 8000 Hz) */
 void dmodem_fax_process(struct dmodem_fax *f, const short *in, short *out,
 			int n);
+/* the same with G.711 octets (the law of cfg, mu-law if unknown) */
 void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
 			     unsigned char *out, int n);
+/* how the call goes, into *s (done once it has ended) */
 void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s);
 /* the call went away */
 void dmodem_fax_hangup(struct dmodem_fax *f);

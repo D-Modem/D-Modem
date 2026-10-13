@@ -171,6 +171,7 @@ static const cplx v22_points[4] = {
 	{ 1, 1 }, { 3, 1 }, { 1, 3 }, { 3, 3 }
 };
 
+/* c turned by quad * 90 degrees counter clockwise */
 static cplx rot90(cplx c, int quad)
 {
 	switch (quad & 3) {
@@ -181,11 +182,14 @@ static cplx rot90(cplx c, int quad)
 	}
 }
 
+/* the name for the debug output */
 const char *V22Pump::mode_name()
 {
 	return bis ? "V22bis" : "V22";
 }
 
+/* to state_, count from 0; from A_S1 / C_GAP on the remote's signal is
+   scrambled and the equalizer may train */
 void V22Pump::set_state(enum v22_state state_)
 {
 	DSP_DBG("%s: state %d -> %d at %ld (%ld ms)\n", mode_name(), state,
@@ -201,6 +205,9 @@ void V22Pump::set_state(enum v22_state state_)
  *    transmitter
  */
 
+/* the next symbol of the current tx_mode: 0 in silence or during the
+   answer tone, else the quadrant advanced by the (scrambled) dibit and
+   the point of Q3Q4 (01 at 1200 bit/s); data bits from the link layer */
 cplx V22Pump::tx_symbol()
 {
 	u8 bits[4] = { 1, 1, 1, 1 };
@@ -238,6 +245,8 @@ cplx V22Pump::tx_symbol()
 	return rot90(v22_points[q34], tx_quad);
 }
 
+/* the transmit pulse at t symbol periods from its centre, 0 outside
+   +-V22_SPAN */
 float V22Pump::pulse_at(float t)
 {
 	float p = (t + V22_SPAN) * V22_PULSE_RES;
@@ -249,6 +258,8 @@ float V22Pump::pulse_at(float t)
 	return pulse[i] + p * (pulse[i + 1] - pulse[i]);
 }
 
+/* the next line sample: the answer tone, or the pulse shaped symbols
+   on our carrier (1200 Hz calling, 2400 Hz answering) */
 float V22Pump::tx_sample()
 {
 	cplx s = { 0, 0 }, c;
@@ -281,6 +292,8 @@ float V22Pump::tx_sample()
  *    receiver
  */
 
+/* the decision for z: returns its quadrant, the point in *d and its
+   Q3Q4 in *q34 (always 01 at 1200 bit/s) */
 int V22Pump::slice(cplx z, cplx *d, int *q34)
 {
 	int quad;
@@ -347,12 +360,16 @@ void V22Pump::rx_bits(int dquad, int q34_16, int dq_raw)
 		modem_put_bits(modem, 1, bits, rx_rate == 2400 ? 4 : 2);
 }
 
+/* the equalizer back to a single centre tap */
 void V22Pump::eq_reset()
 {
 	memset(eq, 0, sizeof(eq));
 	eq[V22_EQ_LEN / 2].re = 1;
 }
 
+/* one symbol sample y (the T/2 delay line already has it): the raw
+   phase step for the pattern detectors, equalizer, slicer, carrier PLL
+   and LMS (only on scrambled signals), then the bits (rx_bits) */
 void V22Pump::rx_symbol(cplx y)
 {
 	cplx out = { 0, 0 }, z, d, e, rot;
@@ -444,6 +461,8 @@ void V22Pump::rx_symbol(cplx y)
 	rx_quad = quad;
 }
 
+/* the receiver from scratch for a new carrier: equalizer, its delay
+   line, carrier phase and frequency, timing integrator, AGC */
 void V22Pump::rx_reset()
 {
 	eq_reset();
@@ -453,6 +472,9 @@ void V22Pump::rx_reset()
 	agc_pwr = 0;
 }
 
+/* one line sample: carrier detector, down conversion, matched filter,
+   AGC, cubic interpolation at the T/2 instants with the Gardner timing
+   loop, and rx_symbol() at every symbol */
 void V22Pump::rx_sample(float x)
 {
 	cplx b, y;
@@ -548,12 +570,14 @@ void V22Pump::rx_sample(float x)
 	eq_mu = mu;
 }
 
+/* the receiver's slicer and bit path to rate (1200 or 2400) */
 void V22Pump::set_rx_rate(int rate)
 {
 	DSP_DBG("%s: rx rate %d\n", mode_name(), rate);
 	rx_rate = rate;
 }
 
+/* transmit mode; the rate follows it (data keeps the rate trained) */
 void V22Pump::set_tx(enum v22_tx mode)
 {
 	tx_mode = mode;
@@ -563,6 +587,7 @@ void V22Pump::set_tx(enum v22_tx mode)
 		tx_rate = 1200;
 }
 
+/* to data: rates to the core, DPSTAT_CONNECT */
 int V22Pump::connect()
 {
 	set_state(V22_DATA);
@@ -573,7 +598,10 @@ int V22Pump::connect()
 	return DPSTAT_CONNECT;
 }
 
-/* the handshake, run once per sample after the receiver */
+/* the handshake, run once per sample after the receiver: the answerer's
+   and the caller's start-up sequences (6.3.1/V.22 and V.22bis), the
+   Bell 212A variants and the automode fallbacks.  Returns DPSTAT_OK,
+   DPSTAT_CONNECT or DPSTAT_CHANGEDP. */
 int V22Pump::handshake()
 {
 	long ms = count * 1000 / srate;
@@ -753,6 +781,9 @@ int V22Pump::handshake()
 	return DPSTAT_OK;
 }
 
+/* cnt samples: receiver, Bell 103 detector (automode), handshake and
+   transmitter.  DPSTAT_ERROR on a handshake timeout (S7) or a loss of
+   carrier in data (S10). */
 int V22Pump::process(void *in, void *out, int cnt)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
@@ -797,6 +828,11 @@ int V22Pump::process(void *in, void *out, int cnt)
 	return ret;
 }
 
+/* V.22 / Bell 212A (id DP_V22, DP_B212) or V.22bis, calling or
+   answering: pulse and matched filter tables, timeouts from S7 and S10,
+   and the first state (an automode answerer whose answer tone is sent
+   starts at the gap; a Bell 212A caller after a 2225 Hz tone at once
+   with scrambled ones); 0 */
 int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
 	struct dp_runtime *rt;
@@ -869,6 +905,7 @@ static const enum DP_ID v22_ids[] = {
 	DP_V22, DP_V22BIS, DP_B212,
 };
 
+/* registers the pump as DP_V22, DP_V22BIS and DP_B212; 0 */
 int dp_v22_init(void)
 {
 	unsigned i;
@@ -877,6 +914,7 @@ int dp_v22_init(void)
 	return 0;
 }
 
+/* deregisters them */
 void dp_v22_exit(void)
 {
 	unsigned i;

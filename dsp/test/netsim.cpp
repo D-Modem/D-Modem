@@ -25,6 +25,7 @@
 using namespace dsp;
 
 unsigned int dsplibs_debug_level = 0;
+/* the DSP code's log: none */
 int dsplibs_debug_printf(const char *fmt, ...) { return 0; }
 
 static int alaw;
@@ -54,6 +55,8 @@ static float loop_h[LOOP_TAPS], loop_hist[2 * LOOP_TAPS];
 static int loop_on, loop_pos;
 static float loop_hp_x, loop_hp_y;
 
+/* NET_LOOP's fractional delay: LOOP_TAPS of Hann windowed sinc, frac
+   of a sample later than its middle */
 static void loop_init(float frac)
 {
 	int n;
@@ -66,6 +69,8 @@ static void loop_init(float frac)
 	loop_on = 1;
 }
 
+/* a sample of B's through the loop: the fractional delay, then the
+   high pass */
 static float loop_run(float x)
 {
 	float y = 0, a = 0.79f;  /* exp(-2 pi 300 / 8000) */
@@ -97,7 +102,8 @@ static volatile sig_atomic_t synced;
 static float echo_g, echo_buf[ECHO_MAX];
 static long echo_d, echo_w, echo_r;     /* samples to A, from A */
 
-/* G.711 (the usual reference algorithms) */
+/* G.711 (the usual reference algorithms).  The segment of v: the first
+   of t's 8 ends at or above it, 8 if none */
 static int seg_search(int v, const short *t)
 {
 	int i;
@@ -107,6 +113,7 @@ static int seg_search(int v, const short *t)
 	return 8;
 }
 
+/* 16 bit linear to mu-law */
 static unsigned char lin2ulaw(int x)
 {
 	static const short seg_end[8] = { 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF,
@@ -126,6 +133,7 @@ static unsigned char lin2ulaw(int x)
 	return (unsigned char)(((seg << 4) | ((x >> (seg + 1)) & 15)) ^ mask);
 }
 
+/* mu-law to 16 bit linear */
 static int ulaw2lin(unsigned char u)
 {
 	int t;
@@ -135,6 +143,7 @@ static int ulaw2lin(unsigned char u)
 	return (u & 0x80) ? 0x84 - t : t - 0x84;
 }
 
+/* 16 bit linear to A-law */
 static unsigned char lin2alaw(int x)
 {
 	static const short seg_end[8] = { 0x1F, 0x3F, 0x7F, 0xFF, 0x1FF,
@@ -153,6 +162,7 @@ static unsigned char lin2alaw(int x)
 	return (unsigned char)(aval ^ mask);
 }
 
+/* A-law to 16 bit linear */
 static int alaw2lin(unsigned char a)
 {
 	int t, seg;
@@ -168,6 +178,7 @@ static int alaw2lin(unsigned char a)
 	return (a & 0x80) ? t : -t;
 }
 
+/* x (clipped to 16 bits) through the network's law, there and back */
 static int g711(int x)
 {
 	if (x > 32767)
@@ -188,6 +199,8 @@ struct rc_up {
 	int pos, t;
 };
 
+/* the raised cosine at 48 kHz (roll-off NET_RC, 0.15 by default), Hann
+   windowed, as 6 phases of RC_TAPS taps; the history cleared */
 static void rc_init(struct rc_up *r)
 {
 	const double a = getenv("NET_RC") ? atof(getenv("NET_RC")) : 0.15;
@@ -254,6 +267,8 @@ static volatile sig_atomic_t wav_sig;   /* SIGUSR2s so far */
 static short *wav_q[2];
 static long wav_n[2], wav_cap[2], wav_frames;
 
+/* the header for wav_frames frames, at the file's start (and back to its
+   end) */
 static void wav_header(void)
 {
 	unsigned char h[44];
@@ -320,6 +335,7 @@ static void wav_flush(int end)
 	}
 }
 
+/* SIGUSR2: the first starts NET_WAV's recording, the second ends it */
 static void on_wav(int sig)
 {
 	(void)sig;
@@ -348,6 +364,8 @@ static int moh_pos, moh_n;
 static long moh_syms;
 static float moh_sym = 1;
 
+/* moh_tx's next symbol: 90 (150 ms) of tone A, then moh_make's bits as
+   phase reversals, round and round */
 static cplx moh_symbol(void *)
 {
 	cplx z = { 0, 0 };
@@ -392,6 +410,7 @@ static void moh_goertzel(float *g, float x)
 	g[0] = s0;
 }
 
+/* the power at the Goertzel's frequency over its block; s1, s2 reset */
 static float moh_power(float *g)
 {
 	float p = g[0] * g[0] + g[1] * g[1] - g[2] * g[0] * g[1];
@@ -580,12 +599,16 @@ static int run(struct dir *d, int a_out, int a_in)
 	return 0;
 }
 
+/* SIGUSR1: NET_SYNC's times count from now */
 static void on_sync(int sig)
 {
 	(void)sig;
 	synced = 1;
 }
 
+/* netsim <rate a> <rate b> <law> <fds> (or netsim test: every code
+   through its law and back); the two directions as their input comes;
+   0 when an input ends, 1 on an error */
 int main(int argc, char **argv)
 {
 	struct dir d[2];

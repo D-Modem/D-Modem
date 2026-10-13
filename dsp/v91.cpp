@@ -43,6 +43,7 @@ namespace dsp {
 #define INFO_UCODE      66      /* INFO, J, PHIL, SCR, CP: its sign */
 #define MS(ms)          ((long)(ms) * 8)        /* symbols */
 
+/* scrambles a bit; returns the scrambled bit */
 static int scramble(unsigned *reg, int bit)
 {
 	/* GPC: 1 + x^-18 + x^-23 */
@@ -51,6 +52,8 @@ static int scramble(unsigned *reg, int bit)
 	return out;
 }
 
+/* the descrambler of scramble(): the register keeps the received bits;
+   returns the descrambled bit */
 static int descramble(unsigned *reg, int bit)
 {
 	int out = (bit ^ (*reg >> 17) ^ (*reg >> 22)) & 1;
@@ -58,6 +61,8 @@ static int descramble(unsigned *reg, int bit)
 	return out;
 }
 
+/* appends the low nbits of val to b at *n (one bit per byte), least
+   significant bit first */
 static void pbits(unsigned char *b, int *n, unsigned val, int nbits)
 {
 	int i;
@@ -89,6 +94,9 @@ static void default_dil(V90Dil *d)
  *    the data mode encoder and decoder
  */
 
+/* the encoder for the constellations of cp (the remote's CP) and D bits
+   per data frame, lin_: Ucode -> linear; returns -1 when they cannot
+   carry K = D - 6 bits */
 int V91Enc::init(const V90Cp *cp, int D, const int *lin_)
 {
 	double prod = 1;
@@ -111,6 +119,8 @@ int V91Enc::init(const V90Cp *cp, int D, const int *lin_)
 	return 0;
 }
 
+/* bits: the 6 sign bits, then the K bits (only the K bits with cc);
+   all scrambled, the cc bits not */
 void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 		   int out_[6])
 {
@@ -132,6 +142,8 @@ void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 	}
 }
 
+/* the decoder for the constellations of cp (our CP) and D bits per data
+   frame; returns -1 when a constellation is empty */
 int V91Dec::init(const V90Cp *cp, int D)
 {
 	int i, u;
@@ -147,6 +159,8 @@ int V91Dec::init(const V90Cp *cp, int D)
 	return 0;
 }
 
+/* u, s: the Ucodes and signs (1: positive) of the 6 symbols; frames
+   that cannot be one are counted in errors */
 int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 		  unsigned char *cc)
 {
@@ -181,6 +195,8 @@ int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 	return bad ? -1 : S + K;
 }
 
+/* i: the data frame interval, x: the received value; by binary search
+   in val[i] (no codes: the distance 1 << 20) */
 int V91Map::decode(int i, int x, int *u, int *s) const
 {
 	int lo = 0, hi = n[i] - 1, b, d;
@@ -209,6 +225,10 @@ int V91Map::decode(int i, int x, int *u, int *s) const
  *    the modem
  */
 
+/* the modem at the start of V.91 (after V.8): A-law when alaw_, at most
+   max_k_ bits through the modulus encoder (up to 41), want_cc_: we ask
+   for the control channel.  Tests: DSP_V91_RETRAIN=<ms>[a|c] (our own
+   retrain that long after connecting), DSP_V91_MUTE=a|c */
 void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
 {
 	static const char slip[] = "0111011111111010";
@@ -317,6 +337,7 @@ void V91::make_cp(int ack)
 	tbpos = 0;
 }
 
+/* the next transmitter segment, from its first symbol */
 void V91::tx_segment(enum v91_tx s)
 {
 	tx = s;
@@ -361,11 +382,14 @@ int V91::sign_sample(int bit)
 	return t ? lin[INFO_UCODE] : -lin[INFO_UCODE];
 }
 
+/* a bit scrambled (GPC), then as sign_sample() */
 int V91::scr_sample(int bit)
 {
 	return sign_sample(scramble(&tscr, bit));
 }
 
+/* the next sample of the DIL the remote asked for (8.4.1/V.90), then
+   SCR */
 int V91::dil_sample()
 {
 	int u = dil.ucode[dil_seg], c = u >> 4, len = (dil.h[c] + 1) * 6;
@@ -382,6 +406,8 @@ int V91::dil_sample()
 	return x;
 }
 
+/* the next sample we send (linear), going on from segment to segment
+   as the receiver's progress allows */
 int V91::tx_sample()
 {
 	int x = 0;
@@ -487,6 +513,8 @@ int V91::tx_sample()
  *    the receiver
  */
 
+/* the receiver back to waiting for INFO, what it learnt of the remote's
+   start-up forgotten */
 void V91::rx_restart()
 {
 	rx = V91R_INFO;
@@ -527,6 +555,9 @@ int V91::info_bit(int bit)
 	return 1;
 }
 
+/* a received symbol of the DIL we asked for: the value each code and
+   sign arrives as in each data frame interval (seen 2: not the same each
+   time) */
 void V91::dil_record(int x)
 {
 	int u = rdil.ucode[rd_seg], c = u >> 4, len = (rdil.h[c] + 1) * 6;
@@ -689,6 +720,8 @@ void V91::data_symbol(int x)
 	}
 }
 
+/* a received sample through the receiver's stages; returns V91_ESCAPE
+   or V91_FAIL to give up, else 0 */
 int V91::rx_sample(int x)
 {
 	int s = x > 0, bit = s ^ rs, b;
@@ -829,6 +862,7 @@ int V91::rx_sample(int x)
 	return 0;
 }
 
+/* a retrain from our side: INFO again, the receiver restarted */
 void V91::retrain(const char *why)
 {
 	DSP_DBG("v91: retrain: %s\n", why);
@@ -837,6 +871,10 @@ void V91::retrain(const char *why)
 	tx_segment(V91T_INFO);
 }
 
+/* a symbol both ways (x received, *y to send); returns V91_CONNECT the
+   first time data mode is up both ways, V91_ESCAPE or V91_FAIL to give up
+   (also on the timeouts of 8.3), else V91_NONE; retrains on too many
+   decoding errors */
 int V91::sample(int x, int *y)
 {
 	int r;

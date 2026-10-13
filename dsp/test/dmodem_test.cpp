@@ -93,11 +93,13 @@ static unsigned char net_octet(Net net, unsigned char c, int from, int to,
 	return c;
 }
 
+/* fd non-blocking; fcntl's result */
 static int nonblock(int fd)
 {
 	return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 }
 
+/* what there is to read on fd, thrown away */
 static void drain(int fd)
 {
 	char buf[256];
@@ -113,6 +115,11 @@ struct Pair {
 	unsigned tx_rate = 0, rx_rate = 0;
 };
 
+/* a pair's thread (arg its Pair): the caller dials, the answerer
+   answers, on the network pc.net for pc.seconds of line time in 20 ms
+   frames; once both are online five lines of text each way a second
+   apart, then pc.bulk bytes from the caller; what went wrong into
+   p->failures, the rates into p->tx_rate and rx_rate */
 static void *run(void *arg)
 {
 	Pair *p = static_cast<Pair *>(arg);
@@ -274,16 +281,19 @@ static void *run(void *arg)
 
 class DmodemPair : public testing::TestWithParam<PairCase> {
 protected:
+	/* the case's environment (the DSP's test hooks) while it runs */
 	void SetUp() override {
 		for (auto &e : GetParam().env)
 			setenv(e.first.c_str(), e.second.c_str(), 1);
 	}
+	/* and unset after it */
 	void TearDown() override {
 		for (auto &e : GetParam().env)
 			unsetenv(e.first.c_str());
 	}
 };
 
+/* pc.pairs calls at once, a thread each; every failure of each pair */
 TEST_P(DmodemPair, DataBothWays)
 {
 	const PairCase &pc = GetParam();
@@ -305,11 +315,14 @@ TEST_P(DmodemPair, DataBothWays)
 			ADD_FAILURE() << "pair " << q.id << ": " << f;
 }
 
+/* the case's name for the test's */
 static std::string name(const testing::TestParamInfo<PairCase> &i)
 {
 	return i.param.name;
 }
 
+/* a case: pairs calls at once of seconds each, the modems given the AT
+   commands ms (after ATE0Q1X3) and the environment env */
 static PairCase pair(const char *name, const char *ms, int pairs, int seconds,
 		     std::map<std::string, std::string> env = {})
 {
@@ -344,12 +357,14 @@ static PairCase v91(const char *name, const char *ms, Net net, unsigned rate,
 	return c;
 }
 
+/* the case on A-law */
 static PairCase alaw(PairCase c)
 {
 	c.alaw = true;
 	return c;
 }
 
+/* the case with bytes of bulk data from the caller after the text */
 static PairCase bulk(PairCase c, long bytes)
 {
 	c.bulk = bytes;
@@ -405,6 +420,7 @@ namespace {
 
 struct Dte {
 	int fd[2];
+	/* a non-blocking socketpair: fd[0] the modem's end, fd[1] the DTE's */
 	Dte()
 	{
 		if (socketpair(AF_UNIX, SOCK_STREAM, 0, fd))
@@ -412,6 +428,7 @@ struct Dte {
 		for (int f : fd)
 			fcntl(f, F_SETFL, fcntl(f, F_GETFL) | O_NONBLOCK);
 	}
+	/* both ends closed */
 	~Dte()
 	{
 		close(fd[0]);
@@ -419,7 +436,9 @@ struct Dte {
 	}
 	Dte(const Dte &) = delete;
 	Dte &operator=(const Dte &) = delete;
+	/* the modem's end */
 	int modem_end() const { return fd[0]; }
+	/* what the modem has written so far */
 	std::string read_all()
 	{
 		std::string s;
@@ -429,6 +448,7 @@ struct Dte {
 			s.append(buf, n);
 		return s;
 	}
+	/* s to the modem, all of it, else an exception */
 	void write_str(const std::string &s)
 	{
 		if (write(fd[1], s.data(), s.size()) !=
@@ -437,6 +457,7 @@ struct Dte {
 	}
 };
 
+/* a modem on mu-law named name, its DTE dte, its init string init */
 dm::Modem make(const char *name, Dte &dte, const std::string &init)
 {
 	dmodem_config c{};

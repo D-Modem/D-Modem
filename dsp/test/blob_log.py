@@ -10,6 +10,9 @@ import sys
 KEY = (4, 6, 2, 7, 1, 9, 3, 5, 8, 7)
 
 
+# one line's encoded text (what follows "$!$ ") decoded: the key from its
+# start, the "?" padding dropped, an odd last character ignored; the
+# text (latin-1) without its trailing newline
 def decode(s):
     out, k = bytearray(), 0
     s = s.rstrip('?')
@@ -22,6 +25,8 @@ def decode(s):
     return out.decode('latin-1').rstrip('\n')
 
 
+# the log (argv[1], else stdin) to stdout, each "$!$ " line's text
+# decoded after a "| "
 def main():
     f = open(sys.argv[1], errors='replace') if len(sys.argv) > 1 else sys.stdin
     for line in f:

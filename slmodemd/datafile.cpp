@@ -17,12 +17,15 @@
 
 namespace slm {
 
+/* the file: one record, its own size last as the check */
 struct datafile_record {
 	unsigned minor;
 	struct dsp_info dsp_info;
 	unsigned size;
 };
 
+/* path's record into *info: the bytes read; -errno if the file can't be
+   read, -1 if it is short or of another size (info untouched then) */
 int datafile_load(const char *path, struct dsp_info *info)
 {
 	struct datafile_record dr;
@@ -46,6 +49,8 @@ int datafile_load(const char *path, struct dsp_info *info)
 	return ret;
 }
 
+/* *info into path (made 0600, written over in place): the bytes
+   written, -errno if it can't be opened */
 int datafile_save(const char *path, const struct dsp_info *info)
 {
 	struct datafile_record dr = {};

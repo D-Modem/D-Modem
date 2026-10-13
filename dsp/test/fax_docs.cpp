@@ -13,6 +13,8 @@
 
 using namespace dsp;
 
+/* (fax_util.h) fax/<suite>_<test>_<what>, a parameterized test's "/" as
+   "_"; fax/ made if need be */
 std::string fax_file(const char *what)
 {
 	const testing::TestInfo *t =
@@ -25,6 +27,7 @@ std::string fax_file(const char *what)
 	return "fax/" + n + "_" + what;
 }
 
+/* pel (x, y) of p black; nothing outside the page */
 static void set(T4Page *p, int x, int y)
 {
 	if (x >= 0 && x < p->width && y >= 0 && y < p->rows)
@@ -62,6 +65,8 @@ static void test_page(T4Page *p, int fine, int seed, int letters)
 	}
 }
 
+/* (fax_util.h) a standard page (seed 1) and a fine one (seed 2) into a
+   TIFF; light: 300 "letters" a page instead of 4000 */
 testing::AssertionResult write_test_doc(const std::string &path, bool light)
 {
 	TiffOut t;
@@ -80,6 +85,8 @@ testing::AssertionResult write_test_doc(const std::string &path, bool light)
 	return testing::AssertionSuccess();
 }
 
+/* (fax_util.h) page by page: rows, resolution and the bits; what differs
+   in the failure's message, and different page counts */
 testing::AssertionResult same_pages(const std::string &a,
 				    const std::string &b)
 {
@@ -128,6 +135,8 @@ testing::AssertionResult same_pages(const std::string &a,
 	return testing::AssertionSuccess() << n << " pages the same";
 }
 
+/* (fax_util.h) x coded to a mu-law octet (G.711: the biased segments,
+   clipped at 32635) and decoded again to the middle of its interval */
 short g711_ulaw(short x)
 {
 	int s = x < 0, m = s ? -x : x, e, q;
@@ -142,6 +151,7 @@ short g711_ulaw(short x)
 	return (short)(s ? -m : m);
 }
 
+/* (fax_util.h) Box-Muller on two of rand()'s, never log(0) */
 double gauss()
 {
 	double u = (rand() + 1.0) / (RAND_MAX + 2.0);

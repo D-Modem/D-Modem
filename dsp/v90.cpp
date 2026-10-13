@@ -26,7 +26,8 @@
 
 namespace dsp {
 
-/* G.711 decoders */
+/* G.711 decoders, the linear value of an octet on a 16 bit scale:
+   mu-law */
 static int ulaw2lin(int u)
 {
 	int t;
@@ -36,6 +37,7 @@ static int ulaw2lin(int u)
 	return (u & 0x80) ? 0x84 - t : t - 0x84;
 }
 
+/* A-law */
 static int alaw2lin(int a)
 {
 	int t, seg;
@@ -68,6 +70,7 @@ static int lin2ulaw(int v)
 	return ((seg << 4) | ((v >> (seg + 1)) & 0xF)) ^ mask;
 }
 
+/* A-law */
 static int lin2alaw(int v)
 {
 	int mask = 0xD5, seg, a;
@@ -92,12 +95,14 @@ int v90_ucode_octet(int alaw, int ucode, int positive)
 	return positive ? c : c & 0x7F;
 }
 
+/* the linear value (16 bit scale) of the positive codeword of a Ucode */
 int v90_ucode_linear(int alaw, int ucode)
 {
 	int c = v90_ucode_octet(alaw, ucode, 1);
 	return alaw ? alaw2lin(c) : ulaw2lin(c);
 }
 
+/* scrambles a bit; returns the scrambled bit */
 static int scramble(unsigned *reg, int bit)
 {
 	/* GPC: 1 + x^-18 + x^-23 */
@@ -106,6 +111,8 @@ static int scramble(unsigned *reg, int bit)
 	return out;
 }
 
+/* appends the low nbits of val to b at *n (one bit per byte), least
+   significant bit first */
 static void put_bits(unsigned char *b, int *n, unsigned val, int nbits)
 {
 	int i;
@@ -162,6 +169,7 @@ void V90Tx::make_jp()
 	nbits = n_;
 }
 
+/* Table 2/V.92 (see v90.h) */
 int v92_uqts(int wxyz)
 {
 	static const signed char u[16] = { 61, 62, 63, 66, 67, 70, 71, 74,
@@ -186,6 +194,8 @@ void V90Tx::anspcm_init(int level)
 	}
 }
 
+/* the transmitter, silent: A-law when alaw_, uinfo_ the Ucode of
+   TRN1d, Jd and Ri */
 void V90Tx::init(int alaw_, int uinfo_)
 {
 	int i;
@@ -198,6 +208,9 @@ void V90Tx::init(int alaw_, int uinfo_)
 	sign = 1;
 }
 
+/* the next segment from its first symbol: Sd restarts the data frame
+   interval count, TRN1d the scrambler, Jd builds its frame, the encoder
+   takes a new data frame first */
 void V90Tx::segment(enum v90_seg seg_)
 {
 	seg = seg_;
@@ -242,16 +255,19 @@ void V90Tx::segment(enum v90_seg seg_)
 	}
 }
 
+/* Jd ends with the current frame (V.92: Jp follows first) */
 void V90Tx::end_jd()
 {
 	jd_end = 1;
 }
 
+/* DIL (or SCR) ends with its current segment (data frame) */
 void V90Tx::end_dil()
 {
 	dil_end = 1;
 }
 
+/* Ri ends with the current data frame, Ri-bar follows */
 void V90Tx::end_ri()
 {
 	ri_end = 1;
@@ -264,6 +280,9 @@ int V90Tx::diff_bit(int bit)
 	return sign ? lin[uinfo] : -lin[uinfo];
 }
 
+/* the next DIL sample (8.4.1/V.90): the Ucode of the segment or its
+   reference by TP, the sign by SP; the segments repeat until end_dil(),
+   then silence */
 int V90Tx::dil_sample()
 {
 	const V90Dil *d = &dil;
@@ -287,6 +306,9 @@ int V90Tx::dil_sample()
 	return x;
 }
 
+/* the next PCM sample (linear, 16 bit scale) of the current segment;
+   goes on to the next segment at the end of each, and from ENC to Rd, Rf
+   or silence when asked to */
 int V90Tx::sample()
 {
 	static const signed char sd[6] = { 1, 0, 1, -1, 0, -1 };
@@ -494,6 +516,7 @@ int V90Tx::sample()
  *    every 17 bits from bit 17 on
  */
 
+/* the nbits wide field at bit first, least significant bit first */
 static int field(const unsigned char *b, int first, int nbits)
 {
 	int i, v = 0;
@@ -511,6 +534,8 @@ static void pattern(unsigned char *p, const unsigned char *b, int first,
 		p[i] = b[first + 17 * (i / 16) + i % 16];
 }
 
+/* the offsets from the start of SP of TP (into *alpha) and of the H
+   fields (returned), in bits */
 static int dil_beta(const unsigned char *b, int *alpha)
 {
 	int lsp = field(b, 35, 7) + 1, ltp = field(b, 43, 7) + 1;
@@ -518,6 +543,7 @@ static int dil_beta(const unsigned char *b, int *alpha)
 	return *alpha + (ltp + 15) / 16 * 17;
 }
 
+/* see v90.h */
 int v90_dil_length(const unsigned char *b, int n)
 {
 	int alpha, beta;
@@ -528,6 +554,8 @@ int v90_dil_length(const unsigned char *b, int n)
 	return 204 + beta + (field(b, 18, 8) + 1) / 2 * 17;
 }
 
+/* the DIL descriptor of len bits (v90_dil_length()) from its frame sync
+   on; returns 0 when the CRC is good, -1 otherwise */
 int V90Dil::parse(const unsigned char *b, int len)
 {
 	unsigned crc = 0xFFFF;
@@ -559,6 +587,8 @@ int V90Dil::parse(const unsigned char *b, int len)
  *    CP (Table 14/V.90)
  */
 
+/* the bits of CP beyond its shortest form, from the constellation
+   indices and bit 128; -1 when an index is above 5 */
 static int cp_delta(const unsigned char *b)
 {
 	int i, maxidx = 0, gamma;
@@ -572,6 +602,8 @@ static int cp_delta(const unsigned char *b)
 	return b[128] ? 2 * gamma + 136 : gamma;
 }
 
+/* the length of a CP frame up to the end of its CRC from its first 129
+   bits; 0 when it cannot be one, -1 before bit 128 is in */
 int v90_cp_length(const unsigned char *b, int n)
 {
 	int delta;
@@ -582,6 +614,8 @@ int v90_cp_length(const unsigned char *b, int n)
 	return delta < 0 ? 0 : 289 + delta;
 }
 
+/* a CP or CPt frame of len bits (v90_cp_length()) from its frame sync
+   on; returns 0 when the CRC is good, -1 (fields unchanged) otherwise */
 int V90Cp::parse(const unsigned char *b, int len)
 {
 	static const int con_bit[6] = { 103, 107, 111, 115, 120, 124 };
@@ -623,6 +657,8 @@ int V90Cp::parse(const unsigned char *b, int len)
  *    MP of the digital modem (Table 16/V.90)
  */
 
+/* the bits of the digital modem's MP, one per byte in time order: type
+   1 when h has a non-zero coefficient; rate_mask from 4800 bit/s on */
 int v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
 		 int ack, int rate_mask, const int *h)
 {
@@ -667,6 +703,8 @@ int v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
  *    the data mode encoder (5.4/V.90)
  */
 
+/* the encoder for the constellations of cp; lin_: Ucode -> linear (see
+   v90.h) */
 int V90Enc::init(const V90Cp *cp, int D, const int *lin_)
 {
 	double prod = 1;
@@ -786,6 +824,8 @@ void V90Enc::decide_frame(int depth)
 	memmove(q, q + 1, --qn * sizeof(q[0]));
 }
 
+/* a data frame of D bits in (see v90.h): the modulus encoder, the sign
+   bits into shaping frames, then the decisions the look-ahead allows */
 void V90Enc::push(const unsigned char *bits, int last_)
 {
 	unsigned char d[48];
@@ -845,6 +885,8 @@ void V90Enc::push(const unsigned char *bits, int last_)
 	}
 }
 
+/* the oldest data frame ready, as 6 linear values; returns 0 when there
+   is none */
 int V90Enc::pop(int out[6])
 {
 	if (!outn)

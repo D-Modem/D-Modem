@@ -19,6 +19,7 @@ namespace slm {
 class Pty {
 public:
 	Pty() = default;
+	/* close() */
 	~Pty();
 	Pty(const Pty &) = delete;
 	Pty &operator=(const Pty &) = delete;
@@ -33,8 +34,11 @@ public:
 		std::string g = group_, l = link_;
 		return open(g.c_str(), perm_, l.c_str());
 	}
+	/* the master closed, the symbolic link removed */
 	void close();
+	/* the master, -1 if none */
 	int fd() const { return fd_; }
+	/* the slave's path */
 	const char *name() const { return name_.c_str(); }
 	/* the symbolic link, if open() made one */
 	const char *link() const { return link_.c_str(); }

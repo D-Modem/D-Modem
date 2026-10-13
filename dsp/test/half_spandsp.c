@@ -35,6 +35,7 @@
 static int dbg;
 #define LOG(...) do { if (dbg) fprintf(stderr, "spandsp: " __VA_ARGS__); } while (0)
 
+/* spandsp's log messages: to stderr */
 static void span_msg(int level, const char *text)
 {
 	(void)level;
@@ -49,12 +50,14 @@ static int pty;
 static long sync_n;
 static long line_n;             /* line samples so far */
 
+/* s to the DTE (what the pty does not take is lost) */
 static void dte_puts(const char *s)
 {
 	if (write(pty, s, strlen(s)) < 0)
 		LOG("pty write: %s\n", strerror(errno));
 }
 
+/* a result code, "\r\n<s>\r\n" */
 static void result(const char *s)
 {
 	char buf[64];
@@ -110,6 +113,7 @@ static int tx_frame, tx_bits;   /* the character going out, bits left */
 static int rx_frame, rx_bits;   /* the one coming in, bits so far */
 static int v8_result = -1, v8_mods;
 
+/* to state s, its sample count from 0 */
 static void set_state(int s)
 {
 	LOG("state %s -> %s at %ld ms\n", state_name[state], state_name[s],
@@ -118,6 +122,7 @@ static void set_state(int s)
 	count = 0;
 }
 
+/* the DTE's next character for the line, -1 if none or offline */
 static int get_byte(void *user_data)
 {
 	(void)user_data;
@@ -130,6 +135,7 @@ static int get_byte(void *user_data)
 	}
 }
 
+/* a character from the line to the DTE, online (< 0: none) */
 static void put_byte(void *user_data, int byte)
 {
 	unsigned char c = (unsigned char)byte;
@@ -140,6 +146,7 @@ static void put_byte(void *user_data, int byte)
 		LOG("pty write: %s\n", strerror(errno));
 }
 
+/* CONNECT <rate>, once a call; data mode */
 static void do_connect(int rate)
 {
 	char buf[32];
@@ -150,6 +157,8 @@ static void do_connect(int rate)
 	result(buf);
 }
 
+/* a pump's status: V.22bis trained (CONNECT), the remote's carrier
+   up and down */
 static void status(void *user_data, int st)
 {
 	(void)user_data;
@@ -169,6 +178,8 @@ static void status(void *user_data, int st)
 	}
 }
 
+/* the pump's next bit to send: 8N1 characters LSB first, marks
+   between them */
 static int get_bit(void *user_data)
 {
 	int bit;
@@ -186,6 +197,8 @@ static int get_bit(void *user_data)
 	return bit;
 }
 
+/* a bit from the pump (< 0: a status): once connected, 8N1 characters
+   out of them, those with their stop bit to the DTE */
 static void put_bit(void *user_data, int bit)
 {
 	(void)user_data;
@@ -212,6 +225,8 @@ static void put_bit(void *user_data, int bit)
 	rx_bits = 0;
 }
 
+/* the pump of +MS code ms (22 and 122 V.22bis's, 23, 103, else V.21:
+   FSK) for our role; the PUMP state */
 static void start_pump(int ms)
 {
 	const fsk_spec_t *tx, *rx;
@@ -279,11 +294,14 @@ static void start_pump(int ms)
 	set_state(PUMP);
 }
 
+/* the FSK pump's rate for the CONNECT: what this side receives (V.23:
+   the caller 1200, the answerer 75) */
 static int fsk_rate(void)
 {
 	return pump_ms == 23 ? (caller ? 1200 : 75) : 300;
 }
 
+/* V.8's news: its status and the modulations, an offer cut to ours */
 static void v8_handler(void *user_data, v8_parms_t *r)
 {
 	(void)user_data;
@@ -296,6 +314,8 @@ static void v8_handler(void *user_data, v8_parms_t *r)
 	v8_mods = r->modulations;
 }
 
+/* V.8 in our role (the answerer with ANSam), offering V.21, V.22(bis)
+   and V.23, no protocol */
 static void start_v8(void)
 {
 	memset(&v8_parms, 0, sizeof(v8_parms));
@@ -324,6 +344,7 @@ static void start_v8(void)
 	set_state(V8);
 }
 
+/* on hook, offline */
 static void hang_up(void)
 {
 	online = connected = 0;
@@ -331,6 +352,8 @@ static void hang_up(void)
 	set_state(IDLE);
 }
 
+/* ATD (as_caller) or ATA: V.8 (the answerer after 1 s), or +MS's
+   modulation with its tones */
 static void dial(int as_caller)
 {
 	caller = as_caller;
@@ -448,6 +471,8 @@ static void line_block(const int16_t *in, int16_t *out, int n)
 static char cmd[256];
 static int cmd_n;
 
+/* AT+MS='s modulation: 21, 22, 122, 23, 103 as numbers or names; 0 for
+   V.8 (and what we do not have, from 32 up), -1 for an error */
 static int parse_ms(const char *p)
 {
 	static const struct { const char *name; int ms; } t[] = {
@@ -467,6 +492,8 @@ static int parse_ms(const char *p)
 	return 0;
 }
 
+/* an AT command line: ATD and ATA start a call (no OK), ATO goes back
+   online (CONNECT), +MS sets the modulation, the rest OK or ERROR */
 static void at_line(char *s)
 {
 	char *p;
@@ -545,6 +572,9 @@ static void at_line(char *s)
 	result(ok ? "OK" : "ERROR");
 }
 
+/* the DTE's input: data online (+++ with a second of quiet each side
+   back to commands), else commands, echoed; in command mode at
+   SPANDSP_SYNC's samples only */
 static void dte_poll(void)
 {
 	unsigned char buf[256];
@@ -588,6 +618,7 @@ static void dte_poll(void)
 	}
 }
 
+/* the modem between fds 3 and 4 and its pty until the line ends */
 int main(int argc, char **argv)
 {
 	int16_t in[480], out[480];

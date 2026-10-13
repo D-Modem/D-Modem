@@ -296,8 +296,8 @@ float FskPump::tx_sample(int data)
 
 /* cnt samples: the receiver and the detectors, then the handshake
    (answerer: 1 s silence, 3.3 s of 2100 Hz, 75 ms gap; both: the mark
-   until the remote's carrier or mark is steady) and data.  Returns DPSTAT_CONNECT
-   once, DPSTAT_CHANGEDP for V.8 or an automode fallback,
+   until the remote's carrier or mark is steady) and data.  Returns
+   DPSTAT_CONNECT once, DPSTAT_CHANGEDP for V.8 or an automode fallback,
    DPSTAT_ERROR on a timeout (S7) or the loss of carrier (S10). */
 int FskPump::process(void *in, void *out, int cnt)
 {

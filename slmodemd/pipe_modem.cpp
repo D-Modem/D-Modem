@@ -30,6 +30,8 @@ static const int HALF_FRAME = 48;
 
 static volatile sig_atomic_t keep_running = 1;
 
+/* the core at rate on the line in -> out, with a new pty for its DTE;
+   PIPE_SYNC read here.  Exits if the pty or the core can't be made */
 PipeModem::PipeModem(const char *name, int rate, const char *country,
 		     int in, int out)
 	: in_(in), out_(out), rate_(rate)
@@ -53,6 +55,7 @@ PipeModem::PipeModem(const char *name, int rate, const char *country,
 	DBG("created %s: %s\n", name, pty_.name());
 }
 
+/* the core, then the recordings */
 PipeModem::~PipeModem()
 {
 	delete m_;
@@ -62,6 +65,7 @@ PipeModem::~PipeModem()
 	}
 }
 
+/* the time in ms: the monotonic clock, or with PIPE_SYNC the line's */
 unsigned long PipeModem::now_ms()
 {
 	struct timespec ts;
@@ -84,6 +88,8 @@ unsigned long PipeModem::now_ms()
 	return ts.tv_sec * 1000UL + ts.tv_nsec / 1000000;
 }
 
+/* off hook (the line is always there); 0, or -1 if the lead silence
+   can't be written */
 int PipeModem::start(dcore::Modem &)
 {
 	char zeros[2048] = {};
@@ -101,6 +107,7 @@ int PipeModem::start(dcore::Modem &)
 	return 0;
 }
 
+/* on hook: nothing to do, the line stays */
 int PipeModem::stop(dcore::Modem &)
 {
 	DBG("modem_test_stop...\n");
@@ -129,6 +136,11 @@ void PipeModem::pace(int samples)
 		usleep(ahead * 1e6);
 }
 
+/* the line is readable: what is there into pend_ (rd false: only what
+   pend_ holds), whole half frames of it through the core (4032 bytes at
+   most, with PIPE_SYNC up to the next sync point), the answer and the
+   delay changes the pumps asked for written to out_; 0, or -1 on an
+   error */
 int PipeModem::line(bool rd)
 {
 	char inbuf[4096], outbuf[4096];
@@ -249,12 +261,14 @@ pending:
 	return 0;
 }
 
+/* SIGINT, SIGTERM: run() returns */
 static void mark_termination(int signum)
 {
 	(void)signum;
 	keep_running = 0;
 }
 
+/* run() returns at its next turn */
 void PipeModem::stop()
 {
 	keep_running = 0;
@@ -280,6 +294,8 @@ void PipeModem::dte_input()
 		m_->hangup();
 }
 
+/* select() on the lines and the ptys of the n modems, their timers in
+   between; 0 once stopped, -1 on an error */
 int PipeModem::run(PipeModem **modems, int n)
 {
 	signal(SIGINT, mark_termination);

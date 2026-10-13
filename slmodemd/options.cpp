@@ -15,6 +15,7 @@
 
 #include "options.h"
 
+/* the usage's text, to stderr */
 #define PR_INFO(fmt...) fprintf(stderr, fmt)
 
 namespace slm {
@@ -30,6 +31,8 @@ enum {
 enum opt_arg { NONE = 0, MANDATORY, OPTIONAL };
 enum opt_type { INTEGER, STRING };
 
+/* an option: its letter, long name, help line, argument (kind, type,
+   value: the default, then what was given) and how often it was seen */
 struct opt {
 	int ch;
 	const char *name;
@@ -66,6 +69,7 @@ static struct opt opt_list[] = {
 	{ 0, nullptr, nullptr, NONE, INTEGER, nullptr, 0 },
 };
 
+/* see options.h */
 void print_version()
 {
 	printf("%s: version %s %s\n", dcore::Modem::product,
@@ -74,6 +78,7 @@ void print_version()
 			  dcore::Modem::version, __DATE__ " " __TIME__);
 }
 
+/* the options and the environment on stderr, then exit(1) */
 static void usage(const char *prog_name)
 {
 	PR_INFO("Usage: %s [option...] <device>\n"
@@ -98,6 +103,10 @@ static void usage(const char *prog_name)
 	exit(1);
 }
 
+/* argv into opt_list (found, arg_val): -x or --name (any number of
+   dashes), the value after '=', glued on (digits only), or the next
+   argument if it is no option (digits only for an INTEGER).  Returns the
+   one other argument (the device) or NULL; usage() on anything else */
 static const char *opt_parse(int argc, char *argv[])
 {
 	const char *prog_name = argv[0];
@@ -155,6 +164,8 @@ static const char *opt_parse(int argc, char *argv[])
 	return dev_name;
 }
 
+/* opt_list's findings into o and the log levels (-d, -l); exits for -h,
+   -v, --countrylist, -a and a bad -p */
 void parse_options(int argc, char *argv[], Options &o)
 {
 	const char *prog_name = argv[0];

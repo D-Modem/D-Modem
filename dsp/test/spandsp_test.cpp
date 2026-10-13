@@ -51,6 +51,8 @@ protected:
 	void *t4src = nullptr;
 	std::string page;
 
+	/* spandsp's next bit to send: the page's (sp_t4_bit) or PRBS 2^23-1,
+	   kept in txb; end of data after maxbits or the page */
 	static int get_bit(void *ctx) {
 		SpandspV17 *t = static_cast<SpandspV17 *>(ctx);
 		int b;
@@ -69,6 +71,7 @@ protected:
 		t->txb[t->ntx++] = b;
 		return b;
 	}
+	/* a bit from our receiver into rxb */
 	static void put_bit(void *ctx, int bit) {
 		SpandspV17 *t = static_cast<SpandspV17 *>(ctx);
 		if (t->nrx < (long)t->rxb.size())
@@ -77,6 +80,11 @@ protected:
 	testing::AssertionResult run(int short_train, FaxRxMemory *mem);
 };
 
+/* one transmission: spandsp's V.17 signal (after 5 frames of silence)
+   through mu-law into our receiver until its carrier goes (120 s at
+   most); mem carries the equalizer from the long train to the short
+   one.  The offset of the received bits with the fewest errors in the
+   first 256 sent; then no bit may differ at it */
 testing::AssertionResult SpandspV17::run(int short_train, FaxRxMemory *mem)
 {
 	int bps = GetParam().bps, st;
@@ -148,6 +156,7 @@ testing::AssertionResult SpandspV17::run(int short_train, FaxRxMemory *mem)
 	return testing::AssertionSuccess();
 }
 
+/* the long train, then the short one with what the long one left */
 TEST_P(SpandspV17, IntoOurReceiver)
 {
 	FaxRxMemory mem;
@@ -186,6 +195,8 @@ struct T4Coding {
 
 class SpandspT4 : public testing::TestWithParam<T4Coding> {};
 
+/* the light document's first page through spandsp's T.4 encoder (MH
+   or MR, at least min_bits a row) into T4Rx: the same rows */
 TEST_P(SpandspT4, IntoOurLineReceiver)
 {
 	std::string doc = fax_file("doc.tif");

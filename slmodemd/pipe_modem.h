@@ -23,8 +23,11 @@ public:
 	/* name: the modem's; in, out: its line */
 	PipeModem(const char *name, int rate, const char *country, int in,
 		  int out);
+	/* the core and the recordings (in and out stay the caller's) */
 	~PipeModem();
+	/* the core */
 	dcore::Modem &modem() { return *m_; }
+	/* the DTE's pty */
 	Pty &pty() { return pty_; }
 
 	/* MODEM_REALTIME: no faster than the sample clock; MODEM_REC: the
@@ -34,21 +37,27 @@ public:
 
 	/* the main loop of any number of them, until stop() */
 	static int run(PipeModem **modems, int n);
+	/* run() returns at its next turn (safe in a signal handler) */
 	static void stop();
 
 	/* Host */
 	int start(dcore::Modem &m) override;
 	int stop(dcore::Modem &m) override;
+	/* the samples on their way (delay_ is in bytes) */
 	int io_delay(dcore::Modem &) override { return delay_ / 2; }
+	/* for ATI3 */
 	const char *driver_name() override { return "modem_test driver"; }
+	/* to the pty */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		return pty_.write(buf, n);
 	}
+	/* ms: the line's clock with PIPE_SYNC, else the monotonic one */
 	unsigned long now_ms() override;
 
 private:
 	int line(bool rd = true);       /* the line's audio is readable (rd:
 					   read it; else what is left) */
+	/* with realtime_, sleep until the clock has these samples' time */
 	void pace(int samples);
 
 	dcore::Modem *m_ = nullptr;
@@ -70,7 +79,9 @@ private:
 	double line_at_ = 0;    /* when the line last had samples (s) */
 	long clock_off_ = 0;    /* now_ms() - the line's ms while idle */
 	unsigned long last_ms_ = 0;
+	/* PIPE_SYNC: nothing on the line for 0.5 s */
 	bool line_idle() const;
+	/* PIPE_SYNC: the DTE's input at a sync point */
 	void dte_input();
 	const char *record_ = nullptr;
 	void *rec_in_ = nullptr, *rec_out_ = nullptr;

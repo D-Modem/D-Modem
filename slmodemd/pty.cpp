@@ -31,11 +31,13 @@ namespace slm {
 /* the DTE closed the slave: not read again for so many loops */
 static const unsigned CLOSE_COUNT_MAX = 100;
 
+/* the master closed, the link removed */
 Pty::~Pty()
 {
 	close();
 }
 
+/* see pty.h (open() makes them again) */
 void Pty::close()
 {
 	if (fd_ >= 0)
@@ -47,6 +49,8 @@ void Pty::close()
 	}
 }
 
+/* see pty.h; an old master is closed first.  A group, mode or link
+   that can't be set is only logged */
 int Pty::open(const char *group, mode_t perm, const char *link)
 {
 	struct termios t;
@@ -111,6 +115,8 @@ int Pty::open(const char *group, mode_t perm, const char *link)
 	return 0;
 }
 
+/* see pty.h: after the DTE closed the slave, not for CLOSE_COUNT_MAX
+   loops while off hook, nor for one loop on hook */
 bool Pty::want_read(const dcore::Modem &m)
 {
 	if (closed_ && close_count_) {
@@ -121,6 +127,8 @@ bool Pty::want_read(const dcore::Modem &m)
 	return m.dte_space() > 0;
 }
 
+/* see pty.h: up to the core's room (4096 at most); EIO (no slave open)
+   is CLOSED the first time, AGAIN after */
 Pty::Read Pty::read(dcore::Modem &m)
 {
 	struct termios t;
@@ -165,6 +173,7 @@ Pty::Read Pty::read(dcore::Modem &m)
 	return DATA;
 }
 
+/* what the master took, 0 if nothing (full, or an error) */
 int Pty::write(const char *buf, int n)
 {
 	int ret = ::write(fd_, buf, n);
