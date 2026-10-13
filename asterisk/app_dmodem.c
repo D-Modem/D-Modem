@@ -136,12 +136,15 @@ struct pipe_buf {
 	int len;
 };
 
+/* O_NONBLOCK on fd; -1 on failure */
 static int nonblock(int fd)
 {
 	int fl = fcntl(fd, F_GETFL);
 	return fl < 0 ? -1 : fcntl(fd, F_SETFL, fl | O_NONBLOCK);
 }
 
+/* libdmodem's log lines: "err: " ones as warnings, the rest at verbose
+   level 5 */
 static void log_line(const char *line)
 {
 	if (!strncmp(line, "err: ", 5))
@@ -150,6 +153,7 @@ static void log_line(const char *line)
 		ast_verb(5, "dmodem: %s", line);
 }
 
+/* the built-in fax settings: on, <spool>/fax, 14400 bit/s, ECM */
 static void fax_defaults(struct fax_settings *f)
 {
 	f->on = 1;
@@ -178,6 +182,7 @@ static int fax_option(struct fax_settings *f, const char *name,
 	return 1;
 }
 
+/* the defaults, then the fax options of [general] */
 static void load_fax_general(struct ast_config *cfg, struct fax_settings *f)
 {
 	struct ast_variable *v;
@@ -199,6 +204,9 @@ static void load_fax_settings(struct fax_settings *f)
 	}
 }
 
+/* [name] of dmodem.conf into *p (fax: [general]'s, then the profile's
+   own); -1 if there is no such profile or it lacks host and port (tcp)
+   or command (exec) */
 static int load_profile(const char *name, struct profile *p)
 {
 	struct ast_flags flags = { 0 };
@@ -266,6 +274,8 @@ static int load_profile(const char *name, struct profile *p)
 	return 0;
 }
 
+/* the profile's host:port, the first address that takes it (a blocking
+   connect), non-blocking once connected; -1 on failure */
 static int connect_tcp(const struct profile *p)
 {
 	struct addrinfo hints = { 0 }, *res, *ai;
@@ -371,6 +381,7 @@ static int relay(int from, int to, struct pipe_buf *b)
 	return eof ? -1 : 0;
 }
 
+/* what fd has, read and thrown away */
 static void drain(int fd)
 {
 	char buf[256];
@@ -378,6 +389,7 @@ static void drain(int fd)
 		;
 }
 
+/* the channel's law: A-law if it has alaw and not ulaw, else mu-law */
 static enum dmodem_law channel_law(struct ast_channel *chan)
 {
 	struct ast_format_cap *caps = ast_channel_nativeformats(chan);
@@ -535,6 +547,10 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	return res;
 }
 
+/* DModem([profile[,options]]): the modem on the channel until the call,
+   the session or the time to connect ends (a calling fax machine goes
+   to run_fax()); DMODEMSTATUS and DMODEMRATE set; -1 only when the
+   channel hung up */
 static int dmodem_exec(struct ast_channel *chan, const char *data)
 {
 	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(profile); AST_APP_ARG(options););
@@ -760,6 +776,8 @@ static const char recv_descrip[] =
 	"  Sets the same variables as DModemSendFax.  DModem() receives faxes\n"
 	"by itself when a fax machine calls (fax = yes, the default).\n";
 
+/* DModemSendFax / DModemReceiveFax (file[,ident]) in direction dir on
+   the channel's law; -1 if the channel hung up */
 static int fax_exec(struct ast_channel *chan, const char *data,
 		    enum dmodem_fax_dir dir)
 {
@@ -793,16 +811,19 @@ static int fax_exec(struct ast_channel *chan, const char *data,
 	return run_fax(chan, fmt, law, dir, args.file, &fs, out);
 }
 
+/* DModemSendFax() */
 static int send_exec(struct ast_channel *chan, const char *data)
 {
 	return fax_exec(chan, data, DMODEM_FAX_SEND);
 }
 
+/* DModemReceiveFax() */
 static int recv_exec(struct ast_channel *chan, const char *data)
 {
 	return fax_exec(chan, data, DMODEM_FAX_RECEIVE);
 }
 
+/* libdmodem's log level: debug of [general] (0 if none) */
 static void load_general(void)
 {
 	struct ast_flags flags = { 0 };
@@ -817,6 +838,7 @@ static void load_general(void)
 	ast_config_destroy(cfg);
 }
 
+/* the three applications unregistered */
 static int unload_module(void)
 {
 	int r = ast_unregister_application(app);
@@ -825,6 +847,7 @@ static int unload_module(void)
 	return r;
 }
 
+/* the log hook, the pumps, [general], the three applications */
 static int load_module(void)
 {
 	dmodem_set_log(log_line);
@@ -843,6 +866,7 @@ static int load_module(void)
 	return AST_MODULE_LOAD_SUCCESS;
 }
 
+/* the log level again */
 static int reload_module(void)
 {
 	load_general();

@@ -101,6 +101,9 @@ void pj_register_thread()
 		pj_thread_register("slmodemd", desc, &thread);
 }
 
+/* the bridge's audio for the modem (in the media clock's thread): a
+   frame of 20 ms onto the socket (and $DMODEM_REC.rx); a failed write
+   ends the call */
 pj_status_t put_frame(pjmedia_port *, pjmedia_frame *frame)
 {
 	int fd = port.sock;
@@ -113,6 +116,9 @@ pj_status_t put_frame(pjmedia_port *, pjmedia_frame *frame)
 	return PJ_SUCCESS;
 }
 
+/* the modem's audio for the bridge: a frame read from the socket
+   (blocking: the modem answers each frame with one); silence without a
+   socket, or when it fails, which ends the call */
 pj_status_t get_frame(pjmedia_port *p, pjmedia_frame *frame)
 {
 	int fd = port.sock;
@@ -130,12 +136,14 @@ pj_status_t get_frame(pjmedia_port *p, pjmedia_frame *frame)
 	return PJ_SUCCESS;
 }
 
+/* a line (RING, CANCEL) to the modem's control socket */
 void ctl_write(const char *msg)
 {
 	if (write(ctl[0], msg, strlen(msg)) < 0)
 		PJ_LOG(1, (__FILE__, "control socket: %s", strerror(errno)));
 }
 
+/* the service thread out of its poll() */
 void wake_service()
 {
 	char c = 0;
@@ -143,6 +151,8 @@ void wake_service()
 		PJ_LOG(1, (__FILE__, "wake up: %s", strerror(errno)));
 }
 
+/* pjsua: a call's state changed (SIP thread); the current call's end
+   goes to the service thread */
 void on_call_state(pjsua_call_id call_id, pjsip_event *)
 {
 	pjsua_call_info ci;
@@ -160,6 +170,8 @@ void on_call_state(pjsua_call_id call_id, pjsip_event *)
 	}
 }
 
+/* pjsua: the current call's media is up: its law (call_law), and the
+   modem's port into the bridge both ways (once a call) */
 void on_call_media_state(pjsua_call_id call_id)
 {
 	pjsua_call_info ci;
@@ -237,6 +249,9 @@ void call_cleanup()
 	hangup_req = false;
 }
 
+/* a request of the modem's, in the service thread: ANSWER the call that
+   rings, or DIAL sip:<number>@<domain>; if it can't be, the socket is
+   closed (NO CARRIER) */
 void do_request(Request &r)
 {
 	if (r.kind == Request::ANSWER) {
@@ -266,6 +281,9 @@ void do_request(Request &r)
 		call_cleanup();
 }
 
+/* the service thread until stop(): the requests, RING every 3 s while a
+   call waits, CANCEL, and the clean up when the call or the socket
+   ends (polled every 200 ms) */
 void service_loop()
 {
 	pj_register_thread();
@@ -305,6 +323,7 @@ void service_loop()
 	call_cleanup();
 }
 
+/* a request for the service thread */
 void post(Request r)
 {
 	{
@@ -314,6 +333,8 @@ void post(Request r)
 	wake_service();
 }
 
+/* true if status is PJ_SUCCESS; else the error logged (what: the call
+   that failed) */
 bool check(pj_status_t status, const char *what)
 {
 	if (status == PJ_SUCCESS)
@@ -340,6 +361,7 @@ void set_codecs()
 
 } // namespace
 
+/* see sip.h: the strings point into a static copy of SIP_LOGIN */
 bool config_from_env(Config &c, bool listen)
 {
 	/* SIP_LOGIN=user:password@domain */
@@ -367,6 +389,9 @@ bool config_from_env(Config &c, bool listen)
 	return true;
 }
 
+/* see sip.h: pjsua with G.711 only, a fixed jitter buffer and 20 ms
+   frames at 8000 Hz, the modem's port, the account, then the service
+   thread; -1 on failure */
 int start(const Config &config)
 {
 	cfg = config;
@@ -466,6 +491,7 @@ int start(const Config &config)
 	return ctl[1];
 }
 
+/* see sip.h; the recordings closed too */
 void stop()
 {
 	if (running.exchange(false)) {
@@ -480,16 +506,19 @@ void stop()
 	rec_rx = rec_tx = NULL;
 }
 
+/* a DIAL request (number NULL: an empty one) */
 void dial(const char *number, int audio_fd)
 {
 	post(Request{Request::DIAL, number ? number : "", audio_fd});
 }
 
+/* an ANSWER request */
 void answer(int audio_fd)
 {
 	post(Request{Request::ANSWER, "", audio_fd});
 }
 
+/* see sip.h */
 int law()
 {
 	return call_law;

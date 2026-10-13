@@ -87,12 +87,14 @@ struct line {
 	unsigned char out[LINE_MAX_SAMPLES * 2];
 };
 
+/* O_NONBLOCK on fd; -1 on failure */
 static int nonblock(int fd)
 {
 	int fl = fcntl(fd, F_GETFL);
 	return fl < 0 ? -1 : fcntl(fd, F_SETFL, fl | O_NONBLOCK);
 }
 
+/* libdmodem's log lines: "err: " ones as warnings, the rest as debug */
 static void log_line(const char *line)
 {
 	if (!strncmp(line, "err: ", 5))
@@ -103,6 +105,7 @@ static void log_line(const char *line)
 				  "dmodem: %s", line);
 }
 
+/* the built-in fax settings: on, <storage>/fax, 14400 bit/s, ECM */
 static void fax_defaults(struct fax_settings *f)
 {
 	f->on = 1;
@@ -171,6 +174,9 @@ static void load_fax_settings(struct fax_settings *f, int *jb_ms)
 	switch_xml_free(xml);
 }
 
+/* <profiles><profile name="name"> of dmodem.conf into *p (fax and
+   jitter buffer: <settings>, then the profile's own); -1 if there is no
+   such profile or it lacks host and port (tcp) or command (exec) */
 static int load_profile(const char *name, struct profile *p)
 {
 	switch_xml_t xml, cfg, profiles, prof, param;
@@ -249,6 +255,8 @@ static int load_profile(const char *name, struct profile *p)
 	return 0;
 }
 
+/* the profile's host:port, the first address that takes it (a blocking
+   connect), non-blocking once connected; -1 on failure */
 static int connect_tcp(const struct profile *p)
 {
 	struct addrinfo hints = { 0 }, *res, *ai;
@@ -400,6 +408,7 @@ static int relay(int from, int to, struct pipe_buf *b)
 	return eof ? -1 : 0;
 }
 
+/* what fd has, read and thrown away */
 static void drain(int fd)
 {
 	char buf[256];
@@ -483,6 +492,7 @@ static int line_open(struct line *l, switch_core_session_t *session,
 	return 0;
 }
 
+/* the channel's own read codec back, ours destroyed (if linear) */
 static void line_close(struct line *l)
 {
 	if (!l->linear)
@@ -514,6 +524,8 @@ static void line_write(struct line *l, int n)
 typedef void (*line_fn)(void *obj, const void *in, void *out, int n,
 			int linear);
 
+/* fn(obj, in, l->out, n, l->linear): the modem or the fax machine on
+   the frame, n samples (linear) or G.711 octets */
 static int line_step(struct line *l, line_fn fn, void *obj)
 {
 	static const short zeros[LINE_MAX_SAMPLES];
@@ -553,6 +565,7 @@ static int line_step(struct line *l, line_fn fn, void *obj)
 	return n;
 }
 
+/* line_fn of the modem (obj: struct dmodem) */
 static void modem_fn(void *obj, const void *in, void *out, int n, int linear)
 {
 	if (linear)
@@ -561,6 +574,7 @@ static void modem_fn(void *obj, const void *in, void *out, int n, int linear)
 		dmodem_process_g711(obj, in, out, n);
 }
 
+/* line_fn of the fax machine (obj: struct dmodem_fax) */
 static void fax_fn(void *obj, const void *in, void *out, int n, int linear)
 {
 	if (linear)
@@ -682,6 +696,9 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 	"end to end, without echo cancellation, jitter buffer or silence\n" \
 	"suppression.\n"
 
+/* dmodem [profile][,o]: the modem on the channel until the call, the
+   session or the time to connect ends (a calling fax machine goes to
+   run_fax()); dmodem_status and dmodem_rate set */
 SWITCH_STANDARD_APP(dmodem_function)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -878,6 +895,7 @@ out:
 
 #define FAX_SYNTAX "<file> [ident]"
 
+/* dmodem_send_fax / dmodem_receive_fax <file> [ident] in direction dir */
 static void fax_app(switch_core_session_t *session, const char *data,
 		    enum dmodem_fax_dir dir)
 {
@@ -912,16 +930,19 @@ static void fax_app(switch_core_session_t *session, const char *data,
 	line_close(&l);
 }
 
+/* dmodem_send_fax */
 SWITCH_STANDARD_APP(send_fax_function)
 {
 	fax_app(session, data, DMODEM_FAX_SEND);
 }
 
+/* dmodem_receive_fax */
 SWITCH_STANDARD_APP(receive_fax_function)
 {
 	fax_app(session, data, DMODEM_FAX_RECEIVE);
 }
 
+/* libdmodem's log level: debug of <settings> (0 if none) */
 static void load_config(void)
 {
 	switch_xml_t xml, cfg;
@@ -935,6 +956,7 @@ static void load_config(void)
 	dmodem_set_debug(debug);
 }
 
+/* the log hook, the pumps, <settings>, the three applications */
 SWITCH_MODULE_LOAD_FUNCTION(mod_dmodem_load)
 {
 	switch_application_interface_t *app_interface;
@@ -964,6 +986,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_dmodem_load)
 	return SWITCH_STATUS_SUCCESS;
 }
 
+/* nothing to free */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_dmodem_shutdown)
 {
 	return SWITCH_STATUS_SUCCESS;
