@@ -74,6 +74,7 @@ static int take_bits(BitQueue *s, int nbits, uint8_t mask, uint8_t *&buf,
 static const int CHAR_SIZE = 10;        /* start, 8 data, stop */
 static const int STOP_BITS = 1;
 
+/* a call in async mode: empty queues, no bit timer */
 void Async::start(Link *link)
 {
 	link_ = link;
@@ -82,6 +83,9 @@ void Async::start(Link *link)
 	link->set_timer(0, nullptr);
 }
 
+/* n items of nbits bits for the data pump: the DTE's characters as
+   start bit, 8 data bits (least significant first) and stop bit, marks
+   when there are none; returns n */
 int Async::get_bits(int nbits, uint8_t *buf, int n)
 {
 	int ret = 0;
@@ -110,6 +114,9 @@ int Async::get_bits(int nbits, uint8_t *buf, int n)
 	return ret;
 }
 
+/* n items of nbits bits from the data pump: marks skipped up to a start
+   bit, then a character to the DTE every 10 bits (the stop bit is not
+   checked; a character the DTE does not take is lost); returns n */
 int Async::put_bits(int nbits, const uint8_t *buf, int n)
 {
 	int ret = 0;
@@ -138,7 +145,8 @@ int Async::put_bits(int nbits, const uint8_t *buf, int n)
 /*
  *    the detection phase
  *
- *    originator: transmits ODPs until T400 expires or an ADP comes;
+ *    originator: transmits ODPs until an ADP or flags come (it has no
+ *    T400 here: the modem core skips the phase at the originator);
  *    answerer: transmits marks until the phase ends, at least 10 ADPs
  *    after an ODP, or until continuous flags come.
  *
@@ -153,18 +161,24 @@ static const uint8_t ADP0 = 0xa2, ADP1_V14 = 0x00, ADP1_V42 = 0xc2;
 static const int MAX_TX_PATTERNS = 16;
 static const int PATTERN_SIZE = 36;
 
+/* the originator's bit timer: its ODPs start after 64 octets of marks */
 void Detector::begin(Link *link)
 {
 	link->logf("detector start...");
 	link->det_.tx_count_ = 1;
 }
 
+/* the bit timer at the end of the phase: LAPM if an ADP (V.42), ODPs or
+   flags came, else async */
 void Detector::finish(Link *link)
 {
 	link->logf("detector finished.");
 	link->detected(link->det_.ec_enable_);
 }
 
+/* the phase at the start of the data mode: the originator waits 64
+   octets of marks for its ODPs, the answerer sends marks until ODPs
+   come, at most T400 */
 void Detector::start(Link *link)
 {
 	/* T400 (750 ms) at the data pump's rate (a nominal 28800 bit/s
@@ -192,6 +206,9 @@ void Detector::start(Link *link)
 	rx_.clear();
 }
 
+/* the phase's transmitter: 9 marks, then (once sending) the next
+   pattern character as 9 bits, a start bit and its 8 bits (its stop
+   bit the first of the next marks); returns n */
 int Detector::get_bits(int nbits, uint8_t *buf, int n)
 {
 	int ret = 0;
@@ -212,6 +229,10 @@ int Detector::get_bits(int nbits, uint8_t *buf, int n)
 	return ret;
 }
 
+/* the phase's receiver: characters after marks, as in async; a flag
+   ends the phase one pattern later (LAPM); at the answerer the second
+   ODP starts 16 ADPs and LAPM, at the originator the second ADP ends
+   the phase (V.42: LAPM, V.14: async); returns n */
 int Detector::put_bits(int nbits, const uint8_t *buf, int n)
 {
 	int ret = 0;
@@ -320,11 +341,15 @@ static const uint16_t fcs16_tab[256] = {
 
 static const uint16_t INIT_FCS = 0xffff, GOOD_FCS = 0xf0b8;
 
+/* the FCS-16 (x^16 + x^12 + x^5 + 1, bits reflected) after one more
+   octet */
 static uint16_t fcs_add(uint16_t fcs, uint8_t c)
 {
 	return (uint16_t)(fcs >> 8 ^ fcs16_tab[(fcs ^ c) & 0xff]);
 }
 
+/* LAPM's framing: no framer and no frame yet (flags go out), the
+   receiver hunting for a flag */
 void Hdlc::start(Link *link)
 {
 	link_ = link;
@@ -363,6 +388,9 @@ void Hdlc::put_byte(uint8_t in)
 	}
 }
 
+/* n items of nbits bits for the data pump: flags between frames, the
+   framer's next frame (while tx is on) with zeros inserted and its
+   FCS, tx_complete() once it is out; returns n */
 int Hdlc::get_bits(int nbits, uint8_t *buf, int n)
 {
 	int ret = 0;
@@ -398,6 +426,10 @@ int Hdlc::get_bits(int nbits, uint8_t *buf, int n)
 	return ret;
 }
 
+/* n items of nbits bits from the data pump: flags delimit the frames,
+   inserted zeros are removed, six 1s outside a flag abort the frame;
+   a frame of whole octets, of at least 3 with the FCS and a good FCS,
+   goes to the framer's rx_complete() without it; returns n */
 int Hdlc::put_bits(int nbits, const uint8_t *buf, int n)
 {
 	int ret = 0;

@@ -30,6 +30,7 @@ const char *const Modem::author = "Smart Link Ltd.";
 const char *const Modem::product = "SmartLink Soft Modem";
 const char *const Modem::version = "2.9.11";
 
+/* debug lines (with the modem's name), error lines */
 #define DBG(fmt, ...) logf(fmt, ##__VA_ARGS__)
 #define ERR(fmt, ...) log_printf(1, "err: %s: " fmt, name_, ##__VA_ARGS__)
 
@@ -43,16 +44,19 @@ static const unsigned RING_COUNT_MIN = 10;
 static const unsigned long ESCAPE_TIMEOUT = 500;
 static const int XMIT_SIZE = 4096;
 
+/* t1 is before t2 (ms, the clock may wrap) */
 static bool time_before(unsigned long t1, unsigned long t2)
 {
 	return (long)(t2 - t1) > 0;
 }
 
+/* t1 is t2 or after */
 static bool time_after(unsigned long t1, unsigned long t2)
 {
 	return !time_before(t1, t2);
 }
 
+/* S-registers by their use; CRLF: S3 and S4 */
 #define TOTAL_RINGS        sregs_[SREG_RING_COUNTER]
 #define ANSWER_AFTER_RINGS sregs_[SREG_RINGS_TO_AUTO_ANSWER]
 #define CRLF               ((const char *)sregs_ + SREG_CR_CHAR)
@@ -75,12 +79,15 @@ static bool fast_dp(int id)
 
 struct LinkOwner final : public dlink::Owner {
 	Modem *m;
+	/* the DTE's characters for the line */
 	int read_chars(uint8_t *buf, int n) override {
 		return m->get_chars((char *)buf, n);
 	}
+	/* received characters to the DTE */
 	int write_chars(const uint8_t *buf, int n) override {
 		return m->put_chars((const char *)buf, n);
 	}
+	/* the link's progress as the core's statuses */
 	void status(dlink::Status s) override {
 		switch (s) {
 		case dlink::Status::Detected:
@@ -97,10 +104,13 @@ struct LinkOwner final : public dlink::Owner {
 			break;
 		}
 	}
+	/* the pump's rate, for the link's bit timers */
 	int tx_rate() override { return (int)m->tx_rate(); }
+	/* what XID agreed, for the CONNECT messages */
 	void negotiated(const dlink::Config &c) override {
 		m->negotiated(c.comp, c.v44, c.dict_size, c.max_string);
 	}
+	/* the link's lines in the modem's log */
 	void log(const char *line) override {
 		m->logf("%s\n", line);
 	}
@@ -110,6 +120,8 @@ struct LinkOwner final : public dlink::Owner {
  *    creation
  */
 
+/* a modem on host: the S-registers, the country (opt.country, else
+   USA), the link layer, the DTE's buffer; ok() if all went well */
 Modem::Modem(Host &host, const Options &opt)
 	: host_(host), name_(opt.name ? opt.name : "modem"),
 	  dev_name_(opt.dev_name)
@@ -141,6 +153,7 @@ Modem::Modem(Host &host, const Options &opt)
 	ok_ = true;
 }
 
+/* a call still going ends (NO CARRIER); everything freed */
 Modem::~Modem()
 {
 	DBG("modem_delete...\n");
@@ -159,11 +172,13 @@ Modem::~Modem()
 	delete handle_;
 }
 
+/* the Modem behind the pumps' struct modem */
 Modem *Modem::of(struct modem *m)
 {
 	return m->self;
 }
 
+/* a debug line (level 1) with the modem's name, printf style */
 void Modem::logf(const char *fmt, ...)
 {
 	char line[400];
@@ -174,6 +189,7 @@ void Modem::logf(const char *fmt, ...)
 	log_printf(1, "%s: %s", name_, line);
 }
 
+/* the name of pump id, NULL if there is none */
 const char *Modem::dp_name(int id) const
 {
 	for (DpDriver *p = dp_drivers(); p->id > 0; p++)
@@ -186,6 +202,8 @@ const char *Modem::dp_name(int id) const
  *    the result codes
  */
 
+/* a result code to the DTE (not with ATQ1): its text (ATV1; CONNECT
+   with the AT&A lines and the rate) or its number */
 void Modem::report(Result code)
 {
 	static const struct {
@@ -242,11 +260,13 @@ void Modem::report(Result code)
 	crlf();
 }
 
+/* a string to the DTE */
 void Modem::puts(const char *s)
 {
 	put_chars(s, strlen(s));
 }
 
+/* the line's end (S3, S4) to the DTE */
 void Modem::crlf()
 {
 	put_chars(CRLF, 2);
@@ -256,6 +276,8 @@ void Modem::crlf()
  *    the state machine
  */
 
+/* the call's state, and what the link does in it: characters flow
+   only ONLINE, the link stops with the pump (IDLE, DP_ESTAB, DP_DISC) */
 int Modem::set_state(State s)
 {
 	DBG("modem set state: %x --> %x...\n", state_, (unsigned)s);
@@ -304,12 +326,16 @@ int Modem::set_state(State s)
 	return 0;
 }
 
+/* runs what after samples more line samples (one at a time) */
 void Modem::later(Later what, unsigned long samples)
 {
 	later_ = what;
 	later_at_ = count_ + samples;
 }
 
+/* hangs up, local (we do: LAPM's DISC first, else the pump hangs up)
+   or not (the remote did); the call stops 48 samples later and its
+   result (NO CARRIER unless set) goes to the DTE */
 void Modem::hup(bool local)
 {
 	DBG("modem_hup...%d\n", state_);
@@ -355,6 +381,9 @@ void Modem::hup(bool local)
 	}
 }
 
+/* the progress of the pump (ST_DP_LINK: the link starts) and of the
+   link (ST_EC_LINK: ONLINE and CONNECT; released, errors: hang up), or
+   the end of the call with its result */
 void Modem::update_status(Status status)
 {
 	DBG("modem_update_status: %d\n", (int)status);
@@ -409,6 +438,7 @@ void Modem::update_status(Status status)
 	}
 }
 
+/* what XID agreed, for the CONNECT messages */
 void Modem::negotiated(int comp, bool v44, int dict_size, int max_string)
 {
 	cfg_.comp = comp;
@@ -417,6 +447,7 @@ void Modem::negotiated(int comp, bool v44, int dict_size, int max_string)
 	cfg_.max_string = max_string;
 }
 
+/* the call's state, for programs that embed the modem */
 LinkState Modem::link_state() const
 {
 	if (state_ == IDLE)
@@ -428,11 +459,13 @@ LinkState Modem::link_state() const
 	return LinkState::HangingUp;
 }
 
+/* DTE characters in the buffer or in LAPM frames not acknowledged */
 bool Modem::tx_pending() const
 {
 	return xmit_count_ > 0 || link_->tx_pending();
 }
 
+/* LAPM frames not sent or not acknowledged */
 bool Modem::link_tx_pending() const
 {
 	return link_->tx_pending();
@@ -442,6 +475,7 @@ bool Modem::link_tx_pending() const
  *    the data pumps
  */
 
+/* the pump's transmitter: bits from the link (logged); returns n */
 int Modem::get_bits(int nbits, uint8_t *buf, int n)
 {
 	n = link_->get_bits(nbits, buf, n);
@@ -449,6 +483,7 @@ int Modem::get_bits(int nbits, uint8_t *buf, int n)
 	return n;
 }
 
+/* the pump's receiver: bits to the link (logged); returns n */
 int Modem::put_bits(int nbits, const uint8_t *buf, int n)
 {
 	n = link_->put_bits(nbits, buf, n);
@@ -456,6 +491,7 @@ int Modem::put_bits(int nbits, const uint8_t *buf, int n)
 	return n;
 }
 
+/* a pump's DPSTAT_ as the core's status */
 static Modem::Status dpstat2status(int dpstat)
 {
 	switch (dpstat) {
@@ -470,6 +506,9 @@ static Modem::Status dpstat2status(int dpstat)
 	}
 }
 
+/* count samples through the pump, frag_ at a time, acting on what it
+   reports (connect, a change of pump, errors); silence once it is
+   gone */
 void Modem::dp_process(int16_t *in, int16_t *out, int count)
 {
 	while (count && dp_) {
@@ -499,6 +538,10 @@ void Modem::dp_process(int16_t *in, int16_t *out, int count)
 		memset(out, 0, count * sizeof(*out));
 }
 
+/* the next pump: the one a pump asked for (dp_requested_), else
+   AT+MS's (V.8 first for V.34 and up; V.90 for K56flex), the fax
+   engine in fax mode; the old pump destroyed; hangs up if it cannot
+   be created */
 void Modem::change_dp()
 {
 	struct dp *old = dp_;
@@ -546,6 +589,7 @@ void Modem::change_dp()
  *    the line's samples
  */
 
+/* n samples through what runs now (silence if nothing) */
 void Modem::run(int16_t *in, int16_t *out, int n)
 {
 	switch (run_) {
@@ -570,6 +614,8 @@ void Modem::run(int16_t *in, int16_t *out, int n)
 	}
 }
 
+/* the line's samples: DC removed (not from PCM codes), logged, through
+   what runs; then what was due after them (later()) */
 void Modem::process(const int16_t *in_, int16_t *out, int n)
 {
 	if (n > scratch_len_) {
@@ -609,6 +655,7 @@ void Modem::process(const int16_t *in_, int16_t *out, int n)
  *    events and timers
  */
 
+/* events mask after ms (one timer: the last one asked wins) */
 void Modem::schedule_event(unsigned mask, unsigned long ms)
 {
 	new_event_ |= mask;
@@ -616,6 +663,7 @@ void Modem::schedule_event(unsigned mask, unsigned long ms)
 	timer_on_ = true;
 }
 
+/* ms until the next event: 0 if one is due, -1 if none */
 long Modem::next_timer_ms()
 {
 	if (event_)
@@ -626,6 +674,7 @@ long Modem::next_timer_ms()
 	return t > 0 ? t : 0;
 }
 
+/* the timer's events once it is due, and any others pending */
 void Modem::poll()
 {
 	if (timer_on_ && (long)(timer_at_ - host_.now_ms()) <= 0) {
@@ -640,6 +689,9 @@ void Modem::poll()
 	}
 }
 
+/* EV_RING_CHECK: a ring burst checked by its length and its pulses
+   (RING, the answer after S0 rings); EV_ESCAPE: +++ and the guard
+   time after it, online command mode and OK */
 void Modem::events(unsigned event)
 {
 	DBG("modem_event: %x...\n", event);
@@ -683,6 +735,8 @@ void Modem::events(unsigned event)
 	}
 }
 
+/* a pulse of ring signal (only while idle): the pulses of one burst
+   counted, the first starts the check (and caller ID) */
 void Modem::ring()
 {
 	unsigned long now = host_.now_ms();
@@ -704,6 +758,8 @@ void Modem::ring()
 	ring_last_ = now;
 }
 
+/* a call that rings by itself (SIP): RING, the answer after S0 rings;
+   on = false: it gave up */
 void Modem::ring_signal(bool on)
 {
 	if (!on) {
@@ -724,6 +780,7 @@ void Modem::ring_signal(bool on)
 	}
 }
 
+/* the device reported an error: logged only */
 void Modem::error()
 {
 	DBG("modem error...\n");
@@ -733,6 +790,8 @@ void Modem::error()
  *    the DTE
  */
 
+/* up to n of the DTE's characters waiting in the buffer; returns how
+   many */
 int Modem::get_chars(char *buf, int n)
 {
 	int ret = 0;
@@ -754,12 +813,16 @@ int Modem::get_chars(char *buf, int n)
 	return ret;
 }
 
+/* characters to the DTE; returns how many it took */
 int Modem::put_chars(const char *buf, int n)
 {
 	int ret = host_.dte_write(*this, buf, n);
 	return ret < 0 ? 0 : ret;
 }
 
+/* the escape: three escape characters (S2) alone, the guard time
+   before them (the timer checks the one after); returns how many came
+   so far */
 int Modem::check_escape(const char *buf, int count)
 {
 	unsigned long now = host_.now_ms();
@@ -785,6 +848,9 @@ noescape:
 	return 0;
 }
 
+/* the DTE's characters: any while connecting hangs up; online, the
+   escape check; into the buffer, and to the AT interpreter in command
+   mode; returns how many the buffer took */
 int Modem::dte_input(const char *buf, int count)
 {
 	int ret = 0;
@@ -821,6 +887,7 @@ int Modem::dte_input(const char *buf, int count)
  *    starting and stopping a call
  */
 
+/* the hook through the host; 0 on success */
 int Modem::set_hook(int state)
 {
 	int ret;
@@ -833,6 +900,7 @@ int Modem::set_hook(int state)
 	return ret;
 }
 
+/* the link's configuration from the S-registers (AT\N, AT%C) */
 void Modem::setup_config()
 {
 	cfg_.ec = sregs_[SREG_EC];
@@ -851,6 +919,7 @@ void Modem::setup_config()
 	dsp_info_.qc_lapm = cfg_.ec && cfg_.ec_detector;
 }
 
+/* the host starts the line's audio; 0 on success */
 int Modem::do_start()
 {
 	int ret;
@@ -860,6 +929,8 @@ int Modem::do_start()
 	return ret;
 }
 
+/* a call (dial or answer): off hook, the link set up, the audio
+   started; on failure NO CARRIER and the call stopped */
 int Modem::start_call()
 {
 	int ret;
@@ -911,6 +982,9 @@ error:
 	return ret;
 }
 
+/* the end of a call: the audio stopped, on hook, all freed, IDLE, the
+   result to the DTE; returns started_ (true if the host could not
+   stop) */
 int Modem::stop_call()
 {
 	DBG("modem_stop..\n");
@@ -965,6 +1039,8 @@ int Modem::stop_call()
 	return started_;
 }
 
+/* ATA: a call whose answering pump starts after S-register
+   SREG_ANS_DELAY (s; 0: 10 ms); -1 if a pump runs */
 int Modem::answer()
 {
 	DBG("modem answer...\n");
@@ -980,6 +1056,8 @@ int Modem::answer()
 	return start_call();
 }
 
+/* the call progress pump for a dial (created with the dial string
+   hidden); -1 if a pump runs or it cannot be created */
 int Modem::dial_start()
 {
 	struct dp_operations *op = nullptr;
@@ -1012,6 +1090,7 @@ int Modem::dial_start()
 	return 0;
 }
 
+/* ATD: dials number (NULL: the last one again); -1 on failure */
 int Modem::dial(const char *number)
 {
 	if (number) {
@@ -1025,6 +1104,7 @@ int Modem::dial(const char *number)
 	return start_call();
 }
 
+/* ATH: the hook, after hanging up a call */
 int Modem::hook(int state)
 {
 	DBG("modem hook...\n");
@@ -1035,6 +1115,7 @@ int Modem::hook(int state)
 	return set_hook(state);
 }
 
+/* ATO: back online from online command mode, CONNECT; -1 if not there */
 int Modem::online()
 {
 	DBG("modem online...\n");
@@ -1046,17 +1127,20 @@ int Modem::online()
 	return 0;
 }
 
+/* the speaker as ATM and ATL say outside a call (on only with M2) */
 void Modem::update_speaker()
 {
 	host_.speaker(*this, sregs_[SREG_SPEAKER_CONTROL] == 2 ?
 		      sregs_[SREG_SPEAKER_VOLUME] : 0);
 }
 
+/* hangs up (ATH, DTR off) */
 void Modem::hangup()
 {
 	hup(true);
 }
 
+/* hangs up, and runs at once what was due later (the stop) */
 void Modem::hangup_now()
 {
 	hup(true);
@@ -1073,6 +1157,8 @@ void Modem::hangup_now()
 	}
 }
 
+/* the country by T.35 code id or by name, with its dial pause and hook
+   flash times; -1 if there is none */
 int Modem::homolog_init(int id, const char *name)
 {
 	for (const struct homolog_set *set = homolog_set; set->name; set++)
@@ -1085,6 +1171,7 @@ int Modem::homolog_init(int id, const char *name)
 	return -1;
 }
 
+/* data, fax or voice (AT+FCLASS); voice stops when it is left */
 int Modem::set_mode(enum MODEM_MODE mode)
 {
 	DBG("modem set mode: -> %d...\n", mode);
@@ -1096,6 +1183,8 @@ int Modem::set_mode(enum MODEM_MODE mode)
 	return 0;
 }
 
+/* ATZ: a call hung up; the S-registers, the rates, modem-on-hold and
+   the mode from the start (the country kept) */
 int Modem::reset()
 {
 	DBG("modem reset...\n");
@@ -1117,6 +1206,7 @@ int Modem::reset()
 	return 0;
 }
 
+/* the S-registers' defaults */
 void Modem::sregs_init()
 {
 	sregs_[SREG_ESCAPE_CHAR] = '+';
@@ -1154,6 +1244,8 @@ void Modem::sregs_init()
  *    caller ID
  */
 
+/* caller ID is over (done, failed or timed out): the call stops unless
+   the ring detector runs; then the answer if it is due */
 void Modem::cid_stop()
 {
 	DBG("modem_cid_stop...\n");
@@ -1172,6 +1264,7 @@ void Modem::cid_stop()
 	}
 }
 
+/* caller ID on the line's samples, silence out */
 void Modem::cid_process(int16_t *in, int16_t *out, int count)
 {
 	int status;
@@ -1184,6 +1277,8 @@ void Modem::cid_process(int16_t *in, int16_t *out, int count)
 	}
 }
 
+/* caller ID for ms, snooping the line (or along with the ring
+   detector); -1 if a call runs or it cannot be created */
 int Modem::cid_start(unsigned long ms)
 {
 	DBG("modem_cid_start: timeout = %lu...\n", ms / TICK);
@@ -1204,6 +1299,8 @@ int Modem::cid_start(unsigned long ms)
  *    the ring detector
  */
 
+/* the ring detector on the samples: a ring's start (ring()), its end
+   with its frequency and length (the ring check); caller ID with it */
 void Modem::rd_process(int16_t *in, int16_t *out, int count)
 {
 	int ret;
@@ -1231,6 +1328,7 @@ void Modem::rd_process(int16_t *in, int16_t *out, int count)
 		cid_process(in, out, count);
 }
 
+/* the line's ring detector, snooping (a hardware modem on hook) */
 int Modem::ring_detector_start()
 {
 	DBG("modem_ring_detector_start...\n");
@@ -1248,6 +1346,7 @@ int Modem::ring_detector_start()
  *    voice
  */
 
+/* the voice engine on the samples; its OK, CONNECT, ERROR to the DTE */
 void Modem::voice_process(int16_t *in, int16_t *out, int count)
 {
 	int status = VOICE_process(voice_, in, out, count);
@@ -1276,6 +1375,8 @@ void Modem::voice_process(int16_t *in, int16_t *out, int count)
 	}
 }
 
+/* AT+VTX, +VRX, +VTS: a command to the voice engine, 1 (no result
+   now); -1 without voice or for another command */
 int Modem::voice_command(enum VOICE_CMD cmd)
 {
 	DBG("modem_voice_command: %u...\n", cmd);
@@ -1294,6 +1395,8 @@ int Modem::voice_command(enum VOICE_CMD cmd)
 	}
 }
 
+/* the voice engine, off hook (the ring detector stops); -1 if a call
+   runs */
 int Modem::voice_start()
 {
 	DBG("modem_voice_start...\n");
@@ -1314,6 +1417,7 @@ int Modem::voice_start()
 	return do_start();
 }
 
+/* the end of voice: the call stopped, on hook */
 void Modem::voice_stop()
 {
 	DBG("modem_voice_stop...\n");
@@ -1327,6 +1431,7 @@ void Modem::voice_stop()
 	set_hook(MODEM_HOOK_ON);
 }
 
+/* AT+VLS: none (voice off) or the line (voice on: 1, no result now) */
 int Modem::voice_set_device(unsigned device)
 {
 	DBG("modem_voice_set_device: dev = %u...\n", device);
@@ -1344,6 +1449,7 @@ int Modem::voice_set_device(unsigned device)
 	return -1;
 }
 
+/* the voice parameters' defaults (AT+VIP) */
 void Modem::voice_init()
 {
 	voice_info_.comp_method = 1;
@@ -1363,6 +1469,7 @@ void Modem::voice_init()
  *    fax (class 1)
  */
 
+/* the fax engine on the samples; its results to the DTE */
 void Modem::fax_process(int16_t *in, int16_t *out, int count)
 {
 	int ret = FAX_process(fax_, in, out, count);
@@ -1402,6 +1509,8 @@ void Modem::fax_process(int16_t *in, int16_t *out, int count)
 	}
 }
 
+/* the fax engine (class 1) instead of a pump; -1 if it cannot be
+   created */
 int Modem::fax_start()
 {
 	DBG("modem_fax_start...\n");

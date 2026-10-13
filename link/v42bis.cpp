@@ -68,6 +68,9 @@ static const int TEST_SLICE = 256;      /* compression test (characters) */
  *
  */
 
+/* the dictionary and the coder from the start: only the 256 characters
+   (codewords from N5), codewords of 9 bits, transparent mode, the
+   escape character 0 */
 void V42bis::dict_init()
 {
 	for (int i = 0; i < dict_size_; i++) {
@@ -90,6 +93,8 @@ void V42bis::dict_init()
 	escape_ = false;
 }
 
+/* the entry of string at + ch (at 0: the character's own); 0 if it is
+   not in the dictionary */
 uint16_t V42bis::match_char(uint16_t at, uint8_t ch) const
 {
 	if (!at)
@@ -100,6 +105,9 @@ uint16_t V42bis::match_char(uint16_t at, uint8_t ch) const
 	return 0;
 }
 
+/* adds string at + ch at the next free entry and returns it; the next
+   free entry is then the next leaf after it (from N5 again past N2),
+   taken out of its parent's children */
 uint16_t V42bis::add_char(uint16_t at, uint8_t ch)
 {
 	uint16_t added = next_free_, next;
@@ -135,6 +143,7 @@ uint16_t V42bis::add_char(uint16_t at, uint8_t ch)
  *
  */
 
+/* the decoder's string so far to the output; returns its length */
 int V42bis::send_string()
 {
 	int ret = str_len_;
@@ -145,6 +154,8 @@ int V42bis::send_string()
 	return ret;
 }
 
+/* the decoder: the string of codeword cw after the string so far (by
+   its parents, backwards); returns its length */
 int V42bis::recv_data(uint16_t cw)
 {
 	int ret = 0, i;
@@ -158,6 +169,9 @@ int V42bis::recv_data(uint16_t cw)
 	return ret;
 }
 
+/* the decoder at the end of a frame: the string so far out, its length
+   kept so that N7 still counts from its start; returns the characters
+   output */
 int V42bis::flush_decoder()
 {
 	int total = flushed_len_ + str_len_;
@@ -166,6 +180,11 @@ int V42bis::flush_decoder()
 	return ret;
 }
 
+/* the decoder: one octet from the line; codewords (and ETM, FLUSH,
+   STEPUP) in compressed mode, characters and the escape character's
+   commands (ECM, EID, RESET) in transparent mode; the dictionary
+   updated as the encoder does it; returns the characters output, -1
+   on an error (C-ERROR) */
 int V42bis::decode(uint8_t in)
 {
 	int ret = 0;
@@ -285,18 +304,21 @@ int V42bis::decode(uint8_t in)
  *
  */
 
+/* a codeword of C2 bits into the bit queue, the lowest bit first */
 void V42bis::send_cw(uint16_t cw)
 {
 	bit_data_ |= (uint32_t)cw << bit_len_;
 	bit_len_ += cw_size_;
 }
 
+/* zero bits to the next octet boundary */
 void V42bis::align_bits()
 {
 	if (bit_len_ % 8)
 		bit_len_ += 8 - bit_len_ % 8;
 }
 
+/* the whole octets of the bit queue to the output; returns how many */
 int V42bis::send_bits()
 {
 	int ret = 0;
@@ -309,6 +331,10 @@ int V42bis::send_bits()
 	return ret;
 }
 
+/* the encoder: the string matched so far out, as codeword cw (after
+   the STEPUPs it needs) or as its characters in transparent mode (EID
+   after an escape character); the ratio test's counts too; returns
+   the octets output */
 int V42bis::send_data(uint16_t cw)
 {
 	int ret = 0;
@@ -386,6 +412,10 @@ int V42bis::test_mode()
 	return ret;
 }
 
+/* the encoder when the DTE has no more for now: the string matched so
+   far out, and in compressed mode FLUSH and the rest of the octet;
+   nothing while a dictionary update is pending; returns the octets
+   of the string */
 int V42bis::flush_encoder()
 {
 	int ret = 0;
@@ -407,6 +437,10 @@ int V42bis::flush_encoder()
 	return ret;
 }
 
+/* the encoder: one character from the DTE; it extends the string or
+   the string goes out and the character starts the next, the
+   dictionary updated, then the test of the mode; returns the octets
+   output */
 int V42bis::encode(uint8_t in)
 {
 	int ret = 0;
@@ -452,6 +486,8 @@ int V42bis::encode(uint8_t in)
  *
  */
 
+/* N2 = dict_size codewords (512 and up) and strings of up to N7 =
+   max_string (6 to 34) allocated; -1 if out of range or no memory */
 int V42bis::init(int dict_size, int max_string)
 {
 	exit();
@@ -471,6 +507,7 @@ int V42bis::init(int dict_size, int max_string)
 	return 0;
 }
 
+/* what XID agreed, no more than init()'s; -1 if out of range */
 int V42bis::config(int dict_size, int max_string)
 {
 	if (dict_size < MIN_DICT_SIZE || max_string < MIN_STR_SIZE ||
@@ -483,6 +520,7 @@ int V42bis::config(int dict_size, int max_string)
 	return 0;
 }
 
+/* frees the dictionary */
 void V42bis::exit()
 {
 	delete[] dict_;
@@ -490,6 +528,7 @@ void V42bis::exit()
 	dict_size_ = 0;
 }
 
+/* up to n octets of the output into buf; returns how many */
 int V42bis::out(uint8_t *buf, int n)
 {
 	int ret = 0;

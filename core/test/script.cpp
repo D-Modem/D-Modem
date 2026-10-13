@@ -34,6 +34,7 @@
 
 static const int RATE = 8000, BLOCK = 160;      /* 20 ms */
 
+/* one modem and its DTE */
 struct Side {
 	char name;
 	Core *core;
@@ -46,6 +47,8 @@ struct Side {
 static unsigned long samples, ms;
 static Side sides[2];
 
+/* the script's text with its escapes (backslash r, n, xNN, or the
+   next character as it is) */
 static std::string unescape(const char *s)
 {
 	std::string r;
@@ -70,6 +73,7 @@ static std::string unescape(const char *s)
 	return r;
 }
 
+/* a line the modem told its DTE, with the time, controls visible */
 static void print_line(Side &s, const std::string &l)
 {
 	printf("%7lu %c: ", ms, s.name);
@@ -86,6 +90,7 @@ static void print_line(Side &s, const std::string &l)
 	putchar('\n');
 }
 
+/* what the modem told its DTE: printed line by line, kept for until */
 static void collect(Side &s)
 {
 	std::string o = s.core->dte_out();
@@ -99,12 +104,14 @@ static void collect(Side &s)
 	s.since += o;
 }
 
+/* both modems' */
 static void collect_all()
 {
 	collect(sides[0]);
 	collect(sides[1]);
 }
 
+/* the DTE's data to send, as much as the modem has room for */
 static void feed(Side &s)
 {
 	if (s.tx.empty())
@@ -137,6 +144,7 @@ static void block()
 	collect_all();
 }
 
+/* t ms of audio */
 static void run(unsigned long t)
 {
 	unsigned long end = ms + t;
@@ -144,11 +152,13 @@ static void run(unsigned long t)
 		block();
 }
 
+/* A or B */
 static Side &side(const char *n)
 {
 	return sides[*n == 'B' ? 1 : 0];
 }
 
+/* n octets of numbered lines of text from who */
 static std::string text_data(char who, long n)
 {
 	std::string d;
@@ -162,6 +172,7 @@ static std::string text_data(char who, long n)
 	return d;
 }
 
+/* runs the script argv[1]; 2 on a usage or script error */
 int main(int argc, char **argv)
 {
 	FILE *f;

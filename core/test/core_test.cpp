@@ -37,32 +37,41 @@ static struct Pumps {
 
 static unsigned long now;
 
+/* the Host: a DTE that keeps the output, a line that can fail to start
+   or to change the hook */
 struct Line final : public dcore::Host {
 	std::string out;
 	int fail_start = 0, fail_hook = 0;
 	int starts = 0, stops = 0, last_hook = -1, volume = -1;
+	/* counted; fail_start fails it */
 	int start(Modem &) override {
 		starts++;
 		return fail_start;
 	}
+	/* counted */
 	int stop(Modem &) override {
 		stops++;
 		return 0;
 	}
+	/* fail_hook fails it, else the state is kept */
 	int set_hook(Modem &, int state) override {
 		if (fail_hook)
 			return -1;
 		last_hook = state;
 		return 0;
 	}
+	/* the volume, kept */
 	void speaker(Modem &, int v) override { volume = v; }
+	/* the DTE's output, kept */
 	int dte_write(Modem &, const char *buf, int n) override {
 		out.append(buf, n);
 		return n;
 	}
+	/* the test's clock */
 	unsigned long now_ms() override { return now; }
 };
 
+/* a modem on l at 8000 Hz, in country (NULL: USA) */
 static Modem *make(Line &l, const char *name, const char *country = nullptr)
 {
 	dcore::Options o;
@@ -72,6 +81,7 @@ static Modem *make(Line &l, const char *name, const char *country = nullptr)
 	return new Modem(l, o);
 }
 
+/* a command line; what the modem answered (SHOW prints it) */
 static std::string cmd(Modem *m, Line &l, const char *s)
 {
 	l.out.clear();
@@ -85,6 +95,7 @@ static std::string cmd(Modem *m, Line &l, const char *s)
 	return l.out;
 }
 
+/* the country, ATI7, S-registers out of range, an idle modem */
 TEST(Core, Options)
 {
 	Line l;
@@ -103,6 +114,7 @@ TEST(Core, Options)
 	delete m;
 }
 
+/* a line that cannot start or change the hook */
 TEST(Core, FailingLine)
 {
 	Line l;
@@ -160,6 +172,7 @@ struct Pair {
 	std::vector<int16_t> ia, ib, oa, ob;
 	std::string got_a, got_b;       /* what each DTE received */
 	static const int BLOCK = 160;
+	/* two modems, ATE0X3 and the modulation command ms */
 	Pair(const char *ms) {
 		a = make(la, "A");
 		b = make(lb, "B");
@@ -175,6 +188,7 @@ struct Pair {
 		delete a;
 		delete b;
 	}
+	/* 20 ms of audio both ways, the timers, the DTEs' output */
 	void step() {
 		if (a->started())
 			a->process(ia.data(), oa.data(), BLOCK);
@@ -194,6 +208,7 @@ struct Pair {
 		la.out.clear();
 		lb.out.clear();
 	}
+	/* steps until cond or ms; cond's value */
 	bool run_until(bool (*cond)(Pair &), int ms) {
 		for (int t = 0; t < ms; t += 20) {
 			if (cond(*this))
@@ -204,6 +219,7 @@ struct Pair {
 	}
 };
 
+/* n pseudo-random octets from who: text that compresses, any octet */
 static std::string data(char who, int n)
 {
 	std::string d;
@@ -217,6 +233,7 @@ static std::string data(char who, int n)
 	return d;
 }
 
+/* a call: its modulation command, its least rate (bit/s), the data */
 struct Call {
 	const char *ms;
 	unsigned min_rate;
@@ -225,6 +242,8 @@ struct Call {
 
 class CoreCall : public testing::TestWithParam<Call> {};
 
+/* a call: online, data both ways byte for byte, the escape, the remote
+   hangs up (NO CARRIER) */
 TEST_P(CoreCall, DataBothWaysAndHangup)
 {
 	const char *ms = GetParam().ms;
@@ -294,6 +313,7 @@ TEST_P(CoreCall, DataBothWaysAndHangup)
 
 static int log_lines;
 
+/* the log hook gets the modem's lines */
 TEST(Core, Log)
 {
 	dcore::log_set_hook([](const char *) { log_lines++; });

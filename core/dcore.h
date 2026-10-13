@@ -87,10 +87,12 @@ enum class LinkState { Idle, Connecting, Online, HangingUp };
 
 class Modem {
 public:
+	/* a modem on host; ok() if it could be set up */
 	Modem(Host &host, const Options &opt);
 	~Modem();
 	Modem(const Modem &) = delete;
 	Modem &operator=(const Modem &) = delete;
+	/* the constructor succeeded */
 	bool ok() const { return ok_; }
 
 	/*
@@ -126,21 +128,33 @@ public:
 	 *    the modem -> the program
 	 */
 
+	/* its name in the log */
 	const char *name() const { return name_; }
+	/* the device's name (ATI3) */
 	const char *dev_name() const { return dev_name_; }
+	/* the line's sample rate (Hz) */
 	int rate() const { return srate_; }
+	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
+	/* we dialled */
 	bool caller() const { return caller_; }
+	/* the number dialled */
 	const char *dial_string() const { return dial_string_; }
+	/* data, fax or voice */
 	enum MODEM_MODE mode() const { return mode_; }
+	/* the call's state */
 	LinkState link_state() const;
+	/* a data connection is (or was, in this call) up */
 	bool carrier() const { return carrier_; }
+	/* the pump's rates (bit/s) */
 	unsigned tx_rate() const { return tx_rate_; }
 	unsigned rx_rate() const { return rx_rate_; }
 	/* DTE data the remote does not have yet (with V.42: not
 	   acknowledged) */
 	bool tx_pending() const;
+	/* DTE characters in the buffer */
 	int xmit_count() const { return xmit_count_; }
+	/* LAPM frames not sent or not acknowledged */
 	bool link_tx_pending() const;
 	/* the pumps' state shared over a call (dsplibs.h), and what they
 	   learn of the line over calls (the program keeps it) */
@@ -158,6 +172,7 @@ public:
 	int sreg(unsigned num) const {
 		return num < sizeof(sregs_) ? sregs_[num] : -1;
 	}
+	/* sets S-register num (8 bits); -1 if there is none */
 	int set_sreg(unsigned num, int val) {
 		if (num >= sizeof(sregs_))
 			return -1;
@@ -167,24 +182,33 @@ public:
 
 	/* the C interface of the data pumps (dsp/), see interface.cpp */
 	struct modem *handle() { return handle_; }
+	/* and the Modem behind it */
 	static Modem *of(struct modem *m);
+	/* modem_get_param(), modem_set_param(): MDMPRM_ and the country's
+	   parameters; -1 if unknown */
 	long get_param(unsigned name);
 	long set_param(unsigned name, int val);
+	/* the pumps' bits to and from the link */
 	int get_bits(int nbits, uint8_t *buf, int n);
 	int put_bits(int nbits, const uint8_t *buf, int n);
+	/* characters to and from the DTE, for the pumps (fax, voice) */
 	int send_to_dte(const char *buf, int n) { return put_chars(buf, n); }
 	int recv_from_dte(char *buf, int n) { return get_chars(buf, n); }
 
 	/* the link layer's side (LinkOwner) */
 	int get_chars(char *buf, int n);
 	int put_chars(const char *buf, int n);
+	/* the progress of the pump and of the link */
 	enum Status {
 		ST_OK, ST_DP_LINK, ST_PACK_LINK, ST_EC_LINK, ST_EC_RELEASE,
 		ST_EC_ERROR, ST_ERROR, ST_DP_ERROR, ST_NOCARRIER,
 		ST_NODIALTONE, ST_BUSY, ST_NOANSWER,
 	};
+	/* what the core does with it */
 	void update_status(Status s);
+	/* what XID agreed */
 	void negotiated(int comp, bool v44, int dict_size, int max_string);
+	/* a debug line with the modem's name */
 	void logf(const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
 
 	/* the version and the name ATI shows */
@@ -351,6 +375,7 @@ struct DpDriver {
 	const char *code;       /* AT+MS shows it */
 	struct dp_operations *op;
 };
+/* the table, ended by an id of 0 */
 DpDriver *dp_drivers();
 
 } // namespace dcore

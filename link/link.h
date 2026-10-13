@@ -62,6 +62,7 @@ public:
 	virtual int read_chars(uint8_t *buf, int n) = 0;
 	/* received characters for the DTE; returns how many it took */
 	virtual int write_chars(const uint8_t *buf, int n) = 0;
+	/* the link's progress */
 	virtual void status(Status s) = 0;
 	/* the data pump's transmit rate (bit timers), 0 if not known */
 	virtual int tx_rate() { return 0; }
@@ -100,24 +101,33 @@ public:
 	int get_bits(int nbits, uint8_t *buf, int n);
 	int put_bits(int nbits, const uint8_t *buf, int n);
 
+	/* what was asked for, then what XID agreed */
 	const Config &config() const { return cfg_; }
+	/* LAPM rather than async (once detected) */
 	bool ec() const { return cfg_.ec; }
 	/* V.42 frames not sent yet or not acknowledged */
 	bool tx_pending() const { return mode_ == Mode::Lapm &&
 						lapm_.tx_pending(); }
+	/* the data pump's transmit rate (bit/s), 0 if not known */
 	int tx_rate() const { return owner_->tx_rate(); }
 
 	/* for the parts */
 	void logf(const char *fmt, ...)
 		__attribute__ ((format (printf, 2, 3)));
+	/* the link's progress to the owner */
 	void status(Status s);
+	/* the bit timer: fn once bits more bits went out (0: none) */
 	void set_timer(long bits, void (*fn)(Link *)) {
 		timer_ = bits;
 		timer_fn_ = fn;
 	}
+	/* the bits left before it fires, 0 if it does not run */
 	long timer() const { return timer_; }
+	/* what it runs */
 	void (*timer_fn() const)(Link *) { return timer_fn_; }
+	/* we are the originator */
 	bool caller() const { return caller_; }
+	/* the parameters, for XID */
 	Config &cfg() { return cfg_; }
 	/* characters between the DTE and LAPM or the async framer,
 	   through V.42bis when it is on in that direction */

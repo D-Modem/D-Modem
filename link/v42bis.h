@@ -27,19 +27,26 @@ public:
 	V42bis(const V42bis &) = delete;
 	V42bis &operator=(const V42bis &) = delete;
 
+	/* N2 codewords and strings of up to N7 characters allocated; -1 if
+	   out of range or no memory */
 	int init(int dict_size, int max_string);
 	/* smaller values from the remote (within what init allocated) */
 	int config(int dict_size, int max_string);
+	/* frees the dictionary (not ready() any more) */
 	void exit();
+	/* init() was done */
 	bool ready() const { return dict_ != nullptr; }
 
 	/* one character in; then out() gives what it produced */
 	int encode(uint8_t ch);
 	int decode(uint8_t ch);
+	/* the encoder: what it holds out (FLUSH); the decoder: the string so
+	   far out, at the end of a frame */
 	int flush_encoder();
 	int flush_decoder();
 	/* the output so far, up to n bytes */
 	int out(uint8_t *buf, int n);
+	/* output waiting */
 	bool has_out() const { return olen_ > 0; }
 
 	/* statistics: bits before and after (the encoder) */

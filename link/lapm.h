@@ -27,8 +27,10 @@ enum {
 
 class Lapm : public Framer {
 public:
+	/* a call: our windows (frames) and information fields (octets) */
 	void init(Link *link, int tx_win, int rx_win, int tx_info,
 		  int rx_info);
+	/* the end of the call: no frame lists */
 	void exit();
 	/* the link is up at the bit level */
 	void start();
@@ -36,6 +38,7 @@ public:
 	void disconnect();
 	/* characters the DTE did not take: try again */
 	void push_rest();
+	/* I frames not sent yet or not acknowledged */
 	bool tx_pending() const {
 		return sent_info_ && info_list_ && sent_info_ != info_list_;
 	}

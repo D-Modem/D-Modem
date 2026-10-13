@@ -30,22 +30,28 @@ unsigned log_data_level = 0;
 static void (*hook)(const char *line);
 static int log_fd = -1;
 
+/* a record of the binary log: the modem (its address), the category
+   (LogData), the octets that follow */
 struct LogHeader {
 	unsigned modem_id;
 	unsigned id;
 	unsigned length;
 };
 
+/* the lines to fn (without their time stamp), or to stderr (NULL) */
 void log_set_hook(void (*fn)(const char *line))
 {
 	hook = fn;
 }
 
+/* the lines go to a hook */
 bool log_hooked()
 {
 	return hook != nullptr;
 }
 
+/* a record of count octets to the binary log, if it is open and id is
+   up to log_data_level */
 void log_data(const void *who, unsigned id, const void *data, int count)
 {
 	LogHeader hdr;
@@ -60,6 +66,10 @@ void log_data(const void *who, unsigned id, const void *data, int count)
 			strerror(errno));
 }
 
+/* a line with a time stamp (s modulo 1000, us): to the binary log when
+   it is on, to the hook (without the stamp) or stderr when level is up
+   to log_level; returns the length without the stamp (511 octets at
+   most with it) */
 int log_vprintf(unsigned level, const char *fmt, va_list args)
 {
 	char line[512];
@@ -84,6 +94,7 @@ int log_vprintf(unsigned level, const char *fmt, va_list args)
 	return len;
 }
 
+/* log_vprintf() with the arguments */
 int log_printf(unsigned level, const char *fmt, ...)
 {
 	va_list args;
@@ -94,6 +105,9 @@ int log_printf(unsigned level, const char *fmt, ...)
 	return len;
 }
 
+/* the pumps' level follows the modem's; with log_data_level, the
+   binary log slmodem.log[.suffix] in the current directory (and the
+   pumps at level 3 at least); -1 if it cannot be created */
 int log_open(const char *suffix)
 {
 	char name[PATH_MAX];
@@ -115,6 +129,7 @@ int log_open(const char *suffix)
 	return 0;
 }
 
+/* the binary log closed */
 void log_close()
 {
 	if (log_fd >= 0) {

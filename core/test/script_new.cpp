@@ -19,11 +19,14 @@ const char *core_kind = "new";
 
 namespace {
 
+/* the new core; its Host keeps the DTE's output and has the script's
+   clock */
 struct NewCore final : public Core, public dcore::Host {
 	dcore::Modem *m;
 	const unsigned long *clock;
 	std::string out;
 
+	/* a modem at 8000 Hz */
 	NewCore(const char *name, const unsigned long *ms) : clock(ms) {
 		dcore::Options o;
 		o.name = name;
@@ -36,10 +39,12 @@ struct NewCore final : public Core, public dcore::Host {
 	/* Host */
 	int start(dcore::Modem &) override { return 0; }
 	int stop(dcore::Modem &) override { return 0; }
+	/* the DTE's output, kept */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		out.append(buf, n);
 		return n;
 	}
+	/* the script's clock (ms) */
 	unsigned long now_ms() override { return *clock; }
 	const char *driver_name() override { return "core_script"; }
 
@@ -48,6 +53,7 @@ struct NewCore final : public Core, public dcore::Host {
 		return m->dte_input(buf, n);
 	}
 	int dte_space() override { return m->dte_space(); }
+	/* what was kept, emptied */
 	std::string dte_out() override {
 		std::string s;
 		s.swap(out);
@@ -62,6 +68,7 @@ struct NewCore final : public Core, public dcore::Host {
 	void ring_signal(bool on) override { m->ring_signal(on); }
 	void hangup() override { m->hangup(); }
 	int link_state() override { return (int)m->link_state(); }
+	/* tx_rate / 100 << 16 | rx_rate / 100 */
 	unsigned rates() override {
 		return m->tx_rate() / 100 << 16 | m->rx_rate() / 100;
 	}
@@ -69,6 +76,7 @@ struct NewCore final : public Core, public dcore::Host {
 
 } // namespace
 
+/* CORE_DEBUG: the log level; the pumps registered */
 void core_init()
 {
 	if (getenv("CORE_DEBUG"))
@@ -78,6 +86,7 @@ void core_init()
 	prop_dp_init();
 }
 
+/* a modem of the new core */
 Core *core_create(const char *name, const unsigned long *ms)
 {
 	return new NewCore(name, ms);

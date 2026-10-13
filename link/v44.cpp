@@ -18,11 +18,15 @@ namespace dlink {
 
 enum { HASH = 4096 };
 
+/* the encoder's hash of a string's first two characters */
 static unsigned hash2(uint8_t a, uint8_t b)
 {
 	return ((unsigned)a * 263 + b) & (HASH - 1);
 }
 
+/* allocates for the largest parameters (N2 codewords, N7 characters,
+   N8 octets of history) and starts both coders' state; -1 if out of
+   range */
 int V44::init(int codewords, int max_string, int history)
 {
 	exit();
@@ -55,6 +59,8 @@ int V44::init(int codewords, int max_string, int history)
 	return 0;
 }
 
+/* what XID agreed (no more than init()'s): the dictionary and the
+   history from the start; -1 if out of range */
 int V44::config(int codewords, int max_string, int history)
 {
 	if (!ready() || codewords < V44_MIN_CODEWORDS ||
@@ -70,6 +76,7 @@ int V44::config(int codewords, int max_string, int history)
 	return 0;
 }
 
+/* frees the dictionary, the history and the buffers */
 void V44::exit()
 {
 	dict_.clear();
@@ -142,6 +149,7 @@ void V44::after_token(int type, uint32_t value)
  *    the encoder
  */
 
+/* the encoder: n bits of v into the octets, the lowest first */
 void V44::put_bits(uint32_t v, int n)
 {
 	bits_ |= v << nbits_;
@@ -154,6 +162,7 @@ void V44::put_bits(uint32_t v, int n)
 	}
 }
 
+/* the encoder: a control code, prefix 1 and C2 bits */
 void V44::put_control(int code)
 {
 	put_bits(1, 1);
@@ -161,6 +170,8 @@ void V44::put_control(int code)
 	prev_type_ = NONE;
 }
 
+/* the encoder: a character as an ordinal (STEPUP to 8 bits first for
+   one of 128 and up) */
 void V44::put_ordinal(uint8_t ch)
 {
 	if (ch >= 128 && c5_ == 7) {
@@ -173,6 +184,7 @@ void V44::put_ordinal(uint8_t ch)
 	prev_type_ = ORD;
 }
 
+/* the encoder: a codeword, after the STEPUPs that make C2 bits hold it */
 void V44::put_codeword(uint32_t cw)
 {
 	while (cw >= c3_) {
@@ -191,6 +203,9 @@ static int ext_bits(int n7)
 	return n7 <= 46 ? 5 : n7 <= 78 ? 6 : n7 <= 142 ? 7 : 8;
 }
 
+/* the encoder: the string extended by n characters: 0 1, then the
+   length (1: 1; 2-4: 0, 2 bits; 5-12: 0, 00, 0, 3 bits; 13 and up: 0,
+   00, 1, ext_bits() bits) */
 void V44::put_extension(int n)
 {
 	put_bits(2, 2);                 /* 0 1 */
@@ -274,6 +289,9 @@ void V44::step()
 		reinit();
 }
 
+/* the encoder: one character from the DTE into the history; tokens for
+   what is more than a longest string ahead (the history full: all of
+   it, then REINIT); -1 if not ready */
 int V44::encode(uint8_t ch)
 {
 	if (!ready())
@@ -396,6 +414,8 @@ bool V44::read_token(int *type, uint32_t *value)
 	return true;
 }
 
+/* the decoder: one character into the history and the output; -1 if
+   the history is full */
 int V44::put_hist(uint8_t ch)
 {
 	if (hp_ >= (uint32_t)n8_)
@@ -405,6 +425,10 @@ int V44::put_hist(uint8_t ch)
 	return 0;
 }
 
+/* the decoder: one token (a control code, an ordinal, a codeword, an
+   extension) into the history and the dictionary; the codeword being
+   defined is the last string and its own first character; -1 on an
+   error */
 int V44::token(int type, uint32_t value)
 {
 	prev_type_ = type;
@@ -488,6 +512,9 @@ int V44::token(int type, uint32_t value)
 	return -1;
 }
 
+/* the decoder: the octets received so far, as tokens while whole ones
+   are there (one cut short waits for more), or as transparent octets;
+   the used octets dropped; -1 on an error */
 int V44::run_decoder()
 {
 	for (;;) {
@@ -540,6 +567,7 @@ int V44::run_decoder()
 	return 0;
 }
 
+/* the decoder: one octet from the line; -1 on an error */
 int V44::decode(uint8_t octet)
 {
 	if (!ready())
@@ -548,6 +576,7 @@ int V44::decode(uint8_t octet)
 	return run_decoder();
 }
 
+/* up to n octets of the output into buf; returns how many */
 int V44::out(uint8_t *buf, int n)
 {
 	size_t k = obuf_.size() - ohead_;

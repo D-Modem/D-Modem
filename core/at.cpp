@@ -36,6 +36,10 @@ static int toupper_strncmp(const char *s1, const char *s2, int n)
  *    command mode: the DTE's characters become command lines
  */
 
+/* the DTE's characters in command mode: the echo (ATE), backspace,
+   A/ (the last line again); a line that starts with AT runs, without
+   its blanks, its result to the DTE; another is blanked out on the
+   DTE's screen; a line too long is an ERROR */
 void Modem::at_process()
 {
 	int echo = sregs_[SREG_ECHO];
@@ -113,6 +117,8 @@ void Modem::at_process()
  *    (ERROR)
  */
 
+/* a one digit setting of S-register num (ATE, ATL, ATM...), lo to hi;
+   no digit means 0 */
 int Modem::at_set_sreg(int num, char c, int lo, int hi, int *len)
 {
 	if (!isdigit((unsigned char)c)) {
@@ -125,11 +131,13 @@ int Modem::at_set_sreg(int num, char c, int lo, int hi, int *len)
 	return -1;
 }
 
+/* ATA: answers (no result now) */
 int Modem::at_A(char *, int *)
 {
 	return answer() ? -1 : 1;
 }
 
+/* ATB: V.22 at 1200 bit/s only, without automode */
 int Modem::at_B(char *, int *)
 {
 	sregs_[SREG_DP] = DP_V22;
@@ -139,6 +147,8 @@ int Modem::at_B(char *, int *)
 	return 0;
 }
 
+/* ATD: dials the rest of the line (T, P: tone, pulse; L: the last
+   number again); no result now */
 int Modem::at_D(char *p, int *)
 {
 	switch (toupper(*p)) {
@@ -165,6 +175,7 @@ int Modem::at_D(char *p, int *)
 	return dial(p) ? -1 : 1;
 }
 
+/* ATH, ATH0: on hook (hanging up), ATH1: off hook */
 int Modem::at_H(char *p, int *len)
 {
 	int ret;
@@ -186,6 +197,8 @@ int Modem::at_H(char *p, int *len)
 	return ret ? -1 : 0;
 }
 
+/* ATI0 to ATI7: the product, its version, the device and driver, the
+   S-registers 0 to 23, the stored profiles (none), the country */
 int Modem::at_I(char *p, int *len)
 {
 	char *end;
@@ -243,11 +256,13 @@ int Modem::at_I(char *p, int *len)
 	return 0;
 }
 
+/* ATO: back online (no result now: CONNECT) */
 int Modem::at_O(char *, int *)
 {
 	return online() ? -1 : 1;
 }
 
+/* ATSn?, ATSn=v: S-register n read or set */
 int Modem::at_S(char *p, int *len)
 {
 	char *end;
@@ -277,6 +292,7 @@ int Modem::at_S(char *p, int *len)
 	}
 }
 
+/* ATZ, ATZ0 to 3: reset (there are no profiles) */
 int Modem::at_Z(char *p, int *len)
 {
 	switch (*p) {
@@ -294,6 +310,7 @@ int Modem::at_Z(char *p, int *len)
 	return 0;
 }
 
+/* AT+GCI=<code in hex>, +GCI=?, +GCI?: the country by its T.35 code */
 int Modem::at_GCI(char *p, int *len)
 {
 	char s[16];
@@ -402,6 +419,8 @@ int Modem::at_PMH(char *p, int *len)
 	return -1;
 }
 
+/* AT+MS=[mod][,[automode][,[min][,[max]]]] (mod: a registered pump's
+   id, the rates in bit/s), +MS=?, +MS? */
 int Modem::at_MS(char *p, int *len)
 {
 	char s[32];
@@ -487,6 +506,7 @@ int Modem::at_MS(char *p, int *len)
 	return 0;
 }
 
+/* AT+FCLASS=0, 1, 8 (data, fax class 1, voice), =?, ? */
 int Modem::at_FCLASS(char *p, int *len)
 {
 	if (*p == '=') {
@@ -512,6 +532,7 @@ int Modem::at_FCLASS(char *p, int *len)
 	return 0;
 }
 
+/* AT#CID=0 to 2 (and AT+VCID): caller ID off or on, =?, ? */
 int Modem::at_CID(char *p, int *len)
 {
 	if (*p == '=') {
@@ -538,11 +559,16 @@ int Modem::at_CID(char *p, int *len)
  *    voice
  */
 
+/* a numeric parameter of a voice command: where it goes, its range
+   (0: no bound) */
 struct Modem::VoiceParam {
 	unsigned *val;
 	unsigned min, max;
 };
 
+/* the parameters of voice command cmd: =? the ranges, ? the values,
+   =a,b,c new values (each in its range, between prefix and suffix
+   when given), set only if all are good */
 int Modem::voice_params(char *p, const char *cmd, VoiceParam *param,
 			int *len, const char *prefix, const char *suffix)
 {
@@ -625,6 +651,9 @@ int Modem::voice_params(char *p, const char *cmd, VoiceParam *param,
 	return -1;
 }
 
+/* AT+V... in voice mode: +VIP, +VNH, +VGT, +VGR, +VIT, +VSD, +VSM,
+   +VLS, +VTX, +VRX, +VTR, +VTS (a tone [f1,f2,d], a DTMF digit {s,d}
+   or s) */
 int Modem::at_voice(char *p, int *len)
 {
 	voice_info &v = voice_info_;
@@ -711,6 +740,9 @@ int Modem::at_voice(char *p, int *len)
  *    fax class 1
  */
 
+/* class 1 fax: AT+FTS=, +FRS= (silence, 10 ms units), +FTM=, +FRM=
+   (data at a modulation, =? the list), +FTH=, +FRH= (HDLC frames, 3:
+   V.21) */
 int Modem::at_fax(char *p, int *len)
 {
 	static const char rates[] = "24,48,72,73,74,96,97,98,121,122,145,146";
@@ -767,6 +799,9 @@ int Modem::at_fax(char *p, int *len)
  *    a command line
  */
 
+/* a command line (without blanks): its commands in turn until one
+   fails or has no result now; returns 0 (OK), 1 (no result now: A, D,
+   O, voice...) or -1 (ERROR) */
 int Modem::at_command(char *cmd)
 {
 	char c, *p = cmd;

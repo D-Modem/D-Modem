@@ -48,11 +48,16 @@ static DpDriver drivers[] = {
 	{ (enum DP_ID)0, nullptr, nullptr, nullptr },
 };
 
+/* the pumps' table (AT+MS, change_dp()) */
 DpDriver *dp_drivers()
 {
 	return drivers;
 }
 
+/* modem_get_param(): what the pumps ask for: the rates, the line's
+   delay and codec, the dial string, the runtime, the mode, modem-on-
+   hold, the country's dial and call progress parameters; -1 if
+   unknown */
 long Modem::get_param(unsigned name)
 {
 	const struct homolog_params *h = homolog_->params;
@@ -173,6 +178,9 @@ long Modem::get_param(unsigned name)
 	return -1;
 }
 
+/* modem_set_param(): what the pumps tell (the rates, the pump to change
+   to, the line's delay, modem-on-hold) or ask for (the hook, a pulse
+   dial digit); -1 if unknown */
 long Modem::set_param(unsigned name, int val)
 {
 	switch (name) {
@@ -212,16 +220,19 @@ using dcore::Modem;
  *    modem_dp.h
  */
 
+/* the pump's transmitter: bits from the link */
 int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
 	return Modem::of(m)->get_bits(nbits, buf, n);
 }
 
+/* the pump's receiver: bits to the link */
 int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
 	return Modem::of(m)->put_bits(nbits, buf, n);
 }
 
+/* a pump registers its operations for id; -1 if id is unknown or taken */
 int modem_dp_register(enum DP_ID id, struct dp_operations *op)
 {
 	for (dcore::DpDriver *p = dcore::drivers; p->id > 0; p++)
@@ -232,6 +243,7 @@ int modem_dp_register(enum DP_ID id, struct dp_operations *op)
 	return -1;
 }
 
+/* a pump is gone */
 void modem_dp_deregister(enum DP_ID id, struct dp_operations *op)
 {
 	(void)op;
@@ -244,26 +256,31 @@ void modem_dp_deregister(enum DP_ID id, struct dp_operations *op)
  *    modem_param.h, modem_defs.h
  */
 
+/* Modem::get_param() */
 long modem_get_param(struct modem *m, unsigned name)
 {
 	return Modem::of(m)->get_param(name);
 }
 
+/* Modem::set_param() */
 long modem_set_param(struct modem *m, unsigned name, int val)
 {
 	return Modem::of(m)->set_param(name, val);
 }
 
+/* an S-register, -1 if there is none */
 long modem_get_sreg_param(struct modem *m, unsigned num)
 {
 	return Modem::of(m)->sreg(num);
 }
 
+/* an S-register, -1 if there is none */
 int modem_get_sreg(struct modem *m, unsigned int num)
 {
 	return Modem::of(m)->sreg(num);
 }
 
+/* sets an S-register; -1 if there is none */
 int modem_set_sreg(struct modem *m, unsigned int num, int val)
 {
 	return Modem::of(m)->set_sreg(num, val);
@@ -273,39 +290,47 @@ int modem_set_sreg(struct modem *m, unsigned int num, int val)
  *    dsplibs.h
  */
 
+/* characters to the DTE; how many it took */
 int modem_send_to_tty(struct modem *m, const char *buf, int n)
 {
 	return Modem::of(m)->send_to_dte(buf, n);
 }
 
+/* the DTE's characters; how many */
 int modem_recv_from_tty(struct modem *m, char *buf, int n)
 {
 	return Modem::of(m)->recv_from_dte(buf, n);
 }
 
+/* the C library, for the pumps */
 void *sysdep_malloc(unsigned int size) { return malloc(size); }
 void sysdep_free(void *mem) { free(mem); }
 size_t sysdep_strlen(const char *s) { return strlen(s); }
 char *sysdep_strcpy(char *d, const char *s) { return strcpy(d, s); }
 char *sysdep_strcat(char *d, const char *s) { return strcat(d, s); }
 int sysdep_strcmp(const char *a, const char *b) { return strcmp(a, b); }
+/* strstr(), its result not const as in C */
 char *sysdep_strstr(const char *a, const char *b)
 {
 	return const_cast<char *>(strstr(a, b));
 }
 void *sysdep_memset(void *d, int c, size_t l) { return memset(d, c, l); }
+/* memcpy() */
 void *sysdep_memcpy(void *d, const void *s, size_t l)
 {
 	return memcpy(d, s, l);
 }
+/* memchr(), its result not const as in C */
 void *sysdep_memchr(const void *s, int c, size_t l)
 {
 	return const_cast<void *>(memchr(s, c, l));
 }
+/* vsnprintf() */
 int sysdep_vsnprintf(char *str, unsigned size, const char *fmt, va_list ap)
 {
 	return vsnprintf(str, size, fmt, ap);
 }
+/* sprintf() (unbounded: the callers size buf) */
 int sysdep_sprintf(char *buf, const char *fmt, ...)
 {
 	va_list args;

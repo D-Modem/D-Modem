@@ -32,14 +32,19 @@ struct Frame {
 struct BitQueue {
 	int bit = 0;
 	uint32_t data = 0;
+	/* empty */
 	void clear() { bit = 0; data = 0; }
 };
 
 /* who sends and receives the frames */
 class Framer {
 public:
+	/* the next frame to send (its buf and size), NULL for none (flags) */
 	virtual Frame *next_tx_frame() = 0;
+	/* f is out on the line */
 	virtual void tx_complete(Frame *f) = 0;
+	/* a good frame: f->count octets without the FCS, in a buffer the next
+	   frame reuses */
 	virtual void rx_complete(Frame *f) = 0;
 protected:
 	~Framer() = default;
@@ -51,6 +56,7 @@ public:
 	/* the framer: nothing to send without one (flags), received frames
 	   go nowhere */
 	void set_framer(Framer *f, bool tx) { framer_ = f; tx_on_ = tx; }
+	/* the framer's frames go out, or only flags */
 	void enable_tx(bool tx) { tx_on_ = tx; }
 	int get_bits(int nbits, uint8_t *buf, int n);
 	int put_bits(int nbits, const uint8_t *buf, int n);
@@ -88,6 +94,7 @@ public:
 	void start(Link *link);
 	int get_bits(int nbits, uint8_t *buf, int n);
 	int put_bits(int nbits, const uint8_t *buf, int n);
+	/* LAPM, as far as the phase has seen */
 	bool ec_enable() const { return ec_enable_; }
 	/* the bit timers */
 	static void begin(Link *link);

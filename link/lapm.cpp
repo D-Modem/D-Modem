@@ -76,18 +76,27 @@ enum {
 	PI_V44_N8T = 0x47, PI_V44_N8R = 0x48,   /* the history */
 };
 
+/* the frame's type by its control field: FRAME_I, FRAME_S or FRAME_U */
 static int frame_type(const Frame *f)
 {
 	return f->buf[1] & 1 ? f->buf[1] & 3 : FRAME_I;
 }
+/* the first control octet: an S or U frame's command */
 static int frame_ctrl(const Frame *f) { return f->buf[1]; }
+/* the address octet */
 static int frame_addr(const Frame *f) { return f->buf[0]; }
+/* the P/F bit of an I frame (modulo 128: the second control octet) */
 static int i_pf(const Frame *f) { return f->buf[2] & 1; }
+/* the P/F bit of an S frame */
 static int s_pf(const Frame *f) { return f->buf[2] & 1; }
+/* the P/F bit of a U frame (0x10, not shifted) */
 static int u_pf(const Frame *f) { return f->buf[1] & 0x10; }
+/* N(S) of an I frame */
 static int frame_ns(const Frame *f) { return f->buf[1] >> 1; }
+/* N(R) of an I or S frame */
 static int frame_nr(const Frame *f) { return f->buf[2] >> 1; }
 
+/* a parameter value of len octets, the first the least significant */
 static uint32_t get_le(const uint8_t *buf, int len)
 {
 	uint32_t v = 0;
@@ -98,6 +107,7 @@ static uint32_t get_le(const uint8_t *buf, int len)
 	return v;
 }
 
+/* a parameter value of len octets, the first the most significant */
 static uint32_t get_be(const uint8_t *buf, int len)
 {
 	uint32_t v = 0;
@@ -116,6 +126,7 @@ static long t401_bits(Link *link)
 	return rate ? rate * 2L : 28800 * 2L;
 }
 
+/* an error line in the link's log */
 #define EC_ERR(...) link_->logf("err: ec: " __VA_ARGS__)
 
 
@@ -124,6 +135,8 @@ static long t401_bits(Link *link)
  *
  */
 
+/* the next free control frame, queued to go out (the caller fills it
+   before the framer asks); one of the ring is kept free; NULL if none */
 Frame *Lapm::ctrl_frame()
 {
 	if (ctrl_list_->next == tx_ctrl_)
@@ -133,6 +146,8 @@ Frame *Lapm::ctrl_frame()
 	return f;
 }
 
+/* queues a U frame: address and control octet (with its P/F bit); -1
+   if no control frame is free */
 int Lapm::tx_unnum(uint8_t addr, uint8_t ctrl)
 {
 	Frame *f = ctrl_frame();
@@ -146,6 +161,8 @@ int Lapm::tx_unnum(uint8_t addr, uint8_t ctrl)
 	return 0;
 }
 
+/* queues an S frame with N(R) = V(R) and the P/F bit pf; -1 if no
+   control frame is free */
 int Lapm::tx_super(uint8_t addr, uint8_t ctrl, int pf)
 {
 	Frame *f = ctrl_frame();
@@ -212,6 +229,11 @@ static void rx_v44(Config &cfg, const uint8_t *p, int len)
 	}
 }
 
+/* an XID command or response: our windows and information fields
+   negotiated in place (set_param(), sizes in bits on the line), the
+   remote's V.42bis private parameters and V.44 user data subfield to
+   the Link (update_config()); without the general format identifier
+   it is ignored */
 void Lapm::rx_xid(Frame *f)
 {
 	/* what the remote asks for; V.42bis off unless it asks */
@@ -295,6 +317,10 @@ void Lapm::rx_xid(Frame *f)
 	link_->update_config(cfg);
 }
 
+/* queues an XID frame (addr: cmd_addr_ for the command, rsp_addr_ for
+   our response): the HDLC optional functions, our sizes and windows,
+   V.42bis (the command, or a response without V.44) and V.44 when the
+   call has it; -1 if no frame is free or it does not fit */
 int Lapm::tx_xid(uint8_t addr)
 {
 	const int size = 2 + 1 + (3 + 19) + (3 + 15) + 34;
@@ -415,18 +441,23 @@ int Lapm::tx_xid(uint8_t addr)
  *
  */
 
+/* T401 from now, the retransmissions counted from 0 */
 void Lapm::timer_start()
 {
 	rtx_count_ = 0;
 	link_->set_timer(t401_bits(link_), t401_timeout);
 }
 
+/* no T401 */
 void Lapm::timer_stop()
 {
 	link_->set_timer(0, nullptr);
 	rtx_count_ = 0;
 }
 
+/* T401 expired: our XID, SABME or DISC again, in the data phase an RR
+   or RNR command with P = 1 (a poll); after N400 of them async (LAPM
+   never came up), released, or DISC */
 void Lapm::t401_timeout(Link *link)
 {
 	Lapm *l = &link->lapm_;
@@ -522,6 +553,9 @@ int Lapm::reject_info()
 	return n;
 }
 
+/* N(R) = nr acknowledges our I frames up to nr - 1: they are free;
+   T401 again for those still in flight (not while we poll); returns
+   how many, -1 (and DISC) if more than a window is in flight */
 int Lapm::ack_info(uint8_t nr)
 {
 	int n = 0;
@@ -550,6 +584,8 @@ int Lapm::ack_info(uint8_t nr)
 	return n;
 }
 
+/* the characters of an I frame the DTE did not take: to it again; once
+   all are taken, RR ends our busy condition */
 void Lapm::push_rest()
 {
 	if (state_ != DATA || !rx_count_)
@@ -567,6 +603,10 @@ void Lapm::push_rest()
 	}
 }
 
+/* an I frame in the data phase: its N(R) for our frames; in sequence,
+   its characters to the DTE (what it does not take kept, and RNR),
+   else one REJ until it is; RR or RNR unless an I frame of ours
+   carries the acknowledgment; -1 out of sequence */
 int Lapm::rx_info(Frame *f)
 {
 	int ret;
@@ -610,6 +650,8 @@ int Lapm::rx_info(Frame *f)
  *
  */
 
+/* an RR, RNR or REJ command: the remote's busy condition, its N(R),
+   REJ goes back to N(R); a poll (P = 1) gets RR or RNR with F = 1 */
 void Lapm::rx_super_cmd(Frame *f)
 {
 	/* 8.4.7: while busy, RR, RNR and REJ with P = 1 get RNR */
@@ -647,6 +689,9 @@ void Lapm::rx_super_cmd(Frame *f)
 	}
 }
 
+/* an RR, RNR or REJ response: its N(R); the final one (F = 1) to our
+   poll stops T401 and sends again from N(R); an F = 1 we did not ask
+   for is ignored */
 void Lapm::rx_super_rsp(Frame *f)
 {
 	if (!rtx_count_ && s_pf(f)) {
@@ -695,6 +740,9 @@ void Lapm::rx_super_rsp(Frame *f)
  *
  */
 
+/* a U command: SABME (the data phase from the start, UA), DISC (UA and
+   released, DM when idle), XID (the parameters, our response); UI and
+   TEST are ignored */
 void Lapm::rx_unnum_cmd(Frame *f)
 {
 	switch (frame_ctrl(f) & 0xef) {
@@ -732,6 +780,8 @@ void Lapm::rx_unnum_cmd(Frame *f)
 	}
 }
 
+/* a U response to our SABME, DISC or XID: DM, UA, XID; UI and FRMR are
+   ignored */
 void Lapm::rx_unnum_rsp(Frame *f)
 {
 	switch (frame_ctrl(f) & 0xef) {
@@ -809,6 +859,10 @@ void Lapm::rx_unnum_rsp(Frame *f)
  *
  */
 
+/* the framer's next frame: a queued control frame first, else (in the
+   data phase, the remote not busy, no XID going on) the next I frame,
+   given N(S) = V(S) and N(R) = V(R), T401 started if it was not
+   running; NULL: flags */
 Frame *Lapm::next_tx_frame()
 {
 	Frame *f;
@@ -832,11 +886,15 @@ Frame *Lapm::next_tx_frame()
 	return f;
 }
 
+/* nothing to do: I frames are free once acknowledged */
 void Lapm::tx_complete(Frame *f)
 {
 	(void)f;
 }
 
+/* an I or S frame came: in ESTAB the remote took our SABME (its UA was
+   lost) and the data phase starts, in DISC the link is released; true
+   if the frame is for the data phase */
 bool Lapm::valid_data_state()
 {
 	switch (state_) {
@@ -859,6 +917,8 @@ bool Lapm::valid_data_state()
 	}
 }
 
+/* a frame from the framer, by its type and its address (the remote's
+   commands come with our response address) */
 void Lapm::rx_complete(Frame *f)
 {
 	bool cmd = frame_addr(f) == rsp_addr_;
@@ -893,6 +953,7 @@ void Lapm::rx_complete(Frame *f)
  *
  */
 
+/* the originator sets the link up: SABME with P = 1, T401 */
 void Lapm::connect()
 {
 	reset();
@@ -901,6 +962,8 @@ void Lapm::connect()
 	timer_start();
 }
 
+/* the XID command with our parameters, T401; in the data phase RNR
+   first, until the response */
 void Lapm::configure()
 {
 	config_ = true;
@@ -912,6 +975,7 @@ void Lapm::configure()
 	timer_start();
 }
 
+/* we hang up: DISC with P = 1, T401 */
 void Lapm::disconnect()
 {
 	state_ = DISC;
@@ -919,6 +983,8 @@ void Lapm::disconnect()
 	timer_start();
 }
 
+/* the data phase from the start: no busy conditions, V(S) = V(A) =
+   V(R) = 0, all I frames free */
 void Lapm::reset()
 {
 	busy_ = false;
@@ -936,6 +1002,8 @@ void Lapm::negotiate(Link *link)
 	link->lapm_.configure();
 }
 
+/* the framer is ours: the answerer's frames may go out at once, the
+   caller's after 48 octets of flags (negotiate(): its XID) */
 void Lapm::start()
 {
 	link_->hdlc_.set_framer(this, !link_->caller());
@@ -944,6 +1012,8 @@ void Lapm::start()
 	link_->push_pending = false;
 }
 
+/* a call: the address octets (the originator's commands 3, the
+   answerer's 1), our windows and sizes, the rings of frames */
 void Lapm::init(Link *link, int tx_win, int rx_win, int tx_info,
 		int rx_info)
 {
@@ -978,6 +1048,7 @@ void Lapm::init(Link *link, int tx_win, int rx_win, int tx_info,
 	reset();
 }
 
+/* the end of the call: no frame lists */
 void Lapm::exit()
 {
 	reset();

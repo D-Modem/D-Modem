@@ -14,11 +14,15 @@
 
 namespace dlink {
 
+/* frees what init() allocated */
 Link::~Link()
 {
 	exit();
 }
 
+/* a call: the V.42bis and V.44 coders at the largest sizes XID can
+   agree on (with ec and comp), LAPM's frames; -1 if they cannot be
+   allocated */
 int Link::init(Owner *owner, bool caller, const Config &cfg)
 {
 	owner_ = owner;
@@ -55,6 +59,7 @@ int Link::init(Owner *owner, bool caller, const Config &cfg)
 	return 0;
 }
 
+/* the end of the call: coders freed, no mode, no timer */
 void Link::exit()
 {
 	lapm_.exit();
@@ -67,6 +72,7 @@ void Link::exit()
 	push_pending = false;
 }
 
+/* a line of debug output to the owner (up to 255 characters) */
 void Link::logf(const char *fmt, ...)
 {
 	char line[256];
@@ -79,11 +85,14 @@ void Link::logf(const char *fmt, ...)
 	owner_->log(line);
 }
 
+/* the link's progress to the owner */
 void Link::status(Status s)
 {
 	owner_->status(s);
 }
 
+/* the data pump has connected: the detection phase, or at once LAPM or
+   async */
 void Link::start(bool ec, bool detect)
 {
 	cfg_.ec = ec;
@@ -94,6 +103,8 @@ void Link::start(bool ec, bool detect)
 		detected(ec);
 }
 
+/* the detection phase is over (or skipped): Detected, then LAPM, or
+   async and Up at once */
 void Link::detected(bool ec)
 {
 	cfg_.ec = ec;
@@ -109,11 +120,14 @@ void Link::detected(bool ec)
 	}
 }
 
+/* the data pump is gone: marks out, bits in dropped (the bit timer is
+   left as it is) */
 void Link::stop()
 {
 	mode_ = Mode::Idle;
 }
 
+/* we hang up: LAPM sends DISC; nothing in the other modes */
 void Link::disconnect()
 {
 	if (mode_ != Mode::Lapm)
@@ -123,6 +137,9 @@ void Link::disconnect()
 	lapm_.disconnect();
 }
 
+/* the data pump's transmitter: n items of nbits bits from the mode's
+   framer (marks when idle); the bit timer counts them, and characters
+   LAPM still holds are pushed on; returns n */
 int Link::get_bits(int nbits, uint8_t *buf, int n)
 {
 	switch (mode_) {
@@ -150,6 +167,8 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 	return n;
 }
 
+/* the data pump's receiver: n items of nbits bits to the mode's
+   framer (dropped when idle); returns n */
 int Link::put_bits(int nbits, const uint8_t *buf, int n)
 {
 	switch (mode_) {
@@ -208,6 +227,8 @@ void Link::update_config(const Config &remote)
  *
  */
 
+/* characters for LAPM's I frames or the async framer: the DTE's,
+   through the encoder when we compress; 0 while not online */
 int Link::read_chars(uint8_t *buf, int n)
 {
 	if (!online_)
@@ -218,6 +239,8 @@ int Link::read_chars(uint8_t *buf, int n)
 	return owner_->read_chars(buf, n);
 }
 
+/* received characters to the DTE, through the decoder when the remote
+   compresses; returns how many were taken (0 while not online) */
 int Link::write_chars(const uint8_t *buf, int n)
 {
 	if (!online_)
@@ -228,18 +251,21 @@ int Link::write_chars(const uint8_t *buf, int n)
 	return owner_->write_chars(buf, n);
 }
 
+/* read_chars() through V.44's or V.42bis's encoder */
 int Link::comp_read(uint8_t *buf, int n)
 {
 	return cfg_.v44 ? comp_read_with(enc44_, buf, n) :
 		comp_read_with(enc_, buf, n);
 }
 
+/* write_chars() through V.44's or V.42bis's decoder */
 int Link::comp_write(const uint8_t *buf, int n)
 {
 	return cfg_.v44 ? comp_write_with(dec44_, buf, n) :
 		comp_write_with(dec_, buf, n);
 }
 
+/* the decoder's output to the DTE; false while some is left */
 bool Link::comp_flush_output()
 {
 	return cfg_.v44 ? comp_flush_with(dec44_) : comp_flush_with(dec_);

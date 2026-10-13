@@ -35,9 +35,11 @@ static std::string fmt(const char *f, ...)
 	va_end(ap);
 	return buf;
 }
+/* EXPECT_TRUE with the message */
 #define CHECK(cond, ...) EXPECT_TRUE(cond) << fmt(__VA_ARGS__)
 
 static unsigned rnd_state = 12345;
+/* a repeatable pseudo-random number (rnd_state), 24 bits */
 static unsigned rnd()
 {
 	rnd_state = rnd_state * 1103515245 + 12345;
@@ -59,6 +61,7 @@ static std::vector<uint8_t> text(size_t n)
 	return v;
 }
 
+/* n random octets */
 static std::vector<uint8_t> noise(size_t n)
 {
 	std::vector<uint8_t> v(n);
@@ -73,6 +76,9 @@ static std::vector<uint8_t> noise(size_t n)
  *
  */
 
+/* in through a V.44 encoder (a flush every flush_every characters, 0:
+   at the end only) and a decoder with the same parameters: the output
+   must be in; returns the compressed octets */
 static std::vector<uint8_t> v44_roundtrip(const char *name,
 					  const std::vector<uint8_t> &in,
 					  int n2, int n7, int n8,
@@ -104,6 +110,8 @@ static std::vector<uint8_t> v44_roundtrip(const char *name,
 	return line;
 }
 
+/* V.44 round trips (text, flushes, small parameters, noise, repeats,
+   a mix), and the decoder's transparent mode */
 TEST(Link, V44)
 {
 	rnd_state = 12345;
@@ -162,6 +170,8 @@ TEST(Link, V44)
  *
  */
 
+/* in through a V.42bis encoder (a flush every flush_every characters)
+   and a decoder: the output must be in */
 static void v42bis_roundtrip(const char *name, const std::vector<uint8_t> &in,
 			     int dict, int maxstr, int flush_every)
 {
@@ -193,6 +203,7 @@ static void v42bis_roundtrip(const char *name, const std::vector<uint8_t> &in,
 	printf("  %s: %zu -> %zu octets\n", name, in.size(), line.size());
 }
 
+/* V.42bis round trips, and that it compresses text */
 TEST(Link, V42bis)
 {
 	rnd_state = 12345;
@@ -231,11 +242,13 @@ TEST(Link, V42bis)
  *
  */
 
+/* an Hdlc's framer: frames to send (tx) and the frames received (rx) */
 struct FrameSource : Framer {
 	std::vector<std::vector<uint8_t>> tx, rx;
 	size_t next = 0;
 	Frame f = {};
 	uint8_t fbuf[600];
+	/* the next of tx, NULL once all are out */
 	Frame *next_tx_frame() override {
 		if (next >= tx.size())
 			return nullptr;
@@ -245,18 +258,24 @@ struct FrameSource : Framer {
 		next++;
 		return &f;
 	}
+	/* nothing to free */
 	void tx_complete(Frame *) override {}
+	/* a copy into rx */
 	void rx_complete(Frame *fr) override {
 		rx.emplace_back(fr->buf, fr->buf + fr->count);
 	}
 };
 
+/* an owner that sends nothing and takes all */
 struct NullOwner : Owner {
 	int read_chars(uint8_t *, int) override { return 0; }
 	int write_chars(const uint8_t *, int n) override { return n; }
 	void status(Status) override {}
 };
 
+/* 200 frames (noise, all 1s, all flags) from one Hdlc to another, bit
+   by bit, one bit error: all but the frame or two it hits arrive, in
+   order and unchanged */
 TEST(Link, Hdlc)
 {
 	rnd_state = 12345;
@@ -309,6 +328,8 @@ TEST(Link, Hdlc)
  *
  */
 
+/* a DTE: what it sends and what it got, the link's progress, the
+   characters it takes per call (accept) */
 struct Dte : Owner {
 	const char *name;
 	std::vector<uint8_t> to_send, got;
@@ -318,18 +339,21 @@ struct Dte : Owner {
 	Config agreed;
 	bool verbose = false;
 	explicit Dte(const char *n) : name(n) {}
+	/* the rest of to_send */
 	int read_chars(uint8_t *buf, int n) override {
 		int k = (int)std::min((size_t)n, to_send.size() - pos);
 		memcpy(buf, to_send.data() + pos, k);
 		pos += k;
 		return k;
 	}
+	/* up to accept characters into got */
 	int write_chars(const uint8_t *buf, int n) override {
 		if (n > accept)
 			n = accept;
 		got.insert(got.end(), buf, buf + n);
 		return n;
 	}
+	/* the progress as flags */
 	void status(Status s) override {
 		switch (s) {
 		case Status::Detected: detected = true; break;
@@ -338,26 +362,34 @@ struct Dte : Owner {
 		case Status::Error: error = true; break;
 		}
 	}
+	/* the pump's rate, for T400 and T401 */
 	int tx_rate() override { return 9600; }
+	/* what XID agreed */
 	void negotiated(const Config &c) override { agreed = c; }
+	/* the link's lines (LINK_DEBUG) */
 	void log(const char *line) override {
 		if (verbose)
 			printf("    %s: %s\n", name, line);
 	}
 };
 
+/* two Links back to back: the caller lc and the answerer la, bit
+   errors at the rate ber */
 struct Pair {
 	Dte dc{"caller"}, da{"answerer"};
 	Link lc, la;
 	double ber = 0;
 	long errors = 0;
 
+	/* a call, each side with its configuration */
 	Pair(const Config &cc, const Config &ca) {
 		lc.init(&dc, true, cc);
 		la.init(&da, false, ca);
 		const char *v = getenv("LINK_DEBUG");
 		dc.verbose = da.verbose = v && *v;
 	}
+	/* the data pumps have connected: each with or without the detection
+	   phase */
 	void start(bool detect_c, bool detect_a) {
 		lc.start(lc.config().ec, detect_c);
 		la.start(la.config().ec, detect_a);
@@ -378,6 +410,7 @@ struct Pair {
 				la.set_online(true);
 		}
 	}
+	/* bit errors at the rate ber */
 	void flip(std::vector<uint8_t> &b) {
 		if (ber <= 0)
 			return;
@@ -389,6 +422,7 @@ struct Pair {
 	}
 };
 
+/* LAPM with the detection phase, compression comp (V.42bis's P0), V.44 */
 static Config lapm_config(int comp, bool v44 = true)
 {
 	Config c;
@@ -399,6 +433,8 @@ static Config lapm_config(int comp, bool v44 = true)
 	return c;
 }
 
+/* n_c characters from the caller and n_a from the answerer (text or
+   noise) until both arrived or max_bits: each must get the other's */
 static void transfer(const char *name, Pair &p, size_t n_c, size_t n_a,
 		     long max_bits, bool text_data = true)
 {
@@ -423,6 +459,7 @@ static void transfer(const char *name, Pair &p, size_t n_c, size_t n_a,
 			   " bit errors)").c_str() : "");
 }
 
+/* detection, XID, V.44 both ways with text and noise, DISC */
 TEST(Link, Lapm)
 {
 	rnd_state = 12345;
@@ -465,6 +502,7 @@ TEST(Link, LapmV42bis)
 	}
 }
 
+/* no compression when the caller offers none */
 TEST(Link, LapmNoCompression)
 {
 	rnd_state = 12345;
@@ -478,6 +516,7 @@ TEST(Link, LapmNoCompression)
 	transfer("lapm, no v42bis", p, 20000, 20000, 9600 * 60);
 }
 
+/* bit errors: REJ and T401 recovery, and no link error */
 TEST(Link, LapmBitErrors)
 {
 	rnd_state = 12345;
@@ -492,6 +531,7 @@ TEST(Link, LapmBitErrors)
 	CHECK(!p.dc.error && !p.da.error, "no link error");
 }
 
+/* a DTE that takes 7 characters at a time: RNR, the rest later */
 TEST(Link, LapmSlowDte)
 {
 	rnd_state = 12345;
@@ -504,6 +544,7 @@ TEST(Link, LapmSlowDte)
 	transfer("lapm, slow DTE", p, 20000, 2000, 9600 * 120);
 }
 
+/* no LAPM: async both ways */
 TEST(Link, Async)
 {
 	rnd_state = 12345;

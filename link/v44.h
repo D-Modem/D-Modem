@@ -56,7 +56,9 @@ public:
 	int init(int codewords, int max_string, int history);
 	/* what was agreed (no more than init's); -1 if out of range */
 	int config(int codewords, int max_string, int history);
+	/* frees it all (not ready() any more) */
 	void exit();
+	/* init() was done */
 	bool ready() const { return !hist_.empty(); }
 
 	/* the encoder: one character in; the tokens come once there are
@@ -68,6 +70,7 @@ public:
 	int flush_decoder() { return 0; }
 	/* the output so far, up to n bytes */
 	int out(uint8_t *buf, int n);
+	/* output waiting */
 	bool has_out() const { return ohead_ < obuf_.size(); }
 
 	/* statistics: characters and compressed bits (the encoder) */
