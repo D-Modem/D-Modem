@@ -1130,8 +1130,22 @@ which is V.34's 3429 baud times 3, 72000 / 7 Hz, and the harness ran it
 at 10287 Hz exactly, 125 ppm off the line's 8000 Hz. A V.90 analogue
 modem's sampling has to follow the network's clock; this one does not
 track such an offset. At 72000 / 7 Hz its CPt asks for drn 14 and the
-call trains. Asked for V.92 it connects with V.90, with no quick connect
-or PCM upstream offer, on the first call and on a second one too. It
+call trains.
+
+Asked for V.92 (`AT+MS=V92`) it connects with V.90, with no quick connect
+or PCM upstream offer, on the first call and on a second one too: this
+build has V.92 in its controller only. `+MS=V92` is taken but leaves
+S37 (the modulation, `act[0x25]`) at 0, automode, so V.8 picks V.90. The
+controller's V.92 path (`go_v8_v92`: its V.8 for V.92, then
+`set_dsp_interface_v92`) is taken with S37=15 and S19=2; `+PQC` and `+PIG`
+default to on (`V92QuickConnectFlag`, `V92UpStreamFlag`). But with
+`ATS37=15 S19=2` it asks the DSP for modem 15, and the DSP (`dsp.o`,
+"LCE-336V 2.15.4") knows modems 2 to 14 only (`initSys`'s switch; 14 is
+V.90): it sends a CM (with V.23 duplex added) and no INFO0a after it,
+and the call ends in phase 2. Nor has the DSP any of V.92's
+signals (QC1a, QTS, ANSpcm, INFO0a's V.92 bits) or a PCM upstream
+transmitter (Ru, TRN1u, the precoder and prefilter): only V.90's.
+So there is no V.92 to test against it. It
 answers ATH after +++ with NO CARRIER, which interop_call takes for the
 hang up as it does OK. On hook for the driver's usual 2 s its second
 call stops in phase 2 (its DSP never leaves the state after INFO0, and
