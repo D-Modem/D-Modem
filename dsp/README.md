@@ -1057,6 +1057,7 @@ pump running (`curModem`).
 |---|---|---|
 | V34 / 34 | CONNECT (we receive at 24000) | CONNECT 24000 |
 | V32B,0 / 132 | CONNECT 14400 | CONNECT 14400 |
+| V90 / 90 (V.90, the open modem digital) | CONNECT 50666/33600 | - |
 | (its automode) / 122 | CONNECT 2400 | CONNECT 2400 |
 | (its automode) / 22 | CONNECT 1200 | CONNECT 1200 |
 | (its automode) / 23 | CONNECT 1200/75 | CONNECT 1200/75 |
@@ -1081,10 +1082,20 @@ control channel symbol before L1. We now send two symbols of B first, a
 phase reference (the Agere and SM56 modems and the original library did
 not mind either way).
 
-V.90 (it as the analogue modem) gets through phase 3 now, but in phase 4
-it stops its CPt about 70 ms after our Ri ends and retrains with tone A;
-the call then connects at V.34 33600 (data both ways). Holding Ri longer
-after CPt does not change it. Open, and so is V.92.
+V.90 with it as the analogue modem connects (50666/33600, µ-law and
+A-law). It used to retrain in phase 4, 200 ms into our TRN2d, and the
+call went on at V.34: its receiver measured TRN2d at 20 dB (it wants 32,
+VpcmARxHandshake), and later found no usable constellation at all
+(VpcmSelectCon). Its CPt already asked for little (drn 6). The cause was
+the harness: during V.90 it runs its codec at FreqTable's "10287 Hz",
+which is V.34's 3429 baud times 3, 72000 / 7 Hz, and the harness ran it
+at 10287 Hz exactly, 125 ppm off the line's 8000 Hz. A V.90 analogue
+modem's sampling has to follow the network's clock; this one does not
+track such an offset. At 72000 / 7 Hz its CPt asks for drn 14 and the
+call trains. Asked for V.92 it connects with V.90 (no quick connect or
+PCM upstream offer on a first call); a second call is not tested (it
+answers ATH after +++ with NO CARRIER, which interop_call does not take
+for the hang up).
 
 ### Against the Conexant HSF soft modem
 

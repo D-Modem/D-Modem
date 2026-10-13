@@ -415,6 +415,15 @@ std::vector<Call> calls()
 		add("pctel", std::string("pctel_") + ms + "_open_calls", "open",
 		    "pctel", o, { "NET=9600:8000:ulaw", "PROTO_B=" + a });
 	}
+	/* V.90: the PCTel modem as the analogue modem (its codec at 72000 / 7
+	   Hz, locked to the line, see half_pctel.c) */
+	for (std::string law : { "ulaw", "alaw" })
+		add("pctel", "pctel_v90_" + law, "pctel", "open8",
+		    "ATX3;AT+MS=V90",
+		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
+		      "DSP_G711=" + law, "STREAM=5",
+		      "EXPECT_B=V.90 connect 5[0-9]{4}/",
+		      "PROTO_B=ATX3;AT+MS=90" });
 	/* and in its automode (no +MS: forced to one of these its answerer
 	   is silent after its answer tone), V.21, V.22, V.22bis and V.23
 	   both ways against our forced ones */

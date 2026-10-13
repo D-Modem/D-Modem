@@ -68,6 +68,14 @@ static unsigned long long line_n;       /* line samples so far */
 static const unsigned freq_table[] = { 7200, 8000, 8400, 9000, 9600,
 				       10287, 12000, 16000 };
 static unsigned codec_rate = 7200;
+/* the codec's sample rate: FreqTable's 10287 is V.34's 3429 baud times
+   3, 72000 / 7 Hz (the codec's clock locked to the line's, as V.90's
+   analogue modem must be: at 10287 Hz, 125 ppm off, the PCTel modem's
+   V.90 receiver finds no usable constellation and retrains to V.34) */
+static double codec_hz(void)
+{
+	return codec_rate == 10287 ? 72000.0 / 7 : codec_rate;
+}
 static unsigned blk = 24;               /* samples a block */
 static u32 hal_time;                    /* ms * 64 */
 
@@ -360,7 +368,7 @@ static void codec_sample(short adc)
 /* one line sample each way */
 static short line_sample(short in)
 {
-	double r = (double)line_rate / codec_rate;
+	double r = (double)line_rate / codec_hz();
 	double out;
 
 	/* the codec's samples due within this line sample */
