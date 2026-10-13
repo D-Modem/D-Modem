@@ -153,6 +153,14 @@ bug*, *risk* (a failure needs unusual input or timing) or *cleanup*.
 
 ### Tests
 
+- **intermittent** — `pctel_21_open_calls`: after V.8 agrees on V.21,
+  the PCTel modem sometimes never starts its V.21 answer carrier, and
+  our caller times out after 60 s. It failed 2 of 20 runs before this
+  review's changes and about 2 of 40 after them.
+- **intermittent** — `fax_interop_121_open_sends`: under heavy parallel
+  load (`ctest -j8` with the Agere tests) the original library's V.17
+  receiver sometimes doesn't find the start of our page; it passes when
+  run alone.
 - **likely bug** (low confidence) — `interop_call.cpp` MIDCALL: data the
   remote sent around "+++" is dropped with the commands' answers.
 - **likely bug** — `half_agere.c`, `half_sm56.c`: an interrupt raised

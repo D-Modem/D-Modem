@@ -5,8 +5,6 @@
  *    dividing by zero or writing past its frame
  */
 
-#include <stdarg.h>
-#include <stdio.h>
 #include <string.h>
 
 #include <gtest/gtest.h>
@@ -14,18 +12,6 @@
 #include "v91.h"
 
 using namespace dsp;
-
-unsigned int dsplibs_debug_level = 0;
-
-/* the DSP's log (DSP_DBG): to stderr */
-int dsplibs_debug_printf(const char *fmt, ...)
-{
-	va_list ap;
-	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
-	return 0;
-}
 
 /* a CP of drn with every constellation the n largest Ucodes (none for
    n = 0) */
