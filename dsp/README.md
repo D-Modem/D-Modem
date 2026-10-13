@@ -256,19 +256,23 @@ law is mu-law, or A-law with `DSP_G711=alaw`.
   the start of the data mode (as it did) had an mse of 0.66 instead of
   0.14 against it. Against the HSF modem with its hybrid's echo 20 dB
   down after 50 ms (`hsf_v90_echo`) the canceller takes 30 dB away and
-  the call connects at 52000/33600; 10 dB down too, with a data mode
-  mse of 0.18 against 0.14 without echo (the G.711 quantization of the
-  echo with the upstream signal). (With the echo after 20 ms instead,
-  netsim left a sixth of the echo out: see `NET_ECHO` below; the
-  upstream renegotiated down to 28800 or lower on that.) The V.8 CM
-  sync takes six of the ten ones before it: with the echo of our ANSam
-  on the line our V.21 receiver has the carrier some milliseconds later,
-  missed the first CM for want of all ten, and took CM 300 ms late,
-  after which the HSF modem retrained in phase 3. 10 dB down it still
-  does, after its S, without the S-bar that answers our Jd' (from
-  silence; it takes no echo in itself, and what we send differs from a
-  call without echo only by a millisecond in phase 2): the call
-  connects after one or two of them.
+  the call connects at 52000/33600 (after a retrain at times); 10 dB
+  down too, with a data mode mse of 0.18 against 0.14 without echo (the
+  G.711 quantization of the echo with the upstream signal). (With the
+  echo after 20 ms instead, netsim left a sixth of the echo out: see
+  `NET_ECHO` below; the upstream renegotiated down to 28800 or lower on
+  that.) The retrains are the HSF modem's: after its S in phase 3 it
+  goes silent without the S-bar that answers our Jd', then sends tone
+  A. It takes no echo in itself; what changes is when we answer it. 20
+  dB down, our V.21 receiver has the carrier some milliseconds later
+  with the echo of our ANSam on the line, misses the first CM for want
+  of all ten ones before its sync, and sends JM 300 ms later. Taking the
+  sync after six ones fixes that, but the SM56 modem, whose first CM we
+  then catch too, chooses 45333 downstream instead of 50666 when JM
+  comes a CM earlier (at every alignment tried), so the sync wants all
+  ten. 10 dB down the HSF modem retrains so even with JM on time; what
+  we send differs from a call without echo only by a millisecond in
+  phase 2. The call connects after one or two of them.
 
 The original library, as an analogue V.90 modem calling through the
 simulated network (`ctest -R interop_v90`), connects at 56000

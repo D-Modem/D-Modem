@@ -968,11 +968,8 @@ void V34Pump::v8_rx_bit(int bit)
 		qc_n = 0;
 		return;
 	}
-	/* ten ones, then the CM/JM sync octet framed; of the first CM, the
-	   receiver may have only the last six ones (its carrier comes some
-	   milliseconds later with the echo of our ANSam on the line, and
-	   the CM it missed so cost 300 ms) */
-	if ((v8_sr & 0xFFFF0) == 0xF03F0) {
+	/* ten ones, then the CM/JM sync octet framed */
+	if (v8_sr == 0xF03FF) {
 		if (v8_sync && v8_n > 1 && !v8_ok) {
 			if (v8_n == v8_last_n &&
 			    !memcmp(v8_rx, v8_last, v8_n)) {
