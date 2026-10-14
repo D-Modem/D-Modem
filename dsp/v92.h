@@ -371,7 +371,7 @@ struct V92Up {
 	void rn_rx_start();
 	void rn_tx_start();
 	void fpe_tx_start();
-	void fpe_design(int drn);
+	void fpe_design(int drn, bool up = false);
 	int fpe_frame(const V92Cpd *c);
 };
 

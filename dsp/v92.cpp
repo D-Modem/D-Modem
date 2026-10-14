@@ -1104,8 +1104,9 @@ void V92Up::fpe_tx_start()
 }
 
 /* the CPd of a fast parameter exchange: the precoder stays, the rate
-   comes from the data mode mse (drn: that one, a test) */
-void V92Up::fpe_design(int drn)
+   comes from the data mode mse (drn: that one, a test; up: the step
+   up below, the CPd as it is if that rate's points don't fit) */
+void V92Up::fpe_design(int drn, bool up)
 {
 	/* (the signal has unit power, as in the training's fit) */
 	double e2 = dmse, sb = 0, msa = 0;
@@ -1199,11 +1200,40 @@ void V92Up::fpe_design(int drn)
 		if (drn ? d == drn : msa * e2 * margin_used <= 1)
 			break;
 	}
+	if (d < 1 && up) {
+		cpd_fpe = cpd;
+		cpd_fpe.ack = 0;
+		DSP_DBG("v92: FPE CPd: as it is (%d bit/s: the next rate's "
+			"points don't fit)\n", (cpd.drn + 17) * 8000 / 6);
+		return;
+	}
 	if (d < 1) {
 		d = 1;
 		M = 8;
 		msa = 37;
 		lc = 2 * M;
+	}
+	/* up a step at most, and only with the margin a renegotiation up
+	   wants (2.5 times the one the rate was chosen with, at the rate we
+	   have, 9.8 above): the data mode mse at this rate makes the next
+	   ones look better than they are (the original library's own
+	   exchange, without the prefilter, at 38666 and 40000 bit/s from
+	   36000: its B1u came through or not by the data before it).  Not
+	   up: the CPd as it is */
+	if (!drn && d > cpd.drn) {
+		double q = 256 * cpd.g * cpd.g / (dmse + 1e-9);
+		int next = cpd.drn + 1;
+		if (q >= margin_used * 2.5 && next <= 19 &&
+		    (!up_mask || ((up_mask >> (next - 1)) & 1))) {
+			fpe_design(next, true);
+			return;
+		}
+		cpd_fpe = cpd;
+		cpd_fpe.ack = 0;
+		DSP_DBG("v92: FPE CPd: as it is (%d bit/s; margin %.1f "
+			"against %.1f)\n", (cpd.drn + 17) * 8000 / 6, q,
+			margin_used);
+		return;
 	}
 	cpd_fpe = cpd;
 	cpd_fpe.drn = d;
