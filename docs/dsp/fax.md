@@ -16,6 +16,15 @@ itself; the calling side sends CNG while it waits for an answer and starts
 `+FRH=3` when the answer tone is heard. Any character from the DTE stops
 `+FRH`/`+FRM` once they reported `CONNECT`.
 
+The DTE's data for `+FTH` and `+FTM` is read a character at a time, and
+nothing after `<DLE><ETX>`: a frame that follows in the same write waits
+until this one goes out, and what follows the last frame or the `+FTM`
+data (the next command) is left for the command interpreter, which
+takes it with the DTE's next characters after the `OK`. In `+FTH` an empty frame, `<DLE><ETX>` alone, ends the transmission
+with `OK` (8.3.5/T.31); a frame of one octet goes out as it is.
+`core/test/scripts/fax_dte.txt` (core_equiv's `FaxDteUntilsCome`) tries
+all three.
+
 The receivers find the training by matching the received phase steps
 against the known sequence. The V.29 and V.27ter training sequences repeat
 every 127 symbols, so the end of the alternations before them tells which

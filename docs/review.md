@@ -28,6 +28,7 @@ as it is.
 |---|---|
 | `dsp/fax_class1.cpp` | No stuffed zero after an FCS ending in five ones: the frame was lost at the receiver |
 | `dsp/fax_modems.cpp` | The V.21 receiver did not count `carrier_run`, so +FRH never answered NO CARRIER |
+| `dsp/fax_class1.cpp` | `read_dte()` read past `<DLE><ETX>`: in `+FTH` the next frame's octets went into the frame that was waiting to go out, in `+FTM` the DTE's next command was thrown away; and a frame under 2 octets, or an empty one, got no result code at all (T.31 ends `+FTH` on an empty frame with OK). Now a character at a time, stopping at `<DLE><ETX>` (core_equiv `FaxDteUntilsCome`) |
 | `dsp/t30.cpp` | A 4-octet frame with a good FCS gave a `memcpy` of `(size_t)-1`; a short FIF a negative length |
 | `dsp/t30.cpp` | ECM: the block counter was not reset with a new page, so the MCF to a repeated PPS could not be repeated |
 | `dsp/t30.cpp` | Without ECM a repeated MPS, EOM or EOP (the sender missed our MCF) got RTN, and the page came twice. With no page's training found since, the MCF now goes again (fax_test `T30Lost`, with `DSP_T30_LOSE`) |
@@ -106,10 +107,7 @@ None left.
 
 ### Fax
 
-- **risk** — `fax_class1.cpp` `read_dte()`: in FTH, bytes after
-  <DLE><ETX> in the same read are appended to the ready frame; a frame
-  under 2 octets gets no result code; in FTM the rest of the read is
-  dropped.
+None left.
 
 ### Data link and core
 

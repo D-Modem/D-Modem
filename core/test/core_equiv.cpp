@@ -67,3 +67,16 @@ TEST_P(CoreEquiv, SameTranscript)
 
 INSTANTIATE_TEST_SUITE_P(Scripts, CoreEquiv, testing::ValuesIn(scripts()),
 	[](const testing::TestParamInfo<std::string> &i) { return i.param; });
+
+/* fax_dte: every until comes (on the new core; in the other scripts
+   some wait for what an earlier until took already) */
+TEST(CoreScript, FaxDteUntilsCome)
+{
+	int st;
+	std::string t = output(std::string(SCRIPT_NEW) + " " SCRIPTS_DIR
+			       "/fax_dte.txt", &st);
+
+	ASSERT_EQ(st, 0);
+	EXPECT_NE(t.find(": yes"), std::string::npos);
+	EXPECT_EQ(t.find("TIMEOUT"), std::string::npos) << t;
+}

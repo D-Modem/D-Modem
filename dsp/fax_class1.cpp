@@ -361,36 +361,36 @@ static void frm_put_bit(void *ctx, int bit)
 	}
 }
 
-/* DTE data for FTM / FTH, with the <DLE> codes taken out */
+/* DTE data for FTM / FTH, with the <DLE> codes taken out, a character at
+   a time: nothing after <DLE><ETX> is taken, so the next frame waits
+   until this one goes out, and what follows the last one (or FTM's data)
+   is left for the commands.  FTH: an empty frame (<DLE><ETX> alone) ends
+   the transmission with OK (8.3.5/T.31); a frame longer than HDLC_MAX - 2
+   octets loses the rest */
 void Fax::read_dte()
 {
-	char tmp[512];
-	int n, i, room;
+	char ch;
 
 	if (eod)
 		return;
-	if (state == C1_FTM)
-		room = (tail - head - 1 + TX_BUF) % TX_BUF;
-	else
-		room = hready ? 0 : HDLC_MAX - 2 - hlen;
-	if (room <= 0)
-		return;
-	if (room > (int)sizeof(tmp))
-		room = sizeof(tmp);
-	n = modem_recv_from_tty(modem, tmp, room);
-	for (i = 0; i < n; i++) {
-		u8 c = tmp[i];
+	for (;;) {
+		u8 c;
+		if (state == C1_FTM ?
+		    (head + 1) % TX_BUF == tail : hready || hclosing)
+			return;
+		if (modem_recv_from_tty(modem, &ch, 1) != 1)
+			return;
+		c = ch;
 		if (dle) {
 			dle = 0;
 			if (c == ETX) {
-				if (state == C1_FTH) {
-					/* one frame complete */
-					if (hlen >= 2)
-						hready = 1;
-					continue;
-				}
-				eod = 1;
-				break;
+				if (state == C1_FTM)
+					eod = 1;
+				else if (hlen)
+					hready = 1;
+				else
+					hclosing = 1;
+				return;
 			}
 			if (c != DLE)
 				continue;
