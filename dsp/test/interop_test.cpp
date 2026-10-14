@@ -485,17 +485,20 @@ std::vector<Call> calls()
 		    "pctel", o, { "NET=9600:8000:ulaw", "PROTO_B=" + a });
 	}
 	/* V.90: the PCTel modem as the analogue modem (its codec at 72000 / 7
-	   Hz, locked to the line, see half_pctel.c) */
+	   Hz, locked to the line, see half_pctel.c).  +MS=V90 with its top
+	   rate: without one (0) it takes the top rate for less than 28000
+	   and keeps the downstream to 45333 */
 	for (std::string law : { "ulaw", "alaw" })
 		add("pctel", "pctel_v90_" + law, "pctel", "open8",
-		    "ATX3;AT+MS=V90",
+		    "ATX3;AT+MS=V90,1,300,56000",
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
 		      "DSP_G711=" + law, "STREAM=5",
 		      "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
 	/* two calls (PCTel answers ATH with NO CARRIER, and wants more than
 	   2 s on hook before the next): V.90 again */
-	add("pctel", "pctel_v90_calls", "pctel", "open8", "ATX3;AT+MS=V90",
+	add("pctel", "pctel_v90_calls", "pctel", "open8",
+	    "ATX3;AT+MS=V90,1,300,56000",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "STREAM=3", "CALLS=2", "HANGUP_WAIT=5",
 	      "EXPECT_B=(?s)V.90 connect 5[0-9]{4}/.*V.90 connect 5[0-9]{4}/",

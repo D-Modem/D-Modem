@@ -295,11 +295,26 @@ samples idle). `GlobalTimer` is the blocks' time in ms. `ctest -L pctel
 controller's choice of pump (`sharedRam` + 0x1c, + 0x20) against the
 pump running (`curModem`).
 
+The controller reads some of its stack before writing it. `+MS`
+(`plus_ms`) copies the carrier's name (`ext_ms` + 0x1b) to its stack
+without the 0 after it, and compares the copy with "V21" ... "V90",
+"V92", "K56FLEX": the name matched only when the byte after the copy
+happened to be 0, and otherwise `+MS` left the carrier as it was. The
+harness clears the stack below its frame before each call into the
+objects (they use some 1 KB of it; it clears 8), so the copy ends in 0,
+as it was meant to. What was there before came from the harness's own
+calls: a print added to the harness, or the stack filled with 0, turned
+`pctel_v90_calls` from 50666 to 45333 every time. With the name matched,
+`+MS=V90` and `+MS=V92` take the top rate from the command (`ext_ms` +
+0x86): without one (0, under 28000) they set S37 to 0, automode, and
+keep the downstream to drn 14, 45333; `+MS=V90,1,300,56000` sets S37 to
+14, V.90, and the call trains at 50666. The tests give the top rate.
+
 | PCTel `AT+MS=` / ours | PCTel caller → open answerer | open caller → PCTel answerer |
 |---|---|---|
 | V34 / 34 | CONNECT (we receive at 24000) | CONNECT 24000 |
 | V32B,0 / 132 | CONNECT 14400 | CONNECT 14400 |
-| V90 / 90 (V.90, the open modem digital) | CONNECT 50666/33600 | - |
+| V90,1,300,56000 / 90 (V.90, the open modem digital) | CONNECT 50666/33600 | - |
 | (its automode) / 122 | CONNECT 2400 | CONNECT 2400 |
 | (its automode) / 22 | CONNECT 1200 | CONNECT 1200 |
 | (its automode) / 23 | CONNECT 1200/75 | CONNECT 1200/75 |

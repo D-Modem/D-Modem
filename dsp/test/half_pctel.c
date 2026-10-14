@@ -299,6 +299,8 @@ static void dte_poll(void)
 	if (room <= 0)
 		return;
 	n = (int)read(pty, buf, room < (int)sizeof(buf) ? (size_t)room : sizeof(buf));
+	if (n > 0 && !online)
+		LOG("DTE input at line sample %llu\n", line_n);
 	for (i = 0; i < n; i++)
 		vuart_put(buf[i]);
 }
@@ -354,6 +356,24 @@ static short sat(double x)
 	return (short)(x > 32767 ? 32767 : x < -32768 ? -32768 : lrint(x));
 }
 
+/* the stack below this call's frame cleared, as it is before each
+   call into the objects: they read some of it before writing it.  The
+   controller's AT+MS copies the carrier's name there without its 0 and
+   compares the copy with "V21" ... "V90", "V92", "K56FLEX", so +MS=V90
+   set V.90 only when the byte after the copy happened to be 0, and
+   otherwise left the carrier as it was (V.92, the default).  What was
+   there was what the harness's own calls had left: a print added to it
+   turned pctel_v90_calls from 50666 to 45333 every time.  Cleared, the
+   copy ends in 0, as it was meant to.  The objects' calls go some 1 KB
+   deep (dspMain at most 988 octets, modem_main 560, in the tests) */
+#define STACK_CLEAR 8192
+static __attribute__((noinline)) void stack_clear(void)
+{
+	char z[STACK_CLEAR];
+	memset(z, 0, sizeof(z));
+	__asm__ volatile("" : : "r"(z) : "memory");
+}
+
 /* the interrupt of a block: the driver's pctel_interrupt */
 static void block_done(void)
 {
@@ -361,7 +381,9 @@ static void block_done(void)
 	GlobalTimer = hal_time >> 6;
 	ASICstatus = 0;
 	ASICerrCnt = 0;
+	stack_clear();
 	dspMain();
+	stack_clear();
 	modem_main();
 	dte_out();
 	if (dbg) {
@@ -450,6 +472,7 @@ int main(int argc, char **argv)
 	   UART's, the controller's (country 0, the USA) */
 	hal_time = 0;
 	vuart_init();
+	stack_clear();
 	PctelInitCtrlVars(0);
 	printf("created pctel: %s\n", name);
 
