@@ -88,9 +88,10 @@ else()
 	message(STATUS "tests: spandsp not found, its tests skipped")
 endif()
 
-# --- the interop calls: modem_half with Smart Link's original library
-#     (half_smartlink) and with the open data pumps (half_open, 32 bit
-#     like the library), and the other modems below, through
+# --- the interop calls: Smart Link's original library on slmodemd's old
+#     core (half_smartlink, legacy/modem_half.cpp) and the open data pumps
+#     on the modem core (half_open, 32 bit like the library), and the
+#     other modems below (classes on modem_half.cpp), through
 #     interop_test.cpp (interop_call.cpp), with netsim for the G.711
 #     network.
 #     The original library (smartlink/dsplibs.o, Smart Link's binary-only
@@ -127,7 +128,7 @@ foreach(_rate 9600 8000)
 			set(_l -no-pie -Wl,-z,noexecstack)
 		else()
 			# the open data pumps on the modem core
-			add_executable(${_n} modem_half.cpp ${DMODEM_FRONT_SRCS}
+			add_executable(${_n} half_open.cpp ${DMODEM_FRONT_SRCS}
 				${DMODEM_CORE_NEW_SRCS} ${DMODEM_LINK_SRCS} ${_dsp})
 			target_include_directories(${_n} PRIVATE
 				${DMODEM_FRONT_DIR} ${S} ${DMODEM_LINK_DIR}
@@ -142,12 +143,12 @@ foreach(_rate 9600 8000)
 	endforeach()
 endforeach()
 
-# the Agere Systems soft modem as another peer (half_agere.c): its library,
+# the Agere Systems soft modem as another peer (half_agere.cpp): its library,
 # agrsm_core.o of agrsm-20070804 (Agere SoftModem 2.1.40; docs/interop.md)
 set(DMODEM_AGERE_LIB "${CMAKE_CURRENT_SOURCE_DIR}/agere/agrsm_core.o" CACHE
 	FILEPATH "agrsm_core.o of the Agere soft modem (interop tests)")
 if(EXISTS "${DMODEM_AGERE_LIB}")
-	add_executable(half_agere half_agere.c ${DMODEM_AGERE_LIB})
+	add_executable(half_agere half_agere.cpp modem_half.cpp ${DMODEM_AGERE_LIB})
 	target_compile_options(half_agere PRIVATE ${DMODEM_M32} -g -O1)
 	target_link_options(half_agere PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
@@ -155,16 +156,16 @@ if(EXISTS "${DMODEM_AGERE_LIB}")
 	message(STATUS "tests: the Agere soft modem: ${DMODEM_AGERE_LIB}")
 endif()
 
-# spandsp's data modems as a peer (half_spandsp.c): its V.21, V.23,
+# spandsp's data modems as a peer (half_spandsp.cpp): its V.21, V.23,
 # Bell 103 and V.22/V.22bis pumps (libspandsp 0.0.6, as Asterisk and
 # FreeSWITCH have it) in a modem of their own
 if(SPANDSP_FOUND)
-	add_executable(half_spandsp half_spandsp.c)
+	add_executable(half_spandsp half_spandsp.cpp modem_half.cpp)
 	target_include_directories(half_spandsp PRIVATE ${SPANDSP_INCLUDE_DIRS})
 	target_link_libraries(half_spandsp PRIVATE ${SPANDSP_LDFLAGS} m)
 endif()
 
-# Motorola's SM56 soft modem as a peer (half_sm56.c): sm56.ko of
+# Motorola's SM56 soft modem as a peer (half_sm56.cpp): sm56.ko of
 # sm56-06.09.05 for Fedora Core 3's kernel 2.6.9, its imports renamed
 set(DMODEM_SM56_KO "${CMAKE_CURRENT_SOURCE_DIR}/sm56/sm56.ko" CACHE
 	FILEPATH "sm56.ko of the Motorola SM56 soft modem (interop tests)")
@@ -176,7 +177,7 @@ if(EXISTS "${DMODEM_SM56_KO}")
 			-P ${CMAKE_CURRENT_SOURCE_DIR}/sm56_obj.cmake
 		DEPENDS ${DMODEM_SM56_KO} sm56_obj.cmake
 		COMMENT "sm56.ko's imports renamed")
-	add_executable(half_sm56 half_sm56.c ${_sm56o})
+	add_executable(half_sm56 half_sm56.cpp modem_half.cpp ${_sm56o})
 	set_source_files_properties(${_sm56o} PROPERTIES EXTERNAL_OBJECT TRUE
 		GENERATED TRUE)
 	target_compile_options(half_sm56 PRIVATE ${DMODEM_M32} -g -O1)
@@ -186,13 +187,13 @@ if(EXISTS "${DMODEM_SM56_KO}")
 	message(STATUS "tests: the Motorola SM56 soft modem: ${DMODEM_SM56_KO}")
 endif()
 
-# PCTel's HSP soft modem as a peer (half_pctel.c): pctel-0.9.7-9's Intel
+# PCTel's HSP soft modem as a peer (half_pctel.cpp): pctel-0.9.7-9's Intel
 # AMR data pumps (lib/amr/dsp.a) and controller (lib/control.a), linked
 # as they are
 set(DMODEM_PCTEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/pctel" CACHE
 	PATH "dsp.o and control.o of the PCTel HSP soft modem (interop tests)")
 if(EXISTS "${DMODEM_PCTEL_DIR}/dsp.o" AND EXISTS "${DMODEM_PCTEL_DIR}/control.o")
-	add_executable(half_pctel half_pctel.c ${DMODEM_PCTEL_DIR}/dsp.o
+	add_executable(half_pctel half_pctel.cpp modem_half.cpp ${DMODEM_PCTEL_DIR}/dsp.o
 		${DMODEM_PCTEL_DIR}/control.o)
 	set_source_files_properties(${DMODEM_PCTEL_DIR}/dsp.o
 		${DMODEM_PCTEL_DIR}/control.o PROPERTIES EXTERNAL_OBJECT TRUE)
@@ -203,10 +204,10 @@ if(EXISTS "${DMODEM_PCTEL_DIR}/dsp.o" AND EXISTS "${DMODEM_PCTEL_DIR}/control.o"
 	message(STATUS "tests: the PCTel HSP soft modem: ${DMODEM_PCTEL_DIR}")
 endif()
 
-# Conexant's HSF soft modem as a peer (half_hsf.c): hsfmodem-7.80.02.06oem's
+# Conexant's HSF soft modem as a peer (half_hsf.cpp): hsfmodem-7.80.02.06oem's
 # engine (hsfengine), its AC'97 ICH codec module (hsfmc97ich) and its
 # soft DAA module (hsfsoar), their sections renamed per object (and the
-# ICH module's microsecond busy wait, hsfmc97ich41_, half_hsf.c's), and the
+# ICH module's microsecond busy wait, hsfmc97ich41_, half_hsf.cpp's), and the
 # modem's .inf and country file for its NVM
 set(DMODEM_HSF_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hsf" CACHE
 	PATH "objects and NVM files of the HSF soft modem (interop tests)")
@@ -225,7 +226,7 @@ if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 			COMMENT "${_b}.o's sections renamed")
 		list(APPEND _hsfo ${_o})
 	endforeach()
-	add_executable(half_hsf half_hsf.c ${_hsfo})
+	add_executable(half_hsf half_hsf.cpp modem_half.cpp ${_hsfo})
 	set_source_files_properties(${_hsfo} PROPERTIES EXTERNAL_OBJECT TRUE
 		GENERATED TRUE)
 	target_compile_definitions(half_hsf PRIVATE
@@ -237,13 +238,14 @@ if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 	message(STATUS "tests: the Conexant HSF soft modem: ${DMODEM_HSF_DIR}")
 endif()
 
-# Broadcom's V.92 soft modem for Windows as a peer (half_broadcom.c): its
+# Broadcom's V.92 soft modem for Windows as a peer (half_broadcom.cpp): its
 # WDM driver (BCMSM.sys 3.4.19, a PE image) and its INF (the registry), on
-# interop_windows.c, a Windows kernel of our own for such drivers
+# interop_windows.cpp, a Windows kernel of our own for such drivers
 set(DMODEM_BROADCOM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/broadcom" CACHE
 	PATH "BCMSM.sys and BCMSMwxp.inf of the Broadcom soft modem (interop tests)")
 if(EXISTS "${DMODEM_BROADCOM_DIR}/BCMSM.sys")
-	add_executable(half_broadcom half_broadcom.c interop_windows.c)
+	add_executable(half_broadcom half_broadcom.cpp interop_windows.cpp
+		modem_half.cpp)
 	target_compile_definitions(half_broadcom PRIVATE
 		BROADCOM_SYS="${DMODEM_BROADCOM_DIR}/BCMSM.sys"
 		BROADCOM_INF="${DMODEM_BROADCOM_DIR}/BCMSMwxp.inf")

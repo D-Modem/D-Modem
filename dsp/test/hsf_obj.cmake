@@ -3,7 +3,7 @@
 # .gnu.linkonce.* sections renamed for the object (.<name>_ctors,
 # .<name>.<rest>).  Each object has the same generic names (its C++
 # vtables and the like) and the linker would keep only one of them.
-# WEAK: its functions (local ones too) that half_hsf.c has its own of,
+# WEAK: its functions (local ones too) that half_hsf.cpp has its own of,
 # made weak globals so that the linker takes those.
 #
 #     cmake -DIN=<hsfengine.o> -DOUT=<out.o> -DNAME=hsfengine

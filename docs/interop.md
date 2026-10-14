@@ -9,6 +9,18 @@ time). Each has a harness, `half_<name>`, which takes the line's audio
 on fd 3, gives its own on fd 4 and is the modem's DTE on a pty, and a
 ctest label of its own; `ctest -L <label> -j16` runs its calls.
 
+The harnesses of the closed modems and spandsp's are C++ classes on
+`dsp/test/modem_half.hpp`. `half::HalfModem` is the program: its settings
+from the environment (`<NAME>_DEBUG`, `_RATE`, `_NOISE`, `_SYNC` and
+`_SYNC_PHASE`), the pty, and the line a sample at a time with the DTE
+served every 48 samples. A harness derives from it the modem's start, its
+line sample and its DTE. What more than one harness emulates is there
+too: the Intel ICH AC'97 modem controller (Agere, SM56, HSF), PCI's
+configuration space and the x86 instructions a driver traps on (SM56,
+HSF, the Windows kernel), the time stamp counter on the line's clock (HSF,
+the Windows kernel), the resampler between the line and a codec at its
+own rate, the pty's buffering, and the clear of the stack below.
+
 ## The peers' binaries
 
 The vendor modems are their own binaries, as their Linux drivers shipped
@@ -129,7 +141,7 @@ What they read is what the calls before left there, the harness's own
 among them: a read or write of the pty, which the driver's timing
 decides, could leave other bytes there, and the same line samples could
 give another call. Each harness clears 8 KB of the stack below its frame
-before each call into its module (`dsp/test/half_stack.h`), so a module
+before each call into its module (`half::stack_clear()`), so a module
 finds the same there every time. `HALF_STACK_FILL=<byte>` fills it with
 that instead of 0: the Agere, SM56 and HSF tests (and PCTel's, with
 their top rate given) pass, connect at the same rates and retrain the
@@ -537,7 +549,7 @@ and Su's reversals are each period's phase against Su's.
 3.4.19: the WDM driver of the "BCM V.92 56K Modem", with its controller,
 data pumps, V.42, V.44 and fax all in that one driver, as Dell shipped
 it for its Dimension desktops in 2002 (above). It runs on
-`interop_windows.c`, a Windows kernel of our own. Wine could not run it.
+`interop_windows.cpp`, a Windows kernel of our own. Wine could not run it.
 Wine's kernel (`ntoskrnl.exe`, master of October 2026) has 726 of its
 1716 exports as stubs, and its HAL 71 of 92. Its `KeInsertQueueDpc`
 queues nothing. `IoConnectInterrupt`, `IoGetDmaAdapter` and
@@ -546,11 +558,11 @@ port reads give 0. START_DEVICE comes without resources, and timers run
 in real time on a thread pool. A soft modem needs all of these, and here
 it runs on the line's clock.
 
-So `interop_windows.c` is a Windows kernel of our own, for the WDM
+So `interop_windows.cpp` is a Windows kernel of our own, for the WDM
 driver of a soft modem on a PCI device; the Broadcom driver is the first
 it runs. A harness describes its device (`struct win_dev` in
 `interop_windows.h`): the driver's files and the INF's model, the PCI
-configuration space, the registers (BAR 0's memory and port I/O) as
+configuration space (a `half::PciConfig`), the registers (BAR 0's memory and port I/O) as
 calls, the interrupt line, and the line's rate and how to run the line
 on while the kernel waits. `win_start()` loads and starts the driver and
 opens its port, `win_tick()` after each line sample runs the kernel's
@@ -704,9 +716,10 @@ the quick connect tests dial (`DIAL`), and the Agere modem waits 2 s off
 hook before its digits; answering at once, our ANSam would be over
 before it listens.
 
-`MODEM_REC=<prefix>` makes `modem_half` record its line input and output
-(`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
-interop calls run the modems with. `WAV=<file>` makes `interop_call` save
+`MODEM_REC=<prefix>` makes `half_open` and `half_smartlink` record their
+line input and output (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>`
+sets the debug level the interop calls run the modems with.
+`WAV=<file>` makes `interop_call` save
 the call as audio: a stereo 16 bit WAV at 8000 Hz of the line where it
 crosses the simulated network (after G.711; A, the caller, to B left, B to
 A right), from the first dial to the end of the data (or of the call that

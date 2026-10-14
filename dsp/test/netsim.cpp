@@ -1,5 +1,5 @@
 /*
- *    netsim.cpp - the digital network between two modem_half processes:
+ *    netsim.cpp - the digital network between two modem processes:
  *    G.711 at 8000 Hz, with sample rate conversion for a modem that
  *    runs at 9600 Hz (as if its codec were on an analogue line).
  *

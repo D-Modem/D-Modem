@@ -1,7 +1,7 @@
 /*
  *
  *    options.h - the command line of slmodemd, modem_test and the interop
- *                tests' modem (modem_half): slmodemd's options, as they
+ *                tests' modem (half_open): slmodemd's options, as they
  *                were (modem_cmdline.c)
  *
  */

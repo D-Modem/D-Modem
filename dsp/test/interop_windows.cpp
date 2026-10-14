@@ -1,5 +1,5 @@
 /*
- *    interop_windows.c - a Windows kernel of our own for the WDM driver
+ *    interop_windows.cpp - a Windows kernel of our own for the WDM driver
  *    of a soft modem (interop_windows.h): what the driver imports
  *    (ntoskrnl, HAL, WMILIB, ks: stdcall and fastcall as there), the PnP
  *    manager and the PCI bus driver under the driver, modem.sys over it.
@@ -20,8 +20,9 @@
  *    window of ours that is not accessible: each access faults and is
  *    single-stepped with the device's values (see mm_fault).  in, out,
  *    cli, sti, mov to and from CRn and rdtsc trap (no I/O permission,
- *    PR_TSC_SIGSEGV) and are carried out here; PCI's configuration ports
- *    are the device's configuration space.
+ *    PR_TSC_SIGSEGV) and are carried out here (half::X86Traps); PCI's
+ *    configuration ports are the device's configuration space
+ *    (half::PciConfig).
  *
  *    We are the rest of the device stack: the PCI bus driver under the
  *    driver (its PDO: the PnP IRPs sent down, the device's resources),
@@ -31,7 +32,6 @@
  *    IRPs.
  */
 
-#define _GNU_SOURCE
 #include <ctype.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -46,9 +46,11 @@
 #include <ucontext.h>
 #include <unistd.h>
 
-#include "half_stack.h"
 #include "interop_windows.h"
 
+using namespace half;
+
+typedef unsigned long long u64;
 typedef int NTSTATUS;
 typedef unsigned short wchar;   /* Windows' WCHAR */
 
@@ -268,11 +270,13 @@ static void *img_entry;         /* its DriverEntry */
 
 static u32 rd32(const byte *p) { u32 v; memcpy(&v, p, 4); return v; }
 static word rd16(const byte *p) { word v; memcpy(&v, p, 2); return v; }
+static void wr32(void *p, u32 v) { memcpy(p, &v, 4); }
+static void wr16(void *p, word v) { memcpy(p, &v, 2); }
 
 /* an import of ours: its name, our function (or the variable it is,
    for a data import) */
-struct export { const char *name; void *fn; };
-static const struct export *export_find(const char *name);
+struct kexport { const char *name; void *fn; };
+static const struct kexport *export_find(const char *name);
 static const char *import_names[1024];
 static int nimports;
 static byte *thunks;            /* the traps and traces made for imports */
@@ -338,7 +342,7 @@ static int pe_load(const char *path)
 	fseek(f, 0, SEEK_END);
 	n = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	file = malloc((size_t)n);
+	file = (byte *)malloc((size_t)n);
 	if (fread(file, 1, (size_t)n, f) != (size_t)n) {
 		fclose(f);
 		return -1;
@@ -355,13 +359,13 @@ static int pe_load(const char *path)
 	base = rd32(opt + 28);
 	img_size = rd32(opt + 56);
 	hdrs = rd32(opt + 60);
-	img = mmap((void *)(uintptr_t)base, img_size,
+	img = (byte *)mmap((void *)(uintptr_t)base, img_size,
 		   PROT_READ | PROT_WRITE | PROT_EXEC,
 		   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
 	if (img == MAP_FAILED || img != (byte *)(uintptr_t)base) {
 		if (img != MAP_FAILED)
 			munmap(img, img_size);
-		img = mmap(NULL, img_size, PROT_READ | PROT_WRITE | PROT_EXEC,
+		img = (byte *)mmap(NULL, img_size, PROT_READ | PROT_WRITE | PROT_EXEC,
 			   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (img == MAP_FAILED) {
 			perror("win: mmap");
@@ -395,7 +399,7 @@ static int pe_load(const char *path)
 		}
 	}
 	/* imports, by name */
-	thunks = mmap(NULL, 1 << 16, PROT_READ | PROT_WRITE | PROT_EXEC,
+	thunks = (byte *)mmap(NULL, 1 << 16, PROT_READ | PROT_WRITE | PROT_EXEC,
 		      MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0);
 	{
 		u32 rva = rd32(opt + 96 + 1 * 8);
@@ -407,7 +411,7 @@ static int pe_load(const char *path)
 			for (; rd32(names); names += 4, iat += 4) {
 				u32 t = rd32(names);
 				const char *name;
-				const struct export *e;
+				const struct kexport *e;
 				void *fn;
 				if (t & 0x80000000) {
 					fprintf(stderr, "win: %s: import by ordinal %u\n",
@@ -455,7 +459,7 @@ static char *w2a(const wchar *w, int n)
 	int i;
 	if (n < 0)
 		n = wlen(w);
-	s = malloc((size_t)n + 1);
+	s = (char *)malloc((size_t)n + 1);
 	for (i = 0; i < n; i++)
 		s[i] = w[i] < 0x80 ? (char)w[i] : '?';
 	s[n] = 0;
@@ -469,7 +473,7 @@ static char *us2a(const struct ustr *u)
 static wchar *a2w(const char *s)
 {
 	size_t n = strlen(s), i;
-	wchar *w = malloc((n + 1) * 2);
+	wchar *w = (wchar *)malloc((n + 1) * 2);
 	for (i = 0; i <= n; i++)
 		w[i] = (byte)s[i];
 	return w;
@@ -494,15 +498,8 @@ static u64 itime(void)
 #define SYSTIME_BOOT ((1028160000ull + 11644473600ull) * 10000000ull)
 
 /* the time stamp counter (rdtsc traps, PR_TSC_SIGSEGV): the line's
-   time at 1 GHz, monotonic, on by 0.1 us each read (busy waits end) */
-static unsigned long long tsc_last;
-static unsigned long long tsc_read(void)
-{
-	unsigned long long t = win_line_n * (1000000000ull / (u64)wdev->rate);
-	if (t <= tsc_last)
-		t = tsc_last + 100;
-	return tsc_last = t;
-}
+   time */
+static Tsc tsc;
 
 /* the line run on a ms (silent) while the kernel waits */
 static void line_ms(void)
@@ -813,13 +810,13 @@ static struct rkey *reg_key(const char *path, int create)
 			return k;
 	if (!create)
 		return NULL;
-	k = calloc(1, sizeof(*k));
+	k = (struct rkey *)calloc(1, sizeof(*k));
 	k->path = strndup(path, n);
 	k->next = rkeys;
 	rkeys = k;
 	/* (and its parents, for enumeration) */
 	{
-		const char *b = memrchr(path, '\\', n);
+		const char *b = (const char *)memrchr(path, '\\', n);
 		if (b && b > path) {
 			char *p = strndup(path, (size_t)(b - path));
 			reg_key(p, 1);
@@ -839,7 +836,7 @@ static struct rval *reg_val(struct rkey *k, const char *name, int create)
 	}
 	if (!create)
 		return NULL;
-	v = calloc(1, sizeof(*v));
+	v = (struct rval *)calloc(1, sizeof(*v));
 	v->name = strdup(name);
 	*at = v;
 	return v;
@@ -850,7 +847,7 @@ static void reg_set(const char *path, const char *name, u32 type,
 	struct rval *v = reg_val(reg_key(path, 1), name, 1);
 	free(v->data);
 	v->type = type;
-	v->data = malloc(len + 2);
+	v->data = (byte *)malloc(len + 2);
 	memcpy(v->data, data, len);
 	v->data[len] = v->data[len + 1] = 0;
 	v->len = len;
@@ -1072,7 +1069,7 @@ static int inf_load(const char *path)
 	fseek(f, 0, SEEK_END);
 	n = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	inf = calloc(1, (size_t)n + 1);
+	inf = (char *)calloc(1, (size_t)n + 1);
 	if (fread(inf, 1, (size_t)n, f) != (size_t)n) {
 		fclose(f);
 		return -1;
@@ -1148,49 +1145,16 @@ static void inf_install(const char *model)
 }
 
 /*
- *    PCI's configuration space (0xcf8, 0xcfc): the device's, on bus 0 at
- *    its devfn; the other ports are the device's
+ *    port I/O: PCI's configuration ports (0xcf8, 0xcfc: the device's
+ *    configuration space, on bus 0 at its devfn), the rest the device's
  */
-static u32 cf8;
 static u32 mem_phys;                    /* BAR 0, as the device starts */
 
-static int cfg_ours(void)
-{
-	return (cf8 & 0x80000000) && ((cf8 >> 16) & 0xff) == 0 &&
-		((cf8 >> 8) & 0xff) == wdev->devfn;
-}
-
-static u32 cfg_read(unsigned off, int size)
-{
-	u32 v;
-	unsigned r = (cf8 & 0xfc) + off;
-	if (!cfg_ours())
-		return 0xffffffff;
-	v = wdev->cfg[(r >> 2) & 63] >> (8 * (r & 3));
-	return size == 4 ? v : size == 2 ? v & 0xffff : v & 0xff;
-}
-
-static void cfg_write(unsigned off, u32 v, int size)
-{
-	unsigned r = (cf8 & 0xfc) + off;
-	u32 mask = size == 4 ? 0xffffffff : size == 2 ? 0xffff : 0xff;
-	if (!cfg_ours())
-		return;
-	LOG("pci config %02x = %x\n", r, v);
-	if (r == 0x10)          /* (BAR 0: its size in the bits that stay 0) */
-		v = v == 0xffffffff ? ~(wdev->mem_size - 1) : (v & ~(wdev->mem_size - 1));
-	wdev->cfg[(r >> 2) & 63] = (wdev->cfg[(r >> 2) & 63] & ~(mask << 8 * (r & 3))) |
-		(v & mask) << 8 * (r & 3);
-}
-
-/* port I/O: PCI's configuration ports, the rest the device's */
 static u32 io_in(unsigned a, int size)
 {
 	u32 v = 0xffffffff;
-	if (a == 0xcf8)
-		v = cf8;
-	else if (a >= 0xcfc && a < 0xd00)
-		v = cfg_read(a - 0xcfc, size);
+	if (wdev->pci->io_in(a, size, &v))
+		;
 	else if (wdev->io_in)
 		v = wdev->io_in(a, size);
 	else
@@ -1208,10 +1172,8 @@ static void io_out(unsigned a, u32 v, int size)
 {
 	if (win_debug > 1)
 		fprintf(stderr, "win: out%d %04x = %x\n", size, a, v);
-	if (a == 0xcf8 && size == 4)
-		cf8 = v;
-	else if (a >= 0xcfc && a < 0xd00)
-		cfg_write(a - 0xcfc, v, size);
+	if (wdev->pci->io_out(a, v, size))
+		;
 	else if (wdev->io_out)
 		wdev->io_out(a, v, size);
 	else
@@ -1323,7 +1285,7 @@ static int mm_fault(ucontext_t *uc, byte *a)
 /* the step done: what it wrote to the device, the window closed */
 static void on_trap(int sig, siginfo_t *si, void *ctx)
 {
-	ucontext_t *uc = ctx;
+	ucontext_t *uc = (ucontext_t *)ctx;
 	(void)sig; (void)si;
 	uc->uc_mcontext.gregs[REG_EFL] &= ~0x100;
 	if (!mm.on)
@@ -1341,17 +1303,16 @@ static void on_trap(int sig, siginfo_t *si, void *ctx)
 }
 
 /* the driver's in and out (a general protection fault without I/O
-   permission), cli and sti, rdtsc (PR_TSC_SIGSEGV) and its register
-   window: carried out here and stepped over */
+   permission), cli and sti, CRn, rdtsc (PR_TSC_SIGSEGV) and its
+   register window: carried out here and stepped over */
+static X86Traps traps;
 static void on_segv(int sig, siginfo_t *si, void *ctx)
 {
 	ucontext_t *uc = (ucontext_t *)ctx;
 	greg_t *g = uc->uc_mcontext.gregs;
 	byte *ip = (byte *)(uintptr_t)g[REG_EIP];
-	int size = 4, n = 1;
-	unsigned port = (unsigned)g[REG_EDX] & 0xffff;
 
-	if (si->si_code == SEGV_ACCERR && mm_fault(uc, si->si_addr) == 0)
+	if (si->si_code == SEGV_ACCERR && mm_fault(uc, (byte *)si->si_addr) == 0)
 		return;
 	if ((byte *)si->si_addr == ip || (uintptr_t)ip < 0x10000) {
 		fprintf(stderr, "win: a jump to %p (from around %p)\n", (void *)ip,
@@ -1359,80 +1320,14 @@ static void on_segv(int sig, siginfo_t *si, void *ctx)
 		signal(sig, SIG_DFL);
 		return;
 	}
-	if (ip[0] == 0x0f && (ip[1] == 0x20 || ip[1] == 0x22) && (ip[2] & 0xc0) == 0xc0) {
-		/* mov from and to a control register: CR0 with TS clear
-		   (the FPU ours to use), CR4 with OSFXSR */
-		static u32 cr[8] = { 0x80050033, 0, 0, 0, 0x000006f0 };
-		static const int greg[8] = { REG_EAX, REG_ECX, REG_EDX, REG_EBX,
-					     REG_ESP, REG_EBP, REG_ESI, REG_EDI };
-		int c = (ip[2] >> 3) & 7, r = greg[ip[2] & 7];
-		if (ip[1] == 0x20)
-			g[r] = (greg_t)cr[c];
-		else
-			cr[c] = (u32)g[r];
-		g[REG_EIP] += 3;
+	if (traps.step(uc))
 		return;
-	}
-	if (ip[0] == 0x0f && ip[1] == 0x31) {
-		unsigned long long t = tsc_read();
-		g[REG_EAX] = (greg_t)(u32)t;
-		g[REG_EDX] = (greg_t)(u32)(t >> 32);
-		g[REG_EIP] += 2;
-		return;
-	}
-	if (ip[0] == 0x66) {
-		size = 2;
-		ip++;
-		n++;
-	}
-	switch (ip[0]) {
-	case 0xfa:      /* cli, sti: one thread, nothing to keep out */
-	case 0xfb:
-		break;
-	case 0xe4:
-		g[REG_EAX] = (g[REG_EAX] & ~0xff) | io_in(ip[1], 1);
-		n++;
-		break;
-	case 0xe5:
-		g[REG_EAX] = size == 2 ? (g[REG_EAX] & ~0xffff) | io_in(ip[1], 2) :
-			io_in(ip[1], 4);
-		n++;
-		break;
-	case 0xe6:
-		io_out(ip[1], g[REG_EAX] & 0xff, 1);
-		n++;
-		break;
-	case 0xe7:
-		io_out(ip[1], size == 2 ? g[REG_EAX] & 0xffff : (u32)g[REG_EAX],
-		       size);
-		n++;
-		break;
-	case 0xec:
-		g[REG_EAX] = (g[REG_EAX] & ~0xff) | io_in(port, 1);
-		break;
-	case 0xed:
-		if (size == 2)
-			g[REG_EAX] = (g[REG_EAX] & ~0xffff) | io_in(port, 2);
-		else
-			g[REG_EAX] = io_in(port, 4);
-		break;
-	case 0xee:
-		io_out(port, g[REG_EAX] & 0xff, 1);
-		break;
-	case 0xef:
-		io_out(port, size == 2 ? g[REG_EAX] & 0xffff : (u32)g[REG_EAX],
-		       size);
-		break;
-	default:
-		fprintf(stderr, "win: fault at %p (%02x %02x %02x), address %p\n",
-			(void *)ip, ip[0], ip[1], ip[2], si->si_addr);
-		fprintf(stderr, "eax %x ebx %x ecx %x edx %x esi %x edi %x ebp %x esp %x\n",
-			(u32)g[REG_EAX], (u32)g[REG_EBX], (u32)g[REG_ECX], (u32)g[REG_EDX],
-			(u32)g[REG_ESI], (u32)g[REG_EDI], (u32)g[REG_EBP], (u32)g[REG_ESP]);
-		signal(sig, SIG_DFL);
-		return;
-	}
-	g[REG_EIP] += n;
+	fprintf(stderr, "win: fault at %p (%02x %02x %02x), address %p\n",
+		(void *)ip, ip[0], ip[1], ip[2], si->si_addr);
+	fprintf(stderr, "eax %x ebx %x ecx %x edx %x esi %x edi %x ebp %x esp %x\n",
+		(u32)g[REG_EAX], (u32)g[REG_EBX], (u32)g[REG_ECX], (u32)g[REG_EDX],
+		(u32)g[REG_ESI], (u32)g[REG_EDI], (u32)g[REG_EBP], (u32)g[REG_ESP]);
+	signal(sig, SIG_DFL);
 }
 
 /*
@@ -1454,7 +1349,7 @@ static void *NTAPI MmMapIoSpace(u64 pa, u32 n, int cache)
 	(void)cache;
 	if (pa >= mem_phys && pa + n <= mem_phys + wdev->mem_size) {
 		if (!mmio) {
-			mmio = mmap(NULL, wdev->mem_size, PROT_NONE,
+			mmio = (byte *)mmap(NULL, wdev->mem_size, PROT_NONE,
 				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		}
 		LOG("MmMapIoSpace %llx %u: the registers, %p\n", pa, n, (void *)mmio);
@@ -1756,7 +1651,7 @@ static NTSTATUS NTAPI RtlAnsiStringToUnicodeString(struct ustr *d, const struct 
 	int i;
 	if (alloc) {
 		d->max = (word)(s->len * 2 + 2);
-		d->buf = malloc(d->max);
+		d->buf = (wchar *)malloc(d->max);
 	} else if (s->len * 2 > d->max)
 		return STATUS_BUFFER_OVERFLOW;
 	for (i = 0; i < s->len; i++)
@@ -1771,7 +1666,7 @@ static NTSTATUS NTAPI RtlUnicodeStringToAnsiString(struct astr *d, const struct 
 	int i, n = s->len / 2;
 	if (alloc) {
 		d->max = (word)(n + 1);
-		d->buf = malloc(d->max);
+		d->buf = (char *)malloc(d->max);
 	} else if (n > d->max)
 		return STATUS_BUFFER_OVERFLOW;
 	for (i = 0; i < n; i++)
@@ -1933,7 +1828,7 @@ static byte NTAPI KeSetTimer(struct ktimer *t, long long due, struct kdpc *dpc)
 static NTSTATUS NTAPI KeWaitForSingleObject(void *o, int reason, int mode, byte alertable,
 					    long long *timeout)
 {
-	struct dispatcher *d = o;
+	struct dispatcher *d = (struct dispatcher *)o;
 	(void)reason; (void)mode; (void)alertable;
 	return wait_for(&d, 1, 0, timeout_end(timeout));
 }
@@ -1957,7 +1852,7 @@ static NTSTATUS NTAPI PsCreateSystemThread(void **handle, u32 access, void *oa, 
 	(void)access; (void)oa; (void)process; (void)client;
 	if (nthreads == NTHREAD)
 		return STATUS_NO_MEMORY;
-	t = calloc(1, sizeof(*t));
+	t = (struct kthread *)calloc(1, sizeof(*t));
 	t->h.type = OBJ_THREAD;
 	t->start = start;
 	t->arg = arg;
@@ -2040,7 +1935,7 @@ static NTSTATUS NTAPI IoCreateDevice(struct drvobj *drv, u32 extsize, struct ust
 	(void)excl;
 	if (ndevs == NDEV)
 		return STATUS_NO_MEMORY;
-	d = calloc(1, sizeof(*d) + extsize + 64);
+	d = (struct devobj *)calloc(1, sizeof(*d) + extsize + 64);
 	d->type = 3;
 	d->size = (word)(sizeof(*d) + extsize);
 	d->driver = drv;
@@ -2092,7 +1987,7 @@ static NTSTATUS NTAPI IoDeleteSymbolicLink(struct ustr *link) { (void)link; retu
 /* an IRP of n stack locations, zeroed */
 static struct irp *NTAPI IoAllocateIrp(char n, byte quota)
 {
-	struct irp *irp = calloc(1, sizeof(struct irp) + (size_t)n * sizeof(struct iosl));
+	struct irp *irp = (struct irp *)calloc(1, sizeof(struct irp) + (size_t)n * sizeof(struct iosl));
 	(void)quota;
 	irp->type = 6;
 	irp->size = (word)(sizeof(struct irp) + (size_t)n * sizeof(struct iosl));
@@ -2196,7 +2091,7 @@ static struct irp *NTAPI IoBuildDeviceIoControlRequest(u32 code, struct devobj *
 			irp->flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
 		}
 		if (out && outlen) {
-			struct mdl *m = calloc(1, sizeof(*m) + 64);
+			struct mdl *m = (struct mdl *)calloc(1, sizeof(*m) + 64);
 			m->startva = (void *)((uintptr_t)out & ~4095u);
 			m->offset = (u32)(uintptr_t)out & 4095;
 			m->count = outlen;
@@ -2243,7 +2138,7 @@ static struct irp *NTAPI IoBuildSynchronousFsdRequest(u32 major, struct devobj *
 typedef void NTAPI (*cancel_fn)(struct devobj *d, struct irp *irp);
 static byte NTAPI IoCancelIrp(struct irp *irp)
 {
-	cancel_fn c = irp->cancelroutine;
+	cancel_fn c = (cancel_fn)irp->cancelroutine;
 	irp->cancel = 1;
 	if (!c)
 		return 0;
@@ -2313,7 +2208,7 @@ static void NTAPI dma_free(struct dma_adapter *a, u32 n, u64 bus, void *va, byte
 }
 static void NTAPI dma_other(void) { fprintf(stderr, "win: a DMA operation we do not have\n"); exit(1); }
 static void *dma_ops[16] = {
-	(void *)(uintptr_t)64, dma_put, dma_alloc, dma_free,
+	(void *)(uintptr_t)64, (void *)dma_put, (void *)dma_alloc, (void *)dma_free,
 };
 static struct dma_adapter dma = { 1, 8, dma_ops };
 static struct dma_adapter *NTAPI IoGetDmaAdapter(struct devobj *pdo, void *desc, u32 *nmap)
@@ -2321,7 +2216,7 @@ static struct dma_adapter *NTAPI IoGetDmaAdapter(struct devobj *pdo, void *desc,
 	int i;
 	(void)pdo; (void)desc;
 	for (i = 4; i < 16; i++)
-		dma_ops[i] = dma_other;
+		dma_ops[i] = (void *)dma_other;
 	*nmap = 16;
 	LOG("IoGetDmaAdapter\n");
 	return &dma;
@@ -2352,9 +2247,9 @@ static NTSTATUS NTAPI IoGetDeviceProperty(struct devobj *d, int prop, u32 n, voi
 	case 9: s = dev_mfg; break;                     /* manufacturer */
 	case 10: s = "\\Device\\NTPNP_PCI0007"; break;   /* PDO name */
 	case 11: s = drv_key; break;
-	case 13: len = 4; memcpy(tmp, &(u32){ 5 }, 4); break;           /* PCIBus */
-	case 14: len = 4; memcpy(tmp, &(u32){ 0 }, 4); break;           /* bus 0 */
-	case 15: len = 4; memcpy(tmp, &(u32){ (wdev->devfn >> 3) << 16 | (wdev->devfn & 7) }, 4); break;
+	case 13: len = 4; wr32(tmp, 5); break;  /* PCIBus */
+	case 14: len = 4; wr32(tmp, 0); break;  /* bus 0 */
+	case 15: len = 4; wr32(tmp, (wdev->pci->devfn >> 3) << 16 | (wdev->pci->devfn & 7)); break;
 	case 22: s = "PCI"; break;                        /* enumerator */
 	default:
 		LOG("IoGetDeviceProperty %d: none\n", prop);
@@ -2392,12 +2287,12 @@ static NTSTATUS NTAPI IoGetDeviceProperty(struct devobj *d, int prop, u32 n, voi
 static NTSTATUS NTAPI IoRegisterDeviceInterface(struct devobj *pdo, void *guid, struct ustr *ref,
 						struct ustr *link)
 {
-	const byte *g = guid;
+	const byte *g = (const byte *)guid;
 	char s[256];
 	(void)pdo; (void)ref;
 	snprintf(s, sizeof(s), "\\??\\PCI#VEN_%04X&DEV_%04X#%s#"
 		 "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
-		 wdev->cfg[0] & 0xffff, wdev->cfg[0] >> 16, instance, rd32(g),
+		 wdev->pci->cfg[0] & 0xffff, wdev->pci->cfg[0] >> 16, instance, rd32(g),
 		 rd16(g + 4), rd16(g + 6), g[8], g[9], g[10], g[11], g[12], g[13],
 		 g[14], g[15]);
 	RtlInitUnicodeString(link, a2w(s));
@@ -2412,7 +2307,7 @@ static NTSTATUS NTAPI IoSetDeviceInterfaceState(struct ustr *link, byte on)
 static NTSTATUS NTAPI IoGetDeviceInterfaces(void *guid, struct devobj *pdo, u32 flags, wchar **list)
 {
 	(void)guid; (void)pdo; (void)flags;
-	*list = calloc(1, 4);
+	*list = (wchar *)calloc(1, 4);
 	return STATUS_SUCCESS;
 }
 static NTSTATUS NTAPI IoRegisterPlugPlayNotification(int category, u32 flags, void *data,
@@ -2532,9 +2427,9 @@ static char *oa_path(struct objattr *oa)
 {
 	char *name = us2a(oa->name), *p;
 	if (oa->root && key_ok(oa->root)) {
-		struct rkey *k = oa->root;
+		struct rkey *k = (struct rkey *)oa->root;
 		size_t n = strlen(k->path) + strlen(name) + 2;
-		p = malloc(n);
+		p = (char *)malloc(n);
 		snprintf(p, n, "%s%s%s", k->path, *name ? "\\" : "", name);
 		free(name);
 		return p;
@@ -2625,12 +2520,12 @@ static NTSTATUS NTAPI ZwQueryValueKey(void *h, struct ustr *name, int c, void *b
 		free(a);
 		return STATUS_INVALID_HANDLE;
 	}
-	v = reg_val(h, a, 0);
+	v = reg_val((struct rkey *)h, a, 0);
 	LOG("ZwQueryValueKey %s\\%s%s\n", ((struct rkey *)h)->path, a, v ? "" : ": none");
 	free(a);
 	if (!v)
 		return STATUS_OBJECT_NAME_NOT_FOUND;
-	return value_info(v, c, buf, n, res);
+	return value_info(v, c, (byte *)buf, n, res);
 }
 static NTSTATUS NTAPI ZwEnumerateValueKey(void *h, u32 i, int c, void *buf, u32 n, u32 *res)
 {
@@ -2642,7 +2537,7 @@ static NTSTATUS NTAPI ZwEnumerateValueKey(void *h, u32 i, int c, void *buf, u32 
 		v = v->next;
 	if (!v)
 		return STATUS_NO_MORE_ENTRIES;
-	return value_info(v, c, buf, n, res);
+	return value_info(v, c, (byte *)buf, n, res);
 }
 static NTSTATUS NTAPI ZwSetValueKey(void *h, struct ustr *name, u32 title, u32 type, void *data,
 				    u32 n)
@@ -2654,12 +2549,12 @@ static NTSTATUS NTAPI ZwSetValueKey(void *h, struct ustr *name, u32 title, u32 t
 		free(a);
 		return STATUS_INVALID_HANDLE;
 	}
-	v = reg_val(h, a, 1);
+	v = reg_val((struct rkey *)h, a, 1);
 	LOG("ZwSetValueKey %s\\%s type %u (%u bytes)\n", ((struct rkey *)h)->path, a, type, n);
 	free(a);
 	free(v->data);
 	v->type = type;
-	v->data = malloc(n + 2);
+	v->data = (byte *)malloc(n + 2);
 	memcpy(v->data, data, n);
 	v->data[n] = v->data[n + 1] = 0;
 	v->len = n;
@@ -2708,10 +2603,10 @@ static NTSTATUS key_info(struct rkey *k, int c, byte *buf, u32 n, u32 *res, int 
 			return STATUS_BUFFER_TOO_SMALL;
 		memset(buf, 0, need);
 		memcpy(buf + 20, &nsub, 4);
-		memcpy(buf + 24, &(u32){ 256 }, 4);
+		wr32(buf + 24, 256);
 		memcpy(buf + 32, &nval, 4);
-		memcpy(buf + 36, &(u32){ 256 }, 4);
-		memcpy(buf + 40, &(u32){ 4096 }, 4);
+		wr32(buf + 36, 256);
+		wr32(buf + 40, 4096);
 		return STATUS_SUCCESS;
 	}
 	default:
@@ -2740,16 +2635,16 @@ static NTSTATUS NTAPI ZwEnumerateKey(void *h, u32 i, int c, void *buf, u32 n, u3
 	struct rkey *s;
 	if (!key_ok(h))
 		return STATUS_INVALID_HANDLE;
-	s = subkey(h, i);
+	s = subkey((struct rkey *)h, i);
 	if (!s)
 		return STATUS_NO_MORE_ENTRIES;
-	return key_info(s, c, buf, n, res, 0);
+	return key_info(s, c, (byte *)buf, n, res, 0);
 }
 static NTSTATUS NTAPI ZwQueryKey(void *h, int c, void *buf, u32 n, u32 *res)
 {
 	if (!key_ok(h))
 		return STATUS_INVALID_HANDLE;
-	return key_info(h, c, buf, n, res, 1);
+	return key_info((struct rkey *)h, c, (byte *)buf, n, res, 1);
 }
 
 /* RtlQueryRegistryValues's and RtlWriteRegistryValue's paths */
@@ -2770,7 +2665,7 @@ static char *rtl_path(u32 rel, const wchar *path)
 	if (rel > 5)
 		rel = 0;
 	n = strlen(roots[rel]) + strlen(a) + 1;
-	p = malloc(n);
+	p = (char *)malloc(n);
 	snprintf(p, n, "%s%s", roots[rel], a);
 	free(a);
 	return p;
@@ -2790,10 +2685,10 @@ typedef NTSTATUS NTAPI (*query_fn)(wchar *name, u32 type, void *data, u32 n, voi
 static void direct_value(void *ctx, u32 type, const byte *data, u32 n)
 {
 	if (type == REG_SZ || type == REG_EXPAND_SZ || type == REG_MULTI_SZ) {
-		struct ustr *u = ctx;
+		struct ustr *u = (struct ustr *)ctx;
 		if (!u->buf) {
 			u->max = (word)(n + 2);
-			u->buf = calloc(1, u->max);
+			u->buf = (wchar *)calloc(1, u->max);
 		}
 		if (n > u->max)
 			n = u->max;
@@ -2833,7 +2728,7 @@ static NTSTATUS NTAPI RtlQueryRegistryValues(u32 rel, const wchar *path, struct 
 			if ((q->flags & RTL_QUERY_REGISTRY_SUBKEY) && q->name) {
 				char *sub = w2a(q->name, -1);
 				size_t n = strlen(base) + strlen(sub) + 2;
-				kpath = malloc(n);
+				kpath = (char *)malloc(n);
 				snprintf(kpath, n, "%s\\%s", base, sub);
 				free(sub);
 			} else
@@ -2878,9 +2773,9 @@ static NTSTATUS NTAPI RtlQueryRegistryValues(u32 rel, const wchar *path, struct 
 			{
 				u32 n = q->deflen;
 				if (!n && (q->deftype == REG_SZ || q->deftype == REG_EXPAND_SZ))
-					n = (u32)(wlen(q->defdata) + 1) * 2;
+					n = (u32)(wlen((const wchar *)q->defdata) + 1) * 2;
 				if (q->flags & RTL_QUERY_REGISTRY_DIRECT)
-					direct_value(q->entryctx, q->deftype, q->defdata, n);
+					direct_value(q->entryctx, q->deftype, (const byte *)q->defdata, n);
 				else if (q->routine)
 					s = ((query_fn)q->routine)(q->name, q->deftype, q->defdata, n,
 								   ctx, q->entryctx);
@@ -2928,7 +2823,7 @@ static NTSTATUS NTAPI RtlDeleteRegistryValue(u32 rel, const wchar *path, const w
 
 /* the exports: by name ('*' a data import) */
 #define E(f) { #f, (void *)f }
-static const struct export exports[] = {
+static const struct kexport exports[] = {
 	E(ExAllocatePoolWithTag), E(ExFreePool), E(MmLockPagableDataSection),
 	E(MmUnlockPagableImageSection), E(MmQuerySystemSize), E(MmMapIoSpace),
 	E(MmUnmapIoSpace), E(MmUnlockPages), E(IoFreeMdl),
@@ -2975,7 +2870,7 @@ static const struct export exports[] = {
 	E(ZwEnumerateValueKey), E(ZwSetValueKey), E(ZwEnumerateKey), E(ZwQueryKey),
 	E(RtlQueryRegistryValues), E(RtlWriteRegistryValue), E(RtlDeleteRegistryValue),
 };
-static const struct export *export_find(const char *name)
+static const struct kexport *export_find(const char *name)
 {
 	size_t i;
 	for (i = 0; i < sizeof(exports) / sizeof(exports[0]); i++)
@@ -2997,25 +2892,25 @@ static char svc_name[64];               /* the driver's service */
 static byte res_raw[4 + 8 + 8 + 2 * 16], res_tr[sizeof(res_raw)];
 static void res_init(byte *r, int translated)
 {
-	u32 irq = wdev->cfg[0x3c / 4] & 0xff;
+	u32 irq = wdev->pci->cfg[0x3c / 4] & 0xff;
 	byte *d;
 	memset(r, 0, sizeof(res_raw));
-	memcpy(r, &(u32){ 1 }, 4);              /* one full descriptor */
-	memcpy(r + 4, &(u32){ 5 }, 4);          /* PCIBus */
-	memcpy(r + 12, &(word){ 1 }, 2);        /* version, revision */
-	memcpy(r + 14, &(word){ 1 }, 2);
-	memcpy(r + 16, &(u32){ 2 }, 4);
+	wr32(r, 1);       /* one full descriptor */
+	wr32(r + 4, 5);   /* PCIBus */
+	wr16(r + 12, 1);  /* version, revision */
+	wr16(r + 14, 1);
+	wr32(r + 16, 2);
 	d = r + 20;
 	d[0] = 3; d[1] = 1;                     /* memory, exclusive */
-	memcpy(d + 2, &(word){ 0 }, 2);         /* (read/write) */
-	memcpy(d + 4, &(u32){ mem_phys }, 4);
-	memcpy(d + 12, &(u32){ wdev->mem_size }, 4);
+	wr16(d + 2, 0);   /* (read/write) */
+	wr32(d + 4, mem_phys);
+	wr32(d + 12, wdev->mem_size);
 	d += 16;
 	d[0] = 2; d[1] = 3;                     /* interrupt, shared */
-	memcpy(d + 2, &(word){ 0 }, 2);         /* (level) */
-	memcpy(d + 4, &(u32){ translated ? DIRQL : irq }, 4);
-	memcpy(d + 8, &(u32){ translated ? 0x30 + irq : irq }, 4);
-	memcpy(d + 12, &(u32){ 1 }, 4);
+	wr16(d + 2, 0);   /* (level) */
+	wr32(d + 4, translated ? DIRQL : irq);
+	wr32(d + 8, translated ? 0x30 + irq : irq);
+	wr32(d + 12, 1);
 }
 
 /* GUID_BUS_INTERFACE_STANDARD: its bus data calls, on the device's
@@ -3028,7 +2923,7 @@ static u32 NTAPI bus_get(void *ctx, u32 type, void *buf, u32 off, u32 n)
 	u32 i;
 	(void)ctx; (void)type;
 	for (i = 0; i < n; i++)
-		((byte *)buf)[i] = off + i < 256 ? ((byte *)wdev->cfg)[off + i] : 0;
+		((byte *)buf)[i] = off + i < 256 ? ((byte *)wdev->pci->cfg)[off + i] : 0;
 	return n;
 }
 static u32 NTAPI bus_set(void *ctx, u32 type, void *buf, u32 off, u32 n)
@@ -3037,7 +2932,7 @@ static u32 NTAPI bus_set(void *ctx, u32 type, void *buf, u32 off, u32 n)
 	(void)ctx; (void)type;
 	for (i = 0; i < n; i++)
 		if (off + i >= 4 && off + i < 256)
-			((byte *)wdev->cfg)[off + i] = ((byte *)buf)[i];
+			((byte *)wdev->pci->cfg)[off + i] = ((byte *)buf)[i];
 	return n;
 }
 static void NTAPI if_ref(void *ctx) { (void)ctx; }
@@ -3063,16 +2958,16 @@ static NTSTATUS NTAPI pdo_dispatch(struct devobj *d, struct irp *irp)
 			u32 bits = 1 << 4 | 1 << 6;     /* LockSupported, Removable no:
 							   SurpriseRemovalOK, UniqueID */
 			memcpy(c + 4, &bits, 4);
-			memcpy(c + 8, &(u32){ 0 }, 4);          /* address */
-			memcpy(c + 12, &(u32){ 0xffffffff }, 4);
-			memcpy(c + 16, &(u32){ 1 }, 4);         /* S0 -> D0 */
+			wr32(c + 8, 0);   /* address */
+			wr32(c + 12, 0xffffffff);
+			wr32(c + 16, 1);  /* S0 -> D0 */
 			{
 				int k;
 				for (k = 1; k < 7; k++)
-					memcpy(c + 16 + 4 * k, &(u32){ 4 }, 4);     /* D3 */
+					wr32(c + 16 + 4 * k, 4);  /* D3 */
 			}
-			memcpy(c + 44, &(u32){ 1 }, 4);         /* SystemWake */
-			memcpy(c + 48, &(u32){ 1 }, 4);         /* DeviceWake */
+			wr32(c + 44, 1);  /* SystemWake */
+			wr32(c + 48, 1);  /* DeviceWake */
 			s = STATUS_SUCCESS;
 			break;
 		}
@@ -3083,12 +2978,12 @@ static NTSTATUS NTAPI pdo_dispatch(struct devobj *d, struct irp *irp)
 				((word *)i)[0] = 32;
 				((word *)i)[1] = 1;
 				i[1] = NULL;
-				i[2] = if_ref;
-				i[3] = if_ref;
+				i[2] = (void *)if_ref;
+				i[3] = (void *)if_ref;
 				i[4] = NULL;    /* TranslateBusAddress */
 				i[5] = NULL;    /* GetDmaAdapter */
-				i[6] = bus_set;
-				i[7] = bus_get;
+				i[6] = (void *)bus_set;
+				i[7] = (void *)bus_get;
 				s = STATUS_SUCCESS;
 			}
 			LOG("pdo: interface %02x%02x%02x%02x: %s\n", g[3], g[2], g[1], g[0],
@@ -3115,7 +3010,7 @@ static byte fileobj[128];
 struct req { int done; NTSTATUS status; u32 info; };
 static NTSTATUS NTAPI req_done(struct devobj *d, struct irp *irp, void *ctx)
 {
-	struct req *r = ctx;
+	struct req *r = (struct req *)ctx;
 	(void)d;
 	r->done = 1;
 	r->status = irp->iosb.status;
@@ -3261,8 +3156,8 @@ static int driver_start(void)
 	{
 		byte caps[64];
 		memset(caps, 0, sizeof(caps));
-		memcpy(caps, &(word){ 64 }, 2);
-		memcpy(caps + 2, &(word){ 1 }, 2);
+		wr16(caps, 64);
+		wr16(caps + 2, 1);
 		irp = irp_new(IRP_MJ_PNP, IRP_MN_QUERY_CAPABILITIES, &r);
 		next_sl(irp)->p[0] = (u32)(uintptr_t)caps;
 		s = irp_sync(irp, &r);
@@ -3315,7 +3210,7 @@ static struct irp *rw_irp(byte major, byte *buf, u32 n, struct req *r)
 	if (top->flags & DO_BUFFERED_IO)
 		irp->sysbuf = buf;
 	else if (top->flags & DO_DIRECT_IO) {
-		struct mdl *m = calloc(1, sizeof(*m) + 64);
+		struct mdl *m = (struct mdl *)calloc(1, sizeof(*m) + 64);
 		m->startva = (void *)((uintptr_t)buf & ~4095u);
 		m->offset = (u32)(uintptr_t)buf & 4095;
 		m->count = n;
@@ -3361,7 +3256,7 @@ u32 win_serial_read(byte *buf)
 }
 
 /* the WRITE in flight done and freed: none in flight? */
-int win_serial_writable(void)
+bool win_serial_writable()
 {
 	if (wr_irp && wr_req.done) {
 		free(wr_irp->mdl);
@@ -3390,7 +3285,7 @@ int win_serial_write(const void *p, int n)
  *    the line's time: the timers each ms, the device's interrupt
  */
 
-void win_tick(void)
+void win_tick()
 {
 	static int irq_was;
 	int up;
@@ -3425,16 +3320,20 @@ void win_tick(void)
  *    the driver
  */
 
-int win_start(struct win_dev *dev)
+int win_start(win_dev *dev)
 {
 	struct sigaction sa;
 	char sect[160];
 	const char *v;
-	u32 id = dev->cfg[0], cls = dev->cfg[0x08 / 4], sub = dev->cfg[0x2c / 4];
+	u32 id = dev->pci->cfg[0], cls = dev->pci->cfg[0x08 / 4], sub = dev->pci->cfg[0x2c / 4];
 	int k;
 
 	wdev = dev;
-	mem_phys = dev->cfg[0x10 / 4] & ~0xfu;
+	mem_phys = dev->pci->cfg[0x10 / 4] & ~0xfu;
+	dev->pci->bar_size[0] = dev->mem_size;
+	traps.in = io_in;
+	traps.out = io_out;
+	traps.tsc = [] { return tsc.read(win_line_n, wdev->rate); };
 	memset(&sa, 0, sizeof(sa));
 	{
 		/* (the handlers on a stack of their own: a fault of an
@@ -3467,7 +3366,7 @@ int win_start(struct win_dev *dev)
 		      id & 0xffff, id >> 16) + 1;
 	k += snprintf(compat_ids + k, sizeof(compat_ids) - (size_t)k, "PCI\\CC_%04X", cls >> 16) + 1;
 	compat_ids[k] = 0;
-	snprintf(instance, sizeof(instance), "3&61aaa01&0&%02X", dev->devfn);
+	snprintf(instance, sizeof(instance), "3&61aaa01&0&%02X", dev->pci->devfn);
 
 	/* what the INF says: the class, the model's description and
 	   maker, the driver's service; the keys, the registry */

@@ -10,7 +10,7 @@ clock, `modem_timer.cpp`, are no longer built), the debug output,
 
 `modem_half.cpp` runs the timers between half frames of the line, on
 its samples with `PIPE_SYNC` (the wall clock's otherwise), in real time
-on hook and with `MODEM_SPEED` as `../modem_half.cpp` does, so that the
+on hook and with `MODEM_SPEED` as `../half_open.cpp` does, so that the
 interop tests' calls with the original library run unpaced too. With
 `PIPE_SYNC` it writes the line's lead silence when it starts, not at
 the first call, so that the line runs from the start.

@@ -485,7 +485,7 @@ std::vector<Call> calls()
 	      "retrained", "PROTO_B=ATX3;AT+MS=92" });
 
 	/* --- Broadcom's V.92 soft modem for Windows (its WDM driver on
-	   interop_windows.c's kernel and half_broadcom's BCM4212, 8000 Hz)
+	   interop_windows.cpp's kernel and half_broadcom's BCM4212, 8000 Hz)
 	   and the open modem (9600 Hz) call each other at each modulation */
 	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
 		     { "B103", "103" }, { "V21", "21" }, { "V23C", "23" },
@@ -547,7 +547,7 @@ std::vector<Call> calls()
 		    "pctel", o, { "NET=9600:8000:ulaw", "PROTO_B=" + a });
 	}
 	/* V.90: the PCTel modem as the analogue modem (its codec at 72000 / 7
-	   Hz, locked to the line, see half_pctel.c).  +MS=V90 with its top
+	   Hz, locked to the line, see half_pctel.cpp).  +MS=V90 with its top
 	   rate: without one (0) it takes the top rate for less than 28000
 	   and keeps the downstream to 45333 */
 	for (std::string law : { "ulaw", "alaw" })

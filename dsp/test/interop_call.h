@@ -5,7 +5,7 @@
  *                     (by hand)
  *
  *    Each modem is a program that reads its line's audio from fd 3,
- *    writes it to fd 4 and prints "created <name>: <pty>" (modem_half,
+ *    writes it to fd 4 and prints "created <name>: <pty>" (half_open,
  *    half_agere, half_sm56, ...); the driver is their DTE on the ptys.
  *    The environment sets what a call does, as the variables below say
  *    (and passes the rest on to the modems and netsim: DSP_*, NET_*, ...).

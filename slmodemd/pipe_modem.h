@@ -3,7 +3,7 @@
  *    pipe_modem.h - a modem whose line's audio comes from one file
  *                   descriptor and goes to another (16 bit linear), with
  *                   a pty for its DTE: modem_test puts two of them back
- *                   to back, the interop tests' modem_half one against a
+ *                   to back, the interop tests' half_open one against a
  *                   modem in another process
  *
  *    slmodemd's modem_test.c and modem_half.c on the new core.

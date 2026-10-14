@@ -1,8 +1,8 @@
 /*
- *    half_spandsp.c - spandsp's data modems (libspandsp 0.0.6, as Asterisk
- *    and FreeSWITCH have it) as a test peer, as half_agere and half_sm56
- *    are: line audio from fd 3 and to fd 4 (16 bit, 8000 Hz), AT commands
- *    on a pty whose name is printed ("created spandsp: /dev/pts/N").
+ *    half_spandsp.cpp - spandsp's data modems (libspandsp 0.0.6, as
+ *    Asterisk and FreeSWITCH have it) as a test peer (modem_half.hpp):
+ *    line audio from fd 3 and to fd 4 (16 bit, 8000 Hz), AT commands on
+ *    a pty whose name is printed ("created spandsp: /dev/pts/N").
  *
  *    spandsp has the pumps but no modem around them (its data_modems of
  *    later versions is a sketch, and its V.32bis and V.34 there are not
@@ -13,29 +13,24 @@
  *
  *    AT+MS=<m> as ours (21, 22, 122, 23, 103; or V21, V22, V22B, V23C,
  *    B103), default V.8 (V.22bis, V.22, V.21 offered); ATD, ATA, ATH, ATO,
- *    +++, ATZ, the rest OK.  SPANDSP_SYNC as half_agere's AGERE_SYNC;
+ *    +++, ATZ, the rest OK.  SPANDSP_SYNC as the others';
  *    SPANDSP_DEBUG=1 prints spandsp's logs and ours.
  */
 
-#define _GNU_SOURCE
 #include <ctype.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
+#include <strings.h>
 #include <unistd.h>
 #include <spandsp.h>
 
-#include "half_dte.h"
+#include "modem_half.hpp"
+
+using namespace half;
 
 #define RATE 8000
 #define MS(x) ((x) * RATE / 1000)
-
-static int dbg;
-#define LOG(...) do { if (dbg) fprintf(stderr, "spandsp: " __VA_ARGS__); } while (0)
 
 /* spandsp's log messages: to stderr */
 static void span_msg(int level, const char *text)
@@ -45,109 +40,141 @@ static void span_msg(int level, const char *text)
 }
 
 /*
+ *    the modem
+ */
+
+class Spandsp : public HalfModem {
+public:
+	Spandsp() : HalfModem("spandsp", "SPANDSP") {}
+
+protected:
+	int start() override { return 0; }
+	void line_block(const short *in, short *out, int n) override;
+	void dte_poll() override;
+
+private:
+	enum State {
+		IDLE,           /* on hook, or in command mode */
+		ANS_SILENCE,    /* answering: 1 s */
+		ANS_TONE,       /* 2100 Hz for 3.3 s (V.25) */
+		ANS_GAP,        /* 75 ms */
+		CALL_WAIT,      /* calling: for the answer tone */
+		CALL_TONE,      /* in it: for its end */
+		V8,             /* V.8, either side */
+		PUMP,           /* the modulation's handshake and data */
+	};
+
+	State state = IDLE;
+	int caller = 0;
+	long count = 0;                 /* samples in the state */
+	int ms_req = 0;                 /* +MS: 0 V.8, else 21, 22, 122, 23, 103 */
+	int pump_ms = 0;                /* the one running */
+	int online = 0, connected = 0;  /* in data mode; CONNECT given */
+	long carrier_off = 0;           /* samples without the remote's carrier */
+	long rx_up = 0;                 /* samples since its carrier came */
+	int rx_carrier = 0;
+	long last_dte = 0;              /* line_n of the DTE's last byte */
+	int plus_n = 0;                 /* +++ seen */
+	float pwr = 0;                  /* the line's power, for the caller's
+					   wait for the answer tone and its
+					   end */
+
+	/* data from the DTE, for the line */
+	unsigned char txq[8192];
+	int txq_head = 0, txq_tail = 0;
+
+	/* (spandsp 0.0.6's states are opaque: its own allocations) */
+	v8_state_t *v8 = nullptr;
+	v8_parms_t v8_parms;
+	modem_connect_tones_tx_state_t *ans_tx = nullptr;
+	v22bis_state_t *v22 = nullptr;
+	fsk_tx_state_t *ftx = nullptr;
+	fsk_rx_state_t *frx = nullptr;
+	/* 8N1 characters each way, ours (0.0.6's async_tx gives the pump a
+	   status for a bit when there is nothing to send) */
+	int tx_frame = 0, tx_bits = 0;  /* the character going out, bits left */
+	int rx_frame = 0, rx_bits = 0;  /* the one coming in, bits so far */
+	int v8_result = -1, v8_mods = 0;
+
+	char cmd[256];                  /* the AT command line so far */
+	int cmd_n = 0;
+
+	void result(const char *s);
+	void set_state(State s);
+	int get_byte();
+	void put_byte(int byte);
+	void do_connect(int rate);
+	void status(int st);
+	int get_bit();
+	void put_bit(int bit);
+	void start_pump(int ms);
+	int fsk_rate() const;
+	void start_v8();
+	void hang_up();
+	void dial(int as_caller);
+	void at_line(char *s);
+
+	/* spandsp's callbacks, to this modem */
+	static int get_bit_cb(void *m) { return ((Spandsp *)m)->get_bit(); }
+	static void put_bit_cb(void *m, int bit) { ((Spandsp *)m)->put_bit(bit); }
+	static void status_cb(void *m, int st) { ((Spandsp *)m)->status(st); }
+	static void v8_cb(void *m, v8_parms_t *r);
+};
+
+static Spandsp spandsp;
+#define LOG(...) do { if (spandsp.dbg) spandsp.log(__VA_ARGS__); } while (0)
+
+/*
  *    the DTE
  */
 
-static int pty;
-static long sync_n;
-static long line_n;             /* line samples so far */
-
-/* s to the DTE */
-static void dte_puts(const char *s)
-{
-	dte_write(pty, s, strlen(s));
-}
-
 /* a result code, "\r\n<s>\r\n" */
-static void result(const char *s)
+void Spandsp::result(const char *s)
 {
 	char buf[64];
 	snprintf(buf, sizeof(buf), "\r\n%s\r\n", s);
-	dte_puts(buf);
+	pty.write(buf, strlen(buf));
 	LOG("result %s\n", s);
 }
-
-/* data from the DTE, for the line */
-static unsigned char txq[8192];
-static int txq_head, txq_tail;
 
 /*
  *    the call
  */
 
-enum {
-	IDLE,           /* on hook, or in command mode */
-	ANS_SILENCE,    /* answering: 1 s */
-	ANS_TONE,       /* 2100 Hz for 3.3 s (V.25) */
-	ANS_GAP,        /* 75 ms */
-	CALL_WAIT,      /* calling: for the answer tone */
-	CALL_TONE,      /* in it: for its end */
-	V8,             /* V.8, either side */
-	PUMP,           /* the modulation's handshake and data */
-};
-static const char *const state_name[] = {
-	"idle", "ans silence", "ans tone", "ans gap", "call wait",
-	"call tone", "v8", "pump"
-};
-
-static int state, caller;
-static long count;              /* samples in the state */
-static int ms_req;              /* +MS: 0 V.8, else 21, 22, 122, 23, 103 */
-static int pump_ms;             /* the one running */
-static int online, connected;   /* in data mode; CONNECT given */
-static long carrier_off;        /* samples without the remote's carrier */
-static long rx_up;              /* samples since its carrier came */
-static int rx_carrier;
-static long last_dte;           /* line_n of the DTE's last byte */
-static int plus_n;              /* +++ seen */
-
-/* (spandsp 0.0.6's states are opaque: its own allocations) */
-static v8_state_t *v8;
-static v8_parms_t v8_parms;
-static modem_connect_tones_tx_state_t *ans_tx;
-static v22bis_state_t *v22;
-static fsk_tx_state_t *ftx;
-static fsk_rx_state_t *frx;
-/* 8N1 characters each way, ours (0.0.6's async_tx gives the pump a status
-   for a bit when there is nothing to send) */
-static int tx_frame, tx_bits;   /* the character going out, bits left */
-static int rx_frame, rx_bits;   /* the one coming in, bits so far */
-static int v8_result = -1, v8_mods;
-
 /* to state s, its sample count from 0 */
-static void set_state(int s)
+void Spandsp::set_state(State s)
 {
+	static const char *const state_name[] = {
+		"idle", "ans silence", "ans tone", "ans gap", "call wait",
+		"call tone", "v8", "pump"
+	};
 	LOG("state %s -> %s at %ld ms\n", state_name[state], state_name[s],
-	    line_n * 1000 / RATE);
+	    (long)(line_n * 1000 / RATE));
 	state = s;
 	count = 0;
 }
 
 /* the DTE's next character for the line, -1 if none or offline */
-static int get_byte(void *user_data)
+int Spandsp::get_byte()
 {
-	(void)user_data;
 	if (!online || txq_head == txq_tail)
 		return -1;
-	{
-		int c = txq[txq_tail];
-		txq_tail = (txq_tail + 1) % (int)sizeof(txq);
-		return c;
-	}
+	int c = txq[txq_tail];
+	txq_tail = (txq_tail + 1) % (int)sizeof(txq);
+	return c;
 }
 
 /* a character from the line to the DTE, online (< 0: none) */
-static void put_byte(void *user_data, int byte)
+void Spandsp::put_byte(int byte)
 {
 	unsigned char c = (unsigned char)byte;
-	(void)user_data;
 	if (byte < 0 || !online)
 		return;
-	dte_write(pty, &c, 1);
+	pty.write(&c, 1);
 }
 
 /* CONNECT <rate>, once a call; data mode */
-static void do_connect(int rate)
+void Spandsp::do_connect(int rate)
 {
 	char buf[32];
 	if (connected)
@@ -159,9 +186,8 @@ static void do_connect(int rate)
 
 /* a pump's status: V.22bis trained (CONNECT), the remote's carrier
    up and down */
-static void status(void *user_data, int st)
+void Spandsp::status(int st)
 {
-	(void)user_data;
 	LOG("status %s\n", signal_status_to_str(st));
 	switch (st) {
 	case SIG_STATUS_TRAINING_SUCCEEDED:
@@ -180,12 +206,11 @@ static void status(void *user_data, int st)
 
 /* the pump's next bit to send: 8N1 characters LSB first, marks
    between them */
-static int get_bit(void *user_data)
+int Spandsp::get_bit()
 {
 	int bit;
-	(void)user_data;
 	if (!tx_bits) {
-		int c = get_byte(NULL);
+		int c = get_byte();
 		if (c < 0)
 			return 1;               /* (mark: idle) */
 		tx_frame = c << 1 | 0x200;      /* start, 8 bits, stop */
@@ -199,11 +224,10 @@ static int get_bit(void *user_data)
 
 /* a bit from the pump (< 0: a status): once connected, 8N1 characters
    out of them, those with their stop bit to the DTE */
-static void put_bit(void *user_data, int bit)
+void Spandsp::put_bit(int bit)
 {
-	(void)user_data;
 	if (bit < 0) {
-		status(NULL, bit);
+		status(bit);
 		return;
 	}
 	if (!connected)
@@ -221,13 +245,13 @@ static void put_bit(void *user_data, int bit)
 	}
 	/* the stop bit */
 	if (bit)
-		put_byte(NULL, rx_frame);
+		put_byte(rx_frame);
 	rx_bits = 0;
 }
 
 /* the pump of +MS code ms (22 and 122 V.22bis's, 23, 103, else V.21:
    FSK) for our role; the PUMP state */
-static void start_pump(int ms)
+void Spandsp::start_pump(int ms)
 {
 	const fsk_spec_t *tx, *rx;
 
@@ -242,8 +266,8 @@ static void start_pump(int ms)
 		if (v22)
 			v22bis_free(v22);
 		v22 = v22bis_init(NULL, ms == 122 ? 2400 : 1200, 0, caller,
-				  get_bit, NULL, put_bit, NULL);
-		v22bis_set_modem_status_handler(v22, status, NULL);
+				  get_bit_cb, this, put_bit_cb, this);
+		v22bis_set_modem_status_handler(v22, status_cb, this);
 		if (dbg) {
 			span_log_set_level(v22bis_get_logging_state(v22),
 					   SPAN_LOG_SHOW_TAG | SPAN_LOG_FLOW);
@@ -287,8 +311,8 @@ static void start_pump(int ms)
 			fsk_tx_free(ftx);
 		if (frx)
 			fsk_rx_free(frx);
-		ftx = fsk_tx_init(NULL, tx, get_bit, NULL);
-		frx = fsk_rx_init(NULL, rx, FSK_FRAME_MODE_ASYNC, put_bit, NULL);
+		ftx = fsk_tx_init(NULL, tx, get_bit_cb, this);
+		frx = fsk_rx_init(NULL, rx, FSK_FRAME_MODE_ASYNC, put_bit_cb, this);
 		break;
 	}
 	set_state(PUMP);
@@ -296,27 +320,27 @@ static void start_pump(int ms)
 
 /* the FSK pump's rate for the CONNECT: what this side receives (V.23:
    the caller 1200, the answerer 75) */
-static int fsk_rate(void)
+int Spandsp::fsk_rate() const
 {
 	return pump_ms == 23 ? (caller ? 1200 : 75) : 300;
 }
 
 /* V.8's news: its status and the modulations, an offer cut to ours */
-static void v8_handler(void *user_data, v8_parms_t *r)
+void Spandsp::v8_cb(void *m, v8_parms_t *r)
 {
-	(void)user_data;
+	Spandsp *s = (Spandsp *)m;
 	LOG("v8 status %d, modulations %#x\n", r->status, r->modulations);
 	/* the CM's offer: the JM says what both have (0.0.6 leaves that to
 	   us, and would send the CM's back) */
 	if (r->status == V8_STATUS_V8_OFFERED)
 		r->modulations &= V8_MOD_V21 | V8_MOD_V22 | V8_MOD_V23;
-	v8_result = r->status;
-	v8_mods = r->modulations;
+	s->v8_result = r->status;
+	s->v8_mods = r->modulations;
 }
 
 /* V.8 in our role (the answerer with ANSam), offering V.21, V.22(bis)
    and V.23, no protocol */
-static void start_v8(void)
+void Spandsp::start_v8()
 {
 	memset(&v8_parms, 0, sizeof(v8_parms));
 	v8_parms.modem_connect_tone = caller ? MODEM_CONNECT_TONES_NONE :
@@ -333,7 +357,7 @@ static void start_v8(void)
 	v8_result = -1;
 	if (v8)
 		v8_free(v8);
-	v8 = v8_init(NULL, caller, &v8_parms, v8_handler, NULL);
+	v8 = v8_init(NULL, caller, &v8_parms, v8_cb, this);
 	if (dbg) {
 		span_log_set_level(v8_get_logging_state(v8),
 				   SPAN_LOG_SHOW_TAG | SPAN_LOG_FLOW);
@@ -345,7 +369,7 @@ static void start_v8(void)
 }
 
 /* on hook, offline */
-static void hang_up(void)
+void Spandsp::hang_up()
 {
 	online = connected = 0;
 	pump_ms = 0;
@@ -354,7 +378,7 @@ static void hang_up(void)
 
 /* ATD (as_caller) or ATA: V.8 (the answerer after 1 s), or +MS's
    modulation with its tones */
-static void dial(int as_caller)
+void Spandsp::dial(int as_caller)
 {
 	caller = as_caller;
 	online = connected = 0;
@@ -369,21 +393,20 @@ static void dial(int as_caller)
 	set_state(caller ? CALL_WAIT : ANS_SILENCE);
 }
 
-/* the line's power, for the caller's wait for the answer tone and its end */
-static float pwr;
-
-/* one block of line samples each way */
-static void line_block(const int16_t *in, int16_t *out, int n)
+/* one block of line samples each way (to the next 48th of the line) */
+void Spandsp::line_block(const short *in, short *out, int n)
 {
 	int i;
 
 	for (i = 0; i < n; i++)
 		pwr = 0.95f * pwr + 0.05f * (float)in[i] * in[i];
 	memset(out, 0, n * sizeof(*out));
-	if (dbg > 1 && line_n % 800 < (long)n)
-		LOG("%ld ms: power %.0f\n", line_n * 1000 / RATE, pwr);
+	if (dbg > 1 && line_n % 800 < (unsigned long long)n)
+		LOG("%ld ms: power %.0f\n", (long)(line_n * 1000 / RATE), pwr);
 	count += n;
 	switch (state) {
+	case IDLE:
+		break;
 	case ANS_SILENCE:
 		if (count >= MS(1000)) {
 			if (ms_req == 0) {
@@ -462,14 +485,12 @@ static void line_block(const int16_t *in, int16_t *out, int n)
 		}
 		break;
 	}
+	line_n += n;
 }
 
 /*
  *    AT commands
  */
-
-static char cmd[256];
-static int cmd_n;
 
 /* AT+MS='s modulation: 21, 22, 122, 23, 103 as numbers or names; 0 for
    V.8 (and what we do not have, from 32 up), -1 for an error */
@@ -494,7 +515,7 @@ static int parse_ms(const char *p)
 
 /* an AT command line: ATD and ATA start a call (no OK), ATO goes back
    online (CONNECT), +MS sets the modulation, the rest OK or ERROR */
-static void at_line(char *s)
+void Spandsp::at_line(char *s)
 {
 	char *p;
 	int ok = 1;
@@ -575,13 +596,13 @@ static void at_line(char *s)
 /* what waits to the DTE, then the DTE's input: data online (+++ with
    a second of quiet each side back to commands), else commands, echoed;
    in command mode at SPANDSP_SYNC's samples only */
-static void dte_poll(void)
+void Spandsp::dte_poll()
 {
 	unsigned char buf[256];
 	int n = sizeof(buf), k;
 
-	dte_flush(pty);
-	if (sync_n && line_n % sync_n && !online)
+	pty.flush();
+	if (dte_waits(online))
 		return;
 	/* online, no more than the line's queue has room for: the rest
 	   waits in the pty */
@@ -593,25 +614,25 @@ static void dte_poll(void)
 		if (!n)
 			return;
 	}
-	n = (int)read(pty, buf, (size_t)n);
+	n = (int)::read(pty.fd(), buf, (size_t)n);
 	for (k = 0; k < n; k++) {
 		unsigned char c = buf[k];
 		if (online) {
 			/* +++ after a second of quiet, and a second after
 			   it: command mode */
 			if (c == '+' && (plus_n ? plus_n < 3 :
-					 line_n - last_dte >= MS(1000)))
+					 (long)line_n - last_dte >= MS(1000)))
 				plus_n++;
 			else
 				plus_n = 0;
-			last_dte = line_n;
+			last_dte = (long)line_n;
 			if ((txq_head + 1) % (int)sizeof(txq) != txq_tail) {
 				txq[txq_head] = c;
 				txq_head = (txq_head + 1) % (int)sizeof(txq);
 			}
 			continue;
 		}
-		dte_write(pty, &c, 1);          /* (echo) */
+		pty.write(&c, 1);               /* (echo) */
 		if (c == '\r' || c == '\n') {
 			cmd[cmd_n] = 0;
 			if (cmd_n)
@@ -621,73 +642,14 @@ static void dte_poll(void)
 			cmd[cmd_n++] = (char)c;
 		}
 	}
-	if (online && plus_n == 3 && line_n - last_dte >= MS(1000)) {
+	if (online && plus_n == 3 && (long)line_n - last_dte >= MS(1000)) {
 		plus_n = 0;
 		online = 0;
 		result("OK");
 	}
 }
 
-/* the modem between fds 3 and 4 and its pty until the line ends */
-int main(int argc, char **argv)
+int main()
 {
-	int16_t in[480], out[480];
-	char *name;
-	int i, n;
-
-	(void)argc; (void)argv;
-	dbg = getenv("SPANDSP_DEBUG") ? atoi(getenv("SPANDSP_DEBUG")) : 0;
-	sync_n = getenv("SPANDSP_SYNC") ?
-		(atol(getenv("SPANDSP_SYNC")) + 47) / 48 * 48 : 0;
-	setvbuf(stdout, NULL, _IONBF, 0);
-
-	pty = posix_openpt(O_RDWR | O_NOCTTY);
-	if (pty < 0 || grantpt(pty) || unlockpt(pty)) {
-		perror("pty");
-		return 1;
-	}
-	{
-		struct termios t;
-		tcgetattr(pty, &t);
-		cfmakeraw(&t);
-		tcsetattr(pty, TCSANOW, &t);
-	}
-	fcntl(pty, F_SETFL, O_NONBLOCK);
-	name = ptsname(pty);
-	printf("created spandsp: %s\n", name);
-
-	/* the other side waits for us first */
-	memset(out, 0, sizeof(out));
-	if (write(4, out, 48 * 2 * 4) < 0)
-		return 1;
-	for (;;) {
-		static int odd;
-		n = (int)read(3, (char *)in + odd, sizeof(in) - odd);
-		if (n < 0 && errno == EINTR)
-			continue;
-		if (n <= 0)
-			break;
-		n += odd;
-		odd = n & 1;
-		n /= 2;
-		/* in blocks to each 48th sample of the line, the DTE between
-		   them */
-		for (i = 0; i < n; ) {
-			int k = 48 - (int)(line_n % 48);
-			if (k > n - i)
-				k = n - i;
-			line_block(in + i, out + i, k);
-			line_n += k;
-			i += k;
-			if (line_n % 48 == 0)
-				dte_poll();
-		}
-		if (write(4, out, n * 2) != n * 2)
-			break;
-		if (odd)
-			((char *)in)[0] = ((char *)in)[n * 2];
-		if (!sync_n)
-			dte_poll();
-	}
-	return 0;
+	return spandsp.run();
 }
