@@ -56,7 +56,11 @@ however late the driver answers:
 - on hook our modem and the original library's run in real time anyway
   (`PIPE_SYNC`), so that the driver's commands meet the samples they
   would in real time (the call itself, from the dial or the answer, as
-  fast as it goes);
+  fast as it goes); and their line runs from the start, as the other
+  harnesses' does (the lead silence written when they start, not at
+  the first ATD or ATA): a line that stood still until then took the
+  commands as they came, and the call began wherever the scheduler had
+  the two modems at that moment;
 - the driver waits 100 ms of the line after a CONNECT before its data (the
   SM56 says CONNECT a little ahead of taking data, and echoes what
   comes sooner as a command line);
@@ -75,7 +79,12 @@ samples (20 ms at 9600 Hz, the original library's frame): its V.17
 receiver takes a short train or not depending on how its frames fall on
 it, so our training has to start at the same point of them every time.
 So they take the turnarounds the paced calls did and give the same TCF
-and pages, in a tenth of the time.
+and pages, in a tenth of the time. The relay holds the line while the
+driver has not answered what a modem said (from the modem's output
+until the driver's next poll or write): however late the scheduler lets
+it run, its answer meets the line where it would at once (the Agere
+modem's `+FTH` ended in ERROR now and then, its frame some seconds of
+the line after its CONNECT).
 
 The calls run a little nicer (`nice` 10) than the rest of the machine.
 Each takes about one processor while it runs, but for the moments on
@@ -83,7 +92,9 @@ hook in real time, so `-j` can be some four times the processors: on 4,
 the whole suite takes some 75 s at `-j16` (105 at `-j8`; 13 minutes when
 every call ran in real time). Much more than that (`-j32` on 4) leaves
 the calls on hook short of real time, and the PCTel V.90 call, which
-fails when its setup lands a period later, can fail. None of the calls
+fails when its setup lands a period later, can fail (now and then at
+`-j16` too: the driver sends modemB its setup on modemA's last OK, a
+few ms before modemB's next period). None of the calls
 has to run alone. `MODEM_REALTIME=1 ctest ...` runs every call in real
 time, as they all did before (for comparing a failure).
 

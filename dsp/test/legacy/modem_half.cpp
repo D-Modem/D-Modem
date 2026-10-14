@@ -101,6 +101,8 @@ struct modem_test {
 	int in,out;
 	unsigned int delay;
 	unsigned int started;
+	unsigned int lead_done;         /* (PIPE_SYNC) the line's lead
+					   silence written */
 	unsigned pty_closed;
 	unsigned close_count;
 };
@@ -121,14 +123,18 @@ static char outbuf[4096];
 
 /* 'driver' simulation */
 
+/* off hook: the lead silence on the line (with PIPE_SYNC the loop wrote
+   it once at the start, and the line keeps it) */
 static int modem_test_start (struct modem *m)
 {
 	struct modem_test *t = static_cast<modem_test*>(m->dev_data);
 	DBG("modem_test_start...\n");
 	t->delay = 256;
 	t->started = 1;
-	memset(outbuf,0,t->delay);
-	write(t->out,outbuf,t->delay);
+	if (!t->lead_done) {
+		memset(outbuf,0,t->delay);
+		write(t->out,outbuf,t->delay);
+	}
 	return 0;
 }
 
@@ -335,10 +341,22 @@ static int modem_test_run(struct modem_test *modems)
 			HALF_FRAME * HALF_FRAME;
 		/* SMARTLINK_SYNC_PHASE: that much later in each period (the
 		   other half reads PIPE_SYNC as well) */
-		sync_phase = getenv("SMARTLINK_SYNC_PHASE") ?
+		sync_phase = sync_n && getenv("SMARTLINK_SYNC_PHASE") ?
 			atol(getenv("SMARTLINK_SYNC_PHASE")) / HALF_FRAME *
 			HALF_FRAME % sync_n : 0;
 		next_sync = sync_n + sync_phase;
+		/* the line runs from the start (on hook in real time): the
+		   DTE's commands meet it at its periods from the first, and a
+		   call starts at the same sample every time, not wherever the
+		   scheduler had it when a line that stood still came to life */
+		for( t = modems ; sync_n && t->modem ; t++ ) {
+			memset(outbuf,0,256);
+			if (write(t->out,outbuf,256) != 256) {
+				ERR("dev write: %s\n",strerror(errno));
+				return -1;
+			}
+			t->lead_done = 1;
+		}
 	}
 
 	while(keep_running) {

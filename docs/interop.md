@@ -485,8 +485,9 @@ the DTE's commands only every that many line samples (data, once
 connected, at once), run their timers between half frames and keep time
 by the line; without them, where the commands meet the line depends on
 the scheduler. With `PIPE_SYNC`, `half_open` and `half_smartlink` also
-run in real time while on hook, so that the commands meet the samples
-they would in real time even when the call itself runs unpaced (see
+run in real time while on hook, their line running from the start (the
+others' does anyway), so that the commands meet the samples they would
+in real time even when the call itself runs unpaced (see
 `docs/testing.md`); `half_smartlink` then runs the old core's timers on
 the line's samples as well. `AGERE_SYNC_PHASE` and
 `SMARTLINK_SYNC_PHASE` move one side within the period, to try the

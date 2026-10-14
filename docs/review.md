@@ -91,6 +91,8 @@ as it is.
 | `dsp/test/interop_call.cpp` | A fax page was found by its first 128 bits only when all were right. The original library's V.17 receiver at 12000 bit/s decides one point wrong about once a page, depending on how its 20 ms frames fall on the trainings, and in one of those alignments it is in those bits: `smartlink_fax_121_open_sends` failed about half the time. Now 8 of them may be wrong; the page's error count takes them |
 | `dsp/test/interop_call.cpp` | MIDCALL dropped the remote's data with the commands' answers: what came ahead of the escape's OK, and what followed `ATO`'s CONNECT in the same read. `agere_v92_moh_grant` failed so once in a full run (data right behind the CONNECT) |
 | `dsp/test/half_agere.c`, `half_sm56.c`, `half_pctel.c`, `half_hsf.c`, `half_spandsp.c` | The modem's output went to the non-blocking pty with one `write()`, and what the pty refused (it takes some 20 KB ahead of the driver's reading) was lost: `agere_v44_agere_calls` lost a block of 4646 octets in the middle of Agere's 60000 once in a few full runs, the driver late to read on a loaded machine. The other way, the SM56 and HSF harnesses dropped what they had read from the pty and the modem did not take, and the spandsp one what did not fit its line's queue. `half_dte.h` keeps both until they are taken |
+| `slmodemd/pipe_modem.cpp`, `dsp/test/legacy/modem_half.cpp` | With `PIPE_SYNC` the line of `half_open` and `half_smartlink` stood still until the first ATD or ATA (its lead silence written then): while it stood, the commands were taken as they came, and the call began wherever the scheduler had the two modems at that moment. The lead is now written when they start, as the other harnesses' is |
+| `dsp/test/interop_call.cpp` | The fax relays ran the line on while the driver had yet to answer what a modem said: on a loaded machine the Agere modem's `+FTH` ended in ERROR now and then, its frame seconds of the line after its CONNECT. The relays now hold the line from a modem's output until the driver's next poll or write |
 | `asterisk/test/sip_call.py` | A traceback instead of FAIL when slmodemd gave no pty or went away |
 
 ## Checked and left as they are
@@ -158,6 +160,12 @@ None left.
 - **risk** — `loopback.cpp`: `ok()` accepts a call that delivered 300
   bits and then stalled; `line_resample()` reads stale samples at large
   clock offsets (`dsp_loopback` only).
+- **risk** — `interop_call.cpp`: the driver sends modemB its setup on
+  modemA's last OK, a few ms before modemB's next sync point, and the
+  PCTel V.90 call fails when the setup lands a period later:
+  `pctel_v90_calls` fails about once in six full runs. Setting both up
+  side by side broke the other PCTel V.90 tests, and moving modemB half
+  a period broke `sm56_34_open_calls` and `hsf_34_hsf_calls`.
 - **cleanup** — `half_hsf.c` `subst()`/`nvm_load()`: very long values are
   cut or overrun the buffer (not with the shipped files);
   `spandsp_test`/`spandsp_tx` leak spandsp states.

@@ -88,14 +88,12 @@ unsigned long PipeModem::now_ms()
 	return ts.tv_sec * 1000UL + ts.tv_nsec / 1000000;
 }
 
-/* off hook (the line is always there); 0, or -1 if the lead silence
-   can't be written */
-int PipeModem::start(dcore::Modem &)
+/* the silence ahead of everything on the line (PIPE_LEAD=<samples>,
+   128): once, as the line keeps it, so that every call has the same
+   delay; 0, or -1 if it can't be written */
+int PipeModem::lead()
 {
 	char zeros[2048] = {};
-	DBG("modem_test_start...\n");
-	/* silence ahead of the first call (PIPE_LEAD=<samples>, 128): once,
-	   as the line keeps it, so that every call has the same delay */
 	if (lead_done_)
 		return 0;
 	lead_done_ = true;
@@ -105,6 +103,14 @@ int PipeModem::start(dcore::Modem &)
 	if (write(out_, zeros, delay_) != delay_)
 		return -1;
 	return 0;
+}
+
+/* off hook (the line is always there, with PIPE_SYNC from the start:
+   run()); 0, or -1 if the lead silence can't be written */
+int PipeModem::start(dcore::Modem &)
+{
+	DBG("modem_test_start...\n");
+	return lead();
 }
 
 /* on hook: nothing to do, the line stays */
@@ -321,6 +327,14 @@ int PipeModem::run(PipeModem **modems, int n)
 {
 	signal(SIGINT, mark_termination);
 	signal(SIGTERM, mark_termination);
+	/* with PIPE_SYNC the line runs from the start (on hook in real
+	   time): the DTE's commands then meet it at its periods from the
+	   first, and a call starts at the same sample every time, not
+	   wherever the scheduler had it when a line that stood still came
+	   to life */
+	for (int i = 0; i < n; i++)
+		if (modems[i]->sync_ && modems[i]->lead() < 0)
+			return -1;
 	while (keep_running) {
 		struct timeval tmo;
 		fd_set rset;

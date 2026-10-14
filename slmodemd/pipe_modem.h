@@ -62,6 +62,7 @@ private:
 					   read it; else what is left) */
 	/* with realtime_, sleep until the clock has these samples' time */
 	void pace(int samples);
+	int lead();                     /* the line's lead silence, once */
 
 	dcore::Modem *m_ = nullptr;
 	Pty pty_;

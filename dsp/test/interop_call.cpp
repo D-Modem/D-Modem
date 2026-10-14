@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <map>
 #include <memory>
@@ -392,6 +393,14 @@ struct Dte {
 	double slice;           /* the longest poll */
 	const CallClock *clock = nullptr;       /* the time it counts in
 						   (else the wall clock's) */
+	/* where we are, for a relay of the line that holds it while we
+	   have not answered what a modem said (hold()): polling (in
+	   poll()), writing to a modem, or deciding (anything else: what to
+	   answer, or a wait that is not a poll); gate: the relay asks
+	   hold() at all */
+	enum { POLLING, DECIDING, WRITING };
+	std::atomic<int> state{DECIDING};
+	std::atomic<bool> gate{false};
 
 	/* polls of slice seconds at most; the fds set by the caller */
 	explicit Dte(double slice) : slice(slice) {}
@@ -408,7 +417,10 @@ struct Dte {
 	{
 		struct pollfd p[2] = { { fd[0], POLLIN, 0 },
 				       { fd[1], POLLIN, 0 } };
-		if (poll(p, 2, (int)(t * 1000)) <= 0)
+		state = POLLING;
+		int r = poll(p, 2, (int)(t * 1000));
+		state = DECIDING;
+		if (r <= 0)
 			return;
 		for (int k = 0; k < 2; k++)
 			if (p[k].revents & POLLIN) {
@@ -435,8 +447,33 @@ struct Dte {
 		while (this->t() < end);
 	}
 
+	/* s to modem k (the line runs meanwhile: a page waits for the
+	   modem to send it) */
+	void send(int k, const std::string &s)
+	{
+		state = WRITING;
+		write_all(fd[k], s);
+		state = DECIDING;
+	}
 	/* the command s (and CR) to modem k */
-	void cmd(int k, const std::string &s) { write_all(fd[k], s + "\r"); }
+	void cmd(int k, const std::string &s) { send(k, s + "\r"); }
+
+	/* (a relay's question) whether the line waits for us: we decide
+	   what to answer, or a modem's output waits to be read */
+	bool hold() const
+	{
+		if (!gate)
+			return false;
+		int st = state;
+		if (st == WRITING)
+			return false;
+		if (st == DECIDING)
+			return true;
+		struct pollfd p[2] = { { fd[0], POLLIN, 0 },
+				       { fd[1], POLLIN, 0 } };
+		return poll(p, 2, 0) > 0 &&
+		       ((p[0].revents | p[1].revents) & POLLIN);
+	}
 
 	/* reads until modem k's output from mark on has pat, t seconds at
 	   most; whether it came */
@@ -765,7 +802,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				dte.pump(1.5);
 				for (int k = 0; k < 2; k++) {
 					dte.buf[k].clear();
-					write_all(dte.fd[k], "+++");
+					dte.send(k, "+++");
 				}
 				for (int k = 0; k < 2; k++)
 					dte.wait(k, ok_re, 5);
@@ -896,7 +933,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 						 "AB"[k]);
 					dte.pump(1.2);
 					size_t kept = dte.buf[k].size();
-					write_all(dte.fd[k], "+++");
+					dte.send(k, "+++");
 					/* the remote gets it too */
 					sent[k] += "+++";
 					dte.wait_from(k, ok_cr, kept, 5);
@@ -947,7 +984,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				char line[16];
 				snprintf(line, sizeof(line), "%06d ", n);
 				for (int k = 0; k < 2; k++) {
-					write_all(dte.fd[k], line + msg[k]);
+					dte.send(k, line + msg[k]);
 					sent[k] += line + msg[k];
 				}
 				dte.pump(0.5);
@@ -988,7 +1025,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			}
 		} else
 			for (int k = 0; k < 2; k++)
-				write_all(dte.fd[k], msg[k]);
+				dte.send(k, msg[k]);
 		/* EXPECT_DROP: the call is to end on the way (EXPECT_B says
 		   how), the data is not checked */
 		if (!env("EXPECT_DROP").empty()) {
@@ -1140,7 +1177,7 @@ struct Fax {
 	void send_frames(int k, const std::vector<std::string> &frames)
 	{
 		for (size_t i = 0; i < frames.size(); i++) {
-			write_all(dte.fd[k], shield(frames[i]));
+			dte.send(k, shield(frames[i]));
 			std::string out;
 			std::string r = dte.wait_code(k, fax_result(), 10, &out);
 			std::string want = i == frames.size() - 1 ? "OK" :
@@ -1217,7 +1254,7 @@ struct Fax {
 	void exchange(int tx, int rx, const std::vector<std::string> &frames,
 		      int tries = 3)
 	{
-		write_all(dte.fd[rx], "AT+FRH=3\r");
+		dte.send(rx, "AT+FRH=3\r");
 		dte.pump(0.1);
 		for (int attempt = 0; attempt < tries; attempt++) {
 			std::string r = cmd(tx, "AT+FTH=3", &fax_result(), 10);
@@ -1240,7 +1277,7 @@ struct Fax {
 			if (got == frames)
 				return;
 			if (!r.empty())     /* gave up on a false start */
-				write_all(dte.fd[rx], "AT+FRH=3\r");
+				dte.send(rx, "AT+FRH=3\r");
 			dte.pump(0.1);
 		}
 		fail(std::string(FAX_NAME[rx]) + " did not get the frames");
@@ -1320,6 +1357,18 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 	std::vector<int> fds = { ab.w, ba.w, ab.r, ba.r };
 	int a_in = ba.r, b_in = ab.r;
 	std::vector<std::thread> relays;
+	Modem m[2];
+	Fax fax;
+	FaxDte &dte = fax.dte;
+	dte.clock = &clock;
+	/* unpaced, the relays hold the line while we have not answered
+	   what a modem said: however late the scheduler lets us read and
+	   answer, the answer comes at the same point of the line (T.30's
+	   turnarounds, a frame after +FTH's CONNECT) */
+	if (line_us) {
+		dte.slice = 0.002;
+		dte.gate = true;
+	}
 	if (!record.empty() || line_us) {
 		/* RECORD=<dir>: the line both ways (16 bit, the modems'
 		   rate) */
@@ -1329,9 +1378,10 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		for (int f : { ra.r, ra.w, rb.r, rb.w })
 			fds.push_back(f);
 		/* src to dst until src ends, recorded into path as it goes
-		   (if any), its samples counted into *us (if any) */
-		auto relay = [rate](int src, int dst, std::string path,
-				    long long *us) {
+		   (if any), its samples counted into *us (if any); 64
+		   samples at a time, each when dte does not hold the line */
+		auto relay = [rate, &dte](int src, int dst, std::string path,
+					  long long *us) {
 			FILE *f = path.empty() ? nullptr :
 				fopen(path.c_str(), "wbe");
 			char b[4096];
@@ -1342,11 +1392,17 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 					fwrite(b, 1, n, f);
 					fflush(f);
 				}
-				write_all(dst, std::string(b, n));
-				bytes += n;
-				if (us)
-					__atomic_store_n(us, bytes / 2 * 1000000 /
-							 rate, __ATOMIC_RELAXED);
+				for (ssize_t i = 0; i < n; i += 128) {
+					ssize_t k = std::min<ssize_t>(128, n - i);
+					while (dte.hold())
+						usleep(100);
+					write_all(dst, std::string(b + i, k));
+					bytes += k;
+					if (us)
+						__atomic_store_n(us, bytes / 2 *
+							1000000 / rate,
+							__ATOMIC_RELAXED);
+				}
 			}
 			if (f)
 				fclose(f);
@@ -1361,12 +1417,6 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		a_in = ra.r;
 		b_in = rb.r;
 	}
-	Modem m[2];
-	Fax fax;
-	FaxDte &dte = fax.dte;
-	dte.clock = &clock;
-	if (line_us)
-		dte.slice = 0.002;
 	bool page_ok = false;
 	try {
 		for (auto &x : m)
@@ -1400,8 +1450,8 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 					fail("setup");
 		}
 		double t0 = dte.t();
-		write_all(dte.fd[1], "ATA\r");
-		write_all(dte.fd[0], "ATD\r");
+		dte.send(1, "ATA\r");
+		dte.send(0, "ATD\r");
 		std::string r = dte.wait_code(1, fax_result(), 30);
 		say("B: ATA -> %s\n", r.empty() ? "None" : r.c_str());
 		if (r != "CONNECT")
@@ -1423,7 +1473,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 
 		/* DCS + TCF */
 		fax.exchange(0, 1, { dcs });
-		write_all(dte.fd[1], "AT+FRM=" + std::to_string(long_mod) + "\r");
+		dte.send(1, "AT+FRM=" + std::to_string(long_mod) + "\r");
 		if (fax.cmd(0, "AT+FTS=8") != "OK")
 			fail("FTS");
 		r = fax.cmd(0, "AT+FTM=" + std::to_string(long_mod),
@@ -1431,7 +1481,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		if (r != "CONNECT")
 			fail("A FTM: " + r);
 		std::string tcf(bps * 3 / 2 / 8, '\0');
-		write_all(dte.fd[0], shield(tcf));
+		dte.send(0, shield(tcf));
 		r = dte.wait_code(1, fax_result(), 10);
 		say("B: AT+FRM=%d -> %s\n", long_mod,
 		    r.empty() ? "None" : r.c_str());
@@ -1473,7 +1523,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 			x = x * 6364136223846793005ull + 1442695040888963407ull;
 			page += (char)(x >> 56);
 		}
-		write_all(dte.fd[1], "AT+FRM=" + std::to_string(page_mod) + "\r");
+		dte.send(1, "AT+FRM=" + std::to_string(page_mod) + "\r");
 		dte.pump(0.05);
 		if (fax.cmd(0, "AT+FTS=8") != "OK")
 			fail("FTS");
@@ -1481,7 +1531,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 			    &fax_result(), 10);
 		if (r != "CONNECT")
 			fail("A FTM page: " + r);
-		write_all(dte.fd[0], shield(page));
+		dte.send(0, shield(page));
 		r = dte.wait_code(1, fax_result(), 10);
 		say("B: AT+FRM=%d -> %s\n", page_mod,
 		    r.empty() ? "None" : r.c_str());
@@ -1556,6 +1606,8 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		say("FAIL: %s\n", f.msg.c_str());
 		page_ok = false;
 	}
+	/* the line no longer waits for us: the relays run to the end */
+	dte.gate = false;
 	for (auto &x : m)
 		x.stop(false);
 	sleep_s(0.2);
