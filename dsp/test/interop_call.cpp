@@ -228,7 +228,7 @@ struct Modem {
 
 	/* exe --debug=<debug> with rfd as its fd 3, wfd as fd 4, MODEM_NAME and
 	   extra_env ahead of our environment; its pty from its "created" line
-	   (10 s at most), its output from then on into log_path by a thread;
+	   (60 s at most), its output from then on into log_path by a thread;
 	   false if it has no pty */
 	bool start(const std::string &exe, const std::string &name, int rfd,
 		   int wfd, const std::string &debug,
@@ -269,9 +269,11 @@ struct Modem {
 		out = o.r;
 		if (pid < 0)
 			return false;
-		/* "created <name>: <pty>", within 10 s */
+		/* "created <name>: <pty>", within 60 s (the HSF modem takes
+		   a few seconds of the processor to start, and runs nicer
+		   than the calls in real time next to it) */
 		std::string line;
-		double end = now() + 10;
+		double end = now() + 60;
 		static const std::regex created("created (\\S+): (\\S+)");
 		while (now() < end) {
 			struct pollfd p = { out, POLLIN, 0 };

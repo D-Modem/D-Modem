@@ -231,12 +231,12 @@ endif()
 # the interop tests: calls between the open modem and each of the modems
 # above (interop_test.cpp, through interop_call.cpp: what a call does is in
 # its environment, NET for netsim's G.711 network, STREAM, EXPECT_B, ...).
-# One test program a label, one more for the calls that run alone; each
-# call writes its modem logs to logs/<test>/.  The original library's
+# One test program a label; each call writes its modem logs to
+# logs/<test>/.  The original library's
 # calls and the fax calls run in real time and mostly wait; the others run
 # as fast as they can, on the line's clock, a little nicer (each takes a
-# processor while it runs).  So they can run in parallel (ctest -j8, more
-# processors than there are).  interop_call makes one by hand.
+# processor while it runs).  So ctest -j can be some four times the
+# processors (-j16 on 4).  interop_call makes one by hand.
 add_library(interop_driver STATIC interop_call.cpp)
 target_compile_options(interop_driver PRIVATE -Wall -O2 -g)
 target_link_libraries(interop_driver PUBLIC pthread)
@@ -252,29 +252,17 @@ foreach(_p agere sm56 spandsp pctel hsf)
 	endif()
 endforeach()
 function(interop_tests label)
-	cmake_parse_arguments(I "RUN_SERIAL" "" "" ${ARGN})
 	set(_n ${label}_test)
-	set(_serial 0)
-	if(I_RUN_SERIAL)
-		set(_n ${label}_serial_test)
-		set(_serial 1)
-	endif()
 	dmodem_test_exe(${_n} interop_test.cpp)
 	target_compile_definitions(${_n} PRIVATE ${_progs}
 		"NETSIM=\"$<TARGET_FILE:netsim>\""
 		"INTEROP_LOG_DIR=\"${CMAKE_CURRENT_BINARY_DIR}/logs\""
-		"INTEROP_LABEL=\"${label}\"" INTEROP_SERIAL=${_serial})
+		"INTEROP_LABEL=\"${label}\"")
 	target_link_libraries(${_n} PRIVATE interop_driver)
-	if(I_RUN_SERIAL)
-		dmodem_gtest(${_n} LABELS ${label} RUN_SERIAL)
-	else()
-		dmodem_gtest(${_n} LABELS ${label})
-	endif()
+	dmodem_gtest(${_n} LABELS ${label})
 endfunction()
-# the original library (half_blob); (quick connect's timing in real time
-# does not take a busy machine: interop_v92_pcmup_calls alone)
+# the original library (half_blob)
 interop_tests(interop)
-interop_tests(interop RUN_SERIAL)
 if(TARGET half_agere)
 	interop_tests(agere)
 endif()

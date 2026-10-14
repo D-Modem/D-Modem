@@ -7,9 +7,9 @@
  *                       spandsp's modems), through interop_call
  *
  *    One table of calls; each test program has the calls of one ctest
- *    label (INTEROP_LABEL) that run alone or not (INTEROP_SERIAL).  The
- *    modem programs are HALF_* (undefined: that modem's calls are left
- *    out), netsim NETSIM; each call's logs go to INTEROP_LOG_DIR/<test>.
+ *    label (INTEROP_LABEL).  The modem programs are HALF_* (undefined:
+ *    that modem's calls are left out), netsim NETSIM; each call's logs go
+ *    to INTEROP_LOG_DIR/<test>.
  *    A call's environment (interop_call.h: NET, STREAM, EXPECT_B, ...;
  *    and the modems' and netsim's own: DSP_*, NET_*, ...) is set for it
  *    alone.
@@ -45,7 +45,6 @@ struct Call {
 	std::string proto;      /* the AT commands (fax: the setup) */
 	std::vector<std::string> env;
 	int fax = 0;            /* fax: the modulation, data call: 0 */
-	bool serial = false;    /* not with other tests (ctest RUN_SERIAL) */
 };
 
 /* the modem programs built (HALF_* defined): the tables' names to paths */
@@ -78,7 +77,7 @@ std::vector<Call> calls()
 {
 	std::vector<Call> c;
 	/* a call: label, name, the modems a (caller or fax sender) and b,
-	   the AT commands and the environment; the Call, for fax or serial */
+	   the AT commands and the environment; the Call, for fax */
 	auto add = [&c](const char *label, std::string name, const char *a,
 			const char *b, std::string proto,
 			std::vector<std::string> env = {}) {
@@ -164,11 +163,13 @@ std::vector<Call> calls()
 	    "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=10", "BLOB_V92FULL=1",
 	      "DSP_V92_PREFILTER=0", "EXPECT_B=V.92 connect 56000/3[4-9]" });
-	/* (quick connect's timing does not take a busy machine: alone) */
+	/* (it ran alone once: quick connect's timing did not take a busy
+	   machine; next to the unpaced calls, which run nicer, and a dozen
+	   calls in real time it connects at the same moments every time) */
 	add("interop", "interop_v92_pcmup_calls", "blob", "open8",
 	    "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "CALLS=2", "STREAM=3", "BLOB_V92FULL=1",
-	      "EXPECT_B=(?s)V.92 connect.*V.92 connect" })->serial = true;
+	      "EXPECT_B=(?s)V.92 connect.*V.92 connect" });
 	add("interop", "interop_v92_pcmup_lite", "blob", "open8",
 	    "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=3",
@@ -657,12 +658,11 @@ public:
 	}
 };
 
-/* this program's calls: its label's, alone or not, with the modems
-   built */
+/* this program's calls: its label's, with the modems built */
 int registered = [] {
 	for (auto &c : calls()) {
-		if (c.label != INTEROP_LABEL || c.serial != INTEROP_SERIAL ||
-		    !programs().count(c.a) || !programs().count(c.b))
+		if (c.label != INTEROP_LABEL || !programs().count(c.a) ||
+		    !programs().count(c.b))
 			continue;
 		testing::RegisterTest(INTEROP_LABEL, c.name.c_str(), nullptr,
 				      nullptr, __FILE__, __LINE__,

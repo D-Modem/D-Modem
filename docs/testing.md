@@ -11,11 +11,13 @@ compiler (`g++ -m32`), for the original library.
 
 ## Tests
 
+    ctest --test-dir build -j16         # all of them (some four times the processors:
+                                        # most calls wait; about 4.5 min on 4)
     ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
-    ctest --test-dir build -L interop -j8   # calls between the original library and this one,
+    ctest --test-dir build -L interop -j16  # calls between the original library and this one,
                                             # data and class 1 fax (needs g++ -m32)
-    ctest --test-dir build -L agere -j8     # calls between the Agere soft modem and this one
+    ctest --test-dir build -L agere -j16    # calls between the Agere soft modem and this one
                                             # (sm56, pctel, hsf, spanpeer: the other modems)
 
 The test programs are in `dsp/test/` (the link layer's and the core's in `link/test/` and `core/test/`). All the tests are GoogleTest programs (the system's libgtest-dev, or
@@ -33,7 +35,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one (or against a script's `.expect`, see `docs/core.md`) |
-| `interop_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test` (and `interop_serial_test`: the call that runs alone) | calls between this modem and the others (`interop_test.cpp`: one table of the calls, each program a label's) |
+| `interop_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test` | calls between this modem and the others (`interop_test.cpp`: one table of the calls, each program a label's) |
 
 Each call writes its modem logs to `build/dsp/test/logs/<test>/`. Most
 calls run as fast as the modems can: every modem but the original
@@ -65,7 +67,10 @@ wait:
 
 The unpaced calls run a little nicer (`nice` 10) than the rest, so that
 the calls in real time next to them get the processor first. Each takes
-about one processor while it runs; the calls in real time take little.
+about one processor while it runs; the calls in real time take little,
+so `-j` can be some four times the processors: on 4, the whole suite
+takes about 4.5 minutes at `-j16` (7.5 at `-j8`; 13 when every call ran
+in real time). None of the calls has to run alone any more.
 `MODEM_REALTIME=1 ctest ...` runs every call in real time, as they all
 did before (for comparing a failure).
 
