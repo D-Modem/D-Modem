@@ -19,7 +19,7 @@ compiler (`g++ -m32`), for the original library.
                                               # original library) and this one, data and
                                               # class 1 fax (needs g++ -m32)
     ctest --test-dir build -L agere -j16    # calls between the Agere soft modem and this one
-                                            # (sm56, pctel, hsf, spanpeer: the other modems;
+                                            # (sm56, pctel, hsf, broadcom, spanpeer: the other modems;
                                             # open: two of this one)
 
 The test programs are in `dsp/test/` (the link layer's and the core's in `link/test/` and `core/test/`). All the tests are GoogleTest programs (the system's libgtest-dev, or
@@ -37,12 +37,12 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one (or against a script's `.expect`, see `docs/core.md`) |
-| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
+| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
 
 Each call writes its modem logs to `build/dsp/test/logs/<test>/`. The
 calls run as fast as the modems can: every modem keeps time by its
-line's samples (the Agere, SM56, PCTel and HSF harnesses count jiffies
-and timers in samples, our core does with `PIPE_SYNC`, and so does
+line's samples (the Agere, SM56, PCTel, HSF and Broadcom harnesses count
+jiffies and timers in samples, our core does with `PIPE_SYNC`, and so does
 slmodemd's old core under the original library, `test/legacy/`, whose
 timers are run by the line too), so a call goes as it would in real
 time, only sooner, and a busy machine only slows it down. The call's own
@@ -125,8 +125,8 @@ on the modem core, `../core`) and another modem's harness, or a second
 controller: AT commands, V.42/LAPM detection and data in both
 directions. The other modems, their harnesses and what the calls with
 them give are in [interop.md](interop.md): Smart Link's original library
-(`half_smartlink`), the Agere, SM56, PCTel and HSF soft modems and
-spandsp's modems.
+(`half_smartlink`), the Agere, SM56, PCTel, HSF and Broadcom soft
+modems and spandsp's modems.
 
 `NET=<rate A>:<rate B>:<ulaw|alaw>` puts `netsim`, a simulated G.711
 network, between the two: each direction goes through the law at 8000 Hz,

@@ -488,8 +488,9 @@ std::vector<Call> calls()
 	   half_win's kernel and BCM4212, 8000 Hz) and the open modem (9600
 	   Hz) call each other at each modulation */
 	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
-		     { "V21", "21" }, { "V22", "22" }, { "B103", "103" },
-		     { "V22B", "122" }, { "V32B", "132" }, { "V34", "34" } }) {
+		     { "B103", "103" }, { "V21", "21" }, { "V23C", "23" },
+		     { "B212", "212" }, { "V22", "22" }, { "V22B", "122" },
+		     { "V32", "32" }, { "V32B", "132" }, { "V34", "34" } }) {
 		std::string a = std::string("ATX3;AT+MS=") + n;
 		std::string o = std::string("ATX3;AT+MS=") + ms;
 		add("broadcom", std::string("broadcom_") + ms + "_broadcom_calls",
@@ -497,6 +498,13 @@ std::vector<Call> calls()
 		add("broadcom", std::string("broadcom_") + ms + "_open_calls",
 		    "open", "broadcom", o, { "NET=9600:8000:ulaw", "PROTO_B=" + a });
 	}
+	/* V.44 both ways (it offers it): 60000 octets each way */
+	add("broadcom", "broadcom_v44_broadcom_calls", "broadcom", "open",
+	    "ATX3;AT+MS=V34",
+	    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=34", "BULK=60000" });
+	add("broadcom", "broadcom_v44_open_calls", "open", "broadcom",
+	    "ATX3;AT+MS=34",
+	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34", "BULK=60000" });
 	/* V.90: the Broadcom modem as the analogue modem, the open one as the
 	   digital modem */
 	for (std::string law : { "ulaw", "alaw" })
@@ -510,6 +518,14 @@ std::vector<Call> calls()
 	      "CALLS=2", "DIAL=5551234", "ANSWER_AFTER=3", "STREAM=3",
 	      "EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2.*V.90 "
 	      "connect", "PROTO_B=ATX3;AT+MS=92" });
+	/* class 1 fax both ways at 8000 Hz */
+	for (int m : { 24, 48, 72, 96, 73, 97, 121, 122, 145 }) {
+		std::string s = std::to_string(m);
+		add("broadcom", "broadcom_fax_" + s + "_broadcom_sends", "broadcom",
+		    "open8", "ATX3")->fax = m;
+		add("broadcom", "broadcom_fax_" + s + "_open_sends", "open8",
+		    "broadcom", "ATX3")->fax = m;
+	}
 
 	/* --- the PCTel HSP soft modem (8000 Hz) and the open modem (9600
 	   Hz): V.32bis and V.34 both ways with its +MS set to them */

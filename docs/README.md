@@ -26,7 +26,7 @@ The project's overview, building and usage are in the top
 - [Building and testing](testing.md): the test programs, netsim (the
   simulated G.711 network) and the interop calls
 - [Interop against other soft modems](interop.md): Agere, spandsp,
-  Motorola SM56, PCTel HSP, Conexant HSF
+  Motorola SM56, PCTel HSP, Conexant HSF, Broadcom (its Windows driver)
 
 ## Review
 

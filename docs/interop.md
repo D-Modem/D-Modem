@@ -2,7 +2,8 @@
 
 Calls between the open modem and other soft modems: Smart Link's on
 slmodemd's old core, the Agere, SM56, PCTel and HSF ones each in user
-space on an emulation of its hardware, and spandsp's (see
+space on an emulation of its hardware, Broadcom's Windows driver on a
+Windows kernel of our own and an emulation of its chip, and spandsp's (see
 [testing.md](testing.md) for the driver, netsim and how the calls keep
 time). Each has a harness, `half_<name>`, which takes the line's audio
 on fd 3, gives its own on fd 4 and is the modem's DTE on a pty, and a
@@ -12,8 +13,9 @@ ctest label of its own; `ctest -L <label> -j16` runs its calls.
 
 The vendor modems are their own binaries, as their Linux drivers shipped
 them, in `dsp/test/<peer>/` (i386 objects; the harnesses link them in,
-`-m32`). Each is the file of a known release, compared byte for byte
-where the release can still be had:
+`-m32`); Broadcom's is its Windows driver, which `half_win` loads. Each
+is the file of a known release, compared byte for byte where the release
+can still be had:
 
 | Peer | Files | Release | Built | Byte-identical to |
 |---|---|---|---|---|
@@ -22,6 +24,7 @@ where the release can still be had:
 | SM56 | `sm56/sm56.ko` | Motorola sm56-06.09.05 for Fedora Core 3 (2.6.9-1.667) | 17 May 2005, GCC 3.4.2 (Fedora Core 3) | `usr/tmp/sm56.ko` of `sm56-06.09.05-1-fc3-2.6.9-1.667.i686.rpm` |
 | PCTel | `pctel/dsp.o`, `pctel/control.o` | pctel-0.9.7-9 (Linux driver K2.4.7.V92.001) | pumps 21 Jun 2001, GCC 2.95.3; controller dated 26 Mar 2003, GCC 2.96 (Red Hat 7.1) | `src/lib/amr/dsp.a`, `src/lib/control.a` of pctel-0.9.7-9-rht-6 |
 | HSF | `hsf/hsfengine.o`, `hsfmc97ich.o`, `hsfsoar.o`, `hsfmc97ich.inf`, `hsf.cty` | Linuxant hsfmodem-7.80.02.06oem | 10 May 2010, GCC 3.4.6 (Red Hat) | `modules/imported/<name>-i386.O`, `nvm/inf/hsfmc97ich.inf`, `nvm/inf/hsf.cty` of `hsfmodem-7.80.02.06oem.tar.gz` |
+| Broadcom | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | BCM V.92 56K Modem 3.4.19, Dell's "V.92 Soft Modem (Data Fax) Driver" A05 | 26 Jul 2002, Microsoft linker 7.0 | the hashes in the package's catalog, signed by Microsoft (WHQL, 31 Jul 2002) |
 | spandsp | (the system's libspandsp) | spandsp 0.0.6 (release 20110122) | | |
 
 The files' sha256, and what was compared:
@@ -85,6 +88,21 @@ The files' sha256, and what was compared:
   (`cnxthsf_7800206full_`), and Linuxant no longer offers it. The `.inf`
   is Conexant's Linux_Intel_SmartMC.inf, "Version: 5.03.27"; the country
   file says "Version: V7.72.00".
+- Broadcom: `BCMSM.sys`
+  `033c6716ef63b1984a8f7a7b36c8efce1c7d9ec622dd97132d54eb5b8a5c0662`,
+  `BCMSMwxp.inf`
+  `34f4059d27803bb1b4947ff6dc1f4b872230eaf738551f8c267ba6f50e363ca8`,
+  from Dell's package "Communications:V.92 Soft Modem (Data Fax)
+  Driver", version A05 (OEM version 3.4.19.1.1, for the Dimension 2200
+  to 8300, created 27 Aug 2002; Windows 2000 and XP). The driver answers
+  `ATI3` with "BCM V.92 56K Modem Version 3.4.19"; its debug path is
+  `C:\releases\3_4_19_1_1\softmodem\build\Win32\opt-dell-wdm-pentium-mmx\bin\BCMSM.pdb`,
+  and the INF's `DriverVer` is 05/21/2002,3.4.19. The package's catalog,
+  `BCMSMwxp.cat` (signed by Microsoft Windows Hardware Compatibility
+  Publisher, 31 Jul 2002), lists the driver's Authenticode SHA-1
+  (`3261275f43309bd1155178d2549b1496ac9552f2`) and the INF's SHA-1
+  (`74a33b6de90b0d12e3b688a29c94cc1dd399ea51`): both files are those
+  Microsoft signed. Dell's download of the package was not compared.
 - spandsp: not in the tree; the build takes the system's (pkg-config
   `spandsp`), 0.0.6 in Debian and Ubuntu.
 
@@ -513,6 +531,139 @@ windows 6 apart, too far apart for a Su-bar of 24 symbols. While we send
 Jd, a signal of period 6 with some of its energy at 1333 Hz is Su now,
 and Su's reversals are each period's phase against Su's.
 
+## Against the Broadcom soft modem (Windows)
+
+`half_win` runs Broadcom's V.92 soft modem for Windows, `BCMSM.sys`
+3.4.19: the WDM driver of the "BCM V.92 56K Modem", with its controller,
+data pumps, V.42, V.44 and fax all in that one driver, as Dell shipped it
+for its Dimension desktops in 2002 (above). Wine could not run it. Wine's kernel (`ntoskrnl.exe`,
+master of October 2026) has 726 of its 1716 exports as stubs, and its
+HAL 71 of 92. Its `KeInsertQueueDpc` queues nothing. `IoConnectInterrupt`,
+`IoGetDmaAdapter` and `KeSynchronizeExecution` are stubs, `MmMapIoSpace`
+gives NULL and the port reads give 0. START_DEVICE comes without
+resources, and timers run in real time on a thread pool. A soft modem
+needs all of these, and here it runs on the line's clock.
+
+So the harness is a Windows kernel of its own, made for this driver. It
+is a 32 bit program that loads the PE image at its base (0x10000),
+relocates it and binds its 114 imports by name (102 from `ntoskrnl.exe`,
+one of them data, 7 from `HAL.dll`, 3 from `WMILIB.SYS` and 2 from
+`ks.sys`), stdcall and fastcall as there. An import the harness does not have stops the harness
+with its name. Everything runs on one thread and on the line's clock:
+
+- The interrupt time and the system time are the line's samples. While
+  the line stands still each read moves them on by 1 µs, because the
+  driver waits on them busily a few µs at a time.
+- Timers and their DPCs run between samples, and the interrupt runs when
+  the device's status and mask raise it.
+- The driver's system threads are coroutines (`ucontext`). Each runs when
+  the event or timer it waits for is signalled.
+- IRQL is kept: no interrupt at or above the device's IRQL, no DPC at
+  DISPATCH_LEVEL and above, threads at PASSIVE_LEVEL only.
+- The registry is held in memory: the INF's `AddReg` sections as the
+  modem class installer writes them, and `PortName`.
+- fs is a KPCR (a TLS entry of the GDT, `set_thread_area`). The driver
+  checks the stack it has left against its NT_TIB's limit (fs:8), which
+  the harness sets for each coroutine.
+- `in`, `out`, `cli`, `sti`, `rdtsc` (`PR_SET_TSC`) and moves to and from
+  control registers (it reads CR0 and CR4) fault, and the harness carries
+  them out.
+
+We are the rest of the device stack. Under the driver we are the PCI bus
+driver: its PDO, with the configuration space, the PnP IRPs the driver
+sends down, and its resources. We are also the PnP manager (DriverEntry,
+AddDevice, and START_DEVICE with the device's memory BAR and interrupt).
+Over the driver we are Windows' `modem.sys`, whose lower filter the INF
+makes it. To us the driver is a serial port: we open it (IRP_MJ_CREATE),
+set it up with the serial IOCTLs (baud rate, line control, handflow,
+timeouts, DTR, RTS), and read and write it with IRPs that carry the pty's
+bytes.
+
+Its hardware is the BCM4212, Broadcom's PCI modem chip (14e4:4212,
+Dell's subsystem 1028:0001). This build (`opt-dell-wdm`) has codec code
+only for CodecType 0x15, 0x19 and 0x1c, the BCM4212's; the INF gives
+0x15. The driver also looks on the PCI bus for AC'97 controllers, the
+ICHs that the other harnesses emulate. But for the codec types those
+use, its codec operations are a stub that fails, and opening the port
+then fails (STATUS_INSUFFICIENT_RESOURCES). So the harness emulates the
+BCM4212. There is no datasheet to be had, so the registers below are
+what the driver does with them:
+
+| Offset | Register |
+|---|---|
+| 0x00 | control: 0x1000 reset, 0x60 DMA on |
+| 0x20 | interrupt status, a 1 written clears it: 0x1000000 TX and 0x10000 RX (a descriptor done), 0x4000 and 0x8000 FIFO errors, 0x40 DAA |
+| 0x24 | interrupt mask (the driver sets 0x101c000) |
+| 0x38 | the DAA's serial port: the DAA register in bits 8 to 12, 0x2000 for a read, the data in bits 0 to 7 |
+| 0x3c | the DAA read's result (bit 15: busy) |
+| 0x200, 0x204, 0x208, 0x20c | TX DMA: control, the descriptor ring's address, the last descriptor posted, status (0x1000 active or 0x2000 idle, with the current descriptor's offset) |
+| 0x210 to 0x21c | the same for RX |
+
+The registers are a 16 KB memory BAR, which the driver maps with
+`MmMapIoSpace`. The harness gives it a window it cannot access, so each
+access faults. The harness then decodes the instruction, opens the
+window with the register's value in place, and single-steps the
+instruction (TF). At the trap after it, the harness takes what was
+written and closes the window again.
+
+The DMA engine is Broadcom's own, the BCM4401 Ethernet's (Linux's `b44`
+driver knows it). Its rings hold 8 octet descriptors: a control word
+(the length in bits 0 to 12, 0x10000000 for the end of the ring,
+0x20000000 for an interrupt when done) and an address. The samples are
+16 bit.
+
+- TX: 64 descriptors of 96 octets (6 ms), with an interrupt on the last.
+  The engine stops at the descriptor the driver posted last.
+- RX: 128 descriptors of 4 and 92 octets in turn, end to end, with an
+  interrupt for each pair.
+
+The line side is a Silicon Labs Si3034 DAA behind the chip's serial port:
+
+- Its PLL gives the rate (registers 7 to 9, 4 MHz · M1 M2 / (N1 N2) /
+  5120). It stays at 8000 Hz in the calls here, V.90's too.
+- Register 5's bit 0 is the hook.
+- Register 12 is the line's state: frame detect, and the loop current in
+  its low four bits. 1111 there is an overload, and the driver hangs up
+  at once (it went off hook and straight back on). The harness reports
+  1000, half the scale.
+
+The harness resamples between the codec's rate and the line's
+(`WIN_RATE`, 8000 Hz) and adds the codec's noise (`WIN_NOISE`, rms 5).
+
+Two of the driver's own ways:
+
+- It reads each setting with Windows XP's version appended first
+  (`CodecFlags__5_1`), then without it.
+- It reads `DisableTxRxDpc` with a handle that is not a key (an address
+  in its device extension). Windows answers STATUS_INVALID_HANDLE, and so
+  does the harness.
+
+`ctest -L broadcom -j16` runs the tests. `WIN_DEBUG=1` prints the
+driver's calls of note, the hook, the rate and the line's levels each
+second. `WIN_DEBUG=2` also prints every register, DAA and port access,
+and `WIN_DEBUG=3` every call the driver makes into the kernel.
+
+| Broadcom `AT+MS=` / ours | Broadcom caller → open answerer | open caller → Broadcom answerer |
+|---|---|---|
+| V34 / 34 | CONNECT 33600 (we receive at 24000) | CONNECT 33600 / 24000 |
+| V32B / 132, V32 / 32 | CONNECT 14400, 9600 | the same |
+| V22B / 122, V22 / 22, B212 / 212 | CONNECT 2400, 1200, 1200 | the same |
+| V23C / 23, V21 / 21, B103 / 103 | CONNECT 1200/75, 300, 300 | the same |
+| V90 / 90 (ours as the digital modem), µ-law and A-law | CONNECT 50666/LAPM/V44 | - |
+| V92 / 92 | quick connect from the first call; short phase 2 on the second (`CALLS=2`) | - |
+
+We receive its V.34 at 24000 bit/s because of our line probe on this
+µ-law line (the same as with the Agere and SM56 modems); it receives ours
+at 33600. Its LAPM calls agree on V.44, and `broadcom_v44_*` sends 60000
+octets each way through it. Class 1 fax at 8000 Hz (`broadcom_fax_*`):
+V.27ter, V.29 and V.17 (7200 to 14400) pass both ways.
+
+Its V.92 sends QC1a on every call, and its upstream stays V.34. By
+default it leaves PCM upstream out (`+PIG:1`). With `AT+PIG=0` it
+chooses PCM upstream (INFO1a), and the call does not connect: we find
+its Ru, TRN1u, Ja and Su, but not Su's reversal in time.
+
+## The calls' options
 
 `ANSWER_AFTER=<s>` gives the answerer its ATA that long after the
 caller's ATD, as a real line rings only once the number is dialed:
@@ -536,8 +687,8 @@ calls in between are in it as well. For example:
 `PIPE_SYNC=<samples>` (`half_open`, `half_smartlink`),
 `AGERE_SYNC=<samples>` (`half_agere`), `SM56_SYNC=<samples>`
 (`half_sm56`), `SPANDSP_SYNC=<samples>` (`half_spandsp`),
-`PCTEL_SYNC=<samples>` (`half_pctel`) and `HSF_SYNC=<samples>`
-(`half_hsf`) make a call repeat exactly from run to run: the modems take
+`PCTEL_SYNC=<samples>` (`half_pctel`), `HSF_SYNC=<samples>`
+(`half_hsf`) and `WIN_SYNC=<samples>` (`half_win`) make a call repeat exactly from run to run: the modems take
 the DTE's commands only every that many line samples (data, once
 connected, at once), run their timers between half frames and keep time
 by the line; without them, where the commands meet the line depends on

@@ -1117,7 +1117,7 @@ static int inf_install(const char *path, const char *model)
  *    devices: the BCM4212 (PCI 14e4:4212) and PCI's configuration space
  */
 
-/* its registers: a memory BAR of 8 KB, mapped by the driver
+/* its registers: a memory BAR of 16 KB, mapped by the driver
    (MmMapIoSpace) at a window of ours whose accesses trap */
 #define BCM_PHYS 0xfebf0000u
 #define BCM_SIZE 0x4000
