@@ -1,6 +1,7 @@
 # The new core against the old one: core_script runs a script with two
 # modems back to back on either core, and the transcripts must be the same
-# (core_equiv).  core_test tests the new core by itself.
+# (core_equiv), or the new core's that of the script's .expect where it
+# differs on purpose.  core_test tests the new core by itself.
 
 # the old core (../../dsp/test/legacy) on libdmodem's old timers
 set(_old ${DMODEM_LEGACY_SRCS})

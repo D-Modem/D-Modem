@@ -649,6 +649,14 @@ void Modem::process(const int16_t *in_, int16_t *out, int n)
 			break;
 		}
 	}
+	/* what the DTE sent after a fax or voice command's data (they stop
+	   at its <DLE><ETX>) is commands: at once, not only when more
+	   characters come */
+	if (commands_due_) {
+		commands_due_ = false;
+		if (command_ && xmit_count_)
+			at_process();
+	}
 }
 
 /*
@@ -1002,7 +1010,12 @@ int Modem::stop_call()
 	if (sregs_[SREG_SPEAKER_CONTROL] == 1)
 		host_.speaker(*this, 0);
 	caller_ = false;
+	/* the call ended online: what the DTE sent is data that did not go
+	   out, not commands (in online command state it is commands) */
+	if (!command_)
+		xmit_head_ = xmit_tail_ = xmit_count_ = 0;
 	command_ = true;
+	commands_due_ = false;
 	link_->exit();
 	if (dp_) {
 		struct dp *dp = dp_;
@@ -1359,6 +1372,7 @@ void Modem::voice_process(int16_t *in, int16_t *out, int count)
 		case VOICE_STATUS_OK:
 			report(Result::Ok);
 			command_ = true;
+			commands_due_ = true;
 			break;
 		case VOICE_STATUS_CONNECT:
 			report(Result::Connect);
@@ -1367,6 +1381,7 @@ void Modem::voice_process(int16_t *in, int16_t *out, int count)
 		case VOICE_STATUS_ERROR:
 			report(Result::Error);
 			command_ = true;
+			commands_due_ = true;
 			break;
 		default:
 			break;
@@ -1483,6 +1498,7 @@ void Modem::fax_process(int16_t *in, int16_t *out, int count)
 			set_state(COMMAND_ONLINE);
 			report(Result::Ok);
 			command_ = true;
+			commands_due_ = true;
 			break;
 		case FAX_STATUS_CONNECT:
 			set_state(ONLINE);
@@ -1493,11 +1509,13 @@ void Modem::fax_process(int16_t *in, int16_t *out, int count)
 			set_state(COMMAND_ONLINE);
 			report(Result::NoCarrier);
 			command_ = true;
+			commands_due_ = true;
 			break;
 		case FAX_STATUS_FRAME_ERROR:
 			set_state(COMMAND_ONLINE);
 			report(Result::Error);
 			command_ = true;
+			commands_due_ = true;
 			break;
 		case FAX_STATUS_ERROR:
 			update_status(ST_ERROR);

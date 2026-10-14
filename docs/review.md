@@ -20,7 +20,11 @@ as it is.
 | `link/link.cpp` | The detection phase's timer kept running after a hangup: a CONNECT while hanging up (DetectHangup) |
 | `link/hdlc.cpp` | A frame of fewer than 4 octets was not a size error |
 | `core/modem.cpp` | `stop_call()` left a caller ID stop armed, which then killed the next call |
+| `core/at.cpp` | `AT*B`, `AT\A` and `AT+M<x>` (other than `+MS`) answered with the result of the command before them on the line, ERROR at its start. Now `*B` and `\A0`..`3` OK, `\A` with another digit and `+M<x>` ERROR (the old core did the same; `at.expect`) |
+| `core/modem.cpp` | A call that ended online kept the DTE's data that had not gone out, and the AT interpreter later took it for commands: a line of it that began with AT ran (`data_drop`). It is dropped now (in online command state the buffer holds commands, and they stay) |
+| `core/modem.cpp` | What the DTE sent after a fax or voice command's data ran only when more characters came; now as the command ends (`fax_dte`) |
 | `core/test/script.cpp` | `\x` at the end of a script line read past the string |
+| `core/test/scripts/at.txt` | `AT\N3\A2` and `AT\Q` were sent without their backslashes (`ATN3A2`, `ATQ`), the backspace line with `b`s (the script knows no `\b`): none of the three was tested |
 
 ### Fax
 
@@ -117,10 +121,6 @@ None left.
   retransmission more than N400 (kept as slmodemd had it).
 - **risk** — `hdlc.cpp`: the originator's detection phase has no T400
   (the core never uses it that way).
-- **likely bug** — `core/at.cpp`: `AT*B`, `AT\A` and `AT+M<x>` (other
-  than `+MS`) answer with the previous command's result. slmodemd does the
-  same, and `core/test/scripts/at.txt` checks `AT*B` against the old core
-  (`core_equiv`), so a fix has to change that script.
 - **cleanup** — `hdlc.cpp`: the async and detector transmitters do not
   mask the bytes to `nbits` (every pump masks them itself).
 

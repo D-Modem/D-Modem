@@ -298,6 +298,9 @@ private:
 	unsigned state_ = IDLE;
 	bool started_ = false;
 	bool command_ = true;
+	/* a fax or voice command ended: the DTE's characters after its
+	   data are its next commands (process() runs them) */
+	bool commands_due_ = false;
 	Result result_ = Result::Ok;
 	bool have_result_ = false;
 	int hook_ = MODEM_HOOK_ON;

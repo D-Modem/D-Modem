@@ -1,0 +1,58 @@
+      0 A< ATE0X3+FCLASS=1\r
+      0 A: ATE0X3+FCLASS=1\r\r\n
+      0 A: OK\r\n
+      0 B< ATE0+FCLASS=1\r
+      0 B: ATE0+FCLASS=1\r\r\n
+      0 B: OK\r\n
+      0 B< ATA\r
+      0 A< ATD\r
+   5280 B: CONNECT\r\n
+   5280 until B 'CONNECT': yes
+   5280 B< \xff\x03\x40\x20\x20\x20\x20\x34\x33\x32\x31\x10\x03\xff\x13\x80\x00\xce\xf4\x80\x80\x81\x80\x80\x80\x18\x10\x03
+   5360 A: CONNECT\r\n
+   6300 B: CONNECT\r\n
+   6300 until B 'CONNECT': yes
+   6700 A: \xff\x03@    4321\r\x8f\x10\x03OK\r\n
+   7140 B: OK\r\n
+   7140 until B 'OK': yes
+   7140 until A '4321': yes
+   7140 A< AT+FRH=3\r
+   7160 A: CONNECT\r\n
+   7180 A: \xff\x13\x80\x00\xce\xf4\x80\x80\x81\x80\x80\x80\x18c/\x10\x03OK\r\n
+   7180 until A '\xce\xf4': yes
+   7180 B< AT+FRH=3\r
+   7180 A< AT+FTH=3\r
+   7200 A: CONNECT\r\n
+   7200 until A 'CONNECT': yes
+   7200 A< \xff\x03\x20\x00\x11\x22\x10\x03
+   7300 B: CONNECT\r\n
+   8200 A: CONNECT\r\n
+   8200 until A 'CONNECT': yes
+   8200 A< \x10\x03
+   8480 A: OK\r\n
+   8480 B: \xff\x03 \x00\x11"c\x16\x10\x03OK\r\n
+   8480 until A 'OK': yes
+   8480 until B '\x11\x22': yes
+   8480 B< AT+FRM=96\r
+   8480 A< AT+FTS=8\r
+   8560 A: OK\r\n
+   8560 until A 'OK': yes
+   8560 A< AT+FTM=96\r
+   8580 A: CONNECT\r\n
+   8580 until A 'CONNECT': yes
+   8580 A< \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10\x03AT+FCLASS?\r
+   8860 B: CONNECT\r\n
+   8880 A: OK\r\n
+   8880 A: 1\r\n
+   8880 A: OK\r\n
+   8880 until A '1\r\n': yes
+   8900 B: \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff/6\xab\x05{\xa7C\xa4\x95\x15V\x10\x03NO CARRIER\r\n
+   8900 until B 'NO CARRIER': yes
+   8900 A< ATH\r
+   8900 A: OK\r\n
+   8900 B< ATH\r
+   8900 B: OK\r\n
+   8920 A: NO CARRIER\r\n
+   8920 B: NO CARRIER\r\n
+   9900 A: state 0, tx 0 rx 0, idle
+   9900 B: state 0, tx 0 rx 0, idle

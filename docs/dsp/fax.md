@@ -20,7 +20,7 @@ The DTE's data for `+FTH` and `+FTM` is read a character at a time, and
 nothing after `<DLE><ETX>`: a frame that follows in the same write waits
 until this one goes out, and what follows the last frame or the `+FTM`
 data (the next command) is left for the command interpreter, which
-takes it with the DTE's next characters after the `OK`. In `+FTH` an empty frame, `<DLE><ETX>` alone, ends the transmission
+runs it after the `OK`. In `+FTH` an empty frame, `<DLE><ETX>` alone, ends the transmission
 with `OK` (8.3.5/T.31); a frame of one octet goes out as it is.
 `core/test/scripts/fax_dte.txt` (core_equiv's `FaxDteUntilsCome`) tries
 all three.

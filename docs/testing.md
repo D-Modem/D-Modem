@@ -32,7 +32,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `dmodem_fax_test` | libdmodem's fax: a data modem answering hands the call to a fax receiver |
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
-| `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one |
+| `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one (or against a script's `.expect`, see `docs/core.md`) |
 | `interop_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test` (and `interop_serial_test`, `agere_serial_test`: the calls that run alone) | calls in real time between this modem and the others (`interop_test.cpp`: one table of the calls, each program a label's) |
 
 The interop and agere calls run in real time and mostly wait, so they run

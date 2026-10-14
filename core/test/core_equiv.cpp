@@ -2,11 +2,16 @@
  *    core_equiv.cpp - the new core against slmodemd's old one: each script
  *    of scripts/ through core_script_old and core_script_new (two modems
  *    back to back, driven as a DTE would, script.cpp), and the two
- *    transcripts must be the same
+ *    transcripts must be the same.  Where the new core does better on
+ *    purpose, scripts/<name>.expect holds its transcript, and the new
+ *    core's must be that one instead (CORE_EXPECT_WRITE=1 writes the
+ *    .expect files there are anew, to be looked at in git diff; an empty
+ *    one starts a new script off).
  */
 
 #include <dirent.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <algorithm>
 #include <string>
@@ -31,6 +36,31 @@ static std::string output(const std::string &cmd, int *status)
 	return out;
 }
 
+/* path's contents into *s; false if it cannot be read */
+static bool read_file(const std::string &path, std::string *s)
+{
+	FILE *f = fopen(path.c_str(), "rb");
+	char buf[4096];
+	size_t n;
+	if (!f)
+		return false;
+	s->clear();
+	while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+		s->append(buf, n);
+	fclose(f);
+	return true;
+}
+
+/* s into path; false if it cannot be written */
+static bool write_file(const std::string &path, const std::string &s)
+{
+	FILE *f = fopen(path.c_str(), "wb");
+	bool ok = f && fwrite(s.data(), 1, s.size(), f) == s.size();
+	if (f)
+		ok = fclose(f) == 0 && ok;
+	return ok;
+}
+
 /* the scripts of SCRIPTS_DIR (their names without .txt), sorted */
 static std::vector<std::string> scripts()
 {
@@ -48,18 +78,28 @@ static std::vector<std::string> scripts()
 	return v;
 }
 
-/* one test per script: the two transcripts the same */
+/* one test per script: the new core's transcript the same as the old
+   core's, or as the script's .expect */
 class CoreEquiv : public testing::TestWithParam<std::string> {};
 
 TEST_P(CoreEquiv, SameTranscript)
 {
-	std::string s = std::string(SCRIPTS_DIR) + "/" + GetParam() + ".txt";
+	std::string base = std::string(SCRIPTS_DIR) + "/" + GetParam();
+	std::string s = base + ".txt", e = base + ".expect", want;
 	int st_old, st_new;
-	std::string t_old = output(std::string(SCRIPT_OLD) + " " + s, &st_old);
 	std::string t_new = output(std::string(SCRIPT_NEW) + " " + s, &st_new);
 
-	ASSERT_EQ(st_old, 0) << "the old core's run";
 	ASSERT_EQ(st_new, 0) << "the new core's run";
+	if (read_file(e, &want)) {
+		if (getenv("CORE_EXPECT_WRITE")) {
+			ASSERT_TRUE(write_file(e, t_new)) << e;
+			return;
+		}
+		EXPECT_EQ(want, t_new) << "the new core against " << e;
+		return;
+	}
+	std::string t_old = output(std::string(SCRIPT_OLD) + " " + s, &st_old);
+	ASSERT_EQ(st_old, 0) << "the old core's run";
 	EXPECT_FALSE(t_old.empty());
 	/* line by line, for a readable difference */
 	EXPECT_EQ(t_old, t_new);

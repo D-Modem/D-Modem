@@ -931,9 +931,11 @@ int Modem::at_command(char *cmd)
 			}
 			break;
 		case '*':
+			/* *B: the blacklisted numbers (none kept), always OK */
 			c = toupper(*p++);
 			if (c != 'B')
 				return -1;
+			ret = 0;
 			break;
 		case '+':
 			c = toupper(*p++);
@@ -986,8 +988,9 @@ int Modem::at_command(char *cmd)
 				break;
 			case 'M':
 				c = toupper(*p++);
-				if (c == 'S')
-					ret = at_MS(p, &len);
+				if (c != 'S')
+					return -1;
+				ret = at_MS(p, &len);
 				break;
 			case 'P':
 				if (!toupper_strncmp(p, "MH", 2)) {
@@ -1013,8 +1016,14 @@ int Modem::at_command(char *cmd)
 			c = toupper(*p++);
 			switch (c) {
 			case 'A':
-				if (isdigit((unsigned char)*p))
+				/* \A0..3: the MNP block size, taken (there is no
+				   MNP) */
+				if (isdigit((unsigned char)*p)) {
+					if (*p > '3')
+						return -1;
 					len++;
+				}
+				ret = 0;
 				break;
 			case 'N':
 				ret = at_set_sreg(SREG_EC, *p, 0, 5, &len);

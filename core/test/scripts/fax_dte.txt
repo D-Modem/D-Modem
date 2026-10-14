@@ -1,9 +1,10 @@
 # class 1 fax, what the DTE sends around <DLE><ETX> (T.31 8.3.3, 8.3.5):
 # B (answering, in +FTH after CED) sends CSI and DIS in one write, each
 # frame on its own; A ends an +FTH with an empty frame (OK); A's +FTM data
-# and its next command in one write (the command is kept: the core runs
-# it with the DTE's next characters).  core_equiv's FaxDteUntilsCome:
-# every until here comes.
+# and its next command in one write (the command runs after the OK).
+# core_equiv's FaxDteUntilsCome: every until here comes; fax_dte.expect:
+# the transcript (the old core runs the command only when more
+# characters come).
 A ATE0X3+FCLASS=1\r
 B ATE0+FCLASS=1\r
 B ATA\r
@@ -29,9 +30,7 @@ until A OK 2000
 A AT+FTM=96\r
 until A CONNECT 2000
 A \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10\x03AT+FCLASS?\r
-until A OK 5000
-A AT\r
-until A 1\r\n 2000
+until A 1\r\n 5000
 until B NO CARRIER 5000
 A ATH\r
 B ATH\r

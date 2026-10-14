@@ -1,0 +1,22 @@
+      0 A< ATE0V0X3+MS=21,0\r
+      0 A: ATE0V0X3+MS=21,0\r\r\n
+      0 A: 0\r\n
+      0 B< ATE0+MS=21,0\r
+      0 B: ATE0+MS=21,0\r\r\n
+      0 B: OK\r\n
+      0 B< ATA\r
+      0 A< ATD\r
+   5940 B: CONNECT 300\r\n
+   5960 A: 1\r\n
+   5960 until A '1\r': yes
+   5960 until B 'CONNECT': yes
+   5960 A< A0000 The quick brown fox jumps over the lazy dog\r\nA0001 The quick brown fox jumps over the lazy dog\r\nA0002 The quick brown fox jumps over the lazy dog\r\nA0003 The quick brown fox jumps over the lazy dog\r\nA0004 The quick brown fox jumps over the lazy dog\r\nA0005 The quick brown fox jumps over the lazy dog\r\nA0006 The quick brown fox jumps over the lazy dog\r\nA0007 The quick brown fox jumps over the lazy dog\r\nATI3\r\n
+   7700 B: A0000 The quick brown fox jumps over the lazy dog\r\n
+   8980 B: A0001 The quick brown fox jumps over tNO CARRIER\r\n
+   9920 A: \x00\x00\x00\x003\r\n
+   9920 until A '3\r': yes
+  10420 A< AT\r
+  10420 A: 0\r\n
+  10420 until A '0\r': yes
+  10920 A: state 0, tx 300 rx 300, idle
+  10920 B: state 0, tx 300 rx 300, idle

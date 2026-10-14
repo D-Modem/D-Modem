@@ -66,11 +66,15 @@ A AT&Q\r
 A AT%C2%E1\r
 A ATS104?S39?\r
 A AT%X\r
-A AT\N3\A2\r
+A AT\\N3\\A2\r
 A ATS103?\r
-A AT\Q\r
+A AT\\Q\r
 A AT*B\r
 A ATE1*B\r
+A AT\\A\r
+A ATV1\\A9\r
+A ATV1+MR\r
+A AT+MV18\r
 A ATB\r
 A AT+MS?\r
 A ATL2M2N0\r
@@ -90,7 +94,7 @@ A ATZ\r
 A AT+MS?\r
 A ATS0?\r
 # typing: backspace, A/, garbage, a line too long
-A ATS0\b\b\b\bATI0\r
+A ATS0\x08\x08\x08\x08ATI0\r
 A A/
 A garbage\r
 A ATQ0V1 E1 \r
