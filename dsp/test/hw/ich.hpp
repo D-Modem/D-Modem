@@ -9,7 +9,9 @@
  *    GLOB_CNT at 0x3c and GLOB_STA at 0x40.  Each bus master walks its
  *    buffer descriptor list a sample at a time; a buffer done with IOC,
  *    or the last valid one, sets its status, and its interrupt is a
- *    status bit whose enable is set.
+ *    status bit whose enable is set (a level: up while the bit is).  At
+ *    the last valid buffer it halts, and goes on with the next once LVI
+ *    moves; paused (RPBM cleared) it keeps its place.
  *
  *    The harness (Host, a half::HalfModem) derives from Ich<Host> and
  *    has the codec: word codec_read(int r) and void codec_write(int r,
@@ -53,14 +55,10 @@ public:
 	   codec's registers at NAMBAR + 0x80 (and GLOB_STA's primary and
 	   secondary ready), else at NAMBAR; bus: what a bus address is
 	   short of the address (the SM56 module's kernel puts memory at
-	   0x02000000 on); resume: a run after a pause goes on where the bus
-	   master stopped, and one halted at the last valid buffer goes on
-	   when there is another (the HSF module pauses it to move LVI on) */
-	Ich(unsigned nambar, unsigned nabmbar, bool secondary, uintptr_t bus,
-	    bool resume) :
+	   0x02000000 on) */
+	Ich(unsigned nambar, unsigned nabmbar, bool secondary, uintptr_t bus) :
 		glob_sta(secondary ? 0x300 : 0x100), nambar_(nambar),
-		nabmbar_(nabmbar), codec_at_(secondary ? 0x80 : 0), bus_(bus),
-		resume_(resume)
+		nabmbar_(nabmbar), codec_at_(secondary ? 0x80 : 0), bus_(bus)
 	{
 	}
 
@@ -98,7 +96,6 @@ public:
 private:
 	const unsigned nambar_, nabmbar_, codec_at_;
 	const uintptr_t bus_;
-	const bool resume_;
 
 	Host &host() { return static_cast<Host &>(*this); }
 	const Host &host() const { return static_cast<const Host &>(*this); }
@@ -123,8 +120,9 @@ private:
 };
 
 /* a write of the control register: reset (RR), run (RPBM: from the
-   current descriptor; with resume_, on where it was after a pause),
-   stop (DCH set) */
+   current descriptor after a reset, on where it was after a pause, as
+   RPBM keeps the state; the HSF module pauses it to move LVI on), stop
+   (DCH set) */
 template <class Host>
 void Ich<Host>::control(BusMaster &b, byte v)
 {
@@ -139,7 +137,7 @@ void Ich<Host>::control(BusMaster &b, byte v)
 		b.fresh = true;
 		return;
 	}
-	if (resume_ && (v & CR_RPBM) && !(b.cr & CR_RPBM) && !b.fresh) {
+	if ((v & CR_RPBM) && !(b.cr & CR_RPBM) && !b.fresh) {
 		b.sr &= ~SR_DCH;
 		if (b.picb == 0 && b.civ != b.lvi) {
 			b.civ = (b.civ + 1) & 31;
@@ -151,7 +149,7 @@ void Ich<Host>::control(BusMaster &b, byte v)
 	}
 	if ((v & CR_RPBM) && !(b.cr & CR_RPBM)) {
 		b.fresh = false;
-		if (resume_ && host().dbg) {
+		if (host().dbg) {
 			host().log("%s runs: lvi %u:", name(b), b.lvi);
 			for (int i = 0; i < 32 && b.bdbar; i++)
 				if (bd(b, i)[1] & 0xffff)
@@ -174,8 +172,9 @@ short Ich<Host>::ich_sample(BusMaster &b, short in)
 	u32 *d;
 	short *buf;
 
-	if (resume_ && (b.cr & CR_RPBM) && (b.sr & SR_CELV) && b.civ != b.lvi) {
-		/* halted at the last valid buffer, and there is another */
+	if ((b.cr & CR_RPBM) && (b.sr & SR_CELV) && b.civ != b.lvi) {
+		/* halted at the last valid buffer, and there is another
+		   (LVI moved): on with it, as the ICH does */
 		b.civ = (b.civ + 1) & 31;
 		b.sr &= ~(SR_CELV | SR_DCH);
 		load(b);
@@ -197,7 +196,7 @@ short Ich<Host>::ich_sample(BusMaster &b, short in)
 		if (d[1] & 0x80000000)
 			b.sr |= SR_BCIS;
 		if (b.civ == b.lvi) {
-			if (resume_ && host().dbg)
+			if (host().dbg)
 				host().log("%s halted at %llu ms (civ %u)\n", name(b),
 					   host().ms(), b.civ);
 			b.sr |= SR_LVBCI | SR_CELV | SR_DCH;

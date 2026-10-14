@@ -86,9 +86,10 @@ public:
 	void (*timer_fn)(unsigned long) = nullptr;
 	int timer_armed = 0;
 	unsigned long long timer_at = 0;
-	/* its interrupt */
+	/* its interrupt; the ISR (or its bottom halves) running */
 	void *isr_dev = nullptr;
 	int isr_on = 0;
+	bool in_isr = false;
 
 	unsigned long long clock_read();
 	void delay_samples(unsigned n);
@@ -118,7 +119,7 @@ static Agere agere;
 Agere::Agere() :
 	HalfModem("agere", "AGERE"),
 	Ac97Codec(0x0001, 0x5349, 0x4c27),
-	Ich(NAMBAR, NABMBAR, false, 0, false)
+	Ich(NAMBAR, NABMBAR, false, 0)
 {
 	codec_regs[0x62] = 0x7000;      /* line side device: 7 */
 }
@@ -540,19 +541,24 @@ void Agere::idle_sample()
 }
 
 /* the interrupt: the ISR and the bottom halves while GLOB_STA asks for
-   it (4 times at most) */
+   it (4 times at most; still up, it is taken again at the next sample),
+   not from within them (a delay there runs the line on) */
 void Agere::raise_irq()
 {
 	int guard = 0;
 	static long nirq;
+	if (in_isr)
+		return;
 	if (++nirq % 1000 == 1 && dbg > 1)
 		LOG("irq %ld, sta %x, pi civ %d lvi %d, po civ %d lvi %d\n", nirq,
 		    ich_status(), pcm_in.civ, pcm_in.lvi, pcm_out.civ, pcm_out.lvi);
+	in_isr = true;
 	while (isr_on && (ich_status() & 0x7) && guard++ < 4) {
 		stack_clear();
 		LX_isr_handler(IRQ, isr_dev, NULL);
 		run_tasks();
 	}
+	in_isr = false;
 }
 
 /* n silent samples of the line, in the library's delay: its time goes
@@ -563,18 +569,19 @@ void Agere::delay_samples(unsigned n)
 		sample(0);
 }
 
-/* one sample each way through the bus masters, the interrupt when one
-   starts to ask for it, the timer when due; the sample to the line */
+/* one sample each way through the bus masters, the interrupt while
+   one asks for it (a level, as on the PCI bus: one that came up in
+   idle_sample() is taken here), the timer when due; the sample to the
+   line */
 short Agere::sample(short in)
 {
 	short out;
-	bool before = ich_irq();
 
 	out = ich_sample(pcm_out, 0);
 	ich_sample(pcm_in, in);
 	now_us += 125;
 	idle_reads = 0;
-	if (!before && ich_irq())
+	if (ich_irq())
 		raise_irq();
 	if (timer_armed && now_us >= timer_at) {
 		timer_armed = 0;

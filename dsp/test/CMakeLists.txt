@@ -50,6 +50,9 @@ dmodem_gtest(pump_test LABELS quick)
 dmodem_test_exe(pcm_cp_test pcm_cp_test.cpp)
 target_link_libraries(pcm_cp_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_gtest(pcm_cp_test LABELS quick)
+# the emulated hardware's mixins (hw/) on a host of the test's own
+dmodem_test_exe(hw_test hw_test.cpp)
+dmodem_gtest(hw_test LABELS quick)
 dmodem_test_exe(netsim netsim.cpp ${S}/dsp_util.cpp ${S}/qam.cpp
 	${S}/v34_tables.cpp)
 # the fax without a core: the modulations, T.4 and TIFF, two T.30 machines

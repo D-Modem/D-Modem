@@ -101,7 +101,7 @@ protected:
 	void dte_poll() override;
 
 private:
-	bool irq_was = false;
+	bool in_isr = false;            /* the ISR or its tasklets running */
 };
 
 static Sm56 sm56;
@@ -117,7 +117,7 @@ static void *bus_to_virt(u32 a) { return (void *)(uintptr_t)(a + PAGE_OFFSET); }
 Sm56::Sm56() :
 	HalfModem("sm56", "SM56"),
 	Ac97Codec(0x0001, 0x4d4f, 0x5466),
-	Ich(NAMBAR, NABMBAR, true, PAGE_OFFSET, false)
+	Ich(NAMBAR, NABMBAR, true, PAGE_OFFSET)
 {
 	pci_devfn = DEVFN;
 	pci_cfg[0x00 / 4] = 0x8086 | 0x2416u << 16;
@@ -594,7 +594,7 @@ KAPI int k_schedule_delayed_work(void *work, unsigned long delay)
 
 /* one line sample each way through the resamplers (a codec sample each
    way through the bus masters); a jiffy each ms and the timers due;
-   the ISR and tasklets when an interrupt starts */
+   the ISR and tasklets while an interrupt is up */
 short Sm56::line_sample(short in)
 {
 	short out = codec_line_sample(in, (double)line_rate / codec_rate,
@@ -603,24 +603,25 @@ short Sm56::line_sample(short in)
 		ich_sample(pcm_in, adc);
 		return dac;
 	});
-	bool irq_now;
 
 	line_n++;
 	if (line_n * 1000 / line_rate != (line_n - 1) * 1000 / line_rate) {
 		k_jiffies++;
 		run_timers();
 	}
-	irq_now = ich_irq();
-	if (irq_now && !irq_was && isr) {
+	/* a level, as on the PCI bus: taken while it is up (4 times at
+	   most a sample), not from within the ISR or its tasklets (a
+	   udelay there runs the line on) */
+	if (ich_irq() && isr && !in_isr) {
 		int guard = 0;
+		in_isr = true;
 		while (ich_irq() && guard++ < 4) {
 			stack_clear();
 			isr(IRQ, isr_dev, NULL);
 			run_tasklets();
 		}
-		irq_now = ich_irq();
+		in_isr = false;
 	}
-	irq_was = irq_now;
 	return out;
 }
 

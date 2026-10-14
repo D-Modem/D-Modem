@@ -217,7 +217,7 @@ static Hsf hsf;
 Hsf::Hsf() :
 	HalfModem("hsf", "HSF"),
 	Ac97Codec(0x4001, 0x4358, 0x5429),
-	Ich(NAMBAR, NABMBAR, true, 0, true)
+	Ich(NAMBAR, NABMBAR, true, 0)
 {
 	pci_cfg[0x00 / 4] = 0x8086 | 0x2416u << 16;
 	pci_cfg[0x04 / 4] = 0x02800005;         /* I/O, bus master */

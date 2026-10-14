@@ -106,6 +106,7 @@ as it is.
 | `dsp/test/half_pctel.c`, `interop_test.cpp` | PCTel's controller compares an unterminated copy of `+MS`'s carrier name on its stack, so `+MS=V90` took V.90 only when the byte after the copy happened to be 0. That byte was what the harness's own calls had left: a print added to the harness, or the stack filled with 0, turned `pctel_v90_calls` from 50666 to 45333 every time. The harness now clears the stack before each call into PCTel's objects. With the name matched, `+MS=V90` without a top rate keeps the downstream to 45333, so the V.90 tests give one (`+MS=V90,1,300,56000`) |
 | `dsp/test/half_agere.c`, `half_sm56.c`, `half_hsf.c`, `half_stack.h` | Agere's, SM56's and HSF's modules read some of their stack before writing it too (valgrind: the status Agere's V.32 and V.22 pumps report, SM56's dial response, two of HSF's engine routines), and found there what the harness's calls before had left, its reads and writes of the pty among them. The PCTel harness's clear is now `half_stack.h`'s, and the other three clear the stack before each call into their modules as well. `HALF_STACK_FILL` fills it with another byte: their tests connect at the same rates with 0, 0xa5 and 0xff. `half_hsf.c` gave `prctl(PR_SET_TSC)` its two arguments only, and valgrind reported the three after them unset (the kernel does not read them): now 0 |
 | `asterisk/test/sip_call.py` | A traceback instead of FAIL when slmodemd gave no pty or went away |
+| `dsp/test/half_agere.cpp`, `half_sm56.cpp`, `hw/ich.hpp` | The ICH's interrupt was taken on its rising edge only: one that came up while the Agere library polled the clock (the bus masters creep on then, the interrupt left for the next sample), or before the SM56 module had its ISR, or that the ISR left up after four rounds, was never taken, and the bus masters halted at LVI for good. It is a level now, as on the PCI bus: taken at each sample while it is up, but not from within the ISR or its bottom halves. And only the HSF harness's bus masters went on once LVI moved past the one they had halted at, or kept their place when paused and run again (RPBM): those are the ICH's, so every harness has them now (`hw_test`). None of the calls met the edge case (a count over the Agere label found none): latent |
 
 ## Checked and left as they are
 
@@ -142,9 +143,6 @@ None left.
 
 ### Tests
 
-- **likely bug** — `half_agere.c`, `half_sm56.c`: an interrupt raised
-  while the library polls the clock is never delivered (edge, not level,
-  triggered); a bus master halted at LVI does not resume when LVI moves.
 - **likely bug** — `netsim.cpp` NET_PLAIN: from an 8000 Hz to a 9600 Hz
   modem, G.711 is applied after the resampler, at 9600 Hz.
 - **risk** — `loopback.cpp`: `ok()` accepts a call that delivered 300
