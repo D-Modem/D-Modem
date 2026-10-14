@@ -85,6 +85,10 @@ extern int  dp_sinus_init(void);
 extern void dp_sinus_exit(void);
 extern int datafile_load_info(char *name,struct dsp_info *info);
 extern int datafile_save_info(char *name,struct dsp_info *info);
+/* the core's timers (dmodem_timer.cpp): its time, set here, and the ones
+   due, run here */
+extern void dmodem_set_time(unsigned long ticks);
+extern void dmodem_run_timers(void *owner);
 
 
 /* global config data */
@@ -259,6 +263,43 @@ static int line_idle(void)
 	return tv.tv_sec + tv.tv_usec * 1e-6 - line_at > 0.5;
 }
 
+static long core_samples;        /* of the line, through the core so far */
+
+/* the core's time in MODEM_HZ ticks: with PIPE_SYNC the line's while it
+   runs (its timers then meet the line at the same samples whatever the
+   machine, and keep up with it unpaced), else and while the line stands
+   the wall clock's */
+static unsigned long now_ticks(struct modem_test *t)
+{
+	static double start;
+	static long off;
+	static unsigned long last;
+	struct timeval tv;
+	double wall;
+	long tk;
+	gettimeofday(&tv, NULL);
+	wall = tv.tv_sec + tv.tv_usec * 1e-6;
+	if (start == 0)
+		start = wall;
+	tk = (long)((wall - start) * MODEM_HZ);
+	if (sync_n) {
+		long line = (long)(core_samples * MODEM_HZ / t->modem->srate);
+		if (line_idle())
+			off = tk - line;
+		tk = line + off;
+	}
+	if ((long)(tk - last) < 0)
+		tk = last;
+	return last = tk;
+}
+
+/* the core's time set, and its timers that are due run */
+static void run_timers(struct modem_test *t)
+{
+	dmodem_set_time(now_ticks(t));
+	dmodem_run_timers(t->modem);
+}
+
 /* at the sample: whatever the DTE has sent */
 static int sync_input(struct modem_test *t)
 {
@@ -267,6 +308,7 @@ static int sync_input(struct modem_test *t)
 	    poll(&p, 1, 0) <= 0)
 		return 0;
 	DBG("DTE input at line sample %ld\n", line_samples);
+	run_timers(t);
 	return pty_input(t);
 }
 
@@ -301,15 +343,18 @@ static int modem_test_run(struct modem_test *modems)
 
 	while(keep_running) {
 
-		for( t = modems ; t->modem ; t++ )
+		for( t = modems ; t->modem ; t++ ) {
+			run_timers(t);
 			if(t->modem->event)
 				modem_event(t->modem);
+		}
 #ifdef SIMULATE_RING
 		tmo.tv_sec = 0;
 		tmo.tv_usec= 1000000/RING_HZ;
 #else
-                tmo.tv_sec = 1;
-                tmo.tv_usec= 0;
+		/* (a tick: the timers are run here) */
+                tmo.tv_sec = 0;
+                tmo.tv_usec= 1000000/MODEM_HZ;
 #endif
                 FD_ZERO(&rset);
 		FD_ZERO(&eset);
@@ -422,6 +467,7 @@ static int modem_test_run(struct modem_test *modems)
 						DBG("change delay -%d...\n", count/2);
 						t->delay -= count;
 						t->modem->update_delay += count/2;
+						core_samples += count/2;
 						continue;
 					}
 					DBG("change delay %d...\n", t->modem->update_delay);
@@ -446,6 +492,7 @@ static int modem_test_run(struct modem_test *modems)
 						     k += HALF_FRAME) {
 							int len = count / 2 - k < HALF_FRAME ?
 								count / 2 - k : HALF_FRAME;
+							dmodem_set_time(now_ticks(t));
 							if (t->started)
 								modem_process(t->modem,
 									in + 2 * k,
@@ -453,11 +500,16 @@ static int modem_test_run(struct modem_test *modems)
 							else
 								memset(outbuf + 2 * k, 0,
 								       2 * len);
+							core_samples += len;
+							run_timers(t);
 							if (t->modem->event)
 								modem_event(t->modem);
 						}
-					} else
+					} else {
+					dmodem_set_time(now_ticks(t));
 					modem_process(t->modem,in,outbuf,count>>1);
+					core_samples += count >> 1;
+					}
 					/* MODEM_REC=<prefix>: record <prefix>.in/.out */
 					if (getenv("MODEM_REC") && !rec_in) {
 						char name[256];
@@ -473,6 +525,7 @@ static int modem_test_run(struct modem_test *modems)
 				}
 				else {
 					memset(outbuf,0,count);
+					core_samples += count >> 1;
 					/* ring here */
 				}
 				count = write(t->out,outbuf,count);
@@ -505,8 +558,10 @@ static int modem_test_run(struct modem_test *modems)
 		}
 
 		for( t = modems ; t->modem ; t++ ) {
-			if(FD_ISSET(t->modem->pty,&rset) &&
-			   pty_input(t) < 0)
+			if(!FD_ISSET(t->modem->pty,&rset))
+				continue;
+			run_timers(t);
+			if(pty_input(t) < 0)
 				return -1;
 		}
 	}
@@ -516,26 +571,39 @@ static int modem_test_run(struct modem_test *modems)
 
 
 /* MODEM_REALTIME=1: run no faster than the sample clock, so that a
-   DTE program (fax) can keep up with the protocol timers */
+   DTE program can keep up with the protocol timers; with PIPE_SYNC on
+   hook as well (the DTE's commands then meet the samples they would in
+   real time, however late the DTE answers), and off hook MODEM_SPEED=<x>
+   times the sample clock at most (unset: as fast as it goes), the timers
+   on the line's clock (now_ticks()) */
 static void pace_clock(struct modem_test *t, int samples)
 {
-	static int on = -1;
-	static double start, done;
+	static int realtime = -1;
+	static double max_speed, cur, start, done;
 	struct timeval tv;
-	double now, ahead;
-	if (on < 0)
-		on = getenv("MODEM_REALTIME") != NULL;
-	if (!on)
+	double now, ahead, speed;
+	if (realtime < 0) {
+		realtime = getenv("MODEM_REALTIME") != NULL;
+		max_speed = getenv("MODEM_SPEED") ?
+			atof(getenv("MODEM_SPEED")) : 0;
+	}
+	speed = realtime || (sync_n && !t->started) ? 1 : max_speed;
+	if (speed != cur) {
+		cur = speed;
+		done = 0;               /* (it starts anew) */
+	}
+	if (speed <= 0)
 		return;
 	gettimeofday(&tv, NULL);
 	now = tv.tv_sec + tv.tv_usec * 1e-6;
-	if (done == 0 || now - start - done / t->modem->srate > 0.5) {
+	if (done == 0 ||
+	    now - start - done / t->modem->srate / speed > 0.5) {
 		/* (re)start the clock after a pause */
 		start = now;
 		done = 0;
 	}
 	done += samples;
-	ahead = start + done / t->modem->srate - now;
+	ahead = start + done / t->modem->srate / speed - now;
 	if (ahead > 0.002)
 		usleep(ahead * 1e6);
 }

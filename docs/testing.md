@@ -12,7 +12,7 @@ compiler (`g++ -m32`), for the original library.
 ## Tests
 
     ctest --test-dir build -j16         # all of them (some four times the processors:
-                                        # most calls wait; some 3 min on 4)
+                                        # about 1.5 min on 4)
     ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
     ctest --test-dir build -L interop -j16  # calls between the original library and this one,
@@ -37,20 +37,24 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one (or against a script's `.expect`, see `docs/core.md`) |
 | `interop_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test` | calls between this modem and the others (`interop_test.cpp`: one table of the calls, each program a label's) |
 
-Each call writes its modem logs to `build/dsp/test/logs/<test>/`. Most
-calls run as fast as the modems can: every modem but the original
-library keeps time by its line's samples (the Agere, SM56, PCTel and HSF
-harnesses count jiffies and timers in samples, and so does our core with
-`PIPE_SYNC`), so a call goes as it would in real time, only sooner, and
-a busy machine only slows it down. The call's own seconds (`STREAM`,
-`MIDCALL`, `WAIT`, `ANSWER_AFTER`, `HANGUP_WAIT`, and how long it waits
-for what the modems say) are then the line's, from netsim's clock
-(`NET_CLOCK_FD`). Three things keep such a call the same from run to
-run, however late the driver answers:
+Each call writes its modem logs to `build/dsp/test/logs/<test>/`. The
+calls run as fast as the modems can: every modem keeps time by its
+line's samples (the Agere, SM56, PCTel and HSF harnesses count jiffies
+and timers in samples, our core does with `PIPE_SYNC`, and so does
+slmodemd's old core under the original library, `test/legacy/`, whose
+timers are run by the line too), so a call goes as it would in real
+time, only sooner, and a busy machine only slows it down. The call's own
+seconds (`STREAM`, `MIDCALL`, `WAIT`, `ANSWER_AFTER`, `HANGUP_WAIT`, and
+how long it waits for what the modems say) are then the line's, from
+netsim's clock (`NET_CLOCK_FD`), faster or slower than the wall clock
+as the machine goes; the wall clock's only while the line stands still
+(a modem gone). Three things keep such a call the same from run to run,
+however late the driver answers:
 
-- on hook our modem runs in real time anyway (`PIPE_SYNC`), so that the
-  driver's commands meet the samples they would in real time (the call
-  itself, from the dial or the answer, as fast as it goes);
+- on hook our modem and the original library's run in real time anyway
+  (`PIPE_SYNC`), so that the driver's commands meet the samples they
+  would in real time (the call itself, from the dial or the answer, as
+  fast as it goes);
 - the driver waits 100 ms of the line after a CONNECT before its data (the
   SM56 says CONNECT a little ahead of taking data, and echoes what
   comes sooner as a command line);
@@ -58,27 +62,28 @@ run, however late the driver answers:
   kept: before the escape's OK and right after `ATO`'s CONNECT.
 
 The fax calls (`interop_call --fax`) keep time by the driver's own relay
-of the line (A's samples at `LINE_RATE`, 8000), and go ten times as fast
-as real time at most (`MODEM_SPEED=10`, `half_open`'s): the fax modems
-take so little that the line would otherwise go a few hundred times as
-fast, and the milliseconds the driver takes to answer what a modem said
-(it plays T.30 for both machines) would be most of a second of the line,
-past T.30's turnarounds. At ten times they take the turnarounds the
-paced calls did, give the same TCF and pages, and take a tenth of the
-time.
+of the line (A's samples at `LINE_RATE`: 8000, 9600 with the original
+library), and go ten times as fast as real time at most
+(`MODEM_SPEED=10`, `half_open`'s and `half_blob`'s): the fax modems take
+so little that the line would otherwise go a few hundred times as fast,
+and the milliseconds the driver takes to answer what a modem said (it
+plays T.30 for both machines) would be most of a second of the line,
+past T.30's turnarounds. The modems take the DTE's commands every 192
+samples (20 ms at 9600 Hz, the original library's frame): its V.17
+receiver takes a short train or not depending on how its frames fall on
+it, so our training has to start at the same point of them every time.
+So they take the turnarounds the paced calls did and give the same TCF
+and pages, in a tenth of the time.
 
-The original library's calls still run in real time (`MODEM_REALTIME=1`)
-and mostly wait: slmodemd's old core, which it runs on, keeps its timers
-on the wall clock.
-
-The unpaced calls run a little nicer (`nice` 10) than the rest, so that
-the calls in real time next to them get the processor first. Each takes
-about one processor while it runs; the calls in real time take little,
-so `-j` can be some four times the processors: on 4, the whole suite
-takes some 3 minutes at `-j16` (7.5 at `-j8`; 13 when every call ran in
-real time). None of the calls has to run alone any more.
-`MODEM_REALTIME=1 ctest ...` runs every call in real time, as they all
-did before (for comparing a failure).
+The calls run a little nicer (`nice` 10) than the rest of the machine.
+Each takes about one processor while it runs, but for the moments on
+hook in real time, so `-j` can be some four times the processors: on 4,
+the whole suite takes some 75 s at `-j16` (105 at `-j8`; 13 minutes when
+every call ran in real time). Much more than that (`-j32` on 4) leaves
+the calls on hook short of real time, and the PCTel V.90 call, which
+fails when its setup lands a period later, can fail. None of the calls
+has to run alone. `MODEM_REALTIME=1 ctest ...` runs every call in real
+time, as they all did before (for comparing a failure).
 
 The test programs are in `build/dsp/test/`. The calls go through
 `interop_call.cpp`; `interop_call` makes one by hand:
@@ -138,10 +143,8 @@ learn.
 
 `fax_interop` does the same with `AT+FCLASS=1`. `interop_call --fax` plays
 the T.30 side of both fax machines: CSI/DIS, DCS, TCF, CFR, one page (for
-V.17 with the short train), EOP, MCF and DCN. With the original library
-the modems run in real time, so that its timers and the driver keep up
-with T.30's (with the Agere modem, at ten times, above). Results at the
-time of writing:
+V.17 with the short train), EOP, MCF and DCN, at ten times real time
+(above). Results at the time of writing:
 
 | Modulation | original sender → open receiver | open sender → original receiver |
 |---|---|---|

@@ -11,10 +11,12 @@
 set(S ${DMODEM_DSP_DIR})
 set(_dsp ${DMODEM_DSP_SRCS})
 # slmodemd's old C core (legacy/): Smart Link's original library calls
-# into it (half_blob), and core_script_old compares the new core with it
+# into it (half_blob), and core_script_old compares the new core with it;
+# both run its timers by hand on a clock of their own (dmodem_timer.cpp,
+# not the SIGALRM ones of modem_timer.cpp)
 set(DMODEM_LEGACY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/legacy)
 set(DMODEM_LEGACY_SRCS modem.cpp modem_datafile.cpp modem_at.cpp
-	modem_timer.cpp modem_param.cpp modem_debug.cpp sysdep_common.cpp)
+	dmodem_timer.cpp modem_param.cpp modem_debug.cpp sysdep_common.cpp)
 list(TRANSFORM DMODEM_LEGACY_SRCS PREPEND ${DMODEM_LEGACY_DIR}/)
 list(APPEND DMODEM_LEGACY_SRCS ${DMODEM_CORE_NEW_DIR}/homolog_data.cpp)
 set(DMODEM_LEGACY_DIR ${DMODEM_LEGACY_DIR} PARENT_SCOPE)
@@ -85,8 +87,8 @@ else()
 endif()
 
 # --- interop: modem_half with the original library and with the open
-#     data pumps (32 bit like the blob), in real time through
-#     interop_test (interop_call.cpp), with netsim for the G.711 network.
+#     data pumps (32 bit like the blob), through interop_test
+#     (interop_call.cpp), with netsim for the G.711 network.
 #     The original library (smartlink/dsplibs.o, Smart Link's binary-only
 #     DSP library) is a 32 bit i386 object: -m32 on x86_64.
 set(DMODEM_M32 "")
@@ -235,11 +237,11 @@ endif()
 # above (interop_test.cpp, through interop_call.cpp: what a call does is in
 # its environment, NET for netsim's G.711 network, STREAM, EXPECT_B, ...).
 # One test program a label; each call writes its modem logs to
-# logs/<test>/.  The original library's
-# calls run in real time and mostly wait; the others run as fast as they
-# can (fax: ten times real time), on the line's clock, a little nicer
-# (each takes a processor while it runs).  So ctest -j can be some four times the
-# processors (-j16 on 4).  interop_call makes one by hand.
+# logs/<test>/.  The calls run as fast as they can (fax: ten times real
+# time), on the line's clock, a little nicer (each takes a processor while
+# it runs, but for the moments on hook in real time).  So ctest -j can be
+# some four times the processors (-j16 on 4).  interop_call makes one by
+# hand.
 add_library(interop_driver STATIC interop_call.cpp)
 target_compile_options(interop_driver PRIVATE -Wall -O2 -g)
 target_link_libraries(interop_driver PUBLIC pthread)

@@ -57,16 +57,23 @@ void sleep_s(double s)
 
 /* a call's time, for what it does when (STREAM, MIDCALL, the pauses)
    and how long it waits for the modems: with them unpaced (no
-   MODEM_REALTIME) they keep time by the line's samples, which run ahead
-   of the wall clock, and so does this, by netsim's NET_CLOCK_FD (a data
-   call) or by the driver's own relay of the line (a fax call); with
-   them paced (or neither), and while the line lags behind (or stops),
-   the wall clock's */
+   MODEM_REALTIME) they keep time by the line's samples, faster or slower
+   than the wall clock as the machine goes, and so does this, by
+   netsim's NET_CLOCK_FD (a data call) or by the driver's own relay of
+   the line (a fax call); while the line stands still for more than a
+   second (a modem gone, or not yet started), the wall clock's on top,
+   so that the waits still end; with the modems paced (or no line), the
+   wall clock's */
 class CallClock {
 	int fd_ = -1;
 	long long *line_ = nullptr;     /* the line's microseconds */
 	long long own_ = 0;             /* (own_line()'s) */
 	double start_ = now();
+	/* the line's last value, when it came, and the wall clock's time
+	   added for the line's stops so far */
+	mutable long long last_ = -1;
+	mutable double moved_ = start_, stopped_ = 0;
+	static constexpr double GRACE = 1;      /* s the line may stand */
 
 public:
 	CallClock() = default;
@@ -104,11 +111,20 @@ public:
 	/* seconds since the call's start */
 	double operator()() const
 	{
-		double t = now() - start_;
-		if (line_)
-			t = std::max(t, __atomic_load_n(line_, __ATOMIC_RELAXED) *
-					1e-6);
-		return t;
+		double w = now();
+		if (!line_)
+			return w - start_;
+		long long l = __atomic_load_n(line_, __ATOMIC_RELAXED);
+		if (l != last_) {
+			/* the line moves (again): its stop beyond the grace
+			   counted for good */
+			if (w - moved_ > GRACE)
+				stopped_ += w - moved_ - GRACE;
+			last_ = l;
+			moved_ = w;
+		}
+		return l * 1e-6 + stopped_ +
+			(w - moved_ > GRACE ? w - moved_ - GRACE : 0);
 	}
 };
 
@@ -1279,20 +1295,24 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 	std::string record = env("RECORD");
 	/* unpaced, the modems keep time by the line, and so does the call:
 	   by our relay of it (A's samples at LINE_RATE); they run nicer
-	   than the paced calls next to them.  Our modem takes the DTE's
-	   commands at every half frame (PIPE_SYNC=48: its timers on the
-	   line's clock, the commands in at once for class 1), and goes ten
-	   times as fast as real time at most (MODEM_SPEED): the fax modems
-	   take so little that the line would go a few hundred times as
-	   fast, and the milliseconds we take to answer what a modem said
-	   would be most of a second of it, past T.30's turnarounds */
+	   than the paced calls next to them.  Our modem and the original
+	   library's take the DTE's commands every 192 samples (PIPE_SYNC:
+	   their timers on the line's clock; 20 ms at 9600 Hz, the original
+	   library's frame: its V.17 receiver takes a short train or not
+	   depending on how its frames fall on it, so a training has to
+	   start at the same point of them every time, however late we
+	   answer), and go ten times as fast as real time at most
+	   (MODEM_SPEED): the fax modems take so little that the line would
+	   go a few hundred times as fast, and the milliseconds we take to
+	   answer what a modem said would be most of a second of it, past
+	   T.30's turnarounds */
 	bool unpaced = !getenv("MODEM_REALTIME");
 	int rate = atoi(env("LINE_RATE", "8000").c_str());
 	CallClock clock;
 	long long *line_us = unpaced && rate > 0 ? clock.own_line() : nullptr;
 	std::vector<std::string> menv;
 	if (unpaced && !getenv("PIPE_SYNC"))
-		menv.push_back("PIPE_SYNC=48");
+		menv.push_back("PIPE_SYNC=192");
 	if (unpaced && !getenv("MODEM_SPEED"))
 		menv.push_back("MODEM_SPEED=10");
 	Pipe ab, ba;

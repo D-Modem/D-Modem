@@ -14,12 +14,11 @@
  *    and the modems' and netsim's own: DSP_*, NET_*, ...) is set for it
  *    alone.
  *
- *    The calls run as fast as the modems can (they keep time by the
- *    line's samples, and so does the call, by netsim's clock or for fax
- *    by interop_call's relay of the line), but for those of the
- *    original library, whose core (slmodemd's old one) keeps its timers
- *    on the wall clock: those in real time (MODEM_REALTIME=1; set it
- *    for ctest to run every call so).
+ *    The calls run as fast as the modems can: they keep time by the
+ *    line's samples (the original library's core, slmodemd's old one,
+ *    too: legacy/modem_half.cpp), and so does the call, by netsim's clock
+ *    or for fax by interop_call's relay of the line.  MODEM_REALTIME=1
+ *    for ctest runs every call in real time.
  *
  */
 
@@ -278,13 +277,13 @@ std::vector<Call> calls()
 	add("interop", "interop_v92_nopcmup", "blob", "open8", "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=3", "BLOB_V92FULL=1",
 	      "DSP_V92_PCMUP=0", "EXPECT_B=V.90 connect" });
-	/* class 1 fax calls both ways */
+	/* class 1 fax calls both ways (the line's clock: 9600 Hz) */
 	for (int m : { 24, 48, 72, 96, 73, 97, 121, 122, 145 }) {
 		std::string s = std::to_string(m);
 		add("interop", "fax_interop_" + s + "_blob_sends", "blob",
-		    "open", "ATX3")->fax = m;
+		    "open", "ATX3", { "LINE_RATE=9600" })->fax = m;
 		add("interop", "fax_interop_" + s + "_open_sends", "open",
-		    "blob", "ATX3")->fax = m;
+		    "blob", "ATX3", { "LINE_RATE=9600" })->fax = m;
 	}
 
 	/* --- the Agere soft modem (8000 Hz) and the open modem (9600 Hz)
@@ -634,15 +633,12 @@ public:
 	/* the test of call c */
 	explicit InteropCall(Call c) : c_(std::move(c)) {}
 
-	/* the call with its environment and NETSIM, its LOG_DIR and (the
-	   original library's calls) MODEM_REALTIME=1 set; it must go
-	   through */
+	/* the call with its environment, NETSIM and its LOG_DIR set; it must
+	   go through */
 	void TestBody() override
 	{
 		Env env;
 		env.set(std::string("NETSIM=") + NETSIM);
-		if (c_.a == "blob" || c_.b == "blob")
-			env.set("MODEM_REALTIME=1");
 		env.set(std::string("LOG_DIR=") + INTEROP_LOG_DIR "/" + c_.name);
 		for (auto &e : c_.env)
 			env.set(e);

@@ -3,11 +3,10 @@
 # (core_equiv), or the new core's that of the script's .expect where it
 # differs on purpose.  core_test tests the new core by itself.
 
-# the old core (../../dsp/test/legacy) on libdmodem's old timers
-set(_old ${DMODEM_LEGACY_SRCS})
-list(REMOVE_ITEM _old ${DMODEM_LEGACY_DIR}/modem_timer.cpp)
-add_executable(core_script_old script.cpp script_old.cpp ${_old}
-	${DMODEM_LEGACY_DIR}/dmodem_timer.cpp)
+# the old core (../../dsp/test/legacy) on libdmodem's old timers (its
+# sources' dmodem_timer.cpp)
+add_executable(core_script_old script.cpp script_old.cpp
+	${DMODEM_LEGACY_SRCS})
 target_include_directories(core_script_old PRIVATE ${DMODEM_LEGACY_DIR}
 	${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
 target_compile_definitions(core_script_old PRIVATE CONFIG_DEBUG_MODEM

@@ -10,10 +10,9 @@
  *    The environment sets what a call does, as the variables below say
  *    (and passes the rest on to the modems and netsim: DSP_*, NET_*, ...).
  *
- *    MODEM_REALTIME=1 runs the modems in real time (the original
- *    library's old core keeps its timers on the wall clock).  Without it
- *    they run as fast as they can, a little nicer than the rest, keeping
- *    time by the line's samples; a call's seconds (STREAM, MIDCALL, WAIT,
+ *    MODEM_REALTIME=1 runs the modems in real time.  Without it they run
+ *    as fast as they can, a little nicer than the rest, keeping time by
+ *    the line's samples; a call's seconds (STREAM, MIDCALL, WAIT,
  *    ANSWER_AFTER, HANGUP_WAIT, the fax's pauses, how long it waits for
  *    the modems) are then the line's, by netsim's clock (NET_CLOCK_FD)
  *    or for fax by the driver's relay of the line.
@@ -68,7 +67,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
  *                     the page sent and received (page.tx, page.rx)
  *   SHOW_TCF=1        the TCF's non-zero octets
  *   LINE_RATE=<Hz>    unpaced, modemA's sample rate, for the line's clock
- *                     (8000)
+ *                     (8000; the original library's: 9600)
  *   MODEM_SPEED=<x>   unpaced, no faster than x times real time (10: the
  *                     driver's answers in time for T.30's turnarounds)
  */
