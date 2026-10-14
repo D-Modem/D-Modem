@@ -4,7 +4,8 @@
  *                       (half_open, half_open8) and the other modems we
  *                       have as programs (Smart Link's original library,
  *                       the Agere, SM56, PCTel and HSF soft modems,
- *                       spandsp's modems), through interop_call
+ *                       Broadcom's Windows driver, spandsp's modems),
+ *                       through interop_call
  *
  *    One table of calls; each test program has the calls of one ctest
  *    label (INTEROP_LABEL).  The modem programs are HALF_* (undefined:
@@ -66,6 +67,9 @@ const std::map<std::string, const char *> &programs()
 #endif
 #ifdef HALF_HSF
 		{ "hsf", HALF_HSF },
+#endif
+#ifdef HALF_WIN
+		{ "broadcom", HALF_WIN },
 #endif
 	};
 	return p;
@@ -479,6 +483,33 @@ std::vector<Call> calls()
 	      "STREAM=40", "MIDCALL_B=8:AT+PMHR;WAIT 6",
 	      "EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.90 "
 	      "retrained", "PROTO_B=ATX3;AT+MS=92" });
+
+	/* --- Broadcom's V.92 soft modem for Windows (its WDM driver on
+	   half_win's kernel and BCM4212, 8000 Hz) and the open modem (9600
+	   Hz) call each other at each modulation */
+	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
+		     { "V21", "21" }, { "V22", "22" }, { "B103", "103" },
+		     { "V22B", "122" }, { "V32B", "132" }, { "V34", "34" } }) {
+		std::string a = std::string("ATX3;AT+MS=") + n;
+		std::string o = std::string("ATX3;AT+MS=") + ms;
+		add("broadcom", std::string("broadcom_") + ms + "_broadcom_calls",
+		    "broadcom", "open", a, { "NET=8000:9600:ulaw", "PROTO_B=" + o });
+		add("broadcom", std::string("broadcom_") + ms + "_open_calls",
+		    "open", "broadcom", o, { "NET=9600:8000:ulaw", "PROTO_B=" + a });
+	}
+	/* V.90: the Broadcom modem as the analogue modem, the open one as the
+	   digital modem */
+	for (std::string law : { "ulaw", "alaw" })
+		add("broadcom", "broadcom_v90_" + law, "broadcom", "open8",
+		    "ATX3;AT+MS=V90",
+		    { "NET_LOOP=0.45", "NET=8000:8000:" + law, "DSP_G711=" + law,
+		      "EXPECT_B=V.90 connect 5[0-9]{4}/", "PROTO_B=ATX3;AT+MS=90" });
+	/* V.92: quick connect with short phase 2 on the second call */
+	add("broadcom", "broadcom_v92_qc", "broadcom", "open8", "ATX3;AT+MS=V92",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "CALLS=2", "DIAL=5551234", "ANSWER_AFTER=3", "STREAM=3",
+	      "EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2.*V.90 "
+	      "connect", "PROTO_B=ATX3;AT+MS=92" });
 
 	/* --- the PCTel HSP soft modem (8000 Hz) and the open modem (9600
 	   Hz): V.32bis and V.34 both ways with its +MS set to them */

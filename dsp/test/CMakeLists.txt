@@ -237,6 +237,23 @@ if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 	message(STATUS "tests: the Conexant HSF soft modem: ${DMODEM_HSF_DIR}")
 endif()
 
+# Broadcom's V.92 soft modem for Windows as a peer (half_win.c): its WDM
+# driver (BCMSM.sys 3.4.19, a PE image half_win loads and runs on a
+# Windows kernel of its own) and its INF (the registry)
+set(DMODEM_BROADCOM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/broadcom" CACHE
+	PATH "BCMSM.sys and BCMSMwxp.inf of the Broadcom soft modem (interop tests)")
+if(EXISTS "${DMODEM_BROADCOM_DIR}/BCMSM.sys")
+	add_executable(half_win half_win.c)
+	target_compile_definitions(half_win PRIVATE
+		WIN_SYS="${DMODEM_BROADCOM_DIR}/BCMSM.sys"
+		WIN_INF="${DMODEM_BROADCOM_DIR}/BCMSMwxp.inf")
+	target_compile_options(half_win PRIVATE ${DMODEM_M32} -g -O1)
+	target_link_options(half_win PRIVATE ${DMODEM_M32} -no-pie
+		-Wl,-z,noexecstack)
+	target_link_libraries(half_win PRIVATE m)
+	message(STATUS "tests: the Broadcom soft modem: ${DMODEM_BROADCOM_DIR}")
+endif()
+
 # the interop tests: calls between the open modem and each of the modems
 # above (interop_test.cpp, through interop_call.cpp: what a call does is in
 # its environment, NET for netsim's G.711 network, STREAM, EXPECT_B, ...).
@@ -254,7 +271,7 @@ target_link_libraries(interop_call PRIVATE interop_driver)
 set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""
 	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
 	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
-foreach(_p agere sm56 spandsp pctel hsf)
+foreach(_p agere sm56 spandsp pctel hsf win)
 	if(TARGET half_${_p})
 		string(TOUPPER ${_p} _u)
 		list(APPEND _progs "HALF_${_u}=\"$<TARGET_FILE:half_${_p}>\"")
@@ -285,3 +302,6 @@ foreach(_l sm56 pctel hsf)
 		interop_tests(${_l})
 	endif()
 endforeach()
+if(TARGET half_win)
+	interop_tests(broadcom)
+endif()
