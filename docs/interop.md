@@ -18,7 +18,17 @@ hardware: the core gives it the line's samples at 9600 Hz as ours gives
 the open pumps theirs (`half_smartlink8`, at 8000 Hz, is built as well,
 but the library does not work at that rate). `ctest -L smartlink -j16`
 runs the tests; `smartlink_log.py` decodes the library's own debug lines
-(`docs/dsp/v92.md`). Results at the time of writing:
+(`docs/dsp/v92.md`).
+
+The library is `modem/dsplibs.o` of slmodem-2.9.11-20110321, as Debian
+ships it (`sl-modem_2.9.11~20110321.orig.tar.gz`, sha256
+`1f3e56d0...3cf0b379`; it came with slmodemd 2.9.11 in D-Modem's first
+commit). It was built on 22 September 2005 (GCC 3.4.2), and its parts
+give their own versions: the V.90 modem 2.98 (25-Mar-04, "Modified Quick
+Connect without Memory + Train Time + Constel Power"), the V.92 modem
+1.1 (9-Apr-01, "Memory cleanups + dil descriptor crash fix"), a "V.92
+Lite" build. slmodem's changes after 2.9.11 are to its drivers only.
+Results at the time of writing:
 
 | `AT+MS=` | Smart Link caller → open answerer | open caller → Smart Link answerer |
 |---|---|---|
