@@ -88,6 +88,7 @@ as it is.
 | `dsp/test/interop_call.cpp` | The BULK write loop had no time limit; the fax relays could hang at the join after a modem died; children outlived a dead driver (now `PR_SET_PDEATHSIG`); a reaped pid could get a SIGKILL |
 | `dsp/test/half_hsf.c` | The last character of a ';' comment in an .inf value was taken as a byte |
 | `dsp/test/interop_call.cpp` | A fax page was found by its first 128 bits only when all were right. The original library's V.17 receiver at 12000 bit/s decides one point wrong about once a page, depending on how its 20 ms frames fall on the trainings, and in one of those alignments it is in those bits: `fax_interop_121_open_sends` failed about half the time. Now 8 of them may be wrong; the page's error count takes them |
+| `dsp/test/interop_call.cpp` | MIDCALL dropped the remote's data with the commands' answers: what came ahead of the escape's OK, and what followed `ATO`'s CONNECT in the same read. `agere_v92_moh_grant` failed so once in a full run (data right behind the CONNECT) |
 | `asterisk/test/sip_call.py` | A traceback instead of FAIL when slmodemd gave no pty or went away |
 
 ## Checked and left as they are
@@ -147,8 +148,6 @@ None left.
 
 ### Tests
 
-- **likely bug** (low confidence) — `interop_call.cpp` MIDCALL: data the
-  remote sent around "+++" is dropped with the commands' answers.
 - **likely bug** — `half_agere.c`, `half_sm56.c`: an interrupt raised
   while the library polls the clock is never delivered (edge, not level,
   triggered); a bus master halted at LVI does not resume when LVI moves.

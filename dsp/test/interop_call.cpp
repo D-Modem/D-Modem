@@ -780,6 +780,15 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 					/* the remote gets it too */
 					sent[k] += "+++";
 					dte.wait_from(k, ok_cr, kept, 5);
+					/* the remote's data that came ahead of the
+					   OK (on its way when the modem escaped) */
+					std::string held = dte.buf[k].substr(kept);
+					size_t ok = held.rfind("OK\r");
+					if (ok != std::string::npos)
+						held.erase(ok >= 2 &&
+							   !held.compare(ok - 2, 2,
+									 "\r\n") ?
+							   ok - 2 : ok);
 					for (auto &c : split(mid.cmds, ';')) {
 						if (c.compare(0, 5, "WAIT ") == 0) {
 							dte.pump(atof(c.c_str() + 5));
@@ -795,11 +804,23 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 					size_t mark = dte.buf[k].size();
 					dte.cmd(k, "ATO");
 					dte.wait_from(k, connect_b, mark, 60);
+					/* ATO's echo and result; the remote's data
+					   may follow at once */
+					std::string ato = dte.buf[k].substr(mark);
+					std::smatch r;
+					size_t end = ato.size();
+					if (std::regex_search(ato, r, connect_b)) {
+						end = r.position(0) + r.length(0);
+						if (end < ato.size() &&
+						    ato[end] == '\n')
+							end++;
+					}
 					say("%s: ATO %s\n", name,
-					    show(dte.buf[k].substr(mark)).c_str());
+					    show(ato.substr(0, end)).c_str());
 					/* what the commands put in its buffer is
-					   not data */
+					   not data; what came around them is */
 					dte.buf[k].resize(kept);
+					dte.buf[k] += held + ato.substr(end);
 				}
 				char line[16];
 				snprintf(line, sizeof(line), "%06d ", n);
