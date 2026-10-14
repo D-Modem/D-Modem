@@ -8,7 +8,8 @@
  *
  *    Prints "created <name>: <pty>" for interop_call.  MODEM_NAME names it,
  *    MODEM_REALTIME=1 runs it no faster than the sample clock (with
- *    PIPE_SYNC it runs so on hook anyway, PipeModem::pace()), and
+ *    PIPE_SYNC it runs so on hook anyway, PipeModem::pace()),
+ *    MODEM_SPEED=<x> else no faster than x times the sample clock, and
  *    MODEM_REC=<prefix> records its line in <prefix>.in and .out.
  *
  */
@@ -47,6 +48,8 @@ int main(int argc, char *argv[])
 	slm::PipeModem *pm = new slm::PipeModem(name, MODEM_RATE, opt.country,
 						 3, 4);
 	pm->set_realtime(getenv("MODEM_REALTIME") != NULL);
+	pm->set_speed(getenv("MODEM_SPEED") ? atof(getenv("MODEM_SPEED")) :
+		      0);
 	pm->set_record(getenv("MODEM_REC"));
 	printf("created %s: %s\n", name, pm->pty().name());
 	fflush(stdout);

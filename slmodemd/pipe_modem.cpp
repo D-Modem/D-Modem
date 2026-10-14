@@ -118,25 +118,29 @@ int PipeModem::stop(dcore::Modem &)
    with the protocol's timers; with PIPE_SYNC on hook as well (the
    DTE's commands then meet the samples they would in real time,
    however late the DTE answers what the modem said), and off hook as
-   fast as it goes, the timers on the line's clock */
+   fast as it goes (speed_ times the sample clock at most), the timers
+   on the line's clock */
 void PipeModem::pace(int samples)
 {
 	struct timeval tv;
-	double now, ahead;
-	if (!realtime_ && !(sync_ && !m_->started())) {
-		clock_done_ = 0;        /* (it starts anew on hook) */
-		return;
+	double now, ahead, speed;
+	speed = realtime_ || (sync_ && !m_->started()) ? 1 : speed_;
+	if (speed != clock_speed_) {
+		clock_speed_ = speed;
+		clock_done_ = 0;        /* (it starts anew) */
 	}
+	if (speed <= 0)
+		return;
 	gettimeofday(&tv, NULL);
 	now = tv.tv_sec + tv.tv_usec * 1e-6;
 	if (clock_done_ == 0 ||
-	    now - clock_start_ - clock_done_ / rate_ > 0.5) {
+	    now - clock_start_ - clock_done_ / rate_ / speed > 0.5) {
 		/* (re)start the clock after a pause */
 		clock_start_ = now;
 		clock_done_ = 0;
 	}
 	clock_done_ += samples;
-	ahead = clock_start_ + clock_done_ / rate_ - now;
+	ahead = clock_start_ + clock_done_ / rate_ / speed - now;
 	if (ahead > 0.002)
 		usleep(ahead * 1e6);
 }

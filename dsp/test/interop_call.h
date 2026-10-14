@@ -11,12 +11,12 @@
  *    (and passes the rest on to the modems and netsim: DSP_*, NET_*, ...).
  *
  *    MODEM_REALTIME=1 runs the modems in real time (the original
- *    library's old core keeps its timers on the wall clock; a fax DTE has
- *    to keep up with T.30: fax calls always do).  Without it they run as
- *    fast as they can, a little nicer than the rest, keeping time by the
- *    line's samples; a data call's seconds (STREAM, MIDCALL, WAIT,
- *    ANSWER_AFTER, HANGUP_WAIT, how long it waits for the modems) are
- *    then the line's, by netsim's clock (NET_CLOCK_FD).
+ *    library's old core keeps its timers on the wall clock).  Without it
+ *    they run as fast as they can, a little nicer than the rest, keeping
+ *    time by the line's samples; a call's seconds (STREAM, MIDCALL, WAIT,
+ *    ANSWER_AFTER, HANGUP_WAIT, the fax's pauses, how long it waits for
+ *    the modems) are then the line's, by netsim's clock (NET_CLOCK_FD)
+ *    or for fax by the driver's relay of the line.
  *
  */
 
@@ -67,6 +67,10 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
  *   RECORD=<dir>      the line both ways (a2b.raw, b2a.raw, 16 bit), and
  *                     the page sent and received (page.tx, page.rx)
  *   SHOW_TCF=1        the TCF's non-zero octets
+ *   LINE_RATE=<Hz>    unpaced, modemA's sample rate, for the line's clock
+ *                     (8000)
+ *   MODEM_SPEED=<x>   unpaced, no faster than x times real time (10: the
+ *                     driver's answers in time for T.30's turnarounds)
  */
 bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 	      const std::string &setup = "ATX3");

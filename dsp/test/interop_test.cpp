@@ -15,11 +15,11 @@
  *    alone.
  *
  *    The calls run as fast as the modems can (they keep time by the
- *    line's samples, and so does the call by netsim's clock), but for
- *    those of the original library, whose core (slmodemd's old one)
- *    keeps its timers on the wall clock, and the fax calls, whose DTE
- *    (interop_call) has to keep up with T.30: those in real time
- *    (MODEM_REALTIME=1; set it for ctest to run every call so).
+ *    line's samples, and so does the call, by netsim's clock or for fax
+ *    by interop_call's relay of the line), but for those of the
+ *    original library, whose core (slmodemd's old one) keeps its timers
+ *    on the wall clock: those in real time (MODEM_REALTIME=1; set it
+ *    for ctest to run every call so).
  *
  */
 
@@ -635,13 +635,13 @@ public:
 	explicit InteropCall(Call c) : c_(std::move(c)) {}
 
 	/* the call with its environment and NETSIM, its LOG_DIR and (the
-	   original library's calls and the fax calls) MODEM_REALTIME=1 set;
-	   it must go through */
+	   original library's calls) MODEM_REALTIME=1 set; it must go
+	   through */
 	void TestBody() override
 	{
 		Env env;
 		env.set(std::string("NETSIM=") + NETSIM);
-		if (c_.fax || c_.a == "blob" || c_.b == "blob")
+		if (c_.a == "blob" || c_.b == "blob")
 			env.set("MODEM_REALTIME=1");
 		env.set(std::string("LOG_DIR=") + INTEROP_LOG_DIR "/" + c_.name);
 		for (auto &e : c_.env)

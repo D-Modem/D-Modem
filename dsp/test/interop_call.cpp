@@ -55,15 +55,17 @@ void sleep_s(double s)
 		std::this_thread::sleep_for(std::chrono::duration<double>(s));
 }
 
-/* a data call's time, for what it does when (STREAM, MIDCALL, the
-   pauses) and how long it waits for the modems: with them unpaced (no
+/* a call's time, for what it does when (STREAM, MIDCALL, the pauses)
+   and how long it waits for the modems: with them unpaced (no
    MODEM_REALTIME) they keep time by the line's samples, which run ahead
-   of the wall clock, and so does this, by netsim's NET_CLOCK_FD; with
-   them paced (or no netsim), and while the line lags behind (or stops),
+   of the wall clock, and so does this, by netsim's NET_CLOCK_FD (a data
+   call) or by the driver's own relay of the line (a fax call); with
+   them paced (or neither), and while the line lags behind (or stops),
    the wall clock's */
 class CallClock {
 	int fd_ = -1;
 	long long *line_ = nullptr;     /* the line's microseconds */
+	long long own_ = 0;             /* (own_line()'s) */
 	double start_ = now();
 
 public:
@@ -72,7 +74,7 @@ public:
 	CallClock &operator=(const CallClock &) = delete;
 	~CallClock()
 	{
-		if (line_)
+		if (line_ && line_ != &own_)
 			munmap(line_, sizeof(*line_));
 		if (fd_ >= 0)
 			close(fd_);
@@ -92,8 +94,11 @@ public:
 		line_ = (long long *)m;
 		return true;
 	}
+	/* the line's microseconds for the caller to set (atomically), as
+	   its relay of the line passes the samples on */
+	long long *own_line() { return line_ = &own_; }
 	/* netsim's NET_CLOCK_FD (-1: none) */
-	int fd() const { return line_ ? fd_ : -1; }
+	int fd() const { return line_ && line_ != &own_ ? fd_ : -1; }
 	/* whether the line keeps the time */
 	bool line() const { return line_ != nullptr; }
 	/* seconds since the call's start */
@@ -1064,7 +1069,8 @@ std::string unshield(const std::string &data, bool *ended, size_t *end)
 }
 
 struct FaxDte : Dte {
-	/* polls of 20 ms: the T.30 timing */
+	/* polls of 20 ms: the T.30 timing (the caller makes them shorter
+	   for the line's clock, which runs fast) */
 	FaxDte() : Dte(0.02) {}
 
 	/* a result code: the text before it and the code ("" if none came),
@@ -1072,8 +1078,8 @@ struct FaxDte : Dte {
 	std::string wait_code(int k, const std::regex &pat, double t,
 			      std::string *before = nullptr)
 	{
-		double end = now() + t;
-		while (now() < end) {
+		double end = this->t() + t;
+		while (this->t() < end) {
 			pump(0.02);
 			std::smatch m;
 			if (std::regex_search(buf[k], m, pat)) {
@@ -1136,8 +1142,8 @@ struct Fax {
 	std::string recv_until_etx(int k, double t, std::string *r,
 				   const char *what)
 	{
-		double end = now() + t;
-		while (now() < end) {
+		double end = dte.t() + t;
+		while (dte.t() < end) {
 			dte.pump(what ? 0.02 : 0.05);
 			bool ended;
 			size_t j;
@@ -1196,7 +1202,7 @@ struct Fax {
 		      int tries = 3)
 	{
 		write_all(dte.fd[rx], "AT+FRH=3\r");
-		sleep_s(0.1);
+		dte.pump(0.1);
 		for (int attempt = 0; attempt < tries; attempt++) {
 			std::string r = cmd(tx, "AT+FTH=3", &fax_result(), 10);
 			if (r != "CONNECT")
@@ -1219,7 +1225,7 @@ struct Fax {
 				return;
 			if (!r.empty())     /* gave up on a false start */
 				write_all(dte.fd[rx], "AT+FRH=3\r");
-			sleep_s(0.1);
+			dte.pump(0.1);
 		}
 		fail(std::string(FAX_NAME[rx]) + " did not get the frames");
 	}
@@ -1271,48 +1277,83 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 	std::string log_dir = env("LOG_DIR", ".");
 	make_dirs(log_dir);
 	std::string record = env("RECORD");
+	/* unpaced, the modems keep time by the line, and so does the call:
+	   by our relay of it (A's samples at LINE_RATE); they run nicer
+	   than the paced calls next to them.  Our modem takes the DTE's
+	   commands at every half frame (PIPE_SYNC=48: its timers on the
+	   line's clock, the commands in at once for class 1), and goes ten
+	   times as fast as real time at most (MODEM_SPEED): the fax modems
+	   take so little that the line would go a few hundred times as
+	   fast, and the milliseconds we take to answer what a modem said
+	   would be most of a second of it, past T.30's turnarounds */
+	bool unpaced = !getenv("MODEM_REALTIME");
+	int rate = atoi(env("LINE_RATE", "8000").c_str());
+	CallClock clock;
+	long long *line_us = unpaced && rate > 0 ? clock.own_line() : nullptr;
+	std::vector<std::string> menv;
+	if (unpaced && !getenv("PIPE_SYNC"))
+		menv.push_back("PIPE_SYNC=48");
+	if (unpaced && !getenv("MODEM_SPEED"))
+		menv.push_back("MODEM_SPEED=10");
 	Pipe ab, ba;
 	/* the line's writers first: the relays end on their end */
 	std::vector<int> fds = { ab.w, ba.w, ab.r, ba.r };
 	int a_in = ba.r, b_in = ab.r;
 	std::vector<std::thread> relays;
-	if (!record.empty()) {
+	if (!record.empty() || line_us) {
 		/* RECORD=<dir>: the line both ways (16 bit, the modems'
 		   rate) */
-		make_dirs(record);
+		if (!record.empty())
+			make_dirs(record);
 		Pipe ra, rb;
 		for (int f : { ra.r, ra.w, rb.r, rb.w })
 			fds.push_back(f);
-		/* src to dst until src ends, recorded into path as it goes */
-		auto relay = [](int src, int dst, std::string path) {
-			FILE *f = fopen(path.c_str(), "wbe");
+		/* src to dst until src ends, recorded into path as it goes
+		   (if any), its samples counted into *us (if any) */
+		auto relay = [rate](int src, int dst, std::string path,
+				    long long *us) {
+			FILE *f = path.empty() ? nullptr :
+				fopen(path.c_str(), "wbe");
 			char b[4096];
 			ssize_t n;
+			long long bytes = 0;
 			while ((n = read(src, b, sizeof(b))) > 0) {
 				if (f) {
 					fwrite(b, 1, n, f);
 					fflush(f);
 				}
 				write_all(dst, std::string(b, n));
+				bytes += n;
+				if (us)
+					__atomic_store_n(us, bytes / 2 * 1000000 /
+							 rate, __ATOMIC_RELAXED);
 			}
 			if (f)
 				fclose(f);
 		};
-		relays.emplace_back(relay, ab.r, rb.w, record + "/a2b.raw");
-		relays.emplace_back(relay, ba.r, ra.w, record + "/b2a.raw");
+		std::string rec = record.empty() ? "" : record + "/";
+		relays.emplace_back(relay, ab.r, rb.w,
+				    rec.empty() ? "" : rec + "a2b.raw",
+				    line_us);
+		relays.emplace_back(relay, ba.r, ra.w,
+				    rec.empty() ? "" : rec + "b2a.raw",
+				    nullptr);
 		a_in = ra.r;
 		b_in = rb.r;
 	}
 	Modem m[2];
 	Fax fax;
 	FaxDte &dte = fax.dte;
+	dte.clock = &clock;
+	if (line_us)
+		dte.slice = 0.002;
 	bool page_ok = false;
-	/* the DTE (we) has to keep up with the T.30 timers */
-	std::vector<std::string> rt = { "MODEM_REALTIME=1" };
 	try {
-		if (!m[0].start(exe_a, "modemA", a_in, ab.w, "3", rt,
+		for (auto &x : m)
+			x.nice_inc = unpaced ? 10 : 0;
+		if (!m[0].start(exe_a, "modemA", a_in, ab.w, "3", menv,
 				log_dir + "/modemA.log") ||
-		    !m[1].start(exe_b, "modemB", b_in, ba.w, "3", rt,
+		    !m[1].start(exe_b, "modemB", b_in, ba.w, "3", menv,
 				log_dir + "/modemB.log"))
 			fail("a modem did not start");
 		for (int k = 0; k < 2; k++)
@@ -1338,7 +1379,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 				if (fax.cmd(k, c) != "OK")
 					fail("setup");
 		}
-		double t0 = now();
+		double t0 = dte.t();
 		write_all(dte.fd[1], "ATA\r");
 		write_all(dte.fd[0], "ATD\r");
 		std::string r = dte.wait_code(1, fax_result(), 30);
@@ -1413,7 +1454,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 			page += (char)(x >> 56);
 		}
 		write_all(dte.fd[1], "AT+FRM=" + std::to_string(page_mod) + "\r");
-		sleep_s(0.05);
+		dte.pump(0.05);
 		if (fax.cmd(0, "AT+FTS=8") != "OK")
 			fail("FTS");
 		r = fax.cmd(0, "AT+FTM=" + std::to_string(page_mod),
@@ -1489,7 +1530,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		fax.send_frames(0, { std::string("\xff\x13\xfb", 3) });
 		for (int k = 0; k < 2; k++)
 			fax.cmd(k, "ATH");
-		say("call took %.1f s\n", now() - t0);
+		say("call took %.1f s\n", dte.t() - t0);
 		say("%s\n", page_ok ? "PASS" : "FAIL: page");
 	} catch (const Fail &f) {
 		say("FAIL: %s\n", f.msg.c_str());

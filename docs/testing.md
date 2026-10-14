@@ -57,13 +57,19 @@ run, however late the driver answers:
 - the data that comes around a call's mid-call commands (`MIDCALL`) is
   kept: before the escape's OK and right after `ATO`'s CONNECT.
 
-Two kinds of call still run in real time (`MODEM_REALTIME=1`) and mostly
-wait:
+The fax calls (`interop_call --fax`) keep time by the driver's own relay
+of the line (A's samples at `LINE_RATE`, 8000), and go ten times as fast
+as real time at most (`MODEM_SPEED=10`, `half_open`'s): the fax modems
+take so little that the line would otherwise go a few hundred times as
+fast, and the milliseconds the driver takes to answer what a modem said
+(it plays T.30 for both machines) would be most of a second of the line,
+past T.30's turnarounds. At ten times they take the turnarounds the
+paced calls did, give the same TCF and pages, and take a tenth of the
+time.
 
-- the original library's: slmodemd's old core, which it runs on, keeps
-  its timers on the wall clock;
-- the fax calls: `interop_call` plays T.30 for both machines and has to
-  keep up with its timers.
+The original library's calls still run in real time (`MODEM_REALTIME=1`)
+and mostly wait: slmodemd's old core, which it runs on, keeps its timers
+on the wall clock.
 
 The unpaced calls run a little nicer (`nice` 10) than the rest, so that
 the calls in real time next to them get the processor first. Each takes
@@ -132,9 +138,10 @@ learn.
 
 `fax_interop` does the same with `AT+FCLASS=1`. `interop_call --fax` plays
 the T.30 side of both fax machines: CSI/DIS, DCS, TCF, CFR, one page (for
-V.17 with the short train), EOP, MCF and DCN. The modems run in real time
-so that the driver keeps up with the T.30 timers. Results at the time of
-writing:
+V.17 with the short train), EOP, MCF and DCN. With the original library
+the modems run in real time, so that its timers and the driver keep up
+with T.30's (with the Agere modem, at ten times, above). Results at the
+time of writing:
 
 | Modulation | original sender → open receiver | open sender → original receiver |
 |---|---|---|

@@ -31,9 +31,11 @@ public:
 	Pty &pty() { return pty_; }
 
 	/* MODEM_REALTIME: no faster than the sample clock (with PIPE_SYNC
-	   it is so on hook anyway); MODEM_REC: the line both ways into
-	   <prefix>.in and <prefix>.out */
+	   it is so on hook anyway); MODEM_SPEED=<x>: else no faster than x
+	   times the sample clock (0: as fast as it goes); MODEM_REC: the
+	   line both ways into <prefix>.in and <prefix>.out */
 	void set_realtime(bool on) { realtime_ = on; }
+	void set_speed(double x) { speed_ = x; }
 	void set_record(const char *prefix) { record_ = prefix; }
 
 	/* the main loop of any number of them, until stop() */
@@ -71,6 +73,7 @@ private:
 	char pend_[8192];
 	int npend_ = 0;
 	bool realtime_ = false;
+	double speed_ = 0;
 	/* PIPE_SYNC=<samples>: the DTE's input only every that many samples
 	   of the line, the timers on the line's clock and the line no
 	   faster than real time on hook, so that a test's commands meet
@@ -89,6 +92,7 @@ private:
 	void *rec_in_ = nullptr, *rec_out_ = nullptr;
 	bool rec_tried_ = false;        /* the files opened (or not) */
 	double clock_start_ = 0, clock_done_ = 0;
+	double clock_speed_ = 0;        /* what pace() last went at */
 };
 
 } // namespace slm

@@ -236,9 +236,9 @@ endif()
 # its environment, NET for netsim's G.711 network, STREAM, EXPECT_B, ...).
 # One test program a label; each call writes its modem logs to
 # logs/<test>/.  The original library's
-# calls and the fax calls run in real time and mostly wait; the others run
-# as fast as they can, on the line's clock, a little nicer (each takes a
-# processor while it runs).  So ctest -j can be some four times the
+# calls run in real time and mostly wait; the others run as fast as they
+# can (fax: ten times real time), on the line's clock, a little nicer
+# (each takes a processor while it runs).  So ctest -j can be some four times the
 # processors (-j16 on 4).  interop_call makes one by hand.
 add_library(interop_driver STATIC interop_call.cpp)
 target_compile_options(interop_driver PRIVATE -Wall -O2 -g)
