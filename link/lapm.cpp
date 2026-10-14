@@ -817,9 +817,13 @@ void Lapm::rx_unnum_rsp(Frame *f)
 			}
 			break;
 		case IDLE:
-			if (!u_pf(f)) {
-				was_up_ = true;
-				link_->status(Status::Up);
+			/* unsolicited, F = 0: the remote asks for the link
+			   (8.8/V.42), an SABME of ours (our XID's answer no
+			   longer awaited), unless it has been up in this
+			   call (released: the call ends) */
+			if (!u_pf(f) && !was_up_) {
+				config_ = false;
+				connect();
 			}
 			break;
 		}

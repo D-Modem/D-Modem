@@ -19,6 +19,7 @@ as it is.
 | `link/lapm.cpp` | The P0 direction bits were read the wrong way round in an XID response |
 | `link/link.cpp` | The detection phase's timer kept running after a hangup: a CONNECT while hanging up (DetectHangup) |
 | `link/hdlc.cpp` | A frame of fewer than 4 octets was not a size error |
+| `link/lapm.cpp` | An unsolicited DM with F = 0 while LAPM was idle reported the link up, with neither SABME nor UA. V.42 (8.8, Table 9) has it ask for the link: now an SABME, until the link has been up in the call (after a release it is ignored) (LapmUnsolicitedDm) |
 | `core/modem.cpp` | `stop_call()` left a caller ID stop armed, which then killed the next call |
 | `core/at.cpp` | `AT*B`, `AT\A` and `AT+M<x>` (other than `+MS`) answered with the result of the command before them on the line, ERROR at its start. Now `*B` and `\A0`..`3` OK, `\A` with another digit and `+M<x>` ERROR (the old core did the same; `at.expect`) |
 | `core/modem.cpp` | A call that ended online kept the DTE's data that had not gone out, and the AT interpreter later took it for commands: a line of it that began with AT ran (`data_drop`). It is dropped now (in online command state the buffer holds commands, and they stay) |
@@ -115,8 +116,6 @@ None left.
 
 ### Data link and core
 
-- **likely bug** (low confidence) — `lapm.cpp`: an unsolicited DM with
-  F = 0 while idle reports the link up without SABME/UA.
 - **risk** — `lapm.cpp` `t401_timeout()`: `> MAX_RTX` allows one
   retransmission more than N400 (kept as slmodemd had it).
 - **risk** — `hdlc.cpp`: the originator's detection phase has no T400

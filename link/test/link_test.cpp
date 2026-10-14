@@ -548,6 +548,62 @@ TEST(Link, LapmBadFrames)
 	transfer("lapm after bad frames", p, 2000, 2000, 9600 * 20);
 }
 
+/* frames into l from the line (rounds of 600 bits each way, as from the
+   other side), and the frames l sent meanwhile */
+static std::vector<std::vector<uint8_t>> exchange(Link &l,
+	const std::vector<std::vector<uint8_t>> &frames, int rounds)
+{
+	NullOwner o;
+	Link side;
+	side.init(&o, true, Config());
+	Hdlc tx, rx;
+	FrameSource src, dst;
+	tx.start(&side);
+	rx.start(&side);
+	tx.set_framer(&src, true);
+	rx.set_framer(&dst, false);
+	src.tx = frames;
+	uint8_t bits[600];
+	for (int k = 0; k < rounds; k++) {
+		tx.get_bits(1, bits, sizeof(bits));
+		l.put_bits(1, bits, sizeof(bits));
+		l.get_bits(1, bits, sizeof(bits));
+		rx.put_bits(1, bits, sizeof(bits));
+	}
+	return dst.rx;
+}
+
+/* an unsolicited DM with F = 0 while LAPM is idle: the remote asks for
+   the link (8.8/V.42), so an SABME, not the link up without one; once
+   the link was up and released, it is ignored */
+TEST(Link, LapmUnsolicitedDm)
+{
+	const std::vector<uint8_t> dm = { 0x01, 0x0f };  /* the caller's DM, F 0 */
+	const std::vector<uint8_t> sabme = { 0x01, 0x7f }; /* the answerer's, P 1 */
+	Dte d("answerer");
+	Link l;
+	l.init(&d, false, lapm_config(0));
+	l.start(true, false);
+	std::vector<std::vector<uint8_t>> out = exchange(l, { dm }, 4);
+	CHECK(!d.up, "the link up on an unsolicited DM");
+	CHECK(std::find(out.begin(), out.end(), sabme) != out.end(),
+	      "no SABME after the DM (%zu frames)", out.size());
+
+	rnd_state = 12345;
+	Pair p(lapm_config(0), lapm_config(0));
+	p.start(true, true);
+	p.run(9600 * 3);
+	CHECK(p.dc.up && p.da.up, "LAPM up");
+	p.lc.disconnect();
+	p.run(9600 * 2);
+	CHECK(p.da.released, "answerer released after DISC");
+	p.da.up = false;
+	out = exchange(p.la, { dm }, 4);
+	CHECK(!p.da.up, "up again on a DM after the release");
+	CHECK(std::find(out.begin(), out.end(), sabme) == out.end(),
+	      "an SABME after the release");
+}
+
 /* V.42bis when one of them has no V.44 (as the caller, as the
    answerer) */
 TEST(Link, LapmV42bis)

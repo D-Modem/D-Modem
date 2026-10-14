@@ -43,7 +43,10 @@ V.44 round trips (text, noise, escape characters, repeats, small
 dictionaries, flushes), V.44's transparent mode, HDLC framing with a bit
 error, and two Links back to back bit by bit: detection, XID, V.44 both
 ways, V.42bis when either has no V.44, bit errors (REJ and T401 recovery),
-a slow DTE (RNR), DISC, async, and a LAPM answerer with an async caller.
+a slow DTE (RNR), DISC, async, a LAPM answerer with an async caller,
+frames LAPM must drop, and an unsolicited DM (F = 0) while idle, which
+asks for the link (8.8/V.42: an SABME, not the link up; ignored after a
+release).
 
 ## V.44
 
