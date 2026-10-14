@@ -48,6 +48,7 @@ as it is.
 | `dsp/v92.cpp` | A leftover `TMP_LC_MIN` test switch changed the constellation |
 | `dsp/v92.cpp` | A fast parameter exchange with the prefilter that stayed at its rate (after a slip's exchange had changed the precoder) built its CPd from the first design's gap with the new precoder's number of points; `pf_cpd()` ignored `pf_points()` failing and `lc` past `V92_LC_MAX`. At the rate it has the CPd now stays as it is, and `pf_cpd()` fails (the old CPd kept) when the points don't fit (`interop_v92_slip_fpe`) |
 | `dsp/v34_modem.cpp` | The Ja debug dump read past the DIL's arrays |
+| `dsp/v34_modem.cpp` | With precoding, a renegotiation on a line where the training kept no good equalizer (mse never under 0.02) trained from the equalizer with 1 + H(z) in it, and E put 1 + H(z) in again (60 taps). The equalizer 1 + H(z) goes into is now the one to go back to, and it never goes in twice (pump_test `V34Precoding`, with `DSP_V34_PRECODE_MIN`) |
 | `dsp/v90.h` | `v90_tx_sample()` was declared but never defined |
 | `dsp/dp_fsk.cpp`, `dp_v22.cpp`, `dp_v32.cpp` | An early return (another pump, an error) left the rest of the output block unwritten: whatever the host's buffer held went to the line. The block is now cleared first |
 | `dsp/dsp_glue.cpp` | Caller ID: a private ('P') number or name was reported as out of area ('O') |
@@ -96,8 +97,6 @@ bug*, *risk* (a failure needs unusual input or timing) or *cleanup*.
 
 ### V.34, V.90, V.92
 
-- **risk** (low confidence) — `v34_modem.cpp`: with precoding, a
-  renegotiation without a good saved equalizer applies 1 + H(z) twice.
 - **risk** — the FSK, V.22 and V.32 answerers wait 1 s before the answer
   tone; V.25 asks for 1.8 to 2.5 s.
 

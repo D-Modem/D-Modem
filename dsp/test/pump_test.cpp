@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include "dsplibs.h"
 #include "loopback.h"
 
 struct Pumps {
@@ -141,6 +142,38 @@ INSTANTIATE_TEST_SUITE_P(Caller, V34Info0, testing::Values(
 	[](const testing::TestParamInfo<Info0Case> &i) {
 		return std::string(i.param.name);
 	});
+
+/* precoding (from a gain of 0.3 dB on, DSP_V34_PRECODE_MIN) on a line
+   too noisy for the training to keep a good equalizer, and a
+   renegotiation (DSP_V34_RENEG): the precoder's 1 + H(z) goes into the
+   equalizer once each time, never on top of the last (the log says) */
+TEST(V34Precoding, RenegotiationAppliesItOnce)
+{
+	setenv("DSP_V34_PRECODE_MIN", "0.3", 1);
+	setenv("DSP_V34_RENEG", "6000:3", 1);
+	setenv("DSP_DEBUG", "2", 1);
+	testing::internal::CaptureStderr();
+	LoopbackResult r = loopback_run(line(8, 14, 25));
+	std::string log = testing::internal::GetCapturedStderr();
+	unsetenv("DSP_V34_PRECODE_MIN");
+	unsetenv("DSP_V34_RENEG");
+	unsetenv("DSP_DEBUG");
+	dsplibs_debug_level = 0;
+
+	size_t at = 0;
+	int once = 0;
+	while ((at = log.find("into the equalizer: 48 taps", at)) !=
+	       std::string::npos) {
+		once++;
+		at++;
+	}
+	EXPECT_NE(log.find("S in data mode"), std::string::npos)
+		<< "no renegotiation";
+	EXPECT_EQ(once, 4) << "1 + H(z) from the plain equalizer";
+	EXPECT_EQ(log.find("into the equalizer: 54 taps"), std::string::npos)
+		<< "1 + H(z) twice";
+	EXPECT_TRUE(r.side[0].connected && r.side[1].connected);
+}
 
 INSTANTIATE_TEST_SUITE_P(Automode, PumpLoopback, testing::Values(
 	Pumps{ "v22bis_to_v34", automode(122, 8, 25) },

@@ -1071,7 +1071,23 @@ void V34Rx::reneg_s()
 void V34Rx::precode_eq(const V34Params *p)
 {
 	cplx eq[QAM_MAX_EQ];
-	int i, k, len = qam.eq_len + 6;
+	int i, k, len;
+
+	/* never on top of an earlier 1 + H(z): from the equalizer
+	   without it */
+	if (qam.eq_len > V34_EQ_LEN && have_good) {
+		memcpy(qam.eq, good_eq, sizeof(qam.eq));
+		qam.eq_len = V34_EQ_LEN;
+	}
+	/* the one a renegotiation goes back to (S-bar), when the training
+	   kept none: this one, as trained */
+	if (!have_good) {
+		memcpy(good_eq, qam.eq, sizeof(good_eq));
+		for (i = qam.eq_len; i < QAM_MAX_EQ; i++)
+			good_eq[i] = cplx_make(0, 0);
+		have_good = 1;
+	}
+	len = qam.eq_len + 6;
 
 	if (len > QAM_MAX_EQ)
 		len = QAM_MAX_EQ;
@@ -1085,6 +1101,8 @@ void V34Rx::precode_eq(const V34Params *p)
 						 cplx_mul(h, qam.eq[i - 2 * k]));
 		}
 	}
+	DSP_DBG("v34 rx: the precoder's 1 + H(z) into the equalizer: %d "
+		"taps -> %d\n", qam.eq_len, len);
 	memcpy(qam.eq, eq, len * sizeof(cplx));
 	qam.eq_len = len;
 }

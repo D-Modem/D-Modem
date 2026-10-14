@@ -462,6 +462,7 @@ struct V34Pump : Pump {
 	/* outcome */
 	int baud_tx, baud_rx;   /* symbol rate codes */
 	int high_tx, high_rx;
+	float precode_min;      /* dB: V34_PRECODE_MIN, or a test's */
 	int info0_rates;        /* our INFO0's bits 12:19 (rates, carriers,
 				   3429 allowed): all, or a test's */
 	int preemph_tx;
@@ -2253,7 +2254,7 @@ void V34Pump::v90_make_mp(int ack)
 		DSP_DBG("v34: V.90 precoding would gain %.2f dB (over %ld "
 			"symbols): h %d %d %d %d %d %d\n", gain, prx.err_n,
 			mp_h[0], mp_h[1], mp_h[2], mp_h[3], mp_h[4], mp_h[5]);
-		if (gain < V34_PRECODE_MIN)
+		if (gain < precode_min)
 			memset(mp_h, 0, sizeof(mp_h));
 	}
 	mp_len = v90_mp_build(mpb, max_rate_rx, V34_TRELLIS, 1, ack,
@@ -2465,7 +2466,7 @@ void V34Pump::mp_start()
 		DSP_DBG("v34: precoding would gain %.2f dB: h %d %d %d %d %d "
 			"%d\n", gain, mp->h[0], mp->h[1], mp->h[2], mp->h[3],
 			mp->h[4], mp->h[5]);
-		if (gain < V34_PRECODE_MIN)
+		if (gain < precode_min)
 			memset(mp->h, 0, sizeof(mp->h));
 	}
 	tx_next(P4_MP, V34_TX_MP);
@@ -4084,6 +4085,10 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		if (!*side || *side == (caller_ ? 'c' : 'a'))
 			retrain_at = ms2samples(atoi(e), srate_);
 	}
+	/* test: DSP_V34_PRECODE_MIN=<dB>: ask for precoding from that gain
+	   on (V34_PRECODE_MIN) */
+	precode_min = getenv("DSP_V34_PRECODE_MIN") ?
+		(float)atof(getenv("DSP_V34_PRECODE_MIN")) : V34_PRECODE_MIN;
 	/* test: DSP_V34_INFO0=<hex>[,a|,c]: our INFO0's bits 12:19 (what
 	   it offers of the symbol rates and carriers), on both sides or
 	   only the answerer's or the caller's */
