@@ -143,7 +143,7 @@ foreach(_rate 9600 8000)
 endforeach()
 
 # the Agere Systems soft modem as another peer (half_agere.c): its library,
-# agrsm_core.o of agrsm-20070804
+# agrsm_core.o of agrsm-20070804 (Agere SoftModem 2.1.40; docs/interop.md)
 set(DMODEM_AGERE_LIB "${CMAKE_CURRENT_SOURCE_DIR}/agere/agrsm_core.o" CACHE
 	FILEPATH "agrsm_core.o of the Agere soft modem (interop tests)")
 if(EXISTS "${DMODEM_AGERE_LIB}")

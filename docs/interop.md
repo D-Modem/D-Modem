@@ -8,6 +8,86 @@ time). Each has a harness, `half_<name>`, which takes the line's audio
 on fd 3, gives its own on fd 4 and is the modem's DTE on a pty, and a
 ctest label of its own; `ctest -L <label> -j16` runs its calls.
 
+## The peers' binaries
+
+The vendor modems are their own binaries, as their Linux drivers shipped
+them, in `dsp/test/<peer>/` (i386 objects; the harnesses link them in,
+`-m32`). Each is the file of a known release, compared byte for byte
+where the release can still be had:
+
+| Peer | Files | Release | Built | Byte-identical to |
+|---|---|---|---|---|
+| Smart Link | `smartlink/dsplibs.o` | slmodem-2.9.11-20110321 | 22 Sep 2005, GCC 3.4.2 | `modem/dsplibs.o` of Debian's `sl-modem_2.9.11~20110321.orig.tar.gz` |
+| Agere | `agere/agrsm_core.o` | Agere SoftModem 2.1.40, from agrsm-20070804 | 16 Nov 2005, GCC 3.3.5 (Debian) | none to be had (below) |
+| SM56 | `sm56/sm56.ko` | Motorola sm56-06.09.05 for Fedora Core 3 (2.6.9-1.667) | 17 May 2005, GCC 3.4.2 (Fedora Core 3) | `usr/tmp/sm56.ko` of `sm56-06.09.05-1-fc3-2.6.9-1.667.i686.rpm` |
+| PCTel | `pctel/dsp.o`, `pctel/control.o` | pctel-0.9.7-9 (Linux driver K2.4.7.V92.001) | pumps 21 Jun 2001, GCC 2.95.3; controller dated 26 Mar 2003, GCC 2.96 (Red Hat 7.1) | `src/lib/amr/dsp.a`, `src/lib/control.a` of pctel-0.9.7-9-rht-6 |
+| HSF | `hsf/hsfengine.o`, `hsfmc97ich.o`, `hsfsoar.o`, `hsfmc97ich.inf`, `hsf.cty` | Linuxant hsfmodem-7.80.02.06oem | 10 May 2010, GCC 3.4.6 (Red Hat) | `modules/imported/<name>-i386.O`, `nvm/inf/hsfmc97ich.inf`, `nvm/inf/hsf.cty` of `hsfmodem-7.80.02.06oem.tar.gz` |
+| spandsp | (the system's libspandsp) | spandsp 0.0.6 (release 20110122) | | |
+
+The files' sha256, and what was compared:
+
+- Smart Link: `dsplibs.o`
+  `1f3e56d0dfae1a6aaf4eb6fcc4875a4524905e010d5758114cde288b3cf0b379`.
+  The tarball (`cea496e9c34a16cf347124b27ed673f3a6e87089f83e15ab5e0b0365a56fd253`)
+  is at `https://deb.debian.org/debian/pool/non-free/s/sl-modem/`. The
+  library came with slmodemd 2.9.11 in D-Modem's first commit.
+- Agere: `agrsm_core.o`
+  `a00a7fe7a21c2b20a353bf373042c3e30599ff4a9238a061acb494bb559e171c`.
+  It says "Agere SoftModem Version 2.1.40", "Built on 11/16/2005
+  16:43:35", and of its PCM module "AGERE PCMLL V2.1.37.105, seed =
+  1220, 2/1/2004". agrsm-20070804 is a dated package of linmodems'
+  "sv92" series (linmodems.technion.ac.il, gone), which carries Agere's
+  2.1.40 (its successor, agrsm-20080203, answers `ATI` with the same).
+  Agere's own builds of 2.1.40 for Mandrake, Red Hat and SuSE (December
+  2005, `agrmodemlib.o` on the Kaiomy Pinball-C driver CD at archive.org)
+  have the same 3132 global symbols, but other compilers, and
+  `LXHardwareInfoCreate` and `LXHardwareInfoDestroy` global. Ours has
+  those two weak (the harness has its own): the object was rewritten
+  after Agere's link, so no file of Agere's matches it byte for byte.
+- SM56: `sm56.ko`
+  `a757fd85bc27cc4bd816073efa9d03591307973de5c5aabcb37e0bb225ba516a`,
+  with `vermagic=2.6.9-1.667 686 REGPARM 4KSTACKS gcc-3.4`, "SM56 Rel.
+  6.09 Build 05" and "Copyright 1998-2004, Motorola Inc.". The RPM
+  (`1f24ba64dae3901de3fe497ec47f6490b7756558cd9ec26f568cc475b0da13d0`,
+  Vendor Motorola, built 2005-05-17, its checksums good, unsigned) is
+  not to be had any more: Motorola gave it to distributors and OEMs
+  only, and its copies at linux-xp-brasil.com.br and
+  linmodems.technion.ac.il are gone.
+- PCTel: `dsp.o`
+  `15d8e5ab1ac4019a029fd9e562e0e74b3f233aa3ab42621334506721e66f82b1`,
+  `control.o`
+  `38d46cabd67f675f8c011afd4725a41a1a813075bae4b516c94cda1b4dfec69d`:
+  upstream's `.a` files renamed (they are plain objects). The pumps'
+  `timeStamp` is "Jun 21 2001,14:27:03"; the controller says "Linux
+  Driver K2.4.7.V92.001 (03/26/2003)" and of the DSP "LCE-336V version
+  .2.15.4.". The copy compared
+  (`f1304bbcefd1b88dc1733421f7850598334eaf62c5b132c8d129af3405d1ddfb`)
+  is
+  `https://archive.org/download/pctel-0.9.7-9-rht-6_for_Ubuntu-2.6.15-23-386/`,
+  Robert Thornburrow's 0.9.7-9-rht-6 of 2006 as a third party uploaded
+  it; its ChangeLog changes no binaries after 0.9.7-8, so 0.9.7-9 and
+  its rht releases carry the same two.
+- HSF: `hsfengine.o`
+  `6d570356f37e62153374f2f50b5d3a3e4b1246285199cbba2aa7d631a5f894fc`,
+  `hsfmc97ich.o`
+  `b6c18aab4585498700b401b0948161f25ee18e6863af48b2b2f35b0536b60c25`,
+  `hsfsoar.o`
+  `3be23c8e6d6ee8f6bc92b89913590ad4828cf2013ba4cf9abc3be854c22ecde9`,
+  `hsfmc97ich.inf`
+  `0d7401ddcefd2c362adcdc19fb0b828312983a8e3970c2389596e2ad271a970c`,
+  `hsf.cty`
+  `bf205eda7dc753a416c347179e2058cdb1a15f053afbc609fe25995ca00eba34`.
+  The tarball
+  (`7388bf4338f434aa65363f2097a9f9c2c87f523ac1a549764de831b68f37846c`,
+  released 9 May 2010) is at
+  `https://www.linuxant.com/drivers/hsf/oem/downloads.php`. The objects'
+  symbols are `cnxthsf_7800206oem_<name>`: the "full" build's differ
+  (`cnxthsf_7800206full_`), and Linuxant no longer offers it. The `.inf`
+  is Conexant's Linux_Intel_SmartMC.inf, "Version: 5.03.27"; the country
+  file says "Version: V7.72.00".
+- spandsp: not in the tree; the build takes the system's (pkg-config
+  `spandsp`), 0.0.6 in Debian and Ubuntu.
+
 ## Against the Smart Link soft modem
 
 `half_smartlink` runs Smart Link's soft modem: its DSP library
@@ -20,15 +100,12 @@ but the library does not work at that rate). `ctest -L smartlink -j16`
 runs the tests; `smartlink_log.py` decodes the library's own debug lines
 (`docs/dsp/v92.md`).
 
-The library is `modem/dsplibs.o` of slmodem-2.9.11-20110321, as Debian
-ships it (`sl-modem_2.9.11~20110321.orig.tar.gz`, sha256
-`1f3e56d0...3cf0b379`; it came with slmodemd 2.9.11 in D-Modem's first
-commit). It was built on 22 September 2005 (GCC 3.4.2), and its parts
-give their own versions: the V.90 modem 2.98 (25-Mar-04, "Modified Quick
-Connect without Memory + Train Time + Constel Power"), the V.92 modem
-1.1 (9-Apr-01, "Memory cleanups + dil descriptor crash fix"), a "V.92
-Lite" build. slmodem's changes after 2.9.11 are to its drivers only.
-Results at the time of writing:
+The library is slmodem-2.9.11-20110321's (above). Its parts give their
+own versions: the V.90 modem 2.98 (25-Mar-04, "Modified Quick Connect
+without Memory + Train Time + Constel Power"), the V.92 modem 1.1
+(9-Apr-01, "Memory cleanups + dil descriptor crash fix"), a "V.92 Lite"
+build. slmodem's changes after 2.9.11 are to its drivers only. Results
+at the time of writing:
 
 | `AT+MS=` | Smart Link caller → open answerer | open caller → Smart Link answerer |
 |---|---|---|
@@ -74,8 +151,9 @@ fall on it, so the fax calls give the DTE's commands every 192 samples
 ## Against the Agere soft modem
 
 `half_agere` runs the Agere Systems soft modem library
-(`test/agere/agrsm_core.o` of agrsm 2.1.40, i386) in user space on an emulated Intel ICH modem
-controller and Si3038 codec; `ctest -L agere -j8` calls it from and to the
+(`test/agere/agrsm_core.o`, Agere SoftModem 2.1.40 from agrsm-20070804,
+above) in user space on an emulated Intel ICH modem controller and
+Si3038 codec; `ctest -L agere -j8` calls it from and to the
 open modem. Results at the time of writing:
 
 | Agere `AT+MS=` / ours | Agere caller → open answerer | open caller → Agere answerer |
@@ -94,8 +172,8 @@ and connects to this implementation at V.34.
 
 ## Against spandsp's data modems
 
-`half_spandsp` is a modem around spandsp's pumps (libspandsp 0.0.6, the
-one Asterisk and FreeSWITCH use): V.21, V.23, Bell 103 and V.22/V.22bis,
+`half_spandsp` is a modem around spandsp's pumps (the system's
+libspandsp, 0.0.6, the one Asterisk and FreeSWITCH use): V.21, V.23, Bell 103 and V.22/V.22bis,
 asynchronous 8N1, a few AT commands, and V.8 by default. spandsp has no
 modem of its own: the `data_modems` of its later versions is a sketch,
 and their V.32bis (V.17's pumps with V.32's scramblers, no handshake) and

@@ -21,8 +21,9 @@
  *    Its serial side is a virtual 16550 (read_vuart_port and
  *    write_vuart_port) between it and the pty.
  *
- *    The library is test/agere/agrsm_core.o (agrsm-20070804: the object
- *    with LXHardwareInfoCreate weakened, as its Makefile makes it);
+ *    The library is test/agere/agrsm_core.o (Agere SoftModem 2.1.40 of
+ *    agrsm-20070804: the object with LXHardwareInfoCreate and
+ *    LXHardwareInfoDestroy weakened, as its Makefile makes it);
  *    -DDMODEM_AGERE_LIB=<path> for another copy of it.
  *    AGERE_DEBUG=1 prints its log and the port accesses we do not know.
  */
