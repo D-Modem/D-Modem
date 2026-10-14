@@ -143,6 +143,29 @@ INSTANTIATE_TEST_SUITE_P(Caller, V34Info0, testing::Values(
 		return std::string(i.param.name);
 	});
 
+/* phase 2's recovery (11.2.2/V.34): one side's first INFO0 lost
+   (DSP_V34_LOSE_INFO0=c or a: its CRC wrong), the other repeats its
+   own until that one comes again, acknowledging it */
+class V34LoseInfo0 : public testing::TestWithParam<const char *> {};
+
+/* connected both ways all the same */
+TEST_P(V34LoseInfo0, PhaseTwoRecovers)
+{
+	setenv("DSP_V34_LOSE_INFO0", GetParam(), 1);
+	LoopbackResult r = loopback_run(line(8, 30, 20));
+	unsetenv("DSP_V34_LOSE_INFO0");
+
+	EXPECT_FALSE(r.dp_failed) << "a pump ended with an error";
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+}
+
+INSTANTIATE_TEST_SUITE_P(Lost, V34LoseInfo0, testing::Values("c", "a"),
+	[](const testing::TestParamInfo<const char *> &i) {
+		return std::string(*i.param == 'c' ? "callers" :
+				   "answerers");
+	});
+
 /* precoding (from a gain of 0.3 dB on, DSP_V34_PRECODE_MIN) on a line
    too noisy for the training to keep a good equalizer, and a
    renegotiation (DSP_V34_RENEG): the precoder's 1 + H(z) goes into the

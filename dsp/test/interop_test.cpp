@@ -337,6 +337,13 @@ std::vector<Call> calls()
 	add("agere", "agere_34_noise", "agere", "open", "ATX3;AT+MS=V34",
 	    { "NET=8000:9600:ulaw", "NET_SYNC=1", "STREAM=40",
 	      "NET_NOISE=10:300", "PROTO_B=ATX3;AT+MS=34" });
+	/* phase 2's recovery (11.2.2/V.34): our INFO0a lost
+	   (DSP_V34_LOSE_INFO0, our first INFO0 with a bad CRC), the Agere
+	   modem repeats its INFO0c, and we ours */
+	add("agere", "agere_34_lose_info0", "agere", "open", "ATX3;AT+MS=V34",
+	    { "NET=8000:9600:ulaw", "DSP_V34_LOSE_INFO0=1",
+	      "EXPECT_B=INFO0 again \\(the remote has not taken ours\\)",
+	      "PROTO_B=ATX3;AT+MS=34" });
 	/* V.92 quick connect: the Agere modem (+PQC=0) remembers the line
 	   of the first call and starts the second with QC1a, and short
 	   phase 2 (in real time its timing did not take a busy machine; on
@@ -495,6 +502,16 @@ std::vector<Call> calls()
 		      "DSP_G711=" + law, "STREAM=5",
 		      "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* our INFO0d lost (DSP_V34_LOSE_INFO0): the PCTel modem repeats its
+	   INFO0a, and we INFO0d (9.2.1.2/V.90).  It misses ours by itself
+	   at some starts of the call (the noise its codec gets with it) */
+	add("pctel", "pctel_v90_lose_info0", "pctel", "open8",
+	    "ATX3;AT+MS=V90,1,300,56000",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "DSP_V34_LOSE_INFO0=1",
+	      "EXPECT_B=(?s)INFO0 again \\(the remote has not taken "
+	      "ours\\).*V.90 connect 5[0-9]{4}/",
+	      "PROTO_B=ATX3;AT+MS=90" });
 	/* two calls (PCTel answers ATH with NO CARRIER, and wants more than
 	   2 s on hook before the next): V.90 again */
 	add("pctel", "pctel_v90_calls", "pctel", "open8",
@@ -546,6 +563,15 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
 		      "DSP_G711=" + law, "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* our INFO0d lost (DSP_V34_LOSE_INFO0): the HSF modem takes it all
+	   the same (its INFO0a acknowledges it) but repeats its INFO0a
+	   until ours acknowledges that (9.2.1.2/V.90) */
+	add("hsf", "hsf_v90_lose_info0", "hsf", "open8", "ATX3;AT+MS=V90",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "DSP_V34_LOSE_INFO0=1",
+	      "EXPECT_B=(?s)INFO0 again \\(the remote's acknowledges "
+	      "ours\\).*V.90 connect 5[0-9]{4}/",
+	      "PROTO_B=ATX3;AT+MS=90" });
 	/* V.8 (the open modem with AT+MS=34) agreeing on the HSF modem's
 	   modulation (its automode up to it), both ways (its V.21 and V.23
 	   answerers work only so: forced, +MS=V21,0, it is silent, and in

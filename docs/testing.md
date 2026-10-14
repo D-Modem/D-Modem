@@ -91,11 +91,8 @@ Each takes about one processor while it runs, but for the moments on
 hook in real time, so `-j` can be some four times the processors: on 4,
 the whole suite takes some 75 s at `-j16` (105 at `-j8`; 13 minutes when
 every call ran in real time). Much more than that (`-j32` on 4) leaves
-the calls on hook short of real time, and the PCTel V.90 call, which
-fails when its setup lands a period later, can fail (now and then at
-`-j16` too: the driver sends modemB its setup on modemA's last OK, a
-few ms before modemB's next period). None of the calls
-has to run alone. `MODEM_REALTIME=1 ctest ...` runs every call in real
+the calls on hook short of real time. None of the calls has to run
+alone. `MODEM_REALTIME=1 ctest ...` runs every call in real
 time, as they all did before (for comparing a failure).
 
 The test programs are in `build/dsp/test/`. The calls go through

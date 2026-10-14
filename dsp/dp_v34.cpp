@@ -408,7 +408,18 @@ struct V34Pump : Pump {
 	int ev_qc;
 	int qc_done;            /* QC1a answered (or tried) */
 	int qc_lapm;
-	int info0_again;        /* INFO0d sent again (after QC) */
+	int info0_again;        /* our INFO0 again, acknowledging the
+				   remote's (its bit 28) */
+	int info0_sent;         /* our INFO0s in this phase 2 */
+	int info0_rep;          /* the remote's INFO0 again (since we last
+				   looked) */
+	int info0_rep_ack;      /* the last one's bit 28 */
+	int info0_rec;          /* recovering: our INFO0s back to back */
+	int info0_recovered;    /* (in this phase 2) */
+	int info0_acked;        /* the remote's acknowledgement in that */
+	long info0_tx_at;       /* when ours last went out */
+	long info0_at;          /* when the remote's INFO0 last came */
+	int lose_info0;         /* test: our first INFO0 spoilt */
 	Goertzel toneq_g;       /* TONEq, 980 Hz */
 	Goertzel toneq_space_g; /* V.21(L)'s space, 1180 Hz: CM, not TONEq */
 	int toneq_blocks;
@@ -545,6 +556,9 @@ struct V34Pump : Pump {
 	void cc_phase_frame();
 	void info_frame(CcRx *r);
 	void rt_info0_frame(const unsigned char *h, long n);
+	void info0_repeat_frame(const unsigned char *h, long n);
+	bool info0_resend(long c);
+	bool info0_more();
 	void ec_schedule();
 	void rt_tone(float x);
 	void pump_rx_sample(float x);
@@ -648,6 +662,7 @@ void V34Pump::make_info0(BitQ *q)
 	} else
 		q->put(0, 2);        /* internal clock */
 	q->put(info0_again, 1);      /* acknowledge (of INFO0a) */
+	info0_tx_at = total;
 	if (pcm) {
 		/* INFO0d, Table 7/V.90 */
 		q->put(V90_P2_POWER, 4);
@@ -658,6 +673,12 @@ void V34Pump::make_info0(BitQ *q)
 		q->put(0, 1);
 	}
 	q->info_end();
+	/* test: the first one lost (its CRC's last bit wrong) */
+	if (lose_info0) {
+		lose_info0 = 0;
+		q->b[q->n - 5] ^= 1;
+	}
+	info0_sent++;
 }
 
 /* our INFO1c (Table 15/V.34; INFO1d, Table 17/V.92): at each symbol
@@ -1404,6 +1425,7 @@ void V34Pump::info_frame(CcRx *r)
 	if (!ev_info0) {
 		rinfo0.parse(r->frame);
 		ev_info0 = 1;
+		info0_at = total;
 		v92_on = pcm && v92 && rinfo0.v92;
 		short2 = v92_on && rinfo0.short2 &&
 			short2_ok && !retraining;
@@ -1458,6 +1480,91 @@ void V34Pump::rt_info0_frame(const unsigned char *h, long n)
 	DSP_DBG("v34: INFO0a in the retrain\n");
 }
 
+/* the remote's INFO0 again in phase 2, after its first and before
+   INFO1, not in a retrain: it has not taken ours (bit 28, its
+   acknowledgement, 0; 11.2.2/V.34, 9.2.1.2/V.90), or repeats it a
+   little longer having taken it (1).  A frame is taken once (the
+   sampling phases' histories each have it) */
+void V34Pump::info0_repeat_frame(const unsigned char *h, long n)
+{
+	unsigned char f[64];
+	int len = 29 + 16, k;
+
+	if (retraining || !ev_info0 || ev_info1 || n < len ||
+	    total - info0_at < ms2samples(60, srate))
+		return;
+	for (k = 0; k < len; k++)
+		f[k] = k < 4 ? 1 : h[(n - len + k) % CC_HIST];
+	for (k = 4; k < 12; k++)
+		if (f[k] != ((0x72 >> (11 - k)) & 1))
+			return;
+	if (!info_crc_ok(f, len - 16))
+		return;
+	/* no reversals within the frame */
+	if (ev_rev && total - rev_time < (long)len * CC_SPS)
+		ev_rev = 0;
+	info0_at = total;
+	info0_rep++;
+	info0_rep_ack = f[28];
+	info0_acked |= f[28];
+	DSP_DBG("v34: INFO0 again from the remote (acknowledging ours: "
+		"%d)\n", f[28]);
+}
+
+/* phase 2's recovery (11.2.2.1.1 and 11.2.2.2.1/V.34, 9.2.1.2.1/V.90),
+   in our tone (B, or A answering) before the reversals: the remote's
+   INFO0 again (it has not taken ours, or it waits for our
+   acknowledgement of its), not those it sent before our last can have
+   reached it (400 ms), or its tone a while without its INFO0 (we have
+   not taken it): ours again, back to back (info0_more()),
+   acknowledging the remote's once we have it.  After V.92's quick
+   connect the analogue modem may come to phase 2 after our INFO0d is
+   over: its first INFO0a, then, and ours once more.  c: the time in the
+   tone; whether ours went out again */
+bool V34Pump::info0_resend(long c)
+{
+	bool qc_late = qc_done && ev_info0 && !info0_again;
+	bool repeated = info0_rep > 0 &&
+		total - info0_tx_at >= ms2samples(400, srate);
+	bool missed = !ev_info0 && tone_blocks >= 3 &&
+		c >= ms2samples(500, srate);
+
+	info0_rep = 0;
+	if (retraining || short2 || info0_sent >= 16 ||
+	    !(qc_late || repeated || missed))
+		return false;
+	DSP_DBG("v34: INFO0 again (%s)\n", qc_late ? "after QC" :
+		!repeated ? "no INFO0 from the remote" :
+		info0_rep_ack ? "the remote's acknowledges ours" :
+		"the remote has not taken ours");
+	info0_rec = info0_recovered = 1;
+	info0_acked = qc_late || (repeated && info0_rep_ack);
+	info0_again = ev_info0;
+	cc_rev = 0;
+	set_state(caller ? P2C_INFO0 : P2A_INFO0);
+	make_info0(&cctx);
+	cc_send();
+	return true;
+}
+
+/* at the end of one of our INFO0s in the recovery: another, until the
+   remote acknowledges ours or stops repeating its own (250 ms without
+   it: its tone); whether it went out */
+bool V34Pump::info0_more()
+{
+	if (!info0_rec)
+		return false;
+	if (info0_acked || info0_sent >= 16 ||
+	    (ev_info0 && total - info0_at > ms2samples(250, srate))) {
+		info0_rec = 0;
+		return false;
+	}
+	info0_again = ev_info0;
+	make_info0(&cctx);
+	cc_send();
+	return true;
+}
+
 /* a frame at the phase of the last sample: the frames do not depend on
    the tracked symbol timing, which may slip at the start of one (the
    remote's INFO1 comes at a new phase after its probing signals) */
@@ -1469,6 +1576,7 @@ void V34Pump::cc_phase_frame()
 	const unsigned char *h = r->ph[i];
 
 	rt_info0_frame(h, n);
+	info0_repeat_frame(h, n);
 	if (ev_info1 || n < len)
 		return;
 	for (k = 0; k < 8; k++)
@@ -1476,7 +1584,8 @@ void V34Pump::cc_phase_frame()
 			return;
 	for (k = 0; k < len; k++)
 		r->frame[k] = k < 4 ? 1 : h[(n - len + k) % CC_HIST];
-	if (!info_crc_ok(r->frame, len - 16))
+	if (!info_crc_ok(r->frame, len - 16) ||
+	    (ev_info0 && info_crc_ok(r->frame, 29)))
 		return;
 	if (dsplibs_debug_level >= 6)
 		DSP_DBG("v34: INFO frame at sampling phase %d (timing at "
@@ -1499,6 +1608,7 @@ void V34Pump::cc_rx_bit(int bit)
 	r->sr = (r->sr << 1) | bit;
 	r->hist[r->hist_n++ % CC_HIST] = bit;
 	rt_info0_frame(r->hist, r->hist_n);
+	info0_repeat_frame(r->hist, r->hist_n);
 	if (r->frame_len > 0)
 		r->frame_len--;
 	mh_check(r);
@@ -1516,6 +1626,10 @@ void V34Pump::cc_rx_bit(int bit)
 			ok = info_crc_ok(r->frame, len - 16);
 			for (i = 4; i < 12 && ok; i++)
 				ok = r->frame[i] == ((0x72 >> (11 - i)) & 1);
+			/* (not an INFO1: the remote's INFO0 again and what
+			   follows it) */
+			if (ok && ev_info0 && info_crc_ok(r->frame, 29))
+				ok = 0;
 			if (ok) {
 				info_frame(r);
 				return;
@@ -2514,6 +2628,7 @@ void V34Pump::retrain(const char *why)
 	cc_sym = 0;
 	ev_info1 = ev_rev = 0;
 	rt_info0 = 0;
+	info0_sent = info0_rep = info0_rec = info0_recovered = 0;
 	rtd = 0;
 	/* the probing */
 	tone_g.init(caller ? 2400 : 1200, PROBE_PERIOD,
@@ -2981,7 +3096,7 @@ int V34Pump::handshake()
 
 	/* phase 2 answerer */
 	case P2A_INFO0:
-		if (!cc_busy())
+		if (!cc_busy() && !info0_more())
 			set_state(P2A_A);
 		break;
 	case P2A_A:
@@ -2996,13 +3111,23 @@ int V34Pump::handshake()
 			}
 			break;
 		}
-		if (c >= ms2samples(50, srate) && ev_info0) {
+		/* phase 2's recovery: our INFO0 again */
+		if (info0_resend(c))
+			break;
+		/* the reversal once the caller's tone B is there
+		   (11.2.1.2.3/V.34): after the recovery, its INFO0s over */
+		if (c >= ms2samples(50, srate) && ev_info0 &&
+		    (!info0_recovered ||
+		     total - info0_at >= ms2samples(100, srate))) {
 			set_state(P2A_ABAR);
 			cc_rev = 1;
 			ev_rev = 0;
 		}
 		break;
 	case P2A_ABAR:
+		/* (the caller's INFO0c again: it has not taken ours) */
+		if (!ev_rev && info0_resend(c))
+			break;
 		if (ev_rev && rev_time > rev_sent) {
 			rtd = rev_time - rev_sent - CC_TX_DELAY -
 				CC_RX_DELAY - ms2samples(40, srate);
@@ -3075,24 +3200,15 @@ int V34Pump::handshake()
 
 	/* phase 2 caller */
 	case P2C_INFO0:
-		if (!cc_busy()) {
+		if (!cc_busy() && !info0_more()) {
 			set_state(P2C_B);
 			ev_rev = 0;
 		}
 		break;
 	case P2C_B:
-		/* after QC the analogue modem may come to phase 2 after our
-		   INFO0d is over: once its INFO0a is in, INFO0d again, with
-		   the acknowledgement (the recovery of 9.2.1.2/V.90) */
-		if (qc_done && ev_info0 && !info0_again && !short2 &&
-		    !retraining) {
-			info0_again = 1;
-			DSP_DBG("v34: INFO0d again\n");
-			set_state(P2C_INFO0);
-			make_info0(&cctx);
-			cc_send();
+		/* phase 2's recovery: our INFO0 again */
+		if (info0_resend(c))
 			break;
-		}
 		/* the remote's INFO0a in a retrain: ours, acknowledging
 		   it (11.8.1/V.34) */
 		if (retraining && rt_info0 == 1) {
@@ -4110,6 +4226,14 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 			side++;
 		if (!*side || *side == (caller_ ? 'c' : 'a'))
 			info0_rates = (int)(v & 0xFF);
+	}
+	/* test: DSP_V34_LOSE_INFO0=[a|c]: our first INFO0 with a bad CRC,
+	   lost to the remote (phase 2's recovery, 11.2.2/V.34), only the
+	   answerer's or the caller's (anything else: either) */
+	if (getenv("DSP_V34_LOSE_INFO0")) {
+		const char *e = getenv("DSP_V34_LOSE_INFO0");
+		lose_info0 = (*e != 'a' && *e != 'c') ||
+			*e == (caller_ ? 'c' : 'a');
 	}
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
 	   renegotiation to N * 2400 bit/s (what we receive) */

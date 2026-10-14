@@ -310,6 +310,17 @@ calls: a print added to the harness, or the stack filled with 0, turned
 keep the downstream to drn 14, 45333; `+MS=V90,1,300,56000` sets S37 to
 14, V.90, and the call trains at 50666. The tests give the top rate.
 
+At some starts of a call it misses our INFO0d and repeats its INFO0a,
+unacknowledged, every 82 ms (in a sweep of the call's start over nine
+periods of the commands, one start, with the harness's codec noise at
+its 5 rms; at 0 or 2 rms the same start trains). We had no recovery for
+that outside quick connect, and the call waited in phase 2 until the
+driver gave up: `pctel_v90_calls` failed so about once in six full runs,
+where the machine's load moved the call's start (the driver's setup
+commands land a period later when it answers late). Now our INFO0d goes
+again until it takes one (dsp/v34.md). `pctel_v90_lose_info0` loses our
+first one on purpose.
+
 | PCTel `AT+MS=` / ours | PCTel caller → open answerer | open caller → PCTel answerer |
 |---|---|---|
 | V34 / 34 | CONNECT (we receive at 24000) | CONNECT 24000 |

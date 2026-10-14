@@ -58,6 +58,8 @@ as it is.
 | `dsp/v34_modem.cpp` | The Ja debug dump read past the DIL's arrays |
 | `dsp/v34_modem.cpp` | With precoding, a renegotiation on a line where the training kept no good equalizer (mse never under 0.02) trained from the equalizer with 1 + H(z) in it, and E put 1 + H(z) in again (60 taps). The equalizer 1 + H(z) goes into is now the one to go back to, and it never goes in twice (pump_test `V34Precoding`, with `DSP_V34_PRECODE_MIN`) |
 | `dsp/v92.cpp` | A fast parameter exchange without the prefilter took its rate from the data mode mse with the training's margin and no more: from 36000 bit/s it went to 38666 or 40000, where the original library's B1u came through or not by the data before it, and `smartlink_v92_fpe_remote_noprefilter` failed now and then. It now goes up a step at most, with 2.5 times the margin (as a renegotiation up does), else the CPd stays as it is |
+| `dsp/dp_v34.cpp` | Phase 2 had no recovery for a lost INFO0 (11.2.2/V.34, 9.2.1.2/V.90) but after V.92's quick connect: when the remote missed ours it repeated its own INFO0 and we stayed in our tone until the call gave up. The PCTel modem misses our INFO0d at some starts of a call, and `pctel_v90_calls` failed so about once in six full runs. Ours now goes again, back to back, until the remote acknowledges it, in both roles (pump_test `V34LoseInfo0`, `agere_34_lose_info0`, `pctel_v90_lose_info0`, `hsf_v90_lose_info0`, with `DSP_V34_LOSE_INFO0`) |
+| `dsp/dp_v34.cpp` | Repeated INFO0s and what follows one could pass for an INFO1 frame (sync and CRC right): with our INFO0d lost, an HSF call took one for its INFO1a and retrained on its symbol rate. A candidate that holds an INFO0 frame is no longer taken for INFO1 |
 | `dsp/v90.h` | `v90_tx_sample()` was declared but never defined |
 | `dsp/dp_fsk.cpp`, `dp_v22.cpp`, `dp_v32.cpp` | An early return (another pump, an error) left the rest of the output block unwritten: whatever the host's buffer held went to the line. The block is now cleared first |
 | `dsp/dp_v34.cpp` | The rest of the output block after an early return (V.8 done, another pump, an error) was left unwritten, as it was in the other pumps: what the host's buffer held went out. After CJ that was a few ms of whatever an earlier block left there |
@@ -161,12 +163,6 @@ None left.
 - **risk** — `loopback.cpp`: `ok()` accepts a call that delivered 300
   bits and then stalled; `line_resample()` reads stale samples at large
   clock offsets (`dsp_loopback` only).
-- **risk** — `interop_call.cpp`: the driver sends modemB its setup on
-  modemA's last OK, a few ms before modemB's next sync point, and the
-  PCTel V.90 call fails when the setup lands a period later:
-  `pctel_v90_calls` fails about once in six full runs. Setting both up
-  side by side broke the other PCTel V.90 tests, and moving modemB half
-  a period broke `sm56_34_open_calls` and `hsf_34_hsf_calls`.
 - **cleanup** — `half_hsf.c` `subst()`/`nvm_load()`: very long values are
   cut or overrun the buffer (not with the shipped files);
   `spandsp_test`/`spandsp_tx` leak spandsp states.
