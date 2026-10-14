@@ -115,6 +115,16 @@ static void run_time(unsigned ms);
 
 static unsigned long long tsc_last;
 
+/* a read of the counter: the line's time, or on by 0.1 us (busy waits
+   end) */
+static unsigned long long tsc_read(void)
+{
+	unsigned long long t = line_n * (1000000000ull / line_rate);
+	if (t <= tsc_last)
+		t = tsc_last + 100;
+	return tsc_last = t;
+}
+
 static void on_segv(int sig, siginfo_t *si, void *ctx)
 {
 	ucontext_t *uc = ctx;
@@ -123,11 +133,7 @@ static void on_segv(int sig, siginfo_t *si, void *ctx)
 	unsigned long long t;
 
 	if (ip[0] == 0x0f && ip[1] == 0x31) {
-		/* (and on by 0.1 us a read: busy waits end) */
-		t = line_n * (1000000000ull / line_rate);
-		if (t <= tsc_last)
-			t = tsc_last + 100;
-		tsc_last = t;
+		t = tsc_read();
 		g[REG_EAX] = (greg_t)(u32)t;
 		g[REG_EDX] = (greg_t)(u32)(t >> 32);
 		g[REG_EIP] += 2;
@@ -135,6 +141,22 @@ static void on_segv(int sig, siginfo_t *si, void *ctx)
 	}
 	(void)si;
 	signal(sig, SIG_DFL);
+}
+
+/* the ICH module's busy wait of us microseconds (hsfmc97ich41_, made
+   weak by hsf_obj.cmake): it reads the counter and then reads it again
+   until (now - start) / OsGetProcessorFreq() comes to us, the
+   microseconds it returns.  Every read traps, and with the line still
+   (no samples go by in a wait) each is 0.1 us on: ten traps a
+   microsecond, most of the HSF's processor time.  The counter steps
+   over the wait at once instead, to where those reads leave it (one at
+   least), and the result is the same */
+unsigned long long hsfmc97ich41_(u32 us)
+{
+	unsigned long long n = us ? 10ull * us : 1;  /* the loop's reads */
+	tsc_read();
+	tsc_last += 100 * n;
+	return 100 * n / 1000;
 }
 
 /* rdtsc to fault into on_segv (PR_TSC_SIGSEGV); prctl's result */

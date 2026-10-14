@@ -199,17 +199,20 @@ endif()
 
 # Conexant's HSF soft modem as a peer (half_hsf.c): hsfmodem-7.80.02.06oem's
 # engine (hsfengine), its AC'97 ICH codec module (hsfmc97ich) and its
-# soft DAA module (hsfsoar), their sections renamed per object, and the
+# soft DAA module (hsfsoar), their sections renamed per object (and the
+# ICH module's microsecond busy wait, hsfmc97ich41_, half_hsf.c's), and the
 # modem's .inf and country file for its NVM
 set(DMODEM_HSF_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hsf" CACHE
 	PATH "objects and NVM files of the HSF soft modem (interop tests)")
 if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 	set(_hsfo "")
+	set(_weak_hsfmc97ich hsfmc97ich41_)
 	foreach(_b hsfengine hsfmc97ich hsfsoar)
 		set(_o ${CMAKE_CURRENT_BINARY_DIR}/${_b}_r.o)
 		add_custom_command(OUTPUT ${_o}
 			COMMAND ${CMAKE_COMMAND} -DIN=${DMODEM_HSF_DIR}/${_b}.o
-				-DOUT=${_o} -DNAME=${_b} -DOBJDUMP=${CMAKE_OBJDUMP}
+				-DOUT=${_o} -DNAME=${_b}
+				"-DWEAK=${_weak_${_b}}" -DOBJDUMP=${CMAKE_OBJDUMP}
 				-DOBJCOPY=${CMAKE_OBJCOPY}
 				-P ${CMAKE_CURRENT_SOURCE_DIR}/hsf_obj.cmake
 			DEPENDS ${DMODEM_HSF_DIR}/${_b}.o hsf_obj.cmake

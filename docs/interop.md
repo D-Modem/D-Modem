@@ -219,7 +219,9 @@ DAA module (`hsfsoar`), the driver's i386 objects as they are in
 `test/hsf/`, with the modem's `.inf` and country file for its NVM. CMake
 renames each object's `.ctors` and `.gnu.linkonce.*` sections for the
 object (`hsf_obj.cmake`): each has the same C++ names and the linker
-would keep only one. The harness provides the engine's OS layer
+would keep only one. It also makes the ICH module's microsecond busy wait
+(`hsfmc97ich41_`) a weak symbol, for the harness's own (below). The
+harness provides the engine's OS layer
 (`cnxthsf_7800206oem_Os*`: memory, timers on the line's clock, I/O ports,
 the interrupt) and its NVM (the `HKR` lines of the `.inf` and the
 country's of `hsf.cty`), and models what the modules drive: an ICH's
@@ -227,8 +229,15 @@ AC'97 bus master (PCM in and out, pausing and resuming at the position it
 was at), a secondary MC'97 codec (Conexant, 0x4358/0x5429) at 15999 Hz
 and the SmartDAA behind its register 0x7a. The modem's `ComCtrl` is the
 DTE, on a pty. The engine reads the TSC: the harness traps `rdtsc`
-(`PR_SET_TSC`) and gives the line's time at 1000 MHz. `ctest -L hsf -j8`
-runs the tests; `HSF_DEBUG=1` prints the modem's own messages and
+(`PR_SET_TSC`) and gives the line's time at 1000 MHz, on by 0.1 µs a
+read while the line stands still (a busy wait would never end). The ICH
+module waits some 37 µs that way about 80 times a second of the line,
+370 trapped reads each: most of the modem's processor time went into
+those signals. The harness's `hsfmc97ich41_` steps the
+counter over the wait at once, to where those reads left it, with the
+same result (a call trains the same, sample for sample); the HSF calls
+take about a quarter of the time they did. `ctest -L hsf -j8` runs the
+tests; `HSF_DEBUG=1` prints the modem's own messages and
 the port accesses the harness does not know, `HSF_DEBUG=2` every access.
 
 | HSF `AT+MS=` / ours | HSF caller → open answerer | open caller → HSF answerer |

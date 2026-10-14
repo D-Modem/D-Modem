@@ -3,9 +3,12 @@
 # .gnu.linkonce.* sections renamed for the object (.<name>_ctors,
 # .<name>.<rest>).  Each object has the same generic names (its C++
 # vtables and the like) and the linker would keep only one of them.
+# WEAK: its functions (local ones too) that half_hsf.c has its own of,
+# made weak globals so that the linker takes those.
 #
 #     cmake -DIN=<hsfengine.o> -DOUT=<out.o> -DNAME=hsfengine
-#           -DOBJDUMP=<objdump> -DOBJCOPY=<objcopy> -P hsf_obj.cmake
+#           [-DWEAK=<sym>[,<sym>...]] -DOBJDUMP=<objdump>
+#           -DOBJCOPY=<objcopy> -P hsf_obj.cmake
 execute_process(COMMAND ${OBJDUMP} -h ${IN} OUTPUT_VARIABLE _h
 	RESULT_VARIABLE _r)
 if(_r)
@@ -22,4 +25,19 @@ endforeach()
 execute_process(COMMAND ${OBJCOPY} ${_args} ${IN} ${OUT} RESULT_VARIABLE _r)
 if(_r)
 	message(FATAL_ERROR "objcopy ${IN} failed")
+endif()
+# (a local symbol weakened: global first, in a pass of its own)
+if(WEAK)
+	string(REPLACE "," ";" _weak "${WEAK}")
+	foreach(_opt --globalize-symbol --weaken-symbol)
+		set(_args "")
+		foreach(_s ${_weak})
+			list(APPEND _args ${_opt}=${_s})
+		endforeach()
+		execute_process(COMMAND ${OBJCOPY} ${_args} ${OUT}
+			RESULT_VARIABLE _r)
+		if(_r)
+			message(FATAL_ERROR "objcopy ${_opt} ${OUT} failed")
+		endif()
+	endforeach()
 endif()
