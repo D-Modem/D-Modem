@@ -5,7 +5,8 @@
  *    The modem core (dcore::Modem) with this program as its Host: the
  *    line is a call of the SIP user agent (sip.cpp), whose audio comes and
  *    goes through a socket, 16 bit linear at 8000 Hz in frames of 20 ms;
- *    the DTE is a pty (/dev/ttySL0 links to it).
+ *    the DTE is a pty (/dev/ttySL<n> links to it, n the device's number:
+ *    /dev/ttySL0 for /dev/slamr0).
  *
  *    The behaviour is that of slmodemd's modem_main.c with its SIP driver.
  *
@@ -14,6 +15,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -296,6 +298,16 @@ int Slmodemd::run(int ctl_fd)
 	return 0;
 }
 
+/* the device's number: the digits its name ends with (/dev/slamr1: 1),
+   0 if none */
+int dev_number(const char *name)
+{
+	size_t n = strlen(name);
+	while (n && isdigit((unsigned char)name[n - 1]))
+		n--;
+	return name[n] ? atoi(name + n) : 0;
+}
+
 /* started as root: on as SLMODEMD_USER, after checking (realtime) that
    the locked memory limit is enough; exits on any failure */
 void drop_privileges(bool realtime)
@@ -358,8 +370,9 @@ int main(int argc, char *argv[])
 	dp_sinus_init();
 	prop_dp_init();
 
-	/* the device's number names the link: /dev/ttySL0 */
-	snprintf(link_name, sizeof(link_name), "/dev/ttySL%d", 0);
+	/* the device's number names the link: /dev/ttySL0 for /dev/slamr0 */
+	snprintf(link_name, sizeof(link_name), "/dev/ttySL%d",
+		 dev_number(opt.dev_name));
 
 	dcore::Options mo;
 	mo.name = name;

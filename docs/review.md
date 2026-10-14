@@ -81,6 +81,7 @@ as it is.
 | `slmodemd/sip.cpp` | One port for every call, without a group lock of its own: pjproject 2.15 on gives it one in the bridge's port pool, whose last reference the port keeps, so each call's pool was never freed. And `call_cleanup()` closed the socket while the media clock could still use the port, whose descriptor the next call could get. Each call now has a port with its own pool and group lock; at the call's end its socket is shut down (the modem sees the end, a read the media clock waits in returns) and it leaves the bridge, and once the bridge is done with it its `on_destroy` closes the socket and frees the pool (`CALLS=3 asterisk/test/sip.sh`) |
 | `slmodemd/pipe_modem.cpp` | `MODEM_REC`: `fclose(NULL)` at exit when one file could not be made, and a `FILE` leaked per block; the run loop spun at 100% CPU once the line's other end closed |
 | `slmodemd/pty.cpp` | The master leaked when `grantpt()`/`unlockpt()` failed |
+| `slmodemd/main.cpp` | The pty's link was always `/dev/ttySL0`, whatever the device: two slmodemd took the same link. It is `/dev/ttySL<n>` now, n the digits the device's name ends with (`/dev/slamr1`: `/dev/ttySL1`) |
 | `asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c` | The data the link delivered in the block where it came up was thrown away with the modem's responses |
 | `asterisk/app_dmodem.c` | In exec mode the program was forked with `ast_safe_fork(0)`, so Asterisk's reaper could collect it during the call, and at the hangup its pid (perhaps another process's by then) got SIGHUP; nothing came after that if the program ignored it. It is forked with `ast_safe_fork(1)` now, ours to reap: SIGHUP at the hangup, SIGKILL after 5 s, collected, then `ast_safe_fork_cleanup()`, as FreeSWITCH's module does (`BBS_LINGER=1 asterisk/test/run.sh AT+MS=34 bbsexec`: a program that closes its pty and ignores SIGHUP) |
 | `asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c` | The TCP connect to the profile's host (DNS and `connect()`) ran in the channel's thread after CONNECT, so the line's audio stopped until it was done: with a server slow to take the connection (9 s), D-Modem calling over SIP got NO CARRIER. It runs in a thread of its own now, its socket handed back on a socketpair, the line going on meanwhile (and what the remote sends waiting in the DTE's socketpair). `BBS_CONNECT_DELAY=15 asterisk/test/sip.sh` and `freeswitch/test/sip.sh` |
@@ -136,8 +137,6 @@ None left.
 
 ### slmodemd and the PBX modules
 
-- **cleanup** — `slmodemd/main.cpp`: the ttySL link is always
-  `/dev/ttySL0`, whatever the device's number.
 - **risk** — `slmodemd/main.cpp`: the data file is saved after dropping
   root, which fails silently with the usual layout.
 
