@@ -21,6 +21,17 @@ if(DMODEM_SLMODEMD)
 	target_link_libraries(slmodemd PRIVATE dmodem_front dmodem_core
 		dmodem_dsp dmodem_link pjproject m pthread)
 	install(TARGETS slmodemd RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+
+	# test/root_test.py: slmodemd started as root, what needs root's
+	# rights after it has dropped them (skipped unless ctest is root)
+	find_package(Python3 COMPONENTS Interpreter QUIET)
+	if(DMODEM_TESTS AND Python3_Interpreter_FOUND)
+		add_test(NAME slmodemd_root COMMAND ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/root_test.py
+			$<TARGET_FILE:slmodemd>)
+		set_tests_properties(slmodemd_root PROPERTIES LABELS quick
+			SKIP_RETURN_CODE 77 TIMEOUT 60)
+	endif()
 endif()
 
 # modem_test: two modems back to back, each with a pty

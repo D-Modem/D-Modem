@@ -8,6 +8,11 @@
  *    the DTE is a pty (/dev/ttySL<n> links to it, n the device's number:
  *    /dev/ttySL0 for /dev/slamr0).
  *
+ *    Started as root, it goes on as nobody (drop_privileges()) once what
+ *    needs root is set up: the data file is opened for the save at the
+ *    end, and the pty's group and link in /dev are left to a process
+ *    that keeps root's rights for them alone (slm::Pty::fork_keeper()).
+ *
  *    The behaviour is that of slmodemd's modem_main.c with its SIP driver.
  *
  */
@@ -388,9 +393,19 @@ int main(int argc, char *argv[])
 	}
 	INFO("modem `%s' created. TTY is `%s'\n", name, s.pty.name());
 
+	/* the data file opened now, while still root: saved at the end
+	   through this descriptor */
 	snprintf(path_name, sizeof(path_name), "/var/lib/slmodem/data.%s",
 		 name);
-	slm::datafile_load(path_name, &s.m->dsp_info());
+	slm::DataFile data(path_name);
+	data.load(&s.m->dsp_info());
+
+	/* started as root: the pty's group and its link in /dev are the
+	   keeper's to set for each new pty (after the DTE hangs up) and the
+	   link its to remove, root's rights gone here (drop_privileges
+	   below) */
+	if (geteuid() == 0)
+		s.pty.fork_keeper();
 
 	if (opt.ring_detector)
 		INFO("the ring detector needs a telephone line: not on SIP "
@@ -436,7 +451,7 @@ int main(int argc, char *argv[])
 	ret = s.run(ctl_fd);
 	sip::stop();
 
-	slm::datafile_save(path_name, &s.m->dsp_info());
+	data.save(&s.m->dsp_info());
 	delete s.m;
 	usleep(100000);
 	s.pty.close();

@@ -43,6 +43,10 @@ jobs:
       - name: Tests
         run: ctest --test-dir build -L "quick|spandsp" -j4 --output-on-failure
 
+      # slmodemd started as root (ctest skips it as the runner's user)
+      - name: slmodemd as root
+        run: sudo python3 slmodemd/test/root_test.py build/slmodemd/slmodemd
+
   asterisk:
     runs-on: ubuntu-24.04
     steps:

@@ -82,6 +82,7 @@ as it is.
 | `slmodemd/pipe_modem.cpp` | `MODEM_REC`: `fclose(NULL)` at exit when one file could not be made, and a `FILE` leaked per block; the run loop spun at 100% CPU once the line's other end closed |
 | `slmodemd/pty.cpp` | The master leaked when `grantpt()`/`unlockpt()` failed |
 | `slmodemd/main.cpp` | The pty's link was always `/dev/ttySL0`, whatever the device: two slmodemd took the same link. It is `/dev/ttySL<n>` now, n the digits the device's name ends with (`/dev/slamr1`: `/dev/ttySL1`) |
+| `slmodemd/main.cpp`, `pty.cpp`, `datafile.cpp` | Started as root, slmodemd went on as nobody before what needed root was done: the data file was opened for the save only at the end, which failed silently with the usual layout (`/var/lib/slmodem` root's); and after the DTE hung up (HUPCL), the new pty could not be given its group (`dialout`) nor the link in `/dev` pointed at it, so the link went stale (another program's pty once the number was taken again), as it did at the end, when it could not be removed. The data file is now opened (and made) for reading and writing while still root, and saved through that descriptor; the pty's group, mode and link are set by a process forked before the privileges go, which keeps root's rights for that alone (the master passed to it on a socket: it can only touch the pty slmodemd holds), and removes the link when slmodemd ends, even killed. What can't be done is logged. `slmodemd/test/root_test.py` (ctest `slmodemd_root`, as root) |
 | `asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c` | The data the link delivered in the block where it came up was thrown away with the modem's responses |
 | `asterisk/app_dmodem.c` | In exec mode the program was forked with `ast_safe_fork(0)`, so Asterisk's reaper could collect it during the call, and at the hangup its pid (perhaps another process's by then) got SIGHUP; nothing came after that if the program ignored it. It is forked with `ast_safe_fork(1)` now, ours to reap: SIGHUP at the hangup, SIGKILL after 5 s, collected, then `ast_safe_fork_cleanup()`, as FreeSWITCH's module does (`BBS_LINGER=1 asterisk/test/run.sh AT+MS=34 bbsexec`: a program that closes its pty and ignores SIGHUP) |
 | `asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c` | The TCP connect to the profile's host (DNS and `connect()`) ran in the channel's thread after CONNECT, so the line's audio stopped until it was done: with a server slow to take the connection (9 s), D-Modem calling over SIP got NO CARRIER. It runs in a thread of its own now, its socket handed back on a socketpair, the line going on meanwhile (and what the remote sends waiting in the DTE's socketpair). `BBS_CONNECT_DELAY=15 asterisk/test/sip.sh` and `freeswitch/test/sip.sh` |
@@ -137,8 +138,7 @@ None left.
 
 ### slmodemd and the PBX modules
 
-- **risk** — `slmodemd/main.cpp`: the data file is saved after dropping
-  root, which fails silently with the usual layout.
+None left.
 
 ### Tests
 

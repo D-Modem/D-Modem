@@ -10,13 +10,34 @@
 
 #include <modem_defs.h>
 
+#include <string>
+
 namespace slm {
 
-/* < 0 on failure (no file yet, a file of another size) */
-int datafile_load(const char *path, struct dsp_info *info);
-/* *info into the file (made if need be): the bytes written, < 0 on
-   failure */
-int datafile_save(const char *path, const struct dsp_info *info);
+class DataFile {
+public:
+	/* path opened for reading and writing, made (0600) if need be;
+	   read only if it can't be written.  Opened while slmodemd is
+	   still root, the descriptor is what lets save() write it after
+	   the privileges are gone.  What can't be done is logged. */
+	explicit DataFile(const char *path);
+	~DataFile();
+	DataFile(const DataFile &) = delete;
+	DataFile &operator=(const DataFile &) = delete;
+
+	/* the record into *info: the bytes read; -errno if the file can't
+	   be read, -1 if it is empty, short or of another size (info
+	   untouched then) */
+	int load(struct dsp_info *info) const;
+	/* *info as the file's record (written over in place, the file cut
+	   to its size): the bytes written, -errno on failure (logged) */
+	int save(const struct dsp_info *info);
+
+private:
+	std::string path_;
+	int fd_ = -1;
+	bool writable_ = false;
+};
 
 } // namespace slm
 

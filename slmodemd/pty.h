@@ -16,6 +16,8 @@ namespace dcore { class Modem; }
 
 namespace slm {
 
+struct keeper_answer;
+
 class Pty {
 public:
 	Pty() = default;
@@ -34,8 +36,18 @@ public:
 		std::string g = group_, l = link_;
 		return open(g.c_str(), perm_, l.c_str());
 	}
-	/* the master closed, the symbolic link removed */
+	/* the master closed, the symbolic link removed (by the keeper,
+	   fork_keeper(), which ends then) */
 	void close();
+	/* from now on the slave's group and mode, and the link to it, set
+	   by a process forked to keep this one's rights (root's:
+	   drop_privileges() comes next), with no other descriptor than its
+	   socket to this one: for each new pty (reopen()) it is passed the
+	   master, and it removes the link when the socket closes, at
+	   close() or this process's end, even killed.  Called before any
+	   thread is made.  0, or -1 if there is no link or no keeper (all
+	   done here as before then) */
+	int fork_keeper();
 	/* the master, -1 if none */
 	int fd() const { return fd_; }
 	/* the slave's path */
@@ -66,6 +78,13 @@ private:
 	bool have_termios_ = false;
 	bool closed_ = false;
 	unsigned close_count_ = 0;
+	/* the keeper (fork_keeper()): the socket to it, its pid */
+	int keeper_ = -1;
+	pid_t keeper_pid_ = -1;
+
+	void set_slave(const char *group, mode_t perm, const char *link);
+	int keeper_ask(struct keeper_answer *a);
+	void end_keeper();
 };
 
 } // namespace slm
