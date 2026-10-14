@@ -29,6 +29,8 @@
 #include <unistd.h>
 #include <spandsp.h>
 
+#include "half_dte.h"
+
 #define RATE 8000
 #define MS(x) ((x) * RATE / 1000)
 
@@ -50,11 +52,10 @@ static int pty;
 static long sync_n;
 static long line_n;             /* line samples so far */
 
-/* s to the DTE (what the pty does not take is lost) */
+/* s to the DTE */
 static void dte_puts(const char *s)
 {
-	if (write(pty, s, strlen(s)) < 0)
-		LOG("pty write: %s\n", strerror(errno));
+	dte_write(pty, s, strlen(s));
 }
 
 /* a result code, "\r\n<s>\r\n" */
@@ -142,8 +143,7 @@ static void put_byte(void *user_data, int byte)
 	(void)user_data;
 	if (byte < 0 || !online)
 		return;
-	if (write(pty, &c, 1) < 0)
-		LOG("pty write: %s\n", strerror(errno));
+	dte_write(pty, &c, 1);
 }
 
 /* CONNECT <rate>, once a call; data mode */
@@ -572,17 +572,28 @@ static void at_line(char *s)
 	result(ok ? "OK" : "ERROR");
 }
 
-/* the DTE's input: data online (+++ with a second of quiet each side
-   back to commands), else commands, echoed; in command mode at
-   SPANDSP_SYNC's samples only */
+/* what waits to the DTE, then the DTE's input: data online (+++ with
+   a second of quiet each side back to commands), else commands, echoed;
+   in command mode at SPANDSP_SYNC's samples only */
 static void dte_poll(void)
 {
 	unsigned char buf[256];
-	int n, k;
+	int n = sizeof(buf), k;
 
+	dte_flush(pty);
 	if (sync_n && line_n % sync_n && !online)
 		return;
-	n = (int)read(pty, buf, sizeof(buf));
+	/* online, no more than the line's queue has room for: the rest
+	   waits in the pty */
+	if (online) {
+		k = (txq_tail - txq_head - 1 + (int)sizeof(txq)) %
+		    (int)sizeof(txq);
+		if (k < n)
+			n = k;
+		if (!n)
+			return;
+	}
+	n = (int)read(pty, buf, (size_t)n);
 	for (k = 0; k < n; k++) {
 		unsigned char c = buf[k];
 		if (online) {
@@ -600,8 +611,7 @@ static void dte_poll(void)
 			}
 			continue;
 		}
-		if (write(pty, &c, 1) < 0)      /* (echo) */
-			break;
+		dte_write(pty, &c, 1);          /* (echo) */
 		if (c == '\r' || c == '\n') {
 			cmd[cmd_n] = 0;
 			if (cmd_n)

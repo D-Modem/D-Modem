@@ -89,6 +89,7 @@ as it is.
 | `dsp/test/half_hsf.c` | The last character of a ';' comment in an .inf value was taken as a byte |
 | `dsp/test/interop_call.cpp` | A fax page was found by its first 128 bits only when all were right. The original library's V.17 receiver at 12000 bit/s decides one point wrong about once a page, depending on how its 20 ms frames fall on the trainings, and in one of those alignments it is in those bits: `fax_interop_121_open_sends` failed about half the time. Now 8 of them may be wrong; the page's error count takes them |
 | `dsp/test/interop_call.cpp` | MIDCALL dropped the remote's data with the commands' answers: what came ahead of the escape's OK, and what followed `ATO`'s CONNECT in the same read. `agere_v92_moh_grant` failed so once in a full run (data right behind the CONNECT) |
+| `dsp/test/half_agere.c`, `half_sm56.c`, `half_pctel.c`, `half_hsf.c`, `half_spandsp.c` | The modem's output went to the non-blocking pty with one `write()`, and what the pty refused (it takes some 20 KB ahead of the driver's reading) was lost: `agere_v44_agere_calls` lost a block of 4646 octets in the middle of Agere's 60000 once in a few full runs, the driver late to read on a loaded machine. The other way, the SM56 and HSF harnesses dropped what they had read from the pty and the modem did not take, and the spandsp one what did not fit its line's queue. `half_dte.h` keeps both until they are taken |
 | `asterisk/test/sip_call.py` | A traceback instead of FAIL when slmodemd gave no pty or went away |
 
 ## Checked and left as they are

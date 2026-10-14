@@ -46,6 +46,8 @@
 #include <ucontext.h>
 #include <unistd.h>
 
+#include "half_dte.h"
+
 typedef unsigned char byte;
 typedef unsigned short word;
 typedef unsigned int u32;
@@ -1567,28 +1569,30 @@ static void dte_out(void)
 	u32 n, k;
 	if (!hcom)
 		return;
+	dte_flush(pty);
 	while ((n = OS(ComCtrl_Read)(hcom, buf, sizeof(buf))) > 0 && n <= sizeof(buf)) {
 		for (k = 0; k < n; k++)
 			result_scan(buf[k]);
-		if (write(pty, buf, n) < 0)
-			LOG("pty write: %s\n", strerror(errno));
+		dte_write(pty, buf, n);
 	}
+}
+
+/* dte_read()'s: n octets at p to the modem, as many as it takes */
+static int dte_put(const void *p, int n)
+{
+	return (int)OS(ComCtrl_Write)(hcom, (void *)p, (u32)n);
 }
 
 /* the DTE's input, as much as the modem takes */
 static void dte_poll(void)
 {
-	byte buf[256];
 	u32 room = 0;
-	int n;
 
 	if (!hcom || (sync_n && line_n % sync_n && !online))
 		return;
-	if (OS(ComCtrl_Monitor)(hcom, COMCTRL_MONITOR_TXFREE, &room) || !room)
+	if (OS(ComCtrl_Monitor)(hcom, COMCTRL_MONITOR_TXFREE, &room))
 		return;
-	n = (int)read(pty, buf, room < sizeof(buf) ? room : sizeof(buf));
-	if (n > 0 && OS(ComCtrl_Write)(hcom, buf, (u32)n) != (u32)n)
-		LOG("ComCtrl_Write: short\n");
+	dte_read(pty, room > 4096 ? 4096 : (int)room, dte_put);
 }
 
 /* ComCtrl's events (the serial driver's): logged only */

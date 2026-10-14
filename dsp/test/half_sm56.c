@@ -49,6 +49,8 @@
 #include <ucontext.h>
 #include <unistd.h>
 
+#include "half_dte.h"
+
 typedef unsigned char byte;
 typedef unsigned short word;
 typedef unsigned int u32;
@@ -862,8 +864,8 @@ static void result_scan(unsigned char c)
 static void flip_push(void)
 {
 	int n = *(int *)(tty + 0x168), k;
-	if (n > 0 && write(pty, tty + 0x170, n) < 0)
-		LOG("pty write: %s\n", strerror(errno));
+	if (n > 0)
+		dte_write(pty, tty + 0x170, n);
 	for (k = 0; k < n; k++)
 		result_scan(tty[0x170 + k]);
 	flip_reset();
@@ -990,21 +992,21 @@ static void line_idle(unsigned n)
  *    main loop
  */
 
-/* the DTE's input, as much as the modem takes; only commands need the
-   fixed timing, so data (online) goes in at once */
+/* dte_read()'s: n octets at p to the modem, as many as it takes */
+static int dte_put(const void *p, int n)
+{
+	return mot_write(tty, 0, p, n);
+}
+
+/* what waits to the DTE, then the DTE's input, as much as the modem
+   takes; only commands need the fixed timing, so data (online) goes in
+   at once */
 static void dte_poll(void)
 {
-	unsigned char buf[256];
-	int n, room;
-
+	dte_flush(pty);
 	if (sync_n && line_n % sync_n && !online)
 		return;
-	room = mot_writeroom(tty);
-	if (room <= 0)
-		return;
-	n = (int)read(pty, buf, room < (int)sizeof(buf) ? (size_t)room : sizeof(buf));
-	if (n > 0 && mot_write(tty, 0, buf, n) != n)
-		LOG("mot_write: short\n");
+	dte_read(pty, mot_writeroom(tty), dte_put);
 }
 
 /* the traps, the patches, the devices, init_module and mot_open; then

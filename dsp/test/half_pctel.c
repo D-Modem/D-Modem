@@ -35,6 +35,8 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include "half_dte.h"
+
 typedef unsigned char byte;
 typedef unsigned short word;
 typedef unsigned int u32;
@@ -278,8 +280,10 @@ static void dte_out(void)
 		COM_RxQcount--;
 		result_scan(buf[n++]);
 	}
-	if (n > 0 && write(pty, buf, (size_t)n) < 0)
-		LOG("pty write: %s\n", strerror(errno));
+	if (n > 0)
+		dte_write(pty, buf, (size_t)n);
+	else
+		dte_flush(pty);
 }
 
 /* the DTE's input, as much as the modem takes; only commands need the

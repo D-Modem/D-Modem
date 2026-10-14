@@ -40,6 +40,8 @@
 #include <unistd.h>
 #include <ctype.h>
 
+#include "half_dte.h"
+
 /* the driver's regparm(0): the default here (no -mregparm) */
 #define fnatr
 typedef unsigned char byte;
@@ -637,8 +639,10 @@ static void uart_poll(void)
 	/* the modem's output to the DTE */
 	while (n < (int)sizeof(buf) && (read_vuart_port(UART_LSR) & 1))
 		buf[n++] = (unsigned char)read_vuart_port(UART_RX);
-	if (n && write(pty, buf, n) < 0)
-		LOG("pty write: %s\n", strerror(errno));
+	if (n)
+		dte_write(pty, buf, n);
+	else
+		dte_flush(pty);
 	if (sync_n)
 		for (k = 0; k < n; k++)
 			result_scan(buf[k]);
