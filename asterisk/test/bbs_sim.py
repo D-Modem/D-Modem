@@ -11,6 +11,11 @@
 #   BBS_EXEC=1 bbs_sim.py         only the terminal: the BBS is run by
 #                                 DModem (mode=exec) as
 #   bbs_sim.py --stdio            the BBS on stdin/stdout (the pty)
+#
+# BBS_CONNECT_DELAY=<s>: the BBS's port takes no connection until s
+# seconds after the start (its accept queue full with one of our own),
+# so DModem's connect to it waits in SYN retransmissions meanwhile; the
+# line must go on while it does.
 import os, socket, sys, threading, time
 
 BBS_PORT, TERM_PORT = 2323, 2324
@@ -72,13 +77,21 @@ def term(conn):
         pass
 
 # one connection on 127.0.0.1:port (accept timeout: argv[1] s, else
-# 120), handed to fn
-def serve(port, fn):
+# 120), handed to fn; none taken until delay s from now
+def serve(port, fn, delay=0):
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("127.0.0.1", port))
-    s.listen(1)
+    s.listen(0 if delay else 1)
     s.settimeout(float(sys.argv[1]) if len(sys.argv) > 1 else 120)
+    if delay:
+        # the accept queue full (one connection, backlog 0): SYNs are
+        # dropped, and connect() retries, until it has room again
+        filler = socket.create_connection(("127.0.0.1", port))
+        time.sleep(delay)
+        s.accept()[0].close()
+        filler.close()
+        print("bbs: taking connections at %.1f s" % delay, flush=True)
     c, _ = s.accept()
     c.settimeout(120)
     fn(c)
@@ -89,7 +102,9 @@ if sys.argv[1:] == ["--stdio"]:
 tt = threading.Thread(target=serve, args=(TERM_PORT, term), daemon=True)
 tt.start()
 if not os.environ.get("BBS_EXEC"):
-    threading.Thread(target=serve, args=(BBS_PORT, bbs), daemon=True).start()
+    threading.Thread(target=serve, args=(BBS_PORT, bbs,
+                     float(os.environ.get("BBS_CONNECT_DELAY", "0"))),
+                     daemon=True).start()
 tt.join()
 ok = result.get("ok", False)
 print("user saw banner, %d echoed lines and goodbye: %s (%.1f s for %d bytes each way)"

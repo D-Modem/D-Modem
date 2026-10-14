@@ -8,7 +8,9 @@
 # (slmodemd -L, ATS0=1), <command> makes Asterisk call it, and DModem(term,o)
 # as the calling modem connects to this script's terminal port (2324), the
 # user; the BBS is on D-Modem's pty.  CALLS=<n>: that many calls one after
-# the other (D-Modem calling), in one slmodemd.
+# the other (D-Modem calling), in one slmodemd.  BBS_CONNECT_DELAY=<s>: the
+# BBS takes no connection until s seconds after the start (as
+# bbs_sim.py's), so DModem(bbs)'s connect waits meanwhile.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 slmodemd, number = sys.argv[1:3]
@@ -39,10 +41,27 @@ def bbs_conn(conn):
             conn.sendall(line.upper() + b"\r\n")
 srv = socket.socket()
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(("127.0.0.1", 2323)); srv.listen(1)
+srv.bind(("127.0.0.1", 2323))
 calls = int(os.environ.get("CALLS", "1"))
-threading.Thread(target=lambda: [bbs_conn(srv.accept()[0]) for _ in range(calls)],
-                 daemon=True).start()
+delay = float(os.environ.get("BBS_CONNECT_DELAY", "0"))
+srv.listen(0 if delay else 1)
+if delay:
+    # the accept queue full with a connection of our own: SYNs dropped,
+    # connect() retrying, until it is taken
+    filler = socket.create_connection(("127.0.0.1", 2323))
+    def take_filler():
+        time.sleep(delay)
+        srv.accept()[0].close()
+        filler.close()
+        print("bbs: taking connections at %.1f s" % delay, flush=True)
+    threading.Thread(target=take_filler, daemon=True).start()
+    time.sleep(0.1)
+def bbs_calls():
+    if delay:
+        time.sleep(delay + 0.05)
+    for _ in range(calls):
+        bbs_conn(srv.accept()[0])
+threading.Thread(target=bbs_calls, daemon=True).start()
 
 incoming = os.environ.get("SIP_IN")
 p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-d" + os.environ.get("SLMODEMD_DEBUG", "1")] + (["-L"] if incoming else []), stdout=subprocess.PIPE,

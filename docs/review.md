@@ -82,6 +82,7 @@ as it is.
 | `slmodemd/pipe_modem.cpp` | `MODEM_REC`: `fclose(NULL)` at exit when one file could not be made, and a `FILE` leaked per block; the run loop spun at 100% CPU once the line's other end closed |
 | `slmodemd/pty.cpp` | The master leaked when `grantpt()`/`unlockpt()` failed |
 | `asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c` | The data the link delivered in the block where it came up was thrown away with the modem's responses |
+| `asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c` | The TCP connect to the profile's host (DNS and `connect()`) ran in the channel's thread after CONNECT, so the line's audio stopped until it was done: with a server slow to take the connection (9 s), D-Modem calling over SIP got NO CARRIER. It runs in a thread of its own now, its socket handed back on a socketpair, the line going on meanwhile (and what the remote sends waiting in the DTE's socketpair). `BBS_CONNECT_DELAY=15 asterisk/test/sip.sh` and `freeswitch/test/sip.sh` |
 | `asterisk/app_dmodem.c` | DMODEMSTATUS=FAX was not documented |
 
 ### Tests
@@ -134,9 +135,6 @@ None left.
 
 ### slmodemd and the PBX modules
 
-- **risk** — `app_dmodem.c`, `mod_dmodem.c`: the TCP connect to the
-  profile's host (DNS and `connect()`) blocks the channel thread after
-  CONNECT, so the line's audio stops meanwhile.
 - **risk** — `app_dmodem.c`: in exec mode the program's pid gets SIGHUP
   after Asterisk's reaper may have collected it, and nothing escalates to
   SIGKILL.

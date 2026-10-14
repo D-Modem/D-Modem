@@ -80,6 +80,7 @@ jobs:
           timeout 300 asterisk/test/sip.sh
           INCOMING=1 timeout 300 asterisk/test/sip.sh
           CALLS=3 timeout 300 asterisk/test/sip.sh
+          BBS_CONNECT_DELAY=15 timeout 300 asterisk/test/sip.sh
 
       - name: Fax
         run: |
@@ -150,6 +151,7 @@ jobs:
         run: |
           timeout 300 freeswitch/test/sip.sh
           INCOMING=1 timeout 300 freeswitch/test/sip.sh
+          BBS_CONNECT_DELAY=15 timeout 300 freeswitch/test/sip.sh
 
       - name: Fax
         run: timeout 1200 freeswitch/test/fax.sh

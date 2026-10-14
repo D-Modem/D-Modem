@@ -275,18 +275,18 @@ static int load_profile(const char *name, struct profile *p)
 	return 0;
 }
 
-/* the profile's host:port, the first address that takes it (a blocking
-   connect), non-blocking once connected; -1 on failure */
-static int connect_tcp(const struct profile *p)
+/* host:port, the first address that takes it (a blocking connect, in
+   tcp_thread()), non-blocking once connected; -1 on failure */
+static int connect_tcp(const char *host, const char *port)
 {
 	struct addrinfo hints = { 0 }, *res, *ai;
 	int fd = -1, err;
 
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
-	err = getaddrinfo(p->host, p->port, &hints, &res);
+	err = getaddrinfo(host, port, &hints, &res);
 	if (err) {
-		ast_log(LOG_WARNING, "dmodem: %s: %s\n", p->host,
+		ast_log(LOG_WARNING, "dmodem: %s: %s\n", host,
 			gai_strerror(err));
 		return -1;
 	}
@@ -302,11 +302,74 @@ static int connect_tcp(const struct profile *p)
 	freeaddrinfo(res);
 	if (fd < 0) {
 		ast_log(LOG_WARNING, "dmodem: cannot connect to %s:%s: %s\n",
-			p->host, p->port, strerror(errno));
+			host, port, strerror(errno));
 		return -1;
 	}
 	nonblock(fd);
 	return fd;
+}
+
+/* the TCP connect, in a thread of its own so that the line's audio goes
+   on meanwhile (DNS and connect() can take seconds): the profile's host
+   and port, and the socket its result goes on */
+struct tcp_job {
+	char host[256];
+	char port[16];
+	int out;
+};
+
+/* the connect; its descriptor (-1: it failed) to the call, or closed if
+   the call has gone */
+static void *tcp_thread(void *arg)
+{
+	struct tcp_job *j = arg;
+	int fd = connect_tcp(j->host, j->port);
+
+	if (send(j->out, &fd, sizeof(fd), MSG_NOSIGNAL) != (ssize_t)sizeof(fd) &&
+	    fd >= 0)
+		close(fd);
+	close(j->out);
+	ast_free(j);
+	return NULL;
+}
+
+/* the profile's connect started; the descriptor its result comes on
+   (tcp_done()), or -1 */
+static int tcp_start(const struct profile *p)
+{
+	struct tcp_job *j = ast_calloc(1, sizeof(*j));
+	int sv[2];
+
+	if (!j || socketpair(AF_UNIX, SOCK_STREAM, 0, sv)) {
+		ast_free(j);
+		return -1;
+	}
+	snprintf(j->host, sizeof(j->host), "%s", p->host);
+	snprintf(j->port, sizeof(j->port), "%s", p->port);
+	j->out = sv[1];
+	if (ast_pthread_create_detached(&(pthread_t){ 0 }, NULL, tcp_thread, j)) {
+		close(sv[0]);
+		close(sv[1]);
+		ast_free(j);
+		return -1;
+	}
+	nonblock(sv[0]);
+	return sv[0];
+}
+
+/* the connect's result, if it has come: 1 and *fd (-1: it failed), else
+   0 */
+static int tcp_done(int pending, int *fd)
+{
+	int r = recv(pending, fd, sizeof(*fd), 0);
+
+	if (r == (int)sizeof(*fd))
+		return 1;
+	if (r == 0 || (r < 0 && errno != EAGAIN && errno != EINTR)) {
+		*fd = -1;
+		return 1;
+	}
+	return 0;
 }
 
 /* the program on the slave of a new pty, the master returned */
@@ -566,6 +629,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];
 	long long samples = 0, deadline, closing = -1;
 	int dte[2] = { -1, -1 }, host = -1, online = 0, res = 0, orig;
+	int connecting = -1;    /* the TCP connect's result comes on it */
 	pid_t pid = 0;
 
 	parse = ast_strdupa(S_OR(data, ""));
@@ -688,7 +752,12 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 				ast_verb(3, "%s: DModem connected at %s bit/s\n",
 					 name, rate);
 				if (p.mode == MODE_TCP) {
-					host = connect_tcp(&p);
+					connecting = tcp_start(&p);
+					if (connecting < 0) {
+						status = "ERROR";
+						break;
+					}
+					continue;
 				} else {
 					const char *env[] = {
 						"DMODEM_CHANNEL", name,
@@ -714,7 +783,24 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			}
 			continue;
 		}
-		/* online */
+		/* online; the host once it is connected (what the remote
+		   sends meanwhile waits in the DTE's socketpair) */
+		if (connecting >= 0) {
+			if (st.link != DMODEM_ONLINE) {
+				status = "REMOTE";
+				break;
+			}
+			if (!tcp_done(connecting, &host))
+				continue;
+			close(connecting);
+			connecting = -1;
+			if (host < 0) {
+				status = "ERROR";
+				break;
+			}
+			ast_verb(4, "%s: DModem: server fd %d, dte fds %d %d\n",
+				 name, host, dte[0], dte[1]);
+		}
 		relay(dte[1], host, &to_host);
 		if (st.link != DMODEM_ONLINE) {
 			status = "REMOTE";
@@ -752,6 +838,8 @@ out:
 		dmodem_destroy(d);
 	if (host >= 0)
 		close(host);
+	if (connecting >= 0)
+		close(connecting);      /* (the thread closes what it gets) */
 	if (pid > 0)
 		kill(pid, SIGHUP);      /* the reaper collects it */
 	if (dte[0] >= 0)

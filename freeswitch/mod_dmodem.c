@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -255,19 +256,19 @@ static int load_profile(const char *name, struct profile *p)
 	return 0;
 }
 
-/* the profile's host:port, the first address that takes it (a blocking
-   connect), non-blocking once connected; -1 on failure */
-static int connect_tcp(const struct profile *p)
+/* host:port, the first address that takes it (a blocking connect, in
+   tcp_thread()), non-blocking once connected; -1 on failure */
+static int connect_tcp(const char *host, const char *port)
 {
 	struct addrinfo hints = { 0 }, *res, *ai;
 	int fd = -1, err;
 
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
-	err = getaddrinfo(p->host, p->port, &hints, &res);
+	err = getaddrinfo(host, port, &hints, &res);
 	if (err) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				  "dmodem: %s: %s\n", p->host,
+				  "dmodem: %s: %s\n", host,
 				  gai_strerror(err));
 		return -1;
 	}
@@ -284,11 +285,83 @@ static int connect_tcp(const struct profile *p)
 	if (fd < 0) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
 				  "dmodem: cannot connect to %s:%s: %s\n",
-				  p->host, p->port, strerror(errno));
+				  host, port, strerror(errno));
 		return -1;
 	}
 	nonblock(fd);
 	return fd;
+}
+
+/* the TCP connect, in a thread of its own so that the line's audio goes
+   on meanwhile (DNS and connect() can take seconds): the profile's host
+   and port, and the socket its result goes on */
+struct tcp_job {
+	char host[256];
+	char port[16];
+	int out;
+};
+
+/* the connect; its descriptor (-1: it failed) to the call, or closed if
+   the call has gone */
+static void *tcp_thread(void *arg)
+{
+	struct tcp_job *j = arg;
+	int fd = connect_tcp(j->host, j->port);
+
+	if (send(j->out, &fd, sizeof(fd), MSG_NOSIGNAL) != (ssize_t)sizeof(fd) &&
+	    fd >= 0)
+		close(fd);
+	close(j->out);
+	free(j);
+	return NULL;
+}
+
+/* the profile's connect started; the descriptor its result comes on
+   (tcp_done()), or -1 */
+static int tcp_start(const struct profile *p)
+{
+	struct tcp_job *j = calloc(1, sizeof(*j));
+	int sv[2];
+
+	if (!j || socketpair(AF_UNIX, SOCK_STREAM, 0, sv)) {
+		free(j);
+		return -1;
+	}
+	snprintf(j->host, sizeof(j->host), "%s", p->host);
+	snprintf(j->port, sizeof(j->port), "%s", p->port);
+	j->out = sv[1];
+	{
+		pthread_t t;
+		pthread_attr_t a;
+		int err;
+		pthread_attr_init(&a);
+		pthread_attr_setdetachstate(&a, PTHREAD_CREATE_DETACHED);
+		err = pthread_create(&t, &a, tcp_thread, j);
+		pthread_attr_destroy(&a);
+		if (err) {
+			close(sv[0]);
+			close(sv[1]);
+			free(j);
+			return -1;
+		}
+	}
+	nonblock(sv[0]);
+	return sv[0];
+}
+
+/* the connect's result, if it has come: 1 and *fd (-1: it failed), else
+   0 */
+static int tcp_done(int pending, int *fd)
+{
+	int r = recv(pending, fd, sizeof(*fd), 0);
+
+	if (r == (int)sizeof(*fd))
+		return 1;
+	if (r == 0 || (r < 0 && errno != EAGAIN && errno != EINTR)) {
+		*fd = -1;
+		return 1;
+	}
+	return 0;
 }
 
 /* in the child: none of FreeSWITCH's descriptors (sockets, files) */
@@ -712,6 +785,7 @@ SWITCH_STANDARD_APP(dmodem_function)
 	const char *profile, *status = "ERROR";
 	long long samples = 0, deadline, closing = -1;
 	int dte[2] = { -1, -1 }, host = -1, online = 0, orig, line_ok = 0;
+	int connecting = -1;    /* the TCP connect's result comes on it */
 	pid_t pid = 0;
 
 	mydata = switch_core_session_strdup(session, data ? data : "");
@@ -817,7 +891,12 @@ SWITCH_STANDARD_APP(dmodem_function)
 						  "dmodem connected at %s bit/s\n",
 						  rate);
 				if (p.mode == MODE_TCP) {
-					host = connect_tcp(&p);
+					connecting = tcp_start(&p);
+					if (connecting < 0) {
+						status = "ERROR";
+						break;
+					}
+					continue;
 				} else {
 					const char *cid =
 						switch_channel_get_variable(channel,
@@ -845,7 +924,22 @@ SWITCH_STANDARD_APP(dmodem_function)
 			}
 			continue;
 		}
-		/* online */
+		/* online; the host once it is connected (what the remote
+		   sends meanwhile waits in the DTE's socketpair) */
+		if (connecting >= 0) {
+			if (st.link != DMODEM_ONLINE) {
+				status = "REMOTE";
+				break;
+			}
+			if (!tcp_done(connecting, &host))
+				continue;
+			close(connecting);
+			connecting = -1;
+			if (host < 0) {
+				status = "ERROR";
+				break;
+			}
+		}
 		relay(dte[1], host, &to_host);
 		if (st.link != DMODEM_ONLINE) {
 			status = "REMOTE";
@@ -887,6 +981,8 @@ out:
 		line_close(&l);
 	if (host >= 0)
 		close(host);
+	if (connecting >= 0)
+		close(connecting);      /* (the thread closes what it gets) */
 	if (pid > 0)
 		end_exec(pid);
 	if (dte[0] >= 0)
