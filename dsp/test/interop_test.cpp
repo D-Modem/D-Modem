@@ -68,8 +68,8 @@ const std::map<std::string, const char *> &programs()
 #ifdef HALF_HSF
 		{ "hsf", HALF_HSF },
 #endif
-#ifdef HALF_WIN
-		{ "broadcom", HALF_WIN },
+#ifdef HALF_BROADCOM
+		{ "broadcom", HALF_BROADCOM },
 #endif
 	};
 	return p;
@@ -485,8 +485,8 @@ std::vector<Call> calls()
 	      "retrained", "PROTO_B=ATX3;AT+MS=92" });
 
 	/* --- Broadcom's V.92 soft modem for Windows (its WDM driver on
-	   half_win's kernel and BCM4212, 8000 Hz) and the open modem (9600
-	   Hz) call each other at each modulation */
+	   interop_windows.c's kernel and half_broadcom's BCM4212, 8000 Hz)
+	   and the open modem (9600 Hz) call each other at each modulation */
 	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
 		     { "B103", "103" }, { "V21", "21" }, { "V23C", "23" },
 		     { "B212", "212" }, { "V22", "22" }, { "V22B", "122" },

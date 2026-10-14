@@ -1,54 +1,38 @@
 /*
- *    half_win.c - Broadcom's V.92 soft modem for Windows (BCMSM.sys
- *    3.4.19 of 2002, the WDM driver of the "BCM V.92 56K Modem": its
- *    controller and data pumps, i386) as a test peer, as half_sm56 does
- *    for Motorola's Linux module: line audio from fd 3 and to fd 4 (16
- *    bit, WIN_RATE, 8000 by default), AT commands on a pty whose name is
- *    printed ("created win: /dev/pts/N"); WIN_SYNC as half_agere's
- *    AGERE_SYNC.
+ *    interop_windows.c - a Windows kernel of our own for the WDM driver
+ *    of a soft modem (interop_windows.h): what the driver imports
+ *    (ntoskrnl, HAL, WMILIB, ks: stdcall and fastcall as there), the PnP
+ *    manager and the PCI bus driver under the driver, modem.sys over it.
  *
- *    The driver is a PE image: loaded here at its base (0x10000), its
- *    imports bound to a Windows kernel of our own (ntoskrnl, HAL, WMILIB,
- *    ks: what it imports, stdcall and fastcall as there), on one thread.
- *    Time is the line's samples: the interrupt time, the system time
- *    (each read on by 1 us, as busy waits need), timers and their DPCs.
- *    Its system threads are coroutines that run when what they wait for
- *    comes.  The registry is the driver's INF (its AddReg sections, as
- *    the modem installer writes them) in memory.  fs is a KPCR (the
+ *    The driver is a PE image: loaded at its base (0x10000), its imports
+ *    bound to ours by name (one we do not have stops us with its name,
+ *    if it is called).  Everything runs on one thread and the line's
+ *    clock: the interrupt time and the system time are the line's
+ *    samples (each read on by 1 us while the line stands still, as busy
+ *    waits need), timers fire and their DPCs run between samples, the ISR
+ *    when the device's interrupt comes up, and the driver's system
+ *    threads are coroutines that run when what they wait for comes.  The
+ *    registry is the driver's INF (its model's AddReg sections, as the
+ *    modem class installer writes them) in memory.  fs is a KPCR (the
  *    driver checks its stack against the TIB's limit).
  *
- *    Its hardware is Broadcom's BCM4212 (PCI 14e4:4212, Dell's subsystem,
- *    CodecType 0x15: this build has no other codec; the AC'97 controllers
- *    it looks for on the PCI bus have no code behind them).  Its
- *    registers are a memory BAR the driver maps: a window of ours that
- *    is not accessible, whose accesses fault and are single-stepped with
- *    the device's values (see mm_fault).  Its DMA is Broadcom's (the
- *    BCM4401 Ethernet's, as Linux's b44 knows it): descriptor rings for
- *    TX and RX, the samples 16 bit at the line side's rate, interrupts
- *    on descriptors' IOC.  Its line side is a Silicon Labs Si3034 DAA
- *    behind a serial port at 0x38/0x3c: its registers, its PLL for the
- *    rate, its hook and loop current.  in, out, cli, sti, mov to and
- *    from CRn and rdtsc trap (no I/O permission, PR_TSC_SIGSEGV) and are
- *    carried out here.
+ *    The device is the harness's (struct win_dev).  Its registers are a
+ *    window of ours that is not accessible: each access faults and is
+ *    single-stepped with the device's values (see mm_fault).  in, out,
+ *    cli, sti, mov to and from CRn and rdtsc trap (no I/O permission,
+ *    PR_TSC_SIGSEGV) and are carried out here; PCI's configuration ports
+ *    are the device's configuration space.
  *
- *    We are the rest of the device stack: the PCI bus driver under it
- *    (its PDO: the PnP IRPs it sends down, its resources), the PnP manager
- *    (AddDevice, START_DEVICE) and, over it, Windows' modem.sys: the
- *    driver is a serial port, opened (IRP_MJ_CREATE), set up by serial
- *    IOCTLs and read and written with IRPs, to and from the pty.
- *
- *    The driver is test/broadcom/BCMSM.sys as Broadcom shipped it (sha256
- *    033c6716...), its INF BCMSMwxp.inf; WIN_SYS and WIN_INF for others.
- *    WIN_DEBUG=1 prints the driver's calls of note, the hook, the rate
- *    and the line's levels, 2 every register and port access, 3 every
- *    call it makes into us.
+ *    We are the rest of the device stack: the PCI bus driver under the
+ *    driver (its PDO: the PnP IRPs sent down, the device's resources),
+ *    the PnP manager (DriverEntry, AddDevice, START_DEVICE) and, over it,
+ *    Windows' modem.sys: the driver is a serial port, opened
+ *    (IRP_MJ_CREATE), set up by serial IOCTLs and read and written with
+ *    IRPs.
  */
 
 #define _GNU_SOURCE
 #include <ctype.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <math.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -59,32 +43,23 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
-#include <termios.h>
 #include <ucontext.h>
 #include <unistd.h>
 
-#include "half_dte.h"
 #include "half_stack.h"
+#include "interop_windows.h"
 
-typedef unsigned char byte;
-typedef unsigned short word;
-typedef unsigned int u32;
-typedef unsigned long long u64;
 typedef int NTSTATUS;
 typedef unsigned short wchar;   /* Windows' WCHAR */
 
 #define NTAPI __attribute__((stdcall))
 #define FASTCALL __attribute__((fastcall))
 
-static int dbg;
-#define LOG(fmt, ...) do { if (dbg) fprintf(stderr, "win: " fmt, ##__VA_ARGS__); } while (0)
+int win_debug;
+#define LOG(fmt, ...) do { if (win_debug) fprintf(stderr, "win: " fmt, ##__VA_ARGS__); } while (0)
 
-#ifndef WIN_SYS
-#define WIN_SYS "BCMSM.sys"
-#endif
-#ifndef WIN_INF
-#define WIN_INF "BCMSMwxp.inf"
-#endif
+/* the device's IRQL (its interrupt's, as the HAL translates it) */
+#define DIRQL 0x16
 
 #define STATUS_SUCCESS                  0
 #define STATUS_TIMEOUT                  0x00000102
@@ -310,7 +285,7 @@ static void __attribute__((used, noreturn)) import_missing(int i)
 		import_names[i]);
 	exit(1);
 }
-/* the trace of a call of import i (WIN_DEBUG=3) */
+/* the trace of a call of import i (win_debug 3) */
 static void __attribute__((used)) import_trace(int i)
 {
 	fprintf(stderr, "win: > %s\n", import_names[i]);
@@ -447,7 +422,7 @@ static int pe_load(const char *path)
 				}
 				import_names[nimports] = name;
 				fn = e ? e->fn : NULL;
-				if (!e || (dbg > 2 && !strstr(name, "Interlocked") &&
+				if (!e || (win_debug > 2 && !strstr(name, "Interlocked") &&
 					   e->name[0] != '*'))
 					fn = thunk_make(nimports, fn);
 				nimports++;
@@ -504,16 +479,15 @@ static wchar *a2w(const char *s)
  *    time: the line's samples
  */
 
-static int line_rate = 8000;
-static unsigned long long line_n;       /* line samples so far */
-static void line_idle(unsigned n);
+static struct win_dev *wdev;            /* the harness's device */
+unsigned long long win_line_n;          /* line samples so far */
 
 /* the interrupt time (100 ns since boot): the line's, from 10 s; and
    on by the driver's busy waits (itime_last) while the line stands */
 static u64 itime_last;
 static u64 itime(void)
 {
-	u64 t = 100000000ull + line_n * 10000000ull / (u64)line_rate;
+	u64 t = 100000000ull + win_line_n * 10000000ull / (u64)wdev->rate;
 	return t > itime_last ? t : itime_last;
 }
 /* the system time (100 ns since 1601): 1 August 2002 then */
@@ -524,10 +498,16 @@ static u64 itime(void)
 static unsigned long long tsc_last;
 static unsigned long long tsc_read(void)
 {
-	unsigned long long t = line_n * (1000000000ull / (u64)line_rate);
+	unsigned long long t = win_line_n * (1000000000ull / (u64)wdev->rate);
 	if (t <= tsc_last)
 		t = tsc_last + 100;
 	return tsc_last = t;
+}
+
+/* the line run on a ms (silent) while the kernel waits */
+static void line_ms(void)
+{
+	wdev->idle((unsigned)(wdev->rate / 1000));
 }
 
 /*
@@ -720,7 +700,7 @@ static NTSTATUS wait_for(struct dispatcher **o, int n, int all, u64 until)
 				fprintf(stderr, "win: a wait of 60 s in the main thread\n");
 				return STATUS_TIMEOUT;
 			}
-			line_idle((unsigned)(line_rate / 1000));
+			line_ms();
 		}
 	}
 }
@@ -745,8 +725,6 @@ static u64 timeout_end(const long long *to)
  *    gs here)
  */
 static byte kpcr[0x1000] __attribute__((aligned(4096)));
-static byte kthread_main[0x400];
-static u32 main_stack_base;
 
 static void kpcr_stack(u32 base, u32 size, void *thread)
 {
@@ -819,9 +797,9 @@ static struct rkey *rkeys;
 #define REG_DWORD 4
 #define REG_MULTI_SZ 7
 
-#define KEY_SERVICE "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\BCMModem"
-#define KEY_DRIVER "\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Class\\{4D36E96D-E325-11CE-BFC1-08002BE10318}\\0000"
-#define KEY_DEVICE "\\Registry\\Machine\\System\\CurrentControlSet\\Enum\\PCI\\VEN_14E4&DEV_4212&SUBSYS_00011028&REV_02\\3&61aaa01&0&58\\Device Parameters"
+/* the driver's keys: its service's, its driver key (its class's, the
+   first instance) and its device's (win_start() names them) */
+static char key_service[256], key_driver[256], key_device[512];
 
 /* the key at path (made, if create); NULL if none */
 static struct rkey *reg_key(const char *path, int create)
@@ -929,13 +907,13 @@ static char *inf_line(const char *name, char **at)
 	}
 }
 
-/* [Strings]' value of key (quotes off), or NULL */
-static const char *inf_string(const char *key)
+/* section's value of key (key = value, quotes off), or NULL */
+static const char *inf_value(const char *section, const char *key)
 {
 	static char val[512];
 	char *at = NULL, *l;
 	size_t n = strlen(key);
-	while ((l = inf_line("Strings", &at))) {
+	while ((l = inf_line(section, &at))) {
 		char *eq = strchr(l, '=');
 		char *k = l, *v;
 		if (!eq)
@@ -957,6 +935,12 @@ static const char *inf_string(const char *key)
 		return val;
 	}
 	return NULL;
+}
+
+/* [Strings]' value of key */
+static const char *inf_string(const char *key)
+{
+	return inf_value("Strings", key);
 }
 
 /* s with %name% as [Strings] has it, %% as % */
@@ -1076,13 +1060,11 @@ static void inf_addreg(const char *section, const char *hkr)
 	}
 }
 
-/* the INF at path, its model's AddReg sections installed (HKR the
-   driver's key); -1 if it cannot be read */
-static int inf_install(const char *path, const char *model)
+/* the INF at path read; -1 if it cannot be */
+static int inf_load(const char *path)
 {
 	FILE *f = fopen(path, "rb");
 	long n;
-	char sect[128], *at = NULL, *l;
 	if (!f) {
 		perror(path);
 		return -1;
@@ -1096,6 +1078,59 @@ static int inf_install(const char *path, const char *model)
 		return -1;
 	}
 	fclose(f);
+	return 0;
+}
+
+/* s with its blanks at either end off */
+static char *trim(char *s)
+{
+	size_t n;
+	while (isspace((byte)*s))
+		s++;
+	n = strlen(s);
+	while (n && isspace((byte)s[n - 1]))
+		s[--n] = 0;
+	return s;
+}
+
+/* model's description and maker, as the INF's [Manufacturer] and its
+   models' sections (description = model, IDs) have them; -1 if none
+   has the model */
+static int inf_model(const char *model, char *desc, size_t dn, char *mfg, size_t mn)
+{
+	char *at = NULL, *l;
+	while ((l = inf_line("Manufacturer", &at))) {
+		/* (copies: inf_line()'s line is overwritten by the next) */
+		char maker[512], *f[8], *eq, sect[128], *at2 = NULL, *l2;
+		snprintf(maker, sizeof(maker), "%s", l);
+		eq = strchr(maker, '=');
+		if (!eq)
+			continue;
+		*eq = 0;
+		inf_fields(eq + 1, f, 8);       /* models[, decorations] */
+		snprintf(sect, sizeof(sect), "%s", f[0]);
+		while ((l2 = inf_line(sect, &at2))) {
+			char line[1024], *g[4], *e;
+			snprintf(line, sizeof(line), "%s", l2);
+			e = strchr(line, '=');
+			if (!e)
+				continue;
+			*e = 0;
+			inf_fields(e + 1, g, 4);        /* model, IDs */
+			if (strcasecmp(g[0], model))
+				continue;
+			inf_subst(trim(line), desc, dn);
+			inf_subst(trim(maker), mfg, mn);
+			return 0;
+		}
+	}
+	return -1;
+}
+
+/* model's AddReg sections into the registry (HKR the driver's key) */
+static void inf_install(const char *model)
+{
+	char sect[128], *at = NULL, *l;
 	snprintf(sect, sizeof(sect), "%s.NT", model);
 	while ((l = inf_line(sect, &at))) {
 		char line[1024], *fl[16];
@@ -1107,199 +1142,22 @@ static int inf_install(const char *path, const char *model)
 		for (k = 0; k < nf; k++) {
 			char save[128];
 			snprintf(save, sizeof(save), "%s", fl[k]);
-			inf_addreg(save, KEY_DRIVER);
-		}
-	}
-	return 0;
-}
-
-/*
- *    devices: the BCM4212 (PCI 14e4:4212) and PCI's configuration space
- */
-
-/* its registers: a memory BAR of 16 KB, mapped by the driver
-   (MmMapIoSpace) at a window of ours whose accesses trap */
-#define BCM_PHYS 0xfebf0000u
-#define BCM_SIZE 0x4000
-#define IRQ      11
-static byte *mmio;                      /* the driver's view: the window */
-static u32 bcm_reg[BCM_SIZE / 4];       /* the device's */
-
-/*
- *    the line side: a Silicon Labs Si3034 DAA behind the chip's serial
- *    port, its registers by commands to 0x38 (address in bits 8..12,
- *    0x2000 a read, the data in bits 0..7) and the read's result at
- *    0x3c (bit 15: busy, never here)
- */
-static byte daa[32];
-static u32 daa_data;
-static unsigned codec_rate = 8000;
-static int off_hook;
-
-/* its sample rate from its PLL (registers 7 to 9: N1 - 1, M1 - 1, and
-   N2 - 1, M2 - 1 in the high and low nibbles), on a 4 MHz clock:
-   4 MHz M1 M2 / (N1 N2) / 5120 */
-static void daa_rate(void)
-{
-	double f = 4000000.0 * (daa[8] + 1) / (daa[7] + 1) *
-		((daa[9] & 15) + 1) / ((daa[9] >> 4) + 1) / 5120;
-	unsigned r = (unsigned)lrint(f);
-	if (r >= 4000 && r <= 48000 && r != codec_rate) {
-		LOG("daa rate %u Hz\n", r);
-		codec_rate = r;
-	}
-}
-
-static void daa_cmd(u32 v)
-{
-	int r = (v >> 8) & 0x1f;
-	if (v & 0x2000) {
-		daa_data = daa[r];
-		if (r == 12)            /* line side: frame detect, loop current
-					   (half the scale: 1111 is an overload) */
-			daa_data = 0x40 | (off_hook ? 0x08 : 0);
-		if (dbg > 1)
-			fprintf(stderr, "win: daa %2d r = %02x\n", r, daa_data);
-		return;
-	}
-	if (dbg > 1 || (dbg && r != 5 && daa[r] != (byte)v))
-		fprintf(stderr, "win: daa %2d w = %02x\n", r, v & 0xff);
-	daa[r] = (byte)v;
-	if (r >= 7 && r <= 9)
-		daa_rate();
-	if (r == 5 && (int)(v & 1) != off_hook) {
-		off_hook = v & 1;
-		LOG("%s hook\n", off_hook ? "off" : "on");
-	}
-}
-
-/*
- *    its DMA: two channels at 0x200 and 0x210 (enable, buffer's bus
- *    address, its size, status: state in bits 12..15, the position
- *    below), running while the control register (0) has 0x60; the
- *    interrupt status at 0x20 (written back to clear), its enables at
- *    0x24
- */
-static u32 dma_cur[2], dma_pos[2];      /* the current descriptor (its
-					   offset), the bytes of it done */
-static int dma_run(int c)
-{
-	return (bcm_reg[0] & 0x60) && (bcm_reg[(0x200 + 0x10 * c) / 4] & 1);
-}
-/* channel c's descriptors posted: those before its PTR (0x208, 0x218) */
-static int dma_idle(int c)
-{
-	return dma_cur[c] == (bcm_reg[(0x208 + 0x10 * c) / 4] & 0xfff);
-}
-static u32 dma_status(int c)
-{
-	return dma_run(c) ? (dma_idle(c) ? 0x2000 : 0x1000) | (dma_cur[c] & 0xfff) : 0;
-}
-
-/* channel c's next sample: TX (0) the one it reads, RX (1) the one it
-   writes; its descriptors' interrupts, the ring's end */
-#define DESC_EOT 0x10000000
-#define DESC_IOC 0x20000000
-static short dma_sample(int c, short in)
-{
-	u32 *ring = (u32 *)(uintptr_t)bcm_reg[(0x204 + 0x10 * c) / 4], *d;
-	short *buf, out = 0;
-	u32 len;
-	if (!dma_run(c) || !ring || dma_idle(c))
-		return 0;
-	d = ring + dma_cur[c] / 4;
-	len = d[0] & 0x1fff;
-	buf = (short *)(uintptr_t)d[1];
-	if (dma_pos[c] + 2 <= len) {
-		if (c)
-			buf[dma_pos[c] / 2] = in;
-		else
-			out = buf[dma_pos[c] / 2];
-	}
-	dma_pos[c] += 2;
-	if (dma_pos[c] >= len) {
-		dma_pos[c] = 0;
-		if (d[0] & DESC_IOC)
-			bcm_reg[0x20 / 4] |= c ? 0x10000 : 0x1000000;
-		dma_cur[c] = d[0] & DESC_EOT ? 0 : (dma_cur[c] + 8) & 0xfff;
-	}
-	return out;
-}
-
-/* a register read of size bytes at off: what the device has there */
-static u32 bcm_read(u32 off, int size)
-{
-	u32 v;
-	if ((off & ~3u) == 0x3c)
-		bcm_reg[0x3c / 4] = daa_data;
-	if ((off & ~3u) == 0x20c)
-		bcm_reg[0x20c / 4] = dma_status(0);
-	if ((off & ~3u) == 0x21c)
-		bcm_reg[0x21c / 4] = dma_status(1);
-	v = bcm_reg[(off & (BCM_SIZE - 1)) / 4] >> (8 * (off & 3));
-	if (size == 1)
-		v &= 0xff;
-	else if (size == 2)
-		v &= 0xffff;
-	return v;
-}
-
-/* a register write */
-static void bcm_write(u32 off, int size, u32 v)
-{
-	u32 *r = &bcm_reg[(off & (BCM_SIZE - 1)) / 4];
-	u32 mask = size == 4 ? 0xffffffff : size == 2 ? 0xffff : 0xff;
-	int sh = 8 * (off & 3);
-	u32 old = *r;
-	if ((off & ~3u) == 0x20) {             /* (written back: cleared) */
-		*r &= ~((v & mask) << sh);
-		return;
-	}
-	*r = (*r & ~(mask << sh)) | (v & mask) << sh;
-	if (off == 0x38)
-		daa_cmd(*r);
-	if ((off == 0x200 || off == 0x210) && !(*r & 1)) {
-		dma_cur[(off - 0x200) / 0x10] = 0;
-		dma_pos[(off - 0x200) / 0x10] = 0;
-	}
-	if (off == 0 && (old & 0x60) != (*r & 0x60)) {
-		dma_cur[0] = dma_cur[1] = dma_pos[0] = dma_pos[1] = 0;
-		LOG("dma %s\n", *r & 0x60 ? "on" : "off");
-		if (dbg && (*r & 0x60)) {
-			int c, i;
-			for (c = 0; c < 2; c++) {
-				u32 *d = (u32 *)(uintptr_t)bcm_reg[(0x204 + 0x10 * c) / 4];
-				fprintf(stderr, "win: ring %d at %p:", c, (void *)d);
-				for (i = 0; i < 10; i++)
-					fprintf(stderr, " %08x/%08x", d[2 * i], d[2 * i + 1]);
-				for (i = 0; i < 512 && !(d[2 * i] & 0x10000000); i++)
-					;
-				fprintf(stderr, " ... EOT at %d\n", i);
-			}
+			inf_addreg(save, key_driver);
 		}
 	}
 }
 
-/* PCI's configuration space (0xcf8, 0xcfc): the BCM4212 at 00:0b.0,
-   Dell's (subsystem 1028:0001) */
-#define DEVFN (0x0b << 3)
+/*
+ *    PCI's configuration space (0xcf8, 0xcfc): the device's, on bus 0 at
+ *    its devfn; the other ports are the device's
+ */
 static u32 cf8;
-static u32 cfg[64];
-
-static void cfg_init(void)
-{
-	cfg[0x00 / 4] = 0x14e4 | 0x4212u << 16;
-	cfg[0x04 / 4] = 0x02800006;             /* memory, bus master */
-	cfg[0x08 / 4] = 0x07800002;             /* communications, other */
-	cfg[0x10 / 4] = BCM_PHYS;
-	cfg[0x2c / 4] = 0x1028 | 0x0001u << 16;
-	cfg[0x3c / 4] = IRQ | 1 << 8;
-}
+static u32 mem_phys;                    /* BAR 0, as the device starts */
 
 static int cfg_ours(void)
 {
 	return (cf8 & 0x80000000) && ((cf8 >> 16) & 0xff) == 0 &&
-		((cf8 >> 8) & 0xff) == DEVFN;
+		((cf8 >> 8) & 0xff) == wdev->devfn;
 }
 
 static u32 cfg_read(unsigned off, int size)
@@ -1308,7 +1166,7 @@ static u32 cfg_read(unsigned off, int size)
 	unsigned r = (cf8 & 0xfc) + off;
 	if (!cfg_ours())
 		return 0xffffffff;
-	v = cfg[(r >> 2) & 63] >> (8 * (r & 3));
+	v = wdev->cfg[(r >> 2) & 63] >> (8 * (r & 3));
 	return size == 4 ? v : size == 2 ? v & 0xffff : v & 0xff;
 }
 
@@ -1319,13 +1177,13 @@ static void cfg_write(unsigned off, u32 v, int size)
 	if (!cfg_ours())
 		return;
 	LOG("pci config %02x = %x\n", r, v);
-	if (r == 0x10)
-		v = v == 0xffffffff ? ~(u32)(BCM_SIZE - 1) : (v & ~(u32)(BCM_SIZE - 1));
-	cfg[(r >> 2) & 63] = (cfg[(r >> 2) & 63] & ~(mask << 8 * (r & 3))) |
+	if (r == 0x10)          /* (BAR 0: its size in the bits that stay 0) */
+		v = v == 0xffffffff ? ~(wdev->mem_size - 1) : (v & ~(wdev->mem_size - 1));
+	wdev->cfg[(r >> 2) & 63] = (wdev->cfg[(r >> 2) & 63] & ~(mask << 8 * (r & 3))) |
 		(v & mask) << 8 * (r & 3);
 }
 
-/* port I/O: PCI's configuration ports only */
+/* port I/O: PCI's configuration ports, the rest the device's */
 static u32 io_in(unsigned a, int size)
 {
 	u32 v = 0xffffffff;
@@ -1333,25 +1191,29 @@ static u32 io_in(unsigned a, int size)
 		v = cf8;
 	else if (a >= 0xcfc && a < 0xd00)
 		v = cfg_read(a - 0xcfc, size);
+	else if (wdev->io_in)
+		v = wdev->io_in(a, size);
 	else
 		LOG("in%d %04x\n", size, a);
 	if (size == 1)
 		v &= 0xff;
 	else if (size == 2)
 		v &= 0xffff;
-	if (dbg > 1)
+	if (win_debug > 1)
 		fprintf(stderr, "win: in%d %04x = %x\n", size, a, v);
 	return v;
 }
 
 static void io_out(unsigned a, u32 v, int size)
 {
-	if (dbg > 1)
+	if (win_debug > 1)
 		fprintf(stderr, "win: out%d %04x = %x\n", size, a, v);
 	if (a == 0xcf8 && size == 4)
 		cf8 = v;
 	else if (a >= 0xcfc && a < 0xd00)
 		cfg_write(a - 0xcfc, v, size);
+	else if (wdev->io_out)
+		wdev->io_out(a, v, size);
 	else
 		LOG("out%d %04x = %x\n", size, a, v);
 }
@@ -1366,6 +1228,7 @@ static void io_out(unsigned a, u32 v, int size)
 
 #define MM_R 1
 #define MM_W 2
+static byte *mmio;                      /* the window: the driver's view */
 static struct { int on, kind, size; u32 off; byte *ip; } mm;
 
 /* what the instruction at p does to its memory operand: MM_R, MM_W or
@@ -1433,7 +1296,7 @@ static int mm_fault(ucontext_t *uc, byte *a)
 	greg_t *g = uc->uc_mcontext.gregs;
 	byte *ip = (byte *)(uintptr_t)g[REG_EIP];
 	u32 v;
-	if (!mmio || a < mmio || a >= mmio + BCM_SIZE)
+	if (!mmio || a < mmio || a >= mmio + wdev->mem_size)
 		return -1;
 	mm.kind = mm_decode(ip, &mm.size);
 	if (!mm.kind) {
@@ -1444,11 +1307,11 @@ static int mm_fault(ucontext_t *uc, byte *a)
 	}
 	mm.off = (u32)(a - mmio);
 	mm.ip = ip;
-	mprotect(mmio, BCM_SIZE, PROT_READ | PROT_WRITE);
+	mprotect(mmio, wdev->mem_size, PROT_READ | PROT_WRITE);
 	if (mm.kind & MM_R) {
-		v = bcm_read(mm.off, mm.size);
+		v = wdev->mem_read(mm.off, mm.size);
 		memcpy(mmio + mm.off, &v, (size_t)mm.size);
-		if (dbg > 1)
+		if (win_debug > 1)
 			fprintf(stderr, "win: reg %04x r%d = %x (%p)\n", mm.off, mm.size, v,
 				(void *)ip);
 	}
@@ -1469,12 +1332,12 @@ static void on_trap(int sig, siginfo_t *si, void *ctx)
 	if (mm.kind & MM_W) {
 		u32 v = 0;
 		memcpy(&v, mmio + mm.off, (size_t)mm.size);
-		if (dbg > 1)
+		if (win_debug > 1)
 			fprintf(stderr, "win: reg %04x w%d = %x (%p)\n", mm.off, mm.size, v,
 				(void *)mm.ip);
-		bcm_write(mm.off, mm.size, v);
+		wdev->mem_write(mm.off, mm.size, v);
 	}
-	mprotect(mmio, BCM_SIZE, PROT_NONE);
+	mprotect(mmio, wdev->mem_size, PROT_NONE);
 }
 
 /* the driver's in and out (a general protection fault without I/O
@@ -1589,13 +1452,13 @@ static int NTAPI MmQuerySystemSize(void) { return 2; }   /* large */
 static void *NTAPI MmMapIoSpace(u64 pa, u32 n, int cache)
 {
 	(void)cache;
-	if (pa == BCM_PHYS && n <= BCM_SIZE) {
+	if (pa >= mem_phys && pa + n <= mem_phys + wdev->mem_size) {
 		if (!mmio) {
-			mmio = mmap(NULL, BCM_SIZE, PROT_NONE,
+			mmio = mmap(NULL, wdev->mem_size, PROT_NONE,
 				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		}
 		LOG("MmMapIoSpace %llx %u: the registers, %p\n", pa, n, (void *)mmio);
-		return mmio;
+		return mmio + (pa - mem_phys);
 	}
 	LOG("MmMapIoSpace %llx %u: none\n", pa, n);
 	return NULL;
@@ -1761,7 +1624,7 @@ static int __attribute__((cdecl)) k_sprintf(char *out, const char *fmt, ...)
 	va_start(ap, fmt);
 	n = ms_vsnprintf(out, 4096, fmt, ap);
 	va_end(ap);
-	if (dbg > 2)
+	if (win_debug > 2)
 		LOG("sprintf: %s\n", out);
 	return n;
 }
@@ -2216,7 +2079,7 @@ static struct devobj *NTAPI IoAttachDeviceToDeviceStack(struct devobj *src, stru
 static void NTAPI IoDetachDevice(struct devobj *lower) { lower->attached = NULL; }
 static NTSTATUS NTAPI IoCreateSymbolicLink(struct ustr *link, struct ustr *dev)
 {
-	if (dbg) {
+	if (win_debug) {
 		char *a = us2a(link), *b = us2a(dev);
 		LOG("symbolic link %s -> %s\n", a, b);
 		free(a);
@@ -2464,9 +2327,14 @@ static struct dma_adapter *NTAPI IoGetDmaAdapter(struct devobj *pdo, void *desc,
 	return &dma;
 }
 
-/* PnP, power, WMI, interfaces */
-static void *pdo_ptr;
-#define MODEM_HWID "PCI\\VEN_14E4&DEV_4212&SUBSYS_00011028&REV_02"
+/* PnP, power, WMI, interfaces: what the PnP manager knows of the
+   device (win_start()): its hardware and compatible IDs (from its
+   configuration space, '\0' between them and two at the end), its
+   instance, and from the INF its description, maker, class and class
+   GUID */
+static char hw_ids[256], compat_ids[256], instance[32];
+static char dev_desc[256], dev_mfg[256], dev_class[64], class_guid[64], drv_key[80];
+
 static NTSTATUS NTAPI IoGetDeviceProperty(struct devobj *d, int prop, u32 n, void *buf, u32 *res)
 {
 	byte tmp[512];
@@ -2475,18 +2343,18 @@ static NTSTATUS NTAPI IoGetDeviceProperty(struct devobj *d, int prop, u32 n, voi
 	int multi = 0;
 	(void)d;
 	switch (prop) {
-	case 0: s = "BCM V.92 56K Modem"; break;         /* description */
-	case 1: s = MODEM_HWID "\0PCI\\VEN_14E4&DEV_4212&SUBSYS_00011028"; multi = 1; break;
-	case 2: s = "PCI\\VEN_14E4&DEV_4212&REV_02\0PCI\\VEN_14E4&DEV_4212\0PCI\\CC_0780"; multi = 1; break;
-	case 5: s = "BCM V.92 56K Modem"; break;         /* friendly name */
-	case 7: s = "Modem"; break;                       /* class name */
-	case 8: s = "{4D36E96D-E325-11CE-BFC1-08002BE10318}"; break;
-	case 9: s = "Broadcom Corporation"; break;        /* manufacturer */
+	case 0: s = dev_desc; break;                    /* description */
+	case 1: s = hw_ids; multi = 1; break;
+	case 2: s = compat_ids; multi = 1; break;
+	case 5: s = dev_desc; break;                    /* friendly name */
+	case 7: s = dev_class; break;                   /* class name */
+	case 8: s = class_guid; break;
+	case 9: s = dev_mfg; break;                     /* manufacturer */
 	case 10: s = "\\Device\\NTPNP_PCI0007"; break;   /* PDO name */
-	case 11: s = "{4D36E96D-E325-11CE-BFC1-08002BE10318}\\0000"; break;
+	case 11: s = drv_key; break;
 	case 13: len = 4; memcpy(tmp, &(u32){ 5 }, 4); break;           /* PCIBus */
 	case 14: len = 4; memcpy(tmp, &(u32){ 0 }, 4); break;           /* bus 0 */
-	case 15: len = 4; memcpy(tmp, &(u32){ (DEVFN >> 3) << 16 | (DEVFN & 7) }, 4); break;
+	case 15: len = 4; memcpy(tmp, &(u32){ (wdev->devfn >> 3) << 16 | (wdev->devfn & 7) }, 4); break;
 	case 22: s = "PCI"; break;                        /* enumerator */
 	default:
 		LOG("IoGetDeviceProperty %d: none\n", prop);
@@ -2524,8 +2392,15 @@ static NTSTATUS NTAPI IoGetDeviceProperty(struct devobj *d, int prop, u32 n, voi
 static NTSTATUS NTAPI IoRegisterDeviceInterface(struct devobj *pdo, void *guid, struct ustr *ref,
 						struct ustr *link)
 {
-	(void)pdo; (void)guid; (void)ref;
-	RtlInitUnicodeString(link, a2w("\\??\\PCI#VEN_14E4&DEV_4212#3&61aaa01&0&58#{2c7089aa-2e0e-11d1-b114-00c04fc2aae4}"));
+	const byte *g = guid;
+	char s[256];
+	(void)pdo; (void)ref;
+	snprintf(s, sizeof(s), "\\??\\PCI#VEN_%04X&DEV_%04X#%s#"
+		 "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+		 wdev->cfg[0] & 0xffff, wdev->cfg[0] >> 16, instance, rd32(g),
+		 rd16(g + 4), rd16(g + 6), g[8], g[9], g[10], g[11], g[12], g[13],
+		 g[14], g[15]);
+	RtlInitUnicodeString(link, a2w(s));
 	return STATUS_SUCCESS;
 }
 static NTSTATUS NTAPI IoSetDeviceInterfaceState(struct ustr *link, byte on)
@@ -2599,7 +2474,7 @@ static NTSTATUS NTAPI PoRequestPowerIrp(struct devobj *pdo, byte minor, u32 stat
 	return STATUS_PENDING;
 }
 
-/* the kernel streaming of its speakerphone: none */
+/* kernel streaming (a speakerphone's): none */
 static NTSTATUS NTAPI KsCreatePin(void *filter, void *connect, u32 access, void **pin)
 {
 	(void)filter; (void)connect; (void)access; (void)pin;
@@ -2613,7 +2488,7 @@ static NTSTATUS NTAPI KsSynchronousIoControlDevice(void *fo, int mode, u32 code,
 	return STATUS_NOT_SUPPORTED;
 }
 
-/* files (its log): none */
+/* files (a driver's log): none */
 static NTSTATUS NTAPI ZwCreateFile(void **h, u32 access, struct objattr *oa, struct iosb *iosb,
 				   void *size, u32 attr, u32 share, u32 disp, u32 opts,
 				   void *ea, u32 ealen)
@@ -2694,7 +2569,7 @@ static NTSTATUS NTAPI ZwCreateKey(void **h, u32 access, struct objattr *oa, u32 
 static NTSTATUS NTAPI IoOpenDeviceRegistryKey(struct devobj *d, u32 which, u32 access, void **h)
 {
 	(void)d; (void)access;
-	*h = reg_key(which & 2 ? KEY_DRIVER : KEY_DEVICE, 1);
+	*h = reg_key(which & 2 ? key_driver : key_device, 1);
 	LOG("IoOpenDeviceRegistryKey %s\n", which & 2 ? "driver" : "device");
 	return STATUS_SUCCESS;
 }
@@ -3113,14 +2988,16 @@ static const struct export *export_find(const char *name)
  *    the PCI bus driver: the PDO and the IRPs sent down to it
  */
 
-static struct drvobj pci_drv, bcm_drv;
-static struct drvext bcm_drvext;
+static struct drvobj pci_drv, drv;
+static struct drvext drvext;
 static struct devobj *pdo;
+static char svc_name[64];               /* the driver's service */
 
-/* the device's resources: its memory and its interrupt */
+/* the device's resources: BAR 0's memory and its interrupt */
 static byte res_raw[4 + 8 + 8 + 2 * 16], res_tr[sizeof(res_raw)];
 static void res_init(byte *r, int translated)
 {
+	u32 irq = wdev->cfg[0x3c / 4] & 0xff;
 	byte *d;
 	memset(r, 0, sizeof(res_raw));
 	memcpy(r, &(u32){ 1 }, 4);              /* one full descriptor */
@@ -3131,17 +3008,17 @@ static void res_init(byte *r, int translated)
 	d = r + 20;
 	d[0] = 3; d[1] = 1;                     /* memory, exclusive */
 	memcpy(d + 2, &(word){ 0 }, 2);         /* (read/write) */
-	memcpy(d + 4, &(u32){ BCM_PHYS }, 4);
-	memcpy(d + 12, &(u32){ BCM_SIZE }, 4);
+	memcpy(d + 4, &(u32){ mem_phys }, 4);
+	memcpy(d + 12, &(u32){ wdev->mem_size }, 4);
 	d += 16;
 	d[0] = 2; d[1] = 3;                     /* interrupt, shared */
 	memcpy(d + 2, &(word){ 0 }, 2);         /* (level) */
-	memcpy(d + 4, &(u32){ translated ? 0x16 : IRQ }, 4);
-	memcpy(d + 8, &(u32){ translated ? 0x3b : IRQ }, 4);
+	memcpy(d + 4, &(u32){ translated ? DIRQL : irq }, 4);
+	memcpy(d + 8, &(u32){ translated ? 0x30 + irq : irq }, 4);
 	memcpy(d + 12, &(u32){ 1 }, 4);
 }
 
-/* GUID_BUS_INTERFACE_STANDARD: its bus data calls, on the controller's
+/* GUID_BUS_INTERFACE_STANDARD: its bus data calls, on the device's
    configuration space */
 static const byte guid_bus_std[16] = {
 	0x95, 0x6c, 0x6d, 0x49, 0x37, 0x92, 0xd0, 0x11,
@@ -3151,7 +3028,7 @@ static u32 NTAPI bus_get(void *ctx, u32 type, void *buf, u32 off, u32 n)
 	u32 i;
 	(void)ctx; (void)type;
 	for (i = 0; i < n; i++)
-		((byte *)buf)[i] = off + i < 256 ? ((byte *)cfg)[off + i] : 0;
+		((byte *)buf)[i] = off + i < 256 ? ((byte *)wdev->cfg)[off + i] : 0;
 	return n;
 }
 static u32 NTAPI bus_set(void *ctx, u32 type, void *buf, u32 off, u32 n)
@@ -3160,7 +3037,7 @@ static u32 NTAPI bus_set(void *ctx, u32 type, void *buf, u32 off, u32 n)
 	(void)ctx; (void)type;
 	for (i = 0; i < n; i++)
 		if (off + i >= 4 && off + i < 256)
-			((byte *)cfg)[off + i] = ((byte *)buf)[i];
+			((byte *)wdev->cfg)[off + i] = ((byte *)buf)[i];
 	return n;
 }
 static void NTAPI if_ref(void *ctx) { (void)ctx; }
@@ -3277,7 +3154,7 @@ static NTSTATUS irp_sync(struct irp *irp, struct req *r)
 				fprintf(stderr, "win: an IRP not done in 60 s\n");
 				exit(1);
 			}
-			line_idle((unsigned)(line_rate / 1000));
+			line_ms();
 		}
 	}
 	free(irp);
@@ -3321,6 +3198,7 @@ static NTSTATUS ioctl(u32 code, const void *in, u32 inlen, void *out, u32 outlen
 static int driver_start(void)
 {
 	static struct ustr regpath;
+	char name[96];
 	NTSTATUS s;
 	struct req r;
 	struct irp *irp;
@@ -3333,36 +3211,36 @@ static int driver_start(void)
 		pci_drv.major[i] = (void *)pdo_dispatch;
 	IoCreateDevice(&pci_drv, 0, NULL, 0x22, 0, 0, &pdo);
 	pdo->flags = DO_BUS_ENUMERATED_DEVICE | DO_POWER_PAGABLE;
-	pdo_ptr = pdo;
 
 	/* the driver's object, its entry */
-	bcm_drv.type = 4;
-	bcm_drv.size = sizeof(bcm_drv);
-	bcm_drv.ext = &bcm_drvext;
-	bcm_drvext.driver = &bcm_drv;
-	RtlInitUnicodeString(&bcm_drvext.service, a2w("BCMModem"));
-	RtlInitUnicodeString(&bcm_drv.name, a2w("\\Driver\\BCMModem"));
-	bcm_drv.start = img;
-	bcm_drv.dsize = img_size;
-	bcm_drv.init = img_entry;
+	drv.type = 4;
+	drv.size = sizeof(drv);
+	drv.ext = &drvext;
+	drvext.driver = &drv;
+	RtlInitUnicodeString(&drvext.service, a2w(svc_name));
+	snprintf(name, sizeof(name), "\\Driver\\%s", svc_name);
+	RtlInitUnicodeString(&drv.name, a2w(name));
+	drv.start = img;
+	drv.dsize = img_size;
+	drv.init = img_entry;
 	for (i = 0; i < 28; i++)
-		bcm_drv.major[i] = NULL;
-	RtlInitUnicodeString(&regpath, a2w(KEY_SERVICE));
+		drv.major[i] = NULL;
+	RtlInitUnicodeString(&regpath, a2w(key_service));
 	stack_clear();
-	s = ((NTSTATUS NTAPI (*)(struct drvobj *, struct ustr *))img_entry)(&bcm_drv, &regpath);
+	s = ((NTSTATUS NTAPI (*)(struct drvobj *, struct ustr *))img_entry)(&drv, &regpath);
 	kernel_run();
 	LOG("DriverEntry: %x\n", (u32)s);
 	if (!NT_SUCCESS(s))
 		return -1;
 	for (i = 0; i < 28; i++)
-		if (!bcm_drv.major[i])
-			bcm_drv.major[i] = (void *)pdo_dispatch;
-	if (!bcm_drvext.adddevice) {
+		if (!drv.major[i])
+			drv.major[i] = (void *)pdo_dispatch;
+	if (!drvext.adddevice) {
 		fprintf(stderr, "win: the driver has no AddDevice\n");
 		return -1;
 	}
 	stack_clear();
-	s = ((NTSTATUS NTAPI (*)(struct drvobj *, struct devobj *))bcm_drvext.adddevice)(&bcm_drv, pdo);
+	s = ((NTSTATUS NTAPI (*)(struct drvobj *, struct devobj *))drvext.adddevice)(&drv, pdo);
 	kernel_run();
 	LOG("AddDevice: %x\n", (u32)s);
 	if (!NT_SUCCESS(s))
@@ -3420,36 +3298,13 @@ static int driver_start(void)
 }
 
 /*
- *    the serial side: its output read, the DTE's written
+ *    the port: the modem's output read, the DTE's written
  */
-
-static int pty;
-static long sync_n;
-static int online;
-
-static void result_scan(unsigned char c)
-{
-	static const char *const pat[] = { "CONNECT", "NO CARRIER",
-					   "\r\nOK\r\n" };
-	static unsigned at[3];
-	int i;
-
-	for (i = 0; i < 3; i++) {
-		if (c != (unsigned char)pat[i][at[i]])
-			at[i] = c == (unsigned char)pat[i][0];
-		else
-			at[i]++;
-		if (!pat[i][at[i]]) {
-			at[i] = 0;
-			online = i == 0;
-		}
-	}
-}
 
 /* the read and the write in flight (one each), their buffers */
 static struct irp *rd_irp, *wr_irp;
 static struct req rd_req, wr_req;
-static byte rd_buf[1024], wr_buf[256];
+static byte rd_buf[WIN_SERIAL_READ / 2], wr_buf[256];
 
 /* a READ or WRITE IRP of n bytes at buf, as the device takes them */
 static struct irp *rw_irp(byte major, byte *buf, u32 n, struct req *r)
@@ -3472,49 +3327,55 @@ static struct irp *rw_irp(byte major, byte *buf, u32 n, struct req *r)
 	return irp;
 }
 
-/* what a READ done brought, to the pty */
-static void read_done(void)
+/* what a READ done brought, into out; how much */
+static u32 read_done(byte *out)
 {
-	u32 k, n = NT_SUCCESS(rd_req.status) ? rd_req.info : 0;
+	u32 n = NT_SUCCESS(rd_req.status) ? rd_req.info : 0;
 	free(rd_irp->mdl);
 	free(rd_irp);
 	rd_irp = NULL;
-	if (dbg && !NT_SUCCESS(rd_req.status))
+	if (win_debug && !NT_SUCCESS(rd_req.status))
 		LOG("read: %x\n", (u32)rd_req.status);
-	if (n) {
-		dte_write(pty, rd_buf, n);
-		for (k = 0; k < n; k++)
-			result_scan(rd_buf[k]);
-	}
+	if (n > sizeof(rd_buf))
+		n = sizeof(rd_buf);
+	memcpy(out, rd_buf, n);
+	return n;
 }
 
 /* the modem's output: a READ for what it has (one in flight at most,
-   one a poll), and what it brought to the pty */
-static void serial_read(void)
+   one a call), and what it brought */
+u32 win_serial_read(byte *buf)
 {
+	u32 n = 0;
 	if (rd_irp && rd_req.done)
-		read_done();
+		n += read_done(buf + n);
 	if (!rd_irp) {
 		rd_irp = rw_irp(IRP_MJ_READ, rd_buf, sizeof(rd_buf), &rd_req);
 		stack_clear();
 		IofCallDriver(top, rd_irp);
 		kernel_run();
 		if (rd_req.done)
-			read_done();
+			n += read_done(buf + n);
 	}
+	return n;
 }
 
-/* dte_read()'s: n octets at p to the modem in a WRITE, if none is in
-   flight */
-static int serial_put(const void *p, int n)
+/* the WRITE in flight done and freed: none in flight? */
+int win_serial_writable(void)
 {
-	if (wr_irp && !wr_req.done)
-		return 0;
-	if (wr_irp) {
+	if (wr_irp && wr_req.done) {
 		free(wr_irp->mdl);
 		free(wr_irp);
 		wr_irp = NULL;
 	}
+	return !wr_irp;
+}
+
+/* n octets at p to the modem in a WRITE, if none is in flight */
+int win_serial_write(const void *p, int n)
+{
+	if (!win_serial_writable())
+		return 0;
 	if (n > (int)sizeof(wr_buf))
 		n = sizeof(wr_buf);
 	memcpy(wr_buf, p, (size_t)n);
@@ -3525,113 +3386,30 @@ static int serial_put(const void *p, int n)
 	return n;
 }
 
-static void dte_poll(void)
-{
-	serial_read();
-	dte_flush(pty);
-	if (wr_irp && wr_req.done) {
-		free(wr_irp->mdl);
-		free(wr_irp);
-		wr_irp = NULL;
-	}
-	if (sync_n && line_n % sync_n && !online)
-		return;
-	if (!wr_irp)
-		dte_read(pty, sizeof(wr_buf), serial_put);
-}
-
 /*
- *    the codec's samples: a windowed sinc resampler each way between the
- *    line's rate and the codec's
+ *    the line's time: the timers each ms, the device's interrupt
  */
 
-#define RS_TAPS 32
-struct rs {
-	float hist[RS_TAPS];    /* the newest last */
-};
-static float rs_at(const float *h, double f, double cut)
+void win_tick(void)
 {
-	double y = 0;
-	int k;
-	for (k = 0; k < RS_TAPS; k++) {
-		double t = k - (RS_TAPS / 2 - 1) - f, x = M_PI * t * cut;
-		double w = fabs(t) < RS_TAPS / 2 ?
-			0.5 + 0.5 * cos(M_PI * t / (RS_TAPS / 2)) : 0;
-		y += h[k] * cut * (fabs(x) < 1e-9 ? 1 : sin(x) / x) * w;
-	}
-	return (float)y;
-}
-static void rs_push(struct rs *r, float x)
-{
-	memmove(r->hist, r->hist + 1, (RS_TAPS - 1) * sizeof(float));
-	r->hist[RS_TAPS - 1] = x;
-}
-
-static struct rs up, down;
-
-/* the codec's input noise (WIN_NOISE, rms; 5 by default): a line is
-   never digitally silent */
-static float noise_rms = 5;
-static float noise(void)
-{
-	static u32 x = 1;
-	x = x * 1664525u + 1013904223u;
-	return noise_rms * 3.4641f * ((float)(x >> 8) / (1 << 24) - 0.5f);
-}
-static double up_ph;
-
-static short sat(double x)
-{
-	return (short)(x > 32767 ? 32767 : x < -32768 ? -32768 : lrint(x));
-}
-
-static int irq_line;
-/* one codec sample each way through the DMA; the interrupt line as
-   the status and its enables are */
-static void codec_sample(short adc)
-{
-	short dac = dma_sample(0, 0);
-	dma_sample(1, adc);
-	if (dbg) {
-		/* (each second: the peaks each way) */
-		static int n, pin, pout;
-		if (abs(adc) > pin) pin = abs(adc);
-		if (abs(dac) > pout) pout = abs(dac);
-		if (++n == (int)codec_rate) {
-			LOG("levels: in %d out %d (tx %03x/%03x rx %03x)\n", pin, pout,
-			    dma_cur[0], bcm_reg[0x208 / 4] & 0xfff, dma_cur[1]);
-			n = pin = pout = 0;
-		}
-	}
-	irq_line = (bcm_reg[0x20 / 4] & bcm_reg[0x24 / 4]) != 0;
-	rs_push(&down, dac);
-}
-
-/* one line sample each way through the resamplers; the timers due each
-   ms; the ISR, its DPCs and the threads when the interrupt starts */
-static short line_sample(short in)
-{
-	double r = (double)line_rate / codec_rate;
-	double out;
 	static int irq_was;
+	int up;
 
-	rs_push(&up, in + noise());
-	while (up_ph < 1) {
-		codec_sample(sat(rs_at(up.hist, up_ph, r > 1 ? 1 / r : 1)));
-		up_ph += r;
-	}
-	up_ph -= 1;
-	out = rs_at(down.hist, 1 - up_ph / r, r < 1 ? r : 1);
-	line_n++;
-	if (line_n * 1000 / line_rate != (line_n - 1) * 1000 / line_rate) {
+	win_line_n++;
+	if (win_line_n * 1000 / (u64)wdev->rate !=
+	    (win_line_n - 1) * 1000 / (u64)wdev->rate) {
 		run_timers();
 		kernel_run();
 	}
-	if (irq_line && !irq_was && isr && irql < 0x16) {
+	/* the ISR (at the device's IRQL) when the interrupt comes up, and
+	   again while it stays up (four times at most), its DPCs and the
+	   threads after each */
+	up = wdev->irq();
+	if (up && !irq_was && isr && irql < DIRQL) {
 		int guard = 0;
-		while (irq_line && guard++ < 4) {
+		while (wdev->irq() && guard++ < 4) {
 			byte o = irql;
-			irql = 0x16;
+			irql = DIRQL;
 			if (!cur_thread)
 				stack_clear();
 			isr(intr_obj, isr_ctx);
@@ -3639,37 +3417,24 @@ static short line_sample(short in)
 			kernel_run();
 		}
 	}
-	irq_was = irq_line;
-	return sat(out);
-}
-
-static void line_idle(unsigned n)
-{
-	while (n--)
-		line_sample(0);
+	irq_was = up;
 }
 
 /*
- *    main
+ *    the start: the traps and the KPCR, what the INF says, the image,
+ *    the driver
  */
 
-int main(int argc, char **argv)
+int win_start(struct win_dev *dev)
 {
-	short in[480], out[480];
 	struct sigaction sa;
-	const char *sys = getenv("WIN_SYS") ? getenv("WIN_SYS") : WIN_SYS;
-	const char *infp = getenv("WIN_INF") ? getenv("WIN_INF") : WIN_INF;
-	char *name;
-	int i, n;
+	char sect[160];
+	const char *v;
+	u32 id = dev->cfg[0], cls = dev->cfg[0x08 / 4], sub = dev->cfg[0x2c / 4];
+	int k;
 
-	dbg = getenv("WIN_DEBUG") ? atoi(getenv("WIN_DEBUG")) : 0;
-	(void)argc; (void)argv;
-	if (getenv("WIN_RATE"))
-		line_rate = atoi(getenv("WIN_RATE"));
-	if (getenv("WIN_NOISE"))
-		noise_rms = (float)atof(getenv("WIN_NOISE"));
-	sync_n = getenv("WIN_SYNC") ? (atol(getenv("WIN_SYNC")) + 47) / 48 * 48 : 0;
-	setvbuf(stdout, NULL, _IONBF, 0);
+	wdev = dev;
+	mem_phys = dev->cfg[0x10 / 4] & ~0xfu;
 	memset(&sa, 0, sizeof(sa));
 	{
 		/* (the handlers on a stack of their own: a fault of an
@@ -3688,61 +3453,55 @@ int main(int argc, char **argv)
 	if (prctl(PR_SET_TSC, PR_TSC_SIGSEGV, 0, 0, 0))
 		perror("win: PR_SET_TSC");
 	if (kpcr_init())
-		return 1;
-	cfg_init();
+		return -1;
 
-	/* the registry: the INF's, the controller for the codec type */
-	if (inf_install(infp, "BCM4211.Modem"))
-		return 1;
-	reg_key(KEY_SERVICE, 1);
-	reg_set_sz(KEY_DEVICE, "PortName", REG_SZ, "COM3");
-	if (pe_load(sys))
-		return 1;
+	/* the device's IDs and instance, from its configuration space */
+	k = snprintf(hw_ids, sizeof(hw_ids), "PCI\\VEN_%04X&DEV_%04X&SUBSYS_%04X%04X&REV_%02X",
+		     id & 0xffff, id >> 16, sub >> 16, sub & 0xffff, cls & 0xff) + 1;
+	k += snprintf(hw_ids + k, sizeof(hw_ids) - (size_t)k, "PCI\\VEN_%04X&DEV_%04X&SUBSYS_%04X%04X",
+		      id & 0xffff, id >> 16, sub >> 16, sub & 0xffff) + 1;
+	hw_ids[k] = 0;
+	k = snprintf(compat_ids, sizeof(compat_ids), "PCI\\VEN_%04X&DEV_%04X&REV_%02X",
+		     id & 0xffff, id >> 16, cls & 0xff) + 1;
+	k += snprintf(compat_ids + k, sizeof(compat_ids) - (size_t)k, "PCI\\VEN_%04X&DEV_%04X",
+		      id & 0xffff, id >> 16) + 1;
+	k += snprintf(compat_ids + k, sizeof(compat_ids) - (size_t)k, "PCI\\CC_%04X", cls >> 16) + 1;
+	compat_ids[k] = 0;
+	snprintf(instance, sizeof(instance), "3&61aaa01&0&%02X", dev->devfn);
 
-	pty = posix_openpt(O_RDWR | O_NOCTTY);
-	if (pty < 0 || grantpt(pty) || unlockpt(pty)) {
-		perror("pty");
-		return 1;
+	/* what the INF says: the class, the model's description and
+	   maker, the driver's service; the keys, the registry */
+	if (inf_load(dev->inf))
+		return -1;
+	v = inf_value("Version", "Class");
+	snprintf(dev_class, sizeof(dev_class), "%s", v ? v : "");
+	v = inf_value("Version", "ClassGUID");
+	snprintf(class_guid, sizeof(class_guid), "%s", v ? v : "");
+	snprintf(drv_key, sizeof(drv_key), "%s\\0000", class_guid);
+	if (inf_model(dev->model, dev_desc, sizeof(dev_desc), dev_mfg, sizeof(dev_mfg))) {
+		fprintf(stderr, "win: %s: no model %s\n", dev->inf, dev->model);
+		return -1;
 	}
-	{
-		struct termios t;
-		tcgetattr(pty, &t);
-		cfmakeraw(&t);
-		tcsetattr(pty, TCSANOW, &t);
+	snprintf(sect, sizeof(sect), "%s.NT.Services", dev->model);
+	v = inf_value(sect, "AddService");
+	if (!v) {
+		fprintf(stderr, "win: %s: no service in [%s]\n", dev->inf, sect);
+		return -1;
 	}
-	fcntl(pty, F_SETFL, O_NONBLOCK);
-	name = ptsname(pty);
+	snprintf(svc_name, sizeof(svc_name), "%.*s", (int)strcspn(v, ", \t"), v);
+	snprintf(key_service, sizeof(key_service),
+		 "\\Registry\\Machine\\System\\CurrentControlSet\\Services\\%s", svc_name);
+	snprintf(key_driver, sizeof(key_driver),
+		 "\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Class\\%s", drv_key);
+	snprintf(key_device, sizeof(key_device),
+		 "\\Registry\\Machine\\System\\CurrentControlSet\\Enum\\PCI\\%s\\%s\\Device Parameters",
+		 hw_ids + 4, instance);
+	LOG("%s: %s (%s), %s, service %s\n", dev->model, dev_desc, dev_mfg, hw_ids, svc_name);
+	inf_install(dev->model);
+	reg_key(key_service, 1);
+	reg_set_sz(key_device, "PortName", REG_SZ, dev->port);
 
-	if (driver_start())
-		return 1;
-	printf("created win: %s\n", name);
-
-	memset(out, 0, sizeof(out));
-	if (write(4, out, 48 * 2 * 4) < 0) {
-		perror("win: the line (fd 4)");
-		return 1;
-	}
-	for (;;) {
-		static int odd;
-		n = (int)read(3, (char *)in + odd, sizeof(in) - odd);
-		if (n < 0 && errno == EINTR)
-			continue;
-		if (n <= 0)
-			break;
-		n += odd;
-		odd = n & 1;
-		n /= 2;
-		for (i = 0; i < n; i++) {
-			out[i] = line_sample(in[i]);
-			if (line_n % 48 == 0)
-				dte_poll();
-		}
-		if (write(4, out, n * 2) != n * 2)
-			break;
-		if (odd)
-			((char *)in)[0] = ((char *)in)[n * 2];
-		if (!sync_n)
-			dte_poll();
-	}
-	return 0;
+	if (pe_load(dev->sys))
+		return -1;
+	return driver_start();
 }

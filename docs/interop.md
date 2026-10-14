@@ -13,7 +13,7 @@ ctest label of its own; `ctest -L <label> -j16` runs its calls.
 
 The vendor modems are their own binaries, as their Linux drivers shipped
 them, in `dsp/test/<peer>/` (i386 objects; the harnesses link them in,
-`-m32`); Broadcom's is its Windows driver, which `half_win` loads. Each
+`-m32`); Broadcom's is its Windows driver, which `half_broadcom` loads. Each
 is the file of a known release, compared byte for byte where the release
 can still be had:
 
@@ -533,29 +533,44 @@ and Su's reversals are each period's phase against Su's.
 
 ## Against the Broadcom soft modem (Windows)
 
-`half_win` runs Broadcom's V.92 soft modem for Windows, `BCMSM.sys`
+`half_broadcom` runs Broadcom's V.92 soft modem for Windows, `BCMSM.sys`
 3.4.19: the WDM driver of the "BCM V.92 56K Modem", with its controller,
-data pumps, V.42, V.44 and fax all in that one driver, as Dell shipped it
-for its Dimension desktops in 2002 (above). Wine could not run it. Wine's kernel (`ntoskrnl.exe`,
-master of October 2026) has 726 of its 1716 exports as stubs, and its
-HAL 71 of 92. Its `KeInsertQueueDpc` queues nothing. `IoConnectInterrupt`,
-`IoGetDmaAdapter` and `KeSynchronizeExecution` are stubs, `MmMapIoSpace`
-gives NULL and the port reads give 0. START_DEVICE comes without
-resources, and timers run in real time on a thread pool. A soft modem
-needs all of these, and here it runs on the line's clock.
+data pumps, V.42, V.44 and fax all in that one driver, as Dell shipped
+it for its Dimension desktops in 2002 (above). It runs on
+`interop_windows.c`, a Windows kernel of our own. Wine could not run it.
+Wine's kernel (`ntoskrnl.exe`, master of October 2026) has 726 of its
+1716 exports as stubs, and its HAL 71 of 92. Its `KeInsertQueueDpc`
+queues nothing. `IoConnectInterrupt`, `IoGetDmaAdapter` and
+`KeSynchronizeExecution` are stubs, `MmMapIoSpace` gives NULL and the
+port reads give 0. START_DEVICE comes without resources, and timers run
+in real time on a thread pool. A soft modem needs all of these, and here
+it runs on the line's clock.
 
-So the harness is a Windows kernel of its own, made for this driver. It
-is a 32 bit program that loads the PE image at its base (0x10000),
-relocates it and binds its 114 imports by name (102 from `ntoskrnl.exe`,
-one of them data, 7 from `HAL.dll`, 3 from `WMILIB.SYS` and 2 from
-`ks.sys`), stdcall and fastcall as there. An import the harness does not have stops the harness
+So `interop_windows.c` is a Windows kernel of our own, for the WDM
+driver of a soft modem on a PCI device; the Broadcom driver is the first
+it runs. A harness describes its device (`struct win_dev` in
+`interop_windows.h`): the driver's files and the INF's model, the PCI
+configuration space, the registers (BAR 0's memory and port I/O) as
+calls, the interrupt line, and the line's rate and how to run the line
+on while the kernel waits. `win_start()` loads and starts the driver and
+opens its port, `win_tick()` after each line sample runs the kernel's
+time, and `win_serial_read()` and `win_serial_write()` are the port's
+reads and writes. What else the driver needs comes from the INF: the
+registry, the service, the device's description, maker and class (the
+device's IDs come from its configuration space).
+
+The kernel is part of a 32 bit program. It loads the PE image at its
+base (0x10000), relocates it and binds its imports by name: the
+Broadcom driver's 114 (102 from `ntoskrnl.exe`, one of them data, 7 from
+`HAL.dll`, 3 from `WMILIB.SYS` and 2 from `ks.sys`), stdcall and
+fastcall as there. An import the kernel does not have stops the program
 with its name. Everything runs on one thread and on the line's clock:
 
 - The interrupt time and the system time are the line's samples. While
   the line stands still each read moves them on by 1 µs, because the
   driver waits on them busily a few µs at a time.
-- Timers and their DPCs run between samples, and the interrupt runs when
-  the device's status and mask raise it.
+- Timers and their DPCs run between samples, and the ISR runs when the
+  device's interrupt comes up (for the BCM4212, a status bit it enables).
 - The driver's system threads are coroutines (`ucontext`). Each runs when
   the event or timer it waits for is signalled.
 - IRQL is kept: no interrupt at or above the device's IRQL, no DPC at
@@ -564,9 +579,9 @@ with its name. Everything runs on one thread and on the line's clock:
   modem class installer writes them, and `PortName`.
 - fs is a KPCR (a TLS entry of the GDT, `set_thread_area`). The driver
   checks the stack it has left against its NT_TIB's limit (fs:8), which
-  the harness sets for each coroutine.
+  the kernel sets for each coroutine.
 - `in`, `out`, `cli`, `sti`, `rdtsc` (`PR_SET_TSC`) and moves to and from
-  control registers (it reads CR0 and CR4) fault, and the harness carries
+  control registers (it reads CR0 and CR4) fault, and the kernel carries
   them out.
 
 We are the rest of the device stack. Under the driver we are the PCI bus
@@ -577,7 +592,7 @@ Over the driver we are Windows' `modem.sys`, whose lower filter the INF
 makes it. To us the driver is a serial port: we open it (IRP_MJ_CREATE),
 set it up with the serial IOCTLs (baud rate, line control, handflow,
 timeouts, DTR, RTS), and read and write it with IRPs that carry the pty's
-bytes.
+bytes (`half_broadcom`'s DTE).
 
 Its hardware is the BCM4212, Broadcom's PCI modem chip (14e4:4212,
 Dell's subsystem 1028:0001). This build (`opt-dell-wdm`) has codec code
@@ -585,8 +600,8 @@ only for CodecType 0x15, 0x19 and 0x1c, the BCM4212's; the INF gives
 0x15. The driver also looks on the PCI bus for AC'97 controllers, the
 ICHs that the other harnesses emulate. But for the codec types those
 use, its codec operations are a stub that fails, and opening the port
-then fails (STATUS_INSUFFICIENT_RESOURCES). So the harness emulates the
-BCM4212. There is no datasheet to be had, so the registers below are
+then fails (STATUS_INSUFFICIENT_RESOURCES). So `half_broadcom` emulates
+the BCM4212. There is no datasheet to be had, so the registers below are
 what the driver does with them:
 
 | Offset | Register |
@@ -600,11 +615,11 @@ what the driver does with them:
 | 0x210 to 0x21c | the same for RX |
 
 The registers are a 16 KB memory BAR, which the driver maps with
-`MmMapIoSpace`. The harness gives it a window it cannot access, so each
-access faults. The harness then decodes the instruction, opens the
-window with the register's value in place, and single-steps the
-instruction (TF). At the trap after it, the harness takes what was
-written and closes the window again.
+`MmMapIoSpace`. The kernel gives it a window it cannot access, so each
+access faults. The kernel then decodes the instruction, opens the
+window with the register's value in place (`half_broadcom`'s), and
+single-steps the instruction (TF). At the trap after it, the kernel
+gives the device what was written and closes the window again.
 
 The DMA engine is Broadcom's own, the BCM4401 Ethernet's (Linux's `b44`
 driver knows it). Its rings hold 8 octet descriptors: a control word
@@ -627,8 +642,9 @@ The line side is a Silicon Labs Si3034 DAA behind the chip's serial port:
   at once (it went off hook and straight back on). The harness reports
   1000, half the scale.
 
-The harness resamples between the codec's rate and the line's
-(`WIN_RATE`, 8000 Hz) and adds the codec's noise (`WIN_NOISE`, rms 5).
+`half_broadcom` resamples between the codec's rate and the line's
+(`BROADCOM_RATE`, 8000 Hz) and adds the codec's noise (`BROADCOM_NOISE`,
+rms 5).
 
 Two of the driver's own ways:
 
@@ -636,12 +652,14 @@ Two of the driver's own ways:
   (`CodecFlags__5_1`), then without it.
 - It reads `DisableTxRxDpc` with a handle that is not a key (an address
   in its device extension). Windows answers STATUS_INVALID_HANDLE, and so
-  does the harness.
+  does our kernel.
 
-`ctest -L broadcom -j16` runs the tests. `WIN_DEBUG=1` prints the
+`ctest -L broadcom -j16` runs the tests. `BROADCOM_DEBUG=1` prints the
 driver's calls of note, the hook, the rate and the line's levels each
-second. `WIN_DEBUG=2` also prints every register, DAA and port access,
-and `WIN_DEBUG=3` every call the driver makes into the kernel.
+second. `BROADCOM_DEBUG=2` also prints every register, DAA and port
+access, and `BROADCOM_DEBUG=3` every call the driver makes into the
+kernel. `BROADCOM_SYS` and `BROADCOM_INF` name other files for the
+driver and its INF.
 
 | Broadcom `AT+MS=` / ours | Broadcom caller → open answerer | open caller → Broadcom answerer |
 |---|---|---|
@@ -702,16 +720,16 @@ calls in between are in it as well. For example:
 `PIPE_SYNC=<samples>` (`half_open`, `half_smartlink`),
 `AGERE_SYNC=<samples>` (`half_agere`), `SM56_SYNC=<samples>`
 (`half_sm56`), `SPANDSP_SYNC=<samples>` (`half_spandsp`),
-`PCTEL_SYNC=<samples>` (`half_pctel`), `HSF_SYNC=<samples>`
-(`half_hsf`) and `WIN_SYNC=<samples>` (`half_win`) make a call repeat exactly from run to run: the modems take
-the DTE's commands only every that many line samples (data, once
-connected, at once), run their timers between half frames and keep time
-by the line; without them, where the commands meet the line depends on
-the scheduler. With `PIPE_SYNC`, `half_open` and `half_smartlink` also
-run in real time while on hook, their line running from the start (the
-others' does anyway), so that the commands meet the samples they would
-in real time even when the call itself runs unpaced (see
-`docs/testing.md`); `half_smartlink` then runs the old core's timers on
-the line's samples as well. `AGERE_SYNC_PHASE` and
-`SMARTLINK_SYNC_PHASE` move one side within the period, to try the
+`PCTEL_SYNC=<samples>` (`half_pctel`), `HSF_SYNC=<samples>` (`half_hsf`)
+and `BROADCOM_SYNC=<samples>` (`half_broadcom`) make a call repeat
+exactly from run to run: the modems take the DTE's commands only every
+that many line samples (data, once connected, at once), run their timers
+between half frames and keep time by the line; without them, where the
+commands meet the line depends on the scheduler. With `PIPE_SYNC`,
+`half_open` and `half_smartlink` also run in real time while on hook,
+their line running from the start (the others' does anyway), so that the
+commands meet the samples they would in real time even when the call
+itself runs unpaced (see `docs/testing.md`); `half_smartlink` then runs
+the old core's timers on the line's samples as well. `AGERE_SYNC_PHASE`
+and `SMARTLINK_SYNC_PHASE` move one side within the period, to try the
 alignments one by one.
