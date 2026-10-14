@@ -77,6 +77,8 @@ as it is.
 |---|---|
 | `slmodemd/dmodem.cpp` | `dmodem_dial()` with a number of 124 characters or more read past its buffer; now -1 |
 | `slmodemd/sip.cpp` | `SIP_LOGIN` with an '@' in the password was split at the wrong '@' |
+| `slmodemd/sip.cpp` | The outgoing call's id was stored only once `pjsua_call_make_call()` returned: an INVITE in between (with `-L`) took the line and was left ringing, and the call's own DISCONNECTED in between was not ours, so nothing cleaned up. The line is now busy (DIALING) while the call is made, and the call is known by its user data until its id is. `audio_attach()` no longer clears a hangup that came after the `ringing` check. The port goes into the bridge in the service thread, which alone keeps `conf_id` |
+| `slmodemd/sip.cpp` | One port for every call, without a group lock of its own: pjproject 2.15 on gives it one in the bridge's port pool, whose last reference the port keeps, so each call's pool was never freed. And `call_cleanup()` closed the socket while the media clock could still use the port, whose descriptor the next call could get. Each call now has a port with its own pool and group lock; at the call's end its socket is shut down (the modem sees the end, a read the media clock waits in returns) and it leaves the bridge, and once the bridge is done with it its `on_destroy` closes the socket and frees the pool (`CALLS=3 asterisk/test/sip.sh`) |
 | `slmodemd/pipe_modem.cpp` | `MODEM_REC`: `fclose(NULL)` at exit when one file could not be made, and a `FILE` leaked per block; the run loop spun at 100% CPU once the line's other end closed |
 | `slmodemd/pty.cpp` | The master leaked when `grantpt()`/`unlockpt()` failed |
 | `asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c` | The data the link delivered in the block where it came up was thrown away with the modem's responses |
@@ -132,16 +134,6 @@ None left.
 
 ### slmodemd and the PBX modules
 
-- **likely bug** — `slmodemd/sip.cpp`: the outgoing call's id is stored
-  only after `pjsua_call_make_call()` returns, so an INVITE (with `-L`) or
-  a DISCONNECTED in between leaves a stuck call; `audio_attach()` clears
-  `hangup_req` after the `ringing` check; `conf_id` is shared between
-  threads without a lock.
-- **risk** — `slmodemd/sip.cpp`: the conference port has no group lock of
-  its own, so with pjproject ≥ 2.15 each call leaks the bridge's port
-  pool.
-- **risk** (low confidence) — `slmodemd/sip.cpp` `call_cleanup()` closes
-  the call's socket while the media thread may still use it.
 - **risk** — `app_dmodem.c`, `mod_dmodem.c`: the TCP connect to the
   profile's host (DNS and `connect()`) blocks the channel thread after
   CONNECT, so the line's audio stops meanwhile.

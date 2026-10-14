@@ -24,14 +24,23 @@
  *    pjsua runs its own threads: the SIP stack's, and the media clock
  *    that moves the call's audio through the conference bridge, through
  *    our port and the modem's audio socket, a frame of 20 ms at a time.
- *    One more thread of ours does what the modem asks for (dial, answer)
- *    and looks after the call: it rings the modem while a call waits,
- *    and cleans up when the call or the modem's socket goes away.
+ *    One more thread of ours, the service thread, does what the modem
+ *    asks for (dial, answer) and looks after the call: it rings the modem
+ *    while a call waits, puts the call's port in the bridge, and cleans
+ *    up when the call or the modem's socket goes away.  The current
+ *    call (cur_call) is the SIP thread's and the service thread's; the
+ *    port and its place in the bridge are the service thread's alone.
+ *
+ *    Each call has a port of its own, with its own pool and group lock:
+ *    the bridge removes a port in its own time (pjproject 2.15 on), and
+ *    frees it once the last user is done, so the port's socket is closed
+ *    then (on_destroy), not under the media clock.
  *
  */
 
 #include <errno.h>
 #include <poll.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +48,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <new>
 #include <deque>
 #include <mutex>
 #include <string>
@@ -56,11 +66,14 @@ constexpr unsigned rate = 8000;
 constexpr unsigned frame_samples = rate / 50;   /* 20 ms */
 constexpr int frame_bytes = frame_samples * 2;
 
-/* the modem's side of the bridge */
-struct Port {
-	pjmedia_port base;
+/* the modem's side of the bridge for one call: the call's audio
+   socket, in a pool of its own (freed with the port, by on_destroy) */
+struct CallPort {
+	pjmedia_port base;      /* (first: the media callbacks get it) */
+	pj_pool_t *pool;
 	pj_timestamp timestamp;
-	std::atomic<int> sock{-1};
+	int sock;
+	std::atomic<bool> failed{false};        /* the socket failed */
 };
 
 /* what the modem asks for, done in the service thread */
@@ -70,16 +83,25 @@ struct Request {
 	int fd;
 };
 
+/* cur_call while pjsua_call_make_call() runs: the line is busy, and the
+   call is ours if its user data is dial_tag (an id no call has) */
+constexpr pjsua_call_id DIALING = PJSUA_MAX_CALLS;
+
 Config cfg;
-Port port;
 pj_pool_t *pool;
 pj_caching_pool cpool;
 pjsua_acc_id acc_id = PJSUA_INVALID_ID;
+
+/* the service thread's: the current call's port, its place in the
+   bridge */
+CallPort *cur_port;
 pjsua_conf_port_id conf_id = PJSUA_INVALID_ID;
 
 std::atomic<pjsua_call_id> cur_call{PJSUA_INVALID_ID};
+std::atomic<uintptr_t> dial_tag{0};     /* the outgoing call's user data */
 std::atomic<bool> ringing{false};       /* cur_call waits for ANSWER */
-std::atomic<bool> hangup_req{false};    /* the call or the socket ended */
+std::atomic<bool> hangup_req{false};    /* the call ended (SIP) */
+std::atomic<bool> media_ready{false};   /* cur_call's media is up */
 std::atomic<bool> cancel_req{false};    /* tell the modem: no more RING */
 std::atomic<int> call_law{0};
 
@@ -102,38 +124,96 @@ void pj_register_thread()
 }
 
 /* the bridge's audio for the modem (in the media clock's thread): a
-   frame of 20 ms onto the socket (and $DMODEM_REC.rx); a failed write
-   ends the call */
-pj_status_t put_frame(pjmedia_port *, pjmedia_frame *frame)
+   frame of 20 ms onto the port's socket (and $DMODEM_REC.rx); a failed
+   write ends the call */
+pj_status_t put_frame(pjmedia_port *p, pjmedia_frame *frame)
 {
-	int fd = port.sock;
+	CallPort *cp = reinterpret_cast<CallPort *>(p);
 	if (frame->type != PJMEDIA_FRAME_TYPE_AUDIO)
 		return PJ_SUCCESS;
 	if (rec_rx)
 		fwrite(frame->buf, 1, frame_bytes, rec_rx);
-	if (fd >= 0 && write(fd, frame->buf, frame_bytes) != frame_bytes)
-		hangup_req = true;
+	if (write(cp->sock, frame->buf, frame_bytes) != frame_bytes)
+		cp->failed = true;
 	return PJ_SUCCESS;
 }
 
-/* the modem's audio for the bridge: a frame read from the socket
-   (blocking: the modem answers each frame with one); silence without a
-   socket, or when it fails, which ends the call */
+/* the modem's audio for the bridge: a frame read from the port's socket
+   (blocking: the modem answers each frame with one); silence when it
+   fails, which ends the call */
 pj_status_t get_frame(pjmedia_port *p, pjmedia_frame *frame)
 {
-	int fd = port.sock;
-	if (fd < 0 || read(fd, frame->buf, frame_bytes) != frame_bytes) {
-		if (fd >= 0)
-			hangup_req = true;
+	CallPort *cp = reinterpret_cast<CallPort *>(p);
+	if (read(cp->sock, frame->buf, frame_bytes) != frame_bytes) {
+		cp->failed = true;
 		memset(frame->buf, 0, frame_bytes);
 	}
 	if (rec_tx)
 		fwrite(frame->buf, 1, frame_bytes, rec_tx);
 	frame->size = frame_bytes;
-	frame->timestamp.u64 = port.timestamp.u64;
+	frame->timestamp.u64 = cp->timestamp.u64;
 	frame->type = PJMEDIA_FRAME_TYPE_AUDIO;
-	port.timestamp.u64 += PJMEDIA_PIA_SPF(&p->info);
+	cp->timestamp.u64 += PJMEDIA_PIA_SPF(&p->info);
 	return PJ_SUCCESS;
+}
+
+/* the port's last user is done (the bridge, and port_end()): its socket
+   closed, its pool freed */
+pj_status_t port_on_destroy(pjmedia_port *p)
+{
+	CallPort *cp = reinterpret_cast<CallPort *>(p);
+	pj_pool_t *pool = cp->pool;
+	PJ_LOG(4, (__FILE__, "port %p freed", (void *)cp));
+	if (cp->sock >= 0)
+		close(cp->sock);
+	cp->~CallPort();
+	pj_pool_release(pool);
+	return PJ_SUCCESS;
+}
+
+/* a port for a call's audio socket fd (taken over); NULL (fd closed) if
+   none can be made */
+CallPort *port_new(int fd)
+{
+	static const pj_str_t name = { const_cast<char *>("dmodem"), 6 };
+	pj_pool_t *pool = pj_pool_create(&cpool.factory, "dmodem%p", 1024,
+					 1024, NULL);
+	if (!pool) {
+		close(fd);
+		return NULL;
+	}
+	CallPort *cp = new (pj_pool_zalloc(pool, sizeof(CallPort))) CallPort;
+	cp->pool = pool;
+	cp->sock = fd;
+	pjmedia_port_info_init(&cp->base.info, &name,
+			       PJMEDIA_SIG_CLASS_PORT_AUD('D', 'M'), rate, 1,
+			       16, frame_samples);
+	cp->base.put_frame = put_frame;
+	cp->base.get_frame = get_frame;
+	cp->base.on_destroy = port_on_destroy;
+	if (pjmedia_port_init_grp_lock(&cp->base, pool, NULL) != PJ_SUCCESS) {
+		port_on_destroy(&cp->base);
+		return NULL;
+	}
+	PJ_LOG(4, (__FILE__, "port %p for socket %d", (void *)cp, fd));
+	return cp;
+}
+
+/* the call's port gone (service thread): its socket shut down now (the
+   modem sees the end, a read the media clock waits in returns), out of
+   the bridge, our reference dropped; on_destroy closes and frees it when
+   the bridge is done with it */
+void port_end()
+{
+	if (!cur_port)
+		return;
+	shutdown(cur_port->sock, SHUT_RDWR);
+	if (conf_id != PJSUA_INVALID_ID) {
+		pjsua_conf_remove_port(conf_id);
+		conf_id = PJSUA_INVALID_ID;
+	}
+	pjmedia_port_destroy(&cur_port->base);
+	cur_port = NULL;
 }
 
 /* a line (RING, CANCEL) to the modem's control socket */
@@ -151,6 +231,16 @@ void wake_service()
 		PJ_LOG(1, (__FILE__, "wake up: %s", strerror(errno)));
 }
 
+/* call_id is the current call: cur_call, or the one being dialled (its
+   id not known until pjsua_call_make_call() returns) */
+bool is_current(pjsua_call_id call_id)
+{
+	pjsua_call_id cur = cur_call;
+	return call_id == cur ||
+		(cur == DIALING && dial_tag &&
+		 (uintptr_t)pjsua_call_get_user_data(call_id) == dial_tag);
+}
+
 /* pjsua: a call's state changed (SIP thread); the current call's end
    goes to the service thread */
 void on_call_state(pjsua_call_id call_id, pjsip_event *)
@@ -161,7 +251,7 @@ void on_call_state(pjsua_call_id call_id, pjsip_event *)
 		   (int)ci.state_text.slen, ci.state_text.ptr));
 	/* the service thread cleans up: the port leaves the bridge before
 	   its socket closes */
-	if (ci.state == PJSIP_INV_STATE_DISCONNECTED && call_id == cur_call) {
+	if (ci.state == PJSIP_INV_STATE_DISCONNECTED && is_current(call_id)) {
 		if (ringing)
 			cancel_req = true;
 		ringing = false;
@@ -171,12 +261,12 @@ void on_call_state(pjsua_call_id call_id, pjsip_event *)
 }
 
 /* pjsua: the current call's media is up: its law (call_law), and the
-   modem's port into the bridge both ways (once a call) */
+   service thread to put the modem's port in the bridge */
 void on_call_media_state(pjsua_call_id call_id)
 {
 	pjsua_call_info ci;
 	pjsua_call_get_info(call_id, &ci);
-	if (ci.media_status != PJSUA_CALL_MEDIA_ACTIVE || call_id != cur_call)
+	if (ci.media_status != PJSUA_CALL_MEDIA_ACTIVE || !is_current(call_id))
 		return;
 	{
 		pjsua_stream_info si;
@@ -189,14 +279,25 @@ void on_call_media_state(pjsua_call_id call_id)
 				   (int)e.slen, e.ptr));
 		}
 	}
-	if (conf_id == PJSUA_INVALID_ID) {
-		pjsua_conf_port_id id;
-		if (pjsua_conf_add_port(pool, &port.base, &id) != PJ_SUCCESS)
-			return;
-		pjsua_conf_connect(ci.conf_slot, id);
-		pjsua_conf_connect(id, ci.conf_slot);
-		conf_id = id;
-	}
+	media_ready = true;
+	wake_service();
+}
+
+/* the current call's port into the bridge both ways (service thread;
+   once a call, when its media is up) */
+void port_connect()
+{
+	pjsua_call_id id = cur_call;
+	if (!cur_port || conf_id != PJSUA_INVALID_ID ||
+	    id == PJSUA_INVALID_ID || id == DIALING)
+		return;
+	pjsua_conf_port_id slot = pjsua_call_get_conf_port(id);
+	if (slot == PJSUA_INVALID_ID ||
+	    pjsua_conf_add_port(cur_port->pool, &cur_port->base, &conf_id) !=
+	    PJ_SUCCESS)
+		return;
+	pjsua_conf_connect(slot, conf_id);
+	pjsua_conf_connect(conf_id, slot);
 }
 
 /* a call comes in: ring the modem, or busy */
@@ -216,37 +317,35 @@ void on_incoming_call(pjsua_acc_id, pjsua_call_id call_id, pjsip_rx_data *)
 	wake_service();
 }
 
-/* a new call's audio socket: a frame of silence first, for the delay the
-   modem expects (it answers each frame with one of its own) */
+/* a new call's audio socket: its port (cur_port), and a frame of
+   silence first, for the delay the modem expects (it answers each frame
+   with one of its own).  (hangup_req is left as it is: the call may
+   have ended already.) */
 void audio_attach(int fd)
 {
 	char buf[frame_bytes];
-	hangup_req = false;
 	call_law = 0;
-	port.timestamp.u64 = 0;
-	port.sock = fd;
+	cur_port = port_new(fd);
+	if (!cur_port) {
+		hangup_req = true;
+		return;
+	}
 	memset(buf, 0, sizeof(buf));
 	if (write(fd, buf, sizeof(buf)) < 0)
-		hangup_req = true;
+		cur_port->failed = true;
 }
 
-/* the end of a call, from either side */
+/* the end of a call, from either side (service thread) */
 void call_cleanup()
 {
 	pjsua_call_id id = cur_call;
-	if (id != PJSUA_INVALID_ID)
+	if (id != PJSUA_INVALID_ID && id != DIALING)
 		pjsua_call_hangup(id, 0, NULL, NULL);
-	if (conf_id != PJSUA_INVALID_ID) {
-		pjsua_conf_remove_port(conf_id);
-		conf_id = PJSUA_INVALID_ID;
-	}
-	/* the bridge may still take a frame */
-	int fd = port.sock.exchange(-1);
-	if (fd >= 0)
-		close(fd);
+	port_end();
 	cur_call = PJSUA_INVALID_ID;
 	ringing = false;
 	hangup_req = false;
+	media_ready = false;
 }
 
 /* a request of the modem's, in the service thread: ANSWER the call that
@@ -265,25 +364,32 @@ void do_request(Request &r)
 		pjsua_call_answer(cur_call, 200, NULL, NULL);
 		return;
 	}
-	if (cur_call != PJSUA_INVALID_ID || r.fd < 0) {
+	/* the line busy while the call is made: no incoming call takes it,
+	   and the call's end is seen before its id is known */
+	pjsua_call_id none = PJSUA_INVALID_ID;
+	if (r.fd < 0 || !cur_call.compare_exchange_strong(none, DIALING)) {
 		if (r.fd >= 0)
 			close(r.fd);            /* busy */
 		return;
 	}
+	static uintptr_t dials;
+	dial_tag = ++dials;
 	audio_attach(r.fd);
 	std::string uri = "sip:" + r.number + "@" + cfg.domain;
 	PJ_LOG(3, (__FILE__, "calling %s", uri.c_str()));
 	pj_str_t u = pj_str(&uri[0]);
 	pjsua_call_id id;
-	if (pjsua_call_make_call(acc_id, &u, 0, NULL, NULL, &id) == PJ_SUCCESS)
+	if (pjsua_call_make_call(acc_id, &u, 0, (void *)dial_tag.load(), NULL,
+				 &id) == PJ_SUCCESS)
 		cur_call = id;
 	else
 		call_cleanup();
+	dial_tag = 0;
 }
 
-/* the service thread until stop(): the requests, RING every 3 s while a
-   call waits, CANCEL, and the clean up when the call or the socket
-   ends (polled every 200 ms) */
+/* the service thread until stop(): the requests, the call's port into
+   the bridge, RING every 3 s while a call waits, CANCEL, and the clean
+   up when the call or the socket ends (polled every 200 ms) */
 void service_loop()
 {
 	pj_register_thread();
@@ -306,6 +412,8 @@ void service_loop()
 			}
 			do_request(r);
 		}
+		if (media_ready.exchange(false))
+			port_connect();
 		if (cancel_req.exchange(false))
 			ctl_write("CANCEL\n");
 		pj_time_val now;
@@ -317,7 +425,7 @@ void service_loop()
 		}
 		if (!ringing)
 			next_ring.sec = 0;
-		if (hangup_req && !ringing)
+		if ((hangup_req || (cur_port && cur_port->failed)) && !ringing)
 			call_cleanup();
 	}
 	call_cleanup();
@@ -459,12 +567,6 @@ int start(const Config &config)
 
 	pj_caching_pool_init(&cpool, NULL, 1024 * 1024);
 	pool = pj_pool_create(&cpool.factory, "sip", 4000, 4000, NULL);
-	pj_str_t name = pj_str(const_cast<char *>("dmodem"));
-	pjmedia_port_info_init(&port.base.info, &name,
-			       PJMEDIA_SIG_CLASS_PORT_AUD('D', 'M'), rate, 1,
-			       16, frame_samples);
-	port.base.put_frame = put_frame;
-	port.base.get_frame = get_frame;
 
 	if (!check(pjsua_start(), "pjsua_start()"))
 		return -1;

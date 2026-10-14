@@ -7,7 +7,8 @@
 # With SIP_IN=<command>, the call goes the other way: D-Modem listens
 # (slmodemd -L, ATS0=1), <command> makes Asterisk call it, and DModem(term,o)
 # as the calling modem connects to this script's terminal port (2324), the
-# user; the BBS is on D-Modem's pty.
+# user; the BBS is on D-Modem's pty.  CALLS=<n>: that many calls one after
+# the other (D-Modem calling), in one slmodemd.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 slmodemd, number = sys.argv[1:3]
@@ -39,7 +40,9 @@ def bbs_conn(conn):
 srv = socket.socket()
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", 2323)); srv.listen(1)
-threading.Thread(target=lambda: bbs_conn(srv.accept()[0]), daemon=True).start()
+calls = int(os.environ.get("CALLS", "1"))
+threading.Thread(target=lambda: [bbs_conn(srv.accept()[0]) for _ in range(calls)],
+                 daemon=True).start()
 
 incoming = os.environ.get("SIP_IN")
 p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-d" + os.environ.get("SLMODEMD_DEBUG", "1")] + (["-L"] if incoming else []), stdout=subprocess.PIPE,
@@ -158,23 +161,30 @@ if incoming:
         print("modem said:", buf[-300:])
     print("PASS" if ok else "FAIL")
     sys.exit(0 if ok else 1)
-m = cmd(b"ATD" + number.encode(), rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO ANSWER|ERROR)\r\n", 90)
-print("dial:", m.group(1).decode() if m else "timeout")
-ok = ok and m is not None and m.group(1).startswith(b"CONNECT")
-if ok:
-    t1 = time.time()
-    # the timeouts are for 2400 bit/s and up
-    rate = re.match(rb"CONNECT (\d+)", m.group(1))
-    slow = max(1, 2400 // int(rate.group(1))) if rate else 1
-    ok = expect(rb"Welcome to the test BBS\r\n", 30 * slow) is not None
-    for l in LINES:
-        os.write(fd, l + b"\r\n")
-    for l in LINES:
-        ok = ok and expect(re.escape(l.upper() + b"\r\n"), 60 * slow) is not None
-    os.write(fd, b"BYE\r\n")
-    ok = ok and expect(rb"Goodbye\r\n", 30 * slow) is not None
-    print("session: %s in %.1f s" % ("PASS" if ok else "FAIL", time.time() - t1))
-    print("hangup:", "NO CARRIER" if expect(rb"NO CARRIER", 30) else "none")
+for call in range(calls):
+    if not ok:
+        break
+    if calls > 1:
+        print("call %d:" % (call + 1))
+    m = cmd(b"ATD" + number.encode(), rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO ANSWER|ERROR)\r\n", 90)
+    print("dial:", m.group(1).decode() if m else "timeout")
+    ok = ok and m is not None and m.group(1).startswith(b"CONNECT")
+    if ok:
+        t1 = time.time()
+        # the timeouts are for 2400 bit/s and up
+        rate = re.match(rb"CONNECT (\d+)", m.group(1))
+        slow = max(1, 2400 // int(rate.group(1))) if rate else 1
+        ok = expect(rb"Welcome to the test BBS\r\n", 30 * slow) is not None
+        for l in LINES:
+            os.write(fd, l + b"\r\n")
+        for l in LINES:
+            ok = ok and expect(re.escape(l.upper() + b"\r\n"), 60 * slow) is not None
+        os.write(fd, b"BYE\r\n")
+        ok = ok and expect(rb"Goodbye\r\n", 30 * slow) is not None
+        print("session: %s in %.1f s" % ("PASS" if ok else "FAIL", time.time() - t1))
+        hung = expect(rb"NO CARRIER", 30)
+        print("hangup:", "NO CARRIER" if hung else "none")
+        ok = ok and (hung is not None or calls == 1)
 p.terminate()
 if not ok:
     print("modem said:", buf[-300:])

@@ -79,6 +79,7 @@ jobs:
         run: |
           timeout 300 asterisk/test/sip.sh
           INCOMING=1 timeout 300 asterisk/test/sip.sh
+          CALLS=3 timeout 300 asterisk/test/sip.sh
 
       - name: Fax
         run: |
