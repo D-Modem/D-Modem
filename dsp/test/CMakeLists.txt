@@ -3,15 +3,17 @@
 #   quick     offline, faster than real time (a few minutes in all)
 #   spandsp   against spandsp's V.17 transmitter and T.4 encoder
 #             (libspandsp-dev)
-#   interop   with the original binary library (needs gcc -m32 on
-#             x86_64); long
-#   agere, sm56, pctel, hsf, spanpeer   with the other soft modems
+#   smartlink, agere, sm56, pctel, hsf, spanpeer   calls with the other
+#             soft modems: Smart Link's (its original binary library),
+#             the Agere, SM56, PCTel and HSF ones, spandsp's (needs gcc
+#             -m32 on x86_64); long
+#   open      calls between two open modems through the same driver
 #
 #   ctest --test-dir build -L quick
 set(S ${DMODEM_DSP_DIR})
 set(_dsp ${DMODEM_DSP_SRCS})
 # slmodemd's old C core (legacy/): Smart Link's original library calls
-# into it (half_blob), and core_script_old compares the new core with it;
+# into it (half_smartlink), and core_script_old compares the new core with it;
 # both run its timers by hand on a clock of their own (dmodem_timer.cpp,
 # not the SIGALRM ones of modem_timer.cpp)
 set(DMODEM_LEGACY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/legacy)
@@ -86,9 +88,11 @@ else()
 	message(STATUS "tests: spandsp not found, its tests skipped")
 endif()
 
-# --- interop: modem_half with the original library and with the open
-#     data pumps (32 bit like the blob), through interop_test
-#     (interop_call.cpp), with netsim for the G.711 network.
+# --- the interop calls: modem_half with Smart Link's original library
+#     (half_smartlink) and with the open data pumps (half_open, 32 bit
+#     like the library), and the other modems below, through
+#     interop_test.cpp (interop_call.cpp), with netsim for the G.711
+#     network.
 #     The original library (smartlink/dsplibs.o, Smart Link's binary-only
 #     DSP library) is a 32 bit i386 object: -m32 on x86_64.
 set(DMODEM_M32 "")
@@ -107,12 +111,12 @@ if(NOT DMODEM_HAVE_M32 OR
 	return()
 endif()
 foreach(_rate 9600 8000)
-	foreach(_kind blob open)
+	foreach(_kind smartlink open)
 		set(_n half_${_kind})
 		if(_rate EQUAL 8000)
 			set(_n ${_n}8)
 		endif()
-		if(_kind STREQUAL "blob")
+		if(_kind STREQUAL "smartlink")
 			# the original library calls into slmodemd's old core
 			add_executable(${_n} ${C}/modem_half.cpp
 				${C}/modem_cmdline.cpp ${DMODEM_LEGACY_SRCS}
@@ -247,7 +251,7 @@ target_compile_options(interop_driver PRIVATE -Wall -O2 -g)
 target_link_libraries(interop_driver PUBLIC pthread)
 dmodem_test_exe(interop_call interop_call_main.cpp)
 target_link_libraries(interop_call PRIVATE interop_driver)
-set(_progs "HALF_BLOB=\"$<TARGET_FILE:half_blob>\""
+set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""
 	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
 	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
 foreach(_p agere sm56 spandsp pctel hsf)
@@ -266,8 +270,9 @@ function(interop_tests label)
 	target_link_libraries(${_n} PRIVATE interop_driver)
 	dmodem_gtest(${_n} LABELS ${label})
 endfunction()
-# the original library (half_blob)
-interop_tests(interop)
+# Smart Link's original library (half_smartlink), and two open modems
+interop_tests(smartlink)
+interop_tests(open)
 if(TARGET half_agere)
 	interop_tests(agere)
 endif()

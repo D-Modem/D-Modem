@@ -1,7 +1,7 @@
-# build: everything (with the 32 bit interop test programs, against the
-# original DSP library) and the offline tests.  The realtime interop
-# tests (ctest -L "interop|agere" -j8, about 2 minutes) are left out: they
-# depend on the runner's timing.
+# build: everything (with the 32 bit interop test programs, against Smart
+# Link's original DSP library) and the offline tests.  The interop calls
+# (ctest -L "smartlink|agere|open" -j16, about a minute) are left out:
+# they depend on the runner's timing.
 #
 # asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from

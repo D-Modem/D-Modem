@@ -40,7 +40,7 @@ namespace {
 struct Call {
 	std::string label;
 	std::string name;
-	std::string a, b;       /* the modems: blob, open, open8, agere, ... */
+	std::string a, b;       /* the modems: smartlink, open, open8, ... */
 	std::string proto;      /* the AT commands (fax: the setup) */
 	std::vector<std::string> env;
 	int fax = 0;            /* fax: the modulation, data call: 0 */
@@ -50,7 +50,7 @@ struct Call {
 const std::map<std::string, const char *> &programs()
 {
 	static const std::map<std::string, const char *> p = {
-		{ "blob", HALF_BLOB }, { "open", HALF_OPEN },
+		{ "smartlink", HALF_SMARTLINK }, { "open", HALF_OPEN },
 		{ "open8", HALF_OPEN8 },
 #ifdef HALF_AGERE
 		{ "agere", HALF_AGERE },
@@ -85,54 +85,56 @@ std::vector<Call> calls()
 		return &c.back();
 	};
 
-	/* --- the original library (half_blob) */
-	for (const char *ms : { "34", "132", "122", "22", "212", "103", "23" }) {
+	/* --- Smart Link's soft modem, its original library on slmodemd's
+	   old core (half_smartlink, 9600 Hz), and the open modem call each
+	   other at each modulation */
+	for (const char *ms : { "34", "132", "122", "22", "212", "103",
+				"23" }) {
 		std::string p = std::string("ATX3;AT+MS=") + ms;
-		add("interop", std::string("interop_") + ms + "_blob_calls",
-		    "blob", "open", p);
-		add("interop", std::string("interop_") + ms + "_open_calls",
-		    "open", "blob", p);
+		add("smartlink",
+		    std::string("smartlink_") + ms + "_smartlink_calls",
+		    "smartlink", "open", p);
+		add("smartlink", std::string("smartlink_") + ms + "_open_calls",
+		    "open", "smartlink", p);
 	}
 	/* V.34 through a line hit (300 ms of silence both ways) in the
 	   middle of the data: both modems retrain, V.42 carries on */
-	for (auto [n, a, b] : { std::make_tuple("blob", "blob", "open"),
-				std::make_tuple("open", "open", "blob") })
-		add("interop", std::string("interop_34_hit_") + n + "_calls",
-		    a, b, "ATX3;AT+MS=34",
+	for (auto [n, a, b] :
+	     { std::make_tuple("smartlink", "smartlink", "open"),
+	       std::make_tuple("open", "open", "smartlink") })
+		add("smartlink", std::string("smartlink_34_hit_") + n +
+		    "_calls", a, b, "ATX3;AT+MS=34",
 		    { "NET=9600:9600:ulaw", "STREAM=25", "NET_DROP=20:300" });
 	/* V.34 rate renegotiation: the open modem starts one (and later
-	   goes back up), the original library answers it; and two open
-	   modems on a noisy line that gets 3 dB worse 10 s after CONNECT
-	   (NET_SYNC), each lowers its receiving rate */
-	for (auto [n, a, b] : { std::make_tuple("blob", "blob", "open"),
-				std::make_tuple("open", "open", "blob") })
-		add("interop", std::string("interop_34_reneg_") + n + "_calls",
-		    a, b, "ATX3;AT+MS=34",
+	   goes back up), the original library answers it */
+	for (auto [n, a, b] :
+	     { std::make_tuple("smartlink", "smartlink", "open"),
+	       std::make_tuple("open", "open", "smartlink") })
+		add("smartlink", std::string("smartlink_34_reneg_") + n +
+		    "_calls", a, b, "ATX3;AT+MS=34",
 		    { "NET=9600:9600:ulaw", "NET_SYNC=1", "STREAM=25",
 		      "DSP_V34_RENEG=5000:8" });
-	add("interop", "interop_34_noise", "open", "open", "ATX3;AT+MS=34",
-	    { "NET=9600:9600:ulaw", "NET_SYNC=1", "STREAM=30",
-	      "NET_FLOOR=250", "NET_NOISE=10:250" });
 	/* V.90: the original library (analogue modem) calls the open one
 	   (digital modem, 8000 Hz) through the simulated G.711 network.
 	   NET_FLOOR: on a line without any noise its phase 4 check (the
 	   error before and after TRN2d corrects its levels from the DIL by
 	   a unit or two) fails, and it retrains once for nothing; a floor
 	   of -81 dBFS keeps the check to what it is for on a real line */
-	add("interop", "interop_v90_ulaw", "blob", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:ulaw", "NET_FLOOR=3" });
-	add("interop", "interop_v90_alaw", "blob", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:alaw", "DSP_G711=alaw" });
+	add("smartlink", "smartlink_v90_ulaw", "smartlink", "open8",
+	    "ATX3;AT+MS=90", { "NET=9600:8000:ulaw", "NET_FLOOR=3" });
+	add("smartlink", "smartlink_v90_alaw", "smartlink", "open8",
+	    "ATX3;AT+MS=90", { "NET=9600:8000:alaw", "DSP_G711=alaw" });
 	/* V.90 rate renegotiation (9.6/V.90): ours after 5 s of data, to
 	   24 000 bit/s upstream; the library's own when noise on the PCM
 	   codes from 40 s on worsens the downstream: it asks for a silent
 	   period (CPs), and the noise stops with our silence (else it may
 	   pick 56000 again and the data goes wrong) */
-	add("interop", "interop_v90_reneg", "blob", "open8", "ATX3;AT+MS=90",
+	add("smartlink", "smartlink_v90_reneg", "smartlink", "open8",
+	    "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_FLOOR=3", "STREAM=15",
 	      "DSP_V34_RENEG=5000:10",
 	      "EXPECT_B=V.90 renegotiated [0-9]+/24000" });
-	add("interop", "interop_v90_reneg_silence", "blob", "open8",
+	add("smartlink", "smartlink_v90_reneg_silence", "smartlink", "open8",
 	    "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_FLOOR=3", "STREAM=50",
 	      "NET_NOISE=40:20:10", "NET_NOISE_DIR=bacodes",
@@ -140,10 +142,11 @@ std::vector<Call> calls()
 	      "EXPECT_B=(?s)CPs'.*V.90 renegotiated" });
 	/* V.92 quick connect (short phase 1): the original library, a V.92
 	   analogue modem, starts with QC1a; then V.90 */
-	add("interop", "interop_v92_qc", "blob", "open8", "ATX3;AT+MS=92",
+	add("smartlink", "smartlink_v92_qc", "smartlink", "open8",
+	    "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "EXPECT_B=V.92 quick connect" });
 	/* V.92 PCM upstream: the original library is a "V.92 Lite" build,
-	   which retrains when INFO1d offers PCM upstream; BLOB_V92FULL
+	   which retrains when INFO1d offers PCM upstream; SMARTLINK_V92FULL
 	   (legacy/modem.cpp) sets its full V.92 bit, and it then goes
 	   through phases 3 and 4 of V.92 with us.  Lite: we answer its
 	   retrain without the offer, V.90.  A rate the line cannot carry
@@ -152,58 +155,61 @@ std::vector<Call> calls()
 	   and 40 000 (A-law); without it (DSP_V92_PREFILTER=0), the precoder
 	   alone, 34 000 to 36 000 */
 	for (const char *law : { "ulaw", "alaw" })
-		add("interop", std::string("interop_v92_pcmup_") + law, "blob",
-		    "open8", "ATX3;AT+MS=92",
+		add("smartlink", std::string("smartlink_v92_pcmup_") + law,
+		    "smartlink", "open8", "ATX3;AT+MS=92",
 		    { std::string("NET=9600:8000:") + law, "STREAM=10",
-		      "BLOB_V92FULL=1",
+		      "SMARTLINK_V92FULL=1",
 		      "EXPECT_B=(?s)prefilter of 64 taps.*V.92 connect "
 		      "56000/(3[89]|4[0-2])" });
-	add("interop", "interop_v92_pcmup_noprefilter", "blob", "open8",
-	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=10", "BLOB_V92FULL=1",
+	add("smartlink", "smartlink_v92_pcmup_noprefilter", "smartlink",
+	    "open8", "ATX3;AT+MS=92",
+	    { "NET=9600:8000:ulaw", "STREAM=10", "SMARTLINK_V92FULL=1",
 	      "DSP_V92_PREFILTER=0", "EXPECT_B=V.92 connect 56000/3[4-9]" });
 	/* (it ran alone once: quick connect's timing did not take a busy
 	   machine; next to the unpaced calls, which run nicer, and a dozen
 	   calls in real time it connects at the same moments every time) */
-	add("interop", "interop_v92_pcmup_calls", "blob", "open8",
+	add("smartlink", "smartlink_v92_pcmup_calls", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "CALLS=2", "STREAM=3", "BLOB_V92FULL=1",
+	    { "NET=9600:8000:ulaw", "CALLS=2", "STREAM=3",
+	      "SMARTLINK_V92FULL=1",
 	      "EXPECT_B=(?s)V.92 connect.*V.92 connect" });
-	add("interop", "interop_v92_pcmup_lite", "blob", "open8",
+	add("smartlink", "smartlink_v92_pcmup_lite", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=3",
 	      "EXPECT_B=(?s)no PCM upstream offer.*V.90 connect" });
-	add("interop", "interop_v92_pcmup_fallback", "blob", "open8",
+	add("smartlink", "smartlink_v92_pcmup_fallback", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=3", "BLOB_V92FULL=1",
+	    { "NET=9600:8000:ulaw", "STREAM=3", "SMARTLINK_V92FULL=1",
 	      "DSP_V92_UP_DRN=16",
 	      "EXPECT_B=(?s)B1u does not come through.*V.90 connect" });
 	/* rate renegotiation (9.8/V.92): ours after 3 s of data, to 30 666
 	   bit/s upstream (DSP_V92_RENEG=<ms>:<drn>); and on its own when
 	   noise on the way up eats the margin of our rate */
-	add("interop", "interop_v92_reneg", "blob", "open8", "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=10", "BLOB_V92FULL=1",
+	add("smartlink", "smartlink_v92_reneg", "smartlink", "open8",
+	    "ATX3;AT+MS=92",
+	    { "NET=9600:8000:ulaw", "STREAM=10", "SMARTLINK_V92FULL=1",
 	      "DSP_V92_RENEG=3000:6",
 	      "EXPECT_B=V.92 renegotiated 56000/30666" });
-	add("interop", "interop_v92_reneg_noise", "blob", "open8",
+	add("smartlink", "smartlink_v92_reneg_noise", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=15", "BLOB_V92FULL=1",
+	    { "NET=9600:8000:ulaw", "STREAM=15", "SMARTLINK_V92FULL=1",
 	      "NET_NOISE=26:60", "NET_NOISE_DIR=ab",
 	      "EXPECT_B=V.92 renegotiated 56000/[23]" });
 	/* fast parameter exchange (9.9/V.92): ours after 3 s of data, to
 	   30 666 bit/s upstream (DSP_V92_FPE=<ms>:<drn>), in the data mode
 	   modulation.  Without the prefilter (below with it) */
-	add("interop", "interop_v92_fpe", "blob", "open8", "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=10", "BLOB_V92FULL=1",
+	add("smartlink", "smartlink_v92_fpe", "smartlink", "open8",
+	    "ATX3;AT+MS=92",
+	    { "NET=9600:8000:ulaw", "STREAM=10", "SMARTLINK_V92FULL=1",
 	      "DSP_V92_PREFILTER=0", "DSP_V92_FPE=3000:6",
 	      "EXPECT_B=(?s)fast parameter exchange 1 done.*V.92 "
 	      "renegotiated 56000/30666" });
 	/* modem-on-hold asked for by us (AT+PMHR, 9.10.2.1/V.92) in the
 	   middle of PCM upstream data: the original library answers our
 	   tone B with a retrain, which we follow, and the data goes on */
-	add("interop", "interop_v92_moh_request", "blob", "open8",
+	add("smartlink", "smartlink_v92_moh_request", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=30", "BLOB_V92FULL=1",
+	    { "NET=9600:8000:ulaw", "STREAM=30", "SMARTLINK_V92FULL=1",
 	      "MIDCALL_B=8:AT+PMHR;WAIT 6",
 	      "EXPECT_B=(?s)modem-on-hold request.*retrains instead.*V.92 "
 	      "retrained" });
@@ -212,16 +218,16 @@ std::vector<Call> calls()
 	   MHack, the remote on hold for 5 s, ANSam; MHnack, MHfrr and
 	   ANSam.  The original library is cut off meanwhile and hangs up,
 	   so nothing comes back to ANSam and we disconnect after T1 (10 s) */
-	add("interop", "interop_v92_moh_request_ack", "blob", "open8",
+	add("smartlink", "smartlink_v92_moh_request_ack", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=40", "BLOB_V92FULL=1",
+	    { "NET=9600:8000:ulaw", "STREAM=40", "SMARTLINK_V92FULL=1",
 	      "NET_MOH=ack:1@22", "MIDCALL_B=12:AT+PMHR=5;WAIT 8",
 	      "EXPECT_DROP=1",
 	      "EXPECT_B=(?s)MHack, T1 10 s: the remote on hold for 5 s.*on "
 	      "hold, ANSam for 10 s.*on hold for T1: disconnect" });
-	add("interop", "interop_v92_moh_request_nack", "blob", "open8",
-	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=35", "BLOB_V92FULL=1",
+	add("smartlink", "smartlink_v92_moh_request_nack", "smartlink",
+	    "open8", "ATX3;AT+MS=92",
+	    { "NET=9600:8000:ulaw", "STREAM=35", "SMARTLINK_V92FULL=1",
 	      "NET_MOH=nack@22", "MIDCALL_B=12:AT+PMHR;WAIT 3",
 	      "EXPECT_DROP=1",
 	      "EXPECT_B=(?s)MHnack: MHfrr.*on hold \\(reconnect\\), ANSam.*"
@@ -230,61 +236,72 @@ std::vector<Call> calls()
 	   SUVu' to FB1u on the new points with the old moduli), so at the
 	   rate it has; the library's sequence through to B1u, and the data
 	   goes on */
-	add("interop", "interop_v92_fpe_prefilter", "blob", "open8",
+	add("smartlink", "smartlink_v92_fpe_prefilter", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=10", "BLOB_V92FULL=1",
+	    { "NET=9600:8000:ulaw", "STREAM=10", "SMARTLINK_V92FULL=1",
 	      "DSP_V92_FPE=3000:6",
 	      "EXPECT_B=(?s)prefilter not down.*SUVu'.*fast parameter "
 	      "exchange 1 done.*V.92 renegotiated 56000/3[89]" });
-	/* the original library's own fast parameter exchange (half_blob's
-	   BLOB_FPE_AT calls its initiateFPE, which nothing in it does on its
-	   own): its RM, our Rf, its SUVu to B1u, and the data goes on; with
-	   the prefilter and without */
+	/* the original library's own fast parameter exchange
+	   (half_smartlink's SMARTLINK_FPE_AT calls its initiateFPE, which
+	   nothing in it does on its own): its RM, our Rf, its SUVu to B1u,
+	   and the data goes on; with the prefilter and without */
 	for (int pf : { 1, 0 }) {
-		std::vector<std::string> e = { "NET=9600:8000:ulaw", "STREAM=10",
-			"BLOB_V92FULL=1", "BLOB_FPE_AT=4", "DSP_V92_SLIP=0",
+		std::vector<std::string> e = {
+			"NET=9600:8000:ulaw", "STREAM=10",
+			"SMARTLINK_V92FULL=1", "SMARTLINK_FPE_AT=4",
+			"DSP_V92_SLIP=0",
 			"EXPECT_B=(?s)RM at.*fast parameter exchange 1 done.*"
 			"V.92 renegotiated 56000/(3[0-9]|4[01])" };
 		if (!pf)
 			e.push_back("DSP_V92_PREFILTER=0");
-		add("interop", pf ? "interop_v92_fpe_remote" :
-		    "interop_v92_fpe_remote_noprefilter", "blob", "open8",
-		    "ATX3;AT+MS=92", e);
+		add("smartlink", pf ? "smartlink_v92_fpe_remote" :
+		    "smartlink_v92_fpe_remote_noprefilter", "smartlink",
+		    "open8", "ATX3;AT+MS=92", e);
 	}
 	/* the original library's timing slips against the network's
 	   clock, and the prefilter's design with it: about every 35 s of
 	   line a design for the slip in a fast parameter exchange at the
 	   same rate (0.35 s), and the data goes on */
 	for (const char *law : { "ulaw", "alaw" })
-		add("interop", std::string("interop_v92_slip_") + law, "blob",
-		    "open8", "ATX3;AT+MS=92",
+		add("smartlink", std::string("smartlink_v92_slip_") + law,
+		    "smartlink", "open8", "ATX3;AT+MS=92",
 		    { std::string("NET=9600:8000:") + law, "STREAM=30",
-		      "BLOB_V92FULL=1",
+		      "SMARTLINK_V92FULL=1",
 		      "EXPECT_B=(?s)the prefilter for a slip.*fast parameter "
 		      "exchange 1 done.*V.92 renegotiated 56000/(3[89]|4[0-2])" });
 	/* after the slip's exchange our own (DSP_V92_FPE) to a rate the
 	   design does not have (48000): it stays at the rate with the CPd
 	   as it is (not from the first design's gap with the slip's
 	   precoder) */
-	add("interop", "interop_v92_slip_fpe", "blob", "open8",
+	add("smartlink", "smartlink_v92_slip_fpe", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=40", "BLOB_V92FULL=1",
+	    { "NET=9600:8000:ulaw", "STREAM=40", "SMARTLINK_V92FULL=1",
 	      "DSP_V92_FPE=29000:19",
 	      "EXPECT_B=(?s)the prefilter for a slip.*fast parameter "
 	      "exchange 1 done.*FPE CPd: as it is.*fast parameter "
 	      "exchange 2 done" });
 	/* without the offer (DSP_V92_PCMUP=0): V.90, V.34 upstream */
-	add("interop", "interop_v92_nopcmup", "blob", "open8", "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "STREAM=3", "BLOB_V92FULL=1",
+	add("smartlink", "smartlink_v92_nopcmup", "smartlink", "open8",
+	    "ATX3;AT+MS=92",
+	    { "NET=9600:8000:ulaw", "STREAM=3", "SMARTLINK_V92FULL=1",
 	      "DSP_V92_PCMUP=0", "EXPECT_B=V.90 connect" });
 	/* class 1 fax calls both ways (the line's clock: 9600 Hz) */
 	for (int m : { 24, 48, 72, 96, 73, 97, 121, 122, 145 }) {
 		std::string s = std::to_string(m);
-		add("interop", "fax_interop_" + s + "_blob_sends", "blob",
-		    "open", "ATX3", { "LINE_RATE=9600" })->fax = m;
-		add("interop", "fax_interop_" + s + "_open_sends", "open",
-		    "blob", "ATX3", { "LINE_RATE=9600" })->fax = m;
+		add("smartlink", "smartlink_fax_" + s + "_smartlink_sends",
+		    "smartlink", "open", "ATX3",
+		    { "LINE_RATE=9600" })->fax = m;
+		add("smartlink", "smartlink_fax_" + s + "_open_sends", "open",
+		    "smartlink", "ATX3", { "LINE_RATE=9600" })->fax = m;
 	}
+
+	/* --- two open modems through the same driver: V.34 on a noisy
+	   line that gets 3 dB worse 10 s after CONNECT (NET_SYNC), each
+	   lowers its receiving rate */
+	add("open", "open_34_noise", "open", "open", "ATX3;AT+MS=34",
+	    { "NET=9600:9600:ulaw", "NET_SYNC=1", "STREAM=30",
+	      "NET_FLOOR=250", "NET_NOISE=10:250" });
 
 	/* --- the Agere soft modem (8000 Hz) and the open modem (9600 Hz)
 	   call each other; AT+MS takes names there (B103, V21, ..., V34) */

@@ -333,10 +333,10 @@ static int modem_test_run(struct modem_test *modems)
 	if (getenv("PIPE_SYNC")) {
 		sync_n = (atol(getenv("PIPE_SYNC")) + HALF_FRAME - 1) /
 			HALF_FRAME * HALF_FRAME;
-		/* BLOB_SYNC_PHASE: that much later in each period (the
+		/* SMARTLINK_SYNC_PHASE: that much later in each period (the
 		   other half reads PIPE_SYNC as well) */
-		sync_phase = getenv("BLOB_SYNC_PHASE") ?
-			atol(getenv("BLOB_SYNC_PHASE")) / HALF_FRAME *
+		sync_phase = getenv("SMARTLINK_SYNC_PHASE") ?
+			atol(getenv("SMARTLINK_SYNC_PHASE")) / HALF_FRAME *
 			HALF_FRAME % sync_n : 0;
 		next_sync = sync_n + sync_phase;
 	}

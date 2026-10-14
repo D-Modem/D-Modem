@@ -573,7 +573,7 @@ static unsigned dpstat2status(unsigned dpstat)
 
 /* the original library's own fast parameter exchange (9.9/V.92) as the
    analogue modem: nothing in it starts one (V92Modulator::initiateFPE is
-   only called on the digital modem's Rf), so BLOB_FPE_AT=<s> calls it
+   only called on the digital modem's Rf), so SMARTLINK_FPE_AT=<s> calls it
    that far into data mode, through its VPcmFloModem (vpcm_create keeps
    it at 0x3574, it its V92Modulator at 0x6124) */
 /* (weak: core_script_old links this file without the library; the
@@ -581,12 +581,12 @@ static unsigned dpstat2status(unsigned dpstat)
 extern "C" void _ZN12V92Modulator11initiateFPEEv(void *mod)
 	__attribute__((weak));
 
-static void blob_fpe(struct modem *m, int cnt)
+static void smartlink_fpe(struct modem *m, int cnt)
 {
 	static long at = -2, n;
 	if (at == -2)
-		at = getenv("BLOB_FPE_AT") ?
-			atol(getenv("BLOB_FPE_AT")) * (long)m->srate : -1;
+		at = getenv("SMARTLINK_FPE_AT") ?
+			atol(getenv("SMARTLINK_FPE_AT")) * (long)m->srate : -1;
 	if (at < 0 || !IS_STATE_ONLINE(m->state) || !m->dp ||
 	    m->dp->id != DP_V92)
 		return;
@@ -595,7 +595,7 @@ static void blob_fpe(struct modem *m, int cnt)
 	at = -1;
 	void *flo = *(void **)((char *)m->dp + 0x3574);
 	void *mod = flo ? *(void **)((char *)flo + 0x6124) : NULL;
-	MODEM_DBG("BLOB_FPE_AT: initiateFPE (%p)\n", mod);
+	MODEM_DBG("SMARTLINK_FPE_AT: initiateFPE (%p)\n", mod);
 	if (mod && _ZN12V92Modulator11initiateFPEEv)
 		_ZN12V92Modulator11initiateFPEEv(mod);
 }
@@ -604,7 +604,7 @@ static void modem_dp_process(struct modem *m,void *in,void *out,int count)
 {
 	int ret;
 	unsigned cnt;
-	blob_fpe(m, count);
+	smartlink_fpe(m, count);
 	//MODEM_DBG("modem_process %d: %d...\n", m->count,count);
 	while(count && m->dp) {
 		cnt = count;
@@ -1063,8 +1063,8 @@ static int modem_start (struct modem *m)
 	/* Smart Link's library is a "V.92 Lite" build: its runtime has
 	   the full V.92 bit (byte 2, bit 7) clear, and the library then
 	   retrains to V.34 upstream when PCM upstream is selected.
-	   BLOB_V92FULL=1 sets the bit. */
-	if (getenv("BLOB_V92FULL") && atoi(getenv("BLOB_V92FULL")))
+	   SMARTLINK_V92FULL=1 sets the bit. */
+	if (getenv("SMARTLINK_V92FULL") && atoi(getenv("SMARTLINK_V92FULL")))
 		((unsigned char *)m->dp_runtime)[2] |= 0x80;
 
 	{

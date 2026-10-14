@@ -177,5 +177,5 @@ and to `DModemReceiveFax`, and `DModemSendFax` to `ReceiveFAX`, all at
 `debug = 3` in `[general]` and `core set verbose 5` show the modem's
 handshake on the console.  The same modem runs outside Asterisk in
 `dsp/test/dmodem_test` (two modems of the library back to back)
-and, as slmodemd, against the original binary library in
-`dsp/test/interop_test` (`interop_call`).
+and, as slmodemd, against Smart Link's original binary library in
+`dsp/test/smartlink_test` (`interop_call`).

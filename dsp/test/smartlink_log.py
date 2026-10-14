@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""blob_log.py [log]: the original library's "$!$ " lines (its edprintf)
-decoded in place, the rest as it is (stdin without a file).
+"""smartlink_log.py [log]: the original library's "$!$ " lines (its
+edprintf) decoded in place, the rest as it is (stdin without a file).
 
 Each byte is two characters: its high and low nibbles, each plus the next
 of a key that goes round (4 6 2 7 1 9 3 5 8 7, from the start of each

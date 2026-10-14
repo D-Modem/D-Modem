@@ -23,7 +23,7 @@
 namespace dsp {
 
 /* debug output (dsplibs_debug_printf), routed through modem_debug.cpp like
-   the original blob */
+   the original library */
 #define DSP_DBG(fmt, arg...) do { if (dsplibs_debug_level > 1) \
 	dsplibs_debug_printf("dsp: " fmt, ##arg); } while (0)
 /* per symbol traces, only for development */

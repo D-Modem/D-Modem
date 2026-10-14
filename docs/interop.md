@@ -1,6 +1,65 @@
 # Interop tests against other soft modems
 
-Calls between the open modem and vendor soft modems, each run in user space on an emulation of its hardware (see [testing.md](testing.md) for the harness and netsim).
+Calls between the open modem and other soft modems: Smart Link's on
+slmodemd's old core, the Agere, SM56, PCTel and HSF ones each in user
+space on an emulation of its hardware, and spandsp's (see
+[testing.md](testing.md) for the driver, netsim and how the calls keep
+time). Each has a harness, `half_<name>`, which takes the line's audio
+on fd 3, gives its own on fd 4 and is the modem's DTE on a pty, and a
+ctest label of its own; `ctest -L <label> -j16` runs its calls.
+
+## Against the Smart Link soft modem
+
+`half_smartlink` runs Smart Link's soft modem: its DSP library
+(`test/smartlink/dsplibs.o`, binary-only, i386: the library slmodemd was
+written for, whose interface the open DSP keeps, `dsp/dsplibs.h`) on
+slmodemd's old C core (`test/legacy/`), which it calls into. It needs no
+hardware: the core gives it the line's samples at 9600 Hz as ours gives
+the open pumps theirs (`half_smartlink8`, at 8000 Hz, is built as well,
+but the library does not work at that rate). `ctest -L smartlink -j16`
+runs the tests; `smartlink_log.py` decodes the library's own debug lines
+(`docs/dsp/v92.md`). Results at the time of writing:
+
+| `AT+MS=` | Smart Link caller → open answerer | open caller → Smart Link answerer |
+|---|---|---|
+| 34 (V.34) | CONNECT 33600 | CONNECT 33600 |
+| 132 (V.32bis) | CONNECT 14400 | CONNECT 14400 |
+| 122 (V.22bis) | CONNECT 2400 | CONNECT 2400 |
+| 22 (V.22) | CONNECT 1200 | CONNECT 1200 |
+| 212 (Bell 212A) | CONNECT 1200 | CONNECT 1200 |
+| 103 (Bell 103) | CONNECT 300 | CONNECT 300 |
+| 23 (V.23) | CONNECT 1200 | CONNECT 1200 |
+| 21 (V.21) | CONNECT 300 | fails: its V.21 answerer only sends 2225 Hz and does not connect to itself either (not in the tests) |
+
+V.34 through a line hit (300 ms of silence both ways in the data:
+`smartlink_34_hit_*`) retrains both modems and V.42 carries on; it
+answers our V.34 rate renegotiation (`smartlink_34_reneg_*`).
+
+As the analogue modem, calling ours (the digital modem, 8000 Hz) through
+netsim's G.711 network, it connects with V.90 at 56000/31200, µ-law and
+A-law (`smartlink_v90_*`, [dsp/v90.md](dsp/v90.md), with the rate
+renegotiations both ways). Its V.92 is a "V.92 Lite" build, which
+retrains when offered PCM upstream; `SMARTLINK_V92FULL=1` sets its full
+V.92 bit, and it then does PCM upstream with us: 56000/38666 (µ-law) and
+40000 (A-law) with our prefilter, quick connect, rate renegotiations and
+fast parameter exchanges both ways (`SMARTLINK_FPE_AT=<s>` starts its
+own that far into the data), modem-on-hold, and the exchange for its
+timing slip (`smartlink_v92_*`, [dsp/v92.md](dsp/v92.md)).
+
+Class 1 fax both ways at 9600 Hz (`smartlink_fax_*`):
+
+| Modulation | Smart Link sender → open receiver | open sender → Smart Link receiver |
+|---|---|---|
+| V.27ter 2400, 4800 | pass | pass |
+| V.29 7200, 9600 | pass | pass |
+| V.17 7200, 9600, 12000, 14400 (long train for TCF, short for the page) | pass | pass |
+
+It makes a few bit errors with some of its own signals (hence the
+driver's 1e-3 allowance on a page), and its V.27ter training contains
+stray 180 degree phase flips, which the open receiver follows. Its V.17
+receiver takes a short train or not depending on how its 20 ms frames
+fall on it, so the fax calls give the DTE's commands every 192 samples
+(`PIPE_SYNC=192`, `docs/testing.md`).
 
 ## Against the Agere soft modem
 
@@ -325,21 +384,22 @@ A right), from the first dial to the end of the data (or of the call that
 failed). It needs `NET` (netsim writes it, `NET_WAV`); with `CALLS` the
 calls in between are in it as well. For example:
 
-    NETSIM=build/dsp/test/netsim NET=9600:8000:ulaw BLOB_V92FULL=1 \
-      WAV=call.wav build/dsp/test/interop_call build/dsp/test/half_blob \
-      build/dsp/test/half_open8 "ATX3;AT+MS=92"
+    NETSIM=build/dsp/test/netsim NET=9600:8000:ulaw SMARTLINK_V92FULL=1 \
+      WAV=call.wav build/dsp/test/interop_call \
+      build/dsp/test/half_smartlink build/dsp/test/half_open8 "ATX3;AT+MS=92"
 
-`PIPE_SYNC=<samples>` (`half_open`, `half_blob`), `AGERE_SYNC=<samples>`
-(`half_agere`), `SM56_SYNC=<samples>` (`half_sm56`),
-`SPANDSP_SYNC=<samples>` (`half_spandsp`), `PCTEL_SYNC=<samples>`
-(`half_pctel`) and `HSF_SYNC=<samples>` (`half_hsf`) make a call repeat exactly from run to run: the modems take
+`PIPE_SYNC=<samples>` (`half_open`, `half_smartlink`),
+`AGERE_SYNC=<samples>` (`half_agere`), `SM56_SYNC=<samples>`
+(`half_sm56`), `SPANDSP_SYNC=<samples>` (`half_spandsp`),
+`PCTEL_SYNC=<samples>` (`half_pctel`) and `HSF_SYNC=<samples>`
+(`half_hsf`) make a call repeat exactly from run to run: the modems take
 the DTE's commands only every that many line samples (data, once
-connected, at once), run their timers
-between half frames and keep time by the line; without them, where the
-commands meet the line depends on the scheduler. With `PIPE_SYNC`,
-`half_open` and `half_blob` also run in real time while on hook, so that
-the commands meet the samples they would in real time even when the call
-itself runs unpaced (see `docs/testing.md`); `half_blob` then runs the
-old core's timers on the line's samples as well. `AGERE_SYNC_PHASE` and
-`BLOB_SYNC_PHASE` move one side within the period, to try the alignments
-one by one.
+connected, at once), run their timers between half frames and keep time
+by the line; without them, where the commands meet the line depends on
+the scheduler. With `PIPE_SYNC`, `half_open` and `half_smartlink` also
+run in real time while on hook, so that the commands meet the samples
+they would in real time even when the call itself runs unpaced (see
+`docs/testing.md`); `half_smartlink` then runs the old core's timers on
+the line's samples as well. `AGERE_SYNC_PHASE` and
+`SMARTLINK_SYNC_PHASE` move one side within the period, to try the
+alignments one by one.

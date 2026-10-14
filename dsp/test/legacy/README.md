@@ -15,9 +15,10 @@ interop tests' calls with the original library run unpaced too.
 
 Nothing ships with it. It is here for two tests:
 
-- `half_blob`/`half_blob8` (`../CMakeLists.txt`): Smart Link's original
-  binary-only DSP library (`../smartlink/dsplibs.o`), the interop tests' peer, was
-  written against this core and calls into it.
+- `half_smartlink`/`half_smartlink8` (`../CMakeLists.txt`): Smart Link's
+  original binary-only DSP library (`../smartlink/dsplibs.o`), one of the
+  interop tests' peers (`docs/interop.md`), was written against this core
+  and calls into it.
 - `core_script_old` (`../../../core/test`): the same scripts on this core
   and on the new one must give the same transcripts.
 

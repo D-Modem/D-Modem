@@ -15,10 +15,12 @@ compiler (`g++ -m32`), for the original library.
                                         # about 1.5 min on 4)
     ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
-    ctest --test-dir build -L interop -j16  # calls between the original library and this one,
-                                            # data and class 1 fax (needs g++ -m32)
+    ctest --test-dir build -L smartlink -j16  # calls between Smart Link's soft modem (its
+                                              # original library) and this one, data and
+                                              # class 1 fax (needs g++ -m32)
     ctest --test-dir build -L agere -j16    # calls between the Agere soft modem and this one
-                                            # (sm56, pctel, hsf, spanpeer: the other modems)
+                                            # (sm56, pctel, hsf, spanpeer: the other modems;
+                                            # open: two of this one)
 
 The test programs are in `dsp/test/` (the link layer's and the core's in `link/test/` and `core/test/`). All the tests are GoogleTest programs (the system's libgtest-dev, or
 fetched while configuring); ctest runs each of their cases as a test of
@@ -35,7 +37,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one (or against a script's `.expect`, see `docs/core.md`) |
-| `interop_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test` | calls between this modem and the others (`interop_test.cpp`: one table of the calls, each program a label's) |
+| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
 
 Each call writes its modem logs to `build/dsp/test/logs/<test>/`. The
 calls run as fast as the modems can: every modem keeps time by its
@@ -64,8 +66,8 @@ however late the driver answers:
 The fax calls (`interop_call --fax`) keep time by the driver's own relay
 of the line (A's samples at `LINE_RATE`: 8000, 9600 with the original
 library), and go ten times as fast as real time at most
-(`MODEM_SPEED=10`, `half_open`'s and `half_blob`'s): the fax modems take
-so little that the line would otherwise go a few hundred times as fast,
+(`MODEM_SPEED=10`, `half_open`'s and `half_smartlink`'s): the fax modems
+take so little that the line would otherwise go a few hundred times as fast,
 and the milliseconds the driver takes to answer what a modem said (it
 plays T.30 for both machines) would be most of a second of the line,
 past T.30's turnarounds. The modems take the DTE's commands every 192
@@ -109,30 +111,22 @@ at 38 dB, 28800 at 35 dB, 26400 at 33 dB, 24000 at 30 dB, 21600 at
 28 dB, 16800 at 25 dB, 14400 at 22 dB. `[echo dB] [far echo dB]` add the echoes;
 `FAR_DELAY=<samples>` delays the far one (200 ms: still 31200 bit/s).
 
-`interop` connects two `modem_half` processes with pipes. One process is
-linked with `test/smartlink/dsplibs.o` on slmodemd's old C core
-(`test/legacy/`: the original library calls into it), the other with this code on the modem
-core (`../core`). Each call goes through the full modem core: AT commands,
-V.42/LAPM detection and data in both directions. Results at the time of writing:
-
-| `AT+MS=` | original caller → open answerer | open caller → original answerer |
-|---|---|---|
-| 34 (V.34) | CONNECT 33600 | CONNECT 33600 |
-| 132 (V.32bis) | CONNECT 14400 | CONNECT 14400 |
-| 122 (V.22bis) | CONNECT 2400 | CONNECT 2400 |
-| 22 (V.22) | CONNECT 1200 | CONNECT 1200 |
-| 212 (Bell 212A) | CONNECT 1200 | CONNECT 1200 |
-| 103 (Bell 103) | CONNECT 300 | CONNECT 300 |
-| 23 (V.23) | CONNECT 1200 | CONNECT 1200 |
-| 21 (V.21) | CONNECT 300 | fails: the original V.21 answerer only sends 2225 Hz and does not connect to itself either |
+A call connects two modem processes with pipes: `half_open` (this code
+on the modem core, `../core`) and another modem's harness, or a second
+`half_open` (the `open` label). Each goes through the modem's whole
+controller: AT commands, V.42/LAPM detection and data in both
+directions. The other modems, their harnesses and what the calls with
+them give are in [interop.md](interop.md): Smart Link's original library
+(`half_smartlink`), the Agere, SM56, PCTel and HSF soft modems and
+spandsp's modems.
 
 `NET=<rate A>:<rate B>:<ulaw|alaw>` puts `netsim`, a simulated G.711
 network, between the two: each direction goes through the law at 8000 Hz,
 and to a modem at 9600 Hz through a converter that acts like a codec on
 an analogue line (a raised cosine at 4000 Hz, so that PCM samples stay
-free of intersymbol interference). `half_blob8`/`half_open8` are the
-modems at 8000 Hz (the original library does not work at 8000 Hz). `NET_GAIN`
-sets an analogue gain on the way to the 9600 Hz modem, and
+free of intersymbol interference). `half_smartlink8`/`half_open8` are
+the modems at 8000 Hz (the original library does not work at 8000 Hz).
+`NET_GAIN` sets an analogue gain on the way to the 9600 Hz modem, and
 `NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
 clock: what it receives comes back with what it sends; from the line,
 before its codec would clip it). The delay has to be more than the
@@ -141,21 +135,12 @@ modem): netsim says how many samples went without their echo
 otherwise, and an echo with gaps in it is not one a canceller can
 learn.
 
-`fax_interop` does the same with `AT+FCLASS=1`. `interop_call --fax` plays
-the T.30 side of both fax machines: CSI/DIS, DCS, TCF, CFR, one page (for
-V.17 with the short train), EOP, MCF and DCN, at ten times real time
-(above). Results at the time of writing:
-
-| Modulation | original sender → open receiver | open sender → original receiver |
-|---|---|---|
-| V.27ter 2400, 4800 | pass | pass |
-| V.29 7200, 9600 | pass | pass |
-| V.17 7200, 9600, 12000, 14400 (long train for TCF, short for the page) | pass | pass |
-
-The original library makes a few bit errors with some of its own signals,
-so `interop_call --fax` accepts a page with a bit error rate below 1e-3 (a fax
-page without ECM survives that). Its V.27ter training also contains stray
-180 degree phase flips, which the open receiver follows.
+The fax calls (`<label>_fax_*`) do the same with `AT+FCLASS=1`:
+`interop_call --fax` plays the T.30 side of both fax machines: CSI/DIS,
+DCS, TCF, CFR, one page (for V.17 with the short train), EOP, MCF and
+DCN, at ten times real time (above). It accepts a page with a bit error
+rate below 1e-3 (a fax page without ECM survives that): the original
+library makes a few bit errors with some of its own signals.
 
 `fax_test`'s `FaxModulation` cases send random data through each fax
 modulation over a simulated line. The V.17 short train codes run a long
