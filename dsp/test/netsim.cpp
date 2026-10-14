@@ -31,7 +31,8 @@ int dsplibs_debug_printf(const char *fmt, ...) { return 0; }
 
 static int alaw;
 static int plain;       /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
-			   resampler of dsp_util, not the raised cosine */
+			   resampler of dsp_util, not the raised cosine (the
+			   law still on the 8000 Hz samples) */
 static float gain = 1;
 static float gain_up = 1;    /* NET_GAIN_UP: on the way up from a 9600 Hz modem */
 /* NET_DROP=<at s>:<ms>: the line goes silent both ways for a while (a
@@ -517,8 +518,7 @@ static int run(struct dir *d, int a_out, int a_in)
 			}
 		}
 		if (noise && (noise_dir == 3 ||
-			      !(d->rate_in == 8000 && d->rate_out != 8000 &&
-				!plain))) {
+			      !(d->rate_in == 8000 && d->rate_out != 8000))) {
 			double x = ibuf[i] + noise * gauss();
 			ibuf[i] = (short)(x > 32767 ? 32767 : x < -32768 ?
 					  -32768 : lrint(x));
@@ -558,11 +558,13 @@ static int run(struct dir *d, int a_out, int a_in)
 			wav_put(!a_out, g711(ibuf[i]));
 			continue;
 		}
-		if (d->rate_in == 8000 && !plain) {
+		if (d->rate_in == 8000) {
 			/* the network, then the far codec (with the
-			   analogue loss or gain NET_GAIN on the way) */
+			   analogue loss or gain NET_GAIN on the way): the
+			   raised cosine, or NET_PLAIN's short resampler */
+			float x = g711(ibuf[i]) * gain;
 			wav_put(!a_out, g711(ibuf[i]));
-			m = rc_run(&d->rc, g711(ibuf[i]) * gain, y);
+			m = plain ? d->rs.run(x, y) : rc_run(&d->rc, x, y);
 			for (k = 0; k < m; k++) {
 				if (noise && noise_dir != 3)
 					y[k] += noise * (float)gauss();
@@ -577,15 +579,14 @@ static int run(struct dir *d, int a_out, int a_in)
 						       y[k] < -32768 ? -32768 : y[k]);
 			}
 		} else {
-			if (d->rate_in == 8000)
-				wav_put(!a_out, g711(ibuf[i]));
+			/* up from a 9600 Hz modem: its codec to 8000 Hz,
+			   then the network */
 			m = d->rs.run(ibuf[i] * gain_up, y);
 			for (k = 0; k < m; k++) {
 				d->obuf[o] = (short)g711((int)lrintf(y[k]));
 				d->lbuf[o] = d->obuf[o];
+				wav_put(!a_out, d->obuf[o]);
 				o++;
-				if (d->rate_out == 8000)
-					wav_put(!a_out, d->obuf[o - 1]);
 			}
 		}
 	}

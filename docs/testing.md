@@ -134,7 +134,8 @@ modems and spandsp's modems.
 network, between the two: each direction goes through the law at 8000 Hz,
 and to a modem at 9600 Hz through a converter that acts like a codec on
 an analogue line (a raised cosine at 4000 Hz, so that PCM samples stay
-free of intersymbol interference). `half_smartlink8`/`half_open8` are
+free of intersymbol interference; `NET_PLAIN=1` takes dsp_util's short
+resampler instead, which is not, so V.90 falls back to V.34 through it). `half_smartlink8`/`half_open8` are
 the modems at 8000 Hz (the original library does not work at 8000 Hz).
 `NET_GAIN` sets an analogue gain on the way to the 9600 Hz modem, and
 `NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
