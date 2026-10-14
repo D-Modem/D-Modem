@@ -30,8 +30,9 @@ public:
 	/* the DTE's pty */
 	Pty &pty() { return pty_; }
 
-	/* MODEM_REALTIME: no faster than the sample clock; MODEM_REC: the
-	   line both ways into <prefix>.in and <prefix>.out */
+	/* MODEM_REALTIME: no faster than the sample clock (with PIPE_SYNC
+	   it is so on hook anyway); MODEM_REC: the line both ways into
+	   <prefix>.in and <prefix>.out */
 	void set_realtime(bool on) { realtime_ = on; }
 	void set_record(const char *prefix) { record_ = prefix; }
 
@@ -71,8 +72,9 @@ private:
 	int npend_ = 0;
 	bool realtime_ = false;
 	/* PIPE_SYNC=<samples>: the DTE's input only every that many samples
-	   of the line, and the timers on the line's clock, so that a test's
-	   commands meet the line at the same samples every time */
+	   of the line, the timers on the line's clock and the line no
+	   faster than real time on hook, so that a test's commands meet
+	   the line at the same samples every time */
 	long sync_ = 0;
 	long samples_ = 0;      /* of the line, so far */
 	long next_sync_ = 0;

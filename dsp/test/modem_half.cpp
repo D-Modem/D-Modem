@@ -7,7 +7,8 @@
  *                     library (modem_half_legacy.cpp) or the Agere modem
  *
  *    Prints "created <name>: <pty>" for interop_call.  MODEM_NAME names it,
- *    MODEM_REALTIME=1 runs it no faster than the sample clock, and
+ *    MODEM_REALTIME=1 runs it no faster than the sample clock (with
+ *    PIPE_SYNC it runs so on hook anyway, PipeModem::pace()), and
  *    MODEM_REC=<prefix> records its line in <prefix>.in and .out.
  *
  */

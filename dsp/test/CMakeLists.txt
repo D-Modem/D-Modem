@@ -3,8 +3,9 @@
 #   quick     offline, faster than real time (a few minutes in all)
 #   spandsp   against spandsp's V.17 transmitter and T.4 encoder
 #             (libspandsp-dev)
-#   interop   with the original binary library, in real time (needs
-#             gcc -m32 on x86_64); long
+#   interop   with the original binary library (needs gcc -m32 on
+#             x86_64); long
+#   agere, sm56, pctel, hsf, spanpeer   with the other soft modems
 #
 #   ctest --test-dir build -L quick
 set(S ${DMODEM_DSP_DIR})
@@ -227,13 +228,15 @@ if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 	message(STATUS "tests: the Conexant HSF soft modem: ${DMODEM_HSF_DIR}")
 endif()
 
-# the interop tests: calls in real time between the open modem and each of
-# the modems above (interop_test.cpp, through interop_call.cpp: what a call
-# does is in its environment, NET for netsim's G.711 network, STREAM,
-# EXPECT_B, ...).  One test program a label, one more for the calls that
-# run alone; each call writes its modem logs to logs/<test>/.  The calls
-# run in real time and mostly wait, so they can run in parallel (ctest -L
-# interop -j8).  interop_call makes one by hand.
+# the interop tests: calls between the open modem and each of the modems
+# above (interop_test.cpp, through interop_call.cpp: what a call does is in
+# its environment, NET for netsim's G.711 network, STREAM, EXPECT_B, ...).
+# One test program a label, one more for the calls that run alone; each
+# call writes its modem logs to logs/<test>/.  The original library's
+# calls and the fax calls run in real time and mostly wait; the others run
+# as fast as they can, on the line's clock, a little nicer (each takes a
+# processor while it runs).  So they can run in parallel (ctest -j8, more
+# processors than there are).  interop_call makes one by hand.
 add_library(interop_driver STATIC interop_call.cpp)
 target_compile_options(interop_driver PRIVATE -Wall -O2 -g)
 target_link_libraries(interop_driver PUBLIC pthread)
@@ -268,13 +271,12 @@ function(interop_tests label)
 		dmodem_gtest(${_n} LABELS ${label})
 	endif()
 endfunction()
-# the original library (half_blob); (quick connect's timing does not take a
-# busy machine: interop_v92_pcmup_calls and agere_v92_qc alone)
+# the original library (half_blob); (quick connect's timing in real time
+# does not take a busy machine: interop_v92_pcmup_calls alone)
 interop_tests(interop)
 interop_tests(interop RUN_SERIAL)
 if(TARGET half_agere)
 	interop_tests(agere)
-	interop_tests(agere RUN_SERIAL)
 endif()
 # spandsp's modems (its own label: CI's "spandsp" are quick)
 if(TARGET half_spandsp)

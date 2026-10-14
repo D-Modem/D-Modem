@@ -1,10 +1,10 @@
 /*
  *
- *    interop_test.cpp - the interop tests: calls in real time between the
- *                       open modem (half_open, half_open8) and the other
- *                       modems we have as programs (Smart Link's original
- *                       library, the Agere, SM56, PCTel and HSF soft
- *                       modems, spandsp's modems), through interop_call
+ *    interop_test.cpp - the interop tests: calls between the open modem
+ *                       (half_open, half_open8) and the other modems we
+ *                       have as programs (Smart Link's original library,
+ *                       the Agere, SM56, PCTel and HSF soft modems,
+ *                       spandsp's modems), through interop_call
  *
  *    One table of calls; each test program has the calls of one ctest
  *    label (INTEROP_LABEL) that run alone or not (INTEROP_SERIAL).  The
@@ -13,6 +13,13 @@
  *    A call's environment (interop_call.h: NET, STREAM, EXPECT_B, ...;
  *    and the modems' and netsim's own: DSP_*, NET_*, ...) is set for it
  *    alone.
+ *
+ *    The calls run as fast as the modems can (they keep time by the
+ *    line's samples, and so does the call by netsim's clock), but for
+ *    those of the original library, whose core (slmodemd's old one)
+ *    keeps its timers on the wall clock, and the fax calls, whose DTE
+ *    (interop_call) has to keep up with T.30: those in real time
+ *    (MODEM_REALTIME=1; set it for ctest to run every call so).
  *
  */
 
@@ -315,18 +322,20 @@ std::vector<Call> calls()
 	      "NET_NOISE=10:300", "PROTO_B=ATX3;AT+MS=34" });
 	/* V.92 quick connect: the Agere modem (+PQC=0) remembers the line
 	   of the first call and starts the second with QC1a, and short
-	   phase 2.  NET_LOOP: our PCM signal reaches it through an analogue
-	   loop (on an ideal line, the same samples as ours, its V.90
-	   training fails at some delays, every 48 samples); not half a
-	   sample: then our sample instants fall exactly between its
-	   samples, and at some alignments (AGERE_SYNC_PHASE 96, 288) it
-	   takes 33333 bit/s downstream for 53333 */
+	   phase 2 (in real time its timing did not take a busy machine; on
+	   the line's clock any machine does).  NET_LOOP: our PCM signal
+	   reaches it through an analogue loop (on an ideal line, the same
+	   samples as ours, its V.90 training fails at some delays, every
+	   48 samples); not half a sample: then our sample instants fall
+	   exactly between its samples, and at some alignments
+	   (AGERE_SYNC_PHASE 96, 288) it takes 33333 bit/s downstream for
+	   53333 */
 	add("agere", "agere_v92_qc", "agere", "open8",
 	    "ATX3;AT+MS=V92;AT+PQC=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "CALLS=2", "DIAL=5551234", "ANSWER_AFTER=3", "STREAM=3",
 	      "EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2",
-	      "PROTO_B=ATX3;AT+MS=92" })->serial = true;
+	      "PROTO_B=ATX3;AT+MS=92" });
 	/* V.90: the Agere modem as the analogue modem, the open one as the
 	   digital modem (both at 8000 Hz) */
 	for (std::string law : { "ulaw", "alaw" })
@@ -624,13 +633,15 @@ public:
 	/* the test of call c */
 	explicit InteropCall(Call c) : c_(std::move(c)) {}
 
-	/* the call with its environment and NETSIM, MODEM_REALTIME=1 and its
-	   LOG_DIR set; it must go through */
+	/* the call with its environment and NETSIM, its LOG_DIR and (the
+	   original library's calls and the fax calls) MODEM_REALTIME=1 set;
+	   it must go through */
 	void TestBody() override
 	{
 		Env env;
 		env.set(std::string("NETSIM=") + NETSIM);
-		env.set("MODEM_REALTIME=1");
+		if (c_.fax || c_.a == "blob" || c_.b == "blob")
+			env.set("MODEM_REALTIME=1");
 		env.set(std::string("LOG_DIR=") + INTEROP_LOG_DIR "/" + c_.name);
 		for (auto &e : c_.env)
 			env.set(e);

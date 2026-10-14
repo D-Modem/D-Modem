@@ -115,13 +115,18 @@ int PipeModem::stop(dcore::Modem &)
 }
 
 /* no faster than the sample clock, so that a DTE program (fax) keeps up
-   with the protocol's timers */
+   with the protocol's timers; with PIPE_SYNC on hook as well (the
+   DTE's commands then meet the samples they would in real time,
+   however late the DTE answers what the modem said), and off hook as
+   fast as it goes, the timers on the line's clock */
 void PipeModem::pace(int samples)
 {
 	struct timeval tv;
 	double now, ahead;
-	if (!realtime_)
+	if (!realtime_ && !(sync_ && !m_->started())) {
+		clock_done_ = 0;        /* (it starts anew on hook) */
 		return;
+	}
 	gettimeofday(&tv, NULL);
 	now = tv.tv_sec + tv.tv_usec * 1e-6;
 	if (clock_done_ == 0 ||

@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include "dsp.h"
 #include "qam.h"
@@ -92,6 +93,11 @@ static float floor_rms;
    CONNECT) instead of from the start; nothing happens before it */
 static int sync_on;
 static volatile sig_atomic_t synced;
+/* NET_CLOCK_FD=<fd>: the line's clock for interop_call (the modems
+   unpaced keep time by the line, not the wall clock): A's samples so
+   far in microseconds, at the start of the 8 bytes that fd maps (a
+   memfd) */
+static long long *line_clock;
 /* NET_DELAY=<ms>: see main().
    NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
    back towards B: what A received <ms> before, counted in A's samples
@@ -586,6 +592,9 @@ static int run(struct dir *d, int a_out, int a_in)
 	if (a_in)
 		for (i = 0; i < o; i++)
 			echo_buf[echo_w++ % ECHO_MAX] = d->lbuf[i];
+	if (a_out && line_clock)
+		__atomic_store_n(line_clock, (long long)d->nin * 1000000 /
+				 d->rate_in, __ATOMIC_RELAXED);
 	if (wav)
 		wav_flush(wav_sig > 1);
 	for (i = 0; i < o * 2; ) {
@@ -681,6 +690,15 @@ int main(int argc, char **argv)
 		   analogue modem answers in phase 2), at INFO's level */
 		moh_tx.init(ra, 2400, 600, 0.5f, 4, 1, 2988 * 1.41421f);
 		moh_tx.get_symbol = moh_symbol;
+	}
+	if (getenv("NET_CLOCK_FD")) {
+		void *m = mmap(NULL, sizeof(*line_clock), PROT_READ |
+			       PROT_WRITE, MAP_SHARED,
+			       atoi(getenv("NET_CLOCK_FD")), 0);
+		if (m == MAP_FAILED)
+			perror("netsim: NET_CLOCK_FD");
+		else
+			line_clock = (long long *)m;
 	}
 	if (getenv("NET_FLOOR"))
 		floor_rms = atof(getenv("NET_FLOOR"));

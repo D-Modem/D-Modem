@@ -16,7 +16,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -52,6 +54,58 @@ void sleep_s(double s)
 	if (s > 0)
 		std::this_thread::sleep_for(std::chrono::duration<double>(s));
 }
+
+/* a data call's time, for what it does when (STREAM, MIDCALL, the
+   pauses) and how long it waits for the modems: with them unpaced (no
+   MODEM_REALTIME) they keep time by the line's samples, which run ahead
+   of the wall clock, and so does this, by netsim's NET_CLOCK_FD; with
+   them paced (or no netsim), and while the line lags behind (or stops),
+   the wall clock's */
+class CallClock {
+	int fd_ = -1;
+	long long *line_ = nullptr;     /* the line's microseconds */
+	double start_ = now();
+
+public:
+	CallClock() = default;
+	CallClock(const CallClock &) = delete;
+	CallClock &operator=(const CallClock &) = delete;
+	~CallClock()
+	{
+		if (line_)
+			munmap(line_, sizeof(*line_));
+		if (fd_ >= 0)
+			close(fd_);
+	}
+
+	/* the memfd for netsim's NET_CLOCK_FD, made; false if it cannot be
+	   (the wall clock's time then) */
+	bool open_line()
+	{
+		fd_ = memfd_create("line_clock", MFD_CLOEXEC);
+		if (fd_ < 0 || ftruncate(fd_, sizeof(*line_)) < 0)
+			return false;
+		void *m = mmap(nullptr, sizeof(*line_), PROT_READ | PROT_WRITE,
+			       MAP_SHARED, fd_, 0);
+		if (m == MAP_FAILED)
+			return false;
+		line_ = (long long *)m;
+		return true;
+	}
+	/* netsim's NET_CLOCK_FD (-1: none) */
+	int fd() const { return line_ ? fd_ : -1; }
+	/* whether the line keeps the time */
+	bool line() const { return line_ != nullptr; }
+	/* seconds since the call's start */
+	double operator()() const
+	{
+		double t = now() - start_;
+		if (line_)
+			t = std::max(t, __atomic_load_n(line_, __ATOMIC_RELAXED) *
+					1e-6);
+		return t;
+	}
+};
 
 /* the environment's name, def if unset */
 std::string env(const char *name, const std::string &def = "")
@@ -166,6 +220,8 @@ struct Modem {
 	int out = -1;           /* its stdout and stderr */
 	std::string pty;
 	std::thread logger;
+	int nice_inc = 0;       /* run it that much nicer (unpaced: the paced
+				   calls next to it first) */
 
 	/* killed if still there */
 	~Modem() { stop(true); }
@@ -198,6 +254,8 @@ struct Modem {
 		pid = fork();
 		if (pid == 0) {
 			die_with(parent);
+			if (nice_inc)
+				setpriority(PRIO_PROCESS, 0, nice_inc);
 			int a = fcntl(rfd, F_DUPFD, 10);
 			int b = fcntl(wfd, F_DUPFD, 10);
 			dup2(o.w, 1);
@@ -309,6 +367,8 @@ struct Dte {
 	int fd[2] = { -1, -1 };
 	std::string buf[2];
 	double slice;           /* the longest poll */
+	const CallClock *clock = nullptr;       /* the time it counts in
+						   (else the wall clock's) */
 
 	/* polls of slice seconds at most; the fds set by the caller */
 	explicit Dte(double slice) : slice(slice) {}
@@ -338,13 +398,18 @@ struct Dte {
 				sleep_s(0.01);
 	}
 
+	/* the time pump() and the waits count in: clock's, else the wall
+	   clock's */
+	double t() const { return clock ? (*clock)() : now(); }
+
 	/* reads for t seconds (one poll at least) */
 	void pump(double t)
 	{
-		double end = now() + t;
+		double end = this->t() + t;
 		do
-			pump_once(std::min(slice, std::max(0.0, end - now())));
-		while (now() < end);
+			pump_once(std::min(slice,
+					   std::max(0.0, end - this->t())));
+		while (this->t() < end);
 	}
 
 	/* the command s (and CR) to modem k */
@@ -354,8 +419,8 @@ struct Dte {
 	   most; whether it came */
 	bool wait_from(int k, const std::regex &pat, size_t mark, double t)
 	{
-		double end = now() + t;
-		while (now() < end) {
+		double end = this->t() + t;
+		while (this->t() < end) {
 			pump(slice);
 			if (mark < buf[k].size() &&
 			    std::regex_search(buf[k].begin() + mark,
@@ -471,6 +536,12 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 	std::string log_dir = env("LOG_DIR", ".");
 	make_dirs(log_dir);
 	std::string dbg = env("DBG", "3");
+	/* unpaced, the modems and netsim keep time by the line: the call's
+	   time is the line's (netsim's clock), and they run nicer than the
+	   paced calls next to them, which keep up with the wall clock */
+	bool unpaced = !getenv("MODEM_REALTIME");
+	int nice_inc = unpaced ? 10 : 0;
+	CallClock clock;
 
 	Pipe ab, ba;    /* A -> B, B -> A */
 	int a_in = ba.r, a_out = ab.w, b_in = ab.r, b_out = ba.w;
@@ -506,16 +577,32 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		for (auto &s : args)
 			argv.push_back((char *)s.c_str());
 		argv.push_back(nullptr);
+		/* netsim's environment: ours, and the line's clock to tick */
+		std::vector<std::string> envs;
+		if (unpaced && clock.open_line())
+			envs.push_back("NET_CLOCK_FD=" +
+				       std::to_string(clock.fd()));
+		for (char **e = environ; *e; e++)
+			envs.push_back(*e);
+		std::vector<char *> envp;
+		for (auto &e : envs)
+			envp.push_back((char *)e.c_str());
+		envp.push_back(nullptr);
 		pid_t parent = getpid();
 		pn = fork();
 		if (pn == 0) {
 			die_with(parent);
-			for (int f : { an.r, na.w, bn.r, nb.w })
-				cloexec(f, false);
+			if (nice_inc)
+				setpriority(PRIO_PROCESS, 0, nice_inc);
+			for (int f : { an.r, na.w, bn.r, nb.w, clock.fd() })
+				if (f >= 0)
+					cloexec(f, false);
 			if (netsim.find('/') != std::string::npos)
-				execv(netsim.c_str(), argv.data());
+				execve(netsim.c_str(), argv.data(),
+				       envp.data());
 			else
-				execvp(netsim.c_str(), argv.data());
+				execvpe(netsim.c_str(), argv.data(),
+					envp.data());
 			_exit(127);
 		}
 		a_in = na.r;
@@ -524,9 +611,13 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		b_out = bn.w;
 	}
 
-	Dte dte(0.1);
+	/* (polls short enough for the line's clock, which runs fast) */
+	Dte dte(clock.line() ? 0.01 : 0.1);
+	dte.clock = &clock;
 	std::unique_ptr<Modem> m[2] = { std::make_unique<Modem>(),
 					std::make_unique<Modem>() };
+	for (auto &x : m)
+		x->nice_inc = nice_inc;
 	int wav_marks = 0;
 	bool wav = pn > 0 && !env("WAV").empty();
 	/* NET_WAV's start (dial) or end (data done): SIGUSR2 to netsim, twice
@@ -648,7 +739,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				/* hang up: escape both (their OK, after the
 				   guard time), ATH and its OK, then wait for
 				   the line to clear */
-				sleep_s(1.5);
+				dte.pump(1.5);
 				for (int k = 0; k < 2; k++) {
 					dte.buf[k].clear();
 					write_all(dte.fd[k], "+++");
@@ -667,12 +758,13 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				}
 				/* HANGUP_WAIT: on hook that long (PCTel's
 				   second call stops in phase 2 after 2 s) */
-				sleep_s(atof(env("HANGUP_WAIT", "2").c_str()));
+				dte.pump(atof(env("HANGUP_WAIT", "2").c_str()));
 				if (!env("RESTART_B").empty()) {
 					m[1]->stop(true);
 					close(dte.fd[1]);
 					dte.fd[1] = -1;
 					m[1] = std::make_unique<Modem>();
+					m[1]->nice_inc = nice_inc;
 					if (!m[1]->start(exe_b, "modemB2", b_in,
 							 b_out, dbg, {},
 							 log_dir + "/modemB2.log")) {
@@ -698,7 +790,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			/* ANSWER_AFTER: B off hook once A has dialed (its
 			   blind dial wait and digits), as the call rings only
 			   then on a line; else both at once */
-			double t_call = now();
+			double t_call = dte.t();
 			double ans_after = atof(env("ANSWER_AFTER", "0").c_str());
 			if (ans_after > 0) {
 				dte.cmd(0, "ATD" + env("DIAL"));
@@ -713,7 +805,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			say("A: %s\n", show(dte.buf[0]).c_str());
 			say("B: %s\n", show(dte.buf[1]).c_str());
 			say("call %d: %.1f s to CONNECT\n", call + 1,
-			    now() - t_call);
+			    dte.t() - t_call);
 			if (dte.buf[0].find("CONNECT") == std::string::npos ||
 			    dte.buf[1].find("CONNECT") == std::string::npos)
 				done(false);
@@ -739,6 +831,11 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		   gives the DTE's rate; V.23's 75 bit/s back channel) */
 		if (atol(env("DATA_RATE", "0").c_str()))
 			rate = atol(env("DATA_RATE").c_str());
+		/* a DTE's moment after CONNECT before its data (the SM56
+		   says CONNECT a little ahead of taking data, and echoes
+		   what comes sooner as a command line; unpaced, we might
+		   answer in no time of the line's) */
+		dte.pump(0.1);
 		dte.buf[0].clear();
 		dte.buf[1].clear();
 
@@ -752,7 +849,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		double stream = atof(env("STREAM", "0").c_str());
 		if (stream) {
 			std::string sent[2];
-			double t_end = now() + stream;
+			double t_end = dte.t() + stream;
 			struct Mid {
 				double at;
 				std::string cmds;
@@ -762,13 +859,13 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				std::string v = env(k ? "MIDCALL_B" : "MIDCALL_A");
 				size_t c = v.find(':');
 				if (c != std::string::npos)
-					mids[k] = { now() + atof(v.substr(0, c)
-								 .c_str()),
+					mids[k] = { dte.t() + atof(v.substr(0, c)
+								   .c_str()),
 						    v.substr(c + 1) };
 			}
-			for (int n = 0; now() < t_end; n++) {
+			for (int n = 0; dte.t() < t_end; n++) {
 				for (auto &[k, mid] : mids) {
-					if (!mid.at || now() < mid.at)
+					if (!mid.at || dte.t() < mid.at)
 						continue;
 					mid.at = 0;
 					char name[16];
@@ -821,6 +918,8 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 					   not data; what came around them is */
 					dte.buf[k].resize(kept);
 					dte.buf[k] += held + ato.substr(end);
+					/* (the moment after CONNECT, above) */
+					dte.pump(0.1);
 				}
 				char line[16];
 				snprintf(line, sizeof(line), "%06d ", n);
@@ -840,9 +939,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				fcntl(f, F_SETFL, fcntl(f, F_GETFL) | O_NONBLOCK);
 			/* (as long as the wait for it below: a modem that
 			   stops taking data or goes away ends the call) */
-			double bulk_end = now() + 40 + 15.0 * bulk_n / rate;
+			double bulk_end = dte.t() + 40 + 15.0 * bulk_n / rate;
 			while (at[0] < msg[0].size() || at[1] < msg[1].size()) {
-				if (now() > bulk_end) {
+				if (dte.t() > bulk_end) {
 					say("bulk: only %zu and %zu of %zu octets "
 					    "written\n", at[0], at[1], bulk_n);
 					done(false);
@@ -875,9 +974,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		}
 		/* 10 bits a character, and half as much again for V.42
 		   framing */
-		double end = now() + 40 + stream + 15.0 *
+		double end = dte.t() + 40 + stream + 15.0 *
 			std::max(msg[0].size(), msg[1].size()) / rate;
-		while (now() < end && (dte.buf[1].size() < msg[0].size() ||
+		while (dte.t() < end && (dte.buf[1].size() < msg[0].size() ||
 				       dte.buf[0].size() < msg[1].size()))
 			dte.pump(0.2);
 		wav_mark();
@@ -888,6 +987,19 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		    msg[1].size(), ok_a ? "True" : "False");
 		say("B received %zu/%zu ok=%s\n", dte.buf[1].size(),
 		    msg[0].size(), ok_b ? "True" : "False");
+		/* where what came differs from what was sent */
+		for (int k = 0; k < 2; k++) {
+			const std::string &got = dte.buf[k], &want = msg[1 - k];
+			if (got == want)
+				continue;
+			size_t i = std::mismatch(got.begin(), got.begin() +
+						 std::min(got.size(), want.size()),
+						 want.begin()).first - got.begin();
+			size_t from = i < 16 ? 0 : i - 16;
+			say("%c received from octet %zu: %s, sent %s\n",
+			    "AB"[k], i, show(got.substr(from, 64)).c_str(),
+			    show(want.substr(from, 64)).c_str());
+		}
 		done(ok_a && ok_b);
 		result = false;
 	} catch (const Done &d) {

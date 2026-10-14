@@ -327,6 +327,9 @@ calls in between are in it as well. For example:
 the DTE's commands only every that many line samples (data, once
 connected, at once), run their timers
 between half frames and keep time by the line; without them, where the
-commands meet the line depends on the scheduler. `AGERE_SYNC_PHASE` and
+commands meet the line depends on the scheduler. With `PIPE_SYNC`,
+`half_open` also runs in real time while on hook, so that the commands
+meet the samples they would in real time even when the call itself runs
+unpaced (see `docs/testing.md`). `AGERE_SYNC_PHASE` and
 `BLOB_SYNC_PHASE` move one side within the period, to try the alignments
 one by one.

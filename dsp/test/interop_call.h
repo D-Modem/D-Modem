@@ -1,14 +1,22 @@
 /*
  *
- *    interop_call.h - calls between two modem processes in real time: the
- *                     interop tests' driver (interop_test.cpp) and
- *                     interop_call's (by hand)
+ *    interop_call.h - calls between two modem processes: the interop
+ *                     tests' driver (interop_test.cpp) and interop_call's
+ *                     (by hand)
  *
  *    Each modem is a program that reads its line's audio from fd 3,
  *    writes it to fd 4 and prints "created <name>: <pty>" (modem_half,
  *    half_agere, half_sm56, ...); the driver is their DTE on the ptys.
  *    The environment sets what a call does, as the variables below say
  *    (and passes the rest on to the modems and netsim: DSP_*, NET_*, ...).
+ *
+ *    MODEM_REALTIME=1 runs the modems in real time (the original
+ *    library's old core keeps its timers on the wall clock; a fax DTE has
+ *    to keep up with T.30: fax calls always do).  Without it they run as
+ *    fast as they can, a little nicer than the rest, keeping time by the
+ *    line's samples; a data call's seconds (STREAM, MIDCALL, WAIT,
+ *    ANSWER_AFTER, HANGUP_WAIT, how long it waits for the modems) are
+ *    then the line's, by netsim's clock (NET_CLOCK_FD).
  *
  */
 

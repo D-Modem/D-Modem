@@ -14,7 +14,7 @@ compiler (`g++ -m32`), for the original library.
     ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
     ctest --test-dir build -L interop -j8   # calls between the original library and this one,
-                                            # data and class 1 fax, in real time (needs g++ -m32)
+                                            # data and class 1 fax (needs g++ -m32)
     ctest --test-dir build -L agere -j8     # calls between the Agere soft modem and this one
                                             # (sm56, pctel, hsf, spanpeer: the other modems)
 
@@ -33,11 +33,41 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one (or against a script's `.expect`, see `docs/core.md`) |
-| `interop_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test` (and `interop_serial_test`, `agere_serial_test`: the calls that run alone) | calls in real time between this modem and the others (`interop_test.cpp`: one table of the calls, each program a label's) |
+| `interop_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `spanpeer_test` (and `interop_serial_test`: the call that runs alone) | calls between this modem and the others (`interop_test.cpp`: one table of the calls, each program a label's) |
 
-The interop and agere calls run in real time and mostly wait, so they run
-side by side (`-j`); each writes its modem logs to
-`build/dsp/test/logs/<test>/`.
+Each call writes its modem logs to `build/dsp/test/logs/<test>/`. Most
+calls run as fast as the modems can: every modem but the original
+library keeps time by its line's samples (the Agere, SM56, PCTel and HSF
+harnesses count jiffies and timers in samples, and so does our core with
+`PIPE_SYNC`), so a call goes as it would in real time, only sooner, and
+a busy machine only slows it down. The call's own seconds (`STREAM`,
+`MIDCALL`, `WAIT`, `ANSWER_AFTER`, `HANGUP_WAIT`, and how long it waits
+for what the modems say) are then the line's, from netsim's clock
+(`NET_CLOCK_FD`). Three things keep such a call the same from run to
+run, however late the driver answers:
+
+- on hook our modem runs in real time anyway (`PIPE_SYNC`), so that the
+  driver's commands meet the samples they would in real time (the call
+  itself, from the dial or the answer, as fast as it goes);
+- the driver waits 100 ms of the line after a CONNECT before its data (the
+  SM56 says CONNECT a little ahead of taking data, and echoes what
+  comes sooner as a command line);
+- the data that comes around a call's mid-call commands (`MIDCALL`) is
+  kept: before the escape's OK and right after `ATO`'s CONNECT.
+
+Two kinds of call still run in real time (`MODEM_REALTIME=1`) and mostly
+wait:
+
+- the original library's: slmodemd's old core, which it runs on, keeps
+  its timers on the wall clock;
+- the fax calls: `interop_call` plays T.30 for both machines and has to
+  keep up with its timers.
+
+The unpaced calls run a little nicer (`nice` 10) than the rest, so that
+the calls in real time next to them get the processor first. Each takes
+about one processor while it runs; the calls in real time take little.
+`MODEM_REALTIME=1 ctest ...` runs every call in real time, as they all
+did before (for comparing a failure).
 
 The test programs are in `build/dsp/test/`. The calls go through
 `interop_call.cpp`; `interop_call` makes one by hand:
