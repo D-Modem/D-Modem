@@ -42,6 +42,7 @@
 #include <ctype.h>
 
 #include "half_dte.h"
+#include "half_stack.h"
 
 /* the driver's regparm(0): the default here (no -mregparm) */
 #define fnatr
@@ -507,6 +508,7 @@ static void run_tasks(void)
 		struct task *k = tasks[0];
 		memmove(tasks, tasks + 1, --ntasks * sizeof(tasks[0]));
 		k->queued = 0;
+		stack_clear();
 		LXHardwareBottomHalf(k->data);
 	}
 }
@@ -638,6 +640,7 @@ static void uart_poll(void)
 	int n = 0, k;
 
 	/* the modem's output to the DTE */
+	stack_clear();
 	while (n < (int)sizeof(buf) && (read_vuart_port(UART_LSR) & 1))
 		buf[n++] = (unsigned char)read_vuart_port(UART_RX);
 	if (n)
@@ -651,12 +654,14 @@ static void uart_poll(void)
 	   the fixed timing, so data (online) goes in at once */
 	if (sync_n && line_n % sync_n != sync_phase && !online)
 		return;
-	for (k = 0; k < 64 && (read_vuart_port(UART_LSR) & 0x20); k++) {
+	for (k = 0; k < 64; k++) {
 		unsigned char c;
-		if (read(pty, &c, 1) != 1)
+		stack_clear();
+		if (!(read_vuart_port(UART_LSR) & 0x20) ||
+		    read(pty, &c, 1) != 1)
 			break;
+		stack_clear();
 		write_vuart_port(UART_RX, c);
-
 	}
 }
 
@@ -690,6 +695,7 @@ static void raise_irq(void)
 		LOG("irq %ld, sta %x, pi civ %d lvi %d, po civ %d lvi %d\n", nirq,
 		    glob_status(), pi.civ, pi.lvi, po.civ, po.lvi);
 	while (isr_on && (glob_status() & 0x7) && guard++ < 4) {
+		stack_clear();
 		LX_isr_handler(IRQ, isr_dev, NULL);
 		run_tasks();
 	}
@@ -718,8 +724,10 @@ static short line_sample(short in)
 		raise_irq();
 	if (timer_armed && now_us >= timer_at) {
 		timer_armed = 0;
-		if (timer_fn)
+		if (timer_fn) {
+			stack_clear();
 			timertick_function(0);
+		}
 	}
 	return out;
 }
@@ -757,20 +765,24 @@ int main(int argc, char **argv)
 	fcntl(pty, F_SETFL, O_NONBLOCK);
 	name = ptsname(pty);
 
+	stack_clear();
 	if (linux_modem_init()) {
 		fprintf(stderr, "agere: linux_modem_init failed\n");
 		return 1;
 	}
+	stack_clear();
 	if (lucent_detect_modem(res)) {
 		fprintf(stderr, "agere: no modem detected\n");
 		return 1;
 	}
 	lucent_init_modem();
 	agr_rs_interrupt = rs_interrupt;
+	stack_clear();
 	linux_modem_open();
 	if (!vxdPortOpen())
 		LOG("vxdPortOpen: 0\n");
 	/* as the serial driver opens it: 115200 bit/s, 8N1, FIFOs */
+	stack_clear();
 	write_vuart_port(UART_LCR, 0x83);
 	write_vuart_port(0, 1);
 	write_vuart_port(1, 0);

@@ -36,6 +36,7 @@
 #include <unistd.h>
 
 #include "half_dte.h"
+#include "half_stack.h"
 
 typedef unsigned char byte;
 typedef unsigned short word;
@@ -356,24 +357,6 @@ static short sat(double x)
 	return (short)(x > 32767 ? 32767 : x < -32768 ? -32768 : lrint(x));
 }
 
-/* the stack below this call's frame cleared, as it is before each
-   call into the objects: they read some of it before writing it.  The
-   controller's AT+MS copies the carrier's name there without its 0 and
-   compares the copy with "V21" ... "V90", "V92", "K56FLEX", so +MS=V90
-   set V.90 only when the byte after the copy happened to be 0, and
-   otherwise left the carrier as it was (V.92, the default).  What was
-   there was what the harness's own calls had left: a print added to it
-   turned pctel_v90_calls from 50666 to 45333 every time.  Cleared, the
-   copy ends in 0, as it was meant to.  The objects' calls go some 1 KB
-   deep (dspMain at most 988 octets, modem_main 560, in the tests) */
-#define STACK_CLEAR 8192
-static __attribute__((noinline)) void stack_clear(void)
-{
-	char z[STACK_CLEAR];
-	memset(z, 0, sizeof(z));
-	__asm__ volatile("" : : "r"(z) : "memory");
-}
-
 /* the interrupt of a block: the driver's pctel_interrupt */
 static void block_done(void)
 {
@@ -381,6 +364,10 @@ static void block_done(void)
 	GlobalTimer = hal_time >> 6;
 	ASICstatus = 0;
 	ASICerrCnt = 0;
+	/* (the controller's +MS copies the carrier's name to its stack
+	   without the 0 after it and compares the copy with "V21" ...
+	   "K56FLEX": without the clear, +MS=V90 set V.90 only when the
+	   byte after the copy happened to be 0) */
 	stack_clear();
 	dspMain();
 	stack_clear();

@@ -50,6 +50,7 @@
 #include <unistd.h>
 
 #include "half_dte.h"
+#include "half_stack.h"
 
 typedef unsigned char byte;
 typedef unsigned short word;
@@ -723,6 +724,7 @@ static void run_timers(void)
 		byte *t = timers[i];
 		if (t && (long)(k_jiffies - T_EXPIRES(t)) >= 0) {
 			timers[i] = NULL;
+			stack_clear();
 			T_FN(t)(T_DATA(t));
 		}
 	}
@@ -746,8 +748,10 @@ static void run_tasklets(void)
 		byte *t = tasklets[0];
 		memmove(tasklets, tasklets + 1, --ntasklets * sizeof(tasklets[0]));
 		*(u32 *)(t + 4) &= ~1u;
-		if (*(int *)(t + 8) == 0)
+		if (*(int *)(t + 8) == 0) {
+			stack_clear();
 			(*(kfn *)(t + 12))(*(unsigned long *)(t + 16));
+		}
 	}
 }
 
@@ -972,6 +976,7 @@ static short line_sample(short in)
 	if (irq_now && !irq_was && isr) {
 		int guard = 0;
 		while ((bm_irq(&pi) || bm_irq(&po)) && guard++ < 4) {
+			stack_clear();
 			isr(IRQ, isr_dev, NULL);
 			run_tasklets();
 		}
@@ -995,6 +1000,7 @@ static void line_idle(unsigned n)
 /* dte_read()'s: n octets at p to the modem, as many as it takes */
 static int dte_put(const void *p, int n)
 {
+	stack_clear();
 	return mot_write(tty, 0, p, n);
 }
 
@@ -1006,6 +1012,7 @@ static void dte_poll(void)
 	dte_flush(pty);
 	if (sync_n && line_n % sync_n && !online)
 		return;
+	stack_clear();
 	dte_read(pty, mot_writeroom(tty), dte_put);
 }
 
@@ -1058,12 +1065,14 @@ int main(int argc, char **argv)
 	fcntl(pty, F_SETFL, O_NONBLOCK);
 	name = ptsname(pty);
 
+	stack_clear();
 	r = init_module();
 	if (r) {
 		fprintf(stderr, "sm56: init_module: %d\n", r);
 		return 1;
 	}
 	tty_init();
+	stack_clear();
 	r = mot_open(tty, NULL);
 	if (r) {
 		fprintf(stderr, "sm56: mot_open: %d\n", r);

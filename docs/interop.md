@@ -88,6 +88,37 @@ The files' sha256, and what was compared:
 - spandsp: not in the tree; the build takes the system's (pkg-config
   `spandsp`), 0.0.6 in Debian and Ubuntu.
 
+## The closed modules' stack
+
+The Agere, SM56, PCTel and HSF modules read some of their stack before
+writing it. Valgrind's memcheck on the harnesses (linked `-static`: on
+the dynamic ones it wants i386 glibc's debug symbols; and SM56's `cli`,
+`in` and `out` come to the harness as SIGILL under it, not SIGSEGV)
+shows where:
+
+- Agere: `ATProcessorStatusHandler`, from `LinkLayerStatusHandler`,
+  tests a value of the status `V32DataPumpReportStatus` and
+  `V22DataPumpReportStatus` build on their stack that they leave unset;
+  `CodecStatusHandler`'s text (`StatusParser`, its `sprintf`) takes
+  unset bytes of `ReportConnectionStatus`'s.
+- SM56: `CM_ConfigReqEvent` tests a value `ACU_DialResponse` leaves
+  unset on its stack (in four of the five calls run under it).
+- HSF: two of the engine's routines (`hsfengine564_`, under its timer,
+  and `hsfengine2004_`) test locals they have not set.
+- PCTel: `+MS` (below).
+
+What they read is what the calls before left there, the harness's own
+among them: a read or write of the pty, which the driver's timing
+decides, could leave other bytes there, and the same line samples could
+give another call. Each harness clears 8 KB of the stack below its frame
+before each call into its module (`dsp/test/half_stack.h`), so a module
+finds the same there every time. `HALF_STACK_FILL=<byte>` fills it with
+that instead of 0: the Agere, SM56 and HSF tests (and PCTel's, with
+their top rate given) pass, connect at the same rates and retrain the
+same with 0, 0xa5 and 0xff, so what those modules read unset does not
+decide their calls here. For
+PCTel's `+MS` it did.
+
 ## Against the Smart Link soft modem
 
 `half_smartlink` runs Smart Link's soft modem: its DSP library

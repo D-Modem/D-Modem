@@ -47,6 +47,7 @@
 #include <unistd.h>
 
 #include "half_dte.h"
+#include "half_stack.h"
 
 typedef unsigned char byte;
 typedef unsigned short word;
@@ -169,7 +170,7 @@ static int tsc_init(void)
 	sa.sa_sigaction = on_segv;
 	sa.sa_flags = SA_SIGINFO;
 	sigaction(SIGSEGV, &sa, NULL);
-	return prctl(PR_SET_TSC, PR_TSC_SIGSEGV);
+	return prctl(PR_SET_TSC, PR_TSC_SIGSEGV, 0, 0, 0);
 }
 
 /*
@@ -393,6 +394,7 @@ static void run_timers(void)
 			if (!t->periodic)
 				t->armed = 0;
 			t->busy = 1;
+			stack_clear();
 			t->fn(t->ref);
 			t->busy = 0;
 			if (t->dead) {
@@ -1570,7 +1572,11 @@ static void dte_out(void)
 	if (!hcom)
 		return;
 	dte_flush(pty);
-	while ((n = OS(ComCtrl_Read)(hcom, buf, sizeof(buf))) > 0 && n <= sizeof(buf)) {
+	for (;;) {
+		stack_clear();
+		n = OS(ComCtrl_Read)(hcom, buf, sizeof(buf));
+		if (n == 0 || n > sizeof(buf))
+			break;
 		for (k = 0; k < n; k++)
 			result_scan(buf[k]);
 		dte_write(pty, buf, n);
@@ -1580,6 +1586,7 @@ static void dte_out(void)
 /* dte_read()'s: n octets at p to the modem, as many as it takes */
 static int dte_put(const void *p, int n)
 {
+	stack_clear();
 	return (int)OS(ComCtrl_Write)(hcom, (void *)p, (u32)n);
 }
 
@@ -1590,6 +1597,7 @@ static void dte_poll(void)
 
 	if (!hcom || (sync_n && line_n % sync_n && !online))
 		return;
+	stack_clear();
 	if (OS(ComCtrl_Monitor)(hcom, COMCTRL_MONITOR_TXFREE, &room))
 		return;
 	dte_read(pty, room > 4096 ? 4096 : (int)room, dte_put);
@@ -1675,6 +1683,7 @@ static void interrupt(void)
 {
 	if (!getenv("HSF_KEEP8"))
 		*(u32 *)((byte *)isr_dev + 0x280) = 0;
+	stack_clear();
 	isr(IRQ, isr_dev, NULL);
 }
 
@@ -1776,6 +1785,7 @@ int main(int argc, char **argv)
 
 	/* the modules' init, the PCI probe's device node, the serial
 	   driver's open (serial_cnxt.c) */
+	stack_clear();
 	r = HsfEngineInit();
 	if (r) {
 		fprintf(stderr, "hsf: HsfEngineInit: %d\n", r);
@@ -1788,6 +1798,7 @@ int main(int argc, char **argv)
 	snprintf(node.hwProfile, sizeof(node.hwProfile), "hsfmc97ich");
 	node.hwType = HW_TYPE_ICH;
 	node.hwIf = GetHwFuncs();
+	stack_clear();
 	hcom = OS(ComCtrl_Create)();
 	if (!hcom) {
 		fprintf(stderr, "hsf: ComCtrl_Create failed\n");
@@ -1799,6 +1810,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "hsf: ComCtrl_Configure: %d\n", r);
 		return 1;
 	}
+	stack_clear();
 	r = OS(ComCtrl_Open)(hcom);
 	if (r) {
 		fprintf(stderr, "hsf: ComCtrl_Open: %d\n", r);
@@ -1808,6 +1820,7 @@ int main(int argc, char **argv)
 	pc.valid = 0x00000001 | 0x10 | 0x20 | 0x1000 | 0x2000;
 	pc.speed = 115200;
 	pc.bits = 1;            /* 8 */
+	stack_clear();
 	OS(ComCtrl_Control)(hcom, COMCTRL_CONTROL_PORTCONFIG, &pc);
 	OS(ComCtrl_Control)(hcom, COMCTRL_CONTROL_SETDTR, NULL);
 	OS(ComCtrl_Control)(hcom, COMCTRL_CONTROL_SETRTS, NULL);
