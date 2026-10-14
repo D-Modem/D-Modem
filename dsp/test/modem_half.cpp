@@ -226,10 +226,16 @@ short HalfModem::line_sample(short in)
 	return 0;
 }
 
-void HalfModem::line_block(const short *in, short *out, int n)
+int HalfModem::line_block(const short *in, short *out, int n)
 {
-	for (int i = 0; i < n; i++)
+	int i = 0;
+	while (i < n) {
 		out[i] = line_sample(in[i]);
+		i++;
+		if (line_n % 48 == 0)
+			break;
+	}
+	return i;
 }
 
 void HalfModem::after_read()
@@ -279,8 +285,7 @@ int HalfModem::run()
 			int k = 48 - (int)(line_n % 48);
 			if (k > n - i)
 				k = n - i;
-			line_block(in + i, out + i, k);
-			i += k;
+			i += line_block(in + i, out + i, k);
 			if (line_n % 48 == 0)
 				dte_poll();
 		}

@@ -49,7 +49,7 @@ public:
 
 protected:
 	int start() override { return 0; }
-	void line_block(const short *in, short *out, int n) override;
+	int line_block(const short *in, short *out, int n) override;
 	void dte_poll() override;
 
 private:
@@ -393,8 +393,9 @@ void Spandsp::dial(int as_caller)
 	set_state(caller ? CALL_WAIT : ANS_SILENCE);
 }
 
-/* one block of line samples each way (to the next 48th of the line) */
-void Spandsp::line_block(const short *in, short *out, int n)
+/* one block of line samples each way (to the next 48th of the line);
+   all of it */
+int Spandsp::line_block(const short *in, short *out, int n)
 {
 	int i;
 
@@ -486,6 +487,7 @@ void Spandsp::line_block(const short *in, short *out, int n)
 		break;
 	}
 	line_n += n;
+	return n;
 }
 
 /*

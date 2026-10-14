@@ -109,6 +109,7 @@ protected:
 private:
 	long creeps = 0;
 
+	short sample(short in);
 	void idle_sample();
 	void raise_irq();
 };
@@ -573,16 +574,17 @@ void Agere::raise_irq()
 	}
 }
 
-/* n silent samples of the line */
+/* n silent samples of the line, in the library's delay: its time goes
+   on, not the line's samples (line_n, which AGERE_SYNC counts) */
 void Agere::delay_samples(unsigned n)
 {
 	while (n--)
-		line_sample(0);
+		sample(0);
 }
 
 /* one sample each way through the bus masters, the interrupt when one
    starts to ask for it, the timer when due; the sample to the line */
-short Agere::line_sample(short in)
+short Agere::sample(short in)
 {
 	short out;
 	bool before = ich.irq();
@@ -600,6 +602,13 @@ short Agere::line_sample(short in)
 			timertick_function(0);
 		}
 	}
+	return out;
+}
+
+/* a sample of the line */
+short Agere::line_sample(short in)
+{
+	short out = sample(in);
 	line_n++;
 	return out;
 }

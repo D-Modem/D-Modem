@@ -208,9 +208,11 @@ protected:
 	virtual int start() = 0;
 	/* one line sample each way; line_n counted */
 	virtual short line_sample(short in);
-	/* n line samples each way (to the next 48th at most); line_sample()
-	   each, unless a harness has its own */
-	virtual void line_block(const short *in, short *out, int n);
+	/* up to n line samples each way (to the next 48th at most): those
+	   done; line_sample() each, until line_n comes to a 48th (a sleep of
+	   the modem's can take it past the block's end), unless a harness
+	   has its own */
+	virtual int line_block(const short *in, short *out, int n);
 	/* the DTE served: the modem's output to it, its input to the modem;
 	   every 48 line samples */
 	virtual void dte_poll() = 0;
