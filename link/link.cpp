@@ -167,7 +167,7 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 		n = async_.get_bits(nbits, buf, n);
 		break;
 	case Mode::Idle:
-		memset(buf, 0xff, n);
+		memset(buf, (1 << nbits) - 1, n);
 		break;
 	}
 	/* the bit timer counts what goes out */

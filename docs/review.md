@@ -21,6 +21,7 @@ as it is.
 | `link/hdlc.cpp` | A frame of fewer than 4 octets was not a size error |
 | `link/lapm.cpp` | `t401_timeout()` gave up after N400 + 1 retransmissions (`> MAX_RTX`; slmodemd had the same): an unanswered XID, SABME or DISC went out 7 times, the data phase polled 6 times. V.42 (8.3.2.2, 8.4.8) allows N400: now 5 (LapmN400) |
 | `link/lapm.cpp` | An unsolicited DM with F = 0 while LAPM was idle reported the link up, with neither SABME nor UA. V.42 (8.8, Table 9) has it ask for the link: now an SABME, until the link has been up in the call (after a release it is ignored) (LapmUnsolicitedDm) |
+| `link/hdlc.cpp`, `link/link.cpp` | The async and detection phase transmitters, and the idle link's marks, gave items of `nbits` bits with the bits above them set (stale ones of the queue, 0xff for marks): only the pumps' own masking kept them off the line. They are masked now, as LAPM's were (BitsMasked) |
 | `link/hdlc.cpp` | The originator's detection phase had no T400: against a remote without V.42 (no ADP, no flags) it sent ODPs for ever and the call never came up. The core runs the phase at the caller by default (S-register EC), so this was any such call. T400 now starts with the ODPs, and the originator goes to async when it runs out (7.2/V.42; OdpUnanswered) |
 | `core/modem.cpp` | `stop_call()` left a caller ID stop armed, which then killed the next call |
 | `core/at.cpp` | `AT*B`, `AT\A` and `AT+M<x>` (other than `+MS`) answered with the result of the command before them on the line, ERROR at its start. Now `*B` and `\A0`..`3` OK, `\A` with another digit and `+M<x>` ERROR (the old core did the same; `at.expect`) |
@@ -127,8 +128,7 @@ None left.
 
 ### Data link and core
 
-- **cleanup** — `hdlc.cpp`: the async and detector transmitters do not
-  mask the bytes to `nbits` (every pump masks them itself).
+None left.
 
 ### slmodemd and the PBX modules
 

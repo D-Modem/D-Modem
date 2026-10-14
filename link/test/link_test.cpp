@@ -701,6 +701,44 @@ TEST(Link, LapmBitErrors)
 	}
 }
 
+/* the bits to the data pump: each item nbits wide, nothing above them,
+   in every mode (idle marks, async characters, the detection phase's
+   ODPs, LAPM's flags and frames) */
+TEST(Link, BitsMasked)
+{
+	for (int nbits : { 1, 2, 4, 7, 8 }) {
+		const unsigned top = 1u << nbits;
+		std::vector<uint8_t> b(48);
+		auto check = [&](Link &l, const char *mode, int calls) {
+			unsigned bad = 0;
+			for (int k = 0; k < calls; k++) {
+				l.get_bits(nbits, b.data(), (int)b.size());
+				for (uint8_t x : b)
+					bad |= x & ~(top - 1);
+			}
+			CHECK(!bad, "%s, %d bit items: bits above them %02x", mode,
+			      nbits, bad);
+		};
+		Config async;
+		Dte d("dte");
+		d.to_send = text(500);
+		Link idle, chars, odp, lapm;
+		idle.init(&d, true, async);
+		check(idle, "idle", 10);
+		chars.init(&d, true, async);
+		chars.start(false, false);
+		chars.set_online(true);         /* (the DTE's characters) */
+		check(chars, "async", 200);
+		CHECK(d.pos > 0, "async: the DTE's characters went out");
+		odp.init(&d, true, lapm_config(0));
+		odp.start(true, true);
+		check(odp, "detection", 200);
+		lapm.init(&d, true, lapm_config(0));
+		lapm.start(true, false);
+		check(lapm, "lapm", 200);
+	}
+}
+
 /* a hangup in the detection phase (the remote has no V.42: no ADP, so
    T400 runs): the timer must not bring the link up afterwards */
 TEST(Link, DetectHangup)

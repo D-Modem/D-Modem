@@ -89,9 +89,10 @@ void Async::start(Link *link)
 int Async::get_bits(int nbits, uint8_t *buf, int n)
 {
 	int ret = 0;
+	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
 	uint8_t ch;
 	for (;;) {
-		ret += take_bits(&tx_, nbits, 0xff, buf, n);
+		ret += take_bits(&tx_, nbits, mask, buf, n);
 		if (n <= 0)
 			break;
 		if (link_->read_chars(&ch, 1) != 1)
@@ -104,13 +105,13 @@ int Async::get_bits(int nbits, uint8_t *buf, int n)
 	if (tx_.bit && n > 0) {
 		/* what is left, then stop bits */
 		*buf++ = (uint8_t)(tx_.data << (nbits - tx_.bit) |
-				   ((1 << (nbits - tx_.bit)) - 1));
+				   ((1 << (nbits - tx_.bit)) - 1)) & mask;
 		ret++;
 		n--;
 		tx_.bit = 0;
 	}
 	for (; n > 0; n--, ret++)
-		*buf++ = (uint8_t)((1 << nbits) - 1);
+		*buf++ = mask;
 	return ret;
 }
 
@@ -219,8 +220,9 @@ void Detector::start(Link *link)
 int Detector::get_bits(int nbits, uint8_t *buf, int n)
 {
 	int ret = 0;
+	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
 	for (;;) {
-		ret += take_bits(&tx_, nbits, 0xff, buf, n);
+		ret += take_bits(&tx_, nbits, mask, buf, n);
 		if (n <= 0)
 			break;
 		/* 9 marks, and a pattern character when sending */
