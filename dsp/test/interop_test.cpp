@@ -518,6 +518,14 @@ std::vector<Call> calls()
 	      "CALLS=2", "DIAL=5551234", "ANSWER_AFTER=3", "STREAM=3",
 	      "EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2.*V.90 "
 	      "connect", "PROTO_B=ATX3;AT+MS=92" });
+	/* PCM upstream (+PIG=0; off by default): its Su is 96T before
+	   Su-bar, and phases 3 and 4 get through; it sends no B1u after
+	   E2u, and after a retrain the call is V.90 */
+	add("broadcom", "broadcom_v92_pcmup", "broadcom", "open8",
+	    "ATX3;AT+PIG=0;AT+MS=V92",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "EXPECT_B=(?s)Su-bar reversal.*E2u at symbol.*V.90 connect "
+	      "5[0-9]{4}/", "PROTO_B=ATX3;AT+MS=92" });
 	/* class 1 fax both ways at 8000 Hz */
 	for (int m : { 24, 48, 72, 96, 73, 97, 121, 122, 145 }) {
 		std::string s = std::to_string(m);

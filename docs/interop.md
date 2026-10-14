@@ -651,6 +651,7 @@ and `WIN_DEBUG=3` every call the driver makes into the kernel.
 | V23C / 23, V21 / 21, B103 / 103 | CONNECT 1200/75, 300, 300 | the same |
 | V90 / 90 (ours as the digital modem), µ-law and A-law | CONNECT 50666/LAPM/V44 | - |
 | V92 / 92 | quick connect from the first call; short phase 2 on the second (`CALLS=2`) | - |
+| V92 with `+PIG=0` (PCM upstream) / 92 | phases 3 and 4, but no B1u: after a retrain, CONNECT 50666 (V.90) | - |
 
 We receive its V.34 at 24000 bit/s because of our line probe on this
 µ-law line (the same as with the Agere and SM56 modems); it receives ours
@@ -660,8 +661,22 @@ V.27ter, V.29 and V.17 (7200 to 14400) pass both ways.
 
 Its V.92 sends QC1a on every call, and its upstream stays V.34. By
 default it leaves PCM upstream out (`+PIG:1`). With `AT+PIG=0` it
-chooses PCM upstream (INFO1a), and the call does not connect: we find
-its Ru, TRN1u, Ja and Su, but not Su's reversal in time.
+chooses PCM upstream in INFO1a (`broadcom_v92_pcmup`):
+
+- Phase 3 failed at first. Its Su lasts 96T before Su-bar, where V.92
+  has 144T. Our receiver took Su only after 96 coherent samples, which
+  came inside its Su-bar, so it never saw the reversal. It then waited 4
+  s for our Jp and gave up. Su now counts after 48 samples, and phases 3
+  and 4 get through.
+- After E2u it sends no B1u (48 frames of scrambled ones). With our
+  usual CPd (a prefilter of 64 taps) its output turns periodic (48
+  symbols) a few samples after E2u. With no prefilter (`DSP_V92_PREFILTER=0`)
+  it falls silent: exact zeros, which no V.92 precoder can give, since
+  the constellations exclude zero. Neither decodes as ones. We retrain,
+  and the call connects at V.90 (50666/33600).
+
+PCM upstream may well be unfinished in this build, as it is off by
+default.
 
 ## The calls' options
 

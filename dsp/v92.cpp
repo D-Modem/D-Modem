@@ -721,8 +721,10 @@ void V92Up::rx_sample(float x)
 		break;
 	case V92R_QUIET:
 		/* (the analogue modem sends Su once it has heard our Jd:
-		   before, a tone is the echo of our own Sd) */
-		if (tone_n >= 96 &&
+		   before, a tone is the echo of our own Sd).  Su is 144T
+		   before Su-bar, but the Broadcom modem's is 96: its phase
+		   from its first 48 */
+		if (tone_n >= 48 &&
 		    !(tx.seg >= V90_SD && tx.seg <= V90_TRN1D)) {
 			DSP_DBG("v92: Su at %ld\n", n);
 			su_ref = tbh[n & 31];
