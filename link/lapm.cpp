@@ -474,7 +474,7 @@ void Lapm::timer_stop()
 void Lapm::t401_timeout(Link *link)
 {
 	Lapm *l = &link->lapm_;
-	if (l->rtx_count_ > MAX_RTX) {
+	if (l->rtx_count_ >= MAX_RTX) {
 		l->rtx_count_ = 0;
 		/* the originator's XID or SABME unanswered (N400 times)
 		   before LAPM was ever up: a remote without V.42 (we may go

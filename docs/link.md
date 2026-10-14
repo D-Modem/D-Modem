@@ -9,7 +9,9 @@ bits once a call has connected (C++, `namespace dlink`):
 - **V.42 LAPM** (`Lapm`, `lapm.cpp`) over **HDLC** framing (`Hdlc`): modulo
   128, windows of up to 15 frames of up to 128 octets, REJ recovery,
   RNR while the DTE does not take the data, T401 counted in transmitted
-  bits (2 s at the data pump's rate), and parameter negotiation in XID,
+  bits (2 s at the data pump's rate) and N400 = 5 retransmissions (XID,
+  SABME, DISC, the data phase's polls) before giving up, and parameter
+  negotiation in XID,
   with the private parameters of V.42bis and the user data subfield of
   V.44.
 - **V.42bis** (`V42bis`, `v42bis.cpp`): 2048 codewords and strings of 34
@@ -44,9 +46,10 @@ dictionaries, flushes), V.44's transparent mode, HDLC framing with a bit
 error, and two Links back to back bit by bit: detection, XID, V.44 both
 ways, V.42bis when either has no V.44, bit errors (REJ and T401 recovery),
 a slow DTE (RNR), DISC, async, a LAPM answerer with an async caller,
-frames LAPM must drop, and an unsolicited DM (F = 0) while idle, which
+frames LAPM must drop, an unsolicited DM (F = 0) while idle, which
 asks for the link (8.8/V.42: an SABME, not the link up; ignored after a
-release).
+release), and N400: five retransmissions of an unanswered XID, five
+polls with the line cut, no more (`LapmN400`).
 
 ## V.44
 

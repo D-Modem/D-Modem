@@ -776,3 +776,53 @@ TEST(Link, LapmCallerAsyncRemote)
 	transfer("lapm caller, async answerer", p, 3000, 3000, 9600 * 10,
 		 false);
 }
+
+/* N400 (5) retransmissions, no more (8.3.2.2, 8.4.8, 8.10/V.42): a
+   caller's XID to a remote that never answers goes out once and again
+   five times, then async; in the data phase, with the line cut, five
+   polls (RR with P = 1), then DISC */
+TEST(Link, LapmN400)
+{
+	Dte d("caller");
+	Link l;
+	l.init(&d, true, lapm_config(0));
+	l.start(true, false);
+	std::vector<std::vector<uint8_t>> out = exchange(l, {}, 400);
+	int xids = 0;
+	for (auto &f : out)
+		if (f.size() >= 2 && f[0] == 0x03 && (f[1] & 0xef) == 0xaf)
+			xids++;
+	CHECK(xids == 6, "%d XIDs (the first and N400 again)", xids);
+	CHECK(d.up && !l.ec(), "async after them");
+
+	rnd_state = 12345;
+	Pair p(lapm_config(0), lapm_config(0));
+	p.start(true, true);
+	p.run(9600 * 3);
+	CHECK(p.dc.up && p.da.up, "LAPM up");
+	/* the caller's frames go nowhere, nothing comes back */
+	p.dc.to_send = text(300);
+	p.dc.pos = 0;
+	NullOwner o;
+	Link side;
+	side.init(&o, true, Config());
+	Hdlc rx;
+	FrameSource dst;
+	rx.start(&side);
+	rx.set_framer(&dst, false);
+	std::vector<uint8_t> b(600), idle(600, 1);
+	for (int k = 0; k < 400; k++) {
+		p.lc.get_bits(1, b.data(), (int)b.size());
+		rx.put_bits(1, b.data(), (int)b.size());
+		p.lc.put_bits(1, idle.data(), (int)idle.size());
+	}
+	int polls = 0, discs = 0;
+	for (auto &f : dst.rx) {
+		if (f.size() == 3 && f[0] == 0x03 && f[1] == 0x01 && (f[2] & 1))
+			polls++;
+		if (f.size() == 2 && f[0] == 0x03 && f[1] == 0x53)
+			discs++;
+	}
+	CHECK(polls == 5, "%d polls before the DISC", polls);
+	CHECK(discs >= 1, "no DISC after the polls");
+}
