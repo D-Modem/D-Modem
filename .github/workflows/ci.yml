@@ -74,6 +74,7 @@ jobs:
           timeout 300 asterisk/test/run.sh AT+MS=132
           LAW=alaw timeout 300 asterisk/test/run.sh
           timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
+          BBS_LINGER=1 timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
 
       - name: SIP (D-Modem)
         run: |
@@ -146,6 +147,7 @@ jobs:
           LAW=alaw timeout 300 freeswitch/test/run.sh
           timeout 300 freeswitch/test/run.sh AT+MS=34 bbsalaw
           timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
+          BBS_LINGER=1 timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
 
       - name: SIP (D-Modem)
         run: |

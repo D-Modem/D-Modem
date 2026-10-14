@@ -12,6 +12,9 @@
 #                                 DModem (mode=exec) as
 #   bbs_sim.py --stdio            the BBS on stdin/stdout (the pty)
 #
+# BBS_LINGER=1 (--stdio): after the session the program closes its pty
+# but stays, deaf to SIGHUP, so that DModem has to kill it.
+#
 # BBS_CONNECT_DELAY=<s>: the BBS's port takes no connection until s
 # seconds after the start (its accept queue full with one of our own),
 # so DModem's connect to it waits in SYN retransmissions meanwhile; the
@@ -98,6 +101,12 @@ def serve(port, fn, delay=0):
 
 if sys.argv[1:] == ["--stdio"]:
     bbs(Stdio())
+    if os.environ.get("BBS_LINGER"):
+        import signal
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        for fd in (0, 1, 2):
+            os.close(fd)
+        time.sleep(60)
     sys.exit(0)
 tt = threading.Thread(target=serve, args=(TERM_PORT, term), daemon=True)
 tt.start()

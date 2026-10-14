@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -372,7 +373,9 @@ static int tcp_done(int pending, int *fd)
 	return 0;
 }
 
-/* the program on the slave of a new pty, the master returned */
+/* the program on the slave of a new pty, the master returned; the
+   child is ours to reap (end_exec()), not Asterisk's reaper's, so that
+   its pid stays ours until then */
 static int start_exec(const struct profile *p, const char *const *env,
 		      pid_t *pid)
 {
@@ -387,9 +390,10 @@ static int start_exec(const struct profile *p, const char *const *env,
 			close(master);
 		return -1;
 	}
-	*pid = ast_safe_fork(0);
+	*pid = ast_safe_fork(1);
 	if (*pid < 0) {
 		ast_log(LOG_WARNING, "dmodem: fork: %s\n", strerror(errno));
+		ast_safe_fork_cleanup();
 		close(master);
 		return -1;
 	}
@@ -417,6 +421,28 @@ static int start_exec(const struct profile *p, const char *const *env,
 	}
 	nonblock(master);
 	return master;
+}
+
+/* the program's end: SIGHUP (its pty is closed as well), then it is
+   collected, by force (SIGKILL) after 5 s; Asterisk's reaping as it was
+   before start_exec() */
+static void end_exec(pid_t pid)
+{
+	int i;
+
+	kill(pid, SIGHUP);
+	for (i = 0; i < 50; i++) {
+		pid_t r = waitpid(pid, NULL, WNOHANG);
+		if (r == pid || (r < 0 && errno == ECHILD))
+			goto done;
+		usleep(100000);
+	}
+	ast_log(LOG_WARNING, "dmodem: program %d still there after SIGHUP: SIGKILL\n",
+		(int)pid);
+	kill(pid, SIGKILL);
+	waitpid(pid, NULL, 0);
+done:
+	ast_safe_fork_cleanup();
 }
 
 /* move what is there from one fd to the other through b (from -1: only
@@ -841,7 +867,7 @@ out:
 	if (connecting >= 0)
 		close(connecting);      /* (the thread closes what it gets) */
 	if (pid > 0)
-		kill(pid, SIGHUP);      /* the reaper collects it */
+		end_exec(pid);
 	if (dte[0] >= 0)
 		close(dte[0]);
 	if (dte[1] >= 0)
