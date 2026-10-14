@@ -59,9 +59,19 @@ its RCP: the V.17 short training of the next block starts from the
 receiver's state at the end of this one, and the V.21 PPS after it would
 spoil that.
 
+Without ECM the receiver answers each post-page command (MPS, EOM, EOP)
+with MCF or RTN. When the sender misses the MCF it sends the command
+again after T4 (3 s); if no page's training came since (the fast
+receiver never found one) that is a repeat, and it gets MCF again, as
+spandsp's receiver does. RTN there would have the sender send the page
+the receiver already has once more.
+
 `fax_test`'s `T30Pair` cases put two of them back to back, at each rate,
 with ECM, and with ECM on a noisy line (at 19 dB ECM sends a few frames
 again and the page comes right; without it two thousand rows come
 damaged); `spandsp_test`'s `T30Spandsp` cases (label `spandsp`) run one
 against spandsp's fax machine both ways, with and without ECM, and with
-line hits.
+line hits. The `T30Lost` cases lose the receiver's MCF to an EOM, an MPS
+and the last page's EOP. `DSP_T30_LOSE=<fcf in hex>[:<n>]` sends the nth
+message (the first by default) whose last frame is that type as silence,
+lost on the line, its timing kept (`8c` is MCF).

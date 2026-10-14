@@ -30,6 +30,7 @@ as it is.
 | `dsp/fax_modems.cpp` | The V.21 receiver did not count `carrier_run`, so +FRH never answered NO CARRIER |
 | `dsp/t30.cpp` | A 4-octet frame with a good FCS gave a `memcpy` of `(size_t)-1`; a short FIF a negative length |
 | `dsp/t30.cpp` | ECM: the block counter was not reset with a new page, so the MCF to a repeated PPS could not be repeated |
+| `dsp/t30.cpp` | Without ECM a repeated MPS, EOM or EOP (the sender missed our MCF) got RTN, and the page came twice. With no page's training found since, the MCF now goes again (fax_test `T30Lost`, with `DSP_T30_LOSE`) |
 | `dsp/t4.cpp` | MH: a row of zero-length runs wrote past the changes array (T4.ZeroRunsAreNoRow) |
 | `dsp/t4.cpp` | TIFF T.4 pages in several strips kept only the first strip (T4Libtiff `*_r_16`) |
 | `dsp/t4.cpp` | `T4Rx::row` used the reference row of a failed `malloc` |
@@ -98,12 +99,10 @@ bug*, *risk* (a failure needs unusual input or timing) or *cleanup*.
 
 ### V.34, V.90, V.92
 
+None left.
 
 ### Fax
 
-- **likely bug** — `t30.cpp` (non-ECM): a repeated MPS/EOP (our MCF was
-  lost) is answered with RTN, so the page is received twice. Remember the
-  last post-page response and repeat it.
 - **risk** — `fax_class1.cpp` `read_dte()`: in FTH, bytes after
   <DLE><ETX> in the same read are appended to the ready frame; a frame
   under 2 octets gets no result code; in FTM the rest of the read is

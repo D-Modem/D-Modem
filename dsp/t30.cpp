@@ -218,6 +218,12 @@ struct T30 {
 	unsigned char hd_buf[ECM_SIZE + 8];     /* a frame coming */
 	int hd_len, hd_nbits, hd_ones, hd_bad;
 	unsigned hd_byte;
+	/* non-ECM: our last post-page response, to the command post_fcf,
+	   and the state it took us to (a repeated command gets it again) */
+	int post_fcf, post_resp;
+	enum state post_state;
+	int page_heard;                 /* S_RX_PAGE: a training was found */
+	int lose_fcf, lose_n, tx_mute;  /* test: DSP_T30_LOSE */
 	int last_resp;                  /* our last response, for RR */
 	unsigned char last_resp_fif[32];
 	int last_resp_len;
@@ -495,6 +501,14 @@ void T30::send_frames(enum state next_)
 	set_state(S_TX_FRAMES);
 	DSP_DBG("t30: send %d frames, fcf %02x\n", nframes,
 		frames[nframes - 1].data[2]);
+	/* test: the nth message of the frame type DSP_T30_LOSE names goes
+	   out as silence (lost on the line), its timing kept */
+	if (lose_fcf && (frames[nframes - 1].data[2] & 0xfe) == lose_fcf &&
+	    --lose_n == 0) {
+		DSP_DBG("t30: (test) this one lost\n");
+		tx_mute = 1;
+		lose_fcf = 0;
+	}
 }
 
 /* an empty message to add frames to */
@@ -589,6 +603,7 @@ void T30::start_page_rx()
 		return;
 	}
 	start_fast(v17);
+	page_heard = 0;
 	set_state(S_RX_PAGE);
 	start_timer(T2_MS * 2);
 }
@@ -773,22 +788,44 @@ void T30::rx_message()
 		break;
 	case FCF_MPS: case FCF_EOP: case FCF_EOM:
 	case FCF_PRI_MPS: case FCF_PRI_EOP: case FCF_PRI_EOM:
+		/* the same command again with nothing since our MCF (no
+		   page's training found; the fast receiver's carrier detector
+		   also takes the V.21 command for a carrier): the sender
+		   missed our MCF, and gets it again, as spandsp does (not
+		   RTN, which has it send the page we have once more) */
+		if (post_resp == FCF_MCF && fcf == post_fcf &&
+		    state == post_state &&
+		    (state != S_RX_PAGE || !page_heard)) {
+			DSP_DBG("t30: the post-page command again: our %02x "
+				"again\n", post_resp);
+			new_frames();
+			add_frame(post_resp, NULL, 0);
+			send_frames(post_state == S_WAIT_DCS ? S_CED :
+				    post_state);
+			break;
+		}
 		if (state == S_RX_PAGE && rx_page_on) {
 			/* the page ended without our seeing the carrier go */
 			page_done();
 		}
 		new_frames();
 		add_frame(page_ok ? FCF_MCF : FCF_RTN, NULL, 0);
-		if (!page_ok)
+		post_fcf = fcf;
+		post_resp = page_ok ? FCF_MCF : FCF_RTN;
+		if (!page_ok) {
+			post_state = S_WAIT_DCS;
 			send_frames(S_WAIT_DCS);     /* it retrains */
-		else if (fcf == FCF_MPS || fcf == FCF_PRI_MPS)
+		} else if (fcf == FCF_MPS || fcf == FCF_PRI_MPS) {
+			post_state = S_RX_PAGE;
 			send_frames(S_RX_PAGE);
-		else if (fcf == FCF_EOP || fcf == FCF_PRI_EOP) {
+		} else if (fcf == FCF_EOP || fcf == FCF_PRI_EOP) {
 			eop_acked = 1;
+			post_state = S_WAIT_DCN;
 			send_frames(S_WAIT_DCN);
-		}
-		else
+		} else {
+			post_state = S_WAIT_DCS;     /* after DIS */
 			send_frames(S_CED);          /* EOM: phase B again */
+		}
 		page_ok = 0;
 		break;
 	default:
@@ -1626,6 +1663,7 @@ void T30::on_timeout()
 void T30::tx_done()
 {
 	tx_on = 0;
+	tx_mute = 0;
 	restart_v21();
 	switch (state) {
 	case S_TX_FRAMES:
@@ -1675,7 +1713,7 @@ float T30::tx_sample()
 	long c = count;
 
 	if (tx_on) {
-		y = tx.sample();
+		y = tx_mute ? (tx.sample(), 0.0f) : tx.sample();
 		if (tx.done)
 			tx_done();
 		return y;
@@ -1713,6 +1751,8 @@ void T30::rx_sample(float x)
 	v21.sample(x);
 	if (fast_on) {
 		fast.sample(x);
+		if (state == S_RX_PAGE && fast.stage != FaxRx::RXS_SEARCH)
+			page_heard = 1;
 		if (state == S_RX_TCF && tcf_trained &&
 		    !fast.carrier) {
 			tcf_done();
@@ -1789,6 +1829,15 @@ T30 *t30_create(const struct t30_config *cfg)
 	if (!t->cfg.max_bps)
 		t->cfg.max_bps = 14400;
 	t->result = T30_RUNNING;
+	/* test: DSP_T30_LOSE=<fcf in hex>[:<n>], see send_frames() */
+	if (getenv("DSP_T30_LOSE")) {
+		char *e;
+		t->lose_fcf = (int)strtol(getenv("DSP_T30_LOSE"), &e, 16) &
+			0xfe;
+		t->lose_n = *e == ':' ? atoi(e + 1) : 1;
+		if (t->lose_n < 1)
+			t->lose_fcf = 0;
+	}
 	if (!cfg->sending && cfg->ecm)
 		t->ecm_rx.assign((size_t)ECM_FRAMES * ECM_SIZE, 0);
 	t->restart_v21();

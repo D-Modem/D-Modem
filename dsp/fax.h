@@ -78,6 +78,9 @@ struct FaxRx {
 	QamRx qam;
 	FskDemod fsk;
 	int nstates;                    /* phase states for training sync */
+	/* searching for the training; in it (found on its reference
+	   symbols); data */
+	enum { RXS_SEARCH, RXS_TRAIN, RXS_DATA };
 	int stage;
 	long seg_sym;
 	int last_state;

@@ -332,13 +332,12 @@ static void page_received(void *ctx, T4Page *p)
 	static_cast<Doc *>(ctx)->out.write_page(p);
 }
 
-class T30Pair : public testing::TestWithParam<Session> {};
-
-/* the audio through G.711 both ways, with noise for an SNR */
-TEST_P(T30Pair, SendsTheDocument)
+/* the document in from a sender to a receiver, the audio through G.711
+   both ways with noise for the SNR: both end OK with its 2 pages, the
+   receiver's copy the same */
+static void send_document(const Session &s, const std::string &in)
 {
-	const Session &s = GetParam();
-	std::string in = fax_file("in.tif"), out = fax_file("out.tif");
+	std::string out = fax_file("out.tif");
 	Doc tx, rx;
 	struct t30_config c = {};
 	struct t30_status sa = {}, sb = {};
@@ -346,8 +345,6 @@ TEST_P(T30Pair, SendsTheDocument)
 	double sigma = s.snr ? 3000 / pow(10, s.snr / 20) : 0;
 	long n;
 
-	debug_level();
-	ASSERT_TRUE(write_test_doc(in, s.light));
 	ASSERT_EQ(tx.in.open(in.c_str()), 0);
 	ASSERT_EQ(rx.out.open(out.c_str()), 0);
 	c.srate = 8000;
@@ -382,6 +379,7 @@ TEST_P(T30Pair, SendsTheDocument)
 	EXPECT_EQ(sa.result, T30_OK) << "sender: " << t30_result_text(sa.result);
 	EXPECT_EQ(sb.result, T30_OK) << "receiver: " << t30_result_text(sb.result);
 	EXPECT_EQ(sa.pages, 2);
+	EXPECT_EQ(sb.pages, 2);
 	EXPECT_EQ(!!sa.ecm, s.ecm);
 	EXPECT_STREQ(sa.remote_ident, "+1 555 0199");
 	EXPECT_STREQ(sb.remote_ident, "+1 555 0100");
@@ -390,6 +388,18 @@ TEST_P(T30Pair, SendsTheDocument)
 	t30_free(a);
 	t30_free(b);
 	EXPECT_TRUE(same_pages(in, out));
+}
+
+class T30Pair : public testing::TestWithParam<Session> {};
+
+TEST_P(T30Pair, SendsTheDocument)
+{
+	const Session &s = GetParam();
+	std::string in = fax_file("in.tif");
+
+	debug_level();
+	ASSERT_TRUE(write_test_doc(in, s.light));
+	send_document(s, in);
 }
 
 /* error correction mode: the page in blocks of HDLC frames; on a line of
@@ -409,4 +419,82 @@ INSTANTIATE_TEST_SUITE_P(Rates, T30Pair, testing::Values(
 		if (i.param.snr)
 			n += "_snr" + std::to_string((int)i.param.snr);
 		return n;
+	});
+
+/*
+ *    a response lost on the line (DSP_T30_LOSE)
+ *
+ */
+
+struct Lost {
+	const char *lose;       /* DSP_T30_LOSE: <fcf>[:<n>], the nth lost */
+	bool same;              /* both pages standard: MPS between them */
+	const char *name;
+};
+
+class T30Lost : public testing::TestWithParam<Lost> {};
+
+/* the test document's first (standard) page twice */
+static testing::AssertionResult write_standard_twice(const std::string &path)
+{
+	std::string doc = fax_file("doc.tif");
+	TiffIn in;
+	TiffOut out;
+	T4Page p;
+
+	if (!write_test_doc(doc, true) || in.open(doc.c_str()))
+		return testing::AssertionFailure() << "cannot write " << doc;
+	if (out.open(path.c_str()) || in.read_page(&p) != 1) {
+		in.close();
+		return testing::AssertionFailure() << "cannot write " << path;
+	}
+	out.write_page(&p);
+	out.write_page(&p);
+	p.release();
+	in.close();
+	if (out.close())
+		return testing::AssertionFailure() << "cannot write " << path;
+	return testing::AssertionSuccess();
+}
+
+/* without ECM our MCF lost: the sender's post-page command again after
+   T4 gets MCF again, not RTN (with which the sender would send the page
+   once more, and the receiver have it twice) */
+TEST_P(T30Lost, McfAgain)
+{
+	const Lost &l = GetParam();
+	std::string in = fax_file("in.tif"), log;
+
+	if (l.same)
+		ASSERT_TRUE(write_standard_twice(in));
+	else
+		ASSERT_TRUE(write_test_doc(in, true));
+	setenv("DSP_T30_LOSE", l.lose, 1);
+	dsplibs_debug_level = 2;
+	testing::internal::CaptureStderr();
+	send_document(Session{ 9600, false, 0, true }, in);
+	log = testing::internal::GetCapturedStderr();
+	dsplibs_debug_level = 0;
+	debug_level();
+	unsetenv("DSP_T30_LOSE");
+	EXPECT_NE(log.find("t30: (test) this one lost"), std::string::npos);
+	EXPECT_NE(log.find("the post-page command again: our 8c again"),
+		  std::string::npos);
+	if (HasFailure())       /* the T.30 lines of the log */
+		for (size_t i = 0, e; i < log.size(); i = e + 1) {
+			e = log.find('\n', i);
+			if (e == std::string::npos)
+				e = log.size();
+			if (log.compare(i, 9, "dsp: t30:") == 0)
+				printf("%.*s\n", (int)(e - i), &log[i]);
+		}
+}
+
+/* the MCF to the first page's EOM (a fine page next) or MPS, and to the
+   last page's EOP */
+INSTANTIATE_TEST_SUITE_P(Mcf, T30Lost, testing::Values(
+	Lost{ "8c", false, "eom" }, Lost{ "8c", true, "mps" },
+	Lost{ "8c:2", false, "eop" }),
+	[](const testing::TestParamInfo<Lost> &i) {
+		return std::string(i.param.name);
 	});

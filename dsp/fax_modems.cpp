@@ -513,12 +513,6 @@ float FaxTx::sample()
  *    receiver
  */
 
-enum {
-	RXS_SEARCH,
-	RXS_TRAIN,
-	RXS_DATA,
-};
-
 /* the phase state of a received symbol: V.17 the nearest of A, B, C, D
    (0-3), else the nearest multiple of 45 degrees (0-7) */
 int FaxRx::state_of(cplx z)
