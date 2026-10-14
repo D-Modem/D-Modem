@@ -268,7 +268,14 @@ sends ANSam and, when no CM comes, its 1650 Hz mark, but drops it 2 s
 after the caller's mark (again also against itself, calling with
 `+MS=V21,0`). So our V.21 caller (`AT+MS=21`) did not connect to it
 until it, too, used V.8 on its ANSam (V.21 alone; our V.22, V.22bis
-and V.23 callers connect to it without). Our V.8 caller does: its CM now offers V.22bis, V.23 and V.21 as
+and V.23 callers connect to it without). It takes our CJ only with
+V.8's 75 ms without signal after it: our V.8 caller started the agreed
+modulation's carrier right after CJ, and the PCTel modem went on with
+JM until it gave up. About half the calls got through anyway, by
+chance: the V.8 pump did not clear the rest of the block it ended in,
+and what the host's buffer held from before went out, a moment of V.21
+space now and then, which the PCTel modem took for the end of CJ.
+Our V.8 caller does: its CM now offers V.22bis, V.23 and V.21 as
 well, and a JM with one of these (the HSF modem's, answering with
 `+MS=V21` and so on) gets CJ and that modulation, the FSK caller's
 carrier first (as the HSF modem's own caller does). Answering, its CM up

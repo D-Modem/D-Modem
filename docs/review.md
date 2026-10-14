@@ -52,6 +52,8 @@ as it is.
 | `dsp/v34_modem.cpp` | With precoding, a renegotiation on a line where the training kept no good equalizer (mse never under 0.02) trained from the equalizer with 1 + H(z) in it, and E put 1 + H(z) in again (60 taps). The equalizer 1 + H(z) goes into is now the one to go back to, and it never goes in twice (pump_test `V34Precoding`, with `DSP_V34_PRECODE_MIN`) |
 | `dsp/v90.h` | `v90_tx_sample()` was declared but never defined |
 | `dsp/dp_fsk.cpp`, `dp_v22.cpp`, `dp_v32.cpp` | An early return (another pump, an error) left the rest of the output block unwritten: whatever the host's buffer held went to the line. The block is now cleared first |
+| `dsp/dp_v34.cpp` | The rest of the output block after an early return (V.8 done, another pump, an error) was left unwritten, as it was in the other pumps: what the host's buffer held went out. After CJ that was a few ms of whatever an earlier block left there |
+| `dsp/dp_v34.cpp` | The caller went on to the low speed modulation V.8 agreed on right after CJ, without V.8's 75 ms of silence (8.1.2/V.8). The PCTel modem takes CJ only with the gap: `pctel_21_open_calls` failed about half the time unpaced (1 in 10 to 20 in real time), passing only when the stale block above happened to hold a V.21 space |
 | `dsp/dp_fsk.cpp`, `dp_v22.cpp`, `dp_v32.cpp`, `dp_v34.cpp` | The answer tone came 3 s after going off hook: the core's answer delay (S92, 2 s: V.25's silent interval) and then 1 s of the pump's own. The pumps now wait V.8's 0.2 s, the tone at 2.2 s (V.25: 1.8 to 2.5 s) |
 | `dsp/dsp_glue.cpp` | Caller ID: a private ('P') number or name was reported as out of area ('O') |
 | `dsp/dp_dummy.cpp` | `malloc` not checked |
@@ -149,10 +151,6 @@ None left.
 
 ### Tests
 
-- **intermittent** — `pctel_21_open_calls`: after V.8 agrees on V.21,
-  the PCTel modem sometimes never starts its V.21 answer carrier, and
-  our caller times out after 60 s. It failed 2 of 20 runs before this
-  review's changes and about 2 of 40 after them.
 - **likely bug** (low confidence) — `interop_call.cpp` MIDCALL: data the
   remote sent around "+++" is dropped with the commands' answers.
 - **likely bug** — `half_agere.c`, `half_sm56.c`: an interrupt raised

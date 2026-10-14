@@ -919,9 +919,8 @@ static const char *v8_dp_name(int dp)
 		dp == DP_V22 ? "V.22" : dp == DP_V23 ? "V.23" : "V.21";
 }
 
-/* after CJ (the caller: sent, the answerer: 75 ms after it), the
-   modulation V.8 agreed on: its pump goes on from there (the answer
-   tone sent, no automode) */
+/* no V.34 after all (why): back to the low speed modulation V.8 ran for
+   (v8_low), its pump without V.8; returns DPSTAT_CHANGEDP */
 int V34Pump::v8_back(const char *why)
 {
 	DSP_DBG("v34: %s: back to %s without V.8\n", why,
@@ -932,8 +931,10 @@ int V34Pump::v8_back(const char *why)
 	return DPSTAT_CHANGEDP;
 }
 
-/* to the pump of v8_dp, what V.8 agreed on without V.34 (the answer
-   tone and V.8 done, no automode); returns DPSTAT_CHANGEDP */
+/* 75 ms after CJ (both sides, 8.1.2 and 8.2.3/V.8): to the pump of
+   v8_dp, what V.8 agreed on without V.34 (the answer tone and V.8 done,
+   no automode), which sends its sigC or sigA at once; returns
+   DPSTAT_CHANGEDP */
 int V34Pump::v8_handover()
 {
 	if (rt) {
@@ -2953,14 +2954,16 @@ int V34Pump::handshake()
 		if (v8tx.pos >= v8tx.n && fsk_bit_edge()) {
 			set_state(V8C_GAP);
 			txm = TXM_SILENCE;
-			if (v8_dp)
-				return v8_handover();
 		}
 		break;
 	case V91_RUN:           /* process() runs it */
 	case V92_RUN:
 		break;
 	case V8C_GAP:
+		/* 75 ms without signal after CJ, then sigC (8.1.2/V.8): the
+		   PCTel modem takes CJ only with the gap after it */
+		if (c >= ms2samples(75, srate) && v8_dp)
+			return v8_handover();
 		if (c >= ms2samples(75, srate) && v91_on) {
 			v91_start();
 			break;
@@ -3872,6 +3875,9 @@ int V34Pump::process(void *in, void *out, int cnt)
 	int ret = DPSTAT_OK, r, i, k, n;
 	float y, up[2], down[2], pcm_ = 0;
 
+	/* silence where an early return (V.8 done, another pump, an error)
+	   leaves the block unwritten */
+	memset(dst, 0, cnt * sizeof(*dst));
 	for (i = 0; i < cnt; i++) {
 		if (state == V91_RUN) {
 			int y91, ev = v91m.sample(src[i], &y91);
