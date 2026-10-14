@@ -15,10 +15,12 @@
  *    engine's ComCtrl interface (as Linuxant's serial_cnxt.c uses it).
  *
  *    Its hardware: an Intel ICH AC'97 modem controller (8086:2416,
- *    half::Ich) with a Conexant modem codec, as half_sm56's, on the port
- *    I/O the module asks the OS layer for.  The codec runs at the rate the
+ *    hw/ich.hpp) with a Conexant modem codec (hw/ac97_codec.hpp) and its
+ *    SmartDAA (hw/smartdaa.hpp), as half_sm56's, on the port I/O the
+ *    module asks the OS layer for; its PCI configuration space through
+ *    the OS layer too (hw/pci.hpp).  The codec runs at the rate the
  *    module sets: a windowed sinc resampler between it and the line
- *    (half::CodecLine).
+ *    (hw/codec_line.hpp).  rdtsc reads the line's time (hw/tsc.hpp).
  *
  *    NVM (the driver's static configuration, Linuxant's nvm/ tree) is
  *    read from the package's hsfmc97ich.inf and hsf.cty, as its cvtinf.pl
@@ -39,7 +41,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/prctl.h>
 #include <ucontext.h>
 
 #include <fstream>
@@ -48,6 +49,12 @@
 #include <utility>
 #include <vector>
 
+#include "hw/ac97_codec.hpp"
+#include "hw/codec_line.hpp"
+#include "hw/ich.hpp"
+#include "hw/pci.hpp"
+#include "hw/smartdaa.hpp"
+#include "hw/tsc.hpp"
 #include "modem_half.hpp"
 
 using namespace half;
@@ -145,13 +152,12 @@ private:
  *    NVM, the ComCtrl
  */
 
-class Hsf : public HalfModem {
+class Hsf : public HalfModem, public Ac97Codec<Hsf>, public SmartDaa<Hsf>,
+	    public Ich<Hsf>, public PciDevice<Hsf>, public LineTsc<Hsf>,
+	    public CodecLine<Hsf> {
 public:
 	Hsf();
 
-	Ich ich;
-	PciConfig pci;
-	X86Traps traps;
 	Nvm nvm;
 
 	/* timers: one-shot (kernel timers, called with their data) and
@@ -172,16 +178,13 @@ public:
 	int (*isr)(int irq, void *dev, void *regs) = nullptr;
 	void *isr_dev = nullptr;
 
-	/* the time stamp counter, which the engine and the ICH back end read
-	   (rdtsc) to follow the codec's clock against the CPU's */
-	Tsc tsc;
-
 	Timer *timer_new();
 	void timer_free(Timer *t);
 	void run_timers();
 	void run_time(unsigned ms);
 	u32 io_in(unsigned a, int size);
 	void io_out(unsigned a, u32 v, int size);
+	bool codec_write_hook(int r, word &v);
 
 protected:
 	int start() override;
@@ -190,16 +193,6 @@ protected:
 	void after_read() override;
 
 private:
-	/* the Conexant codec's registers: secondary, 0x80 to 0xff */
-	word codec_regs[0x80] = {};
-	unsigned codec_rate = 8000;
-	/* the SmartDAA's line side registers, behind codec register 0x7a:
-	   a write of 0x8000 | reg << 8 asks for one (the answer: reg << 8 |
-	   the value), reg << 8 | value writes one */
-	byte daa[0x80] = {};
-	/* and the line side chip's, behind DAA registers 1 (data) and 3
-	   (bit 7 read, the register below it) */
-	byte lsd[0x80] = {};
 	/* HSF_KEEP8: see interrupt() */
 	bool keep8 = false;
 	/* the device node of the PCI probe, and the handle that stands for
@@ -208,8 +201,6 @@ private:
 	byte pcidev[64] = {};
 	void *hcom = nullptr;
 
-	word codec_read(int r);
-	void codec_write(int r, word v);
 	void dte_out();
 	void dte_in();
 	void interrupt();
@@ -218,21 +209,31 @@ private:
 static Hsf hsf;
 #define LOG(...) do { if (hsf.dbg) hsf.log(__VA_ARGS__); } while (0)
 
+/* the Conexant codec (extended modem ID: line 1, ID 01; "CXT)"), the
+   controller's secondary (the module pauses its bus masters to move LVI
+   on: they resume), and the controller's configuration space: its IDs,
+   I/O and bus master on, the modem class, the BARs (256 and 128 octets
+   of I/O), the IRQ */
 Hsf::Hsf() :
 	HalfModem("hsf", "HSF"),
-	ich(*this, NAMBAR, NABMBAR, true, 0, true),
-	pci(*this)
+	Ac97Codec(0x4001, 0x4358, 0x5429),
+	Ich(NAMBAR, NABMBAR, true, 0, true)
 {
-	ich.codec_read = [this](int r) { return codec_read(r); };
-	ich.codec_write = [this](int r, word v) { codec_write(r, v); };
-	traps.in = [this](unsigned a, int size) { return io_in(a, size); };
-	traps.out = [this](unsigned a, u32 v, int size) { io_out(a, v, size); };
-	traps.tsc = [this]() { return tsc.read(line_n, line_rate); };
+	pci_cfg[0x00 / 4] = 0x8086 | 0x2416u << 16;
+	pci_cfg[0x04 / 4] = 0x02800005;         /* I/O, bus master */
+	pci_cfg[0x08 / 4] = 0x07030002;         /* modem */
+	pci_cfg[0x10 / 4] = NAMBAR | 1;
+	pci_cfg[0x14 / 4] = NABMBAR | 1;
+	pci_cfg[0x2c / 4] = 0x8086 | 0x2416u << 16;
+	pci_cfg[0x3c / 4] = IRQ | 2 << 8;
+	pci_bar_size[0] = 0x100;
+	pci_bar_size[1] = 0x80;
 }
 
 /*
- *    the time stamp counter: rdtsc faults (PR_TSC_SIGSEGV) and is done
- *    here, the line's time (half::Tsc)
+ *    the time stamp counter: the engine and the ICH back end read it
+ *    (rdtsc) to follow the codec's clock against the CPU's; rdtsc faults
+ *    (PR_TSC_SIGSEGV) and reads the line's time (hw/tsc.hpp)
  */
 
 /* rdtsc: carried out and stepped over */
@@ -241,7 +242,7 @@ static void on_segv(int sig, siginfo_t *si, void *ctx)
 	ucontext_t *uc = (ucontext_t *)ctx;
 	byte *ip = (byte *)(uintptr_t)uc->uc_mcontext.gregs[REG_EIP];
 
-	if (hsf.traps.step(uc))
+	if (hsf.tsc_step(uc))
 		return;
 	fprintf(stderr, "hsf: fault at %p (%02x %02x %02x), address %p\n",
 		(void *)ip, ip[0], ip[1], ip[2], si->si_addr);
@@ -261,8 +262,8 @@ extern "C" {
 unsigned long long hsfmc97ich41_(u32 us)
 {
 	unsigned long long n = us ? 10ull * us : 1;  /* the loop's reads */
-	hsf.tsc.read(hsf.line_n, hsf.line_rate);
-	hsf.tsc.last += 100 * n;
+	hsf.tsc_read();
+	hsf.tsc_last += 100 * n;
 	return 100 * n / 1000;
 }
 
@@ -549,58 +550,15 @@ int OS(OsMemDMAFree)(void *h, u32 order) { (void)order; free(h); return 1; }
  *    0xff of the mixer space)
  */
 
-/* codec register r */
-word Hsf::codec_read(int r)
+/* its registers but the IDs and the ready bits (hw/ac97_codec.hpp):
+   0x7a reads or writes a register of the SmartDAA's */
+bool Hsf::codec_write_hook(int r, word &v)
 {
-	r &= 0x7e;
-	switch (r) {
-	case 0x3e:
-		/* ADC/DAC of line 1, MREF, GPIO ready, as written above */
-		return (codec_regs[r] & 0xff00) | 0x000f;
-	default:
-		return codec_regs[r];
-	}
-}
-
-/* codec register r = v (the IDs read only): 0x7a reads or writes a
-   DAA register (DAA register 3 the line side chip's through 1), 0x40
-   is the codec's rate */
-void Hsf::codec_write(int r, word v)
-{
-	r &= 0x7e;
-	if (r == 0x7c || r == 0x7e || r == 0x3c)
-		return;
-	if (codec_regs[r] != v && r != 0x7a)
-		LOG("codec %02x = %04x\n", r, v);
-	if (r == 0x7a) {
-		int reg = (v >> 8) & 0x7f;
-		if (v & 0x8000) {
-			if (dbg > 2)
-				LOG("daa read %02x: %02x\n", reg, daa[reg]);
-			v = (word)(reg << 8 | daa[reg]);
-		} else {
-			if (daa[reg] != (byte)v)
-				LOG("daa %02x = %02x\n", reg, v & 0xff);
-			daa[reg] = (byte)v;
-			if (reg == 0x03) {
-				int lr = v & 0x7f;
-				if (v & 0x80)
-					daa[0x01] = lsd[lr];
-				else {
-					if (lsd[lr] != daa[0x01])
-						LOG("line side %02x = %02x\n", lr, daa[0x01]);
-					lsd[lr] = daa[0x01];
-				}
-			}
-		}
-		codec_regs[r] = v;
-		return;
-	}
-	if (r == 0x40 && v != codec_rate && v) {
-		codec_rate = v;
-		LOG("codec rate %u Hz\n", v);
-	}
+	if (r != 0x7a)
+		return false;
+	smartdaa_access(v);
 	codec_regs[r] = v;
+	return true;
 }
 
 /*
@@ -612,7 +570,7 @@ void Hsf::codec_write(int r, word v)
 u32 Hsf::io_in(unsigned a, int size)
 {
 	u32 v;
-	if (!ich.io_in(a, size, &v)) {
+	if (!ich_io_in(a, size, &v)) {
 		LOG("in%d %04x\n", size, a);
 		v = size == 1 ? 0xff : size == 2 ? 0xffff : 0xffffffff;
 	}
@@ -626,19 +584,19 @@ void Hsf::io_out(unsigned a, u32 v, int size)
 {
 	if (dbg > 1)
 		fprintf(stderr, "hsf: out%d %04x = %x\n", size, a, v);
-	if (!ich.io_out(a, v, size))
+	if (!ich_io_out(a, v, size))
 		LOG("out%d %04x = %x\n", size, a, v);
 }
 
 extern "C" {
 
 /* the configuration space of the one device */
-void OS(OsPciReadConfigb)(void *d, byte o, byte *v) { (void)d; *v = (byte)hsf.pci.read(o, 1); }
-void OS(OsPciReadConfigw)(void *d, byte o, word *v) { (void)d; *v = (word)hsf.pci.read(o, 2); }
-void OS(OsPciReadConfigdw)(void *d, byte o, u32 *v) { (void)d; *v = hsf.pci.read(o, 4); }
-void OS(OsPciWriteConfigb)(void *d, byte o, byte v) { (void)d; hsf.pci.write(o, v, 1); }
-void OS(OsPciWriteConfigw)(void *d, byte o, word v) { (void)d; hsf.pci.write(o, v, 2); }
-void OS(OsPciWriteConfigdw)(void *d, byte o, u32 v) { (void)d; hsf.pci.write(o, v, 4); }
+void OS(OsPciReadConfigb)(void *d, byte o, byte *v) { (void)d; *v = (byte)hsf.pci_read(o, 1); }
+void OS(OsPciReadConfigw)(void *d, byte o, word *v) { (void)d; *v = (word)hsf.pci_read(o, 2); }
+void OS(OsPciReadConfigdw)(void *d, byte o, u32 *v) { (void)d; *v = hsf.pci_read(o, 4); }
+void OS(OsPciWriteConfigb)(void *d, byte o, byte v) { (void)d; hsf.pci_write(o, v, 1); }
+void OS(OsPciWriteConfigw)(void *d, byte o, word v) { (void)d; hsf.pci_write(o, v, 2); }
+void OS(OsPciWriteConfigdw)(void *d, byte o, u32 v) { (void)d; hsf.pci_write(o, v, 4); }
 
 struct pci_res { u32 addr, len; };
 /* its resources: no memory, NAMBAR and NABMBAR; 1 */
@@ -1353,14 +1311,14 @@ void Hsf::interrupt()
 short Hsf::line_sample(short in)
 {
 	unsigned long long ms0 = ms();
-	short out = codec.sample(in, (double)line_rate / codec_rate,
-				 [this](short adc) {
-		short dac = ich.sample(ich.po, 0);
-		/* DAA register 0x0e, bits 5 and 6: its loopbacks, which
-		   the SmartDAA library measures the path's delay by */
-		if (daa[0x0e] & 0x60)
+	short out = codec_line_sample(in, (double)line_rate / codec_rate,
+				      [this](short adc) {
+		short dac = ich_sample(pcm_out, 0);
+		/* the DAA's loopbacks, which the SmartDAA library measures
+		   the path's delay by */
+		if (smartdaa_loopback())
 			adc = dac;
-		ich.sample(ich.pi, adc);
+		ich_sample(pcm_in, adc);
 		return dac;
 	});
 
@@ -1368,9 +1326,9 @@ short Hsf::line_sample(short in)
 	/* (level triggered, as PCI's; and with a latency: the module takes
 	   a PICB of a whole buffer for one that has not moved yet, and
 	   reads it again and again, then guesses) */
-	if (isr && ich.irq() && !ich.at_start(ich.pi) && !ich.at_start(ich.po)) {
+	if (isr && ich_irq() && !ich_at_start(pcm_in) && !ich_at_start(pcm_out)) {
 		int guard = 0;
-		while (ich.irq() && guard++ < 4)
+		while (ich_irq() && guard++ < 4)
 			interrupt();
 	}
 	if (ms() != ms0)
@@ -1378,8 +1336,8 @@ short Hsf::line_sample(short in)
 	return out;
 }
 
-/* the rdtsc trap, the NVM, the devices, the engine's init and the
-   serial driver's open (115200 8N1, DTR, RTS) */
+/* the rdtsc trap, the NVM, the engine's init and the serial driver's
+   open (115200 8N1, DTR, RTS) */
 int Hsf::start()
 {
 	/* (the engine keeps them) */
@@ -1399,7 +1357,7 @@ int Hsf::start()
 	sa.sa_sigaction = on_segv;
 	sa.sa_flags = SA_SIGINFO;
 	sigaction(SIGSEGV, &sa, NULL);
-	if (prctl(PR_SET_TSC, PR_TSC_SIGSEGV, 0, 0, 0)) {
+	if (tsc_trap()) {
 		perror("hsf: PR_SET_TSC");
 		return -1;
 	}
@@ -1411,26 +1369,6 @@ int Hsf::start()
 	if (nvm.load(path))
 		return -1;
 	nvm.cty();
-
-	/* the Conexant codec's registers at reset: its IDs, line 1, 8000
-	   Hz */
-	codec_regs[0x3c] = 0x4001;      /* extended modem ID: line 1, ID 01 */
-	codec_regs[0x40] = 8000;
-	codec_regs[0x7c] = 0x4358;      /* "CX" */
-	codec_regs[0x7e] = 0x5429;      /* "T)" */
-
-	/* the controller's configuration space: its IDs, I/O and bus master
-	   on, the modem class, the BARs (256 and 128 octets of I/O), the
-	   IRQ */
-	pci.cfg[0x00 / 4] = 0x8086 | 0x2416u << 16;
-	pci.cfg[0x04 / 4] = 0x02800005;         /* I/O, bus master */
-	pci.cfg[0x08 / 4] = 0x07030002;         /* modem */
-	pci.cfg[0x10 / 4] = NAMBAR | 1;
-	pci.cfg[0x14 / 4] = NABMBAR | 1;
-	pci.cfg[0x2c / 4] = 0x8086 | 0x2416u << 16;
-	pci.cfg[0x3c / 4] = IRQ | 2 << 8;
-	pci.bar_size[0] = 0x100;
-	pci.bar_size[1] = 0x80;
 
 	/* the modules' init, the PCI probe's device node, the serial
 	   driver's open (serial_cnxt.c) */

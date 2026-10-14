@@ -9,12 +9,12 @@
  *
  *    The harness describes the device and its driver (struct win_dev):
  *    the driver's files and the INF's model, the PCI configuration space
- *    (half::PciConfig), the registers (BAR 0's memory, port I/O) as
- *    calls, the interrupt line, the line's rate and how to run it on
- *    while the kernel waits.  win_start() loads the driver, starts it and
- *    opens its port; win_tick() after each line sample runs the timers,
- *    the DPCs, the threads and the ISR; win_serial_*() read and write
- *    the port.
+ *    (a hw/pci.hpp PciDevice's, say), the registers (BAR 0's memory,
+ *    port I/O) as calls, the interrupt line, the line's rate and how to
+ *    run it on while the kernel waits.  win_start() loads the driver,
+ *    starts it and opens its port; win_tick() after each line sample
+ *    runs the timers, the DPCs, the threads and the ISR; win_serial_*()
+ *    read and write the port.
  *
  *    The rest the INF says: the registry (its model's AddReg sections),
  *    the driver's service, the device's description, maker and class.
@@ -36,14 +36,16 @@ struct win_dev {
 	const char *port;               /* the port's name (PortName) */
 	/* the PCI device on bus 0: its slot and function, and its
 	   configuration space as the bus driver reports it (IDs, class,
-	   BAR 0, the interrupt line); BAR 0's size is mem_size */
-	half::PciConfig *pci;
+	   BAR 0, the interrupt line: 64 dwords) */
+	unsigned devfn;
+	half::u32 *cfg;
 	/* its registers: BAR 0's memory, mem_size bytes, each access of
 	   the driver a call */
 	half::u32 mem_size;
 	std::function<half::u32(half::u32 off, int size)> mem_read;
 	std::function<void(half::u32 off, int size, half::u32 v)> mem_write;
-	/* port I/O but PCI's configuration ports (none: all ones) */
+	/* port I/O, PCI's configuration ports (0xcf8, 0xcfc) too (none:
+	   all ones) */
 	std::function<half::u32(unsigned port, int size)> io_in;
 	std::function<void(unsigned port, half::u32 v, int size)> io_out;
 	/* its interrupt: up or not */

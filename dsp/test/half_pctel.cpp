@@ -15,7 +15,7 @@
  *    (afeTxPtr), at the codec's rate and block size that they set
  *    (SetSampleFreq, SetAsicBufSize).  GlobalTimer is the HAL's: ms, by
  *    the blocks.  A windowed sinc resampler between the codec and the
- *    line (CodecLine).
+ *    line (hw/codec_line.hpp).
  *
  *    The objects are test/pctel/ as PCTel shipped them (renamed .o);
  *    -DDMODEM_PCTEL_DIR=<dir> for another copy.  PCTEL_DEBUG=1 prints
@@ -27,6 +27,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "hw/codec_line.hpp"
 #include "modem_half.hpp"
 
 using namespace half;
@@ -48,7 +49,7 @@ extern u32 curModem, curMode;           /* the pumps' */
  *    the modem: its HAL's codec, the virtual UART's DTE side
  */
 
-class Pctel : public HalfModem {
+class Pctel : public HalfModem, public CodecLine<Pctel> {
 public:
 	Pctel() : HalfModem("pctel", "PCTEL") {}
 
@@ -338,8 +339,8 @@ short Pctel::codec_sample(short adc)
 /* one line sample each way */
 short Pctel::line_sample(short in)
 {
-	short out = codec.sample(in, line_rate / codec_hz(),
-				 [this](short adc) { return codec_sample(adc); });
+	short out = codec_line_sample(in, line_rate / codec_hz(),
+				      [this](short adc) { return codec_sample(adc); });
 	line_n++;
 	return out;
 }

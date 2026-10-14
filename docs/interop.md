@@ -11,15 +11,38 @@ ctest label of its own; `ctest -L <label> -j16` runs its calls.
 
 The harnesses of the closed modems and spandsp's are C++ classes on
 `dsp/test/modem_half.hpp`. `half::HalfModem` is the program: its settings
-from the environment (`<NAME>_DEBUG`, `_RATE`, `_NOISE`, `_SYNC` and
-`_SYNC_PHASE`), the pty, and the line a sample at a time with the DTE
-served every 48 samples. A harness derives from it the modem's start, its
-line sample and its DTE. What more than one harness emulates is there
-too: the Intel ICH AC'97 modem controller (Agere, SM56, HSF), PCI's
-configuration space and the x86 instructions a driver traps on (SM56,
-HSF, the Windows kernel), the time stamp counter on the line's clock (HSF,
-the Windows kernel), the resampler between the line and a codec at its
-own rate, the pty's buffering, and the clear of the stack below.
+from the environment (`<NAME>_DEBUG`, `_RATE`, `_SYNC` and `_SYNC_PHASE`),
+the pty, and the line a sample at a time with the DTE served every 48
+samples. A harness derives from it the modem's start, its line sample and
+its DTE.
+
+The hardware a harness emulates is in `dsp/test/hw/`, a header for each
+kind, each a mixin: a class template the harness derives from too, with
+the harness as its parameter, so that what the hardware needs of the
+board it is on is the harness's own. The ICH controller reads and writes
+its codec's registers as the harness's `codec_read()` and
+`codec_write()`, and the x86 traps do their `in` and `out` as its
+`io_in()` and `io_out()`. The SM56 harness, for one, is
+
+    class Sm56 : public HalfModem, public Ac97Codec<Sm56>, public Ich<Sm56>,
+                 public PciDevice<Sm56>, public X86Traps<Sm56>,
+                 public CodecLine<Sm56>
+
+| Header | Hardware | Harnesses |
+|---|---|---|
+| `ac97_codec.hpp` | an AC'97 modem codec's registers (`Ac97Codec`) | Agere (Si3038), SM56 (Motorola), HSF (Conexant) |
+| `ich.hpp` | the Intel ICH AC'97 modem controller (`Ich`) | Agere, SM56, HSF |
+| `pci.hpp` | PCI's configuration space of one device and its ports (`PciDevice`) | SM56, HSF, Broadcom |
+| `x86_traps.hpp` | `in`, `out`, `cli`, `sti` and moves to and from control registers in a driver's own code (`X86Traps`) | SM56, the Windows kernel |
+| `tsc.hpp` | `rdtsc` on the line's clock (`LineTsc`) | HSF, the Windows kernel |
+| `codec_line.hpp` | the line and a codec at a rate of its own: the resamplers and the codec's noise (`CodecLine`, `<NAME>_NOISE`) | SM56, PCTel, HSF, Broadcom |
+| `smartdaa.hpp` | Conexant's SmartDAA behind its codec (`SmartDaa`) | HSF |
+| `si3034.hpp` | Silicon Labs' Si3034 DAA behind a serial port (`Si3034`) | Broadcom |
+| `bcm4212.hpp` | Broadcom's BCM4212 modem chip: its registers and DMA (`Bcm4212`) | Broadcom |
+
+Each mixin's members have its name (`ich_sample()`, `pci_cfg`,
+`si3034_rate`, ...), so that a harness can derive from any of them
+together.
 
 ## The peers' binaries
 
@@ -562,9 +585,10 @@ So `interop_windows.cpp` is a Windows kernel of our own, for the WDM
 driver of a soft modem on a PCI device; the Broadcom driver is the first
 it runs. A harness describes its device (`struct win_dev` in
 `interop_windows.h`): the driver's files and the INF's model, the PCI
-configuration space (a `half::PciConfig`), the registers (BAR 0's memory and port I/O) as
-calls, the interrupt line, and the line's rate and how to run the line
-on while the kernel waits. `win_start()` loads and starts the driver and
+configuration space (the harness's `PciDevice`'s), the registers (BAR
+0's memory and port I/O, PCI's configuration ports among them) as calls,
+the interrupt line, and the line's rate and how to run the line on while
+the kernel waits. `win_start()` loads and starts the driver and
 opens its port, `win_tick()` after each line sample runs the kernel's
 time, and `win_serial_read()` and `win_serial_write()` are the port's
 reads and writes. What else the driver needs comes from the INF: the

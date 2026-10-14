@@ -20,9 +20,9 @@
  *    window of ours that is not accessible: each access faults and is
  *    single-stepped with the device's values (see mm_fault).  in, out,
  *    cli, sti, mov to and from CRn and rdtsc trap (no I/O permission,
- *    PR_TSC_SIGSEGV) and are carried out here (half::X86Traps); PCI's
- *    configuration ports are the device's configuration space
- *    (half::PciConfig).
+ *    PR_TSC_SIGSEGV) and are carried out here (hw/x86_traps.hpp,
+ *    hw/tsc.hpp); the port I/O, PCI's configuration ports too, is the
+ *    device's.
  *
  *    We are the rest of the device stack: the PCI bus driver under the
  *    driver (its PDO: the PnP IRPs sent down, the device's resources),
@@ -41,11 +41,12 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/mman.h>
-#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <ucontext.h>
 #include <unistd.h>
 
+#include "hw/tsc.hpp"
+#include "hw/x86_traps.hpp"
 #include "interop_windows.h"
 
 using namespace half;
@@ -497,9 +498,6 @@ static u64 itime(void)
 /* the system time (100 ns since 1601): 1 August 2002 then */
 #define SYSTIME_BOOT ((1028160000ull + 11644473600ull) * 10000000ull)
 
-/* the time stamp counter (rdtsc traps, PR_TSC_SIGSEGV): the line's
-   time */
-static Tsc tsc;
 
 /* the line run on a ms (silent) while the kernel waits */
 static void line_ms(void)
@@ -1145,17 +1143,14 @@ static void inf_install(const char *model)
 }
 
 /*
- *    port I/O: PCI's configuration ports (0xcf8, 0xcfc: the device's
- *    configuration space, on bus 0 at its devfn), the rest the device's
+ *    port I/O: the device's (PCI's configuration ports too)
  */
 static u32 mem_phys;                    /* BAR 0, as the device starts */
 
 static u32 io_in(unsigned a, int size)
 {
 	u32 v = 0xffffffff;
-	if (wdev->pci->io_in(a, size, &v))
-		;
-	else if (wdev->io_in)
+	if (wdev->io_in)
 		v = wdev->io_in(a, size);
 	else
 		LOG("in%d %04x\n", size, a);
@@ -1172,9 +1167,7 @@ static void io_out(unsigned a, u32 v, int size)
 {
 	if (win_debug > 1)
 		fprintf(stderr, "win: out%d %04x = %x\n", size, a, v);
-	if (wdev->pci->io_out(a, v, size))
-		;
-	else if (wdev->io_out)
+	if (wdev->io_out)
 		wdev->io_out(a, v, size);
 	else
 		LOG("out%d %04x = %x\n", size, a, v);
@@ -1302,10 +1295,18 @@ static void on_trap(int sig, siginfo_t *si, void *ctx)
 	mprotect(mmio, wdev->mem_size, PROT_NONE);
 }
 
+/* the traps' host (hw/x86_traps.hpp, hw/tsc.hpp): the port I/O, the
+   line */
+static struct Kernel : X86Traps<Kernel>, LineTsc<Kernel> {
+	unsigned long long &line_n = win_line_n;
+	int line_rate = 8000;
+	u32 io_in(unsigned a, int size) { return ::io_in(a, size); }
+	void io_out(unsigned a, u32 v, int size) { ::io_out(a, v, size); }
+} kern;
+
 /* the driver's in and out (a general protection fault without I/O
    permission), cli and sti, CRn, rdtsc (PR_TSC_SIGSEGV) and its
    register window: carried out here and stepped over */
-static X86Traps traps;
 static void on_segv(int sig, siginfo_t *si, void *ctx)
 {
 	ucontext_t *uc = (ucontext_t *)ctx;
@@ -1320,7 +1321,7 @@ static void on_segv(int sig, siginfo_t *si, void *ctx)
 		signal(sig, SIG_DFL);
 		return;
 	}
-	if (traps.step(uc))
+	if (kern.traps_step(uc) || kern.tsc_step(uc))
 		return;
 	fprintf(stderr, "win: fault at %p (%02x %02x %02x), address %p\n",
 		(void *)ip, ip[0], ip[1], ip[2], si->si_addr);
@@ -2249,7 +2250,7 @@ static NTSTATUS NTAPI IoGetDeviceProperty(struct devobj *d, int prop, u32 n, voi
 	case 11: s = drv_key; break;
 	case 13: len = 4; wr32(tmp, 5); break;  /* PCIBus */
 	case 14: len = 4; wr32(tmp, 0); break;  /* bus 0 */
-	case 15: len = 4; wr32(tmp, (wdev->pci->devfn >> 3) << 16 | (wdev->pci->devfn & 7)); break;
+	case 15: len = 4; wr32(tmp, (wdev->devfn >> 3) << 16 | (wdev->devfn & 7)); break;
 	case 22: s = "PCI"; break;                        /* enumerator */
 	default:
 		LOG("IoGetDeviceProperty %d: none\n", prop);
@@ -2292,7 +2293,7 @@ static NTSTATUS NTAPI IoRegisterDeviceInterface(struct devobj *pdo, void *guid, 
 	(void)pdo; (void)ref;
 	snprintf(s, sizeof(s), "\\??\\PCI#VEN_%04X&DEV_%04X#%s#"
 		 "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
-		 wdev->pci->cfg[0] & 0xffff, wdev->pci->cfg[0] >> 16, instance, rd32(g),
+		 wdev->cfg[0] & 0xffff, wdev->cfg[0] >> 16, instance, rd32(g),
 		 rd16(g + 4), rd16(g + 6), g[8], g[9], g[10], g[11], g[12], g[13],
 		 g[14], g[15]);
 	RtlInitUnicodeString(link, a2w(s));
@@ -2892,7 +2893,7 @@ static char svc_name[64];               /* the driver's service */
 static byte res_raw[4 + 8 + 8 + 2 * 16], res_tr[sizeof(res_raw)];
 static void res_init(byte *r, int translated)
 {
-	u32 irq = wdev->pci->cfg[0x3c / 4] & 0xff;
+	u32 irq = wdev->cfg[0x3c / 4] & 0xff;
 	byte *d;
 	memset(r, 0, sizeof(res_raw));
 	wr32(r, 1);       /* one full descriptor */
@@ -2923,7 +2924,7 @@ static u32 NTAPI bus_get(void *ctx, u32 type, void *buf, u32 off, u32 n)
 	u32 i;
 	(void)ctx; (void)type;
 	for (i = 0; i < n; i++)
-		((byte *)buf)[i] = off + i < 256 ? ((byte *)wdev->pci->cfg)[off + i] : 0;
+		((byte *)buf)[i] = off + i < 256 ? ((byte *)wdev->cfg)[off + i] : 0;
 	return n;
 }
 static u32 NTAPI bus_set(void *ctx, u32 type, void *buf, u32 off, u32 n)
@@ -2932,7 +2933,7 @@ static u32 NTAPI bus_set(void *ctx, u32 type, void *buf, u32 off, u32 n)
 	(void)ctx; (void)type;
 	for (i = 0; i < n; i++)
 		if (off + i >= 4 && off + i < 256)
-			((byte *)wdev->pci->cfg)[off + i] = ((byte *)buf)[i];
+			((byte *)wdev->cfg)[off + i] = ((byte *)buf)[i];
 	return n;
 }
 static void NTAPI if_ref(void *ctx) { (void)ctx; }
@@ -3325,15 +3326,12 @@ int win_start(win_dev *dev)
 	struct sigaction sa;
 	char sect[160];
 	const char *v;
-	u32 id = dev->pci->cfg[0], cls = dev->pci->cfg[0x08 / 4], sub = dev->pci->cfg[0x2c / 4];
+	u32 id = dev->cfg[0], cls = dev->cfg[0x08 / 4], sub = dev->cfg[0x2c / 4];
 	int k;
 
 	wdev = dev;
-	mem_phys = dev->pci->cfg[0x10 / 4] & ~0xfu;
-	dev->pci->bar_size[0] = dev->mem_size;
-	traps.in = io_in;
-	traps.out = io_out;
-	traps.tsc = [] { return tsc.read(win_line_n, wdev->rate); };
+	mem_phys = dev->cfg[0x10 / 4] & ~0xfu;
+	kern.line_rate = dev->rate;
 	memset(&sa, 0, sizeof(sa));
 	{
 		/* (the handlers on a stack of their own: a fault of an
@@ -3349,7 +3347,7 @@ int win_start(win_dev *dev)
 	sigaction(SIGSEGV, &sa, NULL);
 	sa.sa_sigaction = on_trap;
 	sigaction(SIGTRAP, &sa, NULL);
-	if (prctl(PR_SET_TSC, PR_TSC_SIGSEGV, 0, 0, 0))
+	if (kern.tsc_trap())
 		perror("win: PR_SET_TSC");
 	if (kpcr_init())
 		return -1;
@@ -3366,7 +3364,7 @@ int win_start(win_dev *dev)
 		      id & 0xffff, id >> 16) + 1;
 	k += snprintf(compat_ids + k, sizeof(compat_ids) - (size_t)k, "PCI\\CC_%04X", cls >> 16) + 1;
 	compat_ids[k] = 0;
-	snprintf(instance, sizeof(instance), "3&61aaa01&0&%02X", dev->pci->devfn);
+	snprintf(instance, sizeof(instance), "3&61aaa01&0&%02X", dev->devfn);
 
 	/* what the INF says: the class, the model's description and
 	   maker, the driver's service; the keys, the registry */

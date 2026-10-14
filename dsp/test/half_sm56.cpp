@@ -13,13 +13,14 @@
  *    0x02000000, so that a bus address is the virtual one less that).
  *
  *    Its hardware: an Intel ICH AC'97 modem controller (8086:2416, its
- *    "is_" back end; half::Ich) with a Motorola modem codec ("MOTf") as
- *    the secondary codec, on port I/O it does with in and out itself:
- *    those trap (no I/O permission) and SIGSEGV's handler carries them
- *    out on the emulated devices (half::X86Traps), PCI's configuration
- *    space at 0xcf8 too (half::PciConfig).  The codec runs at whatever
- *    rate the module sets it to (7200 to 12000 Hz, by modulation): a
- *    windowed sinc resampler between it and the line (half::CodecLine).
+ *    "is_" back end; hw/ich.hpp) with a Motorola modem codec ("MOTf",
+ *    hw/ac97_codec.hpp) as the secondary codec, on port I/O it does with
+ *    in and out itself: those trap (no I/O permission) and SIGSEGV's
+ *    handler carries them out on the emulated devices (hw/x86_traps.hpp),
+ *    PCI's configuration space at 0xcf8 too (hw/pci.hpp).  The codec
+ *    runs at whatever rate the module sets it to (7200 to 12000 Hz, by
+ *    modulation): a windowed sinc resampler between it and the line
+ *    (hw/codec_line.hpp).
  *    Time is the samples': jiffies (HZ 1000), its timers and delays.
  *
  *    Its serial side is the tty driver of the module (mot_open,
@@ -44,6 +45,11 @@
 #include <ucontext.h>
 #include <unistd.h>
 
+#include "hw/ac97_codec.hpp"
+#include "hw/codec_line.hpp"
+#include "hw/ich.hpp"
+#include "hw/pci.hpp"
+#include "hw/x86_traps.hpp"
 #include "modem_half.hpp"
 
 using namespace half;
@@ -74,16 +80,11 @@ KAPI int mot_writeroom(void *tty);
  *    space, the time, the interrupt, the tty
  */
 
-class Sm56 : public HalfModem {
+class Sm56 : public HalfModem, public Ac97Codec<Sm56>, public Ich<Sm56>,
+	     public PciDevice<Sm56>, public X86Traps<Sm56>,
+	     public CodecLine<Sm56> {
 public:
 	Sm56();
-
-	/* the Motorola codec's registers: secondary, 0x80 to 0xff */
-	word codec_regs[0x80] = {};
-	unsigned codec_rate = 8000;
-	Ich ich;
-	PciConfig pci;
-	X86Traps traps;
 
 	/* its interrupt handler and its device */
 	typedef KAPI int (*kisr)(int irq, void *dev, void *regs);
@@ -101,9 +102,6 @@ protected:
 
 private:
 	bool irq_was = false;
-
-	word codec_read(int r);
-	void codec_write(int r, word v);
 };
 
 static Sm56 sm56;
@@ -112,15 +110,26 @@ static Sm56 sm56;
 /* the address the module's bus address a stands for */
 static void *bus_to_virt(u32 a) { return (void *)(uintptr_t)(a + PAGE_OFFSET); }
 
+/* the Motorola codec (extended modem ID: line 1; "MOTf"), the
+   controller's secondary, and the controller's configuration space:
+   its IDs, I/O and bus master on, the modem class, the BARs (256 and
+   128 octets of I/O), the IRQ; function 0 the ICH's LPC bridge */
 Sm56::Sm56() :
 	HalfModem("sm56", "SM56"),
-	ich(*this, NAMBAR, NABMBAR, true, PAGE_OFFSET, false),
-	pci(*this)
+	Ac97Codec(0x0001, 0x4d4f, 0x5466),
+	Ich(NAMBAR, NABMBAR, true, PAGE_OFFSET, false)
 {
-	ich.codec_read = [this](int r) { return codec_read(r); };
-	ich.codec_write = [this](int r, word v) { codec_write(r, v); };
-	traps.in = [this](unsigned a, int size) { return io_in(a, size); };
-	traps.out = [this](unsigned a, u32 v, int size) { io_out(a, v, size); };
+	pci_devfn = DEVFN;
+	pci_cfg[0x00 / 4] = 0x8086 | 0x2416u << 16;
+	pci_cfg[0x04 / 4] = 0x02800005;         /* I/O, bus master */
+	pci_cfg[0x08 / 4] = 0x07030002;         /* modem */
+	pci_cfg[0x10 / 4] = NAMBAR | 1;
+	pci_cfg[0x14 / 4] = NABMBAR | 1;
+	pci_cfg[0x2c / 4] = 0x8086 | 0x2416u << 16;
+	pci_cfg[0x3c / 4] = IRQ | 2 << 8;
+	pci_bar_size[0] = 0x100;
+	pci_bar_size[1] = 0x80;
+	pci_fn0_id = 0x24108086;
 }
 
 /*
@@ -129,39 +138,6 @@ Sm56::Sm56() :
 
 extern "C" unsigned long k_jiffies;
 unsigned long k_jiffies;
-
-/*
- *    the Motorola codec: secondary, registers 0x80 to 0xff
- */
-
-/* codec register r */
-word Sm56::codec_read(int r)
-{
-	r &= 0x7e;
-	switch (r) {
-	case 0x3e:
-		/* ADC/DAC of both lines ready (bits 0..3), what was
-		   written above */
-		return (codec_regs[r] & 0xff00) | 0x000f;
-	default:
-		return codec_regs[r];
-	}
-}
-
-/* codec register r = v (the IDs read only); 0x40 is the codec's rate */
-void Sm56::codec_write(int r, word v)
-{
-	r &= 0x7e;
-	if (r == 0x7c || r == 0x7e || r == 0x3c)
-		return;
-	if (codec_regs[r] != v)
-		LOG("codec %02x = %04x\n", r, v);
-	if (r == 0x40 && v != codec_rate) {
-		codec_rate = v;
-		LOG("codec rate %u Hz\n", v);
-	}
-	codec_regs[r] = v;
-}
 
 /*
  *    port I/O
@@ -173,7 +149,7 @@ void Sm56::codec_write(int r, word v)
 u32 Sm56::io_in(unsigned a, int size)
 {
 	u32 v;
-	if (!pci.io_in(a, size, &v) && !ich.io_in(a, size, &v)) {
+	if (!pci_io_in(a, size, &v) && !ich_io_in(a, size, &v)) {
 		LOG("in%d %04x\n", size, a);
 		v = size == 1 ? 0xff : size == 2 ? 0xffff : 0xffffffff;
 	}
@@ -187,7 +163,7 @@ void Sm56::io_out(unsigned a, u32 v, int size)
 {
 	if (dbg > 1)
 		fprintf(stderr, "sm56: out%d %04x = %x\n", size, a, v);
-	if (!pci.io_out(a, v, size) && !ich.io_out(a, v, size))
+	if (!pci_io_out(a, v, size) && !ich_io_out(a, v, size))
 		LOG("out%d %04x = %x\n", size, a, v);
 }
 
@@ -200,7 +176,7 @@ static void on_segv(int sig, siginfo_t *si, void *ctx)
 	greg_t *g = uc->uc_mcontext.gregs;
 	byte *ip = (byte *)(uintptr_t)g[REG_EIP];
 
-	if (sm56.traps.step(uc))
+	if (sm56.traps_step(uc))
 		return;
 	fprintf(stderr, "sm56: fault at %p (%02x %02x %02x), address %p\n",
 		(void *)ip, ip[0], ip[1], ip[2], si->si_addr);
@@ -621,10 +597,10 @@ KAPI int k_schedule_delayed_work(void *work, unsigned long delay)
    the ISR and tasklets when an interrupt starts */
 short Sm56::line_sample(short in)
 {
-	short out = codec.sample(in, (double)line_rate / codec_rate,
-				 [this](short adc) {
-		short dac = ich.sample(ich.po, 0);
-		ich.sample(ich.pi, adc);
+	short out = codec_line_sample(in, (double)line_rate / codec_rate,
+				      [this](short adc) {
+		short dac = ich_sample(pcm_out, 0);
+		ich_sample(pcm_in, adc);
 		return dac;
 	});
 	bool irq_now;
@@ -634,15 +610,15 @@ short Sm56::line_sample(short in)
 		k_jiffies++;
 		run_timers();
 	}
-	irq_now = ich.irq();
+	irq_now = ich_irq();
 	if (irq_now && !irq_was && isr) {
 		int guard = 0;
-		while (ich.irq() && guard++ < 4) {
+		while (ich_irq() && guard++ < 4) {
 			stack_clear();
 			isr(IRQ, isr_dev, NULL);
 			run_tasklets();
 		}
-		irq_now = ich.irq();
+		irq_now = ich_irq();
 	}
 	irq_was = irq_now;
 	return out;
@@ -670,7 +646,7 @@ void Sm56::dte_poll()
 	});
 }
 
-/* the traps, the patches, the devices, init_module and mot_open */
+/* the traps, the patches, init_module and mot_open */
 int Sm56::start()
 {
 	struct sigaction sa;
@@ -688,28 +664,6 @@ int Sm56::start()
 	}
 	ctype_init();
 	malloc_sizes_init();
-
-	/* the Motorola codec's registers at reset: its IDs, line 1, 8000
-	   Hz */
-	codec_regs[0x3c] = 0x0001;      /* extended modem ID: line 1 */
-	codec_regs[0x40] = 8000;
-	codec_regs[0x7c] = 0x4d4f;      /* "MO" */
-	codec_regs[0x7e] = 0x5466;      /* "Tf" */
-
-	/* the controller's configuration space: its IDs, I/O and bus master
-	   on, the modem class, the BARs (256 and 128 octets of I/O), the IRQ;
-	   function 0 the ICH's LPC bridge */
-	pci.devfn = DEVFN;
-	pci.cfg[0x00 / 4] = 0x8086 | 0x2416u << 16;
-	pci.cfg[0x04 / 4] = 0x02800005;         /* I/O, bus master */
-	pci.cfg[0x08 / 4] = 0x07030002;         /* modem */
-	pci.cfg[0x10 / 4] = NAMBAR | 1;
-	pci.cfg[0x14 / 4] = NABMBAR | 1;
-	pci.cfg[0x2c / 4] = 0x8086 | 0x2416u << 16;
-	pci.cfg[0x3c / 4] = IRQ | 2 << 8;
-	pci.bar_size[0] = 0x100;
-	pci.bar_size[1] = 0x80;
-	pci.fn0_id = 0x24108086;
 
 	stack_clear();
 	r = init_module();

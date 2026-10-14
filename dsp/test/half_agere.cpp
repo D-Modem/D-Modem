@@ -8,8 +8,8 @@
  *
  *    The library drives its hardware itself; here it gets an Intel ICH
  *    AC'97 modem controller (MC97, the "AMR Intel MB" of the library;
- *    half::Ich) and a Silicon Labs Si3038 modem codec, emulated on its
- *    port I/O:
+ *    hw/ich.hpp) and a Silicon Labs Si3038 modem codec
+ *    (hw/ac97_codec.hpp), emulated on its port I/O:
  *
  *    NAMBAR    the codec's registers (0x7c/0x7e "SIL'", 0x40 line rate,
  *              0x3e ready, 0x54 GPIO)
@@ -38,6 +38,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "hw/ac97_codec.hpp"
+#include "hw/ich.hpp"
 #include "modem_half.hpp"
 
 using namespace half;
@@ -73,14 +75,9 @@ int LX_isr_handler(int irq, void *isr, void *regs) fnatr;
  *    the UART's DTE side
  */
 
-class Agere : public HalfModem {
+class Agere : public HalfModem, public Ac97Codec<Agere>, public Ich<Agere> {
 public:
 	Agere();
-
-	/* the Si3038's registers */
-	word codec[0x80] = {};
-	/* the controller (its codec the primary, at NAMBAR) */
-	Ich ich;
 
 	/* time: 125 us a sample; clock reads since a sample */
 	unsigned long long now_us = 0;
@@ -95,8 +92,7 @@ public:
 
 	unsigned long long clock_read();
 	void delay_samples(unsigned n);
-	word codec_read(int r);
-	void codec_write(int r, word v);
+	bool codec_write_hook(int r, word &v);
 	u32 io_in(unsigned a, int size);
 	void io_out(unsigned a, u32 v, int size);
 	void run_tasks();
@@ -117,12 +113,14 @@ private:
 static Agere agere;
 #define LOG(...) do { if (agere.dbg) agere.log(__VA_ARGS__); } while (0)
 
+/* the Si3038 (extended modem ID: line 1; "SIL'"), the primary codec of
+   the controller */
 Agere::Agere() :
 	HalfModem("agere", "AGERE"),
-	ich(*this, NAMBAR, NABMBAR, false, 0, false)
+	Ac97Codec(0x0001, 0x5349, 0x4c27),
+	Ich(NAMBAR, NABMBAR, false, 0, false)
 {
-	ich.codec_read = [this](int r) { return codec_read(r); };
-	ich.codec_write = [this](int r, word v) { codec_write(r, v); };
+	codec_regs[0x62] = 0x7000;      /* line side device: 7 */
 }
 
 /*
@@ -251,33 +249,16 @@ fnatr void x__SLOW_DOWN_IO(void) {}
  *    the Si3038 codec
  */
 
-/* codec register r */
-word Agere::codec_read(int r)
+/* its registers but the IDs and the ready bits (hw/ac97_codec.hpp): the
+   line side device kept 7, a rate other than 8000 Hz said to be
+   missing */
+bool Agere::codec_write_hook(int r, word &v)
 {
-	r &= 0x7e;
-	switch (r) {
-	case 0x3e:
-		/* powered up (8..11 clear): ADC/DAC of both lines ready */
-		return (codec[r] & 0xff00) | 0x000f;
-	default:
-		return codec[r];
-	}
-}
-
-/* codec register r = v: the IDs read only, the line side device kept 7,
-   a rate other than 8000 Hz said to be missing */
-void Agere::codec_write(int r, word v)
-{
-	r &= 0x7e;
-	if (r == 0x7c || r == 0x7e || r == 0x3c)
-		return;
-	if (codec[r] != v)
-		LOG("codec %02x = %04x\n", r, v);
 	if (r == 0x62)
-		v = (v & ~0x7000) | 0x7000;
+		v |= 0x7000;
 	if (r == 0x40 && v != 8000)
 		fprintf(stderr, "agere: line rate %u Hz, only 8000 is there\n", v);
-	codec[r] = v;
+	return false;
 }
 
 /*
@@ -290,7 +271,7 @@ void Agere::codec_write(int r, word v)
 u32 Agere::io_in(unsigned a, int size)
 {
 	u32 v;
-	if (!ich.io_in(a, size, &v)) {
+	if (!ich_io_in(a, size, &v)) {
 		LOG("in%d %04x\n", size, a);
 		v = size == 1 ? 0xff : size == 2 ? 0xffff : 0xffffffff;
 	}
@@ -304,7 +285,7 @@ void Agere::io_out(unsigned a, u32 v, int size)
 {
 	if (dbg > 1)
 		fprintf(stderr, "agere: out%d %04x = %x\n", size, a, v);
-	if (!ich.io_out(a, v, size))
+	if (!ich_io_out(a, v, size))
 		LOG("out%d %04x = %x\n", size, a, v);
 }
 
@@ -554,8 +535,8 @@ void Agere::idle_sample()
 {
 	if (++creeps % 1000 == 1 && dbg > 1)
 		LOG("clock creep %ld at %llu ms\n", creeps, now_us / 1000);
-	ich.sample(ich.po, 0);
-	ich.sample(ich.pi, 0);
+	ich_sample(pcm_out, 0);
+	ich_sample(pcm_in, 0);
 }
 
 /* the interrupt: the ISR and the bottom halves while GLOB_STA asks for
@@ -566,8 +547,8 @@ void Agere::raise_irq()
 	static long nirq;
 	if (++nirq % 1000 == 1 && dbg > 1)
 		LOG("irq %ld, sta %x, pi civ %d lvi %d, po civ %d lvi %d\n", nirq,
-		    ich.status(), ich.pi.civ, ich.pi.lvi, ich.po.civ, ich.po.lvi);
-	while (isr_on && (ich.status() & 0x7) && guard++ < 4) {
+		    ich_status(), pcm_in.civ, pcm_in.lvi, pcm_out.civ, pcm_out.lvi);
+	while (isr_on && (ich_status() & 0x7) && guard++ < 4) {
 		stack_clear();
 		LX_isr_handler(IRQ, isr_dev, NULL);
 		run_tasks();
@@ -587,13 +568,13 @@ void Agere::delay_samples(unsigned n)
 short Agere::sample(short in)
 {
 	short out;
-	bool before = ich.irq();
+	bool before = ich_irq();
 
-	out = ich.sample(ich.po, 0);
-	ich.sample(ich.pi, in);
+	out = ich_sample(pcm_out, 0);
+	ich_sample(pcm_in, in);
 	now_us += 125;
 	idle_reads = 0;
-	if (!before && ich.irq())
+	if (!before && ich_irq())
 		raise_irq();
 	if (timer_armed && now_us >= timer_at) {
 		timer_armed = 0;
@@ -617,13 +598,6 @@ short Agere::line_sample(short in)
 int Agere::start()
 {
 	unsigned char res[8] = { 0 };
-
-	/* the Si3038's registers at reset: its IDs, line 1, 8000 Hz */
-	codec[0x3c] = 0x0001;           /* extended modem ID: line 1 */
-	codec[0x40] = 8000;
-	codec[0x7c] = 0x5349;           /* "SI" */
-	codec[0x7e] = 0x4c27;           /* "L'": Si3038 */
-	codec[0x62] = 0x7000;           /* line side device: 7 */
 
 	stack_clear();
 	if (linux_modem_init()) {
