@@ -12,7 +12,7 @@ compiler (`g++ -m32`), for the original library.
 ## Tests
 
     ctest --test-dir build -j16         # all of them (some four times the processors:
-                                        # most calls wait; about 4.5 min on 4)
+                                        # most calls wait; 4 min or less on 4)
     ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
     ctest --test-dir build -L interop -j16  # calls between the original library and this one,
@@ -69,7 +69,7 @@ The unpaced calls run a little nicer (`nice` 10) than the rest, so that
 the calls in real time next to them get the processor first. Each takes
 about one processor while it runs; the calls in real time take little,
 so `-j` can be some four times the processors: on 4, the whole suite
-takes about 4.5 minutes at `-j16` (7.5 at `-j8`; 13 when every call ran
+takes 3.5 to 4.5 minutes at `-j16` (7.5 at `-j8`; 13 when every call ran
 in real time). None of the calls has to run alone any more.
 `MODEM_REALTIME=1 ctest ...` runs every call in real time, as they all
 did before (for comparing a failure).
