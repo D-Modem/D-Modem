@@ -51,6 +51,7 @@ as it is.
 | `dsp/v34_modem.cpp` | With precoding, a renegotiation on a line where the training kept no good equalizer (mse never under 0.02) trained from the equalizer with 1 + H(z) in it, and E put 1 + H(z) in again (60 taps). The equalizer 1 + H(z) goes into is now the one to go back to, and it never goes in twice (pump_test `V34Precoding`, with `DSP_V34_PRECODE_MIN`) |
 | `dsp/v90.h` | `v90_tx_sample()` was declared but never defined |
 | `dsp/dp_fsk.cpp`, `dp_v22.cpp`, `dp_v32.cpp` | An early return (another pump, an error) left the rest of the output block unwritten: whatever the host's buffer held went to the line. The block is now cleared first |
+| `dsp/dp_fsk.cpp`, `dp_v22.cpp`, `dp_v32.cpp`, `dp_v34.cpp` | The answer tone came 3 s after going off hook: the core's answer delay (S92, 2 s: V.25's silent interval) and then 1 s of the pump's own. The pumps now wait V.8's 0.2 s, the tone at 2.2 s (V.25: 1.8 to 2.5 s) |
 | `dsp/dsp_glue.cpp` | Caller ID: a private ('P') number or name was reported as out of area ('O') |
 | `dsp/dp_dummy.cpp` | `malloc` not checked |
 | `dsp/modem_defs.h` | `MFMT_BYTES()` used a misspelt macro |
@@ -97,8 +98,6 @@ bug*, *risk* (a failure needs unusual input or timing) or *cleanup*.
 
 ### V.34, V.90, V.92
 
-- **risk** — the FSK, V.22 and V.32 answerers wait 1 s before the answer
-  tone; V.25 asks for 1.8 to 2.5 s.
 
 ### Fax
 

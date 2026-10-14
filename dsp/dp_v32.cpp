@@ -829,7 +829,10 @@ int V32Pump::handshake()
 	switch (state) {
 	/* answering modem */
 	case A_SILENCE:
-		if (count >= ms2samples(1000, srate)) {
+		/* V.8's 0.2 s at least (8.2/V.8): the core's answer delay (its
+		   S-register, 2 s) is V.25's silent interval of 1.8 to 2.5 s
+		   (4.3/V.25), the answer tone then within it */
+		if (count >= ms2samples(200, srate)) {
 			set_state(A_ANS);
 			set_tx(TXM_ANS);
 		}

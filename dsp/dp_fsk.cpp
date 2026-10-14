@@ -348,7 +348,10 @@ int FskPump::process(void *in, void *out, int cnt)
 
 		switch (state) {
 		case FSK_ANS_SILENCE:
-			if (count >= ms2samples(1000, srate)) {
+			/* V.8's 0.2 s at least (8.2/V.8): the core's answer delay (its
+			   S-register, 2 s) is V.25's silent interval of 1.8 to 2.5 s
+			   (4.3/V.25), the answer tone then within it */
+			if (count >= ms2samples(200, srate)) {
 				/* Bell 103 uses its 2225 Hz mark as answer tone */
 				set_state(dp.id == DP_B103 ?
 					      FSK_TRAIN : FSK_ANS_TONE);

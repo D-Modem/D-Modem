@@ -53,6 +53,12 @@ K56flex, runs V.90). Between two digital modems V.91 (see
 [V.91](v91.md#v91-digital-to-digital)) takes the place of V.90. With the default `AT+MS=92` at 9600 Hz the modem connects at V.34 or
 lower.
 
+Answering: the core starts the answering pump S92 seconds (2) after
+going off hook, which is V.25's silent interval (1.8 to 2.5 s, 4.3/V.25);
+the pump stays silent 0.2 s more (V.8's least, 8.2/V.8) and then sends
+its answer tone (ANS, ANSam, or Bell's 2225 Hz), 2.2 s after the off
+hook, as the original library's pumps do at once after the same delay.
+
 The V.22/V.22bis constellation, quadrant coding and phase tables come from
 the original library's `SMCv22_*` and `DECv22_*` tables, and the V.32bis
 constellations from its `VTBv32_*` tables.
