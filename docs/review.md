@@ -78,6 +78,7 @@ as it is.
 | `dsp/test/fax_docs.cpp` | `same_pages` passed for two files without a readable page |
 | `dsp/test/interop_call.cpp` | The BULK write loop had no time limit; the fax relays could hang at the join after a modem died; children outlived a dead driver (now `PR_SET_PDEATHSIG`); a reaped pid could get a SIGKILL |
 | `dsp/test/half_hsf.c` | The last character of a ';' comment in an .inf value was taken as a byte |
+| `dsp/test/interop_call.cpp` | A fax page was found by its first 128 bits only when all were right. The original library's V.17 receiver at 12000 bit/s decides one point wrong about once a page, depending on how its 20 ms frames fall on the trainings, and in one of those alignments it is in those bits: `fax_interop_121_open_sends` failed about half the time. Now 8 of them may be wrong; the page's error count takes them |
 | `asterisk/test/sip_call.py` | A traceback instead of FAIL when slmodemd gave no pty or went away |
 
 ## Checked and left as they are
@@ -152,10 +153,6 @@ None left.
   the PCTel modem sometimes never starts its V.21 answer carrier, and
   our caller times out after 60 s. It failed 2 of 20 runs before this
   review's changes and about 2 of 40 after them.
-- **intermittent** — `fax_interop_121_open_sends`: under heavy parallel
-  load (`ctest -j8` with the Agere tests) the original library's V.17
-  receiver sometimes doesn't find the start of our page; it passes when
-  run alone.
 - **likely bug** (low confidence) — `interop_call.cpp` MIDCALL: data the
   remote sent around "+++" is dropped with the commands' answers.
 - **likely bug** — `half_agere.c`, `half_sm56.c`: an interrupt raised

@@ -33,7 +33,17 @@ bridge: the first symbols after the training tell which. During a bridge
 it decides on the nearest training point instead of the known sequence:
 the Agere modem's bridge is not that sequence, and following the wrong
 points wound the carrier loop up to a frequency offset of some 3 Hz that
-spoiled the first seconds of the data. V.27ter, too, leads the data
+spoiled the first seconds of the data. At 12000 bit/s after a short
+train the original receiver decides an outer corner of the constellation
+now and then as the point 8 away in its subset (a coordinate of 7 comes
+out as -1): one wrong bit on the line, three after the descrambler. Our
+signal is the same every time; whether and where it happens depends
+only on where the receiver's 20 ms frames fall on the long training and
+on the short one, and it does in three of the four alignments, about
+once a page. The data 1.4 dB down clears all four (0.5 dB down it loses
+the TCF instead), and TEP before the training (the original library
+sends 200 ms of it) two of the three, so the transmitter keeps V.17's
+levels and no TEP. V.27ter, too, leads the data
 with 100 ms of ones (the original library sends some 60 ms): with the 8
 symbols of the standard its receiver lost the start of a page now and
 then. In data mode the V.17 receiver follows a clear

@@ -1297,16 +1297,22 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 			write_file(record + "/page.rx", data);
 			write_file(record + "/page.tx", page);
 		}
-		/* the data is a bit stream: the page at any bit offset */
+		/* the data is a bit stream: the page at any bit offset, where
+		   its first 128 bits come with 8 wrong at most (one wrong bit
+		   on the line is three after the descrambler; elsewhere some
+		   64 are wrong).  The original library's V.17 receiver at
+		   12000 bit/s may decide one point wrong near the start, as
+		   anywhere in the page, which the error count takes. */
 		std::vector<int> rb = bits(data), pb = bits(page);
 		long i = -1;
 		long lim = std::min<long>((long)rb.size() - 128, 4000);
-		for (long k = 0; k < lim; k++)
-			if (std::equal(pb.begin(), pb.begin() + 128,
-				       rb.begin() + k)) {
+		for (long k = 0; k < lim && i < 0; k++) {
+			int wrong = 0;
+			for (int j = 0; j < 128 && wrong <= 8; j++)
+				wrong += rb[k + j] != pb[j];
+			if (wrong <= 8)
 				i = k;
-				break;
-			}
+		}
 		long errs = -1;
 		std::vector<long> pos;
 		if (i >= 0) {
