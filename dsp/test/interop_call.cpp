@@ -695,9 +695,19 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			}
 			if (!call)
 				wav_mark();
-			dte.cmd(1, "ATA");
-			dte.cmd(0, "ATD" + env("DIAL"));
+			/* ANSWER_AFTER: B off hook once A has dialed (its
+			   blind dial wait and digits), as the call rings only
+			   then on a line; else both at once */
 			double t_call = now();
+			double ans_after = atof(env("ANSWER_AFTER", "0").c_str());
+			if (ans_after > 0) {
+				dte.cmd(0, "ATD" + env("DIAL"));
+				dte.pump(ans_after);
+				dte.cmd(1, "ATA");
+			} else {
+				dte.cmd(1, "ATA");
+				dte.cmd(0, "ATD" + env("DIAL"));
+			}
 			if (dte.wait(0, connect_a, 90))
 				dte.wait(1, connect_b, 15);
 			say("A: %s\n", show(dte.buf[0]).c_str());

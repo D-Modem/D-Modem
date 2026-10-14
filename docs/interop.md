@@ -294,6 +294,12 @@ Jd, a signal of period 6 with some of its energy at 1333 Hz is Su now,
 and Su's reversals are each period's phase against Su's.
 
 
+`ANSWER_AFTER=<s>` gives the answerer its ATA that long after the
+caller's ATD, as a real line rings only once the number is dialed:
+the quick connect tests dial (`DIAL`), and the Agere modem waits 2 s off
+hook before its digits; answering at once, our ANSam would be over
+before it listens.
+
 `MODEM_REC=<prefix>` makes `modem_half` record its line input and output
 (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>` sets the debug level the
 interop calls run the modems with. `WAV=<file>` makes `interop_call` save

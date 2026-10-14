@@ -324,7 +324,7 @@ std::vector<Call> calls()
 	add("agere", "agere_v92_qc", "agere", "open8",
 	    "ATX3;AT+MS=V92;AT+PQC=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
-	      "CALLS=2", "DIAL=5551234", "STREAM=3",
+	      "CALLS=2", "DIAL=5551234", "ANSWER_AFTER=3", "STREAM=3",
 	      "EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2",
 	      "PROTO_B=ATX3;AT+MS=92" })->serial = true;
 	/* V.90: the Agere modem as the analogue modem, the open one as the
@@ -426,7 +426,7 @@ std::vector<Call> calls()
 	   its INFO1a says high carrier, but it sends on the low one */
 	add("sm56", "sm56_v92_qc", "sm56", "open8", "ATX3;AT+MS=V92",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
-	      "CALLS=2", "DIAL=5551234", "STREAM=3",
+	      "CALLS=2", "DIAL=5551234", "ANSWER_AFTER=3", "STREAM=3",
 	      "EXPECT_B=(?s)V.92 quick connect.*V.92 short phase 2.*V.90 "
 	      "connect", "REJECT_B=(?s)V.92 short phase 2.*retrain",
 	      "PROTO_B=ATX3;AT+MS=92" });
