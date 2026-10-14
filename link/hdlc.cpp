@@ -145,8 +145,8 @@ int Async::put_bits(int nbits, const uint8_t *buf, int n)
 /*
  *    the detection phase
  *
- *    originator: transmits ODPs until an ADP or flags come (it has no
- *    T400 here: the modem core skips the phase at the originator);
+ *    originator: transmits ODPs until an ADP or flags come, at most
+ *    T400 (then async: the remote has no V.42);
  *    answerer: transmits marks until the phase ends, at least 10 ADPs
  *    after an ODP, or until continuous flags come.
  *
@@ -161,11 +161,22 @@ static const uint8_t ADP0 = 0xa2, ADP1_V14 = 0x00, ADP1_V42 = 0xc2;
 static const int MAX_TX_PATTERNS = 16;
 static const int PATTERN_SIZE = 36;
 
-/* the originator's bit timer: its ODPs start after 64 octets of marks */
+/* T400 (750 ms) in bits at the data pump's rate (a nominal 28800 bit/s
+   if not known: 18 s at 1200 bit/s, longer than a remote without V.42
+   waits for our CONNECT) */
+static long t400(Link *link)
+{
+	const int rate = link->tx_rate() ? link->tx_rate() : 28800;
+	return rate * 3L / 4;
+}
+
+/* the originator's bit timer: its ODPs start after 64 octets of marks,
+   and T400 with them (7.2/V.42) */
 void Detector::begin(Link *link)
 {
 	link->logf("detector start...");
 	link->det_.tx_count_ = 1;
+	link->set_timer(t400(link), finish);
 }
 
 /* the bit timer at the end of the phase: LAPM if an ADP (V.42), ODPs or
@@ -181,10 +192,6 @@ void Detector::finish(Link *link)
    come, at most T400 */
 void Detector::start(Link *link)
 {
-	/* T400 (750 ms) at the data pump's rate (a nominal 28800 bit/s
-	   if not known: 18 s at 1200 bit/s, longer than a remote without
-	   V.42 waits for our CONNECT) */
-	const int rate = link->tx_rate() ? link->tx_rate() : 28800;
 	link_ = link;
 	tx_count_ = 0;          /* mute */
 	rx_count_ = 0;
@@ -200,7 +207,7 @@ void Detector::start(Link *link)
 		tx_pattern_[1] = ADP1_V42;
 		rx_pattern_[0] = ODP0;
 		rx_pattern_[1] = ODP1;
-		link->set_timer(rate * 3 / 4, finish);
+		link->set_timer(t400(link), finish);
 	}
 	tx_.clear();
 	rx_.clear();

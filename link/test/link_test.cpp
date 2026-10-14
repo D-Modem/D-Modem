@@ -760,6 +760,23 @@ TEST(Link, V14)
 		 false);
 }
 
+/* the caller offers LAPM with the detection phase, the answerer has no
+   V.42 (no ADP, no flags): the caller's ODPs go unanswered and it falls
+   back to async after T400 (7.2/V.42) */
+TEST(Link, OdpUnanswered)
+{
+	rnd_state = 12345;
+	Config c;
+	Pair p(lapm_config(3), c);
+	p.start(true, false);
+	/* 64 octets of marks, then T400 (750 ms at the pump's rate) */
+	p.run(9600);
+	CHECK(p.dc.detected && !p.lc.ec(), "caller: no LAPM within 1 s");
+	CHECK(p.dc.up && p.da.up, "both up (async)");
+	transfer("odp caller, async answerer", p, 3000, 3000, 9600 * 10,
+		 false);
+}
+
 /* the caller goes to LAPM without the detection phase (as after V.8), the
    answerer has no V.42 at all: its XIDs unanswered N400 times, the caller
    goes on in async */

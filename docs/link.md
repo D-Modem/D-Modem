@@ -5,7 +5,7 @@ bits once a call has connected (C++, `namespace dlink`):
 
 - **V.42 detection phase** (`Detector`, `hdlc.cpp`): the originator's ODPs,
   the answerer's ADPs, or the HDLC flags of a modem that skips the phase;
-  T400 at the answerer.
+  T400 at both ends (async when it runs out: the remote has no V.42).
 - **V.42 LAPM** (`Lapm`, `lapm.cpp`) over **HDLC** framing (`Hdlc`): modulo
   128, windows of up to 15 frames of up to 128 octets, REJ recovery,
   RNR while the DTE does not take the data, T401 counted in transmitted
