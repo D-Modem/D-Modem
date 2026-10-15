@@ -9,7 +9,7 @@
 
 #include "line_recorder.h"
 
-namespace slm {
+namespace dmd {
 
 /* see line_recorder.h */
 bool LineRecorder::open(const char *base, const char *rx_ext,
@@ -38,4 +38,4 @@ void LineRecorder::close()
 	rx_ = tx_ = nullptr;
 }
 
-} // namespace slm
+} // namespace dmd

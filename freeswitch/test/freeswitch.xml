@@ -168,7 +168,7 @@
         </condition>
       </extension>
 
-      <!-- sip.sh: D-Modem (slmodemd) calls any number -->
+      <!-- sip.sh: D-Modem (dmodemd) calls any number -->
       <extension name="number">
         <condition field="destination_number" expression="^\d+$">
           <action application="dmodem" data="bbs"/>

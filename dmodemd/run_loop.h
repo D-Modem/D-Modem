@@ -1,20 +1,20 @@
 /*
  *
- *    run_loop.h - the main loop of a modem program (slmodemd, the
+ *    run_loop.h - the main loop of a modem program (dmodemd, the
  *                 modem_test pairs): until SIGINT, SIGTERM or stop(),
  *                 each turn the modems' work due, then select() on the
  *                 descriptors the turn watches until their next timer
  *
  */
-#ifndef SLMODEMD_RUN_LOOP_H
-#define SLMODEMD_RUN_LOOP_H
+#ifndef DMODEMD_RUN_LOOP_H
+#define DMODEMD_RUN_LOOP_H
 
 #include <signal.h>
 #include <sys/select.h>
 
 namespace dcore { class Modem; }
 
-namespace slm {
+namespace dmd {
 
 class RunLoop {
 public:
@@ -43,6 +43,6 @@ private:
 	int max_ = -1;
 };
 
-} // namespace slm
+} // namespace dmd
 
 #endif

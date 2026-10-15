@@ -106,7 +106,7 @@ int log_printf(unsigned level, const char *fmt, ...)
 }
 
 /* the pumps' level follows the modem's; with log_data_level, the
-   binary log slmodem.log[.suffix] in the current directory (and the
+   binary log dmodem.log[.suffix] in the current directory (and the
    pumps at level 3 at least); -1 if it cannot be created */
 int log_open(const char *suffix)
 {
@@ -115,9 +115,9 @@ int log_open(const char *suffix)
 	if (!log_data_level)
 		return 0;
 	if (suffix)
-		snprintf(name, sizeof(name), "slmodem.log.%s", suffix);
+		snprintf(name, sizeof(name), "dmodem.log.%s", suffix);
 	else
-		snprintf(name, sizeof(name), "slmodem.log");
+		snprintf(name, sizeof(name), "dmodem.log");
 	log_fd = creat(name, S_IRUSR | S_IWUSR);
 	if (log_fd < 0) {
 		fprintf(stderr, "cannot create `%s': %s\n", name,

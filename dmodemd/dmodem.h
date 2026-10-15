@@ -1,6 +1,6 @@
 /*
  *
- *    dmodem.h - the modem as a library: the slmodemd modem core (AT
+ *    dmodem.h - the modem as a library: D-Modem's modem core (AT
  *               commands, V.42/LAPM, V.42bis) with the open data pumps,
  *               for a program that has the audio itself (an Asterisk
  *               channel, for one)

@@ -36,7 +36,7 @@
 
 extern "C" {
 
-/* the library's records for the binary log (slmodem.log): the core's */
+/* the library's records for the binary log (dmodem.log): the core's */
 int modem_debug_log_data(struct modem *m, unsigned id, const void *data,
 			 int count)
 {

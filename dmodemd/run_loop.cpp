@@ -10,7 +10,7 @@
 
 #include "run_loop.h"
 
-namespace slm {
+namespace dmd {
 
 volatile sig_atomic_t RunLoop::running_ = 1;
 
@@ -64,4 +64,4 @@ int RunLoop::wait(long ms)
 	return ret;
 }
 
-} // namespace slm
+} // namespace dmd

@@ -18,8 +18,8 @@
 
 /*
  *
- *    sip.cpp - slmodemd's telephone line: the SIP user agent of the
- *              former d-modem program (pjsua), now a part of slmodemd
+ *    sip.cpp - dmodemd's telephone line: the SIP user agent of the
+ *              former d-modem program (pjsua), now a part of dmodemd
  *
  *    pjsua runs its own threads: the SIP stack's, and the media clock
  *    that moves the call's audio through the conference bridge, through
@@ -113,7 +113,7 @@ int ctl[2] = {-1, -1};                  /* RING / CANCEL to the modem */
 std::thread service;
 std::atomic<bool> running{false};
 
-slm::LineRecorder rec;                  /* $DMODEM_REC.rx and .tx */
+dmd::LineRecorder rec;                  /* $DMODEM_REC.rx and .tx */
 
 /* calls into pjsua from a thread of ours */
 void pj_register_thread()
@@ -121,7 +121,7 @@ void pj_register_thread()
 	static thread_local pj_thread_desc desc;
 	static thread_local pj_thread_t *thread;
 	if (!pj_thread_is_registered())
-		pj_thread_register("slmodemd", desc, &thread);
+		pj_thread_register("dmodemd", desc, &thread);
 }
 
 /* the bridge's audio for the modem (in the media clock's thread): a

@@ -54,8 +54,8 @@ server or program then talks to the remote BBS or ISP. In `originate`,
 the comma form needs no quoting; an application argument with a space
 does, as in `'&dmodem_send_fax(/tmp/doc.tif +1 555 0100)'`.
 
-The modem is `libdmodem` ([slmodemd/dmodem.h](../slmodemd/dmodem.h)):
-the slmodemd modem core (AT commands, V.42 error correction, V.44 or V.42bis
+The modem is `libdmodem` ([dmodemd/dmodem.h](../dmodemd/dmodem.h)):
+D-Modem's modem core (AT commands, V.42 error correction, V.44 or V.42bis
 compression) with the open data pumps of `dsp`. It supports:
 - V.21, V.22, V.22bis, V.23, Bell 103 and 212A, V.32, V.32bis and V.34;
 - V.90 as the digital (server) modem: up to 56000 bit/s downstream to a
@@ -209,7 +209,7 @@ test/run.sh AT+MS=122             # V.22bis (also 22, 32, 132, ...)
 test/run.sh AT+MS=34 bbsexec      # the BBS as a program on the pty
 test/run.sh AT+MS=34 bbsalaw      # the answerer on A-law: transcoded
 LAW=alaw test/run.sh              # on PCMA
-test/sip.sh                       # D-Modem (slmodemd) calls dmodem
+test/sip.sh                       # D-Modem (dmodemd) calls dmodem
 INCOMING=1 test/sip.sh            # dmodem calls D-Modem
 test/fax.sh                       # faxes, also against mod_spandsp
 ```

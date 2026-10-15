@@ -1,5 +1,5 @@
 #!/bin/sh
-# sip.sh [AT commands, ';' separated]: D-Modem (slmodemd, built in ../..)
+# sip.sh [AT commands, ';' separated]: D-Modem (dmodemd, built in ../..)
 # calls DModem(bbs) over SIP in a private Asterisk (installed
 # with chan_pjsip; app_dmodem.so from the CMake build), or with INCOMING=1 answers
 # DModem(term,o)'s call; see sip_call.py
@@ -62,12 +62,12 @@ i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do
 	sleep 0.5; i=$((i+1)); [ $i -lt 60 ] || { tail "$run/console.log"; exit 1; }
 done
 $ast -rx "pjsip show endpoints" | grep -E "Endpoint:.*modem"
-export SIP_LOGIN=modem:modem@127.0.0.1:5070 SIP_LOG=$run/slmodemd.log
-# INCOMING=1: Asterisk calls D-Modem (slmodemd -L), DModem(term,o) calls
+export SIP_LOGIN=modem:modem@127.0.0.1:5070 SIP_LOG=$run/dmodemd.log
+# INCOMING=1: Asterisk calls D-Modem (dmodemd -L), DModem(term,o) calls
 if [ -n "$INCOMING" ]; then
 	export SIP_IN="$ast -rx 'channel originate PJSIP/modem extension s@modem-call'"
 fi
-"$here/sip_call.py" "$build/slmodemd/slmodemd" 5551000 "$1"
+"$here/sip_call.py" "$build/dmodemd/dmodemd" 5551000 "$1"
 r=$?
 sleep 2
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"

@@ -5,7 +5,7 @@
  *              and its timers, between a DTE, the data pumps (dsp/) and
  *              the data link layer (link/)
  *
- *    A program that runs a modem (slmodemd, libdmodem, a test) is its
+ *    A program that runs a modem (dmodemd, libdmodem, a test) is its
  *    Host: it has the line (the call's audio) and the DTE, and it tells
  *    the time.  It hands the modem the DTE's characters (dte_input()), the
  *    line's samples while the modem is started (process()), and calls

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-# root_test.py <slmodemd>: slmodemd started as root goes on as nobody,
+# root_test.py <dmodemd>: dmodemd started as root goes on as nobody,
 # and what needs root's rights still works after: the data file is saved
 # at the end, the link in /dev follows the pty made anew when the DTE
-# hangs up, and goes when slmodemd ends, even killed (a process of its
+# hangs up, and goes when dmodemd ends, even killed (a process of its
 # own, the link's keeper, keeps root's rights for it alone).  Not root:
 # skipped (77).
 #
 # The modem is dmodem<n> for an n with no link yet (from 50): its
-# link /dev/ttyDM<n>, its data file /var/lib/slmodem/data.dmodem<n>,
+# link /dev/ttyDM<n>, its data file /var/lib/dmodem/data.dmodem<n>,
 # removed after (the directory too if made here).  No SIP server: the
 # modem neither calls nor registers.
 import os
@@ -26,7 +26,7 @@ import tty
 if os.geteuid() != 0:
     print("SKIP: not root")
     sys.exit(77)
-slmodemd = sys.argv[1]
+dmodemd = sys.argv[1]
 NOBODY = 65534
 try:
     dialout = grp.getgrnam("dialout").gr_gid
@@ -35,7 +35,7 @@ except KeyError:
 
 n = next(n for n in range(50, 100) if not os.path.lexists("/dev/ttyDM%d" % n))
 dev, link = "dmodem%d" % n, "/dev/ttyDM%d" % n
-datadir = "/var/lib/slmodem"
+datadir = "/var/lib/dmodem"
 data = "%s/data.dmodem%d" % (datadir, n)
 made_dir = not os.path.isdir(datadir)
 if made_dir:
@@ -53,8 +53,8 @@ def check(ok, what):
     return ok
 
 
-class Slmodemd:
-    """slmodemd on dev, its output gathered; ready() once it runs as
+class Dmodemd:
+    """dmodemd on dev, its output gathered; ready() once it runs as
     nobody"""
 
     def __init__(self):
@@ -64,7 +64,7 @@ class Slmodemd:
         s.close()
         env = dict(os.environ, SIP_LOGIN="test:test@127.0.0.1:9",
                    SIP_PORT=str(port))
-        self.p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-n", dev],
+        self.p = subprocess.Popen(["stdbuf", "-oL", "-eL", dmodemd, "-n", dev],
                                   stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, env=env)
         self.out = b""
@@ -73,7 +73,7 @@ class Slmodemd:
 
     def gather(self):
         for l in self.p.stdout:
-            sys.stdout.write("  slmodemd: " + l.decode(errors="replace"))
+            sys.stdout.write("  dmodemd: " + l.decode(errors="replace"))
             with self.lock:
                 self.out += l
                 self.lock.notify_all()
@@ -127,7 +127,7 @@ def gone(pid):
         return True
 
 
-# the slave as slmodemd's defaults have it: group dialout, mode 0660
+# the slave as dmodemd's defaults have it: group dialout, mode 0660
 def check_slave(path):
     st = os.stat(path) if path else None
     check(st is not None and (dialout is None or st.st_gid == dialout) and
@@ -155,17 +155,17 @@ def at_ok(path):
 
 
 try:
-    # a pty of our own below slmodemd's: freed before the hangup, its
+    # a pty of our own below dmodemd's: freed before the hangup, its
     # number is the new pty's
     own = os.openpty()
-    m = Slmodemd()
+    m = Dmodemd()
     l, pts = m.links(1)
     check(l == link, "the link is %s (%s)" % (link, l))
-    check(m.ready(), "slmodemd runs")
-    check(uids(m.p.pid) == [NOBODY] * 4, "slmodemd runs as nobody")
+    check(m.ready(), "dmodemd runs")
+    check(uids(m.p.pid) == [NOBODY] * 4, "dmodemd runs as nobody")
     keepers = children(m.p.pid)
     check(len(keepers) == 1 and uids(keepers[0])[1] == 0,
-          "one child of slmodemd's, root's: the keeper")
+          "one child of dmodemd's, root's: the keeper")
     keeper = keepers[0] if keepers else None
     if keeper:
         fds = sorted(int(f) for f in os.listdir("/proc/%d/fd" % keeper))
@@ -192,7 +192,7 @@ try:
     os.close(fd)
     m.links(3)
     m.p.send_signal(signal.SIGTERM)
-    check(m.p.wait(10) == 0, "slmodemd ends on SIGTERM")
+    check(m.p.wait(10) == 0, "dmodemd ends on SIGTERM")
     check(not os.path.lexists(link), "the link is gone")
     check(keeper is None or gone(keeper), "the keeper is gone")
     st = os.stat(data) if os.path.exists(data) else None
@@ -201,8 +201,8 @@ try:
           "the data file saved (root's, 0600): %s" % data)
 
     # killed: the keeper removes the link
-    m = Slmodemd()
-    check(m.ready() and os.path.islink(link), "slmodemd runs again, the link made")
+    m = Dmodemd()
+    check(m.ready() and os.path.islink(link), "dmodemd runs again, the link made")
     keepers = children(m.p.pid)
     m.p.kill()
     m.p.wait(10)

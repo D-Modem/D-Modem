@@ -6,13 +6,13 @@
  *                      user agent's DMODEM_REC)
  *
  */
-#ifndef SLMODEMD_LINE_RECORDER_H
-#define SLMODEMD_LINE_RECORDER_H
+#ifndef DMODEMD_LINE_RECORDER_H
+#define DMODEMD_LINE_RECORDER_H
 
 #include <stddef.h>
 #include <stdio.h>
 
-namespace slm {
+namespace dmd {
 
 class LineRecorder {
 public:
@@ -43,6 +43,6 @@ private:
 	FILE *rx_ = nullptr, *tx_ = nullptr;
 };
 
-} // namespace slm
+} // namespace dmd
 
 #endif

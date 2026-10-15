@@ -6,7 +6,7 @@
 # asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
-# two modems of the module, D-Modem (slmodemd) over SIP both ways, and
+# two modems of the module, D-Modem (dmodemd) over SIP both ways, and
 # faxes, also against their own fax (spandsp).
 name: CI
 
@@ -43,9 +43,9 @@ jobs:
       - name: Tests
         run: ctest --test-dir build -L "quick|spandsp" -j4 --output-on-failure
 
-      # slmodemd started as root (ctest skips it as the runner's user)
-      - name: slmodemd as root
-        run: sudo python3 slmodemd/test/root_test.py build/slmodemd/slmodemd
+      # dmodemd started as root (ctest skips it as the runner's user)
+      - name: dmodemd as root
+        run: sudo python3 dmodemd/test/root_test.py build/dmodemd/dmodemd
 
   asterisk:
     runs-on: ubuntu-24.04
@@ -96,7 +96,7 @@ jobs:
       - name: Logs of a failed step
         if: failure()
         run: |
-          for f in /tmp/dmodem-*/slmodemd.log /tmp/dmodem-*/console.log \
+          for f in /tmp/dmodem-*/dmodemd.log /tmp/dmodem-*/console.log \
                    /tmp/dmodem-*/log/freeswitch.log; do
             [ -f "$f" ] || continue
             echo "== $f"; tail -80 "$f"
@@ -166,7 +166,7 @@ jobs:
       - name: Logs of a failed step
         if: failure()
         run: |
-          for f in /tmp/dmodem-*/slmodemd.log /tmp/dmodem-*/console.log \
+          for f in /tmp/dmodem-*/dmodemd.log /tmp/dmodem-*/console.log \
                    /tmp/dmodem-*/log/freeswitch.log; do
             [ -f "$f" ] || continue
             echo "== $f"; tail -80 "$f"

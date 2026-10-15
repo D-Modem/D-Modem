@@ -1,5 +1,5 @@
 % at_commands.tex - the AT command set of D-Modem's modem core
-% (core/at.cpp), as slmodemd, libdmodem and the PBX modules have it.
+% (core/at.cpp), as dmodemd, libdmodem and the PBX modules have it.
 % Built with docs/at/build.sh into docs/at_commands.pdf.
 \documentclass[a4paper,10pt]{article}
 
@@ -28,7 +28,7 @@
   bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=1,
   pdftitle={D-Modem AT Command Reference},
   pdfauthor={D-Modem},
-  pdfsubject={The AT commands of slmodemd, libdmodem and the PBX modules},
+  pdfsubject={The AT commands of dmodemd, libdmodem and the PBX modules},
   pdfkeywords={AT commands, modem, V.250, S-registers}]{hyperref}
 \usepackage{bookmark}
 
@@ -166,7 +166,7 @@
     at ([xshift=2.2cm,yshift=-15.8cm]current page.north west)
     {{\fontsize{48}{54}\selectfont\bfseries D-Modem}\\[12pt]
      {\fontsize{28}{32}\selectfont AT Command Reference}\\[20pt]
-     {\Large\color{dmhead}The modem core of slmodemd, libdmodem
+     {\Large\color{dmhead}The modem core of dmodemd, libdmodem
       and the PBX modules}};
   \node[anchor=north west,text=dmblue,inner sep=0pt]
     at ([xshift=2.2cm,yshift=-18.6cm]current page.north west)
@@ -182,7 +182,7 @@
 D-Modem's modem core (\cmd{core/} in the source) takes the AT commands of
 every D-Modem program:
 \begin{itemize}
-\item \textbf{slmodemd}, the modem on a pseudo terminal
+\item \textbf{dmodemd}, the modem on a pseudo terminal
   (\cmd{/dev/ttyDM0} links to it), its line a SIP call;
 \item \textbf{libdmodem} (\cmd{dmodem.h}), the modem as a library: the
   program that embeds it sends the commands;
@@ -200,7 +200,7 @@ Rockwell's and Conexant's, USRobotics'), most of them with no effect, so
 that a setup string written for another modem works:
 section~\ref{sec:compat} lists them, and where D-Modem's meaning of a
 command differs from another modem's.  Section~\ref{sec:sip} tells what a
-SIP line changes in slmodemd.
+SIP line changes in dmodemd.
 
 This reference follows the core as it is: every command, parameter range,
 default and output here is the core's own.  A setting that is kept but
@@ -251,7 +251,7 @@ answering, the modems' training) hangs up.
 \midrule
 0 & OK & the command line ran \\
 1 & CONNECT [\p{rate}] & the call is up, or a fax command's data begins \\
-2 & RING & a call rings (slmodemd: every 3 s, section~\ref{sec:sip}) \\
+2 & RING & a call rings (dmodemd: every 3 s, section~\ref{sec:sip}) \\
 3 & NO CARRIER & no call came up, or the call is over \\
 4 & ERROR & a command failed, or a line too long \\
 6 & NO DIALTONE & no dial tone (\cmdl[X]{X2}, \cmdl[X]{X4}) \\
@@ -288,7 +288,7 @@ results only), each bit one of them:
 
 \begin{command}{A}{ATA}
 Answers: off hook, and the answering modem's tones after \sreg{92} seconds.
-In slmodemd the call that rings (\cmd{RING}) is answered.  Its result is
+In dmodemd the call that rings (\cmd{RING}) is answered.  Its result is
 CONNECT, or NO CARRIER.
 \end{command}
 
@@ -308,7 +308,7 @@ and \cmd{P} choose tone or pulse dialing (\sreg{16}) for the rest of the call.
 \cmd{ATDL} dials the last number again (\cmd{Dialing }\p{number}\cmd{...}
 first).  With \cmdl[X]{X2} or \cmdl[X]{X4} the modem waits for a dial tone first.
 The result is CONNECT, BUSY, NO ANSWER, NO DIALTONE or NO CARRIER.  In
-slmodemd the dial string is the SIP call's number
+dmodemd the dial string is the SIP call's number
 (section~\ref{sec:sip}).
 \end{command}
 
@@ -329,7 +329,7 @@ Information:
 \cmd{I0} & the product: \cmd{D-Modem} \\
 \cmd{I1}, \cmd{I2} & the product and version (\cmd{D-Modem, 1.0.0}),
   then the maker, \cmd{D-Modem project} \\
-\cmd{I3} & the modem's name, then its line's kind (slmodemd:
+\cmd{I3} & the modem's name, then its line's kind (dmodemd:
   \cmd{dmodem0}, \cmd{SIP}) \\
 \cmd{I4} & \sreg{0} to S23, eight a line (\cmd{s00=000 s01=000 \ldots}) \\
 \cmd{I5}, \cmd{I6} & \cmd{Stored Profile 0:}, \cmd{1:} (there are none) \\
@@ -394,7 +394,7 @@ Results and dial tone, \cmd{X0} to \cmd{X4} (\sreg{56}; default 4):
 \end{tabular}
 \end{center}
 BUSY (four cadences of 0.2 to 0.8 s) and NO ANSWER come in all of them.
-A SIP call has no dial tone: slmodemd wants \cmd{ATX3}.
+A SIP call has no dial tone: dmodemd wants \cmd{ATX3}.
 \end{command}
 
 \begin{command}{Y}{ATY[\p{n}]}
@@ -552,7 +552,7 @@ The command sets the modem has: \cmd{+GCAP: +FCLASS,+MS}.
 \begin{command}{plusGCI}{AT+GCI=\p{h}, AT+GCI?, AT+GCI=?}
 The country by its T.35 code in hexadecimal (\cmd{+GCI:b5}: USA),
 which sets its dial pause (\sreg{8}) and hook flash (\sreg{24}) times; \cmd{=?}
-lists the codes.  slmodemd's \cmd{-c} option names the country it starts
+lists the codes.  dmodemd's \cmd{-c} option names the country it starts
 with (\cmd{--countrylist} lists them).
 \end{command}
 
@@ -703,12 +703,12 @@ online, \cmdl[H]{ATH} hangs up, and on a V.92 connection \cmdl[plusPMHR]{AT+PMHR
 for modem-on-hold.
 
 The call ends with NO CARRIER when the other side hangs up or its
-carrier is gone for \sreg{10} tenths of a second.  slmodemd hangs up as well
+carrier is gone for \sreg{10} tenths of a second.  dmodemd hangs up as well
 when the DTE drops DTR (it sets the pty's speed to 0) or, with HUPCL set
 on the pty, closes it; it then makes a new pty (\cmd{/dev/ttyDM0} follows
 it).
 
-\section{slmodemd on a SIP line}\label{sec:sip}
+\section{dmodemd on a SIP line}\label{sec:sip}
 
 \begin{itemize}
 \item \cmdl[D]{ATD}\p{number} calls \cmd{sip:}\p{number}\cmd{@}\p{domain} of
@@ -719,7 +719,7 @@ it).
   is a SIP user's name, as it is: \cmdl[D]{ATDalice}.
 \item The line has no dial tone: \cmdl[X]{ATX3} (or \cmdl[X]{X1}), else
   NO DIALTONE.
-\item With \cmd{-L} slmodemd registers and takes calls: RING every 3
+\item With \cmd{-L} dmodemd registers and takes calls: RING every 3
   seconds while one waits, \cmdl[A]{ATA} or \sreg{0} rings (\cmdl[S]{ATS0=1}) answer
   it, and the rings stop if the caller gives up.  A call that comes while
   the line is in use is refused (486, busy); without \cmd{-L} every call

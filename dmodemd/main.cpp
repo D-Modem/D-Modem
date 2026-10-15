@@ -1,6 +1,6 @@
 /*
  *
- *    main.cpp - slmodemd: a modem behind a pseudo terminal, on SIP calls
+ *    main.cpp - dmodemd: a modem behind a pseudo terminal, on SIP calls
  *
  *    The modem core (dcore::Modem) with this program as its Host: the
  *    line is a call of the SIP user agent (sip.cpp), whose audio comes and
@@ -11,9 +11,10 @@
  *    Started as root, it goes on as nobody (drop_privileges()) once what
  *    needs root is set up: the data file is opened for the save at the
  *    end, and the pty's group and link in /dev are left to a process
- *    that keeps root's rights for them alone (slm::Pty::fork_keeper()).
+ *    that keeps root's rights for them alone (dmd::Pty::fork_keeper()).
  *
- *    The behaviour is that of slmodemd's modem_main.c with its SIP driver.
+ *    The behaviour is that of Smart Link's slmodemd's modem_main.c with
+ *    its SIP driver.
  *
  */
 
@@ -55,7 +56,7 @@
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, "main: " fmt, ##__VA_ARGS__)
 
-#define SLMODEMD_USER "nobody"
+#define DMODEMD_USER "nobody"
 #define LOCKED_MEM_MIN_KB (8UL * 1024)
 #define LOCKED_MEM_MIN    (LOCKED_MEM_MIN_KB * 1024)
 
@@ -64,8 +65,8 @@
 namespace {
 
 /* the line: a SIP call's audio socket, while the modem is off hook */
-struct Slmodemd final : public dcore::Host {
-	slm::Pty pty;
+struct Dmodemd final : public dcore::Host {
+	dmd::Pty pty;
 	dcore::Modem *m = nullptr;
 	int fd = -1;            /* the call's audio */
 
@@ -121,7 +122,7 @@ char ctl_buf[256];
 int ctl_len;
 
 /* RING and CANCEL lines from the SIP user agent */
-int Slmodemd::ctl_read(int ctl_fd)
+int Dmodemd::ctl_read(int ctl_fd)
 {
 	char *nl;
 	int n = ::read(ctl_fd, ctl_buf + ctl_len, sizeof(ctl_buf) - 1 - ctl_len);
@@ -147,7 +148,7 @@ int Slmodemd::ctl_read(int ctl_fd)
 }
 
 /* a frame of the call's audio in, one out */
-int Slmodemd::audio()
+int Dmodemd::audio()
 {
 	short in[2048], out[2048];
 	int count = ::read(fd, in, sizeof(in));
@@ -179,12 +180,12 @@ int Slmodemd::audio()
 /* the main loop until SIGINT or SIGTERM: the timers, the SIP user
    agent's control lines, the call's audio, the pty; 0, or -1 on an
    error */
-int Slmodemd::run(int ctl_fd)
+int Dmodemd::run(int ctl_fd)
 {
-	slm::RunLoop loop;
+	dmd::RunLoop loop;
 
-	while (slm::RunLoop::running()) {
-		long next = slm::RunLoop::poll(&m, 1);
+	while (dmd::RunLoop::running()) {
+		long next = dmd::RunLoop::poll(&m, 1);
 		int ret;
 
 		loop.clear();
@@ -223,7 +224,7 @@ int dev_number(const char *name)
 	return name[n] ? atoi(name + n) : 0;
 }
 
-/* started as root: on as SLMODEMD_USER, after checking (realtime) that
+/* started as root: on as DMODEMD_USER, after checking (realtime) that
    the locked memory limit is enough; exits on any failure */
 void drop_privileges(bool realtime)
 {
@@ -243,9 +244,9 @@ void drop_privileges(bool realtime)
 			exit(-1);
 		}
 	}
-	pwd = getpwnam(SLMODEMD_USER);
+	pwd = getpwnam(DMODEMD_USER);
 	if (!pwd) {
-		ERR("getpwnam " SLMODEMD_USER ": %s\n", strerror(errno));
+		ERR("getpwnam " DMODEMD_USER ": %s\n", strerror(errno));
 		exit(-1);
 	}
 	if (setgroups(1, &pwd->pw_gid) || setgid(pwd->pw_gid) ||
@@ -264,22 +265,22 @@ void drop_privileges(bool realtime)
 
 } // namespace
 
-/* slmodemd [option...] [name]: the modem on its pty, the line the SIP
-   user agent; the pumps' line data kept in /var/lib/slmodem/data.<name> */
+/* dmodemd [option...] [name]: the modem on its pty, the line the SIP
+   user agent; the pumps' line data kept in /var/lib/dmodem/data.<name> */
 int main(int argc, char *argv[])
 {
-	slm::Options opt;
-	Slmodemd s;
+	dmd::Options opt;
+	Dmodemd s;
 	char path_name[PATH_MAX], link_name[PATH_MAX];
 	char *dev = nullptr;
 	const char *name;
 	int ctl_fd, ret;
 
-	slm::parse_options(argc, argv, opt);
+	dmd::parse_options(argc, argv, opt);
 	dev = strdup(opt.name);
 	name = basename(dev);
 	dcore::log_open(name);
-	slm::print_version();
+	dmd::print_version();
 
 	prop_dp_init();
 
@@ -303,9 +304,9 @@ int main(int argc, char *argv[])
 
 	/* the data file opened now, while still root: saved at the end
 	   through this descriptor */
-	snprintf(path_name, sizeof(path_name), "/var/lib/slmodem/data.%s",
+	snprintf(path_name, sizeof(path_name), "/var/lib/dmodem/data.%s",
 		 name);
-	slm::DataFile data(path_name);
+	dmd::DataFile data(path_name);
 	data.load(&s.m->dsp_info());
 
 	/* started as root: the pty's group and its link in /dev are the
@@ -327,10 +328,10 @@ int main(int argc, char *argv[])
 		DBG("rt applyed: SCHED_FIFO, pri %d\n", prm.sched_priority);
 	}
 
-	slm::RunLoop::catch_signals();
+	dmd::RunLoop::catch_signals();
 	signal(SIGPIPE, SIG_IGN);
 
-	/* started as root: on as SLMODEMD_USER; otherwise there is nothing
+	/* started as root: on as DMODEMD_USER; otherwise there is nothing
 	   to give up */
 	if (geteuid() == 0)
 		drop_privileges(opt.realtime);

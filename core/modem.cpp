@@ -26,7 +26,7 @@ extern "C" int dp_runtime_pcm(void *runtime) __attribute__((weak));
 
 namespace dcore {
 
-/* who the modem says it is (ATI, +GMI, +GMM, +GMR, +FMI?..., slmodemd's
+/* who the modem says it is (ATI, +GMI, +GMM, +GMR, +FMI?..., dmodemd's
    banner); the version is the build's (CMakeLists.txt's project) */
 #ifndef DMODEM_VERSION
 #error "DMODEM_VERSION: the build gives it (CMakeLists.txt)"

@@ -5,7 +5,7 @@
  *                     a pty for its DTE (printed at the start); dial on
  *                     one, answer on the other
  *
- *    The options are slmodemd's (-c, -d, -l).
+ *    The options are dmodemd's (-c, -d, -l).
  *
  */
 
@@ -25,26 +25,26 @@
 /* modemA and modemB back to back on two pipes until SIGINT or SIGTERM */
 int main(int argc, char *argv[])
 {
-	slm::Options opt;
+	dmd::Options opt;
 	int pipe1[2], pipe2[2], ret;
 
 	dcore::log_level = 1;
-	slm::parse_options(argc, argv, opt);
+	dmd::parse_options(argc, argv, opt);
 	dcore::log_open("test");
-	slm::print_version();
+	dmd::print_version();
 	prop_dp_init();
 	if (pipe(pipe1) < 0 || pipe(pipe2) < 0) {
 		perror("pipe");
 		return 1;
 	}
-	slm::PipeModem a("modemA", MODEM_RATE, opt.country, pipe1[0],
+	dmd::PipeModem a("modemA", MODEM_RATE, opt.country, pipe1[0],
 			 pipe2[1]);
-	slm::PipeModem b("modemB", MODEM_RATE, opt.country, pipe2[0],
+	dmd::PipeModem b("modemB", MODEM_RATE, opt.country, pipe2[0],
 			 pipe1[1]);
 	fprintf(stderr, "created modemA: %s\ncreated modemB: %s\n",
 		a.pty().name(), b.pty().name());
-	slm::PipeModem *modems[] = { &a, &b };
-	ret = slm::PipeModem::run(modems, 2);
+	dmd::PipeModem *modems[] = { &a, &b };
+	ret = dmd::PipeModem::run(modems, 2);
 	prop_dp_exit();
 	dcore::log_close();
 	return ret;

@@ -2,7 +2,7 @@
  *
  *    log.h - the modem's debug output: lines of text (to stderr with a
  *            time stamp, or to a hook), and a binary log of the samples,
- *            bits and characters (slmodem.log, for debugging)
+ *            bits and characters (dmodem.log, for debugging)
  *
  *    The data pumps print through dsplibs_debug_printf() (dsplibs.h),
  *    which ends up here too.
@@ -31,7 +31,7 @@ int log_printf(unsigned level, const char *fmt, ...)
 /* the same with a va_list */
 int log_vprintf(unsigned level, const char *fmt, va_list args);
 
-/* the binary log: slmodem.log[.<suffix>], if log_data_level > 0 */
+/* the binary log: dmodem.log[.<suffix>], if log_data_level > 0 */
 enum LogData {
 	LOG_TEXT = 0, LOG_RX_SAMPLES, LOG_TX_SAMPLES, LOG_ECHO_SAMPLES,
 	LOG_MISC, LOG_MISC1, LOG_RX_BITS, LOG_TX_BITS, LOG_RX_DATA,

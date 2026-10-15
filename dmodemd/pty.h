@@ -4,8 +4,8 @@
  *            slave the DTE (a terminal program, pppd) opens
  *
  */
-#ifndef SLMODEMD_PTY_H
-#define SLMODEMD_PTY_H
+#ifndef DMODEMD_PTY_H
+#define DMODEMD_PTY_H
 
 #include <sys/types.h>
 #include <termios.h>
@@ -14,7 +14,7 @@
 
 namespace dcore { class Modem; }
 
-namespace slm {
+namespace dmd {
 
 struct keeper_answer;
 
@@ -91,6 +91,6 @@ private:
 	void end_keeper();
 };
 
-} // namespace slm
+} // namespace dmd
 
 #endif

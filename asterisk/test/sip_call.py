@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 #
-# sip_call.py <slmodemd> <number> [AT commands]: D-Modem (slmodemd) calls
+# sip_call.py <dmodemd> <number> [AT commands]: D-Modem (dmodemd) calls
 # <number> over SIP ($SIP_LOGIN) and plays the user of bbs_sim.py's BBS,
 # which this script serves on its TCP port as well.
 #
 # With SIP_IN=<command>, the call goes the other way: D-Modem listens
-# (slmodemd -L, ATS0=1), <command> makes Asterisk call it, and DModem(term,o)
+# (dmodemd -L, ATS0=1), <command> makes Asterisk call it, and DModem(term,o)
 # as the calling modem connects to this script's terminal port (2324), the
 # user; the BBS is on D-Modem's pty.  CALLS=<n>: that many calls one after
-# the other (D-Modem calling), in one slmodemd.  BBS_CONNECT_DELAY=<s>: the
+# the other (D-Modem calling), in one dmodemd.  BBS_CONNECT_DELAY=<s>: the
 # BBS takes no connection until s seconds after the start (as
 # bbs_sim.py's), so DModem(bbs)'s connect waits meanwhile.  DIAL=<command>:
 # the dial command before the number (ATD; ATDT: the call goes to the
 # number all the same).
 import os, re, socket, subprocess, sys, threading, time, tty
 
-slmodemd, number = sys.argv[1:3]
+dmodemd, number = sys.argv[1:3]
 at = sys.argv[3] if len(sys.argv) > 3 else ""
 LINES = [b"hello from the caller %d " % i + b"x" * 40 for i in range(20)]
 
@@ -66,7 +66,7 @@ def bbs_calls():
 threading.Thread(target=bbs_calls, daemon=True).start()
 
 incoming = os.environ.get("SIP_IN")
-p = subprocess.Popen(["stdbuf", "-oL", "-eL", slmodemd, "-d" + os.environ.get("SLMODEMD_DEBUG", "1")] + (["-L"] if incoming else []), stdout=subprocess.PIPE,
+p = subprocess.Popen(["stdbuf", "-oL", "-eL", dmodemd, "-d" + os.environ.get("DMODEMD_DEBUG", "1")] + (["-L"] if incoming else []), stdout=subprocess.PIPE,
                      stderr=subprocess.STDOUT)
 log = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "wb")
 pty = None
@@ -77,11 +77,11 @@ while time.time() - t0 < 10:
     m = re.search(rb"TTY is `(\S+)'", l)
     if m:
         pty = m.group(1).decode(); break
-# the rest of slmodemd's output into the log
+# the rest of dmodemd's output into the log
 threading.Thread(target=lambda: [log.write(l) or log.flush() for l in p.stdout],
                  daemon=True).start()
 if pty is None:
-    print("FAIL: slmodemd gave no pty")
+    print("FAIL: dmodemd gave no pty")
     p.terminate()
     sys.exit(1)
 fd = os.open(pty, os.O_RDWR | os.O_NOCTTY)
@@ -103,7 +103,7 @@ def expect(pat, t):
         except BlockingIOError:
             time.sleep(0.05)
         except OSError:
-            return None     # slmodemd went away (EIO)
+            return None     # dmodemd went away (EIO)
     return None
 # AT command c, then expect(pat, t)
 def cmd(c, pat=rb"OK\r\n", t=5):
@@ -153,7 +153,7 @@ if incoming:
         c.close()
     ut = threading.Thread(target=user, daemon=True); ut.start()
     ok = ok and cmd(b"ATS0=1") is not None
-    time.sleep(2)               # slmodemd registers
+    time.sleep(2)               # dmodemd registers
     subprocess.Popen(incoming, shell=True)
     m = expect(rb"(CONNECT[^\r]*|NO CARRIER)\r\n", 90)
     print("answer:", m.group(1).decode() if m else "timeout")

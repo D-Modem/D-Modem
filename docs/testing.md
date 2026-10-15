@@ -40,7 +40,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the core's transcripts against the scripts' `.expect` (slmodemd's old core's, recorded from it; see `docs/core.md`) |
 | `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
-| `slmodemd/test/root_test.py` (`slmodemd_root`) | slmodemd started as root: it goes on as nobody, saves its data file, and its pty's group and link (kept by a process of its own) follow the new pty after the DTE hangs up and go when it ends, even killed. Skipped unless ctest runs as root (CI runs it with sudo) |
+| `dmodemd/test/root_test.py` (`dmodemd_root`) | dmodemd started as root: it goes on as nobody, saves its data file, and its pty's group and link (kept by a process of its own) follow the new pty after the DTE hangs up and go when it ends, even killed. Skipped unless ctest runs as root (CI runs it with sudo) |
 
 Each call writes its modem logs to `build/dsp/test/logs/<test>/`. The
 calls run as fast as the modems can: every modem keeps time by its

@@ -1,13 +1,13 @@
 #!/bin/sh
-# sip.sh [AT commands, ';' separated]: D-Modem (slmodemd, built in ../..)
+# sip.sh [AT commands, ';' separated]: D-Modem (dmodemd, built in ../..)
 # registers with a private FreeSWITCH (see fs.sh) and calls dmodem bbs, or
 # with INCOMING=1 answers FreeSWITCH's call, dmodem term o calling; see
 # asterisk/test/sip_call.py.  CODEC=PCMA: the call in A-law.
 . "$(dirname "$0")/fs.sh"
 fs_start sip
-export SIP_LOGIN=modem:modem@127.0.0.1:5080 SIP_LOG=$run/slmodemd.log
+export SIP_LOGIN=modem:modem@127.0.0.1:5080 SIP_LOG=$run/dmodemd.log
 if [ -n "$INCOMING" ]; then
-	# the contact slmodemd registered, then the call to it
+	# the contact dmodemd registered, then the call to it
 	cli="$FS_PREFIX/bin/fs_cli -H 127.0.0.1 -P 8022 -p dmodem -x"
 	cat > "$run/call_in.sh" <<EOT
 #!/bin/sh
@@ -23,7 +23,7 @@ else
 		fs_cli "reloadxml" >/dev/null && fs_cli "sofia profile modem start" >/dev/null &&
 		sleep 2
 fi
-"$asterisk_test/sip_call.py" "$build/slmodemd/slmodemd" 5551000 "$1"
+"$asterisk_test/sip_call.py" "$build/dmodemd/dmodemd" 5551000 "$1"
 r=$?
 sleep 2
 grep -E "dmodem (answering|calling|connected|done)|mod_dptools.c:[0-9]* ANSWERER" "$run/log/freeswitch.log" |

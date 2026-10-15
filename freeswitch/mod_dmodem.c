@@ -7,7 +7,7 @@
  * to a program on a pty (pppd, a getty, a door) as dmodem.conf's profile
  * says.  The module is also a group 3 fax machine.
  *
- * The modem is libdmodem (../slmodemd/dmodem.h): the slmodemd modem core
+ * The modem is libdmodem (../dmodemd/dmodem.h): D-Modem's modem core
  * with the open data pumps, no binary-only parts.  The same as Asterisk's
  * app_dmodem (../asterisk), on FreeSWITCH's API; the call between the
  * modem and the server or program is theirs (../pbx/dmodem_bridge.c).

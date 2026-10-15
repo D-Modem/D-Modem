@@ -25,7 +25,7 @@
   on the program's clock (`poll()`, `next_timer_ms()`); the rest counts
   samples. No signals, no global timer list.
 
-A program that runs a modem (slmodemd, libdmodem, a test) is its `Host`: it
+A program that runs a modem (dmodemd, libdmodem, a test) is its `Host`: it
 starts and stops the line's audio, gets the characters for the DTE, and
 tells the time. It hands the modem the DTE's characters (`dte_input()`), the
 line's samples while the modem is started (`process()`), and calls
@@ -36,18 +36,18 @@ The data pumps (`../dsp`) see the core through their C interface
 `struct modem` that leads back to the `Modem`. The data link layer
 (`../link`: V.42 detection, LAPM, V.44, V.42bis, async) runs between the DTE's
 characters and the pumps' bits. `log.cpp` has the debug output (stderr or
-a hook, and the binary `slmodem.log`).
+a hook, and the binary `dmodem.log`).
 
 The behaviour started as that of Smart Link's slmodemd core (`modem.c`,
 `modem_at.c`, `modem_param.c`): the same commands, responses, states and
-timing. slmodemd, libdmodem (`dmodem.h`), modem_test and the interop
+timing. dmodemd, libdmodem (`dmodem.h`), modem_test and the interop
 tests' modems run on it, Smart Link's original DSP library as well
 (`half_smartlink`, `docs/interop.md`). The old core is no longer in the
 tree: `core_equiv` compares this one with the transcripts recorded from
 it. This core has gone beyond it where the old one fell short:
 
 - the version banner is the program's to print (`Modem::product`,
-  `version`; slmodemd and modem_test print it at the start);
+  `version`; dmodemd and modem_test print it at the start);
 - `AT&A1` in fax mode prints `Modulation: NONE` (the old core dereferenced
   a null data pump there);
 - `AT*B` (the blacklisted numbers: none are kept) and `AT\A<0-3>` (the

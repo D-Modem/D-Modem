@@ -1,8 +1,8 @@
-# pjproject for slmodemd's SIP user agent, as the imported target `pjproject`.
+# pjproject for dmodemd's SIP user agent, as the imported target `pjproject`.
 #
 # An installed pjproject is found with pkg-config (libpjproject).  Otherwise
 # (DMODEM_PJPROJECT=auto or fetch) the pinned release is cloned and built
-# once while configuring, into the build tree, with the options slmodemd
+# once while configuring, into the build tree, with the options dmodemd
 # needs.  Its static libraries carry the target triplet in their names, so
 # they are linked through the .pc file it installs.
 set(DMODEM_PJPROJECT_REPO "https://github.com/pjsip/pjproject.git"
@@ -67,7 +67,7 @@ else()
 	message(STATUS "pjproject: ${PJPROJECT_VERSION} (installed)")
 endif()
 
-# slmodemd links pjproject statically: the private libraries too
+# dmodemd links pjproject statically: the private libraries too
 add_library(pjproject INTERFACE IMPORTED)
 target_compile_options(pjproject INTERFACE ${PJPROJECT_STATIC_CFLAGS})
 # (as link libraries: after the objects, in the order the .pc gives)

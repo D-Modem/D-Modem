@@ -1,16 +1,16 @@
 /*
  *
- *    options.h - the command line of slmodemd, modem_test and the interop
- *                tests' modem (half_open): slmodemd's options, as they
- *                were (modem_cmdline.c)
+ *    options.h - the command line of dmodemd, modem_test and the interop
+ *                tests' modem (half_open): Smart Link's slmodemd's options
+ *                (modem_cmdline.c), less those for modem hardware
  *
  */
-#ifndef SLMODEMD_OPTIONS_H
-#define SLMODEMD_OPTIONS_H
+#ifndef DMODEMD_OPTIONS_H
+#define DMODEMD_OPTIONS_H
 
 #include <sys/types.h>
 
-namespace slm {
+namespace dmd {
 
 struct Options {
 	const char *name = nullptr;      /* the modem's (dmodem0) */
@@ -28,6 +28,6 @@ void parse_options(int argc, char *argv[], Options &opt);
 /* the modem's name and version, on stdout and in the log */
 void print_version();
 
-} // namespace slm
+} // namespace dmd
 
 #endif

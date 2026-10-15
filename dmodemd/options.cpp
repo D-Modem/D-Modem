@@ -18,7 +18,7 @@
 /* the usage's text, to stderr */
 #define PR_INFO(fmt...) fprintf(stderr, fmt)
 
-namespace slm {
+namespace dmd {
 
 /* the modem's name: its pty link /dev/ttyDM<n> (n the digits it ends
    with), its data file and its log */
@@ -211,4 +211,4 @@ void parse_options(int argc, char *argv[], Options &o)
 		o.name = default_name;
 }
 
-} // namespace slm
+} // namespace dmd

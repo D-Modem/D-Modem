@@ -12,14 +12,14 @@
  *    Header only: the test peers' 32 bit harnesses have it too.
  *
  */
-#ifndef SLMODEMD_LINE_FRAMES_H
-#define SLMODEMD_LINE_FRAMES_H
+#ifndef DMODEMD_LINE_FRAMES_H
+#define DMODEMD_LINE_FRAMES_H
 
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
 
-namespace slm {
+namespace dmd {
 
 class LineFrames {
 public:
@@ -112,6 +112,6 @@ private:
 	unsigned long long taken_ = 0;
 };
 
-} // namespace slm
+} // namespace dmd
 
 #endif

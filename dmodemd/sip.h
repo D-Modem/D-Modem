@@ -1,6 +1,6 @@
 /*
  *
- *    sip.h - slmodemd's telephone line: a SIP user agent (pjsua) in the
+ *    sip.h - dmodemd's telephone line: a SIP user agent (pjsua) in the
  *            same process, in place of the external d-modem program
  *
  *    The modem gets each call's audio through one end of a socketpair,

@@ -2,22 +2,22 @@
  *
  *    datafile.h - what the data pumps learn about the line over calls
  *                 (struct dsp_info), kept in a file between runs
- *                 (/var/lib/slmodem/data.<modem>)
+ *                 (/var/lib/dmodem/data.<modem>)
  *
  */
-#ifndef SLMODEMD_DATAFILE_H
-#define SLMODEMD_DATAFILE_H
+#ifndef DMODEMD_DATAFILE_H
+#define DMODEMD_DATAFILE_H
 
 #include <modem_defs.h>
 
 #include <string>
 
-namespace slm {
+namespace dmd {
 
 class DataFile {
 public:
 	/* path opened for reading and writing, made (0600) if need be;
-	   read only if it can't be written.  Opened while slmodemd is
+	   read only if it can't be written.  Opened while dmodemd is
 	   still root, the descriptor is what lets save() write it after
 	   the privileges are gone.  What can't be done is logged. */
 	explicit DataFile(const char *path);
@@ -39,6 +39,6 @@ private:
 	bool writable_ = false;
 };
 
-} // namespace slm
+} // namespace dmd
 
 #endif

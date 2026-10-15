@@ -33,8 +33,8 @@ modem, e.g. `channel originate PJSIP/5559999@trunk application
 DModem(isp,o)`; the profile's server or program then talks to the remote
 BBS or ISP.
 
-The modem is `libdmodem` ([slmodemd/dmodem.h](../slmodemd/dmodem.h)):
-the slmodemd modem core (AT commands, V.42 error correction, V.44 or V.42bis
+The modem is `libdmodem` ([dmodemd/dmodem.h](../dmodemd/dmodem.h)):
+D-Modem's modem core (AT commands, V.42 error correction, V.44 or V.42bis
 compression) with the open data pumps of `dsp`.  It answers
 V.21, V.22, V.22bis, V.23, Bell 103/212A, V.32, V.32bis and V.34, and
 V.90 as the digital (server) modem: up to 56000 bit/s downstream to a
@@ -177,5 +177,5 @@ and to `DModemReceiveFax`, and `DModemSendFax` to `ReceiveFAX`, all at
 `debug = 3` in `[general]` and `core set verbose 5` show the modem's
 handshake on the console.  The same modem runs outside Asterisk in
 `dsp/test/dmodem_test` (two modems of the library back to back)
-and, as slmodemd, against Smart Link's original binary library in
+and against Smart Link's original binary library in
 `dsp/test/smartlink_test` (`interop_call`).

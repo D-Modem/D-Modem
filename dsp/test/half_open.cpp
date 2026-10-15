@@ -29,20 +29,20 @@
 #define MODEM_RATE 9600
 #endif
 
-/* the modem (slmodemd's options: country, ...) on fds 3 and 4 until its
+/* the modem (dmodemd's options: country, ...) on fds 3 and 4 until its
    line ends; PipeModem::run's result */
 int main(int argc, char *argv[])
 {
-	slm::Options opt;
+	dmd::Options opt;
 	const char *name = getenv("MODEM_NAME") ? getenv("MODEM_NAME") :
 		"modem";
 	int ret;
 
 	dcore::log_level = 1;
-	slm::parse_options(argc, argv, opt);
+	dmd::parse_options(argc, argv, opt);
 	dcore::log_open("half");
 	prop_dp_init();
-	slm::PipeModem *pm = new slm::PipeModem(name, MODEM_RATE, opt.country,
+	dmd::PipeModem *pm = new dmd::PipeModem(name, MODEM_RATE, opt.country,
 						 3, 4);
 	pm->set_realtime(getenv("MODEM_REALTIME") != NULL);
 	pm->set_speed(getenv("MODEM_SPEED") ? atof(getenv("MODEM_SPEED")) :
@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
 	pm->set_record(getenv("MODEM_REC"));
 	printf("created %s: %s\n", name, pm->pty().name());
 	fflush(stdout);
-	ret = slm::PipeModem::run(&pm, 1);
+	ret = dmd::PipeModem::run(&pm, 1);
 	delete pm;
 	prop_dp_exit();
 	dcore::log_close();

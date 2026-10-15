@@ -1,9 +1,9 @@
-# Open data pumps for slmodemd
+# Open data pumps for D-Modem
 
 `dsp/` is a reimplementation (C++) of the interface that the
-binary-only `dsplibs.o` (Smart Link's DSP library) gives to the slmodemd
-modem core. It exports the same entry points, so the modem core builds
-against it unchanged. slmodemd and libdmodem use only this code; the
+binary-only `dsplibs.o` (Smart Link's DSP library) gives to Smart Link's
+slmodemd modem core. It exports the same entry points, so the modem core builds
+against it unchanged. dmodemd and libdmodem use only this code; the
 original library, `dsp/test/smartlink/dsplibs.o`, is kept as a test peer for
 the interop tests.
 

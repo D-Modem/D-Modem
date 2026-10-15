@@ -9,8 +9,8 @@
  *    slmodemd's modem_test.c and modem_half.c on the new core.
  *
  */
-#ifndef SLMODEMD_PIPE_MODEM_H
-#define SLMODEMD_PIPE_MODEM_H
+#ifndef DMODEMD_PIPE_MODEM_H
+#define DMODEMD_PIPE_MODEM_H
 
 #include <dcore.h>
 
@@ -19,7 +19,7 @@
 #include "pty.h"
 #include "run_loop.h"
 
-namespace slm {
+namespace dmd {
 
 class PipeModem final : public dcore::Host {
 public:
@@ -105,6 +105,6 @@ private:
 	double clock_speed_ = 0;        /* what pace() last went at */
 };
 
-} // namespace slm
+} // namespace dmd
 
 #endif

@@ -214,7 +214,7 @@ void HalfModem::after_read()
 int HalfModem::run()
 {
 	short out[480];
-	slm::LineFrames line(3, 48);
+	dmd::LineFrames line(3, 48);
 	const char *s;
 
 	dbg = (s = env("DEBUG")) ? atoi(s) : 0;

@@ -1,6 +1,6 @@
 /*
  *
- *    sip_dial_test.cpp - the SIP user slmodemd calls for a dial string
+ *    sip_dial_test.cpp - the SIP user dmodemd calls for a dial string
  *                        (sip::dial_user())
  *
  */

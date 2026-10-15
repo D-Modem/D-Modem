@@ -19,7 +19,7 @@
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, fmt, ##__VA_ARGS__)
 
-namespace slm {
+namespace dmd {
 
 /* the file: one record, its own size last as the check */
 struct datafile_record {
@@ -92,4 +92,4 @@ int DataFile::save(const struct dsp_info *info)
 	return -err;
 }
 
-} // namespace slm
+} // namespace dmd

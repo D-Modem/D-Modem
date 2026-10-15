@@ -2,7 +2,7 @@
  *
  *    pty.cpp - the DTE's pseudo terminal (pty.h); slmodemd's create_pty()
  *              and the pty part of its main loop, and the process that
- *              sets up each new pty with root's rights once slmodemd has
+ *              sets up each new pty with root's rights once dmodemd has
  *              dropped them (the keeper)
  *
  */
@@ -34,7 +34,7 @@
 #define INFO(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, "main: " fmt, ##__VA_ARGS__)
 
-namespace slm {
+namespace dmd {
 
 /* the DTE closed the slave: not read again for so many loops */
 static const unsigned CLOSE_COUNT_MAX = 100;
@@ -454,4 +454,4 @@ int Pty::write(const char *buf, int n)
 	return ret < 0 ? 0 : ret;
 }
 
-} // namespace slm
+} // namespace dmd

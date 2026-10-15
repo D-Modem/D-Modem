@@ -25,7 +25,7 @@
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, "main: " fmt, ##__VA_ARGS__)
 
-namespace slm {
+namespace dmd {
 
 /* the core gets whole periods: the line's samples in frames of these,
    MAX_SAMPLES at a time at most */
@@ -345,4 +345,4 @@ int PipeModem::run(PipeModem **modems, int n)
 	return 0;
 }
 
-} // namespace slm
+} // namespace dmd
