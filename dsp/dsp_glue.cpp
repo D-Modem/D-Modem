@@ -2,7 +2,7 @@
  *
  *    dsp_glue.cpp - entry points used by the modem core: data pump
  *                 registration, DC removal, the shared runtime object,
- *                 ring detector, caller ID, voice and fax objects.
+ *                 caller ID, voice and fax objects.
  *
  */
 
@@ -217,127 +217,6 @@ int dp_runtime_pcm(void *runtime)
 void dp_runtime_delete(void *runtime)
 {
 	delete static_cast<struct dp_runtime *>(runtime);
-}
-
-
-/*
- *    Ring detector: the ring signal seen through a snooping codec is a
- *    large low frequency (15..70 Hz) wave.  RD_process returns 1 at the
- *    start and at the end of each ring burst; RD_ring_details then
- *    reports freq == 0 for a start, or the frequency and the length in
- *    ms of the finished burst.
- */
-
-struct RingDetector {
-	struct modem *modem;
-	int srate;
-	Biquad lp;
-	float env;
-	float env_decay;
-	int on;
-	long on_samples, off_samples;
-	int last_sign;
-	long crossings;
-	long freq, duration;
-
-	int process(void *in, int count);
-	void details(long *freq_, long *duration_);
-};
-
-/* a ring detector at rate Hz: 80 Hz low pass, envelope decaying with a
-   100 ms time constant; NULL when out of memory */
-void *RD_create(struct modem *m, unsigned rate)
-{
-	RingDetector *r = new (std::nothrow) RingDetector();
-	if (!r)
-		return NULL;
-	r->modem = m;
-	r->srate = rate;
-	r->lp.lowpass(80, 0.707f, rate);
-	r->env_decay = 1.0f / (0.1f * rate);
-	return r;
-}
-
-/* frees a ring detector */
-void RD_delete(void *obj)
-{
-	delete static_cast<RingDetector*>(obj);
-}
-
-/* count s16 samples: a burst starts after 50 ms of envelope above 4000
-   and ends after 150 ms below 1500; the frequency comes from the sign
-   changes of the filtered wave (at levels above 100) during it.
-   Returns 1 when a burst started or ended in this block (see
-   details()), else 0. */
-int RingDetector::process(void *in, int count)
-{
-	s16 *s = static_cast<s16*>(in);
-	int i, ret = 0;
-
-	for (i = 0; i < count; i++) {
-		float x = lp.run(s[i]);
-		int sign = x > 0;
-		float a = fabsf(x);
-
-		if (a > env)
-			env = a;
-		else
-			env -= env_decay * env;
-		if (sign != last_sign && a > 100) {
-			crossings++;
-			last_sign = sign;
-		}
-		if (!on) {
-			if (env > 4000) {
-				if (++on_samples > ms2samples(50, srate)) {
-					on = 1;
-					off_samples = 0;
-					crossings = 0;
-					freq = 0;
-					duration = 0;
-					ret = 1;
-				}
-			} else
-				on_samples = 0;
-		} else {
-			on_samples++;
-			if (env < 1500) {
-				if (++off_samples > ms2samples(150, srate)) {
-					long len = on_samples - off_samples;
-					on = 0;
-					on_samples = 0;
-					duration = len * 1000 / srate;
-					freq = len > 0 ?
-						crossings * srate / (2 * len) : 1;
-					if (freq <= 0)
-						freq = 1;
-					ret = 1;
-				}
-			} else
-				off_samples = 0;
-		}
-	}
-	return ret;
-}
-
-/* RingDetector::process() for the C interface */
-int RD_process(void *obj, void *in, int count)
-{
-	return static_cast<RingDetector*>(obj)->process(in, count);
-}
-
-/* the last event: freq 0 for a start, else the burst's frequency (Hz)
-   and length (ms) */
-void RingDetector::details(long *freq_, long *duration_)
-{
-	*freq_ = freq;
-	*duration_ = duration;
-}
-
-/* RingDetector::details() for the C interface */
-void RD_ring_details(void *obj, long *freq, long *duration)
-{
-	static_cast<RingDetector*>(obj)->details(freq, duration);
 }
 
 

@@ -43,7 +43,7 @@ Next, run slmodemd.  Use -d<level> for debug logging.
     # ./build/slmodemd/slmodemd -d9
     D-Modem: version 1.0.0 Oct 15 2026 07:44:51
     symbolic link `/dev/ttyDM0' -> `/dev/pts/3' created. 
-    modem `slamr0' created. TTY is `/dev/pts/3' 
+    modem `dmodem0' created. TTY is `/dev/pts/3' 
     Use `/dev/ttyDM0' as modem device, Ctrl+C for termination.
 
 In another terminal, connect to the newly created serial device at 115200 bps: 

@@ -616,9 +616,6 @@ void Modem::run(int16_t *in, int16_t *out, int n)
 	case Run::CallerId:
 		cid_process(in, out, n);
 		break;
-	case Run::RingDetector:
-		rd_process(in, out, n);
-		break;
 	case Run::Voice:
 		voice_process(in, out, n);
 		break;
@@ -738,7 +735,7 @@ void Modem::events(unsigned event)
 			if (TOTAL_RINGS == 1)
 				crlf();
 			report(Result::Ring);
-			if (ANSWER_AFTER_RINGS && (!started_ || rd_) &&
+			if (ANSWER_AFTER_RINGS && !started_ &&
 			    TOTAL_RINGS >= ANSWER_AFTER_RINGS) {
 				TOTAL_RINGS = 0;
 				answer();
@@ -1049,10 +1046,6 @@ int Modem::stop_call()
 		dcr_delete(dcr_);
 		dcr_ = nullptr;
 	}
-	if (rd_) {
-		RD_delete(rd_);
-		rd_ = nullptr;
-	}
 	if (cid_) {
 		CID_delete(cid_);
 		cid_ = nullptr;
@@ -1280,19 +1273,14 @@ void Modem::sregs_init()
  *    caller ID
  */
 
-/* caller ID is over (done, failed or timed out): the call stops unless
-   the ring detector runs; then the answer if it is due */
+/* caller ID is over (done, failed or timed out): the call stops; then
+   the answer if it is due */
 void Modem::cid_stop()
 {
 	DBG("modem_cid_stop...\n");
 	later_ = Later::None;
-	if (!rd_) {
-		run_ = Run::None;
-		stop_call();
-	} else {
-		CID_delete(cid_);
-		cid_ = nullptr;
-	}
+	run_ = Run::None;
+	stop_call();
 	/* go on and answer, if that is due */
 	if (ANSWER_AFTER_RINGS && TOTAL_RINGS >= ANSWER_AFTER_RINGS) {
 		TOTAL_RINGS = 0;
@@ -1313,67 +1301,18 @@ void Modem::cid_process(int16_t *in, int16_t *out, int count)
 	}
 }
 
-/* caller ID for ms, snooping the line (or along with the ring
-   detector); -1 if a call runs or it cannot be created */
+/* caller ID for ms, snooping the line; -1 if a call runs or it cannot
+   be created */
 int Modem::cid_start(unsigned long ms)
 {
 	DBG("modem_cid_start: timeout = %lu...\n", ms / TICK);
-	if (started_ && !rd_)
+	if (started_)
 		return -1;
 	cid_ = CID_create(handle_, srate_, cid_requested_);
 	if (!cid_)
 		return -1;
 	later(Later::CallerIdStop, (unsigned long)srate_ * ms / 1000);
-	if (started_ && rd_)
-		return 0;
 	run_ = Run::CallerId;
-	set_hook(MODEM_HOOK_SNOOPING);
-	return do_start();
-}
-
-/*
- *    the ring detector
- */
-
-/* the ring detector on the samples: a ring's start (ring()), its end
-   with its frequency and length (the ring check); caller ID with it */
-void Modem::rd_process(int16_t *in, int16_t *out, int count)
-{
-	int ret;
-	memset(out, 0, count * sizeof(*out));
-	ret = RD_process(rd_, in, count);
-	if (ret) {
-		long freq, duration;
-		RD_ring_details(rd_, &freq, &duration);
-		DBG("ring details: freq = %ld, duration = %ld\n", freq,
-		    duration);
-		if (freq == 0) {
-			DBG("report ring start...\n");
-			ring();
-		} else if (freq > 0) {
-			DBG("report ring end...\n");
-			event_ |= EV_RING_CHECK;
-			if (ring_count_ <= 1)
-				ring_count_ = duration * freq / 1000;
-			ring_last_ = host_.now_ms();
-		} else
-			ERR("RD returns %ld freq. (duration %ld)\n", freq,
-			    duration);
-	}
-	if (cid_)
-		cid_process(in, out, count);
-}
-
-/* the line's ring detector, snooping (a hardware modem on hook) */
-int Modem::ring_detector_start()
-{
-	DBG("modem_ring_detector_start...\n");
-	if (rd_) {
-		ERR("modem_ring_detector_start: rd_obj already exists!\n");
-		return -1;
-	}
-	rd_ = RD_create(handle_, srate_);
-	run_ = Run::RingDetector;
 	set_hook(MODEM_HOOK_SNOOPING);
 	return do_start();
 }
@@ -1433,19 +1372,14 @@ int Modem::voice_command(enum VOICE_CMD cmd)
 	}
 }
 
-/* the voice engine, off hook (the ring detector stops); -1 if a call
-   runs */
+/* the voice engine, off hook; -1 if a call runs */
 int Modem::voice_start()
 {
 	DBG("modem_voice_start...\n");
 	if (voice_)
 		return 0;
-	if (started_) {
-		if (rd_)
-			stop_call();
-		else
-			return -1;
-	}
+	if (started_)
+		return -1;
 	voice_ = VOICE_create(handle_, srate_);
 	if (!voice_)
 		return -1;

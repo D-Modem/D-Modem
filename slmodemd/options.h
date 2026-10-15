@@ -13,14 +13,11 @@
 namespace slm {
 
 struct Options {
-	const char *dev_name = nullptr;  /* the device (its name names the
-					    modem: /dev/slamr0) */
+	const char *name = nullptr;      /* the modem's (dmodem0) */
 	const char *country = nullptr;   /* -c */
 	const char *group = "dialout";   /* -g: the pty's group */
 	mode_t perm = 0660;              /* -p: and its permissions */
 	bool realtime = true;            /* -n: not */
-	bool ring_detector = false;      /* -r */
-	bool short_buffer = false;       /* -s */
 	bool listen = false;             /* -L */
 };
 

@@ -136,9 +136,9 @@ Everything here is in `namespace dsp`, except the C entry points of
   symbols or bits from its host (`QamTx`, `FskBitTx`) is given the
   source at `sample()`; the data bits of V.34, V.91 and V.92 go through
   `CoreBits`, the modem core's end.
-- **The other library objects**, `DcRemover`, `RingDetector`, `CallerId`
-  and `Voice` (`dsp_glue.cpp`), are classes behind their C entry points
-  (`dcr_*`, `RD_*`, `CID_*`, `VOICE_*`).
+- **The other library objects**, `DcRemover`, `CallerId` and `Voice`
+  (`dsp_glue.cpp`), are classes behind their C entry points (`dcr_*`,
+  `CID_*`, `VOICE_*`).
 - **slmodemd's own pumps without a modulation**, `dp_dummy.cpp` (the
   `DP_DUMMY` test pump) and `dp_sinus.cpp` (`DP_SINUS`, a test tone), are
   Smart Link's code as it came with slmodemd, on `Pump` and `PumpOps`

@@ -6,8 +6,8 @@
 # own, the link's keeper, keeps root's rights for it alone).  Not root:
 # skipped (77).
 #
-# The modem is /dev/slamr<n> for an n with no link yet (from 50): its
-# link /dev/ttyDM<n>, its data file /var/lib/slmodem/data.slamr<n>,
+# The modem is dmodem<n> for an n with no link yet (from 50): its
+# link /dev/ttyDM<n>, its data file /var/lib/slmodem/data.dmodem<n>,
 # removed after (the directory too if made here).  No SIP server: the
 # modem neither calls nor registers.
 import os
@@ -34,9 +34,9 @@ except KeyError:
     dialout = None
 
 n = next(n for n in range(50, 100) if not os.path.lexists("/dev/ttyDM%d" % n))
-dev, link = "/dev/slamr%d" % n, "/dev/ttyDM%d" % n
+dev, link = "dmodem%d" % n, "/dev/ttyDM%d" % n
 datadir = "/var/lib/slmodem"
-data = "%s/data.slamr%d" % (datadir, n)
+data = "%s/data.dmodem%d" % (datadir, n)
 made_dir = not os.path.isdir(datadir)
 if made_dir:
     os.makedirs(datadir, 0o755)

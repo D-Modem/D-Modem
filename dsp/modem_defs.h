@@ -72,30 +72,7 @@ enum MODEM_MODE {
 #define MODEM_HOOK_OFF      1
 #define MODEM_HOOK_SNOOPING 2
 
-/* modem device ctrl interface */
-#define MDMCTL_CAPABILITIES  0x01
-#define MDMCTL_HOOKSTATE     0x02
-#define MDMCTL_SPEED         0x04
-#define MDMCTL_GETFMTS       0x05
-#define MDMCTL_SETFMT        0x06
-#define MDMCTL_SETFRAG       0x07
-#define MDMCTL_SETFRAGMENT   MDMCTL_SETFRAG
-#define MDMCTL_SPEAKERVOL    0x08
-#define MDMCTL_IODELAY       0x10
-#define MDMCTL_CODECTYPE     0x11
-#define MDMCTL_PULSEDIAL     0x12
-#define MDMCTL_GETSTAT       0x20
-#define MDMCTL_START         0x21
-#define MDMCTL_STOP          0x22
-
-
-/* modem device status mask */
-#define MDMSTAT_ERROR 0x1
-#define MDMSTAT_RING  0x2
-#define MDMSTAT_DATA  0x4
-
-
-/* codec types - numbers important */
+/* codec types (MDMPRM_CODECTYPE) - numbers important */
 enum codec_types {
 	CODEC_UNKNOWN = 0,
 	CODEC_AD1821  = 1,
@@ -106,35 +83,6 @@ enum codec_types {
 	CODEC_AD1803  = 12,
 	CODEC_ALC545A = 13,
 };
-
-/* sample formats + extensions */
-#define MFMT_SIZE_MASK   0x000f
-#define MFMT_SIZE_8      0x0000
-#define MFMT_SIZE_16     0x0001
-#define MFMT_SIGN_MASK   0x00f0
-#define MFMT_SIGNED      0x0010
-#define MFMT_UNSIGNED    0x0000
-#define MFMT_ORDER_MASK  0x0f00
-#define MFMT_ORDER_LE    0x0100
-#define MFMT_ORDER_BE    0x0000
-
-#define MFMT_QUERY       0x0
-
-#define MFMT_S8          (MFMT_SIZE_8|MFMT_SIGNED)
-#define MFMT_U8          (MFMT_SIZE_8|MFMT_UNSIGNED)
-#define MFMT_S16_LE      (MFMT_SIZE_16|MFMT_SIGNED|MFMT_ORDER_LE)
-#define MFMT_S16_BE      (MFMT_SIZE_16|MFMT_SIGNED|MFMT_ORDER_BE)
-#define MFMT_U16_LE      (MFMT_SIZE_16|MFMT_UNSIGNED|MFMT_ORDER_LE)
-#define MFMT_U16_BE      (MFMT_SIZE_16|MFMT_UNSIGNED|MFMT_ORDER_BE)
-
-/* tests and sizes of a format: 16 bit, little endian, log2 and number
-   of bytes per sample */
-#define MFMT_IS_16BIT(x)   ((x)&MFMT_SIZE_16)
-#define MFMT_IS_LE(x)      ((x)&MFMT_ORDER_LE)
-#define MFMT_BYTESSHIFT(x) ((x)&MFMT_SIZE_MASK)
-#define MFMT_SHIFT(x)      (MFMT_BYTESSHIFT(x))
-#define MFMT_BYTES(x)      (1<<MFMT_BYTESSHIFT(x))
-
 
 /* s-registers */
 enum S_REGISTER {

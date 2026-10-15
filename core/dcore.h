@@ -127,8 +127,6 @@ public:
 	void ring();
 	/* a call that rings by itself (SIP): on = false, the caller gave up */
 	void ring_signal(bool on);
-	/* the line's ring detector (a hardware modem while on hook) */
-	int ring_detector_start();
 	/* hang up (ATH, DTR off); hangup_now() also stops at once */
 	void hangup();
 	void hangup_now();
@@ -233,7 +231,7 @@ private:
 		COMMAND_ONLINE = 0x6, EC_DISC = 0x7, DP_DISC = 0x9,
 	};
 	/* what process() runs */
-	enum class Run { None, Dp, CallerId, RingDetector, Voice, Fax };
+	enum class Run { None, Dp, CallerId, Voice, Fax };
 	/* what runs after a number of samples */
 	enum class Later { None, Stop, ChangeDp, CallerIdStop };
 	enum { EV_RING_CHECK = 0x01, EV_ESCAPE = 0x02 };
@@ -264,7 +262,6 @@ private:
 	void cid_process(int16_t *in, int16_t *out, int n);
 	void cid_stop();
 	int cid_start(unsigned long ms);
-	void rd_process(int16_t *in, int16_t *out, int n);
 	void voice_process(int16_t *in, int16_t *out, int n);
 	int voice_start();
 	void voice_stop();
@@ -350,7 +347,6 @@ private:
 	/* rings */
 	unsigned ring_count_ = 0;
 	unsigned long ring_first_ = 0, ring_last_ = 0;
-	void *rd_ = nullptr;
 	unsigned cid_requested_ = 0;
 	void *cid_ = nullptr;
 

@@ -5,8 +5,8 @@
  *    The modem core (dcore::Modem) with this program as its Host: the
  *    line is a call of the SIP user agent (sip.cpp), whose audio comes and
  *    goes through a socket, 16 bit linear at 8000 Hz in frames of 20 ms;
- *    the DTE is a pty (/dev/ttyDM<n> links to it, n the device's number:
- *    /dev/ttyDM0 for /dev/slamr0).
+ *    the DTE is a pty (/dev/ttyDM<n> links to it, n the modem's number:
+ *    /dev/ttyDM0 for dmodem0).
  *
  *    Started as root, it goes on as nobody (drop_privileges()) once what
  *    needs root is set up: the data file is opened for the save at the
@@ -102,10 +102,8 @@ struct Slmodemd final : public dcore::Host {
 		fd = -1;
 		return 0;
 	}
-	/* the old driver's codec type (CODEC_STLC7550) */
-	int codec_type(dcore::Modem &) override { return CODEC_STLC7550; }
-	/* for ATI3 */
-	const char *driver_name() override { return "socket driver"; }
+	/* for ATI3: the line */
+	const char *driver_name() override { return "SIP"; }
 	/* to the pty */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		return pty.write(buf, n);
@@ -215,8 +213,8 @@ int Slmodemd::run(int ctl_fd)
 	return 0;
 }
 
-/* the device's number: the digits its name ends with (/dev/slamr1: 1),
-   0 if none */
+/* the modem's number: the digits its name ends with (dmodem1: 1), 0 if
+   none */
 int dev_number(const char *name)
 {
 	size_t n = strlen(name);
@@ -266,7 +264,7 @@ void drop_privileges(bool realtime)
 
 } // namespace
 
-/* slmodemd [option...] [device]: the modem on its pty, the line the SIP
+/* slmodemd [option...] [name]: the modem on its pty, the line the SIP
    user agent; the pumps' line data kept in /var/lib/slmodem/data.<name> */
 int main(int argc, char *argv[])
 {
@@ -278,20 +276,20 @@ int main(int argc, char *argv[])
 	int ctl_fd, ret;
 
 	slm::parse_options(argc, argv, opt);
-	dev = strdup(opt.dev_name);
+	dev = strdup(opt.name);
 	name = basename(dev);
 	dcore::log_open(name);
 	slm::print_version();
 
 	prop_dp_init();
 
-	/* the device's number names the link: /dev/ttyDM0 for /dev/slamr0 */
+	/* the modem's number names the link: /dev/ttyDM0 for dmodem0 */
 	snprintf(link_name, sizeof(link_name), "/dev/ttyDM%d",
-		 dev_number(opt.dev_name));
+		 dev_number(opt.name));
 
 	dcore::Options mo;
 	mo.name = name;
-	mo.dev_name = opt.dev_name;
+	mo.dev_name = opt.name;
 	mo.rate = RATE;
 	mo.country = opt.country;
 	s.m = new dcore::Modem(s, mo);
@@ -316,10 +314,6 @@ int main(int argc, char *argv[])
 	   below) */
 	if (geteuid() == 0)
 		s.pty.fork_keeper();
-
-	if (opt.ring_detector)
-		INFO("the ring detector needs a telephone line: not on SIP "
-		     "calls, ignored.\n");
 
 	if (opt.realtime) {
 		struct sched_param prm;

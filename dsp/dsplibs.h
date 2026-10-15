@@ -45,14 +45,6 @@ extern int   dp_runtime_pcm(void *runtime);
 extern void *dcr_create(void);
 extern void  dcr_delete(void *dcr);
 extern int   dcr_process(void *dcr, void *buf, int len);
-/* the ring detector on a snooping codec's samples at rate Hz:
-   RD_process returns 1 at the start and at the end of a ring burst, and
-   RD_ring_details then gives freq 0 for a start, or the frequency (Hz)
-   and the length (ms) of the finished burst */
-extern void *RD_create(struct modem *m, unsigned rate);
-extern void  RD_delete(void *obj);
-extern int   RD_process(void *obj, void *in, int count);
-extern void  RD_ring_details(void *obj, long *freq, long *duration);
 /* caller ID (Bell 202 FSK) at rate Hz; cid_val 1: formatted fields, else
    the raw message in hex, sent to the DTE.  CID_process returns 0 to go
    on, 1 when the message was reported, -1 on error */
