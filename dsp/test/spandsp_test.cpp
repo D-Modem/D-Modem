@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,7 @@ int sp_ulaw(int x);
 int sp_end_of_data(void);
 void *sp_t4_tx(const char *file, int page, int encoding, int min_bits);
 int sp_t4_bit(void *s);
+void sp_t4_free(void *s);
 
 /*
  *    V.17
@@ -50,6 +52,15 @@ protected:
 	long ntx = 0, nrx = 0, maxbits = 200000;
 	void *t4src = nullptr;
 	std::string page;
+
+	~SpandspV17() override { drop_t4(); }
+	/* the page's encoder freed */
+	void drop_t4()
+	{
+		if (t4src)
+			sp_t4_free(t4src);
+		t4src = nullptr;
+	}
 
 	/* spandsp's next bit to send: the page's (sp_t4_bit) or PRBS 2^23-1,
 	   kept in txb; end of data after maxbits or the page */
@@ -97,6 +108,7 @@ testing::AssertionResult SpandspV17::run(int short_train, FaxRxMemory *mem)
 
 	ntx = nrx = 0;
 	prbs = 0x1234567;
+	drop_t4();
 	if (GetParam().t4_min >= 0) {
 		maxbits = 2000000;
 		t4src = sp_t4_tx(page.c_str(), 0, 2, GetParam().t4_min);
@@ -110,8 +122,13 @@ testing::AssertionResult SpandspV17::run(int short_train, FaxRxMemory *mem)
 			  bps == 9600 ? (short_train ? 98 : 97) :
 			  (short_train ? 74 : 73), &mod, &st);
 	tx = sp_v17_tx(bps, short_train, get_bit, this);
-	if (rx.init(mod, short_train, 8000, put_bit, this, mem))
+	if (!tx)
+		return testing::AssertionFailure() << train << "no spandsp "
+						   "V.17 transmitter at " << bps;
+	if (rx.init(mod, short_train, 8000, put_bit, this, mem)) {
+		sp_v17_free(tx);
 		return testing::AssertionFailure() << train << "receiver init";
+	}
 	/* silence, the signal, silence */
 	for (n = 0; n < 8000L * 120 / 160; n++) {
 		int k, len = n < 5 ? 0 : sp_v17_samples(tx, amp, 160);
@@ -213,6 +230,7 @@ TEST_P(SpandspT4, IntoOurLineReceiver)
 	ASSERT_EQ(ti.read_page(&ref), 1);
 	s = sp_t4_tx(doc.c_str(), 0, enc, GetParam().min_bits);
 	ASSERT_NE(s, nullptr);
+	std::unique_ptr<void, void (*)(void *)> s_free(s, sp_t4_free);
 	got.init(ref.width, ref.fine);
 	rx.init(&got, enc == 2);
 	while ((b = sp_t4_bit(s)) >= 0)
@@ -227,6 +245,9 @@ TEST_P(SpandspT4, IntoOurLineReceiver)
 		}
 	EXPECT_EQ(got.rows, ref.rows);
 	EXPECT_EQ(diff, 0) << "the first at row " << first;
+	rx.release();
+	got.release();
+	ref.release();
 	ti.close();
 }
 

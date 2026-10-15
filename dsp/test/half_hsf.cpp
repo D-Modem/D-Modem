@@ -963,18 +963,21 @@ int Nvm::load(const char *file)
 		return -1;
 	}
 	while (std::getline(f, line)) {
-		char sub[128], k[128];
 		bool entry = false, region = false;
-		std::string key, idx, text;
-		size_t at;
+		std::string sub, key, idx, text;
+		size_t at, c1, c2;
 
 		line.resize(strcspn(line.c_str(), "\r\n"));
 		if (line.compare(0, 4, "HKR,"))
 			continue;
-		/* HKR,<subkey>,<key>,<type>,<data> */
-		if (sscanf(line.c_str() + 4, "%127[^,],%127[^,],", sub, k) < 2)
+		/* HKR,<subkey>,<key>,<type>,<data>: subkey and key whole,
+		   however long */
+		c1 = line.find(',', 4);
+		c2 = c1 == std::string::npos ? c1 : line.find(',', c1 + 1);
+		if (c2 == std::string::npos || c1 == 4 || c2 == c1 + 1)
 			continue;
-		key = k;
+		sub = line.substr(4, c1 - 4);
+		key = line.substr(c1 + 1, c2 - c1 - 1);
 		while (!key.empty() && isspace((byte)key.back()))
 			key.pop_back();
 		/* the data: after the third comma past HKR, */
@@ -1001,20 +1004,21 @@ int Nvm::load(const char *file)
 		subst(text, "@CNXTLINUXVERSION@", "7.80.02.06oem");
 		subst(text, "@CNXTDRVDSC@", "Conexant HSF softmodem");
 
-		if (!strncmp(sub, "Country\\", 8) || !strncmp(sub, "Region\\", 7) ||
-		    !strncmp(sub, "Profile\\", 8)) {
+		if (!sub.compare(0, 8, "Country\\") ||
+		    !sub.compare(0, 7, "Region\\") ||
+		    !sub.compare(0, 8, "Profile\\")) {
 			entry = true;
 			region = sub[0] != 'P';
-			idx = strchr(sub, '\\') + 1;
-		} else if (!strcmp(sub, "OEM")) {
+			idx = sub.substr(sub.find('\\') + 1);
+		} else if (sub == "OEM") {
 			for (const auto &o : oem_keys)
 				if (key == o[0]) {
 					key = o[1];
 					break;
 				}
-		} else if (!strncmp(sub, "OEM\\", 4)) {
+		} else if (!sub.compare(0, 4, "OEM\\")) {
 			int d;
-			key = std::string(sub + 4) + "_" + key;
+			key = sub.substr(4) + "_" + key;
 			if (sscanf(key.c_str(), "ATI_%d", &d) == 1)
 				key = "ATMESSAGE_I" + std::to_string(d);
 		} else

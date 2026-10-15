@@ -59,6 +59,13 @@ struct Call {
 	double hits;    /* line hits a minute */
 };
 
+/* (gtest prints a call by what it is, not its bytes, padding and all) */
+static void PrintTo(const Call &c, std::ostream *os)
+{
+	*os << (c.to ? "to" : "from") << (c.ecm ? " ecm" : "") << " hits "
+	    << c.hits;
+}
+
 class T30Spandsp : public testing::TestWithParam<Call> {};
 
 /* one call (10 minutes of line at most): spandsp's machine and ours

@@ -46,9 +46,17 @@ void *sp_t4_tx(const char *file, int page, int encoding, int min_bits)
 		return NULL;
 	t4_tx_set_tx_encoding(s, encoding);
 	t4_tx_set_min_bits_per_row(s, min_bits);
-	if (t4_tx_start_page(s))
+	if (t4_tx_start_page(s)) {
+		t4_tx_free(s);
 		return NULL;
+	}
 	return s;
+}
+
+/* the encoder freed */
+void sp_t4_free(void *s)
+{
+	t4_tx_free(static_cast<t4_tx_state_t*>(s));
 }
 
 /* the next bit, or < 0 at the end of the page */
