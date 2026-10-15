@@ -25,7 +25,7 @@ The modem's signal processing is open source, in `dsp/` (C++, behind the C inter
 The two modules share `pbx/dmodem_bridge.c` on libdmodem's C API: the profile's options, the modem with its DTE on a socketpair, and the data between it and the profile's server (TCP or a unix socket, optionally with the call's details first) or program on a pty.  Each module keeps its PBX's side (the channel's frames, its variables and log, the fax applications).
 
 ### Login menu (optional)
-[PBX-Modem](https://github.com/Neo-Desktop/pbx-modem) (`modemmenu`) is a login and menu for callers, in Go: it checks a user name and password against a text file, LDAP, an SQL database or PAM, then offers a BBS, PPP or a shell, started with the caller's credentials, the dialed number, the connect rate and the time of the call.  Either module runs it as a `mode = exec` profile, or connects calls to one `modemmenu -serve` by a `mode = unix` profile with `header = yes`.
+[modemmenu](https://github.com/Neo-Desktop/modemmenu) is a login and menu for callers, in Go: it checks a user name and password against a text file, LDAP, an SQL database or PAM, then offers a BBS, PPP or a shell, started with the caller's credentials, the dialed number, the connect rate and the time of the call.  Either module runs it as a `mode = exec` profile, or connects calls to one `modemmenu -serve` by a `mode = unix` profile with `header = yes`.
 
 ## Documentation
 The technical documentation is in [docs/](docs/README.md): how the DSP, the data link layer and the modem core work, the Asterisk and FreeSWITCH modules, the tests and the interop results against other soft modems.  [docs/specs/](docs/specs/README.md) lists the ITU-T Recommendations implemented, with a script that downloads them.

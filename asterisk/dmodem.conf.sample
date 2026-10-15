@@ -60,7 +60,7 @@ mode = exec
 command = exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:192.168.77.2 ms-dns 192.168.77.1
 
 ; a login and a menu (BBS, PPP, shell) for the caller: modemmenu,
-; https://github.com/Neo-Desktop/pbx-modem, a program for each call
+; https://github.com/Neo-Desktop/modemmenu, a program for each call
 ;[menu]
 ;mode = exec
 ;command = exec /usr/local/bin/modemmenu -config /etc/asterisk/modemmenu.conf
