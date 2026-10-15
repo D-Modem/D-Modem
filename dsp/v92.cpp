@@ -1624,7 +1624,7 @@ void V92Up::decided(int eta)
 					fpe_rx = 0;
 			}
 		} else
-			put_bits(ctx, bits, nb);
+			link.put(bits, nb);
 		if ((dframes & 1023) == 0) {
 			/* the feed forward taps' centre of gravity: the
 			   analogue modem's symbol timing against ours */
@@ -2690,8 +2690,7 @@ static void v92_get_frame(void *ctx, V90Tx *t, unsigned char *bits,
 			v->fmode = V92F_DATA;
 		break;
 	case V92F_DATA:
-		memset(bits, 1, v->D);
-		v->get_bits(v->ctx, bits, v->D);
+		v->link.get(bits, v->D);
 		break;
 	}
 }

@@ -475,8 +475,7 @@ int V91::tx_sample()
 				int nb;
 				cc = peer_cc && tframes % 64 == 0;
 				nb = enc.K + (cc ? 0 : 6);
-				memset(b, 1, nb);
-				get_bits(ctx, b, nb);
+				link.get(b, nb);
 				if (cc)
 					for (i = 0; i < 6; i++)
 						c6[i] = ccseq[(tframes / 64 * 6 + i) % 96];
@@ -693,7 +692,7 @@ void V91::data_symbol(int x)
 			err_count++;
 		nb = dec.K + (cc ? 0 : 6);
 		rframes++;
-		put_bits(ctx, b, nb);
+		link.put(b, nb);
 	}
 }
 

@@ -87,9 +87,7 @@ struct V91 {
 	int caller;
 	int want_cc;            /* we ask for the control channel */
 	int max_k;              /* the most we take (64 000 needs 42) */
-	void (*get_bits)(void *ctx, unsigned char *bits, int n);
-	void (*put_bits)(void *ctx, const unsigned char *bits, int n);
-	void *ctx;
+	CoreBits link;          /* the data */
 	long n;                 /* symbols since the start */
 	int esn;
 	long phase_start;       /* of the last INFO exchange */

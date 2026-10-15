@@ -421,7 +421,7 @@ static cplx nonlinear(cplx s, float theta)
 }
 
 /* the 8 symbols of the next mapping frame into sym[]: high or low by
-   the switching pattern, its bits from get_bits() scrambled (scr, tap:
+   the switching pattern, its bits from link scrambled (scr, tap:
    the primary channel's scrambler), shell mapped, coded differentially
    and by the trellis code, precoded and through the non-linear encoder
    as set */
@@ -439,7 +439,7 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 		bb--;
 		kk--;
 	}
-	get_bits(ctx, bits, bb);
+	link.get(bits, bb);
 	for (i = 0; i < bb; i++) {
 		int b = (bits[i] ^ (*scr >> (tap - 1)) ^ (*scr >> 22)) & 1;
 		*scr = (*scr << 1) | b;
@@ -607,7 +607,7 @@ int V34Params::decide(cplx z, int *px, int *py) const
 
 /* the bits of the mapping frame of the 8 decided points in e[]: shell
    demapping, the differential decoding of the rotations, descrambling
-   (scr, tap), out through put_bits() */
+   (scr, tap), out to link */
 void V34DataRx::decode_frame(unsigned *scr, int tap)
 {
 	const V34Params *p_ = &p;
@@ -649,7 +649,7 @@ void V34DataRx::decode_frame(unsigned *scr, int tap)
 		bits[i] = (b ^ (*scr >> (tap - 1)) ^ (*scr >> 22)) & 1;
 		*scr = (*scr << 1) | b;
 	}
-	put_bits(ctx, bits, n);
+	link.put(bits, n);
 }
 
 /*

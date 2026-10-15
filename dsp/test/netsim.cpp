@@ -373,7 +373,7 @@ static float moh_sym = 1;
 
 /* moh_tx's next symbol: 90 (150 ms) of tone A, then moh_make's bits as
    phase reversals, round and round */
-static cplx moh_symbol(void *)
+static cplx moh_symbol()
 {
 	cplx z = { 0, 0 };
 	/* 150 ms of the tone (90 symbols), then the sequence, repeated */
@@ -490,7 +490,7 @@ static int run(struct dir *d, int a_out, int a_in)
 			moh_watch(ibuf[i], d->rate_in, t);
 		if (moh_st == 1 || moh_st == 2)
 			ibuf[i] = a_out && moh_st == 1 ?
-				(short)lrintf(moh_tx.sample()) : 0;
+				(short)lrintf(moh_tx.sample(moh_symbol)) : 0;
 		if (step_at >= 0 && t >= step_at)
 			ibuf[i] = (short)lrintf(ibuf[i] * step_g);
 		/* the noise of an analogue line: on a 8000 Hz G.711
@@ -690,7 +690,6 @@ int main(int argc, char **argv)
 		/* A's INFO modulation: 600 baud DPSK at 2400 Hz (the
 		   analogue modem answers in phase 2), at INFO's level */
 		moh_tx.init(ra, 2400, 600, 0.5f, 4, 1, 2988 * 1.41421f);
-		moh_tx.get_symbol = moh_symbol;
 	}
 	if (getenv("NET_CLOCK_FD")) {
 		void *m = mmap(NULL, sizeof(*line_clock), PROT_READ |

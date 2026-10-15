@@ -327,12 +327,11 @@ void FaxTx::next_segment(int seg_)
 	seg_sym = 0;
 }
 
-/* QamTx callback: the next symbol.  The training segments one after
+/* the next symbol (for qam.sample()).  The training segments one after
    the other (their lengths in symbols), the ones, the data until the
    caller's FAX_BIT_END, the shutdown ones and silence; done at the end */
-static cplx fax_tx_symbol(void *ctx)
+static cplx fax_tx_symbol(FaxTx *t)
 {
-	FaxTx *t = static_cast<FaxTx*>(ctx);
 	cplx z = { 0, 0 };
 	int b1, b2, off, shift;
 
@@ -466,8 +465,6 @@ void FaxTx::init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t 
 	/* the receivers of the original library want the symbols at this
 	   phase of the sample clock (as with V.32) */
 	qam.t = is_v17(mod_) ? 0.25f : 0.5f;
-	qam.get_symbol = fax_tx_symbol;
-	qam.ctx = this;
 	if (is_v17(mod_)) {
 		scr = 0x2ECDD5;
 		/* after a short train the original library goes on with
@@ -496,7 +493,7 @@ float FaxTx::sample()
 			done = 1;
 		return y;
 	}
-	return qam.sample();
+	return qam.sample([this] { return fax_tx_symbol(this); });
 }
 
 

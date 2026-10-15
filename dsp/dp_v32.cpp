@@ -421,8 +421,8 @@ cplx V32Pump::tx_data_symbol()
 	return r->points[idx];
 }
 
-/* the next symbol of the current transmit signal (QamTx callback via
-   v32_get_symbol): AA, CC, AC/CA (with tx_reverse for a phase reversal),
+/* the next symbol of the current transmit signal (for tx.sample()):
+   AA, CC, AC/CA (with tx_reverse for a phase reversal),
    S, S-bar, TRN, the rate words or data; counts tx_syms */
 cplx V32Pump::tx_symbol()
 {
@@ -471,12 +471,6 @@ cplx V32Pump::tx_symbol()
 	}
 	tx_syms++;
 	return z;
-}
-
-/* QamTx's get_symbol: ctx is the pump */
-static cplx v32_get_symbol(void *ctx)
-{
-	return static_cast<V32Pump*>(ctx)->tx_symbol();
 }
 
 /*
@@ -1046,7 +1040,7 @@ int V32Pump::sample(float x, float *y)
 	if (txm == TXM_ANS)
 		*y = DSP_TX_AMPLITUDE * ans.next();
 	else
-		*y = tx.sample();
+		*y = tx.sample([this] { return tx_symbol(); });
 	last_tx = *y;
 
 	rx_sample(x);
@@ -1084,8 +1078,6 @@ int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 
 	tx.init(srate_, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
 		    sqrtf(V32_POWER), V32_TX_AMPLITUDE);
-	tx.get_symbol = v32_get_symbol;
-	tx.ctx = this;
 	/* symbol centres a quarter symbol off the sample grid: the
 	   original library's receiver fails to train at some timing
 	   phases, this one works for all its rates */

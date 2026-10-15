@@ -16,6 +16,8 @@
 /* the interface to the modem core: the data pumps register and exchange
    bits through modem_dp.h, read and set parameters through modem_param.h,
    and dsplibs.h is the rest of the library's interface (both ways) */
+#include <string.h>
+
 #include <modem_dp.h>
 #include <modem_param.h>
 #include <dsplibs.h>
@@ -346,6 +348,23 @@ struct Bell103Detect {
 	}
 	/* 100 ms of it */
 	bool found() const { return blocks >= 5; }
+};
+
+/* the data bits' end in the modem core, for the parts of a pump that
+   send or receive them: get() what to send (ones when the core has
+   none), put() what came */
+struct CoreBits {
+	struct modem *modem;
+
+	void get(unsigned char *bits, int n) const
+	{
+		memset(bits, 1, n);
+		modem_get_bits(modem, 1, bits, n);
+	}
+	void put(const unsigned char *bits, int n) const
+	{
+		modem_put_bits(modem, 1, (u8 *)bits, n);
+	}
 };
 
 /*

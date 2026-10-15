@@ -163,8 +163,7 @@ struct V34Precoder {
 
 struct V34DataTx {
 	V34Params p;
-	void (*get_bits)(void *ctx, unsigned char *bits, int n);
-	void *ctx;
+	CoreBits link;          /* the data */
 	int sbc;                /* high/low frame switching */
 	int z, state, v0;       /* differential, trellis and sync state */
 	int half, pat;          /* 4D symbols in the half data frame, sync
@@ -184,8 +183,7 @@ struct V34DataTx {
 
 struct V34DataRx {
 	V34Params p;
-	void (*put_bits)(void *ctx, const unsigned char *bits, int n);
-	void *ctx;
+	CoreBits link;          /* the data */
 	int sbc, z;
 	int e[8];               /* rotation << 9 | point index */
 	int pos;
@@ -246,7 +244,7 @@ struct V34Tx {
 	int dibit(int b0, int b1);
 	void init(int baud_, int high, int caller);
 	void segment(enum v34_txseg seg_);
-	void start_data(const V34Params *p, void (*get_bits)(void *, unsigned char *, int), void *ctx);
+	void start_data(const V34Params *p, CoreBits link);
 	float sample();
 };
 
@@ -367,7 +365,7 @@ struct V34Rx {
 		memset(err_h, 0, sizeof(err_h));
 		err_n = 0;
 	}
-	void start_data(const V34Params *p, void (*put_bits)(void *, const unsigned char *, int), void *ctx);
+	void start_data(const V34Params *p, CoreBits link);
 	void sample(float x);
 };
 

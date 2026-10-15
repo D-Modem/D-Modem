@@ -120,9 +120,7 @@ enum v92_fmode { V92F_TRN, V92F_SEQ, V92F_ED, V92F_B1, V92F_DATA,
 struct V92Up {
 	int alaw;
 	V92Info1a ia;
-	void (*get_bits)(void *ctx, unsigned char *bits, int n);
-	void (*put_bits)(void *ctx, const unsigned char *bits, int n);
-	void *ctx;
+	CoreBits link;          /* the data */
 	long n;                 /* samples since the start */
 	int connected;
 

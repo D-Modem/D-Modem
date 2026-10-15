@@ -175,12 +175,11 @@ int V34Tx::dibit(int b0, int b1)
 	return b0 | (b1 << 1);
 }
 
-/* the QamTx callback: the next symbol of the current segment, in units
+/* the next symbol (for qam.sample()) of the current segment, in units
    of the training points (silence: 0); counts it in n, and goes on from
    J' to TRN and from E to data at their ends */
-static cplx tx_symbol(void *ctx)
+static cplx tx_symbol(V34Tx *t)
 {
-	V34Tx *t = static_cast<V34Tx*>(ctx);
 	cplx z = { 0, 0 };
 	int k, w;
 
@@ -262,8 +261,6 @@ void V34Tx::init(int baud_, int high, int caller)
 	qam.init(V34_SRATE, v34_carrier(baud_, high),
 		    v34_symbol_rate(baud_), V34_ALPHA, V34_SPAN, 1.41421f,
 		    V34_PRIMARY_RMS * 1.41421f);
-	qam.get_symbol = tx_symbol;
-	qam.ctx = this;
 	tap = caller ? 18 : 5;
 	seg = V34_TX_SILENCE;
 }
@@ -283,20 +280,19 @@ void V34Tx::segment(enum v34_txseg seg_)
 }
 
 /* the data mode parameters, before the end of E: the symbols after E
-   come from the data encoder, get_bits(ctx, ...) gives the bits of each
-   mapping frame */
-void V34Tx::start_data(const V34Params *p, void (*get_bits)(void *, unsigned char *, int), void *ctx)
+   come from the data encoder, link gives the bits of each mapping
+   frame */
+void V34Tx::start_data(const V34Params *p, CoreBits link)
 {
 	dtx.init(p);
-	dtx.get_bits = get_bits;
-	dtx.ctx = ctx;
+	dtx.link = link;
 	data_on = 1;
 }
 
 /* the next line sample, at 9600 Hz */
 float V34Tx::sample()
 {
-	return qam.sample();
+	return qam.sample([this] { return tx_symbol(this); });
 }
 
 
@@ -1184,13 +1180,11 @@ float V34Rx::precoder(int h[6]) const
 }
 
 /* the data mode parameters, before the end of E (precode_eq() applies
-   at its end): put_bits(ctx, ...) takes the bits of each mapping
-   frame */
-void V34Rx::start_data(const V34Params *p, void (*put_bits)(void *, const unsigned char *, int), void *ctx)
+   at its end): link takes the bits of each mapping frame */
+void V34Rx::start_data(const V34Params *p, CoreBits link)
 {
 	drx.init(p);
-	drx.put_bits = put_bits;
-	drx.ctx = ctx;
+	drx.link = link;
 	mse = 0;
 	data_on = 1;
 }

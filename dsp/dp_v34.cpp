@@ -1083,12 +1083,11 @@ float V34Pump::ans_am_depth()
  *    control channel
  */
 
-/* the control channel modulator's next symbol (QamTx's callback): the
+/* the control channel modulator's next symbol (for cc.sample()): the
    next INFO / MH bit (a 1 reverses the phase), else the tone, reversed
    once when cc_rev asks (rev_sent: then) */
-static cplx cc_symbol(void *ctx)
+static cplx cc_symbol(V34Pump *v)
 {
-	V34Pump *v = static_cast<V34Pump*>(ctx);
 	cplx z = { 0, 0 };
 	if (v->cctx.pos < v->cctx.n) {
 		if (v->cctx.b[v->cctx.pos++])
@@ -2303,7 +2302,6 @@ int V34Pump::v90_start()
 	return 0;
 }
 
-static void v34_put_bits(void *ctx, const unsigned char *bits, int n);
 
 /* without probing (V.92's short phase 2): the fastest rate the mse of
    the receiver's training allows, as probe_analyse() asks of the SNR */
@@ -2447,7 +2445,7 @@ int V34Pump::v90_data_setup()
 	/* the analogue modem precodes with what our last MP said, not
 	   with what the equalizer has adapted to since */
 	p.set_precoder(mp_h);
-	prx.start_data(&p, v34_put_bits, this);
+	prx.start_data(&p, CoreBits{ modem });
 	up_n = n;
 	rate_rx = p.rate;
 	rate_tx = (cp.drn + 20) * 8000 / 6;
@@ -2470,21 +2468,6 @@ static int v34_pick_rate(int baud, int max, int mask)
 		if ((mask >> (n - 1)) & 1 && v34_rates[baud][n - 1].b)
 			return n;
 	return 0;
-}
-
-/* the data transmitter's n bits from the link (ones when it has none) */
-static void v34_get_bits(void *ctx, unsigned char *bits, int n)
-{
-	V34Pump *v = static_cast<V34Pump*>(ctx);
-	memset(bits, 1, n);
-	modem_get_bits(v->modem, 1, bits, n);
-}
-
-/* the data receiver's n bits to the link */
-static void v34_put_bits(void *ctx, const unsigned char *bits, int n)
-{
-	V34Pump *v = static_cast<V34Pump*>(ctx);
-	modem_put_bits(v->modem, 1, (u8 *)bits, n);
 }
 
 /* both MP sequences are known: set up the data mode */
@@ -2516,13 +2499,13 @@ int V34Pump::data_setup()
 	/* each MP asks for the trellis code of the other's transmitter */
 	p.states = 16 << r->trellis;
 	p.set_precoder(r->h);
-	ptx.start_data(&p, v34_get_bits, this);
+	ptx.start_data(&p, CoreBits{ modem });
 	rate_tx = p.rate;
 	if (p.init(prx.baud, nrx, l->expanded))
 		return -1;
 	p.states = 16 << l->trellis;
 	p.set_precoder(l->h);
-	prx.start_data(&p, v34_put_bits, this);
+	prx.start_data(&p, CoreBits{ modem });
 	rate_rx = p.rate;
 	DSP_DBG("v34: data rates tx %d rx %d, trellis tx %d rx %d states%s\n",
 		rate_tx, rate_rx, 16 << r->trellis, 16 << l->trellis,
@@ -2711,9 +2694,7 @@ void V34Pump::v92_start()
 	V92Info1a ia;
 	ia.parse(ccr.frame);
 	v92u.init(alaw, &ia, v90tx.fclock, v90tx.fbase);
-	v92u.get_bits = v34_get_bits;
-	v92u.put_bits = v34_put_bits;
-	v92u.ctx = this;
+	v92u.link.modem = modem;
 	if (rt)
 		rt->pcm = 1;
 	set_state(V92_RUN);
@@ -2725,9 +2706,7 @@ void V34Pump::v91_start()
 	const char *k = getenv("DSP_V91_K");
 	DSP_DBG("v34: V.91\n");
 	v91m.init(alaw, caller, k ? atoi(k) : 0, getenv("DSP_V91_CC") != NULL);
-	v91m.get_bits = v34_get_bits;
-	v91m.put_bits = v34_put_bits;
-	v91m.ctx = this;
+	v91m.link.modem = modem;
 	if (rt)
 		rt->pcm = 1;
 	set_state(V91_RUN);
@@ -2747,8 +2726,6 @@ int V34Pump::v91_escape()
 		set_state(P2A_INFO0);
 		cc.init(srate, 2400, CC_BAUD, 0.5f, 4, 1, V34_TONE_AMP);
 	}
-	cc.get_symbol = cc_symbol;
-	cc.ctx = this;
 	make_info0(&cctx);
 	cc_send();
 	return 0;
@@ -2894,8 +2871,6 @@ int V34Pump::handshake()
 			set_state(P2A_INFO0);
 			cc.init(srate, 2400, CC_BAUD, 0.5f, 4, 1,
 				    V34_TONE_AMP);
-			cc.get_symbol = cc_symbol;
-			cc.ctx = this;
 			make_info0(&cctx);
 			cc_send();
 		}
@@ -3053,8 +3028,6 @@ int V34Pump::handshake()
 			set_state(P2C_INFO0);
 			cc.init(srate, 1200, CC_BAUD, 0.5f, 4, 1,
 				    V34_TONE_AMP);
-			cc.get_symbol = cc_symbol;
-			cc.ctx = this;
 			make_info0(&cctx);
 			cc_send();
 		}
@@ -3905,7 +3878,7 @@ float V34Pump::pump_tx_sample()
 		});
 		break;
 	case TXM_CC:
-		y = cc.sample();
+		y = cc.sample([this] { return cc_symbol(this); });
 		break;
 	case TXM_PROBE:
 		y = probe_gain * probe[probe_pos];

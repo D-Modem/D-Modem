@@ -9,6 +9,8 @@
 #ifndef __QAM_H__
 #define __QAM_H__
 
+#include <string.h>
+
 #include "dsp.h"
 
 namespace dsp {
@@ -19,8 +21,8 @@ namespace dsp {
 #define QAM_MAX_EQ 64           /* T/2 spaced equalizer taps */
 
 /*
- *    transmitter: pulse shaping and modulation of complex symbols;
- *    get_symbol() is called at the symbol rate
+ *    transmitter: pulse shaping and modulation of complex symbols, each
+ *    from the source sample() is given, at the symbol rate
  */
 struct QamTx {
 	int srate;
@@ -31,20 +33,31 @@ struct QamTx {
 	Osc carrier;
 	float scale;
 	float pulse[2 * QAM_MAX_SPAN * QAM_PULSE_RES + 2];
-	cplx (*get_symbol)(void *ctx);
-	void *ctx;
 
 	/* carrier (Hz), baud, root raised cosine roll off alpha over span
 	   symbols each side; symbols of rms rms_symbol give a pass band rms
 	   of amplitude / sqrt(2) (that of a sine of amplitude amplitude) */
 	void  init(int srate, float carrier, float baud, float alpha, int span,
 		   float rms_symbol, float amplitude);
-	/* the next line sample (calls get_symbol at symbol boundaries) */
-	float sample();
+	/* the next line sample; at a symbol boundary the next symbol from
+	   next() */
+	template <class Next> float sample(Next next)
+	{
+		t += 1.0f / sps;
+		if (t >= 1) {
+			t -= 1;
+			memmove(sym + 1, sym,
+				(2 * span - 1) * sizeof(sym[0]));
+			sym[0] = next();
+		}
+		return out();
+	}
 	void  flush();          /* forget symbols in flight */
 private:
 	/* the pulse at t symbol periods from its centre (interpolated) */
 	float pulse_at(float t);
+	/* the symbols in flight shaped and up converted: the sample */
+	float out();
 };
 
 /*

@@ -56,21 +56,14 @@ float QamTx::pulse_at(float t_)
 	return pulse[i] + p * (pulse[i + 1] - pulse[i]);
 }
 
-/* the next pass band sample: a new symbol from get_symbol() whenever t
-   wraps, the sum of the 2 * span symbols in flight (sym[k] went out k
-   periods ago, delayed by span), up converted (real part) */
-float QamTx::sample()
+/* the pass band sample at t: the sum of the 2 * span symbols in flight
+   (sym[k] went out k periods ago, delayed by span), up converted (real
+   part) */
+float QamTx::out()
 {
 	cplx s = { 0, 0 }, c;
 	int k;
 
-	t += 1.0f / sps;
-	if (t >= 1) {
-		t -= 1;
-		memmove(sym + 1, sym,
-			(2 * span - 1) * sizeof(sym[0]));
-		sym[0] = get_symbol(ctx);
-	}
 	for (k = 0; k < 2 * span; k++) {
 		float g = pulse_at(t + k - span);
 		s.re += g * sym[k].re;
