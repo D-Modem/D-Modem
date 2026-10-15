@@ -102,27 +102,47 @@ Everything here is in `namespace dsp`, except the C entry points of
 `dsplibs.h`, which keep C linkage for the modem core.
 
 - **Data pumps** derive from `Pump` (`pump.h`): `CallProgPump`, `FskPump`,
-  `V22Pump`, `V32Pump` and `V34Pump` (which is also V.8 and V.90). A pump
-  has a static `name`, `start()` (what was the create function: 0, or -1
-  if it cannot run), `process()`, and optionally `hangup()` and a
-  destructor. `PumpOps<T>::ops` is the table registered with the modem
-  core (`modem_dp_register`). A pump is allocated with `new T()`, so
-  members start at zero, as they did with `calloc`.
+  `V22Pump`, `V32Pump` and `V34Pump` (which is also V.8 and V.90), and
+  the test pumps `DummyPump` and `SinusPump`. A pump has a static
+  `name`, `start()` (what was the create function: 0, or -1 if it cannot
+  run), `process()`, and optionally `hangup()` and a destructor.
+  `PumpOps<T>::ops` is the table registered with the modem core
+  (`modem_dp_register`). A pump is allocated with `new T()`, so members
+  start at zero, as they did with `calloc`.
+- **`PumpBase<P, S>`** (`pump.h`, CRTP on `Pump`) is what the modulation
+  pumps share: the core, the sample rate and side, a state of `S` with
+  the samples counted in it and in all, the S7 and S10 limits, the
+  carrier run, the connect report, the hand over to another pump, the
+  tests' settings from the environment, and `pump_loop()`, `process()`
+  by the sample for a pump with a `sample()` (FSK, V.22, V.32).
+- **Mixins** (CRTP, the host the template parameter) hold what a host
+  has a part of: `HdlcTx` / `HdlcRx` (`fax_hdlc.h`, the HDLC framing of
+  class 1 and of T.30's V.21 and ECM frames), `PcmFrames` (`v90.h`, the
+  phase 4 frame sequencer of V.90 and of V.92's PCM upstream), and
+  V34Pump's groups in `dp_v34.cpp`: `V34V8`, `V34Qc`, `V34Info0`,
+  `V34Probe`, `V34Cc`, `V34Retrain`, `V34Moh`, each with its fields, its
+  methods and (V.8, quick connect, retrains and renegotiations,
+  modem-on-hold) its states of `handshake()`.
 - **Building blocks** are small classes of plain data with methods:
   `Osc`, `Biquad`, `Goertzel`, `PowerMeter`, `Resampler`, `FskMod`,
-  `FskDemod`, `DtmfGen`, `QamTx`, `QamRx`, `TrellisEnc`, `Viterbi`,
-  `EchoCanceller`, the V.34 and V.90 blocks (`V34Tx`, `V34Rx`,
-  `V34DataTx`, `V34DataRx`, `V34Precoder`, `V90Enc` and others), and the
-  fax side (`FaxTx`, `FaxRx`, `Fax`, `T30`, `T4Page`, `T4Rx`, `TiffIn`,
+  `FskDemod`, `FskBitTx`, `CarrierDetect`, `Bell103Detect`, `DtmfGen`,
+  `QamTx`, `QamRx`, `TrellisEnc`, `Viterbi`, `EchoCanceller`, the V.34
+  and V.90 blocks (`V34Tx`, `V34Rx`, `V34DataTx`, `V34DataRx`,
+  `V34Precoder`, `SyncFrames`, `V90Enc` and others), and the fax side
+  (`FaxTx`, `FaxRx`, `Fax`, `T30`, `T4Page`, `T4Rx`, `TiffIn`,
   `TiffOut`). They have no constructors: `init()` sets one up and, when
   it owns memory, `release()` frees it. Being plain data, they can live
-  inside a pump that is created zeroed.
+  inside a pump that is created zeroed. A transmitter that takes its
+  symbols or bits from its host (`QamTx`, `FskBitTx`) is given the
+  source at `sample()`; the data bits of V.34, V.91 and V.92 go through
+  `CoreBits`, the modem core's end.
 - **The other library objects**, `DcRemover`, `RingDetector`, `CallerId`
   and `Voice` (`dsp_glue.cpp`), are classes behind their C entry points
   (`dcr_*`, `RD_*`, `CID_*`, `VOICE_*`).
 - **slmodemd's own pumps without a modulation**, `dp_dummy.cpp` (the
   `DP_DUMMY` test pump) and `dp_sinus.cpp` (`DP_SINUS`, a test tone), are
-  Smart Link's C code as it came with slmodemd, registered the same way.
+  Smart Link's code as it came with slmodemd, on `Pump` and `PumpOps`
+  like the others.
 
 The conversion from C structs and functions kept the output the same to
 the byte: every quick test produces the same debug log before and after.

@@ -142,7 +142,6 @@ public:
 	/* nothing before the samples */
 	int block_start() { return DPSTAT_OK; }
 
-protected:
 	/* for modem m at srate_ samples/s, calling or not: the runtime,
 	   the handshake's time from S7 (50 s if 0) and the carrier's from
 	   S10 (1.4 s if 0) */
