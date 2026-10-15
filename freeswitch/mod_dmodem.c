@@ -516,14 +516,21 @@ SWITCH_STANDARD_APP(dmodem_function)
 		if (ev == DMBRIDGE_CONNECTED) {
 			const char *cid = switch_channel_get_variable(channel,
 							"caller_id_number");
+			const char *dialed = switch_channel_get_variable(channel,
+							"destination_number");
+			char connected[24];
 			const char *env[] = {
 				"DMODEM_CHANNEL", name,
 				"DMODEM_UUID", switch_core_session_get_uuid(session),
 				"DMODEM_PROFILE", profile,
 				"DMODEM_RATE", c.rate,
 				"DMODEM_CALLERID", cid ? cid : "",
+				"DMODEM_DIALED", dialed ? dialed : "",
+				"DMODEM_CONNECTED", connected,
 				NULL
 			};
+			snprintf(connected, sizeof(connected), "%lld",
+				 (long long)time(NULL));
 			switch_channel_set_variable(channel, "dmodem_rate",
 						    c.rate);
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),

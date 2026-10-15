@@ -1,8 +1,9 @@
 # app_dmodem: a data modem on an Asterisk channel
 
 `DModem()` answers a call with a software modem and, once the modems are
-connected, hands the data to a BBS over TCP or to a program on a pty
-(pppd for dial-up IP, a login, a door).  The profile in `dmodem.conf`
+connected, hands the data to a server over TCP or a unix socket (a BBS,
+a login menu) or to a program on a pty (pppd for dial-up IP, a login, a
+door).  The profile in `dmodem.conf`
 decides which, so one Asterisk can serve several numbers in several ways:
 
 ```
@@ -135,7 +136,8 @@ of a core).
 ## What the server or program sees
 
 Nothing until the modems are connected; then the bytes from the remote
-modem, after V.42 and V.44 or V.42bis.  The server or program ending its side
+modem, after V.42 and V.44 or V.42bis.  A server in `mode = unix` (a
+stream socket at `path`) sees the same as one in `mode = tcp`.  The server or program ending its side
 (closing the socket, the program exiting) hangs up the call once what it
 sent last is on the line; the remote modem hanging up closes the socket
 or hangs up the pty (SIGHUP).
@@ -149,6 +151,30 @@ controlling terminal (raw mode), and in its environment:
 | `DMODEM_PROFILE` | the profile |
 | `DMODEM_RATE` | the connect rate, transmit/receive bit/s |
 | `DMODEM_CALLERID` | the caller's number |
+| `DMODEM_DIALED` | the number dialed (the DNID, or the extension) |
+| `DMODEM_CONNECTED` | when the modems connected, Unix time |
+
+A server has no environment: with `header = yes` in a `tcp` or `unix`
+profile, the same variables come first on the connection, one
+`NAME=value` per line (values on one line), then an empty line, then the
+caller's bytes:
+
+```
+DMODEM_CHANNEL=PJSIP/trunk-00000001
+DMODEM_PROFILE=menu
+DMODEM_RATE=33600/31200
+DMODEM_CALLERID=5559999
+DMODEM_DIALED=5551000
+DMODEM_CONNECTED=1791666309
+
+```
+
+[`modemmenu`](https://github.com/Neo-Desktop/pbx-modem) uses these: a
+login (a text file, LDAP, SQL or PAM) and a menu of a BBS, PPP and a
+shell, started with the caller's credentials and these details of the
+call.  It runs as a `mode = exec` program for each call, or as one
+server for all of them (`modemmenu -serve`) behind a `mode = unix`
+profile with `header = yes`.
 
 On exit `DModem()` sets `DMODEMSTATUS` (`NOCARRIER`, `REMOTE`, `LOCAL`,
 `HANGUP` or `ERROR`) and `DMODEMRATE`.

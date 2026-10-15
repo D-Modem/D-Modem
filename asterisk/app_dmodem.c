@@ -26,6 +26,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <time.h>
 
 #include "asterisk/app.h"
 #include "asterisk/channel.h"
@@ -457,6 +458,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 
 		ev = dmbridge_call_step(&c, k);
 		if (ev == DMBRIDGE_CONNECTED) {
+			char connected[24];
 			const char *env[] = {
 				"DMODEM_CHANNEL", name,
 				"DMODEM_PROFILE", args.profile,
@@ -464,8 +466,14 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 				"DMODEM_CALLERID",
 				S_COR(ast_channel_caller(chan)->id.number.valid,
 				      ast_channel_caller(chan)->id.number.str, ""),
+				"DMODEM_DIALED",
+				S_OR(ast_channel_dialed(chan)->number.str,
+				     ast_channel_exten(chan)),
+				"DMODEM_CONNECTED", connected,
 				NULL
 			};
+			snprintf(connected, sizeof(connected), "%lld",
+				 (long long)time(NULL));
 			pbx_builtin_setvar_helper(chan, "DMODEMRATE", c.rate);
 			ast_verb(3, "%s: DModem connected at %s bit/s\n", name,
 				 c.rate);

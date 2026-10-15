@@ -6,10 +6,14 @@
 ;
 ; A profile:
 ;   mode = tcp       the data goes to a TCP server: host, port
+;   mode = unix      the data goes to a server on a unix socket: path
 ;   mode = exec      the data goes to a program on a pty: command (run by
 ;                    /bin/sh -c, with DMODEM_CHANNEL, DMODEM_PROFILE,
-;                    DMODEM_RATE and DMODEM_CALLERID in its environment);
+;                    DMODEM_RATE, DMODEM_CALLERID, DMODEM_DIALED and
+;                    DMODEM_CONNECTED (Unix time) in its environment);
 ;                    the pty is hung up when the call ends
+;   header = no      tcp, unix: yes sends those variables to the server
+;                    first, NAME=value lines and an empty line
 ;   init = AT...     extra AT commands for the modem, e.g. AT+MS=34 to
 ;                    stop at V.34, AT+MS=132 for V.32bis
 ;   answer = ATA     the command line the modem answers with; commands
@@ -54,6 +58,17 @@ port = 2323
 [ppp]
 mode = exec
 command = exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:192.168.77.2 ms-dns 192.168.77.1
+
+; a login and a menu (BBS, PPP, shell) for the caller: modemmenu,
+; https://github.com/Neo-Desktop/pbx-modem, a program for each call
+;[menu]
+;mode = exec
+;command = exec /usr/local/bin/modemmenu -config /etc/asterisk/modemmenu.conf
+; or one modemmenu -serve for every call
+;[menu]
+;mode = unix
+;path = /run/modemmenu/modemmenu.sock
+;header = yes
 
 ; a login program on the pty
 ;[login]

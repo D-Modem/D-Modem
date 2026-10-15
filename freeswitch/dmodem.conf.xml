@@ -48,9 +48,11 @@
 
     <!-- every option:
     <profile name="example">
-      <param name="mode" value="tcp"/>        tcp or exec
+      <param name="mode" value="tcp"/>        tcp, unix or exec
       <param name="host" value="bbs.example.org"/>
       <param name="port" value="23"/>
+      <param name="path" value="/run/modemmenu/modemmenu.sock"/>  mode unix: the server's socket
+      <param name="header" value="false"/>    tcp, unix: the call's details first (DMODEM_* lines)
       <param name="command" value="exec /usr/sbin/pppd ..."/>
       <param name="init" value="+MS=34"/>     more AT commands for the modem
       <param name="answer" value="ATA"/>      the command line that answers (AT+MS=132;A)

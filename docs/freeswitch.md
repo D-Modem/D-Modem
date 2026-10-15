@@ -5,8 +5,9 @@ the same modem and fax, with FreeSWITCH's applications, configuration and
 channel variables.
 
 The `dmodem` application answers a call with a software modem. Once the
-two modems are connected, it hands the data to a BBS over TCP or to a
-program on a pty (pppd for dial-up IP, a login, a door). The profile in
+two modems are connected, it hands the data to a server over TCP or a
+unix socket (a BBS, a login menu) or to a program on a pty (pppd for
+dial-up IP, a login, a door). The profile in
 `dmodem.conf` decides which, so one FreeSWITCH can serve several numbers
 in several ways:
 
@@ -194,6 +195,34 @@ controlling terminal (raw mode), and these in its environment:
 | `DMODEM_PROFILE` | the profile |
 | `DMODEM_RATE` | the connect rate, transmit/receive bit/s |
 | `DMODEM_CALLERID` | the caller's number |
+| `DMODEM_DIALED` | the number dialed (`destination_number`) |
+| `DMODEM_CONNECTED` | when the modems connected, Unix time |
+
+A server in `mode` `unix` (a stream socket at `path`) gets the same bytes
+as one in `mode` `tcp`.
+
+A server has no environment: with `header` `true` in a `tcp` or `unix`
+profile, the same variables come first on the connection, one
+`NAME=value` per line (values on one line), then an empty line, then the
+caller's bytes:
+
+```
+DMODEM_CHANNEL=sofia/internal/5559999@192.0.2.1
+DMODEM_UUID=6f1c0b9e-1d2a-4b0e-9a57-3c2d8e4f5a61
+DMODEM_PROFILE=menu
+DMODEM_RATE=33600/31200
+DMODEM_CALLERID=5559999
+DMODEM_DIALED=5551000
+DMODEM_CONNECTED=1791666309
+
+```
+
+[`modemmenu`](https://github.com/Neo-Desktop/pbx-modem) uses these: a
+login (a text file, LDAP, SQL or PAM) and a menu of a BBS, PPP and a
+shell, started with the caller's credentials and these details of the
+call.  It runs as a `mode` `exec` program for each call, or as one
+server for all of them (`modemmenu -serve`) behind a `mode` `unix`
+profile with `header` `true`.
 
 When it returns, `dmodem` sets these channel variables:
 - `dmodem_status`: `NOCARRIER`, `REMOTE`, `LOCAL`, `HANGUP`, `FAX` or
