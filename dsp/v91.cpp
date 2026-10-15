@@ -501,10 +501,10 @@ void V91::rx_restart()
 	rx = V91R_INFO;
 	got_info = got_info_ack = 0;
 	have_j = 0;
-	jn = 0;
+	fr.drop();
 	got_cp = got_cp_ack = got_es = 0;
 	cp_ready = 0;
-	cpn = cplen = 0;
+	cp_pad = 0;
 	since_info = zeros = 0;
 	rd_seg = rd_k = 0;
 	memset(seen, 0, sizeof(seen));
@@ -628,50 +628,43 @@ int V91::choose()
 /* a descrambled bit in CP; 1 when a CP frame is complete */
 int V91::cp_bit(int bit)
 {
+	V90Cp c;
+
 	sync = (sync << 1) | (unsigned)bit;
-	if (cpn == 0) {
+	/* the fill after a frame, to a multiple of 6 bits */
+	if (cp_pad)
+		return --cp_pad == 0;
+	if (!fr.busy()) {
 		/* 17 ones, then the start bit */
 		if ((sync & 0x3FFFF) == 0x3FFFE) {
-			memset(cpb, 1, 17);
-			cpb[17] = 0;
-			cpn = 18;
+			fr.init(SyncFrames::CP90, V91_CP_MAX - 8);
+			fr.start();
 		}
 		return 0;
 	}
-	cpb[cpn++] = (unsigned char)bit;
-	if (cpn == 129) {
-		cplen = v90_cp_length(cpb, cpn);
-		if (cplen <= 129 || cplen + 8 > V91_CP_MAX) {
-			cpn = 0;
-			return 0;
-		}
-		cpframe = (cplen + 1 + 5) / 6 * 6;
+	switch (fr.add(bit)) {
+	case SyncFrames::GOOD:
+		break;
+	case SyncFrames::BAD_CRC:
+		DSP_DBG("v91: CP with a bad CRC\n");
+		return 0;
+	default:
+		return 0;
 	}
-	if (cpn > 129 && cpn == cplen) {
-		V90Cp c;
-		if (c.parse(cpb, cplen)) {
-			DSP_DBG("v91: CP with a bad CRC\n");
-			cpn = 0;
-			return 0;
-		}
-		if (!got_cp)
-			DSP_DBG("v91: CP: drn %d, %d constellations, ack %d\n",
-				c.drn, c.ncon, c.ack);
-		/* one our encoder can't use is no CP: 8.3's timeouts
-		   follow */
-		if (!c.usable(c.drn + 20, 6)) {
-			DSP_DBG("v91: the remote's CP does not work\n");
-		} else {
-			cp_rx = c;
-			got_cp = 1;
-			if (c.ack)
-				got_cp_ack = 1;
-		}
+	c.parse(fr.b, fr.len);
+	if (!got_cp)
+		DSP_DBG("v91: CP: drn %d, %d constellations, ack %d\n",
+			c.drn, c.ncon, c.ack);
+	/* one our encoder can't use is no CP: 8.3's timeouts follow */
+	if (!c.usable(c.drn + 20, 6)) {
+		DSP_DBG("v91: the remote's CP does not work\n");
+	} else {
+		cp_rx = c;
+		got_cp = 1;
+		if (c.ack)
+			got_cp_ack = 1;
 	}
-	if (cpn > 129 && cpn == cpframe) {
-		cpn = 0;
-		return 1;
-	}
+	cp_pad = (fr.len + 1 + 5) / 6 * 6 - fr.len;
 	return 0;
 }
 
@@ -733,7 +726,7 @@ int V91::rx_sample(int x)
 					rx = V91R_J;
 					rscr = 0;
 					sync = 0;
-					jn = 0;
+					fr.drop();
 				}
 			}
 			if (peer_transparent & 2) {
@@ -752,34 +745,30 @@ int V91::rx_sample(int x)
 	case V91R_J:
 		b = descramble(&rscr, bit);
 		sync = (sync << 1) | (unsigned)b;
-		if (!jn) {
+		if (!fr.busy()) {
 			if ((sync & 0x3FFFF) == 0x3FFFE) {
-				memset(jb, 1, 17);
-				jb[17] = 0;
-				jn = 18;
+				fr.init(SyncFrames::DIL90);
+				fr.start();
 			}
 			break;
 		}
-		if (jn < (int)sizeof(jb))
-			jb[jn++] = (unsigned char)b;
-		if (jn >= 50) {
-			int len = v90_dil_length(jb, jn);
-			if (len <= 0 || len > (int)sizeof(jb)) {
-				DSP_DBG("v91: J does not make sense\n");
-				return V91_ESCAPE;
-			}
-			if (jn == len) {
-				V90Dil d;
-				if (d.parse(jb, len)) {
-					DSP_DBG("v91: J with a bad CRC\n");
-					return V91_ESCAPE;
-				}
-				dil = d;
-				have_j = 1;
-				DSP_DBG("v91: J: a DIL of %d segments\n", d.n);
-				rx = V91R_EM;
-				zeros = 0;
-			}
+		switch (fr.add(b)) {
+		case SyncFrames::BAD_LENGTH:
+			DSP_DBG("v91: J does not make sense\n");
+			return V91_ESCAPE;
+		case SyncFrames::BAD_CRC:
+			DSP_DBG("v91: J with a bad CRC\n");
+			return V91_ESCAPE;
+		case SyncFrames::GOOD: {
+			V90Dil d;
+			d.parse(fr.b, fr.len);
+			dil = d;
+			have_j = 1;
+			DSP_DBG("v91: J: a DIL of %d segments\n", d.n);
+			rx = V91R_EM;
+			zeros = 0;
+			break;
+		}
 		}
 		break;
 	case V91R_EM:
@@ -801,7 +790,8 @@ int V91::rx_sample(int x)
 				return V91_ESCAPE;
 			}
 			rx = V91R_CP;
-			cpn = 0;
+			fr.drop();
+			cp_pad = 0;
 			sync = 0;
 		}
 		break;

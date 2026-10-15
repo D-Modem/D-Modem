@@ -69,20 +69,6 @@ int  v92_cp_parse(V90Cp *cp, const unsigned char *b, int len);
 
 /* frames of 17 bit blocks after a sync of 17 ones, in the decoded bits
    of the analogue modem */
-#define V92_FR_MAX      3000
-enum { V92F_DIL, V92F_CP };
-struct V92Frames {
-	int mode;
-	unsigned sr;
-	unsigned char b[V92_FR_MAX];
-	int n, len;
-
-	/* cleared, for the frames of mode_ (V92F_DIL, V92F_CP) */
-	void init(int mode_);
-	/* 1 when a frame with a good CRC is in b (len bits) */
-	int bit(int x);
-};
-
 /* events of V92Up::sample() */
 enum {
 	V92_NONE,
@@ -190,7 +176,7 @@ struct V92Up {
 	int order;              /* TRN2u: 0 sign bit first, 1 the other */
 	unsigned dscr2[2];
 	long ones2[2];
-	V92Frames fr;
+	SyncFrames fr;
 	int got_ja, got_cpt, got_e1u, got_suvu, got_cpu, got_ack, got_e2u;
 	long frame_zero;        /* zero bits of the current data frame */
 	V90Dil dil;

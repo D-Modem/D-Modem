@@ -47,13 +47,6 @@
 
 namespace dsp {
 
-/* 1 if the last 16 of len bits are the CRC of the frame's fields
-   before them */
-static int crc_ok(const unsigned char *b, int len)
-{
-	return frame_crc_ok(b, len - 16);
-}
-
 /* GPA (7-2/V.34): 1 + x^-5 + x^-23 */
 static int gpa_scr(unsigned *r, int bit)
 {
@@ -205,7 +198,7 @@ int v92_cp_parse(V90Cp *c, const unsigned char *b, int len)
 	static const int con_bit[6] = { 103, 107, 111, 115, 120, 124 };
 	int i, j, k;
 
-	if (!crc_ok(b, len))
+	if (!frame_crc_ok(b, len - 16))
 		return -1;
 	memset(c, 0, sizeof(*c));
 	c->cp = field(b, 19, 2) == 1;
@@ -228,63 +221,6 @@ int v92_cp_parse(V90Cp *c, const unsigned char *b, int len)
 			for (i = 0; i < 16; i++)
 				c->mask[j][16 * k + i] =
 					b[136 + 136 * j + 17 * k + 1 + i];
-	return 0;
-}
-
-/* cleared, for the frames of mode_ (V92F_DIL: Ja; V92F_CP: CPt, CPu,
-   CPus and SUVu) */
-void V92Frames::init(int mode_)
-{
-	memset(this, 0, sizeof(*this));
-	mode = mode_;
-}
-
-/* a decoded bit: after a sync of 17 ones and a zero the frame goes
-   into b, its length from its header (Ja at bit 50 by its DIL; SUVu
-   and CPus 51; CPt and CPu at bit 129 by their constellations).
-   1 when a frame of len bits with a good CRC is in, -1 for one with a
-   bad CRC, 0 otherwise */
-int V92Frames::bit(int x)
-{
-	sr = (sr << 1) | (x & 1);
-	if (!n) {
-		if ((sr & 0x3FFFF) == 0x3FFFE) {
-			memset(b, 1, 17);
-			b[17] = 0;
-			n = 18;
-			len = 0;
-		}
-		return 0;
-	}
-	b[n++] = x & 1;
-	if (mode == V92F_DIL) {
-		if (n == 50) {
-			len = v92_dil_length(b, n);
-			if (len <= 50 || len > V92_FR_MAX) {
-				n = 0;
-				return 0;
-			}
-		}
-	} else {
-		/* SUVu, CPus: 51 bits; CPt, CPu: by their constellations */
-		if (n == 19 && b[18])
-			len = 51;
-		if (n == 21 && !b[18] && field(b, 19, 2) == 2)
-			len = 51;
-		if (n == 129 && !len) {
-			len = v90_cp_length(b, n);
-			if (len <= 129 || len > V92_FR_MAX) {
-				n = 0;
-				return 0;
-			}
-		}
-	}
-	if (len && n == len) {
-		n = 0;
-		return crc_ok(b, len) ? 1 : -1;
-	}
-	if (n >= V92_FR_MAX)
-		n = 0;
 	return 0;
 }
 
@@ -702,7 +638,7 @@ void V92Up::rx_sample(float x)
 				rx = V92R_QUIET;
 			else {
 				rx = V92R_CPT;
-				fr.init(V92F_CP);
+				fr.init(SyncFrames::CP92);
 				frame_zero = 0;
 			}
 		}
@@ -737,10 +673,10 @@ void V92Up::frame_bits(int bit)
 
 	if (!bit)
 		frame_zero++;
-	if (r < 0)
+	if (r == SyncFrames::BAD_CRC)
 		DSP_DBG("v92: frame with a bad CRC (%d bits) at symbol %ld\n",
 			fr.len, sym);
-	if (r <= 0)
+	if (r != SyncFrames::GOOD)
 		return;
 	if (rx == V92R_JA) {
 		int beta = dil_beta(fr.b), nn = field(fr.b, 18, 8);
@@ -880,7 +816,7 @@ void V92Up::symbol(float y)
 					sym, mse);
 				rx = V92R_TRN2;
 				e2u_sym = sym;
-				fr.init(V92F_CP);
+				fr.init(SyncFrames::CP92);
 				dscr2[0] = dscr2[1] = 0;
 				ones2[0] = ones2[1] = 0;
 				order = 0;
@@ -919,7 +855,7 @@ void V92Up::symbol(float y)
 			got_e2u = 1;
 			rn_wait_suv2 = 1;
 			e2u_sym = sym;
-			fr.init(V92F_CP);
+			fr.init(SyncFrames::CP92);
 			DSP_DBG("v92: E2u before the silence at symbol %ld\n",
 				sym);
 		} else if (i == 11 && got_ack && frame_zero == 24 && !fr.n) {
@@ -966,7 +902,7 @@ void V92Up::symbol(float y)
 			rx = V92R_TRN2;
 			rn_rxd = 1;
 			e2u_sym = sym;
-			fr.init(V92F_CP);
+			fr.init(SyncFrames::CP92);
 			dscr2[0] = dscr2[1] = 0;
 			ones2[0] = ones2[1] = 0;
 			got_suvu = got_cpu = got_ack = got_e2u = 0;
@@ -1284,7 +1220,7 @@ int V92Up::fpe_frame(const V92Cpd *c)
 		fpe_early = 0;
 		dscr = 0;
 		dprev = 0;
-		fr.init(V92F_CP);
+		fr.init(SyncFrames::CP92);
 		got_suvu = got_cpu = got_ack = got_e2u = 0;
 		frame_zero = 0;
 		return 0;
@@ -2978,7 +2914,7 @@ void V92Up::init(int alaw_, const V92Info1a *ia_, const long *fclock,
 	tx.fclock = fclock;
 	tx.fbase = fbase;
 	rx = V92R_RU;
-	fr.init(V92F_DIL);
+	fr.init(SyncFrames::DIL92);
 	ta_g.init(2400, 64, 8000);
 	pf_ok = !(getenv("DSP_V92_PREFILTER") &&
 		  !atoi(getenv("DSP_V92_PREFILTER")));

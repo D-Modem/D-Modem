@@ -122,8 +122,7 @@ struct V91 {
 	int since_info, zeros;
 	int got_info, got_info_ack, peer_default, peer_cc, peer_alaw;
 	int peer_transparent;
-	unsigned char jb[3000];
-	int jn, have_j;
+	int have_j;
 	V90Dil rdil;            /* the DIL we asked for */
 	int rd_seg, rd_k;
 	short obs[6][128][2];
@@ -132,8 +131,9 @@ struct V91 {
 	V90Cp cp_tx;            /* our CP: what the remote sends us */
 	V90Cp cp_rx;            /* the remote's: what we send */
 	int our_drn, cp_ready;
-	unsigned char cpb[V91_CP_MAX];
-	int cpn, cplen, cpframe, got_cp, got_cp_ack, got_es;
+	SyncFrames fr;          /* J, then CP */
+	int cp_pad;             /* the fill after a CP frame still to come */
+	int got_cp, got_cp_ack, got_es;
 	unsigned sync;          /* the last bits, newest in bit 0 */
 	V91Dec dec;
 	int ru[6], rsg[6], rpos, bframes;

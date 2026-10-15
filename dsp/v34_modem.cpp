@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <new>
+
 #include "v34.h"
 #include "v90.h"
 
@@ -324,15 +326,15 @@ int V34Rx::init(int baud_, int high, int caller)
 int V34Rx::set_v90()
 {
 	v90 = 1;
-	jabits = static_cast<unsigned char*>(calloc(V90_JA_MAX, 1));
-	return jabits ? 0 : -1;
+	fr = new (std::nothrow) SyncFrames();
+	return fr ? 0 : -1;
 }
 
 /* frees what init() and set_v90() allocated */
 void V34Rx::release()
 {
-	free(jabits);
-	jabits = NULL;
+	delete fr;
+	fr = nullptr;
 	free(ls_r);
 	free(ls_p);
 	ls_r = ls_p = NULL;
@@ -347,7 +349,8 @@ void V34Rx::set_stage(enum v34_rxstage s)
 	stage = s;
 	n = 0;
 	ls_n = 0;
-	ja_n = 0;            /* no frame across a new signal */
+	if (fr)
+		fr->drop();     /* no frame across a new signal */
 }
 
 /* the index of the 4 point training point nearest to z: its quadrant */
@@ -370,17 +373,21 @@ static void ja_dump_bits(const char *what, const unsigned char *b, int n)
 }
 
 /* Ja (V.90): DIL descriptors in MP style frames, repeated */
+/* a frame begins (its sync seen): Ja until one has come, then CP */
+void V34Rx::frame_start()
+{
+	if (ev_ja)
+		fr->init(SyncFrames::CP90, (int)sizeof(cpraw));
+	else
+		fr->init(SyncFrames::DIL90, V90_JA_MAX);
+	fr->start();
+}
+
 void V34Rx::ja_bit(int bit)
 {
-	jabits[ja_n++] = bit;
-	if (ja_n == 50) {
-		ja_len = v90_dil_length(jabits, ja_n);
-		if (ja_len > V90_JA_MAX)
-			ja_n = 0;
-	}
-	if (ja_len > 0 && ja_n == ja_len) {
-		ja_n = 0;
-		if (dil.parse(jabits, ja_len) == 0) {
+	int r = fr->add(bit);
+	if (r == SyncFrames::GOOD || r == SyncFrames::BAD_CRC) {
+		if (r == SyncFrames::GOOD && dil.parse(fr->b, fr->len) == 0) {
 			if (!ev_ja) {
 				int i;
 				DSP_DBG("v34 rx: Ja at symbol %ld: DIL N %d, "
@@ -414,18 +421,11 @@ void V34Rx::ja_bit(int bit)
    constellations they carry */
 void V34Rx::cp_bit(int bit)
 {
-	if (ja_n < V90_JA_MAX)
-		jabits[ja_n++] = bit;
-	if (ja_n == 129) {
-		ja_len = v90_cp_length(jabits, ja_n);
-		if (ja_len <= 0 || ja_len > (int)sizeof(cpraw))
-			ja_n = 0;
-	}
-	if (ja_len > 0 && ja_n == ja_len) {
+	int r = fr->add(bit);
+	if (r == SyncFrames::GOOD || r == SyncFrames::BAD_CRC) {
 		V90Cp cp;
 		int ok;
-		ja_n = 0;
-		ok = cp.parse(jabits, ja_len) == 0;
+		ok = r == SyncFrames::GOOD && cp.parse(fr->b, fr->len) == 0;
 		if (ok && !cp.usable(cp.drn + (cp.cp ? 20 : 8), 6 - cp.sr)) {
 			/* our encoder can't use it: no CP (a retrain
 			   follows) */
@@ -442,7 +442,7 @@ void V34Rx::cp_bit(int bit)
 					"s" : "") : "t",
 					cp.ack ? "'" : "", sym, cp.drn,
 					cp.sr, cp.ld, cp.ncon, cp.rate_mask);
-			memcpy(cpraw, jabits, ja_len);
+			memcpy(cpraw, fr->b, fr->len);
 			if (cp.cp) {
 				ev_cp = 1;
 				if (cp.ack)
@@ -469,17 +469,12 @@ void V34Rx::got_bit(int bit)
 {
 	sr = (sr << 1) | bit;
 	if (v90 && ev_ja && stage == V34_RX_TRN) {
-		if (ja_n) {
+		if (fr->busy()) {
 			cp_bit(bit);
 			return;
 		}
 		if ((sr & 0x3FFFF) == 0x3FFFE) {
-			int i;
-			for (i = 0; i < 17; i++)
-				jabits[i] = 1;
-			jabits[17] = 0;
-			ja_n = 18;
-			ja_len = 0;
+			frame_start();
 			after_mp = 0;
 			return;
 		}
@@ -494,17 +489,11 @@ void V34Rx::got_bit(int bit)
 		}
 		return;
 	}
-	if (v90 && jabits && !ev_ja && stage == V34_RX_TRN) {
-		if (ja_n)
+	if (v90 && fr && !ev_ja && stage == V34_RX_TRN) {
+		if (fr->busy())
 			ja_bit(bit);
-		else if ((sr & 0x3FFFF) == 0x3FFFE) {
-			int i;
-			for (i = 0; i < 17; i++)
-				jabits[i] = 1;
-			jabits[17] = 0;
-			ja_n = 18;
-			ja_len = 0;
-		}
+		else if ((sr & 0x3FFFF) == 0x3FFFE)
+			frame_start();
 		return;
 	}
 	if (mp_n) {
@@ -1030,7 +1019,8 @@ void V34Rx::reneg_s()
 	/* V.90: CP, CP' and E of the renegotiation to come */
 	ev_cp = ev_cpack = 0;
 	cp_silence = 0;
-	ja_n = 0;
+	if (fr)
+		fr->drop();
 	mp_n = 0;
 	after_mp = 0;
 	ones = 0;

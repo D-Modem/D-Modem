@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "v90.h"
+#include "v92.h"
 
 namespace dsp {
 
@@ -526,6 +527,77 @@ int v90_dil_length(const unsigned char *b, int n)
 	beta = dil_beta(b, &alpha);
 	/* up to the end of the CRC */
 	return 204 + beta + (field(b, 18, 8) + 1) / 2 * 17;
+}
+
+/* see v34.h */
+void SyncFrames::init(Kind k, int max_len)
+{
+	memset(this, 0, sizeof(*this));
+	kind = k;
+	max = max_len < SYNC_FRAME_MAX ? max_len : SYNC_FRAME_MAX;
+}
+
+/* see v34.h */
+void SyncFrames::start()
+{
+	memset(b, 1, 17);
+	b[17] = 0;
+	n = 18;
+	len = 0;
+}
+
+/* see v34.h */
+int SyncFrames::bit(int x)
+{
+	sr = (sr << 1) | (x & 1);
+	if (!n) {
+		if ((sr & 0x3FFFF) == 0x3FFFE)
+			start();
+		return NONE;
+	}
+	return add(x);
+}
+
+/* see v34.h: the length at bit 50 (Ja) or 129 (CP), earlier for V.92's
+   51 bit CPus (bit 18 set) and SUVu (type 2 at bit 19) */
+int SyncFrames::add(int x)
+{
+	b[n++] = x & 1;
+	switch (kind) {
+	case DIL90:
+	case DIL92:
+		if (n == 50) {
+			len = kind == DIL90 ? v90_dil_length(b, n) :
+				v92_dil_length(b, n);
+			if (len <= 50 || len > max) {
+				n = 0;
+				return BAD_LENGTH;
+			}
+		}
+		break;
+	case CP92:
+		if (n == 19 && b[18])
+			len = 51;
+		if (n == 21 && !b[18] && field(b, 19, 2) == 2)
+			len = 51;
+		/* fall through */
+	case CP90:
+		if (n == 129 && !len) {
+			len = v90_cp_length(b, n);
+			if (len <= 129 || len > max) {
+				n = 0;
+				return BAD_LENGTH;
+			}
+		}
+		break;
+	}
+	if (len && n == len) {
+		n = 0;
+		return frame_crc_ok(b, len - 16) ? GOOD : BAD_CRC;
+	}
+	if (n >= max)
+		n = 0;
+	return NONE;
 }
 
 /* the DIL descriptor of len bits (v90_dil_length()) from its frame sync

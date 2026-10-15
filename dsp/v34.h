@@ -52,6 +52,47 @@ extern const signed char v34_quarter[416][2];
 extern const cplx v34_trn4[4];
 cplx v34_pp(int i);
 
+/* MP style frames coming in (bits.h): V.90's Ja and CP, V.92's Ja,
+   CPt, CPu, CPus and SUVu.  After a sync of 17 ones and a zero their
+   bits go into b, their length from their header, their CRC checked at
+   the end (v90.cpp) */
+#define SYNC_FRAME_MAX  3000
+struct SyncFrames {
+	enum Kind {
+		DIL90,          /* V.90's Ja: its length at bit 50 */
+		DIL92,          /* V.92's Ja */
+		CP90,           /* V.90's CP and CPt: at bit 129 */
+		CP92,           /* V.92's CPt and CPu, and CPus and SUVu of 51
+				   bits */
+	};
+	/* add() and bit() */
+	enum { NONE = 0, GOOD = 1, BAD_CRC = -1, BAD_LENGTH = -2 };
+
+	Kind kind;
+	int max;                /* the longest frame taken */
+	unsigned sr;            /* bit()'s last bits, the newest in bit 0 */
+	unsigned char b[SYNC_FRAME_MAX];
+	int n;                  /* bits in b: 0, none (looking for a sync) */
+	int len;                /* the frame's length, 0 until known */
+
+	/* cleared, for frames of kind k of max_len bits at most */
+	void init(Kind k, int max_len = SYNC_FRAME_MAX);
+	/* a frame begins: its sync in b */
+	void start();
+	/* in a frame */
+	bool busy() const { return n != 0; }
+	/* the frame in progress dropped */
+	void drop() { n = 0; }
+	/* a bit of the frame start() began: GOOD when it ends with a good
+	   CRC (len bits in b), BAD_CRC with a bad one, BAD_LENGTH when its
+	   header gives no length it may have (the frame dropped), NONE
+	   until then */
+	int add(int x);
+	/* a bit, the sync looked for in them (sr) while not busy(); as
+	   add() */
+	int bit(int x);
+};
+
 /* MP sequence contents (10.1.3.12/V.34) */
 struct V34Mp {
 	int type;
@@ -277,8 +318,7 @@ struct V34Rx {
 	int cp_count;           /* good CP frames (not CPt) so far */
 	int cp_silence;         /* the last one asked for silence (CPs) */
 	unsigned char cpraw[1800];      /* the last good CP frame */
-	unsigned char *jabits;
-	int ja_n, ja_len;
+	SyncFrames *fr;         /* Ja, then CP (set_v90()) */
 	V90Dil dil;
 	int mp_n, mp_len;       /* collecting an MP frame */
 	int ones;               /* ones since the end of the last MP frame */
@@ -300,6 +340,7 @@ struct V34Rx {
 	int set_v90();
 	void release();
 	void set_stage(enum v34_rxstage s);
+	void frame_start();
 	void ja_bit(int bit);
 	void cp_bit(int bit);
 	void got_bit(int bit);
