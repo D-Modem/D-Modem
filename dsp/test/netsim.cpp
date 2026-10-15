@@ -6,9 +6,12 @@
  *    netsim <rate a> <rate b> <ulaw|alaw> <a in> <a out> <b in> <b out>
  *
  *    reads A's samples (16 bit) from fd <a in>, writes them to B on
- *    fd <b out>, and the other way round.  The impairments (NET_DROP,
- *    NET_STEP, NET_NOISE, NET_FLOOR, NET_ECHO, NET_LOOP, ...) are
- *    described where they are kept.
+ *    fd <b out>, and the other way round.  Each impairment is a class
+ *    of its own (Drop, Step, Noise, Echo, Loop, Moh: NET_DROP, NET_STEP,
+ *    NET_NOISE and NET_FLOOR, NET_ECHO, NET_LOOP, NET_MOH), its members
+ *    named for it, set from the environment by its init(); the network
+ *    (Net) derives from them all and runs a direction's samples through
+ *    them in turn.
  */
 #include <errno.h>
 #include <math.h>
@@ -30,66 +33,205 @@ unsigned int dsplibs_debug_level = 0;
 int dsplibs_debug_printf(const char *fmt, ...) { return 0; }
 
 static int alaw;
-static int plain;       /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
-			   resampler of dsp_util, not the raised cosine (the
-			   law still on the 8000 Hz samples) */
-static float gain = 1;
-static float gain_up = 1;    /* NET_GAIN_UP: on the way up from a 9600 Hz modem */
+
 /* NET_DROP=<at s>:<ms>: the line goes silent both ways for a while (a
-   hit); NET_STEP=<at s>:<dB>: its loss changes for good (a reroute) */
-static float drop_at = -1, drop_ms, step_at = -1, step_g = 1;
+   hit) */
+struct Drop {
+	float drop_at = -1, drop_ms = 0;
+
+	void drop_init(const char *e)
+	{
+		sscanf(e, "%f:%f", &drop_at, &drop_ms);
+	}
+	/* silent at t */
+	bool drop_on(float t) const
+	{
+		return drop_at >= 0 && t >= drop_at &&
+			t < drop_at + drop_ms / 1000;
+	}
+};
+
+/* NET_STEP=<at s>:<dB>: its loss changes for good (a reroute) */
+struct Step {
+	float step_at = -1, step_g = 1;
+
+	void step_init(const char *e)
+	{
+		float db = 0;
+		sscanf(e, "%f:%f", &step_at, &db);
+		step_g = powf(10, db / 20);
+	}
+	/* x at t */
+	short step(short x, float t) const
+	{
+		return step_at >= 0 && t >= step_at ?
+			(short)lrintf(x * step_g) : x;
+	}
+};
+
+/* Gaussian (Box-Muller) */
+static double gauss()
+{
+	double u1 = (rand() + 1.0) / (RAND_MAX + 2.0);
+	double u2 = rand() / (RAND_MAX + 1.0);
+	return sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
+}
+
 /* NET_NOISE=<at s>:<rms>[:<ramp s>[:<until s>]]: white noise from then
-   on (rising over the ramp, stopping at until), both ways */
-static float noise_at = -1, noise_rms, noise_ramp, noise_end = -1;
-/* NET_NOISE_QUIET=<ms>: the noise stops for good once the signal it is
+   on (rising over the ramp, stopping at until), both ways.
+   NET_NOISE_QUIET=<ms>: the noise stops for good once the signal it is
    added to has been silent that long (a V.92 rate renegotiation's
-   silent period: what follows it is to come through clean) */
-static float noise_quiet_ms;
-static long noise_quiet_n;
-static int noise_dir;           /* NET_NOISE_DIR: 1 A -> B only, 2 B -> A,
-				   3 B -> A on the codes */
+   silent period: what follows it is to come through clean).
+   NET_NOISE_DIR: ab A -> B only, ba B -> A, bacodes B -> A on the codes.
+   NET_FLOOR=<rms>: white noise all the time (NET_NOISE adds to it) */
+struct Noise {
+	float noise_at = -1, noise_rms, noise_ramp, noise_end = -1;
+	float noise_quiet_ms;
+	long noise_quiet_n;
+	int noise_dir;          /* 1 A -> B only, 2 B -> A, 3 B -> A on
+				   the codes */
+	float floor_rms;
+
+	void noise_init()
+	{
+		if (getenv("NET_NOISE"))
+			sscanf(getenv("NET_NOISE"), "%f:%f:%f:%f", &noise_at,
+			       &noise_rms, &noise_ramp, &noise_end);
+		if (getenv("NET_NOISE_QUIET"))
+			noise_quiet_ms = atof(getenv("NET_NOISE_QUIET"));
+		if (getenv("NET_NOISE_DIR"))
+			noise_dir = !strcmp(getenv("NET_NOISE_DIR"), "ab") ? 1 :
+				!strcmp(getenv("NET_NOISE_DIR"), "ba") ? 2 :
+				!strcmp(getenv("NET_NOISE_DIR"), "bacodes") ?
+				3 : 0;
+		if (getenv("NET_FLOOR"))
+			floor_rms = atof(getenv("NET_FLOOR"));
+	}
+	/* NET_NOISE's at t */
+	bool noisy(float t) const
+	{
+		return noise_at >= 0 && t >= noise_at &&
+			(noise_end < 0 || t < noise_end);
+	}
+	/* the noise's rms at t (noisy: noisy(t)) A -> B (a_out) or B -> A;
+	   0 if none */
+	float noise_level(float t, int noisy, int a_out) const
+	{
+		return ((noisy || floor_rms) &&
+			!(noise_dir == 1 && !a_out) &&
+			!(noise_dir >= 2 && a_out)) ?
+			(noisy ?
+			 sqrtf(noise_rms * noise_rms *
+			       (noise_ramp > 0 && t - noise_at < noise_ramp ?
+				(t - noise_at) * (t - noise_at) /
+				(noise_ramp * noise_ramp) : 1) +
+			       floor_rms * floor_rms) :
+			 floor_rms) : 0;
+	}
+	/* NET_NOISE_QUIET: x, at t of a signal at rate, is the noise's last
+	   sample if it ends a silence that long */
+	void noise_quiet(short x, float t, int rate)
+	{
+		noise_quiet_n = abs(x) <= 8 ? noise_quiet_n + 1 : 0;
+		if (noise_quiet_n >= noise_quiet_ms * rate / 1000) {
+			noise_end = t;
+			fprintf(stderr, "netsim: noise off at %.2f s\n", t);
+		}
+	}
+};
+
 /* NET_LOOP=<fraction>: on an 8000 Hz line, B's signal reaches A through
    an analogue loop as A's codec samples it: a delay of that fraction of
    a sample (windowed sinc) and a high pass at 300 Hz; else A gets B's
    G.711 values as they are */
-#define LOOP_TAPS 32
-static float loop_h[LOOP_TAPS], loop_hist[2 * LOOP_TAPS];
-static int loop_on, loop_pos;
-static float loop_hp_x, loop_hp_y;
+struct Loop {
+	enum { LOOP_TAPS = 32 };
+	float loop_h[LOOP_TAPS], loop_hist[2 * LOOP_TAPS];
+	int loop_on, loop_pos;
+	float loop_hp_x, loop_hp_y;
 
-/* NET_LOOP's fractional delay: LOOP_TAPS of Hann windowed sinc, frac
-   of a sample later than its middle */
-static void loop_init(float frac)
-{
-	int n;
-	for (n = 0; n < LOOP_TAPS; n++) {
-		double t = n - LOOP_TAPS / 2 + 1 - frac;
-		double h = fabs(t) < 1e-9 ? 1 : sin(M_PI * t) / (M_PI * t);
-		h *= 0.5 - 0.5 * cos(2 * M_PI * (n + 0.5) / LOOP_TAPS);
-		loop_h[n] = (float)h;
+	/* the fractional delay: LOOP_TAPS of Hann windowed sinc, frac of a
+	   sample later than its middle */
+	void loop_init(float frac)
+	{
+		int n;
+		for (n = 0; n < LOOP_TAPS; n++) {
+			double t = n - LOOP_TAPS / 2 + 1 - frac;
+			double h = fabs(t) < 1e-9 ? 1 :
+				sin(M_PI * t) / (M_PI * t);
+			h *= 0.5 - 0.5 * cos(2 * M_PI * (n + 0.5) / LOOP_TAPS);
+			loop_h[n] = (float)h;
+		}
+		loop_on = 1;
 	}
-	loop_on = 1;
-}
+	/* a sample of B's through the loop: the fractional delay, then the
+	   high pass */
+	float loop_run(float x)
+	{
+		float y = 0, a = 0.79f;  /* exp(-2 pi 300 / 8000) */
+		int k;
+		if (--loop_pos < 0)
+			loop_pos = LOOP_TAPS - 1;
+		loop_hist[loop_pos] = loop_hist[loop_pos + LOOP_TAPS] = x;
+		for (k = 0; k < LOOP_TAPS; k++)
+			y += loop_h[k] * loop_hist[loop_pos + k];
+		/* one pole high pass */
+		loop_hp_y = a * (loop_hp_y + y - loop_hp_x);
+		loop_hp_x = y;
+		return loop_hp_y;
+	}
+};
 
-/* a sample of B's through the loop: the fractional delay, then the
-   high pass */
-static float loop_run(float x)
-{
-	float y = 0, a = 0.79f;  /* exp(-2 pi 300 / 8000) */
-	int k;
-	if (--loop_pos < 0)
-		loop_pos = LOOP_TAPS - 1;
-	loop_hist[loop_pos] = loop_hist[loop_pos + LOOP_TAPS] = x;
-	for (k = 0; k < LOOP_TAPS; k++)
-		y += loop_h[k] * loop_hist[loop_pos + k];
-	/* one pole high pass */
-	loop_hp_y = a * (loop_hp_y + y - loop_hp_x);
-	loop_hp_x = y;
-	return loop_hp_y;
-}
+/* NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
+   back towards B: what A received <ms> before, counted in A's samples
+   (from the line, before A's codec clips it); with a soft modem as A,
+   that has to be more than A sends ahead of what it receives (some
+   20 ms for the HSF), else some samples go without their echo */
+struct Echo {
+	enum { ECHO_MAX = 16384 };
+	float echo_g, echo_buf[ECHO_MAX];
+	long echo_d, echo_w, echo_r;    /* samples to A, from A */
+	long echo_early;                /* of A's without their echo */
 
-/* NET_FLOOR=<rms>: white noise all the time (NET_NOISE adds to it) */
-static float floor_rms;
+	/* the gain and delay; ra: A's rate */
+	void echo_init(const char *e, int ra)
+	{
+		float db = 0, ms = 0;
+		sscanf(e, "%f:%f", &db, &ms);
+		echo_g = powf(10, db / 20);
+		echo_d = (int)(ms * ra / 1000);
+		if (echo_d >= ECHO_MAX)
+			echo_d = ECHO_MAX - 1;
+	}
+	/* A sends its sample k as it receives its sample k: x, A's next
+	   sample, with the echo of what it received echo_d before */
+	short echo_add(short x)
+	{
+		long k = echo_r - echo_d;
+		/* (A sends ahead of what it has received by more than the
+		   echo's delay: no echo then) */
+		if (k >= echo_w && ++echo_early &&
+		    !(echo_early & (echo_early - 1)))
+			fprintf(stderr, "netsim: %ld samples without their "
+				"echo (A sends %ld samples ahead; NET_ECHO's "
+				"delay is too short)\n", echo_early,
+				k - echo_w + echo_d + 1);
+		if (k >= 0 && k < echo_w && echo_w - k < ECHO_MAX) {
+			/* the codec clips the sum */
+			long y = lrintf(x + echo_g * echo_buf[k % ECHO_MAX]);
+			x = (short)(y > 32767 ? 32767 :
+				    y < -32768 ? -32768 : y);
+		}
+		return x;
+	}
+	/* n samples A received (on the line) */
+	void echo_received(const float *l, int n)
+	{
+		for (int i = 0; i < n; i++)
+			echo_buf[echo_w++ % ECHO_MAX] = l[i];
+	}
+};
+
 /* NET_SYNC=1: these times count from a SIGUSR1 (interop_call sends it at
    CONNECT) instead of from the start; nothing happens before it */
 static int sync_on;
@@ -99,15 +241,6 @@ static volatile sig_atomic_t synced;
    far in microseconds, at the start of the 8 bytes that fd maps (a
    memfd) */
 static long long *line_clock;
-/* NET_DELAY=<ms>: see main().
-   NET_ECHO=<dB>:<ms>: the hybrid at A's line reflects what A receives
-   back towards B: what A received <ms> before, counted in A's samples
-   (from the line, before A's codec clips it); with a soft modem as A,
-   that has to be more than A sends ahead of what it receives (some
-   20 ms for the HSF), else some samples go without their echo */
-#define ECHO_MAX 16384
-static float echo_g, echo_buf[ECHO_MAX];
-static long echo_d, echo_w, echo_r;     /* samples to A, from A */
 
 /* G.711 (the usual reference algorithms).  The segment of v: the first
    of t's 8 ends at or above it, 8 if none */
@@ -257,14 +390,6 @@ struct dir {
 	long t0;                /* NET_SYNC: nin at the SIGUSR1, -1 before */
 };
 
-/* Gaussian (Box-Muller) */
-static double gauss()
-{
-	double u1 = (rand() + 1.0) / (RAND_MAX + 2.0);
-	double u2 = rand() / (RAND_MAX + 1.0);
-	return sqrt(-2 * log(u1)) * cos(2 * M_PI * u2);
-}
-
 /* NET_WAV=<file>: the line as it crosses the network (8000 Hz, after
    G.711), A -> B left and B -> A right, from the first SIGUSR2 to the
    second (interop_call: from the dial to the end of the data); the header
@@ -359,114 +484,179 @@ static void on_wav(int sig)
    default) or MHnack, repeated, until B is silent 200 ms (on hold) or
    sends ANSam (2100 Hz, its fast reconnect after an MHnack); then
    silence, and A gets the line back with B's ANSam. */
-static int moh_mode;            /* 0 off, 1 MHack, 2 MHnack */
-static float moh_at;
-static int moh_t1 = 1;
-static int moh_st;              /* 0 watching, 1 answering, 2 silent, 3 done */
-static int moh_tone, moh_quiet, moh_ans, moh_blk;
-static float moh_e, moh_g1200[3], moh_g2100[3];
-static QamTx moh_tx;
-static unsigned char moh_bits[40];
-static int moh_pos, moh_n;
-static long moh_syms;
-static float moh_sym = 1;
+struct Moh {
+	int moh_mode;           /* 0 off, 1 MHack, 2 MHnack */
+	float moh_at;
+	int moh_t1 = 1;
+	int moh_st;             /* 0 watching, 1 answering, 2 silent,
+				   3 done */
+	int moh_tone, moh_quiet, moh_ans, moh_blk;
+	float moh_e, moh_g1200[3], moh_g2100[3];
+	QamTx moh_tx;
+	unsigned char moh_bits[40];
+	int moh_pos, moh_n;
+	long moh_syms;
+	float moh_sym = 1;
 
-/* moh_tx's next symbol: 90 (150 ms) of tone A, then moh_make's bits as
-   phase reversals, round and round */
-static cplx moh_symbol()
-{
-	cplx z = { 0, 0 };
-	/* 150 ms of the tone (90 symbols), then the sequence, repeated */
-	if (moh_syms++ >= 90) {
-		if (moh_pos == moh_n)
-			moh_pos = 0;
-		if (moh_bits[moh_pos++])
-			moh_sym = -moh_sym;
+	/* the answer and when; ra: A's rate */
+	void moh_init(const char *e, int ra)
+	{
+		moh_mode = !strncmp(e, "ack", 3) ? 1 :
+			!strncmp(e, "nack", 4) ? 2 : 0;
+		if (moh_mode == 1 && e[3] == ':')
+			moh_t1 = atoi(e + 4) & 15;
+		if (strchr(e, '@'))
+			moh_at = atof(strchr(e, '@') + 1);
+		/* A's INFO modulation: 600 baud DPSK at 2400 Hz (the
+		   analogue modem answers in phase 2), at INFO's level */
+		moh_tx.init(ra, 2400, 600, 0.5f, 4, 1, 2988 * 1.41421f);
 	}
-	z.re = moh_sym;
-	return z;
-}
-
-/* Table 32/V.92: fill, frame sync, the signal and its information (first
-   bit first in time), the CRC of 10.1.2.3.2/V.34, fill */
-static void moh_make(int sig, int info)
-{
-	int i;
-	moh_n = 0;
-	for (i = 0; i < 4; i++)
-		moh_bits[moh_n++] = 1;
-	for (i = 7; i >= 0; i--)
-		moh_bits[moh_n++] = (0x72 >> i) & 1;
-	for (i = 3; i >= 0; i--)
-		moh_bits[moh_n++] = (sig >> i) & 1;
-	for (i = 3; i >= 0; i--)
-		moh_bits[moh_n++] = (info >> i) & 1;
-	unsigned crc = v34_crc_bits(moh_bits + 12, moh_n - 12, 0xFFFF);
-	for (i = 15; i >= 0; i--)
-		moh_bits[moh_n++] = (crc >> i) & 1;
-	for (i = 0; i < 4; i++)
-		moh_bits[moh_n++] = 1;
-	moh_pos = 0;
-}
-
-/* a Goertzel step at f; g: s1, s2, coefficient */
-static void moh_goertzel(float *g, float x)
-{
-	float s0 = x + g[2] * g[0] - g[1];
-	g[1] = g[0];
-	g[0] = s0;
-}
-
-/* the power at the Goertzel's frequency over its block; s1, s2 reset */
-static float moh_power(float *g)
-{
-	float p = g[0] * g[0] + g[1] * g[1] - g[2] * g[0] * g[1];
-	g[0] = g[1] = 0;
-	return p;
-}
-
-/* B's signal, on its way to A: what it does about the request */
-static void moh_watch(float x, int rate, float t)
-{
-	if (t < moh_at)
-		return;
-	int n = rate / 100;     /* 10 ms blocks */
-	if (!moh_g1200[2]) {
-		moh_g1200[2] = 2 * cosf(2 * (float)M_PI * 1200 / rate);
-		moh_g2100[2] = 2 * cosf(2 * (float)M_PI * 2100 / rate);
+	/* A cut off both ways: it is answering, or on hold */
+	bool moh_cut() const { return moh_st == 1 || moh_st == 2; }
+	/* A's next sample while cut off (a_out: A -> B) */
+	short moh_sample(int a_out)
+	{
+		return a_out && moh_st == 1 ?
+			(short)lrintf(moh_tx.sample([this] {
+				return moh_symbol();
+			})) : 0;
 	}
-	moh_e += x * x;
-	moh_goertzel(moh_g1200, x);
-	moh_goertzel(moh_g2100, x);
-	if (++moh_blk < n)
-		return;
-	/* the share of the block's energy at the tone */
-	float e = moh_e, t1200 = 2 * moh_power(moh_g1200) / n,
-		t2100 = 2 * moh_power(moh_g2100) / n;
-	moh_blk = 0;
-	moh_e = 0;
-	moh_tone = e > n * 1e4f && t1200 > 0.6f * e ? moh_tone + 1 : 0;
-	moh_ans = e > n * 1e4f && t2100 > 0.6f * e ? moh_ans + 1 : 0;
-	moh_quiet = e < n * 1e3f ? moh_quiet + 1 : 0;
-	if (moh_st == 0 && moh_tone >= 5) {
-		moh_st = 1;
-		moh_syms = 0;
-		moh_sym = 1;
-		moh_make(moh_mode == 1 ? 0x5 : 0x7,
-			 moh_mode == 1 ? moh_t1 : 0x7);
-		fprintf(stderr, "netsim: modem-on-hold request: %s\n",
-			moh_mode == 1 ? "MHack" : "MHnack");
-	} else if (moh_st == 1 && moh_quiet >= 20) {
-		moh_st = 2;
-		fprintf(stderr, "netsim: on hold\n");
-	} else if ((moh_st == 1 || moh_st == 2) && moh_ans >= 5) {
-		moh_st = 3;
-		fprintf(stderr, "netsim: ANSam: the line back to A\n");
+
+	/* moh_tx's next symbol: 90 (150 ms) of tone A, then moh_make's
+	   bits as phase reversals, round and round */
+	cplx moh_symbol()
+	{
+		cplx z = { 0, 0 };
+		/* 150 ms of the tone (90 symbols), then the sequence,
+		   repeated */
+		if (moh_syms++ >= 90) {
+			if (moh_pos == moh_n)
+				moh_pos = 0;
+			if (moh_bits[moh_pos++])
+				moh_sym = -moh_sym;
+		}
+		z.re = moh_sym;
+		return z;
 	}
-}
+
+	/* Table 32/V.92: fill, frame sync, the signal and its information
+	   (first bit first in time), the CRC of 10.1.2.3.2/V.34, fill */
+	void moh_make(int sig, int info)
+	{
+		int i;
+		moh_n = 0;
+		for (i = 0; i < 4; i++)
+			moh_bits[moh_n++] = 1;
+		for (i = 7; i >= 0; i--)
+			moh_bits[moh_n++] = (0x72 >> i) & 1;
+		for (i = 3; i >= 0; i--)
+			moh_bits[moh_n++] = (sig >> i) & 1;
+		for (i = 3; i >= 0; i--)
+			moh_bits[moh_n++] = (info >> i) & 1;
+		unsigned crc = v34_crc_bits(moh_bits + 12, moh_n - 12, 0xFFFF);
+		for (i = 15; i >= 0; i--)
+			moh_bits[moh_n++] = (crc >> i) & 1;
+		for (i = 0; i < 4; i++)
+			moh_bits[moh_n++] = 1;
+		moh_pos = 0;
+	}
+
+	/* a Goertzel step at f; g: s1, s2, coefficient */
+	static void moh_goertzel(float *g, float x)
+	{
+		float s0 = x + g[2] * g[0] - g[1];
+		g[1] = g[0];
+		g[0] = s0;
+	}
+
+	/* the power at the Goertzel's frequency over its block; s1, s2
+	   reset */
+	static float moh_power(float *g)
+	{
+		float p = g[0] * g[0] + g[1] * g[1] - g[2] * g[0] * g[1];
+		g[0] = g[1] = 0;
+		return p;
+	}
+
+	/* B's signal, on its way to A: what it does about the request */
+	void moh_watch(float x, int rate, float t)
+	{
+		if (t < moh_at)
+			return;
+		int n = rate / 100;     /* 10 ms blocks */
+		if (!moh_g1200[2]) {
+			moh_g1200[2] = 2 * cosf(2 * (float)M_PI * 1200 / rate);
+			moh_g2100[2] = 2 * cosf(2 * (float)M_PI * 2100 / rate);
+		}
+		moh_e += x * x;
+		moh_goertzel(moh_g1200, x);
+		moh_goertzel(moh_g2100, x);
+		if (++moh_blk < n)
+			return;
+		/* the share of the block's energy at the tone */
+		float e = moh_e, t1200 = 2 * moh_power(moh_g1200) / n,
+			t2100 = 2 * moh_power(moh_g2100) / n;
+		moh_blk = 0;
+		moh_e = 0;
+		moh_tone = e > n * 1e4f && t1200 > 0.6f * e ? moh_tone + 1 : 0;
+		moh_ans = e > n * 1e4f && t2100 > 0.6f * e ? moh_ans + 1 : 0;
+		moh_quiet = e < n * 1e3f ? moh_quiet + 1 : 0;
+		if (moh_st == 0 && moh_tone >= 5) {
+			moh_st = 1;
+			moh_syms = 0;
+			moh_sym = 1;
+			moh_make(moh_mode == 1 ? 0x5 : 0x7,
+				 moh_mode == 1 ? moh_t1 : 0x7);
+			fprintf(stderr, "netsim: modem-on-hold request: %s\n",
+				moh_mode == 1 ? "MHack" : "MHnack");
+		} else if (moh_st == 1 && moh_quiet >= 20) {
+			moh_st = 2;
+			fprintf(stderr, "netsim: on hold\n");
+		} else if ((moh_st == 1 || moh_st == 2) && moh_ans >= 5) {
+			moh_st = 3;
+			fprintf(stderr, "netsim: ANSam: the line back to A\n");
+		}
+	}
+};
+
+/* the network: the law (alaw), the far codec of a 9600 Hz modem and the
+   gains on the way (NET_PLAIN, NET_GAIN, NET_GAIN_UP), the impairments */
+struct Net : Drop, Step, Noise, Loop, Echo, Moh {
+	int plain;      /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
+			   resampler of dsp_util, not the raised cosine (the
+			   law still on the 8000 Hz samples) */
+	float gain = 1;
+	float gain_up = 1;      /* NET_GAIN_UP: on the way up from a 9600 Hz
+				   modem */
+	long clipped;           /* samples at the far codec */
+
+	/* from the environment; ra: A's rate */
+	void init(int ra)
+	{
+		plain = getenv("NET_PLAIN") != NULL;
+		if (getenv("NET_GAIN"))
+			gain = atof(getenv("NET_GAIN"));
+		if (getenv("NET_GAIN_UP"))
+			gain_up = atof(getenv("NET_GAIN_UP"));
+		if (getenv("NET_DROP"))
+			drop_init(getenv("NET_DROP"));
+		noise_init();
+		if (getenv("NET_LOOP"))
+			loop_init(atof(getenv("NET_LOOP")));
+		if (getenv("NET_MOH"))
+			moh_init(getenv("NET_MOH"), ra);
+		if (getenv("NET_STEP"))
+			step_init(getenv("NET_STEP"));
+		if (getenv("NET_ECHO"))
+			echo_init(getenv("NET_ECHO"), ra);
+	}
+	int run(struct dir *d, int a_out, int a_in);
+};
+
+static Net net;
 
 /* samples of one direction: to 8000 Hz G.711 and on */
-static int run(struct dir *d, int a_out, int a_in)
+int Net::run(struct dir *d, int a_out, int a_in)
 {
 	short ibuf[2048];
 	float noise;
@@ -483,40 +673,21 @@ static int run(struct dir *d, int a_out, int a_in)
 			t = d->t0 < 0 ? -1e9f : (float)(d->nin - d->t0) /
 				d->rate_in;
 		}
-		if (drop_at >= 0 && t >= drop_at && t < drop_at + drop_ms / 1000)
+		if (drop_on(t))
 			ibuf[i] = 0;
 		/* NET_MOH: A cut off, both ways, while it answers */
 		if (moh_mode && a_in)
 			moh_watch(ibuf[i], d->rate_in, t);
-		if (moh_st == 1 || moh_st == 2)
-			ibuf[i] = a_out && moh_st == 1 ?
-				(short)lrintf(moh_tx.sample(moh_symbol)) : 0;
-		if (step_at >= 0 && t >= step_at)
-			ibuf[i] = (short)lrintf(ibuf[i] * step_g);
+		if (moh_cut())
+			ibuf[i] = moh_sample(a_out);
+		ibuf[i] = step(ibuf[i], t);
 		/* the noise of an analogue line: on a 8000 Hz G.711
 		   signal on its way to a 9600 Hz modem it comes after the
 		   codec (below), not on the codes */
-		int noisy = noise_at >= 0 && t >= noise_at &&
-			(noise_end < 0 || t < noise_end);
-		noise = ((noisy || floor_rms) &&
-			 !(noise_dir == 1 && !a_out) &&
-			 !(noise_dir >= 2 && a_out)) ?
-			(noisy ?
-			 sqrtf(noise_rms * noise_rms *
-			       (noise_ramp > 0 && t - noise_at < noise_ramp ?
-				(t - noise_at) * (t - noise_at) /
-				(noise_ramp * noise_ramp) : 1) +
-			       floor_rms * floor_rms) :
-			 floor_rms) : 0;
-		if (noise && noisy && noise_quiet_ms > 0) {
-			noise_quiet_n = abs(ibuf[i]) <= 8 ?
-				noise_quiet_n + 1 : 0;
-			if (noise_quiet_n >= noise_quiet_ms * d->rate_in / 1000) {
-				noise_end = t;
-				fprintf(stderr, "netsim: noise off at %.2f s\n",
-					t);
-			}
-		}
+		int is_noisy = noisy(t);
+		noise = noise_level(t, is_noisy, a_out);
+		if (noise && is_noisy && noise_quiet_ms > 0)
+			noise_quiet(ibuf[i], t, d->rate_in);
 		if (noise && (noise_dir == 3 ||
 			      !(d->rate_in == 8000 && d->rate_out != 8000))) {
 			double x = ibuf[i] + noise * gauss();
@@ -525,24 +696,8 @@ static int run(struct dir *d, int a_out, int a_in)
 		}
 		/* A sends its sample k as it receives its sample k: the
 		   hybrid's echo comes in A's own sample clock */
-		if (a_out && echo_g) {
-			long k = echo_r - echo_d;
-			static long early;
-			/* (A sends ahead of what it has received by more than
-			   the echo's delay: no echo then) */
-			if (k >= echo_w && ++early && !(early & (early - 1)))
-				fprintf(stderr, "netsim: %ld samples without "
-					"their echo (A sends %ld samples ahead; "
-					"NET_ECHO's delay is too short)\n",
-					early, k - echo_w + echo_d + 1);
-			if (k >= 0 && k < echo_w && echo_w - k < ECHO_MAX) {
-				/* the codec clips the sum */
-				long x = lrintf(ibuf[i] + echo_g *
-						echo_buf[k % ECHO_MAX]);
-				ibuf[i] = (short)(x > 32767 ? 32767 :
-						  x < -32768 ? -32768 : x);
-			}
-		}
+		if (a_out && echo_g)
+			ibuf[i] = echo_add(ibuf[i]);
 		if (a_out)
 			echo_r++;
 		if (d->rate_in == d->rate_out) {
@@ -568,7 +723,6 @@ static int run(struct dir *d, int a_out, int a_in)
 			for (k = 0; k < m; k++) {
 				if (noise && noise_dir != 3)
 					y[k] += noise * (float)gauss();
-				static long clipped;
 				if ((y[k] > 32767 || y[k] < -32768) &&
 				    ++clipped && !(clipped & (clipped - 1)))
 					fprintf(stderr, "netsim: %ld samples "
@@ -591,8 +745,7 @@ static int run(struct dir *d, int a_out, int a_in)
 		}
 	}
 	if (a_in)
-		for (i = 0; i < o; i++)
-			echo_buf[echo_w++ % ECHO_MAX] = d->lbuf[i];
+		echo_received(d->lbuf, o);
 	if (a_out && line_clock)
 		__atomic_store_n(line_clock, (long long)d->nin * 1000000 /
 				 d->rate_in, __ATOMIC_RELAXED);
@@ -647,7 +800,6 @@ int main(int argc, char **argv)
 	ra = atoi(argv[1]);
 	rb = atoi(argv[2]);
 	alaw = !strcmp(argv[3], "alaw");
-	plain = getenv("NET_PLAIN") != NULL;
 	if (getenv("NET_WAV")) {
 		wav = fopen(getenv("NET_WAV"), "wb");
 		if (!wav)
@@ -662,35 +814,7 @@ int main(int argc, char **argv)
 		sync_on = 1;
 		signal(SIGUSR1, on_sync);
 	}
-	if (getenv("NET_GAIN"))
-		gain = atof(getenv("NET_GAIN"));
-	if (getenv("NET_GAIN_UP"))
-		gain_up = atof(getenv("NET_GAIN_UP"));
-	if (getenv("NET_DROP"))
-		sscanf(getenv("NET_DROP"), "%f:%f", &drop_at, &drop_ms);
-	if (getenv("NET_NOISE"))
-		sscanf(getenv("NET_NOISE"), "%f:%f:%f:%f", &noise_at,
-		       &noise_rms, &noise_ramp, &noise_end);
-	if (getenv("NET_NOISE_QUIET"))
-		noise_quiet_ms = atof(getenv("NET_NOISE_QUIET"));
-	if (getenv("NET_NOISE_DIR"))
-		noise_dir = !strcmp(getenv("NET_NOISE_DIR"), "ab") ? 1 :
-			!strcmp(getenv("NET_NOISE_DIR"), "ba") ? 2 :
-			!strcmp(getenv("NET_NOISE_DIR"), "bacodes") ? 3 : 0;
-	if (getenv("NET_LOOP"))
-		loop_init(atof(getenv("NET_LOOP")));
-	if (getenv("NET_MOH")) {
-		const char *e = getenv("NET_MOH");
-		moh_mode = !strncmp(e, "ack", 3) ? 1 :
-			!strncmp(e, "nack", 4) ? 2 : 0;
-		if (moh_mode == 1 && e[3] == ':')
-			moh_t1 = atoi(e + 4) & 15;
-		if (strchr(e, '@'))
-			moh_at = atof(strchr(e, '@') + 1);
-		/* A's INFO modulation: 600 baud DPSK at 2400 Hz (the
-		   analogue modem answers in phase 2), at INFO's level */
-		moh_tx.init(ra, 2400, 600, 0.5f, 4, 1, 2988 * 1.41421f);
-	}
+	net.init(ra);
 	if (getenv("NET_CLOCK_FD")) {
 		void *m = mmap(NULL, sizeof(*line_clock), PROT_READ |
 			       PROT_WRITE, MAP_SHARED,
@@ -699,21 +823,6 @@ int main(int argc, char **argv)
 			perror("netsim: NET_CLOCK_FD");
 		else
 			line_clock = (long long *)m;
-	}
-	if (getenv("NET_FLOOR"))
-		floor_rms = atof(getenv("NET_FLOOR"));
-	if (getenv("NET_STEP")) {
-		float db = 0;
-		sscanf(getenv("NET_STEP"), "%f:%f", &step_at, &db);
-		step_g = powf(10, db / 20);
-	}
-	if (getenv("NET_ECHO")) {
-		float db = 0, ms = 0;
-		sscanf(getenv("NET_ECHO"), "%f:%f", &db, &ms);
-		echo_g = powf(10, db / 20);
-		echo_d = (int)(ms * ra / 1000);
-		if (echo_d >= ECHO_MAX)
-			echo_d = ECHO_MAX - 1;
 	}
 	memset(d, 0, sizeof(d));
 	/* A -> B */
@@ -761,7 +870,7 @@ int main(int argc, char **argv)
 		}
 		for (k = 0; k < 2; k++)
 			if (p[k].revents & (POLLIN | POLLHUP))
-				if (run(&d[k], k == 0, k == 1))
+				if (net.run(&d[k], k == 0, k == 1))
 					return 0;
 	}
 }
