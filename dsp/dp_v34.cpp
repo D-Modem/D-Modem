@@ -315,15 +315,13 @@ struct V34Echo {
 
 #define V34_FIFO        8
 
-struct V34Pump : Pump {
+struct V34Pump : PumpBase<V34Pump, v34_state> {
 	static constexpr const char *name = "V.8/V.34 data pump";
 
 	/* (frees what the receiver holds) */
 	~V34Pump() { cleanup(); }
 
-	struct modem *modem;
-	struct dp_runtime *rt;
-	int srate;              /* of the pump: 9600 */
+	/* (srate: of the pump, 9600) */
 	int line_rate;          /* 9600, or 8000 through the converters */
 	int v90;                /* offer V.90 as the digital modem */
 	int pcm;                /* V.90 agreed in V.8 */
@@ -368,9 +366,6 @@ struct V34Pump : Pump {
 	Resampler rs_ref;        /* V.90: our PCM signal at 9600 Hz */
 	float ref_fifo[V34_FIFO];
 	int ref_n;
-	int caller;
-	enum v34_state state;
-	long count, total, timeout;
 
 	/* transmitter */
 	enum v34_txm txm;
@@ -479,7 +474,7 @@ struct V34Pump : Pump {
 	int preemph_tx;
 	int max_rate_tx, max_rate_rx;
 	int rate_tx, rate_rx;   /* data mode, bit/s */
-	long carrier_loss, lost;
+	long lost;              /* data mode: samples without the signal */
 
 	/* retrain: the remote's tone A / B in data mode */
 	Goertzel rt_g, own_g;    /* the remote's tone, the echo of ours */
@@ -517,6 +512,7 @@ struct V34Pump : Pump {
 	long reneg_at;          /* test: our own renegotiation this far */
 	int reneg_to;           /* test: to this rate (N) */
 
+	const char *tag() const { return "v34"; }
 	void set_state(enum v34_state s);
 	void make_info0(BitQ *q);
 	void make_info1c(BitQ *q);
@@ -596,10 +592,7 @@ struct V34Pump : Pump {
    wait for INFO1a starts with no gap seen */
 void V34Pump::set_state(enum v34_state s)
 {
-	DSP_DBG("v34: state %d -> %d at %ld ms\n", state, s,
-		total * 1000 / srate);
-	state = s;
-	count = 0;
+	PumpBase::set_state(s);
 	if (s == P2C_WAIT_INFO1)
 		p2_gap = 0;
 }
@@ -941,8 +934,7 @@ int V34Pump::v8_back(const char *why)
 		v8_dp_name(v8_low));
 	if (rt)
 		rt->v8_for = 0;
-	modem_set_param(modem, MDMPRM_DP_REQUESTED, v8_low);
-	return DPSTAT_CHANGEDP;
+	return hand_over((enum DP_ID)v8_low, 0);
 }
 
 /* 75 ms after CJ (both sides, 8.1.2 and 8.2.3/V.8): to the pump of
@@ -961,8 +953,7 @@ int V34Pump::v8_handover()
 		else if (v8_dp == DP_V32BIS)
 			rt->v32_automode = 1;
 	}
-	modem_set_param(modem, MDMPRM_DP_REQUESTED, v8_dp);
-	return DPSTAT_CHANGEDP;
+	return hand_over((enum DP_ID)v8_dp, 0);
 }
 
 /* V.90 with us as the digital modem: both offer it */
@@ -2201,17 +2192,12 @@ int V34Pump::fallback(const char *why)
 	if (caller && rt && rt->answer_tone == ANSTONE_2225) {
 		/* a Bell answerer: 212A (or 103, see dp_v22.cpp) */
 		DSP_DBG("v34: %s, Bell answer tone: Bell 212A\n", why);
-		modem_set_param(modem, MDMPRM_DP_REQUESTED, DP_B212);
-		return DPSTAT_CHANGEDP;
+		return hand_over(DP_B212, 0);
 	}
 	DSP_DBG("v34: %s, falling back to V.32bis\n", why);
-	if (rt) {
+	if (rt)
 		rt->v32_automode = 1;
-		if (!caller)
-			rt->ans_sent = 1;
-	}
-	modem_set_param(modem, MDMPRM_DP_REQUESTED, DP_V32BIS);
-	return DPSTAT_CHANGEDP;
+	return hand_over(DP_V32BIS, !caller);
 }
 
 /* whether INFO0 bits 12:19 (rates) allow symbol rate b, and for our
@@ -3621,8 +3607,7 @@ int V34Pump::handshake()
 		}
 		if (fmode == F_DATA && prx.ev_e) {
 			set_state(V34_DATA);
-			modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
-			modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+			set_rates(rate_tx, rate_rx);
 			rt_blocks = 0;
 			lost = 0;
 			if (renegotiating) {
@@ -3680,8 +3665,7 @@ int V34Pump::handshake()
 	case P4_E:
 		if (ptx.seg == V34_TX_DATA && prx.ev_e) {
 			set_state(V34_DATA);
-			modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
-			modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+			set_rates(rate_tx, rate_rx);
 			rt_blocks = 0;
 			lost = 0;
 			if (renegotiating) {
@@ -3994,8 +3978,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 			if (ev == V91_CONNECT) {
 				rate_tx = (v91m.cp_rx.drn + 20) * 8000 / 6;
 				rate_rx = (v91m.our_drn + 20) * 8000 / 6;
-				modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
-				modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+				set_rates(rate_tx, rate_rx);
 				DSP_DBG("v34: V.91 connect %d/%d\n", rate_tx,
 					rate_rx);
 				ret = DPSTAT_CONNECT;
@@ -4030,8 +4013,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 			if (ev == V92_CONNECT) {
 				rate_tx = (v92u.cpu.drn + 20) * 8000 / 6;
 				rate_rx = (v92u.cpd.drn + 17) * 8000 / 6;
-				modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
-				modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+				set_rates(rate_tx, rate_rx);
 				if (retraining && connected) {
 					/* after a retrain, or back from hold:
 					   the link goes on */
@@ -4049,8 +4031,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 			} else if (ev == V92_RENEG) {
 				rate_tx = (v92u.cpu.drn + 20) * 8000 / 6;
 				rate_rx = (v92u.cpd.drn + 17) * 8000 / 6;
-				modem_set_param(modem, MDMPRM_TX_RATE, rate_tx);
-				modem_set_param(modem, MDMPRM_RX_RATE, rate_rx);
+				set_rates(rate_tx, rate_rx);
 				DSP_DBG("v34: V.92 renegotiated %d/%d\n",
 					rate_tx, rate_rx);
 			} else if (ev == V92_FAIL || ev == V92_RETRAIN) {
@@ -4126,8 +4107,6 @@ int V34Pump::process(void *in, void *out, int cnt)
    8000 through converters (-1 for any other) */
 int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
-	int s7, s10;
-
 	if (srate_ != V34_SRATE && srate_ != 8000) {
 		DSP_DBG("v34: sample rate %d not supported\n", srate_);
 		return -1;
@@ -4172,19 +4151,12 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		!(getenv("DSP_V91") && !atoi(getenv("DSP_V91")));
 	/* the G.711 law of the network (D-Modem knows it from the codec of
 	   the call) */
-	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+	pump_setup(m, srate_, caller_);
 	alaw = rt && rt->law ? rt->law == 2 :
 		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
 	v8_low = caller_ && rt ? rt->v8_for : 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
-	modem = m;
-	srate = srate_;
-	caller = caller_;
-	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
-	timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
-	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
-	carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;
 
 	ec.init();
 	ansam.set_freq(2100, srate_);
@@ -4197,12 +4169,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	own_g.init(caller_ ? 1200 : 2400, PROBE_PERIOD, srate_);
 	/* test: DSP_V34_RETRAIN=<ms in data mode>[a|c], c or a: only the
 	   caller or the answerer starts it */
-	if (getenv("DSP_V34_RETRAIN")) {
-		const char *e = getenv("DSP_V34_RETRAIN");
-		const char *side = e + strspn(e, "0123456789");
-		if (!*side || *side == (caller_ ? 'c' : 'a'))
-			retrain_at = ms2samples(atoi(e), srate_);
-	}
+	retrain_at = test_samples("DSP_V34_RETRAIN");
 	/* test: DSP_V34_PRECODE_MIN=<dB>: ask for precoding from that gain
 	   on (V34_PRECODE_MIN) */
 	precode_min = getenv("DSP_V34_PRECODE_MIN") ?
@@ -4223,20 +4190,12 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	/* test: DSP_V34_LOSE_INFO0=[a|c]: our first INFO0 with a bad CRC,
 	   lost to the remote (phase 2's recovery, 11.2.2/V.34), only the
 	   answerer's or the caller's (anything else: either) */
-	if (getenv("DSP_V34_LOSE_INFO0")) {
-		const char *e = getenv("DSP_V34_LOSE_INFO0");
-		lose_info0 = (*e != 'a' && *e != 'c') ||
-			*e == (caller_ ? 'c' : 'a');
-	}
+	lose_info0 = pump_test_env("DSP_V34_LOSE_INFO0", caller_) != NULL;
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
 	   renegotiation to N * 2400 bit/s (what we receive) */
-	if (getenv("DSP_V34_RENEG")) {
-		const char *e = getenv("DSP_V34_RENEG"), *side;
-		int n = 0;
-		if (strchr(e, ':'))
-			n = atoi(strchr(e, ':') + 1);
-		side = e + strcspn(e, "ac");
-		if (n > 0 && (!*side || *side == (caller_ ? 'c' : 'a'))) {
+	if (const char *e = pump_test_env("DSP_V34_RENEG", caller_)) {
+		int n = strchr(e, ':') ? atoi(strchr(e, ':') + 1) : 0;
+		if (n > 0) {
 			reneg_at = ms2samples(atoi(e), srate_);
 			reneg_to = n;
 		}

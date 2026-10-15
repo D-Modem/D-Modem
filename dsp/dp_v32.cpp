@@ -151,20 +151,13 @@ struct ToneTrk {
 	int run(float x, float in_power, int srate);
 };
 
-struct V32Pump : Pump {
+struct V32Pump : PumpBase<V32Pump, v32_state> {
 	static constexpr const char *name = "V.32/V.32bis data pump";
 
 	/* frees the receiver's and echo canceller's buffers */
 	~V32Pump() { cleanup(); }
 
-	struct modem *modem;
-	struct dp_runtime *rt;
-	int srate;
-	int caller;
 	int automode;
-	enum v32_state state;
-	long count, total;      /* samples */
-	long timeout, carrier_loss;
 	unsigned caps;          /* rate bits we offer */
 	unsigned r2_caps;       /* caller: rates in R2 */
 
@@ -192,7 +185,6 @@ struct V32Pump : Pump {
 	ToneTrk aa, ac, usb1, ans2100;
 	ToneTrk v21m, v23m;     /* FSK answerers' marks */
 	int carrier;
-	long carrier_run;
 	enum v32_rxp rxp;
 	int run_s, last_sgn, s_miss;
 	cplx last_z;
@@ -225,7 +217,8 @@ struct V32Pump : Pump {
 	void rx_word_bit(int bit);
 	void rx_symbol();
 	void rx_sample(float x);
-	void set_state(enum v32_state s);
+	const char *tag() const { return "v32"; }
+	bool in_data() const { return state == V32_DATA; }
 	void start_word(enum v32_txm m, unsigned w);
 	int connect();
 	void retrain();
@@ -237,7 +230,11 @@ struct V32Pump : Pump {
 	cplx abcd_point(int k);
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
 	void cleanup();
-	int process(void *in, void *out, int cnt) override;
+	int sample(float x, float *y);
+	int process(void *in, void *out, int cnt) override
+	{
+		return pump_loop(in, out, cnt);
+	}
 };
 
 /*
@@ -712,24 +709,12 @@ void V32Pump::rx_sample(float x)
 		if (rxp != RX_DATA)
 			rx_reset();
 	}
-	if (carrier)
-		carrier_run = carrier_run > 0 ? carrier_run + 1 : 1;
-	else
-		carrier_run = carrier_run < 0 ? carrier_run - 1 : -1;
+	carrier_tick(carrier);
 }
 
 /*
  *    handshake
  */
-
-/* to state s, count from 0 */
-void V32Pump::set_state(enum v32_state s)
-{
-	DSP_DBG("v32: state %d -> %d at %ld ms\n", state, s,
-		total * 1000 / srate);
-	state = s;
-	count = 0;
-}
 
 /* transmit signal m (TXM_R or TXM_E) repeating the word w from its
    first bit */
@@ -745,17 +730,15 @@ void V32Pump::start_word(enum v32_txm m, unsigned w)
 int V32Pump::connect()
 {
 	set_state(V32_DATA);
-	modem_set_param(modem, MDMPRM_TX_RATE, tx_rate->bps);
-	modem_set_param(modem, MDMPRM_RX_RATE, rx_rate->bps);
 	if (retraining) {
 		/* the link goes on (V.42 knows nothing of it) */
+		set_rates(tx_rate->bps, rx_rate->bps);
 		retraining = 0;
 		DSP_DBG("v32: retrained, %d/%d\n", tx_rate->bps,
 			rx_rate->bps);
 		return DPSTAT_OK;
 	}
-	DSP_DBG("v32: connect %d/%d\n", tx_rate->bps, rx_rate->bps);
-	return DPSTAT_CONNECT;
+	return connect_at(tx_rate->bps, rx_rate->bps);
 }
 
 /* a retrain (V.32 5.5): the start-up again from AA / AC, the caller's
@@ -785,10 +768,7 @@ void V32Pump::retrain()
 int V32Pump::fallback_to(enum DP_ID id, const char *mode)
 {
 	DSP_DBG("v32: remote is not V.32, falling back to %s\n", mode);
-	if (rt && !caller)
-		rt->ans_sent = 1;
-	modem_set_param(modem, MDMPRM_DP_REQUESTED, id);
-	return DPSTAT_CHANGEDP;
+	return hand_over(id, !caller);
 }
 
 /* fallback_to() V.22bis */
@@ -1045,56 +1025,34 @@ int V32Pump::handshake()
 	return DPSTAT_OK;
 }
 
-/* cnt samples: the handshake (at symbol boundaries, and every sample
-   in silence or the answer tone), the transmitter, the receiver.
-   Returns DPSTAT_CONNECT once, DPSTAT_CHANGEDP on a fallback,
-   DPSTAT_ERROR on a handshake failure or timeout (S7) or a loss of
-   carrier in data (S10). */
-int V32Pump::process(void *in, void *out, int cnt)
+/* a sample x in, *y out: the handshake (at symbol boundaries, and every
+   sample in silence or the answer tone), the transmitter, the receiver.
+   DPSTAT_CONNECT once, DPSTAT_CHANGEDP on a fallback, DPSTAT_ERROR on
+   a handshake failure (the time limit, S7, and the loss of carrier in
+   data, S10, are pump_loop()'s) */
+int V32Pump::sample(float x, float *y)
 {
-	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
-	int ret = DPSTAT_OK, r, i;
-	float y;
+	int r = DPSTAT_OK;
 
-	/* silence where an early return (another pump, an error) leaves
-	   the block unwritten */
-	memset(dst, 0, cnt * sizeof(*dst));
-	for (i = 0; i < cnt; i++) {
-		/* the handshake acts on symbol boundaries */
-		if (txm != TXM_ANS && tx.t + 1.0f / tx.sps >= 1) {
-			r = handshake();
-			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
-				return r;
-			if (r != DPSTAT_OK)
-				ret = r;
-		} else if (txm == TXM_ANS || txm == TXM_SILENCE) {
-			r = handshake();
-			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
-				return r;
-		}
-
-		if (txm == TXM_ANS)
-			y = DSP_TX_AMPLITUDE * ans.next();
-		else
-			y = tx.sample();
-		last_tx = y;
-		dst[i] = dsp_clip16(y);
-
-		rx_sample(src[i]);
-
-		if (state == V32_DATA) {
-			if (-carrier_run >= carrier_loss) {
-				DSP_DBG("v32: carrier lost\n");
-				return DPSTAT_ERROR;
-			}
-		} else if (total >= timeout) {
-			DSP_DBG("v32: handshake timeout in state %d\n", state);
-			return DPSTAT_ERROR;
-		}
-		count++;
-		total++;
+	/* the handshake acts on symbol boundaries */
+	if (txm != TXM_ANS && tx.t + 1.0f / tx.sps >= 1) {
+		r = handshake();
+		if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
+			return r;
+	} else if (txm == TXM_ANS || txm == TXM_SILENCE) {
+		int h = handshake();
+		if (h == DPSTAT_CHANGEDP || h == DPSTAT_ERROR)
+			return h;
 	}
-	return ret;
+
+	if (txm == TXM_ANS)
+		*y = DSP_TX_AMPLITUDE * ans.next();
+	else
+		*y = tx.sample();
+	last_tx = *y;
+
+	rx_sample(x);
+	return r;
 }
 
 /* V.32 (4800 and 9600 only) or V.32bis, the rates limited by +MS; the
@@ -1103,13 +1061,10 @@ int V32Pump::process(void *in, void *out, int cnt)
    when out of memory. */
 int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
-	int s7, s10, i;
+	int i;
 	long min_rate, max_rate;
 
-	modem = m;
-	srate = srate_;
-	caller = caller_;
-	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+	pump_setup(m, srate_, caller_);
 	automode = (id != DP_V32 && id != DP_V32BIS) ||
 		(rt && rt->v32_automode);
 
@@ -1155,12 +1110,8 @@ int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	tx_rate = &v32_rates[V32_NRATES - 1];
 	rx_rate = tx_rate;
 
-	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
-	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
-	timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
-	carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;
-	if (getenv("DSP_V32_RETRAIN"))
-		retrain_at = ms2samples(atoi(getenv("DSP_V32_RETRAIN")), srate_);
+	/* test: DSP_V32_RETRAIN=<ms in data mode>[a|c] */
+	retrain_at = test_samples("DSP_V32_RETRAIN");
 
 	if (caller_) {
 		state = C_AA;

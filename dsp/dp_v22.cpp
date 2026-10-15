@@ -68,12 +68,9 @@ enum v22_state {
 	V22_DATA,
 };
 
-struct V22Pump : Pump {
+struct V22Pump : PumpBase<V22Pump, v22_state> {
 	static constexpr const char *name = "V.22/V.22bis data pump";
 
-	struct modem *modem;
-	int srate;
-	int caller;
 	int bis;                /* we offer V.22bis */
 	int remote_bis;         /* remote sent S1 */
 	int automode;           /* fallen back from V.32bis: V.21 next */
@@ -84,9 +81,6 @@ struct V22Pump : Pump {
 	Goertzel g1270, g1070;
 	float blk_energy;
 	int bell_blocks;
-	enum v22_state state;
-	long count, total;      /* samples in state / since creation */
-	long timeout, carrier_loss;
 	float sps;              /* samples per symbol */
 
 	/* transmitter */
@@ -110,7 +104,6 @@ struct V22Pump : Pump {
 	int mf_len, mf_pos;
 	PowerMeter in_pwr;
 	int carrier;
-	long carrier_run;       /* >0 samples with, <0 without carrier */
 	float agc_pwr, agc_alpha;
 
 	/* timing recovery */
@@ -142,7 +135,9 @@ struct V22Pump : Pump {
 	long sb1_at;            /* when 270 ms of them were in */
 	V22Scrambler rx_scr12, rx_scr24;
 
-	const char *mode_name();
+	const char *mode_name() const;
+	const char *tag() const { return mode_name(); }
+	bool in_data() const { return state == V22_DATA; }
 	float pulse_at(float t);
 	void set_state(enum v22_state state_);
 	cplx tx_symbol();
@@ -158,7 +153,11 @@ struct V22Pump : Pump {
 	int connect();
 	int handshake();
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
-	int process(void *in, void *out, int cnt) override;
+	int sample(float x, float *y);
+	int process(void *in, void *out, int cnt) override
+	{
+		return pump_loop(in, out, cnt);
+	}
 };
 
 /* quadrant change for the first dibit (Q1 Q2, Q1 first in time) */
@@ -183,7 +182,7 @@ static cplx rot90(cplx c, int quad)
 }
 
 /* the name for the debug output */
-const char *V22Pump::mode_name()
+const char *V22Pump::mode_name() const
 {
 	return bis ? "V22bis" : "V22";
 }
@@ -192,10 +191,7 @@ const char *V22Pump::mode_name()
    scrambled and the equalizer may train */
 void V22Pump::set_state(enum v22_state state_)
 {
-	DSP_DBG("%s: state %d -> %d at %ld (%ld ms)\n", mode_name(), state,
-		state_, total, total * 1000 / srate);
-	state = state_;
-	count = 0;
+	PumpBase::set_state(state_);
 	/* from here on the remote modem sends scrambled signals */
 	if (state_ == A_S1 || state_ == C_GAP)
 		eq_train = 1;
@@ -492,10 +488,7 @@ void V22Pump::rx_sample(float x)
 		carrier = 0;
 		DSP_DBG("%s: carrier off at %ld\n", mode_name(), total);
 	}
-	if (carrier)
-		carrier_run = carrier_run > 0 ? carrier_run + 1 : 1;
-	else
-		carrier_run = carrier_run < 0 ? carrier_run - 1 : -1;
+	carrier_tick(carrier);
 
 	/* down conversion and matched filter */
 	b = cplx_scale(rx_lo.next_cplx(), x);
@@ -592,10 +585,7 @@ int V22Pump::connect()
 {
 	set_state(V22_DATA);
 	set_tx(TX_DATA);
-	modem_set_param(modem, MDMPRM_TX_RATE, tx_rate);
-	modem_set_param(modem, MDMPRM_RX_RATE, rx_rate);
-	DSP_DBG("%s: connect %d/%d\n", mode_name(), tx_rate, rx_rate);
-	return DPSTAT_CONNECT;
+	return connect_at(tx_rate, rx_rate);
 }
 
 /* the handshake, run once per sample after the receiver: the answerer's
@@ -645,25 +635,15 @@ int V22Pump::handshake()
 			set_state(A_V22_SB1);
 			set_tx(TX_SB1_1200);
 		} else if (automode && bell_blocks >= 5) {
-			struct dp_runtime *rt = (struct dp_runtime *)
-				modem_get_param(modem, MDMPRM_DPRUNTIME);
 			DSP_DBG("%s: Bell 103 caller, falling back to it\n",
 				mode_name());
-			if (rt)
-				rt->ans_sent = 1;
-			modem_set_param(modem, MDMPRM_DP_REQUESTED, DP_B103);
-			return DPSTAT_CHANGEDP;
+			return hand_over(DP_B103, 1);
 		} else if (automode && ms >= 3000) {
 			/* no V.22 caller: a V.21 one waits for our mark
 			   (V.32bis Annex A) */
-			struct dp_runtime *rt = (struct dp_runtime *)
-				modem_get_param(modem, MDMPRM_DPRUNTIME);
 			DSP_DBG("%s: no answer, falling back to V.21\n",
 				mode_name());
-			if (rt)
-				rt->ans_sent = 1;
-			modem_set_param(modem, MDMPRM_DP_REQUESTED, DP_V21);
-			return DPSTAT_CHANGEDP;
+			return hand_over(DP_V21, 1);
 		}
 		break;
 	case A_S1:
@@ -752,15 +732,10 @@ int V22Pump::handshake()
 			return connect();
 		/* a Bell 103 answerer only keeps its 2225 Hz mark */
 		if (dp.id == DP_B212 && !sb1_seen && ms >= 1500) {
-			struct dp_runtime *rt = (struct dp_runtime *)
-				modem_get_param(modem, MDMPRM_DPRUNTIME);
 			DSP_DBG("%s: no 212A answer, falling back to Bell 103\n",
 				mode_name());
 			/* the answerer's mark is there already */
-			if (rt)
-				rt->ans_sent = 1;
-			modem_set_param(modem, MDMPRM_DP_REQUESTED, DP_B103);
-			return DPSTAT_CHANGEDP;
+			return hand_over(DP_B103, 1);
 		}
 		break;
 
@@ -784,51 +759,32 @@ int V22Pump::handshake()
 	return DPSTAT_OK;
 }
 
-/* cnt samples: receiver, Bell 103 detector (automode), handshake and
-   transmitter.  DPSTAT_ERROR on a handshake timeout (S7) or a loss of
-   carrier in data (S10). */
-int V22Pump::process(void *in, void *out, int cnt)
+/* a sample x in, *y out: receiver, Bell 103 detector (automode),
+   handshake and transmitter.  The handshake's status (the time limit,
+   S7, and the loss of carrier in data, S10, are pump_loop()'s) */
+int V22Pump::sample(float x, float *y)
 {
-	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
-	int ret = DPSTAT_OK, r, i;
+	int r;
 
-	/* silence where an early return (another pump, an error) leaves
-	   the block unwritten */
-	memset(dst, 0, cnt * sizeof(*dst));
-	for (i = 0; i < cnt; i++) {
-		rx_sample(src[i]);
-		if (automode) {
-			blk_energy += (float)src[i] * src[i];
-			g1070.run(src[i]);
-			if (g1270.run(src[i])) {
-				/* most of the power in that one tone */
-				float mean = blk_energy / g1270.len;
-				/* mark and space: Bell 103's originate band */
-				bell_blocks = g1270.power + g1070.power > 0.6f * mean &&
-					mean > tone_power(150) ?
-					bell_blocks + 1 : 0;
-				blk_energy = 0;
-			}
+	rx_sample(x);
+	if (automode) {
+		blk_energy += x * x;
+		g1070.run(x);
+		if (g1270.run(x)) {
+			/* most of the power in that one tone */
+			float mean = blk_energy / g1270.len;
+			/* mark and space: Bell 103's originate band */
+			bell_blocks = g1270.power + g1070.power > 0.6f * mean &&
+				mean > tone_power(150) ?
+				bell_blocks + 1 : 0;
+			blk_energy = 0;
 		}
-		r = handshake();
-		if (r == DPSTAT_CHANGEDP)
-			return r;       /* the rest of the block silent */
-		if (r != DPSTAT_OK)
-			ret = r;
-		if (state == V22_DATA) {
-			if (-carrier_run >= carrier_loss) {
-				DSP_DBG("%s: carrier lost\n", mode_name());
-				return DPSTAT_ERROR;
-			}
-		} else if (total >= timeout) {
-			DSP_DBG("%s: handshake timeout\n", mode_name());
-			return DPSTAT_ERROR;
-		}
-		dst[i] = dsp_clip16(tx_sample());
-		count++;
-		total++;
 	}
-	return ret;
+	r = handshake();
+	if (r == DPSTAT_CHANGEDP)
+		return r;       /* the rest of the block silent */
+	*y = tx_sample();
+	return r;
 }
 
 /* V.22 / Bell 212A (id DP_V22, DP_B212) or V.22bis, calling or
@@ -838,13 +794,10 @@ int V22Pump::process(void *in, void *out, int cnt)
    with scrambled ones); 0 */
 int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
-	struct dp_runtime *rt;
-	int i, s7, s10;
+	int i;
 	float sum;
 
-	modem = m;
-	srate = srate_;
-	caller = caller_;
+	pump_setup(m, srate_, caller_);
 	bis = !(id == DP_V22 || id == DP_B212);
 	sps = (float)srate_ / V22_BAUD;
 
@@ -873,13 +826,7 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	rx_rate = 1200;
 	rx_reset();
 
-	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
-	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
-	timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
-	carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;
-
 	tx_mode = TX_SILENCE;
-	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
 	if (!caller_ && rt && rt->ans_sent) {
 		/* automode fallback from V.32bis: the answer tone was sent
 		   (after V.8, agreed: no automode) */

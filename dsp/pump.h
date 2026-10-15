@@ -17,10 +17,20 @@
  *    plain members need no constructor; its destructor frees what start
  *    took.
  *
+ *    PumpBase<P, S> is what the modulation pumps share on top of Pump:
+ *    the core, the sample rate and side, a state of S with the samples
+ *    counted in it and in all, the handshake's time limit (S7) and the
+ *    carrier's (S10), the report of a connection and the hand over to
+ *    another pump, the tests' settings from the environment, and the
+ *    sample loop of process().
+ *
  */
 
 #ifndef __PUMP_H__
 #define __PUMP_H__
+
+#include <stdlib.h>
+#include <string.h>
 
 #include <new>
 
@@ -84,6 +94,165 @@ template <class T>
 struct dp_operations PumpOps<T>::ops = {
 	T::name, 0, PumpOps<T>::create, PumpOps<T>::destroy,
 	PumpOps<T>::process, PumpOps<T>::hangup,
+};
+
+/* a test's setting var=<n>...[a|c] (the first a or c in it, if any,
+   names the side it is for: a the answerer, c the caller): the setting
+   when it is for this side, else NULL */
+static inline const char *pump_test_env(const char *var, int caller)
+{
+	const char *e = getenv(var), *side;
+	if (!e)
+		return NULL;
+	side = e + strcspn(e, "ac");
+	return !*side || *side == (caller ? 'c' : 'a') ? e : NULL;
+}
+
+/* the pump P with its states S.  P has
+ *
+ *     const char *tag()                its name in the log
+ *
+ * and, when its process() is pump_loop(),
+ *
+ *     int sample(float x, float *y)    one sample in, one out (*y, 0 to
+ *                                      start with): a DPSTAT_*, the
+ *                                      block ending at a CHANGEDP or
+ *                                      an ERROR
+ *     bool in_data()                   past the handshake: carrier_run
+ *                                      is watched, no longer timeout
+ *     int block_start()                (optional) a DPSTAT_*, the block
+ *                                      silent but for DPSTAT_OK
+ */
+template <class P, class S>
+class PumpBase : public Pump {
+public:
+	struct modem *modem;
+	struct dp_runtime *rt;          /* the core's (NULL: none) */
+	int srate;
+	int caller;
+	S state;
+	long count;                     /* samples in the state */
+	long total;                     /* samples since the start */
+	long timeout;                   /* the handshake's end, in total */
+	long carrier_loss;              /* samples without carrier that end
+					   the call */
+	long carrier_run;               /* >0 samples with, <0 without
+					   carrier */
+
+	/* nothing before the samples */
+	int block_start() { return DPSTAT_OK; }
+
+protected:
+	/* for modem m at srate_ samples/s, calling or not: the runtime,
+	   the handshake's time from S7 (50 s if 0) and the carrier's from
+	   S10 (1.4 s if 0) */
+	void pump_setup(struct modem *m, int srate_, int caller_)
+	{
+		int s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
+		int s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
+
+		modem = m;
+		srate = srate_;
+		caller = caller_;
+		rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+		timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
+		carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;
+	}
+
+	/* to state s, count from 0 */
+	void set_state(S s)
+	{
+		DSP_DBG("%s: state %d -> %d at %ld ms\n", host().tag(),
+			(int)state, (int)s, total * 1000 / srate);
+		state = s;
+		count = 0;
+	}
+
+	/* a sample with or without carrier into carrier_run */
+	void carrier_tick(int on)
+	{
+		if (on)
+			carrier_run = carrier_run > 0 ? carrier_run + 1 : 1;
+		else
+			carrier_run = carrier_run < 0 ? carrier_run - 1 : -1;
+	}
+
+	/* the data rates to the core */
+	void set_rates(int tx, int rx)
+	{
+		modem_set_param(modem, MDMPRM_TX_RATE, tx);
+		modem_set_param(modem, MDMPRM_RX_RATE, rx);
+	}
+
+	/* the data rates to the core: DPSTAT_CONNECT */
+	int connect_at(int tx, int rx)
+	{
+		set_rates(tx, rx);
+		DSP_DBG("%s: connect %d/%d\n", host().tag(), tx, rx);
+		return DPSTAT_CONNECT;
+	}
+
+	/* the call to the pump id, the answer tone marked as sent if
+	   ans_sent: DPSTAT_CHANGEDP */
+	int hand_over(enum DP_ID id, int ans_sent)
+	{
+		if (ans_sent && rt)
+			rt->ans_sent = 1;
+		modem_set_param(modem, MDMPRM_DP_REQUESTED, id);
+		return DPSTAT_CHANGEDP;
+	}
+
+	/* a test's time var=<ms>[a|c] (pump_test_env) in samples, 0 when
+	   not set for this side */
+	long test_samples(const char *var) const
+	{
+		const char *e = pump_test_env(var, caller);
+		return e ? ms2samples(atoi(e), srate) : 0;
+	}
+
+	/* process() by the sample: P's block_start(), then sample() for
+	   each, the handshake's time limit and the carrier's checked after
+	   it (DPSTAT_ERROR); the first other status it gives is returned
+	   at the end of the block.  What is not sent of the block is
+	   silent */
+	int pump_loop(void *in, void *out, int cnt)
+	{
+		s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
+		int ret, r, i;
+
+		memset(dst, 0, cnt * sizeof(*dst));
+		ret = host().block_start();
+		if (ret != DPSTAT_OK)
+			return ret;
+		for (i = 0; i < cnt; i++) {
+			float y = 0;
+
+			r = host().sample(src[i], &y);
+			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
+				return r;
+			if (r != DPSTAT_OK)
+				ret = r;
+			if (host().in_data()) {
+				if (-carrier_run >= carrier_loss) {
+					DSP_DBG("%s: carrier lost\n",
+						host().tag());
+					return DPSTAT_ERROR;
+				}
+			} else if (total >= timeout) {
+				DSP_DBG("%s: handshake timeout in state %d\n",
+					host().tag(), (int)state);
+				return DPSTAT_ERROR;
+			}
+			dst[i] = dsp_clip16(y);
+			count++;
+			total++;
+		}
+		return ret;
+	}
+
+private:
+	P &host() { return static_cast<P&>(*this); }
+	const P &host() const { return static_cast<const P&>(*this); }
 };
 
 } // namespace dsp

@@ -34,15 +34,9 @@ struct cp_tone {
 	int blocks;             /* consecutive blocks where the tone is on */
 };
 
-struct CallProgPump : Pump {
+/* (S10's carrier_loss and carrier_run are not used) */
+struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	static constexpr const char *name = "Call progress";
-
-	struct modem *modem;
-	struct dp_runtime *rt;
-	int srate;
-	enum cp_state state;
-	long count, total;
-	long timeout;
 
 	/* dialing */
 	const char *dial;
@@ -75,20 +69,12 @@ struct CallProgPump : Pump {
 	int fax;
 	Osc ct;
 
-	void set_state(enum cp_state state_);
+	const char *tag() const { return "callprog"; }
 	int block();
 	float dial_sample();
 	int start(struct modem *m, enum DP_ID id, int caller, int srate_, int max_frag);
 	int process(void *in, void *out, int cnt) override;
 };
-
-/* to state_, count (samples in the state) from 0 */
-void CallProgPump::set_state(enum cp_state state_)
-{
-	DSP_DBG("callprog: state %d -> %d at %ld\n", state, state_, total);
-	state = state_;
-	count = 0;
-}
 
 /* sets up the detectors on BLOCK_MS blocks, the dial string and its
    timings (S11 DTMF ms, S8 comma pause), dial tone wait (X2/X4), the
@@ -100,9 +86,7 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 	int i, v;
 	static const float dt_freq[3] = { 350, 440, 425 };
 
-	modem = m;
-	srate = srate_;
-	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+	pump_setup(m, srate_, caller);
 	if (rt) {
 		rt->answer_tone = ANSTONE_NONE;
 		rt->answer_tone_end = 0;
@@ -127,9 +111,6 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 	/* X2 and X4 wait for a dial tone, the others dial blindly */
 	v = modem_get_sreg(m, SREG_X_CODE);
 	need_dialtone = (v == 2 || v == 4);
-
-	v = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
-	timeout = (long)(v > 0 ? v : 50) * srate_;
 
 	calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
 	fax = modem_get_param(m, MDMPRM_MODE) == MODEM_MODE_FAX;

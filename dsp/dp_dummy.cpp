@@ -45,6 +45,9 @@
 #include <string.h>
 
 #include "dsp.h"
+#include "pump.h"
+
+namespace dsp {
 
 #define dprintf(fmt...) DSP_DBG(fmt)
 
@@ -55,75 +58,61 @@
 #define DUMMY_A1  0xff
 
 
-struct dummy_dp {
-	struct dp dp;
+struct DummyPump : Pump {
+	static constexpr const char *name = "Dummy DataPump driver";
+
+	/* gives the runtime's pcm flag back */
+	~DummyPump();
+
+	struct dp_runtime *rt;
 	unsigned long count;
 	unsigned long linked;
 	u8 buf[1024];
 	int pcm_was;            /* the runtime's "no DC removal" before */
+
+	int start(struct modem *m, enum DP_ID id, int caller, int srate,
+		  int max_frag);
+	int process(void *in, void *out, int cnt) override;
 };
 
-/* dp_operations.create: a zeroed pump; turns the core's DC removal off
-   (the runtime's pcm flag) for as long as it runs */
-static struct dp *dummy_create(struct modem *m, enum DP_ID id,
-			       int caller, int srate, int max_frag,
-			       struct dp_operations *op)
+/* turns the core's DC removal off (the runtime's pcm flag) for as long
+   as it runs; 0 */
+int DummyPump::start(struct modem *m, enum DP_ID, int, int, int)
 {
-	struct dummy_dp *d;
 	dprintf("dummy_create...\n");
-	d = static_cast<dummy_dp*>(malloc(sizeof(*d)));
-	if (!d)
-		return NULL;
-	memset(d,0,sizeof(*d));
-	d->dp.id   = id;
-	d->dp.modem = m;
-	d->dp.op = op;
-	d->dp.dp_data = d;
 	/* its 0/1 bits on the line are not DC free: the core must not
 	   take the DC out while it runs */
-	{
-		dsp::dp_runtime *rt = (dsp::dp_runtime *)
-			modem_get_param(m, MDMPRM_DPRUNTIME);
-		if (rt) {
-			d->pcm_was = rt->pcm;
-			rt->pcm = 1;
-		}
+	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+	if (rt) {
+		pcm_was = rt->pcm;
+		rt->pcm = 1;
 	}
-	return (struct dp *)d;
-}
-
-/* dp_operations.destroy: gives the pcm flag back and frees the pump */
-static int dummy_delete(struct dp *dp)
-{
-	struct dummy_dp *d = (struct dummy_dp *)dp;
-	dprintf("dummy_delete...\n");
-	{
-		dsp::dp_runtime *rt = (dsp::dp_runtime *)
-			modem_get_param(dp->modem, MDMPRM_DPRUNTIME);
-		if (rt)
-			rt->pcm = d->pcm_was;
-	}
-	free(d);
 	return 0;
 }
 
-/* dp_operations.process, counted in blocks: silent for DUMMY_SKIP
-   blocks, then +-'A' samples until the remote's are heard (CONNECT), or
-   DPSTAT_ERROR after DUMMY_TIMEOUT; once linked one bit per sample each
-   way, in bit 0 of the samples */
-static int dummy_process(struct dp *dp, void *in, void *out, int cnt)
+DummyPump::~DummyPump()
 {
-	struct dummy_dp *d = (struct dummy_dp *)dp;
+	dprintf("dummy_delete...\n");
+	if (rt)
+		rt->pcm = pcm_was;
+}
+
+/* counted in blocks: silent for DUMMY_SKIP blocks, then +-'A' samples
+   until the remote's are heard (CONNECT), or DPSTAT_ERROR after
+   DUMMY_TIMEOUT; once linked one bit per sample each way, in bit 0 of
+   the samples */
+int DummyPump::process(void *in, void *out, int cnt)
+{
 	int n = cnt * (int)sizeof(s16);    /* the core's samples */
 	s16 *s;
 	int i;
-	d->count++;
-	if (!d->linked) {
-		if (d->count < DUMMY_SKIP) {
+	count++;
+	if (!linked) {
+		if (count < DUMMY_SKIP) {
 			memset(out,0,n);
 			return DPSTAT_OK;
 		}
-		else if(d->count > DUMMY_TIMEOUT)
+		else if(count > DUMMY_TIMEOUT)
 			return DPSTAT_ERROR;
 		s = static_cast<s16*>(out);
 		for(i = 0 ; i < cnt ; i++) {
@@ -133,7 +122,7 @@ static int dummy_process(struct dp *dp, void *in, void *out, int cnt)
 		s = static_cast<s16*>(in);
 		for(i = 0 ; i < cnt ; i++) {
 			if(abs(*s) == 'A') {
-				d->linked = 1;
+				linked = 1;
 				return DPSTAT_CONNECT;
 			}
 			s++;
@@ -142,40 +131,32 @@ static int dummy_process(struct dp *dp, void *in, void *out, int cnt)
 	else {
 		s = static_cast<s16*>(in);
 		for(i = 0 ; i < cnt ; i++) {
-			d->buf[i] = *s&0x1;
+			buf[i] = *s&0x1;
 			s++;
 		}
-		modem_put_bits(dp->modem,1,d->buf,cnt);
+		modem_put_bits(dp.modem,1,buf,cnt);
 		s = static_cast<s16*>(out);
-		modem_get_bits(dp->modem,1,d->buf,cnt);
+		modem_get_bits(dp.modem,1,buf,cnt);
 		for(i = 0 ; i < cnt ; i++) {
-			*s = d->buf[i]&1 ;
+			*s = buf[i]&1 ;
 			s++;
 		}
 	}
 	return DPSTAT_OK;
 }
 
+} // namespace dsp
 
-static struct dp_operations dummy_operations = {
-	name : "Dummy DataPump driver",
-	create: dummy_create,
-	destroy: dummy_delete,
-	process:dummy_process
-};
-
-
+using namespace dsp;
 
 /* registers the pump as DP_DUMMY: modem_dp_register()'s result */
 int dp_dummy_init(void)
 {
-	return modem_dp_register(DP_DUMMY,&dummy_operations);
+	return modem_dp_register(DP_DUMMY, &PumpOps<DummyPump>::ops);
 }
 
 /* deregisters it */
 void dp_dummy_exit(void)
 {
-	modem_dp_deregister(DP_DUMMY,&dummy_operations);
+	modem_dp_deregister(DP_DUMMY, &PumpOps<DummyPump>::ops);
 }
-
-

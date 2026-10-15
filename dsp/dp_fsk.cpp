@@ -156,20 +156,11 @@ static const struct fsk_params v23_params[2] = {
 	{ "V23", 1300, 2100, 1200, 390, 450, 75 },
 };
 
-struct FskPump : Pump {
+struct FskPump : PumpBase<FskPump, fsk_state> {
 	static constexpr const char *name = "FSK (V.21/V.23/Bell103) data pump";
 
-	struct modem *modem;
 	const struct fsk_params *par;
-	int srate;
-	int caller;
-	enum fsk_state state;
-	long count;             /* samples spent in the current state */
-	long total;             /* samples since creation */
-	long carrier_count;     /* consecutive samples with/without carrier */
 	long mark_count;        /* consecutive samples of steady mark */
-	long timeout;
-	long carrier_loss;
 	Osc ans;         /* answer tone */
 	FskMod tx;
 	FskDemod rx;
@@ -188,19 +179,17 @@ struct FskPump : Pump {
 	Goertzel g_mark, g_lo, g_hi;
 	int mark_true;
 
-	void set_state(enum fsk_state state_);
+	const char *tag() const { return par->name; }
+	bool in_data() const { return state == FSK_DATA; }
 	float tx_sample(int data);
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
-	int process(void *in, void *out, int cnt) override;
+	int block_start();
+	int sample(float x, float *y);
+	int process(void *in, void *out, int cnt) override
+	{
+		return pump_loop(in, out, cnt);
+	}
 };
-
-/* to state_, count (samples in the state) from 0 */
-void FskPump::set_state(enum fsk_state state_)
-{
-	DSP_DBG("%s: state %d -> %d at %ld\n", par->name, state, state_, total);
-	state = state_;
-	count = 0;
-}
 
 /* V.21, V.23 or Bell 103 by id, the channels by caller_; timeouts from
    S7 and S10; the first state from the runtime (after V.8, after a Bell
@@ -209,7 +198,6 @@ void FskPump::set_state(enum fsk_state state_)
 int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
 {
 	const struct fsk_params *par_;
-	int s7, s10;
 
 	switch (id) {
 	case DP_V21:  par_ = v21_params; break;
@@ -219,10 +207,8 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	}
 	par_ += caller_ ? 0 : 1;
 
-	modem = m;
+	pump_setup(m, srate_, caller_);
 	par = par_;
-	srate = srate_;
-	caller = caller_;
 
 	tx.init(par_->tx_mark, par_->tx_space, DSP_TX_AMPLITUDE, srate_);
 	rx.init(par_->rx_mark, par_->rx_space, par_->rx_baud, srate_);
@@ -233,14 +219,7 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	g_lo.init(par_->rx_mark - 350, srate_ / 100, srate_);
 	g_hi.init(par_->rx_mark + 350, srate_ / 100, srate_);
 
-	s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
-	s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
-	timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
-	carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;
-
 	if (caller_) {
-		struct dp_runtime *rt = (struct dp_runtime *)
-			modem_get_param(m, MDMPRM_DPRUNTIME);
 		state = FSK_WAIT_CARRIER;
 		if (rt && rt->after_v8) {
 			/* after V.8's CJ the caller's carrier comes first
@@ -255,8 +234,6 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 			state = FSK_TRAIN;
 		}
 	} else {
-		struct dp_runtime *rt = (struct dp_runtime *)
-			modem_get_param(m, MDMPRM_DPRUNTIME);
 		state = FSK_ANS_SILENCE;
 		if (rt && rt->after_v8) {
 			/* after V.8: our mark at once, the caller's
@@ -294,155 +271,127 @@ float FskPump::tx_sample(int data)
 	return tx.next(tx_bit);
 }
 
-/* cnt samples: the receiver and the detectors, then the handshake
-   (answerer: 1 s silence, 3.3 s of 2100 Hz, 75 ms gap; both: the mark
-   until the remote's carrier or mark is steady) and data.  Returns
-   DPSTAT_CONNECT once, DPSTAT_CHANGEDP for V.8 or an automode fallback,
-   DPSTAT_ERROR on a timeout (S7) or the loss of carrier (S10). */
-int FskPump::process(void *in, void *out, int cnt)
+/* before a block: V.21 only, after V.8 the PCTel modem takes V.23's
+   75 bit/s side as the answerer, the HSF modem the 1200 bit/s one, and
+   both answer V.22, V.22bis and V.23 without V.8: DPSTAT_CHANGEDP to
+   another pump, else DPSTAT_OK */
+int FskPump::block_start()
 {
-	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
-	int ret = DPSTAT_OK;
-	int i, bit;
-
-	/* silence where an early return (another pump, an error) leaves
-	   the block unwritten */
-	memset(dst, 0, cnt * sizeof(*dst));
-	/* V.21 only: after V.8 the PCTel modem takes V.23's 75 bit/s
-	   side as the answerer, the HSF modem the 1200 bit/s one, and both
-	   answer V.22, V.22bis and V.23 without V.8 */
 	if (caller && !total && state == FSK_WAIT_CARRIER &&
 	    dp.id == DP_V21 && dp_v8_first(modem, dp.id))
 		return DPSTAT_CHANGEDP;
-	for (i = 0; i < cnt; i++) {
-		float y = 0;
+	return DPSTAT_OK;
+}
 
-		bit = rx.run(src[i]);
-		if (rx.carrier)
-			carrier_count = carrier_count > 0 ? carrier_count + 1 : 1;
-		else
-			carrier_count = carrier_count < 0 ? carrier_count - 1 : -1;
+/* a sample x in, *y out: the receiver and the detectors, then the
+   handshake (answerer: 1 s silence, 3.3 s of 2100 Hz, 75 ms gap; both:
+   the mark until the remote's carrier or mark is steady) and data.
+   DPSTAT_CONNECT once, DPSTAT_CHANGEDP for an automode fallback (the
+   time limit, S7, and the loss of carrier, S10, are pump_loop()'s) */
+int FskPump::sample(float x, float *y)
+{
+	int ret = DPSTAT_OK, bit;
 
-		if (automode && !caller) {
-			blk_energy += (float)src[i] * src[i];
-			g1070.run(src[i]);
-			if (g1270.run(src[i])) {
-				float mean = blk_energy / g1270.len;
-				/* mark and space: Bell 103's originate band */
-				bell_blocks = g1270.power + g1070.power > 0.6f * mean &&
-					mean > tone_power(150) ?
-					bell_blocks + 1 : 0;
-				blk_energy = 0;
-			}
-		}
-		g_lo.run(src[i]);
-		g_hi.run(src[i]);
-		if (g_mark.run(src[i]))
-			mark_true = g_mark.power > 4 * g_lo.power &&
-				g_mark.power > 4 * g_hi.power;
-		if (rx.carrier && rx.last_dec &&
-		    (!caller || state != FSK_WAIT_CARRIER || mark_true))
-			mark_count++;
-		else
-			mark_count = 0;
+	bit = rx.run(x);
+	carrier_tick(rx.carrier);
 
-		switch (state) {
-		case FSK_ANS_SILENCE:
-			/* V.8's 0.2 s at least (8.2/V.8): the core's answer delay (its
-			   S-register, 2 s) is V.25's silent interval of 1.8 to 2.5 s
-			   (4.3/V.25), the answer tone then within it */
-			if (count >= ms2samples(200, srate)) {
-				/* Bell 103 uses its 2225 Hz mark as answer tone */
-				set_state(dp.id == DP_B103 ?
-					      FSK_TRAIN : FSK_ANS_TONE);
-			}
-			break;
-		case FSK_ANS_TONE:
-			y = DSP_TX_AMPLITUDE * ans.next();
-			if (count >= ms2samples(3300, srate))
-				set_state(FSK_ANS_GAP);
-			break;
-		case FSK_ANS_GAP:
-			if (count >= ms2samples(75, srate))
-				set_state(FSK_TRAIN);
-			break;
-		case FSK_WAIT_CARRIER:
-			/* caller: silent until the answerer's mark is heard;
-			   for V.23 the 2100 Hz answer tone is a valid space
-			   tone, so only a steady mark counts */
-			if (mark_count >= ms2samples(150, srate))
-				set_state(FSK_TRAIN);
-			break;
-		case FSK_TRAIN:
-			y = tx_sample(0);
-			/* the caller already saw the answerer's steady mark,
-			   which may be data by now; the answerer waits for
-			   the caller's mark */
-			/* (a Bell 103 caller found in automode may be online
-			   already, sending data: its carrier will do) */
-			/* (after V.8 the caller too waits for the mark: the
-			   answerer's JM, in the same channel, is carrier;
-			   and 400 ms of it, the answerer starting its own as
-			   it starts listening to ours, which it needs 150
-			   ms of) */
-			if (count >= ms2samples(200, srate) &&
-			    ((caller && !after_v8) ||
-			     (automode && dp.id == DP_B103) ?
-			     carrier_count : mark_count) >=
-			    ms2samples(after_v8 ? 400 : 150, srate)) {
-				set_state(FSK_DATA);
-				modem_set_param(modem, MDMPRM_TX_RATE, (int)par->tx_baud);
-				modem_set_param(modem, MDMPRM_RX_RATE, (int)par->rx_baud);
-				DSP_DBG("%s: connect %d/%d\n", par->name,
-					(int)par->tx_baud, (int)par->rx_baud);
-				ret = DPSTAT_CONNECT;
-			} else if (!caller && automode &&
-				   dp.id != DP_B103 &&
-				   (bell_blocks >= 5 ||
-				    (count >= ms2samples(3000, srate) &&
-				     !rx.carrier))) {
-				/* a Bell 103 caller's mark; or no caller:
-				   after V.21 a V.23 one waits for our 1300 Hz
-				   mark, after V.23 a Bell 103 one for 2225 Hz */
-				struct dp_runtime *rt = (struct dp_runtime *)
-					modem_get_param(modem,
-							MDMPRM_DPRUNTIME);
-				enum DP_ID next = bell_blocks >= 5 ||
-					dp.id == DP_V23 ? DP_B103 : DP_V23;
-				DSP_DBG("%s: %s, falling back to %s\n",
-					par->name, bell_blocks >= 5 ?
-					"Bell 103 caller" : "no answer",
-					next == DP_B103 ? "Bell 103" : "V.23");
-				if (rt)
-					rt->ans_sent = 1;
-				modem_set_param(modem, MDMPRM_DP_REQUESTED,
-						next);
-				return DPSTAT_CHANGEDP;
-			}
-			break;
-		case FSK_DATA:
-			/* the answerer keeps its mark for a second: the
-			   caller links up only 0.8 s after it starts its own
-			   carrier and would miss the first characters */
-			y = tx_sample(caller ||
-					  count >= ms2samples(1000, srate));
-			if (bit >= 0 && rx.carrier) {
-				u8 b = bit;
-				modem_put_bits(modem, 1, &b, 1);
-			}
-			if (-carrier_count >= carrier_loss) {
-				DSP_DBG("%s: carrier lost\n", par->name);
-				return DPSTAT_ERROR;
-			}
-			break;
+	if (automode && !caller) {
+		blk_energy += x * x;
+		g1070.run(x);
+		if (g1270.run(x)) {
+			float mean = blk_energy / g1270.len;
+			/* mark and space: Bell 103's originate band */
+			bell_blocks = g1270.power + g1070.power > 0.6f * mean &&
+				mean > tone_power(150) ?
+				bell_blocks + 1 : 0;
+			blk_energy = 0;
 		}
-		if (state != FSK_DATA && total >= timeout) {
-			DSP_DBG("%s: handshake timeout\n", par->name);
-			return DPSTAT_ERROR;
+	}
+	g_lo.run(x);
+	g_hi.run(x);
+	if (g_mark.run(x))
+		mark_true = g_mark.power > 4 * g_lo.power &&
+			g_mark.power > 4 * g_hi.power;
+	if (rx.carrier && rx.last_dec &&
+	    (!caller || state != FSK_WAIT_CARRIER || mark_true))
+		mark_count++;
+	else
+		mark_count = 0;
+
+	switch (state) {
+	case FSK_ANS_SILENCE:
+		/* V.8's 0.2 s at least (8.2/V.8): the core's answer delay (its
+		   S-register, 2 s) is V.25's silent interval of 1.8 to 2.5 s
+		   (4.3/V.25), the answer tone then within it */
+		if (count >= ms2samples(200, srate)) {
+			/* Bell 103 uses its 2225 Hz mark as answer tone */
+			set_state(dp.id == DP_B103 ?
+				      FSK_TRAIN : FSK_ANS_TONE);
 		}
-		dst[i] = dsp_clip16(y);
-		count++;
-		total++;
+		break;
+	case FSK_ANS_TONE:
+		*y = DSP_TX_AMPLITUDE * ans.next();
+		if (count >= ms2samples(3300, srate))
+			set_state(FSK_ANS_GAP);
+		break;
+	case FSK_ANS_GAP:
+		if (count >= ms2samples(75, srate))
+			set_state(FSK_TRAIN);
+		break;
+	case FSK_WAIT_CARRIER:
+		/* caller: silent until the answerer's mark is heard;
+		   for V.23 the 2100 Hz answer tone is a valid space
+		   tone, so only a steady mark counts */
+		if (mark_count >= ms2samples(150, srate))
+			set_state(FSK_TRAIN);
+		break;
+	case FSK_TRAIN:
+		*y = tx_sample(0);
+		/* the caller already saw the answerer's steady mark,
+		   which may be data by now; the answerer waits for
+		   the caller's mark */
+		/* (a Bell 103 caller found in automode may be online
+		   already, sending data: its carrier will do) */
+		/* (after V.8 the caller too waits for the mark: the
+		   answerer's JM, in the same channel, is carrier;
+		   and 400 ms of it, the answerer starting its own as
+		   it starts listening to ours, which it needs 150
+		   ms of) */
+		if (count >= ms2samples(200, srate) &&
+		    ((caller && !after_v8) ||
+		     (automode && dp.id == DP_B103) ?
+		     carrier_run : mark_count) >=
+		    ms2samples(after_v8 ? 400 : 150, srate)) {
+			set_state(FSK_DATA);
+			ret = connect_at((int)par->tx_baud, (int)par->rx_baud);
+		} else if (!caller && automode &&
+			   dp.id != DP_B103 &&
+			   (bell_blocks >= 5 ||
+			    (count >= ms2samples(3000, srate) &&
+			     !rx.carrier))) {
+			/* a Bell 103 caller's mark; or no caller:
+			   after V.21 a V.23 one waits for our 1300 Hz
+			   mark, after V.23 a Bell 103 one for 2225 Hz */
+			enum DP_ID next = bell_blocks >= 5 ||
+				dp.id == DP_V23 ? DP_B103 : DP_V23;
+			DSP_DBG("%s: %s, falling back to %s\n",
+				par->name, bell_blocks >= 5 ?
+				"Bell 103 caller" : "no answer",
+				next == DP_B103 ? "Bell 103" : "V.23");
+			return hand_over(next, 1);
+		}
+		break;
+	case FSK_DATA:
+		/* the answerer keeps its mark for a second: the
+		   caller links up only 0.8 s after it starts its own
+		   carrier and would miss the first characters */
+		*y = tx_sample(caller ||
+			       count >= ms2samples(1000, srate));
+		if (bit >= 0 && rx.carrier) {
+			u8 b = bit;
+			modem_put_bits(modem, 1, &b, 1);
+		}
+		break;
 	}
 	return ret;
 }

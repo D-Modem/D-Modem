@@ -45,13 +45,11 @@
 #include <string.h>
 
 #include "dsp.h"
+#include "pump.h"
+
+namespace dsp {
 
 #define dprintf(fmt...) DSP_DBG(fmt)
-
-#ifdef __KERNEL__
-#define malloc(size) kmalloc(size,GFP_KERNEL)
-#define free(mem)    kfree(mem)
-#endif
 
 #define SIN_AMPLITUDE 16384
 #define SIN_PERIOD    (sizeof(sintab)/sizeof(sintab[0]))
@@ -64,81 +62,54 @@ const s16 sintab[] = {
 
 #define SIN_DBG(fmt,arg...) dprintf("sin: " fmt , ##arg)
 
-struct sin_state {
-	struct dp dp;
-	int count;
-	int linked;
-	u8 buf[1024];
+struct SinusPump : Pump {
+	static constexpr const char *name = "Sinus DP driver";
+
+	~SinusPump() { SIN_DBG("delete...\n"); }
+
 	int      amp;
 	unsigned period;
 	unsigned phase;
+
+	int start(struct modem *m, enum DP_ID id, int caller, int srate,
+		  int max_frag);
+	int process(void *in, void *out, int cnt) override;
 };
 
-/* dp_operations.create: a pump sending the table's sine (srate / 32 Hz,
-   amplitude SIN_AMPLITUDE); NULL when out of memory */
-static struct dp *sin_create(struct modem *m, enum DP_ID id,
-			     int caller, int srate, int max_frag,
-			     struct dp_operations *op)
+/* the table's sine (srate / 32 Hz, amplitude SIN_AMPLITUDE); 0 */
+int SinusPump::start(struct modem *, enum DP_ID, int, int, int)
 {
-	struct sin_state *s;
 	SIN_DBG("create...\n");
-	s = static_cast<sin_state*>(malloc(sizeof(*s)));
-	if (!s) return NULL;
-	memset(s,0,sizeof(*s));
-	s->dp.id   = id;
-	s->dp.modem = m;
-	s->dp.op = op;
-	s->dp.dp_data = s;
-	s->phase = 0;
-	s->amp   = SIN_AMPLITUDE;
-	s->period= SIN_PERIOD;
-	return &s->dp;
-}
-
-/* dp_operations.destroy: frees the pump */
-static int sin_delete(struct dp *dp)
-{
-	struct sin_state *s = static_cast<sin_state*>(dp->dp_data);
-	SIN_DBG("delete...\n");
-	free(s);
+	phase = 0;
+	amp   = SIN_AMPLITUDE;
+	period= SIN_PERIOD;
 	return 0;
 }
 
-/* dp_operations.process: cnt samples of the sine out, the input
-   ignored; always DPSTAT_OK */
-static int sin_run(struct dp *dp, void *in, void *out, int cnt)
+/* cnt samples of the sine out, the input ignored; always DPSTAT_OK */
+int SinusPump::process(void *, void *out, int cnt)
 {
-	struct sin_state *s = static_cast<sin_state*>(dp->dp_data);
 	s16 *smpl = static_cast<s16*>(out);
 	int i;
-	//SIN_DBG("run...\n");
 	for (i=0;i<cnt;i++) {
-		smpl[i]  = sintab[s->phase%SIN_PERIOD];
-		s->phase = s->phase+1;
+		smpl[i]  = sintab[phase%SIN_PERIOD];
+		phase = phase+1;
 	}
 	return DPSTAT_OK;
 }
 
+} // namespace dsp
 
-static struct dp_operations sin_operations = {
-	name : "Sinus DP driver",
-	create: sin_create,
-	destroy: sin_delete,
-	process:sin_run
-};
-
-
+using namespace dsp;
 
 /* registers the pump as DP_SINUS: modem_dp_register()'s result */
 int dp_sinus_init(void)
 {
-	return modem_dp_register(DP_SINUS,&sin_operations);
+	return modem_dp_register(DP_SINUS, &PumpOps<SinusPump>::ops);
 }
 
 /* deregisters it */
 void dp_sinus_exit(void)
 {
-	modem_dp_deregister(DP_SINUS,&sin_operations);
+	modem_dp_deregister(DP_SINUS, &PumpOps<SinusPump>::ops);
 }
-
-
