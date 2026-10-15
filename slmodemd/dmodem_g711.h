@@ -8,10 +8,7 @@
 #ifndef DMODEM_G711_H
 #define DMODEM_G711_H
 
-/* a G.711 octet (A-law if alaw, else mu-law) to 16 bit linear, and 16
-   bit linear to one (dmodem.cpp) */
-int dmodem_g711_decode(int alaw, unsigned char c);
-unsigned char dmodem_g711_encode(int alaw, int x);
+#include "g711.h"
 
 /* n octets in, n out: each block of up to 160 (20 ms) decoded, through
    process(const short *in, short *out, int k), encoded */
@@ -24,10 +21,10 @@ void dmodem_g711_blocks(int alaw, const unsigned char *in,
 	while (n > 0) {
 		int k = n < 160 ? n : 160;
 		for (int i = 0; i < k; i++)
-			li[i] = (short)dmodem_g711_decode(alaw, in[i]);
+			li[i] = (short)dsp::g711::decode(alaw, in[i]);
 		process(li, lo, k);
 		for (int i = 0; i < k; i++)
-			out[i] = dmodem_g711_encode(alaw, lo[i]);
+			out[i] = dsp::g711::encode(alaw, lo[i]);
 		in += k;
 		out += k;
 		n -= k;

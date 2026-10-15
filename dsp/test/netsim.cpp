@@ -23,6 +23,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include "dsp.h"
+#include "g711.h"
 #include "qam.h"
 #include "v34.h"
 
@@ -242,90 +243,14 @@ static volatile sig_atomic_t synced;
    memfd) */
 static long long *line_clock;
 
-/* G.711 (the usual reference algorithms).  The segment of v: the first
-   of t's 8 ends at or above it, 8 if none */
-static int seg_search(int v, const short *t)
-{
-	int i;
-	for (i = 0; i < 8; i++)
-		if (v <= t[i])
-			return i;
-	return 8;
-}
-
-/* 16 bit linear to mu-law */
-static unsigned char lin2ulaw(int x)
-{
-	static const short seg_end[8] = { 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF,
-					  0x7FF, 0xFFF, 0x1FFF };
-	int mask = 0xFF, seg;
-	x >>= 2;
-	if (x < 0) {
-		x = -x;
-		mask = 0x7F;
-	}
-	if (x > 8159)
-		x = 8159;
-	x += 0x84 >> 2;
-	seg = seg_search(x, seg_end);
-	if (seg >= 8)
-		return (unsigned char)(0x7F ^ mask);
-	return (unsigned char)(((seg << 4) | ((x >> (seg + 1)) & 15)) ^ mask);
-}
-
-/* mu-law to 16 bit linear */
-static int ulaw2lin(unsigned char u)
-{
-	int t;
-	u = ~u;
-	t = ((u & 15) << 3) + 0x84;
-	t <<= (u & 0x70) >> 4;
-	return (u & 0x80) ? 0x84 - t : t - 0x84;
-}
-
-/* 16 bit linear to A-law */
-static unsigned char lin2alaw(int x)
-{
-	static const short seg_end[8] = { 0x1F, 0x3F, 0x7F, 0xFF, 0x1FF,
-					  0x3FF, 0x7FF, 0xFFF };
-	int mask = 0xD5, seg, aval;
-	x >>= 3;
-	if (x < 0) {
-		mask = 0x55;
-		x = -x - 1;
-	}
-	seg = seg_search(x, seg_end);
-	if (seg >= 8)
-		return (unsigned char)(0x7F ^ mask);
-	aval = seg << 4;
-	aval |= seg < 2 ? (x >> 1) & 15 : (x >> seg) & 15;
-	return (unsigned char)(aval ^ mask);
-}
-
-/* A-law to 16 bit linear */
-static int alaw2lin(unsigned char a)
-{
-	int t, seg;
-	a ^= 0x55;
-	t = (a & 15) << 4;
-	seg = (a & 0x70) >> 4;
-	if (seg == 0)
-		t += 8;
-	else if (seg == 1)
-		t += 0x108;
-	else
-		t = (t + 0x108) << (seg - 1);
-	return (a & 0x80) ? t : -t;
-}
-
 /* x (clipped to 16 bits) through the network's law, there and back */
-static int g711(int x)
+static int g711_line(int x)
 {
 	if (x > 32767)
 		x = 32767;
 	if (x < -32768)
 		x = -32768;
-	return alaw ? alaw2lin(lin2alaw(x)) : ulaw2lin(lin2ulaw(x));
+	return g711::decode(alaw, g711::encode(alaw, x));
 }
 
 /* 8000 -> 9600 Hz like a codec on an analogue line: a raised cosine
@@ -702,23 +627,23 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			echo_r++;
 		if (d->rate_in == d->rate_out) {
 			if (loop_on && a_in) {
-				float v = loop_run((float)g711(ibuf[i]));
+				float v = loop_run((float)g711_line(ibuf[i]));
 				d->lbuf[o] = v;
 				d->obuf[o++] = (short)(v > 32767 ? 32767 :
 						       v < -32768 ? -32768 : v);
 			} else {
-				d->lbuf[o] = (float)g711(ibuf[i]);
-				d->obuf[o++] = (short)g711(ibuf[i]);
+				d->lbuf[o] = (float)g711_line(ibuf[i]);
+				d->obuf[o++] = (short)g711_line(ibuf[i]);
 			}
-			wav_put(!a_out, g711(ibuf[i]));
+			wav_put(!a_out, g711_line(ibuf[i]));
 			continue;
 		}
 		if (d->rate_in == 8000) {
 			/* the network, then the far codec (with the
 			   analogue loss or gain NET_GAIN on the way): the
 			   raised cosine, or NET_PLAIN's short resampler */
-			float x = g711(ibuf[i]) * gain;
-			wav_put(!a_out, g711(ibuf[i]));
+			float x = g711_line(ibuf[i]) * gain;
+			wav_put(!a_out, g711_line(ibuf[i]));
 			m = plain ? d->rs.run(x, y) : rc_run(&d->rc, x, y);
 			for (k = 0; k < m; k++) {
 				if (noise && noise_dir != 3)
@@ -737,7 +662,7 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			   then the network */
 			m = d->rs.run(ibuf[i] * gain_up, y);
 			for (k = 0; k < m; k++) {
-				d->obuf[o] = (short)g711((int)lrintf(y[k]));
+				d->obuf[o] = (short)g711_line((int)lrintf(y[k]));
 				d->lbuf[o] = d->obuf[o];
 				wav_put(!a_out, d->obuf[o]);
 				o++;
@@ -782,14 +707,14 @@ int main(int argc, char **argv)
 		/* every code back to itself */
 		int c, bad = 0;
 		for (c = 0; c < 256; c++) {
-			if (c != 0x7F && lin2ulaw(ulaw2lin(c)) != c)
+			if (c != 0x7F && g711::lin2ulaw(g711::ulaw2lin(c)) != c)
 				bad++;
-			if (lin2alaw(alaw2lin(c)) != c)
+			if (g711::lin2alaw(g711::alaw2lin(c)) != c)
 				bad++;
 		}
 		printf("ulaw FE %d 80 %d, alaw D5 %d AA %d, bad %d\n",
-		       ulaw2lin(0xFE), ulaw2lin(0x80), alaw2lin(0xD5),
-		       alaw2lin(0xAA), bad);
+		       g711::ulaw2lin(0xFE), g711::ulaw2lin(0x80), g711::alaw2lin(0xD5),
+		       g711::alaw2lin(0xAA), bad);
 		return bad != 0;
 	}
 	if (argc < 8) {

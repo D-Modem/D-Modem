@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include "fax_util.h"
+#include "g711.h"
 #include "t4.h"
 
 using namespace dsp;
@@ -140,20 +141,11 @@ testing::AssertionResult same_pages(const std::string &a,
 	return testing::AssertionSuccess() << n << " pages the same";
 }
 
-/* (fax_util.h) x coded to a mu-law octet (G.711: the biased segments,
+/* (fax_util.h) x coded to a mu-law octet (G.711's sign and magnitude,
    clipped at 32635) and decoded again to the middle of its interval */
 short g711_ulaw(short x)
 {
-	int s = x < 0, m = s ? -x : x, e, q;
-	if (m > 32635)
-		m = 32635;
-	m += 0x84;
-	for (e = 7; e > 0 && !(m & (0x4000 >> (7 - e))); e--)
-		;
-	q = (m >> (e + 3)) & 15;
-	m = ((q << 3) + 0x84) << e;
-	m -= 0x84;
-	return (short)(s ? -m : m);
+	return (short)dsp::g711::decode(0, dsp::g711::encode_sm(0, x));
 }
 
 /* (fax_util.h) Box-Muller on two of rand()'s, never log(0) */

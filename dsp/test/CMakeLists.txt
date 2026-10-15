@@ -53,6 +53,9 @@ dmodem_gtest(pcm_cp_test LABELS quick)
 # bits.h: fields, the V.34 and frame CRCs, the HDLC FCS
 dmodem_test_exe(bits_test bits_test.cpp)
 dmodem_gtest(bits_test LABELS quick)
+# g711.h: the laws' octets, reference values, sign and magnitude
+dmodem_test_exe(g711_test g711_test.cpp)
+dmodem_gtest(g711_test LABELS quick)
 # the emulated hardware's mixins (hw/) on a host of the test's own
 dmodem_test_exe(hw_test hw_test.cpp)
 dmodem_gtest(hw_test LABELS quick)

@@ -35,6 +35,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `dmodem_test` | libdmodem: pairs of its modems, retrains and renegotiations in the data, V.91 across G.711 networks, the network's law for each call, `dmodem.hpp` |
 | `dmodem_fax_test` | libdmodem's fax: a data modem answering hands the call to a fax receiver |
 | `hw_test` | the hardware the harnesses emulate (`hw/`), on a host of its own: the ICH's bus masters |
+| `bits_test`, `g711_test`, `pcm_cp_test` | `bits.h`'s fields and CRCs, `g711.h`'s two laws (each octet back to itself, sign and magnitude), the PCM encoders on CPs that cannot carry their rate |
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one (or against a script's `.expect`, see `docs/core.md`) |

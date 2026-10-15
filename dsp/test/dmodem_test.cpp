@@ -28,11 +28,10 @@
 
 #include "dmodem.h"
 #include "dmodem.hpp"
+#include "g711.h"
 
 #define FRAME 160               /* 20 ms, as Asterisk */
 
-extern int dmodem_g711_decode(int alaw, unsigned char c);
-extern unsigned char dmodem_g711_encode(int alaw, int x);
 
 /* the network between the two modems */
 enum Net {
@@ -83,11 +82,11 @@ static unsigned char net_octet(Net net, unsigned char c, int from, int to,
 			c |= 1;
 		break;
 	case NET_PAD:
-		c = dmodem_g711_encode(to,
-			(int)(dmodem_g711_decode(from, c) * 0.708f));
+		c = dsp::g711::encode(to,
+			(int)(dsp::g711::decode(from, c) * 0.708f));
 		break;
 	case NET_XLAW:
-		c = dmodem_g711_encode(to, dmodem_g711_decode(from, c));
+		c = dsp::g711::encode(to, dsp::g711::decode(from, c));
 		break;
 	default:
 		break;

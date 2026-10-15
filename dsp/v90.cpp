@@ -22,71 +22,11 @@
 #include <math.h>
 #include <string.h>
 
+#include "g711.h"
 #include "v90.h"
 #include "v92.h"
 
 namespace dsp {
-
-/* G.711 decoders, the linear value of an octet on a 16 bit scale:
-   mu-law */
-static int ulaw2lin(int u)
-{
-	int t;
-	u = ~u & 0xFF;
-	t = ((u & 15) << 3) + 0x84;
-	t <<= (u & 0x70) >> 4;
-	return (u & 0x80) ? 0x84 - t : t - 0x84;
-}
-
-/* A-law */
-static int alaw2lin(int a)
-{
-	int t, seg;
-	a ^= 0x55;
-	t = (a & 15) << 4;
-	seg = (a & 0x70) >> 4;
-	if (seg == 0)
-		t += 8;
-	else if (seg == 1)
-		t += 0x108;
-	else
-		t = (t + 0x108) << (seg - 1);
-	return (a & 0x80) ? t : -t;
-}
-
-/* G.711 encoders: mu-law from 14 bit, A-law from 13 bit linear values,
-   as the ANSpcm tables of V.92 (Tables 7 to 10/V.92) come out */
-static int lin2ulaw(int v)
-{
-	int mask = 0xFF, seg;
-	if (v < 0) {
-		v = -v;
-		mask = 0x7F;
-	}
-	v = (v > 8159 ? 8159 : v) + 33;
-	for (seg = 0; seg < 8 && v > (0x40 << seg) - 1; seg++)
-		;
-	if (seg == 8)
-		return 0x7F ^ mask;
-	return ((seg << 4) | ((v >> (seg + 1)) & 0xF)) ^ mask;
-}
-
-/* A-law */
-static int lin2alaw(int v)
-{
-	int mask = 0xD5, seg, a;
-	if (v < 0) {
-		v = -v;
-		mask = 0x55;
-	}
-	for (seg = 0; seg < 8 && v > (0x20 << seg) - 1; seg++)
-		;
-	if (seg == 8)
-		return 0x7F ^ mask;
-	a = seg << 4;
-	a |= seg < 2 ? (v >> 1) & 0xF : (v >> seg) & 0xF;
-	return a ^ mask;
-}
 
 /* Table 1/V.90: mu-law 0xFF - Ucode, A-law Ucode ^ 0xD5 for the positive
    codewords; the sign bit is the MSB */
@@ -100,7 +40,7 @@ int v90_ucode_octet(int alaw, int ucode, int positive)
 int v90_ucode_linear(int alaw, int ucode)
 {
 	int c = v90_ucode_octet(alaw, ucode, 1);
-	return alaw ? alaw2lin(c) : ulaw2lin(c);
+	return g711::decode(alaw, c);
 }
 
 /* scrambles a bit; returns the scrambled bit */
@@ -173,8 +113,9 @@ void V90Tx::anspcm_init(int level)
 		double x = scl * sqrt(2.0) * cos(2 * M_PI * k * 79 / 301 +
 						  0.25 * M_PI / 301) + 0.5;
 		int v = (int)floor(x);
-		anspcm[k] = (short)(alaw ? alaw2lin(lin2alaw(v)) :
-				    ulaw2lin(lin2ulaw(v)));
+		/* (v: 13 bits for A-law, 14 for mu-law) */
+		anspcm[k] = (short)g711::decode(alaw, g711::encode_sm(alaw,
+						alaw ? 8 * v : 4 * v));
 	}
 }
 
