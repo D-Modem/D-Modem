@@ -168,12 +168,14 @@ std::vector<Call> calls()
 	    "open8", "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=10", "SMARTLINK_V92FULL=1",
 	      "DSP_V92_PREFILTER=0", "EXPECT_B=V.92 connect 56000/3[4-9]" });
-	/* (it ran alone once: quick connect's timing did not take a busy
-	   machine; next to the unpaced calls, which run nicer, and a dozen
-	   calls in real time it connects at the same moments every time) */
+	/* two calls: the second starts wherever the hangup left the two
+	   modems' lines (a busy machine moves it), and at some of those
+	   alignments, on a line without any noise, the library's phase 4
+	   check (as in V.90, above) came to 1.6 or 1.7 and it retrained,
+	   to V.90 without the offer; NET_FLOOR keeps it to 1.2 at most */
 	add("smartlink", "smartlink_v92_pcmup_calls", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
-	    { "NET=9600:8000:ulaw", "CALLS=2", "STREAM=3",
+	    { "NET=9600:8000:ulaw", "NET_FLOOR=3", "CALLS=2", "STREAM=3",
 	      "SMARTLINK_V92FULL=1",
 	      "EXPECT_B=(?s)V.92 connect.*V.92 connect" });
 	add("smartlink", "smartlink_v92_pcmup_lite", "smartlink", "open8",
