@@ -67,6 +67,51 @@ static int take_bits(BitQueue *s, int nbits, uint8_t mask, uint8_t *&buf,
 
 
 /*
+ *    the framers' loops (BitFramer)
+ *
+ */
+
+/* see hdlc.h: the queue's bits out, F's tx_fill() and tx_idle(); the
+   number of items filled */
+template <class F>
+int BitFramer<F>::get_bits(int nbits, uint8_t *buf, int n)
+{
+	F &self = static_cast<F &>(*this);
+	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
+	int ret = 0;
+
+	for (;;) {
+		ret += take_bits(&tx_, nbits, mask, buf, n);
+		if (n <= 0)
+			break;
+		if (!self.tx_fill())
+			break;
+	}
+	return ret + self.tx_idle(nbits, mask, buf, n);
+}
+
+/* see hdlc.h: each item into rx_, then F's rx_scan(); the number of
+   items taken */
+template <class F>
+int BitFramer<F>::put_bits(int nbits, const uint8_t *buf, int n)
+{
+	F &self = static_cast<F &>(*this);
+	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
+	int ret = 0;
+
+	while (n > 0) {
+		rx_.data <<= nbits;
+		rx_.data |= *buf++ & mask;
+		rx_.bit += nbits;
+		n--;
+		ret++;
+		self.rx_scan();
+	}
+	return ret;
+}
+
+
+/*
  *    asynchronous characters
  *
  */
@@ -77,31 +122,31 @@ static const int STOP_BITS = 1;
 /* a call in async mode: empty queues, no bit timer */
 void Async::start(Link *link)
 {
-	link_ = link;
-	tx_.clear();
-	rx_.clear();
-	link->set_timer(0, nullptr);
+	framer_start(link);
+	link->set_timer(0, Link::Timer::None);
 }
 
-/* n items of nbits bits for the data pump: the DTE's characters as
-   start bit, 8 data bits (least significant first) and stop bit, marks
-   when there are none; returns n */
-int Async::get_bits(int nbits, uint8_t *buf, int n)
+/* the transmitter: the DTE's next character as start bit, 8 data bits
+   (least significant first) and stop bit; false if there is none */
+bool Async::tx_fill()
+{
+	uint8_t ch;
+
+	if (link_->read_chars(&ch, 1) != 1)
+		return false;
+	ch = reverse_bits(ch);
+	tx_.data <<= CHAR_SIZE;
+	tx_.data |= (uint32_t)ch << 1 | 1;
+	tx_.bit += CHAR_SIZE;
+	return true;
+}
+
+/* the rest of the n items, with no character to send: what is left of
+   the last, then stop bits, then marks; how many */
+int Async::tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n)
 {
 	int ret = 0;
-	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
-	uint8_t ch;
-	for (;;) {
-		ret += take_bits(&tx_, nbits, mask, buf, n);
-		if (n <= 0)
-			break;
-		if (link_->read_chars(&ch, 1) != 1)
-			break;
-		ch = reverse_bits(ch);
-		tx_.data <<= CHAR_SIZE;
-		tx_.data |= (uint32_t)ch << 1 | 1;
-		tx_.bit += CHAR_SIZE;
-	}
+
 	if (tx_.bit && n > 0) {
 		/* what is left, then stop bits */
 		*buf++ = (uint8_t)(tx_.data << (nbits - tx_.bit) |
@@ -115,31 +160,23 @@ int Async::get_bits(int nbits, uint8_t *buf, int n)
 	return ret;
 }
 
-/* n items of nbits bits from the data pump: marks skipped up to a start
-   bit, then a character to the DTE every 10 bits (the stop bit is not
-   checked; a character the DTE does not take is lost); returns n */
-int Async::put_bits(int nbits, const uint8_t *buf, int n)
+/* the receiver: marks skipped up to a start bit, then a character to
+   the DTE every 10 bits (the stop bit is not checked; a character the
+   DTE does not take is lost) */
+void Async::rx_scan()
 {
-	int ret = 0;
 	uint8_t ch;
-	while (n > 0) {
-		rx_.data <<= nbits;
-		rx_.data |= *buf++ & ((1 << nbits) - 1);
-		rx_.bit += nbits;
-		n--;
-		ret++;
-		/* marks before a start bit */
-		while (rx_.bit && rx_.data & (1u << (rx_.bit - 1)))
-			rx_.bit--;
-		while (rx_.bit >= CHAR_SIZE) {
-			ch = (uint8_t)(rx_.data >>
-				       (rx_.bit - (CHAR_SIZE - STOP_BITS)));
-			rx_.bit -= CHAR_SIZE;
-			ch = reverse_bits(ch);
-			link_->write_chars(&ch, 1);
-		}
+
+	/* marks before a start bit */
+	while (rx_.bit && rx_.data & (1u << (rx_.bit - 1)))
+		rx_.bit--;
+	while (rx_.bit >= CHAR_SIZE) {
+		ch = (uint8_t)(rx_.data >>
+			       (rx_.bit - (CHAR_SIZE - STOP_BITS)));
+		rx_.bit -= CHAR_SIZE;
+		ch = reverse_bits(ch);
+		link_->write_chars(&ch, 1);
 	}
-	return ret;
 }
 
 
@@ -173,19 +210,19 @@ static long t400(Link *link)
 
 /* the originator's bit timer: its ODPs start after 64 octets of marks,
    and T400 with them (7.2/V.42) */
-void Detector::begin(Link *link)
+void Detector::begin()
 {
-	link->logf("detector start...");
-	link->det_.tx_count_ = 1;
-	link->set_timer(t400(link), finish);
+	link_->logf("detector start...");
+	tx_count_ = 1;
+	link_->set_timer(t400(link_), Link::Timer::DetectEnd);
 }
 
 /* the bit timer at the end of the phase: LAPM if an ADP (V.42), ODPs or
    flags came, else async */
-void Detector::finish(Link *link)
+void Detector::finish()
 {
-	link->logf("detector finished.");
-	link->detected(link->det_.ec_enable_);
+	link_->logf("detector finished.");
+	link_->detected(ec_enable_);
 }
 
 /* the phase at the start of the data mode: the originator waits 64
@@ -193,7 +230,7 @@ void Detector::finish(Link *link)
    come, at most T400 */
 void Detector::start(Link *link)
 {
-	link_ = link;
+	framer_start(link);
 	tx_count_ = 0;          /* mute */
 	rx_count_ = 0;
 	ec_enable_ = false;
@@ -202,109 +239,94 @@ void Detector::start(Link *link)
 		tx_pattern_[1] = ODP1;
 		rx_pattern_[0] = ADP0;
 		rx_pattern_[1] = ADP1_V42;
-		link->set_timer(64 * 8, begin);
+		link->set_timer(64 * 8, Link::Timer::DetectBegin);
 	} else {
 		tx_pattern_[0] = ADP0;
 		tx_pattern_[1] = ADP1_V42;
 		rx_pattern_[0] = ODP0;
 		rx_pattern_[1] = ODP1;
-		link->set_timer(t400(link), finish);
+		link->set_timer(t400(link), Link::Timer::DetectEnd);
 	}
-	tx_.clear();
-	rx_.clear();
 }
 
 /* the phase's transmitter: 9 marks, then (once sending) the next
    pattern character as 9 bits, a start bit and its 8 bits (its stop
-   bit the first of the next marks); returns n */
-int Detector::get_bits(int nbits, uint8_t *buf, int n)
+   bit the first of the next marks); always more */
+bool Detector::tx_fill()
 {
-	int ret = 0;
-	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
-	for (;;) {
-		ret += take_bits(&tx_, nbits, mask, buf, n);
-		if (n <= 0)
-			break;
-		/* 9 marks, and a pattern character when sending */
+	/* 9 marks, and a pattern character when sending */
+	tx_.data <<= 9;
+	tx_.data |= 0x1ff;
+	tx_.bit += 9;
+	if (tx_count_ > 0) {
 		tx_.data <<= 9;
-		tx_.data |= 0x1ff;
+		tx_.data |= tx_pattern_[tx_count_++ % 2];
 		tx_.bit += 9;
-		if (tx_count_ > 0) {
-			tx_.data <<= 9;
-			tx_.data |= tx_pattern_[tx_count_++ % 2];
-			tx_.bit += 9;
-		}
 	}
-	return ret;
+	return true;
 }
 
 /* the phase's receiver: characters after marks, as in async; a flag
    ends the phase one pattern later (LAPM); at the answerer the second
    ODP starts 16 ADPs and LAPM, at the originator the second ADP ends
-   the phase (V.42: LAPM, V.14: async); returns n */
-int Detector::put_bits(int nbits, const uint8_t *buf, int n)
+   the phase (V.42: LAPM, V.14: async) */
+void Detector::rx_scan()
 {
-	int ret = 0;
 	uint8_t ch;
-	while (n > 0) {
-		rx_.data <<= nbits;
-		rx_.data |= *buf++ & ((1 << nbits) - 1);
-		rx_.bit += nbits;
-		n--;
-		ret++;
-		/* marks */
-		while (rx_.bit && rx_.data & (1u << (rx_.bit - 1)))
-			rx_.bit--;
-		while (rx_.bit >= 10) {
-			ch = (uint8_t)(rx_.data >> (rx_.bit - 9));
-			rx_.bit -= 10;
-			link_->logf("rx pattern: 0x%02x.", ch);
-			if (ch == HDLC_FLAG) {
-				link_->logf("hdlc flag detected.");
-				ec_enable_ = true;
-				/* once: re-arming on every flag would hold
-				   the detector until the flags end, and the
-				   frame after them would be lost */
-				if (link_->timer_fn() != finish ||
-				    link_->timer() > PATTERN_SIZE)
-					link_->set_timer(PATTERN_SIZE, finish);
-				continue;
-			}
-			if (!rx_count_) {
-				rx_count_ = ch == rx_pattern_[0];
-				continue;
-			}
-			if (rx_count_ >= 2)
-				continue;
-			switch (ch) {
-			case ODP1:
-				if (!link_->caller()) {
-					/* answer with ADPs, then go on */
-					tx_count_ = 1;
-					rx_count_ = 2;
-					ec_enable_ = true;
-					link_->set_timer(MAX_TX_PATTERNS *
-							 PATTERN_SIZE, finish);
-				} else
-					rx_count_ = 0;
-				break;
-			case ADP1_V14:
-				rx_count_ = 2;
-				ec_enable_ = false;
-				link_->set_timer(PATTERN_SIZE, finish);
-				break;
-			case ADP1_V42:
+
+	/* marks */
+	while (rx_.bit && rx_.data & (1u << (rx_.bit - 1)))
+		rx_.bit--;
+	while (rx_.bit >= 10) {
+		ch = (uint8_t)(rx_.data >> (rx_.bit - 9));
+		rx_.bit -= 10;
+		link_->logf("rx pattern: 0x%02x.", ch);
+		if (ch == HDLC_FLAG) {
+			link_->logf("hdlc flag detected.");
+			ec_enable_ = true;
+			/* once: re-arming on every flag would hold
+			   the detector until the flags end, and the
+			   frame after them would be lost */
+			if (link_->timer_what() != Link::Timer::DetectEnd ||
+			    link_->timer() > PATTERN_SIZE)
+				link_->set_timer(PATTERN_SIZE,
+						 Link::Timer::DetectEnd);
+			continue;
+		}
+		if (!rx_count_) {
+			rx_count_ = ch == rx_pattern_[0];
+			continue;
+		}
+		if (rx_count_ >= 2)
+			continue;
+		switch (ch) {
+		case ODP1:
+			if (!link_->caller()) {
+				/* answer with ADPs, then go on */
+				tx_count_ = 1;
 				rx_count_ = 2;
 				ec_enable_ = true;
-				link_->set_timer(PATTERN_SIZE, finish);
-				break;
-			default:
+				link_->set_timer(MAX_TX_PATTERNS *
+						 PATTERN_SIZE,
+						 Link::Timer::DetectEnd);
+			} else
 				rx_count_ = 0;
-				break;
-			}
+			break;
+		case ADP1_V14:
+			rx_count_ = 2;
+			ec_enable_ = false;
+			link_->set_timer(PATTERN_SIZE, Link::Timer::DetectEnd);
+			break;
+		case ADP1_V42:
+			rx_count_ = 2;
+			ec_enable_ = true;
+			link_->set_timer(PATTERN_SIZE, Link::Timer::DetectEnd);
+			break;
+		default:
+			rx_count_ = 0;
+			break;
 		}
 	}
-	return ret;
 }
 
 
@@ -361,7 +383,7 @@ static uint16_t fcs_add(uint16_t fcs, uint8_t c)
    receiver hunting for a flag */
 void Hdlc::start(Link *link)
 {
-	link_ = link;
+	framer_start(link);
 	framer_ = nullptr;
 	tx_on_ = false;
 	tx_frame_ = nullptr;
@@ -372,9 +394,7 @@ void Hdlc::start(Link *link)
 	rx_frame_.buf = rx_buf_;
 	rx_frame_.size = sizeof(rx_buf_);
 	rx_frame_.fcs = INIT_FCS;
-	tx_.clear();
-	rx_.clear();
-	link->set_timer(0, nullptr);
+	link->set_timer(0, Link::Timer::None);
 }
 
 /* a byte, least significant bit first, a 0 after five 1s */
@@ -397,126 +417,112 @@ void Hdlc::put_byte(uint8_t in)
 	}
 }
 
-/* n items of nbits bits for the data pump: flags between frames, the
-   framer's next frame (while tx is on) with zeros inserted and its
-   FCS, tx_complete() once it is out; returns n */
-int Hdlc::get_bits(int nbits, uint8_t *buf, int n)
+/* the transmitter: a flag between frames, the framer's next frame
+   (while tx is on) with zeros inserted and its FCS, tx_complete() once
+   it is out; always more */
+bool Hdlc::tx_fill()
 {
-	int ret = 0;
-	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
-
-	for (;;) {
-		ret += take_bits(&tx_, nbits, mask, buf, n);
-		if (n <= 0)
-			break;
-		if (!tx_frame_) {
-			tx_.data <<= 8;
-			tx_.data |= HDLC_FLAG;
-			tx_.bit += 8;
-			if (framer_ && tx_on_ &&
-			    (tx_frame_ = framer_->next_tx_frame())) {
-				tx_frame_->fcs = INIT_FCS;
-				tx_frame_->count = 0;
-			}
-		} else if (tx_frame_->count == tx_frame_->size) {
-			/* the FCS, then the frame is out */
-			tx_frame_->fcs ^= 0xffff;
-			put_byte((uint8_t)(tx_frame_->fcs & 0xff));
-			put_byte((uint8_t)(tx_frame_->fcs >> 8));
-			tx_ones_ = 0;
-			framer_->tx_complete(tx_frame_);
-			tx_frame_ = nullptr;
-		} else {
-			uint8_t in = tx_frame_->buf[tx_frame_->count++];
-			tx_frame_->fcs = fcs_add(tx_frame_->fcs, in);
-			put_byte(in);
+	if (!tx_frame_) {
+		tx_.data <<= 8;
+		tx_.data |= HDLC_FLAG;
+		tx_.bit += 8;
+		if (framer_ && tx_on_ &&
+		    (tx_frame_ = framer_->next_tx_frame())) {
+			tx_frame_->fcs = INIT_FCS;
+			tx_frame_->count = 0;
 		}
+	} else if (tx_frame_->count == tx_frame_->size) {
+		/* the FCS, then the frame is out */
+		tx_frame_->fcs ^= 0xffff;
+		put_byte((uint8_t)(tx_frame_->fcs & 0xff));
+		put_byte((uint8_t)(tx_frame_->fcs >> 8));
+		tx_ones_ = 0;
+		framer_->tx_complete(tx_frame_);
+		tx_frame_ = nullptr;
+	} else {
+		uint8_t in = tx_frame_->buf[tx_frame_->count++];
+		tx_frame_->fcs = fcs_add(tx_frame_->fcs, in);
+		put_byte(in);
 	}
-	return ret;
+	return true;
 }
 
-/* n items of nbits bits from the data pump: flags delimit the frames,
-   inserted zeros are removed, six 1s outside a flag abort the frame;
-   a frame of whole octets, of at least 3 with the FCS and a good FCS,
-   goes to the framer's rx_complete() without it; returns n */
-int Hdlc::put_bits(int nbits, const uint8_t *buf, int n)
+/* the receiver: flags delimit the frames, inserted zeros are removed,
+   six 1s outside a flag abort the frame; a frame of whole octets, of at
+   least 3 with the FCS and a good FCS, goes to the framer's
+   rx_complete() without it */
+void Hdlc::rx_scan()
 {
-	int ret = 0;
-	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
 	Frame *f = &rx_frame_;
 
-	while (n > 0) {
-		rx_.data <<= nbits;
-		rx_.data |= *buf++ & mask;
-		rx_.bit += nbits;
-		n--;
-		ret++;
+	/* a character, 2 possible zeros inserted, 8 for a flag */
+	if (rx_.bit < 8 + 8 + 2)
+		return;
 
-		/* a character, 2 possible zeros inserted, 8 for a flag */
-		if (rx_.bit < 8 + 8 + 2)
-			continue;
-
-		uint8_t out = 0;
-		int i;
-		for (i = 0; i < 8; i++) {
-			uint8_t in = (uint8_t)(rx_.data >> (rx_.bit - 8));
-			if (in == HDLC_FLAG) {
-				/* the end of a frame */
-				if (!f->count)
-					;
-				else if (rx_error_)
-					link_->logf("hdlc frame error.");
-				else if (i)
-					link_->logf("hdlc frame integrity "
-						    "error.");
-				else if (f->count < 4)  /* address, control, FCS */
-					link_->logf("hdlc frame size error.");
-				else if (f->fcs != GOOD_FCS)
-					link_->logf("hdlc frame fcs error.");
-				else if (framer_) {
-					f->count -= 2;  /* the FCS */
-					framer_->rx_complete(f);
-				}
-				rx_.bit -= 8;
-				rx_ones_ = 0;
-				rx_error_ = 0;
-				f->fcs = INIT_FCS;
-				f->count = 0;
-				break;
-			} else if (rx_error_) {
-				rx_.bit--;
-				continue;
+	uint8_t out = 0;
+	int i;
+	for (i = 0; i < 8; i++) {
+		uint8_t in = (uint8_t)(rx_.data >> (rx_.bit - 8));
+		if (in == HDLC_FLAG) {
+			/* the end of a frame */
+			if (!f->count)
+				;
+			else if (rx_error_)
+				link_->logf("hdlc frame error.");
+			else if (i)
+				link_->logf("hdlc frame integrity "
+					    "error.");
+			else if (f->count < 4)  /* address, control, FCS */
+				link_->logf("hdlc frame size error.");
+			else if (f->fcs != GOOD_FCS)
+				link_->logf("hdlc frame fcs error.");
+			else if (framer_) {
+				f->count -= 2;  /* the FCS */
+				framer_->rx_complete(f);
 			}
-			out >>= 1;
-			if (in & 0x80) {
-				out |= 0x80;
-				rx_ones_++;
-				/* an inserted zero, or an abort / idle */
-				if (rx_ones_ == 5) {
-					if (in & 0x40) {
-						rx_error_++;
-						f->count = 0;
-					}
-					rx_.bit--;
-					rx_ones_ = 0;
-				}
-			} else
-				rx_ones_ = 0;
+			rx_.bit -= 8;
+			rx_ones_ = 0;
+			rx_error_ = 0;
+			f->fcs = INIT_FCS;
+			f->count = 0;
+			break;
+		} else if (rx_error_) {
 			rx_.bit--;
+			continue;
 		}
-
-		if (i == 8 && !rx_error_) {
-			if (f->count < f->size) {
-				f->buf[f->count++] = out;
-				f->fcs = fcs_add(f->fcs, out);
-			} else {
-				link_->logf("hdlc rx frame overflow.");
-				rx_error_++;
-				f->count = 0;
+		out >>= 1;
+		if (in & 0x80) {
+			out |= 0x80;
+			rx_ones_++;
+			/* an inserted zero, or an abort / idle */
+			if (rx_ones_ == 5) {
+				if (in & 0x40) {
+					rx_error_++;
+					f->count = 0;
+				}
+				rx_.bit--;
+				rx_ones_ = 0;
 			}
+		} else
+			rx_ones_ = 0;
+		rx_.bit--;
+	}
+
+	if (i == 8 && !rx_error_) {
+		if (f->count < f->size) {
+			f->buf[f->count++] = out;
+			f->fcs = fcs_add(f->fcs, out);
+		} else {
+			link_->logf("hdlc rx frame overflow.");
+			rx_error_++;
+			f->count = 0;
 		}
 	}
-	return ret;
 }
+
+/* the framers */
+template class BitFramer<Async>;
+template class BitFramer<Detector>;
+template class BitFramer<Hdlc>;
 
 } // namespace dlink

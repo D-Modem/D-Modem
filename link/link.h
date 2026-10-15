@@ -116,15 +116,27 @@ public:
 		__attribute__ ((format (printf, 2, 3)));
 	/* the link's progress to the owner */
 	void status(Status s);
-	/* the bit timer: fn once bits more bits went out (0: none) */
-	void set_timer(long bits, void (*fn)(Link *)) {
+	/* what the bit timer runs when it fires */
+	enum class Timer {
+		None,
+		DetectBegin,    /* the originator's ODPs (Detector::begin) */
+		DetectEnd,      /* the detection phase's end (Detector::finish) */
+		T401,           /* LAPM's T401 (Lapm::t401_timeout) */
+		Negotiate,      /* the caller's XID (Lapm::negotiate) */
+	};
+	/* the bit timer: what once bits more bits went out (0: none) */
+	void set_timer(long bits, Timer what) {
 		timer_ = bits;
-		timer_fn_ = fn;
+		timer_what_ = what;
 	}
 	/* the bits left before it fires, 0 if it does not run */
 	long timer() const { return timer_; }
-	/* what it runs */
-	void (*timer_fn() const)(Link *) { return timer_fn_; }
+	/* what it runs (or last ran) */
+	Timer timer_what() const { return timer_what_; }
+	/* LAPM's frames on the line */
+	Hdlc &hdlc() { return hdlc_; }
+	/* the detection phase is over: LAPM (ec) or async */
+	void detected(bool ec);
 	/* we are the originator */
 	bool caller() const { return caller_; }
 	/* the parameters, for XID */
@@ -141,7 +153,7 @@ public:
 private:
 	void end_detect();
 	enum class Mode { Idle, Detect, Lapm, Async };
-	void detected(bool ec);
+	void run_timer();
 	int comp_read(uint8_t *buf, int n);
 	int comp_write(const uint8_t *buf, int n);
 	bool comp_flush_output();
@@ -156,7 +168,7 @@ private:
 	Config cfg_;
 	Mode mode_ = Mode::Idle;
 	long timer_ = 0;
-	void (*timer_fn_)(Link *) = nullptr;
+	Timer timer_what_ = Timer::None;
 
 	Detector det_;
 	Hdlc hdlc_;
@@ -168,9 +180,6 @@ private:
 	/* decoded characters the DTE has not taken yet */
 	uint8_t dec_out_[256];
 	int dec_head_ = 0, dec_count_ = 0;
-
-	friend class Lapm;
-	friend class Detector;
 };
 
 } // namespace dlink

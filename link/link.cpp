@@ -31,7 +31,7 @@ int Link::init(Owner *owner, bool caller, const Config &cfg)
 	online_ = false;
 	mode_ = Mode::Idle;
 	timer_ = 0;
-	timer_fn_ = nullptr;
+	timer_what_ = Timer::None;
 	push_pending = false;
 	dec_head_ = dec_count_ = 0;
 	if (cfg.ec && cfg.comp) {
@@ -127,7 +127,7 @@ void Link::end_detect()
 	if (mode_ != Mode::Detect)
 		return;
 	timer_ = 0;
-	timer_fn_ = nullptr;
+	timer_what_ = Timer::None;
 	mode_ = Mode::Idle;
 }
 
@@ -173,12 +173,32 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 	/* the bit timer counts what goes out */
 	if (timer_ && (timer_ -= (long)nbits * n) <= 0) {
 		timer_ = 0;
-		if (timer_fn_)
-			timer_fn_(this);
+		run_timer();
 	}
 	if (push_pending)
 		lapm_.push_rest();
 	return n;
+}
+
+/* the bit timer has run out: what it was set for */
+void Link::run_timer()
+{
+	switch (timer_what_) {
+	case Timer::DetectBegin:
+		det_.begin();
+		break;
+	case Timer::DetectEnd:
+		det_.finish();
+		break;
+	case Timer::T401:
+		lapm_.t401_timeout();
+		break;
+	case Timer::Negotiate:
+		lapm_.negotiate();
+		break;
+	case Timer::None:
+		break;
+	}
 }
 
 /* the data pump's receiver: n items of nbits bits to the mode's

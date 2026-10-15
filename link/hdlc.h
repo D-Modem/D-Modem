@@ -50,7 +50,43 @@ protected:
 	~Framer() = default;
 };
 
-class Hdlc {
+/* what the three framers share, a mixin on the framer F (CRTP): the
+   link, the bit queues each way, and the loops of get_bits() and
+   put_bits().  Out: the queue's bits nbits at a time, F's tx_fill()
+   queueing more until n items are out or it has nothing more, then F's
+   tx_idle() for the rest (none by default).  In: nbits at a time into
+   rx_, F's rx_scan() after each item. */
+template <class F>
+class BitFramer {
+public:
+	/* n items of nbits bits for the data pump, and from it; how many */
+	int get_bits(int nbits, uint8_t *buf, int n);
+	int put_bits(int nbits, const uint8_t *buf, int n);
+
+protected:
+	/* a call: the link, empty queues */
+	void framer_start(Link *link)
+	{
+		link_ = link;
+		tx_.clear();
+		rx_.clear();
+	}
+	/* (F's) the rest of the n items when tx_fill() has nothing: none
+	   here; how many it filled */
+	int tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n)
+	{
+		(void)nbits;
+		(void)mask;
+		(void)buf;
+		(void)n;
+		return 0;
+	}
+
+	Link *link_ = nullptr;
+	BitQueue tx_, rx_;
+};
+
+class Hdlc : public BitFramer<Hdlc> {
 public:
 	void start(Link *link);
 	/* the framer: nothing to send without one (flags), received frames
@@ -58,16 +94,15 @@ public:
 	void set_framer(Framer *f, bool tx) { framer_ = f; tx_on_ = tx; }
 	/* the framer's frames go out, or only flags */
 	void enable_tx(bool tx) { tx_on_ = tx; }
-	int get_bits(int nbits, uint8_t *buf, int n);
-	int put_bits(int nbits, const uint8_t *buf, int n);
 
 private:
+	friend class BitFramer<Hdlc>;
+	bool tx_fill();
+	void rx_scan();
 	void put_byte(uint8_t in);
 
-	Link *link_ = nullptr;
 	Framer *framer_ = nullptr;
 	bool tx_on_ = false;
-	BitQueue tx_, rx_;
 	Frame *tx_frame_ = nullptr;
 	Frame rx_frame_ = {};
 	uint8_t rx_buf_[512];
@@ -76,33 +111,33 @@ private:
 };
 
 /* start bit, 8 data bits (least significant first), stop bit */
-class Async {
+class Async : public BitFramer<Async> {
 public:
 	void start(Link *link);
-	int get_bits(int nbits, uint8_t *buf, int n);
-	int put_bits(int nbits, const uint8_t *buf, int n);
 
 private:
-	Link *link_ = nullptr;
-	BitQueue tx_, rx_;
+	friend class BitFramer<Async>;
+	bool tx_fill();
+	int tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n);
+	void rx_scan();
 };
 
 /* 8.10/V.42: the originator sends ODPs, the answerer ADPs once it has
    seen two; HDLC flags from the remote end it too */
-class Detector {
+class Detector : public BitFramer<Detector> {
 public:
 	void start(Link *link);
-	int get_bits(int nbits, uint8_t *buf, int n);
-	int put_bits(int nbits, const uint8_t *buf, int n);
 	/* LAPM, as far as the phase has seen */
 	bool ec_enable() const { return ec_enable_; }
-	/* the bit timers */
-	static void begin(Link *link);
-	static void finish(Link *link);
+	/* the bit timers (Link::Timer::DetectBegin, DetectEnd) */
+	void begin();
+	void finish();
 
 private:
-	Link *link_ = nullptr;
-	BitQueue tx_, rx_;
+	friend class BitFramer<Detector>;
+	bool tx_fill();
+	void rx_scan();
+
 	int tx_count_ = 0;
 	uint8_t tx_pattern_[2] = {};
 	int rx_count_ = 0;

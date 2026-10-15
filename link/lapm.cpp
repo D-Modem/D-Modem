@@ -458,69 +458,68 @@ int Lapm::tx_xid(uint8_t addr)
 void Lapm::timer_start()
 {
 	rtx_count_ = 0;
-	link_->set_timer(t401_bits(link_), t401_timeout);
+	link_->set_timer(t401_bits(link_), Link::Timer::T401);
 }
 
 /* no T401 */
 void Lapm::timer_stop()
 {
-	link_->set_timer(0, nullptr);
+	link_->set_timer(0, Link::Timer::None);
 	rtx_count_ = 0;
 }
 
 /* T401 expired: our XID, SABME or DISC again, in the data phase an RR
    or RNR command with P = 1 (a poll); after N400 of them async (LAPM
    never came up), released, or DISC */
-void Lapm::t401_timeout(Link *link)
+void Lapm::t401_timeout()
 {
-	Lapm *l = &link->lapm_;
-	if (l->rtx_count_ >= MAX_RTX) {
-		l->rtx_count_ = 0;
+	if (rtx_count_ >= MAX_RTX) {
+		rtx_count_ = 0;
 		/* the originator's XID or SABME unanswered (N400 times)
 		   before LAPM was ever up: a remote without V.42 (we may go
 		   to LAPM without the detection phase), async then, not a
 		   wait for nothing */
-		if (!l->was_up_ && (l->config_ || l->state_ == ESTAB)) {
-			link->logf("no LAPM from the remote: async");
-			l->config_ = false;
-			l->state_ = IDLE;
-			link->set_timer(0, nullptr);
-			link->detected(false);
+		if (!was_up_ && (config_ || state_ == ESTAB)) {
+			link_->logf("no LAPM from the remote: async");
+			config_ = false;
+			state_ = IDLE;
+			link_->set_timer(0, Link::Timer::None);
+			link_->detected(false);
 			return;
 		}
-		switch (l->state_) {
+		switch (state_) {
 		case ESTAB:
 		case DISC:
-			l->state_ = IDLE;
-			link->status(Status::Released);
+			state_ = IDLE;
+			link_->status(Status::Released);
 			break;
 		case DATA:
-			l->disconnect();
+			disconnect();
 			break;
 		default:
 			break;
 		}
 		return;
 	}
-	l->rtx_count_++;
-	if (l->config_)
-		l->tx_xid(l->cmd_addr_);
+	rtx_count_++;
+	if (config_)
+		tx_xid(cmd_addr_);
 	else {
-		switch (l->state_) {
+		switch (state_) {
 		case ESTAB:
-			l->tx_unnum(l->cmd_addr_, U_SABME | 0x10);
+			tx_unnum(cmd_addr_, U_SABME | 0x10);
 			break;
 		case DISC:
-			l->tx_unnum(l->cmd_addr_, U_DISC | 0x10);
+			tx_unnum(cmd_addr_, U_DISC | 0x10);
 			break;
 		case DATA:
-			l->tx_super(l->cmd_addr_, l->busy_ ? S_RNR : S_RR, 1);
+			tx_super(cmd_addr_, busy_ ? S_RNR : S_RR, 1);
 			break;
 		default:
 			break;
 		}
 	}
-	link->set_timer(t401_bits(link), t401_timeout);
+	link_->set_timer(t401_bits(link_), Link::Timer::T401);
 }
 
 
@@ -776,7 +775,7 @@ void Lapm::rx_unnum_cmd(Frame *f)
 			state_ = IDLE;
 			reset();
 			tx_unnum(rsp_addr_, (uint8_t)(U_UA | u_pf(f)));
-			link_->set_timer(0, nullptr);
+			link_->set_timer(0, Link::Timer::None);
 			rtx_count_ = 0;
 			link_->status(Status::Released);
 		}
@@ -1023,19 +1022,19 @@ void Lapm::reset()
 }
 
 /* the caller sends XID 48 octets into the flags */
-void Lapm::negotiate(Link *link)
+void Lapm::negotiate()
 {
-	link->hdlc_.enable_tx(true);
-	link->lapm_.configure();
+	link_->hdlc().enable_tx(true);
+	configure();
 }
 
 /* the framer is ours: the answerer's frames may go out at once, the
    caller's after 48 octets of flags (negotiate(): its XID) */
 void Lapm::start()
 {
-	link_->hdlc_.set_framer(this, !link_->caller());
+	link_->hdlc().set_framer(this, !link_->caller());
 	if (link_->caller())
-		link_->set_timer(48 * 8, negotiate);
+		link_->set_timer(48 * 8, Link::Timer::Negotiate);
 	link_->push_pending = false;
 }
 

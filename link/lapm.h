@@ -48,9 +48,9 @@ public:
 	void tx_complete(Frame *f) override;
 	void rx_complete(Frame *f) override;
 
-	/* the bit timers */
-	static void t401_timeout(Link *link);
-	static void negotiate(Link *link);
+	/* the bit timers (Link::Timer::T401, Negotiate) */
+	void t401_timeout();
+	void negotiate();
 
 private:
 	enum State { IDLE, ESTAB, DATA, DISC };
