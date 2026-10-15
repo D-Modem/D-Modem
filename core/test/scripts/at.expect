@@ -6,17 +6,17 @@
       0 A: OK\r\n
       0 A< AT I0\r
       0 A: AT I0\r\r\n
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A: OK\r\n
       0 A< ATI1\r
       0 A: ATI1\r\r\n
-      0 A: SmartLink Soft Modem, 2.9.11\r\n
-      0 A: Smart Link Ltd.\r\n
+      0 A: D-Modem, 1.0.0\r\n
+      0 A: D-Modem project\r\n
       0 A: OK\r\n
       0 A< ATI2\r
       0 A: ATI2\r\r\n
-      0 A: SmartLink Soft Modem, 2.9.11\r\n
-      0 A: Smart Link Ltd.\r\n
+      0 A: D-Modem, 1.0.0\r\n
+      0 A: D-Modem project\r\n
       0 A: OK\r\n
       0 A< ATI3\r
       0 A: ATI3\r\r\n
@@ -146,15 +146,15 @@
       0 A: ERROR\r\n
       0 A< AT+GMI\r
       0 A: AT+GMI\r\r\n
-      0 A: Smart Link Ltd.\r\n
+      0 A: D-Modem project\r\n
       0 A: OK\r\n
       0 A< AT+GMM\r
       0 A: AT+GMM\r\r\n
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A: OK\r\n
       0 A< AT+GMR\r
       0 A: AT+GMR\r\r\n
-      0 A: 2.9.11\r\n
+      0 A: 1.0.0\r\n
       0 A: OK\r\n
       0 A< AT+GMX\r
       0 A: AT+GMX\r\r\n
@@ -345,11 +345,11 @@
       0 A: OK\r\n
       0 A< ATS0\x08\x08\x08\x08ATI0\r
       0 A: ATS0\x08 \x08\x08 \x08\x08 \x08\x08 \x08ATI0\r\r\n
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A: OK\r\n
       0 A< A/
       0 A: ATI0\r\r\n
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A: OK\r\n
       0 A< garbage\r
       0 A< ATQ0V1 E1 \r
@@ -357,7 +357,7 @@
       0 A: OK\r\n
       0 A< AT\x09I0\r
       0 A: AT\x09I0\r\r\n
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A: OK\r\n
       0 A< ATIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
       0 A: ATIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\r\n
@@ -371,18 +371,18 @@
       0 A: ATE0\r\r\n
       0 A: OK\r\n
       0 A< ATI0\r
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A: OK\r\n
       0 A< ATV0\r
       0 A: 0\r\n
       0 A< ATI0\r
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A: 0\r\n
       0 A< ATX\r
       0 A: 0\r\n
       0 A< ATQ1\r
       0 A< ATI0\r
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A< ATQ0V1E1\r
       0 A: OK\r\n
       0 A< ATS3=13S4=10S5=8S2=43\r
@@ -393,7 +393,7 @@
       0 A: OK!\n
       0 A< ATI0!
       0 A: ATI0!!\n
-      0 A: SmartLink Soft Modem!\n
+      0 A: D-Modem!\n
       0 A: OK!\n
       0 A< ATS3=13\r
       0 A< ATS12=50S11=70S10=14S9=6S8=2S6=3\r

@@ -19,9 +19,9 @@
       0 A: +GCAP: +FCLASS,+MS\r\n
       0 A: OK\r\n
       0 A< AT+GMI?;+GMM?;+GMR?\r
-      0 A: Smart Link Ltd.\r\n
-      0 A: SmartLink Soft Modem\r\n
-      0 A: 2.9.11\r\n
+      0 A: D-Modem project\r\n
+      0 A: D-Modem\r\n
+      0 A: 1.0.0\r\n
       0 A: OK\r\n
       0 A< AT&F;+MS=V32,1,4800,9600;-SEC=1,12;)M1;\\N2\r
       0 A: OK\r\n
@@ -281,15 +281,15 @@
       0 A: OK\r\n
       0 A< AT+FMI?\r
       0 A: AT+FMI?\r\r\n
-      0 A: Smart Link Ltd.\r\n
+      0 A: D-Modem project\r\n
       0 A: OK\r\n
       0 A< AT+FMM?\r
       0 A: AT+FMM?\r\r\n
-      0 A: SmartLink Soft Modem\r\n
+      0 A: D-Modem\r\n
       0 A: OK\r\n
       0 A< AT+FMR?\r
       0 A: AT+FMR?\r\r\n
-      0 A: 2.9.11\r\n
+      0 A: 1.0.0\r\n
       0 A: OK\r\n
       0 A< AT+FPR=8\r
       0 A: AT+FPR=8\r\r\n

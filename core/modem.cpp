@@ -26,9 +26,14 @@ extern "C" int dp_runtime_pcm(void *runtime) __attribute__((weak));
 
 namespace dcore {
 
-const char *const Modem::author = "Smart Link Ltd.";
-const char *const Modem::product = "SmartLink Soft Modem";
-const char *const Modem::version = "2.9.11";
+/* who the modem says it is (ATI, +GMI, +GMM, +GMR, +FMI?..., slmodemd's
+   banner); the version is the build's (CMakeLists.txt's project) */
+#ifndef DMODEM_VERSION
+#error "DMODEM_VERSION: the build gives it (CMakeLists.txt)"
+#endif
+const char *const Modem::author = "D-Modem project";
+const char *const Modem::product = "D-Modem";
+const char *const Modem::version = DMODEM_VERSION;
 
 /* debug lines (with the modem's name), error lines */
 #define DBG(fmt, ...) logf(fmt, ##__VA_ARGS__)

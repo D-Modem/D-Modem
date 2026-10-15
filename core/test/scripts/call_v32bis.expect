@@ -96,7 +96,7 @@
   14980 A: B0032 The quick \r\n
   14980 A: OK\r\n
   15680 A< ATI0\r
-  15680 A: SmartLink Soft Modem\r\n
+  15680 A: D-Modem\r\n
   15680 A: OK\r\n
   15680 A< ATO\r
   15680 A: CONNECT 14400\r\n

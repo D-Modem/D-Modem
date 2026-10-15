@@ -326,9 +326,9 @@ Information:
 \begin{center}
 \begin{tabular}{cl}
 \toprule
-\cmd{I0} & the product: \cmd{SmartLink Soft Modem} \\
-\cmd{I1}, \cmd{I2} & the product and version (\cmd{SmartLink Soft Modem,
-  2.9.11}), then \cmd{Smart Link Ltd.} \\
+\cmd{I0} & the product: \cmd{D-Modem} \\
+\cmd{I1}, \cmd{I2} & the product and version (\cmd{D-Modem, 1.0.0}),
+  then the maker, \cmd{D-Modem project} \\
 \cmd{I3} & the device's name, then the driver's (slmodemd:
   \cmd{/dev/slamr0}, \cmd{socket driver}) \\
 \cmd{I4} & \sreg{0} to S23, eight a line (\cmd{s00=000 s01=000 \ldots}) \\
@@ -540,9 +540,9 @@ What may be chosen:\\
 \subsection{Identification and country}
 
 \begin{command}{plusGMI}{AT+GMI, AT+GMM, AT+GMR}
-The manufacturer (\cmd{Smart Link Ltd.}), the model (\cmd{SmartLink
-Soft Modem}) and the revision (\cmd{2.9.11}), the names the modem has
-kept from slmodemd; with \cmd{?} after them (\cmd{AT+GMI?}) the same.
+The manufacturer (\cmd{D-Modem project}), the model (\cmd{D-Modem})
+and the revision (\cmd{1.0.0}, the build's version); with \cmd{?} after
+them (\cmd{AT+GMI?}) the same.
 \end{command}
 
 \begin{command}{plusGCAP}{AT+GCAP}

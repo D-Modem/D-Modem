@@ -16,7 +16,11 @@
 #                      against Smart Link's original DSP library)
 #   DMODEM_WERROR      warnings are errors (as in CI)
 cmake_minimum_required(VERSION 3.16)
-project(dmodem C CXX)
+project(dmodem VERSION 1.0.0 LANGUAGES C CXX)
+
+# the version the modem gives (ATI, AT+GMR, slmodemd -v), in every program
+# and test built here
+add_compile_definitions("DMODEM_VERSION=\"${PROJECT_VERSION}\"")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

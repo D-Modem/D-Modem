@@ -33,7 +33,7 @@ Traditional “controller-based” modems generally used a microcontroller and a
 D-Modem replaces a softmodem’s physical hardware with a SIP stack.  Instead of passing audio to and from the software DSP over an analog phone line, audio travels via the RTP (or SRTP) media streams of a SIP VoIP call.   
 
 ## Usage
-slmodemd is the modem.  It began as Debian’s sl-modem-daemon package and is now a C++ program on the modem core (`core/`), with the open DSP and a SIP user agent (pjsua) built in; its commands and options are those of the original.  Its kernel and ALSA driver code is gone: each call's audio comes from SIP, and the modem appears as a pty.
+slmodemd is the modem.  It began as Debian’s sl-modem-daemon package and is now a C++ program on the modem core (`core/`), with the open DSP and a SIP user agent (pjsua) built in; its options are those of the original, and its AT commands D-Modem's own, a superset of the original's.  Its kernel and ALSA driver code is gone: each call's audio comes from SIP, and the modem appears as a pty.
 
 Configure the SIP account in the SIP_LOGIN environment variable (`SIP_PORT` sets the local SIP port, 5060 by default): 
 
@@ -41,7 +41,7 @@ Configure the SIP account in the SIP_LOGIN environment variable (`SIP_PORT` sets
 Next, run slmodemd.  Use -d<level> for debug logging. 
 
     # ./build/slmodemd/slmodemd -d9
-    SmartLink Soft Modem: version 2.9.11 Oct 28 2021 16:51:30 
+    D-Modem: version 1.0.0 Oct 15 2026 07:44:51
     symbolic link `/dev/ttySL0' -> `/dev/pts/3' created. 
     modem `slamr0' created. TTY is `/dev/pts/3' 
     Use `/dev/ttySL0' as modem device, Ctrl+C for termination.
