@@ -746,12 +746,17 @@ default.
 ## MNP
 
 The Agere, SM56, PCTel, HSF and Broadcom modems have MNP 2 to 4 and
-MNP 5 (Smart Link's library and spandsp have none); D-Modem has no MNP,
-and with their defaults they all take V.42 with us. Forced to MNP with
-`+ES=4,4` as the caller, each ends in NO CARRIER against our answerer,
-which goes to async and passes their LR frames to its DTE; none of them
-has MNP 10 or 10EC. See [link.md](link.md#mnp) for the calls, their LR
-frames and what MNP 10EC would take.
+MNP 5 (Smart Link's library and spandsp have none); with their defaults
+they all take V.42 with us. Forced to MNP, each connects with MNP 4 and
+MNP 5 both ways (`ctest -R mnp`, 20000 octets each way): calling with
+MNP alone (`+ES=4,4,6`), our default answerer takes its LR in the
+detection phase; answering with MNP alone (`+ES=3,0,6`), it takes ours
+(`\N5`). The PCTel modem takes no LR offering N401 256 (ours offers 64
+with the 256-octet optimization, as theirs do), the SM56 modem sends its
+LR 1.1 s after the connection (our answerer with MNP waits three times
+T400 for it), and the HSF modem sends LTs without information with MNP
+5. None of them has MNP 10 or 10EC. See [link.md](link.md#mnp) for MNP
+and what MNP 10EC would take.
 
 ## The calls' options
 

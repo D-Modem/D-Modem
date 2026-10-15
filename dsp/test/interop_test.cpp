@@ -696,6 +696,36 @@ std::vector<Call> calls()
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "STREAM=10", "EXPECT_B=V.92 connect 5[0-9]{4}/(3[4-9]|4[0-2])",
 	      "PROTO_B=ATX3;AT+MS=92" });
+
+	/* --- MNP 2 to 4 (V.42's alternative procedure) with MNP 5, both
+	   ways with each modem that has it, 20000 octets each way of text,
+	   binary, repeats and noise: it calls with MNP alone (+ES=4,4,6)
+	   and our answerer takes its LR in the detection phase; we call
+	   with MNP alone (\N5) and it answers so (+ES=3,0,6).  HDLC frames,
+	   8 outstanding, of up to 256 octets */
+	const std::string mnp5 = "mnp: LR: framing mode 3, k 8, N401 256, "
+		"optimization 3, MNP 5";
+	for (const char *p : { "agere", "pctel", "sm56", "hsf", "broadcom" }) {
+		std::string n = p;
+		add(p, n + "_mnp5_" + n + "_calls", p, "open",
+		    "ATX3;AT+MS=V34;AT+ES=4,4,6",
+		    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=34",
+		      "BULK=20000", "EXPECT_B=" + mnp5 });
+		add(p, n + "_mnp5_open_calls", "open", p,
+		    "ATX3;AT+MS=34;AT\\N5",
+		    { "NET=9600:8000:ulaw",
+		      "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6", "BULK=20000",
+		      "EXPECT_A=" + mnp5 });
+	}
+	/* and MNP 4 alone (our %C2: no MNP 5) */
+	add("agere", "agere_mnp4_agere_calls", "agere", "open",
+	    "ATX3;AT+MS=V34;AT+ES=4,4,6",
+	    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=34;AT%C2",
+	      "BULK=20000", "EXPECT_B=optimization 3\\.\n" });
+	add("agere", "agere_mnp4_open_calls", "open", "agere",
+	    "ATX3;AT+MS=34;AT\\N5%C2",
+	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6",
+	      "BULK=20000", "EXPECT_A=optimization 3\\.\n" });
 	return c;
 }
 

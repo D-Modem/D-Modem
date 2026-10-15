@@ -228,7 +228,7 @@
       0 A: 1\r\n
       0 A: 1\r\n
       0 A: 1\r\n
-      0 A: 3\r\n
+      0 A: 2\r\n
       0 A: 1\r\n
       0 A: OK\r\n
       0 A< AT&V\r
@@ -254,9 +254,85 @@
       0 A< AT\\N3\\A2\r
       0 A: AT\N3\A2\r\r\n
       0 A: OK\r\n
+      0 A< ATS103?S105?\r
+      0 A: ATS103?S105?\r\r\n
+      0 A: 3\r\n
+      0 A: 2\r\n
+      0 A: OK\r\n
+      0 A< AT\\N5\r
+      0 A: AT\N5\r\r\n
+      0 A: OK\r\n
+      0 A< AT+ES?\r
+      0 A: AT+ES?\r\r\n
+      0 A: +ES: 4,4,6\r\n
+      0 A: OK\r\n
+      0 A< AT\\N2;+ES?;\\N0;+ES?;\\N1;+ES?;\\N4;+ES?\r
+      0 A: AT\N2;+ES?;\N0;+ES?;\N1;+ES?;\N4;+ES?\r\r\n
+      0 A: +ES: 3,2,4\r\n
+      0 A: +ES: 1,0,1\r\n
+      0 A: +ES: 0,0,0\r\n
+      0 A: +ES: 3,3,5\r\n
+      0 A: OK\r\n
+      0 A< AT+ES=3,0,2\r
+      0 A: AT+ES=3,0,2\r\r\n
+      0 A: OK\r\n
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
       0 A: 3\r\n
+      0 A: OK\r\n
+      0 A< AT+ES=4,0,2\r
+      0 A: AT+ES=4,0,2\r\r\n
+      0 A: OK\r\n
+      0 A< ATS103?\r
+      0 A: ATS103?\r\r\n
+      0 A: 3\r\n
+      0 A: OK\r\n
+      0 A< AT+ES=,4,6\r
+      0 A: AT+ES=,4,6\r\r\n
+      0 A: OK\r\n
+      0 A< ATS103?\r
+      0 A: ATS103?\r\r\n
+      0 A: 5\r\n
+      0 A: OK\r\n
+      0 A< ATS103=0\r
+      0 A: ATS103=0\r\r\n
+      0 A: OK\r\n
+      0 A< AT+ES?\r
+      0 A: AT+ES?\r\r\n
+      0 A: +ES: 1,0,1\r\n
+      0 A: OK\r\n
+      0 A< ATS103=6\r
+      0 A: ATS103=6\r\r\n
+      0 A: OK\r\n
+      0 A< AT\\N6\r
+      0 A: AT\N6\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT%C1\r
+      0 A: AT%C1\r\r\n
+      0 A: OK\r\n
+      0 A< ATS104?\r
+      0 A: ATS104?\r\r\n
+      0 A: 1\r\n
+      0 A: OK\r\n
+      0 A< AT&K2\r
+      0 A: AT&K2\r\r\n
+      0 A: OK\r\n
+      0 A< ATS104?\r
+      0 A: ATS104?\r\r\n
+      0 A: 3\r\n
+      0 A: OK\r\n
+      0 A< ATZ\r
+      0 A: ATZ\r\r\n
+      0 A: OK\r\n
+      0 A< ATS103?S104?S105?\r
+      0 A: ATS103?S104?S105?\r\r\n
+      0 A: 3\r\n
+      0 A: 3\r\n
+      0 A: 3\r\n
+      0 A: OK\r\n
+      0 A< AT+ES?\r
+      0 A: AT+ES?\r\r\n
+      0 A: +ES: 3,0,2\r\n
       0 A: OK\r\n
       0 A< AT\\Q\r
       0 A: AT\Q\r\r\n

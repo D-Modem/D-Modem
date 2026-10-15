@@ -34,9 +34,9 @@ line's samples while the modem is started (`process()`), and calls
 The data pumps (`../dsp`) see the core through their C interface
 (`interface.cpp`: `modem_dp.h`, `modem_param.h`, `dsplibs.h`): a
 `struct modem` that leads back to the `Modem`. The data link layer
-(`../link`: V.42 detection, LAPM, V.44, V.42bis, async) runs between the DTE's
-characters and the pumps' bits. `log.cpp` has the debug output (stderr or
-a hook, and the binary `dmodem.log`).
+(`../link`: V.42 detection, LAPM, MNP 2 to 4, V.44, V.42bis, MNP 5,
+async) runs between the DTE's characters and the pumps' bits. `log.cpp`
+has the debug output (stderr or a hook, and the binary `dmodem.log`).
 
 The behaviour started as that of Smart Link's slmodemd core (`modem.c`,
 `modem_at.c`, `modem_param.c`): the same commands, responses, states and
@@ -51,7 +51,7 @@ it. This core has gone beyond it where the old one fell short:
 - `AT&A1` in fax mode prints `Modulation: NONE` (the old core dereferenced
   a null data pump there);
 - `AT*B` (the blacklisted numbers: none are kept) and `AT\A<0-3>` (the
-  MNP block size, taken) answer OK, `AT+M<x>` other than `+MS` ERROR,
+  MNP block size) answer OK, `AT+M<x>` other than `+MS` ERROR,
   each for itself: the old core answered with the result of the command
   before them on the line (ERROR at its start);
 - what the DTE sends after a fax or voice command's data (they stop at

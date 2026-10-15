@@ -68,7 +68,29 @@ A AT%C2%E1\r
 A ATS104?S39?\r
 A AT%X\r
 A AT\\N3\\A2\r
+A ATS103?S105?\r
+# the error correction: \N as +ES, +ES as \N in S103 (the one it is,
+# or as it was), S103 as \N; the compression's %C and &K
+A AT\\N5\r
+A AT+ES?\r
+A AT\\N2;+ES?;\\N0;+ES?;\\N1;+ES?;\\N4;+ES?\r
+A AT+ES=3,0,2\r
 A ATS103?\r
+A AT+ES=4,0,2\r
+A ATS103?\r
+A AT+ES=,4,6\r
+A ATS103?\r
+A ATS103=0\r
+A AT+ES?\r
+A ATS103=6\r
+A AT\\N6\r
+A AT%C1\r
+A ATS104?\r
+A AT&K2\r
+A ATS104?\r
+A ATZ\r
+A ATS103?S104?S105?\r
+A AT+ES?\r
 A AT\\Q\r
 A AT*B\r
 A ATE1*B\r

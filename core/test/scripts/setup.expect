@@ -55,7 +55,7 @@
       0 A: OK\r\n
       0 A< ATS62?S104?\r
       0 A: 3\r\n
-      0 A: 1\r\n
+      0 A: 3\r\n
       0 A: OK\r\n
       0 A< AT&M1\r
       0 A: ERROR\r\n

@@ -42,15 +42,6 @@ namespace dlink {
 
 static const uint8_t HDLC_FLAG = 0x7e;
 
-/* the line sends the least significant bit of a character first */
-static uint8_t reverse_bits(uint8_t c)
-{
-	static const uint8_t nibble[16] = {
-		0x0, 0x8, 0x4, 0xc, 0x2, 0xa, 0x6, 0xe,
-		0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf };
-	return (uint8_t)(nibble[c & 0xf] << 4 | nibble[c >> 4]);
-}
-
 /* bits from the queue, nbits at a time; the number of items filled */
 static int take_bits(BitQueue *s, int nbits, uint8_t mask, uint8_t *&buf,
 		     int &n)
@@ -218,22 +209,27 @@ void Detector::begin()
 }
 
 /* the bit timer at the end of the phase: LAPM if an ADP (V.42), ODPs or
-   flags came, else async */
+   flags came, else (Link::detected()) MNP or async; not MNP if the
+   answerer's ADP said no error correction */
 void Detector::finish()
 {
 	link_->logf("detector finished.");
-	link_->detected(ec_enable_);
+	link_->detected(ec_enable_, !refused_);
 }
 
 /* the phase at the start of the data mode: the originator waits 64
    octets of marks for its ODPs, the answerer sends marks until ODPs
-   come, at most T400 */
+   come, at most T400 (with MNP three times that: an originator with
+   LAPM sends its LR once its ODPs are over, the SM56 modem's MNP its LR
+   1.1 s after the connection) */
 void Detector::start(Link *link)
 {
 	framer_start(link);
 	tx_count_ = 0;          /* mute */
 	rx_count_ = 0;
 	ec_enable_ = false;
+	refused_ = false;
+	rx_chars_ = 0;
 	if (link->caller()) {
 		tx_pattern_[0] = ODP0;
 		tx_pattern_[1] = ODP1;
@@ -245,7 +241,8 @@ void Detector::start(Link *link)
 		tx_pattern_[1] = ADP1_V42;
 		rx_pattern_[0] = ODP0;
 		rx_pattern_[1] = ODP1;
-		link->set_timer(t400(link), Link::Timer::DetectEnd);
+		link->set_timer(t400(link) * (link->asked().mnp ? 3 : 1),
+				Link::Timer::DetectEnd);
 	}
 }
 
@@ -266,10 +263,17 @@ bool Detector::tx_fill()
 	return true;
 }
 
+/* SYN DLE STX, an MNP frame's start (the characters as the detector
+   has them, the first bit the most significant) */
+static const uint32_t MNP_START = (uint32_t)reverse_bits(0x16) << 16 |
+	reverse_bits(0x10) << 8 | reverse_bits(0x02);
+
 /* the phase's receiver: characters after marks, as in async; a flag
    ends the phase one pattern later (LAPM); at the answerer the second
-   ODP starts 16 ADPs and LAPM, at the originator the second ADP ends
-   the phase (V.42: LAPM, V.14: async) */
+   ODP starts 16 ADPs and LAPM (with LAPM: else the ODPs are passed
+   over), and an MNP LR's start ends the phase at once (with MNP:
+   Link::mnp_lr_seen()); at the originator the second ADP ends the
+   phase (V.42: LAPM, V.14: async) */
 void Detector::rx_scan()
 {
 	uint8_t ch;
@@ -281,6 +285,13 @@ void Detector::rx_scan()
 		ch = (uint8_t)(rx_.data >> (rx_.bit - 9));
 		rx_.bit -= 10;
 		link_->logf("rx pattern: 0x%02x.", ch);
+		rx_chars_ = rx_chars_ << 8 | ch;
+		if ((rx_chars_ & 0xffffff) == MNP_START && !link_->caller() &&
+		    link_->asked().mnp) {
+			/* the rest of the LR is MNP's (the detector is done) */
+			link_->mnp_lr_seen(rx_);
+			return;
+		}
 		if (ch == HDLC_FLAG) {
 			link_->logf("hdlc flag detected.");
 			ec_enable_ = true;
@@ -301,7 +312,7 @@ void Detector::rx_scan()
 			continue;
 		switch (ch) {
 		case ODP1:
-			if (!link_->caller()) {
+			if (!link_->caller() && link_->asked().ec) {
 				/* answer with ADPs, then go on */
 				tx_count_ = 1;
 				rx_count_ = 2;
@@ -315,6 +326,7 @@ void Detector::rx_scan()
 		case ADP1_V14:
 			rx_count_ = 2;
 			ec_enable_ = false;
+			refused_ = true;
 			link_->set_timer(PATTERN_SIZE, Link::Timer::DetectEnd);
 			break;
 		case ADP1_V42:
@@ -474,9 +486,11 @@ void Hdlc::rx_scan()
 					    "error.");
 			else if (f->count < 4)  /* address, control, FCS */
 				link_->logf("hdlc frame size error.");
-			else if (f->fcs != GOOD_FCS)
+			else if (f->fcs != GOOD_FCS) {
 				link_->logf("hdlc frame fcs error.");
-			else if (framer_) {
+				if (framer_)
+					framer_->rx_error();
+			} else if (framer_) {
 				f->count -= 2;  /* the FCS */
 				framer_->rx_complete(f);
 			}
@@ -524,5 +538,6 @@ void Hdlc::rx_scan()
 template class BitFramer<Async>;
 template class BitFramer<Detector>;
 template class BitFramer<Hdlc>;
+template class BitFramer<MnpAsync>;
 
 } // namespace dlink

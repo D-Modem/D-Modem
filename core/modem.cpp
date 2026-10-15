@@ -111,9 +111,10 @@ struct LinkOwner final : public dlink::Owner {
 	}
 	/* the pump's rate, for the link's bit timers */
 	int tx_rate() override { return (int)m->tx_rate(); }
-	/* what XID agreed, for the CONNECT messages */
+	/* what XID (or MNP's LRs) agreed, for the CONNECT messages */
 	void negotiated(const dlink::Config &c) override {
-		m->negotiated(c.comp, c.v44, c.dict_size, c.max_string);
+		m->negotiated(c.comp, c.v44, c.dict_size, c.max_string,
+			      c.mnp5);
 	}
 	/* the link's lines in the modem's log */
 	void log(const char *line) override {
@@ -237,12 +238,14 @@ void Modem::report(Result code)
 			}
 			if (mask & 2) {
 				put_chars("Protocol: ", 10);
-				puts(cfg_.ec ? "LAPM" : none);
+				puts(cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" :
+				     none);
 				crlf();
 			}
 			if ((mask & 3) == 3) {
 				put_chars("Compression: ", 13);
-				puts(!(cfg_.ec && cfg_.comp) ? none :
+				puts(cfg_.mnp_on ? (cfg_.mnp5 ? "MNP5" : none) :
+				     !(cfg_.ec && cfg_.comp) ? none :
 				     cfg_.v44 ? "V44" : "V42bis");
 				crlf();
 			}
@@ -361,7 +364,7 @@ void Modem::hup(bool local)
 	case EC_ESTAB:
 	case ONLINE:
 	case COMMAND_ONLINE:
-		if (local && cfg_.ec) {
+		if (local && (cfg_.ec || cfg_.mnp_on)) {
 			link_->disconnect();
 			set_state(EC_DISC);
 		} else {
@@ -399,15 +402,16 @@ void Modem::update_status(Status status)
 	case ST_DP_LINK:
 		DBG("--> DP LINK\n");
 		if (nonec_dp(dp_->id))
-			cfg_.ec = false;
+			cfg_.ec = cfg_.mnp = false;
 		set_state(EC_ESTAB);
-		/* the V.42 detection phase, then LAPM or async */
-		link_->start(cfg_.ec, cfg_.ec_detector &&
+		/* the V.42 detection phase, then LAPM, MNP or async */
+		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
 			     !(caller_ && dsp_info_.qc_lapm));
 		break;
 	case ST_PACK_LINK:
-		/* LAPM or not: the link goes on by itself */
+		/* LAPM, MNP or none: the link goes on by itself */
 		cfg_.ec = link_->ec();
+		cfg_.mnp_on = link_->protocol() == dlink::Protocol::Mnp;
 		DBG("--> PACK LINK\n");
 		break;
 	case ST_EC_LINK:
@@ -444,13 +448,15 @@ void Modem::update_status(Status status)
 	}
 }
 
-/* what XID agreed, for the CONNECT messages */
-void Modem::negotiated(int comp, bool v44, int dict_size, int max_string)
+/* what XID (or MNP's LRs) agreed, for the CONNECT messages */
+void Modem::negotiated(int comp, bool v44, int dict_size, int max_string,
+		       bool mnp5)
 {
 	cfg_.comp = comp;
 	cfg_.v44 = v44;
 	cfg_.dict_size = dict_size;
 	cfg_.max_string = max_string;
+	cfg_.mnp5 = mnp5;
 }
 
 /* the call's state, for programs that embed the modem */
@@ -922,19 +928,51 @@ int Modem::set_hook(int state)
 	return ret;
 }
 
-/* the link's configuration from the S-registers (AT\N, AT%C) */
+/* the link's configuration: the error correction from +ES (AT\N sets
+   it too; 6.5.1/V.250): the originator's request (2: LAPM, 3: LAPM after
+   the detection phase, 4: MNP) and fallback (0, 1: none, 2: either, 3:
+   LAPM, 4: MNP, as required), the answerer's (0, 1: none, 2, 3: LAPM
+   or MNP or none, 4: either required, 5: LAPM, 6: MNP required);
+   V.42bis and V.44 (bit 1 of S104, AT%C), MNP 5 (bit 0) and MNP's block
+   size (S105, AT\A) */
 void Modem::setup_config()
 {
-	cfg_.ec = sregs_[SREG_EC];
-	cfg_.ec_detector = sregs_[SREG_EC];
+	const unsigned long *es = kept("+ES");
+	const unsigned long orig = es[0], orig_fbk = es[1], ans_fbk = es[2];
+	cfg_.ec = cfg_.mnp = cfg_.mnp_first = cfg_.required = false;
+	cfg_.ec_detector = true;
+	if (caller_) {
+		switch (orig) {
+		case 2:
+		case 3:
+			cfg_.ec = true;
+			cfg_.ec_detector = orig == 3;
+			cfg_.mnp = orig_fbk != 3;
+			break;
+		case 4:
+			cfg_.mnp = cfg_.mnp_first = true;
+			break;
+		default:
+			break;
+		}
+		if (cfg_.ec && orig_fbk == 4) {
+			cfg_.ec = false;
+			cfg_.mnp = cfg_.mnp_first = true;
+		}
+		cfg_.required = (cfg_.ec || cfg_.mnp) && orig_fbk >= 2;
+	} else {
+		cfg_.ec = ans_fbk >= 2 && ans_fbk != 6;
+		cfg_.mnp = ans_fbk >= 2 && ans_fbk != 5;
+		cfg_.required = ans_fbk >= 4 && ans_fbk <= 6;
+	}
+	cfg_.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
 	cfg_.tx_win = dlink::LAPM_MAX_WIN;
 	cfg_.rx_win = dlink::LAPM_MAX_WIN;
 	cfg_.tx_info = dlink::LAPM_MAX_INFO;
 	cfg_.rx_info = dlink::LAPM_MAX_INFO;
-	if (cfg_.ec && sregs_[SREG_COMP] && sregs_[SREG_EC])
-		cfg_.comp = 0x3;        /* V.42bis both ways */
-	else
-		cfg_.comp = 0;
+	cfg_.comp = cfg_.ec && sregs_[SREG_COMP] & 2 ? 0x3 : 0;
+	cfg_.mnp5 = cfg_.mnp && sregs_[SREG_COMP] & 1;
+	cfg_.mnp_on = false;
 	cfg_.dict_size = dlink::V42BIS_MAX_CODEWORDS;
 	cfg_.max_string = dlink::V42BIS_MAX_STRING;
 	cfg_.v44 = false;
@@ -980,6 +1018,11 @@ int Modem::start_call()
 		dlink::Config c;
 		c.ec = cfg_.ec;
 		c.detect = cfg_.ec_detector;
+		c.mnp = cfg_.mnp;
+		c.mnp_first = cfg_.mnp_first;
+		c.required = cfg_.required;
+		c.mnp_info = cfg_.mnp_info;
+		c.mnp5 = cfg_.mnp5;
 		c.tx_win = cfg_.tx_win;
 		c.rx_win = cfg_.rx_win;
 		c.tx_info = cfg_.tx_info;
@@ -1265,8 +1308,9 @@ void Modem::sregs_init()
 	sregs_[SREG_FLOW_CONTROL] = 0;
 	sregs_[SREG_CONNNECT_MSG_FORMAT] = 0;
 	sregs_[SREG_CONNNECT_MSG_SPEED_SRC] = 0;
-	sregs_[SREG_EC] = 1;
+	sregs_[SREG_EC] = 3;
 	sregs_[SREG_COMP] = 0x3;
+	sregs_[SREG_MNP_BLOCK] = 3;
 }
 
 /*

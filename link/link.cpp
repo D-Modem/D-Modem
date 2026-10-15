@@ -1,6 +1,7 @@
 /*
  *
- *    link.cpp - the data link layer: detection, LAPM or async, V.42bis
+ *    link.cpp - the data link layer: detection, LAPM, MNP or async,
+ *               V.42bis and V.44
  *
  */
 
@@ -27,9 +28,11 @@ int Link::init(Owner *owner, bool caller, const Config &cfg)
 {
 	owner_ = owner;
 	caller_ = caller;
-	cfg_ = cfg;
+	cfg_ = asked_ = cfg;
 	online_ = false;
 	mode_ = Mode::Idle;
+	proto_ = Protocol::None;
+	mnp_tried_ = false;
 	timer_ = 0;
 	timer_what_ = Timer::None;
 	push_pending = false;
@@ -56,6 +59,8 @@ int Link::init(Owner *owner, bool caller, const Config &cfg)
 	if (cfg.ec)
 		lapm_.init(this, cfg.tx_win, cfg.rx_win, cfg.tx_info,
 			   cfg.rx_info);
+	if (cfg.mnp)
+		mnp_.init(this, cfg);
 	return 0;
 }
 
@@ -63,6 +68,7 @@ int Link::init(Owner *owner, bool caller, const Config &cfg)
 void Link::exit()
 {
 	lapm_.exit();
+	mnp_.exit();
 	enc_.exit();
 	dec_.exit();
 	enc44_.exit();
@@ -91,33 +97,104 @@ void Link::status(Status s)
 	owner_->status(s);
 }
 
-/* the data pump has connected: the detection phase, or at once LAPM or
-   async */
-void Link::start(bool ec, bool detect)
+/* the data pump has connected (on: error correction is possible): the
+   originator's MNP at once when it is first or alone (no LAPM), the
+   detection phase (detect, or an answerer without LAPM: MNP's LR comes
+   in it), LAPM straight away, or no error correction */
+void Link::start(bool on, bool detect)
 {
-	cfg_.ec = ec;
-	if (ec && detect) {
+	mnp_tried_ = false;
+	proto_ = Protocol::None;
+	if (!on || (!asked_.ec && !asked_.mnp)) {
+		no_ec();
+		return;
+	}
+	if (caller_ && asked_.mnp && (asked_.mnp_first || !asked_.ec)) {
+		start_mnp(true, nullptr);
+		return;
+	}
+	if (detect || !asked_.ec) {
+		cfg_.ec = asked_.ec;
 		mode_ = Mode::Detect;
 		det_.start(this);
 	} else
-		detected(ec);
+		detected(true);
 }
 
-/* the detection phase is over (or skipped): Detected, then LAPM, or
-   async and Up at once */
-void Link::detected(bool ec)
+/* the detection phase is over (or skipped): Detected, then LAPM (ec,
+   if asked), else the originator's MNP (if asked, mnp: the answerer
+   did not refuse error correction, and not tried yet: LAPM's fallback
+   comes here too), else none */
+void Link::detected(bool ec, bool mnp)
 {
-	cfg_.ec = ec;
-	owner_->status(Status::Detected);
-	if (ec) {
+	if (ec && asked_.ec) {
+		cfg_.ec = true;
+		proto_ = Protocol::Lapm;
+		owner_->status(Status::Detected);
 		mode_ = Mode::Lapm;
 		hdlc_.start(this);
 		lapm_.start();
-	} else {
-		mode_ = Mode::Async;
-		async_.start(this);
-		owner_->status(Status::Up);
+		return;
 	}
+	cfg_.ec = false;
+	if (caller_ && asked_.mnp && mnp && !mnp_tried_) {
+		start_mnp(true, nullptr);
+		return;
+	}
+	no_ec();
+}
+
+/* no error correction: Detected, then async and Up, or (required) the
+   link fails */
+void Link::no_ec()
+{
+	cfg_.ec = false;
+	proto_ = Protocol::None;
+	timer_ = 0;
+	timer_what_ = Timer::None;
+	push_pending = false;
+	owner_->status(Status::Detected);
+	if (asked_.required) {
+		logf("no error correction: the link fails.");
+		mode_ = Mode::Idle;
+		owner_->status(Status::Released);
+		return;
+	}
+	mode_ = Mode::Async;
+	async_.start(this);
+	owner_->status(Status::Up);
+}
+
+/* MNP as initiator or responder (rx: the bits of the LR the detection
+   phase did not take): Detected, its octet framer, HDLC frames for a
+   data phase in framing mode 3 */
+void Link::start_mnp(bool initiator, const BitQueue *rx)
+{
+	mnp_tried_ = true;
+	cfg_.ec = false;
+	cfg_.mnp5 = false;
+	enc5_.init();
+	dec5_.init();
+	proto_ = Protocol::Mnp;
+	mode_ = Mode::Mnp;
+	timer_ = 0;
+	timer_what_ = Timer::None;
+	push_pending = false;
+	owner_->status(Status::Detected);
+	logf("mnp: %s.", initiator ? "initiator" : "responder");
+	hdlc_.start(this);
+	hdlc_.set_framer(&mnp_, true);
+	mnp_async_.start(this, &mnp_);
+	mnp_.start(initiator);
+	if (rx)
+		mnp_async_.start_in_frame(*rx);
+}
+
+/* the answerer's detection phase saw SYN DLE STX */
+void Link::mnp_lr_seen(const BitQueue &rx)
+{
+	logf("mnp: LR in the detection phase.");
+	start_mnp(false, &rx);
 }
 
 /* the detection phase ends without a result: its timer (T400, the
@@ -139,11 +216,16 @@ void Link::stop()
 	mode_ = Mode::Idle;
 }
 
-/* we hang up: LAPM sends DISC; the detection phase ends; nothing in the
-   other modes */
+/* we hang up: LAPM sends DISC, MNP LD; the detection phase ends;
+   nothing in the other modes */
 void Link::disconnect()
 {
 	end_detect();
+	if (mode_ == Mode::Mnp) {
+		push_pending = false;
+		mnp_.disconnect();
+		return;
+	}
 	if (mode_ != Mode::Lapm)
 		return;
 	timer_ = 0;
@@ -152,8 +234,9 @@ void Link::disconnect()
 }
 
 /* the data pump's transmitter: n items of nbits bits from the mode's
-   framer (marks when idle); the bit timer counts them, and characters
-   LAPM still holds are pushed on; returns n */
+   framer (marks when idle; MNP's octets, or HDLC frames in its data
+   phase); the bit timer and MNP's timers count them, and characters
+   LAPM or MNP still holds are pushed on; returns n */
 int Link::get_bits(int nbits, uint8_t *buf, int n)
 {
 	switch (mode_) {
@@ -162,6 +245,11 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 		break;
 	case Mode::Lapm:
 		n = hdlc_.get_bits(nbits, buf, n);
+		break;
+	case Mode::Mnp:
+		n = mnp_.bit_tx() ? hdlc_.get_bits(nbits, buf, n) :
+			mnp_async_.get_bits(nbits, buf, n);
+		mnp_.clock((long)nbits * n);
 		break;
 	case Mode::Async:
 		n = async_.get_bits(nbits, buf, n);
@@ -175,8 +263,12 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 		timer_ = 0;
 		run_timer();
 	}
-	if (push_pending)
-		lapm_.push_rest();
+	if (push_pending) {
+		if (mode_ == Mode::Lapm)
+			lapm_.push_rest();
+		else if (mode_ == Mode::Mnp)
+			mnp_.push_rest();
+	}
 	return n;
 }
 
@@ -202,14 +294,27 @@ void Link::run_timer()
 }
 
 /* the data pump's receiver: n items of nbits bits to the mode's
-   framer (dropped when idle); returns n */
+   framer (dropped when idle); the detection phase's an item at a time,
+   the rest to MNP once an LR starts in it; MNP's octets, and HDLC
+   frames as well once the LRs agreed on them; returns n */
 int Link::put_bits(int nbits, const uint8_t *buf, int n)
 {
 	switch (mode_) {
 	case Mode::Detect:
-		return det_.put_bits(nbits, buf, n);
+		for (int i = 0; i < n; i++) {
+			det_.put_bits(nbits, buf + i, 1);
+			if (mode_ != Mode::Detect)
+				return i + 1 + put_bits(nbits, buf + i + 1,
+							n - i - 1);
+		}
+		return n;
 	case Mode::Lapm:
 		return hdlc_.put_bits(nbits, buf, n);
+	case Mode::Mnp:
+		mnp_async_.put_bits(nbits, buf, n);
+		if (mode_ == Mode::Mnp && mnp_.bit_rx())
+			hdlc_.put_bits(nbits, buf, n);
+		return n;
 	case Mode::Async:
 		return async_.put_bits(nbits, buf, n);
 	case Mode::Idle:
@@ -263,12 +368,15 @@ void Link::update_config(const Config &remote)
  *
  */
 
-/* characters for LAPM's I frames or the async framer: the DTE's,
-   through the encoder when we compress; 0 while not online */
+/* characters for LAPM's I frames, MNP's LT frames or the async
+   framer: the DTE's, through the encoder when we compress; 0 while not
+   online */
 int Link::read_chars(uint8_t *buf, int n)
 {
 	if (!online_)
 		return 0;
+	if (proto_ == Protocol::Mnp && cfg_.mnp5)
+		return comp_read_with(enc5_, buf, n);
 	if (cfg_.ec && cfg_.comp & 2 &&
 	    (cfg_.v44 ? enc44_.ready() : enc_.ready()))
 		return comp_read(buf, n);
@@ -281,6 +389,8 @@ int Link::write_chars(const uint8_t *buf, int n)
 {
 	if (!online_)
 		return 0;
+	if (proto_ == Protocol::Mnp && cfg_.mnp5)
+		return comp_write_with(dec5_, buf, n);
 	if (cfg_.ec && cfg_.comp & 1 &&
 	    (cfg_.v44 ? dec44_.ready() : dec_.ready()))
 		return comp_write(buf, n);
@@ -304,6 +414,8 @@ int Link::comp_write(const uint8_t *buf, int n)
 /* the decoder's output to the DTE; false while some is left */
 bool Link::comp_flush_output()
 {
+	if (proto_ == Protocol::Mnp)
+		return comp_flush_with(dec5_);
 	return cfg_.v44 ? comp_flush_with(dec44_) : comp_flush_with(dec_);
 }
 

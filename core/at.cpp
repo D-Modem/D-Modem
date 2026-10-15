@@ -291,6 +291,11 @@ int Modem::at_S(char *p, int *len)
 	case '=':
 		val = strtoul(p, &end, 0);
 		*len += end - p;
+		/* S103 is \N: +ES with it */
+		if (n == SREG_EC && val >= 0 && val <= 5) {
+			set_ec_mode(val);
+			return 0;
+		}
 		return set_sreg(n, val);
 	default:
 		return -1;
@@ -1068,9 +1073,51 @@ int Modem::at_kept(const char *p, int *len)
 		memcpy(kept_[i], v, sizeof(v));
 		kept_n_[i] = count;
 		*len = q - p;
+		if (!strcmp(name, "+ES"))
+			ec_mode_from_es();
 		return 0;
 	}
 	return -2;
+}
+
+/* a kept parameter's values; its name must be in kept_params */
+const unsigned long *Modem::kept(const char *name) const
+{
+	for (size_t i = 0; i < sizeof(kept_params) / sizeof(kept_params[0]);
+	     i++)
+		if (!strcmp(kept_params[i].name, name))
+			return kept_[i];
+	abort();
+}
+
+/* \N0 to \N5 (Smart Link's, Rockwell's) as +ES (V.250's orig_rqst,
+   orig_fbk, ans_fbk): normal and direct without error correction,
+   reliable (LAPM or MNP, required), auto-reliable (LAPM, MNP or none),
+   LAPM only, MNP only */
+static const unsigned long ec_modes[6][3] = {
+	{ 1, 0, 1 }, { 0, 0, 0 }, { 3, 2, 4 }, { 3, 0, 2 }, { 3, 3, 5 },
+	{ 4, 4, 6 },
+};
+
+/* \N<n>: S103 and +ES */
+void Modem::set_ec_mode(int n)
+{
+	sregs_[SREG_EC] = (unsigned char)n;
+	for (size_t i = 0; i < sizeof(kept_params) / sizeof(kept_params[0]);
+	     i++)
+		if (!strcmp(kept_params[i].name, "+ES")) {
+			memcpy(kept_[i], ec_modes[n], sizeof(ec_modes[n]));
+			kept_n_[i] = 3;
+		}
+}
+
+/* +ES set: S103 the \N that has its values (as it was if none has) */
+void Modem::ec_mode_from_es()
+{
+	const unsigned long *es = kept("+ES");
+	for (int n = 0; n < 6; n++)
+		if (!memcmp(es, ec_modes[n], sizeof(ec_modes[n])))
+			sregs_[SREG_EC] = (unsigned char)n;
 }
 
 /*
@@ -1210,26 +1257,35 @@ int Modem::at_command(char *cmd)
 				ret = at_set_sreg(SREG_FLOW_CONTROL, *p, 0, 3,
 						  &len);
 				break;
-			case 'K':
+			case 'K': {
+				/* USRobotics': &K0 none, &K1 and &K2 both, &K3
+				   V.42bis (or V.44) without MNP 5 */
+				static const uint8_t comp[4] = { 0, 3, 3, 2 };
 				ret = at_set_sreg(SREG_COMP, *p, 0, 3, &len);
+				if (!ret)
+					sregs_[SREG_COMP] =
+						comp[sregs_[SREG_COMP]];
 				break;
+			}
 			case 'P':
 				ret = at_set_sreg(SREG_PULSE_RATIO, *p, 0, 3,
 						  &len);
 				break;
 			case 'Q':
 				/* &Q0, &Q6: \N0; &Q5, &Q8, &Q9: \N3 (V.42,
-				   and V.42 here for MNP) */
+				   then MNP) */
 				len = isdigit((unsigned char)*p) ? 1 : 0;
 				switch (len ? *p : '0') {
 				case '0':
 				case '6':
-					ret = set_sreg(SREG_EC, 0);
+					set_ec_mode(0);
+					ret = 0;
 					break;
 				case '5':
 				case '8':
 				case '9':
-					ret = set_sreg(SREG_EC, 3);
+					set_ec_mode(3);
+					ret = 0;
 					break;
 				default:
 					return -1;
@@ -1335,17 +1391,13 @@ int Modem::at_command(char *cmd)
 			c = toupper(*p++);
 			switch (c) {
 			case 'A':
-				/* \A0..3: the MNP block size, taken (there is no
-				   MNP) */
-				if (isdigit((unsigned char)*p)) {
-					if (*p > '3')
-						return -1;
-					len++;
-				}
-				ret = 0;
+				/* \A0..3: MNP's block size, 64 to 256 */
+				ret = at_set_sreg(SREG_MNP_BLOCK, *p, 0, 3, &len);
 				break;
 			case 'N':
 				ret = at_set_sreg(SREG_EC, *p, 0, 5, &len);
+				if (!ret)
+					set_ec_mode(sregs_[SREG_EC]);
 				break;
 			default:
 				return -1;

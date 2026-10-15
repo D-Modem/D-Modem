@@ -1,13 +1,14 @@
 # The data link layer (C++, namespace dlink): the V.42 detection phase,
-# V.42 LAPM over HDLC, V.42bis, and asynchronous characters.  It does not
-# depend on the modem core; the core is its Owner (link.h).
+# V.42 LAPM over HDLC, MNP 2 to 4 and 5, V.42bis, V.44, and asynchronous
+# characters.  It does not depend on the modem core; the core is its
+# Owner (link.h).
 #
 #   dmodem_link        object library
 #   DMODEM_LINK_SRCS   the same as a source list (32 bit interop tests)
 #   DMODEM_LINK_DIR
 
 set(DMODEM_LINK_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(_link hdlc.cpp lapm.cpp v42bis.cpp v44.cpp link.cpp)
+set(_link hdlc.cpp lapm.cpp mnp.cpp mnp5.cpp v42bis.cpp v44.cpp link.cpp)
 list(TRANSFORM _link PREPEND ${DMODEM_LINK_DIR}/)
 add_library(dmodem_link OBJECT ${_link})
 target_include_directories(dmodem_link PUBLIC ${DMODEM_LINK_DIR})

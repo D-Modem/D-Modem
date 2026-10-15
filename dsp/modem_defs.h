@@ -130,6 +130,7 @@ enum S_REGISTER {
 	/* new sgregs */
 	SREG_EC                           = 103,
 	SREG_COMP                         = 104,
+	SREG_MNP_BLOCK                    = 105,   /* (\AN)    */
 
         SREG_DEFAULT_SETTING              = 161, // AT used
 #else

@@ -6,8 +6,10 @@
  *    After the data pump connects, Link runs the V.42 detection phase
  *    (ODP/ADP, or the HDLC flags of a modem that skips it), then either
  *    V.42 LAPM error correction over HDLC frames, with V.44 or V.42bis
- *    compression when both modems agree on it, or plain asynchronous
- *    characters (start bit, 8 data bits, stop bit).
+ *    compression when both modems agree on it, or MNP 2 to 4 (V.42's
+ *    alternative procedure, with MNP 5 compression) with a modem that
+ *    has no LAPM, or plain asynchronous characters (start bit, 8 data
+ *    bits, stop bit).
  *
  *    The modem core is the Owner: it gives and takes the DTE's
  *    characters, hears of the link's progress and gets its log lines.
@@ -26,6 +28,8 @@
 
 #include "hdlc.h"
 #include "lapm.h"
+#include "mnp.h"
+#include "mnp5.h"
 #include "v42bis.h"
 #include "v44.h"
 
@@ -35,6 +39,23 @@ namespace dlink {
 struct Config {
 	bool ec = false;                /* V.42 LAPM */
 	bool detect = false;            /* the V.42 detection phase */
+	/* MNP 2 to 4: the originator's when the answerer has no V.42 (no
+	   ADP in T400, or LAPM unanswered), first (mnp_first: no detection
+	   phase) or alone (without ec); the answerer's on an LR */
+	bool mnp = false;
+	bool mnp_first = false;
+	/* no error correction (LAPM or MNP) agreed: the link fails rather
+	   than going async */
+	bool required = false;
+	/* MNP's offer: framing mode (2 octets, 3 HDLC frames), k, N401,
+	   the data phase optimizations (bit 0: 256-octet information
+	   fields, with N401 256; bit 1: fixed-field LT and LA), MNP 5
+	   (after the LRs: whether the call has it) */
+	int mnp_mode = 3;
+	int mnp_k = MNP_MAX_K;
+	int mnp_info = MNP_MAX_INFO;
+	int mnp_opt = 3;
+	bool mnp5 = false;
 	int tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
 	int tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
 	int comp = 0;                   /* V.42bis: bit 0 decoder (what we
@@ -49,8 +70,12 @@ struct Config {
 	int v44_history = V44_MAX_HISTORY;
 };
 
+/* the error correction a call has */
+enum class Protocol { None, Lapm, Mnp };
+
 enum class Status {
-	Detected,       /* the detection phase is over: LAPM or not (ec()) */
+	Detected,       /* the detection phase is over: LAPM, MNP or none
+			   (protocol()) */
 	Up,             /* data can flow (LAPM connected, or async) */
 	Released,       /* LAPM disconnected */
 	Error,          /* LAPM or V.42bis failed */
@@ -87,10 +112,11 @@ public:
 	/* the end of the call */
 	void exit();
 
-	/* the data pump has connected: the detection phase (detect), then
-	   LAPM (ec, and the detection did not rule it out) or async */
-	void start(bool ec, bool detect);
-	/* we hang up: LAPM sends DISC */
+	/* the data pump has connected: on, error correction as asked
+	   (Config), the detection phase (detect) and LAPM or MNP, else
+	   async */
+	void start(bool on, bool detect);
+	/* we hang up: LAPM sends DISC, MNP LD */
 	void disconnect();
 	/* the data pump is not there (any more): marks out, nothing in */
 	void stop();
@@ -101,13 +127,19 @@ public:
 	int get_bits(int nbits, uint8_t *buf, int n);
 	int put_bits(int nbits, const uint8_t *buf, int n);
 
-	/* what was asked for, then what XID agreed */
+	/* what was asked for, then what XID (or MNP's LRs) agreed */
 	const Config &config() const { return cfg_; }
-	/* LAPM rather than async (once detected) */
+	/* what was asked for */
+	const Config &asked() const { return asked_; }
+	/* LAPM rather than async or MNP (once detected) */
 	bool ec() const { return cfg_.ec; }
-	/* V.42 frames not sent yet or not acknowledged */
-	bool tx_pending() const { return mode_ == Mode::Lapm &&
-						lapm_.tx_pending(); }
+	/* the error correction (once detected) */
+	Protocol protocol() const { return proto_; }
+	/* LAPM's or MNP's frames not sent yet or not acknowledged */
+	bool tx_pending() const {
+		return (mode_ == Mode::Lapm && lapm_.tx_pending()) ||
+			(mode_ == Mode::Mnp && mnp_.tx_pending());
+	}
 	/* the data pump's transmit rate (bit/s), 0 if not known */
 	int tx_rate() const { return owner_->tx_rate(); }
 
@@ -135,8 +167,14 @@ public:
 	Timer timer_what() const { return timer_what_; }
 	/* LAPM's frames on the line */
 	Hdlc &hdlc() { return hdlc_; }
-	/* the detection phase is over: LAPM (ec) or async */
-	void detected(bool ec);
+	/* the detection phase is over: LAPM (ec), else MNP (the originator,
+	   if asked and mnp) or async */
+	void detected(bool ec, bool mnp = true);
+	/* the detection phase (the answerer) saw an MNP LR start: MNP's
+	   framer takes the rest of it, rx */
+	void mnp_lr_seen(const BitQueue &rx);
+	/* MNP's establishment heard nothing: async, as without */
+	void mnp_fallback() { no_ec(); }
 	/* we are the originator */
 	bool caller() const { return caller_; }
 	/* the parameters, for XID */
@@ -147,12 +185,16 @@ public:
 	int write_chars(const uint8_t *buf, int n);
 	/* LAPM's XID: what the remote wants (Config's V.42bis part) */
 	void update_config(const Config &remote);
+	/* what MNP's LRs agreed (cfg()) to the owner */
+	void negotiated() { owner_->negotiated(cfg_); }
 	/* LAPM keeps characters the DTE did not take; push them on */
 	bool push_pending = false;
 
 private:
 	void end_detect();
-	enum class Mode { Idle, Detect, Lapm, Async };
+	void start_mnp(bool initiator, const BitQueue *rx);
+	void no_ec();
+	enum class Mode { Idle, Detect, Lapm, Mnp, Async };
 	void run_timer();
 	int comp_read(uint8_t *buf, int n);
 	int comp_write(const uint8_t *buf, int n);
@@ -165,8 +207,10 @@ private:
 	Owner *owner_ = nullptr;
 	bool caller_ = false;
 	bool online_ = false;
-	Config cfg_;
+	Config cfg_, asked_;
 	Mode mode_ = Mode::Idle;
+	Protocol proto_ = Protocol::None;
+	bool mnp_tried_ = false;
 	long timer_ = 0;
 	Timer timer_what_ = Timer::None;
 
@@ -174,8 +218,11 @@ private:
 	Hdlc hdlc_;
 	Async async_;
 	Lapm lapm_;
+	MnpAsync mnp_async_;
+	Mnp mnp_;
 	V42bis enc_, dec_;
 	V44 enc44_, dec44_;
+	Mnp5 enc5_, dec5_;
 	bool comp_ready_ = false;
 	/* decoded characters the DTE has not taken yet */
 	uint8_t dec_out_[256];

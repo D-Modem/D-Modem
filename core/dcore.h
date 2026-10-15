@@ -214,8 +214,9 @@ public:
 	};
 	/* what the core does with it */
 	void update_status(Status s);
-	/* what XID agreed */
-	void negotiated(int comp, bool v44, int dict_size, int max_string);
+	/* what XID (or MNP's LRs) agreed */
+	void negotiated(int comp, bool v44, int dict_size, int max_string,
+			bool mnp5);
 	/* a debug line with the modem's name */
 	void logf(const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
 
@@ -294,6 +295,11 @@ private:
 	int at_fax(char *p, int *len);
 	int at_kept(const char *p, int *len);
 	void kept_init();
+	/* a kept parameter's values (its name as kept_params has it) */
+	const unsigned long *kept(const char *name) const;
+	/* \N<n>: S103 and +ES; and +ES's values as a \N in S103 */
+	void set_ec_mode(int n);
+	void ec_mode_from_es();
 	struct VoiceParam;
 	int voice_params(char *p, const char *cmd, VoiceParam *param,
 			 int *len, const char *prefix, const char *suffix);
@@ -359,12 +365,17 @@ private:
 	char *xmit_ = nullptr;
 	int xmit_size_ = 0, xmit_head_ = 0, xmit_tail_ = 0, xmit_count_ = 0;
 
-	/* the link layer */
+	/* the link layer: what is asked (ec LAPM, mnp, mnp_first,
+	   required: see dlink::Config), then what the call has */
 	struct Cfg {
 		bool ec, ec_detector;
+		bool mnp, mnp_first, required;
+		int mnp_info;           /* N401 */
 		int tx_win, rx_win, tx_info, rx_info;
 		int comp, dict_size, max_string;
 		bool v44;               /* V.44 rather than V.42bis */
+		bool mnp5;
+		bool mnp_on;            /* the call has MNP */
 	} cfg_ = {};
 	dlink::Link *link_ = nullptr;
 	LinkOwner *link_owner_ = nullptr;

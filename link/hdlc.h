@@ -19,6 +19,15 @@ namespace dlink {
 
 class Link;
 
+/* the line sends the least significant bit of a character first */
+inline uint8_t reverse_bits(uint8_t c)
+{
+	static const uint8_t nibble[16] = {
+		0x0, 0x8, 0x4, 0xc, 0x2, 0xa, 0x6, 0xe,
+		0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf };
+	return (uint8_t)(nibble[c & 0xf] << 4 | nibble[c >> 4]);
+}
+
 /* a frame: address, control, information (no FCS) */
 struct Frame {
 	Frame *next;            /* the frame lists of LAPM are rings */
@@ -46,6 +55,8 @@ public:
 	/* a good frame: f->count octets without the FCS, in a buffer the next
 	   frame reuses */
 	virtual void rx_complete(Frame *f) = 0;
+	/* a frame with a bad FCS (MNP answers it; LAPM does not) */
+	virtual void rx_error() {}
 protected:
 	~Framer() = default;
 };
@@ -62,6 +73,8 @@ public:
 	/* n items of nbits bits for the data pump, and from it; how many */
 	int get_bits(int nbits, uint8_t *buf, int n);
 	int put_bits(int nbits, const uint8_t *buf, int n);
+	/* the received bits not taken yet (for the framer after this one) */
+	const BitQueue &rx_queue() const { return rx_; }
 
 protected:
 	/* a call: the link, empty queues */
@@ -122,8 +135,9 @@ private:
 	void rx_scan();
 };
 
-/* 8.10/V.42: the originator sends ODPs, the answerer ADPs once it has
-   seen two; HDLC flags from the remote end it too */
+/* 7.2/V.42: the originator sends ODPs, the answerer ADPs once it has
+   seen two; HDLC flags from the remote end it too, and at the answerer
+   an MNP LR's start (SYN DLE STX) */
 class Detector : public BitFramer<Detector> {
 public:
 	void start(Link *link);
@@ -143,6 +157,8 @@ private:
 	int rx_count_ = 0;
 	uint8_t rx_pattern_[2] = {};
 	bool ec_enable_ = false;
+	bool refused_ = false;          /* ADP "E" NUL: no error correction */
+	uint32_t rx_chars_ = 0;         /* the last three characters */
 };
 
 } // namespace dlink

@@ -2,7 +2,7 @@
  *
  *    link_test.cpp - tests of the data link layer (link/), without a
  *                    modem: V.42bis round trips, HDLC framing, and two
- *                    Links back to back, bit by bit
+ *                    Links back to back, bit by bit (LAPM, MNP, async)
  *
  *    link_test                          all of them
  *    link_test --gtest_filter=Link.Hdlc one
@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 
 #include "link.h"
+#include "mnp5.h"
 #include "v44.h"
 
 using namespace dlink;
@@ -420,10 +421,10 @@ struct Pair {
 		dc.verbose = da.verbose = v && *v;
 	}
 	/* the data pumps have connected: each with or without the detection
-	   phase */
+	   phase, error correction if it asked for LAPM or MNP */
 	void start(bool detect_c, bool detect_a) {
-		lc.start(lc.config().ec, detect_c);
-		la.start(la.config().ec, detect_a);
+		lc.start(lc.asked().ec || lc.asked().mnp, detect_c);
+		la.start(la.asked().ec || la.asked().mnp, detect_a);
 	}
 	/* run both ways, n bits at a time */
 	void run(long bits, int chunk = 48) {
@@ -919,4 +920,513 @@ TEST(Link, LapmN400)
 	}
 	CHECK(polls == 5, "%d polls before the DISC", polls);
 	CHECK(discs >= 1, "no DISC after the polls");
+}
+
+
+/*
+ *    MNP
+ *
+ */
+
+/* MNP after LAPM (lapm: V.42 with the detection phase first), or MNP
+   alone */
+static Config mnp_config(bool lapm, bool mnp5 = false)
+{
+	Config c = lapm_config(lapm ? 3 : 0);
+	c.ec = lapm;
+	c.mnp = true;
+	c.mnp5 = mnp5;
+	return c;
+}
+
+/* an MNP frame in start-stop octets (A.3/V.42): SYN DLE STX, the body
+   with DLE doubled, DLE ETX, the FCS (x^16 + x^15 + x^2 + 1) */
+static std::vector<uint8_t> mnp_octets(const std::vector<uint8_t> &body)
+{
+	std::vector<uint8_t> out = { 0x16, 0x10, 0x02 };
+	uint16_t crc = 0;
+	auto add = [&crc](uint8_t c) {
+		crc ^= c;
+		for (int i = 0; i < 8; i++)
+			crc = crc & 1 ? (uint16_t)(crc >> 1 ^ 0xa001) :
+				(uint16_t)(crc >> 1);
+	};
+	for (uint8_t c : body) {
+		out.push_back(c);
+		if (c == 0x10)
+			out.push_back(c);
+		add(c);
+	}
+	out.push_back(0x10);
+	out.push_back(0x03);
+	add(0x03);
+	out.push_back((uint8_t)crc);
+	out.push_back((uint8_t)(crc >> 8));
+	return out;
+}
+
+/* characters as start-stop line bits, appended to line */
+static void char_bits(std::vector<uint8_t> &line,
+		      const std::vector<uint8_t> &chars)
+{
+	for (uint8_t c : chars) {
+		line.push_back(0);
+		for (int i = 0; i < 8; i++)
+			line.push_back((c >> i) & 1);
+		line.push_back(1);
+	}
+}
+
+/* the start-stop characters in line bits (marks between them) */
+static std::vector<uint8_t> line_chars(const std::vector<uint8_t> &bits)
+{
+	std::vector<uint8_t> out;
+	for (size_t i = 0; i + 10 <= bits.size();) {
+		if (bits[i]) {
+			i++;
+			continue;
+		}
+		uint8_t c = 0;
+		for (int k = 0; k < 8; k++)
+			c |= (uint8_t)(bits[i + 1 + k] << k);
+		out.push_back(c);
+		i += 10;
+	}
+	return out;
+}
+
+/* the bodies of the MNP octet frames in chars (good FCS only) */
+static std::vector<std::vector<uint8_t>> mnp_frames(
+	const std::vector<uint8_t> &chars)
+{
+	std::vector<std::vector<uint8_t>> out;
+	for (size_t i = 0; i + 3 <= chars.size(); i++) {
+		if (chars[i] != 0x16 || chars[i + 1] != 0x10 ||
+		    chars[i + 2] != 0x02)
+			continue;
+		std::vector<uint8_t> body;
+		size_t j = i + 3;
+		for (; j + 1 < chars.size(); j++) {
+			if (chars[j] == 0x10 && chars[j + 1] == 0x10) {
+				body.push_back(0x10);
+				j++;
+			} else if (chars[j] == 0x10 && chars[j + 1] == 0x03)
+				break;
+			else
+				body.push_back(chars[j]);
+		}
+		if (j + 3 >= chars.size())
+			break;
+		if (mnp_octets(body) == std::vector<uint8_t>(
+			    chars.begin() + i, chars.begin() + j + 4))
+			out.push_back(body);
+		i = j + 3;
+	}
+	return out;
+}
+
+/* our LR (A.6.4.1/V.42) as the peers' (the Agere, PCTel, Broadcom
+   modems'): framing mode 3, k 8, N401 64 and both optimizations (with
+   the first, 256-octet information fields), MNP 5; three of them
+   (T401), then async (A.7.2.2: no answer at all) */
+TEST(Link, MnpLr)
+{
+	const std::vector<uint8_t> lr = {
+		0x1a, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0xff, 0x02, 0x01, 0x03, 0x03, 0x01, 0x08, 0x04, 0x02, 0x40,
+		0x00, 0x08, 0x01, 0x03, 0x09, 0x01, 0x01 };
+	/* the Agere modem's LR as it came from it, FCS and all */
+	const std::vector<uint8_t> agere = {
+		0x16, 0x10, 0x02, 0x1a, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00,
+		0x00, 0x00, 0x00, 0xff, 0x02, 0x01, 0x03, 0x03, 0x01, 0x08,
+		0x04, 0x02, 0x40, 0x00, 0x08, 0x01, 0x03, 0x09, 0x01, 0x01,
+		0x10, 0x03, 0xfa, 0x0a };
+	std::vector<uint8_t> agere_body(agere.begin() + 3, agere.end() - 4);
+	CHECK(mnp_octets(agere_body) == agere, "the FCS as the Agere modem's");
+
+	Dte d("caller");
+	Link l;
+	l.init(&d, true, mnp_config(false, true));
+	l.start(true, true);
+	std::vector<uint8_t> bits, b(48), idle(48, 1);
+	for (int k = 0; k < 9600 * 8 / 48; k++) {
+		l.get_bits(1, b.data(), 48);
+		bits.insert(bits.end(), b.begin(), b.end());
+		l.put_bits(1, idle.data(), 48);
+	}
+	auto frames = mnp_frames(line_chars(bits));
+	CHECK(frames.size() == 3, "%zu LRs", frames.size());
+	CHECK(!frames.empty() && frames[0] == lr, "our LR");
+	CHECK(!frames.empty() && mnp_octets(frames[0]) == agere,
+	      "our LR, the Agere modem's");
+	CHECK(d.up && l.protocol() == Protocol::None,
+	      "async after the LRs went unanswered");
+}
+
+/* our responder against the Agere modem's LR, as it came from it
+   (MNP 5 asked: not here): our LR in answer (what it understood), the
+   LA (fixed fields), the data phase in HDLC frames: an LT's data to the
+   DTE and an LA for it, an LN answered with LNA, an LD the end */
+TEST(Link, MnpResponder)
+{
+	const std::vector<uint8_t> agere_lr = {
+		0x1a, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0xff, 0x02, 0x01, 0x03, 0x03, 0x01, 0x08, 0x04, 0x02, 0x40,
+		0x00, 0x08, 0x01, 0x03, 0x09, 0x01, 0x01 };
+	const std::vector<uint8_t> our_lr = {
+		0x17, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0xff, 0x02, 0x01, 0x03, 0x03, 0x01, 0x08, 0x04, 0x02, 0x40,
+		0x00, 0x08, 0x01, 0x03 };
+	Dte d("answerer");
+	Link l;
+	l.init(&d, false, mnp_config(true));
+	l.start(true, true);
+	std::vector<uint8_t> in(200, 1), out, b(48);
+	char_bits(in, mnp_octets(agere_lr));
+	in.resize(in.size() + 9600 / 2, 1);
+	/* the run so far: what we sent */
+	auto run = [&](std::vector<uint8_t> &line) {
+		line.resize((line.size() + 47) / 48 * 48, 1);
+		for (size_t k = 0; k < line.size(); k += 48) {
+			l.get_bits(1, b.data(), 48);
+			out.insert(out.end(), b.begin(), b.end());
+			l.put_bits(1, line.data() + k, 48);
+		}
+	};
+	run(in);
+	CHECK(d.detected && l.protocol() == Protocol::Mnp, "MNP detected");
+	auto frames = mnp_frames(line_chars(out));
+	CHECK(frames.size() == 1 && frames[0] == our_lr, "our LR (%zu)",
+	      frames.size());
+	CHECK(!d.up, "not up before the LA");
+
+	/* the confirming LA: N(R) 0, credit 8 */
+	in.assign(100, 1);
+	char_bits(in, mnp_octets({ 0x03, 0x05, 0x00, 0x08 }));
+	in.resize(in.size() + 480, 1);
+	run(in);
+	CHECK(d.up, "up after the LA");
+	l.set_online(true);
+
+	/* HDLC frames from here: an LT, an LN */
+	NullOwner o;
+	Link side;
+	side.init(&o, true, Config());
+	Hdlc tx, rx;
+	FrameSource src, dst;
+	tx.start(&side);
+	tx.set_framer(&src, true);
+	rx.start(&side);
+	rx.set_framer(&dst, false);
+	src.tx.push_back({ 0x02, 0x04, 0x01, 'h', 'e', 'l', 'l', 'o' });
+	src.tx.push_back({ 0x07, 0x06, 0x01, 0x01, 0x01, 0x02, 0x01, 0x01 });
+	src.tx.push_back({ 0x04, 0x02, 0x01, 0x01, 0xff });
+	std::vector<uint8_t> tb(48);
+	for (int k = 0; k < 9600 / 48 && !d.released; k++) {
+		tx.get_bits(1, tb.data(), 48);
+		l.put_bits(1, tb.data(), 48);
+		l.get_bits(1, b.data(), 48);
+		rx.put_bits(1, b.data(), 48);
+	}
+	CHECK(std::string(d.got.begin(), d.got.end()) == "hello",
+	      "the LT's data");
+	bool la = false, lna = false;
+	for (auto &f : dst.rx) {
+		la |= f == std::vector<uint8_t>{ 0x03, 0x05, 0x01, 0x08 };
+		lna |= f == std::vector<uint8_t>{ 0x04, 0x07, 0x01, 0x01,
+						  0x01 };
+	}
+	CHECK(la, "LA for the LT");
+	CHECK(lna, "LNA for the LN");
+	CHECK(d.released, "released by the LD");
+}
+
+/* SYN DLE STX in the detection phase, and no LR after it (a caller
+   without error correction whose data has them; DLE ETX and a bad FCS
+   end it): after the responder's wait, the call goes on without error
+   correction, nothing sent (no LD) */
+TEST(Link, MnpResponderNoLr)
+{
+	Dte d("answerer");
+	Link l;
+	l.init(&d, false, mnp_config(true));
+	l.start(true, true);
+	std::vector<uint8_t> in(200, 1), out, b(48);
+	char_bits(in, { 0x16, 0x10, 0x02, 'n', 'o', 't', ' ', 'a', 'n', ' ',
+			'L', 'R', 0x10, 0x03, 0x00, 0x00 });
+	in.resize(9600 * 10, 1);
+	for (size_t k = 0; k + 48 <= in.size(); k += 48) {
+		l.get_bits(1, b.data(), 48);
+		out.insert(out.end(), b.begin(), b.end());
+		l.put_bits(1, in.data() + k, 48);
+	}
+	CHECK(d.up && l.protocol() == Protocol::None,
+	      "async after the wait");
+	CHECK(!d.released, "not released");
+	CHECK(line_chars(out).empty(), "nothing sent");
+}
+
+/* MNP first (+ES=4) at the caller, both ways in HDLC frames with the
+   optimizations: text, noise, then our LD */
+TEST(Link, Mnp)
+{
+	rnd_state = 12345;
+	Config cc = mnp_config(true);
+	cc.mnp_first = true;
+	Pair p(cc, mnp_config(true));
+	p.start(true, true);
+	p.run(9600 * 2);
+	CHECK(p.dc.up && p.da.up, "MNP up");
+	CHECK(p.lc.protocol() == Protocol::Mnp &&
+	      p.la.protocol() == Protocol::Mnp, "MNP chosen");
+	transfer("mnp, text", p, 60000, 40000, 9600 * 120);
+	transfer("mnp, noise", p, 20000, 20000, 9600 * 60, false);
+	p.lc.disconnect();
+	p.run(9600);
+	CHECK(p.dc.released && p.da.released, "released by the LD");
+}
+
+/* the caller has V.42 and MNP, the answerer MNP alone: it passes over
+   the ODPs, the caller sends its LR after T400 (7.2.1.2/V.42) */
+TEST(Link, MnpAfterOdp)
+{
+	rnd_state = 12345;
+	Pair p(mnp_config(true), mnp_config(false));
+	p.start(true, true);
+	p.run(9600 * 3);
+	CHECK(p.dc.up && p.da.up, "up");
+	CHECK(p.lc.protocol() == Protocol::Mnp &&
+	      p.la.protocol() == Protocol::Mnp, "MNP chosen");
+	transfer("mnp after odp", p, 5000, 5000, 9600 * 20);
+}
+
+/* framing mode 2 (start-stop octets in the data phase too), and
+   without the optimizations (variable-field LT and LA, N401 64) */
+TEST(Link, MnpOctets)
+{
+	rnd_state = 12345;
+	Config cc = mnp_config(false);
+	cc.mnp_mode = 2;
+	Pair p(cc, mnp_config(true));
+	p.start(true, true);
+	p.run(9600 * 2);
+	CHECK(p.dc.up && p.da.up, "up in mode 2");
+	/* DLE in the data: noise has it */
+	transfer("mnp mode 2, noise", p, 10000, 10000, 9600 * 60, false);
+
+	Config ca = mnp_config(true);
+	ca.mnp_opt = 0;
+	ca.mnp_info = 64;
+	Pair q(mnp_config(false), ca);
+	q.start(true, true);
+	q.run(9600 * 2);
+	CHECK(q.dc.up && q.da.up, "up without the optimizations");
+	transfer("mnp, variable fields", q, 10000, 10000, 9600 * 60, false);
+}
+
+/* bit errors in both framing modes: LT frames lost or damaged come
+   again (out-of-sequence LAs, T401) */
+TEST(Link, MnpBitErrors)
+{
+	for (int mode = 3; mode >= 2; mode--) {
+		rnd_state = 12345;
+		Config cc = mnp_config(false);
+		cc.mnp_mode = mode;
+		Pair p(cc, mnp_config(false));
+		p.start(true, true);
+		p.run(9600 * 2);
+		CHECK(p.dc.up && p.da.up, "mode %d: up", mode);
+		p.ber = 2e-5;
+		transfer(mode == 3 ? "mnp, bit errors" :
+			 "mnp mode 2, bit errors", p, 30000, 30000,
+			 9600 * 300);
+		CHECK(p.errors > 0, "no bit errors");
+	}
+}
+
+/* a DTE that takes 7 characters at a time: no credit (LA with N(k) 0),
+   the rest later */
+TEST(Link, MnpSlowDte)
+{
+	rnd_state = 12345;
+	Pair p(mnp_config(false), mnp_config(false));
+	p.start(true, true);
+	p.run(9600 * 2);
+	CHECK(p.dc.up && p.da.up, "up");
+	p.da.accept = 7;
+	transfer("mnp, slow DTE", p, 20000, 2000, 9600 * 120);
+}
+
+/* MNP required (+ES=4,4 / \N5) against a modem without error
+   correction: the LRs unanswered, the link fails rather than going
+   async */
+TEST(Link, MnpRequired)
+{
+	rnd_state = 12345;
+	Config cc = mnp_config(false);
+	cc.required = true;
+	Pair p(cc, Config());
+	p.start(true, false);
+	p.run(9600 * 10);
+	CHECK(p.dc.released && !p.dc.up, "caller: released, not up");
+}
+
+/* N400 (12): with the line cut in the data phase an LT goes out again
+   twelve times, then LD */
+TEST(Link, MnpN400)
+{
+	rnd_state = 12345;
+	Pair p(mnp_config(false), mnp_config(false));
+	p.start(true, true);
+	p.run(9600 * 2);
+	CHECK(p.dc.up && p.da.up, "up");
+	p.dc.to_send = text(100);
+	p.dc.pos = 0;
+	p.lc.set_online(true);
+	NullOwner o;
+	Link side;
+	side.init(&o, true, Config());
+	Hdlc rx;
+	FrameSource dst;
+	rx.start(&side);
+	rx.set_framer(&dst, false);
+	std::vector<uint8_t> b(480), idle(480, 1);
+	for (int k = 0; k < 9600 * 120 / 480 && !p.dc.released; k++) {
+		p.lc.get_bits(1, b.data(), (int)b.size());
+		rx.put_bits(1, b.data(), (int)b.size());
+		p.lc.put_bits(1, idle.data(), (int)idle.size());
+	}
+	int lts = 0, lds = 0;
+	for (auto &f : dst.rx) {
+		if (f.size() > 3 && f[0] == 0x02 && f[1] == 0x04 && f[2] == 1)
+			lts++;
+		if (f.size() == 5 && f[1] == 0x02)
+			lds++;
+	}
+	CHECK(lts == 13, "LT 1 sent %d times (once and N400 again)", lts);
+	CHECK(lds == 1 && p.dc.released, "LD, released");
+}
+
+
+/*
+ *    MNP 5
+ *
+ */
+
+/* in through an MNP 5 encoder (a flush where flush_at says, and at the
+   end) and its output through a decoder: the same characters again;
+   the encoder's octets */
+static size_t mnp5_roundtrip(const char *name, const std::vector<uint8_t> &in,
+			     size_t flush_every = 0)
+{
+	Mnp5 enc, dec;
+	enc.init();
+	dec.init();
+	std::vector<uint8_t> coded, out;
+	uint8_t buf[1100];
+	for (size_t i = 0; i < in.size(); i++) {
+		enc.encode(in[i]);
+		if (flush_every && (i + 1) % flush_every == 0)
+			enc.flush_encoder();
+		int n;
+		while ((n = enc.out(buf, sizeof(buf))) > 0)
+			coded.insert(coded.end(), buf, buf + n);
+	}
+	enc.flush_encoder();
+	/* a second flush with nothing coded since: nothing */
+	enc.flush_encoder();
+	int n;
+	while ((n = enc.out(buf, sizeof(buf))) > 0)
+		coded.insert(coded.end(), buf, buf + n);
+	for (uint8_t c : coded) {
+		dec.decode(c);
+		while ((n = dec.out(buf, sizeof(buf))) > 0)
+			out.insert(out.end(), buf, buf + n);
+	}
+	CHECK(out == in, "%s: %zu characters back of %zu", name, out.size(),
+	      in.size());
+	printf("  mnp5 %s: %zu -> %zu octets\n", name, in.size(), coded.size());
+	return coded.size();
+}
+
+/* MNP 5 round trips: text (smaller), noise (larger, by up to a quarter:
+   ranks of 128 and up take 10 bits), runs of every length up to 600
+   (counted after three; 250 at most, then a new run), every value, the
+   flush within runs; and what the Agere modem sent (MNP 5 as PCTel's
+   code has it) decoded */
+TEST(Link, Mnp5)
+{
+	rnd_state = 12345;
+	CHECK(mnp5_roundtrip("text", text(20000)) < 20000 * 3 / 4,
+	      "text compresses");
+	CHECK(mnp5_roundtrip("noise", noise(20000)) < 20000 * 5 / 4,
+	      "noise grows by a quarter at most");
+	std::vector<uint8_t> runs;
+	for (int len = 1; len <= 600; len++)
+		runs.insert(runs.end(), (size_t)len, (uint8_t)(len * 7));
+	CHECK(mnp5_roundtrip("runs", runs) < runs.size() / 20, "runs");
+	std::vector<uint8_t> all;
+	for (int k = 0; k < 40; k++)
+		for (int c = 0; c < 256; c++)
+			all.push_back((uint8_t)(c * 3 + k));
+	mnp5_roundtrip("every value", all);
+	mnp5_roundtrip("runs, flushed", runs, 37);
+	mnp5_roundtrip("text, flushed", text(5000), 1);
+
+	/* the Agere modem's first octets, sending "000000  !\"#$%..." (the
+	   STREAM of interop_call) */
+	static const uint8_t agere[] = {
+		0xb0, 0x00, 0x3a, 0x11, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7,
+		0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf, 0xb0, 0x0b,
+		0x1b, 0x2b, 0x3b, 0x4b, 0x5b, 0x6b, 0x7b, 0x8b, 0x9b, 0xab,
+		0xbb, 0xcb, 0xdb, 0xeb, 0xfc, 0x06, 0x07, 0x05, 0x83, 0xc2,
+		0x61, 0x70, 0xd8, 0x7c, 0x46, 0x27, 0x15, 0x8b, 0xc6, 0x63,
+		0x71, 0xd8, 0xfc, 0x86, 0x47, 0x25, 0x93, 0xca, 0x65, 0x72,
+		0xd9, 0x7c, 0xc7, 0xff,
+	};
+	std::string want = "000000 ";
+	for (char c = ' '; c <= 'X'; c++)
+		want += c;
+	Mnp5 dec;
+	dec.init();
+	std::string got;
+	uint8_t buf[600];
+	for (uint8_t c : agere) {
+		dec.decode(c);
+		int n = dec.out(buf, sizeof(buf));
+		got.append((const char *)buf, n);
+	}
+	CHECK(got == want, "the Agere modem's MNP 5: %s", got.c_str());
+	/* our encoder: the same octets for the same text (the whole octets
+	   it has: the Agere modem's go on with the next characters) */
+	Mnp5 enc;
+	enc.init();
+	std::vector<uint8_t> coded;
+	for (char c : want) {
+		enc.encode((uint8_t)c);
+		int n = enc.out(buf, sizeof(buf));
+		coded.insert(coded.end(), buf, buf + n);
+	}
+	CHECK(coded.size() >= 60 &&
+	      !memcmp(coded.data(), agere, coded.size()),
+	      "our MNP 5 as the Agere modem's (%zu octets)", coded.size());
+}
+
+/* MNP with MNP 5 both ways, two Links back to back: text and noise */
+TEST(Link, MnpMnp5)
+{
+	rnd_state = 12345;
+	Pair p(mnp_config(false, true), mnp_config(true, true));
+	p.start(true, true);
+	p.run(9600 * 2);
+	CHECK(p.dc.up && p.da.up, "up");
+	CHECK(p.dc.agreed.mnp5 && p.da.agreed.mnp5, "MNP 5 agreed");
+	transfer("mnp5, text", p, 60000, 40000, 9600 * 120);
+	transfer("mnp5, noise", p, 10000, 10000, 9600 * 60, false);
+	/* one side without: none */
+	Pair q(mnp_config(false, true), mnp_config(true, false));
+	q.start(true, true);
+	q.run(9600 * 2);
+	CHECK(q.dc.up && q.da.up && !q.dc.agreed.mnp5 && !q.da.agreed.mnp5,
+	      "MNP 5 not agreed");
 }

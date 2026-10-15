@@ -194,7 +194,7 @@ every D-Modem program:
 The command set is D-Modem's own.  It began as Smart Link's slmodemd's
 (the reference of Smart Link's ST56 modems is kept as
 \cmd{docs/legacy/ST56ATCommands.pdf}) and has grown V.90 and V.92 as the
-digital modem, V.91, V.44 and V.92's modem-on-hold since.  It takes as
+digital modem, V.91, V.44, V.92's modem-on-hold, and MNP 2 to 5 since.  It takes as
 well the commands that other modems' setup strings send (V.250's,
 Rockwell's and Conexant's, USRobotics'), most of them with no effect, so
 that a setup string written for another modem works:
@@ -276,9 +276,10 @@ results only), each bit one of them:
 \midrule
 0 (1) & \cmd{Modulation: }\p{name} & the modulation's name (\cmd{V92},
   \cmd{V34}, \cmd{V32bis}, \ldots) \\
-1 (2) & \cmd{Protocol: LAPM} or \cmd{NONE} & V.42 error correction \\
-0 and 1 (3) & \cmd{Compression: V44}, \cmd{V42bis} or \cmd{NONE} &
-  what V.42 agreed \\
+1 (2) & \cmd{Protocol: LAPM}, \cmd{MNP} or \cmd{NONE} & the error
+  correction (V.42's LAPM, MNP 2 to 4) \\
+0 and 1 (3) & \cmd{Compression: V44}, \cmd{V42bis}, \cmd{MNP5} or
+  \cmd{NONE} & what V.42 or MNP agreed \\
 2 (4) & \cmd{TxRate: }\p{rate} & the rate the modem sends at \\
 \bottomrule
 \end{tabular}
@@ -429,13 +430,16 @@ Taken, with or without a digit, and nothing done (\cmdl[Z]{ATZ} gives the
 defaults).
 \end{command}
 
-\begin{command}{ampK}{AT\&K[\p{n}], AT\%C[\p{n}]}
-Data compression (\sreg{104}; default 3): \cmd{0} none, \cmd{1} to \cmd{3}
-V.44 or V.42bis both ways, as the other modem agrees (V.42 offers both).
-It needs V.42 (\cmdl[bsN]{\bs N}).  \cmd{\&K} is compression as on
-USRobotics' modems; Rockwell's and Conexant's use it for flow control,
-whose \cmd{\&K4} to \cmd{\&K6} are taken with no effect, and whose
-\cmd{\&K3} (RTS/CTS) leaves the compression on.
+\begin{command}{ampK}{AT\%C[\p{n}], AT\&K[\p{n}]}
+Data compression (\sreg{104}; default 3): \cmd{\%C0} none, \cmd{\%C1}
+MNP 5 (with MNP), \cmd{\%C2} V.44 or V.42bis both ways (with V.42's LAPM,
+as the other modem agrees: V.42 offers both), \cmd{\%C3} either, as the
+call's error correction has it.  It needs error correction
+(\cmdl[bsN]{\bs N}).  \cmd{\&K} is compression as on USRobotics' modems:
+\cmd{\&K0} none, \cmd{\&K1} and \cmd{\&K2} both (\cmd{\%C3}), \cmd{\&K3}
+V.44 or V.42bis without MNP 5 (\cmd{\%C2}); Rockwell's and Conexant's
+use it for flow control, whose \cmd{\&K4} to \cmd{\&K6} are taken with
+no effect, and whose \cmd{\&K3} (RTS/CTS) leaves V.42's compression on.
 \end{command}
 
 \begin{command}{ampP}{AT\&P[\p{n}]}
@@ -445,8 +449,8 @@ whose \cmd{\&K4} to \cmd{\&K6} are taken with no effect, and whose
 \begin{command}{ampQ}{AT\&Q[\p{n}]}
 Other modems' choice of error correction, as \cmdl[bsN]{\bs N}:
 \cmd{\&Q0} and \cmd{\&Q6} are \cmd{\bs N0} (none), \cmd{\&Q5},
-\cmd{\&Q8} and \cmd{\&Q9} are \cmd{\bs N3} (V.42 when the other modem
-has it; there is no MNP).  The others (synchronous modes) are ERROR.
+\cmd{\&Q8} and \cmd{\&Q9} are \cmd{\bs N3} (V.42, then MNP, then
+none).  The others (synchronous modes) are ERROR.
 \end{command}
 
 \begin{command}{ampV}{AT\&V, AT\&W[\p{n}]}
@@ -455,16 +459,39 @@ There are no stored profiles: \cmd{\&V} (show them) is ERROR, and
 \end{command}
 
 \begin{command}{bsA}{AT\bs A[\p{n}]}
-\cmd{\bs A0} to \cmd{\bs A3}, MNP's block size: taken (there is no
-MNP); \cmd{\bs A4} and up are ERROR.
+MNP's block size, the longest information field it offers
+(\sreg{105}; default 3): \cmd{\bs A0} 64, \cmd{\bs A1} 128, \cmd{\bs A2}
+192, \cmd{\bs A3} 256 octets (as the other modems do, an LR offering 64
+and the 256-octet data phase optimization).  \cmd{\bs A4} and up are
+ERROR.
 \end{command}
 
 \begin{command}{bsN}{AT\bs N[\p{n}]}
-Error correction (\sreg{103}; default 1): \cmd{\bs N0} none; \cmd{\bs N1} to
-\cmd{\bs N5} V.42 (LAPM) when the other modem has it, a call without
-when it does not (V.42's detection phase decides).  There is no MNP:
-an MNP modem that has V.42 connects with LAPM, one with MNP only
-without error correction or not at all.
+Error correction (\sreg{103}; default 3), as Smart Link's and Rockwell's
+modems have it; each sets \cmdl[plusES]{+ES} to V.250's equal:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\rowcolor{dmhead}\thd{} & \thd{} & \thd{\cmd{+ES}} \\
+\midrule
+\cmd{\bs N0} & normal: none & \cmd{1,0,1} \\
+\cmd{\bs N1} & direct: none & \cmd{0,0,0} \\
+\cmd{\bs N2} & reliable: V.42 (LAPM) or MNP, else hang up &
+  \cmd{3,2,4} \\
+\cmd{\bs N3} & auto-reliable: V.42, MNP, or none & \cmd{3,0,2} \\
+\cmd{\bs N4} & V.42 (LAPM) only, else hang up & \cmd{3,3,5} \\
+\cmd{\bs N5} & MNP only, else hang up & \cmd{4,4,6} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+V.42's detection phase decides between LAPM and none; the originator
+sends MNP's LR when the answerer sends no V.42 answer, and the answerer
+takes an LR (from a modem with MNP only, or one set so) as the start of
+MNP.  With MNP only the originator starts with its LR.  MNP 5 compression
+goes with MNP (\cmdl[ampK]{\%C}), MNP's block size is
+\cmdl[bsA]{\bs A}'s.  \cmd{ATS103=}\p{n} is \cmd{\bs N}\p{n}.
 \end{command}
 
 \begin{command}{pctE}{AT\%E[\p{n}]}
@@ -554,6 +581,21 @@ The country by its T.35 code in hexadecimal (\cmd{+GCI:b5}: USA),
 which sets its dial pause (\sreg{8}) and hook flash (\sreg{24}) times; \cmd{=?}
 lists the codes.  dmodemd's \cmd{-c} option names the country it starts
 with (\cmd{--countrylist} lists them).
+\end{command}
+
+\subsection{Error correction: +ES}
+
+\begin{command}{plusES}{AT+ES=[\p{orig}][,[\p{orig\_fb}][,[\p{ans\_fb}]]], AT+ES?, AT+ES=?}
+V.250's error control selection (default \cmd{3,0,2}): as the
+originator, \p{orig} 0 or 1 none, 2 V.42 (LAPM) without the detection
+phase, 3 V.42 with it, 4 MNP first (no detection phase, no LAPM), and
+\p{orig\_fb} what may follow when that fails: 0 or 1 none, 2 V.42 or MNP
+or hang up, 3 V.42 only, 4 MNP only (and first); as the answerer,
+\p{ans\_fb} 0 or 1 none, 2 or 3 V.42, MNP or none, 4 V.42 or MNP or hang
+up, 5 V.42 only, 6 MNP only (7 and 8 as 2).  A parameter left out keeps
+its value; \cmd{=?} gives the ranges \cmd{(0-6),(0-4),(0-8)}.
+\cmdl[bsN]{\bs N} sets it, and it sets \sreg{103} to the \cmd{\bs N}
+with its values (as it was if none has them).
 \end{command}
 
 \subsection{Mode}
@@ -687,8 +729,9 @@ Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;
 \sregrow{70} & CONNECT's lines (\cmdl[ampA]{\&A}) & 0 & \\
 \sregrow{71} & CONNECT's rate (\cmdl[ampC]{\&E}) & 0 & kept \\
 \sregrow{92} & the answer's delay, s (0: 10 ms) & 2 & before the answer tone \\
-\sregrow{103} & error correction (\cmdl[bsN]{\bs N}) & 1 & \\
+\sregrow{103} & error correction (\cmdl[bsN]{\bs N}) & 3 & \\
 \sregrow{104} & data compression (\cmdl[ampK]{\%C}, \cmdl[ampK]{\&K}) & 3 & \\
+\sregrow{105} & MNP's block size (\cmdl[bsA]{\bs A}) & 3 & \\
 \sregrow{161} & \cmdl[Y]{Y} & 0 & kept \\
 \bottomrule
 \end{longtable}
@@ -782,7 +825,7 @@ W0 to W2 & what CONNECT reports (here \cmdl[ampA]{\&A} and
 \bottomrule
 \end{longtable}
 
-\cmdl[ampD]{\&D, \&F, \&R, \&S} and \cmdl[bsA]{\bs A} are taken as well
+\cmdl[ampD]{\&D, \&F, \&R, \&S} are taken as well
 (section~\ref{sec:amp}).
 
 \subsection{Extended parameters kept}
@@ -807,7 +850,6 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
 +MR & 0 & the modulation reported (\cmd{+MCR:}, \cmd{+MRR:}) \\
 +ER & 0 & the error correction reported (\cmd{+ER:}) \\
 +DR & 0 & the compression reported (\cmd{+DR:}) \\
-+ES & 3,0,2 & the error correction (here \cmdl[bsN]{\bs N}) \\
 +DS & 3,0,2048,32 & V.42bis (here \cmdl[ampK]{\%C}) \\
 +DS44 & 3,0,0,2048,2048, 255,255,6144,6144 & V.44 (here
   \cmdl[ampK]{\%C}) \\
@@ -825,7 +867,7 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
 \begin{itemize}
 \item \cmdl[ampK]{\&K} is the compression, as on USRobotics' modems;
   on Rockwell's and Conexant's it is flow control.  \cmd{\&K3} leaves
-  the compression on, \cmd{\&K0} turns it off.
+  V.42's compression on (MNP 5 off), \cmd{\&K0} turns it off.
 \item The S-registers past \sreg{16} are D-Modem's own: \sreg{29} and
   \sreg{30} are the speaker's (elsewhere the hook flash time and the
   inactivity timer), \sreg{92} the answer's delay (elsewhere a fax
@@ -841,10 +883,10 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
   \cmd{I7}); \cmd{ATI8} and up are ERROR.
 \item The numeric results are 0 to 8 (\cmdl[V]{V0}): every CONNECT is
   1, its rate in the verbose result only.
-\item There is no MNP (classes 2 to 5, 10, 10EC): \cmdl[bsA]{\bs A} is
-  taken and \cmdl[bsN]{\bs N1} to \cmdl[bsN]{\bs N5} are all V.42.  A
-  modem with MNP 10EC connects with V.42 (its ``EM'' detection patterns
-  are passed over).  See \texttt{docs/link.md}, MNP.
+\item MNP is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[ampK]{\%C}): there
+  is no MNP 10 or 10EC.  A modem with MNP 10EC connects with V.42 (its
+  ``EM'' detection patterns are passed over).  See
+  \texttt{docs/link.md}, MNP.
 \item K56flex is not there: \cmdl[plusMS]{+MS=56} runs V.90.
 \end{itemize}
 

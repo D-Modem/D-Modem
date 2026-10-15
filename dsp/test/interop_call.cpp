@@ -499,8 +499,8 @@ struct Dte {
 
 const char *const NAME[2] = { "modemA", "modemB" };
 
-/* EXPECT_B: POSIX extended, in which '.' takes newlines ((?s) is
-   Python's way of saying so) */
+/* EXPECT_A, EXPECT_B, REJECT_B: POSIX extended, in which '.' takes
+   newlines ((?s) is Python's way of saying so) */
 bool log_has(const std::string &path, std::string pat)
 {
 	if (pat.compare(0, 4, "(?s)") == 0)
@@ -517,7 +517,7 @@ bool log_has(const std::string &path, std::string pat)
 	std::replace(text.begin(), text.end(), '\0', ' ');
 	regex_t re;
 	if (regcomp(&re, pat.c_str(), REG_EXTENDED | REG_NOSUB) != 0) {
-		say("EXPECT_B: bad regex %s\n", pat.c_str());
+		say("bad regex %s\n", pat.c_str());
 		return false;
 	}
 	bool ok = regexec(&re, text.c_str(), 0, nullptr, 0) == 0;
@@ -579,9 +579,9 @@ std::string bulk(size_t n, unsigned seed)
 
 /* (interop_call.h) the modems (through netsim with NET) set up with
    ATZ and proto, CALLS calls of B answering and A dialing, then the
-   data (two lines, STREAM, or BULK) both ways and checked, EXPECT_B
-   in B's log; PASS or FAIL printed; the processes stopped and the fds
-   closed before it returns */
+   data (two lines, STREAM, or BULK) both ways and checked, EXPECT_A
+   and EXPECT_B in their logs; PASS or FAIL printed; the processes
+   stopped and the fds closed before it returns */
 bool data_call(const std::string &exe_a, const std::string &exe_b,
 	       const std::string &proto)
 {
@@ -717,20 +717,23 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			pn = -1;
 		}
 	};
-	/* the call's end: the modems killed, EXPECT_B checked if ok, PASS or
-	   FAIL; thrown as Done for the catch below (never returns) */
+	/* the call's end: the modems killed, EXPECT_A and EXPECT_B checked
+	   if ok, PASS or FAIL; thrown as Done for the catch below (never
+	   returns) */
 	auto done = [&](bool ok) {
 		if (wav_marks == 1)
 			wav_mark();     /* a call that failed: up to here */
 		for (auto &x : m)
 			x->stop(true);
-		/* EXPECT_B: modemB's log must have it as well (e.g. that
-		   the call took a certain path) */
-		if (ok && !env("EXPECT_B").empty()) {
+		/* EXPECT_A, EXPECT_B: that modem's log must have it as well
+		   (e.g. that the call took a certain path) */
+		for (char w : { 'A', 'B' }) {
+			std::string pat = env((std::string("EXPECT_") + w).c_str());
+			if (!ok || pat.empty())
+				continue;
 			sleep_s(0.5);
-			if (!log_has(log_dir + "/modemB.log", env("EXPECT_B"))) {
-				say("modemB's log has no %s\n",
-				    env("EXPECT_B").c_str());
+			if (!log_has(log_dir + "/modem" + w + ".log", pat)) {
+				say("modem%c's log has no %s\n", w, pat.c_str());
 				ok = false;
 			}
 		}

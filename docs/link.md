@@ -16,6 +16,14 @@ bits once a call has connected (C++, `namespace dlink`):
   negotiation in XID,
   with the private parameters of V.42bis and the user data subfield of
   V.44.
+- **MNP 2 to 4** (`Mnp`, `mnp.cpp`), V.42's "alternative procedure" (Annex
+  A of V.42 (10/96)), with the modems that have no LAPM: the LR, LR, LA
+  establishment in start-stop octets (`MnpAsync`), the data phase in HDLC
+  frames (framing mode 3) or octets (mode 2), LT frames of up to 256
+  octets, 8 outstanding, LA acknowledgment with credit, retransmission on
+  T401 or a repeated N(R), N400 = 12, LN and LNA, LD. See below.
+- **MNP 5** (`Mnp5`, `mnp5.cpp`): run-length and adaptive frequency
+  coding, MNP's compression (not in V.42), as the peers' code has it.
 - **V.42bis** (`V42bis`, `v42bis.cpp`): 2048 codewords and strings of 34
   characters offered, lower when the remote asks; the encoder switches
   between transparent and compressed mode by the ratio over the last 256
@@ -53,7 +61,17 @@ asks for the link (8.8/V.42: an SABME, not the link up; ignored after a
 release), and N400: five retransmissions of an unanswered XID, five
 polls with the line cut, no more (`LapmN400`), and an originator
 against a cellular answerer's ADPs, "EM" then "EC" (LAPM) or "EM" alone
-(async after T400; `AdpCellular`).
+(async after T400; `AdpCellular`). For MNP: our LR octet for octet as
+the Agere modem's, FCS and all, three of them unanswered, then async
+(`MnpLr`); our responder against the Agere modem's LR, then an LA, an LT,
+an LN (LNA) and an LD as HDLC frames (`MnpResponder`), and against SYN
+DLE STX with no LR after it (async after its wait, nothing sent:
+`MnpResponderNoLr`); two Links with MNP
+first, after ODPs a V.42 answerer did not answer, in framing mode 2 and
+without the optimizations, with bit errors in both modes, a slow DTE (no
+credit), MNP required against a modem without it, N400 with the line
+cut; MNP 5's round trips (text, noise, runs, every value, flushes) and
+the Agere modem's MNP 5 octets decoded and coded again (`Mnp5`).
 
 ## V.44
 
@@ -85,49 +103,117 @@ and back now and then; the other Agere and interop calls use V.44 too
 
 ## MNP
 
-D-Modem has no MNP class: neither MNP 2 to 4's error correction (V.42's
-"alternative procedure"), nor MNP 5's compression, nor MNP 10 or 10EC.
-Its error correction is V.42 LAPM, its compression V.42bis and V.44. Of
-the MNP commands of the Smart Link and Rockwell command sets, `\A0` to
-`\A3` (the MNP block size) are taken and change nothing, and `\N1` to
-`\N5` all mean V.42 when the remote has it (Rockwell's `\N2` is a
-reliable link, MNP or V.42, its `\N5` MNP only); `%C` and `&K` choose
-between V.42bis and V.44 (Rockwell's `%C1` is MNP 5). Smart Link's
-slmodemd, which this modem started from, had no MNP either: its link
-layer was LAPM only, and its DSP library (`dsp/test/smartlink/dsplibs.o`)
-has no MNP in it.
+MNP 2 to 4 is V.42's "alternative procedure" (Annex A of V.42 (10/96)),
+the error correction of the modems from before LAPM, which V.42 (1988)
+took in for them; V.42 (03/2002) deleted it, and its text is in the
+superseded editions (`T-REC-V.42-199610-S` at itu.int, which
+`docs/specs/fetch.sh` does not fetch). MNP 5 is MNP's compression, not
+in V.42 at all; it is here as the peers' code has it. The other soft
+modems of the interop tests (`docs/interop.md`) all have both: the
+Agere, PCTel, Motorola SM56, Conexant HSF and Broadcom modems. Smart
+Link's slmodemd, which this modem started from, had neither (its link
+layer was LAPM only).
 
-### MNP modems calling and answering
+### When a call takes it
 
-The other soft modems of the interop tests (`docs/interop.md`) all have
-MNP: the Agere, PCTel, Motorola SM56, Conexant HSF and Broadcom modems'
-code has MNP 2 to 4 (the frames of V.42 (10/96) Annex A: LR, LA, LT, LN,
-LNA, LD) and MNP 5. With their defaults (V.250's `+ES=3,0,2`: V.42 with
-the detection phase, then MNP, then none) every call with us is V.42,
-and that is what MNP modems in general do: V.42 (1988) put LAPM first
-and took MNP 4 in as its Annex A, for the modems that had only that. Forced to MNP with `+ES` (`interop_call` by hand, the
-peer calling with `AT+MS=V34`, us answering with `AT+MS=34`):
+- The originator with V.42 (`\N2`, `\N3`, `+ES=3`) sends its LR when the
+  answerer sends no ADP within T400 (7.2.1.2/V.42: "may attempt to
+  detect the presence of an alternative error-correcting capability"),
+  or when its LAPM goes unanswered; not after an ADP saying no error
+  correction ("E" NUL). With MNP first or alone (`\N5`, `+ES=4`) it skips
+  the detection phase and sends its LR after 64 characters of marks.
+- The answerer takes an LR in the detection phase (SYN DLE STX among its
+  characters) as the start of the protocol phase (7.2.1.3/V.42); MNP's
+  framer takes the rest of the frame from there. With MNP allowed its
+  detection phase lasts three times T400 (2.25 s): the SM56 modem's
+  MNP sends its LR 1.1 s after the connection, and a V.42 originator its
+  LR after its ODPs (an answerer with MNP alone does not answer them).
+- With no LR answered at all (A.7.2.2) the call goes on without error
+  correction, unless error correction is required (`\N2`, `\N4`, `\N5`,
+  `+ES` with a required fallback): then the link fails (NO CARRIER).
 
-| The peer | Result |
-|---|---|
-| calls with MNP only (`+ES=4,4,6`): Agere, PCTel, SM56, HSF, Broadcom | NO CARRIER at the peer. It sends LR frames (start-stop framing: SYN DLE STX, the header, DLE ETX, the FCS); our answerer sees no ODP, goes to async after T400, and the LRs reach its DTE as data; the peer gives up |
-| calls with MNP first, then none (`+ES=4,0,2`): Agere | CONNECT, no error correction either side; two of its LRs reach our DTE ahead of the data |
-| answers with MNP only (`+ES=3,0,6`): Agere | CONNECT 33600 V44: it answers our ODPs with V.42 all the same |
+### The establishment
 
-Their LRs (A.6.4.1/V.42 (10/96)) offer bit-oriented framing (mode 3), 8
-outstanding LT frames, data phase optimization 3 (256-octet information
-fields and fixed-field LT and LA, that is MNP 4) and parameter 9, MNP 5
-compression (not in V.42): the Agere, PCTel and Broadcom modems with
-information fields of 64 octets, HSF of 256 (and parameter 9 = 0x1d),
-SM56's with a parameter 14 more (03 08 00 20) that looks like V.42bis's
-P0, P1 and P2 (3, 2048, 32).
+Our LR is the peers' octet for octet: framing mode 3, k = 8, N401 = 64
+and both data phase optimizations (the first, 256-octet information
+fields, the second fixed-field LT and LA), and parameter 9 = 1 (MNP 5)
+when we want MNP 5. The PCTel modem takes no LR with N401 256 (it drops
+the call 2 s later); the others offer 64 with the 256-octet
+optimization too (the HSF modem 256), and send and take LTs of 256
+octets once both have it. The responder answers with what was agreed
+(the lower mode, k and N401, the optimizations both have) and only the
+parameters the initiator's LR had and it knows; SM56's parameter 14
+(V.42bis's P0, P1, P2 in MNP: 3, 2048, 32) is passed over. The
+establishment exchange goes in start-stop octets, the data phase in
+HDLC frames (mode 3, LAPM's flags, zero insertion and FCS) or octets.
+An LR is sent three times (T401: 2 s and the time of three LRs); the
+responder whose LA is lost takes the initiator's first data phase frame
+for it.
 
-So an MNP modem that has V.42 (all of these) connects with us with
-LAPM; one with MNP only (modems from before V.42, 1988 and earlier, or
-one set so) connects without error correction or not at all. V.42
-(03/2002) deleted Annex A; its text, the published part of MNP, is in
-the superseded editions (V.42 (10/96), `T-REC-V.42-199610-S` at
-itu.int), which `docs/specs/fetch.sh` does not fetch.
+### The data phase
+
+LT frames carry the DTE's data (or MNP 5's), numbered modulo 256, up to
+k unacknowledged within the credit of the remote's last LA. We send an
+LA for an out-of-sequence LT (the first V(R) - 1 again ignored), a bad
+frame, k / 2 LTs unacknowledged, an LT when we have nothing to send,
+T402 (half of T401) and T404 (3 s, or 7 s below 2400 bit/s). While the
+DTE does not take an LT's data, the LA's credit is 0 and later LTs are
+discarded, until an LA with credit again. An LA with the N(R) of the
+last sends again from the first unacknowledged LT (the LAs the LTs sent
+after a lost one bring are passed over), as T401 does (k frames of
+N401 octets at the line's rate, and 1 s); twelve times (N400) without
+progress, then LD. An LN gets its LNA (the break is not passed to the
+DTE); we send none. We hang up with an LD (user-initiated, 255),
+released once it is out. The HSF modem sends LTs with no information
+now and then with MNP 5 (A.6.6.1 has none): they are taken in sequence.
+At the end of a call the log has the LTs sent, sent again and received.
+
+### MNP 5
+
+MNP 5 (`mnp5.h`) is as PCTel's code has it (`MnpCompress`,
+`MnpDecompress`, `MnpEncSort` in its `control.o`), and the Agere
+modem's octets decode with it and are what our encoder sends for the
+same text (`Link.Mnp5`):
+
+- Run-length coding: after three equal characters a count of those after
+  them (0 to 250; at 250 a new run starts).
+- Adaptive frequency coding: the characters ranked by how often they
+  came (a character moves up past those with fewer; all counts are
+  halved when the top one reaches 255), each sent as its rank's code: a
+  3-bit header h and h bits (1 for h = 0), ranks 0 and 1 `000x`, 2 and
+  3 `001x`, 4 to 7 `010xx` up to 128 to 255 `111xxxxxxx`, rank 255 with
+  a 0 after it. A count is coded as the rank of its value, outside the
+  ranking.
+- The codes fill each octet from its most significant bit; eleven 1s
+  are the flush, the rest of its octet 1s. The encoder flushes when the
+  DTE has nothing more (after characters since the last flush); the
+  stream goes on from one LT to the next.
+
+Text takes about two thirds, noise a little more (ranks of 128 and up
+take 10 bits). `%C1` and `%C3` offer it (parameter 9 of the LR).
+
+### With the peers
+
+`ctest -R mnp`: each of the five calls with MNP alone (`+ES=4,4,6`) and
+our default answerer takes its LR; we call with MNP alone (`\N5`) and it
+answers so (`+ES=3,0,6`); 20000 octets each way of text, binary octets,
+repeats and noise, with MNP 5 (and MNP 4 alone with the Agere modem).
+All in framing mode 3, k = 8, 256-octet LTs, without a retransmission
+on netsim's clean line.
+
+| The peer | It calls (MNP alone) | It answers (MNP alone) |
+|---|---|---|
+| Agere | CONNECT 33600 MNP5 | CONNECT 33600 MNP5 |
+| PCTel | CONNECT 115200 (MNP 5) | CONNECT 115200 (MNP 5) |
+| SM56 | CONNECT 33600/MNP/MNP5 | CONNECT 33600/MNP/MNP5 |
+| HSF | CONNECT 115200 (MNP 5) | CONNECT 115200 (MNP 5) |
+| Broadcom | CONNECT 33600/MNP/MNP5 | CONNECT 33600/MNP/MNP5 |
+
+With their defaults (`+ES=3,0,2`: V.42 with the detection phase, then
+MNP) every call with us is V.42, as with any modem that has V.42; MNP
+is for the modems that have only MNP (from before V.42, 1988 and
+earlier) or are set so. Our CONNECT messages (`AT&A`) say `Protocol:
+MNP` and `Compression: MNP5`.
 
 ### MNP 10 and 10EC
 
@@ -160,8 +246,8 @@ Supporting it is not feasible here:
   has a trace of MNP 10 or 10EC (no code, no strings, no `-SEC`
   command); they were in Rockwell and Conexant controller-based modems
   (RCV336ACF and such) and in cellular data devices.
-- MNP 10 is negotiated as an MNP 2 to 4 connection, which D-Modem has
-  not got.
+- MNP 10 is negotiated as an MNP 2 to 4 connection (which D-Modem now
+  has) with MNP 10's own parameters, unpublished.
 - Its use was data over analogue (AMPS) cellular, which is gone (in the
   US since 2008). Digital cellular voice codecs do not carry modem
   signals, and circuit-switched data had the network's own modems
@@ -176,12 +262,3 @@ passes over the "EM" ADPs and takes the "EC" after them (LAPM,
 a setup string written for a cellular-ready modem (CDS-9022's
 `AT&F;+MS=V32,1,4800,9600;-SEC=1,12;)M1;\N2`) ends in OK (the AT
 reference, "Setup strings from other modems").
-
-What could be done:
-
-- MNP 2 to 4 (Annex A of V.42 (10/96)) and MNP 5, for modems that have
-  MNP and not V.42; the five peers above would test it both ways. With
-  it the answerer would also take an LR in the detection phase as the
-  start of the protocol phase (7.2.1.3/V.42) instead of passing it to
-  its DTE.
-
