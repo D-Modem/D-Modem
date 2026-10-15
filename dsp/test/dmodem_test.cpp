@@ -4,7 +4,8 @@
  *    ways through their DTE socketpairs, several pairs in threads at once;
  *    retrains and rate renegotiations in the middle of the data; V.91
  *    across a G.711 network as it is, with robbed bits, a 3 dB pad, and
- *    mu-law to A-law; bulk data; and the same through dmodem.hpp
+ *    mu-law to A-law; bulk data; and through dmodem.hpp a call, and the
+ *    network's law for each of two calls the DTEs make
  *
  *    DMODEM_DEBUG=<level>   libdmodem's log
  */
@@ -20,6 +21,7 @@
 #include <array>
 #include <map>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -461,13 +463,25 @@ struct Dte {
 	}
 };
 
-/* a modem on mu-law named name, its DTE dte, its init string init */
-dm::Modem make(const char *name, Dte &dte, const std::string &init)
+/* the wrappers own their C objects: they move, they do not copy */
+static_assert(std::is_nothrow_move_constructible<dm::Modem>::value &&
+	      std::is_nothrow_move_assignable<dm::Modem>::value &&
+	      !std::is_copy_constructible<dm::Modem>::value &&
+	      !std::is_copy_assignable<dm::Modem>::value, "dm::Modem");
+static_assert(std::is_nothrow_move_constructible<dm::Fax>::value &&
+	      std::is_nothrow_move_assignable<dm::Fax>::value &&
+	      !std::is_copy_constructible<dm::Fax>::value &&
+	      !std::is_copy_assignable<dm::Fax>::value, "dm::Fax");
+
+/* a modem on law (mu-law if not given) named name, its DTE dte, its
+   init string init */
+dm::Modem make(const char *name, Dte &dte, const std::string &init,
+	       enum dmodem_law law = DMODEM_LAW_ULAW)
 {
 	dmodem_config c{};
 	c.name = name;
 	c.dte_fd = dte.modem_end();
-	c.law = DMODEM_LAW_ULAW;
+	c.law = law;
 	c.init = init.c_str();
 	return dm::Modem(c);
 }
@@ -516,4 +530,72 @@ TEST(DmodemCxx, TextBothWays)
 	EXPECT_NE(online, 0) << "never online";
 	EXPECT_EQ(got_a, msg);
 	EXPECT_EQ(got_b, msg);
+}
+
+/* the log lines (DmodemCxx.LawForEachCall) */
+static std::vector<std::string> log_lines;
+
+/* the network's law holds for each call, not only for the first or those
+   of dmodem_dial() and dmodem_answer(): two V.91 calls that the DTEs make
+   (ATA, ATD), the caller on mu-law, the answerer on A-law, each started
+   on the answerer's law (V.91's log says) at V.91's rate */
+TEST(DmodemCxx, LawForEachCall)
+{
+	const std::string init = "ATE0Q1X3+MS=91\r";
+
+	dm::init();
+	log_lines.clear();
+	dm::set_log([](const char *l) { log_lines.push_back(l); });
+	dm::set_debug(2);
+	Dte da, db;
+	dm::Modem a = make("caller", da, init, DMODEM_LAW_ULAW);
+	dm::Modem b = make("answerer", db, init, DMODEM_LAW_ALAW);
+	std::array<unsigned char, FRAME> ab, ba, oa, ob;
+	/* both on the line for frames of 20 ms, the octets converted; true
+	   once both are online */
+	auto line = [&](int frames) {
+		for (int i = 0; i < frames; i++) {
+			a.process_g711(ba.data(), oa.data(), FRAME);
+			b.process_g711(ab.data(), ob.data(), FRAME);
+			for (int k = 0; k < FRAME; k++) {
+				ab[k] = net_octet(NET_XLAW, oa[k], 0, 1, 0, 0);
+				ba[k] = net_octet(NET_XLAW, ob[k], 1, 0, 0, 0);
+			}
+			a.poll_dte();
+			b.poll_dte();
+			if (a.online() && b.online())
+				return true;
+		}
+		return false;
+	};
+
+	ab.fill(0xD5);
+	ba.fill(0xFF);
+	da.read_all();
+	db.read_all();
+	for (int call = 1; call <= 2; call++) {
+		db.write_str("ATA\r");
+		da.write_str("ATD\r");
+		bool online = line(25 * 50);
+		EXPECT_TRUE(online) << "call " << call << ": never online";
+		EXPECT_GE(a.status().tx_rate, 60000u) << "call " << call;
+		EXPECT_GE(a.status().rx_rate, 60000u) << "call " << call;
+		a.hangup();
+		b.hangup();
+		line(50);
+		da.read_all();
+		db.read_all();
+	}
+	dm::set_debug(getenv("DMODEM_DEBUG") ?
+		      atoi(getenv("DMODEM_DEBUG")) : 0);
+	dm::set_log(nullptr);
+	int alaw = 0, mulaw = 0;
+	for (auto &l : log_lines) {
+		if (l.find("v91: start, answerer, A-law") != std::string::npos)
+			alaw++;
+		if (l.find("v91: start, caller, mu-law") != std::string::npos)
+			mulaw++;
+	}
+	EXPECT_EQ(alaw, 2) << "the answerer's V.91 starts on A-law";
+	EXPECT_EQ(mulaw, 2) << "the caller's V.91 starts on mu-law";
 }

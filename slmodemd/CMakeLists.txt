@@ -4,9 +4,11 @@
 # data link layer (../link, dmodem_link).
 #
 #   DMODEM_FRONT_SRCS    the front ends' parts (options, pty, a modem on
-#                        two descriptors), for the 32 bit interop tests
+#                        two descriptors, the main loop, a line recorder),
+#                        for the 32 bit interop tests
 
-set(_front options.cpp pty.cpp datafile.cpp pipe_modem.cpp)
+set(_front options.cpp pty.cpp datafile.cpp pipe_modem.cpp run_loop.cpp
+	line_recorder.cpp)
 list(TRANSFORM _front PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
 set(DMODEM_FRONT_SRCS ${_front} PARENT_SCOPE)
 set(DMODEM_FRONT_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)

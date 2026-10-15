@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "dmodem.h"
+#include "dmodem_g711.h"
 #include "t30.h"
 
 using namespace dsp;
@@ -28,10 +29,6 @@ struct dmodem_fax {
 	int file_error;
 	char path[1024];
 };
-
-/* the G.711 coders of dmodem.cpp */
-extern int dmodem_g711_decode(int alaw, unsigned char c);
-extern unsigned char dmodem_g711_encode(int alaw, int x);
 
 /* T.30's next page to send: 1 with *p filled, 0 when there are no more
    (or on an error) */
@@ -109,19 +106,10 @@ void dmodem_fax_process(struct dmodem_fax *f, const short *in, short *out,
 void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
 			     unsigned char *out, int n)
 {
-	short li[160], lo[160];
-	int alaw = f->law == DMODEM_LAW_ALAW, i, k;
-	while (n > 0) {
-		k = n < 160 ? n : 160;
-		for (i = 0; i < k; i++)
-			li[i] = (short)dmodem_g711_decode(alaw, in[i]);
+	auto process = [f](const short *li, short *lo, int k) {
 		t30_process(f->t30, li, lo, k);
-		for (i = 0; i < k; i++)
-			out[i] = dmodem_g711_encode(alaw, lo[i]);
-		in += k;
-		out += k;
-		n -= k;
-	}
+	};
+	dmodem_g711_blocks(f->law == DMODEM_LAW_ALAW, in, out, n, process);
 }
 
 /* T.30's status; a file error makes it a failure (T30_ERR_FILE) */

@@ -471,6 +471,17 @@ bool Modem::link_tx_pending() const
 	return link_->tx_pending();
 }
 
+/* the network's G.711 law: to this call's pumps now, to the next ones'
+   as their runtime is made */
+void Modem::set_line_law(int law)
+{
+	if (law == line_law_)
+		return;
+	line_law_ = law;
+	if (dp_runtime_ && law)
+		dp_runtime_set_law(dp_runtime_, law);
+}
+
 /*
  *    the data pumps
  */
@@ -960,6 +971,8 @@ int Modem::start_call()
 		ret = -1;
 		goto error;
 	}
+	if (line_law_)
+		dp_runtime_set_law(dp_runtime_, line_law_);
 	{
 		dlink::Config c;
 		c.ec = cfg_.ec;

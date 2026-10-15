@@ -19,6 +19,7 @@
 #define DMODEM_CORE_DCORE_H
 
 #include <stdint.h>
+#include <time.h>
 
 #include <modem_defs.h>
 #include <modem_dp.h>
@@ -43,6 +44,14 @@ namespace dcore {
 
 class Modem;
 struct LinkOwner;
+
+/* CLOCK_MONOTONIC in ms (a Host's now_ms() on a real line) */
+inline unsigned long monotonic_ms()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1000UL + ts.tv_nsec / 1000000;
+}
 
 /* the program around the modem */
 class Host {
@@ -159,6 +168,9 @@ public:
 	   learn of the line over calls (the program keeps it) */
 	void *dp_runtime() const { return dp_runtime_; }
 	struct dsp_info &dsp_info() { return dsp_info_; }
+	/* the network's G.711 law for the pumps of this call and the next
+	   ones (dp_runtime_set_law: 1 mu-law, 2 A-law, 0 not known) */
+	void set_line_law(int law);
 
 	/* S-registers */
 	int sreg(unsigned num) const {
@@ -348,6 +360,7 @@ private:
 
 	/* the data pumps */
 	unsigned dp_requested_ = 0;
+	int line_law_ = 0;
 	Run run_ = Run::None;
 	struct dp *dp_ = nullptr;
 	void *dp_runtime_ = nullptr;

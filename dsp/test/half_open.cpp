@@ -27,9 +27,6 @@
 #define MODEM_RATE 9600
 #endif
 
-extern int dp_dummy_init(void);
-extern int dp_sinus_init(void);
-
 /* the modem (slmodemd's options: country, ...) on fds 3 and 4 until its
    line ends; PipeModem::run's result */
 int main(int argc, char *argv[])
@@ -42,8 +39,6 @@ int main(int argc, char *argv[])
 	dcore::log_level = 1;
 	slm::parse_options(argc, argv, opt);
 	dcore::log_open("half");
-	dp_dummy_init();
-	dp_sinus_init();
 	prop_dp_init();
 	slm::PipeModem *pm = new slm::PipeModem(name, MODEM_RATE, opt.country,
 						 3, 4);

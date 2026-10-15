@@ -1,0 +1,37 @@
+/*
+ *
+ *    dmodem_g711.h - libdmodem's G.711 calls (dmodem_process_g711,
+ *                    dmodem_fax_process_g711): the call's octets as 16
+ *                    bit linear samples, a block at a time
+ *
+ */
+#ifndef DMODEM_G711_H
+#define DMODEM_G711_H
+
+/* a G.711 octet (A-law if alaw, else mu-law) to 16 bit linear, and 16
+   bit linear to one (dmodem.cpp) */
+int dmodem_g711_decode(int alaw, unsigned char c);
+unsigned char dmodem_g711_encode(int alaw, int x);
+
+/* n octets in, n out: each block of up to 160 (20 ms) decoded, through
+   process(const short *in, short *out, int k), encoded */
+template <class Process>
+void dmodem_g711_blocks(int alaw, const unsigned char *in,
+			unsigned char *out, int n, Process process)
+{
+	short li[160], lo[160];
+
+	while (n > 0) {
+		int k = n < 160 ? n : 160;
+		for (int i = 0; i < k; i++)
+			li[i] = (short)dmodem_g711_decode(alaw, in[i]);
+		process(li, lo, k);
+		for (int i = 0; i < k; i++)
+			out[i] = dmodem_g711_encode(alaw, lo[i]);
+		in += k;
+		out += k;
+		n -= k;
+	}
+}
+
+#endif

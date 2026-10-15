@@ -18,8 +18,6 @@
 
 #include "script.h"
 
-int dp_dummy_init(void);
-int dp_sinus_init(void);
 extern void dmodem_run_timers(void *owner);
 extern void dmodem_set_time(unsigned long ticks);
 extern int modem_answer(struct modem *m);
@@ -155,8 +153,6 @@ void core_init()
 	if (getenv("CORE_DEBUG"))
 		modem_debug_level = dsplibs_debug_level =
 			atoi(getenv("CORE_DEBUG"));
-	dp_dummy_init();
-	dp_sinus_init();
 	prop_dp_init();
 	modem_timer_init();
 }

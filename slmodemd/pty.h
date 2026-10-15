@@ -66,6 +66,10 @@ public:
 	   its characters into the modem.  CLOSED: the DTE has just closed
 	   the slave. */
 	Read read(dcore::Modem &m);
+	/* it is readable: read(), and the DTE closing the slave with HUPCL
+	   hangs m up (with new_pty, a new pty then stands in for this one,
+	   as the next line would).  -1 on an error */
+	int serve(dcore::Modem &m, bool new_pty = false);
 
 	/* the modem's characters to the DTE */
 	int write(const char *buf, int n);

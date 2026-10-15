@@ -427,6 +427,26 @@ Pty::Read Pty::read(dcore::Modem &m)
 	return DATA;
 }
 
+/* see pty.h */
+int Pty::serve(dcore::Modem &m, bool new_pty)
+{
+	switch (read(m)) {
+	case CLOSED:
+		if (!hupcl())
+			return 0;
+		m.hangup();
+		if (new_pty && reopen() < 0) {
+			ERR("cannot re-create PTY.\n");
+			return -1;
+		}
+		return 0;
+	case ERROR:
+		return -1;
+	default:
+		return 0;
+	}
+}
+
 /* what the master took, 0 if nothing (full, or an error) */
 int Pty::write(const char *buf, int n)
 {

@@ -11,8 +11,6 @@
 
 #include "script.h"
 
-int dp_dummy_init(void);
-int dp_sinus_init(void);
 extern "C" int prop_dp_init(void);
 
 const char *core_kind = "new";
@@ -81,8 +79,6 @@ void core_init()
 {
 	if (getenv("CORE_DEBUG"))
 		dcore::log_level = atoi(getenv("CORE_DEBUG"));
-	dp_dummy_init();
-	dp_sinus_init();
 	prop_dp_init();
 }
 

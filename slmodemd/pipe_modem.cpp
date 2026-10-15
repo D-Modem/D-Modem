@@ -16,6 +16,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <vector>
+
 #include <log.h>
 
 #include "pipe_modem.h"
@@ -27,8 +29,6 @@ namespace slm {
 
 /* the core gets whole periods: the line's samples in frames of these */
 static const int HALF_FRAME = 48;
-
-static volatile sig_atomic_t keep_running = 1;
 
 /* the core at rate on the line in -> out, with a new pty for its DTE;
    PIPE_SYNC read here.  Exits if the pty or the core can't be made */
@@ -55,37 +55,28 @@ PipeModem::PipeModem(const char *name, int rate, const char *country,
 	DBG("created %s: %s\n", name, pty_.name());
 }
 
-/* the core, then the recordings */
+/* the core (the recordings close after it) */
 PipeModem::~PipeModem()
 {
 	delete m_;
-	if (rec_in_)
-		fclose((FILE *)rec_in_);
-	if (rec_out_)
-		fclose((FILE *)rec_out_);
 }
 
 /* the time in ms: the monotonic clock, or with PIPE_SYNC the line's */
 unsigned long PipeModem::now_ms()
 {
-	struct timespec ts;
 	if (sync_) {
 		/* the line's clock while it runs (the wall clock's while it
 		   does not), so that the timers meet it at the same samples */
 		long line_ms = (long)(samples_ * 1000 / rate_);
 		unsigned long t;
-		if (line_idle()) {
-			clock_gettime(CLOCK_MONOTONIC, &ts);
-			clock_off_ = (long)(ts.tv_sec * 1000L +
-					    ts.tv_nsec / 1000000) - line_ms;
-		}
+		if (line_idle())
+			clock_off_ = (long)dcore::monotonic_ms() - line_ms;
 		t = (unsigned long)(line_ms + clock_off_);
 		if (t < last_ms_)
 			t = last_ms_;
 		return last_ms_ = t;
 	}
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return ts.tv_sec * 1000UL + ts.tv_nsec / 1000000;
+	return dcore::monotonic_ms();
 }
 
 /* the silence ahead of everything on the line (PIPE_LEAD=<samples>,
@@ -162,6 +153,7 @@ int PipeModem::line(bool rd)
 	const int frame = HALF_FRAME * 2;
 	char *in = inbuf;
 	int count;
+	bool off_hook;
 
 	if (sync_ && samples_ >= next_sync_) {
 		next_sync_ += sync_;
@@ -207,7 +199,8 @@ pending:
 	/* no faster than the clock between calls as well: the line's
 	   silence goes round and round */
 	pace(count / 2);
-	if (m_->started() && sync_) {
+	off_hook = m_->started();
+	if (off_hook && sync_) {
 		/* a half frame at a time, with the timers in between: they
 		   meet the line at the same samples whatever the reads
 		   bring */
@@ -221,31 +214,20 @@ pending:
 				memset(outbuf + 2 * k, 0, 2 * len);
 			m_->poll();
 		}
-	} else if (m_->started()) {
+	} else if (off_hook)
 		m_->process((int16_t *)in, (int16_t *)outbuf, count / 2);
-		if (record_ && !rec_tried_) {
-			/* once: both files, or neither */
-			char name[256];
-			rec_tried_ = true;
-			snprintf(name, sizeof(name), "%s.in", record_);
-			rec_in_ = fopen(name, "wb");
-			snprintf(name, sizeof(name), "%s.out", record_);
-			rec_out_ = fopen(name, "wb");
-			if (!rec_in_ || !rec_out_) {
-				ERR("can't record to %s.in/.out\n", record_);
-				if (rec_in_)
-					fclose((FILE *)rec_in_);
-				if (rec_out_)
-					fclose((FILE *)rec_out_);
-				rec_in_ = rec_out_ = nullptr;
-			}
-		}
-		if (rec_in_ && rec_out_) {
-			fwrite(in, 1, count, (FILE *)rec_in_);
-			fwrite(outbuf, 1, count, (FILE *)rec_out_);
-		}
-	} else
+	else
 		memset(outbuf, 0, count);
+	/* MODEM_REC: the line while off hook */
+	if (off_hook && record_) {
+		if (!rec_tried_) {
+			/* once: both files, or neither */
+			rec_tried_ = true;
+			rec_.open(record_, ".in", ".out");
+		}
+		rec_.rx(in, count);
+		rec_.tx(outbuf, count);
+	}
 	count = write(out_, outbuf, count);
 	if (count < 0) {
 		ERR("dev write: %s\n", strerror(errno));
@@ -260,17 +242,10 @@ pending:
 	return 0;
 }
 
-/* SIGINT, SIGTERM: run() returns */
-static void mark_termination(int signum)
-{
-	(void)signum;
-	keep_running = 0;
-}
-
 /* run() returns at its next turn */
 void PipeModem::stop()
 {
-	keep_running = 0;
+	RunLoop::stop();
 }
 
 /* PIPE_SYNC: no line samples for 0.5 s (no call yet, nothing flows): the
@@ -289,16 +264,17 @@ void PipeModem::dte_input()
 	if (!pty_.want_read(*m_) || poll(&p, 1, 0) <= 0)
 		return;
 	DBG("DTE input at line sample %ld\n", samples_);
-	if (pty_.read(*m_) == Pty::CLOSED && pty_.hupcl())
-		m_->hangup();
+	pty_.serve(*m_);
 }
 
 /* select() on the lines and the ptys of the n modems, their timers in
    between; 0 once stopped, -1 on an error */
 int PipeModem::run(PipeModem **modems, int n)
 {
-	signal(SIGINT, mark_termination);
-	signal(SIGTERM, mark_termination);
+	RunLoop loop;
+	std::vector<dcore::Modem *> m(n);
+
+	RunLoop::catch_signals();
 	/* with PIPE_SYNC the line runs from the start (on hook in real
 	   time): the DTE's commands then meet it at its periods from the
 	   first, and a call starts at the same sample every time, not
@@ -307,64 +283,39 @@ int PipeModem::run(PipeModem **modems, int n)
 	for (int i = 0; i < n; i++)
 		if (modems[i]->sync_ && modems[i]->lead() < 0)
 			return -1;
-	while (keep_running) {
-		struct timeval tmo;
-		fd_set rset;
-		int max_fd = 0, ret;
-		long next = 1000;
+	for (int i = 0; i < n; i++)
+		m[i] = modems[i]->m_;
+	while (RunLoop::running()) {
+		long next = RunLoop::poll(m.data(), n);
+		int ret;
 
-		for (int i = 0; i < n; i++) {
-			long t;
-			modems[i]->m_->poll();
-			t = modems[i]->m_->next_timer_ms();
-			if (t >= 0 && t < next)
-				next = t;
-		}
-		tmo.tv_sec = next / 1000;
-		tmo.tv_usec = next % 1000 * 1000;
-		FD_ZERO(&rset);
+		loop.clear();
 		for (int i = 0; i < n; i++) {
 			PipeModem *p = modems[i];
-			FD_SET(p->in_, &rset);
-			if (p->in_ > max_fd)
-				max_fd = p->in_;
+			loop.watch(p->in_);
 			/* with PIPE_SYNC, commands only at the line's
 			   periods; data (carrier up) at once */
 			if ((!p->sync_ || p->line_idle() ||
 			     p->m_->carrier()) &&
-			    p->pty_.want_read(*p->m_)) {
-				FD_SET(p->pty_.fd(), &rset);
-				if (p->pty_.fd() > max_fd)
-					max_fd = p->pty_.fd();
-			}
+			    p->pty_.want_read(*p->m_))
+				loop.watch(p->pty_.fd());
 		}
-		ret = select(max_fd + 1, &rset, NULL, NULL, &tmo);
+		ret = loop.wait(next);
 		if (ret < 0) {
-			if (errno == EINTR)
-				continue;
 			ERR("select: %s\n", strerror(errno));
 			return ret;
 		}
 		if (ret == 0)
 			continue;
 		for (int i = 0; i < n; i++)
-			if (FD_ISSET(modems[i]->in_, &rset) &&
+			if (loop.ready(modems[i]->in_) &&
 			    modems[i]->line() < 0)
 				return -1;
 		for (int i = 0; i < n; i++) {
 			PipeModem *p = modems[i];
-			if (!FD_ISSET(p->pty_.fd(), &rset))
-				continue;
-			switch (p->pty_.read(*p->m_)) {
-			case Pty::CLOSED:
-				if (p->pty_.hupcl())
-					p->m_->hangup();
-				break;
-			case Pty::ERROR:
+			if (loop.ready(p->pty_.fd()) &&
+			    p->pty_.serve(*p->m_) < 0)
 				return -1;
-			default:
-				break;
-			}
 		}
 	}
 	return 0;

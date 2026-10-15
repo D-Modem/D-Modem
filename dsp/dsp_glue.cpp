@@ -18,15 +18,23 @@
 
 using namespace dsp;
 
+/* slmodemd's own pumps without a modulation (dp_dummy.cpp, dp_sinus.cpp) */
+extern int  dp_dummy_init(void);
+extern void dp_dummy_exit(void);
+extern int  dp_sinus_init(void);
+extern void dp_sinus_exit(void);
 
 
 /*
  *    data pumps
  */
 
-/* registers all the open data pumps with the core; always 0 */
+/* registers all the open data pumps with the core, and the dummy and
+   sinus test pumps; always 0 */
 int prop_dp_init(void)
 {
+	dp_dummy_init();
+	dp_sinus_init();
 	dp_callprog_init();
 	dp_fsk_init();
 	dp_v22_init();
@@ -38,6 +46,8 @@ int prop_dp_init(void)
 /* deregisters them */
 void prop_dp_exit(void)
 {
+	dp_dummy_exit();
+	dp_sinus_exit();
 	dp_callprog_exit();
 	dp_fsk_exit();
 	dp_v22_exit();
@@ -188,7 +198,7 @@ void *dp_runtime_create(struct modem *m)
 	return rt;
 }
 
-/* the G.711 law of the network (dmodem.cpp) */
+/* the G.711 law of the network (dcore::Modem::set_line_law()) */
 void dp_runtime_set_law(void *runtime, int law)
 {
 	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);

@@ -19,10 +19,8 @@
 #include <dcore.h>
 #include <log.h>
 #include "dmodem.h"
+#include "dmodem_g711.h"
 #include "dsplibs.h"
-
-extern int  dp_dummy_init(void);
-extern int  dp_sinus_init(void);
 
 /* a calling fax machine's CNG: 1100 Hz, 0.5 s on, 3 s off */
 struct cng_detect {
@@ -35,7 +33,6 @@ struct dmodem final : public dcore::Host {
 	dcore::Modem *m = nullptr;
 	int dte_fd = -1;
 	enum dmodem_law law = DMODEM_LAW_UNKNOWN;
-	int law_set = 0;
 	unsigned long long samples = 0; /* the modem's clock: its audio */
 	char name[32] = {};
 	struct cng_detect cng = {};
@@ -135,14 +132,13 @@ static int alaw2lin(unsigned char a)
 	return (a & 0x80) ? t : -t;
 }
 
-/* for dmodem_fax.cpp: a G.711 octet (A-law if alaw, else mu-law) to
-   16 bit linear */
+/* see dmodem_g711.h */
 int dmodem_g711_decode(int alaw, unsigned char c)
 {
 	return alaw ? alaw2lin(c) : ulaw2lin(c);
 }
 
-/* and 16 bit linear to a G.711 octet */
+/* see dmodem_g711.h */
 unsigned char dmodem_g711_encode(int alaw, int x)
 {
 	return alaw ? lin2alaw(x) : lin2ulaw(x);
@@ -193,8 +189,6 @@ static pthread_once_t init_once = PTHREAD_ONCE_INIT;
 /* the data pumps registered (once: pthread_once) */
 static void init_all(void)
 {
-	dp_dummy_init();
-	dp_sinus_init();
 	prop_dp_init();
 }
 
@@ -240,6 +234,8 @@ struct dmodem *dmodem_create(const struct dmodem_config *cfg)
 		delete d;
 		return NULL;
 	}
+	/* (enum dmodem_law is the pumps' code: 1 mu-law, 2 A-law) */
+	d->m->set_line_law(d->law);
 	if (cfg->init) {
 		d->m->dte_input(cfg->init, strlen(cfg->init));
 		d->m->poll();
@@ -258,11 +254,9 @@ void dmodem_destroy(struct dmodem *d)
 	delete d;
 }
 
-/* ATA: the core's answer(); the law goes to the pumps again with the
-   next block */
+/* ATA: the core's answer() */
 int dmodem_answer(struct dmodem *d)
 {
-	d->law_set = 0;
 	return d->m->answer();
 }
 
@@ -274,7 +268,6 @@ int dmodem_dial(struct dmodem *d, const char *number)
 	int n = snprintf(cmd, sizeof(cmd), "ATD%s\r", number);
 	if (n < 0 || n >= (int)sizeof(cmd))
 		return -1;
-	d->law_set = 0;
 	d->m->dte_input(cmd, n);
 	d->m->poll();
 	return 0;
@@ -287,17 +280,13 @@ void dmodem_hangup(struct dmodem *d)
 	d->m->poll();
 }
 
-/* n samples of the line: the law to the pumps once they exist, the CNG
-   detector while not online, the core (silence out while on hook); the
-   clock moves by n samples and the timers run */
+/* n samples of the line: the CNG detector while not online, the core
+   (silence out while on hook); the clock moves by n samples and the
+   timers run */
 void dmodem_process(struct dmodem *d, const short *in, short *out, int n)
 {
 	dcore::Modem *m = d->m;
 
-	if (!d->law_set && m->dp_runtime()) {
-		dp_runtime_set_law(m->dp_runtime(), d->law);
-		d->law_set = 1;
-	}
 	/* a fax machine calling, while there is no connection */
 	if (m->link_state() != dcore::LinkState::Online) {
 		int i;
@@ -316,21 +305,10 @@ void dmodem_process(struct dmodem *d, const short *in, short *out, int n)
 void dmodem_process_g711(struct dmodem *d, const unsigned char *in,
 			 unsigned char *out, int n)
 {
-	short lin_in[160], lin_out[160];
-	int alaw = d->law == DMODEM_LAW_ALAW, i, k;
-
-	while (n > 0) {
-		k = n < 160 ? n : 160;
-		for (i = 0; i < k; i++)
-			lin_in[i] = alaw ? alaw2lin(in[i]) : ulaw2lin(in[i]);
-		dmodem_process(d, lin_in, lin_out, k);
-		for (i = 0; i < k; i++)
-			out[i] = alaw ? lin2alaw(lin_out[i]) :
-				lin2ulaw(lin_out[i]);
-		in += k;
-		out += k;
-		n -= k;
-	}
+	auto process = [d](const short *li, short *lo, int k) {
+		dmodem_process(d, li, lo, k);
+	};
+	dmodem_g711_blocks(d->law == DMODEM_LAW_ALAW, in, out, n, process);
 }
 
 /* what the DTE wrote, up to the room the core has (1024 at most): the

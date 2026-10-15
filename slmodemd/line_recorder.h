@@ -1,0 +1,48 @@
+/*
+ *
+ *    line_recorder.h - a call's line audio in two raw files, as the
+ *                      front end passes it: what the modem receives and
+ *                      what it sends (PipeModem's MODEM_REC, the SIP
+ *                      user agent's DMODEM_REC)
+ *
+ */
+#ifndef SLMODEMD_LINE_RECORDER_H
+#define SLMODEMD_LINE_RECORDER_H
+
+#include <stddef.h>
+#include <stdio.h>
+
+namespace slm {
+
+class LineRecorder {
+public:
+	LineRecorder() = default;
+	/* close() */
+	~LineRecorder() { close(); }
+	LineRecorder(const LineRecorder &) = delete;
+	LineRecorder &operator=(const LineRecorder &) = delete;
+
+	/* <base><rx_ext> and <base><tx_ext>: both, or neither (false, with
+	   a message) */
+	bool open(const char *base, const char *rx_ext, const char *tx_ext);
+	/* the files closed, if open */
+	void close();
+	/* n bytes the modem received, and n it sent (if open) */
+	void rx(const void *buf, size_t n)
+	{
+		if (rx_)
+			fwrite(buf, 1, n, rx_);
+	}
+	void tx(const void *buf, size_t n)
+	{
+		if (tx_)
+			fwrite(buf, 1, n, tx_);
+	}
+
+private:
+	FILE *rx_ = nullptr, *tx_ = nullptr;
+};
+
+} // namespace slm
+
+#endif

@@ -12,7 +12,7 @@
  *    Audio: 16 bit linear at 8000 Hz, any number of samples per call, the
  *    same number in and out.  For V.90 (the digital modem) the samples go
  *    to the network's G.711 encoder unchanged: give the law in the
- *    configuration.
+ *    configuration (it holds for each call of the modem).
  *
  *    C++: dmodem.hpp wraps this in classes.
  *

@@ -22,11 +22,6 @@
 #define MODEM_RATE 9600
 #endif
 
-extern int  dp_dummy_init(void);
-extern void dp_dummy_exit(void);
-extern int  dp_sinus_init(void);
-extern void dp_sinus_exit(void);
-
 /* modemA and modemB back to back on two pipes until SIGINT or SIGTERM */
 int main(int argc, char *argv[])
 {
@@ -37,8 +32,6 @@ int main(int argc, char *argv[])
 	slm::parse_options(argc, argv, opt);
 	dcore::log_open("test");
 	slm::print_version();
-	dp_dummy_init();
-	dp_sinus_init();
 	prop_dp_init();
 	if (pipe(pipe1) < 0 || pipe(pipe2) < 0) {
 		perror("pipe");
@@ -52,8 +45,6 @@ int main(int argc, char *argv[])
 		a.pty().name(), b.pty().name());
 	slm::PipeModem *modems[] = { &a, &b };
 	ret = slm::PipeModem::run(modems, 2);
-	dp_dummy_exit();
-	dp_sinus_exit();
 	prop_dp_exit();
 	dcore::log_close();
 	return ret;

@@ -14,7 +14,9 @@
 
 #include <dcore.h>
 
+#include "line_recorder.h"
 #include "pty.h"
+#include "run_loop.h"
 
 namespace slm {
 
@@ -86,8 +88,8 @@ private:
 	/* PIPE_SYNC: the DTE's input at a sync point */
 	void dte_input();
 	const char *record_ = nullptr;
-	void *rec_in_ = nullptr, *rec_out_ = nullptr;
-	bool rec_tried_ = false;        /* the files opened (or not) */
+	LineRecorder rec_;
+	bool rec_tried_ = false;        /* rec_ opened (or not) */
 	double clock_start_ = 0, clock_done_ = 0;
 	double clock_speed_ = 0;        /* what pace() last went at */
 };

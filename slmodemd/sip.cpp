@@ -56,6 +56,7 @@
 
 #include <pjsua-lib/pjsua.h>
 
+#include "line_recorder.h"
 #include "sip.h"
 
 namespace sip {
@@ -112,7 +113,7 @@ int ctl[2] = {-1, -1};                  /* RING / CANCEL to the modem */
 std::thread service;
 std::atomic<bool> running{false};
 
-FILE *rec_rx, *rec_tx;
+slm::LineRecorder rec;                  /* $DMODEM_REC.rx and .tx */
 
 /* calls into pjsua from a thread of ours */
 void pj_register_thread()
@@ -131,8 +132,7 @@ pj_status_t put_frame(pjmedia_port *p, pjmedia_frame *frame)
 	CallPort *cp = reinterpret_cast<CallPort *>(p);
 	if (frame->type != PJMEDIA_FRAME_TYPE_AUDIO)
 		return PJ_SUCCESS;
-	if (rec_rx)
-		fwrite(frame->buf, 1, frame_bytes, rec_rx);
+	rec.rx(frame->buf, frame_bytes);
 	if (write(cp->sock, frame->buf, frame_bytes) != frame_bytes)
 		cp->failed = true;
 	return PJ_SUCCESS;
@@ -148,8 +148,7 @@ pj_status_t get_frame(pjmedia_port *p, pjmedia_frame *frame)
 		cp->failed = true;
 		memset(frame->buf, 0, frame_bytes);
 	}
-	if (rec_tx)
-		fwrite(frame->buf, 1, frame_bytes, rec_tx);
+	rec.tx(frame->buf, frame_bytes);
 	frame->size = frame_bytes;
 	frame->timestamp.u64 = cp->timestamp.u64;
 	frame->type = PJMEDIA_FRAME_TYPE_AUDIO;
@@ -504,11 +503,8 @@ bool config_from_env(Config &c, bool listen)
 int start(const Config &config)
 {
 	cfg = config;
-	if (cfg.record) {
-		std::string n = cfg.record;
-		rec_rx = fopen((n + ".rx").c_str(), "wb");
-		rec_tx = fopen((n + ".tx").c_str(), "wb");
-	}
+	if (cfg.record)
+		rec.open(cfg.record, ".rx", ".tx");
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, ctl) || pipe(wake)) {
 		perror("sip: socketpair");
 		return -1;
@@ -602,11 +598,7 @@ void stop()
 		service.join();
 	}
 	pjsua_destroy();
-	if (rec_rx)
-		fclose(rec_rx);
-	if (rec_tx)
-		fclose(rec_tx);
-	rec_rx = rec_tx = NULL;
+	rec.close();
 }
 
 /* a DIAL request (number NULL: an empty one) */

@@ -19,8 +19,6 @@
 #include <log.h>
 #include <modem_param.h>
 
-int dp_dummy_init(void);
-int dp_sinus_init(void);
 extern "C" int prop_dp_init(void);
 
 using dcore::LinkState;
@@ -29,8 +27,6 @@ using dcore::Modem;
 /* the data pumps, once for the program */
 static struct Pumps {
 	Pumps() {
-		dp_dummy_init();
-		dp_sinus_init();
 		prop_dp_init();
 	}
 } pumps;

@@ -48,6 +48,7 @@
 #include "datafile.h"
 #include "options.h"
 #include "pty.h"
+#include "run_loop.h"
 #include "sip.h"
 
 #define INFO(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)
@@ -60,36 +61,13 @@
 
 #define RATE 8000
 
-extern int  dp_dummy_init(void);
-extern void dp_dummy_exit(void);
-extern int  dp_sinus_init(void);
-extern void dp_sinus_exit(void);
-
 namespace {
-
-volatile sig_atomic_t keep_running = 1;
-
-/* SIGINT, SIGTERM: the main loop ends */
-void mark_termination(int signum)
-{
-	(void)signum;
-	keep_running = 0;
-}
-
-/* CLOCK_MONOTONIC in ms */
-unsigned long monotonic_ms()
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return ts.tv_sec * 1000UL + ts.tv_nsec / 1000000;
-}
 
 /* the line: a SIP call's audio socket, while the modem is off hook */
 struct Slmodemd final : public dcore::Host {
 	slm::Pty pty;
 	dcore::Modem *m = nullptr;
 	int fd = -1;            /* the call's audio */
-	int law_set = 0;
 
 	/* off hook: a socketpair for the call's audio, one end to the SIP user
 	   agent (dial, or answer the call that rings), ours primed with 20 ms
@@ -107,7 +85,6 @@ struct Slmodemd final : public dcore::Host {
 			sip::answer(sockets[0]);
 		/* prime the socket with a frame (20 ms) */
 		fd = sockets[1];
-		law_set = 0;
 		short silence[RATE / 50] = {};
 		ret = ::write(fd, silence, sizeof(silence));
 		if (ret < 0) {
@@ -134,7 +111,7 @@ struct Slmodemd final : public dcore::Host {
 		return pty.write(buf, n);
 	}
 	/* the monotonic clock */
-	unsigned long now_ms() override { return monotonic_ms(); }
+	unsigned long now_ms() override { return dcore::monotonic_ms(); }
 
 	int run(int ctl_fd);
 	int audio();
@@ -186,10 +163,9 @@ int Slmodemd::audio()
 		return 0;
 	}
 	count /= 2;
-	if (!law_set && m->dp_runtime() && sip::law()) {
-		dp_runtime_set_law(m->dp_runtime(), sip::law());
-		law_set = 1;
-	}
+	/* the call's G.711 law, once SIP has it */
+	if (sip::law())
+		m->set_line_law(sip::law());
 	m->process(in, out, count);
 	if (fd < 0) {
 		DBG("closed connection to child socket process\n");
@@ -207,66 +183,34 @@ int Slmodemd::audio()
    error */
 int Slmodemd::run(int ctl_fd)
 {
-	while (keep_running) {
-		struct timeval tmo;
-		fd_set rset;
-		int max_fd = -1, ret;
-		long next;
+	slm::RunLoop loop;
 
-		m->poll();
-		next = m->next_timer_ms();
-		if (next < 0 || next > 1000)
-			next = 1000;
-		tmo.tv_sec = next / 1000;
-		tmo.tv_usec = next % 1000 * 1000;
-		FD_ZERO(&rset);
-		if (m->started() && fd >= 0) {
-			FD_SET(fd, &rset);
-			max_fd = fd;
-		}
-		if (ctl_fd >= 0) {
-			FD_SET(ctl_fd, &rset);
-			if (ctl_fd > max_fd)
-				max_fd = ctl_fd;
-		}
-		if (pty.want_read(*m)) {
-			FD_SET(pty.fd(), &rset);
-			if (pty.fd() > max_fd)
-				max_fd = pty.fd();
-		}
-		ret = select(max_fd + 1, &rset, NULL, NULL, &tmo);
+	while (slm::RunLoop::running()) {
+		long next = slm::RunLoop::poll(&m, 1);
+		int ret;
+
+		loop.clear();
+		if (m->started() && fd >= 0)
+			loop.watch(fd);
+		if (ctl_fd >= 0)
+			loop.watch(ctl_fd);
+		if (pty.want_read(*m))
+			loop.watch(pty.fd());
+		ret = loop.wait(next);
 		if (ret < 0) {
-			if (errno == EINTR)
-				continue;
 			ERR("select: %s\n", strerror(errno));
 			return ret;
 		}
 		if (ret == 0)
 			continue;
-		if (ctl_fd >= 0 && FD_ISSET(ctl_fd, &rset) &&
-		    ctl_read(ctl_fd) < 0)
+		if (loop.ready(ctl_fd) && ctl_read(ctl_fd) < 0)
 			return -1;
-		if (fd >= 0 && FD_ISSET(fd, &rset) && audio() < 0)
+		if (loop.ready(fd) && audio() < 0)
 			return -1;
-		if (FD_ISSET(pty.fd(), &rset)) {
-			switch (pty.read(*m)) {
-			case slm::Pty::CLOSED:
-				/* the DTE closed the slave: with HUPCL, that
-				   hangs up, and a new pty simulates it */
-				if (pty.hupcl()) {
-					m->hangup();
-					if (pty.reopen() < 0) {
-						ERR("cannot re-create PTY.\n");
-						return -1;
-					}
-				}
-				break;
-			case slm::Pty::ERROR:
-				return -1;
-			default:
-				break;
-			}
-		}
+		/* the DTE closing the slave with HUPCL hangs up, and a new
+		   pty simulates it */
+		if (loop.ready(pty.fd()) && pty.serve(*m, true) < 0)
+			return -1;
 	}
 	return 0;
 }
@@ -339,8 +283,6 @@ int main(int argc, char *argv[])
 	dcore::log_open(name);
 	slm::print_version();
 
-	dp_dummy_init();
-	dp_sinus_init();
 	prop_dp_init();
 
 	/* the device's number names the link: /dev/ttySL0 for /dev/slamr0 */
@@ -391,8 +333,7 @@ int main(int argc, char *argv[])
 		DBG("rt applyed: SCHED_FIFO, pri %d\n", prm.sched_priority);
 	}
 
-	signal(SIGINT, mark_termination);
-	signal(SIGTERM, mark_termination);
+	slm::RunLoop::catch_signals();
 	signal(SIGPIPE, SIG_IGN);
 
 	/* started as root: on as SLMODEMD_USER; otherwise there is nothing
@@ -424,8 +365,6 @@ int main(int argc, char *argv[])
 	usleep(100000);
 	s.pty.close();
 
-	dp_dummy_exit();
-	dp_sinus_exit();
 	prop_dp_exit();
 	dcore::log_close();
 	free(dev);
