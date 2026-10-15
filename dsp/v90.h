@@ -7,6 +7,8 @@
 #ifndef V90_H
 #define V90_H
 
+#include <string.h>
+
 #include "v34.h"
 
 namespace dsp {
@@ -157,6 +159,118 @@ struct V90Tx {
 	int diff_bit(int bit);
 	int dil_sample();
 	int sample();
+};
+
+/* what the digital modem's encoder sends in phase 4 and data mode:
+   TRN2d, a sequence (V.90's MP, V.92's CPd or SUVd) until the remote
+   acknowledges it, Ed, then B1d and data, or the silence the remote
+   asked for in a renegotiation */
+enum pcm_fmode { PCM_TRN, PCM_SEQ, PCM_ED, PCM_B1, PCM_DATA, PCM_SIL };
+
+#define PCM_SEQ_MAX     8192
+
+/* the frames of D bits for V90Tx (its get_frame, pcm_frame_cb, with the
+   host as ctx), in that order.  The host H has
+ *
+ *     void fs_reinit(V90Tx *t)         before each frame: the encoder
+ *                                      on other constellations (and D)
+ *                                      when they changed
+ *     const V90Cp *fs_data_cp()        the data mode's constellations
+ *     void fs_seq_next(int first)      the next sequence into seq[]
+ *                                      (first: after TRN2d)
+ *     bool fs_acked()                  the remote acknowledged ours
+ *     bool fs_silence()                a silence after Ed
+ *     void fs_data(unsigned char *b, int n)    the data bits
+ *
+ * and may have fs_seq_frame() (a frame of the sequence went out),
+ * fs_to_ed() and fs_ed_end() */
+template <class H>
+struct PcmFrames {
+	enum pcm_fmode fmode;
+	long fcount;            /* frames in the mode */
+	int D;                  /* bits per frame */
+	unsigned char seq[PCM_SEQ_MAX]; /* one bit each, in whole frames */
+	int seq_len, seq_pos;
+	int seq_ack;            /* the sequence acknowledges the remote's */
+	int ack_sent;           /* one that did went out */
+
+	/* V90Tx's get_frame */
+	static void pcm_frame_cb(void *ctx, V90Tx *t, unsigned char *b,
+				 int *last)
+	{
+		static_cast<H*>(ctx)->PcmFrames::pcm_frame(t, b, last);
+	}
+
+	void fs_seq_frame() {}
+	void fs_to_ed() {}
+	void fs_ed_end() {}
+
+	/* the next frame into b; *last at the end of Ed (the encoder
+	   starts again after it) */
+	void pcm_frame(V90Tx *t, unsigned char *b, int *last)
+	{
+		H &h = static_cast<H&>(*this);
+
+		h.fs_reinit(t);
+		if (fmode == PCM_B1 && fcount == 0) {
+			/* B1d with the data mode parameters, from cleared
+			   scrambler, signs and shaping filter */
+			const V90Cp *cp = h.fs_data_cp();
+			D = cp->drn + 20;
+			t->enc.init(cp, D, t->lin);
+		}
+		fcount++;
+		switch (fmode) {
+		case PCM_TRN:
+			memset(b, 1, D);
+			/* TRN2d: 2160 symbols */
+			if (fcount >= 360) {
+				fmode = PCM_SEQ;
+				h.fs_seq_next(1);
+			}
+			break;
+		case PCM_SEQ:
+			memcpy(b, seq + seq_pos, D);
+			seq_pos += D;
+			h.fs_seq_frame();
+			if (seq_pos < seq_len)
+				break;
+			if (seq_ack)
+				ack_sent = 1;
+			if (ack_sent && h.fs_acked()) {
+				h.fs_to_ed();
+				fmode = PCM_ED;
+				fcount = 0;
+			} else
+				h.fs_seq_next(0);
+			break;
+		case PCM_ED:
+			/* 2 frames of zeros */
+			memset(b, 0, D);
+			if (fcount >= 2) {
+				*last = 1;
+				fcount = 0;
+				if (h.fs_silence()) {
+					fmode = PCM_SIL;
+					t->sil_req = 1;
+				} else
+					fmode = PCM_B1;
+				h.fs_ed_end();
+			}
+			break;
+		case PCM_SIL:
+			memset(b, 0, D);
+			break;
+		case PCM_B1:
+			memset(b, 1, D);
+			if (fcount >= 48)
+				fmode = PCM_DATA;
+			break;
+		case PCM_DATA:
+			h.fs_data(b, D);
+			break;
+		}
+	}
 };
 
 /* the length of a CP frame up to the end of its CRC from its first 129

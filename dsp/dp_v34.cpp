@@ -189,10 +189,6 @@ enum v34_state {
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
 };
 
-/* what the digital modem's encoder sends in phase 4 and data mode */
-enum v90_fmode { F_TRN, F_MP, F_ED, F_B1, F_DATA,
-		  F_SIL };       /* silence in a renegotiation (CPs) */
-
 enum v34_txm {
 	TXM_SILENCE,
 	TXM_ANSAM,
@@ -315,7 +311,8 @@ struct V34Echo {
 
 #define V34_FIFO        8
 
-struct V34Pump : PumpBase<V34Pump, v34_state> {
+/* (PcmFrames: V.90's phase 4 frames, MP the sequence) */
+struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump> {
 	static constexpr const char *name = "V.8/V.34 data pump";
 
 	/* (frees what the receiver holds) */
@@ -347,12 +344,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state> {
 	int pcm_tx;             /* our output from it */
 	int sbar_seen;
 	V90Cp cpt, cp;  /* the analogue modem's CPt and CP */
-	enum v90_fmode fmode;   /* phase 4: the encoder's frames */
-	long fcount;
-	unsigned char mpb[256]; /* our MP, filled to whole frames */
-	int mp_len, mp_pos, mp_ack, mp_ack_sent;
 	int mp_h[6];            /* V.90: the precoder our last MP asked for */
-	int D;                  /* bits per data frame */
 	int up_n;               /* upstream rate, 2400 bit/s units */
 	/* V.90 rate renegotiation (9.6/V.90) */
 	int v90_rn_init;        /* the encoder starts on CPt again */
@@ -511,6 +503,13 @@ struct V34Pump : PumpBase<V34Pump, v34_state> {
 	int reneg_to;           /* test: to this rate (N) */
 
 	const char *tag() const { return "v34"; }
+	void fs_reinit(V90Tx *t);
+	const V90Cp *fs_data_cp();
+	void fs_seq_next(int first);
+	bool fs_acked();
+	bool fs_silence();
+	void fs_ed_end();
+	void fs_data(unsigned char *b, int n);
 	void set_state(enum v34_state s);
 	void make_info0(BitQ *q);
 	void make_info1c(BitQ *q);
@@ -2338,7 +2337,7 @@ void V34Pump::v90_make_mp(int ack)
 	/* the precoder once for the exchange: every MP of it asks for the
 	   same (the analogue modem may take the first, or the last), and
 	   the data mode receiver takes it */
-	if (!mp_len) {
+	if (!seq_len) {
 		float gain = prx.precoder(mp_h);
 		DSP_DBG("v34: V.90 precoding would gain %.2f dB (over %ld "
 			"symbols): h %d %d %d %d %d %d\n", gain, prx.err_n,
@@ -2346,88 +2345,57 @@ void V34Pump::v90_make_mp(int ack)
 		if (gain < precode_min)
 			memset(mp_h, 0, sizeof(mp_h));
 	}
-	mp_len = v90_mp_build(mpb, max_rate_rx, V34_TRELLIS, 1, ack,
+	seq_len = v90_mp_build(seq, max_rate_rx, V34_TRELLIS, 1, ack,
 				 0x1FFF, mp_h);
-	while (mp_len % D)
-		mpb[mp_len++] = 0;
-	mp_pos = 0;
-	mp_ack = ack;
+	while (seq_len % D)
+		seq[seq_len++] = 0;
+	seq_pos = 0;
+	seq_ack = ack;
 }
 
-/* the next D bits of the digital modem's data frames */
-static void v90_get_frame(void *ctx, V90Tx *t, unsigned char *b,
-			  int *last)
+/* PcmFrames' hooks for V.90 (the digital modem's data frames): after
+   Rd or Rt, TRN2d, MP and Ed on CPt's constellations, from cleared
+   scrambler and filters */
+void V34Pump::fs_reinit(V90Tx *t)
 {
-	V34Pump *v = static_cast<V34Pump*>(ctx);
-	int D;
+	if (v90_rn_init) {
+		v90_rn_init = 0;
+		D = cpt.drn + 8;
+		t->enc.init(&cpt, D, t->lin);
+	}
+}
 
-	if (v->v90_rn_init) {
-		/* after Rd or Rt: TRN2d, MP and Ed on CPt's
-		   constellations, from cleared scrambler and filters */
-		v->v90_rn_init = 0;
-		v->D = v->cpt.drn + 8;
-		t->enc.init(&v->cpt, v->D, t->lin);
-	}
-	D = v->D;
-	if (v->fmode == F_B1 && v->fcount == 0) {
-		/* B1d with the data mode parameters, from cleared
-		   scrambler, signs and shaping filter */
-		v->D = D = v->cp.drn + 20;
-		t->enc.init(&v->cp, v->D, t->lin);
-	}
+/* CP's: B1d and data */
+const V90Cp *V34Pump::fs_data_cp()
+{
+	return &cp;
+}
 
-	v->fcount++;
-	switch (v->fmode) {
-	case F_TRN:
-		memset(b, 1, D);
-		/* TRN2d: 2160 symbols, then MP */
-		if (v->fcount >= 360) {
-			v->fmode = F_MP;
-			v->v90_make_mp(v->prx.ev_cp);
-		}
-		break;
-	case F_MP:
-		memcpy(b, v->mpb + v->mp_pos, D);
-		v->mp_pos += D;
-		if (v->mp_pos >= v->mp_len) {
-			if (v->mp_ack)
-				v->mp_ack_sent = 1;
-			if (v->mp_ack_sent && (v->prx.ev_cpack || v->prx.ev_e)) {
-				v->fmode = F_ED;
-				v->fcount = 0;
-			} else
-				v->v90_make_mp(v->prx.ev_cp);
-		}
-		break;
-	case F_ED:
-		/* Ed: 2 frames of zeros; the encoder starts again after */
-		memset(b, 0, D);
-		if (v->fcount >= 2) {
-			*last = 1;
-			v->fcount = 0;
-			if (v->prx.cp_silence) {
-				/* CPs': Ed, then silence until CP
-				   (9.6.1.2.5/V.90) */
-				v->fmode = F_SIL;
-				t->sil_req = 1;
-			} else
-				v->fmode = F_B1;
-			v->sil_cp = v->prx.cp_count;
-		}
-		break;
-	case F_SIL:
-		memset(b, 0, D);
-		break;
-	case F_B1:
-		memset(b, 1, D);
-		if (v->fcount >= 48)
-			v->fmode = F_DATA;
-		break;
-	case F_DATA:
-		memset(b, 1, D);
-		modem_get_bits(v->modem, 1, b, D);
-		break;
-	}
+/* MP, again until CP's acknowledgement (or E) */
+void V34Pump::fs_seq_next(int)
+{
+	v90_make_mp(prx.ev_cp);
+}
+
+bool V34Pump::fs_acked()
+{
+	return prx.ev_cpack || prx.ev_e;
+}
+
+/* CPs': Ed, then silence until CP (9.6.1.2.5/V.90) */
+bool V34Pump::fs_silence()
+{
+	return prx.cp_silence;
+}
+
+void V34Pump::fs_ed_end()
+{
+	sil_cp = prx.cp_count;
+}
+
+void V34Pump::fs_data(unsigned char *b, int n)
+{
+	CoreBits{ modem }.get(b, n);
 }
 
 /* the upstream data mode, as our MP asked for it */
@@ -2570,7 +2538,7 @@ void V34Pump::retrain(const char *why)
 		v90tx.rd_req = v90tx.sil_req = 0;
 		v90_rn_init = v90_rd_wait = 0;
 		up_n = 0;
-		mp_len = 0;
+		seq_len = 0;
 	}
 	ec.on = 0;
 	/* the control channel as after INFO0 */
@@ -2662,8 +2630,8 @@ void V34Pump::v90_renegotiate(const char *why, int n, int remote)
 	renegotiating = 1;
 	max_rate_rx = n;
 	up_n = 0;
-	mp_len = 0;
-	mp_ack_sent = 0;
+	seq_len = 0;
+	ack_sent = 0;
 	prx.ev_cp = prx.ev_cpack = prx.ev_e = 0;
 	prx.cp_silence = 0;
 	rn_hi = rn_lo = bad = 0;
@@ -2683,7 +2651,7 @@ void V34Pump::v90_rd_start()
 	DSP_DBG("v34: V.90 Rd\n");
 	v90tx.rd_req = 1;
 	v90_rn_init = 1;
-	fmode = F_TRN;
+	fmode = PCM_TRN;
 	fcount = 0;
 }
 
@@ -3501,11 +3469,11 @@ int V34Pump::handshake()
 				DSP_DBG("v34: V.90 CPt does not fit\n");
 				return DPSTAT_ERROR;
 			}
-			v90tx.get_frame = v90_get_frame;
+			v90tx.get_frame = pcm_frame_cb;
 			v90tx.ctx = this;
-			fmode = F_TRN;
+			fmode = PCM_TRN;
 			fcount = 0;
-			mp_ack_sent = 0;
+			ack_sent = 0;
 			v90tx.end_ri();
 			DSP_DBG("v34: V.90 CPt: D %d, K %d, M %d %d %d %d %d "
 				"%d, Sr %d, ld %d\n", D, v90tx.enc.K,
@@ -3535,7 +3503,7 @@ int V34Pump::handshake()
 		/* after the silence it asked for: CP (bit 30 clear), then
 		   Rt (of CPt's constellations), Rt-bar, MP
 		   (9.6.1.2.6/V.90) */
-		if (fmode == F_SIL && v90tx.seg == V90_SILENCE &&
+		if (fmode == PCM_SIL && v90tx.seg == V90_SILENCE &&
 		    prx.cp_count > sil_cp && !prx.cp_silence &&
 		    v90tx.sym % 6 == 0) {
 			int k;
@@ -3546,10 +3514,10 @@ int V34Pump::handshake()
 			v90_rn_init = 1;
 			prx.ev_cpack = prx.ev_e = 0;
 			up_n = 0;
-			mp_ack_sent = 0;
-			fmode = F_MP;
+			ack_sent = 0;
+			fmode = PCM_SEQ;
 			fcount = 0;
-			mp_len = 0;
+			seq_len = 0;
 			v90_make_mp(1);
 			timeout = total + ms2samples(5500, srate) + 3 * rtd;
 		}
@@ -3565,7 +3533,7 @@ int V34Pump::handshake()
 				return fallback("no common upstream rate");
 			}
 		}
-		if (fmode == F_DATA && prx.ev_e) {
+		if (fmode == PCM_DATA && prx.ev_e) {
 			set_state(V34_DATA);
 			set_rates(rate_tx, rate_rx);
 			rt_blocks = 0;

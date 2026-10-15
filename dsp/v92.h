@@ -114,10 +114,8 @@ enum v92_rx {
 	V92R_RN_WAIT,   /* Ru-bar, until TRN2u */
 };
 
-enum v92_fmode { V92F_TRN, V92F_SEQ, V92F_ED, V92F_B1, V92F_DATA,
-		 V92F_SIL };     /* silence in a renegotiation */
-
-struct V92Up {
+/* (PcmFrames: our phase 4 frames, SUVd and CPd the sequences) */
+struct V92Up : PcmFrames<V92Up> {
 	int alaw;
 	V92Info1a ia;
 	CoreBits link;          /* the data */
@@ -129,13 +127,8 @@ struct V92Up {
 	int tstep;
 	long tstep_at;
 	V90Cp cpt, cpu;         /* the analogue modem's CPt and CPu */
-	int D;                  /* bits per data frame of ours */
-	enum v92_fmode fmode;
-	long fcount;
-	unsigned char seq[8192];        /* SUVd or CPd (one bit each), in whole
-					   frames */
-	int seq_len, seq_pos, seq_ack, seq_cpd;
-	int cpd_sent, ack_sent;
+	int seq_cpd;            /* the sequence is CPd */
+	int cpd_sent;
 	long cpd_at;            /* frames after our last CPd */
 	V92Cpd cpd;             /* ours */
 
@@ -318,6 +311,14 @@ struct V92Up {
 	/* transmitter */
 	int tx_step();
 	void make_seq(int cpd_, int ack);
+	void fs_reinit(V90Tx *t);
+	const V90Cp *fs_data_cp();
+	void fs_seq_next(int first);
+	void fs_seq_frame();
+	bool fs_acked();
+	void fs_to_ed();
+	bool fs_silence();
+	void fs_data(unsigned char *b, int n);
 	void design();
 	int precoder_fit(double gamma, double *bg, double *fg, double *e2);
 	int ch_fit(double *e2, double *q2);

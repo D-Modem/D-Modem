@@ -961,7 +961,7 @@ void V92Up::rn_tx_start()
 		rn = 1;
 		rn_at = n;
 	}
-	fmode = V92F_TRN;
+	fmode = PCM_TRN;
 	fcount = 0;
 	rn_tx_init = 1;
 	ack_sent = 0;
@@ -995,7 +995,7 @@ void V92Up::fpe_tx_start()
 	fpe_design(fpe_drn);
 	fpe_drn = 0;
 	fpe_tx_init = 1;
-	fmode = V92F_SEQ;
+	fmode = PCM_SEQ;
 	fcount = 0;
 	ack_sent = cpd_sent = 0;
 	if (fpe_rx < 3)
@@ -2611,88 +2611,72 @@ void V92Up::make_seq(int cpd_, int ack)
 	seq_cpd = cpd_;
 }
 
-/* the frames of D bits the encoder takes */
-static void v92_get_frame(void *ctx, V90Tx *t, unsigned char *bits,
-			  int *last)
+/* PcmFrames' hooks (the frames of D bits the encoder takes): after Rd,
+   TRN2d and the rest on CPt's constellations; after Rf the data mode
+   modulation, from cleared scrambler, signs and shaping filter */
+void V92Up::fs_reinit(V90Tx *t)
 {
-	V92Up *v = static_cast<V92Up*>(ctx);
+	if (rn_tx_init) {
+		rn_tx_init = 0;
+		D = cpt.drn + 8;
+		t->enc.init(&cpt, D, t->lin);
+	}
+	if (fpe_tx_init) {
+		fpe_tx_init = 0;
+		D = cpu.drn + 20;
+		t->enc.init(&cpu, D, t->lin);
+	}
+}
 
-	if (v->rn_tx_init) {
-		/* after Rd: TRN2d and the rest on CPt's constellations */
-		v->rn_tx_init = 0;
-		v->D = v->cpt.drn + 8;
-		t->enc.init(&v->cpt, v->D, t->lin);
-	}
-	if (v->fpe_tx_init) {
-		/* after Rf: the data mode modulation, from cleared
-		   scrambler, signs and shaping filter */
-		v->fpe_tx_init = 0;
-		v->D = v->cpu.drn + 20;
-		t->enc.init(&v->cpu, v->D, t->lin);
-	}
-	if (v->fmode == V92F_B1 && v->fcount == 0) {
-		v->D = v->cpu.drn + 20;
-		t->enc.init(&v->cpu, v->D, t->lin);
-	}
-	v->fcount++;
-	switch (v->fmode) {
-	case V92F_TRN:
-		memset(bits, 1, v->D);
-		/* TRN2d: 2160 symbols */
-		if (v->fcount >= 360) {
-			v->fmode = V92F_SEQ;
-			v->make_seq(0, v->got_cpu);
-		}
-		break;
-	case V92F_SEQ:
-		memcpy(bits, v->seq + v->seq_pos, v->D);
-		v->seq_pos += v->D;
-		v->cpd_at++;
-		if (v->seq_pos < v->seq_len)
-			break;
-		if (v->seq_ack)
-			v->ack_sent = 1;
-		if (v->ack_sent && (v->got_ack || v->got_e2u)) {
-			DSP_DBG("v92: Ed\n");
-			v->fmode = V92F_ED;
-			v->fcount = 0;
-		} else if (v->got_suvu && !v->rn_silence &&
-			   (!v->cpd_sent || (!v->got_ack && v->cpd_at > 400)) &&
-			   /* the prefilter's design wants more of TRN2u (and
-			      SUVu and CPu, which come in its modulation) */
-			   (v->cpd_sent || !v->pf_ok || v->rx != V92R_TRN2 ||
-			    v->sym - v->e2u_sym > V92_PF_FIT + 32))
-			v->make_seq(1, v->got_cpu);
-		else
-			/* with a silent period asked for: SUVd' (no CP
-			   before it) */
-			v->make_seq(0, v->rn_silence ? 1 : v->got_cpu);
-		break;
-	case V92F_ED:
-		memset(bits, 0, v->D);
-		if (v->fcount >= 2) {
-			*last = 1;
-			v->fcount = 0;
-			if (v->rn_silence) {
-				/* Ed, then silence (9.8.1.1.3) */
-				v->fmode = V92F_SIL;
-				t->sil_req = 1;
-			} else
-				v->fmode = V92F_B1;
-		}
-		break;
-	case V92F_SIL:
-		memset(bits, 0, v->D);
-		break;
-	case V92F_B1:
-		memset(bits, 1, v->D);
-		if (v->fcount >= 48)
-			v->fmode = V92F_DATA;
-		break;
-	case V92F_DATA:
-		v->link.get(bits, v->D);
-		break;
-	}
+/* CPu's: B1d and data */
+const V90Cp *V92Up::fs_data_cp()
+{
+	return &cpu;
+}
+
+/* SUVd after TRN2d; then CPd once SUVu came (again if its
+   acknowledgement does not), else SUVd again */
+void V92Up::fs_seq_next(int first)
+{
+	if (first)
+		make_seq(0, got_cpu);
+	else if (got_suvu && !rn_silence &&
+		 (!cpd_sent || (!got_ack && cpd_at > 400)) &&
+		 /* the prefilter's design wants more of TRN2u (and SUVu
+		    and CPu, which come in its modulation) */
+		 (cpd_sent || !pf_ok || rx != V92R_TRN2 ||
+		  sym - e2u_sym > V92_PF_FIT + 32))
+		make_seq(1, got_cpu);
+	else
+		/* with a silent period asked for: SUVd' (no CP before
+		   it) */
+		make_seq(0, rn_silence ? 1 : got_cpu);
+}
+
+void V92Up::fs_seq_frame()
+{
+	cpd_at++;
+}
+
+bool V92Up::fs_acked()
+{
+	return got_ack || got_e2u;
+}
+
+void V92Up::fs_to_ed()
+{
+	DSP_DBG("v92: Ed\n");
+}
+
+/* Ed, then silence (9.8.1.1.3) */
+bool V92Up::fs_silence()
+{
+	return rn_silence;
+}
+
+void V92Up::fs_data(unsigned char *b, int n)
+{
+	link.get(b, n);
 }
 
 /* the transmitter's and the call's steps, once a sample (tstep): after
@@ -2749,9 +2733,9 @@ int V92Up::tx_step()
 				DSP_DBG("v92: CPt does not fit\n");
 				return V92_FAIL;
 			}
-			tx.get_frame = v92_get_frame;
+			tx.get_frame = pcm_frame_cb;
 			tx.ctx = this;
-			fmode = V92F_TRN;
+			fmode = PCM_TRN;
 			fcount = 0;
 			tx.segment(V90_RI);
 			tstep = 6;
@@ -2768,7 +2752,7 @@ int V92Up::tx_step()
 			DSP_DBG("v92: B1u does not come through\n");
 			return V92_FAIL;
 		}
-		if (fmode == V92F_DATA && rx == V92R_DATA && dframes > 48 &&
+		if (fmode == PCM_DATA && rx == V92R_DATA && dframes > 48 &&
 		    !connected) {
 			connected = 1;
 			connect_n = rn_last = n;
@@ -2822,7 +2806,7 @@ int V92Up::tx_step()
 			rn_tx_start();
 		/* after the silence: Rt (training constellations), Rt-bar,
 		   SUVd and phase 4 (9.8.1.1.4) */
-		if (fmode == V92F_SIL && rn_suv2 && tx.seg == V90_SILENCE &&
+		if (fmode == PCM_SIL && rn_suv2 && tx.seg == V90_SILENCE &&
 		    tx.sym % 6 == 0) {
 			int k;
 			DSP_DBG("v92: Rt\n");
@@ -2831,7 +2815,7 @@ int V92Up::tx_step()
 			tx.segment(V90_RD);
 			rn_silence = rn_wait_suv2 = rn_suv2 = 0;
 			rn_tx_init = 1;
-			fmode = V92F_SEQ;
+			fmode = PCM_SEQ;
 			fcount = 0;
 			ack_sent = cpd_sent = 0;
 			cpd_new = 1;
@@ -2857,7 +2841,7 @@ int V92Up::tx_step()
 			pf_new = 0;
 			rn_tx_start();
 		}
-		if (fmode == V92F_DATA && rx == V92R_DATA && rn_rxd &&
+		if (fmode == PCM_DATA && rx == V92R_DATA && rn_rxd &&
 		    dframes > 48) {
 			if (fpe) {
 				fpes++;
