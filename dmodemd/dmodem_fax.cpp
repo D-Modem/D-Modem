@@ -114,21 +114,27 @@ void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
 	dmodem_g711_blocks(f->law == DMODEM_LAW_ALAW, in, out, n, process);
 }
 
-/* T.30's status; a file error makes it a failure (T30_ERR_FILE) */
+/* T.30's status (once the document is complete its result is OK, as
+   the call's end will have it); a file error makes it a failure
+   (T30_ERR_FILE) */
 void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s)
 {
 	struct t30_status ts;
+	enum t30_result r;
+
 	t30_get_status(f->t30, &ts);
+	r = ts.complete ? T30_OK : ts.result;
 	memset(s, 0, sizeof(*s));
-	s->done = ts.result != T30_RUNNING;
-	s->ok = ts.result == T30_OK && !f->file_error;
+	s->done = ts.done;
+	s->complete = ts.complete;
+	s->ok = r == T30_OK && !f->file_error;
 	s->pages = ts.pages;
 	s->bps = ts.bps;
 	s->fine = ts.fine;
 	s->ecm = ts.ecm;
 	memcpy(s->remote_ident, ts.remote_ident, sizeof(s->remote_ident));
 	s->result = f->file_error ? t30_result_text(T30_ERR_FILE) :
-		t30_result_text(ts.result);
+		t30_result_text(r);
 	s->phase = ts.phase;
 }
 

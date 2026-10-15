@@ -112,7 +112,9 @@ struct dmodem_fax_config {
 };
 
 struct dmodem_fax_status {
-	int done, ok;
+	int done;                       /* the call is over (its DCN out or
+					   in, a hangup, or an error) */
+	int ok;                         /* the document went through */
 	int pages;                      /* sent or received */
 	int bps, fine;
 	char remote_ident[21];
@@ -120,6 +122,12 @@ struct dmodem_fax_status {
 	const char *phase;
 	int ecm;                        /* the call has error correction
 					   mode */
+	int complete;                   /* the document has gone through
+					   (the MCF to its last page): ok,
+					   pages and result are final, the
+					   received pages are in the file,
+					   and the call only ends (the
+					   other machine may hang up) */
 };
 
 struct dmodem_fax;

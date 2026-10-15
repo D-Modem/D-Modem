@@ -70,8 +70,9 @@ static unsigned char *entry(unsigned char *e, unsigned tag, unsigned type,
 }
 
 /* a page appended: its rows in MH with byte aligned EOLs (one strip),
-   then its IFD with the resolutions, linked from the IFD before it.
-   0, or -1 on a write error */
+   then its IFD with the resolutions, linked from the IFD before it, and
+   all of it in the file (a whole TIFF of the pages so far, before
+   close()).  0, or -1 on a write error */
 int TiffOut::write_page(const T4Page *p)
 {
 	FILE *f_ = static_cast<FILE*>(f);
@@ -138,7 +139,7 @@ int TiffOut::write_page(const T4Page *p)
 		return -1;
 	last_ifd_next = ifd_at + 2 + n * 12;
 	pages++;
-	return 0;
+	return fflush(f_) ? -1 : 0;
 }
 
 /* close the file; -1 if that failed */

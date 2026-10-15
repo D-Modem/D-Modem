@@ -1730,6 +1730,13 @@ void t30_get_status(T30 *t, struct t30_status *s)
 {
 	memset(s, 0, sizeof(*s));
 	s->result = t->result;
+	s->done = t->state == S_DONE;
+	/* sending: the MCF to our EOP made it OK (send_dcn()); receiving:
+	   our MCF to its EOP (t30_hangup() and the T2 of S_WAIT_DCN end it
+	   OK) */
+	s->complete = t->cfg.sending ? t->result == T30_OK :
+		t->eop_acked && (t->result == T30_RUNNING ||
+				 t->result == T30_OK);
 	s->pages = t->pages;
 	s->bps = rates[t->rate].bps;
 	s->fine = t->fine;

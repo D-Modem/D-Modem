@@ -52,7 +52,12 @@ struct t30_config {
 };
 
 struct t30_status {
-	enum t30_result result;
+	enum t30_result result; /* as soon as it is known: a DCN may still
+				   be going out */
+	int done;               /* the call is over (the DCN out, or in) */
+	int complete;           /* the document has gone through (the MCF
+				   to its EOP sent or received): the
+				   result is OK however the call ends */
 	int pages;              /* sent or received */
 	int bps;                /* the rate of the pages */
 	int fine;
