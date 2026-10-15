@@ -79,6 +79,7 @@ jobs:
           LAW=alaw timeout 300 asterisk/test/run.sh
           timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
           BBS_LINGER=1 timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
+          ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/14400' timeout 300 asterisk/test/run.sh
 
       - name: SIP (D-Modem)
         run: |
@@ -154,6 +155,7 @@ jobs:
           timeout 300 freeswitch/test/run.sh AT+MS=34 bbsalaw
           timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
           BBS_LINGER=1 timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
+          ANSWER='AT+MS=132;A' EXPECT='ANSWERER .*dmodem_rate=14400/14400' timeout 300 freeswitch/test/run.sh
 
       - name: SIP (D-Modem)
         run: |

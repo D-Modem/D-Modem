@@ -46,6 +46,13 @@ in several ways:
 
 [dmodem.conf.xml](../freeswitch/dmodem.conf.xml) lists all the options.
 
+The modem answers with `ATA`. A profile's `answer` param gives the
+command line it answers with instead, with commands for the answering
+call alone before the `A`: `<param name="answer" value="AT+MS=132;A"/>`
+answers at V.32bis at most. `init` has the commands for both directions.
+A line that leaves the modem not answering ends the call, `dmodem_status`
+`ERROR`.
+
 With `dmodem <profile>,o` (or `<profile> o`), our modem is the caller:
 it waits for the remote modem's answer tone. This is for a call that
 FreeSWITCH places to a remote modem, for example
@@ -209,6 +216,8 @@ test/run.sh AT+MS=122             # V.22bis (also 22, 32, 132, ...)
 test/run.sh AT+MS=34 bbsexec      # the BBS as a program on the pty
 test/run.sh AT+MS=34 bbsalaw      # the answerer on A-law: transcoded
 LAW=alaw test/run.sh              # on PCMA
+ANSWER='AT+MS=132;A' EXPECT='ANSWERER .*dmodem_rate=14400/' test/run.sh
+                                  # the answer command line: V.32bis
 test/sip.sh                       # D-Modem (dmodemd) calls dmodem
 INCOMING=1 test/sip.sh            # dmodem calls D-Modem
 test/fax.sh                       # faxes, also against mod_spandsp

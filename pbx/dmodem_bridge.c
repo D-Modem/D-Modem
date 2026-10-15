@@ -30,10 +30,11 @@
 #include <unistd.h>
 
 /* a line for the PBX's log */
-static void log_line(const struct dmb_host *h, void *call, enum dmb_level level,
-		  const char *fmt, ...) __attribute__ ((format (printf, 4, 5)));
-static void log_line(const struct dmb_host *h, void *call, enum dmb_level level,
-		  const char *fmt, ...)
+static void log_line(const struct dmbridge_host *h, void *call,
+		     enum dmbridge_level level, const char *fmt, ...)
+	__attribute__ ((format (printf, 4, 5)));
+static void log_line(const struct dmbridge_host *h, void *call,
+		     enum dmbridge_level level, const char *fmt, ...)
 {
 	char line[512];
 	va_list ap;
@@ -55,7 +56,7 @@ static void copy(char *dst, const char *src, size_t n)
  */
 
 /* (see dmodem_bridge.h) */
-int dmb_option_is(const char *name, const char *key)
+int dmbridge_option_is(const char *name, const char *key)
 {
 	for (;; name++, key++) {
 		int a = tolower((unsigned char)*name),
@@ -72,7 +73,7 @@ int dmb_option_is(const char *name, const char *key)
 }
 
 /* (see dmodem_bridge.h) */
-void dmb_fax_defaults(struct dmb_fax *f, const char *dir)
+void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir)
 {
 	f->on = 1;
 	copy(f->dir, dir, sizeof(f->dir));
@@ -82,18 +83,19 @@ void dmb_fax_defaults(struct dmb_fax *f, const char *dir)
 }
 
 /* (see dmodem_bridge.h) */
-int dmb_fax_option(const struct dmb_host *h, struct dmb_fax *f,
-		   const char *name, const char *value)
+int dmbridge_fax_option(const struct dmbridge_host *h,
+			struct dmbridge_fax *f, const char *name,
+			const char *value)
 {
-	if (dmb_option_is(name, "fax"))
+	if (dmbridge_option_is(name, "fax"))
 		f->on = h->is_true(value);
-	else if (dmb_option_is(name, "fax-dir"))
+	else if (dmbridge_option_is(name, "fax-dir"))
 		copy(f->dir, value, sizeof(f->dir));
-	else if (dmb_option_is(name, "fax-ident"))
+	else if (dmbridge_option_is(name, "fax-ident"))
 		copy(f->ident, value, sizeof(f->ident));
-	else if (dmb_option_is(name, "fax-max-rate"))
+	else if (dmbridge_option_is(name, "fax-max-rate"))
 		f->max_bps = atoi(value);
-	else if (dmb_option_is(name, "fax-ecm"))
+	else if (dmbridge_option_is(name, "fax-ecm"))
 		f->ecm = h->is_true(value);
 	else
 		return 0;
@@ -101,46 +103,53 @@ int dmb_fax_option(const struct dmb_host *h, struct dmb_fax *f,
 }
 
 /* (see dmodem_bridge.h) */
-void dmb_profile_init(struct dmb_profile *p)
+void dmbridge_profile_init(struct dmbridge_profile *p)
 {
 	memset(p, 0, sizeof(*p));
-	p->mode = DMB_TCP;
+	p->mode = DMBRIDGE_TCP;
+	copy(p->answer, "ATA", sizeof(p->answer));
 	p->timeout = 60;
 }
 
 /* (see dmodem_bridge.h) */
-int dmb_profile_option(const struct dmb_host *h, struct dmb_profile *p,
-		       const char *where, const char *name,
-		       const char *value)
+int dmbridge_profile_option(const struct dmbridge_host *h,
+			    struct dmbridge_profile *p, const char *where,
+			    const char *name, const char *value)
 {
-	if (dmb_fax_option(h, &p->fax, name, value))
+	if (dmbridge_fax_option(h, &p->fax, name, value))
 		return 1;
-	if (dmb_option_is(name, "mode")) {
+	if (dmbridge_option_is(name, "mode")) {
 		if (!strcasecmp(value, "tcp"))
-			p->mode = DMB_TCP;
+			p->mode = DMBRIDGE_TCP;
 		else if (!strcasecmp(value, "exec"))
-			p->mode = DMB_EXEC;
+			p->mode = DMBRIDGE_EXEC;
 		else
-			log_line(h, NULL, DMB_WARNING, "%s: unknown mode %s",
-			      where, value);
-	} else if (dmb_option_is(name, "host")) {
+			log_line(h, NULL, DMBRIDGE_WARNING,
+				 "%s: unknown mode %s", where, value);
+	} else if (dmbridge_option_is(name, "host")) {
 		copy(p->host, value, sizeof(p->host));
-	} else if (dmb_option_is(name, "port")) {
+	} else if (dmbridge_option_is(name, "port")) {
 		copy(p->port, value, sizeof(p->port));
-	} else if (dmb_option_is(name, "command")) {
+	} else if (dmbridge_option_is(name, "command")) {
 		copy(p->command, value, sizeof(p->command));
-	} else if (dmb_option_is(name, "init")) {
+	} else if (dmbridge_option_is(name, "init")) {
 		if (!strncasecmp(value, "AT", 2))
 			value += 2;
 		copy(p->init, value, sizeof(p->init));
-	} else if (dmb_option_is(name, "law")) {
+	} else if (dmbridge_option_is(name, "answer")) {
+		/* a command line, AT and all (A alone is ATA; none: ATA) */
+		if (!strncasecmp(value, "AT", 2))
+			value += 2;
+		snprintf(p->answer, sizeof(p->answer), "AT%s",
+			 *value ? value : "A");
+	} else if (dmbridge_option_is(name, "law")) {
 		if (!strcasecmp(value, "ulaw"))
 			p->law = DMODEM_LAW_ULAW;
 		else if (!strcasecmp(value, "alaw"))
 			p->law = DMODEM_LAW_ALAW;
 		else
 			p->law = DMODEM_LAW_UNKNOWN;
-	} else if (dmb_option_is(name, "timeout")) {
+	} else if (dmbridge_option_is(name, "timeout")) {
 		p->timeout = atoi(value);
 	} else {
 		return 0;
@@ -149,16 +158,18 @@ int dmb_profile_option(const struct dmb_host *h, struct dmb_profile *p,
 }
 
 /* (see dmodem_bridge.h) */
-int dmb_profile_check(const struct dmb_host *h, const struct dmb_profile *p,
-		      const char *where)
+int dmbridge_profile_check(const struct dmbridge_host *h,
+			   const struct dmbridge_profile *p,
+			   const char *where)
 {
-	if (p->mode == DMB_TCP && (!*p->host || !*p->port)) {
-		log_line(h, NULL, DMB_ERROR, "%s: mode tcp needs host and port",
-		      where);
+	if (p->mode == DMBRIDGE_TCP && (!*p->host || !*p->port)) {
+		log_line(h, NULL, DMBRIDGE_ERROR,
+			 "%s: mode tcp needs host and port", where);
 		return -1;
 	}
-	if (p->mode == DMB_EXEC && !*p->command) {
-		log_line(h, NULL, DMB_ERROR, "%s: mode exec needs command", where);
+	if (p->mode == DMBRIDGE_EXEC && !*p->command) {
+		log_line(h, NULL, DMBRIDGE_ERROR, "%s: mode exec needs command",
+			 where);
 		return -1;
 	}
 	return 0;
@@ -185,8 +196,8 @@ static void drain(int fd)
 
 /* move what is there from one fd to the other through b (from -1: only
    what b holds); -1 when the source is closed */
-static int relay(const struct dmb_host *h, int from, int to,
-		 struct dmb_pipe *b)
+static int relay(const struct dmbridge_host *h, int from, int to,
+		 struct dmbridge_pipe *b)
 {
 	int n, eof = 0;
 
@@ -196,8 +207,8 @@ static int relay(const struct dmb_host *h, int from, int to,
 			b->len += n;
 		else if (n == 0 || (errno != EAGAIN && errno != EINTR)) {
 			eof = 1;        /* a pty master reads EIO at the end */
-			log_line(h, NULL, DMB_DEBUG, "fd %d read %d (%s)", from, n,
-			      n ? strerror(errno) : "end of file");
+			log_line(h, NULL, DMBRIDGE_DEBUG, "fd %d read %d (%s)",
+				 from, n, n ? strerror(errno) : "end of file");
 		}
 	}
 	if (b->len > 0) {
@@ -216,7 +227,7 @@ static int relay(const struct dmb_host *h, int from, int to,
 
 /* host:port, the first address that takes it (a blocking connect, in
    tcp_thread()), non-blocking once connected; -1 on failure */
-static int connect_tcp(const struct dmb_host *h, const char *host,
+static int connect_tcp(const struct dmbridge_host *h, const char *host,
 		       const char *port)
 {
 	struct addrinfo hints = { 0 }, *res, *ai;
@@ -226,7 +237,8 @@ static int connect_tcp(const struct dmb_host *h, const char *host,
 	hints.ai_socktype = SOCK_STREAM;
 	err = getaddrinfo(host, port, &hints, &res);
 	if (err) {
-		log_line(h, NULL, DMB_WARNING, "%s: %s", host, gai_strerror(err));
+		log_line(h, NULL, DMBRIDGE_WARNING, "%s: %s", host,
+			 gai_strerror(err));
 		return -1;
 	}
 	for (ai = res; ai; ai = ai->ai_next) {
@@ -240,8 +252,9 @@ static int connect_tcp(const struct dmb_host *h, const char *host,
 	}
 	freeaddrinfo(res);
 	if (fd < 0) {
-		log_line(h, NULL, DMB_WARNING, "cannot connect to %s:%s: %s", host,
-		      port, strerror(errno));
+		log_line(h, NULL, DMBRIDGE_WARNING,
+			 "cannot connect to %s:%s: %s", host, port,
+			 strerror(errno));
 		return -1;
 	}
 	nonblock(fd);
@@ -252,7 +265,7 @@ static int connect_tcp(const struct dmb_host *h, const char *host,
    on meanwhile (DNS and connect() can take seconds): the profile's host
    and port, and the socket its result goes on */
 struct tcp_job {
-	const struct dmb_host *h;
+	const struct dmbridge_host *h;
 	char host[256];
 	char port[16];
 	int out;
@@ -274,7 +287,7 @@ static void *tcp_thread(void *arg)
 }
 
 /* fn(arg) in a detached thread: the host's, else pthread's; 0 or -1 */
-static int start_thread(const struct dmb_host *h, void *(*fn)(void *),
+static int start_thread(const struct dmbridge_host *h, void *(*fn)(void *),
 			void *arg)
 {
 	pthread_t t;
@@ -292,7 +305,8 @@ static int start_thread(const struct dmb_host *h, void *(*fn)(void *),
 
 /* the profile's connect started; the descriptor its result comes on
    (tcp_done()), or -1 */
-static int tcp_start(const struct dmb_host *h, const struct dmb_profile *p)
+static int tcp_start(const struct dmbridge_host *h,
+		     const struct dmbridge_profile *p)
 {
 	struct tcp_job *j = calloc(1, sizeof(*j));
 	int sv[2];
@@ -352,8 +366,9 @@ static void close_fds_above_2(void)
 
 /* the program on the slave of a new pty, the master returned; the child
    is ours to reap (end_exec()) */
-static int start_exec(const struct dmb_host *h, const struct dmb_profile *p,
-		      const char *const *env, pid_t *pid)
+static int start_exec(const struct dmbridge_host *h,
+		      const struct dmbridge_profile *p, const char *const *env,
+		      pid_t *pid)
 {
 	char slave[64];
 	int master, i;
@@ -361,14 +376,16 @@ static int start_exec(const struct dmb_host *h, const struct dmb_profile *p,
 	master = posix_openpt(O_RDWR | O_NOCTTY);
 	if (master < 0 || grantpt(master) || unlockpt(master) ||
 	    ptsname_r(master, slave, sizeof(slave))) {
-		log_line(h, NULL, DMB_WARNING, "no pty: %s", strerror(errno));
+		log_line(h, NULL, DMBRIDGE_WARNING, "no pty: %s",
+			 strerror(errno));
 		if (master >= 0)
 			close(master);
 		return -1;
 	}
 	*pid = h->fork ? h->fork() : fork();
 	if (*pid < 0) {
-		log_line(h, NULL, DMB_WARNING, "fork: %s", strerror(errno));
+		log_line(h, NULL, DMBRIDGE_WARNING, "fork: %s",
+			 strerror(errno));
 		if (h->fork_done)
 			h->fork_done();
 		close(master);
@@ -409,7 +426,7 @@ static int start_exec(const struct dmb_host *h, const struct dmb_profile *p,
 
 /* the program's end: SIGHUP (its pty is closed as well), then it is
    collected, by force (SIGKILL) after 5 s */
-static void end_exec(const struct dmb_host *h, pid_t pid)
+static void end_exec(const struct dmbridge_host *h, pid_t pid)
 {
 	int i;
 
@@ -420,8 +437,8 @@ static void end_exec(const struct dmb_host *h, pid_t pid)
 			goto done;
 		usleep(100000);
 	}
-	log_line(h, NULL, DMB_WARNING,
-	      "program %d still there after SIGHUP: SIGKILL", (int)pid);
+	log_line(h, NULL, DMBRIDGE_WARNING,
+		 "program %d still there after SIGHUP: SIGKILL", (int)pid);
 	kill(pid, SIGKILL);
 	waitpid(pid, NULL, 0);
 done:
@@ -434,7 +451,7 @@ done:
  */
 
 /* (see dmodem_bridge.h) */
-void dmb_call_init(struct dmb_call *c)
+void dmbridge_call_init(struct dmbridge_call *c)
 {
 	memset(c, 0, sizeof(*c));
 	c->status = "ERROR";
@@ -445,11 +462,13 @@ void dmb_call_init(struct dmb_call *c)
 }
 
 /* (see dmodem_bridge.h) */
-int dmb_call_start(struct dmb_call *c, const struct dmb_host *h, void *call,
-		   const struct dmb_profile *p, const char *name,
-		   enum dmodem_law law, int orig)
+int dmbridge_call_start(struct dmbridge_call *c,
+			const struct dmbridge_host *h, void *call,
+			const struct dmbridge_profile *p, const char *name,
+			enum dmodem_law law, int orig)
 {
 	struct dmodem_config cfg = { 0 };
+	struct dmodem_status st;
 	char init[192];
 
 	c->h = h;
@@ -458,7 +477,8 @@ int dmb_call_start(struct dmb_call *c, const struct dmb_host *h, void *call,
 	c->orig = orig;
 	/* the modem's DTE: one end of a socketpair, the other end ours */
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, c->dte)) {
-		log_line(h, call, DMB_WARNING, "socketpair: %s", strerror(errno));
+		log_line(h, call, DMBRIDGE_WARNING, "socketpair: %s",
+			 strerror(errno));
 		c->dte[0] = c->dte[1] = -1;
 		return -1;
 	}
@@ -473,35 +493,44 @@ int dmb_call_start(struct dmb_call *c, const struct dmb_host *h, void *call,
 	cfg.init = init;
 	c->d = dmodem_create(&cfg);
 	if (!c->d) {
-		log_line(h, call, DMB_WARNING, "no modem");
+		log_line(h, call, DMBRIDGE_WARNING, "no modem");
 		return -1;
 	}
 	drain(c->dte[1]);
 	if (orig)
 		dmodem_dial(c->d, "");
-	else
-		dmodem_answer(c->d);
+	else {
+		/* the profile's answer command line (ATA): the modem is
+		   connecting after it, or the line was no answer */
+		dmodem_command(c->d, p->answer);
+		dmodem_status(c->d, &st);
+		if (st.link != DMODEM_CONNECTING) {
+			log_line(h, call, DMBRIDGE_WARNING,
+				 "\"%s\" did not answer", p->answer);
+			return -1;
+		}
+	}
 	c->status = "NOCARRIER";
 	c->deadline = (long long)p->timeout * DMODEM_RATE;
 	return 0;
 }
 
-/* DMB_END with status s */
-static enum dmb_event end(struct dmb_call *c, const char *s)
+/* DMBRIDGE_END with status s */
+static enum dmbridge_event end(struct dmbridge_call *c, const char *s)
 {
 	c->status = s;
-	return DMB_END;
+	return DMBRIDGE_END;
 }
 
 /* the descriptors of the call, for the log */
-static void log_fds(struct dmb_call *c)
+static void log_fds(struct dmbridge_call *c)
 {
-	log_line(c->h, c->call, DMB_DEBUG, "server fd %d, dte fds %d %d", c->fd,
-	      c->dte[0], c->dte[1]);
+	log_line(c->h, c->call, DMBRIDGE_DEBUG, "server fd %d, dte fds %d %d",
+		 c->fd, c->dte[0], c->dte[1]);
 }
 
 /* (see dmodem_bridge.h) */
-enum dmb_event dmb_call_step(struct dmb_call *c, int n)
+enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 {
 	struct dmodem_status *st = &c->st;
 
@@ -519,18 +548,18 @@ enum dmb_event dmb_call_step(struct dmb_call *c, int n)
 			dmodem_destroy(c->d);
 			c->d = NULL;
 			c->status = "FAX";
-			return DMB_FAX;
+			return DMBRIDGE_FAX;
 		}
 		if (st->link == DMODEM_ONLINE) {
 			c->online = 1;
 			snprintf(c->rate, sizeof(c->rate), "%u/%u",
 				 st->tx_rate, st->rx_rate);
-			return DMB_CONNECTED;
+			return DMBRIDGE_CONNECTED;
 		}
 		if (st->link == DMODEM_IDLE || st->link == DMODEM_HANGUP ||
 		    c->samples > c->deadline)
-			return DMB_END;
-		return DMB_RUN;
+			return DMBRIDGE_END;
+		return DMBRIDGE_RUN;
 	}
 	/* online; the server once it is connected (what the remote sends
 	   meanwhile waits in the DTE's socketpair) */
@@ -538,7 +567,7 @@ enum dmb_event dmb_call_step(struct dmb_call *c, int n)
 		if (st->link != DMODEM_ONLINE)
 			return end(c, "REMOTE");
 		if (!tcp_done(c->connecting, &c->fd))
-			return DMB_RUN;
+			return DMBRIDGE_RUN;
 		close(c->connecting);
 		c->connecting = -1;
 		if (c->fd < 0)
@@ -550,11 +579,11 @@ enum dmb_event dmb_call_step(struct dmb_call *c, int n)
 		return end(c, "REMOTE");
 	if (c->closing < 0) {
 		if (relay(c->h, c->fd, c->dte[1], &c->to_line) < 0) {
-			log_line(c->h, c->call, DMB_INFO,
-			      "the server or program ended the session");
+			log_line(c->h, c->call, DMBRIDGE_INFO,
+				 "the server or program ended the session");
 			c->closing = c->samples;
 		}
-		return DMB_RUN;
+		return DMBRIDGE_RUN;
 	}
 	/* the server is gone: once what it sent last is on the line, hang
 	   up */
@@ -563,37 +592,38 @@ enum dmb_event dmb_call_step(struct dmb_call *c, int n)
 	     c->samples - c->closing > DMODEM_RATE) ||
 	    c->samples - c->closing > 30 * DMODEM_RATE) {
 		if (c->to_line.len || st->tx_pending)
-			log_line(c->h, c->call, DMB_WARNING,
-			      "%d bytes not sent at the hangup",
-			      c->to_line.len + (int)st->tx_pending);
+			log_line(c->h, c->call, DMBRIDGE_WARNING,
+				 "%d bytes not sent at the hangup",
+				 c->to_line.len + (int)st->tx_pending);
 		return end(c, "LOCAL");
 	}
-	return DMB_RUN;
+	return DMBRIDGE_RUN;
 }
 
 /* (see dmodem_bridge.h) */
-enum dmb_event dmb_call_serve(struct dmb_call *c, const char *const *env)
+enum dmbridge_event dmbridge_call_serve(struct dmbridge_call *c,
+					const char *const *env)
 {
-	if (c->p->mode == DMB_TCP) {
+	if (c->p->mode == DMBRIDGE_TCP) {
 		c->connecting = tcp_start(c->h, c->p);
-		return c->connecting < 0 ? end(c, "ERROR") : DMB_RUN;
+		return c->connecting < 0 ? end(c, "ERROR") : DMBRIDGE_RUN;
 	}
 	c->fd = start_exec(c->h, c->p, env, &c->pid);
 	if (c->fd < 0)
 		return end(c, "ERROR");
 	log_fds(c);
-	return DMB_RUN;
+	return DMBRIDGE_RUN;
 }
 
 /* (see dmodem_bridge.h) */
-void dmb_call_hangup(struct dmb_call *c)
+void dmbridge_call_hangup(struct dmbridge_call *c)
 {
 	if (c->d && c->online && c->st.link == DMODEM_ONLINE)
 		dmodem_hangup(c->d);
 }
 
 /* (see dmodem_bridge.h) */
-void dmb_call_end(struct dmb_call *c)
+void dmbridge_call_end(struct dmbridge_call *c)
 {
 	if (c->d)
 		dmodem_destroy(c->d);

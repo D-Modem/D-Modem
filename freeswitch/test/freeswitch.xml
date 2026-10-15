@@ -2,7 +2,7 @@
 <!-- the tests' FreeSWITCH (fs.sh): one SIP profile on 127.0.0.1:5080 that
      takes any call and registration, G.711 only, the dialplan of the
      tests, mod_dmodem's profiles.  vars.xml: run, test, dmodem_debug,
-     fax_max_rate, term_init (fs.sh writes it). -->
+     fax_max_rate, term_init, bbs_answer (fs.sh writes it). -->
 <document type="freeswitch/xml">
   <X-PRE-PROCESS cmd="include" data="vars.xml"/>
 
@@ -109,6 +109,7 @@
           <param name="mode" value="tcp"/>
           <param name="host" value="127.0.0.1"/>
           <param name="port" value="2323"/>
+          <param name="answer" value="$${bbs_answer}"/>
         </profile>
         <!-- the calling modem: its data to the user's terminal -->
         <profile name="term">
@@ -124,11 +125,13 @@
           <param name="host" value="127.0.0.1"/>
           <param name="port" value="2323"/>
           <param name="law" value="alaw"/>
+          <param name="answer" value="$${bbs_answer}"/>
         </profile>
         <!-- the same BBS as a program on the pty -->
         <profile name="bbsexec">
           <param name="mode" value="exec"/>
           <param name="command" value="exec python3 -I &quot;$DMODEM_TEST/bbs_sim.py&quot; --stdio"/>
+          <param name="answer" value="$${bbs_answer}"/>
         </profile>
       </profiles>
     </configuration>

@@ -170,17 +170,28 @@ int dmodem_answer(struct dmodem *d)
 	return d->m->answer();
 }
 
-/* ATD<number>\r as the DTE's command line; 0 (how it goes is the
-   link's state), -1 for a number too long for a command line */
-int dmodem_dial(struct dmodem *d, const char *number)
+/* line and \r as the DTE's command line, its events run; 0 (what it
+   did is the link's state), -1 for a line too long for the modem */
+int dmodem_command(struct dmodem *d, const char *line)
 {
 	char cmd[128];
-	int n = snprintf(cmd, sizeof(cmd), "ATD%s\r", number);
+	int n = snprintf(cmd, sizeof(cmd), "%s\r", line);
 	if (n < 0 || n >= (int)sizeof(cmd))
 		return -1;
 	d->m->dte_input(cmd, n);
 	d->m->poll();
 	return 0;
+}
+
+/* ATD<number>\r as the DTE's command line; 0 (how it goes is the
+   link's state), -1 for a number too long for a command line */
+int dmodem_dial(struct dmodem *d, const char *number)
+{
+	char cmd[128];
+	int n = snprintf(cmd, sizeof(cmd), "ATD%s", number);
+	if (n < 0 || n >= (int)sizeof(cmd) - 1)
+		return -1;
+	return dmodem_command(d, cmd);
 }
 
 /* ATH: the core's hangup(), its events run */

@@ -38,7 +38,7 @@ static const char config_file[] = "dmodem.conf";
 
 /* the bridge's profile and the jitter buffer */
 struct profile {
-	struct dmb_profile b;
+	struct dmbridge_profile b;
 	int jb_ms;
 };
 
@@ -68,13 +68,13 @@ static void log_line(const char *line)
 
 /* the bridge's log lines: a call's (call: its session) in the session's
    log */
-static void bridge_log(void *call, enum dmb_level level, const char *line)
+static void bridge_log(void *call, enum dmbridge_level level, const char *line)
 {
 	static const switch_log_level_t lv[] = {
-		[DMB_ERROR] = SWITCH_LOG_ERROR,
-		[DMB_WARNING] = SWITCH_LOG_WARNING,
-		[DMB_INFO] = SWITCH_LOG_INFO,
-		[DMB_DEBUG] = SWITCH_LOG_DEBUG,
+		[DMBRIDGE_ERROR] = SWITCH_LOG_ERROR,
+		[DMBRIDGE_WARNING] = SWITCH_LOG_WARNING,
+		[DMBRIDGE_INFO] = SWITCH_LOG_INFO,
+		[DMBRIDGE_DEBUG] = SWITCH_LOG_DEBUG,
 	};
 	switch_core_session_t *session = call;
 
@@ -93,14 +93,14 @@ static int bridge_true(const char *value)
 }
 
 /* fork() and pthread_create() */
-static const struct dmb_host host = {
+static const struct dmbridge_host host = {
 	.log = bridge_log,
 	.is_true = bridge_true,
 };
 
 /* <settings>: debug, the jitter buffer, the fax defaults (no cfg: the
    built-in ones) */
-static void load_settings(switch_xml_t cfg, struct dmb_fax *f, int *jb_ms,
+static void load_settings(switch_xml_t cfg, struct dmbridge_fax *f, int *jb_ms,
 			  int *debug)
 {
 	switch_xml_t settings, param;
@@ -108,7 +108,7 @@ static void load_settings(switch_xml_t cfg, struct dmb_fax *f, int *jb_ms,
 
 	snprintf(dir, sizeof(dir), "%s%sfax", SWITCH_GLOBAL_dirs.storage_dir,
 		 SWITCH_PATH_SEPARATOR);
-	dmb_fax_defaults(f, dir);
+	dmbridge_fax_defaults(f, dir);
 	*jb_ms = DEFAULT_JB_MS;
 	if (debug)
 		*debug = 0;
@@ -118,17 +118,17 @@ static void load_settings(switch_xml_t cfg, struct dmb_fax *f, int *jb_ms,
 	     param = param->next) {
 		const char *name = switch_xml_attr_soft(param, "name");
 		const char *value = switch_xml_attr_soft(param, "value");
-		if (dmb_fax_option(&host, f, name, value))
+		if (dmbridge_fax_option(&host, f, name, value))
 			continue;
-		if (dmb_option_is(name, "jitter-buffer"))
+		if (dmbridge_option_is(name, "jitter-buffer"))
 			*jb_ms = atoi(value);
-		else if (dmb_option_is(name, "debug") && debug)
+		else if (dmbridge_option_is(name, "debug") && debug)
 			*debug = atoi(value);
 	}
 }
 
 /* the settings of <settings> alone (for the fax applications) */
-static void load_fax_settings(struct dmb_fax *f, int *jb_ms)
+static void load_fax_settings(struct dmbridge_fax *f, int *jb_ms)
 {
 	switch_xml_t xml, cfg = NULL;
 
@@ -146,7 +146,7 @@ static int load_profile(const char *name, struct profile *p)
 	switch_xml_t xml, cfg, profiles, prof, param;
 	char where[96];
 
-	dmb_profile_init(&p->b);
+	dmbridge_profile_init(&p->b);
 	if (!(xml = switch_xml_open_cfg(config_file, &cfg, NULL))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 				  "cannot load %s\n", config_file);
@@ -168,13 +168,13 @@ static int load_profile(const char *name, struct profile *p)
 	     param = param->next) {
 		const char *n = switch_xml_attr_soft(param, "name");
 		const char *v = switch_xml_attr_soft(param, "value");
-		if (dmb_profile_option(&host, &p->b, where, n, v))
+		if (dmbridge_profile_option(&host, &p->b, where, n, v))
 			continue;
-		if (dmb_option_is(n, "jitter-buffer"))
+		if (dmbridge_option_is(n, "jitter-buffer"))
 			p->jb_ms = atoi(v);
 	}
 	switch_xml_free(xml);
-	return dmb_profile_check(&host, &p->b, where);
+	return dmbridge_profile_check(&host, &p->b, where);
 }
 
 /*
@@ -377,7 +377,7 @@ static void fax_file_name(switch_core_session_t *session, const char *dir,
 
 /* a fax call on the line until it ends; -1 if the channel hung up */
 static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
-		   const struct dmb_fax *fs)
+		   const struct dmbridge_fax *fs)
 {
 	struct dmodem_fax_config cfg = { 0 };
 	struct dmodem_fax_status st = { 0 };
@@ -465,13 +465,13 @@ SWITCH_STANDARD_APP(dmodem_function)
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	struct profile p;
 	struct line l;
-	struct dmb_call c;
+	struct dmbridge_call c;
 	enum dmodem_law law;
 	char *argv[3] = { 0 }, *mydata, name[64];
 	const char *profile, *status = "ERROR";
 	int orig, line_ok = 0;
 
-	dmb_call_init(&c);
+	dmbridge_call_init(&c);
 	mydata = switch_core_session_strdup(session, data ? data : "");
 	/* "profile o" or "profile,o" (no space to quote in an originate) */
 	for (char *ch = mydata; *ch; ch++)
@@ -496,7 +496,7 @@ SWITCH_STANDARD_APP(dmodem_function)
 
 	switch_copy_string(name, switch_channel_get_name(channel),
 			   sizeof(name));
-	if (dmb_call_start(&c, &host, session, &p.b, name, law, orig))
+	if (dmbridge_call_start(&c, &host, session, &p.b, name, law, orig))
 		goto out;
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
 			  "dmodem %s (profile %s, %s%s)\n",
@@ -505,15 +505,15 @@ SWITCH_STANDARD_APP(dmodem_function)
 			  l.linear ? " transcoded" : "");
 
 	for (;;) {
-		enum dmb_event ev;
+		enum dmbridge_event ev;
 		int n = line_step(&l, modem_fn, c.d);
 
 		if (n < 0) {
 			c.status = "HANGUP";
 			break;
 		}
-		ev = dmb_call_step(&c, n);
-		if (ev == DMB_CONNECTED) {
+		ev = dmbridge_call_step(&c, n);
+		if (ev == DMBRIDGE_CONNECTED) {
 			const char *cid = switch_channel_get_variable(channel,
 							"caller_id_number");
 			const char *env[] = {
@@ -529,9 +529,9 @@ SWITCH_STANDARD_APP(dmodem_function)
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
 					  SWITCH_LOG_INFO,
 					  "dmodem connected at %s bit/s\n", c.rate);
-			ev = dmb_call_serve(&c, env);
+			ev = dmbridge_call_serve(&c, env);
 		}
-		if (ev == DMB_FAX) {
+		if (ev == DMBRIDGE_FAX) {
 			/* a fax machine calling: a fax receiver instead of
 			   the modem */
 			char path[1024];
@@ -545,16 +545,16 @@ SWITCH_STANDARD_APP(dmodem_function)
 			run_fax(&l, DMODEM_FAX_RECEIVE, path, &p.b.fax);
 			break;
 		}
-		if (ev == DMB_END)
+		if (ev == DMBRIDGE_END)
 			break;
 	}
-	dmb_call_hangup(&c);
+	dmbridge_call_hangup(&c);
 	status = c.status;
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
 			  "dmodem done: %s\n", status);
 
 out:
-	dmb_call_end(&c);
+	dmbridge_call_end(&c);
 	if (line_ok)
 		line_close(&l);
 	switch_channel_set_variable(channel, "dmodem_status", status);
@@ -567,7 +567,7 @@ static void fax_app(switch_core_session_t *session, const char *data,
 		    enum dmodem_fax_dir dir)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
-	struct dmb_fax fs;
+	struct dmbridge_fax fs;
 	struct line l;
 	char *argv[3] = { 0 }, *mydata;
 	int argc, jb_ms;
@@ -613,7 +613,7 @@ SWITCH_STANDARD_APP(receive_fax_function)
 static void load_config(void)
 {
 	switch_xml_t xml, cfg;
-	struct dmb_fax f;
+	struct dmbridge_fax f;
 	int debug = 0, jb_ms;
 
 	if ((xml = switch_xml_open_cfg(config_file, &cfg, NULL))) {

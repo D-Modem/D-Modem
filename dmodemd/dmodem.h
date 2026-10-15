@@ -69,6 +69,10 @@ void dmodem_destroy(struct dmodem *d);
    is too long) */
 int  dmodem_answer(struct dmodem *d);
 int  dmodem_dial(struct dmodem *d, const char *number);
+/* a command line as the DTE would type it ("ATS0=0A", say; the \r
+   added), run now; -1 if it is too long.  Its result goes to the DTE
+   (none with ATQ1): what it did shows in dmodem_status() */
+int  dmodem_command(struct dmodem *d, const char *line);
 /* n samples in, n samples out */
 void dmodem_process(struct dmodem *d, const short *in, short *out, int n);
 /* the same with the network's G.711 octets (the law of the

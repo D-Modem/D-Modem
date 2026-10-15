@@ -1,6 +1,11 @@
 #!/bin/sh
 # run.sh [AT+MS=.. [answering profile]]: a call between two DModem() over a Local channel in a
 # private Asterisk (installed, with app_dmodem.so from the CMake build), see bbs_sim.py
+#   LAW=alaw       both modems on an A-law channel
+#   ANSWER=...     the answering profiles' answer command line (ATA), as
+#                  dmodem.conf has it (\; for a ;)
+#   EXPECT=regex   a line of the console the call must leave, e.g.
+#                  'ANSWERER .*DMODEMRATE=14400/'
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 # the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
@@ -11,10 +16,12 @@ cp "$here/modules.conf" "$run/etc/"
 sed "s/DModem(bbs)/DModem(${2:-bbs})/" "$here/extensions.conf" > "$run/etc/extensions.conf"
 export DMODEM_TEST="$here"
 [ "${2:-bbs}" = bbs ] || export BBS_EXEC=1
-# LAW=alaw: both modems on an A-law channel
 sed -e "${LAW:+s/^\(\[[a-z]*\]\)\$/\1\nlaw = $LAW/}" \
     -e "s/^\[term\]/[term]\ninit = ${1:-}/" \
-    "$here/dmodem.conf" > "$run/etc/dmodem.conf"
+    "$here/dmodem.conf" |
+awk '{ print }
+     /^\[bbs(exec)?\]$/ && ENVIRON["ANSWER"] != "" {
+	print "answer = " ENVIRON["ANSWER"] }' > "$run/etc/dmodem.conf"
 # Asterisk's modules (AST_MODULES, else where asterisk.pc says, else
 # Debian's or the default place)
 astmod=${AST_MODULES:-$(pkg-config --variable=modulesdir asterisk 2>/dev/null || true)}
@@ -60,5 +67,8 @@ set +e
 wait $sim; r=$?
 sleep 3
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"
+if [ -n "${EXPECT:-}" ] && ! grep -qE "$EXPECT" "$run/console.log"; then
+	echo "no line matches $EXPECT"; r=1
+fi
 $ast -rx "core stop now" >/dev/null 2>&1
 exit $r

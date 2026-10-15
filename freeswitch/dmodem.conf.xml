@@ -53,6 +53,7 @@
       <param name="port" value="23"/>
       <param name="command" value="exec /usr/sbin/pppd ..."/>
       <param name="init" value="+MS=34"/>     more AT commands for the modem
+      <param name="answer" value="ATA"/>      the command line that answers (AT+MS=132;A)
       <param name="law" value="auto"/>        ulaw, alaw or auto (the channel's codec)
       <param name="timeout" value="60"/>      seconds for the modems to connect
       <param name="jitter-buffer" value="60"/> ms, as in settings

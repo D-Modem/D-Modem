@@ -91,6 +91,12 @@ public:
 	{
 		return dmodem_dial(p_, number.c_str()) == 0;
 	}
+	/* a command line as the DTE's (dmodem_command); false if it is too
+	   long */
+	bool command(const std::string &line)
+	{
+		return dmodem_command(p_, line.c_str()) == 0;
+	}
 	/* n samples in, n out (dmodem_process) */
 	void process(const short *in, short *out, int n)
 	{

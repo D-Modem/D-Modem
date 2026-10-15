@@ -27,6 +27,13 @@ command = exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:19
 
 See [dmodem.conf.sample](../asterisk/dmodem.conf.sample) for all the options.
 
+The modem answers with `ATA`. A profile's `answer` gives the command line
+it answers with instead, with commands for the answering call alone
+before the `A`: `answer = AT+MS=132\;A` answers at V.32bis at most (in
+`dmodem.conf` a `;` is written `\;`). `init` has the commands for both
+directions. A line that leaves the modem not answering ends the call,
+`DMODEMSTATUS` `ERROR`.
+
 `DModem(profile,o)` makes the modem the caller instead (it waits for the
 remote modem's answer tone), on a call Asterisk has placed to a remote
 modem, e.g. `channel originate PJSIP/5559999@trunk application
@@ -160,7 +167,12 @@ test/run.sh                       # V.34
 test/run.sh AT+MS=122             # V.22bis (also 22, 32, 132)
 test/run.sh AT+MS=34 bbsexec      # the BBS as a program on the pty
 LAW=alaw test/run.sh              # on A-law
+ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/' test/run.sh
+                                  # the answer command line: V.32bis
 ```
+
+`EXPECT` is a regular expression that a line of Asterisk's console must
+match, or the test fails.
 
 A Local channel has no clock: the two modems run sample for sample
 faster than real time, which they don't mind.

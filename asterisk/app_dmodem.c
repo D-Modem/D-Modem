@@ -117,7 +117,7 @@ static void log_line(const char *line)
 
 /* the bridge's log lines: a call's under its channel's name (call), the
    call's progress and its details at verbose level 4 */
-static void bridge_log(void *call, enum dmb_level level, const char *line)
+static void bridge_log(void *call, enum dmbridge_level level, const char *line)
 {
 	char who[96];
 
@@ -125,9 +125,9 @@ static void bridge_log(void *call, enum dmb_level level, const char *line)
 		snprintf(who, sizeof(who), "%s: DModem", (const char *)call);
 	else
 		ast_copy_string(who, "dmodem", sizeof(who));
-	if (level == DMB_ERROR)
+	if (level == DMBRIDGE_ERROR)
 		ast_log(LOG_ERROR, "%s: %s\n", who, line);
-	else if (level == DMB_WARNING)
+	else if (level == DMBRIDGE_WARNING)
 		ast_log(LOG_WARNING, "%s: %s\n", who, line);
 	else
 		ast_verb(4, "%s: %s\n", who, line);
@@ -139,7 +139,7 @@ static int bridge_true(const char *value)
 	return ast_true(value);
 }
 
-/* the program's fork: the child is ours to reap (dmb_call_end()), not
+/* the program's fork: the child is ours to reap (dmbridge_call_end()), not
    Asterisk's reaper's, so that its pid stays ours until then */
 static pid_t bridge_fork(void)
 {
@@ -153,7 +153,7 @@ static int bridge_thread(void *(*fn)(void *), void *arg)
 	return ast_pthread_create_detached(&t, NULL, fn, arg) ? -1 : 0;
 }
 
-static const struct dmb_host host = {
+static const struct dmbridge_host host = {
 	.log = bridge_log,
 	.is_true = bridge_true,
 	.fork = bridge_fork,
@@ -162,21 +162,21 @@ static const struct dmb_host host = {
 };
 
 /* the defaults, then the fax options of [general] */
-static void load_fax_general(struct ast_config *cfg, struct dmb_fax *f)
+static void load_fax_general(struct ast_config *cfg, struct dmbridge_fax *f)
 {
 	struct ast_variable *v;
 	char dir[256];
 
 	snprintf(dir, sizeof(dir), "%s/fax", ast_config_AST_SPOOL_DIR);
-	dmb_fax_defaults(f, dir);
+	dmbridge_fax_defaults(f, dir);
 	if (!cfg)
 		return;
 	for (v = ast_variable_browse(cfg, "general"); v; v = v->next)
-		dmb_fax_option(&host, f, v->name, v->value);
+		dmbridge_fax_option(&host, f, v->name, v->value);
 }
 
 /* the fax settings of [general] alone (for DModemSendFax/ReceiveFax) */
-static void load_fax_settings(struct dmb_fax *f)
+static void load_fax_settings(struct dmbridge_fax *f)
 {
 	struct ast_flags flags = { 0 };
 	struct ast_config *cfg = ast_config_load2(config_file, "app_dmodem",
@@ -191,14 +191,14 @@ static void load_fax_settings(struct dmb_fax *f)
 /* [name] of dmodem.conf into *p (fax: [general]'s, then the profile's
    own); -1 if there is no such profile or it lacks host and port (tcp)
    or command (exec) */
-static int load_profile(const char *name, struct dmb_profile *p)
+static int load_profile(const char *name, struct dmbridge_profile *p)
 {
 	struct ast_flags flags = { 0 };
 	struct ast_config *cfg;
 	struct ast_variable *v;
 	char where[96];
 
-	dmb_profile_init(p);
+	dmbridge_profile_init(p);
 	cfg = ast_config_load2(config_file, "app_dmodem", flags);
 	if (!cfg || cfg == CONFIG_STATUS_FILEINVALID) {
 		ast_log(LOG_ERROR, "cannot load %s\n", config_file);
@@ -212,9 +212,9 @@ static int load_profile(const char *name, struct dmb_profile *p)
 	load_fax_general(cfg, &p->fax);
 	snprintf(where, sizeof(where), "[%s]", name);
 	for (v = ast_variable_browse(cfg, name); v; v = v->next)
-		dmb_profile_option(&host, p, where, v->name, v->value);
+		dmbridge_profile_option(&host, p, where, v->name, v->value);
 	ast_config_destroy(cfg);
-	return dmb_profile_check(&host, p, where);
+	return dmbridge_profile_check(&host, p, where);
 }
 
 /* the channel's law: A-law if it has alaw and not ulaw, else mu-law */
@@ -283,7 +283,7 @@ static void fax_file_name(struct ast_channel *chan, const char *dir,
 /* a fax call on the channel until it ends; -1 if the channel hung up */
 static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 		   enum dmodem_law law, enum dmodem_fax_dir dir,
-		   const char *file, const struct dmb_fax *fs,
+		   const char *file, const struct dmbridge_fax *fs,
 		   unsigned char *out)
 {
 	struct dmodem_fax_config cfg = { 0 };
@@ -382,8 +382,8 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 static int dmodem_exec(struct ast_channel *chan, const char *data)
 {
 	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(profile); AST_APP_ARG(options););
-	struct dmb_profile p;
-	struct dmb_call c;
+	struct dmbridge_profile p;
+	struct dmbridge_call c;
 	enum dmodem_law law;
 	struct ast_format *fmt;
 	char *parse, name[64];
@@ -391,7 +391,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];
 	int res = 0, orig;
 
-	dmb_call_init(&c);
+	dmbridge_call_init(&c);
 	parse = ast_strdupa(S_OR(data, ""));
 	AST_STANDARD_APP_ARGS(args, parse);
 	if (ast_strlen_zero(args.profile))
@@ -414,7 +414,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 	}
 
 	ast_copy_string(name, ast_channel_name(chan), sizeof(name));
-	if (dmb_call_start(&c, &host, name, &p, name, law, orig))
+	if (dmbridge_call_start(&c, &host, name, &p, name, law, orig))
 		goto out;
 	ast_verb(3, "%s: DModem %s (profile %s, %s)\n", name,
 		 orig ? "calling" : "answering", args.profile,
@@ -422,7 +422,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 
 	for (;;) {
 		struct ast_frame *f;
-		enum dmb_event ev;
+		enum dmbridge_event ev;
 		int n = ast_waitfor(chan, IDLE_MS), k = 0;
 
 		if (n < 0) {
@@ -455,8 +455,8 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			ast_frfree(f);
 		}
 
-		ev = dmb_call_step(&c, k);
-		if (ev == DMB_CONNECTED) {
+		ev = dmbridge_call_step(&c, k);
+		if (ev == DMBRIDGE_CONNECTED) {
 			const char *env[] = {
 				"DMODEM_CHANNEL", name,
 				"DMODEM_PROFILE", args.profile,
@@ -469,9 +469,9 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			pbx_builtin_setvar_helper(chan, "DMODEMRATE", c.rate);
 			ast_verb(3, "%s: DModem connected at %s bit/s\n", name,
 				 c.rate);
-			ev = dmb_call_serve(&c, env);
+			ev = dmbridge_call_serve(&c, env);
 		}
-		if (ev == DMB_FAX) {
+		if (ev == DMBRIDGE_FAX) {
 			/* a fax machine calling: a fax receiver instead of
 			   the modem */
 			char path[1024];
@@ -484,15 +484,15 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 				res = -1;
 			break;
 		}
-		if (ev == DMB_END)
+		if (ev == DMBRIDGE_END)
 			break;
 	}
-	dmb_call_hangup(&c);
+	dmbridge_call_hangup(&c);
 	status = c.status;
 	ast_verb(3, "%s: DModem done: %s\n", name, status);
 
 out:
-	dmb_call_end(&c);
+	dmbridge_call_end(&c);
 	pbx_builtin_setvar_helper(chan, "DMODEMSTATUS", status);
 	return res;
 }
@@ -521,7 +521,7 @@ static int fax_exec(struct ast_channel *chan, const char *data,
 		    enum dmodem_fax_dir dir)
 {
 	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(file); AST_APP_ARG(ident););
-	struct dmb_fax fs;
+	struct dmbridge_fax fs;
 	enum dmodem_law law;
 	struct ast_format *fmt;
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];

@@ -12,6 +12,10 @@
 ;                    the pty is hung up when the call ends
 ;   init = AT...     extra AT commands for the modem, e.g. AT+MS=34 to
 ;                    stop at V.34, AT+MS=132 for V.32bis
+;   answer = ATA     the command line the modem answers with; commands
+;                    for the answering call alone go before the A, e.g.
+;                    AT+MS=132\;A (a ; is written \; in this file).  A
+;                    line that does not answer ends the call (ERROR)
 ;   law = auto       the G.711 law of the network, ulaw or alaw (auto:
 ;                    the channel's)
 ;   timeout = 60     seconds for the modems to connect

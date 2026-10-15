@@ -531,6 +531,26 @@ TEST(DmodemCxx, TextBothWays)
 	EXPECT_EQ(got_b, msg);
 }
 
+/* command lines as the DTE's (dmodem_command): their results to the
+   DTE, what they do to the call (an answer); one too long refused */
+TEST(DmodemCxx, CommandLines)
+{
+	dm::init();
+	Dte d;
+	dm::Modem m = make("modem", d, "ATE0\r");
+	d.read_all();
+	EXPECT_TRUE(m.command("ATS7?"));
+	EXPECT_EQ(d.read_all(), "60\r\nOK\r\n");
+	EXPECT_TRUE(m.command("ATS7=45"));
+	EXPECT_EQ(d.read_all(), "OK\r\n");
+	EXPECT_EQ(m.status().link, DMODEM_IDLE);
+	/* what the bridge's answer option runs */
+	EXPECT_TRUE(m.command("ATS0=0A"));
+	EXPECT_EQ(m.status().link, DMODEM_CONNECTING);
+	EXPECT_FALSE(m.command("AT" + std::string(200, 'S')));
+	m.hangup();
+}
+
 /* the log lines (DmodemCxx.LawForEachCall) */
 static std::vector<std::string> log_lines;
 

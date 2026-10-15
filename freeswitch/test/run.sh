@@ -9,6 +9,9 @@
 #   run.sh AT+MS=34 bbsexec     the BBS as a program on the pty
 #   run.sh AT+MS=34 bbsalaw     the answering modem on A-law: transcoded
 #   LAW=alaw run.sh             on A-law (PCMA)
+#   ANSWER='AT+MS=132;A' run.sh the answering modem's command line (ATA)
+#   EXPECT=regex                a line of the log the call must leave, e.g.
+#                               'ANSWERER .*dmodem_rate=14400/'
 . "$(dirname "$0")/fs.sh"
 TERM_INIT=$(echo "${1:-}" | sed 's/^AT//')
 profile=${2:-bbs}
@@ -23,5 +26,8 @@ wait $sim; r=$?
 fs_wait "ANSWERER dmodem_status" 1 10
 grep -E "dmodem (answering|calling|connected|done)|mod_dptools.c:[0-9]* ANSWERER" "$run/log/freeswitch.log" |
 	sed 's/^[^ ]* [^ ]* //'
+if [ -n "${EXPECT:-}" ] && ! grep -qE "$EXPECT" "$run/log/freeswitch.log"; then
+	echo "no line matches $EXPECT"; r=1
+fi
 fs_stop
 exit $r
