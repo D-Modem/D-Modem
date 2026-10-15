@@ -3,7 +3,7 @@ A ATE0V0X3+MS=122\r
 B ATE0+MS=122,0\r
 B ATA\r
 A ATD\r
-until A 1\r 30000
+until A 11\r 30000
 until B CONNECT 2000
 state
 send A 600
@@ -14,10 +14,11 @@ until B NO CARRIER 10000
 run 500
 state
 A AT+MS=21,0\r
+until A 0\r 1000
 B AT+MS=21,0\r
 B ATA\r
 A ATDT5551234\r
-until A 1\r 30000
+until A 9\r 30000
 until B CONNECT 2000
 state
 send A 200

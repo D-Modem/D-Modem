@@ -32,7 +32,7 @@ interface has one addition the original library does not use:
 
 | DP id (`AT+MS=`) | Modulation | Notes |
 |---|---|---|
-| `DP_CALLPROG` | Call progress | Dial tone (X2/X4), DTMF dialing, V.25 calling tone, busy cadence, answer tone (2100 Hz / 2225 Hz / V.22 unscrambled ones), no-answer timeout |
+| `DP_CALLPROG` | Call progress | Dial tone (X2/X4), DTMF dialing, the dial string's `W` (a dial tone), `@` (quiet after ringing) and `;` (`DPSTAT_DIALED`, the call held for more digits), V.25 calling tone, busy cadence, answer tone (2100 Hz / 2225 Hz / V.22 unscrambled ones), no-answer timeout |
 | 21 | ITU V.21, 300 bit/s FSK | |
 | 23 | ITU V.23, 1200/75 bit/s FSK | The answering side sends the 1200 bit/s channel |
 | 103 | Bell 103, 300 bit/s FSK | |

@@ -1,0 +1,91 @@
+# The dial string's ';' (V.250): back to command state once the number
+# is dialed, the call kept; ATD dials on or starts the handshake (ATO
+# too), ATA answers it (call-back), ATH hangs it up.  W waits for a dial
+# tone, @ for ringing and then 5 s of quiet.  CONNECT's numbers (ATV0,
+# with &A3's lines) and the protocol after its rate (AT\V1).
+A ATE0X3V0&A3+MS=122S7=8\r
+B ATE0X3\\V1+MS=122\r
+run 100
+# no stored numbers: ERROR
+A ATDT9S=0\r
+# ATX3: the network dials (SIP), held at once; commands run
+A ATDT5551234;\r
+run 100
+A ATS7?\r
+state
+# the handshake: ATD with nothing more
+B ATA\r
+A ATD\r
+until A 11\r 30000
+until B CONNECT 2000
+state
+hangup A
+until B NO CARRIER 10000
+run 500
+# call-back: A answers the call it dialed (the rest of the line), B
+# calls on its line
+A ATV1&A0\r
+A ATDT5551234;A\r
+B AT\\V0D\r
+until B CONNECT 30000
+until A CONNECT 2000
+state
+hangup B
+until A NO CARRIER 10000
+run 500
+# ATO goes on as ATD; nothing to dial: on to the answer (none: NO
+# ANSWER after S7)
+A ATD;\r
+until A OK 1000
+A ATO\r
+until A NO ANSWER 10000
+run 500
+# in-band (ATX4): the dial tone, the digits, held; more digits, then
+# ATH: OK, NO CARRIER
+tone A 350+440
+A ATX4DT123;\r
+until A OK 5000
+tone A off
+A ATDT45;\r
+until A OK 2000
+A ATH\r
+until A NO CARRIER 1000
+run 500
+# W: a second dial tone after the first digit, 2 s late
+tone A 350+440
+A ATDT9W5;\r
+run 1100
+tone A off
+run 2000
+tone A 350+440
+until A OK 5000
+tone A off
+A ATH\r
+until A NO CARRIER 1000
+run 500
+# W without one: NO DIALTONE after S7
+tone A 350+440
+A ATDT9W5\r
+run 1100
+tone A off
+until A NO DIALTONE 10000
+run 500
+# @: ringing, 5 s of quiet after it
+tone A 350+440
+A ATS7=20DT9@5;\r
+run 1100
+tone A 440+480 1000 3000
+run 6000
+tone A off
+until A OK 10000
+A ATH\r
+until A NO CARRIER 1000
+run 500
+# @ without ringing: NO ANSWER after S7
+tone A 350+440
+A ATS7=8DT9@5\r
+run 1100
+tone A off
+until A NO ANSWER 10000
+run 500
+state

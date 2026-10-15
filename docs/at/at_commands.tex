@@ -236,11 +236,13 @@ command that fails ends the line with ERROR; otherwise OK follows the
 last one.  \cmd{A}, \cmd{D} and
 \cmd{O} end the line and give their result later (CONNECT, NO CARRIER and
 so on), and \cmd{Z} ends it with OK: whatever follows them on the line is
-not read.  A command that reports something (\cmd{I}, \cmd{S}\p{n}\cmd{?},
+not read, but for a dial string's \cmd{;}, after which the rest of the
+line runs once the number is dialed (\cmdl[D]{ATD}).  A command that reports something (\cmd{I}, \cmd{S}\p{n}\cmd{?},
 \cmdl[plusMS-q]{+MS?} \ldots) prints it on lines of its own before the result.
 
 A character from the DTE while a call is being set up (dialing,
-answering, the modems' training) hangs up.
+answering, the modems' training) hangs up; after a dial string's
+\cmd{;} the modem is in command state, and takes commands.
 
 \section{Result codes}
 
@@ -250,7 +252,8 @@ answering, the modems' training) hangs up.
 \rowcolor{dmhead}\thd{\cmdl[V]{V0}} & \thd{\cmdl[V]{V1}} & \\
 \midrule
 0 & OK & the command line ran \\
-1 & CONNECT [\p{rate}] & the call is up, or a fax command's data begins \\
+1 & CONNECT & the call is up, or a fax command's data begins \\
+\p{n} & CONNECT \p{rate} & a data call up at \p{rate} (below) \\
 2 & RING & a call rings (dmodemd: every 3 s, section~\ref{sec:sip}) \\
 3 & NO CARRIER & no call came up, or the call is over \\
 4 & ERROR & a command failed, or a line too long \\
@@ -262,25 +265,56 @@ answering, the modems' training) hangs up.
 \end{center}
 
 \cmdl[Q]{Q1} turns them off, \cmdl[V]{V0} gives the numbers, each on a line of
-its own.  With \cmdl[V]{V1} a data call's CONNECT gives the rate the modem
-receives at, in bit/s (\cmd{CONNECT 33600}); with \cmdl[X]{X0}, in fax and
-in voice mode it is CONNECT alone.
-
-Before CONNECT, \cmdl[ampA]{\&A} (\sreg{70}) adds lines on the connection (verbose
-results only), each bit one of them:
+its own.  A data call's CONNECT gives the rate the modem receives at, in
+bit/s (\cmd{CONNECT 33600}), and with \cmdl[V]{V0} that rate's number (23);
+with \cmdl[X]{X0}, in fax and in voice mode it is CONNECT (1) alone.
+\cmdl[bsV]{\bs V1} adds the error correction and the compression to it
+(\cmd{CONNECT 33600/LAPM/V42bis}).  The rates' numbers are Smart Link's
+(its ST56 manual's), and D-Modem's own from 80 for the rates that has
+not; a rate with neither is 1:
 
 \begin{center}
-\begin{tabular}{cll}
+\small
+\begin{tabular}{rr@{\hspace{2em}}rr@{\hspace{2em}}rr@{\hspace{2em}}rr}
 \toprule
-\rowcolor{dmhead}\thd{bit} & \thd{line} & \\
+\rowcolor{dmhead}\thd{rate} & \thd{n} & \thd{rate} & \thd{n} &
+  \thd{rate} & \thd{n} & \thd{rate} & \thd{n} \\
 \midrule
-0 (1) & \cmd{Modulation: }\p{name} & the modulation's name (\cmd{V92},
-  \cmd{V34}, \cmd{V32bis}, \ldots) \\
-1 (2) & \cmd{Protocol: LAPM}, \cmd{MNP} or \cmd{NONE} & the error
-  correction (V.42's LAPM, MNP 2 to 4) \\
+75 & 80 & 24000 & 19 & 37333 & 51 & 50666 & 58 \\
+300 & 9 & 25333 & 81 & 38000 & 43 & 52000 & 32 \\
+600 & 10 & 26400 & 20 & 38666 & 52 & 53333 & 59 \\
+1200 & 5 & 26666 & 82 & 40000 & 25 & 54000 & 33 \\
+2400 & 11 & 28000 & 46 & 41333 & 53 & 54666 & 60 \\
+4800 & 12 & 28800 & 21 & 42000 & 26 & 56000 & 34 \\
+7200 & 13 & 29333 & 47 & 42666 & 54 & 57333 & 83 \\
+9600 & 27 & 30666 & 48 & 44000 & 28 & 57600 & 35 \\
+12000 & 14 & 31200 & 22 & 45333 & 55 & 58000 & 44 \\
+14400 & 15 & 32000 & 40 & 46000 & 29 & 58666 & 84 \\
+16800 & 16 & 33333 & 49 & 46666 & 56 & 60000 & 45 \\
+19200 & 17 & 33600 & 23 & 48000 & 30 & 61333 & 85 \\
+21600 & 18 & 34666 & 50 & 49333 & 57 & 62666 & 86 \\
+& & 36000 & 42 & 50000 & 31 & 64000 & 87 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Before CONNECT, \cmdl[ampA]{\&A} (\sreg{70}) adds lines on the
+connection, each bit one of them; with \cmdl[V]{V0} the first three are
+numbers, Smart Link's, and the fourth is left out:
+
+\begin{center}
+\begin{tabular}{c p{0.5\textwidth} p{0.28\textwidth}}
+\toprule
+\rowcolor{dmhead}\thd{bit} & \thd{line} & \thd{\cmdl[V]{V0}} \\
+\midrule
+0 (1) & \cmd{Modulation: }\p{name}, the modulation (\cmd{V92},
+  \cmd{V34}, \cmd{V32bis}, \ldots) & 1000 and its number (1092, 1034,
+  1132, \ldots) \\
+1 (2) & \cmd{Protocol: LAPM}, \cmd{MNP} or \cmd{NONE}, the error
+  correction (V.42's LAPM, MNP 2 to 4) & 77, 78, 76 \\
 0 and 1 (3) & \cmd{Compression: V44}, \cmd{V42bis}, \cmd{MNP5} or
-  \cmd{NONE} & what V.42 or MNP agreed \\
-2 (4) & \cmd{TxRate: }\p{rate} & the rate the modem sends at \\
+  \cmd{NONE}, what V.42 or MNP agreed & 68, 67, 66, 69 \\
+2 (4) & \cmd{TxRate: }\p{rate}, the rate the modem sends at & none \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -290,7 +324,9 @@ results only), each bit one of them:
 \begin{command}{A}{ATA}
 Answers: off hook, and the answering modem's tones after \sreg{92} seconds.
 In dmodemd the call that rings (\cmd{RING}) is answered.  Its result is
-CONNECT, or NO CARRIER.
+CONNECT, or NO CARRIER.  On a call held after a dial string's \cmd{;}
+it answers that call (V.250's call-back: \cmd{ATD}\p{number}\cmd{;A}
+dials, then answers).
 \end{command}
 
 \begin{command}{B}{ATB, ATB\p{n}}
@@ -303,14 +339,39 @@ negotiation and \cmdl[plusMS]{+MS} choose).
 
 \begin{command}{D}{ATD\p{string}}
 Dials \p{string} and calls.  The dialer sends the digits and
-\cmd{* \# A B C D} as DTMF (\sreg{11} ms each, as long between them); a comma
-pauses \sreg{8} seconds, \cmd{W} two; other characters are skipped.  \cmd{T}
-and \cmd{P} choose tone or pulse dialing (\sreg{16}) for the rest of the call.
-\cmd{ATDL} dials the last number again (\cmd{Dialing }\p{number}\cmd{...}
-first).  With \cmdl[X]{X2} or \cmdl[X]{X4} the modem waits for a dial tone first.
-The result is CONNECT, BUSY, NO ANSWER, NO DIALTONE or NO CARRIER.  In
-dmodemd the dial string is the SIP call's number
-(section~\ref{sec:sip}).
+\cmd{* \# A B C D} as DTMF (\sreg{11} ms each, as long between them);
+\cmd{T} and \cmd{P} choose tone or pulse dialing (\sreg{16}) for the
+rest of the call, and these modifiers do as V.250 has them:
+
+\begin{center}
+\begin{tabular}{>{\ttfamily}l p{0.75\textwidth}}
+\toprule
+, & a pause of \sreg{8} seconds \\
+W & waits for a dial tone (1 s of it): NO DIALTONE if none comes in
+  \sreg{7} seconds \\
+@ & waits for the remote end's ringing (0.5 s of sound at least), then
+  for 5 s of quiet after it: NO ANSWER if that does not come in
+  \sreg{7} seconds \\
+; & ends the dial string: once the number is dialed the modem is back
+  in command state, off hook with the call kept, and says OK; the rest
+  of the line runs then \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Other characters (\cmd{!}, the hook flash, among them: a SIP call has
+no hook to flash) are skipped; \cmd{S=}\p{n} (a stored number) is ERROR,
+as there are none.  \cmd{ATDL} dials the last number again
+(\cmd{Dialing }\p{number}\cmd{...} first).  With \cmdl[X]{X2} or
+\cmdl[X]{X4} the modem waits for a dial tone first.  The result is
+CONNECT, BUSY, NO ANSWER, NO DIALTONE or NO CARRIER.
+
+After a \cmd{;} the call waits, silent, for the DTE: \cmd{ATD}\p{more}
+dials more on it (as DTMF; a \cmd{;} again holds it again),
+\cmd{ATD} alone or \cmdl[O]{ATO} starts the calling modem's handshake,
+\cmdl[A]{ATA} the answering modem's, and \cmdl[H]{ATH} hangs up (OK,
+then NO CARRIER).  \cmd{ATDL} is ERROR then.  In dmodemd the dial
+string is the SIP call's number (section~\ref{sec:sip}).
 \end{command}
 
 \begin{command}{E}{ATE[\p{n}]}
@@ -356,8 +417,9 @@ it.  The same as \cmdl[plusMS]{+MS}'s second parameter.
 \end{command}
 
 \begin{command}{O}{ATO}
-Back online after the escape (section~\ref{sec:online}): CONNECT.  ERROR
-when there is no call to go back to.
+Back online after the escape (section~\ref{sec:online}): CONNECT.  On a
+call held after a dial string's \cmd{;}, the calling modem's handshake
+(as \cmdl[D]{ATD}).  ERROR when there is no call to go back to.
 \end{command}
 
 \begin{command}{P}{ATP, ATT}
@@ -394,8 +456,9 @@ Results and dial tone, \cmd{X0} to \cmd{X4} (\sreg{56}; default 4):
 \bottomrule
 \end{tabular}
 \end{center}
-BUSY (four cadences of 0.2 to 0.8 s) and NO ANSWER come in all of them.
-A SIP call has no dial tone: dmodemd wants \cmd{ATX3}.
+BUSY (four cadences of 0.2 to 0.8 s) and NO ANSWER come in all of them,
+and the dial string's \cmd{W} and \cmd{@} wait in all of them.  A SIP
+call has no dial tone: dmodemd wants \cmd{ATX3}.
 \end{command}
 
 \begin{command}{Y}{ATY[\p{n}]}
@@ -453,9 +516,24 @@ Other modems' choice of error correction, as \cmdl[bsN]{\bs N}:
 none).  The others (synchronous modes) are ERROR.
 \end{command}
 
-\begin{command}{ampV}{AT\&V, AT\&W[\p{n}]}
-There are no stored profiles: \cmd{\&V} (show them) is ERROR, and
-\cmd{\&W}, \cmd{\&W0}, \cmd{\&W1} (store one) answer OK, storing nothing.
+\begin{command}{ampV}{AT\&V[0], AT\&W[\p{n}]}
+\cmd{\&V} and \cmd{\&V0} show the active settings, in lines of 72
+columns at most: the basic commands', the S-registers in use
+(\cmd{S}\p{nn}\cmd{:}\p{vvv}), \cmdl[plusMS]{+MS} and the other
+extended settings, and the parameters kept for other modems' setup
+strings (section~\ref{sec:compat}).  There are no stored profiles: the
+list ends with \cmd{STORED PROFILES: none}, and \cmd{\&W}, \cmd{\&W0},
+\cmd{\&W1} (store one) answer OK, storing nothing.  \cmd{\&V1} and up
+are ERROR.
+\begin{verbatim}
+ACTIVE PROFILE:
+E1 L3 M1 N1 Q0 T V1 X4 Y0 &A0 &C0 &E0 &H0 &P0 \A3 \N3 \V0 %C3 %E0
+S00:000 S01:000 S02:043 S03:013 S04:010 S05:008 S06:002 S07:060 S08:002
+...
++MS=92,1,300,56000 +FCLASS=0 +GCI=b5 +PMH=0 +PMHT=5 #CID=0 +IFC=2,2
+...
+STORED PROFILES: none
+\end{verbatim}
 \end{command}
 
 \begin{command}{bsA}{AT\bs A[\p{n}]}
@@ -492,6 +570,14 @@ takes an LR (from a modem with MNP only, or one set so) as the start of
 MNP.  With MNP only the originator starts with its LR.  MNP 5 compression
 goes with MNP (\cmdl[ampK]{\%C}), MNP's block size is
 \cmdl[bsA]{\bs A}'s.  \cmd{ATS103=}\p{n} is \cmd{\bs N}\p{n}.
+\end{command}
+
+\begin{command}{bsV}{AT\bs V[\p{n}]}
+\cmd{\bs V1} (\cmd{\bs V2} the same): a data call's CONNECT has the
+error correction and the compression after its rate,
+\cmd{CONNECT 33600/LAPM/V42bis}, \cmd{CONNECT 2400/MNP/MNP5},
+\cmd{CONNECT 28800/NONE}; \cmd{\bs V0} the rate alone (\sreg{106};
+default 0).  With \cmdl[V]{V0} or \cmdl[X]{X0} it changes nothing.
 \end{command}
 
 \begin{command}{pctE}{AT\%E[\p{n}]}
@@ -732,6 +818,7 @@ Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;
 \sregrow{103} & error correction (\cmdl[bsN]{\bs N}) & 3 & \\
 \sregrow{104} & data compression (\cmdl[ampK]{\%C}, \cmdl[ampK]{\&K}) & 3 & \\
 \sregrow{105} & MNP's block size (\cmdl[bsA]{\bs A}) & 3 & \\
+\sregrow{106} & the protocol in CONNECT (\cmdl[bsV]{\bs V}) & 0 & \\
 \sregrow{161} & \cmdl[Y]{Y} & 0 & kept \\
 \bottomrule
 \end{longtable}
@@ -762,6 +849,11 @@ it).
   is a SIP user's name, as it is: \cmdl[D]{ATDalice}.
 \item The line has no dial tone: \cmdl[X]{ATX3} (or \cmdl[X]{X1}), else
   NO DIALTONE.
+\item A dial string with a \cmd{;} (\cmdl[D]{ATDT5551000;}) makes the
+  SIP call and says OK at once, the modem in command state: what
+  \cmd{ATD} adds then goes as DTMF on the call (a menu's choices, an
+  extension), and \cmd{ATD} alone or \cmdl[A]{ATA} starts the modem's
+  handshake.
 \item With \cmd{-L} dmodemd registers and takes calls: RING every 3
   seconds while one waits, \cmdl[A]{ATA} or \sreg{0} rings (\cmdl[S]{ATS0=1}) answer
   it, and the rings stop if the caller gives up.  A call that comes while
@@ -817,7 +909,6 @@ W0 to W2 & what CONNECT reports (here \cmdl[ampA]{\&A} and
 \bs Q0 to \bs Q3 & flow control \\
 \bs R0, \bs R1 & the ring indicator after the answer \\
 \bs T0 to \bs T255 & the inactivity timer \\
-\bs V0 to \bs V2 & the protocol in CONNECT (here \cmdl[ampA]{\&A}) \\
 -C0, -C1 & the calling tone \\
 -K0 to -K2, -Q0, -Q1, )M0 to )M2, @M0 to @M30, *H0 to *H2 &
   Rockwell's MNP 10 and 10EC (cellular): MNP Extended Services, the
@@ -874,15 +965,15 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
   transmit level: \cmd{ATS92=10} makes the modem wait 10 s before its
   answer tone).  The others (S36, S37, S48, S91 \ldots) are free: kept
   as written.  \sreg{7} and \sreg{11} start at 60 and 100.
-\item The dial string's \cmd{W} pauses 2 s (elsewhere it waits for a
-  second dial tone); \cmd{;} (back to command mode after dialing),
-  \cmd{!} (hook flash), \cmd{@} (quiet answer) and \cmd{\$} (bong tone)
-  are skipped.  There are no stored numbers: \cmd{\&Z} and \cmd{ATDS}
-  are ERROR.
+\item The dial string's \cmd{!} (hook flash) and \cmd{\$} (bong tone)
+  are skipped.  There are no stored numbers: \cmd{\&Z} and
+  \cmd{ATDS=}\p{n} are ERROR.
 \item \cmdl[I]{ATI}'s numbers are the modem's own (\cmd{I0} to
   \cmd{I7}); \cmd{ATI8} and up are ERROR.
-\item The numeric results are 0 to 8 (\cmdl[V]{V0}): every CONNECT is
-  1, its rate in the verbose result only.
+\item The numeric results (\cmdl[V]{V0}) are Smart Link's, CONNECT's
+  for each rate among them; those of USRobotics' and Conexant's modems
+  differ.  CONNECT's rates without a number of Smart Link's have
+  D-Modem's own, 80 to 87.
 \item MNP is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[ampK]{\%C}): there
   is no MNP 10 or 10EC.  A modem with MNP 10EC connects with V.42 (its
   ``EM'' detection patterns are passed over).  See
@@ -892,7 +983,7 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
 
 \subsection{Not there}
 
-ERROR: \cmd{\&V} and \cmd{\&Z} (no stored profiles or numbers),
+ERROR: \cmd{\&V1} and up, \cmd{\&Z} (no stored numbers),
 \cmd{\&T} (self tests), \cmd{\bs B} (a break), \cmd{X5} and up,
 \cmd{-V90} (\cmdl[plusMS]{+MS} chooses), \cmd{+MA}, \cmd{+MSC},
 \cmd{+EB}, \cmd{+ESR}, \cmd{+ETBM}, \cmd{+EWIND}, \cmd{+EFRAM},

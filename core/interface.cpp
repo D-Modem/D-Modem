@@ -77,7 +77,7 @@ long Modem::get_param(unsigned name)
 		val = host_.codec_type(*this);
 		return val < 0 ? CODEC_UNKNOWN : val;
 	case MDMPRM_DIALSTR:
-		return (long)dial_string_;
+		return (long)dialing_;
 	case MDMPRM_AUTOMODE:
 		return 0;
 	case MDMPRM_DPRUNTIME:

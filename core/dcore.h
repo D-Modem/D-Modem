@@ -247,6 +247,8 @@ private:
 	void setup_config();
 	void change_dp();
 	int dial_start();
+	void dialed();
+	int link_init();
 	void report(Result r);
 	void events(unsigned ev);
 	void schedule_event(unsigned mask, unsigned long ms);
@@ -284,6 +286,7 @@ private:
 	int at_H(char *p, int *len);
 	int at_I(char *p, int *len);
 	int at_O(char *p, int *len);
+	int at_ampV(char *p, int *len);
 	int at_S(char *p, int *len);
 	int at_Z(char *p, int *len);
 	int at_GCI(char *p, int *len);
@@ -357,6 +360,12 @@ private:
 	void *cid_ = nullptr;
 
 	char dial_string_[128] = {};
+	/* what call progress dials: the dial string, and after a ';'
+	   (dialed_: in command state, the call kept) what ATD adds; the
+	   rest of the ATD line, to run then */
+	char dialing_[128] = {};
+	bool dialed_ = false;
+	char dial_rest_[64] = {};
 	unsigned escape_count_ = 0;
 	unsigned long last_esc_check_ = 0;
 

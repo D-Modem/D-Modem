@@ -21,9 +21,14 @@
  *      signal A, cancel A  a ringing call (SIP) comes, goes
  *      hangup A            the program hangs A up
  *      state               the states of the calls and their rates
+ *      tone A <f>[+<f>] [<on> <off>], tone A off
+ *                          a tone on A's line besides B (a dial tone,
+ *                          ringing): its frequencies (Hz), steady or on
+ *                          and off ms at a time; none
  *
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -44,6 +49,10 @@ struct Side {
 	std::string since;      /* for until */
 	std::string tx;         /* the DTE's data still to send */
 	std::vector<int16_t> in, out;
+	/* a tone on its line: frequencies, on and off samples (off 0:
+	   steady), the samples since it began */
+	std::vector<double> tone;
+	unsigned long tone_on = 0, tone_off = 0, tone_n = 0;
 };
 
 static unsigned long samples, ms;
@@ -130,6 +139,22 @@ static void feed(Side &s)
 	s.tx.erase(0, n);
 }
 
+/* the side's tone (if any) on its line's samples */
+static void add_tone(Side &s)
+{
+	if (s.tone.empty())
+		return;
+	for (int16_t &x : s.in) {
+		unsigned long t = s.tone_n++;
+		if (s.tone_off && t % (s.tone_on + s.tone_off) >= s.tone_on)
+			continue;
+		double y = x;
+		for (double f : s.tone)
+			y += 3000 * sin(2 * M_PI * f * t / RATE);
+		x = (int16_t)(y > 32767 ? 32767 : y < -32768 ? -32768 : y);
+	}
+}
+
 /* one block of audio: each side's output reaches the other a block later */
 static void block()
 {
@@ -142,6 +167,8 @@ static void block()
 	}
 	sides[0].in = sides[1].out;
 	sides[1].in = sides[0].out;
+	for (Side &s : sides)
+		add_tone(s);
 	samples += BLOCK;
 	ms = samples * 1000 / RATE;
 	for (Side &s : sides)
@@ -237,6 +264,18 @@ int main(int argc, char **argv)
 		} else if (!strcmp(cmd, "signal") || !strcmp(cmd, "cancel")) {
 			side(a).core->ring_signal(!strcmp(cmd, "signal"));
 			collect_all();
+		} else if (!strcmp(cmd, "tone")) {
+			Side &s = side(a);
+			char f[64] = "";
+			unsigned long on = 0, off = 0;
+			sscanf(buf, "%*s %*s %63s %lu %lu", f, &on, &off);
+			s.tone.clear();
+			s.tone_on = on * RATE / 1000;
+			s.tone_off = off * RATE / 1000;
+			s.tone_n = 0;
+			for (char *t = strtok(f, "+"); t && strcmp(t, "off");
+			     t = strtok(nullptr, "+"))
+				s.tone.push_back(atof(t));
 		} else if (!strcmp(cmd, "hangup")) {
 			side(a).core->hangup();
 			collect_all();

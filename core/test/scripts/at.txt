@@ -61,6 +61,13 @@ A AT+IFC=2,2\r
 A AT+IFC=1,1\r
 A AT&A7&C1&D2&E1&F&H1&K3&P1&R1&S0\r
 A ATS70?S60?S71?S62?S104?S28?\r
+# AT&V: the active settings (\V1 shown, \V2 taken, \V3 and &V1
+# ERROR)
+A AT\\V1\r
+A AT&V0\r
+A AT\\V2&V1\r
+A AT\\V3\r
+A AT\\V0\r
 A AT&V\r
 A AT&W\r
 A AT&Q\r

@@ -131,6 +131,7 @@ enum S_REGISTER {
 	SREG_EC                           = 103,
 	SREG_COMP                         = 104,
 	SREG_MNP_BLOCK                    = 105,   /* (\AN)    */
+	SREG_CONNECT_PROTOCOL             = 106,   /* (\VN)    */
 
         SREG_DEFAULT_SETTING              = 161, // AT used
 #else
@@ -323,6 +324,9 @@ enum DP_ID {
 #define DPSTAT_BUSY       7
 #define DPSTAT_NOANSWER   8
 #define DPSTAT_CHANGEDP   10
+/* (call progress) the dial string's ';' reached: the number is dialed,
+   the modem back in command state, the call kept */
+#define DPSTAT_DIALED     11
 
 /* dsp info structure */
 struct dsp_info {

@@ -153,9 +153,17 @@ int Modem::at_B(char *, int *)
 }
 
 /* ATD: dials the rest of the line (T, P: tone, pulse; L: the last
-   number again); no result now */
+   number again) up to a ';', after which it returns to command state
+   once the number is dialed and runs what follows on the line (V.250);
+   no result now (ERROR for a stored number, S=<n>: there are none) */
 int Modem::at_D(char *p, int *)
 {
+	char *semi = strchr(p, ';');
+	dial_rest_[0] = '\0';
+	for (const char *q = p; *q && q != semi; q++)
+		if (toupper(*q) == 'S' && q[1] == '=' &&
+		    isdigit((unsigned char)q[2]))
+			return -1;
 	switch (toupper(*p)) {
 	case 'T':
 		set_sreg(SREG_TONE_OR_PULSE, 1);
@@ -172,9 +180,14 @@ int Modem::at_D(char *p, int *)
 			crlf();
 		}
 		p = nullptr;
+		semi = nullptr;
 		break;
 	default:
 		break;
+	}
+	if (semi) {
+		snprintf(dial_rest_, sizeof(dial_rest_), "AT%s", semi + 1);
+		semi[1] = '\0';
 	}
 	/* the number keeps its T or P: call progress reads it */
 	return dial(p) ? -1 : 1;
@@ -912,7 +925,6 @@ static const struct {
 	{ "\\Q", "0-3", false },        /* flow control */
 	{ "\\R", "0-1", false },        /* the ring indicator */
 	{ "\\T", "0-255", false },      /* the inactivity timer */
-	{ "\\V", "0-2", false },        /* the protocol in CONNECT */
 	{ "-C", "0-1", false },         /* the calling tone */
 	/* Rockwell's MNP 10 and 10EC (cellular): power levels, the link's
 	   speed, the V.22bis fallback, MNP Extended Services */
@@ -1120,6 +1132,106 @@ void Modem::ec_mode_from_es()
 			sregs_[SREG_EC] = (unsigned char)n;
 }
 
+/* AT&V, AT&V0: the active settings (no profiles are stored): the basic
+   commands, the S-registers in use, the extended settings and the
+   parameters kept for other modems' setup strings, in lines of 72
+   columns at most */
+int Modem::at_ampV(char *p, int *len)
+{
+	static const struct {
+		const char *fmt;
+		int reg;
+	} basic[] = {
+		{ "E%d", SREG_ECHO }, { "L%d", SREG_SPEAKER_VOLUME },
+		{ "M%d", SREG_SPEAKER_CONTROL }, { "N%d", SREG_AUTOMODE },
+		{ "Q%d", SREG_QUIET }, { nullptr, SREG_TONE_OR_PULSE },
+		{ "V%d", SREG_VERBOSE }, { "X%d", SREG_X_CODE },
+		{ "Y%d", SREG_DEFAULT_SETTING },
+		{ "&A%d", SREG_CONNNECT_MSG_FORMAT }, { "&C%d", SREG_CD },
+		{ "&E%d", SREG_CONNNECT_MSG_SPEED_SRC },
+		{ "&H%d", SREG_FLOW_CONTROL }, { "&P%d", SREG_PULSE_RATIO },
+		{ "\\A%d", SREG_MNP_BLOCK }, { "\\N%d", SREG_EC },
+		{ "\\V%d", SREG_CONNECT_PROTOCOL }, { "%%C%d", SREG_COMP },
+		{ "%%E%d", SREG_LINE_QUALITY_CONTROL },
+	};
+	static const unsigned char regs[] = {
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24,
+		28, 29, 30, 31, 32, 39, 56, 60, 62, 70, 71, 92, 103, 104, 105,
+		106, 161,
+	};
+	char line[160], item[160];
+	size_t n = 0;
+	/* an item on the line, or on the next one */
+	auto add = [&](const char *it) {
+		size_t k = strlen(it);
+		if (n && n + 1 + k > 72) {
+			puts(line);
+			crlf();
+			n = 0;
+		}
+		n += snprintf(line + n, sizeof(line) - n, n ? " %s" : "%s", it);
+		if (n >= sizeof(line))
+			n = sizeof(line) - 1;
+	};
+	/* the line so far */
+	auto flush = [&]() {
+		if (n) {
+			puts(line);
+			crlf();
+		}
+		n = 0;
+	};
+
+	*len = 0;
+	if (isdigit((unsigned char)*p)) {
+		if (*p != '0')
+			return -1;
+		*len = 1;
+	}
+	puts("ACTIVE PROFILE:");
+	crlf();
+	for (const auto &b : basic) {
+		if (b.fmt)
+			snprintf(item, sizeof(item), b.fmt, sregs_[b.reg]);
+		else
+			snprintf(item, sizeof(item), "%s",
+				 sregs_[b.reg] ? "T" : "P");
+		add(item);
+	}
+	flush();
+	for (unsigned r : regs) {
+		snprintf(item, sizeof(item), "S%02u:%03u", r, sregs_[r]);
+		add(item);
+	}
+	flush();
+	snprintf(item, sizeof(item), "+MS=%d,%d,%u,%u", sregs_[SREG_DP],
+		 sregs_[SREG_AUTOMODE], min_rate_, max_rate_);
+	add(item);
+	snprintf(item, sizeof(item), "+FCLASS=%d", mode_);
+	add(item);
+	snprintf(item, sizeof(item), "+GCI=%x", homolog_->id);
+	add(item);
+	snprintf(item, sizeof(item), "+PMH=%d", moh_off_);
+	add(item);
+	snprintf(item, sizeof(item), "+PMHT=%d", moh_timer_);
+	add(item);
+	snprintf(item, sizeof(item), "#CID=%u", cid_requested_);
+	add(item);
+	for (size_t i = 0; i < sizeof(kept_params) / sizeof(kept_params[0]);
+	     i++) {
+		size_t m = snprintf(item, sizeof(item), "%s=",
+				    kept_params[i].name);
+		for (unsigned k = 0; k < kept_n_[i] && m < sizeof(item); k++)
+			m += snprintf(item + m, sizeof(item) - m,
+				      k ? ",%lu" : "%lu", kept_[i][k]);
+		add(item);
+	}
+	flush();
+	puts("STORED PROFILES: none");
+	crlf();
+	return 0;
+}
+
 /*
  *    a command line
  */
@@ -1271,6 +1383,9 @@ int Modem::at_command(char *cmd)
 				ret = at_set_sreg(SREG_PULSE_RATIO, *p, 0, 3,
 						  &len);
 				break;
+			case 'V':
+				ret = at_ampV(p, &len);
+				break;
 			case 'Q':
 				/* &Q0, &Q6: \N0; &Q5, &Q8, &Q9: \N3 (V.42,
 				   then MNP) */
@@ -1398,6 +1513,12 @@ int Modem::at_command(char *cmd)
 				ret = at_set_sreg(SREG_EC, *p, 0, 5, &len);
 				if (!ret)
 					set_ec_mode(sregs_[SREG_EC]);
+				break;
+			case 'V':
+				/* \V1 (\V2 the same): the protocol after
+				   CONNECT's rate */
+				ret = at_set_sreg(SREG_CONNECT_PROTOCOL, *p, 0, 2,
+						  &len);
 				break;
 			default:
 				return -1;

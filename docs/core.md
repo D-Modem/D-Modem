@@ -4,7 +4,7 @@
 `namespace dcore`, `dcore.h`):
 
 - **The AT command interpreter** (`at.cpp`): `A B D E H I L M N O P Q S T V X
-  Y Z`, `&A &C &D &E &F &H &K &P &Q &R &S`, `\A \N`, `%B %C %E`, `*B`,
+  Y Z`, `&A &C &D &E &F &H &K &P &Q &R &S &V`, `\A \N \V`, `%B %C %E`, `*B`,
   `#CID`, `+MS` (by number or V.250's name) `+GCI +GCAP +GMI +GMM +GMR
   +FCLASS +VCID`, V.92 modem-on-hold (`+PMH +PMHT +PMHR`), class 1 fax
   (`+FTS +FRS +FTM +FRM +FTH +FRH +FMI +FMM +FMR`) and voice (`+V...` in
@@ -15,12 +15,18 @@
   commands. Command lines are edited (backspace), echoed, repeated with
   `A/`. [at_commands.pdf](at_commands.pdf) is their reference.
 - **The S-registers**, the **result codes** (verbose or numeric, quiet, the
-  connect messages of `&A` and `X`), and the **country parameters**
+  connect messages of `&A`, `X` and `\V`; with `V0` a CONNECT's number
+  for its rate, Smart Link's), and the **country parameters**
   (`homolog_data.cpp`, `+GCI`).
 - **The call's state machine** (`modem.cpp`): idle, connecting, the data
   link coming up, online, online command mode (after `+++`), disconnecting;
   dialing and answering, rings (a SIP call's, or ring signals on a line
   with their cadence) and auto answer, caller ID, the fax and voice modes.
+  A dial string's `;` holds the call in command state once it is dialed
+  (call progress's `DPSTAT_DIALED`): `ATD` dials more on it (call progress
+  reads `dialing_`, the dial string and what is added, while SIP and `ATDL`
+  have the number as `ATD` first gave it) or starts the handshake, `ATA`
+  answers it (V.250's call-back).
 - **The timers**: the escape guard time and the ring cadence are deadlines
   on the program's clock (`poll()`, `next_timer_ms()`); the rest counts
   samples. No signals, no global timer list.
@@ -59,7 +65,14 @@ it. This core has gone beyond it where the old one fell short:
   old core ran them only when more characters came;
 - a call that ends online drops the data still waiting to go out; the old
   core kept it, and its AT interpreter later took it for commands (a line
-  of the data that began with AT ran).
+  of the data that began with AT ran);
+- `AT&V` lists the active settings (the old core: ERROR), `AT\V1` puts the
+  protocol after CONNECT's rate, and with `ATV0` a data call's CONNECT is
+  its rate's number (the old core: 1 for every one);
+- the dial string's `;` (back to command state), `W` (wait for a dial
+  tone) and `@` (wait for quiet after ringing) do what V.250 says (the
+  old core skipped `;` and `@`, and paused 2 s for `W`), and `S=<n>` (a
+  stored number: there are none) is ERROR.
 
 ## Tests
 
@@ -74,8 +87,12 @@ it. This core has gone beyond it where the old one fell short:
   connecting, rings and auto answer, no answer, class 1 fax (V.21 frames,
   a TCF at 9600), the voice commands. Where this core differs on purpose
   (the list above) the `.expect` is this core's transcript instead: `at`
-  (all the AT commands), `fax_dte` (frames and commands around
-  `<DLE><ETX>`), `data_drop` (a call that ends with data waiting).
+  (all the AT commands), `setup` (other modems' setup strings), `fax_dte`
+  (frames and commands around `<DLE><ETX>`), `data_drop` (a call that
+  ends with data waiting), `call_v22` (numeric CONNECTs), `dial` (the dial
+  string's `;`, `W` and `@`, the call-back, numeric `&A` lines and `\V1`;
+  `tone A 350+440`, or with on and off ms, puts a dial tone or ringing on
+  A's line).
   `CORE_EXPECT_WRITE=1 core_equiv` writes the `.expect` files anew, to be
   read in `git diff`; an empty one starts a new script off. In a script `\\` is a backslash and `\xNN` any
   other character (`\b` is not a backspace). `FaxDteUntilsCome`: every

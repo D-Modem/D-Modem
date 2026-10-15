@@ -7,8 +7,8 @@
       0 B< ATA\r
       0 A< ATD\r
    7960 B: CONNECT 2400\r\n
-   8020 A: 1\r\n
-   8020 until A '1\r': yes
+   8020 A: 11\r\n
+   8020 until A '11\r': yes
    8020 until B 'CONNECT': yes
    8020 A: state 2, tx 2400 rx 2400, started
    8020 B: state 2, tx 2400 rx 2400, started
@@ -37,13 +37,14 @@
   13520 B: state 0, tx 2400 rx 2400, idle
   13520 A< AT+MS=21,0\r
   13520 A: 0\r\n
+  13520 until A '0\r': yes
   13520 B< AT+MS=21,0\r
   13520 B: OK\r\n
   13520 B< ATA\r
   13520 A< ATDT5551234\r
   19460 B: CONNECT 300\r\n
-  19480 A: 1\r\n
-  19480 until A '1\r': yes
+  19480 A: 9\r\n
+  19480 until A '9\r': yes
   19480 until B 'CONNECT': yes
   19480 A: state 2, tx 300 rx 300, started
   19480 B: state 2, tx 300 rx 300, started

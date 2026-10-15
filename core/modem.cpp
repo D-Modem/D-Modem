@@ -209,8 +209,44 @@ const char *Modem::dp_name(int id) const
  *    the result codes
  */
 
-/* a result code to the DTE (not with ATQ1): its text (ATV1; CONNECT
-   with the AT&A lines and the rate) or its number */
+/* CONNECT's number for a rate (bit/s): Smart Link's (its ST56 AT
+   manual), and ours from 80 for the rates it lacks (V.23's 75, V.92's
+   upstream 25333 and 26666, V.91's above 56000); 1 for any other */
+static int connect_code(unsigned rate)
+{
+	static const struct {
+		unsigned rate;
+		int code;
+	} codes[] = {
+		{ 300, 9 }, { 600, 10 }, { 1200, 5 }, { 2400, 11 },
+		{ 4800, 12 }, { 7200, 13 }, { 9600, 27 }, { 12000, 14 },
+		{ 14400, 15 }, { 16800, 16 }, { 19200, 17 }, { 21600, 18 },
+		{ 24000, 19 }, { 26400, 20 }, { 28800, 21 }, { 31200, 22 },
+		{ 33600, 23 }, { 34800, 24 }, { 40000, 25 }, { 42000, 26 },
+		{ 44000, 28 }, { 46000, 29 }, { 48000, 30 }, { 50000, 31 },
+		{ 52000, 32 }, { 54000, 33 }, { 56000, 34 }, { 57600, 35 },
+		{ 115200, 36 }, { 230400, 37 }, { 460800, 38 }, { 921600, 39 },
+		{ 32000, 40 }, { 34000, 41 }, { 36000, 42 }, { 38000, 43 },
+		{ 58000, 44 }, { 60000, 45 }, { 28000, 46 }, { 29333, 47 },
+		{ 30666, 48 }, { 33333, 49 }, { 34666, 50 }, { 37333, 51 },
+		{ 38666, 52 }, { 41333, 53 }, { 42666, 54 }, { 45333, 55 },
+		{ 46666, 56 }, { 49333, 57 }, { 50666, 58 }, { 53333, 59 },
+		{ 54666, 60 },
+		{ 75, 80 }, { 25333, 81 }, { 26666, 82 }, { 57333, 83 },
+		{ 58666, 84 }, { 61333, 85 }, { 62666, 86 }, { 64000, 87 },
+	};
+	for (const auto &c : codes)
+		if (c.rate == rate)
+			return c.code;
+	return 1;
+}
+
+/* a result code to the DTE (not with ATQ1): its text (ATV1) or its
+   number (ATV0); before CONNECT the AT&A lines (with ATV0 Smart Link's
+   numbers: 1000 and the modulation's pump id, 76 to 78 the protocol, 66
+   to 69 the compression); a data call's CONNECT has its rate (not with
+   ATX0), as words or its own number, and with AT\V1 the protocol and
+   the compression after it (CONNECT 33600/LAPM/V42bis) */
 void Modem::report(Result code)
 {
 	static const struct {
@@ -222,50 +258,75 @@ void Modem::report(Result code)
 	};
 	static const char none[] = "NONE";
 	int id = (int)code;
-	const char *msg;
+	bool verbose = sregs_[SREG_VERBOSE];
+	char s[24];
 
 	DBG("modem report result: %d (%s)\n", id, responses[id].text);
 	if (sregs_[SREG_QUIET])
 		return;
-	if (sregs_[SREG_VERBOSE]) {
-		if (code == Result::Connect) {
-			int mask = sregs_[SREG_CONNNECT_MSG_FORMAT];
-			if (mask & 1) {
+	/* the protocol and the compression in use, and their numbers */
+	const char *proto = cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : none;
+	const char *proto_n = cfg_.ec ? "77" : cfg_.mnp_on ? "78" : "76";
+	const char *comp = none, *comp_n = "69";
+	if (cfg_.mnp_on && cfg_.mnp5) {
+		comp = "MNP5";
+		comp_n = "66";
+	} else if (!cfg_.mnp_on && cfg_.ec && cfg_.comp) {
+		comp = cfg_.v44 ? "V44" : "V42bis";
+		comp_n = cfg_.v44 ? "68" : "67";
+	}
+	if (code == Result::Connect) {
+		int mask = sregs_[SREG_CONNNECT_MSG_FORMAT];
+		if (mask & 1 && (dp_ || verbose)) {
+			const char *msg = dp_ ? dp_name(dp_->id) : nullptr;
+			if (verbose) {
 				put_chars("Modulation: ", 12);
-				msg = dp_ ? dp_name(dp_->id) : nullptr;
 				puts(msg ? msg : none);
-				crlf();
-			}
-			if (mask & 2) {
-				put_chars("Protocol: ", 10);
-				puts(cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" :
-				     none);
-				crlf();
-			}
-			if ((mask & 3) == 3) {
-				put_chars("Compression: ", 13);
-				puts(cfg_.mnp_on ? (cfg_.mnp5 ? "MNP5" : none) :
-				     !(cfg_.ec && cfg_.comp) ? none :
-				     cfg_.v44 ? "V44" : "V42bis");
-				crlf();
-			}
-			if (mask & 4 && tx_rate_) {
-				char s[16];
-				put_chars("TxRate: ", 8);
-				snprintf(s, sizeof(s), "%u", tx_rate_);
+			} else {
+				snprintf(s, sizeof(s), "%d", 1000 + dp_->id);
 				puts(s);
-				crlf();
 			}
+			crlf();
 		}
-		puts(responses[id].text);
-		if (code == Result::Connect && mode_ == MODEM_MODE_DATA &&
-		    rx_rate_ && sregs_[SREG_X_CODE] != 0) {
-			char s[16];
-			snprintf(s, sizeof(s), " %u", rx_rate_);
+		if (mask & 2) {
+			if (verbose)
+				put_chars("Protocol: ", 10);
+			puts(verbose ? proto : proto_n);
+			crlf();
+		}
+		if ((mask & 3) == 3) {
+			if (verbose)
+				put_chars("Compression: ", 13);
+			puts(verbose ? comp : comp_n);
+			crlf();
+		}
+		if (mask & 4 && tx_rate_ && verbose) {
+			put_chars("TxRate: ", 8);
+			snprintf(s, sizeof(s), "%u", tx_rate_);
 			puts(s);
+			crlf();
+		}
+	}
+	/* a data call's CONNECT with its rate */
+	if (code == Result::Connect && mode_ == MODEM_MODE_DATA && rx_rate_ &&
+	    sregs_[SREG_X_CODE] != 0) {
+		if (!verbose) {
+			snprintf(s, sizeof(s), "%d", connect_code(rx_rate_));
+			puts(s);
+		} else {
+			snprintf(s, sizeof(s), "CONNECT %u", rx_rate_);
+			puts(s);
+			if (sregs_[SREG_CONNECT_PROTOCOL]) {
+				put_chars("/", 1);
+				puts(proto);
+				if (comp != none) {
+					put_chars("/", 1);
+					puts(comp);
+				}
+			}
 		}
 	} else
-		puts(responses[id].code);
+		puts(verbose ? responses[id].text : responses[id].code);
 	crlf();
 }
 
@@ -352,6 +413,7 @@ void Modem::hup(bool local)
 	case IDLE:
 		return;
 	case DP_ESTAB:
+		dialed_ = false;
 		if (local && dp_ && dp_->op->hangup)
 			dp_->op->hangup(dp_);
 		set_state(DP_DISC);
@@ -547,6 +609,10 @@ void Modem::dp_process(int16_t *in, int16_t *out, int count)
 			break;
 		case DPSTAT_CHANGEDP:
 			change_dp();
+			break;
+		case DPSTAT_DIALED:
+			if (state_ == DP_ESTAB)
+				dialed();
 			break;
 		default:        /* errors */
 			update_status(dpstat2status(ret));
@@ -876,13 +942,14 @@ noescape:
 	return 0;
 }
 
-/* the DTE's characters: any while connecting hangs up; online, the
-   escape check; into the buffer, and to the AT interpreter in command
-   mode; returns how many the buffer took */
+/* the DTE's characters: any while connecting hangs up (not in command
+   state after a dial string's ';'); online, the escape check; into the
+   buffer, and to the AT interpreter in command mode; returns how many
+   the buffer took */
 int Modem::dte_input(const char *buf, int count)
 {
 	int ret = 0;
-	if (state_ > IDLE && state_ < ONLINE) {
+	if (state_ > IDLE && state_ < ONLINE && !command_) {
 		DBG("modem_tty_write: hangup...\n");
 		hup(true);
 		return count;
@@ -1014,25 +1081,8 @@ int Modem::start_call()
 	}
 	if (line_law_)
 		dp_runtime_set_law(dp_runtime_, line_law_);
-	{
-		dlink::Config c;
-		c.ec = cfg_.ec;
-		c.detect = cfg_.ec_detector;
-		c.mnp = cfg_.mnp;
-		c.mnp_first = cfg_.mnp_first;
-		c.required = cfg_.required;
-		c.mnp_info = cfg_.mnp_info;
-		c.mnp5 = cfg_.mnp5;
-		c.tx_win = cfg_.tx_win;
-		c.rx_win = cfg_.rx_win;
-		c.tx_info = cfg_.tx_info;
-		c.rx_info = cfg_.rx_info;
-		c.comp = cfg_.comp;
-		c.dict_size = cfg_.dict_size;
-		c.max_string = cfg_.max_string;
-		if ((ret = link_->init(link_owner_, caller_, c)))
-			goto error;
-	}
+	if ((ret = link_init()))
+		goto error;
 	/* clear rings and all events */
 	TOTAL_RINGS = 0;
 	ring_count_ = 0;
@@ -1047,6 +1097,28 @@ error:
 	have_result_ = true;
 	stop_call();
 	return ret;
+}
+
+/* the link for the call as setup_config() has it, the caller's or the
+   answerer's; 0 on success */
+int Modem::link_init()
+{
+	dlink::Config c;
+	c.ec = cfg_.ec;
+	c.detect = cfg_.ec_detector;
+	c.mnp = cfg_.mnp;
+	c.mnp_first = cfg_.mnp_first;
+	c.required = cfg_.required;
+	c.mnp_info = cfg_.mnp_info;
+	c.mnp5 = cfg_.mnp5;
+	c.tx_win = cfg_.tx_win;
+	c.rx_win = cfg_.rx_win;
+	c.tx_info = cfg_.tx_info;
+	c.rx_info = cfg_.rx_info;
+	c.comp = cfg_.comp;
+	c.dict_size = cfg_.dict_size;
+	c.max_string = cfg_.max_string;
+	return link_->init(link_owner_, caller_, c);
 }
 
 /* the end of a call: the audio stopped, on hook, all freed, IDLE, the
@@ -1069,6 +1141,8 @@ int Modem::stop_call()
 	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
 		host_.speaker(*this, 0);
 	caller_ = false;
+	dialed_ = false;
+	dial_rest_[0] = '\0';
 	/* the call ended online: what the DTE sent is data that did not go
 	   out, not commands (in online command state it is commands) */
 	if (!command_)
@@ -1111,10 +1185,27 @@ int Modem::stop_call()
 }
 
 /* ATA: a call whose answering pump starts after S-register
-   SREG_ANS_DELAY (s; 0: 10 ms); -1 if a pump runs */
+   SREG_ANS_DELAY (s; 0: 10 ms), on the call dialed after a dial
+   string's ';' (V.250's call-back) or a new one; -1 if a pump runs */
 int Modem::answer()
 {
 	DBG("modem answer...\n");
+	if (dialed_) {
+		dialed_ = false;
+		command_ = false;
+		caller_ = false;
+		setup_config();
+		link_->exit();
+		if (link_init()) {
+			hup(true);
+			return -1;
+		}
+		dp_requested_ = 0;
+		later(Later::ChangeDp, sregs_[SREG_ANS_DELAY] ?
+		      sregs_[SREG_ANS_DELAY] * (unsigned long)srate_ :
+		      srate_ / 100);
+		return 0;
+	}
 	if (dp_) {
 		ERR("dp %d is already exists.\n", dp_->id);
 		return -1;
@@ -1146,12 +1237,12 @@ int Modem::dial_start()
 			break;
 		}
 	/* hide the dial string, so that no DTMF is generated */
-	save = dial_string_[0];
-	dial_string_[0] = 0;
+	save = dialing_[0];
+	dialing_[0] = 0;
 	if (op && op->create)
 		dp = op->create(handle_, DP_CALLPROG, caller_, srate_, frag_,
 				op);
-	dial_string_[0] = save;
+	dialing_[0] = save;
 	if (!dp) {
 		ERR("cannot create CALLPROG.\n");
 		return -1;
@@ -1161,18 +1252,63 @@ int Modem::dial_start()
 	return 0;
 }
 
-/* ATD: dials number (NULL: the last one again); -1 on failure */
+/* ATD: dials number (NULL: the last one again) up to its first ';';
+   after a dial string's ';' call progress dials it on the same call
+   (none: it goes on to the handshake); -1 on failure (on a held call:
+   no number, no room for it) */
 int Modem::dial(const char *number)
 {
+	char *semi;
+	if (dialed_) {
+		size_t n = strlen(dialing_);
+		if (!number || n + 1 >= sizeof(dialing_))
+			return -1;
+		/* more to dial (a blank, which dialing skips, if nothing) */
+		snprintf(dialing_ + n, sizeof(dialing_) - n, "%s",
+			 *number ? number : " ");
+		if ((semi = strchr(dialing_ + n, ';')))
+			semi[1] = '\0';
+		DBG("modem dial on: %s...\n", dialing_);
+		dialed_ = false;
+		command_ = false;
+		return 0;
+	}
 	if (number) {
 		strncpy(dial_string_, number, sizeof(dial_string_) - 1);
 		dial_string_[sizeof(dial_string_) - 1] = 0;
+		if ((semi = strchr(dial_string_, ';')))
+			semi[1] = '\0';
 	}
+	memcpy(dialing_, dial_string_, sizeof(dialing_));
 	DBG("modem dial: %s...\n", dial_string_);
 	dp_requested_ = 0;
 	if (dial_start())
 		return -1;
 	return start_call();
+}
+
+/* call progress dialed up to a ';': in command state, the call kept
+   for ATD (more to dial, or the handshake), ATO (the handshake), ATA
+   (the answerer's) or ATH; OK, or the result of the rest of the ATD
+   line, which runs now */
+void Modem::dialed()
+{
+	char line[sizeof(dial_rest_)];
+	int ret;
+	dialed_ = true;
+	command_ = true;
+	if (!dial_rest_[0]) {
+		report(Result::Ok);
+		return;
+	}
+	memcpy(line, dial_rest_, sizeof(line));
+	dial_rest_[0] = '\0';
+	logf("run cmd: %s\n", line);
+	ret = at_command(line);
+	if (ret < 0)
+		report(Result::Error);
+	else if (ret == 0)
+		report(Result::Ok);
 }
 
 /* ATH: the hook, after hanging up a call */
@@ -1186,10 +1322,13 @@ int Modem::hook(int state)
 	return set_hook(state);
 }
 
-/* ATO: back online from online command mode, CONNECT; -1 if not there */
+/* ATO: back online from online command mode, CONNECT (after a dial
+   string's ';': the handshake, as ATD); -1 if not there */
 int Modem::online()
 {
 	DBG("modem online...\n");
+	if (dialed_)
+		return dial("");
 	if (state_ != COMMAND_ONLINE)
 		return -1;
 	command_ = false;
@@ -1311,6 +1450,7 @@ void Modem::sregs_init()
 	sregs_[SREG_EC] = 3;
 	sregs_[SREG_COMP] = 0x3;
 	sregs_[SREG_MNP_BLOCK] = 3;
+	sregs_[SREG_CONNECT_PROTOCOL] = 0;
 }
 
 /*

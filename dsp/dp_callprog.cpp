@@ -7,7 +7,9 @@
  *    dialing, the V.25 calling tone, busy tone detection and answer
  *    tone detection.  When an answer tone is found it returns
  *    DPSTAT_CHANGEDP and the modem core switches to the configured
- *    data pump.
+ *    data pump.  A ';' in the dial string returns DPSTAT_DIALED, and
+ *    the pump holds the line, silent, until the core adds more to the
+ *    dial string (ATD) or replaces it (ATA).
  *
  */
 
@@ -25,6 +27,9 @@ namespace dsp {
 enum cp_state {
 	CP_DIALTONE,
 	CP_DIAL,
+	CP_WAIT_DIALTONE,       /* W */
+	CP_WAIT_QUIET,          /* @ */
+	CP_HOLD,                /* ; */
 	CP_WAIT_ANSWER,
 	CP_DONE,
 };
@@ -38,13 +43,19 @@ struct cp_tone {
 struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	static constexpr const char *name = "Call progress";
 
-	/* dialing */
+	/* dialing: the core's dial string (more comes after a ';'), the
+	   network dialed it (created with it hidden), a ';' to report */
 	const char *dial;
 	int dial_pos;
 	long dial_on, dial_off;
 	long digit_left, pause_left;
 	int digit_on;
 	DtmfGen dtmf;
+	int net_dialed;
+	int dialed;
+	/* @: remote ringing heard, blocks of sound and of quiet */
+	int rang;
+	int sound_blocks, quiet_blocks;
 
 	/* tone detectors on BLOCK_MS blocks */
 	int block_len, block_n;
@@ -117,11 +128,14 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 	ct.set_freq(fax ? 1100 : 1300, srate_);
 
 	/* like the original, X2/X4 insist on a dial tone even when there
-	   is nothing to dial (D-Modem users run ATX3 for SIP lines) */
+	   is nothing to dial (D-Modem users run ATX3 for SIP lines); the
+	   core hides the dial string the network dials (SIP) */
 	if (*dial || need_dialtone)
 		state = CP_DIALTONE;
-	else
+	else {
 		state = CP_WAIT_ANSWER;
+		net_dialed = 1;
+	}
 	DSP_DBG("callprog: create, dial '%s', srate %d\n", dial, srate_);
 	return 0;
 }
@@ -154,6 +168,20 @@ int CallProgPump::block()
 		dialtone_blocks++;
 	else
 		dialtone_blocks = 0;
+
+	/* @: remote ringing (0.5 s of sound at least), then the quiet
+	   after it */
+	if (state == CP_WAIT_QUIET) {
+		if (bp > min) {
+			quiet_blocks = 0;
+			if (++sound_blocks >= 500 / BLOCK_MS)
+				rang = 1;
+		} else {
+			sound_blocks = 0;
+			if (rang)
+				quiet_blocks++;
+		}
+	}
 
 	if (state != CP_WAIT_ANSWER)
 		return DPSTAT_OK;
@@ -203,8 +231,9 @@ int CallProgPump::block()
 }
 
 /* the next dialing sample: DTMF digits (S11 ms on and off), ',' a
-   pause of S8 s, 'W' 2 s, other characters skipped; at the end of the
-   string to CP_WAIT_ANSWER */
+   pause of S8 s, 'W' to CP_WAIT_DIALTONE, '@' to CP_WAIT_QUIET, ';' to
+   CP_HOLD (DPSTAT_DIALED due), other characters skipped; at the end of
+   the string to CP_WAIT_ANSWER */
 float CallProgPump::dial_sample()
 {
 	char ch;
@@ -235,25 +264,49 @@ float CallProgPump::dial_sample()
 			int s8 = modem_get_sreg(modem, SREG_DIAL_PAUSE_TIME);
 			pause_left = (long)(s8 > 0 ? s8 : 2) * srate;
 		} else if (ch == 'W' || ch == 'w') {
-			pause_left = 2L * srate;
+			dialtone_blocks = 0;
+			set_state(CP_WAIT_DIALTONE);
+			return 0;
+		} else if (ch == '@') {
+			rang = sound_blocks = quiet_blocks = 0;
+			set_state(CP_WAIT_QUIET);
+			return 0;
+		} else if (ch == ';') {
+			dialed = 1;
+			set_state(CP_HOLD);
+			return 0;
 		} else if (!dtmf.set(ch, srate)) {
 			digit_on = 1;
 			digit_left = dial_on;
 		}
-		/* other modifiers (T, P, spaces, ...) are ignored */
+		/* other modifiers (T, P, !, spaces, ...) are ignored */
 	}
 }
 
 /* cnt samples: all the detectors on the input, then per state the dial
-   tone wait (DPSTAT_NODIALTONE after S6 s, 2 s at least), dialing, or
-   the wait for an answer with the calling tone (DPSTAT_NOANSWER after S7
-   s); block() adds DPSTAT_CHANGEDP or DPSTAT_BUSY.  The first non OK
-   status of the block is returned. */
+   tone wait (DPSTAT_NODIALTONE after S6 s, 2 s at least), dialing, W's
+   dial tone wait (DPSTAT_NODIALTONE after S7 s), @'s wait for 5 s of
+   quiet after ringing (DPSTAT_NOANSWER after S7 s), the hold after a
+   ';' (DPSTAT_DIALED once; dialing again when the dial string grows),
+   or the wait for an answer with the calling tone (DPSTAT_NOANSWER
+   after S7 s); block() adds DPSTAT_CHANGEDP or DPSTAT_BUSY.  The first
+   non OK status of the block is returned. */
 int CallProgPump::process(void *in, void *out, int cnt)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 	int ret = DPSTAT_OK;
 	int i;
+
+	/* the network dialed the number up to a ';': held at once */
+	if (net_dialed) {
+		const char *semi = strchr(dial, ';');
+		net_dialed = 0;
+		if (semi) {
+			dial_pos = semi + 1 - dial;
+			dialed = 1;
+			set_state(CP_HOLD);
+		}
+	}
 
 	for (i = 0; i < cnt; i++) {
 		float x = src[i], y = 0, b;
@@ -292,6 +345,31 @@ int CallProgPump::process(void *in, void *out, int cnt)
 			break;
 		case CP_DIAL:
 			y = dial_sample();
+			break;
+		case CP_WAIT_DIALTONE:
+			if (dialtone_blocks * BLOCK_MS >= 1000)
+				set_state(CP_DIAL);
+			else if (count >= timeout && ret == DPSTAT_OK) {
+				DSP_DBG("callprog: no dial tone (W)\n");
+				ret = DPSTAT_NODIALTONE;
+			}
+			break;
+		case CP_WAIT_QUIET:
+			if (quiet_blocks * BLOCK_MS >= 5000)
+				set_state(CP_DIAL);
+			else if (count >= timeout && ret == DPSTAT_OK) {
+				DSP_DBG("callprog: no quiet answer (@)\n");
+				ret = DPSTAT_NOANSWER;
+			}
+			break;
+		case CP_HOLD:
+			if (dialed) {
+				if (ret == DPSTAT_OK) {
+					dialed = 0;
+					ret = DPSTAT_DIALED;
+				}
+			} else if (dial[dial_pos])
+				set_state(CP_DIAL);
 			break;
 		case CP_WAIT_ANSWER:
 			if (fax) {

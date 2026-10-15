@@ -7,8 +7,8 @@
       0 B< ATA\r
       0 A< ATD\r
    5940 B: CONNECT 300\r\n
-   5960 A: 1\r\n
-   5960 until A '1\r': yes
+   5960 A: 9\r\n
+   5960 until A '9\r': yes
    5960 until B 'CONNECT': yes
    5960 A< A0000 The quick brown fox jumps over the lazy dog\r\nA0001 The quick brown fox jumps over the lazy dog\r\nA0002 The quick brown fox jumps over the lazy dog\r\nA0003 The quick brown fox jumps over the lazy dog\r\nA0004 The quick brown fox jumps over the lazy dog\r\nA0005 The quick brown fox jumps over the lazy dog\r\nA0006 The quick brown fox jumps over the lazy dog\r\nA0007 The quick brown fox jumps over the lazy dog\r\nATI3\r\n
    7700 B: A0000 The quick brown fox jumps over the lazy dog\r\n

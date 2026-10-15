@@ -12,7 +12,9 @@
 # BBS takes no connection until s seconds after the start (as
 # bbs_sim.py's), so DModem(bbs)'s connect waits meanwhile.  DIAL=<command>:
 # the dial command before the number (ATD; ATDT: the call goes to the
-# number all the same).
+# number all the same).  HOLD=1: the number dialed with a ';' (the SIP
+# call made, OK, the modem in command state), then ATD alone starts the
+# handshake.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 dmodemd, number = sys.argv[1:3]
@@ -187,7 +189,13 @@ for call in range(calls):
         break
     if calls > 1:
         print("call %d:" % (call + 1))
-    m = cmd(os.environ.get("DIAL", "ATD").encode() + number.encode(), rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO ANSWER|ERROR)\r\n", 90)
+    dial = os.environ.get("DIAL", "ATD").encode() + number.encode()
+    if os.environ.get("HOLD"):
+        m = cmd(dial + b";", rb"(OK|NO CARRIER|ERROR)\r\n", 10)
+        print("dial ;:", m.group(1).decode() if m else "timeout")
+        ok = ok and m is not None and m.group(1) == b"OK"
+        dial = b"ATD"
+    m = cmd(dial, rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO ANSWER|ERROR)\r\n", 90)
     print("dial:", m.group(1).decode() if m else "timeout")
     ok = ok and m is not None and m.group(1).startswith(b"CONNECT")
     if ok:
