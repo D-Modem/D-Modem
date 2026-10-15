@@ -48,7 +48,7 @@ In another terminal, connect to the newly created serial device at 115200 bps:
 
     # screen /dev/ttySL0 115200
 
-You can now interact with this terminal (almost) as you would with a normal modem using standard AT commands.  A similar modem’s manual provides a more complete list. 
+You can now interact with this terminal (almost) as you would with a normal modem using standard AT commands; [docs/at_commands.pdf](docs/at_commands.pdf) lists them all. 
 
 Because there isn’t any dial tone on our SIP connection, you’ll need to disable dial tone detection: 
 

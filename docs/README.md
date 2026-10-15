@@ -37,5 +37,10 @@ The project's overview, building and usage are in the top
 
 - [ITU-T Recommendations](specs/README.md): the ones implemented, with
   links and a script that downloads them
-- [ST56ATCommands.pdf](ST56ATCommands.pdf): the AT command set of Smart
-  Link's ST56 modems, whose behaviour slmodemd's core keeps
+- [AT command reference](at_commands.pdf): the commands D-Modem's
+  modem core takes (slmodemd, libdmodem, the PBX modules), its result
+  codes and S-registers; its LaTeX source is [at/](at/at_commands.tex),
+  `docs/at/build.sh` builds it
+- [legacy/ST56ATCommands.pdf](legacy/ST56ATCommands.pdf): the AT command
+  set of Smart Link's ST56 modems, which the core started from (the AT
+  command reference says where it differs)

@@ -1,0 +1,574 @@
+% at_commands.tex - the AT command set of D-Modem's modem core
+% (core/at.cpp), as slmodemd, libdmodem and the PBX modules have it.
+% Built with docs/at/build.sh into docs/at_commands.pdf.
+\documentclass[a4paper,10pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6ex}
+
+% a command or what the modem says, as typed
+\newcommand{\cmd}[1]{\texttt{#1}}
+% the backslash, as in AT\N
+\newcommand{\bs}{\textbackslash}
+% a parameter
+\newcommand{\p}[1]{\textmd{\textit{#1}}}
+
+% one command: its syntax, then what it does
+\newenvironment{command}[1]
+  {\par\medskip\noindent\textbf{\cmd{#1}}\par\nopagebreak
+   \begin{list}{}{\leftmargin=1.5em\topsep=0pt}\item[]}
+  {\end{list}}
+
+\title{D-Modem AT Command Reference}
+\author{The modem core of slmodemd, libdmodem and the PBX modules}
+\date{October 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{Introduction}
+
+D-Modem's modem core (\cmd{core/} in the source) takes the AT commands of
+every D-Modem program:
+\begin{itemize}
+\item \textbf{slmodemd}, the modem on a pseudo terminal
+  (\cmd{/dev/ttySL0} links to it), its line a SIP call;
+\item \textbf{libdmodem} (\cmd{dmodem.h}), the modem as a library: the
+  program that embeds it sends the commands;
+\item the \textbf{Asterisk and FreeSWITCH modules} (\cmd{app\_dmodem},
+  \cmd{mod\_dmodem}), whose profiles give the commands each call starts
+  with.
+\end{itemize}
+
+The commands, and the way a command line is read, are those of Smart
+Link's slmodemd (Debian's \cmd{sl-modem-daemon}), whose ST56 modems'
+reference is kept as \cmd{docs/legacy/ST56ATCommands.pdf}.
+Section~\ref{sec:differences} lists where D-Modem differs from it, and
+section~\ref{sec:sip} what a SIP line changes in slmodemd.
+
+This reference follows the core as it is: every command, parameter range,
+default and output here is the core's own, the outputs as slmodemd
+prints them.  A setting that is kept but changes nothing says so.
+
+\paragraph{Notation.} \cmd{AT} commands are shown in capitals; the modem
+takes either case.  \p{n} is a decimal number, \p{h} a hexadecimal one;
+\verb|[ ]| marks what may be left out.  A setting's default is the one
+\cmd{ATZ} and the start of the program give.
+
+\section{Command lines}
+
+\begin{itemize}
+\item A command line begins with \cmd{AT} and ends with the character of
+  S3 (carriage return) or S4 (line feed).  Blanks and tabs in it are
+  dropped before it is read.
+\item The character of S5 (backspace) takes back the last one typed.
+\item A line holds 63 characters at most; a longer one is ERROR.
+\item With echo on (\cmd{E1}), what the DTE types comes back as it is
+  typed.
+\item A line that does not begin with \cmd{AT} is not a command: with
+  echo on it is blanked out on the DTE's screen.
+\item \cmd{A/} (no line end needed) runs the last command line again.
+\end{itemize}
+
+The commands of a line run in turn.  The first that fails ends the line
+with ERROR; otherwise OK follows the last one.  \cmd{A}, \cmd{D} and
+\cmd{O} end the line and give their result later (CONNECT, NO CARRIER and
+so on), and \cmd{Z} ends it with OK: whatever follows them on the line is
+not read.  A command that reports something (\cmd{I}, \cmd{S}\p{n}\cmd{?},
+\cmd{+MS?} \ldots) prints it on lines of its own before the result.
+
+A character from the DTE while a call is being set up (dialing,
+answering, the modems' training) hangs up.
+
+\section{Result codes}
+
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+\cmd{V0} & \cmd{V1} & \\
+\midrule
+0 & OK & the command line ran \\
+1 & CONNECT [\p{rate}] & the call is up, or a fax command's data begins \\
+2 & RING & a call rings (slmodemd: every 3 s, section~\ref{sec:sip}) \\
+3 & NO CARRIER & no call came up, or the call is over \\
+4 & ERROR & a command failed, or a line too long \\
+6 & NO DIALTONE & no dial tone (\cmd{X2}, \cmd{X4}) \\
+7 & BUSY & a busy tone \\
+8 & NO ANSWER & no answer within S7 seconds of dialing \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\cmd{Q1} turns them off, \cmd{V0} gives the numbers, each on a line of
+its own.  With \cmd{V1} a data call's CONNECT gives the rate the modem
+receives at, in bit/s (\cmd{CONNECT 33600}); with \cmd{X0}, in fax and
+in voice mode it is CONNECT alone.
+
+Before CONNECT, \cmd{\&A} (S70) adds lines on the connection (verbose
+results only), each bit one of them:
+
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+bit & line & \\
+\midrule
+0 (1) & \cmd{Modulation: }\p{name} & the modulation's name (\cmd{V92},
+  \cmd{V34}, \cmd{V32bis}, \ldots) \\
+1 (2) & \cmd{Protocol: LAPM} or \cmd{NONE} & V.42 error correction \\
+0 and 1 (3) & \cmd{Compression: V44}, \cmd{V42bis} or \cmd{NONE} &
+  what V.42 agreed \\
+2 (4) & \cmd{TxRate: }\p{rate} & the rate the modem sends at \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Basic commands}
+
+\begin{command}{ATA}
+Answers: off hook, and the answering modem's tones after S92 seconds.
+In slmodemd the call that rings (\cmd{RING}) is answered.  Its result is
+CONNECT, or NO CARRIER.
+\end{command}
+
+\begin{command}{ATB}
+V.22 at 1200 bit/s only, without automode: \cmd{AT+MS=22,0,1200,1200}.
+(Not V.250's choice between the ITU and Bell modulations: those are
+\cmd{+MS}'s.)
+\end{command}
+
+\begin{command}{ATD\p{string}}
+Dials \p{string} and calls.  The dialer sends the digits and
+\cmd{* \# A B C D} as DTMF (S11 ms each, as long between them); a comma
+pauses S8 seconds, \cmd{W} two; other characters are skipped.  \cmd{T}
+and \cmd{P} choose tone or pulse dialing (S16) for the rest of the call.
+\cmd{ATDL} dials the last number again (\cmd{Dialing }\p{number}\cmd{...}
+first).  With \cmd{X2} or \cmd{X4} the modem waits for a dial tone first.
+The result is CONNECT, BUSY, NO ANSWER, NO DIALTONE or NO CARRIER.  In
+slmodemd the dial string is the SIP call's number
+(section~\ref{sec:sip}).
+\end{command}
+
+\begin{command}{ATE[\p{n}]}
+Echo of the DTE's characters in command mode: \cmd{E0} off, \cmd{E1} on
+(S13; default 1).
+\end{command}
+
+\begin{command}{ATH[0], ATH1}
+\cmd{H} or \cmd{H0} hangs up (on hook); \cmd{H1} goes off hook.
+\end{command}
+
+\begin{command}{ATI[\p{n}]}
+Information:
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+\cmd{I0} & the product: \cmd{SmartLink Soft Modem} \\
+\cmd{I1}, \cmd{I2} & the product and version (\cmd{SmartLink Soft Modem,
+  2.9.11}), then \cmd{Smart Link Ltd.} \\
+\cmd{I3} & the device's name, then the driver's (slmodemd:
+  \cmd{/dev/slamr0}, \cmd{socket driver}) \\
+\cmd{I4} & S0 to S23, eight a line (\cmd{s00=000 s01=000 \ldots}) \\
+\cmd{I5}, \cmd{I6} & \cmd{Stored Profile 0:}, \cmd{1:} (there are none) \\
+\cmd{I7} & the country: \cmd{Country: USA} \\
+\bottomrule
+\end{tabular}
+\end{center}
+Any other number is ERROR.
+\end{command}
+
+\begin{command}{ATL[\p{n}], ATM[\p{n}]}
+The speaker's volume, \cmd{L0} to \cmd{L3} (S30; default 3), and when it
+is on, \cmd{M0} never, \cmd{M1} until the call is up, \cmd{M2} always
+(S29; default 1).  A SIP line has no speaker: kept for the commands
+that set them.
+\end{command}
+
+\begin{command}{ATN[\p{n}]}
+Automode (S31; default 1): \cmd{N1} lets the modems find their best
+common modulation from the one \cmd{+MS} chose down, \cmd{N0} keeps to
+it.  The same as \cmd{+MS}'s second parameter.
+\end{command}
+
+\begin{command}{ATO}
+Back online after the escape (section~\ref{sec:online}): CONNECT.  ERROR
+when there is no call to go back to.
+\end{command}
+
+\begin{command}{ATP, ATT}
+Pulse or tone dialing (S16; default tone).
+\end{command}
+
+\begin{command}{ATQ[\p{n}]}
+\cmd{Q0} gives the result codes, \cmd{Q1} keeps them back (S14; default
+0).
+\end{command}
+
+\begin{command}{ATS\p{n}?, ATS\p{n}=\p{v}}
+Reads S-register \p{n} (0 to 255), in decimal on a line of its own, or
+sets it to \p{v} (8 bits: \p{v} modulo 256).  A number over 255 is
+ERROR.  Section~\ref{sec:sregs} lists them.
+\end{command}
+
+\begin{command}{ATV[\p{n}]}
+\cmd{V0} gives the result codes as numbers, \cmd{V1} as words (S15;
+default 1).
+\end{command}
+
+\begin{command}{ATX[\p{n}]}
+Results and dial tone, \cmd{X0} to \cmd{X4} (S56; default 4):
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+& CONNECT & before dialing \\
+\midrule
+\cmd{X0} & without the rate & no wait for a dial tone \\
+\cmd{X1}, \cmd{X3} & with the rate & no wait for a dial tone \\
+\cmd{X2}, \cmd{X4} & with the rate & a dial tone of 1 s, NO DIALTONE if
+  none in S6 seconds (2 s at least) \\
+\bottomrule
+\end{tabular}
+\end{center}
+BUSY (four cadences of 0.2 to 0.8 s) and NO ANSWER come in all of them.
+A SIP call has no dial tone: slmodemd wants \cmd{ATX3}.
+\end{command}
+
+\begin{command}{ATY[\p{n}]}
+\cmd{Y0} to \cmd{Y3}: kept in S161, nothing more.
+\end{command}
+
+\begin{command}{ATZ[\p{n}]}
+\cmd{Z} or \cmd{Z0} to \cmd{Z3}: hangs up, and the S-registers,
+\cmd{+MS}, modem-on-hold and the data mode (\cmd{+FCLASS=0}) as at the
+start; the country stays.  There are no stored profiles: the number
+changes nothing.  OK, and the rest of the line is not read.
+\end{command}
+
+\section{Ampersand, backslash and percent commands}
+
+\begin{command}{AT\&A[\p{n}]}
+\cmd{\&A0} to \cmd{\&A7}: the lines before CONNECT (S70; default 0), see
+the result codes.
+\end{command}
+
+\begin{command}{AT\&C[\p{n}], AT\&E[\p{n}], AT\&H[\p{n}]}
+Data carrier detect (\cmd{\&C0}, \cmd{\&C1}; S60), the rate CONNECT
+gives (\cmd{\&E0}, \cmd{\&E1}; S71) and flow control (\cmd{\&H0},
+\cmd{\&H1}; S62): kept, but they change nothing (a pty has no carrier
+line, CONNECT always gives the receive rate, and flow control is the
+pty's).  Default 0.
+\end{command}
+
+\begin{command}{AT\&D[\p{n}], AT\&F[\p{n}], AT\&R[\p{n}], AT\&S[\p{n}]}
+Taken, with or without a digit, and nothing done (\cmd{ATZ} gives the
+defaults).
+\end{command}
+
+\begin{command}{AT\&K[\p{n}], AT\%C[\p{n}]}
+Data compression (S104; default 3): \cmd{0} none, \cmd{1} to \cmd{3}
+V.44 or V.42bis both ways, as the other modem agrees (V.42 offers both).
+It needs V.42 (\cmd{\bs N}).
+\end{command}
+
+\begin{command}{AT\&P[\p{n}]}
+\cmd{\&P0} to \cmd{\&P3}: the pulse dialing ratio, kept in S28.
+\end{command}
+
+\begin{command}{AT\&V, AT\&W}
+ERROR: there are no stored profiles to show or write.
+\end{command}
+
+\begin{command}{AT\bs A[\p{n}]}
+\cmd{\bs A0} to \cmd{\bs A3}, MNP's block size: taken (there is no
+MNP); \cmd{\bs A4} and up are ERROR.
+\end{command}
+
+\begin{command}{AT\bs N[\p{n}]}
+Error correction (S103; default 1): \cmd{\bs N0} none; \cmd{\bs N1} to
+\cmd{\bs N5} V.42 (LAPM) when the other modem has it, a call without
+when it does not (V.42's detection phase decides).
+\end{command}
+
+\begin{command}{AT\%E[\p{n}]}
+\cmd{\%E0} to \cmd{\%E2}, line quality monitoring: kept in S39 (the
+modulations retrain and renegotiate their rate by themselves).
+\end{command}
+
+\begin{command}{AT*B}
+The numbers barred from dialing: none are kept; OK.
+\end{command}
+
+\begin{command}{AT\#CID=\p{n}, AT\#CID?, AT\#CID=?}
+Caller ID between the first two rings: \cmd{0} off, \cmd{1} or \cmd{2}
+on (\cmd{=?} gives \cmd{0,1,2}).  A SIP call rings without it.
+\end{command}
+
+\section{Extended commands}
+
+\subsection{Modulation: +MS}
+
+\begin{command}{AT+MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]}
+The modulation the modem calls or answers with, whether it may fall
+back (\p{automode} 1, as \cmd{N1}; S31) and the rates it may connect at,
+\p{min} to \p{max} bit/s (300 to 56000, \p{min} no more than \p{max}).
+A parameter left out keeps its value: \cmd{AT+MS=,0} only turns
+automode off.  The default is \cmd{92,1,300,56000}.
+
+\begin{center}
+\begin{tabular}{rll}
+\toprule
+\p{mod} & & \\
+\midrule
+21 & ITU V.21 & 300 bit/s FSK \\
+23 & ITU V.23 & 1200/75 bit/s FSK \\
+103 & Bell 103 & 300 bit/s FSK \\
+22 & ITU V.22 & 1200 bit/s DPSK \\
+212 & Bell 212A & 1200 bit/s DPSK \\
+122 & ITU V.22bis & 2400 bit/s, V.22 as its fallback \\
+32 & ITU V.32 & 4800 and 9600 bit/s \\
+132 & ITU V.32bis & 4800 to 14400 bit/s \\
+34 & ITU V.34 & 2400 to 33600 bit/s, after V.8 \\
+90 & ITU V.90 & as the digital modem, after V.8 \\
+91 & ITU V.91 & two digital modems, after V.8 \\
+92 & ITU V.92 & V.90 with quick connect, PCM upstream and
+  modem-on-hold \\
+56 & K56flex & not implemented: runs V.90 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+V.90 and V.92 are there as the \emph{digital} modem (the server's side,
+as on a G.711 VoIP line), on an 8000 Hz G.711 line: analogue V.90 and
+V.92 modems calling connect at up to 56000 bit/s downstream.  90 and 92
+offer V.91 too, which two digital modems use instead, and V.34 for the
+others; on a line at another sample rate they are V.34.  With automode
+V.8 and the V.34 modem hand over to V.32bis (and its V.22bis and V.22)
+for a modem without V.34, and the answering modem tries V.23 and Bell
+103 for one without V.8.
+\end{command}
+
+\begin{command}{AT+MS?}
+The settings: \cmd{92,1,300,56000}.
+\end{command}
+
+\begin{command}{AT+MS=?}
+What may be chosen:\\
+\cmd{(21,22,23,122,32,132,34,103,212,56,90,91,92),(0,1),(300-56000),(300-56000)}
+\end{command}
+
+\subsection{Identification and country}
+
+\begin{command}{AT+GMI, AT+GMM, AT+GMR}
+The manufacturer (\cmd{Smart Link Ltd.}), the model (\cmd{SmartLink
+Soft Modem}) and the revision (\cmd{2.9.11}).
+\end{command}
+
+\begin{command}{AT+GCI=\p{h}, AT+GCI?, AT+GCI=?}
+The country by its T.35 code in hexadecimal (\cmd{+GCI:b5}: USA),
+which sets its dial pause (S8) and hook flash (S24) times; \cmd{=?}
+lists the codes.  slmodemd's \cmd{-c} option names the country it starts
+with (\cmd{--countrylist} lists them).
+\end{command}
+
+\subsection{Mode and flow control}
+
+\begin{command}{AT+FCLASS=\p{n}, AT+FCLASS?, AT+FCLASS=?}
+\cmd{0} data (default), \cmd{1} fax class 1, \cmd{8} voice
+(\cmd{=?} gives \cmd{0,1,8}).
+\end{command}
+
+\begin{command}{AT+IFC=2,2}
+Hardware flow control both ways: taken, as the pty does its own.  Any
+other value is ERROR.
+\end{command}
+
+\subsection{V.92 modem-on-hold}
+
+\begin{command}{AT+PMH=\p{n}, AT+PMH?, AT+PMH=?}
+\cmd{0} lets the other modem put the call on hold, \cmd{1} refuses
+(default 0; \cmd{+PMH?} gives \cmd{+PMH: 0}).
+\end{command}
+
+\begin{command}{AT+PMHT=\p{n}, AT+PMHT?, AT+PMHT=?}
+How long a hold the modem grants: the code of V.92's Table~33, \cmd{0}
+to \cmd{13} (\cmd{0} grants none; default 5).
+\end{command}
+
+\begin{command}{AT+PMHR[=\p{s}]}
+In online command mode on a V.92 connection: asks the other modem to
+go on hold, for \p{s} seconds (1 to 960; 10 if left out).  ERROR
+otherwise.
+\end{command}
+
+\subsection{Fax class 1}
+
+With \cmd{AT+FCLASS=1}, the modem takes T.31's class 1 commands, the
+fax machine's side being the DTE's (the PBX modules and libdmodem have
+a T.30 engine of their own as well):
+
+\begin{command}{AT+FTS=\p{n}, AT+FRS=\p{n}}
+Sends silence for, or waits for silence of, \p{n} times 10 ms.
+\end{command}
+
+\begin{command}{AT+FTM=\p{m}, AT+FRM=\p{m}, AT+FTM=?, AT+FRM=?}
+Sends or receives data at modulation \p{m}: CONNECT, then the data with
+\cmd{<DLE>} doubled, ended by \cmd{<DLE><ETX>}.
+\begin{center}
+\begin{tabular}{rl}
+\toprule
+\p{m} & \\
+\midrule
+24, 48 & V.27ter, 2400 and 4800 bit/s \\
+72, 96 & V.29, 7200 and 9600 bit/s \\
+73, 97, 121, 145 & V.17, 7200 to 14400 bit/s, long training \\
+74, 98, 122, 146 & V.17, 7200 to 14400 bit/s, short training \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{command}
+
+\begin{command}{AT+FTH=3, AT+FRH=3, AT+FTH=?, AT+FRH=?}
+Sends or receives HDLC frames at V.21 channel 2 (300 bit/s), the only
+one: \cmd{=?} gives \cmd{3}.
+\end{command}
+
+\subsection{Voice}
+
+With \cmd{AT+FCLASS=8} the voice commands of Smart Link's slmodemd are
+kept (ERROR in the other modes):
+
+\begin{longtable}{>{\ttfamily}l p{0.62\textwidth}}
+\toprule
+\normalfont command & \\
+\midrule
++VIP & the voice settings as at the start \\
++VNH=\p{n} & 0 or 1 \\
++VGT=\p{n}, +VGR=\p{n} & the gain sending and receiving, 0 to 128 \\
++VIT=\p{n} & the inactivity timer, 0 to 255 \\
++VSD=\p{s},\p{t} & silence detection: sensitivity and period, 0 to 255 \\
++VSM=\p{m},8000 & the compression method, 0 or 1, at 8000 samples/s \\
++VLS=\p{n} & 1 takes the line for voice, 0 leaves it \\
++VTX, +VRX, +VTR & sends, receives, or both \\
++VTS=[\p{f1},\p{f2},\p{d}] & a tone of \p{f1} and \p{f2} Hz for \p{d}
+  (0 to 6000) \\
++VTS=\{\p{s},\p{d}\}, +VTS=\p{s} & the DTMF digit \p{s} (for \p{d}, 0 to
+  100) \\
++VCID=\p{n} & as \cmd{\#CID} \\
+\bottomrule
+\end{longtable}
+Each takes \cmd{?} (its values) and \cmd{=?} (their ranges).
+
+\section{S-registers}\label{sec:sregs}
+
+Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;
+``kept'' means set and read back, with no other effect.
+
+\begin{longtable}{rp{0.42\textwidth}rp{0.30\textwidth}}
+\toprule
+S & & default & \\
+\midrule
+\endhead
+0 & rings to answer after (0: never) & 0 & \\
+1 & rings so far & 0 & \\
+2 & the escape character & 43 (\cmd{+}) & \\
+3 & the line's end & 13 (CR) & \\
+4 & the line feed & 10 (LF) & \\
+5 & backspace & 8 (BS) & \\
+6 & wait for a dial tone, s & 2 & \cmd{X2}, \cmd{X4}; 2 s at least \\
+7 & wait for the answer and the training, s & 60 & \\
+8 & a comma's pause, s & 2 & the country's \\
+9 & carrier detect time, 0.1 s & 6 & kept \\
+10 & carrier loss before hanging up, 0.1 s & 7 & \\
+11 & DTMF tone and gap, ms & 100 & below 40: 95 \\
+12 & escape guard time, 20 ms & 50 & kept: the guard is 0.5 s \\
+13 & echo (\cmd{E}) & 1 & \\
+14 & quiet (\cmd{Q}) & 0 & \\
+15 & verbose (\cmd{V}) & 1 & \\
+16 & tone (1) or pulse (0) dialing (\cmd{T}, \cmd{P}) & 1 & \\
+24 & hook flash time, 10 ms & 20 & the country's \\
+28 & pulse ratio (\cmd{\&P}) & 0 & kept \\
+29 & speaker control (\cmd{M}) & 1 & \\
+30 & speaker volume (\cmd{L}) & 3 & \\
+31 & automode (\cmd{N}, \cmd{+MS}) & 1 & \\
+32 & the modulation (\cmd{+MS}) & 92 & \\
+39 & line quality (\cmd{\%E}) & 0 & kept \\
+56 & results and dial tone (\cmd{X}) & 4 & \\
+60 & carrier detect (\cmd{\&C}) & 0 & kept \\
+62 & flow control (\cmd{\&H}) & 0 & kept \\
+70 & CONNECT's lines (\cmd{\&A}) & 0 & \\
+71 & CONNECT's rate (\cmd{\&E}) & 0 & kept \\
+92 & the answer's delay, s (0: 10 ms) & 2 & before the answer tone \\
+103 & error correction (\cmd{\bs N}) & 1 & \\
+104 & data compression (\cmd{\%C}, \cmd{\&K}) & 3 & \\
+161 & \cmd{Y} & 0 & kept \\
+\bottomrule
+\end{longtable}
+
+\section{Online, the escape and hanging up}\label{sec:online}
+
+Online, what the DTE sends goes to the other modem, except the escape:
+three S2 characters (\cmd{+++}), each within 0.5 s of the one before,
+with 0.5 s of nothing before them and after them.  The modem then says
+OK and is in online command mode, the call still up: \cmd{ATO} goes back
+online, \cmd{ATH} hangs up, and on a V.92 connection \cmd{AT+PMHR} asks
+for modem-on-hold.
+
+The call ends with NO CARRIER when the other side hangs up or its
+carrier is gone for S10 tenths of a second.  slmodemd hangs up as well
+when the DTE drops DTR (it sets the pty's speed to 0) or, with HUPCL set
+on the pty, closes it; it then makes a new pty (\cmd{/dev/ttySL0} follows
+it).
+
+\section{slmodemd on a SIP line}\label{sec:sip}
+
+\begin{itemize}
+\item \cmd{ATD}\p{number} calls \cmd{sip:}\p{number}\cmd{@}\p{domain} of
+  \cmd{SIP\_LOGIN}.  A telephone number (only V.250's dial characters:
+  digits, \cmd{* \# + A B C D}, the modifiers \cmd{T P W , @ ! ;} and
+  \cmd{- ( ) .} and blanks) goes as its digits and DTMF characters:
+  \cmd{ATDT555-1000} calls \cmd{sip:5551000@}\p{domain}.  Anything else
+  is a SIP user's name, as it is: \cmd{ATDalice}.
+\item The line has no dial tone: \cmd{ATX3} (or \cmd{X1}), else
+  NO DIALTONE.
+\item With \cmd{-L} slmodemd registers and takes calls: RING every 3
+  seconds while one waits, \cmd{ATA} or S0 rings (\cmd{ATS0=1}) answer
+  it, and the rings stop if the caller gives up.  A call that comes while
+  the line is in use is refused (486, busy); without \cmd{-L} every call
+  is (480).
+\item The call is G.711 at 8000 Hz, which is what V.90 and V.92 need
+  (\cmd{AT+MS=92}, the default).  Over a real PSTN gateway a lower
+  modulation (\cmd{AT+MS=132,0,4800,9600}) may do better.
+\end{itemize}
+
+\section{Differences from Smart Link's ST56 command set}\label{sec:differences}
+
+\begin{itemize}
+\item No stored profiles: \cmd{\&W} and \cmd{\&V} are ERROR, \cmd{\&F}
+  and \cmd{Z}\p{n}'s number do nothing; \cmd{ATZ} gives the defaults.
+\item No MNP: \cmd{\bs A} is taken and \cmd{\bs N1} to \cmd{\bs N5} are
+  all V.42.
+\item K56flex is not there: \cmd{+MS=56} runs V.90.
+\item V.90 and V.92 as the digital modem, V.91, V.44 and V.92's
+  modem-on-hold (\cmd{+PMH}, \cmd{+PMHT}, \cmd{+PMHR}) are D-Modem's.
+\item \cmd{*B}, \cmd{\bs A} and \cmd{+M}\p{x} give their own result
+  (OK, or ERROR for \cmd{+M}\p{x} other than \cmd{+MS}), not the command
+  before them.
+\item Kept settings that change nothing on a pty or a SIP line:
+  \cmd{\&C}, \cmd{\&E}, \cmd{\&H}, \cmd{\%E}, \cmd{\&P}, \cmd{L},
+  \cmd{M}, \cmd{Y}; S9 and S12.
+\end{itemize}
+
+\end{document}

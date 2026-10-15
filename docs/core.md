@@ -8,7 +8,8 @@
   `+MS +GCI +GMI +GMM +GMR +FCLASS +IFC`, V.92 modem-on-hold (`+PMH +PMHT
   +PMHR`), class 1 fax (`+FTS +FRS +FTM +FRM +FTH +FRH`) and voice
   (`+V...` in `+FCLASS=8`). Command lines are edited (backspace), echoed,
-  repeated with `A/`.
+  repeated with `A/`. [at_commands.pdf](at_commands.pdf) is their
+  reference.
 - **The S-registers**, the **result codes** (verbose or numeric, quiet, the
   connect messages of `&A` and `X`), and the **country parameters**
   (`homolog_data.cpp`, `+GCI`).
