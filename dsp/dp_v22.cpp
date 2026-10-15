@@ -10,9 +10,14 @@
  *    01 point of each quadrant; dibit 00 -> +90, 01 -> 0, 10 -> +180,
  *    11 -> +270 degrees.
  *
+ *    Transmitter: QamTx (root raised cosine pulses on our carrier).
  *    Receiver: band pass, down conversion, root raised cosine matched
  *    filter, AGC, cubic interpolator driven by a Gardner timing loop,
- *    T/2 spaced LMS equalizer and a decision directed carrier PLL.
+ *    T/2 spaced LMS equalizer and a decision directed carrier PLL: its
+ *    own, not QamRx, for the AGC on every sample, the interpolation after
+ *    a fixed matched filter and the equalizer that trains on scrambled
+ *    signals only, which the interop tests with the other modems were
+ *    tuned on.
  *
  */
 
@@ -24,13 +29,13 @@
 
 #include "dsp.h"
 #include "pump.h"
+#include "qam.h"
 
 namespace dsp {
 
 #define V22_BAUD      600
 #define V22_ALPHA     0.75f
 #define V22_SPAN      3                 /* pulse half length, symbols */
-#define V22_PULSE_RES 64                /* pulse table points per symbol */
 #define V22_EQ_LEN    16                /* T/2 spaced taps */
 #define V22_SYM_POWER 10.0f             /* mean power of both constellations */
 
@@ -84,15 +89,12 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	/* transmitter */
 	enum v22_tx tx_mode;
 	int tx_rate;
-	float tx_t;
-	cplx tx_sym[2 * V22_SPAN];
 	int tx_quad;
 	int tx_s1_phase;
 	V22Scrambler tx_scr;
-	Osc tx_carrier;
+	QamTx tx;               /* on our carrier (1200 Hz calling, 2400 Hz
+				   answering) */
 	Osc ans;
-	float tx_scale;
-	float pulse[2 * V22_SPAN * V22_PULSE_RES + 2];
 
 	/* receiver front end */
 	Biquad rx_bp;
@@ -136,7 +138,6 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	const char *mode_name() const;
 	const char *tag() const { return mode_name(); }
 	bool in_data() const { return state == V22_DATA; }
-	float pulse_at(float t);
 	void set_state(enum v22_state state_);
 	cplx tx_symbol();
 	float tx_sample();
@@ -239,47 +240,17 @@ cplx V22Pump::tx_symbol()
 	return rot90(v22_points[q34], tx_quad);
 }
 
-/* the transmit pulse at t symbol periods from its centre, 0 outside
-   +-V22_SPAN */
-float V22Pump::pulse_at(float t)
-{
-	float p = (t + V22_SPAN) * V22_PULSE_RES;
-	int i;
-	if (p < 0 || p >= 2 * V22_SPAN * V22_PULSE_RES)
-		return 0;
-	i = (int)p;
-	p -= i;
-	return pulse[i] + p * (pulse[i + 1] - pulse[i]);
-}
-
 /* the next line sample: the answer tone, or the pulse shaped symbols
    on our carrier (1200 Hz calling, 2400 Hz answering) */
 float V22Pump::tx_sample()
 {
-	cplx s = { 0, 0 }, c;
-	int k;
-
 	if (tx_mode == TX_ANSTONE) {
-		tx_t = 0;
-		memset(tx_sym, 0, sizeof(tx_sym));
+		/* the symbols start afresh after it */
+		tx.t = 0;
+		tx.flush();
 		return DSP_TX_AMPLITUDE * ans.next();
 	}
-
-	tx_t += 1.0f / sps;
-	if (tx_t >= 1) {
-		tx_t -= 1;
-		memmove(tx_sym + 1, tx_sym,
-			sizeof(tx_sym) - sizeof(tx_sym[0]));
-		tx_sym[0] = tx_symbol();
-	}
-	/* symbol k was sent k periods ago, delayed by V22_SPAN periods */
-	for (k = 0; k < 2 * V22_SPAN; k++) {
-		float g = pulse_at(tx_t + k - V22_SPAN);
-		s.re += g * tx_sym[k].re;
-		s.im += g * tx_sym[k].im;
-	}
-	c = tx_carrier.next_cplx();
-	return tx_scale * (s.re * c.re - s.im * c.im);
+	return tx.sample([this] { return tx_symbol(); });
 }
 
 /*
@@ -786,11 +757,9 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	bis = !(id == DP_V22 || id == DP_B212);
 	sps = (float)srate_ / V22_BAUD;
 
-	for (i = 0; i <= 2 * V22_SPAN * V22_PULSE_RES + 1; i++)
-		pulse[i] = rrc_pulse((float)i / V22_PULSE_RES - V22_SPAN, V22_ALPHA);
-	/* passband rms of DSP_TX_AMPLITUDE/sqrt(2) for unit energy pulses */
-	tx_scale = DSP_TX_AMPLITUDE / sqrtf(V22_SYM_POWER);
-	tx_carrier.set_freq(caller_ ? 1200 : 2400, srate_);
+	/* a pass band rms of DSP_TX_AMPLITUDE / sqrt(2) */
+	tx.init(srate_, caller_ ? 1200 : 2400, V22_BAUD, V22_ALPHA, V22_SPAN,
+		sqrtf(V22_SYM_POWER), DSP_TX_AMPLITUDE);
 	ans.set_freq(id == DP_B212 ? 2225 : 2100, srate_);
 	tx_rate = 1200;
 
