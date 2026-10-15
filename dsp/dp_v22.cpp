@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    dp_v22.cpp - ITU V.22 / Bell 212A (1200 bit/s DPSK) and
  *               ITU V.22bis (2400 bit/s 16-QAM) data pump

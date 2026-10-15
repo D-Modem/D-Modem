@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    half_sm56.cpp - Motorola's SM56 soft modem (sm56-06.09.05, sm56.ko
  *    of Fedora Core 3's kernel 2.6.9: its controller and data pumps, i386
  *    object code, V.92 with quick connect and modem-on-hold) as a test

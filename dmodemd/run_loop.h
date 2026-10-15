@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    run_loop.h - the main loop of a modem program (dmodemd, the
  *                 modem_test pairs): until SIGINT, SIGTERM or stop(),

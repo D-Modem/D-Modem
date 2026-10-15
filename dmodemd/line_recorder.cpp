@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    line_recorder.cpp - a call's line audio in two files
  *                        (line_recorder.h)

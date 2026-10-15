@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    log.h - the modem's debug output: lines of text (to stderr with a
  *            time stamp, or to a hook), and a binary log of the samples,

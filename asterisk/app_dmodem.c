@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: GPL-2.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  * app_dmodem.c - a data modem on an Asterisk channel
  *
  * The call is answered by a software modem (V.21 to V.34, and V.90 as the

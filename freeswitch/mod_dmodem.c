@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  * mod_dmodem.c - a data modem on a FreeSWITCH channel
  *
  * The call is answered by a software modem (V.21 to V.34, and V.90 as the
@@ -11,9 +14,6 @@
  * with the open data pumps, no binary-only parts.  The same as Asterisk's
  * app_dmodem (../asterisk), on FreeSWITCH's API; the call between the
  * modem and the server or program is theirs (../pbx/dmodem_bridge.c).
- *
- * This program is free software, distributed under the terms of the GNU
- * General Public License Version 2.
  */
 
 #include <switch.h>

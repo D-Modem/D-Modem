@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    interop_windows.cpp - a Windows kernel of our own for the WDM driver
  *    of a soft modem (interop_windows.h): what the driver imports
  *    (ntoskrnl, HAL, WMILIB, ks: stdcall and fastcall as there), the PnP

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    hw/tsc.hpp - the time stamp counter as a driver reads it (rdtsc),
  *                 on the line's clock: a mixin of a harness (i386)

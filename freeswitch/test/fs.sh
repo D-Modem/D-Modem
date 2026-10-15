@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # fs.sh: sourced by the tests; a private FreeSWITCH (the installed one,
 # FS_PREFIX, default /usr/local/freeswitch) with mod_dmodem.so from the
 # CMake build and the configuration here (freeswitch.xml):

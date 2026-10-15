@@ -1,3 +1,10 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * Copyright (C) 2026 Neo-Desktop
+ * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
+ * under its BSD licence (LICENSES/BSD-3-Clause.txt)
+ */
+
 /* generated at Jun  1 2004 19:11:22 */
 
 #include <modem_defs.h>

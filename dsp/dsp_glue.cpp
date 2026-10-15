@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    dsp_glue.cpp - entry points used by the modem core: data pump
  *                 registration, DC removal, the shared runtime object,

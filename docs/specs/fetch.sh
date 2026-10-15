@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # Downloads the ITU-T Recommendations listed in README.md into this
 # directory, the latest in-force English edition of each, as PDF.
 # ITU publishes them free of charge but does not allow them to be

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    link_test.cpp - tests of the data link layer (link/), without a
  *                    modem: V.42bis round trips, HDLC framing, and two

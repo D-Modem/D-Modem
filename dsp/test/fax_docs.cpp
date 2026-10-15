@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    fax_docs.cpp - the fax tests' documents and their comparison
  *    (fax_util.h)
  */

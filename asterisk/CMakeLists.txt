@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # app_dmodem.so: the DModem() dialplan application, built against the
 # headers of an installed Asterisk (make install-headers, or the
 # asterisk-dev package of a distribution); skipped when they are missing.

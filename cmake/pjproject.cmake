@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # pjproject for dmodemd's SIP user agent, as the imported target `pjproject`.
 #
 # An installed pjproject is found with pkg-config (libpjproject).  Otherwise

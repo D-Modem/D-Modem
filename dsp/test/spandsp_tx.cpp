@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ */
+
 /* spandsp's side of spandsp_test.cpp (its headers clash with ours) */
 #include <stdlib.h>
 #include <spandsp.h>

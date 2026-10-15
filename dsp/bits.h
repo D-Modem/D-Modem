@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    bits.h - frames kept as bits, one a byte in bit 0, in time order:
  *             their fields, the CRC-16 of V.34's INFO and MP style

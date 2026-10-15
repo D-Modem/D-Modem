@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    link.h - the data link layer of the modem: what goes on between the
  *             DTE's characters and the data pump's bits

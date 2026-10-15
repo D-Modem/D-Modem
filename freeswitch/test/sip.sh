@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # sip.sh [AT commands, ';' separated]: D-Modem (dmodemd, built in ../..)
 # registers with a private FreeSWITCH (see fs.sh) and calls dmodem bbs, or
 # with INCOMING=1 answers FreeSWITCH's call, dmodem term o calling; see

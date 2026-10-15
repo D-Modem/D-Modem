@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    dsp_loopback.cpp - the open data pumps back to back (loopback.h), from
  *    the command line; pump_test runs the cases of the test suite

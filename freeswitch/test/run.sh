@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # run.sh [AT+MS=.. [answering profile]]: a call between two dmodem over SIP
 # (RTP on 127.0.0.1) in a private FreeSWITCH (see fs.sh): the answering
 # one serves the test BBS (asterisk/test/bbs_sim.py), the calling one

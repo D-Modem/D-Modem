@@ -1,9 +1,9 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  * dmodem_bridge.c - the modem call of the PBX modules on libdmodem's C
  *                   API (see dmodem_bridge.h)
- *
- * This program is free software, distributed under the terms of the GNU
- * General Public License Version 2.
  */
 
 #ifndef _GNU_SOURCE

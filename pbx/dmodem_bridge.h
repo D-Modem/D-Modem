@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  * dmodem_bridge.h - the modem call of the PBX modules (asterisk/app_dmodem.c,
  *                   freeswitch/mod_dmodem.c) on libdmodem's C API
  *
@@ -11,9 +14,6 @@
  * dmodem_process()), the channel's variables and the call's own log
  * lines, the fax machine that takes a fax caller.  The PBX's logging,
  * fork and threads come through struct dmbridge_host.
- *
- * This program is free software, distributed under the terms of the GNU
- * General Public License Version 2.
  */
 #ifndef DMODEM_BRIDGE_H
 #define DMODEM_BRIDGE_H

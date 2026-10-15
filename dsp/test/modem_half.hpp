@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    modem_half.hpp - what the test peers' harnesses share (half_agere,
  *                     half_sm56, half_pctel, half_hsf, half_broadcom,

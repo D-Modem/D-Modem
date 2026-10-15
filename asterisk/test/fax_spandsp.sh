@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # fax_spandsp.sh: faxes between DModem's fax and Asterisk's own (res_fax
 # with spandsp, SendFAX / ReceiveFAX) over a Local channel in a private
 # Asterisk (installed with res_fax_spandsp, app_dmodem.so from the CMake build):

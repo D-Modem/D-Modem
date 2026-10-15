@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    hw/bcm4212.hpp - Broadcom's BCM4212 PCI modem chip (14e4:4212): a
  *                     mixin of a harness

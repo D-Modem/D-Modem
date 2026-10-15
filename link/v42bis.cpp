@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * Copyright (C) 2026 Neo-Desktop
+ * (Smart Link's code in it: Smart Link's notice and licence below)
  *
  *    v42bis.cpp - V.42bis data compression
  *

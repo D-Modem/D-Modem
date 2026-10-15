@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    v91.cpp - ITU-T V.91 (05/99): a digital modem on a 4-wire digital
  *              connection, PCM both ways

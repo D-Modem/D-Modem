@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    netsim.cpp - the digital network between two modem processes:
  *    G.711 at 8000 Hz, with sample rate conversion for a modem that
  *    runs at 9600 Hz (as if its codec were on an analogue line).

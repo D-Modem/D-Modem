@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # The core against slmodemd's old one: core_script runs a script with two
 # modems back to back, and its transcript must be the script's .expect
 # (core_equiv): the old core's, recorded before it left the tree, or the

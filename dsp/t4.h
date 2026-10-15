@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    t4.h - fax page images: ITU-T T.4 (MH, MR) and T.6 (MMR) coding,
  *           and TIFF-F files

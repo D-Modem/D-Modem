@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # root_test.py <dmodemd>: dmodemd started as root goes on as nobody,
 # and what needs root's rights still works after: the data file is saved
 # at the end, the link in /dev follows the pty made anew when the DTE

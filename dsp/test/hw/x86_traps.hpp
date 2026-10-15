@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    hw/x86_traps.hpp - the instructions of a driver's own code that
  *                       trap in a process (no I/O permission): in and

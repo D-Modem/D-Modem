@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    dmodem.hpp - libdmodem for C++ (namespace dm): the modem and the
  *                 fax machine as classes that own their C objects (see

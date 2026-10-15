@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 """smartlink_log.py [log]: the original library's "$!$ " lines (its
 edprintf) decoded in place, the rest as it is (stdin without a file).
 

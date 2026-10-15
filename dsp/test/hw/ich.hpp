@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    hw/ich.hpp - the Intel ICH AC'97 modem controller (8086:2416), as
  *                 the soft modems drive it: a mixin of a harness

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    g711_test.cpp - g711.h: every octet back to itself through its law,
  *                    the reference values, and encode_sm()'s sign and

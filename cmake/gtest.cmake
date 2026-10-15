@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # GoogleTest for the tests: the system's (libgtest-dev) or else fetched.
 # dmodem_gtest(<target> [LABELS ...] [TIMEOUT s] [ENVIRONMENT ...]
 # [RUN_SERIAL]) links a test program with it and registers each of its tests

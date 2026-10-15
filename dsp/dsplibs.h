@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * Copyright (C) 2026 Neo-Desktop
+ * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
+ * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
  *    dsplibs.h - the interface between the modem core and its data pump
  *                library: the original binary-only dsplibs.o (i386

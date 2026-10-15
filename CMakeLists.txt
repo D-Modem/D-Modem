@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # D-Modem: a software modem on SIP calls (dmodemd, with its SIP user
 # agent built in), its modem core as a library (libdmodem) and the
 # Asterisk module built on it.

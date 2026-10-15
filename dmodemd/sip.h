@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    sip.h - dmodemd's telephone line: a SIP user agent (pjsua) in the
  *            same process, in place of the external d-modem program

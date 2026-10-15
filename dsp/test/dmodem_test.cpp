@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    dmodem_test.cpp - libdmodem: two of its modems back to back in one
  *    process (the caller dials, the answerer answers), lines of text both
  *    ways through their DTE socketpairs, several pairs in threads at once;

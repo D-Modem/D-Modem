@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    interop_windows.h - a Windows kernel of our own for the WDM driver
  *                        of a soft modem (half_broadcom): the driver's PE

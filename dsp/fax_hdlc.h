@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    fax_hdlc.h - HDLC framing of fax frames on the FaxTx / FaxRx bit
  *                 callbacks, as mixins for the machines that use it:

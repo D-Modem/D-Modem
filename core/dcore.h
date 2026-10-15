@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    dcore.h - the modem core: the AT command interpreter, the
  *              S-registers, the result codes, the call's state machine

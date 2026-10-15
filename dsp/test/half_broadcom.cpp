@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    half_broadcom.cpp - Broadcom's V.92 soft modem for Windows
  *    (BCMSM.sys 3.4.19 of 2002, the WDM driver of the "BCM V.92 56K
  *    Modem": its controller and data pumps, i386) as a test peer

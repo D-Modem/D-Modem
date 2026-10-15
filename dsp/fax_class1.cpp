@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    fax_class1.cpp - T.31 service class 1 for the modem core:
  *                   FAX_create/FAX_process/FAX_delete and the

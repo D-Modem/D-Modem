@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    v44.h - V.44 data compression (LZJH), one direction (an encoder or a
  *            decoder: each has its own dictionary and history)

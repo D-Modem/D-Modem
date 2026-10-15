@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    mnp5.h - MNP 5 data compression, one direction (an encoder or a
  *             decoder), as the PCTel, Agere and other soft modems have

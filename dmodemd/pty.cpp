@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * Copyright (C) 2026 Neo-Desktop
+ * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
+ * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
  *    pty.cpp - the DTE's pseudo terminal (pty.h); slmodemd's create_pty()
  *              and the pty part of its main loop, and the process that

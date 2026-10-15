@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * Copyright (C) 2026 Neo-Desktop
+ * (Smart Link's code in it: Smart Link's notice and licence below)
  *
  *    Copyright (c) 2002, Smart Link Ltd.
  *    All rights reserved.

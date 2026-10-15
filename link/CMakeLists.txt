@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # The data link layer (C++, namespace dlink): the V.42 detection phase,
 # V.42 LAPM over HDLC, MNP 2 to 4 and 5, V.42bis, V.44, and asynchronous
 # characters.  It does not depend on the modem core; the core is its

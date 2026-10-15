@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    v90.cpp - V.90 digital modem (ITU-T V.90): the PCM transmitter
  *

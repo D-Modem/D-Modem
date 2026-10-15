@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    v92.h - ITU-T V.92 PCM upstream, the digital modem: phases 3 and 4
  *            and the data mode, after an INFO1a that asks for PCM upstream

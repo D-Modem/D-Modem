@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    v42bis.h - V.42bis data compression, one direction (an encoder or a
  *               decoder: each has its own dictionary)

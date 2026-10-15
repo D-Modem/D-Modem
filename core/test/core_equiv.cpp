@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    core_equiv.cpp - the core against slmodemd's old one: each script of
  *    scripts/ through core_script (two modems back to back, driven as a
  *    DTE would, script.cpp), and the transcript must be the script's

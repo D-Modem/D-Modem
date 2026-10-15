@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # The open data pumps (C++): the modulations, V.8, V.34, V.90, V.91, class 1
 # fax, and the slmodemd pumps without a modulation (dp_dummy, dp_sinus).
 # They plug into a modem core through the interface in this directory,

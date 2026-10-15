@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    v34_modem.cpp - V.34 primary channel: the phase 3 and 4 training
  *                  signals (S, S-bar, PP, TRN, J, J', MP, E) and the

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    dp_fsk.cpp - FSK data pumps: ITU V.21 (300 bit/s), ITU V.23
  *               (1200/75 bit/s) and Bell 103 (300 bit/s)

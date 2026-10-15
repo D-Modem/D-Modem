@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 #
 # bbs_sim.py - both ends of a test call through Asterisk: a BBS on
 # BBS_PORT (served by DModem(bbs), the answering modem) and a terminal

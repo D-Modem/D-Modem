@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * Copyright (C) 2026 Neo-Desktop
+ * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
+ * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
  *    main.cpp - dmodemd: a modem behind a pseudo terminal, on SIP calls
  *
@@ -75,7 +79,7 @@ struct Dmodemd final : public dcore::Host {
 	   of silence; < 0 on failure */
 	int start(dcore::Modem &modem) override {
 		int sockets[2], ret;
-		DBG("socket_start...\n");
+		DBG("off hook: the call's audio socket\n");
 		if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1) {
 			ERR("socketpair: %s\n", strerror(errno));
 			return -1;
@@ -97,7 +101,7 @@ struct Dmodemd final : public dcore::Host {
 	}
 	/* on hook: our end of the socket closed, which ends the call */
 	int stop(dcore::Modem &) override {
-		DBG("socket_stop...\n");
+		DBG("on hook: the call's audio socket closed\n");
 		if (fd >= 0)
 			::close(fd);
 		fd = -1;
@@ -154,7 +158,7 @@ int Dmodemd::audio()
 	int count = ::read(fd, in, sizeof(in));
 	if (count <= 0) {
 		if (count < 0 && errno == ECONNRESET)
-			DBG("lost connection to child socket process\n");
+			DBG("the call's audio: connection reset\n");
 		else if (count < 0)
 			ERR("dev read: %s\n", strerror(errno));
 		/* the call has gone: hang up now */
@@ -167,7 +171,7 @@ int Dmodemd::audio()
 		m->set_line_law(sip::law());
 	m->process(in, out, count);
 	if (fd < 0) {
-		DBG("closed connection to child socket process\n");
+		DBG("the call's audio: socket closed\n");
 		return 0;
 	}
 	if (::write(fd, out, count * 2) < 0) {

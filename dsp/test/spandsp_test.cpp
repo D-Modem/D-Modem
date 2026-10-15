@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    spandsp_test.cpp - spandsp (libspandsp) as Asterisk's SendFAX has it,
  *    into our receivers: its V.17 transmitter into our fax receiver at
  *    8000 Hz through G.711 mu-law, a long train (as for TCF), then a short

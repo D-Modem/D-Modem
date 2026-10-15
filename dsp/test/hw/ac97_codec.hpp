@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    hw/ac97_codec.hpp - an AC'97 modem codec's registers (MC97: the
  *                        Silicon Labs Si3038 of the Agere modem, the

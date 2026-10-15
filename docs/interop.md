@@ -50,7 +50,9 @@ The vendor modems are their own binaries, as their Linux drivers shipped
 them, in `dsp/test/<peer>/` (i386 objects; the harnesses link them in,
 `-m32`); Broadcom's is its Windows driver, which `half_broadcom` loads. Each
 is the file of a known release, compared byte for byte where the release
-can still be had:
+can still be had. They belong to their owners and are licensed by them,
+not under this repository's terms
+([dsp/test/NOTICE.md](../dsp/test/NOTICE.md)).
 
 | Peer | Files | Release | Built | Byte-identical to |
 |---|---|---|---|---|

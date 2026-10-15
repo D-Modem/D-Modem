@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    fax.h - fax modulations (V.21 channel 2, V.27ter, V.29, V.17) and
  *            the T.31 class 1 layer

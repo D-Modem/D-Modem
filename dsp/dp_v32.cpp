@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    dp_v32.cpp - ITU V.32 / V.32bis data pump (4800 to 14400 bit/s)
  *

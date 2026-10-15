@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    v34_tables.cpp - V.34 constants (Tables 1, 2/V.34)
  *

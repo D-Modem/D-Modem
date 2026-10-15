@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    interop_call_main.cpp - interop_call: a call between two modem
  *                            processes by hand, as the interop tests

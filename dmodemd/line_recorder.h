@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    line_recorder.h - a call's line audio in two raw files, as the
  *                      front end passes it: what the modem receives and

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    hdlc.h - bit level framing: HDLC frames (flags, zero insertion,
  *             FCS-16), asynchronous characters, and the V.42 detection

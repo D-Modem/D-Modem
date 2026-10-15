@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # fax.sh: faxes between DModem's applications over a Local channel in a
 # private Asterisk (installed, app_dmodem.so from the CMake build):
 #   1. DModemSendFax calls DModem(bbs), which sees the CNG and receives

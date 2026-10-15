@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    modem_test.cpp - the modem simulator: two modems (modemA and modemB)
  *                     whose lines are connected back to back, each with

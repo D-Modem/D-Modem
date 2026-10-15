@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    hw/si3034.hpp - a Silicon Labs Si3034 DAA behind a controller's
  *                    serial port: a mixin of a harness

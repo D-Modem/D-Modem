@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    tiff.cpp - TIFF class F files for fax pages: written with MH coding
  *             (one page per IFD), read with any of the fax codings or

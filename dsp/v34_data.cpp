@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    v34_data.cpp - V.34 data mode (section 9/V.34): framing, shell
  *                 mapping, differential encoding, the 16, 32 and 64

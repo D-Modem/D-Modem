@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    half_spandsp.cpp - spandsp's data modems (libspandsp 0.0.6, as
  *    Asterisk and FreeSWITCH have it) as a test peer (modem_half.hpp):
  *    line audio from fd 3 and to fd 4 (16 bit, 8000 Hz), AT commands on

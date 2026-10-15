@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
  *    dmodem_fax_test.cpp - libdmodem's fax: a fax machine calls a data
  *    modem answering (as DModem() does), which sees the CNG and hands the
  *    call to a fax receiver; the pages must come through, mu-law and A-law

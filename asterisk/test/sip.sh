@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
 # sip.sh [AT commands, ';' separated]: D-Modem (dmodemd, built in ../..)
 # calls DModem(bbs) over SIP in a private Asterisk (installed
 # with chan_pjsip; app_dmodem.so from the CMake build), or with INCOMING=1 answers

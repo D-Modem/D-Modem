@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
  *
  *    interop_call.cpp - calls between two modem processes in real time
  *                       (see interop_call.h)
