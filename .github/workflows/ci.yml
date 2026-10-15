@@ -8,11 +8,20 @@
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
 # two modems of the module, D-Modem (dmodemd) over SIP both ways, and
 # faxes, also against their own fax (spandsp).
+#
+# A push or pull request that changes only documentation (docs/ and the
+# Markdown files: nothing builds or tests from them) runs none of it.
 name: CI
 
 on:
   push:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
 
 jobs:
   build:
