@@ -10,7 +10,9 @@
 # user; the BBS is on D-Modem's pty.  CALLS=<n>: that many calls one after
 # the other (D-Modem calling), in one slmodemd.  BBS_CONNECT_DELAY=<s>: the
 # BBS takes no connection until s seconds after the start (as
-# bbs_sim.py's), so DModem(bbs)'s connect waits meanwhile.
+# bbs_sim.py's), so DModem(bbs)'s connect waits meanwhile.  DIAL=<command>:
+# the dial command before the number (ATD; ATDT: the call goes to the
+# number all the same).
 import os, re, socket, subprocess, sys, threading, time, tty
 
 slmodemd, number = sys.argv[1:3]
@@ -185,7 +187,7 @@ for call in range(calls):
         break
     if calls > 1:
         print("call %d:" % (call + 1))
-    m = cmd(b"ATD" + number.encode(), rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO ANSWER|ERROR)\r\n", 90)
+    m = cmd(os.environ.get("DIAL", "ATD").encode() + number.encode(), rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO ANSWER|ERROR)\r\n", 90)
     print("dial:", m.group(1).decode() if m else "timeout")
     ok = ok and m is not None and m.group(1).startswith(b"CONNECT")
     if ok:

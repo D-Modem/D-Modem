@@ -66,7 +66,7 @@ With `-L` (listen), slmodemd registers with the SIP server, so that calls to the
     # ./build/slmodemd/slmodemd -L
 
 ### Dialing
-Finally, dial the number of the target system.  Below shows a connection to the NIST atomic clock: 
+Finally, dial the number of the target system.  The call goes to `sip:<number>@<domain>` of `SIP_LOGIN`, the number's digits (and `*`, `#`, `+`): `ATDT`, `ATDP`, pauses (`,`, `W`) and the dashes and brackets of a formatted number are left out, and anything else is taken as a SIP user's name (`ATDalice`).  Below shows a connection to the NIST atomic clock: 
 
     atd303-494-4774 
     CONNECT 9600 

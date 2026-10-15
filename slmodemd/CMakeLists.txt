@@ -16,7 +16,7 @@ target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
 
 if(DMODEM_SLMODEMD)
 	# the modem daemon: its SIP user agent (sip.cpp) and a pty
-	add_executable(slmodemd main.cpp sip.cpp)
+	add_executable(slmodemd main.cpp sip.cpp sip_dial.cpp)
 	target_compile_options(slmodemd PRIVATE -Wall -g -O2)
 	target_link_libraries(slmodemd PRIVATE dmodem_front dmodem_core
 		dmodem_dsp dmodem_link pjproject m pthread)
@@ -24,6 +24,15 @@ if(DMODEM_SLMODEMD)
 
 	# test/root_test.py: slmodemd started as root, what needs root's
 	# rights after it has dropped them (skipped unless ctest is root)
+	# test/sip_dial_test.cpp: the SIP user of a dial string
+	if(DMODEM_TESTS)
+		add_executable(sip_dial_test test/sip_dial_test.cpp sip_dial.cpp)
+		target_include_directories(sip_dial_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR})
+		target_compile_options(sip_dial_test PRIVATE -Wall -Wextra -g)
+		dmodem_gtest(sip_dial_test LABELS quick)
+	endif()
+
 	find_package(Python3 COMPONENTS Interpreter QUIET)
 	if(DMODEM_TESTS AND Python3_Interpreter_FOUND)
 		add_test(NAME slmodemd_root COMMAND ${Python3_EXECUTABLE}

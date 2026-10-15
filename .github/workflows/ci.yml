@@ -85,6 +85,7 @@ jobs:
           timeout 300 asterisk/test/sip.sh
           INCOMING=1 timeout 300 asterisk/test/sip.sh
           CALLS=3 timeout 300 asterisk/test/sip.sh
+          DIAL=ATDT timeout 300 asterisk/test/sip.sh
           BBS_CONNECT_DELAY=15 timeout 300 asterisk/test/sip.sh
 
       - name: Fax

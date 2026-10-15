@@ -13,6 +13,8 @@
 #ifndef __SIP_H__
 #define __SIP_H__
 
+#include <string>
+
 namespace sip {
 
 struct Config {
@@ -38,6 +40,11 @@ void stop();
    or answer the call that rings.  If there is none, or the line is busy,
    the socket is closed at once (NO CARRIER). */
 void dial(const char *number, int audio_fd);
+/* the user part of the URI that dial string dial calls: a telephone
+   number as V.250 has it (ATDT555-1000, ATD9,W5551000) its digits and
+   DTMF characters only (5551000, 95551000); anything else is a name
+   (ATDalice), taken as it is (sip_dial.cpp) */
+std::string dial_user(const char *dial);
 void answer(int audio_fd);
 
 /* the G.711 law of the current call: 1 mu-law, 2 A-law, 0 not known yet */

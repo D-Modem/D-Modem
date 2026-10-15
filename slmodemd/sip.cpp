@@ -375,7 +375,7 @@ void do_request(Request &r)
 	static uintptr_t dials;
 	dial_tag = ++dials;
 	audio_attach(r.fd);
-	std::string uri = "sip:" + r.number + "@" + cfg.domain;
+	std::string uri = "sip:" + dial_user(r.number.c_str()) + "@" + cfg.domain;
 	PJ_LOG(3, (__FILE__, "calling %s", uri.c_str()));
 	pj_str_t u = pj_str(&uri[0]);
 	pjsua_call_id id;
