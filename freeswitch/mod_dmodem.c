@@ -516,8 +516,8 @@ SWITCH_STANDARD_APP(dmodem_function)
 		if (ev == DMBRIDGE_CONNECTED) {
 			const char *cid = switch_channel_get_variable(channel,
 							"caller_id_number");
-			const char *dialed = switch_channel_get_variable(channel,
-							"destination_number");
+			const char *dialed = switch_channel_get_variable(
+				channel, "destination_number");
 			char connected[24];
 			const char *env[] = {
 				"DMODEM_CHANNEL", name,

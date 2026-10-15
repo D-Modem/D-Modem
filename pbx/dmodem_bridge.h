@@ -6,11 +6,11 @@
  * name and value, as the PBX's configuration has them), the modem with
  * a socketpair as its DTE, and, once the modems are connected, the data
  * between that socketpair and the profile's server (TCP or a unix
- * socket) or program on a pty, until one side goes.  The module keeps the PBX's side: the
- * channel's frames through dmodem_process_g711() (or dmodem_process()),
- * the channel's variables and the call's own log lines, the fax machine
- * that takes a fax caller.  The PBX's logging, fork and threads come
- * through struct dmbridge_host.
+ * socket) or program on a pty, until one side goes.  The module keeps
+ * the PBX's side: the channel's frames through dmodem_process_g711() (or
+ * dmodem_process()), the channel's variables and the call's own log
+ * lines, the fax machine that takes a fax caller.  The PBX's logging,
+ * fork and threads come through struct dmbridge_host.
  *
  * This program is free software, distributed under the terms of the GNU
  * General Public License Version 2.
@@ -90,8 +90,8 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
    there) */
 void dmbridge_profile_init(struct dmbridge_profile *p);
 /* a profile's option (mode, host, port, path, header, command, init,
-   answer, law, timeout and the fax ones); 0 if name is something else.  where: the
-   profile, for the log ("[bbs]", "profile bbs") */
+   answer, law, timeout and the fax ones); 0 if name is something else.
+   where: the profile, for the log ("[bbs]", "profile bbs") */
 int dmbridge_profile_option(const struct dmbridge_host *h,
 			    struct dmbridge_profile *p, const char *where,
 			    const char *name, const char *value);
