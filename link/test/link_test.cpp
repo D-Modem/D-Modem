@@ -755,6 +755,45 @@ TEST(Link, DetectHangup)
 	CHECK(!p.da.up && !p.da.detected, "no link after the hangup");
 }
 
+/* the originator's detection phase against an answerer whose ADPs are
+   given (pairs of characters, each pair repeated times): marks, then the
+   patterns as start-stop characters with 10 marks between; the caller's
+   Link as the phase leaves it */
+static void detect_against(Pair &p,
+			   std::vector<std::pair<std::string, int>> adps)
+{
+	std::vector<uint8_t> line(64 * 8 + 96, 1), b(48);
+	for (auto &[pat, times] : adps)
+		for (int t = 0; t < times; t++)
+			for (unsigned char c : pat) {
+				line.push_back(0);
+				for (int i = 0; i < 8; i++)
+					line.push_back((c >> i) & 1);
+				line.insert(line.end(), 10, 1);
+			}
+	line.resize(line.size() + 9600 * 2, 1);
+	p.lc.start(true, true);
+	for (size_t k = 0; k + 48 <= line.size(); k += 48) {
+		p.lc.get_bits(1, b.data(), 48);
+		p.lc.put_bits(1, line.data() + k, 48);
+	}
+}
+
+/* Appendix VI/V.42: a cellular modem's answerer (MNP 10EC's) sends "EM"
+   five times or more, then V.42's "EC": the originator takes LAPM; "EM"
+   alone is not V.42, and T400 ends the phase without it */
+TEST(Link, AdpCellular)
+{
+	rnd_state = 12345;
+	Pair p(lapm_config(0), Config());
+	detect_against(p, { { "EM", 5 }, { "EC", 10 } });
+	CHECK(p.dc.detected && p.lc.ec(), "EM then EC: LAPM");
+
+	Pair q(lapm_config(0), Config());
+	detect_against(q, { { "EM", 16 } });
+	CHECK(q.dc.detected && !q.lc.ec(), "EM alone: no LAPM");
+}
+
 /* a DTE that takes 7 characters at a time: RNR, the rest later */
 TEST(Link, LapmSlowDte)
 {

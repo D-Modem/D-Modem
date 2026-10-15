@@ -743,6 +743,16 @@ chooses PCM upstream in INFO1a (`broadcom_v92_pcmup`):
 PCM upstream may well be unfinished in this build, as it is off by
 default.
 
+## MNP
+
+The Agere, SM56, PCTel, HSF and Broadcom modems have MNP 2 to 4 and
+MNP 5 (Smart Link's library and spandsp have none); D-Modem has no MNP,
+and with their defaults they all take V.42 with us. Forced to MNP with
+`+ES=4,4` as the caller, each ends in NO CARRIER against our answerer,
+which goes to async and passes their LR frames to its DTE; none of them
+has MNP 10 or 10EC. See [link.md](link.md#mnp) for the calls, their LR
+frames and what MNP 10EC would take.
+
 ## The calls' options
 
 `ANSWER_AFTER=<s>` gives the answerer its ATA that long after the

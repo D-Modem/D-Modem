@@ -299,7 +299,9 @@ MNP); \cmd{\bs A4} and up are ERROR.
 \begin{command}{AT\bs N[\p{n}]}
 Error correction (S103; default 1): \cmd{\bs N0} none; \cmd{\bs N1} to
 \cmd{\bs N5} V.42 (LAPM) when the other modem has it, a call without
-when it does not (V.42's detection phase decides).
+when it does not (V.42's detection phase decides).  There is no MNP:
+an MNP modem that has V.42 connects with LAPM, one with MNP only
+without error correction or not at all.
 \end{command}
 
 \begin{command}{AT\%E[\p{n}]}
@@ -558,8 +560,12 @@ it).
 \begin{itemize}
 \item No stored profiles: \cmd{\&W} and \cmd{\&V} are ERROR, \cmd{\&F}
   and \cmd{Z}\p{n}'s number do nothing; \cmd{ATZ} gives the defaults.
-\item No MNP: \cmd{\bs A} is taken and \cmd{\bs N1} to \cmd{\bs N5} are
-  all V.42.
+\item No MNP (classes 2 to 5, 10, 10EC): \cmd{\bs A} is taken and
+  \cmd{\bs N1} to \cmd{\bs N5} are all V.42; Rockwell's MNP 10 and
+  10EC commands (\cmd{-K}, \cmd{-SEC}, \cmd{)M}, \cmd{@M}, \cmd{*H},
+  \cmd{-Q}) are ERROR.  A modem with MNP 10EC connects with V.42 (its
+  ``EM'' detection patterns are passed over).  See \texttt{docs/link.md},
+  MNP.
 \item K56flex is not there: \cmd{+MS=56} runs V.90.
 \item V.90 and V.92 as the digital modem, V.91, V.44 and V.92's
   modem-on-hold (\cmd{+PMH}, \cmd{+PMHT}, \cmd{+PMHR}) are D-Modem's.

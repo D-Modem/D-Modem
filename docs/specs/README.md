@@ -35,6 +35,10 @@ links below the table then work.
 | [V.250](https://www.itu.int/rec/T-REC-V.250) | AT commands | `core/at.cpp` | [V.250.pdf](V.250.pdf) |
 | [V.253](https://www.itu.int/rec/T-REC-V.253) | Voice AT commands | `dsp/dsp_glue.cpp` (voice) | [V.253.pdf](V.253.pdf) |
 
+V.42's Annex A, the alternative procedure (MNP 4), which D-Modem does
+not have, was deleted in 2002; it is in the superseded V.42 (10/96),
+`T-REC-V.42-199610-S` at itu.int (`docs/link.md`, MNP).
+
 Not ITU: Bell 103 and Bell 212A (AT&T), Bell 202 caller ID (Telcordia
 GR-30), TIFF-F (RFC 3949). Section references in the code and in these
 documents, such as "9.6.2/V.34", are to these editions.
