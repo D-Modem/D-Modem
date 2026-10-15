@@ -113,7 +113,6 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	void set_state(enum c1_state s);
 	void begin_fth();
 	void begin_frh();
-	float ced_sample();
 };
 
 
@@ -473,16 +472,6 @@ void FAX_delete(void *obj)
 	delete f;
 }
 
-/* the answer tone (CED), by the samples since the answer */
-float Fax::ced_sample()
-{
-	/* 200 ms silence, 3 s of 2100 Hz, 75 ms silence */
-	long t = count;
-	if (t < ms2samples(200, srate) || t >= ms2samples(3200, srate))
-		return 0;
-	return FAX_CED_RMS * 1.41421f * sinf(2 * (float)M_PI * 2100 * t / srate);
-}
-
 /* count samples of 16 bit audio in and out: the transmitter, the
    receiver and the state of the command, the data to and from the DTE.
    The next result (FAX_STATUS_*), or 0 */
@@ -500,7 +489,7 @@ int FAX_process(void *obj, void *in, void *out, int count)
 
 		f->in_power += 0.002f * (x * x - f->in_power);
 		if (f->state == C1_CED)
-			y = f->ced_sample();
+			y = fax_ced_sample(f->count, f->srate);
 		else if (f->tx_on) {
 			y = f->tx.sample();
 			if (f->tx.done) {
@@ -519,7 +508,7 @@ int FAX_process(void *obj, void *in, void *out, int count)
 
 		switch (f->state) {
 		case C1_CED:
-			if (f->count >= ms2samples(3275, f->srate))
+			if (f->count >= ms2samples(FAX_CED_END_MS, f->srate))
 				f->begin_fth();
 			break;
 		case C1_FTS:

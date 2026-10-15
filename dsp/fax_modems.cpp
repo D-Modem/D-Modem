@@ -455,9 +455,8 @@ void FaxTx::init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t 
 	get_bit = get_bit_;
 	ctx = ctx_;
 	if (mod_ == FM_V21) {
-		fsk.init(1650, 1850, fax_tx_rms(mod_) * 1.41421f, srate_);
-		bit_inc = 300.0f / srate_;
-		fsk_bit = 1;
+		fsk.init(1650, 1850, fax_tx_rms(mod_) * 1.41421f, 300.0f,
+			 srate_);
 		seg = SEG_DATA;
 		return;
 	}
@@ -492,18 +491,10 @@ float FaxTx::sample()
 	if (done)
 		return 0;
 	if (mod == FM_V21) {
-		bit_phase += bit_inc;
-		if (bit_phase >= 1) {
-			int b;
-			bit_phase -= 1;
-			b = get_bit(ctx);
-			if (b == FAX_BIT_END) {
-				done = 1;
-				return 0;
-			}
-			fsk_bit = b & 1;
-		}
-		return fsk.next(fsk_bit);
+		float y = fsk.sample([this] { return get_bit(ctx); });
+		if (fsk.ended)
+			done = 1;
+		return y;
 	}
 	return qam.sample();
 }

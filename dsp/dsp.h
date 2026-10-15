@@ -242,6 +242,112 @@ struct FskDemod {
 	int  run(float x);
 };
 
+/* an FSK transmitter on its own bit clock: at each bit boundary the
+   next bit from a source, next() (0 or 1; < 0 when it has no more,
+   which ends the signal) */
+struct FskBitTx {
+	FskMod mod;
+	float phase, inc;       /* the bit clock: a bit due at 1 */
+	int bit;                /* the one going out */
+	int ended;              /* the source had no more */
+
+	/* mark and space (Hz), peak amplitude amp, baud bit/s at srate;
+	   the clock from phase_ (1: the first bit at once), a mark until
+	   then */
+	void init(float mark, float space, float amp, float baud, int srate,
+		  float phase_ = 0)
+	{
+		mod.init(mark, space, amp, srate);
+		phase = phase_;
+		inc = baud / srate;
+		bit = 1;
+		ended = 0;
+	}
+	/* the next sample begins a bit */
+	bool edge() const { return phase + inc >= 1; }
+	/* the next sample; 0 once ended */
+	template <class Next> float sample(Next next)
+	{
+		phase += inc;
+		if (phase >= 1) {
+			int b;
+			phase -= 1;
+			b = next();
+			if (b < 0) {
+				ended = 1;
+				return 0;
+			}
+			bit = b & 1;
+		}
+		return mod.next(bit);
+	}
+};
+
+/* the answerer's start (4.3/V.25, 8.2/V.8): 200 ms of silence (V.8's
+   0.2 s at least; the core's answer delay, its S-register of 2 s, is
+   V.25's silent interval of 1.8 to 2.5 s, the answer tone then within
+   it), the 2100 Hz answer tone, 75 ms of silence */
+#define ANS_SILENCE_MS  200
+#define ANS_TONE_MS     3300
+#define ANS_GAP_MS      75
+
+/* a carrier detector with hysteresis on a power: on above one level,
+   off below another */
+struct CarrierDetect {
+	float on_level, off_level;
+	int on;
+
+	/* the levels as the amplitudes of tones */
+	void init(float on_amp, float off_amp)
+	{
+		on_level = tone_power(on_amp);
+		off_level = tone_power(off_amp);
+		on = 0;
+	}
+	/* the power now: 1 as the carrier comes, -1 as it goes, else 0 */
+	int run(float power)
+	{
+		if (!on && power > on_level) {
+			on = 1;
+			return 1;
+		}
+		if (on && power < off_level) {
+			on = 0;
+			return -1;
+		}
+		return 0;
+	}
+};
+
+/* a Bell 103 caller's mark and space (1270 and 1070 Hz, its originate
+   band) with most of the power in them, in blocks of 20 ms */
+struct Bell103Detect {
+	Goertzel g1270, g1070;
+	float energy;           /* of the block so far */
+	int blocks;             /* in a row with the tones */
+
+	void init(int srate)
+	{
+		g1270.init(1270, srate / 50, srate);
+		g1070.init(1070, srate / 50, srate);
+		energy = 0;
+		blocks = 0;
+	}
+	void run(float x)
+	{
+		energy += x * x;
+		g1070.run(x);
+		if (g1270.run(x)) {
+			float mean = energy / g1270.len;
+			blocks = g1270.power + g1070.power > 0.6f * mean &&
+				mean > tone_power(150) ? blocks + 1 : 0;
+			energy = 0;
+		}
+	}
+	/* 100 ms of it */
+	bool found() const { return blocks >= 5; }
+};
+
 /*
  *    data pump registration helpers: *_init registers the pump's DP_IDs
  *    with the modem core (prop_dp_init), *_exit takes them back

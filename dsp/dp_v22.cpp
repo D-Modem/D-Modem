@@ -78,9 +78,7 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	   answerer's 2225 Hz mark and answers with its own, 1270 Hz: 100 ms
 	   of it before its data (only a pure tone, a V.22 caller never
 	   sends one) */
-	Goertzel g1270, g1070;
-	float blk_energy;
-	int bell_blocks;
+	Bell103Detect bell;
 	float sps;              /* samples per symbol */
 
 	/* transmitter */
@@ -103,7 +101,7 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	std::vector<cplx> mf_buf;
 	int mf_len, mf_pos;
 	PowerMeter in_pwr;
-	int carrier;
+	CarrierDetect carrier;
 	float agc_pwr, agc_alpha;
 
 	/* timing recovery */
@@ -352,7 +350,7 @@ void V22Pump::rx_bits(int dquad, int q34_16, int dq_raw)
 			memcpy(bits, b24, 4);
 	}
 
-	if (state == V22_DATA && carrier)
+	if (state == V22_DATA && carrier.on)
 		modem_put_bits(modem, 1, bits, rx_rate == 2400 ? 4 : 2);
 }
 
@@ -439,7 +437,7 @@ void V22Pump::rx_symbol(cplx y)
 
 	DSP_TRACE("%s: %ld sym %6.2f %6.2f q %d dq %d th %5.2f c %d\n",
 		 caller ? "C" : "A", total, z.re, z.im, quad,
-		 (quad - rx_quad) & 3, theta, carrier);
+		 (quad - rx_quad) & 3, theta, carrier.on);
 	i = (quad - rx_quad) & 3;
 	if (i == dq2)
 		run_periodic++;
@@ -480,15 +478,16 @@ void V22Pump::rx_sample(float x)
 	/* carrier detector on the band passed input */
 	x = rx_bp.run(x);
 	in_pwr.run(x);
-	if (!carrier && in_pwr.power > tone_power(180)) {
-		carrier = 1;
+	switch (carrier.run(in_pwr.power)) {
+	case 1:
 		rx_reset();
 		DSP_DBG("%s: carrier on at %ld\n", mode_name(), total);
-	} else if (carrier && in_pwr.power < tone_power(110)) {
-		carrier = 0;
+		break;
+	case -1:
 		DSP_DBG("%s: carrier off at %ld\n", mode_name(), total);
+		break;
 	}
-	carrier_tick(carrier);
+	carrier_tick(carrier.on);
 
 	/* down conversion and matched filter */
 	b = cplx_scale(rx_lo.next_cplx(), x);
@@ -538,7 +537,7 @@ void V22Pump::rx_sample(float x)
 				   mid.im * (prev_sym.im - s.im)) /
 				V22_SYM_POWER;
 			if (e > 1) e = 1; else if (e < -1) e = -1;
-			if (carrier) {
+			if (carrier.on) {
 				t_adj += 0.001f * sps * e;
 				/* +-1000 ppm at most */
 				if (t_adj > 0.001f * sps)
@@ -557,7 +556,7 @@ void V22Pump::rx_sample(float x)
 	/* adaptation only with a carrier; the equalizer is frozen while
 	   the slicer may not match what the remote sends (1200 -> 2400) */
 	mu = state == V22_DATA ? 0.01f : 0.05f;
-	adapt = carrier && carrier_run > ms2samples(20, srate);
+	adapt = carrier.on && carrier_run > ms2samples(20, srate);
 	eq_freeze = remote_bis && rx_rate == 1200 &&
 		total - s1_seen > ms2samples(350, srate);
 	eq_mu = mu;
@@ -599,10 +598,7 @@ int V22Pump::handshake()
 	switch (state) {
 	/* answering modem */
 	case A_SILENCE:
-		/* V.8's 0.2 s at least (8.2/V.8): the core's answer delay (its
-		   S-register, 2 s) is V.25's silent interval of 1.8 to 2.5 s
-		   (4.3/V.25), the answer tone then within it */
-		if (ms >= 200) {
+		if (ms >= ANS_SILENCE_MS) {
 			set_state(A_ANSTONE);
 			set_tx(TX_ANSTONE);
 		}
@@ -613,13 +609,13 @@ int V22Pump::handshake()
 		if (run_sb1_12 >= MS2SYM(100)) {
 			set_state(A_V22_SB1);
 			set_tx(TX_SB1_1200);
-		} else if (ms >= 3300) {
+		} else if (ms >= ANS_TONE_MS) {
 			set_state(A_GAP);
 			set_tx(TX_SILENCE);
 		}
 		break;
 	case A_GAP:
-		if (ms >= 75) {
+		if (ms >= ANS_GAP_MS) {
 			set_state(A_USB1);
 			set_tx(TX_USB1);
 		}
@@ -634,7 +630,7 @@ int V22Pump::handshake()
 		} else if (run_sb1_12 >= MS2SYM(270)) {
 			set_state(A_V22_SB1);
 			set_tx(TX_SB1_1200);
-		} else if (automode && bell_blocks >= 5) {
+		} else if (automode && bell.found()) {
 			DSP_DBG("%s: Bell 103 caller, falling back to it\n",
 				mode_name());
 			return hand_over(DP_B103, 1);
@@ -767,19 +763,8 @@ int V22Pump::sample(float x, float *y)
 	int r;
 
 	rx_sample(x);
-	if (automode) {
-		blk_energy += x * x;
-		g1070.run(x);
-		if (g1270.run(x)) {
-			/* most of the power in that one tone */
-			float mean = blk_energy / g1270.len;
-			/* mark and space: Bell 103's originate band */
-			bell_blocks = g1270.power + g1070.power > 0.6f * mean &&
-				mean > tone_power(150) ?
-				bell_blocks + 1 : 0;
-			blk_energy = 0;
-		}
-	}
+	if (automode)
+		bell.run(x);
 	r = handshake();
 	if (r == DPSTAT_CHANGEDP)
 		return r;       /* the rest of the block silent */
@@ -821,6 +806,7 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	for (i = 0; i < mf_len; i++)
 		mf[i] /= sqrtf(sum);
 	in_pwr.init(0.03f, srate_);
+	carrier.init(180, 110);
 	agc_alpha = 1.0f / (0.05f * srate_);
 	t_next = sps / 2;
 	rx_rate = 1200;
@@ -833,8 +819,7 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		rt->ans_sent = 0;
 		automode = !rt->after_v8;
 		rt->after_v8 = 0;
-		g1270.init(1270, srate_ / 50, srate_);
-		g1070.init(1070, srate_ / 50, srate_);
+		bell.init(srate_);
 		state = A_GAP;
 	} else if (!caller_)
 		state = A_SILENCE;

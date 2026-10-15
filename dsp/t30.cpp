@@ -1577,11 +1577,8 @@ float T30::tx_sample()
 			y = tone(1100) * 0.5f;
 		break;
 	case S_CED:
-		/* 200 ms of silence, 3 s of 2100 Hz, then 75 ms silence */
-		if (c >= ms2samples(200, srate) &&
-		    c < ms2samples(3200, srate))
-			y = tone(2100);
-		else if (c >= ms2samples(3275, srate))
+		y = fax_ced_sample(c, srate);
+		if (c >= ms2samples(FAX_CED_END_MS, srate))
 			send_dis();
 		break;
 	case S_GAP:

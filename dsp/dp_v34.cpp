@@ -371,9 +371,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state> {
 	enum v34_txm txm;
 	Osc ansam, ansam_am;
 	float ansam_sign;
-	FskMod fsk;
-	float fsk_phase;
-	int fsk_bit;
+	FskBitTx fsk;           /* V.8's V.21 */
 	BitQ v8tx;
 	int v8tx_repeat;        /* restart the message when it is done */
 	QamTx cc;
@@ -567,7 +565,6 @@ struct V34Pump : PumpBase<V34Pump, v34_state> {
 	void tx_next(enum v34_state s, enum v34_txseg seg);
 	int data_setup();
 	void mp_start();
-	int fsk_bit_edge();
 	void retrain(const char *why);
 	int reneg_rate(int up);
 	int rate_floor() const;
@@ -2566,12 +2563,6 @@ void V34Pump::mp_start()
 	tx_next(P4_MP, V34_TX_MP);
 }
 
-/* the transmitter takes the next V.8 bit with this sample */
-int V34Pump::fsk_bit_edge()
-{
-	return fsk_phase + 300.0f / srate >= 1;
-}
-
 /* a retrain: both modems go back to phase 2 at tones A and B
    (the INFO0 sequences stand), probe the line again and train the
    primary channel anew; whoever starts it with silence and its tone, the
@@ -2825,8 +2816,7 @@ int V34Pump::handshake()
 			}
 			v8tx.put(0x3FF, 10);
 			v8tx_repeat = 0;
-			fsk.init(1650, 1850, V34_TONE_AMP, srate);
-			fsk_phase = 1;
+			fsk.init(1650, 1850, V34_TONE_AMP, 300, srate, 1);
 			txm = TXM_FSK;
 			set_state(QCA_QCA1D);
 			break;
@@ -2849,8 +2839,7 @@ int V34Pump::handshake()
 					v8_dp_name(v8_dp));
 				set_state(V8A_JM);
 				v8_make_msg(&v8tx);
-				fsk.init(1650, 1850, V34_TONE_AMP, srate);
-				fsk_phase = 1;
+				fsk.init(1650, 1850, V34_TONE_AMP, 300, srate, 1);
 				txm = TXM_FSK;
 				break;
 			}
@@ -2862,8 +2851,7 @@ int V34Pump::handshake()
 			   modem's INFO0a */
 			ccr.init(pcm ? 2400 : 1200);
 			v8_make_msg(&v8tx);
-			fsk.init(1650, 1850, V34_TONE_AMP, srate);
-			fsk_phase = 1;
+			fsk.init(1650, 1850, V34_TONE_AMP, 300, srate, 1);
 			txm = TXM_FSK;
 		} else if (moh_end) {
 			/* on hold: until T1, for phase 1 only */
@@ -3012,14 +3000,13 @@ int V34Pump::handshake()
 		if (total >= ms2samples(1000, srate)) {
 			set_state(V8C_CM);
 			v8_make_msg(&v8tx);
-			fsk.init(980, 1180, V34_TONE_AMP, srate);
-			fsk_phase = 1;
+			fsk.init(980, 1180, V34_TONE_AMP, 300, srate, 1);
 			txm = TXM_FSK;
 		}
 		break;
 	case V8C_CM:
 		/* finish the octet, then CJ */
-		if (v8_ok && fsk_bit_edge() && v8tx.pos % 10 == 0) {
+		if (v8_ok && fsk.edge() && v8tx.pos % 10 == 0) {
 			v8_dp = 0;
 			if (!v8_remote_v34()) {
 				/* CJ, then what the JM has (9.2/V.8) */
@@ -3045,7 +3032,7 @@ int V34Pump::handshake()
 			return fallback("no JM");
 		break;
 	case V8C_CJ:
-		if (v8tx.pos >= v8tx.n && fsk_bit_edge()) {
+		if (v8tx.pos >= v8tx.n && fsk.edge()) {
 			set_state(V8C_GAP);
 			txm = TXM_SILENCE;
 		}
@@ -3911,15 +3898,11 @@ float V34Pump::pump_tx_sample()
 			ansam.next();
 		break;
 	case TXM_FSK:
-		fsk_phase += 300.0f / srate;
-		if (fsk_phase >= 1) {
-			fsk_phase -= 1;
+		y = fsk.sample([this] {
 			if (v8tx.pos >= v8tx.n && v8tx_repeat)
 				v8tx.pos = 0;
-			fsk_bit = v8tx.pos < v8tx.n ?
-				v8tx.b[v8tx.pos++] : 1;
-		}
-		y = fsk.next(fsk_bit);
+			return v8tx.pos < v8tx.n ? (int)v8tx.b[v8tx.pos++] : 1;
+		});
 		break;
 	case TXM_CC:
 		y = cc.sample();

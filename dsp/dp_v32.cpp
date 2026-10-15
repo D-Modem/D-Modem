@@ -184,7 +184,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	QamRx rx;
 	ToneTrk aa, ac, usb1, ans2100;
 	ToneTrk v21m, v23m;     /* FSK answerers' marks */
-	int carrier;
+	CarrierDetect carrier;
 	enum v32_rxp rxp;
 	int run_s, last_sgn, s_miss;
 	cplx last_z;
@@ -572,7 +572,7 @@ void V32Pump::rx_symbol()
 		st = cplx_mulc(z, last_z);
 		a = atan2f(st.im, st.re);
 		sgn = a > 0 ? 1 : -1;
-		if (fabsf(a) > 0.9f && fabsf(a) < 2.2f && carrier) {
+		if (fabsf(a) > 0.9f && fabsf(a) < 2.2f && carrier.on) {
 			if (sgn != last_sgn) {
 				if (++run_s >= 24 && rxp != RX_S) {
 					/* whatever was learned on silence or
@@ -700,16 +700,17 @@ void V32Pump::rx_sample(float x)
 	if (rx.sample(x))
 		rx_symbol();
 
-	if (!carrier && rx.power > tone_power(150)) {
-		carrier = 1;
+	switch (carrier.run(rx.power)) {
+	case 1:
 		if (rxp == RX_IDLE)
 			rx.reset();
-	} else if (carrier && rx.power < tone_power(90)) {
-		carrier = 0;
+		break;
+	case -1:
 		if (rxp != RX_DATA)
 			rx_reset();
+		break;
 	}
-	carrier_tick(carrier);
+	carrier_tick(carrier.on);
 }
 
 /*
@@ -809,22 +810,19 @@ int V32Pump::handshake()
 	switch (state) {
 	/* answering modem */
 	case A_SILENCE:
-		/* V.8's 0.2 s at least (8.2/V.8): the core's answer delay (its
-		   S-register, 2 s) is V.25's silent interval of 1.8 to 2.5 s
-		   (4.3/V.25), the answer tone then within it */
-		if (count >= ms2samples(200, srate)) {
+		if (count >= ms2samples(ANS_SILENCE_MS, srate)) {
 			set_state(A_ANS);
 			set_tx(TXM_ANS);
 		}
 		break;
 	case A_ANS:
-		if (count >= ms2samples(3300, srate)) {
+		if (count >= ms2samples(ANS_TONE_MS, srate)) {
 			set_state(A_GAP);
 			set_tx(TXM_SILENCE);
 		}
 		break;
 	case A_GAP:
-		if (count >= ms2samples(75, srate)) {
+		if (count >= ms2samples(ANS_GAP_MS, srate)) {
 			set_state(A_AC);
 			set_tx(TXM_AC);
 		}
@@ -1093,6 +1091,7 @@ int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   phases, this one works for all its rates */
 	tx.t = 0.25f;
 	ans.set_freq(2100, srate_);
+	carrier.init(150, 90);
 	if (rx.init(srate_, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
 			V32_EQ_LEN, V32_POWER) ||
 	    ec.init(V32_EC_LEN))

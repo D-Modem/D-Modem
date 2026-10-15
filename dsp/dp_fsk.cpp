@@ -162,17 +162,13 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
 	const struct fsk_params *par;
 	long mark_count;        /* consecutive samples of steady mark */
 	Osc ans;         /* answer tone */
-	FskMod tx;
+	FskBitTx tx;
 	FskDemod rx;
-	float tx_phase, tx_inc;
-	int tx_bit;
 	int automode;           /* answering after V.22bis: V.23, Bell 103
 				   next */
 	int after_v8;           /* calling after V.8: the answerer's JM may
 				   still be in its channel */
-	Goertzel g1270, g1070;  /* a Bell 103 caller's mark */
-	float blk_energy;
-	int bell_blocks;
+	Bell103Detect bell;     /* a Bell 103 caller */
 	/* the caller's check that the mark is really at its frequency:
 	   another answerer's (V.21's 1650 Hz for V.23's 1300) demodulates
 	   as a mark too */
@@ -210,10 +206,9 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	pump_setup(m, srate_, caller_);
 	par = par_;
 
-	tx.init(par_->tx_mark, par_->tx_space, DSP_TX_AMPLITUDE, srate_);
+	tx.init(par_->tx_mark, par_->tx_space, DSP_TX_AMPLITUDE,
+		par_->tx_baud, srate_);
 	rx.init(par_->rx_mark, par_->rx_space, par_->rx_baud, srate_);
-	tx_inc = par_->tx_baud / srate_;
-	tx_bit = 1;
 	ans.set_freq(2100, srate_);
 	g_mark.init(par_->rx_mark, srate_ / 100, srate_);
 	g_lo.init(par_->rx_mark - 350, srate_ / 100, srate_);
@@ -245,8 +240,7 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 			rt->ans_sent = 0;
 			state = FSK_ANS_GAP;
 			automode = 1;
-			g1270.init(1270, srate_ / 50, srate_);
-			g1070.init(1070, srate_ / 50, srate_);
+			bell.init(srate_);
 		}
 	}
 	DSP_DBG("%s: create %s, srate %d\n", par_->name,
@@ -258,17 +252,12 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
    link layer when data, else a mark */
 float FskPump::tx_sample(int data)
 {
-	tx_phase += tx_inc;
-	if (tx_phase >= 1) {
-		tx_phase -= 1;
-		if (data) {
-			u8 b = 1;
+	return tx.sample([&] {
+		u8 b = 1;
+		if (data)
 			modem_get_bits(modem, 1, &b, 1);
-			tx_bit = b & 1;
-		} else
-			tx_bit = 1;
-	}
-	return tx.next(tx_bit);
+		return (int)b;
+	});
 }
 
 /* before a block: V.21 only, after V.8 the PCTel modem takes V.23's
@@ -295,18 +284,8 @@ int FskPump::sample(float x, float *y)
 	bit = rx.run(x);
 	carrier_tick(rx.carrier);
 
-	if (automode && !caller) {
-		blk_energy += x * x;
-		g1070.run(x);
-		if (g1270.run(x)) {
-			float mean = blk_energy / g1270.len;
-			/* mark and space: Bell 103's originate band */
-			bell_blocks = g1270.power + g1070.power > 0.6f * mean &&
-				mean > tone_power(150) ?
-				bell_blocks + 1 : 0;
-			blk_energy = 0;
-		}
-	}
+	if (automode && !caller)
+		bell.run(x);
 	g_lo.run(x);
 	g_hi.run(x);
 	if (g_mark.run(x))
@@ -320,10 +299,7 @@ int FskPump::sample(float x, float *y)
 
 	switch (state) {
 	case FSK_ANS_SILENCE:
-		/* V.8's 0.2 s at least (8.2/V.8): the core's answer delay (its
-		   S-register, 2 s) is V.25's silent interval of 1.8 to 2.5 s
-		   (4.3/V.25), the answer tone then within it */
-		if (count >= ms2samples(200, srate)) {
+		if (count >= ms2samples(ANS_SILENCE_MS, srate)) {
 			/* Bell 103 uses its 2225 Hz mark as answer tone */
 			set_state(dp.id == DP_B103 ?
 				      FSK_TRAIN : FSK_ANS_TONE);
@@ -331,11 +307,11 @@ int FskPump::sample(float x, float *y)
 		break;
 	case FSK_ANS_TONE:
 		*y = DSP_TX_AMPLITUDE * ans.next();
-		if (count >= ms2samples(3300, srate))
+		if (count >= ms2samples(ANS_TONE_MS, srate))
 			set_state(FSK_ANS_GAP);
 		break;
 	case FSK_ANS_GAP:
-		if (count >= ms2samples(75, srate))
+		if (count >= ms2samples(ANS_GAP_MS, srate))
 			set_state(FSK_TRAIN);
 		break;
 	case FSK_WAIT_CARRIER:
@@ -366,16 +342,16 @@ int FskPump::sample(float x, float *y)
 			ret = connect_at((int)par->tx_baud, (int)par->rx_baud);
 		} else if (!caller && automode &&
 			   dp.id != DP_B103 &&
-			   (bell_blocks >= 5 ||
+			   (bell.found() ||
 			    (count >= ms2samples(3000, srate) &&
 			     !rx.carrier))) {
 			/* a Bell 103 caller's mark; or no caller:
 			   after V.21 a V.23 one waits for our 1300 Hz
 			   mark, after V.23 a Bell 103 one for 2225 Hz */
-			enum DP_ID next = bell_blocks >= 5 ||
+			enum DP_ID next = bell.found() ||
 				dp.id == DP_V23 ? DP_B103 : DP_V23;
 			DSP_DBG("%s: %s, falling back to %s\n",
-				par->name, bell_blocks >= 5 ?
+				par->name, bell.found() ?
 				"Bell 103 caller" : "no answer",
 				next == DP_B103 ? "Bell 103" : "V.23");
 			return hand_over(next, 1);

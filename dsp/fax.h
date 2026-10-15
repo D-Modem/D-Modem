@@ -8,6 +8,8 @@
 #ifndef __FAX_H__
 #define __FAX_H__
 
+#include <math.h>
+
 #include "qam.h"
 
 namespace dsp {
@@ -44,9 +46,7 @@ struct FaxTx {
 	int short_train;
 	int srate;
 	QamTx qam;
-	FskMod fsk;
-	float bit_phase, bit_inc;       /* V.21 bit clock */
-	int fsk_bit;
+	FskBitTx fsk;                   /* V.21 */
 	int seg;                        /* training segment */
 	long seg_sym;                   /* symbols sent in this segment */
 	unsigned scr;                   /* data scrambler */
@@ -152,6 +152,21 @@ struct FaxRxMemory {
 /* transmit levels (rms) of the fax signals, as the original library's */
 #define FAX_CED_RMS 4525.0f
 float fax_tx_rms(enum fax_mod mod);
+
+/* the answering fax's CED (6.2.2.1/T.30): the answerer's silence, 3 s
+   of 2100 Hz, its gap (dsp.h), then the frames */
+#define FAX_CED_MS      3000
+#define FAX_CED_END_MS  (ANS_SILENCE_MS + FAX_CED_MS + ANS_GAP_MS)
+
+/* the sample of CED t samples after its start (0 in the silences) */
+static inline float fax_ced_sample(long t, int srate)
+{
+	if (t < ms2samples(ANS_SILENCE_MS, srate) ||
+	    t >= ms2samples(ANS_SILENCE_MS + FAX_CED_MS, srate))
+		return 0;
+	return FAX_CED_RMS * 1.41421f *
+		sinf(2 * (float)M_PI * 2100 * t / srate);
+}
 
 } // namespace dsp
 
