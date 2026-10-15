@@ -42,13 +42,13 @@ Next, run slmodemd.  Use -d<level> for debug logging.
 
     # ./build/slmodemd/slmodemd -d9
     D-Modem: version 1.0.0 Oct 15 2026 07:44:51
-    symbolic link `/dev/ttySL0' -> `/dev/pts/3' created. 
+    symbolic link `/dev/ttyDM0' -> `/dev/pts/3' created. 
     modem `slamr0' created. TTY is `/dev/pts/3' 
-    Use `/dev/ttySL0' as modem device, Ctrl+C for termination.
+    Use `/dev/ttyDM0' as modem device, Ctrl+C for termination.
 
 In another terminal, connect to the newly created serial device at 115200 bps: 
 
-    # screen /dev/ttySL0 115200
+    # screen /dev/ttyDM0 115200
 
 You can now interact with this terminal (almost) as you would with a normal modem using standard AT commands; [docs/at_commands.pdf](docs/at_commands.pdf) lists them all. 
 

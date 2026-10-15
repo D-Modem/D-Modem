@@ -5,8 +5,8 @@
  *    The modem core (dcore::Modem) with this program as its Host: the
  *    line is a call of the SIP user agent (sip.cpp), whose audio comes and
  *    goes through a socket, 16 bit linear at 8000 Hz in frames of 20 ms;
- *    the DTE is a pty (/dev/ttySL<n> links to it, n the device's number:
- *    /dev/ttySL0 for /dev/slamr0).
+ *    the DTE is a pty (/dev/ttyDM<n> links to it, n the device's number:
+ *    /dev/ttyDM0 for /dev/slamr0).
  *
  *    Started as root, it goes on as nobody (drop_privileges()) once what
  *    needs root is set up: the data file is opened for the save at the
@@ -285,8 +285,8 @@ int main(int argc, char *argv[])
 
 	prop_dp_init();
 
-	/* the device's number names the link: /dev/ttySL0 for /dev/slamr0 */
-	snprintf(link_name, sizeof(link_name), "/dev/ttySL%d",
+	/* the device's number names the link: /dev/ttyDM0 for /dev/slamr0 */
+	snprintf(link_name, sizeof(link_name), "/dev/ttyDM%d",
 		 dev_number(opt.dev_name));
 
 	dcore::Options mo;

@@ -183,7 +183,7 @@ D-Modem's modem core (\cmd{core/} in the source) takes the AT commands of
 every D-Modem program:
 \begin{itemize}
 \item \textbf{slmodemd}, the modem on a pseudo terminal
-  (\cmd{/dev/ttySL0} links to it), its line a SIP call;
+  (\cmd{/dev/ttyDM0} links to it), its line a SIP call;
 \item \textbf{libdmodem} (\cmd{dmodem.h}), the modem as a library: the
   program that embeds it sends the commands;
 \item the \textbf{Asterisk and FreeSWITCH modules} (\cmd{app\_dmodem},
@@ -705,7 +705,7 @@ for modem-on-hold.
 The call ends with NO CARRIER when the other side hangs up or its
 carrier is gone for \sreg{10} tenths of a second.  slmodemd hangs up as well
 when the DTE drops DTR (it sets the pty's speed to 0) or, with HUPCL set
-on the pty, closes it; it then makes a new pty (\cmd{/dev/ttySL0} follows
+on the pty, closes it; it then makes a new pty (\cmd{/dev/ttyDM0} follows
 it).
 
 \section{slmodemd on a SIP line}\label{sec:sip}
