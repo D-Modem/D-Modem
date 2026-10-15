@@ -42,5 +42,5 @@ The project's overview, building and usage are in the top
   codes and S-registers; its LaTeX source is [at/](at/at_commands.tex),
   `docs/at/build.sh` builds it
 - [legacy/ST56ATCommands.pdf](legacy/ST56ATCommands.pdf): the AT command
-  set of Smart Link's ST56 modems, which the core started from (the AT
-  command reference says where it differs)
+  set of Smart Link's ST56 modems, which D-Modem's own command set began
+  as
