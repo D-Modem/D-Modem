@@ -37,7 +37,7 @@ endfunction()
 
 # the data pumps back to back: pump_test, and dsp_loopback to try a line
 # from the command line
-add_library(dmodem_loopback OBJECT loopback.cpp)
+add_library(dmodem_loopback OBJECT loopback.cpp test_util.cpp)
 target_include_directories(dmodem_loopback PRIVATE ${S})
 target_compile_options(dmodem_loopback PRIVATE -Wall -O2 -g)
 dmodem_test_exe(dsp_loopback dsp_loopback.cpp)
@@ -59,11 +59,11 @@ dmodem_gtest(g711_test LABELS quick)
 # the emulated hardware's mixins (hw/) on a host of the test's own
 dmodem_test_exe(hw_test hw_test.cpp)
 dmodem_gtest(hw_test LABELS quick)
-dmodem_test_exe(netsim netsim.cpp ${S}/dsp_util.cpp ${S}/qam.cpp
+dmodem_test_exe(netsim netsim.cpp test_util.cpp ${S}/dsp_util.cpp ${S}/qam.cpp
 	${S}/v34_tables.cpp)
 # the fax without a core: the modulations, T.4 and TIFF, two T.30 machines
 find_program(TIFFCP tiffcp)
-dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp ${S}/t30.cpp
+dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp
 	${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 target_compile_definitions(fax_test PRIVATE "TIFFCP=\"${TIFFCP}\"")
 dmodem_gtest(fax_test LABELS quick)
@@ -88,7 +88,7 @@ if(SPANDSP_FOUND)
 	# against its (fax_state_t), both ways, with and without error
 	# correction mode, ECM also with line hits
 	dmodem_test_exe(spandsp_test spandsp_test.cpp spandsp_tx.cpp
-		t30_spandsp.cpp fax_docs.cpp fax_stubs.cpp ${S}/t30.cpp
+		t30_spandsp.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp
 		${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 	target_include_directories(spandsp_test PRIVATE ${SPANDSP_INCLUDE_DIRS})
 	target_link_libraries(spandsp_test PRIVATE ${SPANDSP_LDFLAGS})

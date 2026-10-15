@@ -8,7 +8,6 @@
  */
 
 #include <math.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +17,7 @@
 #include "modem_param.h"
 #include "dsplibs.h"
 #include "loopback.h"
+#include "test_util.h"
 
 using namespace dsp;
 
@@ -26,18 +26,6 @@ using namespace dsp;
 /* the share of the bits its rate carries from the CONNECT to the end
    that a call must have delivered (LoopbackSide::ok()) */
 #define CARRIED_MIN 0.9
-
-unsigned int dsplibs_debug_level = 0;
-
-/* the pumps' log (DSP_DEBUG): to stderr */
-int dsplibs_debug_printf(const char *fmt, ...)
-{
-	va_list ap;
-	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
-	return 0;
-}
 
 /* ---- fake modem core ---- */
 
@@ -165,14 +153,6 @@ int modem_send_to_tty(struct modem *m, const char *buf, int n) { return n; }
 int modem_recv_from_tty(struct modem *m, char *buf, int n) { return 0; }
 
 /* ---- line simulation ---- */
-
-/* Gaussian of unit power (Box-Muller) */
-static double gauss(void)
-{
-	double u = (rand() + 1.0) / (RAND_MAX + 2.0);
-	double v = (rand() + 1.0) / (RAND_MAX + 2.0);
-	return sqrt(-2 * log(u)) * cos(2 * M_PI * v);
-}
 
 struct line {
 	float delay[256];

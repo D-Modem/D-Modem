@@ -1,26 +1,14 @@
 /*
- *    fax_stubs.cpp - the DSP's log, and the modem core the FSK pump in
- *    dp_fsk.cpp links against, for the fax tests without a core
+ *    fax_stubs.cpp - the modem core the FSK pump in dp_fsk.cpp links
+ *    against, for the fax tests without a core (the DSP's log is
+ *    test_util.cpp's)
  */
 
-#include <stdarg.h>
 #include <stdio.h>
 
 #include "../fax.h"
 
 using namespace dsp;
-
-unsigned int dsplibs_debug_level = 0;
-
-/* the DSP's log (DSP_DBG): to stderr */
-int dsplibs_debug_printf(const char *fmt, ...)
-{
-	va_list ap;
-	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
-	return 0;
-}
 
 /* the modem core's calls: no registry, S registers and parameters 0,
    every bit asked for given and every bit given taken (n) */

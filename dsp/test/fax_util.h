@@ -1,6 +1,7 @@
 /*
  *    fax_util.h - what the fax tests share: the test documents, pages
- *    compared, G.711 and noise for the line between two machines
+ *    compared, G.711 and noise (test_util.h) for the line between two
+ *    machines
  */
 #ifndef DMODEM_FAX_UTIL_H
 #define DMODEM_FAX_UTIL_H
@@ -23,7 +24,7 @@ testing::AssertionResult same_pages(const std::string &a,
 /* mu-law there and back */
 short g711_ulaw(short x);
 
-/* Gaussian noise of unit power (rand()) */
-double gauss();
+/* Gaussian noise: gauss() */
+#include "test_util.h"
 
 #endif

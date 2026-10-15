@@ -148,10 +148,3 @@ short g711_ulaw(short x)
 	return (short)dsp::g711::decode(0, dsp::g711::encode_sm(0, x));
 }
 
-/* (fax_util.h) Box-Muller on two of rand()'s, never log(0) */
-double gauss()
-{
-	double u = (rand() + 1.0) / (RAND_MAX + 2.0);
-	double v = (rand() + 1.0) / (RAND_MAX + 2.0);
-	return sqrt(-2 * log(u)) * cos(2 * M_PI * v);
-}

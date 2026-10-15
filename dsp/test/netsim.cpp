@@ -29,9 +29,7 @@
 
 using namespace dsp;
 
-unsigned int dsplibs_debug_level = 0;
-/* the DSP code's log: none */
-int dsplibs_debug_printf(const char *fmt, ...) { return 0; }
+/* (the DSP code's log: test_util.cpp's, never at level 0) */
 
 static int alaw;
 
@@ -70,8 +68,10 @@ struct Step {
 	}
 };
 
-/* Gaussian (Box-Muller) */
-static double gauss()
+/* Gaussian (Box-Muller), the second uniform from [0, 1): not
+   test_util.h's gauss(), so that the interop tests' noise stays the
+   same */
+static double noise_gauss()
 {
 	double u1 = (rand() + 1.0) / (RAND_MAX + 2.0);
 	double u2 = rand() / (RAND_MAX + 1.0);
@@ -615,7 +615,7 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			noise_quiet(ibuf[i], t, d->rate_in);
 		if (noise && (noise_dir == 3 ||
 			      !(d->rate_in == 8000 && d->rate_out != 8000))) {
-			double x = ibuf[i] + noise * gauss();
+			double x = ibuf[i] + noise * noise_gauss();
 			ibuf[i] = (short)(x > 32767 ? 32767 : x < -32768 ?
 					  -32768 : lrint(x));
 		}
@@ -647,7 +647,7 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			m = plain ? d->rs.run(x, y) : rc_run(&d->rc, x, y);
 			for (k = 0; k < m; k++) {
 				if (noise && noise_dir != 3)
-					y[k] += noise * (float)gauss();
+					y[k] += noise * (float)noise_gauss();
 				if ((y[k] > 32767 || y[k] < -32768) &&
 				    ++clipped && !(clipped & (clipped - 1)))
 					fprintf(stderr, "netsim: %ld samples "
