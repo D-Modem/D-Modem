@@ -218,7 +218,7 @@
       0 A: OK\r\n
       0 A< AT+IFC=1,1\r
       0 A: AT+IFC=1,1\r\r\n
-      0 A: ERROR\r\n
+      0 A: OK\r\n
       0 A< AT&A7&C1&D2&E1&F&H1&K3&P1&R1&S0\r
       0 A: AT&A7&C1&D2&E1&F&H1&K3&P1&R1&S0\r\r\n
       0 A: OK\r\n
@@ -236,10 +236,10 @@
       0 A: ERROR\r\n
       0 A< AT&W\r
       0 A: AT&W\r\r\n
-      0 A: ERROR\r\n
+      0 A: OK\r\n
       0 A< AT&Q\r
       0 A: AT&Q\r\r\n
-      0 A: ERROR\r\n
+      0 A: OK\r\n
       0 A< AT%C2%E1\r
       0 A: AT%C2%E1\r\r\n
       0 A: OK\r\n
@@ -260,7 +260,7 @@
       0 A: OK\r\n
       0 A< AT\\Q\r
       0 A: AT\Q\r\r\n
-      0 A: ERROR\r\n
+      0 A: OK\r\n
       0 A< AT*B\r
       0 A: AT*B\r\r\n
       0 A: OK\r\n

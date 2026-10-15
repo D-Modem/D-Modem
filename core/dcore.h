@@ -223,6 +223,9 @@ public:
 
 	/* the version and the name ATI shows */
 	static const char *const author, *const product, *const version;
+	/* the extended parameters of other modems' setup strings it keeps
+	   (at most), their values (at most) */
+	enum { KEPT_PARAMS = 24, KEPT_VALUES = 9 };
 
 private:
 	enum State {
@@ -292,6 +295,8 @@ private:
 	int at_CID(char *p, int *len);
 	int at_voice(char *p, int *len);
 	int at_fax(char *p, int *len);
+	int at_kept(const char *p, int *len);
+	void kept_init();
 	struct VoiceParam;
 	int voice_params(char *p, const char *cmd, VoiceParam *param,
 			 int *len, const char *prefix, const char *suffix);
@@ -323,6 +328,10 @@ private:
 	   +PMHR (ours, until the pump takes it) */
 	int moh_off_ = 0, moh_timer_ = 5, moh_req_ = 0;
 	unsigned char sregs_[256] = {};
+	/* the extended parameters of other modems' setup strings, kept
+	   with no effect (at.cpp): their values, how many */
+	unsigned long kept_[KEPT_PARAMS][KEPT_VALUES] = {};
+	unsigned kept_n_[KEPT_PARAMS] = {};
 	const struct homolog_set *homolog_ = nullptr;
 
 	/* events and timers */

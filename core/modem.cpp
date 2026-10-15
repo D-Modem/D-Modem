@@ -133,6 +133,7 @@ Modem::Modem(Host &host, const Options &opt)
 	min_rate_ = MODEM_MIN_RATE;
 	max_rate_ = MODEM_MAX_RATE;
 	sregs_init();
+	kept_init();
 	if (homolog_init(MODEM_DEFAULT_COUNTRY_CODE, nullptr)) {
 		ERR("bad default country code `%x'!\n",
 		    MODEM_DEFAULT_COUNTRY_CODE);
@@ -412,7 +413,7 @@ void Modem::update_status(Status status)
 			break;
 		set_state(ONLINE);
 		report(Result::Connect);
-		if (sregs_[SREG_SPEAKER_CONTROL] == 1)
+		if (sregs_[SREG_SPEAKER_CONTROL] & 1)
 			host_.speaker(*this, 0);
 		break;
 	case ST_EC_RELEASE:
@@ -959,7 +960,7 @@ int Modem::start_call()
 	have_result_ = false;
 	setup_config();
 	set_state(DP_ESTAB);
-	if (sregs_[SREG_SPEAKER_CONTROL] == 1)
+	if (sregs_[SREG_SPEAKER_CONTROL] & 1)      /* ATM1, ATM3 */
 		host_.speaker(*this, sregs_[SREG_SPEAKER_VOLUME]);
 	ret = set_hook(MODEM_HOOK_OFF);
 	if (ret)
@@ -1020,7 +1021,7 @@ int Modem::stop_call()
 			ERR("modem stop = %d: cannot stop device.\n", ret);
 	}
 	set_hook(MODEM_HOOK_ON);
-	if (sregs_[SREG_SPEAKER_CONTROL] == 1)
+	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
 		host_.speaker(*this, 0);
 	caller_ = false;
 	/* the call ended online: what the DTE sent is data that did not go
@@ -1230,6 +1231,7 @@ int Modem::reset()
 	moh_off_ = moh_req_ = 0;
 	moh_timer_ = 5;
 	sregs_init();
+	kept_init();
 	homolog_init(homolog_->id, nullptr);
 	set_mode(MODEM_MODE_DATA);
 	return 0;

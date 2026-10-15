@@ -1,0 +1,127 @@
+# other modems' setup strings: their commands taken with no effect, or
+# as D-Modem's own where it has them
+#
+# V.250's, Rockwell's and Conexant's (the USRobotics 5639's reference)
+A ATE0\r
+A AT&F&C1&D2&K3\\N3%C1+IFC=2,2;+MS=V92;+PCW=2;+PIG=1\r
+A ATB0B1B15B16C1F1W2X4M1L2\r
+A AT&B1&G0&J0&M0&Q5&S0&Y0&W\r
+A AT\\G0\\J0\\K5\\Q3\\R0\\T0\\V1-C0\r
+A AT+MR=1;+ER=1;+DR=1;+ILRR=0;+IDSR=0;+ILSD=0;+IPR=0;+ICF=3,3\r
+A AT+ES=3,0,2;+DS=3,0,2048,32\r
+A AT+DS44=3,0,0,2048,2048,255,255,6144,6144\r
+A AT+GCAP\r
+A AT+GMI?;+GMM?;+GMR?\r
+# Rockwell's cellular (MNP 10, 10EC): CDS-9022's setup string
+A AT&F;+MS=V32,1,4800,9600;-SEC=1,12;)M1;\\N2\r
+A AT+MS?\r
+A AT-SEC?\r
+A AT-SEC=0\r
+A AT-SEC?\r
+A AT-SEC=?\r
+A AT-K1-Q0)M2@M30*H2\r
+A AT-SEC=2\r
+A AT-SEC=1,31\r
+A AT@M31\r
+A AT*H3\r
+# USRobotics' own (Sportster, Courier)
+A AT&F1&H1&R2&B1&I0&M4&N0&K1\r
+A AT&H3&I5&M5&N14&B2\r
+A ATS62?S104?\r
+A AT&M1\r
+A AT&N15\r
+A AT&I6\r
+# the extended parameters: kept, read back, their ranges
+A AT+IFC?\r
+A AT+IFC=0,0\r
+A AT+IFC?\r
+A AT+IFC=,1\r
+A AT+IFC?\r
+A AT+IFC=?\r
+A AT+IFC=a\r
+A AT+IFC=4,0\r
+A AT+IFC=0,3\r
+A AT+IFC?\r
+A AT+IPR=115200\r
+A AT+IPR?\r
+A AT+IPR=1000\r
+A AT+IPR=?\r
+A AT+DS44?\r
+A AT+DS44=?\r
+A AT+FAA=0\r
+A AT+FAA=1\r
+A AT+FAA?\r
+A AT+MR\r
+A ATZ\r
+A AT+IFC?\r
+A AT+IPR?\r
+A AT-SEC?\r
+# +MS by V.250's carrier names
+A AT+MS=V34\r
+A AT+MS?\r
+A AT+MS=v32b,1,4800,14400\r
+A AT+MS?\r
+A AT+MS=V22B,0\r
+A AT+MS?\r
+A AT+MS=Bell212A\r
+A AT+MS?\r
+A AT+MS=B103\r
+A AT+MS?\r
+A AT+MS=V23C\r
+A AT+MS?\r
+A AT+MS=V92\r
+A AT+MS?\r
+A AT+MS=V32T\r
+A AT+MS=V99,1\r
+A AT+MS?\r
+# &Q as \N, %B as *B, +VCID as #CID in data mode, ATM3 as ATM1
+A AT&Q6\r
+A ATS103?\r
+A AT&Q5\r
+A ATS103?\r
+A AT&Q0\r
+A ATS103?\r
+A AT&Q9\r
+A ATS103?\r
+A AT&Q1\r
+A AT%B\r
+A AT+VCID=1\r
+A AT#CID?\r
+A AT+VCID?\r
+A AT+VCID=?\r
+A AT+VCID=0\r
+A AT#CID?\r
+A ATM3\r
+A ATS29?\r
+# ATB alone is still V.22; the others keep what they were
+A ATB\r
+A AT+MS?\r
+A AT&K4\r
+A ATS104?\r
+A AT&K0\r
+A ATS104?\r
+A AT&K7\r
+A ATZ\r
+# fax: the identification, the port rate
+A AT+FCLASS=1\r
+A AT+FMI?\r
+A AT+FMM?\r
+A AT+FMR?\r
+A AT+FPR=8\r
+A AT+FPR?\r
+A AT+FCLASS=0\r
+# still ERROR: values out of range, commands D-Modem has nothing for
+A ATC0\r
+A ATF0\r
+A ATW3\r
+A AT&G3\r
+A AT\\Q4\r
+A AT-V90=0\r
+A AT+GSN\r
+A AT&V\r
+A AT&Z0=5551212\r
+A AT&T1\r
+A ATX5\r
+# ; between commands, and an extended command's end
+A AT+IFC=2,2;E1;V1\r
+A AT;\r

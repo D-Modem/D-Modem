@@ -4,12 +4,16 @@
 `namespace dcore`, `dcore.h`):
 
 - **The AT command interpreter** (`at.cpp`): `A B D E H I L M N O P Q S T V X
-  Y Z`, `&A &C &D &E &F &H &K &P &R &S`, `\A \N`, `%C %E`, `*B`, `#CID`,
-  `+MS +GCI +GMI +GMM +GMR +FCLASS +IFC`, V.92 modem-on-hold (`+PMH +PMHT
-  +PMHR`), class 1 fax (`+FTS +FRS +FTM +FRM +FTH +FRH`) and voice
-  (`+V...` in `+FCLASS=8`). Command lines are edited (backspace), echoed,
-  repeated with `A/`. [at_commands.pdf](at_commands.pdf) is their
-  reference.
+  Y Z`, `&A &C &D &E &F &H &K &P &Q &R &S`, `\A \N`, `%B %C %E`, `*B`,
+  `#CID`, `+MS` (by number or V.250's name) `+GCI +GCAP +GMI +GMM +GMR
+  +FCLASS +VCID`, V.92 modem-on-hold (`+PMH +PMHT +PMHR`), class 1 fax
+  (`+FTS +FRS +FTM +FRM +FTH +FRH +FMI +FMM +FMR`) and voice (`+V...` in
+  `+FCLASS=8`). It takes as well, with no effect, the commands other
+  modems' setup strings send (V.250's, Rockwell's and Conexant's,
+  USRobotics'): the basic ones of `taken_cmds` and the extended parameters
+  of `kept_params`, which keep their values for `?`. `;` may separate
+  commands. Command lines are edited (backspace), echoed, repeated with
+  `A/`. [at_commands.pdf](at_commands.pdf) is their reference.
 - **The S-registers**, the **result codes** (verbose or numeric, quiet, the
   connect messages of `&A` and `X`), and the **country parameters**
   (`homolog_data.cpp`, `+GCI`).

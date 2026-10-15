@@ -171,7 +171,11 @@ Supporting it is not feasible here:
 What D-Modem does do with a 10EC modem is V.42: as the originator it
 passes over the "EM" ADPs and takes the "EC" after them (LAPM,
 `Link.AdpCellular`), and as the answerer it sends "EC" alone, which a
-10EC originator takes as a V.42 answerer.
+10EC originator takes as a V.42 answerer. The Rockwell cellular commands
+(`-SEC`, `-K`, `-Q`, `)M`, `@M`, `*H`) are taken with no effect, so that
+a setup string written for a cellular-ready modem (CDS-9022's
+`AT&F;+MS=V32,1,4800,9600;-SEC=1,12;)M1;\N2`) ends in OK (the AT
+reference, "Setup strings from other modems").
 
 What could be done:
 
@@ -180,7 +184,4 @@ What could be done:
   it the answerer would also take an LR in the detection phase as the
   start of the protocol phase (7.2.1.3/V.42) instead of passing it to
   its DTE.
-- The Rockwell cellular commands (`-SEC`, `-K`, `-Q`, `)M`, `@M`,
-  `*H`) taken and ignored, so that an init string written for a
-  cellular-ready modem does not end in ERROR.
 
