@@ -419,8 +419,24 @@ int Modem::at_PMH(char *p, int *len)
 	return -1;
 }
 
+/* AT+MS can ask for pump d: one registered, or K56flex while V.90 is
+   (change_dp() runs V.90 for it: K56flex is not there) */
+static bool ms_choice(const DpDriver *d)
+{
+	if (!d->code)
+		return false;
+	if (d->op)
+		return true;
+	if (d->id != DP_K56)
+		return false;
+	for (const DpDriver *v = dp_drivers(); v->id; v++)
+		if (v->id == DP_V90)
+			return v->op != nullptr;
+	return false;
+}
+
 /* AT+MS=[mod][,[automode][,[min][,[max]]]] (mod: a registered pump's
-   id, the rates in bit/s), +MS=?, +MS? */
+   id, or 56, the rates in bit/s), +MS=?, +MS? */
 int Modem::at_MS(char *p, int *len)
 {
 	char s[32];
@@ -437,7 +453,7 @@ int Modem::at_MS(char *p, int *len)
 			*len += 1;
 			put_chars("(", 1);
 			for (DpDriver *d = dp_drivers(); d->id; d++) {
-				if (!d->code || !d->op)
+				if (!ms_choice(d))
 					continue;
 				if (found++ > 0)
 					put_chars(",", 1);
@@ -477,7 +493,7 @@ int Modem::at_MS(char *p, int *len)
 		}
 		if (dp_id != sregs_[SREG_DP]) {
 			for (DpDriver *d = dp_drivers(); d->id; d++)
-				if (d->op && d->code && (unsigned)d->id == dp_id) {
+				if (ms_choice(d) && (unsigned)d->id == dp_id) {
 					found++;
 					break;
 				}

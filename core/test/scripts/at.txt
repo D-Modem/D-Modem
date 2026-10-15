@@ -29,6 +29,7 @@ A AT+MS=132,2\r
 A AT+MS=132,1,9600,4800\r
 A AT+MS=132,1,100\r
 A AT+MS=56\r
+A AT+MS?\r
 A AT+MS\r
 A AT+GCI?\r
 A AT+GCI=?\r
