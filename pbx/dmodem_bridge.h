@@ -5,8 +5,8 @@
  * What the two modules do alike: dmodem.conf's profile (its options by
  * name and value, as the PBX's configuration has them), the modem with
  * a socketpair as its DTE, and, once the modems are connected, the data
- * between that socketpair and the profile's TCP server or program on a
- * pty, until one side goes.  The module keeps the PBX's side: the
+ * between that socketpair and the profile's server (TCP or a unix
+ * socket) or program on a pty, until one side goes.  The module keeps the PBX's side: the
  * channel's frames through dmodem_process_g711() (or dmodem_process()),
  * the channel's variables and the call's own log lines, the fax machine
  * that takes a fax caller.  The PBX's logging, fork and threads come
@@ -47,7 +47,7 @@ struct dmbridge_host {
  *    the profile
  */
 
-enum dmbridge_mode { DMBRIDGE_TCP, DMBRIDGE_EXEC };
+enum dmbridge_mode { DMBRIDGE_TCP, DMBRIDGE_UNIX, DMBRIDGE_EXEC };
 
 /* fax: the PBX's general settings have the defaults, a profile its own */
 struct dmbridge_fax {
@@ -62,6 +62,9 @@ struct dmbridge_profile {
 	enum dmbridge_mode mode;
 	char host[256];
 	char port[16];
+	char path[108];         /* mode unix: the server's socket */
+	int header;             /* tcp, unix: the program's environment (the
+				   call's details) first on the connection */
 	char command[1024];
 	char init[128];         /* extra AT commands, e.g. +MS=34 */
 	char answer[128];       /* the command line that answers (ATA) */
@@ -86,13 +89,14 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
    else empty (the fax settings too: the module's general ones go
    there) */
 void dmbridge_profile_init(struct dmbridge_profile *p);
-/* a profile's option (mode, host, port, command, init, answer, law,
-   timeout and the fax ones); 0 if name is something else.  where: the
+/* a profile's option (mode, host, port, path, header, command, init,
+   answer, law, timeout and the fax ones); 0 if name is something else.  where: the
    profile, for the log ("[bbs]", "profile bbs") */
 int dmbridge_profile_option(const struct dmbridge_host *h,
 			    struct dmbridge_profile *p, const char *where,
 			    const char *name, const char *value);
-/* -1 if mode tcp lacks host or port, or mode exec command */
+/* -1 if mode tcp lacks host or port, mode unix path, or mode exec
+   command */
 int dmbridge_profile_check(const struct dmbridge_host *h,
 			   const struct dmbridge_profile *p,
 			   const char *where);
@@ -158,9 +162,10 @@ int dmbridge_call_start(struct dmbridge_call *c,
 /* n samples of the line have been through c->d: what now */
 enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n);
 /* after DMBRIDGE_CONNECTED: the profile's server (connected in a thread,
-   the line going on meanwhile) or program (on a pty, with env's name,
-   value pairs, NULL ended, in its environment); DMBRIDGE_RUN, or
-   DMBRIDGE_END (ERROR) */
+   the line going on meanwhile) or program (on a pty), with env's name,
+   value pairs (NULL ended) in the program's environment, or with header
+   first to the server as NAME=value lines and an empty line;
+   DMBRIDGE_RUN, or DMBRIDGE_END (ERROR) */
 enum dmbridge_event dmbridge_call_serve(struct dmbridge_call *c,
 					const char *const *env);
 /* the end on the line: the modem hangs up if it is connected */

@@ -11,6 +11,9 @@
 #   BBS_EXEC=1 bbs_sim.py         only the terminal: the BBS is run by
 #                                 DModem (mode=exec) as
 #   bbs_sim.py --stdio            the BBS on stdin/stdout (the pty)
+#   BBS_UNIX=path bbs_sim.py      both, the BBS on a unix socket (mode=unix,
+#                                 header=yes): the call's details come
+#                                 first, and must be there
 #
 # BBS_LINGER=1 (--stdio): after the session the program closes its pty
 # but stays, deaf to SIGHUP, so that DModem has to kill it.
@@ -19,7 +22,7 @@
 # seconds after the start (its accept queue full with one of our own),
 # so DModem's connect to it waits in SYN retransmissions meanwhile; the
 # line must go on while it does.
-import os, socket, sys, threading, time
+import os, re, socket, sys, threading, time
 
 BBS_PORT, TERM_PORT = 2323, 2324
 LINES = [b"hello from the caller %d " % i + b"x" * 40 for i in range(20)]
@@ -79,6 +82,48 @@ def term(conn):
     while conn.recv(4096):
         pass
 
+# the header of a mode=unix (or tcp) profile with header=yes: NAME=value
+# lines and an empty line, read a byte at a time (what follows is the
+# caller's); checked, and the result into result["header"]
+def header(conn):
+    h, line = {}, b""
+    while True:
+        b = conn.recv(1)
+        if not b:
+            break
+        if b != b"\n":
+            line += b
+            continue
+        if not line:
+            break
+        k, _, v = line.decode().partition("=")
+        h[k] = v
+        line = b""
+    print("bbs: header %s" % h, flush=True)
+    connected = int(h.get("DMODEM_CONNECTED", "0") or 0)
+    result["header"] = (
+        h.get("DMODEM_PROFILE") == "bbsunix" and
+        h.get("DMODEM_CHANNEL", "").startswith("Local/") and
+        re.fullmatch(r"\d+/\d+", h.get("DMODEM_RATE", "")) is not None and
+        "DMODEM_CALLERID" in h and
+        h.get("DMODEM_DIALED") == "s" and
+        abs(time.time() - connected) < 600)
+
+# the BBS on a unix socket at path, after the header
+def serve_unix(path, fn):
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    s = socket.socket(socket.AF_UNIX)
+    s.bind(path)
+    s.listen(1)
+    s.settimeout(float(sys.argv[1]) if len(sys.argv) > 1 else 120)
+    c, _ = s.accept()
+    c.settimeout(120)
+    header(c)
+    fn(c)
+
 # one connection on 127.0.0.1:port (accept timeout: argv[1] s, else
 # 120), handed to fn; none taken until delay s from now
 def serve(port, fn, delay=0):
@@ -110,7 +155,10 @@ if sys.argv[1:] == ["--stdio"]:
     sys.exit(0)
 tt = threading.Thread(target=serve, args=(TERM_PORT, term), daemon=True)
 tt.start()
-if not os.environ.get("BBS_EXEC"):
+if os.environ.get("BBS_UNIX"):
+    threading.Thread(target=serve_unix, args=(os.environ["BBS_UNIX"], bbs),
+                     daemon=True).start()
+elif not os.environ.get("BBS_EXEC"):
     threading.Thread(target=serve, args=(BBS_PORT, bbs,
                      float(os.environ.get("BBS_CONNECT_DELAY", "0"))),
                      daemon=True).start()
@@ -118,4 +166,8 @@ tt.join()
 ok = result.get("ok", False)
 print("user saw banner, %d echoed lines and goodbye: %s (%.1f s for %d bytes each way)"
       % (len(LINES), "PASS" if ok else "FAIL", result.get("secs", 0), result.get("bytes", 0)))
+if os.environ.get("BBS_UNIX"):
+    print("the BBS on the unix socket had the call's details first: %s"
+          % ("PASS" if result.get("header") else "FAIL"))
+    ok = ok and result.get("header", False)
 sys.exit(0 if ok else 1)

@@ -25,6 +25,7 @@
 #include <strings.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -121,6 +122,8 @@ int dmbridge_profile_option(const struct dmbridge_host *h,
 	if (dmbridge_option_is(name, "mode")) {
 		if (!strcasecmp(value, "tcp"))
 			p->mode = DMBRIDGE_TCP;
+		else if (!strcasecmp(value, "unix"))
+			p->mode = DMBRIDGE_UNIX;
 		else if (!strcasecmp(value, "exec"))
 			p->mode = DMBRIDGE_EXEC;
 		else
@@ -130,6 +133,13 @@ int dmbridge_profile_option(const struct dmbridge_host *h,
 		copy(p->host, value, sizeof(p->host));
 	} else if (dmbridge_option_is(name, "port")) {
 		copy(p->port, value, sizeof(p->port));
+	} else if (dmbridge_option_is(name, "path")) {
+		if (strlen(value) >= sizeof(p->path))
+			log_line(h, NULL, DMBRIDGE_WARNING,
+				 "%s: path too long", where);
+		copy(p->path, value, sizeof(p->path));
+	} else if (dmbridge_option_is(name, "header")) {
+		p->header = h->is_true(value);
 	} else if (dmbridge_option_is(name, "command")) {
 		copy(p->command, value, sizeof(p->command));
 	} else if (dmbridge_option_is(name, "init")) {
@@ -165,6 +175,11 @@ int dmbridge_profile_check(const struct dmbridge_host *h,
 	if (p->mode == DMBRIDGE_TCP && (!*p->host || !*p->port)) {
 		log_line(h, NULL, DMBRIDGE_ERROR,
 			 "%s: mode tcp needs host and port", where);
+		return -1;
+	}
+	if (p->mode == DMBRIDGE_UNIX && !*p->path) {
+		log_line(h, NULL, DMBRIDGE_ERROR, "%s: mode unix needs path",
+			 where);
 		return -1;
 	}
 	if (p->mode == DMBRIDGE_EXEC && !*p->command) {
@@ -261,13 +276,32 @@ static int connect_tcp(const struct dmbridge_host *h, const char *host,
 	return fd;
 }
 
-/* the TCP connect, in a thread of its own so that the line's audio goes
-   on meanwhile (DNS and connect() can take seconds): the profile's host
-   and port, and the socket its result goes on */
+/* the unix socket path, non-blocking once connected; -1 on failure */
+static int connect_unix(const struct dmbridge_host *h, const char *path)
+{
+	struct sockaddr_un sun = { .sun_family = AF_UNIX };
+	int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+
+	copy(sun.sun_path, path, sizeof(sun.sun_path));
+	if (fd < 0 || connect(fd, (struct sockaddr *)&sun, sizeof(sun))) {
+		log_line(h, NULL, DMBRIDGE_WARNING, "cannot connect to %s: %s",
+			 path, strerror(errno));
+		if (fd >= 0)
+			close(fd);
+		return -1;
+	}
+	nonblock(fd);
+	return fd;
+}
+
+/* the server's connect, in a thread of its own so that the line's audio
+   goes on meanwhile (DNS and connect() can take seconds): the profile's
+   host and port (or path), and the socket its result goes on */
 struct tcp_job {
 	const struct dmbridge_host *h;
 	char host[256];
 	char port[16];
+	char path[108];         /* a unix socket instead */
 	int out;
 };
 
@@ -276,7 +310,8 @@ struct tcp_job {
 static void *tcp_thread(void *arg)
 {
 	struct tcp_job *j = arg;
-	int fd = connect_tcp(j->h, j->host, j->port);
+	int fd = *j->path ? connect_unix(j->h, j->path) :
+			    connect_tcp(j->h, j->host, j->port);
 
 	if (send(j->out, &fd, sizeof(fd), MSG_NOSIGNAL) != (ssize_t)sizeof(fd) &&
 	    fd >= 0)
@@ -318,6 +353,8 @@ static int tcp_start(const struct dmbridge_host *h,
 	j->h = h;
 	copy(j->host, p->host, sizeof(j->host));
 	copy(j->port, p->port, sizeof(j->port));
+	if (p->mode == DMBRIDGE_UNIX)
+		copy(j->path, p->path, sizeof(j->path));
 	j->out = sv[1];
 	if (start_thread(h, tcp_thread, j)) {
 		close(sv[0]);
@@ -600,13 +637,40 @@ enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 	return DMBRIDGE_RUN;
 }
 
+/* the header of a server (header = yes): env's NAME=value lines, values
+   on one line, then an empty line; into b, ahead of the caller's bytes */
+static void put_header(struct dmbridge_pipe *b, const char *const *env)
+{
+	int i, n;
+
+	for (i = 0; env[i]; i += 2) {
+		char *at = b->data + b->len, *c;
+		n = snprintf(at, sizeof(b->data) - b->len, "%s=%s\n", env[i],
+			     env[i + 1]);
+		if (n < 0 || n >= (int)sizeof(b->data) - b->len - 1)
+			break;
+		/* a value of more than one line would end the header */
+		for (c = at + strlen(env[i]) + 1; c < at + n - 1; c++)
+			if (*c == '\r' || *c == '\n')
+				*c = ' ';
+		b->len += n;
+	}
+	b->data[b->len++] = '\n';
+}
+
 /* (see dmodem_bridge.h) */
 enum dmbridge_event dmbridge_call_serve(struct dmbridge_call *c,
 					const char *const *env)
 {
-	if (c->p->mode == DMBRIDGE_TCP) {
+	if (c->p->mode != DMBRIDGE_EXEC) {
 		c->connecting = tcp_start(c->h, c->p);
-		return c->connecting < 0 ? end(c, "ERROR") : DMBRIDGE_RUN;
+		if (c->connecting < 0)
+			return end(c, "ERROR");
+		/* sent once the server is connected, before what the
+		   remote modem sends */
+		if (c->p->header && env)
+			put_header(&c->to_fd, env);
+		return DMBRIDGE_RUN;
 	}
 	c->fd = start_exec(c->h, c->p, env, &c->pid);
 	if (c->fd < 0)
