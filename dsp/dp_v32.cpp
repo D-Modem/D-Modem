@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bits.h"
 #include "pump.h"
 #include "qam.h"
 
@@ -240,23 +241,6 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 /*
  *    helpers
  */
-
-/* self synchronizing scrambler 1 + x^-tap + x^-23 (tap 18: the
-   caller's GPC, 5: the answerer's GPA); returns the line bit */
-static int scramble(unsigned *reg, int tap, int bit)
-{
-	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | out;
-	return out;
-}
-
-/* its inverse: the line bit in, the data bit out */
-static int descramble(unsigned *reg, int tap, int bit)
-{
-	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | (bit & 1);
-	return out;
-}
 
 /* the index (A B C D: 0..3) of the training point nearest to z */
 static int nearest_abcd(cplx z)

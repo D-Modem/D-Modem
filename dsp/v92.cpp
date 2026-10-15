@@ -42,27 +42,11 @@
 
 #include <vector>
 
+#include "bits.h"
 #include "dsp.h"
 #include "v92.h"
 
 namespace dsp {
-
-/* GPA (7-2/V.34): 1 + x^-5 + x^-23 */
-static int gpa_scr(unsigned *r, int bit)
-{
-	int o = (bit ^ (*r >> 4) ^ (*r >> 22)) & 1;
-	*r = (*r << 1) | o;
-	return o;
-}
-
-/* its descrambler: the received bit into the register, the data bit
-   out */
-static int gpa_descr(unsigned *r, int bit)
-{
-	int o = (bit ^ (*r >> 4) ^ (*r >> 22)) & 1;
-	*r = (*r << 1) | (bit & 1);
-	return o;
-}
 
 /* INFO1a's PCM upstream fields (Table 18/V.92), b one bit a byte: the
    filter sections, the coefficients in all and per section, MD's
@@ -240,7 +224,7 @@ static void trn_ref_make()
 	unsigned r = 0;
 	int m;
 	for (m = 0; m < TRN_NT; m++)
-		trn_ref[m] = gpa_scr(&r, 1) ? -1 : 1;
+		trn_ref[m] = scramble(&r, SCR_GPA, 1) ? -1 : 1;
 }
 
 /* trn_ref, once for all calls (which may run in their own threads) */
@@ -368,7 +352,7 @@ int V92Up::train(long start, int lo, int hi)
 	dscr = 0;
 	for (s = TRN_NT - 24; s < TRN_NT; s++) {
 		int d = trn_ref[s] < 0;
-		gpa_descr(&dscr, d ^ (trn_ref[s - 1] < 0));
+		descramble(&dscr, SCR_GPA, d ^ (trn_ref[s - 1] < 0));
 	}
 	mse = mse_trn;
 	trained = 1;
@@ -663,7 +647,7 @@ void V92Up::bit2(int d)
 {
 	int c = d ^ last_d;
 	last_d = d;
-	frame_bits(gpa_descr(&dscr, c));
+	frame_bits(descramble(&dscr, SCR_GPA, c));
 }
 
 /* the frames in the decoded bits */
@@ -775,8 +759,8 @@ void V92Up::bits4(int s, int m)
 	for (k = 0; k < 2; k++) {
 		a = k ? m : c;
 		bb = k ? c : m;
-		a = gpa_descr(&dscr2[k], a);
-		bb = gpa_descr(&dscr2[k], bb);
+		a = descramble(&dscr2[k], SCR_GPA, a);
+		bb = descramble(&dscr2[k], SCR_GPA, bb);
 		ones2[k] += (a & bb) ? 1 : -1;
 		if (k == order) {
 			frame_bits(a);
@@ -1561,7 +1545,8 @@ void V92Up::decided(int eta)
 		}
 		dprev ^= sgn;
 		for (j = 0; j < nb; j++)
-			bits[j] = (unsigned char)gpa_descr(&dscr, R.bit(j));
+			bits[j] = (unsigned char)descramble(&dscr, SCR_GPA,
+							    R.bit(j));
 		if (fpe_rx == 3) {
 			/* SUVu, CPu, SUVu', then E2u: a frame of zeros */
 			int z = 0;

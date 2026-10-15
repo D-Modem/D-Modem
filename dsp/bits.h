@@ -2,7 +2,8 @@
  *
  *    bits.h - frames kept as bits, one a byte in bit 0, in time order:
  *             their fields, the CRC-16 of V.34's INFO and MP style
- *             frames, and the HDLC frame check sequence
+ *             frames, and the HDLC frame check sequence; the scrambler
+ *             1 + x^-tap + x^-23
  *
  *    MP style frames (V.34's MP, V.90's Ja and CP, V.92's CPt, CPu, CPus
  *    and SUVu) begin with a sync of 17 ones, then their 16 bit fields
@@ -101,6 +102,27 @@ inline unsigned hdlc_fcs(const unsigned char *p, int n)
 			crc = crc & 1 ? (crc >> 1) ^ 0x8408 : crc >> 1;
 	}
 	return crc;
+}
+
+/* the self-synchronising scrambler 1 + x^-tap + x^-23 (7.2/V.34: tap 18
+   is the GPC, 5 the GPA), V.32's, V.17's, V.29's and the PCM modems'
+   too, over the register of its last line bits, newest in bit 0: a
+   data bit in, its line bit out */
+enum { SCR_GPC = 18, SCR_GPA = 5 };
+inline int scramble(unsigned *reg, int tap, int bit)
+{
+	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
+	*reg = (*reg << 1) | out;
+	return out;
+}
+
+/* its descrambler: a line bit in (into the register), the data bit
+   out */
+inline int descramble(unsigned *reg, int tap, int bit)
+{
+	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
+	*reg = (*reg << 1) | (bit & 1);
+	return out;
 }
 
 } // namespace dsp

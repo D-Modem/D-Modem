@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bits.h"
 #include "fax.h"
 
 namespace dsp {
@@ -207,22 +208,6 @@ static int ones_len(enum fax_mod m)
  *    scramblers
  */
 
-/* 1 + x^-18 + x^-23 (V.17, V.29) */
-static int scr23(unsigned *reg, int bit)
-{
-	int out = (bit ^ (*reg >> 17) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | out;
-	return out;
-}
-
-/* its descrambler: a received bit in, the data bit out */
-static int descr23(unsigned *reg, int bit)
-{
-	int out = (bit ^ (*reg >> 17) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | (bit & 1);
-	return out;
-}
-
 /* 1 + x^-6 + x^-7 with the V.27ter repeated pattern guard */
 static int scr7(unsigned *reg, int *count, int bit)
 {
@@ -294,18 +279,19 @@ cplx FaxTx::data_symbol()
 
 	if (is_v17(mod)) {
 		for (k = 0; k < n; k++)
-			q |= scr23(&scr, data_bit()) << k;
+			q |= scramble(&scr, SCR_GPC, data_bit()) << k;
 		return v17_points(mod)[trellis.encode(q, n)];
 	}
 	if (is_v29(mod)) {
-		if (mod == FM_V29_9600 && scr23(&scr, data_bit()))
+		if (mod == FM_V29_9600 && scramble(&scr, SCR_GPC, data_bit()))
 			amp = 8;
-		bits = scr23(&scr, data_bit());
-		bits = (bits << 1) | scr23(&scr, data_bit());
+		bits = scramble(&scr, SCR_GPC, data_bit());
+		bits = (bits << 1) | scramble(&scr, SCR_GPC, data_bit());
 		if (mod == FM_V29_4800)
 			bits = steps_4[bits];
 		else
-			bits = steps_8[(bits << 1) | scr23(&scr, data_bit())];
+			bits = steps_8[(bits << 1) |
+				       scramble(&scr, SCR_GPC, data_bit())];
 		state = (state + bits) & 7;
 		return v29_points[amp | state];
 	}
@@ -408,8 +394,8 @@ static cplx fax_tx_symbol(FaxTx *t)
 		break;
 	case SEG_TRN:
 		if (is_v17(t->mod)) {
-			b1 = scr23(&t->scr, 1);
-			b2 = scr23(&t->scr, 1);
+			b1 = scramble(&t->scr, SCR_GPC, 1);
+			b2 = scramble(&t->scr, SCR_GPC, 1);
 			t->state = cdba_to_abcd[b1 << 1 | b2];
 			z = v32_abcd[t->state];
 		} else if (is_v29(t->mod)) {
@@ -425,8 +411,9 @@ static cplx fax_tx_symbol(FaxTx *t)
 		break;
 	case SEG_BRIDGE:
 		shift = (t->seg_sym & 7) << 1;
-		b1 = scr23(&t->scr, V17_BRIDGE_WORD >> shift);
-		b2 = scr23(&t->scr, V17_BRIDGE_WORD >> (shift + 1));
+		b1 = scramble(&t->scr, SCR_GPC, V17_BRIDGE_WORD >> shift);
+		b2 = scramble(&t->scr, SCR_GPC,
+			      V17_BRIDGE_WORD >> (shift + 1));
 		t->state = (t->state + dibit_to_step[b1 << 1 | b2]) & 3;
 		z = v32_abcd[t->state];
 		break;
@@ -560,13 +547,15 @@ int FaxRx::make_reference()
 		scr_ = 0x2ECDD5;
 		for (k = 0; k < n; k++) {
 			if (k < trn_len(mod, short_train)) {
-				b1 = scr23(&scr_, 1);
-				b2 = scr23(&scr_, 1);
+				b1 = scramble(&scr_, SCR_GPC, 1);
+				b2 = scramble(&scr_, SCR_GPC, 1);
 				state_ = cdba_to_abcd[b1 << 1 | b2];
 			} else {
 				shift = ((k - trn_len(mod, short_train)) & 7) << 1;
-				b1 = scr23(&scr_, V17_BRIDGE_WORD >> shift);
-				b2 = scr23(&scr_, V17_BRIDGE_WORD >> (shift + 1));
+				b1 = scramble(&scr_, SCR_GPC,
+					      V17_BRIDGE_WORD >> shift);
+				b2 = scramble(&scr_, SCR_GPC,
+					      V17_BRIDGE_WORD >> (shift + 1));
 				state_ = (state_ + dibit_to_step[b1 << 1 | b2]) & 3;
 			}
 			ref_[k] = state_;
@@ -663,7 +652,7 @@ void FaxRx::bits_out(int q, int n, int msb_first)
 	for (k = 0; k < n; k++) {
 		int bit = msb_first ? (q >> (n - 1 - k)) & 1 : (q >> k) & 1;
 		bit = is_v27(mod) ? descr7(&scr, &scr_count, bit) :
-			descr23(&scr, bit);
+			descramble(&scr, SCR_GPC, bit);
 		if (trained)
 			put_bit(ctx, bit);
 	}

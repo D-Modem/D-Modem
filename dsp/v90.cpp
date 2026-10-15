@@ -22,6 +22,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "bits.h"
 #include "g711.h"
 #include "v90.h"
 #include "v92.h"
@@ -41,15 +42,6 @@ int v90_ucode_linear(int alaw, int ucode)
 {
 	int c = v90_ucode_octet(alaw, ucode, 1);
 	return g711::decode(alaw, c);
-}
-
-/* scrambles a bit; returns the scrambled bit */
-static int scramble(unsigned *reg, int bit)
-{
-	/* GPC: 1 + x^-18 + x^-23 */
-	int out = (bit ^ (*reg >> 17) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | out;
-	return out;
 }
 
 /* Jd (Table 13/V.90): all the rates from 28 000 to 56 000 bit/s, CP, E
@@ -201,7 +193,7 @@ void V90Tx::end_ri()
 /* a bit, scrambled and coded into the sign of UINFO */
 int V90Tx::diff_bit(int bit)
 {
-	sign ^= scramble(&scr, bit);
+	sign ^= scramble(&scr, SCR_GPC, bit);
 	return sign ? lin[uinfo] : -lin[uinfo];
 }
 
@@ -280,7 +272,7 @@ int V90Tx::sample()
 		return x;
 	}
 	case V90_TRN1D:
-		sign = scramble(&scr, 1);
+		sign = scramble(&scr, SCR_GPC, 1);
 		x = sign ? lin[uinfo] : -lin[uinfo];
 		if (trn1d_len && n + 1 >= trn1d_len &&
 		    (sym + 1) % 6 == 0) {
@@ -324,7 +316,7 @@ int V90Tx::sample()
 	case V90_SCR:
 		/* UINFO with the signs of scrambled ones, in whole data
 		   frames */
-		sign = scramble(&scr, 1);
+		sign = scramble(&scr, SCR_GPC, 1);
 		x = sign ? lin[uinfo] : -lin[uinfo];
 		if (dil_end && (sym + 1) % 6 == 0) {
 			seg = V90_SILENCE;
@@ -832,7 +824,7 @@ void V90Enc::push(const unsigned char *bits, int last_)
 	int D = S + K, mag[6], i;
 
 	for (i = 0; i < D; i++)
-		d[i] = (unsigned char)scramble(&scr, bits[i]);
+		d[i] = (unsigned char)scramble(&scr, SCR_GPC, bits[i]);
 	for (i = K - 1; i >= 0; i--)
 		r = (r << 1) | d[S + i];
 	for (i = 0; i < 6; i++) {

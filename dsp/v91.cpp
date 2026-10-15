@@ -36,30 +36,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bits.h"
 #include "v91.h"
 
 namespace dsp {
 
 #define INFO_UCODE      66      /* INFO, J, PHIL, SCR, CP: its sign */
 #define MS(ms)          ((long)(ms) * 8)        /* symbols */
-
-/* scrambles a bit; returns the scrambled bit */
-static int scramble(unsigned *reg, int bit)
-{
-	/* GPC: 1 + x^-18 + x^-23 */
-	int out = (bit ^ (*reg >> 17) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | out;
-	return out;
-}
-
-/* the descrambler of scramble(): the register keeps the received bits;
-   returns the descrambled bit */
-static int descramble(unsigned *reg, int bit)
-{
-	int out = (bit ^ (*reg >> 17) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | (bit & 1);
-	return out;
-}
 
 /* Table 5/V.91 */
 static void default_dil(V90Dil *d)
@@ -121,7 +104,7 @@ void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 	int S = cc ? 0 : 6, i;
 
 	for (i = 0; i < S + K; i++)
-		d[i] = (unsigned char)scramble(&scr, bits[i]);
+		d[i] = (unsigned char)scramble(&scr, SCR_GPC, bits[i]);
 	for (i = K - 1; i >= 0; i--)
 		r = (r << 1) | d[S + i];
 	for (i = 0; i < 6; i++) {
@@ -181,7 +164,7 @@ int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 	for (i = 0; i < K; i++)
 		d[S + i] = (r >> i) & 1;
 	for (i = 0; i < S + K; i++)
-		bits[i] = (unsigned char)descramble(&scr, d[i]);
+		bits[i] = (unsigned char)descramble(&scr, SCR_GPC, d[i]);
 	if (bad)
 		errors++;
 	return bad ? -1 : S + K;
@@ -366,7 +349,7 @@ int V91::sign_sample(int bit)
 /* a bit scrambled (GPC), then as sign_sample() */
 int V91::scr_sample(int bit)
 {
-	return sign_sample(scramble(&tscr, bit));
+	return sign_sample(scramble(&tscr, SCR_GPC, bit));
 }
 
 /* the next sample of the DIL the remote asked for (8.4.1/V.90), then
@@ -742,7 +725,7 @@ int V91::rx_sample(int x)
 		}
 		break;
 	case V91R_J:
-		b = descramble(&rscr, bit);
+		b = descramble(&rscr, SCR_GPC, bit);
 		sync = (sync << 1) | (unsigned)b;
 		if (!fr.busy()) {
 			if ((sync & 0x3FFFF) == 0x3FFFE) {
@@ -772,7 +755,7 @@ int V91::rx_sample(int x)
 		break;
 	case V91R_EM:
 		/* PHIL (ones), then Em */
-		b = descramble(&rscr, bit);
+		b = descramble(&rscr, SCR_GPC, bit);
 		zeros = b ? 0 : zeros + 1;
 		if (zeros == 12) {
 			DSP_DBG("v91: Em at %ld\n", n);
@@ -795,7 +778,7 @@ int V91::rx_sample(int x)
 		}
 		break;
 	case V91R_CP:
-		b = descramble(&rscr, bit);
+		b = descramble(&rscr, SCR_GPC, bit);
 		if (cp_bit(b)) {
 			rx = V91R_ES;
 			esn = 0;
@@ -803,7 +786,7 @@ int V91::rx_sample(int x)
 		break;
 	case V91R_ES:
 		/* after a CP frame: Es, or the next CP */
-		b = descramble(&rscr, bit);
+		b = descramble(&rscr, SCR_GPC, bit);
 		sync = (sync << 1) | (unsigned)b;
 		if (b)
 			rx = V91R_CP;

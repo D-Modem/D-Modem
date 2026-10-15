@@ -23,6 +23,7 @@
 #include <pthread.h>
 #include <string.h>
 
+#include "bits.h"
 #include "v34.h"
 
 namespace dsp {
@@ -440,11 +441,8 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 		kk--;
 	}
 	link.get(bits, bb);
-	for (i = 0; i < bb; i++) {
-		int b = (bits[i] ^ (*scr >> (tap - 1)) ^ (*scr >> 22)) & 1;
-		*scr = (*scr << 1) | b;
-		bits[i] = b;
-	}
+	for (i = 0; i < bb; i++)
+		bits[i] = (unsigned char)scramble(scr, tap, bits[i]);
 	if (p_->K) {
 		for (i = 0; i < kk; i++)
 			r0 |= (unsigned long)bits[n++] << i;
@@ -644,11 +642,8 @@ void V34DataRx::decode_frame(unsigned *scr, int tap)
 				bits[n++] = (v >> k) & 1;
 		}
 	}
-	for (i = 0; i < n; i++) {
-		int b = bits[i];
-		bits[i] = (b ^ (*scr >> (tap - 1)) ^ (*scr >> 22)) & 1;
-		*scr = (*scr << 1) | b;
-	}
+	for (i = 0; i < n; i++)
+		bits[i] = (unsigned char)descramble(scr, tap, bits[i]);
 	link.put(bits, n);
 }
 

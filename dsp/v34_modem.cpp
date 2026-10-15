@@ -25,6 +25,7 @@
 
 #include <new>
 
+#include "bits.h"
 #include "v34.h"
 #include "v90.h"
 
@@ -40,25 +41,6 @@ namespace dsp {
 #define J_4POINT        0x8990
 #define J_16POINT       0x89B0  /* bit 5: TRN of 16 points in phase 4 */
 #define J_DASH          0x899F
-
-/* the self-synchronising scrambler 1 + x^-tap + x^-23 (tap 18: GPC,
-   5: GPA) over the register of its last outputs, newest in bit 0;
-   returns the scrambled bit */
-static int scramble(unsigned *reg, int tap, int bit)
-{
-	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | out;
-	return out;
-}
-
-/* the descrambler of scramble(): the register keeps the received bits;
-   returns the descrambled bit */
-static int descramble(unsigned *reg, int tap, int bit)
-{
-	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
-	*reg = (*reg << 1) | (bit & 1);
-	return out;
-}
 
 /* the low 16 bits of w in reverse order */
 static unsigned rev16(unsigned w)
