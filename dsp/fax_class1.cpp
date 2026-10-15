@@ -19,6 +19,7 @@
 
 #include "bits.h"
 #include "fax.h"
+#include "fax_hdlc.h"
 #include <dsplibs.h>
 
 using namespace dsp;
@@ -49,7 +50,8 @@ struct rx_frame {
 	int ok;
 };
 
-struct Fax {
+struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
+	     HdlcRx<Fax, HDLC_MAX, HdlcV21> {
 	struct modem *modem;
 	int srate;
 	int caller;
@@ -71,19 +73,10 @@ struct Fax {
 	int head, tail;
 	int byte, nbits;
 
-	/* HDLC transmitter (FTH) */
-	u8 hframe[HDLC_MAX];
+	/* the next frame for the HDLC transmitter (FTH) */
+	u8 hframe[HDLC_MAX - 2];
 	int hlen;               /* bytes of the frame being built */
 	int hready;             /* frame complete, waiting to be sent */
-	u8 hsend[HDLC_MAX];
-	int hsend_len, hsend_pos, hsend_bit;
-	int hsending;
-	int hones;
-	int hflag_bit;
-	long hflags;            /* flag bits sent since the last frame */
-	int hfinal;             /* the frame being sent is the final one */
-	int hclosing;           /* final frame sent: closing flags */
-	int hfirst;
 
 	/* receiver */
 	FaxRx rx;
@@ -95,10 +88,7 @@ struct Fax {
 	long rx_quiet;          /* samples of silence (FRS) */
 	float in_power;
 
-	/* HDLC receiver */
-	u8 rbits[HDLC_MAX * 10];
-	int rnbits;
-	int rones;
+	/* frames from the HDLC receiver */
 	int rflags;             /* flags seen with the carrier on */
 	struct rx_frame frames[FRAME_QUEUE];
 	int fhead, ftail;
@@ -115,7 +105,8 @@ struct Fax {
 	void out_end();
 	void stop_tx();
 	void stop_rx();
-	void hdlc_frame_end();
+	int hdlc_tx_next(HdlcV21, u8 *frame, int max);
+	void hdlc_rx_frame(HdlcV21, const u8 *d, int len, bool whole);
 	void read_dte();
 	void start_tx(enum fax_mod mod, int short_train, fax_get_bit_t get_bit);
 	int start_rx(enum fax_mod mod, int short_train, fax_put_bit_t put_bit);
@@ -186,64 +177,25 @@ void Fax::stop_rx()
  *    HDLC transmitter
  */
 
-/* FaxTx callback for +FTH: the flags (1 s of them first), the DTE's
-   frames with their FCS and the stuffed zeros, at least 8 flag bits
-   between them; after the final frame (P/F bit) closing flags, then
-   FAX_BIT_END.  A frame going out lets the DTE send the next one */
-static int hdlc_get_bit(void *ctx)
+/* the HDLC transmitter's next frame for +FTH, the DTE's (1 s of flags
+   before the first one, at least 8 flag bits between them, closing flags
+   after the final one, the P/F bit set).  A frame going out lets the DTE
+   send the next one */
+int Fax::hdlc_tx_next(HdlcV21, u8 *frame, int /* max: hframe's size */)
 {
-	Fax *f = static_cast<Fax*>(ctx);
-	int bit;
+	int n = hlen;
 
-	/* a stuffed zero, also after the FCS's last bit */
-	if (f->hones == 5) {
-		f->hones = 0;
+	if (!hready)
 		return 0;
-	}
-	if (f->hsending) {
-		bit = (f->hsend[f->hsend_pos] >> f->hsend_bit) & 1;
-		if (++f->hsend_bit == 8) {
-			f->hsend_bit = 0;
-			if (++f->hsend_pos == f->hsend_len) {
-				f->hsending = 0;
-				f->hflags = 0;
-				f->hflag_bit = 0;
-			}
-		}
-		f->hones = bit ? f->hones + 1 : 0;
-		return bit;
-	}
-
-	/* at a flag boundary: start a frame, finish, or send another flag */
-	if (f->hflag_bit == 0) {
-		long min = f->hfirst ? 300 : 8;         /* 1 s preamble first */
-		if (f->hclosing && f->hflags >= 16)
-			return FAX_BIT_END;
-		if (!f->hclosing && f->hready && f->hflags >= min) {
-			unsigned crc = hdlc_fcs(f->hframe, f->hlen) ^ 0xffff;
-			memcpy(f->hsend, f->hframe, f->hlen);
-			f->hsend[f->hlen] = crc & 0xff;
-			f->hsend[f->hlen + 1] = crc >> 8;
-			f->hsend_len = f->hlen + 2;
-			f->hsend_pos = f->hsend_bit = 0;
-			f->hones = 0;
-			f->hsending = 1;
-			f->hfinal = f->hlen >= 2 && (f->hframe[1] & 0x10);
-			f->hready = 0;
-			f->hlen = 0;
-			f->hfirst = 0;
-			/* the DTE may send the next frame now */
-			if (!f->hfinal)
-				f->report_status(FAX_STATUS_CONNECT);
-			else
-				f->hclosing = 1;
-			return hdlc_get_bit(f);
-		}
-	}
-	bit = (0x7e >> f->hflag_bit) & 1;
-	f->hflag_bit = (f->hflag_bit + 1) & 7;
-	f->hflags++;
-	return bit;
+	memcpy(frame, hframe, n);
+	hready = 0;
+	hlen = 0;
+	/* the DTE may send the next frame now */
+	if (n >= 2 && (frame[1] & 0x10))
+		hdlc_tx_close();
+	else
+		report_status(FAX_STATUS_CONNECT);
+	return n;
 }
 
 
@@ -251,57 +203,23 @@ static int hdlc_get_bit(void *ctx)
  *    HDLC receiver
  */
 
-/* a flag ended a frame: into the queue if it has whole octets (the
-   flag's 0111111 went into rbits too), at least 4, with its FCS
-   checked */
-void Fax::hdlc_frame_end()
+/* a flag from the HDLC receiver (+FRH), with what came before it: into
+   the queue if whole octets, at least 4, with its FCS checked */
+void Fax::hdlc_rx_frame(HdlcV21, const u8 *d, int len, bool whole)
 {
-	int n = rnbits - 7, k;
 	struct rx_frame *fr;
 
-	rnbits = 0;
-	if (n < 32 || n % 8 || n / 8 > HDLC_MAX)
+	rflags++;
+	if (!whole || len < 4)
 		return;
 	if ((fhead + 1) % FRAME_QUEUE == ftail)
 		return;                         /* queue full */
 	fr = &frames[fhead];
-	fr->len = n / 8;
-	for (k = 0; k < fr->len; k++) {
-		int b, v = 0;
-		for (b = 0; b < 8; b++)
-			v |= rbits[k * 8 + b] << b;
-		fr->data[k] = v;
-	}
+	fr->len = len;
+	memcpy(fr->data, d, len);
 	fr->ok = hdlc_fcs(fr->data, fr->len) == HDLC_FCS_GOOD;
 	DSP_DBG("fax: hdlc frame %d bytes, %s\n", fr->len, fr->ok ? "ok" : "bad fcs");
 	fhead = (fhead + 1) % FRAME_QUEUE;
-}
-
-/* FaxRx callback for +FRH: flags, stuffed zeros and aborts (7 ones) */
-static void hdlc_put_bit(void *ctx, int bit)
-{
-	Fax *f = static_cast<Fax*>(ctx);
-
-	if (bit) {
-		if (++f->rones > 6) {           /* idle or abort */
-			f->rnbits = 0;
-			return;
-		}
-	} else {
-		if (f->rones == 6) {            /* flag */
-			f->rflags++;
-			f->hdlc_frame_end();
-			f->rones = 0;
-			return;
-		}
-		if (f->rones == 5) {            /* stuffed zero */
-			f->rones = 0;
-			return;
-		}
-		f->rones = 0;
-	}
-	if (f->rnbits < (int)sizeof(f->rbits))
-		f->rbits[f->rnbits++] = bit;
 }
 
 
@@ -364,7 +282,8 @@ void Fax::read_dte()
 	for (;;) {
 		u8 c;
 		if (state == C1_FTM ?
-		    (head + 1) % TX_BUF == tail : hready || hclosing)
+		    (head + 1) % TX_BUF == tail :
+		    hready || hdlc_tx_closing())
 			return;
 		if (modem_recv_from_tty(modem, &ch, 1) != 1)
 			return;
@@ -377,7 +296,7 @@ void Fax::read_dte()
 				else if (hlen)
 					hready = 1;
 				else
-					hclosing = 1;
+					hdlc_tx_close();
 				return;
 			}
 			if (c != DLE)
@@ -437,11 +356,10 @@ void Fax::begin_fth()
 {
 	stop_tx();
 	set_state(C1_FTH);
-	hlen = hready = hsending = hclosing = 0;
-	hflags = 0;
-	hflag_bit = 0;
-	hfirst = 1;
-	start_tx(FM_V21, 0, hdlc_get_bit);
+	hlen = hready = 0;
+	/* 1 s of flags first */
+	hdlc_tx_start(300, 16);
+	start_tx(FM_V21, 0, hdlc_tx_cb);
 	report_status(FAX_STATUS_CONNECT);
 }
 
@@ -454,8 +372,9 @@ void Fax::begin_frh()
 	frh_connected = 0;
 	/* keep a running V.21 receiver (frames may already be queued) */
 	if (!rx_on || rx_mod != FM_V21) {
-		start_rx(FM_V21, 0, hdlc_put_bit);
-		rnbits = rones = rflags = 0;
+		start_rx(FM_V21, 0, hdlc_rx_cb);
+		hdlc_rx_reset();
+		rflags = 0;
 	}
 }
 

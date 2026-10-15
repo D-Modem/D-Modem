@@ -35,6 +35,7 @@
 #include "dsp.h"
 #include "bits.h"
 #include "fax.h"
+#include "fax_hdlc.h"
 #include "t30.h"
 
 namespace dsp {
@@ -76,6 +77,7 @@ enum {
 /* error correction mode */
 #define ECM_FRAMES      256     /* in a block at most */
 #define ECM_SIZE        256     /* octets in our frames */
+#define ECM_RX_MAX      (ECM_SIZE + 8)  /* a received frame and its FCS */
 #define ECM_PPRS        4       /* PPRs for a block before CTC */
 #define ECM_RNRS        60      /* RNRs answered (T5: 60 s) */
 /* the fast modulations, best first, with their DCS rate bits (11-14 as
@@ -136,7 +138,16 @@ struct frame {
 	int len;                        /* without the FCS */
 };
 
-struct T30 {
+/* HDLC: frames on V.21, ECM frames (FCD, RCP) on the fast modulation */
+struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
+	     HdlcTx<T30, 4 + ECM_SIZE, HdlcEcm>,
+	     HdlcRx<T30, RX_FRAME_MAX, HdlcV21>,
+	     HdlcRx<T30, ECM_RX_MAX, HdlcEcm> {
+	typedef HdlcTx<T30, FRAME_MAX, HdlcV21> V21Tx;
+	typedef HdlcTx<T30, 4 + ECM_SIZE, HdlcEcm> EcmTx;
+	typedef HdlcRx<T30, RX_FRAME_MAX, HdlcV21> V21Rx;
+	typedef HdlcRx<T30, ECM_RX_MAX, HdlcEcm> EcmRx;
+
 	struct t30_config cfg;
 	int srate;
 	enum state state, after_tx;     /* where to go when the frames went */
@@ -150,8 +161,7 @@ struct T30 {
 	int tx_on;
 	FaxTx tx;
 	struct frame frames[MAX_FRAMES];
-	int nframes, cur_frame, cur_pos, cur_bit, ones;
-	int flags_left, closing, preamble;
+	int nframes, cur_frame;         /* the next one to send */
 	long gap;                       /* S_GAP: samples left */
 	void (T30::*after_gap)();
 	long tcf_bits;                  /* to send */
@@ -163,8 +173,6 @@ struct T30 {
 	FaxRx fast;
 	int fast_on;
 	FaxRxMemory mem;
-	unsigned char rbits[RX_FRAME_MAX * 9];
-	int rnbits, rones;
 	unsigned char msg[MAX_FRAMES * 2][RX_FRAME_MAX];
 	int msg_len[MAX_FRAMES * 2], nmsg;
 	int msg_ready;
@@ -209,16 +217,11 @@ struct T30 {
 	unsigned char ecm_send[32];     /* frames to (re)send */
 	int ppr_count, rnr_count;
 	int etx_frame, etx_rcp;         /* the next frame to look at, RCPs */
-	unsigned char etx_buf[ECM_SIZE + 6];
-	int etx_len, etx_pos, etx_bit, etx_ones, etx_flags, etx_closing;
 	/* receiving */
 	std::vector<unsigned char> ecm_rx;      /* the block's frames */
 	short ecm_rx_len[ECM_FRAMES];   /* -1: not (yet) received */
 	int ecm_rx_frames;              /* in the block, -1: not known */
 	int ecm_rcp;
-	unsigned char hd_buf[ECM_SIZE + 8];     /* a frame coming */
-	int hd_len, hd_nbits, hd_ones, hd_bad;
-	unsigned hd_byte;
 	/* non-ECM: our last post-page response, to the command post_fcf,
 	   and the state it took us to (a repeated command gets it again) */
 	int post_fcf, post_resp;
@@ -257,7 +260,9 @@ struct T30 {
 	void next_page_or_end();
 	void page_settings();
 	void sender_message();
-	void frame_end();
+	int hdlc_tx_next(HdlcV21, unsigned char *buf, int max);
+	void hdlc_rx_frame(HdlcV21, const unsigned char *d, int len,
+			   bool whole);
 	void on_timeout();
 	void tx_done();
 	/* error correction mode */
@@ -268,10 +273,11 @@ struct T30 {
 	void send_pps();
 	void send_ctc();
 	void send_rr();
-	void ecm_frame_out();
+	int hdlc_tx_next(HdlcEcm, unsigned char *buf, int max);
 	void start_ecm_rx();
 	void ecm_block_end();
-	void ecm_hdlc_bit(int bit);
+	void hdlc_rx_frame(HdlcEcm, const unsigned char *d, int len,
+			   bool whole);
 	void ecm_frame_in(const unsigned char *d, int len);
 	void got_pps(const unsigned char *fif, int len);
 	void ecm_respond(int fcf, const unsigned char *fif, int len,
@@ -427,63 +433,28 @@ void T30::add_frame(int fcf, const unsigned char *fif, int len)
 	f->len = 3 + len;
 }
 
-/* HDLC: flags, the frames (the last with the final bit) with their FCS
-   and bit stuffing, closing flags */
-static int frames_get_bit(void *ctx)
+/* the HDLC transmitter's next V.21 frame (FCS and flags are its); -1
+   after the last */
+int T30::hdlc_tx_next(HdlcV21, unsigned char *buf, int /* max */)
 {
-	T30 *t = static_cast<T30*>(ctx);
 	struct frame *f;
-	int bit;
-
-	if (t->ones == 5) {
-		t->ones = 0;
-		return 0;               /* stuffed (also after the FCS) */
-	}
-	if (t->flags_left > 0 || t->cur_frame >= t->nframes) {
-		if (t->flags_left <= 0) {
-			if (t->closing)
-				return FAX_BIT_END;
-			t->closing = 1;
-			t->flags_left = 2 * 8;
-		}
-		bit = (0x7e >> (7 - ((t->flags_left - 1) & 7))) & 1;
-		t->flags_left--;
-		t->ones = 0;
-		return bit;
-	}
-	f = &t->frames[t->cur_frame];
-	bit = (f->data[t->cur_pos] >> t->cur_bit) & 1;
-	if (++t->cur_bit == 8) {
-		t->cur_bit = 0;
-		if (++t->cur_pos == f->len + 2) {
-			/* the next frame after a flag */
-			t->cur_pos = 0;
-			t->cur_frame++;
-			t->flags_left = 8;
-		}
-	}
-	t->ones = bit ? t->ones + 1 : 0;
-	return bit;
+	if (cur_frame >= nframes)
+		return -1;
+	f = &frames[cur_frame++];
+	memcpy(buf, f->data, f->len);
+	return f->len;
 }
 
 /* send the frames added; then on to state next */
 void T30::send_frames(enum state next_)
 {
-	int k;
-	for (k = 0; k < nframes; k++) {
-		struct frame *f = &frames[k];
-		unsigned crc;
-		if (k == nframes - 1)
-			f->data[1] |= HDLC_FINAL;
-		crc = hdlc_fcs(f->data, f->len) ^ 0xffff;
-		f->data[f->len] = crc & 0xff;
-		f->data[f->len + 1] = crc >> 8;
-	}
-	cur_frame = cur_pos = cur_bit = ones = 0;
-	closing = 0;
-	/* a second of flags first (T.30 5.3.1) */
-	flags_left = (int)(1.0 * 300) / 8 * 8;
-	tx.init(FM_V21, 0, srate, frames_get_bit, this);
+	if (nframes)
+		frames[nframes - 1].data[1] |= HDLC_FINAL;
+	cur_frame = 0;
+	/* a second of flags first (T.30 5.3.1), three after the last
+	   frame */
+	V21Tx::hdlc_tx_start(300 / 8 * 8, 3 * 8);
+	tx.init(FM_V21, 0, srate, V21Tx::hdlc_tx_cb, this);
 	tx_on = 1;
 	after_tx = next_;
 	set_state(S_TX_FRAMES);
@@ -611,7 +582,7 @@ static void page_bit(void *ctx, int bit)
 	} else if (t->state == S_RX_PAGE && t->rx_page_on) {
 		t->t4rx.bit(bit);
 	} else if (t->state == S_RX_ECM) {
-		t->ecm_hdlc_bit(bit);
+		t->EcmRx::hdlc_rx_bit(bit);
 	}
 }
 
@@ -1187,12 +1158,11 @@ void T30::start_ecm_block()
 	send_ecm_burst();
 }
 
-/* the next frame to send into etx_buf: an FCD still to send, else RCP
-   three times (T.4 A.1); etx_len 0 when there is none */
-void T30::ecm_frame_out()
+/* the HDLC transmitter's next ECM frame into buf (its FCS and flags are
+   the transmitter's): an FCD still to send, else RCP three times (T.4
+   A.1); -1 after them */
+int T30::hdlc_tx_next(HdlcEcm, unsigned char *buf, int /* max */)
 {
-	unsigned crc;
-	etx_len = 0;
 	while (etx_frame < ecm_frames &&
 	       !(ecm_send[etx_frame / 8] >> (etx_frame % 8) & 1))
 		etx_frame++;
@@ -1201,68 +1171,26 @@ void T30::ecm_frame_out()
 		size_t n = at < ecm_doc.size() ? ecm_doc.size() - at : 0;
 		if (n > (size_t)ecm_size)
 			n = ecm_size;
-		etx_buf[0] = HDLC_ADDR;
-		etx_buf[1] = HDLC_CTRL;
-		etx_buf[2] = FCF_FCD;
-		etx_buf[3] = (unsigned char)etx_frame;
+		buf[0] = HDLC_ADDR;
+		buf[1] = HDLC_CTRL;
+		buf[2] = FCF_FCD;
+		buf[3] = (unsigned char)etx_frame;
 		/* the last frame padded to the size, as most receivers
 		   expect */
-		memset(etx_buf + 4, 0, ecm_size);
+		memset(buf + 4, 0, ecm_size);
 		if (n)
-			memcpy(etx_buf + 4, &ecm_doc[at], n);
-		etx_len = 4 + ecm_size;
+			memcpy(buf + 4, &ecm_doc[at], n);
 		etx_frame++;
-	} else if (etx_rcp < 3) {
-		etx_buf[0] = HDLC_ADDR;
-		etx_buf[1] = HDLC_CTRL;
-		etx_buf[2] = FCF_RCP;
-		etx_len = 3;
+		return 4 + ecm_size;
+	}
+	if (etx_rcp < 3) {
+		buf[0] = HDLC_ADDR;
+		buf[1] = HDLC_CTRL;
+		buf[2] = FCF_RCP;
 		etx_rcp++;
-	} else {
-		return;
+		return 3;
 	}
-	crc = hdlc_fcs(etx_buf, etx_len) ^ 0xffff;
-	etx_buf[etx_len++] = crc & 0xff;
-	etx_buf[etx_len++] = crc >> 8;
-}
-
-/* HDLC on the fast modulation: flags, the frames with a flag between
-   them, closing flags */
-static int ecm_get_bit(void *ctx)
-{
-	T30 *t = static_cast<T30*>(ctx);
-	int bit;
-
-	if (t->etx_ones == 5) {
-		t->etx_ones = 0;
-		return 0;               /* stuffed */
-	}
-	if (t->etx_flags > 0) {
-		bit = (0x7e >> (7 - ((t->etx_flags - 1) & 7))) & 1;
-		t->etx_flags--;
-		t->etx_ones = 0;
-		return bit;
-	}
-	if (t->etx_pos >= t->etx_len) {
-		if (t->etx_closing)
-			return FAX_BIT_END;
-		t->ecm_frame_out();
-		t->etx_pos = t->etx_bit = 0;
-		if (!t->etx_len) {
-			t->etx_closing = 1;
-			t->etx_flags = 3 * 8;
-		} else {
-			t->etx_flags = 8;
-		}
-		return ecm_get_bit(ctx);
-	}
-	bit = (t->etx_buf[t->etx_pos] >> t->etx_bit) & 1;
-	if (++t->etx_bit == 8) {
-		t->etx_bit = 0;
-		t->etx_pos++;
-	}
-	t->etx_ones = bit ? t->etx_ones + 1 : 0;
-	return bit;
+	return -1;
 }
 
 /* the frames of ecm_send, on the page's modulation (V.17: the short
@@ -1271,11 +1199,11 @@ void T30::send_ecm_burst()
 {
 	int v17 = rates[rate].family == 2;
 	etx_frame = etx_rcp = 0;
-	etx_len = etx_pos = etx_bit = etx_ones = etx_closing = 0;
-	/* 200 ms of flags first */
-	etx_flags = rates[rate].bps / 5 / 8 * 8;
-	tx.init(rates[rate].mod, v17 && !ecm_long_train, srate, ecm_get_bit,
-		this);
+	/* 200 ms of flags and one more first, three after the last
+	   frame */
+	EcmTx::hdlc_tx_start(rates[rate].bps / 5 / 8 * 8 + 8, 3 * 8);
+	tx.init(rates[rate].mod, v17 && !ecm_long_train, srate,
+		EcmTx::hdlc_tx_cb, this);
 	ecm_long_train = 0;
 	tx_on = 1;
 	set_state(S_ECM_TX);
@@ -1330,8 +1258,7 @@ void T30::send_rr()
 void T30::start_ecm_rx()
 {
 	int v17 = rates[rate].family == 2;
-	hd_len = hd_nbits = hd_ones = hd_bad = 0;
-	hd_byte = 0;
+	EcmRx::hdlc_rx_reset();
 	ecm_rcp = 0;
 	start_fast(v17 && !ecm_long_train);
 	ecm_long_train = 0;
@@ -1364,41 +1291,13 @@ void T30::ecm_frame_in(const unsigned char *d, int len)
 	}
 }
 
-/* the bits of the fast modulation in ECM: HDLC, flags, stuffing */
-void T30::ecm_hdlc_bit(int bit)
+/* a flag from the ECM HDLC receiver: the frame before it, if whole
+   octets with a good FCS */
+void T30::hdlc_rx_frame(HdlcEcm, const unsigned char *d, int len,
+			bool whole)
 {
-	if (bit) {
-		if (++hd_ones > 6) {            /* idle or abort */
-			hd_len = hd_nbits = 0;
-			hd_bad = 0;
-			return;
-		}
-	} else {
-		if (hd_ones == 6) {             /* a flag: the frame ends */
-			/* the flag's 0111111 went in already: a whole
-			   number of octets before it */
-			if (hd_nbits == 7 && !hd_bad && hd_len >= 5 &&
-			    hdlc_fcs(hd_buf, hd_len) == HDLC_FCS_GOOD)
-				ecm_frame_in(hd_buf, hd_len - 2);
-			hd_len = hd_nbits = hd_ones = hd_bad = 0;
-			hd_byte = 0;
-			return;
-		}
-		if (hd_ones == 5) {             /* stuffed */
-			hd_ones = 0;
-			return;
-		}
-		hd_ones = 0;
-	}
-	hd_byte |= (unsigned)bit << hd_nbits;
-	if (++hd_nbits == 8) {
-		if (hd_len < (int)sizeof(hd_buf))
-			hd_buf[hd_len++] = (unsigned char)hd_byte;
-		else
-			hd_bad = 1;
-		hd_nbits = 0;
-		hd_byte = 0;
-	}
+	if (whole && len >= 5 && hdlc_fcs(d, len) == HDLC_FCS_GOOD)
+		ecm_frame_in(d, len - 2);
 }
 
 /* a response to the sender, remembered for its RR */
@@ -1518,66 +1417,31 @@ void T30::got_pps(const unsigned char *fif, int len)
  *    the V.21 receiver: HDLC frames into messages
  */
 
-/* a flag ended a V.21 frame: into msg[] if whole octets with a good
+/* a flag from the V.21 HDLC receiver: the frame before it into msg[]
+   if whole octets (address, control, FCF and FCS at least) with a good
    FCS; the final bit makes the message ready */
-void T30::frame_end()
+void T30::hdlc_rx_frame(HdlcV21, const unsigned char *d, int len,
+			bool whole)
 {
-	int n = rnbits - 7, k, len;
-	unsigned char *d;
-
-	rnbits = 0;
-	/* address, control, FCF and FCS at least */
-	if (n < 40 || n % 8 || n / 8 > RX_FRAME_MAX)
+	if (!whole || len < 5)
 		return;
-	len = n / 8;
 	if (nmsg >= MAX_FRAMES * 2)
 		return;
-	d = msg[nmsg];
-	for (k = 0; k < len; k++) {
-		int b, v = 0;
-		for (b = 0; b < 8; b++)
-			v |= rbits[k * 8 + b] << b;
-		d[k] = v;
-	}
 	if (hdlc_fcs(d, len) != HDLC_FCS_GOOD || d[0] != HDLC_ADDR) {
 		DSP_DBG("t30: frame of %d bytes with a bad FCS\n", len);
 		return;
 	}
+	memcpy(msg[nmsg], d, len);
 	msg_len[nmsg++] = len - 2;
 	if (d[1] & HDLC_FINAL)
 		msg_ready = 1;
 }
 
-/* V.21 receiver callback: HDLC flags, stuffed zeros and aborts */
-static void v21_bit(void *ctx, int bit)
-{
-	T30 *t = static_cast<T30*>(ctx);
-	if (bit) {
-		if (++t->rones > 6) {           /* idle or abort */
-			t->rnbits = 0;
-			return;
-		}
-	} else {
-		if (t->rones == 6) {            /* a flag */
-			t->frame_end();
-			t->rones = 0;
-			return;
-		}
-		if (t->rones == 5) {            /* stuffed */
-			t->rones = 0;
-			return;
-		}
-		t->rones = 0;
-	}
-	if (t->rnbits < (int)sizeof(t->rbits))
-		t->rbits[t->rnbits++] = bit;
-}
-
 /* a fresh V.21 receiver, no message pending */
 void T30::restart_v21()
 {
-	v21.init(FM_V21, 0, srate, v21_bit, this, NULL);
-	rnbits = rones = 0;
+	v21.init(FM_V21, 0, srate, V21Rx::hdlc_rx_cb, this, NULL);
+	V21Rx::hdlc_rx_reset();
 	nmsg = 0;
 	msg_ready = 0;
 }
@@ -1767,7 +1631,7 @@ void T30::rx_sample(float x)
 		}
 	}
 	if (msg_ready ||
-	    (nmsg && !v21.carrier && rnbits == 0)) {
+	    (nmsg && !v21.carrier && V21Rx::hdlc_rx_idle())) {
 		/* a whole message (or what came before the carrier went) */
 		if (nmsg) {
 			if (cfg.sending) {
