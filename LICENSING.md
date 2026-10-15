@@ -24,6 +24,11 @@ licences above, as long as Smart Link's notice is kept.
 `asterisk/app_dmodem.c` is under the GNU GPL version 2 only
 (GPL-2.0-only), the licence of Asterisk, which it is built against.
 
+`dmodem-ari` (`ari/`) serves Asterisk calls without a module: it is an
+application of the Asterisk REST Interface, which Asterisk's licence says
+need not be under the GPL. It is under the AGPL-3.0, or the commercial
+licence, like the rest ([docs/ari.md](docs/ari.md)).
+
 ## Not covered: the interop test binaries
 
 The closed modem drivers and objects in `dsp/test/` (`smartlink/`,

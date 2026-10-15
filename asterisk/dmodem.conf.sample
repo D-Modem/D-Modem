@@ -41,6 +41,11 @@
 ; the modem's log on the console (verbose 5): 0 errors only, 1 the modem
 ; core, 3 the data pumps too
 debug = 0
+; dmodem-ari (docs/ari.md) only: Asterisk's ARI and the Stasis() app's name
+;ari_url = http://127.0.0.1:8088
+;ari_user = dmodem
+;ari_password = secret
+;ari_app = dmodem
 
 [default]
 mode = tcp

@@ -28,6 +28,10 @@ command = exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:19
 
 See [dmodem.conf.sample](../asterisk/dmodem.conf.sample) for all the options.
 
+The same calls can go to [dmodem-ari](ari.md) instead, D-Modem as an ARI
+application beside Asterisk (`Stasis(dmodem,bbs)`), with the same
+profiles: no module in Asterisk.
+
 The modem answers with `ATA`. A profile's `answer` gives the command line
 it answers with instead, with commands for the answering call alone
 before the `A`: `answer = AT+MS=132\;A` answers at V.32bis at most (in

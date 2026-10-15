@@ -22,6 +22,10 @@
 
 #include "dmodem.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* a log line's weight: the call's progress (INFO) or its details */
 enum dmbridge_level {
 	DMBRIDGE_ERROR, DMBRIDGE_WARNING, DMBRIDGE_INFO, DMBRIDGE_DEBUG
@@ -173,5 +177,9 @@ void dmbridge_call_hangup(struct dmbridge_call *c);
 /* the modem, the server or the program (SIGHUP, SIGKILL after 5 s) and
    the descriptors gone */
 void dmbridge_call_end(struct dmbridge_call *c);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

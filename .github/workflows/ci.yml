@@ -6,8 +6,9 @@
 # asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
-# two modems of the module, D-Modem (dmodemd) over SIP both ways, and
-# faxes, also against their own fax (spandsp).
+# two modems of the module, D-Modem (dmodemd) over SIP both ways (also
+# through dmodem-ari, D-Modem as an ARI application), and faxes, also
+# against their own fax (spandsp).
 #
 # A push or pull request that changes only documentation (docs/ and the
 # Markdown files: nothing builds or tests from them) runs none of it.
@@ -98,6 +99,9 @@ jobs:
           DIAL=ATDT timeout 300 asterisk/test/sip.sh
           HOLD=1 timeout 300 asterisk/test/sip.sh
           BBS_CONNECT_DELAY=15 timeout 300 asterisk/test/sip.sh
+          ARI=1 timeout 300 asterisk/test/sip.sh
+          ARI=1 INCOMING=1 timeout 300 asterisk/test/sip.sh
+          ARI=1 CODEC=alaw timeout 300 asterisk/test/sip.sh
 
       - name: Fax
         run: |

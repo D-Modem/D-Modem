@@ -4,7 +4,9 @@
 # sip.sh [AT commands, ';' separated]: D-Modem (dmodemd, built in ../..)
 # calls DModem(bbs) over SIP in a private Asterisk (installed
 # with chan_pjsip; app_dmodem.so from the CMake build), or with INCOMING=1 answers
-# DModem(term,o)'s call; see sip_call.py
+# DModem(term,o)'s call; see sip_call.py.  ARI=1: the same calls through
+# dmodem-ari (D-Modem as an ARI application, ../../ari) instead of
+# app_dmodem: Stasis(dmodem,...) in the dialplan
 here=$(cd "$(dirname "$0")" && pwd)
 # the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
 build=${DMODEM_BUILD:-$here/../../build}
@@ -26,6 +28,17 @@ else
 	cp "$here/extensions.conf" "$run/etc/"
 fi
 sed "s/^debug = .*/debug = ${DMODEM_DEBUG:-1}/" "$here/dmodem.conf" > "$run/etc/dmodem.conf"
+# ARI=1: Asterisk's HTTP server and ARI on 127.0.0.1:$ari_port for
+# dmodem-ari, its app in the dialplan for DModem()
+ari_port=${ARI_PORT:-18088}
+if [ -n "$ARI" ]; then
+	sed -i 's/DModem(\([a-z]*\))/Stasis(dmodem,\1)/; s/DModem(\([a-z]*\),o)/Stasis(dmodem,\1,o)/' \
+		"$run/etc/extensions.conf"
+	printf '[general]\nenabled = yes\nbindaddr = 127.0.0.1\nbindport = %s\n' \
+		"$ari_port" > "$run/etc/http.conf"
+	printf '[general]\nenabled = yes\n[dmodem]\ntype = user\nread_only = no\npassword = dmodem\n' \
+		> "$run/etc/ari.conf"
+fi
 printf '[modules]\nautoload = yes\nnoload = chan_sip.so\n' > "$run/etc/modules.conf"
 # Asterisk's modules (AST_MODULES, else where asterisk.pc says, else
 # Debian's or the default place)
@@ -64,6 +77,17 @@ i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do
 	sleep 0.5; i=$((i+1)); [ $i -lt 60 ] || { tail "$run/console.log"; exit 1; }
 done
 $ast -rx "pjsip show endpoints" | grep -E "Endpoint:.*modem"
+if [ -n "$ARI" ]; then
+	"$build/ari/dmodem-ari" -c "$run/etc/dmodem.conf" -v \
+		-u "http://127.0.0.1:$ari_port" -U dmodem:dmodem \
+		> "$run/dmodem-ari.log" 2>&1 &
+	ari_pid=$!
+	trap 'kill $pid $ari_pid 2>/dev/null' EXIT
+	i=0; until grep -q "app dmodem on" "$run/dmodem-ari.log"; do
+		sleep 0.5; i=$((i+1))
+		[ $i -lt 20 ] || { cat "$run/dmodem-ari.log"; exit 1; }
+	done
+fi
 export SIP_LOGIN=modem:modem@127.0.0.1:5070 SIP_LOG=$run/dmodemd.log
 # INCOMING=1: Asterisk calls D-Modem (dmodemd -L), DModem(term,o) calls
 if [ -n "$INCOMING" ]; then
@@ -73,5 +97,7 @@ fi
 r=$?
 sleep 2
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"
+[ -z "$ARI" ] || grep -E "dmodem (answering|calling|connected|done)|ERROR|WARNING" \
+	"$run/dmodem-ari.log"
 $ast -rx "core stop now" >/dev/null 2>&1
 exit $r
