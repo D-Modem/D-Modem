@@ -61,15 +61,6 @@ static int descramble(unsigned *reg, int bit)
 	return out;
 }
 
-/* appends the low nbits of val to b at *n (one bit per byte), least
-   significant bit first */
-static void pbits(unsigned char *b, int *n, unsigned val, int nbits)
-{
-	int i;
-	for (i = 0; i < nbits; i++)
-		b[(*n)++] = (val >> i) & 1;
-}
-
 /* Table 5/V.91 */
 static void default_dil(V90Dil *d)
 {
@@ -233,7 +224,6 @@ int V91Map::decode(int i, int x, int *u, int *s) const
 void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
 {
 	static const char slip[] = "0111011111111010";
-	unsigned crc;
 	int i, n_ = 0;
 
 	memset(this, 0, sizeof(*this));
@@ -249,13 +239,11 @@ void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
 	   77 */
 	for (i = 0; i < 16; i++)
 		ccseq[n_++] = (unsigned char)(slip[i] - '0');
-	pbits(ccseq, &n_, 0, 8);
-	pbits(ccseq, &n_, 0, 27);
-	pbits(ccseq, &n_, 0, 27);
-	crc = v34_crc_bits(ccseq, 78, 0xFFFF);
-	for (i = 15; i >= 0; i--)
-		ccseq[n_++] = (crc >> i) & 1;
-	pbits(ccseq, &n_, 0, 2);
+	dsp::put_bits(ccseq, &n_, 0, 8);
+	dsp::put_bits(ccseq, &n_, 0, 27);
+	dsp::put_bits(ccseq, &n_, 0, 27);
+	put_bits_msb(ccseq, &n_, v34_crc_bits(ccseq, 78, 0xFFFF), 16);
+	dsp::put_bits(ccseq, &n_, 0, 2);
 	if (getenv("DSP_V91_RETRAIN")) {
 		const char *e = getenv("DSP_V91_RETRAIN");
 		const char *side = e + strspn(e, "0123456789");
@@ -275,25 +263,22 @@ void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
 /* INFO (Table 6/V.91): the default DIL, our law */
 void V91::make_info(int ack)
 {
-	unsigned crc;
-	int n_ = 0, i;
+	int n_ = 0;
 
-	pbits(tb, &n_, 0xF, 4);
-	pbits(tb, &n_, 0x4E, 8);     /* 01110010 sent from the left */
-	pbits(tb, &n_, 0, 14);
-	pbits(tb, &n_, 0, 1);        /* 26: the default DIL */
-	pbits(tb, &n_, want_cc, 1);  /* 27: the control channel */
-	pbits(tb, &n_, ack, 1);      /* 28 */
-	pbits(tb, &n_, 0, 4);
-	pbits(tb, &n_, 0, 5);        /* 33:37 no maximum power */
-	pbits(tb, &n_, 0, 1);        /* 38 */
-	pbits(tb, &n_, alaw, 1);     /* 39 */
-	pbits(tb, &n_, 0, 1);        /* 40: no transparent mode */
-	pbits(tb, &n_, 0, 1);        /* 41 */
-	crc = v34_crc_bits(tb + 12, n_ - 12, 0xFFFF);
-	for (i = 15; i >= 0; i--)
-		tb[n_++] = (crc >> i) & 1;
-	pbits(tb, &n_, 0xF, 4);
+	dsp::put_bits(tb, &n_, 0xF, 4);
+	dsp::put_bits(tb, &n_, 0x4E, 8);     /* 01110010 sent from the left */
+	dsp::put_bits(tb, &n_, 0, 14);
+	dsp::put_bits(tb, &n_, 0, 1);        /* 26: the default DIL */
+	dsp::put_bits(tb, &n_, want_cc, 1);  /* 27: the control channel */
+	dsp::put_bits(tb, &n_, ack, 1);      /* 28 */
+	dsp::put_bits(tb, &n_, 0, 4);
+	dsp::put_bits(tb, &n_, 0, 5);        /* 33:37 no maximum power */
+	dsp::put_bits(tb, &n_, 0, 1);        /* 38 */
+	dsp::put_bits(tb, &n_, alaw, 1);     /* 39 */
+	dsp::put_bits(tb, &n_, 0, 1);        /* 40: no transparent mode */
+	dsp::put_bits(tb, &n_, 0, 1);        /* 41 */
+	put_bits_msb(tb, &n_, v34_crc_bits(tb + 12, n_ - 12, 0xFFFF), 16);
+	dsp::put_bits(tb, &n_, 0xF, 4);
 	tbn = n_;
 	tbpos = 0;
 }
@@ -301,37 +286,32 @@ void V91::make_info(int ack)
 /* CP (Table 4/V.91) from cp_tx, filled to whole data frames */
 void V91::make_cp(int ack)
 {
-	unsigned crc;
 	int n_ = 0, i, j, c;
 
 	memset(tb, 0, sizeof(tb));
-	pbits(tb, &n_, 0x1FFFF, 17);
-	pbits(tb, &n_, 0, 1);
-	pbits(tb, &n_, 0, 1);        /* 18: no transparent mode */
-	pbits(tb, &n_, 1, 1);        /* 19 */
-	pbits(tb, &n_, our_drn, 5);
-	pbits(tb, &n_, 0, 8);
-	pbits(tb, &n_, ack, 1);      /* 33 */
+	dsp::put_bits(tb, &n_, 0x1FFFF, 17);
+	dsp::put_bits(tb, &n_, 0, 1);
+	dsp::put_bits(tb, &n_, 0, 1);        /* 18: no transparent mode */
+	dsp::put_bits(tb, &n_, 1, 1);        /* 19 */
+	dsp::put_bits(tb, &n_, our_drn, 5);
+	dsp::put_bits(tb, &n_, 0, 8);
+	dsp::put_bits(tb, &n_, ack, 1);      /* 33 */
 	n_ = 103;                       /* 34:102 zeros and start bits */
 	for (i = 0; i < 4; i++)
-		pbits(tb, &n_, cp_tx.con[i], 4);
-	pbits(tb, &n_, 0, 1);
-	pbits(tb, &n_, cp_tx.con[4], 4);
-	pbits(tb, &n_, cp_tx.con[5], 4);
-	pbits(tb, &n_, 0, 8);        /* 128:135 */
+		dsp::put_bits(tb, &n_, cp_tx.con[i], 4);
+	dsp::put_bits(tb, &n_, 0, 1);
+	dsp::put_bits(tb, &n_, cp_tx.con[4], 4);
+	dsp::put_bits(tb, &n_, cp_tx.con[5], 4);
+	dsp::put_bits(tb, &n_, 0, 8);        /* 128:135 */
 	for (j = 0; j < cp_tx.ncon; j++)
 		for (c = 0; c < 8; c++) {
-			pbits(tb, &n_, 0, 1);
+			dsp::put_bits(tb, &n_, 0, 1);
 			for (i = 0; i < 16; i++)
 				tb[n_++] = cp_tx.mask[j][16 * c + i];
 		}
-	pbits(tb, &n_, 0, 1);
-	crc = 0xFFFF;
-	for (i = 18; i < n_ - 1; i += 17)
-		crc = v34_crc_bits(tb + i, 16, crc);
-	for (i = 15; i >= 0; i--)
-		tb[n_++] = (crc >> i) & 1;
-	pbits(tb, &n_, 0, 1);
+	dsp::put_bits(tb, &n_, 0, 1);
+	put_frame_crc(tb, &n_);
+	dsp::put_bits(tb, &n_, 0, 1);
 	while (n_ % 6)
 		tb[n_++] = 0;
 	tbn = n_;
@@ -535,7 +515,6 @@ void V91::rx_restart()
 int V91::info_bit(int bit)
 {
 	static const unsigned char syn[8] = { 0, 1, 1, 1, 0, 0, 1, 0 };
-	unsigned crc;
 	int i;
 
 	memmove(ib, ib + 1, V91_INFO_BITS - 1);
@@ -547,10 +526,8 @@ int V91::info_bit(int bit)
 			return 0;
 	if (memcmp(ib + 4, syn, 8))
 		return 0;
-	crc = v34_crc_bits(ib + 12, 30, 0xFFFF);
-	for (i = 0; i < 16; i++)
-		if (ib[42 + i] != ((crc >> (15 - i)) & 1))
-			return 0;
+	if (!bits_msb_are(ib, 42, v34_crc_bits(ib + 12, 30, 0xFFFF), 16))
+		return 0;
 	since_info = 0;
 	zeros = 0;
 	return 1;

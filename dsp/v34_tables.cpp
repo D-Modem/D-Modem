@@ -111,18 +111,4 @@ const cplx v34_trn4[4] = {
 	{ -1, -1 }, { -1, 1 }, { 1, 1 }, { 1, -1 },
 };
 
-/* n bits (one per byte, in bit 0) in time order through the CRC
-   register crc (0xFFFF to start); returns the new register */
-unsigned v34_crc_bits(const unsigned char *bits, int n, unsigned crc)
-{
-	int i;
-	for (i = 0; i < n; i++) {
-		unsigned top = (crc >> 15) & 1;
-		crc = (crc << 1) & 0xFFFF;
-		if (top ^ (bits[i] & 1))
-			crc ^= 0x1021;
-	}
-	return crc;
-}
-
 } // namespace dsp

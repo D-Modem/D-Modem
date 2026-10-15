@@ -728,21 +728,14 @@ void V34Pump::make_info1a(BitQ *q)
 /* a field of an INFO frame, least significant bit first in time */
 static int bits_val(const unsigned char *b, int first, int last)
 {
-	int i, val = 0;
-	for (i = last; i >= first; i--)
-		val = (val << 1) | b[i];
-	return val;
+	return field(b, first, last - first + 1);
 }
 
 /* b: the frame from bit 0 (fill); 1 when the CRC at crc_pos is good */
 static int info_crc_ok(const unsigned char *b, int crc_pos)
 {
-	unsigned crc = v34_crc_bits(b + 12, crc_pos - 12, 0xFFFF);
-	int i;
-	for (i = 0; i < 16; i++)
-		if (b[crc_pos + i] != ((crc >> (15 - i)) & 1))
-			return 0;
-	return 1;
+	return bits_msb_are(b, crc_pos, v34_crc_bits(b + 12, crc_pos - 12,
+						     0xFFFF), 16);
 }
 
 /* the remote's INFO0 (Table 14/V.34); bits 26 and 27 as INFO0a has

@@ -73,24 +73,11 @@ static unsigned rev16(unsigned w)
  *    MP
  */
 
-/* appends the low nbits of val to b at *n (one bit per byte), least
-   significant bit first */
-static void put_bits(unsigned char *b, int *n, unsigned val, int nbits)
+/* where an MP frame's CRC is (bits.h): after its fields, at bit 69 in
+   type 0 (88 bits), 171 in type 1 (188) */
+static int mp_crc_at(int len)
 {
-	int i;
-	for (i = 0; i < nbits; i++)
-		b[(*n)++] = (val >> i) & 1;
-}
-
-/* the 16 bit fields between the start bits are covered by the CRC (at
-   bit 69 in type 0, 171 in type 1) */
-static unsigned mp_crc(const unsigned char *b, int len)
-{
-	unsigned crc = 0xFFFF;
-	int i, end = len == 188 ? 171 : 69;
-	for (i = 18; i + 17 <= end; i += 17)
-		crc = v34_crc_bits(b + i, 16, crc);
-	return crc;
+	return len == 188 ? 171 : 69;
 }
 
 /* the bits of the MP frame (type 0: 88 bits, type 1 with the precoding
@@ -99,7 +86,6 @@ static unsigned mp_crc(const unsigned char *b, int len)
 int V34Mp::build(unsigned char *b) const
 {
 	int n = 0, i, len = type ? 188 : 88;
-	unsigned crc;
 
 	put_bits(b, &n, 0x1FFFF, 17);
 	put_bits(b, &n, 0, 1);
@@ -123,21 +109,10 @@ int V34Mp::build(unsigned char *b) const
 	put_bits(b, &n, 0, 1);
 	put_bits(b, &n, 0, 16);
 	put_bits(b, &n, 0, 1);
-	crc = mp_crc(b, len);
-	for (i = 15; i >= 0; i--)
-		b[n++] = (crc >> i) & 1;
+	put_frame_crc(b, &n);
 	while (n < len)
 		b[n++] = 0;
 	return len;
-}
-
-/* the nbits wide field at bit first, least significant bit first */
-static int field(const unsigned char *b, int first, int nbits)
-{
-	int i, v = 0;
-	for (i = nbits - 1; i >= 0; i--)
-		v = (v << 1) | b[first + i];
-	return v;
 }
 
 /* the fields of an MP frame of len (88 or 188) bits, from its frame sync
@@ -145,11 +120,9 @@ static int field(const unsigned char *b, int first, int nbits)
    CRC */
 int V34Mp::parse(const unsigned char *b, int len)
 {
-	unsigned crc = mp_crc(b, len);
 	int i;
-	for (i = 0; i < 16; i++)
-		if (b[len - 17 + (len == 188 ? 0 : -2) + i] != ((crc >> (15 - i)) & 1))
-			return -1;
+	if (!frame_crc_ok(b, mp_crc_at(len)))
+		return -1;
 	type = b[18];
 	rate_ca = field(b, 20, 4);
 	rate_ac = field(b, 24, 4);

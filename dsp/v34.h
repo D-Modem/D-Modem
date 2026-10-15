@@ -8,6 +8,7 @@
 #define __V34_H__
 
 #include <string.h>
+#include "bits.h"
 #include "qam.h"
 
 namespace dsp {
@@ -329,10 +330,6 @@ struct V34Rx {
 	void sample(float x);
 };
 
-
-/* CRC-16 (x^16 + x^12 + x^5 + 1, preset to ones) over bits in time order,
-   as used by the INFO and MP sequences */
-unsigned v34_crc_bits(const unsigned char *bits, int n, unsigned crc);
 
 /* the trellis code (9.6.3/V.34): the subset label of a 2D point (odd
    coordinates), the encoder input Y1 | Y2 << 1 | Y3 << 2 | Y4 << 3 of a

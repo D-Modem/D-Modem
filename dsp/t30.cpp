@@ -33,6 +33,7 @@
 #include <new>
 
 #include "dsp.h"
+#include "bits.h"
 #include "fax.h"
 #include "t30.h"
 
@@ -426,19 +427,6 @@ void T30::add_frame(int fcf, const unsigned char *fif, int len)
 	f->len = 3 + len;
 }
 
-/* CRC-16 CCITT as used by HDLC (reflected, init 0xffff) */
-static unsigned crc16(const unsigned char *p, int n)
-{
-	unsigned crc = 0xffff;
-	int k;
-	while (n-- > 0) {
-		crc ^= *p++;
-		for (k = 0; k < 8; k++)
-			crc = crc & 1 ? (crc >> 1) ^ 0x8408 : crc >> 1;
-	}
-	return crc;
-}
-
 /* HDLC: flags, the frames (the last with the final bit) with their FCS
    and bit stuffing, closing flags */
 static int frames_get_bit(void *ctx)
@@ -487,7 +475,7 @@ void T30::send_frames(enum state next_)
 		unsigned crc;
 		if (k == nframes - 1)
 			f->data[1] |= HDLC_FINAL;
-		crc = crc16(f->data, f->len) ^ 0xffff;
+		crc = hdlc_fcs(f->data, f->len) ^ 0xffff;
 		f->data[f->len] = crc & 0xff;
 		f->data[f->len + 1] = crc >> 8;
 	}
@@ -1233,7 +1221,7 @@ void T30::ecm_frame_out()
 	} else {
 		return;
 	}
-	crc = crc16(etx_buf, etx_len) ^ 0xffff;
+	crc = hdlc_fcs(etx_buf, etx_len) ^ 0xffff;
 	etx_buf[etx_len++] = crc & 0xff;
 	etx_buf[etx_len++] = crc >> 8;
 }
@@ -1390,7 +1378,7 @@ void T30::ecm_hdlc_bit(int bit)
 			/* the flag's 0111111 went in already: a whole
 			   number of octets before it */
 			if (hd_nbits == 7 && !hd_bad && hd_len >= 5 &&
-			    crc16(hd_buf, hd_len) == 0xf0b8)
+			    hdlc_fcs(hd_buf, hd_len) == HDLC_FCS_GOOD)
 				ecm_frame_in(hd_buf, hd_len - 2);
 			hd_len = hd_nbits = hd_ones = hd_bad = 0;
 			hd_byte = 0;
@@ -1551,7 +1539,7 @@ void T30::frame_end()
 			v |= rbits[k * 8 + b] << b;
 		d[k] = v;
 	}
-	if (crc16(d, len) != 0xf0b8 || d[0] != HDLC_ADDR) {
+	if (hdlc_fcs(d, len) != HDLC_FCS_GOOD || d[0] != HDLC_ADDR) {
 		DSP_DBG("t30: frame of %d bytes with a bad FCS\n", len);
 		return;
 	}

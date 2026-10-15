@@ -47,48 +47,11 @@
 
 namespace dsp {
 
-/* the field of nbits bits from bit first on, b one bit a byte, least
-   significant bit first */
-static int field(const unsigned char *b, int first, int nbits)
-{
-	int i, v = 0;
-	for (i = nbits - 1; i >= 0; i--)
-		v = (v << 1) | b[first + i];
-	return v;
-}
-
-/* nbits bits of val, least significant first, at b[*n] on (one bit a
-   byte); *n moves past them */
-static void put_bits(unsigned char *b, int *n, unsigned val, int nbits)
-{
-	int i;
-	for (i = 0; i < nbits; i++)
-		b[(*n)++] = (val >> i) & 1;
-}
-
-/* the CRC of 17 bit blocks from bit 18 on, after the bits up to end */
-static void put_crc(unsigned char *b, int *n)
-{
-	unsigned crc = 0xFFFF;
-	int i;
-	for (i = 18; i < *n - 1; i += 17)
-		crc = v34_crc_bits(b + i, 16, crc);
-	for (i = 15; i >= 0; i--)
-		b[(*n)++] = (crc >> i) & 1;
-}
-
-/* 1 if the last 16 of len bits are the CRC of the 17 bit blocks before
-   them (as put_crc() puts it), 0 if not */
+/* 1 if the last 16 of len bits are the CRC of the frame's fields
+   before them */
 static int crc_ok(const unsigned char *b, int len)
 {
-	unsigned crc = 0xFFFF;
-	int i, end = len - 16;
-	for (i = 18; i < end - 1; i += 17)
-		crc = v34_crc_bits(b + i, 16, crc);
-	for (i = 0; i < 16; i++)
-		if (b[end + i] != ((crc >> (15 - i)) & 1))
-			return 0;
-	return 1;
+	return frame_crc_ok(b, len - 16);
 }
 
 /* GPA (7-2/V.34): 1 + x^-5 + x^-23 */
@@ -195,7 +158,7 @@ int V92Cpd::build(unsigned char *b, int fill) const
 			put_bits(b, &n, pts[i][j], 16);
 		}
 	put_bits(b, &n, 0, 1);
-	put_crc(b, &n);
+	put_frame_crc(b, &n);
 	put_bits(b, &n, 0, 1);
 	return fill_to(b, n, fill);
 }
@@ -213,7 +176,7 @@ int v92_suv_build(unsigned char *b, int ack, int fill)
 	put_bits(b, &n, 0, 1);          /* no silent period */
 	put_bits(b, &n, ack, 1);
 	put_bits(b, &n, 0, 1);
-	put_crc(b, &n);
+	put_frame_crc(b, &n);
 	put_bits(b, &n, 0, 1);
 	return fill_to(b, n, fill);
 }

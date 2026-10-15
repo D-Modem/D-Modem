@@ -17,6 +17,7 @@
 
 #include <new>
 
+#include "bits.h"
 #include "fax.h"
 #include <dsplibs.h>
 
@@ -163,19 +164,6 @@ void Fax::out_end()
 	out_flush();
 }
 
-/* CRC-16 CCITT as used by HDLC (reflected, init 0xffff) */
-static unsigned crc16(const u8 *p, int n)
-{
-	unsigned crc = 0xffff;
-	int k;
-	while (n-- > 0) {
-		crc ^= *p++;
-		for (k = 0; k < 8; k++)
-			crc = crc & 1 ? (crc >> 1) ^ 0x8408 : crc >> 1;
-	}
-	return crc;
-}
-
 /* the transmitter off at once */
 void Fax::stop_tx()
 {
@@ -232,7 +220,7 @@ static int hdlc_get_bit(void *ctx)
 		if (f->hclosing && f->hflags >= 16)
 			return FAX_BIT_END;
 		if (!f->hclosing && f->hready && f->hflags >= min) {
-			unsigned crc = crc16(f->hframe, f->hlen) ^ 0xffff;
+			unsigned crc = hdlc_fcs(f->hframe, f->hlen) ^ 0xffff;
 			memcpy(f->hsend, f->hframe, f->hlen);
 			f->hsend[f->hlen] = crc & 0xff;
 			f->hsend[f->hlen + 1] = crc >> 8;
@@ -284,7 +272,7 @@ void Fax::hdlc_frame_end()
 			v |= rbits[k * 8 + b] << b;
 		fr->data[k] = v;
 	}
-	fr->ok = crc16(fr->data, fr->len) == 0xf0b8;
+	fr->ok = hdlc_fcs(fr->data, fr->len) == HDLC_FCS_GOOD;
 	DSP_DBG("fax: hdlc frame %d bytes, %s\n", fr->len, fr->ok ? "ok" : "bad fcs");
 	fhead = (fhead + 1) % FRAME_QUEUE;
 }

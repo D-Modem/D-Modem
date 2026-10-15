@@ -111,21 +111,11 @@ static int scramble(unsigned *reg, int bit)
 	return out;
 }
 
-/* appends the low nbits of val to b at *n (one bit per byte), least
-   significant bit first */
-static void put_bits(unsigned char *b, int *n, unsigned val, int nbits)
-{
-	int i;
-	for (i = 0; i < nbits; i++)
-		b[(*n)++] = (val >> i) & 1;
-}
-
 /* Jd (Table 13/V.90): all the rates from 28 000 to 56 000 bit/s, CP, E
    and SCR on 4 points, look-ahead up to 1 */
 void V90Tx::make_jd()
 {
-	unsigned crc = 0xFFFF;
-	int n_ = 0, i;
+	int n_ = 0;
 
 	put_bits(bits, &n_, 0x1FFFF, 17);
 	put_bits(bits, &n_, 0, 1);
@@ -137,10 +127,7 @@ void V90Tx::make_jd()
 	put_bits(bits, &n_, 0, 1);            /* and in renegotiation */
 	put_bits(bits, &n_, 1, 2);            /* look-ahead */
 	put_bits(bits, &n_, 0, 1);
-	for (i = 18; i < 51; i += 17)
-		crc = v34_crc_bits(bits + i, 16, crc);
-	for (i = 15; i >= 0; i--)
-		bits[n_++] = (crc >> i) & 1;
+	put_frame_crc(bits, &n_);
 	put_bits(bits, &n_, 0, 4);
 	nbits = n_;
 }
@@ -148,8 +135,7 @@ void V90Tx::make_jd()
 /* Jp (Table 22/V.92): the extension of Su, TRN2u on 4 points */
 void V90Tx::make_jp()
 {
-	unsigned crc = 0xFFFF;
-	int n_ = 0, i;
+	int n_ = 0;
 
 	put_bits(bits, &n_, 0x1FFFF, 17);
 	put_bits(bits, &n_, 0, 1);
@@ -161,10 +147,7 @@ void V90Tx::make_jp()
 	put_bits(bits, &n_, 0, 1);            /* and in renegotiation */
 	put_bits(bits, &n_, 0, 1);
 	put_bits(bits, &n_, 0, 1);
-	for (i = 18; i < 51; i += 17)
-		crc = v34_crc_bits(bits + i, 16, crc);
-	for (i = 15; i >= 0; i--)
-		bits[n_++] = (crc >> i) & 1;
+	put_frame_crc(bits, &n_);
 	put_bits(bits, &n_, 0, 4);
 	nbits = n_;
 }
@@ -516,15 +499,6 @@ int V90Tx::sample()
  *    every 17 bits from bit 17 on
  */
 
-/* the nbits wide field at bit first, least significant bit first */
-static int field(const unsigned char *b, int first, int nbits)
-{
-	int i, v = 0;
-	for (i = nbits - 1; i >= 0; i--)
-		v = (v << 1) | b[first + i];
-	return v;
-}
-
 /* bits of a pattern of len bits from first on, past the start bits */
 static void pattern(unsigned char *p, const unsigned char *b, int first,
 		    int len)
@@ -558,14 +532,10 @@ int v90_dil_length(const unsigned char *b, int n)
    on; returns 0 when the CRC is good, -1 otherwise */
 int V90Dil::parse(const unsigned char *b, int len)
 {
-	unsigned crc = 0xFFFF;
-	int alpha, beta, i, end = len - 16;
+	int alpha, beta, i;
 
-	for (i = 18; i < end - 1; i += 17)
-		crc = v34_crc_bits(b + i, 16, crc);
-	for (i = 0; i < 16; i++)
-		if (b[end + i] != ((crc >> (15 - i)) & 1))
-			return -1;
+	if (!frame_crc_ok(b, len - 16))
+		return -1;
 	beta = dil_beta(b, &alpha);
 	n = field(b, 18, 8);
 	lsp = field(b, 35, 7) + 1;
@@ -619,14 +589,10 @@ int v90_cp_length(const unsigned char *b, int n)
 int V90Cp::parse(const unsigned char *b, int len)
 {
 	static const int con_bit[6] = { 103, 107, 111, 115, 120, 124 };
-	unsigned crc = 0xFFFF;
-	int i, j, c, end = len - 16;
+	int i, j, c;
 
-	for (i = 18; i < end - 1; i += 17)
-		crc = v34_crc_bits(b + i, 16, crc);
-	for (i = 0; i < 16; i++)
-		if (b[end + i] != ((crc >> (15 - i)) & 1))
-			return -1;
+	if (!frame_crc_ok(b, len - 16))
+		return -1;
 	memset(this, 0, sizeof(*this));
 	cp = b[19];
 	drn = field(b, 20, 5);
@@ -686,7 +652,6 @@ int v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
 		 int ack, int rate_mask, const int *h)
 {
 	int n = 0, i, type = 0;
-	unsigned crc = 0xFFFF;
 
 	for (i = 0; i < 6; i++)
 		if (h && h[i])
@@ -714,10 +679,7 @@ int v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
 	put_bits(b, &n, 0, 1);
 	put_bits(b, &n, 0, 16);
 	put_bits(b, &n, 0, 1);
-	for (i = 18; i < n - 1; i += 17)
-		crc = v34_crc_bits(b + i, 16, crc);
-	for (i = 15; i >= 0; i--)
-		b[n++] = (crc >> i) & 1;
+	put_frame_crc(b, &n);
 	b[n++] = 0;
 	return n;
 }
