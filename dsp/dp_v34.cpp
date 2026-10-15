@@ -302,6 +302,7 @@ struct V34Echo {
 	float pw_rx, pw_err;    /* in and out while training */
 	float es;               /* the error's short term power */
 	float pw_est;           /* the echo taken away */
+	float pw_near, pw_far;  /* that of the near, the far part */
 	long dt;                /* samples frozen for the remote's signal */
 
 	void init();
@@ -479,6 +480,10 @@ struct V34Cc {
 	void info_frame(CcRx *r);
 };
 
+/* who starts a retrain, for the call's statistics: we, the remote, or
+   neither (modem-on-hold leaves data mode as a retrain does) */
+enum { RT_OURS, RT_REMOTE, RT_HOLD };
+
 /* retrains (11.5/V.34) and rate renegotiations (11.6/V.34): the
    remote's tone A or B in data mode, the line's quality that asks for
    either, the tests' own */
@@ -502,9 +507,9 @@ struct V34Retrain {
 	long reneg_at;          /* test: our own renegotiation this far */
 	int reneg_to;           /* test: to this rate (N) */
 	void rt_tone(float x);
-	void retrain(const char *why);
+	void retrain(const char *why, int by = RT_OURS);
 	int reneg_rate(int up);
-	void renegotiate(const char *why, int n);
+	void renegotiate(const char *why, int n, bool remote = false);
 	int rt_step(long c);
 };
 
@@ -1959,7 +1964,7 @@ template <class P>
 void V34Moh<P>::moh_request(int hold_secs)
 {
 	P &self = static_cast<P &>(*this);
-	self.retrain("modem-on-hold request");
+	self.retrain("modem-on-hold request", RT_HOLD);
 	moh_req = MH_REQ;
 	moh_req_hold = hold_secs;
 	moh_req_t1 = 0;
@@ -2057,7 +2062,7 @@ void V34Echo::search()
 float V34Echo::run(float tx, float rx)
 {
 	const int mask = EC_HIST - 1;
-	float est = 0, en = 1, err, g, h;
+	float est = 0, est_far = 0, en = 1, err, g, h;
 	int i, p;
 
 	pos = (pos + 1) & mask;
@@ -2073,13 +2078,16 @@ float V34Echo::run(float tx, float rx)
 		est += wn[i] * h;
 		en += h * h;
 	}
+	pw_near += 0.001f * (est * est - pw_near);
 	if (far_on)
 		for (i = 0, p = (pos - far_delay) & mask; i < EC_FAR_LEN;
 		     i++, p = (p - 1) & mask) {
 			h = hist[p];
-			est += wf[i] * h;
+			est_far += wf[i] * h;
 			en += h * h;
 		}
+	pw_far += 0.001f * (est_far * est_far - pw_far);
+	est += est_far;
 	err = rx - est;
 	pw_est += 0.001f * (est * est - pw_est);
 	/* what the near part leaves, for the far echo search */
@@ -2190,6 +2198,18 @@ void V34Pump::ec_schedule()
 						 !atoi(getenv("DSP_EC")));
 			DSP_DBG("v34: echo canceller took %.1f dB away%s\n",
 				erle, e->bypass ? ": off" : "");
+		}
+	}
+	/* the echoes it takes away, for the call's statistics */
+	if (stats && e->on && e->judged && !e->bypass &&
+	    total % ms2samples(100, srate) == 0) {
+		stats->near_echo = 10 * log10f(e->pw_near / DP_DBM0_POWER +
+					       1e-12f);
+		stats->have |= DP_STATS_NEAR_ECHO;
+		if (e->far_on) {
+			stats->far_echo = 10 * log10f(e->pw_far /
+						      DP_DBM0_POWER + 1e-12f);
+			stats->have |= DP_STATS_FAR_ECHO;
 		}
 	}
 }
@@ -2642,12 +2662,14 @@ void V34Pump::mp_start()
    (the INFO0 sequences stand), probe the line again and train the
    primary channel anew; whoever starts it with silence and its tone, the
    other modem answers the same way when it loses the data signal or
-   hears the tone */
+   hears the tone; by: whose it is (RT_OURS, RT_REMOTE, RT_HOLD) */
 template <class P>
-void V34Retrain<P>::retrain(const char *why)
+void V34Retrain<P>::retrain(const char *why, int by)
 {
 	P &self = static_cast<P &>(*this);
 	DSP_DBG("v34: retrain %d (%s)\n", ++retrains, why);
+	if (by != RT_HOLD)
+		self.stat_retrain(by == RT_REMOTE);
 	retraining = 1;
 	renegotiating = 0;
 	self.short2 = 0;
@@ -2733,11 +2755,12 @@ int V34Pump::rate_floor() const
    and data at the new rates, all with the equalizers as they are; the
    link (V.42) carries on */
 template <class P>
-void V34Retrain<P>::renegotiate(const char *why, int n)
+void V34Retrain<P>::renegotiate(const char *why, int n, bool remote)
 {
 	P &self = static_cast<P &>(*this);
 	DSP_DBG("v34: renegotiation %d (%s): receive at most %d, mse %.3f\n",
 		++renegs, why, n * 2400, self.prx.mse);
+	self.stat_reneg(remote);
 	renegotiating = 1;
 	self.max_rate_rx = n;
 	self.ptx.data_on = 0;
@@ -2760,6 +2783,7 @@ void V34Pump::v90_renegotiate(const char *why, int n, int remote)
 {
 	DSP_DBG("v34: V.90 renegotiation %d (%s): upstream at most %d, mse "
 		"%.3f\n", ++renegs, why, n * 2400, prx.mse);
+	stat_reneg(remote);
 	renegotiating = 1;
 	max_rate_rx = n;
 	up_n = 0;
@@ -2808,6 +2832,7 @@ void V34Pump::v91_start()
 	DSP_DBG("v34: V.91\n");
 	v91m.init(alaw, caller, k ? atoi(k) : 0, getenv("DSP_V91_CC") != NULL);
 	v91m.link.modem = modem;
+	v91m.stats = stats;
 	if (rt)
 		rt->pcm = 1;
 	set_state(V91_RUN);
@@ -3292,10 +3317,10 @@ int V34Pump::handshake()
 	/* V.90: the analogue modem asks for a retrain in phase 3 or 4 with
 	   silence and its tone A (it is the V.34 answerer in phase 2) */
 	if (v90_digital() && rt_blocks >= 6)
-		retrain("tone A");
+		retrain("tone A", RT_REMOTE);
 	/* the remote retrains instead (11.6.2/V.34) */
 	if (renegotiating && rt_blocks >= 6)
-		retrain(caller ? "tone A" : "tone B");
+		retrain(caller ? "tone A" : "tone B", RT_REMOTE);
 	if (ev_mh) {
 		ev_mh = 0;
 		mh_event();
@@ -3365,6 +3390,7 @@ int V34Pump::handshake()
 				CC_RX_DELAY - ms2samples(40, srate);
 			DSP_DBG("v34: round trip %ld ms\n",
 				rtd * 1000 / srate);
+			stat_rtd(rtd);
 			set_state(P2A_ABAR_40);
 			count = total - rev_time;
 		}
@@ -3498,6 +3524,7 @@ int V34Pump::handshake()
 				CC_RX_DELAY - ms2samples(40, srate);
 			DSP_DBG("v34: round trip %ld ms\n",
 				rtd * 1000 / srate);
+			stat_rtd(rtd);
 			if (short2) {
 				/* the upstream rate from phase 3's
 				   training, not from probing */
@@ -3576,7 +3603,7 @@ int V34Pump::handshake()
 				DSP_DBG("v34: no PCM upstream offer from now "
 					"on\n");
 			}
-			retrain("the remote retrains in phase 2");
+			retrain("the remote retrains in phase 2", RT_REMOTE);
 			break;
 		}
 		/* symbol rate codes past the table (6 only for PCM: both
@@ -3885,6 +3912,7 @@ int V34Pump::handshake()
 			connected = 1;
 			DSP_DBG("v34: V.90 connect %d/%d\n", rate_tx,
 				rate_rx);
+			stat_dp(v92_on ? DP_V92 : DP_V90);
 			return DPSTAT_CONNECT;
 		}
 		break;
@@ -3946,6 +3974,7 @@ int V34Pump::handshake()
 			retraining = 0;
 			connected = 1;
 			DSP_DBG("v34: connect %d/%d\n", rate_tx, rate_rx);
+			stat_dp(DP_V34);
 			return DPSTAT_CONNECT;
 		}
 		break;
@@ -3956,7 +3985,7 @@ int V34Pump::handshake()
 			lost++;
 		if (pcm) {
 			if (rt_blocks >= 6) {
-				retrain("tone A");
+				retrain("tone A", RT_REMOTE);
 				break;
 			}
 			if (lost >= carrier_loss) {
@@ -3986,15 +4015,19 @@ int V34Pump::handshake()
 				prx.mse * powf(10, step / 10) < V34_RN_UP ?
 				rn_lo + 1 : 0;
 		}
+		/* the receiver's quality, for the call's statistics */
+		if (prx.data_on && !lost && c % ms2samples(100, srate) == 0)
+			stat_snr(10 * log10f(prx.sig / (prx.mse + 1e-6f)));
 		if (rt_blocks >= 6)
-			retrain(caller ? "tone A" : "tone B");
+			retrain(caller ? "tone A" : "tone B", RT_REMOTE);
 		else if (prx.ev_reneg) {
 			prx.ev_reneg = 0;
 			if (pcm)
 				v90_renegotiate("the remote's S",
 						reneg_rate(0), 1);
 			else
-				renegotiate("the remote's S", reneg_rate(0));
+				renegotiate("the remote's S", reneg_rate(0),
+					    true);
 		} else if (rn_hi >= ms2samples(300, srate) &&
 			   c >= ms2samples(2000, srate) && rate_rx > 2400) {
 			/* the line got much worse (6 dB and more): both ways,
@@ -4127,6 +4160,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 				set_rates(rate_tx, rate_rx);
 				DSP_DBG("v34: V.91 connect %d/%d\n", rate_tx,
 					rate_rx);
+				stat_dp(DP_V91);
 				ret = DPSTAT_CONNECT;
 			} else if (ev == V91_FAIL)
 				return DPSTAT_ERROR;
@@ -4169,6 +4203,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 				} else {
 					DSP_DBG("v34: V.92 connect %d/%d\n",
 						rate_tx, rate_rx);
+					stat_dp(DP_V92);
 					ret = DPSTAT_CONNECT;
 				}
 				retraining = 0;

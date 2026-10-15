@@ -25,6 +25,10 @@
  *                          a tone on A's line besides B (a dial tone,
  *                          ringing): its frequencies (Hz), steady or on
  *                          and off ms at a time; none
+ *      echo A <dB> <ms> [<dB> <ms>], echo A off
+ *                          A's signal back on its line (a hybrid's
+ *                          echo), a block (20 ms) and ms later at dB;
+ *                          a second one; none
  *
  */
 
@@ -53,7 +57,13 @@ struct Side {
 	   steady), the samples since it began */
 	std::vector<double> tone;
 	unsigned long tone_on = 0, tone_off = 0, tone_n = 0;
+	/* its echoes (gain, delay in samples), what it sent (the last
+	   ECHO_HIST samples) */
+	std::vector<std::pair<double, int>> echo;
+	std::vector<int16_t> sent;
 };
+
+static const int ECHO_HIST = 1 << 15;
 
 static unsigned long samples, ms;
 static Side sides[2];
@@ -155,6 +165,24 @@ static void add_tone(Side &s)
 	}
 }
 
+/* the side's echoes on its line's samples: what it sent a block and
+   their delays before (samples) */
+static void add_echo(Side &s)
+{
+	if (s.sent.empty())
+		s.sent.assign(ECHO_HIST, 0);
+	for (int i = 0; i < BLOCK; i++) {
+		/* this block's sample i, in the side's count */
+		unsigned long t = samples + i;
+		double y = s.in[i];
+		for (const auto &e : s.echo)
+			if (t >= (unsigned long)(BLOCK + e.second))
+				y += e.first * s.sent[(t - BLOCK - e.second) %
+						      ECHO_HIST];
+		s.in[i] = (int16_t)(y > 32767 ? 32767 : y < -32768 ? -32768 : y);
+	}
+}
+
 /* one block of audio: each side's output reaches the other a block later */
 static void block()
 {
@@ -165,11 +193,21 @@ static void block()
 		else
 			std::fill(s.out.begin(), s.out.end(), 0);
 	}
+	/* what each sent (the samples of this block), for its echoes */
+	for (Side &s : sides) {
+		if (s.sent.empty())
+			s.sent.assign(ECHO_HIST, 0);
+		for (int i = 0; i < BLOCK; i++)
+			s.sent[(samples + i) % ECHO_HIST] = s.out[i];
+	}
 	sides[0].in = sides[1].out;
 	sides[1].in = sides[0].out;
-	for (Side &s : sides)
-		add_tone(s);
 	samples += BLOCK;
+	for (Side &s : sides) {
+		add_tone(s);
+		if (!s.echo.empty())
+			add_echo(s);
+	}
 	ms = samples * 1000 / RATE;
 	for (Side &s : sides)
 		s.core->poll();
@@ -276,6 +314,16 @@ int main(int argc, char **argv)
 			for (char *t = strtok(f, "+"); t && strcmp(t, "off");
 			     t = strtok(nullptr, "+"))
 				s.tone.push_back(atof(t));
+		} else if (!strcmp(cmd, "echo")) {
+			Side &s = side(a);
+			double db[2], ms[2];
+			int n = sscanf(buf, "%*s %*s %lf %lf %lf %lf", &db[0],
+				       &ms[0], &db[1], &ms[1]);
+			s.echo.clear();
+			for (int k = 0; k + 1 < n && k < 4; k += 2)
+				s.echo.push_back({ pow(10, db[k / 2] / 20),
+						   (int)(ms[k / 2] * RATE /
+							 1000) });
 		} else if (!strcmp(cmd, "hangup")) {
 			side(a).core->hangup();
 			collect_all();

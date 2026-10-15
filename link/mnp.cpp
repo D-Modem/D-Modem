@@ -88,6 +88,7 @@ bool MnpAsync::tx_fill()
 	case Tx::Idle:
 		if (!(tx_frame_ = mnp_->next_octet_frame()))
 			return false;
+		link_->stats().tx_frames++;
 		tx_frame_->count = 0;
 		tx_fcs_ = 0;
 		tx_dle_ = false;
@@ -247,12 +248,15 @@ void MnpAsync::rx_char(uint8_t ch)
 	case Rx::Fcs2:
 		if ((rx_fcs_lo_ | ch << 8) != rx_fcs_) {
 			link_->logf("mnp: rx frame fcs error.");
+			link_->stats().rx_errors++;
 			mnp_->rx_bad_frame(false);
 		} else if (rx_frame_.count < 2) {
 			link_->logf("mnp: rx frame too short.");
 			mnp_->rx_bad_frame(false);
-		} else
+		} else {
+			link_->stats().rx_frames++;
 			mnp_->rx_octet_frame(&rx_frame_);
+		}
 		rx_restart(Rx::Hunt);
 		break;
 	}
@@ -505,6 +509,7 @@ Frame *Mnp::next_lt()
 		s = &slot_[nxt_ % MNP_MAX_K];
 		nxt_++;
 		lt_again_++;
+		link_->stats().tx_again++;
 	} else {
 		if ((uint8_t)(vs_ - una_) >= k_ || !can_send(vs_))
 			return nullptr;

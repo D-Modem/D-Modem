@@ -562,6 +562,7 @@ int Lapm::reject_info()
 		return 0;
 	vs_ = va_;
 	tx_info_frame_ = sent_info_;
+	link_->stats().tx_again += n;
 	return n;
 }
 

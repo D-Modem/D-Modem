@@ -198,6 +198,9 @@ enum MODEM_PARAMETER_NAMES {
 	   (+PMHR), which the pump takes (sets to 0) */
 	MDMPRM_MOH_T1,
 	MDMPRM_MOH_REQ,
+	/* the call's struct dp_stats (modem_defs.h), which the pumps fill
+	   in; -1 (or 0) where there is none */
+	MDMPRM_STATS,
 	MDMPRM_LAST
 };
 

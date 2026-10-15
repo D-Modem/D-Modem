@@ -128,6 +128,8 @@ class PumpBase : public Pump {
 public:
 	struct modem *modem;
 	struct dp_runtime *rt;          /* the core's (NULL: none) */
+	struct dp_stats *stats;         /* the call's statistics, the core's
+					   (NULL: none) */
 	int srate;
 	int caller;
 	S state;
@@ -154,8 +156,46 @@ public:
 		srate = srate_;
 		caller = caller_;
 		rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+		long st = modem_get_param(m, MDMPRM_STATS);
+		stats = st == -1 ? nullptr : (struct dp_stats *)st;
 		timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
 		carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;
+	}
+
+	/* the call's statistics (ATI11): a retrain or a rate renegotiation,
+	   ours or the remote's; the modulation that came up (when it is not
+	   the pump's own: V.8's); the receiver's SNR (dB), the round trip
+	   delay (samples) */
+	void stat_retrain(bool remote)
+	{
+		if (stats)
+			++*(remote ? &stats->retrains_remote :
+			    &stats->retrains_local);
+	}
+	void stat_reneg(bool remote)
+	{
+		if (stats)
+			++*(remote ? &stats->renegs_remote :
+			    &stats->renegs_local);
+	}
+	void stat_dp(int id)
+	{
+		if (stats)
+			stats->dp = id;
+	}
+	void stat_snr(float db)
+	{
+		if (!stats)
+			return;
+		stats->snr = db;
+		stats->have |= DP_STATS_SNR;
+	}
+	void stat_rtd(long samples)
+	{
+		if (!stats || samples <= 0)
+			return;
+		stats->rtd = (int)(samples * 1000 / srate);
+		stats->have |= DP_STATS_RTD;
 	}
 
 	/* to state s, count from 0 */

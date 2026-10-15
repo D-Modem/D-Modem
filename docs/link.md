@@ -40,7 +40,11 @@ bits once a call has connected (C++, `namespace dlink`):
 gives and takes the DTE's characters, hears of the link's progress
 (`Status::Detected`, `Up`, `Released`, `Error`) and of what XID agreed, and
 gets the log lines. The data pump calls `get_bits()` and `put_bits()`. The
-link does not depend on the modem core or the data pumps.
+link does not depend on the modem core or the data pumps. `stats()`
+counts a call (for the core's `ATI11`): the DTE's characters each way,
+the frames LAPM or MNP sent (by `Hdlc` and `MnpAsync`) and the information
+frames among them sent again (LAPM's REJ or poll, MNP's retransmissions),
+the frames received intact and those with a bad FCS.
 
 The protocol code is Smart Link's slmodemd link layer (`modem_pack.c`,
 `modem_ec.c`, `modem_comp.c`) as classes, with the same behaviour on the

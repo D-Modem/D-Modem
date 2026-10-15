@@ -328,6 +328,32 @@ enum DP_ID {
    the modem back in command state, the call kept */
 #define DPSTAT_DIALED     11
 
+/* a call's line statistics from the data pumps (ATI11): the core's
+   (MDMPRM_STATS), zeroed as each call starts.  The counts are the
+   call's; the measures are the latest, each valid once its bit is in
+   have */
+struct dp_stats {
+	int dp;                         /* the modulation the call came up
+					   with (DP_ID; 0: the pump's own) */
+	unsigned retrains_local;        /* retrains we started */
+	unsigned retrains_remote;       /* retrains the remote started */
+	unsigned renegs_local;          /* rate renegotiations, ours */
+	unsigned renegs_remote;         /* the remote's */
+	unsigned have;                  /* DP_STATS_* */
+	float snr;                      /* the receiver's, dB (from its mse) */
+	int rtd;                        /* round trip delay, ms */
+	float near_echo, far_echo;      /* the echoes the canceller takes
+					   away, dBm0 */
+};
+#define DP_STATS_SNR       0x1
+#define DP_STATS_RTD       0x2
+#define DP_STATS_NEAR_ECHO 0x4
+#define DP_STATS_FAR_ECHO  0x8
+
+/* the mean square of 16 bit linear samples at 0 dBm0: G.711's digital
+   milliwatt, a sine of amplitude 22300 (mu-law's +3.17 dBm0 is 32124) */
+#define DP_DBM0_POWER 2.49e8f
+
 /* dsp info structure */
 struct dsp_info {
 	unsigned connection_type;

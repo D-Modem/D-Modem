@@ -114,7 +114,14 @@ Everything here is in `namespace dsp`, except the C entry points of
   the samples counted in it and in all, the S7 and S10 limits, the
   carrier run, the connect report, the hand over to another pump, the
   tests' settings from the environment, and `pump_loop()`, `process()`
-  by the sample for a pump with a `sample()` (FSK, V.22, V.32).
+  by the sample for a pump with a `sample()` (FSK, V.22, V.32). The
+  call's statistics for the core's `ATI11` (`struct dp_stats`,
+  `modem_defs.h`, by `MDMPRM_STATS`) go through it too: `stat_retrain()`
+  and `stat_reneg()` (ours or the remote's), `stat_dp()` (the modulation
+  V.8's pump came up with: V.34, V.90, V.91, V.92), `stat_snr()` and
+  `stat_rtd()`. V.34's echo canceller adds the near and far echo levels,
+  V.34 (its receiver's point power over its mse) and V.32bis (its mse)
+  the SNR.
 - **Mixins** (CRTP, the host the template parameter) hold what a host
   has a part of: `HdlcTx` / `HdlcRx` (`fax_hdlc.h`, the HDLC framing of
   class 1 and of T.30's V.21 and ECM frames), `PcmFrames` (`v90.h`, the

@@ -127,9 +127,12 @@ public:
 	void ring();
 	/* a call that rings by itself (SIP): on = false, the caller gave up */
 	void ring_signal(bool on);
-	/* hang up (ATH, DTR off); hangup_now() also stops at once */
+	/* hang up (ATH, DTR off); hangup_now() also stops at once;
+	   line_dropped(): the line ended the call (a SIP call that is over),
+	   at once */
 	void hangup();
 	void hangup_now();
+	void line_dropped();
 	/* ATA, ATD<number> */
 	int answer();
 	int dial(const char *number);
@@ -235,6 +238,12 @@ private:
 	enum class Run { None, Dp, CallerId, Voice, Fax };
 	/* what runs after a number of samples */
 	enum class Later { None, Stop, ChangeDp, CallerIdStop };
+	/* why a call ended (ATI11) */
+	enum class Cause {
+		None, LocalHangup, RemoteCleardown, LineDropped, CarrierLost,
+		NoDialtone, Busy, NoAnswer, TrainingFailed, ProtocolFailure,
+		NoCarrier,
+	};
 	enum { EV_RING_CHECK = 0x01, EV_ESCAPE = 0x02 };
 
 	/* the state machine (modem.c) */
@@ -275,6 +284,10 @@ private:
 	int fax_start();
 	void later(Later what, unsigned long samples);
 	const char *dp_name(int id) const;
+	const char *protocol_name() const;
+	const char *compression_name() const;
+	void set_cause(Cause c);
+	void call_stats();
 
 	/* the AT interpreter (at.cpp) */
 	void at_process();
@@ -397,6 +410,22 @@ private:
 	void *dp_runtime_ = nullptr;
 	void *dcr_ = nullptr;
 	struct dsp_info dsp_info_ = {};
+	/* the last call's statistics, or this one's (ATI11): the pumps'
+	   (MDMPRM_STATS), and the core's own: whether there was one, fax
+	   or not, when it started, came up (CONNECT) and ended (host ms),
+	   its modulation (the pump's id), its rates at CONNECT and at its
+	   end, why it ended, the line's power each way while it was up
+	   (sums of squares over samples) */
+	struct dp_stats dp_stats_ = {};
+	struct CallStats {
+		bool call, fax, connected, ended;
+		unsigned long start, up, end;
+		int dp;
+		unsigned tx0, rx0, tx1, rx1;
+		Cause cause;
+		double rx_pow, tx_pow;
+		unsigned long samples;
+	} stats_ = {};
 	int16_t *scratch_ = nullptr;
 	int scratch_len_ = 0;
 	void *voice_ = nullptr;

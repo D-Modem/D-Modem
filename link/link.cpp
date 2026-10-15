@@ -29,6 +29,7 @@ int Link::init(Owner *owner, bool caller, const Config &cfg)
 	owner_ = owner;
 	caller_ = caller;
 	cfg_ = asked_ = cfg;
+	stats_ = Stats();
 	online_ = false;
 	mode_ = Mode::Idle;
 	proto_ = Protocol::None;
@@ -380,7 +381,7 @@ int Link::read_chars(uint8_t *buf, int n)
 	if (cfg_.ec && cfg_.comp & 2 &&
 	    (cfg_.v44 ? enc44_.ready() : enc_.ready()))
 		return comp_read(buf, n);
-	return owner_->read_chars(buf, n);
+	return dte_read(buf, n);
 }
 
 /* received characters to the DTE, through the decoder when the remote
@@ -394,7 +395,25 @@ int Link::write_chars(const uint8_t *buf, int n)
 	if (cfg_.ec && cfg_.comp & 1 &&
 	    (cfg_.v44 ? dec44_.ready() : dec_.ready()))
 		return comp_write(buf, n);
-	return owner_->write_chars(buf, n);
+	return dte_write(buf, n);
+}
+
+/* the DTE's characters (the owner's), counted */
+int Link::dte_read(uint8_t *buf, int n)
+{
+	int r = owner_->read_chars(buf, n);
+	if (r > 0)
+		stats_.tx_chars += r;
+	return r;
+}
+
+/* characters to the DTE (the owner), those it took counted */
+int Link::dte_write(const uint8_t *buf, int n)
+{
+	int w = owner_->write_chars(buf, n);
+	if (w > 0)
+		stats_.rx_chars += w;
+	return w;
 }
 
 /* read_chars() through V.44's or V.42bis's encoder */
@@ -430,7 +449,7 @@ int Link::comp_read_with(E &enc, uint8_t *buf, int n)
 		ret += enc.out(buf + ret, n - ret);
 		if (ret == n)
 			break;
-		if (owner_->read_chars(&ch, 1) != 1)
+		if (dte_read(&ch, 1) != 1)
 			break;
 		enc.encode(ch);
 	}
@@ -453,7 +472,7 @@ bool Link::comp_flush_with(D &dec)
 			if (!dec_count_)
 				return true;
 		}
-		int w = owner_->write_chars(dec_out_ + dec_head_, dec_count_);
+		int w = dte_write(dec_out_ + dec_head_, dec_count_);
 		if (w <= 0)
 			return false;
 		dec_head_ += w;

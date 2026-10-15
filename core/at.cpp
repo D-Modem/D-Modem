@@ -216,7 +216,8 @@ int Modem::at_H(char *p, int *len)
 }
 
 /* ATI0 to ATI7: the product, its version, the device and driver, the
-   S-registers 0 to 23, the stored profiles (none), the country */
+   S-registers 0 to 23, the stored profiles (none), the country; ATI11
+   the last call's statistics */
 int Modem::at_I(char *p, int *len)
 {
 	char *end;
@@ -267,6 +268,9 @@ int Modem::at_I(char *p, int *len)
 		put_chars("Country: ", 9);
 		puts(homolog_->name);
 		crlf();
+		break;
+	case 11:
+		call_stats();
 		break;
 	default:
 		return -1;

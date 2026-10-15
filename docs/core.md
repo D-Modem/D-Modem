@@ -18,6 +18,16 @@
   connect messages of `&A`, `X` and `\V`; with `V0` a CONNECT's number
   for its rate, Smart Link's), and the **country parameters**
   (`homolog_data.cpp`, `+GCI`).
+- **The call's statistics** (`ATI11`, `call_stats()`): kept from one
+  call's start to the next's (`CallStats`): its modulation and rates at
+  CONNECT and at its end, the line's power each way while it was up
+  (measured on the samples in `process()`), why it ended (`Cause`: the
+  first that says so, from the DTE's hangup, the link's release or
+  error, the pump's failure before or after CONNECT, or `line_dropped()`,
+  dmodemd's when the SIP call is over), with what the pumps fill in
+  (`dp_stats_`, `MDMPRM_STATS`: retrains, renegotiations, SNR, round trip
+  delay, echoes) and the link's counts. Each call's end logs a line of
+  them.
 - **The call's state machine** (`modem.cpp`): idle, connecting, the data
   link coming up, online, online command mode (after `+++`), disconnecting;
   dialing and answering, rings (a SIP call's, or ring signals on a line
@@ -69,6 +79,9 @@ it. This core has gone beyond it where the old one fell short:
 - `AT&V` lists the active settings (the old core: ERROR), `AT\V1` puts the
   protocol after CONNECT's rate, and with `ATV0` a data call's CONNECT is
   its rate's number (the old core: 1 for every one);
+- `ATI11` gives the last call's statistics (the old core: ERROR), and
+  `&A`'s `Modulation:` is the one the call came up with (`V91` between two
+  D-Modems; the old core named the pump AT+MS chose, `V92`);
 - the dial string's `;` (back to command state), `W` (wait for a dial
   tone) and `@` (wait for quiet after ringing) do what V.250 says (the
   old core skipped `;` and `@`, and paused 2 s for `W`), and `S=<n>` (a
@@ -92,7 +105,11 @@ it. This core has gone beyond it where the old one fell short:
   ends with data waiting), `call_v22` (numeric CONNECTs), `dial` (the dial
   string's `;`, `W` and `@`, the call-back, numeric `&A` lines and `\V1`;
   `tone A 350+440`, or with on and off ms, puts a dial tone or ringing on
-  A's line).
+  A's line), `call_v34` (`&A`'s modulation, V.91), `stats` (`ATI11`
+  before, during and after calls at V.34 with echoes, V.32bis with MNP
+  and without error correction, and one with no answer; `echo A -12 0
+  -30 40` sends A's signal back to it, a block and 0 and 40 ms later,
+  at -12 and -30 dB).
   `CORE_EXPECT_WRITE=1 core_equiv` writes the `.expect` files anew, to be
   read in `git diff`; an empty one starts a new script off. In a script `\\` is a backslash and `\xNN` any
   other character (`\b` is not a backspace). `FaxDteUntilsCome`: every

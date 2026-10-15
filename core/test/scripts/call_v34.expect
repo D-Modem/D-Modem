@@ -6,12 +6,12 @@
       0 B: OK\r\n
       0 B< ATA\r
       0 A< ATD123\r
-   6300 B: Modulation: V92\r\n
+   6300 B: Modulation: V91\r\n
    6300 B: Protocol: LAPM\r\n
    6300 B: Compression: V44\r\n
    6300 B: TxRate: 62666\r\n
    6300 B: CONNECT 62666\r\n
-   6320 A: Modulation: V92\r\n
+   6320 A: Modulation: V91\r\n
    6320 A: Protocol: LAPM\r\n
    6320 A: Compression: V44\r\n
    6320 A: TxRate: 62666\r\n

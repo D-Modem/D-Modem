@@ -197,6 +197,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	unsigned rx_word, rx_r_word;
 	int rx_word_align;
 	float rx_mse;
+	float data_power;       /* the input's power as data mode began */
 	int rx_e_seen;
 	const struct v32_rate *rx_rate;
 	Viterbi vit;
@@ -222,7 +223,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	bool in_data() const { return state == V32_DATA; }
 	void start_word(enum v32_txm m, unsigned w);
 	int connect();
-	void retrain();
+	void retrain(bool remote);
 	int fallback_to(enum DP_ID id, const char *mode);
 	int fallback();
 	unsigned quality_caps();
@@ -685,6 +686,7 @@ void V32Pump::start_word(enum v32_txm m, unsigned w)
 int V32Pump::connect()
 {
 	set_state(V32_DATA);
+	data_power = rx.power;
 	if (retraining) {
 		/* the link goes on (V.42 knows nothing of it) */
 		set_rates(tx_rate->bps, rx_rate->bps);
@@ -697,12 +699,14 @@ int V32Pump::connect()
 }
 
 /* a retrain (V.32 5.5): the start-up again from AA / AC, the caller's
-   from AA, the answerer's from AC; whoever starts it, the other modem
-   answers the same way when it hears the signal */
-void V32Pump::retrain()
+   from AA, the answerer's from AC; whoever starts it (remote: the
+   other modem), the other modem answers the same way when it hears the
+   signal */
+void V32Pump::retrain(bool remote)
 {
 	DSP_DBG("v32: retrain %d (%s)\n", ++retrains,
 		caller ? "AA" : "AC");
+	stat_retrain(remote);
 	retraining = 1;
 	automode = 0;                /* no falling back now */
 	rx_reset();
@@ -967,11 +971,17 @@ int V32Pump::handshake()
 		   answerer (scrambled data has no such tone) */
 		if ((!caller && ev_aa && !ev_ac) ||
 		    (caller && ev_ac))
-			retrain();
+			retrain(true);
 		else if (retrain_at && count >= retrain_at &&
 			 !retrains) {
-			retrain();
+			retrain(false);
 		}
+		/* the receiver's quality, for the call's statistics (while
+		   the signal is there as it was: not as it fades at the
+		   end) */
+		else if (count % ms2samples(100, srate) == 0 &&
+			 rx.power > 0.5f * data_power)
+			stat_snr(-10 * log10f(rx_mse + 1e-6f));
 		break;
 	}
 	return DPSTAT_OK;

@@ -396,10 +396,78 @@ Information:
 \cmd{I4} & \sreg{0} to S23, eight a line (\cmd{s00=000 s01=000 \ldots}) \\
 \cmd{I5}, \cmd{I6} & \cmd{Stored Profile 0:}, \cmd{1:} (there are none) \\
 \cmd{I7} & the country: \cmd{Country: USA} \\
+\cmd{I11} & the last call's statistics, or this one's (below) \\
 \bottomrule
 \end{tabular}
 \end{center}
 Any other number is ERROR.
+
+\cmd{ATI11} lists the last call's statistics, as Conexant's modems do:
+in online command state those of the call that is up, after a call
+(dialed or answered, connected or not) its own, until the next one;
+before any, \cmd{No Previous Call}.  A line whose value the call does
+not have is left out (the rates and what follows for a call that never
+came up, the frame counts without error correction, the SNR, the round
+trip delay and the echoes where the modulation does not measure them,
+the cause while the call is up):
+
+\begin{center}
+\small
+\begin{tabular}{>{\raggedright\arraybackslash\ttfamily}p{0.36\textwidth}
+  >{\raggedright\arraybackslash}p{0.56\textwidth}}
+\toprule
+\rowcolor{dmhead}\normalfont\thd{line} & \thd{} \\
+\midrule
+Last Connection & the modulation it came up with (\cmd{V34},
+  \cmd{V90}, \cmd{V92}, \cmd{V91}, \cmd{V32bis}, \ldots), \cmd{Fax},
+  or \cmd{None} \\
+Initial ..., Final Transmit / Receive Carrier Rate & the rates
+  (bit/s) at CONNECT, and now or at the end (after renegotiations) \\
+Protocol Negotiation Result & \cmd{LAPM}, \cmd{MNP} or \cmd{NONE} \\
+Data Compression Result & \cmd{V44}, \cmd{V42bis}, \cmd{MNP5} or
+  \cmd{NONE} \\
+Estimated SNR (dB) & the receiver's signal to noise ratio (V.34, V.90's
+  upstream, V.32bis) \\
+Receive / Transmit Signal Power Level (dBm0) & the line's mean power
+  each way while the call was up \\
+Round Trip Delay (ms) & as V.34's phase 2 measured it \\
+Near / Far Echo Level (dBm0) & the echoes of our signal the canceller
+  takes away (V.34, V.90, V.92) \\
+Characters Sent / Received & the DTE's \\
+Transmit Frame Count & LAPM's or MNP's frames sent \\
+Transmit Frame Error Count & the information frames among them sent
+  again \\
+Receive Frame Count & the frames received intact \\
+Receive Frame Error Count & the frames received with a bad FCS \\
+Retrains by Local Modem, Retrains Requested by Remote Modem & retrains,
+  ours and the other modem's \\
+Rate Renegotiation by Local / Remote Modem & rate renegotiations (V.34,
+  V.90, V.92) \\
+Call Duration & from CONNECT, \p{h}\cmd{:}\p{mm}\cmd{:}\p{ss} \\
+Call Termination Cause & \cmd{Local hangup} (\cmdl[H]{ATH},
+  \cmdl[Z]{ATZ}, DTR, a character while connecting), \cmd{Remote
+  cleardown} (the other modem's LAPM DISC or MNP LD), \cmd{Line
+  dropped} (the SIP call ended), \cmd{Carrier lost}, \cmd{No dial
+  tone}, \cmd{Busy}, \cmd{No answer}, \cmd{Training failed},
+  \cmd{Protocol failure} (no error correction where it is required,
+  LAPM's errors), \cmd{No carrier} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{verbatim}
+Description                         Status
+-----------                         ------
+Last Connection                     V34
+Initial Transmit Carrier Rate       33600
+...
+Call Duration                       0:00:10
+Call Termination Cause              Local hangup
+\end{verbatim}
+
+A digital modem has no view of the line's digital loss or robbed-bit
+signalling (the analogue modem measures them), so those other modems'
+lines are not there.
 \end{command}
 
 \begin{command}{L}{ATL[\p{n}], ATM[\p{n}]}
@@ -969,7 +1037,8 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
   are skipped.  There are no stored numbers: \cmd{\&Z} and
   \cmd{ATDS=}\p{n} are ERROR.
 \item \cmdl[I]{ATI}'s numbers are the modem's own (\cmd{I0} to
-  \cmd{I7}); \cmd{ATI8} and up are ERROR.
+  \cmd{I7}, and \cmd{I11} as Conexant's); \cmd{ATI8} to \cmd{ATI10}
+  and \cmd{ATI12} and up are ERROR.
 \item The numeric results (\cmdl[V]{V0}) are Smart Link's, CONNECT's
   for each rate among them; those of USRobotics' and Conexant's modems
   differ.  CONNECT's rates without a number of Smart Link's have

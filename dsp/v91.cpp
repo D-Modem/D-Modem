@@ -804,6 +804,8 @@ int V91::rx_sample(int x)
 		/* the remote's retrain: its INFO */
 		if (info_bit(bit)) {
 			DSP_DBG("v91: the remote retrains\n");
+			if (stats)
+				stats->retrains_remote++;
 			rx_restart();
 			got_info = 1;
 			peer_default = !ib[26];
@@ -822,6 +824,8 @@ int V91::rx_sample(int x)
 void V91::retrain(const char *why)
 {
 	DSP_DBG("v91: retrain: %s\n", why);
+	if (stats)
+		stats->retrains_local++;
 	retraining = 1;
 	rx_restart();
 	tx_segment(V91T_INFO);

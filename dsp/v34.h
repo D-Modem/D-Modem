@@ -380,6 +380,8 @@ struct V34Rx {
 	int s_count;
 	int on;                 /* signal present */
 	float mse;
+	float sig;              /* data mode: the points' power, in the
+				   units of mse (its SNR: sig / mse) */
 	float ref_power;        /* input power when trained */
 	cplx good_eq[QAM_MAX_EQ];       /* the equalizer at its best */
 	cplx pp_buf[48];        /* the first PP symbols, for the alignment */

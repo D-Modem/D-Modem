@@ -1,0 +1,67 @@
+# ATI11, the call's statistics: none before a call; a V.34 call (V.42
+# with V.44) on a line with A's echoes (-12 dB at 20 ms, -30 dB at
+# 60 ms), in online command state and after it on both sides (our
+# hangup, the remote's cleardown); a V.32bis call with MNP (and MNP 5),
+# then one without error correction, both of which the remote ended
+# (the carrier lost); one nobody answered
+A ATE0X3+MS=34\r
+B ATE0\r
+A ATI11\r
+echo A -12 0 -30 40
+B ATA\r
+A ATD123\r
+until A CONNECT 40000
+until B CONNECT 2000
+send A 3000
+send B 3000
+run 6000
+A +++
+run 1000
+A ATI11\r
+A ATO\r
+run 2000
+A +++
+run 1000
+A ATH\r
+until B NO CARRIER 10000
+run 500
+A ATI11\r
+B ATI11\r
+echo A off
+# V.32bis with MNP (and MNP 5): B hangs up
+A AT\\N5+MS=132\r
+until A OK 1000
+B AT\\N5+MS=132\r
+until B OK 1000
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 2000
+send A 2000
+send B 1000
+run 4000
+hangup B
+until A NO CARRIER 10000
+run 500
+A ATI11\r
+# without error correction: B hangs up, A's carrier goes
+A AT\\N0\r
+until A OK 1000
+B AT\\N0\r
+until B OK 1000
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 2000
+send A 1000
+run 3000
+hangup B
+until A NO CARRIER 10000
+run 500
+A ATI11\r
+B ATI11\r
+# no answer
+A ATS7=5D\r
+until A NO ANSWER 10000
+run 500
+A ATI11\r

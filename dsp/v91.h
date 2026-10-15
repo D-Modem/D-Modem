@@ -93,6 +93,7 @@ struct V91 {
 	long phase_start;       /* of the last INFO exchange */
 	int connected, retraining;
 	long retrain_at;        /* test: our own retrain (symbols) */
+	struct dp_stats *stats; /* the call's statistics (NULL: none) */
 	int mute;               /* test: we send nothing */
 
 	/* transmitter */

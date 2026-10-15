@@ -442,6 +442,7 @@ bool Hdlc::tx_fill()
 		    (tx_frame_ = framer_->next_tx_frame())) {
 			tx_frame_->fcs = INIT_FCS;
 			tx_frame_->count = 0;
+			link_->stats().tx_frames++;
 		}
 	} else if (tx_frame_->count == tx_frame_->size) {
 		/* the FCS, then the frame is out */
@@ -488,9 +489,12 @@ void Hdlc::rx_scan()
 				link_->logf("hdlc frame size error.");
 			else if (f->fcs != GOOD_FCS) {
 				link_->logf("hdlc frame fcs error.");
-				if (framer_)
+				if (framer_) {
+					link_->stats().rx_errors++;
 					framer_->rx_error();
+				}
 			} else if (framer_) {
+				link_->stats().rx_frames++;
 				f->count -= 2;  /* the FCS */
 				framer_->rx_complete(f);
 			}

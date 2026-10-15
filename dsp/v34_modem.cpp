@@ -965,6 +965,7 @@ void V34Rx::symbol()
 					tap, n, z.re, z.im, d.re, d.im);
 			e = cplx_pow(cplx_sub(z, d)) / g2;
 			mse += 0.01f * (e - mse);
+			sig += 0.01f * (cplx_pow(d) / g2 - sig);
 			timing_dd(d);
 			qam.adapt(d, 0.004f, 0.02f, 0.0002f);
 			/* the equalizer to go back to in a renegotiation (with

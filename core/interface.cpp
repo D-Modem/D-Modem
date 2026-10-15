@@ -88,6 +88,8 @@ long Modem::get_param(unsigned name)
 		return moh_off_ ? 0 : moh_timer_;
 	case MDMPRM_MOH_REQ:
 		return moh_req_;
+	case MDMPRM_STATS:
+		return (long)&dp_stats_;
 	case MDMPRM_DSPINFO:
 		return (long)&dsp_info_;
 	case MDMPRM_VOICEINFO:

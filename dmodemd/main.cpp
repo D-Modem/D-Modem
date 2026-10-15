@@ -158,7 +158,7 @@ int Dmodemd::audio()
 		else if (count < 0)
 			ERR("dev read: %s\n", strerror(errno));
 		/* the call has gone: hang up now */
-		m->hangup_now();
+		m->line_dropped();
 		return 0;
 	}
 	count /= 2;

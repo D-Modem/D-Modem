@@ -73,6 +73,16 @@ struct Config {
 /* the error correction a call has */
 enum class Protocol { None, Lapm, Mnp };
 
+/* a call's counts (ATI11): the DTE's characters each way; the frames
+   of the error correction (LAPM's, MNP's) sent, the information frames
+   among them sent again, the frames received intact and those received
+   with a bad FCS */
+struct Stats {
+	unsigned long tx_chars = 0, rx_chars = 0;
+	unsigned long tx_frames = 0, tx_again = 0;
+	unsigned long rx_frames = 0, rx_errors = 0;
+};
+
 enum class Status {
 	Detected,       /* the detection phase is over: LAPM, MNP or none
 			   (protocol()) */
@@ -142,6 +152,10 @@ public:
 	}
 	/* the data pump's transmit rate (bit/s), 0 if not known */
 	int tx_rate() const { return owner_->tx_rate(); }
+	/* the call's counts so far (kept after it, until the next init()),
+	   which the framers add to */
+	const Stats &stats() const { return stats_; }
+	Stats &stats() { return stats_; }
 
 	/* for the parts */
 	void logf(const char *fmt, ...)
@@ -203,10 +217,13 @@ private:
 	template <class D> int comp_write_with(D &dec, const uint8_t *buf,
 					       int n);
 	template <class D> bool comp_flush_with(D &dec);
+	int dte_read(uint8_t *buf, int n);
+	int dte_write(const uint8_t *buf, int n);
 
 	Owner *owner_ = nullptr;
 	bool caller_ = false;
 	bool online_ = false;
+	Stats stats_;
 	Config cfg_, asked_;
 	Mode mode_ = Mode::Idle;
 	Protocol proto_ = Protocol::None;
