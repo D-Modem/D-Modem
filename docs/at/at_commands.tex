@@ -80,23 +80,31 @@
 \makeatother
 
 % one command: its syntax in a tinted strip (a link target and a
-% bookmark under its section, as cmd:<key>), then what it does
+% bookmark under its section, as cmd:<key>), then what it does; on the
+% next page unless the strip and some of its text fit (straight after a
+% heading, the heading keeps them with it)
 \newtcolorbox{cmdstrip}{enhanced,colback=dmtint,colframe=dmblue,
   boxrule=0pt,leftrule=3pt,arc=0pt,outer arc=0pt,left=6pt,right=6pt,
-  top=3pt,bottom=3pt,before skip=10pt,after skip=4pt}
+  top=3pt,bottom=3pt,before skip=10pt,
+  after={\par\nobreak\nointerlineskip\vspace{\glueexpr 4pt-\parskip}}}
+\makeatletter
 \newenvironment{command}[2]
-  {\par\needspace{4\baselineskip}%
+  {\par\if@nobreak\else\needspace{4\baselineskip}\fi
    \begin{cmdstrip}\hypertarget{cmd:#1}{}%
      \bookmark[dest={cmd:#1},rellevel=1,keeplevel]{#2}%
      \textbf{\color{dmblue}\cmd{#2}}\end{cmdstrip}\nopagebreak
-   \begin{list}{}{\leftmargin=1.2em\topsep=0pt}\item[]}
+   \begin{list}{}{\leftmargin=1.2em\topsep=0pt\@beginparpenalty=\@M}%
+   \item[]}
   {\end{list}}
+\makeatother
 
 % headings: the section's number in a box of the band's colour
 \titleformat{\section}{\Large\bfseries\color{dmblue}}
   {\colorbox{dmblue}{\makebox[1.1em]{\color{white}\thesection}}}{0.6em}{}
   [{\color{dmaccent}\titlerule[1.2pt]}]
 \titlespacing*{\section}{0pt}{3.2ex plus 1ex minus .2ex}{1.6ex}
+% each section on a page of its own
+\newcommand{\sectionbreak}{\clearpage}
 \titleformat{\subsection}{\large\bfseries\color{dmblue}}
   {\textcolor{dmaccent}{\thesubsection}}{0.6em}{}
 \titleformat{\paragraph}[runin]{\bfseries\color{dmblue}}{}{0pt}{}
@@ -106,6 +114,7 @@
 \renewcommand{\cftsecpagefont}{\bfseries\color{dmblue}}
 \renewcommand{\cfttoctitlefont}{\Large\bfseries\color{dmblue}}
 \setlength{\cftbeforesecskip}{0.45ex}
+\renewcommand{\cftmarktoc}{\markboth{\contentsname}{\contentsname}}
 
 % every page: a band across the top with the document's name and the
 % section, an accent stripe under it; the footer the name, the edition
@@ -134,30 +143,38 @@
   \renewcommand{\footrulewidth}{0.5pt}%
   \renewcommand{\footrule}{{\color{dmhead}%
     \hrule width\headwidth height\footrulewidth \vskip\footruleskip}}}
-% the title page's: no band in the header (the title has its own)
-\fancypagestyle{dmtitle}{\pagestyle{dm}\fancyhead{}}
-\tocloftpagestyle{dmtitle}
+\tocloftpagestyle{dm}
 \pagestyle{dm}
 
 \begin{document}
+% the title page: the band down past the middle of the page, faint
+% carriers across it and the title at its foot; no header or footer
 \pdfbookmark[1]{Title}{title}
-\thispagestyle{dmtitle}
+\thispagestyle{empty}
 \begin{tikzpicture}[remember picture,overlay]
   \fill[dmblue] (current page.north west) rectangle
-    ([yshift=-7.2cm]current page.north east);
-  \fill[dmaccent] ([yshift=-7.2cm]current page.north west) rectangle
-    ([yshift=-7.45cm]current page.north east);
-  \node[anchor=north west,text=white,align=left,inner sep=0pt]
-    at ([xshift=2.2cm,yshift=-2.0cm]current page.north west)
-    {{\fontsize{34}{38}\selectfont\bfseries D-Modem}\\[10pt]
-     {\fontsize{22}{26}\selectfont AT Command Reference}\\[14pt]
-     {\large\color{dmhead}The modem core of slmodemd, libdmodem
+    ([yshift=-17cm]current page.north east);
+  \begin{scope}[shift={([yshift=-6.5cm]current page.north west)}]
+    \foreach \a/\f/\o in {1.1/1.3/0.10, 0.7/2.1/0.08, 1.6/0.7/0.06}
+      \draw[white,opacity=\o,line width=1.2pt,domain=0:21,samples=300,
+        smooth] plot (\x,{\a*sin(\f*\x r)});
+  \end{scope}
+  \fill[dmaccent] ([yshift=-17cm]current page.north west) rectangle
+    ([yshift=-17.4cm]current page.north east);
+  \node[anchor=south west,text=white,align=left,inner sep=0pt,
+    text width=16.6cm]
+    at ([xshift=2.2cm,yshift=-15.8cm]current page.north west)
+    {{\fontsize{48}{54}\selectfont\bfseries D-Modem}\\[12pt]
+     {\fontsize{28}{32}\selectfont AT Command Reference}\\[20pt]
+     {\Large\color{dmhead}The modem core of slmodemd, libdmodem
       and the PBX modules}};
-  \node[anchor=south east,text=white,inner sep=0pt]
-    at ([xshift=-2.2cm,yshift=-6.6cm]current page.north east)
-    {\large\docedition};
+  \node[anchor=north west,text=dmblue,inner sep=0pt]
+    at ([xshift=2.2cm,yshift=-18.6cm]current page.north west)
+    {\Large\docedition};
 \end{tikzpicture}
-\vspace*{4.6cm}
+\clearpage
+
+\pdfbookmark[1]{\contentsname}{contents}
 \tableofcontents
 
 \section{Introduction}
