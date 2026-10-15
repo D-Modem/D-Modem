@@ -23,6 +23,9 @@ using namespace dsp;
 
 #define FRAG 48
 #define MAX_BITS (1 << 20)
+/* the share of the bits its rate carries from the CONNECT to the end
+   that a call must have delivered (LoopbackSide::ok()) */
+#define CARRIED_MIN 0.9
 
 unsigned int dsplibs_debug_level = 0;
 
@@ -54,6 +57,9 @@ struct side {
 
 static struct dp_operations *ops[256];   /* by id: DP_MAX is below some ids */
 static struct side sides[2];
+/* the line's sample now, and from when what the pumps receive is
+   dropped (LoopbackConfig::cut_s; 0: never) */
+static long now_sample, drop_from;
 /* the pumps' struct modem: only its address matters here */
 struct modem {
 	int side;
@@ -140,11 +146,14 @@ int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n)
 	return n;
 }
 
-/* n bits the pump received, the first MAX_BITS kept in rx_bits; n */
+/* n bits the pump received, the first MAX_BITS kept in rx_bits (none
+   from drop_from on); n */
 int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
 	struct side *s = side_of(m);
 	int i;
+	if (drop_from && now_sample >= drop_from)
+		return n;
 	for (i = 0; i < n; i++)
 		if (s->nrx < MAX_BITS)
 			s->rx_bits[s->nrx++] = buf[i] & 1;
@@ -170,33 +179,58 @@ struct line {
 	int pos, len;
 	float gain, noise;
 	Biquad tilt;
-	/* sample clock offset: linear interpolation resampler */
-	double step;
+	/* sample clock offset (line_clock()): a windowed sinc resampler,
+	   step input samples an output, its input kept in ring (mask + 1
+	   samples) and read lag samples behind the newest at the start */
+	double step, lag;
+	float *ring;
+	long mask;
 	float sig_pwr, ref_pwr;
-	float ring[1024];
 	long n;
 };
+
+/* l's clock offset for total samples of line time: step input samples
+   an output.  The reading drifts by (step - 1) total samples over
+   them: it starts 256 samples behind the input, more if it would
+   overtake it (step > 1), and the ring keeps 1024 samples, more if it
+   would fall that far behind (step < 1), so that every output is read
+   from the line's own samples.  (Not enough at the start: the old
+   reader went on reading the ring's stale samples, or none.) */
+static void line_clock(struct line *l, double step, long total)
+{
+	double drift = fabs(step - 1) * total + 64;
+	long size = 1024;
+
+	l->step = step;
+	l->lag = step > 1 && drift + 32 > 256 ? drift + 32 : 256;
+	while (size < l->lag + (step < 1 ? drift : 0) + 64)
+		size *= 2;
+	l->ring = static_cast<float *>(calloc(size, sizeof(float)));
+	l->mask = size - 1;
+}
 
 /* x into the clock offset's resampler; the line at the drifting
    position (l->step input samples an output), 0 at the start */
 static float line_resample(struct line *l, float x)
 {
 	/* one output per input, read at a slowly drifting position that
-	   starts 256 samples behind the newest input */
-	double t = l->n * l->step - 256;
+	   starts l->lag samples behind the newest input */
+	double t = l->n * l->step - l->lag;
 	long i = (long)floor(t);
 	float f = (float)(t - i), y = 0;
 	int k;
-	l->ring[l->n & 1023] = x;
+	l->ring[l->n & l->mask] = x;
 	l->n++;
-	if (i < 16 || l->n - i > 1000)
+	/* the window (i - 15 to i + 16) in the ring: not before the
+	   start, not ahead of the newest sample, not overwritten */
+	if (i < 16 || i + 16 > l->n - 1 || l->n - (i - 15) > l->mask + 1)
 		return 0;
 	/* 32 tap Blackman windowed sinc interpolation */
 	for (k = -15; k <= 16; k++) {
 		double d = k - f, w, sinc;
 		sinc = fabs(d) < 1e-9 ? 1 : sin(M_PI * d) / (M_PI * d);
 		w = 0.42 + 0.5 * cos(M_PI * d / 16.5) + 0.08 * cos(2 * M_PI * d / 16.5);
-		y += l->ring[(i + k) & 1023] * sinc * w;
+		y += l->ring[(i + k) & l->mask] * sinc * w;
 	}
 	return y;
 }
@@ -350,8 +384,8 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 	to_a.len = 37;
 	to_c.len = 53;
 	to_a.gain = to_c.gain = gain;
-	to_a.step = 1 + ppm * 1e-6;
-	to_c.step = 1 - ppm * 1e-6;
+	line_clock(&to_a, 1 + ppm * 1e-6, total);
+	line_clock(&to_c, 1 - ppm * 1e-6, total);
 	/* white noise at snr dB below the received signal power */
 	to_a.noise = to_c.noise = powf(10, -snr / 20);
 	to_a.tilt.lowpass(3000, 0.6f, srate);
@@ -375,7 +409,9 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 	memset(a_in, 0, sizeof(a_in));
 	memset(c_in, 0, sizeof(c_in));
 
+	drop_from = cfg.cut_s > 0 ? (long)(cfg.cut_s * srate) : 0;
 	for (t = 0; t < total; t += FRAG) {
+		now_sample = t;
 		for (k = 0; k < 2; k++) {
 			struct side *s = &sides[k];
 			s16 *in = k ? a_in : c_in, *out = k ? a_out : c_out;
@@ -459,11 +495,22 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 		r.rx_rate = s->rx_rate;
 		r.received = s->nrx;
 		if (s->connected) {
+			r.carried = s->nrx - s->connect_rx;
+			r.expected = (long)(s->rx_rate * (secs - r.connect_s));
+			if (r.expected > MAX_BITS - s->connect_rx)
+				r.expected = MAX_BITS - s->connect_rx;
+			printf("%s: carried %ld of the %ld bits expected "
+			       "(%.0f%%)\n", s->name, r.carried, r.expected,
+			       r.expected ? 100.0 * r.carried / r.expected : 0);
+		}
+		if (s->connected) {
 			resyncs = 0;
 			r.errors = count_errors(&sides[1 - k], s, &r.checked);
 			r.resyncs = resyncs;
 		}
 	}
+	free(to_a.ring);
+	free(to_c.ring);
 	for (k = 0; k < 2; k++) {
 		struct side *s = &sides[k];
 		if (s->dp)
@@ -475,10 +522,12 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 	return res;
 }
 
-/* (loopback.h) connected, bits checked, a BER of 1e-3 at most */
+/* (loopback.h) connected, CARRIED_MIN of the bits expected carried,
+   bits checked, a BER of 1e-3 at most */
 bool LoopbackSide::ok() const
 {
-	return connected && checked && (double)errors / checked <= 1e-3;
+	return connected && carried >= CARRIED_MIN * expected && checked &&
+		(double)errors / checked <= 1e-3;
 }
 
 /* (loopback.h) "<name>: received ..., checked ..., errors ... (BER)",
@@ -488,8 +537,9 @@ std::string LoopbackSide::text(const char *name) const
 	char buf[200];
 	if (!connected)
 		return std::string(name) + ": no connection";
-	snprintf(buf, sizeof(buf), "%s: received %ld bits, checked %ld, "
-		 "errors %ld (BER %.2e)", name, received, checked, errors,
+	snprintf(buf, sizeof(buf), "%s: received %ld bits (%ld of the %ld "
+		 "the call should carry), checked %ld, errors %ld (BER %.2e)",
+		 name, received, carried, expected, checked, errors,
 		 checked ? (double)errors / checked : 1.0);
 	std::string t = buf;
 	if (resyncs)

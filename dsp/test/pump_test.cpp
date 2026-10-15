@@ -98,7 +98,28 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "bell212", line(212, 15, 20) },
 	Pumps{ "v21", line(21, 8, 20) },
 	Pumps{ "v23", line(23, 12, 30) },
-	Pumps{ "bell103_300ppm", line(103, 8, 20, 9600, 0.5f, 300) }), name);
+	Pumps{ "bell103_300ppm", line(103, 8, 20, 9600, 0.5f, 300) },
+	/* a minute at 3000 ppm: the line's clock drifts by 1700 samples,
+	   more than its resampler kept at first */
+	Pumps{ "v21_3000ppm_long", line(21, 20, 60, 9600, 0.5f, 3000) }), name);
+
+/* a call whose receivers stall halfway (nothing they receive from then
+   on comes out) is no good, however right the bits before were: ok()
+   wants the data the call should carry, which the BER alone does not */
+TEST(Loopback, StalledCallFails)
+{
+	LoopbackConfig c = line(132, 40, 20);
+	c.cut_s = 12;
+	LoopbackResult r = loopback_run(c);
+
+	for (const LoopbackSide &s : r.side) {
+		EXPECT_TRUE(s.connected);
+		EXPECT_GT(s.checked, 300);
+		EXPECT_LE((double)s.errors / s.checked, 1e-3);
+		EXPECT_LT(s.carried, s.expected * 0.9);
+		EXPECT_FALSE(s.ok()) << s.text("side");
+	}
+}
 
 /* the caller's INFO0 offering only some of the symbol rates and carriers
    (DSP_V34_INFO0=<bits 12:19>,c): the answerer keeps to them, and the

@@ -31,7 +31,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 
 | Program | What |
 |---|---|
-| `pump_test` | the data pumps back to back (`loopback.cpp`): each modulation on clean and noisy lines, 8000 Hz, clock offsets, gains, echoes; the answering automode |
+| `pump_test` | the data pumps back to back (`loopback.cpp`): each modulation on clean and noisy lines, 8000 Hz, clock offsets, gains, echoes; the answering automode. A side passes connected, with 90% of the bits its rate carries from the CONNECT on, at a BER of 1e-3 at most |
 | `dmodem_test` | libdmodem: pairs of its modems, retrains and renegotiations in the data, V.91 across G.711 networks, `dmodem.hpp` |
 | `dmodem_fax_test` | libdmodem's fax: a data modem answering hands the call to a fax receiver |
 | `hw_test` | the hardware the harnesses emulate (`hw/`), on a host of its own: the ICH's bus masters |

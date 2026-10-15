@@ -23,6 +23,8 @@ struct LoopbackConfig {
 	float far_db = 0;       /* < 0: the echo of the far end's hybrid */
 	int far_delay = 0;      /* samples more for the far echo (VoIP) */
 	bool flat = false;      /* no band limitation */
+	float cut_s = 0;        /* > 0: what the pumps receive from then
+				   on dropped (a call that stalls) */
 	const char *dump = nullptr;     /* what each side hears: <dump>.a
 					   (answerer), <dump>.c (caller) */
 };
@@ -32,8 +34,13 @@ struct LoopbackSide {
 	double connect_s = 0;   /* when */
 	int tx_rate = 0, rx_rate = 0;
 	long received = 0;      /* bits */
+	/* of them, since the CONNECT; and what rx_rate carries from the
+	   CONNECT to the end (the bits kept at most) */
+	long carried = 0, expected = 0;
 	long checked = 0, errors = 0, resyncs = 0;
-	/* connected, and a bit error rate of 1e-3 at most */
+	/* connected, CARRIED_MIN of the bits expected carried (a call
+	   that stalls is no good however few errors its first bits have),
+	   and a bit error rate of 1e-3 at most */
 	bool ok() const;
 	/* the side's result on one line, name first */
 	std::string text(const char *name) const;
