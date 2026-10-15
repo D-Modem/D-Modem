@@ -1,8 +1,9 @@
 #!/bin/sh
 # build.sh: docs/at_commands.pdf from at_commands.tex (pdflatex through
-# latexmk; Debian's texlive-latex-recommended, texlive-latex-extra and
-# latexmk).  The intermediate files go to <build>/docs/at (DMODEM_BUILD,
-# default <repo>/build).
+# latexmk; Debian's texlive-latex-recommended, texlive-latex-extra,
+# texlive-fonts-recommended, texlive-pictures, lmodern and latexmk).  The
+# intermediate files go to <build>/docs/at (DMODEM_BUILD, default
+# <repo>/build).
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 out=${DMODEM_BUILD:-$here/../../build}/docs/at
