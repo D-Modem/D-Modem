@@ -49,6 +49,8 @@ add_subdirectory(dsp)
 add_subdirectory(core)
 add_subdirectory(slmodemd)
 
+# the PBX modules' call on libdmodem (pbx/dmodem_bridge.c), built into each
+set(DMODEM_PBX_DIR ${CMAKE_SOURCE_DIR}/pbx)
 if(DMODEM_ASTERISK)
 	add_subdirectory(asterisk)
 endif()

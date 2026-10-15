@@ -8,7 +8,9 @@
  * says.
  *
  * The modem is libdmodem (../slmodemd/dmodem.h): the slmodemd modem core
- * with the open data pumps, no binary-only parts.
+ * with the open data pumps, no binary-only parts.  The call between the
+ * modem and the server or program is ../pbx/dmodem_bridge.c, as in
+ * FreeSWITCH's mod_dmodem.
  *
  * This program is free software, distributed under the terms of the GNU
  * General Public License Version 2.
@@ -21,16 +23,9 @@
 #include "asterisk.h"
 
 #include <ctype.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <signal.h>
+#include <pthread.h>
 #include <stdlib.h>
-#include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/wait.h>
-#include <termios.h>
-#include <unistd.h>
 
 #include "asterisk/app.h"
 #include "asterisk/channel.h"
@@ -45,7 +40,7 @@
 #include "asterisk/strings.h"
 #include "asterisk/utils.h"
 
-#include "dmodem.h"
+#include "dmodem_bridge.h"
 
 /*** DOCUMENTATION
 	<application name="DModem" language="en_US">
@@ -110,41 +105,6 @@ static const char descrip[] =
 #define LINE_MAX_SAMPLES 1600   /* in one frame, 200 ms */
 #define IDLE_MS 200             /* no frame for this long: go on alone */
 
-enum mode { MODE_TCP, MODE_EXEC };
-
-/* fax: [general] has the defaults, a profile its own */
-struct fax_settings {
-	int on;                 /* DModem(): a fax caller is received */
-	char dir[256];          /* ... into this directory */
-	char ident[21];         /* our number (CSI / TSI) */
-	int max_bps;
-	int ecm;                /* error correction mode offered */
-};
-
-struct profile {
-	enum mode mode;
-	char host[256];
-	char port[16];
-	char command[1024];
-	char init[128];         /* extra AT commands, e.g. +MS=34 */
-	enum dmodem_law law;    /* DMODEM_LAW_UNKNOWN: the channel's */
-	int timeout;            /* seconds to connect */
-	struct fax_settings fax;
-};
-
-/* the bytes between the modem and the server or program */
-struct pipe_buf {
-	char data[4096];
-	int len;
-};
-
-/* O_NONBLOCK on fd; -1 on failure */
-static int nonblock(int fd)
-{
-	int fl = fcntl(fd, F_GETFL);
-	return fl < 0 ? -1 : fcntl(fd, F_SETFL, fl | O_NONBLOCK);
-}
-
 /* libdmodem's log lines: "err: " ones as warnings, the rest at verbose
    level 5 */
 static void log_line(const char *line)
@@ -155,69 +115,90 @@ static void log_line(const char *line)
 		ast_verb(5, "dmodem: %s", line);
 }
 
-/* the built-in fax settings: on, <spool>/fax, 14400 bit/s, ECM */
-static void fax_defaults(struct fax_settings *f)
+/* the bridge's log lines: a call's under its channel's name (call), the
+   call's progress and its details at verbose level 4 */
+static void bridge_log(void *call, enum dmb_level level, const char *line)
 {
-	f->on = 1;
-	snprintf(f->dir, sizeof(f->dir), "%s/fax", ast_config_AST_SPOOL_DIR);
-	f->ident[0] = 0;
-	f->max_bps = 14400;
-	f->ecm = 1;
+	char who[96];
+
+	if (call)
+		snprintf(who, sizeof(who), "%s: DModem", (const char *)call);
+	else
+		ast_copy_string(who, "dmodem", sizeof(who));
+	if (level == DMB_ERROR)
+		ast_log(LOG_ERROR, "%s: %s\n", who, line);
+	else if (level == DMB_WARNING)
+		ast_log(LOG_WARNING, "%s: %s\n", who, line);
+	else
+		ast_verb(4, "%s: %s\n", who, line);
 }
 
-/* a fax option; 0 if it is something else */
-static int fax_option(struct fax_settings *f, const char *name,
-		      const char *value)
+/* yes, true, on, ... */
+static int bridge_true(const char *value)
 {
-	if (!strcasecmp(name, "fax"))
-		f->on = ast_true(value);
-	else if (!strcasecmp(name, "fax_dir"))
-		ast_copy_string(f->dir, value, sizeof(f->dir));
-	else if (!strcasecmp(name, "fax_ident"))
-		ast_copy_string(f->ident, value, sizeof(f->ident));
-	else if (!strcasecmp(name, "fax_max_rate"))
-		f->max_bps = atoi(value);
-	else if (!strcasecmp(name, "fax_ecm"))
-		f->ecm = ast_true(value);
-	else
-		return 0;
-	return 1;
+	return ast_true(value);
 }
+
+/* the program's fork: the child is ours to reap (dmb_call_end()), not
+   Asterisk's reaper's, so that its pid stays ours until then */
+static pid_t bridge_fork(void)
+{
+	return ast_safe_fork(1);
+}
+
+/* the TCP connect's thread, one of Asterisk's */
+static int bridge_thread(void *(*fn)(void *), void *arg)
+{
+	pthread_t t;
+	return ast_pthread_create_detached(&t, NULL, fn, arg) ? -1 : 0;
+}
+
+static const struct dmb_host host = {
+	.log = bridge_log,
+	.is_true = bridge_true,
+	.fork = bridge_fork,
+	.fork_done = ast_safe_fork_cleanup,
+	.thread = bridge_thread,
+};
 
 /* the defaults, then the fax options of [general] */
-static void load_fax_general(struct ast_config *cfg, struct fax_settings *f)
+static void load_fax_general(struct ast_config *cfg, struct dmb_fax *f)
 {
 	struct ast_variable *v;
-	fax_defaults(f);
+	char dir[256];
+
+	snprintf(dir, sizeof(dir), "%s/fax", ast_config_AST_SPOOL_DIR);
+	dmb_fax_defaults(f, dir);
+	if (!cfg)
+		return;
 	for (v = ast_variable_browse(cfg, "general"); v; v = v->next)
-		fax_option(f, v->name, v->value);
+		dmb_fax_option(&host, f, v->name, v->value);
 }
 
 /* the fax settings of [general] alone (for DModemSendFax/ReceiveFax) */
-static void load_fax_settings(struct fax_settings *f)
+static void load_fax_settings(struct dmb_fax *f)
 {
 	struct ast_flags flags = { 0 };
 	struct ast_config *cfg = ast_config_load2(config_file, "app_dmodem",
 						  flags);
-	fax_defaults(f);
-	if (cfg && cfg != CONFIG_STATUS_FILEINVALID) {
-		load_fax_general(cfg, f);
+	if (cfg == CONFIG_STATUS_FILEINVALID)
+		cfg = NULL;
+	load_fax_general(cfg, f);
+	if (cfg)
 		ast_config_destroy(cfg);
-	}
 }
 
 /* [name] of dmodem.conf into *p (fax: [general]'s, then the profile's
    own); -1 if there is no such profile or it lacks host and port (tcp)
    or command (exec) */
-static int load_profile(const char *name, struct profile *p)
+static int load_profile(const char *name, struct dmb_profile *p)
 {
 	struct ast_flags flags = { 0 };
 	struct ast_config *cfg;
 	struct ast_variable *v;
+	char where[96];
 
-	memset(p, 0, sizeof(*p));
-	p->mode = MODE_TCP;
-	p->timeout = 60;
+	dmb_profile_init(p);
 	cfg = ast_config_load2(config_file, "app_dmodem", flags);
 	if (!cfg || cfg == CONFIG_STATUS_FILEINVALID) {
 		ast_log(LOG_ERROR, "cannot load %s\n", config_file);
@@ -229,254 +210,11 @@ static int load_profile(const char *name, struct profile *p)
 		return -1;
 	}
 	load_fax_general(cfg, &p->fax);
-	for (v = ast_variable_browse(cfg, name); v; v = v->next) {
-		if (fax_option(&p->fax, v->name, v->value))
-			continue;
-		if (!strcasecmp(v->name, "mode")) {
-			if (!strcasecmp(v->value, "tcp"))
-				p->mode = MODE_TCP;
-			else if (!strcasecmp(v->value, "exec"))
-				p->mode = MODE_EXEC;
-			else
-				ast_log(LOG_WARNING, "[%s]: unknown mode %s\n",
-					name, v->value);
-		} else if (!strcasecmp(v->name, "host")) {
-			ast_copy_string(p->host, v->value, sizeof(p->host));
-		} else if (!strcasecmp(v->name, "port")) {
-			ast_copy_string(p->port, v->value, sizeof(p->port));
-		} else if (!strcasecmp(v->name, "command")) {
-			ast_copy_string(p->command, v->value,
-					sizeof(p->command));
-		} else if (!strcasecmp(v->name, "init")) {
-			const char *s = v->value;
-			if (!strncasecmp(s, "AT", 2))
-				s += 2;
-			ast_copy_string(p->init, s, sizeof(p->init));
-		} else if (!strcasecmp(v->name, "law")) {
-			if (!strcasecmp(v->value, "ulaw"))
-				p->law = DMODEM_LAW_ULAW;
-			else if (!strcasecmp(v->value, "alaw"))
-				p->law = DMODEM_LAW_ALAW;
-			else
-				p->law = DMODEM_LAW_UNKNOWN;
-		} else if (!strcasecmp(v->name, "timeout")) {
-			p->timeout = atoi(v->value);
-		}
-	}
+	snprintf(where, sizeof(where), "[%s]", name);
+	for (v = ast_variable_browse(cfg, name); v; v = v->next)
+		dmb_profile_option(&host, p, where, v->name, v->value);
 	ast_config_destroy(cfg);
-	if (p->mode == MODE_TCP && (!*p->host || !*p->port)) {
-		ast_log(LOG_ERROR, "[%s]: mode=tcp needs host and port\n",
-			name);
-		return -1;
-	}
-	if (p->mode == MODE_EXEC && !*p->command) {
-		ast_log(LOG_ERROR, "[%s]: mode=exec needs command\n", name);
-		return -1;
-	}
-	return 0;
-}
-
-/* host:port, the first address that takes it (a blocking connect, in
-   tcp_thread()), non-blocking once connected; -1 on failure */
-static int connect_tcp(const char *host, const char *port)
-{
-	struct addrinfo hints = { 0 }, *res, *ai;
-	int fd = -1, err;
-
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	err = getaddrinfo(host, port, &hints, &res);
-	if (err) {
-		ast_log(LOG_WARNING, "dmodem: %s: %s\n", host,
-			gai_strerror(err));
-		return -1;
-	}
-	for (ai = res; ai; ai = ai->ai_next) {
-		fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-		if (fd < 0)
-			continue;
-		if (!connect(fd, ai->ai_addr, ai->ai_addrlen))
-			break;
-		close(fd);
-		fd = -1;
-	}
-	freeaddrinfo(res);
-	if (fd < 0) {
-		ast_log(LOG_WARNING, "dmodem: cannot connect to %s:%s: %s\n",
-			host, port, strerror(errno));
-		return -1;
-	}
-	nonblock(fd);
-	return fd;
-}
-
-/* the TCP connect, in a thread of its own so that the line's audio goes
-   on meanwhile (DNS and connect() can take seconds): the profile's host
-   and port, and the socket its result goes on */
-struct tcp_job {
-	char host[256];
-	char port[16];
-	int out;
-};
-
-/* the connect; its descriptor (-1: it failed) to the call, or closed if
-   the call has gone */
-static void *tcp_thread(void *arg)
-{
-	struct tcp_job *j = arg;
-	int fd = connect_tcp(j->host, j->port);
-
-	if (send(j->out, &fd, sizeof(fd), MSG_NOSIGNAL) != (ssize_t)sizeof(fd) &&
-	    fd >= 0)
-		close(fd);
-	close(j->out);
-	ast_free(j);
-	return NULL;
-}
-
-/* the profile's connect started; the descriptor its result comes on
-   (tcp_done()), or -1 */
-static int tcp_start(const struct profile *p)
-{
-	struct tcp_job *j = ast_calloc(1, sizeof(*j));
-	int sv[2];
-
-	if (!j || socketpair(AF_UNIX, SOCK_STREAM, 0, sv)) {
-		ast_free(j);
-		return -1;
-	}
-	snprintf(j->host, sizeof(j->host), "%s", p->host);
-	snprintf(j->port, sizeof(j->port), "%s", p->port);
-	j->out = sv[1];
-	if (ast_pthread_create_detached(&(pthread_t){ 0 }, NULL, tcp_thread, j)) {
-		close(sv[0]);
-		close(sv[1]);
-		ast_free(j);
-		return -1;
-	}
-	nonblock(sv[0]);
-	return sv[0];
-}
-
-/* the connect's result, if it has come: 1 and *fd (-1: it failed), else
-   0 */
-static int tcp_done(int pending, int *fd)
-{
-	int r = recv(pending, fd, sizeof(*fd), 0);
-
-	if (r == (int)sizeof(*fd))
-		return 1;
-	if (r == 0 || (r < 0 && errno != EAGAIN && errno != EINTR)) {
-		*fd = -1;
-		return 1;
-	}
-	return 0;
-}
-
-/* the program on the slave of a new pty, the master returned; the
-   child is ours to reap (end_exec()), not Asterisk's reaper's, so that
-   its pid stays ours until then */
-static int start_exec(const struct profile *p, const char *const *env,
-		      pid_t *pid)
-{
-	char slave[64];
-	int master, i;
-
-	master = posix_openpt(O_RDWR | O_NOCTTY);
-	if (master < 0 || grantpt(master) || unlockpt(master) ||
-	    ptsname_r(master, slave, sizeof(slave))) {
-		ast_log(LOG_WARNING, "dmodem: no pty: %s\n", strerror(errno));
-		if (master >= 0)
-			close(master);
-		return -1;
-	}
-	*pid = ast_safe_fork(1);
-	if (*pid < 0) {
-		ast_log(LOG_WARNING, "dmodem: fork: %s\n", strerror(errno));
-		ast_safe_fork_cleanup();
-		close(master);
-		return -1;
-	}
-	if (*pid == 0) {
-		struct termios t;
-		int fd;
-		setsid();
-		/* the pty becomes the program's controlling tty: closing
-		   the master hangs it up */
-		fd = open(slave, O_RDWR);
-		if (fd < 0)
-			_exit(127);
-		if (!tcgetattr(fd, &t)) {
-			cfmakeraw(&t);
-			tcsetattr(fd, TCSANOW, &t);
-		}
-		dup2(fd, 0);
-		dup2(fd, 1);
-		dup2(fd, 2);
-		ast_close_fds_above_n(2);
-		for (i = 0; env[i]; i += 2)
-			setenv(env[i], env[i + 1], 1);
-		execl("/bin/sh", "sh", "-c", p->command, (char *)NULL);
-		_exit(127);
-	}
-	nonblock(master);
-	return master;
-}
-
-/* the program's end: SIGHUP (its pty is closed as well), then it is
-   collected, by force (SIGKILL) after 5 s; Asterisk's reaping as it was
-   before start_exec() */
-static void end_exec(pid_t pid)
-{
-	int i;
-
-	kill(pid, SIGHUP);
-	for (i = 0; i < 50; i++) {
-		pid_t r = waitpid(pid, NULL, WNOHANG);
-		if (r == pid || (r < 0 && errno == ECHILD))
-			goto done;
-		usleep(100000);
-	}
-	ast_log(LOG_WARNING, "dmodem: program %d still there after SIGHUP: SIGKILL\n",
-		(int)pid);
-	kill(pid, SIGKILL);
-	waitpid(pid, NULL, 0);
-done:
-	ast_safe_fork_cleanup();
-}
-
-/* move what is there from one fd to the other through b (from -1: only
-   what b holds); -1 when the source is closed */
-static int relay(int from, int to, struct pipe_buf *b)
-{
-	int n, eof = 0;
-
-	if (from >= 0 && b->len < (int)sizeof(b->data)) {
-		n = read(from, b->data + b->len, sizeof(b->data) - b->len);
-		if (n > 0)
-			b->len += n;
-		else if (n == 0 || (errno != EAGAIN && errno != EINTR)) {
-			eof = 1;        /* a pty master reads EIO at the end */
-			ast_verb(4, "dmodem: fd %d read %d (%s)\n", from, n,
-				 n ? strerror(errno) : "end of file");
-		}
-	}
-	if (b->len > 0) {
-		n = write(to, b->data, b->len);
-		if (n > 0) {
-			memmove(b->data, b->data + n, b->len - n);
-			b->len -= n;
-		}
-	}
-	return eof ? -1 : 0;
-}
-
-/* what fd has, read and thrown away */
-static void drain(int fd)
-{
-	char buf[256];
-	while (read(fd, buf, sizeof(buf)) > 0)
-		;
+	return dmb_profile_check(&host, p, where);
 }
 
 /* the channel's law: A-law if it has alaw and not ulaw, else mu-law */
@@ -545,7 +283,7 @@ static void fax_file_name(struct ast_channel *chan, const char *dir,
 /* a fax call on the channel until it ends; -1 if the channel hung up */
 static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 		   enum dmodem_law law, enum dmodem_fax_dir dir,
-		   const char *file, const struct fax_settings *fs,
+		   const char *file, const struct dmb_fax *fs,
 		   unsigned char *out)
 {
 	struct dmodem_fax_config cfg = { 0 };
@@ -644,20 +382,16 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 static int dmodem_exec(struct ast_channel *chan, const char *data)
 {
 	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(profile); AST_APP_ARG(options););
-	struct profile p;
-	struct dmodem_config cfg = { 0 };
-	struct dmodem_status st;
-	struct dmodem *d = NULL;
+	struct dmb_profile p;
+	struct dmb_call c;
+	enum dmodem_law law;
 	struct ast_format *fmt;
-	struct pipe_buf to_line = { .len = 0 }, to_host = { .len = 0 };
-	char *parse, init[192], rate[32] = "", name[64];
+	char *parse, name[64];
 	const char *status = "ERROR";
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];
-	long long samples = 0, deadline, closing = -1;
-	int dte[2] = { -1, -1 }, host = -1, online = 0, res = 0, orig;
-	int connecting = -1;    /* the TCP connect's result comes on it */
-	pid_t pid = 0;
+	int res = 0, orig;
 
+	dmb_call_init(&c);
 	parse = ast_strdupa(S_OR(data, ""));
 	AST_STANDARD_APP_ARGS(args, parse);
 	if (ast_strlen_zero(args.profile))
@@ -666,8 +400,8 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 		goto out;
 	orig = args.options && strchr(args.options, 'o');
 
-	cfg.law = p.law ? p.law : channel_law(chan);
-	fmt = cfg.law == DMODEM_LAW_ALAW ? ast_format_alaw : ast_format_ulaw;
+	law = p.law ? p.law : channel_law(chan);
+	fmt = law == DMODEM_LAW_ALAW ? ast_format_alaw : ast_format_ulaw;
 	if (ast_channel_state(chan) != AST_STATE_UP && ast_answer(chan)) {
 		status = "HANGUP";
 		res = -1;
@@ -679,42 +413,20 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 		goto out;
 	}
 
-	/* the modem's DTE: one end of a socketpair, the other end ours */
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, dte)) {
-		ast_log(LOG_WARNING, "socketpair: %s\n", strerror(errno));
-		goto out;
-	}
-	nonblock(dte[0]);
-	nonblock(dte[1]);
-	/* no echo, no result codes, no auto answer, no +++ escape; the call
-	   is there already: no dial tone to wait for */
-	snprintf(init, sizeof(init), "ATE0Q1S0=0S2=255X3%s\r", p.init);
 	ast_copy_string(name, ast_channel_name(chan), sizeof(name));
-	cfg.name = name;
-	cfg.dte_fd = dte[0];
-	cfg.init = init;
-	d = dmodem_create(&cfg);
-	if (!d) {
-		ast_log(LOG_WARNING, "%s: no modem\n", name);
+	if (dmb_call_start(&c, &host, name, &p, name, law, orig))
 		goto out;
-	}
-	drain(dte[1]);
-	if (orig)
-		dmodem_dial(d, "");
-	else
-		dmodem_answer(d);
 	ast_verb(3, "%s: DModem %s (profile %s, %s)\n", name,
 		 orig ? "calling" : "answering", args.profile,
 		 ast_format_get_name(fmt));
 
-	status = "NOCARRIER";
-	deadline = (long long)p.timeout * DMODEM_RATE;
 	for (;;) {
 		struct ast_frame *f;
-		int n = ast_waitfor(chan, IDLE_MS);
+		enum dmb_event ev;
+		int n = ast_waitfor(chan, IDLE_MS), k = 0;
 
 		if (n < 0) {
-			status = "HANGUP";
+			c.status = "HANGUP";
 			res = -1;
 			break;
 		}
@@ -723,14 +435,13 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			   silence suppression): keep the modem going on
 			   silence */
 			unsigned char sil[160];
-			memset(sil, cfg.law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF,
+			memset(sil, law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF,
 			       sizeof(sil));
-			line_io(chan, d, fmt, sil, sizeof(sil), out);
-			samples += sizeof(sil);
+			k = line_io(chan, c.d, fmt, sil, sizeof(sil), out);
 		} else {
 			f = ast_read(chan);
 			if (!f) {
-				status = "HANGUP";
+				c.status = "HANGUP";
 				res = -1;
 				break;
 			}
@@ -739,139 +450,49 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			    f->datalen > 0 &&
 			    ast_format_cmp(f->subclass.format, fmt) ==
 			    AST_FORMAT_CMP_EQUAL)
-				samples += line_io(chan, d, fmt, f->data.ptr,
-						   f->datalen, out);
+				k = line_io(chan, c.d, fmt, f->data.ptr,
+					    f->datalen, out);
 			ast_frfree(f);
 		}
 
-		dmodem_poll_dte(d);
-		dmodem_status(d, &st);
-		if (!online) {
-			/* (not what the link delivered with ONLINE: the
-			   remote's first data) */
-			if (st.link != DMODEM_ONLINE)
-				drain(dte[1]);
-			if (!orig && p.fax.on && st.fax_caller) {
-				/* a fax machine calling: a fax receiver
-				   instead of the modem */
-				char path[1024];
-				dmodem_destroy(d);
-				d = NULL;
-				ast_mkdir(p.fax.dir, 0755);
-				fax_file_name(chan, p.fax.dir, path,
-					      sizeof(path));
-				ast_verb(3, "%s: DModem: a fax machine is calling\n",
-					 name);
-				status = "FAX";
-				if (run_fax(chan, fmt, cfg.law,
-					    DMODEM_FAX_RECEIVE, path, &p.fax,
-					    out) < 0)
-					res = -1;
-				break;
-			}
-			if (st.link == DMODEM_ONLINE) {
-				online = 1;
-				snprintf(rate, sizeof(rate), "%u/%u",
-					 st.tx_rate, st.rx_rate);
-				pbx_builtin_setvar_helper(chan, "DMODEMRATE",
-							  rate);
-				ast_verb(3, "%s: DModem connected at %s bit/s\n",
-					 name, rate);
-				if (p.mode == MODE_TCP) {
-					connecting = tcp_start(&p);
-					if (connecting < 0) {
-						status = "ERROR";
-						break;
-					}
-					continue;
-				} else {
-					const char *env[] = {
-						"DMODEM_CHANNEL", name,
-						"DMODEM_PROFILE", args.profile,
-						"DMODEM_RATE", rate,
-						"DMODEM_CALLERID",
-						S_COR(ast_channel_caller(chan)->id.number.valid,
-						      ast_channel_caller(chan)->id.number.str, ""),
-						NULL
-					};
-					host = start_exec(&p, env, &pid);
-				}
-				if (host < 0) {
-					status = "ERROR";
-					break;
-				}
-				ast_verb(4, "%s: DModem: server fd %d, dte fds %d %d\n",
-					 name, host, dte[0], dte[1]);
-			} else if (st.link == DMODEM_IDLE ||
-				   st.link == DMODEM_HANGUP ||
-				   samples > deadline) {
-				break;
-			}
-			continue;
+		ev = dmb_call_step(&c, k);
+		if (ev == DMB_CONNECTED) {
+			const char *env[] = {
+				"DMODEM_CHANNEL", name,
+				"DMODEM_PROFILE", args.profile,
+				"DMODEM_RATE", c.rate,
+				"DMODEM_CALLERID",
+				S_COR(ast_channel_caller(chan)->id.number.valid,
+				      ast_channel_caller(chan)->id.number.str, ""),
+				NULL
+			};
+			pbx_builtin_setvar_helper(chan, "DMODEMRATE", c.rate);
+			ast_verb(3, "%s: DModem connected at %s bit/s\n", name,
+				 c.rate);
+			ev = dmb_call_serve(&c, env);
 		}
-		/* online; the host once it is connected (what the remote
-		   sends meanwhile waits in the DTE's socketpair) */
-		if (connecting >= 0) {
-			if (st.link != DMODEM_ONLINE) {
-				status = "REMOTE";
-				break;
-			}
-			if (!tcp_done(connecting, &host))
-				continue;
-			close(connecting);
-			connecting = -1;
-			if (host < 0) {
-				status = "ERROR";
-				break;
-			}
-			ast_verb(4, "%s: DModem: server fd %d, dte fds %d %d\n",
-				 name, host, dte[0], dte[1]);
-		}
-		relay(dte[1], host, &to_host);
-		if (st.link != DMODEM_ONLINE) {
-			status = "REMOTE";
+		if (ev == DMB_FAX) {
+			/* a fax machine calling: a fax receiver instead of
+			   the modem */
+			char path[1024];
+			ast_mkdir(p.fax.dir, 0755);
+			fax_file_name(chan, p.fax.dir, path, sizeof(path));
+			ast_verb(3, "%s: DModem: a fax machine is calling\n",
+				 name);
+			if (run_fax(chan, fmt, law, DMODEM_FAX_RECEIVE, path,
+				    &p.fax, out) < 0)
+				res = -1;
 			break;
 		}
-		if (closing < 0) {
-			if (relay(host, dte[1], &to_line) < 0) {
-				ast_debug(1, "%s: the server closed (%s)\n",
-					  name, strerror(errno));
-				ast_verb(4, "%s: DModem: the server or program ended the session\n",
-					 name);
-				closing = samples;
-			}
-			continue;
-		}
-		/* the server is gone: once what it sent last is on the
-		   line, hang up */
-		relay(-1, dte[1], &to_line);
-		if ((!to_line.len && !st.tx_pending &&
-		     samples - closing > DMODEM_RATE) ||
-		    samples - closing > 30 * DMODEM_RATE) {
-			status = "LOCAL";
-			if (to_line.len || st.tx_pending)
-				ast_log(LOG_WARNING, "%s: %d bytes not sent at the hangup\n",
-					name, to_line.len + (int)st.tx_pending);
+		if (ev == DMB_END)
 			break;
-		}
 	}
-	if (d && online && st.link == DMODEM_ONLINE)
-		dmodem_hangup(d);
+	dmb_call_hangup(&c);
+	status = c.status;
 	ast_verb(3, "%s: DModem done: %s\n", name, status);
 
 out:
-	if (d)
-		dmodem_destroy(d);
-	if (host >= 0)
-		close(host);
-	if (connecting >= 0)
-		close(connecting);      /* (the thread closes what it gets) */
-	if (pid > 0)
-		end_exec(pid);
-	if (dte[0] >= 0)
-		close(dte[0]);
-	if (dte[1] >= 0)
-		close(dte[1]);
+	dmb_call_end(&c);
 	pbx_builtin_setvar_helper(chan, "DMODEMSTATUS", status);
 	return res;
 }
@@ -900,7 +521,7 @@ static int fax_exec(struct ast_channel *chan, const char *data,
 		    enum dmodem_fax_dir dir)
 {
 	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(file); AST_APP_ARG(ident););
-	struct fax_settings fs;
+	struct dmb_fax fs;
 	enum dmodem_law law;
 	struct ast_format *fmt;
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];

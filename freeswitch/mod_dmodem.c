@@ -9,7 +9,8 @@
  *
  * The modem is libdmodem (../slmodemd/dmodem.h): the slmodemd modem core
  * with the open data pumps, no binary-only parts.  The same as Asterisk's
- * app_dmodem (../asterisk), on FreeSWITCH's API.
+ * app_dmodem (../asterisk), on FreeSWITCH's API; the call between the
+ * modem and the server or program is theirs (../pbx/dmodem_bridge.c).
  *
  * This program is free software, distributed under the terms of the GNU
  * General Public License Version 2.
@@ -18,21 +19,10 @@
 #include <switch.h>
 
 #include <ctype.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <pthread.h>
-#include <signal.h>
 #include <stdlib.h>
-#include <sys/socket.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <termios.h>
 #include <time.h>
-#include <unistd.h>
 
-#include "dmodem.h"
+#include "dmodem_bridge.h"
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_dmodem_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_dmodem_shutdown);
@@ -43,36 +33,13 @@ static const char config_file[] = "dmodem.conf";
 
 #define LINE_MAX_SAMPLES 1600   /* in one frame, 200 ms */
 
-enum mode { MODE_TCP, MODE_EXEC };
-
-/* fax: <settings> has the defaults, a profile its own */
-struct fax_settings {
-	int on;                 /* dmodem: a fax caller is received */
-	char dir[256];          /* ... into this directory */
-	char ident[21];         /* our number (CSI / TSI) */
-	int max_bps;
-	int ecm;                /* error correction mode offered */
-};
-
 /* <settings> and a profile: the jitter buffer (ms, 0 none) */
 #define DEFAULT_JB_MS 60
 
+/* the bridge's profile and the jitter buffer */
 struct profile {
-	enum mode mode;
-	char host[256];
-	char port[16];
-	char command[1024];
-	char init[128];         /* extra AT commands, e.g. +MS=34 */
-	enum dmodem_law law;    /* DMODEM_LAW_UNKNOWN: the channel's */
-	int timeout;            /* seconds to connect */
-	int jb_ms;              /* the jitter buffer */
-	struct fax_settings fax;
-};
-
-/* the bytes between the modem and the server or program */
-struct pipe_buf {
-	char data[4096];
-	int len;
+	struct dmb_profile b;
+	int jb_ms;
 };
 
 /* the line: the channel's frames in G.711 (the channel's own codec, the
@@ -88,13 +55,6 @@ struct line {
 	unsigned char out[LINE_MAX_SAMPLES * 2];
 };
 
-/* O_NONBLOCK on fd; -1 on failure */
-static int nonblock(int fd)
-{
-	int fl = fcntl(fd, F_GETFL);
-	return fl < 0 ? -1 : fcntl(fd, F_SETFL, fl | O_NONBLOCK);
-}
-
 /* libdmodem's log lines: "err: " ones as warnings, the rest as debug */
 static void log_line(const char *line)
 {
@@ -106,73 +66,76 @@ static void log_line(const char *line)
 				  "dmodem: %s", line);
 }
 
-/* the built-in fax settings: on, <storage>/fax, 14400 bit/s, ECM */
-static void fax_defaults(struct fax_settings *f)
+/* the bridge's log lines: a call's (call: its session) in the session's
+   log */
+static void bridge_log(void *call, enum dmb_level level, const char *line)
 {
-	f->on = 1;
-	snprintf(f->dir, sizeof(f->dir), "%s%sfax",
-		 SWITCH_GLOBAL_dirs.storage_dir, SWITCH_PATH_SEPARATOR);
-	f->ident[0] = 0;
-	f->max_bps = 14400;
-	f->ecm = 1;
-}
+	static const switch_log_level_t lv[] = {
+		[DMB_ERROR] = SWITCH_LOG_ERROR,
+		[DMB_WARNING] = SWITCH_LOG_WARNING,
+		[DMB_INFO] = SWITCH_LOG_INFO,
+		[DMB_DEBUG] = SWITCH_LOG_DEBUG,
+	};
+	switch_core_session_t *session = call;
 
-/* a fax option; 0 if it is something else */
-static int fax_option(struct fax_settings *f, const char *name,
-		      const char *value)
-{
-	if (!strcasecmp(name, "fax"))
-		f->on = switch_true(value);
-	else if (!strcasecmp(name, "fax-dir"))
-		switch_copy_string(f->dir, value, sizeof(f->dir));
-	else if (!strcasecmp(name, "fax-ident"))
-		switch_copy_string(f->ident, value, sizeof(f->ident));
-	else if (!strcasecmp(name, "fax-max-rate"))
-		f->max_bps = atoi(value);
-	else if (!strcasecmp(name, "fax-ecm"))
-		f->ecm = switch_true(value);
+	if (session)
+		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), lv[level],
+				  "dmodem: %s\n", line);
 	else
-		return 0;
-	return 1;
+		switch_log_printf(SWITCH_CHANNEL_LOG, lv[level], "dmodem: %s\n",
+				  line);
 }
 
-/* <settings>: debug, the jitter buffer, the fax defaults */
-static void load_settings(switch_xml_t cfg, struct fax_settings *f,
-			  int *jb_ms, int *debug)
+/* yes, true, on, ... */
+static int bridge_true(const char *value)
+{
+	return switch_true(value);
+}
+
+/* fork() and pthread_create() */
+static const struct dmb_host host = {
+	.log = bridge_log,
+	.is_true = bridge_true,
+};
+
+/* <settings>: debug, the jitter buffer, the fax defaults (no cfg: the
+   built-in ones) */
+static void load_settings(switch_xml_t cfg, struct dmb_fax *f, int *jb_ms,
+			  int *debug)
 {
 	switch_xml_t settings, param;
+	char dir[256];
 
-	fax_defaults(f);
+	snprintf(dir, sizeof(dir), "%s%sfax", SWITCH_GLOBAL_dirs.storage_dir,
+		 SWITCH_PATH_SEPARATOR);
+	dmb_fax_defaults(f, dir);
 	*jb_ms = DEFAULT_JB_MS;
 	if (debug)
 		*debug = 0;
-	if (!(settings = switch_xml_child(cfg, "settings")))
+	if (!cfg || !(settings = switch_xml_child(cfg, "settings")))
 		return;
 	for (param = switch_xml_child(settings, "param"); param;
 	     param = param->next) {
 		const char *name = switch_xml_attr_soft(param, "name");
 		const char *value = switch_xml_attr_soft(param, "value");
-		if (fax_option(f, name, value))
+		if (dmb_fax_option(&host, f, name, value))
 			continue;
-		if (!strcasecmp(name, "jitter-buffer"))
+		if (dmb_option_is(name, "jitter-buffer"))
 			*jb_ms = atoi(value);
-		else if (!strcasecmp(name, "debug") && debug)
+		else if (dmb_option_is(name, "debug") && debug)
 			*debug = atoi(value);
 	}
 }
 
 /* the settings of <settings> alone (for the fax applications) */
-static void load_fax_settings(struct fax_settings *f, int *jb_ms)
+static void load_fax_settings(struct dmb_fax *f, int *jb_ms)
 {
-	switch_xml_t xml, cfg;
+	switch_xml_t xml, cfg = NULL;
 
-	if (!(xml = switch_xml_open_cfg(config_file, &cfg, NULL))) {
-		fax_defaults(f);
-		*jb_ms = DEFAULT_JB_MS;
-		return;
-	}
-	load_settings(cfg, f, jb_ms, NULL);
-	switch_xml_free(xml);
+	xml = switch_xml_open_cfg(config_file, &cfg, NULL);
+	load_settings(xml ? cfg : NULL, f, jb_ms, NULL);
+	if (xml)
+		switch_xml_free(xml);
 }
 
 /* <profiles><profile name="name"> of dmodem.conf into *p (fax and
@@ -181,16 +144,15 @@ static void load_fax_settings(struct fax_settings *f, int *jb_ms)
 static int load_profile(const char *name, struct profile *p)
 {
 	switch_xml_t xml, cfg, profiles, prof, param;
+	char where[96];
 
-	memset(p, 0, sizeof(*p));
-	p->mode = MODE_TCP;
-	p->timeout = 60;
+	dmb_profile_init(&p->b);
 	if (!(xml = switch_xml_open_cfg(config_file, &cfg, NULL))) {
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
 				  "cannot load %s\n", config_file);
 		return -1;
 	}
-	load_settings(cfg, &p->fax, &p->jb_ms, NULL);
+	load_settings(cfg, &p->b.fax, &p->jb_ms, NULL);
 	prof = NULL;
 	if ((profiles = switch_xml_child(cfg, "profiles")))
 		prof = switch_xml_find_child(profiles, "profile", "name",
@@ -201,292 +163,18 @@ static int load_profile(const char *name, struct profile *p)
 		switch_xml_free(xml);
 		return -1;
 	}
+	snprintf(where, sizeof(where), "profile %s", name);
 	for (param = switch_xml_child(prof, "param"); param;
 	     param = param->next) {
 		const char *n = switch_xml_attr_soft(param, "name");
 		const char *v = switch_xml_attr_soft(param, "value");
-		if (fax_option(&p->fax, n, v))
+		if (dmb_profile_option(&host, &p->b, where, n, v))
 			continue;
-		if (!strcasecmp(n, "mode")) {
-			if (!strcasecmp(v, "tcp"))
-				p->mode = MODE_TCP;
-			else if (!strcasecmp(v, "exec"))
-				p->mode = MODE_EXEC;
-			else
-				switch_log_printf(SWITCH_CHANNEL_LOG,
-						  SWITCH_LOG_WARNING,
-						  "profile %s: unknown mode %s\n",
-						  name, v);
-		} else if (!strcasecmp(n, "host")) {
-			switch_copy_string(p->host, v, sizeof(p->host));
-		} else if (!strcasecmp(n, "port")) {
-			switch_copy_string(p->port, v, sizeof(p->port));
-		} else if (!strcasecmp(n, "command")) {
-			switch_copy_string(p->command, v, sizeof(p->command));
-		} else if (!strcasecmp(n, "init")) {
-			if (!strncasecmp(v, "AT", 2))
-				v += 2;
-			switch_copy_string(p->init, v, sizeof(p->init));
-		} else if (!strcasecmp(n, "law")) {
-			if (!strcasecmp(v, "ulaw"))
-				p->law = DMODEM_LAW_ULAW;
-			else if (!strcasecmp(v, "alaw"))
-				p->law = DMODEM_LAW_ALAW;
-			else
-				p->law = DMODEM_LAW_UNKNOWN;
-		} else if (!strcasecmp(n, "timeout")) {
-			p->timeout = atoi(v);
-		} else if (!strcasecmp(n, "jitter-buffer")) {
+		if (dmb_option_is(n, "jitter-buffer"))
 			p->jb_ms = atoi(v);
-		}
 	}
 	switch_xml_free(xml);
-	if (p->mode == MODE_TCP && (!*p->host || !*p->port)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-				  "profile %s: mode tcp needs host and port\n",
-				  name);
-		return -1;
-	}
-	if (p->mode == MODE_EXEC && !*p->command) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-				  "profile %s: mode exec needs command\n",
-				  name);
-		return -1;
-	}
-	return 0;
-}
-
-/* host:port, the first address that takes it (a blocking connect, in
-   tcp_thread()), non-blocking once connected; -1 on failure */
-static int connect_tcp(const char *host, const char *port)
-{
-	struct addrinfo hints = { 0 }, *res, *ai;
-	int fd = -1, err;
-
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	err = getaddrinfo(host, port, &hints, &res);
-	if (err) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				  "dmodem: %s: %s\n", host,
-				  gai_strerror(err));
-		return -1;
-	}
-	for (ai = res; ai; ai = ai->ai_next) {
-		fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-		if (fd < 0)
-			continue;
-		if (!connect(fd, ai->ai_addr, ai->ai_addrlen))
-			break;
-		close(fd);
-		fd = -1;
-	}
-	freeaddrinfo(res);
-	if (fd < 0) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				  "dmodem: cannot connect to %s:%s: %s\n",
-				  host, port, strerror(errno));
-		return -1;
-	}
-	nonblock(fd);
-	return fd;
-}
-
-/* the TCP connect, in a thread of its own so that the line's audio goes
-   on meanwhile (DNS and connect() can take seconds): the profile's host
-   and port, and the socket its result goes on */
-struct tcp_job {
-	char host[256];
-	char port[16];
-	int out;
-};
-
-/* the connect; its descriptor (-1: it failed) to the call, or closed if
-   the call has gone */
-static void *tcp_thread(void *arg)
-{
-	struct tcp_job *j = arg;
-	int fd = connect_tcp(j->host, j->port);
-
-	if (send(j->out, &fd, sizeof(fd), MSG_NOSIGNAL) != (ssize_t)sizeof(fd) &&
-	    fd >= 0)
-		close(fd);
-	close(j->out);
-	free(j);
-	return NULL;
-}
-
-/* the profile's connect started; the descriptor its result comes on
-   (tcp_done()), or -1 */
-static int tcp_start(const struct profile *p)
-{
-	struct tcp_job *j = calloc(1, sizeof(*j));
-	int sv[2];
-
-	if (!j || socketpair(AF_UNIX, SOCK_STREAM, 0, sv)) {
-		free(j);
-		return -1;
-	}
-	snprintf(j->host, sizeof(j->host), "%s", p->host);
-	snprintf(j->port, sizeof(j->port), "%s", p->port);
-	j->out = sv[1];
-	{
-		pthread_t t;
-		pthread_attr_t a;
-		int err;
-		pthread_attr_init(&a);
-		pthread_attr_setdetachstate(&a, PTHREAD_CREATE_DETACHED);
-		err = pthread_create(&t, &a, tcp_thread, j);
-		pthread_attr_destroy(&a);
-		if (err) {
-			close(sv[0]);
-			close(sv[1]);
-			free(j);
-			return -1;
-		}
-	}
-	nonblock(sv[0]);
-	return sv[0];
-}
-
-/* the connect's result, if it has come: 1 and *fd (-1: it failed), else
-   0 */
-static int tcp_done(int pending, int *fd)
-{
-	int r = recv(pending, fd, sizeof(*fd), 0);
-
-	if (r == (int)sizeof(*fd))
-		return 1;
-	if (r == 0 || (r < 0 && errno != EAGAIN && errno != EINTR)) {
-		*fd = -1;
-		return 1;
-	}
-	return 0;
-}
-
-/* in the child: none of FreeSWITCH's descriptors (sockets, files) */
-static void close_fds_above_2(void)
-{
-#ifdef SYS_close_range
-	if (!syscall(SYS_close_range, 3U, ~0U, 0))
-		return;
-#endif
-	{
-		long fd, max = sysconf(_SC_OPEN_MAX);
-		if (max < 0 || max > 65536)
-			max = 65536;
-		for (fd = 3; fd < max; fd++)
-			close(fd);
-	}
-}
-
-/* the program on the slave of a new pty, the master returned */
-static int start_exec(const struct profile *p, const char *const *env,
-		      pid_t *pid)
-{
-	char slave[64];
-	int master, i;
-
-	master = posix_openpt(O_RDWR | O_NOCTTY);
-	if (master < 0 || grantpt(master) || unlockpt(master) ||
-	    ptsname_r(master, slave, sizeof(slave))) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				  "dmodem: no pty: %s\n", strerror(errno));
-		if (master >= 0)
-			close(master);
-		return -1;
-	}
-	*pid = fork();
-	if (*pid < 0) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-				  "dmodem: fork: %s\n", strerror(errno));
-		close(master);
-		return -1;
-	}
-	if (*pid == 0) {
-		struct termios t;
-		sigset_t none;
-		int fd;
-		/* FreeSWITCH's threads block signals: the program gets
-		   them */
-		sigemptyset(&none);
-		sigprocmask(SIG_SETMASK, &none, NULL);
-		for (i = 1; i < NSIG; i++)
-			signal(i, SIG_DFL);
-		setsid();
-		/* the pty becomes the program's controlling tty: closing
-		   the master hangs it up */
-		fd = open(slave, O_RDWR);
-		if (fd < 0)
-			_exit(127);
-		if (!tcgetattr(fd, &t)) {
-			cfmakeraw(&t);
-			tcsetattr(fd, TCSANOW, &t);
-		}
-		dup2(fd, 0);
-		dup2(fd, 1);
-		dup2(fd, 2);
-		close_fds_above_2();
-		for (i = 0; env[i]; i += 2)
-			setenv(env[i], env[i + 1], 1);
-		execl("/bin/sh", "sh", "-c", p->command, (char *)NULL);
-		_exit(127);
-	}
-	nonblock(master);
-	return master;
-}
-
-/* the program's end: SIGHUP (its pty is closed as well), then it is
-   collected, by force after a while */
-static void end_exec(pid_t pid)
-{
-	int i;
-
-	kill(pid, SIGHUP);
-	for (i = 0; i < 50; i++) {
-		pid_t r = waitpid(pid, NULL, WNOHANG);
-		if (r == pid || (r < 0 && errno == ECHILD))
-			return;
-		switch_yield(100000);
-	}
-	kill(pid, SIGKILL);
-	waitpid(pid, NULL, 0);
-}
-
-/* move what is there from one fd to the other through b (from -1: only
-   what b holds); -1 when the source is closed */
-static int relay(int from, int to, struct pipe_buf *b)
-{
-	int n, eof = 0;
-
-	if (from >= 0 && b->len < (int)sizeof(b->data)) {
-		n = read(from, b->data + b->len, sizeof(b->data) - b->len);
-		if (n > 0)
-			b->len += n;
-		else if (n == 0 || (errno != EAGAIN && errno != EINTR)) {
-			eof = 1;        /* a pty master reads EIO at the end */
-			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-					  "dmodem: fd %d read %d (%s)\n", from,
-					  n, n ? strerror(errno) :
-					  "end of file");
-		}
-	}
-	if (b->len > 0) {
-		n = write(to, b->data, b->len);
-		if (n > 0) {
-			memmove(b->data, b->data + n, b->len - n);
-			b->len -= n;
-		}
-	}
-	return eof ? -1 : 0;
-}
-
-/* what fd has, read and thrown away */
-static void drain(int fd)
-{
-	char buf[256];
-	while (read(fd, buf, sizeof(buf)) > 0)
-		;
+	return dmb_profile_check(&host, &p->b, where);
 }
 
 /*
@@ -689,7 +377,7 @@ static void fax_file_name(switch_core_session_t *session, const char *dir,
 
 /* a fax call on the line until it ends; -1 if the channel hung up */
 static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
-		   const struct fax_settings *fs)
+		   const struct dmb_fax *fs)
 {
 	struct dmodem_fax_config cfg = { 0 };
 	struct dmodem_fax_status st = { 0 };
@@ -777,22 +465,18 @@ SWITCH_STANDARD_APP(dmodem_function)
 	switch_channel_t *channel = switch_core_session_get_channel(session);
 	struct profile p;
 	struct line l;
-	struct dmodem_config cfg = { 0 };
-	struct dmodem_status st;
-	struct dmodem *d = NULL;
-	struct pipe_buf to_line = { .len = 0 }, to_host = { .len = 0 };
-	char *argv[3] = { 0 }, *mydata, init[192], rate[32] = "", name[64];
+	struct dmb_call c;
+	enum dmodem_law law;
+	char *argv[3] = { 0 }, *mydata, name[64];
 	const char *profile, *status = "ERROR";
-	long long samples = 0, deadline, closing = -1;
-	int dte[2] = { -1, -1 }, host = -1, online = 0, orig, line_ok = 0;
-	int connecting = -1;    /* the TCP connect's result comes on it */
-	pid_t pid = 0;
+	int orig, line_ok = 0;
 
+	dmb_call_init(&c);
 	mydata = switch_core_session_strdup(session, data ? data : "");
 	/* "profile o" or "profile,o" (no space to quote in an originate) */
-	for (char *c = mydata; *c; c++)
-		if (*c == ',')
-			*c = ' ';
+	for (char *ch = mydata; *ch; ch++)
+		if (*ch == ',')
+			*ch = ' ';
 	switch_separate_string(mydata, ' ', argv, 3);
 	profile = !zstr(argv[0]) ? argv[0] : "default";
 	orig = argv[1] && strchr(argv[1], 'o');
@@ -803,192 +487,76 @@ SWITCH_STANDARD_APP(dmodem_function)
 		status = "HANGUP";
 		goto out;
 	}
-	if (line_open(&l, session, p.law, p.jb_ms))
+	if (line_open(&l, session, p.b.law, p.jb_ms))
 		goto out;
 	line_ok = 1;
 	/* transcoded: whatever law the network has, the modem does not see
 	   its octets (no V.90) */
-	cfg.law = l.linear ? DMODEM_LAW_UNKNOWN : l.law;
+	law = l.linear ? DMODEM_LAW_UNKNOWN : l.law;
 
-	/* the modem's DTE: one end of a socketpair, the other end ours */
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, dte)) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
-				  SWITCH_LOG_WARNING, "socketpair: %s\n",
-				  strerror(errno));
-		goto out;
-	}
-	nonblock(dte[0]);
-	nonblock(dte[1]);
-	/* no echo, no result codes, no auto answer, no +++ escape; the call
-	   is there already: no dial tone to wait for */
-	snprintf(init, sizeof(init), "ATE0Q1S0=0S2=255X3%s\r", p.init);
 	switch_copy_string(name, switch_channel_get_name(channel),
 			   sizeof(name));
-	cfg.name = name;
-	cfg.dte_fd = dte[0];
-	cfg.init = init;
-	d = dmodem_create(&cfg);
-	if (!d) {
-		switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
-				  SWITCH_LOG_WARNING, "dmodem: no modem\n");
+	if (dmb_call_start(&c, &host, session, &p.b, name, law, orig))
 		goto out;
-	}
-	drain(dte[1]);
-	if (orig)
-		dmodem_dial(d, "");
-	else
-		dmodem_answer(d);
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
 			  "dmodem %s (profile %s, %s%s)\n",
 			  orig ? "calling" : "answering", profile,
-			  cfg.law == DMODEM_LAW_ALAW ? "PCMA" : "PCMU",
+			  law == DMODEM_LAW_ALAW ? "PCMA" : "PCMU",
 			  l.linear ? " transcoded" : "");
 
-	status = "NOCARRIER";
-	deadline = (long long)p.timeout * DMODEM_RATE;
 	for (;;) {
-		int n = line_step(&l, modem_fn, d);
+		enum dmb_event ev;
+		int n = line_step(&l, modem_fn, c.d);
 
 		if (n < 0) {
-			status = "HANGUP";
+			c.status = "HANGUP";
 			break;
 		}
-		samples += n;
-		dmodem_poll_dte(d);
-		dmodem_status(d, &st);
-		if (!online) {
-			/* (not what the link delivered with ONLINE: the
-			   remote's first data) */
-			if (st.link != DMODEM_ONLINE)
-				drain(dte[1]);
-			if (!orig && p.fax.on && st.fax_caller) {
-				/* a fax machine calling: a fax receiver
-				   instead of the modem */
-				char path[1024];
-				dmodem_destroy(d);
-				d = NULL;
-				switch_dir_make_recursive(p.fax.dir,
-					SWITCH_DEFAULT_DIR_PERMS,
-					switch_core_session_get_pool(session));
-				fax_file_name(session, p.fax.dir, path,
-					      sizeof(path));
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
-						  SWITCH_LOG_INFO,
-						  "dmodem: a fax machine is calling\n");
-				status = "FAX";
-				run_fax(&l, DMODEM_FAX_RECEIVE, path, &p.fax);
-				break;
-			}
-			if (st.link == DMODEM_ONLINE) {
-				online = 1;
-				snprintf(rate, sizeof(rate), "%u/%u",
-					 st.tx_rate, st.rx_rate);
-				switch_channel_set_variable(channel,
-							    "dmodem_rate",
-							    rate);
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
-						  SWITCH_LOG_INFO,
-						  "dmodem connected at %s bit/s\n",
-						  rate);
-				if (p.mode == MODE_TCP) {
-					connecting = tcp_start(&p);
-					if (connecting < 0) {
-						status = "ERROR";
-						break;
-					}
-					continue;
-				} else {
-					const char *cid =
-						switch_channel_get_variable(channel,
+		ev = dmb_call_step(&c, n);
+		if (ev == DMB_CONNECTED) {
+			const char *cid = switch_channel_get_variable(channel,
 							"caller_id_number");
-					const char *env[] = {
-						"DMODEM_CHANNEL", name,
-						"DMODEM_UUID",
-						switch_core_session_get_uuid(session),
-						"DMODEM_PROFILE", profile,
-						"DMODEM_RATE", rate,
-						"DMODEM_CALLERID",
-						cid ? cid : "",
-						NULL
-					};
-					host = start_exec(&p, env, &pid);
-				}
-				if (host < 0) {
-					status = "ERROR";
-					break;
-				}
-			} else if (st.link == DMODEM_IDLE ||
-				   st.link == DMODEM_HANGUP ||
-				   samples > deadline) {
-				break;
-			}
-			continue;
+			const char *env[] = {
+				"DMODEM_CHANNEL", name,
+				"DMODEM_UUID", switch_core_session_get_uuid(session),
+				"DMODEM_PROFILE", profile,
+				"DMODEM_RATE", c.rate,
+				"DMODEM_CALLERID", cid ? cid : "",
+				NULL
+			};
+			switch_channel_set_variable(channel, "dmodem_rate",
+						    c.rate);
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
+					  SWITCH_LOG_INFO,
+					  "dmodem connected at %s bit/s\n", c.rate);
+			ev = dmb_call_serve(&c, env);
 		}
-		/* online; the host once it is connected (what the remote
-		   sends meanwhile waits in the DTE's socketpair) */
-		if (connecting >= 0) {
-			if (st.link != DMODEM_ONLINE) {
-				status = "REMOTE";
-				break;
-			}
-			if (!tcp_done(connecting, &host))
-				continue;
-			close(connecting);
-			connecting = -1;
-			if (host < 0) {
-				status = "ERROR";
-				break;
-			}
-		}
-		relay(dte[1], host, &to_host);
-		if (st.link != DMODEM_ONLINE) {
-			status = "REMOTE";
+		if (ev == DMB_FAX) {
+			/* a fax machine calling: a fax receiver instead of
+			   the modem */
+			char path[1024];
+			switch_dir_make_recursive(p.b.fax.dir,
+				SWITCH_DEFAULT_DIR_PERMS,
+				switch_core_session_get_pool(session));
+			fax_file_name(session, p.b.fax.dir, path, sizeof(path));
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
+					  SWITCH_LOG_INFO,
+					  "dmodem: a fax machine is calling\n");
+			run_fax(&l, DMODEM_FAX_RECEIVE, path, &p.b.fax);
 			break;
 		}
-		if (closing < 0) {
-			if (relay(host, dte[1], &to_line) < 0) {
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
-						  SWITCH_LOG_INFO,
-						  "dmodem: the server or program ended the session\n");
-				closing = samples;
-			}
-			continue;
-		}
-		/* the server is gone: once what it sent last is on the
-		   line, hang up */
-		relay(-1, dte[1], &to_line);
-		if ((!to_line.len && !st.tx_pending &&
-		     samples - closing > DMODEM_RATE) ||
-		    samples - closing > 30 * DMODEM_RATE) {
-			status = "LOCAL";
-			if (to_line.len || st.tx_pending)
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
-						  SWITCH_LOG_WARNING,
-						  "dmodem: %d bytes not sent at the hangup\n",
-						  to_line.len + (int)st.tx_pending);
+		if (ev == DMB_END)
 			break;
-		}
 	}
-	if (d && online && st.link == DMODEM_ONLINE)
-		dmodem_hangup(d);
+	dmb_call_hangup(&c);
+	status = c.status;
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
 			  "dmodem done: %s\n", status);
 
 out:
-	if (d)
-		dmodem_destroy(d);
+	dmb_call_end(&c);
 	if (line_ok)
 		line_close(&l);
-	if (host >= 0)
-		close(host);
-	if (connecting >= 0)
-		close(connecting);      /* (the thread closes what it gets) */
-	if (pid > 0)
-		end_exec(pid);
-	if (dte[0] >= 0)
-		close(dte[0]);
-	if (dte[1] >= 0)
-		close(dte[1]);
 	switch_channel_set_variable(channel, "dmodem_status", status);
 }
 
@@ -999,7 +567,7 @@ static void fax_app(switch_core_session_t *session, const char *data,
 		    enum dmodem_fax_dir dir)
 {
 	switch_channel_t *channel = switch_core_session_get_channel(session);
-	struct fax_settings fs;
+	struct dmb_fax fs;
 	struct line l;
 	char *argv[3] = { 0 }, *mydata;
 	int argc, jb_ms;
@@ -1045,7 +613,7 @@ SWITCH_STANDARD_APP(receive_fax_function)
 static void load_config(void)
 {
 	switch_xml_t xml, cfg;
-	struct fax_settings f;
+	struct dmb_fax f;
 	int debug = 0, jb_ms;
 
 	if ((xml = switch_xml_open_cfg(config_file, &cfg, NULL))) {

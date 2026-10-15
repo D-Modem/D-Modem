@@ -22,6 +22,8 @@ The modem's signal processing is open source, in `dsp/` (C++, behind the C inter
 ### FreeSWITCH module
 `freeswitch/` has `mod_dmodem`, the same for FreeSWITCH: the `dmodem` application (a BBS over TCP or a program on a pty, per profile in `dmodem.conf.xml`) and the fax applications `dmodem_send_fax` and `dmodem_receive_fax`.  See [docs/freeswitch.md](docs/freeswitch.md).
 
+The two modules share `pbx/dmodem_bridge.c` on libdmodem's C API: the profile's options, the modem with its DTE on a socketpair, and the data between it and the profile's TCP server or program on a pty.  Each module keeps its PBX's side (the channel's frames, its variables and log, the fax applications).
+
 ## Documentation
 The technical documentation is in [docs/](docs/README.md): how the DSP, the data link layer and the modem core work, the Asterisk and FreeSWITCH modules, the tests and the interop results against other soft modems.  [docs/specs/](docs/specs/README.md) lists the ITU-T Recommendations implemented, with a script that downloads them.
 

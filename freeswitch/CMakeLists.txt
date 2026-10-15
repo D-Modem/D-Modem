@@ -40,9 +40,10 @@ endif()
 set(FREESWITCH_MODULES_DIR ${_fs_modules} CACHE PATH "FreeSWITCH modules")
 set(FREESWITCH_CONF_DIR ${_fs_conf} CACHE PATH "FreeSWITCH configuration")
 
-add_library(mod_dmodem MODULE mod_dmodem.c)
+add_library(mod_dmodem MODULE mod_dmodem.c ${DMODEM_PBX_DIR}/dmodem_bridge.c)
 set_target_properties(mod_dmodem PROPERTIES PREFIX "")
-target_include_directories(mod_dmodem PRIVATE ${FREESWITCH_INCLUDE_DIRS})
+target_include_directories(mod_dmodem PRIVATE ${FREESWITCH_INCLUDE_DIRS}
+	${DMODEM_PBX_DIR})
 target_compile_definitions(mod_dmodem PRIVATE _GNU_SOURCE)
 target_compile_options(mod_dmodem PRIVATE -Wall -g -O2 -pthread
 	${FREESWITCH_CFLAGS_OTHER})

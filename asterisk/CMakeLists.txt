@@ -31,9 +31,10 @@ endif()
 set(ASTERISK_MODULES_DIR ${_modules_dir} CACHE PATH "Asterisk modules")
 set(ASTERISK_CONF_DIR /etc/asterisk CACHE PATH "Asterisk configuration")
 
-add_library(app_dmodem MODULE app_dmodem.c)
+add_library(app_dmodem MODULE app_dmodem.c ${DMODEM_PBX_DIR}/dmodem_bridge.c)
 set_target_properties(app_dmodem PROPERTIES PREFIX "")
-target_include_directories(app_dmodem PRIVATE ${ASTERISK_INCLUDE_DIR})
+target_include_directories(app_dmodem PRIVATE ${ASTERISK_INCLUDE_DIR}
+	${DMODEM_PBX_DIR})
 target_compile_definitions(app_dmodem PRIVATE _GNU_SOURCE
 	AST_MODULE="app_dmodem"
 	AST_MODULE_SELF_SYM=__internal_app_dmodem_self)
