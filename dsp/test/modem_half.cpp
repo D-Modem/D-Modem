@@ -7,6 +7,8 @@
 
 #include "modem_half.hpp"
 
+#include "line_frames.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -211,8 +213,8 @@ void HalfModem::after_read()
 
 int HalfModem::run()
 {
-	short in[480], out[480];
-	int odd = 0;
+	short out[480];
+	slm::LineFrames line(3, 48);
 	const char *s;
 
 	dbg = (s = env("DEBUG")) ? atoi(s) : 0;
@@ -233,29 +235,22 @@ int HalfModem::run()
 		perror("the line (fd 4)");
 		return 1;
 	}
-	for (;;) {
-		int n = (int)::read(3, (char *)in + odd, sizeof(in) - odd);
-		if (n < 0 && errno == EINTR)
-			continue;
-		if (n <= 0)
-			break;
-		n += odd;
-		odd = n & 1;
-		n /= 2;
-		/* in blocks to each 48th sample of the line, the DTE
-		   between them */
-		for (int i = 0; i < n; ) {
-			int k = 48 - (int)(line_n % 48);
-			if (k > n - i)
-				k = n - i;
-			i += line_block(in + i, out + i, k);
+	/* what comes (an odd octet waits for its other half), in blocks
+	   to each 48th sample of line_n, the DTE between them; a modem's
+	   delay runs line_n on as well, so a block can end early (what it
+	   left goes in the next) */
+	while (line.read(sizeof(out)) > 0) {
+		const short *in;
+		int n = 0, k, done;
+		while ((k = line.block(&in, 48, line_n)) > 0) {
+			done = line_block(in, out + n, k);
+			line.unget(k - done);
+			n += done;
 			if (line_n % 48 == 0)
 				dte_poll();
 		}
 		if (::write(4, out, n * 2) != n * 2)
 			break;
-		if (odd)
-			((char *)in)[0] = ((char *)in)[n * 2];
 		after_read();
 	}
 	return 0;

@@ -149,6 +149,11 @@ foreach(_rate 9600 8000)
 	endforeach()
 endforeach()
 
+# the peers' harnesses (modem_half.cpp) read their line as PipeModem does
+# (line_frames.h)
+set_source_files_properties(modem_half.cpp PROPERTIES INCLUDE_DIRECTORIES
+	${DMODEM_FRONT_DIR})
+
 # the Agere Systems soft modem as another peer (half_agere.cpp): its library,
 # agrsm_core.o of agrsm-20070804 (Agere SoftModem 2.1.40; docs/interop.md)
 set(DMODEM_AGERE_LIB "${CMAKE_CURRENT_SOURCE_DIR}/agere/agrsm_core.o" CACHE

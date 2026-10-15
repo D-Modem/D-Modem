@@ -27,14 +27,16 @@
 
 namespace slm {
 
-/* the core gets whole periods: the line's samples in frames of these */
+/* the core gets whole periods: the line's samples in frames of these,
+   MAX_SAMPLES at a time at most */
 static const int HALF_FRAME = 48;
+static const int MAX_SAMPLES = 42 * HALF_FRAME;
 
 /* the core at rate on the line in -> out, with a new pty for its DTE;
    PIPE_SYNC read here.  Exits if the pty or the core can't be made */
 PipeModem::PipeModem(const char *name, int rate, const char *country,
 		     int in, int out)
-	: in_(in), out_(out), rate_(rate)
+	: in_(in), out_(out), rate_(rate), line_(in, HALF_FRAME)
 {
 	dcore::Options o;
 	o.name = name;
@@ -67,7 +69,7 @@ unsigned long PipeModem::now_ms()
 	if (sync_) {
 		/* the line's clock while it runs (the wall clock's while it
 		   does not), so that the timers meet it at the same samples */
-		long line_ms = (long)(samples_ * 1000 / rate_);
+		long line_ms = samples() * 1000 / rate_;
 		unsigned long t;
 		if (line_idle())
 			clock_off_ = (long)dcore::monotonic_ms() - line_ms;
@@ -143,81 +145,71 @@ void PipeModem::pace(int samples)
 		usleep(ahead * 1e6);
 }
 
-/* the line is readable: what is there into pend_ (rd false: only what
-   pend_ holds), whole half frames of it through the core (4032 bytes at
+/* the line is readable: what is there into line_ (rd false: only what
+   it holds), whole half frames of it through the core (2016 samples at
    most, with PIPE_SYNC up to the next sync point), the answer written
    to out_; 0, or -1 on an error */
 int PipeModem::line(bool rd)
 {
-	char inbuf[4096], outbuf[4096];
-	const int frame = HALF_FRAME * 2;
-	char *in = inbuf;
-	int count;
+	int16_t outbuf[MAX_SAMPLES];
+	const short *in;
+	int count, max = MAX_SAMPLES;
 	bool off_hook;
 
-	if (sync_ && samples_ >= next_sync_) {
+	if (sync_ && samples() >= next_sync_) {
 		next_sync_ += sync_;
 		dte_input();
 	}
-	if (!rd)
-		goto pending;
-	count = read(in_, pend_ + npend_, sizeof(pend_) - npend_);
-	if (sync_ && count > 0) {
-		struct timeval tv;
-		/* the line runs again (a call): its periods from here */
-		if (line_idle())
-			next_sync_ = samples_ + sync_;
-		gettimeofday(&tv, NULL);
-		line_at_ = tv.tv_sec + tv.tv_usec * 1e-6;
+	if (rd) {
+		count = line_.read();
+		if (sync_ && count > 0) {
+			struct timeval tv;
+			/* the line runs again (a call): its periods from
+			   here */
+			if (line_idle())
+				next_sync_ = samples() + sync_;
+			gettimeofday(&tv, NULL);
+			line_at_ = tv.tv_sec + tv.tv_usec * 1e-6;
+		}
+		if (count < 0) {
+			ERR("dev read: %s\n", strerror(errno));
+			return -1;
+		}
+		if (count == 0) {
+			/* the other end is gone: select() would find it
+			   readable for ever */
+			DBG("dev read = 0: the line's other end closed\n");
+			return -1;
+		}
 	}
-
-	if (count < 0) {
-		ERR("dev read: %s\n", strerror(errno));
-		return -1;
-	}
-	if (count == 0) {
-		/* the other end is gone: select() would find it readable
-		   for ever */
-		DBG("dev read = 0: the line's other end closed\n");
-		return -1;
-	}
-	npend_ += count;
-pending:
-	count = npend_ / frame * frame;
-	if (count > (int)sizeof(inbuf) / frame * frame)
-		count = sizeof(inbuf) / frame * frame;
 	/* up to the next sample the DTE's input is taken at */
-	if (sync_ && count > (next_sync_ - samples_) * 2)
-		count = (int)(next_sync_ - samples_) * 2;
+	if (sync_ && max > next_sync_ - samples())
+		max = (int)(next_sync_ - samples());
+	count = line_.frames(&in, max);
 	if (count == 0)
 		return 0;
-	memcpy(inbuf, pend_, count);
-	memmove(pend_, pend_ + count, npend_ - count);
-	npend_ -= count;
-	samples_ += count / 2;
 
 	/* no faster than the clock between calls as well: the line's
 	   silence goes round and round */
-	pace(count / 2);
+	pace(count);
 	off_hook = m_->started();
 	if (off_hook && sync_) {
 		/* a half frame at a time, with the timers in between: they
 		   meet the line at the same samples whatever the reads
 		   bring */
-		for (int k = 0; k < count / 2; k += HALF_FRAME) {
-			int len = count / 2 - k < HALF_FRAME ?
-				count / 2 - k : HALF_FRAME;
+		for (int k = 0; k < count; k += HALF_FRAME) {
+			int len = count - k < HALF_FRAME ? count - k :
+				HALF_FRAME;
 			if (m_->started())
-				m_->process((int16_t *)in + k,
-					    (int16_t *)outbuf + k, len);
+				m_->process(in + k, outbuf + k, len);
 			else
-				memset(outbuf + 2 * k, 0, 2 * len);
+				memset(outbuf + k, 0, 2 * len);
 			m_->poll();
 		}
 	} else if (off_hook)
-		m_->process((int16_t *)in, (int16_t *)outbuf, count / 2);
+		m_->process(in, outbuf, count);
 	else
-		memset(outbuf, 0, count);
+		memset(outbuf, 0, 2 * count);
 	/* MODEM_REC: the line while off hook */
 	if (off_hook && record_) {
 		if (!rec_tried_) {
@@ -225,10 +217,10 @@ pending:
 			rec_tried_ = true;
 			rec_.open(record_, ".in", ".out");
 		}
-		rec_.rx(in, count);
-		rec_.tx(outbuf, count);
+		rec_.rx(in, 2 * count);
+		rec_.tx(outbuf, 2 * count);
 	}
-	count = write(out_, outbuf, count);
+	count = write(out_, outbuf, 2 * count);
 	if (count < 0) {
 		ERR("dev write: %s\n", strerror(errno));
 		return -1;
@@ -237,7 +229,7 @@ pending:
 		DBG("dev write = 0\n");
 	/* PIPE_SYNC stops at its samples: on with what is left, else it
 	   may hold the line's last samples with nothing more to read */
-	if (sync_ && npend_ >= frame)
+	if (sync_ && line_.waiting() >= HALF_FRAME)
 		return line(false);
 	return 0;
 }
@@ -263,7 +255,7 @@ void PipeModem::dte_input()
 	struct pollfd p = { pty_.fd(), POLLIN, 0 };
 	if (!pty_.want_read(*m_) || poll(&p, 1, 0) <= 0)
 		return;
-	DBG("DTE input at line sample %ld\n", samples_);
+	DBG("DTE input at line sample %ld\n", samples());
 	pty_.serve(*m_);
 }
 

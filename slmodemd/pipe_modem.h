@@ -14,6 +14,7 @@
 
 #include <dcore.h>
 
+#include "line_frames.h"
 #include "line_recorder.h"
 #include "pty.h"
 #include "run_loop.h"
@@ -69,8 +70,7 @@ private:
 	int in_, out_;
 	int rate_;
 	bool lead_done_ = false;        /* the silence before the first call */
-	char pend_[8192];
-	int npend_ = 0;
+	LineFrames line_;               /* in_'s samples */
 	bool realtime_ = false;
 	double speed_ = 0;
 	/* PIPE_SYNC=<samples>: the DTE's input only every that many samples
@@ -78,7 +78,8 @@ private:
 	   faster than real time on hook, so that a test's commands meet
 	   the line at the same samples every time */
 	long sync_ = 0;
-	long samples_ = 0;      /* of the line, so far */
+	/* of the line, so far */
+	long samples() const { return (long)line_.taken(); }
 	long next_sync_ = 0;
 	double line_at_ = 0;    /* when the line last had samples (s) */
 	long clock_off_ = 0;    /* now_ms() - the line's ms while idle */
