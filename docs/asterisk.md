@@ -192,6 +192,8 @@ the BBS closing then hangs up the call.
 test/run.sh                       # V.34
 test/run.sh AT+MS=122             # V.22bis (also 22, 32, 132)
 test/run.sh AT+MS=34 bbsexec      # the BBS as a program on the pty
+test/run.sh "" bbsunix            # the BBS on a unix socket, the call's
+                                  # details first (header = yes)
 LAW=alaw test/run.sh              # on A-law
 ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/' test/run.sh
                                   # the answer command line: V.32bis

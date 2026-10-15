@@ -15,12 +15,19 @@ rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib"
 cp "$here/modules.conf" "$run/etc/"
 sed "s/DModem(bbs)/DModem(${2:-bbs})/" "$here/extensions.conf" > "$run/etc/extensions.conf"
 export DMODEM_TEST="$here"
-[ "${2:-bbs}" = bbs ] || export BBS_EXEC=1
+case ${2:-bbs} in
+bbs) ;;
+# bbs_sim.py serves the BBS on the profile's unix socket, and checks the
+# header that comes first
+bbsunix) export BBS_UNIX="$run/bbs.sock" ;;
+*) export BBS_EXEC=1 ;;
+esac
 sed -e "${LAW:+s/^\(\[[a-z]*\]\)\$/\1\nlaw = $LAW/}" \
     -e "s/^\[term\]/[term]\ninit = ${1:-}/" \
+    -e "s#@RUN@#$run#" \
     "$here/dmodem.conf" |
 awk '{ print }
-     /^\[bbs(exec)?\]$/ && ENVIRON["ANSWER"] != "" {
+     /^\[bbs(exec|unix)?\]$/ && ENVIRON["ANSWER"] != "" {
 	print "answer = " ENVIRON["ANSWER"] }' > "$run/etc/dmodem.conf"
 # Asterisk's modules (AST_MODULES, else where asterisk.pc says, else
 # Debian's or the default place)
