@@ -94,13 +94,14 @@ unsigned long PipeModem::now_ms()
 int PipeModem::lead()
 {
 	char zeros[2048] = {};
+	int n;
 	if (lead_done_)
 		return 0;
 	lead_done_ = true;
-	delay_ = getenv("PIPE_LEAD") ? 2 * atoi(getenv("PIPE_LEAD")) : 256;
-	if (delay_ > (int)sizeof(zeros))
-		delay_ = sizeof(zeros);
-	if (write(out_, zeros, delay_) != delay_)
+	n = getenv("PIPE_LEAD") ? 2 * atoi(getenv("PIPE_LEAD")) : 256;
+	if (n > (int)sizeof(zeros))
+		n = sizeof(zeros);
+	if (write(out_, zeros, n) != n)
 		return -1;
 	return 0;
 }
@@ -153,9 +154,8 @@ void PipeModem::pace(int samples)
 
 /* the line is readable: what is there into pend_ (rd false: only what
    pend_ holds), whole half frames of it through the core (4032 bytes at
-   most, with PIPE_SYNC up to the next sync point), the answer and the
-   delay changes the pumps asked for written to out_; 0, or -1 on an
-   error */
+   most, with PIPE_SYNC up to the next sync point), the answer written
+   to out_; 0, or -1 on an error */
 int PipeModem::line(bool rd)
 {
 	char inbuf[4096], outbuf[4096];
@@ -204,20 +204,6 @@ pending:
 	npend_ -= count;
 	samples_ += count / 2;
 
-	pending_delay_ += m_->take_update_delay();
-	if (pending_delay_ < 0) {
-		if (-pending_delay_ >= count / 2) {
-			DBG("change delay -%d...\n", count / 2);
-			delay_ -= count;
-			pending_delay_ += count / 2;
-			return 0;
-		}
-		DBG("change delay %d...\n", pending_delay_);
-		in -= pending_delay_ * 2;
-		count += pending_delay_ * 2;
-		delay_ += pending_delay_ * 2;
-		pending_delay_ = 0;
-	}
 	/* no faster than the clock between calls as well: the line's
 	   silence goes round and round */
 	pace(count / 2);
@@ -267,20 +253,6 @@ pending:
 	}
 	if (count == 0)
 		DBG("dev write = 0\n");
-	pending_delay_ += m_->take_update_delay();
-	if (pending_delay_ > 0) {
-		int n = pending_delay_ * 2 > (int)sizeof(outbuf) ?
-			sizeof(outbuf) : pending_delay_ * 2;
-		DBG("change delay %d...\n", pending_delay_);
-		memset(outbuf, 0, n);
-		count = write(out_, outbuf, n);
-		if (count < 0) {
-			ERR("dev write: %s\n", strerror(errno));
-			return -1;
-		}
-		delay_ += n;
-		pending_delay_ -= n / 2;
-	}
 	/* PIPE_SYNC stops at its samples: on with what is left, else it
 	   may hold the line's last samples with nothing more to read */
 	if (sync_ && npend_ >= frame)

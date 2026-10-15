@@ -89,8 +89,6 @@ struct Slmodemd final : public dcore::Host {
 	slm::Pty pty;
 	dcore::Modem *m = nullptr;
 	int fd = -1;            /* the call's audio */
-	int delay = 0;          /* samples on their way */
-	int pending_delay = 0;  /* the data pumps' delay change, left */
 	int law_set = 0;
 
 	/* off hook: a socketpair for the call's audio, one end to the SIP user
@@ -109,8 +107,6 @@ struct Slmodemd final : public dcore::Host {
 			sip::answer(sockets[0]);
 		/* prime the socket with a frame (20 ms) */
 		fd = sockets[1];
-		delay = 0;
-		pending_delay = 0;
 		law_set = 0;
 		short silence[RATE / 50] = {};
 		ret = ::write(fd, silence, sizeof(silence));
@@ -119,7 +115,6 @@ struct Slmodemd final : public dcore::Host {
 			fd = -1;
 			return ret;
 		}
-		delay = ret / 2;
 		return 0;
 	}
 	/* on hook: our end of the socket closed, which ends the call */
@@ -191,26 +186,11 @@ int Slmodemd::audio()
 		return 0;
 	}
 	count /= 2;
-	short *p = in;
-	pending_delay += m->take_update_delay();
-	if (pending_delay < 0) {
-		if (-pending_delay >= count) {
-			DBG("change delay -%d...\n", count);
-			delay -= count;
-			pending_delay += count;
-			return 0;
-		}
-		DBG("change delay %d...\n", pending_delay);
-		p -= pending_delay;
-		count += pending_delay;
-		delay += pending_delay;
-		pending_delay = 0;
-	}
 	if (!law_set && m->dp_runtime() && sip::law()) {
 		dp_runtime_set_law(m->dp_runtime(), sip::law());
 		law_set = 1;
 	}
-	m->process(p, out, count);
+	m->process(in, out, count);
 	if (fd < 0) {
 		DBG("closed connection to child socket process\n");
 		return 0;
@@ -218,18 +198,6 @@ int Slmodemd::audio()
 	if (::write(fd, out, count * 2) < 0) {
 		ERR("dev write: %s\n", strerror(errno));
 		return -1;
-	}
-	pending_delay += m->take_update_delay();
-	if (pending_delay > 0) {
-		short z[2048] = {};
-		int n = pending_delay > 2048 ? 2048 : pending_delay;
-		DBG("change delay +%d...\n", n);
-		if (::write(fd, z, n * 2) != n * 2) {
-			ERR("cannot update delay: %d.\n", n);
-			return -1;
-		}
-		delay += n;
-		pending_delay -= n;
 	}
 	return 0;
 }

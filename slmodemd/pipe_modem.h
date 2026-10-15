@@ -46,8 +46,6 @@ public:
 	/* Host */
 	int start(dcore::Modem &m) override;
 	int stop(dcore::Modem &m) override;
-	/* the samples on their way (delay_ is in bytes) */
-	int io_delay(dcore::Modem &) override { return delay_ / 2; }
 	/* for ATI3 */
 	const char *driver_name() override { return "modem_test driver"; }
 	/* to the pty */
@@ -68,9 +66,7 @@ private:
 	Pty pty_;
 	int in_, out_;
 	int rate_;
-	int delay_ = 0;         /* bytes on their way */
 	bool lead_done_ = false;        /* the silence before the first call */
-	int pending_delay_ = 0; /* samples the pumps asked for, left */
 	char pend_[8192];
 	int npend_ = 0;
 	bool realtime_ = false;

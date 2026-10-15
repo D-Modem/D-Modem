@@ -54,8 +54,7 @@ public:
 	/* MODEM_HOOK_ON, _OFF, _SNOOPING; 0 on success */
 	virtual int set_hook(Modem &m, int state) { (void)m; (void)state; return 0; }
 	virtual void speaker(Modem &m, int volume) { (void)m; (void)volume; }
-	/* samples between the line and the modem, codec type, pulse dial */
-	virtual int io_delay(Modem &m) { (void)m; return 0; }
+	/* codec type, pulse dial */
 	virtual int codec_type(Modem &m) { (void)m; return CODEC_UNKNOWN; }
 	virtual int pulse_dial(Modem &m, int val) { (void)m; (void)val; return -1; }
 	/* for ATI3 */
@@ -160,13 +159,6 @@ public:
 	   learn of the line over calls (the program keeps it) */
 	void *dp_runtime() const { return dp_runtime_; }
 	struct dsp_info &dsp_info() { return dsp_info_; }
-	/* samples the line's delay should change by (the data pumps ask):
-	   > 0 add silence to the output, < 0 drop input; reads it once */
-	int take_update_delay() {
-		int d = update_delay_;
-		update_delay_ = 0;
-		return d;
-	}
 
 	/* S-registers */
 	int sreg(unsigned num) const {
@@ -356,7 +348,6 @@ private:
 
 	/* the data pumps */
 	unsigned dp_requested_ = 0;
-	int update_delay_ = 0;
 	Run run_ = Run::None;
 	struct dp *dp_ = nullptr;
 	void *dp_runtime_ = nullptr;
