@@ -17,16 +17,23 @@
  *    DMODEMSTATUS and DMODEMRATE are set and the call goes back to the
  *    dialplan, after the Stasis().
  *
+ *    Faxes as app_dmodem has them: a fax machine that calls a modem
+ *    profile (fax on) is received into fax_dir; Stasis(<app>,sendfax,
+ *    <file>[,<ident>]) sends a TIFF file (DModemSendFax), and
+ *    Stasis(<app>,receivefax,<file>[,<ident>]) answers as a fax machine
+ *    (DModemReceiveFax); DMODEMFAX* set as they do, but as soon as the
+ *    result is final (the MCF to the last page): the channel is gone
+ *    with the other machine's hangup, which may come right after it.
+ *
  *    One thread reads ARI's events (the WebSocket); each call has a
- *    thread of its own.  Not yet: the fax machine that calls a modem
- *    profile (the call ends, DMODEMSTATUS FAX), DModemSendFax and
- *    DModemReceiveFax.
+ *    thread of its own.
  *
  *    dmodem-ari [-c dmodem.conf] [-u http://host:port] [-U user:password]
  *               [-a app] [-v]...
  *
  */
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <errno.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -37,6 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -340,9 +348,15 @@ struct Rtp {
  *    calls
  */
 
+/* what a call is for: the first of Stasis()'s arguments */
+enum Kind { MODEM, SENDFAX, RECEIVEFAX };
+
 struct Call {
-	std::string id, name;           /* the channel */
-	std::string profile, options;   /* Stasis()'s arguments */
+	std::string id, name;           /* the channel (id: its uniqueid) */
+	Kind kind = MODEM;
+	std::string profile, options;   /* MODEM: Stasis(app,profile,options) */
+	std::string file, ident;        /* the faxes: Stasis(app,sendfax,file,
+					   ident) */
 	std::string state, caller, exten;
 	std::atomic<bool> hungup{false};
 };
@@ -352,19 +366,143 @@ std::map<std::string, std::shared_ptr<Call>> calls;
 /* the external media channels of ours (their StasisStart ignored) */
 std::map<std::string, bool> media_channels;
 
-/* the call's law: the profile's, else the channel's (A-law if it has
+/* the call's law: law if it is known, else the channel's (A-law if it has
    alaw and not ulaw) */
-enum dmodem_law call_law(const Call &c, const struct dmbridge_profile &p)
+enum dmodem_law call_law(const Call &c, enum dmodem_law law)
 {
-	if (p.law != DMODEM_LAW_UNKNOWN)
-		return p.law;
+	if (law != DMODEM_LAW_UNKNOWN)
+		return law;
 	std::string f = get_var(c.id, "CHANNEL(audionativeformat)");
 	return f.find("alaw") != std::string::npos &&
 		f.find("ulaw") == std::string::npos ?
 		DMODEM_LAW_ALAW : DMODEM_LAW_ULAW;
 }
 
-/* the modem on the call's line until it ends; its status */
+/* the line's next block into in: a packet's samples, or silence once
+   IDLE_MS went by without one; 0 if the call has gone, -1 on an error */
+int next_block(Call &c, Rtp &rtp, enum dmodem_law law, uint8_t *in)
+{
+	if (c.hungup)
+		return 0;
+	int n = rtp.recv(in, MAX_SAMPLES, IDLE_MS);
+	if (n == 0) {
+		n = 160;
+		memset(in, law == DMODEM_LAW_ALAW ? 0xd5 : 0xff, n);
+	}
+	return n;
+}
+
+/* the fax settings of [general]: the built-in ones, then its own */
+void general_fax(struct dmbridge_fax *f)
+{
+	dmbridge_fax_defaults(f, "/var/spool/asterisk/fax");
+	for (const auto &v : conf["general"])
+		dmbridge_fax_option(&host, f, v.first.c_str(), v.second.c_str());
+}
+
+/* dir and the directories above it made (as far as they can be) */
+void make_dirs(const std::string &dir)
+{
+	for (size_t i = 1; i <= dir.size(); i++)
+		if (i == dir.size() || dir[i] == '/')
+			mkdir(dir.substr(0, i).c_str(), 0755);
+}
+
+/* where a fax a modem profile takes goes:
+   <dir>/<date>-<time>-<caller>-<uniqueid>.tif, as app_dmodem names it */
+std::string fax_file_name(const Call &c, const char *dir)
+{
+	char when[32];
+	time_t now = time(NULL);
+	std::string caller, id = c.id;
+
+	strftime(when, sizeof(when), "%Y%m%d-%H%M%S", localtime(&now));
+	for (char ch : c.caller)
+		if ((isalnum((unsigned char)ch) || ch == '+') &&
+		    caller.size() < 31)
+			caller += ch;
+	for (char &ch : id)
+		if (!isalnum((unsigned char)ch) && ch != '.')
+			ch = '_';
+	return std::string(dir) + "/" + when + "-" +
+		(caller.empty() ? "unknown" : caller) + "-" + id + ".tif";
+}
+
+/* the fax's result in the call's variables, as DModemSendFax and
+   DModemReceiveFax set them */
+void fax_variables(const Call &c, const struct dmodem_fax_status &st)
+{
+	set_var(c.id, "DMODEMFAXSTATUS", st.ok ? "SUCCESS" : "FAILED");
+	set_var(c.id, "DMODEMFAXRESULT", st.result);
+	set_var(c.id, "DMODEMFAXPAGES", std::to_string(st.pages));
+	set_var(c.id, "DMODEMFAXRATE", std::to_string(st.bps));
+	set_var(c.id, "DMODEMFAXREMOTE", st.remote_ident);
+	set_var(c.id, "DMODEMFAXECM", st.ecm ? "yes" : "no");
+}
+
+/* the fax machine on the call's line (dir: send file, or receive into
+   it) until the fax call ends; DMODEMFAXFILE first, and the result's
+   variables as soon as it is final (complete: the MCF to the last page,
+   the received pages in the file).  From then on the other machine may
+   hang up, and the dialplan's h extension runs at once: an ARI app
+   cannot hold the channel as DModemReceiveFax does */
+void run_fax(Call &c, Rtp &rtp, enum dmodem_law law, enum dmodem_fax_dir dir,
+	     const std::string &file, const struct dmbridge_fax &fs)
+{
+	struct dmodem_fax_config cfg = {};
+	struct dmodem_fax_status st = {};
+	struct dmodem_fax *f;
+	uint8_t in[MAX_SAMPLES], out[MAX_SAMPLES];
+	bool sending = dir == DMODEM_FAX_SEND, told = false;
+
+	cfg.law = law;
+	cfg.dir = dir;
+	cfg.file = file.c_str();
+	cfg.ident = fs.ident;
+	cfg.max_bps = fs.max_bps;
+	cfg.no_ecm = !fs.ecm;
+	set_var(c.id, "DMODEMFAXFILE", file);
+	f = dmodem_fax_create(&cfg);
+	if (!f) {
+		say("WARNING %s: cannot %s fax file %s", c.name.c_str(),
+		    sending ? "read" : "use", file.c_str());
+		set_var(c.id, "DMODEMFAXSTATUS", "FAILED");
+		set_var(c.id, "DMODEMFAXRESULT", "no document");
+		return;
+	}
+	if (verbose >= 1)
+		say("%s: dmodem fax: %s %s", c.name.c_str(),
+		    sending ? "sending" : "receiving", file.c_str());
+	for (;;) {
+		int n = next_block(c, rtp, law, in);
+		if (n <= 0) {
+			dmodem_fax_hangup(f);
+			break;
+		}
+		dmodem_fax_process_g711(f, in, out, n);
+		rtp.send(out, n);
+		dmodem_fax_status(f, &st);
+		if (st.complete && !told) {
+			fax_variables(c, st);
+			told = true;
+		}
+		if (st.done)
+			break;
+	}
+	dmodem_fax_status(f, &st);
+	if (!told && !c.hungup)
+		fax_variables(c, st);
+	/* (the received file closed with it) */
+	dmodem_fax_destroy(f);
+	if (verbose >= 1)
+		say("%s: dmodem fax %s: %s, %d pages at %d bit/s%s, remote "
+		    "'%s'", c.name.c_str(), sending ? "sent" : "received",
+		    st.result, st.pages, st.bps, st.ecm ? " (ECM)" : "",
+		    st.remote_ident);
+}
+
+/* the modem on the call's line until it ends (a fax machine that calls a
+   profile with fax on: the fax receiver in its place); its status */
 std::string run_modem(Call &c, const struct dmbridge_profile &p,
 		      enum dmodem_law law, Rtp &rtp)
 {
@@ -386,28 +524,17 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 		    law == DMODEM_LAW_ALAW ? "alaw" : "ulaw");
 	for (;;) {
 		enum dmbridge_event ev;
-		int n, k = 0;
+		int n = next_block(c, rtp, law, in);
 
-		if (c.hungup) {
-			bc.status = "HANGUP";
+		if (n <= 0) {
+			bc.status = n ? "ERROR" : "HANGUP";
 			break;
-		}
-		n = rtp.recv(in, sizeof(in), IDLE_MS);
-		if (n < 0) {
-			bc.status = "ERROR";
-			break;
-		}
-		if (n == 0) {
-			/* nothing from the line: the modem on silence */
-			n = 160;
-			memset(in, law == DMODEM_LAW_ALAW ? 0xd5 : 0xff, n);
 		}
 		/* a packet out for each packet in */
 		dmodem_process_g711(bc.d, in, out, n);
 		rtp.send(out, n);
-		k = n;
 
-		ev = dmbridge_call_step(&bc, k);
+		ev = dmbridge_call_step(&bc, n);
 		if (ev == DMBRIDGE_CONNECTED) {
 			char connected[24];
 			const char *env[] = {
@@ -428,8 +555,15 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 			ev = dmbridge_call_serve(&bc, env);
 		}
 		if (ev == DMBRIDGE_FAX) {
-			say("%s: a fax machine is calling: not handled by "
-			    "dmodem-ari yet", c.name.c_str());
+			/* the modem is gone: the line is the fax receiver's */
+			std::string path = fax_file_name(c, p.fax.dir);
+			if (verbose >= 1)
+				say("%s: dmodem: a fax machine is calling",
+				    c.name.c_str());
+			/* (now: it may have hung up when the fax ends) */
+			set_var(c.id, "DMODEMSTATUS", "FAX");
+			make_dirs(p.fax.dir);
+			run_fax(c, rtp, law, DMODEM_FAX_RECEIVE, path, p.fax);
 			break;
 		}
 		if (ev == DMBRIDGE_END)
@@ -441,31 +575,25 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 	return status;
 }
 
-/* a call's thread: the line set up, the modem, the line taken down, and
-   the call back to the dialplan (if it is still there) */
-void run_call(std::shared_ptr<Call> c)
+/* the call's line: the channel answered (unless it is up), our UDP port,
+   the external media channel that sends the call's audio there in law,
+   and the two in a bridge (media, bridge: their ids, for the end); false
+   (logged) if any of it fails */
+bool open_line(Call &c, enum dmodem_law law, Rtp &rtp, std::string &media,
+	       std::string &bridge)
 {
-	struct dmbridge_profile p;
-	std::string status = "ERROR", media, bridge;
-	enum dmodem_law law = DMODEM_LAW_ULAW;
-	Rtp rtp;
 	ari::Json r;
 	int port;
 
-	if (!load_profile(c->profile, &p))
-		goto done;
-	law = call_law(*c, p);
 	rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
-	if (c->state != "Up" && !ari_call("POST", "channels/" + c->id +
-					  "/answer")) {
-		status = "HANGUP";
-		goto done;
-	}
+	if (c.state != "Up" &&
+	    !ari_call("POST", "channels/" + c.id + "/answer"))
+		return false;
 	port = rtp.open();
 	if (port < 0) {
-		say("ERROR %s: no UDP port: %s", c->name.c_str(),
+		say("ERROR %s: no UDP port: %s", c.name.c_str(),
 		    strerror(errno));
-		goto done;
+		return false;
 	}
 	/* the call's audio to our port, in its law */
 	if (!ari_call("POST", "channels/externalMedia?app=" +
@@ -473,7 +601,7 @@ void run_call(std::shared_ptr<Call> c)
 		      ari::url_encode("127.0.0.1:" + std::to_string(port)) +
 		      "&format=" + (law == DMODEM_LAW_ALAW ? "alaw" : "ulaw"),
 		      &r))
-		goto done;
+		return false;
 	media = r["id"].str();
 	{
 		std::lock_guard<std::mutex> lk(calls_lock);
@@ -484,26 +612,69 @@ void run_call(std::shared_ptr<Call> c)
 	    !rtp.set_peer(get_var(media, "UNICASTRTP_LOCAL_ADDRESS"),
 			  get_var(media, "UNICASTRTP_LOCAL_PORT"))) {
 		say("ERROR %s: no address of the external media channel",
-		    c->name.c_str());
-		goto done;
+		    c.name.c_str());
+		return false;
 	}
 	if (!ari_call("POST", "bridges?type=mixing", &r))
-		goto done;
+		return false;
 	bridge = r["id"].str();
-	if (!ari_call("POST", "bridges/" + bridge + "/addChannel?channel=" +
-		      ari::url_encode(c->id + "," + media)))
-		goto done;
+	return ari_call("POST", "bridges/" + bridge + "/addChannel?channel=" +
+			ari::url_encode(c.id + "," + media));
+}
 
-	status = run_modem(*c, p, law, rtp);
-	if (verbose >= 1)
-		say("%s: dmodem done: %s", c->name.c_str(), status.c_str());
-done:
+/* a call's thread: what it is for on its line (the modem, or a fax to
+   send or receive), the line taken down, and the call back to the
+   dialplan (if it is still there) */
+void run_call(std::shared_ptr<Call> c)
+{
+	struct dmbridge_profile p;
+	struct dmbridge_fax fs;
+	std::string status = "ERROR", media, bridge;
+	enum dmodem_law law = DMODEM_LAW_UNKNOWN;
+	Rtp rtp;
+	bool line = false;
+
+	if (c->kind == MODEM) {
+		if (load_profile(c->profile, &p)) {
+			law = call_law(*c, p.law);
+			line = open_line(*c, law, rtp, media, bridge);
+		}
+		if (line)
+			status = run_modem(*c, p, law, rtp);
+		else if (c->hungup)
+			status = "HANGUP";
+		if (verbose >= 1)
+			say("%s: dmodem done: %s", c->name.c_str(),
+			    status.c_str());
+	} else {
+		/* the fax settings of [general], the ident of Stasis() */
+		general_fax(&fs);
+		if (!c->ident.empty())
+			snprintf(fs.ident, sizeof(fs.ident), "%s",
+				 c->ident.c_str());
+		if (c->file.empty()) {
+			say("WARNING %s: %s needs a file name",
+			    c->name.c_str(), c->kind == SENDFAX ?
+			    "sendfax" : "receivefax");
+			set_var(c->id, "DMODEMFAXSTATUS", "FAILED");
+		} else {
+			law = call_law(*c, DMODEM_LAW_UNKNOWN);
+			line = open_line(*c, law, rtp, media, bridge);
+			if (line)
+				run_fax(*c, rtp, law, c->kind == SENDFAX ?
+					DMODEM_FAX_SEND : DMODEM_FAX_RECEIVE,
+					c->file, fs);
+			else if (!c->hungup)
+				set_var(c->id, "DMODEMFAXSTATUS", "FAILED");
+		}
+	}
 	if (!media.empty())
 		ari_call("DELETE", "channels/" + media);
 	if (!bridge.empty())
 		ari_call("DELETE", "bridges/" + bridge);
 	if (!c->hungup) {
-		set_var(c->id, "DMODEMSTATUS", status);
+		if (c->kind == MODEM)
+			set_var(c->id, "DMODEMSTATUS", status);
 		ari_call("POST", "channels/" + c->id + "/continue");
 	}
 	std::lock_guard<std::mutex> lk(calls_lock);
@@ -524,15 +695,20 @@ void event(const ari::Json &e)
 		    !ch["name"].str().compare(0, 11, "UnicastRTP/"))
 			return;
 		auto c = std::make_shared<Call>();
+		const std::string &what = e["args"][0].str();
 		c->id = id;
 		c->name = ch["name"].str();
 		c->state = ch["state"].str();
 		c->caller = ch["caller"]["number"].str();
 		c->exten = ch["dialplan"]["exten"].str();
-		c->profile = e["args"][0].str();
-		c->options = e["args"][1].str();
-		if (c->profile.empty())
-			c->profile = "default";
+		if (what == "sendfax" || what == "receivefax") {
+			c->kind = what == "sendfax" ? SENDFAX : RECEIVEFAX;
+			c->file = e["args"][1].str();
+			c->ident = e["args"][2].str();
+		} else {
+			c->profile = what.empty() ? "default" : what;
+			c->options = e["args"][1].str();
+		}
 		calls[id] = c;
 		std::thread(run_call, c).detach();
 		return;

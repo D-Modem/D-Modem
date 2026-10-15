@@ -6,9 +6,9 @@
 # asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
-# two modems of the module, D-Modem (dmodemd) over SIP both ways (also
-# through dmodem-ari, D-Modem as an ARI application), and faxes, also
-# against their own fax (spandsp).
+# two modems of the module, D-Modem (dmodemd) over SIP both ways, and
+# faxes, also against their own fax (spandsp); in Asterisk also through
+# dmodem-ari, D-Modem as an ARI application.
 #
 # A push or pull request that changes only documentation (docs/ and the
 # Markdown files: nothing builds or tests from them) runs none of it.
@@ -90,6 +90,7 @@ jobs:
           timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
           BBS_LINGER=1 timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
           ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/14400' timeout 300 asterisk/test/run.sh
+          ARI=1 timeout 300 asterisk/test/run.sh
 
       - name: SIP (D-Modem)
         run: |
@@ -107,11 +108,14 @@ jobs:
         run: |
           timeout 900 asterisk/test/fax.sh
           timeout 900 asterisk/test/fax_spandsp.sh
+          ARI=1 timeout 900 asterisk/test/fax.sh
+          ARI=1 timeout 900 asterisk/test/fax_spandsp.sh
 
       - name: Logs of a failed step
         if: failure()
         run: |
           for f in /tmp/dmodem-*/dmodemd.log /tmp/dmodem-*/console.log \
+                   /tmp/dmodem-*/dmodem-ari.log \
                    /tmp/dmodem-*/log/freeswitch.log; do
             [ -f "$f" ] || continue
             echo "== $f"; tail -80 "$f"

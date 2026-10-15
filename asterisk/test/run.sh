@@ -8,6 +8,7 @@
 #                  dmodem.conf has it (\; for a ;)
 #   EXPECT=regex   a line of the console the call must leave, e.g.
 #                  'ANSWERER .*DMODEMRATE=14400/'
+#   ARI=1          the calls through dmodem-ari instead (ari_env.sh)
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 # the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
@@ -31,6 +32,8 @@ sed -e "${LAW:+s/^\(\[[a-z]*\]\)\$/\1\nlaw = $LAW/}" \
 awk '{ print }
      /^\[bbs(exec|unix)?\]$/ && ENVIRON["ANSWER"] != "" {
 	print "answer = " ENVIRON["ANSWER"] }' > "$run/etc/dmodem.conf"
+. "$here/ari_env.sh"
+[ -z "$ARI" ] || ari_setup "$run/etc"
 # Asterisk's modules (AST_MODULES, else where asterisk.pc says, else
 # Debian's or the default place)
 astmod=${AST_MODULES:-$(pkg-config --variable=modulesdir asterisk 2>/dev/null || true)}
@@ -68,6 +71,10 @@ i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do
 	sleep 0.5; i=$((i+1)); [ $i -lt 40 ] || { tail "$run/console.log"; exit 1; }
 done
 $ast -rx "module show like dmodem"
+if [ -n "$ARI" ]; then
+	trap 'kill $pid 2>/dev/null; ari_stop' EXIT
+	ari_start "$run" "$run/etc/dmodem.conf" || exit 1
+fi
 "$here/bbs_sim.py" 150 &
 sim=$!
 sleep 0.5
@@ -76,6 +83,7 @@ set +e
 wait $sim; r=$?
 sleep 3
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"
+[ -z "$ARI" ] || ari_log "$run"
 if [ -n "${EXPECT:-}" ] && ! grep -qE "$EXPECT" "$run/console.log"; then
 	echo "no line matches $EXPECT"; r=1
 fi

@@ -19,7 +19,7 @@ The modem's signal processing is open source, in `dsp/` (C++, behind the C inter
 ### Asterisk module
 `asterisk/` has `app_dmodem`, a dialplan application that answers a call on an Asterisk channel with the open modem and hands the connection to a server (TCP or a unix socket) or a program on a pty such as pppd, per profile in `dmodem.conf`.  It is built on `libdmodem` (`dmodemd/dmodem.h`, and `dmodemd/dmodem.hpp` with C++ classes for it), the modem core and open DSP as a library.  See [docs/asterisk.md](docs/asterisk.md).
 
-`ari/` has `dmodem-ari`, the same as a program of its own beside Asterisk, an application of the Asterisk REST Interface (ARI): the dialplan's `Stasis(dmodem,<profile>)` hands it a call, whose audio it takes over RTP from an external media channel.  Nothing of D-Modem is loaded into Asterisk.  It is a prototype; see [docs/ari.md](docs/ari.md).
+`ari/` has `dmodem-ari`, the same as a program of its own beside Asterisk, an application of the Asterisk REST Interface (ARI): the dialplan's `Stasis(dmodem,<profile>)` hands it a call, and `Stasis(dmodem,sendfax,<file>)` or `Stasis(dmodem,receivefax,<file>)` a fax, whose audio it takes over RTP from an external media channel.  Nothing of D-Modem is loaded into Asterisk.  It is a prototype; see [docs/ari.md](docs/ari.md).
 
 ### FreeSWITCH module
 `freeswitch/` has `mod_dmodem`, the same for FreeSWITCH: the `dmodem` application (a server over TCP or a unix socket, or a program on a pty, per profile in `dmodem.conf.xml`) and the fax applications `dmodem_send_fax` and `dmodem_receive_fax`.  See [docs/freeswitch.md](docs/freeswitch.md).

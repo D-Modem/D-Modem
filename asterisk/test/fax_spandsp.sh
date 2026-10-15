@@ -8,7 +8,8 @@
 #   2. SendFAX calls DModemReceiveFax
 #   3. DModemSendFax calls ReceiveFAX
 # Each received document must be the one sent.  CASES="2 3" runs only
-# those; DMODEM_DEBUG=3 for the DSP traces in console.log.
+# those; DMODEM_DEBUG=3 for the DSP traces in console.log.  ARI=1:
+# DModem's side of the calls through dmodem-ari instead (ari_env.sh).
 here=$(cd "$(dirname "$0")" && pwd)
 # the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
 build=${DMODEM_BUILD:-$here/../../build}
@@ -24,6 +25,8 @@ sed -e "s|^\[general\]|[general]\nfax_dir = $run/fax\nfax_ident = +1 555 0199|" 
     -e "s/^debug = .*/debug = ${DMODEM_DEBUG:-1}/" "$here/dmodem.conf" > "$run/etc/dmodem.conf"
 # FAX_MAX_RATE=9600: DModem's fax no faster
 [ -n "$FAX_MAX_RATE" ] && sed -i "s|^\[general\]|[general]\nfax_max_rate = $FAX_MAX_RATE|" "$run/etc/dmodem.conf"
+. "$here/ari_env.sh"
+[ -z "$ARI" ] || ari_setup "$run/etc"
 # Asterisk's modules (AST_MODULES, else where asterisk.pc says, else
 # Debian's or the default place)
 astmod=${AST_MODULES:-$(pkg-config --variable=modulesdir asterisk 2>/dev/null || true)}
@@ -61,6 +64,10 @@ i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do
 	sleep 0.5; i=$((i+1)); [ $i -lt 40 ] || { tail "$run/console.log"; exit 1; }
 done
 $ast -rx "module show like fax" | grep -E "res_fax|app_dmodem"
+if [ -n "$ARI" ]; then
+	trap 'kill $pid 2>/dev/null; ari_stop' EXIT
+	ari_start "$run" "$run/etc/dmodem.conf" || exit 1
+fi
 $ast -rx "dialplan set global FAXIN $run/doc.tif" >/dev/null
 $ast -rx "dialplan set global FAXOUT $run/received.tif" >/dev/null
 $ast -rx "dialplan set global SPOUT $run/spandsp.tif" >/dev/null
@@ -104,5 +111,6 @@ grep -E " SPRECV" "$run/console.log" | tail -1
 "$t4" compare "$run/doc.tif" "$run/spandsp.tif" || r=1
 ;;
 esac; done
+[ -z "$ARI" ] || ari_log "$run"
 $ast -rx "core stop now" >/dev/null 2>&1
 exit $r

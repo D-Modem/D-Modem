@@ -28,9 +28,10 @@ command = exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:19
 
 See [dmodem.conf.sample](../asterisk/dmodem.conf.sample) for all the options.
 
-The same calls can go to [dmodem-ari](ari.md) instead, D-Modem as an ARI
-application beside Asterisk (`Stasis(dmodem,bbs)`), with the same
-profiles: no module in Asterisk.
+The same calls and faxes can go to [dmodem-ari](ari.md) instead, D-Modem
+as an ARI application beside Asterisk (`Stasis(dmodem,bbs)`,
+`Stasis(dmodem,receivefax,<file>)`), with the same profiles: no module in
+Asterisk.
 
 The modem answers with `ATA`. A profile's `answer` gives the command line
 it answers with instead, with commands for the answering call alone
@@ -215,6 +216,9 @@ compares what came with what went.  `test/fax_spandsp.sh` does the same
 against Asterisk's own fax (`res_fax_spandsp`): `SendFAX` to `DModem()`
 and to `DModemReceiveFax`, and `DModemSendFax` to `ReceiveFAX`, all at
 14400 bit/s (`CASES`, `FAX_MAX_RATE`, `DMODEM_DEBUG` in the script).
+
+`ARI=1` runs these tests (and `test/sip.sh`) through
+[dmodem-ari](ari.md#testing) instead of the module.
 
 ## Debugging
 
