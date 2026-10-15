@@ -1,0 +1,39 @@
+      0 A< ATE0X3+MS=132\r
+      0 A: ATE0X3+MS=132\r\r\n
+      0 A: OK\r\n
+      0 A< ATD555\r
+   2000 A< x
+   2020 A: NO CARRIER\r\n
+   2020 until A 'NO CARRIER': yes
+   2020 A< ATDL\r
+   2020 A: Dialing 555...\r\n
+   3520 A< ATH\r
+   3540 A: NO CARRIER\r\n
+   3540 until A 'NO CARRIER': yes
+   4040 A< ATS7=3D\r
+   7060 A: NO ANSWER\r\n
+   7060 until A 'NO': yes
+   7560 A< ATS7?\r
+   7560 A: 3\r\n
+   7560 A: OK\r\n
+   7560 A< ATZ\r
+   7560 A: OK\r\n
+   7560 A< ATE0X3+MS=32\r
+   7560 A: ATE0X3+MS=32\r\r\n
+   7560 A: OK\r\n
+   7560 B< ATE0+MS=32\r
+   7560 B: ATE0+MS=32\r\r\n
+   7560 B: OK\r\n
+   7560 B< ATA\r
+   7560 A< ATD\r
+  10560 B< ATH\r
+  10580 B: NO CARRIER\r\n
+  10580 until B 'NO CARRIER': yes
+  40580 until A 'NO CARRIER': TIMEOUT
+  41080 B< ATA\r
+  41080 A< ATD\r
+  41100 A: NO CARRIER\r\n
+  46080 until A 'NO CARRIER': yes
+  76080 until B 'NO CARRIER': TIMEOUT
+  76580 A: state 0, tx 0 rx 0, idle
+  76580 B: state 1, tx 0 rx 0, started

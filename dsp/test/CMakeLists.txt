@@ -12,18 +12,6 @@
 #   ctest --test-dir build -L quick
 set(S ${DMODEM_DSP_DIR})
 set(_dsp ${DMODEM_DSP_SRCS})
-# slmodemd's old C core (legacy/): Smart Link's original library calls
-# into it (half_smartlink), and core_script_old compares the new core with it;
-# both run its timers by hand on a clock of their own (dmodem_timer.cpp,
-# not the SIGALRM ones of modem_timer.cpp)
-set(DMODEM_LEGACY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/legacy)
-set(DMODEM_LEGACY_SRCS modem.cpp modem_datafile.cpp modem_at.cpp
-	dmodem_timer.cpp modem_param.cpp modem_debug.cpp sysdep_common.cpp)
-list(TRANSFORM DMODEM_LEGACY_SRCS PREPEND ${DMODEM_LEGACY_DIR}/)
-list(APPEND DMODEM_LEGACY_SRCS ${DMODEM_CORE_NEW_DIR}/homolog_data.cpp)
-set(DMODEM_LEGACY_DIR ${DMODEM_LEGACY_DIR} PARENT_SCOPE)
-set(DMODEM_LEGACY_SRCS ${DMODEM_LEGACY_SRCS} PARENT_SCOPE)
-set(C ${DMODEM_LEGACY_DIR})
 set(_fax ${S}/fax_modems.cpp ${S}/qam.cpp ${S}/qam_tables.cpp ${S}/dsp_util.cpp
 	${S}/dp_fsk.cpp)
 
@@ -97,12 +85,12 @@ else()
 	message(STATUS "tests: spandsp not found, its tests skipped")
 endif()
 
-# --- the interop calls: Smart Link's original library on slmodemd's old
-#     core (half_smartlink, legacy/modem_half.cpp) and the open data pumps
-#     on the modem core (half_open, 32 bit like the library), and the
-#     other modems below (classes on modem_half.cpp), through
-#     interop_test.cpp (interop_call.cpp), with netsim for the G.711
-#     network.
+# --- the interop calls: the open data pumps on the modem core
+#     (half_open, half_open8 at 8000 Hz; 32 bit like the library) and
+#     Smart Link's original library on the same core in their place
+#     (half_smartlink), and the other modems below (classes on
+#     modem_half.cpp), through interop_test.cpp (interop_call.cpp), with
+#     netsim for the G.711 network.
 #     The original library (smartlink/dsplibs.o, Smart Link's binary-only
 #     DSP library) is a 32 bit i386 object: -m32 on x86_64.
 set(DMODEM_M32 "")
@@ -120,36 +108,31 @@ if(NOT DMODEM_HAVE_M32 OR
 	message(STATUS "tests: no 32 bit i386 compiler, interop tests skipped")
 	return()
 endif()
-foreach(_rate 9600 8000)
-	foreach(_kind smartlink open)
-		set(_n half_${_kind})
-		if(_rate EQUAL 8000)
-			set(_n ${_n}8)
-		endif()
-		if(_kind STREQUAL "smartlink")
-			# the original library calls into slmodemd's old core
-			add_executable(${_n} ${C}/modem_half.cpp
-				${C}/modem_cmdline.cpp ${DMODEM_LEGACY_SRCS}
-				${DMODEM_LINK_SRCS}
-				${CMAKE_CURRENT_SOURCE_DIR}/smartlink/dsplibs.o)
-			target_include_directories(${_n} PRIVATE ${C} ${S}
-				${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
-			set(_l -no-pie -Wl,-z,noexecstack)
-		else()
-			# the open data pumps on the modem core
-			add_executable(${_n} half_open.cpp ${DMODEM_FRONT_SRCS}
-				${DMODEM_CORE_NEW_SRCS} ${DMODEM_LINK_SRCS} ${_dsp})
-			target_include_directories(${_n} PRIVATE
-				${DMODEM_FRONT_DIR} ${S} ${DMODEM_LINK_DIR}
-				${DMODEM_CORE_NEW_DIR})
-			set(_l "")
-		endif()
-		target_compile_definitions(${_n} PRIVATE CONFIG_DEBUG_MODEM
-			MODEM_RATE=${_rate})
-		target_compile_options(${_n} PRIVATE ${DMODEM_M32} -w -g -O)
-		target_link_options(${_n} PRIVATE ${DMODEM_M32} ${_l})
-		target_link_libraries(${_n} PRIVATE m pthread)
-	endforeach()
+foreach(_n half_open half_open8 half_smartlink)
+	set(_rate 9600)
+	set(_l "")
+	if(_n STREQUAL "half_open8")
+		set(_rate 8000)
+	endif()
+	if(_n STREQUAL "half_smartlink")
+		# the library in place of the open data pumps; its runtime and
+		# its V.92 pump come through smartlink_glue.cpp first
+		set(_pumps smartlink_glue.cpp
+			${CMAKE_CURRENT_SOURCE_DIR}/smartlink/dsplibs.o)
+		set(_l -no-pie -Wl,-z,noexecstack -Wl,--wrap=dp_runtime_create
+			-Wl,--wrap=modem_dp_register)
+	else()
+		set(_pumps ${_dsp})
+	endif()
+	add_executable(${_n} half_open.cpp ${DMODEM_FRONT_SRCS}
+		${DMODEM_CORE_NEW_SRCS} ${DMODEM_LINK_SRCS} ${_pumps})
+	target_include_directories(${_n} PRIVATE ${DMODEM_FRONT_DIR} ${S}
+		${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
+	target_compile_definitions(${_n} PRIVATE CONFIG_DEBUG_MODEM
+		MODEM_RATE=${_rate})
+	target_compile_options(${_n} PRIVATE ${DMODEM_M32} -w -g -O)
+	target_link_options(${_n} PRIVATE ${DMODEM_M32} ${_l})
+	target_link_libraries(${_n} PRIVATE m pthread)
 endforeach()
 
 # the peers' harnesses (modem_half.cpp) read their line as PipeModem does

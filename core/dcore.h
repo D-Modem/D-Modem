@@ -63,6 +63,12 @@ public:
 	/* MODEM_HOOK_ON, _OFF, _SNOOPING; 0 on success */
 	virtual int set_hook(Modem &m, int state) { (void)m; (void)state; return 0; }
 	virtual void speaker(Modem &m, int volume) { (void)m; (void)volume; }
+	/* the line's delay, which Smart Link's original library asks for
+	   (the open data pumps do not): the samples between the modem's
+	   output and its input, and a change of it (> 0: silence out, < 0:
+	   input dropped) */
+	virtual int io_delay(Modem &m) { (void)m; return 0; }
+	virtual void update_delay(Modem &m, int samples) { (void)m; (void)samples; }
 	/* codec type, pulse dial */
 	virtual int codec_type(Modem &m) { (void)m; return CODEC_UNKNOWN; }
 	virtual int pulse_dial(Modem &m, int val) { (void)m; (void)val; return -1; }

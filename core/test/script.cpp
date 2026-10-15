@@ -4,8 +4,9 @@
  *                  as a DTE would drive them; prints what each one tells
  *                  its DTE, line by line with the time (ms of audio)
  *
- *    Built twice: with the new core and with slmodemd's old one.  The
- *    same script must give the same transcript (ctest core_equiv_*).
+ *    A script's transcript must be the one in its .expect (ctest
+ *    core_equiv: slmodemd's old core's, or the core's own where it
+ *    differs on purpose).
  *
  *    core_script <script>
  *

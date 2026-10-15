@@ -49,6 +49,13 @@ public:
 	/* Host */
 	int start(dcore::Modem &m) override;
 	int stop(dcore::Modem &m) override;
+	/* the line's delay, which Smart Link's original library asks for:
+	   the lead silence and the changes it asked for in this call; a
+	   change, made in line() */
+	int io_delay(dcore::Modem &) override { return delay_; }
+	void update_delay(dcore::Modem &, int samples) override {
+		pending_delay_ += samples;
+	}
 	/* for ATI3 */
 	const char *driver_name() override { return "modem_test driver"; }
 	/* to the pty */
@@ -70,6 +77,9 @@ private:
 	int in_, out_;
 	int rate_;
 	bool lead_done_ = false;        /* the silence before the first call */
+	int lead_ = 0;                  /* its samples */
+	int delay_ = 0;                 /* io_delay() */
+	int pending_delay_ = 0;         /* the change not made yet */
 	LineFrames line_;               /* in_'s samples */
 	bool realtime_ = false;
 	double speed_ = 0;

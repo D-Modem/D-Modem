@@ -38,16 +38,15 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `bits_test`, `g711_test`, `pcm_cp_test` | `bits.h`'s fields and CRCs, `g711.h`'s two laws (each octet back to itself, sign and magnitude), the PCM encoders on CPs that cannot carry their rate |
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's |
-| `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the new core against the old one (or against a script's `.expect`, see `docs/core.md`) |
+| `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the core's transcripts against the scripts' `.expect` (slmodemd's old core's, recorded from it; see `docs/core.md`) |
 | `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
 | `slmodemd/test/root_test.py` (`slmodemd_root`) | slmodemd started as root: it goes on as nobody, saves its data file, and its pty's group and link (kept by a process of its own) follow the new pty after the DTE hangs up and go when it ends, even killed. Skipped unless ctest runs as root (CI runs it with sudo) |
 
 Each call writes its modem logs to `build/dsp/test/logs/<test>/`. The
 calls run as fast as the modems can: every modem keeps time by its
 line's samples (the Agere, SM56, PCTel, HSF and Broadcom harnesses count
-jiffies and timers in samples, our core does with `PIPE_SYNC`, and so does
-slmodemd's old core under the original library, `test/legacy/`, whose
-timers are run by the line too), so a call goes as it would in real
+jiffies and timers in samples, and our core, under the open pumps or
+the original library, does with `PIPE_SYNC`), so a call goes as it would in real
 time, only sooner, and a busy machine only slows it down. The call's own
 seconds (`STREAM`, `MIDCALL`, `WAIT`, `ANSWER_AFTER`, `HANGUP_WAIT`, and
 how long it waits for what the modems say) are then the line's, from
@@ -136,8 +135,8 @@ network, between the two: each direction goes through the law at 8000 Hz,
 and to a modem at 9600 Hz through a converter that acts like a codec on
 an analogue line (a raised cosine at 4000 Hz, so that PCM samples stay
 free of intersymbol interference; `NET_PLAIN=1` takes dsp_util's short
-resampler instead, which is not, so V.90 falls back to V.34 through it). `half_smartlink8`/`half_open8` are
-the modems at 8000 Hz (the original library does not work at 8000 Hz).
+resampler instead, which is not, so V.90 falls back to V.34 through it). `half_open8` is
+the open modem at 8000 Hz (the original library does not work at 8000 Hz).
 `NET_GAIN` sets an analogue gain on the way to the 9600 Hz modem, and
 `NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
 clock: what it receives comes back with what it sends; from the line,

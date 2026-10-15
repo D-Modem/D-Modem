@@ -1,0 +1,69 @@
+      0 A< ATE0X3+FCLASS=1\r
+      0 A: ATE0X3+FCLASS=1\r\r\n
+      0 A: OK\r\n
+      0 B< ATE0+FCLASS=1\r
+      0 B: ATE0+FCLASS=1\r\r\n
+      0 B: OK\r\n
+      0 B< ATA\r
+      0 A< ATD\r
+   5280 B: CONNECT\r\n
+   5280 until B 'CONNECT': yes
+   5280 B< \xff\x03\x40\x20\x20\x20\x20\x34\x33\x32\x31\x10\x03
+   5360 A: CONNECT\r\n
+   6300 B: CONNECT\r\n
+   6300 until B 'CONNECT': yes
+   6300 B< \xff\x13\x80\x00\xce\xf4\x80\x80\x81\x80\x80\x80\x18\x10\x03
+   6300 until A 'CONNECT': yes
+   6700 A: \xff\x03@    4321\r\x8f\x10\x03OK\r\n
+   6700 until A '\x10\x03': yes
+   7140 B: OK\r\n
+   8700 until A 'OK': TIMEOUT
+   8700 A< AT+FRH=3\r
+   8720 A: CONNECT\r\n
+   8740 A: \xff\x13\x80\x00\xce\xf4\x80\x80\x81\x80\x80\x80\x18c/\x10\x03OK\r\n
+   8740 until A '\x10\x03': yes
+   8740 until B 'OK': yes
+  10740 until A 'OK': TIMEOUT
+  10740 B< AT+FRH=3\r
+  10740 A< AT+FTH=3\r
+  10760 A: CONNECT\r\n
+  10760 until A 'CONNECT': yes
+  10760 A< \xff\x13\x83\x00\xc6\x74\x10\x03
+  10860 B: CONNECT\r\n
+  12040 A: OK\r\n
+  12040 B: \xff\x13\x83\x00\xc6tS\x00\x10\x03OK\r\n
+  12040 until A 'OK': yes
+  12040 until B '\x10\x03': yes
+  14040 until B 'OK': TIMEOUT
+  14040 B< AT+FRM=96\r
+  14040 A< AT+FTS=8\r
+  14120 A: OK\r\n
+  14120 until A 'OK': yes
+  14120 A< AT+FTM=96\r
+  14140 A: CONNECT\r\n
+  14140 until A 'CONNECT': yes
+  14140 A< \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10\x03
+  14420 B: CONNECT\r\n
+  14420 until B 'CONNECT': yes
+  14480 A: OK\r\n
+  14480 B: \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xe7\xf8\xb9\x83\xf68\xa7\x95uZ\xdf\x10\x03NO CARRIER\r\n
+  14480 until A 'OK': yes
+  14480 until B 'NO CARRIER': yes
+  14480 A< AT+FRH=3\r
+  14480 B< AT+FTH=3\r
+  14500 B: CONNECT\r\n
+  14500 until B 'CONNECT': yes
+  14500 B< \xff\x13\x84\x10\x03
+  14600 A: CONNECT\r\n
+  15700 A: \xff\x13\x84\xea}\x10\x03OK\r\n
+  15700 B: OK\r\n
+  15700 until B 'OK': yes
+  15700 until A 'OK': yes
+  15700 A< ATH\r
+  15700 A: OK\r\n
+  15700 B< ATH\r
+  15700 B: OK\r\n
+  15720 A: NO CARRIER\r\n
+  15720 B: NO CARRIER\r\n
+  16700 A: state 0, tx 0 rx 0, idle
+  16700 B: state 0, tx 0 rx 0, idle

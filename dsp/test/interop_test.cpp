@@ -16,8 +16,7 @@
  *    alone.
  *
  *    The calls run as fast as the modems can: they keep time by the
- *    line's samples (the original library's core, slmodemd's old one,
- *    too: legacy/modem_half.cpp), and so does the call, by netsim's clock
+ *    line's samples, and so does the call, by netsim's clock
  *    or for fax by interop_call's relay of the line.  MODEM_REALTIME=1
  *    for ctest runs every call in real time.
  *
@@ -89,8 +88,8 @@ std::vector<Call> calls()
 		return &c.back();
 	};
 
-	/* --- Smart Link's soft modem, its original library on slmodemd's
-	   old core (half_smartlink, 9600 Hz), and the open modem call each
+	/* --- Smart Link's soft modem, its original library on the modem
+	   core (half_smartlink, 9600 Hz), and the open modem call each
 	   other at each modulation */
 	for (const char *ms : { "34", "132", "122", "22", "212", "103",
 				"23" }) {
@@ -151,7 +150,7 @@ std::vector<Call> calls()
 	    { "NET=9600:8000:ulaw", "EXPECT_B=V.92 quick connect" });
 	/* V.92 PCM upstream: the original library is a "V.92 Lite" build,
 	   which retrains when INFO1d offers PCM upstream; SMARTLINK_V92FULL
-	   (legacy/modem.cpp) sets its full V.92 bit, and it then goes
+	   (smartlink_glue.cpp) sets its full V.92 bit, and it then goes
 	   through phases 3 and 4 of V.92 with us.  Lite: we answer its
 	   retrain without the offer, V.90.  A rate the line cannot carry
 	   (44 000): B1u does not come through, we retrain to V.90.  With the

@@ -1,12 +1,11 @@
 /*
- *    core_equiv.cpp - the new core against slmodemd's old one: each script
- *    of scripts/ through core_script_old and core_script_new (two modems
- *    back to back, driven as a DTE would, script.cpp), and the two
- *    transcripts must be the same.  Where the new core does better on
- *    purpose, scripts/<name>.expect holds its transcript, and the new
- *    core's must be that one instead (CORE_EXPECT_WRITE=1 writes the
- *    .expect files there are anew, to be looked at in git diff; an empty
- *    one starts a new script off).
+ *    core_equiv.cpp - the core against slmodemd's old one: each script of
+ *    scripts/ through core_script (two modems back to back, driven as a
+ *    DTE would, script.cpp), and the transcript must be the script's
+ *    .expect: the old core's, recorded from it, or where the core does
+ *    better on purpose its own (CORE_EXPECT_WRITE=1 writes the .expect
+ *    files there are anew, to be looked at in git diff; an empty one
+ *    starts a new script off).
  */
 
 #include <dirent.h>
@@ -78,42 +77,37 @@ static std::vector<std::string> scripts()
 	return v;
 }
 
-/* one test per script: the new core's transcript the same as the old
-   core's, or as the script's .expect */
+/* one test per script: the core's transcript the same as the script's
+   .expect */
 class CoreEquiv : public testing::TestWithParam<std::string> {};
 
 TEST_P(CoreEquiv, SameTranscript)
 {
 	std::string base = std::string(SCRIPTS_DIR) + "/" + GetParam();
 	std::string s = base + ".txt", e = base + ".expect", want;
-	int st_old, st_new;
-	std::string t_new = output(std::string(SCRIPT_NEW) + " " + s, &st_new);
+	int st;
+	std::string t = output(std::string(SCRIPT) + " " + s, &st);
 
-	ASSERT_EQ(st_new, 0) << "the new core's run";
-	if (read_file(e, &want)) {
-		if (getenv("CORE_EXPECT_WRITE")) {
-			ASSERT_TRUE(write_file(e, t_new)) << e;
-			return;
-		}
-		EXPECT_EQ(want, t_new) << "the new core against " << e;
+	ASSERT_EQ(st, 0) << "the core's run";
+	ASSERT_TRUE(read_file(e, &want))
+		<< e << ": none (an empty one, then CORE_EXPECT_WRITE=1)";
+	if (getenv("CORE_EXPECT_WRITE")) {
+		ASSERT_TRUE(write_file(e, t)) << e;
 		return;
 	}
-	std::string t_old = output(std::string(SCRIPT_OLD) + " " + s, &st_old);
-	ASSERT_EQ(st_old, 0) << "the old core's run";
-	EXPECT_FALSE(t_old.empty());
 	/* line by line, for a readable difference */
-	EXPECT_EQ(t_old, t_new);
+	EXPECT_EQ(want, t) << "the core against " << e;
 }
 
 INSTANTIATE_TEST_SUITE_P(Scripts, CoreEquiv, testing::ValuesIn(scripts()),
 	[](const testing::TestParamInfo<std::string> &i) { return i.param; });
 
-/* fax_dte: every until comes (on the new core; in the other scripts
-   some wait for what an earlier until took already) */
+/* fax_dte: every until comes (in the other scripts some wait for what
+   an earlier until took already) */
 TEST(CoreScript, FaxDteUntilsCome)
 {
 	int st;
-	std::string t = output(std::string(SCRIPT_NEW) + " " SCRIPTS_DIR
+	std::string t = output(std::string(SCRIPT) + " " SCRIPTS_DIR
 			       "/fax_dte.txt", &st);
 
 	ASSERT_EQ(st, 0);

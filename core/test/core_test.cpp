@@ -1,6 +1,6 @@
 /*
  *
- *    core_test - the new modem core by itself: its Host interface, the
+ *    core_test - the modem core by itself: its Host interface, the
  *                timers, the options, a line that fails, and two modems
  *                back to back with data both ways, byte for byte
  *
@@ -39,6 +39,7 @@ struct Line final : public dcore::Host {
 	std::string out;
 	int fail_start = 0, fail_hook = 0;
 	int starts = 0, stops = 0, last_hook = -1, volume = -1;
+	int delay = 0, delay_change = 0;
 	/* counted; fail_start fails it */
 	int start(Modem &) override {
 		starts++;
@@ -58,6 +59,11 @@ struct Line final : public dcore::Host {
 	}
 	/* the volume, kept */
 	void speaker(Modem &, int v) override { volume = v; }
+	/* the line's delay, and the changes asked for, added up */
+	int io_delay(Modem &) override { return delay; }
+	void update_delay(Modem &, int samples) override {
+		delay_change += samples;
+	}
 	/* the DTE's output, kept */
 	int dte_write(Modem &, const char *buf, int n) override {
 		out.append(buf, n);
@@ -133,6 +139,23 @@ TEST(Core, FailingLine)
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
 	EXPECT_EQ(cmd(m, l, "ATM2L2\r"), "OK\r\n");
 	EXPECT_EQ(l.volume, 2);
+	delete m;
+}
+
+/* the line's delay as Smart Link's original library sees it: asked of
+   the host (MDMPRM_IODELAY), and its changes passed on to it
+   (MDMPRM_UPDATE_DELAY) */
+TEST(Core, LineDelay)
+{
+	Line l;
+	Modem *m = make(l, "delay");
+	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_IODELAY), 0);
+	l.delay = 128;
+	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_IODELAY), 128);
+	EXPECT_EQ(modem_set_param(m->handle(), MDMPRM_UPDATE_DELAY, -48), 0);
+	EXPECT_EQ(l.delay_change, -48);
+	EXPECT_EQ(modem_set_param(m->handle(), MDMPRM_UPDATE_DELAY, 20), 0);
+	EXPECT_EQ(l.delay_change, -28);
 	delete m;
 }
 

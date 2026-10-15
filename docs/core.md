@@ -36,10 +36,11 @@ a hook, and the binary `slmodem.log`).
 
 The behaviour started as that of Smart Link's slmodemd core (`modem.c`,
 `modem_at.c`, `modem_param.c`): the same commands, responses, states and
-timing. slmodemd, libdmodem (`dmodem.h`) and modem_test run on it. The
-old core is in `../dsp/test/legacy/`, only for the tests that need it: the
-original DSP library calls into it, and `core_equiv` compares the two.
-This core has gone beyond it where the old one fell short:
+timing. slmodemd, libdmodem (`dmodem.h`), modem_test and the interop
+tests' modems run on it, Smart Link's original DSP library as well
+(`half_smartlink`, `docs/interop.md`). The old core is no longer in the
+tree: `core_equiv` compares this one with the transcripts recorded from
+it. This core has gone beyond it where the old one fell short:
 
 - the version banner is the program's to print (`Modem::product`,
   `version`; slmodemd and modem_test print it at the start);
@@ -61,18 +62,18 @@ This core has gone beyond it where the old one fell short:
     ctest --test-dir build -R Core
 
 - `core_equiv` (`CoreEquiv`): `core_script` runs a script (`test/scripts/`) with two
-  modems back to back, once on this core and once on the old one, and the
-  transcripts (what each modem tells its DTE, with the time to 20 ms) must
-  be the same: calls at V.32bis, V.34/V.90 (`&A7`), V.22bis and V.21 with
+  modems back to back, and its transcript (what each modem tells its DTE,
+  with the time to 20 ms) must be the script's `<name>.expect`, the old
+  core's, recorded from it when it left the tree (the two cores gave the
+  same transcripts then): calls at V.32bis, V.34/V.90 (`&A7`), V.22bis and V.21 with
   data both ways, the escape and `ATO`, hangups from either side and while
   connecting, rings and auto answer, no answer, class 1 fax (V.21 frames,
   a TCF at 9600), the voice commands. Where this core differs on purpose
-  (the list above) the script has a `<name>.expect`, this core's
-  transcript, and the old core is not run: `at` (all the AT commands),
-  `fax_dte` (frames and commands around `<DLE><ETX>`), `data_drop` (a call
-  that ends with data waiting). `CORE_EXPECT_WRITE=1 core_equiv` writes the
-  `.expect` files there are anew, to be read in `git diff`; an empty one
-  starts a new script off. In a script `\\` is a backslash and `\xNN` any
+  (the list above) the `.expect` is this core's transcript instead: `at`
+  (all the AT commands), `fax_dte` (frames and commands around
+  `<DLE><ETX>`), `data_drop` (a call that ends with data waiting).
+  `CORE_EXPECT_WRITE=1 core_equiv` writes the `.expect` files anew, to be
+  read in `git diff`; an empty one starts a new script off. In a script `\\` is a backslash and `\xNN` any
   other character (`\b` is not a backspace). `FaxDteUntilsCome`: every
   `until` of `fax_dte` comes.
 - `core_test` (`Core`, `CoreCall`): this core by itself: its `Host` interface, a line that does

@@ -1,7 +1,7 @@
 # Interop tests against other soft modems
 
 Calls between the open modem and other soft modems: Smart Link's on
-slmodemd's old core, the Agere, SM56, PCTel and HSF ones each in user
+our modem core, the Agere, SM56, PCTel and HSF ones each in user
 space on an emulation of its hardware, Broadcom's Windows driver on a
 Windows kernel of our own and an emulation of its chip, and spandsp's (see
 [testing.md](testing.md) for the driver, netsim and how the calls keep
@@ -176,12 +176,23 @@ PCTel's `+MS` it did.
 
 `half_smartlink` runs Smart Link's soft modem: its DSP library
 (`test/smartlink/dsplibs.o`, binary-only, i386: the library slmodemd was
-written for, whose interface the open DSP keeps, `dsp/dsplibs.h`) on
-slmodemd's old C core (`test/legacy/`), which it calls into. It needs no
-hardware: the core gives it the line's samples at 9600 Hz as ours gives
-the open pumps theirs (`half_smartlink8`, at 8000 Hz, is built as well,
-but the library does not work at that rate). `ctest -L smartlink -j16`
-runs the tests; `smartlink_log.py` decodes the library's own debug lines
+written for, whose interface the open DSP keeps, `dsp/dsplibs.h`) on our
+modem core, in the open pumps' place: it is `half_open` built with the
+library and `test/smartlink_glue.cpp` instead of `dsp/`. It needs no
+hardware: the core gives it the line's samples at 9600 Hz as it gives
+the open pumps theirs (the library does not work at 8000 Hz). The glue
+has the little the library needs beyond the core's interface (its
+binary log records), and the tests' handles on it, `SMARTLINK_V92FULL`
+and `SMARTLINK_FPE_AT` (`docs/dsp/v92.md`), through the linker's
+`--wrap` of `dp_runtime_create` and `modem_dp_register`. The library
+also asks the line's delay (`MDMPRM_IODELAY`: PipeModem's lead silence)
+and may ask for it to change (`MDMPRM_UPDATE_DELAY`: input dropped or
+silence added), which the core passes to its host (`Host::io_delay`,
+`update_delay`). Until October 2026 it ran on slmodemd's old C core,
+kept in the tree for it; that core is gone, and the 60 calls came out
+the same on ours, within the variation of the old harness from one run
+to the next. `ctest -L smartlink -j16` runs the tests;
+`smartlink_log.py` decodes the library's own debug lines
 (`docs/dsp/v92.md`).
 
 The library is slmodem-2.9.11-20110321's (above). Its parts give their
@@ -766,7 +777,6 @@ commands meet the line depends on the scheduler. With `PIPE_SYNC`,
 `half_open` and `half_smartlink` also run in real time while on hook,
 their line running from the start (the others' does anyway), so that the
 commands meet the samples they would in real time even when the call
-itself runs unpaced (see `docs/testing.md`); `half_smartlink` then runs
-the old core's timers on the line's samples as well. `AGERE_SYNC_PHASE`
-and `SMARTLINK_SYNC_PHASE` move one side within the period, to try the
-alignments one by one.
+itself runs unpaced (see `docs/testing.md`). `AGERE_SYNC_PHASE` (each
+peer's `<NAME>_SYNC_PHASE`) moves that side within the period, to try
+the alignments one by one.

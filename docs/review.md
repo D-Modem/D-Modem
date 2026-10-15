@@ -3,8 +3,8 @@
 A review of the whole tree: every function of our own code got a comment
 saying what it does, small and clearly correct fixes were made (with a
 test where one could catch the bug), and the rest is listed here.
-`dsp/test/legacy` (the old slmodemd core, kept for `core_equiv`) was left
-as it is.
+`dsp/test/legacy` (the old slmodemd core, then kept for `core_equiv` and
+the original library) was left as it is; it has since left the tree.
 
 ## Fixed
 

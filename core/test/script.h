@@ -1,7 +1,7 @@
 /*
  *
- *    script.h - one modem core as core_script drives it: the new core
- *               (script_new.cpp) or slmodemd's old one (script_old.cpp)
+ *    script.h - the modem core as core_script drives it
+ *               (script_core.cpp)
  *
  */
 #ifndef CORE_SCRIPT_H
@@ -36,7 +36,5 @@ struct Core {
 /* the pumps register (once); a modem at 8000 Hz on the clock *ms */
 void core_init();
 Core *core_create(const char *name, const unsigned long *ms);
-/* new or old */
-extern const char *core_kind;
 
 #endif

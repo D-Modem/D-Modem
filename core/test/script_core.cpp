@@ -1,6 +1,6 @@
 /*
  *
- *    script_new.cpp - core_script's modem: the new core (dcore.h)
+ *    script_core.cpp - core_script's modem: the modem core (dcore.h)
  *
  */
 
@@ -13,26 +13,24 @@
 
 extern "C" int prop_dp_init(void);
 
-const char *core_kind = "new";
-
 namespace {
 
-/* the new core; its Host keeps the DTE's output and has the script's
+/* the core; its Host keeps the DTE's output and has the script's
    clock */
-struct NewCore final : public Core, public dcore::Host {
+struct ScriptCore final : public Core, public dcore::Host {
 	dcore::Modem *m;
 	const unsigned long *clock;
 	std::string out;
 
 	/* a modem at 8000 Hz */
-	NewCore(const char *name, const unsigned long *ms) : clock(ms) {
+	ScriptCore(const char *name, const unsigned long *ms) : clock(ms) {
 		dcore::Options o;
 		o.name = name;
 		o.dev_name = name;
 		o.rate = 8000;
 		m = new dcore::Modem(*this, o);
 	}
-	~NewCore() override { delete m; }
+	~ScriptCore() override { delete m; }
 
 	/* Host */
 	int start(dcore::Modem &) override { return 0; }
@@ -82,8 +80,8 @@ void core_init()
 	prop_dp_init();
 }
 
-/* a modem of the new core */
+/* a modem of the core */
 Core *core_create(const char *name, const unsigned long *ms)
 {
-	return new NewCore(name, ms);
+	return new ScriptCore(name, ms);
 }

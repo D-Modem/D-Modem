@@ -70,9 +70,9 @@ long Modem::get_param(unsigned name)
 	case MDMPRM_MAX_RATE:
 		return max_rate_;
 	case MDMPRM_IODELAY:
-		/* (the line's delay: the open data pumps do not ask, only
-		   Smart Link's original library did) */
-		return 0;
+		/* (Smart Link's original library asks, not the open data
+		   pumps) */
+		return host_.io_delay(*this);
 	case MDMPRM_CODECTYPE:
 		val = host_.codec_type(*this);
 		return val < 0 ? CODEC_UNKNOWN : val;
@@ -198,8 +198,8 @@ long Modem::set_param(unsigned name, int val)
 		dp_requested_ = val;
 		break;
 	case MDMPRM_UPDATE_DELAY:
-		/* (a change of the line's delay: none of the open data pumps
-		   asks for one, only Smart Link's original library did) */
+		/* (as MDMPRM_IODELAY) */
+		host_.update_delay(*this, val);
 		break;
 	case MDMPRM_MOH_REQ:
 		moh_req_ = val;

@@ -3,8 +3,10 @@
  *    half_open.cpp - one modem (the open data pumps on the modem core)
  *                     whose line's audio is read from fd 3 and written to
  *                     fd 4, so that interop_call can put it back to back
- *                     with a modem in another process: the original
- *                     library (half_smartlink) or the Agere modem
+ *                     with a modem in another process: another open one,
+ *                     the original library or the other soft modems.
+ *                     Built with the original library in the open pumps'
+ *                     place (smartlink_glue.cpp) it is half_smartlink.
  *
  *    Prints "created <name>: <pty>" for interop_call.  MODEM_NAME names it,
  *    MODEM_REALTIME=1 runs it no faster than the sample clock (with

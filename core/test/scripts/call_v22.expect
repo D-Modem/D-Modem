@@ -1,0 +1,57 @@
+      0 A< ATE0V0X3+MS=122\r
+      0 A: ATE0V0X3+MS=122\r\r\n
+      0 A: 0\r\n
+      0 B< ATE0+MS=122,0\r
+      0 B: ATE0+MS=122,0\r\r\n
+      0 B: OK\r\n
+      0 B< ATA\r
+      0 A< ATD\r
+   7960 B: CONNECT 2400\r\n
+   8020 A: 1\r\n
+   8020 until A '1\r': yes
+   8020 until B 'CONNECT': yes
+   8020 A: state 2, tx 2400 rx 2400, started
+   8020 B: state 2, tx 2400 rx 2400, started
+   8380 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8380 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  12040 A: B0009 The quick brown fox jumps over the l3\r\n
+  13020 B: A0009 The quick brown fox jumps over the lNO CARRIER\r\n
+  13020 until B 'NO CARRIER': yes
+  13520 A: state 0, tx 2400 rx 2400, idle
+  13520 B: state 0, tx 2400 rx 2400, idle
+  13520 A< AT+MS=21,0\r
+  13520 A: 0\r\n
+  13520 B< AT+MS=21,0\r
+  13520 B: OK\r\n
+  13520 B< ATA\r
+  13520 A< ATDT5551234\r
+  19460 B: CONNECT 300\r\n
+  19480 A: 1\r\n
+  19480 until A '1\r': yes
+  19480 until B 'CONNECT': yes
+  19480 A: state 2, tx 300 rx 300, started
+  19480 B: state 2, tx 300 rx 300, started
+  21580 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  22540 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  23640 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  24500 B: A0002 The quick brown foxNO CARRIER\r\n
+  25440 A: B0001 The quick brown fox jumps over the lazy dog 012345678\xff\x00\x00\x00\x003\r\n
+  25440 until A '3\r': yes
+  25940 A: state 0, tx 300 rx 300, idle
+  25940 B: state 0, tx 300 rx 300, idle

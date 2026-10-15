@@ -94,23 +94,31 @@ int PipeModem::lead()
 	n = getenv("PIPE_LEAD") ? 2 * atoi(getenv("PIPE_LEAD")) : 256;
 	if (n > (int)sizeof(zeros))
 		n = sizeof(zeros);
+	lead_ = n / 2;
 	if (write(out_, zeros, n) != n)
 		return -1;
 	return 0;
 }
 
 /* off hook (the line is always there, with PIPE_SYNC from the start:
-   run()); 0, or -1 if the lead silence can't be written */
+   run()), its delay the lead silence's; 0, or -1 if the lead silence
+   can't be written */
 int PipeModem::start(dcore::Modem &)
 {
+	int ret;
 	DBG("modem_test_start...\n");
-	return lead();
+	ret = lead();
+	delay_ = lead_;
+	pending_delay_ = 0;
+	return ret;
 }
 
 /* on hook: nothing to do, the line stays */
 int PipeModem::stop(dcore::Modem &)
 {
 	DBG("modem_test_stop...\n");
+	delay_ = 0;
+	pending_delay_ = 0;
 	return 0;
 }
 
@@ -188,6 +196,17 @@ int PipeModem::line(bool rd)
 	count = line_.frames(&in, max);
 	if (count == 0)
 		return 0;
+	/* a shorter line (update_delay()): input dropped */
+	if (pending_delay_ < 0) {
+		int n = -pending_delay_ < count ? -pending_delay_ : count;
+		DBG("change delay -%d...\n", n);
+		in += n;
+		count -= n;
+		delay_ -= n;
+		pending_delay_ += n;
+		if (count == 0)
+			return 0;
+	}
 
 	/* no faster than the clock between calls as well: the line's
 	   silence goes round and round */
@@ -227,6 +246,19 @@ int PipeModem::line(bool rd)
 	}
 	if (count == 0)
 		DBG("dev write = 0\n");
+	/* a longer line (update_delay(), as the modem ran): silence out */
+	while (pending_delay_ > 0) {
+		static const int16_t zeros[MAX_SAMPLES] = {};
+		int n = pending_delay_ < MAX_SAMPLES ? pending_delay_ :
+			MAX_SAMPLES;
+		DBG("change delay %d...\n", n);
+		if (write(out_, zeros, 2 * n) != 2 * n) {
+			ERR("dev write: %s\n", strerror(errno));
+			return -1;
+		}
+		delay_ += n;
+		pending_delay_ -= n;
+	}
 	/* PIPE_SYNC stops at its samples: on with what is left, else it
 	   may hold the line's last samples with nothing more to read */
 	if (sync_ && line_.waiting() >= HALF_FRAME)
