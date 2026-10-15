@@ -697,90 +697,12 @@ void V34Params::subset_points(float u, float v, float dist[8], int pt[8]) const
    data signal */
 void V34DataRx::viterbi_init()
 {
-	int s;
 	/* the encoder starts at 0, but a receiver rotated by 90, 180 or
 	   270 degrees sees the code sequence of another start state */
-	for (s = 0; s < V34_STATES; s++)
-		metric[s] = 0;
-	vt = vn = 0;
+	vit.init(-1);
 	half = 0;
 	pat = 2 * p.J - 2;
 	v0 = v34_sync_pattern[pat];
-}
-
-/* one 4D symbol in; returns 1 with a decided pair of point codes, after
-   the decoding delay */
-int V34DataRx::viterbi_4d(const float da_[8], const int ca_[8], const float db[8], const int cb[8], int out[2])
-{
-	float gm[32], m2[V34_STATES], best;
-	int ga[32], gb[32];
-	int states = p.states, l0, l1, g, s, y, t = vt, bs, k;
-	/* the 16 state code only uses Y1 and Y2 */
-	int ny = states == 16 ? 4 : 16;
-
-	/* the best pair of subsets for each trellis input and Y0 */
-	for (g = 0; g < 2 * ny; g++)
-		gm[g] = 1e30f;
-	for (l0 = 0; l0 < 8; l0++)
-		for (l1 = 0; l1 < 8; l1++) {
-			float m = da_[l0] + db[l1];
-			g = (conv_in(l0, l1) & (ny - 1)) +
-			    ((l0 ^ l1) & 1) * ny;
-			if (m < gm[g]) {
-				gm[g] = m;
-				ga[g] = ca_[l0];
-				gb[g] = cb[l1];
-			}
-		}
-	for (s = 0; s < states; s++)
-		m2[s] = 1e30f;
-	for (s = 0; s < states; s++) {
-		/* U0 = Y0 ^ V0 (no precoding: C0 = 0) */
-		int y0 = (s ^ v0) & 1;
-		if (metric[s] >= 1e29f)
-			continue;
-		for (y = 0; y < ny; y++) {
-			int ns = trellis_next(states, s, y);
-			float m = metric[s] + gm[y + y0 * ny];
-			if (m < m2[ns]) {
-				m2[ns] = m;
-				prev[t][ns] = (unsigned char)s;
-				pa[t][ns] = ga[y + y0 * ny];
-				pb[t][ns] = gb[y + y0 * ny];
-			}
-		}
-	}
-	best = m2[0];
-	bs = 0;
-	for (s = 1; s < states; s++)
-		if (m2[s] < best) {
-			best = m2[s];
-			bs = s;
-		}
-	for (s = 0; s < states; s++)
-		metric[s] = m2[s] - best;
-
-	/* the superframe inversions, as the transmitter */
-	if (++half >= 2 * p.P) {
-		half = 0;
-		if (++pat >= 2 * p.J)
-			pat = 0;
-		v0 = v34_sync_pattern[pat];
-	} else
-		v0 = 0;
-
-	vt = (t + 1) % V34_TB;
-	if (++vn < V34_TB)
-		return 0;
-	/* trace back from the best state to the oldest symbol kept */
-	s = bs;
-	for (k = 0; k < V34_TB - 1; k++) {
-		s = prev[t][s];
-		t = (t + V34_TB - 1) % V34_TB;
-	}
-	out[0] = pa[t][s];
-	out[1] = pb[t][s];
-	return 1;
 }
 
 /* a decided channel output point y(n): with precoding u(n) = y(n) - c(n),
@@ -834,7 +756,16 @@ cplx V34DataRx::symbol(cplx z_, unsigned *scr, int tap)
 		int cb[8];
 		p_->subset_points(u, v, db, cb);
 		half2 = 0;
-		if (viterbi_4d(da, ca, db, cb, out)) {
+		int got = vit.step(p.states, v0, da, ca, db, cb, out);
+		/* the superframe inversions, as the transmitter */
+		if (++half >= 2 * p.P) {
+			half = 0;
+			if (++pat >= 2 * p.J)
+				pat = 0;
+			v0 = v34_sync_pattern[pat];
+		} else
+			v0 = 0;
+		if (got) {
 			point(out[0], scr, tap);
 			point(out[1], scr, tap);
 		}

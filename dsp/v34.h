@@ -181,17 +181,113 @@ struct V34DataTx {
 #define V34_STATES      64      /* at most */
 #define V34_TB          32      /* Viterbi decoding delay, 4D symbols */
 
+/* the trellis code (9.6.3/V.34): the subset label of a 2D point (odd
+   coordinates), the encoder input Y1 | Y2 << 1 | Y3 << 2 | Y4 << 3 of a
+   4D symbol from its two labels, and the next encoder state (16, 32 or 64
+   states; its low bit is Y0) */
+int v34_subset_label(int x, int y);
+int v34_conv_in(int s0, int s1);
+int v34_trellis_next(int states, int st, int y);
+
+/* the Viterbi decoder of the 4D trellis code (9.6.3/V.34; V.92's PCM
+   upstream codes the same way), TB 4D symbols behind: in, each 2D half's
+   best point in each of its 8 subsets and that point's metric; out, the
+   points of the 4D symbol TB - 1 back on the best path */
+template <int TB>
+struct Viterbi4d {
+	float metric[V34_STATES];
+	unsigned char prev[TB][V34_STATES];
+	int pa[TB][V34_STATES], pb[TB][V34_STATES];
+	int t, n;
+
+	/* the paths cleared: from any state (start < 0: a receiver turned
+	   by 90, 180 or 270 degrees sees the code sequence of another start
+	   state), or from start alone */
+	void init(int start)
+	{
+		for (int s = 0; s < V34_STATES; s++)
+			metric[s] = start < 0 || s == start ? 0 : 1e30f;
+		t = n = 0;
+	}
+
+	/* a 4D symbol on a code of states (16, 32 or 64): its halves'
+	   subset metrics da, db and points ca, cb; v0 inverts Y0 (V.34's
+	   superframe sync, 0 else).  1 with out[] the points of the 4D
+	   symbol TB - 1 back, 0 while the paths fill */
+	int step(int states, int v0, const float da[8], const int ca[8],
+		 const float db[8], const int cb[8], int out[2])
+	{
+		float gm[32], m2[V34_STATES], best;
+		int ga[32], gb[32];
+		int l0, l1, g, s, y, bs, k, tt = t;
+		/* the 16 state code only uses Y1 and Y2 */
+		int ny = states == 16 ? 4 : 16;
+
+		/* the best pair of subsets for each encoder input (Y1 Y2,
+		   or Y1 to Y4) and Y0 */
+		for (g = 0; g < 2 * ny; g++)
+			gm[g] = 1e30f;
+		for (l0 = 0; l0 < 8; l0++)
+			for (l1 = 0; l1 < 8; l1++) {
+				float m = da[l0] + db[l1];
+				g = (v34_conv_in(l0, l1) & (ny - 1)) +
+				    ((l0 ^ l1) & 1) * ny;
+				if (m < gm[g]) {
+					gm[g] = m;
+					ga[g] = ca[l0];
+					gb[g] = cb[l1];
+				}
+			}
+		for (s = 0; s < states; s++)
+			m2[s] = 1e30f;
+		for (s = 0; s < states; s++) {
+			/* U0 = Y0 ^ V0 (no precoding: C0 = 0) */
+			int y0 = (s ^ v0) & 1;
+			if (metric[s] >= 1e29f)
+				continue;
+			for (y = 0; y < ny; y++) {
+				int ns = v34_trellis_next(states, s, y);
+				float m = metric[s] + gm[y + y0 * ny];
+				if (m < m2[ns]) {
+					m2[ns] = m;
+					prev[tt][ns] = (unsigned char)s;
+					pa[tt][ns] = ga[y + y0 * ny];
+					pb[tt][ns] = gb[y + y0 * ny];
+				}
+			}
+		}
+		best = m2[0];
+		bs = 0;
+		for (s = 1; s < states; s++)
+			if (m2[s] < best) {
+				best = m2[s];
+				bs = s;
+			}
+		for (s = 0; s < states; s++)
+			metric[s] = m2[s] - best;
+
+		t = (tt + 1) % TB;
+		if (++n < TB)
+			return 0;
+		/* trace back from the best state to the oldest symbol kept */
+		s = bs;
+		for (k = 0; k < TB - 1; k++) {
+			s = prev[tt][s];
+			tt = (tt + TB - 1) % TB;
+		}
+		out[0] = pa[tt][s];
+		out[1] = pb[tt][s];
+		return 1;
+	}
+};
+
 struct V34DataRx {
 	V34Params p;
 	CoreBits link;          /* the data */
 	int sbc, z;
 	int e[8];               /* rotation << 9 | point index */
 	int pos;
-	/* Viterbi decoder */
-	float metric[V34_STATES];
-	unsigned char prev[V34_TB][V34_STATES];
-	int pa[V34_TB][V34_STATES], pb[V34_TB][V34_STATES];
-	int vt, vn;
+	Viterbi4d<V34_TB> vit;
 	int half, pat, v0;      /* superframe inversions, as the transmitter */
 	int half2;              /* the first 2D symbol of a 4D one is in: */
 	float da[8];
@@ -201,7 +297,6 @@ struct V34DataRx {
 	void viterbi_init();
 	void init(const V34Params *p_);
 	void decode_frame(unsigned *scr, int tap);
-	int viterbi_4d(const float da_[8], const int ca_[8], const float db[8], const int cb[8], int out[2]);
 	void point(int pt, unsigned *scr, int tap);
 	cplx symbol(cplx z_, unsigned *scr, int tap);
 };
@@ -369,14 +464,6 @@ struct V34Rx {
 	void sample(float x);
 };
 
-
-/* the trellis code (9.6.3/V.34): the subset label of a 2D point (odd
-   coordinates), the encoder input Y1 | Y2 << 1 | Y3 << 2 | Y4 << 3 of a
-   4D symbol from its two labels, and the next encoder state (16, 32 or 64
-   states; its low bit is Y0) */
-int v34_subset_label(int x, int y);
-int v34_conv_in(int s0, int s1);
-int v34_trellis_next(int states, int st, int y);
 
 } // namespace dsp
 

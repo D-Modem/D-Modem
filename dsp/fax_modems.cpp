@@ -492,18 +492,8 @@ float FaxTx::sample()
    (0-3), else the nearest multiple of 45 degrees (0-7) */
 int FaxRx::state_of(cplx z)
 {
-	if (is_v17(mod)) {
-		int k, best = 0;
-		float bd = 1e30f;
-		for (k = 0; k < 4; k++) {
-			float d = cplx_pow(cplx_sub(z, v32_abcd[k]));
-			if (d < bd) {
-				bd = d;
-				best = k;
-			}
-		}
-		return best;
-	}
+	if (is_v17(mod))
+		return nearest_point(v32_abcd, 4, z);
 	return (int)lrintf(atan2f(z.im, z.re) / (float)(M_PI / 4)) & 7;
 }
 
@@ -665,18 +655,11 @@ void FaxRx::data_symbol()
 {
 	cplx z = qam.z, d;
 	int n = data_bits(mod), k, best, phase, dp, bits;
-	float bd;
 
 	if (is_v17(mod)) {
 		const cplx *pts = v17_points(mod);
 		int q;
-		for (k = 0, best = 0, bd = 1e30f; k < (1 << (n + 1)); k++) {
-			float e = cplx_pow(cplx_sub(z, pts[k]));
-			if (e < bd) {
-				bd = e;
-				best = k;
-			}
-		}
+		best = nearest_point(pts, 1 << (n + 1), z);
 		d = pts[best];
 		q = vit.decode(z, NULL);
 		data_sym++;
@@ -689,16 +672,9 @@ void FaxRx::data_symbol()
 	} else {
 		const cplx *pts = is_v29(mod) ? v29_points : v27_points;
 		int npts = mod == FM_V29_9600 ? 16 : 8;
-		for (k = 0, best = 0, bd = 1e30f; k < npts; k++) {
-			float e;
-			if (mod == FM_V29_4800 && (k & 1))
-				continue;
-			e = cplx_pow(cplx_sub(z, pts[k]));
-			if (e < bd) {
-				bd = e;
-				best = k;
-			}
-		}
+		/* (V.29 4800: the even points) */
+		best = nearest_point(pts, npts, z,
+				     mod == FM_V29_4800 ? 2 : 1);
 		d = pts[best];
 		phase = best & 7;
 		dp = (phase - state) & 7;

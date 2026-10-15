@@ -130,6 +130,22 @@ struct TrellisEnc {
 	int encode(int q, int bits);
 };
 
+/* the index of the point nearest to z among pts[0], pts[step], ... below
+   pts[n] (the first of equals): a slicer on a constellation's table */
+inline int nearest_point(const cplx *pts, int n, cplx z, int step = 1)
+{
+	int best = 0;
+	float bd = 1e30f;
+	for (int k = 0; k < n; k += step) {
+		float d = cplx_pow(cplx_sub(z, pts[k]));
+		if (d < bd) {
+			bd = d;
+			best = k;
+		}
+	}
+	return best;
+}
+
 #define VITERBI_DEPTH 16
 struct Viterbi {
 	int nbits;              /* bits per symbol */

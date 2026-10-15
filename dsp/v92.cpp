@@ -868,9 +868,7 @@ void V92Up::symbol(float y)
 			fpe_rx = fpe_sw = 0;
 			dmse = 0;
 			vi = 0;
-			vt = vn = 0;
-			for (int k = 0; k < 64; k++)
-				vmetric[k] = k ? 1e30f : 0;
+			vit.init(0);
 		}
 		break;
 	}
@@ -1289,66 +1287,19 @@ static void subset_pts(float u, float v, int lim, float dist[8], int pt[8])
    symbols); the decided symbols after the decoding delay */
 void V92Up::trellis_frame()
 {
-	float da[8], db[8], gm[32], m2[64], best;
-	int ca[8], cb[8], ga[32], gb[32], l0, l1, g, st, y, t = vt, bs, k;
+	float da[8], db[8];
+	int ca[8], cb[8], out[2];
 	int lim = 2 * cpd.lc[0] - 1;
-	int states = 16 << cpd.trellis, ny = states == 16 ? 4 : 16;
 
 	subset_pts(tu[0], tu[1], lim, da, ca);
 	subset_pts(tu[2], tu[3], lim, db, cb);
-	for (g = 0; g < 2 * ny; g++)
-		gm[g] = 1e30f;
-	for (l0 = 0; l0 < 8; l0++)
-		for (l1 = 0; l1 < 8; l1++) {
-			float m = da[l0] + db[l1];
-			/* the encoder input (Y1 Y2, or Y1 to Y4), and Y0 */
-			g = (v34_conv_in(l0, l1) & (ny - 1)) +
-				((l0 ^ l1) & 1) * ny;
-			if (m < gm[g]) {
-				gm[g] = m;
-				ga[g] = ca[l0];
-				gb[g] = cb[l1];
-			}
-		}
-	for (st = 0; st < states; st++)
-		m2[st] = 1e30f;
-	for (st = 0; st < states; st++) {
-		int y0 = st & 1;
-		if (vmetric[st] >= 1e29f)
-			continue;
-		for (y = 0; y < ny; y++) {
-			int ns = v34_trellis_next(states, st, y);
-			float m = vmetric[st] + gm[y + y0 * ny];
-			if (m < m2[ns]) {
-				m2[ns] = m;
-				vprev[t][ns] = (unsigned char)st;
-				vpa[t][ns] = ga[y + y0 * ny];
-				vpb[t][ns] = gb[y + y0 * ny];
-			}
-		}
-	}
-	best = m2[0];
-	bs = 0;
-	for (st = 1; st < states; st++)
-		if (m2[st] < best) {
-			best = m2[st];
-			bs = st;
-		}
-	for (st = 0; st < states; st++)
-		vmetric[st] = m2[st] - best;
-	vt = (t + 1) % V92_VT;
-	if (++vn < V92_VT)
+	if (!vit.step(16 << cpd.trellis, 0, da, ca, db, cb, out))
 		return;
-	st = bs;
-	for (k = 0; k < V92_VT - 1; k++) {
-		st = vprev[t][st];
-		t = (t + V92_VT - 1) % V92_VT;
-	}
 	/* the odd coordinates back to indices */
-	decided(((short)(vpa[t][st] & 0xFFFF) - 1) / 2);
-	decided(((vpa[t][st] >> 16) - 1) / 2);
-	decided(((short)(vpb[t][st] & 0xFFFF) - 1) / 2);
-	decided(((vpb[t][st] >> 16) - 1) / 2);
+	decided(((short)(out[0] & 0xFFFF) - 1) / 2);
+	decided(((out[0] >> 16) - 1) / 2);
+	decided(((short)(out[1] & 0xFFFF) - 1) / 2);
+	decided(((out[1] >> 16) - 1) / 2);
 }
 
 /* a data mode symbol, y the equalizer's output: the nearest point in

@@ -221,10 +221,7 @@ struct V92Up : PcmFrames<V92Up> {
 	int trellis_on;         /* Viterbi decoding of the trellis code */
 	float tu[4];            /* the symbols of a trellis frame, in grid
 				   units (2 eta + 1) */
-	float vmetric[64];
-	unsigned char vprev[V92_VT][64];
-	int vpa[V92_VT][64], vpb[V92_VT][64];
-	int vt, vn;
+	Viterbi4d<V92_VT> vit;
 	int vi;                 /* data frame interval of the next decided
 				   symbol */
 	int dk[12];

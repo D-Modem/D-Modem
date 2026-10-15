@@ -245,31 +245,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 /* the index (A B C D: 0..3) of the training point nearest to z */
 static int nearest_abcd(cplx z)
 {
-	int k, best = 0;
-	float bd = 1e30f;
-	for (k = 0; k < 4; k++) {
-		float d = cplx_pow(cplx_sub(z, v32_abcd[k]));
-		if (d < bd) {
-			bd = d;
-			best = k;
-		}
-	}
-	return best;
-}
-
-/* the index of the point of pts[n] nearest to z */
-static int nearest_point(const cplx *pts, int n, cplx z)
-{
-	int k, best = 0;
-	float bd = 1e30f;
-	for (k = 0; k < n; k++) {
-		float d = cplx_pow(cplx_sub(z, pts[k]));
-		if (d < bd) {
-			bd = d;
-			best = k;
-		}
-	}
-	return best;
+	return nearest_point(v32_abcd, 4, z);
 }
 
 /* the fastest rate whose bits are all set in the rate word w, or NULL */
