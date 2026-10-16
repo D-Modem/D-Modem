@@ -7,7 +7,7 @@
  *                         of E.180's networks, through G.711, at the
  *                         sample rates the modem runs at, and what is
  *                         neither (speech, noise, a dial tone's level
- *                         too low)
+ *                         too low); the answer tones
  *
  */
 #include <gtest/gtest.h>
@@ -195,9 +195,60 @@ TEST(CallTone, NotCallTones)
 	}
 	EXPECT_EQ(d.rings, 0u);
 	EXPECT_EQ(d.busy, 0u);
+	EXPECT_EQ(d.answer[0] + d.answer[1], 0u);
 
 	EXPECT_EQ(listen({ { 1000 } }, 5000).rings, 0u);
 	EXPECT_EQ(listen({ { 440, 480 }, { 500, 4000 } }, 9000).rings, 0u);
+}
+
+/* answer tones (V.253's <DLE>a and <DLE>f): ANS and ANSam (2100 Hz, its
+   phase reversed every 450 ms, ANSam amplitude-modulated at 15 Hz) and
+   Bell's 2225 Hz, each once, 0.3 s in, through G.711; not 1800 Hz, not
+   a tone of 0.2 s, not the ringing or a busy tone */
+TEST(CallTone, AnswerTones)
+{
+	struct { const char *name; double f, am; bool reverse; int ms;
+		 unsigned a2100, a2225; } cases[] = {
+		{ "ANS", 2100, 0, false, 3300, 1, 0 },
+		{ "/ANS", 2100, 0, true, 3300, 1, 0 },
+		{ "ANSam", 2100, 0.2, true, 3300, 1, 0 },
+		{ "Bell", 2225, 0, false, 2000, 0, 1 },
+		{ "1800 Hz", 1800, 0, false, 2000, 0, 0 },
+		{ "short", 2100, 0, false, 200, 0, 0 },
+	};
+	for (const auto &c : cases) {
+		CallToneDetect d;
+		long on_at = -1;
+		double a = 32767 * pow(10, (-12 - 3.14) / 20);
+		d.init(8000);
+		for (long i = 0; i < 8L * (c.ms + 500); i++) {
+			double t = i / 8000.0, x = 0;
+			if (i < 8L * c.ms) {
+				int rev = c.reverse ? (int)(t / 0.45) : 0;
+				x = a * sin(2 * M_PI * c.f * t + M_PI * rev) *
+					(1 + c.am * sin(2 * M_PI * 15 * t));
+			}
+			d.sample(g711::decode(false, g711::encode(false, (int)x)));
+			if (on_at < 0 && d.answer[0] + d.answer[1])
+				on_at = i / 8;
+		}
+		EXPECT_EQ(d.answer[0], c.a2100) << c.name;
+		EXPECT_EQ(d.answer[1], c.a2225) << c.name;
+		if (c.a2100 + c.a2225) {
+			EXPECT_NEAR(on_at, 300, 30) << c.name;
+		}
+		EXPECT_EQ(d.rings, 0u) << c.name;
+		EXPECT_EQ(d.busy, 0u) << c.name;
+	}
+	EXPECT_EQ(listen({ { 440, 480 }, { 2000, 4000 } }, 7000).rings, 2u);
+	CallToneDetect d;
+	d.init(8000);
+	for (long i = 0; i < 8000L * 5; i++)
+		d.sample((i / 4000) % 2 ? 0 : (float)(3000 *
+			(sin(2 * M_PI * 480 * i / 8000.0) +
+			 sin(2 * M_PI * 620 * i / 8000.0))));
+	EXPECT_EQ(d.busy, 1u);
+	EXPECT_EQ(d.answer[0] + d.answer[1], 0u);
 }
 
 /* a ring a long way into the quiet: the ms since it ended keep counting,

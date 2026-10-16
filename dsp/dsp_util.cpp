@@ -324,8 +324,11 @@ void CallToneDetect::init(int srate)
 	len = srate * CT_BLOCK_MS / 1000;
 	for (int k = 0; k < 5; k++)
 		g[k].init(f[k], len, srate);
+	ans[0].init(2100, len, srate);
+	ans[1].init(2225, len, srate);
 	band.bandpass(480, 1.2f, srate);
 	drop = CT_GAP;
+	ans_drop[0] = ans_drop[1] = CT_GAP;
 }
 
 /* see dsp.h */
@@ -337,6 +340,8 @@ void CallToneDetect::sample(float x)
 	band_energy += b * b;
 	for (int k = 0; k < 5; k++)
 		g[k].run(x);
+	ans[0].run(x);
+	ans[1].run(x);
 	if (++n < len)
 		return;
 	block();
@@ -350,7 +355,9 @@ void CallToneDetect::sample(float x)
    band when that has half of it.  A ring is the burst of segments,
    each 0.3 s of the tone at least, that comes to 0.6 s of them; it ends
    after 0.3 s without.  The band on and off in runs of 0.2 to 0.8 s,
-   four times on, is a busy cadence. */
+   four times on, is a busy cadence.  An answer tone is 0.3 s of blocks
+   with 60 per cent of their energy at its frequency (ANSam's phase
+   reversals may cost a block or two), once until it has gone. */
 void CallToneDetect::block()
 {
 	float e = energy / len, t = 0;
@@ -383,6 +390,18 @@ void CallToneDetect::block()
 		since_ring = 0;
 	else
 		since_ring++;
+
+	for (int k = 0; k < 2; k++) {
+		if (e > 100.0f * 100.0f && ans[k].power > 0.6f * e) {
+			if (ans_drop[k] > CT_DROP_MAX)
+				ans_run[k] = 0;
+			ans_drop[k] = 0;
+			if (++ans_run[k] == CT_SEG_MIN)
+				answer[k]++;
+		} else {
+			ans_drop[k]++;
+		}
+	}
 
 	if (b == (band_on != 0)) {
 		band_run++;

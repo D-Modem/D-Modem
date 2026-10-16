@@ -318,6 +318,7 @@ private:
 	long voice_dial_left_ms();
 	void voice_dial_end(Result r);
 	void voice_line_gone();
+	void voice_drain();
 	int voice_set_device(unsigned device);
 	void voice_init();
 	void fax_process(int16_t *in, int16_t *out, int n);
@@ -485,8 +486,13 @@ private:
 	/* a voice dial under way (ATD in voice mode): since when (ms) */
 	bool voice_dialing_ = false;
 	unsigned long voice_dial_since_ = 0;
-	/* the voice engine streams (+VTX, +VRX) until its OK */
-	bool voice_streaming_ = false;
+	/* the voice engine's command (a VOICE_CMD: +VTS's tones, +VTX,
+	   +VRX, +VTR) until its OK or ERROR, -1 for none */
+	int voice_cmd_ = -1;
+	/* the line gone during +VTX or +VTR (duplex): the DTE's samples
+	   discarded up to their end (a <DLE> code) */
+	bool voice_drain_ = false, voice_drain_dle_ = false;
+	bool voice_drain_duplex_ = false;
 	void *fax_ = nullptr;
 	/* the call's fax over T.38 (its data octets in a packet) */
 	bool t38_ = false;

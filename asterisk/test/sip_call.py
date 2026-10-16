@@ -25,8 +25,11 @@
 # side.  VOICE_DIAL=1: D-Modem dials in voice mode (ATD with +FCLASS=8,
 # S7=6): 7002 BUSY, 7003 NO ANSWER after S7, 7001 OK when Asterisk
 # answers (2 s of ringing), its DTMF 7 reported, our +VTS played, and its
-# hangup reported as <DLE>l and NO CARRIER; ATH then data mode again,
-# where a data call to 7002 is BUSY too.
+# hangup reported as <DLE>l alone; then with early media (S7=15) 7004's
+# ringing tone reported as rings (<DLE>r) and OK at its 200 OK, 7005's
+# busy tone BUSY before its 486, 7007's answer tone <DLE>a and OK
+# without a 200 OK; 7006 (404) ERROR; ATH then data mode again, where a
+# data call to 7002 is BUSY too.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 dmodemd, number = sys.argv[1:3]
@@ -154,11 +157,37 @@ if os.environ.get("VOICE_DIAL"):
     m = cmd(b"AT+VTS=1,2", rb"(OK|ERROR)\r\n", 5)
     print("tones:", m.group(1).decode() if m else "timeout")
     ok = ok and m is not None and m.group(1) == b"OK"
-    m = expect(rb"\x10l(\r\n)?NO CARRIER\r\n", 10)
-    print("hangup:", "<DLE>l NO CARRIER" if m else "none")
-    ok = ok and m is not None
+    # its hangup: <DLE>l alone (V.253 has no NO CARRIER in voice mode)
+    m = expect(rb"\x10l", 10)
+    expect(rb"(?!)", 1)         # what follows it, for a second
+    nc = b"NO CARRIER" in seen[-50:]
+    print("hangup:", ("<DLE>l" if m else "none") + (" NO CARRIER" if nc else ""))
+    ok = ok and m is not None and not nc
     m = cmd(b"AT+FCLASS?", rb"(\d)\r\nOK\r\n", 5)
     ok = ok and m is not None and m.group(1) == b"8"
+    # early media (183): the ringing tone heard as rings (<DLE>r), the
+    # answer still the 200 OK, 7 s on; a busy tone BUSY at once, not the
+    # 486 15 s on; an answer tone (<DLE>a) OK with no 200 OK
+    ok = ok and cmd(b"ATS7=15") is not None
+    m, dt = timed(b"ATD7004", rb"(OK|BUSY|NO ANSWER|NO CARRIER|ERROR)\r\n", 15)
+    rings = seen[-200:].count(b"\x10r")
+    print("7004: %d rings, %s in %.1f s" % (rings, m.group(1).decode() if m else "timeout", dt))
+    ok = ok and m is not None and m.group(1) == b"OK" and dt > 6.5 and rings >= 2
+    time.sleep(2)
+    m, dt = timed(b"ATD7005", rb"(OK|BUSY|NO ANSWER|NO CARRIER|ERROR)\r\n", 20)
+    print("7005: %s in %.1f s" % (m.group(1).decode() if m else "timeout", dt))
+    ok = ok and m is not None and m.group(1) == b"BUSY" and dt < 8
+    time.sleep(1)
+    m, dt = timed(b"ATD7007", rb"(OK|BUSY|NO ANSWER|NO CARRIER|ERROR)\r\n", 15)
+    a = b"\x10a" in seen[-100:]
+    print("7007: %s%s in %.1f s" % ("<DLE>a " if a else "", m.group(1).decode() if m else "timeout", dt))
+    ok = ok and m is not None and m.group(1) == b"OK" and a and dt < 3
+    ok = ok and cmd(b"AT+VLS=0") is not None
+    time.sleep(1)
+    # a number that does not exist (404): ERROR, not NO CARRIER
+    m, dt = timed(b"ATD7006", rb"(OK|BUSY|NO ANSWER|NO CARRIER|ERROR)\r\n", 15)
+    print("7006: %s in %.1f s" % (m.group(1).decode() if m else "timeout", dt))
+    ok = ok and m is not None and m.group(1) == b"ERROR"
     m = cmd(b"ATH")
     ok = ok and m is not None
     m = cmd(b"AT+FCLASS?", rb"(\d)\r\nOK\r\n", 5)

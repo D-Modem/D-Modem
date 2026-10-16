@@ -117,3 +117,15 @@
   40600 A: AT+VLS?\r\r\n
   40600 A: +VLS=0\r\n
   40600 A: OK\r\n
+  40600 A< ATD5551000\r
+  40600 A: ATD5551000\r\r\n
+  40920 A: \x10aOK\r\n
+  41600 A< AT+VLS=0\r
+  41600 A: AT+VLS=0\r\r\n
+  41600 A: OK\r\n
+  41600 A< ATD5551000\r
+  41600 A: ATD5551000\r\r\n
+  41920 A: \x10fOK\r\n
+  42600 A< AT+VLS=0\r
+  42600 A: AT+VLS=0\r\r\n
+  42600 A: OK\r\n

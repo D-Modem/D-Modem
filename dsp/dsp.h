@@ -426,9 +426,13 @@ struct DtmfDetect {
    or 400 + 450 Hz) on for 0.6 s or more (the UK's 0.4 + 0.4 s with its
    0.2 s gap is one ring), off 0.3 s or more between rings; and a busy
    or congestion tone's cadence, four rounds of 0.2 to 0.8 s on and off
-   in the band of call progress tones.  On blocks of 20 ms. */
+   in the band of call progress tones; and an answer tone, 2100 Hz (ANS,
+   ANSam: a fax or data answer) or 2225 Hz (Bell's, or V.22's unscrambled
+   ones: a data answer), 0.3 s of it.  On blocks of 20 ms. */
 struct CallToneDetect {
 	Goertzel g[5];          /* 400, 425, 440, 450, 480 Hz */
+	Goertzel ans[2];        /* 2100, 2225 Hz */
+	int ans_run[2], ans_drop[2];
 	Biquad band;            /* the busy tones' band, around 480 Hz */
 	float energy, band_energy;
 	int n, len;
@@ -443,6 +447,7 @@ struct CallToneDetect {
 	unsigned rings;         /* rings heard */
 	bool ringing;           /* one sounds */
 	unsigned busy;          /* busy cadences heard (each four rounds) */
+	unsigned answer[2];     /* answer tones heard: 2100, 2225 Hz */
 
 	/* at srate, nothing heard */
 	void init(int srate);

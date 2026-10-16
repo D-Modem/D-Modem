@@ -47,7 +47,10 @@ bool config_from_env(Config &cfg, bool listen);
    come on (a call waits for ANSWER, or the caller gave up), T38 and
    AUDIO (the call's fax went over to T.38, or back), and for a call we
    dial ANSWERED (it is up) or FAILED <SIP status> (it never came up; 0
-   for no response), ahead of the end of its audio; or -1 */
+   for no response), ahead of the end of its audio; or -1.  A call we
+   dial has its audio from a provisional response with SDP on (183
+   Session Progress's early media: the ringing tone, a busy tone, an
+   announcement). */
 int start(const Config &cfg);
 /* the SIP thread ended (the call hung up, the registration given up) */
 void stop();

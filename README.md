@@ -79,13 +79,17 @@ UDPTL instead of its audio.  `SIP_T38=no` keeps faxes on the audio.
 ### Voice
 In voice mode (`AT+FCLASS=8`), `AT+VLS=1` answers a ringing call,
 `ATD` dials one (OK when the far end answers with its 200 OK; BUSY on
-486, 600 or 603, NO ANSWER on 408 or 480 or after S7, NO CARRIER on
-anything else; on a line that does not signal the answer, such as a PBX
-module's, the answer is the ringing tone gone for `AT+VRA` after its
-last ring, or no ring in `AT+VRN`, and a busy tone gives BUSY; rings and
-busy tones are reported as `<DLE>r` and `<DLE>b`), `ATH` hangs up and
+486, 600 or 603, NO ANSWER on 408 or 480 or after S7, ERROR on anything
+else, as V.253 has no NO CARRIER in voice mode).  The modem listens to
+the call's early media (183 Session Progress) and to the line: an
+answer tone is the answer and a busy tone BUSY, and on a line that does
+not signal the answer, such as a PBX module's, the answer is also the
+ringing tone gone for `AT+VRA` after its last ring, or no ring in
+`AT+VRN`; rings, busy and answer tones are reported as `<DLE>r`,
+`<DLE>b`, `<DLE>a` (2100 Hz) and `<DLE>f` (2225 Hz).  `ATH` hangs up and
 goes back to data mode, and a call the far end ends is reported as
-`<DLE>l` and NO CARRIER.  `AT+VTS`
+`<DLE>l`, ending a `+VRX` stream (`<DLE><ETX>`, OK) or a `+VTX` or `+VTR`
+one when the voice software ends it.  `AT+VTS`
 plays tones and DTMF digits in the audio.  Its hook flash (`!`)
 goes to the far end as an RFC 4733 telephone-event (event 16), which
 dmodemd offers and takes on every call; `AT+VTS` with `!` is an ERROR on

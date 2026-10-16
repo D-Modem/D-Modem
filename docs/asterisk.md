@@ -270,9 +270,13 @@ tone, and the voice engine must report the digit to the pty as
 (busy) must give BUSY, 7003 (ringing, never answered) NO ANSWER after
 S7 (6 s), and 7001 (rings for 2 s, answers, sends the digit 7 and hangs
 up 4 s on) OK when it answers, then `<DLE>7` ... `<DLE>~`, OK to
-`AT+VTS=1,2`, and `<DLE>l` and NO CARRIER at the hang-up.  `ATH` must
-then leave voice mode (`+FCLASS: 0`), and a data call to 7002 give
-BUSY.
+`AT+VTS=1,2`, and `<DLE>l` alone at the hang-up (no NO CARRIER).  With
+early media (183, S7 15 s): 7004's ringing tone must come as two rings
+(`<DLE>r`) and OK at its 200 OK 7 s on, 7005's busy tone give BUSY
+before its 486 (15 s on), and 7007's answer tone (2100 Hz) `<DLE>a` and
+OK although it never answers.  7006 (no such number, 404) must give
+ERROR.  `ATH` must then leave voice mode (`+FCLASS: 0`), and a data
+call to 7002 give BUSY.
 
 `test/efax.sh` is dmodemd's fax (class 1) with efax on its pty against
 Asterisk's own over PJSIP (`t38_udptl`): efax sends, dmodemd calling

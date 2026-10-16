@@ -25,6 +25,7 @@ extern "C" int prop_dp_init(void);
 
 using dcore::LinkState;
 using dcore::Modem;
+using dcore::Result;
 
 /* the data pumps, once for the program */
 static struct Pumps {
@@ -183,6 +184,84 @@ TEST(Core, ModemOnHold)
 	/* ATZ: granted again, 1 min */
 	EXPECT_EQ(cmd(m, l, "ATZ\r"), "OK\r\n");
 	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 5);
+	delete m;
+}
+
+/* the result codes V.253 allows in voice mode (Table 3: no NO CARRIER)
+   when the line ends a call (Modem::line_dropped(), the far end hung
+   up) or a voice dial fails (line_failed()): <DLE>l alone in the
+   command state; +VRX's samples end with <DLE><ETX>, then OK; +VTX's and
+   +VTR's go on until the DTE ends them (what it sends meanwhile
+   discarded), then OK, +VTR's after <DLE><ETX>; +VTS's tones ERROR; a
+   voice dial's NO CARRIER ERROR.  The line is left (on hook, +VLS=0). */
+TEST(Core, VoiceLineGone)
+{
+	Line l;
+	Modem *m = make(l, "voice");
+	int16_t in[160] = {}, out[160];
+	/* blocks of the line's samples (20 ms each), what the DTE got */
+	auto run = [&](int blocks) {
+		l.out.clear();
+		for (int i = 0; i < blocks; i++) {
+			now += 20;
+			if (m->started())
+				m->process(in, out, 160);
+			m->poll();
+		}
+		return l.out;
+	};
+	/* the line taken, then cmd's result after a block */
+	auto taken = [&](const char *c) {
+		cmd(m, l, "AT+VLS=1\r");
+		EXPECT_EQ(run(1), "OK\r\n");
+		cmd(m, l, c);
+		return run(1);
+	};
+	auto gone = [&]() {
+		l.out.clear();
+		m->line_dropped();
+		return l.out;
+	};
+
+	EXPECT_EQ(cmd(m, l, "ATE0+FCLASS=8\r"), "ATE0+FCLASS=8\r\r\nOK\r\n");
+	/* the command state */
+	cmd(m, l, "AT+VLS=1\r");
+	EXPECT_EQ(run(1), "OK\r\n");
+	EXPECT_EQ(gone(), "\x10l");
+	EXPECT_FALSE(m->started());
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
+
+	EXPECT_EQ(taken("AT+VRX\r").substr(0, 9), "CONNECT\r\n");
+	EXPECT_EQ(gone(), "\x10l\x10\x03OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT\r"), "OK\r\n");
+
+	EXPECT_EQ(taken("AT+VTX\r"), "CONNECT\r\n");
+	EXPECT_EQ(gone(), "\x10l");
+	EXPECT_EQ(cmd(m, l, "AT\rx\x10\x10\x10~"), "");
+	EXPECT_EQ(cmd(m, l, "\x10\x03" "AT+VLS?\r"), "OK\r\n+VLS=0\r\nOK\r\n");
+
+	EXPECT_EQ(taken("AT+VTR\r").substr(0, 9), "CONNECT\r\n");
+	EXPECT_EQ(gone(), "\x10l");
+	EXPECT_EQ(cmd(m, l, "AT\r\x10\x03\x10!"), "");
+	EXPECT_EQ(cmd(m, l, "\x10^AT\r"), "\x10\x03OK\r\nOK\r\n");
+
+	cmd(m, l, "AT+VLS=1\r");
+	run(1);
+	cmd(m, l, "AT+VTS=[440,0,100]\r");
+	EXPECT_EQ(run(2), "");
+	EXPECT_EQ(gone(), "\x10lERROR\r\n");
+
+	/* a voice dial the line fails (FAILED 404, its socket's end) */
+	cmd(m, l, "AT+VRN=20\r");
+	EXPECT_EQ(cmd(m, l, "ATD5551000\r"), "");
+	run(2);
+	l.out.clear();
+	m->line_failed(Result::NoCarrier);
+	m->line_dropped();
+	EXPECT_EQ(l.out, "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "ATD5551000\r"), "");
+	EXPECT_EQ(gone(), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
 	delete m;
 }
 

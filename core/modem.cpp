@@ -857,6 +857,8 @@ int Modem::dte_input(const char *buf, int n)
 	}
 	if (k < n)
 		logf("DTE buffer full: %d of %d characters taken\n", k, n);
+	if (voice_drain_)
+		voice_drain();
 	if (command_)
 		at_process();
 	return k;
@@ -1276,14 +1278,16 @@ void Modem::line_answered()
 	commands_due_ = true;
 }
 
-/* see dcore.h: a data call not yet up keeps r for its end */
+/* see dcore.h: a data call not yet up keeps r for its end (a voice call
+   taken as answered on its early media's tones ends with the line's
+   line_dropped()) */
 void Modem::line_failed(Result r)
 {
 	if (voice_dialing_) {
 		voice_dial_end(r);
 		return;
 	}
-	if (state_ == IDLE || stats_.connected || have_result_)
+	if (voice_ || state_ == IDLE || stats_.connected || have_result_)
 		return;
 	set_cause(r == Result::Busy ? Cause::Busy :
 		  r == Result::NoAnswer ? Cause::NoAnswer : Cause::NoCarrier);
@@ -1776,7 +1780,7 @@ void Modem::voice_stop()
 	vts_.clear();
 	vts_next_ = 0;
 	voice_dialing_ = false;
-	voice_streaming_ = false;
+	voice_cmd_ = -1;
 	stop_call();
 	set_hook(MODEM_HOOK_ON);
 }
@@ -1795,9 +1799,7 @@ int Modem::voice_command(enum VOICE_CMD cmd)
 		if (!voice_)
 			return -1;
 		command_ = false;
-		voice_streaming_ = cmd == VOICE_CMD_STATE_RX ||
-			cmd == VOICE_CMD_STATE_TX ||
-			cmd == VOICE_CMD_STATE_DUPLEX;
+		voice_cmd_ = cmd;
 		VOICE_command(voice_, cmd);
 		return 1;
 	default:
@@ -1867,22 +1869,29 @@ long Modem::voice_dial_left_ms()
 }
 
 /* a voice dial's timers and tones (the core's poll(), and each block of
-   the line's samples).  On a line that does not tell of the answer
-   (V.253 9.1.1): BUSY on a busy tone's cadence; answered when +VRN has
-   gone without a ring of a ringing tone (10.2.6), or when +VRA has gone
-   since the last ring ended without another (10.2.5).  NO ANSWER after
-   S7. */
+   the line's samples; on SIP its early media).  On any line (V.253
+   9.1.1): BUSY on a busy tone's cadence, answered on an answer tone (the
+   far end a modem or fax: "high confidence").  On a line that does not
+   tell of the answer, also answered when +VRN has gone without a ring
+   of a ringing tone (10.2.6), or when +VRA has gone since the last ring
+   ended without another (10.2.5).  NO ANSWER after S7. */
 void Modem::voice_dial_check()
 {
 	unsigned long gone = host_.now_ms() - voice_dial_since_;
 	voice_tones t = heard(voice_);
 
+	if (t.busy) {
+		logf("voice dial: busy tone\n");
+		voice_dial_end(Result::Busy);
+		return;
+	}
+	if (t.ans2100 || t.ans2225) {
+		logf("voice dial: answer tone (%s Hz)\n",
+		     t.ans2100 ? "2100" : "2225");
+		line_answered();
+		return;
+	}
 	if (!host_.signals_answer(*this)) {
-		if (t.busy) {
-			logf("voice dial: busy tone\n");
-			voice_dial_end(Result::Busy);
-			return;
-		}
 		if (!t.rings && gone >= voice_info_.ring_never * 1000UL &&
 		    voice_info_.ring_never <=
 		    sregs_[SREG_WAIT_CARRIER_AFTER_DIAL]) {
@@ -1904,11 +1913,15 @@ void Modem::voice_dial_check()
 	}
 }
 
-/* a voice dial over: on hook, result r */
+/* a voice dial over: on hook, result r; NO CARRIER, which V.253 does
+   not allow in voice mode (Table 3), is ERROR ("the operation completed
+   abnormally") */
 void Modem::voice_dial_end(Result r)
 {
+	if (r == Result::NoCarrier)
+		r = Result::Error;
 	logf("voice dial: %s\n", r == Result::Busy ? "busy" :
-	     r == Result::NoAnswer ? "no answer" : "no carrier");
+	     r == Result::NoAnswer ? "no answer" : "failed");
 	voice_dialing_ = false;
 	voice_stop();
 	report(r);
@@ -1918,20 +1931,68 @@ void Modem::voice_dial_end(Result r)
 
 /* the voice call's line ended it (the far end hung up): <DLE><l>, V.253's
    loop current interruption, which "usually indicates a remote hangup",
-   then the end of a stream (<DLE><ETX> in +VRX) and NO CARRIER; on hook */
+   on hook, and the end of the engine's command (V.253 has no NO CARRIER
+   in voice mode): +VRX's samples end (<DLE><ETX>) and OK; +VTX's and
+   +VTR's when the DTE ends them (voice_drain()); +VTS's tones ERROR;
+   none in the command state */
 void Modem::voice_line_gone()
 {
 	static const char lci[2] = { 0x10, 'l' };
 	static const char etx[2] = { 0x10, 0x03 };
+	int cmd = voice_cmd_;
 
 	logf("voice: the line ended the call\n");
 	host_.dte_write(*this, lci, 2);
-	if (voice_streaming_)
-		host_.dte_write(*this, etx, 2);
 	voice_stop();
-	report(Result::NoCarrier);
+	switch (cmd) {
+	case VOICE_CMD_STATE_RX:
+		host_.dte_write(*this, etx, 2);
+		report(Result::Ok);
+		break;
+	case VOICE_CMD_STATE_TX:
+	case VOICE_CMD_STATE_DUPLEX:
+		voice_drain_ = true;
+		voice_drain_dle_ = false;
+		voice_drain_duplex_ = cmd == VOICE_CMD_STATE_DUPLEX;
+		command_ = false;
+		voice_drain();
+		return;
+	case VOICE_CMD_BEEP:
+	case VOICE_CMD_DTMF:
+		report(Result::Error);
+		break;
+	default:
+		break;
+	}
 	command_ = true;
 	commands_due_ = true;
+}
+
+/* the DTE's samples of a +VTX or +VTR whose line has gone, discarded up
+   to their end (+VTX's <DLE><ETX>, <DLE>! or <DLE><CAN>, +VTR's <DLE><^>
+   only, as the engine has them): then +VTR's <DLE><ETX>, OK, and the
+   command state */
+void Modem::voice_drain()
+{
+	static const char etx[2] = { 0x10, 0x03 };
+	char c;
+
+	while (voice_drain_ && get_chars(&c, 1) == 1) {
+		if (!voice_drain_dle_) {
+			voice_drain_dle_ = c == 0x10;
+			continue;
+		}
+		voice_drain_dle_ = false;
+		if (voice_drain_duplex_ ? c != '^' :
+		    c != 0x03 && c != '!' && c != 0x18)
+			continue;
+		voice_drain_ = false;
+		if (voice_drain_duplex_)
+			host_.dte_write(*this, etx, 2);
+		report(Result::Ok);
+		command_ = true;
+		commands_due_ = true;
+	}
 }
 
 /* the voice engine on the samples, its results to the DTE: after OK or
@@ -1959,9 +2020,8 @@ void Modem::voice_process(int16_t *in, int16_t *out, int n)
 		voice_tone_next();
 		return;
 	}
-	if (st == VOICE_STATUS_OK || st == VOICE_STATUS_ERROR)
-		voice_streaming_ = false;
 	if (st == VOICE_STATUS_OK || st == VOICE_STATUS_ERROR) {
+		voice_cmd_ = -1;
 		vts_.clear();
 		vts_next_ = 0;
 	}

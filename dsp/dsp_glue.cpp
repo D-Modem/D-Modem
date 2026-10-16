@@ -453,7 +453,7 @@ struct Voice {
 	/* the call progress tones on the line, the rings and busy
 	   cadences reported */
 	CallToneDetect rx_cpt;
-	unsigned rings_told, busy_told;
+	unsigned rings_told, busy_told, answer_told[2];
 
 	struct voice_info *info();
 	int get_tx_sample(float *x);
@@ -603,9 +603,10 @@ void Voice::tx_done(char *rxbuf, int *nrx)
    and every 70 ms while it lasts, <DLE><~> when it goes, among the
    samples in receive (or duplex) state, whose audio is silence from the report on
    (7.6, its method 2: 51 ms of the tone are left); not while a tone of
-   ours plays.  So are a ringing tone's rings (<DLE>r, as one comes on)
-   and a busy tone's cadences (<DLE>b), which the line is quiet for
-   while a tone of ours plays.  Returns the VOICE_STATUS_* due, or 0. */
+   ours plays.  So are a ringing tone's rings (<DLE>r, as one comes on),
+   a busy tone's cadences (<DLE>b) and answer tones (<DLE>a for 2100 Hz,
+   <DLE>f for 2225 Hz), which the line is quiet for while a tone of ours
+   plays.  Returns the VOICE_STATUS_* due, or 0. */
 int Voice::process(void *in, void *out, int count)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
@@ -667,6 +668,13 @@ int Voice::process(void *in, void *out, int count)
 			busy_told = rx_cpt.busy;
 			DSP_DBG("voice: busy tone\n");
 			report('b');
+		}
+		for (int k = 0; k < 2; k++) {
+			if (rx_cpt.answer[k] == answer_told[k])
+				continue;
+			answer_told[k] = rx_cpt.answer[k];
+			DSP_DBG("voice: answer tone %s\n", k ? "2225" : "2100");
+			report(k ? 'f' : 'a');
 		}
 
 		if (tone_left > 0) {
@@ -739,6 +747,8 @@ void VOICE_tones(void *obj, struct voice_tones *t)
 	t->ringing = d.ringing;
 	t->quiet_ms = d.quiet_ms();
 	t->busy = d.busy;
+	t->ans2100 = d.answer[0];
+	t->ans2225 = d.answer[1];
 }
 
 /* Voice::process() for the C interface */

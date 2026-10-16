@@ -1390,7 +1390,8 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 	te_pt_ = te;
 	if (!c->audio_up) {
 		c->audio_up = true;
-		say(3, "call %u: media up, %s, to %s:%d", c->serial,
+		say(3, "call %u: media up%s, %s, to %s:%d", c->serial,
+		    c->incoming || c->confirmed ? "" : " (early media)",
 		    law == 1 ? "PCMU" : "PCMA", m.addr.c_str(), m.port);
 	}
 	c->media->active(true);

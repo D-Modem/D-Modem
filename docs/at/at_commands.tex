@@ -835,10 +835,12 @@ the other modes):
 +VLS=\p{n} & 1 takes the line for voice (on SIP: answers the call
   that rings), 0 leaves it \\
 D\p{number} & dials \p{number} and gives OK when the far end answers,
-  BUSY, \mbox{NO ANSWER} after S7, or NO CARRIER.  On SIP the answer is
-  the 200~OK; on a line that does not tell, the ringing tone's end
-  (\cmd{+VRA}), or \cmd{+VRN} without one, and a busy tone is BUSY.
-  With the line taken it dials the digits as DTMF, S11~ms each \\
+  BUSY, \mbox{NO ANSWER} after S7, or ERROR when the call fails
+  otherwise.  An answer tone is the answer and a busy tone BUSY on any
+  line (on SIP in its early media too); on SIP the answer is otherwise
+  the 200~OK, on a line that does not tell the ringing tone's end
+  (\cmd{+VRA}), or \cmd{+VRN} without one.  With the line taken it
+  dials the digits as DTMF, S11~ms each \\
 H & leaves the line and goes back to data mode, \cmd{+FCLASS=0} \\
 +VRA=\p{n} & the far end has answered when the ringing tone has been
   gone this long since its last ring, in 100~ms, 0 to 255 (0: as the
@@ -888,12 +890,18 @@ The modem also reports, in every state, each ring of a ringing tone
 as \cmd{<DLE>r} (a tone of 400 to 480~Hz, or 440 and 480~Hz, or 400 and
 450~Hz, on for 0.6~s at least; the UK's two bursts are one ring) and a
 busy or congestion tone as \cmd{<DLE>b} (four rounds of 0.2 to 0.8~s on
-and off).  A ring ends after 0.3~s without the tone.
+and off), and an answer tone as \cmd{<DLE>a} (2100~Hz: a fax or data
+answer) or \cmd{<DLE>f} (2225~Hz: a data answer), 0.3~s into it.  A ring
+ends after 0.3~s without the tone.
 
 When the far end ends a voice call, the modem reports \cmd{<DLE>l}
-(V.253's loop current interruption, ``usually a remote hangup''), ends
-a \cmd{+VRX} stream with \cmd{<DLE><ETX>}, goes on hook and gives NO
-CARRIER.
+(V.253's loop current interruption, ``usually a remote hangup'') and
+goes on hook (\cmd{+VLS=0}); V.253 has no NO CARRIER in voice mode.
+What was under way ends: \cmd{+VRX}'s samples with \cmd{<DLE><ETX>},
+then OK; \cmd{+VTX} and \cmd{+VTR} when the DTE ends them (its samples
+until then are discarded), then OK, \cmd{+VTR}'s after
+\cmd{<DLE><ETX>}; \cmd{+VTS}'s tones with ERROR.  In the command state
+\cmd{<DLE>l} comes alone.
 
 \section{S-registers}\label{sec:sregs}
 
