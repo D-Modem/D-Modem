@@ -221,6 +221,89 @@ float DtmfGen::next()
 }
 
 /*
+ *    DTMF detector
+ */
+
+/* see dsp.h: blocks of 205 samples at 8000 Hz (the bins 39 Hz apart,
+   half the spacing of the tones), as many ms at srate */
+void DtmfDetect::init(int srate)
+{
+	*this = DtmfDetect();
+	n_block = (205 * srate + 4000) / 8000;
+	for (int k = 0; k < 4; k++) {
+		coef[k] = 2 * cosf(2 * (float)M_PI * dtmf_lo[k] / srate);
+		coef[4 + k] = 2 * cosf(2 * (float)M_PI * dtmf_hi[k] / srate);
+	}
+}
+
+/* see dsp.h: a block is a digit when it is not too quiet (-50 dBFS
+   rms), the strongest tone of each group is 6 dB above the others of
+   its group, the two together have 70 per cent of the block's energy
+   (speech and noise spread theirs), and the high one is within 8 dB
+   below and 4 dB above the low one (Q.24's twist) */
+char DtmfDetect::classify(float e, const float *p) const
+{
+	static const char keys[] = "123A456B789C*0#D";
+	int lo = 0, hi = 4;
+
+	if (e < (float)n_block * 100.0f * 100.0f)
+		return 0;
+	for (int k = 1; k < 4; k++) {
+		if (p[k] > p[lo])
+			lo = k;
+		if (p[4 + k] > p[hi])
+			hi = 4 + k;
+	}
+	for (int k = 0; k < 4; k++) {
+		if (k != lo && p[k] * 4 > p[lo])
+			return 0;
+		if (4 + k != hi && p[4 + k] * 4 > p[hi])
+			return 0;
+	}
+	if (2 * (p[lo] + p[hi]) < 0.7f * n_block * e)
+		return 0;
+	if (p[hi] < p[lo] * 0.158f || p[hi] > p[lo] * 2.51f)
+		return 0;
+	return keys[lo * 4 + hi - 4];
+}
+
+/* see dsp.h */
+DtmfDetect::Event DtmfDetect::sample(float x)
+{
+	float p[8];
+	Event ev = NONE;
+	char d;
+
+	for (int k = 0; k < 8; k++) {
+		float s = x + coef[k] * s1[k] - s2[k];
+		s2[k] = s1[k];
+		s1[k] = s;
+	}
+	energy += x * x;
+	if (++n < n_block)
+		return NONE;
+	for (int k = 0; k < 8; k++)
+		p[k] = s1[k] * s1[k] + s2[k] * s2[k] - coef[k] * s1[k] * s2[k];
+	d = classify(energy, p);
+	if (digit) {
+		if (d != digit || energy * 4 < ref) {
+			digit = 0;
+			ev = OFF;
+		}
+	} else if (d && d == last) {
+		digit = d;
+		ref = energy;
+		ev = ON;
+	}
+	last = d;
+	for (int k = 0; k < 8; k++)
+		s1[k] = s2[k] = 0;
+	energy = 0;
+	n = 0;
+	return ev;
+}
+
+/*
  *    8000 <-> 9600 Hz sample rate conversion through 48 kHz
  */
 #define RS_LEN  480     /* prototype taps at 48 kHz */

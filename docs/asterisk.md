@@ -260,9 +260,10 @@ checked).  `CASES`, `SIP_LOG=1` (the SIP messages in the console),
 answers with `AT+FCLASS=8` and `AT+VLS=1`, and plays
 `AT+VTS=1,!,{!,30},2` (with `AT+VTD=10`) while the dialplan sends it the
 DTMF digit 5.  Asterisk's RTP debug must show the two hook flashes as
-RFC 4733 event 16 (their end packets: 100 and 300 ms), and dmodemd's log
+RFC 4733 event 16 (their end packets: 100 and 300 ms), dmodemd's log
 the flashes sent and the digit received as an event and played as its
-tone.
+tone, and the voice engine must report the digit to the pty as
+`<DLE>5` ... `<DLE>~`.
 
 `test/efax.sh` is dmodemd's fax (class 1) with efax on its pty against
 Asterisk's own over PJSIP (`t38_udptl`): efax sends, dmodemd calling

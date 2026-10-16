@@ -20,7 +20,9 @@
 # mode (RING, AT+FCLASS=8, AT+VLS=1), plays DTMF digits and hook flashes
 # with AT+VTS and leaves the line; the call's dialplan sends it a DTMF
 # digit meanwhile.  Its log must show the flashes sent as RFC 4733
-# events and the digit received as one (sip.sh checks Asterisk's side).
+# events and the digit received as one, and the voice engine must report
+# that digit to the DTE (<DLE>5 ... <DLE>~); sip.sh checks Asterisk's
+# side.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 dmodemd, number = sys.argv[1:3]
@@ -95,10 +97,11 @@ if pty is None:
 fd = os.open(pty, os.O_RDWR | os.O_NOCTTY)
 tty.setraw(fd)
 buf = b""
+seen = b""                  # all the modem sent, for the voice checks
 # the first match of pat in what the modem sent (read from the pty), buf
 # kept past it; None after t s
 def expect(pat, t):
-    global buf
+    global buf, seen
     end = time.time() + t
     while time.time() < end:
         m = re.search(pat, buf)
@@ -107,7 +110,9 @@ def expect(pat, t):
             return m
         try:
             os.set_blocking(fd, False)
-            buf += os.read(fd, 4096)
+            got = os.read(fd, 4096)
+            buf += got
+            seen += got
         except BlockingIOError:
             time.sleep(0.05)
         except OSError:
@@ -134,6 +139,9 @@ if incoming and os.environ.get("VOICE"):
     ok = ok and m is not None and m.group(1) == b"OK"
     time.sleep(1)
     ok = ok and cmd(b"AT+VLS=0") is not None
+    dtmf = re.search(rb"\x105(\x105)*\x10~", seen) is not None
+    print("dte: DTMF 5 reported:", "yes" if dtmf else "no")
+    ok = ok and dtmf
     time.sleep(0.5)
     p.terminate()
     p.wait(10)

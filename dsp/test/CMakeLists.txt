@@ -46,6 +46,10 @@ dmodem_gtest(bits_test LABELS quick)
 # g711.h: the laws' octets, reference values, sign and magnitude
 dmodem_test_exe(g711_test g711_test.cpp)
 dmodem_gtest(g711_test LABELS quick)
+# dsp.h's DTMF detector on the generator's digits, G.711, twist, length
+dmodem_test_exe(dtmf_test dtmf_test.cpp)
+target_link_libraries(dtmf_test PRIVATE dmodem_loopback dmodem_dsp)
+dmodem_gtest(dtmf_test LABELS quick)
 # the emulated hardware's mixins (hw/) on a host of the test's own
 dmodem_test_exe(hw_test hw_test.cpp)
 dmodem_gtest(hw_test LABELS quick)

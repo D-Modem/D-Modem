@@ -857,6 +857,14 @@ the other modes):
 Each takes \cmd{?} (its values) and \cmd{=?} (their ranges).
 \cmd{+VCID}, caller ID, is \cmdl[hashCID]{\#CID}'s, in every mode.
 
+While the line is taken (\cmd{+VLS=1}) the modem listens for DTMF
+digits from the far end and reports them as V.253 has it: \cmd{<DLE>}
+and the digit (0--9, *, \#, A--D) when one is heard, 51~ms into it, and
+again every 70~ms while it lasts, then \cmd{<DLE>\textasciitilde} when
+it ends.  The reports come in the voice command state as well as among
+the samples of \cmd{+VRX}, whose audio is silence from a digit's report
+until it ends.  The modem's own \cmd{+VTS} tones are not reported.
+
 \section{S-registers}\label{sec:sregs}
 
 Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;

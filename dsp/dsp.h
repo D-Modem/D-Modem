@@ -395,6 +395,32 @@ struct DtmfGen {
 	float next();
 };
 
+/* DTMF detector (the voice object): Goertzel filters at the eight
+   frequencies over blocks of 25.6 ms; a digit is on after two blocks of
+   it in a row (51 ms, Q.24's 40 ms tones and V.253's 25 ms minimum),
+   off after a block without it or at a quarter of its level */
+struct DtmfDetect {
+	enum Event { NONE, ON, OFF };
+
+	int n_block;            /* samples a block */
+	float coef[8];          /* 2 cos(2 pi f / srate) */
+	float s1[8], s2[8];
+	float energy;
+	int n;
+	char last;              /* the last block's digit, 0 if none */
+	char digit;             /* the digit on, 0 if none */
+	float ref;              /* its first block's energy */
+
+	/* at srate, nothing on */
+	void init(int srate);
+	/* one sample: ON when a digit comes on (digit has it), OFF when it
+	   goes, else NONE */
+	Event sample(float x);
+	/* the digit of a block of energy e and Goertzel powers p, 0 if it
+	   has none */
+	char classify(float e, const float *p) const;
+};
+
 /* sample format helpers: the modem core always uses S16_LE */
 /* x saturated to the s16 range (and truncated toward 0) */
 static inline s16 dsp_clip16(float x)

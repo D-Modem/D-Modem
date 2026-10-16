@@ -444,6 +444,11 @@ struct Voice {
 	int tone1, tone2;      /* each sounds (its frequency is not 0) */
 	DtmfGen dtmf;
 	int tone_dtmf;
+	/* DTMF on the line: the detector, the samples since the digit on
+	   was last reported, whether it is held off (our own tone plays) */
+	DtmfDetect rx_dtmf;
+	long dtmf_since;
+	int dtmf_held;
 
 	struct voice_info *info();
 	int get_tx_sample(float *x);
@@ -463,6 +468,7 @@ void *VOICE_create(struct modem *m, unsigned srate)
 	v->srate = srate;
 	v->state = VOICE_STATE_COMMAND;
 	v->pending = VOICE_STATUS_OK;
+	v->rx_dtmf.init(srate);
 	DSP_DBG("voice: VOICE_create...\n");
 	return v;
 }
@@ -573,14 +579,25 @@ int Voice::get_tx_sample(float *x)
 /* count samples each way at srate: out a pending tone or the DTE's
    samples (8000 Hz, linearly interpolated), in sent to the DTE as 8 bit
    samples at 8000 Hz (<DLE> doubled); in receive only state any character
-   from the DTE ends it with <DLE><ETX>.  Returns the VOICE_STATUS_* due,
-   or 0. */
+   from the DTE ends it with <DLE><ETX>.  DTMF digits on the line are
+   reported in every state (V.253 7.5): <DLE><digit> when one comes on
+   and every 70 ms while it lasts, <DLE><~> when it goes, among the
+   samples in receive state, whose audio is silence from the report on
+   (7.6, its method 2: 51 ms of the tone are left); not while a tone of
+   ours plays.  Returns the VOICE_STATUS_* due, or 0. */
 int Voice::process(void *in, void *out, int count)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 	double step = 8000.0 / srate;
 	char rxbuf[512];
 	int nrx = 0, i, status;
+	const long repeat = (long)srate * 70 / 1000;
+	auto report = [&](char c) {
+		if (nrx < (int)sizeof(rxbuf) - 2) {
+			rxbuf[nrx++] = DLE;
+			rxbuf[nrx++] = c;
+		}
+	};
 
 	for (i = 0; i < count; i++) {
 		float y = 0;
@@ -617,10 +634,39 @@ int Voice::process(void *in, void *out, int count)
 		}
 		dst[i] = dsp_clip16(y);
 
-		if (state & VOICE_STATE_RX) {
+		if (tone_left > 0) {
+			if (!dtmf_held) {
+				if (rx_dtmf.digit)
+					report('~');
+				rx_dtmf.init(srate);
+				dtmf_held = 1;
+			}
+		} else {
+			dtmf_held = 0;
+			switch (rx_dtmf.sample(src[i])) {
+			case DtmfDetect::ON:
+				report(rx_dtmf.digit);
+				dtmf_since = 0;
+				break;
+			case DtmfDetect::OFF:
+				report('~');
+				break;
+			default:
+				if (rx_dtmf.digit && ++dtmf_since >= repeat) {
+					report(rx_dtmf.digit);
+					dtmf_since = 0;
+				}
+				break;
+			}
+		}
+
+		/* the samples after the CONNECT, which the core writes when
+		   this returns */
+		if ((state & VOICE_STATE_RX) && pending != VOICE_STATUS_CONNECT) {
 			rx_pos += step;
 			if (rx_pos >= 1) {
-				int c = (src[i] >> 8) + 128;
+				int c = rx_dtmf.digit ? 128 :
+					(src[i] >> 8) + 128;
 				rx_pos -= 1;
 				if (nrx < (int)sizeof(rxbuf) - 2) {
 					rxbuf[nrx++] = c;

@@ -760,6 +760,168 @@ TEST(DmodemCxx, VoiceHookFlash)
 	}
 }
 
+/* n samples of DTMF digit d (0: silence) at dbfs per tone */
+static std::vector<short> dtmf_tone(char d, int ms, double dbfs = -20)
+{
+	static const char keys[] = "123A456B789C*0#D";
+	static const double lo[] = { 697, 770, 852, 941 };
+	static const double hi[] = { 1209, 1336, 1477, 1633 };
+	std::vector<short> v(ms * DMODEM_RATE / 1000);
+	const char *k = d ? strchr(keys, d) : nullptr;
+	double a = 32767 * pow(10, dbfs / 20);
+
+	for (size_t i = 0; k && i < v.size(); i++) {
+		int j = (int)(k - keys);
+		v[i] = (short)(a * (sin(2 * M_PI * lo[j / 4] * i / DMODEM_RATE) +
+				    sin(2 * M_PI * hi[j % 4] * i / DMODEM_RATE)));
+	}
+	return v;
+}
+
+/* the <DLE> codes in a stream to the DTE (the data's <DLE><DLE> not
+   one), and its data octets into *data if given */
+static std::string dle_codes(const std::string &s, std::string *data = nullptr)
+{
+	std::string codes;
+	for (size_t i = 0; i < s.size(); i++) {
+		if (s[i] != 0x10 || i + 1 == s.size()) {
+			if (data)
+				*data += s[i];
+			continue;
+		}
+		if (s[++i] == 0x10) {
+			if (data)
+				*data += '\x10';
+		} else {
+			codes += s[i];
+		}
+	}
+	return codes;
+}
+
+/* the codes with each run of one digit's reports as one */
+static std::string runs(const std::string &codes)
+{
+	std::string r;
+	for (char c : codes)
+		if (r.empty() || c != r.back())
+			r += c;
+	return r;
+}
+
+/* DTMF on the line reported to the DTE (V.253 7.5 and 7.6): <DLE><digit>
+   when a digit comes on and every 70 ms while it lasts, <DLE><~> when it
+   goes, in the voice command state and among the samples of +VRX, whose
+   audio is silence from the report until the digit ends; nothing for a
+   single tone, noise, three tones at once, a digit too quiet, or the
+   modem's own +VTS tones coming back */
+TEST(DmodemCxx, VoiceDtmfDetect)
+{
+	dm::init();
+	Dte d;
+	dm::Modem m = make("detect", d, "ATE0\r");
+	std::array<short, FRAME> out{};
+	std::string dte;
+
+	/* the samples of line through the modem, its DTE's stream after */
+	auto feed = [&](const std::vector<short> &line) {
+		dte.clear();
+		std::vector<short> in(line);
+		in.resize((in.size() + FRAME - 1) / FRAME * FRAME);
+		for (size_t i = 0; i < in.size(); i += FRAME) {
+			m.process(&in[i], out.data(), FRAME);
+			m.poll_dte();
+			dte += d.read_all();
+		}
+	};
+	auto cat = [](std::initializer_list<std::vector<short>> parts) {
+		std::vector<short> v;
+		for (const auto &p : parts)
+			v.insert(v.end(), p.begin(), p.end());
+		return v;
+	};
+
+	d.read_all();
+	ASSERT_TRUE(m.command("AT+FCLASS=8"));
+	ASSERT_TRUE(m.command("AT+VLS=1"));
+	feed(dtmf_tone(0, 100));
+	ASSERT_EQ(d.read_all() + dte, "OK\r\nOK\r\n");
+
+	/* digits of 100 ms with pauses of 60 ms, the same twice among
+	   them (a pause of 50 ms) */
+	feed(cat({ dtmf_tone(0, 200), dtmf_tone('1', 100), dtmf_tone(0, 60),
+		   dtmf_tone('#', 100), dtmf_tone(0, 60), dtmf_tone('5', 100),
+		   dtmf_tone(0, 50), dtmf_tone('5', 100), dtmf_tone(0, 60),
+		   dtmf_tone('D', 100, -30), dtmf_tone(0, 200) }));
+	EXPECT_EQ(runs(dle_codes(dte)), "1~#~5~5~D~") << dle_codes(dte);
+
+	/* a digit held 600 ms: on at 51 ms, then every 70 ms */
+	feed(cat({ dtmf_tone('0', 600), dtmf_tone(0, 200) }));
+	std::string c = dle_codes(dte);
+	EXPECT_EQ(runs(c), "0~") << c;
+	EXPECT_GE(std::count(c.begin(), c.end(), '0'), 7) << c;
+	EXPECT_LE(std::count(c.begin(), c.end(), '0'), 9) << c;
+
+	/* none of these is a digit */
+	std::vector<short> one(DMODEM_RATE), noise(DMODEM_RATE),
+		chord(DMODEM_RATE);
+	unsigned seed = 7;
+	for (int i = 0; i < DMODEM_RATE; i++) {
+		double t = (double)i / DMODEM_RATE;
+		one[i] = (short)(6000 * sin(2 * M_PI * 1209 * t));
+		seed = seed * 1103515245 + 12345;
+		noise[i] = (short)((int)(seed >> 16 & 0x7fff) - 16384) / 4;
+		chord[i] = (short)(3000 * (sin(2 * M_PI * 697 * t) +
+					   sin(2 * M_PI * 1209 * t) +
+					   sin(2 * M_PI * 1477 * t)));
+	}
+	feed(cat({ one, noise, chord, dtmf_tone('3', 200, -55),
+		   dtmf_tone(0, 100) }));
+	EXPECT_EQ(dle_codes(dte), "") << dle_codes(dte);
+
+	/* receive: the report among the samples, silence after it */
+	ASSERT_TRUE(m.command("AT+VRX"));
+	feed(cat({ dtmf_tone(0, 200), dtmf_tone('7', 200),
+		   dtmf_tone(0, 200) }));
+	std::string data, codes;
+	ASSERT_EQ(dte.compare(0, 9, "CONNECT\r\n"), 0) << dte.substr(0, 20);
+	size_t on = dte.find("\x10" "7"), off = dte.find("\x10~");
+	ASSERT_NE(on, std::string::npos);
+	ASSERT_NE(off, std::string::npos);
+	codes = dle_codes(dte.substr(9), &data);
+	EXPECT_EQ(runs(codes), "7~") << codes;
+	std::string during, before;
+	dle_codes(dte.substr(on + 2, off - on - 2), &during);
+	dle_codes(dte.substr(9, on - 9), &before);
+	EXPECT_EQ(during.find_first_not_of('\x80'), std::string::npos);
+	/* the tone's first 25 ms (200 samples) and more stay in the data */
+	long loud = std::count_if(before.begin(), before.end(), [](char b) {
+		return abs((int)(unsigned char)b - 128) > 4; });
+	EXPECT_GE(loud, 200);
+	d.write_str("x");
+	feed(dtmf_tone(0, 40));
+	EXPECT_NE(dte.find("\x10\x03"), std::string::npos);
+	EXPECT_NE(dte.find("OK\r\n"), std::string::npos);
+
+	/* our own digits coming back (an echo): not reported */
+	ASSERT_TRUE(m.command("AT+VTD=20"));
+	feed(dtmf_tone(0, 20));
+	ASSERT_TRUE(m.command("AT+VTS=1,2"));
+	dte.clear();
+	std::array<short, FRAME> back{};
+	std::string echo;
+	for (int i = 0; i < 40; i++) {
+		m.process(back.data(), out.data(), FRAME);
+		back = out;
+		m.poll_dte();
+		echo += d.read_all();
+	}
+	EXPECT_EQ(dle_codes(echo), "") << dle_codes(echo);
+	EXPECT_NE(echo.find("OK\r\n"), std::string::npos);
+
+	ASSERT_TRUE(m.command("AT+VLS=0"));
+}
+
 /* the log lines (DmodemCxx.LawForEachCall) */
 static std::vector<std::string> log_lines;
 
