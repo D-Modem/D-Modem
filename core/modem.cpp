@@ -1832,34 +1832,69 @@ void Modem::keep_dial_string(const char *number)
 	copy_dial(dial_string_, sizeof(dial_string_), number);
 }
 
-/* the ms until a voice dial's next timer: +VRN's on a line that does not
-   tell of the answer (when not beyond S7), S7's */
+/* the call progress tones the voice engine heard (none without one) */
+static voice_tones heard(void *voice)
+{
+	voice_tones t = {};
+	if (voice)
+		VOICE_tones(voice, &t);
+	return t;
+}
+
+/* the ms until a voice dial's next timer: on a line that does not tell
+   of the answer, +VRN's while no ring was heard (when not beyond S7),
+   +VRA's once one ended; S7's */
 long Modem::voice_dial_left_ms()
 {
 	unsigned long s7 = sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * 1000UL;
-	unsigned long due = s7;
-	long left;
+	long left = (long)(voice_dial_since_ + s7 - host_.now_ms());
+	voice_tones t = heard(voice_);
 
-	if (!host_.signals_answer(*this) &&
-	    voice_info_.ring_never * 1000UL <= s7)
-		due = voice_info_.ring_never * 1000UL;
-	left = (long)(voice_dial_since_ + due - host_.now_ms());
+	if (!host_.signals_answer(*this)) {
+		long due = -1;
+		if (!t.rings && voice_info_.ring_never * 1000UL <= s7)
+			due = (long)(voice_dial_since_ +
+				     voice_info_.ring_never * 1000UL -
+				     host_.now_ms());
+		else if (t.rings && !t.ringing)
+			due = voice_info_.ring_after * 100L - t.quiet_ms;
+		if (due >= 0 && due < left)
+			left = due;
+	}
 	return left > 0 ? left : 0;
 }
 
-/* a voice dial's timers (the core's poll(), and each block of the line's
-   samples): on a line that does not tell of the answer, the call
-   answered once +VRN has gone without a ringing tone detected (V.253
-   10.2.6: this modem detects none); NO ANSWER after S7 */
+/* a voice dial's timers and tones (the core's poll(), and each block of
+   the line's samples).  On a line that does not tell of the answer
+   (V.253 9.1.1): BUSY on a busy tone's cadence; answered when +VRN has
+   gone without a ring of a ringing tone (10.2.6), or when +VRA has gone
+   since the last ring ended without another (10.2.5).  NO ANSWER after
+   S7. */
 void Modem::voice_dial_check()
 {
 	unsigned long gone = host_.now_ms() - voice_dial_since_;
+	voice_tones t = heard(voice_);
 
-	if (!host_.signals_answer(*this) &&
-	    gone >= voice_info_.ring_never * 1000UL &&
-	    voice_info_.ring_never <= sregs_[SREG_WAIT_CARRIER_AFTER_DIAL]) {
-		line_answered();
-		return;
+	if (!host_.signals_answer(*this)) {
+		if (t.busy) {
+			logf("voice dial: busy tone\n");
+			voice_dial_end(Result::Busy);
+			return;
+		}
+		if (!t.rings && gone >= voice_info_.ring_never * 1000UL &&
+		    voice_info_.ring_never <=
+		    sregs_[SREG_WAIT_CARRIER_AFTER_DIAL]) {
+			logf("voice dial: no ringing tone in +VRN\n");
+			line_answered();
+			return;
+		}
+		if (t.rings && !t.ringing &&
+		    t.quiet_ms >= voice_info_.ring_after * 100L) {
+			logf("voice dial: ringing tone gone (%u rings)\n",
+			     t.rings);
+			line_answered();
+			return;
+		}
 	}
 	if (gone >= sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * 1000UL) {
 		logf("voice dial: no answer in S7\n");

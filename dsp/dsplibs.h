@@ -74,6 +74,8 @@ void VOICE_delete(void *obj);
 int VOICE_process(void *obj, void *in, void *out, int count);
 /* a command: 0, or -1 for one it does not know */
 int VOICE_command(void *obj, enum VOICE_CMD cmd);
+/* the call progress tones heard so far into *t */
+void VOICE_tones(void *obj, struct voice_tones *t);
 
 /* the service class 1 fax engine (T.31) of modem m, on the calling side
    if caller is not 0, at srate samples/s */

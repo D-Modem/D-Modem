@@ -421,6 +421,39 @@ struct DtmfDetect {
 	char classify(float e, const float *p) const;
 };
 
+/* call progress tones (E.180) after dialling (the voice object, V.253
+   9.1.1): the ringing tone, steady 400 to 480 Hz (alone, or 440 + 480 Hz
+   or 400 + 450 Hz) on for 0.6 s or more (the UK's 0.4 + 0.4 s with its
+   0.2 s gap is one ring), off 0.3 s or more between rings; and a busy
+   or congestion tone's cadence, four rounds of 0.2 to 0.8 s on and off
+   in the band of call progress tones.  On blocks of 20 ms. */
+struct CallToneDetect {
+	Goertzel g[5];          /* 400, 425, 440, 450, 480 Hz */
+	Biquad band;            /* the busy tones' band, around 480 Hz */
+	float energy, band_energy;
+	int n, len;
+	/* the ringing tone: blocks of the segment that goes on (gaps of 40
+	   ms at most), off since its last block, of segments of 0.3 s or
+	   more in the burst; blocks since the ring sounded last */
+	int seg, drop, burst;
+	long since_ring;
+	/* the busy tone's cadence: the band on, blocks of its run, rounds */
+	int band_on, band_run, rounds;
+
+	unsigned rings;         /* rings heard */
+	bool ringing;           /* one sounds */
+	unsigned busy;          /* busy cadences heard (each four rounds) */
+
+	/* at srate, nothing heard */
+	void init(int srate);
+	/* one sample of the line */
+	void sample(float x);
+	/* ms since a ring sounded last (since the start if none did) */
+	long quiet_ms() const { return since_ring * 20; }
+	/* one block's verdicts */
+	void block();
+};
+
 /* sample format helpers: the modem core always uses S16_LE */
 /* x saturated to the s16 range (and truncated toward 0) */
 static inline s16 dsp_clip16(float x)

@@ -75,6 +75,13 @@ void FAX_t38_rx(void *obj, const void *ifp)
 	(void)ifp;
 }
 
+/* its voice engine tells of no call progress tones: none heard */
+void VOICE_tones(void *obj, struct voice_tones *t)
+{
+	(void)obj;
+	*t = voice_tones();
+}
+
 /* the library's own, and the member function that starts an FPE (it
    takes its object as its first argument) */
 void *__real_dp_runtime_create(struct modem *m);

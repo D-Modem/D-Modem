@@ -449,6 +449,10 @@ struct Voice {
 	DtmfDetect rx_dtmf;
 	long dtmf_since;
 	int dtmf_held;
+	/* the call progress tones on the line, the rings and busy
+	   cadences reported */
+	CallToneDetect rx_cpt;
+	unsigned rings_told, busy_told;
 
 	struct voice_info *info();
 	int get_tx_sample(float *x);
@@ -469,6 +473,7 @@ void *VOICE_create(struct modem *m, unsigned srate)
 	v->state = VOICE_STATE_COMMAND;
 	v->pending = VOICE_STATUS_OK;
 	v->rx_dtmf.init(srate);
+	v->rx_cpt.init(srate);
 	DSP_DBG("voice: VOICE_create...\n");
 	return v;
 }
@@ -584,7 +589,9 @@ int Voice::get_tx_sample(float *x)
    and every 70 ms while it lasts, <DLE><~> when it goes, among the
    samples in receive state, whose audio is silence from the report on
    (7.6, its method 2: 51 ms of the tone are left); not while a tone of
-   ours plays.  Returns the VOICE_STATUS_* due, or 0. */
+   ours plays.  So are a ringing tone's rings (<DLE>r, as one comes on)
+   and a busy tone's cadences (<DLE>b), which the line is quiet for
+   while a tone of ours plays.  Returns the VOICE_STATUS_* due, or 0. */
 int Voice::process(void *in, void *out, int count)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
@@ -633,6 +640,18 @@ int Voice::process(void *in, void *out, int count)
 			y = tx_prev + (float)tx_pos * (tx_cur - tx_prev);
 		}
 		dst[i] = dsp_clip16(y);
+
+		rx_cpt.sample(tone_left > 0 ? 0 : src[i]);
+		if (rx_cpt.rings != rings_told) {
+			rings_told = rx_cpt.rings;
+			DSP_DBG("voice: ringing tone\n");
+			report('r');
+		}
+		if (rx_cpt.busy != busy_told) {
+			busy_told = rx_cpt.busy;
+			DSP_DBG("voice: busy tone\n");
+			report('b');
+		}
 
 		if (tone_left > 0) {
 			if (!dtmf_held) {
@@ -693,6 +712,17 @@ int Voice::process(void *in, void *out, int count)
 	status = pending;
 	pending = 0;
 	return status;
+}
+
+/* see dsplibs.h */
+void VOICE_tones(void *obj, struct voice_tones *t)
+{
+	const CallToneDetect &d = static_cast<Voice*>(obj)->rx_cpt;
+
+	t->rings = d.rings;
+	t->ringing = d.ringing;
+	t->quiet_ms = d.quiet_ms();
+	t->busy = d.busy;
 }
 
 /* Voice::process() for the C interface */

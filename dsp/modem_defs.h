@@ -244,6 +244,17 @@ enum VOICE_CMD {
 #define VOICE_STATE_TX          0x02
 #define VOICE_STATE_DUPLEX      (VOICE_STATE_RX | VOICE_STATE_TX)
 
+/* the call progress tones the voice engine heard (VOICE_tones()): the
+   rings of a ringing tone, whether one sounds now, the ms since one
+   sounded last (since the engine started if none did), and the busy
+   cadences (V.253's <DLE>r and <DLE>b, which the engine reports) */
+struct voice_tones {
+	unsigned rings;
+	int ringing;
+	long quiet_ms;
+	unsigned busy;
+};
+
 /* the devices of AT+VLS (V.253 10.2.4.1) */
 #define VOICE_DEVICE_NONE       0   /* on hook */
 #define VOICE_DEVICE_LINE       1   /* the telephone line */

@@ -7,6 +7,8 @@
  */
 
 #include <math.h>
+
+#include <algorithm>
 #include <pthread.h>
 #include <string.h>
 
@@ -301,6 +303,102 @@ DtmfDetect::Event DtmfDetect::sample(float x)
 	energy = 0;
 	n = 0;
 	return ev;
+}
+
+/*
+ *    Call progress tones: ringing and busy
+ */
+
+#define CT_BLOCK_MS     20
+#define CT_SEG_MIN      (300 / CT_BLOCK_MS)     /* a segment counts */
+#define CT_RING_MIN     (600 / CT_BLOCK_MS)     /* of tone: a ring */
+#define CT_DROP_MAX     2                       /* blocks of a dropout */
+#define CT_GAP          (300 / CT_BLOCK_MS)     /* of quiet: a ring ends */
+
+/* see dsp.h */
+void CallToneDetect::init(int srate)
+{
+	static const float f[5] = { 400, 425, 440, 450, 480 };
+
+	*this = CallToneDetect();
+	len = srate * CT_BLOCK_MS / 1000;
+	for (int k = 0; k < 5; k++)
+		g[k].init(f[k], len, srate);
+	band.bandpass(480, 1.2f, srate);
+	drop = CT_GAP;
+}
+
+/* see dsp.h */
+void CallToneDetect::sample(float x)
+{
+	float b = band.run(x);
+
+	energy += x * x;
+	band_energy += b * b;
+	for (int k = 0; k < 5; k++)
+		g[k].run(x);
+	if (++n < len)
+		return;
+	block();
+	n = 0;
+	energy = band_energy = 0;
+}
+
+/* a block of the ringing tone when not too quiet (-50 dBFS rms) and one
+   of its frequencies, or one of its pairs, has 60 per cent of the
+   block's energy (speech and noise spread theirs); of the busy tone's
+   band when that has half of it.  A ring is the burst of segments,
+   each 0.3 s of the tone at least, that comes to 0.6 s of them; it ends
+   after 0.3 s without.  The band on and off in runs of 0.2 to 0.8 s,
+   four times on, is a busy cadence. */
+void CallToneDetect::block()
+{
+	float e = energy / len, t = 0;
+	bool on, b;
+
+	for (int k = 0; k < 5; k++)
+		t = std::max(t, g[k].power);
+	t = std::max(t, g[2].power + g[4].power);       /* 440 + 480 */
+	t = std::max(t, g[0].power + g[3].power);       /* 400 + 450 */
+	on = e > 100.0f * 100.0f && t > 0.6f * e;
+	b = e > 100.0f * 100.0f && band_energy > 0.5f * energy;
+
+	if (on) {
+		if (drop > CT_DROP_MAX)
+			seg = 0;
+		drop = 0;
+		if (++seg == CT_SEG_MIN)
+			burst += CT_SEG_MIN;
+		else if (seg > CT_SEG_MIN)
+			burst++;
+		if (!ringing && burst >= CT_RING_MIN) {
+			ringing = true;
+			rings++;
+		}
+	} else if (++drop == CT_GAP) {
+		seg = burst = 0;
+		ringing = false;
+	}
+	if (ringing && on)
+		since_ring = 0;
+	else
+		since_ring++;
+
+	if (b == (band_on != 0)) {
+		band_run++;
+	} else {
+		int ms = band_run * CT_BLOCK_MS;
+		if (ms >= 200 && ms <= 800)
+			rounds += band_on;
+		else
+			rounds = 0;
+		band_on = b;
+		band_run = 1;
+		if (rounds >= 4) {
+			rounds = 0;
+			busy++;
+		}
+	}
 }
 
 /*

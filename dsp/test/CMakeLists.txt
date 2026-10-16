@@ -50,6 +50,10 @@ dmodem_gtest(g711_test LABELS quick)
 dmodem_test_exe(dtmf_test dtmf_test.cpp)
 target_link_libraries(dtmf_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_gtest(dtmf_test LABELS quick)
+# the call progress tones (ringing, busy) a voice dial listens for
+dmodem_test_exe(call_tone_test call_tone_test.cpp)
+target_link_libraries(call_tone_test PRIVATE dmodem_loopback dmodem_dsp)
+dmodem_gtest(call_tone_test LABELS quick)
 # the emulated hardware's mixins (hw/) on a host of the test's own
 dmodem_test_exe(hw_test hw_test.cpp)
 dmodem_gtest(hw_test LABELS quick)

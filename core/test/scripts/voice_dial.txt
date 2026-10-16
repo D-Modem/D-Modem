@@ -28,3 +28,43 @@ A AT+VRN=0\r
 A ATDL\r
 run 200
 A AT+VLS=0\r
+# a ringing tone (North America's, 2 s on and 4 s off): <DLE>r as each
+# ring is heard, and +VRN no longer applies; OK when +VRA has gone since
+# the last ring ended (V.253 10.2.5)
+A AT+VRN=1\r
+A AT+VRA=50\r
+A ATS7=60\r
+tone A 440+480 2000 4000
+A ATD5551000\r
+run 8000
+tone A off
+run 6000
+A AT+VLS=0\r
+# +VRA shorter than the gap between rings: OK in it
+A AT+VRA=30\r
+tone A 440+480 2000 4000
+A ATD5551000\r
+run 6000
+tone A off
+A AT+VLS=0\r
+# +VRA=0: OK as soon as the first ring has ended
+A AT+VRA=0\r
+tone A 425 1000 4000
+A ATD5551000\r
+run 2000
+tone A off
+A AT+VLS=0\r
+# ringing that goes on: NO ANSWER after S7
+A AT+VRA=50\r
+A ATS7=8\r
+tone A 425 1000 4000
+A ATD5551000\r
+run 9000
+tone A off
+# a busy tone's cadence: <DLE>b and BUSY
+A AT+VRN=10\r
+tone A 480+620 500 500
+A ATD5551000\r
+run 5000
+tone A off
+A AT+VLS?\r
