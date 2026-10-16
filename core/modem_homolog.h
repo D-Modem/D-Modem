@@ -1,125 +1,79 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * (Smart Link's code in it: Smart Link's notice and licence below)
- */
-
-/*****************************************************************************/
-
-/*
  *
- *    Copyright (c) 2002, Smart Link Ltd.
- *    All rights reserved.
+ *    modem_homolog.h - the countries the modem can be set up for: their
+ *                      T.35 codes (AT+GCI), names (dmodemd's -c) and
+ *                      dialling and call progress parameters
  *
- *    Redistribution and use in source and binary forms, with or without
- *    modification, are permitted provided that the following conditions
- *    are met:
- * 
- *        1. Redistributions of source code must retain the above copyright
- *           notice, this list of conditions and the following disclaimer.
- *        2. Redistributions in binary form must reproduce the above
- *           copyright notice, this list of conditions and the following
- *           disclaimer in the documentation and/or other materials provided
- *           with the distribution.
- *        3. Neither the name of the Smart Link Ltd. nor the names of its
- *           contributors may be used to endorse or promote products derived
- *           from this software without specific prior written permission.
- *
- *    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- *    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- *    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- *    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *    The table is in homolog_data.cpp.  The core (dcore.h) keeps one of
+ *    its entries as the current country: Modem::homolog_init() selects
+ *    it by code or by name, USA first (MODEM_DEFAULT_COUNTRY_CODE).
  *
  */
+#ifndef DMODEM_CORE_MODEM_HOMOLOG_H
+#define DMODEM_CORE_MODEM_HOMOLOG_H
 
-/*
- *
- *	modem_homolog.h  --  Modem Homologation definitions.
- *
- *	Author: Sasha K (sashak@smlink.com)
- *
- *
- */
+#include <modem_defs.h>
 
-/*****************************************************************************/
-
-#ifndef __MODEM_HOMOLOG_H__
-#define __MODEM_HOMOLOG_H__
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-
-/* homologation parameters struct */
+/* A country's parameters.  Selecting the country copies DialPauseTime
+   to S8 and HookFlashTime to S24; the data pumps ask for the members by
+   their Get... names (modem_param.h, Modem::get_param(), which answers
+   the dial pause from S8).  Of the open pumps only call progress reads
+   one (CallingToneFlag): the rest are for Smart Link's DSP library,
+   which has its own units for them. */
 struct homolog_params {
+	/* the S-registers' values for the country */
+	u8 DialPauseTime;	/* S8: a ',' in the dial string, s */
+	u8 HookFlashTime;	/* S24: 10 ms */
+	/* pulse dialling */
 	u8 PulseDialMakeTime;
 	u8 PulseDialBreakTime;
 	u8 PulseDialDigitPattern;
+	u8 PulseBetweenDigitsInterval;
+	/* DTMF dialling: the high tone's level, and how much lower the low
+	   tone's is */
 	u8 DTMFHighToneLevel;
-	u8 DTMFDialSpeed;
-	u8 MinBusyCadenceOnTime;
-	u8 MaxBusyCadenceOnTime;
-	u8 BusyDetectionCyclesNumber;
-	u8 MinBusyCadenceOffTime;
-	u8 MaxBusyCadenceOffTime;
-	u8 CallingToneFlag;
-	u8 HookFlashTime;
-	u8 DialPauseTime; // ?
-	u8 TransmitLevel;
-	u8 DialModifierValidation;
-	u8 DialToneValidationTime;
-	//u8 BusyToneDiffTime;
 	u8 DTMFHighAndLowToneLevelDifference;
-	u8 DialToneCallProgressFilterIndex;
-	u8 DialToneDetectionThreshold;
+	/* the dial string: its modifiers, whether A to D may be dialled, the
+	   limit of a ',' */
+	u8 DialModifierValidation;
 	u8 ABCDDialingPermittedFlag;
 	u8 ComaPauseDurationLimit;
-	//u8 PulseAndToneDialInSameDialStringPermittedFlag;
+	/* > 0: the calling tone while a data call waits for the answer */
+	u8 CallingToneFlag;
+	/* no pump asks for it */
+	u8 TransmitLevel;
+	/* dial tone detection */
+	u8 DialToneValidationTime;
+	u8 DialToneCallProgressFilterIndex;
+	u8 DialToneDetectionThreshold;
+	/* busy tone detection: the bounds of its cadence, the cycles it
+	   takes, its filter */
+	u8 MinBusyCadenceOnTime;
+	u8 MaxBusyCadenceOnTime;
+	u8 MinBusyCadenceOffTime;
+	u8 MaxBusyCadenceOffTime;
+	u8 BusyDetectionCyclesNumber;
 	u8 BusyToneCallProgressFilterIndex;
-	u8 PulseBetweenDigitsInterval;
-	u8 DialToneWaitTime;
+	/* ringback detection */
 	u8 MinRingbackCadenceOnTime;
 	u8 MaxRingbackCadenceOnTime;
 	u8 RingbackDetectionCyclesNumber;
-	//u8 MinRingbackCadenceOffTime;
-	//u8 MaxRingbackCadenceOffTime;
-	//u8 RingbackToneCallProgressFilterIndex;
-	//u8 MinCongestionCadenceOnTime;
-	//u8 MaxCongestionCadenceOnTime;
-	//u8 CongestionDetectionCyclesNumber;
-	//u8 MinCongestionCadenceOffTime;
-	//u8 MaxCongestionCadenceOffTime;
-	//u8 CongestionToneCallProgressFilterIndex;
+	/* call progress's analysis of the line's samples */
 	u16 CallProgressSamplesBufferLength;
 	u8 MustNoiseFilterBeApplied;
-	//u32 DigitalImpairmentsMask;
-	//u8 DialToneFilterSubindex;
-	//u8 BusyToneLooseDetectionEnabled;
-	//u8 CallWaitingIntegrationTimeMiliSec;
-	//u8 CallWaitingThresholdPercentage;
 };
 
-
-/* homologation country set */
+/* a country of the table */
 struct homolog_set {
-	const u16 id;
-	const char *name;
-	const struct homolog_params *params;
+	const u16 id;		/* its code: T.35's, or above 0xff our own */
+	const char *name;	/* in upper case; null ends the table */
+	const struct homolog_params *params;	/* never null in a country */
 };
 
-/* 'nulled'-terminated homologation array */
+/* the countries in the order of their names (AT+GCI=?, --countrylist),
+   up to an entry whose name is null */
 extern const struct homolog_set homolog_set[];
 
-#ifdef __cplusplus
-}
 #endif
-
-#endif /* __MODEM_HOMOLOG_H__ */
