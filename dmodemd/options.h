@@ -21,6 +21,12 @@ struct Options {
 	mode_t perm = 0660;              /* -p: and its permissions */
 	bool realtime = true;            /* -n: not */
 	bool listen = false;             /* -L */
+	/* dmodemd: a softmodem's codec through ALSA for its line (-a, its
+	   control --alsa-ctl), at rate Hz (-r: 8000 or 9600, the data
+	   pumps') */
+	const char *alsa = nullptr;
+	const char *alsa_ctl = nullptr;
+	unsigned rate = 9600;
 };
 
 /* parses argv (prints the usage and exits on an error, -h, -v,

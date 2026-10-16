@@ -25,6 +25,39 @@ if(DMODEM_DMODEMD)
 	target_link_libraries(dmodemd PRIVATE dmodem_front dmodem_core
 		dmodem_dsp dmodem_t30 dmodem_link libre m pthread)
 	install(TARGETS dmodemd RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+	# -a: a softmodem's codec through ALSA for the line (alsa_line.cpp),
+	# if libasound2-dev is there
+	find_package(PkgConfig QUIET)
+	if(PkgConfig_FOUND)
+		pkg_check_modules(ALSA QUIET IMPORTED_TARGET alsa)
+	endif()
+	if(ALSA_FOUND)
+		target_sources(dmodemd PRIVATE alsa_line.cpp)
+		target_compile_definitions(dmodemd PRIVATE DMODEM_ALSA)
+		target_link_libraries(dmodemd PRIVATE PkgConfig::ALSA)
+		# test/alsa_test.py: two dmodemd on fake ALSA modem cards
+		# (test/fake_modem_card.cpp, alsa-lib plugins) calling each
+		# other through a simulated exchange (test/line_exchange.cpp)
+		if(DMODEM_TESTS)
+			add_library(asound_module_dmline MODULE
+				test/fake_modem_card.cpp)
+			target_compile_options(asound_module_dmline PRIVATE
+				-Wall -Wextra -g)
+			# (alsa-lib's plugin symbols, as a shared object
+			# has them)
+			target_compile_definitions(asound_module_dmline
+				PRIVATE PIC)
+			target_link_libraries(asound_module_dmline PRIVATE
+				PkgConfig::ALSA)
+			add_executable(line_exchange test/line_exchange.cpp)
+			target_compile_options(line_exchange PRIVATE -Wall
+				-Wextra -g -O2)
+			target_link_libraries(line_exchange PRIVATE dmodem_core dmodem_dsp
+				dmodem_link m pthread)
+		endif()
+	else()
+		message(STATUS "dmodemd: no ALSA (libasound2-dev): no -a")
+	endif()
 
 	# test/root_test.py: dmodemd started as root, what needs root's
 	# rights after it has dropped them (skipped unless ctest is root)
@@ -53,6 +86,16 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_root PROPERTIES LABELS quick
 			SKIP_RETURN_CODE 77 TIMEOUT 60)
+		if(ALSA_FOUND)
+			add_test(NAME dmodemd_alsa COMMAND
+				${Python3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/test/alsa_test.py
+				$<TARGET_FILE:dmodemd>
+				$<TARGET_FILE:line_exchange>
+				$<TARGET_FILE_DIR:asound_module_dmline>)
+			set_tests_properties(dmodemd_alsa PROPERTIES
+				LABELS alsa TIMEOUT 300 COST 1000)
+		endif()
 	endif()
 endif()
 

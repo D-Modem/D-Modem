@@ -1,11 +1,15 @@
 # D-Modem
 Connect to dialup modems over VoIP using SIP, no modem hardware required.
+Or, on an old laptop's softmodem, use it as the modem's open driver on a
+telephone line ([docs/hardware.md](docs/hardware.md)).
 
 ## Building
 You'll need Linux, CMake (3.16 or later), a C++17 compiler (and a C compiler for the Asterisk and FreeSWITCH modules), git and OpenSSL (libssl-dev: libre's digests for SIP's authentication).
 
     cmake -B build
     cmake --build build
+
+With libasound2-dev (ALSA), dmodemd can also drive a softmodem's codec (`-a`, [docs/hardware.md](docs/hardware.md)).
 
 This builds `build/dmodemd/dmodemd`, `build/dmodemd/libdmodem.a` and, when Asterisk's headers are installed, `build/asterisk/app_dmodem.so`, and when FreeSWITCH is installed (its `freeswitch.pc`), `build/freeswitch/mod_dmodem.so`.  `cmake --install build` installs them.
 
@@ -38,7 +42,7 @@ Traditional “controller-based” modems generally used a microcontroller and a
 D-Modem replaces a softmodem’s physical hardware with a SIP stack.  Instead of passing audio to and from the software DSP over an analog phone line, audio travels via the RTP (or SRTP) media streams of a SIP VoIP call.   
 
 ## Usage
-dmodemd is the modem.  It began as Smart Link's slmodemd (Debian’s sl-modem-daemon package) and is now a C++ program on the modem core (`core/`), with the open DSP and a SIP user agent (on libre) built in; its options are the original's less those for modem hardware, and its AT commands D-Modem's own, a superset of the original's.  Its kernel and ALSA driver code is gone: each call's audio comes from SIP, and the modem appears as a pty.
+dmodemd is the modem.  It began as Smart Link's slmodemd (Debian’s sl-modem-daemon package) and is now a C++ program on the modem core (`core/`), with the open DSP and a SIP user agent (on libre) built in; its AT commands are D-Modem's own, a superset of the original's.  Each call's audio comes from SIP, and the modem appears as a pty.  With `-a` the line is instead a softmodem's codec through ALSA, as described in [Softmodem hardware](#softmodem-hardware).
 
 Configure the SIP account in the SIP_LOGIN environment variable (`SIP_PORT` sets the local SIP port, 5060 by default): 
 
@@ -127,6 +131,13 @@ Finally, dial the number of the target system.  The call goes to `sip:<number>@<
     59515 21-10-28 21:40:22 11 0 -.1 045.0 UTC(NIST) * 
     59515 21-10-28 21:40:23 11 0 -.1 045.0 UTC(NIST) *
  
+### Softmodem hardware
+dmodemd can be the modem of an AC'97 or HD-audio softmodem (the Si3054 kind) that Linux still drives through ALSA.  It replaces Smart Link's closed, i386-only slmodemd, on any architecture:
+
+    # ./build/dmodemd/dmodemd -a hw:1
+
+`aplay -l` lists the card's "Modem" device (an HD-audio modem is a device of the audio card, e.g. `hw:0,6`).  The modem dials in DTMF after the dial tone (`ATX4`), hears rings and caller ID on hook, and connects at V.34 and below, with fax and voice too.  [docs/hardware.md](docs/hardware.md) lists the hardware and the limits.  It has been tested on a simulated line (`ctest -L alsa`), not yet on a real codec.
+
 ## Known Issues / Future Work
 - For a server answering many calls (a BBS, PPP dial-in or fax), the Asterisk module in `asterisk/` or the FreeSWITCH module in `freeswitch/` is the better fit than `dmodemd -L`: it answers with the open modem at V.91 (another digital modem calling, up to 62667 bps both ways), V.90 (as the digital modem, up to 56000 bps downstream), V.34, V.32bis, V.22bis, V.22 or V.21.
 - Tested over SIP against a local Asterisk and a local FreeSWITCH only, not yet through real PSTN gateways.

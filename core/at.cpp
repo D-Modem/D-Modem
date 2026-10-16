@@ -733,23 +733,17 @@ int Modem::at_D(char *p, int *len)
 }
 
 /* ATD in voice mode (V.253 9.1.1): the line taken as the caller (an
-   implied +VLS=1), OK when the call is answered, BUSY, NO ANSWER (S7)
-   or NO CARRIER when it fails.  With the line already taken, the
+   implied +VLS=1), the number dialled in DTMF where the modem dials it
+   (Host::analog_line(), after 2 s for the dial tone), OK when the call
+   is answered, BUSY, NO ANSWER (S7) or ERROR when it fails.  With the line already taken, the
    number's digits are dialled on it as DTMF (S11 ms each, S11 ms
    apart), as on a line off hook, and OK follows them.  number NULL: the
    last one (ATDL).  1 (the result to come), 0 (OK now), or -1 */
 int Modem::voice_dial(const char *number)
 {
 	if (voice_) {
-		std::vector<VoiceTone> tones;
-		unsigned d = sregs_[SREG_DTMF_DURATION] / 10;
-		for (const char *p = number ? number : dial_string_; *p; p++) {
-			if (!dtmf_digit(*p))
-				continue;
-			if (!tones.empty())
-				tones.push_back({ 0, 0, 0, d, false });
-			tones.push_back({ (char)upper(*p), 0, 0, d, false });
-		}
+		std::vector<VoiceTone> tones =
+			dtmf_tones(number ? number : dial_string_);
 		if (tones.empty())
 			return 0;
 		vts_ = std::move(tones);
@@ -768,8 +762,34 @@ int Modem::voice_dial(const char *number)
 	}
 	voice_dialing_ = true;
 	voice_dial_since_ = host_.now_ms();
+	if (host_.analog_line(*this)) {
+		/* a telephone line's: 2 s for the dial tone, then the
+		   number in DTMF (the engine's first OK, the line taken,
+		   starts them; voice_process()) */
+		vts_ = dtmf_tones(dial_string_);
+		vts_.insert(vts_.begin(), { 0, 0, 0, 200, false });
+		vts_next_ = 0;
+		voice_dial_digits_ = true;
+	}
 	command_ = false;
 	return 1;
+}
+
+/* the DTMF digits of number as +VTS elements: S11 ms each, S11 ms
+   apart */
+std::vector<Modem::VoiceTone> Modem::dtmf_tones(const char *number)
+{
+	std::vector<VoiceTone> tones;
+	unsigned d = sregs_[SREG_DTMF_DURATION] / 10;
+
+	for (const char *p = number; *p; p++) {
+		if (!dtmf_digit(*p))
+			continue;
+		if (!tones.empty())
+			tones.push_back({ 0, 0, 0, d, false });
+		tones.push_back({ (char)upper(*p), 0, 0, d, false });
+	}
+	return tones;
 }
 
 /* ATH, ATH0 on hook (a call hangs up), ATH1 off hook; ERROR when the

@@ -1061,8 +1061,9 @@ const char *Modem::dp_name(int id) const
 }
 
 /* the next pump: in fax mode the fax engine; else the one a pump asked
-   for, or +MS's (V.8 starting V.34 and up), created before the old one
-   goes; if it cannot be, the call hangs up on the old one */
+   for, or +MS's (V.8 starting V.34 and up; V.34 at most on an analogue
+   line), created before the old one goes; if it cannot be, the call
+   hangs up on the old one */
 void Modem::change_dp()
 {
 	const DpDriver *d;
@@ -1080,6 +1081,10 @@ void Modem::change_dp()
 		id = sregs_[SREG_DP];
 		if (id == DP_K56)
 			id = DP_V90;
+		/* (an analogue line has no digital modem's modes) */
+		if (host_.analog_line(*this) &&
+		    (id == DP_V90 || id == DP_V91 || id == DP_V92))
+			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
 			id == DP_V92 ? (unsigned)DP_V8 : id;
 	}
@@ -1106,9 +1111,10 @@ void Modem::change_dp()
  */
 
 /* call progress for a dial: the line stopped if caller ID or voice has
-   it, the caller, the pump created with the dial string hidden (the
-   network dials it, unless the pump has to wait for a dial tone); -1 if
-   there is a pump already or none can be made */
+   it, the caller, the pump created with the dial string hidden when the
+   network dials it (unless the pump has to wait for a dial tone; on an
+   analogue line, Host::analog_line(), the modem dials it); -1 if there
+   is a pump already or none can be made */
 int Modem::dial_start()
 {
 	const DpDriver *d;
@@ -1121,7 +1127,8 @@ int Modem::dial_start()
 	caller_ = true;
 	d = find_driver(DP_CALLPROG);
 	first = dialing_[0];
-	dialing_[0] = '\0';
+	if (!host_.analog_line(*this))
+		dialing_[0] = '\0';
 	if (d && d->op)
 		dp_ = d->op->create(handle(), DP_CALLPROG, 1, srate_, frag_,
 				    d->op);
@@ -1551,7 +1558,7 @@ void Modem::poll()
 {
 	unsigned ev;
 
-	if (voice_dialing_)
+	if (voice_dialing_ && !voice_dial_digits_)
 		voice_dial_check();
 	if (timer_on_ && (long)(host_.now_ms() - timer_at_) >= 0) {
 		timer_on_ = false;
@@ -1577,7 +1584,7 @@ long Modem::next_timer_ms()
 		if (left < 0)
 			left = 0;
 	}
-	if (voice_dialing_) {
+	if (voice_dialing_ && !voice_dial_digits_) {
 		long vd = voice_dial_left_ms();
 		if (left < 0 || vd < left)
 			left = vd;
@@ -1754,7 +1761,8 @@ int Modem::voice_start()
 {
 	if (voice_)
 		return 0;
-	if (started_)
+	/* (caller ID on the line gives way, as to ATA) */
+	if (started_ && (run_ != Run::CallerId || stop_call()))
 		return -1;
 	voice_ = VOICE_create(handle(), srate_);
 	if (!voice_)
@@ -1780,6 +1788,7 @@ void Modem::voice_stop()
 	vts_.clear();
 	vts_next_ = 0;
 	voice_dialing_ = false;
+	voice_dial_digits_ = false;
 	voice_cmd_ = -1;
 	stop_call();
 	set_hook(MODEM_HOOK_ON);
@@ -2008,11 +2017,26 @@ void Modem::voice_process(int16_t *in, int16_t *out, int n)
 		return;
 	}
 	if (voice_dialing_) {
-		/* the line-taken OK of the engine's start is not the dial's,
-		   which comes with the answer */
+		/* the engine's OKs (the line taken, a digit played) are not
+		   the dial's, which comes with the answer; while it dials
+		   the number, each plays the next digit, and its timers
+		   start from the last */
+		if (st == VOICE_STATUS_OK && voice_dial_digits_) {
+			if (vts_next_ < vts_.size()) {
+				voice_tone_next();
+				return;
+			}
+			voice_dial_digits_ = false;
+			voice_cmd_ = -1;
+			vts_.clear();
+			vts_next_ = 0;
+			voice_dial_since_ = host_.now_ms();
+			logf("voice dial: dialled\n");
+		}
 		if (st == VOICE_STATUS_OK)
 			st = 0;
-		voice_dial_check();
+		if (!voice_dial_digits_)
+			voice_dial_check();
 		if (!voice_)
 			return;
 	}

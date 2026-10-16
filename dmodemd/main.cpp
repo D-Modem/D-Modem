@@ -10,6 +10,8 @@
  *    from the SIP user agent (sip.cpp) on a socket pair, 20 ms frames
  *    that pace the modem; a fax call that goes over to T.38 has the
  *    modem's fax engine on the call's UDPTL instead, on our own clock.
+ *    With -a the line is a softmodem's codec through ALSA instead
+ *    (alsa_line.cpp): a telephone line, its samples pacing the modem.
  *
  */
 
@@ -37,6 +39,9 @@
 #include <log.h>
 #include <t38.h>
 
+#ifdef DMODEM_ALSA
+#include "alsa_line.h"
+#endif
 #include "datafile.h"
 #include "options.h"
 #include "pty.h"
@@ -496,6 +501,38 @@ int run(dcore::Modem &m, SipLine &line, dmd::Pty &pty, Control &control)
 	return 0;
 }
 
+#ifdef DMODEM_ALSA
+/* the loop on an ALSA line, until SIGINT or SIGTERM (0) or an error
+   (-1), each turn: the modem's timers, then select() on the codec's
+   capture and the pty (if the modem takes its characters now), then the
+   samples that came */
+int run_alsa(dcore::Modem &m, dmd::AlsaLine &line, dmd::Pty &pty)
+{
+	dcore::Modem *const modems[] = { &m };
+	dmd::RunLoop loop;
+
+	while (dmd::RunLoop::running()) {
+		long wait = dmd::RunLoop::poll(modems, 1);
+		int ret;
+
+		loop.clear();
+		line.watch(loop);
+		if (pty.want_read(m))
+			loop.watch(pty.fd());
+		ret = loop.wait(wait);
+		if (ret < 0) {
+			ERR("select: %s\n", strerror(errno));
+			return -1;
+		}
+		if (line.pump(m) < 0)
+			return -1;
+		if (ret > 0 && loop.ready(pty.fd()) && pty.serve(m, true) < 0)
+			return -1;
+	}
+	return 0;
+}
+#endif
+
 /* the pty's link: /dev/ttyDM<n>, n the number name ends with (0 if it
    ends with no digit) */
 std::string link_path(const char *name)
@@ -575,13 +612,17 @@ void drop_privileges(bool realtime)
 
 } // namespace
 
-/* the modem on a pty and a SIP line until SIGINT or SIGTERM (0), or an
-   error (255) */
+/* the modem on a pty and a SIP line (or with -a an ALSA one) until
+   SIGINT or SIGTERM (0), or an error (255) */
 int main(int argc, char *argv[])
 {
 	dmd::Options opt;
 	dmd::Pty pty;
 	SipLine line(pty);
+#ifdef DMODEM_ALSA
+	dmd::AlsaLine alsa(pty);
+#endif
+	dcore::Host *host = &line;
 	dcore::Options mo;
 	sip::Config cfg;
 	const char *name, *slash;
@@ -599,7 +640,16 @@ int main(int argc, char *argv[])
 	mo.dev_name = opt.name;
 	mo.rate = RATE;
 	mo.country = opt.country;
-	std::unique_ptr<dcore::Modem> m(new dcore::Modem(line, mo));
+	if (opt.alsa) {
+#ifdef DMODEM_ALSA
+		host = &alsa;
+		mo.rate = (int)opt.rate;
+#else
+		ERR("-a: dmodemd was built without ALSA (libasound2-dev)\n");
+		exit(-1);
+#endif
+	}
+	std::unique_ptr<dcore::Modem> m(new dcore::Modem(*host, mo));
 	if (!m->ok())
 		exit(-1);
 
@@ -613,6 +663,11 @@ int main(int argc, char *argv[])
 	dmd::DataFile data((DATA_PREFIX + std::string(name)).c_str());
 	data.load(&m->dsp_info());
 
+#ifdef DMODEM_ALSA
+	/* the codec opened as root (its device's group may be audio) */
+	if (opt.alsa && !alsa.open(opt.alsa, opt.alsa_ctl, opt.rate))
+		exit(-1);
+#endif
 	/* the keeper an ordinary process, forked before any thread */
 	if (geteuid() == 0)
 		pty.fork_keeper();
@@ -625,6 +680,18 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "Use `%s' as modem device, Ctrl+C for termination.\n",
 		*pty.link() ? pty.link() : pty.name());
 
+#ifdef DMODEM_ALSA
+	if (opt.alsa) {
+		ret = run_alsa(*m, alsa, pty);
+		data.save(&m->dsp_info());
+		m.reset();
+		usleep(100000);
+		pty.close();
+		prop_dp_exit();
+		dcore::log_close();
+		return ret < 0 ? 255 : 0;
+	}
+#endif
 	if (!sip::config_from_env(cfg, opt.listen))
 		exit(-1);
 	ctl = sip::start(cfg);

@@ -459,6 +459,29 @@ struct CallToneDetect {
 	void block();
 };
 
+/* the ring signal of a line on hook, as a modem codec hears it with its
+   line monitor (caller ID) path on: a large wave of 15 to 70 Hz (the
+   bell's 20 or 25 Hz, Japan's 16 Hz, a few 50 Hz), at 90 V and more on
+   the line, the codec's samples near or at full scale.  Low passed at
+   80 Hz (the voice band gone); a burst starts after 50 ms of its
+   envelope above 4000 and ends after 150 ms below 1500 (Smart Link's
+   levels); in a burst each cycle (its rise through 0, at levels above
+   100) is a pulse, as a ring indicator line gives them
+   (dcore::Modem::ring()). */
+struct RingDetect {
+	Biquad lp[2];
+	float env, decay;
+	bool on;                /* a burst */
+	long on_samples, off_samples;
+	int sign;               /* the wave's last (1 up, -1 down, 0 none) */
+	int srate;
+
+	/* at srate, no burst */
+	void init(int srate);
+	/* one sample: true at a pulse */
+	bool sample(float x);
+};
+
 /* sample format helpers: the modem core always uses S16_LE */
 /* x saturated to the s16 range (and truncated toward 0) */
 static inline s16 dsp_clip16(float x)

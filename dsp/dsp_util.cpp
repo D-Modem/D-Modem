@@ -421,6 +421,56 @@ void CallToneDetect::block()
 }
 
 /*
+ *    Ring signal
+ */
+
+/* see dsp.h: two sections of 80 Hz low pass, the envelope's time
+   constant 100 ms */
+void RingDetect::init(int srate_)
+{
+	*this = RingDetect();
+	srate = srate_;
+	lp[0].lowpass(80, 0.707f, srate);
+	lp[1].lowpass(80, 0.707f, srate);
+	decay = 1.0f / (0.1f * srate);
+}
+
+/* see dsp.h */
+bool RingDetect::sample(float x)
+{
+	float y = lp[1].run(lp[0].run(x)), a = fabsf(y);
+	bool pulse = false;
+
+	if (a > env)
+		env = a;
+	else
+		env -= decay * env;
+	if (!on) {
+		if (env > 4000) {
+			if (++on_samples > srate / 20) {
+				on = true;
+				off_samples = 0;
+			}
+		} else {
+			on_samples = 0;
+		}
+	} else if (env < 1500) {
+		if (++off_samples > srate * 3 / 20) {
+			on = false;
+			on_samples = 0;
+		}
+	} else {
+		off_samples = 0;
+	}
+	if (a > 100) {
+		int s = y > 0 ? 1 : -1;
+		pulse = on && s > 0 && sign < 0;
+		sign = s;
+	}
+	return pulse;
+}
+
+/*
  *    8000 <-> 9600 Hz sample rate conversion through 48 kHz
  */
 #define RS_LEN  480     /* prototype taps at 48 kHz */

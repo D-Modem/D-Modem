@@ -21,6 +21,8 @@ The project's overview, building and usage are in the top
 
 - [Asterisk: app_dmodem](asterisk.md)
 - [FreeSWITCH: mod_dmodem](freeswitch.md)
+- [Softmodem hardware](hardware.md): dmodemd on an AC'97 or HD-audio
+  modem codec through ALSA (`-a`)
 
 ## Testing
 

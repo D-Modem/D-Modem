@@ -36,7 +36,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config g++ libssl-dev libgtest-dev \
-            libspandsp-dev libtiff-tools asterisk-dev g++-multilib
+            libspandsp-dev libtiff-tools asterisk-dev g++-multilib \
+            libasound2-dev
 
       # libre is fetched and built while configuring: keep it
       - name: libre cache
@@ -52,7 +53,7 @@ jobs:
         run: cmake --build build
 
       - name: Tests
-        run: ctest --test-dir build -L "quick|spandsp" -j4 --output-on-failure
+        run: ctest --test-dir build -L "quick|spandsp|alsa" -j4 --output-on-failure
 
       # dmodemd started as root (ctest skips it as the runner's user)
       - name: dmodemd as root

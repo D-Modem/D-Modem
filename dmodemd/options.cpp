@@ -45,7 +45,7 @@ struct Option {
 enum {
 	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
-	OPT_COUNT
+	OPT_ALSA, OPT_ALSA_CTL, OPT_RATE, OPT_COUNT
 };
 
 const Option OPTIONS[OPT_COUNT] = {
@@ -69,6 +69,13 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "binary log dmodem.log.<name> to level", "5", false },
 	{ 'L', "listen", Takes::Nothing, false,
 	  "register, and take calls in", nullptr, false },
+	{ 'a', "alsa", Takes::Text, true,
+	  "the line a modem codec's ALSA PCM (hw:1, hw:0,6), not SIP",
+	  "none", false },
+	{ 0, "alsa-ctl", Takes::Text, true,
+	  "its controls (hw:<card> of -a's)", "-a's", false },
+	{ 'r', "rate", Takes::Number, true,
+	  "the codec's rate with -a (8000 or 9600)", "9600", false },
 };
 
 /* one reading of a command line */
@@ -207,7 +214,7 @@ void CommandLine::usage() const
 		"\n"
 		"Environment:\n"
 		"  SIP_LOGIN=user:password@domain  the SIP account "
-		"(required)\n"
+		"(required without -a)\n"
 		"  SIP_PORT=port         the local SIP port (5060)\n"
 		"  SIP_LOG_LEVEL=n       the SIP log's level (4: with the "
 		"SIP messages,\n"
@@ -258,6 +265,18 @@ void CommandLine::apply(Options &opt) const
 	}
 	if (o[OPT_LISTEN].given)
 		opt.listen = true;
+	if (o[OPT_ALSA].given)
+		opt.alsa = o[OPT_ALSA].value;
+	if (o[OPT_ALSA_CTL].given)
+		opt.alsa_ctl = o[OPT_ALSA_CTL].value;
+	if (o[OPT_RATE].given) {
+		long rate = strtol(o[OPT_RATE].value, nullptr, 10);
+		if (rate != 8000 && rate != 9600) {
+			fprintf(stderr, "%s: -r: 8000 or 9600\n", prog_);
+			exit(1);
+		}
+		opt.rate = (unsigned)rate;
+	}
 	opt.name = name_ ? name_ : DEFAULT_NAME;
 }
 

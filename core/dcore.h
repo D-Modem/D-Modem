@@ -76,6 +76,13 @@ public:
 	   fails (Modem::line_answered(), line_failed()), as SIP does; else
 	   a voice dial takes the call for answered after +VRN */
 	virtual bool signals_answer(Modem &m) { (void)m; return false; }
+	/* the line is an analogue telephone line (a softmodem's codec):
+	   the modem dials the number itself (its call progress pump in
+	   DTMF, after a dial tone with X2 or X4), and offers no mode of a
+	   digital modem (V.90's and V.92's, V.91: +MS's V.90 and up are
+	   V.34).  Else the line is a digital network's (SIP, a PBX's
+	   channel), which dials the number */
+	virtual bool analog_line(Modem &m) { (void)m; return false; }
 	virtual void speaker(Modem &m, int volume) { (void)m; (void)volume; }
 	/* the line's delay, which Smart Link's original library asks for
 	   (the open data pumps do not): the samples between the modem's
@@ -483,9 +490,12 @@ private:
 	};
 	std::vector<VoiceTone> vts_;
 	size_t vts_next_ = 0;
+	std::vector<VoiceTone> dtmf_tones(const char *number);
 	/* a voice dial under way (ATD in voice mode): since when (ms) */
 	bool voice_dialing_ = false;
 	unsigned long voice_dial_since_ = 0;
+	/* it dials the number (in vts_) first; its timers from then */
+	bool voice_dial_digits_ = false;
 	/* the voice engine's command (a VOICE_CMD: +VTS's tones, +VTX,
 	   +VRX, +VTR) until its OK or ERROR, -1 for none */
 	int voice_cmd_ = -1;
