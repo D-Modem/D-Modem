@@ -1755,6 +1755,13 @@ int Modem::voice_tone_next()
 	const VoiceTone &t = vts_[vts_next_++];
 
 	voice_info_.tone_duration = t.d;
+	if (t.flash) {
+		/* the line signals it; the modem's audio is silence */
+		host_.hook_flash(*this, t.d * 10);
+		voice_info_.tone1_freq = 0;
+		voice_info_.tone2_freq = 0;
+		return voice_command(VOICE_CMD_BEEP);
+	}
 	if (t.dtmf) {
 		voice_info_.dtmf_symbol = (unsigned char)t.dtmf;
 		return voice_command(VOICE_CMD_DTMF);

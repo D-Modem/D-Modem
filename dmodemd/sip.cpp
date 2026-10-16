@@ -24,6 +24,11 @@
  *    jump in time), when its backlog passes 2 s, or when it has run dry
  *    with the far end's packets late (its clock slower than ours).
  *
+ *    Telephone-events (RFC 4733), offered and taken on every call: the
+ *    modem's hook flash (sip::flash()) goes as event 16, in place of the
+ *    audio while it lasts, and the far end's DTMF digits sent as events
+ *    reach the modem as their tones.
+ *
  *    T.38: an offer of it (a re-INVITE with an image line) is answered at
  *    once while the modem is in fax mode, our image line in its place,
  *    the other lines off.  Our own ask, a second after we answered a fax
@@ -77,6 +82,7 @@ namespace libre {
 #include <re.h>
 }
 
+#include "dsp.h"
 #include "g711.h"
 #include "line_recorder.h"
 #include "sip.h"
@@ -121,6 +127,16 @@ const int QUIT_MS = 2000;
 /* the SIP thread's queue */
 enum { MQ_DIAL, MQ_ANSWER, MQ_MODEM_GONE, MQ_QUIT };
 
+/* RFC 4733 telephone-events: the payload type of ours in an offer; the
+   events (hook flash), the longest one (its 16 bit duration, in
+   samples), the copies of its last packet; a received digit's tone
+   ended when no packet of it came for this long (samples) */
+const int TE_PT = 101;
+const unsigned EV_FLASH = 16;
+const unsigned EV_MAX = 65535;
+const int EV_ENDS = 3;
+const unsigned EV_LOST = RATE / 10;
+
 /* start()'s copy of the configuration */
 Config cfg_;
 std::string user_, password_, domain_;
@@ -129,6 +145,10 @@ int log_level = 4;
 dmd::LineRecorder rec;
 int ctl[2] = { -1, -1 };        /* our lines: written to [0] */
 std::atomic<int> law_{0};
+/* the current call's telephone-event payload type (the far end's), -1
+   if it has none; a hook flash asked for (ms), 0 if none */
+std::atomic<int> te_pt_{-1};
+std::atomic<unsigned> flash_ms_{0};
 std::atomic<bool> fax_{false};
 std::atomic<bool> running{false};       /* the SIP thread takes requests */
 std::thread sip_thread;
@@ -483,6 +503,29 @@ int g711_pt(const SdpMedia &m, int *law)
 	return -1;
 }
 
+/* the telephone-event format of audio line m, -1 if it has none */
+int te_pt(const SdpMedia &m)
+{
+	for (const std::string &f : m.fmts) {
+		char *end;
+		long pt = strtol(f.c_str(), &end, 10);
+
+		if (*end || pt < 96 || pt > 127)
+			continue;
+		for (const auto &a : m.attrs) {
+			if (strcasecmp(a.first.c_str(), "rtpmap"))
+				continue;
+			size_t sp = a.second.find(' ');
+			if (sp != std::string::npos &&
+			    a.second.substr(0, sp) == f &&
+			    lower(a.second.substr(sp + 1)).compare(
+				    0, 20, "telephone-event/8000") == 0)
+				return (int)pt;
+		}
+	}
+	return -1;
+}
+
 /* the direction of line m of s: its own, else the session's */
 std::string direction(const Sdp &s, const SdpMedia &m)
 {
@@ -533,6 +576,8 @@ struct Line {
 	int pt = -1;                    /* audio: the format agreed, -1 if
 					   none yet (both offered) */
 	int law = 0;
+	int te = -1;                    /* audio: telephone-event's format
+					   agreed, -1 if none */
 	std::string dir = "sendrecv";
 	int version = 0;                /* image: T38FaxVersion */
 	std::string type, proto, fmts;  /* off: the far end's line */
@@ -545,6 +590,7 @@ Line audio_answer(const Sdp &s, const SdpMedia &m)
 	std::string d = direction(s, m);
 
 	l.pt = g711_pt(m, &l.law);
+	l.te = te_pt(m);
 	l.dir = d == "sendonly" ? "recvonly" : d == "recvonly" ? "sendonly" :
 		d == "inactive" ? "inactive" : "sendrecv";
 	return l;
@@ -767,16 +813,18 @@ public:
 		modem_ = -1;
 	}
 
-	/* the far end's RTP at a (len), in payload type pt of law; send:
-	   whether it is to have ours */
+	/* the far end's RTP at a (len), in payload type pt of law, its
+	   telephone-events in te (-1: none); send: whether it is to have
+	   ours */
 	void remote(const struct sockaddr_storage &a, socklen_t len, int pt,
-		    int law, bool send)
+		    int law, int te, bool send)
 	{
 		std::lock_guard<std::mutex> lk(mu_);
 		peer_ = a;
 		peer_len_ = len;
 		pt_ = pt;
 		law_ = law;
+		te_ = te;
 		send_ = send;
 	}
 
@@ -799,13 +847,31 @@ private:
 	bool active_ = false, send_ = false;
 	struct sockaddr_storage peer_ = {};
 	socklen_t peer_len_ = 0;
-	int pt_ = 0, law_ = 1;
+	int pt_ = 0, law_ = 1, te_ = -1;
 
 	/* the thread's own */
 	Jitter jb_;
 	uint16_t seq_;
 	uint32_t ts_, ssrc_;
 	bool marker_ = true;
+
+	/* the hook flash being sent (RFC 4733): its timestamp, length and
+	   duration so far (samples), its last packet's copies sent (0 while
+	   it lasts), whether one is on */
+	uint32_t ev_ts_ = 0;
+	unsigned ev_len_ = 0, ev_dur_ = 0;
+	int ev_ends_ = 0;
+	bool ev_on_ = false, ev_first_ = false;
+
+	/* a DTMF digit received as a telephone-event, played into the
+	   modem's audio as the tone it stands for: the event's timestamp,
+	   the samples left until it counts as ended without its end packet,
+	   whether one plays */
+	dsp::DtmfGen rx_dtmf_ = {};
+	uint32_t rx_ev_ts_ = 0;
+	unsigned rx_ev_left_ = 0;
+	bool rx_ev_on_ = false;
+	bool rx_ev_ended_ = false;
 
 	/* the socket has failed (what): told once, the thread to end */
 	void failed(const char *what)
@@ -815,9 +881,48 @@ private:
 			    reinterpret_cast<void *>((uintptr_t)serial_));
 	}
 
+	/* a telephone-event packet's payload b (n octets) at timestamp ts:
+	   a DTMF digit's start, its going on, or its end (others ignored) */
+	void event_in(const uint8_t *b, size_t n, uint32_t ts)
+	{
+		static const char keys[] = "0123456789*#ABCD";
+
+		if (n < 4 || b[0] > 15)
+			return;
+		if (!rx_ev_on_ || ts != rx_ev_ts_) {
+			if (rx_ev_ended_ && ts == rx_ev_ts_)
+				return;         /* a copy of its end */
+			rx_dtmf_.set(keys[b[0]], RATE);
+			rx_ev_ts_ = ts;
+			rx_ev_on_ = true;
+			rx_ev_ended_ = false;
+			say(4, "call %u: DTMF %c (RFC 4733), played as its tone",
+			    serial_, keys[b[0]]);
+		}
+		rx_ev_left_ = EV_LOST;
+		if (b[1] & 0x80) {
+			rx_ev_on_ = false;
+			rx_ev_ended_ = true;
+		}
+	}
+
+	/* the received digit's tone over frame in, while it plays */
+	void dtmf_over(int16_t *in)
+	{
+		if (!rx_ev_on_)
+			return;
+		for (unsigned i = 0; i < SAMPLES; i++)
+			in[i] = (int16_t)rx_dtmf_.next();
+		if (rx_ev_left_ <= SAMPLES)
+			rx_ev_on_ = false;
+		else
+			rx_ev_left_ -= SAMPLES;
+	}
+
 	/* the packets that have come: into the jitter buffer if on, those
-	   in G.711 (pt of law, or a static one) */
-	void drain(bool on, int pt, int law)
+	   in G.711 (pt of law, or a static one); telephone-events (te) to
+	   event_in() */
+	void drain(bool on, int pt, int law, int te)
 	{
 		uint8_t b[2048];
 
@@ -844,6 +949,12 @@ private:
 			if (h >= end)
 				continue;
 			p = b[1] & 0x7f;
+			if (p == te && te >= 0) {
+				event_in(b + h, end - h,
+					 (uint32_t)b[4] << 24 | b[5] << 16 |
+					 b[6] << 8 | b[7]);
+				continue;
+			}
 			if (p == pt)
 				l = law;
 			else if (p == 0 || p == 8)
@@ -860,31 +971,102 @@ private:
 		}
 	}
 
+	/* an RTP header into p: payload type pt, the marker if marker,
+	   timestamp ts, the next sequence number */
+	void header(uint8_t *p, int pt, bool marker, uint32_t ts)
+	{
+		p[0] = 0x80;
+		p[1] = (uint8_t)((marker ? 0x80 : 0) | (pt & 0x7f));
+		p[2] = (uint8_t)(seq_ >> 8);
+		p[3] = (uint8_t)seq_;
+		p[4] = (uint8_t)(ts >> 24);
+		p[5] = (uint8_t)(ts >> 16);
+		p[6] = (uint8_t)(ts >> 8);
+		p[7] = (uint8_t)ts;
+		p[8] = (uint8_t)(ssrc_ >> 24);
+		p[9] = (uint8_t)(ssrc_ >> 16);
+		p[10] = (uint8_t)(ssrc_ >> 8);
+		p[11] = (uint8_t)ssrc_;
+		seq_++;
+	}
+
 	/* a frame of the modem's (out) in RTP to peer */
 	void send_rtp(const int16_t *out, int pt, int law,
 		      const struct sockaddr_storage &peer, socklen_t len)
 	{
 		uint8_t p[12 + SAMPLES];
 
-		p[0] = 0x80;
-		p[1] = (uint8_t)((marker_ ? 0x80 : 0) | (pt & 0x7f));
-		p[2] = (uint8_t)(seq_ >> 8);
-		p[3] = (uint8_t)seq_;
-		p[4] = (uint8_t)(ts_ >> 24);
-		p[5] = (uint8_t)(ts_ >> 16);
-		p[6] = (uint8_t)(ts_ >> 8);
-		p[7] = (uint8_t)ts_;
-		p[8] = (uint8_t)(ssrc_ >> 24);
-		p[9] = (uint8_t)(ssrc_ >> 16);
-		p[10] = (uint8_t)(ssrc_ >> 8);
-		p[11] = (uint8_t)ssrc_;
+		header(p, pt, marker_, ts_);
 		for (unsigned i = 0; i < SAMPLES; i++)
 			p[12 + i] = dsp::g711::encode(law == 2, out[i]);
 		(void)sendto(rtp_, p, sizeof(p), MSG_DONTWAIT,
 			     reinterpret_cast<const struct sockaddr *>(&peer),
 			     len);
 		marker_ = false;
-		seq_++;
+	}
+
+	/* the hook flash's packet in payload type te to peer (RFC 4733:
+	   event 16, its duration so far, the end bit on its last; the
+	   marker on its first) */
+	void send_flash(int te, const struct sockaddr_storage &peer,
+			socklen_t len)
+	{
+		uint8_t p[12 + 4];
+		bool end = ev_ends_ > 0;
+
+		header(p, te, ev_first_, ev_ts_);
+		ev_first_ = false;
+		p[12] = EV_FLASH;
+		p[13] = end ? 0x80 : 0;
+		p[14] = (uint8_t)(ev_dur_ >> 8);
+		p[15] = (uint8_t)ev_dur_;
+		(void)sendto(rtp_, p, sizeof(p), MSG_DONTWAIT,
+			     reinterpret_cast<const struct sockaddr *>(&peer),
+			     len);
+	}
+
+	/* this frame's part of a hook flash: one asked for started (if
+	   the far end takes telephone-events and has our RTP; one asked
+	   for while another is on waits for its end), its packet while it
+	   lasts (true: no audio with it), the copies of its last after
+	   it */
+	bool flash(int te, bool send, const struct sockaddr_storage &peer,
+		   socklen_t len)
+	{
+		unsigned ms = ev_on_ ? 0 : flash_ms_.exchange(0);
+
+		if (ms) {
+			if (te < 0 || !send) {
+				say(3, "call %u: hook flash of %u ms not sent "
+				    "(%s)", serial_, ms, te < 0 ?
+				    "no telephone-event" :
+				    "the far end has no audio of ours");
+			} else {
+				ev_on_ = true;
+				ev_ts_ = ts_;
+				ev_len_ = std::min(ms * (RATE / 1000), EV_MAX);
+				ev_dur_ = 0;
+				ev_ends_ = 0;
+				ev_first_ = true;
+				say(3, "call %u: hook flash, %u ms (RFC 4733)",
+				    serial_, ev_len_ / (RATE / 1000));
+			}
+		}
+		if (!ev_on_ || !send || te < 0) {
+			ev_on_ = false;
+			return false;
+		}
+		if (ev_ends_ == 0) {
+			ev_dur_ = std::min(ev_dur_ + SAMPLES, ev_len_);
+			if (ev_dur_ >= ev_len_)
+				ev_ends_ = 1;
+			send_flash(te, peer, len);
+			return true;
+		}
+		send_flash(te, peer, len);
+		if (++ev_ends_ >= EV_ENDS)
+			ev_on_ = false;
+		return false;
 	}
 
 	/* every 20 ms: the packets taken in; if active, a frame to the
@@ -902,7 +1084,7 @@ private:
 			socklen_t len;
 			int16_t in[SAMPLES], out[SAMPLES];
 			bool on, send;
-			int pt, law;
+			int pt, law, te;
 
 			next.tv_nsec += TICK_NS;
 			if (next.tv_nsec >= 1000000000L) {
@@ -926,8 +1108,9 @@ private:
 				len = peer_len_;
 				pt = pt_;
 				law = law_;
+				te = te_;
 			}
-			drain(on, pt, law);
+			drain(on, pt, law, te);
 			if (!on) {
 				was_on = false;
 				ts_ += SAMPLES;
@@ -943,6 +1126,7 @@ private:
 				was_on = true;
 			}
 			jb_.get(in, SAMPLES);
+			dtmf_over(in);
 			rec.rx(in, FRAME);
 			if (!write_all(modem_, in, FRAME)) {
 				failed("write failed");
@@ -953,7 +1137,7 @@ private:
 				break;
 			}
 			rec.tx(out, FRAME);
-			if (send)
+			if (!flash(te, send, peer, len) && send)
 				send_rtp(out, pt, law, peer, len);
 			ts_ += SAMPLES;
 		}
@@ -1030,14 +1214,24 @@ struct Call {
 				m += "m=audio " + std::to_string(rtp_port) +
 					" RTP/AVP ";
 				if (l.pt < 0) {
-					m += "0 8\r\n"
+					std::string te = std::to_string(TE_PT);
+					m += "0 8 " + te + "\r\n"
 						"a=rtpmap:0 PCMU/8000\r\n"
-						"a=rtpmap:8 PCMA/8000\r\n";
+						"a=rtpmap:8 PCMA/8000\r\n"
+						"a=rtpmap:" + te +
+						" telephone-event/8000\r\n"
+						"a=fmtp:" + te + " 0-16\r\n";
 				} else {
 					std::string pt = std::to_string(l.pt);
-					m += pt + "\r\na=rtpmap:" + pt +
+					std::string te = std::to_string(l.te);
+					m += pt + (l.te >= 0 ? " " + te : "") +
+						"\r\na=rtpmap:" + pt +
 						(l.law == 2 ? " PCMA" : " PCMU") +
 						"/8000\r\n";
+					if (l.te >= 0)
+						m += "a=rtpmap:" + te +
+							" telephone-event/8000\r\n"
+							"a=fmtp:" + te + " 0-16\r\n";
 				}
 				m += "a=ptime:20\r\na=" + l.dir + "\r\n";
 				break;
@@ -1113,6 +1307,8 @@ void end_call()
 	if (!c)
 		return;
 	cur = nullptr;
+	te_pt_ = -1;
+	flash_ms_ = 0;
 	tmr_cancel(&c->ring_tmr);
 	tmr_cancel(&c->poll_tmr);
 	tmr_cancel(&c->tell_tmr);
@@ -1169,6 +1365,8 @@ bool attach(Call *c, int fd)
 	int family;
 
 	law_ = 0;
+	te_pt_ = -1;
+	flash_ms_ = 0;
 	if (!write_all(fd, silence, FRAME)) {
 		say(1, "audio socket %d: %s", fd, strerror(errno));
 		close(fd);
@@ -1199,9 +1397,12 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 		say(1, "call %u: no address in `%s'", c->serial, m.addr.c_str());
 		return false;
 	}
-	c->media->remote(a, len, pt, law, d != "sendonly" && d != "inactive" &&
+	int te = te_pt(m);
+	c->media->remote(a, len, pt, law, te,
+			 d != "sendonly" && d != "inactive" &&
 			 m.addr != "0.0.0.0");
 	law_ = law;
+	te_pt_ = te;
 	if (!c->audio_up) {
 		c->audio_up = true;
 		say(3, "call %u: media up, %s, to %s:%d", c->serial,
@@ -1345,6 +1546,7 @@ int on_answer(const struct sip_msg *msg, void *arg)
 	}
 	Line l = c->offered[i];
 	l.pt = g711_pt(s.media[i], &l.law);
+	l.te = te_pt(s.media[i]);
 	if (l.pt < 0 || !take_audio(c, s, s.media[i])) {
 		say(1, "call %u: an answer without G.711", c->serial);
 		return c->confirmed ? 0 : EPROTO;
@@ -1952,6 +2154,19 @@ int law()
 void set_fax(bool fax)
 {
 	fax_ = fax;
+}
+
+/* see sip.h */
+bool can_flash()
+{
+	return te_pt_ >= 0;
+}
+
+/* see sip.h */
+void flash(unsigned ms)
+{
+	if (ms)
+		flash_ms_ = ms;
 }
 
 /* see sip.h */

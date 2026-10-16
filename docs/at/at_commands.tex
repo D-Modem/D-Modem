@@ -839,15 +839,19 @@ the other modes):
 +VTS=\p{string} & plays the elements of \p{string}, separated by commas,
   in turn, and gives OK after the last; ERROR, and nothing played, if one
   cannot be.  An element is: \\
-\quad \p{s} & the DTMF digit \p{s} (0--9, *, \#, A--D) \\
-\quad \{\p{s},\p{d}\} & the DTMF digit \p{s} for \p{d} \\
+\quad \p{s} & the DTMF digit \p{s} (0--9, *, \#, A--D), or ! a hook
+  flash \\
+\quad \{\p{s},\p{d}\} & the DTMF digit or hook flash \p{s} for \p{d} \\
 \quad [\p{f1},\p{f2},\p{d}] & a tone of \p{f1} and \p{f2} Hz (0 to 4000; 0
   is none) for \p{d} \\
 & Durations are in 10~ms, 0 to 6000.  A field may be left empty: a
   frequency is then 0, a digit none (silence), and a duration
   \cmd{+VTD}'s, so \cmd{\{5\}}, \cmd{[440]} and \cmd{[]} last \cmd{+VTD}
   and \cmd{\{\}} is silence for as long.  Two digits in a row get 50~ms
-  of silence between them.  \cmd{+VTS=1,2,3} dials 123. \\
+  of silence between them.  \cmd{+VTS=1,2,3} dials 123.  A hook flash
+  is the line's: over SIP an RFC 4733 event (16), the audio silent
+  meanwhile; a string with ! is an ERROR on a line that has none (a SIP
+  call whose far end takes no telephone-events). \\
 \bottomrule
 \end{longtable}
 Each takes \cmd{?} (its values) and \cmd{=?} (their ranges).

@@ -78,9 +78,24 @@ export SIP_LOGIN=modem:modem@127.0.0.1:5070 SIP_LOG=$run/dmodemd.log
 if [ -n "$INCOMING" ]; then
 	export SIP_IN="$ast -rx 'channel originate PJSIP/modem extension s@modem-call'"
 fi
+# VOICE=1: Asterisk calls D-Modem, which answers in voice mode and plays
+# DTMF and hook flashes (sip_call.py); the dialplan sends it a digit.
+# Asterisk's RTP debug shows the flashes come as RFC 4733 event 16.
+if [ -n "$VOICE" ]; then
+	export SIP_IN="$ast -rx 'channel originate PJSIP/modem extension s@modem-voice'"
+	$ast -rx "rtp set debug on" >/dev/null
+fi
 "$here/sip_call.py" "$build/dmodemd/dmodemd" 5551000 "$1"
 r=$?
 sleep 2
+if [ -n "$VOICE" ]; then
+	# event 16 (0x10) as RTP RFC2833 packets from dmodemd: the start,
+	# and the end bit on the last of each flash
+	n=$(grep -c "Got  RTP RFC2833 .*event 00000010, end 1" "$run/console.log")
+	echo "asterisk: $n end packets of event 16"
+	grep -m 4 "Got  RTP RFC2833 .*event 00000010" "$run/console.log"
+	[ "$n" -ge 2 ] || r=1
+fi
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"
 [ -z "$ARI" ] || ari_log "$run"
 $ast -rx "core stop now" >/dev/null 2>&1

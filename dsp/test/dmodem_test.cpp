@@ -693,6 +693,73 @@ TEST(DmodemCxx, VoiceTones)
 	ASSERT_TRUE(m.command("AT+VLS=0"));
 }
 
+/* AT+VTS's hook flash: ERROR (and nothing played) on a line without
+   one; on a line with one, the program's callback with each flash's
+   length, the line silent for as long, the digits around it played */
+static std::vector<unsigned> flashes;
+static void on_flash(void *arg, unsigned ms)
+{
+	(void)arg;
+	flashes.push_back(ms);
+}
+
+TEST(DmodemCxx, VoiceHookFlash)
+{
+	dm::init();
+	for (int with = 0; with < 2; with++) {
+		Dte d;
+		dmodem_config c{};
+		c.name = "flash";
+		c.dte_fd = d.modem_end();
+		c.law = DMODEM_LAW_ULAW;
+		c.init = "ATE0\r";
+		if (with)
+			c.hook_flash = on_flash;
+		dm::Modem m(c);
+		std::array<short, FRAME> in{}, out{};
+		std::string labels, dte;
+
+		auto run = [&](int n) {
+			labels.clear();
+			dte.clear();
+			for (int i = 0; i < n; i++) {
+				m.process(in.data(), out.data(), FRAME);
+				m.poll_dte();
+				labels += dtmf_key(out.data());
+				dte += d.read_all();
+			}
+		};
+		flashes.clear();
+		d.read_all();
+		ASSERT_TRUE(m.command("AT+FCLASS=8"));
+		ASSERT_TRUE(m.command("AT+VLS=1"));
+		run(5);
+		ASSERT_EQ(d.read_all() + dte, "OK\r\nOK\r\n");
+		ASSERT_TRUE(m.command("AT+VTD=10"));
+		run(1);
+		ASSERT_TRUE(m.command("AT+VTS=1,!,{!,30},2"));
+		run(60);
+		if (!with) {
+			EXPECT_EQ(dte, "ERROR\r\n");
+			EXPECT_EQ(labels.find_first_not_of(' '),
+				  std::string::npos) << labels;
+			EXPECT_TRUE(flashes.empty());
+			continue;
+		}
+		EXPECT_EQ(dte, "OK\r\n");
+		EXPECT_EQ(flashes, (std::vector<unsigned>{ 100, 300 }));
+		size_t one = labels.find_last_of('1'), two = labels.find('2');
+		ASSERT_NE(one, std::string::npos) << labels;
+		ASSERT_NE(two, std::string::npos) << labels;
+		/* 100 + 300 ms of silence between the digits */
+		long quiet = std::count(labels.begin() + one,
+					labels.begin() + two, ' ');
+		EXPECT_GE(quiet, 19) << labels;
+		EXPECT_LE(quiet, 21) << labels;
+		ASSERT_TRUE(m.command("AT+VLS=0"));
+	}
+}
+
 /* the log lines (DmodemCxx.LawForEachCall) */
 static std::vector<std::string> log_lines;
 

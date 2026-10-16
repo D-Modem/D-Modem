@@ -1359,17 +1359,18 @@ int Modem::at_voice(char *p, int *len)
 	if (*q++ != '=')
 		return -1;
 	/* V.253's string: elements separated by commas, each a DTMF digit
-	   (0-9, *, #, A-D), {s,d} the digit s for d * 10 ms, or [f1,f2,d]
-	   a tone of f1 and f2 Hz (0 to 4000, 0: none) for d * 10 ms (0 to
-	   6000).  A field left empty is 0 for a frequency, no digit
-	   (silence) for s, and +VTD for d, so that a bare digit, {s}, [f1]
-	   and [] last +VTD; all of the string checked before any of it
-	   plays */
+	   (0-9, *, #, A-D) or ! (a hook flash), {s,d} the digit or flash s
+	   for d * 10 ms, or [f1,f2,d] a tone of f1 and f2 Hz (0 to 4000, 0:
+	   none) for d * 10 ms (0 to 6000).  A field left empty is 0 for a
+	   frequency, no digit (silence) for s, and +VTD for d, so that a
+	   bare digit, !, {s}, [f1] and [] last +VTD; all of the string
+	   checked before any of it plays, a flash on a line that can have
+	   none an ERROR */
 	std::vector<VoiceTone> tones;
 	const unsigned dflt = voice_info_.tone_default ?
 		voice_info_.tone_default : 100;
 	for (;;) {
-		VoiceTone t = { 0, 0, 0, dflt };
+		VoiceTone t = { 0, 0, 0, dflt, false };
 		if (*q == '[') {
 			unsigned long v[3] = { 0, 0, dflt };
 			q++;
@@ -1389,8 +1390,12 @@ int Modem::at_voice(char *p, int *len)
 			t.d = (unsigned)v[2];
 		} else if (*q == '{') {
 			q++;
-			if (dtmf_digit(*q))
+			if (dtmf_digit(*q)) {
 				t.dtmf = (char)upper(*q++);
+			} else if (*q == '!') {
+				q++;
+				t.flash = true;
+			}
 			if (*q == ',') {
 				q++;
 				if (is_digit(*q)) {
@@ -1405,13 +1410,18 @@ int Modem::at_voice(char *p, int *len)
 				return -1;
 		} else if (dtmf_digit(*q)) {
 			t.dtmf = (char)upper(*q++);
+		} else if (*q == '!') {
+			q++;
+			t.flash = true;
 		} else {
 			return -1;
 		}
+		if (t.flash && !host_.can_flash(*this))
+			return -1;
 		/* a pause of 50 ms between two digits, so that the same
 		   digit twice is two digits to the far end's receiver */
 		if (t.dtmf && !tones.empty() && tones.back().dtmf)
-			tones.push_back({ 0, 0, 0, 5 });
+			tones.push_back({ 0, 0, 0, 5, false });
 		tones.push_back(t);
 		if (!*q)
 			break;

@@ -67,6 +67,13 @@ int law();
 /* the modem is in fax mode: its calls may go over to T.38 */
 void set_fax(bool fax);
 
+/* telephone-events (RFC 4733): the current call has them (its far end
+   offered or took ours); a hook flash of ms on it, as event 16, sent
+   in place of the audio while it lasts.  The far end's DTMF digits sent
+   as events reach the modem as their tones, as on an analogue line. */
+bool can_flash();
+void flash(unsigned ms);
+
 /* the current call's T.38, as the far end has it */
 struct T38 {
 	int fd;                         /* our UDPTL socket: the caller's

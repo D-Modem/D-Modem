@@ -45,6 +45,14 @@ struct dmodem final : public dcore::Host {
 	int stop(dcore::Modem &) override { return 0; }
 	/* for ATI3 */
 	const char *driver_name() override { return "dmodem"; }
+	/* the program's hook flash, if it gave one */
+	void (*flash)(void *, unsigned) = nullptr;
+	void *flash_arg = nullptr;
+	bool can_flash(dcore::Modem &) override { return flash != nullptr; }
+	void hook_flash(dcore::Modem &, unsigned ms) override {
+		if (flash)
+			flash(flash_arg, ms);
+	}
 	/* to the DTE's fd (non-blocking): what it took, 0 if nothing */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		int ret = write(dte_fd, buf, n);
@@ -137,6 +145,8 @@ struct dmodem *dmodem_create(const struct dmodem_config *cfg)
 		sizeof(d->name) - 1);
 	d->dte_fd = cfg->dte_fd;
 	d->law = cfg->law;
+	d->flash = cfg->hook_flash;
+	d->flash_arg = cfg->hook_flash_arg;
 	o.name = d->name;
 	o.dev_name = d->name;
 	o.rate = DMODEM_RATE;

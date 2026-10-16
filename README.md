@@ -76,6 +76,15 @@ over to T.38 when the other end asks for it, or a second after dmodemd
 answered one: the same commands and results for the software, the call's
 UDPTL instead of its audio.  `SIP_T38=no` keeps faxes on the audio.
 
+### Voice
+In voice mode (`AT+FCLASS=8`), `AT+VLS=1` answers a ringing call, and
+`AT+VTS` plays tones and DTMF digits in the audio.  Its hook flash (`!`)
+goes to the far end as an RFC 4733 telephone-event (event 16), which
+dmodemd offers and takes on every call; `AT+VTS` with `!` is an ERROR on
+a call whose far end has no telephone-events.  DTMF digits the far end
+sends as telephone-events reach the modem as their tones, as they would
+on an analogue line.
+
 ### Receiving calls
 With `-L` (listen), dmodemd registers with the SIP server, so that calls to the account reach the modem: it reports `RING`, and answers on `ATA` or by itself after `ATS0=n` rings.  Dialing works as before in this mode.
 

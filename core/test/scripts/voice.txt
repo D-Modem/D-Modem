@@ -51,6 +51,8 @@ A AT+VTD?\r
 A AT+VTD=5\r
 A AT+VTS=1,2\r
 run 300
+# a hook flash: ERROR on this line, which has none
+A AT+VTS=1,!\r
 A AT+VLS=0\r
 A AT+VLS?\r
 A AT+VLS=0\r

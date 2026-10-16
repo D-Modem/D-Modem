@@ -41,6 +41,13 @@ struct dmodem_config {
 	enum dmodem_law law;
 	const char *init;       /* AT commands at the start, as the DTE would
 				   send them ("ATE0Q1\r", say), or NULL */
+	/* a hook flash of ms on the line (AT+VTS's !), called from
+	   dmodem_process(): the program signals it on its call (an RFC 4733
+	   event 16, a SIP INFO, an analogue line's loop opened); the modem's
+	   audio is silent for as long.  NULL: the line has none, and a
+	   +VTS with ! is an ERROR */
+	void (*hook_flash)(void *arg, unsigned ms);
+	void *hook_flash_arg;
 };
 
 enum dmodem_link { DMODEM_IDLE, DMODEM_CONNECTING, DMODEM_ONLINE,

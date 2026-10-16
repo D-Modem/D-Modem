@@ -96,6 +96,13 @@ public:
 		return pty_.write(buf, n);
 	}
 	void t38_send(dcore::Modem &m, const void *ifp) override;
+	/* a hook flash: an RFC 4733 event on the call, if it has them */
+	bool can_flash(dcore::Modem &) override {
+		return audio_ >= 0 && sip::can_flash();
+	}
+	void hook_flash(dcore::Modem &, unsigned ms) override {
+		sip::flash(ms);
+	}
 	unsigned long now_ms() override { return dcore::monotonic_ms(); }
 
 	/* the call's audio socket, -1 if none */

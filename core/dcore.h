@@ -66,6 +66,12 @@ public:
 	virtual int stop(Modem &m) = 0;
 	/* MODEM_HOOK_ON, _OFF, _SNOOPING; 0 on success */
 	virtual int set_hook(Modem &m, int state) { (void)m; (void)state; return 0; }
+	/* a hook flash of ms on the call's line (+VTS's !): whether the
+	   line can have one (no: the command is an ERROR), and the flash
+	   itself, which the line signals its own way (the modem's audio is
+	   silent for as long) */
+	virtual bool can_flash(Modem &m) { (void)m; return false; }
+	virtual void hook_flash(Modem &m, unsigned ms) { (void)m; (void)ms; }
 	virtual void speaker(Modem &m, int volume) { (void)m; (void)volume; }
 	/* the line's delay, which Smart Link's original library asks for
 	   (the open data pumps do not): the samples between the modem's
@@ -452,10 +458,12 @@ private:
 	void *voice_ = nullptr;
 	struct voice_info voice_info_ = {};
 	/* the elements of a +VTS string, played in turn: a DTMF digit
-	   (its character), or a tone of f1 and f2 Hz (0: none); d in 10 ms */
+	   (its character), a hook flash, or a tone of f1 and f2 Hz (0:
+	   none); d in 10 ms */
 	struct VoiceTone {
 		char dtmf;
 		unsigned f1, f2, d;
+		bool flash;
 	};
 	std::vector<VoiceTone> vts_;
 	size_t vts_next_ = 0;

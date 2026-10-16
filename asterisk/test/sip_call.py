@@ -16,7 +16,11 @@
 # the dial command before the number (ATD; ATDT: the call goes to the
 # number all the same).  HOLD=1: the number dialed with a ';' (the SIP
 # call made, OK, the modem in command state), then ATD alone starts the
-# handshake.
+# handshake.  VOICE=1 (with SIP_IN): D-Modem takes the call in voice
+# mode (RING, AT+FCLASS=8, AT+VLS=1), plays DTMF digits and hook flashes
+# with AT+VTS and leaves the line; the call's dialplan sends it a DTMF
+# digit meanwhile.  Its log must show the flashes sent as RFC 4733
+# events and the digit received as one (sip.sh checks Asterisk's side).
 import os, re, socket, subprocess, sys, threading, time, tty
 
 dmodemd, number = sys.argv[1:3]
@@ -117,6 +121,35 @@ def cmd(c, pat=rb"OK\r\n", t=5):
 ok = True
 for c in [b"ATZ", b"ATX3"] + [x.encode() for x in at.split(";") if x]:
     ok = ok and cmd(c) is not None
+if incoming and os.environ.get("VOICE"):
+    time.sleep(2)               # dmodemd registers
+    subprocess.Popen(incoming, shell=True)
+    ok = expect(rb"RING\r\n", 30) is not None
+    print("ring:", "RING" if ok else "none")
+    for c in [b"AT+FCLASS=8", b"AT+VLS=1", b"AT+VTD=10"]:
+        ok = ok and cmd(c) is not None
+    time.sleep(2)               # Asterisk's digit comes meanwhile
+    m = ok and cmd(b"AT+VTS=1,!,{!,30},2", rb"(OK|ERROR)\r\n", 10)
+    print("tones:", m.group(1).decode() if m else "timeout")
+    ok = ok and m is not None and m.group(1) == b"OK"
+    time.sleep(1)
+    ok = ok and cmd(b"AT+VLS=0") is not None
+    time.sleep(0.5)
+    p.terminate()
+    p.wait(10)
+    time.sleep(0.2)
+    text = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "rb").read()
+    for want in [rb"hook flash, 100 ms \(RFC 4733\)",
+                 rb"hook flash, 300 ms \(RFC 4733\)",
+                 rb"DTMF 5 \(RFC 4733\), played as its tone"]:
+        found = re.search(want, text) is not None
+        print("log: %s: %s" % (want.decode().replace("\\", ""),
+                               "yes" if found else "no"))
+        ok = ok and found
+    if not ok:
+        print("modem said:", buf[-300:])
+    print("PASS" if ok else "FAIL")
+    sys.exit(0 if ok else 1)
 if incoming:
     # the user, on the terminal port DModem(term,o) connects to
     term = socket.socket()
