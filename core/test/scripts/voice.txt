@@ -32,6 +32,14 @@ A AT+VIP\r
 A AT+VGT?\r
 A AT+IFC=2,2\r
 A AT+VLS?\r
+# the voice engine takes the line: its OK is +VLS=1's result
+A AT+VLS=1\r
+run 100
+A AT+VLS?\r
+A AT+VTS=[933,0,10]\r
+run 200
+A AT+VLS=0\r
+A AT+VLS?\r
 A AT+VLS=0\r
 A AT+FCLASS=0\r
 A AT+VGT?\r

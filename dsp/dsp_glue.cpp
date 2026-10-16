@@ -451,7 +451,9 @@ struct Voice {
 	int process(void *in, void *out, int count);
 };
 
-/* a voice object at srate Hz in command state; NULL when out of memory */
+/* a voice object at srate Hz in command state, its OK (the line is
+   taken: AT+VLS=1's result, which the core leaves to it) due from the
+   first process(); NULL when out of memory */
 void *VOICE_create(struct modem *m, unsigned srate)
 {
 	Voice *v = new (std::nothrow) Voice();
@@ -460,6 +462,7 @@ void *VOICE_create(struct modem *m, unsigned srate)
 	v->modem = m;
 	v->srate = srate;
 	v->state = VOICE_STATE_COMMAND;
+	v->pending = VOICE_STATUS_OK;
 	DSP_DBG("voice: VOICE_create...\n");
 	return v;
 }

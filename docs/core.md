@@ -112,7 +112,8 @@ core has gone beyond the old one where it fell short:
   before, during and after calls at V.34 with echoes, V.32bis with MNP
   and without error correction, and one with no answer; `echo A -12 0
   -30 40` sends A's signal back to it, a block and 0 and 40 ms later,
-  at -12 and -30 dB).
+  at -12 and -30 dB), `voice` (`+VLS=1`, whose OK the voice engine
+  gives, and a tone after it).
   `CORE_EXPECT_WRITE=1 core_equiv` writes the `.expect` files anew, to be
   read in `git diff`; an empty one starts a new script off. In a script `\\` is a backslash and `\xNN` any
   other character (`\b` is not a backspace). `FaxDteUntilsCome`: every
