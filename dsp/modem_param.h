@@ -1,228 +1,128 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * (Smart Link's code in it: Smart Link's notice and licence below)
  *
- *    Copyright (c) 2002, Smart Link Ltd.
- *    All rights reserved.
+ *    modem_param.h - the parameters a data pump reads from or gives to
+ *                    the modem core, by number: rates, the line, the dial
+ *                    string, the call's shared objects, the country's
+ *                    dialling and call progress settings, modem-on-hold
  *
- *    Redistribution and use in source and binary forms, with or without
- *    modification, are permitted provided that the following conditions
- *    are met:
+ *    Smart Link's library passes the numbers 1 to 62 as they are, so the
+ *    whole list keeps its order and each value is written out.  The names
+ *    from 17 to 62 are the library's own, mixed case and all.  From 63
+ *    on the numbers are D-Modem's.
  *
- *        1. Redistributions of source code must retain the above copyright
- *           notice, this list of conditions and the following disclaimer.
- *        2. Redistributions in binary form must reproduce the above
- *           copyright notice, this list of conditions and the following
- *           disclaimer in the documentation and/or other materials provided
- *           with the distribution.
- *        3. Neither the name of the Smart Link Ltd. nor the names of its
- *           contributors may be used to endorse or promote products derived
- *           from this software without specific prior written permission.
- *
- *    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- *    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- *    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- *    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *    A pointer comes back from modem_get_param() as a long, which holds
+ *    one on both i386 (where the library has 32 bits) and x86_64.
  *
  */
 
-/*
- *
- *    modem_param.h  --  modem parameters access definitions.
- *
- *    Author: Sasha K (sashak@smlink.com)
- *
- *
- */
-
-#ifndef __MODEM_PARAM_H__
-#define __MODEM_PARAM_H__
+#ifndef DSP_MODEM_PARAM_H
+#define DSP_MODEM_PARAM_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* param names */
-enum MODEM_PARAMETER_NAMES {
-	MDMPRM_NONE,
-	MDMPRM_RX_RATE,
-	MDMPRM_RATE = MDMPRM_RX_RATE,
-	MDMPRM_TX_RATE,
-	MDMPRM_MIN_RATE,
-	MDMPRM_MAX_RATE,
-	MDMPRM_IODELAY,
-	MDMPRM_CODECTYPE,
-	MDMPRM_DIALSTR,
-	MDMPRM_AUTOMODE,
-	MDMPRM_DP_REQUESTED,
-	MDMPRM_DPRUNTIME,
-	MDMPRM_DSPINFO,
-	MDMPRM_VOICEINFO,
-	MDMPRM_UPDATE_DELAY,
-	MDMPRM_DP_ADDR,
-	MDMPRM_HOOK_ON,
-	MDMPRM_PULSE_DIAL,
-	//GetDTMFBetweenDigitsInterval,
-	GetPulseDialMakeTime,
-	GetPulseDialBreakTime,
-	GetPulseDialDigitPattern,
-	GetDTMFHighToneLevel,
-	GetDTMFDialSpeed,
-	//GetCallProgressDetectionThreshold,
-	//GetDialToneDelay,
-	//GetDialToneHoleTime,
-	//GetDelayBeforeRingCountResettingInMcs,
-	//GetRingCountForAutoanswer,
-	//GetMinRingSignalPeriodInMcs,
-	//GetMaxRingSignalPeriodInMcs,
-	//GetMinRingCadenceOnTimeInMcs,
-	//GetRingCadenceOffTimeInMcs,
-	GetMinBusyCadenceOnTime,
-	GetMaxBusyCadenceOnTime,
-	GetBusyDetectionCyclesNumber,
-	GetMinBusyCadenceOffTime,
-	GetMaxBusyCadenceOffTime,
-	//GetContinuousUnavailableDetectionFlag,
-	//GetAnswerToneValidationTime,
-	//GetBlacklistingDelayedFlag,
-	//GetFailedAttemptsAllowedInFirstStage,
-	//GetFailedAttemptsNumberBeforeBlacklisting,
-	//GetTroubledCallDelay,
-	//GetIneffectiveCallDelay,
-	//GetErroneousCallDelay,
-	//GetBlackListingDuration,
-	//GetLoopCurrentSenseWaitingTime,
-	GetCallingToneFlag,
-	//GetBlindDialFlag,
-	//GetBusyDetectDisable,
-	//GetGuardToneType,
-	//GetBellModesPermittedFlag,
-	//GetOffHookRestrictions,
-	//GetShuntRelayOnTimeDuringOffHook,
-	GetHookFlashTime,
-	GetBlindDialPause,
-	GetNoAnswerTimeOut,
-	GetDialPauseTime,
-	//GetNoCarrierDisconnectTime,
-	GetTransmitLevel,
-	GetDialModifierValidation,
-	//GetTADReceiveGain,
-	//GetHalfOrFullWaveRingDetection,
-	//GetFailedAttemptsNumberBeforeBlockingFurtherAttempts,
-	//GetErroneousCallIncrementCount,
-	GetDialToneValidationTime,
-	//GetDialToneMinOnTimePeriod,
-	GetBusyToneDiffTime,
-	//GetBusyToneDetectionDuringDialToneDetectionFlag,
-	GetDTMFHighAndLowToneLevelDifference,
-	//GetLocalPhoneDetectionInSpeakerphone,
-	GetPulseDialingFlag,
-	GetDialToneCallProgressFilterIndex,
-	GetDialToneDetectionThreshold,
-	GetABCDDialingPermittedFlag,
-	GetComaPauseDurationLimit,
-	//GetTADTransmitLevel,
-	//GetDataFAXCarrierReceiveThreshold,
-	//GetNoDialToneTimeOutDuration,
-	//GetFAXDataAnswerToneDetectionThreshold,
-	//GetDialToneLevel,
-	//GetFAXCallingToneLevel,
-	GetPulseAndToneDialInSameDialStringPermittedFlag,
-	//GetRingerImpedanceRelayFlag,
-	//GetDCLoopVICharacteristicsRelayFlag,
-	//GetDCLoopLimitingRelayFlag,
-	//GetRealOrComplexImpedance,
-	//GetMinPauseBetweenRingSequencesInMcs,
-	//GetMaxPauseBetweenRingSequencesInMcs,
-	//GetMinRingCadenceOnTimeFirstInMcs,
-	//GetMaxRingCadenceOnTimeFirstInMcs,
-	//GetMinRingCadenceOnTimeForFirstSequenceInMcs,
-	//GetMaxRingCadenceOnTimeForFirstSequenceInMcs,
-	//GetMaxRingCadenceOnTimeInMcs,
-	//GetNumberOfSequencesInFirstRing,
-	//GetNumberOfSequencesInRegularRing,
-	//IsALaw,
-	GetBusyToneCallProgressFilterIndex,
-	//GetCoefficientTableIndex,
-	GetPulseBetweenDigitsInterval,
-	GetDialToneWaitTime,
-	//GetAnswerDelay,
-	//GetPulseRefresh,
-	//GetHandsetGain,
-	//GetSpecificHardwareBitmask,
-	//GetDefaultDTMFDialSpeed,
-	//GetDefaultNoAnswerTimeout,
-	//GetBlacklistingTimeout,
-	//IsATPCommandDisabled,
-	//GetDelayAfterCounterpartDisconnection,
-	//IsFloatModeForced,
-	//GetDataFaxCarrierDisconnectThreshold,
-	//GetFaxTransmitLevel,
-	//GetPulseDialingRefreshScheme,
-	GetMinRingbackCadenceOnTime,
-	GetMaxRingbackCadenceOnTime,
-	GetRingbackDetectionCyclesNumber,
-	GetMinRingbackCadenceOffTime,
-	GetMaxRingbackCadenceOffTime,
-	GetRingbackToneCallProgressFilterIndex,
-	GetMinCongestionCadenceOnTime,
-	GetMaxCongestionCadenceOnTime,
-	GetCongestionDetectionCyclesNumber,
-	GetMinCongestionCadenceOffTime,
-	GetMaxCongestionCadenceOffTime,
-	GetCongestionToneCallProgressFilterIndex,
-	GetCallProgressSamplesBufferLength,
-	MustNoiseFilterBeApplied,
-	//GetDigitalImpairmentsMask,
-	GetAdditAttenToBeepgenVoice,
-	GetDialToneFilterSubindex,
-	GetBusyToneLooseDetectionEnabled,
-	//GetRingFreqValueInHz(int);
-	//GetEndUniversalRingTimeoutInMcs,
-	//GetRingIntsForFreq,
-	//GetDelayBeforeUniversalRingCountResettingInMcs,
-	//GetUniversalRingDetectorEnabled, 
-	//GetCallWaitingIntegrationTimeMiliSec,
-	//GetCallWaitingThresholdPercentage,
-	//GetDialStringAfterFlash(char *dialString);
-	/* not in the original library's interface */
-	MDMPRM_MODE,            /* enum MODEM_MODE: data, fax, voice */
-	/* V.92 modem-on-hold (9.10/V.92): the T1 code (Table 33/V.92) we
-	   grant the remote, 0 none (+PMH, +PMHT); a request of ours
-	   (+PMHR), which the pump takes (sets to 0) */
-	MDMPRM_MOH_T1,
-	MDMPRM_MOH_REQ,
-	/* the call's struct dp_stats (modem_defs.h), which the pumps fill
-	   in; -1 (or 0) where there is none */
-	MDMPRM_STATS,
-	MDMPRM_LAST
-};
-
-
 struct modem;
 
-/* the value of a parameter (enum MODEM_PARAMETER_NAMES), -1 for an
-   unknown one; pointers (the dial string, the dp runtime) come cast to
-   long */
-extern long modem_get_param(struct modem *m, unsigned param);
-/* sets a parameter: 0 (the host's result for MDMPRM_HOOK_ON and
-   MDMPRM_PULSE_DIAL), or -1 for one that cannot be set */
-extern long modem_set_param(struct modem *m, unsigned name, int val);
+enum MODEM_PARAMETER_NAMES {
+	MDMPRM_NONE         = 0,   /* set: nothing */
+	MDMPRM_RX_RATE      = 1,   /* set: the receive rate, bit/s */
+	MDMPRM_TX_RATE      = 2,   /* set: the transmit rate, bit/s */
+	MDMPRM_MIN_RATE     = 3,   /* AT+MS's lowest rate, bit/s */
+	MDMPRM_MAX_RATE     = 4,   /* AT+MS's highest rate, bit/s */
+	MDMPRM_IODELAY      = 5,   /* the host's delay from its output back
+				      to its input, samples */
+	MDMPRM_CODECTYPE    = 6,   /* enum codec_types */
+	MDMPRM_DIALSTR      = 7,   /* the string to dial (const char *) */
+	MDMPRM_AUTOMODE     = 8,   /* 0 */
+	MDMPRM_DP_REQUESTED = 9,   /* set: the DP_ID that DPSTAT_CHANGEDP
+				      asks for, 0 for the core's choice */
+	MDMPRM_DPRUNTIME    = 10,  /* the call's dp_runtime_create() */
+	MDMPRM_DSPINFO      = 11,  /* struct dsp_info *, never NULL */
+	MDMPRM_VOICEINFO    = 12,  /* struct voice_info * */
+	MDMPRM_UPDATE_DELAY = 13,  /* set: a change of the line's delay,
+				      samples */
+	MDMPRM_DP_ADDR      = 14,  /* the current struct dp * */
+	MDMPRM_HOOK_ON      = 15,  /* set: on hook (not 0) or off (0) */
+	MDMPRM_PULSE_DIAL   = 16,  /* set: a digit to pulse dial */
 
-/* S-register sreg_param, like modem_get_sreg() */
-extern long modem_get_sreg_param(struct modem *m, unsigned sreg_param);
+	/* the country's dialling and call progress settings, or the
+	   S-register that holds one */
+	GetPulseDialMakeTime                            = 17,
+	GetPulseDialBreakTime                           = 18,
+	GetPulseDialDigitPattern                        = 19,
+	GetDTMFHighToneLevel                            = 20,
+	GetDTMFDialSpeed                                = 21,
+	GetMinBusyCadenceOnTime                         = 22,
+	GetMaxBusyCadenceOnTime                         = 23,
+	GetBusyDetectionCyclesNumber                    = 24,
+	GetMinBusyCadenceOffTime                        = 25,
+	GetMaxBusyCadenceOffTime                        = 26,
+	GetCallingToneFlag                              = 27,
+	GetHookFlashTime                                = 28,
+	GetBlindDialPause                               = 29,
+	GetNoAnswerTimeOut                              = 30,
+	GetDialPauseTime                                = 31,
+	GetTransmitLevel                                = 32,
+	GetDialModifierValidation                       = 33,
+	GetDialToneValidationTime                       = 34,
+	GetBusyToneDiffTime                             = 35,
+	GetDTMFHighAndLowToneLevelDifference            = 36,
+	GetPulseDialingFlag                             = 37,
+	GetDialToneCallProgressFilterIndex              = 38,
+	GetDialToneDetectionThreshold                   = 39,
+	GetABCDDialingPermittedFlag                     = 40,
+	GetComaPauseDurationLimit                       = 41,
+	GetPulseAndToneDialInSameDialStringPermittedFlag = 42,
+	GetBusyToneCallProgressFilterIndex              = 43,
+	GetPulseBetweenDigitsInterval                   = 44,
+	GetDialToneWaitTime                             = 45,
+	GetMinRingbackCadenceOnTime                     = 46,
+	GetMaxRingbackCadenceOnTime                     = 47,
+	GetRingbackDetectionCyclesNumber                = 48,
+	GetMinRingbackCadenceOffTime                    = 49,
+	GetMaxRingbackCadenceOffTime                    = 50,
+	GetRingbackToneCallProgressFilterIndex          = 51,
+	GetMinCongestionCadenceOnTime                   = 52,
+	GetMaxCongestionCadenceOnTime                   = 53,
+	GetCongestionDetectionCyclesNumber              = 54,
+	GetMinCongestionCadenceOffTime                  = 55,
+	GetMaxCongestionCadenceOffTime                  = 56,
+	GetCongestionToneCallProgressFilterIndex        = 57,
+	GetCallProgressSamplesBufferLength              = 58,
+	MustNoiseFilterBeApplied                        = 59,
+	GetAdditAttenToBeepgenVoice                     = 60,
+	GetDialToneFilterSubindex                       = 61,
+	GetBusyToneLooseDetectionEnabled                = 62,
+
+	/* D-Modem's own */
+	MDMPRM_MODE         = 63,  /* the enum MODEM_MODE */
+	MDMPRM_MOH_T1       = 64,  /* the modem-on-hold time the DTE allows,
+				      as V.92's Table 33 codes it; 0: none */
+	MDMPRM_MOH_REQ      = 65,  /* the DTE asks for modem-on-hold (> 0);
+				      the pump sets it back to 0 as it
+				      takes the request (V.92 9.10) */
+	MDMPRM_STATS        = 66,  /* the call's struct dp_stats *; -1 or 0
+				      from a core that has none */
+};
+
+/*
+ *    From the core
+ */
+
+/* parameter param (a pointer cast to long for those that are one); -1
+   for one the core does not give */
+long modem_get_param(struct modem *m, unsigned param);
+/* sets parameter name to val: 0, or -1 for one that cannot be set
+   (MDMPRM_HOOK_ON and MDMPRM_PULSE_DIAL: the host's result) */
+long modem_set_param(struct modem *m, unsigned name, int val);
+/* S-register sreg_param as modem_get_sreg() gives it */
+long modem_get_sreg_param(struct modem *m, unsigned sreg_param);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __MODEM_PARAM_H__ */
-
+#endif /* DSP_MODEM_PARAM_H */

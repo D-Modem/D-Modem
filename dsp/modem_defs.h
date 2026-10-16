@@ -1,414 +1,255 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * (Smart Link's code in it: Smart Link's notice and licence below)
  *
- *    Copyright (c) 2002, Smart Link Ltd.
- *    All rights reserved.
+ *    modem_defs.h - the types and numbers the modem core and a data pump
+ *                   library share: fixed width integers, the service
+ *                   classes, the hook states, the S-registers, the data
+ *                   pump ids and results, the call's statistics, what is
+ *                   learnt about the line for V.92 quick connect, and the
+ *                   fax and voice engines' commands and results
  *
- *    Redistribution and use in source and binary forms, with or without
- *    modification, are permitted provided that the following conditions
- *    are met:
+ *    A data pump library sees the modem core only as a struct modem
+ *    pointer; each core defines the structure itself.  Most numbers here
+ *    are seen from outside: by the DTE (S-registers, AT+MS, AT+FCLASS),
+ *    by the core's test transcripts, and by Smart Link's i386 library
+ *    (dsp/test/smartlink/dsplibs.o), which was compiled against them.
+ *    They are therefore all written out, and struct dsp_info and struct
+ *    voice_info keep the layout the library reads and writes.
  *
- *        1. Redistributions of source code must retain the above copyright
- *           notice, this list of conditions and the following disclaimer.
- *        2. Redistributions in binary form must reproduce the above
- *           copyright notice, this list of conditions and the following
- *           disclaimer in the documentation and/or other materials provided
- *           with the distribution.
- *        3. Neither the name of the Smart Link Ltd. nor the names of its
- *           contributors may be used to endorse or promote products derived
- *           from this software without specific prior written permission.
- *
- *    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- *    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- *    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- *    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *    C linkage; the header is valid C as well as C++.
  *
  */
 
-/*
- *
- *    modem_defs.h - modem common definitions
- *
- *    Author: sashak@smlink.com
- */
+#ifndef DSP_MODEM_DEFS_H
+#define DSP_MODEM_DEFS_H
 
-#ifndef __MODEM_DEFS_H__
-#define __MODEM_DEFS_H__
-
-#ifdef __KERNEL__
-#include <linux/types.h>
-#else
-
+#include <stdint.h>
 #include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef __uint8_t  u8;
-typedef __uint16_t u16;
-typedef __uint32_t u32;
+/* the modem core, opaque to the data pumps */
+struct modem;
 
-typedef __int8_t  s8;
-typedef __int16_t s16;
-typedef __int32_t s32;
-#endif /* !__KERNEL__ */
+/* integers of a fixed width; s16 is a 16 bit linear sample */
+typedef uint8_t  u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef int8_t   s8;
+typedef int16_t  s16;
+typedef int32_t  s32;
 
-/* what the modem is doing (MDMPRM_MODE) */
+/* the service class, numbered as AT+FCLASS sets it (V.250; T.31 8.2;
+   V.253) */
 enum MODEM_MODE {
-	MODEM_MODE_DATA = 0,
-	MODEM_MODE_FAX  = 1,
-	MODEM_MODE_VOICE = 8
+	MODEM_MODE_DATA  = 0,
+	MODEM_MODE_FAX   = 1,   /* service class 1 */
+	MODEM_MODE_VOICE = 8,
 };
 
-/* hook states */
-#define MODEM_HOOK_ON       0
-#define MODEM_HOOK_OFF      1
-#define MODEM_HOOK_SNOOPING 2
+/* what the core asks of the host's hook */
+#define MODEM_HOOK_ON           0
+#define MODEM_HOOK_OFF          1
+#define MODEM_HOOK_SNOOPING     2   /* off hook to listen only: caller ID */
 
-/* codec types (MDMPRM_CODECTYPE) - numbers important */
+/* the host's codec, as MDMPRM_CODECTYPE reports it.  Smart Link's
+   library knows some codec chips by other numbers; no host here has
+   one */
 enum codec_types {
 	CODEC_UNKNOWN = 0,
-	CODEC_AD1821  = 1,
-	CODEC_STLC7550= 4,
-	CODEC_SILABS  = 9,
-	CODEC_SIL3052 = 10,
-	CODEC_SIL3054 = 11,
-	CODEC_AD1803  = 12,
-	CODEC_ALC545A = 13,
 };
 
-/* s-registers */
+/*
+ *    S-registers: the numbers of the bytes of the core's 256 byte
+ *    register file, as ATSn, AT&V and modem_get_sreg() know them.  The
+ *    library reads S7, S16, S56 and S221 (the last one unnamed) by number.
+ */
 enum S_REGISTER {
-        SREG_RINGS_TO_AUTO_ANSWER         =  0,
-        SREG_RING_COUNTER                 =  1,
-        SREG_ESCAPE_CHAR                  =  2,
-        SREG_CR_CHAR                      =  3,
-        SREG_LF_CHAR                      =  4,
-        SREG_BS_CHAR                      =  5,
-        SREG_DIAL_TONE_WAIT_TIME          =  6,
-        SREG_WAIT_CARRIER_AFTER_DIAL      =  7,
-        SREG_DIAL_PAUSE_TIME              =  8,
-        SREG_CARRIER_DETECT_RESPONSE_TIME =  9,
-        SREG_CARRIER_LOSS_DISCONNECT_TIME = 10,
-        SREG_DTMF_DURATION                = 11,
-        SREG_ESCAPE_PROMPT_DELAY          = 12,
-        SREG_ECHO                         = 13,
-        SREG_QUIET                        = 14,
-        SREG_VERBOSE                      = 15,
-        SREG_TONE_OR_PULSE                = 16,
-        SREG_TEST_TIMER                   = 18,
-        SREG_INACTIVITY_TIMEOUT           = 19,
-        SREG_BREAK_LENGTH                 = 21,
-        SREG_ORIGIN_OR_ANSWER             = 22,
-        SREG_XOFF_CHAR                    = 23,
-        SREG_FLASH_TIMER                  = 24,
-        SREG_DELAY_TO_DTR_OFF             = 25,  /* (NA) */
-        SREG_RTS_TO_CTS_DELAY             = 26,  /* (NA) */
-        SREG_AUTOANSWER_CLEAR_TIMEOUT     = 27,
-        SREG_PULSE_RATIO                  = 28,
-        SREG_SPEAKER_CONTROL              = 29,
-        SREG_SPEAKER_VOLUME               = 30,
-        SREG_SPEAKER_LEVEL                = 30,
-        SREG_AUTOMODE                     = 31,
-        SREG_DP                           = 32,
-
-#if 1
-        SREG_LINE_QUALITY_CONTROL         = 39,
-        SREG_X_CODE                       = 56,
-        SREG_CD                           = 60,    /* (&CN)    */
-        SREG_FLOW_CONTROL                 = 62,    /* (&HN)    */
-        SREG_CONNNECT_MSG_FORMAT          = 70,
-        SREG_CONNNECT_MSG_SPEED_SRC       = 71,
-        SREG_ANS_DELAY                    = 92,
-	/* new sgregs */
-	SREG_EC                           = 103,
-	SREG_COMP                         = 104,
-	SREG_MNP_BLOCK                    = 105,   /* (\AN)    */
-	SREG_CONNECT_PROTOCOL             = 106,   /* (\VN)    */
-
-        SREG_DEFAULT_SETTING              = 161, // AT used
-#else
-        SREG_REQUESTED_DP                 = SREG_DP,
-        SREG_REQUESTED_MIN_SPEED          = 33,
-        SREG_REQUESTED_MAX_SPEED          = 34,
-        SREG_ACTUAL_SPEED                 = 35,
-        SREG_CONNECT_RESULT_CODE          = 35,
-        SREG_DATA_PUMP_STATUS             = 36,
-        SREG_VXX_STATUS                   = 36,
-        SREG_ACTUAL_DP                    = 37,
-        SREG_ACTUAL_RX_SPEED              = 38,
-        SREG_LINE_QUALITY_CONTROL         = 39,
-        SREG_SIGNAL_RECEPTION_GAIN        = 41,
-        SREG_SNR                          = 42,
-        SREG_RESULT_CODES_CONTROL         = 43,
-        SREG_CONFIGURATION_SETTING        = 44,
-        SREG_SIGNAL_TRANSMISSION_LEVEL    = 45,
-        SREG_DISTINCTIVE_RING_SILENCE_PERIOD = 48,
-        SREG_ADAPTIVE_ANSWER_MODE            = 49,
-        SREG_TEST_BASE                    = 50,
-        SREG_TEST_MODE                    = SREG_TEST_BASE,
-        SREG_TEST_PAR1                    = (SREG_TEST_BASE+1),
-        SREG_MAPPED_S28                   = 52,
-        SREG_MAPPED_S37                   = 53,
-        SREG_TEST_RES1                    = (SREG_TEST_BASE+4),
-        SREG_TEST_RES2                    = (SREG_TEST_BASE+5),
-        SREG_X_CODE                       = 56,
-        SREG_MESSAGE_DETAIL               = 57,
-        SREG_CURRENT_SETTING              = 59,    /* (ZN,&FN) */
-        SREG_CD                           = 60,    /* (&CN)    */
-        SREG_FLOW_CONTROL                 = 62,    /* (&HN)    */
-        SREG_CIRCUIT_106                  = 66,
-        SREG_CIRCUIT_107                  = 67,
-        SREG_CIRCUIT_109                  = 68,
-        SREG_CONNNECT_MSG_FORMAT          = 70,
-        SREG_COMMAND_AT_A                 = 70,
-        SREG_CONNNECT_MSG_SPEED_SRC       = 71,
-        /* Modem Support registers */
-        SREG_HANDSET_GANE                 = 72,
-        SREG_RECBUF_PURGE_UPON_ABORT      = 73,
-        SREG_VOICE_DIALTONE_DETECT_DELAY  = 73,   /* in seconds */
-        SREG_PLAYBACK_VALUME              = 74,   /* #VGT */
-        SREG_CID_ENABLE                   = 75,   /* #CID */
-        SREG_ADPCM_BPS                    = 76,   /* #VBS */
-        SREG_BEEP_TONE_TIMER              = 77,   /* #VBT */
-        SREG_VOICE_SRC_SELECT             = 78,   /* #VLS */
-        SREG_RING_GOES_AWAY_TIMER         = 79,   /* #VRA */
-        SREG_RING_NEVER_CAME_TIMER        = 80,   /* #VRN */
-        SREG_SILENCE_DETECT_ENABLE        = 81,   /* #VSD */
-        SREG_SILENCE_DETECT_SENSITIVITY   = 82,   /* #VSS */
-        SREG_SILENCE_DETECT_DURATION      = 83,   /* #VSP */
-        SREG_DTMF_TONE_REPORTS_CAP0       = 84,   /* #VTD */
-        SREG_DTMF_TONE_REPORTS_CAP1       = 85,
-        SREG_DTMF_TONE_REPORTS_CAP2       = 86,
-        SREG_TIME_MARK_PLACEMENT          = 87,   /* #VTM   */
-        SREG_SPK_MUTE                     = 88,   /* #SPK   */
-        SREG_SPK_SPKR                     = 89,   /* #SPK 2 */
-        SREG_SPK_MICROPHONE               = 90,   /* #SPK 3 */
-        SREG_ADPCM_SAMPLE_RATE            = 91,   /* #VSR   */
-        SREG_ANS_DELAY                    = 92,
-        /* Voice Modem Support registers */
-        SREG_DP_CYCLE_TIME                = 93,
-        SREG_ENV_CYCLE_TIME               = 94,
-        SREG_V42_CYCLE_TIME               = 95,
-        /*  Sample Rate Sregister: */
-        SREG_AUDIO_SAMPLE_RATE            = 96,
-        SREG_RAW_RMS_ENABLE               = 97,
-        SREG_RAW_RMS_IN                   = 98,
-        SREG_RAW_RMS_OUT                  = 99,
-        SREG_V42_BASEREG                      = 100,
-        SREG_V42_DATA_LINK                    = SREG_V42_BASEREG,
-        SREG_V42_MNP_BLOCK_SIZE               = (SREG_V42_BASEREG + 1),
-        SREG_V42_DATA_COMPRESSION             = (SREG_V42_BASEREG + 2),
-        SREG_V42_OUTPUT_PROTOCOL              = (SREG_V42_BASEREG + 24),
-        SREG_V42_OUTPUT_COMRESION             = (SREG_V42_BASEREG + 26),
-        SREG_V42_ORIG_REQUEST                 = (SREG_V42_BASEREG + 29),
-        SREG_V42_ORIG_FALLBACK                = (SREG_V42_BASEREG + 30),
-        SREG_V42_ANSWER_FALLBACK              = (SREG_V42_BASEREG + 31),
-        SREG_V42_COMPRESSION_RATIO_REPORT     = (SREG_V42_BASEREG + 32),
-        SREG_V42_BAD_BYTES_PERCENTAGE         = (SREG_V42_BASEREG + 33),
-        SREG_RS_DEBUG_LEVEL                   = (SREG_V42_BASEREG + 34),
-        SREG_V42_EA_SINGLE_UNIT_TIME          = (SREG_V42_BASEREG + 35),
-        SREG_V42_EA_USED_UNITS_NUMBER         = (SREG_V42_BASEREG + 36),
-        SREG_V42_EA_CRITICAL_BAD_UNITS_NUMBER = (SREG_V42_BASEREG + 37),
-        SREG_MIC_GAIN                     = 138,
-        SREG_LINE_RECORD_GAIN             = 139,
-        SREG_LOCAL_FLASH                  = 140,
-        SREG_V42_EA_CRITICAL_BAD_UNITS_NUMBER_FOR_V34 = (SREG_V42_BASEREG+41),
-        SREG_ATH1_FLAG                    = 142,
-        SREG_BELL_MODE                    = 143,
-        SREG_MAPPED_S35                   = 144,
-        SREG_TEST_COMMAND_SUBMODE         = 145,
-        SREG_PULSE_MAKE                   = 146,  /* Percent */
-        SREG_PULSE_PPS                    = 147,  /* 10,20   */
-        SREG_PULSE_PAUSE                  = 148,  /* * 10ms  */
-        SREG_PULSE_REFRESH                = 149,  /* ms      */ 
-        SREG_FCLASS_CURRENT               = 150,
-        SREG_FAE_CURRENT                  = 151,
-        SREG_LINE_OUT_GAIN                = 152,
-        SREG_SPK_OUT_GAIN                 = 153,
-        SREG_HS_OUT_GAIN                  = 154,
-        SREG_DTMF_LOW_GAIN_DB_2SCOMP      = 155,
-        SREG_DTMF_HIGH_GAIN_DB_2SCOMP     = 156,
-        SREG_SINUS_SAMPLE_RATE_REG_1      = 157,
-        SREG_SINUS_SAMPLE_RATE_REG_2      = 158,
-        SREG_PULSEDIAL_DISABLE            = 159,
-        /* ---------- Unsaved region from 160 ------------------- */
-        SREG_DEFAULT_SETTING              = 161, // AT used
-        SREG_CALL_PROGRESS_CODE           = 162,
-        SREG_COUNTRY_CODE                 = 162,
-        SREG_DEBUG_REG_0                  = 170,
-        SREG_DEBUG_REG_1                  = 171,
-        SREG_DEBUG_REG_2                  = 172,
-        SREG_DEBUG_REG_3                  = 173,
-        SREG_DEBUG_REG_4                  = 174,
-        SREG_DIAG_PROC_CNT1_ID            = 180,
-        SREG_DIAG_PROC_CNT2_ID            = 181,
-        SREG_DIAG_RING                    = 182,
-        SREG_DIAG_COUNT_TYPE              = 183,
-        SREG_DIAG_TYPE                    = 184,
-        SREG_DIAG_SCOPE                   = 185,
-        SREG_PM_UPPER_THR                 = 186,
-        SREG_PM_LOWER_THR                 = 187,
-        SREG_PM_WEIGHT1                   = 188,
-        SREG_PM_WEIGHT2                   = 189,
-        SREG_PM_DEGRADE_ENABLE            = 190,
-        SREG_PM_DECISION_VALUE            = 191,
-        SREG_PROCESSOR_TYPE               = 193,
-        SREG_HW_TRACE_LEVEL               = 197,
-        SREG_HARDWARE_CONTROL             = 197,
-        SREG_STRM_TRACE_LEVEL             = 198,
-        SREG_STREAM_MANAGER_DEBUG_LEVEL   = 198,
-        SREG_BLACKLISTING_ENABLED_FLAG    = 200,
-        SREG_FAILED_ATTEMPTS_BEFORE_BLACKLISTING = 201,
-        SREG_BLACKLISTING_DURATION        = 202,
-        SREG_BLACKLIST_TIMEOUT            = 203,
-        SREG_AT_P_COMMAND_DISABLED        = 204,
-        SREG_CID_TIMEOUT_IN_100MS         = 205,
-        SREG_V90_PAD_TYPE                 = 210,
-        SREG_V90_POWER_REDUCTION          = 211,
-        SREG_V90_PROBING_MODE             = 212,
-        SREG_V90_COMPUTATIONAL_MODE       = 213,
-        SREG_CALL_PROGRESS_SIGNAL_RECEPTION_GAIN = 214,
-        SREG_LINE_QUALITY                 = 215,
-        SREG_DC_RECALIBRATION_PERIOD      = 216,
-        SREG_UPSTREAM_MIN_RATE            = 217,
-        SREG_UPSTREAM_MAX_RATE            = 218,
-        SREG_V22_LEVEL_CONTROL            = 220,
-        SREG_CALLING_TONE_LEVEL_CONTROL   = 221,
-#endif
+	SREG_RINGS_TO_AUTO_ANSWER         = 0,   /* V.250 6.3.8 */
+	SREG_RING_COUNTER                 = 1,   /* rings of this call */
+	SREG_ESCAPE_CHAR                  = 2,   /* of the +++ escape */
+	SREG_CR_CHAR                      = 3,   /* V.250 6.2.1 */
+	SREG_LF_CHAR                      = 4,   /* V.250 6.2.2 */
+	SREG_BS_CHAR                      = 5,   /* V.250 6.2.3 */
+	SREG_DIAL_TONE_WAIT_TIME          = 6,   /* s, V.250 6.3.9 */
+	SREG_WAIT_CARRIER_AFTER_DIAL      = 7,   /* s, V.250 6.3.10 */
+	SREG_DIAL_PAUSE_TIME              = 8,   /* s for a ',', V.250 6.3.11 */
+	SREG_CARRIER_DETECT_RESPONSE_TIME = 9,   /* 0.1 s */
+	SREG_CARRIER_LOSS_DISCONNECT_TIME = 10,  /* 0.1 s, V.250 6.3.12 */
+	SREG_DTMF_DURATION                = 11,  /* ms */
+	SREG_ESCAPE_PROMPT_DELAY          = 12,  /* guard time of +++ */
+	SREG_ECHO                         = 13,  /* ATE */
+	SREG_QUIET                        = 14,  /* ATQ */
+	SREG_VERBOSE                      = 15,  /* ATV */
+	SREG_TONE_OR_PULSE                = 16,  /* 1 tone (ATT), 0 pulse (ATP) */
+	SREG_FLASH_TIMER                  = 24,  /* hook flash, 10 ms */
+	SREG_PULSE_RATIO                  = 28,  /* AT&P */
+	SREG_SPEAKER_CONTROL              = 29,  /* ATM */
+	SREG_SPEAKER_VOLUME               = 30,  /* ATL */
+	SREG_AUTOMODE                     = 31,  /* ATN, AT+MS's automode */
+	SREG_DP                           = 32,  /* AT+MS's modulation, a DP_ID */
+	SREG_LINE_QUALITY_CONTROL         = 39,  /* AT%E */
+	SREG_X_CODE                       = 56,  /* ATX: the result code set */
+	SREG_CD                           = 60,  /* AT&C */
+	SREG_FLOW_CONTROL                 = 62,  /* AT&H */
+	SREG_CONNNECT_MSG_FORMAT          = 70,  /* AT&A */
+	SREG_CONNNECT_MSG_SPEED_SRC       = 71,  /* AT&E */
+	SREG_ANS_DELAY                    = 92,  /* s from ATA to the answering
+						    pump */
+	SREG_EC                           = 103, /* AT\N: error correction */
+	SREG_COMP                         = 104, /* AT%C: compression */
+	SREG_MNP_BLOCK                    = 105, /* AT\A: MNP block size */
+	SREG_CONNECT_PROTOCOL             = 106, /* AT\V */
+	SREG_DEFAULT_SETTING              = 161, /* ATY */
 };
 
-
-/* data pumps identifiers */
+/*
+ *    Data pump ids.  The DTE sees them (AT+MS=<id>, AT+MS?, the &A
+ *    modulation report as 1000 + id); SREG_DP keeps one in a byte, so all
+ *    are below 256; the core's driver table ends with id 0; and Smart
+ *    Link's library registers its pumps under these numbers.
+ */
 enum DP_ID {
-        DP_CALLPROG = 2,
-        DP_DUMMY = 3,
-        DP_AUTOMODE = 4,
-        DP_V8 = 8,
-	DP_V17 = 17,
-	DP_V21 = 21,
-        DP_V22 = 22,
-        DP_V23 = 23,
-        DP_V22BIS = 122,
-        DP_V32 = 32,
-        DP_V32BIS = 132,
-        DP_V34 = 34,
-        DP_V34BIS = 134,
-        DP_B103 = 103,
-        DP_B212 = 212,
-        DP_FAX = 100,
-        DP_K56 = 56,
-        DP_K56_OR_V90 = 65,
-        DP_V8BIS = 108,
-        DP_V90 = 90,
-        DP_V91 = 91,
-        DP_V92 = 92,
-        DP_TEST  = 126,
-        DP_SINUS = 127,
-	DP_MAX = 128,
-        MAX_DP = 128
+	DP_CALLPROG = 2,        /* call progress: dialling, tones */
+	DP_DUMMY    = 3,        /* a test pump */
+	DP_AUTOMODE = 4,
+	DP_V8       = 8,        /* V.8, the start of V.34 and above */
+	DP_V17      = 17,
+	DP_V21      = 21,
+	DP_V22      = 22,
+	DP_V23      = 23,
+	DP_V32      = 32,
+	DP_V34      = 34,
+	DP_K56      = 56,       /* K56flex: the core runs V.90 for it */
+	DP_V90      = 90,
+	DP_V91      = 91,
+	DP_V92      = 92,
+	DP_FAX      = 100,
+	DP_B103     = 103,      /* Bell 103 */
+	DP_V8BIS    = 108,
+	DP_V22BIS   = 122,
+	DP_SINUS    = 127,      /* a test pump */
+	DP_V32BIS   = 132,
+	DP_B212     = 212,      /* Bell 212A */
 };
 
-/* dp status */
-#define DPSTAT_OK         0
-#define DPSTAT_CONNECT    1
-#define DPSTAT_ERROR      4
-#define DPSTAT_NODIALTONE 6
-#define DPSTAT_BUSY       7
-#define DPSTAT_NOANSWER   8
-#define DPSTAT_CHANGEDP   10
-/* (call progress) the dial string's ';' reached: the number is dialed,
-   the modem back in command state, the call kept */
-#define DPSTAT_DIALED     11
+/*
+ *    What a pump's process() returns, numbered as V.250's numeric result
+ *    codes (Table 1/V.250)
+ */
+#define DPSTAT_OK               0   /* nothing to report */
+#define DPSTAT_CONNECT          1   /* the data connection is up, at the
+				       rates set with MDMPRM_TX_RATE and
+				       MDMPRM_RX_RATE */
+#define DPSTAT_ERROR            4   /* the call failed */
+#define DPSTAT_NODIALTONE       6   /* call progress */
+#define DPSTAT_BUSY             7   /* call progress */
+#define DPSTAT_NOANSWER         8   /* call progress */
+#define DPSTAT_CHANGEDP         10  /* another pump takes over: the one in
+				       MDMPRM_DP_REQUESTED, or the core's
+				       choice if that is 0 */
+#define DPSTAT_DIALED           11  /* a dial string ending in ';' is
+				       dialled: back to command state, the
+				       call kept (V.250 6.3.1) */
 
-/* a call's line statistics from the data pumps (ATI11): the core's
-   (MDMPRM_STATS), zeroed as each call starts.  The counts are the
-   call's; the measures are the latest, each valid once its bit is in
-   have */
+/*
+ *    The call's statistics (AT I11), which the pumps fill in through
+ *    MDMPRM_STATS.  The core clears them at the start of each call.
+ */
 struct dp_stats {
-	int dp;                         /* the modulation the call came up
-					   with (DP_ID; 0: the pump's own) */
+	int dp;                         /* the DP_ID the call came up with;
+					   0: the pump's own id */
 	unsigned retrains_local;        /* retrains we started */
 	unsigned retrains_remote;       /* retrains the remote started */
-	unsigned renegs_local;          /* rate renegotiations, ours */
-	unsigned renegs_remote;         /* the remote's */
-	unsigned have;                  /* DP_STATS_* */
-	float snr;                      /* the receiver's, dB (from its mse) */
+	unsigned renegs_local;          /* rate renegotiations we started */
+	unsigned renegs_remote;         /* those the remote started */
+	unsigned have;                  /* DP_STATS_*: which of the
+					   measures below are valid */
+	float snr;                      /* the receiver's SNR, dB */
 	int rtd;                        /* round trip delay, ms */
-	float near_echo, far_echo;      /* the echoes the canceller takes
-					   away, dBm0 */
+	float near_echo;                /* echo levels the canceller */
+	float far_echo;                 /* removed, dBm0 */
 };
-#define DP_STATS_SNR       0x1
-#define DP_STATS_RTD       0x2
-#define DP_STATS_NEAR_ECHO 0x4
-#define DP_STATS_FAR_ECHO  0x8
 
-/* the mean square of 16 bit linear samples at 0 dBm0: G.711's digital
-   milliwatt, a sine of amplitude 22300 (mu-law's +3.17 dBm0 is 32124) */
-#define DP_DBM0_POWER 2.49e8f
+#define DP_STATS_SNR            0x1
+#define DP_STATS_RTD            0x2
+#define DP_STATS_NEAR_ECHO      0x4
+#define DP_STATS_FAR_ECHO       0x8
 
-/* dsp info structure */
+/* the mean square of 16 bit linear samples at 0 dBm0: a sine of peak
+   22300, G.711's digital milliwatt */
+#define DP_DBM0_POWER           2.49e8f
+
+/*
+ *    What the pumps learn about the line over calls, for V.92 quick
+ *    connect (V.92 clause 8).  The core keeps it per modem and hands it
+ *    out with MDMPRM_DSPINFO; dmodemd saves it in its data file as it
+ *    is.  Smart Link's library reads and writes all of it.
+ */
 struct dsp_info {
 	unsigned connection_type;
-	long     clock_deviation;
+	long clock_deviation;
 	unsigned qc_lapm;
 	unsigned qc_index;
 };
 
+/*
+ *    Fax, service class 1 (T.31)
+ */
 
-/* fax definitions */
+/* what FAX_process() reports */
+#define FAX_STATUS_OK           1
+#define FAX_STATUS_ERROR        2
+#define FAX_STATUS_CONNECT      3
+#define FAX_STATUS_NOCARRIER    4
+#define FAX_STATUS_FRAME_ERROR  5   /* an ERROR result, the call kept */
 
-#define FAX_STATUS_OK        1
-#define FAX_STATUS_ERROR     2
-#define FAX_STATUS_CONNECT   3
-#define FAX_STATUS_NOCARRIER 4
-#define FAX_STATUS_FRAME_ERROR 5 /* ERROR result, stay connected */
-
+/* the class 1 commands of FAX_class1_command(), T.31 8.3.1 to 8.3.6 */
 enum FAX_CMD {
-	FAX_CMD_FTS,
-	FAX_CMD_FRS,
-	FAX_CMD_FTM,
-	FAX_CMD_FRM,
-	FAX_CMD_FTH,
-	FAX_CMD_FRH,
+	FAX_CMD_FTS = 0,        /* +FTS: silence */
+	FAX_CMD_FRS = 1,        /* +FRS: wait for silence */
+	FAX_CMD_FTM = 2,        /* +FTM: send data */
+	FAX_CMD_FRM = 3,        /* +FRM: receive data */
+	FAX_CMD_FTH = 4,        /* +FTH: send HDLC frames */
+	FAX_CMD_FRH = 5,        /* +FRH: receive HDLC frames */
 };
 
-/* voice definitions */
+/*
+ *    Voice (V.253)
+ */
 
+/* the commands of VOICE_command(); Smart Link's library takes 0 to 7 */
 enum VOICE_CMD {
-	VOICE_CMD_STATE_COMMAND,
-	VOICE_CMD_STATE_RX,
-	VOICE_CMD_STATE_TX,
-	VOICE_CMD_STATE_DUPLEX,
-	VOICE_CMD_STATE_SPEAKER,
-	VOICE_CMD_BEEP,
-	VOICE_CMD_DTMF,
-	VOICE_CMD_ABORT,
+	VOICE_CMD_STATE_COMMAND = 0,    /* back to command state */
+	VOICE_CMD_STATE_RX      = 1,    /* receive samples (+VRX) */
+	VOICE_CMD_STATE_TX      = 2,    /* transmit samples (+VTX) */
+	VOICE_CMD_STATE_DUPLEX  = 3,    /* both (+VTR) */
+	VOICE_CMD_STATE_SPEAKER = 4,    /* the speaker (no one sends it) */
+	VOICE_CMD_BEEP          = 5,    /* a +VTS tone */
+	VOICE_CMD_DTMF          = 6,    /* a +VTS DTMF digit */
+	VOICE_CMD_ABORT         = 7,
 };
 
-#define VOICE_STATUS_OK      1
-#define VOICE_STATUS_ERROR   2
-#define VOICE_STATUS_CONNECT 3
+/* what VOICE_process() reports */
+#define VOICE_STATUS_OK         1
+#define VOICE_STATUS_ERROR      2
+#define VOICE_STATUS_CONNECT    3
 
-#define VOICE_STATE_COMMAND 0x00
-#define VOICE_STATE_RX      0x01
-#define VOICE_STATE_TX      0x02
-#define VOICE_STATE_DUPLEX (VOICE_STATE_TX|VOICE_STATE_RX)
-#define VOICE_STATE_SPEAKER 0x08
+/* the voice engine's streaming state, as bits */
+#define VOICE_STATE_COMMAND     0x00
+#define VOICE_STATE_RX          0x01
+#define VOICE_STATE_TX          0x02
+#define VOICE_STATE_DUPLEX      (VOICE_STATE_RX | VOICE_STATE_TX)
 
-#define VOICE_DEVICE_NONE 0
-#define VOICE_DEVICE_LINE 1
+/* the devices of AT+VLS (V.253 10.2.4.1) */
+#define VOICE_DEVICE_NONE       0   /* on hook */
+#define VOICE_DEVICE_LINE       1   /* the telephone line */
 
+/* the core's +V settings, handed out with MDMPRM_VOICEINFO; Smart Link's
+   library reads them at these offsets */
 struct voice_info {
 	unsigned comp_method;
 	unsigned sample_rate;
@@ -417,30 +258,24 @@ struct voice_info {
 	unsigned dtmf_symbol;
 	unsigned tone1_freq;
 	unsigned tone2_freq;
-	unsigned tone_duration;
+	unsigned tone_duration;         /* 10 ms */
 	unsigned inactivity_timer;
 	unsigned silence_detect_sensitivity;
 	unsigned silence_detect_period;
 };
 
-
 /*
- *    prototypes
- *
+ *    S-registers, from the core
  */
 
-struct modem;
-
-/* S-register num (enum S_REGISTER): its value (0..255), or -1 when out
-   of range */
-extern int modem_get_sreg(struct modem *m, unsigned int num);
-/* stores val (as a byte) in S-register num: 0, or -1 when out of range */
-extern int modem_set_sreg(struct modem *m, unsigned int num, int val);
-
+/* S-register num, 0 to 255; -1 if there is no such register */
+int modem_get_sreg(struct modem *m, unsigned int num);
+/* stores the low 8 bits of val in S-register num: 0, or -1 if there is
+   no such register */
+int modem_set_sreg(struct modem *m, unsigned int num, int val);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __MODEM_DEFS_H__ */
-
+#endif /* DSP_MODEM_DEFS_H */

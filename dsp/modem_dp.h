@@ -1,110 +1,88 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * (Smart Link's code in it: Smart Link's notice and licence below)
  *
- *    Copyright (c) 2002, Smart Link Ltd.
- *    All rights reserved.
+ *    modem_dp.h - a data pump as the modem core knows it: the instance
+ *                 (struct dp), the table of functions a library registers
+ *                 for each of its ids (struct dp_operations), the
+ *                 registration, and the bits a pump exchanges with the
+ *                 core
  *
- *    Redistribution and use in source and binary forms, with or without
- *    modification, are permitted provided that the following conditions
- *    are met:
+ *    The library calls modem_dp_register() from prop_dp_init() for each
+ *    id it serves (one table may serve several); the core creates a pump
+ *    from the table when a call needs that modulation, runs process() on
+ *    each block of samples, and destroys it at the end of the call or
+ *    when the pump hands over to another one (DPSTAT_CHANGEDP).
  *
- *        1. Redistributions of source code must retain the above copyright
- *           notice, this list of conditions and the following disclaimer.
- *        2. Redistributions in binary form must reproduce the above
- *           copyright notice, this list of conditions and the following
- *           disclaimer in the documentation and/or other materials provided
- *           with the distribution.
- *        3. Neither the name of the Smart Link Ltd. nor the names of its
- *           contributors may be used to endorse or promote products derived
- *           from this software without specific prior written permission.
- *
- *    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- *    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- *    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- *    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *    Neither structure may change: Smart Link's i386 library has tables
+ *    of exactly these six words, and its pump objects begin with a struct
+ *    dp that its own state follows directly.
  *
  */
 
-/*
- *
- *    modem_dp.h - modem data pumps interface definitions
- *
- *    Author: sashak@smlink.com
- */
+#ifndef DSP_MODEM_DP_H
+#define DSP_MODEM_DP_H
 
-#ifndef __MODEM_DP_H__
-#define __MODEM_DP_H__
-
-#include <modem_defs.h>
+#include "modem_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+struct modem;
+struct dp;
 
-/*
- *    type definitions
- *
- */
-
-
-/* data pump operations structure */
+/* one pump's functions */
 struct dp_operations {
+	/* for the log */
 	const char *name;
+	/* 0, not used */
 	int use_count;
-	/* dp interface */
-	/* a new pump for id, calling or answering, at srate samples/s,
-	   process() given at most max_frag samples; NULL if it cannot */
-	struct dp *(*create)(struct modem *, enum DP_ID id,
-			     int caller, int srate, int max_frag,
-			     struct dp_operations *);
+	/* a new pump on modem m for modulation id, on the calling side if
+	   caller is not 0, at srate samples/s, process() never to be given
+	   more than max_frag samples; op is this table.  Its id, modem and
+	   op are set, status 0.  NULL if it cannot run */
+	struct dp *(*create)(struct modem *m, enum DP_ID id, int caller,
+			     int srate, int max_frag,
+			     struct dp_operations *op);
 	/* frees the pump */
-	int (*destroy)(struct dp *);
-	/* cnt s16 samples in from the line, cnt out to it: a DPSTAT_* */
-	int (*process)(struct dp *, void *in, void *out, int cnt);
-	/* the call is being hung up (may be NULL) */
-	int (*hangup)(struct dp *);
+	int (*destroy)(struct dp *d);
+	/* cnt received samples (s16) in, cnt samples to send written to
+	   out: a DPSTAT_* */
+	int (*process)(struct dp *d, void *in, void *out, int cnt);
+	/* the local side hangs up; may be NULL */
+	int (*hangup)(struct dp *d);
 };
 
-/* data pump structure */
+/* a running pump: the start of each pump's object */
 struct dp {
-        enum DP_ID id;
-        struct modem *modem;
-        unsigned status;
-	struct dp_operations *op;
-        void *dp_data;
+	enum DP_ID id;                  /* the modulation it was created for */
+	struct modem *modem;
+	unsigned status;                /* not used by the core */
+	struct dp_operations *op;       /* the table it was created from */
+	void *dp_data;                  /* the pump's own */
 };
-
 
 /*
- *    prototypes
- *
+ *    From the core.  A unit of bits is one byte with nbits bits in its
+ *    low bits (the open pumps take one bit per byte).
  */
 
-/* bit interface: n bytes of buf, nbits bits in each, to be
-   sent (get) or received (put) through the link layer; returns the
-   number of bytes done (n) */
-extern int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n);
-extern int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n);
-
-/* modem dp registration: op becomes the driver of id (0, or -1 when id
-   is unknown or already taken); deregister forgets the driver of id */
-extern int  modem_dp_register(enum DP_ID id, struct dp_operations *op);
-extern void modem_dp_deregister(enum DP_ID id, struct dp_operations *op);
-
+/* n units for the pump's transmitter, from the link layer (ones when it
+   has nothing to send) into buf; returns n */
+int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n);
+/* n units the pump's receiver got, from buf to the link layer; returns
+   n */
+int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n);
+/* op serves id from now on: 0, or -1 if the core has no such id or
+   another table already serves it.  op must stay valid while
+   registered */
+int modem_dp_register(enum DP_ID id, struct dp_operations *op);
+/* no table serves id any more (whatever op is) */
+void modem_dp_deregister(enum DP_ID id, struct dp_operations *op);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __MODEM_DP_H__ */
-
+#endif /* DSP_MODEM_DP_H */
