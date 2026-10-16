@@ -1,0 +1,100 @@
+=== none
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.000, 16/16 tones, 1600 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.000, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.000, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.000, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.000, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.000, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.000, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.000, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.000, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.000, pitch SER 0.000, 30.6 bit/symbol, 1529 bit/s
+=== amr:12.2
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.001, 16/16 tones, 1600 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.000, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.000, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.007, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.001, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.023, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.048, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.184, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.150, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.006, pitch SER 0.000, 30.6 bit/symbol, 1529 bit/s
+=== amr:10.2
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.028, 8/16 tones,  800 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.078, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.052, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.119, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.065, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.244, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.139, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.490, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.292, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.154, pitch SER 0.000, 30.6 bit/symbol, 1529 bit/s
+=== amr:7.4
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.222, 0/16 tones,    0 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.239, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.260, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.432, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.363, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.523, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.536, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.638, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.606, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.461, pitch SER 0.000, 30.6 bit/symbol, 1529 bit/s
+=== amrwb:23.85
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.000, 16/16 tones, 1600 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.000, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.000, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.000, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.000, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.002, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.006, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.022, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.014, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.001, pitch SER 0.000, 30.6 bit/symbol, 1529 bit/s
+=== amrwb:12.65
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.056, 7/16 tones,  700 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.022, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.029, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.053, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.050, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.148, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.155, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.288, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.277, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.114, pitch SER 0.000, 30.6 bit/symbol, 1529 bit/s
+=== amrwb:6.6
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.392, 0/16 tones,    0 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.448, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.424, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.556, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.484, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.587, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.580, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.610, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.633, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.591, pitch SER 0.010, 30.6 bit/symbol, 1529 bit/s
+=== evs:13200
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.036, 10/16 tones, 1000 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.023, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.014, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.036, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.031, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.065, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.108, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.129, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.114, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.106, pitch SER 0.000, 30.6 bit/symbol, 1529 bit/s
+=== evs:24400
+  comb 200 Hz, random phase, differential in time (v_cvm): SER 0.000, 16/16 tones, 1600 bit/s
+  harmonic L=27 (296.3 Hz),  8 data tones: SER 0.000, 16.0 bit/symbol,  800 bit/s
+  harmonic L=32 (250.0 Hz), 10 data tones: SER 0.000, 20.0 bit/symbol, 1000 bit/s
+  harmonic L=36 (222.2 Hz), 12 data tones: SER 0.000, 24.0 bit/symbol, 1200 bit/s
+  harmonic L=40 (200.0 Hz), 14 data tones: SER 0.000, 28.0 bit/symbol, 1400 bit/s
+  harmonic L=44 (181.8 Hz), 15 data tones: SER 0.002, 30.0 bit/symbol, 1500 bit/s
+  harmonic L=50 (160.0 Hz), 18 data tones: SER 0.001, 36.0 bit/symbol, 1800 bit/s
+  harmonic L=57 (140.4 Hz), 20 data tones: SER 0.002, 40.0 bit/symbol, 2000 bit/s
+  harmonic L=70 (114.3 Hz), 25 data tones: SER 0.003, 50.0 bit/symbol, 2500 bit/s
+  harmonic, lag per symbol (6 lags 36-46): tone SER 0.000, pitch SER 0.000, 30.6 bit/symbol, 1529 bit/s
+done
