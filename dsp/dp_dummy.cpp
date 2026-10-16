@@ -1,49 +1,24 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * (Smart Link's code in it: Smart Link's notice and licence below)
  *
- *    Copyright (c) 2002, Smart Link Ltd.
- *    All rights reserved.
+ *    dp_dummy.cpp - the dummy data pump (DP_DUMMY), a link simulator
+ *               without a modulation
  *
- *    Redistribution and use in source and binary forms, with or without
- *    modification, are permitted provided that the following conditions
- *    are met:
- *
- *        1. Redistributions of source code must retain the above copyright
- *           notice, this list of conditions and the following disclaimer.
- *        2. Redistributions in binary form must reproduce the above
- *           copyright notice, this list of conditions and the following
- *           disclaimer in the documentation and/or other materials provided
- *           with the distribution.
- *        3. Neither the name of the Smart Link Ltd. nor the names of its
- *           contributors may be used to endorse or promote products derived
- *           from this software without specific prior written permission.
- *
- *    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- *    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- *    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- *    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *    Selected with ATS32=3, on either side of a call.  The pump is
+ *    silent for its first 99 blocks (process() calls), then sends a tone
+ *    of samples alternately +65 and -65 and listens for a sample of
+ *    exactly that size from the other end.  The first one it hears
+ *    links it (DPSTAT_CONNECT); none by block 300 is an error.  Once
+ *    linked, every sample carries one data bit each way, its least
+ *    significant one, so the bit rate is the sample rate.  Two dummies
+ *    find each other only on a path that keeps every sample exact: no
+ *    G.711, no gain, filtering or noise.  While the pump runs, the core's
+ *    DC removal is off, for the received samples to stay as they were
+ *    sent.
  *
  */
 
-/*
- *
- *    dp_dummy.cpp  --  dummy data pump (very stupid simulator).
- *
- *    Author: Sasha K (sashak@smlink.com)
- *
- *
- */
-
-#include <stdlib.h>
 #include <string.h>
 
 #include "dsp.h"
@@ -51,114 +26,128 @@
 
 namespace dsp {
 
-#define dprintf(fmt...) DSP_DBG(fmt)
-
-
-#define DUMMY_SKIP     100
-#define DUMMY_TIMEOUT  300
-
-#define DUMMY_A1  0xff
-
-
 struct DummyPump : Pump {
-	static constexpr const char *name = "Dummy DataPump driver";
+	static constexpr const char *name = "Dummy";
 
-	/* gives the runtime's pcm flag back */
+	/* blocks 1 to SILENT_BLOCKS are silent, the tone runs up to
+	   LAST_TONE_BLOCK, and the next block without a link fails */
+	static constexpr long SILENT_BLOCKS = 99;
+	static constexpr long LAST_TONE_BLOCK = 300;
+	/* the tone's level (the code of 'A'), +TONE first in each block */
+	static constexpr s16 TONE = 65;
+	/* the bits handed to or taken from the core at a time */
+	static constexpr int BIT_CHUNK = 64;
+
+	CoreBits core;
+	struct dp_runtime *rt;  /* the core's (NULL: none) */
+	int saved_pcm;          /* rt->pcm as it was before the pump */
+	long blocks;            /* process() calls before the link */
+	bool linked;            /* the other end was heard: data */
+
+	int start(struct modem *m, enum DP_ID, int, int, int);
 	~DummyPump();
-
-	struct dp_runtime *rt;
-	unsigned long count;
-	unsigned long linked;
-	u8 buf[1024];
-	int pcm_was;            /* the runtime's "no DC removal" before */
-
-	int start(struct modem *m, enum DP_ID id, int caller, int srate,
-		  int max_frag);
 	int process(void *in, void *out, int cnt) override;
+
+private:
+	int handshake(const s16 *rx, s16 *tx, int cnt);
+	void exchange(const s16 *rx, s16 *tx, int cnt);
 };
 
-/* turns the core's DC removal off (the runtime's pcm flag) for as long
-   as it runs; 0 */
+/* the pump for modem m (the id, the side, the sample rate and the
+   block size make no difference): the core's DC removal turned off
+   while it runs; always 0 */
 int DummyPump::start(struct modem *m, enum DP_ID, int, int, int)
 {
-	dprintf("dummy_create...\n");
-	/* its 0/1 bits on the line are not DC free: the core must not
-	   take the DC out while it runs */
+	core.modem = m;
 	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
 	if (rt) {
-		pcm_was = rt->pcm;
+		saved_pcm = rt->pcm;
 		rt->pcm = 1;
 	}
+	DSP_DBG("dummy: start\n");
 	return 0;
 }
 
+/* gives the core its DC removal back as it was */
 DummyPump::~DummyPump()
 {
-	dprintf("dummy_delete...\n");
 	if (rt)
-		rt->pcm = pcm_was;
+		rt->pcm = saved_pcm;
+	DSP_DBG("dummy: end\n");
 }
 
-/* counted in blocks: silent for DUMMY_SKIP blocks, then +-'A' samples
-   until the remote's are heard (CONNECT), or DPSTAT_ERROR after
-   DUMMY_TIMEOUT; once linked one bit per sample each way, in bit 0 of
-   the samples */
+/* one block: the start until the other end is heard, data after it */
 int DummyPump::process(void *in, void *out, int cnt)
 {
-	int n = cnt * (int)sizeof(s16);    /* the core's samples */
-	s16 *s;
-	int i;
-	count++;
-	if (!linked) {
-		if (count < DUMMY_SKIP) {
-			memset(out,0,n);
-			return DPSTAT_OK;
-		}
-		else if(count > DUMMY_TIMEOUT)
-			return DPSTAT_ERROR;
-		s = static_cast<s16*>(out);
-		for(i = 0 ; i < cnt ; i++) {
-			*s = (1-2*(i&1))*('A');
-			s++;
-		}
-		s = static_cast<s16*>(in);
-		for(i = 0 ; i < cnt ; i++) {
-			if(abs(*s) == 'A') {
-				linked = 1;
-				return DPSTAT_CONNECT;
-			}
-			s++;
-		}
-	}
-	else {
-		s = static_cast<s16*>(in);
-		for(i = 0 ; i < cnt ; i++) {
-			buf[i] = *s&0x1;
-			s++;
-		}
-		modem_put_bits(dp.modem,1,buf,cnt);
-		s = static_cast<s16*>(out);
-		modem_get_bits(dp.modem,1,buf,cnt);
-		for(i = 0 ; i < cnt ; i++) {
-			*s = buf[i]&1 ;
-			s++;
-		}
-	}
+	const s16 *rx = static_cast<const s16 *>(in);
+	s16 *tx = static_cast<s16 *>(out);
+
+	if (!linked)
+		return handshake(rx, tx, cnt);
+	exchange(rx, tx, cnt);
 	return DPSTAT_OK;
+}
+
+/* a block before the link: silence up to block SILENT_BLOCKS; then
+   the tone, and DPSTAT_CONNECT as soon as a received sample is +TONE or
+   -TONE (the rest of the block's input unread); after LAST_TONE_BLOCK,
+   silence and DPSTAT_ERROR */
+int DummyPump::handshake(const s16 *rx, s16 *tx, int cnt)
+{
+	int i;
+
+	if (++blocks <= SILENT_BLOCKS) {
+		memset(tx, 0, cnt * sizeof(*tx));
+		return DPSTAT_OK;
+	}
+	if (blocks > LAST_TONE_BLOCK) {
+		memset(tx, 0, cnt * sizeof(*tx));
+		DSP_DBG("dummy: no tone from the other end\n");
+		return DPSTAT_ERROR;
+	}
+	for (i = 0; i < cnt; i++)
+		tx[i] = i & 1 ? -TONE : TONE;
+	for (i = 0; i < cnt; i++)
+		if (rx[i] == TONE || rx[i] == -TONE) {
+			linked = true;
+			DSP_DBG("dummy: linked\n");
+			return DPSTAT_CONNECT;
+		}
+	return DPSTAT_OK;
+}
+
+/* a block of data: the low bit of each received sample to the core,
+   all of them first, then as many bits from the core, each one sent as
+   a sample of 0 or 1 */
+void DummyPump::exchange(const s16 *rx, s16 *tx, int cnt)
+{
+	u8 bits[BIT_CHUNK];
+	int i, j, n;
+
+	for (i = 0; i < cnt; i += n) {
+		n = cnt - i < BIT_CHUNK ? cnt - i : BIT_CHUNK;
+		for (j = 0; j < n; j++)
+			bits[j] = (u16)rx[i + j] & 1;
+		core.put(bits, n);
+	}
+	for (i = 0; i < cnt; i += n) {
+		n = cnt - i < BIT_CHUNK ? cnt - i : BIT_CHUNK;
+		core.get(bits, n);
+		for (j = 0; j < n; j++)
+			tx[i + j] = bits[j] & 1;
+	}
 }
 
 } // namespace dsp
 
-using namespace dsp;
-
 /* registers the pump as DP_DUMMY: modem_dp_register()'s result */
 int dp_dummy_init(void)
 {
-	return modem_dp_register(DP_DUMMY, &PumpOps<DummyPump>::ops);
+	return modem_dp_register(DP_DUMMY, &dsp::PumpOps<dsp::DummyPump>::ops);
 }
 
 /* deregisters it */
 void dp_dummy_exit(void)
 {
-	modem_dp_deregister(DP_DUMMY, &PumpOps<DummyPump>::ops);
+	modem_dp_deregister(DP_DUMMY, &dsp::PumpOps<dsp::DummyPump>::ops);
 }

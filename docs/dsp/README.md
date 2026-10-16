@@ -146,10 +146,11 @@ Everything here is in `namespace dsp`, except the C entry points of
 - **The other library objects**, `DcRemover`, `CallerId` and `Voice`
   (`dsp_glue.cpp`), are classes behind their C entry points (`dcr_*`,
   `CID_*`, `VOICE_*`).
-- **slmodemd's own pumps without a modulation**, `dp_dummy.cpp` (the
-  `DP_DUMMY` test pump) and `dp_sinus.cpp` (`DP_SINUS`, a test tone), are
-  Smart Link's code as it came with slmodemd, on `Pump` and `PumpOps`
-  like the others.
+- **The pumps without a modulation**, `dp_dummy.cpp` (`DummyPump`, the
+  `DP_DUMMY` test pump: two of them find each other by a tone, then carry
+  a bit in each sample) and `dp_sinus.cpp` (`SinusPump`, `DP_SINUS`, a
+  test tone), slmodemd's two, written anew on `Pump` and `PumpOps` like
+  the others (`ATS32=3`, `ATS32=127`).
 
 The conversion from C structs and functions kept the output the same to
 the byte: every quick test produces the same debug log before and after.
