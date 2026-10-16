@@ -4,81 +4,108 @@
  */
 /*
  *
- *    sip.cpp - dmodemd's telephone line: a SIP user agent on pjsua
+ *    sip.cpp - dmodemd's telephone line: a SIP user agent on libre
+ *              (baresip's re), with SDP, RTP and UDPTL of its own
  *              (sip.h)
  *
- *    One call at a time, the current call.  pjsua's callbacks (on its
- *    own threads) only note what happened to it; a worker thread of
- *    ours does the rest: it takes the modem's requests (dial, answer),
- *    writes the RING and CANCEL lines, hangs calls up, and alone puts a
- *    call's audio port in the conference bridge and takes it out again.
+ *    One call at a time, the current call.  libre runs in a thread of
+ *    ours (the SIP thread), which alone has the SIP side: the modem's
+ *    requests (dial, answer) come to it through libre's queue, it writes
+ *    the RING, CANCEL, T38 and AUDIO lines, and it alone has the current
+ *    call.
  *
- *    The audio port carries the call's audio between the bridge and the
- *    modem's socket, a frame of 20 ms each way on every tick of the
- *    bridge's clock: 8000 Hz, 16 bit linear, nothing resampled, so that
- *    G.711's codes pass through as they are.
+ *    A call's audio has a thread of its own on a clock of 20 ms: on each
+ *    tick a frame from the jitter buffer to the modem's socket, the
+ *    modem's answer to the frame before from it, and that in RTP to the
+ *    far end.  G.711 both ways, the modem's samples G.711's own values,
+ *    so that its codes pass through as they are.  The jitter buffer is
+ *    fixed (60 ms) and drops nothing to shrink (a slip the modem can't
+ *    take): it starts over only when the far end does (another source, a
+ *    jump in time), when its backlog passes 2 s, or when it has run dry
+ *    with the far end's packets late (its clock slower than ours).
  *
- *    T.38: pjsua has no image media of its own, and would make an audio
- *    stream of an image line on in an audio line's place.  An offer of
- *    it (a re-INVITE) is answered here, our image line in its place off
- *    as pjsua has it (port 0: pjsua stops the audio there and makes
- *    nothing of it), the SIP messages with our UDPTL port in it (a
- *    module of ours on their way out); pjsua refuses an offer without
- *    audio itself, so it is told that the answer is ours.  Our own ask
- *    has pjsua's offer with its audio off and our image line on in a
- *    media line of its own, one more than pjsua's (pjsua skips a media
- *    line it has no type for).  What was agreed comes from the SDP
- *    negotiator's active SDPs.  (pjsua_internal.h)
+ *    T.38: an offer of it (a re-INVITE with an image line) is answered at
+ *    once while the modem is in fax mode, our image line in its place,
+ *    the other lines off.  Our own ask, a second after we answered a fax
+ *    call, has our image line in the audio line's place.  On T.38 the
+ *    audio stops (its thread stays, for the call's end), and the modem's
+ *    fax engine has the call's UDPTL socket (t38()).
  *
  */
 
 #include <arpa/inet.h>
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <limits.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <time.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
-#include <deque>
+#include <memory>
 #include <mutex>
-#include <new>
 #include <string>
 #include <system_error>
 #include <thread>
+#include <utility>
+#include <vector>
 
-#include <pjsua-lib/pjsua.h>
-#include <pjsua-lib/pjsua_internal.h>
+/* libre's declarations in a namespace of their own: its struct sip
+   would be the namespace sip's name (the system headers it has are
+   above) */
+namespace libre {
+#include <re.h>
+}
 
+#include "g711.h"
 #include "line_recorder.h"
 #include "sip.h"
-
-#define THIS_FILE "sip.cpp"
 
 namespace sip {
 
 namespace {
 
+using namespace libre;
+
 /* the modem's audio: 8000 Hz, mono, 16 bit, frames of 20 ms */
 const unsigned RATE = 8000;
 const unsigned SAMPLES = RATE / 50;
 const size_t FRAME = SAMPLES * 2;
+const long TICK_NS = 1000000000L / 50;
 
-/* the jitter buffer, fixed (ms) */
-const int JB_DELAY = 60;
-const int JB_MAX = 2000;
+/* the jitter buffer, fixed (samples): its delay, its longest backlog */
+const int32_t JB_DELAY = 60 * RATE / 1000;
+const int32_t JB_MAX = 2000 * RATE / 1000;
 
-/* a ringing call's RING lines, and the worker's longest sleep (ms) */
+/* late packets in a row, the buffer dry, for it to start over (a
+   moment's lateness only loses their time) */
+const unsigned LATE_RUN = 5;
+
+/* the audio thread's clock: behind by more than this (ns), it starts
+   over from now */
+const long LATE_NS = 200000000L;
+
+/* a ringing call's RING lines, the look at the current call (ms) */
 const int RING_MS = 3000;
 const int POLL_MS = 200;
 
@@ -86,122 +113,94 @@ const int POLL_MS = 200;
    the call's ACK */
 const int T38_ASK_MS = 1000;
 
-/* the far end's T.38, from its image line */
-struct Peer {
-	std::string addr;
-	int port = 0;
-	int version = 0;
-	int max_datagram = 0;
-	bool redundancy = false;
-};
+/* the registration's lifetime (s); the longest stop() waits for the
+   last transactions (ms) */
+const uint32_t REG_EXPIRES = 300;
+const int QUIT_MS = 2000;
 
-/* the current call, as pjsua's callbacks and the worker share it (under
-   lock).  Every call carries a user data of its own (token), by which
-   the callbacks know the current call: the id of a call being dialled
-   is not known until pjsua_call_make_call() returns, and its callbacks
-   may come before that */
-struct Call {
-	void *token = nullptr;  /* none: the line is free */
-	pjsua_call_id id = PJSUA_INVALID_ID;
-	bool ringing = false;   /* came in, not answered yet */
-	bool media = false;     /* its media came up */
-	bool gone = false;      /* disconnected */
-	bool incoming = false;  /* it came in */
-	bool confirmed = false;
-	std::chrono::steady_clock::time_point up;       /* confirmed then */
-	/* T.38 */
-	bool t38_asked = false;         /* by us or the far end: not again */
-	bool t38_offering = false;      /* our re-INVITE's offer: an image
-					   line in the audio's place */
-	bool t38_mine = false;          /* an image line of ours is in
-					   pjsua's SDPs */
-	pjmedia_sdp_session *offer = nullptr;   /* the far end's, to answer
-						   (in offer_pool) */
-	pj_pool_t *offer_pool = nullptr;
-	bool t38 = false;               /* the call is on T.38 */
-	bool t38_told = false;          /* the T38 line written */
-	Peer peer;
-	bool audio_again = false;       /* back on the audio: the port to
-					   connect, an AUDIO line */
-	bool no_media = false;          /* neither: the audio to ask for */
-};
-
-/* a modem's request: dial number, or answer; the call's audio on fd */
-struct Request {
-	bool dial;
-	std::string number;
-	int fd;
-};
-
-/* a call's audio port: the bridge's frames to the modem's socket, the
-   modem's from it.  Its memory is its own pool's, which it outlives
-   only in port_on_destroy() */
-struct Port {
-	pjmedia_port base = {};
-	pj_pool_t *pool = nullptr;
-	int fd = -1;
-	pj_uint64_t ts = 0;     /* get_frame()'s timestamp */
-	std::atomic<bool> failed{false};
-};
+/* the SIP thread's queue */
+enum { MQ_DIAL, MQ_ANSWER, MQ_MODEM_GONE, MQ_QUIT };
 
 /* start()'s copy of the configuration */
 Config cfg_;
 std::string user_, password_, domain_;
+int log_level = 4;
 
 dmd::LineRecorder rec;
-int ctl[2] = { -1, -1 };        /* RING and CANCEL: written to [0] */
-bool pj_created;
-pjsua_acc_id acc = PJSUA_INVALID_ID;
+int ctl[2] = { -1, -1 };        /* our lines: written to [0] */
 std::atomic<int> law_{0};
-std::atomic<uintptr_t> last_token{0};
 std::atomic<bool> fax_{false};
+std::atomic<bool> running{false};       /* the SIP thread takes requests */
+std::thread sip_thread;
 
-/* shared by the worker, pjsua's callbacks and the modem's thread */
-std::mutex mu;
-std::condition_variable cv;
-std::deque<Request> requests;
-bool running;           /* the worker takes requests */
-bool quit;              /* the worker is to end */
-bool poked;             /* something for the worker */
-Call cur;
-std::thread worker;
+/* the SIP thread's start: 0 under way, 1 up, -1 failed */
+std::mutex start_mu;
+std::condition_variable start_cv;
+int start_state;
 
-/* the worker's own: the current call's audio port, its slot in the
-   bridge, the RING timer */
-Port *port;
-pjsua_conf_port_id port_slot = PJSUA_INVALID_ID;
-bool rang;
-std::chrono::steady_clock::time_point next_ring;
 
-/* (under mu) the current call's UDPTL socket and its port, and the
-   address of our media lines */
-int udptl = -1;
-int udptl_port;
-std::string media_ip;
+/*
+ *    helpers
+ */
 
-/* false, with pjsua's message for what failed, unless st is success */
-bool ok(pj_status_t st, const char *what)
+/* a line of the log (stderr) at level (1 errors, 3 the calls, 4 more,
+   with the SIP messages), if SIP_LOG_LEVEL has it */
+void say(int level, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void say(int level, const char *fmt, ...)
 {
-	if (st == PJ_SUCCESS)
-		return true;
-	pjsua_perror(THIS_FILE, what, st);
-	return false;
-}
+	struct timespec ts;
+	struct tm tm;
+	va_list ap;
+	std::vector<char> buf(256);
+	int n;
 
-/* a user data no other call has had */
-void *new_token()
-{
-	return reinterpret_cast<void *>(++last_token);
-}
-
-/* the worker on its way, if it sleeps */
-void wake()
-{
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		poked = true;
+	if (level > log_level)
+		return;
+	va_start(ap, fmt);
+	n = vsnprintf(buf.data(), buf.size(), fmt, ap);
+	va_end(ap);
+	if (n < 0)
+		return;
+	if ((size_t)n >= buf.size()) {
+		buf.resize(n + 1);
+		va_start(ap, fmt);
+		vsnprintf(buf.data(), buf.size(), fmt, ap);
+		va_end(ap);
 	}
-	cv.notify_one();
+	clock_gettime(CLOCK_REALTIME, &ts);
+	localtime_r(&ts.tv_sec, &tm);
+	fprintf(stderr, "%02d:%02d:%02d.%03ld sip: %s\n", tm.tm_hour,
+		tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000, buf.data());
+}
+
+std::string str(const struct pl &p)
+{
+	return std::string(p.p ? p.p : "", p.p ? p.l : 0);
+}
+
+std::string lower(std::string s)
+{
+	for (char &c : s)
+		c = (char)tolower((unsigned char)c);
+	return s;
+}
+
+/* a's address, without its port */
+std::string ip_of(const struct sa *a)
+{
+	char buf[64] = "";
+	if (sa_ntop(a, buf, sizeof(buf)))
+		return std::string();
+	return buf;
+}
+
+/* a's address and port */
+std::string addr_of(const struct sa *a)
+{
+	std::string ip = ip_of(a);
+	if (ip.find(':') != std::string::npos)
+		ip = "[" + ip + "]";
+	return ip + ":" + std::to_string(sa_port(a));
 }
 
 /* n bytes from fd into buf, in as many reads as it takes; false if it
@@ -237,14 +236,6 @@ bool write_all(int fd, const void *buf, size_t n)
 	return true;
 }
 
-/* a line to main.cpp's control descriptor (RING, CANCEL) */
-void ctl_line(const char *s)
-{
-	PJ_LOG(4, (THIS_FILE, "control: %.*s", (int)strlen(s) - 1, s));
-	if (!write_all(ctl[0], s, strlen(s)))
-		PJ_LOG(1, (THIS_FILE, "control socket: %s", strerror(errno)));
-}
-
 /* the modem has closed its end of fd (seen without reading from it) */
 bool peer_closed(int fd)
 {
@@ -253,1049 +244,1594 @@ bool peer_closed(int fd)
 		(p.revents & (POLLRDHUP | POLLHUP | POLLERR | POLLNVAL));
 }
 
-/* the Port of a pjmedia_port */
-Port *port_of(pjmedia_port *base)
+/* (SIP thread) a line to main.cpp's control descriptor (RING, CANCEL,
+   T38, AUDIO) */
+void ctl_line(const char *s)
 {
-	return static_cast<Port *>(base->port_data.pdata);
+	say(4, "control: %.*s", (int)strlen(s) - 1, s);
+	if (!write_all(ctl[0], s, strlen(s)))
+		say(1, "control socket: %s", strerror(errno));
 }
 
-/* the socket has failed (what): once, the port marked and the worker
-   woken */
-void port_failed(Port *p, const char *what)
+/* a UDP socket on a port of its own (into *port), both IPv6 and IPv4 if
+   it can (its family into *family); -1 if it can't be had */
+int open_udp(int *port, int *family)
 {
-	if (p->failed.exchange(true))
-		return;
-	PJ_LOG(4, (THIS_FILE, "audio socket %d: %s", p->fd, what));
-	wake();
-}
+	for (int af : { AF_INET6, AF_INET }) {
+		struct sockaddr_storage a = {};
+		socklen_t len = af == AF_INET6 ? sizeof(struct sockaddr_in6) :
+			sizeof(struct sockaddr_in);
+		int off = 0;
+		int fd = socket(af, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 
-/* a frame from the bridge to the modem (the media clock's thread):
-   audio recorded and written to the socket, anything else ignored */
-pj_status_t port_put_frame(pjmedia_port *base, pjmedia_frame *f)
-{
-	Port *p = port_of(base);
-	char pad[FRAME];
-	const void *buf = f->buf;
-
-	if (f->type != PJMEDIA_FRAME_TYPE_AUDIO)
-		return PJ_SUCCESS;
-	if (f->size < FRAME) {
-		/* (not from the bridge: its frames are whole) */
-		memcpy(pad, f->buf, f->size);
-		memset(pad + f->size, 0, FRAME - f->size);
-		buf = pad;
+		if (fd < 0)
+			continue;
+		a.ss_family = (sa_family_t)af;
+		if ((af == AF_INET6 &&
+		     setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off,
+				sizeof(off)) < 0) ||
+		    bind(fd, reinterpret_cast<struct sockaddr *>(&a), len) < 0 ||
+		    getsockname(fd, reinterpret_cast<struct sockaddr *>(&a),
+				&len) < 0) {
+			close(fd);
+			continue;
+		}
+		*port = ntohs(af == AF_INET6 ?
+			reinterpret_cast<struct sockaddr_in6 *>(&a)->sin6_port :
+			reinterpret_cast<struct sockaddr_in *>(&a)->sin_port);
+		*family = af;
+		return fd;
 	}
-	rec.rx(buf, FRAME);
-	if (!p->failed && !write_all(p->fd, buf, FRAME))
-		port_failed(p, "write failed");
-	return PJ_SUCCESS;
-}
-
-/* a frame from the modem to the bridge (the media clock's thread): read
-   from the socket, which blocks until the modem has answered the last
-   frame it got; silence once the socket has failed */
-pj_status_t port_get_frame(pjmedia_port *base, pjmedia_frame *f)
-{
-	Port *p = port_of(base);
-
-	if (p->failed || !read_all(p->fd, f->buf, FRAME)) {
-		port_failed(p, "read failed or ended");
-		memset(f->buf, 0, FRAME);
-	}
-	rec.tx(f->buf, FRAME);
-	f->size = FRAME;
-	f->type = PJMEDIA_FRAME_TYPE_AUDIO;
-	f->timestamp.u64 = p->ts;
-	p->ts += SAMPLES;
-	return PJ_SUCCESS;
-}
-
-/* the last reference to the port gone, the bridge's included: only now
-   are the socket closed and the memory released */
-pj_status_t port_on_destroy(pjmedia_port *base)
-{
-	Port *p = port_of(base);
-	pj_pool_t *pool = p->pool;
-
-	PJ_LOG(4, (THIS_FILE, "audio socket %d closed", p->fd));
-	close(p->fd);
-	p->~Port();
-	pj_pool_release(pool);
-	return PJ_SUCCESS;
-}
-
-/* an audio port on the socket fd, with its own pool and group lock (the
-   bridge keeps a reference while it may use it); nullptr if it can't be
-   made (fd left open) */
-Port *make_port(int fd)
-{
-	pj_pool_t *pool = pjsua_pool_create("dmodem-port", 512, 512);
-	pj_str_t name;
-	void *mem;
-	Port *p;
-
-	if (!pool) {
-		PJ_LOG(1, (THIS_FILE, "no pool for the audio port"));
-		return nullptr;
-	}
-	mem = pj_pool_zalloc(pool, sizeof(Port));
-	if (!mem) {
-		pj_pool_release(pool);
-		return nullptr;
-	}
-	p = new (mem) Port;
-	p->pool = pool;
-	p->fd = fd;
-	pjmedia_port_info_init(&p->base.info, pj_cstr(&name, "dmodem"),
-			       PJMEDIA_SIG_CLASS_PORT_AUD('D', 'M'), RATE, 1,
-			       16, SAMPLES);
-	p->base.port_data.pdata = p;
-	p->base.put_frame = &port_put_frame;
-	p->base.get_frame = &port_get_frame;
-	p->base.on_destroy = &port_on_destroy;
-	if (!ok(pjmedia_port_init_grp_lock(&p->base, pool, nullptr),
-		"audio port's group lock")) {
-		p->~Port();
-		pj_pool_release(pool);
-		return nullptr;
-	}
-	return p;
-}
-
-/* (worker) the current call's port let go: its socket shut down (a
-   read() the media thread waits in returns, and the modem sees the call
-   end), out of the bridge, our reference dropped; the bridge may hold
-   its own a while longer */
-void release_port()
-{
-	if (!port)
-		return;
-	shutdown(port->fd, SHUT_RDWR);
-	if (port_slot != PJSUA_INVALID_ID)
-		ok(pjsua_conf_remove_port(port_slot),
-		   "removing the audio port");
-	pjmedia_port_destroy(&port->base);
-	port = nullptr;
-	port_slot = PJSUA_INVALID_ID;
-}
-
-/* (worker) a new call's audio on fd: its port, the law not known yet,
-   and a frame of silence in the socket ahead of everything (the modem
-   keeps one in flight); false (fd closed) if that can't be */
-bool attach(int fd)
-{
-	static const char silence[FRAME] = {};
-
-	law_ = 0;
-	port = make_port(fd);
-	if (!port) {
-		close(fd);
-		return false;
-	}
-	port_slot = PJSUA_INVALID_ID;
-	if (!write_all(fd, silence, FRAME)) {
-		PJ_LOG(1, (THIS_FILE, "audio socket %d: %s", fd,
-			   strerror(errno)));
-		release_port();
-		return false;
-	}
-	return true;
-}
-
-/* (worker) the port into the bridge (unless it is there: back from
-   T.38) and connected both ways with call id's slot; false if that
-   fails */
-bool connect_port(pjsua_call_id id)
-{
-	pjsua_conf_port_id call_slot = pjsua_call_get_conf_port(id);
-	pjsua_conf_port_id slot;
-
-	if (call_slot == PJSUA_INVALID_ID) {
-		PJ_LOG(1, (THIS_FILE, "call %d: no audio in the bridge", id));
-		return false;
-	}
-	if (port_slot == PJSUA_INVALID_ID) {
-		if (!ok(pjsua_conf_add_port(port->pool, &port->base, &slot),
-			"adding the audio port"))
-			return false;
-		port_slot = slot;
-	}
-	slot = port_slot;
-	/* towards the modem first: until the modem has frames to answer,
-	   the bridge's get_frame() would wait for it */
-	if (!ok(pjsua_conf_connect(call_slot, slot), "connecting the call") ||
-	    !ok(pjsua_conf_connect(slot, call_slot), "connecting the modem"))
-		return false;
-	PJ_LOG(3, (THIS_FILE, "call %d: audio connected (slots %d, %d)", id,
-		   call_slot, slot));
-	return true;
-}
-
-/* (lock held) whether id, which carries the user data ud, is the current
-   call; the id of a call being dialled is learnt here */
-bool is_current(pjsua_call_id id, void *ud)
-{
-	if (!cur.token || ud != cur.token)
-		return false;
-	if (cur.id == PJSUA_INVALID_ID)
-		cur.id = id;
-	return true;
-}
-
-
-/*
- *    T.38's SDP
- */
-
-std::string str(const pj_str_t &s)
-{
-	return std::string(s.ptr ? s.ptr : "", s.slen);
-}
-
-std::string lower(std::string s)
-{
-	for (char &c : s)
-		c = (char)tolower((unsigned char)c);
-	return s;
-}
-
-/* m is a T.38 line (an image line on UDPTL) */
-bool is_t38(const pjmedia_sdp_media *m)
-{
-	return !pj_stricmp2(&m->desc.media, "image") &&
-		!pj_stricmp2(&m->desc.transport, "udptl");
-}
-
-/* the first T.38 line of s that is on, -1 if none */
-int t38_line(const pjmedia_sdp_session *s)
-{
-	for (unsigned i = 0; i < s->media_count; i++)
-		if (s->media[i]->desc.port && is_t38(s->media[i]))
-			return (int)i;
+	say(1, "a UDP socket: %s", strerror(errno));
 	return -1;
 }
 
-/* s has an audio line on */
-bool has_audio(const pjmedia_sdp_session *s)
+/* the socket address of addr:port for a socket of family (an IPv4
+   address mapped for an IPv6 one); false if addr is none of either */
+bool sockaddr_of(const std::string &addr, int port, int family,
+		 struct sockaddr_storage *a, socklen_t *len)
 {
-	for (unsigned i = 0; i < s->media_count; i++)
-		if (s->media[i]->desc.port &&
-		    !pj_stricmp2(&s->media[i]->desc.media, "audio"))
+	struct sockaddr_in *a4 = reinterpret_cast<struct sockaddr_in *>(a);
+	struct sockaddr_in6 *a6 = reinterpret_cast<struct sockaddr_in6 *>(a);
+	struct in_addr in4;
+
+	memset(a, 0, sizeof(*a));
+	if (inet_pton(AF_INET, addr.c_str(), &in4) == 1) {
+		if (family == AF_INET) {
+			a4->sin_family = AF_INET;
+			a4->sin_addr = in4;
+			a4->sin_port = htons((uint16_t)port);
+			*len = sizeof(*a4);
 			return true;
-	return false;
-}
-
-/* the address of line i of s: its own, else the session's */
-std::string line_addr(const pjmedia_sdp_session *s, unsigned i)
-{
-	const pjmedia_sdp_conn *c = s->media[i]->conn ? s->media[i]->conn :
-		s->conn;
-	return c ? str(c->addr) : std::string();
-}
-
-/* the T.38 settings of line i of s */
-Peer t38_params(const pjmedia_sdp_session *s, unsigned i)
-{
-	const pjmedia_sdp_media *m = s->media[i];
-	Peer p;
-
-	p.addr = line_addr(s, i);
-	p.port = m->desc.port;
-	for (unsigned k = 0; k < m->attr_count; k++) {
-		std::string n = lower(str(m->attr[k]->name));
-		std::string v = str(m->attr[k]->value);
-		if (n == "t38faxversion")
-			p.version = atoi(v.c_str());
-		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
-			p.max_datagram = atoi(v.c_str());
-		else if (n == "t38faxudpec")
-			p.redundancy = lower(v) == "t38udpredundancy";
+		}
+		a6->sin6_family = AF_INET6;
+		a6->sin6_addr.s6_addr[10] = 0xff;
+		a6->sin6_addr.s6_addr[11] = 0xff;
+		memcpy(&a6->sin6_addr.s6_addr[12], &in4, 4);
+		a6->sin6_port = htons((uint16_t)port);
+		*len = sizeof(*a6);
+		return true;
 	}
-	return p;
-}
-
-/* a connection line of addr */
-pjmedia_sdp_conn *make_conn(pj_pool_t *pool, const std::string &addr)
-{
-	pjmedia_sdp_conn *c = PJ_POOL_ZALLOC_T(pool, pjmedia_sdp_conn);
-	pj_strdup2(pool, &c->net_type, "IN");
-	pj_strdup2(pool, &c->addr_type,
-		   addr.find(':') != std::string::npos ? "IP6" : "IP4");
-	pj_strdup2(pool, &c->addr, addr.c_str());
-	return c;
-}
-
-void add_attr(pj_pool_t *pool, pjmedia_sdp_media *m, const char *name,
-	      const std::string &value)
-{
-	pj_str_t v;
-	pj_strdup2(pool, &v, value.c_str());
-	pjmedia_sdp_media_add_attr(m, pjmedia_sdp_attr_create(pool, name, &v));
-}
-
-/* our T.38 line: UDPTL on port (of addr, unless empty: the session's),
-   T38FaxVersion version, with redundancy, datagrams of 400 octets;
-   port 0 in pjsua's SDPs (see on_tx_sdp()) */
-pjmedia_sdp_media *image_line(pj_pool_t *pool, int port,
-			      const std::string &addr, int version)
-{
-	pjmedia_sdp_media *m = PJ_POOL_ZALLOC_T(pool, pjmedia_sdp_media);
-
-	pj_strdup2(pool, &m->desc.media, "image");
-	m->desc.port = (pj_uint16_t)port;
-	pj_strdup2(pool, &m->desc.transport, "udptl");
-	m->desc.fmt_count = 1;
-	pj_strdup2(pool, &m->desc.fmt[0], "t38");
-	if (!addr.empty())
-		m->conn = make_conn(pool, addr);
-	add_attr(pool, m, "T38FaxVersion", std::to_string(version));
-	add_attr(pool, m, "T38MaxBitRate", "14400");
-	add_attr(pool, m, "T38FaxRateManagement", "transferredTCF");
-	add_attr(pool, m, "T38FaxMaxBuffer", "2000");
-	add_attr(pool, m, "T38FaxMaxDatagram", "400");
-	add_attr(pool, m, "T38FaxUdpEC", "t38UDPRedundancy");
-	return m;
-}
-
-/* (pjsua, with call id's dialog locked) the T.38 that the call's active
-   SDPs agree on: our image line (off, as pjsua has it) and the far
-   end's on, the far end's (the lower version of the two); false if none
-   (pjsua_internal.h: pjsua has no call of its own for them) */
-bool active_t38(pjsua_call_id id, Peer *p)
-{
-	pjsip_inv_session *inv = pjsua_var.calls[id].inv;
-	const pjmedia_sdp_session *l, *r;
-
-	if (!inv || !inv->neg ||
-	    pjmedia_sdp_neg_get_active_local(inv->neg, &l) != PJ_SUCCESS ||
-	    pjmedia_sdp_neg_get_active_remote(inv->neg, &r) != PJ_SUCCESS)
-		return false;
-	for (unsigned i = 0; i < l->media_count && i < r->media_count; i++) {
-		if (!is_t38(l->media[i]) || !is_t38(r->media[i]) ||
-		    !r->media[i]->desc.port)
-			continue;
-		*p = t38_params(r, i);
-		p->version = std::min(p->version, t38_params(l, i).version);
+	if (family == AF_INET6 &&
+	    inet_pton(AF_INET6, addr.c_str(), &a6->sin6_addr) == 1) {
+		a6->sin6_family = AF_INET6;
+		a6->sin6_port = htons((uint16_t)port);
+		*len = sizeof(*a6);
 		return true;
 	}
 	return false;
 }
 
-/* (worker) the call's UDPTL socket, on a port of its own, of the
-   family of our media's address; false if it can't be had */
-bool open_udptl()
-{
-	struct sockaddr_storage a = {};
-	socklen_t len = sizeof(a);
-	bool v6;
-	int fd, port;
 
+/*
+ *    SDP
+ */
+
+/* an SDP's media line */
+struct SdpMedia {
+	std::string type;               /* audio, image */
+	int port = 0;
+	std::string proto;              /* RTP/AVP, udptl */
+	std::vector<std::string> fmts;
+	std::string addr;               /* its c= (or the session's) */
+	std::vector<std::pair<std::string, std::string>> attrs;
+
+	/* the value of its attribute name (any case), NULL if none */
+	const std::string *attr(const char *name) const
+	{
+		for (const auto &a : attrs)
+			if (!strcasecmp(a.first.c_str(), name))
+				return &a.second;
+		return nullptr;
+	}
+};
+
+/* an SDP: the session's attributes, the media lines in their order */
+struct Sdp {
+	std::vector<std::pair<std::string, std::string>> attrs;
+	std::vector<SdpMedia> media;
+};
+
+/* the SDP of body (n octets) into s; false if it has no media line */
+bool sdp_parse(const char *body, size_t n, Sdp *s)
+{
+	std::string text(body, n), session_addr;
+	size_t at = 0;
+
+	*s = Sdp();
+	while (at < text.size()) {
+		size_t eol = text.find('\n', at);
+		std::string line = text.substr(at, eol == std::string::npos ?
+					       std::string::npos : eol - at);
+		at = eol == std::string::npos ? text.size() : eol + 1;
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+		if (line.size() < 2 || line[1] != '=')
+			continue;
+		std::string v = line.substr(2);
+		switch (line[0]) {
+		case 'c': {
+			/* IN IP4 <addr> */
+			size_t sp = v.rfind(' ');
+			std::string a = sp == std::string::npos ? v :
+				v.substr(sp + 1);
+			a = a.substr(0, a.find('/'));
+			if (s->media.empty())
+				session_addr = a;
+			else
+				s->media.back().addr = a;
+			break;
+		}
+		case 'm': {
+			SdpMedia m;
+			char type[32], proto[32];
+			int port, k = 0;
+			if (sscanf(v.c_str(), "%31s %d%*[^ ] %31s %n", type,
+				   &port, proto, &k) < 3 &&
+			    sscanf(v.c_str(), "%31s %d %31s %n", type, &port,
+				   proto, &k) < 3)
+				return false;
+			m.type = type;
+			m.port = port;
+			m.proto = proto;
+			m.addr = session_addr;
+			for (size_t i = k; i < v.size();) {
+				size_t e = v.find(' ', i);
+				std::string f = v.substr(i, e == std::string::npos ?
+							 std::string::npos : e - i);
+				if (!f.empty())
+					m.fmts.push_back(f);
+				i = e == std::string::npos ? v.size() : e + 1;
+			}
+			s->media.push_back(m);
+			break;
+		}
+		case 'a': {
+			size_t colon = v.find(':');
+			auto a = std::make_pair(v.substr(0, colon),
+				colon == std::string::npos ? std::string() :
+				v.substr(colon + 1));
+			if (s->media.empty())
+				s->attrs.push_back(a);
+			else
+				s->media.back().attrs.push_back(a);
+			break;
+		}
+		default:
+			break;
+		}
+	}
+	return !s->media.empty();
+}
+
+/* the SDP of msg into s; false if it has none, or none we can read */
+bool sdp_of(const struct sip_msg *msg, Sdp *s)
+{
+	if (!mbuf_get_left(msg->mb) ||
+	    !msg_ctype_cmp(&msg->ctyp, "application", "sdp"))
+		return false;
+	return sdp_parse(reinterpret_cast<const char *>(mbuf_buf(msg->mb)),
+			 mbuf_get_left(msg->mb), s);
+}
+
+/* m is a T.38 line (an image line on UDPTL) */
+bool is_t38(const SdpMedia &m)
+{
+	return lower(m.type) == "image" && lower(m.proto) == "udptl";
+}
+
+/* the first line of s on of type audio or (t38) T.38, -1 if none */
+int line_of(const Sdp &s, bool t38)
+{
+	for (size_t i = 0; i < s.media.size(); i++)
+		if (s.media[i].port > 0 &&
+		    (t38 ? is_t38(s.media[i]) :
+		     lower(s.media[i].type) == "audio"))
+			return (int)i;
+	return -1;
+}
+
+/* the first G.711 format of audio line m, its law into *law (1 mu-law,
+   2 A-law); -1 if it has none */
+int g711_pt(const SdpMedia &m, int *law)
+{
+	for (const std::string &f : m.fmts) {
+		char *end;
+		long pt = strtol(f.c_str(), &end, 10);
+		std::string enc;
+
+		if (*end || pt < 0 || pt > 127)
+			continue;
+		for (const auto &a : m.attrs) {
+			if (strcasecmp(a.first.c_str(), "rtpmap"))
+				continue;
+			size_t sp = a.second.find(' ');
+			if (sp != std::string::npos &&
+			    a.second.substr(0, sp) == f)
+				enc = lower(a.second.substr(sp + 1));
+		}
+		if (enc.empty())
+			enc = pt == 0 ? "pcmu/8000" : pt == 8 ? "pcma/8000" : "";
+		if (enc.compare(0, 9, "pcmu/8000") == 0)
+			*law = 1;
+		else if (enc.compare(0, 9, "pcma/8000") == 0)
+			*law = 2;
+		else
+			continue;
+		return (int)pt;
+	}
+	return -1;
+}
+
+/* the direction of line m of s: its own, else the session's */
+std::string direction(const Sdp &s, const SdpMedia &m)
+{
+	static const char *const dirs[] = { "sendrecv", "sendonly",
+					    "recvonly", "inactive" };
+	for (const char *d : dirs)
+		if (m.attr(d))
+			return d;
+	for (const char *d : dirs)
+		for (const auto &a : s.attrs)
+			if (!strcasecmp(a.first.c_str(), d))
+				return d;
+	return "sendrecv";
+}
+
+/* the far end's T.38, from its image line */
+struct Peer {
+	std::string addr;
+	int port = 0;
+	int version = 0;
+	int max_datagram = 0;
+	bool redundancy = false;
+};
+
+/* the T.38 settings of image line m */
+Peer t38_params(const SdpMedia &m)
+{
+	Peer p;
+
+	p.addr = m.addr;
+	p.port = m.port;
+	for (const auto &a : m.attrs) {
+		std::string n = lower(a.first);
+		if (n == "t38faxversion")
+			p.version = atoi(a.second.c_str());
+		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
+			p.max_datagram = atoi(a.second.c_str());
+		else if (n == "t38faxudpec")
+			p.redundancy = lower(a.second) == "t38udpredundancy";
+	}
+	return p;
+}
+
+/* a media line of ours: our audio (RTP), our T.38 (UDPTL), or another
+   line off */
+struct Line {
+	enum Kind { AUDIO, IMAGE, OFF } kind = AUDIO;
+	int pt = -1;                    /* audio: the format agreed, -1 if
+					   none yet (both offered) */
+	int law = 0;
+	std::string dir = "sendrecv";
+	int version = 0;                /* image: T38FaxVersion */
+	std::string type, proto, fmts;  /* off: the far end's line */
+};
+
+/* our audio line in answer to line m of s (with a G.711 format) */
+Line audio_answer(const Sdp &s, const SdpMedia &m)
+{
+	Line l;
+	std::string d = direction(s, m);
+
+	l.pt = g711_pt(m, &l.law);
+	l.dir = d == "sendonly" ? "recvonly" : d == "recvonly" ? "sendonly" :
+		d == "inactive" ? "inactive" : "sendrecv";
+	return l;
+}
+
+Line image_line(int version)
+{
+	Line l;
+	l.kind = Line::IMAGE;
+	l.version = version;
+	return l;
+}
+
+/* our answer to s: l in line i's place, the other lines off */
+std::vector<Line> mirror(const Sdp &s, size_t i, const Line &l)
+{
+	std::vector<Line> v;
+
+	for (size_t k = 0; k < s.media.size(); k++) {
+		if (k == i) {
+			v.push_back(l);
+			continue;
+		}
+		Line off;
+		off.kind = Line::OFF;
+		off.type = s.media[k].type;
+		off.proto = s.media[k].proto;
+		for (const std::string &f : s.media[k].fmts)
+			off.fmts += (off.fmts.empty() ? "" : " ") + f;
+		if (off.fmts.empty())
+			off.fmts = "0";
+		v.push_back(off);
+	}
+	return v;
+}
+
+/* the index of the first of lines of kind, -1 if none */
+int find(const std::vector<Line> &lines, Line::Kind kind)
+{
+	for (size_t i = 0; i < lines.size(); i++)
+		if (lines[i].kind == kind)
+			return (int)i;
+	return -1;
+}
+
+/* our T.38 line's attributes: version, with redundancy, datagrams of
+   400 octets */
+std::string t38_attrs(int version)
+{
+	return "a=T38FaxVersion:" + std::to_string(version) + "\r\n"
+		"a=T38MaxBitRate:14400\r\n"
+		"a=T38FaxRateManagement:transferredTCF\r\n"
+		"a=T38FaxMaxBuffer:2000\r\n"
+		"a=T38FaxMaxDatagram:400\r\n"
+		"a=T38FaxUdpEC:t38UDPRedundancy\r\n";
+}
+
+/* an mbuf of s, at its start; NULL if there is no memory for it */
+struct mbuf *mbuf_of(const std::string &s)
+{
+	struct mbuf *mb = mbuf_alloc(s.size() + 1);
+
+	if (!mb)
+		return nullptr;
+	if (mbuf_write_mem(mb, reinterpret_cast<const uint8_t *>(s.data()),
+			   s.size())) {
+		mem_deref(mb);
+		return nullptr;
+	}
+	mbuf_set_pos(mb, 0);
+	return mb;
+}
+
+
+/*
+ *    the audio
+ */
+
+/* the far end's samples by their RTP timestamps, played out at a fixed
+   delay behind the first (the audio thread's) */
+class Jitter {
+public:
+	/* empty, to start over with the next packet */
+	void reset() { started_ = false; }
+
+	/* a packet of n G.711 octets (alaw: A-law) at ts from source ssrc;
+	   why the buffer started over for it, or NULL */
+	const char *put(uint32_t ssrc, uint32_t ts, const uint8_t *p,
+			size_t n, bool alaw)
+	{
+		const char *why = nullptr;
+		int32_t d;
+
+		if (!n || n > (size_t)JB_MAX)
+			return nullptr;
+		packets++;
+		if (!started_ || ssrc != ssrc_) {
+			if (started_)
+				why = "another source";
+			restart(ssrc, ts);
+		}
+		d = (int32_t)(ts - play_);
+		if (d + (int32_t)n > JB_MAX || d < -JB_MAX) {
+			/* a jump, or the backlog too long */
+			why = "a jump in time";
+			restart(ssrc, ts);
+		} else if (d + (int32_t)n <= 0) {
+			/* late: dropped (its time played as silence),
+			   unless they have been late for a while, the
+			   buffer dry (the far end's clock slower than
+			   ours) */
+			late++;
+			late_max = std::max(late_max, (unsigned long)-d);
+			if ((int32_t)(end_ - play_) > 0 || ++late_run < LATE_RUN)
+				return nullptr;
+			why = "run dry";
+			restart(ssrc, ts);
+		}
+		late_run = 0;
+		if (why)
+			restarts++;
+		d = (int32_t)(ts - play_);
+		for (size_t k = 0; k < n; k++) {
+			uint32_t i;
+			if (d + (int32_t)k < 0)
+				continue;
+			i = (ts + (uint32_t)k) & MASK;
+			buf_[i] = (int16_t)dsp::g711::decode(alaw, p[k]);
+			valid_[i] = 1;
+		}
+		if ((int32_t)(ts + (uint32_t)n - end_) > 0)
+			end_ = ts + (uint32_t)n;
+		return why;
+	}
+
+	/* the packets put, those late and the latest of them (samples),
+	   the times it started over */
+	unsigned long packets = 0, late = 0, late_max = 0, restarts = 0;
+
+	/* the next n samples to play (silence where none came) */
+	void get(int16_t *out, size_t n)
+	{
+		for (size_t k = 0; k < n; k++) {
+			uint32_t i = (play_ + (uint32_t)k) & MASK;
+			out[k] = started_ && valid_[i] ? buf_[i] : 0;
+			valid_[i] = 0;
+		}
+		if (started_)
+			play_ += (uint32_t)n;
+	}
+
+private:
+	static const uint32_t SIZE = 32768, MASK = SIZE - 1;
+	int16_t buf_[SIZE];
+	uint8_t valid_[SIZE] = {};
+	bool started_ = false;
+	unsigned late_run = 0;  /* late packets in a row, the buffer dry */
+	uint32_t ssrc_ = 0;
+	uint32_t play_ = 0;     /* the timestamp to play next */
+	uint32_t end_ = 0;      /* the end of the latest packet */
+
+	void restart(uint32_t ssrc, uint32_t ts)
+	{
+		memset(valid_, 0, sizeof(valid_));
+		started_ = true;
+		ssrc_ = ssrc;
+		play_ = ts - (uint32_t)JB_DELAY;
+		end_ = ts;
+	}
+};
+
+/* a call's audio: the modem's socket and the call's RTP, a thread on
+   the clock between them.  Until active(), and while on T.38, no
+   frames pass (the thread looks for the modem's hanging up); a failed
+   socket is told to the SIP thread (MQ_MODEM_GONE) */
+class Media {
+public:
+	Media(int modem, int rtp, int family, unsigned serial, struct mqueue *mq)
+		: modem_(modem), rtp_(rtp), family_(family), serial_(serial),
+		  mq_(mq), seq_(rand_u16()), ts_(rand_u32()), ssrc_(rand_u32())
+	{
+	}
+	~Media() { stop(); }
+	Media(const Media &) = delete;
+	Media &operator=(const Media &) = delete;
+
+	int family() const { return family_; }
+
+	/* the thread started; false if it can't be */
+	bool start()
+	{
+		try {
+			thread_ = std::thread(&Media::run, this);
+		} catch (const std::system_error &e) {
+			say(1, "the audio thread: %s", e.what());
+			return false;
+		}
+		return true;
+	}
+
+	/* the thread ended, the modem's socket shut down first (a read the
+	   thread waits in returns, and the modem sees the call end) and
+	   closed */
+	void stop()
+	{
+		quit_ = true;
+		if (modem_ >= 0)
+			shutdown(modem_, SHUT_RDWR);
+		if (thread_.joinable()) {
+			thread_.join();
+			say(4, "call %u: audio: %lu packets in, %lu late "
+			    "(by %lu ms at the most), %lu restarts", serial_,
+			    jb_.packets, jb_.late, jb_.late_max / (RATE / 1000),
+			    jb_.restarts);
+		}
+		if (modem_ >= 0) {
+			say(4, "audio socket %d closed", modem_);
+			close(modem_);
+		}
+		modem_ = -1;
+	}
+
+	/* the far end's RTP at a (len), in payload type pt of law; send:
+	   whether it is to have ours */
+	void remote(const struct sockaddr_storage &a, socklen_t len, int pt,
+		    int law, bool send)
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		peer_ = a;
+		peer_len_ = len;
+		pt_ = pt;
+		law_ = law;
+		send_ = send;
+	}
+
+	/* frames pass (on) or not */
+	void active(bool on)
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		active_ = on;
+	}
+
+private:
+	int modem_, rtp_, family_;
+	unsigned serial_;
+	struct mqueue *mq_;
+	std::thread thread_;
+	std::atomic<bool> quit_{false};
+
+	/* (under mu_) as remote() and active() have it */
+	std::mutex mu_;
+	bool active_ = false, send_ = false;
+	struct sockaddr_storage peer_ = {};
+	socklen_t peer_len_ = 0;
+	int pt_ = 0, law_ = 1;
+
+	/* the thread's own */
+	Jitter jb_;
+	uint16_t seq_;
+	uint32_t ts_, ssrc_;
+	bool marker_ = true;
+
+	/* the socket has failed (what): told once, the thread to end */
+	void failed(const char *what)
+	{
+		say(4, "audio socket %d: %s", modem_, what);
+		mqueue_push(mq_, MQ_MODEM_GONE,
+			    reinterpret_cast<void *>((uintptr_t)serial_));
+	}
+
+	/* the packets that have come: into the jitter buffer if on, those
+	   in G.711 (pt of law, or a static one) */
+	void drain(bool on, int pt, int law)
+	{
+		uint8_t b[2048];
+
+		for (;;) {
+			ssize_t n = recv(rtp_, b, sizeof(b), MSG_DONTWAIT);
+			size_t h, end;
+			int p, l;
+
+			if (n < 0 && errno == EINTR)
+				continue;
+			if (n < 0)
+				return;
+			if (!on || n < 12 || (b[0] >> 6) != 2)
+				continue;
+			h = 12 + 4 * (size_t)(b[0] & 15);
+			if (b[0] & 0x10) {
+				if ((size_t)n < h + 4)
+					continue;
+				h += 4 + 4 * (size_t)((b[h + 2] << 8) | b[h + 3]);
+			}
+			end = (size_t)n;
+			if ((b[0] & 0x20) && b[n - 1] <= end)
+				end -= b[n - 1];
+			if (h >= end)
+				continue;
+			p = b[1] & 0x7f;
+			if (p == pt)
+				l = law;
+			else if (p == 0 || p == 8)
+				l = p == 8 ? 2 : 1;
+			else
+				continue;
+			const char *why = jb_.put((uint32_t)b[8] << 24 |
+				b[9] << 16 | b[10] << 8 | b[11],
+				(uint32_t)b[4] << 24 | b[5] << 16 | b[6] << 8 |
+				b[7], b + h, end - h, l == 2);
+			if (why)
+				say(3, "call %u: the jitter buffer starts over "
+				    "(%s)", serial_, why);
+		}
+	}
+
+	/* a frame of the modem's (out) in RTP to peer */
+	void send_rtp(const int16_t *out, int pt, int law,
+		      const struct sockaddr_storage &peer, socklen_t len)
+	{
+		uint8_t p[12 + SAMPLES];
+
+		p[0] = 0x80;
+		p[1] = (uint8_t)((marker_ ? 0x80 : 0) | (pt & 0x7f));
+		p[2] = (uint8_t)(seq_ >> 8);
+		p[3] = (uint8_t)seq_;
+		p[4] = (uint8_t)(ts_ >> 24);
+		p[5] = (uint8_t)(ts_ >> 16);
+		p[6] = (uint8_t)(ts_ >> 8);
+		p[7] = (uint8_t)ts_;
+		p[8] = (uint8_t)(ssrc_ >> 24);
+		p[9] = (uint8_t)(ssrc_ >> 16);
+		p[10] = (uint8_t)(ssrc_ >> 8);
+		p[11] = (uint8_t)ssrc_;
+		for (unsigned i = 0; i < SAMPLES; i++)
+			p[12 + i] = dsp::g711::encode(law == 2, out[i]);
+		(void)sendto(rtp_, p, sizeof(p), MSG_DONTWAIT,
+			     reinterpret_cast<const struct sockaddr *>(&peer),
+			     len);
+		marker_ = false;
+		seq_++;
+	}
+
+	/* every 20 ms: the packets taken in; if active, a frame to the
+	   modem, the modem's answer to the frame before back (it keeps one
+	   in flight), and that to the far end */
+	void run()
+	{
+		struct timespec next;
+		bool was_on = false;
+
+		clock_gettime(CLOCK_MONOTONIC, &next);
+		while (!quit_) {
+			struct timespec now;
+			struct sockaddr_storage peer;
+			socklen_t len;
+			int16_t in[SAMPLES], out[SAMPLES];
+			bool on, send;
+			int pt, law;
+
+			next.tv_nsec += TICK_NS;
+			if (next.tv_nsec >= 1000000000L) {
+				next.tv_nsec -= 1000000000L;
+				next.tv_sec++;
+			}
+			while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
+					       &next, nullptr) == EINTR)
+				;
+			if (quit_)
+				break;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			if ((now.tv_sec - next.tv_sec) * 1000000000L +
+			    (now.tv_nsec - next.tv_nsec) > LATE_NS)
+				next = now;
+			{
+				std::lock_guard<std::mutex> lk(mu_);
+				on = active_;
+				send = send_ && peer_len_;
+				peer = peer_;
+				len = peer_len_;
+				pt = pt_;
+				law = law_;
+			}
+			drain(on, pt, law);
+			if (!on) {
+				was_on = false;
+				ts_ += SAMPLES;
+				if (peer_closed(modem_)) {
+					failed("closed by the modem");
+					break;
+				}
+				continue;
+			}
+			if (!was_on) {
+				jb_.reset();
+				marker_ = true;
+				was_on = true;
+			}
+			jb_.get(in, SAMPLES);
+			rec.rx(in, FRAME);
+			if (!write_all(modem_, in, FRAME)) {
+				failed("write failed");
+				break;
+			}
+			if (!read_all(modem_, out, FRAME)) {
+				failed("read failed or ended");
+				break;
+			}
+			rec.tx(out, FRAME);
+			if (send)
+				send_rtp(out, pt, law, peer, len);
+			ts_ += SAMPLES;
+		}
+	}
+};
+
+
+/*
+ *    the SIP side (all of it the SIP thread's)
+ */
+
+/* the current call */
+struct Call {
+	unsigned serial;                /* for the log */
+	struct sipsess *sess = nullptr;
+	bool incoming = false;
+	bool ringing = false;           /* came in, not answered yet */
+	bool confirmed = false;
+	bool closed = false;            /* by the far end, or failed */
+	uint64_t up = 0;                /* confirmed then (ms) */
+	struct tmr ring_tmr, poll_tmr;
+	struct tmr tell_tmr;            /* the T38 and AUDIO lines, after
+					   the SIP message that has them */
+	std::string tell;
+
+	std::unique_ptr<Media> media;   /* from dial or answer on */
+	int rtp = -1, rtp_port = 0;
+	std::string ip;                 /* our address, in our SDP */
+	bool audio_up = false;          /* its audio agreed, once */
+
+	/* the INVITE's offer, answered by answer() */
+	bool have_offer = false;
+	Sdp offer;
+
+	/* our SDP: its lines as agreed, and as we last offered them; its
+	   session id and version, the media lines of the version */
+	std::vector<Line> lines, offered;
+	std::string sdp_id;
+	unsigned sdp_version = 0;
+	std::string sdp_media;
+
+	/* T.38 */
+	bool t38_asked = false;         /* by us or the far end: not again */
+	bool t38 = false;               /* the call is on T.38 */
+	bool restore = false;           /* our ask refused, the audio off:
+					   to ask for the audio again */
+	int udptl = -1, udptl_port = 0, udptl_family = AF_INET;
+
+	explicit Call(unsigned s) : serial(s)
+	{
+		tmr_init(&ring_tmr);
+		tmr_init(&poll_tmr);
+		tmr_init(&tell_tmr);
+		sdp_id = std::to_string(rand_u32());
+	}
+	~Call()
+	{
+		tmr_cancel(&ring_tmr);
+		tmr_cancel(&poll_tmr);
+		tmr_cancel(&tell_tmr);
+	}
+	Call(const Call &) = delete;
+	Call &operator=(const Call &) = delete;
+
+	/* our SDP of lines: its version a new one if its media lines are */
+	std::string sdp(const std::vector<Line> &v)
+	{
+		std::string m, in = ip.find(':') != std::string::npos ?
+			"IN IP6 " : "IN IP4 ";
+
+		for (const Line &l : v) {
+			switch (l.kind) {
+			case Line::AUDIO:
+				m += "m=audio " + std::to_string(rtp_port) +
+					" RTP/AVP ";
+				if (l.pt < 0) {
+					m += "0 8\r\n"
+						"a=rtpmap:0 PCMU/8000\r\n"
+						"a=rtpmap:8 PCMA/8000\r\n";
+				} else {
+					std::string pt = std::to_string(l.pt);
+					m += pt + "\r\na=rtpmap:" + pt +
+						(l.law == 2 ? " PCMA" : " PCMU") +
+						"/8000\r\n";
+				}
+				m += "a=ptime:20\r\na=" + l.dir + "\r\n";
+				break;
+			case Line::IMAGE:
+				m += "m=image " + std::to_string(udptl_port) +
+					" udptl t38\r\n" + t38_attrs(l.version);
+				break;
+			case Line::OFF:
+				m += "m=" + l.type + " 0 " + l.proto + " " +
+					l.fmts + "\r\n";
+				break;
+			}
+		}
+		if (m != sdp_media) {
+			sdp_media = m;
+			sdp_version++;
+		}
+		return "v=0\r\n"
+			"o=dmodem " + sdp_id + " " +
+			std::to_string(sdp_version) + " " + in + ip + "\r\n"
+			"s=dmodem\r\n"
+			"c=" + in + ip + "\r\n"
+			"t=0 0\r\n" + m;
+	}
+};
+
+struct sip *sip_;
+struct dnsc *dnsc_;
+struct sipsess_sock *sock_;
+struct sip_lsnr *lsnr_;
+struct sipreg *reg_;
+struct mqueue *mq_;
+struct tmr quit_tmr;
+bool quitting;
+bool sip_closing, sip_closed;
+bool registered;
+unsigned last_serial;
+Call *cur;
+
+/* (under mu) the current call's T.38, for t38() */
+std::mutex mu;
+bool t38_on_;
+int t38_fd_ = -1, t38_family_;
+Peer t38_peer_;
+
+/* a modem's request: dial number, or answer; the call's audio on fd */
+struct Request {
+	std::string number;
+	int fd;
+};
+
+/* SIP's credentials, ours whatever the realm */
+int on_auth(char **user, char **pass, const char *, void *)
+{
+	int err = str_dup(user, user_.c_str());
+	return err ? err : str_dup(pass, password_.c_str());
+}
+
+/* the call's UDPTL socket, once; false if it can't be had */
+bool open_udptl(Call *c)
+{
+	if (c->udptl < 0)
+		c->udptl = open_udp(&c->udptl_port, &c->udptl_family);
+	return c->udptl >= 0;
+}
+
+/* the current call ended: its audio first (the modem sees the call
+   end), hung up unless it is over, the line free */
+void end_call()
+{
+	Call *c = cur;
+
+	if (!c)
+		return;
+	cur = nullptr;
+	tmr_cancel(&c->ring_tmr);
+	tmr_cancel(&c->poll_tmr);
+	tmr_cancel(&c->tell_tmr);
+	if (c->media)
+		c->media->stop();
+	if (c->sess) {
+		if (!c->closed)
+			say(3, "call %u: hanging up", c->serial);
+		mem_deref(c->sess);
+		c->sess = nullptr;
+	}
 	{
 		std::lock_guard<std::mutex> lk(mu);
-		if (udptl >= 0)
-			return true;
-		v6 = media_ip.find(':') != std::string::npos;
+		t38_on_ = false;
+		t38_fd_ = -1;
 	}
-	a.ss_family = v6 ? AF_INET6 : AF_INET;
-	fd = socket(a.ss_family, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (fd < 0 || bind(fd, reinterpret_cast<struct sockaddr *>(&a),
-			   v6 ? sizeof(struct sockaddr_in6) :
-			   sizeof(struct sockaddr_in)) < 0 ||
-	    getsockname(fd, reinterpret_cast<struct sockaddr *>(&a),
-			&len) < 0) {
-		PJ_LOG(1, (THIS_FILE, "the UDPTL socket: %s", strerror(errno)));
-		if (fd >= 0)
-			close(fd);
+	c->media.reset();
+	if (c->rtp >= 0)
+		close(c->rtp);
+	if (c->udptl >= 0)
+		close(c->udptl);
+	delete c;
+}
+
+/* the lines the call has for main.cpp */
+void on_tell(void *arg)
+{
+	Call *c = static_cast<Call *>(arg);
+
+	if (c != cur)
+		return;
+	for (size_t at = 0; at < c->tell.size();) {
+		size_t nl = c->tell.find('\n', at);
+		ctl_line(c->tell.substr(at, nl + 1 - at).c_str());
+		at = nl + 1;
+	}
+	c->tell.clear();
+}
+
+/* line for main.cpp once the SIP message being answered (or acked) has
+   gone: the far end has our answer before our UDPTL comes */
+void tell(Call *c, const char *line)
+{
+	c->tell += line;
+	tmr_start(&c->tell_tmr, 0, on_tell, c);
+}
+
+/* the call's audio on the modem's socket fd: its RTP socket, its
+   thread, a frame of silence in the socket ahead of everything (the
+   modem keeps one in flight); false (fd closed) if that can't be */
+bool attach(Call *c, int fd)
+{
+	static const char silence[FRAME] = {};
+	int family;
+
+	law_ = 0;
+	if (!write_all(fd, silence, FRAME)) {
+		say(1, "audio socket %d: %s", fd, strerror(errno));
+		close(fd);
 		return false;
 	}
-	port = ntohs(v6 ? reinterpret_cast<struct sockaddr_in6 *>(&a)->sin6_port :
-		     reinterpret_cast<struct sockaddr_in *>(&a)->sin_port);
-	std::lock_guard<std::mutex> lk(mu);
-	udptl = fd;
-	udptl_port = port;
+	c->rtp = open_udp(&c->rtp_port, &family);
+	if (c->rtp < 0) {
+		close(fd);
+		return false;
+	}
+	c->media.reset(new Media(fd, c->rtp, family, c->serial, mq_));
+	return c->media->start();
+}
+
+/* the far end's audio, line m of s: where our RTP goes, in what, and
+   the audio on (from T.38 back to it: an AUDIO line); false if it has
+   none we can take */
+bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
+{
+	struct sockaddr_storage a;
+	socklen_t len;
+	std::string d = direction(s, m);
+	int law = 0, pt = g711_pt(m, &law);
+
+	if (pt < 0 || !c->media)
+		return false;
+	if (!sockaddr_of(m.addr, m.port, c->media->family(), &a, &len)) {
+		say(1, "call %u: no address in `%s'", c->serial, m.addr.c_str());
+		return false;
+	}
+	c->media->remote(a, len, pt, law, d != "sendonly" && d != "inactive" &&
+			 m.addr != "0.0.0.0");
+	law_ = law;
+	if (!c->audio_up) {
+		c->audio_up = true;
+		say(3, "call %u: media up, %s, to %s:%d", c->serial,
+		    law == 1 ? "PCMU" : "PCMA", m.addr.c_str(), m.port);
+	}
+	c->media->active(true);
+	if (c->t38) {
+		c->t38 = false;
+		{
+			std::lock_guard<std::mutex> lk(mu);
+			t38_on_ = false;
+		}
+		say(3, "call %u: back on the audio", c->serial);
+		tell(c, "AUDIO\n");
+	}
 	return true;
 }
 
-/* an outgoing SIP message: in its SDP our image line, off as pjsua has
-   it, gets our UDPTL port (the SDP pjsip's own, its body still to be
-   printed: a copy of it changed) */
-pj_status_t on_tx_sdp(pjsip_tx_data *tdata)
+/* the call over to T.38 with the far end's p: its audio stopped, a T38
+   line */
+void take_t38(Call *c, const Peer &p)
 {
-	pjsip_msg_body *b = tdata->msg ? tdata->msg->body : nullptr;
-	pjmedia_sdp_session *sdp;
-	int port;
-
-	if (!b || b->len || !b->data ||
-	    pj_stricmp2(&b->content_type.type, "application") ||
-	    pj_stricmp2(&b->content_type.subtype, "sdp"))
-		return PJ_SUCCESS;
+	say(3, "call %u: T.38 on, to %s:%d (version %d%s)", c->serial,
+	    p.addr.c_str(), p.port, p.version,
+	    p.redundancy ? ", redundancy" : "");
+	if (c->media)
+		c->media->active(false);
 	{
 		std::lock_guard<std::mutex> lk(mu);
-		if (!cur.token || !cur.t38_mine || udptl < 0)
-			return PJ_SUCCESS;
-		port = udptl_port;
+		t38_on_ = true;
+		t38_fd_ = c->udptl;
+		t38_family_ = c->udptl_family;
+		t38_peer_ = p;
 	}
-	sdp = pjmedia_sdp_session_clone(tdata->pool,
-		static_cast<const pjmedia_sdp_session *>(b->data));
-	for (unsigned i = 0; i < sdp->media_count; i++)
-		if (is_t38(sdp->media[i]) && !sdp->media[i]->desc.port)
-			sdp->media[i]->desc.port = (pj_uint16_t)port;
-	b->data = sdp;
-	return PJ_SUCCESS;
+	if (!c->t38) {
+		c->t38 = true;
+		tell(c, "T38\n");
+	}
 }
 
-pjsip_module mod_t38 = {
-	nullptr, nullptr,                       /* prev, next */
-	{ const_cast<char *>("mod-dmodem-t38"), 14 },
-	-1,                                     /* id */
-	PJSIP_MOD_PRIORITY_APPLICATION,         /* before the message is
-						   printed */
-	nullptr, nullptr, nullptr, nullptr,     /* load, start, stop,
-						   unload */
-	nullptr, nullptr,                       /* on_rx_request, response */
-	&on_tx_sdp, &on_tx_sdp,                 /* on_tx_request, response */
-	nullptr,                                /* on_tsx_state */
-};
-
-/* (pjsua, call id's dialog locked) an SDP of ours: the address of its
-   audio noted.  The offer of our T.38 ask (the worker's re-INVITE): its
-   audio off, our T.38 line after the rest, on, for a media line of
-   pjsua's that has no type yet (none at all if there is none) */
-void on_call_sdp_created(pjsua_call_id id, pjmedia_sdp_session *sdp,
-			 pj_pool_t *pool, const pjmedia_sdp_session *rem_sdp)
+/* our offer of the outgoing call's audio (the call's address now ours
+   towards the far end) */
+int on_desc(struct mbuf **descp, const struct sa *src, const struct sa *,
+	    void *arg)
 {
-	void *ud = pjsua_call_get_user_data(id);
-	pjsua_call *call = &pjsua_var.calls[id];
-	std::lock_guard<std::mutex> lk(mu);
-	unsigned k = call->med_prov_cnt;
-	int audio = -1;
-	std::string a;
+	Call *c = static_cast<Call *>(arg);
 
-	if (!is_current(id, ud))
-		return;
-	for (unsigned i = 0; i < sdp->media_count && audio < 0; i++)
-		if (sdp->media[i]->desc.port &&
-		    !pj_stricmp2(&sdp->media[i]->desc.media, "audio"))
-			audio = (int)i;
-	if (audio < 0)
-		return;
-	a = line_addr(sdp, audio);
-	if (!a.empty())
-		media_ip = a;
-	if (rem_sdp || !cur.t38_offering || udptl < 0)
-		return;
-	if (k != sdp->media_count || k >= PJSUA_MAX_CALL_MEDIA ||
-	    k >= PJMEDIA_MAX_SDP_MEDIA || call->media_prov[k].tp ||
-	    call->media_prov[k].type != PJMEDIA_TYPE_NONE) {
-		PJ_LOG(1, (THIS_FILE, "call %d: no media line for T.38", id));
-		return;
-	}
-	pjmedia_sdp_media_deactivate(pool, sdp->media[audio]);
-	sdp->media[sdp->media_count++] = image_line(pool, udptl_port,
-		sdp->media[audio]->conn ? a : std::string(), 0);
-	call->med_prov_cnt = k + 1;
-	cur.t38_mine = true;
-	PJ_LOG(3, (THIS_FILE, "call %d: asking for T.38 (UDPTL port %d)", id,
-		   udptl_port));
+	c->ip = ip_of(src);
+	c->offered = { Line() };
+	*descp = mbuf_of(c->sdp(c->offered));
+	return *descp ? 0 : ENOMEM;
 }
 
-/* (pjsua) a re-INVITE: an offer of T.38 (an image line) taken while the
-   modem is in fax mode, for the worker to answer (pjsua would refuse
-   one without audio: told that the answer is ours, which
-   pjsua_call_answer_with_sdp() gives later); else one without audio
-   refused (488), the rest pjsua's */
-void on_call_rx_reinvite(pjsua_call_id id, const pjmedia_sdp_session *offer,
-			 pjsip_rx_data *, void *, pj_bool_t *async,
-			 pjsip_status_code *code, pjsua_call_setting *)
+/* the far end's offer in a re-INVITE (or UPDATE), our answer into
+   *descp: T.38 taken while the modem is in fax mode (our image line in
+   its place, the rest off), else its audio; an error is a 488.  An
+   INVITE without one has our offer */
+int on_offer(struct mbuf **descp, const struct sip_msg *msg, void *arg)
 {
-	void *ud = pjsua_call_get_user_data(id);
-	pj_pool_t *pool;
-	bool take;
+	Call *c = static_cast<Call *>(arg);
+	Sdp s;
+	int i, law;
 
-	if (t38_line(offer) < 0)
-		return;
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		take = is_current(id, ud) && cfg_.t38 && fax_;
-		/* (pjsua's answer would have more lines than its media) */
-		if (take && offer->media_count > pjsua_var.calls[id].med_cnt) {
-			PJ_LOG(3, (THIS_FILE, "call %d: T.38 offered with %u "
-				   "media lines, the call has %u", id,
-				   offer->media_count,
-				   pjsua_var.calls[id].med_cnt));
-			take = false;
+	if (c != cur)
+		return EPROTO;
+	if (!mbuf_get_left(msg->mb)) {
+		c->offered = c->lines.empty() ?
+			std::vector<Line>{ Line() } : c->lines;
+		*descp = mbuf_of(c->sdp(c->offered));
+		return *descp ? 0 : ENOMEM;
+	}
+	if (!sdp_of(msg, &s)) {
+		say(1, "call %u: an offer we can't read", c->serial);
+		return EBADMSG;
+	}
+	i = line_of(s, true);
+	if (i >= 0) {
+		if (cfg_.t38 && fax_ && open_udptl(c)) {
+			Peer p = t38_params(s.media[i]);
+			p.version = std::min(p.version, 3);
+			c->t38_asked = true;
+			c->lines = mirror(s, i, image_line(p.version));
+			*descp = mbuf_of(c->sdp(c->lines));
+			if (!*descp)
+				return ENOMEM;
+			say(3, "call %u: T.38 offered, taken (UDPTL port %d)",
+			    c->serial, c->udptl_port);
+			take_t38(c, p);
+			return 0;
 		}
-		if (!take && is_current(id, ud))
-			cur.t38_mine = false;
+		say(3, "call %u: T.38 offered, not taken", c->serial);
 	}
-	pool = take ? pjsua_pool_create("dmodem-t38", 1024, 1024) : nullptr;
-	if (!pool) {
-		PJ_LOG(3, (THIS_FILE, "call %d: T.38 offered, not taken", id));
-		if (!has_audio(offer))
-			*code = PJSIP_SC_NOT_ACCEPTABLE_HERE;
-		return;
+	i = line_of(s, false);
+	if (i < 0 || g711_pt(s.media[i], &law) < 0) {
+		say(3, "call %u: an offer without G.711 audio, refused",
+		    c->serial);
+		return EPROTO;
 	}
-	PJ_LOG(3, (THIS_FILE, "call %d: T.38 offered", id));
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		if (cur.offer_pool)
-			pj_pool_release(cur.offer_pool);
-		cur.offer = pjmedia_sdp_session_clone(pool, offer);
-		cur.offer_pool = pool;
-		cur.t38_asked = true;
-		poked = true;
-	}
-	cv.notify_one();
-	*async = PJ_TRUE;
-	pjsua_var.calls[id].rx_reinv_async = PJ_TRUE;
-}
-
-/* (worker) the far end's T.38 offer answered: our T.38 line in its
-   image line's place (the version the offer's, up to 3), the other
-   lines off; 488 if there is no UDPTL socket for it */
-void answer_t38(pjsua_call_id id)
-{
-	pjmedia_sdp_session *offer, *sdp = nullptr;
-	pj_pool_t *pool;
-	pj_sockaddr origin;
-	pj_str_t ip_str;
-	std::string ip;
-	int i, port = 0;
-
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		offer = cur.offer;
-		pool = cur.offer_pool;
-		cur.offer = nullptr;
-		cur.offer_pool = nullptr;
-		ip = media_ip;
-	}
-	if (!offer)
-		return;
-	i = t38_line(offer);
-	if (open_udptl()) {
-		std::lock_guard<std::mutex> lk(mu);
-		port = udptl_port;
-		cur.t38_mine = true;
-	}
-	if (port && !ip.empty() &&
-	    pj_sockaddr_parse(pj_AF_UNSPEC(), 0, pj_cstr(&ip_str, ip.c_str()),
-			      &origin) == PJ_SUCCESS &&
-	    pjmedia_endpt_create_base_sdp(pjsua_get_pjmedia_endpt(), pool,
-					  nullptr, &origin, &sdp) == PJ_SUCCESS) {
-		sdp->conn = make_conn(pool, ip);
-		for (unsigned k = 0; k < offer->media_count; k++)
-			sdp->media[sdp->media_count++] = (int)k == i ?
-				image_line(pool, 0, std::string(),
-					   std::min(t38_params(offer, i).version,
-						    3)) :
-				pjmedia_sdp_media_clone_deactivate(pool,
-							offer->media[k]);
-		PJ_LOG(3, (THIS_FILE, "call %d: T.38 taken (UDPTL port %d)", id,
-			   port));
-		ok(pjsua_call_answer_with_sdp(id, sdp, nullptr, PJSIP_SC_OK,
-					      nullptr, nullptr),
-		   "answering the T.38 offer");
-	} else {
-		ok(pjsua_call_answer(id, PJSIP_SC_NOT_ACCEPTABLE_HERE, nullptr,
-				     nullptr), "refusing the T.38 offer");
-	}
-	pj_pool_release(pool);
-}
-
-/* (worker) our T.38 ask: a re-INVITE whose offer on_call_sdp_created()
-   makes T.38's (once only, taken or not) */
-void ask_t38(pjsua_call_id id)
-{
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		cur.t38_asked = true;
-	}
-	if (!open_udptl())
-		return;
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		cur.t38_offering = true;
-	}
-	ok(pjsua_call_reinvite2(id, nullptr, nullptr), "asking for T.38");
-	std::lock_guard<std::mutex> lk(mu);
-	cur.t38_offering = false;
-}
-
-
-/* (pjsua) an INVITE: 480 unless listening, 486 if the line is busy
-   (a call being dialled too), else the call is current and rings */
-void on_incoming_call(pjsua_acc_id, pjsua_call_id id, pjsip_rx_data *)
-{
-	void *token = new_token();
-	pjsua_call_info ci;
-	unsigned code;
-
-	pjsua_call_set_user_data(id, token);
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		if (!cfg_.listen || !running) {
-			code = PJSIP_SC_TEMPORARILY_UNAVAILABLE;
-		} else if (cur.token) {
-			code = PJSIP_SC_BUSY_HERE;
-		} else {
-			cur = Call();
-			cur.token = token;
-			cur.id = id;
-			cur.ringing = true;
-			cur.incoming = true;
-			code = PJSIP_SC_RINGING;
-		}
-	}
-	if (pjsua_call_get_info(id, &ci) == PJ_SUCCESS)
-		PJ_LOG(3, (THIS_FILE, "call %d from %.*s: %u", id,
-			   (int)ci.remote_info.slen, ci.remote_info.ptr, code));
-	ok(pjsua_call_answer(id, code, nullptr, nullptr),
-	   "answering the INVITE");
-	if (code == PJSIP_SC_RINGING)
-		wake();
-}
-
-/* (pjsua) a call's state; the current call disconnected is the worker's
-   to end */
-void on_call_state(pjsua_call_id id, pjsip_event *)
-{
-	pjsua_call_info ci;
-	void *ud;
-
-	if (pjsua_call_get_info(id, &ci) != PJ_SUCCESS)
-		return;
-	if (ci.state != PJSIP_INV_STATE_DISCONNECTED) {
-		PJ_LOG(3, (THIS_FILE, "call %d: %.*s", id,
-			   (int)ci.state_text.slen, ci.state_text.ptr));
-		if (ci.state != PJSIP_INV_STATE_CONFIRMED)
-			return;
-		ud = pjsua_call_get_user_data(id);
-		{
-			std::lock_guard<std::mutex> lk(mu);
-			if (!is_current(id, ud) || cur.confirmed)
-				return;
-			cur.confirmed = true;
-			cur.up = std::chrono::steady_clock::now();
-			poked = true;
-		}
-		cv.notify_one();
-		return;
-	}
-	PJ_LOG(3, (THIS_FILE, "call %d: %.*s (%d %.*s)", id,
-		   (int)ci.state_text.slen, ci.state_text.ptr, ci.last_status,
-		   (int)ci.last_status_text.slen, ci.last_status_text.ptr));
-	ud = pjsua_call_get_user_data(id);
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		if (!is_current(id, ud))
-			return;
-		cur.gone = true;
-		poked = true;
-	}
-	cv.notify_one();
-}
-
-/* the G.711 law of call id's audio stream (as law()), 0 if neither */
-int stream_law(pjsua_call_id id, const pjsua_call_info &ci)
-{
-	for (unsigned i = 0; i < ci.media_cnt; i++) {
-		pjsua_stream_info si;
-		if (ci.media[i].type != PJMEDIA_TYPE_AUDIO ||
-		    ci.media[i].status != PJSUA_CALL_MEDIA_ACTIVE ||
-		    pjsua_call_get_stream_info(id, i, &si) != PJ_SUCCESS ||
-		    si.type != PJMEDIA_TYPE_AUDIO)
-			continue;
-		if (!pj_stricmp2(&si.info.aud.fmt.encoding_name, "PCMU"))
-			return 1;
-		if (!pj_stricmp2(&si.info.aud.fmt.encoding_name, "PCMA"))
-			return 2;
-	}
+	c->lines = mirror(s, i, audio_answer(s, s.media[i]));
+	*descp = mbuf_of(c->sdp(c->lines));
+	if (!*descp)
+		return ENOMEM;
+	take_audio(c, s, s.media[i]);
 	return 0;
 }
 
-/* (pjsua) a call's media: the first time the current call's is up, its
-   law noted and the worker to connect its audio; over to T.38, and
-   back to the audio (the port to connect again); neither after our
-   T.38 ask (its image line refused with its port 0, the audio gone
-   with it), the worker to ask for the audio */
-void on_call_media_state(pjsua_call_id id)
+/* the far end's answer to our offer: to our T.38 ask its image line on
+   (T.38), or off (the audio to ask for again); else its audio.  An
+   answer without G.711 audio ends a call that is not up yet */
+int on_answer(const struct sip_msg *msg, void *arg)
 {
-	pjsua_call_info ci;
-	Peer p;
-	bool t38, audio;
-	void *ud;
-	int l = 0;
+	Call *c = static_cast<Call *>(arg);
+	Sdp s;
+	int i;
 
-	if (pjsua_call_get_info(id, &ci) != PJ_SUCCESS)
-		return;
-	t38 = active_t38(id, &p);
-	if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE)
-		l = stream_law(id, ci);
-	ud = pjsua_call_get_user_data(id);
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		if (!is_current(id, ud))
-			return;
-		/* (an image line off of pjsua's own, an offer not taken) */
-		t38 = t38 && cur.t38_mine;
-		audio = !t38 && ci.media_status == PJSUA_CALL_MEDIA_ACTIVE;
-		if (t38) {
-			if (cur.t38)
-				return;
-			cur.t38 = true;
-			cur.t38_told = false;
-			cur.peer = p;
-		} else if (audio && cur.t38) {
-			cur.t38 = false;
-			cur.t38_mine = false;
-			cur.audio_again = true;
-		} else if (audio && !cur.media) {
-			cur.media = true;
-			law_ = l;
-		} else if (!audio && cur.media && cur.t38_asked && !cur.t38 &&
-			   (ci.media_status == PJSUA_CALL_MEDIA_NONE ||
-			    ci.media_status == PJSUA_CALL_MEDIA_ERROR)) {
-			/* our image line stays off in the ask for the audio */
-			cur.t38_mine = false;
-			cur.no_media = true;
-		} else {
-			return;
-		}
-		poked = true;
+	if (c != cur)
+		return 0;
+	if (!sdp_of(msg, &s)) {
+		say(1, "call %u: an answer we can't read", c->serial);
+		return c->confirmed ? 0 : EBADMSG;
 	}
-	if (t38)
-		PJ_LOG(3, (THIS_FILE, "call %d: T.38 on, to %s:%d (version %d%s)",
-			   id, p.addr.c_str(), p.port, p.version,
-			   p.redundancy ? ", redundancy" : ""));
-	else if (audio)
-		PJ_LOG(3, (THIS_FILE, "call %d: media up, %s", id,
-			   l == 1 ? "PCMU" : l == 2 ? "PCMA" : "not G.711"));
+	i = find(c->offered, Line::IMAGE);
+	if (i >= 0) {
+		c->lines = c->offered;
+		if ((size_t)i < s.media.size() && is_t38(s.media[i]) &&
+		    s.media[i].port > 0) {
+			Peer p = t38_params(s.media[i]);
+			p.version = std::min(p.version, c->offered[i].version);
+			take_t38(c, p);
+		} else if (!c->t38) {
+			say(3, "call %u: T.38 refused", c->serial);
+			c->restore = true;
+		}
+		return 0;
+	}
+	i = line_of(s, false);
+	if (i < 0 || (size_t)i >= c->offered.size() ||
+	    c->offered[i].kind != Line::AUDIO) {
+		say(1, "call %u: an answer without our audio", c->serial);
+		return c->confirmed ? 0 : EPROTO;
+	}
+	Line l = c->offered[i];
+	l.pt = g711_pt(s.media[i], &l.law);
+	if (l.pt < 0 || !take_audio(c, s, s.media[i])) {
+		say(1, "call %u: an answer without G.711", c->serial);
+		return c->confirmed ? 0 : EPROTO;
+	}
+	c->lines = c->offered;
+	c->lines[i] = l;
+	return 0;
+}
+
+/* the outgoing call's provisional responses */
+void on_progress(const struct sip_msg *msg, void *arg)
+{
+	Call *c = static_cast<Call *>(arg);
+
+	say(3, "call %u: %u %s", c->serial, msg->scode,
+	    str(msg->reason).c_str());
+}
+
+/* the call up (its 2xx, or its ACK) */
+void on_estab(const struct sip_msg *, void *arg)
+{
+	Call *c = static_cast<Call *>(arg);
+
+	if (c != cur)
+		return;
+	c->confirmed = true;
+	c->up = tmr_jiffies();
+	say(3, "call %u: CONFIRMED", c->serial);
+}
+
+/* the call over (the far end hung up, or the call failed): CANCEL if
+   it still rang, the call ended */
+void on_close(int err, const struct sip_msg *msg, void *arg)
+{
+	Call *c = static_cast<Call *>(arg);
+
+	if (c != cur)
+		return;
+	if (msg && msg->scode)
+		say(3, "call %u: DISCONNECTED (%u %s)", c->serial, msg->scode,
+		    str(msg->reason).c_str());
+	else if (msg)
+		say(3, "call %u: DISCONNECTED (%s)", c->serial,
+		    str(msg->met).c_str());
 	else
-		PJ_LOG(3, (THIS_FILE, "call %d: no media", id));
-	cv.notify_one();
-}
-
-/* (worker) the current call ended: hung up if it is still there, its
-   port released, the line free */
-void end_call()
-{
-	Call c;
-
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		c = cur;
-	}
-	/* the socket first: the media thread may be waiting on it, and
-	   the bridge with it */
-	if (port)
-		shutdown(port->fd, SHUT_RDWR);
-	if (c.token && c.id != PJSUA_INVALID_ID && !c.gone &&
-	    pjsua_call_get_user_data(c.id) == c.token) {
-		PJ_LOG(3, (THIS_FILE, "call %d: hanging up", c.id));
-		ok(pjsua_call_hangup(c.id, 0, nullptr, nullptr), "hanging up");
-	}
-	release_port();
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		if (cur.offer_pool)
-			pj_pool_release(cur.offer_pool);
-		cur = Call();
-		if (udptl >= 0)
-			close(udptl);
-		udptl = -1;
-	}
-	rang = false;
-}
-
-/* (worker) dial number with the call's audio on fd, unless the line is
-   busy (fd closed) */
-void do_dial(const std::string &number, int fd)
-{
-	void *token = new_token();
-	std::string uri = "sip:" + dial_user(number.c_str()) + "@" + domain_;
-	pjsua_call_id id = PJSUA_INVALID_ID;
-	pj_str_t dst;
-	pj_status_t st;
-
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		if (!cur.token) {
-			/* busy from here on, the INVITE not yet sent */
-			cur = Call();
-			cur.token = token;
-		} else {
-			token = nullptr;
-		}
-	}
-	if (!token) {
-		PJ_LOG(3, (THIS_FILE, "dial %s: the line is busy",
-			   number.c_str()));
-		close(fd);
-		return;
-	}
-	if (!attach(fd)) {
-		end_call();
-		return;
-	}
-	PJ_LOG(3, (THIS_FILE, "dialling %s", uri.c_str()));
-	st = pjsua_call_make_call(acc, pj_cstr(&dst, uri.c_str()), nullptr,
-				  token, nullptr, &id);
-	if (!ok(st, "making the call")) {
-		end_call();
-		return;
-	}
-	std::lock_guard<std::mutex> lk(mu);
-	if (cur.token == token)
-		cur.id = id;
-}
-
-/* (worker) answer the call that rings with its audio on fd; fd closed
-   if none rings */
-void do_answer(int fd)
-{
-	pjsua_call_id id = PJSUA_INVALID_ID;
-
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		if (cur.token && cur.ringing && !cur.gone) {
-			cur.ringing = false;
-			id = cur.id;
-		}
-	}
-	if (id == PJSUA_INVALID_ID) {
-		PJ_LOG(3, (THIS_FILE, "answer: no call rings"));
-		close(fd);
-		return;
-	}
-	if (!attach(fd)) {
-		end_call();
-		return;
-	}
-	PJ_LOG(3, (THIS_FILE, "call %d: answering", id));
-	if (!ok(pjsua_call_answer(id, PJSIP_SC_OK, nullptr, nullptr),
-		"answering the call"))
-		end_call();
-}
-
-/* (worker) what has happened to the current call: disconnected (CANCEL
-   if it still rang), the modem's socket failed, its media up, the RING
-   timer; T.38: an offer to answer, our ask, T38 and AUDIO lines */
-void check_call()
-{
-	Call c;
-	bool tell_t38 = false, again = false, restore = false;
-
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		c = cur;
-		if (cur.t38 && !cur.t38_told)
-			tell_t38 = cur.t38_told = true;
-		again = cur.audio_again;
-		restore = cur.no_media;
-		cur.audio_again = cur.no_media = false;
-	}
-	if (!c.token)
-		return;
-	if (c.gone) {
-		if (c.ringing)
-			ctl_line("CANCEL\n");
-		end_call();
-		return;
-	}
-	if (port && !port->failed && peer_closed(port->fd))
-		port_failed(port, "closed by the modem");
-	if (port && port->failed) {
-		PJ_LOG(3, (THIS_FILE, "call %d: the modem has gone", c.id));
-		end_call();
-		return;
-	}
-	if (c.media && port && (port_slot == PJSUA_INVALID_ID || again) &&
-	    !connect_port(c.id)) {
-		end_call();
-		return;
-	}
-	if (c.offer)
-		answer_t38(c.id);
-	if (tell_t38)
-		ctl_line("T38\n");
-	if (again)
-		ctl_line("AUDIO\n");
-	if (restore) {
-		PJ_LOG(3, (THIS_FILE, "call %d: asking for the audio again",
-			   c.id));
-		ok(pjsua_call_reinvite2(c.id, nullptr, nullptr),
-		   "asking for the audio");
-	}
-	if (cfg_.t38 && fax_ && c.incoming && c.confirmed && !c.t38_asked &&
-	    std::chrono::steady_clock::now() >=
-	    c.up + std::chrono::milliseconds(T38_ASK_MS))
-		ask_t38(c.id);
-	if (c.ringing) {
-		auto now = std::chrono::steady_clock::now();
-		if (!rang || now >= next_ring) {
-			ctl_line("RING\n");
-			rang = true;
-			next_ring = now + std::chrono::milliseconds(RING_MS);
-		}
-	}
-}
-
-/* the worker thread: the modem's requests and the current call's events
-   as they come, and a look at the call every POLL_MS at least; at the
-   end the call ended */
-void serve()
-{
-	pj_thread_desc desc;
-	pj_thread_t *self = nullptr;
-	std::unique_lock<std::mutex> lk(mu, std::defer_lock);
-
-	pj_bzero(desc, sizeof(desc));
-	if (pj_thread_register("dmodem-sip", desc, &self) != PJ_SUCCESS) {
-		fprintf(stderr, "error: the SIP thread can't use pjlib\n");
-		return;
-	}
-	lk.lock();
-	while (!quit) {
-		std::deque<Request> todo;
-
-		cv.wait_for(lk, std::chrono::milliseconds(POLL_MS), [] {
-			return quit || poked || !requests.empty();
-		});
-		if (quit)
-			break;
-		poked = false;
-		todo.swap(requests);
-		lk.unlock();
-		check_call();
-		for (const Request &r : todo) {
-			if (r.dial)
-				do_dial(r.number, r.fd);
-			else
-				do_answer(r.fd);
-		}
-		lk.lock();
-	}
-	lk.unlock();
+		say(3, "call %u: DISCONNECTED (%s)", c->serial,
+		    err == ECONNRESET ? "BYE" : err ? strerror(err) : "closed");
+	c->closed = true;
+	if (c->ringing)
+		ctl_line("CANCEL\n");
 	end_call();
 }
 
-/* a request for the worker; without one, fd closed at once */
-void queue(Request r)
+/* our T.38 ask: a re-INVITE with our image line in the audio's place
+   (once only, taken or not) */
+void ask_t38(Call *c)
 {
-	int fd = r.fd;
-	bool queued = false;
+	struct mbuf *mb;
+	int i = find(c->lines, Line::AUDIO), err;
+
+	c->t38_asked = true;
+	if (i < 0 || !open_udptl(c))
+		return;
+	std::vector<Line> v = c->lines;
+	v[i] = image_line(0);
+	mb = mbuf_of(c->sdp(v));
+	err = mb ? sipsess_modify(c->sess, mb) : ENOMEM;
+	mem_deref(mb);
+	if (err) {
+		say(1, "call %u: asking for T.38: %s", c->serial, strerror(err));
+		return;
+	}
+	c->offered = v;
+	say(3, "call %u: asking for T.38 (UDPTL port %d)", c->serial,
+	    c->udptl_port);
+}
+
+/* our ask refused with the image line off: a re-INVITE with our audio
+   in its place */
+void ask_audio(Call *c)
+{
+	struct mbuf *mb;
+	int i = find(c->lines, Line::IMAGE), err;
+
+	if (i < 0)
+		return;
+	std::vector<Line> v = c->lines;
+	v[i] = Line();
+	mb = mbuf_of(c->sdp(v));
+	err = mb ? sipsess_modify(c->sess, mb) : ENOMEM;
+	mem_deref(mb);
+	if (err) {
+		say(1, "call %u: asking for the audio: %s", c->serial,
+		    strerror(err));
+		return;
+	}
+	c->offered = v;
+	say(3, "call %u: asking for the audio again", c->serial);
+}
+
+/* the look at the current call every POLL_MS: the audio to ask for
+   again, our T.38 ask a second after we answered a fax call */
+void on_poll(void *arg)
+{
+	Call *c = static_cast<Call *>(arg);
+
+	if (c != cur)
+		return;
+	tmr_start(&c->poll_tmr, POLL_MS, on_poll, c);
+	if (c->restore) {
+		c->restore = false;
+		ask_audio(c);
+	}
+	if (cfg_.t38 && fax_ && c->incoming && c->confirmed && !c->t38_asked &&
+	    !c->t38 && tmr_jiffies() >= c->up + T38_ASK_MS)
+		ask_t38(c);
+}
+
+/* a ringing call's RING lines */
+void on_ring(void *arg)
+{
+	Call *c = static_cast<Call *>(arg);
+
+	if (c != cur || !c->ringing)
+		return;
+	ctl_line("RING\n");
+	tmr_start(&c->ring_tmr, RING_MS, on_ring, c);
+}
+
+/* an INVITE: 480 unless listening, 486 if the line is busy (a call
+   being dialled too), 488 if its offer has no G.711 audio; else the
+   call is current and rings (180) */
+void on_invite(const struct sip_msg *msg, void *)
+{
+	std::string from = str(msg->from.auri);
+	Sdp s;
+	bool sdp = mbuf_get_left(msg->mb) > 0;
+	int law, i = -1, err;
+	Call *c;
+
+	if (sdp && sdp_of(msg, &s))
+		i = line_of(s, false);
+	if (!cfg_.listen || quitting) {
+		say(3, "call from %s: 480", from.c_str());
+		sip_treply(nullptr, sip_, msg, 480, "Temporarily Unavailable");
+		return;
+	}
+	if (cur) {
+		say(3, "call from %s: 486", from.c_str());
+		sip_treply(nullptr, sip_, msg, 486, "Busy Here");
+		return;
+	}
+	if (sdp && (i < 0 || g711_pt(s.media[i], &law) < 0)) {
+		say(3, "call from %s: no G.711 audio, 488", from.c_str());
+		sip_treply(nullptr, sip_, msg, 488, "Not Acceptable Here");
+		return;
+	}
+	c = new Call(++last_serial);
+	c->incoming = c->ringing = true;
+	c->have_offer = sdp;
+	c->offer = s;
+	c->ip = ip_of(&msg->dst);
+	cur = c;
+	err = sipsess_accept(&c->sess, sock_, msg, 180, "Ringing",
+			     REL100_DISABLED, user_.c_str(), "application/sdp",
+			     nullptr, on_auth, nullptr, false, on_offer,
+			     on_answer, on_estab, nullptr, nullptr, on_close, c,
+			     nullptr);
+	if (err) {
+		say(1, "call from %s: accepting it: %s", from.c_str(),
+		    strerror(err));
+		c->sess = nullptr;
+		c->closed = true;
+		end_call();
+		sip_treply(nullptr, sip_, msg, 500, "Server Internal Error");
+		return;
+	}
+	say(3, "call %u from %s: ringing", c->serial, from.c_str());
+	on_ring(c);
+	tmr_start(&c->poll_tmr, POLL_MS, on_poll, c);
+}
+
+/* dial number with the call's audio on fd, unless the line is busy (fd
+   closed) */
+void do_dial(const std::string &number, int fd)
+{
+	std::string uri = "sip:" + dial_user(number.c_str()) + "@" + domain_;
+	std::string from = "sip:" + user_ + "@" + domain_;
+	Call *c;
+	int err;
+
+	if (cur) {
+		say(3, "dial %s: the line is busy", number.c_str());
+		close(fd);
+		return;
+	}
+	c = cur = new Call(++last_serial);
+	if (!attach(c, fd)) {
+		end_call();
+		return;
+	}
+	say(3, "call %u: dialling %s", c->serial, uri.c_str());
+	err = sipsess_connect(&c->sess, sock_, uri.c_str(), nullptr,
+			      from.c_str(), user_.c_str(), nullptr, 0,
+			      "application/sdp", on_auth, nullptr, false,
+			      nullptr, on_desc, on_offer, on_answer,
+			      on_progress, on_estab, nullptr, nullptr,
+			      on_close, c, nullptr);
+	if (err) {
+		say(1, "call %u: making the call: %s", c->serial,
+		    strerror(err));
+		c->closed = true;
+		end_call();
+		return;
+	}
+	tmr_start(&c->poll_tmr, POLL_MS, on_poll, c);
+}
+
+/* answer the call that rings with its audio on fd (fd closed if none
+   rings): our answer to its offer, or our offer if it had none */
+void do_answer(int fd)
+{
+	Call *c = cur;
+	std::vector<Line> v;
+	struct mbuf *mb;
+	int i = -1, err;
+
+	if (!c || !c->ringing) {
+		say(3, "answer: no call rings");
+		close(fd);
+		return;
+	}
+	c->ringing = false;
+	tmr_cancel(&c->ring_tmr);
+	if (!attach(c, fd)) {
+		end_call();
+		return;
+	}
+	say(3, "call %u: answering", c->serial);
+	if (c->have_offer) {
+		i = line_of(c->offer, false);
+		v = mirror(c->offer, i, audio_answer(c->offer,
+						      c->offer.media[i]));
+	} else {
+		v = { Line() };
+	}
+	mb = mbuf_of(c->sdp(v));
+	err = mb ? sipsess_answer(c->sess, 200, "OK", mb, nullptr) : ENOMEM;
+	mem_deref(mb);
+	if (err) {
+		say(1, "call %u: answering: %s", c->serial, strerror(err));
+		end_call();
+		return;
+	}
+	if (c->have_offer) {
+		c->lines = v;
+		take_audio(c, c->offer, c->offer.media[i]);
+	} else {
+		c->offered = v;
+	}
+}
+
+/* the stack's last transactions done (sip_close()) */
+void on_sip_exit(void *)
+{
+	sip_closed = true;
+	re_cancel();
+}
+
+/* the end: the call hung up, unregistered, the stack closed once its
+   last transactions are done (QUIT_MS at the most) */
+void quit()
+{
+	quitting = true;
+	end_call();
+	reg_ = static_cast<struct sipreg *>(mem_deref(reg_));
+	lsnr_ = static_cast<struct sip_lsnr *>(mem_deref(lsnr_));
+	sock_ = static_cast<struct sipsess_sock *>(mem_deref(sock_));
+	tmr_start(&quit_tmr, QUIT_MS, [](void *) { re_cancel(); }, nullptr);
+	sip_closing = true;
+	sip_close(sip_, false);
+}
+
+/* the SIP thread's queue: the modem's requests, its audio socket
+   failed, the end */
+void on_mq(int id, void *data, void *)
+{
+	switch (id) {
+	case MQ_DIAL:
+	case MQ_ANSWER: {
+		std::unique_ptr<Request> r(static_cast<Request *>(data));
+		if (quitting)
+			close(r->fd);
+		else if (id == MQ_DIAL)
+			do_dial(r->number, r->fd);
+		else
+			do_answer(r->fd);
+		break;
+	}
+	case MQ_MODEM_GONE:
+		if (cur && (uintptr_t)cur->serial ==
+		    reinterpret_cast<uintptr_t>(data)) {
+			say(3, "call %u: the modem has gone", cur->serial);
+			end_call();
+		}
+		break;
+	case MQ_QUIT:
+		if (!quitting)
+			quit();
+		break;
+	}
+}
+
+/* requests outside a call: OPTIONS answered */
+bool on_request(const struct sip_msg *msg, void *)
+{
+	if (pl_strcmp(&msg->met, "OPTIONS"))
+		return false;
+	sip_treplyf(nullptr, nullptr, sip_, msg, false, 200, "OK",
+		    "Allow: INVITE, ACK, BYE, CANCEL, OPTIONS, UPDATE\r\n"
+		    "Accept: application/sdp\r\n"
+		    "Content-Length: 0\r\n"
+		    "\r\n");
+	return true;
+}
+
+/* the registration's responses */
+void on_reg(int err, const struct sip_msg *msg, void *)
+{
+	if (err)
+		say(1, "registration with %s: %s", domain_.c_str(),
+		    strerror(err));
+	else if (msg->scode >= 300)
+		say(1, "registration with %s: %u %s", domain_.c_str(),
+		    msg->scode, str(msg->reason).c_str());
+	else if (msg->scode >= 200) {
+		say(registered ? 4 : 3, "registered with %s (%u %s)",
+		    domain_.c_str(), msg->scode, str(msg->reason).c_str());
+		registered = true;
+	}
+}
+
+/* the SIP messages, into the log */
+void on_trace(bool tx, enum sip_transp, const struct sa *src,
+	      const struct sa *dst, const uint8_t *pkt, size_t len, void *)
+{
+	say(4, "%s %s:\n%.*s", tx ? "TX to" : "RX from",
+	    addr_of(tx ? dst : src).c_str(), (int)len,
+	    reinterpret_cast<const char *>(pkt));
+}
+
+/* SIP over UDP on each address of ours (the local port, as the far end
+   has it, then the address it came to) */
+bool add_transport(const char *ifname, const struct sa *a, void *arg)
+{
+	auto *added = static_cast<std::vector<struct sa> *>(arg);
+	struct sa l;
+	int err;
+
+	if (sa_is_linklocal(a))
+		return false;
+	sa_cpy(&l, a);
+	sa_set_port(&l, (uint16_t)cfg_.port);
+	for (const struct sa &o : *added)
+		if (sa_cmp(&o, &l, SA_ADDR))
+			return false;
+	err = sip_transp_add(sip_, SIP_TRANSP_UDP, &l);
+	if (err) {
+		say(1, "SIP on %s (%s): %s", addr_of(&l).c_str(), ifname,
+		    strerror(err));
+		return false;
+	}
+	added->push_back(l);
+	say(4, "SIP on %s (%s)", addr_of(&l).c_str(), ifname);
+	return false;
+}
+
+/* libre and the stack up: its transports, calls taken, the queue, the
+   registration when listening; false (with a message) if any of it
+   fails */
+bool init()
+{
+	std::vector<struct sa> added;
+	struct sa nsv[8];
+	uint32_t nsn = 8;
+	char dom[256] = "";
+	int err;
+
+	err = libre_init();
+	if (err) {
+		say(1, "libre: %s", strerror(err));
+		return false;
+	}
+	/* (its OpenSSL's set-up put a handler of its own) */
+	signal(SIGPIPE, SIG_IGN);
+	tmr_init(&quit_tmr);
+
+	/* names by the system's resolver, SRV and NAPTR by its servers */
+	if (dns_srv_get(dom, sizeof(dom), nsv, &nsn))
+		nsn = 0;
+	err = dnsc_alloc(&dnsc_, nullptr, nsn ? nsv : nullptr, nsn);
+	if (err) {
+		say(1, "DNS client: %s", strerror(err));
+		return false;
+	}
+	dnsc_getaddrinfo(dnsc_, true);
+
+	err = sip_alloc(&sip_, dnsc_, 32, 32, 32, "D-Modem " DMODEM_VERSION,
+			on_sip_exit, nullptr);
+	if (err) {
+		say(1, "SIP stack: %s", strerror(err));
+		return false;
+	}
+	if (log_level >= 4)
+		sip_set_trace_handler(sip_, on_trace);
+	net_if_apply(add_transport, &added);
+	if (added.empty()) {
+		say(1, "no address for SIP on port %d", cfg_.port);
+		return false;
+	}
+	err = sipsess_listen(&sock_, sip_, 32, on_invite, nullptr);
+	if (!err)
+		err = sip_listen(&lsnr_, sip_, true, on_request, nullptr);
+	if (!err)
+		err = mqueue_alloc(&mq_, on_mq, nullptr);
+	if (err) {
+		say(1, "SIP: %s", strerror(err));
+		return false;
+	}
+	if (cfg_.listen) {
+		std::string uri = "sip:" + domain_;
+		std::string aor = "sip:" + user_ + "@" + domain_;
+		err = sipreg_alloc(&reg_, sip_, uri.c_str(), aor.c_str(),
+				   nullptr, aor.c_str(), REG_EXPIRES,
+				   user_.c_str(), nullptr, 0, 0, on_auth,
+				   nullptr, false, on_reg, nullptr, nullptr,
+				   nullptr);
+		if (!err)
+			err = sipreg_send(reg_);
+		if (err)
+			say(1, "registration with %s: %s", domain_.c_str(),
+			    strerror(err));
+	}
+	return true;
+}
+
+/* what init() and the main loop leave, libre closed */
+void cleanup()
+{
+	tmr_cancel(&quit_tmr);
+	end_call();
+	reg_ = static_cast<struct sipreg *>(mem_deref(reg_));
+	lsnr_ = static_cast<struct sip_lsnr *>(mem_deref(lsnr_));
+	sock_ = static_cast<struct sipsess_sock *>(mem_deref(sock_));
+	if (sip_ && sip_closing && !sip_closed)
+		/* (QUIT_MS passed: its own reference given up) */
+		sip_close(sip_, true);
+	else
+		mem_deref(sip_);
+	sip_ = nullptr;
+	dnsc_ = static_cast<struct dnsc *>(mem_deref(dnsc_));
+	mq_ = static_cast<struct mqueue *>(mem_deref(mq_));
+	libre_close();
+}
+
+/* the SIP thread: libre's main loop, until quit() */
+void serve()
+{
+	bool ok = init();
 
 	{
-		std::lock_guard<std::mutex> lk(mu);
-		if (running) {
-			requests.push_back(std::move(r));
-			poked = queued = true;
-		}
+		std::lock_guard<std::mutex> lk(start_mu);
+		start_state = ok ? 1 : -1;
 	}
-	if (queued)
-		cv.notify_one();
-	else
-		close(fd);
+	start_cv.notify_one();
+	if (ok)
+		re_main(nullptr);
+	cleanup();
 }
 
-/* only G.711, mu-law first: every other codec disabled */
-bool set_codecs()
+/* a request for the SIP thread; without one, fd closed at once */
+void queue(int id, Request *r)
 {
-	pjsua_codec_info ci[PJMEDIA_CODEC_MGR_MAX_CODECS];
-	unsigned n = PJ_ARRAY_SIZE(ci);
-	pj_str_t id;
-
-	if (!ok(pjsua_enum_codecs(ci, &n), "listing the codecs"))
-		return false;
-	for (unsigned i = 0; i < n; i++)
-		pjsua_codec_set_priority(&ci[i].codec_id, 0);
-	return ok(pjsua_codec_set_priority(pj_cstr(&id, "PCMU/8000/1"),
-					   PJMEDIA_CODEC_PRIO_HIGHEST),
-		  "enabling PCMU") &&
-	       ok(pjsua_codec_set_priority(pj_cstr(&id, "PCMA/8000/1"),
-					   PJMEDIA_CODEC_PRIO_NEXT_HIGHER),
-		  "enabling PCMA");
-}
-
-/* the account, the default: user@domain, registered with the domain
-   only when listening */
-bool add_account()
-{
-	std::string id = "sip:" + user_ + "@" + domain_;
-	std::string reg = "sip:" + domain_;
-	pjsua_acc_config ac;
-
-	pjsua_acc_config_default(&ac);
-	pj_cstr(&ac.id, id.c_str());
-	pj_cstr(&ac.reg_uri, reg.c_str());
-	ac.register_on_acc_add = cfg_.listen ? PJ_TRUE : PJ_FALSE;
-	ac.cred_count = 1;
-	pj_cstr(&ac.cred_info[0].realm, "*");
-	pj_cstr(&ac.cred_info[0].scheme, "digest");
-	pj_cstr(&ac.cred_info[0].username, user_.c_str());
-	ac.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
-	pj_cstr(&ac.cred_info[0].data, password_.c_str());
-	return ok(pjsua_acc_add(&ac, PJ_TRUE, &acc), "adding the account");
-}
-
-/* pjsua created, set up for a modem's calls and started, with its
-   account; false (with pjsua's message) if any of it fails */
-bool start_pjsua()
-{
-	pjsua_config ua;
-	pjsua_logging_config lc;
-	pjsua_media_config mc;
-	pjsua_transport_config tc;
-	const char *level = getenv("SIP_LOG_LEVEL");
-
-	if (!ok(pjsua_create(), "pjsua_create"))
-		return false;
-	pj_created = true;
-
-	pjsua_config_default(&ua);
-	ua.cb.on_incoming_call = &on_incoming_call;
-	ua.cb.on_call_state = &on_call_state;
-	ua.cb.on_call_media_state = &on_call_media_state;
-	ua.cb.on_call_sdp_created = &on_call_sdp_created;
-	ua.cb.on_call_rx_reinvite = &on_call_rx_reinvite;
-
-	pjsua_logging_config_default(&lc);
-	lc.console_level = level && *level ? atoi(level) : 4;
-	if (lc.level < lc.console_level)
-		lc.level = lc.console_level;
-
-	/* the modem's samples as they are: the bridge at their rate and
-	   frame, no VAD, no echo canceller; a fixed jitter buffer that
-	   never drops a frame to shrink (a slip the modem can't take) */
-	pjsua_media_config_default(&mc);
-	mc.clock_rate = RATE;
-	mc.snd_clock_rate = RATE;
-	mc.channel_count = 1;
-	mc.audio_frame_ptime = 1000 * SAMPLES / RATE;
-	mc.no_vad = PJ_TRUE;
-	mc.ec_tail_len = 0;
-	mc.jb_init = JB_DELAY;
-	mc.jb_min_pre = JB_DELAY;
-	mc.jb_max_pre = JB_DELAY;
-	mc.jb_max = JB_MAX;
-	mc.jb_discard_algo = PJMEDIA_JB_DISCARD_NONE;
-
-	if (!ok(pjsua_init(&ua, &lc, &mc), "pjsua_init") ||
-	    !ok(pjsip_endpt_register_module(pjsua_get_pjsip_endpt(), &mod_t38),
-		"T.38's module") ||
-	    !ok(pjsua_set_ec(0, 0), "turning the echo canceller off") ||
-	    !ok(pjsua_set_null_snd_dev(), "the null sound device") ||
-	    !set_codecs())
-		return false;
-
-	pjsua_transport_config_default(&tc);
-	tc.port = cfg_.port;
-	if (!ok(pjsua_transport_create(PJSIP_TRANSPORT_UDP, &tc, nullptr),
-		"the UDP transport") ||
-	    !ok(pjsua_start(), "pjsua_start"))
-		return false;
-	return add_account();
+	if (!running || mqueue_push(mq_, id, r)) {
+		close(r->fd);
+		delete r;
+	}
 }
 
 } // namespace
@@ -1339,10 +1875,13 @@ bool config_from_env(Config &cfg, bool listen)
 /* see sip.h */
 int start(const Config &cfg)
 {
+	const char *level = getenv("SIP_LOG_LEVEL");
+
 	cfg_ = cfg;
 	user_ = cfg.user ? cfg.user : "";
 	password_ = cfg.password ? cfg.password : "";
 	domain_ = cfg.domain ? cfg.domain : "";
+	log_level = level && *level ? atoi(level) : 4;
 	if (cfg.record)
 		rec.open(cfg.record, ".rx", ".tx");
 
@@ -1352,23 +1891,22 @@ int start(const Config &cfg)
 		rec.close();
 		return -1;
 	}
-	if (start_pjsua()) {
-		std::lock_guard<std::mutex> lk(mu);
-		cur = Call();
-		quit = poked = false;
-		running = true;
-		try {
-			worker = std::thread(serve);
-			return ctl[1];
-		} catch (const std::system_error &e) {
-			fprintf(stderr, "error: the SIP thread: %s\n",
-				e.what());
-			running = false;
-		}
+	start_state = 0;
+	try {
+		sip_thread = std::thread(serve);
+	} catch (const std::system_error &e) {
+		fprintf(stderr, "error: the SIP thread: %s\n", e.what());
 	}
-	if (pj_created)
-		pjsua_destroy();
-	pj_created = false;
+	if (sip_thread.joinable()) {
+		std::unique_lock<std::mutex> lk(start_mu);
+		start_cv.wait(lk, [] { return start_state != 0; });
+		if (start_state > 0) {
+			running = true;
+			return ctl[1];
+		}
+		lk.unlock();
+		sip_thread.join();
+	}
 	close(ctl[0]);
 	close(ctl[1]);
 	ctl[0] = ctl[1] = -1;
@@ -1379,24 +1917,13 @@ int start(const Config &cfg)
 /* see sip.h */
 void stop()
 {
-	{
-		std::lock_guard<std::mutex> lk(mu);
-		quit = true;
-		running = false;
-	}
-	cv.notify_one();
-	if (worker.joinable())
-		worker.join();
-	{
-		/* what the worker did not get to */
-		std::lock_guard<std::mutex> lk(mu);
-		for (const Request &r : requests)
-			close(r.fd);
-		requests.clear();
-	}
-	if (pj_created)
-		pjsua_destroy();
-	pj_created = false;
+	if (!sip_thread.joinable())
+		return;
+	running = false;
+	if (mqueue_push(mq_, MQ_QUIT, nullptr))
+		fprintf(stderr, "error: the SIP thread can't be stopped\n");
+	else
+		sip_thread.join();
 	rec.close();
 	if (ctl[0] >= 0)
 		close(ctl[0]);
@@ -1406,13 +1933,13 @@ void stop()
 /* see sip.h */
 void dial(const char *number, int audio_fd)
 {
-	queue(Request{ true, number ? number : "", audio_fd });
+	queue(MQ_DIAL, new Request{ number ? number : "", audio_fd });
 }
 
 /* see sip.h */
 void answer(int audio_fd)
 {
-	queue(Request{ false, std::string(), audio_fd });
+	queue(MQ_ANSWER, new Request{ std::string(), audio_fd });
 }
 
 /* see sip.h */
@@ -1431,33 +1958,20 @@ void set_fax(bool fax)
 bool t38(T38 *t)
 {
 	std::lock_guard<std::mutex> lk(mu);
-	struct sockaddr_in *a4 = reinterpret_cast<struct sockaddr_in *>(&t->peer);
-	struct sockaddr_in6 *a6 =
-		reinterpret_cast<struct sockaddr_in6 *>(&t->peer);
 
-	if (!cur.token || !cur.t38 || udptl < 0 || cur.peer.port <= 0)
+	if (!t38_on_ || t38_fd_ < 0 || t38_peer_.port <= 0)
 		return false;
-	memset(&t->peer, 0, sizeof(t->peer));
-	if (inet_pton(AF_INET, cur.peer.addr.c_str(), &a4->sin_addr) == 1) {
-		a4->sin_family = AF_INET;
-		a4->sin_port = htons((uint16_t)cur.peer.port);
-		t->peer_len = sizeof(*a4);
-	} else if (inet_pton(AF_INET6, cur.peer.addr.c_str(),
-			     &a6->sin6_addr) == 1) {
-		a6->sin6_family = AF_INET6;
-		a6->sin6_port = htons((uint16_t)cur.peer.port);
-		t->peer_len = sizeof(*a6);
-	} else {
-		PJ_LOG(1, (THIS_FILE, "T.38: no address in %s",
-			   cur.peer.addr.c_str()));
+	if (!sockaddr_of(t38_peer_.addr, t38_peer_.port, t38_family_,
+			 &t->peer, &t->peer_len)) {
+		say(1, "T.38: no address in `%s'", t38_peer_.addr.c_str());
 		return false;
 	}
-	t->fd = fcntl(udptl, F_DUPFD_CLOEXEC, 0);
+	t->fd = fcntl(t38_fd_, F_DUPFD_CLOEXEC, 0);
 	if (t->fd < 0)
 		return false;
-	t->version = cur.peer.version;
-	t->max_datagram = cur.peer.max_datagram;
-	t->redundancy = cur.peer.redundancy;
+	t->version = t38_peer_.version;
+	t->max_datagram = t38_peer_.max_datagram;
+	t->redundancy = t38_peer_.redundancy;
 	return true;
 }
 

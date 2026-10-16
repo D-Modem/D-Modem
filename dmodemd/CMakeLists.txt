@@ -23,7 +23,7 @@ if(DMODEM_DMODEMD)
 	add_executable(dmodemd main.cpp sip.cpp sip_dial.cpp)
 	target_compile_options(dmodemd PRIVATE -Wall -g -O2)
 	target_link_libraries(dmodemd PRIVATE dmodem_front dmodem_core
-		dmodem_dsp dmodem_t30 dmodem_link pjproject m pthread)
+		dmodem_dsp dmodem_t30 dmodem_link libre m pthread)
 	install(TARGETS dmodemd RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
 
 	# test/root_test.py: dmodemd started as root, what needs root's

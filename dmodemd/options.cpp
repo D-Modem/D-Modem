@@ -100,7 +100,8 @@ static void usage(const char *prog_name)
 	PR_INFO("Environment:\n"
 		"  SIP_LOGIN=user:password@domain   the SIP account (required)\n"
 		"  SIP_PORT=port                    the local SIP port (5060)\n"
-		"  SIP_LOG_LEVEL=n                  pjsip's log level (4)\n");
+		"  SIP_LOG_LEVEL=n                  the SIP log's level (4, with\n"
+		"                                   the SIP messages; 3 the calls)\n");
 	exit(1);
 }
 

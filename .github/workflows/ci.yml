@@ -35,15 +35,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++ libssl-dev uuid-dev libgtest-dev \
+            cmake ninja-build pkg-config g++ libssl-dev libgtest-dev \
             libspandsp-dev libtiff-tools asterisk-dev g++-multilib
 
-      # pjproject is fetched and built while configuring: keep it
-      - name: pjproject cache
+      # libre is fetched and built while configuring: keep it
+      - name: libre cache
         uses: actions/cache@v4
         with:
-          path: build/_deps/pjproject-install
-          key: pjproject-2.17-${{ runner.os }}-${{ hashFiles('cmake/pjproject.cmake') }}
+          path: build/_deps/libre-install
+          key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: Configure
         run: cmake -B build -G Ninja -DDMODEM_WERROR=ON
@@ -67,17 +67,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++ libssl-dev uuid-dev libgtest-dev \
+            cmake ninja-build pkg-config g++ libssl-dev libgtest-dev \
             libtiff-tools asterisk asterisk-modules asterisk-dev python3 \
             efax
           # the tests run an Asterisk of their own
           sudo systemctl stop asterisk || true
 
-      - name: pjproject cache
+      - name: libre cache
         uses: actions/cache@v4
         with:
-          path: build/_deps/pjproject-install
-          key: pjproject-2.17-${{ runner.os }}-${{ hashFiles('cmake/pjproject.cmake') }}
+          path: build/_deps/libre-install
+          key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: Build
         run: |
@@ -164,11 +164,11 @@ jobs:
         run: |
           SRC=/tmp/fs-src freeswitch/test/build_freeswitch.sh $FS_PREFIX
 
-      - name: pjproject cache
+      - name: libre cache
         uses: actions/cache@v4
         with:
-          path: build/_deps/pjproject-install
-          key: pjproject-2.17-${{ runner.os }}-${{ hashFiles('cmake/pjproject.cmake') }}
+          path: build/_deps/libre-install
+          key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: Build
         run: |

@@ -45,11 +45,11 @@ here. They are only used by the interop tests; see
 These are not in the repository; the build fetches them or takes them from
 the system:
 
-- **pjproject**, dmodemd's SIP stack: GPL-2.0-or-later, or Teluu's
-  commercial licence. Under the AGPL it combines with D-Modem as it is.
-  A commercial licensee who ships dmodemd with its SIP user agent needs
-  Teluu's commercial licence for pjproject as well; libdmodem and the
-  Asterisk and FreeSWITCH modules do not use pjproject.
+- **libre** (baresip's re), dmodemd's SIP stack: BSD-3-Clause (its
+  copyright notice and licence go with a dmodemd that is shipped). It
+  combines with D-Modem under the AGPL and under the commercial licence
+  alike; libdmodem and the Asterisk and FreeSWITCH modules do not use it.
+  The OpenSSL it links (its digests) is under the Apache License 2.0.
 - **GoogleTest** (the tests only): BSD-3-Clause.
 - **spandsp** (the tests only): LGPL-2.1.
 - The ITU-T Recommendations that `docs/specs/fetch.sh` downloads are the

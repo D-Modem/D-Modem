@@ -8,10 +8,10 @@
 #   ctest --test-dir build -L quick           the fast tests
 #
 # Options:
-#   DMODEM_PJPROJECT   auto: an installed pjproject (pkg-config
-#                      libpjproject), else fetched; system: installed only;
-#                      fetch: always build the pinned release
-#   DMODEM_DMODEMD    build dmodemd (needs pjproject)
+#   DMODEM_LIBRE       auto: an installed libre (pkg-config libre), else
+#                      fetched; system: installed only; fetch: always
+#                      build the pinned release
+#   DMODEM_DMODEMD     build dmodemd (its SIP on libre)
 #   DMODEM_ASTERISK    build app_dmodem when Asterisk's headers are found
 #   DMODEM_TESTS       build the test programs and register them with ctest
 #                      (with a 32 bit compiler also the interop tests
@@ -28,9 +28,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(DMODEM_PJPROJECT "auto" CACHE STRING "pjproject: auto, system or fetch")
-set_property(CACHE DMODEM_PJPROJECT PROPERTY STRINGS auto system fetch)
-option(DMODEM_DMODEMD "Build dmodemd (SIP, needs pjproject)" ON)
+set(DMODEM_LIBRE "auto" CACHE STRING "libre: auto, system or fetch")
+set_property(CACHE DMODEM_LIBRE PROPERTY STRINGS auto system fetch)
+option(DMODEM_DMODEMD "Build dmodemd (SIP, needs libre)" ON)
 option(DMODEM_ASTERISK "Build app_dmodem when Asterisk's headers are found" ON)
 option(DMODEM_FREESWITCH "Build mod_dmodem when FreeSWITCH is found" ON)
 option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)" ON)
@@ -45,7 +45,7 @@ include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 if(DMODEM_DMODEMD)
-	include(pjproject)
+	include(libre)
 endif()
 if(DMODEM_TESTS)
 	enable_testing()

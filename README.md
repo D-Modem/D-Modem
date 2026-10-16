@@ -2,14 +2,14 @@
 Connect to dialup modems over VoIP using SIP, no modem hardware required.
 
 ## Building
-You'll need Linux, CMake (3.16 or later), a C++17 compiler (and a C compiler for the Asterisk and FreeSWITCH modules), git and pjproject's dependencies (OpenSSL, uuid).
+You'll need Linux, CMake (3.16 or later), a C++17 compiler (and a C compiler for the Asterisk and FreeSWITCH modules), git and OpenSSL (libssl-dev: libre's digests for SIP's authentication).
 
     cmake -B build
     cmake --build build
 
 This builds `build/dmodemd/dmodemd`, `build/dmodemd/libdmodem.a` and, when Asterisk's headers are installed, `build/asterisk/app_dmodem.so`, and when FreeSWITCH is installed (its `freeswitch.pc`), `build/freeswitch/mod_dmodem.so`.  `cmake --install build` installs them.
 
-pjproject (PJSIP) is not part of this repository.  CMake uses an installed one (`pkg-config libpjproject`); without one it clones the pinned release (2.17) once and builds it in the build directory.  `-DDMODEM_PJPROJECT=system` requires an installed pjproject, `-DDMODEM_PJPROJECT=fetch` always builds the pinned one, and `-DDMODEM_PJPROJECT_TAG=...` picks another release.
+dmodemd's SIP is [libre](https://github.com/baresip/re) (baresip's re, BSD-3-Clause), which is not part of this repository.  CMake uses an installed one (`pkg-config libre`, 4.12 or later); without one it clones the pinned release (v4.12.0) once and builds it in the build directory, a static library.  `-DDMODEM_LIBRE=system` requires an installed libre, `-DDMODEM_LIBRE=fetch` always builds the pinned one, and `-DDMODEM_LIBRE_TAG=...` picks another release.  The SDP, RTP (G.711) and UDPTL are dmodemd's own.
 
 Tests: `ctest --test-dir build -L quick` runs the fast ones (a few seconds; GoogleTest programs, with the system's libgtest-dev or a copy fetched while configuring); `-L spandsp` (with libspandsp-dev) and `-L smartlink` are longer.  The interop tests run the modem against other soft modems ([docs/interop.md](docs/interop.md)); `-L smartlink` against Smart Link's original binary-only i386 DSP library (`dsp/test/smartlink/dsplibs.o`), kept only as a test peer; they need a 32-bit build environment (`g++ -m32`; Debian-based systems can install `g++-multilib`) and are skipped without one.  See [docs/testing.md](docs/testing.md).
 
@@ -38,7 +38,7 @@ Traditional “controller-based” modems generally used a microcontroller and a
 D-Modem replaces a softmodem’s physical hardware with a SIP stack.  Instead of passing audio to and from the software DSP over an analog phone line, audio travels via the RTP (or SRTP) media streams of a SIP VoIP call.   
 
 ## Usage
-dmodemd is the modem.  It began as Smart Link's slmodemd (Debian’s sl-modem-daemon package) and is now a C++ program on the modem core (`core/`), with the open DSP and a SIP user agent (pjsua) built in; its options are the original's less those for modem hardware, and its AT commands D-Modem's own, a superset of the original's.  Its kernel and ALSA driver code is gone: each call's audio comes from SIP, and the modem appears as a pty.
+dmodemd is the modem.  It began as Smart Link's slmodemd (Debian’s sl-modem-daemon package) and is now a C++ program on the modem core (`core/`), with the open DSP and a SIP user agent (on libre) built in; its options are the original's less those for modem hardware, and its AT commands D-Modem's own, a superset of the original's.  Its kernel and ALSA driver code is gone: each call's audio comes from SIP, and the modem appears as a pty.
 
 Configure the SIP account in the SIP_LOGIN environment variable (`SIP_PORT` sets the local SIP port, 5060 by default): 
 
@@ -107,7 +107,7 @@ Finally, dial the number of the target system.  The call goes to `sip:<number>@<
 
 
 ## Acknowledgements
-D-Modem was created by Aon's Cyber Labs in 2021, who published it with the article [Introducing D-Modem: A Software SIP Modem](https://www.aon.com/cyber-solutions/aon_cyber_labs/introducing-d-modem-a-software-sip-modem/).  This project grew from their idea and their code: slmodemd's audio on a socket, and their d-modem program, a SIP user agent beside it.  Their code has since been replaced; the SIP user agent, `dmodemd/sip.cpp`, was written anew from a specification of what it does.  The modem daemon began as Smart Link's `slmodemd` (from Debian's sl-modem-daemon package), parts of which remain under Smart Link's BSD licence, and SIP is handled by [pjproject](https://github.com/pjsip/pjproject).
+D-Modem was created by Aon's Cyber Labs in 2021, who published it with the article [Introducing D-Modem: A Software SIP Modem](https://www.aon.com/cyber-solutions/aon_cyber_labs/introducing-d-modem-a-software-sip-modem/).  This project grew from their idea and their code: slmodemd's audio on a socket, and their d-modem program, a SIP user agent beside it.  Their code has since been replaced; the SIP user agent, `dmodemd/sip.cpp`, was written anew from a specification of what it does.  The modem daemon began as Smart Link's `slmodemd` (from Debian's sl-modem-daemon package), parts of which remain under Smart Link's BSD licence, and SIP is handled by [libre](https://github.com/baresip/re).
 
 ## License
 

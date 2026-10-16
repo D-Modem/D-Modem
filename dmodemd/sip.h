@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    sip.h - dmodemd's telephone line: a SIP user agent (pjsua) in the
+ *    sip.h - dmodemd's telephone line: a SIP user agent (on libre) in the
  *            same process, in place of the external d-modem program
  *
  *    The modem gets each call's audio through one end of a socketpair,
@@ -47,7 +47,7 @@ bool config_from_env(Config &cfg, bool listen);
    come on (a call waits for ANSWER, or the caller gave up), and T38 and
    AUDIO (the call's fax went over to T.38, or back), or -1 */
 int start(const Config &cfg);
-/* the service thread ended (the call hung up), pjsua destroyed */
+/* the SIP thread ended (the call hung up, the registration given up) */
 void stop();
 
 /* hand a call its audio socket (taken over in any case): dial a number,

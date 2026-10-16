@@ -29,7 +29,7 @@
  *    there): those that arrive distinguishable, both signs, are the
  *    constellation it asks for in CP, and the received values decode
  *    data by their nearest DIL value.  Transparent mode is never asked
- *    for nor granted: through a 16 bit linear interface (pjsua's) the
+ *    for nor granted: through a 16 bit linear interface (dmodemd's) the
  *    mu-law codes +0 and -0 are one.
  *
  */

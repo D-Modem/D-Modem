@@ -12,7 +12,11 @@
 # dmodemd in 2; each fax must have gone over T.38 (dmodemd's log says
 # so).  T38=no: the endpoint without it, the faxes on the audio
 # (dmodemd's ask in 2 refused); DMODEMD_T38=no: dmodemd without it
-# (SIP_T38=no), Asterisk's ask in 1 refused.  The document is the two
+# (SIP_T38=no), Asterisk's ask in 1 refused, and in 2 SendFAX on the
+# audio from the start (F): on a channel with T.38 it would first wait
+# 10.5 s for the receiver to ask for it, efax's first DIS unanswered,
+# and efax 0.9a takes the OK of its abort of the +FRH=3 after it (T.31
+# 6.2.2) for a frame of a length it never set.  The document is the two
 # page test file of dsp/test/fax_doc.
 # CASES="1" runs only those; DMODEMD_DEBUG=<n> dmodemd's -d (1),
 # SIP_LOG=1 the SIP messages in console.log, FAX_DEBUG=1 spandsp's
@@ -112,6 +116,9 @@ $ast -rx "module show like fax" | grep -E "res_fax"
 [ -z "$FAX_DEBUG" ] || $ast -rx "fax set debug on" >/dev/null
 $ast -rx "dialplan set global FAXIN $run/doc.tif" >/dev/null
 $ast -rx "dialplan set global SPOUT $run/spandsp.tif" >/dev/null
+sendopt=f
+[ "${DMODEMD_T38:-yes}" != no ] || sendopt=fF
+$ast -rx "dialplan set global SENDOPT $sendopt" >/dev/null
 
 # dmodemd, listening (registered: Asterisk's calls come to it), its pty
 SIP_LOGIN=modem:modem@127.0.0.1:$sip SIP_PORT=$ua SIP_T38=${DMODEMD_T38:-yes} \
