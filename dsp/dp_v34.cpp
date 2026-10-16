@@ -197,6 +197,9 @@ enum v34_state {
 	P3V_WAIT_JD,    /* silence until Jd */
 	P3V_S2,         /* S until Jd' */
 	P3V_SBAR2,
+	P3V_DIL,        /* silence while the DIL is measured */
+	P3V_S3,         /* S, S-bar: enough of it */
+	P3V_SBAR3,
 	P3V_END,        /* phase 4 is to come */
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
@@ -2558,17 +2561,39 @@ int V34Pump::primary_start()
 
 /* the analogue modem's phase 3 (9.3.2/V.90): our V.34 transmitter at
    the upstream symbol rate on the carrier INFO1d asked for (the answer
-   modem's scrambler), Ja asking for no DIL so far (N 0: the digital
-   modem goes to phase 4 after Jd'), the PCM receiver on the line at
-   8000 Hz */
+   modem's scrambler), Ja with the DIL descriptor, the PCM receiver on
+   the line at 8000 Hz.  The DIL: every Ucode, from the loudest, 36
+   symbols each (H 5: 6
+   in each frame interval), no reference symbols (TP 1), signs SP of 12
+   whose second half is the first's opposite (each frame interval has
+   3 of each sign in a segment); DSP_V90A_DIL=0 asks for none (N 0: the
+   digital modem goes to phase 4 after Jd') */
 void V34Pump::v90a_start()
 {
+	static const unsigned char sp[12] = { 1, 0, 1, 1, 0, 0,
+					      0, 1, 0, 0, 1, 1 };
+	int i;
 	ptx.init(baud_tx, rinfo1c.r[baud_tx].high, 0);
 	memset(&v90a_dil, 0, sizeof(v90a_dil));
 	v90a_dil.lsp = v90a_dil.ltp = 1;
+	if (!(getenv("DSP_V90A_DIL") && !atoi(getenv("DSP_V90A_DIL")))) {
+		v90a_dil.n = 128;
+		/* the loudest first: what clips spills over only into
+		   the louder ones after it */
+		for (i = 0; i < 128; i++)
+			v90a_dil.ucode[i] = (unsigned char)(127 - i);
+		for (i = 0; i < 8; i++) {
+			v90a_dil.h[i] = 5;
+			v90a_dil.ref[i] = v90a_uinfo;
+		}
+		v90a_dil.lsp = 12;
+		memcpy(v90a_dil.sp, sp, sizeof(sp));
+		v90a_dil.tp[0] = 1;
+	}
 	ptx.nbits = v90a_dil.build(ptx.bits);
 	txm = TXM_PRIMARY;
 	v90rx.init(alaw, v90a_uinfo);
+	v90rx.dil_set(v90a_dil);
 	rs_pcm.init(5, 6);
 	v90a_rx = 1;
 }
@@ -3920,8 +3945,34 @@ int V34Pump::handshake()
 		}
 		break;
 	case P3V_SBAR2:
-		if (ptx.n >= 16) {
+		if (ptx.n < 16)
+			break;
+		if (!v90a_dil.n) {
 			DSP_DBG("v34: V.90: phase 3 done (no DIL)\n");
+			tx_next(P3V_END, V34_TX_SILENCE);
+		} else
+			tx_next(P3V_DIL, V34_TX_SILENCE);
+		break;
+	case P3V_DIL:
+		/* the DIL's rounds measured (within 5 s of S-bar,
+		   9.3.2.10/V.90): S, S-bar end it */
+		if (v90rx.ev_dil >= V90RX_DIL_ROUNDS) {
+			v90rx.dil_analyse();
+			tx_next(P3V_S3, V34_TX_S);
+			break;
+		}
+		if (c >= ms2samples(4500, srate)) {
+			DSP_DBG("v34: V.90: the DIL did not come\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P3V_S3:
+		if (ptx.n >= 128)
+			tx_next(P3V_SBAR3, V34_TX_SBAR);
+		break;
+	case P3V_SBAR3:
+		if (ptx.n >= 16) {
+			DSP_DBG("v34: V.90: phase 3 done\n");
 			tx_next(P3V_END, V34_TX_SILENCE);
 		}
 		break;

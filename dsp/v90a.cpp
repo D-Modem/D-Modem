@@ -14,15 +14,21 @@
  *    equaliser is solved on its first symbols by least squares (after
  *    its delay is centred on the correlation with them), then follows
  *    its decisions.  Jd and Jd' are the decisions' signs, differentially
- *    decoded and descrambled (8.4.2, 8.4.3/V.90).
+ *    decoded and descrambled (8.4.2, 8.4.3/V.90).  The DIL (8.4.1/V.90)
+ *    follows Jd' in data frame interval 0; with the equaliser still,
+ *    each symbol's value times its sign (SP) goes to its frame
+ *    interval's and Ucode's sums.
  *
  */
 
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "bits.h"
 #include "dsp.h"
+#include "g711.h"
 #include "v90.h"
 #include "v90a.h"
 
@@ -232,7 +238,16 @@ void V90Rx::jd_bit(int bit)
 			ones += jb[(jpos + 64 + i) % 72];
 		if (ones <= 1) {
 			ev_jdp = 1;
-			DSP_DBG("v90a: Jd' after %d Jd\n", ev_jd);
+			/* this is Jd''s 8th symbol: the DIL's first is 5
+			   on, in data frame interval 0 */
+			dil_start = k + 5;
+			if (dil_start % 6) {
+				DSP_DBG("v90a: Jd' %ld symbols off its "
+					"frame\n", dil_start % 6);
+				dil_start = (dil_start + 3) / 6 * 6;
+			}
+			DSP_DBG("v90a: Jd' after %d Jd, DIL from symbol %ld\n",
+				ev_jd, dil_start);
 		}
 	}
 	if (jbits < 72)
@@ -257,6 +272,198 @@ void V90Rx::decide(float y)
 	int bit = descramble(&dscr, SCR_GPC, s ^ last_sign);
 	last_sign = s;
 	jd_bit(bit);
+}
+
+/* see v90a.h */
+void V90Rx::dil_set(const V90Dil &d)
+{
+	int i;
+	dil = d;
+	dil_on = d.n > 0;
+	dil_len = 0;
+	for (i = 0; i < d.n; i++)
+		dil_len += (d.h[d.ucode[i] >> 4] + 1) * 6;
+}
+
+/* a DIL symbol's value y: to its frame interval's and Ucode's sums,
+   times its sign; the segments and rounds counted on */
+static inline void dil_add(V90Rx *r, float y)
+{
+	const V90Dil *d = &r->dil;
+	int u = d->ucode[r->dil_seg], c = u >> 4;
+	int len = (d->h[c] + 1) * 6, k = r->dil_k, j = (int)(r->k % 6);
+	float s = d->sp[k % d->lsp] ? 1.0f : -1.0f;
+
+	if (!d->tp[k % d->ltp])
+		u = d->ref[c];
+	r->dsum[j][u] += s * y;
+	r->dsq[j][u] += (double)y * y;
+	r->dcnt[j][u]++;
+	if (++r->dil_k >= len) {
+		r->dil_k = 0;
+		if (++r->dil_seg >= d->n) {
+			r->dil_seg = 0;
+			r->ev_dil++;
+		}
+	}
+}
+
+/* a value's place in a sorted array of floats (qsort()) */
+static int cmp_float(const void *a, const void *b)
+{
+	float x = *(const float *)a, y = *(const float *)b;
+	return x < y ? -1 : x > y;
+}
+
+/* the median of n values (sorted in place); 0 for none */
+static float median(float *v, int n)
+{
+	if (!n)
+		return 0;
+	qsort(v, n, sizeof(*v), cmp_float);
+	return n & 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
+}
+
+/* the levels Ucodes 0..127 have through a digital loss pad of db
+   (each code requantized that much lower), as our equaliser scales them
+   (UINFO through it to lin[UINFO]) */
+static void pad_levels(int alaw, const int *lin, int uinfo, float db,
+		       float *out)
+{
+	double g = pow(10, -db / 20), ref;
+	int u;
+	for (u = 0; u < 128; u++)
+		out[u] = (float)g711::decode(alaw, g711::encode(alaw,
+				(int)lrint(lin[u] * g)));
+	ref = out[uinfo] > 0 ? lin[uinfo] / out[uinfo] : 1;
+	for (u = 0; u < 128; u++)
+		out[u] = (float)(out[u] * ref);
+}
+
+/* see v90a.h: the levels and their noise (each Ucode's; the median of
+   them); a Ucode unusable whose noise is more than 4 times that and
+   0.2% of its level (clipped).  A frame interval robbed when 7 in 10 of
+   the Ucode pairs (2m, 2m + 1, or 2m + 1, 2m + 2: whichever the law's
+   octet makes) that the noise lets tell apart come out alike, or it
+   tells less than 3/4 as many levels apart as the best.  The pad:
+   of 0 to 9 dB in 0.5 dB steps, the one whose levels fit those of the
+   intervals not robbed best (their relative errors, on the levels 10
+   times the noise and more) */
+void V90Rx::dil_analyse()
+{
+	float r[6 * 128], nz[6][128], lv[128], pl[128];
+	double best = -1;
+	char rb[16] = "none";
+	int j, u, m, nr = 0, nm, pd, most = 0;
+
+	memset(dil_level, 0, sizeof(dil_level));
+	memset(dil_usable, 0, sizeof(dil_usable));
+	for (j = 0; j < 6; j++)
+		for (u = 0; u < 128; u++) {
+			int n_ = dcnt[j][u];
+			double mu, var;
+			nz[j][u] = 0;
+			if (!n_)
+				continue;
+			mu = dsum[j][u] / n_;
+			var = dsq[j][u] / n_ - mu * mu;
+			dil_level[j][u] = (float)mu;
+			nz[j][u] = (float)sqrt(var > 0 ? var : 0);
+			r[nr++] = nz[j][u];
+		}
+	nm = nr;
+	dil_noise = median(r, nr);
+	if (dsplibs_debug_level >= 5)
+		for (u = 0; u < 128; u += 4)
+			DSP_DBG("v90a: DIL u %3d lin %6d: %8.1f %8.1f %8.1f %8.1f "
+				"%8.1f %8.1f (noise %6.1f)\n", u, lin[u],
+				dil_level[0][u], dil_level[1][u],
+				dil_level[2][u], dil_level[3][u],
+				dil_level[4][u], dil_level[5][u], nz[0][u]);
+	for (j = 0; j < 6; j++)
+		for (u = 0; u < 128; u++)
+			dil_usable[j][u] = dcnt[j][u] &&
+				nz[j][u] <= 4 * dil_noise + 0.002f * lin[u];
+
+	for (j = 0; j < 6; j++) {
+		int n_ = 0, i;
+		for (u = 0; u < 128; u++)
+			if (dil_usable[j][u])
+				lv[n_++] = dil_level[j][u];
+		qsort(lv, n_, sizeof(*lv), cmp_float);
+		dil_distinct[j] = n_ ? 1 : 0;
+		for (i = 1, m = 0; i < n_; i++)
+			if (lv[i] - lv[m] > 3 * dil_noise) {
+				dil_distinct[j]++;
+				m = i;
+			}
+	}
+	for (j = 0; j < 6; j++)
+		if (dil_distinct[j] > most)
+			most = dil_distinct[j];
+
+	dil_robbed = 0;
+	for (j = 0; j < 6; j++) {
+		int off;
+		/* (behind a pad the codes the robbed bit makes alike are
+		   not neighbouring Ucodes: half the levels are left) */
+		if (dil_distinct[j] * 4 < most * 3)
+			dil_robbed |= 1 << j;
+		for (off = 0; off < 2; off++) {
+			int pairs = 0, alike = 0;
+			for (m = 0; 2 * m + off + 1 < 128; m++) {
+				int a = 2 * m + off, b_ = a + 1;
+				float step = (float)(lin[b_] - lin[a]);
+				if (!dil_usable[j][a] || !dil_usable[j][b_] ||
+				    step < 4 * dil_noise)
+					continue;
+				pairs++;
+				if (fabsf(dil_level[j][b_] - dil_level[j][a]) <
+				    0.3f * step)
+					alike++;
+			}
+			if (pairs >= 8 && alike * 10 >= pairs * 7)
+				dil_robbed |= 1 << j;
+		}
+	}
+
+	dil_pad_db = 0;
+	for (pd = 0; pd <= 18; pd++) {
+		double e = 0;
+		pad_levels(alaw, lin, uinfo, pd * 0.5f, pl);
+		for (j = 0; j < 6; j++) {
+			if (dil_robbed & (1 << j))
+				continue;
+			for (u = 1; u < 128; u++)
+				if (dil_usable[j][u] &&
+				    pl[u] > 10 * dil_noise) {
+					double d = (dil_level[j][u] - pl[u]) /
+						pl[u];
+					e += d * d;
+				}
+		}
+		if (best < 0 || e < best) {
+			best = e;
+			dil_pad_db = pd * 0.5f;
+		}
+	}
+
+	for (j = 0, u = 0; j < 6; j++)
+		for (m = 0; m < 128; m++)
+			u += dcnt[j][m] && !dil_usable[j][m];
+	if (dil_robbed)
+		for (j = 0, m = 0; j < 6; j++)
+			if (dil_robbed & (1 << j)) {
+				m += snprintf(rb + m, sizeof(rb) - m, "%s%d",
+					      m ? "," : "", j);
+			}
+	DSP_DBG("v90a: DIL: pad %.1f dB, noise %.1f (%.1f dB below UINFO), "
+		"%d of %d unusable, robbed %s, distinct levels %d "
+		"%d %d %d %d %d\n", dil_pad_db, dil_noise,
+		20 * log10f(level / (dil_noise + 1e-6f)), u, nm, rb,
+		dil_distinct[0],
+		dil_distinct[1], dil_distinct[2], dil_distinct[3],
+		dil_distinct[4], dil_distinct[5]);
 }
 
 /* see v90a.h */
@@ -304,6 +511,14 @@ void V90Rx::sample(float v)
 			continue;
 		}
 		y = equalize(k);
+		/* after Jd': the equaliser still, the DIL measured */
+		if (ev_jdp) {
+			if (dil_on && k >= dil_start &&
+			    ev_dil < V90RX_DIL_ROUNDS)
+				dil_add(this, y);
+			k++;
+			continue;
+		}
 		/* TRN1d known up to its least length; after it our
 		   decisions */
 		if (t >= TRN1D_MIN)

@@ -8,12 +8,16 @@
  *    network's codec, the line and our codec, at 8000 samples a second
  *    (the network's clock).  Phase 3 so far (9.3.2/V.90): Sd and its
  *    reversal (the data frame alignment), the equaliser trained on
- *    TRN1d, Jd and Jd'.
+ *    TRN1d, Jd and Jd', the DIL measured: each codeword's level in each
+ *    frame interval, what that shows of the network (its pads, robbed
+ *    bits, noise).
  *
  */
 
 #ifndef V90A_H
 #define V90A_H
+
+#include "v34.h"
 
 namespace dsp {
 
@@ -37,6 +41,7 @@ struct V90Jd {
 #define V90RX_TAPS      127
 #define V90RX_LS        1020    /* TRN1d symbols the equaliser is first
 				   solved on (least squares) */
+#define V90RX_DIL_ROUNDS 2      /* the DIL's rounds measured */
 
 struct V90Rx {
 	enum Stage {
@@ -92,9 +97,43 @@ struct V90Rx {
 	int ev_trained;
 	int ev_jd;              /* Jd frames received */
 	int ev_jdp;             /* Jd' after them */
+	int ev_dil;             /* the DIL's rounds measured */
 	V90Jd jd;
 
+	/* the DIL our Ja asked for (8.4.1/V.90): it follows Jd' (in data
+	   frame interval 0), round after round; the decisions' values
+	   (the equaliser still) by frame interval and Ucode, the sign
+	   SP's.  Its first symbol, a round's length, where in it we are */
+	V90Dil dil;
+	int dil_on;
+	long dil_start, dil_len;
+	int dil_seg, dil_k;
+	double dsum[6][128], dsq[6][128];
+	int dcnt[6][128];
+	/* what it shows (dil_analyse()): each Ucode's level in each frame
+	   interval (the equaliser's scale: UINFO is lin[UINFO]; 0 if not
+	   measured; usable unless its own noise stands out, as a clipped
+	   one's does), the noise on them (the median of each Ucode's: the
+	   equaliser's mse on random data, mse, is the data mode's noise),
+	   the network's digital loss (a pad: the equaliser, trained on
+	   UINFO through it, takes its gain away, but its requantization
+	   shows in the levels), the
+	   frame intervals whose least significant bit is robbed (odd and
+	   even Ucodes alike), and how many levels each interval tells
+	   apart (more than 3 noise apart) */
+	float dil_level[6][128];
+	unsigned char dil_usable[6][128];       /* measured, its noise not
+						   standing out (clipped) */
+	float dil_noise;
+	float dil_pad_db;       /* the network's digital loss: the pad whose
+				   requantized levels fit the DIL's best */
+	int dil_robbed;
+	int dil_distinct[6];
+
 	void init(int alaw_, int uinfo_);
+	/* the DIL to measure (N 0: none) */
+	void dil_set(const V90Dil &d);
+	void dil_analyse();
 	/* one sample at 8000 Hz */
 	void sample(float v);
 

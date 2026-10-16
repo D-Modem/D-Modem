@@ -314,29 +314,45 @@ std::vector<Call> calls()
 	   so far phases 1 to 3) and the open digital modem (8000 Hz), each
 	   calling: V.8 agrees on V.90, phase 2 has the analogue modem as
 	   the V.34 answer modem, INFO0d's law, INFO1a asks for V.90; in
-	   phase 3 Ja asks for no DIL, the PCM receiver finds Sd-bar, trains
-	   on TRN1d and takes Jd, our S ends Jd, Jd' our S-bar.  The
-	   analogue modem has no phase 4 yet: the call ends there, the
-	   digital modem's in phase 4 */
+	   phase 3 Ja asks for a DIL of every Ucode, the PCM receiver finds
+	   Sd-bar, trains on TRN1d and takes Jd, our S ends Jd, Jd' our
+	   S-bar; two rounds of the DIL measured, our S and S-bar end it.
+	   The analogue modem has no phase 4 yet: the call ends there, the
+	   digital modem's in phase 4.  With netsim's pads (NET_PAD) and
+	   robbed bits (NET_RBS) on the codes to the analogue modem the DIL
+	   finds them */
 	add("open", "open_v90a_ulaw", "open", "open8", "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "DSP_V90A=1", "EXPECT_FAIL=1",
 	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*INFO0d u-law"
 	      ".*V.90 upstream 3429 baud.*Sd-bar.*Jd: rates 3fffff.*Jd'"
-	      ".*phase 3 done.*no phase 4 yet",
+	      ".*DIL: pad 0.0 dB.*robbed none.*phase 3 done.*no phase 4 yet",
 	      "EXPECT_B=(?s)V.90 with us as the digital modem.*INFO1a: V.90, "
-	      "upstream 3429 baud, UINFO 79.*DIL N 0.*V.90 S after [0-9]+ Jd" });
+	      "upstream 3429 baud, UINFO 79.*DIL N 128.*V.90 S after [0-9]+ "
+	      "Jd.*V.90 DIL ends after 2 rounds" });
 	add("open", "open_v90a_alaw", "open", "open8", "ATX3;AT+MS=90",
 	    { "NET=9600:8000:alaw", "DSP_G711=alaw", "DSP_V90A=1",
 	      "EXPECT_FAIL=1",
 	      "EXPECT_A=(?s)INFO0d A-law.*V.90 upstream.*Jd: rates.*"
-	      "phase 3 done",
-	      "EXPECT_B=V.90 S after [0-9]+ Jd" });
+	      "DIL: pad 0.0 dB.*robbed none.*phase 3 done",
+	      "EXPECT_B=V.90 DIL ends" });
 	add("open", "open_v90a_answers", "open8", "open", "ATX3;AT+MS=90",
 	    { "NET=8000:9600:ulaw", "DSP_V90A=1", "EXPECT_FAIL=1",
 	      "EXPECT_A=(?s)INFO1a: V.90, upstream 3429 baud, UINFO 79.*"
-	      "V.90 S after [0-9]+ Jd",
+	      "V.90 DIL ends",
 	      "EXPECT_B=(?s)V.90 with us as the analogue modem.*INFO0d u-law"
-	      ".*V.90 upstream 3429 baud.*phase 3 done" });
+	      ".*V.90 upstream 3429 baud.*DIL: pad 0.0 dB.*phase 3 done" });
+	add("open", "open_v90a_dil_pad", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "NET_PAD=3", "DSP_V90A=1",
+	      "EXPECT_FAIL=1", "EXPECT_A=DIL: pad 3.0 dB.*robbed none" });
+	add("open", "open_v90a_dil_rbs", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "NET_RBS=0x01", "DSP_V90A=1",
+	      "EXPECT_FAIL=1", "EXPECT_A=DIL: pad 0.0 dB.*robbed [0-5],"
+	      " distinct" });
+	add("open", "open_v90a_dil_pad_rbs", "open", "open8",
+	    "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "NET_PAD=6", "NET_RBS=0x24",
+	      "NET_FLOOR=30", "DSP_V90A=1", "EXPECT_FAIL=1",
+	      "EXPECT_A=DIL: pad 6.0 dB.*robbed [0-5],[0-5], distinct" });
 #ifdef INTEROP_HAVE_AMR
 	/* --- two open modems (8000 Hz) through a mobile network's speech
 	   codec (netsim's NET_CODEC): V.22 passes AMR at 12.2 kbit/s with

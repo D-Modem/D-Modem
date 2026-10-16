@@ -17,7 +17,12 @@
  *    them in turn.  NET_CODEC=amr:12.2 (or amrwb:23.85, ...: codec_sim.h)
  *    puts a mobile network's speech codec on the 8000 Hz line in place
  *    of G.711, NET_CODEC_LOSS=<percent> erases that many of its frames
- *    at random (NET_CODEC_SEED).
+ *    at random (NET_CODEC_SEED).  Toward a 9600 Hz modem (an analogue
+ *    line's) the codes may cross a digital loss pad (NET_PAD=<dB>: each
+ *    sample re-encoded that much lower) and robbed bit signalling
+ *    (NET_RBS=<mask>: in the samples whose count mod 6 has its bit in
+ *    the mask, the octet's least significant bit forced to 1, as T1
+ *    trunks rob it every sixth frame), as V.90's DIL finds them.
  */
 #include <errno.h>
 #include <math.h>
@@ -566,6 +571,8 @@ struct Net : Drop, Step, Noise, Loop, Echo, Moh {
 	const char *codec_spec = nullptr;       /* NET_CODEC */
 	double codec_loss = 0;                  /* NET_CODEC_LOSS, percent */
 	unsigned codec_seed = 1;                /* NET_CODEC_SEED */
+	double pad = 1;         /* NET_PAD: the digital loss, a factor */
+	int rbs = 0;            /* NET_RBS: the robbed positions mod 6 */
 
 	/* from the environment; ra: A's rate */
 	void init(int ra)
@@ -580,6 +587,10 @@ struct Net : Drop, Step, Noise, Loop, Echo, Moh {
 			gain = atof(getenv("NET_GAIN"));
 		if (getenv("NET_GAIN_UP"))
 			gain_up = atof(getenv("NET_GAIN_UP"));
+		if (getenv("NET_PAD"))
+			pad = pow(10, -atof(getenv("NET_PAD")) / 20);
+		if (getenv("NET_RBS"))
+			rbs = (int)strtol(getenv("NET_RBS"), NULL, 0) & 63;
 		if (getenv("NET_DROP"))
 			drop_init(getenv("NET_DROP"));
 		noise_init();
@@ -597,6 +608,16 @@ struct Net : Drop, Step, Noise, Loop, Echo, Moh {
 	static int line_sample(struct dir *d, int x)
 	{
 		return d->codec ? d->codec->sample(x) : g711_line(x);
+	}
+	/* a code on its way to an analogue line's codec (sample n of the
+	   direction): the pad, then the robbed bit */
+	int digital(int s, long n) const
+	{
+		if (pad != 1)
+			s = g711_line((int)lrint(s * pad));
+		if (rbs & (1 << (n % 6)))
+			s = g711::decode(alaw, g711::encode(alaw, s) | 1);
+		return s;
 	}
 	int run(struct dir *d, int a_out, int a_in);
 };
@@ -668,7 +689,10 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			   analogue loss or gain NET_GAIN on the way): the
 			   raised cosine, or NET_PLAIN's short resampler */
 			int s = line_sample(d, ibuf[i]);
-			float x = s * gain;
+			float x;
+			if (!d->codec)
+				s = digital(s, d->nin - 1);
+			x = s * gain;
 			wav_put(!a_out, s);
 			m = plain ? d->rs.run(x, y) : rc_run(&d->rc, x, y);
 			for (k = 0; k < m; k++) {
