@@ -213,6 +213,15 @@ static cplx tx_symbol(V34Tx *t)
 			t->pos += 2;
 		}
 		break;
+	case V34_TX_JA:
+		/* the descriptor again and again, as MP */
+		if (t->pos >= t->nbits)
+			t->pos = 0;
+		k = t->dibit(t->bits[t->pos], t->bits[t->pos + 1]);
+		t->pos += 2;
+		t->idx = (t->idx + k) & 3;
+		z = tx_point(t->idx);
+		break;
 	case V34_TX_DATA:
 		if (t->data_on) {
 			z = t->dtx.symbol(&t->scr, t->tap);
@@ -257,6 +266,9 @@ void V34Tx::segment(enum v34_txseg seg_)
 	n = 0;
 	if (seg_ == V34_TX_MP)
 		nbits = pos = 0;
+	/* (Ja's bits are the caller's) */
+	if (seg_ == V34_TX_JA)
+		pos = 0;
 	/* TRN starts with the scrambler cleared, the remote may train with
 	   a copy of it */
 	if (seg_ == V34_TX_TRN)

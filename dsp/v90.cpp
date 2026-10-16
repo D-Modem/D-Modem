@@ -560,6 +560,49 @@ int V90Dil::parse(const unsigned char *b, int len)
 	return 0;
 }
 
+/* see v34.h: Table 12/V.90, SP and TP padded with zeros to 16 bits, a
+   start bit before each 16, the Ucodes two to a 16 (with their reserved
+   bits), the CRC, a fill bit, and another to make it even */
+int V90Dil::build(unsigned char *b) const
+{
+	int m = 0, i, j;
+
+	put_bits(b, &m, 0x1FFFF, 17);
+	put_bits(b, &m, 0, 1);
+	put_bits(b, &m, n, 8);
+	put_bits(b, &m, 0, 8);
+	put_bits(b, &m, 0, 1);
+	put_bits(b, &m, lsp - 1, 7);
+	put_bits(b, &m, 0, 1);
+	put_bits(b, &m, ltp - 1, 7);
+	put_bits(b, &m, 0, 1);
+	for (i = 0; i < 2; i++) {
+		const unsigned char *pat = i ? tp : sp;
+		int len = i ? ltp : lsp;
+		for (j = 0; j < (len + 15) / 16 * 16; j++) {
+			if (j % 16 == 0)
+				put_bits(b, &m, 0, 1);
+			put_bits(b, &m, j < len ? pat[j] : 0, 1);
+		}
+	}
+	/* H1..H8, REF1..REF8, then the N Ucodes: two 7 bit fields (each
+	   with a reserved bit) after a start bit */
+	for (i = 0; i < 16 + n + (n & 1); i++) {
+		int v = i < 8 ? h[i] : i < 16 ? ref[i - 8] :
+			i - 16 < n ? ucode[i - 16] : 0;
+		if (i % 2 == 0)
+			put_bits(b, &m, 0, 1);
+		put_bits(b, &m, v, 7);
+		put_bits(b, &m, 0, 1);
+	}
+	put_bits(b, &m, 0, 1);
+	put_frame_crc(b, &m);
+	put_bits(b, &m, 0, 1);
+	if (m & 1)
+		put_bits(b, &m, 0, 1);
+	return m;
+}
+
 /*
  *    CP (Table 14/V.90)
  */

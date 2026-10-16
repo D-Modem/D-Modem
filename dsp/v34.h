@@ -316,6 +316,8 @@ enum v34_txseg {
 	V34_TX_J,
 	V34_TX_JP,
 	V34_TX_MP,
+	V34_TX_JA,      /* V.90's analogue modem: Ja, the DIL descriptor in
+			   bits (repeated) */
 	V34_TX_E,
 	V34_TX_DATA,
 };
@@ -330,7 +332,7 @@ struct V34Tx {
 	int idx;                /* last training point, for differential coding */
 	int trn16;              /* phase 4 TRN, MP and E of 16 points (the
 				   remote's J asked for them) */
-	unsigned char bits[200];
+	unsigned char bits[2800];       /* MP, or Ja (V90_JA_MAX) */
 	int nbits, pos;
 	V34Mp mp;       /* the MP we send */
 	int mp_sent;            /* complete MP / MP' sequences sent */
@@ -365,6 +367,9 @@ struct V90Dil {
 	unsigned char ucode[255];
 
 	int parse(const unsigned char *b, int len);
+	/* the descriptor's bits into b (the analogue modem's Ja): how
+	   many (even) */
+	int build(unsigned char *b) const;
 };
 
 typedef struct { double re, im; } lscplx;

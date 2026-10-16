@@ -33,6 +33,7 @@
 #include "pump.h"
 #include "v34.h"
 #include "v90.h"
+#include "v90a.h"
 #include "v91.h"
 #include "v92.h"
 
@@ -186,9 +187,17 @@ enum v34_state {
 	P4D_START,
 	P4D_RI,         /* until CPt */
 	P4D_TRAIN,      /* TRN2d, MP, MP', Ed, B1d (the frame source) */
-	/* V.90 analogue modem, phase 3 (9.3.2/V.90): its silence after
-	   INFO1a; what follows is to come */
-	P3V_SILENCE,
+	/* V.90 analogue modem, phase 3 (9.3.2/V.90) */
+	P3V_SILENCE,    /* 70 ms after INFO1a */
+	P3V_S,
+	P3V_SBAR,
+	P3V_PP,
+	P3V_TRN,
+	P3V_JA,         /* Ja until Sd-bar */
+	P3V_WAIT_JD,    /* silence until Jd */
+	P3V_S2,         /* S until Jd' */
+	P3V_SBAR2,
+	P3V_END,        /* phase 4 is to come */
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
@@ -564,6 +573,10 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int v90a_on;            /* V.90 agreed in V.8, we the analogue
 				   modem */
 	int v90a_uinfo;         /* the 2 point train's Ucode we ask for */
+	int v90a_rx;            /* the line into v90rx */
+	V90Rx v90rx;    /* the analogue modem's PCM receiver */
+	Resampler rs_pcm;       /* the line at 8000 Hz for it */
+	V90Dil v90a_dil;        /* the DIL our Ja asks for */
 	int v92;                /* offer V.92 as the digital modem */
 	int v92_on;             /* both INFO0 said V.92 */
 	int short2;             /* and both asked for short phase 2 */
@@ -638,6 +651,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int fallback(const char *why);
 	void choose_bauds();
 	void v90a_choose();
+	void v90a_start();
 	int primary_start();
 	int v90_start();
 	void v90_make_mp(int ack);
@@ -2356,6 +2370,14 @@ void V34Pump::pump_rx_sample(float x)
 		}
 		return;
 	}
+	if (v90a_rx) {
+		/* the digital modem's PCM at the network's 8000 Hz */
+		float d[2];
+		int m = rs_pcm.run(x, d);
+		for (k = 0; k < m; k++)
+			v90rx.sample(d[k]);
+		return;
+	}
 	if (prx_on) {
 		ec_schedule();
 		if (!ec.bypass)
@@ -2532,6 +2554,23 @@ int V34Pump::primary_start()
 	prx_on = 1;
 	txm = TXM_PRIMARY;
 	return 0;
+}
+
+/* the analogue modem's phase 3 (9.3.2/V.90): our V.34 transmitter at
+   the upstream symbol rate on the carrier INFO1d asked for (the answer
+   modem's scrambler), Ja asking for no DIL so far (N 0: the digital
+   modem goes to phase 4 after Jd'), the PCM receiver on the line at
+   8000 Hz */
+void V34Pump::v90a_start()
+{
+	ptx.init(baud_tx, rinfo1c.r[baud_tx].high, 0);
+	memset(&v90a_dil, 0, sizeof(v90a_dil));
+	v90a_dil.lsp = v90a_dil.ltp = 1;
+	ptx.nbits = v90a_dil.build(ptx.bits);
+	txm = TXM_PRIMARY;
+	v90rx.init(alaw, v90a_uinfo);
+	rs_pcm.init(5, 6);
+	v90a_rx = 1;
 }
 
 /* V.90 phase 3: the remote's V.34 signals in, our PCM signals out */
@@ -3603,6 +3642,7 @@ int V34Pump::handshake()
 			cc_silence();
 			if (v90a_on) {
 				set_state(P3V_SILENCE);
+				v90a_start();
 				break;
 			}
 			set_state(P3A_SILENCE);
@@ -3820,11 +3860,75 @@ int V34Pump::handshake()
 		}
 		break;
 
-	/* V.90 analogue modem, phase 3: not yet there (DSP_V90A=1 only),
-	   the call ends */
+	/* V.90 analogue modem, phase 3 (9.3.2/V.90): S, S-bar, PP, TRN,
+	   Ja until the digital modem's Sd-bar, silence while TRN1d trains
+	   the PCM receiver, S once Jd is in, S-bar after Jd'.  The
+	   failures that would retrain (9.5.2.1/V.90) end the call so far */
 	case P3V_SILENCE:
-		if (c >= ms2samples(1000, srate)) {
-			DSP_DBG("v34: V.90 analogue modem: no phase 3 yet\n");
+		if (c >= ms2samples(70, srate))
+			tx_next(P3V_S, V34_TX_S);
+		break;
+	case P3V_S:
+		if (ptx.n >= 128)
+			tx_next(P3V_SBAR, V34_TX_SBAR);
+		break;
+	case P3V_SBAR:
+		if (ptx.n >= 16)
+			tx_next(P3V_PP, V34_TX_PP);
+		break;
+	case P3V_PP:
+		if (ptx.n >= 288)
+			tx_next(P3V_TRN, V34_TX_TRN);
+		break;
+	case P3V_TRN:
+		/* 512 T at least: the digital modem trains on PP and
+		   them, then takes Ja */
+		if (ptx.n >= 2048)
+			tx_next(P3V_JA, V34_TX_JA);
+		break;
+	case P3V_JA:
+		if (v90rx.ev_sdbar) {
+			tx_next(P3V_WAIT_JD, V34_TX_SILENCE);
+			break;
+		}
+		if (c >= ms2samples(3000, srate)) {
+			DSP_DBG("v34: V.90: no Sd-bar after Ja\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P3V_WAIT_JD:
+		if (v90rx.ev_jd) {
+			DSP_DBG("v34: V.90: Jd, PCM receiver mse %.4f\n",
+				v90rx.mse);
+			tx_next(P3V_S2, V34_TX_S);
+			break;
+		}
+		if (c >= ms2samples(4500, srate)) {
+			DSP_DBG("v34: V.90: no Jd (%s)\n",
+				v90rx.ev_trained ? "trained" : "not trained");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P3V_S2:
+		if (v90rx.ev_jdp) {
+			tx_next(P3V_SBAR2, V34_TX_SBAR);
+			break;
+		}
+		if (c >= ms2samples(5000, srate)) {
+			DSP_DBG("v34: V.90: no Jd'\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P3V_SBAR2:
+		if (ptx.n >= 16) {
+			DSP_DBG("v34: V.90: phase 3 done (no DIL)\n");
+			tx_next(P3V_END, V34_TX_SILENCE);
+		}
+		break;
+	case P3V_END:
+		/* phase 4 is to come (DSP_V90A=1 only): the call ends */
+		if (c >= ms2samples(500, srate)) {
+			DSP_DBG("v34: V.90 analogue modem: no phase 4 yet\n");
 			return DPSTAT_ERROR;
 		}
 		break;
@@ -4504,7 +4608,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   modem's network: under way, only DSP_V90A=1 offers it */
 	v90a = (id == DP_V90 || id == DP_V92) && !v90 && !v8_low &&
 		getenv("DSP_V90A") && atoi(getenv("DSP_V90A"));
-	v90a_on = 0;
+	v90a_on = v90a_rx = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
 
