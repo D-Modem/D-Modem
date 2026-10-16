@@ -2,9 +2,10 @@
 # Copyright (C) 2026 Neo-Desktop
 # The tests' logs: each ctest run in a directory of its own under
 # DMODEM_TEST_LOG_ROOT (<build>/test-logs/<YYYY-MM-DD_HH-MM-SS>/, latest
-# pointing to the last), each test's output, files and result in
-# <run>/<test>/ (deleted when it passes, unless DMODEM_TEST_KEEP_PASSED=1),
-# the run's results.txt and summary.txt; verbose debug levels for every
+# pointing to the newest), each test's output, files and result in
+# <run>/<test>/ (deleted when it passes, and the run's directory too when
+# nothing failed, unless DMODEM_TEST_KEEP_PASSED=1), the run's
+# results.txt and summary.txt; verbose debug levels for every
 # test (DMODEM_TEST_DEBUG, 5 by default; 0: the tests' own).
 #
 # A fixture does it: test_logs_begin makes the run's directory before

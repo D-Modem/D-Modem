@@ -14,7 +14,9 @@
 #        results.txt (failures first; a test directory without a
 #        result.txt was killed, e.g. at its ctest timeout), and that
 #        printed.  (test_run.sh has deleted the directories of the tests
-#        that passed already.)
+#        that passed already.)  A run without a failure (skipped tests
+#        are none) leaves nothing: its directory goes, and latest points
+#        to the newest run left (DMODEM_TEST_KEEP_PASSED=1 keeps it).
 
 cmd=$1
 root=$2
@@ -70,7 +72,20 @@ end)
 		grep ' FAIL ' "$run/.results" | sort
 		grep -v ' FAIL ' "$run/.results" | sort
 	} > "$run/summary.txt"
+	failed=$(grep -c ' FAIL ' "$run/.results")
 	rm -f "$run/.results" "$root/.run-$PPID"
+	if [ "$failed" = 0 ] && [ "${DMODEM_TEST_KEEP_PASSED:-0}" = 0 ]; then
+		sed -n 2p "$run/summary.txt"
+		echo "test logs: none kept, nothing failed"
+		rm -rf "$run"
+		last=$(ls -1d "$root"/20[0-9][0-9]-* 2>/dev/null | sort | tail -n 1)
+		if [ -n "$last" ]; then
+			ln -sfn "$(basename "$last")" "$root/latest"
+		else
+			rm -f "$root/latest"
+		fi
+		exit 0
+	fi
 	echo "test logs: $run"
 	head -3 "$run/summary.txt"
 	grep ' FAIL ' "$run/summary.txt"

@@ -48,9 +48,10 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 
 ## Test logs
 
-Every ctest run keeps the logs of the tests that fail, in a directory
-of its own named for when it started, under `build/test-logs/`
-(`latest` is the last):
+A ctest run with a failure keeps the logs of the tests that failed, in
+a directory of its own named for when it started, under
+`build/test-logs/` (`latest` is the newest); a run without one (skipped
+tests are not failures) leaves nothing there:
 
     build/test-logs/2026-10-16_21-34-03/
         run.txt                     when, the ctest command, the commit, the host
@@ -71,8 +72,10 @@ directory before the first test and `test_logs_end` writes the summary
 after the last, and every test runs under `cmake/test_run.sh`, which
 keeps its output and passes it on to ctest. A test finds its directory
 in `DMODEM_TEST_DIR`. When the test passes, the launcher deletes its
-directory at once (`DMODEM_TEST_KEEP_PASSED=1` keeps them: some 100 MB
-for a full run); a test without its `result.txt` was killed, at its
+directory at once, and when the run ends without a failure
+`test_logs_end` deletes the run's directory and points `latest` at the
+newest run left (`DMODEM_TEST_KEEP_PASSED=1` keeps all of it: some 100
+MB for a full run); a test without its `result.txt` was killed, at its
 ctest timeout say, and counts as failed. The 20 latest runs stay
 (`-DDMODEM_TEST_LOG_KEEP=<n>`; `-DDMODEM_TEST_LOG_ROOT=<dir>` puts them
 elsewhere).

@@ -55,15 +55,17 @@ jobs:
       - name: Tests
         run: ctest --test-dir build -L "quick|spandsp|alsa" -j4 --output-on-failure
 
-      # each test's output and logs (build/test-logs/<run>/<test>/)
+      # the failed tests' output and logs (build/test-logs/<run>/<test>/;
+      # a run without a failure keeps none)
       - name: Test logs
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-logs
           path: |
             build/test-logs/
             !build/test-logs/latest
+          if-no-files-found: ignore
           retention-days: 14
 
       # dmodemd started as root (ctest skips it as the runner's user)
