@@ -117,11 +117,12 @@ directions. `DUMP=<prefix>` records what each side hears. It is the
 simulation of `pump_test`, for trying a line from the command line.
 
 V.34 between two open modems (`dsp_loopback 8 ...`, with the low-pass
-filter, no bit errors): 33600 bit/s at 40 dB (also with ±80 ppm clock
-offset, or with near and far echo 6 and 10 dB below our signal), 31200
-at 38 dB, 28800 at 35 dB, 26400 at 33 dB, 24000 at 30 dB, 21600 at
-28 dB, 16800 at 25 dB, 14400 at 22 dB. `[echo dB] [far echo dB]` add the echoes;
-`FAR_DELAY=<samples>` delays the far one (200 ms: still 31200 bit/s).
+filter, no bit errors): 33600 bit/s at 40 dB (also with near and far
+echo 6 and 10 dB below our signal; with ±80 ppm clock offset 33600 one
+way and 31200 the other), 31200 at 38 dB, 28800 at 35 dB, 26400 at
+33 dB, 24000 at 30 dB, 21600 at 28 dB, 19200 at 25 dB, 14400 at 22 dB.
+`[echo dB] [far echo dB]` add the echoes; `FAR_DELAY=<samples>` delays
+the far one (200 ms: still 33600 bit/s).
 
 A call connects two modem processes with pipes: `half_open` (this code
 on the modem core, `../core`) and another modem's harness, or a second

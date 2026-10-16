@@ -1,532 +1,764 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
- * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
- *    loopback.cpp - back to back test of the open data pumps
- *    (loopback.h): a calling and an answering modem against each other
- *    through a simulated line, the bit errors of the data phase counted
- *    in both directions
+ *    loopback.cpp - two of the open data pumps back to back through a
+ *    simulated line (loopback.h)
  *
+ *    No modem core is linked into the test programs, so this file is
+ *    the core the pumps see: it keeps the registered pumps, answers
+ *    their parameter and S-register questions, gives their transmitters
+ *    O.150's 2^23 - 1 pattern and keeps what their receivers deliver.
+ *    loopback_run() then runs a caller (call progress first) and an
+ *    answerer in blocks of 48 samples of simulated time.  Each direction
+ *    of the line delays, may drift (a sample clock offset), band limits,
+ *    scales and adds white noise relative to the signal it carries; each
+ *    side also hears the echoes of its own signal from the near and the
+ *    far hybrid.  After the run each side's bits since its CONNECT are
+ *    compared with what the other side sent.
+ *
+ *    The numbers below (seeds, delays, filters, the noise's order, the
+ *    error count's windows) are what the pump tests are calibrated
+ *    against.
  */
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "../dsp.h"
-#include "modem_dp.h"  /* it plays the modem core */
+#include <algorithm>
+#include <string>
+#include <vector>
+
+#include "dsp.h"
+#include "modem_dp.h"
 #include "modem_param.h"
 #include "dsplibs.h"
 #include "loopback.h"
 #include "test_util.h"
 
-using namespace dsp;
+using dsp::Biquad;
+using dsp::dsp_clip16;
 
-#define FRAG 48
-#define MAX_BITS (1 << 20)
-/* the share of the bits its rate carries from the CONNECT to the end
-   that a call must have delivered (LoopbackSide::ok()) */
-#define CARRIED_MIN 0.9
+/* samples a block (the pumps' max_frag) */
+static const int FRAG = 48;
+/* bits kept of what each side sends and of what it receives */
+static const long RECORD_BITS = 1L << 20;
+/* ok(): the share of the bits expected that a call must carry, and the
+   bit error rate it may have */
+static const double CARRIED_MIN = 0.9;
+static const double BER_MAX = 1e-3;
 
-/* ---- fake modem core ---- */
+/* the line's delay each way, samples */
+static const int DELAY_TO_ANSWERER = 37;
+static const int DELAY_TO_CALLER = 53;
+/* the near hybrid's echo delay, and the far hybrid's beyond the two
+   line delays */
+static const int NEAR_ECHO_DELAY = 20;
+static const int FAR_HYBRID_DELAY = 8;
+/* each side's own samples kept for the echoes (a power of two) */
+static const int ECHO_HISTORY = 32768;
 
-struct side {
-	const char *name;
-	struct dp *dp;
-	struct dp_runtime *rt;
-	int connected;
-	long connect_sample;
-	int tx_rate, rx_rate;
-	unsigned prbs;
-	u8 *tx_bits, *rx_bits;
-	long ntx, nrx;
-	long connect_rx;
-	int dp_requested;
-};
+/* the error count: bits skipped after the CONNECT at most, checked at
+   most, left unchecked at the end, and the fewest worth checking */
+static const long SKIP_MAX = 2000;
+static const long CHECK_MAX = 200000;
+static const long TAIL = 64;
+static const long CHECK_MIN = 300;
+/* an alignment: a window of this many bits with fewer mismatches than
+   MISMATCH_LIMIT; a slip once the run score exceeds SLIP_SCORE, looked
+   for from this far back */
+static const int WINDOW = 128;
+static const int MISMATCH_LIMIT = 8;
+static const long SLIP_SCORE = 24;
+static const long SLIP_BACK = 65536;
 
-static struct dp_operations *ops[256];   /* by id: DP_MAX is below some ids */
-static struct side sides[2];
-/* the line's sample now, and from when what the pumps receive is
-   dropped (LoopbackConfig::cut_s; 0: never) */
-static long now_sample, drop_from;
-/* the pumps' struct modem: only its address matters here */
+/* the two modems the pumps are created for, by their side (0 the
+   caller, 1 the answerer) */
 struct modem {
 	int side;
 };
-static struct modem fake_modems[2] = { { 0 }, { 1 } };
-static struct modem *fake[2];
 
-/* the side whose fake modem m is */
-static struct side *side_of(struct modem *m)
+/* one side of the call as the core keeps it */
+struct Side {
+	struct dp *pump;        /* the current one, or none */
+	void *runtime;          /* dp_runtime_create()'s, for all its pumps */
+	int tx_rate, rx_rate;   /* as the pumps last set them */
+	bool connected;
+	long connect_at;        /* the CONNECT's block, its first sample */
+	long rx_at_connect;     /* bits received by then */
+	int requested;          /* MDMPRM_DP_REQUESTED, 0: none */
+	unsigned prbs;          /* the pattern's last 23 bits, bit 0 the
+				   latest */
+	std::vector<u8> sent;   /* the first RECORD_BITS bits sent */
+	std::vector<u8> received;       /* and received, one a byte */
+};
+
+static const char *const side_name[2] = { "caller", "answerer" };
+static struct modem modems[2] = { { 0 }, { 1 } };
+static Side sides[2];
+
+/* the registered pumps by id, for the whole process (some ids are
+   above 128) */
+static struct dp_operations *pump_ops[256];
+
+/* the current block's first sample, and the first sample from which
+   received bits are dropped (-1: none) */
+static long block_at;
+static long cut_at = -1;
+
+/* what the core hands out: no voice settings, nothing to dial */
+static struct voice_info voice;
+static const char dial_string[] = "";
+
+/* the side of modem m */
+static Side &side_of(struct modem *m)
 {
-	return m == fake[0] ? &sides[0] : &sides[1];
+	return sides[m->side];
 }
 
-/* a pump's operations by its id */
+/* the next bit of O.150's 2^23 - 1 pattern (x^23 + x^18 + 1, not
+   inverted): the XOR of the bits 23 and 18 back, which are bits 22 and
+   17 of the register */
+static int prbs_next(unsigned &r)
+{
+	int b = ((r >> 22) ^ (r >> 17)) & 1;
+	r = ((r << 1) | b) & 0x7fffff;
+	return b;
+}
+
+/*
+ *    The modem core towards the pumps
+ */
+
+/* op serves id from now on, whatever served it before: 0 (-1 for an id
+   past the table) */
 int modem_dp_register(enum DP_ID id, struct dp_operations *op)
 {
-	ops[id] = op;
+	if ((unsigned)id >= 256)
+		return -1;
+	pump_ops[id] = op;
 	return 0;
 }
 
-/* and gone */
-void modem_dp_deregister(enum DP_ID id, struct dp_operations *op)
+/* nothing serves id any more */
+void modem_dp_deregister(enum DP_ID id, struct dp_operations *)
 {
-	ops[id] = NULL;
+	if ((unsigned)id < 256)
+		pump_ops[id] = nullptr;
 }
 
-/* the S registers the pumps read: S7 50 s, S10 1.4 s, the DTMF
-   duration, the dial pause and dial tone wait; 0 for the rest */
-int modem_get_sreg(struct modem *m, unsigned int num)
+/* n of the side's next pattern bits, one a byte, into buf (the first
+   RECORD_BITS also into its record); n */
+int modem_get_bits(struct modem *m, int, u8 *buf, int n)
 {
-	switch (num) {
-	case SREG_WAIT_CARRIER_AFTER_DIAL: return 50;
-	case SREG_CARRIER_LOSS_DISCONNECT_TIME: return 14;
-	case SREG_DTMF_DURATION: return 95;
-	case SREG_DIAL_PAUSE_TIME: return 2;
-	case SREG_DIAL_TONE_WAIT_TIME: return 5;
-	default: return 0;
+	Side &s = side_of(m);
+
+	for (int i = 0; i < n; i++) {
+		buf[i] = prbs_next(s.prbs);
+		if ((long)s.sent.size() < RECORD_BITS)
+			s.sent.push_back(buf[i]);
 	}
+	return n;
 }
 
-static struct voice_info vinfo;
+/* n bits (the low bit of each byte) into the side's record, as long as
+   it has room and the line is not cut; n */
+int modem_put_bits(struct modem *m, int, u8 *buf, int n)
+{
+	Side &s = side_of(m);
 
-/* the parameters the pumps read: the side's runtime, no dial string,
-   the voice info, the calling tone on; -1 for the rest */
+	if (cut_at >= 0 && block_at >= cut_at)
+		return n;
+	for (int i = 0; i < n && (long)s.received.size() < RECORD_BITS; i++)
+		s.received.push_back(buf[i] & 1);
+	return n;
+}
+
+/* the side's runtime, an empty dial string, the voice settings, the
+   calling tone wanted; -1 for anything else */
 long modem_get_param(struct modem *m, unsigned name)
 {
 	switch (name) {
-	case MDMPRM_DPRUNTIME: return (long)side_of(m)->rt;
-	case MDMPRM_DIALSTR: return (long)"";
-	case MDMPRM_VOICEINFO: return (long)&vinfo;
-	case GetCallingToneFlag: return 1;
-	default: return -1;
+	case MDMPRM_DPRUNTIME:
+		return (long)side_of(m).runtime;
+	case MDMPRM_DIALSTR:
+		return (long)dial_string;
+	case MDMPRM_VOICEINFO:
+		return (long)&voice;
+	case GetCallingToneFlag:
+		return 1;
+	default:
+		return -1;
 	}
 }
 
-/* what the pumps tell the core: the pump they want next (automode)
-   and the rates */
+/* keeps the pump the side asks for and its rates, ignores the rest: 0 */
 long modem_set_param(struct modem *m, unsigned name, int val)
 {
-	struct side *s = side_of(m);
-	if (name == MDMPRM_DP_REQUESTED)
-		s->dp_requested = val;
-	else if (name == MDMPRM_TX_RATE)
-		s->tx_rate = val;
-	else if (name == MDMPRM_RX_RATE)
-		s->rx_rate = val;
+	Side &s = side_of(m);
+
+	switch (name) {
+	case MDMPRM_DP_REQUESTED:
+		s.requested = val;
+		break;
+	case MDMPRM_TX_RATE:
+		s.tx_rate = val;
+		break;
+	case MDMPRM_RX_RATE:
+		s.rx_rate = val;
+		break;
+	}
 	return 0;
 }
 
-/* n bits for the pump to send, one a byte: PRBS 2^23-1, the first
-   MAX_BITS kept in tx_bits; n */
-int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n)
+/* the S-registers the pumps read: 50 s for the handshake, 1.4 s of
+   carrier loss, 95 ms DTMF and the dial timings; 0 for all others
+   (blind dialling among them) */
+int modem_get_sreg(struct modem *, unsigned int num)
 {
-	struct side *s = side_of(m);
-	int i;
-	for (i = 0; i < n; i++) {
-		/* PRBS 2^23-1 */
-		int b = ((s->prbs >> 22) ^ (s->prbs >> 17)) & 1;
-		s->prbs = (s->prbs << 1) | b;
-		buf[i] = b;
-		if (s->ntx < MAX_BITS)
-			s->tx_bits[s->ntx++] = b;
+	switch (num) {
+	case SREG_DIAL_TONE_WAIT_TIME:
+		return 5;
+	case SREG_WAIT_CARRIER_AFTER_DIAL:
+		return 50;
+	case SREG_DIAL_PAUSE_TIME:
+		return 2;
+	case SREG_CARRIER_LOSS_DISCONNECT_TIME:
+		return 14;
+	case SREG_DTMF_DURATION:
+		return 95;
+	default:
+		return 0;
 	}
-	return n;
 }
 
-/* n bits the pump received, the first MAX_BITS kept in rx_bits (none
-   from drop_from on); n */
-int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n)
+/* no DTE: what is sent to it is dropped */
+int modem_send_to_tty(struct modem *, const char *, int n)
 {
-	struct side *s = side_of(m);
-	int i;
-	if (drop_from && now_sample >= drop_from)
-		return n;
-	for (i = 0; i < n; i++)
-		if (s->nrx < MAX_BITS)
-			s->rx_bits[s->nrx++] = buf[i] & 1;
 	return n;
 }
 
-/* no DTE: what is sent is gone, nothing comes */
-int modem_send_to_tty(struct modem *m, const char *buf, int n) { return n; }
-int modem_recv_from_tty(struct modem *m, char *buf, int n) { return 0; }
+/* and nothing comes from it */
+int modem_recv_from_tty(struct modem *, char *, int)
+{
+	return 0;
+}
 
-/* ---- line simulation ---- */
+/*
+ *    The line
+ */
 
-struct line {
-	float delay[256];
-	int pos, len;
-	float gain, noise;
-	Biquad tilt;
-	/* sample clock offset (line_clock()): a windowed sinc resampler,
-	   step input samples an output, its input kept in ring (mask + 1
-	   samples) and read lag samples behind the newest at the start */
-	double step, lag;
-	float *ring;
-	long mask;
-	float sig_pwr, ref_pwr;
-	long n;
+/* a sample clock offset: one output for each input, the input read
+   between its samples at lag samples behind the newest and drifting by
+   step - 1 a sample, through 32 taps of a Blackman windowed sinc */
+class ClockOffset {
+public:
+	/* for a clock step and a run of n samples: the lag and the
+	   history sized so that the reading neither overtakes the input
+	   nor falls off the end of what is kept */
+	void init(double step_, long n)
+	{
+		long drift = (long)(fabs(step_ - 1) * n) + 64;
+		long need;
+		size_t size = 1024;
+
+		step = step_;
+		lag = 256;
+		if (step > 1 && drift + 32 > lag)
+			lag = drift + 32;
+		need = lag + 64 + (step < 1 ? drift : 0);
+		while ((long)size < need)
+			size <<= 1;
+		hist.assign(size, 0);
+		mask = size - 1;
+		count = 0;
+	}
+
+	/* x in, the interpolated sample out (0 while the taps are not
+	   all within what has come and is kept) */
+	float run(float x)
+	{
+		long newest = count++;
+		double pos = newest * step - lag;
+		long i = (long)floor(pos);
+
+		hist[newest & mask] = x;
+		if (i < 16 || i + 16 > newest ||
+		    i - 15 <= newest - (long)hist.size())
+			return 0;
+
+		/* sin(pi (k - f)) is -(-1)^k sin(pi f), and the window's
+		   second cosine is the first's double angle */
+		double f = pos - i;
+		double s = sin(M_PI * f);
+		double acc = 0;
+		for (int k = -15; k <= 16; k++) {
+			double d = k - f;
+			double sinc = d == 0 ? 1 :
+				((k & 1) ? s : -s) / (M_PI * d);
+			double c = cos(M_PI * d / 16.5);
+			double win = 0.42 + 0.5 * c + 0.08 * (2 * c * c - 1);
+			acc += sinc * win * hist[(i + k) & mask];
+		}
+		return (float)acc;
+	}
+
+private:
+	std::vector<float> hist;
+	size_t mask;
+	long count;             /* inputs so far */
+	double step;
+	long lag;
 };
 
-/* l's clock offset for total samples of line time: step input samples
-   an output.  The reading drifts by (step - 1) total samples over
-   them: it starts 256 samples behind the input, more if it would
-   overtake it (step > 1), and the ring keeps 1024 samples, more if it
-   would fall that far behind (step < 1), so that every output is read
-   from the line's own samples.  (Not enough at the start: the old
-   reader went on reading the ring's stale samples, or none.) */
-static void line_clock(struct line *l, double step, long total)
-{
-	double drift = fabs(step - 1) * total + 64;
-	long size = 1024;
-
-	l->step = step;
-	l->lag = step > 1 && drift + 32 > 256 ? drift + 32 : 256;
-	while (size < l->lag + (step < 1 ? drift : 0) + 64)
-		size *= 2;
-	l->ring = static_cast<float *>(calloc(size, sizeof(float)));
-	l->mask = size - 1;
-}
-
-/* x into the clock offset's resampler; the line at the drifting
-   position (l->step input samples an output), 0 at the start */
-static float line_resample(struct line *l, float x)
-{
-	/* one output per input, read at a slowly drifting position that
-	   starts l->lag samples behind the newest input */
-	double t = l->n * l->step - l->lag;
-	long i = (long)floor(t);
-	float f = (float)(t - i), y = 0;
-	int k;
-	l->ring[l->n & l->mask] = x;
-	l->n++;
-	/* the window (i - 15 to i + 16) in the ring: not before the
-	   start, not ahead of the newest sample, not overwritten */
-	if (i < 16 || i + 16 > l->n - 1 || l->n - (i - 15) > l->mask + 1)
-		return 0;
-	/* 32 tap Blackman windowed sinc interpolation */
-	for (k = -15; k <= 16; k++) {
-		double d = k - f, w, sinc;
-		sinc = fabs(d) < 1e-9 ? 1 : sin(M_PI * d) / (M_PI * d);
-		w = 0.42 + 0.5 * cos(M_PI * d / 16.5) + 0.08 * cos(2 * M_PI * d / 16.5);
-		y += l->ring[(i + k) & l->mask] * sinc * w;
+/* one direction of the line: a delay, the clock offset, the band
+   limit, the gain, then white noise snr dB below a slow estimate of the
+   signal's power (held through its quiet parts) */
+class LineDirection {
+public:
+	/* delay_n samples of delay, a clock step (1: none) over a run of
+	   n samples, the rest from cfg */
+	void init(int delay_n, double step, long n, const LoopbackConfig &cfg)
+	{
+		delay.assign(delay_n, 0);
+		delay_at = 0;
+		drift = step != 1;
+		if (drift)
+			clock.init(step, n);
+		flat = cfg.flat;
+		lowpass.lowpass(3000, 0.6f, cfg.srate);
+		gain = cfg.gain;
+		noise = pow(10.0, -cfg.snr / 20.0);
+		power = 0;
+		ref = 0;
 	}
-	return y;
-}
 
-/* one sample over a line: its delay (len samples), the clock offset,
-   the tilt, the gain, and noise at l->noise of the received rms */
-static float line_run(struct line *l, float x)
-{
-	float y = l->delay[l->pos];
-	l->delay[l->pos] = x;
-	if (++l->pos >= l->len)
-		l->pos = 0;
-	if (l->step != 1)
-		y = line_resample(l, y);
-	y = l->tilt.run(y) * l->gain;
-	/* noise relative to the actual signal power (slow average, held
-	   during silence) */
-	l->sig_pwr += (y * y - l->sig_pwr) / 2400.0f;
-	if (l->sig_pwr > 0.05f * l->ref_pwr)
-		l->ref_pwr = l->sig_pwr;
-	y += sqrtf(l->ref_pwr) * l->noise * gauss();
-	return y;
-}
+	/* a sample of the sender's into the line, the sample at the far
+	   end out (one gauss() drawn each time) */
+	float run(float x)
+	{
+		float y = delay[delay_at];
 
-/* where rx bit r lines up with the transmitted bits (searching from
-   tx bit "from"), -1 if nowhere */
-static long find_alignment(struct side *tx, struct side *rx, long r,
-			   long from)
-{
-	long off, i;
-	if (from < 0)
-		from = 0;
-	for (off = from; off + 128 < tx->ntx; off++) {
-		long err = 0;
-		for (i = 0; i < 128 && err < 32 && r + i < rx->nrx; i++)
-			err += tx->tx_bits[off + i] != rx->rx_bits[r + i];
-		if (err < 8)
-			return off;
+		delay[delay_at] = x;
+		if (++delay_at == delay.size())
+			delay_at = 0;
+		if (drift)
+			y = clock.run(y);
+		if (!flat)
+			y = lowpass.run(y);
+		y *= gain;
+		power += ((double)y * y - power) / 2400;
+		if (power > 0.05 * ref)
+			ref = power;
+		return (float)(y + sqrt(ref) * noise * gauss());
 	}
-	return -1;
-}
 
-static long resyncs;
+private:
+	std::vector<float> delay;
+	size_t delay_at;
+	bool drift;
+	ClockOffset clock;
+	bool flat;
+	Biquad lowpass;
+	float gain;
+	double noise;           /* the noise's rms for a reference of 1 */
+	double power;           /* the signal's slow mean square */
+	double ref;             /* the one the noise follows */
+};
 
-/* bit errors over the bits received after the connection (after
-   a retrain, which loses bits, the alignment is found again) */
-static long count_errors(struct side *tx, struct side *rx, long *checked)
-{
-	long best, best_err = 0, i, n, run = 0, gap;
-	long skip = (rx->nrx - rx->connect_rx) / 4;
-	long start_rx = rx->connect_rx + (skip < 2000 ? skip : 2000);
-	n = rx->nrx - start_rx - 64;
-	*checked = 0;
-	if (n > 200000)
-		n = 200000;
-	if (n < 300)
-		return 0;
-	best = find_alignment(tx, rx, start_rx, 0);
-	if (best < 0) {
-		*checked = n;
-		return n / 2;
+/* what a side hears of its own signal: the near hybrid's echo and the
+   far one's, each through a band pass of its own */
+class Echoes {
+public:
+	void init(const LoopbackConfig &cfg)
+	{
+		own.assign(ECHO_HISTORY, 0);
+		count = 0;
+		near_bp.bandpass(1500, 0.5f, cfg.srate);
+		far_bp.bandpass(1500, 0.4f, cfg.srate);
+		near_gain = cfg.echo_db < 0 ? pow(10.0, cfg.echo_db / 20.0) : 0;
+		far_gain = cfg.far_db < 0 ?
+			pow(10.0, cfg.far_db / 20.0) * cfg.gain : 0;
+		far_n = DELAY_TO_ANSWERER + DELAY_TO_CALLER + FAR_HYBRID_DELAY +
+			std::min(std::max(cfg.far_delay, 0),
+				 ECHO_HISTORY - 200);
 	}
-	for (i = 0; i < n && best + i < tx->ntx; i++) {
-		int e = tx->tx_bits[best + i] != rx->rx_bits[start_rx + i];
-		best_err += e;
-		/* errors at random for 64 bits: lost or gained bits */
-		run = e ? run + 1 : (run > 0 ? run - 1 : 0);
-		if (run > 24) {
-			long r = start_rx + i + 1, nb;
-			nb = find_alignment(tx, rx, r, best + i - 64 * 1024);
-			if (nb >= 0) {
-				resyncs++;
-				gap = nb - (best + i + 1);
-				best = nb - (i + 1);
-				best_err -= run;        /* the bits of the slip */
-				run = 0;
-				if (getenv("SHOW_ERRORS"))
-					fprintf(stderr, "%s: realigned by %ld bits at %ld\n",
-						rx->name, gap, i);
-			}
+
+	/* the side's sample x in, both echoes at its input out */
+	float run(float x)
+	{
+		long n = count++;
+
+		own[n & (ECHO_HISTORY - 1)] = x;
+		float e_near = near_bp.run(own[(n - NEAR_ECHO_DELAY) &
+					       (ECHO_HISTORY - 1)]);
+		float e_far = far_bp.run(own[(n - far_n) & (ECHO_HISTORY - 1)]);
+		return near_gain * e_near + far_gain * e_far;
+	}
+
+private:
+	std::vector<float> own; /* the side's samples, the last ones */
+	long count;
+	Biquad near_bp, far_bp;
+	float near_gain, far_gain;
+	long far_n;             /* the far echo's delay */
+};
+
+/* the whole line: the two directions and each side's echoes */
+class Line {
+public:
+	void init(const LoopbackConfig &cfg, long n)
+	{
+		double offset = cfg.ppm * 1e-6;
+
+		to_answerer.init(DELAY_TO_ANSWERER, 1 + offset, n, cfg);
+		to_caller.init(DELAY_TO_CALLER, 1 - offset, n, cfg);
+		for (Echoes &e : echoes)
+			e.init(cfg);
+	}
+
+	/* a block of what each side sent (out) into what each side hears
+	   in the next (in), saturated to 16 bits; the noise towards the
+	   answerer drawn first for each sample */
+	void run(const s16 out[2][FRAG], s16 in[2][FRAG])
+	{
+		for (int i = 0; i < FRAG; i++) {
+			float a = to_answerer.run(out[0][i]);
+			float c = to_caller.run(out[1][i]);
+			in[1][i] = dsp_clip16(a + echoes[1].run(out[1][i]));
+			in[0][i] = dsp_clip16(c + echoes[0].run(out[0][i]));
 		}
-		if (e && getenv("SHOW_ERRORS"))
-			fprintf(stderr, "%s: bit error at %ld\n", rx->name, i);
 	}
-	*checked = i;
-	return best_err;
+
+private:
+	LineDirection to_answerer, to_caller;
+	Echoes echoes[2];
+};
+
+/*
+ *    The bit errors
+ */
+
+/* one side's bits received since its CONNECT against what the other
+   side sent: the bits checked, the errors among them and the slips the
+   count realigned after */
+class ErrorCount {
+public:
+	ErrorCount(const std::vector<u8> &rx_, const std::vector<u8> &tx_,
+		   const char *name_)
+		: rx(rx_), tx(tx_), rx_words(pack(rx_)), tx_words(pack(tx_)),
+		  name(name_), show(getenv("SHOW_ERRORS") != nullptr)
+	{
+	}
+
+	/* the bits from rx's bit connect on into r's checked, errors and
+	   resyncs */
+	void count(long connect, LoopbackSide &r)
+	{
+		long nrx = rx.size(), ntx = tx.size();
+		long start = connect + std::min((nrx - connect) / 4, SKIP_MAX);
+		long len = std::min(nrx - TAIL - start, CHECK_MAX);
+		long score = 0;
+
+		r.checked = r.errors = r.resyncs = 0;
+		if (len < CHECK_MIN)
+			return;
+		long j = start, o = align(start, 0);
+		if (o < 0) {
+			r.checked = len;
+			r.errors = len / 2;
+			return;
+		}
+		while (r.checked < len && o < ntx) {
+			r.checked++;
+			if (rx[j] != tx[o]) {
+				r.errors++;
+				score++;
+				if (show)
+					fprintf(stderr, "%s: bit error at "
+						"%ld\n", name, j);
+			} else if (score > 0) {
+				score--;
+			}
+			j++;
+			o++;
+			if (score <= SLIP_SCORE)
+				continue;
+			long at = align(j, std::max(o - SLIP_BACK, 0L));
+			if (at < 0)
+				continue;
+			if (show)
+				fprintf(stderr, "%s: realigned by %ld bits "
+					"at %ld\n", name, at - o, j);
+			o = at;
+			r.resyncs++;
+			r.errors -= score;
+			score = 0;
+		}
+	}
+
+private:
+	const std::vector<u8> &rx, &tx;
+	std::vector<uint64_t> rx_words, tx_words;
+	const char *name;
+	bool show;              /* SHOW_ERRORS */
+
+	/* the bits, 64 a word (bit i at bit i % 64 of word i / 64), with
+	   two words of zeros after them */
+	static std::vector<uint64_t> pack(const std::vector<u8> &bits)
+	{
+		std::vector<uint64_t> w(bits.size() / 64 + 2, 0);
+		for (size_t i = 0; i < bits.size(); i++)
+			w[i / 64] |= (uint64_t)(bits[i] & 1) << (i % 64);
+		return w;
+	}
+
+	/* the 64 bits from bit pos on */
+	static uint64_t bits64(const std::vector<uint64_t> &w, long pos)
+	{
+		size_t i = pos / 64;
+		int sh = pos % 64;
+		uint64_t v = w[i] >> sh;
+		if (sh)
+			v |= w[i + 1] << (64 - sh);
+		return v;
+	}
+
+	/* whether the len bits of rx from j can be that close to a stretch
+	   of the pattern: each wrong bit fails at most three of the
+	   pattern's own checks (a bit the XOR of those 23 and 18 before
+	   it), so more failures than that rule out every offset */
+	bool can_match(long j, long len) const
+	{
+		int fails = 0;
+		for (long n = 23; n < len; n++)
+			fails += rx[j + n] ^ rx[j + n - 23] ^ rx[j + n - 18];
+		return fails <= 3 * (MISMATCH_LIMIT - 1);
+	}
+
+	/* the lowest offset of tx from from on, with WINDOW + 1 bits after
+	   it, where the next WINDOW bits of rx from j (fewer at its end)
+	   differ in fewer than MISMATCH_LIMIT places; -1 if none */
+	long align(long j, long from) const
+	{
+		long len = std::min((long)WINDOW, (long)rx.size() - j);
+		long last = (long)tx.size() - (WINDOW + 1);
+
+		if (len <= 0 || !can_match(j, len))
+			return -1;
+		uint64_t m0 = len >= 64 ? ~0ULL : (1ULL << len) - 1;
+		uint64_t m1 = len >= 128 ? ~0ULL :
+			len > 64 ? (1ULL << (len - 64)) - 1 : 0;
+		uint64_t r0 = bits64(rx_words, j) & m0;
+		uint64_t r1 = bits64(rx_words, j + 64) & m1;
+		for (long o = from; o <= last; o++) {
+			int miss = __builtin_popcountll((bits64(tx_words, o) ^
+							 r0) & m0);
+			if (miss >= MISMATCH_LIMIT)
+				continue;
+			miss += __builtin_popcountll((bits64(tx_words, o + 64) ^
+						      r1) & m1);
+			if (miss < MISMATCH_LIMIT)
+				return o;
+		}
+		return -1;
+	}
+};
+
+/*
+ *    The run
+ */
+
+/* side k's pump id created (calling for the caller) at srate, in the
+   block at sample t; false, and no pump, if id has none or it cannot be
+   created */
+static bool start_pump(int k, int id, long t, int srate)
+{
+	struct dp_operations *op = id > 0 && id < 256 ? pump_ops[id] :
+		nullptr;
+
+	sides[k].pump = op ? op->create(&modems[k], (enum DP_ID)id, k == 0,
+					 srate, FRAG, op) : nullptr;
+	if (sides[k].pump)
+		return true;
+	printf("%.2f s: %s has no data pump %d\n", (double)t / srate,
+	       side_name[k], id);
+	return false;
 }
 
-/* (loopback.h) the caller from DP_CALLPROG on (then cfg.caller_dp or
-   cfg.dp, or what automode asks for), the answerer at cfg.dp, FRAG
-   samples at a time each way through the two lines and the echoes for
-   cfg.secs; their CONNECTs and pump changes printed; then the bit
-   errors of what each side received after its CONNECT */
+/* side k's pump gone */
+static void stop_pump(int k)
+{
+	struct dp *d = sides[k].pump;
+
+	if (d)
+		d->op->destroy(d);
+	sides[k].pump = nullptr;
+}
+
+/* side k's pump returned st in the block at sample t: a CONNECT noted,
+   a change of pump made, anything else the pump's failure */
+static void pump_status(int k, int st, long t, const LoopbackConfig &cfg,
+			LoopbackResult &res)
+{
+	Side &s = sides[k];
+	double at = (double)t / cfg.srate;
+
+	if (st == DPSTAT_OK)
+		return;
+	if (st == DPSTAT_CONNECT) {
+		s.connected = true;
+		s.connect_at = t;
+		s.rx_at_connect = s.received.size();
+		printf("%.2f s: %s connected at %d/%d bit/s\n", at,
+		       side_name[k], s.tx_rate, s.rx_rate);
+		return;
+	}
+	stop_pump(k);
+	if (st == DPSTAT_CHANGEDP) {
+		/* the pump asked for, else the caller's modulation after the
+		   call progress */
+		int id = s.requested;
+		if (!id && k == 0)
+			id = cfg.caller_dp ? cfg.caller_dp : cfg.dp;
+		s.requested = 0;
+		printf("%.2f s: %s to data pump %d\n", at, side_name[k], id);
+		if (start_pump(k, id, t, cfg.srate))
+			return;
+	} else {
+		printf("%.2f s: %s's data pump ended with status %d\n", at,
+		       side_name[k], st);
+	}
+	res.dp_failed = true;
+}
+
+/* side k's result at the end of the run, its bits compared with what
+   the other side sent */
+static void side_result(int k, const LoopbackConfig &cfg, LoopbackSide &r)
+{
+	const Side &s = sides[k];
+
+	r.tx_rate = s.tx_rate;
+	r.rx_rate = s.rx_rate;
+	r.received = s.received.size();
+	if (!s.connected)
+		return;
+	r.connected = true;
+	r.connect_s = (double)s.connect_at / cfg.srate;
+	r.carried = r.received - s.rx_at_connect;
+	r.expected = std::min((long)(r.rx_rate * (cfg.secs - r.connect_s)),
+			      RECORD_BITS - s.rx_at_connect);
+	printf("%s: %ld of %ld bits carried (%.1f%%)\n", side_name[k],
+	       r.carried, r.expected,
+	       r.expected ? 100.0 * r.carried / r.expected : 0.0);
+	ErrorCount(s.received, sides[1 - k].sent, side_name[k])
+		.count(s.rx_at_connect, r);
+}
+
+/* see loopback.h */
 LoopbackResult loopback_run(const LoopbackConfig &cfg)
 {
-	LoopbackResult res;
-	int id = cfg.dp;
-	float snr = cfg.snr;
-	float secs = cfg.secs;
-	int srate = cfg.srate;
-	float gain = cfg.gain;
-	float ppm = cfg.ppm;
-	float echo_db = cfg.echo_db;
-	float echo_gain = echo_db < 0 ? powf(10, echo_db / 20) : 0;
-	float echo_a[64] = { 0 }, echo_c[64] = { 0 };
-	Biquad echo_fa, echo_fc;
-	int echo_pos = 0;
-	float far_db = cfg.far_db;
-	float far_gain = far_db < 0 ? powf(10, far_db / 20) : 0;
-	int far_delay = cfg.far_delay;
-	static float far_a[1 << 15], far_c[1 << 15];
-	Biquad far_fa, far_fc;
-	int far_pos = 0;
-	s16 a_in[FRAG], a_out[FRAG], c_in[FRAG], c_out[FRAG];
-	struct line to_a, to_c;
-	long t, total = (long)(secs * srate);
-	int i, k, ret, id2;
 	static bool registered;
-
-	FILE *dump_a = NULL, *dump_c = NULL;
+	static const unsigned seed[2] = { 0x7654321, 0x1234567 };
+	LoopbackResult res;
+	FILE *dump[2] = { nullptr, nullptr };
+	s16 in[2][FRAG], out[2][FRAG];
+	long n = (long)(cfg.secs * cfg.srate);
+	Line line;
 
 	if (getenv("DSP_DEBUG"))
 		dsplibs_debug_level = atoi(getenv("DSP_DEBUG"));
 	if (cfg.dump) {
-		/* what each side hears: <dump>.a (answerer), <dump>.c (caller) */
-		char name[256];
-		snprintf(name, sizeof(name), "%s.a", cfg.dump);
-		dump_a = fopen(name, "wb");
-		snprintf(name, sizeof(name), "%s.c", cfg.dump);
-		dump_c = fopen(name, "wb");
+		std::string name = cfg.dump;
+		dump[0] = fopen((name + ".c").c_str(), "wb");
+		dump[1] = fopen((name + ".a").c_str(), "wb");
 	}
 	srand(1);
-	memset(far_a, 0, sizeof(far_a));
-	memset(far_c, 0, sizeof(far_c));
-	memset(sides, 0, sizeof(sides));
-	for (k = 0; k < 2; k++) {
-		fake[k] = &fake_modems[k];
-		sides[k].name = k ? "answerer" : "caller";
-		sides[k].rt = static_cast<dp_runtime*>(dp_runtime_create(fake[k]));
-		sides[k].prbs = k ? 0x1234567 : 0x7654321;
-		sides[k].tx_bits = static_cast<u8*>(malloc(MAX_BITS));
-		sides[k].rx_bits = static_cast<u8*>(malloc(MAX_BITS));
+
+	for (int k = 0; k < 2; k++) {
+		Side &s = sides[k];
+		s.pump = nullptr;
+		s.runtime = dp_runtime_create(&modems[k]);
+		s.tx_rate = s.rx_rate = 0;
+		s.connected = false;
+		s.connect_at = s.rx_at_connect = 0;
+		s.requested = 0;
+		s.prbs = seed[k] & 0x7fffff;
+		s.sent.clear();
+		s.sent.reserve(RECORD_BITS);
+		s.received.clear();
+		s.received.reserve(RECORD_BITS);
 	}
 	if (!registered) {
 		prop_dp_init();
 		registered = true;
 	}
+	block_at = 0;
+	cut_at = cfg.cut_s > 0 ? (long)(cfg.cut_s * cfg.srate) : -1;
+	line.init(cfg, n);
+	memset(in, 0, sizeof(in));
 
-	memset(&to_a, 0, sizeof(to_a));
-	memset(&to_c, 0, sizeof(to_c));
-	to_a.len = 37;
-	to_c.len = 53;
-	to_a.gain = to_c.gain = gain;
-	line_clock(&to_a, 1 + ppm * 1e-6, total);
-	line_clock(&to_c, 1 - ppm * 1e-6, total);
-	/* white noise at snr dB below the received signal power */
-	to_a.noise = to_c.noise = powf(10, -snr / 20);
-	to_a.tilt.lowpass(3000, 0.6f, srate);
-	echo_fa.bandpass(1500, 0.5f, srate);
-	echo_fc.bandpass(1500, 0.5f, srate);
-	far_fa.bandpass(1500, 0.4f, srate);
-	far_fc.bandpass(1500, 0.4f, srate);
-	if (far_delay > (1 << 15) - 200)
-		far_delay = (1 << 15) - 200;
-	to_c.tilt.lowpass(3000, 0.6f, srate);
-	if (cfg.flat) {
-		/* no band limitation */
-		memset(&to_a.tilt, 0, sizeof(to_a.tilt));
-		memset(&to_c.tilt, 0, sizeof(to_c.tilt));
-		to_a.tilt.b0 = to_c.tilt.b0 = 1;
-	}
+	if (!start_pump(0, DP_CALLPROG, 0, cfg.srate))
+		res.dp_failed = true;
+	if (!start_pump(1, cfg.dp, 0, cfg.srate))
+		res.dp_failed = true;
 
-	sides[0].dp = ops[DP_CALLPROG]->create(fake[0], DP_CALLPROG, 1, srate, FRAG,
-					       ops[DP_CALLPROG]);
-	sides[1].dp = ops[id]->create(fake[1], (enum DP_ID)id, 0, srate, FRAG, ops[id]);
-	memset(a_in, 0, sizeof(a_in));
-	memset(c_in, 0, sizeof(c_in));
-
-	drop_from = cfg.cut_s > 0 ? (long)(cfg.cut_s * srate) : 0;
-	for (t = 0; t < total; t += FRAG) {
-		now_sample = t;
-		for (k = 0; k < 2; k++) {
-			struct side *s = &sides[k];
-			s16 *in = k ? a_in : c_in, *out = k ? a_out : c_out;
-			if (!s->dp) {
-				memset(out, 0, sizeof(a_out));
+	for (long t = 0; t < n; t += FRAG) {
+		block_at = t;
+		for (int k = 0; k < 2; k++) {
+			struct dp *d = sides[k].pump;
+			if (!d) {
+				memset(out[k], 0, sizeof(out[k]));
 				continue;
 			}
-			ret = s->dp->op->process(s->dp, in, out, FRAG);
-			switch (ret) {
-			case DPSTAT_OK:
-				break;
-			case DPSTAT_CHANGEDP:
-				s->dp->op->destroy(s->dp);
-				if (k == 0 && s->dp_requested) {
-					/* automode change requested */
-					id2 = s->dp_requested;
-					s->dp_requested = 0;
-				} else if (k == 0)
-					id2 = cfg.caller_dp ? cfg.caller_dp : id;
-				else {
-					id2 = s->dp_requested;
-					s->dp_requested = 0;
-				}
-				printf("%6.2fs %s: dp -> %d\n",
-				       (double)t / srate, s->name, id2);
-				s->dp = ops[id2]->create(fake[k], (enum DP_ID)id2, k == 0,
-							 srate, FRAG, ops[id2]);
-				break;
-			case DPSTAT_CONNECT:
-				s->connected = 1;
-				s->connect_sample = t;
-				s->connect_rx = s->nrx;
-				printf("%6.2fs %s: CONNECT tx %d rx %d\n",
-				       (double)t / srate, s->name,
-				       s->tx_rate, s->rx_rate);
-				break;
-			default:
-				printf("%6.2fs %s: dp status %d\n",
-				       (double)t / srate, s->name, ret);
-				s->dp->op->destroy(s->dp);
-				s->dp = NULL;
-				res.dp_failed = true;
-				break;
-			}
+			pump_status(k, d->op->process(d, in[k], out[k], FRAG),
+				    t, cfg, res);
 		}
-		for (i = 0; i < FRAG; i++) {
-			/* own signal echo: 20 sample delay, band limited */
-			float ea = echo_fa.run(echo_a[(echo_pos + 44) & 63]);
-			float ec = echo_fc.run(echo_c[(echo_pos + 44) & 63]);
-			echo_a[echo_pos] = a_out[i];
-			echo_c[echo_pos] = c_out[i];
-			echo_pos = (echo_pos + 1) & 63;
-			/* far echo: both line delays and the far hybrid */
-			int fd = to_a.len + to_c.len + 8 + far_delay;
-			float fa = far_fa.run(far_a[(far_pos - fd) & 0x7FFF]);
-			float fc = far_fc.run(far_c[(far_pos - fd) & 0x7FFF]);
-			far_a[far_pos] = a_out[i];
-			far_c[far_pos] = c_out[i];
-			far_pos = (far_pos + 1) & 0x7FFF;
-			a_in[i] = dsp_clip16(line_run(&to_a, c_out[i]) + echo_gain * ea +
-					     far_gain * gain * fa);
-			c_in[i] = dsp_clip16(line_run(&to_c, a_out[i]) + echo_gain * ec +
-					     far_gain * gain * fc);
-		}
-		if (dump_a) {
-			fwrite(a_in, sizeof(a_in[0]), FRAG, dump_a);
-			fwrite(c_in, sizeof(c_in[0]), FRAG, dump_c);
-		}
+		line.run(out, in);
+		for (int k = 0; k < 2; k++)
+			if (dump[k])
+				fwrite(in[k], sizeof(s16), FRAG, dump[k]);
 	}
 
-	if (dump_a) {
-		fclose(dump_a);
-		fclose(dump_c);
-	}
-	for (k = 0; k < 2; k++) {
-		struct side *s = &sides[k];
-		LoopbackSide &r = res.side[k];
-		r.connected = s->connected;
-		r.connect_s = (double)s->connect_sample / srate;
-		r.tx_rate = s->tx_rate;
-		r.rx_rate = s->rx_rate;
-		r.received = s->nrx;
-		if (s->connected) {
-			r.carried = s->nrx - s->connect_rx;
-			r.expected = (long)(s->rx_rate * (secs - r.connect_s));
-			if (r.expected > MAX_BITS - s->connect_rx)
-				r.expected = MAX_BITS - s->connect_rx;
-			printf("%s: carried %ld of the %ld bits expected "
-			       "(%.0f%%)\n", s->name, r.carried, r.expected,
-			       r.expected ? 100.0 * r.carried / r.expected : 0);
-		}
-		if (s->connected) {
-			resyncs = 0;
-			r.errors = count_errors(&sides[1 - k], s, &r.checked);
-			r.resyncs = resyncs;
-		}
-	}
-	free(to_a.ring);
-	free(to_c.ring);
-	for (k = 0; k < 2; k++) {
-		struct side *s = &sides[k];
-		if (s->dp)
-			s->dp->op->destroy(s->dp);
-		dp_runtime_delete(s->rt);
-		free(s->tx_bits);
-		free(s->rx_bits);
+	for (int k = 0; k < 2; k++)
+		if (dump[k])
+			fclose(dump[k]);
+	for (int k = 0; k < 2; k++)
+		side_result(k, cfg, res.side[k]);
+	for (int k = 0; k < 2; k++) {
+		Side &s = sides[k];
+		stop_pump(k);
+		dp_runtime_delete(s.runtime);
+		s.runtime = nullptr;
+		std::vector<u8>().swap(s.sent);
+		std::vector<u8>().swap(s.received);
 	}
 	return res;
 }
 
-/* (loopback.h) connected, CARRIED_MIN of the bits expected carried,
-   bits checked, a BER of 1e-3 at most */
+/* see loopback.h */
 bool LoopbackSide::ok() const
 {
 	return connected && carried >= CARRIED_MIN * expected && checked &&
-		(double)errors / checked <= 1e-3;
+		(double)errors / checked <= BER_MAX;
 }
 
-/* (loopback.h) "<name>: received ..., checked ..., errors ... (BER)",
-   and the realignments */
+/* see loopback.h */
 std::string LoopbackSide::text(const char *name) const
 {
 	char buf[200];
+
 	if (!connected)
 		return std::string(name) + ": no connection";
-	snprintf(buf, sizeof(buf), "%s: received %ld bits (%ld of the %ld "
-		 "the call should carry), checked %ld, errors %ld (BER %.2e)",
-		 name, received, carried, expected, checked, errors,
+	snprintf(buf, sizeof(buf), ": %ld bits received, %ld of %ld carried, "
+		 "%ld checked, %ld errors, BER %.2e", received, carried,
+		 expected, checked, errors,
 		 checked ? (double)errors / checked : 1.0);
-	std::string t = buf;
-	if (resyncs)
-		t += ", realigned " + std::to_string(resyncs) + " times";
-	return t;
+	std::string s = std::string(name) + buf;
+	if (resyncs > 0)
+		s += ", realigned " + std::to_string(resyncs) + " times";
+	return s;
 }
