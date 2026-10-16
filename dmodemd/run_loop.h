@@ -30,18 +30,23 @@ public:
 	   next timers, 1000 at most */
 	static long poll(dcore::Modem *const *m, int n);
 
-	/* this turn's descriptors: none, then each to watch */
+	/* this turn's descriptors: none, then each to watch (to read
+	   from, or to write to) */
 	void clear();
 	void watch(int fd);
-	/* fd is readable (after wait()) */
+	void watch_write(int fd);
+	/* fd is readable, writable (after wait()) */
 	bool ready(int fd) const { return fd >= 0 && FD_ISSET(fd, &set_); }
+	bool ready_write(int fd) const {
+		return fd >= 0 && FD_ISSET(fd, &wset_);
+	}
 	/* select() on them for ms: > 0 some are ready, 0 none (or a
 	   signal), < 0 an error (errno) */
 	int wait(long ms);
 
 private:
 	static volatile sig_atomic_t running_;
-	fd_set set_;
+	fd_set set_, wset_;
 	int max_ = -1;
 };
 

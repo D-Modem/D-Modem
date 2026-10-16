@@ -42,6 +42,9 @@ the system:
   combines with D-Modem under the AGPL and under the commercial licence
   alike; libdmodem and the Asterisk and FreeSWITCH modules do not use it.
   The OpenSSL it links (its digests) is under the Apache License 2.0.
+- **Mbed TLS**, libre's digests in OpenSSL's place when built with
+  `-DDMODEM_CRYPTO=mbedtls` (the default for Android): Apache-2.0 or
+  GPL-2.0-or-later, at the shipper's choice.
 - **GoogleTest** (the tests only): BSD-3-Clause.
 - **spandsp** (the tests only): LGPL-2.1.
 - The ITU-T Recommendations that `docs/specs/fetch.sh` downloads are the

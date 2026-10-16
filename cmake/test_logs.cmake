@@ -18,21 +18,21 @@
 # <command...>): add_test() under it.  Both require the fixture
 # (DMODEM_TEST_FIXTURE in a test's FIXTURES_REQUIRED).
 
-set(DMODEM_TEST_LOG_ROOT "${CMAKE_BINARY_DIR}/test-logs" CACHE PATH
+set(DMODEM_TEST_LOG_ROOT "${PROJECT_BINARY_DIR}/test-logs" CACHE PATH
 	"where each ctest run's test logs go")
 set(DMODEM_TEST_LOG_KEEP 20 CACHE STRING
 	"how many ctest runs' test logs are kept")
 set(DMODEM_TEST_FIXTURE dmodem_test_logs)
-set(DMODEM_TEST_LAUNCHER bash "${CMAKE_SOURCE_DIR}/cmake/test_run.sh"
+set(DMODEM_TEST_LAUNCHER bash "${PROJECT_SOURCE_DIR}/cmake/test_run.sh"
 	"${DMODEM_TEST_LOG_ROOT}")
 
 add_test(NAME test_logs_begin COMMAND bash
-	"${CMAKE_SOURCE_DIR}/cmake/test_logs.sh" begin
+	"${PROJECT_SOURCE_DIR}/cmake/test_logs.sh" begin
 	"${DMODEM_TEST_LOG_ROOT}" ${DMODEM_TEST_LOG_KEEP})
 set_tests_properties(test_logs_begin PROPERTIES
 	FIXTURES_SETUP ${DMODEM_TEST_FIXTURE} LABELS logs)
 add_test(NAME test_logs_end COMMAND bash
-	"${CMAKE_SOURCE_DIR}/cmake/test_logs.sh" end "${DMODEM_TEST_LOG_ROOT}")
+	"${PROJECT_SOURCE_DIR}/cmake/test_logs.sh" end "${DMODEM_TEST_LOG_ROOT}")
 set_tests_properties(test_logs_end PROPERTIES
 	FIXTURES_CLEANUP ${DMODEM_TEST_FIXTURE} LABELS logs)
 

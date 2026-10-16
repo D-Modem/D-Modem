@@ -22,7 +22,7 @@ function(dmodem_test_exe name)
 	target_include_directories(${name} PRIVATE ${S} ${DMODEM_LINK_DIR}
 		${DMODEM_CORE_NEW_DIR})
 	target_compile_options(${name} PRIVATE -Wall -O2 -g)
-	target_link_libraries(${name} PRIVATE m pthread)
+	target_link_libraries(${name} PRIVATE m Threads::Threads)
 endfunction()
 
 # the data pumps back to back: pump_test, and dsp_loopback to try a line
@@ -102,8 +102,8 @@ dmodem_test_exe(fax_doc fax_doc.cpp fax_docs.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(fax_doc PRIVATE GTest::gtest)
 # libdmodem: pairs of its modems back to back
 dmodem_test_exe(dmodem_test dmodem_test.cpp
-	${CMAKE_SOURCE_DIR}/dmodemd/rtp_events.cpp)
-target_include_directories(dmodem_test PRIVATE ${CMAKE_SOURCE_DIR}/dmodemd)
+	${PROJECT_SOURCE_DIR}/dmodemd/rtp_events.cpp)
+target_include_directories(dmodem_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
 target_link_libraries(dmodem_test PRIVATE dmodem)
 dmodem_gtest(dmodem_test LABELS quick)
 dmodem_test_exe(dmodem_fax_test dmodem_fax_test.cpp fax_docs.cpp)
@@ -176,7 +176,7 @@ foreach(_n half_open half_open8 half_smartlink)
 		MODEM_RATE=${_rate})
 	target_compile_options(${_n} PRIVATE ${DMODEM_M32} -w -g -O)
 	target_link_options(${_n} PRIVATE ${DMODEM_M32} ${_l})
-	target_link_libraries(${_n} PRIVATE m pthread)
+	target_link_libraries(${_n} PRIVATE m Threads::Threads)
 endforeach()
 
 # the peers' harnesses (modem_half.cpp) read their line as PipeModem does
@@ -309,7 +309,7 @@ endif()
 # hand.
 add_library(interop_driver STATIC interop_call.cpp)
 target_compile_options(interop_driver PRIVATE -Wall -O2 -g)
-target_link_libraries(interop_driver PUBLIC pthread)
+target_link_libraries(interop_driver PUBLIC Threads::Threads)
 dmodem_test_exe(interop_call interop_call_main.cpp)
 target_link_libraries(interop_call PRIVATE interop_driver)
 set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""

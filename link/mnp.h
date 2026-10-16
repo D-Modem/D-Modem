@@ -172,8 +172,7 @@ private:
 					   optimization) */
 	/* the parameters the initiator's LR had (the responder echoes
 	   those it understood) */
-	bool lr_opt_ = false, lr_mnp5_ = false;
-	int lr_mnp5_value_ = 0;
+	bool lr_opt_ = false;
 	/* establishment */
 	int tries_ = 0;
 	bool heard_ = false;            /* a frame came, good or bad */

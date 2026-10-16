@@ -41,6 +41,7 @@ long RunLoop::poll(dcore::Modem *const *m, int n)
 void RunLoop::clear()
 {
 	FD_ZERO(&set_);
+	FD_ZERO(&wset_);
 	max_ = -1;
 }
 
@@ -53,6 +54,14 @@ void RunLoop::watch(int fd)
 }
 
 /* see run_loop.h */
+void RunLoop::watch_write(int fd)
+{
+	FD_SET(fd, &wset_);
+	if (fd > max_)
+		max_ = fd;
+}
+
+/* see run_loop.h */
 int RunLoop::wait(long ms)
 {
 	struct timeval tmo;
@@ -60,7 +69,7 @@ int RunLoop::wait(long ms)
 
 	tmo.tv_sec = ms / 1000;
 	tmo.tv_usec = ms % 1000 * 1000;
-	ret = select(max_ + 1, &set_, NULL, NULL, &tmo);
+	ret = select(max_ + 1, &set_, &wset_, NULL, &tmo);
 	if (ret < 0 && errno == EINTR)
 		return 0;
 	return ret;

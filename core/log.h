@@ -32,6 +32,9 @@ int log_printf(unsigned level, const char *fmt, ...)
 	__attribute__ ((format (printf, 2, 3)));
 /* the same with a va_list */
 int log_vprintf(unsigned level, const char *fmt, va_list args);
+/* a line of another part of the program, which checked its own level:
+   to the hook, else to stderr as it is (with its newline) */
+void log_line(const char *line);
 
 /* the binary log: dmodem.log[.<suffix>], if log_data_level > 0 */
 enum LogData {

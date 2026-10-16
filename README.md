@@ -4,16 +4,18 @@ Or, on an old laptop's softmodem, use it as the modem's open driver on a
 telephone line ([docs/hardware.md](docs/hardware.md)).
 
 ## Building
-You'll need Linux, CMake (3.16 or later), a C++17 compiler (and a C compiler for the Asterisk and FreeSWITCH modules), git and OpenSSL (libssl-dev: libre's digests for SIP's authentication).
+You'll need Linux, CMake (3.16 or later), a C++17 compiler (and a C compiler for the Asterisk and FreeSWITCH modules), git and OpenSSL (libssl-dev: libre's digests for SIP's authentication), or Mbed TLS in its place (below).
 
     cmake -B build
     cmake --build build
 
 With libasound2-dev (ALSA), dmodemd can also drive a softmodem's codec (`-a`, [docs/hardware.md](docs/hardware.md)).
 
-This builds `build/dmodemd/dmodemd`, `build/dmodemd/libdmodem.a` and, when Asterisk's headers are installed, `build/asterisk/app_dmodem.so`, and when FreeSWITCH is installed (its `freeswitch.pc`), `build/freeswitch/mod_dmodem.so`.  `cmake --install build` installs them.
+This builds `build/dmodemd/dmodemd`, `build/dmodemd/libdmodem.a`, `build/dmodemd/libdmodem_sip.a` and, when Asterisk's headers are installed, `build/asterisk/app_dmodem.so`, and when FreeSWITCH is installed (its `freeswitch.pc`), `build/freeswitch/mod_dmodem.so`.  `cmake --install build` installs them.
 
-dmodemd's SIP is [libre](https://github.com/baresip/re) (baresip's re, BSD-3-Clause), which is not part of this repository.  CMake uses an installed one (`pkg-config libre`, 4.12 or later); without one it clones the pinned release (v4.12.0) once and builds it in the build directory, a static library.  `-DDMODEM_LIBRE=system` requires an installed libre, `-DDMODEM_LIBRE=fetch` always builds the pinned one, and `-DDMODEM_LIBRE_TAG=...` picks another release.  The SDP, RTP (G.711) and UDPTL are dmodemd's own.
+dmodemd's SIP is [libre](https://github.com/baresip/re) (baresip's re, BSD-3-Clause), which is not part of this repository.  CMake uses an installed one (`pkg-config libre`, 4.12 or later); without one it clones the pinned release (v4.12.0) once and builds it in the build directory, a static library.  `-DDMODEM_LIBRE=system` requires an installed libre, `-DDMODEM_LIBRE=fetch` always builds the pinned one, and `-DDMODEM_LIBRE_TAG=...` picks another release.  The SDP, RTP (G.711) and UDPTL are dmodemd's own.  `-DDMODEM_CRYPTO=mbedtls` builds that libre on [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) (its pinned release, v3.6.7, fetched and built the same way) instead of the system's OpenSSL.
+
+`libdmodem_sip.a` is the modem on a SIP line as a library (`dmodemd/sip_modem.h`): the modem core with its SIP user agent, its DTE any descriptor (a pty, or one end of a socket pair), run in a thread of the program's own and stopped from another; dmodemd is a pty in front of it.  It cross compiles: with a CMake toolchain file (the Android NDK's, say: `-DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26`) libre and its crypto are fetched and built with the same toolchain, Mbed TLS by default for Android, which has no OpenSSL of its own; a system without `/etc/resolv.conf` (Android) gives the DNS servers in `sip::Config`.  The tree also builds as another CMake project's subdirectory.
 
 Tests: `ctest --test-dir build -L quick` runs the fast ones (a few seconds; GoogleTest programs, with the system's libgtest-dev or a copy fetched while configuring); `-L spandsp` (with libspandsp-dev) and `-L smartlink` are longer.  The interop tests run the modem against other soft modems ([docs/interop.md](docs/interop.md)); `-L smartlink` against Smart Link's original binary-only i386 DSP library (`dsp/test/smartlink/dsplibs.o`), kept only as a test peer; they need a 32-bit build environment (`g++ -m32`; Debian-based systems can install `g++-multilib`) and are skipped without one.  See [docs/testing.md](docs/testing.md).
 
