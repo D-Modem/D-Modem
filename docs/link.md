@@ -46,13 +46,15 @@ the frames LAPM or MNP sent (by `Hdlc` and `MnpAsync`) and the information
 frames among them sent again (LAPM's REJ or poll, MNP's retransmissions),
 the frames received intact and those with a bad FCS.
 
-The protocol code is Smart Link's slmodemd link layer (`modem_pack.c`,
-`modem_ec.c`, `modem_comp.c`) as classes, with the same behaviour on the
-line; the interop tests (`ctest -L "interop|agere"`) run it against the
-original library and the Agere modem. Two faults of the old glue between
-V.42bis and the DTE are gone: a character could be lost when the encoder's
-pending output filled a frame exactly, and a decoder flush could overwrite
-decoded characters the DTE had not taken yet.
+The protocol code began as Smart Link's slmodemd link layer
+(`modem_pack.c`, `modem_ec.c`, `modem_comp.c`) as classes. Its HDLC
+framing, LAPM and V.42bis were written anew in 2026 from specifications
+of what they do, with the same behaviour on the line; the interop tests
+(`ctest -L "smartlink|agere|pctel|hsf|sm56|broadcom"`) run it against the
+other modems. Faults of the old code are gone: a character could be lost
+when V.42bis's pending output filled a frame exactly, a decoder flush
+could overwrite decoded characters the DTE had not taken yet, and an idle
+link in compressed mode sent a FLUSH and padding each time LAPM asked.
 
 `link_test` (`ctest -R Link`, GoogleTest) runs it without a modem: V.42bis and
 V.44 round trips (text, noise, escape characters, repeats, small

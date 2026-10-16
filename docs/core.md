@@ -60,7 +60,10 @@ timing. dmodemd, libdmodem (`dmodem.h`), modem_test and the interop
 tests' modems run on it, Smart Link's original DSP library as well
 (`half_smartlink`, `docs/interop.md`). The old core is no longer in the
 tree: `core_equiv` compares this one with the transcripts recorded from
-it. This core has gone beyond it where the old one fell short:
+it. None of slmodemd's code is left: `at.cpp`, `modem.cpp`,
+`interface.cpp` and the country data were written anew in 2026 from
+specifications of what they do, and give the same transcripts. This
+core has gone beyond the old one where it fell short:
 
 - the version banner is the program's to print (`Modem::product`,
   `version`; dmodemd and modem_test print it at the start);

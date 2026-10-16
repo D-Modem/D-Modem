@@ -8,7 +8,7 @@
  *                   to back, the interop tests' half_open one against a
  *                   modem in another process
  *
- *    slmodemd's modem_test.c and modem_half.c on the new core.
+ *    What slmodemd's modem_test.c and modem_half.c did, on the new core.
  *
  */
 #ifndef DMODEMD_PIPE_MODEM_H

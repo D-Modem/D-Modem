@@ -13,8 +13,9 @@
  *    line's samples while the modem is started (process()), and calls
  *    poll() for the timers.
  *
- *    The behaviour is Smart Link's slmodemd core (modem.c, modem_at.c,
- *    modem_param.c) as a class: the same commands, responses and states.
+ *    The behaviour began as Smart Link's slmodemd core's (modem.c,
+ *    modem_at.c, modem_param.c): the same commands, responses and
+ *    states; none of its code is left.
  *
  */
 #ifndef DMODEM_CORE_DCORE_H

@@ -11,14 +11,6 @@ licences:
 
 Each source file names its licence on an `SPDX-License-Identifier` line.
 
-## Smart Link's code
-
-Some files carry or adapt code of Smart Link's slmodemd (Smart Link Ltd.,
-2001 to 2004), which Smart Link published under a BSD licence, kept in
-[LICENSES/BSD-3-Clause.txt](LICENSES/BSD-3-Clause.txt). Their SPDX lines
-say `AGPL-3.0-only AND BSD-3-Clause`. The BSD licence allows both of the
-licences above, as long as Smart Link's notice is kept.
-
 ## The Asterisk module
 
 `asterisk/app_dmodem.c` is under the GNU GPL version 2 only
@@ -57,10 +49,14 @@ the system:
 
 ## History
 
-D-Modem began as Aon's D-Modem (2021, GPL-2.0-or-later). None of Aon's
-code is left: the last of it, the SIP user agent `dmodemd/sip.cpp`, was
-written anew in 2026 from a specification of what it does, without Aon's
-code.
+D-Modem began as Aon's D-Modem (2021, GPL-2.0-or-later), on Smart Link's
+slmodemd (Smart Link Ltd., 2001 to 2004, under a BSD licence). None of
+their code is left. Aon's last, the SIP user agent `dmodemd/sip.cpp`,
+and Smart Link's last (the modem core in `core/`, the HDLC framing, LAPM
+and V.42bis in `link/`, the data pumps' interface and two simple pumps in
+`dsp/`, the pumps' test loopback, and dmodemd's main program, options and
+pty) were written anew in 2026, each from a specification of what it
+does, without their code.
 
 ## Contributions
 

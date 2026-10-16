@@ -17,9 +17,9 @@
  *    characters, hears of the link's progress and gets its log lines.
  *    The data pump calls get_bits() and put_bits().
  *
- *    The protocol code is Smart Link's slmodemd link layer (modem_pack,
- *    modem_ec, modem_comp) as classes, with the same behaviour on the
- *    line.
+ *    The protocols behave on the line as Smart Link's slmodemd link
+ *    layer did (modem_pack, modem_ec, modem_comp), which this began as;
+ *    none of its code is left.
  *
  */
 

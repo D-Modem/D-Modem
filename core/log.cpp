@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    log.cpp - the modem's debug output (log.h); slmodemd's
- *              modem_debug.c
+ *    log.cpp - the modem's debug output (log.h), in place of
+ *              slmodemd's modem_debug.c
  *
  */
 
