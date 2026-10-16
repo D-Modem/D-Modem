@@ -309,6 +309,16 @@ std::vector<Call> calls()
 	add("open", "open_34_noise", "open", "open", "ATX3;AT+MS=34",
 	    { "NET=9600:9600:ulaw", "NET_SYNC=1", "STREAM=30",
 	      "NET_FLOOR=250", "NET_NOISE=10:250" });
+#ifdef INTEROP_HAVE_AMR
+	/* --- two open modems (8000 Hz) through a mobile network's speech
+	   codec (netsim's NET_CODEC): V.22 passes AMR at 12.2 kbit/s with
+	   its data intact, V.21 AMR-WB at 23.85 (docs/cellular/v_cvm.pdf
+	   has the whole picture) */
+	add("open", "open_22_amr122", "open8", "open8", "ATX3;AT+MS=22",
+	    { "NET=8000:8000:ulaw", "NET_CODEC=amr:12.2", "STREAM=10" });
+	add("open", "open_21_amrwb2385", "open8", "open8", "ATX3;AT+MS=21",
+	    { "NET=8000:8000:ulaw", "NET_CODEC=amrwb:23.85", "STREAM=10" });
+#endif
 
 	/* --- the Agere soft modem (8000 Hz) and the open modem (9600 Hz)
 	   call each other; AT+MS takes names there (B103, V21, ..., V34) */

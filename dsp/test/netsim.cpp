@@ -14,7 +14,10 @@
  *    NET_NOISE and NET_FLOOR, NET_ECHO, NET_LOOP, NET_MOH), its members
  *    named for it, set from the environment by its init(); the network
  *    (Net) derives from them all and runs a direction's samples through
- *    them in turn.
+ *    them in turn.  NET_CODEC=amr:12.2 (or amrwb:23.85, ...: codec_sim.h)
+ *    puts a mobile network's speech codec on the 8000 Hz line in place
+ *    of G.711, NET_CODEC_LOSS=<percent> erases that many of its frames
+ *    at random (NET_CODEC_SEED).
  */
 #include <errno.h>
 #include <math.h>
@@ -25,6 +28,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include "codec_sim.h"
 #include "dsp.h"
 #include "g711.h"
 #include "qam.h"
@@ -308,6 +312,7 @@ static int rc_run(struct rc_up *r, float x, float *out)
 
 struct dir {
 	int in, out, rate_in, rate_out;
+	SpeechCodec *codec;     /* NET_CODEC's, in place of the law */
 	Resampler rs;
 	struct rc_up rc;
 	short obuf[8192];
@@ -547,8 +552,9 @@ struct Moh {
 	}
 };
 
-/* the network: the law (alaw), the far codec of a 9600 Hz modem and the
-   gains on the way (NET_PLAIN, NET_GAIN, NET_GAIN_UP), the impairments */
+/* the network: the law (alaw) or a speech codec (NET_CODEC), the far
+   codec of a 9600 Hz modem and the gains on the way (NET_PLAIN, NET_GAIN,
+   NET_GAIN_UP), the impairments */
 struct Net : Drop, Step, Noise, Loop, Echo, Moh {
 	int plain;      /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
 			   resampler of dsp_util, not the raised cosine (the
@@ -557,11 +563,19 @@ struct Net : Drop, Step, Noise, Loop, Echo, Moh {
 	float gain_up = 1;      /* NET_GAIN_UP: on the way up from a 9600 Hz
 				   modem */
 	long clipped;           /* samples at the far codec */
+	const char *codec_spec = nullptr;       /* NET_CODEC */
+	double codec_loss = 0;                  /* NET_CODEC_LOSS, percent */
+	unsigned codec_seed = 1;                /* NET_CODEC_SEED */
 
 	/* from the environment; ra: A's rate */
 	void init(int ra)
 	{
 		plain = getenv("NET_PLAIN") != NULL;
+		codec_spec = getenv("NET_CODEC");
+		if (getenv("NET_CODEC_LOSS"))
+			codec_loss = atof(getenv("NET_CODEC_LOSS"));
+		if (getenv("NET_CODEC_SEED"))
+			codec_seed = (unsigned)atoi(getenv("NET_CODEC_SEED"));
 		if (getenv("NET_GAIN"))
 			gain = atof(getenv("NET_GAIN"));
 		if (getenv("NET_GAIN_UP"))
@@ -578,10 +592,17 @@ struct Net : Drop, Step, Noise, Loop, Echo, Moh {
 		if (getenv("NET_ECHO"))
 			echo_init(getenv("NET_ECHO"), ra);
 	}
+	/* an 8000 Hz sample across the network: through the law, or the
+	   speech codec */
+	static int line_sample(struct dir *d, int x)
+	{
+		return d->codec ? d->codec->sample(x) : g711_line(x);
+	}
 	int run(struct dir *d, int a_out, int a_in);
 };
 
 static Net net;
+static SpeechCodec codecs[2];
 
 /* samples of one direction: to 8000 Hz G.711 and on */
 int Net::run(struct dir *d, int a_out, int a_in)
@@ -629,24 +650,26 @@ int Net::run(struct dir *d, int a_out, int a_in)
 		if (a_out)
 			echo_r++;
 		if (d->rate_in == d->rate_out) {
+			int s = line_sample(d, ibuf[i]);
 			if (loop_on && a_in) {
-				float v = loop_run((float)g711_line(ibuf[i]));
+				float v = loop_run((float)s);
 				d->lbuf[o] = v;
 				d->obuf[o++] = (short)(v > 32767 ? 32767 :
 						       v < -32768 ? -32768 : v);
 			} else {
-				d->lbuf[o] = (float)g711_line(ibuf[i]);
-				d->obuf[o++] = (short)g711_line(ibuf[i]);
+				d->lbuf[o] = (float)s;
+				d->obuf[o++] = (short)s;
 			}
-			wav_put(!a_out, g711_line(ibuf[i]));
+			wav_put(!a_out, s);
 			continue;
 		}
 		if (d->rate_in == 8000) {
 			/* the network, then the far codec (with the
 			   analogue loss or gain NET_GAIN on the way): the
 			   raised cosine, or NET_PLAIN's short resampler */
-			float x = g711_line(ibuf[i]) * gain;
-			wav_put(!a_out, g711_line(ibuf[i]));
+			int s = line_sample(d, ibuf[i]);
+			float x = s * gain;
+			wav_put(!a_out, s);
 			m = plain ? d->rs.run(x, y) : rc_run(&d->rc, x, y);
 			for (k = 0; k < m; k++) {
 				if (noise && noise_dir != 3)
@@ -665,7 +688,7 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			   then the network */
 			m = d->rs.run(ibuf[i] * gain_up, y);
 			for (k = 0; k < m; k++) {
-				d->obuf[o] = (short)g711_line((int)lrintf(y[k]));
+				d->obuf[o] = (short)line_sample(d, (int)lrintf(y[k]));
 				d->lbuf[o] = d->obuf[o];
 				wav_put(!a_out, d->obuf[o]);
 				o++;
@@ -753,6 +776,28 @@ int main(int argc, char **argv)
 			line_clock = (long long *)m;
 	}
 	memset(d, 0, sizeof(d));
+	if (net.codec_spec) {
+		/* the speech codec, each direction its own, on the 8000 Hz
+		   samples: the line (NET=8000:8000) or the far side of a
+		   9600 Hz modem's codec (NET=9600:8000) */
+		const char *err;
+		if (ra == rb && ra != 8000) {
+			fprintf(stderr, "netsim: NET_CODEC needs the line at "
+				"8000 Hz (NET=8000:8000 or 9600:8000)\n");
+			return 1;
+		}
+		for (k = 0; k < 2; k++) {
+			if (codecs[k].init(net.codec_spec, net.codec_loss,
+					   net.codec_seed + k, &err)) {
+				fprintf(stderr, "netsim: NET_CODEC: %s\n", err);
+				return 1;
+			}
+			d[k].codec = &codecs[k];
+		}
+		fprintf(stderr, "netsim: %s on the line%s\n",
+			codecs[0].name(), net.codec_loss > 0 ?
+			", frames erased" : "");
+	}
 	/* A -> B */
 	d[0].in = atoi(argv[4]);
 	d[0].out = atoi(argv[7]);

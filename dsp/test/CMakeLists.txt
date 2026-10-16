@@ -49,8 +49,26 @@ dmodem_gtest(g711_test LABELS quick)
 # the emulated hardware's mixins (hw/) on a host of the test's own
 dmodem_test_exe(hw_test hw_test.cpp)
 dmodem_gtest(hw_test LABELS quick)
-dmodem_test_exe(netsim netsim.cpp test_util.cpp ${S}/dsp_util.cpp ${S}/qam.cpp
-	${S}/v34_tables.cpp)
+# netsim's NET_CODEC and codec_probe: AMR and AMR-WB, a mobile network's
+# speech codecs on the line (libopencore-amrnb-dev, libopencore-amrwb-dev,
+# libvo-amrwbenc-dev); without the libraries netsim says so
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+	pkg_check_modules(AMR QUIET opencore-amrnb opencore-amrwb vo-amrwbenc)
+endif()
+dmodem_test_exe(netsim netsim.cpp codec_sim.cpp test_util.cpp ${S}/dsp_util.cpp
+	${S}/qam.cpp ${S}/v34_tables.cpp)
+dmodem_test_exe(codec_probe codec_probe.cpp codec_sim.cpp)
+if(AMR_FOUND)
+	foreach(_t netsim codec_probe)
+		target_compile_definitions(${_t} PRIVATE DMODEM_HAVE_AMR)
+		target_include_directories(${_t} PRIVATE ${AMR_INCLUDE_DIRS})
+		target_link_libraries(${_t} PRIVATE ${AMR_LDFLAGS})
+	endforeach()
+	message(STATUS "tests: netsim with AMR and AMR-WB (NET_CODEC)")
+else()
+	message(STATUS "tests: AMR libraries not found, netsim without NET_CODEC")
+endif()
 # the fax without a core: the modulations, T.4 and TIFF, two T.30 machines
 find_program(TIFFCP tiffcp)
 dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp
@@ -299,8 +317,12 @@ function(interop_tests label)
 	dmodem_gtest(${_n} LABELS ${label})
 endfunction()
 # Smart Link's original library (half_smartlink), and two open modems
+# (through the AMR codecs too, when netsim has them)
 interop_tests(smartlink)
 interop_tests(open)
+if(AMR_FOUND)
+	target_compile_definitions(open_test PRIVATE INTEROP_HAVE_AMR)
+endif()
 if(TARGET half_agere)
 	interop_tests(agere)
 endif()

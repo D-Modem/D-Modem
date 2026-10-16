@@ -140,6 +140,18 @@ an analogue line (a raised cosine at 4000 Hz, so that PCM samples stay
 free of intersymbol interference; `NET_PLAIN=1` takes dsp_util's short
 resampler instead, which is not, so V.90 falls back to V.34 through it). `half_open8` is
 the open modem at 8000 Hz (the original library does not work at 8000 Hz).
+`NET_CODEC=amr:12.2` (AMR at 4.75 to 12.2 kbit/s) or `NET_CODEC=amrwb:23.85`
+(AMR-WB at 6.6 to 23.85 kbit/s; `:dtx` after the rate turns their
+discontinuous transmission on) puts a mobile network's speech codec on the
+8000 Hz line in place of G.711, each direction encoded and decoded frame by
+frame (`dsp/test/codec_sim.cpp`, on the OpenCORE and VisualOn libraries:
+Debian's libopencore-amrnb-dev, libopencore-amrwb-dev, libvo-amrwbenc-dev;
+without them netsim says so), and `NET_CODEC_LOSS=<percent>` erases that
+share of its frames at random (`NET_CODEC_SEED`), as lost packets would.
+`codec_probe` runs a file of samples through the same codec, for measuring
+what it does to a signal.  What the modulations and the codecs make of each
+other is in [cellular/](cellular/v_cvm.tex), a proposed Recommendation for
+data over mobile telephony's speech paths ([v_cvm.pdf](v_cvm.pdf)).
 `NET_GAIN` sets an analogue gain on the way to the 9600 Hz modem, and
 `NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
 clock: what it receives comes back with what it sends; from the line,
