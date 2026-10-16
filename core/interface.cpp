@@ -1,18 +1,28 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
- * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
- *    interface.cpp - what the data pumps (dsp/) call in the modem core:
- *                    modem_dp.h, modem_param.h and dsplibs.h, in C
+ *    interface.cpp - the modem core as the data pumps see it: the C
+ *                    functions of modem_dp.h, modem_param.h, modem_defs.h
+ *                    and dsplibs.h that the core provides, the table of
+ *                    data pumps, and the meaning of each parameter number
  *
- *    The pumps get a struct modem from the core; here it leads back to
- *    the Modem.  The parameters are those of slmodemd's modem_param.c.
+ *    The pumps (the open ones in dsp/, Smart Link's i386 library in
+ *    half_smartlink) hold a struct modem pointer and call the functions
+ *    below on it; each finds the Modem behind it (Modem::of()) and asks
+ *    that Modem.  They are called from inside the Modem's own work (a
+ *    pump's create() or process()), so none of them blocks or locks, and
+ *    none writes to the log: the bits are logged by the Modem, and the
+ *    callers would flood the text log.
+ *
+ *    The binary library also links against the sysdep_ C library shims
+ *    here and passes the parameter numbers as plain integers, so those
+ *    numbers (modem_param.h) cannot move.
  *
  */
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,11 +33,17 @@
 
 #include "dcore.h"
 
-
 namespace dcore {
 
-/* the pumps register at the start of the program (prop_dp_init()) */
-static DpDriver drivers[] = {
+/*
+ *    the data pumps
+ */
+
+/* Every pump the core can name, in the order AT+MS=? lists those with a
+   code; a library fills in op as it registers.  Plain data with constant
+   initializers, so it is ready before any static constructor runs (a
+   test registers the pumps from one). */
+static DpDriver pump_table[] = {
 	{ DP_CALLPROG, "CallProg", nullptr, nullptr },
 	{ DP_DUMMY, "Dummy", nullptr, nullptr },
 	{ DP_AUTOMODE, "Automode", nullptr, nullptr },
@@ -49,121 +65,144 @@ static DpDriver drivers[] = {
 	{ DP_V91, "V91", "91", nullptr },
 	{ DP_V92, "V92", "92", nullptr },
 	{ DP_SINUS, "Sinus", nullptr, nullptr },
-	{ (enum DP_ID)0, nullptr, nullptr, nullptr },
+	{},	/* the end: id 0 */
 };
 
-/* the pumps' table (AT+MS, change_dp()) */
+/* the table of the pumps (dcore.h), up to the entry whose id is 0 */
 DpDriver *dp_drivers()
 {
-	return drivers;
+	return pump_table;
 }
 
-/* modem_get_param(): what the pumps ask for: the rates, the line's
-   delay and codec, the dial string, the runtime, the mode, modem-on-
-   hold, the country's dial and call progress parameters; -1 if
-   unknown */
+/*
+ *    the parameters
+ */
+
+/* a pointer as modem_get_param() hands it out */
+static long param_address(const void *p)
+{
+	return (long)reinterpret_cast<intptr_t>(p);
+}
+
+/* parameter name (enum MODEM_PARAMETER_NAMES) as it is now: a rate, the
+   host's answer, the address of one of the Modem's objects, an
+   S-register, a field of the current country, or a constant; -1 for a
+   number that can only be set and for an unknown one */
 long Modem::get_param(unsigned name)
 {
-	const struct homolog_params *h = homolog_->params;
-	int val;
+	const struct homolog_params &c = *homolog_->params;
+
 	switch (name) {
-	case MDMPRM_NONE:
-		break;
+	/* AT+MS's limits */
 	case MDMPRM_MIN_RATE:
 		return min_rate_;
 	case MDMPRM_MAX_RATE:
 		return max_rate_;
+
+	/* what the host knows of its line */
 	case MDMPRM_IODELAY:
-		/* (Smart Link's original library asks, not the open data
-		   pumps) */
 		return host_.io_delay(*this);
-	case MDMPRM_CODECTYPE:
-		val = host_.codec_type(*this);
-		return val < 0 ? CODEC_UNKNOWN : val;
+	case MDMPRM_CODECTYPE: {
+		int codec = host_.codec_type(*this);
+		return codec < 0 ? CODEC_UNKNOWN : codec;
+	}
+
+	/* the Modem's own objects, which the pumps read (and write) in
+	   place; the dial buffer is the live one, which the core changes
+	   under the call progress pump */
 	case MDMPRM_DIALSTR:
-		return (long)dialing_;
-	case MDMPRM_AUTOMODE:
-		return 0;
+		return param_address(dialing_);
 	case MDMPRM_DPRUNTIME:
-		return (long)dp_runtime_;
+		return param_address(dp_runtime_);
+	case MDMPRM_DSPINFO:
+		return param_address(&dsp_info_);
+	case MDMPRM_VOICEINFO:
+		return param_address(&voice_info_);
+	case MDMPRM_DP_ADDR:
+		return param_address(dp_);
+	case MDMPRM_STATS:
+		return param_address(&dp_stats_);
+
+	/* the service class, V.92 modem-on-hold */
 	case MDMPRM_MODE:
 		return mode_;
 	case MDMPRM_MOH_T1:
 		return moh_off_ ? 0 : moh_timer_;
 	case MDMPRM_MOH_REQ:
 		return moh_req_;
-	case MDMPRM_STATS:
-		return (long)&dp_stats_;
-	case MDMPRM_DSPINFO:
-		return (long)&dsp_info_;
-	case MDMPRM_VOICEINFO:
-		return (long)&voice_info_;
-	case MDMPRM_DP_ADDR:
-		return (long)dp_;
-	case GetPulseDialMakeTime:
-		return h->PulseDialMakeTime;
-	case GetPulseDialBreakTime:
-		return h->PulseDialBreakTime;
-	case GetPulseDialDigitPattern:
-		return h->PulseDialDigitPattern;
-	case GetDTMFHighToneLevel:
-		return h->DTMFHighToneLevel;
+
+	/* the settings the S-registers hold */
 	case GetDTMFDialSpeed:
 		return sregs_[SREG_DTMF_DURATION];
-	case GetMinBusyCadenceOnTime:
-		return h->MinBusyCadenceOnTime;
-	case GetMaxBusyCadenceOnTime:
-		return h->MaxBusyCadenceOnTime;
-	case GetBusyDetectionCyclesNumber:
-		return h->BusyDetectionCyclesNumber;
-	case GetMinBusyCadenceOffTime:
-		return h->MinBusyCadenceOffTime;
-	case GetMaxBusyCadenceOffTime:
-		return h->MaxBusyCadenceOffTime;
-	case GetCallingToneFlag:
-		return h->CallingToneFlag;
-	case GetHookFlashTime:
-		return h->HookFlashTime;
 	case GetBlindDialPause:
+	case GetDialToneWaitTime:
 		return sregs_[SREG_DIAL_TONE_WAIT_TIME];
 	case GetNoAnswerTimeOut:
 		return sregs_[SREG_WAIT_CARRIER_AFTER_DIAL];
 	case GetDialPauseTime:
 		return sregs_[SREG_DIAL_PAUSE_TIME];
-	case GetTransmitLevel:
-		return h->TransmitLevel;
-	case GetDialModifierValidation:
-		return h->DialModifierValidation;
-	case GetDialToneValidationTime:
-		return h->DialToneValidationTime;
-	case GetBusyToneDiffTime:
-		return 0;
-	case GetDTMFHighAndLowToneLevelDifference:
-		return h->DTMFHighAndLowToneLevelDifference;
 	case GetPulseDialingFlag:
-		return !sregs_[SREG_TONE_OR_PULSE];
-	case GetDialToneCallProgressFilterIndex:
-		return h->DialToneCallProgressFilterIndex;
-	case GetDialToneDetectionThreshold:
-		return h->DialToneDetectionThreshold;
-	case GetABCDDialingPermittedFlag:
-		return h->ABCDDialingPermittedFlag;
-	case GetComaPauseDurationLimit:
-		return h->ComaPauseDurationLimit;
-	case GetPulseAndToneDialInSameDialStringPermittedFlag:
-		return 0;
-	case GetBusyToneCallProgressFilterIndex:
-		return h->BusyToneCallProgressFilterIndex;
+		return sregs_[SREG_TONE_OR_PULSE] == 0;
+
+	/* the current country's, as the table has them */
+	case GetPulseDialMakeTime:
+		return c.PulseDialMakeTime;
+	case GetPulseDialBreakTime:
+		return c.PulseDialBreakTime;
+	case GetPulseDialDigitPattern:
+		return c.PulseDialDigitPattern;
 	case GetPulseBetweenDigitsInterval:
-		return h->PulseBetweenDigitsInterval;
-	case GetDialToneWaitTime:
-		return sregs_[SREG_DIAL_TONE_WAIT_TIME];
+		return c.PulseBetweenDigitsInterval;
+	case GetDTMFHighToneLevel:
+		return c.DTMFHighToneLevel;
+	case GetDTMFHighAndLowToneLevelDifference:
+		return c.DTMFHighAndLowToneLevelDifference;
+	case GetDialModifierValidation:
+		return c.DialModifierValidation;
+	case GetABCDDialingPermittedFlag:
+		return c.ABCDDialingPermittedFlag;
+	case GetComaPauseDurationLimit:
+		return c.ComaPauseDurationLimit;
+	case GetCallingToneFlag:
+		return c.CallingToneFlag;
+	case GetHookFlashTime:
+		return c.HookFlashTime;
+	case GetTransmitLevel:
+		return c.TransmitLevel;
+	case GetDialToneValidationTime:
+		return c.DialToneValidationTime;
+	case GetDialToneCallProgressFilterIndex:
+		return c.DialToneCallProgressFilterIndex;
+	case GetDialToneDetectionThreshold:
+		return c.DialToneDetectionThreshold;
+	case GetMinBusyCadenceOnTime:
+		return c.MinBusyCadenceOnTime;
+	case GetMaxBusyCadenceOnTime:
+		return c.MaxBusyCadenceOnTime;
+	case GetMinBusyCadenceOffTime:
+		return c.MinBusyCadenceOffTime;
+	case GetMaxBusyCadenceOffTime:
+		return c.MaxBusyCadenceOffTime;
+	case GetBusyDetectionCyclesNumber:
+		return c.BusyDetectionCyclesNumber;
+	case GetBusyToneCallProgressFilterIndex:
+		return c.BusyToneCallProgressFilterIndex;
 	case GetMinRingbackCadenceOnTime:
-		return h->MinRingbackCadenceOnTime;
+		return c.MinRingbackCadenceOnTime;
 	case GetMaxRingbackCadenceOnTime:
-		return h->MaxRingbackCadenceOnTime;
+		return c.MaxRingbackCadenceOnTime;
 	case GetRingbackDetectionCyclesNumber:
-		return h->RingbackDetectionCyclesNumber;
+		return c.RingbackDetectionCyclesNumber;
+	case GetCallProgressSamplesBufferLength:
+		return c.CallProgressSamplesBufferLength;
+	case MustNoiseFilterBeApplied:
+		return c.MustNoiseFilterBeApplied;
+
+	/* no automode of the pumps' own; and what the country table has
+	   no data for (Smart Link's call progress asks, and wants 0) */
+	case MDMPRM_AUTOMODE:
+	case GetBusyToneDiffTime:
+	case GetPulseAndToneDialInSameDialStringPermittedFlag:
 	case GetMinRingbackCadenceOffTime:
 	case GetMaxRingbackCadenceOffTime:
 	case GetRingbackToneCallProgressFilterIndex:
@@ -173,179 +212,227 @@ long Modem::get_param(unsigned name)
 	case GetMinCongestionCadenceOffTime:
 	case GetMaxCongestionCadenceOffTime:
 	case GetCongestionToneCallProgressFilterIndex:
-		return 0;
-	case GetCallProgressSamplesBufferLength:
-		return h->CallProgressSamplesBufferLength;
-	case MustNoiseFilterBeApplied:
-		return h->MustNoiseFilterBeApplied;
 	case GetAdditAttenToBeepgenVoice:
 	case GetDialToneFilterSubindex:
 	case GetBusyToneLooseDetectionEnabled:
 		return 0;
+
+	default:
+		return -1;
 	}
-	return -1;
 }
 
-/* modem_set_param(): what the pumps tell (the rates, the pump to change
-   to, the line's delay, modem-on-hold) or ask for (the hook, a pulse
-   dial digit); -1 if unknown */
+/* parameter name set to val by a pump: the rates it runs at, the pump
+   to change to, a modem-on-hold request taken, or something for the
+   host (the line's delay, the hook, a pulse); 0 (the host's result for
+   the hook and the pulse), -1 for a number that cannot be set */
 long Modem::set_param(unsigned name, int val)
 {
 	switch (name) {
 	case MDMPRM_NONE:
-		break;
+		return 0;
 	case MDMPRM_RX_RATE:
-		rx_rate_ = val;
-		break;
+		rx_rate_ = (unsigned)val;
+		return 0;
 	case MDMPRM_TX_RATE:
-		tx_rate_ = val;
-		break;
+		tx_rate_ = (unsigned)val;
+		return 0;
 	case MDMPRM_DP_REQUESTED:
-		dp_requested_ = val;
-		break;
+		/* change_dp() takes it when the pump says DPSTAT_CHANGEDP */
+		dp_requested_ = (unsigned)val;
+		return 0;
 	case MDMPRM_UPDATE_DELAY:
-		/* (as MDMPRM_IODELAY) */
 		host_.update_delay(*this, val);
-		break;
+		return 0;
 	case MDMPRM_MOH_REQ:
 		moh_req_ = val;
-		break;
+		return 0;
 	case MDMPRM_HOOK_ON:
-		return host_.set_hook(*this, val ? MODEM_HOOK_ON :
-				      MODEM_HOOK_OFF);
+		/* straight to the host: the Modem's hook state stays */
+		return host_.set_hook(*this,
+				      val ? MODEM_HOOK_ON : MODEM_HOOK_OFF);
 	case MDMPRM_PULSE_DIAL:
 		return host_.pulse_dial(*this, val);
 	default:
 		return -1;
 	}
-	return 0;
 }
 
 } // namespace dcore
 
+using dcore::DpDriver;
 using dcore::Modem;
+
+extern "C" {
 
 /*
  *    modem_dp.h
  */
 
-/* the pump's transmitter: bits from the link */
+/* n units of nbits bits for the pump's transmitter, from the link */
 int modem_get_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
 	return Modem::of(m)->get_bits(nbits, buf, n);
 }
 
-/* the pump's receiver: bits to the link */
+/* n units of nbits bits from the pump's receiver, to the link */
 int modem_put_bits(struct modem *m, int nbits, u8 *buf, int n)
 {
 	return Modem::of(m)->put_bits(nbits, buf, n);
 }
 
-/* a pump registers its operations for id; -1 if id is unknown or taken */
+/* op serves pump id from now on, if the table has id and nobody
+   serves it yet: 0, else -1 and nothing changes */
 int modem_dp_register(enum DP_ID id, struct dp_operations *op)
 {
-	for (dcore::DpDriver *p = dcore::drivers; p->id > 0; p++)
-		if (p->id == id && !p->op) {
-			p->op = op;
+	for (DpDriver *d = dcore::dp_drivers(); d->id; d++)
+		if (d->id == id && !d->op) {
+			d->op = op;
 			return 0;
 		}
 	return -1;
 }
 
-/* a pump is gone */
-void modem_dp_deregister(enum DP_ID id, struct dp_operations *op)
+/* nobody serves pump id any more, whoever registered it */
+void modem_dp_deregister(enum DP_ID id, struct dp_operations *)
 {
-	(void)op;
-	for (dcore::DpDriver *p = dcore::drivers; p->id > 0; p++)
-		if (p->id == id)
-			p->op = nullptr;
+	for (DpDriver *d = dcore::dp_drivers(); d->id; d++)
+		if (d->id == id)
+			d->op = nullptr;
 }
 
 /*
- *    modem_param.h, modem_defs.h
+ *    modem_param.h, and the S-registers of modem_defs.h
  */
 
-/* Modem::get_param() */
-long modem_get_param(struct modem *m, unsigned name)
+/* a parameter (Modem::get_param()) */
+long modem_get_param(struct modem *m, unsigned param)
 {
-	return Modem::of(m)->get_param(name);
+	return Modem::of(m)->get_param(param);
 }
 
-/* Modem::set_param() */
+/* sets a parameter (Modem::set_param()) */
 long modem_set_param(struct modem *m, unsigned name, int val)
 {
 	return Modem::of(m)->set_param(name, val);
 }
 
-/* an S-register, -1 if there is none */
-long modem_get_sreg_param(struct modem *m, unsigned num)
+/* S-register sreg_param, 0 to 255; -1 if there is none */
+long modem_get_sreg_param(struct modem *m, unsigned sreg_param)
 {
-	return Modem::of(m)->sreg(num);
+	return Modem::of(m)->sreg(sreg_param);
 }
 
-/* an S-register, -1 if there is none */
+/* S-register num, 0 to 255; -1 if there is none */
 int modem_get_sreg(struct modem *m, unsigned int num)
 {
 	return Modem::of(m)->sreg(num);
 }
 
-/* sets an S-register; -1 if there is none */
+/* the low 8 bits of val into S-register num: 0, or -1 if there is
+   none */
 int modem_set_sreg(struct modem *m, unsigned int num, int val)
 {
 	return Modem::of(m)->set_sreg(num, val);
 }
 
 /*
- *    dsplibs.h
+ *    dsplibs.h: the DTE's characters
  */
 
-/* characters to the DTE; how many it took */
+/* up to n characters to the DTE: how many it took */
 int modem_send_to_tty(struct modem *m, const char *buf, int n)
 {
 	return Modem::of(m)->send_to_dte(buf, n);
 }
 
-/* the DTE's characters; how many */
+/* up to n of the DTE's waiting characters: how many (0: none) */
 int modem_recv_from_tty(struct modem *m, char *buf, int n)
 {
 	return Modem::of(m)->recv_from_dte(buf, n);
 }
 
-/* the C library, for the pumps */
-void *sysdep_malloc(unsigned int size) { return malloc(size); }
-void sysdep_free(void *mem) { free(mem); }
-size_t sysdep_strlen(const char *s) { return strlen(s); }
-char *sysdep_strcpy(char *d, const char *s) { return strcpy(d, s); }
-char *sysdep_strcat(char *d, const char *s) { return strcat(d, s); }
-int sysdep_strcmp(const char *a, const char *b) { return strcmp(a, b); }
-/* strstr(), its result not const as in C */
-char *sysdep_strstr(const char *a, const char *b)
+/*
+ *    dsplibs.h: the C library under the names the binary library knows;
+ *    each does what the function without sysdep_ does
+ */
+
+/* malloc() */
+void *sysdep_malloc(unsigned int size)
 {
-	return const_cast<char *>(strstr(a, b));
+	return malloc(size);
 }
-void *sysdep_memset(void *d, int c, size_t l) { return memset(d, c, l); }
+
+/* free() */
+void sysdep_free(void *mem)
+{
+	free(mem);
+}
+
+/* strlen() */
+size_t sysdep_strlen(const char *s)
+{
+	return strlen(s);
+}
+
+/* strcpy() */
+char *sysdep_strcpy(char *d, const char *s)
+{
+	return strcpy(d, s);
+}
+
+/* strcat() */
+char *sysdep_strcat(char *d, const char *s)
+{
+	return strcat(d, s);
+}
+
+/* strcmp() */
+int sysdep_strcmp(const char *s1, const char *s2)
+{
+	return strcmp(s1, s2);
+}
+
+/* strstr(), with C's result that is not const */
+char *sysdep_strstr(const char *s1, const char *s2)
+{
+	return const_cast<char *>(strstr(s1, s2));
+}
+
+/* memset() */
+void *sysdep_memset(void *d, int c, size_t l)
+{
+	return memset(d, c, l);
+}
+
 /* memcpy() */
 void *sysdep_memcpy(void *d, const void *s, size_t l)
 {
 	return memcpy(d, s, l);
 }
-/* memchr(), its result not const as in C */
+
+/* memchr(), with C's result that is not const */
 void *sysdep_memchr(const void *s, int c, size_t l)
 {
 	return const_cast<void *>(memchr(s, c, l));
 }
+
 /* vsnprintf() */
-int sysdep_vsnprintf(char *str, unsigned size, const char *fmt, va_list ap)
+int sysdep_vsnprintf(char *str, unsigned size, const char *format,
+		     va_list ap)
 {
-	return vsnprintf(str, size, fmt, ap);
+	return vsnprintf(str, size, format, ap);
 }
-/* sprintf() (unbounded: the callers size buf) */
+
+/* sprintf(): the caller sized buf */
 int sysdep_sprintf(char *buf, const char *fmt, ...)
 {
-	va_list args;
-	int i;
-	va_start(args, fmt);
-	i = vsprintf(buf, fmt, args);
-	va_end(args);
-	return i;
+	va_list ap;
+	int len;
+	va_start(ap, fmt);
+	len = vsprintf(buf, fmt, ap);
+	va_end(ap);
+	return len;
 }
+
+} // extern "C"
