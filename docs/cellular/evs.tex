@@ -1,0 +1,120 @@
+% evs.tex - Appendix: the EVS codec, measured with the 3GPP reference code
+\section{The codec}
+The enhanced voice services codec (EVS, \tgpp{26.445}) is the codec of
+VoLTE where both terminals have it, and the codec of 5G voice (VoNR,
+[b-GSMA NG.114]).  It codes 20~ms frames at 5.9 to 128~\kbs{} in four
+bandwidths (narrowband to 4~kHz, wideband to 8~kHz, super wideband to
+16~kHz, full band to 20~kHz), choosing per frame between an ACELP core
+(speech), a transform core (MDCT: TCX and high-quality modes, for music
+and mixed content) and, at the low rates, a generic sound coding of the
+spectral envelope with a coarse residual; above the core's band it codes
+a bandwidth extension that carries no waveform.  It also has an AMR-WB
+interoperable mode (the AMR-WB codec, bit-exact) and a channel-aware mode
+at 13.2~\kbs{} with partial redundancy.  Its signal classification
+decides which core codes a frame, so what it does to a modem's signal
+depends on what the signal looks like to it, not on the bit rate alone.
+
+\section{Measurements}
+The combs of clause~\ref{sec:modulation} were passed through the 3GPP
+reference encoder and decoder of \tgpp{26.442} (fixed point, version
+16.4.0, through G.192 files, DTX off) at the signal interface rates and
+modes of Table~\ref{tab:codecmodes}, as Appendix~\ref{app:measurements}
+describes.  Tables~\ref{tab:combevsnb} to \ref{tab:combevsswb} give, per
+comb, the tone symbol error ratio, the rms phase error, the raw rate of
+the good tones, and the rms change of a tone's amplitude from one symbol
+to the next in dB (the last for the question of amplitude modulation,
+clause~\ref{sec:qam}).
+
+\begin{table}[htbp]
+\caption{EVS at the 8000~Hz interface (narrowband): tone SER / rms phase error / raw rate of the good tones (bit/s) / rms amplitude change (dB)}
+\label{tab:combevsnb}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabcombevsnb}
+\end{table}
+\begin{table}[htbp]
+\caption{EVS at the 16000~Hz interface (wideband); EVS AMR-WB IO is the codec's AMR-WB mode}
+\label{tab:combevswb}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabcombevswb}
+\end{table}
+\begin{table}[htbp]
+\caption{EVS at the 32000~Hz interface (super wideband): the S200, S300 and S400 combs to 14~kHz}
+\label{tab:combevsswb}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabcombevsswb}
+\end{table}
+
+\section{What they show}
+\begin{enumerate}[label=\alph*)]
+\item \textbf{At 7.2 and 9.6~\kbs{}} (narrowband) and \textbf{at 9.6 and
+  13.2~\kbs{} wideband and super wideband}, the combs do not pass: the
+  tone symbol error ratio is $10^{-1}$ or worse on every comb, and the
+  amplitude of a tone changes by 5 to 9~dB rms from one symbol to the
+  next.  The codec's low-rate generic coding keeps the spectral envelope
+  and not the phases.  The robust mode (300~bit/s FSK) passes: V.21's
+  bit error ratio is below $10^{-2}$ at every mode but 9.6 wideband.
+  A single carrier at 600~baud has a symbol error ratio of $3 \cdot 10^{-2}$
+  at 13.2 wideband: V.22 would connect and lose data.
+\item \textbf{At 13.2~\kbs{} narrowband}, the N400 comb passes with a
+  tone symbol error ratio below $10^{-3}$ (8$^\circ$ rms, 800~bit/s raw),
+  the N200 comb loads 10 of its 16 tones, and 8-DPSK does not hold.  This
+  is the mode a VoLTE call falls to in poor coverage; the probing's
+  choice of the sparse comb is what keeps the DCE connected through it.
+\item \textbf{At 24.4~\kbs{}}, the transform core takes over for the
+  comb and the picture changes: narrowband, every comb passes with 8-DPSK
+  (N200: $2 \cdot 10^{-3}$, 6$^\circ$, 2400~bit/s raw); wideband, W300
+  passes DQPSK at $10^{-3}$ (2200~bit/s) and W400 8-DPSK on 11 of 17
+  tones; super wideband, the band above about 8~kHz is the codec's
+  bandwidth extension and carries nothing, and the probing loads 13 to
+  15 tones (1300 to 1500~bit/s) -- less than the wideband interface gives
+  at the same rate, because the signal's power is spread over tones the
+  codec drops.  A DCE at a 32000~Hz interface should therefore offer the
+  wideband combs as well (Table~\ref{tab:combs}: the probing finds the
+  band).
+\item \textbf{At 48~\kbs{} and above}, the codec carries the comb
+  nearly as a waveform: wideband, 8-DPSK on all 33 tones of W200 at
+  $3 \cdot 10^{-3}$ (4950~bit/s raw) and on all tones of W400 without
+  error; super wideband at 48~\kbs{}, DQPSK on 31 of the 35 tones of S400
+  to 12.4~kHz (3100~bit/s); at 96~\kbs{}, DQPSK on all 69 tones of S200
+  (6900~bit/s) and 8-DPSK on 56 of them (8400~bit/s); at 128~\kbs{},
+  8-DPSK on all 69 tones without error, 3.4$^\circ$ rms: 10\,350~bit/s raw.
+\item \textbf{Amplitude.}  Through the ACELP codecs a tone's amplitude
+  changes by 1.5 to 3~dB rms from one symbol to the next, and amplitude
+  carries no bits.  Through EVS at 24.4~\kbs{} the change is 0.7 to
+  1.0~dB rms, at 48 it is 0.5 to 1.0~dB, at 96 and 128 it is 0.3 to
+  0.6~dB: two amplitude levels 6~dB apart, or the 16-point constellation
+  of clause~\ref{sec:qam} with the trellis code, would hold at 48~\kbs{}
+  and above.  With 16-QAM on the 69 tones of S200 the raw rate would be
+  13\,800~bit/s, at 128~\kbs{} of codec rate; the loading is for further
+  study, as that clause says.
+\item \textbf{AMR-WB IO} at 23.85~\kbs{} behaves as the AMR-WB codec
+  (which it is): W300 loads 20 of 23 tones (2000~bit/s), W200 25 of 33.
+\item \textbf{Frame erasures} cost more through EVS than through AMR:
+  with 1 per cent of the frames erased at 24.4~\kbs{} wideband, the
+  comb's tone symbol error ratio rises from $10^{-3}$ to $2 \cdot 10^{-2}$
+  (Table~\ref{tab:combevswb}), about twice the erasure ratio, because the
+  transform core's overlap carries each erasure into the next frame as
+  well: an erased frame costs two symbols.  The receiver's erasure
+  marking (clause~\ref{sec:erasure}) should mark both, and the probing
+  should leave erased symbols out of its statistics, which are over a
+  few tens of symbols.
+\item \textbf{Mode changes.}  A VoLTE call switches between 13.2 and
+  24.4~\kbs{} with the radio conditions, and a VoNR call may hold
+  higher modes.  Between 13.2 and 24.4 the usable loading changes from
+  one comb (N400, 800~bit/s) to another with 8-DPSK (N200, 2400~bit/s):
+  the renegotiation of clause~\ref{sec:reneg} is what follows the
+  codec, and the DCE should expect it every few seconds in a moving
+  terminal.
+\end{enumerate}
+
+\section{Consequences for the signal set}
+The signal set of clause~\ref{sec:modulation} needs no change for EVS:
+the combs, the two modulation orders and the probing's loading cover it
+from 13.2~\kbs{} narrowband (N400, DQPSK) to 128~\kbs{} super wideband
+(S200, 8-DPSK), a range of 800 to 10\,350~bit/s raw.  What EVS adds is
+the case for the super wideband combs (S200 to S400), which this
+Recommendation defines, and for the amplitude loading of
+clause~\ref{sec:qam}, which it leaves for further study with the
+measured amplitude stability as its starting point.  The terminal's
+part is in Appendix~\ref{app:terminal}: a terminal that can hold the EVS
+mode at 48~\kbs{} or more for a DCE's call multiplies its throughput.

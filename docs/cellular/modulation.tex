@@ -1,0 +1,175 @@
+% modulation.tex - clause 10 of v_cvm.tex: the signal set
+\subsection{Signal set}\label{sec:modes}
+The signal set has three modes, Table~\ref{tab:modes}.  A DCE shall
+support the robust mode and the narrowband mode; it may support the
+wideband mode (which needs the signal interface at 16000~Hz).
+
+\begin{table}[htbp]
+\caption{The modes of the signal set}
+\label{tab:modes}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{ituhead}\thd{} & \thd{Robust (R)} & \thd{Narrowband (N)} & \thd{Wideband (W)} \\
+\midrule
+Signal & the FSK of \rec{V.21}: channel~1 (980/1180~Hz) from the calling DCE, channel~2 (1650/1850~Hz) from the answering DCE, 300~bit/s & a comb of tones at 200, 300 or 400~Hz spacing in the band 300 to 3400~Hz (16, 11 or 8 tones), DPSK & a comb of tones at 200, 300 or 400~Hz spacing in the band 300 to 6900~Hz (33, 23 or 17 tones), DPSK \\
+Symbol & 3.33~ms (one bit) & 20~ms (a codec frame): a useful part of whole cycles of the spacing and a cyclic prefix (clause~\ref{sec:timing}); the 200~Hz comb also 22.5~ms & as N \\
+Modulation & binary FSK & DQPSK, or 8-DPSK on tones with a low enough phase error & as N \\
+Raw rate & 300~bit/s & 1600~bit/s (16 tones at 200~Hz, DQPSK, 20~ms), 1100 (11 at 300~Hz), 800 (8 at 400~Hz); half as much again with 8-DPSK & 3300~bit/s (33 tones at 200~Hz, DQPSK, 20~ms), 2300 (23 at 300~Hz), 1700 (17 at 400~Hz); half as much again with 8-DPSK \\
+Use & INFO and MP messages, control sequences; data through codecs that carry nothing else & data & data \\
+Passes (measured) & every AMR mode but 4.75, every AMR-WB mode but 6.6, every EVS mode but 9.6 wideband & AMR 12.2 (every comb), AMR 10.2 and two AMR 12.2 codecs in tandem (the 300 and 400~Hz combs), AMR-WB from 12.65, EVS 13.2 (N400) and 24.4 (every comb, 8-DPSK) & AMR-WB 23.85 (28 tones of W200), 15.85 (16 of W300), 12.65 (7 of W300); EVS 24.4 (W300), 48 and above (every comb, 8-DPSK); the super wideband combs through EVS at 48~\kbs{} and above \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\itunote{The modes were chosen from measurements (Appendix~\ref{app:measurements}).
+Through AMR at 7.4~\kbs{} and below, no differential phase modulation
+measured kept a symbol error ratio below $10^{-1}$, on one carrier or many;
+only 300~bit/s FSK did.  Through AMR at 12.2 and AMR-WB at 23.85~\kbs{},
+a comb of 16 tones at 200~Hz spacing with DQPSK and a symbol of 20 to
+22.5~ms kept its tone symbol error ratio at or below $10^{-2}$; combs of
+32 tones at 100~Hz spacing did not (the codec's noise against each tone
+grows faster than the number of tones), and 8-DPSK held only on the
+better tones.  Fewer tones, more widely spaced, keep working where more
+do not: through AMR at 10.2~\kbs{} and through two AMR codecs in tandem
+the 11-tone comb at 300~Hz spacing kept $3 \cdot 10^{-3}$ while the
+16-tone comb went to $3 \cdot 10^{-2}$, and through AMR-WB at 15.85 the
+300~Hz comb loads 16 tones where the 200~Hz comb loads 10; so the signal
+set has three combs for each band and the probing chooses.  A single
+carrier at 600~baud (V.22's) passes AMR~12.2 as
+well, at 1200~bit/s; the comb carries a third more at the same symbol
+error ratio and loads itself to the codec.}
+
+\subsection{The comb}\label{sec:comb}
+The comb's tones are at the frequencies
+\[ f_k = k \cdot \Delta f, \qquad k = k_{\min}, \ldots, k_{\max}, \]
+as Table~\ref{tab:combs} gives them.
+\begin{table}[htbp]
+\caption{The combs}
+\label{tab:combs}
+\small
+\begin{tabular}{llcccccc}
+\toprule
+\rowcolor{ituhead}\thd{Code} & \thd{Comb} & $\Delta f$ (Hz) & $k$ & \thd{Tones} & \thd{Band (Hz)} & $T_u$ (ms) & $T_g$ (ms) \\
+\midrule
+0 & N200 & 200 & 2--17 & 16 & 400--3400 & 15 (or 20) & 5 (or 2.5) \\
+1 & N300 & 300 & 1--11 & 11 & 300--3300 & 10 & 10 \\
+2 & N400 & 400 & 1--8 & 8 & 400--3200 & 15 & 5 \\
+3 & W200 & 200 & 2--34 & 33 & 400--6800 & 15 & 5 \\
+4 & W300 & 300 & 1--23 & 23 & 300--6900 & 10 & 10 \\
+5 & W400 & 400 & 1--17 & 17 & 400--6800 & 15 & 5 \\
+6 & S200 & 200 & 2--69 & 68 & 400--13800 & 15 & 5 \\
+7 & S300 & 300 & 1--46 & 46 & 300--13800 & 10 & 10 \\
+8 & S400 & 400 & 1--35 & 35 & 400--14000 & 15 & 5 \\
+9--15 & -- & \multicolumn{6}{l}{reserved} \\
+\bottomrule
+\end{tabular}
+\end{table}
+The narrowband combs N200, N300 and N400 are for the signal interface
+at 8000~Hz, the wideband combs W200, W300 and W400 for 16000~Hz, and the
+super wideband combs S200, S300 and S400 for 32000~Hz (for the EVS
+codec's super wideband modes, Appendix~\ref{app:evs}).  The probing (clause~\ref{sec:probing}) decides which
+tones are loaded; the transmitter sends nothing on a tone that is not.
+The transmitted signal in the useful part of symbol $n$ is
+\[ s_n(t) = A \sum_{k \in \mathcal{L}} \cos\bigl(2\pi f_k t + \varphi_{n,k}\bigr), \qquad 0 \le t < T_u, \]
+where $\mathcal{L}$ is the set of loaded tones, $\varphi_{n,k}$ the tone's
+phase in this symbol and $A$ the amplitude that gives the level of
+clause~\ref{sec:pointp}~b) over the loaded tones.  The useful period $T_u$
+is a whole number of cycles of $\Delta f$, so that the tones are
+orthogonal over it.
+
+\subsection{Symbol timing and the cyclic prefix}\label{sec:timing}
+A symbol consists of a cyclic prefix of $T_g$ followed by the useful part
+of $T_u$: the prefix is the last $T_g$ of the useful part, transmitted
+first, so that the signal is continuous across each symbol except for the
+phase steps at the symbol's start.  The symbol periods are
+\begin{itemize}
+\item \textbf{20~ms}, the period of a codec frame, for every comb: $T_u$
+  and $T_g$ as Table~\ref{tab:combs} gives them (three cycles of the
+  spacing for the 200 and 300~Hz combs, six for the 400~Hz combs), so
+  that one symbol's phase steps fall in each frame and the prefix spans
+  the codec's transient after them (a subframe of 5~ms, or two for the
+  300~Hz combs);
+\item \textbf{22.5~ms}, for the N200 comb only: $T_u = 20$~ms (four
+  cycles), $T_g = 2.5$~ms, for codecs that gain from the longer integration
+  (the probing compares the two).
+\end{itemize}
+The receiver shall integrate each tone over the useful part only.  A
+receiver shall acquire the symbol timing from the cyclic prefix (the
+correlation of the signal with itself $T_u$ earlier peaks over the prefix)
+and shall re-acquire it within two symbols after a step of the received
+timing of up to $\pm 20$~ms, which a jitter buffer's adaptation causes
+(Appendix~\ref{app:terminal}).  Differential modulation makes the symbol
+after such a step the only one lost.
+
+\subsection{The codec frame and the symbol}\label{sec:align}
+The symbols are not aligned to the codec's frames, and no alignment is
+signalled: the position of the symbols' phase steps within the frame was
+found to make no difference to the tone symbol error ratio
+(Appendix~\ref{app:measurements}, Table~\ref{tab:combnb}: the 20~ms
+symbol at a frame boundary and 10~ms off it), which the codec's 5~ms
+subframes and its long-term predictor explain: the step is coded in the
+subframe it falls in, wherever that is.  The 20~ms symbol is chosen for
+its rate (12 per cent more than the 22.5~ms symbol) and for its match
+with the frame erasures: one erased frame is one symbol.
+
+\subsection{Differential phase modulation}
+Each loaded tone carries, per symbol, the phase difference
+$\varphi_{n,k} - \varphi_{n-1,k}$, one of four values for DQPSK or eight for
+8-DPSK, mapped from the bits as Table~\ref{tab:gray} shows.  The first
+symbol of phase~4, and the first after a renegotiation, carries no data:
+it is the phase reference.  The receiver decides each tone symbol from the
+difference of the tone's phases in two consecutive symbols; no carrier
+recovery and no equalization are required, and a frequency offset between
+the DCEs' clocks of $\Delta f_c$ appears as a constant phase rotation of
+$2\pi \Delta f_c T$ per symbol, which the receiver should estimate from
+the decisions and remove.
+
+\subsection{Loading and raw rate}
+The raw rate is
+\[ R = \frac{1}{T_u + T_g} \sum_{k \in \mathcal{L}} b_k, \]
+with $b_k = 2$ for a DQPSK tone and 3 for an 8-DPSK tone: 1600~bit/s for the
+16 DQPSK tones of N200 at the 20~ms symbol, 1100 for N300, 800 for N400,
+3300 for W200, and half as much again with 8-DPSK on all tones.  The loading of clause~\ref{sec:loading} chooses $\mathcal{L}$
+and the $b_k$; a loading with fewer than 4 tones shall not be used (the
+DCE renegotiates or retrains).
+
+\subsection{Control sequences during data}\label{sec:control}
+A DCE that wishes to renegotiate (clause~\ref{sec:reneg}) shall send, in
+place of data, the control sequence: eight consecutive symbols with the
+phase difference $180^\circ$ on every loaded tone, then its MP in the
+robust mode.  A receiver that decodes four such symbols in a row shall
+stop delivering data to the inner decoder, flush, answer with the same
+sequence if it has not sent one, and proceed to the MP exchange.  The
+sequence cannot occur in scrambled data for more than two symbols with a
+probability above $10^{-9}$ on 8 tones.
+
+\subsection{Scrambling}
+The bits given to the mapping of clause~\ref{sec:mapping} shall be
+scrambled with the generating polynomials of \rec{V.34}: $1 + x^{-18} + x^{-23}$
+in the calling DCE's transmitter and $1 + x^{-5} + x^{-23}$ in the
+answering DCE's (GPC and GPA), self-synchronizing as in that
+Recommendation.  The scrambler is reset at the start of phase~4 and after
+each renegotiation.
+
+\subsection{Quick start}\label{sec:quick}
+A DCE may keep, for the last number dialled or answered, the loading and
+the symbol period of the last call, and offer them in INFO0 as the mode
+to start with.  If its peer accepts in its INFO0, phase~2 is reduced to L1 of
+0.5~s for a check of the loading, and the DCEs proceed to phase~3; this
+is in the manner of \rec{V.92}'s quick connect.  A loading so offered
+shall still be checked by the receiver against the thresholds of
+clause~\ref{sec:loading}.
+
+\subsection{Loading with amplitude: for further study}\label{sec:qam}
+The MP message carries a loading value reserved for QAM constellations of
+16 and 64~points per tone, with the 16-state four-dimensional trellis code
+of \rec{V.34} across tone pairs as \rec{G.992.1} applies it.  Such a
+loading is for the transform coding modes of the EVS codec, which carry
+waveforms: through EVS at 48~\kbs{} and above a tone's amplitude was
+measured to change by 0.3 to 1~dB rms from one symbol to the next, which
+would hold two levels 6~dB apart (Appendix~\ref{app:evs}); through the
+ACELP codecs it changes by 1.5 to 3~dB, and amplitude carries no bits.
+The loading's parameters are for further study.  A DCE shall not
+request it unless both DCEs have indicated the capability in CM and JM,
+and shall fall back to DPSK when the peer does not confirm it in MP.

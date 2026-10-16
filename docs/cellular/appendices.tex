@@ -1,0 +1,290 @@
+% appendices.tex - the appendices of v_cvm.tex (informative)
+\infappendix{The speech codecs as a channel: measurements}{measurements}
+\section{Method}
+The measurements were made with the D-Modem project's tools
+[b-D-Modem], in October 2026, as follows.
+\begin{enumerate}[label=\alph*)]
+\item \textbf{Codecs.}  AMR: the OpenCORE AMR-NB library (encoder and
+  decoder); AMR-WB: the VisualOn AMR-WB encoder and the OpenCORE AMR-WB
+  decoder.  Both are the implementations of the 3GPP reference code that
+  Android carries; the AMR-WB pair was checked against the 3GPP reference
+  code of \tgpp{26.173} on a comb signal (clause~\ref{sec:crosscheck}).
+  EVS: the 3GPP reference code of \tgpp{26.442} (fixed point, version
+  16.4.0), encoder and decoder, through files in the G.192 format.  The
+  codecs ran at the modes of Table~\ref{tab:codecmodes}, without DTX
+  unless stated, one encoding and decoding per direction.
+\item \textbf{Signal interface.}  16~bit linear PCM at 8000~Hz (AMR, and
+  AMR-WB through a 2:1 resampler with a 3400~Hz low pass, as a narrowband
+  signal reaches a wideband codec), at 16000~Hz (AMR-WB and EVS as they
+  are) or at 32000~Hz (EVS super wideband).  The test signals were at
+  $-12$~dBFS.
+\item \textbf{Modulations of the V series.}  Two D-Modem modems
+  (\code{half\_open8}) called each other through \code{netsim}, the
+  project's network simulator, with the codec on its line
+  (\code{NET\_CODEC}), at each modulation of Table~\ref{tab:modsurvive}
+  with the modems' default settings (V.42 and V.44 where the modulation
+  carries them), and sent 10~s of data each way; a call passed when both
+  modems reached CONNECT and the data arrived intact.
+\item \textbf{Waveform probes.}  Test signals were generated, passed
+  through the codec (\code{codec\_probe}, or the EVS programs) and
+  analysed against the input, aligned by correlation: steady tones (the
+  signal-to-noise ratio of the output against the input, with the best
+  gain), binary FSK at 300~bit/s (bit errors of a non-coherent detector),
+  DQPSK and 8-DPSK on one carrier (symbol errors and the root mean square
+  phase error of the differential detector), and the combs of
+  clause~\ref{sec:modulation} with the phases changing at random every
+  symbol (per tone: symbol errors, the rms phase error, and the rms
+  change of the tone's amplitude from one symbol to the next).  Each
+  measurement is over 150 symbols or 800 bits; a tone counts as
+  \emph{good} when its symbol error ratio is below $2 \cdot 10^{-2}$, and
+  the raw rate given is that of the good tones.
+\item \textbf{Frame erasures.}  Frames were erased at random, independently,
+  at the ratio given, and the decoder told so (its concealment ran).
+\end{enumerate}
+The scripts (\code{measure/probe.py}, \code{probe3.py}, \code{matrix.sh})
+and the generator of the tables below (\code{tables.py}) are in the
+D-Modem repository with this document, so that the measurements can be
+repeated and extended.
+
+\begin{table}[htbp]
+\caption{The codec modes measured}
+\label{tab:codecmodes}
+\small
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\rowcolor{ituhead}\thd{Codec} & \thd{Modes (kbit/s)} \\
+\midrule
+AMR (\tgpp{26.090}), 8000~Hz & 4.75, 7.4, 7.95, 10.2, 12.2 \\
+AMR-WB (\rec{G.722.2}), 16000~Hz & 6.6, 12.65, 15.85, 23.85; also behind a 2:1 resampler at 8000~Hz \\
+EVS (\tgpp{26.445}), primary modes & NB (8000~Hz): 7.2, 9.6, 13.2, 24.4; WB (16000~Hz): 9.6, 13.2, 16.4, 24.4, 32, 48, 64, 96, 128; SWB (32000~Hz): 13.2, 24.4, 32, 48, 64, 96, 128 \\
+EVS AMR-WB IO & 23.85 (16000~Hz) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{The modulations of the V series through the codecs}
+Table~\ref{tab:modsurvive} gives, for each modulation and codec, the rate
+of the CONNECT the modems reached (bold where the data then arrived
+intact in both directions; with an \textsuperscript{e} where the data had
+errors, which means the modulation carried no error correction, or that
+V.42's detection phase failed and the modems ran without it) and a dash
+where the modems did not connect.
+\begin{table}[htbp]
+\caption{D-Modem's modulations through the codecs: CONNECT rate (bold: data intact; e: data in error; --: no connection)}
+\label{tab:modsurvive}
+\centering\footnotesize
+\resizebox{\textwidth}{!}{\tabmodsurvive}
+\end{table}
+V.21 (and Bell~103) connect through every mode and carry their 300~bit/s
+without error through AMR at 12.2 and AMR-WB at 23.85; at the lower modes
+their bits are in error (Table~\ref{tab:fsk}).  V.22 connects through AMR
+12.2 and its LAPM comes up, so that its data arrives intact: 1200~bit/s.
+V.22bis connects through AMR 12.2 and AMR-WB 23.85 (its handshake is
+V.22's) but its 16-point constellation does not survive, nor does V.42's
+detection on it.  V.32 and above do not complete their training; V.23's
+1200~bit/s channel does, its 75~bit/s channel not.
+
+\begin{table}[htbp]
+\caption{Bit error ratio of 300~bit/s FSK through the codecs (8000~Hz interface)}
+\label{tab:fsk}
+\centering\small
+\tabfsk
+\end{table}
+
+\section{Steady tones}
+Table~\ref{tab:tones} gives the signal-to-noise ratio of a steady tone
+after the codec, which is high (25 to 37~dB through AMR 12.2) at most
+frequencies and low (10 to 18~dB) at a few: those whose period is a whole
+number of samples at 8000~Hz (800, 1000, 1333, 1600, 2000, 2667~Hz) and
+at 1500~Hz.  A steady tone is the easiest signal for the long-term
+predictor once it has locked, and the hardest for the linear predictor,
+whose line spectrum it cannot place; the values are no guide to a
+modulated signal, whose phases the predictor must follow, and the
+single-carrier and comb measurements below are.
+\begin{table}[htbp]
+\caption{SNR (dB) of a steady tone at $-12$~dBFS after the codec, by frequency (Hz)}
+\label{tab:tones}
+\centering\footnotesize
+\resizebox{\textwidth}{!}{\tabtones}
+\end{table}
+
+\section{One carrier}
+Table~\ref{tab:carrier} gives the symbol error ratio and the rms phase
+error of DQPSK on one carrier at 1700~Hz, at 300 and 600~baud (600 baud
+is V.22's).  Through AMR 12.2 and AMR-WB 23.85 the 600~baud signal has a
+symbol error ratio near $10^{-3}$ with 14$^\circ$ rms; through AMR 7.4
+and below, and AMR-WB 12.65, it does not pass.
+\begin{table}[htbp]
+\caption{DQPSK on one carrier at 1700~Hz: symbol error ratio / rms phase error}
+\label{tab:carrier}
+\centering\small
+\tabcarrier
+\end{table}
+
+\section{The combs}\label{sec:combmeas}
+Table~\ref{tab:combnb} gives, at the 8000~Hz interface, the tone symbol
+error ratio, the rms phase error and the raw rate of the good tones for
+the narrowband comb (200~Hz spacing, 400 to 3400~Hz, 16 tones) with the
+20~ms and the 22.5~ms symbols, with 8-DPSK, with the shorter 12.5~ms
+symbol, and for the 400~Hz comb; Table~\ref{tab:combwb} the same at the
+16000~Hz interface for the wideband combs (400 to 6800~Hz).  The columns
+``+10~ms'' are the 20~ms symbol with its boundaries 10~ms into the codec
+frame rather than at it.
+\begin{table}[htbp]
+\caption{Combs at the 8000~Hz interface: tone SER / rms phase error / raw rate of the good tones (bit/s)}
+\label{tab:combnb}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabcombnb}
+\end{table}
+\begin{table}[htbp]
+\caption{Combs at the 16000~Hz interface (AMR-WB): tone SER / rms phase error / raw rate of the good tones (bit/s)}
+\label{tab:combwb}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabcombwb}
+\end{table}
+What the combs show, and clause~\ref{sec:modulation} builds on:
+\begin{itemize}
+\item the 16-tone comb with DQPSK and the 20~ms symbol passes AMR 12.2 at a
+  tone symbol error ratio of $10^{-3}$ (12$^\circ$ rms) and AMR-WB 23.85
+  better; it does not pass AMR 7.4 and below, nor AMR-WB 6.6;
+\item the position of the symbol in the codec frame makes no difference;
+\item 8-DPSK on the same comb has a symbol error ratio of $6 \cdot 10^{-2}$
+  through AMR 12.2: too high for the code; on the 400~Hz comb (8 tones)
+  it passes, at 1050~bit/s, less than DQPSK on 16 tones;
+\item the shorter 12.5~ms symbol raises the error ratio by an order of
+  magnitude: the codec needs the integration time;
+\item at the 16000~Hz interface through AMR-WB 23.85, 28 of the 34 tones
+  are good and the tones above 6400~Hz are not: AMR-WB codes 6.4 to
+  7~kHz by bandwidth extension, without the waveform;
+\item the amplitude of a tone changes from one symbol to the next by
+  1.5 to 3~dB rms through the ACELP codecs: amplitude carries no bits
+  there.
+\end{itemize}
+
+\section{Tandem codecs and frame erasures}
+Table~\ref{tab:combnb} also has AMR 12.2 followed by AMR 12.2 (a
+mobile-to-mobile call with a transcoding gateway, or two codecs in a
+call's path), and AMR-WB 23.85 followed by AMR 12.2 (a wideband terminal
+calling a narrowband one): the comb's error ratio roughly doubles, and
+the loading drops a few tones.  With 1 and 3 per cent of the frames
+erased at random the comb's error ratio rises by about the erasure ratio
+itself (an erased frame is an erased symbol); the code of
+Annex~\ref{annex:rs} is dimensioned for this.
+
+\section{Cross-check of the codec implementations}\label{sec:crosscheck}
+The AMR-WB encoder and decoder used (VisualOn, OpenCORE) were run on the
+wideband comb and compared with the 3GPP reference code of \tgpp{26.173}
+on the same input; the result is in the text of
+Table~\ref{tab:crosscheck}.
+\begin{table}[htbp]
+\caption{The AMR-WB implementations against the 3GPP reference code}
+\label{tab:crosscheck}
+\centering\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{5.2cm}}
+\toprule
+\rowcolor{ituhead}\thd{Comparison} & \thd{Result} \\
+\midrule
+\tabcrosscheck
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\infappendix{The EVS codec}{evs}
+\input{evs.tex}
+
+\infappendix{Terminals and networks}{terminal}
+This appendix says what a terminal and a network should do so that a DCE
+of this Recommendation gets the most of the speech path; none of it is a
+requirement of this Recommendation on them.
+\section{The terminal}
+\begin{enumerate}[label=\alph*)]
+\item \textbf{Signal interface.}  The DCE needs the codec's PCM
+  interface: in a UE, the point where the acoustic front end's output
+  enters the encoder and the decoder's output leaves for the acoustic
+  back end.  The acoustic processing of \tgpp{26.131} (echo cancellation,
+  noise suppression, automatic gain control, equalization) is for the
+  acoustic path and should be bypassed for the DCE's samples; noise
+  suppression in particular treats a comb as noise.
+\item \textbf{Codec selection.}  Where the terminal negotiates the codec
+  (an IMS client, through SDP), it should offer, for a call the DCE will
+  use, the highest modes available and the wideband codecs first: EVS at
+  24.4~\kbs{} or more, AMR-WB at 23.85, AMR at 12.2; it should restrict
+  the mode set (the \code{mode-set} parameter of [b-IETF RFC 4867]) to
+  the highest modes, and set the EVS parameters \code{br} and \code{bw} of
+  \tgpp{26.445} Annex~A accordingly.
+\item \textbf{DTX and VAD.}  The terminal should turn discontinuous
+  transmission off for the call (the \code{dtx} parameter of EVS; for AMR
+  and AMR-WB it is the encoder's setting).  A comb is not speech, and a
+  voice activity detector may classify it as noise and send comfort noise
+  in its place.  The DCE's signals are continuous while a call is up, so
+  that DTX, where it cannot be turned off, has nothing to detect as
+  silence.
+\item \textbf{Jitter buffer.}  The jitter buffer management of
+  \tgpp{26.114} adapts its delay by dropping or repeating frames, or by
+  time-scaling the decoded signal (\tgpp{26.448} for EVS).  Each
+  adaptation is a step in the DCE's symbol timing of up to one frame,
+  which the receiver re-acquires (clause~\ref{sec:timing}); a terminal
+  should prefer, for a DCE's call, a fixed delay large enough for the
+  path's jitter.
+\item \textbf{Level.}  The terminal should pass the DCE's samples to the
+  encoder at their level, without gain, and give the DCE the decoder's
+  output at its level.
+\end{enumerate}
+\section{The network}
+\begin{enumerate}[label=\alph*)]
+\item \textbf{Transcoding.}  Each codec in the path costs throughput
+  (Appendix~\ref{app:measurements}); transcoder-free operation between
+  terminals with the same codec is best.  A gateway to the PSTN
+  transcodes to \rec{G.711}, which costs nothing further.
+\item \textbf{Echo cancellers.}  Network echo cancellers of [b-ITU-T
+  G.168] disable on the 2100~Hz tone with phase reversals that \rec{V.8}'s
+  ANSam is; a DCE sends it as a matter of course.  Mobile-to-mobile IMS
+  calls have no network echo canceller; the UE's acoustic echo canceller
+  is bypassed with the rest of the acoustic processing.
+\item \textbf{Codec mode control.}  The network changes the codec mode
+  with the radio conditions; the DCE follows with renegotiations
+  (clause~\ref{sec:reneg}).  A network that holds a call at the highest
+  mode while a DCE is in it gives it the highest throughput; the DCE
+  cannot ask for that, and this Recommendation does not define a way.
+\item \textbf{In-band signalling.}  DTMF and other tones sent out of band
+  ([b-IETF RFC 4733]) do not reach the speech path; the DCE's signals are
+  not DTMF and are unaffected.  A network that detects the V.8 tones and
+  switches a PSTN gateway to a voice-band data mode ([b-ITU-T V.152]) or
+  to modem relay ([b-ITU-T V.150.1]) does so on its own leg; the mobile
+  leg's codec remains, and remains the limit.
+\end{enumerate}
+
+\infappendix{Implementation notes}{impl}
+A DCE of this Recommendation can be built from the parts of a V series
+software modem, as the D-Modem project [b-D-Modem] has them:
+\begin{itemize}
+\item the V.8 procedures, with the information field of
+  Annex~\ref{annex:v8} added to the CM and JM encoders and decoders;
+\item the V.21 modulator and demodulator for the robust mode and the
+  INFO and MP messages, and the HDLC framing of V.42 for their frames;
+\item a multitone modulator (an inverse discrete Fourier transform of
+  the tone phases, the cyclic prefix prepended) and demodulator (the
+  correlation of each tone over the useful part, as the probe scripts of
+  Appendix~\ref{app:measurements} do it), with the differential
+  detection, the Gray mapping of Table~\ref{tab:gray} and the scrambler
+  of V.34;
+\item a Reed-Solomon encoder and decoder over GF($2^8$) for the code of
+  Annex~\ref{annex:rs}, with erasure decoding; a block interleaver;
+\item the LAPM, V.42bis and V.44 of the V.42 implementation, unchanged,
+  with the detection phase disabled;
+\item the V.250 command interpreter with the \code{+MS} value and the
+  \code{+CVM} command of clause~\ref{sec:dte};
+\item for Annex~\ref{annex:fax}, the T.30 session machine and the T.38
+  packetizer of a T.38 gateway or an internet-aware fax implementation.
+\end{itemize}
+The computational load is small: the comb has at most 68 tones at
+50~symbols/s, and the Reed-Solomon code at most 3300~bit/s.  The
+probing's phase error estimates and the loading are the only parts not
+found in a V series modem, and they are a few hundred lines.
+
+In D-Modem, the natural place is a data pump (\code{dsp/}) behind the
+existing pump interface, which the modem core (\code{core/}) already
+drives through V.8 for V.34 and V.90, with the link layer (\code{link/})
+above it, and \code{netsim}'s \code{NET\_CODEC} as the test line; the
+interoperability test harness then runs the DCE against itself through
+each codec mode as it runs the other modems today.

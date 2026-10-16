@@ -1,0 +1,91 @@
+none                 21   CONNECT 300        A:7340/7340:True B:7780/7780:True        PASS
+none                 103  CONNECT 300        A:7340/7340:True B:7780/7780:True        PASS
+none                 23   CONNECT 1200       A:7340/7340:True B:7780/7780:True        PASS
+none                 22   CONNECT 1200       A:3303/3303:True B:3501/3501:True        PASS
+none                 212  CONNECT 1200       A:4037/4037:True B:4279/4279:True        PASS
+none                 122  CONNECT 2400       A:3303/3303:True B:3501/3501:True        PASS
+none                 32   CONNECT 9600       A:5505/5505:True B:5835/5835:True        PASS
+none                 132  CONNECT 14400      A:5505/5505:True B:5835/5835:True        PASS
+none                 34   CONNECT 33600      A:6606/6606:True B:7002/7002:True        PASS
+amr:12.2             21   CONNECT 300        A:7340/7340:True B:7780/7780:True        PASS
+amr:12.2             103  CONNECT 300        A:7340/7340:True B:7780/7780:True        PASS
+amr:12.2             23   CONNECT 1200       A:7340/7340:False B:7780/7780:True A received from octet 0: b'\x98\x98\x98\x98\x98\x98\x90\xaa\xb4YH\]Z\xac-$,\xae\xeb\xb9\x81\x99\xbd\xe1\x81\xa9\xd5\xb5\xc1\xcd\x81\xbd\xd9\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x85\xe9\xe5\x81\x91\xbd\x9d\xb9\x81Q\xa1\x95\x81\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br'  FAIL
+amr:12.2             22   CONNECT 1200       A:5872/5872:True B:6224/6224:True        PASS
+amr:12.2             212  CONNECT 1200                                                FAIL
+amr:12.2             122  CONNECT 2400                                                FAIL
+amr:12.2             32   CONNECT                                                     FAIL
+amr:12.2             132  CONNECT                                                     FAIL
+amr:12.2             34   CONNECT                                                     FAIL
+amr:7.4              21   CONNECT 300        A:7340/7340:False B:7780/7780:False A received from octet 1: b'0\x1000\x100 The quick brown fox jumps over the lazy dog. The quick br', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 197: b'opqrstuvwxyz{|}~\x00!"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNO', sent b'opqrstuvwxyz{|}~ !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNO'  FAIL
+amr:7.4              103  CONNECT 300        A:7340/7340:False B:7779/7780:False A received from octet 0: b'\x98\x98\x98\x98\x98\x98\x90\xaa\xb4YH\]Z\xac-$,\xae\xeb\xb9\x81\x99\xbd\xe1\x81\xa9\xd5\xb5\xc1\xcd\x81\xbd\xd9\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x85\xe9\xe5\x81\x91\xbd\x9d\xb9\x81Q\xa1\x95\x81\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 0: b'\x98\x98\x98\x98\x98\x98\x90\x90H\xa4$R\x92\xd2\x12)Ii\x89\xa9\xc9\xe9\x09\x8a\x92\x9a\xa2\xaa\xb2\xba\xc2\xca\xd2\xda\xe2\xea\xf2\xfa\x02\x05\x09\x11\x15\x19\x1d!%)-159=AEIMQUY]ae', sent b'000000  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX'  FAIL
+amr:7.4              23   CONNECT 1200       A:7224/7340:False B:7780/7780:True A received from octet 0: b'/&&&&&$*\xab\x16R_Wkk\x0bIK\xbd\xdd\xbb\x81\xb9\xad\xe1\x81)\xd5\xb5\xc1\xcd\x81<\xdd\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x89\xe9\xe5\x81\x91\xbd\x9d\xb9\x80\x91\xa1\x95\x89\x85\xd1\xa1ck b2o', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br'  FAIL
+amr:7.4              22   CONNECT                                                     FAIL
+amr:7.4              212  CONNECT 300                                                 FAIL
+amr:7.4              122  CONNECT 2400                                                FAIL
+amr:7.4              32   CONNECT                                                     FAIL
+amr:7.4              132  CONNECT                                                     FAIL
+amr:7.4              34   CONNECT                                                     FAIL
+amr:4.75             21   CONNECT 300        A:7147/7340:False B:7752/7780:False A received from octet 3: b'000\x98\x98\xb8\x80\xaaZQH|]Z\xac- ,\x8e\xeb\xf9\x81\x99\xbf\xe3\x85\xa9\xd5\xb5\xc3\xcd\x81\xbd\xdb\x95\xcb\x80t`u`\xb6P\xaf\x00\x91o\x96\x00\xaa\xa1\x95\x01\xc5\xd5\xa5\x8d\xad\x01\x89\xc9\xfd\xdd\xb9', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 0: b'&&&\x06$&$\xa8$\xa4$R\x92\x92\x12)Ii\x89\xa9\xc9\xe9\x09\x8a\x92\x9a\xa2\xaa\xb2\xba\xc2\xcaR\xfa\xe2\xear\xfa\x02  FAIL
+amr:4.75             103  CONNECT 300        A:6998/7340:False B:7698/7780:False A received from octet 0: b'`\xb0\x1000\x00`R\xa8uQy\x95ic\xeb/\xb22{s~ $o\x00  B received from octet 0: b'LLLHLLHHH$"R\x92\xd2\x11)Ii\x89\xa9\xc9\xe9\x09)\x92\x9a\xa2\xaa\x92\xba\xc2\xca\xd2\xda\xe2\xea\xf3\xfb\x00  FAIL
+amr:4.75             23   CONNECT 1200       A:6871/7340:False B:7780/7780:False A received from octet 0: b'~PP\x0800 T\x88\x09Q\xba \x85\xad\xef\x08$\xee\x9d\x9e+\xe2\xf617\xd6aH^$\xa5\xe3_b\x02\xa2\xc2\x81\xe1\xa9\x90ZY\x0e \xa3\xbe>4\x94\xb4J\x00\@l<.\x9dI\xe1\xe7\x99', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 211: b'}~ !"#$%&\'()*+,->/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]', sent b'}~ !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]'  FAIL
+amr:4.75             22   CONNECT                                                     FAIL
+amr:4.75             212  CONNECT 300                                                 FAIL
+amr:4.75             122  CONNECT                                                     FAIL
+amr:4.75             32   CONNECT                                                     FAIL
+amr:4.75             132  CONNECT                                                     FAIL
+amr:4.75             34   CONNECT                                                     FAIL
+amrwb:23.85          21   CONNECT 300        A:7340/7340:True B:7780/7780:True        PASS
+amrwb:23.85          103  CONNECT 300        A:7340/7340:False B:7780/7780:True A received from octet 0: b'\x98\x98\x98\x98\x98\x98\x90\xaa\xb4YH\]Z\xac-$,\xae\xeb\xb9\x81\x99\xbd\xe1\x81\xa9\xd5\xb5\xc1\xcd\x81\xbd\xd9\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x85\xe9\xe5\x81\x91\xbd\x9d\xb9\x81Q\xa1\x95\x81\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br'  FAIL
+amrwb:23.85          23   CONNECT 1200       A:7340/7340:False B:7780/7780:True A received from octet 514: b' lazy dog. The qUick brown fox jumps over the lazy dog. The quic', sent b' lazy dog. The quick brown fox jumps over the lazy dog. The quic'  FAIL
+amrwb:23.85          22   CONNECT                                                     FAIL
+amrwb:23.85          212  CONNECT 300                                                 FAIL
+amrwb:23.85          122  CONNECT 2400       A:7546/7340:False B:7793/7780:False A received from octet 0: b'\xfb\xff\xfb\xffs?\xbe\xda\xad\xb7\xf7\xb30\x14x\xb4\x154D\xaa\xb4YZ\]Z\xac-$.\x8e\xeb\xb9\x81\x9d]\xf2\xcd,]\x1b\\x15:qgr the la:y)tmE. Th', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 0: b'\xff\x7fjX\x82B\xfdC\xa3\xff\x1c\xfb\xe35\x81\\x18\xb7\xa9\'wI\xa0R\xa9\x0e\x17\x94\xb7\xf3#]\x95\xaa\xfdn\xd9\x13\x9a\xdbq\xd2\xa6G7\x12\x92x\xb4\x053\xc4\xed\xcai,\xbe\xe0T\x9ew\x9e\xd5', sent b'000000  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX'  FAIL
+amrwb:23.85          32   CONNECT                                                     FAIL
+amrwb:23.85          132  CONNECT                                                     FAIL
+amrwb:23.85          34   CONNECT                                                     FAIL
+amrwb:12.65          21   CONNECT 300        A:7340/7340:False B:7780/7780:False A received from octet 0: b' 00000 The quick brown fox jumps over the lazy dog. The quick br', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 228: b'/0123456789:;<=>\x7f@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmn', sent b'/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmn'  FAIL
+amrwb:12.65          103  CONNECT 300        A:7319/7340:False B:7780/7780:False A received from octet 0: b'HHLLHLHUZYH^]Z\xac-$,\xae\xeb\xb9\x81\x99\xbd\xe1\x81\xa9\xd5\xb5\xc1\xcd\x81\xbd\xd9\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x85\xe9\xe5\x81\x91\xbd\x9d\xb9\x81Q\xa1\x95\x81\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 1912: b'PQRSTUVWXYZ[\]^_@abcdefghijklmnopqrstuvwxyz{|}~  FAIL
+amrwb:12.65          23   CONNECT 1200       A:7248/7340:False B:7780/7780:True A received from octet 0: b'3:2000 The\xa0quick Rrowm$f\x7f}&jumqr\xa2ouer w\xb7YH[Y\xaf/$\xd6k\xcb\x09\xcd\x85\x95\xc1\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br'  FAIL
+amrwb:12.65          22   CONNECT                                                     FAIL
+amrwb:12.65          212  CONNECT 300                                                 FAIL
+amrwb:12.65          122  CONNECT                                                     FAIL
+amrwb:12.65          32   CONNECT                                                     FAIL
+amrwb:12.65          132  CONNECT                                                     FAIL
+amrwb:12.65          34   CONNECT                                                     FAIL
+amrwb:6.6            21   CONNECT                                                     FAIL
+amrwb:6.6            103  CONNECT 300        A:6589/7340:False B:7899/7780:False A received from octet 1: b'0\xa0\x04\xb8\xb0\xb0a"\x08\x0f\x1b\x7f|\xd4\x82\x85\x89\x09<\x9e\x15q\xb3\xe8\xff\x00{tm$\x10\xc0\xe0\x91\xc9\x07\x02\xb0\x81\xc0\x10\xfe\xc0\xe1h\xd1\x00\x88\xa0\xe1\x01cw}\xe0b\xe0\xc3\xa4\x8b\x8f?\xc9\xe0', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 0: b' \x10\x00 \x00\x00 \x00\x01"\x02\x00%\x02\x01 )\x00+\x08%\x00\x0f  2\x11\x04\x15\x12\x01\x08963,=\x1a<@AB\x01@EB\x00HIH\x09\x00\x02O QPy@U@\xad\x08', sent b'000000  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX'  FAIL
+amrwb:6.6            23   CONNECT                                                     FAIL
+amrwb:6.6            22   CONNECT                                                     FAIL
+amrwb:6.6            212  CONNECT 300                                                 FAIL
+amrwb:6.6            122  CONNECT                                                     FAIL
+amrwb:6.6            32   CONNECT                                                     FAIL
+amrwb:6.6            132  CONNECT                                                     FAIL
+amrwb:6.6            34   CONNECT                                                     FAIL
+amr:12.2 LOSS=1      21   CONNECT 300        A:7287/7340:False B:7742/7780:False A received from octet 6: b'000000"\x01\xab\x0b)\xd5\xa5\x8d\xad\x81\x89\xc9\xbd\xdd\xb9\x81\x99\xbd\xe1\x81\xa9\xd5\xb5\xc1\xcd\x81\xbd\xd9\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x85\xe9\xe5\x81|\xeb\xcb\x09\x89\x85\x95\x81\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd\xdd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 47: b'89:;<=>?@ABCDEFG\x95IJKLMNOPQRSTUVW*V\xab+\xd5\xe5\xf5\x05\x85\x89\x8d\x91\x95\x99\x9d\xa1\xa5\xa9\xad\xa5[\xeb\x0b.\xac.W\x97\xd7\x17\xe5\xe9', sent b'89:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvw'  FAIL
+amr:12.2 LOSS=1      103  CONNECT 300        A:7297/7340:False B:7735/7780:False A received from octet 40: b'ox jumps over thUH[X\xaf/$\xd6\xeb\xcb\x09\x89\x85\x95\x81\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd\xdd\xb9\x81\x99\xbd\xe1\x81\xa9\xd5\xb5\xc1\xcd\x81\xbd\xd9\xf7\xc9\x81\xd1\xa1\x95\x81\xb1\x85', sent b'ox jumps over the lazy dog. The quick brown fox jumps over the l' B received from octet 35: b',-./0123456789:;\x92p\x9f\x02\x05\x09\x11\x15\x19\x1d!%)-159=AEIMQUY]aeimquy}\x81\x85\x89\x8d\x91\x95\x99\x9d\xa1\xa5\xa9\xad\xb1', sent b',-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijk'  FAIL
+amr:12.2 LOSS=1      23   CONNECT 1200       A:7318/7340:False B:7754/7780:False A received from octet 128: b' fox jumps over \xa0\xcbG\x00lazy dog. The quick brown fox jumps over the', sent b' fox jumps over the lazy dog. The quick brown fox jumps over the' B received from octet 8: b'000000  H\xa4$\x12\x92\xd2\x12)yi\x89\xa9\xc9\xe9\x09\x8a\x92\x9a\xa2\xea\xb2\xba\xc2\xca\xd2\xda\xe2\xea\xf2\xfa\x02\x05\x09\x0c\x11\x15\x19\x1d!%)-159=AEIMQUY]ae', sent b'000000  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX'  FAIL
+amr:12.2 LOSS=1      22   CONNECT 1200                                                FAIL
+amr:12.2 LOSS=1      212  CONNECT 300                                                 FAIL
+amr:12.2 LOSS=1      122  CONNECT 2400                                                FAIL
+amr:12.2 LOSS=1      32   CONNECT                                                     FAIL
+amr:12.2 LOSS=1      132  CONNECT                                                     FAIL
+amr:12.2 LOSS=1      34   CONNECT                                                     FAIL
+amr:12.2 LOSS=3      21   CONNECT 300        A:7206/7340:False B:7705/7780:False A received from octet 0: b'\xdf000000"\x00\xb4Y\x08\xaeWkk\x0bIK\xbd\xdd\xb9\x81\x99\xdb\xf1 jumps over the lazy do\xe7\xb7 The quick br', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 0: b'`00000  !"#$%&\'()*+,-./0123456789:\xbb\x7fO\xfa\x02\x05\x09\x11\x15\x99\x1e!%)-159=AEIMQUY]\xe1\xb4', sent b'000000  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX'  FAIL
+amr:12.2 LOSS=3      103  CONNECT 300        A:7254/7340:False B:7652/7780:False A received from octet 5: b'00000\x0cHUZYH\]Zl\x1a,,\xae\xeb\xb9\x81\x99\xbd\xe1\x81\xa9\xd5\xb5\xc1\xcd\x81\xbd\xd9\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x85\xe9\xe5\x81Dx2\xb9\x81Q\xa1\x95\x81\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 6: b'000000XHH\xa4$R\x92\xd2\x12)Ii\x89\xca\xdb\xe9\x09\x8a\x92\x9a\xa2\xaa\xb2\xba\xc2\xca\xd2\xda\xe2\xea\xf2\xfa\x02\x05\x09m\x00EGGHIJKLMNOPQRSTUVWXY', sent b'000000  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX'  FAIL
+amr:12.2 LOSS=3      23   CONNECT 1200       A:7322/7340:False B:7740/7780:False A received from octet 0: b'\x98\x98\x98\x98\x98\x98\x90\xaa\xb4YH\]Z\xac-$,\xae\xeb\xb9\x81\x99\x14\xc4 jumps over the lazy dog. The quick bro', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 4: b'0000\x98\x98\xf0\x90H\xa4$\xa4\x92\xd2\x12+Ii\x89\xa8\xc9\xe9\x09\x8a23456789:;<<>?@ABCDE~GHI\xcaKLMNOPQRSTUVWXY', sent b'000000  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX'  FAIL
+amr:12.2 LOSS=3      22   CONNECT                                                     FAIL
+amr:12.2 LOSS=3      212  CONNECT 300                                                 FAIL
+amr:12.2 LOSS=3      122  CONNECT 2400                                                FAIL
+amr:12.2 LOSS=3      32   CONNECT                                                     FAIL
+amr:12.2 LOSS=3      132  CONNECT                                                     FAIL
+amr:12.2 LOSS=3      34   CONNECT                                                     FAIL
+amrwb:23.85 LOSS=1   21   CONNECT 300        A:7411/7340:False B:7744/7780:False A received from octet 5: b'00000p\x8cThe quick brown fox jumps over the lazy\x12\xd6\xeb\xcb\x09\x89\x85\x95\x81\xc5\xd5\xa5\x8d\xad\x81\x89\xc9\xbd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 60: b'EFGHIJKLMNOPQRST\xf5\xd5\x15\x95\xa5\xb5\xc5\xd5\xe5\xf5\x05\x85\x89\x8d\x91\x95\xf6\x16+Kk\x8b\xab\xcb\xeb\x0b\xc5\xc9\xcd\xd1\xd5\xd9\xdd\xe1\xe5\xbc/\xf5\xf9 !"#$%&\'(', sent b'EFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ !"#$%'  FAIL
+amrwb:23.85 LOSS=1   103  CONNECT 300        A:7340/7340:False B:7780/7780:False A received from octet 0: b'\x98\x98\x98\x98\x98\x98\x90\xaa\xb4YH\]Z\xac-$,\xae\xeb\xb9\x81\x99\xbd\xe1\x81\xa9\xd5\xb5\xc1\xcd\x81\xbd\xd9\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x85\xe9\xe5\x81\x91\xbd\x9d\xb9\x81Q\xa1\x95\x81\xc5\xd5\xbf\x8d\xad\x81\x89\xc9\xbd', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 71: b'PQRSTUVWXYZ[\]^_\xf8abcdefghijklmnopqrstuvwxyz{|}~ !"#$%&\'()*+,-./0', sent b'PQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~ !"#$%&\'()*+,-./0'  FAIL
+amrwb:23.85 LOSS=1   23   CONNECT 1200       A:7405/7340:False B:7775/7780:False A received from octet 0: b'_\xbf\xff000000 The quick brown f\x03\xfa\x93\xab\xb5\xc1\xcd\x81\xbd\xd9\x95\xc9\x81\xd1\xa1\x95\x81\xb1\x85\xe9\xe5\x81\x91\xbd\x9d\xb9\x81Q\xa1\x95\x81\xc5\xd5\xa5\x8d\xad\x81', sent b'000000 The quick brown fox jumps over the lazy dog. The quick br' B received from octet 17: b'00000  !"#$%&\'()\xa5%\xa9\xe9\xe9\x09\x8a\x92\x9e\x82\xaa\xb2\xba\xc2\xca\xd2\xda\xe2\xea\xf2\xfa\x02\x05\x09\x11\x15\x19\x1d!%)-359=AEIMQUY]aei', sent b'00000  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXY'  FAIL
+amrwb:23.85 LOSS=1   22   CONNECT                                                     FAIL
+amrwb:23.85 LOSS=1   212  CONNECT 300                                                 FAIL
+amrwb:23.85 LOSS=1   122  CONNECT                                                     FAIL
+amrwb:23.85 LOSS=1   32   CONNECT                                                     FAIL
+amrwb:23.85 LOSS=1   132  CONNECT                                                     FAIL
+amrwb:23.85 LOSS=1   34   CONNECT                                                     FAIL
+done

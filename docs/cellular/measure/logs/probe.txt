@@ -1,0 +1,281 @@
+=== none
+tone sweep (Hz: SNR dB, gain dB):
+  300:85.4/+0.0  500:90.1/+0.0  700:85.4/+0.0  900:85.4/+0.0  1100:85.4/+0.0  1300:85.4/+0.0  1500:90.1/+0.0  1700:85.4/+0.0  1900:85.4/+0.0  2100:85.4/+0.0  2300:85.4/+0.0  2500:90.1/+0.0  2700:85.4/+0.0  2900:85.4/+0.0  3100:85.4/+0.0  3300:85.4/+0.0
+1000 Hz by level (dBFS: SNR dB): -3:102.6  -6:106.7  -12:95.5  -18:90.0  -24:77.1  -30:70.5
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0000  rms 0.7 deg
+    100 baud: SER 0.0000  rms 0.9 deg
+    200 baud: SER 0.0000  rms 2.8 deg
+    300 baud: SER 0.0000  rms 3.2 deg
+    600 baud: SER 0.0000  rms 4.8 deg
+   1200 baud: SER 0.0000  rms 10.4 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0000  rms 0.5 deg
+    100 baud: SER 0.0000  rms 0.6 deg
+    200 baud: SER 0.0000  rms 2.1 deg
+    600 baud: SER 0.0000  rms 3.6 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0000   V.23 1200 bd 1300/2100: 0.0000   Bell103 300 bd 2025/2225: 0.0000
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.000, tones with SER<2%: 32, mean rms phase err 0.1 deg, raw 2844 bit/s (good tones)
+   per tone SER: 300:0.00 400:0.00 500:0.00 600:0.00 700:0.00 800:0.00 900:0.00 1000:0.00 1100:0.00 1200:0.00 1300:0.00 1400:0.00 1500:0.00 1600:0.00 1700:0.00 1800:0.00 1900:0.00 2000:0.00 2100:0.00 2200:0.00 2300:0.00 2400:0.00 2500:0.00 2600:0.00 2700:0.00 2800:0.00 2900:0.00 3000:0.00 3100:0.00 3200:0.00 3300:0.00 3400:0.00
+   per tone rms deg: 300:0 400:0 500:0 600:0 700:0 800:0 900:0 1000:0 1100:0 1200:0 1300:0 1400:0 1500:0 1600:0 1700:0 1800:0 1900:0 2000:0 2100:0 2200:0 2300:0 2400:0 2500:0 2600:0 2700:0 2800:0 2900:0 3000:0 3100:0 3200:0 3300:0 3400:0
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.000, tones with SER<2%: 32, mean rms phase err 0.1 deg, raw 5120 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.000, tones with SER<2%: 16, mean rms phase err 0.0 deg, raw 2560 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.000, tones with SER<2%: 16, mean rms phase err 0.0 deg, raw 1422 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.000, tones with SER<2%: 63, mean rms phase err 0.2 deg, raw 5600 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.000, tones with SER<2%: 32, mean rms phase err 0.1 deg, raw 4266 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.000, tones with SER<2%: 16, mean rms phase err 0.0 deg, raw 3840 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.000, tones with SER<2%: 32, mean rms phase err 0.1 deg, raw 1505 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.000
+=== amr:12.2
+tone sweep (Hz: SNR dB, gain dB):
+  300:27.8/-0.3  500:32.7/-0.4  700:28.9/-0.5  900:36.5/-0.5  1100:33.3/-0.5  1300:31.0/-0.5  1500:16.4/-0.6  1700:28.7/-0.5  1900:31.1/-0.5  2100:32.9/-0.5  2300:32.1/-0.5  2500:25.3/-0.5  2700:25.3/-0.5  2900:30.6/-0.5  3100:29.6/-0.5  3300:33.5/-0.6
+1000 Hz by level (dBFS: SNR dB): -3:12.8  -6:12.9  -12:12.8  -18:12.8  -24:13.0  -30:12.1
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0000  rms 2.3 deg
+    100 baud: SER 0.0000  rms 4.5 deg
+    200 baud: SER 0.0000  rms 6.9 deg
+    300 baud: SER 0.0000  rms 8.8 deg
+    600 baud: SER 0.0000  rms 13.5 deg
+   1200 baud: SER 0.0397  rms 22.0 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0000  rms 2.5 deg
+    100 baud: SER 0.0000  rms 4.7 deg
+    200 baud: SER 0.0069  rms 7.2 deg
+    600 baud: SER 0.0743  rms 12.9 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0000   V.23 1200 bd 1300/2100: 0.0013   Bell103 300 bd 2025/2225: 0.0000
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.071, tones with SER<2%: 2, mean rms phase err 24.7 deg, raw 177 bit/s (good tones)
+   per tone SER: 300:0.07 400:0.06 500:0.08 600:0.06 700:0.06 800:0.05 900:0.02 1000:0.05 1100:0.04 1200:0.03 1300:0.03 1400:0.09 1500:0.04 1600:0.10 1700:0.01 1800:0.06 1900:0.01 2000:0.10 2100:0.06 2200:0.05 2300:0.08 2400:0.06 2500:0.07 2600:0.06 2700:0.06 2800:0.15 2900:0.16 3000:0.17 3100:0.08 3200:0.09 3300:0.08 3400:0.12
+   per tone rms deg: 300:24 400:24 500:24 600:23 700:25 800:24 900:21 1000:23 1100:21 1200:21 1300:20 1400:25 1500:22 1600:27 1700:20 1800:26 1900:21 2000:27 2100:22 2200:24 2300:26 2400:24 2500:24 2600:24 2700:25 2800:31 2900:34 3000:32 3100:25 3200:27 3300:24 3400:30
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.222, tones with SER<2%: 0, mean rms phase err 38.9 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.054, tones with SER<2%: 1, mean rms phase err 23.0 deg, raw 160 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.000, tones with SER<2%: 16, mean rms phase err 13.1 deg, raw 1422 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.231, tones with SER<2%: 0, mean rms phase err 39.7 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.359, tones with SER<2%: 0, mean rms phase err 24.6 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.336, tones with SER<2%: 0, mean rms phase err 24.0 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.002, tones with SER<2%: 31, mean rms phase err 13.9 deg, raw 1458 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.010
+=== amr:7.4
+tone sweep (Hz: SNR dB, gain dB):
+  300:27.5/-0.3  500:16.6/-0.5  700:26.5/-0.6  900:30.5/-0.7  1100:26.5/-0.6  1300:27.0/-0.6  1500:14.6/-0.8  1700:24.3/-0.5  1900:29.8/-0.5  2100:21.7/-0.8  2300:15.0/-0.8  2500:16.3/-0.7  2700:32.9/-0.5  2900:18.5/-0.9  3100:18.3/-1.6  3300:18.8/-2.2
+1000 Hz by level (dBFS: SNR dB): -3:10.5  -6:10.3  -12:10.5  -18:10.3  -24:8.5  -30:10.0
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0000  rms 6.2 deg
+    100 baud: SER 0.0294  rms 17.1 deg
+    200 baud: SER 0.0086  rms 15.6 deg
+    300 baud: SER 0.0328  rms 21.1 deg
+    600 baud: SER 0.1503  rms 33.4 deg
+   1200 baud: SER 0.3264  rms 48.3 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0000  rms 6.1 deg
+    100 baud: SER 0.0829  rms 12.6 deg
+    200 baud: SER 0.0898  rms 12.8 deg
+    600 baud: SER 0.4318  rms 34.5 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0038   V.23 1200 bd 1300/2100: 0.0519   Bell103 300 bd 2025/2225: 0.0000
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.399, tones with SER<2%: 0, mean rms phase err 59.1 deg, raw 0 bit/s (good tones)
+   per tone SER: 300:0.28 400:0.32 500:0.46 600:0.44 700:0.44 800:0.33 900:0.40 1000:0.41 1100:0.42 1200:0.44 1300:0.36 1400:0.38 1500:0.32 1600:0.34 1700:0.43 1800:0.38 1900:0.35 2000:0.33 2100:0.28 2200:0.28 2300:0.35 2400:0.44 2500:0.38 2600:0.45 2700:0.46 2800:0.36 2900:0.46 3000:0.49 3100:0.49 3200:0.50 3300:0.53 3400:0.47
+   per tone rms deg: 300:48 400:59 500:64 600:62 700:58 800:47 900:53 1000:57 1100:63 1200:56 1300:56 1400:60 1500:50 1600:56 1700:63 1800:58 1900:54 2000:52 2100:47 2200:46 2300:52 2400:68 2500:61 2600:67 2700:63 2800:56 2900:63 3000:71 3100:67 3200:75 3300:75 3400:61
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.528, tones with SER<2%: 0, mean rms phase err 73.8 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.409, tones with SER<2%: 0, mean rms phase err 58.1 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.248, tones with SER<2%: 0, mean rms phase err 40.7 deg, raw 0 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.527, tones with SER<2%: 0, mean rms phase err 75.2 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.668, tones with SER<2%: 0, mean rms phase err 59.8 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.674, tones with SER<2%: 0, mean rms phase err 57.5 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.222, tones with SER<2%: 0, mean rms phase err 39.9 deg, raw 0 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.030
+=== amr:4.75
+tone sweep (Hz: SNR dB, gain dB):
+  300:20.5/-0.2  500:15.8/-0.4  700:15.4/-0.5  900:27.6/-0.6  1100:23.3/-0.4  1300:20.5/-0.5  1500:13.6/-0.7  1700:10.4/-1.0  1900:19.3/-0.4  2100:22.7/-0.3  2300:14.4/-1.0  2500:12.2/-0.8  2700:11.4/-2.4  2900:12.9/-0.7  3100:10.9/-4.3  3300:9.2/-8.1
+1000 Hz by level (dBFS: SNR dB): -3:10.2  -6:9.3  -12:9.3  -18:9.6  -24:8.2  -30:7.8
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0000  rms 11.1 deg
+    100 baud: SER 0.0708  rms 24.4 deg
+    200 baud: SER 0.0691  rms 26.3 deg
+    300 baud: SER 0.2625  rms 43.8 deg
+    600 baud: SER 0.4508  rms 64.6 deg
+   1200 baud: SER 0.6442  rms 88.1 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0553  rms 11.5 deg
+    100 baud: SER 0.2919  rms 26.7 deg
+    200 baud: SER 0.3472  rms 30.1 deg
+    600 baud: SER 0.6995  rms 65.0 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0987   V.23 1200 bd 1300/2100: 0.2899   Bell103 300 bd 2025/2225: 0.2342
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.573, tones with SER<2%: 0, mean rms phase err 80.5 deg, raw 0 bit/s (good tones)
+   per tone SER: 300:0.58 400:0.60 500:0.56 600:0.54 700:0.59 800:0.58 900:0.53 1000:0.50 1100:0.57 1200:0.55 1300:0.64 1400:0.52 1500:0.58 1600:0.54 1700:0.54 1800:0.49 1900:0.54 2000:0.60 2100:0.53 2200:0.55 2300:0.65 2400:0.58 2500:0.59 2600:0.53 2700:0.62 2800:0.57 2900:0.52 3000:0.50 3100:0.65 3200:0.65 3300:0.69 3400:0.63
+   per tone rms deg: 300:77 400:89 500:76 600:80 700:82 800:82 900:75 1000:72 1100:84 1200:70 1300:83 1400:73 1500:78 1600:77 1700:71 1800:74 1900:76 2000:89 2100:80 2200:80 2300:88 2400:80 2500:85 2600:78 2700:74 2800:80 2900:72 3000:80 3100:90 3200:95 3300:96 3400:89
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.644, tones with SER<2%: 0, mean rms phase err 89.8 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.556, tones with SER<2%: 0, mean rms phase err 79.0 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.482, tones with SER<2%: 0, mean rms phase err 68.2 deg, raw 0 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.644, tones with SER<2%: 0, mean rms phase err 90.0 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.775, tones with SER<2%: 0, mean rms phase err 80.6 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.780, tones with SER<2%: 0, mean rms phase err 77.3 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.487, tones with SER<2%: 0, mean rms phase err 69.0 deg, raw 0 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.107
+=== amrwb:23.85
+tone sweep (Hz: SNR dB, gain dB):
+  300:28.0/-0.2  500:24.5/-0.3  700:30.3/-0.0  900:26.9/-0.3  1100:30.7/-0.0  1300:22.1/-0.5  1500:16.1/-0.1  1700:25.8/-0.2  1900:26.6/-0.6  2100:25.2/-0.4  2300:26.2/-0.3  2500:15.2/-0.3  2700:27.4/-0.2  2900:32.8/-0.0  3100:31.4/-0.1  3300:32.5/-0.7
+1000 Hz by level (dBFS: SNR dB): -3:9.6  -6:9.7  -12:9.8  -18:9.7  -24:9.8  -30:10.0
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0000  rms 2.7 deg
+    100 baud: SER 0.0000  rms 3.4 deg
+    200 baud: SER 0.0000  rms 6.3 deg
+    300 baud: SER 0.0000  rms 9.6 deg
+    600 baud: SER 0.0017  rms 12.1 deg
+   1200 baud: SER 0.0173  rms 18.7 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0000  rms 2.1 deg
+    100 baud: SER 0.0000  rms 3.6 deg
+    200 baud: SER 0.0000  rms 6.6 deg
+    600 baud: SER 0.0760  rms 12.9 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0000   V.23 1200 bd 1300/2100: 0.0000   Bell103 300 bd 2025/2225: 0.0013
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.008, tones with SER<2%: 26, mean rms phase err 14.3 deg, raw 2311 bit/s (good tones)
+   per tone SER: 300:0.00 400:0.00 500:0.00 600:0.00 700:0.00 800:0.00 900:0.00 1000:0.00 1100:0.00 1200:0.00 1300:0.00 1400:0.00 1500:0.01 1600:0.00 1700:0.01 1800:0.00 1900:0.03 2000:0.01 2100:0.01 2200:0.01 2300:0.01 2400:0.01 2500:0.03 2600:0.01 2700:0.00 2800:0.03 2900:0.03 3000:0.03 3100:0.03 3200:0.00 3300:0.00 3400:0.00
+   per tone rms deg: 300:6 400:7 500:8 600:9 700:10 800:10 900:11 1000:11 1100:13 1200:11 1300:12 1400:14 1500:14 1600:16 1700:16 1800:16 1900:17 2000:15 2100:18 2200:18 2300:17 2400:21 2500:21 2600:18 2700:17 2800:20 2900:18 3000:21 3100:19 3200:13 3300:12 3400:9
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.073, tones with SER<2%: 12, mean rms phase err 22.9 deg, raw 1920 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.007, tones with SER<2%: 13, mean rms phase err 13.6 deg, raw 2080 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.000, tones with SER<2%: 16, mean rms phase err 7.4 deg, raw 1422 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.079, tones with SER<2%: 21, mean rms phase err 24.2 deg, raw 1866 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.126, tones with SER<2%: 4, mean rms phase err 14.7 deg, raw 533 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.120, tones with SER<2%: 2, mean rms phase err 14.1 deg, raw 480 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.000, tones with SER<2%: 32, mean rms phase err 7.9 deg, raw 1505 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.086
+=== amrwb:12.65
+tone sweep (Hz: SNR dB, gain dB):
+  300:27.8/-0.2  500:24.8/-0.3  700:30.1/-0.0  900:26.5/-0.2  1100:29.1/-0.1  1300:18.4/-0.7  1500:16.1/-0.2  1700:21.4/-0.4  1900:20.1/-0.9  2100:20.8/-0.7  2300:22.3/-0.5  2500:15.1/-0.3  2700:23.8/-0.3  2900:32.7/-0.1  3100:27.6/-0.2  3300:32.2/-0.7
+1000 Hz by level (dBFS: SNR dB): -3:9.9  -6:9.9  -12:9.7  -18:9.8  -24:10.0  -30:9.9
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0000  rms 4.1 deg
+    100 baud: SER 0.0000  rms 5.7 deg
+    200 baud: SER 0.0000  rms 9.6 deg
+    300 baud: SER 0.0069  rms 14.4 deg
+    600 baud: SER 0.0674  rms 24.5 deg
+   1200 baud: SER 0.2055  rms 37.6 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0000  rms 3.6 deg
+    100 baud: SER 0.0000  rms 5.6 deg
+    200 baud: SER 0.0259  rms 9.3 deg
+    600 baud: SER 0.3402  rms 24.9 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0025   V.23 1200 bd 1300/2100: 0.0620   Bell103 300 bd 2025/2225: 0.0089
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.188, tones with SER<2%: 7, mean rms phase err 35.4 deg, raw 622 bit/s (good tones)
+   per tone SER: 300:0.00 400:0.00 500:0.00 600:0.01 700:0.01 800:0.00 900:0.01 1000:0.03 1100:0.09 1200:0.10 1300:0.10 1400:0.12 1500:0.11 1600:0.20 1700:0.27 1800:0.28 1900:0.34 2000:0.27 2100:0.30 2200:0.32 2300:0.32 2400:0.35 2500:0.45 2600:0.44 2700:0.33 2800:0.29 2900:0.38 3000:0.35 3100:0.25 3200:0.22 3300:0.06 3400:0.02
+   per tone rms deg: 300:13 400:11 500:12 600:17 700:16 800:17 900:18 1000:23 1100:27 1200:24 1300:26 1400:30 1500:29 1600:38 1700:44 1800:41 1900:48 2000:38 2100:43 2200:51 2300:49 2400:48 2500:65 2600:61 2700:52 2800:51 2900:55 3000:53 3100:51 3200:36 3300:25 3400:19
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.324, tones with SER<2%: 2, mean rms phase err 51.2 deg, raw 320 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.169, tones with SER<2%: 2, mean rms phase err 34.7 deg, raw 320 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.048, tones with SER<2%: 7, mean rms phase err 20.1 deg, raw 622 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.335, tones with SER<2%: 5, mean rms phase err 51.6 deg, raw 444 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.445, tones with SER<2%: 0, mean rms phase err 35.9 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.421, tones with SER<2%: 0, mean rms phase err 33.6 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.046, tones with SER<2%: 14, mean rms phase err 19.9 deg, raw 658 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.096
+=== amrwb:6.6
+tone sweep (Hz: SNR dB, gain dB):
+  300:27.1/-0.1  500:22.7/-0.3  700:21.2/-0.6  900:23.0/-0.6  1100:21.6/-0.9  1300:18.4/-5.5  1500:18.7/-3.2  1700:13.8/-8.7  1900:4.9/-8.7  2100:3.7/-12.5  2300:6.0/-13.2  2500:13.6/-4.1  2700:5.8/-4.8  2900:9.7/-14.6  3100:8.5/-12.5  3300:21.2/-1.9
+1000 Hz by level (dBFS: SNR dB): -3:10.7  -6:12.7  -12:12.3  -18:11.5  -24:11.7  -30:10.0
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0415  rms 21.5 deg
+    100 baud: SER 0.1105  rms 27.5 deg
+    200 baud: SER 0.1986  rms 35.7 deg
+    300 baud: SER 0.3368  rms 49.7 deg
+    600 baud: SER 0.4732  rms 66.7 deg
+   1200 baud: SER 0.5924  rms 84.3 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.1986  rms 19.5 deg
+    100 baud: SER 0.3402  rms 25.8 deg
+    200 baud: SER 0.5406  rms 37.4 deg
+    600 baud: SER 0.7772  rms 71.0 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.2127   V.23 1200 bd 1300/2100: 0.3608   Bell103 300 bd 2025/2225: 0.2747
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.508, tones with SER<2%: 0, mean rms phase err 73.2 deg, raw 0 bit/s (good tones)
+   per tone SER: 300:0.15 400:0.15 500:0.17 600:0.28 700:0.31 800:0.25 900:0.34 1000:0.36 1100:0.49 1200:0.50 1300:0.40 1400:0.45 1500:0.58 1600:0.64 1700:0.56 1800:0.59 1900:0.64 2000:0.68 2100:0.60 2200:0.65 2300:0.67 2400:0.62 2500:0.71 2600:0.68 2700:0.69 2800:0.68 2900:0.67 3000:0.69 3100:0.65 3200:0.66 3300:0.45 3400:0.31
+   per tone rms deg: 300:33 400:32 500:34 600:42 700:46 800:44 900:59 1000:63 1100:64 1200:65 1300:64 1400:66 1500:77 1600:84 1700:77 1800:84 1900:84 2000:93 2100:88 2200:89 2300:91 2400:90 2500:92 2600:92 2700:95 2800:91 2900:97 3000:98 3100:95 3200:89 3300:68 3400:57
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.588, tones with SER<2%: 0, mean rms phase err 82.0 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.517, tones with SER<2%: 0, mean rms phase err 71.3 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.401, tones with SER<2%: 0, mean rms phase err 59.7 deg, raw 0 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.590, tones with SER<2%: 0, mean rms phase err 82.1 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.724, tones with SER<2%: 0, mean rms phase err 72.6 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.735, tones with SER<2%: 0, mean rms phase err 72.7 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.391, tones with SER<2%: 0, mean rms phase err 58.3 deg, raw 0 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.173
+=== amr:12.2@1
+tone sweep (Hz: SNR dB, gain dB):
+  300:14.6/-0.8  500:14.0/-1.0  700:14.9/-1.1  900:-1.0/-3.7  1100:3.5/+0.2  1300:5.7/-2.2  1500:12.7/-1.1  1700:9.3/-0.7  1900:13.2/-1.0  2100:8.3/-0.7  2300:6.4/-2.5  2500:11.2/-1.4  2700:11.2/-0.8  2900:15.0/-0.8  3100:18.3/-0.8  3300:16.2/-0.9
+1000 Hz by level (dBFS: SNR dB): -3:10.7  -6:11.0  -12:11.3  -18:10.6  -24:9.1  -30:8.4
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0155  rms 14.3 deg
+    100 baud: SER 0.0311  rms 20.5 deg
+    200 baud: SER 0.0121  rms 15.5 deg
+    300 baud: SER 0.0155  rms 15.0 deg
+    600 baud: SER 0.0242  rms 21.7 deg
+   1200 baud: SER 0.0397  rms 22.0 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0242  rms 12.9 deg
+    100 baud: SER 0.0380  rms 18.9 deg
+    200 baud: SER 0.0225  rms 16.1 deg
+    600 baud: SER 0.1105  rms 19.7 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0241   V.23 1200 bd 1300/2100: 0.0013   Bell103 300 bd 2025/2225: 0.0304
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.090, tones with SER<2%: 0, mean rms phase err 28.5 deg, raw 0 bit/s (good tones)
+   per tone SER: 300:0.08 400:0.09 500:0.12 600:0.07 700:0.09 800:0.08 900:0.04 1000:0.06 1100:0.06 1200:0.04 1300:0.04 1400:0.10 1500:0.06 1600:0.09 1700:0.03 1800:0.07 1900:0.04 2000:0.14 2100:0.08 2200:0.08 2300:0.12 2400:0.08 2500:0.08 2600:0.08 2700:0.08 2800:0.15 2900:0.19 3000:0.17 3100:0.10 3200:0.12 3300:0.08 3400:0.15
+   per tone rms deg: 300:29 400:31 500:33 600:26 700:26 800:31 900:24 1000:25 1100:25 1200:23 1300:22 1400:26 1500:24 1600:27 1700:23 1800:30 1900:27 2000:30 2100:30 2200:27 2300:37 2400:26 2500:28 2600:32 2700:27 2800:35 2900:38 3000:33 3100:26 3200:34 3300:25 3400:34
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.232, tones with SER<2%: 0, mean rms phase err 41.2 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.070, tones with SER<2%: 0, mean rms phase err 27.5 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.022, tones with SER<2%: 5, mean rms phase err 19.9 deg, raw 444 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.249, tones with SER<2%: 0, mean rms phase err 42.8 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.378, tones with SER<2%: 0, mean rms phase err 28.6 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.348, tones with SER<2%: 0, mean rms phase err 28.5 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.036, tones with SER<2%: 5, mean rms phase err 21.8 deg, raw 235 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.025
+=== amr:12.2@3
+tone sweep (Hz: SNR dB, gain dB):
+  300:14.6/-0.8  500:14.0/-1.0  700:14.9/-1.1  900:-1.0/-3.7  1100:3.5/+0.2  1300:5.7/-2.2  1500:12.7/-1.1  1700:9.3/-0.7  1900:13.2/-1.0  2100:8.3/-0.7  2300:6.4/-2.5  2500:11.2/-1.4  2700:11.2/-0.8  2900:15.0/-0.8  3100:18.3/-0.8  3300:16.2/-0.9
+1000 Hz by level (dBFS: SNR dB): -3:10.7  -6:11.0  -12:11.3  -18:10.6  -24:9.1  -30:8.4
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0708  rms 33.1 deg
+    100 baud: SER 0.0587  rms 31.3 deg
+    200 baud: SER 0.0363  rms 24.7 deg
+    300 baud: SER 0.0173  rms 15.9 deg
+    600 baud: SER 0.0242  rms 21.7 deg
+   1200 baud: SER 0.0397  rms 22.0 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0984  rms 28.2 deg
+    100 baud: SER 0.0898  rms 28.6 deg
+    200 baud: SER 0.0812  rms 25.1 deg
+    600 baud: SER 0.1105  rms 19.7 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0253   V.23 1200 bd 1300/2100: 0.0013   Bell103 300 bd 2025/2225: 0.0342
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.111, tones with SER<2%: 0, mean rms phase err 33.5 deg, raw 0 bit/s (good tones)
+   per tone SER: 300:0.10 400:0.10 500:0.14 600:0.12 700:0.11 800:0.09 900:0.07 1000:0.10 1100:0.08 1200:0.07 1300:0.08 1400:0.13 1500:0.08 1600:0.10 1700:0.08 1800:0.10 1900:0.06 2000:0.15 2100:0.12 2200:0.08 2300:0.13 2400:0.10 2500:0.09 2600:0.10 2700:0.10 2800:0.17 2900:0.19 3000:0.18 3100:0.10 3200:0.15 3300:0.12 3400:0.15
+   per tone rms deg: 300:32 400:34 500:36 600:33 700:32 800:35 900:27 1000:36 1100:30 1200:29 1300:32 1400:35 1500:28 1600:33 1700:33 1800:34 1900:31 2000:37 2100:41 2200:31 2300:35 2400:32 2500:30 2600:34 2700:35 2800:40 2900:38 3000:38 3100:27 3200:38 3300:30 3400:38
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.232, tones with SER<2%: 0, mean rms phase err 41.2 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.070, tones with SER<2%: 0, mean rms phase err 27.5 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.047, tones with SER<2%: 0, mean rms phase err 27.3 deg, raw 0 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.263, tones with SER<2%: 0, mean rms phase err 45.8 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.393, tones with SER<2%: 0, mean rms phase err 32.5 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.348, tones with SER<2%: 0, mean rms phase err 28.5 deg, raw 0 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.078, tones with SER<2%: 0, mean rms phase err 32.2 deg, raw 0 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.046
+=== amrwb:23.85@1
+tone sweep (Hz: SNR dB, gain dB):
+  300:13.6/-0.7  500:14.0/-0.7  700:11.6/-0.9  900:13.1/-0.8  1100:11.5/-0.5  1300:13.9/-0.7  1500:10.9/-0.9  1700:14.5/-0.4  1900:12.6/-1.1  2100:13.1/-0.9  2300:13.8/-0.8  2500:11.3/-0.8  2700:13.6/-0.6  2900:13.1/-0.7  3100:12.6/-0.7  3300:9.2/-2.4
+1000 Hz by level (dBFS: SNR dB): -3:7.8  -6:8.1  -12:8.5  -18:8.5  -24:8.7  -30:8.0
+DQPSK 1800 Hz by baud (SER, rms phase err deg):
+     50 baud: SER 0.0173  rms 14.6 deg
+    100 baud: SER 0.0138  rms 16.8 deg
+    200 baud: SER 0.0190  rms 17.7 deg
+    300 baud: SER 0.0121  rms 14.8 deg
+    600 baud: SER 0.0242  rms 21.1 deg
+   1200 baud: SER 0.0173  rms 18.7 deg
+8-DPSK 1800 Hz by baud:
+     50 baud: SER 0.0173  rms 15.1 deg
+    100 baud: SER 0.0190  rms 13.7 deg
+    200 baud: SER 0.0311  rms 15.4 deg
+    600 baud: SER 0.1019  rms 21.7 deg
+FSK BER: V.21 ch2 300 bd 1650/1850: 0.0089   V.23 1200 bd 1300/2100: 0.0000   Bell103 300 bd 2025/2225: 0.0127
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.023, tones with SER<2%: 13, mean rms phase err 19.6 deg, raw 1155 bit/s (good tones)
+   per tone SER: 300:0.01 400:0.01 500:0.02 600:0.00 700:0.02 800:0.02 900:0.01 1000:0.03 1100:0.00 1200:0.03 1300:0.01 1400:0.03 1500:0.03 1600:0.01 1700:0.02 1800:0.01 1900:0.06 2000:0.03 2100:0.03 2200:0.03 2300:0.03 2400:0.01 2500:0.06 2600:0.02 2700:0.00 2800:0.03 2900:0.05 3000:0.05 3100:0.03 3200:0.00 3300:0.01 3400:0.01
+   per tone rms deg: 300:18 400:9 500:18 600:11 700:24 800:18 900:20 1000:26 1100:14 1200:23 1300:18 1400:20 1500:19 1600:21 1700:20 1800:19 1900:19 2000:23 2100:20 2200:21 2300:25 2400:21 2500:30 2600:20 2700:17 2800:21 2900:21 3000:22 3100:19 3200:14 3300:22 3400:14
+multitone f0 100 Hz, 4-DPSK, 12.5 ms symbols: 32 tones, mean SER 0.088, tones with SER<2%: 6, mean rms phase err 27.1 deg, raw 960 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.019, tones with SER<2%: 8, mean rms phase err 19.7 deg, raw 1280 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.018, tones with SER<2%: 8, mean rms phase err 15.9 deg, raw 711 bit/s (good tones)
+multitone f0 50 Hz, 4-DPSK, 22.5 ms symbols: 63 tones, mean SER 0.098, tones with SER<2%: 7, mean rms phase err 29.0 deg, raw 622 bit/s (good tones)
+multitone f0 100 Hz, 8-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.155, tones with SER<2%: 0, mean rms phase err 20.5 deg, raw 0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.141, tones with SER<2%: 1, mean rms phase err 19.2 deg, raw 240 bit/s (good tones)
+multitone f0 100 Hz, 4-DPSK, 42.5 ms symbols: 32 tones, mean SER 0.024, tones with SER<2%: 9, mean rms phase err 16.8 deg, raw 423 bit/s (good tones)
+pitch symbols (8 lags, 20 ms): symbol error rate 0.096
+done

@@ -42,6 +42,14 @@ The project's overview, building and usage are in the top
   modem core takes (dmodemd, libdmodem, the PBX modules), its result
   codes and S-registers; its LaTeX source is [at/](at/at_commands.tex),
   `docs/at/build.sh` builds it
+- [Data over mobile telephony's speech paths](v_cvm.pdf): a proposed
+  Recommendation, in the form of an ITU-T Recommendation, for a modem
+  through the AMR, AMR-WB and EVS codecs of VoLTE and VoNR calls, built on
+  V.8, V.21, V.22, V.34's probing, V.42, V.44 and T.38, with measurements
+  of what the codecs do to modem signals (D-Modem's modems through them,
+  and waveform probes); its LaTeX source is [cellular/](cellular/v_cvm.tex),
+  `docs/cellular/build.sh` builds it and `cellular/measure/` repeats the
+  measurements
 - [legacy/ST56ATCommands.pdf](legacy/ST56ATCommands.pdf): the AT command
   set of Smart Link's ST56 modems, which D-Modem's own command set began
   as

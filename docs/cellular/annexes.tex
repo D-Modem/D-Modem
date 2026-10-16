@@ -1,0 +1,214 @@
+% annexes.tex - the annexes of v_cvm.tex (normative)
+\annex{Indication of this Recommendation's capabilities in V.8 and V.8bis}{v8}
+\section{Encoding in CM and JM}
+The CM and JM signals of \rec{V.8} are sequences of octets grouped in
+categories (call function, modulation modes, protocols, GSTN access, PCM
+modem availability, non-standard facilities).  This Recommendation needs
+one bit of the modulation modes category to say ``\recname{} available'',
+and an information field of two octets to say what of it.  The bit is an
+allocation that ITU-T makes in a revision of \rec{V.8}; until it is made:
+\begin{enumerate}[label=\alph*)]
+\item the DCE shall send the information field of clause~\ref{sec:infofield}
+  in the \emph{non-standard facilities} category of CM and JM, as \rec{V.8}
+  provides for it, with the country code and the provider code of
+  \rec{T.35} that the implementer holds, followed by the octets of
+  Table~\ref{tab:infofield} with the identifier octet \code{0x43} (`C')
+  first, so that a DCE of this Recommendation recognizes the field among
+  a provider's other uses of the category;
+\item the DCE shall also set, in the modulation modes category, the bits
+  of its fallback modulations (V.22 and V.21) and, in the protocols
+  category, LAPM.
+\end{enumerate}
+On the allocation of the bit, a DCE shall set it and shall still send the
+information field, in the category ITU-T assigns to it.
+
+\section{The information field}\label{sec:infofield}
+\begin{table}[htbp]
+\caption{The information field}
+\label{tab:infofield}
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\rowcolor{ituhead}\thd{Octet} & \thd{Bits} & \thd{Meaning} \\
+\midrule
+1 & 8--6 & version of this Recommendation: 001 \\
+1 & 5 & signal interface at 16000~Hz (1), or 8000~Hz (0) \\
+1 & 4 & facsimile of Annex~\ref{annex:fax} supported \\
+1 & 3 & QAM loading of clause~\ref{sec:qam} supported \\
+1 & 2--1 & reserved, 00 \\
+2 & 8 & robust mode (always 1) \\
+2 & 7 & narrowband mode (always 1) \\
+2 & 6 & wideband mode, 200~Hz comb \\
+2 & 5 & wideband mode, 400~Hz comb \\
+2 & 4 & 8-DPSK \\
+2 & 3 & 22.5~ms symbol (the 20~ms symbol is always supported) \\
+2 & 2 & quick start of clause~\ref{sec:quick} \\
+2 & 1 & reserved, 0 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+A DCE receiving an information field with a version it does not know
+shall treat the peer as having version~1 and the capabilities the field's
+bits it knows say.
+
+\section{V.8bis}
+A DCE that uses the procedures of \rec{V.8bis} shall carry the same
+information field in the capabilities list of its MS and CL messages, in
+the non-standard capability of that Recommendation, with the same
+identifier octet.
+
+\annex{The probing signals and the INFO messages}{probe}
+\section{L1 and L2}
+L1 is each comb the transmitting DCE supports for the band of its
+signal interface (Table~\ref{tab:combs}: N200, N300 and N400 at
+8000~Hz; W200, W300 and W400 at 16000~Hz; S200, S300 and S400 at
+32000~Hz), in the order of their codes, all tones loaded, DQPSK, with the
+20~ms symbol, for 0.6~s each (30 symbols); L2 is the 200~Hz comb with the
+22.5~ms symbol for 0.5~s (22 symbols).  The
+phase difference transmitted on tone $k$ in symbol $n$ is given by two
+bits taken from the scrambler of clause~\ref{sec:modulation} fed with
+ones, started at the first symbol of L1 and run across the tones from the
+lowest and across the symbols in order, so that the receiver, knowing
+the sequence, measures the phase error of every tone symbol.  L1's first
+symbol is the phase reference.  The level is $-12$~dBFS over all tones.
+
+\section{What the receiver measures}
+For each tone $k$ and each of L1 and L2 the receiver computes the root
+mean square phase error $\sigma_k$ of the received phase differences
+against the transmitted ones, after removing the mean (the clock offset's
+rotation), the mean received level of the tone, and the fraction of
+tone symbols in error.
+
+\section{INFO0}
+\begin{table}[htbp]
+\caption{INFO0}
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\rowcolor{ituhead}\thd{Octet} & \thd{Bits} & \thd{Meaning} \\
+\midrule
+1 & 8--1 & the information field's octet 2 (Annex~\ref{annex:v8}): the modes supported \\
+2 & 8--1 & the combs this DCE will probe with, a bit each for codes 0 to 7 of Table~\ref{tab:combs} (bit 8 for code 0) \\
+3 & 8 & the same for code 8 \\
+3 & 7 & quick start offered (the loading of octets 5 onwards is the last call's) \\
+3 & 6 & quick start accepted (in the answering DCE's INFO0) \\
+3 & 5--1 & reserved, 0 \\
+4 & 8--1 & the DCE's transmit level in the data phases, in 0.5~dB below $-9$~dBFS \\
+5-- & & with quick start: the loading of Table~\ref{tab:loading} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{INFO1 and MP}
+\begin{table}[htbp]
+\caption{INFO1 and MP: the loading asked for}
+\label{tab:loading}
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\rowcolor{ituhead}\thd{Octet} & \thd{Bits} & \thd{Meaning} \\
+\midrule
+1 & 8 & MP only: acknowledgement (the peer's MP was received) \\
+1 & 7--6 & symbol period: 00 20~ms, 01 22.5~ms \\
+1 & 5--4 & code rate: 00 1/2, 01 3/4, 10 7/8 \\
+1 & 3--1 & reserved, 0 \\
+2 & 8--1 & reserved, 0 \\
+3 & 8--1 & round-trip delay this DCE measured, in 10~ms, 255 if unknown \\
+4 & 8--5 & the comb: its code of Table~\ref{tab:combs} \\
+4 & 4--1 & reserved, 0 \\
+5 & 8--1 & number of tones $N$ in the comb, 8 to 68 \\
+6-- & & $N$ two-bit fields, the lowest tone first, packed from bit 8: 00 not loaded, 01 DQPSK, 10 8-DPSK, 11 QAM (clause~\ref{sec:qam}, with a following octet per tone for its constellation) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+Each message is an HDLC frame of \rec{V.42} (flags, the FCS of ISO/IEC
+13239, no address or control octet) carrying the octets above, transmitted
+twice in the robust mode; a receiver takes the first copy whose FCS
+checks.  INFO0 is sent 100~ms after the end of the V.8 procedures by the
+calling DCE; INFO1 100~ms after the end of L2; the answering DCE's INFO0
+50~ms after the end of the calling DCE's INFO1.
+
+\annex{The inner code and its interleaver}{rs}
+\section{The code}
+The inner code is a Reed-Solomon code over GF($2^8$).  The field is
+generated by the primitive polynomial $p(x) = x^8 + x^4 + x^3 + x^2 + 1$,
+and the code generator polynomial is
+\[ g(x) = \prod_{i=0}^{2t-1} (x - \alpha^i), \]
+with $\alpha$ a root of $p(x)$: the field and the generator of the
+RS(255,239) code of \rec{G.975} (where $t = 8$), with $t$ as
+Table~\ref{tab:rsannex} gives.  Codewords are shortened to $n = 32$
+octets: the encoder computes the check octets of the $k$ information
+octets preceded by $255 - n$ zero octets, which are not transmitted, and
+the decoder restores them.  The first octet of a codeword is the highest
+order coefficient.
+
+\begin{table}[htbp]
+\caption{The code rates}
+\label{tab:rsannex}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\rowcolor{ituhead}\thd{Rate} & $n$ & $k$ & $t$ & \thd{erasures corrected ($2t$)} \\
+\midrule
+7/8 & 32 & 28 & 2 & 4 \\
+3/4 & 32 & 24 & 4 & 8 \\
+1/2 & 32 & 16 & 8 & 16 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{The interleaver}
+Codewords are interleaved in blocks of $D = 4$: the 4 codewords of a block
+are transmitted octet by octet across the codewords, that is, octet~0 of
+codeword~0, octet~0 of codeword~1, \ldots, octet~0 of codeword~3, then
+octet~1 of each, and so on, 128 octets in all.  Consecutive octets on the
+line thus belong to different codewords, and a symbol erasure of up to 4
+octets (16 DQPSK tones) costs each codeword one octet.  The interleaver's
+delay is one block: 128 octets, which is 0.64~s at 1600~bit/s and
+0.31~s at 3300~bit/s.  The receiver's de-interleaver is the inverse.  The
+block boundary is marked by the first symbol of phase~4 and by the MP
+exchange of a renegotiation; the receiver recovers it, if lost, from the
+syndromes of the codewords (a block boundary error leaves every codeword
+uncorrectable).
+
+\section{Erasure marking}
+The receiver should give the decoder, per octet, an erasure flag set when
+the tone symbols that carried the octet's bits were marked unreliable
+(clause~\ref{sec:mapping}) or lay in a frame detected as erased
+(clause~\ref{sec:erasure}).  A decoder given $e$ erasures and $v$ errors
+corrects the codeword when $2v + e \le 2t$.
+
+\annex{Facsimile}{fax}
+\section{Principle}
+A DCE that indicates facsimile in its information field
+(Annex~\ref{annex:v8}) terminates the \rec{T.30} session of the facsimile
+terminal on its side -- as a Group~3 facsimile machine does on the
+PSTN, with the V.21, V.27ter, V.29 and V.17 modulations towards the
+terminal, or as a T.38 gateway does towards an IP network -- and carries
+the session to its peer as the Internet facsimile protocol (IFP) packets
+of \rec{T.38} in the data link of this Recommendation.  The peer DCE
+reproduces the session towards its own terminal.  The procedure is that
+of a \rec{T.38} gateway pair with the data link of this Recommendation in
+place of the IP network, and of the facsimile relay of \rec{V.150.1} in its
+aim.
+
+\section{Carriage of the IFP packets}
+Each IFP packet shall be sent in the information field of one LAPM I
+frame, preceded by one octet of type (\code{0x01}: T.38 IFP packet, other
+values reserved) and two octets of length (most significant first).  The
+UDPTL transport of \rec{T.38} and its redundancy are not used: LAPM
+delivers the packets in order and without loss.  The T.38 options in use
+shall be version~0, no error correction and no fill bit removal, unless
+both DCEs indicated otherwise in a T.38 options exchange carried the same
+way with type \code{0x02}.
+
+\section{Rates}
+The slowest image modulation of \rec{T.30} is V.27ter at 2400~bit/s.  Where
+the coded rate of the data link is below the modulation rate the
+terminals negotiate, the DCE shall accept only the error correction mode
+of \rec{T.30} Annex~A from its terminal (it shall clear the non-ECM
+capability in the DIS it relays) and shall pace the sending terminal with
+the receive-not-ready procedure of that annex, as T.38 gateways do.  The
+T.30 session's timers (T1, T2, T4) are met by the DCE towards its
+terminal; the DCE may spoof the terminal with preamble flags while the
+peer's answer is in transit, as \rec{T.38} allows.

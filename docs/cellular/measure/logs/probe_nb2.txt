@@ -1,0 +1,146 @@
+=== amr:12.2
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.071, good tones  2, rms phase err 24.7 deg, raw  177 bit/s (good tones)
+multitone f0 110 Hz, 4-DPSK, 20.6 ms symbols: 28 tones, mean SER 0.056, good tones  2, rms phase err 23.2 deg, raw  193 bit/s (good tones)
+multitone f0  90 Hz, 4-DPSK, 24.8 ms symbols: 34 tones, mean SER 0.058, good tones  2, rms phase err 23.7 deg, raw  161 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.054, good tones  1, rms phase err 23.0 deg, raw  160 bit/s (good tones)
+multitone f0 190 Hz, 4-DPSK, 13.0 ms symbols: 16 tones, mean SER 0.049, good tones  2, rms phase err 22.3 deg, raw  307 bit/s (good tones)
+multitone f0 210 Hz, 4-DPSK, 12.0 ms symbols: 15 tones, mean SER 0.048, good tones  1, rms phase err 22.8 deg, raw  166 bit/s (good tones)
+multitone f0 150 Hz, 4-DPSK, 22.5 ms symbols: 21 tones, mean SER 0.019, good tones 12, rms phase err 17.6 deg, raw 1066 bit/s (good tones)
+multitone f0 250 Hz, 4-DPSK, 22.5 ms symbols: 12 tones, mean SER 0.000, good tones 12, rms phase err 9.7 deg, raw 1066 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 17.5 ms symbols: 16 tones, mean SER 0.010, good tones 13, rms phase err 17.3 deg, raw 1485 bit/s (good tones)
+multitone f0 400 Hz, 4-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.000, good tones  8, rms phase err 7.0 deg, raw  711 bit/s (good tones)
+multitone f0 400 Hz, 8-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.005, good tones  7, rms phase err 7.6 deg, raw  933 bit/s (good tones)
+multitone f0 300 Hz, 4-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.000, good tones 11, rms phase err 9.1 deg, raw  977 bit/s (good tones)
+multitone f0 300 Hz, 8-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.028, good tones  3, rms phase err 9.8 deg, raw  400 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.097, good tones  0, rms phase err 13.5 deg, raw    0 bit/s (good tones)
+DQPSK fc 1200 Hz  300 baud: SER 0.0000 rms 9.7 deg
+DQPSK fc 1200 Hz  600 baud: SER 0.0017 rms 14.0 deg
+DQPSK fc 1200 Hz 1200 baud: SER 0.0812 rms 25.5 deg
+DQPSK fc 1700 Hz  300 baud: SER 0.0000 rms 9.9 deg
+DQPSK fc 1700 Hz  600 baud: SER 0.0017 rms 13.9 deg
+DQPSK fc 1700 Hz 1200 baud: SER 0.0328 rms 20.7 deg
+DQPSK fc 2100 Hz  300 baud: SER 0.0000 rms 9.5 deg
+DQPSK fc 2100 Hz  600 baud: SER 0.0000 rms 14.0 deg
+DQPSK fc 2100 Hz 1200 baud: SER 0.0484 rms 22.5 deg
+DQPSK fc 2400 Hz  300 baud: SER 0.0017 rms 10.2 deg
+DQPSK fc 2400 Hz  600 baud: SER 0.0052 rms 15.6 deg
+DQPSK fc 2400 Hz 1200 baud: SER 0.0276 rms 20.9 deg
+8-DPSK fc 1700 Hz  300 baud: SER 0.0259 rms 9.7 deg
+8-DPSK fc 1700 Hz  600 baud: SER 0.1019 rms 13.7 deg
+=== amr:7.4
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.399, good tones  0, rms phase err 59.1 deg, raw    0 bit/s (good tones)
+multitone f0 110 Hz, 4-DPSK, 20.6 ms symbols: 28 tones, mean SER 0.378, good tones  0, rms phase err 56.6 deg, raw    0 bit/s (good tones)
+multitone f0  90 Hz, 4-DPSK, 24.8 ms symbols: 34 tones, mean SER 0.390, good tones  0, rms phase err 57.4 deg, raw    0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.409, good tones  0, rms phase err 58.1 deg, raw    0 bit/s (good tones)
+multitone f0 190 Hz, 4-DPSK, 13.0 ms symbols: 16 tones, mean SER 0.368, good tones  0, rms phase err 54.5 deg, raw    0 bit/s (good tones)
+multitone f0 210 Hz, 4-DPSK, 12.0 ms symbols: 15 tones, mean SER 0.372, good tones  0, rms phase err 54.5 deg, raw    0 bit/s (good tones)
+multitone f0 150 Hz, 4-DPSK, 22.5 ms symbols: 21 tones, mean SER 0.286, good tones  0, rms phase err 45.3 deg, raw    0 bit/s (good tones)
+multitone f0 250 Hz, 4-DPSK, 22.5 ms symbols: 12 tones, mean SER 0.118, good tones  0, rms phase err 29.6 deg, raw    0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 17.5 ms symbols: 16 tones, mean SER 0.303, good tones  0, rms phase err 47.3 deg, raw    0 bit/s (good tones)
+multitone f0 400 Hz, 4-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.108, good tones  0, rms phase err 28.3 deg, raw    0 bit/s (good tones)
+multitone f0 400 Hz, 8-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.384, good tones  0, rms phase err 26.7 deg, raw    0 bit/s (good tones)
+multitone f0 300 Hz, 4-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.109, good tones  0, rms phase err 28.4 deg, raw    0 bit/s (good tones)
+multitone f0 300 Hz, 8-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.396, good tones  0, rms phase err 27.5 deg, raw    0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.557, good tones  0, rms phase err 40.8 deg, raw    0 bit/s (good tones)
+DQPSK fc 1200 Hz  300 baud: SER 0.0397 rms 22.9 deg
+DQPSK fc 1200 Hz  600 baud: SER 0.1330 rms 30.5 deg
+DQPSK fc 1200 Hz 1200 baud: SER 0.3800 rms 52.9 deg
+DQPSK fc 1700 Hz  300 baud: SER 0.0639 rms 23.9 deg
+DQPSK fc 1700 Hz  600 baud: SER 0.1917 rms 35.5 deg
+DQPSK fc 1700 Hz 1200 baud: SER 0.3368 rms 52.0 deg
+DQPSK fc 2100 Hz  300 baud: SER 0.0604 rms 22.4 deg
+DQPSK fc 2100 Hz  600 baud: SER 0.1416 rms 30.9 deg
+DQPSK fc 2100 Hz 1200 baud: SER 0.3731 rms 51.6 deg
+DQPSK fc 2400 Hz  300 baud: SER 0.0449 rms 22.0 deg
+DQPSK fc 2400 Hz  600 baud: SER 0.1572 rms 35.4 deg
+DQPSK fc 2400 Hz 1200 baud: SER 0.3333 rms 53.6 deg
+8-DPSK fc 1700 Hz  300 baud: SER 0.3057 rms 23.8 deg
+8-DPSK fc 1700 Hz  600 baud: SER 0.5078 rms 33.4 deg
+=== amr:4.75
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.573, good tones  0, rms phase err 80.5 deg, raw    0 bit/s (good tones)
+multitone f0 110 Hz, 4-DPSK, 20.6 ms symbols: 28 tones, mean SER 0.566, good tones  0, rms phase err 80.1 deg, raw    0 bit/s (good tones)
+multitone f0  90 Hz, 4-DPSK, 24.8 ms symbols: 34 tones, mean SER 0.573, good tones  0, rms phase err 78.9 deg, raw    0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.556, good tones  0, rms phase err 79.0 deg, raw    0 bit/s (good tones)
+multitone f0 190 Hz, 4-DPSK, 13.0 ms symbols: 16 tones, mean SER 0.585, good tones  0, rms phase err 79.9 deg, raw    0 bit/s (good tones)
+multitone f0 210 Hz, 4-DPSK, 12.0 ms symbols: 15 tones, mean SER 0.584, good tones  0, rms phase err 80.1 deg, raw    0 bit/s (good tones)
+multitone f0 150 Hz, 4-DPSK, 22.5 ms symbols: 21 tones, mean SER 0.495, good tones  0, rms phase err 70.4 deg, raw    0 bit/s (good tones)
+multitone f0 250 Hz, 4-DPSK, 22.5 ms symbols: 12 tones, mean SER 0.411, good tones  0, rms phase err 61.6 deg, raw    0 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 17.5 ms symbols: 16 tones, mean SER 0.514, good tones  0, rms phase err 73.6 deg, raw    0 bit/s (good tones)
+multitone f0 400 Hz, 4-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.435, good tones  0, rms phase err 62.4 deg, raw    0 bit/s (good tones)
+multitone f0 400 Hz, 8-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.668, good tones  0, rms phase err 60.6 deg, raw    0 bit/s (good tones)
+multitone f0 300 Hz, 4-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.449, good tones  0, rms phase err 64.6 deg, raw    0 bit/s (good tones)
+multitone f0 300 Hz, 8-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.725, good tones  0, rms phase err 64.3 deg, raw    0 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.724, good tones  0, rms phase err 65.3 deg, raw    0 bit/s (good tones)
+DQPSK fc 1200 Hz  300 baud: SER 0.2124 rms 39.2 deg
+DQPSK fc 1200 Hz  600 baud: SER 0.3679 rms 53.8 deg
+DQPSK fc 1200 Hz 1200 baud: SER 0.5699 rms 79.1 deg
+DQPSK fc 1700 Hz  300 baud: SER 0.2642 rms 46.2 deg
+DQPSK fc 1700 Hz  600 baud: SER 0.4957 rms 69.5 deg
+DQPSK fc 1700 Hz 1200 baud: SER 0.6287 rms 86.8 deg
+DQPSK fc 2100 Hz  300 baud: SER 0.4732 rms 71.5 deg
+DQPSK fc 2100 Hz  600 baud: SER 0.5751 rms 85.8 deg
+DQPSK fc 2100 Hz 1200 baud: SER 0.5941 rms 84.5 deg
+DQPSK fc 2400 Hz  300 baud: SER 0.4404 rms 64.8 deg
+DQPSK fc 2400 Hz  600 baud: SER 0.6028 rms 84.6 deg
+DQPSK fc 2400 Hz 1200 baud: SER 0.6373 rms 88.9 deg
+8-DPSK fc 1700 Hz  300 baud: SER 0.5855 rms 48.9 deg
+8-DPSK fc 1700 Hz  600 baud: SER 0.7340 rms 66.3 deg
+=== amrwb:12.65
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.188, good tones  7, rms phase err 35.4 deg, raw  622 bit/s (good tones)
+multitone f0 110 Hz, 4-DPSK, 20.6 ms symbols: 28 tones, mean SER 0.192, good tones  6, rms phase err 35.4 deg, raw  581 bit/s (good tones)
+multitone f0  90 Hz, 4-DPSK, 24.8 ms symbols: 34 tones, mean SER 0.184, good tones  7, rms phase err 35.7 deg, raw  565 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.169, good tones  2, rms phase err 34.7 deg, raw  320 bit/s (good tones)
+multitone f0 190 Hz, 4-DPSK, 13.0 ms symbols: 16 tones, mean SER 0.198, good tones  4, rms phase err 36.1 deg, raw  615 bit/s (good tones)
+multitone f0 210 Hz, 4-DPSK, 12.0 ms symbols: 15 tones, mean SER 0.191, good tones  3, rms phase err 36.4 deg, raw  500 bit/s (good tones)
+multitone f0 150 Hz, 4-DPSK, 22.5 ms symbols: 21 tones, mean SER 0.101, good tones  7, rms phase err 25.5 deg, raw  622 bit/s (good tones)
+multitone f0 250 Hz, 4-DPSK, 22.5 ms symbols: 12 tones, mean SER 0.023, good tones  7, rms phase err 16.7 deg, raw  622 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 17.5 ms symbols: 16 tones, mean SER 0.092, good tones  6, rms phase err 25.1 deg, raw  685 bit/s (good tones)
+multitone f0 400 Hz, 4-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.026, good tones  4, rms phase err 16.6 deg, raw  355 bit/s (good tones)
+multitone f0 400 Hz, 8-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.194, good tones  1, rms phase err 17.7 deg, raw  133 bit/s (good tones)
+multitone f0 300 Hz, 4-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.018, good tones  7, rms phase err 15.5 deg, raw  622 bit/s (good tones)
+multitone f0 300 Hz, 8-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.164, good tones  1, rms phase err 16.1 deg, raw  133 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.220, good tones  2, rms phase err 19.1 deg, raw  266 bit/s (good tones)
+DQPSK fc 1200 Hz  300 baud: SER 0.0035 rms 14.5 deg
+DQPSK fc 1200 Hz  600 baud: SER 0.0311 rms 21.6 deg
+DQPSK fc 1200 Hz 1200 baud: SER 0.1658 rms 31.8 deg
+DQPSK fc 1700 Hz  300 baud: SER 0.0069 rms 14.9 deg
+DQPSK fc 1700 Hz  600 baud: SER 0.0466 rms 23.4 deg
+DQPSK fc 1700 Hz 1200 baud: SER 0.2073 rms 37.1 deg
+DQPSK fc 2100 Hz  300 baud: SER 0.0207 rms 19.2 deg
+DQPSK fc 2100 Hz  600 baud: SER 0.1244 rms 29.6 deg
+DQPSK fc 2100 Hz 1200 baud: SER 0.2522 rms 43.8 deg
+DQPSK fc 2400 Hz  300 baud: SER 0.0276 rms 19.5 deg
+DQPSK fc 2400 Hz  600 baud: SER 0.1572 rms 31.6 deg
+DQPSK fc 2400 Hz 1200 baud: SER 0.6235 rms 87.3 deg
+8-DPSK fc 1700 Hz  300 baud: SER 0.1468 rms 15.8 deg
+8-DPSK fc 1700 Hz  600 baud: SER 0.3489 rms 24.2 deg
+=== amrwb:23.85
+multitone f0 100 Hz, 4-DPSK, 22.5 ms symbols: 32 tones, mean SER 0.008, good tones 26, rms phase err 14.3 deg, raw 2311 bit/s (good tones)
+multitone f0 110 Hz, 4-DPSK, 20.6 ms symbols: 28 tones, mean SER 0.007, good tones 22, rms phase err 14.6 deg, raw 2133 bit/s (good tones)
+multitone f0  90 Hz, 4-DPSK, 24.8 ms symbols: 34 tones, mean SER 0.012, good tones 22, rms phase err 14.8 deg, raw 1777 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 12.5 ms symbols: 16 tones, mean SER 0.007, good tones 13, rms phase err 13.6 deg, raw 2080 bit/s (good tones)
+multitone f0 190 Hz, 4-DPSK, 13.0 ms symbols: 16 tones, mean SER 0.010, good tones 12, rms phase err 14.3 deg, raw 1846 bit/s (good tones)
+multitone f0 210 Hz, 4-DPSK, 12.0 ms symbols: 15 tones, mean SER 0.014, good tones  9, rms phase err 15.8 deg, raw 1500 bit/s (good tones)
+multitone f0 150 Hz, 4-DPSK, 22.5 ms symbols: 21 tones, mean SER 0.000, good tones 21, rms phase err 10.2 deg, raw 1866 bit/s (good tones)
+multitone f0 250 Hz, 4-DPSK, 22.5 ms symbols: 12 tones, mean SER 0.000, good tones 12, rms phase err 6.7 deg, raw 1066 bit/s (good tones)
+multitone f0 200 Hz, 4-DPSK, 17.5 ms symbols: 16 tones, mean SER 0.000, good tones 16, rms phase err 9.9 deg, raw 1828 bit/s (good tones)
+multitone f0 400 Hz, 4-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.000, good tones  8, rms phase err 6.6 deg, raw  711 bit/s (good tones)
+multitone f0 400 Hz, 8-DPSK, 22.5 ms symbols:  8 tones, mean SER 0.009, good tones  6, rms phase err 7.2 deg, raw  800 bit/s (good tones)
+multitone f0 300 Hz, 4-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.000, good tones 11, rms phase err 9.7 deg, raw  977 bit/s (good tones)
+multitone f0 300 Hz, 8-DPSK, 22.5 ms symbols: 11 tones, mean SER 0.018, good tones  6, rms phase err 9.9 deg, raw  800 bit/s (good tones)
+multitone f0 200 Hz, 8-DPSK, 22.5 ms symbols: 16 tones, mean SER 0.013, good tones 11, rms phase err 7.6 deg, raw 1466 bit/s (good tones)
+DQPSK fc 1200 Hz  300 baud: SER 0.0000 rms 9.9 deg
+DQPSK fc 1200 Hz  600 baud: SER 0.0000 rms 12.3 deg
+DQPSK fc 1200 Hz 1200 baud: SER 0.0466 rms 24.2 deg
+DQPSK fc 1700 Hz  300 baud: SER 0.0000 rms 9.9 deg
+DQPSK fc 1700 Hz  600 baud: SER 0.0000 rms 12.2 deg
+DQPSK fc 1700 Hz 1200 baud: SER 0.0190 rms 18.1 deg
+DQPSK fc 2100 Hz  300 baud: SER 0.0000 rms 10.3 deg
+DQPSK fc 2100 Hz  600 baud: SER 0.0017 rms 14.4 deg
+DQPSK fc 2100 Hz 1200 baud: SER 0.0415 rms 21.7 deg
+DQPSK fc 2400 Hz  300 baud: SER 0.0000 rms 9.2 deg
+DQPSK fc 2400 Hz  600 baud: SER 0.0484 rms 22.4 deg
+DQPSK fc 2400 Hz 1200 baud: SER 0.6770 rms 94.6 deg
+8-DPSK fc 1700 Hz  300 baud: SER 0.0415 rms 9.5 deg
+8-DPSK fc 1700 Hz  600 baud: SER 0.0898 rms 13.7 deg
+done

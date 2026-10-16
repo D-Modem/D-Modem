@@ -1,0 +1,925 @@
+% v_cvm.tex - a proposed Recommendation, in the form of an ITU-T
+% Recommendation, for data transmission over the speech paths of mobile
+% telephony networks (VoLTE, VoNR): what a modem can do through AMR,
+% AMR-WB and EVS, built on V.8, V.21, V.22, V.34's probing, V.42,
+% V.42bis, V.44, V.250, T.38 and the ITU-T G.722.2 codec.  Its figures
+% come from measurements with D-Modem's modems through the AMR codecs
+% (dsp/test/codec_probe, netsim's NET_CODEC); the tables of Appendix I
+% are generated into measured.tex by docs/cellular/tables.py.
+% Built with docs/cellular/build.sh into docs/v_cvm.pdf.
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}                   % Times, as ITU-T publications
+\usepackage[scaled=0.88]{helvet}
+\usepackage{courier}
+\usepackage{microtype}
+\setlength{\emergencystretch}{3em}
+\usepackage[a4paper,left=2.5cm,right=2.5cm,top=2.6cm,bottom=2.6cm,
+  headheight=14pt,headsep=0.8cm,footskip=1.0cm]{geometry}
+\usepackage[table]{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{needspace}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,decorations.pathreplacing}
+\usepackage{amsmath}
+\usepackage{caption}
+\usepackage{graphicx}
+\usepackage[colorlinks=true,linkcolor=itulink,urlcolor=itulink,
+  citecolor=itulink,bookmarksnumbered=true,bookmarksopen=true,
+  bookmarksopenlevel=1,
+  pdftitle={Recommendation ITU-T V.cvm (draft): Data transmission over the speech paths of mobile telephony networks},
+  pdfauthor={D-Modem project (Neo-Desktop)},
+  pdfsubject={Draft new Recommendation, proposal},
+  pdfkeywords={modem, VoLTE, VoNR, AMR, AMR-WB, EVS, V.8, V.22, V.42, data over voice}]{hyperref}
+\usepackage{bookmark}
+\input{measured.tex}
+
+\definecolor{itulink}{HTML}{1F4E79}
+\definecolor{itugrey}{HTML}{555555}
+\definecolor{ituhead}{HTML}{DCE6F0}
+
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.7ex}
+\setlength{\aboverulesep}{0pt}
+\setlength{\belowrulesep}{0pt}
+\renewcommand{\arraystretch}{1.2}
+\captionsetup{font=small,labelfont=bf,labelsep=endash}
+\captionsetup[table]{position=above,skip=4pt}
+
+% the document's names
+\newcommand{\recname}{V.cvm}
+\newcommand{\rectitle}{Data transmission over the speech paths of mobile telephony networks}
+\newcommand{\docdate}{October 2026}
+\newcommand{\recfull}{Recommendation ITU-T \recname}
+
+% ITU-T clause headings: bold, the number alone (no "Section")
+\titleformat{\section}{\large\bfseries}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.8em}{}
+\titlespacing*{\section}{0pt}{3.0ex plus 1ex minus .2ex}{1.2ex}
+\titlespacing*{\subsection}{0pt}{2.2ex plus .8ex minus .2ex}{0.8ex}
+\titlespacing*{\subsubsection}{0pt}{1.8ex plus .6ex minus .2ex}{0.6ex}
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{2}
+\makeatletter
+\renewcommand{\l@subsection}{\@dottedtocline{2}{1.5em}{3.4em}}
+\makeatother
+
+% annexes and appendices in the ITU-T way: "Annex A", "Appendix I"
+\newcounter{annex}
+\renewcommand{\theannex}{\Alph{annex}}
+\newcommand{\annex}[2]{%
+  \clearpage\refstepcounter{annex}%
+  \setcounter{section}{0}\setcounter{table}{0}\setcounter{figure}{0}%
+  \renewcommand{\thesection}{\theannex.\arabic{section}}%
+  \renewcommand{\thetable}{\theannex.\arabic{table}}%
+  \renewcommand{\thefigure}{\theannex.\arabic{figure}}%
+  \phantomsection\addcontentsline{toc}{section}{Annex \theannex\ -- #1}%
+  \begin{center}\Large\bfseries Annex \theannex\\[0.4ex]\large #1\\[0.6ex]
+  \normalsize\mdseries (This annex forms an integral part of this Recommendation.)\end{center}%
+  \label{annex:#2}\medskip}
+\newcounter{appendix}
+\renewcommand{\theappendix}{\Roman{appendix}}
+\newcommand{\infappendix}[2]{%
+  \clearpage\refstepcounter{appendix}%
+  \setcounter{section}{0}\setcounter{table}{0}\setcounter{figure}{0}%
+  \renewcommand{\thesection}{\theappendix.\arabic{section}}%
+  \renewcommand{\thetable}{\theappendix.\arabic{table}}%
+  \renewcommand{\thefigure}{\theappendix.\arabic{figure}}%
+  \phantomsection\addcontentsline{toc}{section}{Appendix \theappendix\ -- #1}%
+  \begin{center}\Large\bfseries Appendix \theappendix\\[0.4ex]\large #1\\[0.6ex]
+  \normalsize\mdseries (This appendix does not form an integral part of this Recommendation.)\end{center}%
+  \label{app:#2}\medskip}
+
+% a NOTE in ITU-T form
+\newcommand{\itunote}[1]{\par{\small NOTE -- #1}\par}
+\newcommand{\itunoten}[2]{\par{\small NOTE #1 -- #2}\par}
+% a reference to a Recommendation, in brackets as ITU-T has it
+\newcommand{\rec}[1]{[ITU-T #1]}
+\newcommand{\tgpp}[1]{[3GPP TS #1]}
+\newcommand{\ietf}[1]{[IETF RFC #1]}
+\newcommand{\unit}[1]{\,\mathrm{#1}}
+\newcommand{\kbs}{kbit/s}
+\newcommand{\thd}[1]{\textbf{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+% the running header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{itugrey}\recfull\ (\docdate) -- Draft}
+\fancyhead[R]{\small\color{itugrey}\thepage}
+\fancyfoot[C]{\small\color{itugrey}Proposal for a new Recommendation -- not an ITU-T publication}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}}
+
+\begin{document}
+
+% ------------------------------------------------------------------ cover
+\thispagestyle{plain}
+\begin{center}
+\vspace*{1.0cm}
+{\large International Telecommunication Union}\\[0.3cm]
+{\Large\bfseries ITU-T}\hfill{\Large\bfseries\recname}\\[-0.2cm]
+\rule{\textwidth}{0.6pt}\\[-0.1cm]
+{\small TELECOMMUNICATION STANDARDIZATION SECTOR OF ITU\hfill(\docdate)}\\[1.2cm]
+{\small SERIES V: DATA COMMUNICATION OVER THE TELEPHONE NETWORK}\\[0.2cm]
+{\small Interworking with other networks}\\[1.6cm]
+{\LARGE\bfseries\rectitle}\\[2.0cm]
+{\large Draft new Recommendation ITU-T \recname}\\[0.4cm]
+{\normalsize Proposal}\\[2.4cm]
+\end{center}
+\begin{minipage}{0.92\textwidth}\small
+\textbf{Status of this document.}  This document is a \emph{proposal} for a new
+Recommendation, written in the form and the conventions of an ITU-T
+Recommendation so that it may be contributed to the ITU-T study group
+responsible for the V series.  It has not been approved by ITU-T, its
+designation \recname{} is a working name, and nothing in it binds ITU-T.
+The capability bits in the V.8 and V.8bis signals that it needs
+(Annex~\ref{annex:v8}) are allocations that only ITU-T can make; until
+they are made, the non-standard facilities mechanism of those
+Recommendations is used, as Annex~\ref{annex:v8} says.
+
+\medskip
+\textbf{Where its numbers come from.}  The behaviour of the speech codecs
+towards modem signals, on which the design rests, was measured with the
+D-Modem project's modems and test tools through the AMR and AMR-WB codecs
+(the OpenCORE and VisualOn implementations of 3GPP TS 26.090 and 26.190,
+checked bit-exact against the 3GPP reference code) and through the EVS
+codec (the 3GPP reference code of TS 26.442).  Appendix~\ref{app:measurements}
+gives the measurements and how to repeat them; Appendix~\ref{app:evs}
+those of EVS.
+\end{minipage}
+\vfill
+\clearpage
+
+% ---------------------------------------------------------------- summary
+\thispagestyle{plain}
+\section*{Summary}
+Modern mobile telephony carries speech as packets of a low bit rate speech
+codec: AMR in GSM and narrowband VoLTE, AMR-WB (ITU-T G.722.2) in wideband
+VoLTE, EVS in VoLTE and 5G voice (VoNR).  These codecs model speech, not
+waveforms, and the voice-band modems of the V series fail through them:
+of the modulations of Recommendations ITU-T V.21 to V.34, only V.21 and
+V.22 come through the AMR codecs at all, and at 300 and 1200~bit/s.  A
+circuit-switched data bearer is no longer offered.  Where the only path
+between two parties is a telephone call -- the general case between
+networks, operators and countries -- data must go through the codec.
+
+Recommendation ITU-T \recname{} specifies a data circuit-terminating
+equipment (DCE) for that path.  It reuses the V series wherever the codec
+leaves it usable and replaces only what the codec breaks:
+\begin{itemize}
+\item the call starts as a V.8 session (ANSam, CI, CM, JM in V.21), with
+  an indication of this Recommendation's capabilities, and falls back to
+  V.22 or V.21 towards a DCE that does not have them;
+\item the line is probed, in the manner of V.34's line probing, for the
+  codec's bandwidth and its noise against a multitone signal, and a
+  mode is chosen from the measurements;
+\item the signal is a comb of tones with differential phase modulation,
+  a symbol every codec frame or two, in the band the codec carries; the
+  tones are loaded by the probing, and the mode is renegotiated as the
+  codec's mode changes, in the manner of V.34's rate renegotiation;
+\item a Reed-Solomon code with interleaving (the code of ITU-T G.975)
+  corrects the codec's errors and the erasures of lost frames, and
+  V.42's LAPM, V.42bis and V.44 run above it unchanged;
+\item the DTE interface is V.250's, with the additions this
+  Recommendation needs; facsimile is carried as T.38 packets.
+\end{itemize}
+The measured raw rate of the signal set is 1600~bit/s through AMR at
+12.2~\kbs{}, 800 through EVS at 13.2~\kbs{}, 2200 to 2800 through
+AMR-WB and EVS at 24.4~\kbs{} wideband, 4950 through EVS at 48~\kbs{}
+and 10\,350 through EVS at 128~\kbs{} super wideband; the bound for any
+signal set is the codec's own bit rate.  Through AMR at 7.4~\kbs{} and
+below, only the 300~bit/s of V.21 passes.
+
+\section*{Keywords}
+AMR, AMR-WB, data over voice, EVS, modem, speech codec, V.22, V.8, VoLTE,
+VoNR.
+
+\clearpage
+\thispagestyle{plain}
+\tableofcontents
+\clearpage
+
+% ------------------------------------------------------------------ body
+\section{Scope}
+This Recommendation specifies a DCE for data transmission over the speech
+path of a telephone call carried by a mobile telephony network, that is,
+through one or more low bit rate speech codecs: the adaptive multi-rate
+codec (AMR, \tgpp{26.090}), the adaptive multi-rate wideband codec
+(AMR-WB, \rec{G.722.2}, \tgpp{26.190}) and the enhanced voice services
+codec (EVS, \tgpp{26.445}), as the IP multimedia subsystem carries them in
+VoLTE and VoNR calls (\tgpp{26.114}), and through the circuit-switched
+speech bearers of earlier networks.  It specifies:
+\begin{itemize}
+\item the reference configuration and the interface at which the DCE's
+  signal enters and leaves the speech path (clause~\ref{sec:ref});
+\item the start-up procedures, built on \rec{V.8} (clause~\ref{sec:startup});
+\item the probing of the path and the selection of a mode of operation
+  (clause~\ref{sec:probing});
+\item the signal set: its modulation modes, symbol timing and tone
+  loading (clause~\ref{sec:modulation});
+\item error control, framing and the use of \rec{V.42}, \rec{V.42bis} and
+  \rec{V.44} above it (clause~\ref{sec:error});
+\item the DTE interface, as additions to \rec{V.250} (clause~\ref{sec:dte});
+\item interworking with the V series DCEs of the PSTN and with facsimile
+  (clause~\ref{sec:interworking}, Annex~\ref{annex:fax}).
+\end{itemize}
+It does not specify the speech codecs, the mobile network, the terminal's
+acoustic processing or the IMS signalling, and it does not change the
+speech path in any way: it is a signal the path carries; what the terminal and the
+network should do for the DCE is in Appendix~\ref{app:terminal}
+(informative).  Data transmission over the packet data bearers of the same
+networks is out of scope: this Recommendation is for the case where the
+telephone call is the path available.
+
+\section{References}
+The following ITU-T Recommendations and other references contain
+provisions which, through reference in this text, constitute provisions
+of this Recommendation.  At the time of publication, the editions
+indicated were valid.  All Recommendations and other references are
+subject to revision; users of this Recommendation are therefore encouraged
+to investigate the possibility of applying the most recent edition of the
+Recommendations and other references listed below.  A list of the
+currently valid ITU-T Recommendations is regularly published.  The
+reference to a document within this Recommendation does not give it, as a
+stand-alone document, the status of a Recommendation.
+
+\begin{description}[style=sameline,leftmargin=3.4cm,labelwidth=3.2cm,font=\normalfont]
+\item[{[ITU-T G.711]}] Recommendation ITU-T G.711 (1988), \emph{Pulse code modulation (PCM) of voice frequencies}.
+\item[{[ITU-T G.722.2]}] Recommendation ITU-T G.722.2 (2003), \emph{Wideband coding of speech at around 16 kbit/s using Adaptive Multi-Rate Wideband (AMR-WB)}.
+\item[{[ITU-T G.975]}] Recommendation ITU-T G.975 (2000), \emph{Forward error correction for submarine systems}.
+\item[{[ITU-T T.30]}] Recommendation ITU-T T.30 (2005), \emph{Procedures for document facsimile transmission in the general switched telephone network}.
+\item[{[ITU-T T.38]}] Recommendation ITU-T T.38 (2010), \emph{Procedures for real-time Group 3 facsimile communication over IP networks}.
+\item[{[ITU-T V.8]}] Recommendation ITU-T V.8 (2000), \emph{Procedures for starting sessions of data transmission over the public switched telephone network}.
+\item[{[ITU-T V.8bis]}] Recommendation ITU-T V.8bis (2000), \emph{Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits}.
+\item[{[ITU-T V.21]}] Recommendation ITU-T V.21 (1988), \emph{300 bits per second duplex modem standardized for use in the general switched telephone network}.
+\item[{[ITU-T V.22]}] Recommendation ITU-T V.22 (1988), \emph{1200 bits per second duplex modem standardized for use in the general switched telephone network and on point-to-point 2-wire leased telephone-type circuits}.
+\item[{[ITU-T V.34]}] Recommendation ITU-T V.34 (1998), \emph{A modem operating at data signalling rates of up to 33 600 bit/s for use on the general switched telephone network and on leased point-to-point 2-wire telephone-type circuits}.
+\item[{[ITU-T V.42]}] Recommendation ITU-T V.42 (2002), \emph{Error-correcting procedures for DCEs using asynchronous-to-synchronous conversion}.
+\item[{[ITU-T V.42bis]}] Recommendation ITU-T V.42bis (1990), \emph{Data compression procedures for data circuit-terminating equipment (DCE) using error correction procedures}.
+\item[{[ITU-T V.44]}] Recommendation ITU-T V.44 (2000), \emph{Data compression procedures}.
+\item[{[ITU-T V.250]}] Recommendation ITU-T V.250 (2003), \emph{Serial asynchronous automatic dialling and control}.
+\item[{[ITU-T T.35]}] Recommendation ITU-T T.35 (2000), \emph{Procedure for the allocation of ITU-T defined codes for non-standard facilities}.
+\item[{[3GPP TS 26.090]}] 3GPP TS 26.090, \emph{Mandatory Speech Codec speech processing functions; Adaptive Multi-Rate (AMR) speech codec; Transcoding functions}.
+\item[{[3GPP TS 26.190]}] 3GPP TS 26.190, \emph{Speech codec speech processing functions; Adaptive Multi-Rate -- Wideband (AMR-WB) speech codec; Transcoding functions}.
+\item[{[3GPP TS 26.445]}] 3GPP TS 26.445, \emph{Codec for Enhanced Voice Services (EVS); Detailed algorithmic description}.
+\item[{[3GPP TS 26.114]}] 3GPP TS 26.114, \emph{IP Multimedia Subsystem (IMS); Multimedia telephony; Media handling and interaction}.
+\end{description}
+
+\section{Definitions}
+\subsection{Terms defined elsewhere}
+This Recommendation uses the following terms defined elsewhere:
+\begin{description}[style=sameline,font=\bfseries]
+\item[answering DCE, calling DCE] \rec{V.8}.
+\item[call function, modulation mode] \rec{V.8}: the categories of the CM and JM signals.
+\item[frame erasure] \tgpp{26.090}: a codec frame that the decoder does not receive, or receives marked as bad, and conceals.
+\item[LAPM] \rec{V.42}: the link access procedure for modems.
+\item[line probing] \rec{V.34}: the transmission of a known multitone signal so that the receiver may measure the channel.
+\item[rate renegotiation] \rec{V.34}: a change of the data signalling rate during data transmission, without retraining.
+\end{description}
+
+\subsection{Terms defined in this Recommendation}
+This Recommendation defines the following terms:
+\begin{description}[style=sameline,font=\bfseries]
+\item[speech path] the path from the calling DCE's signal interface to the
+  answering DCE's, through the terminals' speech processing, one or more
+  speech codecs and the networks between them.  It is the channel of this
+  Recommendation.
+\item[signal interface] the point at which the DCE's transmitted signal
+  enters the speech path and the received signal leaves it, as linear PCM
+  samples (reference point P, clause~\ref{sec:ref}).
+\item[codec frame] the block of samples a speech codec encodes together:
+  20~ms for the codecs of this Recommendation.
+\item[comb] the set of tones of the signal set, at a common spacing.
+\item[tone symbol] the information carried by one tone in one modulation
+  symbol: a phase difference from the tone's previous symbol.
+\item[mode] a signal set, a comb, a symbol period, a modulation order and
+  a code rate, agreed between the DCEs by the probing procedure.
+\item[loading] the set of tones in use and the modulation order of each.
+\end{description}
+
+\section{Abbreviations and acronyms}
+This Recommendation uses the following abbreviations and acronyms:
+\begin{description}[style=sameline,leftmargin=2.4cm,labelwidth=2.2cm,font=\normalfont]
+\item[ACELP] Algebraic code excited linear prediction
+\item[AMR] Adaptive multi-rate (speech codec)
+\item[AMR-WB] Adaptive multi-rate wideband (speech codec)
+\item[ANSam] Modified answer tone (\rec{V.8})
+\item[CI] Call indicator signal (\rec{V.8})
+\item[CM, JM] Call menu, joint menu signals (\rec{V.8})
+\item[DCE] Data circuit-terminating equipment
+\item[DPSK] Differential phase shift keying
+\item[DTE] Data terminal equipment
+\item[DTX] Discontinuous transmission
+\item[EVS] Enhanced voice services (speech codec)
+\item[FEC] Forward error correction
+\item[IMS] IP multimedia subsystem
+\item[JBM] Jitter buffer management
+\item[LAPM] Link access procedure for modems
+\item[LPC] Linear predictive coding
+\item[MDCT] Modified discrete cosine transform
+\item[PCM] Pulse code modulation
+\item[PLC] Packet loss concealment
+\item[PSTN] Public switched telephone network
+\item[RS] Reed-Solomon (code)
+\item[SDP] Session description protocol
+\item[SER] Symbol error ratio
+\item[UE] User equipment
+\item[VAD] Voice activity detection
+\item[VoLTE, VoNR] Voice over LTE, voice over new radio (5G)
+\end{description}
+
+\section{Conventions}
+In this Recommendation, ``shall'' indicates a requirement, ``should'' a
+recommendation and ``may'' a permission, as in ITU-T practice.  Data
+signalling rates are in bit/s; the rate before the Reed-Solomon code is
+the \emph{raw} rate and the rate after it the \emph{coded} rate.  Levels
+are relative to the full scale of the 16~bit linear PCM samples at the
+signal interface (dBFS); $-12$~dBFS is the level of the test signals.
+Frequencies of tones are in Hz.  Octets are shown most significant bit
+first; bit~1 is the least significant.\label{sec:conventions}  Figures and tables give the
+values of this Recommendation; where a value was measured, the
+measurement is in Appendix~\ref{app:measurements}.
+
+\section{General description}\label{sec:general}
+\subsection{The speech path as a channel}
+A speech codec of the ACELP family (AMR, AMR-WB, the ACELP modes of EVS)
+describes each 20~ms frame of its input by a linear predictive spectral
+envelope, a long-term (pitch) predictor with a lag and a gain per 5~ms
+subframe, and a sparse algebraic excitation of a few pulses per subframe.
+The decoder synthesizes a signal from these parameters.  The result
+matches the input's waveform only as far as the parameters can describe
+it and as far as the perceptually weighted error criterion of the encoder
+cares to.  For a modem's signal the consequences, measured in
+Appendix~\ref{app:measurements}, are:
+\begin{enumerate}[label=\alph*)]
+\item the signal-to-noise ratio of the output against the input is low,
+  in the order of 10 to 15~dB for signals with the spectrum of speech,
+  and it does not improve with the input level: the noise is the codec's,
+  proportional to the signal;
+\item a signal of many tones with a smooth spectral envelope is carried
+  better than a single tone, whose line spectrum the predictive model
+  cannot place exactly; single-carrier modulations therefore fare worse
+  than their bandwidth suggests, and multitone signals better;
+\item the phase of each tone is carried from one frame to the next well
+  enough for differential phase modulation of four states per tone and
+  symbol, when the symbol lasts a codec frame or two, and not for eight
+  states or for amplitude modulation;
+\item the band is the codec's: 200 to 3400~Hz for AMR, 50 to 6400~Hz for
+  AMR-WB (its 6.4 to 7~kHz is a bandwidth extension that carries no
+  waveform), and for EVS by its bandwidth mode and bit rate: at
+  24.4~\kbs{} to about 8~kHz and at 48~\kbs{} and above to 12 or 14~kHz
+  (Appendix~\ref{app:evs});
+\item a lost packet erases a frame; the decoder conceals it with an
+  extrapolation, which to the modem is 20~ms of noise; the jitter buffer
+  of the receiving terminal may also repeat or drop a frame, or stretch
+  the signal, to adapt its delay;
+\item the codec's mode (its bit rate) is chosen by the network and
+  changes during the call; the noise changes with it;
+\item the one-way delay is 100 to 300~ms, and differs between the two
+  directions.
+\end{enumerate}
+Nothing in the path is a linear channel; the effects of a) to c) are
+those of a channel with a noise floor some 10 to 15~dB below the signal,
+and the design of this Recommendation is a modem for such a channel, with
+the measures of e) to g) around it.
+
+\itunote{The throughput of any signal set through a codec is bounded by
+the codec's bit rate: 12.2~\kbs{} for AMR at its highest mode, 23.85 for
+AMR-WB, 13.2 to 128~\kbs{} for EVS.  The codec's parameters describe the
+signal, and no more information passes than they carry.  Practical signal
+sets reach a fraction of the bound; the one of this Recommendation
+reaches in the order of 10 to 15 per cent of it through AMR and EVS.}
+
+\subsection{What this Recommendation reuses}
+Table~\ref{tab:reuse} lists the parts of the V series and of other
+Recommendations that this Recommendation uses as they are, and what it
+replaces.
+\begin{table}[htbp]
+\caption{The V series and other Recommendations in this Recommendation}
+\label{tab:reuse}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{4.8cm}}
+\toprule
+\rowcolor{ituhead}\thd{Function} & \thd{Reused} & \thd{New in this Recommendation} \\
+\midrule
+Start-up & \rec{V.8}: ANSam, CI, CM, JM, CJ, in V.21 (300~bit/s FSK, which the codecs carry) & capability indication (Annex~\ref{annex:v8}) \\
+Fallback & \rec{V.22} (1200~bit/s, through AMR 12.2) and \rec{V.21} (300~bit/s, through every mode), as they are & -- \\
+Probing & the principle of \rec{V.34} clause 10: a multitone probing signal, INFO exchanges, MP parameter exchange, rate renegotiation and retrain & the probing signals and the parameters exchanged (clause~\ref{sec:probing}) \\
+Modulation & the differential phase modulation of \rec{V.22} per tone; the multitone structure of ADSL (\rec{G.992.1}) with a cyclic prefix & the comb, symbol timing and loading (clause~\ref{sec:modulation}) \\
+Inner code & the Reed-Solomon code of \rec{G.975} over GF($2^8$), shortened & its interleaving over symbols and frames (Annex~\ref{annex:rs}) \\
+Link layer & \rec{V.42} LAPM with its detection phase, \rec{V.42bis} and \rec{V.44} compression & -- \\
+DTE interface & \rec{V.250} & the +MS values, S-registers and result codes of clause~\ref{sec:dte} \\
+Facsimile & \rec{T.38} internet facsimile packets, \rec{T.30} & their carriage in the data link (Annex~\ref{annex:fax}) \\
+Codec & \rec{G.722.2} (AMR-WB) as a channel model & -- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Overview of a call}
+Figure~\ref{fig:phases} shows the phases of a call.  The answering DCE
+sends ANSam; the calling DCE sends CI then CM with this Recommendation's
+capabilities; the answering DCE answers with JM.  If both have the
+capability, the DCEs exchange probing signals and INFO messages (phase~2),
+each chooses a loading for the direction it receives and tells the other
+(phase~3, MP), and data transmission begins (phase~4).  During data
+transmission either DCE may ask for a renegotiation of its loading or a
+retrain.  If either DCE lacks the capability, the call continues as a
+\rec{V.8} session to V.22 or V.21 as the common modulation modes allow.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm,font=\small,
+  ph/.style={draw,rounded corners=2pt,fill=ituhead,minimum height=0.9cm,
+    text width=2.7cm,align=center},
+  arr/.style={-{Latex[length=2.2mm]},thick}]
+\node[ph] (p1) {Phase 1\\V.8 session\\ANSam, CI, CM, JM};
+\node[ph,right=0.5cm of p1] (p2) {Phase 2\\probing\\comb, INFO};
+\node[ph,right=0.5cm of p2] (p3) {Phase 3\\parameters\\MP, loading};
+\node[ph,right=0.5cm of p3] (p4) {Phase 4\\data\\RS, LAPM};
+\draw[arr] (p1) -- (p2); \draw[arr] (p2) -- (p3); \draw[arr] (p3) -- (p4);
+\node[ph,below=0.8cm of p1,fill=white] (fb) {fallback\\V.22 or V.21\\(V.8 session)};
+\draw[arr] (p1.south) -- (fb.north) node[midway,right,font=\footnotesize] {no \recname{} in JM};
+\draw[arr] (p4.north) to[out=120,in=60] node[above,font=\footnotesize] {renegotiation} (p3.north);
+\draw[arr] (p4.south) to[out=-120,in=-60] node[below,font=\footnotesize] {retrain} (p2.south);
+\end{tikzpicture}
+\caption{The phases of a call}
+\label{fig:phases}
+\end{figure}
+
+\section{Reference configuration and interfaces}\label{sec:ref}
+\subsection{Reference configuration}
+Figure~\ref{fig:refconf} gives the reference configuration.  Reference
+point~P is the signal interface: the DCE gives its transmitted signal to
+the terminal as linear PCM samples and takes the received signal from it
+in the same form.  The terminal is whatever carries the speech path: a
+UE, an IMS client, a gateway between the IMS and another network, or a
+circuit-switched mobile terminal.  Everything from one reference point P
+to the other is the speech path.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm,font=\small,
+  box/.style={draw,minimum height=0.9cm,align=center},
+  arr/.style={{Latex[length=2mm]}-{Latex[length=2mm]},thick}]
+\node[box,text width=1.0cm] (dte1) {DTE};
+\node[box,text width=1.4cm,right=0.4cm of dte1,fill=ituhead] (dce1) {DCE\\\recname};
+\node[box,text width=2.0cm,right=0.7cm of dce1] (t1) {terminal\\speech encoder\\and decoder};
+\node[box,text width=2.1cm,right=0.5cm of t1,dashed] (net) {mobile and\\other networks\\(transcoding)};
+\node[box,text width=2.0cm,right=0.5cm of net] (t2) {terminal\\speech decoder\\and encoder};
+\node[box,text width=1.6cm,right=0.7cm of t2,fill=ituhead] (dce2) {DCE\\\recname};
+\node[box,text width=1.0cm,right=0.4cm of dce2] (dte2) {DTE};
+\draw[arr] (dte1) -- (dce1); \draw[arr] (dce1) -- (t1) node[midway,above=1pt] {P};
+\draw[arr] (t1) -- (net); \draw[arr] (net) -- (t2);
+\draw[arr] (t2) -- (dce2) node[midway,above=1pt] {P}; \draw[arr] (dce2) -- (dte2);
+\draw[decorate,decoration={brace,amplitude=4pt},thick]
+  ([yshift=-0.55cm]t1.south west) -- ([yshift=-0.55cm]t2.south east)
+  node[midway,below=5pt] {the speech path};
+\end{tikzpicture}
+\caption{Reference configuration}
+\label{fig:refconf}
+\end{figure}
+
+\subsection{The signal interface (reference point P)}\label{sec:pointp}
+At reference point P:
+\begin{enumerate}[label=\alph*)]
+\item samples shall be 16~bit linear PCM, two's complement, at 8000~Hz
+  (narrowband operation) or 16000~Hz (wideband operation).  A DCE shall
+  support 8000~Hz and may support 16000~Hz.  The rate is the terminal's;
+  the DCE learns the band the path carries by probing, not from the rate.
+\item the DCE's transmitted signal shall not exceed $-9$~dBFS in any
+  20~ms frame and should be at $-12 \pm 2$~dBFS in the data phases, so
+  that no terminal gain stage limits it and the codec's gain quantizers
+  are in their range.  The received level is whatever the path delivers;
+  the DCE shall accept $-30$ to $-3$~dBFS.
+\item the terminal should pass the samples to and from the speech codec
+  without acoustic processing (echo cancellation, noise suppression,
+  automatic gain control, voice activity detection with comfort noise)
+  between P and the codec.  Where the terminal cannot disable them, the
+  DCE shall still operate, with the modes the probing finds usable.
+\item the sample clocks of the two terminals are independent.  The DCE
+  shall tolerate a difference of $\pm 200$~ppm between its transmit clock
+  and the received signal's, and the steps of clause~\ref{sec:timing}.
+\end{enumerate}
+
+\itunote{A DCE in a UE must reach the speech codec's PCM interface.  The
+acoustic path (loudspeaker to microphone) is not a signal interface of
+this Recommendation.}
+
+\subsection{Interchange circuits}
+The DTE interface is the serial asynchronous interface of \rec{V.250}
+(clause~\ref{sec:dte}), on any physical interface a V.250 DCE may have.
+
+% ---------------------------------------------------------------- startup
+\section{Start-up procedures}\label{sec:startup}
+\subsection{General}
+A DCE of this Recommendation shall perform the start-up procedures of
+\rec{V.8}: the answering DCE transmits ANSam; the calling DCE transmits CI
+and, on detecting ANSam, CM; the answering DCE answers with JM; the
+calling DCE acknowledges with CJ.  The V.21 modulation of CI, CM, JM and
+CJ passes through every mode of the codecs
+(Appendix~\ref{app:measurements}, Table~\ref{tab:modsurvive}), and ANSam's
+2100~Hz tone, with its phase reversals, disables the network's echo
+cancellers (as it is meant to), which matters at a gateway to the PSTN.
+
+\subsection{Capability indication}
+The calling DCE shall indicate its support of this Recommendation in CM
+and the answering DCE in JM, as Annex~\ref{annex:v8} specifies, together
+with the modulation modes of its fallback (V.22 and V.21) and the
+protocol (LAPM).  The indication carries:
+\begin{itemize}
+\item the version of this Recommendation (1);
+\item the signal interface rate: 8000, or 16000~Hz;
+\item the modes of clause~\ref{sec:modulation} the DCE supports;
+\item whether the DCE can carry facsimile (Annex~\ref{annex:fax}).
+\end{itemize}
+
+\subsection{Outcome}
+When both CM and JM carry the indication, both DCEs proceed to the
+probing of clause~\ref{sec:probing} on the completion of the V.8
+procedures (CJ sent, or JM ended), within the time \rec{V.8} allows for the
+start of the selected modulation.  Otherwise the DCEs proceed to the
+common modulation mode of highest rate among those indicated, V.22 then
+V.21, as \rec{V.8} and that Recommendation specify, and this Recommendation
+has nothing more to say about the call.
+
+\itunote{A legacy V series DCE on the PSTN, reached through a gateway,
+indicates its own modulation modes (V.34, V.32bis, ...) and none of this
+Recommendation's.  Of its modulation modes, V.22 is the fastest the
+codec carries (Table~\ref{tab:modsurvive}): a DCE of this Recommendation
+should not indicate modulation modes above V.22 in CM when it knows the
+speech path to be a codec's, so that the legacy DCE selects V.22 at once
+rather than fail at V.34 and renegotiate.}
+
+\subsection{Timing}
+The DCEs' timers for the V.8 procedures are \rec{V.8}'s.  The probing of
+clause~\ref{sec:probing} shall begin within 200~ms of the end of the V.8
+procedures and shall be complete, with the first data symbols sent,
+within 12~s (each direction's INFO0, L1, L2 and INFO1 take about 5~s at
+300~bit/s for the messages); a DCE that has not received its peer's
+INFO0 within 6~s of the end of the V.8 procedures shall fall back to
+V.22 by restarting the V.8 procedures, once.
+
+% ---------------------------------------------------------------- probing
+\section{Probing and mode selection}\label{sec:probing}
+\subsection{Purpose}
+Probing measures the speech path as the signal set will see it:
+\begin{enumerate}[label=\alph*)]
+\item the band carried, from which the signal interface rate of the far
+  end and the codec's bandwidth mode follow;
+\item the noise per tone against a multitone signal of the signal set's
+  own form, from which the loading follows;
+\item the round-trip delay, for the timers of the link layer.
+\end{enumerate}
+Each direction is probed and loaded separately: the two directions of a
+mobile call go through different codecs, radio links and jitter buffers.
+
+\subsection{Phase 2: the probing signals}\label{sec:phase2}
+After the V.8 procedures each DCE transmits, in turn as
+Figure~\ref{fig:probing} shows:
+\begin{enumerate}
+\item \textbf{INFO0}: its signal interface rate, the modes it supports and
+  the comb it will probe with, modulated as clause~\ref{sec:infomod}
+  specifies;
+\item \textbf{L1}: the probing combs of Annex~\ref{annex:probe}: each
+  comb the DCE supports for the band of its signal interface, in turn
+  (200, 300 and 400~Hz spacing, Table~\ref{tab:combs}), all tones loaded,
+  each tone with a differential phase sequence known to both, 0.6~s a
+  comb;
+\item \textbf{L2}: the 200~Hz comb with the 22.5~ms symbol, for 0.5~s, so
+  that the receiver may compare the two symbol periods;
+\item silence for 100~ms, then \textbf{INFO1}: what it measured of its
+  peer's L1 and L2 as the loading it asks for (clause~\ref{sec:loading}),
+  and its own round-trip estimate.
+\end{enumerate}
+The calling DCE transmits first; the answering DCE begins its INFO0 on
+the end of the calling DCE's INFO1, as \rec{V.34} phase~2 orders INFO0c
+and INFO0a.  The probing signal's level is $-12$~dBFS.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[x=1cm,y=1cm,font=\footnotesize]
+\draw[->] (0,0) -- (14.6,0) node[right] {$t$};
+\node[left] at (0,0.75) {calling};
+\node[left] at (0,-0.75) {answering};
+\foreach \x/\w/\n in {0.2/1.4/INFO0,1.8/3.0/L1,5.0/1.0/L2,6.4/1.8/INFO1} {
+  \draw[fill=ituhead] (\x,0.35) rectangle ++(\w,0.8) node[midway] {\n};}
+\foreach \x/\w/\n in {8.4/1.4/INFO0,10.0/2.4/L1,12.6/0.8/L2,13.6/0.9/INFO1} {
+  \draw[fill=ituhead] (\x,-1.15) rectangle ++(\w,0.8) node[midway] {\n};}
+\draw[dashed] (8.3,-1.3) -- (8.3,1.3);
+\node[above] at (8.3,1.3) {end of the calling INFO1};
+\end{tikzpicture}}
+\caption{Phase 2: the probing signals (durations not to scale)}
+\label{fig:probing}
+\end{figure}
+
+\subsection{Modulation of the INFO and MP messages}\label{sec:infomod}
+INFO0, INFO1 and the MP messages of clause~\ref{sec:phase3} shall be
+transmitted in the \emph{robust mode} of clause~\ref{sec:modes}: the FSK
+of \rec{V.21} at 300~bit/s, channel~1 from the calling DCE and channel~2
+from the answering DCE as \rec{V.8} uses them for CM and JM, as HDLC
+frames (flags, FCS) of \rec{V.42} with the message's octets as the
+information field.  Each message is sent twice; the receiver takes the
+first copy whose FCS checks.  V.21's bit error ratio was measured below
+$10^{-2}$ through every mode of AMR but 4.75~\kbs{}, of AMR-WB but 6.6,
+and of EVS but 9.6 wideband (Appendix~\ref{app:measurements},
+Table~\ref{tab:fsk}).
+
+\itunote{V.34 modulates INFO and MP at 600~bit/s with differential phase
+modulation on two tones.  Through AMR at 7.4~\kbs{} and below no
+differential phase modulation measured kept a symbol error ratio below
+$10^{-1}$, while 300~bit/s FSK did (Table~\ref{tab:fsk}); so this
+Recommendation sends its messages as V.8 sends CM and JM.}
+
+\subsection{The loading}\label{sec:loading}
+From its peer's L1 and L2 the receiving DCE shall estimate, for each tone
+of the comb and each of the two symbol periods, the root mean square
+phase error of the received tone symbols against the known sequence, and
+for each tone the mean received level.  It shall then choose:
+\begin{enumerate}[label=\alph*)]
+\item the band: the tones whose level is within 20~dB of the strongest
+  tone's; tones outside are not loaded (this finds the codec's band);
+\item the comb and the symbol period: those giving the greatest number
+  of bits per second over the tones loaded by c); a comb of fewer tones,
+  more widely spaced, wins where the codec's noise against each tone of a
+  denser comb is too high (Appendix~\ref{app:measurements});
+\item the modulation order of each tone, from its phase error $\sigma$:
+  DQPSK where $\sigma \le 20^\circ$, 8-DPSK where $\sigma \le 9^\circ$ and
+  the mode set allows it, none where $\sigma > 20^\circ$;
+\item the code rate of the Reed-Solomon code (Annex~\ref{annex:rs}) from
+  the measured tone symbol error ratio over the loaded tones: rate~7/8
+  below $10^{-3}$, 3/4 below $10^{-2}$, 1/2 otherwise.
+\end{enumerate}
+The thresholds in c) give a tone symbol error ratio of about $10^{-2}$
+at the threshold for Gaussian phase error, which the code of
+Annex~\ref{annex:rs} corrects to below $10^{-6}$ at rate~3/4.  The
+loading is sent to the peer in INFO1 and MP as a bitmap of the comb with
+two bits a tone (none, DQPSK, 8-DPSK).
+
+\subsection{Phase 3: parameter exchange}\label{sec:phase3}
+Each DCE transmits an \textbf{MP} message with the loading it asks for in
+the direction it receives, the symbol period and the code rate, in the
+manner of \rec{V.34}'s MP sequence; it shall
+transmit MP until it has received its peer's MP with the acknowledgement
+bit set, then once more with its own acknowledgement bit set, and begin
+data transmission (phase~4) with the loading its peer asked for.  Both
+directions enter phase~4 within 100~ms of each other.
+
+\subsection{Renegotiation and retrain}\label{sec:reneg}
+During phase~4, a DCE whose receiver measures a phase error or an error
+ratio over the thresholds of clause~\ref{sec:loading} on tones it loaded,
+or well under them on tones it did not load, should ask for a
+\emph{renegotiation}: it sends the control sequence of
+clause~\ref{sec:control} and the DCEs exchange MP messages in the robust
+mode with the new loading, then resume data; the code's interleaver is
+flushed and restarted.  A DCE that loses the symbol timing or receives no
+decodable symbol for 2~s shall ask for a \emph{retrain}: both DCEs return
+to phase~2.  The codec's mode changes with the radio conditions, and the
+loading shall follow it; a renegotiation shall take no more than 500~ms
+and a DCE shall not refuse one.
+
+% ---------------------------------------------------------------- modulation
+\section{Modulation}\label{sec:modulation}
+\input{modulation.tex}
+
+% ---------------------------------------------------------------- error
+\section{Error control and framing}\label{sec:error}
+\subsection{Structure}
+The data of phase~4 pass, from the DTE towards the line, through:
+\begin{enumerate}
+\item \rec{V.42}: LAPM, with the V.42bis or V.44 compression the DCEs
+  negotiate in XID (clause~\ref{sec:link});
+\item the inner code: the Reed-Solomon code of Annex~\ref{annex:rs} over
+  the HDLC frames' octets, as a continuous octet stream (the LAPM frames
+  with their flags are the stream; no further framing is added);
+\item the interleaver of Annex~\ref{annex:rs}, which spreads each
+  codeword over several modulation symbols so that an erased codec frame
+  costs each codeword a fraction of its symbols;
+\item the mapping of the coded bits onto the tone symbols of
+  clause~\ref{sec:mapping}.
+\end{enumerate}
+
+\subsection{The code}
+The inner code shall be the Reed-Solomon code over GF($2^8$) of
+\rec{G.975} (the field of the primitive polynomial $x^8+x^4+x^3+x^2+1$,
+the code generator of its clause on the RS(255,239) code), shortened to
+the codeword lengths of Annex~\ref{annex:rs}: a codeword of $n$ octets
+with $k$ information octets and $n-k = 2t$ check octets, correcting $t$
+octets in error or $2t$ octets erased.  The code rates of
+Table~\ref{tab:rates} are offered (Annex~\ref{annex:rs} shortens the
+codewords to 32 octets, so that the interleaver's delay stays short).  A receiver should mark the octets of
+an erased codec frame as erasures (clause~\ref{sec:erasure}).
+
+\begin{table}[htbp]
+\caption{Code rates of the inner code}
+\label{tab:rates}
+\small
+\begin{tabular}{lccc}
+\toprule
+\rowcolor{ituhead}\thd{Rate} & \thd{Codeword $n$} & \thd{Information $k$} & \thd{Corrects $t$ octets / $2t$ erasures} \\
+\midrule
+7/8 & 32 & 28 & 2 / 4 \\
+3/4 & 32 & 24 & 4 / 8 \\
+1/2 & 32 & 16 & 8 / 16 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Erased frames}\label{sec:erasure}
+A speech decoder conceals a lost or bad frame by extrapolating the
+previous frame's parameters: the output over the erased frame keeps the
+spectral envelope and the pitch of the signal before it and loses its
+information.  A receiver of this Recommendation should detect an erased
+frame -- from the phase errors of all its tones at once, or from the
+tones' levels decaying together as concealment attenuates -- and mark the
+tone symbols of the symbol or symbols it spans as erasures to the
+Reed-Solomon decoder, which corrects twice as many erasures as errors.
+With the interleaving depth of Annex~\ref{annex:rs} one erased 20~ms
+frame erases one symbol in each of $D$ consecutive codewords' $D$
+symbols, and is corrected at any code rate of Table~\ref{tab:rates};
+frame erasure ratios of the mobile networks are below 2 per cent
+(\tgpp{26.114}'s design targets), and the measured effect is in
+Appendix~\ref{app:measurements}.
+
+\subsection{Mapping}\label{sec:mapping}
+The interleaver's output bits shall be taken in order and mapped onto the
+loaded tones of a symbol from the lowest tone to the highest, two bits to
+a DQPSK tone and three to an 8-DPSK tone, Gray coded onto the phase
+difference as Table~\ref{tab:gray} shows.  Bits left over at the end of a
+symbol are carried into the next.  The receiver shall deliver, per tone
+symbol, the hard decision and an indication of its reliability (the
+distance of the received phase difference from the decision's), so that
+the Reed-Solomon decoder may be given erasures.
+
+\begin{table}[htbp]
+\caption{Gray mapping of the phase difference}
+\label{tab:gray}
+\small
+\begin{tabular}{lcccccccc}
+\toprule
+\rowcolor{ituhead}\thd{Phase difference} & 0 & 45 & 90 & 135 & 180 & 225 & 270 & 315 \\
+\midrule
+DQPSK bits & 00 & -- & 01 & -- & 11 & -- & 10 & -- \\
+8-DPSK bits & 000 & 001 & 011 & 010 & 110 & 111 & 101 & 100 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------- link
+\section{Link layer, compression and DTE interface}\label{sec:dte}
+\subsection{Link layer}\label{sec:link}
+Above the inner code the DCEs shall operate \rec{V.42} LAPM.  The
+detection phase of \rec{V.42} (ODP and ADP) is not needed and shall not be
+used: both DCEs have indicated LAPM in the V.8 session; the originator
+shall start LAPM's XID exchange on entering phase~4.  The DCEs should
+negotiate \rec{V.44} compression, or \rec{V.42bis} where V.44 is not
+available, in XID as those Recommendations specify.  LAPM's T401 shall be
+set from the round-trip delay measured in phase~2 (clause~\ref{sec:phase2}),
+with at least 1~s added for the interleaver's delay and the symbol
+period; N401 should not exceed 64~octets at raw rates below 2400~bit/s,
+so that a frame fits in an interleaver block.
+
+\itunote{The code of Annex~\ref{annex:rs} leaves LAPM an error ratio
+below $10^{-6}$ in the loaded modes; LAPM is retained for the residual
+errors, for the erased frames the code cannot cover, for flow control and
+for compression.}
+
+\subsection{DTE interface}
+The DCE's DTE interface shall conform to \rec{V.250}, with:
+\begin{enumerate}[label=\alph*)]
+\item in \code{+MS} (modulation selection), the value \code{V\_CVM} for this
+  Recommendation's modulation, with its automode fallback to V.22 and
+  V.21 (\code{+MS=V\_CVM,1}); a DCE should make it its default on a speech
+  path known to be a codec's.  \code{+MS?} reports the value, \code{+MS=?}
+  includes it in the list.
+\item the extended command \code{+CVM} (Table~\ref{tab:atcvm}) to constrain
+  the mode set and to read the loading and the measurements of the
+  current connection.
+\item in the CONNECT result code, with \code{\textbackslash V1} or \code{X}
+  settings that give the rate, the coded data signalling rate (clause~\ref{sec:conventions}) and the
+  text \code{/CVM}; the raw rate is read with \code{+CVM?}.
+\item the result code \code{+CVMR: <raw>,<coded>} (unsolicited, if enabled
+  by \code{+CVM}) on each renegotiation.
+\end{enumerate}
+
+\begin{table}[htbp]
+\caption{The +CVM command}
+\label{tab:atcvm}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{6.0cm}X}
+\toprule
+\rowcolor{ituhead}\thd{Command} & \thd{Meaning} \\
+\midrule
+\code{+CVM=<modes>}\allowbreak\code{[,<rate>}\allowbreak\code{[,<report>]]} & \code{<modes>}: the modes allowed, a sum of 1 (robust), 2 (narrowband), 4 (wideband), 8 (8-DPSK permitted), 16 (QAM loading permitted, clause~\ref{sec:qam}); default all.  \code{<rate>}: the signal interface rate, 8000 or 16000.  \code{<report>}: 1 enables \code{+CVMR}. \\
+\code{+CVM?} & \code{+CVM: <modes>,<rate>,<report>} and, while connected, a second line \code{+CVM: <raw tx>,<raw rx>,<coded tx>,<coded rx>,<symbol ms>,<tones tx>,<tones rx>,<code rate>,<renegotiations>,<erasures>}. \\
+\code{+CVM=?} & the ranges. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{S-registers}
+S-register~44 (as a DCE of this Recommendation uses it) holds the number
+of tones loaded in the receive direction of the last call, S-register~45
+the number of renegotiations of the last call.  Both are read-only; the
+loading kept for the quick start of clause~\ref{sec:quick} is the DCE's
+own.
+
+% ---------------------------------------------------------------- interworking
+\section{Interworking}\label{sec:interworking}
+\subsection{With V series DCEs on the PSTN}
+A DCE of this Recommendation falls back to \rec{V.22} and \rec{V.21}
+(clause~\ref{sec:startup}).  Through a gateway between the mobile network
+and the PSTN the speech path has one codec (the mobile side's); V.22
+passes AMR at 12.2~\kbs{} with its data intact and V.21 passes every
+mode measured (Appendix~\ref{app:measurements}).  A gateway that detects
+the V.8 session and switches its IP leg to \rec{G.711} or to the modem
+relay of \rec{V.150.1} changes nothing for this Recommendation: the codec
+that limits the path is the mobile side's.
+
+\subsection{With DCEs of this Recommendation across two codecs}
+A mobile-to-mobile call, or a call through a transcoding gateway, has two
+or more codecs in tandem in each direction.  The probing of
+clause~\ref{sec:probing} measures the tandem as one channel; the loading
+follows the measurement.  The throughput through two codecs is lower than
+through one (Appendix~\ref{app:measurements} gives the measured figures
+for AMR after AMR), and the retrain timers allow for the longer delay.
+
+\subsection{With facsimile}
+Facsimile terminals are served through Annex~\ref{annex:fax}: the DCE
+terminates the \rec{T.30} session on its side and carries it as \rec{T.38}
+packets in the data link.  The modulations of a facsimile terminal
+(V.27ter, V.29, V.17) do not pass the codecs (Table~\ref{tab:modsurvive}).
+
+% ---------------------------------------------------------------- performance
+\section{Performance}\label{sec:performance}
+A DCE of this Recommendation shall meet the following, measured through
+the reference codecs of Appendix~\ref{app:measurements} with no frame
+erasures and the signal interface at 8000~Hz, with the method of that
+appendix:
+\begin{enumerate}[label=\alph*)]
+\item through AMR at 12.2~\kbs{} it shall connect in a narrowband mode
+  with a raw rate of at least 1200~bit/s in each direction, and with the
+  Reed-Solomon code at rate~3/4 or better;
+\item through AMR at 7.95~\kbs{} it shall connect in the robust mode (no
+  mode of this Recommendation passes AMR at 4.75~\kbs{} or AMR-WB at
+  6.6~\kbs{}, whose radio conditions a network leaves only at the worst
+  coverage: the DCE waits in the robust mode for a better codec mode);
+\item through AMR-WB at 23.85~\kbs{} with the interface at 16000~Hz it
+  shall connect in a wideband mode with a raw rate of at least
+  2400~bit/s in each direction;
+\item through EVS at 13.2~\kbs{} narrowband it shall connect in the
+  narrowband mode (the N400 comb) with a raw rate of at least 800~bit/s;
+  through EVS at 24.4~\kbs{} narrowband with a raw rate of at least
+  2000~bit/s; through EVS at 48~\kbs{} wideband, with the interface at
+  16000~Hz, of at least 4000~bit/s;
+\item the error ratio delivered to LAPM shall be below $10^{-6}$ at the
+  loading chosen by clause~\ref{sec:loading};
+\item a frame erasure ratio of 1 per cent (independent erasures) shall
+  not lower the coded rate by more than the code rate step of
+  Table~\ref{tab:rates}.
+\end{enumerate}
+The rates achievable are in Appendices~\ref{app:measurements} and
+\ref{app:evs}.
+
+\input{annexes.tex}
+
+\input{appendices.tex}
+
+\clearpage
+\phantomsection\addcontentsline{toc}{section}{Bibliography}
+\section*{Bibliography}
+\begin{description}[style=sameline,leftmargin=2.6cm,labelwidth=2.4cm,font=\normalfont]
+\item[{[b-ITU-T G.168]}] Recommendation ITU-T G.168 (2015), \emph{Digital network echo cancellers}.
+\item[{[b-ITU-T G.992.1]}] Recommendation ITU-T G.992.1 (1999), \emph{Asymmetric digital subscriber line (ADSL) transceivers}.
+\item[{[b-ITU-T V.150.1]}] Recommendation ITU-T V.150.1 (2003), \emph{Modem-over-IP networks: Procedures for the end-to-end connection of V-series DCEs}.
+\item[{[b-ITU-T V.152]}] Recommendation ITU-T V.152 (2010), \emph{Procedures for supporting voice-band data over IP networks}.
+\item[{[b-ITU-T V.22bis]}] Recommendation ITU-T V.22bis (1988), \emph{2400 bits per second duplex modem using the frequency division technique standardized for use on the general switched telephone network and on point-to-point 2-wire leased telephone-type circuits}.
+\item[{[b-ITU-T V.32bis]}] Recommendation ITU-T V.32bis (1991), \emph{A duplex modem operating at data signalling rates of up to 14 400 bit/s for use on the general switched telephone network and on leased point-to-point 2-wire telephone-type circuits}.
+\item[{[b-3GPP TS 26.071]}] 3GPP TS 26.071, \emph{Mandatory speech CODEC speech processing functions; AMR speech CODEC; General description}.
+\item[{[b-3GPP TS 26.093]}] 3GPP TS 26.093, \emph{Mandatory speech codec speech processing functions; Adaptive Multi-Rate (AMR) speech codec; Source controlled rate operation}.
+\item[{[b-3GPP TS 26.441]}] 3GPP TS 26.441, \emph{Codec for Enhanced Voice Services (EVS); General overview}.
+\item[{[b-3GPP TS 26.447]}] 3GPP TS 26.447, \emph{Codec for Enhanced Voice Services (EVS); Error concealment of lost packets}.
+\item[{[b-3GPP TS 26.448]}] 3GPP TS 26.448, \emph{Codec for Enhanced Voice Services (EVS); Jitter buffer management}.
+\item[{[b-3GPP TS 26.131]}] 3GPP TS 26.131, \emph{Terminal acoustic characteristics for telephony; Requirements}.
+\item[{[b-IETF RFC 4867]}] IETF RFC 4867 (2007), \emph{RTP Payload Format and File Storage Format for the Adaptive Multi-Rate (AMR) and Adaptive Multi-Rate Wideband (AMR-WB) Audio Codecs}.
+\item[{[b-IETF RFC 4733]}] IETF RFC 4733 (2006), \emph{RTP Payload for DTMF Digits, Telephony Tones, and Telephony Signals}.
+\item[{[b-GSMA IR.92]}] GSMA PRD IR.92, \emph{IMS Profile for Voice and SMS}.
+\item[{[b-GSMA NG.114]}] GSMA PRD NG.114, \emph{IMS Profile for Voice, Video and Messaging over 5GS}.
+\item[{[b-D-Modem]}] \sloppy D-Modem, a software modem (Neo-Desktop), \url{https://github.com/Neo-Desktop/d-modem-re}; the modems, the codec simulation (\code{dsp/test/codec\_sim.cpp}, \code{netsim}) and the measurement scripts of Appendix~\ref{app:measurements} are in it.
+\end{description}
+
+\end{document}

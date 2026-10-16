@@ -1,0 +1,61 @@
+=== evs:24400
+comb 200 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.020, good 22, rms 16.5 deg, raw 2200 bit/s, amp 2.9 dB
+comb 200 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.177, good  4, rms 16.6 deg, raw  600 bit/s, amp 2.7 dB
+comb 300 Hz, 4-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.001, good 22, rms 10.0 deg, raw 2200 bit/s, amp 1.7 dB
+comb 300 Hz, 8-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.050, good  9, rms 10.1 deg, raw 1350 bit/s, amp 1.7 dB
+comb 400 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.001, good 17, rms 8.6 deg, raw 1700 bit/s, amp 1.4 dB
+comb 400 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.027, good 11, rms 8.7 deg, raw 1650 bit/s, amp 1.4 dB
+comb 200 Hz, 4-DPSK, 22.5 ms symbol (20.0 useful, 2.5 prefix), offset  0 ms: 34 tones, mean SER 0.017, good 23, rms 15.7 deg, raw 2044 bit/s, amp 2.5 dB
+DQPSK fc 1700 Hz  600 baud: SER 0.0017 rms 10.3 deg
+FSK BER: V.21 ch1 300 bd 980/1180: 0.0000  V.21 ch2 300 bd 1650/1850: 0.0063  Bell103 300 bd 2025/2225: 0.0114
+=== evs:13200
+comb 200 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.444, good  5, rms 66.9 deg, raw  500 bit/s, amp 7.0 dB
+comb 200 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.631, good  2, rms 67.3 deg, raw  300 bit/s, amp 7.0 dB
+comb 300 Hz, 4-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.323, good  6, rms 55.0 deg, raw  600 bit/s, amp 7.2 dB
+comb 300 Hz, 8-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.545, good  1, rms 57.1 deg, raw  150 bit/s, amp 7.4 dB
+comb 400 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.196, good  3, rms 41.9 deg, raw  300 bit/s, amp 6.2 dB
+comb 400 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.379, good  2, rms 35.0 deg, raw  300 bit/s, amp 5.5 dB
+comb 200 Hz, 4-DPSK, 22.5 ms symbol (20.0 useful, 2.5 prefix), offset  0 ms: 34 tones, mean SER 0.298, good  4, rms 50.7 deg, raw  355 bit/s, amp 5.4 dB
+DQPSK fc 1700 Hz  600 baud: SER 0.0259 rms 18.5 deg
+FSK BER: V.21 ch1 300 bd 980/1180: 0.0000  V.21 ch2 300 bd 1650/1850: 0.0000  Bell103 300 bd 2025/2225: 0.0000
+=== evs:48000
+comb 200 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.000, good 34, rms 6.3 deg, raw 3400 bit/s, amp 0.9 dB
+comb 200 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.003, good 33, rms 6.2 deg, raw 4950 bit/s, amp 1.0 dB
+comb 300 Hz, 4-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.000, good 23, rms 5.1 deg, raw 2300 bit/s, amp 0.8 dB
+comb 300 Hz, 8-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.001, good 23, rms 5.1 deg, raw 3450 bit/s, amp 0.7 dB
+comb 400 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.000, good 17, rms 3.3 deg, raw 1700 bit/s, amp 0.5 dB
+comb 400 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.000, good 17, rms 3.5 deg, raw 2550 bit/s, amp 0.5 dB
+comb 200 Hz, 4-DPSK, 22.5 ms symbol (20.0 useful, 2.5 prefix), offset  0 ms: 34 tones, mean SER 0.000, good 34, rms 5.7 deg, raw 3022 bit/s, amp 0.9 dB
+DQPSK fc 1700 Hz  600 baud: SER 0.0000 rms 4.9 deg
+FSK BER: V.21 ch1 300 bd 980/1180: 0.0000  V.21 ch2 300 bd 1650/1850: 0.0000  Bell103 300 bd 2025/2225: 0.0000
+=== evs:96000
+comb 200 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.000, good 34, rms 1.0 deg, raw 3400 bit/s, amp 0.3 dB
+comb 200 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.000, good 34, rms 1.1 deg, raw 5100 bit/s, amp 0.3 dB
+comb 300 Hz, 4-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.000, good 23, rms 0.9 deg, raw 2300 bit/s, amp 0.3 dB
+comb 300 Hz, 8-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.000, good 23, rms 0.9 deg, raw 3450 bit/s, amp 0.3 dB
+comb 400 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.000, good 17, rms 0.5 deg, raw 1700 bit/s, amp 0.3 dB
+comb 400 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.000, good 17, rms 0.6 deg, raw 2550 bit/s, amp 0.3 dB
+comb 200 Hz, 4-DPSK, 22.5 ms symbol (20.0 useful, 2.5 prefix), offset  0 ms: 34 tones, mean SER 0.000, good 34, rms 0.9 deg, raw 3022 bit/s, amp 0.3 dB
+DQPSK fc 1700 Hz  600 baud: SER 0.0000 rms 1.4 deg
+FSK BER: V.21 ch1 300 bd 980/1180: 0.0000  V.21 ch2 300 bd 1650/1850: 0.0000  Bell103 300 bd 2025/2225: 0.0000
+=== evsio:23850
+comb 200 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.118, good 25, rms 26.9 deg, raw 2500 bit/s, amp 2.8 dB
+comb 200 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.244, good  4, rms 27.5 deg, raw  600 bit/s, amp 2.7 dB
+comb 300 Hz, 4-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.070, good 20, rms 17.6 deg, raw 2000 bit/s, amp 2.0 dB
+comb 300 Hz, 8-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.113, good 12, rms 17.2 deg, raw 1800 bit/s, amp 2.0 dB
+comb 400 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.095, good 14, rms 22.2 deg, raw 1400 bit/s, amp 2.2 dB
+comb 400 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.178, good  4, rms 22.4 deg, raw  600 bit/s, amp 2.4 dB
+comb 200 Hz, 4-DPSK, 22.5 ms symbol (20.0 useful, 2.5 prefix), offset  0 ms: 34 tones, mean SER 0.118, good 24, rms 27.5 deg, raw 2133 bit/s, amp 2.8 dB
+DQPSK fc 1700 Hz  600 baud: SER 0.0190 rms 17.5 deg
+FSK BER: V.21 ch1 300 bd 980/1180: 0.0000  V.21 ch2 300 bd 1650/1850: 0.0000  Bell103 300 bd 2025/2225: 0.0038
+=== evs:24400@1
+comb 200 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.041, good  4, rms 24.0 deg, raw  400 bit/s, amp 3.4 dB
+comb 200 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 34 tones, mean SER 0.201, good  0, rms 24.2 deg, raw    0 bit/s, amp 3.3 dB
+comb 300 Hz, 4-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.021, good  9, rms 18.6 deg, raw  900 bit/s, amp 2.9 dB
+comb 300 Hz, 8-DPSK, 20.0 ms symbol (10.0 useful, 10.0 prefix), offset  0 ms: 23 tones, mean SER 0.075, good  3, rms 17.8 deg, raw  450 bit/s, amp 2.4 dB
+comb 400 Hz, 4-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.022, good  7, rms 21.2 deg, raw  700 bit/s, amp 2.0 dB
+comb 400 Hz, 8-DPSK, 20.0 ms symbol (15.0 useful, 5.0 prefix), offset  0 ms: 17 tones, mean SER 0.055, good  1, rms 19.3 deg, raw  150 bit/s, amp 2.1 dB
+comb 200 Hz, 4-DPSK, 22.5 ms symbol (20.0 useful, 2.5 prefix), offset  0 ms: 34 tones, mean SER 0.032, good  9, rms 21.2 deg, raw  800 bit/s, amp 3.3 dB
+DQPSK fc 1700 Hz  600 baud: SER 0.0207 rms 20.8 deg
+FSK BER: V.21 ch1 300 bd 980/1180: 0.0152  V.21 ch2 300 bd 1650/1850: 0.0203  Bell103 300 bd 2025/2225: 0.0253
+done
