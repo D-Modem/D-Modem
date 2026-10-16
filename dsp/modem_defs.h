@@ -262,6 +262,10 @@ struct voice_info {
 	unsigned inactivity_timer;
 	unsigned silence_detect_sensitivity;
 	unsigned silence_detect_period;
+	/* +VTD: the duration of a +VTS element that gives none, 10 ms
+	   (0: the DCE's own, 1 s); after the library's fields, which keep
+	   their offsets */
+	unsigned tone_default;
 };
 
 /*

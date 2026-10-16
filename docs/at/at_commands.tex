@@ -834,17 +834,20 @@ the other modes):
 +VSM=\p{m},8000 & the compression method, 0 or 1, at 8000 samples/s \\
 +VLS=\p{n} & 1 takes the line for voice, 0 leaves it \\
 +VTX, +VRX, +VTR & sends, receives, or both \\
++VTD=\p{d} & the duration of a \cmd{+VTS} element that gives none, 0 to
+  6000 (0: 1~s); 100 at the start \\
 +VTS=\p{string} & plays the elements of \p{string}, separated by commas,
   in turn, and gives OK after the last; ERROR, and nothing played, if one
   cannot be.  An element is: \\
-\quad \p{s} & the DTMF digit \p{s} (0--9, *, \#, A--D) for the current
-  duration: 1.5~s at the start, then the last element's of the last
-  \cmd{+VTS} \\
-\quad \{\p{s},\p{d}\} & the DTMF digit \p{s} for \p{d} (0 to 100) \\
+\quad \p{s} & the DTMF digit \p{s} (0--9, *, \#, A--D) \\
+\quad \{\p{s},\p{d}\} & the DTMF digit \p{s} for \p{d} \\
 \quad [\p{f1},\p{f2},\p{d}] & a tone of \p{f1} and \p{f2} Hz (0 to 4000; 0
-  is none, so [0,0,\p{d}] is silence) for \p{d} (0 to 6000) \\
-& Durations are in 10~ms.  Two digits in a row get 50~ms of silence
-  between them.  \cmd{+VTS=1,2,3} dials 123. \\
+  is none) for \p{d} \\
+& Durations are in 10~ms, 0 to 6000.  A field may be left empty: a
+  frequency is then 0, a digit none (silence), and a duration
+  \cmd{+VTD}'s, so \cmd{\{5\}}, \cmd{[440]} and \cmd{[]} last \cmd{+VTD}
+  and \cmd{\{\}} is silence for as long.  Two digits in a row get 50~ms
+  of silence between them.  \cmd{+VTS=1,2,3} dials 123. \\
 \bottomrule
 \end{longtable}
 Each takes \cmd{?} (its values) and \cmd{=?} (their ranges).

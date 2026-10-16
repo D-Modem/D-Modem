@@ -287,6 +287,8 @@ const struct VoiceSetting {
 	{ "SM", 2, { &voice_info::comp_method, &voice_info::sample_rate },
 	  { 0, 8000 }, { 1, 8000 } },
 	{ "LS", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
+	{ "TD", 1, { &voice_info::tone_default, nullptr }, { 0, 0 },
+	  { 6000, 0 } },
 };
 
 /* v within the bounds lo and hi (0: none) */
@@ -1357,24 +1359,27 @@ int Modem::at_voice(char *p, int *len)
 	if (*q++ != '=')
 		return -1;
 	/* V.253's string: elements separated by commas, each a DTMF digit
-	   (0-9, *, #, A-D) for the current duration, {s,d} the digit s for
-	   d * 10 ms (0 to 100), or [f1,f2,d] a tone of f1 and f2 Hz (0:
-	   none) for d * 10 ms (0 to 6000); all of it checked before any of
-	   it plays */
+	   (0-9, *, #, A-D), {s,d} the digit s for d * 10 ms, or [f1,f2,d]
+	   a tone of f1 and f2 Hz (0 to 4000, 0: none) for d * 10 ms (0 to
+	   6000).  A field left empty is 0 for a frequency, no digit
+	   (silence) for s, and +VTD for d, so that a bare digit, {s}, [f1]
+	   and [] last +VTD; all of the string checked before any of it
+	   plays */
 	std::vector<VoiceTone> tones;
-	const unsigned dflt = voice_info_.tone_duration;
+	const unsigned dflt = voice_info_.tone_default ?
+		voice_info_.tone_default : 100;
 	for (;;) {
 		VoiceTone t = { 0, 0, 0, dflt };
 		if (*q == '[') {
-			unsigned long v[3];
+			unsigned long v[3] = { 0, 0, dflt };
 			q++;
-			for (int i = 0; i < 3; i++) {
+			for (int i = 0; i < 3 && *q != ']'; i++) {
 				if (i && *q++ != ',')
 					return -1;
-				if (!is_digit(*q))
-					return -1;
-				v[i] = number(q, &e);
-				q = e;
+				if (is_digit(*q)) {
+					v[i] = number(q, &e);
+					q = e;
+				}
 			}
 			if (*q++ != ']' || v[0] > 4000 || v[1] > 4000 ||
 			    v[2] > 6000)
@@ -1383,18 +1388,21 @@ int Modem::at_voice(char *p, int *len)
 			t.f2 = (unsigned)v[1];
 			t.d = (unsigned)v[2];
 		} else if (*q == '{') {
-			unsigned long d;
 			q++;
-			if (!dtmf_digit(*q))
+			if (dtmf_digit(*q))
+				t.dtmf = (char)upper(*q++);
+			if (*q == ',') {
+				q++;
+				if (is_digit(*q)) {
+					unsigned long d = number(q, &e);
+					q = e;
+					if (d > 6000)
+						return -1;
+					t.d = (unsigned)d;
+				}
+			}
+			if (*q++ != '}')
 				return -1;
-			t.dtmf = (char)upper(*q++);
-			if (*q++ != ',' || !is_digit(*q))
-				return -1;
-			d = number(q, &e);
-			q = e;
-			if (*q++ != '}' || d > 100)
-				return -1;
-			t.d = (unsigned)d;
 		} else if (dtmf_digit(*q)) {
 			t.dtmf = (char)upper(*q++);
 		} else {

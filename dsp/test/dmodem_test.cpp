@@ -597,7 +597,7 @@ static char dtmf_key(const short *x)
    them (0-9, *, #, A-D, bare or as {s,d}), the same digit twice as two,
    [0,0,d] as silence (after another tone too), its OK after the last
    element; a string with an element it cannot play is an ERROR, and
-   nothing of it plays */
+   nothing of it plays.  An element without a duration lasts +VTD */
 TEST(DmodemCxx, VoiceTones)
 {
 	dm::init();
@@ -662,10 +662,33 @@ TEST(DmodemCxx, VoiceTones)
 	run(25);
 	EXPECT_EQ(dte, "ERROR\r\n");
 	EXPECT_EQ(labels.find_first_not_of(' '), std::string::npos) << labels;
-	ASSERT_TRUE(m.command("AT+VTS={5,1000}"));
+	ASSERT_TRUE(m.command("AT+VTS={5,6001}"));
 	run(25);
 	EXPECT_EQ(dte, "ERROR\r\n");
 	EXPECT_EQ(labels.find_first_not_of(' '), std::string::npos) << labels;
+
+	/* +VTD=10: a bare digit, {} (silence), [440] and {9} last 100 ms */
+	ASSERT_TRUE(m.command("AT+VTD=10"));
+	run(1);
+	EXPECT_EQ(dte, "OK\r\n");
+	ASSERT_TRUE(m.command("AT+VTS=7,{},[440],{9}"));
+	run(50);
+	EXPECT_EQ(dte, "OK\r\n");
+	/* the blocks of each element (a block at each end may be shared) */
+	auto blocks = [&](char c) {
+		return std::count(labels.begin(), labels.end(), c);
+	};
+	EXPECT_GE(blocks('7'), 4) << labels;
+	EXPECT_LE(blocks('7'), 6) << labels;
+	EXPECT_GE(blocks('9'), 4) << labels;
+	EXPECT_LE(blocks('9'), 6) << labels;
+	EXPECT_GE(blocks('?'), 4) << labels;
+	EXPECT_LE(blocks('?'), 7) << labels;
+	size_t silent = std::count(labels.begin() + labels.find('7'),
+				   labels.begin() + labels.find('?'), ' ');
+	EXPECT_GE(silent, 4u) << labels;
+	EXPECT_LE(silent, 6u) << labels;
+	EXPECT_LT(ok_at, 30) << labels;
 
 	ASSERT_TRUE(m.command("AT+VLS=0"));
 }

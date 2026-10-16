@@ -315,6 +315,7 @@ void Modem::voice_init()
 	voice_info_.inactivity_timer = 0;
 	voice_info_.silence_detect_sensitivity = 128;
 	voice_info_.silence_detect_period = 50;
+	voice_info_.tone_default = 100;
 }
 
 /*

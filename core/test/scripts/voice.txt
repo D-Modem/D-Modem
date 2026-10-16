@@ -18,6 +18,11 @@ A AT+VIT=10\r
 A AT+VIT?\r
 A AT+VNH=1\r
 A AT+VNH?\r
+A AT+VTD=?\r
+A AT+VTD?\r
+A AT+VTD=6001\r
+A AT+VTD=5\r
+A AT+VTD?\r
 A AT+VTS=?\r
 A AT+VTS?\r
 A AT+VTS=[933,0,100]\r
@@ -41,6 +46,11 @@ run 200
 # two DTMF digits with the pause between them; OK after the second
 A AT+VTS={5,10},{#,10}\r
 run 400
+# +VIP gave +VTD its 100 again; bare digits last +VTD (50 ms)
+A AT+VTD?\r
+A AT+VTD=5\r
+A AT+VTS=1,2\r
+run 300
 A AT+VLS=0\r
 A AT+VLS?\r
 A AT+VLS=0\r
