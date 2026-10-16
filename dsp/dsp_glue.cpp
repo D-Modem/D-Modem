@@ -441,7 +441,7 @@ struct Voice {
 	/* tones */
 	long tone_left;
 	Osc t1, t2;
-	int tone2;
+	int tone1, tone2;      /* each sounds (its frequency is not 0) */
 	DtmfGen dtmf;
 	int tone_dtmf;
 
@@ -512,6 +512,7 @@ int Voice::command(enum VOICE_CMD cmd)
 		} else {
 			t1.set_freq(vi->tone1_freq, srate);
 			t2.set_freq(vi->tone2_freq, srate);
+			tone1 = vi->tone1_freq != 0;
 			tone2 = vi->tone2_freq != 0;
 		}
 		if (!tone_left)
@@ -585,14 +586,15 @@ int Voice::process(void *in, void *out, int count)
 		float y = 0;
 
 		if (tone_left > 0) {
+			/* a frequency of 0 is no tone: [0,0,d] is silence */
 			if (tone_dtmf)
 				y = dtmf.next();
-			else {
-				y = DSP_TX_AMPLITUDE * t1.next();
-				if (tone2)
-					y = 0.5f * y + 0.5f * DSP_TX_AMPLITUDE *
-						t2.next();
-			}
+			else if (tone1 && tone2)
+				y = 0.5f * DSP_TX_AMPLITUDE *
+					(t1.next() + t2.next());
+			else if (tone1 || tone2)
+				y = DSP_TX_AMPLITUDE *
+					(tone1 ? t1.next() : t2.next());
 			if (--tone_left == 0)
 				pending = VOICE_STATUS_OK;
 		} else if (state & VOICE_STATE_TX && !tx_end) {

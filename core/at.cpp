@@ -47,6 +47,12 @@ int upper(char c)
 	return toupper((unsigned char)c);
 }
 
+/* c a DTMF digit of V.253: 0-9, *, #, A-D (a-d) */
+bool dtmf_digit(char c)
+{
+	return c && strchr("0123456789*#ABCDabcd", c) != nullptr;
+}
+
 /* the number at p as C's strtoul() with base 0 reads it (0x hex, 0
    octal, else decimal), *end after it (p if there are no digits: 0) */
 unsigned long number(const char *p, const char **end)
@@ -1342,7 +1348,7 @@ int Modem::at_voice(char *p, int *len)
 				 voice_info_.tone2_freq,
 				 voice_info_.tone_duration);
 		else
-			snprintf(line, sizeof(line), "+VTS=0-0,0-0,0-6000");
+			snprintf(line, sizeof(line), "+VTS=0-4000,0-4000,0-6000");
 		puts(line);
 		crlf();
 		*len = q[0] == '?' ? 5 : 6;
@@ -1350,42 +1356,65 @@ int Modem::at_voice(char *p, int *len)
 	}
 	if (*q++ != '=')
 		return -1;
-	if (*q == '[') {
-		/* [f1,f2,d]: a tone of d * 10 ms */
-		unsigned long t[3] = { 0, 0, 0 };
-		const char *r = q + 1;
-		int i;
-		for (i = 0; i < 3; i++) {
-			if (i && *r++ != ',')
-				break;
-			if (!is_digit(*r))
-				break;
-			t[i] = number(r, &r);
-		}
-		if (i == 3 && *r == ']' && t[2] <= 6000) {
-			voice_info_.tone1_freq = (unsigned)t[0];
-			voice_info_.tone2_freq = (unsigned)t[1];
-			voice_info_.tone_duration = (unsigned)t[2];
-			return voice_command(VOICE_CMD_BEEP);
-		}
-	} else if (*q == '{') {
-		/* {s,d}: DTMF symbol s for d * 10 ms */
-		unsigned long s, d;
-		const char *r = q + 1;
-		if (is_digit(*r)) {
-			s = number(r, &r);
-			if (*r++ == ',' && is_digit(*r)) {
-				d = number(r, &r);
-				if (*r == '}' && d <= 100) {
-					voice_info_.dtmf_symbol = (unsigned)s;
-					voice_info_.tone_duration = (unsigned)d;
-					return voice_command(VOICE_CMD_DTMF);
-				}
+	/* V.253's string: elements separated by commas, each a DTMF digit
+	   (0-9, *, #, A-D) for the current duration, {s,d} the digit s for
+	   d * 10 ms (0 to 100), or [f1,f2,d] a tone of f1 and f2 Hz (0:
+	   none) for d * 10 ms (0 to 6000); all of it checked before any of
+	   it plays */
+	std::vector<VoiceTone> tones;
+	const unsigned dflt = voice_info_.tone_duration;
+	for (;;) {
+		VoiceTone t = { 0, 0, 0, dflt };
+		if (*q == '[') {
+			unsigned long v[3];
+			q++;
+			for (int i = 0; i < 3; i++) {
+				if (i && *q++ != ',')
+					return -1;
+				if (!is_digit(*q))
+					return -1;
+				v[i] = number(q, &e);
+				q = e;
 			}
+			if (*q++ != ']' || v[0] > 4000 || v[1] > 4000 ||
+			    v[2] > 6000)
+				return -1;
+			t.f1 = (unsigned)v[0];
+			t.f2 = (unsigned)v[1];
+			t.d = (unsigned)v[2];
+		} else if (*q == '{') {
+			unsigned long d;
+			q++;
+			if (!dtmf_digit(*q))
+				return -1;
+			t.dtmf = (char)upper(*q++);
+			if (*q++ != ',' || !is_digit(*q))
+				return -1;
+			d = number(q, &e);
+			q = e;
+			if (*q++ != '}' || d > 100)
+				return -1;
+			t.d = (unsigned)d;
+		} else if (dtmf_digit(*q)) {
+			t.dtmf = (char)upper(*q++);
+		} else {
+			return -1;
 		}
+		/* a pause of 50 ms between two digits, so that the same
+		   digit twice is two digits to the far end's receiver */
+		if (t.dtmf && !tones.empty() && tones.back().dtmf)
+			tones.push_back({ 0, 0, 0, 5 });
+		tones.push_back(t);
+		if (!*q)
+			break;
+		if (*q++ != ',')
+			return -1;
 	}
-	voice_info_.dtmf_symbol = (unsigned)number(q, &e);
-	return voice_command(VOICE_CMD_DTMF);
+	if (!voice_)
+		return -1;
+	vts_ = std::move(tones);
+	vts_next_ = 0;
+	return voice_tone_next();
 }
 
 /*

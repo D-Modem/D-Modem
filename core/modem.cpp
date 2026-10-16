@@ -1721,6 +1721,8 @@ void Modem::voice_stop()
 	later_ = Later::None;
 	VOICE_delete(voice_);
 	voice_ = nullptr;
+	vts_.clear();
+	vts_next_ = 0;
 	stop_call();
 	set_hook(MODEM_HOOK_ON);
 }
@@ -1745,9 +1747,25 @@ int Modem::voice_command(enum VOICE_CMD cmd)
 	}
 }
 
+/* the next element of the +VTS string to the voice engine: 1, or -1
+   without an engine */
+int Modem::voice_tone_next()
+{
+	const VoiceTone &t = vts_[vts_next_++];
+
+	voice_info_.tone_duration = t.d;
+	if (t.dtmf) {
+		voice_info_.dtmf_symbol = (unsigned char)t.dtmf;
+		return voice_command(VOICE_CMD_DTMF);
+	}
+	voice_info_.tone1_freq = t.f1;
+	voice_info_.tone2_freq = t.f2;
+	return voice_command(VOICE_CMD_BEEP);
+}
+
 /* the voice engine on the samples, its results to the DTE: after OK or
    ERROR the DTE's characters are commands again (those already there
-   run) */
+   run); a +VTS string's OK comes after its last element */
 void Modem::voice_process(int16_t *in, int16_t *out, int n)
 {
 	int st = VOICE_process(voice_, in, out, n);
@@ -1756,6 +1774,14 @@ void Modem::voice_process(int16_t *in, int16_t *out, int n)
 		logf("voice engine: %d, stopped\n", st);
 		voice_stop();
 		return;
+	}
+	if (st == VOICE_STATUS_OK && vts_next_ < vts_.size()) {
+		voice_tone_next();
+		return;
+	}
+	if (st == VOICE_STATUS_OK || st == VOICE_STATUS_ERROR) {
+		vts_.clear();
+		vts_next_ = 0;
 	}
 	switch (st) {
 	case VOICE_STATUS_OK:

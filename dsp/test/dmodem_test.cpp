@@ -14,6 +14,7 @@
  */
 
 #include <fcntl.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <map>
 #include <string>
@@ -552,6 +554,120 @@ TEST(DmodemCxx, CommandLines)
 	EXPECT_EQ(m.status().link, DMODEM_CONNECTING);
 	EXPECT_FALSE(m.command("AT" + std::string(200, 'S')));
 	m.hangup();
+}
+
+/* the DTMF key whose two tones dominate the 20 ms block x, ' ' for a
+   silent block, '?' for any other sound (a Goertzel filter at each of
+   the eight frequencies) */
+static char dtmf_key(const short *x)
+{
+	static const double f[8] = { 697, 770, 852, 941,
+				     1209, 1336, 1477, 1633 };
+	static const char keys[] = "123A456B789C*0#D";
+	double p[8], e = 0;
+
+	for (int i = 0; i < FRAME; i++)
+		e += (double)x[i] * x[i];
+	if (e / FRAME < 100.0 * 100.0)
+		return ' ';
+	for (int k = 0; k < 8; k++) {
+		double c = 2 * cos(2 * M_PI * f[k] / DMODEM_RATE);
+		double s1 = 0, s2 = 0;
+		for (int i = 0; i < FRAME; i++) {
+			double s0 = x[i] + c * s1 - s2;
+			s2 = s1;
+			s1 = s0;
+		}
+		/* the share of the block's energy at f[k] */
+		p[k] = 2 * (s1 * s1 + s2 * s2 - c * s1 * s2) / (FRAME * e);
+	}
+	int lo = 0, hi = 4;
+	for (int k = 1; k < 4; k++) {
+		if (p[k] > p[lo])
+			lo = k;
+		if (p[4 + k] > p[hi])
+			hi = 4 + k;
+	}
+	if (p[lo] < 0.25 || p[hi] < 0.25)
+		return '?';
+	return keys[lo * 4 + hi - 4];
+}
+
+/* AT+VTS plays its string on the line: the DTMF digits as V.253 writes
+   them (0-9, *, #, A-D, bare or as {s,d}), the same digit twice as two,
+   [0,0,d] as silence (after another tone too), its OK after the last
+   element; a string with an element it cannot play is an ERROR, and
+   nothing of it plays */
+TEST(DmodemCxx, VoiceTones)
+{
+	dm::init();
+	Dte d;
+	dm::Modem m = make("voice", d, "ATE0\r");
+	std::array<short, FRAME> in{}, out{};
+	std::string labels, dte;
+	int ok_at = -1;
+
+	/* the blocks' labels and the DTE's text until an OK or ERROR, at
+	   most n blocks */
+	auto run = [&](int n) {
+		labels.clear();
+		dte.clear();
+		ok_at = -1;
+		for (int i = 0; i < n; i++) {
+			m.process(in.data(), out.data(), FRAME);
+			m.poll_dte();
+			labels += dtmf_key(out.data());
+			dte += d.read_all();
+			if (ok_at < 0 && (dte.find("OK") != std::string::npos ||
+					  dte.find("ERROR") != std::string::npos))
+				ok_at = i;
+		}
+	};
+
+	d.read_all();
+	ASSERT_TRUE(m.command("AT+FCLASS=8"));
+	EXPECT_EQ(d.read_all(), "OK\r\n");
+	ASSERT_TRUE(m.command("AT+VLS=1"));
+	run(10);
+	ASSERT_EQ(dte, "OK\r\n");
+
+	/* a tone of 440 Hz that ends mid-cycle, 200 ms of silence, digits */
+	ASSERT_TRUE(m.command("AT+VTS=[440,0,13],[0,0,20],1,5,5,#,{a,10},*"));
+	run(12 * 50);
+	EXPECT_EQ(dte, "OK\r\n");
+	std::string keys;
+	char prev = ' ';
+	for (char c : labels) {
+		if (c != prev && strchr("0123456789*#ABCD", c))
+			keys += c;
+		prev = c;
+	}
+	EXPECT_EQ(keys, "155#A*") << labels;
+	/* the OK when the last digit is over, not before */
+	size_t last = labels.find_last_of("*");
+	ASSERT_NE(last, std::string::npos);
+	EXPECT_GE(ok_at, (int)last);
+	EXPECT_LE(ok_at, (int)last + 2);
+	/* between the 440 Hz tone and the first digit, silence: no samples
+	   at all, where a tone of 0 Hz used to send its oscillator's last
+	   value */
+	size_t tone = labels.find('?'), first = labels.find('1');
+	ASSERT_NE(tone, std::string::npos);
+	ASSERT_LT(tone, first);
+	EXPECT_GE(std::count(labels.begin() + tone, labels.begin() + first,
+			     ' '), 9) << labels;
+
+	/* a string with an element it cannot play: ERROR, and nothing */
+	ASSERT_TRUE(m.command("AT+VTS=5,X"));
+	run(25);
+	EXPECT_EQ(dte, "ERROR\r\n");
+	EXPECT_EQ(labels.find_first_not_of(' '), std::string::npos) << labels;
+	ASSERT_TRUE(m.command("AT+VTS={5,1000}"));
+	run(25);
+	EXPECT_EQ(dte, "ERROR\r\n");
+	EXPECT_EQ(labels.find_first_not_of(' '), std::string::npos) << labels;
+
+	ASSERT_TRUE(m.command("AT+VLS=0"));
 }
 
 /* the log lines (DmodemCxx.LawForEachCall) */

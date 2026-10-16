@@ -67,7 +67,7 @@
       0 A: OK\r\n
       0 A< AT+VTS=?\r
       0 A: AT+VTS=?\r\r\n
-      0 A: +VTS=0-0,0-0,0-6000\r\n
+      0 A: +VTS=0-4000,0-4000,0-6000\r\n
       0 A: OK\r\n
       0 A< AT+VTS?\r
       0 A: AT+VTS?\r\r\n
@@ -122,23 +122,26 @@
     100 A< AT+VTS=[933,0,10]\r
     100 A: AT+VTS=[933,0,10]\r\r\n
     200 A: OK\r\n
-    300 A< AT+VLS=0\r
-    300 A: AT+VLS=0\r\r\n
-    300 A: OK\r\n
-    300 A< AT+VLS?\r
-    300 A: AT+VLS?\r\r\n
-    300 A: +VLS=0\r\n
-    300 A: OK\r\n
-    300 A< AT+VLS=0\r
-    300 A: AT+VLS=0\r\r\n
-    300 A: OK\r\n
-    300 A< AT+FCLASS=0\r
-    300 A: AT+FCLASS=0\r\r\n
-    300 A: OK\r\n
-    300 A< AT+VGT?\r
-    300 A: AT+VGT?\r\r\n
-    300 A: ERROR\r\n
-    300 A< AT+FCLASS?\r
-    300 A: AT+FCLASS?\r\r\n
-    300 A: 0\r\n
-    300 A: OK\r\n
+    300 A< AT+VTS={5,10},{#,10}\r
+    300 A: AT+VTS={5,10},{#,10}\r\r\n
+    560 A: OK\r\n
+    700 A< AT+VLS=0\r
+    700 A: AT+VLS=0\r\r\n
+    700 A: OK\r\n
+    700 A< AT+VLS?\r
+    700 A: AT+VLS?\r\r\n
+    700 A: +VLS=0\r\n
+    700 A: OK\r\n
+    700 A< AT+VLS=0\r
+    700 A: AT+VLS=0\r\r\n
+    700 A: OK\r\n
+    700 A< AT+FCLASS=0\r
+    700 A: AT+FCLASS=0\r\r\n
+    700 A: OK\r\n
+    700 A< AT+VGT?\r
+    700 A: AT+VGT?\r\r\n
+    700 A: ERROR\r\n
+    700 A< AT+FCLASS?\r
+    700 A: AT+FCLASS?\r\r\n
+    700 A: 0\r\n
+    700 A: OK\r\n

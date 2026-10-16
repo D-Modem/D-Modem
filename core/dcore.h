@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <time.h>
+#include <vector>
 
 #include <modem_defs.h>
 #include <modem_dp.h>
@@ -295,6 +296,7 @@ private:
 	int voice_start();
 	void voice_stop();
 	int voice_command(enum VOICE_CMD cmd);
+	int voice_tone_next();
 	int voice_set_device(unsigned device);
 	void voice_init();
 	void fax_process(int16_t *in, int16_t *out, int n);
@@ -449,6 +451,14 @@ private:
 	int scratch_len_ = 0;
 	void *voice_ = nullptr;
 	struct voice_info voice_info_ = {};
+	/* the elements of a +VTS string, played in turn: a DTMF digit
+	   (its character), or a tone of f1 and f2 Hz (0: none); d in 10 ms */
+	struct VoiceTone {
+		char dtmf;
+		unsigned f1, f2, d;
+	};
+	std::vector<VoiceTone> vts_;
+	size_t vts_next_ = 0;
 	void *fax_ = nullptr;
 	/* the call's fax over T.38 (its data octets in a packet) */
 	bool t38_ = false;

@@ -38,6 +38,9 @@ run 100
 A AT+VLS?\r
 A AT+VTS=[933,0,10]\r
 run 200
+# two DTMF digits with the pause between them; OK after the second
+A AT+VTS={5,10},{#,10}\r
+run 400
 A AT+VLS=0\r
 A AT+VLS?\r
 A AT+VLS=0\r
