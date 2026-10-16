@@ -20,7 +20,7 @@ set(_dsp
 	dp_v34.cpp v34_tables.cpp v34_modem.cpp v34_data.cpp v90.cpp v91.cpp v92.cpp
 	dp_dummy.cpp dp_sinus.cpp)
 list(TRANSFORM _dsp PREPEND ${DMODEM_DSP_DIR}/)
-set(_t30 t30.cpp t4.cpp tiff.cpp)
+set(_t30 t30.cpp t38.cpp t4.cpp tiff.cpp)
 list(TRANSFORM _t30 PREPEND ${DMODEM_DSP_DIR}/)
 
 foreach(_lib dsp t30)

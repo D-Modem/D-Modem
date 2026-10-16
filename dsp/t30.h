@@ -16,6 +16,7 @@
 #define __T30_H__
 
 #include "t4.h"
+#include "t38.h"
 
 namespace dsp {
 
@@ -49,6 +50,12 @@ struct t30_config {
 	/* receiving: a page that came; it stays the caller's to free */
 	void (*page_received)(void *ctx, T4Page *page);
 	void *ctx;
+	/* T.38 instead of audio: what would go out on the line as IFP
+	   packets to t38_tx (paced as the line would have them, by
+	   t30_t38_time()), what comes by t30_t38_rx() */
+	int t38;
+	void (*t38_tx)(void *ctx, const struct t38_ifp *p);
+	int t38_max_data;       /* data octets in a packet (0: 300) */
 };
 
 struct t30_status {
@@ -74,6 +81,11 @@ T30 *t30_create(const struct t30_config *cfg);
 void t30_free(T30 *t);
 /* audio: n samples in and n out, 16 bit linear */
 void t30_process(T30 *t, const short *in, short *out, int n);
+/* T.38: n samples' time going by (at srate): the timers, and the
+   packets that are due */
+void t30_t38_time(T30 *t, int n);
+/* T.38: an IFP packet that came */
+void t30_t38_rx(T30 *t, const struct t38_ifp *p);
 /* how the call goes (or went) */
 void t30_get_status(T30 *t, struct t30_status *s);
 /* the far end hung up */

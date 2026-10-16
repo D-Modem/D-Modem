@@ -4,7 +4,8 @@
  *
  *    dmodem_fax.cpp - fax calls of the library (dmodem.h): a T.30 fax
  *                   machine (dsp/t30.cpp) that sends a TIFF file or
- *                   receives into one
+ *                   receives into one, on audio or over T.38 (its IFP
+ *                   packets in UDPTL, dsp/t38.cpp)
  *
  */
 
@@ -16,6 +17,7 @@
 #include "dmodem.h"
 #include "dmodem_g711.h"
 #include "t30.h"
+#include "t38.h"
 
 using namespace dsp;
 
@@ -30,6 +32,12 @@ struct dmodem_fax {
 	int pages_written;
 	int file_error;
 	char path[1024];
+	/* T.38 */
+	int t38_version, t38_max_datagram;
+	UdptlTx tx;
+	UdptlRx rx;
+	void (*t38_send)(void *ctx, const unsigned char *pkt, int len);
+	void *t38_ctx;
 };
 
 /* T.30's next page to send: 1 with *p filled, 0 when there are no more
@@ -56,6 +64,32 @@ static void page_received(void *ctx, T4Page *p)
 		f->file_error = 1;
 	else
 		f->pages_written++;
+}
+
+/* an IFP packet of T.30's: in UDPTL to t38_send */
+static void t38_tx(void *ctx, const struct t38_ifp *p)
+{
+	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
+	unsigned char ifp[UDPTL_IFP_MAX], pkt[UDPTL_IFP_MAX * 2];
+	int n = t38_ifp_encode(p, f->t38_version, ifp, sizeof(ifp)), m;
+	int max = f->t38_max_datagram < (int)sizeof(pkt) ?
+		f->t38_max_datagram : (int)sizeof(pkt);
+	if (n < 0)
+		return;
+	m = f->tx.packet(ifp, n, pkt, max);
+	if (m > 0 && f->t38_send)
+		f->t38_send(f->t38_ctx, pkt, m);
+}
+
+/* an IFP packet out of UDPTL, to T.30 (one it does not know dropped) */
+static void t38_ifp_in(void *ctx, const unsigned char *ifp, int len,
+		       unsigned seq)
+{
+	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
+	struct t38_ifp p;
+	(void)seq;
+	if (!t38_ifp_decode(&p, f->t38_version, ifp, len))
+		t30_t38_rx(f->t30, &p);
 }
 
 /* the TIFF to send opened now, the one to receive into only when a page
@@ -87,6 +121,25 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 	c.next_page = next_page;
 	c.page_received = page_received;
 	c.ctx = f;
+	if (cfg->t38) {
+		f->t38_version = cfg->t38_version;
+		/* the datagrams no longer than the other end takes: the data
+		   in a packet leaves room for the headers (the redundancy
+		   goes where it fits) */
+		f->t38_max_datagram = cfg->t38_max_datagram > 0 ?
+			cfg->t38_max_datagram : 400;
+		if (f->t38_max_datagram < 32)
+			f->t38_max_datagram = 32;
+		f->tx.init(cfg->t38_ec == DMODEM_T38_EC_REDUNDANCY ?
+			   T38_EC_REDUNDANCY : T38_EC_NONE,
+			   cfg->t38_redundancy > 0 ? cfg->t38_redundancy : 3);
+		f->rx.init();
+		f->t38_send = cfg->t38_send;
+		f->t38_ctx = cfg->t38_ctx;
+		c.t38 = 1;
+		c.t38_tx = t38_tx;
+		c.t38_max_data = f->t38_max_datagram - 16;
+	}
 	f->t30 = t30_create(&c);
 	if (!f->t30) {
 		if (f->sending)
@@ -142,6 +195,19 @@ void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s)
 void dmodem_fax_hangup(struct dmodem_fax *f)
 {
 	t30_hangup(f->t30);
+}
+
+/* a UDPTL packet: its IFP packets to T.30, in their order */
+void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
+		       int len)
+{
+	f->rx.packet(pkt, len, t38_ifp_in, f);
+}
+
+/* T.38's time going by */
+void dmodem_fax_t38_time(struct dmodem_fax *f, int n)
+{
+	t30_t38_time(f->t30, n);
 }
 
 /* T.30 freed, the files closed (NULL is fine) */

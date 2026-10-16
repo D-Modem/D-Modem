@@ -24,6 +24,15 @@
  *    block followed by RCP and then PPS on V.21: MCF if all frames came,
  *    else PPR with a map of those to send again.
  *
+ *    With T.38 (t30_config.t38) the same machine runs on IFP packets
+ *    instead of the modulations, as a T.38 terminal: each transmission
+ *    is a no-signal indicator and 75 ms, the modulation's indicator and
+ *    its training's time (V.21: a second of flags), then its data, paced
+ *    as the modulation would carry it (HDLC frames whole, without FCS;
+ *    T.4 data and the TCF's zeros), the last with its end, a tail, and
+ *    no-signal; what comes in is taken the same way, a sig-end or
+ *    no-signal for the end of the carrier.
+ *
  */
 
 #include <vector>
@@ -83,21 +92,32 @@ enum {
 #define ECM_PPRS        4       /* PPRs for a block before CTC */
 #define ECM_RNRS        60      /* RNRs answered (T5: 60 s) */
 /* the fast modulations, best first, with their DCS rate bits (11-14 as
-   bit 0-3) */
+   bit 0-3); for T.38 their data and training indicator (V.17: the short
+   training, the long one is the next) and the training's time */
 static const struct rate {
 	enum fax_mod mod;
 	int bps;
 	unsigned bits;
 	int family;                     /* 2: V.17, 1: V.29, 0: V.27ter */
+	int t38_data, t38_ind;
+	int train_ms, long_train_ms;
 } rates[] = {
-	{ FM_V17_14400, 14400, 0x8, 2 },
-	{ FM_V17_12000, 12000, 0xa, 2 },
-	{ FM_V17_9600,  9600,  0x9, 2 },
-	{ FM_V17_7200,  7200,  0xb, 2 },
-	{ FM_V29_9600,  9600,  0x1, 1 },
-	{ FM_V29_7200,  7200,  0x3, 1 },
-	{ FM_V27_4800,  4800,  0x2, 0 },
-	{ FM_V27_2400,  2400,  0x0, 0 },
+	{ FM_V17_14400, 14400, 0x8, 2, T38_DATA_V17_14400,
+	  T38_IND_V17_14400_SHORT, 142, 1393 },
+	{ FM_V17_12000, 12000, 0xa, 2, T38_DATA_V17_12000,
+	  T38_IND_V17_12000_SHORT, 142, 1393 },
+	{ FM_V17_9600,  9600,  0x9, 2, T38_DATA_V17_9600,
+	  T38_IND_V17_9600_SHORT, 142, 1393 },
+	{ FM_V17_7200,  7200,  0xb, 2, T38_DATA_V17_7200,
+	  T38_IND_V17_7200_SHORT, 142, 1393 },
+	{ FM_V29_9600,  9600,  0x1, 1, T38_DATA_V29_9600,
+	  T38_IND_V29_9600, 234, 234 },
+	{ FM_V29_7200,  7200,  0x3, 1, T38_DATA_V29_7200,
+	  T38_IND_V29_7200, 234, 234 },
+	{ FM_V27_4800,  4800,  0x2, 0, T38_DATA_V27_4800,
+	  T38_IND_V27_4800, 708, 708 },
+	{ FM_V27_2400,  2400,  0x0, 0, T38_DATA_V27_2400,
+	  T38_IND_V27_2400, 943, 943 },
 };
 #define NRATES ((int)(sizeof(rates) / sizeof(rates[0])))
 
@@ -126,6 +146,19 @@ enum state {
 	S_TX_FRAMES,
 	S_DONE,
 };
+
+/* T.38: what is going out, and its steps */
+enum t38_tx {
+	T38_TX_NONE, T38_TX_V21, T38_TX_TCF, T38_TX_PAGE, T38_TX_ECM,
+};
+enum t38_step {
+	T38_STEP_SILENCE,               /* no-signal, 75 ms */
+	T38_STEP_TRAIN,                 /* the indicator, the training */
+	T38_STEP_DATA,
+	T38_STEP_TAIL,                  /* after the end, then no-signal */
+};
+#define T38_CHUNK_MAX   300             /* data octets in a packet */
+#define T38_V21_MAX     7               /* V.21 ones (T.38 7.5) */
 
 static const char *state_name[] = {
 	"idle", "CED", "wait DCS", "receive TCF", "receive page",
@@ -235,6 +268,27 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	int last_resp_len;
 	enum state last_resp_next;
 
+	/* T.38: the transmission going out as packets */
+	int t38_kind;                   /* enum t38_tx */
+	int t38_step;                   /* enum t38_step */
+	long t38_wait;                  /* samples left in the step, -1:
+					   it starts */
+	long t38_acc;                   /* the data's time: bits x srate */
+	int t38_due;                    /* octets the line had time for */
+	int t38_debt;                   /* octets of time to go first (the
+					   frame's FCS and a flag) */
+	int t38_last_ind;               /* the indicator sent last */
+	int t38_long_train;             /* V.17: the long training */
+	unsigned char t38_frame[4 + ECM_SIZE], t38_next[4 + ECM_SIZE];
+	int t38_frame_len, t38_frame_pos, t38_next_len; /* -1: none */
+	size_t t38_t4_pos, t38_t4_len;  /* T.4 octets sent, in all */
+	/* receiving */
+	unsigned char t38_hdlc[RX_FRAME_MAX];
+	int t38_hdlc_len;                 /* the V.21 frame so far */
+	unsigned char t38_ecm[ECM_RX_MAX];
+	int t38_ecm_len;                /* the ECM frame so far */
+	int t38_heard;                  /* the fast modulation came */
+
 	void set_state(enum state s);
 	void start_timer(int ms);
 	void stop_fast();
@@ -288,6 +342,19 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	float tone(float freq);
 	float tx_sample();
 	void rx_sample(float x);
+	void take_message();
+	/* T.38 */
+	void t38_start(int kind);
+	void t38_ind(int ind);
+	void t38_data(int type, const unsigned char *d, int n, int end);
+	int t38_get_frame(unsigned char *buf);
+	void t38_flush();
+	void t38_tx_sample();
+	void t38_sample();
+	void t38_rx(const struct t38_ifp *p);
+	void t38_frame_in(const unsigned char *d, int len);
+	void t38_t4_in(const unsigned char *d, int n);
+	void t38_signal_end();
 };
 
 
@@ -398,7 +465,7 @@ static void page_bit(void *ctx, int bit);
 /* the fast receiver off, its V.17 equalizer kept in mem */
 void T30::stop_fast()
 {
-	if (fast_on) {
+	if (fast_on && !cfg.t38) {
 		fast.save(&mem);
 		fast.release();
 	}
@@ -406,12 +473,17 @@ void T30::stop_fast()
 }
 
 /* the fast receiver on at the call's rate (short_train: V.17 short
-   training, from what mem keeps); stays off when out of memory */
+   training, from what mem keeps); stays off when out of memory (T.38:
+   none, its data comes in packets) */
 void T30::start_fast(int short_train)
 {
 	stop_fast();
-	if (!fast.init(rates[rate].mod, short_train, srate,
-			 page_bit, this, &mem))
+	t38_heard = 0;
+	t38_ecm_len = 0;
+	if (cfg.t38)
+		fast_on = 1;
+	else if (!fast.init(rates[rate].mod, short_train, srate,
+			      page_bit, this, &mem))
 		fast_on = 1;
 }
 
@@ -453,10 +525,14 @@ void T30::send_frames(enum state next_)
 	if (nframes)
 		frames[nframes - 1].data[1] |= HDLC_FINAL;
 	cur_frame = 0;
-	/* a second of flags first (T.30 5.3.1), three after the last
-	   frame */
-	V21Tx::hdlc_tx_start(300 / 8 * 8, 3 * 8);
-	tx.init(FM_V21, 0, srate, V21Tx::hdlc_tx_cb, this);
+	if (cfg.t38) {
+		t38_start(T38_TX_V21);
+	} else {
+		/* a second of flags first (T.30 5.3.1), three after the
+		   last frame */
+		V21Tx::hdlc_tx_start(300 / 8 * 8, 3 * 8);
+		tx.init(FM_V21, 0, srate, V21Tx::hdlc_tx_cb, this);
+	}
 	tx_on = 1;
 	after_tx = next_;
 	set_state(S_TX_FRAMES);
@@ -832,7 +908,10 @@ static int tcf_get_bit(void *ctx)
 void T30::send_tcf()
 {
 	tcf_bits = rates[rate].bps * 3 / 2;       /* 1.5 s */
-	tx.init(rates[rate].mod, 0, srate, tcf_get_bit, this);
+	if (cfg.t38)
+		t38_start(T38_TX_TCF);
+	else
+		tx.init(rates[rate].mod, 0, srate, tcf_get_bit, this);
 	tx_on = 1;
 	set_state(S_TCF);
 }
@@ -876,8 +955,11 @@ void T30::send_page()
 	encode_page();
 	DSP_DBG("t30: page %d: %d rows, %zu bits\n", pages + 1,
 		page.rows, page_bits.n);
-	tx.init(rates[rate].mod,
-		    rates[rate].family == 2, srate, page_get_bit, this);
+	if (cfg.t38)
+		t38_start(T38_TX_PAGE);
+	else
+		tx.init(rates[rate].mod, rates[rate].family == 2, srate,
+			page_get_bit, this);
 	tx_on = 1;
 	set_state(S_PAGE);
 }
@@ -1201,11 +1283,15 @@ void T30::send_ecm_burst()
 {
 	int v17 = rates[rate].family == 2;
 	etx_frame = etx_rcp = 0;
-	/* 200 ms of flags and one more first, three after the last
-	   frame */
-	EcmTx::hdlc_tx_start(rates[rate].bps / 5 / 8 * 8 + 8, 3 * 8);
-	tx.init(rates[rate].mod, v17 && !ecm_long_train, srate,
-		EcmTx::hdlc_tx_cb, this);
+	if (cfg.t38) {
+		t38_start(T38_TX_ECM);
+	} else {
+		/* 200 ms of flags and one more first, three after the last
+		   frame */
+		EcmTx::hdlc_tx_start(rates[rate].bps / 5 / 8 * 8 + 8, 3 * 8);
+		tx.init(rates[rate].mod, v17 && !ecm_long_train, srate,
+			EcmTx::hdlc_tx_cb, this);
+	}
 	ecm_long_train = 0;
 	tx_on = 1;
 	set_state(S_ECM_TX);
@@ -1442,10 +1528,399 @@ void T30::hdlc_rx_frame(HdlcV21, const unsigned char *d, int len,
 /* a fresh V.21 receiver, no message pending */
 void T30::restart_v21()
 {
-	v21.init(FM_V21, 0, srate, V21Rx::hdlc_rx_cb, this, NULL);
+	if (!cfg.t38)
+		v21.init(FM_V21, 0, srate, V21Rx::hdlc_rx_cb, this, NULL);
 	V21Rx::hdlc_rx_reset();
 	nmsg = 0;
 	msg_ready = 0;
+	t38_hdlc_len = 0;
+}
+
+
+/*
+ *    T.38: IFP packets instead of the modulations
+ */
+
+/* the transmission of kind on its way (its packets by t38_tx_sample()):
+   kind's indicator and training; V.17 pages and ECM blocks with the
+   short one (but after CTC), the TCF with the long one */
+void T30::t38_start(int kind)
+{
+	t38_kind = kind;
+	t38_step = T38_STEP_SILENCE;
+	t38_wait = -1;
+	t38_acc = 0;
+	t38_due = 0;
+	t38_debt = 0;
+	t38_long_train = kind == T38_TX_TCF ||
+		(kind == T38_TX_ECM && ecm_long_train);
+	t38_frame_len = t38_next_len = -1;
+	t38_frame_pos = 0;
+	t38_t4_pos = 0;
+	t38_t4_len = kind == T38_TX_TCF ? (size_t)tcf_bits / 8 :
+		kind == T38_TX_PAGE ? (page_bits.n + 7) / 8 : 0;
+}
+
+/* an indicator, unless it is the last one sent (none while the
+   transmission is lost for a test) */
+void T30::t38_ind(int ind)
+{
+	struct t38_ifp p;
+	if (ind == t38_last_ind)
+		return;
+	t38_last_ind = ind;
+	memset(&p, 0, sizeof(p));
+	p.type = ind;
+	if (!tx_mute && cfg.t38_tx)
+		cfg.t38_tx(cfg.ctx, &p);
+}
+
+/* a data packet of the transmission's modulation: n octets as field
+   type (none if n is 0), then end, a field without data (-1: none) */
+void T30::t38_data(int type, const unsigned char *d, int n, int end)
+{
+	struct t38_ifp p;
+	memset(&p, 0, sizeof(p));
+	p.data = 1;
+	p.type = t38_kind == T38_TX_V21 ? T38_DATA_V21 : rates[rate].t38_data;
+	if (n > 0) {
+		p.field[p.nfields].type = type;
+		p.field[p.nfields].data = d;
+		p.field[p.nfields++].len = n;
+	}
+	if (end >= 0)
+		p.field[p.nfields++].type = end;
+	if (!tx_mute && cfg.t38_tx)
+		cfg.t38_tx(cfg.ctx, &p);
+}
+
+/* the transmission's next HDLC frame into buf, its octets the T.38 way
+   round: our V.21 frames, or the ECM block's (FCD, RCP); its length,
+   -1 after the last */
+int T30::t38_get_frame(unsigned char *buf)
+{
+	int n;
+	if (t38_kind == T38_TX_V21) {
+		if (cur_frame >= nframes)
+			return -1;
+		n = frames[cur_frame].len;
+		memcpy(buf, frames[cur_frame++].data, n);
+	} else {
+		n = hdlc_tx_next(HdlcEcm(), buf, 4 + ECM_SIZE);
+		if (n < 0)
+			return -1;
+	}
+	t38_reverse(buf, buf, n);
+	return n;
+}
+
+/* the data the line has had time for (t38_due octets), in packets of
+   the modulation's size; the last with its end, then the tail */
+void T30::t38_flush()
+{
+	unsigned char buf[T38_CHUNK_MAX];
+	int max = t38_kind == T38_TX_V21 ? T38_V21_MAX :
+		cfg.t38_max_data > 0 && cfg.t38_max_data < T38_CHUNK_MAX ?
+		cfg.t38_max_data : T38_CHUNK_MAX;
+
+	while (tx_on && t38_step == T38_STEP_DATA && t38_due > 0) {
+		int n = t38_due < max ? t38_due : max;
+		if (t38_kind == T38_TX_V21 || t38_kind == T38_TX_ECM) {
+			int left;
+			if (t38_frame_len < 0) {
+				t38_frame_len = t38_get_frame(t38_frame);
+				t38_frame_pos = 0;
+				if (t38_frame_len < 0) {
+					/* (no frame at all) */
+					t38_data(0, NULL, 0, T38_HDLC_SIG_END);
+					t38_step = T38_STEP_TAIL;
+					t38_wait = ms2samples(100, srate);
+					break;
+				}
+			}
+			left = t38_frame_len - t38_frame_pos;
+			if (n < left) {
+				t38_data(T38_HDLC_DATA, t38_frame + t38_frame_pos,
+					 n, -1);
+				t38_frame_pos += n;
+				t38_due -= n;
+				continue;
+			}
+			/* the rest of the frame: is it the last? */
+			t38_next_len = t38_get_frame(t38_next);
+			t38_data(T38_HDLC_DATA, t38_frame + t38_frame_pos, left,
+				 t38_next_len >= 0 ? T38_HDLC_FCS_OK :
+				 T38_HDLC_FCS_OK_SIG_END);
+			t38_due -= left;
+			t38_debt = 3;           /* its FCS and a flag */
+			if (t38_next_len < 0) {
+				t38_step = T38_STEP_TAIL;
+				t38_wait = ms2samples(100, srate);
+				break;
+			}
+			memcpy(t38_frame, t38_next, t38_next_len);
+			t38_frame_len = t38_next_len;
+			t38_frame_pos = 0;
+		} else {
+			/* T.4: the TCF's zeros, or the page's octets */
+			size_t left = t38_t4_len - t38_t4_pos;
+			int last = (size_t)n >= left, k;
+			if (last)
+				n = (int)left;
+			memset(buf, 0, n);
+			if (t38_kind == T38_TX_PAGE)
+				for (k = 0; k < n * 8; k++) {
+					size_t b = (t38_t4_pos + k / 8) * 8 + k % 8;
+					if (b < page_bits.n &&
+					    t4_bits_get(&page_bits, b))
+						buf[k / 8] |= 0x80 >> (k % 8);
+				}
+			t38_data(last ? T38_T4_SIG_END : T38_T4_DATA, buf, n,
+				 -1);
+			t38_t4_pos += n;
+			t38_due -= n;
+			if (last) {
+				t38_step = T38_STEP_TAIL;
+				t38_wait = ms2samples(60, srate);
+				break;
+			}
+		}
+	}
+	if (t38_step != T38_STEP_DATA)
+		t38_due = 0;
+}
+
+/* a sample's time of the transmission: its steps, and in its data the
+   octets the modulation would have sent by now */
+void T30::t38_tx_sample()
+{
+	const struct rate *r = &rates[rate];
+	int fast = t38_kind != T38_TX_V21;
+
+	if (t38_step == T38_STEP_DATA) {
+		t38_acc += fast ? r->bps : 300;
+		if (t38_acc >= 8L * srate) {
+			t38_acc -= 8L * srate;
+			if (t38_debt)
+				t38_debt--;
+			else
+				t38_due++;
+			if (t38_due >= T38_CHUNK_MAX)
+				t38_flush();
+		}
+		return;
+	}
+	if (t38_step == T38_STEP_SILENCE && t38_wait < 0) {
+		t38_ind(T38_IND_NO_SIGNAL);
+		t38_wait = ms2samples(75, srate);
+	}
+	if (--t38_wait > 0)
+		return;
+	switch (t38_step) {
+	case T38_STEP_SILENCE:
+		/* the indicator, and the training's time (HDLC: and its
+		   flags': V.21 a second, ECM 200 ms) */
+		t38_ind(!fast ? T38_IND_V21_PREAMBLE :
+			r->t38_ind + (r->family == 2 && t38_long_train));
+		t38_step = T38_STEP_TRAIN;
+		t38_wait = ms2samples(!fast ? 1000 :
+				      (t38_long_train ? r->long_train_ms :
+				       r->train_ms) +
+				      (t38_kind == T38_TX_ECM ? 200 : 0), srate);
+		break;
+	case T38_STEP_TRAIN:
+		t38_step = T38_STEP_DATA;
+		break;
+	default:
+		/* the tail is over */
+		t38_ind(T38_IND_NO_SIGNAL);
+		t38_kind = T38_TX_NONE;
+		tx_done();
+		break;
+	}
+}
+
+/* a sample's time without a transmission: CNG and CED as indicators
+   (after 200 ms of no-signal), and the end of a gap */
+void T30::t38_sample()
+{
+	if (tx_on) {
+		t38_tx_sample();
+		return;
+	}
+	switch (state) {
+	case S_CNG:
+		if (cng && count == 0)
+			t38_ind(T38_IND_NO_SIGNAL);
+		else if (cng && count == ms2samples(ANS_SILENCE_MS, srate))
+			t38_ind(T38_IND_CNG);
+		break;
+	case S_CED:
+		if (count == 0)
+			t38_ind(T38_IND_NO_SIGNAL);
+		else if (count == ms2samples(ANS_SILENCE_MS, srate))
+			t38_ind(T38_IND_CED);
+		else if (count >= ms2samples(FAX_CED_END_MS, srate))
+			send_dis();
+		break;
+	case S_GAP:
+		if (--gap <= 0)
+			(this->*after_gap)();
+		break;
+	default:
+		break;
+	}
+}
+
+/* a frame that came whole (the other end saw its FCS good) into msg[];
+   the final one makes the message ready */
+void T30::t38_frame_in(const unsigned char *d, int len)
+{
+	if (len < 3 || nmsg >= MAX_FRAMES * 2 || d[0] != HDLC_ADDR)
+		return;
+	memcpy(msg[nmsg], d, len);
+	msg_len[nmsg++] = len;
+	if (d[1] & HDLC_FINAL)
+		msg_ready = 1;
+}
+
+/* T.4 octets (the first bit at the top): the TCF's longest run of zeros,
+   or the page's bits up to its RTC */
+void T30::t38_t4_in(const unsigned char *d, int n)
+{
+	for (int k = 0; k < n * 8; k++) {
+		int bit = d[k / 8] >> (7 - k % 8) & 1;
+		if (state == S_RX_TCF) {
+			tcf_trained = 1;
+			if (bit)
+				zero_run = 0;
+			else if (++zero_run > max_zero_run)
+				max_zero_run = zero_run;
+		} else if (state == S_RX_PAGE && rx_page_on) {
+			page_heard = 1;
+			t4rx.bit(bit);
+			if (t4rx.done) {
+				/* RTC: the rest is no page */
+				page_done();
+				return;
+			}
+		} else {
+			return;
+		}
+	}
+	if (state == S_RX_PAGE)
+		start_timer(T2_MS);     /* (a page may take minutes) */
+}
+
+/* the carrier went (a sig-end, or no-signal): the TCF, page or ECM block
+   is over, and a message without its final frame ends */
+void T30::t38_signal_end()
+{
+	if (state == S_RX_TCF && tcf_trained)
+		tcf_done();
+	else if (state == S_RX_PAGE && rx_page_on && page_heard)
+		page_done();
+	else if (state == S_RX_ECM && t38_heard)
+		ecm_block_end();
+	if (nmsg)
+		take_message();
+}
+
+/* an IFP packet: indicators for the carrier, V.21 frames into messages,
+   the fast modulation's data to the TCF, the page or the ECM block */
+void T30::t38_rx(const struct t38_ifp *p)
+{
+	int k, end = 0;
+
+	if (!p->data) {
+		if (p->type == T38_IND_NO_SIGNAL) {
+			t38_signal_end();
+		} else if (p->type == T38_IND_V21_PREAMBLE) {
+			t38_hdlc_len = 0;
+		} else if (p->type >= T38_IND_V27_2400 &&
+			   p->type <= T38_IND_V17_14400_LONG) {
+			t38_heard = 1;
+			if (state == S_RX_PAGE)
+				page_heard = 1;
+		}
+		return;
+	}
+	if (p->type == T38_DATA_V21) {
+		for (k = 0; k < p->nfields; k++) {
+			const struct t38_field *f = &p->field[k];
+			switch (f->type) {
+			case T38_HDLC_DATA:
+				if (t38_hdlc_len + f->len <= RX_FRAME_MAX) {
+					t38_reverse(t38_hdlc + t38_hdlc_len, f->data,
+						    f->len);
+					t38_hdlc_len += f->len;
+				}
+				break;
+			case T38_HDLC_FCS_OK:
+			case T38_HDLC_FCS_OK_SIG_END:
+				t38_frame_in(t38_hdlc, t38_hdlc_len);
+				t38_hdlc_len = 0;
+				end |= f->type == T38_HDLC_FCS_OK_SIG_END;
+				break;
+			case T38_HDLC_FCS_BAD:
+			case T38_HDLC_FCS_BAD_SIG_END:
+			case T38_HDLC_SIG_END:
+				DSP_DBG("t30: T.38 frame: %s\n",
+					f->type == T38_HDLC_SIG_END ? "end" :
+					"bad FCS");
+				t38_hdlc_len = 0;
+				end |= f->type != T38_HDLC_FCS_BAD;
+				break;
+			default:
+				break;
+			}
+		}
+		if (msg_ready || (end && nmsg))
+			take_message();
+		return;
+	}
+	/* the fast modulation */
+	t38_heard = 1;
+	for (k = 0; k < p->nfields && state != S_DONE; k++) {
+		const struct t38_field *f = &p->field[k];
+		switch (f->type) {
+		case T38_T4_DATA:
+		case T38_T4_SIG_END:
+			t38_t4_in(f->data, f->len);
+			if (f->type == T38_T4_SIG_END)
+				t38_signal_end();
+			break;
+		case T38_HDLC_DATA:
+			if (state == S_RX_ECM &&
+			    t38_ecm_len + f->len <= ECM_RX_MAX) {
+				t38_reverse(t38_ecm + t38_ecm_len, f->data,
+					    f->len);
+				t38_ecm_len += f->len;
+				start_timer(T2_MS);
+			}
+			break;
+		case T38_HDLC_FCS_OK:
+		case T38_HDLC_FCS_OK_SIG_END:
+			if (state == S_RX_ECM)
+				ecm_frame_in(t38_ecm, t38_ecm_len);
+			t38_ecm_len = 0;
+			if (f->type == T38_HDLC_FCS_OK_SIG_END)
+				t38_signal_end();
+			break;
+		case T38_HDLC_FCS_BAD:
+		case T38_HDLC_FCS_BAD_SIG_END:
+		case T38_HDLC_SIG_END:
+			t38_ecm_len = 0;
+			if (f->type != T38_HDLC_FCS_BAD)
+				t38_signal_end();
+			break;
+		default:
+			break;
+		}
+	}
+	/* RCP: the block is over */
+	if (state == S_RX_ECM && ecm_rcp)
+		ecm_block_end();
 }
 
 
@@ -1629,21 +2104,27 @@ void T30::rx_sample(float x)
 			start_timer(T2_MS);
 		}
 	}
-	if (msg_ready ||
-	    (nmsg && !v21.carrier && V21Rx::hdlc_rx_idle())) {
-		/* a whole message (or what came before the carrier went) */
-		if (nmsg) {
-			if (cfg.sending) {
-				rx_message();
-				if (state != S_DONE)
-					sender_message();
-			} else {
-				rx_message();
-			}
+	/* a whole message (or what came before the carrier went) */
+	if (msg_ready || (nmsg && !v21.carrier && V21Rx::hdlc_rx_idle()))
+		take_message();
+}
+
+/* a message came (its frames up to the final one, or those before the
+   carrier went): to the answering machine's handling, or the calling
+   one's */
+void T30::take_message()
+{
+	if (nmsg) {
+		if (cfg.sending) {
+			rx_message();
+			if (state != S_DONE)
+				sender_message();
+		} else {
+			rx_message();
 		}
-		nmsg = 0;
-		msg_ready = 0;
 	}
+	nmsg = 0;
+	msg_ready = 0;
 }
 
 /* n samples of 16 bit audio in and out (in NULL: silence, out NULL:
@@ -1668,6 +2149,29 @@ void t30_process(T30 *t, const short *in, short *out, int n)
 	}
 }
 
+/* n samples' time of T.38: what goes out by then, and the timers */
+void t30_t38_time(T30 *t, int n)
+{
+	int i;
+	for (i = 0; i < n && t->state != S_DONE; i++) {
+		t->t38_sample();
+		t->count++;
+		if (t->timer && --t->timer == 0)
+			t->on_timeout();
+		if (t->t1 && --t->t1 == 0 && t->state == S_CNG)
+			t->finish(T30_ERR_NO_FAX);
+	}
+	if (t->state != S_DONE)
+		t->t38_flush();
+}
+
+/* a T.38 packet that came */
+void t30_t38_rx(T30 *t, const struct t38_ifp *p)
+{
+	if (t->state != S_DONE)
+		t->t38_rx(p);
+}
+
 /* a fax machine for one call; a sender with no first page ends at once
    (T30_ERR_DOCUMENT).  NULL when out of memory */
 T30 *t30_create(const struct t30_config *cfg)
@@ -1677,6 +2181,7 @@ T30 *t30_create(const struct t30_config *cfg)
 		return NULL;
 	t->cfg = *cfg;
 	t->srate = cfg->srate ? cfg->srate : 8000;
+	t->t38_last_ind = -1;
 	if (!t->cfg.max_bps)
 		t->cfg.max_bps = 14400;
 	t->result = T30_RUNNING;

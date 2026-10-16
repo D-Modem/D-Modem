@@ -53,10 +53,14 @@ dmodem_test_exe(netsim netsim.cpp test_util.cpp ${S}/dsp_util.cpp ${S}/qam.cpp
 	${S}/v34_tables.cpp)
 # the fax without a core: the modulations, T.4 and TIFF, two T.30 machines
 find_program(TIFFCP tiffcp)
-dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp
+dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp
 	${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 target_compile_definitions(fax_test PRIVATE "TIFFCP=\"${TIFFCP}\"")
 dmodem_gtest(fax_test LABELS quick)
+# T.38: its packets, UDPTL, and two T.30 machines over it
+dmodem_test_exe(t38_test t38_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp
+	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp ${_fax})
+dmodem_gtest(t38_test LABELS quick)
 # the test document for the Asterisk and FreeSWITCH fax scripts
 dmodem_test_exe(fax_doc fax_doc.cpp fax_docs.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(fax_doc PRIVATE GTest::gtest)
@@ -78,7 +82,7 @@ if(SPANDSP_FOUND)
 	# against its (fax_state_t), both ways, with and without error
 	# correction mode, ECM also with line hits
 	dmodem_test_exe(spandsp_test spandsp_test.cpp spandsp_tx.cpp
-		t30_spandsp.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp
+		t30_spandsp.cpp t38_spandsp.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp
 		${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 	target_include_directories(spandsp_test PRIVATE ${SPANDSP_INCLUDE_DIRS})
 	target_link_libraries(spandsp_test PRIVATE ${SPANDSP_LDFLAGS})

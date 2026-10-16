@@ -133,3 +133,82 @@ INSTANTIATE_TEST_SUITE_P(Law, DmodemFax,
 	[](const testing::TestParamInfo<enum dmodem_law> &i) {
 		return std::string(i.param == DMODEM_LAW_ALAW ? "alaw" : "ulaw");
 	});
+
+/* a side's UDPTL packets on their way to the other; every lose'th lost */
+struct T38Line {
+	std::vector<std::vector<unsigned char>> pkts;
+	int lose, sent;
+};
+
+static void t38_send(void *ctx, const unsigned char *pkt, int len)
+{
+	T38Line *l = static_cast<T38Line *>(ctx);
+	if (l->lose && ++l->sent % l->lose == 0)
+		return;
+	l->pkts.push_back(std::vector<unsigned char>(pkt, pkt + len));
+}
+
+/* the same document over T.38 through the API, UDPTL with redundancy
+   and every sixth packet lost each way (20 ms ticks, the packets one
+   tick late): both end OK by the DCN, complete before, the pages the
+   same */
+TEST(DmodemFaxT38, SendsTheDocument)
+{
+	std::string in = fax_file("in.tif"), out = fax_file("out.tif");
+	struct dmodem_fax_config fc = {};
+	struct dmodem_fax *sender, *receiver;
+	struct dmodem_fax_status ss = {}, rs = {};
+	T38Line ab = { {}, 6, 0 }, ba = { {}, 6, 0 };
+	int n, s_complete = -1;
+
+	ASSERT_TRUE(write_test_doc(in, true));
+	dmodem_init();
+	fc.law = DMODEM_LAW_ULAW;
+	fc.t38 = 1;
+	fc.t38_version = 0;
+	fc.t38_ec = DMODEM_T38_EC_REDUNDANCY;
+	fc.t38_max_datagram = 400;
+	fc.t38_send = t38_send;
+	fc.dir = DMODEM_FAX_SEND;
+	fc.file = in.c_str();
+	fc.ident = "+1 555 0100";
+	fc.t38_ctx = &ab;
+	sender = dmodem_fax_create(&fc);
+	ASSERT_NE(sender, nullptr);
+	fc.dir = DMODEM_FAX_RECEIVE;
+	fc.file = out.c_str();
+	fc.ident = "+1 555 0199";
+	fc.t38_ctx = &ba;
+	receiver = dmodem_fax_create(&fc);
+	ASSERT_NE(receiver, nullptr);
+
+	for (n = 0; n < 50 * 600; n++) {
+		std::vector<std::vector<unsigned char>> to_r, to_s;
+		to_r.swap(ab.pkts);
+		to_s.swap(ba.pkts);
+		for (auto &p : to_r)
+			dmodem_fax_t38_rx(receiver, p.data(), (int)p.size());
+		for (auto &p : to_s)
+			dmodem_fax_t38_rx(sender, p.data(), (int)p.size());
+		dmodem_fax_t38_time(sender, 160);
+		dmodem_fax_t38_time(receiver, 160);
+		dmodem_fax_status(sender, &ss);
+		dmodem_fax_status(receiver, &rs);
+		if (ss.complete && s_complete < 0)
+			s_complete = n;
+		if (ss.done && rs.done)
+			break;
+	}
+	printf("%d pages at %d bit/s%s in %.1f s\n", ss.pages, ss.bps,
+	       ss.ecm ? " (ECM)" : "", n / 50.0);
+	EXPECT_TRUE(ss.ok) << "sender: " << ss.result;
+	EXPECT_TRUE(rs.ok) << "receiver: " << rs.result;
+	EXPECT_TRUE(ss.done && rs.done);
+	EXPECT_GE(s_complete, 0);
+	EXPECT_EQ(ss.pages, 2);
+	EXPECT_TRUE(ss.ecm);
+	EXPECT_STREQ(ss.remote_ident, "+1 555 0199");
+	dmodem_fax_destroy(sender);
+	dmodem_fax_destroy(receiver);
+	EXPECT_TRUE(same_pages(in, out));
+}

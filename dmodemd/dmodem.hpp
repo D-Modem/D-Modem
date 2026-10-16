@@ -152,6 +152,12 @@ public:
 	}
 	/* the call went away */
 	void hangup() { dmodem_fax_hangup(p_); }
+	/* T.38: a UDPTL packet that came, the time going by */
+	void t38_rx(const unsigned char *pkt, int len)
+	{
+		dmodem_fax_t38_rx(p_, pkt, len);
+	}
+	void t38_time(int n) { dmodem_fax_t38_time(p_, n); }
 };
 
 } /* namespace dm */

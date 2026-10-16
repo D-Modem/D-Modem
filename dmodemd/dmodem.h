@@ -97,10 +97,15 @@ void dmodem_set_log(void (*fn)(const char *line));
 /*
  *    fax calls: a group 3 fax machine (T.30, V.17/V.29/V.27ter, error
  *    correction mode when the other machine has it) that sends a TIFF
- *    file (calling) or receives one (answering)
+ *    file (calling) or receives one (answering), on the audio of the line
+ *    or over T.38 (as a T.38 terminal: UDPTL packets, the time going by
+ *    told with dmodem_fax_t38_time())
  */
 
 enum dmodem_fax_dir { DMODEM_FAX_RECEIVE, DMODEM_FAX_SEND };
+
+/* T.38's UDPTL error recovery (T38FaxUdpEC) for the packets we send */
+enum dmodem_t38_ec { DMODEM_T38_EC_NONE, DMODEM_T38_EC_REDUNDANCY };
 
 struct dmodem_fax_config {
 	enum dmodem_law law;
@@ -109,6 +114,17 @@ struct dmodem_fax_config {
 	const char *ident;              /* our number (TSI/CSI), 20 chars */
 	int max_bps;                    /* 14400 if 0 */
 	int no_ecm;                     /* without error correction mode */
+	/* T.38 instead of audio: our UDPTL packets to t38_send, the other
+	   end's by dmodem_fax_t38_rx() */
+	int t38;
+	int t38_version;                /* T38FaxVersion agreed, 0 to 3 */
+	enum dmodem_t38_ec t38_ec;
+	int t38_redundancy;             /* the packets before in each (with
+					   DMODEM_T38_EC_REDUNDANCY; 0: 3) */
+	int t38_max_datagram;           /* the other end's T38FaxMaxDatagram
+					   (0: 400) */
+	void (*t38_send)(void *ctx, const unsigned char *pkt, int len);
+	void *t38_ctx;
 };
 
 struct dmodem_fax_status {
@@ -144,6 +160,12 @@ void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
 void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s);
 /* the call went away */
 void dmodem_fax_hangup(struct dmodem_fax *f);
+/* T.38: a UDPTL packet of len octets that came */
+void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
+		       int len);
+/* T.38: n samples' time (at 8000 Hz) going by: the timers, and the
+   packets due by now to t38_send */
+void dmodem_fax_t38_time(struct dmodem_fax *f, int n);
 /* also closes the received file (none if no page came) */
 void dmodem_fax_destroy(struct dmodem_fax *f);
 
