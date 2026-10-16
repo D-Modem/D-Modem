@@ -1766,6 +1766,10 @@ bool init()
 	char dom[256] = "";
 	int err;
 
+	/* nothing of a run before (start() after stop()) */
+	quitting = sip_closing = sip_closed = registered = false;
+	law_ = 0;
+
 	err = libre_init();
 	if (err) {
 		say(1, "libre: %s", strerror(err));
