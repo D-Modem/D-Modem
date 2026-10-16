@@ -40,11 +40,22 @@ The measurements were made with the D-Modem project's tools
   the raw rate given is that of the good tones.
 \item \textbf{Frame erasures.}  Frames were erased at random, independently,
   at the ratio given, and the decoder told so (its concealment ran).
+\item \textbf{Parametric probes.}  A pulse train with a known sequence of
+  periods from a lag alphabet, one period a symbol, as
+  clause~\ref{sec:parametric} defines the signal, at $-15$~dBFS rms,
+  was passed through the codec and the period of each symbol decided by
+  the normalized autocorrelation of that clause over the symbol, the
+  receiver given the symbol timing (its acquisition from the preamble
+  was not measured); 200 symbols a configuration with the 20~ms symbol
+  and 400 with the 10~ms symbol, the first two priming the codec and not
+  counted.  The stacked signal of clause~\ref{sec:stackmeas} was
+  measured the same way.
 \end{enumerate}
-The scripts (\code{measure/probe.py}, \code{probe3.py}, \code{matrix.sh})
-and the generator of the tables below (\code{tables.py}) are in the
-D-Modem repository with this document, so that the measurements can be
-repeated and extended.
+The scripts (\code{measure/probe.py}, \code{probe3.py},
+\code{probe\_pitch.py}, \code{probe\_stack.py}, \code{matrix.sh}) and
+the generator of the tables below (\code{tables.py}) are in the D-Modem
+repository with this document, so that the measurements can be repeated
+and extended.
 
 \begin{table}[htbp]
 \caption{The codec modes measured}
@@ -171,6 +182,104 @@ erased at random the comb's error ratio rises by about the erasure ratio
 itself (an erased frame is an erased symbol); the code of
 Annex~\ref{annex:rs} is dimensioned for this.
 
+\section{The parametric mode}\label{sec:pitchmeas}
+Table~\ref{tab:pitch} gives the lag symbol error ratio of the pulse
+train of clause~\ref{sec:parametric} through each codec, for the two
+alphabets of Table~\ref{tab:lags} (P20: 16 lags of 40 to 70 samples with
+the 20~ms symbol; P10: 16 lags of 20 to 35 with the 10~ms symbol) and
+for others measured: 8 lags of 40 to 96 in steps of 8, the same with the
+symbols 10~ms off the codec frame, and 32 lags of 32 to 63 at both
+symbol periods.
+
+\begin{table}[htbp]
+\caption{The pulse train's period through the codecs: lag symbol error ratio by alphabet and symbol period (raw rate in bit/s in the heading); 0 is no symbol in error}
+\label{tab:pitch}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabpitch}
+\end{table}
+
+What it shows:
+\begin{itemize}
+\item with the P20 alphabet the period came through without a symbol in
+  error through every codec and mode measured but AMR 4.75 (11 per cent)
+  and the cases with frame erasures: through AMR 7.4, AMR-WB 6.6 and EVS
+  9.6 among them, where no comb loads a tone (Tables~\ref{tab:combnb}
+  and \ref{tab:combevsnb});
+\item the P10 alphabet, at twice the rate, came through without error
+  from AMR 12.2, AMR-WB 12.65 and EVS 9.6 up and through both tandems,
+  and with 1 to 5 per cent of its symbols in error through AMR 10.2 to
+  7.4 and AMR-WB 6.6: the codec codes a lag every 5~ms subframe, and two
+  subframes a symbol are enough where it codes the lag well;
+\item the alphabet's range matters more than its size: 32 lags of 32 to
+  63 with the 20~ms symbol (250~bit/s) pass everything but AMR 7.4 (1
+  per cent) and 4.75, and with the 10~ms symbol (500~bit/s) pass AMR-WB
+  23.85 and EVS 24.4 without error but not the AMR modes; 8 lags of 40
+  to 96 (150~bit/s) are worse than 16 of 40 to 70 through every codec
+  but AMR 12.2 to 7.95.  The long lags are the less surely carried, and
+  40 to 70 samples (114 to 200~Hz, the pitch of a low voice) is the
+  range every codec carried;
+\item the position of the symbol in the codec frame makes no difference
+  (the column ``+10~ms''), as for the comb;
+\item frame erasures cost about twice their ratio in symbols (2.0 per
+  cent of the symbols at 1 per cent of the frames erased, 5 at 3): the
+  erased frame and usually the one after it;
+\item a second codec in tandem costs nothing with either alphabet (AMR
+  12.2 after AMR 12.2, and after AMR-WB 23.85); the 32-lag alphabet with
+  the 10~ms symbol shows the tandem's cost (9 and 5 per cent).
+\end{itemize}
+
+\section{The two layers in one waveform}\label{sec:stackmeas}
+The pulse train's period and the comb's phases were also measured as one
+signal, to see whether the parametric mode could ride on a comb for
+nothing: a symbol of one period of $L$ samples repeated over the 20~ms
+(periodic at $L$, so that the lag carries four bits), whose spectrum is
+the harmonics of $8000/L$~Hz between 300 and 3400~Hz, each harmonic's
+phase carrying two bits as its difference from the harmonic below (so
+that a symbol needs no reference to the symbol before it and $L$ may
+change every symbol); a timing offset of a fraction of a sample is a
+constant in those differences, which the receiver estimates by their
+fourth power, and the lowest difference is a known reference against
+the fourfold ambiguity that leaves.  Table~\ref{tab:stack} gives the
+tone symbol error ratio of the comb of clause~\ref{sec:modulation}
+(200~Hz spacing, random phases, differential in time) for comparison, of
+the harmonic signal at a fixed $L$ (without the parametric layer, so the
+harmonic comb alone), and of the signal with $L$ chosen per symbol from
+six lags of 36 to 46 (spacings of 174 to 222~Hz, whose harmonic combs
+carry most), with its lag symbol error ratio.
+
+\begin{table}[htbp]
+\caption{The two layers in one waveform (8000~Hz interface): tone symbol error ratio and raw rate; the comb of clause~\ref{sec:modulation} for comparison}
+\label{tab:stack}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabstack}
+\end{table}
+
+It works -- the lag came through without error while the harmonics
+carried data, through every codec but AMR-WB 6.6 (1 per cent) -- and it
+is not worth having:
+\begin{itemize}
+\item the reference costs two harmonics, which is more than the six lags
+  give back: 1529~bit/s against the comb's 1600 through AMR 12.2, AMR-WB
+  23.85 and EVS 24.4;
+\item where a comb is marginal the stacked signal is worse: through AMR
+  10.2 a tone symbol error ratio of 0.154 against 0.028, through AMR-WB
+  12.65 0.114 against 0.056, through EVS 13.2 0.106 against 0.036.  The
+  codec's phase error is more correlated from one symbol to the next on
+  a tone than from one tone to the next in a symbol, so a difference
+  across frequency loses to a difference in time: \rec{V.22}'s choice,
+  and \rec{V.34}'s, holds here;
+\item a harmonic, voiced-looking comb is not carried better than one
+  with random phases: at 200~Hz spacing ($L = 40$) both have a tone
+  symbol error ratio of $10^{-3}$ through AMR 12.2, both fail below
+  160~Hz spacing, and through AMR 7.4 the harmonic one is worse (0.363
+  against 0.222).  The limit on a comb's density is the codec's noise
+  against each tone, not whether the signal looks like speech.
+\end{itemize}
+The modes of clause~\ref{sec:modes} are therefore separate, and the
+probing chooses between them: the parametric mode carries 200~bit/s
+where the comb carries nothing, and costs the comb nothing where it
+carries data.
+
 \section{Cross-check of the codec implementations}\label{sec:crosscheck}
 The AMR-WB encoder and decoder used (VisualOn, OpenCORE) were run on the
 wideband comb and compared with the 3GPP reference code of \tgpp{26.173}
@@ -262,6 +371,11 @@ software modem, as the D-Modem project [b-D-Modem] has them:
   Annex~\ref{annex:v8} added to the CM and JM encoders and decoders;
 \item the V.21 modulator and demodulator for the robust mode and the
   INFO and MP messages, and the HDLC framing of V.42 for their frames;
+\item for the parametric mode, a pulse train generator (one 33-tap pulse
+  and a one-pole filter) and the normalized autocorrelation at 16 lags
+  over each symbol, with the timing search over the preamble: a few
+  dozen lines (\code{measure/probe\_pitch.py} has the generator and the
+  detector);
 \item a multitone modulator (an inverse discrete Fourier transform of
   the tone phases, the cyclic prefix prepended) and demodulator (the
   correlation of each tone over the useful part, as the probe scripts of

@@ -140,3 +140,42 @@ EVS 13.2 & 0.634 / 90$^\circ$ / 400 / 7.3 & 0.780 / 91$^\circ$ / 0 / 7.5 & 0.599
 \newcommand{\tabcrosscheck}{%
 OpenCORE AMR-NB encoder and decoder against the 3GPP TS 26.073 reference encoder and decoder, mode 12.2, 2~s of the N200 comb at 8000~Hz & decoded samples identical: 0 of 15\,840 differ \\
 VisualOn AMR-WB encoder and OpenCORE AMR-WB decoder against the 3GPP TS 26.173 reference coder and decoder, mode 23.85, 2~s of the W200 comb at 16000~Hz & decoded samples identical: 0 of 31\,680 differ \\}
+\newcommand{\tabpitch}{%
+\begin{tabular}{lcccccc}
+\toprule
+\rowcolor{ituhead}\thd{Codec} & \thd{P20: 16 lags 40--70, 20 ms (200)} & \thd{P10: 16 lags 20--35, 10 ms (400)} & \thd{8 lags 40--96, 20 ms (150)} & \thd{8 lags 40--96, 20 ms, +10 ms (150)} & \thd{32 lags 32--63, 20 ms (250)} & \thd{32 lags 32--63, 10 ms (500)} \\
+\midrule
+none (G.711) & 0 & 0 & 0 & 0 & 0 & 0 \\
+AMR 12.2 & 0 & 0 & 0 & 0 & 0 & 0.005 \\
+AMR 10.2 & 0 & 0.010 & 0 & 0 & 0 & 0.023 \\
+AMR 7.95 & 0 & 0.015 & 0 & 0 & 0 & 0.143 \\
+AMR 7.4 & 0 & 0.045 & 0.020 & 0.010 & 0.010 & 0.191 \\
+AMR 4.75 & 0.106 & 0.221 & 0.091 & 0.146 & 0.106 & 0.425 \\
+AMR-WB 23.85 & 0 & 0 & 0.025 & 0.056 & 0 & 0 \\
+AMR-WB 12.65 & 0 & 0 & 0.020 & 0.040 & 0 & 0.010 \\
+AMR-WB 6.6 & 0 & 0.038 & 0.187 & 0.197 & 0 & 0.108 \\
+EVS 9.6 & 0 & 0 & 0.010 & 0.015 & 0 & 0.083 \\
+EVS 13.2 & 0 & 0 & 0.005 & 0.010 & 0 & 0.008 \\
+EVS 24.4 & 0 & 0 & 0.025 & 0.010 & 0 & 0 \\
+AMR 12.2 + AMR 12.2 & 0 & 0 & 0 & 0.005 & 0 & 0.090 \\
+AMR-WB 23.85 + AMR 12.2 & 0 & 0 & 0.010 & 0.030 & 0 & 0.048 \\
+AMR 12.2, 1\% of the frames erased & 0.020 & 0.015 & 0.020 & 0.030 & 0.020 & 0.025 \\
+AMR 12.2, 3\% of the frames erased & 0.051 & 0.038 & 0.045 & 0.051 & 0.040 & 0.055 \\
+\bottomrule
+\end{tabular}}
+\newcommand{\tabstack}{%
+\begin{tabular}{lccccc}
+\toprule
+\rowcolor{ituhead}\thd{Codec} & \thd{Comb N200 (clause 10): SER / tones / bit/s} & \thd{Harmonic $L=40$ (200 Hz): SER / bit/s} & \thd{Harmonic $L=50$ (160 Hz): SER / bit/s} & \thd{Harmonic $L=70$ (114 Hz): SER / bit/s} & \thd{Lag per symbol: tone SER / lag SER / bit/s} \\
+\midrule
+none (G.711) & 0 / 16/16 / 1600 & 0 / 1400 & 0 / 1800 & 0 / 2500 & 0 / 0 / 1529 \\
+AMR 12.2 & 0.001 / 16/16 / 1600 & 0.001 / 1400 & 0.048 / 1800 & 0.150 / 2500 & 0.006 / 0 / 1529 \\
+AMR 10.2 & 0.028 / 8/16 / 800 & 0.065 / 1400 & 0.139 / 1800 & 0.292 / 2500 & 0.154 / 0 / 1529 \\
+AMR 7.4 & 0.222 / 0/16 / 0 & 0.363 / 1400 & 0.536 / 1800 & 0.606 / 2500 & 0.461 / 0 / 1529 \\
+AMR-WB 23.85 & 0 / 16/16 / 1600 & 0 / 1400 & 0.006 / 1800 & 0.014 / 2500 & 0.001 / 0 / 1529 \\
+AMR-WB 12.65 & 0.056 / 7/16 / 700 & 0.050 / 1400 & 0.155 / 1800 & 0.277 / 2500 & 0.114 / 0 / 1529 \\
+AMR-WB 6.6 & 0.392 / 0/16 / 0 & 0.484 / 1400 & 0.580 / 1800 & 0.633 / 2500 & 0.591 / 0.010 / 1529 \\
+EVS 13.2 & 0.036 / 10/16 / 1000 & 0.031 / 1400 & 0.108 / 1800 & 0.114 / 2500 & 0.106 / 0 / 1529 \\
+EVS 24.4 & 0 / 16/16 / 1600 & 0 / 1400 & 0.001 / 1800 & 0.003 / 2500 & 0 / 0 / 1529 \\
+\bottomrule
+\end{tabular}}

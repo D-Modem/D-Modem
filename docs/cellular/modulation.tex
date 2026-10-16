@@ -1,23 +1,26 @@
 % modulation.tex - clause 10 of v_cvm.tex: the signal set
 \subsection{Signal set}\label{sec:modes}
-The signal set has three modes, Table~\ref{tab:modes}.  A DCE shall
-support the robust mode and the narrowband mode; it may support the
-wideband mode (which needs the signal interface at 16000~Hz).
+The signal set has four modes, Table~\ref{tab:modes}.  A DCE shall
+support the robust mode and the narrowband mode; it should support the
+parametric mode, which alone carries data through the lower codec modes
+and carries the messages of clause~\ref{sec:infomod} between DCEs that
+have it; it may support the wideband mode (which needs the signal
+interface at 16000~Hz).
 
 \begin{table}[htbp]
 \caption{The modes of the signal set}
 \label{tab:modes}
-\small
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{1.6cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
 \toprule
-\rowcolor{ituhead}\thd{} & \thd{Robust (R)} & \thd{Narrowband (N)} & \thd{Wideband (W)} \\
+\rowcolor{ituhead}\thd{} & \thd{Robust (R)} & \thd{Narrowband (N)} & \thd{Wideband (W)} & \thd{Parametric (P)} \\
 \midrule
-Signal & the FSK of \rec{V.21}: channel~1 (980/1180~Hz) from the calling DCE, channel~2 (1650/1850~Hz) from the answering DCE, 300~bit/s & a comb of tones at 200, 300 or 400~Hz spacing in the band 300 to 3400~Hz (16, 11 or 8 tones), DPSK & a comb of tones at 200, 300 or 400~Hz spacing in the band 300 to 6900~Hz (33, 23 or 17 tones), DPSK \\
-Symbol & 3.33~ms (one bit) & 20~ms (a codec frame): a useful part of whole cycles of the spacing and a cyclic prefix (clause~\ref{sec:timing}); the 200~Hz comb also 22.5~ms & as N \\
-Modulation & binary FSK & DQPSK, or 8-DPSK on tones with a low enough phase error & as N \\
-Raw rate & 300~bit/s & 1600~bit/s (16 tones at 200~Hz, DQPSK, 20~ms), 1100 (11 at 300~Hz), 800 (8 at 400~Hz); half as much again with 8-DPSK & 3300~bit/s (33 tones at 200~Hz, DQPSK, 20~ms), 2300 (23 at 300~Hz), 1700 (17 at 400~Hz); half as much again with 8-DPSK \\
-Use & INFO and MP messages, control sequences; data through codecs that carry nothing else & data & data \\
-Passes (measured) & every AMR mode but 4.75, every AMR-WB mode but 6.6, every EVS mode but 9.6 wideband & AMR 12.2 (every comb), AMR 10.2 and two AMR 12.2 codecs in tandem (the 300 and 400~Hz combs), AMR-WB from 12.65, EVS 13.2 (N400) and 24.4 (every comb, 8-DPSK) & AMR-WB 23.85 (28 tones of W200), 15.85 (16 of W300), 12.65 (7 of W300); EVS 24.4 (W300), 48 and above (every comb, 8-DPSK); the super wideband combs through EVS at 48~\kbs{} and above \\
+Signal & the FSK of \rec{V.21}: channel~1 (980/1180~Hz) from the calling DCE, channel~2 (1650/1850~Hz) from the answering DCE, 300~bit/s & a comb of tones at 200, 300 or 400~Hz spacing in the band 300 to 3400~Hz (16, 11 or 8 tones), DPSK & a comb of tones at 200, 300 or 400~Hz spacing in the band 300 to 6900~Hz (33, 23 or 17 tones), DPSK & a pulse train whose period is the symbol (clause~\ref{sec:parametric}): the codec transmits it as the lag of its long-term predictor \\
+Symbol & 3.33~ms (one bit) & 20~ms (a codec frame): a useful part of whole cycles of the spacing and a cyclic prefix (clause~\ref{sec:timing}); the 200~Hz comb also 22.5~ms & as N & 20~ms (P20) or 10~ms (P10); the pulses restart at each symbol's start \\
+Modulation & binary FSK & DQPSK, or 8-DPSK on tones with a low enough phase error & as N & 16 periods, four bits a symbol: 40 to 70 samples at 8000~Hz in steps of 2 (P20), 20 to 35 (P10) \\
+Raw rate & 300~bit/s & 1600~bit/s (16 tones at 200~Hz, DQPSK, 20~ms), 1100 (11 at 300~Hz), 800 (8 at 400~Hz); half as much again with 8-DPSK & 3300~bit/s (33 tones at 200~Hz, DQPSK, 20~ms), 2300 (23 at 300~Hz), 1700 (17 at 400~Hz); half as much again with 8-DPSK & 200~bit/s (P20), 400~bit/s (P10) \\
+Use & INFO and MP messages and control sequences (the message mode, clause~\ref{sec:infomod}) where a DCE lacks the parametric mode; data where no other mode passes & data & data & the message mode between DCEs that have it; data where no comb loads four tones \\
+Passes (measured) & every AMR mode but 4.75, every AMR-WB mode but 6.6, every EVS mode but 9.6 wideband & AMR 12.2 (every comb), AMR 10.2 and two AMR 12.2 codecs in tandem (the 300 and 400~Hz combs), AMR-WB from 12.65, EVS 13.2 (N400) and 24.4 (every comb, 8-DPSK) & AMR-WB 23.85 (28 tones of W200), 15.85 (16 of W300), 12.65 (7 of W300); EVS 24.4 (W300), 48 and above (every comb, 8-DPSK); the super wideband combs through EVS at 48~\kbs{} and above & P20 without a symbol in error through every AMR mode but 4.75, AMR-WB 23.85 to 6.6, EVS 9.6 to 24.4 narrowband and two codecs in tandem; P10 without error through AMR 12.2, AMR-WB 23.85 and 12.65, EVS 9.6 to 24.4 and the tandems, and with 1 to 5 per cent of its symbols in error through AMR 10.2 to 7.4 and AMR-WB 6.6 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -38,7 +41,10 @@ the 11-tone comb at 300~Hz spacing kept $3 \cdot 10^{-3}$ while the
 set has three combs for each band and the probing chooses.  A single
 carrier at 600~baud (V.22's) passes AMR~12.2 as
 well, at 1200~bit/s; the comb carries a third more at the same symbol
-error ratio and loads itself to the codec.}
+error ratio and loads itself to the codec.  The parametric mode came
+from the same measurements, which show that the one parameter every
+codec mode but AMR 4.75 transmits to the sample is the long-term
+predictor's lag (clause~\ref{sec:parametric}, Table~\ref{tab:pitch}).}
 
 \subsection{The comb}\label{sec:comb}
 The comb's tones are at the frequencies
@@ -132,17 +138,149 @@ with $b_k = 2$ for a DQPSK tone and 3 for an 8-DPSK tone: 1600~bit/s for the
 16 DQPSK tones of N200 at the 20~ms symbol, 1100 for N300, 800 for N400,
 3300 for W200, and half as much again with 8-DPSK on all tones.  The loading of clause~\ref{sec:loading} chooses $\mathcal{L}$
 and the $b_k$; a loading with fewer than 4 tones shall not be used (the
-DCE renegotiates or retrains).
+DCE takes the parametric mode, clause~\ref{sec:loading}~e)).
+
+\subsection{The parametric mode}\label{sec:parametric}
+\subsubsection{Principle}
+The parametric mode carries the data not in a waveform but in a
+parameter the codec must transmit to describe the signal at all: the
+period of a periodic signal, which an ACELP codec codes as the lag of
+its long-term predictor in every subframe, at its lowest modes as at its
+highest (clause~\ref{sec:general}~h)).  The transmitter sends a pulse
+train whose period is the symbol; the decoder reproduces a signal with
+that period; the receiver measures it.  Neither DCE touches the codec or
+its bitstream, and the mode is a signal at the interface of
+clause~\ref{sec:pointp} like the others.
+
+\subsubsection{Signal}
+In symbol $n$, of $T$ samples, the transmitter sends pulses $L_n$ samples
+apart, the first at the symbol's start:
+\[ e(m) = \sum_{j \ge 0,\; jL_n < T} \delta(m - nT - jL_n), \qquad
+   x(m) = e(m) + 0.7\,x(m-1), \qquad s = A\,(x * h), \]
+where $L_n$ is the symbol's lag from the alphabet of
+Table~\ref{tab:lags}; the one-pole filter gives the pulses the spectral
+tilt of a glottal pulse (about $-6$~dB per octave above 400~Hz, so that
+the codec's classifier takes the signal for voiced speech); and $h$ is a
+band-pass pulse of 33 taps at 8000~Hz, the impulse response of an ideal
+band-pass from 300~Hz to the top of the codec's band (3400~Hz at the
+8000~Hz interface) under a Hamming window.  $A$ sets the level:
+$-15 \pm 2$~dBFS rms over a symbol; the signal's peak factor is 13~dB,
+and its peaks shall stay below $-1$~dBFS (clause~\ref{sec:pointp}~b)).
+At the 16000~Hz interface the lags and the pulse have twice the samples,
+so that the periods in time are the same.
+
+\subsubsection{Lag alphabets}
+\begin{table}[htbp]
+\caption{The lag alphabets (samples at 8000~Hz) and the mapping of the bits}
+\label{tab:lags}
+\centering\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l*{16}{c}}
+\toprule
+\rowcolor{ituhead}\thd{Index} & 0 & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9 & 10 & 11 & 12 & 13 & 14 & 15 \\
+\midrule
+Bits (Gray code) & 0000 & 0001 & 0011 & 0010 & 0110 & 0111 & 0101 & 0100 & 1100 & 1101 & 1111 & 1110 & 1010 & 1011 & 1001 & 1000 \\
+P20: lag $L$ ($T = 160$) & 40 & 42 & 44 & 46 & 48 & 50 & 52 & 54 & 56 & 58 & 60 & 62 & 64 & 66 & 68 & 70 \\
+P10: lag $L$ ($T = 80$) & 20 & 21 & 22 & 23 & 24 & 25 & 26 & 27 & 28 & 29 & 30 & 31 & 32 & 33 & 34 & 35 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+Each alphabet has 16 lags: four bits a symbol.  No lag of an alphabet is
+twice another or more, so that a period cannot be read as its own
+multiple, and every lag is at most $T - 16$, so that the receiver sees
+more than one period in a symbol.  The P20 lags are inside the range of
+every codec's long-term predictor (AMR: 18 to 143 samples); the shortest
+P10 lags are below AMR-WB's shortest (34 samples at 12.8~kHz, 2.66~ms)
+and pass it nonetheless (Table~\ref{tab:pitch}): a signal of period $L$
+has period $2L$ as well.  Lags above 70 samples were carried less surely
+by every codec and are not used (Appendix~\ref{app:measurements}).
+
+\subsubsection{Symbol timing}
+A transmission in the parametric mode -- a message
+(clause~\ref{sec:infomod}), a part of the probing signal L3
+(Annex~\ref{annex:probe}) or the data of phase~4 -- shall begin with the
+\emph{preamble}: eight symbols alternating the alphabet's lowest and
+highest lag (index~0 and index~15), the lowest first.  The receiver
+shall acquire the symbol timing from the preamble: the signal is
+periodic within each symbol and not across the symbol boundaries, so the
+symbol phase at which the normalized autocorrelation at the decided lag,
+summed over the preamble's symbols, is greatest is the transmitter's.
+The receiver should track the timing on the data symbols in the same
+way, for the clock difference of clause~\ref{sec:pointp}~d), and shall
+re-acquire it after a step of the received timing
+(clause~\ref{sec:timing}); in P20 a step of one codec frame is one
+symbol.
+
+\subsubsection{Receiver}
+The receiver shall decide each symbol's lag from the decoded samples
+$y$ of the symbol: for each lag $L$ of the alphabet the normalized
+autocorrelation
+\[ c(L) = \frac{\sum_{m=0}^{T-L-1} y(m)\,y(m+L)}
+   {\sqrt{\sum_{m=0}^{T-L-1} y(m)^2 \;\sum_{m=0}^{T-L-1} y(m+L)^2}}, \]
+and the lag of the greatest $c(L)$; where a smaller lag's $c$ is within
+0.02 of the greatest, the smaller lag should be taken (as the
+measurements of Appendix~\ref{app:measurements} did).  The receiver
+shall deliver, per symbol, the decided index's bits and a reliability
+(the margin of the decided $c$ over the next), as clause~\ref{sec:mapping}
+requires of a tone symbol.  Nothing of the codec's own pitch estimate is
+used: the receiver has only the decoded samples.
+
+\subsubsection{Raw rate}
+Four bits a symbol: 200~bit/s with the 20~ms symbol, 400 with the 10~ms
+symbol.  The probing chooses the symbol period, and chooses the
+parametric mode only where no comb loads four tones
+(clause~\ref{sec:loading}~e)): a comb of four DQPSK tones carries what
+P10 does, and every comb that passes a codec mode carries more.
+
+\itunote{The mode rests on one measured fact (Appendix~\ref{app:measurements},
+Table~\ref{tab:pitch}): with the P20 alphabet, the period of the pulse
+train came through every mode of AMR but 4.75~\kbs{}, every mode of
+AMR-WB measured down to 6.6, EVS from 9.6~\kbs{} and two codecs in
+tandem without a symbol in error in 198, while the combs carry nothing
+through AMR 7.4, AMR-WB 6.6 or EVS 9.6 and V.21's FSK has a bit error
+ratio of $4 \cdot 10^{-3}$ to $6 \cdot 10^{-3}$ through AMR 7.4 and up
+to $3 \cdot 10^{-2}$ through EVS 9.6.  A codec at those modes spends
+its bits on the spectral envelope and the pitch and codes the lag to the
+sample (AMR: 8 or 9 bits in a frame's first subframe and 4 to 6 relative
+to it in the others, at every mode); what it drops is the excitation's
+detail, which is where a waveform's phases live.  With frame erasures
+the mode's symbol error ratio is about twice the erasure ratio: the
+erased frame, whose concealment repeats the previous lag, and often the
+frame after it.}
+
+\itunote{The two layers -- the comb's phases and the pulse train's
+period -- were also measured as one waveform, with the comb's spacing as
+the pitch: a symbol of one period of $L$ samples repeated, periodic at
+$L$ so that the lag carries four bits, with a spectrum of harmonics of
+$f_s/L$ whose phases carry the comb's bits as differences across
+frequency, so that $L$ may change every symbol
+(Appendix~\ref{app:measurements}, Table~\ref{tab:stack}).  It works and
+is not worth having.  The lag's four bits cost the harmonics a reference
+and come to 1529~bit/s against the comb's 1600 through AMR 12.2, AMR-WB
+23.85 and EVS 24.4; where a comb is marginal the stacked signal is worse
+(a tone symbol error ratio of 0.154 against 0.028 through AMR 10.2),
+because the codec's phase error is more correlated from one symbol to
+the next on a tone than from one tone to the next in a symbol, so that a
+difference across frequency loses to \rec{V.22}'s difference in time;
+and a harmonic, voiced-looking comb is not carried better than one with
+random phases (both $10^{-3}$ at 200~Hz spacing through AMR 12.2; the
+harmonic one worse through AMR 7.4).  The modes are therefore separate,
+and the probing chooses.}
 
 \subsection{Control sequences during data}\label{sec:control}
 A DCE that wishes to renegotiate (clause~\ref{sec:reneg}) shall send, in
-place of data, the control sequence: eight consecutive symbols with the
-phase difference $180^\circ$ on every loaded tone, then its MP in the
-robust mode.  A receiver that decodes four such symbols in a row shall
+place of data, the control sequence, then its MP in the message mode
+(clause~\ref{sec:infomod}).  In the comb modes the control sequence is
+eight consecutive symbols with the phase difference $180^\circ$ on every
+loaded tone; a receiver that decodes four such symbols in a row shall
 stop delivering data to the inner decoder, flush, answer with the same
 sequence if it has not sent one, and proceed to the MP exchange.  The
 sequence cannot occur in scrambled data for more than two symbols with a
-probability above $10^{-9}$ on 8 tones.
+probability above $10^{-9}$ on 8 tones.  In the parametric mode the
+control sequence is sixteen consecutive symbols at the alphabet's lowest
+lag (index~0), and a receiver that decodes ten in a row acts as above
+(ten equal symbols occur in scrambled data with a probability of
+$2^{-36}$ at any position).
 
 \subsection{Scrambling}
 The bits given to the mapping of clause~\ref{sec:mapping} shall be
@@ -156,7 +294,9 @@ each renegotiation.
 A DCE may keep, for the last number dialled or answered, the loading and
 the symbol period of the last call, and offer them in INFO0 as the mode
 to start with.  If its peer accepts in its INFO0, phase~2 is reduced to L1 of
-0.5~s for a check of the loading, and the DCEs proceed to phase~3; this
+0.5~s for a check of the loading (or, where the loading kept is the
+parametric mode, to the part of L3 for its symbol period), and the DCEs
+proceed to phase~3; this
 is in the manner of \rec{V.92}'s quick connect.  A loading so offered
 shall still be checked by the receiver against the thresholds of
 clause~\ref{sec:loading}.

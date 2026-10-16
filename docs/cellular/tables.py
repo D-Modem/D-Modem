@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Neo-Desktop
 # tables.py <matrix.txt> <probe.txt> <probe3.txt> <probe3_wb.txt>
 #           <probe_evs8.txt> <probe_evs16.txt> <probe_evs32.txt> <cross.tex>
-#           > measured.tex
+#           <pitch.txt> <pitch_evs.txt> <stack.txt> > measured.tex
 #
 # The tables of Appendices I and II of v_cvm.tex from the measurement logs
 # (measure/logs/, made by the scripts of measure/): matrix.txt from
@@ -10,7 +10,9 @@
 # probe.txt and probe3.txt from probe.py and probe3.py at the 8000 Hz
 # interface, probe3_wb.txt from probe3.py at 16000 Hz, probe_evs*.txt
 # from probe_evs.py at 8000, 16000 and 32000 Hz; cross.tex has the rows
-# of the cross-check table.  Prints LaTeX.
+# of the cross-check table; pitch.txt and pitch_evs.txt from
+# probe_pitch.py (the parametric mode) and stack.txt from probe_stack.py
+# (the two layers in one waveform), all at 8000 Hz.  Prints LaTeX.
 import re
 import sys
 
@@ -216,8 +218,101 @@ def tone_table(blocks):
     return "\n".join(res)
 
 
+# the order of the codecs in the parametric mode's tables
+CODEC_ORDER = ["none", "amr:12.2", "amr:10.2", "amr:7.95", "amr:7.4",
+               "amr:4.75", "amrwb:23.85", "amrwb:12.65", "amrwb:6.6",
+               "evs:9600", "evs:13200", "evs:24400", "amr:12.2+amr:12.2",
+               "amrwb:23.85+amr:12.2", "amr:12.2@1", "amr:12.2@3"]
+
+
+def ordered(blocks):
+    """the codecs of blocks in CODEC_ORDER, the rest after in their order"""
+    return ([c for c in CODEC_ORDER if c in blocks] +
+            [c for c in blocks if c not in CODEC_ORDER])
+
+
+def ser_cell(ser):
+    return "0" if ser < 0.0005 else "%.3f" % ser
+
+
+def pitch_table(blocks, want):
+    """the parametric mode: rows per codec, columns the configurations in
+    want (list of (alphabet name, symbol ms, offset ms)): the lag symbol
+    error ratio"""
+    def key(l):
+        m = re.match(r"pitch (.+?)\s+([\d.]+) ms symbol(, \+10 ms)?\s*: "
+                     r"SER ([\d.]+), mean miss ([\d.]+) steps, raw\s*(\d+) bit/s", l)
+        if not m:
+            return None
+        name, ms, off, ser, miss, raw = m.groups()
+        return ((name.strip(), float(ms), 10 if off else 0),
+                (float(ser), float(miss), int(raw)))
+    found = {c: {} for c in blocks}
+    for c, lines in blocks.items():
+        for l in lines:
+            k = key(l)
+            if k:
+                found[c][k[0]] = k[1]
+    heads = []
+    for name, ms, off, label in want:
+        raws = [found[c][(name, ms, off)][2] for c in found
+                if (name, ms, off) in found[c]]
+        heads.append("\\thd{%s, %g ms%s (%d)}" %
+                     (label, ms, ", +10 ms" if off else "", raws[0] if raws else 0))
+    out = ["\\begin{tabular}{l%s}" % ("c" * len(want)), "\\toprule",
+           "\\rowcolor{ituhead}\\thd{Codec} & " + " & ".join(heads) + " \\\\",
+           "\\midrule"]
+    for c in ordered(blocks):
+        cells = []
+        for name, ms, off, _ in want:
+            v = found[c].get((name, ms, off))
+            cells.append(ser_cell(v[0]) if v else "")
+        if any(cells):
+            out.append(esc(codec_name(c)) + " & " + " & ".join(cells) + " \\\\")
+    out += ["\\bottomrule", "\\end{tabular}"]
+    return "\n".join(out)
+
+
+def stack_table(blocks, lags=(40, 50, 70)):
+    """the two layers in one waveform: the comb for comparison, the
+    harmonic signal at fixed lags, and the lag chosen per symbol"""
+    heads = ["\\thd{Comb N200 (clause 10): SER / tones / bit/s}"]
+    heads += ["\\thd{Harmonic $L=%d$ (%.0f Hz): SER / bit/s}" % (L, 8000.0 / L)
+              for L in lags]
+    heads.append("\\thd{Lag per symbol: tone SER / lag SER / bit/s}")
+    out = ["\\begin{tabular}{l%s}" % ("c" * len(heads)), "\\toprule",
+           "\\rowcolor{ituhead}\\thd{Codec} & " + " & ".join(heads) + " \\\\",
+           "\\midrule"]
+    for c in ordered(blocks):
+        comb = fixed = per = None
+        fixed = {}
+        for l in blocks[c]:
+            m = re.match(r"\s*comb .*: SER ([\d.]+), (\d+)/(\d+) tones,\s*(\d+) bit/s", l)
+            if m:
+                comb = m.groups()
+            m = re.match(r"\s*harmonic L=\s*(\d+) .*: SER ([\d.]+),.*,\s*(\d+) bit/s", l)
+            if m:
+                fixed[int(m.group(1))] = (float(m.group(2)), int(m.group(3)))
+            m = re.match(r"\s*harmonic, lag per symbol \((\d+) lags (\d+)-(\d+)\): "
+                         r"tone SER ([\d.]+), pitch SER ([\d.]+),.*,\s*(\d+) bit/s", l)
+            if m:
+                per = m.groups()
+        if not comb:
+            continue
+        cells = ["%s / %s/%s / %s" % (ser_cell(float(comb[0])), comb[1], comb[2], comb[3])]
+        for L in lags:
+            v = fixed.get(L)
+            cells.append("%s / %d" % (ser_cell(v[0]), v[1]) if v else "")
+        cells.append("%s / %s / %s" % (ser_cell(float(per[3])), ser_cell(float(per[4])), per[5])
+                     if per else "")
+        out.append(esc(codec_name(c)) + " & " + " & ".join(cells) + " \\\\")
+    out += ["\\bottomrule", "\\end{tabular}"]
+    return "\n".join(out)
+
+
 def main():
-    mat, probe, probe3, probe3_wb, evs8, evs16, evs32, cross = sys.argv[1:9]
+    (mat, probe, probe3, probe3_wb, evs8, evs16, evs32, cross,
+     pitch, pitch_evs, stack) = sys.argv[1:12]
     b1 = parse_probe(probe)
     b3 = parse_probe(probe3)
     b3w = parse_probe(probe3_wb)
@@ -236,6 +331,16 @@ def main():
     print("\\newcommand{\\tabcombevswb}{%\n" + comb_table(e16, want_evs, True) + "}")
     print("\\newcommand{\\tabcombevsswb}{%\n" + comb_table(e32, want_evs, True) + "}")
     print("\\newcommand{\\tabcrosscheck}{%\n" + open(cross).read().strip() + "}")
+    pb = parse_probe(pitch)
+    pb.update(parse_probe(pitch_evs))
+    want_pitch = [("16 lags 40-70 step 2", 20.0, 0, "P20: 16 lags 40--70"),
+                  ("16 lags 20-35", 10.0, 0, "P10: 16 lags 20--35"),
+                  ("8 lags 40-96 step 8", 20.0, 0, "8 lags 40--96"),
+                  ("8 lags 40-96 step 8", 20.0, 10, "8 lags 40--96"),
+                  ("32 lags 32-63", 20.0, 0, "32 lags 32--63"),
+                  ("32 lags 32-63", 10.0, 0, "32 lags 32--63")]
+    print("\\newcommand{\\tabpitch}{%\n" + pitch_table(pb, want_pitch) + "}")
+    print("\\newcommand{\\tabstack}{%\n" + stack_table(parse_probe(stack)) + "}")
 
 
 main()

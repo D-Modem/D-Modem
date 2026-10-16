@@ -191,6 +191,12 @@ leaves it usable and replaces only what the codec breaks:
   a symbol every codec frame or two, in the band the codec carries; the
   tones are loaded by the probing, and the mode is renegotiated as the
   codec's mode changes, in the manner of V.34's rate renegotiation;
+\item where no comb passes -- AMR at 7.95 and 7.4~\kbs{}, AMR-WB at
+  6.6, EVS at 9.6 -- a parametric mode carries the data as the period of
+  a pulse train, which the codec transmits as the lag of its long-term
+  predictor: 200~bit/s, or 400 through codec modes that carry the shorter
+  symbol, without error where no waveform passes; it also carries the
+  procedures' messages;
 \item a Reed-Solomon code with interleaving (the code of ITU-T G.975)
   corrects the codec's errors and the erasures of lost frames, and
   V.42's LAPM, V.42bis and V.44 run above it unchanged;
@@ -201,12 +207,14 @@ The measured raw rate of the signal set is 1600~bit/s through AMR at
 12.2~\kbs{}, 800 through EVS at 13.2~\kbs{}, 2200 to 2800 through
 AMR-WB and EVS at 24.4~\kbs{} wideband, 4950 through EVS at 48~\kbs{}
 and 10\,350 through EVS at 128~\kbs{} super wideband; the bound for any
-signal set is the codec's own bit rate.  Through AMR at 7.4~\kbs{} and
-below, only the 300~bit/s of V.21 passes.
+signal set is the codec's own bit rate.  Through AMR at 7.95 and
+7.4~\kbs{}, AMR-WB at 6.6 and EVS at 9.6, the parametric mode carries 200
+to 400~bit/s without error where no waveform does; through AMR at
+4.75~\kbs{} nothing passes.
 
 \section*{Keywords}
-AMR, AMR-WB, data over voice, EVS, modem, speech codec, V.22, V.8, VoLTE,
-VoNR.
+AMR, AMR-WB, data over voice, EVS, long-term predictor, modem, pitch
+lag, speech codec, V.22, V.8, VoLTE, VoNR.
 
 \clearpage
 \thispagestyle{plain}
@@ -229,8 +237,8 @@ speech bearers of earlier networks.  It specifies:
 \item the start-up procedures, built on \rec{V.8} (clause~\ref{sec:startup});
 \item the probing of the path and the selection of a mode of operation
   (clause~\ref{sec:probing});
-\item the signal set: its modulation modes, symbol timing and tone
-  loading (clause~\ref{sec:modulation});
+\item the signal set: the combs, their symbol timing and tone loading,
+  and the parametric mode (clause~\ref{sec:modulation});
 \item error control, framing and the use of \rec{V.42}, \rec{V.42bis} and
   \rec{V.44} above it (clause~\ref{sec:error});
 \item the DTE interface, as additions to \rec{V.250} (clause~\ref{sec:dte});
@@ -306,9 +314,15 @@ This Recommendation defines the following terms:
 \item[comb] the set of tones of the signal set, at a common spacing.
 \item[tone symbol] the information carried by one tone in one modulation
   symbol: a phase difference from the tone's previous symbol.
-\item[mode] a signal set, a comb, a symbol period, a modulation order and
-  a code rate, agreed between the DCEs by the probing procedure.
+\item[mode] a signal set, a comb or a lag alphabet, a symbol period, a
+  modulation order and a code rate, agreed between the DCEs by the
+  probing procedure.
 \item[loading] the set of tones in use and the modulation order of each.
+\item[lag alphabet] the set of periods the parametric mode uses with a
+  symbol period (clause~\ref{sec:parametric}).
+\item[lag symbol] the information carried by one symbol of the parametric
+  mode: the period of the pulse train in it, one of the lag alphabet's
+  values.
 \end{description}
 
 \section{Abbreviations and acronyms}
@@ -390,12 +404,19 @@ Appendix~\ref{app:measurements}, are:
 \item the codec's mode (its bit rate) is chosen by the network and
   changes during the call; the noise changes with it;
 \item the one-way delay is 100 to 300~ms, and differs between the two
-  directions.
+  directions;
+\item the lag of the long-term predictor is transmitted at every mode of
+  every codec, to the sample, since nothing of voiced speech survives
+  without it: the period of a periodic signal came through every codec
+  mode measured but AMR at 4.75~\kbs{}, where no waveform did
+  (Appendix~\ref{app:measurements}, Table~\ref{tab:pitch}).
 \end{enumerate}
 Nothing in the path is a linear channel; the effects of a) to c) are
 those of a channel with a noise floor some 10 to 15~dB below the signal,
 and the design of this Recommendation is a modem for such a channel, with
-the measures of e) to g) around it.
+the measures of e) to g) around it; the parametric mode of
+clause~\ref{sec:parametric} is a modem for h), for where that channel
+closes.
 
 \itunote{The throughput of any signal set through a codec is bounded by
 the codec's bit rate: 12.2~\kbs{} for AMR at its highest mode, 23.85 for
@@ -419,7 +440,7 @@ replaces.
 Start-up & \rec{V.8}: ANSam, CI, CM, JM, CJ, in V.21 (300~bit/s FSK, which the codecs carry) & capability indication (Annex~\ref{annex:v8}) \\
 Fallback & \rec{V.22} (1200~bit/s, through AMR 12.2) and \rec{V.21} (300~bit/s, through every mode), as they are & -- \\
 Probing & the principle of \rec{V.34} clause 10: a multitone probing signal, INFO exchanges, MP parameter exchange, rate renegotiation and retrain & the probing signals and the parameters exchanged (clause~\ref{sec:probing}) \\
-Modulation & the differential phase modulation of \rec{V.22} per tone; the multitone structure of ADSL (\rec{G.992.1}) with a cyclic prefix & the comb, symbol timing and loading (clause~\ref{sec:modulation}) \\
+Modulation & the differential phase modulation of \rec{V.22} per tone; the multitone structure of ADSL (\rec{G.992.1}) with a cyclic prefix & the comb, symbol timing and loading (clause~\ref{sec:modulation}); the parametric mode on the codec's pitch lag (clause~\ref{sec:parametric}) \\
 Inner code & the Reed-Solomon code of \rec{G.975} over GF($2^8$), shortened & its interleaving over symbols and frames (Annex~\ref{annex:rs}) \\
 Link layer & \rec{V.42} LAPM with its detection phase, \rec{V.42bis} and \rec{V.44} compression & -- \\
 DTE interface & \rec{V.250} & the +MS values, S-registers and result codes of clause~\ref{sec:dte} \\
@@ -447,7 +468,7 @@ retrain.  If either DCE lacks the capability, the call continues as a
     text width=2.7cm,align=center},
   arr/.style={-{Latex[length=2.2mm]},thick}]
 \node[ph] (p1) {Phase 1\\V.8 session\\ANSam, CI, CM, JM};
-\node[ph,right=0.5cm of p1] (p2) {Phase 2\\probing\\comb, INFO};
+\node[ph,right=0.5cm of p1] (p2) {Phase 2\\probing\\L1--L3, INFO};
 \node[ph,right=0.5cm of p2] (p3) {Phase 3\\parameters\\MP, loading};
 \node[ph,right=0.5cm of p3] (p4) {Phase 4\\data\\RS, LAPM};
 \draw[arr] (p1) -- (p2); \draw[arr] (p2) -- (p3); \draw[arr] (p3) -- (p4);
@@ -500,10 +521,12 @@ At reference point P:
   (narrowband operation) or 16000~Hz (wideband operation).  A DCE shall
   support 8000~Hz and may support 16000~Hz.  The rate is the terminal's;
   the DCE learns the band the path carries by probing, not from the rate.
-\item the DCE's transmitted signal shall not exceed $-9$~dBFS in any
-  20~ms frame and should be at $-12 \pm 2$~dBFS in the data phases, so
-  that no terminal gain stage limits it and the codec's gain quantizers
-  are in their range.  The received level is whatever the path delivers;
+\item the DCE's transmitted signal shall not exceed $-9$~dBFS rms in
+  any 20~ms frame and should be at $-12 \pm 2$~dBFS in the comb modes
+  and $-15 \pm 2$~dBFS in the parametric mode (whose pulse train has a
+  peak factor of 13~dB, clause~\ref{sec:parametric}), so that no
+  terminal gain stage limits it and the codec's gain quantizers are in
+  their range.  The received level is whatever the path delivers;
   the DCE shall accept $-30$ to $-3$~dBFS.
 \item the terminal should pass the samples to and from the speech codec
   without acoustic processing (echo cancellation, noise suppression,
@@ -568,8 +591,8 @@ rather than fail at V.34 and renegotiate.}
 The DCEs' timers for the V.8 procedures are \rec{V.8}'s.  The probing of
 clause~\ref{sec:probing} shall begin within 200~ms of the end of the V.8
 procedures and shall be complete, with the first data symbols sent,
-within 12~s (each direction's INFO0, L1, L2 and INFO1 take about 5~s at
-300~bit/s for the messages); a DCE that has not received its peer's
+within 16~s (each direction's INFO0, L1, L2, L3 and INFO1 take about 7~s
+with the messages at 200~bit/s); a DCE that has not received its peer's
 INFO0 within 6~s of the end of the V.8 procedures shall fall back to
 V.22 by restarting the V.8 procedures, once.
 
@@ -601,8 +624,11 @@ Figure~\ref{fig:probing} shows:
   comb;
 \item \textbf{L2}: the 200~Hz comb with the 22.5~ms symbol, for 0.5~s, so
   that the receiver may compare the two symbol periods;
+\item \textbf{L3}, where the DCE indicated the parametric mode: that
+  mode's probing signal of Annex~\ref{annex:probe}, 40 symbols of P20
+  and 80 of P10 with lags known to both, each part with its preamble;
 \item silence for 100~ms, then \textbf{INFO1}: what it measured of its
-  peer's L1 and L2 as the loading it asks for (clause~\ref{sec:loading}),
+  peer's L1 to L3 as the loading it asks for (clause~\ref{sec:loading}),
   and its own round-trip estimate.
 \end{enumerate}
 The calling DCE transmits first; the answering DCE begins its INFO0 on
@@ -613,37 +639,49 @@ and INFO0a.  The probing signal's level is $-12$~dBFS.
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[x=1cm,y=1cm,font=\footnotesize]
-\draw[->] (0,0) -- (14.6,0) node[right] {$t$};
+\draw[->] (0,0) -- (18.2,0) node[right] {$t$};
 \node[left] at (0,0.75) {calling};
 \node[left] at (0,-0.75) {answering};
-\foreach \x/\w/\n in {0.2/1.4/INFO0,1.8/3.0/L1,5.0/1.0/L2,6.4/1.8/INFO1} {
+\foreach \x/\w/\n in {0.2/1.4/INFO0,1.8/3.0/L1,5.0/1.0/L2,6.2/1.6/L3,8.0/1.8/INFO1} {
   \draw[fill=ituhead] (\x,0.35) rectangle ++(\w,0.8) node[midway] {\n};}
-\foreach \x/\w/\n in {8.4/1.4/INFO0,10.0/2.4/L1,12.6/0.8/L2,13.6/0.9/INFO1} {
+\foreach \x/\w/\n in {10.0/1.4/INFO0,11.6/2.4/L1,14.2/0.8/L2,15.2/1.2/L3,16.6/0.9/INFO1} {
   \draw[fill=ituhead] (\x,-1.15) rectangle ++(\w,0.8) node[midway] {\n};}
-\draw[dashed] (8.3,-1.3) -- (8.3,1.3);
-\node[above] at (8.3,1.3) {end of the calling INFO1};
+\draw[dashed] (9.9,-1.3) -- (9.9,1.3);
+\node[above] at (9.9,1.3) {end of the calling INFO1};
 \end{tikzpicture}}
 \caption{Phase 2: the probing signals (durations not to scale)}
 \label{fig:probing}
 \end{figure}
 
-\subsection{Modulation of the INFO and MP messages}\label{sec:infomod}
+\subsection{Modulation of the INFO and MP messages: the message mode}\label{sec:infomod}
 INFO0, INFO1 and the MP messages of clause~\ref{sec:phase3} shall be
-transmitted in the \emph{robust mode} of clause~\ref{sec:modes}: the FSK
-of \rec{V.21} at 300~bit/s, channel~1 from the calling DCE and channel~2
-from the answering DCE as \rec{V.8} uses them for CM and JM, as HDLC
-frames (flags, FCS) of \rec{V.42} with the message's octets as the
-information field.  Each message is sent twice; the receiver takes the
-first copy whose FCS checks.  V.21's bit error ratio was measured below
-$10^{-2}$ through every mode of AMR but 4.75~\kbs{}, of AMR-WB but 6.6,
-and of EVS but 9.6 wideband (Appendix~\ref{app:measurements},
-Table~\ref{tab:fsk}).
+transmitted in the \emph{message mode}, which is:
+\begin{enumerate}[label=\alph*)]
+\item where both DCEs indicated the parametric mode in CM and JM
+  (Annex~\ref{annex:v8}), the parametric mode with the 20~ms symbol
+  (P20, clause~\ref{sec:parametric}): the preamble of that clause, then
+  the message's bits four to a lag symbol as clause~\ref{sec:mapping}
+  maps them, unscrambled, padded with flags to whole symbols;
+\item otherwise the \emph{robust mode} of clause~\ref{sec:modes}: the FSK
+  of \rec{V.21} at 300~bit/s, channel~1 from the calling DCE and
+  channel~2 from the answering DCE as \rec{V.8} uses them for CM and JM.
+\end{enumerate}
+A message is an HDLC frame (flags, FCS) of \rec{V.42} with the message's
+octets as the information field.  Each message is sent twice; the
+receiver takes the first copy whose FCS checks.  V.21's bit error ratio
+was measured below $10^{-2}$ through every mode of AMR but 4.75~\kbs{},
+of AMR-WB but 6.6, and of EVS but 9.6 wideband
+(Appendix~\ref{app:measurements}, Table~\ref{tab:fsk}); the parametric
+mode's lag symbol error ratio was zero through all of them but AMR 4.75
+(Table~\ref{tab:pitch}), which is why it carries the messages where both
+DCEs have it.
 
 \itunote{V.34 modulates INFO and MP at 600~bit/s with differential phase
 modulation on two tones.  Through AMR at 7.4~\kbs{} and below no
 differential phase modulation measured kept a symbol error ratio below
 $10^{-1}$, while 300~bit/s FSK did (Table~\ref{tab:fsk}); so this
-Recommendation sends its messages as V.8 sends CM and JM.}
+Recommendation sends its messages as V.8 sends CM and JM, or on the
+codec's pitch lag, which is surer still.}
 
 \subsection{The loading}\label{sec:loading}
 From its peer's L1 and L2 the receiving DCE shall estimate, for each tone
@@ -662,13 +700,24 @@ for each tone the mean received level.  It shall then choose:
   the mode set allows it, none where $\sigma > 20^\circ$;
 \item the code rate of the Reed-Solomon code (Annex~\ref{annex:rs}) from
   the measured tone symbol error ratio over the loaded tones: rate~7/8
-  below $10^{-3}$, 3/4 below $10^{-2}$, 1/2 otherwise.
+  below $10^{-3}$, 3/4 below $10^{-2}$, 1/2 otherwise (in the parametric
+  mode, from the lag symbol error ratio of L3 the same way);
+\item the mode: the comb of b) where it loads four tones or more;
+  otherwise the parametric mode (clause~\ref{sec:parametric}), with the
+  10~ms symbol where no lag symbol of L3's P10 part was in error, else
+  the 20~ms symbol where none of its P20 part was; else no data mode:
+  the DCE asks in MP for no loading (Annex~\ref{annex:probe}) and both
+  DCEs wait in the message mode, retraining as clause~\ref{sec:reneg}
+  says, until the codec's mode carries one (AMR at 4.75~\kbs{} is the
+  one codec mode measured that carries none; a network leaves a call
+  there only at the worst coverage).
 \end{enumerate}
 The thresholds in c) give a tone symbol error ratio of about $10^{-2}$
 at the threshold for Gaussian phase error, which the code of
 Annex~\ref{annex:rs} corrects to below $10^{-6}$ at rate~3/4.  The
 loading is sent to the peer in INFO1 and MP as a bitmap of the comb with
-two bits a tone (none, DQPSK, 8-DPSK).
+two bits a tone (none, DQPSK, 8-DPSK), or as the parametric mode and its
+symbol period.
 
 \subsection{Phase 3: parameter exchange}\label{sec:phase3}
 Each DCE transmits an \textbf{MP} message with the loading it asks for in
@@ -684,13 +733,22 @@ During phase~4, a DCE whose receiver measures a phase error or an error
 ratio over the thresholds of clause~\ref{sec:loading} on tones it loaded,
 or well under them on tones it did not load, should ask for a
 \emph{renegotiation}: it sends the control sequence of
-clause~\ref{sec:control} and the DCEs exchange MP messages in the robust
-mode with the new loading, then resume data; the code's interleaver is
-flushed and restarted.  A DCE that loses the symbol timing or receives no
-decodable symbol for 2~s shall ask for a \emph{retrain}: both DCEs return
-to phase~2.  The codec's mode changes with the radio conditions, and the
-loading shall follow it; a renegotiation shall take no more than 500~ms
-and a DCE shall not refuse one.
+clause~\ref{sec:control} and the DCEs exchange MP messages in the
+message mode (clause~\ref{sec:infomod}) with the new loading, then
+resume data; the code's interleaver is flushed and restarted.  A DCE
+that loses the symbol timing or receives no decodable symbol for 2~s
+shall ask for a \emph{retrain}: both DCEs return to phase~2.  The
+codec's mode changes with the radio conditions, and the loading shall
+follow it; a renegotiation shall take no more than 500~ms and a DCE
+shall not refuse one.
+
+A DCE whose receive direction is in the parametric mode, or in no data
+mode (clause~\ref{sec:loading}~e)), has nothing that measures the combs:
+it should ask for a retrain 30~s after entering that state and every
+60~s while it lasts, so that a codec mode that has improved is found and
+used.  Whether the normalized autocorrelation of the parametric mode's
+symbols (clause~\ref{sec:parametric}), which falls as the codec's mode
+falls, can replace the retrain is for further study.
 
 % ---------------------------------------------------------------- modulation
 \section{Modulation}\label{sec:modulation}
@@ -708,9 +766,10 @@ The data of phase~4 pass, from the DTE towards the line, through:
   with their flags are the stream; no further framing is added);
 \item the interleaver of Annex~\ref{annex:rs}, which spreads each
   codeword over several modulation symbols so that an erased codec frame
-  costs each codeword a fraction of its symbols;
-\item the mapping of the coded bits onto the tone symbols of
-  clause~\ref{sec:mapping}.
+  costs each codeword a fraction of its symbols (its depth is 1 in the
+  parametric mode);
+\item the mapping of the coded bits onto the tone symbols, or the lag
+  symbols of the parametric mode, of clause~\ref{sec:mapping}.
 \end{enumerate}
 
 \subsection{The code}
@@ -753,7 +812,12 @@ frame erases one symbol in each of $D$ consecutive codewords' $D$
 symbols, and is corrected at any code rate of Table~\ref{tab:rates};
 frame erasure ratios of the mobile networks are below 2 per cent
 (\tgpp{26.114}'s design targets), and the measured effect is in
-Appendix~\ref{app:measurements}.
+Appendix~\ref{app:measurements}.  In the parametric mode the concealment
+repeats the previous lag: the erased frame's symbol decodes as the
+symbol before it, and the frame after it is often wrong as well (the
+measured cost is two symbols an erasure, Table~\ref{tab:pitch}); the
+receiver should detect the erasure from the level, which the concealment
+attenuates, since the lag gives no sign of it.
 
 \subsection{Mapping}\label{sec:mapping}
 The interleaver's output bits shall be taken in order and mapped onto the
@@ -763,7 +827,10 @@ difference as Table~\ref{tab:gray} shows.  Bits left over at the end of a
 symbol are carried into the next.  The receiver shall deliver, per tone
 symbol, the hard decision and an indication of its reliability (the
 distance of the received phase difference from the decision's), so that
-the Reed-Solomon decoder may be given erasures.
+the Reed-Solomon decoder may be given erasures.  In the parametric mode
+the bits are mapped four to a lag symbol, the first bit the most
+significant, Gray coded onto the alphabet's index as Table~\ref{tab:lags}
+shows; the receiver delivers the decision and its reliability as above.
 
 \begin{table}[htbp]
 \caption{Gray mapping of the phase difference}
@@ -790,8 +857,9 @@ negotiate \rec{V.44} compression, or \rec{V.42bis} where V.44 is not
 available, in XID as those Recommendations specify.  LAPM's T401 shall be
 set from the round-trip delay measured in phase~2 (clause~\ref{sec:phase2}),
 with at least 1~s added for the interleaver's delay and the symbol
-period; N401 should not exceed 64~octets at raw rates below 2400~bit/s,
-so that a frame fits in an interleaver block.
+period, and 3~s in the parametric mode (a codeword takes 1.3~s at
+200~bit/s); N401 should not exceed 64~octets at raw rates below
+2400~bit/s, so that a frame fits in an interleaver block.
 
 \itunote{The code of Annex~\ref{annex:rs} leaves LAPM an error ratio
 below $10^{-6}$ in the loaded modes; LAPM is retained for the residual
@@ -824,8 +892,8 @@ The DCE's DTE interface shall conform to \rec{V.250}, with:
 \toprule
 \rowcolor{ituhead}\thd{Command} & \thd{Meaning} \\
 \midrule
-\code{+CVM=<modes>}\allowbreak\code{[,<rate>}\allowbreak\code{[,<report>]]} & \code{<modes>}: the modes allowed, a sum of 1 (robust), 2 (narrowband), 4 (wideband), 8 (8-DPSK permitted), 16 (QAM loading permitted, clause~\ref{sec:qam}); default all.  \code{<rate>}: the signal interface rate, 8000 or 16000.  \code{<report>}: 1 enables \code{+CVMR}. \\
-\code{+CVM?} & \code{+CVM: <modes>,<rate>,<report>} and, while connected, a second line \code{+CVM: <raw tx>,<raw rx>,<coded tx>,<coded rx>,<symbol ms>,<tones tx>,<tones rx>,<code rate>,<renegotiations>,<erasures>}. \\
+\code{+CVM=<modes>}\allowbreak\code{[,<rate>}\allowbreak\code{[,<report>]]} & \code{<modes>}: the modes allowed, a sum of 1 (robust), 2 (narrowband), 4 (wideband), 8 (8-DPSK permitted), 16 (QAM loading permitted, clause~\ref{sec:qam}), 32 (parametric); default all.  \code{<rate>}: the signal interface rate, 8000 or 16000.  \code{<report>}: 1 enables \code{+CVMR}. \\
+\code{+CVM?} & \code{+CVM: <modes>,<rate>,<report>} and, while connected, a second line \code{+CVM: <raw tx>,<raw rx>,<coded tx>,<coded rx>,<symbol ms>,<tones tx>,<tones rx>,<code rate>,<renegotiations>,<erasures>} (the tones are 0 in the parametric mode). \\
 \code{+CVM=?} & the ranges. \\
 \bottomrule
 \end{tabularx}
@@ -874,10 +942,12 @@ appendix:
 \item through AMR at 12.2~\kbs{} it shall connect in a narrowband mode
   with a raw rate of at least 1200~bit/s in each direction, and with the
   Reed-Solomon code at rate~3/4 or better;
-\item through AMR at 7.95~\kbs{} it shall connect in the robust mode (no
-  mode of this Recommendation passes AMR at 4.75~\kbs{} or AMR-WB at
-  6.6~\kbs{}, whose radio conditions a network leaves only at the worst
-  coverage: the DCE waits in the robust mode for a better codec mode);
+\item through AMR at 7.95 and 7.4~\kbs{} and AMR-WB at 6.6~\kbs{} it
+  shall connect in the parametric mode with a raw rate of at least
+  200~bit/s in each direction, and through EVS at 9.6~\kbs{} narrowband
+  of at least 400~bit/s (no mode of this Recommendation passes AMR at
+  4.75~\kbs{}, whose radio conditions a network leaves only at the worst
+  coverage: the DCEs wait in the message mode for a better codec mode);
 \item through AMR-WB at 23.85~\kbs{} with the interface at 16000~Hz it
   shall connect in a wideband mode with a raw rate of at least
   2400~bit/s in each direction;
@@ -889,8 +959,9 @@ appendix:
 \item the error ratio delivered to LAPM shall be below $10^{-6}$ at the
   loading chosen by clause~\ref{sec:loading};
 \item a frame erasure ratio of 1 per cent (independent erasures) shall
-  not lower the coded rate by more than the code rate step of
-  Table~\ref{tab:rates}.
+  not lower the coded rate in a comb mode by more than the code rate
+  step of Table~\ref{tab:rates} (in the parametric mode an erasure costs
+  two symbols, and the code rate~1/2 follows).
 \end{enumerate}
 The rates achievable are in Appendices~\ref{app:measurements} and
 \ref{app:evs}.

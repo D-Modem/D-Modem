@@ -43,7 +43,7 @@ information field, in the category ITU-T assigns to it.
 2 & 4 & 8-DPSK \\
 2 & 3 & 22.5~ms symbol (the 20~ms symbol is always supported) \\
 2 & 2 & quick start of clause~\ref{sec:quick} \\
-2 & 1 & reserved, 0 \\
+2 & 1 & parametric mode (clause~\ref{sec:parametric}) \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -58,7 +58,7 @@ the non-standard capability of that Recommendation, with the same
 identifier octet.
 
 \annex{The probing signals and the INFO messages}{probe}
-\section{L1 and L2}
+\section{L1, L2 and L3}
 L1 is each comb the transmitting DCE supports for the band of its
 signal interface (Table~\ref{tab:combs}: N200, N300 and N400 at
 8000~Hz; W200, W300 and W400 at 16000~Hz; S200, S300 and S400 at
@@ -72,12 +72,21 @@ lowest and across the symbols in order, so that the receiver, knowing
 the sequence, measures the phase error of every tone symbol.  L1's first
 symbol is the phase reference.  The level is $-12$~dBFS over all tones.
 
+L3 is transmitted by a DCE that indicated the parametric mode
+(clause~\ref{sec:parametric}): the P20 preamble and 40 symbols with the
+20~ms symbol, then the P10 preamble and 80 symbols with the 10~ms
+symbol, 1.84~s in all; each symbol's index is four bits from the same
+scrambler, continued from L2, so that the receiver, knowing the lags,
+counts the symbols in error.  Its level is the parametric mode's,
+$-15$~dBFS.
+
 \section{What the receiver measures}
 For each tone $k$ and each of L1 and L2 the receiver computes the root
 mean square phase error $\sigma_k$ of the received phase differences
 against the transmitted ones, after removing the mean (the clock offset's
 rotation), the mean received level of the tone, and the fraction of
-tone symbols in error.
+tone symbols in error; for each part of L3, the number of lag symbols in
+error.
 
 \section{INFO0}
 \begin{table}[htbp]
@@ -109,24 +118,26 @@ tone symbols in error.
 \rowcolor{ituhead}\thd{Octet} & \thd{Bits} & \thd{Meaning} \\
 \midrule
 1 & 8 & MP only: acknowledgement (the peer's MP was received) \\
-1 & 7--6 & symbol period: 00 20~ms, 01 22.5~ms \\
+1 & 7--6 & symbol period: 00 20~ms, 01 22.5~ms, 10 10~ms (parametric mode only) \\
 1 & 5--4 & code rate: 00 1/2, 01 3/4, 10 7/8 \\
 1 & 3--1 & reserved, 0 \\
 2 & 8--1 & reserved, 0 \\
 3 & 8--1 & round-trip delay this DCE measured, in 10~ms, 255 if unknown \\
-4 & 8--5 & the comb: its code of Table~\ref{tab:combs} \\
-4 & 4--1 & reserved, 0 \\
-5 & 8--1 & number of tones $N$ in the comb, 8 to 68 \\
+4 & 8--5 & the comb: its code of Table~\ref{tab:combs}; 0 with the parametric mode \\
+4 & 4 & the parametric mode (clause~\ref{sec:parametric}) is asked for, with the symbol period of octet~1: $N$ is then 0 \\
+4 & 3--1 & reserved, 0 \\
+5 & 8--1 & number of tones $N$ in the comb, 8 to 68; 0 with the parametric mode, or when no data mode is asked for (clause~\ref{sec:loading}~e)) \\
 6-- & & $N$ two-bit fields, the lowest tone first, packed from bit 8: 00 not loaded, 01 DQPSK, 10 8-DPSK, 11 QAM (clause~\ref{sec:qam}, with a following octet per tone for its constellation) \\
 \bottomrule
 \end{tabularx}
 \end{table}
 Each message is an HDLC frame of \rec{V.42} (flags, the FCS of ISO/IEC
 13239, no address or control octet) carrying the octets above, transmitted
-twice in the robust mode; a receiver takes the first copy whose FCS
-checks.  INFO0 is sent 100~ms after the end of the V.8 procedures by the
-calling DCE; INFO1 100~ms after the end of L2; the answering DCE's INFO0
-50~ms after the end of the calling DCE's INFO1.
+twice in the message mode of clause~\ref{sec:infomod}; a receiver takes
+the first copy whose FCS checks.  INFO0 is sent 100~ms after the end of
+the V.8 procedures by the calling DCE; INFO1 100~ms after the end of L3
+(of L2 where there is no L3); the answering DCE's INFO0 50~ms after the
+end of the calling DCE's INFO1.
 
 \annex{The inner code and its interleaver}{rs}
 \section{The code}
@@ -165,7 +176,11 @@ octet~1 of each, and so on, 128 octets in all.  Consecutive octets on the
 line thus belong to different codewords, and a symbol erasure of up to 4
 octets (16 DQPSK tones) costs each codeword one octet.  The interleaver's
 delay is one block: 128 octets, which is 0.64~s at 1600~bit/s and
-0.31~s at 3300~bit/s.  The receiver's de-interleaver is the inverse.  The
+0.31~s at 3300~bit/s.  In the parametric mode $D = 1$: the codewords are
+sent one after the other (a block of 128 octets would take 5~s at
+200~bit/s), and an erased frame costs the codeword it falls in one or
+two octets, which every code rate corrects.  The receiver's
+de-interleaver is the inverse.  The
 block boundary is marked by the first symbol of phase~4 and by the MP
 exchange of a renegotiation; the receiver recovers it, if lost, from the
 syndromes of the codewords (a block boundary error leaves every codeword

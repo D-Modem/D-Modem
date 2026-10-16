@@ -105,13 +105,22 @@ clause~\ref{sec:qam}).
   the renegotiation of clause~\ref{sec:reneg} is what follows the
   codec, and the DCE should expect it every few seconds in a moving
   terminal.
+\item \textbf{The parametric mode} passes where the combs do not: through
+  EVS at 9.6~\kbs{} narrowband the pulse train's period came through
+  without a symbol in error at both symbol periods
+  (Table~\ref{tab:pitch}): 400~bit/s where the combs carry nothing and
+  V.21's bit error ratio reaches $3 \cdot 10^{-2}$ (item~a)).  At 13.2
+  and 24.4~\kbs{} it passes as well, and the combs carry more; at 24.4
+  even the 32-lag alphabet with the 10~ms symbol passed without error
+  (500~bit/s), which the signal set does not use.
 \end{enumerate}
 
 \section{Consequences for the signal set}
 The signal set of clause~\ref{sec:modulation} needs no change for EVS:
 the combs, the two modulation orders and the probing's loading cover it
 from 13.2~\kbs{} narrowband (N400, DQPSK) to 128~\kbs{} super wideband
-(S200, 8-DPSK), a range of 800 to 10\,350~bit/s raw.  What EVS adds is
+(S200, 8-DPSK), a range of 800 to 10\,350~bit/s raw, and the parametric
+mode covers 9.6~\kbs{}, where no comb passes, at 400~bit/s.  What EVS adds is
 the case for the super wideband combs (S200 to S400), which this
 Recommendation defines, and for the amplitude loading of
 clause~\ref{sec:qam}, which it leaves for further study with the
