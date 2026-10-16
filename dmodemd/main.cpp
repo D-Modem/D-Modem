@@ -92,6 +92,8 @@ public:
 	int start(dcore::Modem &m) override;
 	int stop(dcore::Modem &m) override;
 	const char *driver_name() override { return "SIP"; }
+	/* SIP says when a call we dial is answered, and why it failed */
+	bool signals_answer(dcore::Modem &) override { return true; }
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		return pty_.write(buf, n);
 	}
@@ -360,8 +362,26 @@ void SipLine::t38_clock(dcore::Modem &m)
 	}
 }
 
+/* the result for a call we dialled that failed with SIP status code: busy
+   (486 Busy Here, 600 Busy Everywhere, 603 Decline), no answer (408
+   Request Timeout, 480 Temporarily Unavailable), else no carrier */
+dcore::Result failure(int code)
+{
+	switch (code) {
+	case 486:
+	case 600:
+	case 603:
+		return dcore::Result::Busy;
+	case 408:
+	case 480:
+		return dcore::Result::NoAnswer;
+	default:
+		return dcore::Result::NoCarrier;
+	}
+}
+
 /* the SIP user agent's control descriptor: its lines (RING, CANCEL,
-   T38, AUDIO), each acted on as it is complete */
+   T38, AUDIO, ANSWERED, FAILED), each acted on as it is complete */
 class Control {
 public:
 	explicit Control(int fd) : fd_(fd) {}
@@ -422,6 +442,10 @@ void Control::act(const char *s, dcore::Modem &m, SipLine &line)
 	} else if (!strcmp(s, "AUDIO")) {
 		m.t38_stop();
 		line.t38_end();
+	} else if (!strcmp(s, "ANSWERED")) {
+		m.line_answered();
+	} else if (!strncmp(s, "FAILED ", 7)) {
+		m.line_failed(failure(atoi(s + 7)));
 	}
 }
 

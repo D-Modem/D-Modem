@@ -85,6 +85,8 @@ if [ -n "$VOICE" ]; then
 	export SIP_IN="$ast -rx 'channel originate PJSIP/modem extension s@modem-voice'"
 	$ast -rx "rtp set debug on" >/dev/null
 fi
+# VOICE_DIAL=1: D-Modem dials in voice mode the dialplan's 7001 to 7003
+# in modem-in (sip_call.py).
 "$here/sip_call.py" "$build/dmodemd/dmodemd" 5551000 "$1"
 r=$?
 sleep 2

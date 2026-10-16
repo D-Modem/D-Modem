@@ -22,7 +22,11 @@
 # digit meanwhile.  Its log must show the flashes sent as RFC 4733
 # events and the digit received as one, and the voice engine must report
 # that digit to the DTE (<DLE>5 ... <DLE>~); sip.sh checks Asterisk's
-# side.
+# side.  VOICE_DIAL=1: D-Modem dials in voice mode (ATD with +FCLASS=8,
+# S7=6): 7002 BUSY, 7003 NO ANSWER after S7, 7001 OK when Asterisk
+# answers (2 s of ringing), its DTMF 7 reported, our +VTS played, and its
+# hangup reported as <DLE>l and NO CARRIER; ATH then data mode again,
+# where a data call to 7002 is BUSY too.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 dmodemd, number = sys.argv[1:3]
@@ -126,6 +130,49 @@ def cmd(c, pat=rb"OK\r\n", t=5):
 ok = True
 for c in [b"ATZ", b"ATX3"] + [x.encode() for x in at.split(";") if x]:
     ok = ok and cmd(c) is not None
+if os.environ.get("VOICE_DIAL"):
+    def timed(c, pat, t):
+        t0 = time.time()
+        m = cmd(c, pat, t)
+        return m, time.time() - t0
+    results = []
+    for c in [b"AT+FCLASS=8", b"ATS7=6"]:
+        ok = ok and cmd(c) is not None
+    m, dt = timed(b"ATD7002", rb"(OK|BUSY|NO ANSWER|NO CARRIER|ERROR)\r\n", 15)
+    print("7002: %s in %.1f s" % (m.group(1).decode() if m else "timeout", dt))
+    ok = ok and m is not None and m.group(1) == b"BUSY"
+    m, dt = timed(b"ATD7003", rb"(OK|BUSY|NO ANSWER|NO CARRIER|ERROR)\r\n", 15)
+    print("7003: %s in %.1f s" % (m.group(1).decode() if m else "timeout", dt))
+    ok = ok and m is not None and m.group(1) == b"NO ANSWER" and 5.5 < dt < 8
+    time.sleep(1)
+    m, dt = timed(b"ATD7001", rb"(OK|BUSY|NO ANSWER|NO CARRIER|ERROR)\r\n", 15)
+    print("7001: %s in %.1f s" % (m.group(1).decode() if m else "timeout", dt))
+    ok = ok and m is not None and m.group(1) == b"OK" and dt > 1.8
+    d = expect(rb"\x107(\x107)*\x10~", 6)
+    print("dte: DTMF 7 reported:", "yes" if d else "no")
+    ok = ok and d is not None
+    m = cmd(b"AT+VTS=1,2", rb"(OK|ERROR)\r\n", 5)
+    print("tones:", m.group(1).decode() if m else "timeout")
+    ok = ok and m is not None and m.group(1) == b"OK"
+    m = expect(rb"\x10l(\r\n)?NO CARRIER\r\n", 10)
+    print("hangup:", "<DLE>l NO CARRIER" if m else "none")
+    ok = ok and m is not None
+    m = cmd(b"AT+FCLASS?", rb"(\d)\r\nOK\r\n", 5)
+    ok = ok and m is not None and m.group(1) == b"8"
+    m = cmd(b"ATH")
+    ok = ok and m is not None
+    m = cmd(b"AT+FCLASS?", rb"(\d)\r\nOK\r\n", 5)
+    print("after ATH: +FCLASS", m.group(1).decode() if m else "?")
+    ok = ok and m is not None and m.group(1) == b"0"
+    # a data call to a busy number: BUSY (SIP's 486), not NO CARRIER
+    m, dt = timed(b"ATD7002", rb"(CONNECT|BUSY|NO ANSWER|NO CARRIER|ERROR)[^\r]*\r\n", 15)
+    print("data 7002: %s in %.1f s" % (m.group(1).decode() if m else "timeout", dt))
+    ok = ok and m is not None and m.group(1) == b"BUSY"
+    p.terminate()
+    if not ok:
+        print("modem said:", buf[-300:], seen[-300:])
+    print("PASS" if ok else "FAIL")
+    sys.exit(0 if ok else 1)
 if incoming and os.environ.get("VOICE"):
     time.sleep(2)               # dmodemd registers
     subprocess.Popen(incoming, shell=True)

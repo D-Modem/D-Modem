@@ -316,6 +316,8 @@ void Modem::voice_init()
 	voice_info_.silence_detect_sensitivity = 128;
 	voice_info_.silence_detect_period = 50;
 	voice_info_.tone_default = 100;
+	voice_info_.ring_after = 50;
+	voice_info_.ring_never = 10;
 }
 
 /*
@@ -1245,12 +1247,48 @@ void Modem::hangup_now()
 		later(later_, 0);
 }
 
-/* the line ended the call (the SIP call is over): at once */
+/* the line ended the call (the SIP call is over): at once; a voice
+   dial's NO CARRIER, a voice call's end */
 void Modem::line_dropped()
 {
+	if (voice_dialing_) {
+		voice_dial_end(Result::NoCarrier);
+		return;
+	}
+	if (voice_) {
+		voice_line_gone();
+		return;
+	}
 	if (state_ != IDLE)
 		set_cause(Cause::LineDropped);
 	hangup_now();
+}
+
+/* see dcore.h */
+void Modem::line_answered()
+{
+	if (!voice_dialing_)
+		return;
+	logf("voice dial: answered\n");
+	voice_dialing_ = false;
+	report(Result::Ok);
+	command_ = true;
+	commands_due_ = true;
+}
+
+/* see dcore.h: a data call not yet up keeps r for its end */
+void Modem::line_failed(Result r)
+{
+	if (voice_dialing_) {
+		voice_dial_end(r);
+		return;
+	}
+	if (state_ == IDLE || stats_.connected || have_result_)
+		return;
+	set_cause(r == Result::Busy ? Cause::Busy :
+		  r == Result::NoAnswer ? Cause::NoAnswer : Cause::NoCarrier);
+	result_ = r;
+	have_result_ = true;
 }
 
 /* ATH (MODEM_HOOK_ON), ATH1: a call hangs up when the hook goes on;
@@ -1503,11 +1541,14 @@ void Modem::schedule_event(unsigned mask, unsigned long ms)
 	timer_on_ = true;
 }
 
-/* the timer's events, if its deadline has passed */
+/* the timer's events, if its deadline has passed; a voice dial's
+   timers */
 void Modem::poll()
 {
 	unsigned ev;
 
+	if (voice_dialing_)
+		voice_dial_check();
 	if (timer_on_ && (long)(host_.now_ms() - timer_at_) >= 0) {
 		timer_on_ = false;
 		event_ |= new_event_;
@@ -1520,16 +1561,24 @@ void Modem::poll()
 	events(ev);
 }
 
-/* the ms until the timer's events (0: due), -1 without any */
+/* the ms until the timer's events or a voice dial's timer (0: due), -1
+   without any */
 long Modem::next_timer_ms()
 {
-	long left;
+	long left = -1;
 	if (event_)
 		return 0;
-	if (!timer_on_)
-		return -1;
-	left = (long)(timer_at_ - host_.now_ms());
-	return left > 0 ? left : 0;
+	if (timer_on_) {
+		left = (long)(timer_at_ - host_.now_ms());
+		if (left < 0)
+			left = 0;
+	}
+	if (voice_dialing_) {
+		long vd = voice_dial_left_ms();
+		if (left < 0 || vd < left)
+			left = vd;
+	}
+	return left;
 }
 
 /* the events due: the ring check (a burst ends: RING, the auto answer,
@@ -1677,7 +1726,8 @@ void Modem::cid_stop()
  */
 
 /* +VLS: the voice engine on the line (1: started, its OK to come; 0: it
-   was there) or off (0); -1 for another device or if it cannot start */
+   was there) or off (0); -1 for another device or if it cannot start.
+   The line is taken to answer (a ringing call's, on SIP) */
 int Modem::voice_set_device(unsigned device)
 {
 	switch (device) {
@@ -1688,6 +1738,7 @@ int Modem::voice_set_device(unsigned device)
 	case VOICE_DEVICE_LINE:
 		if (voice_)
 			return 0;
+		caller_ = false;
 		return voice_start() ? -1 : 1;
 	default:
 		return -1;
@@ -1724,6 +1775,8 @@ void Modem::voice_stop()
 	voice_ = nullptr;
 	vts_.clear();
 	vts_next_ = 0;
+	voice_dialing_ = false;
+	voice_streaming_ = false;
 	stop_call();
 	set_hook(MODEM_HOOK_ON);
 }
@@ -1741,6 +1794,8 @@ int Modem::voice_command(enum VOICE_CMD cmd)
 		if (!voice_)
 			return -1;
 		command_ = false;
+		voice_streaming_ = cmd == VOICE_CMD_STATE_RX ||
+			cmd == VOICE_CMD_STATE_TX;
 		VOICE_command(voice_, cmd);
 		return 1;
 	default:
@@ -1771,6 +1826,77 @@ int Modem::voice_tone_next()
 	return voice_command(VOICE_CMD_BEEP);
 }
 
+/* number as the dial string (ATDL's), as dial() keeps it */
+void Modem::keep_dial_string(const char *number)
+{
+	copy_dial(dial_string_, sizeof(dial_string_), number);
+}
+
+/* the ms until a voice dial's next timer: +VRN's on a line that does not
+   tell of the answer (when not beyond S7), S7's */
+long Modem::voice_dial_left_ms()
+{
+	unsigned long s7 = sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * 1000UL;
+	unsigned long due = s7;
+	long left;
+
+	if (!host_.signals_answer(*this) &&
+	    voice_info_.ring_never * 1000UL <= s7)
+		due = voice_info_.ring_never * 1000UL;
+	left = (long)(voice_dial_since_ + due - host_.now_ms());
+	return left > 0 ? left : 0;
+}
+
+/* a voice dial's timers (the core's poll(), and each block of the line's
+   samples): on a line that does not tell of the answer, the call
+   answered once +VRN has gone without a ringing tone detected (V.253
+   10.2.6: this modem detects none); NO ANSWER after S7 */
+void Modem::voice_dial_check()
+{
+	unsigned long gone = host_.now_ms() - voice_dial_since_;
+
+	if (!host_.signals_answer(*this) &&
+	    gone >= voice_info_.ring_never * 1000UL &&
+	    voice_info_.ring_never <= sregs_[SREG_WAIT_CARRIER_AFTER_DIAL]) {
+		line_answered();
+		return;
+	}
+	if (gone >= sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * 1000UL) {
+		logf("voice dial: no answer in S7\n");
+		voice_dial_end(Result::NoAnswer);
+	}
+}
+
+/* a voice dial over: on hook, result r */
+void Modem::voice_dial_end(Result r)
+{
+	logf("voice dial: %s\n", r == Result::Busy ? "busy" :
+	     r == Result::NoAnswer ? "no answer" : "no carrier");
+	voice_dialing_ = false;
+	voice_stop();
+	report(r);
+	command_ = true;
+	commands_due_ = true;
+}
+
+/* the voice call's line ended it (the far end hung up): <DLE><l>, V.253's
+   loop current interruption, which "usually indicates a remote hangup",
+   then the end of a stream (<DLE><ETX> in +VRX) and NO CARRIER; on hook */
+void Modem::voice_line_gone()
+{
+	static const char lci[2] = { 0x10, 'l' };
+	static const char etx[2] = { 0x10, 0x03 };
+
+	logf("voice: the line ended the call\n");
+	host_.dte_write(*this, lci, 2);
+	if (voice_streaming_)
+		host_.dte_write(*this, etx, 2);
+	voice_stop();
+	report(Result::NoCarrier);
+	command_ = true;
+	commands_due_ = true;
+}
+
 /* the voice engine on the samples, its results to the DTE: after OK or
    ERROR the DTE's characters are commands again (those already there
    run); a +VTS string's OK comes after its last element */
@@ -1783,10 +1909,21 @@ void Modem::voice_process(int16_t *in, int16_t *out, int n)
 		voice_stop();
 		return;
 	}
+	if (voice_dialing_) {
+		/* the line-taken OK of the engine's start is not the dial's,
+		   which comes with the answer */
+		if (st == VOICE_STATUS_OK)
+			st = 0;
+		voice_dial_check();
+		if (!voice_)
+			return;
+	}
 	if (st == VOICE_STATUS_OK && vts_next_ < vts_.size()) {
 		voice_tone_next();
 		return;
 	}
+	if (st == VOICE_STATUS_OK || st == VOICE_STATUS_ERROR)
+		voice_streaming_ = false;
 	if (st == VOICE_STATUS_OK || st == VOICE_STATUS_ERROR) {
 		vts_.clear();
 		vts_next_ = 0;

@@ -266,6 +266,10 @@ struct voice_info {
 	   (0: the DCE's own, 1 s); after the library's fields, which keep
 	   their offsets */
 	unsigned tone_default;
+	/* +VRA, +VRN (V.253 10.2.5, 10.2.6): a voice dial's ringing-tone
+	   timers, 100 ms and 1 s */
+	unsigned ring_after;
+	unsigned ring_never;
 };
 
 /*

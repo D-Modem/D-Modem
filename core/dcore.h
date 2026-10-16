@@ -72,6 +72,10 @@ public:
 	   silent for as long) */
 	virtual bool can_flash(Modem &m) { (void)m; return false; }
 	virtual void hook_flash(Modem &m, unsigned ms) { (void)m; (void)ms; }
+	/* the line tells when a call it dials is answered and why one
+	   fails (Modem::line_answered(), line_failed()), as SIP does; else
+	   a voice dial takes the call for answered after +VRN */
+	virtual bool signals_answer(Modem &m) { (void)m; return false; }
 	virtual void speaker(Modem &m, int volume) { (void)m; (void)volume; }
 	/* the line's delay, which Smart Link's original library asks for
 	   (the open data pumps do not): the samples between the modem's
@@ -147,6 +151,11 @@ public:
 	void hangup();
 	void hangup_now();
 	void line_dropped();
+	/* the line's word on the call it dials: answered (a voice dial's
+	   OK), or failed with r (BUSY, NO ANSWER, NO CARRIER: the dial's
+	   result, the line's line_dropped() to follow) */
+	void line_answered();
+	void line_failed(Result r);
 	/* ATA, ATD<number> */
 	int answer();
 	int dial(const char *number);
@@ -303,6 +312,12 @@ private:
 	void voice_stop();
 	int voice_command(enum VOICE_CMD cmd);
 	int voice_tone_next();
+	int voice_dial(const char *number);
+	void keep_dial_string(const char *number);
+	void voice_dial_check();
+	long voice_dial_left_ms();
+	void voice_dial_end(Result r);
+	void voice_line_gone();
 	int voice_set_device(unsigned device);
 	void voice_init();
 	void fax_process(int16_t *in, int16_t *out, int n);
@@ -467,6 +482,11 @@ private:
 	};
 	std::vector<VoiceTone> vts_;
 	size_t vts_next_ = 0;
+	/* a voice dial under way (ATD in voice mode): since when (ms) */
+	bool voice_dialing_ = false;
+	unsigned long voice_dial_since_ = 0;
+	/* the voice engine streams (+VTX, +VRX) until its OK */
+	bool voice_streaming_ = false;
 	void *fax_ = nullptr;
 	/* the call's fax over T.38 (its data octets in a packet) */
 	bool t38_ = false;

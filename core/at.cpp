@@ -289,6 +289,10 @@ const struct VoiceSetting {
 	{ "LS", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
 	{ "TD", 1, { &voice_info::tone_default, nullptr }, { 0, 0 },
 	  { 6000, 0 } },
+	{ "RA", 1, { &voice_info::ring_after, nullptr }, { 0, 0 },
+	  { 255, 0 } },
+	{ "RN", 1, { &voice_info::ring_never, nullptr }, { 0, 0 },
+	  { 255, 0 } },
 };
 
 /* v within the bounds lo and hi (0: none) */
@@ -702,6 +706,8 @@ int Modem::at_D(char *p, int *len)
 			puts("...");
 			crlf();
 		}
+		if (mode_ == MODEM_MODE_VOICE)
+			return voice_dial(nullptr);
 		return dial(nullptr) ? -1 : 1;
 	}
 	if (upper(*s) == 'T')
@@ -721,7 +727,49 @@ int Modem::at_D(char *p, int *len)
 		memcpy(dial_rest_ + 2, semi + 1, rest);
 		dial_rest_[rest + 2] = '\0';
 	}
+	if (mode_ == MODEM_MODE_VOICE)
+		return voice_dial(number);
 	return dial(number) ? -1 : 1;
+}
+
+/* ATD in voice mode (V.253 9.1.1): the line taken as the caller (an
+   implied +VLS=1), OK when the call is answered, BUSY, NO ANSWER (S7)
+   or NO CARRIER when it fails.  With the line already taken, the
+   number's digits are dialled on it as DTMF (S11 ms each, S11 ms
+   apart), as on a line off hook, and OK follows them.  number NULL: the
+   last one (ATDL).  1 (the result to come), 0 (OK now), or -1 */
+int Modem::voice_dial(const char *number)
+{
+	if (voice_) {
+		std::vector<VoiceTone> tones;
+		unsigned d = sregs_[SREG_DTMF_DURATION] / 10;
+		for (const char *p = number ? number : dial_string_; *p; p++) {
+			if (!dtmf_digit(*p))
+				continue;
+			if (!tones.empty())
+				tones.push_back({ 0, 0, 0, d, false });
+			tones.push_back({ (char)upper(*p), 0, 0, d, false });
+		}
+		if (tones.empty())
+			return 0;
+		vts_ = std::move(tones);
+		vts_next_ = 0;
+		return voice_tone_next();
+	}
+	if (number)
+		keep_dial_string(number);
+	else if (!dial_string_[0])
+		return -1;
+	caller_ = true;
+	logf("voice dial: %s\n", dial_string_);
+	if (voice_start()) {
+		caller_ = false;
+		return -1;
+	}
+	voice_dialing_ = true;
+	voice_dial_since_ = host_.now_ms();
+	command_ = false;
+	return 1;
 }
 
 /* ATH, ATH0 on hook (a call hangs up), ATH1 off hook; ERROR when the
@@ -736,6 +784,14 @@ int Modem::at_H(char *p, int *len)
 		else if (p[1] != '0' || is_digit(p[2]))
 			return -1;
 		*len = 2;
+	}
+	/* in voice mode, ATH is +VLS=0 and back to data mode (V.253
+	   9.1.2) */
+	if (mode_ == MODEM_MODE_VOICE && state == MODEM_HOOK_ON) {
+		if (voice_)
+			voice_stop();
+		set_mode(MODEM_MODE_DATA);
+		return 0;
 	}
 	return hook(state) ? -1 : 0;
 }

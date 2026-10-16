@@ -1,0 +1,30 @@
+# ATD in voice mode (V.253 9.1.1), on a line that does not tell when the
+# call is answered: OK once +VRN has gone without a ringing tone
+A AT+FCLASS=8\r
+A AT+VRA?\r
+A AT+VRN?\r
+A AT+VRN=?\r
+A AT+VRN=256\r
+A AT+VRN=1\r
+A ATD5551000\r
+run 1500
+A AT+VLS?\r
+# the line taken: a number dialled on it is DTMF digits, OK after them
+A ATS11=50\r
+A ATD12\r
+run 400
+# ATH in voice mode: on hook, and data mode again (V.253 9.1.2)
+A ATH\r
+A AT+FCLASS?\r
+# +VRN beyond S7: S7 only, NO ANSWER when it has gone
+A AT+FCLASS=8\r
+A ATS7=2\r
+A AT+VRN=5\r
+A ATD5551000\r
+run 2500
+A AT+VLS?\r
+# ATDL: the last number again
+A AT+VRN=0\r
+A ATDL\r
+run 200
+A AT+VLS=0\r

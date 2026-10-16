@@ -265,6 +265,15 @@ the flashes sent and the digit received as an event and played as its
 tone, and the voice engine must report the digit to the pty as
 `<DLE>5` ... `<DLE>~`.
 
+`VOICE_DIAL=1 test/sip.sh` has dmodemd dial in voice mode
+(`AT+FCLASS=8`, `ATD`) to the dialplan's extensions in `modem-in`: 7002
+(busy) must give BUSY, 7003 (ringing, never answered) NO ANSWER after
+S7 (6 s), and 7001 (rings for 2 s, answers, sends the digit 7 and hangs
+up 4 s on) OK when it answers, then `<DLE>7` ... `<DLE>~`, OK to
+`AT+VTS=1,2`, and `<DLE>l` and NO CARRIER at the hang-up.  `ATH` must
+then leave voice mode (`+FCLASS: 0`), and a data call to 7002 give
+BUSY.
+
 `test/efax.sh` is dmodemd's fax (class 1) with efax on its pty against
 Asterisk's own over PJSIP (`t38_udptl`): efax sends, dmodemd calling
 `ReceiveFAX` (which asks for T.38), and efax receives, `SendFAX` calling

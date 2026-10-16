@@ -1550,7 +1550,8 @@ void on_progress(const struct sip_msg *msg, void *arg)
 	    str(msg->reason).c_str());
 }
 
-/* the call up (its 2xx, or its ACK) */
+/* the call up (its 2xx, or its ACK): an ANSWERED line for a call we
+   made */
 void on_estab(const struct sip_msg *, void *arg)
 {
 	Call *c = static_cast<Call *>(arg);
@@ -1560,6 +1561,8 @@ void on_estab(const struct sip_msg *, void *arg)
 	c->confirmed = true;
 	c->up = tmr_jiffies();
 	say(3, "call %u: CONFIRMED", c->serial);
+	if (!c->incoming)
+		ctl_line("ANSWERED\n");
 }
 
 /* the call over (the far end hung up, or the call failed): CANCEL if
@@ -1582,6 +1585,14 @@ void on_close(int err, const struct sip_msg *msg, void *arg)
 	c->closed = true;
 	if (c->ringing)
 		ctl_line("CANCEL\n");
+	/* a call we made that never came up: why, ahead of its audio's
+	   end */
+	if (!c->incoming && !c->confirmed) {
+		char line[32];
+		snprintf(line, sizeof(line), "FAILED %u\n",
+			 msg ? msg->scode : 0);
+		ctl_line(line);
+	}
 	end_call();
 }
 

@@ -44,8 +44,10 @@ struct Config {
 bool config_from_env(Config &cfg, bool listen);
 
 /* start the user agent; returns the descriptor its RING and CANCEL lines
-   come on (a call waits for ANSWER, or the caller gave up), and T38 and
-   AUDIO (the call's fax went over to T.38, or back), or -1 */
+   come on (a call waits for ANSWER, or the caller gave up), T38 and
+   AUDIO (the call's fax went over to T.38, or back), and for a call we
+   dial ANSWERED (it is up) or FAILED <SIP status> (it never came up; 0
+   for no response), ahead of the end of its audio; or -1 */
 int start(const Config &cfg);
 /* the SIP thread ended (the call hung up, the registration given up) */
 void stop();

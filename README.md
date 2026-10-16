@@ -77,8 +77,12 @@ answered one: the same commands and results for the software, the call's
 UDPTL instead of its audio.  `SIP_T38=no` keeps faxes on the audio.
 
 ### Voice
-In voice mode (`AT+FCLASS=8`), `AT+VLS=1` answers a ringing call, and
-`AT+VTS` plays tones and DTMF digits in the audio.  Its hook flash (`!`)
+In voice mode (`AT+FCLASS=8`), `AT+VLS=1` answers a ringing call,
+`ATD` dials one (OK when the far end answers with its 200 OK; BUSY on
+486, 600 or 603, NO ANSWER on 408 or 480 or after S7, NO CARRIER on
+anything else), `ATH` hangs up and goes back to data mode, and a call
+the far end ends is reported as `<DLE>l` and NO CARRIER.  `AT+VTS`
+plays tones and DTMF digits in the audio.  Its hook flash (`!`)
 goes to the far end as an RFC 4733 telephone-event (event 16), which
 dmodemd offers and takes on every call; `AT+VTS` with `!` is an ERROR on
 a call whose far end has no telephone-events.  DTMF digits the far end

@@ -832,7 +832,15 @@ the other modes):
 +VIT=\p{n} & the inactivity timer, 0 to 255 \\
 +VSD=\p{s},\p{t} & silence detection: sensitivity and period, 0 to 255 \\
 +VSM=\p{m},8000 & the compression method, 0 or 1, at 8000 samples/s \\
-+VLS=\p{n} & 1 takes the line for voice, 0 leaves it \\
++VLS=\p{n} & 1 takes the line for voice (on SIP: answers the call
+  that rings), 0 leaves it \\
+D\p{number} & dials \p{number} and gives OK when the far end answers,
+  BUSY, \mbox{NO ANSWER} after S7, or NO CARRIER; on SIP the answer is the
+  200~OK, on a line that cannot tell, \cmd{+VRN} after dialling.  With
+  the line taken it dials the digits as DTMF, S11~ms each \\
+H & leaves the line and goes back to data mode, \cmd{+FCLASS=0} \\
++VRA=\p{n}, +VRN=\p{n} & the ringing-tone timers, in 100~ms (50 at
+  the start) and in seconds (10), 0 to 255 \\
 +VTX, +VRX, +VTR & sends, receives, or both \\
 +VTD=\p{d} & the duration of a \cmd{+VTS} element that gives none, 0 to
   6000 (0: 1~s); 100 at the start \\
@@ -854,7 +862,7 @@ the other modes):
   call whose far end takes no telephone-events). \\
 \bottomrule
 \end{longtable}
-Each takes \cmd{?} (its values) and \cmd{=?} (their ranges).
+Each \cmd{+} command takes \cmd{?} (its values) and \cmd{=?} (their ranges).
 \cmd{+VCID}, caller ID, is \cmdl[hashCID]{\#CID}'s, in every mode.
 
 While the line is taken (\cmd{+VLS=1}) the modem listens for DTMF
@@ -864,6 +872,11 @@ again every 70~ms while it lasts, then \cmd{<DLE>\textasciitilde} when
 it ends.  The reports come in the voice command state as well as among
 the samples of \cmd{+VRX}, whose audio is silence from a digit's report
 until it ends.  The modem's own \cmd{+VTS} tones are not reported.
+
+When the far end ends a voice call, the modem reports \cmd{<DLE>l}
+(V.253's loop current interruption, ``usually a remote hangup''), ends
+a \cmd{+VRX} stream with \cmd{<DLE><ETX>}, goes on hook and gives NO
+CARRIER.
 
 \section{S-registers}\label{sec:sregs}
 
