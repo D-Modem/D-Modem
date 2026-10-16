@@ -85,7 +85,13 @@ a call whose far end has no telephone-events.  DTMF digits the far end
 sends as telephone-events reach the modem as their tones, as they would
 on an analogue line, and the modem reports the digits it hears to the
 voice software as V.253's `<DLE>` codes (`<DLE>5`, then `<DLE>~` when
-the digit ends).
+the digit ends).  So do RFC 4734's modem and fax tones, which some
+gateways relay as events in place of the audio: the answer tones (ANS,
+ANSam, with their phase reversals every 450 ms), CNG, CT, the V.21 tones
+and V.8bis's segments, each at the level the event gives.  Events for
+modulated signals (CI, V.21 preamble, the modulations in use) and the far
+end's hook flash are logged and not played: the audio carries the
+former, and no signal of a line stands for the latter.
 
 ### Receiving calls
 With `-L` (listen), dmodemd registers with the SIP server, so that calls to the account reach the modem: it reports `RING`, and answers on `ATA` or by itself after `ATS0=n` rings.  Dialing works as before in this mode.

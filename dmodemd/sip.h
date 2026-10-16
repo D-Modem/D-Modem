@@ -69,8 +69,9 @@ void set_fax(bool fax);
 
 /* telephone-events (RFC 4733): the current call has them (its far end
    offered or took ours); a hook flash of ms on it, as event 16, sent
-   in place of the audio while it lasts.  The far end's DTMF digits sent
-   as events reach the modem as their tones, as on an analogue line. */
+   in place of the audio while it lasts.  The far end's DTMF digits and
+   RFC 4734's tones sent as events reach the modem as their tones, as on
+   an analogue line (rtp_events.h). */
 bool can_flash();
 void flash(unsigned ms);
 

@@ -149,7 +149,7 @@ if incoming and os.environ.get("VOICE"):
     text = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "rb").read()
     for want in [rb"hook flash, 100 ms \(RFC 4733\)",
                  rb"hook flash, 300 ms \(RFC 4733\)",
-                 rb"DTMF 5 \(RFC 4733\), played as its tone"]:
+                 rb"DTMF 5 \(RFC 4733 event 5\), played as its tone"]:
         found = re.search(want, text) is not None
         print("log: %s: %s" % (want.decode().replace("\\", ""),
                                "yes" if found else "no"))

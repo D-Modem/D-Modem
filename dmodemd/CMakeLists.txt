@@ -20,7 +20,7 @@ target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
 
 if(DMODEM_DMODEMD)
 	# the modem daemon: its SIP user agent (sip.cpp) and a pty
-	add_executable(dmodemd main.cpp sip.cpp sip_dial.cpp)
+	add_executable(dmodemd main.cpp sip.cpp sip_dial.cpp rtp_events.cpp)
 	target_compile_options(dmodemd PRIVATE -Wall -g -O2)
 	target_link_libraries(dmodemd PRIVATE dmodem_front dmodem_core
 		dmodem_dsp dmodem_t30 dmodem_link libre m pthread)
@@ -35,6 +35,15 @@ if(DMODEM_DMODEMD)
 			${CMAKE_CURRENT_SOURCE_DIR})
 		target_compile_options(sip_dial_test PRIVATE -Wall -Wextra -g)
 		dmodem_gtest(sip_dial_test LABELS quick)
+		# test/rtp_events_test.cpp: the far end's telephone-events
+		# as tones (rtp_events.h)
+		add_executable(rtp_events_test test/rtp_events_test.cpp
+			rtp_events.cpp)
+		target_include_directories(rtp_events_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR})
+		target_compile_options(rtp_events_test PRIVATE -Wall -Wextra -g)
+		target_link_libraries(rtp_events_test PRIVATE m)
+		dmodem_gtest(rtp_events_test LABELS quick)
 	endif()
 
 	find_package(Python3 COMPONENTS Interpreter QUIET)

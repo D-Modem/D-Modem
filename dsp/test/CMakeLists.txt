@@ -93,7 +93,9 @@ dmodem_gtest(class1_t38_test LABELS quick)
 dmodem_test_exe(fax_doc fax_doc.cpp fax_docs.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(fax_doc PRIVATE GTest::gtest)
 # libdmodem: pairs of its modems back to back
-dmodem_test_exe(dmodem_test dmodem_test.cpp)
+dmodem_test_exe(dmodem_test dmodem_test.cpp
+	${CMAKE_SOURCE_DIR}/dmodemd/rtp_events.cpp)
+target_include_directories(dmodem_test PRIVATE ${CMAKE_SOURCE_DIR}/dmodemd)
 target_link_libraries(dmodem_test PRIVATE dmodem)
 dmodem_gtest(dmodem_test LABELS quick)
 dmodem_test_exe(dmodem_fax_test dmodem_fax_test.cpp fax_docs.cpp)

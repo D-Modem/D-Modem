@@ -34,6 +34,7 @@
 #include "dmodem.h"
 #include "dmodem.hpp"
 #include "g711.h"
+#include "rtp_events.h"
 
 #define FRAME 160               /* 20 ms, as Asterisk */
 
@@ -924,6 +925,61 @@ TEST(DmodemCxx, VoiceDtmfDetect)
 
 /* the log lines (DmodemCxx.LawForEachCall) */
 static std::vector<std::string> log_lines;
+
+/* a gateway that relays the far modem's answer tone as RFC 4734 events:
+   dmodemd plays them (dmd::EventPlayer), and a calling modem that hears
+   only that takes it for the answer tone it is (the call progress pump's
+   2100 Hz for ANSam and /ANSam, 2225 Hz for ANS2225) */
+TEST(DmodemCxx, AnswerToneFromEvents)
+{
+	struct { int first, then; const char *want; } cases[] = {
+		{ 34, 35, "answer tone 2100 detected" },
+		{ 32, 33, "answer tone 2100 detected" },
+		{ 52, 52, "answer tone 2225 detected" },
+		{ 36, 36, nullptr },    /* CNG is no answer tone */
+	};
+	dm::init();
+	for (const auto &c : cases) {
+		log_lines.clear();
+		dm::set_log([](const char *l) { log_lines.push_back(l); });
+		dm::set_debug(2);
+		Dte d;
+		dm::Modem m = make("caller", d, "ATE0Q1X3\r");
+		dmd::EventPlayer player;
+		std::array<short, FRAME> in{}, out{};
+		d.read_all();
+		d.write_str("ATD\r");
+		bool heard = false;
+		/* 1 s of silence, then the tone as events: the first event
+		   200 ms, then the form after its phase reversal */
+		for (int i = 0; i < 4 * 50 && !heard; i++) {
+			in.fill(0);
+			if (i >= 50) {
+				int k = i - 50;
+				int ev = k < 10 ? c.first : c.then;
+				uint32_t ts = k < 10 ? 1000 : 1000 + 1600;
+				unsigned dur = (k < 10 ? k + 1 : k - 9) * FRAME;
+				uint8_t b[4] = { (uint8_t)ev, 12,
+						 (uint8_t)(dur >> 8),
+						 (uint8_t)dur };
+				player.packet(b, 4, ts);
+				std::array<int16_t, FRAME> t{};
+				player.fill(t.data(), FRAME);
+				std::copy(t.begin(), t.end(), in.begin());
+			}
+			m.process(in.data(), out.data(), FRAME);
+			m.poll_dte();
+			for (auto &l : log_lines)
+				heard = heard || l.find(c.want ? c.want :
+					"answer tone") != std::string::npos;
+		}
+		dm::set_debug(getenv("DMODEM_DEBUG") ?
+			      atoi(getenv("DMODEM_DEBUG")) : 0);
+		dm::set_log(nullptr);
+		EXPECT_EQ(heard, c.want != nullptr) << c.first;
+		m.hangup();
+	}
+}
 
 /* the network's law holds for each call, not only for the first or those
    of dmodem_dial() and dmodem_answer(): two V.91 calls that the DTEs make

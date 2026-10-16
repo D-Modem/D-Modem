@@ -26,8 +26,9 @@
  *
  *    Telephone-events (RFC 4733), offered and taken on every call: the
  *    modem's hook flash (sip::flash()) goes as event 16, in place of the
- *    audio while it lasts, and the far end's DTMF digits sent as events
- *    reach the modem as their tones.
+ *    audio while it lasts, and the far end's DTMF digits and RFC 4734's
+ *    tones (answer tones, CNG, CT, ...) sent as events reach the modem as
+ *    their tones (rtp_events.h).
  *
  *    T.38: an offer of it (a re-INVITE with an image line) is answered at
  *    once while the modem is in fax mode, our image line in its place,
@@ -82,9 +83,9 @@ namespace libre {
 #include <re.h>
 }
 
-#include "dsp.h"
 #include "g711.h"
 #include "line_recorder.h"
+#include "rtp_events.h"
 #include "sip.h"
 
 namespace sip {
@@ -129,13 +130,11 @@ enum { MQ_DIAL, MQ_ANSWER, MQ_MODEM_GONE, MQ_QUIT };
 
 /* RFC 4733 telephone-events: the payload type of ours in an offer; the
    events (hook flash), the longest one (its 16 bit duration, in
-   samples), the copies of its last packet; a received digit's tone
-   ended when no packet of it came for this long (samples) */
+   samples), the copies of its last packet */
 const int TE_PT = 101;
 const unsigned EV_FLASH = 16;
 const unsigned EV_MAX = 65535;
 const int EV_ENDS = 3;
-const unsigned EV_LOST = RATE / 10;
 
 /* start()'s copy of the configuration */
 Config cfg_;
@@ -863,15 +862,9 @@ private:
 	int ev_ends_ = 0;
 	bool ev_on_ = false, ev_first_ = false;
 
-	/* a DTMF digit received as a telephone-event, played into the
-	   modem's audio as the tone it stands for: the event's timestamp,
-	   the samples left until it counts as ended without its end packet,
-	   whether one plays */
-	dsp::DtmfGen rx_dtmf_ = {};
-	uint32_t rx_ev_ts_ = 0;
-	unsigned rx_ev_left_ = 0;
-	bool rx_ev_on_ = false;
-	bool rx_ev_ended_ = false;
+	/* the far end's telephone-events, played into the modem's audio
+	   as the tones they stand for (rtp_events.h) */
+	dmd::EventPlayer rx_events_;
 
 	/* the socket has failed (what): told once, the thread to end */
 	void failed(const char *what)
@@ -881,42 +874,33 @@ private:
 			    reinterpret_cast<void *>((uintptr_t)serial_));
 	}
 
-	/* a telephone-event packet's payload b (n octets) at timestamp ts:
-	   a DTMF digit's start, its going on, or its end (others ignored) */
+	/* a telephone-event packet's payload b (n octets) at timestamp ts
+	   to the player; what began, told */
 	void event_in(const uint8_t *b, size_t n, uint32_t ts)
 	{
-		static const char keys[] = "0123456789*#ABCD";
+		dmd::EventPlayer::Began e = rx_events_.packet(b, n, ts);
 
-		if (n < 4 || b[0] > 15)
-			return;
-		if (!rx_ev_on_ || ts != rx_ev_ts_) {
-			if (rx_ev_ended_ && ts == rx_ev_ts_)
-				return;         /* a copy of its end */
-			rx_dtmf_.set(keys[b[0]], RATE);
-			rx_ev_ts_ = ts;
-			rx_ev_on_ = true;
-			rx_ev_ended_ = false;
-			say(4, "call %u: DTMF %c (RFC 4733), played as its tone",
-			    serial_, keys[b[0]]);
+		switch (e.kind) {
+		case dmd::EventPlayer::PLAYED:
+			say(4, "call %u: %s (RFC 4733 event %d), played as its "
+			    "tone", serial_, e.name, e.event);
+			break;
+		case dmd::EventPlayer::FLASH:
+			say(3, "call %u: the far end's hook flash (RFC 4733 "
+			    "event 16): no signal of a line stands for it, "
+			    "ignored", serial_);
+			break;
+		case dmd::EventPlayer::NOT_PLAYED:
+			say(4, "call %u: %s (RFC 4733 event %d): its signal is "
+			    "in the audio", serial_, e.name, e.event);
+			break;
+		case dmd::EventPlayer::UNKNOWN:
+			say(3, "call %u: RFC 4733 event %d, unknown: ignored",
+			    serial_, e.event);
+			break;
+		default:
+			break;
 		}
-		rx_ev_left_ = EV_LOST;
-		if (b[1] & 0x80) {
-			rx_ev_on_ = false;
-			rx_ev_ended_ = true;
-		}
-	}
-
-	/* the received digit's tone over frame in, while it plays */
-	void dtmf_over(int16_t *in)
-	{
-		if (!rx_ev_on_)
-			return;
-		for (unsigned i = 0; i < SAMPLES; i++)
-			in[i] = (int16_t)rx_dtmf_.next();
-		if (rx_ev_left_ <= SAMPLES)
-			rx_ev_on_ = false;
-		else
-			rx_ev_left_ -= SAMPLES;
 	}
 
 	/* the packets that have come: into the jitter buffer if on, those
@@ -1122,11 +1106,12 @@ private:
 			}
 			if (!was_on) {
 				jb_.reset();
+				rx_events_.reset();
 				marker_ = true;
 				was_on = true;
 			}
 			jb_.get(in, SAMPLES);
-			dtmf_over(in);
+			rx_events_.fill(in, SAMPLES);
 			rec.rx(in, FRAME);
 			if (!write_all(modem_, in, FRAME)) {
 				failed("write failed");
