@@ -242,7 +242,6 @@ private:
 	V42bis enc_, dec_;
 	V44 enc44_, dec44_;
 	Mnp5 enc5_, dec5_;
-	bool comp_ready_ = false;
 	/* decoded characters the DTE has not taken yet */
 	uint8_t dec_out_[256];
 	int dec_head_ = 0, dec_count_ = 0;

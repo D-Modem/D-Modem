@@ -38,6 +38,18 @@ struct Config {
 	const char *record;     /* $DMODEM_REC: the audio both ways in
 				   <record>.rx and <record>.tx */
 	bool t38;               /* $SIP_T38 (not "no"): fax over T.38 */
+	const char *dns = nullptr;      /* the DNS servers for SRV and
+					   NAPTR, addresses (with :port, 53
+					   if none) apart by commas or
+					   spaces; NULL: /etc/resolv.conf's
+					   (a system without one, Android,
+					   gives them here) */
+	int log_level = -1;             /* 1 errors .. 4 the SIP messages,
+					   0 none; -1: $SIP_LOG_LEVEL, or
+					   4.  The lines go to the modem's
+					   log hook if it has one
+					   (dcore::log_set_hook()), else to
+					   stderr */
 };
 
 /* $SIP_LOGIN and friends into cfg; false (with a message) if unusable */

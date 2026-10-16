@@ -77,6 +77,8 @@ namespace libre {
 #include <re.h>
 }
 
+#include <log.h>
+
 #include "g711.h"
 #include "line_recorder.h"
 #include "sip.h"
@@ -123,7 +125,7 @@ enum { MQ_DIAL, MQ_ANSWER, MQ_MODEM_GONE, MQ_QUIT };
 
 /* start()'s copy of the configuration */
 Config cfg_;
-std::string user_, password_, domain_;
+std::string user_, password_, domain_, dns_;
 int log_level = 4;
 
 dmd::LineRecorder rec;
@@ -143,8 +145,9 @@ int start_state;
  *    helpers
  */
 
-/* a line of the log (stderr) at level (1 errors, 3 the calls, 4 more,
-   with the SIP messages), if SIP_LOG_LEVEL has it */
+/* a line of the log at level (1 errors, 3 the calls, 4 more, with the
+   SIP messages), if the configuration's level has it: to the modem's
+   log hook if it has one, else to stderr with the time */
 void say(int level, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 void say(int level, const char *fmt, ...)
 {
@@ -166,6 +169,11 @@ void say(int level, const char *fmt, ...)
 		va_start(ap, fmt);
 		vsnprintf(buf.data(), buf.size(), fmt, ap);
 		va_end(ap);
+	}
+	if (dcore::log_hooked()) {
+		dcore::log_line(("sip: " + std::string(buf.data()) +
+				 "\n").c_str());
+		return;
 	}
 	clock_gettime(CLOCK_REALTIME, &ts);
 	localtime_r(&ts.tv_sec, &tm);
@@ -1722,6 +1730,31 @@ bool add_transport(const char *ifname, const struct sa *a, void *arg)
 	return false;
 }
 
+/* the DNS servers of a list (addresses apart by commas or spaces, with
+   :port or port 53) into srvv, max at most: how many (one that can't be
+   read left out, with a message) */
+uint32_t dns_servers(const std::string &list, struct sa *srvv, uint32_t max)
+{
+	uint32_t n = 0;
+	size_t i = 0;
+
+	while (i < list.size() && n < max) {
+		size_t end = list.find_first_of(", ", i);
+		std::string a = list.substr(i, end == std::string::npos ?
+					    std::string::npos : end - i);
+		i = end == std::string::npos ? list.size() : end + 1;
+		if (a.empty())
+			continue;
+		if (sa_decode(&srvv[n], a.c_str(), a.size()) &&
+		    sa_set_str(&srvv[n], a.c_str(), DNS_PORT)) {
+			say(1, "DNS server `%s': not an address", a.c_str());
+			continue;
+		}
+		n++;
+	}
+	return n;
+}
+
 /* libre and the stack up: its transports, calls taken, the queue, the
    registration when listening; false (with a message) if any of it
    fails */
@@ -1742,8 +1775,11 @@ bool init()
 	signal(SIGPIPE, SIG_IGN);
 	tmr_init(&quit_tmr);
 
-	/* names by the system's resolver, SRV and NAPTR by its servers */
-	if (dns_srv_get(dom, sizeof(dom), nsv, &nsn))
+	/* names by the system's resolver, SRV and NAPTR by its servers:
+	   the configuration's, else resolv.conf's */
+	if (!dns_.empty())
+		nsn = dns_servers(dns_, nsv, nsn);
+	else if (dns_srv_get(dom, sizeof(dom), nsv, &nsn))
 		nsn = 0;
 	err = dnsc_alloc(&dnsc_, nullptr, nsn ? nsv : nullptr, nsn);
 	if (err) {
@@ -1881,12 +1917,17 @@ int start(const Config &cfg)
 	user_ = cfg.user ? cfg.user : "";
 	password_ = cfg.password ? cfg.password : "";
 	domain_ = cfg.domain ? cfg.domain : "";
-	log_level = level && *level ? atoi(level) : 4;
+	dns_ = cfg.dns ? cfg.dns : "";
+	cfg_.dns = nullptr;
+	if (cfg.log_level >= 0)
+		log_level = cfg.log_level;
+	else
+		log_level = level && *level ? atoi(level) : 4;
 	if (cfg.record)
 		rec.open(cfg.record, ".rx", ".tx");
 
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, ctl) < 0) {
-		fprintf(stderr, "error: socketpair: %s\n", strerror(errno));
+		say(1, "socketpair: %s", strerror(errno));
 		ctl[0] = ctl[1] = -1;
 		rec.close();
 		return -1;
@@ -1895,7 +1936,7 @@ int start(const Config &cfg)
 	try {
 		sip_thread = std::thread(serve);
 	} catch (const std::system_error &e) {
-		fprintf(stderr, "error: the SIP thread: %s\n", e.what());
+		say(1, "the SIP thread: %s", e.what());
 	}
 	if (sip_thread.joinable()) {
 		std::unique_lock<std::mutex> lk(start_mu);
@@ -1921,7 +1962,7 @@ void stop()
 		return;
 	running = false;
 	if (mqueue_push(mq_, MQ_QUIT, nullptr))
-		fprintf(stderr, "error: the SIP thread can't be stopped\n");
+		say(1, "the SIP thread can't be stopped");
 	else
 		sip_thread.join();
 	rec.close();

@@ -96,6 +96,15 @@ int log_vprintf(unsigned level, const char *fmt, va_list args)
 	return len;
 }
 
+/* see log.h */
+void log_line(const char *line)
+{
+	if (hook)
+		hook(line);
+	else
+		fputs(line, stderr);
+}
+
 /* log_vprintf() with the arguments */
 int log_printf(unsigned level, const char *fmt, ...)
 {

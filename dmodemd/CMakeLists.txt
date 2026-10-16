@@ -17,13 +17,30 @@ set(DMODEM_FRONT_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
 add_library(dmodem_front OBJECT ${_front})
 target_link_libraries(dmodem_front PUBLIC dmodem_core)
 target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
+set_target_properties(dmodem_front PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(DMODEM_DMODEMD)
-	# the modem daemon: its SIP user agent (sip.cpp) and a pty
-	add_executable(dmodemd main.cpp sip.cpp sip_dial.cpp)
+	# libdmodem_sip: the modem on a SIP line, its DTE a descriptor
+	# (sip_modem.h), with its SIP user agent (sip.cpp), the front
+	# ends' parts and the objects of the core, the pumps and the link;
+	# for dmodemd, and for a program that has the modem in a thread of
+	# its own (an Android app)
+	add_library(dmodem_sip STATIC sip_modem.cpp sip.cpp sip_dial.cpp
+		$<TARGET_OBJECTS:dmodem_front> $<TARGET_OBJECTS:dmodem_core>
+		$<TARGET_OBJECTS:dmodem_dsp> $<TARGET_OBJECTS:dmodem_t30>
+		$<TARGET_OBJECTS:dmodem_link>)
+	target_include_directories(dmodem_sip PUBLIC
+		${CMAKE_CURRENT_SOURCE_DIR} ${DMODEM_CORE_NEW_DIR}
+		${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR})
+	target_compile_options(dmodem_sip PRIVATE -Wall -Wextra -g -O2)
+	set_target_properties(dmodem_sip PROPERTIES
+		POSITION_INDEPENDENT_CODE ON)
+	target_link_libraries(dmodem_sip PUBLIC libre m Threads::Threads)
+
+	# the modem daemon: the modem on a SIP line and a pty
+	add_executable(dmodemd main.cpp)
 	target_compile_options(dmodemd PRIVATE -Wall -g -O2)
-	target_link_libraries(dmodemd PRIVATE dmodem_front dmodem_core
-		dmodem_dsp dmodem_t30 dmodem_link libre m pthread)
+	target_link_libraries(dmodemd PRIVATE dmodem_sip)
 	install(TARGETS dmodemd RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
 
 	# test/root_test.py: dmodemd started as root, what needs root's
@@ -51,7 +68,7 @@ endif()
 add_executable(modem_test modem_test.cpp)
 target_compile_options(modem_test PRIVATE -Wall -Wextra -g -O2)
 target_link_libraries(modem_test PRIVATE dmodem_front dmodem_core dmodem_dsp
-	dmodem_link m pthread)
+	dmodem_link m Threads::Threads)
 
 # libdmodem: the objects of dmodem_core, dmodem_dsp, dmodem_t30 and
 # dmodem_link go into libdmodem.a
@@ -62,6 +79,6 @@ target_include_directories(dmodem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 	PRIVATE ${DMODEM_CORE_NEW_DIR} ${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR})
 target_compile_options(dmodem PRIVATE -Wall -g -O2)
 set_target_properties(dmodem PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(dmodem PUBLIC m pthread)
+target_link_libraries(dmodem PUBLIC m Threads::Threads)
 install(TARGETS dmodem ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES dmodem.h dmodem.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
