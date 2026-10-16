@@ -186,6 +186,9 @@ enum v34_state {
 	P4D_START,
 	P4D_RI,         /* until CPt */
 	P4D_TRAIN,      /* TRN2d, MP, MP', Ed, B1d (the frame source) */
+	/* V.90 analogue modem, phase 3 (9.3.2/V.90): its silence after
+	   INFO1a; what follows is to come */
+	P3V_SILENCE,
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
@@ -264,8 +267,13 @@ struct Info0 {
 	int ack;
 	int v92, short2;        /* INFO0a (Table 16/V.92): V.92, and short
 				   phase 2 asked for */
+	/* INFO0d (Table 7/V.90), the digital modem's: its phase 2 power
+	   (-6 - n dBm0), its most (-0.5 - n / 2 dBm0), measured at the
+	   codec's output, the network's law (1: A-law), 3429 upstream */
+	int p2_power, max_power, codec_power, law, up3429;
 
 	void parse(const unsigned char *b);
+	void parse_d(const unsigned char *b);
 };
 
 struct Info1c {
@@ -387,6 +395,7 @@ struct V34V8 {
 	int v8_handover();
 	int v8_back(const char *why);
 	int v8_v90();
+	int v8_v90a();
 	int v8_v91();
 	void v8_rx_bit(int bit);
 	void ans_analyse(float x);
@@ -551,6 +560,10 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int pcm;                /* V.90 agreed in V.8 */
 	int v91;                /* offer V.91 */
 	int v91_on;             /* V.91 agreed in V.8 */
+	int v90a;               /* offer V.90 as the analogue modem */
+	int v90a_on;            /* V.90 agreed in V.8, we the analogue
+				   modem */
+	int v90a_uinfo;         /* the 2 point train's Ucode we ask for */
 	int v92;                /* offer V.92 as the digital modem */
 	int v92_on;             /* both INFO0 said V.92 */
 	int short2;             /* and both asked for short phase 2 */
@@ -614,6 +627,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void set_state(enum v34_state s);
 	void make_info1c(BitQ *q);
 	void make_info1a(BitQ *q);
+	void make_info1a_v90(BitQ *q);
+	int info0_rx_len() const { return v90a_on ? 42 + 16 : 29 + 16; }
 	int info_expected();
 	void v91_start();
 	void v92_start();
@@ -622,6 +637,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void pump_rx_sample(float x);
 	int fallback(const char *why);
 	void choose_bauds();
+	void v90a_choose();
 	int primary_start();
 	int v90_start();
 	void v90_make_mp(int ack);
@@ -777,6 +793,24 @@ void V34Pump::make_info1a(BitQ *q)
 	q->info_end();
 }
 
+/* our INFO1a as the analogue modem asking for V.90 (Table 10/V.90): no
+   MD, the 2 point train's Ucode (v90a_uinfo), the upstream symbol rate
+   v90a_choose() picked (its carrier and pre-emphasis INFO1d's), 6 for
+   the digital modem's 8000; no frequency offset (as our INFO1a and
+   INFO1c) */
+void V34Pump::make_info1a_v90(BitQ *q)
+{
+	q->info_start();
+	q->put(0, 6);
+	q->put(0, 7);        /* no MD */
+	q->put(v90a_uinfo, 7);
+	q->put(0, 2);
+	q->put(baud_tx, 3);
+	q->put(6, 3);
+	q->put(0, 10);       /* frequency offset */
+	q->info_end();
+}
+
 /* a field of an INFO frame, least significant bit first in time */
 static int bits_val(const unsigned char *b, int first, int last)
 {
@@ -804,6 +838,18 @@ void Info0::parse(const unsigned char *b)
 	ack = b[28];
 	v92 = b[26];
 	short2 = b[27];
+}
+
+/* the digital modem's INFO0d (Table 7/V.90): INFO0's bits and its
+   powers, law and upstream 3429 */
+void Info0::parse_d(const unsigned char *b)
+{
+	parse(b);
+	p2_power = bits_val(b, 29, 32);
+	max_power = bits_val(b, 33, 37);
+	codec_power = b[38];
+	law = b[39];
+	up3429 = b[40];
 }
 
 /* the caller's INFO1c (Table 15/V.34): at each symbol rate its
@@ -847,7 +893,7 @@ void Info1a::parse(const unsigned char *b)
 int V34Pump::info_expected()
 {
 	if (!ev_info0)
-		return 29 + 16;
+		return info0_rx_len();
 	return caller ? 50 + 16 : 89 + 16;
 }
 
@@ -876,23 +922,27 @@ int V34V8<P>::v8_remote_cat(int tag)
 
 /* CM (caller) or JM (answerer); a JM repeats what both modems have.  As a
    V.90 digital modem: PCM in the modulation octet, the PCM modem
-   availability category and a digital network connection. */
+   availability category and a digital network connection; as the
+   analogue modem the first two. */
 template <class P>
 void V34V8<P>::v8_make_msg(BitQ *q)
 {
 	P &self = static_cast<P &>(*this);
 	int i, k, pcm_ = (self.v90 ? V8_PCM_DIGITAL : 0) |
-		(self.v91 ? V8_PCM_V91 : 0);
+		(self.v91 ? V8_PCM_V91 : 0) |
+		(self.v90a ? V8_PCM_ANALOGUE : 0);
 	q->reset();
 	q->put(0x3FF, 10);
-	/* in a JM what both have: V.90 when the CM had an analogue V.90
-	   modem, V.91 when it had V.91 */
+	/* in a JM what both have: V.90 when the CM had the other end of
+	   it, V.91 when it had V.91 */
 	if (!self.caller) {
 		int c = v8_remote_cat(V8_CAT_PCM);
 		if (c < 0)
 			c = 0;
 		if (!(c & V8_PCM_ANALOGUE))
 			pcm_ &= ~V8_PCM_DIGITAL;
+		if (!(c & V8_PCM_DIGITAL))
+			pcm_ &= ~V8_PCM_ANALOGUE;
 		if (!(c & V8_PCM_V91))
 			pcm_ &= ~V8_PCM_V91;
 	}
@@ -918,7 +968,8 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 				    v8_low == DP_V21 ? V8_MOD3_V21 : 0);
 		if (pcm_ && (c & 0x1F) == V8_CAT_MOD)
 			c |= V8_MOD1_PCM;
-		if (pcm_ && (c & 0x1F) == V8_CAT_ACCESS)
+		if ((pcm_ & (V8_PCM_DIGITAL | V8_PCM_V91)) &&
+		    (c & 0x1F) == V8_CAT_ACCESS)
 			c |= V8_ACCESS_DIGITAL;
 		q->put_octet(c);
 	}
@@ -1034,6 +1085,15 @@ int V34V8<P>::v8_v90()
 	P &self = static_cast<P &>(*this);
 	int c = v8_remote_cat(V8_CAT_PCM);
 	return self.v90 && c >= 0 && (c & V8_PCM_ANALOGUE) != 0;
+}
+
+/* V.90 with us as the analogue modem: the remote is its digital one */
+template <class P>
+int V34V8<P>::v8_v90a()
+{
+	P &self = static_cast<P &>(*this);
+	int c = v8_remote_cat(V8_CAT_PCM);
+	return self.v90a && c >= 0 && (c & V8_PCM_DIGITAL) != 0;
 }
 
 /* V.91: both offer it (and the remote is not an analogue V.90 modem) */
@@ -1501,7 +1561,20 @@ void V34Cc<P>::info_frame(CcRx *r)
 	r->hist_n = 0;
 	memset(r->ph_n, 0, sizeof(r->ph_n));
 	if (!ev_info0) {
-		rinfo0.parse(r->frame);
+		if (self.v90a_on) {
+			/* the digital modem's INFO0d: its network's law is
+			   what our PCM receiver decodes */
+			rinfo0.parse_d(r->frame);
+			self.alaw = rinfo0.law;
+			DSP_DBG("v34: INFO0d %s, phase 2 at %d dBm0, at most "
+				"%.1f dBm0%s, 3429 upstream %d\n",
+				rinfo0.law ? "A-law" : "u-law",
+				-6 - rinfo0.p2_power,
+				-0.5 - rinfo0.max_power / 2.0,
+				rinfo0.codec_power ? " (at the codec)" : "",
+				rinfo0.up3429);
+		} else
+			rinfo0.parse(r->frame);
 		ev_info0 = 1;
 		self.info0_at = self.total;
 		self.v92_on = self.pcm && self.v92 && rinfo0.v92;
@@ -1543,7 +1616,7 @@ void V34Info0<P>::rt_info0_frame(const unsigned char *h, long n)
 {
 	P &self = static_cast<P &>(*this);
 	unsigned char f[64];
-	int len = 29 + 16, k;
+	int len = self.info0_rx_len(), k;
 
 	if (!self.retraining || !self.caller || !self.ev_info0 ||
 	    self.ev_info1 || rt_info0 || n < len)
@@ -1570,7 +1643,7 @@ void V34Info0<P>::info0_repeat_frame(const unsigned char *h, long n)
 {
 	P &self = static_cast<P &>(*this);
 	unsigned char f[64];
-	int len = 29 + 16, k;
+	int len = self.info0_rx_len(), k;
 
 	if (self.retraining || !self.ev_info0 || self.ev_info1 || n < len ||
 	    self.total - info0_at < ms2samples(60, self.srate))
@@ -1674,7 +1747,7 @@ void V34Cc<P>::cc_phase_frame()
 	for (k = 0; k < len; k++)
 		r->frame[k] = k < 4 ? 1 : h[(n - len + k) % CC_HIST];
 	if (!info_crc_ok(r->frame, len - 16) ||
-	    (ev_info0 && info_crc_ok(r->frame, 29)))
+	    (ev_info0 && info_crc_ok(r->frame, self.info0_rx_len() - 16)))
 		return;
 	if (dsplibs_debug_level >= 6)
 		DSP_DBG("v34: INFO frame at sampling phase %d (timing at "
@@ -1720,7 +1793,8 @@ void V34Cc<P>::cc_rx_bit(int bit)
 				ok = r->frame[i] == ((0x72 >> (11 - i)) & 1);
 			/* (not an INFO1: the remote's INFO0 again and what
 			   follows it) */
-			if (ok && ev_info0 && info_crc_ok(r->frame, 29))
+			if (ok && ev_info0 &&
+			    info_crc_ok(r->frame, self.info0_rx_len() - 16))
 				ok = 0;
 			if (ok) {
 				info_frame(r);
@@ -1913,7 +1987,7 @@ void V34Moh<P>::moh_hold(int secs)
 	/* phase 1 from scratch (9.10.2.1/V.92: what earlier phase 1
 	   signals said does not count) */
 	self.caller = 0;
-	self.pcm = 0;
+	self.pcm = self.v90a_on = 0;
 	self.v8_ok = self.v8_cj = self.v8_sync = 0;
 	self.v8_n = self.v8_last_n = 0;
 	self.ev_qc = self.qc_done = 0;
@@ -2401,6 +2475,48 @@ void V34Pump::choose_bauds()
 	high_rx = best_high;
 	max_rate_rx = rate_of_baud[best] ? rate_of_baud[best] :
 		v34_min_rate(best);
+}
+
+/* the analogue modem of V.90 after INFO1d (9.2.2.1.9, Table 10/V.90):
+   its upstream symbol rate, of 3000, 3200 and 3429 (when INFO0d allows
+   it) the one INFO1d gives the most for, on the carrier INFO1d asks for
+   if our INFO0a has it; the 2 point train's Ucode (UINFO, above 66),
+   the loudest within the digital modem's most (INFO0d), as 0 dBm0 is
+   3.17 dB (A-law 3.14) below the sine at G.711's overload.  Without
+   a symbol rate (INFO1d has none): V.34 instead, v90a_on 0 */
+void V34Pump::v90a_choose()
+{
+	int b, best = -1, best_rate = 0, u;
+	double most = -0.5 - rinfo0.max_power / 2.0, rms0;
+
+	for (b = V34_BAUD_3000; b <= V34_BAUD_3429; b++) {
+		int rate = rinfo1c.r[b].max_rate;
+		if (b == V34_BAUD_3429 && !rinfo0.up3429)
+			continue;
+		if (!v34_info0_allows(info0_rates, b, b == V34_BAUD_3429 ? -1 :
+				      rinfo1c.r[b].high))
+			continue;
+		if (rate && rate >= best_rate) {
+			best_rate = rate;
+			best = b;
+		}
+	}
+	if (best < 0) {
+		DSP_DBG("v34: INFO1d: no upstream symbol rate for V.90, "
+			"V.34\n");
+		v90a_on = 0;
+		return;
+	}
+	baud_tx = best;
+	rms0 = (alaw ? 32768 : 32636) / M_SQRT2 /
+		pow(10, (alaw ? 3.14 : 3.17) / 20);
+	for (u = 127; u > 67 &&
+	     20 * log10(v90_ucode_linear(alaw, u) / rms0) > most; u--)
+		;
+	v90a_uinfo = u;
+	DSP_DBG("v34: V.90 upstream %d baud (%d bit/s), UINFO %d (%.1f "
+		"dBm0)\n", v34_bauds[best].nominal, best_rate * 2400, u,
+		20 * log10(v90_ucode_linear(alaw, u) / rms0));
 }
 
 /* the primary channel at the agreed symbol rates; -1 if the receiver
@@ -2936,6 +3052,10 @@ int V34V8<P>::v8_step(long c)
 			}
 			self.pcm = v8_v90();
 			self.v91_on = v8_v91();
+			self.v90a_on = v8_v90a();
+			if (self.v90a_on)
+				DSP_DBG("v34: V.90 with us as the analogue "
+					"modem\n");
 			self.set_state(V8A_JM);
 			/* the caller's INFO0c follows its CJ by only 75 ms:
 			   listen for it already; with V.90 the analogue
@@ -3032,12 +3152,18 @@ int V34V8<P>::v8_step(long c)
 			}
 			self.pcm = v8_v90();
 			self.v91_on = v8_v91();
+			self.v90a_on = v8_v90a();
 			if (self.pcm)
 				DSP_DBG("v34: V.90 with us as the digital modem\n");
+			if (self.v90a_on)
+				DSP_DBG("v34: V.90 with us as the analogue "
+					"modem\n");
 			self.set_state(V8C_CJ);
 			v8tx.make_cj();
 			v8tx_repeat = 0;
-			self.ccr.init(2400);
+			/* (the analogue modem is the V.34 answerer: the
+			   digital modem's INFO0d comes at 1200 Hz) */
+			self.ccr.init(self.v90a_on ? 1200 : 2400);
 		} else if (c >= ms2samples(5000, self.srate))
 			return self.fallback("no JM");
 		break;
@@ -3054,6 +3180,21 @@ int V34V8<P>::v8_step(long c)
 			return v8_handover();
 		if (c >= ms2samples(75, self.srate) && self.v91_on) {
 			self.v91_start();
+			break;
+		}
+		if (c >= ms2samples(75, self.srate) && self.v90a_on) {
+			/* the analogue modem of V.90 takes the part of the
+			   V.34 answer modem from phase 2 on (9.2.2/V.90) */
+			self.caller = 0;
+			self.tone_g.init(1200, PROBE_PERIOD, self.srate);
+			/* a retrain: the digital modem's tone B, ours A */
+			self.rt_g.init(1200, PROBE_PERIOD, self.srate);
+			self.own_g.init(2400, PROBE_PERIOD, self.srate);
+			self.set_state(P2A_INFO0);
+			self.cc.init(self.srate, 2400, CC_BAUD, 0.5f, 4, 1,
+				    V34_TONE_AMP);
+			self.make_info0(&self.cctx);
+			self.cc_send();
 			break;
 		}
 		if (c >= ms2samples(75, self.srate)) {
@@ -3443,15 +3584,27 @@ int V34Pump::handshake()
 		break;
 	case P2A_A2:
 		if (ev_info1) {
-			choose_bauds();
+			/* the analogue modem of V.90 asks for it in INFO1a,
+			   or for V.34 */
+			if (v90a_on)
+				v90a_choose();
+			if (!v90a_on)
+				choose_bauds();
 			set_state(P2A_INFO1);
-			make_info1a(&cctx);
+			if (v90a_on)
+				make_info1a_v90(&cctx);
+			else
+				make_info1a(&cctx);
 			cc_send();
 		}
 		break;
 	case P2A_INFO1:
 		if (!cc_busy()) {
 			cc_silence();
+			if (v90a_on) {
+				set_state(P3V_SILENCE);
+				break;
+			}
 			set_state(P3A_SILENCE);
 			if (primary_start())
 				return DPSTAT_ERROR;
@@ -3664,6 +3817,15 @@ int V34Pump::handshake()
 			set_state(P3C_WAIT);
 			if (primary_start())
 				return DPSTAT_ERROR;
+		}
+		break;
+
+	/* V.90 analogue modem, phase 3: not yet there (DSP_V90A=1 only),
+	   the call ends */
+	case P3V_SILENCE:
+		if (c >= ms2samples(1000, srate)) {
+			DSP_DBG("v34: V.90 analogue modem: no phase 3 yet\n");
+			return DPSTAT_ERROR;
 		}
 		break;
 
@@ -4338,6 +4500,11 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	alaw = rt && rt->law ? rt->law == 2 :
 		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
 	v8_low = caller_ && rt ? rt->v8_for : 0;
+	/* V.90 as the analogue modem, on a line other than the digital
+	   modem's network: under way, only DSP_V90A=1 offers it */
+	v90a = (id == DP_V90 || id == DP_V92) && !v90 && !v8_low &&
+		getenv("DSP_V90A") && atoi(getenv("DSP_V90A"));
+	v90a_on = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
 

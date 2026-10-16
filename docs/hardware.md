@@ -86,7 +86,8 @@ that user needs access to `/dev/snd/*`.
 ## Limits
 
 - **Speed.** The open DSP has V.90 and V.92 only as the digital modem.
-  The analogue end of a V.90 call to an ISP is not there, so such a call
+  The analogue end of a V.90 call to an ISP is not there yet (see
+  [V.90 analogue modem](dsp/v90a.md) for the plan), so such a call
   connects at V.34.
 - **Dialling.** DTMF only: `ATDP` dials in DTMF too, as a hook switch
   through a mixer control cannot time pulses.

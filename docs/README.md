@@ -9,6 +9,7 @@ The project's overview, building and usage are in the top
   core, the pumps (V.21 to V.34), the QAM receiver and the code structure
   - [V.8 and V.34](dsp/v34.md)
   - [V.90 digital modem](dsp/v90.md)
+  - [V.90 analogue modem](dsp/v90a.md): the plan, and phases 1 and 2
   - [V.92](dsp/v92.md): quick connect, modem-on-hold, PCM upstream
   - [V.91 digital to digital](dsp/v91.md)
   - [Fax](dsp/fax.md): class 1 modems and the T.30 fax machine

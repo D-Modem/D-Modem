@@ -47,6 +47,8 @@ namespace interop {
  *                     newlines anyway); EXPECT_A modemA's
  *   REJECT_B=<regex>  and must not have it
  *   EXPECT_DROP=1     the call is to end on the way: the data unchecked
+ *   EXPECT_FAIL=1     the call is to end before CONNECT, modemA with NO
+ *                     CARRIER (EXPECT_A, EXPECT_B say how)
  *   DATA_RATE=<bit/s> the slowest direction's rate, when the CONNECTs do
  *                     not say it
  *   NET_SYNC=1        netsim's line events count from CONNECT

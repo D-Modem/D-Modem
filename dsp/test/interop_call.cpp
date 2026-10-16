@@ -871,8 +871,16 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			say("B: %s\n", show(dte.buf[1]).c_str());
 			say("call %d: %.1f s to CONNECT\n", call + 1,
 			    dte.t() - t_call);
-			if (dte.buf[0].find("CONNECT") == std::string::npos ||
-			    dte.buf[1].find("CONNECT") == std::string::npos)
+			bool connected =
+				dte.buf[0].find("CONNECT") != std::string::npos &&
+				dte.buf[1].find("CONNECT") != std::string::npos;
+			/* EXPECT_FAIL: the call is to end before CONNECT
+			   (EXPECT_A and EXPECT_B say how) */
+			if (!env("EXPECT_FAIL").empty())
+				done(!connected &&
+				     dte.buf[0].find("NO CARRIER") !=
+				     std::string::npos);
+			if (!connected)
 				done(false);
 		}
 		/* NET_SYNC: netsim's NET_DROP, NET_STEP and NET_NOISE times
