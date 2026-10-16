@@ -318,6 +318,8 @@ enum v34_txseg {
 	V34_TX_MP,
 	V34_TX_JA,      /* V.90's analogue modem: Ja, the DIL descriptor in
 			   bits (repeated) */
+	V34_TX_CP,      /* V.90's analogue modem: CP frames (repeated), the
+			   next one or E after a whole frame */
 	V34_TX_E,
 	V34_TX_DATA,
 };
@@ -330,6 +332,7 @@ struct V34Tx {
 	enum v34_txseg seg;
 	long n;                 /* symbols sent in this segment */
 	int idx;                /* last training point, for differential coding */
+	int s_odd;              /* S-bar after an S of odd length */
 	int trn16;              /* phase 4 TRN, MP and E of 16 points (the
 				   remote's J asked for them) */
 	unsigned char bits[2800];       /* MP, or Ja (V90_JA_MAX) */
@@ -337,6 +340,12 @@ struct V34Tx {
 	V34Mp mp;       /* the MP we send */
 	int mp_sent;            /* complete MP / MP' sequences sent */
 	int ack_mp;             /* set the acknowledge bit from the next MP on */
+	/* CP: the frame to send from the end of the current one on (0
+	   bits: the same again), whole frames of it sent, E instead */
+	unsigned char cp_next[1024];
+	int cp_next_n;
+	long cp_frames;
+	int cp_to_e;
 	V34DataTx dtx;     /* data mode, when data_on */
 	int data_on;
 

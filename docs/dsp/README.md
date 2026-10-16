@@ -48,7 +48,7 @@ V.90 is there as the **digital** modem only (the server side, as on a
 G.711 VoIP line), with V.92's quick connect for V.92 analogue modems
 calling (see [V.92](v92.md#v92-quick-connect)) and V.92's PCM
 upstream (see [PCM upstream](v92.md#v92-pcm-upstream)); the analogue side of
-V.90 is under way (phases 1 to 3 so far, with `DSP_V90A=1`: see
+V.90 is under way (phases 1 to 4 so far, with `DSP_V90A=1`: see
 [V.90 analogue modem](v90a.md)); V.92's, K56flex and V.8bis are not (`AT+MS=56`,
 K56flex, runs V.90). Between two digital modems V.91 (see
 [V.91](v91.md#v91-digital-to-digital)) takes the place of V.90. With the default `AT+MS=92` at 9600 Hz the modem connects at V.34 or

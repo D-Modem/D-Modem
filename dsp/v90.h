@@ -61,6 +61,10 @@ struct V90Cp {
 	unsigned char mask[6][128];     /* by Ucode */
 
 	int parse(const unsigned char *b, int len);
+	/* the analogue modem's CP in bits (Table 14/V.90): one per byte,
+	   the first in b[0]; how many (to the end of the fill).  The TRN1d
+	   rms ratio 1, the codec's constellations the transmitter's */
+	int build(unsigned char *b) const;
 	/* whether the constellations carry data frames of D bits, S of
 	   them sign bits, as the encoders (at most 48 bits) take them */
 	int usable(int D, int S) const;

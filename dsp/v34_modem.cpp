@@ -167,13 +167,27 @@ static cplx tx_symbol(V34Tx *t)
 	cplx z = { 0, 0 };
 	int k, w;
 
+	if (t->seg == V34_TX_CP && t->pos >= t->nbits) {
+		/* a CP frame out: E, or the next frame */
+		t->cp_frames++;
+		if (t->cp_to_e)
+			t->segment(V34_TX_E);
+		else if (t->cp_next_n) {
+			memcpy(t->bits, t->cp_next, t->cp_next_n);
+			t->nbits = t->cp_next_n;
+			t->cp_next_n = 0;
+			t->cp_frames = 0;
+		}
+		t->pos = 0;
+	}
 	switch (t->seg) {
 	case V34_TX_SILENCE:
 		break;
 	case V34_TX_S:
 	case V34_TX_SBAR:
-		/* 45 and 135 degrees; S-bar continues the alternation reversed */
-		t->idx = (t->n & 1) ? 1 : 2;
+		/* 45 and 135 degrees; S-bar continues the alternation reversed
+		   (after an S of odd length too) */
+		t->idx = ((t->n + t->s_odd) & 1) ? 1 : 2;
 		z = tx_point(t->idx);
 		if (t->seg == V34_TX_SBAR)
 			z = cplx_scale(z, -1);
@@ -214,6 +228,7 @@ static cplx tx_symbol(V34Tx *t)
 		}
 		break;
 	case V34_TX_JA:
+	case V34_TX_CP:
 		/* the descriptor again and again, as MP */
 		if (t->pos >= t->nbits)
 			t->pos = 0;
@@ -262,6 +277,7 @@ void V34Tx::init(int baud_, int high, int caller)
 void V34Tx::segment(enum v34_txseg seg_)
 {
 	DSP_DBG("v34 tx: segment %d -> %d after %ld symbols\n", seg, seg_, n);
+	s_odd = seg_ == V34_TX_SBAR && seg == V34_TX_S ? (int)(n & 1) : 0;
 	seg = seg_;
 	n = 0;
 	if (seg_ == V34_TX_MP)
@@ -269,6 +285,12 @@ void V34Tx::segment(enum v34_txseg seg_)
 	/* (Ja's bits are the caller's) */
 	if (seg_ == V34_TX_JA)
 		pos = 0;
+	if (seg_ == V34_TX_CP) {
+		pos = 0;
+		cp_next_n = 0;
+		cp_frames = 0;
+		cp_to_e = 0;
+	}
 	/* TRN starts with the scrambler cleared, the remote may train with
 	   a copy of it */
 	if (seg_ == V34_TX_TRN)

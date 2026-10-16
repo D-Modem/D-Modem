@@ -669,6 +669,53 @@ int V90Cp::parse(const unsigned char *b, int len)
 	return 0;
 }
 
+/* see v90.h: the inverse of parse() */
+int V90Cp::build(unsigned char *b) const
+{
+	static const int sbit[6] = { 0, 0, 0, 0, 1, 1 };
+	int n = 0, i, j, c;
+
+	put_bits(b, &n, 0x1FFFF, 17);
+	put_bits(b, &n, 0, 1);
+	put_bits(b, &n, 0, 1);
+	put_bits(b, &n, cp, 1);
+	put_bits(b, &n, drn, 5);
+	put_bits(b, &n, 0, 5);
+	put_bits(b, &n, silence, 1);
+	put_bits(b, &n, sr, 2);
+	put_bits(b, &n, ack, 1);
+	put_bits(b, &n, 0, 1);                  /* 34 */
+	put_bits(b, &n, alaw, 1);
+	put_bits(b, &n, rate_mask, 13);
+	put_bits(b, &n, ld, 2);
+	put_bits(b, &n, 0, 1);                  /* 51 */
+	put_bits(b, &n, 8192, 16);              /* TRN1d's rms ratio, 1 */
+	put_bits(b, &n, 0, 1);                  /* 68 */
+	put_bits(b, &n, a1 & 0xFF, 8);
+	put_bits(b, &n, a2 & 0xFF, 8);
+	put_bits(b, &n, 0, 1);                  /* 85 */
+	put_bits(b, &n, b1 & 0xFF, 8);
+	put_bits(b, &n, b2 & 0xFF, 8);
+	for (i = 0; i < 6; i++) {
+		/* a start bit at 102 and at 119 */
+		if (i == 0 || (sbit[i] && !sbit[i - 1]))
+			put_bits(b, &n, 0, 1);
+		put_bits(b, &n, con[i], 4);
+	}
+	put_bits(b, &n, 0, 1);                  /* 128: no codec ones */
+	put_bits(b, &n, 0, 7);
+	for (j = 0; j < ncon; j++)
+		for (c = 0; c < 8; c++) {
+			put_bits(b, &n, 0, 1);
+			for (i = 0; i < 16; i++)
+				put_bits(b, &n, mask[j][16 * c + i] != 0, 1);
+		}
+	put_bits(b, &n, 0, 1);
+	put_frame_crc(b, &n);
+	put_bits(b, &n, 0, 3);
+	return n;
+}
+
 /* whether the constellations carry data frames of D bits, S of them sign
    bits: none empty, enough points for the K = D - S modulus bits, and
    frames that fit the encoders' 48 bits (a CP may pass its CRC and still

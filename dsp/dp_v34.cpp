@@ -200,7 +200,11 @@ enum v34_state {
 	P3V_DIL,        /* silence while the DIL is measured */
 	P3V_S3,         /* S, S-bar: enough of it */
 	P3V_SBAR3,
-	P3V_END,        /* phase 4 is to come */
+	P4V_CPT,        /* CPt until Ri-bar */
+	P4V_CP,         /* CP until MP */
+	P4V_CPACK,      /* CP' until MP' or Ed */
+	P4V_E,          /* E, then ones until B1d is in */
+	P4V_END,        /* the data mode is to come */
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
@@ -578,8 +582,9 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int v90a_uinfo;         /* the 2 point train's Ucode we ask for */
 	int v90a_rx;            /* the line into v90rx */
 	V90Rx v90rx;    /* the analogue modem's PCM receiver */
-	Resampler rs_pcm;       /* the line at 8000 Hz for it */
+	V90Interp rs_pcm;       /* the line at 8000 Hz for it */
 	V90Dil v90a_dil;        /* the DIL our Ja asks for */
+	V90Cp v90a_cpt, v90a_cp;        /* the constellations we ask for */
 	int v92;                /* offer V.92 as the digital modem */
 	int v92_on;             /* both INFO0 said V.92 */
 	int short2;             /* and both asked for short phase 2 */
@@ -655,6 +660,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void choose_bauds();
 	void v90a_choose();
 	void v90a_start();
+	int v90a_phase4();
 	int primary_start();
 	int v90_start();
 	void v90_make_mp(int ack);
@@ -2594,8 +2600,47 @@ void V34Pump::v90a_start()
 	txm = TXM_PRIMARY;
 	v90rx.init(alaw, v90a_uinfo);
 	v90rx.dil_set(v90a_dil);
-	rs_pcm.init(5, 6);
+	rs_pcm.init();
 	v90a_rx = 1;
+}
+
+/* the analogue modem's phase 4 (9.4.2/V.90): the constellations of
+   CPt and CP from what the PCM receiver found, within the power
+   INFO0d allows (Table 15/V.90); CPt from cleared scrambler and
+   differential encoder (8.5.2/V.90), the PCM receiver waiting for Ri.
+   -1 when there are no constellations to ask for */
+int V34Pump::v90a_phase4()
+{
+	static const short lim[32] = {
+		15124, 14276, 13480, 12724, 12012, 11340, 10708, 10108,
+		9544, 9008, 8504, 8028, 7580, 7156, 6756, 6380, 6020, 5684,
+		5368, 5068, 4784, 4516, 4264, 4024, 3800, 3588, 3388, 3196,
+		3020, 2852, 2692, 2540 };
+	float lv[6][128];
+	int m = rinfo0.max_power;
+	double limit, pw;
+	V90Con c;
+
+	limit = lim[m < 0 ? 0 : m > 31 ? 31 : m];
+	v90rx.levels(lv);
+	if (v90a_design_cpt(&v90a_cpt, alaw, v90rx.lin, lv, limit)) {
+		DSP_DBG("v34: V.90: no CPt constellations\n");
+		return -1;
+	}
+	c.init(v90a_cpt, v90a_cpt.drn + 8, lv);
+	pw = c.power(v90rx.lin);
+	if (v90a_design_cp(&v90a_cp, alaw, v90rx.lin, lv, v90rx.noise(),
+			   limit, pw, v90rx.jd.rate_mask) ||
+	    v90rx.phase4(v90a_cpt, v90a_cp)) {
+		DSP_DBG("v34: V.90: no CP constellations (noise %.1f)\n",
+			v90rx.noise());
+		return -1;
+	}
+	ptx.nbits = v90a_cpt.build(ptx.bits);
+	ptx.scr = 0;
+	ptx.idx = 0;
+	tx_next(P4V_CPT, V34_TX_CP);
+	return 0;
 }
 
 /* V.90 phase 3: the remote's V.34 signals in, our PCM signals out */
@@ -3949,7 +3994,8 @@ int V34Pump::handshake()
 			break;
 		if (!v90a_dil.n) {
 			DSP_DBG("v34: V.90: phase 3 done (no DIL)\n");
-			tx_next(P3V_END, V34_TX_SILENCE);
+			if (v90a_phase4())
+				return DPSTAT_ERROR;
 		} else
 			tx_next(P3V_DIL, V34_TX_SILENCE);
 		break;
@@ -3973,13 +4019,74 @@ int V34Pump::handshake()
 	case P3V_SBAR3:
 		if (ptx.n >= 16) {
 			DSP_DBG("v34: V.90: phase 3 done\n");
-			tx_next(P3V_END, V34_TX_SILENCE);
+			if (v90a_phase4())
+				return DPSTAT_ERROR;
 		}
 		break;
-	case P3V_END:
-		/* phase 4 is to come (DSP_V90A=1 only): the call ends */
-		if (c >= ms2samples(500, srate)) {
-			DSP_DBG("v34: V.90 analogue modem: no phase 4 yet\n");
+
+	/* V.90 analogue modem, phase 4 (9.4.2/V.90): CPt until the
+	   digital modem's Ri-bar, CP (no SCR) after the CPt frame going
+	   out, CP' after the one going out once MP is in, E after a whole
+	   CP' once MP' or Ed is in; B1d on CP's constellations.  The
+	   timeouts end the call (a retrain, 9.5.2.1/V.90, is to come) */
+	case P4V_CPT:
+		if (v90rx.ev_ribar) {
+			v90a_cp.ack = 0;
+			ptx.cp_next_n = v90a_cp.build(ptx.cp_next);
+			set_state(P4V_CP);
+			break;
+		}
+		if (c >= ms2samples(5000, srate)) {
+			DSP_DBG("v34: V.90: no Ri-bar (Ri %s)\n",
+				v90rx.ev_ri ? "seen" : "not seen");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P4V_CP:
+		if (v90rx.ev_mp) {
+			v90a_cp.ack = 1;
+			ptx.cp_next_n = v90a_cp.build(ptx.cp_next);
+			set_state(P4V_CPACK);
+			break;
+		}
+		if (c >= ms2samples(4000, srate)) {
+			DSP_DBG("v34: V.90: no MP (TRN2d %ld of %ld "
+				"symbols wrong)\n", v90rx.trn_sym_err,
+				v90rx.trn_sym);
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P4V_CPACK:
+		if (!ptx.cp_next_n && ptx.cp_frames >= 1 &&
+		    (v90rx.ev_mpack || v90rx.ev_ed)) {
+			ptx.cp_to_e = 1;
+			set_state(P4V_E);
+			break;
+		}
+		if (c >= ms2samples(4000, srate)) {
+			DSP_DBG("v34: V.90: no MP'\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P4V_E:
+		if (v90rx.ev_b1d) {
+			DSP_DBG("v34: V.90: B1d in, %d bit/s downstream\n",
+				(v90a_cp.drn + 20) * 8000 / 6);
+			set_state(P4V_END);
+			break;
+		}
+		if (c >= ms2samples(4000, srate)) {
+			DSP_DBG("v34: V.90: no B1d (Ed %s)\n",
+				v90rx.ev_ed ? "seen" : "not seen");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P4V_END:
+		/* the data mode is to come (DSP_V90A=1 only): the call
+		   ends */
+		if (c >= ms2samples(300, srate)) {
+			DSP_DBG("v34: V.90 analogue modem: no data mode "
+				"yet\n");
 			return DPSTAT_ERROR;
 		}
 		break;

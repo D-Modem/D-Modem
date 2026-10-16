@@ -19,6 +19,12 @@
  *    each symbol's value times its sign (SP) goes to its frame
  *    interval's and Ucode's sums.
  *
+ *    Phase 4: Ri, + + + - - - of UINFO in each data frame, until our
+ *    CPt is in, Ri-bar (24 symbols), then TRN2d, MP sequences and Ed
+ *    from the data mode encoder on CPt's constellations, B1d on CP's
+ *    (8.6/V.90): decoded here as the encoder makes them for Sr 0, no
+ *    spectral shaping.
+ *
  */
 
 #include <math.h>
@@ -67,6 +73,43 @@ int V90Jd::parse(const unsigned char *b)
 	cp16_reneg = b[48];
 	lookahead = field(b, 49, 2);
 	return 0;
+}
+
+/* see v90a.h: a Blackman windowed sinc at 48 kHz cut at 4800 Hz, gain
+   5 (the zeros between the samples), as 5 phases */
+void V90Interp::init()
+{
+	const int len = 5 * V90_INTERP_TAPS;
+	const double fc = 4800.0 / 48000;
+	int n;
+	memset(this, 0, sizeof(*this));
+	for (n = 0; n < len; n++) {
+		double m = n - (len - 1) / 2.0, x = 2 * fc * m, w;
+		double hh = fabs(x) < 1e-12 ? 1 : sin(M_PI * x) / (M_PI * x);
+		w = 0.42 - 0.5 * cos(2 * M_PI * (n + 0.5) / len) +
+			0.08 * cos(4 * M_PI * (n + 0.5) / len);
+		h[n % 5][n / 5] = (float)(5 * 2 * fc * hh * w);
+	}
+}
+
+/* see v90a.h: 48 kHz phase t of each output, 6 apart */
+int V90Interp::run(float x, float *out)
+{
+	int m = 0;
+	if (--pos < 0)
+		pos = V90_INTERP_TAPS - 1;
+	hist[pos] = hist[pos + V90_INTERP_TAPS] = x;
+	while (t < 5) {
+		const float *hp = h[t], *bp = hist + pos;
+		float y = 0;
+		int k;
+		for (k = 0; k < V90_INTERP_TAPS; k++)
+			y += hp[k] * bp[k];
+		out[m++] = y;
+		t += 6;
+	}
+	t -= 5;
+	return m;
 }
 
 /* see v90a.h */
@@ -506,11 +549,32 @@ void V90Rx::sample(float v)
 			k++;
 			continue;
 		}
-		if (stage != DECIDE) {
+		if (stage == TRAIN) {
 			k++;
 			continue;
 		}
 		y = equalize(k);
+		/* phase 4: Ri, its reversal (the equaliser follows them,
+		   UINFO's), then data frames */
+		if (stage == RI && ev_ribar && k >= frames_at)
+			stage = FRAMES;
+		if (stage == RI) {
+			int j = (int)(k % 6);
+			rs[j] = y > 0;
+			if (ev_ri)
+				adapt(k, (y > 0 ? level : -level) - y);
+			if (j == 5)
+				ri_frame(rs);
+			k++;
+			continue;
+		}
+		if (stage == FRAMES) {
+			fy[k % 6] = y;
+			if (k % 6 == 5)
+				frame();
+			k++;
+			continue;
+		}
 		/* after Jd': the equaliser still, the DIL measured */
 		if (ev_jdp) {
 			if (dil_on && k >= dil_start &&
@@ -521,8 +585,15 @@ void V90Rx::sample(float v)
 		}
 		/* TRN1d known up to its least length; after it our
 		   decisions */
-		if (t >= TRN1D_MIN)
+		if (t >= TRN1D_MIN) {
+			int j = (int)(k % 6);
 			a = y > 0 ? level : -level;
+			if (!ev_jd) {
+				usum[j] += fabsf(y);
+				usq[j] += (double)y * y;
+				un[j]++;
+			}
+		}
 		{
 			float e = a - y, pw = 0;
 			for (i = 0; i < V90RX_TAPS; i++) {
@@ -550,6 +621,468 @@ void V90Rx::sample(float v)
 		decide(y);
 		k++;
 	}
+}
+
+/*
+ *    phase 4 (9.4.2/V.90)
+ */
+
+/* see v90a.h: Table 16/V.90, the CRC after bit 68 (type 0) or 170 */
+int V90Mp::parse(const unsigned char *b, int len)
+{
+	int i, t = len == 188;
+
+	if (len != 86 && len != 188)
+		return -1;
+	if (b[18] != t || !frame_crc_ok(b, t ? 171 : 69))
+		return -1;
+	type = t;
+	rate_max = field(b, 24, 4);
+	trellis = field(b, 29, 2);
+	nonlinear = b[31];
+	expanded = b[32];
+	ack = b[33];
+	rate_mask = field(b, 36, 13);
+	for (i = 0; i < 6; i++)
+		h[i] = t ? (short)field(b, 52 + 17 * i, 16) : 0;
+	return 0;
+}
+
+/* see v90a.h: Sr 0 only (no spectral shaping) */
+int V90Con::init(const V90Cp &cp, int D_, const float lv[6][128])
+{
+	int i, u;
+
+	memset(this, 0, sizeof(*this));
+	if (cp.sr || !cp.usable(D_, 6))
+		return -1;
+	D = D_;
+	S = 6;
+	K = D - S;
+	for (i = 0; i < 6; i++) {
+		const unsigned char *m = cp.mask[cp.con[i]];
+		for (u = 127; u >= 0; u--)
+			if (m[u]) {
+				ucode[i][M[i]] = (unsigned char)u;
+				lev[i][M[i]++] = lv[i][u];
+			}
+	}
+	return 0;
+}
+
+/* see v90a.h: label j of interval i comes up in n of the 2^K values of
+   the modulus encoder's R, with A the product of the M before i */
+double V90Con::power(const int *lin) const
+{
+	unsigned long long two_k = 1ULL << K, A = 1;
+	double sum = 0;
+	int i, j;
+
+	for (i = 0; i < 6; i++) {
+		unsigned long long am = A * (unsigned)M[i];
+		unsigned long long full = two_k / am, rem = two_k % am;
+		for (j = 0; j < M[i]; j++) {
+			unsigned long long lo = (unsigned long long)j * A, n;
+			n = full * A + (rem > lo ? (rem - lo < A ? rem - lo : A) :
+					0);
+			sum += (double)lin[ucode[i][j]] * lin[ucode[i][j]] *
+				(double)n;
+		}
+		A = am;
+	}
+	return sum / (6.0 * (double)two_k);
+}
+
+/* a CP's constellations from each interval's Ucodes (pts[i][0..n[i]-1]):
+   one per distinct set */
+static void cp_masks(V90Cp *cp, const int pts[6][128], const int *n)
+{
+	int i, j, m;
+
+	cp->ncon = 0;
+	memset(cp->mask, 0, sizeof(cp->mask));
+	for (i = 0; i < 6; i++) {
+		unsigned char mk[128];
+		memset(mk, 0, sizeof(mk));
+		for (m = 0; m < n[i]; m++)
+			mk[pts[i][m]] = 1;
+		for (j = 0; j < cp->ncon; j++)
+			if (!memcmp(cp->mask[j], mk, sizeof(mk)))
+				break;
+		if (j == cp->ncon)
+			memcpy(cp->mask[cp->ncon++], mk, sizeof(mk));
+		cp->con[i] = j;
+	}
+}
+
+/* the parts of a CP our designs share: Sr 0 (no shaping), ld 0, every
+   upstream rate */
+static void cp_common(V90Cp *cp, int alaw)
+{
+	memset(cp, 0, sizeof(*cp));
+	cp->alaw = alaw;
+	cp->rate_mask = 0x1FFF;
+}
+
+/* the power of a CP's constellations (Table 15/V.90) at D bits */
+static double cp_power(const V90Cp &cp, int D, const int *lin,
+		       const float lv[6][128])
+{
+	V90Con c;
+	if (c.init(cp, D, lv))
+		return -1;
+	return c.power(lin);
+}
+
+/* its level in dBm0: 0 dBm0 is 3.17 dB (A-law 3.14) below the sine
+   at G.711's overload */
+static double dbm0(int alaw, double pw)
+{
+	double rms0 = (alaw ? 32768 : 32636) / M_SQRT2 /
+		pow(10, (alaw ? 3.14 : 3.17) / 20);
+	return 10 * log10(pw / (rms0 * rms0) + 1e-30);
+}
+
+/* see v90a.h: in each interval the Ucodes nearest L, 3 L, 5 L and 7 L
+   (8 levels with the signs, evenly apart; 21 L^2 the power), L lowered
+   until the power is within the limit */
+int v90a_design_cpt(V90Cp *cp, int alaw, const int *lin,
+		    const float lv[6][128], double limit)
+{
+	double L = 0.89 * limit / sqrt(21.0), pw = -1;
+	int pts[6][128], n[6], i, t, u, tries;
+
+	cp_common(cp, alaw);
+	cp->drn = 10;           /* D 18: K 12, S 6, 24 000 bit/s */
+	for (tries = 0; tries < 40; tries++, L *= 0.97) {
+		for (i = 0; i < 6; i++) {
+			n[i] = 0;
+			for (t = 1; t <= 7; t += 2) {
+				int best = -1;
+				for (u = 1; u < 128; u++)
+					if (lv[i][u] > 0 &&
+					    (n[i] == 0 || u > pts[i][n[i] - 1]) &&
+					    (best < 0 || fabs(lin[u] - t * L) <
+					     fabs(lin[best] - t * L)))
+						best = u;
+				if (best < 0)
+					return -1;
+				pts[i][n[i]++] = best;
+			}
+		}
+		cp_masks(cp, pts, n);
+		pw = cp_power(*cp, 18, lin, lv);
+		if (pw >= 0 && pw <= limit * limit)
+			break;
+	}
+	if (pw < 0 || pw > limit * limit)
+		return -1;
+	DSP_DBG("v90a: CPt: Ucodes %d %d %d %d (interval 0), %d "
+		"constellations, %.1f dBm0\n", pts[0][0], pts[0][1],
+		pts[0][2], pts[0][3], cp->ncon, dbm0(alaw, pw));
+	return 0;
+}
+
+/* see v90a.h: in each interval, from the least level of half the
+   spacing up, each next point the spacing above the last; then the
+   largest point of the interval whose largest is loudest dropped until
+   the power is within the limits; K the most the points carry (up to
+   36), as Jd allows (bit 0: K 15, 28 000 bit/s) */
+int v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
+		   const float lv[6][128], double noise, double limit,
+		   double cpt_power, unsigned jd_rates)
+{
+	double dmin = 10 * noise, most = limit * limit, pw = -1;
+	int pts[6][128], n[6], i, u, K = 0;
+
+	if (cpt_power * 1.99 < most)
+		most = cpt_power * 1.99;
+	cp_common(cp, alaw);
+	cp->cp = 1;
+	for (i = 0; i < 6; i++) {
+		float last = 0;
+		n[i] = 0;
+		/* (the levels rise with the Ucode) */
+		for (u = 1; u < 128; u++) {
+			if (lv[i][u] <= 0)
+				continue;
+			if (n[i] ? lv[i][u] - last < dmin : lv[i][u] < dmin / 2)
+				continue;
+			pts[i][n[i]++] = u;
+			last = lv[i][u];
+		}
+		if (n[i] < 2)
+			return -1;
+	}
+	for (;;) {
+		double bits = 0;
+		int j;
+		for (i = 0; i < 6; i++)
+			bits += log2((double)n[i]);
+		K = (int)floor(bits + 1e-9);
+		if (K > 36)
+			K = 36;
+		while (K >= 15 && !(jd_rates >> (K - 15) & 1))
+			K--;
+		if (K < 15) {
+			DSP_DBG("v90a: CP: M %d %d %d %d %d %d at spacing "
+				"%.0f carry %.1f bits, 15 at least\n", n[0],
+				n[1], n[2], n[3], n[4], n[5], dmin, bits);
+			return -1;
+		}
+		cp->drn = K - 14;
+		cp_masks(cp, pts, n);
+		pw = cp_power(*cp, K + 6, lin, lv);
+		if (pw >= 0 && pw <= most)
+			break;
+		/* the loudest largest point goes */
+		for (i = 1, j = 0; i < 6; i++)
+			if (lin[pts[i][n[i] - 1]] > lin[pts[j][n[j] - 1]])
+				j = i;
+		if (--n[j] < 2)
+			return -1;
+	}
+	DSP_DBG("v90a: CP: D %d (%d bit/s), M %d %d %d %d %d %d, %d "
+		"constellations, spacing %.0f, %.1f dBm0 (CPt %.1f)\n", K + 6,
+		(K + 6) * 8000 / 6, n[0], n[1], n[2], n[3], n[4], n[5],
+		cp->ncon, dmin, dbm0(alaw, pw), dbm0(alaw, cpt_power));
+	return 0;
+}
+
+/* see v90a.h */
+void V90Rx::levels(float lv[6][128]) const
+{
+	int j, u;
+	for (j = 0; j < 6; j++)
+		for (u = 0; u < 128; u++)
+			if (dil_on)
+				lv[j][u] = dil_usable[j][u] &&
+					dil_level[j][u] > 0 ?
+					dil_level[j][u] : 0;
+			else
+				lv[j][u] = (float)lin[u];
+}
+
+/* see v90a.h: UINFO's spread in each frame interval after TRN1d's
+   least length (random signs: the data mode's intersymbol
+   interference), or the DIL's noise if more */
+float V90Rx::noise() const
+{
+	double v = 0;
+	float nz;
+	int j;
+	for (j = 0; j < 6; j++) {
+		double mu;
+		if (un[j] < 100)
+			break;
+		mu = usum[j] / un[j];
+		v += usq[j] / un[j] - mu * mu;
+	}
+	nz = j == 6 ? (float)sqrt(v > 0 ? v / 6 : 0) : sqrtf(mse) * level;
+	return dil_on && dil_noise > nz ? dil_noise : nz;
+}
+
+/* see v90a.h: Ri next */
+int V90Rx::phase4(const V90Cp &cpt, const V90Cp &cp)
+{
+	int u;
+	levels(lv4);
+	if (con_trn.init(cpt, cpt.drn + 8, lv4) ||
+	    con_data.init(cp, cp.drn + 20, lv4))
+		return -1;
+	for (u = 0; u < 128; u++)
+		ref_lin[u] = u + 1;
+	ref.init(&cpt, cpt.drn + 8, ref_lin);
+	con = &con_trn;
+	stage = RI;
+	ri_run = 0;
+	return 0;
+}
+
+/* the equaliser a step towards e (NLMS) for symbol kk */
+void V90Rx::adapt(long kk, float e)
+{
+	float pw = 0;
+	int i;
+	for (i = 0; i < V90RX_TAPS; i++) {
+		float xi = at(b + kk + EQ_D - i);
+		pw += xi * xi;
+	}
+	if (pw > 0)
+		for (i = 0; i < V90RX_TAPS; i++)
+			c[i] += EQ_MU * e / pw * at(b + kk + EQ_D - i);
+}
+
+/* a frame's signs in phase 4 before TRN2d: Ri, 8 frames of + + + - - -
+   in a row, then the first frame of mostly its opposite, Ri-bar;
+   TRN2d 24 symbols after it */
+void V90Rx::ri_frame(const int *s)
+{
+	static const int p[6] = { 1, 1, 1, -1, -1, -1 };
+	int j, score = 0;
+
+	if (ev_ribar)
+		return;
+	for (j = 0; j < 6; j++)
+		score += s[j] ? p[j] : -p[j];
+	if (!ev_ri) {
+		ri_run = score == 6 ? ri_run + 1 : 0;
+		if (ri_run >= 8) {
+			ev_ri = 1;
+			ri_seen = k;
+			DSP_DBG("v90a: Ri at symbol %ld\n", k - 47);
+		}
+		return;
+	}
+	if (score <= -4) {
+		ev_ribar = 1;
+		ribar_at = k - 5;
+		frames_at = ribar_at + 24;
+		DSP_DBG("v90a: Ri-bar at symbol %ld, TRN2d from %ld\n",
+			ribar_at, frames_at);
+	} else if (score < 4) {
+		ri_run = 0;
+		ev_ri = 0;
+		DSP_DBG("v90a: Ri lost at symbol %ld\n", k);
+	}
+}
+
+/* an MP bit (9.4.1.3/V.90): frame sync, then 86 bits (type 0) or 188 */
+void V90Rx::mp_bit(int bit)
+{
+	msr = (msr << 1) | (unsigned)bit;
+	if (mp_n) {
+		mpb[mp_n++] = (unsigned char)bit;
+		if (mp_n == 19)
+			mp_len = bit ? 188 : 86;
+		if (mp_n == mp_len) {
+			V90Mp m;
+			mp_n = 0;
+			if (m.parse(mpb, mp_len) == 0) {
+				if (!ev_mp || (m.ack && !ev_mpack))
+					DSP_DBG("v90a: MP%s at frame %ld: type "
+						"%d, upstream at most %d, mask "
+						"%04x, trellis %d\n",
+						m.ack ? "'" : "", frames,
+						m.type, m.rate_max * 2400,
+						m.rate_mask, m.trellis);
+				mp = m;
+				ev_mp++;
+				if (m.ack)
+					ev_mpack++;
+				mp_frame = frames;
+				ed_zero = 0;
+			} else
+				DSP_DBG("v90a: MP with bad CRC at frame %ld\n",
+					frames);
+		}
+		return;
+	}
+	if ((msr & 0x3FFFF) == 0x3FFFE) {
+		memset(mpb, 1, 17);
+		mpb[17] = 0;
+		mp_n = 18;
+		mp_len = 0;
+	}
+}
+
+/* a data frame's values fy[] decoded (5.4/V.90, Sr 0): each the
+   nearest level, the labels the modulus encoder's R, the signs
+   differentially, all D descrambled.  TRN2d's first 340 frames are
+   known (the equaliser follows them), after them the decisions; MP
+   frames, Ed after an MP', B1d on CP's constellations */
+void V90Rx::frame()
+{
+	const V90Con *cn = con;
+	unsigned char d[48];
+	unsigned long long R = 0, A = 1;
+	int j, i, s[6], ones = 0, known = cn == &con_trn && frames < 340;
+	int out[6];
+
+	if (known) {
+		unsigned char one[48];
+		memset(one, 1, sizeof(one));
+		ref.push(one, 0);
+		ref.pop(out);
+	}
+	for (j = 0; j < 6; j++) {
+		float m = fabsf(fy[j]), best = 1e30f, tg;
+		int l, bl = 0;
+		for (l = 0; l < cn->M[j]; l++) {
+			float dd = fabsf(cn->lev[j][l] - m);
+			if (dd < best) {
+				best = dd;
+				bl = l;
+			}
+		}
+		s[j] = fy[j] > 0;
+		R += (unsigned long long)bl * A;
+		A *= (unsigned)cn->M[j];
+		tg = s[j] ? cn->lev[j][bl] : -cn->lev[j][bl];
+		if (known) {
+			int u = (out[j] > 0 ? out[j] : -out[j]) - 1;
+			if (u != cn->ucode[j][bl] || (out[j] > 0) != s[j])
+				trn_sym_err++;
+			trn_sym++;
+			tg = out[j] > 0 ? lv4[j][u] : -lv4[j][u];
+		}
+		adapt(k - 5 + j, tg - fy[j]);
+		fe_sum += (double)(tg - fy[j]) * (tg - fy[j]);
+		fe_n++;
+	}
+	for (j = 0; j < 6; j++) {
+		d[j] = (unsigned char)(s[j] ^ flast);
+		flast = s[j];
+	}
+	for (i = 0; i < cn->K; i++)
+		d[6 + i] = (unsigned char)(R >> i & 1);
+	for (i = 0; i < cn->D; i++) {
+		d[i] = (unsigned char)descramble(&fscr, SCR_GPC, d[i]);
+		ones += d[i];
+	}
+
+	if (cn == &con_data) {
+		/* B1d: 48 frames of ones */
+		if (frames_b1 < 48) {
+			b1_err += cn->D - ones;
+			if (++frames_b1 == 48) {
+				ev_b1d = 1;
+				DSP_DBG("v90a: B1d: %ld bit errors in 48 frames "
+					"of %d bits, mse %.4f\n", b1_err, cn->D,
+					fe_n ? fe_sum / fe_n / ((double)level *
+						level) : 0);
+			}
+		}
+		frames++;
+		return;
+	}
+	if (known && frames == 339)
+		DSP_DBG("v90a: TRN2d: %ld of %ld symbols wrong, mse %.4f\n",
+			trn_sym_err, trn_sym, fe_sum / fe_n /
+			((double)level * level));
+	if (frames == 339) {
+		fe_sum = 0;
+		fe_n = 0;
+	}
+	for (i = 0; i < cn->D; i++)
+		mp_bit(d[i]);
+	/* Ed: the 2 frames after an MP' sequence's last are zeros */
+	if (ev_mpack && !mp_n && frames == mp_frame + 1 + ed_zero) {
+		if (ones <= 2) {
+			if (++ed_zero == 2) {
+				ev_ed = 1;
+				con = &con_data;
+				fscr = 0;
+				flast = 0;
+				fe_sum = 0;
+				fe_n = 0;
+				DSP_DBG("v90a: Ed at frame %ld, B1d next "
+					"(D %d)\n", frames, con_data.D);
+			}
+		} else
+			ed_zero = 0;
+	}
+	frames++;
 }
 
 } // namespace dsp
