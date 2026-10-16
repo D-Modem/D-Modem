@@ -1,11 +1,10 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
- * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
- *    options.cpp - the command line (options.h); slmodemd's
- *                  modem_cmdline.c
+ *    options.cpp - the command line of the modem programs (options.h):
+ *                  the options read into dmd::Options and the log
+ *                  levels, the usage, the version line, the countries
  *
  */
 
@@ -19,201 +18,273 @@
 
 #include "options.h"
 
-/* the usage's text, to stderr */
-#define PR_INFO(fmt...) fprintf(stderr, fmt)
-
 namespace dmd {
 
-/* the modem's name: its pty link /dev/ttyDM<n> (n the digits it ends
-   with), its data file and its log */
-static const char default_name[] = "dmodem0";
+namespace {
 
-enum {
-	OPT_HELP = 0, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
-	OPT_GROUP, OPT_PERM, OPT_USER, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
-	OPT_LAST
-};
+/* the modem's name when the command line gives none */
+const char DEFAULT_NAME[] = "dmodem0";
 
-enum opt_arg { NONE = 0, MANDATORY, OPTIONAL };
-enum opt_type { INTEGER, STRING };
+/* what an option takes after it */
+enum class Takes { Nothing, Text, Number };
 
-/* an option: its letter, long name, help line, argument (kind, type,
-   value: the default, then what was given) and how often it was seen */
-struct opt {
-	int ch;
+/* one option: how it is written, what it takes (and whether it must
+   have it), its line in the usage; then, as the command line is read,
+   whether it came and its value (the default until one is given) */
+struct Option {
+	char letter;            /* 0: a long name only */
 	const char *name;
-	const char *desc;
-	enum opt_arg arg;
-	enum opt_type arg_type;
-	const char *arg_val;
-	unsigned found;
+	Takes takes;
+	bool mandatory;
+	const char *help;
+	const char *value;
+	bool given;
 };
 
-static struct opt opt_list[] = {
-	{ 'h', "help", "this usage", NONE, INTEGER, nullptr, 0 },
-	{ 'u', "usage", "this usage", NONE, INTEGER, nullptr, 0 },
-	{ 'v', "version", "show version and exit", NONE, INTEGER, nullptr, 0 },
-	{ 'c', "country", "default modem country name", MANDATORY, STRING,
-	  "USA", 0 },
-	{ 0, "countrylist", "show list of supported countries", NONE, INTEGER,
-	  nullptr, 0 },
-	{ 'g', "group", "Modem TTY group", MANDATORY, STRING, "dialout", 0 },
-	{ 'p', "perm", "Modem TTY permission", MANDATORY, INTEGER, "0660", 0 },
-	{ 'n', "nortpriority", "run with regular priority", NONE, INTEGER,
-	  nullptr, 0 },
-	{ 'd', "debug", "debug level (developers only, for ./sl...)", OPTIONAL,
-	  INTEGER, "0", 0 },
-	{ 'l', "log", "logging mode", OPTIONAL, INTEGER, "5", 0 },
-	{ 'L', "listen", "register with the SIP server and take calls in "
-	  "(RING, ATA or ATS0=n)", NONE, INTEGER, nullptr, 0 },
-	{ 0, nullptr, nullptr, NONE, INTEGER, nullptr, 0 },
+/* the options in the order they are tried and shown; their indices */
+enum {
+	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
+	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
+	OPT_COUNT
 };
 
-/* see options.h */
-void print_version()
+const Option OPTIONS[OPT_COUNT] = {
+	{ 'h', "help", Takes::Nothing, false, "this text", nullptr, false },
+	{ 'u', "usage", Takes::Nothing, false, "this text", nullptr, false },
+	{ 'v', "version", Takes::Nothing, false, "the version, and exit",
+	  nullptr, false },
+	{ 'c', "country", Takes::Text, true,
+	  "the country's rules (--countrylist)", "USA", false },
+	{ 0, "countrylist", Takes::Nothing, false,
+	  "the countries -c takes, and exit", nullptr, false },
+	{ 'g', "group", Takes::Text, true, "the pty's group", "dialout",
+	  false },
+	{ 'p', "perm", Takes::Number, true, "the pty's mode, in octal",
+	  "0660", false },
+	{ 'n', "nortpriority", Takes::Nothing, false,
+	  "no realtime scheduling", nullptr, false },
+	{ 'd', "debug", Takes::Number, false, "debug messages up to level",
+	  "0", false },
+	{ 'l', "log", Takes::Number, false,
+	  "binary log dmodem.log.<name> to level", "5", false },
+	{ 'L', "listen", Takes::Nothing, false,
+	  "register, and take calls in", nullptr, false },
+};
+
+/* one reading of a command line */
+class CommandLine {
+public:
+	CommandLine(int argc, char *argv[])
+		: argc_(argc), argv_(argv),
+		  prog_(argc > 0 && argv[0] ? argv[0] : "dmodemd")
+	{
+		memcpy(opts_, OPTIONS, sizeof(opts_));
+	}
+
+	/* every argument read (the usage and exit 1 on an error) */
+	void read();
+	/* the options' effects on opt and the log levels, or the exits of
+	   -h, -v and --countrylist */
+	void apply(Options &opt) const;
+
+private:
+	/* the option text (an argument without its dashes) is: its index,
+	   and in *value what was glued to it (nullptr if nothing); -1 if
+	   none */
+	int match(const char *text, const char **value) const;
+	/* the usage on stderr, exit 1 */
+	[[noreturn]] void usage() const;
+
+	int argc_;
+	char **argv_;
+	const char *prog_;
+	const char *name_ = nullptr;
+	Option opts_[OPT_COUNT];
+};
+
+/* rest is what follows an option's name or letter: it is the option's
+   if nothing follows, or (for one that takes a value) '=' and the value,
+   or a value of digits; the value into *value */
+bool fits(const Option &o, const char *rest, const char **value)
 {
-	printf("%s: version %s %s\n", dcore::Modem::product,
-	       dcore::Modem::version, __DATE__ " " __TIME__);
-	dcore::log_printf(1, "%s: version %s %s\n", dcore::Modem::product,
-			  dcore::Modem::version, __DATE__ " " __TIME__);
+	*value = nullptr;
+	if (!*rest)
+		return true;
+	if (o.takes == Takes::Nothing)
+		return false;
+	if (*rest == '=') {
+		*value = *(rest + 1) ? rest + 1 : nullptr;
+		return true;
+	}
+	if (isdigit((unsigned char)*rest)) {
+		*value = rest;
+		return true;
+	}
+	return false;
 }
 
-/* the options and the environment on stderr, then exit(1) */
-static void usage(const char *prog_name)
+/* each option in turn: by its whole long name, else by its letter */
+int CommandLine::match(const char *text, const char **value) const
 {
-	PR_INFO("Usage: %s [option...] [name]\n"
-		"Where 'name' names the modem: its pty link /dev/ttyDM<n>, n the\n"
-		"  digits it ends with, its data file and log (default `%s'),\n"
-		"  and 'option' may be:\n", prog_name, default_name);
-	for (struct opt *opt = opt_list; opt->name; opt++) {
-		int n = 0;
-		if (opt->ch)
-			n = PR_INFO("  -%c, ", opt->ch);
-		else
-			n = PR_INFO("      ");
-		n += PR_INFO("--%s%s ", opt->name, opt->arg ? "=VAL" : "");
-		n += PR_INFO("%*s%s", 24 - n, "", opt->desc);
-		if (opt->arg)
-			PR_INFO(" (default `%s')", opt->arg_val);
-		PR_INFO("\n");
+	for (int i = 0; i < OPT_COUNT; i++) {
+		const Option &o = opts_[i];
+		size_t len = strlen(o.name);
+		if (!strncmp(text, o.name, len) && fits(o, text + len, value))
+			return i;
+		if (o.letter && *text == o.letter &&
+		    fits(o, text + 1, value))
+			return i;
 	}
-	PR_INFO("Environment:\n"
-		"  SIP_LOGIN=user:password@domain   the SIP account (required)\n"
-		"  SIP_PORT=port                    the local SIP port (5060)\n"
-		"  SIP_LOG_LEVEL=n                  the SIP log's level (4, with\n"
-		"                                   the SIP messages; 3 the calls)\n");
+	return -1;
+}
+
+/* the arguments in order: options (a value glued on, or the next
+   argument if it may be one) and the name */
+void CommandLine::read()
+{
+	for (int i = 1; i < argc_; i++) {
+		const char *arg = argv_[i], *text = arg, *value;
+		int k;
+
+		if (*arg != '-') {
+			if (name_)
+				usage();
+			name_ = arg;
+			continue;
+		}
+		while (*text == '-')
+			text++;
+		k = match(text, &value);
+		if (k < 0)
+			usage();
+		Option &o = opts_[k];
+		if (o.takes != Takes::Nothing && !value && i + 1 < argc_) {
+			const char *next = argv_[i + 1];
+			if (*next != '-' && (o.takes != Takes::Number ||
+					     isdigit((unsigned char)*next))) {
+				value = next;
+				i++;
+			}
+		}
+		if (o.takes != Takes::Nothing && o.mandatory && !value)
+			usage();
+		o.given = true;
+		if (value)
+			o.value = value;
+	}
+}
+
+void CommandLine::usage() const
+{
+	fprintf(stderr,
+		"Usage: %s [option...] [name]\n"
+		"\n"
+		"The name is the modem's (default %s): its pty's link is\n"
+		"/dev/ttyDM<n> (n the digits it ends with), its data file\n"
+		"/var/lib/dmodem/data.<name>, its log dmodem.log.<name>.\n"
+		"\n"
+		"Options:\n", prog_, DEFAULT_NAME);
+	for (const Option &o : opts_) {
+		char head[48];
+		const char *eq = o.takes != Takes::Nothing ? "=VAL" : "";
+		int len, width;
+
+		if (o.letter)
+			len = snprintf(head, sizeof(head), "  -%c, --%s%s",
+				       o.letter, o.name, eq);
+		else
+			len = snprintf(head, sizeof(head), "      --%s%s",
+				       o.name, eq);
+		/* the help from column 24, a space after the option at
+		   least */
+		width = len + 1 > 24 ? len + 1 : 24;
+		fprintf(stderr, "%-*s%s", width, head, o.help);
+		if (o.takes != Takes::Nothing)
+			fprintf(stderr, " (default `%s')", o.value);
+		fputc('\n', stderr);
+	}
+	fprintf(stderr,
+		"\n"
+		"Environment:\n"
+		"  SIP_LOGIN=user:password@domain  the SIP account "
+		"(required)\n"
+		"  SIP_PORT=port         the local SIP port (5060)\n"
+		"  SIP_LOG_LEVEL=n       the SIP log's level (4: with the "
+		"SIP messages,\n"
+		"                        3: the calls)\n");
 	exit(1);
 }
 
-/* argv into opt_list (found, arg_val): -x or --name (any number of
-   dashes), the value after '=', glued on (digits only), or the next
-   argument if it is no option (digits only for an INTEGER).  Returns the
-   one other argument (the modem's name) or NULL; usage() on anything
-   else */
-static const char *opt_parse(int argc, char *argv[])
+/* the countries of homolog_set, their T.35 code and name, on stderr */
+void list_countries()
 {
-	const char *prog_name = argv[0];
-	const char *name = nullptr;
-
-	for (int i = 1; i < argc; i++) {
-		char *p = argv[i], *arg = nullptr;
-		int found = 0;
-		if (*p != '-') {
-			if (name)
-				usage(prog_name);
-			name = p;
-			continue;
-		}
-		do {
-			p++;
-		} while (*p == '-');
-		for (struct opt *opt = opt_list; opt->name; opt++) {
-			if (!strncmp(p, opt->name, strlen(opt->name)) ||
-			    (opt->ch && *p == opt->ch)) {
-				char *q;
-				if (!strncmp(p, opt->name, strlen(opt->name)))
-					q = p + strlen(opt->name);
-				else
-					q = p + 1;
-				if (*q == '\0')
-					found = 1;
-				else if (*q == '=' && opt->arg) {
-					arg = q + 1;
-					found = 1;
-				} else if (isdigit((unsigned char)*q) && opt->arg) {
-					arg = q;
-					found = 1;
-				}
-			}
-			if (!found)
-				continue;
-			if (arg && !opt->arg)
-				usage(prog_name);
-			if (!arg && opt->arg &&
-			    (i < argc - 1 && *argv[i + 1] != '-') &&
-			    (opt->arg_type != INTEGER ||
-			     isdigit((unsigned char)*argv[i + 1])))
-				arg = argv[++i];
-			if (!arg && opt->arg == MANDATORY)
-				usage(prog_name);
-			opt->found++;
-			if (opt->arg && arg)
-				opt->arg_val = arg;
-			break;
-		}
-		if (!found)
-			usage(prog_name);
-	}
-	return name;
+	for (const struct homolog_set *h = homolog_set; h->name; h++)
+		fprintf(stderr, "%02x: %s\n", (unsigned)h->id, h->name);
 }
 
-/* opt_list's findings into o and the log levels (-d, -l); exits for -h,
-   -v, --countrylist and a bad -p */
-void parse_options(int argc, char *argv[], Options &o)
+void CommandLine::apply(Options &opt) const
 {
-	const char *prog_name = argv[0];
-	int val;
+	const Option *o = opts_;
 
-	o.name = opt_parse(argc, argv);
-	if (opt_list[OPT_HELP].found || opt_list[OPT_USAGE].found)
-		usage(prog_name);
-	if (opt_list[OPT_VERSION].found) {
+	if (o[OPT_HELP].given || o[OPT_USAGE].given)
+		usage();
+	if (o[OPT_VERSION].given) {
 		print_version();
 		exit(0);
 	}
-	if (opt_list[OPT_COUNTRYLIST].found) {
-		for (const struct homolog_set *s = homolog_set; s->name; s++)
-			PR_INFO("%02x: %s\n", s->id, s->name);
+	if (o[OPT_COUNTRYLIST].given) {
+		list_countries();
 		exit(0);
 	}
-	if (opt_list[OPT_COUNTRY].found)
-		o.country = opt_list[OPT_COUNTRY].arg_val;
-	if (opt_list[OPT_GROUP].found)
-		o.group = opt_list[OPT_GROUP].arg_val;
-	if (opt_list[OPT_PERM].found) {
-		val = strtol(opt_list[OPT_PERM].arg_val, nullptr, 8);
-		if (val <= 0)
-			usage(prog_name);
-		o.perm = val;
+	if (o[OPT_COUNTRY].given)
+		opt.country = o[OPT_COUNTRY].value;
+	if (o[OPT_GROUP].given)
+		opt.group = o[OPT_GROUP].value;
+	if (o[OPT_PERM].given) {
+		long perm = strtol(o[OPT_PERM].value, nullptr, 8);
+		if (perm <= 0)
+			usage();
+		opt.perm = (mode_t)perm;
 	}
-	if (opt_list[OPT_USER].found)
-		o.realtime = false;
-	if (opt_list[OPT_DEBUG].found) {
-		dcore::log_level = 1;
-		if (opt_list[OPT_DEBUG].arg_val &&
-		    (val = strtol(opt_list[OPT_DEBUG].arg_val, nullptr, 0)) > 0)
-			dcore::log_level = val;
+	if (o[OPT_NORT].given)
+		opt.realtime = false;
+	if (o[OPT_DEBUG].given) {
+		long level = strtol(o[OPT_DEBUG].value, nullptr, 0);
+		dcore::log_level = level > 0 ? (unsigned)level : 1;
 	}
-	if (opt_list[OPT_LOG].found) {
-		dcore::log_data_level = 5;
-		if (opt_list[OPT_LOG].arg_val &&
-		    (val = strtol(opt_list[OPT_LOG].arg_val, nullptr, 0)) > 0)
-			dcore::log_data_level = val;
+	if (o[OPT_LOG].given) {
+		long level = strtol(o[OPT_LOG].value, nullptr, 0);
+		dcore::log_data_level = level > 0 ? (unsigned)level : 5;
 	}
-	if (opt_list[OPT_LISTEN].found)
-		o.listen = true;
-	if (!o.name)
-		o.name = default_name;
+	if (o[OPT_LISTEN].given)
+		opt.listen = true;
+	opt.name = name_ ? name_ : DEFAULT_NAME;
+}
+
+} // namespace
+
+/* the whole command line read first, then acted on: -h and -u before
+   -v, -v before --countrylist, then the settings */
+void parse_options(int argc, char *argv[], Options &opt)
+{
+	CommandLine cl(argc, argv);
+
+	cl.read();
+	cl.apply(opt);
+}
+
+/* "<product>: version <version> <date> <time>", the date and time this
+   file was compiled, on stdout and at level 1 in the log */
+void print_version()
+{
+	char line[128];
+
+	snprintf(line, sizeof(line), "%s: version %s %s %s",
+		 dcore::Modem::product, dcore::Modem::version, __DATE__,
+		 __TIME__);
+	printf("%s\n", line);
+	fflush(stdout);
+	dcore::log_printf(1, "%s\n", line);
 }
 
 } // namespace dmd

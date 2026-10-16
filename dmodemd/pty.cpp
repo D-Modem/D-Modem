@@ -1,19 +1,19 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
- * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
- *    pty.cpp - the DTE's pseudo terminal (pty.h); slmodemd's create_pty()
- *              and the pty part of its main loop, and the process that
- *              sets up each new pty with root's rights once dmodemd has
- *              dropped them (the keeper)
+ *    pty.cpp - the DTE's side of a modem program (pty.h): a pseudo
+ *              terminal and its slave's group, mode and symbolic link;
+ *              the DTE's characters in and the modem's out, its DTR and
+ *              its hang-up; and the link's keeper, a process that keeps
+ *              root's rights for the link alone
  *
  */
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
@@ -26,7 +26,9 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include <dcore.h>
@@ -35,135 +37,255 @@
 #include "pty.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
-#define INFO(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)
-#define DBG(fmt, ...) dcore::log_printf(1, "main: " fmt, ##__VA_ARGS__)
+#define DBG(fmt, ...) dcore::log_printf(1, "pty: " fmt, ##__VA_ARGS__)
 
 namespace dmd {
 
-/* the DTE closed the slave: not read again for so many loops */
-static const unsigned CLOSE_COUNT_MAX = 100;
+/* the keeper's answer to a pty it was given: each step's errno, 0 if it
+   was done or not asked for */
+struct keeper_answer {
+	int group;
+	int mode;
+	int link;
+};
 
-/* link removed if it still points at target (not another program's
-   since) */
-static void remove_link(const char *link, const char *target)
+namespace {
+
+/* the most octets one read of the DTE's takes */
+const int READ_MAX = 4096;
+
+/* after the DTE closed the slave: the turns the master is left out of
+   select() off hook, and on hook */
+const unsigned CLOSED_PAUSE_OFF_HOOK = 100;
+const unsigned CLOSED_PAUSE_ON_HOOK = 1;
+
+/* the keeper's socket, and the most descriptors it closes one by one
+   (when the kernel has no close_range) */
+const int KEEPER_FD = 3;
+const int KEEPER_FD_SCAN = 65536;
+
+/* a request's octet: the link as well, or only the group and mode */
+const char ASK_LINK = 'L';
+const char ASK_SLAVE = 'S';
+/* the keeper's first word: it holds nothing of ours but its socket */
+const char KEEPER_READY = 'R';
+
+/* what the keeper works with, in fixed buffers filled before the fork:
+   the group (if it is known) and mode for each slave, the link, and the
+   slave the link was last made to */
+struct KeeperSetup {
+	bool have_gid;
+	gid_t gid;
+	mode_t perm;
+	char link[PATH_MAX];
+	char target[PATH_MAX];
+};
+
+/* the slave at path given group gid (if have_gid) and mode perm (if not
+   0), and the symbolic link link made to it (if link is not null; what
+   was there removed): each step's errno into *a.  Async-signal-safe:
+   the keeper runs it */
+void setup_slave(const char *path, bool have_gid, gid_t gid, mode_t perm,
+		 const char *link, keeper_answer *a)
+{
+	a->group = a->mode = a->link = 0;
+	if (have_gid && chown(path, (uid_t)-1, gid) < 0)
+		a->group = errno;
+	if (perm && chmod(path, perm) < 0)
+		a->mode = errno;
+	if (link) {
+		unlink(link);
+		if (symlink(path, link) < 0)
+			a->link = errno;
+	}
+}
+
+/* link removed if it still points at target (not if another program
+   has put something else there since).  Async-signal-safe */
+void remove_link(const char *link, const char *target)
 {
 	char buf[PATH_MAX];
 	ssize_t n = readlink(link, buf, sizeof(buf) - 1);
+
 	if (n < 0)
 		return;
-	buf[n] = 0;
+	buf[n] = '\0';
 	if (!strcmp(buf, target))
 		unlink(link);
 }
 
-/* every descriptor from fd on closed */
-static void close_from(int fd)
+/* every descriptor from first up closed.  Async-signal-safe */
+void close_from(int first)
 {
 	struct rlimit rl;
-	long max = 1024;
+	int last = KEEPER_FD_SCAN;
+
 #ifdef SYS_close_range
-	if (!syscall(SYS_close_range, (unsigned)fd, ~0u, 0))
+	if (syscall(SYS_close_range, (unsigned)first, ~0U, 0U) == 0)
 		return;
 #endif
-	if (!getrlimit(RLIMIT_NOFILE, &rl))
-		max = rl.rlim_cur == RLIM_INFINITY || rl.rlim_cur > 1 << 20 ?
-			1 << 20 : (long)rl.rlim_cur;
-	for (; fd < max; fd++)
-		::close(fd);
+	if (getrlimit(RLIMIT_NOFILE, &rl) == 0 && rl.rlim_cur < (rlim_t)last)
+		last = (int)rl.rlim_cur;
+	for (int fd = first; fd < last; fd++)
+		close(fd);
 }
 
-/* the keeper's answer: the errno of each step, 0 if done (or not
-   asked for) */
-struct keeper_answer {
-	int group, mode, link;
-};
-
-/* the keeper (Pty::fork_keeper()), in the process forked for it: for
-   each message on sock, the slave of the master that came with it given
-   group gid (-1: left as is) and mode perm (0: left as is), and the link
-   pointed at it, a keeper_answer the answer; at the socket's end, the
-   link removed if it is still the one made last (made: the slave it
-   points at already).  Only system calls once forked: no other thread's
-   lock is held here.  Signals from the terminal and SIGTERM are the
-   modem's (it ends, then this) */
-[[noreturn]] static void keeper(int sock, const char *link, char *made,
-				gid_t gid, mode_t perm)
+/* the keeper's descriptors: its socket sock moved to KEEPER_FD, 0 to 2
+   on /dev/null (closed if it can't be opened), none other.  false if
+   the socket can't be moved */
+bool keeper_descriptors(int sock)
 {
-	static const int sigs[] = { SIGHUP, SIGINT, SIGQUIT, SIGTERM,
-				    SIGPIPE };
-	int nul;
+	int null;
 
-	for (int s : sigs)
-		signal(s, SIG_IGN);
-	/* the socket as 3, the standard ones /dev/null, nothing else (the
-	   pty's master least of all: it would keep the pty) */
-	if (sock != 3) {
-		if (dup2(sock, 3) != 3)
-			_exit(1);
-		sock = 3;
+	if (sock != KEEPER_FD) {
+		if (dup2(sock, KEEPER_FD) < 0)
+			return false;
+		close(sock);
 	}
-	nul = open("/dev/null", O_RDWR);
+	null = open("/dev/null", O_RDWR);
 	for (int fd = 0; fd < 3; fd++) {
-		if (fd == nul)
-			continue;
-		if (nul >= 0)
-			dup2(nul, fd);
-		else
-			::close(fd);
+		if (null < 0)
+			close(fd);
+		else if (fd != null)
+			dup2(null, fd);
 	}
-	close_from(4);
+	close_from(KEEPER_FD + 1);
+	return true;
+}
 
+/* the keeper's request: an octet (ASK_LINK or ASK_SLAVE) into *op and
+   the descriptor passed with it into *fd (-1 if none); the octets
+   received (0 at the end of the socket), or -1 */
+ssize_t keeper_receive(char *op, int *fd)
+{
+	struct iovec iov = { op, 1 };
+	union {
+		struct cmsghdr align;
+		char buf[CMSG_SPACE(sizeof(int))];
+	} ctl;
+	struct msghdr msg;
+	struct cmsghdr *c;
+	ssize_t n;
+
+	memset(&ctl, 0, sizeof(ctl));
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = ctl.buf;
+	msg.msg_controllen = sizeof(ctl.buf);
+	*fd = -1;
+	n = recvmsg(KEEPER_FD, &msg, MSG_CMSG_CLOEXEC);
+	c = n > 0 ? CMSG_FIRSTHDR(&msg) : nullptr;
+	if (c && c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS &&
+	    c->cmsg_len >= CMSG_LEN(sizeof(int)))
+		memcpy(fd, CMSG_DATA(c), sizeof(int));
+	return n;
+}
+
+/* the keeper (the child of Pty::fork_keeper()), on its socket sock: it
+   holds nothing else, then serves each pty it is passed until the
+   socket ends, and removes the link if it is still its own.  Only
+   async-signal-safe calls: the program it was forked from may have had
+   anything locked */
+[[noreturn]] void keeper_run(int sock, KeeperSetup &k)
+{
+	static const int ignored[] = {
+		SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGPIPE
+	};
+	struct sigaction sa;
+
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = SIG_IGN;
+	for (int sig : ignored)
+		sigaction(sig, &sa, nullptr);
+	if (!keeper_descriptors(sock) ||
+	    send(KEEPER_FD, &KEEPER_READY, 1, MSG_NOSIGNAL) != 1)
+		_exit(1);
 	for (;;) {
-		char c, name[PATH_MAX];
-		union {
-			struct cmsghdr h;
-			char buf[CMSG_SPACE(sizeof(int))];
-		} u;
-		struct iovec iov = { &c, 1 };
-		struct msghdr msg = {};
-		struct keeper_answer a = {};
-		struct cmsghdr *cm;
-		int fd = -1;
-		ssize_t n;
+		char op, path[PATH_MAX];
+		keeper_answer a = {};
+		int fd, err;
+		ssize_t n = keeper_receive(&op, &fd);
 
-		msg.msg_iov = &iov;
-		msg.msg_iovlen = 1;
-		msg.msg_control = u.buf;
-		msg.msg_controllen = sizeof(u.buf);
-		n = recvmsg(sock, &msg, MSG_CMSG_CLOEXEC);
 		if (n < 0 && errno == EINTR)
 			continue;
 		if (n <= 0)
 			break;
-		cm = CMSG_FIRSTHDR(&msg);
-		if (cm && cm->cmsg_level == SOL_SOCKET &&
-		    cm->cmsg_type == SCM_RIGHTS &&
-		    cm->cmsg_len == CMSG_LEN(sizeof(int)))
-			memcpy(&fd, CMSG_DATA(cm), sizeof(int));
-		if (fd < 0)
-			a.link = EINVAL;
-		else {
-			/* the master's own slave: ENOTTY if it is no
-			   pty's master */
-			a.link = ptsname_r(fd, name, sizeof(name));
-			::close(fd);
+		/* the slave of a master only: nothing else of the system's
+		   is ours to touch */
+		err = fd < 0 ? EBADF : ptsname_r(fd, path, sizeof(path));
+		if (fd >= 0)
+			close(fd);
+		if (err) {
+			a.link = err;
+		} else {
+			bool link = op == ASK_LINK;
+			setup_slave(path, k.have_gid, k.gid, k.perm & 0777,
+				    link ? k.link : nullptr, &a);
+			if (link && !a.link)
+				memcpy(k.target, path, strlen(path) + 1);
 		}
-		if (!a.link) {
-			if (gid != (gid_t)-1 && chown(name, -1, gid))
-				a.group = errno;
-			if (perm && chmod(name, perm & 0777))
-				a.mode = errno;
-			unlink(link);
-			if (symlink(name, link))
-				a.link = errno;
-			else
-				strcpy(made, name);
-		}
-		send(sock, &a, sizeof(a), MSG_NOSIGNAL);
+		if (send(KEEPER_FD, &a, sizeof(a), MSG_NOSIGNAL) < 0 &&
+		    errno != EINTR)
+			break;
 	}
-	remove_link(link, made);
+	remove_link(k.link, k.target);
 	_exit(0);
 }
+
+/* a new pty: its master (non-blocking), its slave's path into path; the
+   settings *t if keep, else its own made raw at 115200 bit/s, and in *t
+   what it has then.  -1 (reported) if it can't be had */
+int new_master(struct termios *t, bool keep, char *path, size_t size)
+{
+	const char *failed = nullptr;
+	int fd, flags;
+
+	fd = posix_openpt(O_RDWR | O_NOCTTY);
+	if (fd < 0) {
+		ERR("cannot open a pty: %s\n", strerror(errno));
+		return -1;
+	}
+	if (grantpt(fd) < 0 || unlockpt(fd) < 0) {
+		failed = "unlock";
+	} else if ((errno = ptsname_r(fd, path, size)) != 0) {
+		failed = "name";
+	} else if (!keep && tcgetattr(fd, t) < 0) {
+		failed = "read the settings of";
+	} else {
+		if (!keep) {
+			cfmakeraw(t);
+			cfsetispeed(t, B115200);
+			cfsetospeed(t, B115200);
+		}
+		flags = fcntl(fd, F_GETFL);
+		if (tcsetattr(fd, TCSANOW, t) < 0)
+			failed = "set up";
+		else if (flags < 0 ||
+			 fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
+			failed = "make non-blocking";
+		else
+			tcgetattr(fd, t);
+	}
+	if (failed) {
+		ERR("cannot %s the pty: %s\n", failed, strerror(errno));
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+/* the terminal settings that matter the same in a and b */
+bool same_settings(const struct termios &a, const struct termios &b)
+{
+	return a.c_iflag == b.c_iflag && a.c_oflag == b.c_oflag &&
+		a.c_cflag == b.c_cflag && a.c_lflag == b.c_lflag &&
+		cfgetispeed(&a) == cfgetispeed(&b) &&
+		cfgetospeed(&a) == cfgetospeed(&b) &&
+		!memcmp(a.c_cc, b.c_cc, sizeof(a.c_cc));
+}
+
+} // namespace
 
 /* the master closed, the link removed */
 Pty::~Pty()
@@ -171,44 +293,188 @@ Pty::~Pty()
 	close();
 }
 
-/* see pty.h (open() makes them again) */
+/* the old master closed first, so that the new slave normally has its
+   number; then a new pty as the DTE had the last one (or the first one
+   raw at 115200 bit/s), and its slave's group, mode and link (what of
+   these fails is only reported) */
+int Pty::open(const char *group, mode_t perm, const char *link)
+{
+	/* (link may be link_'s own string) */
+	std::string want_link = link ? link : "";
+	struct termios t = termios_;
+	char path[PATH_MAX];
+	int fd;
+
+	if (fd_ >= 0) {
+		::close(fd_);
+		fd_ = -1;
+	}
+	fd = new_master(&t, have_termios_, path, sizeof(path));
+	if (fd < 0)
+		return -1;
+	fd_ = fd;
+	name_ = path;
+	group_ = group ? group : "";
+	perm_ = perm;
+	termios_ = t;
+	have_termios_ = true;
+	closed_ = false;
+	close_count_ = 0;
+	DBG("%s opened\n", path);
+	set_slave(group, perm, want_link.c_str());
+	return 0;
+}
+
+/* the slave's group, mode and link: by the keeper if there is one (the
+   group, mode and link fork_keeper() took), else here; what failed is
+   reported, the link remembered if it was made */
+void Pty::set_slave(const char *group, mode_t perm, const char *link)
+{
+	keeper_answer a = {};
+	bool have_gid = false;
+	gid_t gid = 0;
+
+	link_ = link ? link : "";
+	if (group && *group) {
+		struct group *g;
+		errno = 0;
+		g = getgrnam(group);
+		if (g) {
+			have_gid = true;
+			gid = g->gr_gid;
+		} else {
+			ERR("cannot find group '%s': %s\n", group,
+			    errno ? strerror(errno) : "no such group");
+		}
+	}
+	if (keeper_ >= 0 && keeper_ask(&a) < 0) {
+		ERR("the keeper of %s is gone (%s): its pty set up here\n",
+		    link_.empty() ? name_.c_str() : link_.c_str(),
+		    strerror(errno));
+		end_keeper();
+	}
+	if (keeper_ < 0)
+		setup_slave(name_.c_str(), have_gid, gid, perm,
+			    link_.empty() ? nullptr : link_.c_str(), &a);
+	if (a.group)
+		ERR("cannot give %s the group '%s': %s\n", name_.c_str(),
+		    group, strerror(a.group));
+	if (a.mode)
+		ERR("cannot give %s the mode %04o: %s\n", name_.c_str(),
+		    (unsigned)perm, strerror(a.mode));
+	if (link_.empty())
+		return;
+	if (a.link) {
+		ERR("cannot create the symbolic link '%s' -> '%s': %s\n",
+		    link_.c_str(), name_.c_str(), strerror(a.link));
+		link_.clear();
+		return;
+	}
+	fprintf(stderr, "symbolic link `%s' -> `%s' created.\n",
+		link_.c_str(), name_.c_str());
+}
+
+/* the master to the keeper with an octet that says whether the link is
+   wanted (link_), its answer into *a; 0, or -1 (errno) if the keeper
+   could not be asked or did not answer */
+int Pty::keeper_ask(struct keeper_answer *a)
+{
+	char op = link_.empty() ? ASK_SLAVE : ASK_LINK;
+	struct iovec iov = { &op, 1 };
+	union {
+		struct cmsghdr align;
+		char buf[CMSG_SPACE(sizeof(int))];
+	} ctl;
+	struct msghdr msg;
+	struct cmsghdr *c;
+	ssize_t n;
+
+	memset(&ctl, 0, sizeof(ctl));
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = ctl.buf;
+	msg.msg_controllen = sizeof(ctl.buf);
+	c = CMSG_FIRSTHDR(&msg);
+	c->cmsg_level = SOL_SOCKET;
+	c->cmsg_type = SCM_RIGHTS;
+	c->cmsg_len = CMSG_LEN(sizeof(int));
+	memcpy(CMSG_DATA(c), &fd_, sizeof(int));
+	do
+		n = sendmsg(keeper_, &msg, MSG_NOSIGNAL);
+	while (n < 0 && errno == EINTR);
+	if (n != 1)
+		return -1;
+	do
+		n = recv(keeper_, a, sizeof(*a), 0);
+	while (n < 0 && errno == EINTR);
+	if (n != (ssize_t)sizeof(*a)) {
+		if (n >= 0)
+			errno = ECONNRESET;
+		return -1;
+	}
+	return 0;
+}
+
+/* the keeper's socket closed (it removes the link and ends then), the
+   keeper waited for */
+void Pty::end_keeper()
+{
+	if (keeper_ >= 0) {
+		::close(keeper_);
+		keeper_ = -1;
+	}
+	if (keeper_pid_ > 0) {
+		while (waitpid(keeper_pid_, nullptr, 0) < 0 && errno == EINTR)
+			;
+		keeper_pid_ = -1;
+	}
+}
+
+/* the master closed; the link removed by the keeper (which ends), or
+   here if there is none */
 void Pty::close()
 {
-	if (fd_ >= 0)
+	if (fd_ >= 0) {
 		::close(fd_);
-	fd_ = -1;
-	if (keeper_ >= 0)
+		fd_ = -1;
+	}
+	if (keeper_ >= 0 || keeper_pid_ > 0)
 		end_keeper();
 	else if (!link_.empty())
 		remove_link(link_.c_str(), name_.c_str());
 	link_.clear();
 }
 
-/* see pty.h */
+/* the keeper forked, with the link, group and mode of the current pty;
+   it has closed all it had of ours when this returns 0 */
 int Pty::fork_keeper()
 {
-	char link[PATH_MAX], made[PATH_MAX];
-	gid_t gid = (gid_t)-1;
+	KeeperSetup k;
 	int sv[2];
 	pid_t pid;
+	char word;
+	ssize_t n;
 
-	if (link_.empty() || keeper_ >= 0 || link_.size() >= sizeof(link) ||
-	    name_.size() >= sizeof(made))
+	if (link_.empty() || keeper_ >= 0 || link_.size() >= sizeof(k.link) ||
+	    name_.size() >= sizeof(k.target))
 		return -1;
+	memset(&k, 0, sizeof(k));
+	memcpy(k.link, link_.c_str(), link_.size() + 1);
+	memcpy(k.target, name_.c_str(), name_.size() + 1);
+	k.perm = perm_;
 	if (!group_.empty()) {
-		struct group *grp = getgrnam(group_.c_str());
-		if (grp)
-			gid = grp->gr_gid;
+		struct group *g = getgrnam(group_.c_str());
+		if (g) {
+			k.have_gid = true;
+			k.gid = g->gr_gid;
+		}
 	}
-	if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sv)) {
+	if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sv) < 0) {
 		ERR("socketpair: %s\n", strerror(errno));
 		return -1;
 	}
-	/* the keeper allocates nothing once forked */
-	strcpy(link, link_.c_str());
-	strcpy(made, name_.c_str());
-	fflush(stdout);
-	fflush(stderr);
+	fflush(nullptr);
 	pid = fork();
 	if (pid < 0) {
 		ERR("fork: %s\n", strerror(errno));
@@ -216,246 +482,121 @@ int Pty::fork_keeper()
 		::close(sv[1]);
 		return -1;
 	}
-	if (pid == 0) {
-		::close(sv[0]);
-		keeper(sv[1], link, made, gid, perm_);
-	}
+	if (pid == 0)
+		keeper_run(sv[1], k);
 	::close(sv[1]);
+	/* not on before the keeper holds nothing but its socket (one may
+	   look at its descriptors as soon as we go on) */
+	do
+		n = recv(sv[0], &word, 1, 0);
+	while (n < 0 && errno == EINTR);
+	if (n != 1 || word != KEEPER_READY) {
+		ERR("the keeper of %s did not start\n", link_.c_str());
+		::close(sv[0]);
+		while (waitpid(pid, nullptr, 0) < 0 && errno == EINTR)
+			;
+		return -1;
+	}
 	keeper_ = sv[0];
 	keeper_pid_ = pid;
-	DBG("the pty's group, mode and link `%s' kept by process %ld\n", link,
-	    (long)pid);
+	DBG("%s: its keeper is process %d\n", link_.c_str(), (int)pid);
 	return 0;
 }
 
-/* the keeper given this master (its slave's group, mode and link):
-   0 with its answer in *a, or the errno of the exchange (EPIPE: the
-   keeper is gone) */
-int Pty::keeper_ask(struct keeper_answer *a)
-{
-	union {
-		struct cmsghdr h;
-		char buf[CMSG_SPACE(sizeof(int))];
-	} u = {};
-	char c = 'P';
-	struct iovec iov = { &c, 1 };
-	struct msghdr msg = {};
-	struct cmsghdr *cm;
-	ssize_t n;
-
-	msg.msg_iov = &iov;
-	msg.msg_iovlen = 1;
-	msg.msg_control = u.buf;
-	msg.msg_controllen = sizeof(u.buf);
-	cm = CMSG_FIRSTHDR(&msg);
-	cm->cmsg_level = SOL_SOCKET;
-	cm->cmsg_type = SCM_RIGHTS;
-	cm->cmsg_len = CMSG_LEN(sizeof(int));
-	memcpy(CMSG_DATA(cm), &fd_, sizeof(int));
-	do
-		n = sendmsg(keeper_, &msg, MSG_NOSIGNAL);
-	while (n < 0 && errno == EINTR);
-	if (n < 0)
-		return errno;
-	do
-		n = recv(keeper_, a, sizeof(*a), 0);
-	while (n < 0 && errno == EINTR);
-	if (n == (ssize_t)sizeof(*a))
-		return 0;
-	return n < 0 ? errno : EPIPE;
-}
-
-/* the keeper's socket closed: it removes the link and ends, reaped
-   here */
-void Pty::end_keeper()
-{
-	::close(keeper_);
-	keeper_ = -1;
-	while (waitpid(keeper_pid_, nullptr, 0) < 0 && errno == EINTR)
-		;
-	keeper_pid_ = -1;
-}
-
-/* the slave's group and mode, and link to it, as open() has them: set
-   here, or by the keeper while there is one; what can't be done is
-   logged, a link not made forgotten */
-void Pty::set_slave(const char *group, mode_t perm, const char *link)
-{
-	struct keeper_answer a = {};
-	gid_t gid = (gid_t)-1;
-	int err;
-
-	if (group && *group) {
-		struct group *grp = getgrnam(group);
-		if (!grp)
-			ERR("cannot find group '%s': %s\n", group,
-			    strerror(errno));
-		else
-			gid = grp->gr_gid;
-	}
-	if (keeper_ >= 0 && (err = keeper_ask(&a))) {
-		ERR("the pty's keeper: %s\n", strerror(err));
-		end_keeper();
-		a = {};
-	}
-	if (keeper_ < 0) {
-		if (gid != (gid_t)-1 && chown(name_.c_str(), -1, gid) < 0)
-			a.group = errno;
-		if (perm && chmod(name_.c_str(), perm) < 0)
-			a.mode = errno;
-		if (link && *link) {
-			unlink(link);
-			if (symlink(name_.c_str(), link))
-				a.link = errno;
-		}
-	}
-	if (a.group)
-		ERR("cannot chown '%s' to ':%s': %s\n", name_.c_str(), group,
-		    strerror(a.group));
-	if (a.mode)
-		ERR("cannot chmod '%s' to %o: %s\n", name_.c_str(), perm,
-		    strerror(a.mode));
-	if (!link || !*link)
-		return;
-	if (a.link) {
-		ERR("cannot create symbolink link `%s' -> `%s': %s\n", link,
-		    name_.c_str(), strerror(a.link));
-		link_.clear();
-	} else {
-		INFO("symbolic link `%s' -> `%s' created.\n", link,
-		     name_.c_str());
-		link_ = link;
-	}
-}
-
-/* see pty.h; an old master is closed first.  A group, mode or link
-   that can't be set is only logged */
-int Pty::open(const char *group, mode_t perm, const char *link)
-{
-	struct termios t;
-	int pty;
-
-	if (fd_ >= 0)
-		::close(fd_);
-	fd_ = -1;
-	pty = posix_openpt(O_RDWR | O_NOCTTY);
-	if (pty < 0 || grantpt(pty) < 0 || unlockpt(pty) < 0) {
-		ERR("getpt: %s\n", strerror(errno));
-		if (pty >= 0)
-			::close(pty);
-		return -1;
-	}
-	if (have_termios_)
-		t = termios_;
-	else {
-		tcgetattr(pty, &t);
-		/* non canonical raw tty */
-		cfmakeraw(&t);
-		cfsetispeed(&t, B115200);
-		cfsetospeed(&t, B115200);
-	}
-	if (tcsetattr(pty, TCSANOW, &t)) {
-		ERR("tcsetattr: %s\n", strerror(errno));
-		::close(pty);
-		return -1;
-	}
-	fcntl(pty, F_SETFL, O_NONBLOCK);
-	fd_ = pty;
-	name_ = ptsname(pty);
-	group_ = group ? group : "";
-	perm_ = perm;
-	termios_ = t;
-	have_termios_ = true;
-	closed_ = false;
-	close_count_ = 0;
-
-	set_slave(group, perm, link);
-	return 0;
-}
-
-/* see pty.h: after the DTE closed the slave, not for CLOSE_COUNT_MAX
-   loops while off hook, nor for one loop on hook */
+/* the modem's room, unless the DTE has closed the slave: then a pause
+   of some calls first (each call counts) */
 bool Pty::want_read(const dcore::Modem &m)
 {
-	if (closed_ && close_count_) {
-		if (!m.started() || ++close_count_ > CLOSE_COUNT_MAX)
-			close_count_ = 0;
-		return false;
+	if (closed_) {
+		unsigned pause = m.started() ? CLOSED_PAUSE_OFF_HOOK :
+			CLOSED_PAUSE_ON_HOOK;
+		if (close_count_ < pause) {
+			close_count_++;
+			return false;
+		}
 	}
 	return m.dte_space() > 0;
 }
 
-/* see pty.h: up to the core's room (4096 at most); EIO (no slave open)
-   is CLOSED the first time, AGAIN after */
+/* the DTE's settings (DTR dropped: speed 0), then up to the modem's
+   room of its characters into the modem */
 Pty::Read Pty::read(dcore::Modem &m)
 {
 	struct termios t;
-	char buf[4096];
-	int count;
+	char buf[READ_MAX];
+	int room;
+	ssize_t n;
 
-	/* the DTE's settings: a speed of 0 drops DTR */
-	tcgetattr(fd_, &t);
-	if (memcmp(&t, &termios_, sizeof(t))) {
-		DBG("termios changed.\n");
-		if (cfgetispeed(&t) == B0 || cfgetospeed(&t) == B0) {
-			DBG("modem_update_termios: hangup.\n");
+	if (tcgetattr(fd_, &t) == 0 && !same_settings(t, termios_)) {
+		DBG("%s: the DTE's settings: cflag 0%o, lflag 0%o\n",
+		    name_.c_str(), (unsigned)t.c_cflag, (unsigned)t.c_lflag);
+		if (cfgetospeed(&t) == B0 || cfgetispeed(&t) == B0) {
+			DBG("%s: the DTE dropped DTR\n", name_.c_str());
 			if (m.link_state() != dcore::LinkState::Idle)
 				m.hangup();
 		}
 		termios_ = t;
 	}
-	count = m.dte_space();
-	if (count == 0)
+	room = m.dte_space();
+	if (room <= 0)
 		return AGAIN;
-	if (count > (int)sizeof(buf))
-		count = sizeof(buf);
-	count = ::read(fd_, buf, count);
-	if (count < 0) {
-		if (errno == EAGAIN)
+	if (room > READ_MAX)
+		room = READ_MAX;
+	n = ::read(fd_, buf, room);
+	if (n < 0) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
 			return AGAIN;
 		if (errno == EIO) {
-			bool first = !closed_;
-			if (first)
-				DBG("pty closed.\n");
+			/* no one has the slave open: the pause starts over */
+			close_count_ = 0;
+			if (closed_)
+				return AGAIN;
 			closed_ = true;
-			close_count_ = 1;
-			return first ? CLOSED : AGAIN;
+			DBG("%s: the DTE closed it\n", name_.c_str());
+			return CLOSED;
 		}
 		ERR("pty read: %s\n", strerror(errno));
 		return ERROR;
 	}
-	if (count == 0)
-		DBG("pty read = 0\n");
+	if (n == 0)
+		DBG("%s: read 0 octets\n", name_.c_str());
 	closed_ = false;
-	m.dte_input(buf, count);
+	if (n > 0)
+		m.dte_input(buf, (int)n);
 	return DATA;
 }
 
-/* see pty.h */
+/* read(); the DTE closing the slave with HUPCL hangs up, and with
+   new_pty a new pty takes this one's place */
 int Pty::serve(dcore::Modem &m, bool new_pty)
 {
 	switch (read(m)) {
+	case ERROR:
+		return -1;
 	case CLOSED:
 		if (!hupcl())
 			return 0;
+		DBG("%s: closed with HUPCL: hanging up\n", name_.c_str());
 		m.hangup();
 		if (new_pty && reopen() < 0) {
 			ERR("cannot re-create PTY.\n");
 			return -1;
 		}
 		return 0;
-	case ERROR:
-		return -1;
 	default:
 		return 0;
 	}
 }
 
-/* what the master took, 0 if nothing (full, or an error) */
+/* to the master as much of buf as it takes now */
 int Pty::write(const char *buf, int n)
 {
-	int ret = ::write(fd_, buf, n);
-	return ret < 0 ? 0 : ret;
+	ssize_t done;
+
+	if (fd_ < 0 || n <= 0)
+		return 0;
+	done = ::write(fd_, buf, n);
+	return done > 0 ? (int)done : 0;
 }
 
 } // namespace dmd
