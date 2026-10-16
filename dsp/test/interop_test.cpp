@@ -12,7 +12,8 @@
  *    One table of calls; each test program has the calls of one ctest
  *    label (INTEROP_LABEL).  The modem programs are HALF_* (undefined:
  *    that modem's calls are left out), netsim NETSIM; each call's logs go
- *    to INTEROP_LOG_DIR/<test>.
+ *    to its test's directory of the run's test logs (DMODEM_TEST_DIR,
+ *    cmake/test_logs.cmake), or run by hand to INTEROP_LOG_DIR/<test>.
  *    A call's environment (interop_call.h: NET, STREAM, EXPECT_B, ...;
  *    and the modems' and netsim's own: DSP_*, NET_*, ...) is set for it
  *    alone.
@@ -799,24 +800,26 @@ public:
 	/* the test of call c */
 	explicit InteropCall(Call c) : c_(std::move(c)) {}
 
-	/* the call with its environment, NETSIM and its LOG_DIR set; it must
-	   go through */
+	/* the call with its environment, NETSIM and its LOG_DIR set (the
+	   test's own directory in the run's test logs, DMODEM_TEST_DIR, or
+	   INTEROP_LOG_DIR/<call>); it must go through */
 	void TestBody() override
 	{
 		Env env;
+		const char *t = getenv("DMODEM_TEST_DIR");
+		std::string logs = t && *t ? std::string(t) :
+			std::string(INTEROP_LOG_DIR "/") + c_.name;
 		env.set(std::string("NETSIM=") + NETSIM);
-		env.set(std::string("LOG_DIR=") + INTEROP_LOG_DIR "/" + c_.name);
+		env.set("LOG_DIR=" + logs);
 		for (auto &e : c_.env)
 			env.set(e);
 		const char *a = programs().at(c_.a), *b = programs().at(c_.b);
 		if (c_.fax)
 			EXPECT_TRUE(interop::fax_call(a, b, c_.fax, c_.proto))
-				<< c_.name << " (logs: " INTEROP_LOG_DIR "/"
-				<< c_.name << ")";
+				<< c_.name << " (logs: " << logs << ")";
 		else
 			EXPECT_TRUE(interop::data_call(a, b, c_.proto))
-				<< c_.name << " (logs: " INTEROP_LOG_DIR "/"
-				<< c_.name << ")";
+				<< c_.name << " (logs: " << logs << ")";
 	}
 };
 

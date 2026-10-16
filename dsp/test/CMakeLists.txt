@@ -300,8 +300,9 @@ endif()
 # the interop tests: calls between the open modem and each of the modems
 # above (interop_test.cpp, through interop_call.cpp: what a call does is in
 # its environment, NET for netsim's G.711 network, STREAM, EXPECT_B, ...).
-# One test program a label; each call writes its modem logs to
-# logs/<test>/.  The calls run as fast as they can (fax: ten times real
+# One test program a label; each call writes its modem logs to its
+# test's directory of the run's test logs (test-logs/<run>/<test>/), or
+# run by hand, logs/<test>/.  The calls run as fast as they can (fax: ten times real
 # time), on the line's clock, a little nicer (each takes a processor while
 # it runs, but for the moments on hook in real time).  So ctest -j can be
 # some four times the processors (-j16 on 4).  interop_call makes one by

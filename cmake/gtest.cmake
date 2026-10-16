@@ -3,8 +3,9 @@
 # GoogleTest for the tests: the system's (libgtest-dev) or else fetched.
 # dmodem_gtest(<target> [LABELS ...] [TIMEOUT s] [ENVIRONMENT ...]
 # [RUN_SERIAL]) links a test program with it and registers each of its tests
-# with ctest, in a process of its own (gtest_discover_tests); RUN_SERIAL:
-# none of them with other tests.
+# with ctest, in a process of its own (gtest_discover_tests), its output
+# kept in the run's test logs (test_logs.cmake); RUN_SERIAL: none of them
+# with other tests.
 
 find_package(GTest QUIET)
 if(NOT GTest_FOUND)
@@ -26,7 +27,8 @@ function(dmodem_gtest target)
 	cmake_parse_arguments(G "RUN_SERIAL" "TIMEOUT" "LABELS;ENVIRONMENT"
 		${ARGN})
 	target_link_libraries(${target} PRIVATE GTest::gtest_main)
-	set(_props)
+	dmodem_test_launcher(${target})
+	set(_props FIXTURES_REQUIRED ${DMODEM_TEST_FIXTURE})
 	if(G_LABELS)
 		list(APPEND _props LABELS "${G_LABELS}")
 	endif()

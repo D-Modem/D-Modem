@@ -81,14 +81,13 @@ if(DMODEM_DMODEMD)
 
 	find_package(Python3 COMPONENTS Interpreter QUIET)
 	if(DMODEM_TESTS AND Python3_Interpreter_FOUND)
-		add_test(NAME dmodemd_root COMMAND ${Python3_EXECUTABLE}
+		dmodem_add_test(dmodemd_root ${Python3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/test/root_test.py
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_root PROPERTIES LABELS quick
 			SKIP_RETURN_CODE 77 TIMEOUT 60)
 		if(ALSA_FOUND)
-			add_test(NAME dmodemd_alsa COMMAND
-				${Python3_EXECUTABLE}
+			dmodem_add_test(dmodemd_alsa ${Python3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/test/alsa_test.py
 				$<TARGET_FILE:dmodemd>
 				$<TARGET_FILE:line_exchange>

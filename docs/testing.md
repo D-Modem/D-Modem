@@ -46,7 +46,51 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `dmodemd/test/alsa_test.py` (`dmodemd_alsa`, label `alsa`) | two dmodemd on fake ALSA modem cards (alsa-lib plugins), calling each other through a simulated exchange: dial tone, DTMF, rings, caller ID, V.34, busy, a stall, a voice call ([hardware.md](hardware.md)). Needs libasound2-dev |
 | `dmodemd/test/root_test.py` (`dmodemd_root`) | dmodemd started as root: it goes on as nobody, saves its data file, and its pty's group and link (kept by a process of its own) follow the new pty after the DTE hangs up and go when it ends, even killed. Skipped unless ctest runs as root (CI runs it with sudo) |
 
-Each call writes its modem logs to `build/dsp/test/logs/<test>/`. The
+## Test logs
+
+Every ctest run keeps the logs of the tests that fail, in a directory
+of its own named for when it started, under `build/test-logs/`
+(`latest` is the last):
+
+    build/test-logs/2026-10-16_21-34-03/
+        run.txt                     when, the ctest command, the commit, the host
+        results.txt                 each test as it ends: PASS, FAIL or SKIP, its exit
+                                    status and seconds
+        summary.txt                 the counts, then results.txt, failures first
+        open.open_v90a_ulaw/        a test that failed (or was skipped, or killed)
+            output.log              what it printed (ctest's output of it)
+            info.txt                its command, start, debug levels, environment
+            result.txt              its line of results.txt
+            modemA.log, modemB.log  a call's modem logs (dmodemd_alsa: exchange.log,
+                                    dmodemd-<line>.log)
+        open.open_v90a_ulaw.2/      the same test again in the run (ctest --repeat)
+
+This is plain ctest, with `-R`, `-L` or `--repeat` as well: a fixture
+does it (`cmake/test_logs.cmake`). `test_logs_begin` makes the
+directory before the first test and `test_logs_end` writes the summary
+after the last, and every test runs under `cmake/test_run.sh`, which
+keeps its output and passes it on to ctest. A test finds its directory
+in `DMODEM_TEST_DIR`. When the test passes, the launcher deletes its
+directory at once (`DMODEM_TEST_KEEP_PASSED=1` keeps them: some 100 MB
+for a full run); a test without its `result.txt` was killed, at its
+ctest timeout say, and counts as failed. The 20 latest runs stay
+(`-DDMODEM_TEST_LOG_KEEP=<n>`; `-DDMODEM_TEST_LOG_ROOT=<dir>` puts them
+elsewhere).
+
+Every run logs verbosely: the launcher sets the debug level of every
+modem and library the tests run to `DMODEM_TEST_DEBUG` (5 by default),
+wherever it is not already set: `DSP_DEBUG` (the pumps), `CORE_DEBUG`,
+`DMODEM_DEBUG` (libdmodem), `DBG` (the interop calls' modems),
+`DMODEMD_DEBUG` (dmodemd's `-d`), and `LINK_DEBUG` and `SPANDSP_DEBUG`
+on. Level 5 is what the modems log of each step of a call, with their
+equalizers' and retrains' figures as they go; 6 and up log every bit
+and symbol (`DSP_DEBUG=6 ctest -R ...` for one test).
+`DMODEM_TEST_DEBUG=0` leaves the tests' own levels. With all of this a
+full run takes about a tenth longer.
+
+A call run by hand (`interop_call`, or a test program outside ctest)
+writes its modem logs to `LOG_DIR`, or `build/dsp/test/logs/<test>/`
+for the test programs. The
 calls run as fast as the modems can: every modem keeps time by its
 line's samples (the Agere, SM56, PCTel, HSF and Broadcom harnesses count
 jiffies and timers in samples, and our core, under the open pumps or

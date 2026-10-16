@@ -24,14 +24,18 @@
 #
 # The calls run in real time (the exchange's clock).  RATE=<Hz> the
 # codec's rate (9600, or 8000); LINE_LOSS, LINE_ECHO (line_exchange's)
-# the line's.  KEEP=1 keeps the logs (in the temporary
-# directory, printed).
+# the line's; DMODEMD_DEBUG dmodemd's -d (3).  The logs (exchange.log,
+# dmodemd-<line>.log) go to DMODEM_TEST_DIR (the test's directory of the
+# run's test logs, cmake/test_logs.cmake); without it to the temporary
+# directory, kept with KEEP=1 (and printed).
 import os, re, select, shutil, signal, subprocess, sys, tempfile, threading, time, tty
 
 dmodemd, exchange, plugdir = sys.argv[1:4]
 rate = os.environ.get("RATE", "9600")
 tmp = tempfile.mkdtemp(prefix="dmodem-alsa-")
 os.chmod(tmp, 0o755)
+logs = os.environ.get("DMODEM_TEST_DIR") or tmp
+debug = os.environ.get("DMODEMD_DEBUG", "3")
 lib = os.path.join(os.path.abspath(plugdir), "libasound_module_dmline.so")
 conf = os.path.join(tmp, "asound.conf")
 with open(conf, "w") as f:
@@ -53,10 +57,10 @@ def cleanup():
             p.kill()
     if not os.environ.get("KEEP"):
         shutil.rmtree(tmp, ignore_errors=True)
-    else:
-        print("logs in", tmp)
+    if logs != tmp or os.environ.get("KEEP"):
+        print("logs in", logs)
 
-ex_log = open(os.path.join(tmp, "exchange.log"), "w")
+ex_log = open(os.path.join(logs, "exchange.log"), "w")
 events = []
 ex = subprocess.Popen([exchange, rate, tmp, "1001", "1002"], stdin=subprocess.PIPE,
                       stdout=subprocess.PIPE, text=True)
@@ -74,8 +78,8 @@ class Modem:
     """a dmodemd on line <n>'s card, its pty"""
     def __init__(self, n, name):
         env = dict(os.environ, ALSA_CONFIG_PATH=conf)
-        self.log = open(os.path.join(tmp, "dmodemd-%s.log" % n), "wb")
-        self.p = subprocess.Popen([dmodemd, "-n", "-d3", "-a", "line" + n, "-r", rate, name],
+        self.log = open(os.path.join(logs, "dmodemd-%s.log" % n), "wb")
+        self.p = subprocess.Popen([dmodemd, "-n", "-d" + debug, "-a", "line" + n, "-r", rate, name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
         procs.append(self.p)
         pty = None

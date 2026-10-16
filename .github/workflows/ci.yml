@@ -55,6 +55,17 @@ jobs:
       - name: Tests
         run: ctest --test-dir build -L "quick|spandsp|alsa" -j4 --output-on-failure
 
+      # each test's output and logs (build/test-logs/<run>/<test>/)
+      - name: Test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            build/test-logs/
+            !build/test-logs/latest
+          retention-days: 14
+
       # dmodemd started as root (ctest skips it as the runner's user)
       - name: dmodemd as root
         run: sudo python3 dmodemd/test/root_test.py build/dmodemd/dmodemd
