@@ -33,7 +33,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 |---|---|
 | `pump_test` | the data pumps back to back (`loopback.cpp`): each modulation on clean and noisy lines, 8000 Hz, clock offsets, gains, echoes; the answering automode. A side passes connected, with 90% of the bits its rate carries from the CONNECT on, at a BER of 1e-3 at most |
 | `dmodem_test` | libdmodem: pairs of its modems, retrains and renegotiations in the data, V.91 across G.711 networks, the network's law for each call, `dmodem.hpp` |
-| `dmodem_fax_test` | libdmodem's fax: a data modem answering hands the call to a fax receiver; a fax over T.38 through the API, packets lost |
+| `dmodem_fax_test` | libdmodem's fax: a data modem answering hands the call to a fax receiver; a fax over T.38 through the API, in UDPTL with packets lost, and in IFP packets (`t38_ifp`, as Asterisk's channels have them) no longer than 72 octets |
 | `hw_test` | the hardware the harnesses emulate (`hw/`), on a host of its own: the ICH's bus masters |
 | `bits_test`, `g711_test`, `pcm_cp_test` | `bits.h`'s fields and CRCs, `g711.h`'s two laws (each octet back to itself, sign and magnitude), the PCM encoders on CPs that cannot carry their rate |
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |

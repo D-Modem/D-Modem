@@ -31,8 +31,7 @@ See [dmodem.conf.sample](../asterisk/dmodem.conf.sample) for all the options.
 The same calls and faxes can go to [dmodem-ari](ari.md) instead, D-Modem
 as an ARI application beside Asterisk (`Stasis(dmodem,bbs)`,
 `Stasis(dmodem,receivefax,<file>)`), with the same profiles: no module in
-Asterisk. Its faxes can also go over T.38 ([ari.md](ari.md#t38)); the
-module's are on the audio only.
+Asterisk. Its faxes go over T.38 as the module's do ([ari.md](ari.md#t38)).
 
 The modem answers with `ATA`. A profile's `answer` gives the command line
 it answers with instead, with commands for the answering call alone
@@ -84,14 +83,37 @@ Asterisk's `res_fax` with spandsp:
 They set `DMODEMFAXSTATUS` (`SUCCESS` or `FAILED`), `DMODEMFAXRESULT`
 (why), `DMODEMFAXPAGES`, `DMODEMFAXRATE`, `DMODEMFAXREMOTE` (the other
 machine's number), `DMODEMFAXECM` (`yes` when the call had error
-correction mode) and `DMODEMFAXFILE`.  `fax_dir`, `fax_ident` (our
-number), `fax_max_rate` and `fax_ecm` are set in `[general]` or per
-profile.
+correction mode), `DMODEMFAXT38` (`yes` when the fax went over T.38) and
+`DMODEMFAXFILE`.  `fax_dir`, `fax_ident` (our number), `fax_max_rate`,
+`fax_ecm` and `fax_t38` are set in `[general]` or per profile.
 
 In error correction mode (T.30 Annex A) the page goes in blocks of HDLC
 frames, and the receiving machine asks again for the frames a line hit
 spoiled: the page comes as it went, where without it the rows hit come
 damaged.  Both machines offer it (`fax_ecm = no` to go without).
+
+### T.38
+
+On a channel that has T.38 (PJSIP, an endpoint with `t38_udptl = yes`)
+the faxes go over T.38 when the channel does, as `SendFAX` and
+`ReceiveFAX` have it (`fax_t38 = no` to keep them on the audio):
+
+- `DModemReceiveFax` asks for T.38 at once (Asterisk re-INVITEs) and
+  waits for the answer, 6 s at most, with silence on the line; refused,
+  the fax goes on the audio.
+- `DModemSendFax` takes T.38 when the other end asks for it, until a
+  page has gone.
+- `DModem()` takes a T.38 offer that comes before the modems connect as
+  a fax machine calling (a gateway's), and a fax machine it hears on the
+  audio asks for T.38 as `DModemReceiveFax` does.
+
+The fax machine is then a T.38 terminal (libdmodem's): the IFP packets
+of T.38 versions 0 to 3 as `AST_FRAME_MODEM` frames, the UDPTL and its
+redundancy Asterisk's, the packets paced by the clock.  At the end the
+channel goes back to the audio (Asterisk re-INVITEs again).  Asterisk's
+T.38 gateway (`FAXOPT(gateway)=yes`) puts a fax machine on the audio
+at the other end; the console says `over T.38` at the end of a fax
+that went so.
 
 ## The channel
 
@@ -217,6 +239,19 @@ compares what came with what went.  `test/fax_spandsp.sh` does the same
 against Asterisk's own fax (`res_fax_spandsp`): `SendFAX` to `DModem()`
 and to `DModemReceiveFax`, and `DModemSendFax` to `ReceiveFAX`, all at
 14400 bit/s (`CASES`, `FAX_MAX_RATE`, `DMODEM_DEBUG` in the script).
+
+`test/t38.sh` has the faxes over T.38, with Asterisk calling itself over
+PJSIP (out on `loopout`, in on `loopin`, both with `t38_udptl`):
+`SendFAX` to `DModemReceiveFax`, `DModemSendFax` to `ReceiveFAX` and to
+`DModemReceiveFax`, `SendFAX` to `DModem()`, all of them over T.38;
+`SendFAX` from an endpoint without T.38 to `DModemReceiveFax` (T.38
+refused, on the audio); through Asterisk's T.38 gateway, `SendFAX` on
+the audio to `DModem()` and `DModemSendFax` to `ReceiveFAX` on the audio
+(the gateway asks for T.38 when it hears the DIS); and `DModemReceiveFax`
+to `DModem()`, which takes its T.38 request before the modems connect as
+a fax machine calling (two receivers: no document, only that is
+checked).  `CASES`, `SIP_LOG=1` (the SIP messages in the console),
+`FAX_DEBUG=1` (spandsp's).
 
 `ARI=1` runs these tests (and `test/sip.sh`) through
 [dmodem-ari](ari.md#testing) instead of the module.

@@ -34,6 +34,8 @@
 ;   fax_ident = +1 555 0100              our number (CSI / TSI)
 ;   fax_max_rate = 14400                 9600, 7200, 4800, 2400 to go slower
 ;   fax_ecm = yes                        error correction mode offered
+;   fax_t38 = yes                        over T.38 when the channel has it
+;                                        (PJSIP with t38_udptl = yes)
 ; DModemSendFax(file[,ident]) and DModemReceiveFax(file[,ident]) use these
 ; of [general].
 

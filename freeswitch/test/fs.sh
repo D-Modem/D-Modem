@@ -11,7 +11,8 @@
 #   fs_stop
 #
 # Before fs_start: DMODEM_DEBUG (the modem's debug level), FAX_MAX_RATE
-# (dmodem's fax no faster), TERM_INIT (AT commands for the calling modem
+# (dmodem's fax no faster), T38 (yes: T.38 for dmodem's fax and
+# mod_spandsp's, default no), TERM_INIT (AT commands for the calling modem
 # of profile term, e.g. +MS=122), ANSWER (the command line the answering
 # profiles bbs, bbsalaw and bbsexec answer with, default ATA).
 here=$(cd "$(dirname "$0")" && pwd)
@@ -41,6 +42,7 @@ fs_start() {
 		echo "<X-PRE-PROCESS cmd=\"set\" data=\"test=$here\"/>"
 		echo "<X-PRE-PROCESS cmd=\"set\" data=\"dmodem_debug=${DMODEM_DEBUG:-1}\"/>"
 		echo "<X-PRE-PROCESS cmd=\"set\" data=\"fax_max_rate=${FAX_MAX_RATE:-14400}\"/>"
+		echo "<X-PRE-PROCESS cmd=\"set\" data=\"fax_t38=${T38:-no}\"/>"
 		echo "<X-PRE-PROCESS cmd=\"set\" data=\"term_init=${TERM_INIT:-}\"/>"
 		echo "<X-PRE-PROCESS cmd=\"set\" data=\"bbs_answer=${ANSWER:-ATA}\"/>"
 	} > "$run/conf/vars.xml"

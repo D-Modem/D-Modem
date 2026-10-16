@@ -1740,8 +1740,12 @@ void T30::t38_tx_sample()
 	}
 }
 
-/* a sample's time without a transmission: CNG and CED as indicators
-   (after 200 ms of no-signal), and the end of a gap */
+/* a sample's time without a transmission: CED as its indicator (after
+   200 ms of no-signal), and the end of a gap.  No CNG: the call is over
+   on T.38 because it is a fax call, and a gateway that plays a CNG
+   holds what comes after it until it hears the other machine's V.21
+   (spandsp's: a DIS already on its way when the CNG came keeps our DCS
+   back till the DIS after it, into which it goes) */
 void T30::t38_sample()
 {
 	if (tx_on) {
@@ -1752,8 +1756,6 @@ void T30::t38_sample()
 	case S_CNG:
 		if (cng && count == 0)
 			t38_ind(T38_IND_NO_SIGNAL);
-		else if (cng && count == ms2samples(ANS_SILENCE_MS, srate))
-			t38_ind(T38_IND_CNG);
 		break;
 	case S_CED:
 		if (count == 0)

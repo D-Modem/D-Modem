@@ -122,7 +122,14 @@ struct dmodem_fax_config {
 	int t38_redundancy;             /* the packets before in each (with
 					   DMODEM_T38_EC_REDUNDANCY; 0: 3) */
 	int t38_max_datagram;           /* the other end's T38FaxMaxDatagram
-					   (0: 400) */
+					   (0: 400); with t38_ifp the
+					   longest IFP packet it takes */
+	int t38_ifp;                    /* the packets are IFP packets, not
+					   UDPTL (for a program whose UDPTL
+					   is its own: Asterisk's channels):
+					   t38_ec and t38_redundancy
+					   unused, the packets that come in
+					   their order */
 	void (*t38_send)(void *ctx, const unsigned char *pkt, int len);
 	void *t38_ctx;
 };
@@ -160,7 +167,8 @@ void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
 void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s);
 /* the call went away */
 void dmodem_fax_hangup(struct dmodem_fax *f);
-/* T.38: a UDPTL packet of len octets that came */
+/* T.38: a UDPTL packet of len octets that came (with t38_ifp an IFP
+   packet) */
 void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
 		       int len);
 /* T.38: n samples' time (at 8000 Hz) going by: the timers, and the

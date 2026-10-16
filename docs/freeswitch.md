@@ -111,11 +111,36 @@ The fax applications set these channel variables:
 | `dmodem_fax_rate` | bit/s |
 | `dmodem_fax_remote` | the other machine's number |
 | `dmodem_fax_ecm` | `true` when the call had error correction mode |
+| `dmodem_fax_t38` | `true` when the fax went over T.38 |
 | `dmodem_fax_file` | the file |
 
-`fax-dir`, `fax-ident` (our number), `fax-max-rate` and `fax-ecm` (`false`
-to go without error correction mode) go in `<settings>` or in a profile;
-the fax applications take `<settings>`.
+`fax-dir`, `fax-ident` (our number), `fax-max-rate`, `fax-ecm` (`false`
+to go without error correction mode) and `fax-t38` (`false` to keep the
+faxes on the audio) go in `<settings>` or in a profile; the fax
+applications take `<settings>`.
+
+### T.38
+
+On a SIP channel the faxes go over T.38 when the channel does, as
+mod_spandsp's `txfax` and `rxfax` have it:
+
+- `dmodem_receive_fax` asks for T.38 a second after the answer (a
+  re-INVITE sooner can cross the call's ACK) and waits for the answer,
+  6 s at most, with silence on the line; refused, the fax goes on the
+  audio.
+- `dmodem_send_fax` takes T.38 when the other end asks for it, until a
+  page has gone.
+- `dmodem` takes a T.38 offer that comes before the modems connect as a
+  fax machine calling, and a fax machine it hears on the audio asks for
+  T.38 as `dmodem_receive_fax` does.
+
+FreeSWITCH refuses a T.38 offer on a channel without
+`fax_enable_t38=true`: the module sets it for the call when it is not
+set, and `fax_enable_t38=false` keeps that call's fax on the audio.  The
+fax machine is then a T.38 terminal (libdmodem's) on sofia's UDPTL: its
+packets with sofia's redundancy or none, as the other end asked, paced
+by a clock of its own (a timer thread, as mod_spandsp's).  The log says
+`over T.38` at the end of a fax that went so.
 
 ## The channel
 
@@ -250,6 +275,7 @@ ANSWER='AT+MS=132;A' EXPECT='ANSWERER .*dmodem_rate=14400/' test/run.sh
 test/sip.sh                       # D-Modem (dmodemd) calls dmodem
 INCOMING=1 test/sip.sh            # dmodem calls D-Modem
 test/fax.sh                       # faxes, also against mod_spandsp
+T38=yes test/fax.sh               # the same over T.38
 ```
 
 In `run.sh`, FreeSWITCH calls itself. The answering `dmodem` serves the
@@ -257,17 +283,25 @@ test BBS. The calling one (`dmodem term,o`) hands its data to a script
 playing the user. The user reads the banner, sends 20 lines, checks
 their echoes and logs off; the BBS closing then hangs up the call.
 
-`fax.sh` sends a two page fax five ways:
+`fax.sh` sends a two page fax six ways (seven with T.38):
 1. `dmodem_send_fax` to `dmodem`, which has to notice the fax machine;
 2. `dmodem_send_fax` to `dmodem_receive_fax`;
 3. mod_spandsp's `txfax` to `dmodem`;
 4. `txfax` to `dmodem_receive_fax`;
-5. `dmodem_send_fax` to `rxfax`.
+5. `dmodem_send_fax` to `rxfax`;
+6. `txfax` with `fax_enable_t38=false` to `dmodem_receive_fax`;
+7. with `T38=yes` only, `dmodem_receive_fax` to `dmodem`, which takes its
+   T.38 request before the modems connect as a fax machine calling (two
+   receivers: no document, only that is checked).
 
 Each time it compares what came with what went. The `rxfax` leg gets a
 jitter buffer as well, for the same reason as the module's (see
 [The channel](#the-channel)), and mod_spandsp no page header and error
-correction mode, which the module then uses.
+correction mode, which the module then uses.  The faxes are on the
+audio; `T38=yes test/fax.sh` turns T.38 on for both machines (the
+module's `fax-t38`, mod_spandsp's `enable-t38` and `enable-t38-request`)
+and checks that each of the module's faxes went over T.38, but the sixth's
+(the module's request refused, on the audio).
 
 ## Debugging
 

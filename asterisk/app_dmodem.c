@@ -284,7 +284,115 @@ static void fax_file_name(struct ast_channel *chan, const char *dir,
 		 *caller ? caller : "unknown", id);
 }
 
-/* a fax call on the channel until it ends; -1 if the channel hung up */
+/*
+ *    T.38: the channel's (chan_pjsip with t38_udptl): its re-INVITEs as
+ *    AST_CONTROL_T38_PARAMETERS, the IFP packets as AST_FRAME_MODEM
+ *    frames (the UDPTL the channel's), as res_fax has them
+ */
+
+#define T38_ASK_MS 6000         /* our request's answer waited for */
+#define T38_TICK_MS 20          /* the fax machine's time in steps of */
+
+/* our side of T.38: version, the longest IFP packet we take, the fax's
+   top rate, TCF sent (not made locally) */
+static void t38_ours(struct ast_control_t38_parameters *t, int version,
+		     int max_bps, enum ast_control_t38 what)
+{
+	memset(t, 0, sizeof(*t));
+	t->request_response = what;
+	t->version = version;
+	t->max_ifp = 400;
+	t->rate = max_bps >= 14400 ? AST_T38_RATE_14400 :
+		max_bps >= 12000 ? AST_T38_RATE_12000 :
+		max_bps >= 9600 ? AST_T38_RATE_9600 :
+		max_bps >= 7200 ? AST_T38_RATE_7200 :
+		max_bps >= 4800 ? AST_T38_RATE_4800 : AST_T38_RATE_2400;
+	t->rate_management = AST_T38_RATE_MANAGEMENT_TRANSFERRED_TCF;
+}
+
+/* the frame's T.38 parameters if it is AST_CONTROL_T38_PARAMETERS, else
+   NULL */
+static const struct ast_control_t38_parameters *t38_frame(
+	const struct ast_frame *fr)
+{
+	if (fr->frametype != AST_FRAME_CONTROL ||
+	    fr->subclass.integer != AST_CONTROL_T38_PARAMETERS ||
+	    fr->datalen != sizeof(struct ast_control_t38_parameters))
+		return NULL;
+	return fr->data.ptr;
+}
+
+/* an IFP packet of the fax machine's to the channel */
+static void t38_send(void *ctx, const unsigned char *pkt, int len)
+{
+	struct ast_frame wf = {
+		.frametype = AST_FRAME_MODEM,
+		.subclass.integer = AST_MODEM_T38,
+		.src = app,
+	};
+	wf.data.ptr = (void *)pkt;
+	wf.datalen = len;
+	ast_write(ctx, &wf);
+}
+
+/* back to audio at the end of a fax over T.38 (as res_fax does), its
+   answer waited for: 5 s at most */
+static void t38_stop(struct ast_channel *chan)
+{
+	struct ast_control_t38_parameters t = {
+		.request_response = AST_T38_REQUEST_TERMINATE };
+	struct timeval start = ast_tvnow();
+	int ms;
+
+	if (ast_indicate_data(chan, AST_CONTROL_T38_PARAMETERS, &t,
+			      sizeof(t)))
+		return;
+	while ((ms = ast_remaining_ms(start, 5000)) > 0) {
+		const struct ast_control_t38_parameters *tp;
+		struct ast_frame *fr;
+		int over;
+
+		if (ast_waitfor(chan, ms) <= 0 || !(fr = ast_read(chan)))
+			return;
+		tp = t38_frame(fr);
+		over = tp && tp->request_response != AST_T38_REQUEST_NEGOTIATE;
+		ast_frfree(fr);
+		if (over)
+			return;
+	}
+}
+
+/* n octets of silence through the fax machine (NULL: not it, only the
+   silence out) to the channel */
+static void fax_audio(struct ast_channel *chan, struct ast_format *fmt,
+		      enum dmodem_law law, struct dmodem_fax *f,
+		      const unsigned char *in, int n, unsigned char *out)
+{
+	struct ast_frame wf = { .frametype = AST_FRAME_VOICE, .src = app };
+
+	if (n > LINE_MAX_SAMPLES)
+		n = LINE_MAX_SAMPLES;
+	if (f)
+		dmodem_fax_process_g711(f, in, out + AST_FRIENDLY_OFFSET, n);
+	else
+		memset(out + AST_FRIENDLY_OFFSET,
+		       law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF, n);
+	wf.subclass.format = fmt;
+	wf.data.ptr = out + AST_FRIENDLY_OFFSET;
+	wf.offset = AST_FRIENDLY_OFFSET;
+	wf.datalen = wf.samples = n;
+	ast_write(chan, &wf);
+}
+
+/* a fax call on the channel until it ends; -1 if the channel hung up.
+
+   With fax_t38 on a channel that can (T.38 not refused), the fax goes
+   over to T.38 when the channel does, before a page has gone (the fax
+   machine anew on IFP packets, its time by the clock): a receiver asks
+   for it as ReceiveFAX does, and waits for the answer (T38_ASK_MS at
+   most, silence on the line) before it starts on the audio; a sender
+   takes it when the other end asks.  A request that came before (the
+   channel negotiating) is had again, and answered */
 static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 		   enum dmodem_law law, enum dmodem_fax_dir dir,
 		   const char *file, const struct dmbridge_fax *fs,
@@ -294,8 +402,13 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	struct dmodem_fax_status st = { 0 };
 	struct dmodem_fax *f;
 	const char *name = ast_channel_name(chan);
+	enum ast_t38_state ts = ast_channel_get_t38_state(chan);
+	struct timeval t0 = { 0 }, asked = { 0 };
+	long long samples = 0;
 	char buf[32];
-	int res = 0;
+	int res = 0, t38 = 0, asking = 0, our_version = 0;
+	int may_switch = fs->t38 && (ts == T38_STATE_UNKNOWN ||
+				     ts == T38_STATE_NEGOTIATING);
 
 	cfg.law = law;
 	cfg.dir = dir;
@@ -315,58 +428,146 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	}
 	ast_verb(3, "%s: DModem fax: %s %s\n", name,
 		 dir == DMODEM_FAX_SEND ? "sending" : "receiving", file);
+	if (may_switch && ts == T38_STATE_NEGOTIATING) {
+		/* the other end's request again, to answer */
+		struct ast_control_t38_parameters t = {
+			.request_response = AST_T38_REQUEST_PARMS };
+		if (ast_indicate_data(chan, AST_CONTROL_T38_PARAMETERS, &t,
+				      sizeof(t)) != AST_T38_REQUEST_PARMS)
+			may_switch = 0;
+	} else if (may_switch && dir == DMODEM_FAX_RECEIVE) {
+		struct ast_control_t38_parameters t;
+		t38_ours(&t, 0, fs->max_bps, AST_T38_REQUEST_NEGOTIATE);
+		if (!ast_indicate_data(chan, AST_CONTROL_T38_PARAMETERS, &t,
+				       sizeof(t))) {
+			asking = 1;
+			asked = ast_tvnow();
+			ast_verb(3, "%s: DModem fax: T.38 asked for\n", name);
+		}
+	}
 	for (;;) {
-		struct ast_frame *fr;
-		int n = ast_waitfor(chan, IDLE_MS);
+		const struct ast_control_t38_parameters *tp;
+		struct ast_frame *fr = NULL;
+		int n = ast_waitfor(chan, t38 ? T38_TICK_MS : IDLE_MS);
 
 		if (n < 0 || (n > 0 && !(fr = ast_read(chan)))) {
 			dmodem_fax_hangup(f);
 			res = -1;
 			break;
 		}
-		if (n == 0) {
-			unsigned char sil[160];
-			struct ast_frame wf = { .frametype = AST_FRAME_VOICE,
-						.src = app };
-			memset(sil, law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF,
-			       sizeof(sil));
-			dmodem_fax_process_g711(f, sil, out + AST_FRIENDLY_OFFSET,
-						sizeof(sil));
-			wf.subclass.format = fmt;
-			wf.data.ptr = out + AST_FRIENDLY_OFFSET;
-			wf.offset = AST_FRIENDLY_OFFSET;
-			wf.datalen = wf.samples = sizeof(sil);
-			ast_write(chan, &wf);
-		} else {
-			if (fr->frametype == AST_FRAME_VOICE &&
-			    fr->datalen > 0 &&
-			    ast_format_cmp(fr->subclass.format, fmt) ==
-			    AST_FORMAT_CMP_EQUAL) {
-				struct ast_frame wf = {
-					.frametype = AST_FRAME_VOICE,
-					.src = app };
-				int len = fr->datalen;
-				if (len > LINE_MAX_SAMPLES)
-					len = LINE_MAX_SAMPLES;
-				dmodem_fax_process_g711(f, fr->data.ptr,
-					out + AST_FRIENDLY_OFFSET, len);
-				wf.subclass.format = fmt;
-				wf.data.ptr = out + AST_FRIENDLY_OFFSET;
-				wf.offset = AST_FRIENDLY_OFFSET;
-				wf.datalen = wf.samples = len;
-				ast_write(chan, &wf);
+		if (asking && ast_tvdiff_ms(ast_tvnow(), asked) > T38_ASK_MS)
+			asking = 0;
+		if (!fr) {
+			/* nothing from the line: on alone, on silence */
+			if (!t38) {
+				unsigned char sil[160];
+				memset(sil, law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF,
+				       sizeof(sil));
+				fax_audio(chan, fmt, law, asking ? NULL : f, sil,
+					  sizeof(sil), out);
 			}
+		} else if ((tp = t38_frame(fr))) {
+			struct ast_control_t38_parameters t;
+			switch (tp->request_response) {
+			case AST_T38_REQUEST_NEGOTIATE:
+				/* the other end asks: yes until a page has
+				   gone (and again once on T.38) */
+				if (!t38)
+					our_version = 3;
+				t38_ours(&t, our_version, fs->max_bps,
+					 may_switch || t38 ? AST_T38_NEGOTIATED :
+					 AST_T38_REFUSED);
+				ast_indicate_data(chan,
+						  AST_CONTROL_T38_PARAMETERS,
+						  &t, sizeof(t));
+				break;
+			case AST_T38_NEGOTIATED:
+				if (t38)
+					break;
+				/* over to T.38: the fax machine anew */
+				dmodem_fax_destroy(f);
+				cfg.t38 = 1;
+				cfg.t38_ifp = 1;
+				cfg.t38_version = (int)tp->version < our_version ?
+					(int)tp->version : our_version;
+				cfg.t38_max_datagram = tp->max_ifp;
+				cfg.t38_send = t38_send;
+				cfg.t38_ctx = chan;
+				f = dmodem_fax_create(&cfg);
+				if (!f) {
+					ast_log(LOG_WARNING, "%s: cannot %s fax "
+						"file %s\n", name,
+						dir == DMODEM_FAX_SEND ? "read" :
+						"use", file);
+					pbx_builtin_setvar_helper(chan,
+						"DMODEMFAXSTATUS", "FAILED");
+					ast_frfree(fr);
+					t38_stop(chan);
+					return 0;
+				}
+				ast_verb(3, "%s: DModem fax: T.38 (version %d, "
+					 "IFP packets up to %u octets)\n", name,
+					 cfg.t38_version, tp->max_ifp);
+				t38 = 1;
+				asking = may_switch = 0;
+				t0 = ast_tvnow();
+				samples = 0;
+				break;
+			case AST_T38_REFUSED:
+				asking = 0;
+				break;
+			case AST_T38_TERMINATED:
+			case AST_T38_REQUEST_TERMINATE:
+				/* the other end back on audio: the fax
+				   over T.38 ends */
+				if (t38)
+					dmodem_fax_hangup(f);
+				asking = 0;
+				break;
+			default:
+				break;
+			}
+		} else if (t38) {
+			if (fr->frametype == AST_FRAME_MODEM &&
+			    fr->subclass.integer == AST_MODEM_T38 &&
+			    fr->datalen > 0)
+				dmodem_fax_t38_rx(f, fr->data.ptr, fr->datalen);
+		} else if (fr->frametype == AST_FRAME_VOICE &&
+			   fr->datalen > 0 &&
+			   ast_format_cmp(fr->subclass.format, fmt) ==
+			   AST_FORMAT_CMP_EQUAL) {
+			/* a frame out for each frame in (T.38 asked for:
+			   silence, the fax machine waits) */
+			fax_audio(chan, fmt, law, asking ? NULL : f,
+				  fr->data.ptr, fr->datalen, out);
+		}
+		if (fr)
 			ast_frfree(fr);
+		if (t38) {
+			/* the time since, by the clock (a second at most) */
+			long long due = ast_tvdiff_us(ast_tvnow(), t0) * 8 /
+				1000;
+			if (due > samples) {
+				dmodem_fax_t38_time(f, due - samples > 8000 ?
+						    8000 : (int)(due - samples));
+				samples = due;
+			}
 		}
 		dmodem_fax_status(f, &st);
+		if (may_switch && (st.pages || st.complete))
+			/* a page has gone on audio: it stays */
+			may_switch = 0;
 		if (st.done)
 			break;
 	}
 	dmodem_fax_status(f, &st);
 	dmodem_fax_destroy(f);
-	ast_verb(3, "%s: DModem fax %s: %s, %d pages at %d bit/s%s, remote '%s'\n",
+	if (t38 && res == 0)
+		t38_stop(chan);
+	ast_verb(3, "%s: DModem fax %s: %s, %d pages at %d bit/s%s%s, remote '%s'\n",
 		 name, dir == DMODEM_FAX_SEND ? "sent" : "received", st.result,
-		 st.pages, st.bps, st.ecm ? " (ECM)" : "", st.remote_ident);
+		 st.pages, st.bps, st.ecm ? " (ECM)" : "",
+		 t38 ? " over T.38" : "", st.remote_ident);
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS",
 				  st.ok ? "SUCCESS" : "FAILED");
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXRESULT", st.result);
@@ -376,6 +577,7 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXRATE", buf);
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXREMOTE", st.remote_ident);
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXECM", st.ecm ? "yes" : "no");
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXT38", t38 ? "yes" : "no");
 	return res;
 }
 
@@ -393,7 +595,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 	char *parse, name[64];
 	const char *status = "ERROR";
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];
-	int res = 0, orig;
+	int res = 0, orig, t38_fax = 0;
 
 	dmbridge_call_init(&c);
 	parse = ast_strdupa(S_OR(data, ""));
@@ -425,6 +627,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 		 ast_format_get_name(fmt));
 
 	for (;;) {
+		const struct ast_control_t38_parameters *tp;
 		struct ast_frame *f;
 		enum dmbridge_event ev;
 		int n = ast_waitfor(chan, IDLE_MS), k = 0;
@@ -456,10 +659,28 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			    AST_FORMAT_CMP_EQUAL)
 				k = line_io(chan, c.d, fmt, f->data.ptr,
 					    f->datalen, out);
+			else if ((tp = t38_frame(f)) &&
+				 tp->request_response ==
+				 AST_T38_REQUEST_NEGOTIATE) {
+				/* T.38 asked for before the modems are
+				   connected: a fax machine (a gateway's) */
+				if (!orig && !c.online && p.fax.on &&
+				    p.fax.t38) {
+					t38_fax = 1;
+					c.status = "FAX";
+				} else {
+					struct ast_control_t38_parameters t;
+					t38_ours(&t, 0, p.fax.max_bps,
+						 AST_T38_REFUSED);
+					ast_indicate_data(chan,
+						AST_CONTROL_T38_PARAMETERS, &t,
+						sizeof(t));
+				}
+			}
 			ast_frfree(f);
 		}
 
-		ev = dmbridge_call_step(&c, k);
+		ev = t38_fax ? DMBRIDGE_FAX : dmbridge_call_step(&c, k);
 		if (ev == DMBRIDGE_CONNECTED) {
 			char connected[24];
 			const char *env[] = {
@@ -488,8 +709,8 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			char path[1024];
 			ast_mkdir(p.fax.dir, 0755);
 			fax_file_name(chan, p.fax.dir, path, sizeof(path));
-			ast_verb(3, "%s: DModem: a fax machine is calling\n",
-				 name);
+			ast_verb(3, "%s: DModem: a fax machine is calling%s\n",
+				 name, t38_fax ? " (T.38)" : "");
 			if (run_fax(chan, fmt, law, DMODEM_FAX_RECEIVE, path,
 				    &p.fax, out) < 0)
 				res = -1;

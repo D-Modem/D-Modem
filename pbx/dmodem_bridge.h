@@ -60,6 +60,7 @@ struct dmbridge_fax {
 	char ident[21];         /* our number (CSI / TSI) */
 	int max_bps;
 	int ecm;                /* error correction mode offered */
+	int t38;                /* over T.38 when the channel has it */
 };
 
 struct dmbridge_profile {
@@ -81,10 +82,10 @@ struct dmbridge_profile {
    aside */
 int dmbridge_option_is(const char *name, const char *key);
 
-/* the built-in fax settings: on, into dir, 14400 bit/s, ECM */
+/* the built-in fax settings: on, into dir, 14400 bit/s, ECM, T.38 */
 void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir);
-/* a fax option (fax, fax-dir, fax-ident, fax-max-rate, fax-ecm); 0 if
-   name is something else */
+/* a fax option (fax, fax-dir, fax-ident, fax-max-rate, fax-ecm,
+   fax-t38); 0 if name is something else */
 int dmbridge_fax_option(const struct dmbridge_host *h,
 			struct dmbridge_fax *f, const char *name,
 			const char *value);

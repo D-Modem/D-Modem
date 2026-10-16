@@ -344,6 +344,18 @@ static void fax_fn(void *obj, const void *in, void *out, int n, int linear)
 		dmodem_fax_process_g711(obj, in, out, n);
 }
 
+/* line_fn of silence (obj: the struct line, for its law) */
+static void silence_fn(void *obj, const void *in, void *out, int n,
+		       int linear)
+{
+	const struct line *l = obj;
+	(void)in;
+	if (linear)
+		memset(out, 0, (size_t)n * 2);
+	else
+		memset(out, l->law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF, n);
+}
+
 /*
  *    fax
  */
@@ -375,15 +387,147 @@ static void fax_file_name(switch_core_session_t *session, const char *dir,
 		 when, *caller ? caller : "unknown", id);
 }
 
-/* a fax call on the line until it ends; -1 if the channel hung up */
+/*
+ *    T.38: sofia's (a re-INVITE either way, the options in the channel's
+ *    t38_options, the T38 application flags), its UDPTL packets as
+ *    SFF_UDPTL_PACKET frames, as mod_spandsp has them
+ */
+
+#define T38_ASK_AFTER_MS 1000   /* our request no sooner (a re-INVITE
+				   before the call's ACK: 491, sofia hangs
+				   up) */
+#define T38_ASK_MS 6000         /* its answer waited for */
+#define T38_TICK_MS 20          /* the fax machine's time in steps of */
+#define T38_MAX_DATAGRAM 400    /* the longest UDPTL packet we take */
+
+/* the fax machine over T.38: its clock a thread of its own (a read
+   waits for the next packet), under a lock with the packets that come */
+struct fax_t38 {
+	switch_core_session_t *session;
+	struct dmodem_fax *f;
+	switch_mutex_t *lock;
+	switch_thread_t *thread;
+	volatile int stop;              /* the clock to end */
+	volatile int done;              /* the fax call is over */
+};
+
+/* a UDPTL packet of the fax machine's to the channel */
+static void t38_send(void *ctx, const unsigned char *pkt, int len)
+{
+	struct fax_t38 *t = ctx;
+	switch_frame_t wf = { 0 };
+
+	wf.flags = SFF_UDPTL_PACKET | SFF_PROXY_PACKET;
+	wf.packet = (void *)pkt;
+	wf.packetlen = len;
+	wf.buflen = len;
+	switch_core_session_write_frame(t->session, &wf, SWITCH_IO_FLAG_NONE,
+					0);
+}
+
+/* the clock: T38_TICK_MS at a time to the fax machine until it is done
+   (the read that waits broken then) or told to stop */
+static void *SWITCH_THREAD_FUNC t38_clock(switch_thread_t *thread, void *obj)
+{
+	struct fax_t38 *t = obj;
+	switch_timer_t timer = { 0 };
+	int n = DMODEM_RATE / 1000 * T38_TICK_MS;
+
+	(void)thread;
+	if (switch_core_timer_init(&timer, "soft", T38_TICK_MS, n, NULL) !=
+	    SWITCH_STATUS_SUCCESS) {
+		switch_mutex_lock(t->lock);
+		dmodem_fax_hangup(t->f);
+		switch_mutex_unlock(t->lock);
+		t->done = 1;
+		switch_core_session_kill_channel(t->session, SWITCH_SIG_BREAK);
+		return NULL;
+	}
+	while (!t->stop) {
+		struct dmodem_fax_status st;
+		switch_mutex_lock(t->lock);
+		dmodem_fax_t38_time(t->f, n);
+		dmodem_fax_status(t->f, &st);
+		switch_mutex_unlock(t->lock);
+		if (st.done) {
+			t->done = 1;
+			switch_core_session_kill_channel(t->session,
+							 SWITCH_SIG_BREAK);
+			break;
+		}
+		switch_core_timer_next(&timer);
+	}
+	switch_core_timer_destroy(&timer);
+	return NULL;
+}
+
+/* our side of T.38 into *o (the other end's address in it left as it
+   is): version, the fax's top rate, TCF sent, our longest datagram,
+   redundancy (or none) */
+static void t38_ours(switch_t38_options_t *o, int version, int max_bps,
+		     int redundancy)
+{
+	o->T38FaxVersion = (uint16_t)version;
+	o->T38MaxBitRate = max_bps > 0 && max_bps < 14400 ? max_bps : 14400;
+	o->T38FaxFillBitRemoval = SWITCH_FALSE;
+	o->T38FaxTranscodingMMR = SWITCH_FALSE;
+	o->T38FaxTranscodingJBIG = SWITCH_FALSE;
+	o->T38FaxRateManagement = "transferredTCF";
+	o->T38FaxMaxBuffer = 2000;
+	o->T38FaxMaxDatagram = T38_MAX_DATAGRAM;
+	o->T38FaxUdpEC = redundancy ? "t38UDPRedundancy" : NULL;
+	o->T38VendorInfo = "0 0 0";
+}
+
+/* the other end's T.38 (its options, as sofia has them) for the fax
+   machine's configuration; version: ours, at most */
+static void t38_config(struct dmodem_fax_config *cfg,
+		       const switch_t38_options_t *o, int version)
+{
+	cfg->t38 = 1;
+	cfg->t38_version = o->T38FaxVersion < version ? o->T38FaxVersion :
+		version;
+	cfg->t38_ec = o->T38FaxUdpEC &&
+		!strcasecmp(o->T38FaxUdpEC, "t38UDPRedundancy") ?
+		DMODEM_T38_EC_REDUNDANCY : DMODEM_T38_EC_NONE;
+	cfg->t38_max_datagram = (int)o->T38FaxMaxDatagram;
+}
+
+/* T.38 for the call: fax-t38, and fax_enable_t38 not false (the call's
+   variable, as mod_spandsp has it); then it is true (without it sofia
+   refuses an offer) */
+static int t38_allowed(switch_channel_t *channel, const struct dmbridge_fax *fs)
+{
+	const char *v = switch_channel_get_variable(channel, "fax_enable_t38");
+
+	if (!fs->t38 || (v && !switch_true(v)))
+		return 0;
+	if (!v)
+		switch_channel_set_variable(channel, "fax_enable_t38", "true");
+	return 1;
+}
+
+/* a fax call on the line until it ends; -1 if the channel hung up.
+
+   With T.38 (t38_allowed()) the fax goes over to it when the channel
+   does, before a page has gone (the fax machine anew on UDPTL, its
+   time by the clock): a receiver asks for it as rxfax does when told
+   to (after T38_ASK_AFTER_MS), and waits for the answer (T38_ASK_MS at
+   most, silence on the line) before it starts on the audio; a sender
+   takes it when the other end asks (an offer that came before, the
+   channel's T.38 flag up, too) */
 static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 		   const struct dmbridge_fax *fs)
 {
 	struct dmodem_fax_config cfg = { 0 };
 	struct dmodem_fax_status st = { 0 };
 	struct dmodem_fax *f;
+	struct fax_t38 t = { 0 };
+	switch_core_session_t *session = l->session;
 	switch_channel_t *channel = l->channel;
-	int res = 0;
+	switch_time_t asked = switch_micro_time_now();
+	int res = 0, t38 = 0, ask = 0, asking = 0;
+	int may_switch = t38_allowed(channel, fs);
 
 	cfg.law = l->law;
 	cfg.dir = dir;
@@ -409,24 +553,176 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 			  SWITCH_LOG_INFO, "dmodem fax: %s %s\n",
 			  dir == DMODEM_FAX_SEND ? "sending" : "receiving",
 			  file);
+	if (may_switch) {
+		/* sofia waits for this to take an offer */
+		switch_channel_set_app_flag_key("T38", channel,
+						CF_APP_T38_POSSIBLE);
+		/* a receiver asks (silence on the line till then) */
+		ask = asking = dir == DMODEM_FAX_RECEIVE &&
+			!switch_channel_test_app_flag_key("T38", channel,
+							  CF_APP_T38) &&
+			!switch_channel_get_private(channel, "t38_options");
+	}
 	for (;;) {
-		if (line_step(l, fax_fn, f) < 0) {
+		if (ask && !switch_channel_test_app_flag_key("T38", channel,
+							     CF_APP_T38) &&
+		    switch_micro_time_now() - asked >
+		    (switch_time_t)T38_ASK_AFTER_MS * 1000) {
+			switch_core_session_message_t msg = { 0 };
+			switch_t38_options_t *o =
+				switch_core_session_alloc(session, sizeof(*o));
+			t38_ours(o, 0, fs->max_bps, 1);
+			switch_channel_set_private(channel, "t38_options", o);
+			switch_channel_set_app_flag_key("T38", channel,
+							CF_APP_T38_REQ);
+			msg.from = __FILE__;
+			msg.message_id =
+				SWITCH_MESSAGE_INDICATE_REQUEST_IMAGE_MEDIA;
+			switch_core_session_receive_message(session, &msg);
+			ask = 0;
+			asked = switch_micro_time_now();
+			switch_log_printf(SWITCH_CHANNEL_CHANNEL_LOG(channel),
+					  SWITCH_LOG_INFO,
+					  "dmodem fax: T.38 asked for\n");
+		}
+		if (may_switch && !t38 &&
+		    switch_channel_test_app_flag_key("T38", channel, CF_APP_T38)) {
+			/* T.38: our request's answer, or the other end's
+			   offer (answered: our side in its options) */
+			switch_t38_options_t *o =
+				switch_channel_get_private(channel, "t38_options");
+			switch_core_session_message_t msg = { 0 };
+			if (!o) {
+				may_switch = asking = 0;
+				continue;
+			}
+			dmodem_fax_destroy(f);
+			if (asking && !ask) {
+				t38_config(&cfg, o, 0);
+				msg.message_id = SWITCH_MESSAGE_INDICATE_UDPTL_MODE;
+			} else {
+				t38_config(&cfg, o, 3);
+				t38_ours(o, cfg.t38_version, fs->max_bps,
+					 cfg.t38_ec == DMODEM_T38_EC_REDUNDANCY);
+				msg.message_id =
+					SWITCH_MESSAGE_INDICATE_T38_DESCRIPTION;
+			}
+			switch_channel_set_app_flag_key("T38", channel,
+							CF_APP_T38_NEGOTIATED);
+			t.session = session;
+			cfg.t38_send = t38_send;
+			cfg.t38_ctx = &t;
+			f = dmodem_fax_create(&cfg);
+			if (!f) {
+				switch_log_printf(SWITCH_CHANNEL_CHANNEL_LOG(channel),
+						  SWITCH_LOG_WARNING,
+						  "dmodem: cannot %s fax file %s\n",
+						  dir == DMODEM_FAX_SEND ? "read" :
+						  "use", file);
+				switch_channel_set_variable(channel,
+					"dmodem_fax_status", "FAILED");
+				switch_channel_clear_app_flag_key("T38", channel,
+					CF_APP_T38_POSSIBLE);
+				return 0;
+			}
+			t.f = f;
+			switch_mutex_init(&t.lock, SWITCH_MUTEX_NESTED,
+					  switch_core_session_get_pool(session));
+			msg.from = __FILE__;
+			switch_core_session_receive_message(session, &msg);
+			switch_log_printf(SWITCH_CHANNEL_CHANNEL_LOG(channel),
+					  SWITCH_LOG_INFO,
+					  "dmodem fax: T.38 (version %d, %s:%d%s)\n",
+					  cfg.t38_version,
+					  switch_str_nil(o->remote_ip),
+					  o->remote_port,
+					  cfg.t38_ec == DMODEM_T38_EC_REDUNDANCY ?
+					  ", redundancy" : "");
+			t38 = 1;
+			ask = asking = may_switch = 0;
+			{
+				switch_threadattr_t *attr = NULL;
+				switch_memory_pool_t *pool =
+					switch_core_session_get_pool(session);
+				switch_threadattr_create(&attr, pool);
+				switch_threadattr_stacksize_set(attr,
+					SWITCH_THREAD_STACKSIZE);
+				if (switch_thread_create(&t.thread, attr, t38_clock,
+							 &t, pool) !=
+				    SWITCH_STATUS_SUCCESS) {
+					t.thread = NULL;
+					dmodem_fax_hangup(f);
+					break;
+				}
+			}
+		} else if (asking && !ask &&
+			   (switch_channel_test_app_flag_key("T38", channel,
+							     CF_APP_T38_FAIL) ||
+			    switch_micro_time_now() - asked >
+			    (switch_time_t)T38_ASK_MS * 1000)) {
+			/* refused, or no answer: on the audio */
+			asking = 0;
+		}
+		if (t38) {
+			/* the packets that come (a read waits for the next;
+			   the clock breaks it when the fax is done) */
+			switch_frame_t *fr = NULL;
+			switch_status_t s;
+			if (t.done)
+				break;
+			s = switch_channel_ready(channel) ?
+				switch_core_session_read_frame(session, &fr,
+					SWITCH_IO_FLAG_NONE, 0) :
+				SWITCH_STATUS_FALSE;
+			if (!SWITCH_READ_ACCEPTABLE(s)) {
+				switch_mutex_lock(t.lock);
+				dmodem_fax_hangup(f);
+				switch_mutex_unlock(t.lock);
+				res = -1;
+				break;
+			}
+			if (fr && switch_test_flag(fr, SFF_UDPTL_PACKET) &&
+			    fr->packet && fr->packetlen > 0) {
+				switch_mutex_lock(t.lock);
+				dmodem_fax_t38_rx(f, fr->packet,
+						  (int)fr->packetlen);
+				switch_mutex_unlock(t.lock);
+			}
+			continue;
+		}
+		/* the audio (T.38 asked for: silence, the fax machine
+		   waits) */
+		if (asking ? line_step(l, silence_fn, l) < 0 :
+		    line_step(l, fax_fn, f) < 0) {
 			dmodem_fax_hangup(f);
 			res = -1;
 			break;
 		}
 		dmodem_fax_status(f, &st);
+		if (may_switch && (st.pages || st.complete)) {
+			/* a page has gone on audio: it stays (sofia refuses
+			   an offer now) */
+			switch_channel_clear_app_flag_key("T38", channel,
+							  CF_APP_T38_POSSIBLE);
+			may_switch = 0;
+		}
 		if (st.done)
 			break;
 	}
+	if (t.thread) {
+		switch_status_t ts;
+		t.stop = 1;
+		switch_thread_join(&ts, t.thread);
+	}
 	dmodem_fax_status(f, &st);
 	dmodem_fax_destroy(f);
+	switch_channel_clear_app_flag_key("T38", channel, CF_APP_T38_POSSIBLE);
 	switch_log_printf(SWITCH_CHANNEL_CHANNEL_LOG(channel),
 			  SWITCH_LOG_INFO,
-			  "dmodem fax %s: %s, %d pages at %d bit/s%s, remote '%s'\n",
+			  "dmodem fax %s: %s, %d pages at %d bit/s%s%s, remote '%s'\n",
 			  dir == DMODEM_FAX_SEND ? "sent" : "received",
 			  st.result, st.pages, st.bps, st.ecm ? " (ECM)" : "",
-			  st.remote_ident);
+			  t38 ? " over T.38" : "", st.remote_ident);
 	switch_channel_set_variable(channel, "dmodem_fax_status",
 				    st.ok ? "SUCCESS" : "FAILED");
 	switch_channel_set_variable(channel, "dmodem_fax_result", st.result);
@@ -438,6 +734,8 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 				    st.remote_ident);
 	switch_channel_set_variable(channel, "dmodem_fax_ecm",
 				    st.ecm ? "true" : "false");
+	switch_channel_set_variable(channel, "dmodem_fax_t38",
+				    t38 ? "true" : "false");
 	return res;
 }
 
@@ -469,7 +767,7 @@ SWITCH_STANDARD_APP(dmodem_function)
 	enum dmodem_law law;
 	char *argv[3] = { 0 }, *mydata, name[64];
 	const char *profile, *status = "ERROR";
-	int orig, line_ok = 0;
+	int orig, line_ok = 0, t38_fax = 0, t38_ok;
 
 	dmbridge_call_init(&c);
 	mydata = switch_core_session_strdup(session, data ? data : "");
@@ -503,6 +801,12 @@ SWITCH_STANDARD_APP(dmodem_function)
 			  orig ? "calling" : "answering", profile,
 			  law == DMODEM_LAW_ALAW ? "PCMA" : "PCMU",
 			  l.linear ? " transcoded" : "");
+	/* a T.38 offer before the modems are connected: a fax machine (a
+	   gateway's), taken (sofia waits for the flag to take it) */
+	t38_ok = !orig && p.b.fax.on && t38_allowed(channel, &p.b.fax);
+	if (t38_ok)
+		switch_channel_set_app_flag_key("T38", channel,
+						CF_APP_T38_POSSIBLE);
 
 	for (;;) {
 		enum dmbridge_event ev;
@@ -512,7 +816,14 @@ SWITCH_STANDARD_APP(dmodem_function)
 			c.status = "HANGUP";
 			break;
 		}
-		ev = dmbridge_call_step(&c, n);
+		if (t38_ok && !c.online &&
+		    switch_channel_test_app_flag_key("T38", channel, CF_APP_T38)) {
+			t38_fax = 1;
+			c.status = "FAX";
+			ev = DMBRIDGE_FAX;
+		} else {
+			ev = dmbridge_call_step(&c, n);
+		}
 		if (ev == DMBRIDGE_CONNECTED) {
 			const char *cid = switch_channel_get_variable(channel,
 							"caller_id_number");
@@ -536,6 +847,9 @@ SWITCH_STANDARD_APP(dmodem_function)
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
 					  SWITCH_LOG_INFO,
 					  "dmodem connected at %s bit/s\n", c.rate);
+			if (t38_ok)
+				switch_channel_clear_app_flag_key("T38", channel,
+					CF_APP_T38_POSSIBLE);
 			ev = dmbridge_call_serve(&c, env);
 		}
 		if (ev == DMBRIDGE_FAX) {
@@ -548,7 +862,8 @@ SWITCH_STANDARD_APP(dmodem_function)
 			fax_file_name(session, p.b.fax.dir, path, sizeof(path));
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
 					  SWITCH_LOG_INFO,
-					  "dmodem: a fax machine is calling\n");
+					  "dmodem: a fax machine is calling%s\n",
+					  t38_fax ? " (T.38)" : "");
 			run_fax(&l, DMODEM_FAX_RECEIVE, path, &p.b.fax);
 			break;
 		}
@@ -557,6 +872,9 @@ SWITCH_STANDARD_APP(dmodem_function)
 	}
 	dmbridge_call_hangup(&c);
 	status = c.status;
+	if (t38_ok)
+		switch_channel_clear_app_flag_key("T38", channel,
+						  CF_APP_T38_POSSIBLE);
 	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
 			  "dmodem done: %s\n", status);
 
@@ -649,7 +967,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_dmodem_load)
 		       "machine.  ident: our number (TSI), else fax-ident of dmodem.conf.\n"
 		       "Sets dmodem_fax_status (SUCCESS or FAILED), dmodem_fax_result,\n"
 		       "dmodem_fax_pages, dmodem_fax_rate, dmodem_fax_remote, dmodem_fax_ecm,\n"
-		       "dmodem_fax_file.\n",
+		       "dmodem_fax_t38 (true when the fax went over T.38), dmodem_fax_file.\n",
 		       send_fax_function, FAX_SYNTAX, SAF_NONE);
 	SWITCH_ADD_APP(app_interface, "dmodem_receive_fax",
 		       "Receive a fax into a TIFF file with DModem's fax",

@@ -440,8 +440,9 @@ std::string fax_file_name(const Call &c, const char *dir)
 }
 
 /* the fax's result in the call's variables, as DModemSendFax and
-   DModemReceiveFax set them */
-void fax_variables(const Call &c, const struct dmodem_fax_status &st)
+   DModemReceiveFax set them (t38: it went over T.38) */
+void fax_variables(const Call &c, const struct dmodem_fax_status &st,
+		   bool t38)
 {
 	set_var(c.id, "DMODEMFAXSTATUS", st.ok ? "SUCCESS" : "FAILED");
 	set_var(c.id, "DMODEMFAXRESULT", st.result);
@@ -449,6 +450,7 @@ void fax_variables(const Call &c, const struct dmodem_fax_status &st)
 	set_var(c.id, "DMODEMFAXRATE", std::to_string(st.bps));
 	set_var(c.id, "DMODEMFAXREMOTE", st.remote_ident);
 	set_var(c.id, "DMODEMFAXECM", st.ecm ? "yes" : "no");
+	set_var(c.id, "DMODEMFAXT38", t38 ? "yes" : "no");
 }
 
 /* the call's line: our RTP, and what Asterisk has at its end (an
@@ -490,11 +492,11 @@ long long now_us()
    hang up, and the dialplan's h extension runs at once: an ARI app
    cannot hold the channel as DModemReceiveFax does.
 
-   On a SIP leg the fax goes over to T.38 when the leg does, before a
-   page has gone (the fax machine anew on UDPTL, its time by the clock):
-   a receiver asks for it, as ReceiveFAX does, and waits for the answer
-   (6 s at most, silence on the line) before it starts on the audio; a
-   sender takes it when asked */
+   On a SIP leg (fax_t38 on) the fax goes over to T.38 when the leg
+   does, before a page has gone (the fax machine anew on UDPTL, its time
+   by the clock): a receiver asks for it, as ReceiveFAX does, and waits
+   for the answer (6 s at most, silence on the line) before it starts on
+   the audio; a sender takes it when asked */
 void run_fax(Call &c, Line &line, enum dmodem_law law,
 	     enum dmodem_fax_dir dir, const std::string &file,
 	     const struct dmbridge_fax &fs)
@@ -504,7 +506,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	struct dmodem_fax *f;
 	uint8_t in[MAX_SAMPLES], out[MAX_SAMPLES];
 	bool sending = dir == DMODEM_FAX_SEND, told = false, t38 = false;
-	bool may_switch = line.leg != nullptr, asking = false;
+	bool may_switch = line.leg != nullptr && fs.t38, asking = false;
 	T38Peer peer = { line.udptl, {} };
 	long long t0 = 0, samples = 0, asked = 0;
 
@@ -622,7 +624,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 		}
 		dmodem_fax_status(f, &st);
 		if (st.complete && !told) {
-			fax_variables(c, st);
+			fax_variables(c, st, t38);
 			told = true;
 		}
 		if (st.done)
@@ -630,7 +632,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	}
 	dmodem_fax_status(f, &st);
 	if (!told && !c.hungup)
-		fax_variables(c, st);
+		fax_variables(c, st, t38);
 	/* (the received file closed with it) */
 	dmodem_fax_destroy(f);
 	if (verbose >= 1)
@@ -663,7 +665,7 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 		say("%s: dmodem %s (profile %s, %s)", c.name.c_str(),
 		    orig ? "calling" : "answering", c.profile.c_str(),
 		    law == DMODEM_LAW_ALAW ? "alaw" : "ulaw");
-	if (line.leg && p.fax.on)
+	if (line.leg && p.fax.on && p.fax.t38)
 		sip.accept_t38(line.leg, true);
 	for (;;) {
 		enum dmbridge_event ev;
@@ -882,7 +884,8 @@ void run_call(std::shared_ptr<Call> c)
 	if (c->kind == MODEM) {
 		if (load_profile(c->profile, &p)) {
 			law = call_law(*c, p.law);
-			up = open_line(*c, law, line, p.fax.on);
+			up = open_line(*c, law, line,
+				       p.fax.on && p.fax.t38);
 		}
 		if (up)
 			status = run_modem(*c, p, law, line);
@@ -904,7 +907,7 @@ void run_call(std::shared_ptr<Call> c)
 			set_var(c->id, "DMODEMFAXSTATUS", "FAILED");
 		} else {
 			law = call_law(*c, DMODEM_LAW_UNKNOWN);
-			up = open_line(*c, law, line, true);
+			up = open_line(*c, law, line, fs.t38);
 			if (up)
 				run_fax(*c, line, law, c->kind == SENDFAX ?
 					DMODEM_FAX_SEND : DMODEM_FAX_RECEIVE,

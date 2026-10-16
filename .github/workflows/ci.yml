@@ -7,8 +7,8 @@
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
 # two modems of the module, D-Modem (dmodemd) over SIP both ways, and
-# faxes, also against their own fax (spandsp); in Asterisk also through
-# dmodem-ari, D-Modem as an ARI application, and its faxes over T.38.
+# faxes on the audio and over T.38, also against their own fax (spandsp);
+# in Asterisk also through dmodem-ari, D-Modem as an ARI application.
 #
 # A push or pull request that changes only documentation (docs/ and the
 # Markdown files: nothing builds or tests from them) runs none of it.
@@ -113,6 +113,7 @@ jobs:
           ARI=1 timeout 900 asterisk/test/fax_spandsp.sh
           ARI=1 ARI_SIP=1 timeout 900 asterisk/test/fax.sh
           timeout 1500 asterisk/test/t38.sh
+          ARI=1 timeout 1500 asterisk/test/t38.sh
 
       - name: Logs of a failed step
         if: failure()
@@ -184,7 +185,9 @@ jobs:
           BBS_CONNECT_DELAY=15 timeout 300 freeswitch/test/sip.sh
 
       - name: Fax
-        run: timeout 1200 freeswitch/test/fax.sh
+        run: |
+          timeout 1200 freeswitch/test/fax.sh
+          T38=yes timeout 1200 freeswitch/test/fax.sh
 
       - name: Logs of a failed step
         if: failure()

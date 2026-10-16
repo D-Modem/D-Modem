@@ -16,6 +16,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
+
 #include "dmodem.h"
 #include "fax_util.h"
 
@@ -208,6 +210,72 @@ TEST(DmodemFaxT38, SendsTheDocument)
 	EXPECT_EQ(ss.pages, 2);
 	EXPECT_TRUE(ss.ecm);
 	EXPECT_STREQ(ss.remote_ident, "+1 555 0199");
+	dmodem_fax_destroy(sender);
+	dmodem_fax_destroy(receiver);
+	EXPECT_TRUE(same_pages(in, out));
+}
+
+/* the same with IFP packets (t38_ifp: the UDPTL a program's own), the
+   longest IFP packet 72 octets (Asterisk's far_max_ifp for a
+   T38FaxMaxDatagram of 400 with three packets of redundancy), none lost
+   (they come in order, as the program's UDPTL gives them) */
+TEST(DmodemFaxT38, IfpPackets)
+{
+	std::string in = fax_file("in.tif"), out = fax_file("out.tif");
+	struct dmodem_fax_config fc = {};
+	struct dmodem_fax *sender, *receiver;
+	struct dmodem_fax_status ss = {}, rs = {};
+	T38Line ab = { {}, 0, 0 }, ba = { {}, 0, 0 };
+	size_t longest = 0;
+	int n;
+
+	ASSERT_TRUE(write_test_doc(in, true));
+	dmodem_init();
+	fc.law = DMODEM_LAW_ULAW;
+	fc.t38 = 1;
+	fc.t38_ifp = 1;
+	fc.t38_version = 0;
+	fc.t38_max_datagram = 72;
+	fc.t38_send = t38_send;
+	fc.dir = DMODEM_FAX_SEND;
+	fc.file = in.c_str();
+	fc.ident = "+1 555 0100";
+	fc.t38_ctx = &ab;
+	sender = dmodem_fax_create(&fc);
+	ASSERT_NE(sender, nullptr);
+	fc.dir = DMODEM_FAX_RECEIVE;
+	fc.file = out.c_str();
+	fc.ident = "+1 555 0199";
+	fc.t38_ctx = &ba;
+	receiver = dmodem_fax_create(&fc);
+	ASSERT_NE(receiver, nullptr);
+
+	for (n = 0; n < 50 * 600; n++) {
+		std::vector<std::vector<unsigned char>> to_r, to_s;
+		to_r.swap(ab.pkts);
+		to_s.swap(ba.pkts);
+		for (auto &p : to_r) {
+			longest = std::max(longest, p.size());
+			dmodem_fax_t38_rx(receiver, p.data(), (int)p.size());
+		}
+		for (auto &p : to_s) {
+			longest = std::max(longest, p.size());
+			dmodem_fax_t38_rx(sender, p.data(), (int)p.size());
+		}
+		dmodem_fax_t38_time(sender, 160);
+		dmodem_fax_t38_time(receiver, 160);
+		dmodem_fax_status(sender, &ss);
+		dmodem_fax_status(receiver, &rs);
+		if (ss.done && rs.done)
+			break;
+	}
+	printf("%d pages at %d bit/s%s in %.1f s, IFP packets up to %zu "
+	       "octets\n", ss.pages, ss.bps, ss.ecm ? " (ECM)" : "", n / 50.0,
+	       longest);
+	EXPECT_TRUE(ss.ok) << "sender: " << ss.result;
+	EXPECT_TRUE(rs.ok) << "receiver: " << rs.result;
+	EXPECT_EQ(ss.pages, 2);
+	EXPECT_LE(longest, 72u);
 	dmodem_fax_destroy(sender);
 	dmodem_fax_destroy(receiver);
 	EXPECT_TRUE(same_pages(in, out));

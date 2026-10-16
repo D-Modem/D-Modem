@@ -2,7 +2,7 @@
 <!-- the tests' FreeSWITCH (fs.sh): one SIP profile on 127.0.0.1:5080 that
      takes any call and registration, G.711 only, the dialplan of the
      tests, mod_dmodem's profiles.  vars.xml: run, test, dmodem_debug,
-     fax_max_rate, term_init, bbs_answer (fs.sh writes it). -->
+     fax_max_rate, fax_t38, term_init, bbs_answer (fs.sh writes it). -->
 <document type="freeswitch/xml">
   <X-PRE-PROCESS cmd="include" data="vars.xml"/>
 
@@ -93,6 +93,10 @@
         <param name="header" value="_undef_"/>
         <param name="spool-dir" value="$${run}/tmp"/>
         <param name="file-prefix" value="spandsp"/>
+        <!-- T.38 as dmodem's fax has it (fax.sh T38=yes): offers taken,
+             and asked for -->
+        <param name="enable-t38" value="$${fax_t38}"/>
+        <param name="enable-t38-request" value="$${fax_t38}"/>
       </fax-settings>
     </configuration>
 
@@ -102,6 +106,7 @@
         <param name="fax-dir" value="$${run}/fax"/>
         <param name="fax-ident" value="+1 555 0199"/>
         <param name="fax-max-rate" value="$${fax_max_rate}"/>
+        <param name="fax-t38" value="$${fax_t38}"/>
       </settings>
       <profiles>
         <!-- the test BBS (asterisk/test/bbs_sim.py) -->
@@ -166,6 +171,8 @@
                receiver a frame -->
           <action application="set" data="jitterbuffer_msec=60"/>
           <action application="set" data="rtp_jitter_buffer_plc=false"/>
+          <!-- (FreeSWITCH refuses a T.38 offer without it) -->
+          <action application="set" data="fax_enable_t38=$${fax_t38}"/>
           <action application="answer"/>
           <action application="rxfax" data="$${run}/spandsp.tif"/>
         </condition>

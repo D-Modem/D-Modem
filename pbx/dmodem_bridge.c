@@ -81,6 +81,7 @@ void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir)
 	f->ident[0] = 0;
 	f->max_bps = 14400;
 	f->ecm = 1;
+	f->t38 = 1;
 }
 
 /* (see dmodem_bridge.h) */
@@ -98,6 +99,8 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 		f->max_bps = atoi(value);
 	else if (dmbridge_option_is(name, "fax-ecm"))
 		f->ecm = h->is_true(value);
+	else if (dmbridge_option_is(name, "fax-t38"))
+		f->t38 = h->is_true(value);
 	else
 		return 0;
 	return 1;

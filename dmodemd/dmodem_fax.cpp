@@ -33,7 +33,7 @@ struct dmodem_fax {
 	int file_error;
 	char path[1024];
 	/* T.38 */
-	int t38_version, t38_max_datagram;
+	int t38_version, t38_max_datagram, t38_ifp;
 	UdptlTx tx;
 	UdptlRx rx;
 	void (*t38_send)(void *ctx, const unsigned char *pkt, int len);
@@ -66,7 +66,8 @@ static void page_received(void *ctx, T4Page *p)
 		f->pages_written++;
 }
 
-/* an IFP packet of T.30's: in UDPTL to t38_send */
+/* an IFP packet of T.30's: in UDPTL (or as it is, with t38_ifp) to
+   t38_send */
 static void t38_tx(void *ctx, const struct t38_ifp *p)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
@@ -76,6 +77,11 @@ static void t38_tx(void *ctx, const struct t38_ifp *p)
 		f->t38_max_datagram : (int)sizeof(pkt);
 	if (n < 0)
 		return;
+	if (f->t38_ifp) {
+		if (f->t38_send)
+			f->t38_send(f->t38_ctx, ifp, n);
+		return;
+	}
 	m = f->tx.packet(ifp, n, pkt, max);
 	if (m > 0 && f->t38_send)
 		f->t38_send(f->t38_ctx, pkt, m);
@@ -134,11 +140,14 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 			   T38_EC_REDUNDANCY : T38_EC_NONE,
 			   cfg->t38_redundancy > 0 ? cfg->t38_redundancy : 3);
 		f->rx.init();
+		f->t38_ifp = cfg->t38_ifp;
 		f->t38_send = cfg->t38_send;
 		f->t38_ctx = cfg->t38_ctx;
 		c.t38 = 1;
 		c.t38_tx = t38_tx;
-		c.t38_max_data = f->t38_max_datagram - 16;
+		/* an IFP packet's headers: its type and count, and each
+		   field's type and length (a data field and the end's) */
+		c.t38_max_data = f->t38_max_datagram - (f->t38_ifp ? 12 : 16);
 	}
 	f->t30 = t30_create(&c);
 	if (!f->t30) {
@@ -197,11 +206,15 @@ void dmodem_fax_hangup(struct dmodem_fax *f)
 	t30_hangup(f->t30);
 }
 
-/* a UDPTL packet: its IFP packets to T.30, in their order */
+/* a UDPTL packet: its IFP packets to T.30, in their order (an IFP
+   packet: to T.30) */
 void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
 		       int len)
 {
-	f->rx.packet(pkt, len, t38_ifp_in, f);
+	if (f->t38_ifp)
+		t38_ifp_in(f, pkt, len, 0);
+	else
+		f->rx.packet(pkt, len, t38_ifp_in, f);
 }
 
 /* T.38's time going by */

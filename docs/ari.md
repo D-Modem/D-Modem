@@ -123,7 +123,8 @@ For each call that enters the app:
 The fax machine is `app_dmodem`'s (T.30 on V.17, V.29 and V.27ter, error
 correction mode, TIFF files; see [asterisk.md](asterisk.md#fax)), with its
 settings from `dmodem.conf`'s `[general]`: `fax_ident`, `fax_max_rate`,
-`fax_ecm`, and `fax_dir` for the faxes the modem profiles take.
+`fax_ecm`, `fax_t38`, and `fax_dir` for the faxes the modem profiles
+take.
 
 - A fax machine that calls a modem profile (`fax` on, the default) is
   received into `<fax_dir>/<date>-<time>-<caller>-<uniqueid>.tif`, as
@@ -137,7 +138,8 @@ settings from `dmodem.conf`'s `[general]`: `fax_ident`, `fax_max_rate`,
 `<ident>` is our number instead of `fax_ident`. They set the variables of
 `DModemSendFax` and `DModemReceiveFax`: `DMODEMFAXFILE` first, then
 `DMODEMFAXSTATUS` (`SUCCESS` or `FAILED`), `DMODEMFAXRESULT`,
-`DMODEMFAXPAGES`, `DMODEMFAXRATE`, `DMODEMFAXREMOTE` and `DMODEMFAXECM`.
+`DMODEMFAXPAGES`, `DMODEMFAXRATE`, `DMODEMFAXREMOTE`, `DMODEMFAXECM` and
+`DMODEMFAXT38`.
 
 One thing differs from the module. An ARI application cannot keep a
 channel that has hung up: when the other machine hangs up, Asterisk ends
@@ -188,7 +190,8 @@ sip_endpoint = dmodem           ; the endpoint above
 sip_bind = 127.0.0.1:5090       ; dmodem-ari's SIP side (its RTP, UDPTL too)
 ```
 
-How the faxes take it:
+How the faxes take it, as the module's do ([asterisk.md](asterisk.md#t38);
+`fax_t38 = no` keeps them on the audio):
 
 - `receivefax`, and a modem profile that hears a fax machine, ask for
   T.38 (our re-INVITE, as `ReceiveFAX` does) and wait for the answer, 6 s
@@ -243,9 +246,6 @@ the dialplan's `DModem(...)`, `DModemSendFax(...)` and
   `dmodem` endpoint added to `pjsip.conf`). The modems still connect at
   62666/62666; the faxes between `dmodem-ari`'s own machines go over T.38
   even through a Local channel.
-- `asterisk/test/t38.sh`: T.38 through `dmodem-ari` with Asterisk calling
-  itself over PJSIP (out on `loopout`, in on `loopin`, both with T.38):
-  `SendFAX` to `receivefax`, `sendfax` to `ReceiveFAX`, `dmodem-ari`'s
-  `sendfax` to its `receivefax`, `SendFAX` to a modem profile, all of them
-  over T.38, and `SendFAX` from an endpoint without T.38 to `receivefax`
-  on the audio. `CASES`, `SIP_LOG=1` (the SIP messages in the console).
+- `ARI=1 asterisk/test/t38.sh`: the T.38 test of the module
+  ([asterisk.md](asterisk.md#testing)) through `dmodem-ari`, `t38 = yes`
+  and its SIP side on the `dmodem` endpoint.

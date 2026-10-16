@@ -107,8 +107,11 @@ packet on V.21, as T.38 7.5 has it), each ended by `hdlc-fcs-OK` and the
 last by `hdlc-fcs-OK-sig-end`; T.4 data (the TCF's zeros, transferred, and
 the page's bits) ended by `t4-non-ecm-sig-end`; then 100 or 60 ms and
 no-signal. The octets are the line's bits with the first in the top bit
-(7.1.2), the other way round from the frames as T.30 writes them. CNG and
-CED are their indicators after 200 ms of no-signal. What comes in is
+(7.1.2), the other way round from the frames as T.30 writes them. CED is
+its indicator after 200 ms of no-signal; the calling side sends no CNG
+(the call goes over to T.38 because it is a fax call, and a gateway
+playing CNG holds back what follows until it hears the other machine's
+V.21, which may be a DIS already gone by). What comes in is
 taken the same way, a sig-end field or a no-signal indicator for the
 carrier's end. `t30_t38_time()` is the time going by; the timers are the
 same.
