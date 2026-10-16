@@ -1,16 +1,23 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
- * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
- *    modem.cpp - the modem core (dcore.h): the call's state machine, the
- *                data pumps' life cycle, rings, caller ID, voice and fax,
- *                the DTE's characters and the timers
+ *    modem.cpp - the modem core's call (dcore.h): its states from the
+ *                dial or the answer to the hang-up, the DTE's characters,
+ *                the line's samples through the data pump that runs, the
+ *                data link layer it owns, the result codes, rings and
+ *                caller ID, voice and class 1 fax (T.38 too), the timers
+ *                and the call's statistics (ATI11)
  *
- *    Smart Link's slmodemd modem.c as a class, with the same states and
- *    the same order of things.  The timers are deadlines on the Host's
- *    clock (no signals, no global timer list).
+ *    The AT interpreter (at.cpp) is the other half of the class: it gets
+ *    the DTE's characters while the modem is in command state and calls
+ *    back here for what a command does to the call.  The data pumps see
+ *    the modem through interface.cpp.
+ *
+ *    Time comes from the Host in two forms: its clock (now_ms()), for the
+ *    escape's guard time and the rings' cadence, and the count of the
+ *    line's samples, for everything that happens inside a call (the hang-
+ *    up's stop, the answer delay, the end of caller ID).
  *
  */
 
@@ -21,156 +28,197 @@
 
 #include <dsplibs.h>
 #include <link.h>
+#include <modem_dp.h>
 
-#include "log.h"
 #include "dcore.h"
+#include "log.h"
 
-/* not in the original dsplibs.o */
+/* V.91's exact PCM codes, which must keep their DC (dsplibs.h): weak, as
+   Smart Link's library (half_smartlink) has no such function, and then
+   the samples are never PCM codes */
 extern "C" int dp_runtime_pcm(void *runtime) __attribute__((weak));
-
 
 namespace dcore {
 
-/* who the modem says it is (ATI, +GMI, +GMM, +GMR, +FMI?..., dmodemd's
-   banner); the version is the build's (CMakeLists.txt's project) */
-#ifndef DMODEM_VERSION
-#error "DMODEM_VERSION: the build gives it (CMakeLists.txt)"
-#endif
 const char *const Modem::author = "D-Modem project";
 const char *const Modem::product = "D-Modem";
 const char *const Modem::version = DMODEM_VERSION;
 
-/* debug lines (with the modem's name), error lines */
-#define DBG(fmt, ...) logf(fmt, ##__VA_ARGS__)
-#define ERR(fmt, ...) log_printf(1, "err: %s: " fmt, name_, ##__VA_ARGS__)
-
-/* the timing of the old core, in its ticks of 10 ms */
-static const unsigned long RING_ON_MIN = 150;   /* ms */
-static const unsigned long RING_ON_MAX = 2500;
-static const unsigned long RING_OFF_MIN = 1500;
-static const unsigned long RING_OFF_MAX = 6500;
-static const unsigned long TICK = 10;
-static const unsigned RING_COUNT_MIN = 10;
-static const unsigned long ESCAPE_TIMEOUT = 500;
+/* the DTE's characters waiting for the line or the interpreter */
 static const int XMIT_SIZE = 4096;
+/* a hang-up's stop: the samples after it */
+static const unsigned long STOP_SAMPLES = 48;
+/* the escape's guard time (before, between and after the S2s) */
+static const unsigned long ESCAPE_MS = 500;
+/* caller ID listens this long after the first ring */
+static const unsigned long CID_MS = 4000;
+/* a ring burst: the least gap before its first pulse, when it is
+   checked, the bounds of its length (first to last pulse), its least
+   pulses; how long a ring counts in S1 without another one */
+static const unsigned long RING_GAP_MS = 1500, RING_CHECK_MS = 2510;
+static const unsigned long RING_MIN_MS = 150, RING_MAX_MS = 2500;
+static const unsigned RING_PULSES = 10;
+static const unsigned long RING_GONE_MS = 6510;
 
-/* t1 is before t2 (ms, the clock may wrap) */
-static bool time_before(unsigned long t1, unsigned long t2)
+/* why a call ended (ATI11), by Modem::Cause */
+static const char *const cause_text[] = {
+	"None", "Local hangup", "Remote cleardown", "Line dropped",
+	"Carrier lost", "No dial tone", "Busy", "No answer",
+	"Training failed", "Protocol failure", "No carrier",
+};
+
+/* the result codes in words, by Result */
+static const char *const result_text[] = {
+	"OK", "CONNECT", "RING", "NO CARRIER", "ERROR", "", "NO DIALTONE",
+	"BUSY", "NO ANSWER",
+};
+
+/* CONNECT's number with ATV0 for a rate (Smart Link's ST56 numbers,
+   D-Modem's own from 80) */
+static const struct {
+	unsigned rate, code;
+} connect_codes[] = {
+	{ 300, 9 }, { 600, 10 }, { 1200, 5 }, { 2400, 11 }, { 4800, 12 },
+	{ 7200, 13 }, { 9600, 27 }, { 12000, 14 }, { 14400, 15 },
+	{ 16800, 16 }, { 19200, 17 }, { 21600, 18 }, { 24000, 19 },
+	{ 26400, 20 }, { 28800, 21 }, { 31200, 22 }, { 33600, 23 },
+	{ 34800, 24 }, { 40000, 25 }, { 42000, 26 }, { 44000, 28 },
+	{ 46000, 29 }, { 48000, 30 }, { 50000, 31 }, { 52000, 32 },
+	{ 54000, 33 }, { 56000, 34 }, { 57600, 35 }, { 115200, 36 },
+	{ 230400, 37 }, { 460800, 38 }, { 921600, 39 }, { 32000, 40 },
+	{ 34000, 41 }, { 36000, 42 }, { 38000, 43 }, { 58000, 44 },
+	{ 60000, 45 }, { 28000, 46 }, { 29333, 47 }, { 30666, 48 },
+	{ 33333, 49 }, { 34666, 50 }, { 37333, 51 }, { 38666, 52 },
+	{ 41333, 53 }, { 42666, 54 }, { 45333, 55 }, { 46666, 56 },
+	{ 49333, 57 }, { 50666, 58 }, { 53333, 59 }, { 54666, 60 },
+	{ 75, 80 }, { 25333, 81 }, { 26666, 82 }, { 57333, 83 },
+	{ 58666, 84 }, { 61333, 85 }, { 62666, 86 }, { 64000, 87 },
+};
+
+/* the number CONNECT has for rate with ATV0; 1 for a rate without one */
+static unsigned connect_code(unsigned rate)
 {
-	return (long)(t2 - t1) > 0;
+	for (const auto &c : connect_codes)
+		if (c.rate == rate)
+			return c.code;
+	return 1;
 }
 
-/* t1 is t2 or after */
-static bool time_after(unsigned long t1, unsigned long t2)
+/* the driver table's entry for pump id, NULL if there is none */
+static const DpDriver *find_driver(unsigned id)
 {
-	return !time_before(t1, t2);
+	for (const DpDriver *d = dp_drivers(); d->id; d++)
+		if ((unsigned)d->id == id)
+			return d;
+	return nullptr;
 }
 
-/* S-registers by their use; CRLF: S3 and S4 */
-#define TOTAL_RINGS        sregs_[SREG_RING_COUNTER]
-#define ANSWER_AFTER_RINGS sregs_[SREG_RINGS_TO_AUTO_ANSWER]
-#define CRLF               ((const char *)sregs_ + SREG_CR_CHAR)
-
-/* the modulations without V.42 */
-static bool nonec_dp(int id)
+/* the modulation a call has: the one the pumps reported in its
+   statistics, else the pump's own id, else 0 */
+static int modulation(const struct dp_stats &st, const struct dp *dp)
 {
-	return id == DP_V23 || id == DP_B103 || id == DP_V21;
+	return st.dp ? st.dp : dp ? (int)dp->id : 0;
 }
 
-/* V.8 starts them */
-static bool fast_dp(int id)
+/* src into dst (size octets), cut after its first ';' (which stays) */
+static void copy_dial(char *dst, size_t size, const char *src)
 {
-	return id == DP_V34 || id == DP_V90 || id == DP_V91 || id == DP_V92;
-}
-
-/*
- *    the link layer's owner
- */
-
-struct LinkOwner final : public dlink::Owner {
-	Modem *m;
-	/* the DTE's characters for the line */
-	int read_chars(uint8_t *buf, int n) override {
-		return m->get_chars((char *)buf, n);
-	}
-	/* received characters to the DTE */
-	int write_chars(const uint8_t *buf, int n) override {
-		return m->put_chars((const char *)buf, n);
-	}
-	/* the link's progress as the core's statuses */
-	void status(dlink::Status s) override {
-		switch (s) {
-		case dlink::Status::Detected:
-			m->update_status(Modem::ST_PACK_LINK);
-			break;
-		case dlink::Status::Up:
-			m->update_status(Modem::ST_EC_LINK);
-			break;
-		case dlink::Status::Released:
-			m->update_status(Modem::ST_EC_RELEASE);
-			break;
-		case dlink::Status::Error:
-			m->update_status(Modem::ST_EC_ERROR);
+	size_t i;
+	for (i = 0; i + 1 < size && src[i]; i++) {
+		dst[i] = src[i];
+		if (src[i] == ';') {
+			i++;
 			break;
 		}
 	}
-	/* the pump's rate, for the link's bit timers */
-	int tx_rate() override { return (int)m->tx_rate(); }
-	/* what XID (or MNP's LRs) agreed, for the CONNECT messages */
+	dst[i] = '\0';
+}
+
+/*
+ *    the data link layer's owner
+ */
+
+/* what the link (link.h) asks of the modem that owns it */
+struct LinkOwner final : public dlink::Owner {
+	explicit LinkOwner(Modem &m) : m_(m) {}
+
+	/* the DTE's characters for the line */
+	int read_chars(uint8_t *buf, int n) override {
+		return m_.get_chars(reinterpret_cast<char *>(buf), n);
+	}
+	/* the remote's characters for the DTE: what it took */
+	int write_chars(const uint8_t *buf, int n) override {
+		return m_.put_chars(reinterpret_cast<const char *>(buf), n);
+	}
+	/* the link's progress as the modem's */
+	void status(dlink::Status s) override {
+		switch (s) {
+		case dlink::Status::Detected:
+			m_.update_status(Modem::ST_PACK_LINK);
+			break;
+		case dlink::Status::Up:
+			m_.update_status(Modem::ST_EC_LINK);
+			break;
+		case dlink::Status::Released:
+			m_.update_status(Modem::ST_EC_RELEASE);
+			break;
+		case dlink::Status::Error:
+			m_.update_status(Modem::ST_EC_ERROR);
+			break;
+		}
+	}
+	/* the pump's transmit rate, for the link's bit timers */
+	int tx_rate() override { return (int)m_.tx_rate(); }
+	/* what XID or MNP's LRs agreed */
 	void negotiated(const dlink::Config &c) override {
-		m->negotiated(c.comp, c.v44, c.dict_size, c.max_string,
+		m_.negotiated(c.comp, c.v44, c.dict_size, c.max_string,
 			      c.mnp5);
 	}
-	/* the link's lines in the modem's log */
-	void log(const char *line) override {
-		m->logf("%s\n", line);
-	}
+	/* a line of the link's in the modem's log */
+	void log(const char *line) override { m_.logf("%s\n", line); }
+
+	Modem &m_;
 };
 
 /*
- *    creation
+ *    the modem
  */
 
-/* a modem on host: the S-registers, the country (opt.country, else
-   USA), the link layer, the DTE's buffer; ok() if all went well */
+/* a modem on host with opt: the S-registers and the kept parameters at
+   their defaults, the country (USA, or opt.country), the link layer and
+   the DTE's buffer; ok() if the country could be set */
 Modem::Modem(Host &host, const Options &opt)
-	: host_(host), name_(opt.name ? opt.name : "modem"),
-	  dev_name_(opt.dev_name)
+	: host_(host), handle_(new struct modem()),
+	  name_(opt.name ? opt.name : "modem"), dev_name_(opt.dev_name),
+	  srate_(opt.rate), frag_(opt.rate / 200 > 0 ? opt.rate / 200 : 1),
+	  min_rate_(MODEM_MIN_RATE), max_rate_(MODEM_MAX_RATE)
 {
-	handle_ = new struct modem;
 	handle_->self = this;
-	srate_ = opt.rate;
-	frag_ = srate_ / 200;
-	min_rate_ = MODEM_MIN_RATE;
-	max_rate_ = MODEM_MAX_RATE;
+	link_owner_ = new LinkOwner(*this);
+	link_ = new dlink::Link;
+	xmit_ = new char[XMIT_SIZE];
+	xmit_size_ = XMIT_SIZE;
 	sregs_init();
 	kept_init();
 	if (homolog_init(MODEM_DEFAULT_COUNTRY_CODE, nullptr)) {
-		ERR("bad default country code `%x'!\n",
-		    MODEM_DEFAULT_COUNTRY_CODE);
+		log_printf(1, "err: %s: no default country\n", name_);
 		return;
 	}
 	if (opt.country && homolog_init(-1, opt.country))
-		log_printf(0, "bad country name `%s', using default by "
-			   "code!\n", opt.country);
+		log_printf(0, "%s: bad country name %s, using default by "
+			   "code!\n", name_, opt.country);
 	ring_last_ = host_.now_ms();
 	setup_config();
-	DBG("startup modem...\n");
-	link_ = new dlink::Link();
-	link_owner_ = new LinkOwner();
-	link_owner_->m = this;
-	xmit_ = new char[XMIT_SIZE];
-	xmit_size_ = XMIT_SIZE;
+	logf("created: %d Hz, %s\n", srate_, homolog_->name);
 	voice_init();
 	ok_ = true;
 }
 
-/* a call still going ends (NO CARRIER); everything freed */
+/* a call that is on ends (NO CARRIER to the DTE: the Host still
+   serves), then everything goes */
 Modem::~Modem()
 {
-	DBG("modem_delete...\n");
 	if (started_) {
-		DBG("shutdown modem...\n");
 		if (state_ != IDLE) {
 			result_ = Result::NoCarrier;
 			have_result_ = true;
@@ -184,953 +232,163 @@ Modem::~Modem()
 	delete handle_;
 }
 
-/* the Modem behind the pumps' struct modem */
+/* the Modem behind a pump's struct modem */
 Modem *Modem::of(struct modem *m)
 {
 	return m->self;
 }
 
-/* a debug line (level 1) with the modem's name, printf style */
+/* a debug line, after the modem's name (the caller ends it) */
 void Modem::logf(const char *fmt, ...)
 {
 	char line[400];
-	va_list args;
-	va_start(args, fmt);
-	vsnprintf(line, sizeof(line), fmt, args);
-	va_end(args);
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(line, sizeof(line), fmt, ap);
+	va_end(ap);
 	log_printf(1, "%s: %s", name_, line);
 }
 
-/* the name of pump id, NULL if there is none */
-const char *Modem::dp_name(int id) const
+/* the device reports an error: only a line in the log */
+void Modem::error()
 {
-	for (DpDriver *p = dp_drivers(); p->id > 0; p++)
-		if (p->id == id)
-			return p->name;
-	return nullptr;
+	logf("device error\n");
+}
+
+/* the S-registers that have defaults (ATZ sets them too; the others
+   keep what they have) */
+void Modem::sregs_init()
+{
+	static const struct {
+		unsigned char reg, val;
+	} defaults[] = {
+		{ SREG_ESCAPE_CHAR, '+' }, { SREG_CR_CHAR, 13 },
+		{ SREG_LF_CHAR, 10 }, { SREG_BS_CHAR, 8 },
+		{ SREG_DIAL_TONE_WAIT_TIME, 2 },
+		{ SREG_WAIT_CARRIER_AFTER_DIAL, 60 },
+		{ SREG_DIAL_PAUSE_TIME, 2 },
+		{ SREG_CARRIER_DETECT_RESPONSE_TIME, 6 },
+		{ SREG_CARRIER_LOSS_DISCONNECT_TIME, 7 },
+		{ SREG_DTMF_DURATION, 100 }, { SREG_ESCAPE_PROMPT_DELAY, 50 },
+		{ SREG_ECHO, 1 }, { SREG_QUIET, 0 }, { SREG_VERBOSE, 1 },
+		{ SREG_TONE_OR_PULSE, 1 }, { SREG_FLASH_TIMER, 20 },
+		{ SREG_SPEAKER_CONTROL, 1 }, { SREG_SPEAKER_VOLUME, 3 },
+		{ SREG_AUTOMODE, 1 }, { SREG_DP, DP_V92 },
+		{ SREG_LINE_QUALITY_CONTROL, 0 }, { SREG_X_CODE, 4 },
+		{ SREG_CD, 0 }, { SREG_FLOW_CONTROL, 0 },
+		{ SREG_CONNNECT_MSG_FORMAT, 0 },
+		{ SREG_CONNNECT_MSG_SPEED_SRC, 0 }, { SREG_ANS_DELAY, 2 },
+		{ SREG_EC, 3 }, { SREG_COMP, 3 }, { SREG_MNP_BLOCK, 3 },
+		{ SREG_CONNECT_PROTOCOL, 0 },
+	};
+	for (const auto &d : defaults)
+		sregs_[d.reg] = d.val;
+}
+
+/* the country: the first of the table whose T.35 code is id, or whose
+   name is name (when there is one), with its S8 and S24; -1 if there is
+   none */
+int Modem::homolog_init(int id, const char *name)
+{
+	for (const struct homolog_set *h = homolog_set; h->name; h++) {
+		if (h->id != id && !(name && *name && !strcmp(h->name, name)))
+			continue;
+		homolog_ = h;
+		sregs_[SREG_DIAL_PAUSE_TIME] = h->params->DialPauseTime;
+		sregs_[SREG_FLASH_TIMER] = h->params->HookFlashTime;
+		return 0;
+	}
+	return -1;
+}
+
+/* the voice parameters' defaults (+VIP) */
+void Modem::voice_init()
+{
+	voice_info_.comp_method = 1;
+	voice_info_.sample_rate = 8000;
+	voice_info_.rx_gain = 128;
+	voice_info_.tx_gain = 128;
+	voice_info_.dtmf_symbol = 0;
+	voice_info_.tone1_freq = 933;
+	voice_info_.tone2_freq = 0;
+	voice_info_.tone_duration = 150;
+	voice_info_.inactivity_timer = 0;
+	voice_info_.silence_detect_sensitivity = 128;
+	voice_info_.silence_detect_period = 50;
 }
 
 /*
- *    the result codes
+ *    the call's states
  */
 
-/* CONNECT's number for a rate (bit/s): Smart Link's (its ST56 AT
-   manual), and ours from 80 for the rates it lacks (V.23's 75, V.92's
-   upstream 25333 and 26666, V.91's above 56000); 1 for any other */
-static int connect_code(unsigned rate)
+/* the call's state, to the Host */
+LinkState Modem::link_state() const
 {
-	static const struct {
-		unsigned rate;
-		int code;
-	} codes[] = {
-		{ 300, 9 }, { 600, 10 }, { 1200, 5 }, { 2400, 11 },
-		{ 4800, 12 }, { 7200, 13 }, { 9600, 27 }, { 12000, 14 },
-		{ 14400, 15 }, { 16800, 16 }, { 19200, 17 }, { 21600, 18 },
-		{ 24000, 19 }, { 26400, 20 }, { 28800, 21 }, { 31200, 22 },
-		{ 33600, 23 }, { 34800, 24 }, { 40000, 25 }, { 42000, 26 },
-		{ 44000, 28 }, { 46000, 29 }, { 48000, 30 }, { 50000, 31 },
-		{ 52000, 32 }, { 54000, 33 }, { 56000, 34 }, { 57600, 35 },
-		{ 115200, 36 }, { 230400, 37 }, { 460800, 38 }, { 921600, 39 },
-		{ 32000, 40 }, { 34000, 41 }, { 36000, 42 }, { 38000, 43 },
-		{ 58000, 44 }, { 60000, 45 }, { 28000, 46 }, { 29333, 47 },
-		{ 30666, 48 }, { 33333, 49 }, { 34666, 50 }, { 37333, 51 },
-		{ 38666, 52 }, { 41333, 53 }, { 42666, 54 }, { 45333, 55 },
-		{ 46666, 56 }, { 49333, 57 }, { 50666, 58 }, { 53333, 59 },
-		{ 54666, 60 },
-		{ 75, 80 }, { 25333, 81 }, { 26666, 82 }, { 57333, 83 },
-		{ 58666, 84 }, { 61333, 85 }, { 62666, 86 }, { 64000, 87 },
-	};
-	for (const auto &c : codes)
-		if (c.rate == rate)
-			return c.code;
-	return 1;
-}
-
-/* a result code to the DTE (not with ATQ1): its text (ATV1) or its
-   number (ATV0); before CONNECT the AT&A lines (with ATV0 Smart Link's
-   numbers: 1000 and the modulation's pump id, 76 to 78 the protocol, 66
-   to 69 the compression); a data call's CONNECT has its rate (not with
-   ATX0), as words or its own number, and with AT\V1 the protocol and
-   the compression after it (CONNECT 33600/LAPM/V42bis) */
-void Modem::report(Result code)
-{
-	static const struct {
-		const char *code, *text;
-	} responses[] = {
-		{ "0", "OK" }, { "1", "CONNECT" }, { "2", "RING" },
-		{ "3", "NO CARRIER" }, { "4", "ERROR" }, { "", "" },
-		{ "6", "NO DIALTONE" }, { "7", "BUSY" }, { "8", "NO ANSWER" },
-	};
-	static const char none[] = "NONE";
-	int id = (int)code;
-	bool verbose = sregs_[SREG_VERBOSE];
-	char s[24];
-
-	DBG("modem report result: %d (%s)\n", id, responses[id].text);
-	if (sregs_[SREG_QUIET])
-		return;
-	/* the protocol and the compression in use, and their numbers */
-	const char *proto = protocol_name();
-	const char *proto_n = cfg_.ec ? "77" : cfg_.mnp_on ? "78" : "76";
-	const char *comp = compression_name();
-	const char *comp_n = !strcmp(comp, "MNP5") ? "66" :
-		!strcmp(comp, "V44") ? "68" : !strcmp(comp, "V42bis") ? "67" :
-		"69";
-	if (code == Result::Connect) {
-		int mask = sregs_[SREG_CONNNECT_MSG_FORMAT];
-		/* (the modulation that came up: V.8's pump says which) */
-		int dp = dp_stats_.dp ? dp_stats_.dp : dp_ ? dp_->id : 0;
-		if (mask & 1 && (dp || verbose)) {
-			const char *msg = dp ? dp_name(dp) : nullptr;
-			if (verbose) {
-				put_chars("Modulation: ", 12);
-				puts(msg ? msg : none);
-			} else {
-				snprintf(s, sizeof(s), "%d", 1000 + dp);
-				puts(s);
-			}
-			crlf();
-		}
-		if (mask & 2) {
-			if (verbose)
-				put_chars("Protocol: ", 10);
-			puts(verbose ? proto : proto_n);
-			crlf();
-		}
-		if ((mask & 3) == 3) {
-			if (verbose)
-				put_chars("Compression: ", 13);
-			puts(verbose ? comp : comp_n);
-			crlf();
-		}
-		if (mask & 4 && tx_rate_ && verbose) {
-			put_chars("TxRate: ", 8);
-			snprintf(s, sizeof(s), "%u", tx_rate_);
-			puts(s);
-			crlf();
-		}
+	switch (state_) {
+	case DP_ESTAB:
+	case EC_ESTAB:
+		return LinkState::Connecting;
+	case ONLINE:
+	case COMMAND_ONLINE:
+		return LinkState::Online;
+	case EC_DISC:
+	case DP_DISC:
+		return LinkState::HangingUp;
+	default:
+		return LinkState::Idle;
 	}
-	/* a data call's CONNECT with its rate */
-	if (code == Result::Connect && mode_ == MODEM_MODE_DATA && rx_rate_ &&
-	    sregs_[SREG_X_CODE] != 0) {
-		if (!verbose) {
-			snprintf(s, sizeof(s), "%d", connect_code(rx_rate_));
-			puts(s);
-		} else {
-			snprintf(s, sizeof(s), "CONNECT %u", rx_rate_);
-			puts(s);
-			if (sregs_[SREG_CONNECT_PROTOCOL]) {
-				put_chars("/", 1);
-				puts(proto);
-				if (strcmp(comp, none)) {
-					put_chars("/", 1);
-					puts(comp);
-				}
-			}
-		}
-	} else
-		puts(verbose ? responses[id].text : responses[id].code);
-	crlf();
 }
 
-/* the error correction the call has (CONNECT, ATI11) */
-const char *Modem::protocol_name() const
-{
-	return cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : "NONE";
-}
-
-/* and its compression */
-const char *Modem::compression_name() const
-{
-	if (cfg_.mnp_on)
-		return cfg_.mnp5 ? "MNP5" : "NONE";
-	if (cfg_.ec && cfg_.comp)
-		return cfg_.v44 ? "V44" : "V42bis";
-	return "NONE";
-}
-
-/* why the call ends, if nothing has said so before */
-void Modem::set_cause(Cause c)
-{
-	if (stats_.call && !stats_.ended && stats_.cause == Cause::None)
-		stats_.cause = c;
-}
-
-/* why a call ended, as ATI11 says it (by Cause) */
-static const char *const causes[] = {
-	"None", "Local hangup", "Remote cleardown", "Line dropped",
-	"Carrier lost", "No dial tone", "Busy", "No answer",
-	"Training failed", "Protocol failure", "No carrier",
-};
-
-/* ATI11: the last call's statistics, or this one's (online command
-   state): its connection and rates, the line as the pumps and the core
-   measured it, the link's counts, the retrains and renegotiations, how
-   long it was up and why it ended; lines with no value left out */
-void Modem::call_stats()
-{
-	const CallStats &c = stats_;
-	const dp_stats &d = dp_stats_;
-	char v[48];
-	/* one line: the name, its value from column 37 */
-	auto row = [this](const char *name, const char *val) {
-		char line[96];
-		snprintf(line, sizeof(line), "%-36s%s", name, val);
-		puts(line);
-		crlf();
-	};
-	auto num = [&](const char *name, unsigned long n) {
-		snprintf(v, sizeof(v), "%lu", n);
-		row(name, v);
-	};
-	auto db = [&](const char *name, double x) {
-		snprintf(v, sizeof(v), "%.1f", x);
-		row(name, v);
-	};
-
-	if (!c.call) {
-		puts("No Previous Call");
-		crlf();
-		return;
-	}
-	row("Description", "Status");
-	row("-----------", "------");
-	if (c.fax)
-		row("Last Connection", c.connected ? "Fax" : "None");
-	else if (!c.connected)
-		row("Last Connection", "None");
-	else {
-		const char *name = c.dp ? dp_name(c.dp) : nullptr;
-		row("Last Connection", name ? name : "Unknown");
-		num("Initial Transmit Carrier Rate", c.tx0);
-		num("Initial Receive Carrier Rate", c.rx0);
-		num("Final Transmit Carrier Rate", c.ended ? c.tx1 : tx_rate_);
-		num("Final Receive Carrier Rate", c.ended ? c.rx1 : rx_rate_);
-		row("Protocol Negotiation Result", protocol_name());
-		row("Data Compression Result", compression_name());
-		if (d.have & DP_STATS_SNR)
-			db("Estimated SNR (dB)", d.snr);
-		if (c.samples) {
-			db("Receive Signal Power Level (dBm0)",
-			   10 * log10(c.rx_pow / c.samples / DP_DBM0_POWER +
-				      1e-9));
-			db("Transmit Signal Power Level (dBm0)",
-			   10 * log10(c.tx_pow / c.samples / DP_DBM0_POWER +
-				      1e-9));
-		}
-		if (d.have & DP_STATS_RTD)
-			num("Round Trip Delay (ms)", d.rtd);
-		if (d.have & DP_STATS_NEAR_ECHO)
-			db("Near Echo Level (dBm0)", d.near_echo);
-		if (d.have & DP_STATS_FAR_ECHO)
-			db("Far Echo Level (dBm0)", d.far_echo);
-		const dlink::Stats &l = link_->stats();
-		num("Characters Sent", l.tx_chars);
-		num("Characters Received", l.rx_chars);
-		if (cfg_.ec || cfg_.mnp_on) {
-			num("Transmit Frame Count", l.tx_frames);
-			num("Transmit Frame Error Count", l.tx_again);
-			num("Receive Frame Count", l.rx_frames);
-			num("Receive Frame Error Count", l.rx_errors);
-		}
-		num("Retrains by Local Modem", d.retrains_local);
-		num("Retrains Requested by Remote Modem", d.retrains_remote);
-		num("Rate Renegotiation by Local Modem", d.renegs_local);
-		num("Rate Renegotiation by Remote Modem", d.renegs_remote);
-	}
-	if (c.connected) {
-		unsigned long t = ((c.ended ? c.end : host_.now_ms()) - c.up) /
-			1000;
-		snprintf(v, sizeof(v), "%lu:%02lu:%02lu", t / 3600,
-			 t / 60 % 60, t % 60);
-		row("Call Duration", v);
-	}
-	if (c.ended)
-		row("Call Termination Cause", causes[(int)c.cause]);
-}
-
-/* a string to the DTE */
-void Modem::puts(const char *s)
-{
-	put_chars(s, strlen(s));
-}
-
-/* the line's end (S3, S4) to the DTE */
-void Modem::crlf()
-{
-	put_chars(CRLF, 2);
-}
-
-/*
- *    the state machine
- */
-
-/* the call's state, and what the link does in it: characters flow
-   only ONLINE, the link stops with the pump (IDLE, DP_ESTAB, DP_DISC) */
+/* the call goes to state s: whether the DTE's characters are commands,
+   whether they (and the remote's) flow through the link, whether the
+   link still runs, and the carrier once online; nothing if it is there
+   already; 0 */
 int Modem::set_state(State s)
 {
-	DBG("modem set state: %x --> %x...\n", state_, (unsigned)s);
 	if (state_ == (unsigned)s)
 		return 0;
+	logf("state %u -> %u\n", state_, (unsigned)s);
+	state_ = s;
 	switch (s) {
 	case IDLE:
-		DBG("new state: MODEM_IDLE\n");
 		command_ = true;
 		link_->set_online(false);
 		link_->stop();
 		break;
 	case DP_ESTAB:
-		DBG("new state: DP_ESTAB\n");
 		command_ = false;
 		link_->set_online(false);
 		link_->stop();
 		break;
 	case EC_ESTAB:
-		DBG("new state: EC_ESTAB\n");
 		command_ = false;
 		link_->set_online(false);
 		break;
 	case ONLINE:
-		DBG("new state: MODEM_ONLINE\n");
 		command_ = false;
 		link_->set_online(true);
 		carrier_ = true;
 		break;
 	case COMMAND_ONLINE:
-		DBG("new state: COMMAND_ONLINE\n");
 		command_ = true;
 		link_->set_online(false);
 		break;
 	case EC_DISC:
-		DBG("new state: EC_DISC\n");
 		link_->set_online(false);
 		break;
 	case DP_DISC:
-		DBG("new state: DP_DISC\n");
 		link_->set_online(false);
 		link_->stop();
 		break;
 	}
-	state_ = s;
 	return 0;
 }
 
-/* runs what after samples more line samples (one at a time) */
-void Modem::later(Later what, unsigned long samples)
-{
-	later_ = what;
-	later_at_ = count_ + samples;
-}
-
-/* hangs up, local (we do: LAPM's DISC first, else the pump hangs up)
-   or not (the remote did); the call stops 48 samples later and its
-   result (NO CARRIER unless set) goes to the DTE */
-void Modem::hup(bool local)
-{
-	DBG("modem_hup...%d\n", state_);
-	switch (state_) {
-	case IDLE:
-		return;
-	case DP_ESTAB:
-		dialed_ = false;
-		if (local && dp_ && dp_->op->hangup)
-			dp_->op->hangup(dp_);
-		set_state(DP_DISC);
-		if (!have_result_) {
-			result_ = Result::NoCarrier;
-			have_result_ = true;
-		}
-		later(Later::Stop, 48);
-		break;
-	case EC_ESTAB:
-	case ONLINE:
-	case COMMAND_ONLINE:
-		if (local && (cfg_.ec || cfg_.mnp_on)) {
-			link_->disconnect();
-			set_state(EC_DISC);
-		} else {
-			if (local && dp_ && dp_->op->hangup)
-				dp_->op->hangup(dp_);
-			set_state(DP_DISC);
-		}
-		if (!have_result_) {
-			result_ = Result::NoCarrier;
-			have_result_ = true;
-		}
-		later(Later::Stop, 48);
-		carrier_ = false;
-		break;
-	case EC_DISC:
-		if (local && dp_ && dp_->op->hangup)
-			dp_->op->hangup(dp_);
-		set_state(DP_DISC);
-		break;
-	case DP_DISC:
-	default:
-		return;
-	}
-}
-
-/* the progress of the pump (ST_DP_LINK: the link starts) and of the
-   link (ST_EC_LINK: ONLINE and CONNECT; released, errors: hang up), or
-   the end of the call with its result */
-void Modem::update_status(Status status)
-{
-	DBG("modem_update_status: %d\n", (int)status);
-	switch (status) {
-	case ST_OK:
-		break;
-	case ST_DP_LINK:
-		DBG("--> DP LINK\n");
-		if (nonec_dp(dp_->id))
-			cfg_.ec = cfg_.mnp = false;
-		set_state(EC_ESTAB);
-		/* the V.42 detection phase, then LAPM, MNP or async */
-		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
-			     !(caller_ && dsp_info_.qc_lapm));
-		break;
-	case ST_PACK_LINK:
-		/* LAPM, MNP or none: the link goes on by itself */
-		cfg_.ec = link_->ec();
-		cfg_.mnp_on = link_->protocol() == dlink::Protocol::Mnp;
-		DBG("--> PACK LINK\n");
-		break;
-	case ST_EC_LINK:
-		DBG("--> EC LINK\n");
-		/* the remote set the link up again (its SABME once more):
-		   the call goes on, CONNECT once */
-		if (state_ == ONLINE || state_ == COMMAND_ONLINE)
-			break;
-		set_state(ONLINE);
-		if (!stats_.connected) {
-			stats_.connected = true;
-			stats_.up = host_.now_ms();
-			stats_.dp = dp_stats_.dp ? dp_stats_.dp :
-				dp_ ? dp_->id : 0;
-			stats_.tx0 = tx_rate_;
-			stats_.rx0 = rx_rate_;
-		}
-		report(Result::Connect);
-		if (sregs_[SREG_SPEAKER_CONTROL] & 1)
-			host_.speaker(*this, 0);
-		break;
-	case ST_EC_RELEASE:
-	case ST_EC_ERROR:
-		DBG("--> EC UNLINK\n");
-		set_cause(status == ST_EC_RELEASE ? Cause::RemoteCleardown :
-			  Cause::ProtocolFailure);
-		result_ = Result::NoCarrier;
-		have_result_ = true;
-		hup(state_ == EC_DISC);
-		break;
-	default:
-		DBG("--> FINISH.\n");
-		if (status == ST_NODIALTONE)
-			result_ = Result::NoDialtone;
-		else if (status == ST_BUSY)
-			result_ = Result::Busy;
-		else if (status == ST_NOANSWER)
-			result_ = Result::NoAnswer;
-		else
-			result_ = Result::NoCarrier;
-		set_cause(status == ST_NODIALTONE ? Cause::NoDialtone :
-			  status == ST_BUSY ? Cause::Busy :
-			  status == ST_NOANSWER ? Cause::NoAnswer :
-			  stats_.connected ? Cause::CarrierLost :
-			  Cause::TrainingFailed);
-		have_result_ = true;
-		hup(state_ == EC_DISC || state_ == DP_DISC);
-		break;
-	}
-}
-
-/* what XID (or MNP's LRs) agreed, for the CONNECT messages */
-void Modem::negotiated(int comp, bool v44, int dict_size, int max_string,
-		       bool mnp5)
-{
-	cfg_.comp = comp;
-	cfg_.v44 = v44;
-	cfg_.dict_size = dict_size;
-	cfg_.max_string = max_string;
-	cfg_.mnp5 = mnp5;
-}
-
-/* the call's state, for programs that embed the modem */
-LinkState Modem::link_state() const
-{
-	if (state_ == IDLE)
-		return LinkState::Idle;
-	if (state_ == ONLINE || state_ == COMMAND_ONLINE)
-		return LinkState::Online;
-	if (state_ > IDLE && state_ < ONLINE)
-		return LinkState::Connecting;
-	return LinkState::HangingUp;
-}
-
-/* DTE characters in the buffer or in LAPM frames not acknowledged */
-bool Modem::tx_pending() const
-{
-	return xmit_count_ > 0 || link_->tx_pending();
-}
-
-/* LAPM frames not sent or not acknowledged */
-bool Modem::link_tx_pending() const
-{
-	return link_->tx_pending();
-}
-
-/* the network's G.711 law: to this call's pumps now, to the next ones'
-   as their runtime is made */
-void Modem::set_line_law(int law)
-{
-	if (law == line_law_)
-		return;
-	line_law_ = law;
-	if (dp_runtime_ && law)
-		dp_runtime_set_law(dp_runtime_, law);
-}
-
-/*
- *    the data pumps
- */
-
-/* the pump's transmitter: bits from the link (logged); returns n */
-int Modem::get_bits(int nbits, uint8_t *buf, int n)
-{
-	n = link_->get_bits(nbits, buf, n);
-	log_data(this, LOG_TX_BITS, buf, n);
-	return n;
-}
-
-/* the pump's receiver: bits to the link (logged); returns n */
-int Modem::put_bits(int nbits, const uint8_t *buf, int n)
-{
-	n = link_->put_bits(nbits, buf, n);
-	log_data(this, LOG_RX_BITS, buf, n);
-	return n;
-}
-
-/* a pump's DPSTAT_ as the core's status */
-static Modem::Status dpstat2status(int dpstat)
-{
-	switch (dpstat) {
-	case DPSTAT_OK:         return Modem::ST_OK;
-	case DPSTAT_CONNECT:    return Modem::ST_DP_LINK;
-	case DPSTAT_ERROR:      return Modem::ST_DP_ERROR;
-	case DPSTAT_NODIALTONE: return Modem::ST_NODIALTONE;
-	case DPSTAT_BUSY:       return Modem::ST_BUSY;
-	case DPSTAT_NOANSWER:   return Modem::ST_NOANSWER;
-	case DPSTAT_CHANGEDP:   return Modem::ST_OK;
-	default:                return Modem::ST_ERROR;
-	}
-}
-
-/* count samples through the pump, frag_ at a time, acting on what it
-   reports (connect, a change of pump, errors); silence once it is
-   gone */
-void Modem::dp_process(int16_t *in, int16_t *out, int count)
-{
-	while (count && dp_) {
-		int cnt = count > frag_ ? frag_ : count;
-		int ret = dp_->op->process(dp_, in, out, cnt);
-		switch (ret) {
-		case DPSTAT_OK:
-			break;
-		case DPSTAT_CONNECT:
-			if (state_ <= DP_ESTAB && state_ != EC_DISC &&
-			    state_ != DP_DISC)
-				update_status(ST_DP_LINK);
-			break;
-		case DPSTAT_CHANGEDP:
-			change_dp();
-			break;
-		case DPSTAT_DIALED:
-			if (state_ == DP_ESTAB)
-				dialed();
-			break;
-		default:        /* errors */
-			update_status(dpstat2status(ret));
-			run_ = Run::None;
-			break;
-		}
-		count -= cnt;
-		in += cnt;
-		out += cnt;
-	}
-	if (count)
-		memset(out, 0, count * sizeof(*out));
-}
-
-/* the next pump: the one a pump asked for (dp_requested_), else
-   AT+MS's (V.8 first for V.34 and up; V.90 for K56flex), the fax
-   engine in fax mode; the old pump destroyed; hangs up if it cannot
-   be created */
-void Modem::change_dp()
-{
-	struct dp *old = dp_;
-
-	if (mode_ == MODEM_MODE_FAX) {
-		fax_start();
-		dp_ = nullptr;
-	} else {
-		struct dp_operations *op = nullptr;
-		struct dp *dp = nullptr;
-		int dp_id = dp_requested_, id;
-		dp_requested_ = 0;
-		id = dp_id;
-		if (dp_id == 0) {
-			dp_id = sregs_[SREG_DP];
-			/* K56flex is not there (Rockwell's pre-V.90 PCM
-			   modem): AT+MS=56 runs V.90, which K56flex modems
-			   mostly got as an upgrade, else V.34 */
-			if (dp_id == DP_K56)
-				dp_id = DP_V90;
-			id = fast_dp(dp_id) ? DP_V8 : dp_id;
-		}
-		DBG("%lu: change dp: --> %d...\n", count_, id);
-		for (DpDriver *p = dp_drivers(); p->id > 0; p++)
-			if (p->id == id) {
-				op = p->op;
-				break;
-			}
-		if (op && op->create)
-			dp = op->create(handle_, (enum DP_ID)dp_id, caller_,
-					srate_, frag_, op);
-		if (!dp) {
-			ERR("change dp -> %d error.\n", id);
-			hup(true);
-			return;
-		}
-		dp_ = dp;
-		run_ = Run::Dp;
-	}
-	if (old)
-		old->op->destroy(old);
-}
-
-/*
- *    the line's samples
- */
-
-/* n samples through what runs now (silence if nothing) */
-void Modem::run(int16_t *in, int16_t *out, int n)
-{
-	switch (run_) {
-	case Run::Dp:
-		dp_process(in, out, n);
-		break;
-	case Run::CallerId:
-		cid_process(in, out, n);
-		break;
-	case Run::Voice:
-		voice_process(in, out, n);
-		break;
-	case Run::Fax:
-		fax_process(in, out, n);
-		break;
-	case Run::None:
-		memset(out, 0, n * sizeof(*out));
-		break;
-	}
-}
-
-/* the line's samples: DC removed (not from PCM codes), logged, through
-   what runs; then what was due after them (later()) */
-void Modem::process(const int16_t *in_, int16_t *out, int n)
-{
-	if (n > scratch_len_) {
-		delete[] scratch_;
-		scratch_ = new int16_t[n];
-		scratch_len_ = n;
-	}
-	int16_t *in = scratch_;
-	memcpy(in, in_, n * sizeof(*in));
-	/* clean DC (not from PCM codes) */
-	if (dcr_ && !(dp_runtime_pcm && dp_runtime_pcm(dp_runtime_)))
-		dcr_process(dcr_, in, n);
-	log_data(this, LOG_RX_SAMPLES, in, n * 2);
-	run(in, out, n);
-	log_data(this, LOG_TX_SAMPLES, out, n * 2);
-	/* the line's power each way while a data call is up (ATI11) */
-	if (stats_.connected && !stats_.ended && !stats_.fax &&
-	    (state_ == ONLINE || state_ == COMMAND_ONLINE)) {
-		for (int i = 0; i < n; i++) {
-			stats_.rx_pow += (double)in[i] * in[i];
-			stats_.tx_pow += (double)out[i] * out[i];
-		}
-		stats_.samples += n;
-	}
-	count_ += n;
-	if (later_ != Later::None && count_ >= later_at_) {
-		Later what = later_;
-		later_ = Later::None;
-		switch (what) {
-		case Later::Stop:
-			stop_call();
-			break;
-		case Later::ChangeDp:
-			change_dp();
-			break;
-		case Later::CallerIdStop:
-			cid_stop();
-			break;
-		case Later::None:
-			break;
-		}
-	}
-	/* what the DTE sent after a fax or voice command's data (they stop
-	   at its <DLE><ETX>) is commands: at once, not only when more
-	   characters come */
-	if (commands_due_) {
-		commands_due_ = false;
-		if (command_ && xmit_count_)
-			at_process();
-	}
-}
-
-/*
- *    events and timers
- */
-
-/* events mask after ms (one timer: the last one asked wins) */
-void Modem::schedule_event(unsigned mask, unsigned long ms)
-{
-	new_event_ |= mask;
-	timer_at_ = host_.now_ms() + ms;
-	timer_on_ = true;
-}
-
-/* ms until the next event: 0 if one is due, -1 if none */
-long Modem::next_timer_ms()
-{
-	if (event_)
-		return 0;
-	if (!timer_on_)
-		return -1;
-	long t = (long)(timer_at_ - host_.now_ms());
-	return t > 0 ? t : 0;
-}
-
-/* the timer's events once it is due, and any others pending */
-void Modem::poll()
-{
-	if (timer_on_ && (long)(timer_at_ - host_.now_ms()) <= 0) {
-		timer_on_ = false;
-		event_ |= new_event_;
-		new_event_ = 0;
-	}
-	if (event_) {
-		unsigned ev = event_;
-		event_ = 0;
-		events(ev);
-	}
-}
-
-/* EV_RING_CHECK: a ring burst checked by its length and its pulses
-   (RING, the answer after S0 rings); EV_ESCAPE: +++ and the guard
-   time after it, online command mode and OK */
-void Modem::events(unsigned event)
-{
-	DBG("modem_event: %x...\n", event);
-	if (event & EV_RING_CHECK) {
-		if (ring_count_ == 0) {
-			DBG("ring cancel...\n");
-			TOTAL_RINGS = 0;
-		} else if (time_before(ring_last_, ring_first_ + RING_ON_MIN) ||
-			   time_after(ring_last_, ring_first_ + RING_ON_MAX) ||
-			   ring_count_ < RING_COUNT_MIN) {
-			DBG("ring reject: count %d (%lu-%lu)\n", ring_count_,
-			    ring_first_, ring_last_);
-			TOTAL_RINGS = 0;
-			ring_count_ = 0;
-		} else {
-			DBG("ring valid.\n");
-			ring_count_ = 0;
-			TOTAL_RINGS++;
-			if (TOTAL_RINGS == 1)
-				crlf();
-			report(Result::Ring);
-			if (ANSWER_AFTER_RINGS && !started_ &&
-			    TOTAL_RINGS >= ANSWER_AFTER_RINGS) {
-				TOTAL_RINGS = 0;
-				answer();
-			} else
-				schedule_event(EV_RING_CHECK,
-					       RING_OFF_MAX + TICK);
-		}
-	}
-	if (event & EV_ESCAPE) {
-		DBG("modem_escape (count %d)...\n", escape_count_);
-		if (state_ == ONLINE && escape_count_ == 3) {
-			set_state(COMMAND_ONLINE);
-			xmit_head_ = xmit_tail_ = xmit_count_ = 0;
-			crlf();
-			report(Result::Ok);
-			command_ = true;
-		}
-		escape_count_ = 0;
-	}
-}
-
-/* a pulse of ring signal (only while idle): the pulses of one burst
-   counted, the first starts the check (and caller ID) */
-void Modem::ring()
-{
-	unsigned long now = host_.now_ms();
-	if (state_ != IDLE)
-		return;
-	ring_count_++;
-	if (ring_count_ == 1) {
-		DBG("modem_ring...\n");
-		if (time_before(now, ring_last_ + RING_OFF_MIN)) {
-			DBG("bad ring: now %lu, last %lu.\n", now, ring_last_);
-			ring_count_ = 0;
-		} else {
-			ring_first_ = now;
-			schedule_event(EV_RING_CHECK, RING_ON_MAX + TICK);
-			if (TOTAL_RINGS == 0 && cid_requested_)
-				cid_start(RING_ON_MAX + RING_OFF_MIN);
-		}
-	}
-	ring_last_ = now;
-}
-
-/* a call that rings by itself (SIP): RING, the answer after S0 rings;
-   on = false: it gave up */
-void Modem::ring_signal(bool on)
-{
-	if (!on) {
-		DBG("ring cancel...\n");
-		TOTAL_RINGS = 0;
-		ring_count_ = 0;
-		return;
-	}
-	if (state_ != IDLE || started_)
-		return;
-	TOTAL_RINGS++;
-	if (TOTAL_RINGS == 1)
-		crlf();
-	report(Result::Ring);
-	if (ANSWER_AFTER_RINGS && TOTAL_RINGS >= ANSWER_AFTER_RINGS) {
-		TOTAL_RINGS = 0;
-		answer();
-	}
-}
-
-/* the device reported an error: logged only */
-void Modem::error()
-{
-	DBG("modem error...\n");
-}
-
-/*
- *    the DTE
- */
-
-/* up to n of the DTE's characters waiting in the buffer; returns how
-   many */
-int Modem::get_chars(char *buf, int n)
-{
-	int ret = 0;
-	while (n) {
-		int cnt = n;
-		if (cnt > xmit_count_)
-			cnt = xmit_count_;
-		if (cnt > xmit_size_ - xmit_tail_)
-			cnt = xmit_size_ - xmit_tail_;
-		if (cnt <= 0)
-			break;
-		memcpy(buf, xmit_ + xmit_tail_, cnt);
-		ret += cnt;
-		n -= cnt;
-		buf += cnt;
-		xmit_count_ -= cnt;
-		xmit_tail_ = (xmit_tail_ + cnt) % xmit_size_;
-	}
-	return ret;
-}
-
-/* characters to the DTE; returns how many it took */
-int Modem::put_chars(const char *buf, int n)
-{
-	int ret = host_.dte_write(*this, buf, n);
-	return ret < 0 ? 0 : ret;
-}
-
-/* the escape: three escape characters (S2) alone, the guard time
-   before them (the timer checks the one after); returns how many came
-   so far */
-int Modem::check_escape(const char *buf, int count)
-{
-	unsigned long now = host_.now_ms();
-	int i;
-	if (count + escape_count_ > 3)
-		goto noescape;
-	for (i = 0; i < count; i++)
-		if (buf[i] != (char)sregs_[SREG_ESCAPE_CHAR])
-			goto noescape;
-	if (escape_count_ == 0) {
-		if (time_before(now, last_esc_check_ + ESCAPE_TIMEOUT))
-			goto noescape;
-	} else if (time_after(now, last_esc_check_ + ESCAPE_TIMEOUT))
-		goto noescape;
-	escape_count_ += count;
-	if (escape_count_ == 3)
-		schedule_event(EV_ESCAPE, ESCAPE_TIMEOUT);
-	last_esc_check_ = now;
-	return escape_count_;
-noescape:
-	escape_count_ = 0;
-	last_esc_check_ = now;
-	return 0;
-}
-
-/* the DTE's characters: any while connecting hangs up (not in command
-   state after a dial string's ';'); online, the escape check; into the
-   buffer, and to the AT interpreter in command mode; returns how many
-   the buffer took */
-int Modem::dte_input(const char *buf, int count)
-{
-	int ret = 0;
-	if (state_ > IDLE && state_ < ONLINE && !command_) {
-		DBG("modem_tty_write: hangup...\n");
-		set_cause(Cause::LocalHangup);
-		hup(true);
-		return count;
-	}
-	if (state_ == ONLINE)
-		check_escape(buf, count);
-	while (count) {
-		int cnt = count;
-		if (cnt > xmit_size_ - xmit_count_)
-			cnt = xmit_size_ - xmit_count_;
-		if (cnt > xmit_size_ - xmit_head_)
-			cnt = xmit_size_ - xmit_head_;
-		if (cnt <= 0) {
-			DBG("modem_write: overflow!\n");
-			break;
-		}
-		memcpy(xmit_ + xmit_head_, buf, cnt);
-		xmit_count_ += cnt;
-		xmit_head_ = (xmit_head_ + cnt) % xmit_size_;
-		ret += cnt;
-		buf += cnt;
-		count -= cnt;
-	}
-	if (command_)
-		at_process();
-	return ret;
-}
-
-/*
- *    starting and stopping a call
- */
-
-/* the hook through the host; 0 on success */
+/* the Host's hook to state, unless it is there already: the Host's
+   result, the state kept only when it is 0 */
 int Modem::set_hook(int state)
 {
 	int ret;
-	DBG("modem set hook: %d --> %d...\n", hook_, state);
 	if (hook_ == state)
 		return 0;
 	ret = host_.set_hook(*this, state);
@@ -1139,153 +397,128 @@ int Modem::set_hook(int state)
 	return ret;
 }
 
-/* the link's configuration: the error correction from +ES (AT\N sets
-   it too; 6.5.1/V.250): the originator's request (2: LAPM, 3: LAPM after
-   the detection phase, 4: MNP) and fallback (0, 1: none, 2: either, 3:
-   LAPM, 4: MNP, as required), the answerer's (0, 1: none, 2, 3: LAPM
-   or MNP or none, 4: either required, 5: LAPM, 6: MNP required);
-   V.42bis and V.44 (bit 1 of S104, AT%C), MNP 5 (bit 0) and MNP's block
-   size (S105, AT\A) */
-void Modem::setup_config()
+/* why the call ends, unless that is known already (only while a call
+   is on) */
+void Modem::set_cause(Cause c)
 {
-	const unsigned long *es = kept("+ES");
-	const unsigned long orig = es[0], orig_fbk = es[1], ans_fbk = es[2];
-	cfg_.ec = cfg_.mnp = cfg_.mnp_first = cfg_.required = false;
-	cfg_.ec_detector = true;
-	if (caller_) {
-		switch (orig) {
-		case 2:
-		case 3:
-			cfg_.ec = true;
-			cfg_.ec_detector = orig == 3;
-			cfg_.mnp = orig_fbk != 3;
-			break;
-		case 4:
-			cfg_.mnp = cfg_.mnp_first = true;
-			break;
-		default:
-			break;
-		}
-		if (cfg_.ec && orig_fbk == 4) {
-			cfg_.ec = false;
-			cfg_.mnp = cfg_.mnp_first = true;
-		}
-		cfg_.required = (cfg_.ec || cfg_.mnp) && orig_fbk >= 2;
-	} else {
-		cfg_.ec = ans_fbk >= 2 && ans_fbk != 6;
-		cfg_.mnp = ans_fbk >= 2 && ans_fbk != 5;
-		cfg_.required = ans_fbk >= 4 && ans_fbk <= 6;
-	}
-	cfg_.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
-	cfg_.tx_win = dlink::LAPM_MAX_WIN;
-	cfg_.rx_win = dlink::LAPM_MAX_WIN;
-	cfg_.tx_info = dlink::LAPM_MAX_INFO;
-	cfg_.rx_info = dlink::LAPM_MAX_INFO;
-	cfg_.comp = cfg_.ec && sregs_[SREG_COMP] & 2 ? 0x3 : 0;
-	cfg_.mnp5 = cfg_.mnp && sregs_[SREG_COMP] & 1;
-	cfg_.mnp_on = false;
-	cfg_.dict_size = dlink::V42BIS_MAX_CODEWORDS;
-	cfg_.max_string = dlink::V42BIS_MAX_STRING;
-	cfg_.v44 = false;
-	dsp_info_.qc_lapm = cfg_.ec && cfg_.ec_detector;
+	if (stats_.call && !stats_.ended && stats_.cause == Cause::None)
+		stats_.cause = c;
 }
 
-/* the host starts the line's audio; 0 on success */
+/* the call hangs up, by us (local: the pump and the link say goodbye)
+   or not; the stop follows STOP_SAMPLES later, with NO CARRIER unless
+   another result is due */
+void Modem::hup(bool local)
+{
+	struct dp *dp = dp_;
+
+	switch (state_) {
+	case DP_ESTAB:
+		dialed_ = false;
+		if (local && dp && dp->op->hangup)
+			dp->op->hangup(dp);
+		set_state(DP_DISC);
+		break;
+	case EC_ESTAB:
+	case ONLINE:
+	case COMMAND_ONLINE:
+		if (local && (cfg_.ec || cfg_.mnp_on)) {
+			link_->disconnect();
+			set_state(EC_DISC);
+		} else {
+			if (local && dp && dp->op->hangup)
+				dp->op->hangup(dp);
+			set_state(DP_DISC);
+		}
+		carrier_ = false;
+		break;
+	case EC_DISC:
+		if (local && dp && dp->op->hangup)
+			dp->op->hangup(dp);
+		set_state(DP_DISC);
+		return;
+	default:
+		return;
+	}
+	if (!have_result_) {
+		result_ = Result::NoCarrier;
+		have_result_ = true;
+	}
+	later(Later::Stop, STOP_SAMPLES);
+}
+
+/* the line starts: its samples counted from 0, the Host's start();
+   0, or the Host's error */
 int Modem::do_start()
 {
 	int ret;
 	count_ = 0;
 	ret = host_.start(*this);
-	started_ = !ret;
+	if (!ret)
+		started_ = true;
 	return ret;
 }
 
-/* a call (dial or answer): off hook, the link set up, the audio
-   started; on failure NO CARRIER and the call stopped */
+/* a call starts (dialled or answered, its first pump there or due): its
+   statistics anew, the link set up, off hook, the line started; -1 if
+   any of it fails, the call then stopped with NO CARRIER */
 int Modem::start_call()
 {
-	int ret;
-	DBG("modem_start..\n");
+	auto fail = [this](const char *what) {
+		log_printf(1, "err: %s: %s\n", name_, what);
+		result_ = Result::NoCarrier;
+		have_result_ = true;
+		stop_call();
+		return -1;
+	};
+
 	if (started_ && stop_call())
 		return -1;
 	have_result_ = false;
-	/* a call: its statistics from nothing */
 	stats_ = CallStats();
 	stats_.call = true;
 	stats_.fax = mode_ == MODEM_MODE_FAX;
 	stats_.start = host_.now_ms();
-	dp_stats_ = {};
+	memset(&dp_stats_, 0, sizeof(dp_stats_));
 	setup_config();
 	set_state(DP_ESTAB);
-	if (sregs_[SREG_SPEAKER_CONTROL] & 1)      /* ATM1, ATM3 */
+	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
 		host_.speaker(*this, sregs_[SREG_SPEAKER_VOLUME]);
-	ret = set_hook(MODEM_HOOK_OFF);
-	if (ret)
-		goto error;
+	if (set_hook(MODEM_HOOK_OFF))
+		return fail("cannot go off hook");
 	xmit_head_ = xmit_tail_ = xmit_count_ = 0;
 	command_ = false;
-	if (!(dcr_ = dcr_create()) ||
-	    !(dp_runtime_ = dp_runtime_create(handle_))) {
-		ret = -1;
-		goto error;
-	}
+	dcr_ = dcr_create();
+	dp_runtime_ = dp_runtime_create(handle());
+	if (!dcr_ || !dp_runtime_)
+		return fail("no memory for the call");
 	if (line_law_)
 		dp_runtime_set_law(dp_runtime_, line_law_);
-	if ((ret = link_init()))
-		goto error;
-	/* clear rings and all events */
-	TOTAL_RINGS = 0;
+	if (link_init())
+		return fail("cannot set up the link");
+	sregs_[SREG_RING_COUNTER] = 0;
 	ring_count_ = 0;
 	event_ = new_event_ = 0;
 	timer_on_ = false;
-	ret = do_start();
-	if (!ret)
-		return 0;
-error:
-	ERR("modem start = %d: cannot start device.\n", ret);
-	result_ = Result::NoCarrier;
-	have_result_ = true;
-	stop_call();
-	return ret;
+	escape_count_ = 0;
+	if (do_start())
+		return fail("the line does not start");
+	return 0;
 }
 
-/* the link for the call as setup_config() has it, the caller's or the
-   answerer's; 0 on success */
-int Modem::link_init()
-{
-	dlink::Config c;
-	c.ec = cfg_.ec;
-	c.detect = cfg_.ec_detector;
-	c.mnp = cfg_.mnp;
-	c.mnp_first = cfg_.mnp_first;
-	c.required = cfg_.required;
-	c.mnp_info = cfg_.mnp_info;
-	c.mnp5 = cfg_.mnp5;
-	c.tx_win = cfg_.tx_win;
-	c.rx_win = cfg_.rx_win;
-	c.tx_info = cfg_.tx_info;
-	c.rx_info = cfg_.rx_info;
-	c.comp = cfg_.comp;
-	c.dict_size = cfg_.dict_size;
-	c.max_string = cfg_.max_string;
-	return link_->init(link_owner_, caller_, c);
-}
-
-/* the end of a call: the audio stopped, on hook, all freed, IDLE, the
-   result to the DTE; returns started_ (true if the host could not
-   stop) */
+/* the call (or caller ID, or voice) ends: whatever runs goes, on hook,
+   the statistics closed, command state, idle, and the result due
+   reported; whether the line still runs (the Host could not stop it) */
 int Modem::stop_call()
 {
-	DBG("modem_stop..\n");
 	run_ = Run::None;
-	/* nothing due for this call may reach the next one (a caller ID
-	   stop armed between rings would end a dial 4 s in) */
 	later_ = Later::None;
 	if (started_) {
-		int ret = host_.stop(*this);
-		started_ = ret != 0;
-		if (ret)
-			ERR("modem stop = %d: cannot stop device.\n", ret);
+		if (host_.stop(*this))
+			log_printf(1, "err: %s: the line does not stop\n",
+				   name_);
+		else
+			started_ = false;
 	}
 	set_hook(MODEM_HOOK_ON);
 	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
@@ -1293,24 +526,21 @@ int Modem::stop_call()
 	caller_ = false;
 	dialed_ = false;
 	dial_rest_[0] = '\0';
-	/* the call's end, for ATI11 (and the log) */
 	if (stats_.call && !stats_.ended) {
-		const dp_stats &d = dp_stats_;
-		set_cause(Cause::NoCarrier);
+		const char *dp = stats_.connected ? dp_name(stats_.dp) :
+			nullptr;
+		if (stats_.cause == Cause::None)
+			stats_.cause = Cause::NoCarrier;
 		stats_.ended = true;
 		stats_.end = host_.now_ms();
 		stats_.tx1 = tx_rate_;
 		stats_.rx1 = rx_rate_;
-		logf("call: %s %u/%u, SNR %.1f dB, round trip %d ms, echo "
-		     "%.1f/%.1f dBm0, retrains %u/%u, renegotiations %u/%u, "
-		     "%s\n", stats_.connected ? "up" : "not up",
-		     stats_.tx1, stats_.rx1, d.snr, d.rtd, d.near_echo,
-		     d.far_echo, d.retrains_local, d.retrains_remote,
-		     d.renegs_local, d.renegs_remote,
-		     causes[(int)stats_.cause]);
+		logf("call over: %s, %u/%u bit/s, %lu ms, %s\n",
+		     stats_.fax ? "fax" : dp ? dp : "no connection",
+		     stats_.tx1, stats_.rx1, stats_.end - stats_.start,
+		     cause_text[(int)stats_.cause]);
 	}
-	/* the call ended online: what the DTE sent is data that did not go
-	   out, not commands (in online command state it is commands) */
+	/* data that did not go out is no command */
 	if (!command_)
 		xmit_head_ = xmit_tail_ = xmit_count_ = 0;
 	command_ = true;
@@ -1351,151 +581,607 @@ int Modem::stop_call()
 	return started_;
 }
 
-/* ATA: a call whose answering pump starts after S-register
-   SREG_ANS_DELAY (s; 0: 10 ms), on the call dialed after a dial
-   string's ';' (V.250's call-back) or a new one; -1 if a pump runs */
-int Modem::answer()
+/* what to do once samples more of the line's samples have gone through,
+   in place of what was due; due after 0 samples, it is done at once */
+void Modem::later(Later what, unsigned long samples)
 {
-	DBG("modem answer...\n");
-	if (dialed_) {
-		dialed_ = false;
-		command_ = false;
-		caller_ = false;
-		setup_config();
-		link_->exit();
-		if (link_init()) {
-			hup(true);
-			return -1;
-		}
-		dp_requested_ = 0;
-		later(Later::ChangeDp, sregs_[SREG_ANS_DELAY] ?
-		      sregs_[SREG_ANS_DELAY] * (unsigned long)srate_ :
-		      srate_ / 100);
-		return 0;
-	}
-	if (dp_) {
-		ERR("dp %d is already exists.\n", dp_->id);
-		return -1;
-	}
-	if (started_)
+	later_ = what;
+	later_at_ = count_ + samples;
+	if (samples || what == Later::None)
+		return;
+	later_ = Later::None;
+	switch (what) {
+	case Later::Stop:
 		stop_call();
-	dp_requested_ = 0;
-	later(Later::ChangeDp, sregs_[SREG_ANS_DELAY] ?
-	      sregs_[SREG_ANS_DELAY] * (unsigned long)srate_ : srate_ / 100);
-	return start_call();
+		break;
+	case Later::ChangeDp:
+		change_dp();
+		break;
+	case Later::CallerIdStop:
+		cid_stop();
+		break;
+	case Later::None:
+		break;
+	}
 }
 
-/* the call progress pump for a dial (created with the dial string
-   hidden); -1 if a pump runs or it cannot be created */
-int Modem::dial_start()
+/*
+ *    the link layer
+ */
+
+/* the link's configuration for this call (our side's: caller_) from
+   +ES, S104 and S105, nothing in use yet; and whether the pumps may
+   skip V.42's detection phase (qc_lapm) */
+void Modem::setup_config()
 {
-	struct dp_operations *op = nullptr;
-	struct dp *dp = nullptr;
-	char save;
-	DBG("modem_dial_start...\n");
-	if (dp_)
-		return -1;
-	if (started_)
-		stop_call();
-	caller_ = true;
-	for (DpDriver *p = dp_drivers(); p->id > 0; p++)
-		if (p->id == DP_CALLPROG) {
-			op = p->op;
+	const unsigned long *es = kept("+ES");
+	unsigned comp = sregs_[SREG_COMP];
+	Cfg c = {};
+
+	if (caller_) {
+		unsigned long rqst = es[0], fbk = es[1];
+		c.ec_detector = true;
+		switch (rqst) {
+		case 2:
+			c.ec = true;
+			c.ec_detector = false;
+			c.mnp = fbk != 3;
+			break;
+		case 3:
+			c.ec = true;
+			c.mnp = fbk != 3;
+			break;
+		case 4:
+			c.mnp = true;
+			c.mnp_first = true;
+			break;
+		default:
 			break;
 		}
-	/* hide the dial string, so that no DTMF is generated */
-	save = dialing_[0];
-	dialing_[0] = 0;
-	if (op && op->create)
-		dp = op->create(handle_, DP_CALLPROG, caller_, srate_, frag_,
-				op);
-	dialing_[0] = save;
+		if (c.ec && fbk == 4) {
+			c.ec = false;
+			c.mnp = true;
+			c.mnp_first = true;
+		}
+		c.required = (c.ec || c.mnp) && fbk >= 2;
+	} else {
+		unsigned long fbk = es[2];
+		c.ec = fbk >= 2 && fbk != 6;
+		c.mnp = fbk >= 2 && fbk != 5;
+		c.required = fbk >= 4 && fbk <= 6;
+		c.ec_detector = true;
+	}
+	c.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
+	c.tx_win = c.rx_win = dlink::LAPM_MAX_WIN;
+	c.tx_info = c.rx_info = dlink::LAPM_MAX_INFO;
+	c.comp = c.ec && (comp & 2) ? 3 : 0;
+	c.mnp5 = c.mnp && (comp & 1);
+	c.dict_size = dlink::V42BIS_MAX_CODEWORDS;
+	c.max_string = dlink::V42BIS_MAX_STRING;
+	c.v44 = false;
+	c.mnp_on = false;
+	cfg_ = c;
+	dsp_info_.qc_lapm = c.ec && c.ec_detector;
+}
+
+/* the link set up for the call as configured; -1 if it cannot be */
+int Modem::link_init()
+{
+	dlink::Config c;
+	c.ec = cfg_.ec;
+	c.detect = cfg_.ec_detector;
+	c.mnp = cfg_.mnp;
+	c.mnp_first = cfg_.mnp_first;
+	c.required = cfg_.required;
+	c.mnp_info = cfg_.mnp_info;
+	c.mnp5 = cfg_.mnp5;
+	c.tx_win = cfg_.tx_win;
+	c.rx_win = cfg_.rx_win;
+	c.tx_info = cfg_.tx_info;
+	c.rx_info = cfg_.rx_info;
+	c.comp = cfg_.comp;
+	c.dict_size = cfg_.dict_size;
+	c.max_string = cfg_.max_string;
+	return link_->init(link_owner_, caller_, c);
+}
+
+/* what XID or MNP's LRs agreed: the call's compression */
+void Modem::negotiated(int comp, bool v44, int dict_size, int max_string,
+		       bool mnp5)
+{
+	cfg_.comp = comp;
+	cfg_.v44 = v44;
+	cfg_.dict_size = dict_size;
+	cfg_.max_string = max_string;
+	cfg_.mnp5 = mnp5;
+	logf("negotiated: compression %d%s, %d codewords, strings of %d%s\n",
+	     comp, v44 ? " (V.44)" : "", dict_size, max_string,
+	     mnp5 ? ", MNP 5" : "");
+}
+
+/* the call's error correction, as CONNECT and ATI11 name it */
+const char *Modem::protocol_name() const
+{
+	return cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : "NONE";
+}
+
+/* the call's compression, as CONNECT and ATI11 name it */
+const char *Modem::compression_name() const
+{
+	if (cfg_.mnp_on)
+		return cfg_.mnp5 ? "MNP5" : "NONE";
+	if (cfg_.ec && cfg_.comp)
+		return cfg_.v44 ? "V44" : "V42bis";
+	return "NONE";
+}
+
+/* the pump's or the link's progress s: the link started when the pump
+   connects, CONNECT when the link is up, the hang-up when either
+   fails or the remote leaves */
+void Modem::update_status(Status s)
+{
+	switch (s) {
+	case ST_OK:
+		break;
+	case ST_DP_LINK:
+		if (dp_ && (dp_->id == DP_V23 || dp_->id == DP_B103 ||
+			    dp_->id == DP_V21)) {
+			cfg_.ec = false;
+			cfg_.mnp = false;
+		}
+		set_state(EC_ESTAB);
+		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
+			     !(caller_ && dsp_info_.qc_lapm));
+		break;
+	case ST_PACK_LINK:
+		cfg_.ec = link_->ec();
+		cfg_.mnp_on = link_->protocol() == dlink::Protocol::Mnp;
+		break;
+	case ST_EC_LINK:
+		if (state_ == ONLINE || state_ == COMMAND_ONLINE)
+			break;
+		set_state(ONLINE);
+		if (!stats_.connected) {
+			stats_.connected = true;
+			stats_.up = host_.now_ms();
+			stats_.dp = modulation(dp_stats_, dp_);
+			stats_.tx0 = tx_rate_;
+			stats_.rx0 = rx_rate_;
+		}
+		report(Result::Connect);
+		if (sregs_[SREG_SPEAKER_CONTROL] & 1)
+			host_.speaker(*this, 0);
+		break;
+	case ST_EC_RELEASE:
+	case ST_EC_ERROR:
+		set_cause(s == ST_EC_RELEASE ? Cause::RemoteCleardown :
+			  Cause::ProtocolFailure);
+		result_ = Result::NoCarrier;
+		have_result_ = true;
+		hup(state_ == EC_DISC);
+		break;
+	case ST_ERROR:
+	case ST_DP_ERROR:
+	case ST_NOCARRIER:
+	case ST_NODIALTONE:
+	case ST_BUSY:
+	case ST_NOANSWER:
+		switch (s) {
+		case ST_NODIALTONE:
+			set_cause(Cause::NoDialtone);
+			result_ = Result::NoDialtone;
+			break;
+		case ST_BUSY:
+			set_cause(Cause::Busy);
+			result_ = Result::Busy;
+			break;
+		case ST_NOANSWER:
+			set_cause(Cause::NoAnswer);
+			result_ = Result::NoAnswer;
+			break;
+		default:
+			set_cause(stats_.connected ? Cause::CarrierLost :
+				  Cause::TrainingFailed);
+			result_ = Result::NoCarrier;
+			break;
+		}
+		have_result_ = true;
+		hup(state_ == EC_DISC || state_ == DP_DISC);
+		break;
+	}
+}
+
+/* the pumps' bits for the line, from the link */
+int Modem::get_bits(int nbits, uint8_t *buf, int n)
+{
+	int ret = link_->get_bits(nbits, buf, n);
+	log_data(this, LOG_TX_BITS, buf, n);
+	return ret;
+}
+
+/* the pumps' bits from the line, to the link */
+int Modem::put_bits(int nbits, const uint8_t *buf, int n)
+{
+	int ret = link_->put_bits(nbits, buf, n);
+	log_data(this, LOG_RX_BITS, buf, n);
+	return ret;
+}
+
+/* DTE data the remote does not have yet */
+bool Modem::tx_pending() const
+{
+	return xmit_count_ > 0 || link_->tx_pending();
+}
+
+/* LAPM's or MNP's frames not sent or not acknowledged */
+bool Modem::link_tx_pending() const
+{
+	return link_->tx_pending();
+}
+
+/*
+ *    the DTE
+ */
+
+/* characters from the DTE: one aborts a call being set up; online they
+   are checked for the escape; they wait in the buffer (as many as fit),
+   and in command state the interpreter takes them; how many were
+   taken */
+int Modem::dte_input(const char *buf, int n)
+{
+	int k = 0;
+
+	if (n <= 0)
+		return 0;
+	if ((state_ == DP_ESTAB || state_ == EC_ESTAB) && !command_) {
+		logf("a character from the DTE: hanging up\n");
+		set_cause(Cause::LocalHangup);
+		hup(true);
+		return n;
+	}
+	if (state_ == ONLINE)
+		check_escape(buf, n);
+	while (k < n && xmit_count_ < xmit_size_) {
+		int run = xmit_size_ - xmit_head_;
+		if (run > xmit_size_ - xmit_count_)
+			run = xmit_size_ - xmit_count_;
+		if (run > n - k)
+			run = n - k;
+		memcpy(xmit_ + xmit_head_, buf + k, run);
+		xmit_head_ = (xmit_head_ + run) % xmit_size_;
+		xmit_count_ += run;
+		k += run;
+	}
+	if (k < n)
+		logf("DTE buffer full: %d of %d characters taken\n", k, n);
+	if (command_)
+		at_process();
+	return k;
+}
+
+/* up to n of the DTE's characters, oldest first: how many */
+int Modem::get_chars(char *buf, int n)
+{
+	int k = 0;
+	while (k < n && xmit_count_ > 0) {
+		int run = xmit_size_ - xmit_tail_;
+		if (run > xmit_count_)
+			run = xmit_count_;
+		if (run > n - k)
+			run = n - k;
+		memcpy(buf + k, xmit_ + xmit_tail_, run);
+		xmit_tail_ = (xmit_tail_ + run) % xmit_size_;
+		xmit_count_ -= run;
+		k += run;
+	}
+	return k;
+}
+
+/* n characters to the DTE: how many the Host took */
+int Modem::put_chars(const char *buf, int n)
+{
+	int ret;
+	if (n <= 0)
+		return 0;
+	ret = host_.dte_write(*this, buf, n);
+	return ret < 0 ? 0 : ret;
+}
+
+/* a string to the DTE */
+void Modem::puts(const char *s)
+{
+	put_chars(s, (int)strlen(s));
+}
+
+/* the end of a line to the DTE: S3, S4 */
+void Modem::crlf()
+{
+	put_chars(reinterpret_cast<const char *>(&sregs_[SREG_CR_CHAR]), 2);
+}
+
+/* the escape (+++): this input (online) after the last one's, as the
+   rules of the guard time have it: all of it S2 and the S2s at most
+   three, the first a guard time after the input before, the others
+   within one; the third arms the escape a guard time later.  The S2s
+   so far */
+int Modem::check_escape(const char *buf, int n)
+{
+	unsigned long now = host_.now_ms();
+	long since = (long)(now - last_esc_check_);
+	bool escape = escape_count_ + n <= 3;
+
+	for (int i = 0; escape && i < n; i++)
+		escape = (unsigned char)buf[i] == sregs_[SREG_ESCAPE_CHAR];
+	if (escape)
+		escape = escape_count_ ? since < (long)ESCAPE_MS :
+			since >= (long)ESCAPE_MS;
+	last_esc_check_ = now;
+	if (!escape) {
+		escape_count_ = 0;
+		return 0;
+	}
+	escape_count_ += n;
+	if (escape_count_ == 3)
+		schedule_event(EV_ESCAPE, ESCAPE_MS);
+	return escape_count_;
+}
+
+/*
+ *    the line's samples
+ */
+
+/* n samples of the line in, n out: the input's DC taken out, whatever
+   runs on them, the line's power while the data call is up, then what
+   falls due after them and the commands waiting after a fax or voice
+   command */
+void Modem::process(const int16_t *in, int16_t *out, int n)
+{
+	if (n <= 0)
+		return;
+	if (n > scratch_len_) {
+		delete[] scratch_;
+		scratch_ = new int16_t[n];
+		scratch_len_ = n;
+	}
+	memcpy(scratch_, in, n * sizeof(*in));
+	if (dcr_ && !(dp_runtime_pcm && dp_runtime_ &&
+		      dp_runtime_pcm(dp_runtime_)))
+		dcr_process(dcr_, scratch_, n);
+	log_data(this, LOG_RX_SAMPLES, scratch_, 2 * n);
+	run(scratch_, out, n);
+	log_data(this, LOG_TX_SAMPLES, out, 2 * n);
+	if (stats_.connected && !stats_.ended && !stats_.fax &&
+	    (state_ == ONLINE || state_ == COMMAND_ONLINE)) {
+		for (int i = 0; i < n; i++) {
+			stats_.rx_pow += (double)scratch_[i] * scratch_[i];
+			stats_.tx_pow += (double)out[i] * out[i];
+		}
+		stats_.samples += n;
+	}
+	count_ += n;
+	if (later_ != Later::None && (long)(count_ - later_at_) >= 0)
+		later(later_, 0);
+	if (commands_due_) {
+		commands_due_ = false;
+		if (command_ && xmit_count_ > 0)
+			at_process();
+	}
+}
+
+/* the samples through what runs: a pump, caller ID, voice, fax, or
+   nothing (silence) */
+void Modem::run(int16_t *in, int16_t *out, int n)
+{
+	switch (run_) {
+	case Run::Dp:
+		dp_process(in, out, n);
+		break;
+	case Run::CallerId:
+		cid_process(in, out, n);
+		break;
+	case Run::Voice:
+		voice_process(in, out, n);
+		break;
+	case Run::Fax:
+		fax_process(in, out, n);
+		break;
+	case Run::None:
+		memset(out, 0, n * sizeof(*out));
+		break;
+	}
+}
+
+/* the samples through the current pump, frag_ at most at a time, each
+   piece's status acted on; silence once there is no pump; after a
+   failure the rest goes to the pump, and from the next samples on
+   nothing runs */
+void Modem::dp_process(int16_t *in, int16_t *out, int n)
+{
+	bool failed = false;
+
+	for (int done = 0; done < n;) {
+		int len = n - done < frag_ ? n - done : frag_, st;
+		if (!dp_ || run_ != Run::Dp) {
+			memset(out + done, 0, (n - done) * sizeof(*out));
+			break;
+		}
+		st = dp_->op->process(dp_, in + done, out + done, len);
+		done += len;
+		switch (st) {
+		case DPSTAT_OK:
+			break;
+		case DPSTAT_CONNECT:
+			if (state_ == IDLE || state_ == DP_ESTAB)
+				update_status(ST_DP_LINK);
+			break;
+		case DPSTAT_CHANGEDP:
+			change_dp();
+			break;
+		case DPSTAT_DIALED:
+			if (state_ == DP_ESTAB)
+				dialed();
+			break;
+		case DPSTAT_ERROR:
+			failed = true;
+			update_status(ST_DP_ERROR);
+			break;
+		case DPSTAT_NODIALTONE:
+			failed = true;
+			update_status(ST_NODIALTONE);
+			break;
+		case DPSTAT_BUSY:
+			failed = true;
+			update_status(ST_BUSY);
+			break;
+		case DPSTAT_NOANSWER:
+			failed = true;
+			update_status(ST_NOANSWER);
+			break;
+		default:
+			failed = true;
+			update_status(ST_ERROR);
+			break;
+		}
+	}
+	if (failed && run_ == Run::Dp)
+		run_ = Run::None;
+}
+
+/* the pump's name in the driver table, NULL for an id it does not
+   have */
+const char *Modem::dp_name(int id) const
+{
+	const DpDriver *d = id > 0 ? find_driver((unsigned)id) : nullptr;
+	return d ? d->name : nullptr;
+}
+
+/* the next pump: in fax mode the fax engine; else the one a pump asked
+   for, or +MS's (V.8 starting V.34 and up), created before the old one
+   goes; if it cannot be, the call hangs up on the old one */
+void Modem::change_dp()
+{
+	const DpDriver *d;
+	struct dp *dp = nullptr, *old;
+	unsigned id, drv;
+
+	if (mode_ == MODEM_MODE_FAX) {
+		fax_start();
+		return;
+	}
+	if (dp_requested_) {
+		id = drv = dp_requested_;
+		dp_requested_ = 0;
+	} else {
+		id = sregs_[SREG_DP];
+		if (id == DP_K56)
+			id = DP_V90;
+		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
+			id == DP_V92 ? (unsigned)DP_V8 : id;
+	}
+	logf("pump %u (driver %u), %s\n", id, drv,
+	     caller_ ? "caller" : "answerer");
+	d = find_driver(drv);
+	if (d && d->op)
+		dp = d->op->create(handle(), (enum DP_ID)id, caller_, srate_,
+				   frag_, d->op);
 	if (!dp) {
-		ERR("cannot create CALLPROG.\n");
+		log_printf(1, "err: %s: cannot create pump %u\n", name_, id);
+		hup(true);
+		return;
+	}
+	old = dp_;
+	dp_ = dp;
+	run_ = Run::Dp;
+	if (old)
+		old->op->destroy(old);
+}
+
+/*
+ *    dialling and answering
+ */
+
+/* call progress for a dial: the line stopped if caller ID or voice has
+   it, the caller, the pump created with the dial string hidden (the
+   network dials it, unless the pump has to wait for a dial tone); -1 if
+   there is a pump already or none can be made */
+int Modem::dial_start()
+{
+	const DpDriver *d;
+	char first;
+
+	if (dp_)
+		return -1;
+	if (started_ && stop_call())
+		return -1;
+	caller_ = true;
+	d = find_driver(DP_CALLPROG);
+	first = dialing_[0];
+	dialing_[0] = '\0';
+	if (d && d->op)
+		dp_ = d->op->create(handle(), DP_CALLPROG, 1, srate_, frag_,
+				    d->op);
+	dialing_[0] = first;
+	if (!dp_) {
+		log_printf(1, "err: %s: cannot create CALLPROG.\n", name_);
 		return -1;
 	}
-	dp_ = dp;
 	run_ = Run::Dp;
 	return 0;
 }
 
-/* ATD: dials number (NULL: the last one again) up to its first ';';
-   after a dial string's ';' call progress dials it on the same call
-   (none: it goes on to the handshake); -1 on failure (on a held call:
-   no number, no room for it) */
+/* ATD<number>, ATDL (number NULL: the last one again): call progress and
+   the call; on a call held after a ';', number is dialled on it (a
+   blank for none: the pump goes on to the handshake); 0, or -1 */
 int Modem::dial(const char *number)
 {
-	char *semi;
 	if (dialed_) {
-		size_t n = strlen(dialing_);
-		if (!number || n + 1 >= sizeof(dialing_))
+		size_t len = strlen(dialing_);
+		if (!number || len >= sizeof(dialing_) - 1)
 			return -1;
-		/* more to dial (a blank, which dialing skips, if nothing) */
-		snprintf(dialing_ + n, sizeof(dialing_) - n, "%s",
-			 *number ? number : " ");
-		if ((semi = strchr(dialing_ + n, ';')))
-			semi[1] = '\0';
-		DBG("modem dial on: %s...\n", dialing_);
+		copy_dial(dialing_ + len, sizeof(dialing_) - len,
+			  *number ? number : " ");
+		logf("dial more: %s\n", dialing_);
 		dialed_ = false;
 		command_ = false;
 		return 0;
 	}
-	if (number) {
-		strncpy(dial_string_, number, sizeof(dial_string_) - 1);
-		dial_string_[sizeof(dial_string_) - 1] = 0;
-		if ((semi = strchr(dial_string_, ';')))
-			semi[1] = '\0';
-	}
-	memcpy(dialing_, dial_string_, sizeof(dialing_));
-	DBG("modem dial: %s...\n", dial_string_);
+	if (number)
+		copy_dial(dial_string_, sizeof(dial_string_), number);
+	strcpy(dialing_, dial_string_);
+	logf("dial: %s\n", dialing_);
 	dp_requested_ = 0;
 	if (dial_start())
 		return -1;
 	return start_call();
 }
 
-/* call progress dialed up to a ';': in command state, the call kept
-   for ATD (more to dial, or the handshake), ATO (the handshake), ATA
-   (the answerer's) or ATH; OK, or the result of the rest of the ATD
-   line, which runs now */
+/* call progress has dialled up to the ';': the call is held in command
+   state, and the rest of the ATD line runs (OK when there is none) */
 void Modem::dialed()
 {
-	char line[sizeof(dial_rest_)];
+	char cmd[sizeof(dial_rest_)];
 	int ret;
+
 	dialed_ = true;
 	command_ = true;
 	if (!dial_rest_[0]) {
 		report(Result::Ok);
 		return;
 	}
-	memcpy(line, dial_rest_, sizeof(line));
+	memcpy(cmd, dial_rest_, sizeof(cmd));
 	dial_rest_[0] = '\0';
-	logf("run cmd: %s\n", line);
-	ret = at_command(line);
+	logf("run cmd: %s\n", cmd);
+	ret = at_command(cmd);
 	if (ret < 0)
 		report(Result::Error);
-	else if (ret == 0)
+	else if (!ret)
 		report(Result::Ok);
 }
 
-/* ATH: the hook, after hanging up a call */
-int Modem::hook(int state)
-{
-	DBG("modem hook...\n");
-	if (hook_ == state)
-		return 0;
-	if (state_ != IDLE) {
-		set_cause(Cause::LocalHangup);
-		hup(true);
-	}
-	return set_hook(state);
-}
-
-/* ATO: back online from online command mode, CONNECT (after a dial
-   string's ';': the handshake, as ATD); -1 if not there */
+/* ATO: on a held call the handshake (as ATD); in online command state
+   back online with CONNECT; -1 otherwise */
 int Modem::online()
 {
-	DBG("modem online...\n");
 	if (dialed_)
 		return dial("");
 	if (state_ != COMMAND_ONLINE)
@@ -1506,14 +1192,43 @@ int Modem::online()
 	return 0;
 }
 
-/* the speaker as ATM and ATL say outside a call (on only with M2) */
-void Modem::update_speaker()
+/* ATA: the answering pump after the answer delay (S92 s, or 10 ms), on
+   the held call (call-back: we answer the call we dialled) or a new
+   one; -1 if a pump runs already or the call cannot start */
+int Modem::answer()
 {
-	host_.speaker(*this, sregs_[SREG_SPEAKER_CONTROL] == 2 ?
-		      sregs_[SREG_SPEAKER_VOLUME] : 0);
+	unsigned long delay = sregs_[SREG_ANS_DELAY] ?
+		(unsigned long)sregs_[SREG_ANS_DELAY] * srate_ : srate_ / 100;
+
+	if (dialed_) {
+		dialed_ = false;
+		command_ = false;
+		caller_ = false;
+		setup_config();
+		link_->exit();
+		if (link_init()) {
+			log_printf(1, "err: %s: cannot set up the link\n",
+				   name_);
+			hup(true);
+			return -1;
+		}
+		dp_requested_ = 0;
+		later(Later::ChangeDp, delay);
+		return 0;
+	}
+	if (dp_) {
+		log_printf(1, "err: %s: answer: a pump runs\n", name_);
+		return -1;
+	}
+	if (started_ && stop_call())
+		return -1;
+	caller_ = false;
+	dp_requested_ = 0;
+	later(Later::ChangeDp, delay);
+	return start_call();
 }
 
-/* hangs up (ATH, DTR off) */
+/* the Host hangs up (DTR, HUPCL) */
 void Modem::hangup()
 {
 	if (state_ != IDLE)
@@ -1521,7 +1236,15 @@ void Modem::hangup()
 	hup(true);
 }
 
-/* the line ended the call (the SIP call is over): hangs up at once */
+/* the Host hangs up, and whatever is due happens now */
+void Modem::hangup_now()
+{
+	hangup();
+	if (later_ != Later::None)
+		later(later_, 0);
+}
+
+/* the line ended the call (the SIP call is over): at once */
 void Modem::line_dropped()
 {
 	if (state_ != IDLE)
@@ -1529,44 +1252,52 @@ void Modem::line_dropped()
 	hangup_now();
 }
 
-/* hangs up, and runs at once what was due later (the stop) */
-void Modem::hangup_now()
+/* ATH (MODEM_HOOK_ON), ATH1: a call hangs up when the hook goes on;
+   nothing if the hook is there already; the Host's result */
+int Modem::hook(int state)
 {
-	if (state_ != IDLE)
+	if (hook_ == state)
+		return 0;
+	if (state_ != IDLE) {
 		set_cause(Cause::LocalHangup);
-	hup(true);
-	if (later_ != Later::None) {
-		later_at_ = count_;
-		Later what = later_;
-		later_ = Later::None;
-		if (what == Later::Stop)
-			stop_call();
-		else if (what == Later::ChangeDp)
-			change_dp();
-		else if (what == Later::CallerIdStop)
-			cid_stop();
+		hup(true);
 	}
+	return set_hook(state);
 }
 
-/* the country by T.35 code id or by name, with its dial pause and hook
-   flash times; -1 if there is none */
-int Modem::homolog_init(int id, const char *name)
+/* ATZ: the call hung up (its stop still to come), the line stopped or on
+   hook; the S-registers, +MS, modem-on-hold, the kept parameters and
+   data mode as at the start, the country's S8 and S24 again; 0 */
+int Modem::reset()
 {
-	for (const struct homolog_set *set = homolog_set; set->name; set++)
-		if (set->id == id || (name && *name && !strcmp(name, set->name))) {
-			homolog_ = set;
-			sregs_[SREG_DIAL_PAUSE_TIME] = set->params->DialPauseTime;
-			sregs_[SREG_FLASH_TIMER] = set->params->HookFlashTime;
-			return 0;
-		}
-	return -1;
+	if (state_ != IDLE) {
+		set_cause(Cause::LocalHangup);
+		hup(true);
+	} else if (started_) {
+		stop_call();
+	} else {
+		set_hook(MODEM_HOOK_ON);
+	}
+	set_state(IDLE);
+	command_ = true;
+	min_rate_ = MODEM_MIN_RATE;
+	max_rate_ = MODEM_MAX_RATE;
+	moh_off_ = 0;
+	moh_timer_ = 5;
+	moh_req_ = 0;
+	sregs_init();
+	kept_init();
+	sregs_[SREG_DIAL_PAUSE_TIME] = homolog_->params->DialPauseTime;
+	sregs_[SREG_FLASH_TIMER] = homolog_->params->HookFlashTime;
+	set_mode(MODEM_MODE_DATA);
+	return 0;
 }
 
-/* data, fax or voice (AT+FCLASS); voice stops when it is left */
+/* +FCLASS: data, fax or voice (the voice engine stops when voice is
+   left); 0 */
 int Modem::set_mode(enum MODEM_MODE mode)
 {
-	DBG("modem set mode: -> %d...\n", mode);
-	if (mode_ == mode)
+	if (mode == mode_)
 		return 0;
 	if (mode_ == MODEM_MODE_VOICE && voice_)
 		voice_stop();
@@ -1574,156 +1305,431 @@ int Modem::set_mode(enum MODEM_MODE mode)
 	return 0;
 }
 
-/* ATZ: a call hung up; the S-registers, the rates, modem-on-hold and
-   the mode from the start (the country kept) */
-int Modem::reset()
+/* ATL, ATM: the speaker on at S30 with ATM2, else off */
+void Modem::update_speaker()
 {
-	DBG("modem reset...\n");
-	if (state_ != IDLE) {
-		set_cause(Cause::LocalHangup);
-		hup(true);
-	}
-	else if (started_)
-		stop_call();
-	else if (hook_)
-		set_hook(MODEM_HOOK_ON);
-	set_state(IDLE);
-	command_ = true;
-	min_rate_ = MODEM_MIN_RATE;
-	max_rate_ = MODEM_MAX_RATE;
-	moh_off_ = moh_req_ = 0;
-	moh_timer_ = 5;
-	sregs_init();
-	kept_init();
-	homolog_init(homolog_->id, nullptr);
-	set_mode(MODEM_MODE_DATA);
-	return 0;
+	host_.speaker(*this, sregs_[SREG_SPEAKER_CONTROL] == 2 ?
+		      sregs_[SREG_SPEAKER_VOLUME] : 0);
 }
 
-/* the S-registers' defaults */
-void Modem::sregs_init()
+/* the network's G.711 law, for this call's pumps and the next ones' */
+void Modem::set_line_law(int law)
 {
-	sregs_[SREG_ESCAPE_CHAR] = '+';
-	sregs_[SREG_CR_CHAR] = '\r';
-	sregs_[SREG_LF_CHAR] = '\n';
-	sregs_[SREG_BS_CHAR] = '\b';
-	sregs_[SREG_DIAL_TONE_WAIT_TIME] = 2;          /* s */
-	sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] = 60;     /* s */
-	sregs_[SREG_DIAL_PAUSE_TIME] = 2;              /* s */
-	sregs_[SREG_CARRIER_DETECT_RESPONSE_TIME] = 6; /* 0.1 s */
-	sregs_[SREG_CARRIER_LOSS_DISCONNECT_TIME] = 7; /* 0.1 s */
-	sregs_[SREG_DTMF_DURATION] = 100;              /* ms */
-	sregs_[SREG_ESCAPE_PROMPT_DELAY] = 50;         /* ms */
-	sregs_[SREG_FLASH_TIMER] = 20;                 /* 10 ms */
-	sregs_[SREG_ECHO] = 1;
-	sregs_[SREG_QUIET] = 0;
-	sregs_[SREG_VERBOSE] = 1;
-	sregs_[SREG_TONE_OR_PULSE] = 1;                /* tone */
-	sregs_[SREG_X_CODE] = 4;
-	sregs_[SREG_SPEAKER_CONTROL] = 1;
-	sregs_[SREG_SPEAKER_VOLUME] = 3;
-	sregs_[SREG_AUTOMODE] = 1;
-	sregs_[SREG_DP] = DP_V92;
-	sregs_[SREG_ANS_DELAY] = 2;                    /* s */
-	sregs_[SREG_LINE_QUALITY_CONTROL] = 0;
-	sregs_[SREG_CD] = 0;
-	sregs_[SREG_FLOW_CONTROL] = 0;
-	sregs_[SREG_CONNNECT_MSG_FORMAT] = 0;
-	sregs_[SREG_CONNNECT_MSG_SPEED_SRC] = 0;
-	sregs_[SREG_EC] = 3;
-	sregs_[SREG_COMP] = 0x3;
-	sregs_[SREG_MNP_BLOCK] = 3;
-	sregs_[SREG_CONNECT_PROTOCOL] = 0;
+	if (law == line_law_)
+		return;
+	line_law_ = law;
+	if (dp_runtime_ && law)
+		dp_runtime_set_law(dp_runtime_, law);
 }
 
 /*
- *    caller ID
+ *    result codes and the call's statistics
  */
 
-/* caller ID is over (done, failed or timed out): the call stops; then
-   the answer if it is due */
-void Modem::cid_stop()
+/* result r to the DTE (unless ATQ1), in words (ATV1) or as a number; a
+   CONNECT after the lines AT&A asks for, with the receive rate in data
+   mode (unless ATX0) and AT\V's protocol */
+void Modem::report(Result r)
 {
-	DBG("modem_cid_stop...\n");
-	later_ = Later::None;
-	run_ = Run::None;
-	stop_call();
-	/* go on and answer, if that is due */
-	if (ANSWER_AFTER_RINGS && TOTAL_RINGS >= ANSWER_AFTER_RINGS) {
-		TOTAL_RINGS = 0;
+	bool verbose = sregs_[SREG_VERBOSE] != 0;
+	char line[64];
+
+	logf("result: %s\n", result_text[(int)r]);
+	if (sregs_[SREG_QUIET])
+		return;
+	if (r == Result::Connect) {
+		unsigned a = sregs_[SREG_CONNNECT_MSG_FORMAT];
+		int m = modulation(dp_stats_, dp_);
+		const char *comp = compression_name();
+		if ((a & 1) && (m || verbose)) {
+			const char *name = dp_name(m);
+			if (verbose)
+				snprintf(line, sizeof(line), "Modulation: %s",
+					 name ? name : "NONE");
+			else
+				snprintf(line, sizeof(line), "%d", 1000 + m);
+			puts(line);
+			crlf();
+		}
+		if (a & 2) {
+			if (verbose)
+				snprintf(line, sizeof(line), "Protocol: %s",
+					 protocol_name());
+			else
+				snprintf(line, sizeof(line), "%d", cfg_.ec ?
+					 77 : cfg_.mnp_on ? 78 : 76);
+			puts(line);
+			crlf();
+		}
+		if ((a & 3) == 3) {
+			if (verbose)
+				snprintf(line, sizeof(line), "Compression: %s",
+					 comp);
+			else
+				snprintf(line, sizeof(line), "%d",
+					 !strcmp(comp, "MNP5") ? 66 :
+					 !strcmp(comp, "V42bis") ? 67 :
+					 !strcmp(comp, "V44") ? 68 : 69);
+			puts(line);
+			crlf();
+		}
+		if ((a & 4) && verbose && tx_rate_) {
+			snprintf(line, sizeof(line), "TxRate: %u", tx_rate_);
+			puts(line);
+			crlf();
+		}
+	}
+	if (r == Result::Connect && mode_ == MODEM_MODE_DATA && rx_rate_ &&
+	    sregs_[SREG_X_CODE]) {
+		if (!verbose) {
+			snprintf(line, sizeof(line), "%u",
+				 connect_code(rx_rate_));
+		} else if (sregs_[SREG_CONNECT_PROTOCOL]) {
+			const char *comp = compression_name();
+			snprintf(line, sizeof(line), "CONNECT %u/%s%s%s",
+				 rx_rate_, protocol_name(),
+				 strcmp(comp, "NONE") ? "/" : "",
+				 strcmp(comp, "NONE") ? comp : "");
+		} else {
+			snprintf(line, sizeof(line), "CONNECT %u", rx_rate_);
+		}
+	} else if (verbose) {
+		snprintf(line, sizeof(line), "%s", result_text[(int)r]);
+	} else {
+		snprintf(line, sizeof(line), "%d", (int)r);
+	}
+	puts(line);
+	crlf();
+}
+
+/* ATI11: the last call's statistics (or this one's), a row each: its
+   label padded to 36 columns, then the value; "No Previous Call" before
+   the first */
+void Modem::call_stats()
+{
+	char v[48];
+	auto row = [this](const char *label, const char *value) {
+		char line[96];
+		snprintf(line, sizeof(line), "%-36s%s", label, value);
+		puts(line);
+		crlf();
+	};
+	auto number = [&v, &row](const char *label, unsigned long n) {
+		snprintf(v, sizeof(v), "%lu", n);
+		row(label, v);
+	};
+	auto decibels = [&v, &row](const char *label, double db) {
+		snprintf(v, sizeof(v), "%.1f", db);
+		row(label, v);
+	};
+
+	if (!stats_.call) {
+		puts("No Previous Call");
+		crlf();
+		return;
+	}
+	row("Description", "Status");
+	row("-----------", "------");
+	if (stats_.fax) {
+		row("Last Connection", stats_.connected ? "Fax" : "None");
+	} else if (!stats_.connected) {
+		row("Last Connection", "None");
+	} else {
+		const struct dp_stats &d = dp_stats_;
+		const dlink::Stats &l = link_->stats();
+		const char *name = dp_name(stats_.dp);
+		row("Last Connection", name ? name : "Unknown");
+		number("Initial Transmit Carrier Rate", stats_.tx0);
+		number("Initial Receive Carrier Rate", stats_.rx0);
+		number("Final Transmit Carrier Rate",
+		       stats_.ended ? stats_.tx1 : tx_rate_);
+		number("Final Receive Carrier Rate",
+		       stats_.ended ? stats_.rx1 : rx_rate_);
+		row("Protocol Negotiation Result", protocol_name());
+		row("Data Compression Result", compression_name());
+		if (d.have & DP_STATS_SNR)
+			decibels("Estimated SNR (dB)", d.snr);
+		if (stats_.samples) {
+			decibels("Receive Signal Power Level (dBm0)",
+				 10 * log10(stats_.rx_pow / stats_.samples /
+					    DP_DBM0_POWER + 1e-9));
+			decibels("Transmit Signal Power Level (dBm0)",
+				 10 * log10(stats_.tx_pow / stats_.samples /
+					    DP_DBM0_POWER + 1e-9));
+		}
+		if (d.have & DP_STATS_RTD) {
+			snprintf(v, sizeof(v), "%d", d.rtd);
+			row("Round Trip Delay (ms)", v);
+		}
+		if (d.have & DP_STATS_NEAR_ECHO)
+			decibels("Near Echo Level (dBm0)", d.near_echo);
+		if (d.have & DP_STATS_FAR_ECHO)
+			decibels("Far Echo Level (dBm0)", d.far_echo);
+		number("Characters Sent", l.tx_chars);
+		number("Characters Received", l.rx_chars);
+		if (cfg_.ec || cfg_.mnp_on) {
+			number("Transmit Frame Count", l.tx_frames);
+			number("Transmit Frame Error Count", l.tx_again);
+			number("Receive Frame Count", l.rx_frames);
+			number("Receive Frame Error Count", l.rx_errors);
+		}
+		number("Retrains by Local Modem", d.retrains_local);
+		number("Retrains Requested by Remote Modem",
+		       d.retrains_remote);
+		number("Rate Renegotiation by Local Modem", d.renegs_local);
+		number("Rate Renegotiation by Remote Modem", d.renegs_remote);
+	}
+	if (stats_.connected) {
+		unsigned long s = ((stats_.ended ? stats_.end :
+				    host_.now_ms()) - stats_.up) / 1000;
+		snprintf(v, sizeof(v), "%lu:%02lu:%02lu", s / 3600,
+			 s / 60 % 60, s % 60);
+		row("Call Duration", v);
+	}
+	if (stats_.ended)
+		row("Call Termination Cause", cause_text[(int)stats_.cause]);
+}
+
+/*
+ *    timers and events
+ */
+
+/* events (mask) due ms from now: the timer's deadline is that */
+void Modem::schedule_event(unsigned mask, unsigned long ms)
+{
+	new_event_ |= mask;
+	timer_at_ = host_.now_ms() + ms;
+	timer_on_ = true;
+}
+
+/* the timer's events, if its deadline has passed */
+void Modem::poll()
+{
+	unsigned ev;
+
+	if (timer_on_ && (long)(host_.now_ms() - timer_at_) >= 0) {
+		timer_on_ = false;
+		event_ |= new_event_;
+		new_event_ = 0;
+	}
+	if (!event_)
+		return;
+	ev = event_;
+	event_ = 0;
+	events(ev);
+}
+
+/* the ms until the timer's events (0: due), -1 without any */
+long Modem::next_timer_ms()
+{
+	long left;
+	if (event_)
+		return 0;
+	if (!timer_on_)
+		return -1;
+	left = (long)(timer_at_ - host_.now_ms());
+	return left > 0 ? left : 0;
+}
+
+/* the events due: the ring check (a burst ends: RING, the auto answer,
+   or the ring gone), then the escape (online command state, OK) */
+void Modem::events(unsigned ev)
+{
+	if (ev & EV_RING_CHECK) {
+		long len = (long)(ring_last_ - ring_first_);
+		if (!ring_count_) {
+			sregs_[SREG_RING_COUNTER] = 0;
+		} else if (len < (long)RING_MIN_MS ||
+			   len >= (long)RING_MAX_MS ||
+			   ring_count_ < RING_PULSES) {
+			logf("bad ring: %u pulses in %ld ms\n", ring_count_,
+			     len);
+			sregs_[SREG_RING_COUNTER] = 0;
+			ring_count_ = 0;
+		} else {
+			ring_count_ = 0;
+			sregs_[SREG_RING_COUNTER]++;
+			if (sregs_[SREG_RING_COUNTER] == 1)
+				crlf();
+			report(Result::Ring);
+			if (sregs_[SREG_RINGS_TO_AUTO_ANSWER] && !started_ &&
+			    sregs_[SREG_RING_COUNTER] >=
+			    sregs_[SREG_RINGS_TO_AUTO_ANSWER]) {
+				sregs_[SREG_RING_COUNTER] = 0;
+				answer();
+			} else {
+				schedule_event(EV_RING_CHECK, RING_GONE_MS);
+			}
+		}
+	}
+	if (ev & EV_ESCAPE) {
+		if (state_ == ONLINE && escape_count_ == 3) {
+			set_state(COMMAND_ONLINE);
+			xmit_head_ = xmit_tail_ = xmit_count_ = 0;
+			crlf();
+			report(Result::Ok);
+			command_ = true;
+		}
+		escape_count_ = 0;
+	}
+}
+
+/*
+ *    rings and caller ID
+ */
+
+/* a pulse of a ring signal (idle only): a burst's first one, if it comes
+   late enough after the last pulse, has the burst checked later (and
+   starts caller ID before the first ring) */
+void Modem::ring()
+{
+	unsigned long now = host_.now_ms();
+
+	if (state_ != IDLE)
+		return;
+	if (!ring_count_) {
+		if ((long)(now - ring_last_) < (long)RING_GAP_MS) {
+			ring_last_ = now;
+			return;
+		}
+		ring_first_ = now;
+		schedule_event(EV_RING_CHECK, RING_CHECK_MS);
+		if (!sregs_[SREG_RING_COUNTER] && cid_requested_)
+			cid_start(CID_MS);
+	}
+	ring_last_ = now;
+	ring_count_++;
+}
+
+/* a call that rings by itself (SIP): RING each time, the auto answer
+   (idle, line stopped); on false the rings are over */
+void Modem::ring_signal(bool on)
+{
+	if (!on) {
+		sregs_[SREG_RING_COUNTER] = 0;
+		ring_count_ = 0;
+		return;
+	}
+	if (state_ != IDLE || started_)
+		return;
+	sregs_[SREG_RING_COUNTER]++;
+	if (sregs_[SREG_RING_COUNTER] == 1)
+		crlf();
+	report(Result::Ring);
+	if (sregs_[SREG_RINGS_TO_AUTO_ANSWER] && sregs_[SREG_RING_COUNTER] >=
+	    sregs_[SREG_RINGS_TO_AUTO_ANSWER]) {
+		sregs_[SREG_RING_COUNTER] = 0;
 		answer();
 	}
 }
 
-/* caller ID on the line's samples, silence out */
-void Modem::cid_process(int16_t *in, int16_t *out, int count)
-{
-	int status;
-	memset(out, 0, count * sizeof(*out));
-	status = CID_process(cid_, in, count);
-	if (status) {
-		if (status < 0)
-			DBG("CID failed.\n");
-		cid_stop();
-	}
-}
-
-/* caller ID for ms, snooping the line; -1 if a call runs or it cannot
-   be created */
+/* caller ID for ms: its receiver on the line, the hook snooping; -1 if
+   the line runs already or the receiver cannot be had */
 int Modem::cid_start(unsigned long ms)
 {
-	DBG("modem_cid_start: timeout = %lu...\n", ms / TICK);
 	if (started_)
 		return -1;
-	cid_ = CID_create(handle_, srate_, cid_requested_);
+	cid_ = CID_create(handle(), srate_, cid_requested_);
 	if (!cid_)
 		return -1;
+	count_ = 0;
 	later(Later::CallerIdStop, (unsigned long)srate_ * ms / 1000);
 	run_ = Run::CallerId;
 	set_hook(MODEM_HOOK_SNOOPING);
-	return do_start();
+	if (do_start()) {
+		log_printf(1, "err: %s: the line does not start\n", name_);
+		stop_call();
+		return -1;
+	}
+	return 0;
+}
+
+/* the caller ID receiver on the samples (silence out) until it has
+   reported (or failed) */
+void Modem::cid_process(int16_t *in, int16_t *out, int n)
+{
+	int ret;
+	memset(out, 0, n * sizeof(*out));
+	ret = CID_process(cid_, in, n);
+	if (ret < 0)
+		logf("caller ID failed\n");
+	if (ret)
+		cid_stop();
+}
+
+/* the end of caller ID: the line stops, and the auto answer if the
+   rings have come */
+void Modem::cid_stop()
+{
+	later_ = Later::None;
+	run_ = Run::None;
+	stop_call();
+	if (sregs_[SREG_RINGS_TO_AUTO_ANSWER] && sregs_[SREG_RING_COUNTER] >=
+	    sregs_[SREG_RINGS_TO_AUTO_ANSWER]) {
+		sregs_[SREG_RING_COUNTER] = 0;
+		answer();
+	}
 }
 
 /*
  *    voice
  */
 
-/* the voice engine on the samples; its OK, CONNECT, ERROR to the DTE */
-void Modem::voice_process(int16_t *in, int16_t *out, int count)
+/* +VLS: the voice engine on the line (1: started, its OK to come; 0: it
+   was there) or off (0); -1 for another device or if it cannot start */
+int Modem::voice_set_device(unsigned device)
 {
-	int status = VOICE_process(voice_, in, out, count);
-	if (status) {
-		DBG("modem_voice_process: status %d\n", status);
-		switch (status) {
-		case VOICE_STATUS_OK:
-			report(Result::Ok);
-			command_ = true;
-			commands_due_ = true;
-			break;
-		case VOICE_STATUS_CONNECT:
-			report(Result::Connect);
-			command_ = false;
-			break;
-		case VOICE_STATUS_ERROR:
-			report(Result::Error);
-			command_ = true;
-			commands_due_ = true;
-			break;
-		default:
-			break;
-		}
-		if (status < 0) {
-			DBG("VOICE failed.\n");
+	switch (device) {
+	case VOICE_DEVICE_NONE:
+		if (voice_)
 			voice_stop();
-		}
+		return 0;
+	case VOICE_DEVICE_LINE:
+		if (voice_)
+			return 0;
+		return voice_start() ? -1 : 1;
+	default:
+		return -1;
 	}
 }
 
-/* AT+VTX, +VRX, +VTS: a command to the voice engine, 1 (no result
-   now); -1 without voice or for another command */
+/* the voice engine off hook on the line: 0, or -1 */
+int Modem::voice_start()
+{
+	if (voice_)
+		return 0;
+	if (started_)
+		return -1;
+	voice_ = VOICE_create(handle(), srate_);
+	if (!voice_)
+		return -1;
+	later_ = Later::None;
+	run_ = Run::Voice;
+	set_hook(MODEM_HOOK_OFF);
+	if (do_start()) {
+		log_printf(1, "err: %s: the line does not start\n", name_);
+		voice_stop();
+		return -1;
+	}
+	return 0;
+}
+
+/* the voice engine goes, the line stops, on hook */
+void Modem::voice_stop()
+{
+	run_ = Run::None;
+	later_ = Later::None;
+	VOICE_delete(voice_);
+	voice_ = nullptr;
+	stop_call();
+	set_hook(MODEM_HOOK_ON);
+}
+
+/* +VTS, +VTX, +VRX: the voice engine's command, the DTE's characters its
+   own until it reports; 1, or -1 without an engine or for another
+   command (+VTR's duplex) */
 int Modem::voice_command(enum VOICE_CMD cmd)
 {
-	DBG("modem_voice_command: %u...\n", cmd);
 	switch (cmd) {
 	case VOICE_CMD_BEEP:
 	case VOICE_CMD_DTMF:
@@ -1739,145 +1745,123 @@ int Modem::voice_command(enum VOICE_CMD cmd)
 	}
 }
 
-/* the voice engine, off hook; -1 if a call runs */
-int Modem::voice_start()
+/* the voice engine on the samples, its results to the DTE: after OK or
+   ERROR the DTE's characters are commands again (those already there
+   run) */
+void Modem::voice_process(int16_t *in, int16_t *out, int n)
 {
-	DBG("modem_voice_start...\n");
-	if (voice_)
-		return 0;
-	if (started_)
-		return -1;
-	voice_ = VOICE_create(handle_, srate_);
-	if (!voice_)
-		return -1;
-	later_ = Later::None;
-	run_ = Run::Voice;
-	set_hook(MODEM_HOOK_OFF);
-	return do_start();
-}
+	int st = VOICE_process(voice_, in, out, n);
 
-/* the end of voice: the call stopped, on hook */
-void Modem::voice_stop()
-{
-	DBG("modem_voice_stop...\n");
-	run_ = Run::None;
-	later_ = Later::None;
-	if (voice_) {
-		VOICE_delete(voice_);
-		voice_ = nullptr;
+	if (st < 0) {
+		logf("voice engine: %d, stopped\n", st);
+		voice_stop();
+		return;
 	}
-	stop_call();
-	set_hook(MODEM_HOOK_ON);
-}
-
-/* AT+VLS: none (voice off) or the line (voice on: 1, no result now) */
-int Modem::voice_set_device(unsigned device)
-{
-	DBG("modem_voice_set_device: dev = %u...\n", device);
-	if (device == VOICE_DEVICE_NONE) {
-		if (voice_)
-			voice_stop();
-		return 0;
-	} else if (device == VOICE_DEVICE_LINE) {
-		if (voice_)
-			return 0;
-		if (voice_start())
-			return -1;
-		return 1;
+	switch (st) {
+	case VOICE_STATUS_OK:
+		report(Result::Ok);
+		command_ = true;
+		commands_due_ = true;
+		break;
+	case VOICE_STATUS_CONNECT:
+		report(Result::Connect);
+		command_ = false;
+		break;
+	case VOICE_STATUS_ERROR:
+		report(Result::Error);
+		command_ = true;
+		commands_due_ = true;
+		break;
+	default:
+		break;
 	}
-	return -1;
-}
-
-/* the voice parameters' defaults (AT+VIP) */
-void Modem::voice_init()
-{
-	voice_info_.comp_method = 1;
-	voice_info_.sample_rate = 8000;
-	voice_info_.rx_gain = 128;
-	voice_info_.tx_gain = 128;
-	voice_info_.dtmf_symbol = 0;
-	voice_info_.tone1_freq = 933;
-	voice_info_.tone2_freq = 0;
-	voice_info_.tone_duration = 150;
-	voice_info_.inactivity_timer = 0;
-	voice_info_.silence_detect_sensitivity = 128;
-	voice_info_.silence_detect_period = 50;
 }
 
 /*
- *    fax (class 1)
+ *    class 1 fax
  */
 
-/* the fax engine on the samples; its results to the DTE */
-void Modem::fax_process(int16_t *in, int16_t *out, int count)
-{
-	int ret = FAX_process(fax_, in, out, count);
-	if (ret) {
-		DBG("fax_process: %d\n", ret);
-		switch (ret) {
-		case FAX_STATUS_OK:
-			set_state(COMMAND_ONLINE);
-			report(Result::Ok);
-			command_ = true;
-			commands_due_ = true;
-			break;
-		case FAX_STATUS_CONNECT:
-			if (!stats_.connected) {
-				stats_.connected = true;
-				stats_.up = host_.now_ms();
-			}
-			set_state(ONLINE);
-			report(Result::Connect);
-			command_ = false;
-			break;
-		case FAX_STATUS_NOCARRIER:
-			set_state(COMMAND_ONLINE);
-			report(Result::NoCarrier);
-			command_ = true;
-			commands_due_ = true;
-			break;
-		case FAX_STATUS_FRAME_ERROR:
-			set_state(COMMAND_ONLINE);
-			report(Result::Error);
-			command_ = true;
-			commands_due_ = true;
-			break;
-		case FAX_STATUS_ERROR:
-			update_status(ST_ERROR);
-			break;
-		default:
-			break;
-		}
-		if (ret < 0) {
-			DBG("FAX failed.\n");
-			stop_call();
-		}
-	}
-}
-
-/* the fax engine (class 1) instead of a pump, on T.38 if the call is;
-   -1 if it cannot be created */
+/* the fax engine in the pump's place (on T.38 if that was asked for);
+   the line silent if it cannot be had; 0, or -1 */
 int Modem::fax_start()
 {
-	DBG("modem_fax_start...\n");
-	fax_ = FAX_create(handle_, caller_, srate_);
-	if (!fax_)
-		return -1;
-	if (t38_ && FAX_t38_start(fax_, fax_t38_send, this, t38_max_) < 0)
+	struct dp *old = dp_;
+
+	fax_ = FAX_create(handle(), caller_, srate_);
+	if (fax_ && t38_ &&
+	    FAX_t38_start(fax_, fax_t38_send, this, t38_max_) < 0)
 		t38_ = false;
 	later_ = Later::None;
-	run_ = Run::Fax;
+	run_ = fax_ ? Run::Fax : Run::None;
+	dp_ = nullptr;
+	if (old)
+		old->op->destroy(old);
+	if (!fax_) {
+		log_printf(1, "err: %s: cannot create the fax engine\n", name_);
+		return -1;
+	}
+	logf("fax engine, %s%s\n", caller_ ? "caller" : "answerer",
+	     t38_ ? ", T.38" : "");
 	return 0;
 }
 
-/* the fax engine's IFP packet to the host */
+/* the fax engine on the samples, its results to the DTE: after OK, NO
+   CARRIER or ERROR the DTE's characters are commands again (those
+   already there run) */
+void Modem::fax_process(int16_t *in, int16_t *out, int n)
+{
+	int st = FAX_process(fax_, in, out, n);
+
+	if (st < 0) {
+		logf("fax engine: %d, the call stops\n", st);
+		stop_call();
+		return;
+	}
+	switch (st) {
+	case FAX_STATUS_OK:
+		set_state(COMMAND_ONLINE);
+		report(Result::Ok);
+		command_ = true;
+		commands_due_ = true;
+		break;
+	case FAX_STATUS_CONNECT:
+		if (!stats_.connected) {
+			stats_.connected = true;
+			stats_.up = host_.now_ms();
+		}
+		set_state(ONLINE);
+		report(Result::Connect);
+		command_ = false;
+		break;
+	case FAX_STATUS_NOCARRIER:
+		set_state(COMMAND_ONLINE);
+		report(Result::NoCarrier);
+		command_ = true;
+		commands_due_ = true;
+		break;
+	case FAX_STATUS_FRAME_ERROR:
+		set_state(COMMAND_ONLINE);
+		report(Result::Error);
+		command_ = true;
+		commands_due_ = true;
+		break;
+	case FAX_STATUS_ERROR:
+		update_status(ST_ERROR);
+		break;
+	default:
+		break;
+	}
+}
+
+/* the fax engine's T.38 packet (ctx: the modem) to the Host */
 void Modem::fax_t38_send(void *ctx, const void *ifp)
 {
 	Modem *m = static_cast<Modem *>(ctx);
 	m->host_.t38_send(*m, ifp);
 }
 
-/* see dcore.h */
+/* the call's fax goes over T.38, now or as its engine starts; 0, or -1
+   outside fax mode or if the engine cannot */
 int Modem::t38_start(int max_data)
 {
 	if (mode_ != MODEM_MODE_FAX)
@@ -1885,23 +1869,23 @@ int Modem::t38_start(int max_data)
 	t38_max_ = max_data;
 	if (fax_ && FAX_t38_start(fax_, fax_t38_send, this, max_data) < 0)
 		return -1;
-	DBG("fax over T.38\n");
+	logf("T.38 on, %d octets of data a packet\n", max_data);
 	t38_ = true;
 	return 0;
 }
 
-/* see dcore.h */
+/* back to the audio */
 void Modem::t38_stop()
 {
 	if (!t38_)
 		return;
-	DBG("fax back on the audio\n");
+	logf("T.38 off\n");
 	t38_ = false;
 	if (fax_)
 		FAX_t38_stop(fax_);
 }
 
-/* see dcore.h */
+/* a T.38 packet from the remote, for the fax engine */
 void Modem::t38_rx(const void *ifp)
 {
 	if (t38_ && fax_)

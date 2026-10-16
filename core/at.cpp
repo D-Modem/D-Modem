@@ -1,23 +1,18 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * Parts from Smart Link's slmodemd: Copyright (c) Smart Link Ltd.,
- * under its BSD licence (LICENSES/BSD-3-Clause.txt)
  *
- *    at.cpp - the AT command interpreter of the modem core
+ *    at.cpp - the modem core's AT command interpreter (dcore.h): the
+ *             DTE's characters in command state made into command lines
+ *             (echo, backspace, A/, the line's end), and each line run
+ *             command by command, V.250's and D-Modem's own, and those
+ *             of other modems' setup strings, taken with no effect
  *
- *    D-Modem's commands (they began as slmodemd's, modem_at.c):
- *
- *      AT  A B D E H I L M N O P Q S T V X Y Z
- *      AT& A C D E F H K P Q R S
- *      AT\ A N    AT% B C E    AT* B    AT# CID
- *      AT+ MS GCI GCAP GMI GMM GMR FCLASS VCID PMH PMHT PMHR, class 1
- *          fax (FTS FRS FTM FRM FTH FRH FMI FMM FMR), voice (+V..., in
- *          voice mode)
- *
- *    and, taken with no effect, the commands other modems' setup
- *    strings send (V.250's, Rockwell's and Conexant's, USRobotics'):
- *    taken_cmds and kept_params below.  ; separates commands.
+ *    What a command does to the call (ATD, ATA, ATH, ATO, ATZ, +FCLASS,
+ *    the voice engine) and the result codes are modem.cpp's; the
+ *    interpreter decides whether a line ends with OK, ERROR or no result
+ *    yet, and prints the information commands' text.  The AT manual
+ *    (docs/at/at_commands.tex) describes every command.
  *
  */
 
@@ -25,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include <dsplibs.h>
 
@@ -32,247 +28,758 @@
 
 namespace dcore {
 
-/* toupper + strncmp */
-static int toupper_strncmp(const char *s1, const char *s2, int n)
+namespace {
+
+/* the longest command line: at_line_ holds it and its end */
+const unsigned LINE_CHARS = 63;
+/* &V's lines at most */
+const int PROFILE_COLUMNS = 72;
+
+/* c is a decimal digit */
+bool is_digit(char c)
 {
-	for (int i = 0; i < n; i++)
-		if (toupper(s1[i]) != s2[i])
-			return s1[i] - s2[i];
-	return 0;
+	return isdigit((unsigned char)c) != 0;
 }
 
-/*
- *    command mode: the DTE's characters become command lines
- */
-
-/* the DTE's characters in command mode: the echo (ATE), backspace,
-   A/ (the last line again); a line that starts with AT runs, without
-   its blanks, its result to the DTE; another is blanked out on the
-   DTE's screen; a line too long is an ERROR */
-void Modem::at_process()
+/* c in upper case */
+int upper(char c)
 {
-	int echo = sregs_[SREG_ECHO];
-	char lf = sregs_[SREG_LF_CHAR], cr = sregs_[SREG_CR_CHAR];
-	char bs = sregs_[SREG_BS_CHAR];
-	char ch;
-	int ret;
+	return toupper((unsigned char)c);
+}
 
-	while (get_chars(&ch, 1) > 0) {
-		/* A/: the last command again */
-		if (ch == '/' && at_count_ == 1 &&
-		    toupper(at_line_[0]) == 'A') {
-			at_count_ = strlen(at_line_);
-			if (echo)
-				put_chars(at_line_ + 1, at_count_ - 1);
-			ch = cr;
-		}
-		if (echo)
-			put_chars(&ch, 1);
-		if (ch == cr || ch == lf) {
-			char *p = at_cmd_;
-			at_line_[at_count_] = '\0';
-			for (unsigned i = 0; i < at_count_; i++) {
-				if (at_line_[i] == ' ' || at_line_[i] == '\t')
-					continue;
-				*p++ = at_line_[i];
-			}
-			*p = '\0';
-			if (strlen(at_cmd_) < 2 || toupper(at_cmd_[0]) != 'A' ||
-			    toupper(at_cmd_[1]) != 'T') {
-				memset(at_line_, ' ', at_count_);
-				if (echo) {
-					put_chars(&cr, 1);
-					put_chars(at_line_, at_count_);
-					put_chars(&cr, 1);
-				}
-				at_count_ = 0;
-				continue;
-			}
-			if (echo)
-				crlf();
-			logf("run cmd: %s\n", at_cmd_);
-			ret = at_command(at_cmd_);
-			if (ret < 0)
-				report(Result::Error);
-			else if (ret == 0)
-				report(Result::Ok);
-			at_line_[at_count_] = '\0';
-			at_count_ = 0;
-			echo = sregs_[SREG_ECHO];
-			cr = sregs_[SREG_CR_CHAR];
-			lf = sregs_[SREG_LF_CHAR];
-			bs = sregs_[SREG_BS_CHAR];
-			/* a fax command runs: the rest is the fax engine's */
-			if (ret > 0 && !command_ && fax_)
-				break;
-		} else if (ch == bs && at_count_) {
-			at_count_--;
-			if (echo) {
-				ch = ' ';
-				put_chars(&ch, 1);
-				put_chars(&bs, 1);
-			}
-		} else if (at_count_ == sizeof(at_line_) - 1) {
-			if (echo)
-				crlf();
-			at_count_ = 0;
-			at_line_[1] = '\0';
-			report(Result::Error);
-		} else
-			at_line_[at_count_++] = ch;
+/* the number at p as C's strtoul() with base 0 reads it (0x hex, 0
+   octal, else decimal), *end after it (p if there are no digits: 0) */
+unsigned long number(const char *p, const char **end)
+{
+	char *e;
+	unsigned long v = strtoul(p, &e, 0);
+	*end = e;
+	return v;
+}
+
+/* the decimal digits at p, *end after them (p and 0 if there are
+   none) */
+unsigned long decimal(const char *p, const char **end)
+{
+	char *e;
+	unsigned long v;
+	if (!is_digit(*p)) {
+		*end = p;
+		return 0;
+	}
+	v = strtoul(p, &e, 10);
+	*end = e;
+	return v;
+}
+
+/* v is an item of list: single values and ranges a-b, separated by
+   commas, up to the list's end or a ')' */
+bool in_list(const char *list, unsigned long v)
+{
+	while (is_digit(*list)) {
+		const char *e;
+		unsigned long lo = decimal(list, &e), hi = lo;
+		if (*e == '-')
+			hi = decimal(e + 1, &e);
+		if (v >= lo && v <= hi)
+			return true;
+		if (*e != ',')
+			break;
+		list = e + 1;
+	}
+	return false;
+}
+
+/* the list of range group pos (from 0) of ranges "(...),(...)", after
+   its '('; NULL if there is no such group */
+const char *range_group(const char *ranges, unsigned pos)
+{
+	const char *p = ranges;
+	for (unsigned i = 0;; i++) {
+		p = strchr(p, '(');
+		if (!p)
+			return nullptr;
+		if (i == pos)
+			return p + 1;
+		p++;
 	}
 }
 
 /*
- *    the commands: each gets the text after its letters and sets *len
- *    to what it took of it; returns 0 (OK), 1 (no result now) or -1
- *    (ERROR)
+ *    other modems' setup strings
  */
 
-/* a one digit setting of S-register num (ATE, ATL, ATM...), lo to hi;
-   no digit means 0 */
-int Modem::at_set_sreg(int num, char c, int lo, int hi, int *len)
+/* basic commands taken with no effect: the name, the values taken (with
+   no number 0, but B needs one) */
+const struct {
+	const char *name, *values;
+} taken_cmds[] = {
+	{ "B", "0-3,15,16" }, { "C", "1" }, { "F", "1" }, { "W", "0-2" },
+	{ "&B", "0-2" }, { "&G", "0-2" }, { "&I", "0-5" }, { "&J", "0-1" },
+	{ "&K", "4-6" }, { "&M", "0,4,5" }, { "&N", "0-14" }, { "&W", "0-1" },
+	{ "&Y", "0-1" }, { "\\G", "0-1" }, { "\\J", "0-1" }, { "\\K", "0-5" },
+	{ "\\Q", "0-3" }, { "\\R", "0-1" }, { "\\T", "0-255" },
+	{ "-C", "0-1" }, { "-K", "0-2" }, { "-Q", "0-1" }, { ")M", "0-2" },
+	{ "@M", "0-30" }, { "*H", "0-2" },
+};
+
+/* the command at p is a taken one: *len its characters */
+bool taken(const char *p, int *len)
 {
-	if (!isdigit((unsigned char)c)) {
-		*len = 0;
-		c = '0';
-	} else
-		*len = 1;
-	if (c >= lo + '0' && c <= hi + '0')
-		return set_sreg(num, c - '0');
+	for (const auto &t : taken_cmds) {
+		size_t n = strlen(t.name);
+		const char *e;
+		unsigned long v;
+		if (strncasecmp(p, t.name, n))
+			continue;
+		if (!is_digit(p[n]) && !strcmp(t.name, "B"))
+			continue;
+		v = decimal(p + n, &e);
+		if (!in_list(t.values, v))
+			continue;
+		*len = (int)(e - p);
+		return true;
+	}
+	return false;
+}
+
+/* extended parameters kept with no effect but for +ES (which modem.cpp
+   reads): the name, the values at the start, the range groups (one a
+   value) */
+const struct Kept {
+	const char *name;
+	unsigned n;
+	unsigned long values[Modem::KEPT_VALUES];
+	const char *ranges;
+} kept_params[] = {
+	{ "+IFC", 2, { 2, 2 }, "(0-3),(0-2)" },
+	{ "+ICF", 2, { 3, 3 }, "(1-6),(0-3)" },
+	{ "+IPR", 1, { 0 }, "(0,300,1200,2400,4800,9600,19200,38400,57600,"
+	  "115200,230400,460800,921600)" },
+	{ "+ILRR", 1, { 0 }, "(0,1)" },
+	{ "+IDSR", 1, { 0 }, "(0,1)" },
+	{ "+ILSD", 1, { 0 }, "(0,1)" },
+	{ "+MR", 1, { 0 }, "(0,1)" },
+	{ "+ER", 1, { 0 }, "(0,1)" },
+	{ "+DR", 1, { 0 }, "(0,1)" },
+	{ "+ES", 3, { 3, 0, 2 }, "(0-6),(0-4),(0-8)" },
+	{ "+DS", 4, { 3, 0, 2048, 32 }, "(0-3),(0,1),(512-65535),(6-250)" },
+	{ "+DS44", 9, { 3, 0, 0, 2048, 2048, 255, 255, 6144, 6144 },
+	  "(0-3),(0,1),(0,1),(256-65535),(256-65535),(32-255),(32-255),"
+	  "(512-65535),(512-65535)" },
+	{ "+PCW", 1, { 2 }, "(0-2)" },
+	{ "+PIG", 1, { 1 }, "(0,1)" },
+	{ "+FAA", 1, { 0 }, "(0)" },
+	{ "+FPR", 1, { 0 }, "(0,1,2,4,8,10,18)" },
+	{ "-SEC", 1, { 0 }, "(0,1),(0-30)" },
+};
+const int KEPT_COUNT = sizeof(kept_params) / sizeof(kept_params[0]);
+static_assert(KEPT_COUNT <= Modem::KEPT_PARAMS,
+	      "the kept parameters do not fit the modem's storage");
+
+/* the kept parameter whose name (any case) is at p followed by '=' or
+   '?'; -1 if none is */
+int kept_command(const char *p)
+{
+	for (int i = 0; i < KEPT_COUNT; i++) {
+		size_t n = strlen(kept_params[i].name);
+		if (!strncasecmp(p, kept_params[i].name, n) &&
+		    (p[n] == '=' || p[n] == '?'))
+			return i;
+	}
 	return -1;
 }
 
-/* ATA: answers (no result now) */
-int Modem::at_A(char *, int *)
+/* the kept parameter called name; -1 if there is none */
+int kept_index(const char *name)
 {
-	return answer() ? -1 : 1;
+	for (int i = 0; i < KEPT_COUNT; i++)
+		if (!strcmp(kept_params[i].name, name))
+			return i;
+	return -1;
 }
 
-/* ATB: V.22 at 1200 bit/s only, without automode */
-int Modem::at_B(char *, int *)
+/* \N0 to \N5 as +ES's orig_rqst, orig_fbk, ans_fbk */
+const unsigned long ec_modes[6][3] = {
+	{ 1, 0, 1 }, { 0, 0, 0 }, { 3, 2, 4 }, { 3, 0, 2 }, { 3, 3, 5 },
+	{ 4, 4, 6 },
+};
+
+/*
+ *    +MS
+ */
+
+/* +MS's carrier names (V.250 Table 13, USRobotics' Bell ones, K56flex) */
+const struct {
+	const char *name;
+	unsigned id;
+} ms_names[] = {
+	{ "V21", DP_V21 }, { "V22", DP_V22 }, { "V22B", DP_V22BIS },
+	{ "V23C", DP_V23 }, { "V32", DP_V32 }, { "V32B", DP_V32BIS },
+	{ "V34", DP_V34 }, { "V90", DP_V90 }, { "V91", DP_V91 },
+	{ "V92", DP_V92 }, { "B103", DP_B103 }, { "BELL103", DP_B103 },
+	{ "B212", DP_B212 }, { "BELL212A", DP_B212 }, { "K56", DP_K56 },
+};
+
+/* pump id is registered */
+bool registered(unsigned long id)
 {
-	sregs_[SREG_DP] = DP_V22;
-	sregs_[SREG_AUTOMODE] = 0;
-	min_rate_ = 1200;
-	max_rate_ = 1200;
+	for (const DpDriver *d = dp_drivers(); d->id; d++)
+		if ((unsigned long)d->id == id)
+			return d->op != nullptr;
+	return false;
+}
+
+/* +MS may choose pump id: it has a code and is registered (K56flex
+   while V.90 is, which runs for it) */
+bool ms_choosable(unsigned long id)
+{
+	for (const DpDriver *d = dp_drivers(); d->id; d++)
+		if ((unsigned long)d->id == id)
+			return d->code && (d->op || (id == DP_K56 &&
+						     registered(DP_V90)));
+	return false;
+}
+
+/* +GMI, +GMM, +GMR (and +FMx) by their last letter: the author, the
+   product, the version; NULL for another letter */
+const char *identity(char c)
+{
+	switch (upper(c)) {
+	case 'I':
+		return Modem::author;
+	case 'M':
+		return Modem::product;
+	case 'R':
+		return Modem::version;
+	default:
+		return nullptr;
+	}
+}
+
+/*
+ *    voice
+ */
+
+/* a +V parameter command: the two letters after +V, its values (the
+   fields of struct voice_info, none for +VNH and +VLS), their ranges
+   (a bound 0: none) */
+const struct VoiceSetting {
+	const char *name;
+	int n;
+	unsigned voice_info::*field[2];
+	unsigned lo[2], hi[2];
+} voice_settings[] = {
+	{ "NH", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
+	{ "GT", 1, { &voice_info::tx_gain, nullptr }, { 0, 0 }, { 128, 0 } },
+	{ "GR", 1, { &voice_info::rx_gain, nullptr }, { 0, 0 }, { 128, 0 } },
+	{ "IT", 1, { &voice_info::inactivity_timer, nullptr }, { 0, 0 },
+	  { 255, 0 } },
+	{ "SD", 2, { &voice_info::silence_detect_sensitivity,
+		     &voice_info::silence_detect_period }, { 0, 0 },
+	  { 255, 255 } },
+	{ "SM", 2, { &voice_info::comp_method, &voice_info::sample_rate },
+	  { 0, 8000 }, { 1, 8000 } },
+	{ "LS", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
+};
+
+/* v within the bounds lo and hi (0: none) */
+bool in_bounds(unsigned long v, unsigned lo, unsigned hi)
+{
+	return !(lo && v < lo) && !(hi && v > hi);
+}
+
+} // namespace
+
+/*
+ *    command lines
+ */
+
+/* the DTE's characters waiting in the buffer as command text, one at a
+   time: echoed, edited, made into lines, and each line run when it
+   ends; a line that hands the DTE's characters to the fax engine stops
+   it there */
+void Modem::at_process()
+{
+	/* the line ends: blanks out, a command line runs (its result), any
+	   other is blanked out on the DTE's screen; true if the fax engine
+	   now has the DTE's characters */
+	auto line_end = [this]() {
+		bool echo = sregs_[SREG_ECHO] != 0;
+		char cmd[LINE_CHARS + 1];
+		unsigned typed = at_count_, k = 0;
+		int ret;
+
+		for (unsigned i = 0; i < typed && at_line_[i]; i++)
+			if (at_line_[i] != ' ' && at_line_[i] != '\t')
+				cmd[k++] = at_line_[i];
+		cmd[k] = '\0';
+		at_count_ = 0;
+		if (k < 2 || upper(cmd[0]) != 'A' || upper(cmd[1]) != 'T') {
+			if (echo) {
+				const char *cr = reinterpret_cast<const char *>(
+					&sregs_[SREG_CR_CHAR]);
+				put_chars(cr, 1);
+				for (unsigned i = 0; i < typed; i++)
+					put_chars(" ", 1);
+				put_chars(cr, 1);
+			}
+			if (typed) {
+				memset(at_cmd_, ' ', typed);
+				at_cmd_[typed] = '\0';
+			}
+			return false;
+		}
+		if (echo)
+			crlf();
+		memcpy(at_cmd_, at_line_, typed);
+		at_cmd_[typed] = '\0';
+		logf("run cmd: %s\n", cmd);
+		ret = at_command(cmd);
+		if (!ret)
+			report(Result::Ok);
+		else if (ret < 0)
+			report(Result::Error);
+		return ret > 0 && !command_ && fax_;
+	};
+	char c;
+
+	while (get_chars(&c, 1) == 1) {
+		bool echo = sregs_[SREG_ECHO] != 0;
+		char bs = (char)sregs_[SREG_BS_CHAR];
+
+		/* A/: the last line again, with no line end */
+		if (c == '/' && at_count_ == 1 && upper(at_line_[0]) == 'A') {
+			size_t n = strlen(at_cmd_);
+			if (n > 1) {
+				memcpy(at_line_ + 1, at_cmd_ + 1, n - 1);
+				at_count_ = n;
+				if (echo)
+					put_chars(at_cmd_ + 1, (int)n - 1);
+			}
+			if (echo)
+				put_chars(reinterpret_cast<const char *>(
+						  &sregs_[SREG_CR_CHAR]), 1);
+			if (line_end())
+				return;
+			continue;
+		}
+		if (echo)
+			put_chars(&c, 1);
+		if (c == (char)sregs_[SREG_CR_CHAR] ||
+		    c == (char)sregs_[SREG_LF_CHAR]) {
+			if (line_end())
+				return;
+			continue;
+		}
+		if (c == bs && at_count_) {
+			at_count_--;
+			if (echo) {
+				put_chars(" ", 1);
+				put_chars(&bs, 1);
+			}
+			continue;
+		}
+		if (at_count_ >= LINE_CHARS) {
+			/* too long: ERROR now, the rest a new line */
+			if (echo)
+				crlf();
+			at_count_ = 0;
+			at_cmd_[0] = '\0';
+			report(Result::Error);
+			continue;
+		}
+		at_line_[at_count_++] = c;
+	}
+}
+
+/* a command line (AT and the commands, without blanks), each command in
+   turn until one fails: 0 for OK, < 0 for ERROR, > 0 when the result
+   comes later (the line ends there) */
+int Modem::at_command(char *cmd)
+{
+	char *p;
+
+	if (upper(cmd[0]) != 'A' || upper(cmd[1]) != 'T')
+		return -1;
+	for (p = cmd + 2; *p;) {
+		int len = 1, ret = 0;
+		/* a one-digit setting in S-register reg, skip characters
+		   in */
+		auto setting = [this, &p, &len](int reg, int skip, int lo,
+						int hi) {
+			int k, r = at_set_sreg(reg, p[skip], lo, hi, &k);
+			len = skip + k;
+			return r;
+		};
+
+		if (kept_command(p) >= 0) {
+			ret = at_kept(p, &len);
+		} else if (taken(p, &len)) {
+			ret = 0;
+		} else {
+			switch (upper(*p)) {
+			case ';':
+				break;
+			case 'A':
+				ret = at_A(p, &len);
+				break;
+			case 'B':
+				ret = at_B(p, &len);
+				break;
+			case 'D':
+				ret = at_D(p, &len);
+				break;
+			case 'E':
+				ret = setting(SREG_ECHO, 1, 0, 1);
+				break;
+			case 'H':
+				ret = at_H(p, &len);
+				break;
+			case 'I':
+				ret = at_I(p, &len);
+				break;
+			case 'L':
+				ret = setting(SREG_SPEAKER_VOLUME, 1, 0, 3);
+				if (!ret)
+					update_speaker();
+				break;
+			case 'M':
+				ret = setting(SREG_SPEAKER_CONTROL, 1, 0, 3);
+				if (!ret)
+					update_speaker();
+				break;
+			case 'N':
+				ret = setting(SREG_AUTOMODE, 1, 0, 1);
+				break;
+			case 'O':
+				ret = at_O(p, &len);
+				break;
+			case 'P':
+				sregs_[SREG_TONE_OR_PULSE] = 0;
+				break;
+			case 'Q':
+				ret = setting(SREG_QUIET, 1, 0, 1);
+				break;
+			case 'S':
+				ret = at_S(p, &len);
+				break;
+			case 'T':
+				sregs_[SREG_TONE_OR_PULSE] = 1;
+				break;
+			case 'V':
+				ret = setting(SREG_VERBOSE, 1, 0, 1);
+				break;
+			case 'X':
+				ret = setting(SREG_X_CODE, 1, 0, 4);
+				break;
+			case 'Y':
+				ret = setting(SREG_DEFAULT_SETTING, 1, 0, 3);
+				break;
+			case 'Z':
+				ret = at_Z(p, &len);
+				break;
+			case '#':
+				ret = strncasecmp(p, "#CID", 4) ? -1 :
+					at_CID(p, &len);
+				break;
+			case '%':
+				switch (upper(p[1])) {
+				case 'B':
+					len = 2;
+					break;
+				case 'C':
+					ret = setting(SREG_COMP, 2, 0, 3);
+					break;
+				case 'E':
+					ret = setting(SREG_LINE_QUALITY_CONTROL,
+						      2, 0, 2);
+					break;
+				default:
+					ret = -1;
+					break;
+				}
+				break;
+			case '&':
+				switch (upper(p[1])) {
+				case 'A':
+					ret = setting(SREG_CONNNECT_MSG_FORMAT,
+						      2, 0, 7);
+					break;
+				case 'C':
+					ret = setting(SREG_CD, 2, 0, 1);
+					break;
+				case 'D':
+				case 'F':
+				case 'R':
+				case 'S':
+					len = 2 + is_digit(p[2]);
+					break;
+				case 'E':
+					ret = setting(
+						SREG_CONNNECT_MSG_SPEED_SRC, 2,
+						0, 1);
+					break;
+				case 'H':
+					ret = setting(SREG_FLOW_CONTROL, 2, 0,
+						      3);
+					break;
+				case 'K': {
+					/* USRobotics': as %C */
+					static const unsigned char comp[] = {
+						0, 3, 3, 2,
+					};
+					ret = setting(SREG_COMP, 2, 0, 3);
+					if (!ret)
+						sregs_[SREG_COMP] =
+							comp[sregs_[SREG_COMP]];
+					break;
+				}
+				case 'P':
+					ret = setting(SREG_PULSE_RATIO, 2, 0,
+						      3);
+					break;
+				case 'Q': {
+					/* other modems' error control, as
+					   \N0 or \N3 */
+					int d = is_digit(p[2]) ? p[2] - '0' : 0;
+					len = 2 + is_digit(p[2]);
+					if (d == 0 || d == 6)
+						set_ec_mode(0);
+					else if (d == 5 || d == 8 || d == 9)
+						set_ec_mode(3);
+					else
+						ret = -1;
+					break;
+				}
+				case 'V':
+					ret = at_ampV(p, &len);
+					break;
+				default:
+					ret = -1;
+					break;
+				}
+				break;
+			case '*':
+				if (upper(p[1]) == 'B')
+					len = 2;
+				else
+					ret = -1;
+				break;
+			case '\\':
+				switch (upper(p[1])) {
+				case 'A':
+					ret = setting(SREG_MNP_BLOCK, 2, 0, 3);
+					break;
+				case 'N':
+					ret = setting(SREG_EC, 2, 0, 5);
+					if (!ret)
+						set_ec_mode(sregs_[SREG_EC]);
+					break;
+				case 'V':
+					ret = setting(SREG_CONNECT_PROTOCOL, 2,
+						      0, 2);
+					break;
+				default:
+					ret = -1;
+					break;
+				}
+				break;
+			case '+':
+				switch (upper(p[1])) {
+				case 'F':
+					ret = strncasecmp(p, "+FCLASS", 7) ?
+						at_fax(p, &len) :
+						at_FCLASS(p, &len);
+					break;
+				case 'G':
+					if (!strncasecmp(p, "+GCI", 4)) {
+						ret = at_GCI(p, &len);
+					} else if (!strncasecmp(p, "+GCAP",
+								5)) {
+						puts("+GCAP: +FCLASS,+MS");
+						crlf();
+						len = 5;
+					} else if (upper(p[2]) == 'M' &&
+						   identity(p[3])) {
+						puts(identity(p[3]));
+						crlf();
+						len = p[4] == '?' ? 5 : 4;
+					} else {
+						ret = -1;
+					}
+					break;
+				case 'M':
+					ret = at_MS(p, &len);
+					break;
+				case 'P':
+					ret = at_PMH(p, &len);
+					break;
+				case 'V':
+					ret = at_voice(p, &len);
+					break;
+				default:
+					ret = -1;
+					break;
+				}
+				break;
+			default:
+				ret = -1;
+				break;
+			}
+		}
+		if (ret)
+			return ret;
+		p += len;
+	}
 	return 0;
 }
 
-/* ATD: dials the rest of the line (T, P: tone, pulse; L: the last
-   number again) up to a ';', after which it returns to command state
-   once the number is dialed and runs what follows on the line (V.250);
-   no result now (ERROR for a stored number, S=<n>: there are none) */
-int Modem::at_D(char *p, int *)
+/* a one-digit setting: S-register num to the digit c (none: 0) if it is
+   within lo and hi, *len the digits read (0 or 1); 0, or -1 (the
+   register unchanged) */
+int Modem::at_set_sreg(int num, char c, int lo, int hi, int *len)
 {
-	char *semi = strchr(p, ';');
+	int v = 0;
+	*len = 0;
+	if (is_digit(c)) {
+		v = c - '0';
+		*len = 1;
+	}
+	if (v < lo || v > hi)
+		return -1;
+	sregs_[num] = (unsigned char)v;
+	return 0;
+}
+
+/*
+ *    basic commands
+ */
+
+/* ATA: answers (the held call too); its result later, or ERROR */
+int Modem::at_A(char *p, int *len)
+{
+	*len = (int)strlen(p);
+	return answer() ? -1 : 1;
+}
+
+/* ATB alone: V.22 at 1200 bit/s, no automode (+MS=22,0,1200,1200) */
+int Modem::at_B(char *, int *len)
+{
+	*len = 1;
+	sregs_[SREG_DP] = DP_V22;
+	sregs_[SREG_AUTOMODE] = 0;
+	min_rate_ = max_rate_ = 1200;
+	return 0;
+}
+
+/* ATD<dial string>: the rest of the line; after its first ';' the rest
+   of the line runs once the number is dialled; ATDL the last number
+   again; S=<n> (a stored number) ERROR; its result later, or ERROR */
+int Modem::at_D(char *p, int *len)
+{
+	char *s = p + 1, *semi = strchr(s, ';');
+	char number[LINE_CHARS + 1];
+	size_t n;
+
+	*len = (int)strlen(p);
 	dial_rest_[0] = '\0';
-	for (const char *q = p; *q && q != semi; q++)
-		if (toupper(*q) == 'S' && q[1] == '=' &&
-		    isdigit((unsigned char)q[2]))
+	for (char *q = s; *q && q != semi; q++)
+		if (upper(q[0]) == 'S' && q[1] == '=' && is_digit(q[2]))
 			return -1;
-	switch (toupper(*p)) {
-	case 'T':
-		set_sreg(SREG_TONE_OR_PULSE, 1);
-		break;
-	case 'P':
-		set_sreg(SREG_TONE_OR_PULSE, 0);
-		break;
-	case 'L':
-		/* the last number again */
+	if (upper(*s) == 'L') {
 		if (dial_string_[0]) {
-			put_chars("Dialing ", 8);
+			puts("Dialing ");
 			puts(dial_string_);
-			put_chars("...", 3);
+			puts("...");
 			crlf();
 		}
-		p = nullptr;
-		semi = nullptr;
-		break;
-	default:
-		break;
+		return dial(nullptr) ? -1 : 1;
 	}
+	if (upper(*s) == 'T')
+		sregs_[SREG_TONE_OR_PULSE] = 1;
+	else if (upper(*s) == 'P')
+		sregs_[SREG_TONE_OR_PULSE] = 0;
+	n = semi ? (size_t)(semi + 1 - s) : strlen(s);
+	if (n > LINE_CHARS)
+		n = LINE_CHARS;
+	memcpy(number, s, n);
+	number[n] = '\0';
 	if (semi) {
-		snprintf(dial_rest_, sizeof(dial_rest_), "AT%s", semi + 1);
-		semi[1] = '\0';
+		size_t rest = strlen(semi + 1);
+		if (rest > sizeof(dial_rest_) - 3)
+			rest = sizeof(dial_rest_) - 3;
+		memcpy(dial_rest_, "AT", 2);
+		memcpy(dial_rest_ + 2, semi + 1, rest);
+		dial_rest_[rest + 2] = '\0';
 	}
-	/* the number keeps its T or P: call progress reads it */
-	return dial(p) ? -1 : 1;
+	return dial(number) ? -1 : 1;
 }
 
-/* ATH, ATH0: on hook (hanging up), ATH1: off hook */
+/* ATH, ATH0 on hook (a call hangs up), ATH1 off hook; ERROR when the
+   hook does not change, or for another digit */
 int Modem::at_H(char *p, int *len)
 {
-	int ret;
-	switch (*p) {
-	case '1':
-		*len = 1;
-		ret = hook(MODEM_HOOK_OFF);
-		break;
-	case '0':
-		*len = 1;
-		p++;
-		/* fall through */
-	default:
-		if (isdigit((unsigned char)*p))
+	int state = MODEM_HOOK_ON;
+	*len = 1;
+	if (is_digit(p[1])) {
+		if (p[1] == '1')
+			state = MODEM_HOOK_OFF;
+		else if (p[1] != '0' || is_digit(p[2]))
 			return -1;
-		ret = hook(MODEM_HOOK_ON);
-		break;
+		*len = 2;
 	}
-	return ret ? -1 : 0;
+	return hook(state) ? -1 : 0;
 }
 
-/* ATI0 to ATI7: the product, its version, the device and driver, the
-   S-registers 0 to 23, the stored profiles (none), the country; ATI11
-   the last call's statistics */
+/* ATI<n>: what the modem is, its S-registers, its country, the last
+   call's statistics */
 int Modem::at_I(char *p, int *len)
 {
-	char *end;
-	const char *s;
-	int c = strtoul(p, &end, 0);
-	*len = end - p;
-	switch (c) {
+	const char *e;
+	unsigned long n = number(p + 1, &e);
+	char line[64];
+
+	*len = (int)(e - p);
+	switch (n) {
 	case 0:
 		puts(product);
 		crlf();
 		break;
 	case 1:
 	case 2:
-		puts(product);
-		put_chars(", ", 2);
-		puts(version);
+		snprintf(line, sizeof(line), "%s, %s", product, version);
+		puts(line);
 		crlf();
 		puts(author);
 		crlf();
 		break;
-	case 3:
-		s = dev_name_ ? dev_name_ : "unknown";
-		puts(s);
+	case 3: {
+		const char *driver = host_.driver_name();
+		puts(dev_name_ ? dev_name_ : "unknown");
 		crlf();
-		s = host_.driver_name();
-		puts(s ? s : "unknown");
+		puts(driver ? driver : "unknown");
 		crlf();
 		break;
+	}
 	case 4:
 		for (int i = 0; i < 24; i++) {
-			char str[24];
-			snprintf(str, sizeof(str), "s%.2d=%.3d ", i, sregs_[i]);
-			puts(str);
-			if (!((i + 1) % 8))
+			snprintf(line, sizeof(line), "s%02d=%03d ", i,
+				 sregs_[i]);
+			puts(line);
+			if (i % 8 == 7)
 				crlf();
 		}
 		crlf();
 		break;
 	case 5:
-		put_chars("Stored Profile 0:", 17);
-		crlf();
-		break;
 	case 6:
-		put_chars("Stored Profile 1:", 17);
+		snprintf(line, sizeof(line), "Stored Profile %lu:", n - 5);
+		puts(line);
 		crlf();
 		break;
 	case 7:
-		put_chars("Country: ", 9);
+		puts("Country: ");
 		puts(homolog_->name);
 		crlf();
 		break;
@@ -285,1276 +792,703 @@ int Modem::at_I(char *p, int *len)
 	return 0;
 }
 
-/* ATO: back online (no result now: CONNECT) */
-int Modem::at_O(char *, int *)
+/* ATO: back online (or the held call's handshake); its result later, or
+   ERROR */
+int Modem::at_O(char *p, int *len)
 {
+	*len = (int)strlen(p);
 	return online() ? -1 : 1;
 }
 
-/* ATSn?, ATSn=v: S-register n read or set */
+/* ATS<n>? reads S-register n, ATS<n>=<v> sets it (S103 as \N) */
 int Modem::at_S(char *p, int *len)
 {
-	char *end;
-	unsigned n = strtoul(p, &end, 0);
-	int val;
-	*len = end - p + 1;
-	p = end;
+	const char *e;
+	unsigned long n = number(p + 1, &e), v;
+	char line[16];
+
 	if (n >= sizeof(sregs_))
 		return -1;
-	switch (*p++) {
-	case '?': {
-		char s[16];
-		val = sreg(n);
-		if (val < 0)
-			return -1;
-		snprintf(s, sizeof(s), "%d", val);
-		puts(s);
+	if (*e == '?') {
+		snprintf(line, sizeof(line), "%u", sregs_[n]);
+		puts(line);
 		crlf();
+		*len = (int)(e + 1 - p);
 		return 0;
 	}
-	case '=':
-		val = strtoul(p, &end, 0);
-		*len += end - p;
-		/* S103 is \N: +ES with it */
-		if (n == SREG_EC && val >= 0 && val <= 5) {
-			set_ec_mode(val);
-			return 0;
-		}
-		return set_sreg(n, val);
-	default:
+	if (*e != '=')
 		return -1;
-	}
+	v = number(e + 1, &e);
+	set_sreg((unsigned)n, (int)v);
+	if (n == SREG_EC && v <= 5)
+		set_ec_mode((int)v);
+	*len = (int)(e - p);
+	return 0;
 }
 
-/* ATZ, ATZ0 to 3: reset (there are no profiles) */
+/* ATZ: the modem as at the start (but the country), the rest of the
+   line not read */
 int Modem::at_Z(char *p, int *len)
 {
-	switch (*p) {
-	case '0':
-	case '1':
-	case '2':
-	case '3':
-		*len = 1;
-		break;
-	default:
-		*len = 0;
-		break;
-	}
-	reset();
-	return 0;
+	*len = (int)strlen(p);
+	return reset();
 }
 
-/* AT+GCI=<code in hex>, +GCI=?, +GCI?: the country by its T.35 code */
-int Modem::at_GCI(char *p, int *len)
-{
-	char s[16];
-	char *end;
-	unsigned long n;
-	switch (*p) {
-	case '=':
-		p++;
-		*len = 1;
-		if (*p == '?') {        /* the country codes */
-			*len += 1;
-			puts("+GCI:");
-			put_chars("(", 1);
-			for (const struct homolog_set *h = homolog_set;
-			     h->name; h++) {
-				snprintf(s, sizeof(s), "%x,", h->id);
-				puts(s);
-			}
-			put_chars(")", 1);
-			crlf();
-		} else {
-			n = strtoul(p, &end, 16);
-			if (end == p)
-				return -1;
-			*len += end - p;
-			if (homolog_init(n, nullptr))
-				return -1;
-		}
-		break;
-	case '?':
-		snprintf(s, sizeof(s), "%x", homolog_->id);
-		put_chars("+GCI:", 5);
-		puts(s);
-		crlf();
-		*len = 1;
-		break;
-	default:
-		*len = 0;
-		return -1;
-	}
-	return 0;
-}
-
-/* V.92 modem-on-hold (V.250's +PMH, +PMHT, +PMHR): +PMH=0 or 1 lets
-   the remote put us on hold or not, +PMHT=<0..13> is the T1 code we
-   grant (Table 33/V.92; 0 denies), +PMHR asks the remote to go on hold
-   (in online command mode, on a V.92 connection) */
-int Modem::at_PMH(char *p, int *len)
-{
-	char s[32];
-	int *v = &moh_off_, hi = 1;
-	const char *name = "+PMH";
-
-	*len = 0;
-	switch (toupper(*p)) {
-	case 'R':
-		/* (=<s>: how long we keep it on hold, 10 s otherwise) */
-		*len = 1;
-		if (state_ != COMMAND_ONLINE || !dp_ || dp_->id != DP_V92)
-			return -1;
-		moh_req_ = 10;
-		if (p[1] == '=' && isdigit((unsigned char)p[2])) {
-			char *end;
-			long n = strtol(p + 2, &end, 10);
-			if (n < 1 || n > 960)
-				return -1;
-			moh_req_ = (int)n;
-			*len += end - (p + 1);
-		}
-		return 0;
-	case 'T':
-		v = &moh_timer_;
-		hi = 13;
-		name = "+PMHT";
-		p++;
-		*len = 1;
-		break;
-	}
-	switch (*p) {
-	case '=':
-		if (p[1] == '?') {
-			snprintf(s, sizeof(s), "%s: (0-%d)", name, hi);
-			puts(s);
-			crlf();
-			*len += 2;
-			return 0;
-		}
-		if (!isdigit((unsigned char)p[1]))
-			return -1;
-		{
-			char *end;
-			long n = strtol(p + 1, &end, 10);
-			if (n < 0 || n > hi)
-				return -1;
-			*v = (int)n;
-			*len += end - p;
-		}
-		return 0;
-	case '?':
-		snprintf(s, sizeof(s), "%s: %d", name, *v);
-		puts(s);
-		crlf();
-		*len += 1;
-		return 0;
-	}
-	return -1;
-}
-
-/* AT+MS's carriers by V.250's names (and USRobotics' Bell ones): the
-   pump ids */
-static const struct {
-	const char *name;
-	unsigned id;
-} ms_names[] = {
-	{ "V21", DP_V21 }, { "V22", DP_V22 }, { "V22B", DP_V22BIS },
-	{ "V23C", DP_V23 }, { "V32", DP_V32 }, { "V32B", DP_V32BIS },
-	{ "V34", DP_V34 }, { "V90", DP_V90 }, { "V91", DP_V91 },
-	{ "V92", DP_V92 }, { "B103", DP_B103 }, { "BELL103", DP_B103 },
-	{ "B212", DP_B212 }, { "BELL212A", DP_B212 }, { "K56", DP_K56 },
-};
-
-/* AT+MS can ask for pump d: one registered, or K56flex while V.90 is
-   (change_dp() runs V.90 for it: K56flex is not there) */
-static bool ms_choice(const DpDriver *d)
-{
-	if (!d->code)
-		return false;
-	if (d->op)
-		return true;
-	if (d->id != DP_K56)
-		return false;
-	for (const DpDriver *v = dp_drivers(); v->id; v++)
-		if (v->id == DP_V90)
-			return v->op != nullptr;
-	return false;
-}
-
-/* AT+MS=[mod][,[automode][,[min][,[max]]]] (mod: a registered pump's
-   id, or 56, the rates in bit/s), +MS=?, +MS? */
-int Modem::at_MS(char *p, int *len)
-{
-	char s[32];
-	char *end;
-	unsigned long n;
-	unsigned dp_id;
-	int auto_mode, min_rate, max_rate, found = 0;
-
-	switch (*p) {
-	case '=':
-		p++;
-		*len = 1;
-		if (*p == '?') {
-			*len += 1;
-			put_chars("(", 1);
-			for (DpDriver *d = dp_drivers(); d->id; d++) {
-				if (!ms_choice(d))
-					continue;
-				if (found++ > 0)
-					put_chars(",", 1);
-				snprintf(s, sizeof(s), "%d", d->id);
-				puts(s);
-			}
-			put_chars("),(0,1),", 8);
-			snprintf(s, sizeof(s), "(%u-%u),", MODEM_MIN_RATE,
-				 MODEM_MAX_RATE);
-			puts(s);
-			put_chars(s, strlen(s) - 1);
-			crlf();
-			break;
-		}
-		dp_id = sregs_[SREG_DP];
-		auto_mode = sregs_[SREG_AUTOMODE];
-		min_rate = min_rate_;
-		max_rate = max_rate_;
-		/* AT+MS=[dp][,[automode][,[min][,[max]]]], dp a number or a
-		   name */
-		{
-			int *items[3] = { &auto_mode, &min_rate, &max_rate };
-			int i = 0;
-			if (isalpha((unsigned char)*p)) {
-				size_t n = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-						  "abcdefghijklmnopqrstuvwxyz"
-						  "0123456789");
-				bool known = false;
-				for (const auto &m : ms_names)
-					if (strlen(m.name) == n &&
-					    !toupper_strncmp(p, m.name, n)) {
-						dp_id = m.id;
-						known = true;
-					}
-				if (!known)
-					return -1;
-				*len += n;
-				p += n;
-				i = 1;
-				if (*p == ',') {
-					*len += 1;
-					p++;
-				} else
-					i = 4;
-			}
-			for (; i < 4; i++) {
-				n = strtoul(p, &end, 0);
-				if (end != p) {
-					if (i == 0)
-						dp_id = n;
-					else
-						*items[i - 1] = n;
-				}
-				*len += end - p;
-				p = end;
-				if (*p != ',')
-					break;
-				*len += 1;
-				p++;
-			}
-		}
-		if (dp_id != sregs_[SREG_DP]) {
-			for (DpDriver *d = dp_drivers(); d->id; d++)
-				if (ms_choice(d) && (unsigned)d->id == dp_id) {
-					found++;
-					break;
-				}
-			if (!found)
-				return -1;
-		}
-		if ((auto_mode != 0 && auto_mode != 1) || min_rate > max_rate ||
-		    min_rate < MODEM_MIN_RATE || max_rate > MODEM_MAX_RATE)
-			return -1;
-		sregs_[SREG_DP] = dp_id;
-		sregs_[SREG_AUTOMODE] = auto_mode;
-		min_rate_ = min_rate;
-		max_rate_ = max_rate;
-		break;
-	case '?':
-		snprintf(s, sizeof(s), "%d,%d,%u,%u", sregs_[SREG_DP],
-			 sregs_[SREG_AUTOMODE], min_rate_, max_rate_);
-		puts(s);
-		crlf();
-		*len = 1;
-		break;
-	default:
-		*len = 0;
-		return -1;
-	}
-	return 0;
-}
-
-/* AT+FCLASS=0, 1, 8 (data, fax class 1, voice), =?, ? */
-int Modem::at_FCLASS(char *p, int *len)
-{
-	if (*p == '=') {
-		p++;
-		*len += 2;
-		if (*p == '?') {
-			put_chars("0,1,8", 5);
-			crlf();
-		} else if (isdigit((unsigned char)*p)) {
-			int val = *p - '0';
-			if (val != 0 && val != 1 && val != 8)
-				return -1;
-			return set_mode((enum MODEM_MODE)val);
-		} else
-			return -1;
-	} else if (*p == '?') {
-		char ch = '0' + mode_;
-		*len += 1;
-		put_chars(&ch, 1);
-		crlf();
-	} else
-		return -1;
-	return 0;
-}
-
-/* AT#CID=0 to 2 (and AT+VCID): caller ID off or on, =?, ? */
-int Modem::at_CID(char *p, int *len)
-{
-	if (*p == '=') {
-		p++;
-		*len += 2;
-		if (*p == '?') {
-			put_chars("0,1,2", 5);
-			crlf();
-		} else if (isdigit((unsigned char)*p) && *p - '0' < 3)
-			cid_requested_ = *p - '0';
-		else
-			return -1;
-	} else if (*p == '?') {
-		char ch = '0' + cid_requested_;
-		*len += 1;
-		put_chars(&ch, 1);
-		crlf();
-	} else
-		return -1;
-	return 0;
-}
-
-/*
- *    voice
- */
-
-/* a numeric parameter of a voice command: where it goes, its range
-   (0: no bound) */
-struct Modem::VoiceParam {
-	unsigned *val;
-	unsigned min, max;
-};
-
-/* the parameters of voice command cmd: =? the ranges, ? the values,
-   =a,b,c new values (each in its range, between prefix and suffix
-   when given), set only if all are good */
-int Modem::voice_params(char *p, const char *cmd, VoiceParam *param,
-			int *len, const char *prefix, const char *suffix)
-{
-	char s[32];
-	unsigned val[3];
-	VoiceParam *prm;
-	char *end;
-	int i;
-
-	*len += 1;
-	if (*p == '=') {
-		p++;
-		if (*p == '?') {
-			*len += 1;
-			snprintf(s, sizeof(s), "+%s=", cmd);
-			puts(s);
-			if (prefix)
-				puts(prefix);
-			for (prm = param; prm->val; ) {
-				snprintf(s, sizeof(s), "%d-%d", prm->min,
-					 prm->max);
-				puts(s);
-				prm++;
-				if (prm->val)
-					put_chars(",", 1);
-			}
-			if (suffix)
-				puts(suffix);
-			crlf();
-			return 0;
-		}
-		if (prefix) {
-			if (strncmp(p, prefix, strlen(prefix)))
-				return -1;
-			p += strlen(prefix);
-			*len += strlen(prefix);
-		}
-		prm = param;
-		for (i = 0; prm->val && i < 3; i++) {
-			val[i] = strtoul(p, &end, 0);
-			if ((prm->min && val[i] < prm->min) ||
-			    (prm->max && val[i] > prm->max))
-				return -1;
-			*len += end - p;
-			p = end;
-			prm++;
-			if (prm->val) {
-				if (*p != ',')
-					return -1;
-				*len += 1;
-				p++;
-			}
-		}
-		if (suffix) {
-			if (strncmp(p, suffix, strlen(suffix)))
-				return -1;
-			*len += strlen(suffix);
-		}
-		prm = param;
-		for (i = 0; prm->val && i < 3; i++, prm++)
-			*prm->val = val[i];
-		return 0;
-	} else if (*p == '?') {
-		snprintf(s, sizeof(s), "+%s=", cmd);
-		puts(s);
-		if (prefix)
-			puts(prefix);
-		for (prm = param; prm->val; ) {
-			snprintf(s, sizeof(s), "%d", *prm->val);
-			puts(s);
-			prm++;
-			if (prm->val)
-				put_chars(",", 1);
-		}
-		if (suffix)
-			puts(suffix);
-		crlf();
-		return 0;
-	}
-	return -1;
-}
-
-/* AT+V... in voice mode: +VIP, +VNH, +VGT, +VGR, +VIT, +VSD, +VSM,
-   +VLS, +VTX, +VRX, +VTR, +VTS (a tone [f1,f2,d], a DTMF digit {s,d}
-   or s) */
-int Modem::at_voice(char *p, int *len)
-{
-	voice_info &v = voice_info_;
-	*len += 2;
-	if (!toupper_strncmp(p, "IP", 2)) {             /* +VIP */
-		voice_init();
-		return 0;
-	} else if (!toupper_strncmp(p, "NH", 2)) {      /* +VNH=0,1 */
-		unsigned val = 0;
-		VoiceParam params[] = { { &val, 0, 1 }, {} };
-		return voice_params(p + 2, "VNH", params, len, nullptr, nullptr);
-	} else if (!toupper_strncmp(p, "GT", 2)) {      /* +VGT=127 */
-		VoiceParam params[] = { { &v.tx_gain, 0, 128 }, {} };
-		return voice_params(p + 2, "VGT", params, len, nullptr, nullptr);
-	} else if (!toupper_strncmp(p, "GR", 2)) {      /* +VGR=127 */
-		VoiceParam params[] = { { &v.rx_gain, 0, 128 }, {} };
-		return voice_params(p + 2, "VGR", params, len, nullptr, nullptr);
-	} else if (!toupper_strncmp(p, "IT", 2)) {      /* +VIT= */
-		VoiceParam params[] = { { &v.inactivity_timer, 0, 255 }, {} };
-		return voice_params(p + 2, "VIT", params, len, nullptr, nullptr);
-	} else if (!toupper_strncmp(p, "SD", 2)) {      /* +VSD=128,50 */
-		VoiceParam params[] = {
-			{ &v.silence_detect_sensitivity, 0, 255 },
-			{ &v.silence_detect_period, 0, 255 }, {} };
-		return voice_params(p + 2, "VSD", params, len, nullptr, nullptr);
-	} else if (!toupper_strncmp(p, "SM", 2)) {      /* +VSM=1,8000 */
-		VoiceParam params[] = {
-			{ &v.comp_method, 0, 1 },
-			{ &v.sample_rate, 8000, 8000 }, {} };
-		return voice_params(p + 2, "VSM", params, len, nullptr, nullptr);
-	} else if (!toupper_strncmp(p, "LS", 2)) {      /* +VLS=1 */
-		unsigned dev = voice_ != nullptr;
-		VoiceParam params[] = { { &dev, 0, 1 }, {} };
-		int ret = voice_params(p + 2, "VLS", params, len, nullptr,
-				       nullptr);
-		if (ret)
-			return ret;
-		return voice_set_device(dev);
-	} else if (!toupper_strncmp(p, "TX", 2))
-		return voice_command(VOICE_CMD_STATE_TX);
-	else if (!toupper_strncmp(p, "RX", 2))
-		return voice_command(VOICE_CMD_STATE_RX);
-	else if (!toupper_strncmp(p, "TR", 2))
-		return voice_command(VOICE_CMD_STATE_DUPLEX);
-	else if (!toupper_strncmp(p, "TS", 2)) {        /* +VTS=[933,,150] */
-		int orig_len, ret;
-		p += 2;
-		orig_len = *len;
-		{
-			VoiceParam params[] = {
-				{ &v.tone1_freq, 0, 0 },
-				{ &v.tone2_freq, 0, 0 },
-				{ &v.tone_duration, 0, 6000 }, {} };
-			if (*p == '?' || (*p == '=' && p[1] == '?'))
-				return voice_params(p, "VTS", params, len,
-						    nullptr, nullptr);
-			ret = voice_params(p, "VTS", params, len, "[", "]");
-			if (!ret)
-				return voice_command(VOICE_CMD_BEEP);
-		}
-		{
-			VoiceParam params[] = {
-				{ &v.dtmf_symbol, 0, 0 },
-				{ &v.tone_duration, 0, 100 }, {} };
-			*len = orig_len;
-			ret = voice_params(p, "VTS", params, len, "{", "}");
-			if (!ret)
-				return voice_command(VOICE_CMD_DTMF);
-		}
-		{
-			VoiceParam params[] = { { &v.dtmf_symbol, 0, 0 }, {} };
-			*len = orig_len;
-			ret = voice_params(p, "VTS", params, len, nullptr,
-					   nullptr);
-			if (!ret)
-				return voice_command(VOICE_CMD_DTMF);
-		}
-		return -1;
-	}
-	return -1;
-}
-
-/*
- *    fax class 1
- */
-
-/* a class 1 action command for the fax engine: once it runs, what the
-   DTE sends is the engine's until its result (its data, or the
-   character that aborts a receive command: T.31 8.3), commands after
-   that */
-int Modem::fax_command(enum FAX_CMD cmd, unsigned val)
-{
-	int ret = FAX_class1_command(fax_, cmd, val);
-	if (ret > 0)
-		command_ = false;
-	return ret;
-}
-
-/* class 1 fax: AT+FTS=, +FRS= (silence, 10 ms units), +FTM=, +FRM=
-   (data at a modulation, =? the list), +FTH=, +FRH= (HDLC frames, 3:
-   V.21) */
-int Modem::at_fax(char *p, int *len)
-{
-	static const char rates[] = "24,48,72,73,74,96,97,98,121,122,145,146";
-	unsigned val;
-	char *end;
-	*len += 2;
-	if (!toupper_strncmp(p, "TS=", 3) || !toupper_strncmp(p, "RS=", 3)) {
-		/* +FTS=, +FRS= */
-		enum FAX_CMD cmd = toupper(*p) == 'T' ? FAX_CMD_FTS :
-			FAX_CMD_FRS;
-		*len += 1;
-		p += 3;
-		val = strtoul(p, &end, 0);
-		if (p == end)
-			return -1;
-		*len += end - p;
-		return fax_command(cmd, val);
-	} else if (!toupper_strncmp(p, "TM=", 3) ||
-		   !toupper_strncmp(p, "RM=", 3)) {
-		/* +FTM=, +FRM= */
-		enum FAX_CMD cmd = toupper(*p) == 'T' ? FAX_CMD_FTM :
-			FAX_CMD_FRM;
-		*len += 2;
-		p += 3;
-		if (*p == '?') {
-			puts(rates);
-			crlf();
-			return 0;
-		}
-		val = strtoul(p, &end, 0);
-		if (p == end)
-			return -1;
-		*len += end - p - 1;
-		return fax_command(cmd, val);
-	} else if (!toupper_strncmp(p, "RH=", 3) ||
-		   !toupper_strncmp(p, "TH=", 3)) {
-		/* +FRH=, +FTH= */
-		enum FAX_CMD cmd = toupper(*p) == 'T' ? FAX_CMD_FTH :
-			FAX_CMD_FRH;
-		*len += 2;
-		p += 3;
-		if (*p == '?') {
-			put_chars("3", 1);
-			crlf();
-			return 0;
-		} else if (isdigit((unsigned char)*p))
-			return fax_command(cmd, *p - '0');
-		return -1;
-	}
-	return -1;
-}
-
-/*
- *    the commands of other modems' setup strings (V.250's, Rockwell's
- *    and Conexant's, USRobotics'), taken with no effect so that such a
- *    setup string does not end in ERROR: flow control (the pty does
- *    its own), reports, profiles, tones and settings the modulations
- *    have no use for
- */
-
-/* v is in values, a list of numbers and ranges ("0-3,15,16") */
-static bool in_values(const char *values, unsigned long v)
-{
-	while (*values) {
-		char *end;
-		unsigned long lo = strtoul(values, &end, 10), hi = lo;
-		if (end == values)
-			break;
-		if (*end == '-')
-			hi = strtoul(end + 1, &end, 10);
-		if (v >= lo && v <= hi)
-			return true;
-		values = *end == ',' ? end + 1 : end;
-	}
-	return false;
-}
-
-/* a basic command taken: its letters and its values (without a number:
-   0, unless it needs one) */
-static const struct {
-	const char *name, *values;
-	bool number;
-} taken_cmds[] = {
-	{ "B", "0-3,15,16", true },     /* ITU or Bell at 1200 and 300 bit/s
-					   (ATB alone: V.22) */
-	{ "C", "1", false },            /* the carrier on */
-	{ "F", "1", false },            /* no echo of data online */
-	{ "W", "0-2", false },          /* what CONNECT says (&A, &E here) */
-	{ "&B", "0-2", false },         /* V.32 retrains (USRobotics': the
-					   DTE's rate fixed) */
-	{ "&G", "0-2", false },         /* the V.22bis guard tone */
-	{ "&I", "0-5", false },         /* XON/XOFF (USRobotics') */
-	{ "&J", "0-1", false },         /* the auxiliary relay */
-	{ "&K", "4-6", false },         /* flow control (&K0 to 3: here the
-					   compression) */
-	{ "&M", "0,4,5", false },       /* asynchronous (USRobotics': error
-					   control: \N's here) */
-	{ "&N", "0-14", false },        /* the rate (USRobotics') */
-	{ "&W", "0-1", false },         /* the profile stored: none is */
-	{ "&Y", "0-1", false },         /* the profile at power on */
-	{ "\\G", "0-1", false },        /* XON/XOFF to the other modem */
-	{ "\\J", "0-1", false },        /* the DTE's rate */
-	{ "\\K", "0-5", false },        /* breaks */
-	{ "\\Q", "0-3", false },        /* flow control */
-	{ "\\R", "0-1", false },        /* the ring indicator */
-	{ "\\T", "0-255", false },      /* the inactivity timer */
-	{ "-C", "0-1", false },         /* the calling tone */
-	/* Rockwell's MNP 10 and 10EC (cellular): power levels, the link's
-	   speed, the V.22bis fallback, MNP Extended Services */
-	{ "-K", "0-2", false },
-	{ "-Q", "0-1", false },
-	{ ")M", "0-2", false },
-	{ "@M", "0-30", false },
-	{ "*H", "0-2", false },
-};
-
-/* p at a command's letters: true if it is a basic command taken, *len
-   its letters and number; false if not (another command, or a value
-   the command has a meaning for here, or ERROR) */
-static bool at_taken(const char *p, int *len)
-{
-	for (const auto &t : taken_cmds) {
-		int n = strlen(t.name);
-		unsigned long v = 0;
-		char *end = (char *)p + n;
-		if (toupper_strncmp(p, t.name, n))
-			continue;
-		if (isdigit((unsigned char)p[n]))
-			v = strtoul(p + n, &end, 10);
-		else if (t.number)
-			return false;
-		if (!in_values(t.values, v))
-			return false;
-		*len = end - p;
-		return true;
-	}
-	return false;
-}
-
-/* an extended parameter kept: its name, its default and its ranges (as
-   =? gives them); ? gives the values after the name and a colon, or
-   (-SEC, Rockwell's) alone */
-static const struct {
-	const char *name, *dflt, *ranges;
-} kept_params[] = {
-	{ "+IFC", "2,2", "(0-3),(0-2)" },       /* flow control */
-	{ "+ICF", "3,3", "(1-6),(0-3)" },       /* character framing */
-	{ "+IPR", "0", "(0,300,1200,2400,4800,9600,19200,38400,57600,"
-		"115200,230400,460800,921600)" },       /* the DTE's rate */
-	{ "+ILRR", "0", "(0,1)" },              /* the DTE's rate reported */
-	{ "+IDSR", "0", "(0,1)" },              /* DSR */
-	{ "+ILSD", "0", "(0,1)" },              /* long space disconnect */
-	{ "+MR", "0", "(0,1)" },                /* modulation reported */
-	{ "+ER", "0", "(0,1)" },                /* error control reported */
-	{ "+DR", "0", "(0,1)" },                /* compression reported */
-	{ "+ES", "3,0,2", "(0-6),(0-4),(0-8)" },        /* error control */
-	{ "+DS", "3,0,2048,32", "(0-3),(0,1),(512-65535),(6-250)" },
-	{ "+DS44", "3,0,0,2048,2048,255,255,6144,6144",
-		"(0-3),(0,1),(0,1),(256-65535),(256-65535),(32-255),"
-		"(32-255),(512-65535),(512-65535)" },
-	{ "+PCW", "2", "(0-2)" },               /* call waiting */
-	{ "+PIG", "1", "(0,1)" },               /* V.92 PCM upstream */
-	{ "+FAA", "0", "(0)" },                 /* fax adaptive answer */
-	{ "+FPR", "0", "(0,1,2,4,8,10,18)" },   /* the fax DTE's rate */
-	{ "-SEC", "0", "(0,1),(0-30)" },        /* MNP 10EC, tx level */
-};
-static_assert(sizeof(kept_params) / sizeof(kept_params[0]) <=
-	      Modem::KEPT_PARAMS, "KEPT_PARAMS");
-
-/* the values of a list ("3,0,2") into v, how many */
-static unsigned kept_values(const char *s, unsigned long *v)
-{
-	unsigned n = 0;
-	while (*s && n < Modem::KEPT_VALUES) {
-		char *end;
-		v[n++] = strtoul(s, &end, 10);
-		s = *end == ',' ? end + 1 : end;
-	}
-	return n;
-}
-
-/* v is in group k of ranges ("(0-3),(0-2)") */
-static bool kept_in_range(const char *ranges, unsigned k, unsigned long v)
-{
-	char group[128];
-	const char *g = ranges;
-	for (unsigned i = 0; g && i < k; i++)
-		g = strchr(g + 1, '(');
-	if (!g || *g != '(')
-		return false;
-	size_t n = strcspn(g + 1, ")");
-	if (n >= sizeof(group))
-		return false;
-	memcpy(group, g + 1, n);
-	group[n] = '\0';
-	return in_values(group, v);
-}
-
-/* the kept parameters' defaults (ATZ) */
-void Modem::kept_init()
-{
-	for (size_t i = 0; i < sizeof(kept_params) / sizeof(kept_params[0]);
-	     i++)
-		kept_n_[i] = kept_values(kept_params[i].dflt, kept_[i]);
-}
-
-/* p at a command's letters: a kept parameter's =<values>, ? or =?
-   (0, or -1 for a value out of its range, *len what it took), or -2
-   if p is not one */
-int Modem::at_kept(const char *p, int *len)
-{
-	for (size_t i = 0; i < sizeof(kept_params) / sizeof(kept_params[0]);
-	     i++) {
-		const char *name = kept_params[i].name;
-		int n = strlen(name);
-		bool bare = name[0] == '-';
-		char s[160];
-		if (toupper_strncmp(p, name, n) || (p[n] != '=' && p[n] != '?'))
-			continue;
-		const char *q = p + n;
-		if (*q == '?' || q[1] == '?') {
-			size_t m = 0;
-			if (*q == '?') {        /* the values */
-				if (!bare)
-					m = snprintf(s, sizeof(s), "%s: ", name);
-				for (unsigned k = 0; k < kept_n_[i] &&
-				     m < sizeof(s); k++)
-					m += snprintf(s + m, sizeof(s) - m,
-						      k ? ",%lu" : "%lu",
-						      kept_[i][k]);
-			} else                  /* the ranges */
-				snprintf(s, sizeof(s), "%s: %s", name,
-					 kept_params[i].ranges);
-			puts(s);
-			crlf();
-			*len = q - p + (*q == '?' ? 1 : 2);
-			return 0;
-		}
-		/* =<values>, each in its range; one left out stays */
-		unsigned long v[KEPT_VALUES];
-		unsigned count = kept_n_[i], k = 0;
-		memcpy(v, kept_[i], sizeof(v));
-		q++;
-		if (*q && *q != ',' && *q != ';' &&
-		    !isdigit((unsigned char)*q))
-			return -1;
-		for (;; k++) {
-			if (isdigit((unsigned char)*q)) {
-				char *end;
-				unsigned long val = strtoul(q, &end, 10);
-				if (k >= KEPT_VALUES ||
-				    !kept_in_range(kept_params[i].ranges, k,
-						   val))
-					return -1;
-				v[k] = val;
-				if (k >= count)
-					count = k + 1;
-				q = end;
-			}
-			if (*q != ',')
-				break;
-			q++;
-		}
-		memcpy(kept_[i], v, sizeof(v));
-		kept_n_[i] = count;
-		*len = q - p;
-		if (!strcmp(name, "+ES"))
-			ec_mode_from_es();
-		return 0;
-	}
-	return -2;
-}
-
-/* a kept parameter's values; its name must be in kept_params */
-const unsigned long *Modem::kept(const char *name) const
-{
-	for (size_t i = 0; i < sizeof(kept_params) / sizeof(kept_params[0]);
-	     i++)
-		if (!strcmp(kept_params[i].name, name))
-			return kept_[i];
-	abort();
-}
-
-/* \N0 to \N5 (Smart Link's, Rockwell's) as +ES (V.250's orig_rqst,
-   orig_fbk, ans_fbk): normal and direct without error correction,
-   reliable (LAPM or MNP, required), auto-reliable (LAPM, MNP or none),
-   LAPM only, MNP only */
-static const unsigned long ec_modes[6][3] = {
-	{ 1, 0, 1 }, { 0, 0, 0 }, { 3, 2, 4 }, { 3, 0, 2 }, { 3, 3, 5 },
-	{ 4, 4, 6 },
-};
-
-/* \N<n>: S103 and +ES */
-void Modem::set_ec_mode(int n)
-{
-	sregs_[SREG_EC] = (unsigned char)n;
-	for (size_t i = 0; i < sizeof(kept_params) / sizeof(kept_params[0]);
-	     i++)
-		if (!strcmp(kept_params[i].name, "+ES")) {
-			memcpy(kept_[i], ec_modes[n], sizeof(ec_modes[n]));
-			kept_n_[i] = 3;
-		}
-}
-
-/* +ES set: S103 the \N that has its values (as it was if none has) */
-void Modem::ec_mode_from_es()
-{
-	const unsigned long *es = kept("+ES");
-	for (int n = 0; n < 6; n++)
-		if (!memcmp(es, ec_modes[n], sizeof(ec_modes[n])))
-			sregs_[SREG_EC] = (unsigned char)n;
-}
-
-/* AT&V, AT&V0: the active settings (no profiles are stored): the basic
-   commands, the S-registers in use, the extended settings and the
-   parameters kept for other modems' setup strings, in lines of 72
-   columns at most */
+/* AT&V, AT&V0: the active settings, in lines of PROFILE_COLUMNS at
+   most */
 int Modem::at_ampV(char *p, int *len)
 {
-	static const struct {
-		const char *fmt;
-		int reg;
-	} basic[] = {
-		{ "E%d", SREG_ECHO }, { "L%d", SREG_SPEAKER_VOLUME },
-		{ "M%d", SREG_SPEAKER_CONTROL }, { "N%d", SREG_AUTOMODE },
-		{ "Q%d", SREG_QUIET }, { nullptr, SREG_TONE_OR_PULSE },
-		{ "V%d", SREG_VERBOSE }, { "X%d", SREG_X_CODE },
-		{ "Y%d", SREG_DEFAULT_SETTING },
-		{ "&A%d", SREG_CONNNECT_MSG_FORMAT }, { "&C%d", SREG_CD },
-		{ "&E%d", SREG_CONNNECT_MSG_SPEED_SRC },
-		{ "&H%d", SREG_FLOW_CONTROL }, { "&P%d", SREG_PULSE_RATIO },
-		{ "\\A%d", SREG_MNP_BLOCK }, { "\\N%d", SREG_EC },
-		{ "\\V%d", SREG_CONNECT_PROTOCOL }, { "%%C%d", SREG_COMP },
-		{ "%%E%d", SREG_LINE_QUALITY_CONTROL },
-	};
 	static const unsigned char regs[] = {
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24,
 		28, 29, 30, 31, 32, 39, 56, 60, 62, 70, 71, 92, 103, 104, 105,
 		106, 161,
 	};
-	char line[160], item[160];
-	size_t n = 0;
-	/* an item on the line, or on the next one */
-	auto add = [&](const char *it) {
-		size_t k = strlen(it);
-		if (n && n + 1 + k > 72) {
-			puts(line);
+	char item[96];
+	int col = 0;
+	/* an item of the current group, on a new line if it does not fit
+	   on this one */
+	auto put = [this, &col](const char *s) {
+		int n = (int)strlen(s);
+		if (col && col + 1 + n > PROFILE_COLUMNS) {
 			crlf();
-			n = 0;
+			col = 0;
 		}
-		n += snprintf(line + n, sizeof(line) - n, n ? " %s" : "%s", it);
-		if (n >= sizeof(line))
-			n = sizeof(line) - 1;
+		if (col) {
+			puts(" ");
+			col++;
+		}
+		puts(s);
+		col += n;
 	};
-	/* the line so far */
-	auto flush = [&]() {
-		if (n) {
-			puts(line);
+	/* the group ends with its line */
+	auto end = [this, &col]() {
+		if (col)
 			crlf();
-		}
-		n = 0;
+		col = 0;
 	};
 
-	*len = 0;
-	if (isdigit((unsigned char)*p)) {
-		if (*p != '0')
-			return -1;
-		*len = 1;
-	}
+	if (is_digit(p[2]) && p[2] != '0')
+		return -1;
+	*len = 2 + is_digit(p[2]);
 	puts("ACTIVE PROFILE:");
 	crlf();
-	for (const auto &b : basic) {
-		if (b.fmt)
-			snprintf(item, sizeof(item), b.fmt, sregs_[b.reg]);
-		else
-			snprintf(item, sizeof(item), "%s",
-				 sregs_[b.reg] ? "T" : "P");
-		add(item);
-	}
-	flush();
-	for (unsigned r : regs) {
+	snprintf(item, sizeof(item), "E%u", sregs_[SREG_ECHO]);
+	put(item);
+	snprintf(item, sizeof(item), "L%u", sregs_[SREG_SPEAKER_VOLUME]);
+	put(item);
+	snprintf(item, sizeof(item), "M%u", sregs_[SREG_SPEAKER_CONTROL]);
+	put(item);
+	snprintf(item, sizeof(item), "N%u", sregs_[SREG_AUTOMODE]);
+	put(item);
+	snprintf(item, sizeof(item), "Q%u", sregs_[SREG_QUIET]);
+	put(item);
+	put(sregs_[SREG_TONE_OR_PULSE] ? "T" : "P");
+	snprintf(item, sizeof(item), "V%u", sregs_[SREG_VERBOSE]);
+	put(item);
+	snprintf(item, sizeof(item), "X%u", sregs_[SREG_X_CODE]);
+	put(item);
+	snprintf(item, sizeof(item), "Y%u", sregs_[SREG_DEFAULT_SETTING]);
+	put(item);
+	snprintf(item, sizeof(item), "&A%u", sregs_[SREG_CONNNECT_MSG_FORMAT]);
+	put(item);
+	snprintf(item, sizeof(item), "&C%u", sregs_[SREG_CD]);
+	put(item);
+	snprintf(item, sizeof(item), "&E%u",
+		 sregs_[SREG_CONNNECT_MSG_SPEED_SRC]);
+	put(item);
+	snprintf(item, sizeof(item), "&H%u", sregs_[SREG_FLOW_CONTROL]);
+	put(item);
+	snprintf(item, sizeof(item), "&P%u", sregs_[SREG_PULSE_RATIO]);
+	put(item);
+	snprintf(item, sizeof(item), "\\A%u", sregs_[SREG_MNP_BLOCK]);
+	put(item);
+	snprintf(item, sizeof(item), "\\N%u", sregs_[SREG_EC]);
+	put(item);
+	snprintf(item, sizeof(item), "\\V%u", sregs_[SREG_CONNECT_PROTOCOL]);
+	put(item);
+	snprintf(item, sizeof(item), "%%C%u", sregs_[SREG_COMP]);
+	put(item);
+	snprintf(item, sizeof(item), "%%E%u",
+		 sregs_[SREG_LINE_QUALITY_CONTROL]);
+	put(item);
+	end();
+	for (unsigned char r : regs) {
 		snprintf(item, sizeof(item), "S%02u:%03u", r, sregs_[r]);
-		add(item);
+		put(item);
 	}
-	flush();
-	snprintf(item, sizeof(item), "+MS=%d,%d,%u,%u", sregs_[SREG_DP],
+	end();
+	snprintf(item, sizeof(item), "+MS=%u,%u,%u,%u", sregs_[SREG_DP],
 		 sregs_[SREG_AUTOMODE], min_rate_, max_rate_);
-	add(item);
-	snprintf(item, sizeof(item), "+FCLASS=%d", mode_);
-	add(item);
-	snprintf(item, sizeof(item), "+GCI=%x", homolog_->id);
-	add(item);
+	put(item);
+	snprintf(item, sizeof(item), "+FCLASS=%d", (int)mode_);
+	put(item);
+	snprintf(item, sizeof(item), "+GCI=%x", (unsigned)homolog_->id);
+	put(item);
 	snprintf(item, sizeof(item), "+PMH=%d", moh_off_);
-	add(item);
+	put(item);
 	snprintf(item, sizeof(item), "+PMHT=%d", moh_timer_);
-	add(item);
+	put(item);
 	snprintf(item, sizeof(item), "#CID=%u", cid_requested_);
-	add(item);
-	for (size_t i = 0; i < sizeof(kept_params) / sizeof(kept_params[0]);
-	     i++) {
-		size_t m = snprintf(item, sizeof(item), "%s=",
-				    kept_params[i].name);
-		for (unsigned k = 0; k < kept_n_[i] && m < sizeof(item); k++)
-			m += snprintf(item + m, sizeof(item) - m,
-				      k ? ",%lu" : "%lu", kept_[i][k]);
-		add(item);
+	put(item);
+	for (int i = 0; i < KEPT_COUNT; i++) {
+		int k = snprintf(item, sizeof(item), "%s=",
+				 kept_params[i].name);
+		for (unsigned j = 0; j < kept_n_[i]; j++)
+			k += snprintf(item + k, sizeof(item) - k, "%s%lu",
+				      j ? "," : "", kept_[i][j]);
+		put(item);
 	}
-	flush();
+	end();
 	puts("STORED PROFILES: none");
 	crlf();
 	return 0;
 }
 
 /*
- *    a command line
+ *    extended commands
  */
 
-/* a command line (without blanks): its commands in turn until one
-   fails or has no result now; returns 0 (OK), 1 (no result now: A, D,
-   O, voice...) or -1 (ERROR) */
-int Modem::at_command(char *cmd)
+/* +MS?, +MS=?, +MS=[<mod>][,[<automode>][,[<min>][,[<max>]]]]: the
+   modulation (a pump's number or a carrier's name), automode and the
+   rates; an item left out stays as it is */
+int Modem::at_MS(char *p, int *len)
 {
-	char c, *p = cmd;
-	int len = 0, ret = -1;
+	const char *q = p + 3, *e;
+	unsigned long mod = sregs_[SREG_DP], automode = sregs_[SREG_AUTOMODE];
+	unsigned long min = min_rate_, max = max_rate_, v;
+	char line[128];
 
-	if (toupper(*p++) != 'A' || toupper(*p++) != 'T')
+	if (upper(p[2]) != 'S')
 		return -1;
+	if (*q == '?') {
+		snprintf(line, sizeof(line), "%u,%u,%u,%u", sregs_[SREG_DP],
+			 sregs_[SREG_AUTOMODE], min_rate_, max_rate_);
+		puts(line);
+		crlf();
+		*len = (int)(q + 1 - p);
+		return 0;
+	}
+	if (*q++ != '=')
+		return -1;
+	if (*q == '?') {
+		int k = snprintf(line, sizeof(line), "(");
+		for (const DpDriver *d = dp_drivers(); d->id; d++)
+			if (d->code && ms_choosable(d->id))
+				k += snprintf(line + k, sizeof(line) - k,
+					      "%s%d", k > 1 ? "," : "",
+					      (int)d->id);
+		snprintf(line + k, sizeof(line) - k,
+			 "),(0,1),(%d-%d),(%d-%d)", MODEM_MIN_RATE,
+			 MODEM_MAX_RATE, MODEM_MIN_RATE, MODEM_MAX_RATE);
+		puts(line);
+		crlf();
+		*len = (int)(q + 1 - p);
+		return 0;
+	}
+	if (isalpha((unsigned char)*q)) {
+		size_t n = 0;
+		bool found = false;
+		while (isalnum((unsigned char)q[n]))
+			n++;
+		for (const auto &m : ms_names)
+			if (strlen(m.name) == n &&
+			    !strncasecmp(q, m.name, n)) {
+				mod = m.id;
+				found = true;
+				break;
+			}
+		if (!found)
+			return -1;
+		q += n;
+	} else {
+		v = number(q, &e);
+		if (e != q)
+			mod = v;
+		q = e;
+	}
+	if (*q == ',') {
+		v = number(++q, &e);
+		if (e != q)
+			automode = v;
+		q = e;
+		if (*q == ',') {
+			v = number(++q, &e);
+			if (e != q)
+				min = v;
+			q = e;
+			if (*q == ',') {
+				v = number(++q, &e);
+				if (e != q)
+					max = v;
+				q = e;
+				if (*q == ',')
+					q++;
+			}
+		}
+	}
+	if ((mod != sregs_[SREG_DP] && !ms_choosable(mod)) || automode > 1 ||
+	    min > max || min < MODEM_MIN_RATE || max > MODEM_MAX_RATE)
+		return -1;
+	sregs_[SREG_DP] = (unsigned char)mod;
+	sregs_[SREG_AUTOMODE] = (unsigned char)automode;
+	min_rate_ = (unsigned)min;
+	max_rate_ = (unsigned)max;
+	*len = (int)(q - p);
+	return 0;
+}
 
-	while (*p) {
-		/* other modems' commands, taken */
-		len = 0;
-		ret = at_kept(p, &len);
-		if (ret == -1)
-			return -1;
-		if (ret == 0 || at_taken(p, &len)) {
-			p += len;
-			continue;
+/* +GCI?, +GCI=?, +GCI=<hex>: the country by its T.35 code */
+int Modem::at_GCI(char *p, int *len)
+{
+	const char *q = p + 4;
+	char line[16];
+
+	if (*q == '?') {
+		snprintf(line, sizeof(line), "+GCI:%x",
+			 (unsigned)homolog_->id);
+		puts(line);
+		crlf();
+		*len = 5;
+		return 0;
+	}
+	if (*q++ != '=')
+		return -1;
+	if (*q == '?') {
+		puts("+GCI:(");
+		for (const struct homolog_set *h = homolog_set; h->name; h++) {
+			snprintf(line, sizeof(line), "%x,", (unsigned)h->id);
+			puts(line);
 		}
-		c = toupper(*p++);
-		len = 0;
-		switch (c) {
-		case ';':
-			/* between commands (V.250's after an extended one) */
-			ret = 0;
-			break;
-		case 'A':
-			return at_A(p, &len);
-		case 'B':
-			ret = at_B(p, &len);
-			break;
-		case 'D':
-			return at_D(p, &len);
-		case 'E':
-			ret = at_set_sreg(SREG_ECHO, *p, 0, 1, &len);
-			break;
-		case 'H':
-			ret = at_H(p, &len);
-			break;
-		case 'I':
-			ret = at_I(p, &len);
-			break;
-		case 'L':
-			ret = at_set_sreg(SREG_SPEAKER_VOLUME, *p, 0, 3, &len);
-			if (!ret)
-				update_speaker();
-			break;
-		case 'M':
-			ret = at_set_sreg(SREG_SPEAKER_CONTROL, *p, 0, 3, &len);
-			if (!ret)
-				update_speaker();
-			break;
-		case 'N':
-			ret = at_set_sreg(SREG_AUTOMODE, *p, 0, 1, &len);
-			break;
-		case 'O':
-			ret = at_O(p, &len);
-			break;
-		case 'P':
-			ret = set_sreg(SREG_TONE_OR_PULSE, 0);
-			break;
-		case 'Q':
-			ret = at_set_sreg(SREG_QUIET, *p, 0, 1, &len);
-			break;
-		case 'S':
-			ret = at_S(p, &len);
-			break;
-		case 'T':
-			ret = set_sreg(SREG_TONE_OR_PULSE, 1);
-			break;
-		case 'V':
-			ret = at_set_sreg(SREG_VERBOSE, *p, 0, 1, &len);
-			break;
-		case 'X':
-			ret = at_set_sreg(SREG_X_CODE, *p, 0, 4, &len);
-			break;
-		case 'Y':
-			ret = at_set_sreg(SREG_DEFAULT_SETTING, *p, 0, 3, &len);
-			break;
-		case 'Z':
-			return at_Z(p, &len);
-		case '#':
-			if (!toupper_strncmp(p, "CID", 3)) {
-				p += 3;
-				ret = at_CID(p, &len);
-			} else
-				ret = -1;
-			break;
-		case '%':
-			c = toupper(*p++);
-			switch (c) {
-			case 'C':
-				ret = at_set_sreg(SREG_COMP, *p, 0, 3, &len);
-				break;
-			case 'E':
-				ret = at_set_sreg(SREG_LINE_QUALITY_CONTROL, *p,
-						  0, 2, &len);
-				break;
-			case 'B':
-				/* %B as *B: the blacklisted numbers (none) */
-				ret = 0;
-				break;
-			default:
-				return -1;
-			}
-			break;
-		case '&':
-			c = toupper(*p++);
-			switch (c) {
-			case 'A':
-				ret = at_set_sreg(SREG_CONNNECT_MSG_FORMAT, *p, 0,
-						  7, &len);
-				break;
-			case 'C':
-				ret = at_set_sreg(SREG_CD, *p, 0, 1, &len);
-				break;
-			case 'D':
-			case 'R':
-			case 'S':
-			case 'F':
-				len = isdigit((unsigned char)*p) ? 1 : 0;
-				ret = 0;
-				break;
-			case 'E':
-				ret = at_set_sreg(SREG_CONNNECT_MSG_SPEED_SRC, *p,
-						  0, 1, &len);
-				break;
-			case 'H':
-				ret = at_set_sreg(SREG_FLOW_CONTROL, *p, 0, 3,
-						  &len);
-				break;
-			case 'K': {
-				/* USRobotics': &K0 none, &K1 and &K2 both, &K3
-				   V.42bis (or V.44) without MNP 5 */
-				static const uint8_t comp[4] = { 0, 3, 3, 2 };
-				ret = at_set_sreg(SREG_COMP, *p, 0, 3, &len);
-				if (!ret)
-					sregs_[SREG_COMP] =
-						comp[sregs_[SREG_COMP]];
-				break;
-			}
-			case 'P':
-				ret = at_set_sreg(SREG_PULSE_RATIO, *p, 0, 3,
-						  &len);
-				break;
-			case 'V':
-				ret = at_ampV(p, &len);
-				break;
-			case 'Q':
-				/* &Q0, &Q6: \N0; &Q5, &Q8, &Q9: \N3 (V.42,
-				   then MNP) */
-				len = isdigit((unsigned char)*p) ? 1 : 0;
-				switch (len ? *p : '0') {
-				case '0':
-				case '6':
-					set_ec_mode(0);
-					ret = 0;
-					break;
-				case '5':
-				case '8':
-				case '9':
-					set_ec_mode(3);
-					ret = 0;
-					break;
-				default:
-					return -1;
-				}
-				break;
-			default:
-				return -1;
-			}
-			break;
-		case '*':
-			/* *B: the blacklisted numbers (none kept), always OK */
-			c = toupper(*p++);
-			if (c != 'B')
-				return -1;
-			ret = 0;
-			break;
-		case '+':
-			c = toupper(*p++);
-			switch (c) {
-			case 'G':
-				c = toupper(*p++);
-				switch (c) {
-				case 'C':       /* +GCI, +GCAP */
-					if (toupper(*p) == 'I')
-						ret = at_GCI(++p, &len);
-					else if (!toupper_strncmp(p, "AP", 2)) {
-						p += 2;
-						puts("+GCAP: +FCLASS,+MS");
-						crlf();
-						ret = 0;
-					} else
-						return -1;
-					break;
-				case 'M':       /* +GMI, +GMM, +GMR (and ?) */
-					c = toupper(*p++);
-					switch (c) {
-					case 'I':
-						puts(author);
-						break;
-					case 'M':
-						puts(product);
-						break;
-					case 'R':
-						puts(version);
-						break;
-					default:
-						return -1;
-					}
-					crlf();
-					len = *p == '?' ? 1 : 0;
-					ret = 0;
-					break;
-				default:
-					return -1;
-				}
-				break;
-			case 'F':
-				if (!toupper_strncmp(p, "CLASS", 5)) {
-					p += 5;
-					ret = at_FCLASS(p, &len);
-				} else if (toupper(p[0]) == 'M' && p[1] &&
-					   strchr("IMR", toupper(p[1]))) {
-					/* +FMI?, +FMM?, +FMR?: as +GMI... */
-					c = toupper(p[1]);
-					p += 2;
-					puts(c == 'I' ? author :
-					     c == 'M' ? product : version);
-					crlf();
-					len = *p == '?' ? 1 : 0;
-					ret = 0;
-				} else
-					ret = at_fax(p, &len);
-				break;
-			case 'M':
-				c = toupper(*p++);
-				if (c != 'S')
-					return -1;
-				ret = at_MS(p, &len);
-				break;
-			case 'P':
-				if (!toupper_strncmp(p, "MH", 2)) {
-					p += 2;
-					ret = at_PMH(p, &len);
-				} else
-					ret = -1;
-				break;
-			case 'V':
-				if (!toupper_strncmp(p, "CID", 3)) {
-					/* +VCID: #CID's caller ID, in any
-					   mode */
-					p += 3;
-					ret = at_CID(p, &len);
-				} else if (mode_ != MODEM_MODE_VOICE)
-					return -1;
-				else
-					ret = at_voice(p, &len);
-				break;
-			default:
-				return -1;
-			}
-			break;
-		case '\\':
-			c = toupper(*p++);
-			switch (c) {
-			case 'A':
-				/* \A0..3: MNP's block size, 64 to 256 */
-				ret = at_set_sreg(SREG_MNP_BLOCK, *p, 0, 3, &len);
-				break;
-			case 'N':
-				ret = at_set_sreg(SREG_EC, *p, 0, 5, &len);
-				if (!ret)
-					set_ec_mode(sregs_[SREG_EC]);
-				break;
-			case 'V':
-				/* \V1 (\V2 the same): the protocol after
-				   CONNECT's rate */
-				ret = at_set_sreg(SREG_CONNECT_PROTOCOL, *p, 0, 2,
-						  &len);
-				break;
-			default:
-				return -1;
-			}
-			break;
-		default:
+		puts(")");
+		crlf();
+		*len = 6;
+		return 0;
+	}
+	{
+		char *e;
+		unsigned long code = strtoul(q, &e, 16);
+		if (e == q || code > 0xffff || homolog_init((int)code, nullptr))
 			return -1;
-		}
-		if (ret)
-			return ret;
-		p += len;
+		*len = (int)(e - p);
 	}
 	return 0;
+}
+
+/* +FCLASS=?, +FCLASS?, +FCLASS=<d>: data (0), class 1 fax (1), voice
+   (8) */
+int Modem::at_FCLASS(char *p, int *len)
+{
+	const char *q = p + 7;
+	char line[8];
+
+	if (q[0] == '=' && q[1] == '?') {
+		puts("0,1,8");
+		crlf();
+		*len = 9;
+		return 0;
+	}
+	if (q[0] == '?') {
+		snprintf(line, sizeof(line), "%d", (int)mode_);
+		puts(line);
+		crlf();
+		*len = 8;
+		return 0;
+	}
+	if (q[0] == '=' && (q[1] == '0' || q[1] == '1' || q[1] == '8')) {
+		*len = 9;
+		return set_mode((enum MODEM_MODE)(q[1] - '0'));
+	}
+	return -1;
+}
+
+/* +FMI, +FMM, +FMR (T.31 Annex A); the class 1 commands +FTS, +FRS
+   (silence), +FTM, +FRM (data), +FTH, +FRH (HDLC frames), for the fax
+   engine (T.31 8.3) */
+int Modem::at_fax(char *p, int *len)
+{
+	const char *q = p + 2, *e;
+	char what = (char)upper(q[0]), kind = (char)upper(q[1]);
+	enum FAX_CMD cmd;
+	unsigned long v;
+
+	if (what == 'M' && identity(kind)) {
+		puts(identity(kind));
+		crlf();
+		*len = q[2] == '?' ? 5 : 4;
+		return 0;
+	}
+	if ((what != 'T' && what != 'R') ||
+	    (kind != 'S' && kind != 'M' && kind != 'H') || q[2] != '=')
+		return -1;
+	q += 3;
+	switch (kind) {
+	case 'S':
+		cmd = what == 'T' ? FAX_CMD_FTS : FAX_CMD_FRS;
+		v = number(q, &e);
+		if (e == q)
+			return -1;
+		break;
+	case 'M':
+		if (*q == '?') {
+			puts("24,48,72,73,74,96,97,98,121,122,145,146");
+			crlf();
+			*len = (int)(q + 1 - p);
+			return 0;
+		}
+		cmd = what == 'T' ? FAX_CMD_FTM : FAX_CMD_FRM;
+		v = number(q, &e);
+		if (e == q)
+			return -1;
+		break;
+	default:
+		if (*q == '?') {
+			puts("3");
+			crlf();
+			*len = (int)(q + 1 - p);
+			return 0;
+		}
+		if (!is_digit(*q))
+			return -1;
+		cmd = what == 'T' ? FAX_CMD_FTH : FAX_CMD_FRH;
+		v = *q - '0';
+		e = q + 1;
+		break;
+	}
+	*len = (int)(e - p);
+	return fax_command(cmd, (unsigned)v);
+}
+
+/* a class 1 command for the fax engine: once it has started, the DTE's
+   characters are the engine's until it reports (1); ERROR without an
+   engine or when it refuses */
+int Modem::fax_command(enum FAX_CMD cmd, unsigned val)
+{
+	int ret;
+	if (!fax_)
+		return -1;
+	ret = FAX_class1_command(fax_, cmd, val);
+	if (ret > 0) {
+		command_ = false;
+		return 1;
+	}
+	return ret < 0 ? -1 : 0;
+}
+
+/* V.92 modem-on-hold: +PMH (0 granted, 1 not), +PMHT (the time we
+   grant, as V.250's code), +PMHR[=<s>] (we ask for s seconds, 10 if
+   not said: online command state of a V.92 call only) */
+int Modem::at_PMH(char *p, int *len)
+{
+	const char *q = p + 4, *e;
+	char line[32];
+	bool timer;
+	unsigned long v;
+
+	if (strncasecmp(p, "+PMH", 4))
+		return -1;
+	if (upper(*q) == 'R') {
+		unsigned long secs = 10;
+		q++;
+		if (state_ != COMMAND_ONLINE || !dp_ || dp_->id != DP_V92)
+			return -1;
+		if (q[0] == '=' && is_digit(q[1])) {
+			secs = decimal(q + 1, &e);
+			if (secs < 1 || secs > 960)
+				return -1;
+			q = e;
+		}
+		moh_req_ = (int)secs;
+		*len = (int)(q - p);
+		return 0;
+	}
+	timer = upper(*q) == 'T';
+	if (timer)
+		q++;
+	if (q[0] == '=' && q[1] == '?') {
+		puts(timer ? "+PMHT: (0-13)" : "+PMH: (0-1)");
+		crlf();
+		q += 2;
+	} else if (q[0] == '?') {
+		snprintf(line, sizeof(line), timer ? "+PMHT: %d" : "+PMH: %d",
+			 timer ? moh_timer_ : moh_off_);
+		puts(line);
+		crlf();
+		q++;
+	} else if (q[0] == '=' && is_digit(q[1])) {
+		v = decimal(q + 1, &e);
+		if (v > (timer ? 13u : 1u))
+			return -1;
+		if (timer)
+			moh_timer_ = (int)v;
+		else
+			moh_off_ = (int)v;
+		q = e;
+	} else {
+		return -1;
+	}
+	*len = (int)(q - p);
+	return 0;
+}
+
+/* #CID, +VCID (V.253 9.2.3): caller ID, 0 off, 1 formatted, 2 the
+   message as it is */
+int Modem::at_CID(char *p, int *len)
+{
+	const char *q = p + (*p == '#' ? 4 : 5);
+	char line[8];
+
+	if (q[0] == '=' && q[1] == '?') {
+		puts("0,1,2");
+		crlf();
+		q += 2;
+	} else if (q[0] == '?') {
+		snprintf(line, sizeof(line), "%u", cid_requested_);
+		puts(line);
+		crlf();
+		q++;
+	} else if (q[0] == '=' && q[1] >= '0' && q[1] <= '2') {
+		cid_requested_ = q[1] - '0';
+		q += 2;
+	} else {
+		return -1;
+	}
+	*len = (int)(q - p);
+	return 0;
+}
+
+/* +V...: caller ID in any mode, the rest in voice mode only: the
+   parameters (? =? =<values>), +VIP, +VLS, and what the voice engine
+   does: +VTX, +VRX, +VTS (+VTR is not offered) */
+int Modem::at_voice(char *p, int *len)
+{
+	const char *q = p + 4, *e;
+	char cmd[3], line[64];
+
+	if (!strncasecmp(p + 2, "CID", 3))
+		return at_CID(p, len);
+	if (mode_ != MODEM_MODE_VOICE || !p[2] || !p[3])
+		return -1;
+	cmd[0] = (char)upper(p[2]);
+	cmd[1] = (char)upper(p[3]);
+	cmd[2] = '\0';
+	for (const auto &s : voice_settings) {
+		bool device = !strcmp(s.name, "LS");
+		unsigned long v[2] = { 0, 0 };
+		int ret = 0;
+
+		if (strcmp(s.name, cmd))
+			continue;
+		for (int i = 0; i < s.n; i++)
+			v[i] = s.field[i] ? voice_info_.*s.field[i] :
+				device && voice_ ? 1 : 0;
+		if (q[0] == '=' && q[1] == '?') {
+			int k = snprintf(line, sizeof(line), "+V%s=", s.name);
+			for (int i = 0; i < s.n; i++)
+				k += snprintf(line + k, sizeof(line) - k,
+					      "%s%u-%u", i ? "," : "", s.lo[i],
+					      s.hi[i]);
+			puts(line);
+			crlf();
+			q += 2;
+		} else if (q[0] == '?') {
+			int k = snprintf(line, sizeof(line), "+V%s=", s.name);
+			for (int i = 0; i < s.n; i++)
+				k += snprintf(line + k, sizeof(line) - k,
+					      "%s%lu", i ? "," : "", v[i]);
+			puts(line);
+			crlf();
+			q++;
+		} else if (q[0] == '=') {
+			q++;
+			for (int i = 0; i < s.n; i++) {
+				if (i && *q++ != ',')
+					return -1;
+				v[i] = number(q, &e);
+				q = e;
+				if (!in_bounds(v[i], s.lo[i], s.hi[i]))
+					return -1;
+			}
+			for (int i = 0; i < s.n; i++)
+				if (s.field[i])
+					voice_info_.*s.field[i] =
+						(unsigned)v[i];
+		} else {
+			return -1;
+		}
+		*len = (int)(q - p);
+		if (device)
+			ret = voice_set_device((unsigned)v[0]);
+		return ret;
+	}
+	if (!strcmp(cmd, "IP")) {
+		voice_init();
+		*len = 4;
+		return 0;
+	}
+	*len = (int)strlen(p);
+	if (!strcmp(cmd, "TX"))
+		return voice_command(VOICE_CMD_STATE_TX);
+	if (!strcmp(cmd, "RX"))
+		return voice_command(VOICE_CMD_STATE_RX);
+	if (!strcmp(cmd, "TR"))
+		return voice_command(VOICE_CMD_STATE_DUPLEX);
+	if (strcmp(cmd, "TS"))
+		return -1;
+	/* +VTS: the tone settings, or a tone or a DTMF digit played */
+	if (q[0] == '?' || (q[0] == '=' && q[1] == '?')) {
+		if (q[0] == '?')
+			snprintf(line, sizeof(line), "+VTS=%u,%u,%u",
+				 voice_info_.tone1_freq,
+				 voice_info_.tone2_freq,
+				 voice_info_.tone_duration);
+		else
+			snprintf(line, sizeof(line), "+VTS=0-0,0-0,0-6000");
+		puts(line);
+		crlf();
+		*len = q[0] == '?' ? 5 : 6;
+		return 0;
+	}
+	if (*q++ != '=')
+		return -1;
+	if (*q == '[') {
+		/* [f1,f2,d]: a tone of d * 10 ms */
+		unsigned long t[3] = { 0, 0, 0 };
+		const char *r = q + 1;
+		int i;
+		for (i = 0; i < 3; i++) {
+			if (i && *r++ != ',')
+				break;
+			if (!is_digit(*r))
+				break;
+			t[i] = number(r, &r);
+		}
+		if (i == 3 && *r == ']' && t[2] <= 6000) {
+			voice_info_.tone1_freq = (unsigned)t[0];
+			voice_info_.tone2_freq = (unsigned)t[1];
+			voice_info_.tone_duration = (unsigned)t[2];
+			return voice_command(VOICE_CMD_BEEP);
+		}
+	} else if (*q == '{') {
+		/* {s,d}: DTMF symbol s for d * 10 ms */
+		unsigned long s, d;
+		const char *r = q + 1;
+		if (is_digit(*r)) {
+			s = number(r, &r);
+			if (*r++ == ',' && is_digit(*r)) {
+				d = number(r, &r);
+				if (*r == '}' && d <= 100) {
+					voice_info_.dtmf_symbol = (unsigned)s;
+					voice_info_.tone_duration = (unsigned)d;
+					return voice_command(VOICE_CMD_DTMF);
+				}
+			}
+		}
+	}
+	voice_info_.dtmf_symbol = (unsigned)number(q, &e);
+	return voice_command(VOICE_CMD_DTMF);
+}
+
+/*
+ *    the kept parameters
+ */
+
+/* a kept parameter: <name>? its values, <name>=? its ranges,
+   <name>=<values> new ones (each in its range group, those left out as
+   they are; nothing changes on an error) */
+int Modem::at_kept(const char *p, int *len)
+{
+	int i = kept_command(p);
+	const Kept &k = kept_params[i];
+	const char *q = p + strlen(k.name), *e;
+	unsigned long v[KEPT_VALUES];
+	unsigned n = kept_n_[i];
+	char line[128];
+
+	if (*q == '?') {
+		/* (-SEC, Rockwell's, without its name) */
+		int c = 0;
+		line[0] = '\0';
+		if (strcmp(k.name, "-SEC"))
+			c = snprintf(line, sizeof(line), "%s: ", k.name);
+		for (unsigned j = 0; j < n; j++)
+			c += snprintf(line + c, sizeof(line) - c, "%s%lu",
+				      j ? "," : "", kept_[i][j]);
+		puts(line);
+		crlf();
+		*len = (int)(q + 1 - p);
+		return 0;
+	}
+	q++;
+	if (*q == '?') {
+		snprintf(line, sizeof(line), "%s: %s", k.name, k.ranges);
+		puts(line);
+		crlf();
+		*len = (int)(q + 1 - p);
+		return 0;
+	}
+	if (*q && *q != ',' && *q != ';' && !is_digit(*q))
+		return -1;
+	memcpy(v, kept_[i], sizeof(v));
+	for (unsigned pos = 0;; pos++) {
+		if (is_digit(*q)) {
+			const char *g = pos < KEPT_VALUES ?
+				range_group(k.ranges, pos) : nullptr;
+			unsigned long x = decimal(q, &e);
+			if (!g || !in_list(g, x))
+				return -1;
+			v[pos] = x;
+			if (n < pos + 1)
+				n = pos + 1;
+			q = e;
+		}
+		if (*q != ',')
+			break;
+		q++;
+	}
+	memcpy(kept_[i], v, sizeof(v));
+	kept_n_[i] = n;
+	if (!strcmp(k.name, "+ES"))
+		ec_mode_from_es();
+	*len = (int)(q - p);
+	return 0;
+}
+
+/* every kept parameter's values as at the start */
+void Modem::kept_init()
+{
+	for (int i = 0; i < KEPT_COUNT; i++) {
+		memcpy(kept_[i], kept_params[i].values,
+		       sizeof(kept_params[i].values));
+		kept_n_[i] = kept_params[i].n;
+	}
+}
+
+/* the values of the kept parameter called name (as kept_params spells
+   it); NULL for one there is not */
+const unsigned long *Modem::kept(const char *name) const
+{
+	int i = kept_index(name);
+	return i < 0 ? nullptr : kept_[i];
+}
+
+/* \N<n>: S103, and +ES as V.250 has the same error control */
+void Modem::set_ec_mode(int n)
+{
+	int i = kept_index("+ES");
+	sregs_[SREG_EC] = (unsigned char)n;
+	memcpy(kept_[i], ec_modes[n], sizeof(ec_modes[n]));
+	kept_n_[i] = 3;
+}
+
+/* +ES's values as S103's \N, if one has them (else S103 stays) */
+void Modem::ec_mode_from_es()
+{
+	const unsigned long *es = kept_[kept_index("+ES")];
+	for (int n = 0; n < 6; n++)
+		if (!memcmp(es, ec_modes[n], sizeof(ec_modes[n]))) {
+			sregs_[SREG_EC] = (unsigned char)n;
+			return;
+		}
 }
 
 } // namespace dcore
