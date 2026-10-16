@@ -1,44 +1,28 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
+ * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
- * (Smart Link's code in it: Smart Link's notice and licence below)
  *
- *    v42bis.cpp - V.42bis data compression
+ *    v42bis.cpp - V.42bis data compression (see v42bis.h)
  *
- *    From slmodemd's modem_comp.c:
+ *    The dictionary is an array indexed by codeword.  Each entry holds
+ *    the last character of its string, its parent (the string one
+ *    character shorter), its first dependant and its next sibling, so
+ *    that strings are matched from the root down and spelled from the
+ *    leaf up.  The roots are the codewords N6 + ordinal (6.2); an entry
+ *    from N5 up without a parent is empty.
  *
- *    Copyright (c) 2002, Smart Link Ltd.
- *    All rights reserved.
+ *    The encoder matches strings the same way in both modes.  In
+ *    transparent mode each character goes out as soon as it joins a
+ *    string (7.5 allows it); in compressed mode a string goes out as its
+ *    codeword when it ends.  It changes modes on an estimate of what the
+ *    last 256 characters would cost as codewords (7.8 leaves the test to
+ *    the implementation), and never sends RESET.
  *
- *    Redistribution and use in source and binary forms, with or without
- *    modification, are permitted provided that the following conditions
- *    are met:
- *
- *        1. Redistributions of source code must retain the above copyright
- *           notice, this list of conditions and the following disclaimer.
- *        2. Redistributions in binary form must reproduce the above
- *           copyright notice, this list of conditions and the following
- *           disclaimer in the documentation and/or other materials provided
- *           with the distribution.
- *        3. Neither the name of the Smart Link Ltd. nor the names of its
- *           contributors may be used to endorse or promote products derived
- *           from this software without specific prior written permission.
- *
- *    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- *    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- *    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- *    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *    The decoder repeats the encoder's string matching in transparent
+ *    mode, so that both dictionaries stay alike (8), and outputs each
+ *    character as soon as it knows it.
  *
  */
-
-#include <string.h>
 
 #include <new>
 
@@ -46,505 +30,498 @@
 
 namespace dlink {
 
-/* limits of the protocol */
-static const int MIN_DICT_SIZE = 512;
-static const int MIN_STR_SIZE = 6;
-static const int MAX_STR_SIZE = 250;
+/* control codewords (compressed mode) and command codes (after the
+   escape character, transparent mode): Table 2 */
+enum { ETM = 0, FLUSH = 1, STEPUP = 2 };
+enum { ECM = 0, EID = 1, RESET = 2 };
 
-static const int CHAR_SIZE = 8;                         /* N3 */
-static const int TOTAL_CHARS = 256;                     /* N4 */
-static const int TOTAL_CTRLS = 3;                       /* N6 */
-static const int FIRST_ENTRY = TOTAL_CTRLS;
-static const int FIRST_FREE = TOTAL_CHARS + FIRST_ENTRY; /* N5 */
+enum {
+	N6 = 3,                 /* control codewords: a root is N6 + ordinal */
+	N5 = N6 + 256,          /* the first codeword of a longer string */
+	MIN_CODEWORDS = 512,    /* N2, P1's default (5.1) */
+	MIN_STRING = 6,         /* N7, P2's default (5.1) */
+	ESCAPE_STEP = 51,       /* the escape character's step (9.2 b) */
+	/* the compressibility estimate: bits for the last WINDOW characters
+	   as codewords, starting at what they cost as characters; compressed
+	   mode below TO_COMPRESSED, transparent mode above TO_TRANSPARENT */
+	WINDOW = 256,
+	EST_START = WINDOW * 8,
+	TO_COMPRESSED = EST_START - 11,
+	TO_TRANSPARENT = EST_START,
+};
 
-/* control codewords */
-enum { CCW_ETM = 0, CCW_FLUSH = 1, CCW_STEPUP = 2 };
-/* command codes after the escape character */
-enum { CC_ECM = 0, CC_EID = 1, CC_RESET = 2 };
-
-static const int ESCAPE_STEP = 51;
-static const int TEST_SLICE = 256;      /* compression test (characters) */
-
-
-/*
- *    the dictionary
- *
- */
-
-/* the dictionary and the coder from the start: only the 256 characters
-   (codewords from N5), codewords of 9 bits, transparent mode, the
-   escape character 0 */
-void V42bis::dict_init()
+/* the estimate after one codeword of size bits stood for len more
+   characters: it loses len / WINDOW of itself and gains the codeword */
+static uint16_t estimate(uint16_t est, int len, int size)
 {
-	for (int i = 0; i < dict_size_; i++) {
-		dict_[i].parent = 0;
-		dict_[i].child = 0;
-		dict_[i].next = 0;
-	}
-	next_free_ = FIRST_FREE;
-	last_matched_ = 0;
-	update_at_ = 0;
-	last_added_ = 0;
-	cw_size_ = CHAR_SIZE + 1;
-	threshold_ = TOTAL_CHARS << 1;
-	bit_len_ = 0;
-	flushed_len_ = 0;
-	str_len_ = 0;
-	escape_char_ = 0;
-	cmp_last_ = TEST_SLICE << 3;
-	mode_ = TRANSPARENT;
-	escape_ = false;
+	return (uint16_t)(est + size - est * len / WINDOW);
 }
 
-/* the entry of string at + ch (at 0: the character's own); 0 if it is
-   not in the dictionary */
-uint16_t V42bis::match_char(uint16_t at, uint8_t ch) const
-{
-	if (!at)
-		return (uint16_t)(ch + FIRST_ENTRY);
-	for (uint16_t e = dict_[at].child; e; e = dict_[e].next)
-		if (dict_[e].ch == ch)
-			return e;
-	return 0;
-}
-
-/* adds string at + ch at the next free entry and returns it; the next
-   free entry is then the next leaf after it (from N5 again past N2),
-   taken out of its parent's children */
-uint16_t V42bis::add_char(uint16_t at, uint8_t ch)
-{
-	uint16_t added = next_free_, next;
-	dict_[added].ch = ch;
-	dict_[added].parent = at;
-	dict_[added].child = 0;
-	dict_[added].next = dict_[at].child;
-	dict_[at].child = added;
-	/* the next free entry: a leaf, taken out of its parent's list */
-	next = added;
-	do {
-		if (++next == dict_size_)
-			next = FIRST_FREE;
-	} while (dict_[next].child);
-	if (dict_[next].parent) {
-		uint16_t e = dict_[next].parent;
-		if (dict_[e].child == next)
-			dict_[e].child = dict_[next].next;
-		else {
-			e = dict_[e].child;
-			while (dict_[e].next != next)
-				e = dict_[e].next;
-			dict_[e].next = dict_[next].next;
-		}
-	}
-	next_free_ = next;
-	return added;
-}
-
-
-/*
- *    decoder
- *
- */
-
-/* the decoder's string so far to the output; returns its length */
-int V42bis::send_string()
-{
-	int ret = str_len_;
-	memcpy(obuf_ + olen_, str_data_, str_len_);
-	olen_ += ret;
-	str_len_ = 0;
-	flushed_len_ = 0;
-	return ret;
-}
-
-/* the decoder: the string of codeword cw after the string so far (by
-   its parents, backwards); returns its length */
-int V42bis::recv_data(uint16_t cw)
-{
-	int ret = 0, i;
-	uint16_t p;
-	for (p = cw; p; ret++)
-		p = dict_[p].parent;
-	i = str_len_ + ret - 1;
-	for (p = cw; p; p = dict_[p].parent)
-		str_data_[i--] = dict_[p].ch;
-	str_len_ += ret;
-	return ret;
-}
-
-/* the decoder at the end of a frame: the string so far out, its length
-   kept so that N7 still counts from its start; returns the characters
-   output */
-int V42bis::flush_decoder()
-{
-	int total = flushed_len_ + str_len_;
-	int ret = send_string();
-	flushed_len_ = total;
-	return ret;
-}
-
-/* the decoder: one octet from the line; codewords (and ETM, FLUSH,
-   STEPUP) in compressed mode, characters and the escape character's
-   commands (ECM, EID, RESET) in transparent mode; the dictionary
-   updated as the encoder does it; returns the characters output, -1
-   on an error (C-ERROR) */
-int V42bis::decode(uint8_t in)
-{
-	int ret = 0;
-	uint16_t cw, p;
-	bool consumed = false;
-
-	while (!consumed) {
-		switch (mode_) {
-		case COMPRESSED:
-			bit_data_ |= (uint32_t)in << bit_len_;
-			bit_len_ += 8;
-			consumed = true;
-			while (bit_len_ >= cw_size_ && mode_ == COMPRESSED) {
-				cw = (uint16_t)(bit_data_ & ((1u << cw_size_) - 1));
-				bit_data_ >>= cw_size_;
-				bit_len_ -= cw_size_;
-				switch (cw) {
-				case CCW_ETM:
-					bit_len_ = 0;
-					mode_ = TRANSPARENT;
-					last_matched_ = 0;
-					last_added_ = 0;
-					break;
-				case CCW_FLUSH:
-					bit_len_ = 0;
-					break;
-				case CCW_STEPUP:
-					cw_size_++;
-					threshold_ <<= 1;
-					/* C2 up to log2(N2) (7.6/V.42bis) */
-					if (1 << (cw_size_ - 1) >= dict_size_)
-						return -1;      /* C-ERROR */
-					break;
-				default:
-					if (cw == next_free_ ||
-					    cw >= (unsigned)dict_size_)
-						return -1;
-					ret += recv_data(cw);
-					if (update_at_) {
-						uint8_t ch = str_data_[0];
-						p = match_char(update_at_, ch);
-						if (!p) {
-							last_added_ = add_char(
-								update_at_, ch);
-							if (cw == next_free_)
-								return -1;
-						} else if (p == last_added_)
-							last_added_ = 0;
-					}
-					update_at_ = str_len_ + flushed_len_ ==
-						max_string_ ? 0 : cw;
-					for (int j = 0; j < str_len_; j++)
-						if (str_data_[j] == escape_char_)
-							escape_char_ +=
-								ESCAPE_STEP;
-					send_string();
-					break;
-				}
-			}
-			break;
-		case TRANSPARENT:
-			if (escape_) {
-				escape_ = false;
-				switch (in) {
-				case CC_ECM:
-					ret += send_string();
-					mode_ = COMPRESSED;
-					update_at_ = last_matched_;
-					last_matched_ = 0;
-					return ret;
-				case CC_EID:
-					in = escape_char_;
-					escape_char_ += ESCAPE_STEP;
-					break;
-				case CC_RESET:
-					ret += send_string();
-					dict_init();
-					return ret;
-				default:
-					return -1;      /* C-ERROR */
-				}
-			} else if (in == escape_char_) {
-				escape_ = true;
-				return ret;
-			}
-			if (update_at_) {
-				if (!match_char(update_at_, in))
-					last_added_ = add_char(update_at_, in);
-				update_at_ = 0;
-			}
-			cw = match_char(last_matched_, in);
-			if (!cw) {
-				update_at_ = last_matched_;
-				ret += send_string();
-				last_matched_ = 0;
-				/* the character starts the next string */
-			} else if (cw == last_added_) {
-				last_added_ = 0;
-				ret += send_string();
-				last_matched_ = 0;
-			} else {
-				last_matched_ = cw;
-				str_data_[str_len_++] = in;
-				if (str_len_ + flushed_len_ == max_string_) {
-					ret += send_string();
-					last_matched_ = 0;
-				}
-				consumed = true;
-			}
-			break;
-		}
-	}
-	return ret;
-}
-
-
-/*
- *    encoder
- *
- */
-
-/* a codeword of C2 bits into the bit queue, the lowest bit first */
-void V42bis::send_cw(uint16_t cw)
-{
-	bit_data_ |= (uint32_t)cw << bit_len_;
-	bit_len_ += cw_size_;
-}
-
-/* zero bits to the next octet boundary */
-void V42bis::align_bits()
-{
-	if (bit_len_ % 8)
-		bit_len_ += 8 - bit_len_ % 8;
-}
-
-/* the whole octets of the bit queue to the output; returns how many */
-int V42bis::send_bits()
-{
-	int ret = 0;
-	while (bit_len_ >= 8) {
-		obuf_[olen_++] = (uint8_t)bit_data_;
-		bit_data_ >>= 8;
-		bit_len_ -= 8;
-		ret++;
-	}
-	return ret;
-}
-
-/* the encoder: the string matched so far out, as codeword cw (after
-   the STEPUPs it needs) or as its characters in transparent mode (EID
-   after an escape character); the ratio test's counts too; returns
-   the octets output */
-int V42bis::send_data(uint16_t cw)
-{
-	int ret = 0;
-
-	raw_bits_ += str_len_ << 3;
-	cmp_bits_ += cw_size_;
-	cmp_last_ += cw_size_ - cmp_last_ * str_len_ / TEST_SLICE;
-
-	switch (mode_) {
-	case TRANSPARENT:
-		for (int i = 0; i < str_len_; i++) {
-			obuf_[olen_++] = str_data_[i];
-			ret++;
-			if (str_data_[i] == escape_char_) {
-				obuf_[olen_++] = CC_EID;
-				ret++;
-				escape_char_ += ESCAPE_STEP;
-			}
-		}
-		break;
-	case COMPRESSED:
-		for (int i = 0; i < str_len_; i++)
-			if (str_data_[i] == escape_char_)
-				escape_char_ += ESCAPE_STEP;
-		while (cw >= threshold_) {
-			send_cw(CCW_STEPUP);
-			ret += send_bits();
-			threshold_ <<= 1;
-			cw_size_++;
-		}
-		send_cw(cw);
-		ret += send_bits();
-		break;
-	}
-	str_len_ = 0;
-	flushed_len_ = 0;
-	return ret;
-}
-
-/* switch between transparent and compressed by the last TEST_SLICE
-   characters */
-int V42bis::test_mode()
-{
-	int ret = 0;
-	switch (mode_) {
-	case TRANSPARENT:
-		if (cmp_last_ < (TEST_SLICE << 3) - 11) {
-			if (last_matched_) {
-				update_at_ = last_matched_;
-				ret += send_data(last_matched_);
-				last_matched_ = 0;
-			}
-			obuf_[olen_++] = escape_char_;
-			obuf_[olen_++] = CC_ECM;
-			ret += 2;
-			bit_data_ = 0;
-			mode_ = COMPRESSED;
-		}
-		break;
-	case COMPRESSED:
-		if (cmp_last_ > (TEST_SLICE << 3)) {
-			if (last_matched_) {
-				update_at_ = last_matched_;
-				ret += send_data(last_matched_);
-				last_matched_ = 0;
-			}
-			last_added_ = 0;
-			send_cw(CCW_ETM);
-			align_bits();
-			ret += send_bits();
-			mode_ = TRANSPARENT;
-		}
-		break;
-	}
-	return ret;
-}
-
-/* the encoder when the DTE has no more for now: the string matched so
-   far out, and in compressed mode FLUSH and the rest of the octet;
-   nothing while a dictionary update is pending; returns the octets
-   of the string */
-int V42bis::flush_encoder()
-{
-	int ret = 0;
-	if (update_at_)
-		return 0;
-	if (last_matched_) {
-		int total = flushed_len_ + str_len_;
-		ret = send_data(last_matched_);
-		flushed_len_ = total;
-	}
-	if (mode_ == COMPRESSED) {
-		update_at_ = last_matched_;
-		last_matched_ = 0;
-		flushed_len_ = 0;
-		send_cw(CCW_FLUSH);
-		align_bits();
-		send_bits();
-	}
-	return ret;
-}
-
-/* the encoder: one character from the DTE; it extends the string or
-   the string goes out and the character starts the next, the
-   dictionary updated, then the test of the mode; returns the octets
-   output */
-int V42bis::encode(uint8_t in)
-{
-	int ret = 0;
-	bool consumed = false;
-
-	while (!consumed) {
-		if (update_at_) {
-			if (!match_char(update_at_, in))
-				last_added_ = add_char(update_at_, in);
-			update_at_ = 0;
-		}
-		for (;;) {
-			uint16_t cw = match_char(last_matched_, in);
-			if (!cw) {
-				update_at_ = last_matched_;
-				ret += send_data(last_matched_);
-				last_matched_ = 0;
-				break;
-			}
-			if (cw == last_added_) {
-				last_added_ = 0;
-				ret += send_data(last_matched_);
-				last_matched_ = 0;
-				break;
-			}
-			last_matched_ = cw;
-			str_data_[str_len_++] = in;
-			consumed = true;
-			if (str_len_ + flushed_len_ == max_string_) {
-				ret += send_data(last_matched_);
-				last_matched_ = 0;
-			}
-			break;
-		}
-		ret += test_mode();
-	}
-	return ret;
-}
-
-
-/*
- *    set up
- *
- */
-
-/* N2 = dict_size codewords (512 and up) and strings of up to N7 =
-   max_string (6 to 34) allocated; -1 if out of range or no memory */
+/* allocates the dictionary for N2 codewords and strings of up to N7
+   characters, and starts the coder in the initial state with no
+   statistics and no output; -1 if out of range (codewords are 16 bits,
+   the string buffer holds V42BIS_MAX_STRING) or out of memory */
 int V42bis::init(int dict_size, int max_string)
 {
 	exit();
-	if (dict_size < MIN_DICT_SIZE || max_string < MIN_STR_SIZE ||
-	    max_string > MAX_STR_SIZE || max_string > V42BIS_MAX_STRING)
+	if (dict_size < MIN_CODEWORDS || dict_size > 65535 ||
+	    max_string < MIN_STRING || max_string > V42BIS_MAX_STRING)
 		return -1;
-	dict_ = new (std::nothrow) Node[dict_size]();
+	dict_ = new (std::nothrow) Node[dict_size];
 	if (!dict_)
 		return -1;
-	max_string_ = max_string;
 	dict_size_ = dict_size;
-	for (int i = 0; i < TOTAL_CHARS; i++)
-		dict_[i + FIRST_ENTRY].ch = (uint8_t)i;
+	max_string_ = max_string;
 	dict_init();
-	cmp_bits_ = raw_bits_ = 0;
+	raw_bits_ = cmp_bits_ = 0;
 	olen_ = ohead_ = 0;
 	return 0;
 }
 
-/* what XID agreed, no more than init()'s; -1 if out of range */
+/* the parameters XID agreed (5.1), before any data: no more codewords
+   than now, strings of MIN_STRING to V42BIS_MAX_STRING characters.  The
+   dictionary stays as it is; -1, and nothing changed, if out of range
+   (always when not ready()) */
 int V42bis::config(int dict_size, int max_string)
 {
-	if (dict_size < MIN_DICT_SIZE || max_string < MIN_STR_SIZE ||
-	    max_string > MAX_STR_SIZE)
+	if (dict_size < MIN_CODEWORDS || dict_size > dict_size_ ||
+	    max_string < MIN_STRING || max_string > V42BIS_MAX_STRING)
 		return -1;
-	if (dict_size > dict_size_ || max_string > (int)sizeof(str_data_))
-		return -1;
-	max_string_ = max_string;
 	dict_size_ = dict_size;
+	max_string_ = max_string;
 	return 0;
 }
 
-/* frees the dictionary */
+/* frees the dictionary and drops any output: not ready(), no codewords
+   (so config() fails); harmless when repeated */
 void V42bis::exit()
 {
 	delete[] dict_;
 	dict_ = nullptr;
 	dict_size_ = 0;
+	olen_ = ohead_ = 0;
 }
 
-/* up to n octets of the output into buf; returns how many */
+/* the initial state of 6.2 and 7.2, the same for the encoder and the
+   decoder (C-INIT, or RESET from the remote): each tree its root only,
+   C1 = N5, C2 = 9 and C3 = 512, transparent mode, escape character 0,
+   no string, no pending update, nothing excluded, no bits waiting, the
+   estimate at its start.  The statistics and the output stay */
+void V42bis::dict_init()
+{
+	for (int i = 0; i < dict_size_; i++) {
+		Node &n = dict_[i];
+		n.ch = i >= N6 && i < N5 ? (uint8_t)(i - N6) : 0;
+		n.parent = n.child = n.next = 0;
+	}
+	next_free_ = N5;
+	cw_size_ = 9;
+	/* C3 - 1, the largest codeword of C2 bits: C3 itself would not fit
+	   16 bits once C2 reaches 16 */
+	threshold_ = (1 << 9) - 1;
+	mode_ = TRANSPARENT;
+	escape_ = false;
+	escape_char_ = 0;
+	update_at_ = last_matched_ = last_added_ = 0;
+	str_len_ = flushed_len_ = 0;
+	bit_len_ = 0;
+	bit_data_ = 0;
+	cmp_last_ = EST_START;
+}
+
+/* the codeword of the string at + ch, 0 if the dictionary has no such
+   string; at 0 is the empty string, whose extensions are the roots */
+uint16_t V42bis::match_char(uint16_t at, uint8_t ch) const
+{
+	if (!at)
+		return N6 + ch;
+	for (uint16_t c = dict_[at].child; c; c = dict_[c].next)
+		if (dict_[c].ch == ch)
+			return c;
+	return 0;
+}
+
+/* adds the string at + ch to the dictionary (6.4) unless it is there
+   already, at codeword C1; it becomes the excluded entry.  Then node
+   recovery (6.5): C1 moves on, wrapping from N2 to N5, to the next entry
+   that is empty or a leaf, and a leaf there is detached from its parent.
+   Callers never pass a string of N7 characters (6.4 a), so no string is
+   longer than N7.  Returns the new entry's codeword, 0 if none */
+uint16_t V42bis::add_char(uint16_t at, uint8_t ch)
+{
+	if (match_char(at, ch))
+		return 0;
+	uint16_t cw = next_free_;
+	Node &n = dict_[cw];
+	n.ch = ch;
+	n.parent = at;
+	n.child = 0;
+	n.next = dict_[at].child;
+	dict_[at].child = cw;
+	last_added_ = cw;
+
+	do {
+		if (++next_free_ >= dict_size_)
+			next_free_ = N5;
+	} while (dict_[next_free_].child);
+	Node &r = dict_[next_free_];
+	if (r.parent) {
+		uint16_t *link = &dict_[r.parent].child;
+		while (*link != next_free_)
+			link = &dict_[*link].next;
+		*link = r.next;
+		r.parent = r.next = 0;
+	}
+	return cw;
+}
+
+/* string matching (6.3) of the data character ch, the same for the
+   encoder's characters and for the decoder's in transparent mode (8).
+   First the dictionary update pending from the last string, with ch as
+   its unmatched character (6.4, 7.6); then ch extends the current string
+   if the dictionary has that string and it is not the excluded entry.
+   Returns 1 if ch joined the string; 2 if it joined and the string has
+   N7 characters now (it ends, and no update will follow it: 6.4 a); 0 if
+   the string ends before ch: with no such string its update with ch is
+   now pending, at the excluded entry nothing is and the entry is not
+   excluded any more.  After 0 the caller ends the string and matches ch
+   again, which then starts the next string */
+int V42bis::recv_data(uint16_t ch)
+{
+	if (update_at_) {
+		add_char(update_at_, (uint8_t)ch);
+		update_at_ = 0;
+	}
+	uint16_t at = match_char(last_matched_, (uint8_t)ch);
+	if (!at) {
+		update_at_ = last_matched_;
+		return 0;
+	}
+	if (at == last_added_) {
+		last_added_ = 0;
+		return 0;
+	}
+	last_matched_ = at;
+	return ++str_len_ >= max_string_ ? 2 : 1;
+}
+
+
+/*
+ *    the encoder
+ *
+ */
+
+/* one character from the DTE (7.3): string matching, each string it
+   ends passed on (7.5), the compressibility test after each of these
+   and after the character joins a string (7.8).  Returns the octets it
+   queued */
+int V42bis::encode(uint8_t ch)
+{
+	int before = olen_;
+	int r;
+	while (!(r = recv_data(ch))) {
+		send_string();
+		test_mode();
+	}
+	/* the escape character procedure (9.2) as ch joins its string; in
+	   transparent mode ch goes out now */
+	if (mode_ == TRANSPARENT) {
+		send_data(ch);
+		if (ch == escape_char_)
+			send_data(EID);
+	}
+	if (ch == escape_char_)
+		escape_char_ += ESCAPE_STEP;
+	if (r == 2)
+		send_string();
+	test_mode();
+	return olen_ - before;
+}
+
+/* passes on the current string (7.5) and ends it: in compressed mode as
+   its codeword, in transparent mode its characters are out already.  Its
+   characters not yet counted (since its start, or since the last flush
+   in transparent mode) count as one codeword of the size in effect
+   before any STEPUP, in the estimate and the statistics.  Returns how
+   many characters that was */
+int V42bis::send_string()
+{
+	int len = str_len_ - flushed_len_;
+	if (len > 0) {
+		int size = cw_size_;
+		if (mode_ == COMPRESSED)
+			send_cw(last_matched_);
+		cmp_last_ = estimate(cmp_last_, len, size);
+		raw_bits_ += 8 * len;
+		cmp_bits_ += size;
+	}
+	last_matched_ = 0;
+	str_len_ = flushed_len_ = 0;
+	return len;
+}
+
+/* the compressibility test (7.8): to compressed mode when the estimate
+   is below TO_COMPRESSED, to transparent mode when it is above
+   TO_TRANSPARENT.  A change cuts string matching short (6.3 ii): the
+   partial string, if any, is passed on in the mode being left and
+   becomes the pending update with the next character (7.8.1 a, 7.8.2 b);
+   without one, an update already pending stays.  Returns 1 if the mode
+   changed */
+int V42bis::test_mode()
+{
+	if (mode_ == TRANSPARENT ? cmp_last_ >= TO_COMPRESSED :
+	    cmp_last_ <= TO_TRANSPARENT)
+		return 0;
+	if (last_matched_)
+		update_at_ = last_matched_;
+	send_string();
+	if (mode_ == TRANSPARENT) {
+		/* the escape character as it is, then ECM; the first codeword
+		   starts at bit 1 of the next octet (7.8.1, 7.5) */
+		send_data(escape_char_);
+		send_data(ECM);
+		mode_ = COMPRESSED;
+	} else {
+		/* ETM and zeros to the octet boundary (7.8.2, 7.5); nothing is
+		   excluded any more, as in the decoder on ETM */
+		send_cw(ETM);
+		align_bits();
+		last_added_ = 0;
+		mode_ = TRANSPARENT;
+	}
+	return 1;
+}
+
+/* the codeword cw in C2 bits (7.4), after as many STEPUPs as it needs
+   (each in the size it leaves, C3 doubling); its whole octets go out */
+void V42bis::send_cw(uint16_t cw)
+{
+	while (cw > threshold_) {
+		bit_data_ |= (uint32_t)STEPUP << bit_len_;
+		bit_len_ += cw_size_++;
+		threshold_ = (uint16_t)(threshold_ << 1 | 1);
+		send_bits();
+	}
+	bit_data_ |= (uint32_t)cw << bit_len_;
+	bit_len_ += cw_size_;
+	send_bits();
+}
+
+/* zeros up to the octet boundary (after FLUSH and ETM, 7.5), and the
+   last octet out */
+void V42bis::align_bits()
+{
+	bit_len_ = (bit_len_ + 7) & ~7;
+	send_bits();
+}
+
+/* the whole octets of the bit reservoir to the output, bit 1 first
+   (Figure 3); returns how many */
+int V42bis::send_bits()
+{
+	int n = 0;
+	for (; bit_len_ >= 8; n++) {
+		send_data(bit_data_ & 0xff);
+		bit_data_ >>= 8;
+		bit_len_ -= 8;
+	}
+	return n;
+}
+
+/* C-FLUSH (7.9, 5.7), each time the DTE has nothing more for now.  In
+   transparent mode the characters are out already: those since the last
+   flush count as a string passed on, but string matching goes on and no
+   update is made.  In compressed mode the partial string, if any, goes
+   as its codeword and becomes the pending update; then FLUSH and zeros
+   to the octet boundary, unless no codeword went and no bits wait.  With
+   nothing new since the last flush nothing happens.  Returns the octets
+   it queued */
+int V42bis::flush_encoder()
+{
+	int before = olen_;
+	if (mode_ == TRANSPARENT) {
+		int len = str_len_ - flushed_len_;
+		if (len > 0) {
+			cmp_last_ = estimate(cmp_last_, len, cw_size_);
+			raw_bits_ += 8 * len;
+			cmp_bits_ += cw_size_;
+			flushed_len_ = str_len_;
+		}
+		return 0;
+	}
+	bool sent = last_matched_ != 0;
+	if (sent) {
+		update_at_ = last_matched_;
+		send_string();
+	}
+	if (sent || bit_len_) {
+		send_cw(FLUSH);
+		align_bits();
+	}
+	return olen_ - before;
+}
+
+
+/*
+ *    the decoder
+ *
+ */
+
+/* one octet of a received I frame (8); the characters it gives join the
+   output.  Returns how many, or -1 on C-ERROR (5.8) */
+int V42bis::decode(uint8_t ch)
+{
+	if (mode_ == COMPRESSED) {
+		/* the octet's bits join the reservoir, the least significant
+		   first (Figure 3); a codeword has 9 bits or more, so no more
+		   than one ends in this octet */
+		bit_data_ |= (uint32_t)ch << bit_len_;
+		bit_len_ += 8;
+		if (bit_len_ < cw_size_)
+			return 0;
+		uint16_t cw = (uint16_t)(bit_data_ & threshold_);
+		bit_data_ >>= cw_size_;
+		bit_len_ -= cw_size_;
+		switch (cw) {
+		case ETM:
+			/* transparent mode from the next octet, no string and
+			   nothing excluded; an update pending from the last
+			   codeword waits for the first character (7.8.2 b) */
+			mode_ = TRANSPARENT;
+			last_matched_ = 0;
+			str_len_ = 0;
+			last_added_ = 0;
+			[[fallthrough]];
+		case FLUSH:
+			/* the rest of the octet is padding (7.5, 7.9 c) */
+			bit_data_ = 0;
+			bit_len_ = 0;
+			return 0;
+		case STEPUP:
+			/* no further than N1 (5.8 a): C2 is N1 once its largest
+			   codeword reaches N2 - 1 */
+			if (threshold_ >= dict_size_ - 1)
+				return -1;
+			cw_size_++;
+			threshold_ = (uint16_t)(threshold_ << 1 | 1);
+			return 0;
+		}
+		/* a string: not beyond the dictionary nor an empty entry, such
+		   as C1 (5.8 b, c) */
+		if (cw >= dict_size_ || (cw >= N5 && !dict_[cw].parent))
+			return -1;
+		/* spelled from the leaf up into the end of str_data_ (no string
+		   is longer than N7) */
+		int pos = V42BIS_MAX_STRING;
+		for (uint16_t at = cw;; at = dict_[at].parent) {
+			str_data_[--pos] = dict_[at].ch;
+			if (at < N5)
+				break;
+		}
+		/* the last string plus this one's first character (8, 6.4);
+		   C-ERROR if node recovery then took this very entry, which the
+		   encoder could not have had */
+		if (update_at_) {
+			add_char(update_at_, str_data_[pos]);
+			update_at_ = 0;
+			if (cw >= N5 && !dict_[cw].parent)
+				return -1;
+		}
+		int len = V42BIS_MAX_STRING - pos;
+		if (len < max_string_)
+			update_at_ = cw;
+		/* out, the escape character cycling on its own (9.2 b) */
+		for (; pos < V42BIS_MAX_STRING; pos++) {
+			uint8_t c = str_data_[pos];
+			send_data(c);
+			if (c == escape_char_)
+				escape_char_ += ESCAPE_STEP;
+		}
+		return len;
+	}
+
+	/* transparent mode: a command code after the escape character */
+	if (escape_) {
+		escape_ = false;
+		switch (ch) {
+		case ECM:
+			/* compressed mode from the next octet, its first
+			   codeword from bit 1; the current string, if any, is
+			   the update pending for that codeword (7.8.1 a) */
+			if (last_matched_)
+				update_at_ = last_matched_;
+			last_matched_ = 0;
+			str_len_ = 0;
+			mode_ = COMPRESSED;
+			return 0;
+		case EID:
+			ch = escape_char_;
+			escape_char_ += ESCAPE_STEP;
+			break;
+		case RESET:
+			dict_init();
+			return 0;
+		default:
+			return -1;      /* reserved (5.8 d) */
+		}
+	} else if (ch == escape_char_) {
+		escape_ = true;
+		return 0;
+	}
+	/* a data character: matched as the encoder did, then out */
+	int r;
+	do {
+		r = recv_data(ch);
+		if (r != 1) {
+			last_matched_ = 0;
+			str_len_ = 0;
+		}
+	} while (!r);
+	send_data(ch);
+	return 1;
+}
+
+/* the end of a received frame.  The decoder holds no characters back
+   (each goes out as soon as it is known), and string matching and an
+   escape character just received carry on into the next frame, so
+   there is nothing to do; returns 0 characters */
+int V42bis::flush_decoder()
+{
+	return 0;
+}
+
+
+/*
+ *    output
+ *
+ */
+
+/* one octet (the encoder's) or character (the decoder's) onto the end
+   of the output queue; dropped if it is full (callers take the output
+   before each encode() and decode(), which queue far less).  Returns 1
+   if queued */
+int V42bis::send_data(uint16_t ch)
+{
+	if (olen_ >= (int)sizeof(obuf_))
+		return 0;
+	obuf_[(ohead_ + olen_++) % (int)sizeof(obuf_)] = (uint8_t)ch;
+	return 1;
+}
+
+/* takes up to n octets from the front of the output queue into buf;
+   returns how many */
 int V42bis::out(uint8_t *buf, int n)
 {
-	int ret = 0;
-	if (olen_ > 0) {
-		ret = olen_ - ohead_ < n ? olen_ - ohead_ : n;
-		memcpy(buf, obuf_ + ohead_, ret);
-		ohead_ += ret;
-		if (ohead_ == olen_)
-			ohead_ = olen_ = 0;
+	if (n > olen_)
+		n = olen_;
+	if (n <= 0)
+		return 0;
+	for (int i = 0; i < n; i++) {
+		buf[i] = obuf_[ohead_];
+		ohead_ = (ohead_ + 1) % (int)sizeof(obuf_);
 	}
-	return ret;
+	olen_ -= n;
+	return n;
 }
 
 } // namespace dlink
