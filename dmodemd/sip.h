@@ -10,12 +10,22 @@
  *    (it reads a frame from the call, the modem answers with one).  A
  *    call ends with that socket: whichever side closes it.
  *
+ *    A fax call may go over to T.38 (SIP_T38, on by default) while the
+ *    modem is in fax mode (set_fax()): when the far end asks, or a
+ *    second after we answered one.  Its audio stops then (the socket
+ *    stays, for the call's end), and the modem's fax engine has the
+ *    call's UDPTL instead (t38()); a "T38" line on the control
+ *    descriptor says so, an "AUDIO" line that the call is back on the
+ *    audio.
+ *
  */
 
 #ifndef __SIP_H__
 #define __SIP_H__
 
 #include <string>
+
+#include <sys/socket.h>
 
 namespace sip {
 
@@ -27,13 +37,15 @@ struct Config {
 	bool listen;            /* register, and take calls in */
 	const char *record;     /* $DMODEM_REC: the audio both ways in
 				   <record>.rx and <record>.tx */
+	bool t38;               /* $SIP_T38 (not "no"): fax over T.38 */
 };
 
 /* $SIP_LOGIN and friends into cfg; false (with a message) if unusable */
 bool config_from_env(Config &cfg, bool listen);
 
 /* start the user agent; returns the descriptor its RING and CANCEL lines
-   come on (a call waits for ANSWER, or the caller gave up), or -1 */
+   come on (a call waits for ANSWER, or the caller gave up), and T38 and
+   AUDIO (the call's fax went over to T.38, or back), or -1 */
 int start(const Config &cfg);
 /* the service thread ended (the call hung up), pjsua destroyed */
 void stop();
@@ -51,6 +63,23 @@ void answer(int audio_fd);
 
 /* the G.711 law of the current call: 1 mu-law, 2 A-law, 0 not known yet */
 int law();
+
+/* the modem is in fax mode: its calls may go over to T.38 */
+void set_fax(bool fax);
+
+/* the current call's T.38, as the far end has it */
+struct T38 {
+	int fd;                         /* our UDPTL socket: the caller's
+					   own descriptor of it */
+	struct sockaddr_storage peer;   /* the far end's UDPTL */
+	socklen_t peer_len;
+	int version;                    /* T38FaxVersion agreed */
+	int max_datagram;               /* its T38FaxMaxDatagram, 0 if
+					   none */
+	bool redundancy;                /* T38FaxUdpEC t38UDPRedundancy */
+};
+/* the current call's T.38 into t, while it is on; false if it is not */
+bool t38(T38 *t);
 
 } // namespace sip
 

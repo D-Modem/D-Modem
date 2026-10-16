@@ -17,8 +17,9 @@
 std::string fax_file(const char *what);
 
 /* the test document of two pages (one standard, one fine); light: with
-   less on them, quicker to send */
-testing::AssertionResult write_test_doc(const std::string &path, bool light);
+   less on them, quicker to send; rtc: each page's data ending in RTC */
+testing::AssertionResult write_test_doc(const std::string &path, bool light,
+					bool rtc = false);
 
 /* the same pages in both files */
 testing::AssertionResult same_pages(const std::string &a,

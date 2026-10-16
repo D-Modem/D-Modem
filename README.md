@@ -67,6 +67,15 @@ By default the modem negotiates the best common modulation (V.8, then V.34 at up
     at+ms=132,0,4800,9600 
     OK
 
+### Fax
+dmodemd is a class 1 fax modem (`AT+FCLASS=1`) for fax software on its
+pty such as efax (`efax -d /dev/ttyDM0 -o1 -iX3 -t <number> page.tif`;
+`-iS0=1 -w -r <prefix>` waits for a call and receives; efax reads a TIFF
+page up to its RTC, as efix writes them).  A fax call goes
+over to T.38 when the other end asks for it, or a second after dmodemd
+answered one: the same commands and results for the software, the call's
+UDPTL instead of its audio.  `SIP_T38=no` keeps faxes on the audio.
+
 ### Receiving calls
 With `-L` (listen), dmodemd registers with the SIP server, so that calls to the account reach the modem: it reports `RING`, and answers on `ATA` or by itself after `ATS0=n` rings.  Dialing works as before in this mode.
 

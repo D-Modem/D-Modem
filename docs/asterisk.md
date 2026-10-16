@@ -256,6 +256,16 @@ checked).  `CASES`, `SIP_LOG=1` (the SIP messages in the console),
 `ARI=1` runs these tests (and `test/sip.sh`) through
 [dmodem-ari](ari.md#testing) instead of the module.
 
+`test/efax.sh` is dmodemd's fax (class 1) with efax on its pty against
+Asterisk's own over PJSIP (`t38_udptl`): efax sends, dmodemd calling
+`ReceiveFAX` (which asks for T.38), and efax receives, `SendFAX` calling
+dmodemd (which asks for it a second after it answers); both over T.38.
+`T38=no` has the endpoint without T.38 (dmodemd's ask refused, the faxes
+on the audio), `DMODEMD_T38=no` dmodemd without it (Asterisk's refused).
+The pages efax receives must be the document's; those it sends carry a
+header of its own, and must have come with the rows it sent.  Needs efax
+(and libtiff-tools); `CASES`, `DMODEMD_DEBUG`, `SIP_LOG=1`, `FAX_DEBUG=1`.
+
 ## Debugging
 
 `debug = 3` in `[general]` and `core set verbose 5` show the modem's

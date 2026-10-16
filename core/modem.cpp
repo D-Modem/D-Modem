@@ -1341,6 +1341,7 @@ int Modem::stop_call()
 		FAX_delete(fax_);
 		fax_ = nullptr;
 	}
+	t38_ = false;
 	set_state(IDLE);
 	if (have_result_) {
 		have_result_ = false;
@@ -1854,17 +1855,57 @@ void Modem::fax_process(int16_t *in, int16_t *out, int count)
 	}
 }
 
-/* the fax engine (class 1) instead of a pump; -1 if it cannot be
-   created */
+/* the fax engine (class 1) instead of a pump, on T.38 if the call is;
+   -1 if it cannot be created */
 int Modem::fax_start()
 {
 	DBG("modem_fax_start...\n");
 	fax_ = FAX_create(handle_, caller_, srate_);
 	if (!fax_)
 		return -1;
+	if (t38_ && FAX_t38_start(fax_, fax_t38_send, this, t38_max_) < 0)
+		t38_ = false;
 	later_ = Later::None;
 	run_ = Run::Fax;
 	return 0;
+}
+
+/* the fax engine's IFP packet to the host */
+void Modem::fax_t38_send(void *ctx, const void *ifp)
+{
+	Modem *m = static_cast<Modem *>(ctx);
+	m->host_.t38_send(*m, ifp);
+}
+
+/* see dcore.h */
+int Modem::t38_start(int max_data)
+{
+	if (mode_ != MODEM_MODE_FAX)
+		return -1;
+	t38_max_ = max_data;
+	if (fax_ && FAX_t38_start(fax_, fax_t38_send, this, max_data) < 0)
+		return -1;
+	DBG("fax over T.38\n");
+	t38_ = true;
+	return 0;
+}
+
+/* see dcore.h */
+void Modem::t38_stop()
+{
+	if (!t38_)
+		return;
+	DBG("fax back on the audio\n");
+	t38_ = false;
+	if (fax_)
+		FAX_t38_stop(fax_);
+}
+
+/* see dcore.h */
+void Modem::t38_rx(const void *ifp)
+{
+	if (t38_ && fax_)
+		FAX_t38_rx(fax_, ifp);
 }
 
 } // namespace dcore

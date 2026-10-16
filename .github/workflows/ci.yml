@@ -8,7 +8,8 @@
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
 # two modems of the module, D-Modem (dmodemd) over SIP both ways, and
 # faxes on the audio and over T.38, also against their own fax (spandsp);
-# in Asterisk also through dmodem-ari, D-Modem as an ARI application.
+# in Asterisk also through dmodem-ari, D-Modem as an ARI application, and
+# dmodemd's class 1 fax with efax on its pty.
 #
 # A push or pull request that changes only documentation (docs/ and the
 # Markdown files: nothing builds or tests from them) runs none of it.
@@ -67,7 +68,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config g++ libssl-dev uuid-dev libgtest-dev \
-            libtiff-tools asterisk asterisk-modules asterisk-dev python3
+            libtiff-tools asterisk asterisk-modules asterisk-dev python3 \
+            efax
           # the tests run an Asterisk of their own
           sudo systemctl stop asterisk || true
 
@@ -115,11 +117,18 @@ jobs:
           timeout 1500 asterisk/test/t38.sh
           ARI=1 timeout 1500 asterisk/test/t38.sh
 
+      # dmodemd's class 1 fax with efax on its pty, over T.38 and not
+      - name: Fax (dmodemd)
+        run: |
+          timeout 900 asterisk/test/efax.sh
+          T38=no timeout 900 asterisk/test/efax.sh
+          DMODEMD_T38=no timeout 900 asterisk/test/efax.sh
+
       - name: Logs of a failed step
         if: failure()
         run: |
           for f in /tmp/dmodem-*/dmodemd.log /tmp/dmodem-*/console.log \
-                   /tmp/dmodem-*/dmodem-ari.log \
+                   /tmp/dmodem-*/dmodem-ari.log /tmp/dmodem-*/efax*.log \
                    /tmp/dmodem-*/log/freeswitch.log; do
             [ -f "$f" ] || continue
             echo "== $f"; tail -80 "$f"

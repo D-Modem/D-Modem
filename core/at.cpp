@@ -102,6 +102,9 @@ void Modem::at_process()
 			cr = sregs_[SREG_CR_CHAR];
 			lf = sregs_[SREG_LF_CHAR];
 			bs = sregs_[SREG_BS_CHAR];
+			/* a fax command runs: the rest is the fax engine's */
+			if (ret > 0 && !command_ && fax_)
+				break;
 		} else if (ch == bs && at_count_) {
 			at_count_--;
 			if (echo) {
@@ -824,6 +827,18 @@ int Modem::at_voice(char *p, int *len)
  *    fax class 1
  */
 
+/* a class 1 action command for the fax engine: once it runs, what the
+   DTE sends is the engine's until its result (its data, or the
+   character that aborts a receive command: T.31 8.3), commands after
+   that */
+int Modem::fax_command(enum FAX_CMD cmd, unsigned val)
+{
+	int ret = FAX_class1_command(fax_, cmd, val);
+	if (ret > 0)
+		command_ = false;
+	return ret;
+}
+
 /* class 1 fax: AT+FTS=, +FRS= (silence, 10 ms units), +FTM=, +FRM=
    (data at a modulation, =? the list), +FTH=, +FRH= (HDLC frames, 3:
    V.21) */
@@ -843,7 +858,7 @@ int Modem::at_fax(char *p, int *len)
 		if (p == end)
 			return -1;
 		*len += end - p;
-		return FAX_class1_command(fax_, cmd, val);
+		return fax_command(cmd, val);
 	} else if (!toupper_strncmp(p, "TM=", 3) ||
 		   !toupper_strncmp(p, "RM=", 3)) {
 		/* +FTM=, +FRM= */
@@ -860,7 +875,7 @@ int Modem::at_fax(char *p, int *len)
 		if (p == end)
 			return -1;
 		*len += end - p - 1;
-		return FAX_class1_command(fax_, cmd, val);
+		return fax_command(cmd, val);
 	} else if (!toupper_strncmp(p, "RH=", 3) ||
 		   !toupper_strncmp(p, "TH=", 3)) {
 		/* +FRH=, +FTH= */
@@ -873,7 +888,7 @@ int Modem::at_fax(char *p, int *len)
 			crlf();
 			return 0;
 		} else if (isdigit((unsigned char)*p))
-			return FAX_class1_command(fax_, cmd, *p - '0');
+			return fax_command(cmd, *p - '0');
 		return -1;
 	}
 	return -1;

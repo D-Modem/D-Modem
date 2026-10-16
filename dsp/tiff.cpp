@@ -69,8 +69,8 @@ static unsigned char *entry(unsigned char *e, unsigned tag, unsigned type,
 	return e + 12;
 }
 
-/* a page appended: its rows in MH with byte aligned EOLs (one strip),
-   then its IFD with the resolutions, linked from the IFD before it, and
+/* a page appended: its rows in MH with byte aligned EOLs (one strip;
+   RTC after them with rtc), then its IFD with the resolutions, linked from the IFD before it, and
    all of it in the file (a whole TIFF of the pages so far, before
    close()).  0, or -1 on a write error */
 int TiffOut::write_page(const T4Page *p)
@@ -84,7 +84,7 @@ int TiffOut::write_page(const T4Page *p)
 
 	if (!f_)
 		return -1;
-	p->encode_mh(&b, 0, 1, 0);
+	p->encode_mh(&b, 0, 1, rtc);
 	len = (b.n + 7) / 8;
 	fseek(f_, 0, SEEK_END);
 	data_at = ftell(f_);

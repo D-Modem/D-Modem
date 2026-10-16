@@ -18,17 +18,35 @@
  *    bridge's clock: 8000 Hz, 16 bit linear, nothing resampled, so that
  *    G.711's codes pass through as they are.
  *
+ *    T.38: pjsua has no image media of its own, and would make an audio
+ *    stream of an image line on in an audio line's place.  An offer of
+ *    it (a re-INVITE) is answered here, our image line in its place off
+ *    as pjsua has it (port 0: pjsua stops the audio there and makes
+ *    nothing of it), the SIP messages with our UDPTL port in it (a
+ *    module of ours on their way out); pjsua refuses an offer without
+ *    audio itself, so it is told that the answer is ours.  Our own ask
+ *    has pjsua's offer with its audio off and our image line on in a
+ *    media line of its own, one more than pjsua's (pjsua skips a media
+ *    line it has no type for).  What was agreed comes from the SDP
+ *    negotiator's active SDPs.  (pjsua_internal.h)
+ *
  */
 
+#include <arpa/inet.h>
+#include <ctype.h>
 #include <errno.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -40,6 +58,7 @@
 #include <thread>
 
 #include <pjsua-lib/pjsua.h>
+#include <pjsua-lib/pjsua_internal.h>
 
 #include "line_recorder.h"
 #include "sip.h"
@@ -63,6 +82,19 @@ const int JB_MAX = 2000;
 const int RING_MS = 3000;
 const int POLL_MS = 200;
 
+/* T.38: our ask, after answering a fax call (ms): one sooner may cross
+   the call's ACK */
+const int T38_ASK_MS = 1000;
+
+/* the far end's T.38, from its image line */
+struct Peer {
+	std::string addr;
+	int port = 0;
+	int version = 0;
+	int max_datagram = 0;
+	bool redundancy = false;
+};
+
 /* the current call, as pjsua's callbacks and the worker share it (under
    lock).  Every call carries a user data of its own (token), by which
    the callbacks know the current call: the id of a call being dialled
@@ -74,6 +106,24 @@ struct Call {
 	bool ringing = false;   /* came in, not answered yet */
 	bool media = false;     /* its media came up */
 	bool gone = false;      /* disconnected */
+	bool incoming = false;  /* it came in */
+	bool confirmed = false;
+	std::chrono::steady_clock::time_point up;       /* confirmed then */
+	/* T.38 */
+	bool t38_asked = false;         /* by us or the far end: not again */
+	bool t38_offering = false;      /* our re-INVITE's offer: an image
+					   line in the audio's place */
+	bool t38_mine = false;          /* an image line of ours is in
+					   pjsua's SDPs */
+	pjmedia_sdp_session *offer = nullptr;   /* the far end's, to answer
+						   (in offer_pool) */
+	pj_pool_t *offer_pool = nullptr;
+	bool t38 = false;               /* the call is on T.38 */
+	bool t38_told = false;          /* the T38 line written */
+	Peer peer;
+	bool audio_again = false;       /* back on the audio: the port to
+					   connect, an AUDIO line */
+	bool no_media = false;          /* neither: the audio to ask for */
 };
 
 /* a modem's request: dial number, or answer; the call's audio on fd */
@@ -104,6 +154,7 @@ bool pj_created;
 pjsua_acc_id acc = PJSUA_INVALID_ID;
 std::atomic<int> law_{0};
 std::atomic<uintptr_t> last_token{0};
+std::atomic<bool> fax_{false};
 
 /* shared by the worker, pjsua's callbacks and the modem's thread */
 std::mutex mu;
@@ -121,6 +172,12 @@ Port *port;
 pjsua_conf_port_id port_slot = PJSUA_INVALID_ID;
 bool rang;
 std::chrono::steady_clock::time_point next_ring;
+
+/* (under mu) the current call's UDPTL socket and its port, and the
+   address of our media lines */
+int udptl = -1;
+int udptl_port;
+std::string media_ip;
 
 /* false, with pjsua's message for what failed, unless st is success */
 bool ok(pj_status_t st, const char *what)
@@ -345,8 +402,9 @@ bool attach(int fd)
 	return true;
 }
 
-/* (worker) the port into the bridge and connected both ways with call
-   id's slot; false if that fails */
+/* (worker) the port into the bridge (unless it is there: back from
+   T.38) and connected both ways with call id's slot; false if that
+   fails */
 bool connect_port(pjsua_call_id id)
 {
 	pjsua_conf_port_id call_slot = pjsua_call_get_conf_port(id);
@@ -356,10 +414,13 @@ bool connect_port(pjsua_call_id id)
 		PJ_LOG(1, (THIS_FILE, "call %d: no audio in the bridge", id));
 		return false;
 	}
-	if (!ok(pjsua_conf_add_port(port->pool, &port->base, &slot),
-		"adding the audio port"))
-		return false;
-	port_slot = slot;
+	if (port_slot == PJSUA_INVALID_ID) {
+		if (!ok(pjsua_conf_add_port(port->pool, &port->base, &slot),
+			"adding the audio port"))
+			return false;
+		port_slot = slot;
+	}
+	slot = port_slot;
 	/* towards the modem first: until the modem has frames to answer,
 	   the bridge's get_frame() would wait for it */
 	if (!ok(pjsua_conf_connect(call_slot, slot), "connecting the call") ||
@@ -381,6 +442,387 @@ bool is_current(pjsua_call_id id, void *ud)
 	return true;
 }
 
+
+/*
+ *    T.38's SDP
+ */
+
+std::string str(const pj_str_t &s)
+{
+	return std::string(s.ptr ? s.ptr : "", s.slen);
+}
+
+std::string lower(std::string s)
+{
+	for (char &c : s)
+		c = (char)tolower((unsigned char)c);
+	return s;
+}
+
+/* m is a T.38 line (an image line on UDPTL) */
+bool is_t38(const pjmedia_sdp_media *m)
+{
+	return !pj_stricmp2(&m->desc.media, "image") &&
+		!pj_stricmp2(&m->desc.transport, "udptl");
+}
+
+/* the first T.38 line of s that is on, -1 if none */
+int t38_line(const pjmedia_sdp_session *s)
+{
+	for (unsigned i = 0; i < s->media_count; i++)
+		if (s->media[i]->desc.port && is_t38(s->media[i]))
+			return (int)i;
+	return -1;
+}
+
+/* s has an audio line on */
+bool has_audio(const pjmedia_sdp_session *s)
+{
+	for (unsigned i = 0; i < s->media_count; i++)
+		if (s->media[i]->desc.port &&
+		    !pj_stricmp2(&s->media[i]->desc.media, "audio"))
+			return true;
+	return false;
+}
+
+/* the address of line i of s: its own, else the session's */
+std::string line_addr(const pjmedia_sdp_session *s, unsigned i)
+{
+	const pjmedia_sdp_conn *c = s->media[i]->conn ? s->media[i]->conn :
+		s->conn;
+	return c ? str(c->addr) : std::string();
+}
+
+/* the T.38 settings of line i of s */
+Peer t38_params(const pjmedia_sdp_session *s, unsigned i)
+{
+	const pjmedia_sdp_media *m = s->media[i];
+	Peer p;
+
+	p.addr = line_addr(s, i);
+	p.port = m->desc.port;
+	for (unsigned k = 0; k < m->attr_count; k++) {
+		std::string n = lower(str(m->attr[k]->name));
+		std::string v = str(m->attr[k]->value);
+		if (n == "t38faxversion")
+			p.version = atoi(v.c_str());
+		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
+			p.max_datagram = atoi(v.c_str());
+		else if (n == "t38faxudpec")
+			p.redundancy = lower(v) == "t38udpredundancy";
+	}
+	return p;
+}
+
+/* a connection line of addr */
+pjmedia_sdp_conn *make_conn(pj_pool_t *pool, const std::string &addr)
+{
+	pjmedia_sdp_conn *c = PJ_POOL_ZALLOC_T(pool, pjmedia_sdp_conn);
+	pj_strdup2(pool, &c->net_type, "IN");
+	pj_strdup2(pool, &c->addr_type,
+		   addr.find(':') != std::string::npos ? "IP6" : "IP4");
+	pj_strdup2(pool, &c->addr, addr.c_str());
+	return c;
+}
+
+void add_attr(pj_pool_t *pool, pjmedia_sdp_media *m, const char *name,
+	      const std::string &value)
+{
+	pj_str_t v;
+	pj_strdup2(pool, &v, value.c_str());
+	pjmedia_sdp_media_add_attr(m, pjmedia_sdp_attr_create(pool, name, &v));
+}
+
+/* our T.38 line: UDPTL on port (of addr, unless empty: the session's),
+   T38FaxVersion version, with redundancy, datagrams of 400 octets;
+   port 0 in pjsua's SDPs (see on_tx_sdp()) */
+pjmedia_sdp_media *image_line(pj_pool_t *pool, int port,
+			      const std::string &addr, int version)
+{
+	pjmedia_sdp_media *m = PJ_POOL_ZALLOC_T(pool, pjmedia_sdp_media);
+
+	pj_strdup2(pool, &m->desc.media, "image");
+	m->desc.port = (pj_uint16_t)port;
+	pj_strdup2(pool, &m->desc.transport, "udptl");
+	m->desc.fmt_count = 1;
+	pj_strdup2(pool, &m->desc.fmt[0], "t38");
+	if (!addr.empty())
+		m->conn = make_conn(pool, addr);
+	add_attr(pool, m, "T38FaxVersion", std::to_string(version));
+	add_attr(pool, m, "T38MaxBitRate", "14400");
+	add_attr(pool, m, "T38FaxRateManagement", "transferredTCF");
+	add_attr(pool, m, "T38FaxMaxBuffer", "2000");
+	add_attr(pool, m, "T38FaxMaxDatagram", "400");
+	add_attr(pool, m, "T38FaxUdpEC", "t38UDPRedundancy");
+	return m;
+}
+
+/* (pjsua, with call id's dialog locked) the T.38 that the call's active
+   SDPs agree on: our image line (off, as pjsua has it) and the far
+   end's on, the far end's (the lower version of the two); false if none
+   (pjsua_internal.h: pjsua has no call of its own for them) */
+bool active_t38(pjsua_call_id id, Peer *p)
+{
+	pjsip_inv_session *inv = pjsua_var.calls[id].inv;
+	const pjmedia_sdp_session *l, *r;
+
+	if (!inv || !inv->neg ||
+	    pjmedia_sdp_neg_get_active_local(inv->neg, &l) != PJ_SUCCESS ||
+	    pjmedia_sdp_neg_get_active_remote(inv->neg, &r) != PJ_SUCCESS)
+		return false;
+	for (unsigned i = 0; i < l->media_count && i < r->media_count; i++) {
+		if (!is_t38(l->media[i]) || !is_t38(r->media[i]) ||
+		    !r->media[i]->desc.port)
+			continue;
+		*p = t38_params(r, i);
+		p->version = std::min(p->version, t38_params(l, i).version);
+		return true;
+	}
+	return false;
+}
+
+/* (worker) the call's UDPTL socket, on a port of its own, of the
+   family of our media's address; false if it can't be had */
+bool open_udptl()
+{
+	struct sockaddr_storage a = {};
+	socklen_t len = sizeof(a);
+	bool v6;
+	int fd, port;
+
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		if (udptl >= 0)
+			return true;
+		v6 = media_ip.find(':') != std::string::npos;
+	}
+	a.ss_family = v6 ? AF_INET6 : AF_INET;
+	fd = socket(a.ss_family, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (fd < 0 || bind(fd, reinterpret_cast<struct sockaddr *>(&a),
+			   v6 ? sizeof(struct sockaddr_in6) :
+			   sizeof(struct sockaddr_in)) < 0 ||
+	    getsockname(fd, reinterpret_cast<struct sockaddr *>(&a),
+			&len) < 0) {
+		PJ_LOG(1, (THIS_FILE, "the UDPTL socket: %s", strerror(errno)));
+		if (fd >= 0)
+			close(fd);
+		return false;
+	}
+	port = ntohs(v6 ? reinterpret_cast<struct sockaddr_in6 *>(&a)->sin6_port :
+		     reinterpret_cast<struct sockaddr_in *>(&a)->sin_port);
+	std::lock_guard<std::mutex> lk(mu);
+	udptl = fd;
+	udptl_port = port;
+	return true;
+}
+
+/* an outgoing SIP message: in its SDP our image line, off as pjsua has
+   it, gets our UDPTL port (the SDP pjsip's own, its body still to be
+   printed: a copy of it changed) */
+pj_status_t on_tx_sdp(pjsip_tx_data *tdata)
+{
+	pjsip_msg_body *b = tdata->msg ? tdata->msg->body : nullptr;
+	pjmedia_sdp_session *sdp;
+	int port;
+
+	if (!b || b->len || !b->data ||
+	    pj_stricmp2(&b->content_type.type, "application") ||
+	    pj_stricmp2(&b->content_type.subtype, "sdp"))
+		return PJ_SUCCESS;
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		if (!cur.token || !cur.t38_mine || udptl < 0)
+			return PJ_SUCCESS;
+		port = udptl_port;
+	}
+	sdp = pjmedia_sdp_session_clone(tdata->pool,
+		static_cast<const pjmedia_sdp_session *>(b->data));
+	for (unsigned i = 0; i < sdp->media_count; i++)
+		if (is_t38(sdp->media[i]) && !sdp->media[i]->desc.port)
+			sdp->media[i]->desc.port = (pj_uint16_t)port;
+	b->data = sdp;
+	return PJ_SUCCESS;
+}
+
+pjsip_module mod_t38 = {
+	nullptr, nullptr,                       /* prev, next */
+	{ const_cast<char *>("mod-dmodem-t38"), 14 },
+	-1,                                     /* id */
+	PJSIP_MOD_PRIORITY_APPLICATION,         /* before the message is
+						   printed */
+	nullptr, nullptr, nullptr, nullptr,     /* load, start, stop,
+						   unload */
+	nullptr, nullptr,                       /* on_rx_request, response */
+	&on_tx_sdp, &on_tx_sdp,                 /* on_tx_request, response */
+	nullptr,                                /* on_tsx_state */
+};
+
+/* (pjsua, call id's dialog locked) an SDP of ours: the address of its
+   audio noted.  The offer of our T.38 ask (the worker's re-INVITE): its
+   audio off, our T.38 line after the rest, on, for a media line of
+   pjsua's that has no type yet (none at all if there is none) */
+void on_call_sdp_created(pjsua_call_id id, pjmedia_sdp_session *sdp,
+			 pj_pool_t *pool, const pjmedia_sdp_session *rem_sdp)
+{
+	void *ud = pjsua_call_get_user_data(id);
+	pjsua_call *call = &pjsua_var.calls[id];
+	std::lock_guard<std::mutex> lk(mu);
+	unsigned k = call->med_prov_cnt;
+	int audio = -1;
+	std::string a;
+
+	if (!is_current(id, ud))
+		return;
+	for (unsigned i = 0; i < sdp->media_count && audio < 0; i++)
+		if (sdp->media[i]->desc.port &&
+		    !pj_stricmp2(&sdp->media[i]->desc.media, "audio"))
+			audio = (int)i;
+	if (audio < 0)
+		return;
+	a = line_addr(sdp, audio);
+	if (!a.empty())
+		media_ip = a;
+	if (rem_sdp || !cur.t38_offering || udptl < 0)
+		return;
+	if (k != sdp->media_count || k >= PJSUA_MAX_CALL_MEDIA ||
+	    k >= PJMEDIA_MAX_SDP_MEDIA || call->media_prov[k].tp ||
+	    call->media_prov[k].type != PJMEDIA_TYPE_NONE) {
+		PJ_LOG(1, (THIS_FILE, "call %d: no media line for T.38", id));
+		return;
+	}
+	pjmedia_sdp_media_deactivate(pool, sdp->media[audio]);
+	sdp->media[sdp->media_count++] = image_line(pool, udptl_port,
+		sdp->media[audio]->conn ? a : std::string(), 0);
+	call->med_prov_cnt = k + 1;
+	cur.t38_mine = true;
+	PJ_LOG(3, (THIS_FILE, "call %d: asking for T.38 (UDPTL port %d)", id,
+		   udptl_port));
+}
+
+/* (pjsua) a re-INVITE: an offer of T.38 (an image line) taken while the
+   modem is in fax mode, for the worker to answer (pjsua would refuse
+   one without audio: told that the answer is ours, which
+   pjsua_call_answer_with_sdp() gives later); else one without audio
+   refused (488), the rest pjsua's */
+void on_call_rx_reinvite(pjsua_call_id id, const pjmedia_sdp_session *offer,
+			 pjsip_rx_data *, void *, pj_bool_t *async,
+			 pjsip_status_code *code, pjsua_call_setting *)
+{
+	void *ud = pjsua_call_get_user_data(id);
+	pj_pool_t *pool;
+	bool take;
+
+	if (t38_line(offer) < 0)
+		return;
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		take = is_current(id, ud) && cfg_.t38 && fax_;
+		/* (pjsua's answer would have more lines than its media) */
+		if (take && offer->media_count > pjsua_var.calls[id].med_cnt) {
+			PJ_LOG(3, (THIS_FILE, "call %d: T.38 offered with %u "
+				   "media lines, the call has %u", id,
+				   offer->media_count,
+				   pjsua_var.calls[id].med_cnt));
+			take = false;
+		}
+		if (!take && is_current(id, ud))
+			cur.t38_mine = false;
+	}
+	pool = take ? pjsua_pool_create("dmodem-t38", 1024, 1024) : nullptr;
+	if (!pool) {
+		PJ_LOG(3, (THIS_FILE, "call %d: T.38 offered, not taken", id));
+		if (!has_audio(offer))
+			*code = PJSIP_SC_NOT_ACCEPTABLE_HERE;
+		return;
+	}
+	PJ_LOG(3, (THIS_FILE, "call %d: T.38 offered", id));
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		if (cur.offer_pool)
+			pj_pool_release(cur.offer_pool);
+		cur.offer = pjmedia_sdp_session_clone(pool, offer);
+		cur.offer_pool = pool;
+		cur.t38_asked = true;
+		poked = true;
+	}
+	cv.notify_one();
+	*async = PJ_TRUE;
+	pjsua_var.calls[id].rx_reinv_async = PJ_TRUE;
+}
+
+/* (worker) the far end's T.38 offer answered: our T.38 line in its
+   image line's place (the version the offer's, up to 3), the other
+   lines off; 488 if there is no UDPTL socket for it */
+void answer_t38(pjsua_call_id id)
+{
+	pjmedia_sdp_session *offer, *sdp = nullptr;
+	pj_pool_t *pool;
+	pj_sockaddr origin;
+	pj_str_t ip_str;
+	std::string ip;
+	int i, port = 0;
+
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		offer = cur.offer;
+		pool = cur.offer_pool;
+		cur.offer = nullptr;
+		cur.offer_pool = nullptr;
+		ip = media_ip;
+	}
+	if (!offer)
+		return;
+	i = t38_line(offer);
+	if (open_udptl()) {
+		std::lock_guard<std::mutex> lk(mu);
+		port = udptl_port;
+		cur.t38_mine = true;
+	}
+	if (port && !ip.empty() &&
+	    pj_sockaddr_parse(pj_AF_UNSPEC(), 0, pj_cstr(&ip_str, ip.c_str()),
+			      &origin) == PJ_SUCCESS &&
+	    pjmedia_endpt_create_base_sdp(pjsua_get_pjmedia_endpt(), pool,
+					  nullptr, &origin, &sdp) == PJ_SUCCESS) {
+		sdp->conn = make_conn(pool, ip);
+		for (unsigned k = 0; k < offer->media_count; k++)
+			sdp->media[sdp->media_count++] = (int)k == i ?
+				image_line(pool, 0, std::string(),
+					   std::min(t38_params(offer, i).version,
+						    3)) :
+				pjmedia_sdp_media_clone_deactivate(pool,
+							offer->media[k]);
+		PJ_LOG(3, (THIS_FILE, "call %d: T.38 taken (UDPTL port %d)", id,
+			   port));
+		ok(pjsua_call_answer_with_sdp(id, sdp, nullptr, PJSIP_SC_OK,
+					      nullptr, nullptr),
+		   "answering the T.38 offer");
+	} else {
+		ok(pjsua_call_answer(id, PJSIP_SC_NOT_ACCEPTABLE_HERE, nullptr,
+				     nullptr), "refusing the T.38 offer");
+	}
+	pj_pool_release(pool);
+}
+
+/* (worker) our T.38 ask: a re-INVITE whose offer on_call_sdp_created()
+   makes T.38's (once only, taken or not) */
+void ask_t38(pjsua_call_id id)
+{
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		cur.t38_asked = true;
+	}
+	if (!open_udptl())
+		return;
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		cur.t38_offering = true;
+	}
+	ok(pjsua_call_reinvite2(id, nullptr, nullptr), "asking for T.38");
+	std::lock_guard<std::mutex> lk(mu);
+	cur.t38_offering = false;
+}
+
+
 /* (pjsua) an INVITE: 480 unless listening, 486 if the line is busy
    (a call being dialled too), else the call is current and rings */
 void on_incoming_call(pjsua_acc_id, pjsua_call_id id, pjsip_rx_data *)
@@ -401,6 +843,7 @@ void on_incoming_call(pjsua_acc_id, pjsua_call_id id, pjsip_rx_data *)
 			cur.token = token;
 			cur.id = id;
 			cur.ringing = true;
+			cur.incoming = true;
 			code = PJSIP_SC_RINGING;
 		}
 	}
@@ -425,6 +868,18 @@ void on_call_state(pjsua_call_id id, pjsip_event *)
 	if (ci.state != PJSIP_INV_STATE_DISCONNECTED) {
 		PJ_LOG(3, (THIS_FILE, "call %d: %.*s", id,
 			   (int)ci.state_text.slen, ci.state_text.ptr));
+		if (ci.state != PJSIP_INV_STATE_CONFIRMED)
+			return;
+		ud = pjsua_call_get_user_data(id);
+		{
+			std::lock_guard<std::mutex> lk(mu);
+			if (!is_current(id, ud) || cur.confirmed)
+				return;
+			cur.confirmed = true;
+			cur.up = std::chrono::steady_clock::now();
+			poked = true;
+		}
+		cv.notify_one();
 		return;
 	}
 	PJ_LOG(3, (THIS_FILE, "call %d: %.*s (%d %.*s)", id,
@@ -460,28 +915,64 @@ int stream_law(pjsua_call_id id, const pjsua_call_info &ci)
 }
 
 /* (pjsua) a call's media: the first time the current call's is up, its
-   law noted and the worker to connect its audio */
+   law noted and the worker to connect its audio; over to T.38, and
+   back to the audio (the port to connect again); neither after our
+   T.38 ask (its image line refused with its port 0, the audio gone
+   with it), the worker to ask for the audio */
 void on_call_media_state(pjsua_call_id id)
 {
 	pjsua_call_info ci;
+	Peer p;
+	bool t38, audio;
 	void *ud;
-	int l;
+	int l = 0;
 
-	if (pjsua_call_get_info(id, &ci) != PJ_SUCCESS ||
-	    ci.media_status != PJSUA_CALL_MEDIA_ACTIVE)
+	if (pjsua_call_get_info(id, &ci) != PJ_SUCCESS)
 		return;
-	l = stream_law(id, ci);
+	t38 = active_t38(id, &p);
+	if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE)
+		l = stream_law(id, ci);
 	ud = pjsua_call_get_user_data(id);
 	{
 		std::lock_guard<std::mutex> lk(mu);
-		if (!is_current(id, ud) || cur.media)
+		if (!is_current(id, ud))
 			return;
-		cur.media = true;
-		law_ = l;
+		/* (an image line off of pjsua's own, an offer not taken) */
+		t38 = t38 && cur.t38_mine;
+		audio = !t38 && ci.media_status == PJSUA_CALL_MEDIA_ACTIVE;
+		if (t38) {
+			if (cur.t38)
+				return;
+			cur.t38 = true;
+			cur.t38_told = false;
+			cur.peer = p;
+		} else if (audio && cur.t38) {
+			cur.t38 = false;
+			cur.t38_mine = false;
+			cur.audio_again = true;
+		} else if (audio && !cur.media) {
+			cur.media = true;
+			law_ = l;
+		} else if (!audio && cur.media && cur.t38_asked && !cur.t38 &&
+			   (ci.media_status == PJSUA_CALL_MEDIA_NONE ||
+			    ci.media_status == PJSUA_CALL_MEDIA_ERROR)) {
+			/* our image line stays off in the ask for the audio */
+			cur.t38_mine = false;
+			cur.no_media = true;
+		} else {
+			return;
+		}
 		poked = true;
 	}
-	PJ_LOG(3, (THIS_FILE, "call %d: media up, %s", id,
-		   l == 1 ? "PCMU" : l == 2 ? "PCMA" : "not G.711"));
+	if (t38)
+		PJ_LOG(3, (THIS_FILE, "call %d: T.38 on, to %s:%d (version %d%s)",
+			   id, p.addr.c_str(), p.port, p.version,
+			   p.redundancy ? ", redundancy" : ""));
+	else if (audio)
+		PJ_LOG(3, (THIS_FILE, "call %d: media up, %s", id,
+			   l == 1 ? "PCMU" : l == 2 ? "PCMA" : "not G.711"));
+	else
+		PJ_LOG(3, (THIS_FILE, "call %d: no media", id));
 	cv.notify_one();
 }
 
@@ -507,7 +998,12 @@ void end_call()
 	release_port();
 	{
 		std::lock_guard<std::mutex> lk(mu);
+		if (cur.offer_pool)
+			pj_pool_release(cur.offer_pool);
 		cur = Call();
+		if (udptl >= 0)
+			close(udptl);
+		udptl = -1;
 	}
 	rang = false;
 }
@@ -584,14 +1080,20 @@ void do_answer(int fd)
 
 /* (worker) what has happened to the current call: disconnected (CANCEL
    if it still rang), the modem's socket failed, its media up, the RING
-   timer */
+   timer; T.38: an offer to answer, our ask, T38 and AUDIO lines */
 void check_call()
 {
 	Call c;
+	bool tell_t38 = false, again = false, restore = false;
 
 	{
 		std::lock_guard<std::mutex> lk(mu);
 		c = cur;
+		if (cur.t38 && !cur.t38_told)
+			tell_t38 = cur.t38_told = true;
+		again = cur.audio_again;
+		restore = cur.no_media;
+		cur.audio_again = cur.no_media = false;
 	}
 	if (!c.token)
 		return;
@@ -608,11 +1110,27 @@ void check_call()
 		end_call();
 		return;
 	}
-	if (c.media && port && port_slot == PJSUA_INVALID_ID &&
+	if (c.media && port && (port_slot == PJSUA_INVALID_ID || again) &&
 	    !connect_port(c.id)) {
 		end_call();
 		return;
 	}
+	if (c.offer)
+		answer_t38(c.id);
+	if (tell_t38)
+		ctl_line("T38\n");
+	if (again)
+		ctl_line("AUDIO\n");
+	if (restore) {
+		PJ_LOG(3, (THIS_FILE, "call %d: asking for the audio again",
+			   c.id));
+		ok(pjsua_call_reinvite2(c.id, nullptr, nullptr),
+		   "asking for the audio");
+	}
+	if (cfg_.t38 && fax_ && c.incoming && c.confirmed && !c.t38_asked &&
+	    std::chrono::steady_clock::now() >=
+	    c.up + std::chrono::milliseconds(T38_ASK_MS))
+		ask_t38(c.id);
 	if (c.ringing) {
 		auto now = std::chrono::steady_clock::now();
 		if (!rang || now >= next_ring) {
@@ -739,6 +1257,8 @@ bool start_pjsua()
 	ua.cb.on_incoming_call = &on_incoming_call;
 	ua.cb.on_call_state = &on_call_state;
 	ua.cb.on_call_media_state = &on_call_media_state;
+	ua.cb.on_call_sdp_created = &on_call_sdp_created;
+	ua.cb.on_call_rx_reinvite = &on_call_rx_reinvite;
 
 	pjsua_logging_config_default(&lc);
 	lc.console_level = level && *level ? atoi(level) : 4;
@@ -762,6 +1282,8 @@ bool start_pjsua()
 	mc.jb_discard_algo = PJMEDIA_JB_DISCARD_NONE;
 
 	if (!ok(pjsua_init(&ua, &lc, &mc), "pjsua_init") ||
+	    !ok(pjsip_endpt_register_module(pjsua_get_pjsip_endpt(), &mod_t38),
+		"T.38's module") ||
 	    !ok(pjsua_set_ec(0, 0), "turning the echo canceller off") ||
 	    !ok(pjsua_set_null_snd_dev(), "the null sound device") ||
 	    !set_codecs())
@@ -785,6 +1307,7 @@ bool config_from_env(Config &cfg, bool listen)
 	const char *login = getenv("SIP_LOGIN");
 	const char *port = getenv("SIP_PORT");
 	const char *rec_base = getenv("DMODEM_REC");
+	const char *t38 = getenv("SIP_T38");
 	std::string s = login ? login : "";
 	size_t at = s.rfind('@');
 	size_t colon = s.find(':');
@@ -807,6 +1330,9 @@ bool config_from_env(Config &cfg, bool listen)
 	cfg.port = port && *port ? atoi(port) : 5060;
 	cfg.listen = listen;
 	cfg.record = record.empty() ? nullptr : record.c_str();
+	cfg.t38 = !t38 || !(!strcasecmp(t38, "no") || !strcmp(t38, "0") ||
+			    !strcasecmp(t38, "off") ||
+			    !strcasecmp(t38, "false"));
 	return true;
 }
 
@@ -893,6 +1419,46 @@ void answer(int audio_fd)
 int law()
 {
 	return law_;
+}
+
+/* see sip.h */
+void set_fax(bool fax)
+{
+	fax_ = fax;
+}
+
+/* see sip.h */
+bool t38(T38 *t)
+{
+	std::lock_guard<std::mutex> lk(mu);
+	struct sockaddr_in *a4 = reinterpret_cast<struct sockaddr_in *>(&t->peer);
+	struct sockaddr_in6 *a6 =
+		reinterpret_cast<struct sockaddr_in6 *>(&t->peer);
+
+	if (!cur.token || !cur.t38 || udptl < 0 || cur.peer.port <= 0)
+		return false;
+	memset(&t->peer, 0, sizeof(t->peer));
+	if (inet_pton(AF_INET, cur.peer.addr.c_str(), &a4->sin_addr) == 1) {
+		a4->sin_family = AF_INET;
+		a4->sin_port = htons((uint16_t)cur.peer.port);
+		t->peer_len = sizeof(*a4);
+	} else if (inet_pton(AF_INET6, cur.peer.addr.c_str(),
+			     &a6->sin6_addr) == 1) {
+		a6->sin6_family = AF_INET6;
+		a6->sin6_port = htons((uint16_t)cur.peer.port);
+		t->peer_len = sizeof(*a6);
+	} else {
+		PJ_LOG(1, (THIS_FILE, "T.38: no address in %s",
+			   cur.peer.addr.c_str()));
+		return false;
+	}
+	t->fd = fcntl(udptl, F_DUPFD_CLOEXEC, 0);
+	if (t->fd < 0)
+		return false;
+	t->version = cur.peer.version;
+	t->max_datagram = cur.peer.max_datagram;
+	t->redundancy = cur.peer.redundancy;
+	return true;
 }
 
 } // namespace sip

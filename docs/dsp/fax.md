@@ -13,8 +13,12 @@ modulations in `fax_modems.cpp`:
 
 The answering side sends CED (2100 Hz for 3 s) and then starts `+FTH=3` by
 itself; the calling side sends CNG while it waits for an answer and starts
-`+FRH=3` when the answer tone is heard. Any character from the DTE stops
-`+FRH`/`+FRM` once they reported `CONNECT`.
+`+FRH=3` when the answer tone is heard. Any character from the DTE but
+XON and XOFF stops `+FRH`, `+FRM` and `+FRS` with `OK`, before their
+`CONNECT` too (T.31 8.3; efax aborts a `+FRH` that waited too long with a
+CAN): while a class 1 command runs, the DTE's characters are the
+engine's, its data or that character, and commands again only after
+its result.
 
 The DTE's data for `+FTH` and `+FTM` is read a character at a time, and
 nothing after `<DLE><ETX>`: a frame that follows in the same write waits
@@ -61,6 +65,46 @@ original library's constellation comes about 1.4 dB below its training.
 
 `ctest -L spandsp` (with libspandsp-dev) puts spandsp's V.17 transmitter
 and T.4 encoder, as Asterisk's `SendFAX` uses them, into these receivers.
+
+### Class 1 over T.38
+
+`FAX_t38_start()` (dsplibs.h) puts the engine on T.38 instead of the
+audio, also in the middle of a call (dmodemd's call goes over to it):
+the same commands and results for the DTE, the line's signals as IFP
+packets (`dsp/t38.h`) in their time, which `FAX_process()`'s samples
+still give (its audio is silence then). A transmission in progress
+starts over on T.38 with what has not gone yet; `FAX_t38_stop()` goes
+back to the audio.
+
+- `+FTH=3`: the V.21 preamble's indicator, a second of flags' time, then
+  each of the DTE's frames as it comes, paced at 300 bit/s in packets
+  of seven octets at most, its end `hdlc-fcs-OK` (`-sig-end` for the
+  final one); taking a frame that is not the final one is the `CONNECT`
+  for the next, as on the audio. 100 ms after the final frame (or an
+  empty one): no-signal and `OK`.
+- `+FTM=`: the modulation's indicator and its training's time, then the
+  DTE's octets at its rate, the T.38 way round, `t4-non-ecm-sig-end`
+  after the last and no-signal 60 ms later. If the data starts with two
+  HDLC flags it is the DTE's own HDLC (error correction mode: fax
+  software frames the ECM blocks itself): its frames are taken out of
+  the bits and go as HDLC data, each with `hdlc-fcs-OK` (`-BAD` if the
+  DTE's FCS was wrong), `hdlc-sig-end` at the end.
+- `+FRH=3`: `CONNECT` at the V.21 preamble (or its first data), each
+  frame to the DTE with an FCS of its own (spoilt, and `ERROR`, for an
+  `hdlc-fcs-BAD`), `NO CARRIER` when the signal goes without one.
+- `+FRM=`: `CONNECT` at the first data of a fast modulation, T.4 data to
+  the DTE the DTE's way round, HDLC frames (ECM) as an HDLC bit stream
+  of their own (flags first, zeros stuffed, the FCS, two closing flags
+  at the end), `NO CARRIER` at its sig-end or no-signal.
+- `+FRS=`: silence is no signal on T.38; CED is its indicator after
+  200 ms of no-signal; no CNG (as T.30's machine above).
+
+`class1_t38_test` (ctest's `quick`) has a DTE of its own go through T.30
+with these commands, sending and receiving, without and with ECM, both
+packet versions, and T.38 after a while on the audio, against our T.30
+machine over T.38, with the packets' timing; `asterisk/test/efax.sh`
+has efax on dmodemd against Asterisk's fax over T.38 (dmodemd's
+`SIP_T38`, [README](../../README.md)).
 
 ## Fax machine (T.30)
 
@@ -127,4 +171,5 @@ in their order, a repeated one once only.
 `t38_test` has the encodings (Appendix V's DIS), UDPTL with packets lost,
 late and repeated, and two machines over T.38 (versions 0 to 3, 14400 to
 4800 bit/s, ECM, every fifth packet lost); `spandsp_test`'s `T38Spandsp`
-cases run ours against spandsp's T.38 terminal both ways.
+cases run ours against spandsp's T.38 terminal both ways.  Class 1 over
+T.38 (dmodemd's) is in [Fax (class 1)](#class-1-over-t38).

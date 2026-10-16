@@ -96,6 +96,9 @@ struct TiffOut {
 	void *f;
 	int pages;
 	long last_ifd_next;             /* where to link the next page */
+	int rtc;                        /* RTC after each page's rows, for
+					   readers that look for it (efax);
+					   set after open() */
 
 	int open(const char *path);
 	int write_page(const T4Page *p);

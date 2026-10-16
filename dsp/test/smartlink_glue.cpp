@@ -53,6 +53,28 @@ void dp_runtime_set_law(void *runtime, int law)
 	(void)law;
 }
 
+/* its fax has no T.38: it stays on the audio */
+int FAX_t38_start(void *obj, void (*tx)(void *ctx, const void *ifp),
+		  void *ctx, int max_data)
+{
+	(void)obj;
+	(void)tx;
+	(void)ctx;
+	(void)max_data;
+	return -1;
+}
+
+void FAX_t38_stop(void *obj)
+{
+	(void)obj;
+}
+
+void FAX_t38_rx(void *obj, const void *ifp)
+{
+	(void)obj;
+	(void)ifp;
+}
+
 /* the library's own, and the member function that starts an FPE (it
    takes its object as its first argument) */
 void *__real_dp_runtime_create(struct modem *m);

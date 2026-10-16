@@ -71,13 +71,15 @@ static void test_page(T4Page *p, int fine, int seed, int letters)
 
 /* (fax_util.h) a standard page (seed 1) and a fine one (seed 2) into a
    TIFF; light: 300 "letters" a page instead of 4000 */
-testing::AssertionResult write_test_doc(const std::string &path, bool light)
+testing::AssertionResult write_test_doc(const std::string &path, bool light,
+					bool rtc)
 {
 	TiffOut t;
 	T4Page p;
 	int letters = light ? 300 : 4000;
 	if (t.open(path.c_str()))
 		return testing::AssertionFailure() << "cannot write " << path;
+	t.rtc = rtc;
 	test_page(&p, 0, 1, letters);
 	t.write_page(&p);
 	p.release();

@@ -69,6 +69,17 @@ extern void *FAX_create(struct modem *m, unsigned caller, unsigned srate);
 extern void  FAX_delete(void *obj);
 extern int   FAX_process(void *obj, void *in, void *out, int count);
 extern int   FAX_class1_command(void *obj, unsigned cmd, unsigned param);
+/* fax class 1 over T.38 instead of the audio, from now on (also in the
+   middle of a call): the IFP packets (ifp: a struct t38_ifp, t38.h) to
+   tx(ctx, ifp), max_data data octets in one at most (0: 300);
+   FAX_process's samples still its time, its audio silence.  0, or -1
+   if it can't.  FAX_t38_rx: a packet that came; FAX_t38_stop: back to
+   the audio.  (Not in Smart Link's original library: its glue has them,
+   FAX_t38_start failing) */
+extern int   FAX_t38_start(void *obj, void (*tx)(void *ctx, const void *ifp),
+			   void *ctx, int max_data);
+extern void  FAX_t38_stop(void *obj);
+extern void  FAX_t38_rx(void *obj, const void *ifp);
 
 /*
  *    the core -> the library (besides modem_dp.h and modem_param.h)

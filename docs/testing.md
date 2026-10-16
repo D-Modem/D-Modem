@@ -38,6 +38,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `bits_test`, `g711_test`, `pcm_cp_test` | `bits.h`'s fields and CRCs, `g711.h`'s two laws (each octet back to itself, sign and magnitude), the PCM encoders on CPs that cannot carry their rate |
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `t38_test` | T.38: the IFP packets' encodings (both versions), UDPTL's redundancy, two T.30 machines over T.38 with packets lost |
+| `class1_t38_test` | class 1 over T.38: a DTE of the test's own through T.30 on the engine's commands against our T.30 machine over T.38, sending and receiving, ECM, both packet versions, T.38 after a while on the audio; the packets' fields and times |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's, on the audio and over T.38 (its T.38 terminal) |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the core's transcripts against the scripts' `.expect` (slmodemd's old core's, recorded from it; see `docs/core.md`) |
 | `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |

@@ -80,6 +80,10 @@ public:
 	/* the DTE: responses and received data; returns how many it took */
 	virtual int dte_write(Modem &m, const char *buf, int n) = 0;
 
+	/* fax over T.38 (Modem::t38_start()): an IFP packet of the fax
+	   engine's to send (a struct t38_ifp, dsp/t38.h) */
+	virtual void t38_send(Modem &m, const void *ifp) { (void)m; (void)ifp; }
+
 	/* the time in ms, from any origin */
 	virtual unsigned long now_ms() = 0;
 protected:
@@ -138,6 +142,16 @@ public:
 	/* ATA, ATD<number> */
 	int answer();
 	int dial(const char *number);
+	/* the call's fax over T.38 instead of the audio, for the rest of
+	   the call (the line went over to it): the fax engine's packets to
+	   Host::t38_send, max_data data octets in one at most (0: 300),
+	   process() still its time (its audio silence); t38_rx(): a packet
+	   that came.  0, or -1 when the modem is not in fax mode (or its fax
+	   has no T.38).  t38_stop(): back to the audio */
+	int t38_start(int max_data);
+	void t38_stop();
+	void t38_rx(const void *ifp);
+	bool t38() const { return t38_; }
 	/* the device reports an error */
 	void error();
 
@@ -284,6 +298,7 @@ private:
 	void voice_init();
 	void fax_process(int16_t *in, int16_t *out, int n);
 	int fax_start();
+	static void fax_t38_send(void *ctx, const void *ifp);
 	void later(Later what, unsigned long samples);
 	const char *dp_name(int id) const;
 	const char *protocol_name() const;
@@ -311,6 +326,7 @@ private:
 	int at_CID(char *p, int *len);
 	int at_voice(char *p, int *len);
 	int at_fax(char *p, int *len);
+	int fax_command(enum FAX_CMD cmd, unsigned val);
 	int at_kept(const char *p, int *len);
 	void kept_init();
 	/* a kept parameter's values (its name as kept_params has it) */
@@ -433,6 +449,9 @@ private:
 	void *voice_ = nullptr;
 	struct voice_info voice_info_ = {};
 	void *fax_ = nullptr;
+	/* the call's fax over T.38 (its data octets in a packet) */
+	bool t38_ = false;
+	int t38_max_ = 0;
 
 	friend struct LinkOwner;
 };
