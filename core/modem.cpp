@@ -1781,9 +1781,9 @@ void Modem::voice_stop()
 	set_hook(MODEM_HOOK_ON);
 }
 
-/* +VTS, +VTX, +VRX: the voice engine's command, the DTE's characters its
-   own until it reports; 1, or -1 without an engine or for another
-   command (+VTR's duplex) */
+/* +VTS, +VTX, +VRX, +VTR: the voice engine's command, the DTE's
+   characters its own until it reports; 1, or -1 without an engine or
+   for another command */
 int Modem::voice_command(enum VOICE_CMD cmd)
 {
 	switch (cmd) {
@@ -1791,11 +1791,13 @@ int Modem::voice_command(enum VOICE_CMD cmd)
 	case VOICE_CMD_DTMF:
 	case VOICE_CMD_STATE_RX:
 	case VOICE_CMD_STATE_TX:
+	case VOICE_CMD_STATE_DUPLEX:
 		if (!voice_)
 			return -1;
 		command_ = false;
 		voice_streaming_ = cmd == VOICE_CMD_STATE_RX ||
-			cmd == VOICE_CMD_STATE_TX;
+			cmd == VOICE_CMD_STATE_TX ||
+			cmd == VOICE_CMD_STATE_DUPLEX;
 		VOICE_command(voice_, cmd);
 		return 1;
 	default:

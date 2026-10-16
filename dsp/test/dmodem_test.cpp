@@ -923,6 +923,93 @@ TEST(DmodemCxx, VoiceDtmfDetect)
 	ASSERT_TRUE(m.command("AT+VLS=0"));
 }
 
+/* +VTR, V.253's voice duplex state (10.1.4): CONNECT, then the DTE's
+   samples go to the line while the line's come to the DTE; <DLE><ETX>
+   and <DLE>! do not end it (they are ignored), a gap in the DTE's
+   samples plays as silence, and <DLE><^> ends it: the line's samples
+   end with <DLE><ETX>, then OK */
+TEST(DmodemCxx, VoiceDuplex)
+{
+	dm::init();
+	Dte d;
+	dm::Modem m = make("duplex", d, "ATE0\r");
+	std::array<short, FRAME> in{}, out{};
+	std::vector<short> sent;
+	std::string dte;
+
+	/* n blocks of a 1 kHz tone on the line, the modem's samples to the
+	   line kept, its DTE's stream after */
+	auto run = [&](int n) {
+		dte.clear();
+		for (int b = 0; b < n; b++) {
+			for (int i = 0; i < FRAME; i++)
+				in[i] = (short)(8000 * sin(2 * M_PI * 1000 *
+							   i / DMODEM_RATE));
+			m.process(in.data(), out.data(), FRAME);
+			m.poll_dte();
+			sent.insert(sent.end(), out.begin(), out.end());
+			dte += d.read_all();
+		}
+	};
+
+	d.read_all();
+	ASSERT_TRUE(m.command("AT+FCLASS=8"));
+	ASSERT_TRUE(m.command("AT+VLS=1"));
+	run(5);
+	ASSERT_TRUE(m.command("AT+VTR"));
+	run(1);
+	ASSERT_EQ(dte.compare(0, 9, "CONNECT\r\n"), 0) << dte;
+	sent.clear();
+
+	/* 300 samples, a <DLE><DLE> (one 0x10 sample), <DLE><ETX> and
+	   <DLE>! among them */
+	std::string stream, want;
+	for (int i = 0; i < 300; i++) {
+		char c = (char)(130 + i % 60);
+		stream += c;
+		want += c;
+		if (i == 100) {
+			stream += "\x10\x10";
+			want += '\x10';
+		}
+		if (i == 150)
+			stream += "\x10\x03";
+		if (i == 200)
+			stream += "\x10!";
+	}
+	d.write_str(stream);
+	run(10);
+
+	/* to the line: the samples in order, then silence */
+	std::string got;
+	size_t k = 0;
+	while (k < sent.size() && sent[k] == 0)
+		k++;
+	for (; k < sent.size() && sent[k] != 0; k++)
+		got += (char)(sent[k] / 256 + 128);
+	EXPECT_EQ(got, want);
+	for (; k < sent.size(); k++)
+		ASSERT_EQ(sent[k], 0) << k;
+
+	/* to the DTE: the line's tone, still streaming */
+	std::string data;
+	EXPECT_EQ(dle_codes(dte, &data), "");
+	EXPECT_EQ(data.size(), (size_t)10 * FRAME);
+	EXPECT_GT(std::count_if(data.begin(), data.end(), [](char c) {
+		return abs((int)(unsigned char)c - 128) > 16; }), 5 * FRAME);
+
+	/* <DLE><^>: the end, OK, the command state */
+	d.write_str("\x10^");
+	run(2);
+	size_t etx = dte.find("\x10\x03");
+	ASSERT_NE(etx, std::string::npos) << dle_codes(dte);
+	EXPECT_EQ(dte.substr(etx), "\x10\x03OK\r\n");
+	ASSERT_TRUE(m.command("AT+VLS?"));
+	run(1);
+	EXPECT_EQ(dte, "+VLS=1\r\nOK\r\n");
+	ASSERT_TRUE(m.command("AT+VLS=0"));
+}
+
 /* the log lines (DmodemCxx.LawForEachCall) */
 static std::vector<std::string> log_lines;
 

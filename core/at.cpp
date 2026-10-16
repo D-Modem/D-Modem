@@ -1322,7 +1322,7 @@ int Modem::at_CID(char *p, int *len)
 
 /* +V...: caller ID in any mode, the rest in voice mode only: the
    parameters (? =? =<values>), +VIP, +VLS, and what the voice engine
-   does: +VTX, +VRX, +VTS (+VTR is not offered) */
+   does: +VTX, +VRX, +VTR, +VTS */
 int Modem::at_voice(char *p, int *len)
 {
 	const char *q = p + 4, *e;

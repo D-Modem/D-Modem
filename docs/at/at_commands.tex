@@ -846,7 +846,13 @@ H & leaves the line and goes back to data mode, \cmd{+FCLASS=0} \\
 +VRN=\p{n} & the far end has answered when no ring has come in this
   long after dialling, in seconds, 0 to 255 (not beyond S7); 10 at the
   start \\
-+VTX, +VRX, +VTR & sends, receives, or both \\
++VTX, +VRX, +VTR & sends, receives, or both at once: CONNECT, then
+  8-bit samples at 8000/s, \cmd{<DLE>} doubled.  \cmd{+VTX} ends at
+  \cmd{<DLE><ETX>}, \cmd{<DLE>!} or \cmd{<DLE><CAN>} from the DTE,
+  \cmd{+VRX} at any character from it, \cmd{+VTR} at \cmd{<DLE>\textasciicircum}
+  only; then OK, after \cmd{<DLE><ETX>} to end the samples of
+  \cmd{+VRX} and \cmd{+VTR}.  A gap
+  in the DTE's samples plays as silence \\
 +VTD=\p{d} & the duration of a \cmd{+VTS} element that gives none, 0 to
   6000 (0: 1~s); 100 at the start \\
 +VTS=\p{string} & plays the elements of \p{string}, separated by commas,

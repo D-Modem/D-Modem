@@ -426,6 +426,7 @@ int CID_process(void *obj, void *in, int count)
 
 #define DLE 0x10
 #define ETX 0x03
+#define CAN 0x18
 #define DC4 0x14   /* <DLE><DC4> could be sent by the DTE as well */
 
 struct Voice {
@@ -456,6 +457,7 @@ struct Voice {
 
 	struct voice_info *info();
 	int get_tx_sample(float *x);
+	void tx_done(char *rxbuf, int *nrx);
 	int command(enum VOICE_CMD cmd);
 	int process(void *in, void *out, int count);
 };
@@ -547,9 +549,10 @@ int VOICE_command(void *obj, enum VOICE_CMD cmd)
 }
 
 /* the next 8 bit unsigned sample from the DTE, <DLE> codes taken out
-   (<DLE><DLE> a 0x10 sample, <DLE><ETX>, <DLE>! and <DLE><CAN> end the
-   transmission: tx_end), as a 16 bit level in *x; returns 1 for a sample,
-   0 when there is none (yet or any more) */
+   (<DLE><DLE> a 0x10 sample; in transmit state <DLE><ETX>, <DLE>! and
+   <DLE><CAN> end the transmission, in duplex state <DLE><^> does and
+   the others are ignored (V.253 10.1.4.1): tx_end), as a 16 bit level in
+   *x; returns 1 for a sample, 0 when there is none (yet or any more) */
 int Voice::get_tx_sample(float *x)
 {
 	char ch;
@@ -557,15 +560,12 @@ int Voice::get_tx_sample(float *x)
 		u8 c = ch;
 		if (dle) {
 			dle = 0;
-			if (c == ETX) {
-				tx_end = 1;
-				break;
-			}
 			if (c == DLE) {
 				*x = ((int)c - 128) * 256.0f;
 				return 1;
 			}
-			if (c == '!' || c == 0x18) {    /* abort, <CAN> */
+			if (state == VOICE_STATE_DUPLEX ? c == '^' :
+			    c == ETX || c == '!' || c == CAN) {
 				tx_end = 1;
 				break;
 			}
@@ -581,13 +581,27 @@ int Voice::get_tx_sample(float *x)
 	return 0;
 }
 
+/* the DTE's stream over: transmit state back to command state; duplex
+   state too, its samples to the DTE ended with <DLE><ETX> (after those
+   in rxbuf so far, *nrx of them); OK due */
+void Voice::tx_done(char *rxbuf, int *nrx)
+{
+	DSP_DBG("voice: the DTE's stream ends\n");
+	if (state == VOICE_STATE_DUPLEX && *nrx <= 512 - 2) {
+		rxbuf[(*nrx)++] = DLE;
+		rxbuf[(*nrx)++] = ETX;
+	}
+	state = VOICE_STATE_COMMAND;
+	pending = VOICE_STATUS_OK;
+}
+
 /* count samples each way at srate: out a pending tone or the DTE's
    samples (8000 Hz, linearly interpolated), in sent to the DTE as 8 bit
    samples at 8000 Hz (<DLE> doubled); in receive only state any character
    from the DTE ends it with <DLE><ETX>.  DTMF digits on the line are
    reported in every state (V.253 7.5): <DLE><digit> when one comes on
    and every 70 ms while it lasts, <DLE><~> when it goes, among the
-   samples in receive state, whose audio is silence from the report on
+   samples in receive (or duplex) state, whose audio is silence from the report on
    (7.6, its method 2: 51 ms of the tone are left); not while a tone of
    ours plays.  So are a ringing tone's rings (<DLE>r, as one comes on)
    and a busy tone's cadences (<DLE>b), which the line is quiet for
@@ -596,7 +610,7 @@ int Voice::process(void *in, void *out, int count)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 	double step = 8000.0 / srate;
-	char rxbuf[512];
+	char rxbuf[512];        /* tx_done() knows its size */
 	int nrx = 0, i, status;
 	const long repeat = (long)srate * 70 / 1000;
 	auto report = [&](char c) {
@@ -631,10 +645,12 @@ int Voice::process(void *in, void *out, int count)
 				if (get_tx_sample(&x))
 					tx_cur = x;
 				else if (tx_end) {
-					DSP_DBG("voice: dle command: ETX\n");
-					state &= ~VOICE_STATE_TX;
-					pending = VOICE_STATUS_OK;
+					tx_done(rxbuf, &nrx);
 					break;
+				} else {
+					/* an underrun: silence (V.253's
+					   event 23) */
+					tx_cur = 0;
 				}
 			}
 			y = tx_prev + (float)tx_pos * (tx_cur - tx_prev);
