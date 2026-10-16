@@ -14,6 +14,7 @@ links below the table then work.
 | [T.6](https://www.itu.int/rec/T-REC-T.6) | MMR coding | `dsp/t4.cpp` | [T.6.pdf](T.6.pdf) |
 | [T.30](https://www.itu.int/rec/T-REC-T.30) | Group 3 facsimile procedures, ECM | `dsp/t30.cpp` | [T.30.pdf](T.30.pdf) |
 | [T.31](https://www.itu.int/rec/T-REC-T.31) | Class 1 fax AT commands | `dsp/fax_class1.cpp` | [T.31.pdf](T.31.pdf) |
+| [T.38](https://www.itu.int/rec/T-REC-T.38) | Fax over IP: IFP packets, UDPTL | `dsp/t38.cpp`, `dsp/t30.cpp` (T.38 terminal), `ari/` | [T.38.pdf](T.38.pdf) |
 | [V.8](https://www.itu.int/rec/T-REC-V.8) | Start-up: ANSam, CM/JM/CJ | `dsp/dp_v34.cpp` | [V.8.pdf](V.8.pdf) |
 | [V.17](https://www.itu.int/rec/T-REC-V.17) | 14400 bit/s fax modem | `dsp/fax_modems.cpp` | [V.17.pdf](V.17.pdf) |
 | [V.21](https://www.itu.int/rec/T-REC-V.21) | 300 bit/s FSK | `dsp/dp_fsk.cpp`, V.8 and fax HDLC | [V.21.pdf](V.21.pdf) |

@@ -2,8 +2,9 @@
 
 `dmodem-ari` answers (or makes) Asterisk calls with D-Modem's modem, like
 `DModem()`, and sends and receives faxes with its fax machine, like
-`DModemSendFax()` and `DModemReceiveFax()`, but as a program of its own
-beside Asterisk instead of a module inside it. It talks to Asterisk over the Asterisk REST Interface (ARI): the
+`DModemSendFax()` and `DModemReceiveFax()`, on the audio or over T.38 (see
+[T.38](#t38)), but as a program of its own beside Asterisk instead of a
+module inside it. It talks to Asterisk over the Asterisk REST Interface (ARI): the
 events on a WebSocket, the requests over HTTP, and each call's audio over
 RTP from an ARI external media channel, in the call's G.711 law. Nothing of
 D-Modem is loaded into Asterisk.
@@ -151,6 +152,61 @@ fax that ends with the other machine hanging up before then leaves only
 The same goes for a modem call that the other side hangs up: no
 `DMODEMSTATUS` in `h`, where `DModem()` sets `HANGUP`.
 
+## T.38
+
+With `t38 = yes` in `[general]` each call's line is a SIP leg instead of
+an external media channel: Asterisk calls `dmodem-ari`'s own SIP side on
+a PJSIP endpoint of its own (`POST /channels` to
+`PJSIP/<sip_endpoint>/sip:<token>@<sip_bind>`), the audio comes in RTP as
+before, and the leg can go over to T.38 (UDPTL) by a re-INVITE. Asterisk
+passes T.38 between a bridge's PJSIP channels, so it goes on to the other
+end of the call when that endpoint has `t38_udptl` too; external media,
+AudioSocket and WebSocket channels carry audio only.
+
+```
+; pjsip.conf: dmodem-ari's SIP side
+[dmodem]
+type = endpoint
+transport = transport-udp
+context = default               ; (no calls come from it)
+disallow = all
+allow = ulaw
+allow = alaw
+direct_media = no
+t38_udptl = yes
+t38_udptl_ec = redundancy
+aors = dmodem
+
+[dmodem]
+type = aor
+contact = sip:dmodem@127.0.0.1:5090
+
+; dmodem.conf
+[general]
+t38 = yes
+sip_endpoint = dmodem           ; the endpoint above
+sip_bind = 127.0.0.1:5090       ; dmodem-ari's SIP side (its RTP, UDPTL too)
+```
+
+How the faxes take it:
+
+- `receivefax`, and a modem profile that hears a fax machine, ask for
+  T.38 (our re-INVITE, as `ReceiveFAX` does) and wait for the answer, 6 s
+  at most, with silence on the line; refused, the fax goes on the audio.
+- `sendfax` takes T.38 when the other end asks for it (as `SendFAX` does
+  while it sends CNG), any time before its first page.
+- A modem profile takes a T.38 offer before the modems connect as a fax
+  machine calling; once they are connected it refuses (488).
+
+The fax machine is then a T.38 terminal (libdmodem, `dsp/t38.cpp` and
+`dsp/t30.cpp`): the IFP packets of T.38 versions 0 to 3, UDPTL with the
+packets before again for redundancy, transferred TCF, up to 14400 bit/s,
+error correction mode; its packets paced as the modulations would carry
+them. The log says `over T.38` at the end of a fax that went so.
+
+Modem calls take the SIP leg the same way, and V.90's and V.91's G.711
+codes come through it unchanged as through external media.
+
 ## Limits of the prototype
 
 - The variables of a call that the other side hangs up come only as far
@@ -159,6 +215,10 @@ The same goes for a modem call that the other side hangs up: no
   WebSocket's `Sec-WebSocket-Accept` is not checked.
 - One thread a call, and the RTP on 127.0.0.1: `dmodem-ari` runs on
   Asterisk's host.
+- T.38: the SIP side is for Asterisk only (UDP, no authentication, the
+  calls Asterisk makes to it); UDPTL's FEC is not sent (an offer of it is
+  answered with redundancy) and of FEC packets that come only the primary
+  is taken.
 
 ## Testing
 
@@ -179,3 +239,13 @@ the dialplan's `DModem(...)`, `DModemSendFax(...)` and
   receiving, `receivefax`, `sendfax`) and against Asterisk's `SendFAX` and
   `ReceiveFAX` (spandsp). The `h` extensions must have the results, and
   the received files the pages sent.
+- `ARI_SIP=1` with any of them: `t38 = yes`, the calls on SIP legs (a
+  `dmodem` endpoint added to `pjsip.conf`). The modems still connect at
+  62666/62666; the faxes between `dmodem-ari`'s own machines go over T.38
+  even through a Local channel.
+- `asterisk/test/t38.sh`: T.38 through `dmodem-ari` with Asterisk calling
+  itself over PJSIP (out on `loopout`, in on `loopin`, both with T.38):
+  `SendFAX` to `receivefax`, `sendfax` to `ReceiveFAX`, `dmodem-ari`'s
+  `sendfax` to its `receivefax`, `SendFAX` to a modem profile, all of them
+  over T.38, and `SendFAX` from an endpoint without T.38 to `receivefax`
+  on the audio. `CASES`, `SIP_LOG=1` (the SIP messages in the console).

@@ -4,7 +4,7 @@
 # program of its own beside Asterisk (no module in it).  Its call is the
 # PBX modules' (pbx/dmodem_bridge.c) on libdmodem.
 
-add_executable(dmodem-ari dmodem_ari.cpp client.cpp json.cpp
+add_executable(dmodem-ari dmodem_ari.cpp client.cpp json.cpp sip.cpp
 	${DMODEM_PBX_DIR}/dmodem_bridge.c)
 target_include_directories(dmodem-ari PRIVATE ${DMODEM_PBX_DIR})
 target_compile_definitions(dmodem-ari PRIVATE _GNU_SOURCE)

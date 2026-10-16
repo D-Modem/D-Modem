@@ -17,6 +17,11 @@
  *    DMODEMSTATUS and DMODEMRATE are set and the call goes back to the
  *    dialplan, after the Stasis().
  *
+ *    With t38 = yes the line is a SIP leg instead (sip.cpp): Asterisk's
+ *    PJSIP channel to our own SIP side, the audio in RTP as before, and
+ *    T.38 (UDPTL) when the leg goes over to it by a re-INVITE; the fax
+ *    machine is then a T.38 terminal, its time by the clock.
+ *
  *    Faxes as app_dmodem has them: a fax machine that calls a modem
  *    profile (fax on) is received into fax_dir; Stasis(<app>,sendfax,
  *    <file>[,<ident>]) sends a TIFF file (DModemSendFax), and
@@ -62,6 +67,7 @@
 #include "dmodem.h"
 #include "dmodem_bridge.h"
 #include "json.h"
+#include "sip.h"
 
 namespace {
 
@@ -79,6 +85,11 @@ std::map<std::string, Section> conf;
 ari::Server server;
 std::string app = "dmodem";
 int verbose;                    /* -v: 1 the calls, 2 the bridge's details */
+/* T.38: the calls' lines are legs to our SIP side, on Asterisk's PJSIP
+   endpoint sip_endpoint, instead of external media */
+bool use_sip;
+std::string sip_endpoint = "dmodem";
+ari::SipAgent sip;
 
 std::mutex log_lock;
 
@@ -270,15 +281,15 @@ struct Rtp {
 
 	~Rtp() { if (fd >= 0) close(fd); }
 
-	/* a UDP socket on 127.0.0.1, any port: its port, -1 if none */
-	int open()
+	/* a UDP socket on host, any port: its port, -1 if none */
+	int open(const std::string &host)
 	{
 		struct sockaddr_in a = {};
 		socklen_t len = sizeof(a);
 		fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 		a.sin_family = AF_INET;
-		a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		if (fd < 0 || bind(fd, (struct sockaddr *)&a, sizeof(a)) ||
+		if (fd < 0 || inet_pton(AF_INET, host.c_str(), &a.sin_addr) != 1 ||
+		    bind(fd, (struct sockaddr *)&a, sizeof(a)) ||
 		    getsockname(fd, (struct sockaddr *)&a, &len))
 			return -1;
 		ssrc = (uint32_t)random();
@@ -440,20 +451,62 @@ void fax_variables(const Call &c, const struct dmodem_fax_status &st)
 	set_var(c.id, "DMODEMFAXECM", st.ecm ? "yes" : "no");
 }
 
+/* the call's line: our RTP, and what Asterisk has at its end (an
+   external media channel, or our SIP leg), in a bridge with the call */
+struct Line {
+	Rtp rtp;
+	std::string media, bridge;      /* their ids, for the end */
+	std::shared_ptr<ari::SipLeg> leg;       /* (T.38) */
+	int udptl = -1;                 /* our UDPTL socket */
+
+	~Line() { if (udptl >= 0) close(udptl); }
+};
+
+/* where our T.38 packets go */
+struct T38Peer {
+	int fd;
+	struct sockaddr_in to;
+};
+
+void t38_send(void *ctx, const unsigned char *pkt, int len)
+{
+	const T38Peer *p = static_cast<const T38Peer *>(ctx);
+	sendto(p->fd, pkt, len, 0, (const struct sockaddr *)&p->to,
+	       sizeof(p->to));
+}
+
+/* microseconds, monotonic */
+long long now_us()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (long long)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
 /* the fax machine on the call's line (dir: send file, or receive into
    it) until the fax call ends; DMODEMFAXFILE first, and the result's
    variables as soon as it is final (complete: the MCF to the last page,
    the received pages in the file).  From then on the other machine may
    hang up, and the dialplan's h extension runs at once: an ARI app
-   cannot hold the channel as DModemReceiveFax does */
-void run_fax(Call &c, Rtp &rtp, enum dmodem_law law, enum dmodem_fax_dir dir,
-	     const std::string &file, const struct dmbridge_fax &fs)
+   cannot hold the channel as DModemReceiveFax does.
+
+   On a SIP leg the fax goes over to T.38 when the leg does, before a
+   page has gone (the fax machine anew on UDPTL, its time by the clock):
+   a receiver asks for it, as ReceiveFAX does, and waits for the answer
+   (6 s at most, silence on the line) before it starts on the audio; a
+   sender takes it when asked */
+void run_fax(Call &c, Line &line, enum dmodem_law law,
+	     enum dmodem_fax_dir dir, const std::string &file,
+	     const struct dmbridge_fax &fs)
 {
 	struct dmodem_fax_config cfg = {};
 	struct dmodem_fax_status st = {};
 	struct dmodem_fax *f;
 	uint8_t in[MAX_SAMPLES], out[MAX_SAMPLES];
-	bool sending = dir == DMODEM_FAX_SEND, told = false;
+	bool sending = dir == DMODEM_FAX_SEND, told = false, t38 = false;
+	bool may_switch = line.leg != nullptr, asking = false;
+	T38Peer peer = { line.udptl, {} };
+	long long t0 = 0, samples = 0, asked = 0;
 
 	cfg.law = law;
 	cfg.dir = dir;
@@ -473,14 +526,100 @@ void run_fax(Call &c, Rtp &rtp, enum dmodem_law law, enum dmodem_fax_dir dir,
 	if (verbose >= 1)
 		say("%s: dmodem fax: %s %s", c.name.c_str(),
 		    sending ? "sending" : "receiving", file.c_str());
-	for (;;) {
-		int n = next_block(c, rtp, law, in);
-		if (n <= 0) {
-			dmodem_fax_hangup(f);
-			break;
+	if (may_switch) {
+		sip.accept_t38(line.leg, true);
+		if (!sending && sip.ask_t38(line.leg)) {
+			asked = now_us();
+			if (verbose >= 1)
+				say("%s: dmodem fax: T.38 asked for",
+				    c.name.c_str());
 		}
-		dmodem_fax_process_g711(f, in, out, n);
-		rtp.send(out, n);
+	}
+	for (;;) {
+		if (line.leg) {
+			ari::SipLeg l = sip.get(line.leg);
+			if (l.gone) {
+				dmodem_fax_hangup(f);
+				break;
+			}
+			if (may_switch && l.t38 == ari::T38_ON) {
+				/* over to T.38: the fax machine anew */
+				dmodem_fax_destroy(f);
+				cfg.t38 = 1;
+				cfg.t38_version = l.t38_peer.version;
+				cfg.t38_ec = l.t38_peer.redundancy ?
+					DMODEM_T38_EC_REDUNDANCY :
+					DMODEM_T38_EC_NONE;
+				cfg.t38_max_datagram = l.t38_peer.max_datagram;
+				cfg.t38_send = t38_send;
+				cfg.t38_ctx = &peer;
+				peer.to.sin_family = AF_INET;
+				peer.to.sin_port = htons((uint16_t)l.t38_peer.port);
+				inet_pton(AF_INET, l.t38_peer.addr.c_str(),
+					  &peer.to.sin_addr);
+				f = dmodem_fax_create(&cfg);
+				if (!f) {
+					say("WARNING %s: cannot %s fax file %s",
+					    c.name.c_str(),
+					    sending ? "read" : "use", file.c_str());
+					set_var(c.id, "DMODEMFAXSTATUS", "FAILED");
+					return;
+				}
+				if (verbose >= 1)
+					say("%s: dmodem fax: T.38 (version %d, "
+					    "%s:%d%s)", c.name.c_str(),
+					    l.t38_peer.version,
+					    l.t38_peer.addr.c_str(), l.t38_peer.port,
+					    l.t38_peer.redundancy ?
+					    ", redundancy" : "");
+				t38 = true;
+				may_switch = false;
+				t0 = now_us();
+				samples = 0;
+			} else if (may_switch && (st.pages || st.complete)) {
+				/* a page has gone on audio: it stays */
+				sip.accept_t38(line.leg, false);
+				may_switch = false;
+			}
+			asking = asked && l.t38 == ari::T38_ASKED &&
+				now_us() - asked < 6000000;
+		}
+		if (t38) {
+			unsigned char pkt[2048];
+			struct pollfd pf = { line.udptl, POLLIN, 0 };
+			ssize_t n;
+			long long due;
+			if (c.hungup) {
+				dmodem_fax_hangup(f);
+				break;
+			}
+			poll(&pf, 1, 20);
+			while ((n = recv(line.udptl, pkt, sizeof(pkt),
+					 MSG_DONTWAIT)) > 0)
+				dmodem_fax_t38_rx(f, pkt, (int)n);
+			/* the time since, by the clock (a second at most) */
+			due = (now_us() - t0) * 8 / 1000;
+			if (due > samples) {
+				dmodem_fax_t38_time(f, due - samples > 8000 ?
+						    8000 : (int)(due - samples));
+				samples = due;
+			}
+		} else {
+			int n = next_block(c, line.rtp, law, in);
+			if (n <= 0) {
+				dmodem_fax_hangup(f);
+				break;
+			}
+			if (asking) {
+				/* (T.38 or not: the fax machine waits) */
+				memset(out, law == DMODEM_LAW_ALAW ? 0xd5 : 0xff,
+				       n);
+				line.rtp.send(out, n);
+				continue;
+			}
+			dmodem_fax_process_g711(f, in, out, n);
+			line.rtp.send(out, n);
+		}
 		dmodem_fax_status(f, &st);
 		if (st.complete && !told) {
 			fax_variables(c, st);
@@ -495,22 +634,24 @@ void run_fax(Call &c, Rtp &rtp, enum dmodem_law law, enum dmodem_fax_dir dir,
 	/* (the received file closed with it) */
 	dmodem_fax_destroy(f);
 	if (verbose >= 1)
-		say("%s: dmodem fax %s: %s, %d pages at %d bit/s%s, remote "
+		say("%s: dmodem fax %s: %s, %d pages at %d bit/s%s%s, remote "
 		    "'%s'", c.name.c_str(), sending ? "sent" : "received",
 		    st.result, st.pages, st.bps, st.ecm ? " (ECM)" : "",
-		    st.remote_ident);
+		    t38 ? " over T.38" : "", st.remote_ident);
 }
 
 /* the modem on the call's line until it ends (a fax machine that calls a
-   profile with fax on: the fax receiver in its place); its status */
+   profile with fax on: the fax receiver in its place; also when the
+   other end goes over to T.38 before the modems are connected); its
+   status */
 std::string run_modem(Call &c, const struct dmbridge_profile &p,
-		      enum dmodem_law law, Rtp &rtp)
+		      enum dmodem_law law, Line &line)
 {
 	struct dmbridge_call bc;
 	char *who = const_cast<char *>(c.name.c_str());
 	uint8_t in[MAX_SAMPLES], out[MAX_SAMPLES];
 	std::string status;
-	bool orig = c.options.find('o') != std::string::npos;
+	bool orig = c.options.find('o') != std::string::npos, fax = false;
 
 	dmbridge_call_init(&bc);
 	if (dmbridge_call_start(&bc, &host, who, &p, c.name.c_str(), law,
@@ -522,19 +663,32 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 		say("%s: dmodem %s (profile %s, %s)", c.name.c_str(),
 		    orig ? "calling" : "answering", c.profile.c_str(),
 		    law == DMODEM_LAW_ALAW ? "alaw" : "ulaw");
+	if (line.leg && p.fax.on)
+		sip.accept_t38(line.leg, true);
 	for (;;) {
 		enum dmbridge_event ev;
-		int n = next_block(c, rtp, law, in);
+		int n;
 
-		if (n <= 0) {
+		if (line.leg) {
+			ari::SipLeg l = sip.get(line.leg);
+			if (l.gone) {
+				bc.status = "HANGUP";
+				break;
+			}
+			fax = l.t38 == ari::T38_ON;
+		}
+		n = fax ? 0 : next_block(c, line.rtp, law, in);
+		if (!fax && n <= 0) {
 			bc.status = n ? "ERROR" : "HANGUP";
 			break;
 		}
-		/* a packet out for each packet in */
-		dmodem_process_g711(bc.d, in, out, n);
-		rtp.send(out, n);
-
-		ev = dmbridge_call_step(&bc, n);
+		ev = DMBRIDGE_RUN;
+		if (!fax) {
+			/* a packet out for each packet in */
+			dmodem_process_g711(bc.d, in, out, n);
+			line.rtp.send(out, n);
+			ev = dmbridge_call_step(&bc, n);
+		}
 		if (ev == DMBRIDGE_CONNECTED) {
 			char connected[24];
 			const char *env[] = {
@@ -552,74 +706,165 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 			if (verbose >= 1)
 				say("%s: dmodem connected at %s bit/s",
 				    c.name.c_str(), bc.rate);
+			if (line.leg)
+				sip.accept_t38(line.leg, false);
 			ev = dmbridge_call_serve(&bc, env);
 		}
-		if (ev == DMBRIDGE_FAX) {
+		if (ev == DMBRIDGE_FAX || fax) {
 			/* the modem is gone: the line is the fax receiver's */
 			std::string path = fax_file_name(c, p.fax.dir);
 			if (verbose >= 1)
-				say("%s: dmodem: a fax machine is calling",
-				    c.name.c_str());
+				say("%s: dmodem: a fax machine is calling%s",
+				    c.name.c_str(), fax ? " (T.38)" : "");
 			/* (now: it may have hung up when the fax ends) */
 			set_var(c.id, "DMODEMSTATUS", "FAX");
 			make_dirs(p.fax.dir);
-			run_fax(c, rtp, law, DMODEM_FAX_RECEIVE, path, p.fax);
+			run_fax(c, line, law, DMODEM_FAX_RECEIVE, path, p.fax);
+			fax = true;
 			break;
 		}
 		if (ev == DMBRIDGE_END)
 			break;
 	}
 	dmbridge_call_hangup(&bc);
-	status = bc.status;
+	status = fax ? "FAX" : bc.status;
 	dmbridge_call_end(&bc);
 	return status;
 }
 
-/* the call's line: the channel answered (unless it is up), our UDP port,
-   the external media channel that sends the call's audio there in law,
-   and the two in a bridge (media, bridge: their ids, for the end); false
-   (logged) if any of it fails */
-bool open_line(Call &c, enum dmodem_law law, Rtp &rtp, std::string &media,
-	       std::string &bridge)
+/* a UDP socket of ours on host, any port, into *fd: its port, -1 if
+   none */
+int udp_open(const std::string &host, int *fd)
 {
-	ari::Json r;
-	int port;
+	struct sockaddr_in a = {};
+	socklen_t len = sizeof(a);
+	*fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	a.sin_family = AF_INET;
+	if (*fd < 0 || inet_pton(AF_INET, host.c_str(), &a.sin_addr) != 1 ||
+	    bind(*fd, (struct sockaddr *)&a, sizeof(a)) ||
+	    getsockname(*fd, (struct sockaddr *)&a, &len))
+		return -1;
+	return ntohs(a.sin_port);
+}
 
-	rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
-	if (c.state != "Up" &&
-	    !ari_call("POST", "channels/" + c.id + "/answer"))
-		return false;
-	port = rtp.open();
-	if (port < 0) {
+/* true once channel id has had its StasisStart, within ms */
+bool media_started(const std::string &id, int ms)
+{
+	for (int k = 0; k < ms / 10; k++) {
+		{
+			std::lock_guard<std::mutex> lk(calls_lock);
+			auto it = media_channels.find(id);
+			if (it != media_channels.end() && it->second)
+				return true;
+		}
+		usleep(10000);
+	}
+	return false;
+}
+
+/* the SIP leg for the call (T.38): our RTP and UDPTL on the SIP side's
+   address, Asterisk's channel to our SIP side for a token of the call's
+   (its INVITE in law: what we answer it with goes into law), up and in
+   Stasis; a T.38 offer taken from the start if t38 (a fax, or a modem
+   that may get one: the other end may ask before our side is ready);
+   false (logged) if it isn't */
+bool open_leg(Call &c, enum dmodem_law &law, Line &line, bool t38)
+{
+	std::string token = "dmodem-" + std::to_string(random());
+	int rtp_port, udptl_port;
+
+	line.rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
+	rtp_port = line.rtp.open(sip.host());
+	udptl_port = udp_open(sip.host(), &line.udptl);
+	if (rtp_port < 0 || udptl_port < 0) {
 		say("ERROR %s: no UDP port: %s", c.name.c_str(),
 		    strerror(errno));
 		return false;
 	}
-	/* the call's audio to our port, in its law */
-	if (!ari_call("POST", "channels/externalMedia?app=" +
-		      ari::url_encode(app) + "&external_host=" +
-		      ari::url_encode("127.0.0.1:" + std::to_string(port)) +
-		      "&format=" + (law == DMODEM_LAW_ALAW ? "alaw" : "ulaw"),
-		      &r))
-		return false;
-	media = r["id"].str();
+	line.leg = sip.expect(token, line.rtp.pt, rtp_port, udptl_port);
+	sip.accept_t38(line.leg, t38);
+	line.media = "leg-" + token;
 	{
 		std::lock_guard<std::mutex> lk(calls_lock);
-		media_channels[media] = true;
+		media_channels[line.media] = false;
 	}
-	if (!rtp.set_peer(r["channelvars"]["UNICASTRTP_LOCAL_ADDRESS"].str(),
-			  r["channelvars"]["UNICASTRTP_LOCAL_PORT"].str()) &&
-	    !rtp.set_peer(get_var(media, "UNICASTRTP_LOCAL_ADDRESS"),
-			  get_var(media, "UNICASTRTP_LOCAL_PORT"))) {
-		say("ERROR %s: no address of the external media channel",
+	if (!ari_call("POST", "channels?endpoint=" +
+		      ari::url_encode("PJSIP/" + sip_endpoint + "/sip:" + token +
+				      "@" + sip.host() + ":" +
+				      std::to_string(sip.port())) +
+		      "&app=" + ari::url_encode(app) + "&appArgs=leg"
+		      "&channelId=" + ari::url_encode(line.media) +
+		      "&formats=" + (law == DMODEM_LAW_ALAW ? "alaw" : "ulaw")))
+		return false;
+	if (!sip.wait_up(line.leg, 10000) || !media_started(line.media, 5000)) {
+		say("ERROR %s: Asterisk's channel to our SIP side (PJSIP/%s) "
+		    "did not come", c.name.c_str(), sip_endpoint.c_str());
+		return false;
+	}
+	ari::SipLeg l = sip.get(line.leg);
+	line.rtp.pt = (uint8_t)l.pt;
+	law = l.pt == 8 ? DMODEM_LAW_ALAW : DMODEM_LAW_ULAW;
+	if (!line.rtp.set_peer(l.rtp_addr, std::to_string(l.rtp_peer_port))) {
+		say("ERROR %s: no RTP address in Asterisk's SDP",
 		    c.name.c_str());
 		return false;
 	}
+	return true;
+}
+
+/* the call's line: the channel answered (unless it is up), our UDP port,
+   the external media channel that sends the call's audio there in law
+   (T.38: the SIP leg, taking T.38 offers if t38), and the two in a
+   bridge; false (logged) if any of it fails */
+bool open_line(Call &c, enum dmodem_law &law, Line &line, bool t38)
+{
+	ari::Json r;
+	int port;
+
+	line.rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
+	if (c.state != "Up" &&
+	    !ari_call("POST", "channels/" + c.id + "/answer"))
+		return false;
+	if (use_sip) {
+		if (!open_leg(c, law, line, t38))
+			return false;
+	} else {
+		port = line.rtp.open("127.0.0.1");
+		if (port < 0) {
+			say("ERROR %s: no UDP port: %s", c.name.c_str(),
+			    strerror(errno));
+			return false;
+		}
+		/* the call's audio to our port, in its law */
+		if (!ari_call("POST", "channels/externalMedia?app=" +
+			      ari::url_encode(app) + "&external_host=" +
+			      ari::url_encode("127.0.0.1:" +
+					      std::to_string(port)) +
+			      "&format=" +
+			      (law == DMODEM_LAW_ALAW ? "alaw" : "ulaw"), &r))
+			return false;
+		line.media = r["id"].str();
+		{
+			std::lock_guard<std::mutex> lk(calls_lock);
+			media_channels[line.media] = true;
+		}
+		if (!line.rtp.set_peer(
+			    r["channelvars"]["UNICASTRTP_LOCAL_ADDRESS"].str(),
+			    r["channelvars"]["UNICASTRTP_LOCAL_PORT"].str()) &&
+		    !line.rtp.set_peer(get_var(line.media,
+					       "UNICASTRTP_LOCAL_ADDRESS"),
+				       get_var(line.media,
+					       "UNICASTRTP_LOCAL_PORT"))) {
+			say("ERROR %s: no address of the external media channel",
+			    c.name.c_str());
+			return false;
+		}
+	}
 	if (!ari_call("POST", "bridges?type=mixing", &r))
 		return false;
-	bridge = r["id"].str();
-	return ari_call("POST", "bridges/" + bridge + "/addChannel?channel=" +
-			ari::url_encode(c.id + "," + media));
+	line.bridge = r["id"].str();
+	return ari_call("POST", "bridges/" + line.bridge + "/addChannel?channel=" +
+			ari::url_encode(c.id + "," + line.media));
 }
 
 /* a call's thread: what it is for on its line (the modem, or a fax to
@@ -629,18 +874,18 @@ void run_call(std::shared_ptr<Call> c)
 {
 	struct dmbridge_profile p;
 	struct dmbridge_fax fs;
-	std::string status = "ERROR", media, bridge;
+	std::string status = "ERROR";
 	enum dmodem_law law = DMODEM_LAW_UNKNOWN;
-	Rtp rtp;
-	bool line = false;
+	Line line;
+	bool up = false;
 
 	if (c->kind == MODEM) {
 		if (load_profile(c->profile, &p)) {
 			law = call_law(*c, p.law);
-			line = open_line(*c, law, rtp, media, bridge);
+			up = open_line(*c, law, line, p.fax.on);
 		}
-		if (line)
-			status = run_modem(*c, p, law, rtp);
+		if (up)
+			status = run_modem(*c, p, law, line);
 		else if (c->hungup)
 			status = "HANGUP";
 		if (verbose >= 1)
@@ -659,19 +904,21 @@ void run_call(std::shared_ptr<Call> c)
 			set_var(c->id, "DMODEMFAXSTATUS", "FAILED");
 		} else {
 			law = call_law(*c, DMODEM_LAW_UNKNOWN);
-			line = open_line(*c, law, rtp, media, bridge);
-			if (line)
-				run_fax(*c, rtp, law, c->kind == SENDFAX ?
+			up = open_line(*c, law, line, true);
+			if (up)
+				run_fax(*c, line, law, c->kind == SENDFAX ?
 					DMODEM_FAX_SEND : DMODEM_FAX_RECEIVE,
 					c->file, fs);
 			else if (!c->hungup)
 				set_var(c->id, "DMODEMFAXSTATUS", "FAILED");
 		}
 	}
-	if (!media.empty())
-		ari_call("DELETE", "channels/" + media);
-	if (!bridge.empty())
-		ari_call("DELETE", "bridges/" + bridge);
+	if (!line.media.empty())
+		ari_call("DELETE", "channels/" + line.media);
+	if (!line.bridge.empty())
+		ari_call("DELETE", "bridges/" + line.bridge);
+	if (line.leg)
+		sip.forget(line.leg);
 	if (!c->hungup) {
 		if (c->kind == MODEM)
 			set_var(c->id, "DMODEMSTATUS", status);
@@ -679,7 +926,7 @@ void run_call(std::shared_ptr<Call> c)
 	}
 	std::lock_guard<std::mutex> lk(calls_lock);
 	calls.erase(c->id);
-	media_channels.erase(media);
+	media_channels.erase(line.media);
 }
 
 /* one of ARI's events */
@@ -691,8 +938,12 @@ void event(const ari::Json &e)
 
 	if (type == "StasisStart") {
 		std::lock_guard<std::mutex> lk(calls_lock);
-		if (media_channels.count(id) ||
-		    !ch["name"].str().compare(0, 11, "UnicastRTP/"))
+		auto m = media_channels.find(id);
+		if (m != media_channels.end()) {
+			m->second = true;       /* (a SIP leg: up) */
+			return;
+		}
+		if (!ch["name"].str().compare(0, 11, "UnicastRTP/"))
 			return;
 		auto c = std::make_shared<Call>();
 		const std::string &what = e["args"][0].str();
@@ -776,6 +1027,20 @@ int main(int argc, char *argv[])
 		login.substr(login.find(':') + 1);
 	if (app == "dmodem")
 		app = general("ari_app", app);
+	/* T.38: the calls on legs to our SIP side */
+	use_sip = bridge_true(general("t38", "no").c_str());
+	if (use_sip) {
+		std::string bind = general("sip_bind", "127.0.0.1:5090");
+		size_t colon = bind.rfind(':');
+		sip_endpoint = general("sip_endpoint", sip_endpoint);
+		if (!sip.start(bind.substr(0, colon),
+			       colon == std::string::npos ? 5090 :
+			       atoi(bind.c_str() + colon + 1))) {
+			fprintf(stderr, "dmodem-ari: no SIP socket on %s: %s\n",
+				bind.c_str(), strerror(errno));
+			return 1;
+		}
+	}
 
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, on_signal);
@@ -799,6 +1064,10 @@ int main(int argc, char *argv[])
 			}
 			say("dmodem-ari: app %s on %s:%d", app.c_str(),
 			    server.host.c_str(), server.port);
+			if (use_sip)
+				say("dmodem-ari: T.38: the calls' legs on "
+				    "PJSIP/%s to %s:%d", sip_endpoint.c_str(),
+				    sip.host().c_str(), sip.port());
 		}
 		int r = ws.read(msg, 500);
 		if (r < 0) {

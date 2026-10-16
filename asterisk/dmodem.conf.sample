@@ -46,6 +46,11 @@ debug = 0
 ;ari_user = dmodem
 ;ari_password = secret
 ;ari_app = dmodem
+; dmodem-ari only, T.38: the calls on legs to its own SIP side, Asterisk's
+; PJSIP endpoint sip_endpoint (with t38_udptl = yes) calling sip_bind
+;t38 = yes
+;sip_endpoint = dmodem
+;sip_bind = 127.0.0.1:5090
 
 [default]
 mode = tcp

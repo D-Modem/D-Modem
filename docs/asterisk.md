@@ -31,7 +31,8 @@ See [dmodem.conf.sample](../asterisk/dmodem.conf.sample) for all the options.
 The same calls and faxes can go to [dmodem-ari](ari.md) instead, D-Modem
 as an ARI application beside Asterisk (`Stasis(dmodem,bbs)`,
 `Stasis(dmodem,receivefax,<file>)`), with the same profiles: no module in
-Asterisk.
+Asterisk. Its faxes can also go over T.38 ([ari.md](ari.md#t38)); the
+module's are on the audio only.
 
 The modem answers with `ATA`. A profile's `answer` gives the command line
 it answers with instead, with commands for the answering call alone

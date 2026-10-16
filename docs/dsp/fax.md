@@ -94,3 +94,34 @@ line hits. The `T30Lost` cases lose the receiver's MCF to an EOM, an MPS
 and the last page's EOP. `DSP_T30_LOSE=<fcf in hex>[:<n>]` sends the nth
 message (the first by default) whose last frame is that type as silence,
 lost on the line, its timing kept (`8c` is MCF).
+
+## T.38
+
+With `t30_config.t38` the same machine is a T.38 terminal: it sends and
+takes IFP packets (`dsp/t38.cpp`, T.38 Annex A) instead of the
+modulations. Each transmission is a no-signal indicator and 75 ms, the
+modulation's indicator and its training's time (the V.21 preamble: a
+second of flags; ECM: 200 ms of them too), then the data, paced as the
+modulation would carry it: HDLC frames without their FCS (seven octets a
+packet on V.21, as T.38 7.5 has it), each ended by `hdlc-fcs-OK` and the
+last by `hdlc-fcs-OK-sig-end`; T.4 data (the TCF's zeros, transferred, and
+the page's bits) ended by `t4-non-ecm-sig-end`; then 100 or 60 ms and
+no-signal. The octets are the line's bits with the first in the top bit
+(7.1.2), the other way round from the frames as T.30 writes them. CNG and
+CED are their indicators after 200 ms of no-signal. What comes in is
+taken the same way, a sig-end field or a no-signal indicator for the
+carrier's end. `t30_t38_time()` is the time going by; the timers are the
+same.
+
+The IFP packets are in the encoding of the 1998 ASN.1 (T38FaxVersion 0:
+the field types in four bits, a field without data leaving its octet's
+low half to the next) or of the 2002 one (1 to 3), as spandsp and
+Asterisk have them; a field without data goes last in our packets, so
+both read the same. UDPTL numbers them and repeats the ones before
+(redundancy); on receipt the lost ones come back from the next packet's,
+in their order, a repeated one once only.
+
+`t38_test` has the encodings (Appendix V's DIS), UDPTL with packets lost,
+late and repeated, and two machines over T.38 (versions 0 to 3, 14400 to
+4800 bit/s, ECM, every fifth packet lost); `spandsp_test`'s `T38Spandsp`
+cases run ours against spandsp's T.38 terminal both ways.
