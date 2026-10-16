@@ -1,0 +1,92 @@
+=== none
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+=== amr:12.2
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.005, mean miss 1.0 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+=== amr:10.2
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.023, mean miss 7.2 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.010, mean miss 6.8 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+=== amr:7.95
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.143, mean miss 2.0 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.015, mean miss 1.0 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+=== amr:7.4
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.020, mean miss 2.0 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.010, mean miss 9.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.191, mean miss 5.9 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.045, mean miss 4.9 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.010, mean miss 2.0 steps, raw  150 bit/s
+=== amr:4.75
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.091, mean miss 3.9 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.106, mean miss 8.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.106, mean miss 14.3 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.425, mean miss 8.6 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.221, mean miss 3.9 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.146, mean miss 3.3 steps, raw  150 bit/s
+=== amrwb:23.85
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.025, mean miss 3.2 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.056, mean miss 2.4 steps, raw  150 bit/s
+=== amrwb:12.65
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.020, mean miss 3.8 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.010, mean miss 6.2 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.040, mean miss 2.4 steps, raw  150 bit/s
+=== amrwb:6.6
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.187, mean miss 3.5 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.108, mean miss 5.1 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.038, mean miss 2.7 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.197, mean miss 2.6 steps, raw  150 bit/s
+=== amr:12.2@1
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.020, mean miss 3.0 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.020, mean miss 6.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.020, mean miss 8.5 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.025, mean miss 9.2 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.015, mean miss 3.0 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.030, mean miss 3.0 steps, raw  150 bit/s
+=== amr:12.2@3
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.045, mean miss 3.7 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.051, mean miss 6.9 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.040, mean miss 12.5 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.055, mean miss 8.4 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.038, mean miss 3.3 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.051, mean miss 3.3 steps, raw  150 bit/s
+=== amr:12.2+amr:12.2
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.090, mean miss 2.3 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.005, mean miss 5.0 steps, raw  150 bit/s
+=== amrwb:23.85+amr:12.2
+pitch 8 lags 40-96 step 8    20.0 ms symbol       : SER 0.010, mean miss 2.0 steps, raw  150 bit/s
+pitch 16 lags 40-70 step 2   20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  200 bit/s
+pitch 32 lags 32-63          20.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  250 bit/s
+pitch 32 lags 32-63          10.0 ms symbol       : SER 0.048, mean miss 2.2 steps, raw  500 bit/s
+pitch 16 lags 20-35          10.0 ms symbol       : SER 0.000, mean miss 0.0 steps, raw  400 bit/s
+pitch 8 lags 40-96 step 8    20.0 ms symbol, +10 ms: SER 0.030, mean miss 2.0 steps, raw  150 bit/s
+done
