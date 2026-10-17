@@ -206,6 +206,8 @@ enum v34_state {
 	P4V_CPACK,      /* CP' until MP' or Ed */
 	P4V_E,          /* E, then ones until B1d is in */
 	V90A_DATA,      /* the analogue modem's data mode */
+	V90A_RN_S,      /* a rate renegotiation: S 128 T (9.6.2/V.90) */
+	V90A_RN_SBAR,   /* S-bar 16 T, then SCR and phase 4's CP ... */
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
@@ -724,6 +726,16 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int v90a_cp_design();
 	int v90a_data_setup();
 	long v90a_quiet;        /* data mode: samples of the PCM signal gone */
+	float v90a_cp_noise;    /* the noise CP was designed on */
+	long v90a_bad, v90a_good;       /* data mode: samples of the error
+					   far above it, or well below */
+	int v90a_rn;            /* a rate renegotiation: 1 the digital
+				   modem's (its Rd first), 2 ours */
+	long v90a_rn_at;        /* test: ours this far into data mode
+				   (DSP_V90A_RENEG=<ms>[a|c]) */
+	void v90a_reneg(int who, const char *why = "");
+	int v90a_v34;           /* V.90 failed: V.34 after the next retrain */
+	int v90a_fail(int no_pcm);
 	double v90a_limit, v90a_cpt_pw;	/* Table 15's, CPt's power */
 	int primary_start();
 	int v90_start();
@@ -2577,6 +2589,8 @@ void V34Pump::pump_rx_sample(float x)
 				x = ec.run(last_tx, x);
 			v90rx.line(x);
 		}
+		/* the digital modem's tone B: a retrain (9.5.2.2/V.90) */
+		rt_tone(x);
 		/* the data mode's bits to the core */
 		if (state == V90A_DATA && v90rx.qn) {
 			unsigned char b[V90RX_Q];
@@ -2874,8 +2888,11 @@ int V34Pump::v90a_data_setup()
 int V34Pump::v90a_cp_design()
 {
 	float lv[6][128], nz = v90rx.noise();
-	if (v90rx.trn2_noise > nz)
+	/* (in a renegotiation the noise as it is now: what its frames'
+	   decisions show) */
+	if (v90rx.trn2_noise > nz || v90rx.renegs)
 		nz = v90rx.trn2_noise;
+	v90a_cp_noise = nz;
 	v90rx.levels(lv);
 	if (v90a_design_cp(&v90a_cp, alaw, v90rx.lin, lv, nz, v90a_limit,
 			   v90a_cpt_pw, v90rx.jd.rate_mask) ||
@@ -2884,6 +2901,43 @@ int V34Pump::v90a_cp_design()
 		return -1;
 	}
 	return 0;
+}
+
+/* a rate renegotiation as the analogue modem (9.6.2/V.90): who 1 the
+   digital modem's (its Rd-bar is in), 2 ours; S 128 T, S-bar 16 T, SCR
+   until its TRN2d (or MP) shows the noise, then CP (designed again),
+   CP', E, B1 as in phase 4, on its Rd's frames.  No Ed within 5000 ms
+   plus 2 round trips of our S-bar: the call ends (a retrain is to
+   come) */
+void V34Pump::v90a_reneg(int who, const char *why)
+{
+	DSP_DBG("v34: V.90 renegotiation %d (%s%s%s), downstream error %.2f "
+		"rms, CP's noise %.2f\n", v90rx.renegs + 1,
+		who == 1 ? "the digital modem's Rd" : "ours", *why ? ": " : "",
+		why, sqrtf(v90rx.data_mse()), v90a_cp_noise);
+	v90a_bad = v90a_good = 0;
+	stat_reneg(who == 1);
+	v90a_rn = who;
+	timeout = total + ms2samples(5000 + 128 * 1000 / 2400, srate) +
+		3 * rtd;
+	tx_next(V90A_RN_S, V34_TX_S);
+}
+
+/* V.90 as the analogue modem did not get through phase 3 or 4, or a
+   renegotiation: a retrain (9.5.2.1/V.90: silence, tone A, phase 2);
+   with no constellations or upstream rate to use (no_pcm), or after
+   two retrains, the next phase 2's INFO1a asks for V.34; after four
+   the call ends */
+int V34Pump::v90a_fail(int no_pcm)
+{
+	if (retrains >= 4) {
+		DSP_DBG("v34: V.90: %d retrains, giving up\n", retrains);
+		return DPSTAT_ERROR;
+	}
+	if (no_pcm || retrains >= 2)
+		v90a_v34 = 1;
+	retrain(v90a_v34 ? "V.90 failed, V.34 next" : "V.90 failed");
+	return DPSTAT_OK;
 }
 
 /* V.90 phase 3: the remote's V.34 signals in, our PCM signals out */
@@ -3159,6 +3213,14 @@ void V34Retrain<P>::retrain(const char *why, int by)
 		self.seq_len = 0;
 	}
 	self.ec.on = 0;
+	/* V.90's analogue modem: the PCM receiver off (phase 2 is the
+	   V.34 receiver's), the core's DC removal back */
+	if (self.v90a_rx) {
+		self.v90a_rx = 0;
+		self.v90a_rn = 0;
+		if (self.rt)
+			self.rt->pcm = 0;
+	}
 	/* the control channel as after INFO0 */
 	self.ccr.init(self.caller ? 2400 : 1200);
 	self.ccr.snap = 1;
@@ -3186,7 +3248,8 @@ void V34Retrain<P>::retrain(const char *why, int by)
 	self.lost = bad = 0;
 	/* V.90's phase 3 (Jd, the DIL) takes about 8 s more */
 	self.timeout = self.total +
-		ms2samples(self.pcm ? 30000 : 15000, self.srate);
+		ms2samples(self.pcm || self.v90a_on ? 30000 : 15000,
+			   self.srate);
 	self.set_state(V34_RT_SILENCE);
 }
 
@@ -3813,6 +3876,10 @@ int V34Pump::handshake()
 	   silence and its tone A (it is the V.34 answerer in phase 2) */
 	if (v90_digital() && rt_blocks >= 6)
 		retrain("tone A", RT_REMOTE);
+	/* the analogue modem: the digital modem's tone B, in phase 3, 4,
+	   data mode or a renegotiation (9.5.2.2/V.90) */
+	if (v90a_rx && rt_blocks >= 6)
+		retrain("tone B", RT_REMOTE);
 	/* the remote retrains instead (11.6.2/V.34) */
 	if (renegotiating && rt_blocks >= 6)
 		retrain(caller ? "tone A" : "tone B", RT_REMOTE);
@@ -3937,7 +4004,11 @@ int V34Pump::handshake()
 	case P2A_A2:
 		if (ev_info1) {
 			/* the analogue modem of V.90 asks for it in INFO1a,
-			   or for V.34 */
+			   or for V.34 (and after V.90 failed: v90a_fail()) */
+			if (v90a_on && v90a_v34) {
+				DSP_DBG("v34: V.34 this time (V.90 failed)\n");
+				v90a_on = 0;
+			}
 			if (v90a_on)
 				v90a_choose();
 			if (!v90a_on)
@@ -4206,7 +4277,7 @@ int V34Pump::handshake()
 		}
 		if (c >= ms2samples(3000, srate)) {
 			DSP_DBG("v34: V.90: no Sd-bar after Ja\n");
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case P3V_WAIT_JD:
@@ -4222,7 +4293,7 @@ int V34Pump::handshake()
 		if (c >= ms2samples(4500, srate)) {
 			DSP_DBG("v34: V.90: no Jd (%s)\n",
 				v90rx.ev_trained ? "trained" : "not trained");
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case P3V_S2:
@@ -4232,7 +4303,7 @@ int V34Pump::handshake()
 		}
 		if (c >= ms2samples(5000, srate)) {
 			DSP_DBG("v34: V.90: no Jd'\n");
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case P3V_SBAR2:
@@ -4241,7 +4312,7 @@ int V34Pump::handshake()
 		if (!v90a_dil.n) {
 			DSP_DBG("v34: V.90: phase 3 done (no DIL)\n");
 			if (v90a_phase4())
-				return DPSTAT_ERROR;
+				return v90a_fail(1);
 		} else
 			tx_next(P3V_DIL, V34_TX_SILENCE);
 		break;
@@ -4255,7 +4326,7 @@ int V34Pump::handshake()
 		}
 		if (c >= ms2samples(4500, srate)) {
 			DSP_DBG("v34: V.90: the DIL did not come\n");
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case P3V_S3:
@@ -4266,15 +4337,16 @@ int V34Pump::handshake()
 		if (ptx.n >= 16) {
 			DSP_DBG("v34: V.90: phase 3 done\n");
 			if (v90a_phase4())
-				return DPSTAT_ERROR;
+				return v90a_fail(1);
 		}
 		break;
 
 	/* V.90 analogue modem, phase 4 (9.4.2/V.90): CPt until the
 	   digital modem's Ri-bar, CP (no SCR) after the CPt frame going
 	   out, CP' after the one going out once MP is in, E after a whole
-	   CP' once MP' or Ed is in; B1d on CP's constellations.  The
-	   timeouts end the call (a retrain, 9.5.2.1/V.90, is to come) */
+	   CP' once MP' or Ed is in; B1d on CP's constellations.  A
+	   timeout, here or in phase 3, retrains (9.5.2.1/V.90:
+	   v90a_fail()) */
 	case P4V_CPT:
 		/* SCR (ones, as CP is sent: a frame of 2 bits) after the
 		   CPt going out */
@@ -4287,7 +4359,7 @@ int V34Pump::handshake()
 		if (c >= ms2samples(5000, srate)) {
 			DSP_DBG("v34: V.90: no Ri-bar (Ri %s)\n",
 				v90rx.ev_ri ? "seen" : "not seen");
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case P4V_SCR:
@@ -4295,7 +4367,7 @@ int V34Pump::handshake()
 		   4000 ms, 9.4.2.2/V.90) */
 		if (v90rx.ev_trn2) {
 			if (v90a_cp_design())
-				return DPSTAT_ERROR;
+				return v90a_fail(1);
 			v90a_cp.ack = 0;
 			ptx.cp_next_n = v90a_cp.build(ptx.cp_next);
 			set_state(P4V_CP);
@@ -4303,7 +4375,7 @@ int V34Pump::handshake()
 		}
 		if (c >= ms2samples(3500, srate)) {
 			DSP_DBG("v34: V.90: no TRN2d\n");
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case P4V_CP:
@@ -4318,7 +4390,7 @@ int V34Pump::handshake()
 			DSP_DBG("v34: V.90: no MP (TRN2d %ld of %ld "
 				"symbols wrong)\n", v90rx.trn_sym_err,
 				v90rx.trn_sym);
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case P4V_CPACK:
@@ -4326,23 +4398,47 @@ int V34Pump::handshake()
 		    (v90rx.ev_mpack || v90rx.ev_ed)) {
 			/* the data mode's encoder takes over after E */
 			if (v90a_data_setup())
-				return DPSTAT_ERROR;
+				return v90a_fail(1);
 			ptx.cp_to_e = 1;
 			set_state(P4V_E);
 			break;
 		}
 		if (c >= ms2samples(4000, srate)) {
 			DSP_DBG("v34: V.90: no MP'\n");
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case P4V_E:
 		/* B1d in and our E out (B1, the encoder's first frame of
 		   ones, after it): CONNECT */
+		if (v90rx.ev_b1d && ptx.seg == V34_TX_DATA &&
+		    v90a_rn) {
+			/* back from a rate renegotiation */
+			set_state(V90A_DATA);
+			set_rates(rate_tx, rate_rx);
+			v90a_quiet = 0;
+			v90a_rn = 0;
+			v90rx.ev_rd = v90rx.ev_rdbar = v90rx.rd_run = 0;
+			DSP_DBG("v34: V.90 renegotiated %d/%d (analogue "
+				"modem)\n", rate_tx, rate_rx);
+			break;
+		}
+		if (v90rx.ev_b1d && ptx.seg == V34_TX_DATA &&
+		    retraining && connected) {
+			/* back from a retrain: no new CONNECT */
+			set_state(V90A_DATA);
+			set_rates(rate_tx, rate_rx);
+			v90a_quiet = 0;
+			retraining = 0;
+			DSP_DBG("v34: V.90 retrained %d/%d (analogue modem)\n",
+				rate_tx, rate_rx);
+			break;
+		}
 		if (v90rx.ev_b1d && ptx.seg == V34_TX_DATA) {
 			set_state(V90A_DATA);
 			set_rates(rate_tx, rate_rx);
 			v90a_quiet = 0;
+			retraining = 0;
 			connected = 1;
 			DSP_DBG("v34: V.90 connect %d/%d (analogue modem)\n",
 				rate_tx, rate_rx);
@@ -4352,7 +4448,7 @@ int V34Pump::handshake()
 		if (c >= ms2samples(4000, srate)) {
 			DSP_DBG("v34: V.90: no B1d (Ed %s)\n",
 				v90rx.ev_ed ? "seen" : "not seen");
-			return DPSTAT_ERROR;
+			return v90a_fail(0);
 		}
 		break;
 	case V90A_DATA:
@@ -4375,6 +4471,54 @@ int V34Pump::handshake()
 				10 * log10f(v90rx.dpow /
 					    (v90rx.data_mse() + 1e-6f)),
 				v90rx.ppm(), v90rx.t_phase);
+		/* the digital modem's rate renegotiation: its Rd (no data
+		   from it on), our S after Rd-bar (9.6.2.2/V.90) */
+		if (v90rx.ev_rdbar) {
+			v90a_reneg(1);
+			break;
+		}
+		/* our own (9.6.2.1/V.90): the downstream's error 2.5
+		   times the noise CP was designed for (8 dB worse) for a
+		   second, or under half of it for 20 s with a faster CP to
+		   be had; a CP designed anew on what the line is now */
+		{
+			float er = sqrtf(v90rx.data_mse());
+			int settled = c >= ms2samples(2000, srate);
+			v90a_bad = settled && er > 2.5f * v90a_cp_noise ?
+				v90a_bad + 1 : 0;
+			v90a_good = settled && er < 0.5f * v90a_cp_noise &&
+				v90a_cp.drn < 22 ? v90a_good + 1 : 0;
+		}
+		if (v90rx.ev_rd)
+			break;
+		if (v90a_bad >= ms2samples(1000, srate)) {
+			v90rx.reneg_wait();
+			v90a_reneg(2, "errors");
+		} else if (v90a_good >= ms2samples(20000, srate)) {
+			v90rx.reneg_wait();
+			v90a_reneg(2, "margin");
+		} else if (v90a_rn_at && c >= v90a_rn_at && !v90rx.renegs) {
+			/* test: DSP_V90A_RENEG */
+			v90rx.reneg_wait();
+			v90a_reneg(2, "test");
+		} else if (retrain_at && c >= retrain_at && !retrains)
+			/* test: DSP_V34_RETRAIN (9.5.2.1/V.90) */
+			retrain("test");
+		break;
+	case V90A_RN_S:
+		if (ptx.n >= 128)
+			tx_next(V90A_RN_SBAR, V34_TX_SBAR);
+		break;
+	case V90A_RN_SBAR:
+		/* then SCR (as in phase 4: ones, as CP is sent) while
+		   TRN2d comes, and CP once it shows the noise */
+		if (ptx.n >= 16) {
+			ptx.bits[0] = ptx.bits[1] = 1;
+			ptx.nbits = 2;
+			ptx.scr = 0;
+			ptx.idx = 0;
+			tx_next(P4V_SCR, V34_TX_CP);
+		}
 		break;
 
 	/* phase 3 answerer */
@@ -4763,7 +4907,10 @@ int V34Pump::handshake()
 				v90_renegotiate("test", reneg_to, 0);
 			else
 				renegotiate("test", reneg_to);
-		} else if (pcm)
+		} else if (retrain_at && c >= retrain_at && !retrains)
+			/* test: DSP_V34_RETRAIN (V.90's digital modem too) */
+			retrain("test");
+		else if (pcm)
 			/* (carrier loss above) */
 			;
 		else if (bad >= ms2samples(1000, srate) &&
@@ -4772,8 +4919,6 @@ int V34Pump::handshake()
 			retrain("errors");
 		else if (lost >= ms2samples(30, srate))
 			retrain("signal lost");
-		else if (retrain_at && c >= retrain_at && !retrains)
-			retrain("test");
 		break;
 	/* renegotiations and retrains */
 	case V34_RN_S:
@@ -4839,6 +4984,13 @@ int V34Pump::sample(float x, float *y, const float *ref)
 	pump_rx_sample(x);
 	if (renegotiating && total >= timeout)
 		retrain("renegotiation timed out");
+	/* no Ed within 5000 ms plus 2 round trips of our S-bar
+	   (9.6.2/V.90) */
+	if (v90a_rn && total >= timeout) {
+		DSP_DBG("v34: V.90: renegotiation timed out\n");
+		if (v90a_fail(0) == DPSTAT_ERROR)
+			return DPSTAT_ERROR;
+	}
 	if (state != V34_DATA && state != V90A_DATA && total >= timeout) {
 		DSP_DBG("v34: start-up timeout in state %d\n", state);
 		return DPSTAT_ERROR;
@@ -5100,6 +5252,9 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	/* test: DSP_V34_RETRAIN=<ms in data mode>[a|c], c or a: only the
 	   caller or the answerer starts it */
 	retrain_at = test_samples("DSP_V34_RETRAIN");
+	v90a_rn_at = test_samples("DSP_V90A_RENEG");
+	v90a_rn = 0;
+	v90a_v34 = 0;
 	/* test: DSP_V34_PRECODE_MIN=<dB>: ask for precoding from that gain
 	   on (V34_PRECODE_MIN) */
 	precode_min = getenv("DSP_V34_PRECODE_MIN") ?

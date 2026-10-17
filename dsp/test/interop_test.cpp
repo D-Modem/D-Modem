@@ -423,6 +423,62 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)DIL: pad 6.0 dB.*robbed [0-5],[0-5], distinct.*"
 	      "B1d: 0 bit errors in 48 frames",
 	      "EXPECT_B=V.90 connect [0-9]+/" });
+	/* stage F: rate renegotiations (9.6/V.90).  The digital modem's
+	   (DSP_V34_RENEG on it: upstream to 24 000 bit/s): its Rd, Rd-bar,
+	   TRN2d, MP; our S, S-bar, SCR, CP again, CP', E, B1, data at the
+	   new rates, the bulk transfer across it */
+	add("open", "open_v90a_reneg", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "DSP_V34_RENEG=3000:10a", "BULK=100000",
+	      "EXPECT_A=(?s)V.90 connect 3[0-9]+/56000 \\(analogue modem\\)"
+	      ".*Rd at symbol.*Rd-bar at symbol.*V.90 renegotiation 1 "
+	      "\\(the digital modem's Rd\\).*CP: D 42.*B1d: 0 bit errors.*"
+	      "V.90 renegotiated 24000/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.90 renegotiation 1 \\(test\\).*"
+	      "V.90 renegotiated 56000/24000" });
+	/* ours (DSP_V90A_RENEG on the analogue modem): our S, S-bar, SCR;
+	   its Rd after our S-bar, Rd-bar, TRN2d, MP; our CP ... */
+	add("open", "open_v90a_reneg_ours", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "DSP_V90A_RENEG=3000c", "BULK=100000",
+	      "EXPECT_A=(?s)V.90 connect 3[0-9]+/56000 \\(analogue modem\\)"
+	      ".*V.90 renegotiation 1 \\(ours: test\\).*Rd at symbol.*Rd-bar at "
+	      "symbol.*CP: D 42.*B1d: 0 bit errors.*"
+	      "V.90 renegotiated 3[0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.90 renegotiation 1 \\(the remote's S\\).*"
+	      "V.90 renegotiated 56000/" });
+	/* ours on errors: noise on the line to us 16 s in (some 3 s into
+	   the data mode), 8 dB and more above what CP was designed for:
+	   CP anew on it, a lower rate, the bulk transfer across it */
+	add("open", "open_v90a_reneg_noise", "open", "open8",
+	    "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "NET_NOISE=16:25", "NET_NOISE_DIR=ba",
+	      "BULK=100000",
+	      "EXPECT_A=(?s)V.90 connect 3[0-9]+/56000 \\(analogue modem\\)"
+	      ".*V.90 renegotiation 1 \\(ours: errors\\).*"
+	      "V.90 renegotiated 3[0-9]+/[34][0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=V.90 renegotiated" });
+	/* stage F: retrains (9.5/V.90).  The digital modem's in data mode
+	   (DSP_V34_RETRAIN on it): its silence and tone B, our silence and
+	   tone A, phase 2 again (the analogue modem the V.34 answerer),
+	   phases 3 and 4, data without a new CONNECT; ours (our tone A);
+	   and a line too noisy for any CP: retrains, V.34 after them */
+	add("open", "open_v90a_retrain", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "DSP_V34_RETRAIN=3000a", "BULK=100000",
+	      "EXPECT_A=(?s)V.90 connect 3[0-9]+/56000 \\(analogue modem\\)"
+	      ".*retrain 1 \\(tone B\\).*phase 3 done.*"
+	      "V.90 retrained 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)retrain 1 \\(test\\).*V.90 retrained" });
+	add("open", "open_v90a_retrain_ours", "open", "open8",
+	    "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "DSP_V34_RETRAIN=3000c", "BULK=100000",
+	      "EXPECT_A=(?s)V.90 connect 3[0-9]+/56000 \\(analogue modem\\)"
+	      ".*retrain 1 \\(test\\).*phase 3 done.*"
+	      "V.90 retrained 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)retrain 1 \\(tone A\\).*V.90 retrained" });
+	add("open", "open_v90a_v34", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "NET_FLOOR=400", "NET_NOISE_DIR=ba",
+	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
+	      "V.90 failed, V.34 next.*V.34 this time.*"
+	      "data rates tx [0-9]+ rx [0-9]+, trellis" });
 	/* the analogue modem with its codec at 8000 Hz (MODEM_ANALOG: its
 	   line an analogue one; netsim's NET_ANALOG), on the network's
 	   clock: the PCM receiver on the line's own samples, with

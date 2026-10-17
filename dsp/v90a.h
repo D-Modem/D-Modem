@@ -128,6 +128,8 @@ struct V90Rx {
 		DECIDE,         /* trained: decisions, Jd and Jd' */
 		RI,             /* phase 4: Ri, then its reversal */
 		FRAMES,         /* TRN2d, MP, Ed, B1d: data frames */
+		RD,             /* a rate renegotiation: Rd-bar's 24
+				   symbols, then FRAMES again */
 	};
 
 	int alaw, uinfo;
@@ -281,6 +283,14 @@ struct V90Rx {
 	int ev_mpack;           /* MP' */
 	int ev_ed;
 	int ev_b1d;             /* B1d's frames in */
+	/* a rate renegotiation (9.6/V.90): Rd (+ + + - - - of each
+	   interval's loudest data point, either polarity) frames in a row,
+	   its polarity, Rd-bar; then TRN2d (on the decisions: it may be
+	   left out), MP, Ed and B1d as in phase 4 */
+	int rd_run, rd_pol;
+	int ev_rd, ev_rdbar;
+	int renegs;             /* phase 4 done again so many times */
+	V90Cp cpt_s;            /* CPt (TRN2d and MP's constellations) */
 	/* data mode: the bits of the frames after B1d (take()), the
 	   signal's power (lost, it is gone), the decisions' error */
 	unsigned char q[V90RX_Q];
@@ -303,6 +313,13 @@ struct V90Rx {
 	int phase4(const V90Cp &cpt);
 	/* CP's for B1d and data (before Ed): -1 when not usable */
 	int data_cp(const V90Cp &cp);
+	/* our own rate renegotiation (9.6.2.1/V.90): Rd next, whatever
+	   the frames decode to until it comes */
+	void reneg_wait()
+	{
+		ev_rd = ev_rdbar = rd_run = 0;
+		ev_trn2 = ev_mp = ev_mpack = ev_ed = ev_b1d = 0;
+	}
 	/* one sample of the line (9600 or 8000 Hz: init()'s rate) */
 	void line(float v);
 	/* one sample at 16 000 Hz */
@@ -333,6 +350,8 @@ private:
 	void jd_bit(int bit);
 	void adapt(long kk, float e);
 	void ri_frame(const int *s);
+	void rd_frame(const int *s, const int *lab);
+	void reneg_frames();
 	void frame();
 	void mp_bit(int bit);
 };

@@ -696,6 +696,14 @@ void V90Rx::sample(float v)
 			k++;
 			continue;
 		}
+		if (stage == RD) {
+			/* Rd-bar's symbols: the timing on its frequency */
+			timing_free();
+			if (k + 1 >= frames_at && k % 6 == 5)
+				reneg_frames();
+			k++;
+			continue;
+		}
 		if (stage == FRAMES) {
 			fy[k % 6] = y;
 			if (k % 6 == 5)
@@ -1053,6 +1061,7 @@ float V90Rx::noise() const
 int V90Rx::phase4(const V90Cp &cpt)
 {
 	int u;
+	cpt_s = cpt;
 	levels(lv4);
 	if (con_trn.init(cpt, cpt.drn + 8, lv4))
 		return -1;
@@ -1131,6 +1140,73 @@ void V90Rx::ri_frame(const int *s)
 	}
 }
 
+/* a data frame's labels and signs in data mode: Rd, 8 frames of + + +
+   - - - (or - - - + + +) of each interval's loudest point (or the one
+   below it) in a row, then the first frame mostly the opposite, Rd-bar
+   (9.6/V.90); TRN2d (or MP) 24 symbols after it */
+void V90Rx::rd_frame(const int *s, const int *lab)
+{
+	static const int p[6] = { 1, 1, 1, -1, -1, -1 };
+	int j, score = 0, top = 1;
+
+	if (ev_rdbar)
+		return;
+	for (j = 0; j < 6; j++) {
+		score += s[j] ? p[j] : -p[j];
+		/* (label 0 the loudest) */
+		if (lab[j] > 1)
+			top = 0;
+	}
+	if (!ev_rd) {
+		if (top && (score == 6 || score == -6) &&
+		    (!rd_run || score == 6 * rd_pol)) {
+			rd_pol = score > 0 ? 1 : -1;
+			if (++rd_run >= 8) {
+				ev_rd = 1;
+				DSP_DBG("v90a: Rd at symbol %ld\n", k - 47);
+			}
+		} else
+			rd_run = 0;
+		return;
+	}
+	if (score * rd_pol <= -4) {
+		ev_rdbar = 1;
+		ribar_at = k - 5;
+		frames_at = ribar_at + 24;
+		stage = RD;
+		DSP_DBG("v90a: Rd-bar at symbol %ld, TRN2d from %ld\n",
+			ribar_at, frames_at);
+	} else if (score * rd_pol < 4) {
+		/* (the frames before it were not data: Rd lost) */
+		rd_run = 0;
+		ev_rd = 0;
+		DSP_DBG("v90a: Rd lost at symbol %ld\n", k);
+	}
+}
+
+/* after Rd-bar: phase 4's frames again (9.6.2.2/V.90), TRN2d, MP and
+   Ed on CPt's constellations from cleared descrambler and signs, then
+   B1d on the new CP's; the bits queued for the caller stay */
+void V90Rx::reneg_frames()
+{
+	renegs++;
+	con = &con_trn;
+	frames = 0;
+	frames_b1 = 0;
+	fscr = 0;
+	flast = 0;
+	trn_sym = trn_sym_err = 0;
+	mp_n = 0;
+	msr = 0;
+	mp_frame = 0;
+	ed_zero = 0;
+	b1_err = 0;
+	fe_sum = 0;
+	fe_n = 0;
+	ev_trn2 = ev_mp = ev_mpack = ev_ed = ev_b1d = 0;
+	stage = FRAMES;
+}
+
 /* an MP bit (9.4.1.3/V.90): frame sync, then 86 bits (type 0) or 188 */
 void V90Rx::mp_bit(int bit)
 {
@@ -1180,7 +1256,8 @@ void V90Rx::frame()
 	V90Con *cn = con;
 	unsigned char d[48];
 	unsigned long long R = 0, A = 1;
-	int j, i, s[6], ones = 0, known = cn == &con_trn && frames < 340;
+	int j, i, s[6], lab[6], ones = 0;
+	int known = cn == &con_trn && frames < 340 && !renegs;
 	int out[6];
 
 	if (known) {
@@ -1200,6 +1277,7 @@ void V90Rx::frame()
 			}
 		}
 		s[j] = fy[j] > 0;
+		lab[j] = bl;
 		R += (unsigned long long)bl * A;
 		A *= (unsigned)cn->M[j];
 		tg = s[j] ? cn->lev[j][bl] : -cn->lev[j][bl];
@@ -1247,6 +1325,12 @@ void V90Rx::frame()
 		/* data mode: the bits for take(), the signal's power and the
 		   decisions' error */
 		if (frames_b1 >= 48) {
+			/* Rd: no bits from it on (circuit 104 clamped) */
+			rd_frame(s, lab);
+			if (ev_rd) {
+				frames++;
+				return;
+			}
 			for (i = 0; i < cn->D; i++) {
 				if (qn == V90RX_Q) {
 					/* (the caller is not taking them) */
@@ -1298,6 +1382,14 @@ void V90Rx::frame()
 			"timing %+.1f ppm\n", trn_sym_err, trn_sym,
 			trn2_noise, t_gain[0], t_gain[1], t_gain[2], t_gain[3],
 			t_gain[4], t_gain[5], ppm());
+	}
+	/* a renegotiation's TRN2d (if any: the decisions, on CPt's
+	   points): the noise from the error over the same frames */
+	if (renegs && cn == &con_trn && frames == 339) {
+		trn2_noise = (float)sqrt(fe_n ? fe_sum / fe_n : 0);
+		ev_trn2 = 1;
+		DSP_DBG("v90a: renegotiation's TRN2d (or MP): noise %.2f, "
+			"timing %+.1f ppm\n", trn2_noise, ppm());
 	}
 	/* (TRN2d's noise from its second half: the equaliser and the
 	   timing settle in the first after the DIL) */
