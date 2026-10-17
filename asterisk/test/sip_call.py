@@ -29,7 +29,9 @@
 # ringing tone reported as rings (<DLE>r) and OK at its 200 OK, 7005's
 # busy tone BUSY before its 486, 7007's answer tone <DLE>a and OK
 # without a 200 OK; 7006 (404) ERROR; ATH then data mode again, where a
-# data call to 7002 is BUSY too.
+# data call to 7002 is BUSY too.  A Windows dmodemd (<dmodemd> a .exe)
+# runs under Wine, its DTE a TCP connection (--tcp) instead of the pty;
+# WIN_COM=1: a COM port (--com COM9), Wine's COM9 a pty pair's far end.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 dmodemd, number = sys.argv[1:3]
@@ -83,26 +85,74 @@ def bbs_calls():
 threading.Thread(target=bbs_calls, daemon=True).start()
 
 incoming = os.environ.get("SIP_IN")
-p = subprocess.Popen(["stdbuf", "-oL", "-eL", dmodemd, "-d" + os.environ.get("DMODEMD_DEBUG", "1")] + (["-L"] if incoming else []), stdout=subprocess.PIPE,
+windows = dmodemd.endswith(".exe")
+# Windows: the DTE on TCP, or with WIN_COM=1 on a COM port, Wine's COM9
+# made the far end of a pty pair whose near end is ours
+com = None
+if windows and os.environ.get("WIN_COM"):
+    com, slave = os.openpty()
+    tty.setraw(slave)
+    link = os.path.join(os.environ.get("WINEPREFIX", os.path.expanduser("~/.wine")),
+                        "dosdevices", "com9")
+    if os.path.lexists(link):
+        os.unlink(link)
+    os.symlink(os.ttyname(slave), link)
+    dte_args = ["--com", "COM9"]
+else:
+    dte_args = ["--tcp", "127.0.0.1:2399"]
+argv = ["stdbuf", "-oL", "-eL"] + (["wine", dmodemd] + dte_args if windows else [dmodemd])
+p = subprocess.Popen(argv + ["-d" + os.environ.get("DMODEMD_DEBUG", "1")] + (["-L"] if incoming else []), stdout=subprocess.PIPE,
                      stderr=subprocess.STDOUT)
 log = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "wb")
 pty = None
+tcp = None
+com_up = False
 t0 = time.time()
-while time.time() - t0 < 10:
+while time.time() - t0 < (60 if windows else 10):
     l = p.stdout.readline()
     log.write(l); log.flush()
     m = re.search(rb"TTY is `(\S+)'", l)
     if m:
         pty = m.group(1).decode(); break
+    m = re.search(rb"DTE is TCP (\S+):(\d+)", l)
+    if m:
+        tcp = (m.group(1).decode(), int(m.group(2))); break
+    if com is not None and re.search(rb"DTE is COM9", l):
+        com_up = True; break
 # the rest of dmodemd's output into the log
-threading.Thread(target=lambda: [log.write(l) or log.flush() for l in p.stdout],
-                 daemon=True).start()
-if pty is None:
+def copy_log():
+    for l in p.stdout:
+        log.write(l)
+        log.flush()
+threading.Thread(target=copy_log, daemon=True).start()
+if pty is None and tcp is None and not com_up:
     print("FAIL: dmodemd gave no pty")
     p.terminate()
     sys.exit(1)
-fd = os.open(pty, os.O_RDWR | os.O_NOCTTY)
-tty.setraw(fd)
+# the DTE's end: the pty, or the TCP connection
+if tcp:
+    dte = socket.create_connection(tcp)
+    dte.setblocking(False)
+else:
+    fd = com if com is not None else os.open(pty, os.O_RDWR | os.O_NOCTTY)
+    tty.setraw(fd)
+    os.set_blocking(fd, False)
+# what the modem sent: BlockingIOError if nothing yet, OSError when it's
+# gone
+def dte_read():
+    if tcp:
+        d = dte.recv(4096)
+        if not d:
+            raise OSError("closed")
+        return d
+    return os.read(fd, 4096)
+def dte_write(b):
+    if tcp:
+        dte.setblocking(True)
+        dte.sendall(b)
+        dte.setblocking(False)
+    else:
+        os.write(fd, b)
 buf = b""
 seen = b""                  # all the modem sent, for the voice checks
 # the first match of pat in what the modem sent (read from the pty), buf
@@ -116,8 +166,7 @@ def expect(pat, t):
             buf = buf[m.end():]
             return m
         try:
-            os.set_blocking(fd, False)
-            got = os.read(fd, 4096)
+            got = dte_read()
             buf += got
             seen += got
         except BlockingIOError:
@@ -127,7 +176,7 @@ def expect(pat, t):
     return None
 # AT command c, then expect(pat, t)
 def cmd(c, pat=rb"OK\r\n", t=5):
-    os.write(fd, c + b"\r")
+    dte_write(c + b"\r")
     return expect(pat, t)
 
 ok = True
@@ -284,14 +333,14 @@ if incoming:
         # the calling modem may come online after us (FSK: a second
         # later); a greeting sent before would be lost
         time.sleep(1.5)
-        os.write(fd, b"Welcome to the test BBS\r\n")
+        dte_write(b"Welcome to the test BBS\r\n")
         while True:
             l = expect(rb"([^\r\n]*)\r\n", 120)
             if l is None or l.group(1) == b"BYE":
                 break
             if l.group(1):
-                os.write(fd, l.group(1).upper() + b"\r\n")
-        os.write(fd, b"Goodbye\r\n")
+                dte_write(l.group(1).upper() + b"\r\n")
+        dte_write(b"Goodbye\r\n")
         ut.join(60)
         ok = user_ok.get("ok", False)
         print("session: %s in %.1f s" % ("PASS" if ok else "FAIL", time.time() - t1))
@@ -324,10 +373,10 @@ for call in range(calls):
         slow = max(1, 2400 // int(rate.group(1))) if rate else 1
         ok = expect(rb"Welcome to the test BBS\r\n", 30 * slow) is not None
         for l in LINES:
-            os.write(fd, l + b"\r\n")
+            dte_write(l + b"\r\n")
         for l in LINES:
             ok = ok and expect(re.escape(l.upper() + b"\r\n"), 60 * slow) is not None
-        os.write(fd, b"BYE\r\n")
+        dte_write(b"BYE\r\n")
         ok = ok and expect(rb"Goodbye\r\n", 30 * slow) is not None
         print("session: %s in %.1f s" % ("PASS" if ok else "FAIL", time.time() - t1))
         hung = expect(rb"NO CARRIER", 30)

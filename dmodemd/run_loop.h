@@ -12,7 +12,12 @@
 #define DMODEMD_RUN_LOOP_H
 
 #include <signal.h>
+#ifdef _WIN32
+/* (Windows: select() on sockets alone, a descriptor here a SOCKET) */
+#include <winsock2.h>
+#else
 #include <sys/select.h>
+#endif
 
 namespace dcore { class Modem; }
 
@@ -36,9 +41,11 @@ public:
 	void watch(int fd);
 	void watch_write(int fd);
 	/* fd is readable, writable (after wait()) */
-	bool ready(int fd) const { return fd >= 0 && FD_ISSET(fd, &set_); }
+	bool ready(int fd) const {
+		return fd >= 0 && FD_ISSET(fd, (fd_set *)&set_);
+	}
 	bool ready_write(int fd) const {
-		return fd >= 0 && FD_ISSET(fd, &wset_);
+		return fd >= 0 && FD_ISSET(fd, (fd_set *)&wset_);
 	}
 	/* select() on them for ms: > 0 some are ready, 0 none (or a
 	   signal), < 0 an error (errno) */

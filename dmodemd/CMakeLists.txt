@@ -9,19 +9,21 @@
 #                        two descriptors, the main loop, a line recorder),
 #                        for the 32 bit interop tests
 
-set(_front options.cpp pty.cpp datafile.cpp pipe_modem.cpp run_loop.cpp
-	line_recorder.cpp)
+set(_front options.cpp datafile.cpp run_loop.cpp line_recorder.cpp)
+if(WIN32)
+	# the DTE a COM port or a TCP connection (windows_dte.cpp), for the
+	# pty and the pipe modems of POSIX
+	list(APPEND _front windows_dte.cpp)
+else()
+	list(APPEND _front pty.cpp pipe_modem.cpp)
+endif()
 list(TRANSFORM _front PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
 set(DMODEM_FRONT_SRCS ${_front} PARENT_SCOPE)
 set(DMODEM_FRONT_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
-if(NOT WIN32)
-	# (the pty, POSIX's processes and signals: Linux, macOS)
-	add_library(dmodem_front OBJECT ${_front})
-	target_link_libraries(dmodem_front PUBLIC dmodem_core)
-	target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
-	set_target_properties(dmodem_front PROPERTIES
-		POSITION_INDEPENDENT_CODE ON)
-endif()
+add_library(dmodem_front OBJECT ${_front})
+target_link_libraries(dmodem_front PUBLIC dmodem_core)
+target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
+set_target_properties(dmodem_front PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(DMODEM_DMODEMD)
 	# libdmodem_sip: the modem on a SIP line, its DTE a descriptor
@@ -44,14 +46,24 @@ if(DMODEM_DMODEMD)
 
 	# the modem daemon: the modem on a SIP line (or with -a an ALSA
 	# one, below) and a pty
-	add_executable(dmodemd main.cpp)
+	if(WIN32)
+		# (Windows: its DTE a COM port or TCP, windows_dte.cpp; the
+		# system's timer at 1 ms, winmm)
+		add_executable(dmodemd main_windows.cpp)
+		target_link_libraries(dmodemd PRIVATE dmodem_sip winmm)
+		install(TARGETS dmodemd RUNTIME
+			DESTINATION ${CMAKE_INSTALL_BINDIR})
+	else()
+		add_executable(dmodemd main.cpp)
+		target_link_libraries(dmodemd PRIVATE dmodem_sip)
+		install(TARGETS dmodemd RUNTIME
+			DESTINATION ${CMAKE_INSTALL_SBINDIR})
+	endif()
 	target_compile_options(dmodemd PRIVATE -Wall -g -O2)
-	target_link_libraries(dmodemd PRIVATE dmodem_sip)
-	install(TARGETS dmodemd RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
 	# -a: a softmodem's codec through ALSA for the line (alsa_line.cpp),
 	# if libasound2-dev is there
 	find_package(PkgConfig QUIET)
-	if(PkgConfig_FOUND)
+	if(PkgConfig_FOUND AND NOT WIN32)
 		pkg_check_modules(ALSA QUIET IMPORTED_TARGET alsa)
 	endif()
 	if(ALSA_FOUND)
@@ -103,7 +115,7 @@ if(DMODEM_DMODEMD)
 	endif()
 
 	find_package(Python3 COMPONENTS Interpreter QUIET)
-	if(DMODEM_TESTS AND Python3_Interpreter_FOUND)
+	if(DMODEM_TESTS AND Python3_Interpreter_FOUND AND NOT WIN32)
 		dmodem_add_test(dmodemd_root ${Python3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/test/root_test.py
 			$<TARGET_FILE:dmodemd>)

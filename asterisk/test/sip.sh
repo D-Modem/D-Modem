@@ -6,7 +6,9 @@
 # with chan_pjsip; app_dmodem.so from the CMake build), or with INCOMING=1 answers
 # DModem(term,o)'s call; see sip_call.py.  ARI=1: the same calls through
 # dmodem-ari (D-Modem as an ARI application, ../../ari) instead of
-# app_dmodem: Stasis(dmodem,...) in the dialplan
+# app_dmodem: Stasis(dmodem,...) in the dialplan.  DMODEMD=<path>: that
+# dmodemd instead of the build's (a Windows dmodemd.exe runs under Wine;
+# WIN_COM=1 its DTE on a COM port rather than TCP)
 here=$(cd "$(dirname "$0")" && pwd)
 # the binaries of the CMake build (DMODEM_BUILD, default <repo>/build)
 build=${DMODEM_BUILD:-$here/../../build}
@@ -87,7 +89,9 @@ if [ -n "$VOICE" ]; then
 fi
 # VOICE_DIAL=1: D-Modem dials in voice mode the dialplan's 7001 to 7003
 # in modem-in (sip_call.py).
-"$here/sip_call.py" "$build/dmodemd/dmodemd" 5551000 "$1"
+# DMODEMD: another dmodemd (build-win/dmodemd/dmodemd.exe: Windows's,
+# under Wine)
+"$here/sip_call.py" "${DMODEMD:-$build/dmodemd/dmodemd}" 5551000 "$1"
 r=$?
 sleep 2
 if [ -n "$VOICE" ]; then

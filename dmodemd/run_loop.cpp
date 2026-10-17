@@ -11,6 +11,9 @@
 #include <dcore.h>
 
 #include "run_loop.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace dmd {
 
@@ -21,6 +24,14 @@ void RunLoop::catch_signals()
 {
 	signal(SIGINT, [](int) { stop(); });
 	signal(SIGTERM, [](int) { stop(); });
+#ifdef _WIN32
+	/* (Windows: Ctrl+C, Ctrl+Break, the console closed, the user
+	   logging off or the system shutting down stop it too) */
+	SetConsoleCtrlHandler([](DWORD) -> BOOL {
+		stop();
+		return TRUE;
+	}, TRUE);
+#endif
 }
 
 /* see run_loop.h */
@@ -69,10 +80,25 @@ int RunLoop::wait(long ms)
 
 	tmo.tv_sec = ms / 1000;
 	tmo.tv_usec = ms % 1000 * 1000;
+#ifdef _WIN32
+	/* (Winsock's select(): an error if no socket is watched; a sleep
+	   then) */
+	if (set_.fd_count == 0 && wset_.fd_count == 0) {
+		Sleep((DWORD)ms);
+		return 0;
+	}
+	ret = select(0, &set_, &wset_, NULL, &tmo);
+	if (ret == SOCKET_ERROR) {
+		errno = WSAGetLastError() == WSAEINTR ? EINTR : EIO;
+		return errno == EINTR ? 0 : -1;
+	}
+	return ret;
+#else
 	ret = select(max_ + 1, &set_, &wset_, NULL, &tmo);
 	if (ret < 0 && errno == EINTR)
 		return 0;
 	return ret;
+#endif
 }
 
 } // namespace dmd

@@ -33,7 +33,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(DMODEM_LIBRE "auto" CACHE STRING "libre: auto, system or fetch")
 set_property(CACHE DMODEM_LIBRE PROPERTY STRINGS auto system fetch)
-if(ANDROID OR IOS)
+if(ANDROID OR IOS OR WIN32)
 	# (no system OpenSSL to link: Mbed TLS's, built with the modem)
 	set(_crypto mbedtls)
 else()

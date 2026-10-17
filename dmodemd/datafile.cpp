@@ -13,6 +13,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <io.h>
+#endif
 
 #include <log.h>
 
@@ -20,6 +23,24 @@
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, fmt, ##__VA_ARGS__)
+
+#ifdef _WIN32
+/* (Windows: the file binary, not inherited; positioned reads and writes
+   by a seek first, the descriptor being this object's alone) */
+#define O_CLOEXEC (O_BINARY | O_NOINHERIT)
+static ssize_t pread(int fd, void *buf, size_t n, off_t at)
+{
+	if (lseek(fd, at, SEEK_SET) < 0)
+		return -1;
+	return read(fd, buf, (unsigned)n);
+}
+static ssize_t pwrite(int fd, const void *buf, size_t n, off_t at)
+{
+	if (lseek(fd, at, SEEK_SET) < 0)
+		return -1;
+	return write(fd, buf, (unsigned)n);
+}
+#endif
 
 namespace dmd {
 

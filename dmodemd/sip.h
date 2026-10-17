@@ -25,7 +25,7 @@
 
 #include <string>
 
-#include <sys/socket.h>
+#include "portable.h"
 
 namespace sip {
 

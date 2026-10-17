@@ -52,6 +52,7 @@ public:
 	virtual int write(const char *buf, int n) = 0;
 };
 
+#ifndef _WIN32
 /* a pty (pty.h) as the DTE: its DTE closing it with HUPCL hangs up,
    and a new pty stands in for it */
 class PtyDte final : public Dte {
@@ -64,6 +65,7 @@ public:
 private:
 	Pty &pty_;
 };
+#endif
 
 /* any stream descriptor as the DTE (one end of a socket pair, say),
    made non-blocking; the other end closed ends the call and the modem.

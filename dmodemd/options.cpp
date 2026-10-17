@@ -45,7 +45,11 @@ struct Option {
 enum {
 	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
-	OPT_ALSA, OPT_ALSA_CTL, OPT_RATE, OPT_COUNT
+	OPT_ALSA, OPT_ALSA_CTL, OPT_RATE,
+#ifdef _WIN32
+	OPT_COM, OPT_TCP,
+#endif
+	OPT_COUNT
 };
 
 const Option OPTIONS[OPT_COUNT] = {
@@ -76,7 +80,28 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "its controls (hw:<card> of -a's)", "-a's", false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a (8000 or 9600)", "9600", false },
+#ifdef _WIN32
+	{ 0, "com", Takes::Text, true,
+	  "the DTE a COM port (COM5: one end of a com0com pair)", "none",
+	  false },
+	{ 0, "tcp", Takes::Text, true,
+	  "the DTE a TCP connection on [address:]port",
+	  "127.0.0.1:2323", false },
+#endif
 };
+
+/* an option of POSIX's alone (the pty's, ALSA's), neither taken nor
+   shown on Windows */
+bool posix_only(int i)
+{
+#ifdef _WIN32
+	return i == OPT_GROUP || i == OPT_PERM || i == OPT_ALSA ||
+		i == OPT_ALSA_CTL || i == OPT_RATE;
+#else
+	(void)i;
+	return false;
+#endif
+}
 
 /* one reading of a command line */
 class CommandLine {
@@ -136,6 +161,8 @@ int CommandLine::match(const char *text, const char **value) const
 	for (int i = 0; i < OPT_COUNT; i++) {
 		const Option &o = opts_[i];
 		size_t len = strlen(o.name);
+		if (posix_only(i))
+			continue;
 		if (!strncmp(text, o.name, len) && fits(o, text + len, value))
 			return i;
 		if (o.letter && *text == o.letter &&
@@ -186,13 +213,23 @@ void CommandLine::usage() const
 	fprintf(stderr,
 		"Usage: %s [option...] [name]\n"
 		"\n"
+#ifdef _WIN32
+		"The name is the modem's (default %s): its data file\n"
+		"%%LOCALAPPDATA%%\\dmodem\\data.<name>, its log\n"
+		"dmodem.log.<name>.  The DTE talks to it on a COM port\n"
+		"(--com) or by TCP (--tcp, the default).\n"
+#else
 		"The name is the modem's (default %s): its pty's link is\n"
 		"/dev/ttyDM<n> (n the digits it ends with), its data file\n"
 		"/var/lib/dmodem/data.<name>, its log dmodem.log.<name>.\n"
+#endif
 		"\n"
 		"Options:\n", prog_, DEFAULT_NAME);
-	for (const Option &o : opts_) {
+	for (int i = 0; i < OPT_COUNT; i++) {
+		const Option &o = opts_[i];
 		char head[48];
+		if (posix_only(i))
+			continue;
 		const char *eq = o.takes != Takes::Nothing ? "=VAL" : "";
 		int len, width;
 
@@ -277,6 +314,12 @@ void CommandLine::apply(Options &opt) const
 		}
 		opt.rate = (unsigned)rate;
 	}
+#ifdef _WIN32
+	if (o[OPT_COM].given)
+		opt.com = o[OPT_COM].value;
+	if (o[OPT_TCP].given)
+		opt.tcp = o[OPT_TCP].value;
+#endif
 	opt.name = name_ ? name_ : DEFAULT_NAME;
 }
 

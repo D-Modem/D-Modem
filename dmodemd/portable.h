@@ -29,6 +29,7 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
 
 namespace dmd {
 
@@ -86,6 +87,76 @@ inline void fd_close(int fd)
 	closesocket((SOCKET)fd);
 }
 
+#ifndef SHUT_RDWR
+#define SHUT_RDWR SD_BOTH
+#endif
+
+/* the local time of t into *tm (localtime_r) */
+inline void local_time(time_t t, struct tm *tm)
+{
+	localtime_s(tm, &t);
+}
+
+/* (sends never raise a signal on Windows; MSG_DONTWAIT: the sockets it
+   is used on are made non-blocking instead, set_nonblocking()) */
+const int SEND_NOSIGNAL = 0;
+#ifndef MSG_DONTWAIT
+#define MSG_DONTWAIT 0
+#endif
+
+/* socket(2), not inherited by child processes */
+inline int socket_cloexec(int domain, int type, int protocol)
+{
+	if (!net_init())
+		return -1;
+	SOCKET s = WSASocketW(domain, type, protocol, nullptr, 0,
+			      WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
+	if (s == INVALID_SOCKET) {
+		errno = sock_errno();
+		return -1;
+	}
+	return (int)s;
+}
+
+/* another descriptor for the socket fd (F_DUPFD_CLOEXEC) */
+inline int fd_dup(int fd)
+{
+	WSAPROTOCOL_INFOW pi;
+	if (WSADuplicateSocketW((SOCKET)fd, GetCurrentProcessId(), &pi))
+		return -1;
+	SOCKET s = WSASocketW(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO,
+			      FROM_PROTOCOL_INFO, &pi, 0,
+			      WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
+	return s == INVALID_SOCKET ? -1 : (int)s;
+}
+
+/* asleep until CLOCK_MONOTONIC reads *at */
+inline void sleep_until(const struct timespec *at)
+{
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	long long ms = (at->tv_sec - now.tv_sec) * 1000LL +
+		(at->tv_nsec - now.tv_nsec) / 1000000;
+	if (ms > 0)
+		Sleep((DWORD)ms);
+}
+
+/* the other end of the stream socket fd has closed it (seen without
+   taking anything from it) */
+inline bool peer_closed(int fd)
+{
+	fd_set r;
+	struct timeval t = { 0, 0 };
+	char c;
+	FD_ZERO(&r);
+	FD_SET((SOCKET)fd, &r);
+	if (select(0, &r, nullptr, nullptr, &t) <= 0)
+		return false;
+	/* (readable: its end, an error, or data, which stays) */
+	return recv((SOCKET)fd, &c, 1, MSG_PEEK) <= 0 &&
+		WSAGetLastError() != WSAEWOULDBLOCK;
+}
+
 /* two connected stream sockets, for socketpair(2): a listener on the
    loopback address takes the one connection it waits for; Nagle off,
    so that a byte goes when it is written */
@@ -122,6 +193,13 @@ fail:
 	if (a != INVALID_SOCKET)
 		closesocket(a);
 	return -1;
+}
+
+/* socketpair(2) (stream sockets alone: domain and type are AF_UNIX
+   and SOCK_STREAM wherever this is called on Windows) */
+inline int socketpair_cloexec(int, int, int, int sv[2])
+{
+	return stream_pair(sv);
 }
 
 } // namespace dmd
@@ -247,6 +325,8 @@ inline int stream_pair(int sv[2])
 {
 	return socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, sv);
 }
+inline int fd_dup(int fd) { return fcntl(fd, F_DUPFD_CLOEXEC, 0); }
+inline void local_time(time_t t, struct tm *tm) { localtime_r(&t, tm); }
 
 } // namespace dmd
 

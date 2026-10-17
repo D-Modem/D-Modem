@@ -27,6 +27,11 @@ struct Options {
 	const char *alsa = nullptr;
 	const char *alsa_ctl = nullptr;
 	unsigned rate = 9600;
+	/* Windows: the DTE a COM port (--com: one end of a null-modem
+	   pair such as com0com's), or TCP connections on [address:]port
+	   (--tcp) */
+	const char *com = nullptr;
+	const char *tcp = nullptr;
 };
 
 /* parses argv (prints the usage and exits on an error, -h, -v,

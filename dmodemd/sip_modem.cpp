@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -21,8 +20,10 @@
 #include <log.h>
 #include <t38.h>
 
-#include "pty.h"
 #include "portable.h"
+#ifndef _WIN32
+#include "pty.h"
+#endif
 #include "run_loop.h"
 #include "sip.h"
 #include "sip_modem.h"
@@ -120,6 +121,10 @@ private:
 
 	Dte &dte_;
 	int audio_ = -1;
+	/* (an odd octet of the audio a read split off: the next read's
+	   first; TCP's loopback on Windows splits where it likes) */
+	char carry_ = 0;
+	int carry_n_ = 0;
 	int speaker_level_ = 0;
 
 	/* T.38: the socket, the far end, the version agreed, the largest
@@ -142,7 +147,7 @@ private:
 SipLine::~SipLine()
 {
 	if (audio_ >= 0)
-		close(audio_);
+		dmd::fd_close(audio_);
 	t38_end();
 }
 
@@ -159,14 +164,15 @@ int SipLine::start(dcore::Modem &m)
 		ERR("socketpair: %s\n", strerror(errno));
 		return -1;
 	}
-	if (write(sv[0], silence, sizeof(silence)) !=
-	    (ssize_t)sizeof(silence)) {
+	if (dmd::fd_write(sv[0], silence, sizeof(silence)) !=
+	    (int)sizeof(silence)) {
 		ERR("dev write: %s\n", strerror(errno));
-		close(sv[0]);
-		close(sv[1]);
+		dmd::fd_close(sv[0]);
+		dmd::fd_close(sv[1]);
 		return -1;
 	}
 	audio_ = sv[0];
+	carry_n_ = 0;
 	if (m.caller()) {
 		DBG("off hook: dialling %s\n", m.dial_string());
 		sip::dial(m.dial_string(), sv[1]);
@@ -183,7 +189,15 @@ int SipLine::stop(dcore::Modem &)
 {
 	DBG("on hook\n");
 	if (audio_ >= 0) {
-		close(audio_);
+#ifdef _WIN32
+		/* (abortive: the user agent may not have read the frame
+		   start() put ahead, and Windows says nothing of a plain
+		   close behind data not read; a reset it sees) */
+		struct linger l = { 1, 0 };
+		setsockopt((SOCKET)audio_, SOL_SOCKET, SO_LINGER,
+			   (const char *)&l, sizeof(l));
+#endif
+		dmd::fd_close(audio_);
 		audio_ = -1;
 	}
 	t38_end();
@@ -196,7 +210,11 @@ int SipLine::stop(dcore::Modem &)
 int SipLine::audio(dcore::Modem &m)
 {
 	int16_t in[AUDIO_MAX], out[AUDIO_MAX];
-	ssize_t n = read(audio_, in, sizeof(in)), done;
+	char *bytes = reinterpret_cast<char *>(in);
+	if (carry_n_)
+		bytes[0] = carry_;
+	ssize_t n = dmd::fd_read(audio_, bytes + carry_n_,
+				 (int)sizeof(in) - carry_n_), done;
 	int count;
 
 	if (n < 0 && (errno == EINTR || errno == EAGAIN))
@@ -210,8 +228,15 @@ int SipLine::audio(dcore::Modem &m)
 		m.line_dropped();
 		return 0;
 	}
-	/* (the user agent writes whole frames) */
+	/* (the user agent writes whole frames; a read may end inside a
+	   sample all the same) */
+	n += carry_n_;
+	carry_n_ = (int)(n & 1);
+	if (carry_n_)
+		carry_ = bytes[n - 1];
 	count = (int)n / 2;
+	if (count == 0)
+		return 0;
 	if (t38_ >= 0) {
 		memset(out, 0, 2 * count);
 	} else {
@@ -226,7 +251,7 @@ int SipLine::audio(dcore::Modem &m)
 		DBG("hung up: no answer to the line's samples\n");
 		return 0;
 	}
-	done = write(audio_, out, 2 * count);
+	done = dmd::fd_write(audio_, out, 2 * count);
 	if (done == 2 * count)
 		return 0;
 	if (done < 0 && (errno == EPIPE || errno == ECONNRESET)) {
@@ -252,6 +277,10 @@ void SipLine::t38_begin(dcore::Modem &m)
 	}
 	t38_end();
 	t38_ = t.fd;
+#ifdef _WIN32
+	/* (no MSG_DONTWAIT) */
+	dmd::set_nonblocking(t38_);
+#endif
 	peer_ = t.peer;
 	peer_len_ = t.peer_len;
 	version_ = t.version;
@@ -276,7 +305,7 @@ void SipLine::t38_begin(dcore::Modem &m)
 void SipLine::t38_end()
 {
 	if (t38_ >= 0) {
-		close(t38_);
+		dmd::fd_close(t38_);
 		t38_ = -1;
 	}
 }
@@ -299,7 +328,8 @@ void SipLine::t38_send(dcore::Modem &, const void *ifp)
 	len = tx_.packet(pkt, n, dgram, max);
 	if (len <= 0)
 		return;
-	if (sendto(t38_, dgram, len, 0, (const struct sockaddr *)&peer_,
+	if (sendto(t38_, (const char *)dgram, len, 0,
+		   (const struct sockaddr *)&peer_,
 		   peer_len_) < 0)
 		DBG("T.38 send: %s\n", strerror(errno));
 }
@@ -326,7 +356,7 @@ void SipLine::t38_receive(dcore::Modem &m)
 
 	rx_modem_ = &m;
 	while (t38_ >= 0) {
-		ssize_t n = recv(t38_, buf, sizeof(buf), MSG_DONTWAIT);
+		ssize_t n = recv(t38_, (char *)buf, sizeof(buf), MSG_DONTWAIT);
 		if (n < 0)
 			break;
 		rx_.packet(buf, (int)n, ifp_in, this);
@@ -397,9 +427,9 @@ private:
 int Control::serve(dcore::Modem &m, SipLine &line)
 {
 	char chunk[CONTROL_MAX];
-	ssize_t n = read(fd_, chunk, sizeof(chunk));
+	ssize_t n = dmd::fd_read(fd_, chunk, sizeof(chunk));
 
-	if (n < 0 && errno == EINTR)
+	if (n < 0 && (errno == EINTR || errno == EAGAIN))
 		return 0;
 	if (n <= 0) {
 		ERR("the SIP user agent has gone%s%s\n", n < 0 ? ": " : "",
@@ -449,6 +479,7 @@ void Control::act(const char *s, dcore::Modem &m, SipLine &line)
  *    the DTEs
  */
 
+#ifndef _WIN32
 /* see sip_modem.h */
 int PtyDte::fd() const
 {
@@ -473,14 +504,12 @@ int PtyDte::write(const char *buf, int n)
 {
 	return pty_.write(buf, n);
 }
+#endif
 
 /* see sip_modem.h */
 FdDte::FdDte(int fd) : fd_(fd)
 {
-	int fl = fcntl(fd_, F_GETFL);
-
-	if (fl >= 0 && !(fl & O_NONBLOCK))
-		fcntl(fd_, F_SETFL, fl | O_NONBLOCK);
+	dmd::set_nonblocking(fd_);
 }
 
 /* see sip_modem.h */
@@ -501,7 +530,7 @@ int FdDte::serve(dcore::Modem &m)
 		return 0;
 	if (room > (int)sizeof(buf))
 		room = sizeof(buf);
-	n = read(fd_, buf, room);
+	n = dmd::fd_read(fd_, buf, room);
 	if (n < 0) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
 			return 0;
@@ -522,7 +551,7 @@ int FdDte::serve(dcore::Modem &m)
 void FdDte::flush()
 {
 	while (!out_.empty()) {
-		ssize_t n = ::write(fd_, out_.data(), out_.size());
+		ssize_t n = dmd::fd_write(fd_, out_.data(), (int)out_.size());
 		if (n <= 0) {
 			if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
 			    errno != EINTR) {
@@ -546,7 +575,7 @@ int FdDte::write(const char *buf, int n)
 		return 0;
 	flush();
 	if (out_.empty()) {
-		ssize_t done = ::write(fd_, buf, n);
+		ssize_t done = dmd::fd_write(fd_, buf, n);
 		if (done < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
 		    errno != EINTR)
 			return 0;
@@ -575,15 +604,14 @@ SipModem::SipModem(Dte &dte, const dcore::Options &opt)
 	: dte_(dte), line_(new SipLine(dte))
 {
 	m_.reset(new dcore::Modem(*line_, opt));
-	if (pipe(wake_) < 0) {
-		ERR("pipe: %s\n", strerror(errno));
+	/* (a socket pair: on Windows select() takes sockets alone) */
+	if (dmd::socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, wake_) < 0) {
+		ERR("socketpair: %s\n", strerror(errno));
 		wake_[0] = wake_[1] = -1;
 		return;
 	}
-	for (int fd : wake_) {
-		fcntl(fd, F_SETFD, FD_CLOEXEC);
-		fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
-	}
+	for (int fd : wake_)
+		dmd::set_nonblocking(fd);
 }
 
 /* the core first: it may still hang up on the line */
@@ -593,7 +621,7 @@ SipModem::~SipModem()
 	line_.reset();
 	for (int fd : wake_)
 		if (fd >= 0)
-			close(fd);
+			dmd::fd_close(fd);
 }
 
 /* see sip_modem.h */
@@ -608,7 +636,7 @@ void SipModem::stop()
 	char c = 0;
 
 	stopped_ = true;
-	if (wake_[1] >= 0 && ::write(wake_[1], &c, 1) < 0) {
+	if (wake_[1] >= 0 && dmd::fd_write(wake_[1], &c, 1) < 0) {
 		/* (full: it is awake anyway) */
 	}
 }
@@ -658,7 +686,7 @@ int SipModem::run(const sip::Config &cfg)
 	if (m_->link_state() != dcore::LinkState::Idle)
 		m_->hangup_now();
 	sip::stop();
-	close(ctl);
+	dmd::fd_close(ctl);
 	dte_.flush();
 	return ret;
 }
@@ -709,7 +737,7 @@ int SipModem::serve(int ctl)
 			continue;
 		if (loop.ready(wake_[0])) {
 			char buf[16];
-			while (read(wake_[0], buf, sizeof(buf)) > 0)
+			while (dmd::fd_read(wake_[0], buf, sizeof(buf)) > 0)
 				;
 		}
 		if (loop.ready(control.fd()) && control.serve(m, line) < 0)

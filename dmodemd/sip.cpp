@@ -39,15 +39,12 @@
  *
  */
 
-#include <arpa/inet.h>
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <netinet/in.h>
-#include <poll.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -58,12 +55,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 #include <wchar.h>
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -78,7 +78,8 @@
 
 /* libre's declarations in a namespace of their own: its struct sip
    would be the namespace sip's name (the system headers it has are
-   above) */
+   above; on Windows Winsock's, by portable.h) */
+#include "portable.h"
 namespace libre {
 #include <re.h>
 }
@@ -196,7 +197,7 @@ void say(int level, const char *fmt, ...)
 		return;
 	}
 	clock_gettime(CLOCK_REALTIME, &ts);
-	localtime_r(&ts.tv_sec, &tm);
+	dmd::local_time(ts.tv_sec, &tm);
 	fprintf(stderr, "%02d:%02d:%02d.%03ld sip: %s\n", tm.tm_hour,
 		tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000, buf.data());
 }
@@ -237,7 +238,7 @@ bool read_all(int fd, void *buf, size_t n)
 {
 	char *p = static_cast<char *>(buf);
 	while (n) {
-		ssize_t r = read(fd, p, n);
+		ssize_t r = dmd::fd_read(fd, p, (int)n);
 		if (r < 0 && errno == EINTR)
 			continue;
 		if (r <= 0)
@@ -253,7 +254,7 @@ bool write_all(int fd, const void *buf, size_t n)
 {
 	const char *p = static_cast<const char *>(buf);
 	while (n) {
-		ssize_t r = send(fd, p, n, dmd::SEND_NOSIGNAL);
+		ssize_t r = send(fd, p, (int)n, dmd::SEND_NOSIGNAL);
 		if (r < 0 && errno == EINTR)
 			continue;
 		if (r <= 0)
@@ -292,16 +293,20 @@ int open_udp(int *port, int *family)
 
 		if (fd < 0)
 			continue;
-		a.ss_family = (sa_family_t)af;
+		a.ss_family = (decltype(a.ss_family))af;
 		if ((af == AF_INET6 &&
-		     setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &off,
-				sizeof(off)) < 0) ||
+		     setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+				(const char *)&off, sizeof(off)) < 0) ||
 		    bind(fd, reinterpret_cast<struct sockaddr *>(&a), len) < 0 ||
 		    getsockname(fd, reinterpret_cast<struct sockaddr *>(&a),
 				&len) < 0) {
-			close(fd);
+			dmd::fd_close(fd);
 			continue;
 		}
+#ifdef _WIN32
+		/* (no MSG_DONTWAIT: the socket itself doesn't wait) */
+		dmd::set_nonblocking(fd);
+#endif
 		*port = ntohs(af == AF_INET6 ?
 			reinterpret_cast<struct sockaddr_in6 *>(&a)->sin6_port :
 			reinterpret_cast<struct sockaddr_in *>(&a)->sin_port);
@@ -814,7 +819,7 @@ public:
 		}
 		if (modem_ >= 0) {
 			say(4, "audio socket %d closed", modem_);
-			close(modem_);
+			dmd::fd_close(modem_);
 		}
 		modem_ = -1;
 	}
@@ -918,7 +923,8 @@ private:
 		uint8_t b[2048];
 
 		for (;;) {
-			ssize_t n = recv(rtp_, b, sizeof(b), MSG_DONTWAIT);
+			ssize_t n = recv(rtp_, (char *)b, sizeof(b),
+					 MSG_DONTWAIT);
 			size_t h, end;
 			int p, l;
 
@@ -990,7 +996,7 @@ private:
 		header(p, pt, marker_, ts_);
 		for (unsigned i = 0; i < SAMPLES; i++)
 			p[12 + i] = dsp::g711::encode(law == 2, out[i]);
-		(void)sendto(rtp_, p, sizeof(p), MSG_DONTWAIT,
+		(void)sendto(rtp_, (const char *)p, sizeof(p), MSG_DONTWAIT,
 			     reinterpret_cast<const struct sockaddr *>(&peer),
 			     len);
 		marker_ = false;
@@ -1011,7 +1017,7 @@ private:
 		p[13] = end ? 0x80 : 0;
 		p[14] = (uint8_t)(ev_dur_ >> 8);
 		p[15] = (uint8_t)ev_dur_;
-		(void)sendto(rtp_, p, sizeof(p), MSG_DONTWAIT,
+		(void)sendto(rtp_, (const char *)p, sizeof(p), MSG_DONTWAIT,
 			     reinterpret_cast<const struct sockaddr *>(&peer),
 			     len);
 	}
@@ -1317,9 +1323,9 @@ void end_call()
 	}
 	c->media.reset();
 	if (c->rtp >= 0)
-		close(c->rtp);
+		dmd::fd_close(c->rtp);
 	if (c->udptl >= 0)
-		close(c->udptl);
+		dmd::fd_close(c->udptl);
 	delete c;
 }
 
@@ -1359,12 +1365,12 @@ bool attach(Call *c, int fd)
 	flash_ms_ = 0;
 	if (!write_all(fd, silence, FRAME)) {
 		say(1, "audio socket %d: %s", fd, strerror(errno));
-		close(fd);
+		dmd::fd_close(fd);
 		return false;
 	}
 	c->rtp = open_udp(&c->rtp_port, &family);
 	if (c->rtp < 0) {
-		close(fd);
+		dmd::fd_close(fd);
 		return false;
 	}
 	c->media.reset(new Media(fd, c->rtp, family, c->serial, mq_));
@@ -1742,7 +1748,7 @@ void do_dial(const std::string &number, int fd)
 
 	if (cur) {
 		say(3, "dial %s: the line is busy", number.c_str());
-		close(fd);
+		dmd::fd_close(fd);
 		return;
 	}
 	c = cur = new Call(++last_serial);
@@ -1778,7 +1784,7 @@ void do_answer(int fd)
 
 	if (!c || !c->ringing) {
 		say(3, "answer: no call rings");
-		close(fd);
+		dmd::fd_close(fd);
 		return;
 	}
 	c->ringing = false;
@@ -1841,7 +1847,7 @@ void on_mq(int id, void *data, void *)
 	case MQ_ANSWER: {
 		std::unique_ptr<Request> r(static_cast<Request *>(data));
 		if (quitting)
-			close(r->fd);
+			dmd::fd_close(r->fd);
 		else if (id == MQ_DIAL)
 			do_dial(r->number, r->fd);
 		else
@@ -1974,7 +1980,9 @@ bool init()
 		return false;
 	}
 	/* (its OpenSSL's set-up put a handler of its own) */
+#ifdef SIGPIPE
 	signal(SIGPIPE, SIG_IGN);
+#endif
 	tmr_init(&quit_tmr);
 
 	/* names by the system's resolver, SRV and NAPTR by its servers:
@@ -2067,7 +2075,7 @@ void serve()
 void queue(int id, Request *r)
 {
 	if (!running || mqueue_push(mq_, id, r)) {
-		close(r->fd);
+		dmd::fd_close(r->fd);
 		delete r;
 	}
 }
@@ -2128,7 +2136,7 @@ int start(const Config &cfg)
 	if (cfg.record)
 		rec.open(cfg.record, ".rx", ".tx");
 
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, ctl) < 0) {
+	if (dmd::socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, ctl) < 0) {
 		say(1, "socketpair: %s", strerror(errno));
 		ctl[0] = ctl[1] = -1;
 		rec.close();
@@ -2150,8 +2158,8 @@ int start(const Config &cfg)
 		lk.unlock();
 		sip_thread.join();
 	}
-	close(ctl[0]);
-	close(ctl[1]);
+	dmd::fd_close(ctl[0]);
+	dmd::fd_close(ctl[1]);
 	ctl[0] = ctl[1] = -1;
 	rec.close();
 	return -1;
@@ -2169,7 +2177,7 @@ void stop()
 		sip_thread.join();
 	rec.close();
 	if (ctl[0] >= 0)
-		close(ctl[0]);
+		dmd::fd_close(ctl[0]);
 	ctl[0] = -1;
 }
 
@@ -2222,7 +2230,7 @@ bool t38(T38 *t)
 		say(1, "T.38: no address in `%s'", t38_peer_.addr.c_str());
 		return false;
 	}
-	t->fd = fcntl(t38_fd_, F_DUPFD_CLOEXEC, 0);
+	t->fd = dmd::fd_dup(t38_fd_);
 	if (t->fd < 0)
 		return false;
 	t->version = t38_peer_.version;

@@ -159,3 +159,10 @@ add_library(libre INTERFACE IMPORTED)
 target_include_directories(libre INTERFACE ${_re_prefix}/include/re)
 target_link_libraries(libre INTERFACE ${_re_lib} ${_crypto_libs}
 	Threads::Threads m ${CMAKE_DL_LIBS})
+if(WIN32)
+	# (its headers choose Winsock's by WIN32; the system libraries its
+	# .pc and Mbed TLS's name)
+	target_compile_definitions(libre INTERFACE WIN32)
+	target_link_libraries(libre INTERFACE qwave iphlpapi wsock32 ws2_32
+		dbghelp bcrypt)
+endif()
