@@ -890,8 +890,11 @@ What it does not do here:
   not.
 - Answering with MNP (`+ES=3,0,6`), it often takes our direction no
   higher than 14400 bit/s (at some answer timings 7200) and retrains up
-  a second or two into the call, as an MNP 10 modem would (plain V.34
-  answers take 33600 at every timing). MNP 5 goes on through the
+  a second or two into the call, as an MNP 10 modem would. Plain V.34
+  answers take 33600 at most timings, but at some 14400 or 7200 too
+  (about one call in ten with `ESS_SYNC=0`, the ATA landing where the
+  scheduler has it: the intermittent caps of full-suite runs); the
+  tests' `ESS_SYNC` keeps them at one that takes 33600. MNP 5 goes on through the
   retrain; with MNP 4 alone (our `%C2`) it gives its DTE no CONNECT after
   it, so that test is only with it calling.
 
@@ -1058,8 +1061,9 @@ calls in between are in it as well. For example:
 `PIPE_SYNC=<samples>` (`half_open`, `half_smartlink`),
 `AGERE_SYNC=<samples>` (`half_agere`), `SM56_SYNC=<samples>`
 (`half_sm56`), `SPANDSP_SYNC=<samples>` (`half_spandsp`),
-`PCTEL_SYNC=<samples>` (`half_pctel`), `HSF_SYNC=<samples>` (`half_hsf`)
-and `BROADCOM_SYNC=<samples>` (`half_broadcom`) make a call repeat
+`PCTEL_SYNC=<samples>` (`half_pctel`), `HSF_SYNC=<samples>` (`half_hsf`),
+`BROADCOM_SYNC=<samples>` (`half_broadcom`), `INTEL_SYNC=<samples>`
+(`half_intel`) and `ESS_SYNC=<samples>` (`half_ess`) make a call repeat
 exactly from run to run: the modems take the DTE's commands only every
 that many line samples (data, once connected, at once), run their timers
 between half frames and keep time by the line; without them, where the

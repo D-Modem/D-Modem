@@ -594,7 +594,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 	setenv("PIPE_SYNC", "4800", 0);
 	for (const char *v : { "AGERE_SYNC", "SM56_SYNC", "SPANDSP_SYNC",
 			       "PCTEL_SYNC", "HSF_SYNC", "BROADCOM_SYNC",
-			       "INTEL_SYNC" })
+			       "INTEL_SYNC", "ESS_SYNC" })
 		setenv(v, getenv("PIPE_SYNC"), 0);
 	std::string log_dir = env("LOG_DIR", ".");
 	make_dirs(log_dir);
