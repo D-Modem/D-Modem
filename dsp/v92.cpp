@@ -228,8 +228,9 @@ int v92_dil_build(unsigned char *b, const V90Dil &d, unsigned up_mask)
 	return fill_to(b, n, 12);
 }
 
-/* see v92.h */
-int v92_cpt_build(unsigned char *b, const V90Cp &cp)
+/* CPt or CPu (type 0 or 1) in Table 23's form, filled to a multiple
+   of fill bits */
+static int cp_build(unsigned char *b, const V90Cp &cp, int type, int fill)
 {
 	static const int sbit[6] = { 0, 0, 0, 0, 1, 1 };
 	int n = 0, i, j, c;
@@ -237,7 +238,7 @@ int v92_cpt_build(unsigned char *b, const V90Cp &cp)
 	put_bits(b, &n, 0x1FFFF, 17);
 	put_bits(b, &n, 0, 1);
 	put_bits(b, &n, 0, 1);                  /* 18: CP */
-	put_bits(b, &n, 0, 2);                  /* CPt */
+	put_bits(b, &n, type, 2);
 	put_bits(b, &n, cp.drn, 5);
 	put_bits(b, &n, 0, 5);
 	put_bits(b, &n, cp.sr, 2);
@@ -272,7 +273,120 @@ int v92_cpt_build(unsigned char *b, const V90Cp &cp)
 	put_bits(b, &n, 0, 1);
 	put_frame_crc(b, &n);
 	put_bits(b, &n, 0, 1);
-	return fill_to(b, n, 12);
+	return fill_to(b, n, fill);
+}
+
+/* see v92.h */
+int v92_cpt_build(unsigned char *b, const V90Cp &cp)
+{
+	return cp_build(b, cp, 0, 12);
+}
+
+/* see v92.h */
+int v92_cpu_build(unsigned char *b, const V90Cp &cp, int fill)
+{
+	return cp_build(b, cp, 1, fill);
+}
+
+/* see v92.h */
+int v92_suvu_build(unsigned char *b, int ack, int fill)
+{
+	int n = 0;
+	put_bits(b, &n, 0x1FFFF, 17);
+	put_bits(b, &n, 0, 1);
+	put_bits(b, &n, 1, 1);          /* SUVu */
+	put_bits(b, &n, 0, 7);
+	put_bits(b, &n, 0, 1);          /* no wait for CPu */
+	put_bits(b, &n, 16, 5);         /* no level measured */
+	put_bits(b, &n, 0, 1);          /* no silent period */
+	put_bits(b, &n, ack, 1);
+	put_bits(b, &n, 0, 1);
+	put_frame_crc(b, &n);
+	put_bits(b, &n, 0, 1);
+	return fill_to(b, n, fill);
+}
+
+/* see v92.h: the header to bit 51, then the parts bits 19 to 21 say
+   are there (V92Cpd::build()'s layout), a start bit, the CRC */
+int v92_cpd_length(const unsigned char *b, int n)
+{
+	int p = 51, i, l;
+
+	if (n < 22)
+		return 0;
+	if (b[19])
+		p += 102;
+	if (b[20]) {
+		if (n < p + 68)
+			return 0;
+		for (i = 0, l = 0; i < 4; i++)
+			l += field(b, p + 1 + 17 * i, 9);
+		p += 68 + 17 * l;
+	}
+	if (b[21]) {
+		if (n < p + 85)
+			return 0;
+		for (i = 0, l = 0; i < 6; i++)
+			l += field(b, p + 34 + 17 * (i / 2) + 1 + 8 * (i % 2), 8);
+		p += 85 + 17 * l;
+	}
+	return p + 17;
+}
+
+/* see v92.h */
+int V92Cpd::parse(const unsigned char *b, int nb)
+{
+	int p = 51, i, j, g4;
+
+	if (nb < 68 || !frame_crc_ok(b, nb - 16) || b[18])
+		return -1;
+	memset(this, 0, sizeof(*this));
+	drn = field(b, 22, 5);
+	trellis = field(b, 27, 2);
+	e2u_extend = b[29];
+	ack = b[33];
+	g4 = field(b, 35, 16);
+	g = g4 / 65536.0 / 4;
+	for (i = 0; i < 12; i++)
+		M[i] = 1;
+	if (b[19]) {
+		for (i = 0; i < 12; i++)
+			M[i] = field(b, p + 1 + 17 * (i / 2) + 8 * (i % 2), 8);
+		p += 102;
+	}
+	if (b[20]) {
+		for (i = 0; i < 4; i++) {
+			len[i] = field(b, p + 1 + 17 * i, 9);
+			if (len[i] > V92_PMAX)
+				return -1;
+		}
+		p += 68;
+		for (i = 0; i < 4; i++)
+			for (j = 0; j < len[i]; j++, p += 17)
+				coef[i][j] = (short)field(b, p + 1, 16);
+	}
+	if (b[21]) {
+		for (i = 0; i < 4; i++)
+			con[i] = field(b, p + 1 + 4 * i, 4);
+		con[4] = field(b, p + 18, 4);
+		con[5] = field(b, p + 22, 4);
+		for (i = 0; i < 6; i++) {
+			lc[i] = field(b, p + 34 + 17 * (i / 2) + 1 + 8 * (i % 2),
+				      8);
+			if (lc[i] > V92_LC_MAX)
+				return -1;
+			if (lc[i])
+				ncon = i + 1;
+		}
+		p += 85;
+		for (i = 0; i < ncon; i++)
+			for (j = 0; j < lc[i]; j++, p += 17)
+				pts[i][j] = (int)field(b, p + 1, 16);
+		for (i = 0; i < 6; i++)
+			if (con[i] >= ncon)
+				return -1;
+	}
+	return 0;
 }
 
 /*
@@ -758,6 +872,9 @@ void V92Up::frame_bits(int bit)
 		return;
 	}
 	if (rx == V92R_TRN2 || fpe_rx == 3) {
+		/* (E2u is after it: its fill may be zeros to the frame's
+		   end) */
+		seq_sym = sym;
 		if (fr.b[18]) {
 			/* SUVu */
 			if (!got_suvu)
@@ -904,7 +1021,7 @@ void V92Up::symbol(float y)
 			/* in the silent period: until SUVu with bit 32
 			   clear */
 		} else if (i == 11 && got_ack && frame_zero == 24 && !fr.n &&
-		    rn_silence) {
+		    sym - 11 > seq_sym && rn_silence) {
 			/* the silent period: TRN2u, then SUVu with bit 32
 			   clear (9.8.1.1.4) */
 			got_e2u = 1;
@@ -913,7 +1030,8 @@ void V92Up::symbol(float y)
 			fr.init(SyncFrames::CP92);
 			DSP_DBG("v92: E2u before the silence at symbol %ld\n",
 				sym);
-		} else if (i == 11 && got_ack && frame_zero == 24 && !fr.n) {
+		} else if (i == 11 && got_ack && frame_zero == 24 && !fr.n &&
+			   sym - 11 > seq_sym) {
 			got_e2u = 1;
 			DSP_DBG("v92: E2u at symbol %ld\n", sym);
 			rx = V92R_DATA;

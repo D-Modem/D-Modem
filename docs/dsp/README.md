@@ -52,8 +52,9 @@ upstream (see [PCM upstream](v92.md#v92-pcm-upstream)), and as the
 bit/s down and 33600 up from a V.90 digital modem, V.34 and below with
 any other, with its retrains and rate renegotiations (`DSP_V90A=0`
 leaves it out: see [V.90 analogue modem](v90a.md)). V.92 as the
-analogue modem is V.90's with modem-on-hold; its PCM upstream has
-phase 3 so far (`DSP_V92A_UP=1`), its quick connect is to come. K56flex
+analogue modem has PCM upstream (up to 48000 bit/s; `DSP_V92A_UP=0`
+leaves it out) and modem-on-hold; its quick connect, and PCM
+upstream's renegotiation, are to come. K56flex
 and V.8bis are not there (`AT+MS=56`, K56flex, runs V.90). Between two
 digital modems V.91 (see [V.91](v91.md#v91-digital-to-digital)) takes
 the place of V.90.

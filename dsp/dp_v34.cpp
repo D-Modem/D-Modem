@@ -223,6 +223,11 @@ enum v34_state {
 	P3U_TRN1,       /* Su-bar, TRN1u while the DIL is measured */
 	P3U_CPT,        /* CPt until Ri */
 	P3U_E1U,
+	/* phase 4 (9.6.2/V.92) */
+	P4U_TRN2,       /* TRN2u until SUVd (or 12000 T) */
+	P4U_SEQ,        /* SUVu, CPu after SUVd, the acknowledged ones
+			   after CPd, until SUVd' or CPd' or Ed */
+	P4U_DATA,       /* E2u, B1u, data; until B1d */
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
@@ -673,11 +678,17 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int v92a_on;            /* and the digital modem's INFO0d said V.92
 				   (for the call) */
 	int v92a_up;            /* we ask for PCM upstream where INFO1d
-				   offers it (DSP_V92A_UP=1: phase 4 is not
-				   there yet) */
+				   offers it (DSP_V92A_UP=0: not) */
 	int v92a_noup;          /* it failed in this call: V.90 next */
 	int v92a_up_on;         /* this phase 3 is PCM upstream's */
 	V92ATx patx;            /* its transmitter */
+	/* its phase 4: our CPu sent (when, in samples), our acknowledged
+	   sequences queued (sent whole once patx.seqs reaches
+	   v92a_ack_seqs) */
+	int v92a_cpu, v92a_cpu_n;
+	long v92a_cpu_at;
+	int v92a_acked;
+	long v92a_ack_seqs;
 	int short2;             /* and both asked for short phase 2 */
 	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=0: not) */
 	V91 v91m;
@@ -756,6 +767,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void v92a_up_start();
 	int v92a_cpt();
 	int v92a_up_fail(const char *why);
+	int v92a_next_seq();
 	int v90a_cp_design();
 	int v90a_data_setup();
 	long v90a_quiet;        /* data mode: samples of the PCM signal gone */
@@ -2991,6 +3003,37 @@ int V34Pump::v92a_cpt()
 	return 0;
 }
 
+/* phase 4's next sequence after the one going out (9.6.2.1/V.92):
+   CPu once SUVd is in (again if no acknowledgement 100 ms and a round
+   trip after it went), else SUVu; acknowledged once CPd is in.  -1
+   when there are no constellations for CPu */
+int V34Pump::v92a_next_seq()
+{
+	int ack = v90rx.ev_cpd > 0;
+	long again = ms2samples(100, srate) + rtd +
+		ms2samples(1000L * v92a_cpu_n / 2 / 8000, srate);
+	if (v90rx.ev_suvd && v90rx.ev_trn2 &&
+	    (!v92a_cpu || (!v90rx.ev_mpack && total - v92a_cpu_at > again))) {
+		if (!v92a_cpu) {
+			if (v90a_cp_design())
+				return -1;
+			DSP_DBG("v34: V.92: CPu, drn %d\n", v90a_cp.drn);
+		}
+		v90a_cp.ack = ack;
+		patx.nxt_n = v92_cpu_build(patx.nxt, v90a_cp, 24);
+		v92a_cpu_n = patx.nxt_n;
+		v92a_cpu++;
+		v92a_cpu_at = total;
+	} else
+		patx.nxt_n = v92_suvu_build(patx.nxt, ack, 24);
+	if (ack && !v92a_acked) {
+		/* (after the one going out and this one) */
+		v92a_acked = 1;
+		v92a_ack_seqs = patx.seqs + 2;
+	}
+	return 0;
+}
+
 /* PCM upstream did not work: V.90 for the rest of the call, after a
    retrain */
 int V34Pump::v92a_up_fail(const char *why)
@@ -4597,13 +4640,93 @@ int V34Pump::handshake()
 			return v92a_up_fail("no Ri");
 		break;
 	case P3U_E1U:
-		if (patx.e1u_sent()) {
+		/* TRN2u after it */
+		if (patx.next) {
 			DSP_DBG("v34: V.92: PCM upstream phase 3 done\n");
-			/* (phase 4 is not there yet) */
-			return v92a_up_fail("no PCM upstream phase 4 yet");
+			v92a_cpu = v92a_acked = 0;
+			set_state(P4U_TRN2);
+			break;
 		}
 		if (c >= ms2samples(1000, srate))
 			return v92a_up_fail("E1u did not go");
+		break;
+
+	/* V.92 analogue modem, PCM upstream phase 4 (9.6.2/V.92): TRN2u
+	   until SUVd, or 12000 T of it, once TRN2d has shown the noise
+	   (for CPu's design), then SUVu; one CPu after SUVd (again if no
+	   acknowledgement comes 100 ms and a round trip after it), all
+	   acknowledged once CPd is in; E2u after the current sequence
+	   once one of ours acknowledged has gone and SUVd' or CPd' or Ed
+	   is in; B1u and data on CPd, B1d on our CPu's constellations */
+	case P4U_TRN2:
+		if (v90rx.ev_trn2 && patx.seg == V92A_TRN2 &&
+		    (v90rx.ev_suvd || patx.n >= 12000)) {
+			patx.nbits = v92_suvu_build(patx.bits, 0, 24);
+			patx.nxt_n = 0;
+			patx.trn2_stop = 1;
+			set_state(P4U_SEQ);
+			break;
+		}
+		if (c >= ms2samples(4000, srate))
+			return v92a_up_fail(v90rx.ev_trn2 ? "no SUVd" :
+					    "no TRN2d");
+		break;
+	case P4U_SEQ:
+		if (patx.seg == V92A_SEQ && !patx.nxt_n && v92a_next_seq())
+			return v92a_up_fail("no CP constellations");
+		if (v92a_acked && patx.seqs >= v92a_ack_seqs &&
+		    (v90rx.ev_mpack || v90rx.ev_ed)) {
+			const V92Cpd &d = v90rx.cpd;
+			double lm = 0;
+			int i, ok = d.drn >= 1 && d.ncon >= 1 && d.g > 0;
+			/* (the moduli enough for its bits) */
+			for (i = 0; i < 12 && ok; i++) {
+				ok = d.M[i] >= 1 && d.lc[d.con[i % 6]] > 0 &&
+					d.M[i] <= 2 * d.lc[d.con[i % 6]];
+				lm += log2((double)d.M[i]);
+			}
+			if (!ok || lm < 2 * (d.drn + 17) - 1e-9)
+				return v92a_up_fail("CPd we can't take");
+			patx.cpd = d;
+			patx.link = CoreBits{ modem };
+			patx.e2u_req = 1;
+			rate_tx = (d.drn + 17) * 8000 / 6;
+			rate_rx = (v90a_cp.drn + 20) * 8000 / 6;
+			DSP_DBG("v34: V.92: E2u, B1u at %d bit/s\n", rate_tx);
+			set_state(P4U_DATA);
+			break;
+		}
+		if (c >= ms2samples(5000, srate))
+			return v92a_up_fail(!v90rx.ev_suvd ? "no SUVd" :
+					    !v90rx.ev_cpd ? "no CPd" :
+					    "no SUVd' or CPd'");
+		break;
+	case P4U_DATA:
+		/* B1d in and our B1u out: CONNECT */
+		if (v90rx.ev_b1d && patx.seg == V92A_DATA &&
+		    patx.frames > 48) {
+			set_state(V90A_DATA);
+			set_rates(rate_tx, rate_rx);
+			v90a_quiet = 0;
+			if (retraining && connected) {
+				retraining = 0;
+				DSP_DBG("v34: V.92 %s %d/%d (analogue modem)\n",
+					moh_end || moh_backed ?
+					"back from hold," : "retrained",
+					rate_tx, rate_rx);
+				moh_end = moh_backed = 0;
+				break;
+			}
+			retraining = 0;
+			connected = 1;
+			DSP_DBG("v34: V.92 connect %d/%d (analogue modem)\n",
+				rate_tx, rate_rx);
+			stat_dp(DP_V92);
+			return DPSTAT_CONNECT;
+		}
+		if (c >= ms2samples(4000, srate))
+			return v92a_up_fail(v90rx.ev_ed ? "no B1d" :
+					    "no Ed");
 		break;
 
 	/* V.90 analogue modem, phase 4 (9.4.2/V.90): CPt until the
@@ -4741,6 +4864,9 @@ int V34Pump::handshake()
 				v90rx.ppm(), v90rx.t_phase);
 		/* the digital modem's rate renegotiation: its Rd (no data
 		   from it on), our S after Rd-bar (9.6.2.2/V.90) */
+		if (v90rx.ev_rdbar && v92a_up_on)
+			/* (V.92's renegotiation is not there yet) */
+			return v92a_up_fail("the digital modem renegotiates");
 		if (v90rx.ev_rdbar) {
 			v90a_reneg(1);
 			break;
@@ -4757,7 +4883,7 @@ int V34Pump::handshake()
 			v90a_good = settled && er < 0.5f * v90a_cp_noise &&
 				v90a_cp.drn < 22 ? v90a_good + 1 : 0;
 		}
-		if (v90rx.ev_rd)
+		if (v90rx.ev_rd || v92a_up_on)
 			break;
 		if (v90a_bad >= ms2samples(1000, srate)) {
 			v90rx.reneg_wait();
@@ -5339,8 +5465,10 @@ int V34Pump::process(void *in, void *out, int cnt)
 					/* after a retrain, or back from hold:
 					   the link goes on */
 					DSP_DBG("v34: V.92 %s, %d/%d\n",
-						moh_end ? "back from hold" :
-						"retrained", rate_tx, rate_rx);
+						moh_end || moh_backed ?
+						"back from hold" : "retrained",
+						rate_tx, rate_rx);
+					moh_backed = 0;
 				} else {
 					DSP_DBG("v34: V.92 connect %d/%d\n",
 						rate_tx, rate_rx);
@@ -5517,7 +5645,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v92a = v90a && id == DP_V92 &&
 		!(getenv("DSP_V92A") && !atoi(getenv("DSP_V92A")));
 	v92a_on = 0;
-	v92a_up = getenv("DSP_V92A_UP") && atoi(getenv("DSP_V92A_UP"));
+	v92a_up = !(getenv("DSP_V92A_UP") && !atoi(getenv("DSP_V92A_UP")));
 	v92a_noup = v92a_up_on = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;

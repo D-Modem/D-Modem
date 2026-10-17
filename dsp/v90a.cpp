@@ -214,6 +214,16 @@ void V90Rx::sd_detect(float v)
 		dip = r;
 		dip_at = i;
 	}
+	if (sd_dip && q > 0.9 && dip > -0.2) {
+		/* the lag 6 correlation never went the other way: not the
+		   reversal (an echo of ours over Sd, as after a hold), on
+		   to the next dip */
+		DSP_DBG("v90a: not Sd-bar at sample %ld (%.2f)\n",
+			2 * (dip_at - 5), dip);
+		sd_dip = 0;
+		dip = 1;
+		return;
+	}
 	if (sd_dip && q > 0.9) {
 		/* the 6 samples after the reversal end at dip_at (8000
 		   Hz: every other sample) */
@@ -1230,6 +1240,63 @@ void V90Rx::reneg_frames()
 void V90Rx::mp_bit(int bit)
 {
 	msr = (msr << 1) | (unsigned)bit;
+	if (mp_n && v92) {
+		/* SUVd (bit 18 set: Table 31/V.92) or CPd (Table 30) */
+		mpb[mp_n++] = (unsigned char)bit;
+		if (mp_n == 19)
+			mp_len = bit ? 51 : 0;
+		if (!mp_len && mp_n > 19) {
+			mp_len = v92_cpd_length(mpb, mp_n);
+			if (mp_len > V90RX_SEQ || (mp_len && mp_len < mp_n)) {
+				mp_n = 0;
+				return;
+			}
+		}
+		if (mp_len && mp_n == mp_len) {
+			int ack = -1;
+			mp_n = 0;
+			if (mp_len == 51) {
+				if (frame_crc_ok(mpb, 35)) {
+					ack = mpb[33];
+					if (!ev_suvd || (ack && !ev_mpack))
+						DSP_DBG("v90a: SUVd%s at frame "
+							"%ld\n", ack ? "'" : "",
+							frames);
+					ev_suvd++;
+				}
+			} else {
+				V92Cpd c;
+				if (c.parse(mpb, mp_len) == 0) {
+					ack = c.ack;
+					if (!ev_cpd || (ack && !ev_mpack))
+						DSP_DBG("v90a: CPd%s at frame "
+							"%ld: %d bit/s, M %d, "
+							"%d points, G %.5f, "
+							"trellis %d, taps %d %d "
+							"%d %d\n", ack ? "'" : "",
+							frames, (c.drn + 17) *
+							8000 / 6, c.M[0],
+							2 * c.lc[0], c.g,
+							16 << c.trellis,
+							c.len[0], c.len[1],
+							c.len[2], c.len[3]);
+					cpd = c;
+					ev_cpd++;
+				}
+			}
+			if (ack < 0) {
+				DSP_DBG("v90a: %s with a bad CRC at frame "
+					"%ld\n", mp_len == 51 ? "SUVd" : "CPd",
+					frames);
+				return;
+			}
+			if (ack)
+				ev_mpack++;
+			mp_frame = frames;
+			ed_zero = 0;
+		}
+		return;
+	}
 	if (mp_n) {
 		mpb[mp_n++] = (unsigned char)bit;
 		if (mp_n == 19)

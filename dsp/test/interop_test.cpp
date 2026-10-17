@@ -493,51 +493,68 @@ std::vector<Call> calls()
 	      "MIDCALL_A=8:AT+PMHR=5;WAIT 12",
 	      "EXPECT_A=(?s)INFO0d V.92: V.92 as the analogue modem.*"
 	      "MHack, T1 60 s: the remote on hold for 5 s.*back from hold: "
-	      "ANSam, V.8 as the call modem.*V.90 back from hold, "
+	      "ANSam, V.8 as the call modem.*V.9[02] back from hold, "
 	      "3[0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)INFO0a V.92 1.*MHreq: MHack \\(on hold\\).*"
-	      "on hold, ANSam.*V.90 back from hold" });
+	      "on hold, ANSam.*V.9[02] back from hold" });
 	add("open", "open_v92a_moh_theirs", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "STREAM=50",
 	      "MIDCALL_B=8:AT+PMHR=5;WAIT 12",
 	      "EXPECT_A=(?s)MHreq: MHack \\(on hold\\).*on hold, ANSam.*"
-	      "V.90 back from hold, 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "V.9[02] back from hold, 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)MHack, T1 60 s: the remote on hold for 5 s.*"
-	      "back from hold: ANSam, V.8 as the call modem.*V.90 back from "
-	      "hold" });
+	      "back from hold: ANSam, V.8 as the call modem.*V.9[02] back "
+	      "from hold" });
 	/* V.92's PCM upstream as the analogue modem (DSP_V92A_UP=1):
 	   INFO1a of Table 18, phase 3 (Ru, TRN1u, Ja; Su, Jp, the second
-	   TRN1u during the DIL, CPt, E1u) on the PAM transmitter; phase 4
-	   is not there yet, so a retrain, and V.90 */
-	add("open", "open_v92a_up_phase3", "open", "open8", "ATX3",
-	    { "NET=9600:8000:ulaw", "DSP_V92A_UP=1",
+	   TRN1u during the DIL, CPt, E1u) and phase 4 (TRN2u, SUVu, CPu;
+	   the digital modem's SUVd, CPd, Ed, B1d; E2u, B1u) on the PAM
+	   transmitter, then the data both ways: the digital modem's
+	   prefilter design (the default), and its plain precoder */
+	add("open", "open_v92a_up", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92A_UP=1", "BULK=100000",
 	      "EXPECT_A=(?s)V.92: PCM upstream phase 3, LU.*Jp: Su-bar.*"
 	      "Jp' after.*V.92: CPt, drn.*PCM upstream phase 3 done.*"
-	      "V.90 connect 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "SUVd at frame.*V.92: CPu, drn.*CPd'? at frame.*"
+	      "B1d: 0 bit errors.*"
+	      "V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)v92: Ru reversal at.*v92: Ja: DIL N 128.*"
 	      "v92: Su reversal after Jp.*v92: CPt at symbol.*"
-	      "v92: E1u at symbol.*V.90 connect" });
+	      "v92: E1u at symbol.*v92: SUVu at symbol.*v92: CPu at symbol.*"
+	      "prefilter of 64 taps.*v92: E2u at symbol.*"
+	      "v92: B1u: 0 zeros.*V.92 connect 5[0-9]+/[34][0-9]+" });
+	add("open", "open_v92a_up_precoder", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92A_UP=1", "DSP_V92_PREFILTER=0",
+	      "BULK=100000",
+	      "EXPECT_A=(?s)CPd'? at frame [0-9]+: [0-9]+ bit/s.*"
+	      "V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)CPd: [0-9]+ bit/s, M [0-9]+, [0-9]+ points, G "
+	      "[0-9.]+ \\(mse [0-9.]+\\), precoding.*"
+	      "v92: B1u: 0 zeros.*V.92 connect 5[0-9]+/[34][0-9]+" });
 	/* its symbols on the network's clock as the PCM receiver finds it
 	   (100 ppm off ours: half a symbol off by the second TRN1u's end
 	   otherwise), answering on an A-law network, and its echo */
 	add("open", "open_v92a_up_ppm", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "DSP_V92A_UP=1", "NET_PPM=100",
-	      "NET_PHASE=0.3",
+	      "NET_PHASE=0.3", "BULK=100000",
 	      "EXPECT_A=(?s)timing \\+(99.[5-9]|100.[0-4])[0-9]* ppm.*"
-	      "PCM upstream phase 3 done.*V.90 connect",
+	      "V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)v92: Su reversal after Jp.*v92: CPt at symbol.*"
-	      "v92: E1u at symbol [0-9]+, mse 0.00[0-4].*V.90 connect" });
+	      "v92: E1u at symbol [0-9]+, mse 0.00[0-4].*"
+	      "v92: B1u: 0 zeros.*V.92 connect" });
 	add("open", "open_v92a_up_answers", "open8", "open", "ATX3",
 	    { "NET=8000:9600:alaw", "DSP_G711=alaw", "DSP_V92A_UP=1",
-	      "EXPECT_A=(?s)v92: CPt at symbol.*v92: E1u at symbol.*"
-	      "V.90 connect",
-	      "EXPECT_B=(?s)PCM upstream phase 3 done.*V.90 connect "
-	      "3[0-9]+/5[0-9]+ \\(analogue modem\\)" });
+	      "BULK=100000",
+	      "EXPECT_A=(?s)v92: E1u at symbol.*v92: B1u: 0 zeros.*"
+	      "V.92 connect",
+	      "EXPECT_B=(?s)PCM upstream phase 3 done.*V.92 connect "
+	      "[34][0-9]+/5[0-9]+ \\(analogue modem\\)" });
 	add("open", "open_v92a_up_echo", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "DSP_V92A_UP=1", "DSP_TEST_ECHO=-10:1c",
+	      "BULK=100000",
 	      "EXPECT_A=(?s)echo canceller: least squares [4-9][0-9].[0-9] "
-	      "dB.*DIL: pad 0.0 dB.*PCM upstream phase 3 done",
-	      "EXPECT_B=(?s)v92: E1u at symbol.*V.90 connect" });
+	      "dB.*DIL: pad 0.0 dB.*V.92 connect",
+	      "EXPECT_B=(?s)v92: B1u: 0 zeros.*V.92 connect" });
 	/* the analogue modem with its codec at 8000 Hz (MODEM_ANALOG: its
 	   line an analogue one; netsim's NET_ANALOG), on the network's
 	   clock: the PCM receiver on the line's own samples, with
@@ -565,15 +582,14 @@ std::vector<Call> calls()
 	      "NET_PHASE=0.25",
 	      "EXPECT_A=data rates tx [0-9]+ rx [0-9]+, trellis",
 	      "EXPECT_B=data rates tx [0-9]+ rx [0-9]+, trellis" });
-	/* V.90 as the analogue modem is the 9600 Hz modem's default: both
-	   modems with the default AT+MS (92) connect at V.90, the digital
-	   modem offering V.92 (we do not ask for it); DSP_V90A=0 leaves it
-	   out, V.34 */
+	/* PCM as the analogue modem is the 9600 Hz modem's default: both
+	   modems with the default AT+MS (92) connect at V.92 with PCM
+	   upstream; DSP_V90A=0 leaves it out, V.34 */
 	add("open", "open_v90a_default", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw",
 	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
-	      "V.90 connect 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
-	      "EXPECT_B=V.90 connect 5[0-9]+/" });
+	      "V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=V.92 connect 5[0-9]+/" });
 	add("open", "open_v90a_off", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "DSP_V90A=0",
 	      "EXPECT_A=data rates tx [0-9]+ rx [0-9]+, trellis" });

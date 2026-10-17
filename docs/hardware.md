@@ -78,9 +78,10 @@ that user needs access to `/dev/snd/*`.
   9.1.1).
 - **Modulations.** The core treats the line as an analogue one
   (`Host::analog_line()`): the modem is the analogue end of the call.
-  `+MS`'s V.90 and V.92 (the default) run V.90 as the analogue modem
-  at 9600 Hz (`-r 9600`, the default), up to 56000 bit/s down and
-  33600 up from a V.90 server (see [V.90 analogue modem](dsp/v90a.md)),
+  `+MS`'s V.90 and V.92 (the default) run PCM as the analogue modem at
+  9600 Hz (`-r 9600`, the default): up to 56000 bit/s down and 33600 up
+  from a V.90 server, and with V.92 (a V.92 server) PCM upstream up to
+  48000 bit/s and modem-on-hold (see [V.90 analogue modem](dsp/v90a.md)),
   and V.34 (up to 33600 bit/s) and below with any other modem. V.91,
   between two digital modems, becomes V.34. At 8000 Hz (`-r 8000`)
   V.90 is there only with `DSP_V90A=1`: a codec at 8000 Hz on a clock
@@ -92,9 +93,10 @@ that user needs access to `/dev/snd/*`.
 
 - **Speed.** As the analogue modem the open DSP has V.90, with its
   retrains and rate renegotiations (a line that changes mid-call
-  renegotiates, and one PCM cannot use falls back to V.34), but not
-  yet V.92's (no quick connect, PCM upstream or modem-on-hold). The
-  V.90 analogue modem has been tested against our own digital modem on
+  renegotiates, and one PCM cannot use falls back to V.34), and V.92's
+  PCM upstream and modem-on-hold, but not yet V.92's quick connect or
+  PCM upstream's own renegotiations (the server's retrains to V.90).
+  The analogue modem has been tested against our own digital modem on
   the simulated network only, not yet against an ISP's server.
 - **Dialling.** DTMF only: `ATDP` dials in DTMF too, as a hook switch
   through a mixer control cannot time pulses.

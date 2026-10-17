@@ -20,6 +20,7 @@
 #define V90A_H
 
 #include "v90.h"
+#include "v92.h"
 
 namespace dsp {
 
@@ -119,6 +120,7 @@ struct V90Interp {
 				   solved on (least squares) */
 #define V90RX_DIL_ROUNDS 2      /* the DIL's rounds measured */
 #define V90RX_Q         1024    /* data mode bits held for the caller */
+#define V90RX_SEQ       8192    /* MP, or V.92's SUVd or CPd, bits */
 
 struct V90Rx {
 	enum Stage {
@@ -271,7 +273,7 @@ struct V90Rx {
 	float lv4[6][128];      /* levels(), at phase4() */
 	int rs[6];              /* Ri: the frame's signs */
 	long trn_sym_err, trn_sym;
-	unsigned char mpb[200];
+	unsigned char mpb[V90RX_SEQ];
 	int mp_n, mp_len;
 	unsigned msr;
 	long mp_frame;          /* frame the last good MP ended in */
@@ -289,7 +291,10 @@ struct V90Rx {
 	double t2_yr[6], t2_rr[6], t2_yy[6];
 	long t2_n;
 	int ev_mp;              /* MP frames in */
-	int ev_mpack;           /* MP' */
+	int ev_mpack;           /* MP' (V.92: SUVd' or CPd') */
+	/* V.92's phase 4 (v92): SUVd and CPd in MP's place */
+	int ev_suvd, ev_cpd;
+	V92Cpd cpd;
 	int ev_ed;
 	int ev_b1d;             /* B1d's frames in */
 	/* a rate renegotiation (9.6/V.90): Rd (+ + + - - - of each

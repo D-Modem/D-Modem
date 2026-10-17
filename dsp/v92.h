@@ -53,10 +53,20 @@ struct V92Cpd {
 	int lc[6];              /* positive points of each constellation */
 	int pts[6][V92_LC_MAX]; /* their linear values, smallest first */
 
+	int e2u_extend;         /* bit 29: E2u a symbol longer */
+
 	/* the bits, filled with zeros to whole frames of fill bits;
 	   returns their number */
 	int build(unsigned char *b, int fill) const;
+	/* the analogue modem's side: from the bits of a CPd of len bits
+	   (to its CRC's end, v92_cpd_length()); -1 for a bad CRC or one
+	   it can't take (more taps or points than we keep) */
+	int parse(const unsigned char *b, int nb);
 };
+
+/* a CPd's length up to its CRC's end, from its first n bits (its
+   parts' lengths are in them); 0 while more are needed */
+int  v92_cpd_length(const unsigned char *b, int n);
 
 /* SUVd (Table 31/V.92) */
 int  v92_suv_build(unsigned char *b, int ack, int fill);
@@ -75,6 +85,11 @@ int  v92_cp_parse(V90Cp *cp, const unsigned char *b, int len);
    byte, filled with zeros to a multiple of 12 bits; return the count */
 int  v92_dil_build(unsigned char *b, const V90Dil &d, unsigned up_mask);
 int  v92_cpt_build(unsigned char *b, const V90Cp &cp);
+/* and CPu (type 1, cp.drn for (drn + 20) * 8000 / 6 bit/s) and SUVu
+   (Table 27/V.92: no wait for CPu, no level measured, no silent
+   period), filled to a multiple of fill bits */
+int  v92_cpu_build(unsigned char *b, const V90Cp &cp, int fill);
+int  v92_suvu_build(unsigned char *b, int ack, int fill);
 
 /* frames of 17 bit blocks after a sync of 17 ones, in the decoded bits
    of the analogue modem */
@@ -180,6 +195,7 @@ struct V92Up : PcmFrames<V92Up> {
 	int got_ja, got_cpt, got_e1u, got_suvu, got_cpu, got_ack, got_e2u;
 	long frame_zero;        /* zero bits of the current data frame */
 	long cpt_sym;           /* the symbol the last CPt ended on */
+	long seq_sym;           /* and the last SUVu or CPu */
 	V90Dil dil;
 	int up_mask;            /* the analogue modem's rates, bit 0: 24 000 */
 	long e2u_sym;

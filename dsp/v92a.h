@@ -13,16 +13,22 @@
  *    fractional extensions of Su-bar move the symbols later by part of
  *    a symbol.
  *
- *    Phase 3 so far (9.5.2/V.92): Ru, Ru-bar, TRN1u, Ja until it is
- *    asked to stop, then silence; Su, Su-bar of 24.5 T, Su until Jp is
- *    in, Su-bar of 24 T and Jp's fraction, the second TRN1u (the data
+ *    Phase 3 (9.5.2/V.92): Ru, Ru-bar, TRN1u, Ja until it is asked to
+ *    stop, then silence; Su, Su-bar of 24.5 T, Su until Jp is in,
+ *    Su-bar of 24 T and Jp's fraction, the second TRN1u (the data
  *    frames count from its first symbol) until CPt is ready, CPt until
- *    Ri, then E1u.
+ *    Ri, then E1u.  Phase 4 (9.6.2/V.92): TRN2u on 4 points, then
+ *    sequences (SUVu, CPu) on them, each the caller's next or the same
+ *    again, E2u, and the data mode: B1u, then the data (6.4/V.92: the
+ *    modulus encoder, the trellis code, the precoder and the prefilter
+ *    of the digital modem's CPd).
  *
  */
 
 #ifndef V92A_H
 #define V92A_H
+
+#include "v92.h"
 
 namespace dsp {
 
@@ -42,8 +48,16 @@ enum v92a_seg {
 	V92A_SU,                /* 144 T; the second until jp_req */
 	V92A_SUBAR,             /* 24.5 T; the second 24 T and frac */
 	V92A_CPT,               /* 24 ones, CPt until ri_seen */
-	V92A_E1U,               /* a data frame of zeros */
+	V92A_E1U,               /* a data frame of zeros, then TRN2u */
+	V92A_TRN2,              /* until trn2_stop, then the sequences */
+	V92A_SEQ,               /* bits[] again and again, nxt[] (if
+				   any) after each; E2u after one once
+				   e2u_req */
+	V92A_E2U,               /* a data frame of zeros, then data */
+	V92A_DATA,              /* B1u, then link's bits */
 };
+
+#define V92A_HIST       (V92_PMAX + 1)  /* the filters' past */
 
 struct V92ATx {
 	int rate;               /* the line's, 9600 or 8000 */
@@ -69,9 +83,30 @@ struct V92ATx {
 	long bn;                /* bits sent of Ja or CPt */
 	int ja_stop, jp_req, trn_stop, ri_seen;
 	double jp_frac;         /* of a symbol */
-	int next;               /* E1u is made: what comes next is the
-				   caller's */
+	int next;               /* E1u is made */
 	double next_at;         /* the time of its last symbol */
+	/* phase 4 */
+	int trn2_stop;
+	unsigned char nxt[V92A_BITS];
+	int nxt_n;              /* 0: the current sequence again */
+	int pos;
+	long seqs;              /* sequences sent whole */
+	int e2u_req;
+	/* the data mode: the CPd's parameters, the bits, the frames sent
+	   (B1u the first 48), the data frame interval, the modulus
+	   encoder's K and its sign's memory, the trellis encoder's state
+	   and the frame's points, the filters' past (u, x, v by symbol) */
+	V92Cpd cpd;
+	CoreBits link;
+	int K;
+	long frames;
+	int fi;
+	int kq[12];
+	int dprev;
+	int tstate;
+	int eta[4];
+	double uh[V92A_HIST], xh[V92A_HIST], vh[V92A_HIST];
+	long dn;                /* data symbols */
 
 	/* silent, on a line of rate (9600 or 8000), at level lu */
 	void init(int rate_, float lu_);
@@ -93,6 +128,10 @@ private:
 	float symbol();
 	float dbit(int bit);
 	float trn();
+	float sym4(int sign, int mag);
+	float data_symbol();
+	void data_frame();
+	float point(int c, int e) const;
 };
 
 } // namespace dsp
