@@ -78,30 +78,39 @@ int  v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
 		    const float lv[6][128], double noise, double limit,
 		    double cpt_power, unsigned jd_rates);
 
-/* the line at 9600 Hz to the network's 8000 Hz for the PCM receiver: an
-   interpolator that keeps the whole band below 4800 Hz (the line's
-   Nyquist), as the PCM signal fills it up to 4000 Hz and past; the
-   samples at 8000 Hz alias it as the network's did (dsp_util's
-   Resampler cuts below 4000 Hz, leaving intersymbol interference no
-   equaliser takes away: some 32 dB below the signal) */
-#define V90_INTERP_TAPS 125     /* per phase, 5 phases at 48 kHz: a delay
-				   of 52 samples at 8000 Hz */
+/* the line at 9600 Hz to 16 000 Hz, two samples a PCM symbol, for the
+   PCM receiver's T/2 equaliser: a windowed sinc cut at the line's
+   Nyquist (4800 Hz) keeps the whole band, whatever the phase of the
+   symbols against our samples (at 8000 Hz the band past 4000 Hz folds
+   onto itself, and half a symbol off it cancels: no equaliser brings
+   it back).  The output's time moves with shift(): the timing loop
+   keeps two samples on each of the network's symbols */
+#define V90_INTERP_T    64      /* taps each side, at 9600 Hz */
+#define V90_INTERP_P    256     /* phases tabulated, interpolated
+				   between */
 struct V90Interp {
-	float h[5][V90_INTERP_TAPS];
-	float hist[2 * V90_INTERP_TAPS];
-	int pos, t;
+	float g[V90_INTERP_P + 1][2 * V90_INTERP_T];
+	float hist[4 * V90_INTERP_T];
+	long nin;               /* samples in */
+	double t;               /* the next output's time, in input
+				   samples */
 
 	void init();
-	/* one sample at 9600 Hz in; 0 or 1 out at 8000 Hz */
+	/* one sample at 9600 Hz in; how many out at 16 000 Hz (0 to 3) */
 	int run(float x, float *out);
+	/* the outputs from now on dt input samples later */
+	void shift(double dt) { t += dt; }
 };
 
-#define V90RX_HIST      1024    /* samples kept (a power of 2) */
-/* the equaliser's taps, T-spaced: the symbols fall between our samples
-   (the network's clock and ours converted), and a T-spaced equaliser
-   makes that delay with a sinc's long tails (31 taps: 18 dB, 63: 23,
-   127: 32 to 36 dB on netsim's line) */
-#define V90RX_TAPS      127
+#define V90RX_HIST      2048    /* samples kept at 16 000 Hz (a power of
+				   2) */
+#define V90RX_HIST8     1024    /* Sd's: every other one, 8000 Hz */
+/* the equaliser's taps, T/2 spaced (64 symbols): 86 to 88 dB at any
+   phase on a raised cosine line, where a T-spaced one's 90 dB falls to
+   21 half a symbol off */
+#define V90RX_TAPS      128
+#define V90RX_EQ_D      (V90RX_TAPS / 2)        /* symbol k's sample b + 2 k
+						   at this tap */
 #define V90RX_LS        1020    /* TRN1d symbols the equaliser is first
 				   solved on (least squares) */
 #define V90RX_DIL_ROUNDS 2      /* the DIL's rounds measured */
@@ -120,18 +129,22 @@ struct V90Rx {
 	int lin[128];           /* Ucode -> linear value, positive */
 	enum Stage stage;
 
-	float x[V90RX_HIST];    /* the input */
+	V90Interp ip;           /* the line at 16 000 Hz */
+	float x[V90RX_HIST];    /* its samples */
 	long n;                 /* samples in */
+	float x8[V90RX_HIST8];  /* every other one, for Sd */
+	long n8;
 
 	/* Sd: running sums over the last SD_WIN samples of x(n)^2,
 	   x(n) x(n - 6), x(n) x(n - 3), and over the last 6 of the first
 	   two (the reversal) */
 	double e24, a6_24, a3_24, e6, a6_6;
 	int sd_run;             /* samples Sd has been there */
+	int sd_dip;             /* the 24 sample sums say it is reversing */
 	double dip;             /* the reversal: its least a6_6 / e6 */
 	long dip_at;
 
-	/* symbol k (0: the first of S-bar d) is around sample b + k */
+	/* symbol k (0: the first of S-bar d) is around sample b + 2 k */
 	long b;
 	long k;                 /* the next symbol to decide */
 	int refined;
@@ -145,12 +158,22 @@ struct V90Rx {
 	double err_sum;
 	long err_n;
 	float mse;              /* of the decisions, to the points' power */
-	/* after TRN1d's least length until Jd (the DIL's loud codes later
-	   reach into the equaliser's span): UINFO's magnitudes by frame
-	   interval
-	   (their spread about each interval's own mean is the noise: a
-	   robbed bit or the network's gain moves the mean, not the
-	   decisions) */
+	/* the timing loop, from the equaliser's error times its slope
+	   (its output a sample either side): the frequency term (16 kHz
+	   samples a symbol) */
+	int t_on;
+	long t_n;               /* symbols it has followed */
+	double t_freq, t_pow;   /* t_pow: the targets' power */
+	double t_phase;         /* the phase it has moved (16 kHz samples) */
+	double t_sx, t_sy, t_sxx, t_sxy;        /* the line fitted to it */
+	long t_sn;
+	/* the second solution (ls2_n symbols in), then over NOISE_N
+	   symbols (before our S: well before the DIL, whose loud codes
+	   reach into the equaliser's span) UINFO's magnitudes by frame
+	   interval (their spread about each interval's own mean is the
+	   noise: a robbed bit or the network's gain moves the mean, not
+	   the decisions) */
+	int ls2_n;
 	double usum[6], usq[6];
 	long un[6];
 
@@ -168,6 +191,8 @@ struct V90Rx {
 	int ev_sd;              /* Sd there */
 	int ev_sdbar;           /* its reversal */
 	int ev_trained;
+	int ev_ready;           /* solved again on the locked timing, the
+				   noise measured: our S may go */
 	int ev_jd;              /* Jd frames received */
 	int ev_jdp;             /* Jd' after them */
 	int ev_dil;             /* the DIL's rounds measured */
@@ -253,15 +278,28 @@ struct V90Rx {
 	/* phase 4 on CPt's constellations (TRN2d, MP, Ed) and CP's (B1d,
 	   data): -1 when they are not usable */
 	int phase4(const V90Cp &cpt, const V90Cp &cp);
-	/* one sample at 8000 Hz */
+	/* one sample of the line at 9600 Hz */
+	void line(float v);
+	/* one sample at 16 000 Hz */
 	void sample(float v);
+	/* the codec's clock against the network's, parts per million */
+	double ppm() const { return t_freq / 2 * 1e6; }
 
 private:
 	float at(long i) const { return x[i & (V90RX_HIST - 1)]; }
+	float at8(long i) const { return x8[i & (V90RX_HIST8 - 1)]; }
+	/* tap i's input for symbol kk, d samples later */
+	float xin(long kk, int i, int d = 0) const
+	{
+		return at(b + 2 * kk + V90RX_EQ_D + d - i);
+	}
+	void timing(long kk, float y, float a);
+	void timing_free();
+	void timing_step(double dt);
 	void sd_detect(float v);
 	void refine();
 	void solve();
-	float equalize(long kk) const;
+	float equalize(long kk, int d = 0) const;
 	void decide(float y);
 	void jd_bit(int bit);
 	void adapt(long kk, float e);

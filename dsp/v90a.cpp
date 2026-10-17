@@ -46,16 +46,29 @@ namespace dsp {
 #define SD_MIN_RUN      96
 /* below this level (16 bit scale) nothing is there */
 #define SD_MIN_RMS      30.0
-/* the equaliser's centre: symbol k's sample b + k at tap D */
-#define EQ_D            (V90RX_TAPS / 2)
+#define EQ_D            V90RX_EQ_D
+/* the symbols of UINFO's spread in each interval (noise()), after the
+   second solution */
+#define NOISE_N         512
 /* TRN1d: its first symbol, the symbols the delay is centred on, how
    far it is looked for, and its least length (9.3.2.5/V.90) */
 #define TRN1D_K0        48
 #define REFINE_N        96
-#define REFINE_D        10
+#define REFINE_D        20      /* (16 kHz samples) */
 #define TRN1D_MIN       2040
 /* the equaliser's tracking (NLMS) step */
 #define EQ_MU           0.005f
+/* the timing loop's gains on the error (normalised to the signal's
+   power) for the phase and the frequency: to lock (the codec's clock
+   found within some 1000 symbols), then TIM_LOCK symbols after the
+   equaliser is solved, with the clock's offset fitted, a fifth of the
+   phase gain (the loop's jitter costs the dense constellations their
+   margin) */
+#define TIM_KP          0.02
+#define TIM_KI          2e-5
+#define TIM_LOCK        6000
+#define TIM_KP2         0.004
+#define TIM_KI2         2e-7
 
 /* see v90a.h */
 int V90Jd::parse(const unsigned char *b)
@@ -75,40 +88,48 @@ int V90Jd::parse(const unsigned char *b)
 	return 0;
 }
 
-/* see v90a.h: a Blackman windowed sinc at 48 kHz cut at 4800 Hz, gain
-   5 (the zeros between the samples), as 5 phases */
+/* see v90a.h: a Blackman windowed sinc over +-V90_INTERP_T samples,
+   at V90_INTERP_P phases between two samples */
 void V90Interp::init()
 {
-	const int len = 5 * V90_INTERP_TAPS;
-	const double fc = 4800.0 / 48000;
-	int n;
+	int p, j;
 	memset(this, 0, sizeof(*this));
-	for (n = 0; n < len; n++) {
-		double m = n - (len - 1) / 2.0, x = 2 * fc * m, w;
-		double hh = fabs(x) < 1e-12 ? 1 : sin(M_PI * x) / (M_PI * x);
-		w = 0.42 - 0.5 * cos(2 * M_PI * (n + 0.5) / len) +
-			0.08 * cos(4 * M_PI * (n + 0.5) / len);
-		h[n % 5][n / 5] = (float)(5 * 2 * fc * hh * w);
-	}
+	for (p = 0; p <= V90_INTERP_P; p++)
+		for (j = 0; j < 2 * V90_INTERP_T; j++) {
+			/* the output's time less input j's (from the
+			   oldest of those it takes) */
+			double u = (double)p / V90_INTERP_P + V90_INTERP_T -
+				1 - j, x = M_PI * u / V90_INTERP_T;
+			double h = fabs(u) < 1e-12 ? 1 : sin(M_PI * u) /
+				(M_PI * u);
+			g[p][j] = fabs(u) >= V90_INTERP_T ? 0 :
+				(float)(h * (0.42 + 0.5 * cos(x) +
+					     0.08 * cos(2 * x)));
+		}
+	/* (the inputs it needs before the first output) */
+	t = V90_INTERP_T;
 }
 
-/* see v90a.h: 48 kHz phase t of each output, 6 apart */
+/* see v90a.h: outputs 0.6 input samples apart, each from the inputs
+   either side of its time */
 int V90Interp::run(float x, float *out)
 {
+	const int L = 2 * V90_INTERP_T;
 	int m = 0;
-	if (--pos < 0)
-		pos = V90_INTERP_TAPS - 1;
-	hist[pos] = hist[pos + V90_INTERP_TAPS] = x;
-	while (t < 5) {
-		const float *hp = h[t], *bp = hist + pos;
-		float y = 0;
-		int k;
-		for (k = 0; k < V90_INTERP_TAPS; k++)
-			y += hp[k] * bp[k];
+	hist[nin % L] = hist[nin % L + L] = x;
+	nin++;
+	while (t + V90_INTERP_T <= nin - 1 && m < 3) {
+		long n0 = (long)floor(t);
+		double fp = (t - n0) * V90_INTERP_P;
+		int p = (int)fp, j;
+		float w = (float)(fp - p), y = 0;
+		const float *bp = hist + (n0 - V90_INTERP_T + 1) % L;
+		const float *g0 = g[p], *g1 = g[p + 1];
+		for (j = 0; j < L; j++)
+			y += (g0[j] + w * (g1[j] - g0[j])) * bp[j];
 		out[m++] = y;
-		t += 6;
+		t += 0.6;
 	}
-	t -= 5;
 	return m;
 }
 
@@ -122,37 +143,39 @@ void V90Rx::init(int alaw_, int uinfo_)
 	for (i = 0; i < 128; i++)
 		lin[i] = v90_ucode_linear(alaw_, i);
 	level = (float)lin[uinfo & 127];
+	ip.init();
 	stage = WAIT_SD;
 	dip = 1;
 }
 
-/* the sums of Sd's detector with the newest sample v (x[n - 1]); Sd
+/* the sums of Sd's detector with the newest sample v (x8[n8 - 1], at
+   8000 Hz); Sd
    there for SD_MIN_RUN samples, then its reversal: the least of
    a6_6 / e6 once it has gone below -0.5 and come back */
 void V90Rx::sd_detect(float v)
 {
-	long i = n - 1;
-	double r;
+	long i = n8 - 1;
+	double r, q;
 	int there;
 
 	e24 += (double)v * v;
 	e6 += (double)v * v;
 	if (i >= 6) {
-		a6_24 += (double)v * at(i - 6);
-		a6_6 += (double)v * at(i - 6);
+		a6_24 += (double)v * at8(i - 6);
+		a6_6 += (double)v * at8(i - 6);
 	}
 	if (i >= 3)
-		a3_24 += (double)v * at(i - 3);
+		a3_24 += (double)v * at8(i - 3);
 	if (i >= SD_WIN + 6) {
-		float o = at(i - SD_WIN);
+		float o = at8(i - SD_WIN);
 		e24 -= (double)o * o;
-		a6_24 -= (double)o * at(i - SD_WIN - 6);
-		a3_24 -= (double)o * at(i - SD_WIN - 3);
+		a6_24 -= (double)o * at8(i - SD_WIN - 6);
+		a3_24 -= (double)o * at8(i - SD_WIN - 3);
 	}
 	if (i >= 12) {
-		float o = at(i - 6);
+		float o = at8(i - 6);
 		e6 -= (double)o * o;
-		a6_6 -= (double)o * at(i - 12);
+		a6_6 -= (double)o * at8(i - 12);
 	}
 	if (i < SD_WIN + 6)
 		return;
@@ -169,20 +192,33 @@ void V90Rx::sd_detect(float v)
 		}
 		return;
 	}
+	/* the reversal: over 24 samples the lag 6 correlation falls to
+	   about 0.5 (the 6 after the reversal against the 6 before) at any
+	   phase; within that dip, where over 6 it is least (sampled off
+	   the symbols' instants the reversal spreads, and that least is
+	   -1 only on them) */
 	r = e6 > 0 ? a6_6 / e6 : 0;
-	if (r < dip) {
+	q = e24 > 0 ? a6_24 / e24 : 1;
+	if (!sd_dip && q < 0.8) {
+		sd_dip = 1;
+		dip = 1;
+	}
+	if (sd_dip && r < dip) {
 		dip = r;
 		dip_at = i;
 	}
-	if (dip < -0.5 && r > -0.2) {
-		/* the 6 samples after the reversal end at dip_at */
-		b = dip_at - 5;
+	if (sd_dip && q > 0.9) {
+		/* the 6 samples after the reversal end at dip_at (8000
+		   Hz: every other sample) */
+		b = 2 * (dip_at - 5);
 		k = 0;
 		stage = TRAIN;
 		ev_sdbar = 1;
 		DSP_DBG("v90a: Sd-bar at sample %ld (%.2f)\n", b, dip);
 		return;
 	}
+	if (sd_dip)
+		return;
 	/* Sd gone without its reversal */
 	sd_run = there ? sd_run + 1 : sd_run - 1;
 	if (sd_run < 0) {
@@ -194,14 +230,78 @@ void V90Rx::sd_detect(float v)
 		sd_run = SD_MIN_RUN;
 }
 
-/* the equaliser's output for symbol kk */
-float V90Rx::equalize(long kk) const
+/* the equaliser's output for symbol kk, on its input d samples later */
+float V90Rx::equalize(long kk, int d) const
 {
 	float y = 0;
 	int i;
 	for (i = 0; i < V90RX_TAPS; i++)
-		y += c[i] * at(b + kk + EQ_D - i);
+		y += c[i] * xin(kk, i, d);
 	return y;
+}
+
+/* the timing loop on symbol kk's output y against a: the error's
+   gradient in the time of the input, (a - y) (y(+1) - y(-1)), over the
+   signal's power of late (the DIL's codes and the data's are up to 64
+   times UINFO's), moves the interpolator (its outputs later for a
+   positive one), a phase term and a frequency term (which follows the
+   codec's clock).  From TIM_LOCK / 3 to TIM_LOCK symbols the phase it
+   has moved is fitted to a line, whose slope is the clock's offset far
+   more closely than the frequency term (it then runs on that, with
+   TIM_KP2 and TIM_KI2) */
+void V90Rx::timing(long kk, float y, float a)
+{
+	double e, dt;
+	if (!t_on)
+		return;
+	t_pow += 0.05 * ((double)a * a - t_pow);
+	e = (double)(a - y) * (equalize(kk, 1) - equalize(kk, -1)) /
+		(t_pow + 1e-3 * (double)level * level);
+	if (e > 0.05)
+		e = 0.05;
+	if (e < -0.05)
+		e = -0.05;
+	if (t_n < TIM_LOCK) {
+		t_freq += TIM_KI * e;
+		dt = TIM_KP * e + t_freq;
+	} else {
+		t_freq += TIM_KI2 * e;
+		dt = TIM_KP2 * e + t_freq;
+	}
+	timing_step(dt);
+}
+
+/* a symbol on the timing's frequency alone (no error to go by: the
+   DIL's levels are what it measures) */
+void V90Rx::timing_free()
+{
+	if (t_on)
+		timing_step(t_freq);
+}
+
+/* the interpolator dt samples (16 kHz) on; the line fitted to the
+   phase */
+void V90Rx::timing_step(double dt)
+{
+	ip.shift(0.6 * dt);
+	t_phase += dt;
+	t_n++;
+	if (t_n > TIM_LOCK / 3 && t_n <= TIM_LOCK) {
+		double x = (double)t_n;
+		t_sx += x;
+		t_sy += t_phase;
+		t_sxx += x * x;
+		t_sxy += x * t_phase;
+		t_sn++;
+	}
+	if (t_n == TIM_LOCK && t_sn > 1) {
+		double d = t_sn * t_sxx - t_sx * t_sx;
+		double old = ppm();
+		if (d > 0)
+			t_freq = (t_sn * t_sxy - t_sx * t_sy) / d;
+		DSP_DBG("v90a: timing %+.2f ppm (the loop's %+.2f)\n", ppm(),
+			old);
+	}
 }
 
 /* the delay of symbol k's samples centred: the shift d of b that
@@ -218,7 +318,7 @@ void V90Rx::refine()
 	for (d = -REFINE_D; d <= REFINE_D; d++) {
 		double cc = 0;
 		for (j = 0; j < REFINE_N; j++)
-			cc += a[j] * at(b + TRN1D_K0 + j + d);
+			cc += a[j] * at(b + 2 * (TRN1D_K0 + j) + d);
 		if (fabs(cc) > best) {
 			best = fabs(cc);
 			bd = d;
@@ -510,16 +610,30 @@ void V90Rx::dil_analyse()
 }
 
 /* see v90a.h */
+void V90Rx::line(float v)
+{
+	float o[3];
+	int m = ip.run(v, o), i;
+	for (i = 0; i < m; i++)
+		sample(o[i]);
+}
+
+/* see v90a.h */
 void V90Rx::sample(float v)
 {
 	x[n & (V90RX_HIST - 1)] = v;
 	n++;
 	if (stage == WAIT_SD || stage == SD) {
-		sd_detect(v);
+		/* Sd at 8000 Hz: it repeats every 6 symbols at any phase */
+		if (n & 1) {
+			x8[n8 & (V90RX_HIST8 - 1)] = v;
+			n8++;
+			sd_detect(v);
+		}
 		return;
 	}
 	/* symbol k's samples are in */
-	while (b + k + EQ_D <= n - 1) {
+	while (b + 2 * k + EQ_D <= n - 1) {
 		long t = k - TRN1D_K0;
 		float a = 0, y;
 		int i;
@@ -533,7 +647,7 @@ void V90Rx::sample(float v)
 			float xv[V90RX_TAPS];
 			int j;
 			for (i = 0; i < V90RX_TAPS; i++)
-				xv[i] = at(b + k + EQ_D - i);
+				xv[i] = xin(k, i);
 			for (i = 0; i < V90RX_TAPS; i++) {
 				p[i] += (double)a * xv[i];
 				for (j = i; j < V90RX_TAPS; j++)
@@ -543,6 +657,8 @@ void V90Rx::sample(float v)
 				solve();
 				stage = DECIDE;
 				ev_trained = 1;
+				t_on = 1;
+				t_pow = (double)level * level;
 				err_sum = 0;
 				err_n = 0;
 			}
@@ -561,8 +677,11 @@ void V90Rx::sample(float v)
 		if (stage == RI) {
 			int j = (int)(k % 6);
 			rs[j] = y > 0;
-			if (ev_ri)
+			if (ev_ri) {
 				adapt(k, (y > 0 ? level : -level) - y);
+				timing(k, y, y > 0 ? level : -level);
+			} else
+				timing_free();
 			if (j == 5)
 				ri_frame(rs);
 			k++;
@@ -575,35 +694,56 @@ void V90Rx::sample(float v)
 			k++;
 			continue;
 		}
-		/* after Jd': the equaliser still, the DIL measured */
+		/* after Jd': the equaliser still, the DIL measured (the
+		   timing follows what it measured so far) */
 		if (ev_jdp) {
 			if (dil_on && k >= dil_start &&
 			    ev_dil < V90RX_DIL_ROUNDS)
 				dil_add(this, y);
+			timing_free();
 			k++;
 			continue;
 		}
 		/* TRN1d known up to its least length; after it our
 		   decisions */
-		if (t >= TRN1D_MIN) {
-			int j = (int)(k % 6);
+		if (t >= TRN1D_MIN)
 			a = y > 0 ? level : -level;
-			if (!ev_jd) {
-				usum[j] += fabsf(y);
-				usq[j] += (double)y * y;
-				un[j]++;
+		/* once the timing has locked: the equaliser solved again on
+		   what is known (TRN1d's first solution spans a drifting
+		   clock), then UINFO's spread in each interval */
+		if (!ev_ready && t_n >= TIM_LOCK && ls2_n < V90RX_LS) {
+			int j;
+			if (!ls2_n) {
+				memset(R, 0, sizeof(R));
+				memset(p, 0, sizeof(p));
+			}
+			for (i = 0; i < V90RX_TAPS; i++) {
+				float xi = xin(k, i);
+				p[i] += (double)a * xi;
+				for (j = i; j < V90RX_TAPS; j++)
+					R[i][j] += (double)xi * xin(k, j);
+			}
+			if (++ls2_n == V90RX_LS) {
+				solve();
+				DSP_DBG("v90a: equaliser solved again at symbol "
+					"%ld, timing %+.1f ppm\n", k, ppm());
+				y = equalize(k);
+			}
+		} else if (!ev_ready && ls2_n == V90RX_LS) {
+			int j = (int)(k % 6);
+			usum[j] += fabsf(y);
+			usq[j] += (double)y * y;
+			un[j]++;
+			if (un[0] >= NOISE_N / 6 && un[5] >= NOISE_N / 6) {
+				ev_ready = 1;
+				DSP_DBG("v90a: PCM receiver ready at symbol %ld: "
+					"noise %.2f\n", k, noise());
 			}
 		}
 		{
-			float e = a - y, pw = 0;
-			for (i = 0; i < V90RX_TAPS; i++) {
-				float xi = at(b + k + EQ_D - i);
-				pw += xi * xi;
-			}
-			if (pw > 0)
-				for (i = 0; i < V90RX_TAPS; i++)
-					c[i] += EQ_MU * e / pw *
-						at(b + k + EQ_D - i);
+			float e = a - y;
+			adapt(k, e);
+			timing(k, y, a);
 			err_sum += (double)e * e;
 			err_n++;
 			if (err_n == 512) {
@@ -611,9 +751,10 @@ void V90Rx::sample(float v)
 					      ((double)level * level));
 				if (t < TRN1D_MIN || !ev_jd)
 					DSP_DBG("v90a: equaliser mse %.4f "
-						"(%.1f dB) at symbol %ld\n",
-						mse, -10 * log10(mse + 1e-12),
-						k);
+						"(%.1f dB) at symbol %ld, "
+						"timing %+.1f ppm\n", mse,
+						-10 * log10(mse + 1e-12), k,
+						ppm());
 				err_sum = 0;
 				err_n = 0;
 			}
@@ -873,7 +1014,7 @@ float V90Rx::noise() const
 	int j;
 	for (j = 0; j < 6; j++) {
 		double mu;
-		if (un[j] < 100)
+		if (un[j] < NOISE_N / 6)
 			break;
 		mu = usum[j] / un[j];
 		v += usq[j] / un[j] - mu * mu;
@@ -905,12 +1046,12 @@ void V90Rx::adapt(long kk, float e)
 	float pw = 0;
 	int i;
 	for (i = 0; i < V90RX_TAPS; i++) {
-		float xi = at(b + kk + EQ_D - i);
+		float xi = xin(kk, i);
 		pw += xi * xi;
 	}
 	if (pw > 0)
 		for (i = 0; i < V90RX_TAPS; i++)
-			c[i] += EQ_MU * e / pw * at(b + kk + EQ_D - i);
+			c[i] += EQ_MU * e / pw * xin(kk, i);
 }
 
 /* a frame's signs in phase 4 before TRN2d: Ri, 8 frames of + + + - - -
@@ -1027,6 +1168,7 @@ void V90Rx::frame()
 			tg = out[j] > 0 ? lv4[j][u] : -lv4[j][u];
 		}
 		adapt(k - 5 + j, tg - fy[j]);
+		timing(k - 5 + j, fy[j], tg);
 		fe_sum += (double)(tg - fy[j]) * (tg - fy[j]);
 		fe_n++;
 	}
@@ -1048,18 +1190,19 @@ void V90Rx::frame()
 			if (++frames_b1 == 48) {
 				ev_b1d = 1;
 				DSP_DBG("v90a: B1d: %ld bit errors in 48 frames "
-					"of %d bits, mse %.4f\n", b1_err, cn->D,
+					"of %d bits, mse %.6f, timing %+.1f "
+					"ppm\n", b1_err, cn->D,
 					fe_n ? fe_sum / fe_n / ((double)level *
-						level) : 0);
+						level) : 0, ppm());
 			}
 		}
 		frames++;
 		return;
 	}
 	if (known && frames == 339)
-		DSP_DBG("v90a: TRN2d: %ld of %ld symbols wrong, mse %.4f\n",
-			trn_sym_err, trn_sym, fe_sum / fe_n /
-			((double)level * level));
+		DSP_DBG("v90a: TRN2d: %ld of %ld symbols wrong, mse %.6f, "
+			"timing %+.1f ppm\n", trn_sym_err, trn_sym,
+			fe_sum / fe_n / ((double)level * level), ppm());
 	if (frames == 339) {
 		fe_sum = 0;
 		fe_n = 0;

@@ -582,7 +582,6 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int v90a_uinfo;         /* the 2 point train's Ucode we ask for */
 	int v90a_rx;            /* the line into v90rx */
 	V90Rx v90rx;    /* the analogue modem's PCM receiver */
-	V90Interp rs_pcm;       /* the line at 8000 Hz for it */
 	V90Dil v90a_dil;        /* the DIL our Ja asks for */
 	V90Cp v90a_cpt, v90a_cp;        /* the constellations we ask for */
 	int v92;                /* offer V.92 as the digital modem */
@@ -2380,11 +2379,9 @@ void V34Pump::pump_rx_sample(float x)
 		return;
 	}
 	if (v90a_rx) {
-		/* the digital modem's PCM at the network's 8000 Hz */
-		float d[2];
-		int m = rs_pcm.run(x, d);
-		for (k = 0; k < m; k++)
-			v90rx.sample(d[k]);
+		/* the digital modem's PCM (V90Rx takes the line at its
+		   9600 Hz) */
+		v90rx.line(x);
 		return;
 	}
 	if (prx_on) {
@@ -2600,7 +2597,6 @@ void V34Pump::v90a_start()
 	txm = TXM_PRIMARY;
 	v90rx.init(alaw, v90a_uinfo);
 	v90rx.dil_set(v90a_dil);
-	rs_pcm.init();
 	v90a_rx = 1;
 }
 
@@ -3967,7 +3963,10 @@ int V34Pump::handshake()
 		}
 		break;
 	case P3V_WAIT_JD:
-		if (v90rx.ev_jd) {
+		/* S once Jd is in and the PCM receiver is ready (we may
+		   wait 5 s, 9.3.2.7/V.90) */
+		if (v90rx.ev_jd && (v90rx.ev_ready ||
+				    c >= ms2samples(4000, srate))) {
 			DSP_DBG("v34: V.90: Jd, PCM receiver mse %.4f\n",
 				v90rx.mse);
 			tx_next(P3V_S2, V34_TX_S);

@@ -23,6 +23,10 @@
  *    (NET_RBS=<mask>: in the samples whose count mod 6 has its bit in
  *    the mask, the octet's least significant bit forced to 1, as T1
  *    trunks rob it every sixth frame), as V.90's DIL finds them.
+ *    NET_PHASE=<fraction> and NET_PPM=<ppm>: the 9600 Hz modem's codec
+ *    samples that fraction of a network sample late, its clock that
+ *    many parts per million fast (both directions: frac_rs), where
+ *    otherwise its samples fall on the network's.
  */
 #include <errno.h>
 #include <math.h>
@@ -315,8 +319,90 @@ static int rc_run(struct rc_up *r, float x, float *out)
 	return n;
 }
 
+/* NET_PHASE, NET_PPM: a converter between the network's 8000 Hz and a
+   9600 Hz codec whose clock is not the network's.  Output m is at
+   input time t0 + m * step (input samples); its value the inputs
+   through a kernel g (in input samples), tabulated at FRAC_P phases
+   and interpolated between them.  Toward the codec g is netsim's
+   raised cosine (Nyquist at 4000 Hz, the codes free of intersymbol
+   interference), Hann windowed over +-FRAC_T; from it a low pass at
+   3900 Hz (the codec's own anti-aliasing filter) */
+#define FRAC_T  64
+#define FRAC_P  256
+struct frac_rs {
+	float g[FRAC_P + 1][2 * FRAC_T];
+	float hist[4 * FRAC_T];
+	long nin;               /* inputs so far */
+	double t, step;         /* the next output's input time */
+};
+
+/* the converter: up (8000 -> 9600 Hz, the raised cosine) or down;
+   ratio: output samples per input sample, phase the first output's
+   input time */
+static void frac_init(struct frac_rs *r, int up, double ratio,
+		      double phase)
+{
+	const double a = getenv("NET_RC") ? atof(getenv("NET_RC")) : 0.15;
+	int p, j;
+	memset(r, 0, sizeof(*r));
+	for (p = 0; p <= FRAC_P; p++)
+		for (j = 0; j < 2 * FRAC_T; j++) {
+			/* the output's time less the input's: g[p][j] for
+			   input FRAC_T - 1 - j after the output's floor */
+			double u = (double)p / FRAC_P + j - FRAC_T, h;
+			double w = fabs(u) >= FRAC_T ? 0 :
+				0.5 + 0.5 * cos(M_PI * u / FRAC_T);
+			if (up) {
+				double d = 1 - (2 * a * u) * (2 * a * u);
+				h = fabs(u) < 1e-12 ? 1 :
+					sin(M_PI * u) / (M_PI * u);
+				h *= fabs(d) < 1e-9 ? M_PI / 4 :
+					cos(M_PI * a * u) / d;
+			} else {
+				double f = 2 * 3900.0 / 9600, x = f * u;
+				h = f * (fabs(x) < 1e-12 ? 1 :
+					 sin(M_PI * x) / (M_PI * x));
+			}
+			r->g[p][j] = (float)(h * w);
+		}
+	r->step = 1 / ratio;
+	/* as if 2 FRAC_T zeros had come before: the first input gives
+	   the first output (FRAC_T inputs late), as the modems at either
+	   end each wait for the other's samples */
+	r->nin = 2 * FRAC_T;
+	r->t = phase + FRAC_T;
+}
+
+/* one input sample in; the outputs it completes into out (at most 3) */
+static int frac_run(struct frac_rs *r, float x, float *out)
+{
+	int m = 0;
+	r->hist[r->nin % (2 * FRAC_T)] = x;
+	r->hist[r->nin % (2 * FRAC_T) + 2 * FRAC_T] = x;
+	r->nin++;
+	/* output at t needs the inputs up to floor(t) + FRAC_T */
+	while (r->t + FRAC_T <= r->nin - 1 && m < 3) {
+		long n0 = (long)floor(r->t);
+		double f = r->t - n0, fp = f * FRAC_P, y = 0;
+		int p = (int)fp, j;
+		float w = (float)(fp - p);
+		/* inputs n0 - FRAC_T + 1 .. n0 + FRAC_T */
+		const float *b = r->hist + (n0 - FRAC_T + 1) % (2 * FRAC_T);
+		for (j = 0; j < 2 * FRAC_T; j++) {
+			float g = r->g[p][2 * FRAC_T - 1 - j] * (1 - w) +
+				r->g[p + 1][2 * FRAC_T - 1 - j] * w;
+			y += g * b[j];
+		}
+		out[m++] = (float)y;
+		r->t += r->step;
+	}
+	return m;
+}
+
 struct dir {
 	int in, out, rate_in, rate_out;
+	struct frac_rs *frac;   /* NET_PHASE, NET_PPM: the 9600 Hz codec's
+				   clock */
 	SpeechCodec *codec;     /* NET_CODEC's, in place of the law */
 	Resampler rs;
 	struct rc_up rc;
@@ -631,7 +717,7 @@ int Net::run(struct dir *d, int a_out, int a_in)
 	short ibuf[2048];
 	float noise;
 	int n = read(d->in, ibuf, sizeof(ibuf)), i, k, m, o = 0;
-	float y[2];
+	float y[3];
 	if (n <= 0)
 		return n == 0 || errno != EINTR ? -1 : 0;
 	n /= 2;
@@ -694,7 +780,8 @@ int Net::run(struct dir *d, int a_out, int a_in)
 				s = digital(s, d->nin - 1);
 			x = s * gain;
 			wav_put(!a_out, s);
-			m = plain ? d->rs.run(x, y) : rc_run(&d->rc, x, y);
+			m = d->frac ? frac_run(d->frac, x, y) :
+				plain ? d->rs.run(x, y) : rc_run(&d->rc, x, y);
 			for (k = 0; k < m; k++) {
 				if (noise && noise_dir != 3)
 					y[k] += noise * (float)noise_gauss();
@@ -710,7 +797,8 @@ int Net::run(struct dir *d, int a_out, int a_in)
 		} else {
 			/* up from a 9600 Hz modem: its codec to 8000 Hz,
 			   then the network */
-			m = d->rs.run(ibuf[i] * gain_up, y);
+			m = d->frac ? frac_run(d->frac, ibuf[i] * gain_up, y) :
+				d->rs.run(ibuf[i] * gain_up, y);
 			for (k = 0; k < m; k++) {
 				d->obuf[o] = (short)line_sample(d, (int)lrintf(y[k]));
 				d->lbuf[o] = d->obuf[o];
@@ -841,6 +929,21 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		rc_init(&d[k].rc);
+		if (d[k].rate_in != d[k].rate_out &&
+		    (getenv("NET_PHASE") || getenv("NET_PPM"))) {
+			/* the codec's clock: ppm fast, its samples phase
+			   late (in network samples) */
+			double ppm = getenv("NET_PPM") ?
+				atof(getenv("NET_PPM")) : 0;
+			double ph = getenv("NET_PHASE") ?
+				atof(getenv("NET_PHASE")) : 0;
+			double r = 1.2 * (1 + ppm * 1e-6);
+			int up = d[k].rate_in == 8000;
+			d[k].frac = static_cast<struct frac_rs *>(
+				calloc(1, sizeof(struct frac_rs)));
+			frac_init(d[k].frac, up, up ? r : 1 / r,
+				  up ? ph : 0);
+		}
 		d[k].t0 = -1;
 		p[k].fd = d[k].in;
 		p[k].events = POLLIN;

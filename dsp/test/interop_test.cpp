@@ -356,6 +356,28 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)phase 3 done \\(no DIL\\).*CP: D 42 .*"
 	      "B1d: 0 bit errors in 48 frames of 42 bits",
 	      "EXPECT_B=V.90 connect 56000/" });
+	/* the analogue modem's codec on a clock of its own (netsim's
+	   NET_PHASE, NET_PPM): its samples half a network sample off the
+	   symbols (where a T-spaced receiver at 8000 Hz loses the band's
+	   top), and fast or slow by 100 ppm, the timing loop finding it */
+	add("open", "open_v90a_phase", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "NET_PHASE=0.5", "DSP_V90A=1",
+	      "EXPECT_FAIL=1",
+	      "EXPECT_A=(?s)timing [-+]0.[0-9]+ ppm.*robbed none.*"
+	      "CP: D 42 .*B1d: 0 bit errors in 48 frames of 42 bits",
+	      "EXPECT_B=V.90 connect 56000/" });
+	add("open", "open_v90a_ppm_fast", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "NET_PPM=100", "NET_PHASE=0.3",
+	      "DSP_V90A=1", "EXPECT_FAIL=1",
+	      "EXPECT_A=(?s)timing \\+(99.[5-9]|100.[0-4])[0-9]* ppm.*"
+	      "robbed none.*B1d: 0 bit errors in 48 frames of 4[0-2] bits",
+	      "EXPECT_B=V.90 connect 5[0-9]+/" });
+	add("open", "open_v90a_ppm_slow", "open8", "open", "ATX3;AT+MS=90",
+	    { "NET=8000:9600:alaw", "DSP_G711=alaw", "NET_PPM=-100",
+	      "NET_PHASE=0.7", "DSP_V90A=1", "EXPECT_FAIL=1",
+	      "EXPECT_A=V.90 connect 5[0-9]+/",
+	      "EXPECT_B=(?s)timing -(99.[5-9]|100.[0-4])[0-9]* ppm.*"
+	      "robbed none.*B1d: 0 bit errors in 48 frames of 4[0-2] bits" });
 	add("open", "open_v90a_dil_pad", "open", "open8", "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_PAD=3", "DSP_V90A=1",
 	      "EXPECT_FAIL=1", "EXPECT_A=(?s)DIL: pad 3.0 dB.*robbed none.*"

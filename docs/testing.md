@@ -206,7 +206,13 @@ on that way the codes may also cross a digital loss pad (`NET_PAD=<dB>`:
 each one re-encoded that much lower) and robbed bit signalling
 (`NET_RBS=<mask>`: in the samples whose count mod 6 has its bit in the
 mask the octet's least significant bit is forced to 1, as on T1 trunks),
-what V.90's DIL finds ([v90a.md](dsp/v90a.md)); and
+what V.90's DIL finds ([v90a.md](dsp/v90a.md)). The 9600 Hz modem's
+codec is on the network's clock, its samples on the network's symbols,
+unless `NET_PHASE=<fraction>` (its samples that fraction of a network
+sample late) or `NET_PPM=<ppm>` (its clock that many parts per million
+fast, both ways) say otherwise: a converter whose output times move
+by the clock (netsim's raised cosine toward it, a 3900 Hz low pass
+from it), what V.90's PCM receiver has to follow; and
 `NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
 clock: what it receives comes back with what it sends; from the line,
 before its codec would clip it). The delay has to be more than the
