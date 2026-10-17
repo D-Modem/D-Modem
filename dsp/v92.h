@@ -69,6 +69,13 @@ int  v92_dil_length(const unsigned char *b, int n);
 /* CPt and CPu (Table 23/V.92) into V.90's CP; -1 for a bad CRC */
 int  v92_cp_parse(V90Cp *cp, const unsigned char *b, int len);
 
+/* the analogue modem's side: its DIL descriptor for Ja (Table 20/V.92)
+   asking for d, up_mask the PCM upstream rates (bit 0: 24 000 bit/s),
+   and CPt (Table 23/V.92: cp's fields as V.90's, cp.cp 0), one bit a
+   byte, filled with zeros to a multiple of 12 bits; return the count */
+int  v92_dil_build(unsigned char *b, const V90Dil &d, unsigned up_mask);
+int  v92_cpt_build(unsigned char *b, const V90Cp &cp);
+
 /* frames of 17 bit blocks after a sync of 17 ones, in the decoded bits
    of the analogue modem */
 /* events of V92Up::sample() */
@@ -172,6 +179,7 @@ struct V92Up : PcmFrames<V92Up> {
 	SyncFrames fr;
 	int got_ja, got_cpt, got_e1u, got_suvu, got_cpu, got_ack, got_e2u;
 	long frame_zero;        /* zero bits of the current data frame */
+	long cpt_sym;           /* the symbol the last CPt ended on */
 	V90Dil dil;
 	int up_mask;            /* the analogue modem's rates, bit 0: 24 000 */
 	long e2u_sym;

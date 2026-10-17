@@ -36,6 +36,7 @@
 #include "v90a.h"
 #include "v91.h"
 #include "v92.h"
+#include "v92a.h"
 
 namespace dsp {
 
@@ -45,6 +46,8 @@ namespace dsp {
 /* the original library's tones, INFO sequences and L2: about 2990 rms */
 #define V34_LEVEL       2988.0f
 #define V34_TONE_AMP    (V34_LEVEL * 1.41421f)
+/* V.92's PCM upstream LU: about our V.34 signal's power */
+#define V92A_LU         3000.0f
 #define ANSAM_AMP       3200.0f
 #define PROBE_PERIOD    64      /* L1/L2 repeat at 150 Hz */
 #define TRN3_LEN        5120    /* TRN symbols in phase 3 */
@@ -210,6 +213,16 @@ enum v34_state {
 	V90A_DATA,      /* the analogue modem's data mode */
 	V90A_RN_S,      /* a rate renegotiation: S 128 T (9.6.2/V.90) */
 	V90A_RN_SBAR,   /* S-bar 16 T, then SCR and phase 4's CP ... */
+	/* V.92 analogue modem, PCM upstream phase 3 (9.5.2/V.92): the
+	   PAM transmitter's segments follow each other (v92a.h), these
+	   wait for what moves them on */
+	P3U_SILENCE,    /* 70 ms after INFO1a */
+	P3U_JA,         /* Ru, Ru-bar, TRN1u, Ja until Sd-bar */
+	P3U_WAIT_JD,    /* silence until Jd */
+	P3U_SU,         /* Su, Su-bar, Su until Jp */
+	P3U_TRN1,       /* Su-bar, TRN1u while the DIL is measured */
+	P3U_CPT,        /* CPt until Ri */
+	P3U_E1U,
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
@@ -222,6 +235,7 @@ enum v34_txm {
 	TXM_CC,
 	TXM_PROBE,
 	TXM_PRIMARY,
+	TXM_PAM,        /* V.92's PCM upstream (patx) */
 };
 
 struct BitQ {
@@ -658,6 +672,12 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 				   analogue line; DSP_V92A=0: V.90) */
 	int v92a_on;            /* and the digital modem's INFO0d said V.92
 				   (for the call) */
+	int v92a_up;            /* we ask for PCM upstream where INFO1d
+				   offers it (DSP_V92A_UP=1: phase 4 is not
+				   there yet) */
+	int v92a_noup;          /* it failed in this call: V.90 next */
+	int v92a_up_on;         /* this phase 3 is PCM upstream's */
+	V92ATx patx;            /* its transmitter */
 	int short2;             /* and both asked for short phase 2 */
 	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=0: not) */
 	V91 v91m;
@@ -732,6 +752,10 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void v90a_choose();
 	void v90a_start();
 	int v90a_phase4();
+	void make_info1a_v92(BitQ *q);
+	void v92a_up_start();
+	int v92a_cpt();
+	int v92a_up_fail(const char *why);
 	int v90a_cp_design();
 	int v90a_data_setup();
 	long v90a_quiet;        /* data mode: samples of the PCM signal gone */
@@ -2486,7 +2510,10 @@ void V34Pump::ec_schedule()
 		(v90a_rx && (state == P3V_S || state == P3V_SBAR ||
 			     state == P3V_PP || state == P3V_TRN ||
 			     (state == P3V_JA &&
-			      v90rx.stage == V90Rx::WAIT_SD)));
+			      v90rx.stage == V90Rx::WAIT_SD))) ||
+		/* and V.92's: Ru to Ja */
+		(v90a_rx && state == P3U_JA &&
+		 v90rx.stage == V90Rx::WAIT_SD);
 	int training;
 
 	if (ours && !e->on) {
@@ -2903,6 +2930,74 @@ int V34Pump::v90a_phase4()
 	ptx.idx = 0;
 	tx_next(P4V_CPT, V34_TX_CP);
 	return 0;
+}
+
+/* our INFO1a asking for PCM upstream (Table 18/V.92): the precoder's
+   and prefilter's p1 and z2 with the fewest coefficients, no MD, the
+   2 point train's Ucode, 8000 symbols a second both ways */
+void V34Pump::make_info1a_v92(BitQ *q)
+{
+	q->info_start();
+	q->put(0, 2);        /* p1, z2 */
+	q->put(0, 2);        /* Ltot 192 */
+	q->put(0, 2);        /* Lmax 128 */
+	q->put(0, 7);        /* no MD */
+	q->put(v90a_uinfo, 7);
+	q->put(0, 2);
+	q->put(6, 3);
+	q->put(6, 3);
+	q->put(0x3FF, 10);
+	q->info_end();
+}
+
+/* V.92's PCM upstream phase 3 as the analogue modem: V.90's PCM
+   receiver and DIL (v90a_start()), Jp in Jd's place, our signals from
+   the PAM transmitter; Ja's DIL descriptor asks for every upstream rate
+   (bits 0 to 18: 24 000 to 48 000 bit/s) */
+void V34Pump::v92a_up_start()
+{
+	v90a_start();
+	v90rx.v92 = 1;
+	patx.init(line_rate, V92A_LU);
+	patx.nbits = v92_dil_build(patx.bits, v90a_dil, 0x7FFFF);
+	txm = TXM_PAM;
+	DSP_DBG("v34: V.92: PCM upstream phase 3, LU %.0f\n", V92A_LU);
+}
+
+/* CPt's constellations (as V.90's analogue modem designs them) into
+   the transmitter's bits in V.92's form; the PCM receiver waits for
+   Ri.  -1 when there are none */
+int V34Pump::v92a_cpt()
+{
+	static const short lim[32] = {
+		15124, 14276, 13480, 12724, 12012, 11340, 10708, 10108,
+		9544, 9008, 8504, 8028, 7580, 7156, 6756, 6380, 6020, 5684,
+		5368, 5068, 4784, 4516, 4264, 4024, 3800, 3588, 3388, 3196,
+		3020, 2852, 2692, 2540 };
+	float lv[6][128];
+	int m = rinfo0.max_power;
+	V90Con c;
+
+	v90a_limit = lim[m < 0 ? 0 : m > 31 ? 31 : m];
+	v90rx.levels(lv);
+	if (v90a_design_cpt(&v90a_cpt, alaw, v90rx.lin, lv, v90a_limit) ||
+	    v90rx.phase4(v90a_cpt))
+		return -1;
+	c.init(v90a_cpt, v90a_cpt.drn + 8, lv);
+	v90a_cpt_pw = c.power(v90rx.lin);
+	patx.nbits = v92_cpt_build(patx.bits, v90a_cpt);
+	DSP_DBG("v34: V.92: CPt, drn %d (%d bits)\n", v90a_cpt.drn,
+		patx.nbits);
+	return 0;
+}
+
+/* PCM upstream did not work: V.90 for the rest of the call, after a
+   retrain */
+int V34Pump::v92a_up_fail(const char *why)
+{
+	DSP_DBG("v34: V.92: PCM upstream: %s\n", why);
+	v92a_noup = 1;
+	return v90a_fail(0);
 }
 
 /* the upstream data mode (9.4.2.4/V.90): the fastest rate our CP
@@ -4089,7 +4184,13 @@ int V34Pump::handshake()
 			if (!v90a_on)
 				choose_bauds();
 			set_state(P2A_INFO1);
-			if (v90a_on)
+			/* V.92's PCM upstream where INFO1d offers it (bit
+			   70, Table 17/V.92) */
+			v92a_up_on = v90a_on && v92a_on && v92a_up &&
+				!v92a_noup && rinfo1c.r[V34_BAUD_3429].high;
+			if (v92a_up_on)
+				make_info1a_v92(&cctx);
+			else if (v90a_on)
 				make_info1a_v90(&cctx);
 			else
 				make_info1a(&cctx);
@@ -4099,6 +4200,11 @@ int V34Pump::handshake()
 	case P2A_INFO1:
 		if (!cc_busy()) {
 			cc_silence();
+			if (v92a_up_on) {
+				set_state(P3U_SILENCE);
+				v92a_up_start();
+				break;
+			}
 			if (v90a_on) {
 				set_state(P3V_SILENCE);
 				v90a_start();
@@ -4414,6 +4520,90 @@ int V34Pump::handshake()
 			if (v90a_phase4())
 				return v90a_fail(1);
 		}
+		break;
+
+	/* V.92 analogue modem, PCM upstream phase 3 (9.5.2/V.92): the
+	   transmitter goes from Ru to Ja by itself; Ja until the digital
+	   modem's Sd-bar, silence while TRN1d trains the PCM receiver, Su
+	   once Jd is in, Su-bar of 24 T and Jp's fraction once Jp is in,
+	   TRN1u while the DIL is measured, CPt until Ri, E1u */
+	case P3U_SILENCE:
+		if (c >= ms2samples(70, srate)) {
+			patx.segment(V92A_RU);
+			set_state(P3U_JA);
+		}
+		break;
+	case P3U_JA:
+		if (v90rx.ev_sdbar) {
+			patx.ja_stop = 1;
+			set_state(P3U_WAIT_JD);
+			break;
+		}
+		/* Ru and TRN1u, then 1500 ms of Ja (9.5.2.2.1/V.92) */
+		if (c >= ms2samples(2000, srate))
+			return v92a_up_fail("no Sd-bar after Ja");
+		break;
+	case P3U_WAIT_JD:
+		/* Su once Jd is in and the PCM receiver is ready (we may
+		   wait 5 s, 9.5.2.1.6/V.92) */
+		if (v90rx.ev_jd && (v90rx.ev_ready ||
+				    c >= ms2samples(4000, srate))) {
+			DSP_DBG("v34: V.92: Jd, PCM receiver mse %.4f\n",
+				v90rx.mse);
+			patx.segment(V92A_SU);
+			set_state(P3U_SU);
+			break;
+		}
+		if (c >= ms2samples(4500, srate))
+			return v92a_up_fail(v90rx.ev_trained ?
+					    "no Jd (trained)" :
+					    "no Jd (not trained)");
+		break;
+	case P3U_SU:
+		if (v90rx.ev_jp) {
+			patx.jp_frac = v90rx.jp_frac;
+			patx.jp_req = 1;
+			set_state(P3U_TRN1);
+			break;
+		}
+		if (c >= ms2samples(5000, srate))
+			return v92a_up_fail("no Jp");
+		break;
+	case P3U_TRN1:
+		/* the DIL's rounds measured (within 5 s of Su-bar,
+		   9.5.2.1.11/V.92): CPt after 2040 T of TRN1u at least */
+		if (v90rx.ev_dil >= V90RX_DIL_ROUNDS ||
+		    (!v90a_dil.n && v90rx.ev_jdp)) {
+			if (v90a_dil.n)
+				v90rx.dil_analyse();
+			if (v92a_cpt())
+				return v92a_up_fail("no CPt constellations");
+			patx.trn_stop = 1;
+			set_state(P3U_CPT);
+			break;
+		}
+		if (c >= ms2samples(5000, srate))
+			return v92a_up_fail(v90rx.ev_jdp ?
+					    "the DIL did not come" :
+					    "no Jp'");
+		break;
+	case P3U_CPT:
+		if (v90rx.ev_ri) {
+			patx.ri_seen = 1;
+			set_state(P3U_E1U);
+			break;
+		}
+		if (c >= ms2samples(5000, srate))
+			return v92a_up_fail("no Ri");
+		break;
+	case P3U_E1U:
+		if (patx.e1u_sent()) {
+			DSP_DBG("v34: V.92: PCM upstream phase 3 done\n");
+			/* (phase 4 is not there yet) */
+			return v92a_up_fail("no PCM upstream phase 4 yet");
+		}
+		if (c >= ms2samples(1000, srate))
+			return v92a_up_fail("E1u did not go");
 		break;
 
 	/* V.90 analogue modem, phase 4 (9.4.2/V.90): CPt until the
@@ -5049,6 +5239,12 @@ float V34Pump::pump_tx_sample()
 	case TXM_PRIMARY:
 		y = ptx.sample();
 		break;
+	case TXM_PAM:
+		/* on the network's clock, once the PCM receiver has it */
+		if (v90rx.t_on)
+			patx.set_ppm(v90rx.ppm());
+		y = patx.sample();
+		break;
 	}
 	return y;
 }
@@ -5321,6 +5517,8 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v92a = v90a && id == DP_V92 &&
 		!(getenv("DSP_V92A") && !atoi(getenv("DSP_V92A")));
 	v92a_on = 0;
+	v92a_up = getenv("DSP_V92A_UP") && atoi(getenv("DSP_V92A_UP"));
+	v92a_noup = v92a_up_on = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
 

@@ -210,6 +210,71 @@ int v92_cp_parse(V90Cp *c, const unsigned char *b, int len)
 	return 0;
 }
 
+/* see v92.h: V.90's descriptor up to its Ucodes (V90Dil::build), then
+   the rate mask in two 16 bit fields after start bits, the CRC */
+int v92_dil_build(unsigned char *b, const V90Dil &d, unsigned up_mask)
+{
+	int n;
+
+	/* to the end of the Ucodes: V.90's start bit, CRC and fill go */
+	d.build(b);
+	n = 188 + dil_beta(b) + (d.n + 1) / 2 * 17;
+	put_bits(b, &n, up_mask & 0xFFFF, 16);
+	put_bits(b, &n, 0, 1);
+	put_bits(b, &n, (up_mask >> 16) & 7, 16);
+	put_bits(b, &n, 0, 1);
+	put_frame_crc(b, &n);
+	put_bits(b, &n, 0, 1);
+	return fill_to(b, n, 12);
+}
+
+/* see v92.h */
+int v92_cpt_build(unsigned char *b, const V90Cp &cp)
+{
+	static const int sbit[6] = { 0, 0, 0, 0, 1, 1 };
+	int n = 0, i, j, c;
+
+	put_bits(b, &n, 0x1FFFF, 17);
+	put_bits(b, &n, 0, 1);
+	put_bits(b, &n, 0, 1);                  /* 18: CP */
+	put_bits(b, &n, 0, 2);                  /* CPt */
+	put_bits(b, &n, cp.drn, 5);
+	put_bits(b, &n, 0, 5);
+	put_bits(b, &n, cp.sr, 2);
+	put_bits(b, &n, cp.ack, 1);
+	put_bits(b, &n, 0, 1);                  /* 34 */
+	put_bits(b, &n, cp.alaw, 1);
+	put_bits(b, &n, 0, 13);
+	put_bits(b, &n, cp.ld, 2);
+	put_bits(b, &n, 0, 1);                  /* 51 */
+	put_bits(b, &n, 8192, 16);              /* TRN1d's rms ratio, 1 */
+	put_bits(b, &n, 0, 1);                  /* 68 */
+	put_bits(b, &n, cp.a1 & 0xFF, 8);
+	put_bits(b, &n, cp.a2 & 0xFF, 8);
+	put_bits(b, &n, 0, 1);                  /* 85 */
+	put_bits(b, &n, cp.b1 & 0xFF, 8);
+	put_bits(b, &n, cp.b2 & 0xFF, 8);
+	for (i = 0; i < 6; i++) {
+		/* a start bit at 102 and at 119 */
+		if (i == 0 || (sbit[i] && !sbit[i - 1]))
+			put_bits(b, &n, 0, 1);
+		put_bits(b, &n, cp.con[i], 4);
+	}
+	put_bits(b, &n, 0, 1);                  /* 128: no codec ones */
+	put_bits(b, &n, 0, 7);
+	for (j = 0; j < cp.ncon; j++)
+		for (c = 0; c < 8; c++) {
+			put_bits(b, &n, 0, 1);
+			for (i = 0; i < 16; i++)
+				put_bits(b, &n, cp.mask[j][16 * c + i] != 0,
+					 1);
+		}
+	put_bits(b, &n, 0, 1);
+	put_frame_crc(b, &n);
+	put_bits(b, &n, 0, 1);
+	return fill_to(b, n, 12);
+}
+
 /*
  *    receiver
  */
@@ -680,6 +745,9 @@ void V92Up::frame_bits(int bit)
 		return;
 	}
 	if (rx == V92R_CPT && !fr.b[18] && !field(fr.b, 19, 2)) {
+		/* (its fill to the data frame's end may be all zeros, with
+		   the CRC's last bit: E1u is after it) */
+		cpt_sym = sym;
 		if (!got_cpt) {
 			if (v92_cp_parse(&cpt, fr.b, fr.len))
 				return;
@@ -796,7 +864,8 @@ void V92Up::symbol(float y)
 		bit2(d);
 		if (rx == V92R_CPT && i == 11) {
 			/* E1u: a data frame of zeros after CPt */
-			if (got_cpt && frame_zero == 12 && !fr.n) {
+			if (got_cpt && frame_zero == 12 && !fr.n &&
+			    sym - 11 > cpt_sym) {
 				got_e1u = 1;
 				DSP_DBG("v92: E1u at symbol %ld, mse %.4f\n",
 					sym, mse);

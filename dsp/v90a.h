@@ -210,6 +210,15 @@ struct V90Rx {
 	int ev_jdp;             /* Jd' after them */
 	int ev_dil;             /* the DIL's rounds measured */
 	V90Jd jd;
+	/* V.92 (v92): Jd's bit 47 makes it Jp (Table 22/V.92), whose
+	   fraction of a symbol extends our Su-bar; its Jp' follows (as
+	   Jd' does in V.90) */
+	int v92;
+	int ev_jp;
+	long jp_end;
+	double jp_frac;
+	int jp_con, jp_con_rn;  /* TRN2u and CPu on 8 points: in training,
+				   in renegotiation */
 
 	/* the DIL our Ja asked for (8.4.1/V.90): it follows Jd' (in data
 	   frame interval 0), round after round; the decisions' values

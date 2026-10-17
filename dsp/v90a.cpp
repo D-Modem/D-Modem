@@ -379,11 +379,13 @@ void V90Rx::jd_bit(int bit)
 {
 	unsigned char f[72];
 	int i, ones = 0;
+	V90Jd jp;
 
 	jb[jpos] = (unsigned char)bit;
 	jpos = (jpos + 1) % 72;
 	jbits++;
-	if (ev_jd && !ev_jdp && jbits - jd_end == 8) {
+	if (!ev_jdp && (v92 ? ev_jp && jbits - jp_end == 8 :
+			ev_jd && jbits - jd_end == 8)) {
 		for (i = 0; i < 8; i++)
 			ones += jb[(jpos + 64 + i) % 72];
 		if (ones <= 1) {
@@ -396,15 +398,32 @@ void V90Rx::jd_bit(int bit)
 					"frame\n", dil_start % 6);
 				dil_start = (dil_start + 3) / 6 * 6;
 			}
-			DSP_DBG("v90a: Jd' after %d Jd, DIL from symbol %ld\n",
-				ev_jd, dil_start);
+			DSP_DBG("v90a: %s after %d %s, DIL from symbol %ld\n",
+				v92 ? "Jp'" : "Jd'", v92 ? ev_jp : ev_jd,
+				v92 ? "Jp" : "Jd", dil_start);
 		}
 	}
 	if (jbits < 72)
 		return;
 	for (i = 0; i < 72; i++)
 		f[i] = jb[(jpos + i) % 72];
-	if (jd.parse(f) == 0) {
+	if (v92 && f[47] && ev_jd && jp.parse(f) == 0) {
+		/* (its frame as Jd's, the fields its own) */
+		if (!ev_jp) {
+			jp_frac = field(f, 18, 16) / 65536.0;
+			jp_con = f[48];
+			jp_con_rn = f[49];
+			DSP_DBG("v90a: Jp: Su-bar %.4f symbol longer, %d "
+				"points in training, %d in renegotiation\n",
+				jp_frac, jp_con ? 8 : 4, jp_con_rn ? 8 : 4);
+		}
+		ev_jp++;
+		jp_end = jbits;
+		return;
+	}
+	if ((!v92 || !f[47]) && jd.parse(f) == 0) {
+		if (v92)
+			jd.cp16_train = jd.cp16_reneg = 0;
 		if (!ev_jd)
 			DSP_DBG("v90a: Jd: rates %06x, %s points in training, "
 				"%s in renegotiation, look-ahead %d\n",

@@ -505,6 +505,39 @@ std::vector<Call> calls()
 	      "EXPECT_B=(?s)MHack, T1 60 s: the remote on hold for 5 s.*"
 	      "back from hold: ANSam, V.8 as the call modem.*V.90 back from "
 	      "hold" });
+	/* V.92's PCM upstream as the analogue modem (DSP_V92A_UP=1):
+	   INFO1a of Table 18, phase 3 (Ru, TRN1u, Ja; Su, Jp, the second
+	   TRN1u during the DIL, CPt, E1u) on the PAM transmitter; phase 4
+	   is not there yet, so a retrain, and V.90 */
+	add("open", "open_v92a_up_phase3", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92A_UP=1",
+	      "EXPECT_A=(?s)V.92: PCM upstream phase 3, LU.*Jp: Su-bar.*"
+	      "Jp' after.*V.92: CPt, drn.*PCM upstream phase 3 done.*"
+	      "V.90 connect 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)v92: Ru reversal at.*v92: Ja: DIL N 128.*"
+	      "v92: Su reversal after Jp.*v92: CPt at symbol.*"
+	      "v92: E1u at symbol.*V.90 connect" });
+	/* its symbols on the network's clock as the PCM receiver finds it
+	   (100 ppm off ours: half a symbol off by the second TRN1u's end
+	   otherwise), answering on an A-law network, and its echo */
+	add("open", "open_v92a_up_ppm", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92A_UP=1", "NET_PPM=100",
+	      "NET_PHASE=0.3",
+	      "EXPECT_A=(?s)timing \\+(99.[5-9]|100.[0-4])[0-9]* ppm.*"
+	      "PCM upstream phase 3 done.*V.90 connect",
+	      "EXPECT_B=(?s)v92: Su reversal after Jp.*v92: CPt at symbol.*"
+	      "v92: E1u at symbol [0-9]+, mse 0.00[0-4].*V.90 connect" });
+	add("open", "open_v92a_up_answers", "open8", "open", "ATX3",
+	    { "NET=8000:9600:alaw", "DSP_G711=alaw", "DSP_V92A_UP=1",
+	      "EXPECT_A=(?s)v92: CPt at symbol.*v92: E1u at symbol.*"
+	      "V.90 connect",
+	      "EXPECT_B=(?s)PCM upstream phase 3 done.*V.90 connect "
+	      "3[0-9]+/5[0-9]+ \\(analogue modem\\)" });
+	add("open", "open_v92a_up_echo", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92A_UP=1", "DSP_TEST_ECHO=-10:1c",
+	      "EXPECT_A=(?s)echo canceller: least squares [4-9][0-9].[0-9] "
+	      "dB.*DIL: pad 0.0 dB.*PCM upstream phase 3 done",
+	      "EXPECT_B=(?s)v92: E1u at symbol.*V.90 connect" });
 	/* the analogue modem with its codec at 8000 Hz (MODEM_ANALOG: its
 	   line an analogue one; netsim's NET_ANALOG), on the network's
 	   clock: the PCM receiver on the line's own samples, with
