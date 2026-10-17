@@ -844,7 +844,7 @@ INF.
 | B103 / 103 | CONNECT 300 (answered after it dials: see below) | CONNECT 300 |
 | V90 / 90 (ours as the digital modem), µ-law and A-law | CONNECT 50666 (31200 upstream) | - |
 | V92 / 92, as it comes | CONNECT 49333 (V.90) | - |
-| V92 with `+PIG=0` (PCM upstream) / 92, µ-law and A-law | a retrain, then CONNECT 46666/32000, renegotiated down to some 30666 | - |
+| V92 with `+PIG=0` (PCM upstream) / 92, µ-law and A-law | CONNECT 49333/41333 (our prefilter) | - |
 
 V.8 in its automode (V.34), V.44 both ways (60000 octets) and MNP 5
 both ways pass too, and as the other peers':
@@ -916,15 +916,23 @@ in our receiver (`v92.cpp`, data_symbol()):
   the one nearer a point: its sum is not quite ours); the first 48
   symbols' grid mse with this and without tell which.
 
-Its B1u on our prefilter (z2, with p1) still decodes as noise, the
-points nowhere near the levels.  So after a PCM upstream that failed with
-the prefilter, we retrain and try it once more without the prefilter,
-nor trellis decoding (which a wrong decision's fb throws off): precoding
-alone, to a V.92 connect at 32000 or 33333 upstream.  The points, off
-G.711's levels, then take its quantization noise, which the training's
-mse that chose the rate misses (G.711's noise grows with the level, and
-TRN2u's points are near ones): the margin renegotiates down, each time a
-rate lower than the last (`drn_cap`), to some 30666, about V.90's 31200.
+With our prefilter (in z2, the precoder in p1) its points come on our
+levels, but on the trellis frame's 4th symbol, about half of the time,
+it sent 0. There the classes are of 2M (eta = 2K + 2zM + parity), and
+its precoder goes past the M (1 + sum |b|) points our prefilter's CPd
+had (42 for M 36), where it sends 0 rather than the last point (the
+HSF and Smart Link modems keep within them). The CPd now has 2M points
+at least, as the design without the prefilter had; the HSF and Smart
+Link rates are the same with them. ESS's PCM upstream connects at
+41333 (µ-law and A-law), with modem-on-hold and with the echo 10 dB
+down (33333) too.
+
+Should a PCM upstream with the prefilter fail on a modem with p1 and z2
+alone, we retrain and try once more without the prefilter or trellis
+decoding: precoding alone, on the corrections above. ESS gets 32000 or
+33333 that way; its points, off G.711's levels, take its quantization
+noise (which TRN2u's mse misses), so the margin renegotiates down, each
+time below the last rate (`drn_cap`), to some 30666.
 
 What it showed in ours: our V.32 and V.32bis caller sent S for 256
 symbols after R1, then S-bar. V.32 (5.4.1) has S for NT first, the round

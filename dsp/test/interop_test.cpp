@@ -1139,19 +1139,17 @@ std::vector<Call> calls()
 		add("ess", "ess_v90_" + law, "ess", "open8", "ATX3;AT+MS=V90",
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law, "DSP_G711=" + law,
 		      "EXPECT_B=V.90 connect 5[0-9]{4}/", "PROTO_B=ATX3;AT+MS=90" });
-	/* V.92 as it comes, and with PCM upstream (+PIG=0), both laws.  Its
-	   INFO1a has p1 and z2 alone (our CPd has no z1 or p2); its B1u on
-	   our prefilter decodes as noise, and after a retrain PCM upstream
-	   goes without it: precoding alone, on its points (the precoder's
-	   feedback a unit below, see v92.cpp), to a V.92 connect */
+	/* V.92 as it comes (V.90: it leaves PCM upstream out), and with PCM
+	   upstream (+PIG=0), both laws: on our prefilter (its INFO1a has p1
+	   and z2 alone, our CPd no z1 or p2; 2M points at least, for the
+	   trellis frame's 4th symbol), some 41333 upstream */
 	add("ess", "ess_v92", "ess", "open8", "ATX3",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
 	add("ess", "ess_v92_pcmup", "ess", "open8", "ATX3;AT+PIG=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
-	      "EXPECT_B=(?s)once more, without the prefilter.*precoder on "
-	      "the grid unit below.*V.92 connect [45][0-9]{4}/[23][0-9]{4}\n",
-	      "PROTO_B=ATX3" });
+	      "EXPECT_B=(?s)prefilter of 64 taps.*V.92 connect "
+	      "[45][0-9]{4}/4[0-9]{4}\n", "PROTO_B=ATX3" });
 	/* V.34 rate renegotiation started by us, both ways; a much noisier
 	   line 10 s in; our INFO0a lost */
 	add("ess", "ess_34_reneg_ess_calls", "ess", "open", "ATX3;AT+MS=V34",
@@ -1191,24 +1189,24 @@ std::vector<Call> calls()
 	   neither short phase 2 nor quick connect (+PQC=0 too), and its
 	   own AT+PMHR needs the +++ escape, after which (its OK given) it
 	   parses no command (ATO goes out as data): no tests of those.
-	   (+PIG=1: no PCM upstream, whose B1u fails, below) */
+	   With PCM upstream (+PIG=0), as the echo's */
 	add("ess", "ess_v92_moh_request", "ess", "open8",
-	    "ATX3;AT+MS=V92;AT+PIG=1",
+	    "ATX3;AT+MS=V92;AT+PIG=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "STREAM=40", "MIDCALL_B=8:AT+PMHR;WAIT 6",
 	      "EXPECT_B=(?s)modem-on-hold request.*retrains instead.*"
 	      "retrained", "PROTO_B=ATX3;AT+MS=92" });
 	add("ess", "ess_v92_echo", "ess", "open8",
-	    "ATX3;AT+MS=V92;AT+PIG=1",
+	    "ATX3;AT+MS=V92;AT+PIG=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "NET_ECHO=-10:50", "STREAM=10",
 	      "EXPECT_B=(?s)far echo at.*echo canceller took [23][0-9]\\.[0-9] "
-	      "dB away\n.*V.9[02] connect [45][0-9]{4}/",
+	      "dB away\n.*V.92 connect [45][0-9]{4}/[34][0-9]{4}\n",
 	      "PROTO_B=ATX3;AT+MS=92" });
 	add("ess", "ess_v92_pcmup_alaw", "ess", "open8", "ATX3;AT+PIG=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:alaw", "DSP_G711=alaw",
-	      "EXPECT_B=V.92 connect [45][0-9]{4}/[23][0-9]{4}\n",
-	      "PROTO_B=ATX3" });
+	      "EXPECT_B=(?s)prefilter of 64 taps.*V.92 connect "
+	      "[45][0-9]{4}/4[0-9]{4}\n", "PROTO_B=ATX3" });
 	/* V.8 agreeing on a lower modulation, both ways; our forced low
 	   speed callers against its automode */
 	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,

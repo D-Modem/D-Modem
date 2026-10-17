@@ -2438,8 +2438,12 @@ int V92Up::pf_rate(int drn)
 	M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
 	for (int k = 0; k < V92_PF_B; k++)
 		sb += fabs(pf_b[k]);
-	/* the trellis frame's 4th symbol: classes of 2M */
+	/* the trellis frame's 4th symbol: classes of 2M, so 2M points at
+	   least (as in design(): the ESS modem's precoder goes past
+	   M (1 + sum |b|) there, and past the last point it sends 0) */
 	lc = (int)ceil(M * (1 + sb)) + 2;
+	if (lc < 2 * M)
+		lc = 2 * M;
 	lc += lc & 1;
 	if (lc > V92_LC_MAX)
 		return 0;
@@ -2686,6 +2690,8 @@ int V92Up::pf_cpd(V92Cpd *c, int drn)
 	for (j = 0; j < V92_PF_B; j++)
 		sb += fabs(pf_b[j]);
 	lc = (int)ceil(M * (1 + sb)) + 2;
+	if (lc < 2 * M)
+		lc = 2 * M;
 	lc += lc & 1;
 	int gap = pf_gap[drn];
 	if (lc > V92_LC_MAX || !gap || !pf_points(gap, lc, pts))
