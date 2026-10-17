@@ -483,6 +483,15 @@ int Modem::start_call()
 	have_result_ = false;
 	stats_ = CallStats();
 	stats_.call = true;
+	/* V.cvm: +CVM's settings kept, this call's figures cleared */
+	{
+		struct dp_vcvm v = {};
+		v.modes = vcvm_.modes;
+		v.rate = vcvm_.rate;
+		v.report = vcvm_.report;
+		vcvm_ = v;
+		vcvm_refresh();
+	}
 	stats_.fax = mode_ == MODEM_MODE_FAX;
 	stats_.start = host_.now_ms();
 	memset(&dp_stats_, 0, sizeof(dp_stats_));
@@ -737,9 +746,16 @@ void Modem::update_status(Status s)
 			cfg_.ec = false;
 			cfg_.mnp = false;
 		}
+		/* V.cvm: LAPM, and no detection phase (11.1/V.cvm: both
+		   indicated it in V.8) */
+		if (dp_ && dp_->id == DP_VCVM) {
+			cfg_.ec = true;
+			cfg_.mnp = false;
+		}
 		set_state(EC_ESTAB);
 		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
-			     !(caller_ && dsp_info_.qc_lapm));
+			     !(caller_ && dsp_info_.qc_lapm) &&
+			     !(dp_ && dp_->id == DP_VCVM));
 		break;
 	case ST_PACK_LINK:
 		cfg_.ec = link_->ec();
@@ -1092,7 +1108,7 @@ void Modem::change_dp()
 		if (host_.analog_line(*this) && id == DP_V91)
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
-			id == DP_V92 ? (unsigned)DP_V8 : id;
+			id == DP_V92 || id == DP_VCVM ? (unsigned)DP_V8 : id;
 	}
 	logf("pump %u (driver %u), %s\n", id, drv,
 	     caller_ ? "caller" : "answerer");
@@ -1382,6 +1398,22 @@ void Modem::set_line_law(int law)
  *    result codes and the call's statistics
  */
 
+/* V.cvm's block from +CVM's settings; S44 and S45 from the pump's
+   figures of the call (the last one's, once it has ended) */
+void Modem::vcvm_refresh()
+{
+	const unsigned long *c = kept("+CVM");
+	if (c) {
+		vcvm_.modes = (int)c[0];
+		vcvm_.rate = (int)c[1];
+		vcvm_.report = (int)c[2];
+	}
+	if (vcvm_.on) {
+		sregs_[SREG_VCVM_TONES] = (unsigned char)std::min(vcvm_.tones_rx, 255);
+		sregs_[SREG_VCVM_RENEGS] = (unsigned char)std::min(vcvm_.renegs, 255);
+	}
+}
+
 /* result r to the DTE (unless ATQ1), in words (ATV1) or as a number; a
    CONNECT after the lines AT&A asks for, with the receive rate in data
    mode (unless ATX0) and AT\V's protocol */
@@ -1435,6 +1467,8 @@ void Modem::report(Result r)
 			crlf();
 		}
 	}
+	/* V.cvm's CONNECT: the coded rate and /CVM (12.2 c)/V.cvm) */
+	bool cvm = modulation(dp_stats_, dp_) == DP_VCVM;
 	if (r == Result::Connect && mode_ == MODEM_MODE_DATA && rx_rate_ &&
 	    sregs_[SREG_X_CODE]) {
 		if (!verbose) {
@@ -1442,12 +1476,13 @@ void Modem::report(Result r)
 				 connect_code(rx_rate_));
 		} else if (sregs_[SREG_CONNECT_PROTOCOL]) {
 			const char *comp = compression_name();
-			snprintf(line, sizeof(line), "CONNECT %u/%s%s%s",
-				 rx_rate_, protocol_name(),
+			snprintf(line, sizeof(line), "CONNECT %u%s/%s%s%s",
+				 rx_rate_, cvm ? "/CVM" : "", protocol_name(),
 				 strcmp(comp, "NONE") ? "/" : "",
 				 strcmp(comp, "NONE") ? comp : "");
 		} else {
-			snprintf(line, sizeof(line), "CONNECT %u", rx_rate_);
+			snprintf(line, sizeof(line), "CONNECT %u%s", rx_rate_,
+				 cvm ? "/CVM" : "");
 		}
 	} else if (verbose) {
 		snprintf(line, sizeof(line), "%s", result_text[(int)r]);

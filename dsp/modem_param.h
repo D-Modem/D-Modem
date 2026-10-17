@@ -106,6 +106,8 @@ enum MODEM_PARAMETER_NAMES {
 				      takes the request (V.92 9.10) */
 	MDMPRM_STATS        = 66,  /* the call's struct dp_stats *; -1 or 0
 				      from a core that has none */
+	MDMPRM_VCVM         = 67,  /* the struct dp_vcvm *; -1 or 0 from a
+				      core that has none */
 };
 
 /*

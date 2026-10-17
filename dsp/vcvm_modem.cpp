@@ -143,6 +143,7 @@ void VcvmModem::enter_data()
 	     rxl_.str().c_str());
 	start_tx();
 	start_rx(last_rx_end_);
+	p4_mps_ = 0;
 	data_at_ = t_;
 	next_check_ = t_ + 3L * c_.su.fs;
 	words_ = failed_ = 0;
@@ -244,6 +245,7 @@ void VcvmModem::finish_reneg()
 	     rxl_.str().c_str());
 	start_tx();
 	start_rx(last_rx_end_);
+	p4_mps_ = 0;
 	data_at_ = t_;
 	next_check_ = t_ + 3L * c_.su.fs;
 	words_ = failed_ = 0;
@@ -256,10 +258,25 @@ void VcvmModem::on_msg(const VcvmMsg &m)
 		return;
 	last_rx_end_ = m.end;
 	if (state_ == DATA) {
+		if (mp.ack && !mp.retrain && p4_mps_++ == 0) {
+			/* the peer's one more MP after our acknowledgement
+			   (9.4), which ends after we have begun phase 4: its
+			   phase 4 starts at that MP's end */
+			note("the peer's last MP in phase 4");
+			if (rx_on_) {
+				drx_.start(m.end);
+				replay(drx_, m.end);
+				/* phase 4's watch from there */
+				next_check_ = t_ + 3L * c_.su.fs;
+				words_ = failed_ = 0;
+			}
+			return;
+		}
 		if (mp.ack && !mp.retrain) {
-			/* the peer lost our last MP: another, and phase 4
-			   again */
+			/* MPs go on: the peer lost our last MP; another, and
+			   phase 4 again */
 			note("an MP of the peer's in phase 4: ours again");
+			p4_mps_ = 0;
 			txq_.resize(std::min(txq_.size(), txpos_));
 			tx_data_ = false;
 			got_mp_ = got_ack_ = true;

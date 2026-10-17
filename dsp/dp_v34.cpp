@@ -37,6 +37,7 @@
 #include "v91.h"
 #include "v92.h"
 #include "v92a.h"
+#include "vcvm_startup.h"
 
 namespace dsp {
 
@@ -491,6 +492,11 @@ struct V34V8 {
 	int v8_ok;              /* two identical CM / JM */
 	int v8_zeros;           /* zero octets in a row (CJ) */
 	int v8_cj;
+	/* answerer, while JM goes out: 10 ms blocks of the line's energy,
+	   the CM's (the loudest block), and quiet blocks in a row (30 dB
+	   under it) */
+	float v8_blk_e, v8_cm_e;
+	int v8_blk_n, v8_quiet;
 	unsigned char v8_remote[32];
 	int v8_remote_n;
 	/* answer tone analysis (caller) */
@@ -513,7 +519,9 @@ struct V34V8 {
 	int v8_v90();
 	int v8_v90a();
 	int v8_v91();
+	int v8_vcvm();
 	void v8_rx_bit(int bit);
+	void v8_quiet_run(float x);
 	void ans_analyse(float x);
 	float ans_am_depth();
 	int v8_step(long c);
@@ -683,6 +691,10 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int v90;                /* offer V.90 as the digital modem */
 	int pcm;                /* V.90 agreed in V.8 */
 	int v91;                /* offer V.91 */
+	int vcvm;               /* offer V.cvm (its information field in
+				   CM / JM's non-standard facilities),
+				   with V.22 and V.21 for the fallback */
+	VcvmCaps vcvm_caps;
 	int v91_on;             /* V.91 agreed in V.8 */
 	int v90a;               /* offer V.90 as the analogue modem */
 	int v90a_on;            /* V.90 agreed in V.8, we the analogue
@@ -1158,6 +1170,14 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 		if (v8_low && k == 2)
 			c = 0x10 | (v8_low == DP_V23 ? V8_MOD3_V23 :
 				    v8_low == DP_V21 ? V8_MOD3_V21 : 0);
+		/* V.cvm: V.22 and V.21 its fallback, nothing above V.22
+		   (8.3/V.cvm: a legacy DCE then takes V.22 at once) */
+		if (self.vcvm && k == 0)
+			c &= ~V8_MOD1_V34;
+		if (self.vcvm && k == 1)
+			c &= ~V8_MOD2_V32;
+		if (self.vcvm && k == 2)
+			c &= ~V8_MOD3_V23;
 		if (pcm_ && (c & 0x1F) == V8_CAT_MOD)
 			c |= V8_MOD1_PCM;
 		if ((pcm_ & (V8_PCM_DIGITAL | V8_PCM_V91)) &&
@@ -1167,6 +1187,13 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 	}
 	if (pcm_)
 		q->put_octet(V8_CAT_PCM | pcm_);
+	/* V.cvm's field (Annex A/V.cvm); in a JM where the CM had it */
+	if (self.vcvm && (self.caller || v8_vcvm())) {
+		uint8_t ns[24];
+		int n = vcvm_v8_ns(self.vcvm_caps, ns);
+		for (int j = 0; j < n; j++)
+			q->put_octet(ns[j]);
+	}
 	v8tx_repeat = 1;
 }
 
@@ -1217,6 +1244,8 @@ int V34V8<P>::v8_choice()
 		return (v8_low == DP_V21 ? m3 & V8_MOD3_V21 :
 			v8_low == DP_V23 ? m3 & V8_MOD3_V23 :
 			m2 & V8_MOD2_V22) ? v8_low : 0;
+	if (v8_vcvm())
+		return DP_VCVM;
 	if (m2 & V8_MOD2_V32)
 		return DP_V32BIS;
 	if (m2 & V8_MOD2_V22)
@@ -1231,7 +1260,8 @@ int V34V8<P>::v8_choice()
 /* the name of a low speed modulation V.8 agreed on, for the log */
 static const char *v8_dp_name(int dp)
 {
-	return dp == DP_V32BIS ? "V.32bis" : dp == DP_V22BIS ? "V.22bis" :
+	return dp == DP_VCVM ? "V.cvm" :
+		dp == DP_V32BIS ? "V.32bis" : dp == DP_V22BIS ? "V.22bis" :
 		dp == DP_V22 ? "V.22" : dp == DP_V23 ? "V.23" : "V.21";
 }
 
@@ -1266,6 +1296,12 @@ int V34V8<P>::v8_handover()
 			self.rt->ans_sent = 1;
 		else if (v8_dp == DP_V32BIS)
 			self.rt->v32_automode = 1;
+		/* V.cvm: the peer's information field for its pump */
+		VcvmCaps pc;
+		self.rt->vcvm_peer = v8_dp == DP_VCVM &&
+			vcvm_v8_find(v8_remote, v8_remote_n, &pc);
+		if (self.rt->vcvm_peer)
+			pc.encode(self.rt->vcvm_info);
 	}
 	return self.hand_over((enum DP_ID)v8_dp, 0);
 }
@@ -1295,6 +1331,15 @@ int V34V8<P>::v8_v91()
 	P &self = static_cast<P &>(*this);
 	int c = v8_remote_cat(V8_CAT_PCM);
 	return self.v91 && !v8_v90() && c >= 0 && (c & V8_PCM_V91) != 0;
+}
+
+/* V.cvm: both offer it (its field in the remote's CM or JM) */
+template <class P>
+int V34V8<P>::v8_vcvm()
+{
+	P &self = static_cast<P &>(*this);
+	VcvmCaps c;
+	return self.vcvm && vcvm_v8_find(v8_remote, v8_remote_n, &c);
 }
 
 /* one bit of the V.21 receiver (V.8 at 300 bit/s): QC1a frames
@@ -1382,6 +1427,22 @@ void V34V8<P>::v8_rx_bit(int bit)
 		/* CJ's third zero octet without its stop bit: the HSF
 		   modem drops its carrier right after the last data bit */
 		v8_cj = 1;
+}
+
+/* the answerer's watch on the line while JM goes out (x at 9600 Hz):
+   the V.21 receiver's own carrier detector is too slow to see the
+   175 ms between CJ and V.cvm's INFO0 */
+template <class P>
+void V34V8<P>::v8_quiet_run(float x)
+{
+	v8_blk_e += x * x;
+	if (++v8_blk_n < V34_SRATE / 100)
+		return;
+	if (v8_blk_e > v8_cm_e)
+		v8_cm_e = v8_blk_e;
+	v8_quiet = v8_blk_e < v8_cm_e * 1e-3f ? v8_quiet + 1 : 0;
+	v8_blk_e = 0;
+	v8_blk_n = 0;
 }
 
 /* ANSam: 15 Hz amplitude modulation of the 2100 Hz answer tone */
@@ -2693,6 +2754,8 @@ void V34Pump::pump_rx_sample(float x)
 		bit = v21.run(x);
 		if (bit >= 0 && v21.carrier)
 			v8_rx_bit(bit);
+		if (state == V8A_JM)
+			v8_quiet_run(x);
 		if (state == V8A_JM || state == V8A_GAP ||
 		    state == V8C_CJ || state == V8C_GAP ||
 		    state == QCA_TONEQ || state == QCA_GAP2 ||
@@ -3843,6 +3906,13 @@ int V34V8<P>::v8_step(long c)
 			return self.fallback("no CM");
 		break;
 	case V8A_JM:
+		/* V.cvm: the caller's CM gone quiet is its CJ too.  A codec
+		   (AMR 7.4) can garble CJ's three zero octets, and the
+		   caller's INFO0 follows only 175 ms after CJ */
+		if (!v8_cj && v8_dp == DP_VCVM && v8_quiet >= 3) {
+			DSP_DBG("v34: CM ended without a CJ: taken as CJ\n");
+			v8_cj = 1;
+		}
 		if (v8_cj) {
 			self.set_state(V8A_GAP);
 			self.txm = TXM_SILENCE;
@@ -6013,12 +6083,25 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v91 = (id == DP_V90 || id == DP_V92 || id == DP_V91) &&
 		line_rate == 8000 &&
 		!(getenv("DSP_V91") && !atoi(getenv("DSP_V91")));
+	/* V.cvm (+MS=V_CVM): its field after +CVM's mode set, the pump
+	   at 8000 Hz (a 9600 Hz line through converters) */
+	vcvm = id == DP_VCVM;
+	{
+		long v = modem_get_param(m, MDMPRM_VCVM);
+		const struct dp_vcvm *vi = v == -1 || v == 0 ? nullptr :
+			(const struct dp_vcvm *)v;
+		vcvm_caps = vcvm_caps_for(vi ? vi->modes : VCVM_M_ALL, 8000);
+	}
 	/* the G.711 law of the network (D-Modem knows it from the codec of
 	   the call) */
 	pump_setup(m, srate_, caller_);
 	alaw = rt && rt->law ? rt->law == 2 :
 		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
 	v8_low = caller_ && rt ? rt->v8_for : 0;
+	if (rt)
+		rt->vcvm_peer = 0;
+	if (v8_low)
+		vcvm = 0;
 	/* an analogue line (dp_runtime_set_analog()), at 9600 or 8000 Hz,
 	   has none of the digital modem's modes */
 	analog = line_rate == 9600 || (rt && rt->analog);

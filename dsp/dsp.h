@@ -71,6 +71,8 @@ struct dp_runtime {
 	int pcm;                /* V.91: the received codes as they are
 				   (no DC removal) */
 	int analog;             /* an analogue line (dp_runtime_set_analog) */
+	int vcvm_peer;          /* V.8 agreed on V.cvm: the peer's ... */
+	unsigned char vcvm_info[2];     /* ... information field (Annex A) */
 };
 
 /*
@@ -384,6 +386,8 @@ int  dp_v32_init(void);
 void dp_v32_exit(void);
 int  dp_v34_init(void);
 void dp_v34_exit(void);
+int  dp_vcvm_init(void);
+void dp_vcvm_exit(void);
 
 /* DTMF generator used by the call progress pump and the voice object */
 struct DtmfGen {

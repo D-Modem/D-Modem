@@ -41,6 +41,7 @@ interface has one addition the original library does not use:
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | Full S1 handshake, falls back to V.22 |
 | 32 | ITU V.32, 4800/9600 bit/s | Uncoded 4800, trellis coded 9600, echo canceller |
 | 132 | ITU V.32bis, 4800 to 14400 bit/s | Rate chosen from the measured training quality |
+| V_CVM (150) | V.cvm, data over mobile speech paths, 175 to 3500 bit/s | The proposed Recommendation of [docs/cellular](../cellular/v_cvm.tex): V.8 (with V.22 and V.21 as the fallback), then probing and a loaded comb or the parametric mode through AMR, AMR-WB or G.711 (see [V.cvm](vcvm.md)) |
 | 91 | ITU V.91, 28000 to 62667 bit/s both ways | Two digital modems on an 8000 Hz G.711 line; V.8, then V.34 if V.91 does not start (see [V.91](v91.md#v91-digital-to-digital)). 90 and 92 offer it as well |
 | 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s; V.90 as the digital modem | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. With 90 or 92 on an 8000 Hz G.711 line: V.90 as the digital modem, 28000 to 56000 bit/s downstream (see [V.90](v90.md#v90-digital-modem)) |
 

@@ -70,7 +70,7 @@
       0 A: ERROR\r\n
       0 A< AT+MS=?\r
       0 A: AT+MS=?\r\r\n
-      0 A: (21,22,23,122,32,132,34,103,212,56,90,91,92),(0,1),(300-56000),(300-56000)\r\n
+      0 A: (21,22,23,122,32,132,34,103,212,56,90,91,92,150),(0,1),(300-56000),(300-56000)\r\n
       0 A: OK\r\n
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
@@ -115,6 +115,55 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 56,1,1200,14400\r\n
+      0 A: OK\r\n
+      0 A< AT+MS=V_CVM\r
+      0 A: AT+MS=V_CVM\r\r\n
+      0 A: OK\r\n
+      0 A< AT+MS?\r
+      0 A: AT+MS?\r\r\n
+      0 A: 150,1,1200,14400\r\n
+      0 A: OK\r\n
+      0 A< AT+MS=v_cvm,0\r
+      0 A: AT+MS=v_cvm,0\r\r\n
+      0 A: OK\r\n
+      0 A< AT+MS?\r
+      0 A: AT+MS?\r\r\n
+      0 A: 150,0,1200,14400\r\n
+      0 A: OK\r\n
+      0 A< AT+CVM?\r
+      0 A: AT+CVM?\r\r\n
+      0 A: +CVM: 63,8000,0\r\n
+      0 A: OK\r\n
+      0 A< AT+CVM=?\r
+      0 A: AT+CVM=?\r\r\n
+      0 A: +CVM: (0-63),(8000,16000),(0,1)\r\n
+      0 A: OK\r\n
+      0 A< AT+CVM=33,8000,1\r
+      0 A: AT+CVM=33,8000,1\r\r\n
+      0 A: OK\r\n
+      0 A< AT+CVM?\r
+      0 A: AT+CVM?\r\r\n
+      0 A: +CVM: 33,8000,1\r\n
+      0 A: OK\r\n
+      0 A< AT+CVM=64\r
+      0 A: AT+CVM=64\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+CVM=33,12000\r
+      0 A: AT+CVM=33,12000\r\r\n
+      0 A: ERROR\r\n
+      0 A< ATS44?S45?\r
+      0 A: ATS44?S45?\r\r\n
+      0 A: 0\r\n
+      0 A: 0\r\n
+      0 A: OK\r\n
+      0 A< ATS44=3\r
+      0 A: ATS44=3\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+CVM=63,8000,0\r
+      0 A: AT+CVM=63,8000,0\r\r\n
+      0 A: OK\r\n
+      0 A< AT+MS=56,1\r
+      0 A: AT+MS=56,1\r\r\n
       0 A: OK\r\n
       0 A< AT+MS\r
       0 A: AT+MS\r\r\n
@@ -245,7 +294,7 @@
       0 A: +MS=56,1,1200,14400 +FCLASS=0 +GCI=b4 +PMH=0 +PMHT=5 #CID=1 +IFC=1,1\r\n
       0 A: +ICF=3,3 +IPR=0 +ILRR=0 +IDSR=0 +ILSD=0 +MR=0 +ER=0 +DR=0 +ES=3,0,2\r\n
       0 A: +DS=3,0,2048,32 +DS44=3,0,0,2048,2048,255,255,6144,6144 +PCW=2 +PIG=1\r\n
-      0 A: +FAA=0 +FPR=0 -SEC=0\r\n
+      0 A: +FAA=0 +FPR=0 -SEC=0 +CVM=63,8000,0\r\n
       0 A: STORED PROFILES: none\r\n
       0 A: OK\r\n
       0 A< AT\\V2&V1\r
@@ -268,7 +317,7 @@
       0 A: +MS=56,1,1200,14400 +FCLASS=0 +GCI=b4 +PMH=0 +PMHT=5 #CID=1 +IFC=1,1\r\n
       0 A: +ICF=3,3 +IPR=0 +ILRR=0 +IDSR=0 +ILSD=0 +MR=0 +ER=0 +DR=0 +ES=3,0,2\r\n
       0 A: +DS=3,0,2048,32 +DS44=3,0,0,2048,2048,255,255,6144,6144 +PCW=2 +PIG=1\r\n
-      0 A: +FAA=0 +FPR=0 -SEC=0\r\n
+      0 A: +FAA=0 +FPR=0 -SEC=0 +CVM=63,8000,0\r\n
       0 A: STORED PROFILES: none\r\n
       0 A: OK\r\n
       0 A< AT&W\r

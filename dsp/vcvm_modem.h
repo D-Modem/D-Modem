@@ -9,9 +9,11 @@
  *
  *    Phase 4: each transmitter begins as its start-up ends; each
  *    receiver looks for the peer's phase 4 from the end of the last
- *    message it received, and takes it as data once a block decodes
- *    (until then a further MP from the peer, which lost the last of
- *    ours, is answered with another and phase 4 begun again).
+ *    message it received, and takes it as data once a block decodes.
+ *    Until then the first MP from the peer is its last of the exchange
+ *    (the receiver starts again at its end), and a further one, the
+ *    peer having lost our last, is answered with another and phase 4
+ *    begun again.
  *
  *    A renegotiation: the control sequence, then the MP exchange in the
  *    message mode with the new loadings, then phase 4 again (the
@@ -126,6 +128,8 @@ private:
 	int mps_ = 0;
 	long deadline_ = 0;
 	long last_rx_end_ = 0;
+	int p4_mps_ = 0;                /* the peer's MPs in phase 4 (the
+					   first its last of the exchange) */
 	int renegs_ = 0, retrains_ = 0;
 	/* phase 4's watch */
 	long data_at_ = 0;              /* phase 4 (re)entered */

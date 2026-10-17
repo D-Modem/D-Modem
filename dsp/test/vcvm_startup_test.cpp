@@ -83,6 +83,34 @@ TEST(VcvmCaps, NonStandardFacilities)
 	EXPECT_FALSE(vcvm_nsf_find(none, 6, &d));
 }
 
+TEST(VcvmCaps, V8)
+{
+	/* in a CM: after the standard categories, extension octets only */
+	VcvmCaps c = caps(true), d;
+	c.param = false;
+	uint8_t cm[40] = { 0xe0, 0xc1, 0x45, 0x13, 0x94, 0x2a, 0x0d };
+	int n = 7 + vcvm_v8_ns(c, cm + 7);
+	EXPECT_EQ(n, 7 + 1 + 13);
+	EXPECT_EQ(cm[7], 0x0F);
+	for (int i = 8; i < n; i++) {
+		EXPECT_EQ(cm[i] & 0x38, 0x10) << i;
+		EXPECT_NE(cm[i], 0);
+	}
+	ASSERT_TRUE(vcvm_v8_find(cm, n, &d));
+	EXPECT_TRUE(d.fs16 && d.wide && !d.param);
+	/* none in a plain CM, nor in a provider's other NS block */
+	EXPECT_FALSE(vcvm_v8_find(cm, 7, &d));
+	uint8_t other[40] = { 0xe0, 0xc1, 0x45, 0x0F };
+	for (int i = 4; i < 12; i++)
+		other[i] = 0x10 | (uint8_t)(i & 7);
+	EXPECT_FALSE(vcvm_v8_find(other, 12, &d));
+	/* the categories' parser of the V.8 pump: no octet of the field
+	   reads as a category tag */
+	for (int i = 8; i < n; i++)
+		for (int tag : { 0x01, 0x05, 0x07, 0x0A, 0x0D })
+			EXPECT_NE(cm[i] & 0x1F, tag);
+}
+
 TEST(VcvmCaps, Allowed)
 {
 	VcvmCaps a = caps(true), b = caps(true);

@@ -126,7 +126,9 @@ Each loaded tone carries, per symbol, the phase difference
 $\varphi_{n,k} - \varphi_{n-1,k}$, one of four values for DQPSK or eight for
 8-DPSK, mapped from the bits as Table~\ref{tab:gray} shows.  The first
 symbol of phase~4, and the first after a renegotiation, carries no data:
-it is the phase reference.  The receiver decides each tone symbol from the
+it is the phase reference, and it is sent three times (the codec's first
+frames out of silence are its own, and the receiver takes the last of the
+three).  The receiver decides each tone symbol from the
 difference of the tone's phases in two consecutive symbols; no carrier
 recovery and no equalization are required, and a frequency offset between
 the DCEs' clocks of $\Delta f_c$ appears as a constant phase rotation of
@@ -285,13 +287,30 @@ lag (index~0), and a receiver that decodes ten in a row acts as above
 (ten equal symbols occur in scrambled data with a probability of
 $2^{-36}$ at any position).
 
+A receiver shall count control symbols only once it has decoded a block
+of its peer's data in phase~4 (the peer's data is then \emph{confirmed}),
+and only while the received signal is at the level of data: an MP's zero
+octets are runs of lag index~0, and silence decodes as anything.  The first MP of its peer's that a DCE
+receives in phase~4 is the peer's last of the exchange (clause~\ref{sec:phase3}),
+which may end after the DCE has begun phase~4: the peer's phase~4 begins
+at its end, and the receiver shall look for the data from there.  A DCE
+that receives a further MP in phase~4 (the peer lost the last MP of the
+exchange and repeats its own) shall answer it with its own MP, its
+acknowledgement bit set, and begin phase~4 again.
+
 \subsection{Scrambling}
-The bits given to the mapping of clause~\ref{sec:mapping} shall be
-scrambled with the generating polynomials of \rec{V.34}: $1 + x^{-18} + x^{-23}$
+The information octets, before the inner code (clause~\ref{sec:error}),
+shall be scrambled with the generating polynomials of \rec{V.34}: $1 + x^{-18} + x^{-23}$
 in the calling DCE's transmitter and $1 + x^{-5} + x^{-23}$ in the
 answering DCE's (GPC and GPA), self-synchronizing as in that
 Recommendation.  The scrambler is reset at the start of phase~4 and after
 each renegotiation.
+
+\itunote{A self-synchronizing descrambler turns one line error into three
+(the error and its two taps).  After the inner code that would cost a
+codeword of the parametric mode three or four octets for one lag symbol in
+error; before it, the decoder sees the line's errors as they are, and
+LAPM sees the descrambler's tripling only of what the code left.}
 
 \subsection{Quick start}\label{sec:quick}
 A DCE may keep, for the last number dialled or answered, the loading and

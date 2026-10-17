@@ -446,3 +446,20 @@ TEST(VcvmModem, Parametric)
 	EXPECT_LE(p.rb.bad + p.ra_sink.bad, 2) << logs(p);
 	printf("%s", logs(p).c_str());
 }
+
+TEST(VcvmModem, AmrWbNarrow)
+{
+	if (!have_codec())
+		GTEST_SKIP() << "no AMR-WB";
+	/* AMR-WB 23.85 with the signal interface at 8000 Hz (the interop
+	   call's line): the comb narrowband, 8-DPSK and rings offered */
+	Pair p;
+	VcvmCaps c = vcvm_caps_for(VCVM_M_ALL, 8000);
+	run(&p, 8000, "amrwb:23.85", 60, 100, [](double) { return false; }, c, c);
+	EXPECT_TRUE(p.a.connected()) << logs(p);
+	EXPECT_TRUE(p.b.connected()) << logs(p);
+	EXPECT_EQ(p.a.retrains() + p.b.retrains(), 0) << logs(p);
+	printf("%s", logs(p).c_str());
+	printf("records: %ld good, %ld bad one way, %ld good, %ld bad the other\n",
+	       p.rb.good, p.rb.bad, p.ra_sink.good, p.ra_sink.bad);
+}

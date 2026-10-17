@@ -86,6 +86,16 @@ int vcvm_nsf_build(const VcvmCaps &c, uint8_t *out);
 /* the field in non-standard facilities' octets, if there */
 bool vcvm_nsf_find(const uint8_t *p, int n, VcvmCaps *c);
 
+/* V.8's non-standard facilities category for CM and JM (6.6/V.8): the
+   category octet (0x0F), then the NS field (its length, the T.35
+   country code, the provider code's length, the provider code, then the
+   identifier and the information field) in extension octets of five
+   bits each (b0-b2 and b6-b7), the field's bits least significant
+   first.  Its octets to out (21 at most): their number */
+int vcvm_v8_ns(const VcvmCaps &c, uint8_t *out);
+/* the information field among a CM's or JM's octets, if there */
+bool vcvm_v8_find(const uint8_t *msg, int n, VcvmCaps *c);
+
 /* +CVM's mode set (Table 12-1) */
 enum {
 	VCVM_M_ROBUST = 1, VCVM_M_NARROW = 2, VCVM_M_WIDE = 4,
@@ -94,6 +104,10 @@ enum {
 	VCVM_M_SYM22 = 64,      /* not +CVM's: both have the 22.5 ms symbol */
 	VCVM_M_WIDE400 = 128,   /* nor this: both have the W400 comb */
 };
+
+/* this DCE's information field for +CVM's mode set (VCVM_M_*) at the
+   signal interface's fs */
+VcvmCaps vcvm_caps_for(int modes, int fs);
 
 /* what both DCEs have and the mode set allows, as VCVM_M_* bits */
 int vcvm_allowed(const VcvmCaps &own, const VcvmCaps &peer, int modes);

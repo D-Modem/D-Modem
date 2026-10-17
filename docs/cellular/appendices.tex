@@ -429,9 +429,17 @@ The computational load is small: the comb has at most 68 tones at
 probing's phase error estimates and the loading are the only parts not
 found in a V series modem, and they are a few hundred lines.
 
-In D-Modem, the natural place is a data pump (\code{dsp/}) behind the
-existing pump interface, which the modem core (\code{core/}) already
-drives through V.8 for V.34 and V.90, with the link layer (\code{link/})
-above it, and \code{netsim}'s \code{NET\_CODEC} as the test line; the
-interoperability test harness then runs the DCE against itself through
-each codec mode as it runs the other modems today.
+In D-Modem the DCE is a data pump (\code{dsp/dp\_vcvm.cpp}, on
+\code{dsp/vcvm*.cpp} and \code{dsp/rs.cpp}) behind the existing pump
+interface, which the modem core (\code{core/}) drives through V.8 as it
+does for V.34 and V.90, with the link layer (\code{link/}) above it, and
+\code{netsim}'s \code{NET\_CODEC} as the test line; the interoperability
+test harness runs the DCE against itself through G.711, AMR at 12.2 and
+7.4~\kbs{} and AMR-WB at 23.85~\kbs{}.  Its message mode's V.21 receiver
+is the detector of this appendix's measurements (two filters matched over
+the bit) with its own bit clock, quick to acquire over the first dozen
+transitions and then slow; its P20 messages whose FCS fails are retried
+with the second most likely lag on the five least reliable symbols, singly
+and in pairs; its Reed-Solomon decoder decodes the errors alone first,
+then with the 2, 4, \ldots{} least reliable octets erased.
+\code{docs/dsp/vcvm.md} describes it.

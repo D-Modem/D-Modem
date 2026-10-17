@@ -579,6 +579,12 @@ common modulation mode of highest rate among those indicated, V.22 then
 V.21, as \rec{V.8} and that Recommendation specify, and this Recommendation
 has nothing more to say about the call.
 
+An answering DCE that has agreed on this Recommendation and detects the
+end of CM (30~ms of the line 30~dB below CM's level) without having
+decoded CJ shall take the end of CM for CJ: a codec at a low mode can
+garble CJ's three zero octets, and the calling DCE's INFO0 follows CJ by
+only 175~ms.
+
 \itunote{A legacy V series DCE on the PSTN, reached through a gateway,
 indicates its own modulation modes (V.34, V.32bis, ...) and none of this
 Recommendation's.  Of its modulation modes, V.22 is the fastest the
@@ -591,8 +597,9 @@ rather than fail at V.34 and renegotiate.}
 The DCEs' timers for the V.8 procedures are \rec{V.8}'s.  The probing of
 clause~\ref{sec:probing} shall begin within 200~ms of the end of the V.8
 procedures and shall be complete, with the first data symbols sent,
-within 16~s (each direction's INFO0, L1, L2, L3 and INFO1 take about 7~s
-with the messages at 200~bit/s); a DCE that has not received its peer's
+within 21~s (each direction's INFO0, L1, L2, L3 and INFO1 take about 7~s
+with the messages at 200~bit/s, and the MP exchange 1 to 4~s; the
+start-up takes 15 to 21~s); a DCE that has not received its peer's
 INFO0 within 6~s of the end of the V.8 procedures shall fall back to
 V.22 by restarting the V.8 procedures, once.
 
@@ -627,13 +634,19 @@ Figure~\ref{fig:probing} shows:
 \item \textbf{L3}, where the DCE indicated the parametric mode: that
   mode's probing signal of Annex~\ref{annex:probe}, 40 symbols of P20
   and 80 of P10 with lags known to both, each part with its preamble;
-\item silence for 100~ms, then \textbf{INFO1}: what it measured of its
-  peer's L1 to L3 as the loading it asks for (clause~\ref{sec:loading}),
-  and its own round-trip estimate.
+\item \textbf{INFO1}: what it measured of its peer's L1 to L3 as the
+  loading it asks for (clause~\ref{sec:loading}), and its own round-trip
+  estimate.
 \end{enumerate}
-The calling DCE transmits first; the answering DCE begins its INFO0 on
-the end of the calling DCE's INFO1, as \rec{V.34} phase~2 orders INFO0c
-and INFO0a.  The probing signal's level is $-12$~dBFS.
+Each part follows the last after 100~ms of silence.  The calling DCE
+transmits its INFO0, L1, L2 and L3 first; the answering DCE begins its
+INFO0 50~ms after the end of the calling DCE's L3 and transmits INFO0, L1,
+L2, L3 and its INFO1; the calling DCE then transmits its INFO1 50~ms after
+the end of the answering DCE's.  The calling DCE's INFO1 cannot carry what
+it measured before it has received anything, which is why it comes last.
+A DCE that misses its peer's INFO1 takes the loading from the peer's
+first MP (clause~\ref{sec:phase3}), which has INFO1's layout.  The
+probing signal's level is $-12$~dBFS.
 
 \begin{figure}[htbp]
 \centering
@@ -642,12 +655,14 @@ and INFO0a.  The probing signal's level is $-12$~dBFS.
 \draw[->] (0,0) -- (18.2,0) node[right] {$t$};
 \node[left] at (0,0.75) {calling};
 \node[left] at (0,-0.75) {answering};
-\foreach \x/\w/\n in {0.2/1.4/INFO0,1.8/3.0/L1,5.0/1.0/L2,6.2/1.6/L3,8.0/1.8/INFO1} {
+\foreach \x/\w/\n in {0.2/1.4/INFO0,1.8/3.0/L1,5.0/1.0/L2,6.2/1.6/L3,16.6/1.4/INFO1} {
   \draw[fill=ituhead] (\x,0.35) rectangle ++(\w,0.8) node[midway] {\n};}
-\foreach \x/\w/\n in {10.0/1.4/INFO0,11.6/2.4/L1,14.2/0.8/L2,15.2/1.2/L3,16.6/0.9/INFO1} {
+\foreach \x/\w/\n in {8.0/1.4/INFO0,9.6/2.4/L1,12.2/0.8/L2,13.2/1.2/L3,14.6/1.4/INFO1} {
   \draw[fill=ituhead] (\x,-1.15) rectangle ++(\w,0.8) node[midway] {\n};}
-\draw[dashed] (9.9,-1.3) -- (9.9,1.3);
-\node[above] at (9.9,1.3) {end of the calling INFO1};
+\draw[dashed] (7.9,-1.3) -- (7.9,1.3);
+\node[above] at (7.9,1.3) {end of the calling L3};
+\draw[dashed] (16.5,-1.3) -- (16.5,1.3);
+\node[above] at (16.5,1.3) {end of the answering INFO1};
 \end{tikzpicture}}
 \caption{Phase 2: the probing signals (durations not to scale)}
 \label{fig:probing}
@@ -674,7 +689,12 @@ of AMR-WB but 6.6, and of EVS but 9.6 wideband
 (Appendix~\ref{app:measurements}, Table~\ref{tab:fsk}); the parametric
 mode's lag symbol error ratio was zero through all of them but AMR 4.75
 (Table~\ref{tab:pitch}), which is why it carries the messages where both
-DCEs have it.
+DCEs have it.  Measured end to end, through a receiver of two filters matched
+over the bit with its own bit clock (Appendix~\ref{app:impl}), V.21's bit
+error ratio was 1 to $3 \cdot 10^{-2}$ at AMR 5.15 to
+6.7~\kbs{}: messages in V.21 are surest from AMR 7.4~\kbs{} up.  A
+receiver may retry a P20 message whose FCS fails with the second most
+likely lag on the few least reliable symbols.
 
 \itunote{V.34 modulates INFO and MP at 600~bit/s with differential phase
 modulation on two tones.  Through AMR at 7.4~\kbs{} and below no
@@ -707,10 +727,12 @@ magnitude from one symbol to the next (in dB).  It shall then choose:
   the measured tone symbol error ratio over the loaded tones: rate~7/8
   below $10^{-3}$, 3/4 below $10^{-2}$, 1/2 otherwise (in the parametric
   mode, from the lag symbol error ratio of L3 the same way);
-\item the mode: the comb of b) where it loads four tones or more;
+\item the mode: the comb of b) where it loads four tones or more and
+  carries more after the code of d) than the parametric mode would;
   otherwise the parametric mode (clause~\ref{sec:parametric}), with the
   10~ms symbol where no lag symbol of L3's P10 part was in error, else
-  the 20~ms symbol where none of its P20 part was; else no data mode:
+  the 20~ms symbol where at most one of its P20 part's 40 symbols was (at
+  the code rate 1/2 where one was); else no data mode:
   the DCE asks in MP for no loading (Annex~\ref{annex:probe}) and both
   DCEs wait in the message mode, retraining as clause~\ref{sec:reneg}
   says, until the codec's mode carries one (AMR at 4.75~\kbs{} is the
@@ -742,8 +764,12 @@ or well under them on tones it did not load, should ask for a
 clause~\ref{sec:control} and the DCEs exchange MP messages in the
 message mode (clause~\ref{sec:infomod}) with the new loading, then
 resume data; the code's interleaver is flushed and restarted.  A DCE
-that loses the symbol timing or receives no decodable symbol for 2~s
-shall ask for a \emph{retrain}: both DCEs return to phase~2.  The
+that loses the symbol timing, or the signal, or decodes no codeword for
+2~s (or 2.5 interleaver blocks where that is longer) shall ask for a
+\emph{retrain}: the control sequence, then MP messages with the retrain
+bit set (Table~\ref{tab:loading}); after the exchange both DCEs return to
+phase~2, the calling DCE's INFO0 3~s after it (so that the answering
+DCE's last MP is through).  The
 codec's mode changes with the radio conditions, and the loading shall
 follow it; a renegotiation shall take no more than 500~ms and a DCE
 shall not refuse one.
@@ -757,7 +783,10 @@ last 2~s of the decided lags' normalized autocorrelation $c$
 (clause~\ref{sec:parametric}).  While $\bar c$ is below 0.85 it need not
 ask for those retrains: no codec mode measured that gives $\bar c$ below
 0.85 carries a comb.  When $\bar c$ rises to 0.85 or more from below, it
-should ask for a retrain at once rather than at the next 60~s.  At or
+should ask for a retrain at once rather than at the next 60~s, though not
+in the first 30~s of phase~4.  The threshold has 0.02 of hysteresis:
+$\bar c$ is below it once under 0.83 and rises through it at 0.87, so
+that $\bar c$ wavering about 0.85 does not retrain again and again.  At or
 above 0.85 the periodic retrains stay: $\bar c$ there does not say
 whether a comb would pass.
 

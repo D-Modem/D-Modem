@@ -1,0 +1,143 @@
+# V.cvm: data over mobile speech paths
+
+`AT+MS=V_CVM` runs the DCE of the proposed Recommendation in
+[docs/cellular](../cellular/v_cvm.tex) ([v_cvm.pdf](../v_cvm.pdf)): data
+through the speech codecs of mobile calls (AMR, AMR-WB, EVS), where V.34
+and V.32 do not pass. The Recommendation has the reasons and the
+measurements; this page is the implementation.
+
+## A call
+
+1. **V.8** (`dp_v34.cpp`). With `+MS=V_CVM` the V.34 pump offers, in CM or
+   JM, V.22 and V.21 as the fallback (not V.34, V.32 or V.23, which a codec
+   does not carry), LAPM, and V.cvm's information field in the
+   non-standard facilities category (Annex A). The answering DCE puts the
+   field in JM only if CM had it. When both have it the pump hands the
+   call to `DP_VCVM` (150) 75 ms after CJ. Through AMR 7.4 the answering
+   DCE can miss CJ, so when V.cvm is agreed it also takes 30 ms of quiet
+   after CM for CJ (the caller's INFO0 follows CJ by 175 ms). Without the
+   field on both sides V.8 picks V.22 or V.21 as usual.
+2. **The start-up** (`vcvm_startup.cpp`, `vcvm_msg.cpp`,
+   `vcvm_probe.cpp`). Phase 2: the calling DCE's INFO0, L1, L2 and L3,
+   then the answering DCE's INFO0, L1, L2, L3 and INFO1, then the calling
+   DCE's INFO1. Phase 3: the MP exchange. The messages go in P20 (the
+   parametric mode) when both DCEs have it, else in V.21. This takes 15 to
+   21 s.
+3. **Phase 4** (`vcvm_data.cpp`, `vcvm_modem.cpp`). The octets go through
+   the scrambler, then RS(32,k) (`rs.cpp`), then the interleaver, onto
+   the loaded tones or the lags. CONNECT comes at the coded rate with
+   `/CVM` once data runs both ways. LAPM starts without V.42's detection
+   phase.
+4. **Renegotiation and retrain.** A renegotiation is the control sequence,
+   then the MP exchange with new loadings. It is triggered by request, by
+   a loaded tone's phase error, or by failing codewords. A retrain is the
+   control sequence, then MPs with the retrain bit set, then phase 2
+   again. It is triggered by request, by the peer's data lost for 2 s, or
+   by the parametric mode's timers and c-bar.
+
+| Line (interop test) | Mode | CONNECT (coded bit/s) |
+|---|---|---|
+| G.711 (`open_vcvm`) | N200 comb | 3500 |
+| AMR 12.2 (`open_vcvm_amr122`) | N200 comb | about 1200 |
+| AMR-WB 23.85, 8 kHz interface (`open_vcvm_amrwb2385`) | N200 comb | 1600 to 1760 |
+| AMR 7.4 (`open_vcvm_amr74`) | parametric, P10 or P20 | 175 to 350 |
+
+At AMR 7.4 the first loading can be P10 (400 bit/s raw) in one direction.
+The receiver's failing codewords then renegotiate it down to P20 within
+the first minute.
+
+## Files
+
+| File | What it is |
+|---|---|
+| `dsp/vcvm.h`, `vcvm.cpp` | The signal set: the combs (DPSK, amplitude rings, cyclic prefix, timing) and the parametric mode (pulse trains, lag detection, the preamble search) |
+| `dsp/vcvm_startup.h`, `vcvm_msg.cpp` | The capabilities (V.8's NS field), INFO0, the loading (INFO1, MP), the messages' HDLC frames, the P20 and V.21 message transmitter and receivers |
+| `dsp/vcvm_probe.cpp` | L1 to L3 and their measurement; the choice of the loading |
+| `dsp/vcvm_startup.cpp` | Phases 2 and 3, sample by sample |
+| `dsp/rs.h`, `rs.cpp` | The Reed-Solomon code (G.975's field and generator), errors and erasures |
+| `dsp/vcvm_data.h`, `vcvm_data.cpp` | Phase 4: transmitter and receiver, the control sequence, loss of signal |
+| `dsp/vcvm_modem.h`, `vcvm_modem.cpp` | One DCE after V.8: the start-up, phase 4, renegotiations, retrains |
+| `dsp/dp_vcvm.cpp` | The pump `DP_VCVM`: the core's bits as octets (first bit the least significant), 9600 Hz lines through resamplers, CONNECT, the figures for `+CVM?`, S44 and S45 |
+
+## Receivers
+
+- **V.21 messages.** Two filters matched over the bit (the detector of the
+  Recommendation's measurements) and its own bit clock. The clock gain is 0.5 over the first 12
+  transitions, then 0.1 within a window of ±0.3 bit. A message ends at
+  30 ms of quiet (10 ms windows under −40 dBFS).
+- **P20 messages.** A frame whose FCS fails is retried with the second
+  most likely lag on the 5 least reliable symbols, one at a time and in
+  pairs. A lost INFO1 is recovered from the peer's MP, which has its
+  layout.
+- **L3.** The P10 part is locked to where the P20 part ends. Its own
+  preamble is found poorly through AMR 10.2 and below.
+- **RS decoding** uses GMD: errors alone first, then with the 2, 4, … least
+  reliable octets erased, up to n−k−2.
+- **Phase 4.** Control sequences count only after a block of the peer's
+  data has decoded, and only at the level of data (with c > 0.5 in the
+  parametric mode). Without this, an MP's zero octets and silence both
+  read as control sequences. The signal counts as lost when it is quiet,
+  or when nothing decodes for max(2 s, 2.5 blocks).
+
+## Where it departs from the Recommendation's first draft
+
+These are written into the Recommendation now:
+
+- the order of phase 2 (above): the calling DCE's INFO1 cannot carry
+  measurements before it has received anything;
+- INFO0 octet 3 bit 5: the amplitude rings allowed (so that `+CVM` can
+  refuse them);
+- L3's P10 part starts where the P20 part ends;
+- the loading picks the comb only when it carries more after the code
+  than the parametric mode would; P20 is taken with up to 1 symbol of 40
+  in error, at rate 1/2;
+- one more MP after the peer's acknowledgement;
+- the start-up takes 15 to 21 s, not 16;
+- V.21's measured bit error ratio is 1 to 3·10⁻² at AMR 5.15 to 6.7, so
+  V.21 messages are reliable only from AMR 7.4 up;
+- the scrambler works on the information octets before the code (it was
+  after the interleaver): the descrambler triples each line error;
+- phase 4's comb sends its phase reference three times;
+- control sequences are gated as above. The first MP in phase 4 is the
+  peer's expected extra one, and the receiver realigns to its end. Only a
+  second one, meaning the peer is repeating, is answered;
+- the retrain bit is MP octet 2 bit 8; after a retrain the calling DCE's
+  INFO0 comes 3 s on;
+- c-bar's retrain rule has hysteresis (0.83/0.87) and does nothing in
+  the first 30 s;
+- V.8: the field's coding in the non-standard facilities category, and
+  the end of CM taken for CJ.
+
+## Not implemented
+
+- The signal interface is 8000 Hz only. `+CVM`'s `<rate>` of 16000 is
+  accepted and kept, but the wideband modes are not offered.
+- `+CVMR` (`+CVM`'s `<report>`) is accepted and kept, but no unsolicited
+  result is sent.
+- After a failed start-up the call ends (NO CARRIER). It does not restart
+  V.8 for V.22.
+- No quick start (INFO0 octet 3 bits 7 and 6), no facsimile (Annex D), no
+  V.8bis.
+- EVS is not in the interop tests: netsim's `NET_CODEC` has AMR and
+  AMR-WB.
+
+## Known issues
+
+- Through AMR 7.4, after some 200 s of data at 175 bit/s, one run ended
+  with V.44 reporting a decoder error: a corrupted frame got past LAPM's
+  16-bit FCS. The Reed-Solomon decoder miscorrects now and then, and LAPM
+  has no 32-bit FCS yet. `open_vcvm_amr74` sends one line each way.
+- P20 messages through AMR-WB 23.85 at an 8000 Hz interface are lost
+  often (c is about 0.8). The MP exchange recovers, but the start-up
+  takes longer.
+
+## Tests
+
+- `vcvm_test`: the signal set, through the codecs.
+- `vcvm_startup_test`: capabilities, messages, probing and loading, the
+  start-up through G.711, AMR 12.2, AMR 7.4, AMR-WB and impaired lines.
+- `vcvm_data_test`: phase 4, and `VcvmModem` through a clean line and AMR,
+  with renegotiation, retrain and a cut line.
+- `rs_test`: the code.
+- The `open.open_vcvm*` interop calls (table above): two open modems
+  through netsim, V.8 and LAPM included.

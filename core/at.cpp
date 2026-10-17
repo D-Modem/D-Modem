@@ -178,6 +178,9 @@ const struct Kept {
 	{ "+FAA", 1, { 0 }, "(0)" },
 	{ "+FPR", 1, { 0 }, "(0,1,2,4,8,10,18)" },
 	{ "-SEC", 1, { 0 }, "(0,1),(0-30)" },
+	/* V.cvm (Table 12-1/V.cvm): the modes, the signal interface's rate,
+	   +CVMR */
+	{ "+CVM", 3, { 63, 8000, 0 }, "(0-63),(8000,16000),(0,1)" },
 };
 const int KEPT_COUNT = sizeof(kept_params) / sizeof(kept_params[0]);
 static_assert(KEPT_COUNT <= Modem::KEPT_PARAMS,
@@ -225,6 +228,7 @@ const struct {
 	{ "V34", DP_V34 }, { "V90", DP_V90 }, { "V91", DP_V91 },
 	{ "V92", DP_V92 }, { "B103", DP_B103 }, { "BELL103", DP_B103 },
 	{ "B212", DP_B212 }, { "BELL212A", DP_B212 }, { "K56", DP_K56 },
+	{ "V_CVM", DP_VCVM },
 };
 
 /* pump id is registered */
@@ -894,6 +898,8 @@ int Modem::at_S(char *p, int *len)
 	if (n >= sizeof(sregs_))
 		return -1;
 	if (*e == '?') {
+		if (n == SREG_VCVM_TONES || n == SREG_VCVM_RENEGS)
+			vcvm_refresh();
 		snprintf(line, sizeof(line), "%u", sregs_[n]);
 		puts(line);
 		crlf();
@@ -903,6 +909,9 @@ int Modem::at_S(char *p, int *len)
 	if (*e != '=')
 		return -1;
 	v = number(e + 1, &e);
+	/* S44 and S45 (V.cvm's) are read only */
+	if (n == SREG_VCVM_TONES || n == SREG_VCVM_RENEGS)
+		return -1;
 	set_sreg((unsigned)n, (int)v);
 	if (n == SREG_EC && v <= 5)
 		set_ec_mode((int)v);
@@ -1072,7 +1081,7 @@ int Modem::at_MS(char *p, int *len)
 	if (isalpha((unsigned char)*q)) {
 		size_t n = 0;
 		bool found = false;
-		while (isalnum((unsigned char)q[n]))
+		while (isalnum((unsigned char)q[n]) || q[n] == '_')
 			n++;
 		for (const auto &m : ms_names)
 			if (strlen(m.name) == n &&
@@ -1538,6 +1547,19 @@ int Modem::at_kept(const char *p, int *len)
 				      j ? "," : "", kept_[i][j]);
 		puts(line);
 		crlf();
+		/* +CVM? while connected: the connection's figures */
+		if (!strcmp(k.name, "+CVM") && vcvm_.on) {
+			static const char *rates[3] = { "1/2", "3/4", "7/8" };
+			snprintf(line, sizeof(line), "+CVM: %d,%d,%d,%d,%d.%d,"
+				 "%d,%d,%s,%d,%ld", vcvm_.raw_tx, vcvm_.raw_rx,
+				 vcvm_.coded_tx, vcvm_.coded_rx,
+				 vcvm_.sym_tenths / 10, vcvm_.sym_tenths % 10,
+				 vcvm_.tones_tx, vcvm_.tones_rx,
+				 rates[vcvm_.code_rate % 3], vcvm_.renegs,
+				 vcvm_.erasures);
+			puts(line);
+			crlf();
+		}
 		*len = (int)(q + 1 - p);
 		return 0;
 	}

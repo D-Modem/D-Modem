@@ -102,6 +102,11 @@ enum S_REGISTER {
 	SREG_EC                           = 103, /* AT\N: error correction */
 	SREG_COMP                         = 104, /* AT%C: compression */
 	SREG_MNP_BLOCK                    = 105, /* AT\A: MNP block size */
+	SREG_VCVM_TONES                   = 44,  /* V.cvm: the last call's
+						    tones received, read
+						    only (12.3/V.cvm) */
+	SREG_VCVM_RENEGS                  = 45,  /* and its
+						    renegotiations */
 	SREG_CONNECT_PROTOCOL             = 106, /* AT\V */
 	SREG_DEFAULT_SETTING              = 161, /* ATY */
 };
@@ -132,6 +137,8 @@ enum DP_ID {
 	DP_V8BIS    = 108,
 	DP_V22BIS   = 122,
 	DP_SINUS    = 127,      /* a test pump */
+	DP_VCVM     = 150,      /* V.cvm, data over a mobile speech path
+				   (docs/v_cvm.pdf), after V.8 */
 	DP_V32BIS   = 132,
 	DP_B212     = 212,      /* Bell 212A */
 };
@@ -172,6 +179,31 @@ struct dp_stats {
 	int rtd;                        /* round trip delay, ms */
 	float near_echo;                /* echo levels the canceller */
 	float far_echo;                 /* removed, dBm0 */
+};
+
+/*
+ *    V.cvm (+CVM, S44, S45): what the DTE allows, and what the pump
+ *    reports of the connection, through MDMPRM_VCVM.  The core keeps the
+ *    settings (+CVM's) over calls and clears the rest at the start of
+ *    each.
+ */
+struct dp_vcvm {
+	int modes;              /* +CVM's <modes>: 1 robust, 2 narrowband,
+				   4 wideband, 8 8-DPSK, 16 the amplitude
+				   rings, 32 parametric (63 all) */
+	int rate;               /* +CVM's <rate>: 8000 or 16000 */
+	int report;             /* +CVM's <report>: +CVMR on each
+				   renegotiation */
+	int on;                 /* the pump has a connection: what
+				   follows is valid */
+	int raw_tx, raw_rx;     /* bit/s */
+	int coded_tx, coded_rx;
+	int sym_tenths;         /* the receive direction's symbol, 0.1 ms */
+	int tones_tx, tones_rx; /* 0 in the parametric mode */
+	int code_rate;          /* the receive direction's: 0 1/2, 1 3/4,
+				   2 7/8 */
+	int renegs;             /* this call's renegotiations */
+	long erasures;          /* octets the receiver marked */
 };
 
 #define DP_STATS_SNR            0x1

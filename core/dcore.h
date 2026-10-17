@@ -467,6 +467,9 @@ private:
 	   end, why it ended, the line's power each way while it was up
 	   (sums of squares over samples) */
 	struct dp_stats dp_stats_ = {};
+	struct dp_vcvm vcvm_ = {};      /* V.cvm's: +CVM's settings, the
+					   pump's figures (MDMPRM_VCVM) */
+	void vcvm_refresh();
 	struct CallStats {
 		bool call, fax, connected, ended;
 		unsigned long start, up, end;

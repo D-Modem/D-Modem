@@ -64,6 +64,7 @@ static DpDriver pump_table[] = {
 	{ DP_V90, "V90", "90", nullptr },
 	{ DP_V91, "V91", "91", nullptr },
 	{ DP_V92, "V92", "92", nullptr },
+	{ DP_VCVM, "V_CVM", "150", nullptr },
 	{ DP_SINUS, "Sinus", nullptr, nullptr },
 	{},	/* the end: id 0 */
 };
@@ -122,6 +123,9 @@ long Modem::get_param(unsigned name)
 		return param_address(dp_);
 	case MDMPRM_STATS:
 		return param_address(&dp_stats_);
+	case MDMPRM_VCVM:
+		vcvm_refresh();
+		return param_address(&vcvm_);
 
 	/* the service class, V.92 modem-on-hold */
 	case MDMPRM_MODE:

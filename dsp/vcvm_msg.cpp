@@ -85,6 +85,81 @@ bool vcvm_nsf_find(const uint8_t *p, int n, VcvmCaps *c)
 	return true;
 }
 
+int vcvm_v8_ns(const VcvmCaps &c, uint8_t *out)
+{
+	/* the NS field: K + L + M + 1, the country (K = 1), L = 2, the
+	   provider, the identifier and the field (M = 3) */
+	uint8_t f[8], nsf[6];
+	vcvm_nsf_build(c, nsf);
+	f[0] = 7;
+	f[1] = nsf[0];
+	f[2] = 2;
+	f[3] = nsf[1];
+	f[4] = nsf[2];
+	f[5] = nsf[3];
+	f[6] = nsf[4];
+	f[7] = nsf[5];
+	int n = 0;
+	out[n++] = 0x0F;
+	for (int b = 0; b < 8 * 8; b += 5) {
+		unsigned v = 0;
+		for (int i = 0; i < 5 && b + i < 64; i++)
+			v |= (unsigned)((f[(b + i) / 8] >> ((b + i) % 8)) & 1) << i;
+		out[n++] = (uint8_t)(0x10 | (v & 7) | ((v >> 3) & 3) << 6);
+	}
+	return n;
+}
+
+bool vcvm_v8_find(const uint8_t *msg, int n, VcvmCaps *c)
+{
+	for (int i = 0; i < n; i++) {
+		if ((msg[i] & 0x1F) != 0x0F)
+			continue;
+		/* the extension octets' five bits each, into octets */
+		uint8_t f[64] = {};
+		int nb = 0;
+		for (int j = i + 1; j < n && (msg[j] & 0x38) == 0x10 &&
+		     nb + 5 <= 8 * (int)sizeof(f); j++) {
+			unsigned v = (msg[j] & 7) | ((msg[j] >> 6) & 3) << 3;
+			for (int k = 0; k < 5; k++, nb++)
+				f[nb / 8] |= (uint8_t)(((v >> k) & 1) << (nb % 8));
+		}
+		/* the NS blocks: length, country (two octets after 0xFF),
+		   provider code's length, provider code, information */
+		int nf = nb / 8;
+		for (int p = 0; p < nf && f[p]; p += f[p] + 1) {
+			int len = f[p], e = p + 1 + len;
+			if (e > nf)
+				break;
+			int q = p + 1 + (f[p + 1] == 0xFF ? 2 : 1);
+			if (q >= e)
+				continue;
+			q += 1 + f[q];
+			if (q + 3 <= e && f[q] == VCVM_NSF_ID) {
+				const uint8_t inf[3] = { f[q], f[q + 1], f[q + 2] };
+				/* nsf_at's checks, on the field alone */
+				if ((inf[1] >> 5) && !(inf[1] & 3) &&
+				    (inf[2] & 0xC0) == 0xC0) {
+					*c = VcvmCaps::decode(inf + 1);
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+VcvmCaps vcvm_caps_for(int modes, int fs)
+{
+	VcvmCaps c;
+	c.fs16 = fs == 16000;
+	c.wide = c.wide400 = c.fs16 && (modes & VCVM_M_WIDE);
+	c.dpsk8 = modes & VCVM_M_8DPSK;
+	c.rings = modes & VCVM_M_RINGS;
+	c.param = modes & VCVM_M_PARAM;
+	return c;
+}
+
 int vcvm_allowed(const VcvmCaps &own, const VcvmCaps &peer, int modes)
 {
 	int a = modes & (VCVM_M_ROBUST | VCVM_M_NARROW);

@@ -695,6 +695,8 @@ turns automode off.  The default is \cmd{92,1,300,56000}.
 92 & \cmd{V92} & ITU V.92 & V.90 with quick connect, PCM upstream \\
  & & & and modem-on-hold \\
 56 & \cmd{K56} & K56flex & not implemented: runs V.90 \\
+150 & \cmd{V\_CVM} & V.cvm & data over mobile speech paths, \\
+ & & & 175 to 3500 bit/s, after V.8 (\cmdl[plusCVM]{+CVM}) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -707,6 +709,12 @@ others; on a line at another sample rate they are V.34.  With automode
 V.8 and the V.34 modem hand over to V.32bis (and its V.22bis and V.22)
 for a modem without V.34, and the answering modem tries V.23 and Bell
 103 for one without V.8.
+
+\cmd{V\_CVM} is the proposed Recommendation of \cmd{docs/v\_cvm.pdf}, for
+calls whose speech path is a mobile codec's (AMR, AMR-WB), which carry
+neither V.34 nor V.32: V.8 with V.22 and V.21 as the fallback, then a
+probing of the codec and a mode loaded for it.  The start-up takes 15 to
+21~s; \sreg{7} should allow for it.  The connection runs LAPM.
 \end{command}
 
 \begin{command}{plusMS-q}{AT+MS?}
@@ -715,7 +723,7 @@ The settings: \cmd{92,1,300,56000}.
 
 \begin{command}{plusMS-t}{AT+MS=?}
 What may be chosen:\\
-\cmd{(21,22,23,122,32,132,34,103,212,56,90,91,92),(0,1),(300-56000),(300-56000)}
+\cmd{(21,22,23,122,32,132,34,103,212,56,90,91,92,150),(0,1),(300-56000),(300-56000)}
 \end{command}
 
 \subsection{Identification and country}
@@ -775,6 +783,29 @@ to \cmd{13} (\cmd{0} grants none; default 5).
 In online command mode on a V.92 connection: asks the other modem to
 go on hold, for \p{s} seconds (1 to 960; 10 if left out).  ERROR
 otherwise.
+\end{command}
+
+\subsection{V.cvm: +CVM}
+
+\begin{command}{plusCVM}{AT+CVM=[\p{modes}][,[\p{rate}][,[\p{report}]]], AT+CVM?, AT+CVM=?}
+For \cmdl[plusMS]{+MS=V\_CVM}: \p{modes}, the modes allowed, a sum of 1
+(the robust mode), 2 (narrowband), 4 (wideband), 8 (8-DPSK), 16 (the
+amplitude rings) and 32 (the parametric mode); default 63, all of them.
+\p{rate} is the signal interface's rate, 8000 or 16000 (default 8000);
+\p{report}, 0 or 1 (default 0), asks for \cmd{+CVMR} on each
+renegotiation.  D-Modem keeps \p{rate} and \p{report} but works at
+8000~Hz only, without the wideband modes, and sends no \cmd{+CVMR}.
+\cmd{+CVM?} gives \cmd{+CVM: 63,8000,0} and, during and after a V.cvm
+call, a second line with that call's figures:
+\cmd{+CVM: }\p{raw tx}\cmd{,}\p{raw rx}\cmd{,}\p{coded tx}\cmd{,}%
+\p{coded rx}\cmd{,}\p{symbol ms}\cmd{,}\p{tones tx}\cmd{,}\p{tones rx}%
+\cmd{,}\p{code rate}\cmd{,}\p{renegotiations}\cmd{,}\p{erasures}
+(\cmd{+CVM: 1600,1600,1400,1400,20.0,16,16,7/8,0,0}; the tones are 0 in
+the parametric mode).  \cmd{=?} gives
+\cmd{+CVM: (0-63),(8000,16000),(0,1)}.  The call's CONNECT has its coded
+receive rate and \cmd{/CVM}: \cmd{CONNECT 1200/CVM}, with
+\cmdl[bsV]{\bs V1} \cmd{CONNECT 1200/CVM/LAPM}.  \sreg{44} and \sreg{45} hold
+the tones loaded and the renegotiations.
 \end{command}
 
 \subsection{Fax class 1}
@@ -937,6 +968,8 @@ Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;
 \sregrow{31} & automode (\cmdl[N]{N}, \cmdl[plusMS]{+MS}) & 1 & \\
 \sregrow{32} & the modulation (\cmdl[plusMS]{+MS}) & 92 & \\
 \sregrow{39} & line quality (\cmdl[pctE]{\%E}) & 0 & kept \\
+\sregrow{44} & V.cvm: the tones loaded in the receive direction of the last call (\cmdl[plusCVM]{+CVM}) & 0 & read only \\
+\sregrow{45} & V.cvm: the last call's renegotiations & 0 & read only \\
 \sregrow{56} & results and dial tone (\cmdl[X]{X}) & 4 & \\
 \sregrow{60} & carrier detect (\cmdl[ampC]{\&C}) & 0 & kept \\
 \sregrow{62} & flow control (\cmdl[ampC]{\&H}) & 0 & kept \\
