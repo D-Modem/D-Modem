@@ -1,0 +1,88 @@
+=== evs:48000 (32000 Hz)
+comb 200 Hz 4-DPSK 1 ring      : 69 tones, good 35, phase SER 0.129, ring SER 0.000, ratio error 3.07 dB rms, raw  3500 bit/s
+comb 200 Hz 8-DPSK 1 ring      : 69 tones, good 13, phase SER 0.296, ring SER 0.000, ratio error 3.14 dB rms, raw  1950 bit/s
+comb 200 Hz 4-DPSK 2 rings 6 dB: 69 tones, good 10, phase SER 0.182, ring SER 0.263, ratio error 5.19 dB rms, raw  1500 bit/s
+comb 200 Hz 8-DPSK 2 rings 6 dB: 69 tones, good  9, phase SER 0.363, ring SER 0.266, ratio error 4.91 dB rms, raw  1800 bit/s
+comb 200 Hz 8-DPSK 2 rings 3 dB: 69 tones, good  4, phase SER 0.320, ring SER 0.399, ratio error 3.73 dB rms, raw   800 bit/s
+comb 200 Hz 8-DPSK 4 rings 3 dB: 69 tones, good  1, phase SER 0.374, ring SER 0.536, ratio error 5.22 dB rms, raw   250 bit/s
+comb 200 Hz loaded per tone: phase alone  4150 bit/s, with amplitude  4650 bit/s (+12 %)
+comb 300 Hz 4-DPSK 1 ring      : 46 tones, good 28, phase SER 0.084, ring SER 0.000, ratio error 2.48 dB rms, raw  2800 bit/s
+comb 300 Hz 8-DPSK 1 ring      : 46 tones, good 15, phase SER 0.216, ring SER 0.000, ratio error 2.53 dB rms, raw  2250 bit/s
+comb 300 Hz 4-DPSK 2 rings 6 dB: 46 tones, good  7, phase SER 0.118, ring SER 0.206, ratio error 3.39 dB rms, raw  1050 bit/s
+comb 300 Hz 8-DPSK 2 rings 6 dB: 46 tones, good  8, phase SER 0.286, ring SER 0.213, ratio error 3.39 dB rms, raw  1600 bit/s
+comb 300 Hz 8-DPSK 2 rings 3 dB: 46 tones, good  4, phase SER 0.239, ring SER 0.360, ratio error 2.78 dB rms, raw   800 bit/s
+comb 300 Hz 8-DPSK 4 rings 3 dB: 46 tones, good  3, phase SER 0.286, ring SER 0.481, ratio error 3.52 dB rms, raw   750 bit/s
+comb 300 Hz loaded per tone: phase alone  3550 bit/s, with amplitude  4100 bit/s (+15 %)
+comb 400 Hz 4-DPSK 1 ring      : 35 tones, good 31, phase SER 0.080, ring SER 0.000, ratio error 1.44 dB rms, raw  3100 bit/s
+comb 400 Hz 8-DPSK 1 ring      : 35 tones, good 15, phase SER 0.134, ring SER 0.000, ratio error 1.47 dB rms, raw  2250 bit/s
+comb 400 Hz 4-DPSK 2 rings 6 dB: 35 tones, good 11, phase SER 0.083, ring SER 0.153, ratio error 2.13 dB rms, raw  1650 bit/s
+comb 400 Hz 8-DPSK 2 rings 6 dB: 35 tones, good 10, phase SER 0.169, ring SER 0.154, ratio error 2.15 dB rms, raw  2000 bit/s
+comb 400 Hz 8-DPSK 2 rings 3 dB: 35 tones, good  6, phase SER 0.140, ring SER 0.279, ratio error 1.74 dB rms, raw  1200 bit/s
+comb 400 Hz 8-DPSK 4 rings 3 dB: 35 tones, good  4, phase SER 0.170, ring SER 0.373, ratio error 2.31 dB rms, raw  1000 bit/s
+comb 400 Hz loaded per tone: phase alone  3850 bit/s, with amplitude  4550 bit/s (+18 %)
+=== evs:64000 (32000 Hz)
+comb 200 Hz 4-DPSK 1 ring      : 69 tones, good 69, phase SER 0.000, ring SER 0.000, ratio error 1.56 dB rms, raw  6900 bit/s
+comb 200 Hz 8-DPSK 1 ring      : 69 tones, good 41, phase SER 0.016, ring SER 0.000, ratio error 1.58 dB rms, raw  6150 bit/s
+comb 200 Hz 4-DPSK 2 rings 6 dB: 69 tones, good  1, phase SER 0.001, ring SER 0.105, ratio error 1.85 dB rms, raw   150 bit/s
+comb 200 Hz 8-DPSK 2 rings 6 dB: 69 tones, good  1, phase SER 0.052, ring SER 0.099, ratio error 1.83 dB rms, raw   200 bit/s
+comb 200 Hz 8-DPSK 2 rings 3 dB: 69 tones, good  0, phase SER 0.024, ring SER 0.347, ratio error 1.61 dB rms, raw     0 bit/s
+comb 200 Hz 8-DPSK 4 rings 3 dB: 69 tones, good  0, phase SER 0.067, ring SER 0.399, ratio error 1.90 dB rms, raw     0 bit/s
+comb 200 Hz loaded per tone: phase alone  8950 bit/s, with amplitude  9000 bit/s (+1 %)
+comb 300 Hz 4-DPSK 1 ring      : 46 tones, good 46, phase SER 0.000, ring SER 0.000, ratio error 1.38 dB rms, raw  4600 bit/s
+comb 300 Hz 8-DPSK 1 ring      : 46 tones, good 39, phase SER 0.007, ring SER 0.000, ratio error 1.43 dB rms, raw  5850 bit/s
+comb 300 Hz 4-DPSK 2 rings 6 dB: 46 tones, good  2, phase SER 0.000, ring SER 0.071, ratio error 1.67 dB rms, raw   300 bit/s
+comb 300 Hz 8-DPSK 2 rings 6 dB: 46 tones, good  1, phase SER 0.035, ring SER 0.081, ratio error 1.71 dB rms, raw   200 bit/s
+comb 300 Hz 8-DPSK 2 rings 3 dB: 46 tones, good  0, phase SER 0.016, ring SER 0.330, ratio error 1.57 dB rms, raw     0 bit/s
+comb 300 Hz 8-DPSK 4 rings 3 dB: 46 tones, good  0, phase SER 0.041, ring SER 0.357, ratio error 1.74 dB rms, raw     0 bit/s
+comb 300 Hz loaded per tone: phase alone  6550 bit/s, with amplitude  6600 bit/s (+1 %)
+comb 400 Hz 4-DPSK 1 ring      : 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 1.19 dB rms, raw  3500 bit/s
+comb 400 Hz 8-DPSK 1 ring      : 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 1.12 dB rms, raw  5250 bit/s
+comb 400 Hz 4-DPSK 2 rings 6 dB: 35 tones, good 16, phase SER 0.000, ring SER 0.022, ratio error 1.27 dB rms, raw  2400 bit/s
+comb 400 Hz 8-DPSK 2 rings 6 dB: 35 tones, good 20, phase SER 0.002, ring SER 0.019, ratio error 1.26 dB rms, raw  4000 bit/s
+comb 400 Hz 8-DPSK 2 rings 3 dB: 35 tones, good  0, phase SER 0.001, ring SER 0.203, ratio error 1.18 dB rms, raw     0 bit/s
+comb 400 Hz 8-DPSK 4 rings 3 dB: 35 tones, good  0, phase SER 0.006, ring SER 0.227, ratio error 1.27 dB rms, raw     0 bit/s
+comb 400 Hz loaded per tone: phase alone  5250 bit/s, with amplitude  6250 bit/s (+19 %)
+=== evs:96000 (32000 Hz)
+comb 200 Hz 4-DPSK 1 ring      : 69 tones, good 69, phase SER 0.000, ring SER 0.000, ratio error 1.03 dB rms, raw  6900 bit/s
+comb 200 Hz 8-DPSK 1 ring      : 69 tones, good 58, phase SER 0.008, ring SER 0.000, ratio error 1.06 dB rms, raw  8700 bit/s
+comb 200 Hz 4-DPSK 2 rings 6 dB: 69 tones, good 33, phase SER 0.000, ring SER 0.040, ratio error 1.24 dB rms, raw  4950 bit/s
+comb 200 Hz 8-DPSK 2 rings 6 dB: 69 tones, good 30, phase SER 0.024, ring SER 0.039, ratio error 1.21 dB rms, raw  6000 bit/s
+comb 200 Hz 8-DPSK 2 rings 3 dB: 69 tones, good 15, phase SER 0.010, ring SER 0.177, ratio error 1.08 dB rms, raw  3000 bit/s
+comb 200 Hz 8-DPSK 4 rings 3 dB: 69 tones, good 12, phase SER 0.029, ring SER 0.214, ratio error 1.26 dB rms, raw  3000 bit/s
+comb 200 Hz loaded per tone: phase alone  9800 bit/s, with amplitude 11900 bit/s (+21 %)
+comb 300 Hz 4-DPSK 1 ring      : 46 tones, good 46, phase SER 0.000, ring SER 0.000, ratio error 0.86 dB rms, raw  4600 bit/s
+comb 300 Hz 8-DPSK 1 ring      : 46 tones, good 43, phase SER 0.003, ring SER 0.000, ratio error 0.89 dB rms, raw  6450 bit/s
+comb 300 Hz 4-DPSK 2 rings 6 dB: 46 tones, good 26, phase SER 0.000, ring SER 0.022, ratio error 1.04 dB rms, raw  3900 bit/s
+comb 300 Hz 8-DPSK 2 rings 6 dB: 46 tones, good 27, phase SER 0.008, ring SER 0.017, ratio error 1.00 dB rms, raw  5400 bit/s
+comb 300 Hz 8-DPSK 2 rings 3 dB: 46 tones, good 10, phase SER 0.004, ring SER 0.131, ratio error 0.95 dB rms, raw  2000 bit/s
+comb 300 Hz 8-DPSK 4 rings 3 dB: 46 tones, good 10, phase SER 0.013, ring SER 0.160, ratio error 1.06 dB rms, raw  2500 bit/s
+comb 300 Hz loaded per tone: phase alone  6750 bit/s, with amplitude  8650 bit/s (+28 %)
+comb 400 Hz 4-DPSK 1 ring      : 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 0.56 dB rms, raw  3500 bit/s
+comb 400 Hz 8-DPSK 1 ring      : 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 0.56 dB rms, raw  5250 bit/s
+comb 400 Hz 4-DPSK 2 rings 6 dB: 35 tones, good 35, phase SER 0.000, ring SER 0.001, ratio error 0.66 dB rms, raw  5250 bit/s
+comb 400 Hz 8-DPSK 2 rings 6 dB: 35 tones, good 35, phase SER 0.001, ring SER 0.001, ratio error 0.64 dB rms, raw  7000 bit/s
+comb 400 Hz 8-DPSK 2 rings 3 dB: 35 tones, good 18, phase SER 0.000, ring SER 0.027, ratio error 0.60 dB rms, raw  3600 bit/s
+comb 400 Hz 8-DPSK 4 rings 3 dB: 35 tones, good 14, phase SER 0.000, ring SER 0.054, ratio error 0.68 dB rms, raw  3500 bit/s
+comb 400 Hz loaded per tone: phase alone  5250 bit/s, with amplitude  7700 bit/s (+47 %)
+=== evs:128000 (32000 Hz)
+comb 200 Hz 4-DPSK 1 ring      : 69 tones, good 69, phase SER 0.000, ring SER 0.000, ratio error 0.59 dB rms, raw  6900 bit/s
+comb 200 Hz 8-DPSK 1 ring      : 69 tones, good 69, phase SER 0.000, ring SER 0.000, ratio error 0.59 dB rms, raw 10350 bit/s
+comb 200 Hz 4-DPSK 2 rings 6 dB: 69 tones, good 68, phase SER 0.000, ring SER 0.002, ratio error 0.71 dB rms, raw 10200 bit/s
+comb 200 Hz 8-DPSK 2 rings 6 dB: 69 tones, good 68, phase SER 0.000, ring SER 0.001, ratio error 0.70 dB rms, raw 13600 bit/s
+comb 200 Hz 8-DPSK 2 rings 3 dB: 69 tones, good 33, phase SER 0.000, ring SER 0.034, ratio error 0.62 dB rms, raw  6600 bit/s
+comb 200 Hz 8-DPSK 4 rings 3 dB: 69 tones, good 27, phase SER 0.000, ring SER 0.060, ratio error 0.72 dB rms, raw  6750 bit/s
+comb 200 Hz loaded per tone: phase alone 10350 bit/s, with amplitude 15100 bit/s (+46 %)
+comb 300 Hz 4-DPSK 1 ring      : 46 tones, good 46, phase SER 0.000, ring SER 0.000, ratio error 0.51 dB rms, raw  4600 bit/s
+comb 300 Hz 8-DPSK 1 ring      : 46 tones, good 46, phase SER 0.000, ring SER 0.000, ratio error 0.53 dB rms, raw  6900 bit/s
+comb 300 Hz 4-DPSK 2 rings 6 dB: 46 tones, good 46, phase SER 0.000, ring SER 0.000, ratio error 0.57 dB rms, raw  6900 bit/s
+comb 300 Hz 8-DPSK 2 rings 6 dB: 46 tones, good 46, phase SER 0.000, ring SER 0.000, ratio error 0.57 dB rms, raw  9200 bit/s
+comb 300 Hz 8-DPSK 2 rings 3 dB: 46 tones, good 31, phase SER 0.000, ring SER 0.012, ratio error 0.53 dB rms, raw  6200 bit/s
+comb 300 Hz 8-DPSK 4 rings 3 dB: 46 tones, good 20, phase SER 0.000, ring SER 0.031, ratio error 0.61 dB rms, raw  5000 bit/s
+comb 300 Hz loaded per tone: phase alone  6900 bit/s, with amplitude 10200 bit/s (+48 %)
+comb 400 Hz 4-DPSK 1 ring      : 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 0.37 dB rms, raw  3500 bit/s
+comb 400 Hz 8-DPSK 1 ring      : 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 0.37 dB rms, raw  5250 bit/s
+comb 400 Hz 4-DPSK 2 rings 6 dB: 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 0.40 dB rms, raw  5250 bit/s
+comb 400 Hz 8-DPSK 2 rings 6 dB: 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 0.41 dB rms, raw  7000 bit/s
+comb 400 Hz 8-DPSK 2 rings 3 dB: 35 tones, good 35, phase SER 0.000, ring SER 0.000, ratio error 0.39 dB rms, raw  7000 bit/s
+comb 400 Hz 8-DPSK 4 rings 3 dB: 35 tones, good 35, phase SER 0.000, ring SER 0.002, ratio error 0.41 dB rms, raw  8750 bit/s
+comb 400 Hz loaded per tone: phase alone  5250 bit/s, with amplitude  8750 bit/s (+67 %)

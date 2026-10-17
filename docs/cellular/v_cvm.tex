@@ -687,7 +687,8 @@ codec's pitch lag, which is surer still.}
 From its peer's L1 and L2 the receiving DCE shall estimate, for each tone
 of the comb and each of the two symbol periods, the root mean square
 phase error of the received tone symbols against the known sequence, and
-for each tone the mean received level.  It shall then choose:
+for each tone the mean received level and the rms change of its
+magnitude from one symbol to the next (in dB).  It shall then choose:
 \begin{enumerate}[label=\alph*)]
 \item the band: the tones whose level is within 20~dB of the strongest
   tone's; tones outside are not loaded (this finds the codec's band);
@@ -697,7 +698,11 @@ for each tone the mean received level.  It shall then choose:
   denser comb is too high (Appendix~\ref{app:measurements});
 \item the modulation order of each tone, from its phase error $\sigma$:
   DQPSK where $\sigma \le 20^\circ$, 8-DPSK where $\sigma \le 9^\circ$ and
-  the mode set allows it, none where $\sigma > 20^\circ$;
+  the mode set allows it, none where $\sigma > 20^\circ$; and on a loaded
+  tone, from the rms change $\sigma_A$ of its magnitude from one symbol of
+  L1 to the next, two amplitude rings where $\sigma_A \le 0.8$~dB and four
+  where $\sigma_A \le 0.4$~dB, where both DCEs have the amplitude loading
+  of clause~\ref{sec:qam} and the mode set allows it;
 \item the code rate of the Reed-Solomon code (Annex~\ref{annex:rs}) from
   the measured tone symbol error ratio over the loaded tones: rate~7/8
   below $10^{-3}$, 3/4 below $10^{-2}$, 1/2 otherwise (in the parametric
@@ -716,8 +721,9 @@ The thresholds in c) give a tone symbol error ratio of about $10^{-2}$
 at the threshold for Gaussian phase error, which the code of
 Annex~\ref{annex:rs} corrects to below $10^{-6}$ at rate~3/4.  The
 loading is sent to the peer in INFO1 and MP as a bitmap of the comb with
-two bits a tone (none, DQPSK, 8-DPSK), or as the parametric mode and its
-symbol period.
+two bits a tone (none, DQPSK, 8-DPSK), with a second such bitmap for the
+amplitude rings where any tone has them (Annex~\ref{annex:probe}), or as
+the parametric mode and its symbol period.
 
 \subsection{Phase 3: parameter exchange}\label{sec:phase3}
 Each DCE transmits an \textbf{MP} message with the loading it asks for in
@@ -746,9 +752,27 @@ A DCE whose receive direction is in the parametric mode, or in no data
 mode (clause~\ref{sec:loading}~e)), has nothing that measures the combs:
 it should ask for a retrain 30~s after entering that state and every
 60~s while it lasts, so that a codec mode that has improved is found and
-used.  Whether the normalized autocorrelation of the parametric mode's
-symbols (clause~\ref{sec:parametric}), which falls as the codec's mode
-falls, can replace the retrain is for further study.
+used.  In the parametric mode it shall keep $\bar c$, the mean over the
+last 2~s of the decided lags' normalized autocorrelation $c$
+(clause~\ref{sec:parametric}).  While $\bar c$ is below 0.85 it need not
+ask for those retrains: no codec mode measured that gives $\bar c$ below
+0.85 carries a comb.  When $\bar c$ rises to 0.85 or more from below, it
+should ask for a retrain at once rather than at the next 60~s.  At or
+above 0.85 the periodic retrains stay: $\bar c$ there does not say
+whether a comb would pass.
+
+\itunote{$\bar c$ does not order the codec modes by what they carry, so it
+cannot replace the retrain (Appendix~\ref{app:measurements},
+Table~\ref{tab:pquality}).  Every mode measured in which a comb loads
+four tones or more gave $\bar c$ of 0.875 or more (AMR 10.2 the least),
+but modes in which none does gave as much as 0.938 (EVS 9.6) and 0.920
+(AMR 7.95 loads five): the long-term predictor of a codec at a low mode
+may code the pulse train's period better than one at a higher mode that
+spends its bits on the excitation.  Below 0.85 are only the lowest modes
+(AMR 4.75 to 5.9, AMR-WB 6.6, EVS 7.2 and 8.0), none of which carries a
+comb, and $\bar c$ over 2~s varies by at most 0.075 there; so $\bar c$
+saves the retrains where they cannot succeed, and its rise through 0.85,
+a codec mode leaving that range, is the earliest sign one may.}
 
 % ---------------------------------------------------------------- modulation
 \section{Modulation}\label{sec:modulation}
@@ -823,10 +847,13 @@ attenuates, since the lag gives no sign of it.
 The interleaver's output bits shall be taken in order and mapped onto the
 loaded tones of a symbol from the lowest tone to the highest, two bits to
 a DQPSK tone and three to an 8-DPSK tone, Gray coded onto the phase
-difference as Table~\ref{tab:gray} shows.  Bits left over at the end of a
+difference as Table~\ref{tab:gray} shows, and on a tone with amplitude
+rings one or two bits more, onto its amplitude digit as
+clause~\ref{sec:qam} says.  Bits left over at the end of a
 symbol are carried into the next.  The receiver shall deliver, per tone
 symbol, the hard decision and an indication of its reliability (the
-distance of the received phase difference from the decision's), so that
+distance of the received phase difference from the decision's, and of
+the magnitude ratio from its decision boundary), so that
 the Reed-Solomon decoder may be given erasures.  In the parametric mode
 the bits are mapped four to a lag symbol, the first bit the most
 significant, Gray coded onto the alphabet's index as Table~\ref{tab:lags}
@@ -892,7 +919,7 @@ The DCE's DTE interface shall conform to \rec{V.250}, with:
 \toprule
 \rowcolor{ituhead}\thd{Command} & \thd{Meaning} \\
 \midrule
-\code{+CVM=<modes>}\allowbreak\code{[,<rate>}\allowbreak\code{[,<report>]]} & \code{<modes>}: the modes allowed, a sum of 1 (robust), 2 (narrowband), 4 (wideband), 8 (8-DPSK permitted), 16 (QAM loading permitted, clause~\ref{sec:qam}), 32 (parametric); default all.  \code{<rate>}: the signal interface rate, 8000 or 16000.  \code{<report>}: 1 enables \code{+CVMR}. \\
+\code{+CVM=<modes>}\allowbreak\code{[,<rate>}\allowbreak\code{[,<report>]]} & \code{<modes>}: the modes allowed, a sum of 1 (robust), 2 (narrowband), 4 (wideband), 8 (8-DPSK permitted), 16 (the amplitude rings of clause~\ref{sec:qam} permitted), 32 (parametric); default all.  \code{<rate>}: the signal interface rate, 8000 or 16000.  \code{<report>}: 1 enables \code{+CVMR}. \\
 \code{+CVM?} & \code{+CVM: <modes>,<rate>,<report>} and, while connected, a second line \code{+CVM: <raw tx>,<raw rx>,<coded tx>,<coded rx>,<symbol ms>,<tones tx>,<tones rx>,<code rate>,<renegotiations>,<erasures>} (the tones are 0 in the parametric mode). \\
 \code{+CVM=?} & the ranges. \\
 \bottomrule

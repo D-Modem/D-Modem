@@ -34,7 +34,7 @@ information field, in the category ITU-T assigns to it.
 1 & 8--6 & version of this Recommendation: 001 \\
 1 & 5 & signal interface at 16000~Hz (1), or 8000~Hz (0) \\
 1 & 4 & facsimile of Annex~\ref{annex:fax} supported \\
-1 & 3 & QAM loading of clause~\ref{sec:qam} supported \\
+1 & 3 & the amplitude loading of clause~\ref{sec:qam} supported \\
 1 & 2--1 & reserved, 00 \\
 2 & 8 & robust mode (always 1) \\
 2 & 7 & narrowband mode (always 1) \\
@@ -84,9 +84,11 @@ $-15$~dBFS.
 For each tone $k$ and each of L1 and L2 the receiver computes the root
 mean square phase error $\sigma_k$ of the received phase differences
 against the transmitted ones, after removing the mean (the clock offset's
-rotation), the mean received level of the tone, and the fraction of
-tone symbols in error; for each part of L3, the number of lag symbols in
-error.
+rotation), the mean received level of the tone, the rms change
+$\sigma_{A,k}$ of its magnitude from one symbol to the next in dB (for the
+amplitude loading of clause~\ref{sec:qam}; L1's amplitude is constant),
+and the fraction of tone symbols in error; for each part of L3, the
+number of lag symbols in error.
 
 \section{INFO0}
 \begin{table}[htbp]
@@ -125,9 +127,10 @@ error.
 3 & 8--1 & round-trip delay this DCE measured, in 10~ms, 255 if unknown \\
 4 & 8--5 & the comb: its code of Table~\ref{tab:combs}; 0 with the parametric mode \\
 4 & 4 & the parametric mode (clause~\ref{sec:parametric}) is asked for, with the symbol period of octet~1: $N$ is then 0 \\
-4 & 3--1 & reserved, 0 \\
+4 & 3 & amplitude rings: the second bitmap follows the first \\
+4 & 2--1 & reserved, 0 \\
 5 & 8--1 & number of tones $N$ in the comb, 8 to 68; 0 with the parametric mode, or when no data mode is asked for (clause~\ref{sec:loading}~e)) \\
-6-- & & $N$ two-bit fields, the lowest tone first, packed from bit 8: 00 not loaded, 01 DQPSK, 10 8-DPSK, 11 QAM (clause~\ref{sec:qam}, with a following octet per tone for its constellation) \\
+6-- & & $N$ two-bit fields, the lowest tone first, packed from bit 8: 00 not loaded, 01 DQPSK, 10 8-DPSK, 11 reserved; where octet~4 bit~3 is set, $N$ more two-bit fields after them (from the next octet), the tones in the same order: 00 no rings, 01 two rings, 10 four rings (clause~\ref{sec:qam}), 11 reserved \\
 \bottomrule
 \end{tabularx}
 \end{table}

@@ -22,8 +22,8 @@ modes of Table~\ref{tab:codecmodes}, as Appendix~\ref{app:measurements}
 describes.  Tables~\ref{tab:combevsnb} to \ref{tab:combevsswb} give, per
 comb, the tone symbol error ratio, the rms phase error, the raw rate of
 the good tones, and the rms change of a tone's amplitude from one symbol
-to the next in dB (the last for the question of amplitude modulation,
-clause~\ref{sec:qam}).
+to the next in dB (the last for the amplitude loading of
+clause~\ref{sec:qam}, measured on its own in Table~\ref{tab:dapsk}).
 
 \begin{table}[htbp]
 \caption{EVS at the 8000~Hz interface (narrowband): tone SER / rms phase error / raw rate of the good tones (bit/s) / rms amplitude change (dB)}
@@ -42,6 +42,13 @@ clause~\ref{sec:qam}).
 \label{tab:combevsswb}
 \centering\scriptsize
 \resizebox{\textwidth}{!}{\tabcombevsswb}
+\end{table}
+
+\begin{table}[htbp]
+\caption{The amplitude rings of clause~\ref{sec:qam}: per comb, the raw rate (bit/s) of the best loading of each tone with phase alone / with the rings (DQPSK, 8-DPSK, and 8-DPSK or DQPSK with two rings 6~dB apart or four 3~dB apart; a tone loaded where its phase and ring symbol error ratios are both below $2 \cdot 10^{-2}$), 20~ms symbol}
+\label{tab:dapsk}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabdapsk}
 \end{table}
 
 \section{What they show}
@@ -80,13 +87,20 @@ clause~\ref{sec:qam}).
   8-DPSK on all 69 tones without error, 3.4$^\circ$ rms: 10\,350~bit/s raw.
 \item \textbf{Amplitude.}  Through the ACELP codecs a tone's amplitude
   changes by 1.5 to 3~dB rms from one symbol to the next, and amplitude
-  carries no bits.  Through EVS at 24.4~\kbs{} the change is 0.7 to
-  1.0~dB rms, at 48 it is 0.5 to 1.0~dB, at 96 and 128 it is 0.3 to
-  0.6~dB: two amplitude levels 6~dB apart, or the 16-point constellation
-  of clause~\ref{sec:qam} with the trellis code, would hold at 48~\kbs{}
-  and above.  With 16-QAM on the 69 tones of S200 the raw rate would be
-  13\,800~bit/s, at 128~\kbs{} of codec rate; the loading is for further
-  study, as that clause says.
+  carries no bits but on a few tones.  Through EVS at 24.4~\kbs{} the
+  change is 0.7 to 1.0~dB rms, at 48 it is 0.5 to 1.0~dB, at 96 and 128
+  it is 0.3 to 0.6~dB.  The amplitude rings of clause~\ref{sec:qam} were
+  measured on every comb (Table~\ref{tab:dapsk}): per comb, the raw rate
+  of the best loading of each tone with phase alone and with two rings
+  6~dB apart or four 3~dB apart.  Through EVS at 128~\kbs{} two rings
+  hold on all 46 tones of S300 and 68 of the 69 of S200 with 8-DPSK, and
+  four rings on all 35 of S400: 15\,100~bit/s on S200 against 10\,350;
+  at 96~\kbs{} the rings add 21 to 47 per cent, at 64~\kbs{} only on
+  S400 (19 per cent), at 48~\kbs{} 12 to 18 per cent super wideband and
+  20 to 51 per cent wideband, at 24.4~\kbs{} narrowband 19 to 36 per
+  cent.  Through AMR 12.2 they add a few tones of N300 and N400 (9 to 15 per
+  cent), through AMR 10.2 and the AMR tandem nothing, through AMR-WB
+  23.85 the few steadiest tones of W300 (18 per cent).
 \item \textbf{AMR-WB IO} at 23.85~\kbs{} behaves as the AMR-WB codec
   (which it is): W300 loads 20 of 23 tones (2000~bit/s), W200 25 of 33.
 \item \textbf{Frame erasures} cost more through EVS than through AMR:
@@ -121,9 +135,9 @@ the combs, the two modulation orders and the probing's loading cover it
 from 13.2~\kbs{} narrowband (N400, DQPSK) to 128~\kbs{} super wideband
 (S200, 8-DPSK), a range of 800 to 10\,350~bit/s raw, and the parametric
 mode covers 9.6~\kbs{}, where no comb passes, at 400~bit/s.  What EVS adds is
-the case for the super wideband combs (S200 to S400), which this
-Recommendation defines, and for the amplitude loading of
-clause~\ref{sec:qam}, which it leaves for further study with the
-measured amplitude stability as its starting point.  The terminal's
+the case for the super wideband combs (S200 to S400) and for the
+amplitude loading of clause~\ref{sec:qam}, which this Recommendation
+defines from the measured amplitude stability: up to half as much again
+as phase alone at the codec's highest rates.  The terminal's
 part is in Appendix~\ref{app:terminal}: a terminal that can hold the EVS
 mode at 48~\kbs{} or more for a DCE's call multiplies its throughput.

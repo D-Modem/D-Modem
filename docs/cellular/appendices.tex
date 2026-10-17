@@ -228,6 +228,39 @@ What it shows:
   the 10~ms symbol shows the tandem's cost (9 and 5 per cent).
 \end{itemize}
 
+Table~\ref{tab:pquality} gives, for the P20 alphabet through each codec
+(300 symbols), the decided lag's normalized autocorrelation $c$ of
+clause~\ref{sec:parametric}: its mean $\bar c$, its 10th percentile, the
+spread of $\bar c$ over windows of 2~s, and the mean margin over the next
+lag's $c$; and, from the same codec, the most tones a narrowband comb
+(N200, N300 or N400, DQPSK, 20~ms) loads at a tone symbol error ratio
+below $2 \cdot 10^{-2}$, which decides between the comb and the
+parametric mode (clause~\ref{sec:loading}~e)).  It is the measurement
+behind clause~\ref{sec:reneg}'s use of $\bar c$.
+
+\begin{table}[htbp]
+\caption{The parametric mode's autocorrelation by codec mode, against the tones a comb loads there}
+\label{tab:pquality}
+\centering\scriptsize
+\resizebox{\textwidth}{!}{\tabpquality}
+\end{table}
+
+What it shows:
+\begin{itemize}
+\item $\bar c$ falls with the codec's mode within a codec family at the
+  low end (AMR 4.75: 0.62; 5.9: 0.84; AMR-WB 6.6: 0.81; EVS 7.2: 0.76)
+  and is 0.94 to 0.97 at the high end;
+\item it does not order the modes by what a comb gets through them: EVS
+  9.6 (no comb) gives 0.938 and EVS 13.2 (ten tones) 0.884; AMR 7.95
+  (five tones) 0.920 and AMR 10.2 (ten) 0.875;
+\item every mode with a comb of four tones or more gave 0.875 or more,
+  and every mode below 0.85 loads no comb: a threshold of 0.85 separates
+  the modes where a retrain cannot find a comb from the others, and no
+  threshold separates the modes where it would;
+\item frame erasures lower $\bar c$ (AMR 12.2: 0.951, with 3 per cent
+  erased 0.915) and widen its spread over 2~s (0.004 to 0.067).
+\end{itemize}
+
 \section{The two layers in one waveform}\label{sec:stackmeas}
 The pulse train's period and the comb's phases were also measured as one
 signal, to see whether the parametric mode could ride on a comb for

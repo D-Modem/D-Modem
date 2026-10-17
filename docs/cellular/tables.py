@@ -2,7 +2,8 @@
 # Copyright (C) 2026 Neo-Desktop
 # tables.py <matrix.txt> <probe.txt> <probe3.txt> <probe3_wb.txt>
 #           <probe_evs8.txt> <probe_evs16.txt> <probe_evs32.txt> <cross.tex>
-#           <pitch.txt> <pitch_evs.txt> <stack.txt> > measured.tex
+#           <pitch.txt> <pitch_evs.txt> <stack.txt> <dapsk_nb.txt>
+#           <dapsk_wb.txt> <dapsk_swb.txt> <pquality.txt> > measured.tex
 #
 # The tables of Appendices I and II of v_cvm.tex from the measurement logs
 # (measure/logs/, made by the scripts of measure/): matrix.txt from
@@ -12,7 +13,10 @@
 # from probe_evs.py at 8000, 16000 and 32000 Hz; cross.tex has the rows
 # of the cross-check table; pitch.txt and pitch_evs.txt from
 # probe_pitch.py (the parametric mode) and stack.txt from probe_stack.py
-# (the two layers in one waveform), all at 8000 Hz.  Prints LaTeX.
+# (the two layers in one waveform), all at 8000 Hz; dapsk_*.txt from
+# probe_dapsk.py (amplitude loading) at 8000, 16000 and 32000 Hz and
+# pquality.txt from probe_pquality.py (the parametric mode's
+# autocorrelation against the codec's mode).  Prints LaTeX.
 import re
 import sys
 
@@ -310,6 +314,57 @@ def stack_table(blocks, lags=(40, 50, 70)):
     return "\n".join(out)
 
 
+def dapsk_table(paths):
+    """amplitude loading: per codec and interface, per comb, the raw rate
+    of the best loading per tone with phase alone and with the amplitude
+    rings (probe_dapsk.py's "loaded per tone" lines)"""
+    rows = []
+    for path in paths:
+        cur = None
+        for line in open(path):
+            m = re.match(r"=== (\S+) \((\d+) Hz\)", line)
+            if m:
+                cur = (m.group(1), int(m.group(2)), {})
+                rows.append(cur)
+                continue
+            m = re.match(r"comb (\d+) Hz loaded per tone: phase alone\s+(\d+) bit/s, "
+                         r"with amplitude\s+(\d+) bit/s \(([+-]\d+) %\)", line)
+            if m and cur:
+                cur[2][int(m.group(1))] = (int(m.group(2)), int(m.group(3)), m.group(4))
+    band = {8000: "N", 16000: "W", 32000: "S"}
+    out = ["\\begin{tabular}{lllll}", "\\toprule",
+           "\\rowcolor{ituhead}\\thd{Codec} & \\thd{Interface} & "
+           "\\thd{200~Hz comb} & \\thd{300~Hz comb} & \\thd{400~Hz comb} \\\\",
+           "\\midrule"]
+    for c, fs, combs in rows:
+        cells = []
+        for f0 in (200, 300, 400):
+            v = combs.get(f0)
+            cells.append("%s%d: %d / %d (%s\\,\\%%)" % (band[fs], f0, v[0], v[1], v[2])
+                         if v else "")
+        out.append("%s & %d~Hz & %s \\\\" % (esc(codec_name(c)), fs, " & ".join(cells)))
+    out += ["\\bottomrule", "\\end{tabular}"]
+    return "\n".join(out)
+
+
+def pquality_table(paths):
+    """the parametric mode's autocorrelation by codec (probe_pquality.py)"""
+    out = ["\\begin{tabular}{lcccccc}", "\\toprule",
+           "\\rowcolor{ituhead}\\thd{Codec} & \\thd{P20 SER} & \\thd{$\\bar c$} & "
+           "\\thd{$c$, 10th percentile} & \\thd{Spread of $\\bar c$ over 2~s} & "
+           "\\thd{Margin} & \\thd{Comb tones} \\\\", "\\midrule"]
+    for path in paths:
+        for line in open(path):
+            m = re.match(r"(\S+)\s+P20 SER ([\d.]+)\s+c mean ([\d.]+)\s+c 10% ([\d.]+)\s+"
+                         r"2 s spread ([\d.]+)\s+margin ([\d.]+)\s+comb tones (\d+)", line)
+            if m and m.group(1) != "none":
+                c, ser, cm, c10, sp, mg, nt = m.groups()
+                out.append("%s & %s & %s & %s & %s & %s & %s \\\\" % (
+                    esc(codec_name(c)), ser_cell(float(ser)), cm, c10, sp, mg, nt))
+    out += ["\\bottomrule", "\\end{tabular}"]
+    return "\n".join(out)
+
+
 def main():
     (mat, probe, probe3, probe3_wb, evs8, evs16, evs32, cross,
      pitch, pitch_evs, stack) = sys.argv[1:12]
@@ -341,6 +396,10 @@ def main():
                   ("32 lags 32-63", 10.0, 0, "32 lags 32--63")]
     print("\\newcommand{\\tabpitch}{%\n" + pitch_table(pb, want_pitch) + "}")
     print("\\newcommand{\\tabstack}{%\n" + stack_table(parse_probe(stack)) + "}")
+    # dapsk_nb.txt dapsk_wb.txt dapsk_swb.txt pquality.txt
+    if len(sys.argv) > 15:
+        print("\\newcommand{\\tabdapsk}{%\n" + dapsk_table(sys.argv[12:15]) + "}")
+        print("\\newcommand{\\tabpquality}{%\n" + pquality_table(sys.argv[15:16]) + "}")
 
 
 main()

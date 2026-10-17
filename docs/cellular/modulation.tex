@@ -17,7 +17,7 @@ interface at 16000~Hz).
 \midrule
 Signal & the FSK of \rec{V.21}: channel~1 (980/1180~Hz) from the calling DCE, channel~2 (1650/1850~Hz) from the answering DCE, 300~bit/s & a comb of tones at 200, 300 or 400~Hz spacing in the band 300 to 3400~Hz (16, 11 or 8 tones), DPSK & a comb of tones at 200, 300 or 400~Hz spacing in the band 300 to 6900~Hz (33, 23 or 17 tones), DPSK & a pulse train whose period is the symbol (clause~\ref{sec:parametric}): the codec transmits it as the lag of its long-term predictor \\
 Symbol & 3.33~ms (one bit) & 20~ms (a codec frame): a useful part of whole cycles of the spacing and a cyclic prefix (clause~\ref{sec:timing}); the 200~Hz comb also 22.5~ms & as N & 20~ms (P20) or 10~ms (P10); the pulses restart at each symbol's start \\
-Modulation & binary FSK & DQPSK, or 8-DPSK on tones with a low enough phase error & as N & 16 periods, four bits a symbol: 40 to 70 samples at 8000~Hz in steps of 2 (P20), 20 to 35 (P10) \\
+Modulation & binary FSK & DQPSK, or 8-DPSK on tones with a low enough phase error; two or four amplitude rings on tones whose amplitude the codec keeps (clause~\ref{sec:qam}) & as N & 16 periods, four bits a symbol: 40 to 70 samples at 8000~Hz in steps of 2 (P20), 20 to 35 (P10) \\
 Raw rate & 300~bit/s & 1600~bit/s (16 tones at 200~Hz, DQPSK, 20~ms), 1100 (11 at 300~Hz), 800 (8 at 400~Hz); half as much again with 8-DPSK & 3300~bit/s (33 tones at 200~Hz, DQPSK, 20~ms), 2300 (23 at 300~Hz), 1700 (17 at 400~Hz); half as much again with 8-DPSK & 200~bit/s (P20), 400~bit/s (P10) \\
 Use & INFO and MP messages and control sequences (the message mode, clause~\ref{sec:infomod}) where a DCE lacks the parametric mode; data where no other mode passes & data & data & the message mode between DCEs that have it; data where no comb loads four tones \\
 Passes (measured) & every AMR mode but 4.75, every AMR-WB mode but 6.6, every EVS mode but 9.6 wideband & AMR 12.2 (every comb), AMR 10.2 and two AMR 12.2 codecs in tandem (the 300 and 400~Hz combs), AMR-WB from 12.65, EVS 13.2 (N400) and 24.4 (every comb, 8-DPSK) & AMR-WB 23.85 (28 tones of W200), 15.85 (16 of W300), 12.65 (7 of W300); EVS 24.4 (W300), 48 and above (every comb, 8-DPSK); the super wideband combs through EVS at 48~\kbs{} and above & P20 without a symbol in error through every AMR mode but 4.75, AMR-WB 23.85 to 6.6, EVS 9.6 to 24.4 narrowband and two codecs in tandem; P10 without error through AMR 12.2, AMR-WB 23.85 and 12.65, EVS 9.6 to 24.4 and the tandems, and with 1 to 5 per cent of its symbols in error through AMR 10.2 to 7.4 and AMR-WB 6.6 \\
@@ -80,7 +80,9 @@ The transmitted signal in the useful part of symbol $n$ is
 \[ s_n(t) = A \sum_{k \in \mathcal{L}} \cos\bigl(2\pi f_k t + \varphi_{n,k}\bigr), \qquad 0 \le t < T_u, \]
 where $\mathcal{L}$ is the set of loaded tones, $\varphi_{n,k}$ the tone's
 phase in this symbol and $A$ the amplitude that gives the level of
-clause~\ref{sec:pointp}~b) over the loaded tones.  The useful period $T_u$
+clause~\ref{sec:pointp}~b) over the loaded tones (with the amplitude
+rings of clause~\ref{sec:qam} the tone's amplitude is $A a_{n,k}$, of the
+same mean power).  The useful period $T_u$
 is a whole number of cycles of $\Delta f$, so that the tones are
 orthogonal over it.
 
@@ -134,7 +136,8 @@ the decisions and remove.
 \subsection{Loading and raw rate}
 The raw rate is
 \[ R = \frac{1}{T_u + T_g} \sum_{k \in \mathcal{L}} b_k, \]
-with $b_k = 2$ for a DQPSK tone and 3 for an 8-DPSK tone: 1600~bit/s for the
+with $b_k = 2$ for a DQPSK tone and 3 for an 8-DPSK tone, and one or two
+more with the amplitude rings of clause~\ref{sec:qam}: 1600~bit/s for the
 16 DQPSK tones of N200 at the 20~ms symbol, 1100 for N300, 800 for N400,
 3300 for W200, and half as much again with 8-DPSK on all tones.  The loading of clause~\ref{sec:loading} chooses $\mathcal{L}$
 and the $b_k$; a loading with fewer than 4 tones shall not be used (the
@@ -301,15 +304,64 @@ is in the manner of \rec{V.92}'s quick connect.  A loading so offered
 shall still be checked by the receiver against the thresholds of
 clause~\ref{sec:loading}.
 
-\subsection{Loading with amplitude: for further study}\label{sec:qam}
-The MP message carries a loading value reserved for QAM constellations of
-16 and 64~points per tone, with the 16-state four-dimensional trellis code
-of \rec{V.34} across tone pairs as \rec{G.992.1} applies it.  Such a
-loading is for the transform coding modes of the EVS codec, which carry
-waveforms: through EVS at 48~\kbs{} and above a tone's amplitude was
-measured to change by 0.3 to 1~dB rms from one symbol to the next, which
-would hold two levels 6~dB apart (Appendix~\ref{app:evs}); through the
-ACELP codecs it changes by 1.5 to 3~dB, and amplitude carries no bits.
-The loading's parameters are for further study.  A DCE shall not
-request it unless both DCEs have indicated the capability in CM and JM,
-and shall fall back to DPSK when the peer does not confirm it in MP.
+\subsection{Loading with amplitude}\label{sec:qam}
+\subsubsection{Signal}
+A loaded tone may carry, besides its phase difference, a difference of
+its amplitude from one symbol to the next: differential amplitude and
+phase shift keying.  The tone's amplitude in symbol $n$ is one of $R$
+rings, $R = 2$ or~4:
+\[ a_{n,k} = g_R \, 10^{\rho_{n,k} \Delta_R / 20}, \qquad
+   \rho_{n,k} = (\rho_{n-1,k} + d_{n,k}) \bmod R, \]
+with the rings $\Delta_2 = 6$~dB apart for two rings and
+$\Delta_4 = 3$~dB apart for four, the tone's amplitude digit
+$d_{n,k} \in \{0, \ldots, R-1\}$, and $g_R$ the factor that gives the
+tone the mean power of a tone without rings,
+$g_R = \bigl(\frac{1}{R} \sum_{r=0}^{R-1} 10^{r \Delta_R / 10}\bigr)^{-1/2}$.
+The transmitted signal of clause~\ref{sec:comb} is then
+\[ s_n(t) = A \sum_{k \in \mathcal{L}} a_{n,k} \cos\bigl(2\pi f_k t + \varphi_{n,k}\bigr), \]
+with $a_{n,k} = 1$ on tones without rings.  The phase reference symbol
+(clause~\ref{sec:modulation}) has $\rho = 0$ on every tone.  A tone with
+rings carries its phase bits (Table~\ref{tab:gray}) and then its
+amplitude bits: one for two rings ($d$ the bit), two for four, Gray coded
+(00 is $d = 0$, 01 is 1, 11 is 2, 10 is 3).
+
+\subsubsection{Receiver}
+The receiver decides $d$ from the ratio of the tone's magnitudes in two
+consecutive symbols, as it decides the phase from their phase
+difference, with no amplitude reference:
+\[ \hat d_{n,k} = \operatorname{round}\Bigl(\frac{20 \log_{10} \bigl(|r_{n,k}| / |r_{n-1,k}|\bigr)}{\Delta_R}\Bigr) \bmod R, \]
+where $r_{n,k}$ is the tone's integral over the useful part; the
+reliability of clause~\ref{sec:mapping} is the distance of the ratio
+(in dB) from the nearest decision boundary.
+
+\subsubsection{Loading}
+The loading of clause~\ref{sec:loading} gives a tone two rings where the
+rms change $\sigma_A$ of its magnitude from one symbol of L1 to the next
+(whose amplitude is constant) is at most 0.8~dB, and four rings where it
+is at most 0.4~dB, on the phase order that clause chose for the tone; it
+does so only where both DCEs indicated the capability in CM and JM
+(Annex~\ref{annex:v8}) and the mode set allows it.  The raw rate's $b_k$
+(clause~\ref{sec:modulation}) is then the tone's phase bits plus one for
+two rings or two for four: 4 for 8-DPSK with two rings, 5 with four.  A
+DCE that does not receive its peer's MP with the rings it asked for
+loads without them.
+
+\itunote{The parameters come from the measurements of
+Appendix~\ref{app:evs} (Table~\ref{tab:dapsk}).  Of 725 tones measured
+through EVS (24.4 to 128~\kbs{}), AMR and AMR-WB, two rings 6~dB apart
+held (a tone symbol error ratio below $2 \cdot 10^{-2}$ for the phase and
+for the rings) on 99 per cent of those whose $\sigma_A$ was at most
+0.8~dB and on 17 per cent of the others; four rings 3~dB apart held on
+all of those at or below 0.4~dB and on fewer than half of those up to
+0.8.  A tone's $\sigma_A$ is therefore the loading's one criterion, as
+its phase error is for the phase order, and it finds the tones without
+a list of codecs: through EVS at 96 and 128~\kbs{} the rings add 21 to
+67 per cent to the comb's raw rate (15\,100~bit/s on S200 at
+128~\kbs{}, against 10\,350 with phase alone), through EVS at 48~\kbs{}
+wideband and 24.4~\kbs{} narrowband 19 to 51 per cent, through AMR-WB at
+23.85 and AMR 12.2 a few tones of the 300 and 400~Hz combs, and
+through AMR 10.2 none.  A coherent
+constellation (QAM with a trellis code) was not taken: it needs the
+reference and the equalization the comb's differential modulation does
+without, and the codec's phase error, correlated from one symbol to the
+next, is what differential detection cancels.}
