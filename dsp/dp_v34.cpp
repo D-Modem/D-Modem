@@ -632,6 +632,7 @@ struct V34Retrain {
 				   a higher rate */
 	float mse_good;         /* data mode: the mse while it was fine */
 	long reneg_at;          /* test: our own renegotiation this far */
+	bool reneg_test;        /* (done, whatever the remote's before it) */
 	int reneg_to;           /* test: to this rate (N) */
 	void rt_tone(float x);
 	void retrain(const char *why, int by = RT_OURS);
@@ -5672,7 +5673,8 @@ int V34Pump::handshake()
 				v90_renegotiate("margin", reneg_rate(1), 0);
 			else
 				renegotiate("margin", reneg_rate(1));
-		} else if (reneg_at && c >= reneg_at && !renegs) {
+		} else if (reneg_at && c >= reneg_at && !reneg_test) {
+			reneg_test = true;
 			if (pcm)
 				v90_renegotiate("test", reneg_to, 0);
 			else
@@ -6066,6 +6068,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   lost to the remote (phase 2's recovery, 11.2.2/V.34), only the
 	   answerer's or the caller's (anything else: either) */
 	lose_info0 = pump_test_env("DSP_V34_LOSE_INFO0", caller_) != NULL;
+	reneg_test = false;
 	test_echo.init(pump_test_env("DSP_TEST_ECHO", caller_), line_rate);
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
 	   renegotiation to N * 2400 bit/s (what we receive) */

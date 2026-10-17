@@ -1091,9 +1091,7 @@ std::vector<Call> calls()
 	   interop_windows.cpp's kernel and half_ess's ES2838, 8000 Hz) and
 	   the open modem (9600 Hz) call each other at each modulation.  It
 	   says CONNECT a little before it receives (the first octets of
-	   an FSK call lost), so the data waits a second (DATA_WAIT).  As
-	   the caller at Bell 103 it never answers the answer tone (nor
-	   Broadcom's): that call only the other way */
+	   an FSK call lost), so the data waits a second (DATA_WAIT) */
 	const std::string ess_wait = "DATA_WAIT=1";
 	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
 		     { "B103", "103" }, { "V21", "21" }, { "V23C", "23" },
@@ -1112,9 +1110,15 @@ std::vector<Call> calls()
 			ee.push_back(rate);
 			eo.push_back(rate);
 		}
-		if (m != "103")
-			add("ess", std::string("ess_") + ms + "_ess_calls", "ess",
-			    "open", a, ee);
+		/* (as the Bell 103 caller it takes no answer tone already on
+		   the line as it dials: the answer a while after, as after
+		   rings) */
+		if (m == "103") {
+			ee.push_back("DIAL=5551234");
+			ee.push_back("ANSWER_AFTER=2");
+		}
+		add("ess", std::string("ess_") + ms + "_ess_calls", "ess",
+		    "open", a, ee);
 		add("ess", std::string("ess_") + ms + "_open_calls", "open", "ess",
 		    o, eo);
 	}
@@ -1143,10 +1147,93 @@ std::vector<Call> calls()
 	add("ess", "ess_v92_pcmup", "ess", "open8", "ATX3;AT+PIG=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
+	/* V.34 rate renegotiation started by us, both ways; a much noisier
+	   line 10 s in; our INFO0a lost */
+	add("ess", "ess_34_reneg_ess_calls", "ess", "open", "ATX3;AT+MS=V34",
+	    { "NET=8000:9600:ulaw", "NET_SYNC=1", "STREAM=30",
+	      "DSP_V34_RENEG=5000:8", "PROTO_B=ATX3;AT+MS=34" });
+	add("ess", "ess_34_reneg_open_calls", "open", "ess", "ATX3;AT+MS=34",
+	    { "NET=9600:8000:ulaw", "NET_SYNC=1", "STREAM=30",
+	      "DSP_V34_RENEG=5000:8", "PROTO_B=ATX3;AT+MS=V34" });
+	add("ess", "ess_34_noise", "ess", "open", "ATX3;AT+MS=V34",
+	    { "NET=8000:9600:ulaw", "NET_SYNC=1", "STREAM=40",
+	      "NET_NOISE=10:300", "PROTO_B=ATX3;AT+MS=34" });
+	add("ess", "ess_34_lose_info0", "ess", "open", "ATX3;AT+MS=V34",
+	    { "NET=8000:9600:ulaw", "DSP_V34_LOSE_INFO0=1",
+	      "EXPECT_B=INFO0 again \\(the remote has not taken ours\\)",
+	      "PROTO_B=ATX3;AT+MS=34" });
+	/* V.90: our INFO0d lost; our renegotiation (after its own, to
+	   26400, at the start); echo */
+	add("ess", "ess_v90_lose_info0", "ess", "open8", "ATX3;AT+MS=V90",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "DSP_V34_LOSE_INFO0=1",
+	      "EXPECT_B=(?s)INFO0 again \\(the remote has not taken ours\\).*"
+	      "V.90 connect 5[0-9]{4}/", "PROTO_B=ATX3;AT+MS=90" });
+	add("ess", "ess_v90_reneg_open", "ess", "open8", "ATX3;AT+MS=V90",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "STREAM=15", "DSP_V34_RENEG=5000:8",
+	      "EXPECT_B=V.90 renegotiated [0-9]+/19200",
+	      "PROTO_B=ATX3;AT+MS=90" });
+	add("ess", "ess_v90_echo", "ess", "open8", "ATX3;AT+MS=V90",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "NET_ECHO=-20:50", "STREAM=10",
+	      "EXPECT_B=(?s)far echo at.*echo canceller took [23][0-9]\\.[0-9] "
+	      "dB away\n.*V.90 connect [45][0-9]{4}/",
+	      "PROTO_B=ATX3;AT+MS=90" });
+	/* V.92: our modem-on-hold request (it takes our tone B for a
+	   retrain's, as the Agere modem).  It offers V.92 in INFO0a but
+	   neither short phase 2 nor quick connect (+PQC=0 too), and its
+	   own AT+PMHR needs the +++ escape, after which (its OK given) it
+	   parses no command (ATO goes out as data): no tests of those */
+	add("ess", "ess_v92_moh_request", "ess", "open8", "ATX3;AT+MS=V92",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "STREAM=40", "MIDCALL_B=8:AT+PMHR;WAIT 6",
+	      "EXPECT_B=(?s)modem-on-hold request.*retrains instead.*"
+	      "retrained", "PROTO_B=ATX3;AT+MS=92" });
+	add("ess", "ess_v92_echo", "ess", "open8", "ATX3;AT+MS=V92",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "NET_ECHO=-10:50", "STREAM=10",
+	      "EXPECT_B=(?s)far echo at.*echo canceller took [23][0-9]\\.[0-9] "
+	      "dB away\n.*V.9[02] connect [45][0-9]{4}/",
+	      "PROTO_B=ATX3;AT+MS=92" });
+	add("ess", "ess_v92_pcmup_alaw", "ess", "open8", "ATX3;AT+PIG=0",
+	    { "NET_LOOP=0.45", "NET=8000:8000:alaw", "DSP_G711=alaw",
+	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
+	/* V.8 agreeing on a lower modulation, both ways; our forced low
+	   speed callers against its automode */
+	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,
+		     const char *, const char *>>{ { "V21", "21", "300" },
+		     { "V23C", "23", "75" }, { "V22B", "122", "2400" },
+		     { "V32B", "132", "14400" } }) {
+		add("ess", std::string("ess_v8_") + ms + "_open_calls", "open",
+		    "ess", "ATX3;AT+MS=34",
+		    { "NET=9600:8000:ulaw", std::string("DATA_RATE=") + rate,
+		      ess_wait, std::string("PROTO_B=ATX3;AT+MS=") + n });
+		add("ess", std::string("ess_v8_") + ms + "_ess_calls", "ess",
+		    "open", std::string("ATX3;AT+MS=") + n,
+		    { "NET=8000:9600:ulaw", std::string("DATA_RATE=") + rate,
+		      ess_wait, "PROTO_B=ATX3;AT+MS=34" });
+	}
+	for (auto [ms, rate] : std::vector<std::pair<const char *, const char *>>{
+		     { "21", "300" }, { "23", "75" }, { "22", "1200" },
+		     { "122", "2400" } })
+		add("ess", std::string("ess_low_") + ms + "_open_calls", "open",
+		    "ess", std::string("ATX3;AT+MS=") + ms,
+		    { "NET=9600:8000:ulaw", std::string("DATA_RATE=") + rate,
+		      ess_wait, "PROTO_B=ATX3" });
+	/* MNP 4 alone (our %C2), it calling.  Answering with MNP
+	   (+ES=3,0,6) it often takes our direction no higher than 14400
+	   (at some answer timings 7200) and retrains up soon after (as an
+	   MNP 10 modem does); with MNP 5 the link goes on through it, with
+	   MNP 4 alone it gives its DTE no CONNECT after it: not that way */
+	add("ess", "ess_mnp4_ess_calls", "ess", "open",
+	    "ATX3;AT+MS=V34;AT+ES=4,4,6",
+	    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=34;AT%C2",
+	      "BULK=20000", "EXPECT_B=optimization 3\\.\n" });
 	/* class 1 fax at 8000 Hz with it receiving.  As the sender (the
-	   caller) it takes the answerer's DIS but no AT+FTH=3 after it (a
-	   command it never parses until the call is over; with Broadcom's
-	   answerer too): no calls that way */
+	   caller) it takes the answerer's DIS but no AT+FTH=3 after it (as
+	   after +++, no command parsed once the frames' OK is given; with
+	   the Agere and Broadcom answerers too): no calls that way */
 	for (int m : { 24, 48, 72, 96, 73, 97, 121, 122, 145, 146 }) {
 		std::string s = std::to_string(m);
 		add("ess", "ess_fax_" + s + "_open_sends", "open8", "ess",

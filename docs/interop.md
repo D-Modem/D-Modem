@@ -841,12 +841,26 @@ INF.
 | V32B / 132, V32 / 32 | CONNECT 14400, 9600 | the same |
 | V22B / 122, V22 / 22 | CONNECT 2400, 1200 | the same |
 | V23C / 23, V21 / 21 | CONNECT 1200/75, 300 | the same |
-| B103 / 103 | no call: it never answers the answer tone | CONNECT 300 |
+| B103 / 103 | CONNECT 300 (answered after it dials: see below) | CONNECT 300 |
 | V90 / 90 (ours as the digital modem), µ-law and A-law | CONNECT 50666 (31200 upstream) | - |
 | V92 / 92, as it comes and with `+PIG=0` | PCM upstream to CPu, then a retrain and V.90 (49333) | - |
 
 V.8 in its automode (V.34), V.44 both ways (60000 octets) and MNP 5
-both ways pass too. Class 1 fax at 8000 Hz with it receiving
+both ways pass too, and as the other peers':
+
+- V.8 agreeing on V.21, V.23, V.22bis and V.32bis both ways (`ess_v8_*`),
+  and our forced V.21, V.23, V.22 and V.22bis callers against its
+  automode (`ess_low_*`);
+- V.34 rate renegotiations of ours both ways, the line 10 dB noisier
+  10 s in (a retrain), and phase 2's recovery from our lost INFO0a;
+- V.90 with our INFO0d lost, our renegotiation (after its own to 26400
+  upstream, which it starts at every V.90 connect), and the echo of our
+  PCM signal 20 dB down (our echo canceller takes some 31 dB away);
+- V.92 with the echo 10 dB down, PCM upstream on A-law lines, our
+  modem-on-hold request (it takes our tone B for a retrain's and
+  retrains, as the Agere modem does), and MNP 4 alone with it calling.
+
+Class 1 fax at 8000 Hz with it receiving
 (`ess_fax_*_open_sends`) passes at all ten modulations. It says CONNECT
 a little before it receives: at 300 bit/s its first octet or more are
 lost, so its FSK calls send their data a second after CONNECT
@@ -854,14 +868,31 @@ lost, so its FSK calls send their data a second after CONNECT
 three octets wrong, which the fax check takes (it finds the page by its
 next 128 bits).
 
-Two things it does not do here, the same against Broadcom's modem:
+As the Bell 103 caller it takes no answer tone (2225 Hz) that is on the
+line already as it dials, and sends nothing: `ess_103_ess_calls` answers
+2 s after it dials (`DIAL`, `ANSWER_AFTER`), as after rings, and then
+it calls at 300 bit/s.
 
-- As the Bell 103 caller it hears the answer tone (2225 Hz), with
-  `ATB1` or without, in its automode or not, and sends nothing.
-- As the fax sender (the caller) it takes the answerer's frames, but no
-  `AT+FTH=3` after them: the command is in the driver's buffer, but its
-  parser takes it only when the call is over (NO CARRIER). It keeps
-  sending CNG all the while.
+What it does not do here:
+
+- Once it has left a call's data state for command state, its parser
+  takes no command. After `+++` it says OK, and then `ATI` gets no
+  answer and `ATO` goes out on the line as data; as the fax sender (the
+  caller) it takes the answerer's frames and says OK, but no
+  `AT+FTH=3` after them, nor `AT` (with our answerer, Agere's and
+  Broadcom's alike), until the call is over. So: no fax calls with it
+  sending, and no modem-on-hold of its own (`AT+PMHR` needs the
+  escape). A WAIT_ON_MASK kept in flight, as modem.sys has it, makes no
+  difference.
+- No Bell 212A: `AT+MS=B212` is ERROR (and `ATB1` with V.22 is no 212A).
+- Its V.92 INFO0a has short phase 2 off: no quick connect, `+PQC=0` or
+  not.
+- Answering with MNP (`+ES=3,0,6`), it often takes our direction no
+  higher than 14400 bit/s (at some answer timings 7200) and retrains up
+  a second or two into the call, as an MNP 10 modem would (plain V.34
+  answers take 33600 at every timing). MNP 5 goes on through the
+  retrain; with MNP 4 alone (our `%C2`) it gives its DTE no CONNECT after
+  it, so that test is only with it calling.
 
 Its V.92 offers PCM upstream by default: its INFO0a says V.92, and its
 INFO1a asks for PCM upstream. Phases 3 and 4 get through (Ru, TRN1u,
