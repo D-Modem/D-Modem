@@ -179,15 +179,15 @@ int modem_put_bits(struct modem *m, int, u8 *buf, int n)
 
 /* the side's runtime, an empty dial string, the voice settings, the
    calling tone wanted; -1 for anything else */
-long modem_get_param(struct modem *m, unsigned name)
+intptr_t modem_get_param(struct modem *m, unsigned name)
 {
 	switch (name) {
 	case MDMPRM_DPRUNTIME:
-		return (long)side_of(m).runtime;
+		return (intptr_t)side_of(m).runtime;
 	case MDMPRM_DIALSTR:
-		return (long)dial_string;
+		return (intptr_t)dial_string;
 	case MDMPRM_VOICEINFO:
-		return (long)&voice;
+		return (intptr_t)&voice;
 	case GetCallingToneFlag:
 		return 1;
 	default:

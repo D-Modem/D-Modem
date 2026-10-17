@@ -14,10 +14,14 @@ set(_front options.cpp pty.cpp datafile.cpp pipe_modem.cpp run_loop.cpp
 list(TRANSFORM _front PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
 set(DMODEM_FRONT_SRCS ${_front} PARENT_SCOPE)
 set(DMODEM_FRONT_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
-add_library(dmodem_front OBJECT ${_front})
-target_link_libraries(dmodem_front PUBLIC dmodem_core)
-target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
-set_target_properties(dmodem_front PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(NOT WIN32)
+	# (the pty, POSIX's processes and signals: Linux, macOS)
+	add_library(dmodem_front OBJECT ${_front})
+	target_link_libraries(dmodem_front PUBLIC dmodem_core)
+	target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
+	set_target_properties(dmodem_front PROPERTIES
+		POSITION_INDEPENDENT_CODE ON)
+endif()
 
 if(DMODEM_DMODEMD)
 	# libdmodem_sip: the modem on a SIP line, its DTE a descriptor
@@ -118,10 +122,12 @@ if(DMODEM_DMODEMD)
 endif()
 
 # modem_test: two modems back to back, each with a pty
-add_executable(modem_test modem_test.cpp)
-target_compile_options(modem_test PRIVATE -Wall -Wextra -g -O2)
-target_link_libraries(modem_test PRIVATE dmodem_front dmodem_core dmodem_dsp
-	dmodem_link m Threads::Threads)
+if(NOT WIN32)
+	add_executable(modem_test modem_test.cpp)
+	target_compile_options(modem_test PRIVATE -Wall -Wextra -g -O2)
+	target_link_libraries(modem_test PRIVATE dmodem_front dmodem_core
+		dmodem_dsp dmodem_link m Threads::Threads)
+endif()
 
 # libdmodem: the objects of dmodem_core, dmodem_dsp, dmodem_t30 and
 # dmodem_link go into libdmodem.a
@@ -133,5 +139,9 @@ target_include_directories(dmodem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_options(dmodem PRIVATE -Wall -g -O2)
 set_target_properties(dmodem PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(dmodem PUBLIC m Threads::Threads)
+if(WIN32)
+	# (the DTE's socket: Winsock)
+	target_link_libraries(dmodem PUBLIC ws2_32)
+endif()
 install(TARGETS dmodem ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES dmodem.h dmodem.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

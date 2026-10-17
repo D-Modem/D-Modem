@@ -12,13 +12,16 @@
  *    from 17 to 62 are the library's own, mixed case and all.  From 63
  *    on the numbers are D-Modem's.
  *
- *    A pointer comes back from modem_get_param() as a long, which holds
- *    one on both i386 (where the library has 32 bits) and x86_64.
+ *    A pointer comes back from modem_get_param() as an intptr_t: the
+ *    library's long on i386 and x86_64 Linux, where the two are the same
+ *    size, and wide enough on 64 bit Windows, where a long is 32 bits.
  *
  */
 
 #ifndef DSP_MODEM_PARAM_H
 #define DSP_MODEM_PARAM_H
+
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -114,9 +117,9 @@ enum MODEM_PARAMETER_NAMES {
  *    From the core
  */
 
-/* parameter param (a pointer cast to long for those that are one); -1
-   for one the core does not give */
-long modem_get_param(struct modem *m, unsigned param);
+/* parameter param (a pointer cast to intptr_t for those that are one);
+   -1 for one the core does not give */
+intptr_t modem_get_param(struct modem *m, unsigned param);
 /* sets parameter name to val: 0, or -1 for one that cannot be set
    (MDMPRM_HOOK_ON and MDMPRM_PULSE_DIAL: the host's result) */
 long modem_set_param(struct modem *m, unsigned name, int val);

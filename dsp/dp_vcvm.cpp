@@ -67,7 +67,7 @@ int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, int srate_,
 		rs_down_.init(5, 6);
 		rs_up_.init(6, 5);
 	}
-	long v = modem_get_param(m, MDMPRM_VCVM);
+	intptr_t v = modem_get_param(m, MDMPRM_VCVM);
 	info_ = v == -1 || v == 0 ? nullptr : (struct dp_vcvm *)v;
 	VcvmModem::Config c;
 	c.su.calling = caller_;

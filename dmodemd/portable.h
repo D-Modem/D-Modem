@@ -7,9 +7,15 @@
  *                 (macOS, iOS: an app with the modem in it) another:
  *                 descriptors closed on exec from the start, sends that
  *                 don't raise SIGPIPE, a sleep until a monotonic time,
- *                 a peer's hang-up seen without reading
+ *                 a peer's hang-up seen without reading; and on
+ *                 Windows (MinGW-w64) the DTE's stream socket: read,
+ *                 written and made non-blocking with Winsock's calls
+ *                 (there a socket is no file descriptor), a connected
+ *                 pair of them for socketpair(2)
  *
  *    DMODEM_PORTABLE_FALLBACKS: the other way on Linux too (its tests).
+ *    On Windows a descriptor (int) here is a SOCKET: Winsock's handles
+ *    fit in an int.
  *
  */
 #ifndef DMODEMD_PORTABLE_H
@@ -17,9 +23,113 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <time.h>
+
+#ifdef _WIN32
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+namespace dmd {
+
+/* Winsock started, once (the process's first use of a socket) */
+inline bool net_init()
+{
+	static const bool ok = [] {
+		WSADATA w;
+		return WSAStartup(MAKEWORD(2, 2), &w) == 0;
+	}();
+	return ok;
+}
+
+/* the last call's error as errno has it (EAGAIN for a socket that
+   would block) */
+inline int sock_errno()
+{
+	int e = WSAGetLastError();
+	return e == WSAEWOULDBLOCK ? EAGAIN : e == WSAEINTR ? EINTR :
+		e == WSAECONNRESET ? ECONNRESET : EIO;
+}
+
+/* up to n bytes from the stream socket fd: as read(2) */
+inline int fd_read(int fd, void *buf, int n)
+{
+	int r = recv((SOCKET)fd, (char *)buf, n, 0);
+	if (r == SOCKET_ERROR) {
+		errno = sock_errno();
+		return -1;
+	}
+	return r;
+}
+
+/* n bytes to the stream socket fd: as write(2) */
+inline int fd_write(int fd, const void *buf, int n)
+{
+	int r = send((SOCKET)fd, (const char *)buf, n, 0);
+	if (r == SOCKET_ERROR) {
+		errno = sock_errno();
+		return -1;
+	}
+	return r;
+}
+
+/* fd's reads and writes no longer wait */
+inline int set_nonblocking(int fd)
+{
+	u_long on = 1;
+	return ioctlsocket((SOCKET)fd, FIONBIO, &on) == 0 ? 0 : -1;
+}
+
+/* the socket fd closed */
+inline void fd_close(int fd)
+{
+	closesocket((SOCKET)fd);
+}
+
+/* two connected stream sockets, for socketpair(2): a listener on the
+   loopback address takes the one connection it waits for; Nagle off,
+   so that a byte goes when it is written */
+inline int stream_pair(int sv[2])
+{
+	if (!net_init())
+		return -1;
+	SOCKET l = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	SOCKET a = INVALID_SOCKET, b = INVALID_SOCKET;
+	struct sockaddr_in in = {};
+	int len = sizeof(in), on = 1;
+	if (l == INVALID_SOCKET)
+		return -1;
+	in.sin_family = AF_INET;
+	in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (bind(l, (struct sockaddr *)&in, sizeof(in)) ||
+	    getsockname(l, (struct sockaddr *)&in, &len) || listen(l, 1))
+		goto fail;
+	a = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (a == INVALID_SOCKET ||
+	    connect(a, (struct sockaddr *)&in, sizeof(in)))
+		goto fail;
+	b = accept(l, nullptr, nullptr);
+	if (b == INVALID_SOCKET)
+		goto fail;
+	closesocket(l);
+	setsockopt(a, IPPROTO_TCP, TCP_NODELAY, (const char *)&on, sizeof(on));
+	setsockopt(b, IPPROTO_TCP, TCP_NODELAY, (const char *)&on, sizeof(on));
+	sv[0] = (int)a;
+	sv[1] = (int)b;
+	return 0;
+fail:
+	closesocket(l);
+	if (a != INVALID_SOCKET)
+		closesocket(a);
+	return -1;
+}
+
+} // namespace dmd
+
+#else /* !_WIN32 */
+
 #include <poll.h>
 #include <sys/socket.h>
-#include <time.h>
 #include <unistd.h>
 
 #if defined(__APPLE__) || defined(DMODEM_PORTABLE_FALLBACKS) || \
@@ -121,6 +231,25 @@ inline bool peer_closed(int fd)
 #endif
 }
 
+/* as the Windows functions above, by POSIX's own calls */
+inline bool net_init() { return true; }
+inline int fd_read(int fd, void *buf, int n) { return (int)read(fd, buf, n); }
+inline int fd_write(int fd, const void *buf, int n)
+{
+	return (int)write(fd, buf, n);
+}
+inline int set_nonblocking(int fd)
+{
+	return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+}
+inline void fd_close(int fd) { close(fd); }
+inline int stream_pair(int sv[2])
+{
+	return socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, sv);
+}
+
 } // namespace dmd
+
+#endif /* _WIN32 */
 
 #endif

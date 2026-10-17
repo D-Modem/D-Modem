@@ -26,6 +26,10 @@ set(DMODEM_TEST_LOG_KEEP 20 CACHE STRING
 set(DMODEM_TEST_FIXTURE dmodem_test_logs)
 set(DMODEM_TEST_LAUNCHER bash "${PROJECT_SOURCE_DIR}/cmake/test_run.sh"
 	"${DMODEM_TEST_LOG_ROOT}")
+# (a cross build's programs then through the emulator, Wine for Windows)
+if(CMAKE_CROSSCOMPILING_EMULATOR)
+	list(APPEND DMODEM_TEST_LAUNCHER ${CMAKE_CROSSCOMPILING_EMULATOR})
+endif()
 
 add_test(NAME test_logs_begin COMMAND bash
 	"${PROJECT_SOURCE_DIR}/cmake/test_logs.sh" begin

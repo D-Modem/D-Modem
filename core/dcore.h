@@ -237,7 +237,7 @@ public:
 	static Modem *of(struct modem *m);
 	/* modem_get_param(), modem_set_param(): MDMPRM_ and the country's
 	   parameters; -1 if unknown */
-	long get_param(unsigned name);
+	intptr_t get_param(unsigned name);
 	long set_param(unsigned name, int val);
 	/* the pumps' bits to and from the link */
 	int get_bits(int nbits, uint8_t *buf, int n);

@@ -1950,7 +1950,7 @@ void Modem::voice_dial_check()
 			return;
 		}
 		if (t.rings && !t.ringing &&
-		    t.quiet_ms >= voice_info_.ring_after * 100L) {
+		    t.quiet_ms >= (long)voice_info_.ring_after * 100) {
 			logf("voice dial: ringing tone gone (%u rings)\n",
 			     t.rings);
 			line_answered();

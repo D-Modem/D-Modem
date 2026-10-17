@@ -158,7 +158,7 @@ public:
 		srate = srate_;
 		caller = caller_;
 		rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
-		long st = modem_get_param(m, MDMPRM_STATS);
+		intptr_t st = modem_get_param(m, MDMPRM_STATS);
 		stats = st == -1 ? nullptr : (struct dp_stats *)st;
 		timeout = (long)(s7 > 0 ? s7 : 50) * srate_;
 		carrier_loss = (long)(s10 > 0 ? s10 : 14) * srate_ / 10;

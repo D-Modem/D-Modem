@@ -37,7 +37,9 @@ enum dmodem_law { DMODEM_LAW_UNKNOWN, DMODEM_LAW_ULAW, DMODEM_LAW_ALAW };
 
 struct dmodem_config {
 	const char *name;       /* for the log */
-	int dte_fd;
+	int dte_fd;             /* the DTE's end, non-blocking: a pty, a
+				   pipe or a stream socket; on Windows a
+				   stream SOCKET (portable.h) */
 	enum dmodem_law law;
 	const char *init;       /* AT commands at the start, as the DTE would
 				   send them ("ATE0Q1\r", say), or NULL */

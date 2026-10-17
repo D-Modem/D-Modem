@@ -13,12 +13,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #include <algorithm>
 
 #include "dmodem.h"
+#include "portable.h"
 #include "fax_util.h"
 
 class DmodemFax : public testing::TestWithParam<enum dmodem_law> {};
@@ -54,9 +54,9 @@ TEST_P(DmodemFax, DataModemHandsCallToFax)
 		dmodem_set_debug(atoi(getenv("DMODEM_DEBUG")));
 
 	/* the answering side: a data modem first */
-	ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, dte), 0);
-	fcntl(dte[0], F_SETFL, O_NONBLOCK);
-	fcntl(dte[1], F_SETFL, O_NONBLOCK);
+	ASSERT_EQ(dmd::stream_pair(dte), 0);
+	dmd::set_nonblocking(dte[0]);
+	dmd::set_nonblocking(dte[1]);
 	mc.name = "answer";
 	mc.dte_fd = dte[0];
 	mc.law = law;
@@ -124,8 +124,8 @@ TEST_P(DmodemFax, DataModemHandsCallToFax)
 	dmodem_fax_destroy(receiver);
 	if (modem)
 		dmodem_destroy(modem);
-	close(dte[0]);
-	close(dte[1]);
+	dmd::fd_close(dte[0]);
+	dmd::fd_close(dte[1]);
 	EXPECT_TRUE(same_pages(in, out));
 }
 

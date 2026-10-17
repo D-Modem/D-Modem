@@ -19,7 +19,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -32,6 +31,7 @@
 #include <gtest/gtest.h>
 
 #include "dmodem.h"
+#include "portable.h"
 #include "dmodem.hpp"
 #include "g711.h"
 #include "rtp_events.h"
@@ -100,17 +100,17 @@ static unsigned char net_octet(Net net, unsigned char c, int from, int to,
 	return c;
 }
 
-/* fd non-blocking; fcntl's result */
+/* fd non-blocking: 0, or -1 */
 static int nonblock(int fd)
 {
-	return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+	return dmd::set_nonblocking(fd);
 }
 
 /* what there is to read on fd, thrown away */
 static void drain(int fd)
 {
 	char buf[256];
-	while (read(fd, buf, sizeof(buf)) > 0)
+	while (dmd::fd_read(fd, buf, sizeof(buf)) > 0)
 		;
 }
 
@@ -148,8 +148,8 @@ static void *run(void *arg)
 	long bulk_out = 0, bulk_in = 0, bulk_start = 0, bulk_bad = 0;
 	bool fax_seen = false;
 
-	socketpair(AF_UNIX, SOCK_STREAM, 0, sa);
-	socketpair(AF_UNIX, SOCK_STREAM, 0, sb);
+	dmd::stream_pair(sa);
+	dmd::stream_pair(sb);
 	nonblock(sa[0]); nonblock(sa[1]); nonblock(sb[0]); nonblock(sb[1]);
 	snprintf(init, sizeof(init), "ATE0Q1X3%s\r", pc.ms);
 	c.init = init;
@@ -237,12 +237,12 @@ static void *run(void *arg)
 					      bulk - bulk_out : (long)sizeof(buf));
 				for (k = 0; k < m; k++)
 					buf[k] = bulk_byte(bulk_out + k);
-				m = (int)write(sa[1], buf, m);
+				m = (int)dmd::fd_write(sa[1], buf, m);
 				if (m <= 0)
 					break;
 				bulk_out += m;
 			}
-			while ((n = read(sb[1], buf, sizeof(buf))) > 0) {
+			while ((n = dmd::fd_read(sb[1], buf, sizeof(buf))) > 0) {
 				for (k = 0; k < n; k++)
 					if (buf[k] != bulk_byte(bulk_in + k))
 						bulk_bad++;
@@ -261,13 +261,13 @@ static void *run(void *arg)
 		/* a line of text each way every second once online */
 		if (online && i > online + 50 && (i - online) % 50 == 0 &&
 		    sent < 5) {
-			if (write(sa[1], msg, len) < 0 || write(sb[1], msg, len) < 0)
+			if (dmd::fd_write(sa[1], msg, len) < 0 || dmd::fd_write(sb[1], msg, len) < 0)
 				perror("write");
 			sent++;
 		}
-		while ((n = read(sa[1], got_a + na, sizeof(got_a) - na)) > 0)
+		while ((n = dmd::fd_read(sa[1], got_a + na, sizeof(got_a) - na)) > 0)
 			na += n;
-		while ((n = read(sb[1], got_b + nb, sizeof(got_b) - nb)) > 0)
+		while ((n = dmd::fd_read(sb[1], got_b + nb, sizeof(got_b) - nb)) > 0)
 			nb += n;
 	}
 	if (!online)
@@ -286,7 +286,7 @@ static void *run(void *arg)
 			"], answerer got [" + std::string(got_b, nb) + "]");
 	dmodem_destroy(a);
 	dmodem_destroy(b);
-	close(sa[0]); close(sa[1]); close(sb[0]); close(sb[1]);
+	dmd::fd_close(sa[0]); dmd::fd_close(sa[1]); dmd::fd_close(sb[0]); dmd::fd_close(sb[1]);
 	return NULL;
 }
 
@@ -434,16 +434,16 @@ struct Dte {
 	/* a non-blocking socketpair: fd[0] the modem's end, fd[1] the DTE's */
 	Dte()
 	{
-		if (socketpair(AF_UNIX, SOCK_STREAM, 0, fd))
+		if (dmd::stream_pair(fd))
 			throw std::runtime_error("socketpair");
 		for (int f : fd)
-			fcntl(f, F_SETFL, fcntl(f, F_GETFL) | O_NONBLOCK);
+			dmd::set_nonblocking(f);
 	}
 	/* both ends closed */
 	~Dte()
 	{
-		close(fd[0]);
-		close(fd[1]);
+		dmd::fd_close(fd[0]);
+		dmd::fd_close(fd[1]);
 	}
 	Dte(const Dte &) = delete;
 	Dte &operator=(const Dte &) = delete;
@@ -455,14 +455,14 @@ struct Dte {
 		std::string s;
 		char buf[256];
 		ssize_t n;
-		while ((n = read(fd[1], buf, sizeof(buf))) > 0)
+		while ((n = dmd::fd_read(fd[1], buf, sizeof(buf))) > 0)
 			s.append(buf, n);
 		return s;
 	}
 	/* s to the modem, all of it, else an exception */
 	void write_str(const std::string &s)
 	{
-		if (write(fd[1], s.data(), s.size()) !=
+		if (dmd::fd_write(fd[1], s.data(), s.size()) !=
 		    static_cast<ssize_t>(s.size()))
 			throw std::runtime_error("DTE write");
 	}

@@ -6087,7 +6087,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   at 8000 Hz (a 9600 Hz line through converters) */
 	vcvm = id == DP_VCVM;
 	{
-		long v = modem_get_param(m, MDMPRM_VCVM);
+		intptr_t v = modem_get_param(m, MDMPRM_VCVM);
 		const struct dp_vcvm *vi = v == -1 || v == 0 ? nullptr :
 			(const struct dp_vcvm *)v;
 		vcvm_caps = vcvm_caps_for(vi ? vi->modes : VCVM_M_ALL, 8000);

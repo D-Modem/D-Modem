@@ -16,13 +16,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include <dcore.h>
 #include <log.h>
 #include "dmodem.h"
 #include "dmodem_g711.h"
 #include "dsplibs.h"
+#include "portable.h"
 
 /* a calling fax machine's CNG: 1100 Hz, 0.5 s on, 3 s off */
 struct cng_detect {
@@ -55,7 +55,7 @@ struct dmodem final : public dcore::Host {
 	}
 	/* to the DTE's fd (non-blocking): what it took, 0 if nothing */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
-		int ret = write(dte_fd, buf, n);
+		int ret = dmd::fd_write(dte_fd, buf, n);
 		return ret < 0 ? 0 : ret;
 	}
 	/* the clock: the samples processed so far, in ms */
@@ -258,7 +258,7 @@ int dmodem_poll_dte(struct dmodem *d)
 		return 0;
 	if (n > (int)sizeof(buf))
 		n = sizeof(buf);
-	n = read(d->dte_fd, buf, n);
+	n = dmd::fd_read(d->dte_fd, buf, n);
 	if (n < 0)
 		return errno == EAGAIN || errno == EINTR ? 0 : -1;
 	if (n == 0)

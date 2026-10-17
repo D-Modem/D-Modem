@@ -52,6 +52,12 @@ if(DMODEM_WERROR)
 	add_compile_options(-Werror)
 endif()
 
+if(WIN32)
+	# (M_PI and the like from math.h, which Windows' C library has
+	# only on request) and no min/max macros from windows.h
+	add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)
+endif()
+
 include(GNUInstallDirs)
 # (PROJECT_SOURCE_DIR: also as another project's subdirectory)
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)

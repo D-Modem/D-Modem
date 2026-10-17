@@ -80,16 +80,16 @@ DpDriver *dp_drivers()
  */
 
 /* a pointer as modem_get_param() hands it out */
-static long param_address(const void *p)
+static intptr_t param_address(const void *p)
 {
-	return (long)reinterpret_cast<intptr_t>(p);
+	return reinterpret_cast<intptr_t>(p);
 }
 
 /* parameter name (enum MODEM_PARAMETER_NAMES) as it is now: a rate, the
    host's answer, the address of one of the Modem's objects, an
    S-register, a field of the current country, or a constant; -1 for a
    number that can only be set and for an unknown one */
-long Modem::get_param(unsigned name)
+intptr_t Modem::get_param(unsigned name)
 {
 	const struct homolog_params &c = *homolog_->params;
 
@@ -310,7 +310,7 @@ void modem_dp_deregister(enum DP_ID id, struct dp_operations *)
  */
 
 /* a parameter (Modem::get_param()) */
-long modem_get_param(struct modem *m, unsigned param)
+intptr_t modem_get_param(struct modem *m, unsigned param)
 {
 	return Modem::of(m)->get_param(param);
 }

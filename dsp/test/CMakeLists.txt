@@ -17,6 +17,11 @@ set(_dsp ${DMODEM_DSP_SRCS})
 set(_fax ${S}/fax_modems.cpp ${S}/qam.cpp ${S}/qam_tables.cpp ${S}/dsp_util.cpp
 	${S}/dp_fsk.cpp)
 
+# Windows: setenv, unsetenv and mkdir's mode for every test source here
+if(WIN32)
+	add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/win_posix.h)
+endif()
+
 function(dmodem_test_exe name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE ${S} ${DMODEM_LINK_DIR}
@@ -68,11 +73,16 @@ find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
 	pkg_check_modules(AMR QUIET opencore-amrnb opencore-amrwb vo-amrwbenc)
 endif()
-dmodem_test_exe(netsim netsim.cpp codec_sim.cpp test_util.cpp ${S}/dsp_util.cpp
-	${S}/qam.cpp ${S}/v34_tables.cpp)
+# (netsim: the interop calls' network, on POSIX's pipes and poll)
+set(_amr_users codec_probe)
+if(NOT WIN32)
+	dmodem_test_exe(netsim netsim.cpp codec_sim.cpp test_util.cpp
+		${S}/dsp_util.cpp ${S}/qam.cpp ${S}/v34_tables.cpp)
+	list(APPEND _amr_users netsim)
+endif()
 dmodem_test_exe(codec_probe codec_probe.cpp codec_sim.cpp)
 if(AMR_FOUND)
-	foreach(_t netsim codec_probe)
+	foreach(_t ${_amr_users})
 		target_compile_definitions(${_t} PRIVATE DMODEM_HAVE_AMR)
 		target_include_directories(${_t} PRIVATE ${AMR_INCLUDE_DIRS})
 		target_link_libraries(${_t} PRIVATE ${AMR_LDFLAGS})
@@ -102,7 +112,13 @@ foreach(_t vcvm_test vcvm_startup_test vcvm_data_test)
 	dmodem_gtest(${_t} LABELS quick)
 endforeach()
 # the fax without a core: the modulations, T.4 and TIFF, two T.30 machines
-find_program(TIFFCP tiffcp)
+# (libtiff's tiffcp, run by the test: not the build host's from a cross
+# build's program)
+if(CMAKE_CROSSCOMPILING)
+	set(TIFFCP "")
+else()
+	find_program(TIFFCP tiffcp)
+endif()
 dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp
 	${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 target_compile_definitions(fax_test PRIVATE "TIFFCP=\"${TIFFCP}\"")
@@ -167,6 +183,11 @@ set(CMAKE_REQUIRED_LINK_OPTIONS "${DMODEM_M32}")
 check_cxx_source_compiles("int main() { return 0; }" DMODEM_HAVE_M32)
 unset(CMAKE_REQUIRED_FLAGS)
 unset(CMAKE_REQUIRED_LINK_OPTIONS)
+if(WIN32)
+	# (half modems on POSIX's ptys, pipes and processes)
+	message(STATUS "tests: Windows, interop tests skipped")
+	return()
+endif()
 if(NOT DMODEM_HAVE_M32 OR
    NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|i.86)$")
 	message(STATUS "tests: no 32 bit i386 compiler, interop tests skipped")
