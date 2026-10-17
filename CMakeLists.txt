@@ -42,9 +42,18 @@ endif()
 set(DMODEM_CRYPTO ${_crypto} CACHE STRING "libre's crypto: openssl or mbedtls")
 set_property(CACHE DMODEM_CRYPTO PROPERTY STRINGS openssl mbedtls)
 option(DMODEM_DMODEMD "Build dmodemd (SIP, needs libre)" ON)
-option(DMODEM_ASTERISK "Build app_dmodem when Asterisk's headers are found" ON)
-option(DMODEM_FREESWITCH "Build mod_dmodem when FreeSWITCH is found" ON)
-option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)" ON)
+# (the PBX parts are POSIX's alone: off on Windows unless asked for)
+if(WIN32)
+	set(_dmodem_pbx_default OFF)
+else()
+	set(_dmodem_pbx_default ON)
+endif()
+option(DMODEM_ASTERISK "Build app_dmodem when Asterisk's headers are found"
+	${_dmodem_pbx_default})
+option(DMODEM_FREESWITCH "Build mod_dmodem when FreeSWITCH is found"
+	${_dmodem_pbx_default})
+option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)"
+	${_dmodem_pbx_default})
 option(DMODEM_TESTS "Build the test programs (ctest)" ON)
 option(DMODEM_WERROR "Treat compiler warnings as errors (CI)" OFF)
 
@@ -54,8 +63,13 @@ endif()
 
 if(WIN32)
 	# (M_PI and the like from math.h, which Windows' C library has
-	# only on request) and no min/max macros from windows.h
-	add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)
+	# only on request), no min/max macros from windows.h, and MinGW's
+	# own C99 printf and scanf: msvcrt's know no %zu or %lld
+	add_compile_definitions(_USE_MATH_DEFINES NOMINMAX
+		__USE_MINGW_ANSI_STDIO=1)
+	# (GCC checks format(printf) functions against msvcrt's printf
+	# there, which knows no %zu: the POSIX builds check the formats)
+	add_compile_options(-Wno-format)
 endif()
 
 include(GNUInstallDirs)

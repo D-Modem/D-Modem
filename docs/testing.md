@@ -9,6 +9,10 @@ There is no i386 requirement. It builds natively on x86_64, ARM and other
 architectures, and links with `-lm`. Only the interop tests need a 32 bit
 compiler (`g++ -m32`), for the original library.
 
+A Windows build (MinGW-w64, `-DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake`)
+runs its tests under Wine: `ctest --test-dir build-win -L quick`. The
+interop tests are left out there ([windows.md](windows.md)).
+
 ## Tests
 
     ctest --test-dir build -j16         # all of them (some four times the processors:

@@ -66,7 +66,11 @@ const Option OPTIONS[OPT_COUNT] = {
 	{ 'p', "perm", Takes::Number, true, "the pty's mode, in octal",
 	  "0660", false },
 	{ 'n', "nortpriority", Takes::Nothing, false,
+#ifdef _WIN32
+	  "normal priority, not high", nullptr, false },
+#else
 	  "no realtime scheduling", nullptr, false },
+#endif
 	{ 'd', "debug", Takes::Number, false, "debug messages up to level",
 	  "0", false },
 	{ 'l', "log", Takes::Number, false,
@@ -250,8 +254,13 @@ void CommandLine::usage() const
 	fprintf(stderr,
 		"\n"
 		"Environment:\n"
+#ifdef _WIN32
+		"  SIP_LOGIN=user:password@domain  the SIP account "
+		"(required)\n"
+#else
 		"  SIP_LOGIN=user:password@domain  the SIP account "
 		"(required without -a)\n"
+#endif
 		"  SIP_PORT=port         the local SIP port (5060)\n"
 		"  SIP_LOG_LEVEL=n       the SIP log's level (4: with the "
 		"SIP messages,\n"

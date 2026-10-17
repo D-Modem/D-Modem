@@ -3,6 +3,9 @@
 # (ctest -L "smartlink|agere|open" -j16, about a minute) are left out:
 # they depend on the runner's timing.
 #
+# windows: the Windows build (MinGW-w64, cross from Linux) with its
+# offline tests under Wine; dmodemd.exe kept as an artifact.
+#
 # asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
@@ -71,6 +74,61 @@ jobs:
       # dmodemd started as root (ctest skips it as the runner's user)
       - name: dmodemd as root
         run: sudo python3 dmodemd/test/root_test.py build/dmodemd/dmodemd
+
+  windows:
+    runs-on: ubuntu-24.04
+    env:
+      WINEDEBUG: -all
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix \
+            wine wine64
+
+      # libre and Mbed TLS are fetched and built while configuring: keep
+      # them
+      - name: libre cache
+        uses: actions/cache@v4
+        with:
+          path: build-win/_deps/libre-install
+          key: libre-v4.12.0-mingw-${{ hashFiles('cmake/libre.cmake', 'cmake/mingw-w64.cmake') }}
+
+      - name: Configure
+        run: |
+          cmake -B build-win -G Ninja -DDMODEM_WERROR=ON \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
+
+      - name: Build
+        run: cmake --build build-win
+
+      # (Wine's first start makes its prefix: before the tests' timeouts)
+      - name: Wine prefix
+        run: wineboot --init && wineserver -w
+
+      - name: Tests
+        run: ctest --test-dir build-win -L quick -j4 --output-on-failure
+
+      - name: Test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-windows
+          path: |
+            build-win/test-logs/
+            !build-win/test-logs/latest
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: dmodemd.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmodemd-windows-x86_64
+          path: build-win/dmodemd/dmodemd.exe
+          retention-days: 30
 
   asterisk:
     runs-on: ubuntu-24.04
