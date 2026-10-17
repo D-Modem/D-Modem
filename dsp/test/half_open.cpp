@@ -14,12 +14,15 @@
  *    MODEM_REALTIME=1 runs it no faster than the sample clock (with
  *    PIPE_SYNC it runs so on hook anyway, PipeModem::pace()),
  *    MODEM_SPEED=<x> else no faster than x times the sample clock, and
- *    MODEM_REC=<prefix> records its line in <prefix>.in and .out.
+ *    MODEM_REC=<prefix> records its line in <prefix>.<name>.in and .out
+ *    (both modems of a call can be given the same prefix).
  *
  */
 
 #include <stdio.h>
 #include <stdlib.h>
+
+#include <string>
 
 #include <dsplibs.h>
 #include <log.h>
@@ -49,7 +52,12 @@ int main(int argc, char *argv[])
 	pm->set_realtime(getenv("MODEM_REALTIME") != NULL);
 	pm->set_speed(getenv("MODEM_SPEED") ? atof(getenv("MODEM_SPEED")) :
 		      0);
-	pm->set_record(getenv("MODEM_REC"));
+	/* MODEM_REC=<prefix>: the line to <prefix>.<name>.in and .out */
+	static std::string rec;
+	if (getenv("MODEM_REC")) {
+		rec = std::string(getenv("MODEM_REC")) + "." + name;
+		pm->set_record(rec.c_str());
+	}
 	printf("created %s: %s\n", name, pm->pty().name());
 	fflush(stdout);
 	ret = dmd::PipeModem::run(&pm, 1);

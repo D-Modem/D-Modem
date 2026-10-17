@@ -205,7 +205,7 @@ enum v34_state {
 	P4V_CP,         /* CP until MP */
 	P4V_CPACK,      /* CP' until MP' or Ed */
 	P4V_E,          /* E, then ones until B1d is in */
-	P4V_END,        /* the data mode is to come */
+	V90A_DATA,      /* the analogue modem's data mode */
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
@@ -720,6 +720,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void v90a_start();
 	int v90a_phase4();
 	int v90a_cp_design();
+	int v90a_data_setup();
+	long v90a_quiet;        /* data mode: samples of the PCM signal gone */
 	double v90a_limit, v90a_cpt_pw;	/* Table 15's, CPt's power */
 	int primary_start();
 	int v90_start();
@@ -2569,6 +2571,12 @@ void V34Pump::pump_rx_sample(float x)
 		if (!ec.bypass)
 			x = ec.run(last_tx, x);
 		v90rx.line(x);
+		/* the data mode's bits to the core */
+		if (state == V90A_DATA && v90rx.qn) {
+			unsigned char b[V90RX_Q];
+			int m = v90rx.take(b, V90RX_Q);
+			CoreBits{ modem }.put(b, m);
+		}
 		return;
 	}
 	if (prx_on) {
@@ -2785,6 +2793,10 @@ void V34Pump::v90a_start()
 	v90rx.init(alaw, v90a_uinfo);
 	v90rx.dil_set(v90a_dil);
 	v90a_rx = 1;
+	/* the PCM codes' DC is theirs: the core's DC remover would take
+	   away a stepwise estimate of it, which no equaliser undoes */
+	if (rt)
+		rt->pcm = 1;
 }
 
 /* the analogue modem's phase 4 (9.4.2/V.90): the constellations of
@@ -2816,6 +2828,36 @@ int V34Pump::v90a_phase4()
 	ptx.scr = 0;
 	ptx.idx = 0;
 	tx_next(P4V_CPT, V34_TX_CP);
+	return 0;
+}
+
+/* the upstream data mode (9.4.2.4/V.90): the fastest rate our CP
+   enabled at or below the most the digital modem's MP receives (its
+   rule: v90_data_setup()), with MP's trellis code, precoder and
+   constellation; V.34's data encoder after our E */
+int V34Pump::v90a_data_setup()
+{
+	const V90Mp &mp = v90rx.mp;
+	int mask = v90a_cp.rate_mask & 0x1FFF, n;
+	V34Params p;
+
+	for (n = mp.rate_max; n >= 2; n--)
+		if ((mask >> (n - 2)) & 1 && v34_rates[baud_tx][n - 1].b)
+			break;
+	if (n < 2 || mp.trellis > 2 || p.init(baud_tx, n, mp.expanded)) {
+		DSP_DBG("v34: V.90: no upstream rate (MP's most %d)\n",
+			mp.rate_max * 2400);
+		return -1;
+	}
+	if (mp.nonlinear)
+		p.set_nonlinear(0.3125);
+	p.states = 16 << mp.trellis;
+	p.set_precoder(mp.h);
+	ptx.start_data(&p, CoreBits{ modem });
+	rate_tx = p.rate;
+	rate_rx = (v90a_cp.drn + 20) * 8000 / 6;
+	DSP_DBG("v34: V.90 rates: up %d (%d states%s), down %d\n", rate_tx,
+		p.states, mp.type ? ", precoded" : "", rate_rx);
 	return 0;
 }
 
@@ -4276,6 +4318,9 @@ int V34Pump::handshake()
 	case P4V_CPACK:
 		if (!ptx.cp_next_n && ptx.cp_frames >= 1 &&
 		    (v90rx.ev_mpack || v90rx.ev_ed)) {
+			/* the data mode's encoder takes over after E */
+			if (v90a_data_setup())
+				return DPSTAT_ERROR;
 			ptx.cp_to_e = 1;
 			set_state(P4V_E);
 			break;
@@ -4286,11 +4331,17 @@ int V34Pump::handshake()
 		}
 		break;
 	case P4V_E:
-		if (v90rx.ev_b1d) {
-			DSP_DBG("v34: V.90: B1d in, %d bit/s downstream\n",
-				(v90a_cp.drn + 20) * 8000 / 6);
-			set_state(P4V_END);
-			break;
+		/* B1d in and our E out (B1, the encoder's first frame of
+		   ones, after it): CONNECT */
+		if (v90rx.ev_b1d && ptx.seg == V34_TX_DATA) {
+			set_state(V90A_DATA);
+			set_rates(rate_tx, rate_rx);
+			v90a_quiet = 0;
+			connected = 1;
+			DSP_DBG("v34: V.90 connect %d/%d (analogue modem)\n",
+				rate_tx, rate_rx);
+			stat_dp(DP_V90);
+			return DPSTAT_CONNECT;
 		}
 		if (c >= ms2samples(4000, srate)) {
 			DSP_DBG("v34: V.90: no B1d (Ed %s)\n",
@@ -4298,14 +4349,26 @@ int V34Pump::handshake()
 			return DPSTAT_ERROR;
 		}
 		break;
-	case P4V_END:
-		/* the data mode is to come (DSP_V90A=1 only): the call
-		   ends */
-		if (c >= ms2samples(300, srate)) {
-			DSP_DBG("v34: V.90 analogue modem: no data mode "
-				"yet\n");
+	case V90A_DATA:
+		/* the PCM signal gone (the digital modem hung up, or the
+		   line went): carrier lost.  Retrains and renegotiations
+		   are stage F's */
+		v90a_quiet = v90rx.dpow < 1e-3f * v90rx.level * v90rx.level ?
+			v90a_quiet + 1 : 0;
+		if (v90a_quiet >= carrier_loss) {
+			DSP_DBG("v34: V.90: carrier lost\n");
 			return DPSTAT_ERROR;
 		}
+		if (c % ms2samples(100, srate) == 0 && v90rx.fe_n)
+			stat_snr(10 * log10f(v90rx.dpow /
+					     (v90rx.data_mse() + 1e-6f)));
+		if (c % ms2samples(1000, srate) == 0)
+			DSP_DBG("v34: V.90 data: error %.2f rms (%.1f dB), "
+				"timing %+.2f ppm, phase %+.3f\n",
+				sqrtf(v90rx.data_mse()),
+				10 * log10f(v90rx.dpow /
+					    (v90rx.data_mse() + 1e-6f)),
+				v90rx.ppm(), v90rx.t_phase);
 		break;
 
 	/* phase 3 answerer */
@@ -4770,7 +4833,7 @@ int V34Pump::sample(float x, float *y, const float *ref)
 	pump_rx_sample(x);
 	if (renegotiating && total >= timeout)
 		retrain("renegotiation timed out");
-	if (state != V34_DATA && total >= timeout) {
+	if (state != V34_DATA && state != V90A_DATA && total >= timeout) {
 		DSP_DBG("v34: start-up timeout in state %d\n", state);
 		return DPSTAT_ERROR;
 	}

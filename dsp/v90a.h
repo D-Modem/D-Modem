@@ -114,6 +114,7 @@ struct V90Interp {
 #define V90RX_LS        1020    /* TRN1d symbols the equaliser is first
 				   solved on (least squares) */
 #define V90RX_DIL_ROUNDS 2      /* the DIL's rounds measured */
+#define V90RX_Q         1024    /* data mode bits held for the caller */
 
 struct V90Rx {
 	enum Stage {
@@ -239,7 +240,7 @@ struct V90Rx {
 	int ri_run;
 	long ri_seen, ribar_at, frames_at;
 	V90Con con_trn, con_data;
-	const V90Con *con;
+	V90Con *con;
 	float fy[6];
 	long frames, frames_b1;
 	int flast;
@@ -270,6 +271,11 @@ struct V90Rx {
 	int ev_mpack;           /* MP' */
 	int ev_ed;
 	int ev_b1d;             /* B1d's frames in */
+	/* data mode: the bits of the frames after B1d (take()), the
+	   signal's power (lost, it is gone), the decisions' error */
+	unsigned char q[V90RX_Q];
+	int qh, qn;
+	float dpow, de_mse;
 	V90Mp mp;
 
 	void init(int alaw_, int uinfo_);
@@ -291,6 +297,10 @@ struct V90Rx {
 	void line(float v);
 	/* one sample at 16 000 Hz */
 	void sample(float v);
+	/* data mode: up to n of its bits into b, oldest first (how many) */
+	int take(unsigned char *b, int n);
+	/* its decisions' mean square error of late (16 bit scale) */
+	float data_mse() const { return de_mse; }
 	/* the codec's clock against the network's, parts per million */
 	double ppm() const { return t_freq / 2 * 1e6; }
 

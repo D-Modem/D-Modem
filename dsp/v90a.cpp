@@ -56,6 +56,8 @@ namespace dsp {
 #define REFINE_N        96
 #define REFINE_D        20      /* (16 kHz samples) */
 #define TRN1D_MIN       2040
+/* data mode: a point's level a step towards each value decided as it */
+#define LEV_MU          0.01f
 /* the equaliser's tracking (NLMS) step */
 #define EQ_MU           0.005f
 /* the timing loop's gains on the error (normalised to the signal's
@@ -1043,6 +1045,18 @@ int V90Rx::phase4(const V90Cp &cpt)
 }
 
 /* see v90a.h */
+int V90Rx::take(unsigned char *b, int n)
+{
+	int m = 0;
+	while (m < n && qn) {
+		b[m++] = q[qh];
+		qh = (qh + 1) % V90RX_Q;
+		qn--;
+	}
+	return m;
+}
+
+/* see v90a.h */
 int V90Rx::data_cp(const V90Cp &cp)
 {
 	return con_data.init(cp, cp.drn + 20, lv4);
@@ -1142,7 +1156,7 @@ void V90Rx::mp_bit(int bit)
    frames, Ed after an MP', B1d on CP's constellations */
 void V90Rx::frame()
 {
-	const V90Con *cn = con;
+	V90Con *cn = con;
 	unsigned char d[48];
 	unsigned long long R = 0, A = 1;
 	int j, i, s[6], ones = 0, known = cn == &con_trn && frames < 340;
@@ -1185,6 +1199,15 @@ void V90Rx::frame()
 		}
 		adapt(k - 5 + j, tg - fy[j]);
 		timing(k - 5 + j, fy[j], tg);
+		if (cn == &con_data) {
+			/* each point's level follows its decisions (the
+			   DIL's, by the gain TRN2d showed, are a little off
+			   for some codes) */
+			cn->lev[j][bl] += LEV_MU * (m - cn->lev[j][bl]);
+			dpow += 0.0002f * (fy[j] * fy[j] - dpow);
+			de_mse += 0.0002f * ((tg - fy[j]) * (tg - fy[j]) -
+					     de_mse);
+		}
 		fe_sum += (double)(tg - fy[j]) * (tg - fy[j]);
 		fe_n++;
 	}
@@ -1200,6 +1223,20 @@ void V90Rx::frame()
 	}
 
 	if (cn == &con_data) {
+		/* data mode: the bits for take(), the signal's power and the
+		   decisions' error */
+		if (frames_b1 >= 48) {
+			for (i = 0; i < cn->D; i++) {
+				if (qn == V90RX_Q) {
+					/* (the caller is not taking them) */
+					qh = (qh + 1) % V90RX_Q;
+					qn--;
+				}
+				q[(qh + qn++) % V90RX_Q] = d[i];
+			}
+			frames++;
+			return;
+		}
 		/* B1d: 48 frames of ones */
 		if (frames_b1 < 48) {
 			b1_err += cn->D - ones;

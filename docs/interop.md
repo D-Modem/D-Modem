@@ -769,7 +769,8 @@ hook before its digits; answering at once, our ANSam would be over
 before it listens.
 
 `MODEM_REC=<prefix>` makes `half_open` and `half_smartlink` record their
-line input and output (`<prefix>.in`, `<prefix>.out`), and `DBG=<level>`
+line input and output (`<prefix>.<name>.in`, `<prefix>.<name>.out`, the
+name `MODEM_NAME`'s: `modemA` and `modemB` in an interop call), and `DBG=<level>`
 sets the debug level the interop calls run the modems with.
 `WAV=<file>` makes `interop_call` save
 the call as audio: a stereo 16 bit WAV at 8000 Hz of the line where it
