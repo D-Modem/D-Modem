@@ -17,6 +17,8 @@
 #ifndef DMODEMD_SIP_MODEM_H
 #define DMODEMD_SIP_MODEM_H
 
+#include <stdint.h>
+
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -116,6 +118,18 @@ public:
 	void on_status(std::function<void(const Status &)> fn) {
 		status_fn_ = std::move(fn);
 	}
+
+	/* the modem's speaker, as ATM and ATL have it (on while it dials
+	   and trains with ATM1): volume(level) as it changes (0 off, 1..3
+	   ATL's), and while it is on audio(rx, tx, n), each block of the
+	   call's samples as it passes: what came, and the modem's answer.
+	   On run()'s thread, before run() */
+	struct Speaker {
+		std::function<void(int level)> volume;
+		std::function<void(const int16_t *rx, const int16_t *tx,
+				   int n)> audio;
+	};
+	void on_speaker(Speaker s);
 
 	/* the SIP user agent started with cfg, then the modem served until
 	   stop() or SIGINT/SIGTERM (RunLoop::catch_signals()), or the DTE
