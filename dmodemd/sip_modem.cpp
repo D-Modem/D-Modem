@@ -85,6 +85,15 @@ public:
 		sip::flash(ms);
 	}
 	unsigned long now_ms() override { return dcore::monotonic_ms(); }
+	/* ATM, ATL: to the speaker's owner (SipModem::on_speaker()) */
+	void speaker(dcore::Modem &, int volume) override {
+		speaker_level_ = volume;
+		if (speaker_to.volume)
+			speaker_to.volume(volume);
+	}
+
+	/* the speaker's owner */
+	SipModem::Speaker speaker_to;
 
 	/* the call's audio socket, -1 if none */
 	int audio_fd() const { return audio_; }
@@ -110,6 +119,7 @@ private:
 
 	Dte &dte_;
 	int audio_ = -1;
+	int speaker_level_ = 0;
 
 	/* T.38: the socket, the far end, the version agreed, the largest
 	   datagram it takes; UDPTL each way; the fax engine's clock (when
@@ -208,6 +218,8 @@ int SipLine::audio(dcore::Modem &m)
 		if (law)
 			m.set_line_law(law);
 		m.process(in, out, count);
+		if (speaker_level_ > 0 && speaker_to.audio)
+			speaker_to.audio(in, out, count);
 	}
 	if (audio_ < 0) {
 		DBG("hung up: no answer to the line's samples\n");
@@ -598,6 +610,12 @@ void SipModem::stop()
 	if (wake_[1] >= 0 && ::write(wake_[1], &c, 1) < 0) {
 		/* (full: it is awake anyway) */
 	}
+}
+
+/* see sip_modem.h */
+void SipModem::on_speaker(Speaker s)
+{
+	line_->speaker_to = std::move(s);
 }
 
 /* the status to status_fn_ if it changed */
