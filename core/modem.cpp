@@ -1081,9 +1081,13 @@ void Modem::change_dp()
 		id = sregs_[SREG_DP];
 		if (id == DP_K56)
 			id = DP_V90;
-		/* (an analogue line has no digital modem's modes) */
+		/* an analogue line has no V.91 (that is between two
+		   digital modems); V.90 and V.92 run as the analogue modem,
+		   whose PCM receiver wants the line at 9600 Hz (at 8000 Hz
+		   the pump would take the line for the digital modem's) */
 		if (host_.analog_line(*this) &&
-		    (id == DP_V90 || id == DP_V91 || id == DP_V92))
+		    (id == DP_V91 ||
+		     ((id == DP_V90 || id == DP_V92) && srate_ != 9600)))
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
 			id == DP_V92 ? (unsigned)DP_V8 : id;

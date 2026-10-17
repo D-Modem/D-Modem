@@ -5047,10 +5047,11 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	alaw = rt && rt->law ? rt->law == 2 :
 		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
 	v8_low = caller_ && rt ? rt->v8_for : 0;
-	/* V.90 as the analogue modem, on a line other than the digital
-	   modem's network: under way, only DSP_V90A=1 offers it */
+	/* V.90 as the analogue modem, on a 9600 Hz line (the digital
+	   modem's network is at 8000 Hz): DSP_V90A=0 leaves it out */
 	v90a = (id == DP_V90 || id == DP_V92) && !v90 && !v8_low &&
-		getenv("DSP_V90A") && atoi(getenv("DSP_V90A"));
+		line_rate == 9600 &&
+		!(getenv("DSP_V90A") && !atoi(getenv("DSP_V90A")));
 	v90a_on = v90a_rx = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;

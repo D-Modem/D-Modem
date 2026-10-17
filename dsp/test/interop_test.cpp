@@ -310,7 +310,7 @@ std::vector<Call> calls()
 	add("open", "open_34_noise", "open", "open", "ATX3;AT+MS=34",
 	    { "NET=9600:9600:ulaw", "NET_SYNC=1", "STREAM=30",
 	      "NET_FLOOR=250", "NET_NOISE=10:250" });
-	/* --- the open modem as V.90's analogue modem (DSP_V90A=1, 9600 Hz)
+	/* --- the open modem as V.90's analogue modem (9600 Hz)
 	   and the open digital modem (8000 Hz), each calling: V.8 agrees
 	   on V.90, phase 2 has the analogue modem as the V.34 answer
 	   modem, INFO0d's law, INFO1a asks for V.90; in phase 3 Ja asks
@@ -326,7 +326,7 @@ std::vector<Call> calls()
 	   and CP leaves out what they make alike; DSP_V90A_DIL=0 asks for
 	   no DIL */
 	add("open", "open_v90a_ulaw", "open", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:ulaw", "DSP_V90A=1", "BULK=200000",
+	    { "NET=9600:8000:ulaw", "BULK=200000",
 	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*INFO0d u-law"
 	      ".*V.90 upstream 3429 baud.*Sd-bar.*Jd: rates 3fffff.*Jd'"
 	      ".*DIL: pad 0.0 dB.*robbed none.*phase 3 done.*CPt: Ucodes"
@@ -339,20 +339,20 @@ std::vector<Call> calls()
 	      "Jd.*V.90 DIL ends after 2 rounds.*V.90 CPt: D 18, K 12, M 4 4 "
 	      "4 4 4 4.*CP' at symbol.*E at symbol.*V.90 connect 56000/" });
 	add("open", "open_v90a_alaw", "open", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:alaw", "DSP_G711=alaw", "DSP_V90A=1",
+	    { "NET=9600:8000:alaw", "DSP_G711=alaw",
 	      "EXPECT_A=(?s)INFO0d A-law.*V.90 upstream.*Jd: rates.*"
 	      "DIL: pad 0.0 dB.*robbed none.*phase 3 done.*"
 	      "B1d: 0 bit errors in 48 frames of 42 bits",
 	      "EXPECT_B=V.90 connect 56000/" });
 	add("open", "open_v90a_answers", "open8", "open", "ATX3;AT+MS=90",
-	    { "NET=8000:9600:ulaw", "DSP_V90A=1",
+	    { "NET=8000:9600:ulaw",
 	      "EXPECT_A=(?s)INFO1a: V.90, upstream 3429 baud, UINFO 79.*"
 	      "V.90 DIL ends.*V.90 connect 56000/",
 	      "EXPECT_B=(?s)V.90 with us as the analogue modem.*INFO0d u-law"
 	      ".*V.90 upstream 3429 baud.*DIL: pad 0.0 dB.*phase 3 done.*"
 	      "B1d: 0 bit errors in 48 frames of 42 bits" });
 	add("open", "open_v90a_nodil", "open", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:ulaw", "DSP_V90A=1", "DSP_V90A_DIL=0",
+	    { "NET=9600:8000:ulaw", "DSP_V90A_DIL=0",
 	      "EXPECT_A=(?s)phase 3 done \\(no DIL\\).*CP: D 42 .*"
 	      "B1d: 0 bit errors in 48 frames of 42 bits",
 	      "EXPECT_B=V.90 connect 56000/" });
@@ -361,20 +361,20 @@ std::vector<Call> calls()
 	   symbols (where a T-spaced receiver at 8000 Hz loses the band's
 	   top), and fast or slow by 100 ppm, the timing loop finding it */
 	add("open", "open_v90a_phase", "open", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:ulaw", "NET_PHASE=0.5", "DSP_V90A=1",
+	    { "NET=9600:8000:ulaw", "NET_PHASE=0.5",
 	      "EXPECT_A=(?s)timing [-+]0.[0-9]+ ppm.*robbed none.*"
 	      "CP: D 42 .*B1d: 0 bit errors in 48 frames of 42 bits",
 	      "EXPECT_B=V.90 connect 56000/" });
 	add("open", "open_v90a_ppm_fast", "open", "open8", "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_PPM=100", "NET_PHASE=0.3",
-	      "DSP_V90A=1", "BULK=100000",
+	      "BULK=100000",
 	      "EXPECT_A=(?s)timing \\+(99.[5-9]|100.[0-4])[0-9]* ppm.*"
 	      "robbed none.*B1d: 0 bit errors in 48 frames of 4[0-2] bits"
 	      ".*V.90 data: error [0-2].[0-9]+ rms",
 	      "EXPECT_B=V.90 connect 5[0-9]+/" });
 	add("open", "open_v90a_ppm_slow", "open8", "open", "ATX3;AT+MS=90",
 	    { "NET=8000:9600:alaw", "DSP_G711=alaw", "NET_PPM=-100",
-	      "NET_PHASE=0.7", "DSP_V90A=1",
+	      "NET_PHASE=0.7",
 	      "EXPECT_A=V.90 connect 5[0-9]+/",
 	      "EXPECT_B=(?s)timing -(99.[5-9]|100.[0-4])[0-9]* ppm.*"
 	      "robbed none.*B1d: 0 bit errors in 48 frames of 4[0-2] bits" });
@@ -384,7 +384,7 @@ std::vector<Call> calls()
 	   at the end, and takes it from the PCM receiver's line; CP is
 	   designed on TRN2d's noise, our SCR and its echo going out */
 	add("open", "open_v90a_echo", "open", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:ulaw", "DSP_TEST_ECHO=-10:1c", "DSP_V90A=1",
+	    { "NET=9600:8000:ulaw", "DSP_TEST_ECHO=-10:1c",
 	      "EXPECT_A=(?s)echo canceller: least squares [4-9][0-9].[0-9] "
 	      "dB.*echo canceller took [4-9][0-9].[0-9] dB away[^:].*"
 	      "B1d: 0 bit errors in 48 frames of 4[0-2] bits",
@@ -392,28 +392,40 @@ std::vector<Call> calls()
 	add("open", "open_v90a_echo_answers", "open8", "open",
 	    "ATX3;AT+MS=90",
 	    { "NET=8000:9600:alaw", "DSP_G711=alaw", "DSP_TEST_ECHO=-6:0.4a",
-	      "NET_PPM=50", "NET_PHASE=0.4", "DSP_V90A=1", "BULK=100000",
+	      "NET_PPM=50", "NET_PHASE=0.4", "BULK=100000",
 	      "EXPECT_A=V.90 connect [0-9]+/",
 	      "EXPECT_B=(?s)echo canceller took [3-9][0-9].[0-9] dB away[^:].*"
 	      "B1d: 0 bit errors in 48 frames.*V.90 data: error [0-2].[0-9]+ "
 	      "rms" });
 	add("open", "open_v90a_dil_pad", "open", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:ulaw", "NET_PAD=3", "DSP_V90A=1",
+	    { "NET=9600:8000:ulaw", "NET_PAD=3",
 	      "EXPECT_A=(?s)DIL: pad 3.0 dB.*robbed none.*"
 	      "B1d: 0 bit errors in 48 frames of 4[0-2] bits",
 	      "EXPECT_B=V.90 connect 5[0-9]+/" });
 	add("open", "open_v90a_dil_rbs", "open", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:ulaw", "NET_RBS=0x01", "DSP_V90A=1",
+	    { "NET=9600:8000:ulaw", "NET_RBS=0x01",
 	      "EXPECT_A=(?s)DIL: pad 0.0 dB.*robbed [0-5],"
 	      " distinct.*B1d: 0 bit errors in 48 frames of 3[3-9] bits",
 	      "EXPECT_B=V.90 connect 4[0-9]+/" });
 	add("open", "open_v90a_dil_pad_rbs", "open", "open8",
 	    "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_PAD=6", "NET_RBS=0x24",
-	      "NET_FLOOR=30", "DSP_V90A=1",
+	      "NET_FLOOR=30",
 	      "EXPECT_A=(?s)DIL: pad 6.0 dB.*robbed [0-5],[0-5], distinct.*"
 	      "B1d: 0 bit errors in 48 frames",
 	      "EXPECT_B=V.90 connect [0-9]+/" });
+	/* V.90 as the analogue modem is the 9600 Hz modem's default: both
+	   modems with the default AT+MS (92) connect at V.90, the digital
+	   modem offering V.92 (we do not ask for it); DSP_V90A=0 leaves it
+	   out, V.34 */
+	add("open", "open_v90a_default", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw",
+	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
+	      "V.90 connect 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=V.90 connect 5[0-9]+/" });
+	add("open", "open_v90a_off", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V90A=0",
+	      "EXPECT_A=data rates tx [0-9]+ rx [0-9]+, trellis" });
 #ifdef INTEROP_HAVE_AMR
 	/* --- two open modems (8000 Hz) through a mobile network's speech
 	   codec (netsim's NET_CODEC): V.22 passes AMR at 12.2 kbit/s with

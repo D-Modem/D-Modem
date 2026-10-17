@@ -44,15 +44,17 @@ interface has one addition the original library does not use:
 | 91 | ITU V.91, 28000 to 62667 bit/s both ways | Two digital modems on an 8000 Hz G.711 line; V.8, then V.34 if V.91 does not start (see [V.91](v91.md#v91-digital-to-digital)). 90 and 92 offer it as well |
 | 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s; V.90 as the digital modem | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. With 90 or 92 on an 8000 Hz G.711 line: V.90 as the digital modem, 28000 to 56000 bit/s downstream (see [V.90](v90.md#v90-digital-modem)) |
 
-V.90 is there as the **digital** modem only (the server side, as on a
+V.90 is there as the **digital** modem (the server side, as on a
 G.711 VoIP line), with V.92's quick connect for V.92 analogue modems
 calling (see [V.92](v92.md#v92-quick-connect)) and V.92's PCM
-upstream (see [PCM upstream](v92.md#v92-pcm-upstream)); the analogue side of
-V.90 is under way (phases 1 to 4 and the data mode so far, with `DSP_V90A=1`: see
-[V.90 analogue modem](v90a.md)); V.92's, K56flex and V.8bis are not (`AT+MS=56`,
-K56flex, runs V.90). Between two digital modems V.91 (see
-[V.91](v91.md#v91-digital-to-digital)) takes the place of V.90. With the default `AT+MS=92` at 9600 Hz the modem connects at V.34 or
-lower.
+upstream (see [PCM upstream](v92.md#v92-pcm-upstream)), and as the
+**analogue** modem at 9600 Hz, with 90 or 92 (the default): 56000
+bit/s down and 33600 up from a V.90 digital modem, V.34 and below with
+any other (`DSP_V90A=0` leaves it out; retrains are still to come: see
+[V.90 analogue modem](v90a.md)). V.92 as the analogue modem, K56flex
+and V.8bis are not there (`AT+MS=56`, K56flex, runs V.90). Between two
+digital modems V.91 (see [V.91](v91.md#v91-digital-to-digital)) takes
+the place of V.90.
 
 Answering: the core starts the answering pump S92 seconds (2) after
 going off hook, which is V.25's silent interval (1.8 to 2.5 s, 4.3/V.25);

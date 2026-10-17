@@ -77,18 +77,23 @@ that user needs access to `/dev/snd/*`.
   by the ringing tone's end (`+VRA`), or by `+VRN` without one (V.253
   9.1.1).
 - **Modulations.** The core treats the line as an analogue one
-  (`Host::analog_line()`), so `+MS`'s V.90, V.91 and V.92 become V.34:
-  those are a digital modem's modes, and an analogue line has none. On a
-  telephone line the modem is the analogue end of the call, and it
-  connects at V.34 (up to 33600 bit/s) and below. It has fax (class 1)
-  and voice too.
+  (`Host::analog_line()`): the modem is the analogue end of the call.
+  `+MS`'s V.90 and V.92 (the default) run V.90 as the analogue modem
+  at 9600 Hz (`-r 9600`, the default), up to 56000 bit/s down and
+  33600 up from a V.90 server (see [V.90 analogue modem](dsp/v90a.md)),
+  and V.34 (up to 33600 bit/s) and below with any other modem. V.91,
+  between two digital modems, becomes V.34, as do V.90 and V.92 at
+  8000 Hz (`-r 8000`: the PCM receiver wants 9600). It has fax (class
+  1) and voice too.
 
 ## Limits
 
-- **Speed.** The open DSP has V.90 and V.92 only as the digital modem.
-  The analogue end of a V.90 call to an ISP is not there yet (see
-  [V.90 analogue modem](dsp/v90a.md) for the plan), so such a call
-  connects at V.34.
+- **Speed.** As the analogue modem the open DSP has V.90 but not yet
+  V.92's (no quick connect, PCM upstream or modem-on-hold), nor V.90's
+  retrains and rate renegotiations: a line that changes mid-call drops
+  it. The V.90 analogue modem has been tested against our own digital
+  modem on the simulated network only, not yet against an ISP's
+  server.
 - **Dialling.** DTMF only: `ATDP` dials in DTMF too, as a hook switch
   through a mixer control cannot time pulses.
 - **Country rules.** The codec's line settings (impedance, ring
