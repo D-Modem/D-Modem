@@ -88,7 +88,12 @@ dmodem_test_exe(vcvm_test vcvm_test.cpp codec_sim.cpp ${S}/vcvm.cpp)
 # probing and the loading, and two DCEs' start-ups through the codecs
 dmodem_test_exe(vcvm_startup_test vcvm_startup_test.cpp codec_sim.cpp)
 target_link_libraries(vcvm_startup_test PRIVATE dmodem_loopback dmodem_dsp)
-foreach(_t vcvm_test vcvm_startup_test)
+# its data mode, and the Reed-Solomon code under it
+dmodem_test_exe(vcvm_data_test vcvm_data_test.cpp codec_sim.cpp)
+target_link_libraries(vcvm_data_test PRIVATE dmodem_loopback dmodem_dsp)
+dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
+dmodem_gtest(rs_test LABELS quick)
+foreach(_t vcvm_test vcvm_startup_test vcvm_data_test)
 	if(AMR_FOUND)
 		target_compile_definitions(${_t} PRIVATE DMODEM_HAVE_AMR)
 		target_include_directories(${_t} PRIVATE ${AMR_INCLUDE_DIRS})

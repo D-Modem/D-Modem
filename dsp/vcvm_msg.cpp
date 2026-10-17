@@ -220,6 +220,7 @@ int VcvmMp::encode(uint8_t *o) const
 	int nb = (N + 3) / 4;
 	memset(o, 0, 5 + 2 * nb);
 	o[0] = (uint8_t)((ack ? 0x80 : 0) | per << 5 | (l.rate & 3) << 3);
+	o[1] = retrain ? 0x80 : 0;
 	o[2] = (uint8_t)std::min(std::max(rtt, 0), 255);
 	o[3] = (uint8_t)((l.kind == VcvmLoading::COMB ? (l.code & 15) << 4 : 0) |
 			 (l.kind == VcvmLoading::PARAM ? 0x08 : 0) |
@@ -237,6 +238,7 @@ int VcvmMp::decode(const uint8_t *o, int n)
 		return -1;
 	*this = VcvmMp();
 	ack = o[0] & 0x80;
+	retrain = o[1] & 0x80;
 	int per = (o[0] >> 5) & 3, rate = (o[0] >> 3) & 3;
 	if (rate == 3 || per == 3)
 		return -1;
@@ -462,6 +464,7 @@ int VcvmMsgRx::init(int fs, bool param, bool peer_calling)
 
 void VcvmMsgRx::restart(long at)
 {
+	out_.clear();
 	n_ = at;
 	active_ = got_ = false;
 	quiet_ = loud_ = 0;

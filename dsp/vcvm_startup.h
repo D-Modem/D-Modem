@@ -140,6 +140,9 @@ struct VcvmLoading {
 /* INFO1 and MP (Table B.2) */
 struct VcvmMp {
 	bool ack = false;       /* MP only */
+	bool retrain = false;   /* MP only, octet 2 bit 8: the DCE asks
+				   for a retrain (both return to phase 2
+				   after the exchange) */
 	int rtt = 255;          /* the round trip delay, 10 ms; 255 unknown */
 	VcvmLoading l;
 
@@ -206,7 +209,8 @@ public:
 
 	/* P20, or the channel the peer (calling or answering) sends on */
 	int init(int fs, bool param, bool peer_calling);
-	/* nothing received: the next sample pushed is sample at */
+	/* nothing received (nor kept): the next sample pushed is sample
+	   at */
 	void restart(long at);
 	void push(const float *x, int n);
 	/* a transmission received, once its signal has ended */
@@ -367,6 +371,10 @@ public:
 		VcvmCaps own, peer;     /* from CM and JM */
 		int modes = VCVM_M_ALL; /* +CVM's */
 		int level = 6;          /* INFO0's transmit level */
+		int delay_ms = 100;     /* the calling DCE's silence before
+					   INFO0 (after V.8; longer after a
+					   retrain, while the peer finishes
+					   its MP) */
 	};
 	enum State { RUNNING, DONE, FAILED };
 
@@ -384,6 +392,9 @@ public:
 	const VcvmProbeMeas &meas() const { return prx_.meas(); }
 	bool param_messages() const { return msgp_; }
 	long done_at() const { return done_at_; }
+	/* the end of the last message received (phase 4's signal is
+	   looked for from there) */
+	long last_rx_end() const { return last_rx_end_; }
 	/* what happened, a line a step */
 	const std::string &log() const { return log_; }
 
@@ -431,6 +442,7 @@ private:
 	int rtt_ms_ = -1;
 	long deadline_ = 0;
 	long done_at_ = -1;
+	long last_rx_end_ = 0;
 	int mps_ = 0;
 	std::string log_;
 };

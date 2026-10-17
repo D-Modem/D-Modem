@@ -53,6 +53,7 @@ int VcvmStartup::init(const Config &c)
 	got_mp_ = got_ack_ = sent_ack_ = mp_on_ = false;
 	rtt_ms_ = -1;
 	done_at_ = -1;
+	last_rx_end_ = 0;
 	mps_ = 0;
 	rxl_ = txl_ = VcvmLoading();
 	if (c.fs != 8000 && c.fs != 16000)
@@ -74,7 +75,7 @@ int VcvmStartup::init(const Config &c)
 	     "answering", c.fs, msgp_ ? "P20" : "V.21", allowed_);
 	step_ = WAIT_INFO0;
 	if (c.calling) {
-		silence(100);
+		silence(c.delay_ms);
 		uint8_t o[4];
 		send_msg(o, info0_.encode(o));
 		silence(100);
@@ -167,6 +168,7 @@ template <class R> void VcvmStartup::replay(R &r, long from)
 
 void VcvmStartup::on_msg(const VcvmMsg &m)
 {
+	last_rx_end_ = m.end;
 	if (!m.ok) {
 		note("a transmission without a good frame (%.3f to %.3f s)",
 		     (double)m.start / c_.fs, (double)m.end / c_.fs);
