@@ -2204,6 +2204,15 @@ int Modem::t38_start(int max_data)
 		return -1;
 	logf("T.38 on, %d octets of data a packet\n", max_data);
 	t38_ = true;
+	/* a call we dialled, its call progress still waiting for the
+	   answer tone: the far end, going over to T.38, has answered (it
+	   may well do so before its CED, which T.30 has wait 1.8 s and
+	   which T.38 then carries as an indicator, not as audio): the fax
+	   engine now, on T.38, as the answer tone would have started it */
+	if (!fax_ && caller_ && run_ == Run::Dp && started_) {
+		logf("T.38 before the answer tone: the call answered\n");
+		change_dp();
+	}
 	return 0;
 }
 

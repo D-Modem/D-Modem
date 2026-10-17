@@ -22,6 +22,7 @@
 #include <t38.h>
 
 #include "pty.h"
+#include "portable.h"
 #include "run_loop.h"
 #include "sip.h"
 #include "sip_modem.h"
@@ -154,7 +155,7 @@ int SipLine::start(dcore::Modem &m)
 	static const int16_t silence[FRAME] = {};
 	int sv[2];
 
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
+	if (dmd::socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
 		ERR("socketpair: %s\n", strerror(errno));
 		return -1;
 	}
