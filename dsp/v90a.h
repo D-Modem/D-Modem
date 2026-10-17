@@ -156,6 +156,12 @@ struct V90Rx {
 	double L[V90RX_TAPS][V90RX_TAPS];
 	unsigned trn_scr;       /* TRN1d's signs: GPC on ones from zero */
 	float level;            /* lin[uinfo] */
+	/* UINFO's level at each symbol position mod 6, as the equaliser
+	   gives it (a robbed bit lowers it in its interval): its targets
+	   in training, from the loudest position's level; the positions'
+	   mean magnitudes of late */
+	float tlev[6];
+	double tmag[6];
 	double err_sum;
 	long err_n;
 	float mse;              /* of the decisions, to the points' power */

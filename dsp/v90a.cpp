@@ -145,6 +145,10 @@ void V90Rx::init(int alaw_, int uinfo_)
 	for (i = 0; i < 128; i++)
 		lin[i] = v90_ucode_linear(alaw_, i);
 	level = (float)lin[uinfo & 127];
+	for (i = 0; i < 6; i++) {
+		tlev[i] = level;
+		tmag[i] = level;
+	}
 	ip.init();
 	stage = WAIT_SD;
 	dip = 1;
@@ -641,7 +645,8 @@ void V90Rx::sample(float v)
 		int i;
 
 		if (t >= 0)
-			a = scramble(&trn_scr, SCR_GPC, 1) ? level : -level;
+			a = scramble(&trn_scr, SCR_GPC, 1) ? tlev[k % 6] :
+				-tlev[k % 6];
 		if (t == REFINE_N && !refined)
 			refine();
 		if (stage == TRAIN && t > REFINE_N) {
@@ -680,8 +685,9 @@ void V90Rx::sample(float v)
 			int j = (int)(k % 6);
 			rs[j] = y > 0;
 			if (ev_ri) {
-				adapt(k, (y > 0 ? level : -level) - y);
-				timing(k, y, y > 0 ? level : -level);
+				float a4 = y > 0 ? tlev[j] : -tlev[j];
+				adapt(k, a4 - y);
+				timing(k, y, a4);
 			} else
 				timing_free();
 			if (j == 5)
@@ -709,7 +715,21 @@ void V90Rx::sample(float v)
 		/* TRN1d known up to its least length; after it our
 		   decisions */
 		if (t >= TRN1D_MIN)
-			a = y > 0 ? level : -level;
+			a = y > 0 ? tlev[k % 6] : -tlev[k % 6];
+		/* each position's level as the equaliser gives it: the
+		   targets follow, against the loudest's (an equaliser the
+		   same for all six cannot make one interval's level its
+		   own, so what it gives there is the line's) */
+		{
+			int j = (int)(k % 6), i2;
+			double mx = 0;
+			tmag[j] += 0.01 * (fabsf(y) - tmag[j]);
+			for (i2 = 0; i2 < 6; i2++)
+				if (tmag[i2] > mx)
+					mx = tmag[i2];
+			for (i2 = 0; i2 < 6; i2++)
+				tlev[i2] = (float)(level * tmag[i2] / mx);
+		}
 		/* once the timing has locked: the equaliser solved again on
 		   what is known (TRN1d's first solution spans a drifting
 		   clock), then UINFO's spread in each interval */

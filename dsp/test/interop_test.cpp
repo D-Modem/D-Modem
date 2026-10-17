@@ -403,10 +403,19 @@ std::vector<Call> calls()
 	      "B1d: 0 bit errors in 48 frames of 4[0-2] bits",
 	      "EXPECT_B=V.90 connect 5[0-9]+/" });
 	add("open", "open_v90a_dil_rbs", "open", "open8", "ATX3;AT+MS=90",
-	    { "NET=9600:8000:ulaw", "NET_RBS=0x01",
-	      "EXPECT_A=(?s)DIL: pad 0.0 dB.*robbed [0-5],"
-	      " distinct.*B1d: 0 bit errors in 48 frames of 3[3-9] bits",
-	      "EXPECT_B=V.90 connect 4[0-9]+/" });
+	    { "NET=9600:8000:ulaw", "NET_RBS=0x01", "BULK=100000",
+	      "EXPECT_A=(?s)PCM receiver ready at symbol [0-9]+: noise 0.[0-9]+"
+	      ".*DIL: pad 0.0 dB.*robbed [0-5], distinct.*"
+	      "B1d: 0 bit errors in 48 frames of 42 bits.*"
+	      "V.90 data: error [0-1].[0-9]+ rms",
+	      "EXPECT_B=V.90 connect 56000/" });
+	add("open", "open_v90a_dil_rbs_alaw", "open", "open8",
+	    "ATX3;AT+MS=90",
+	    { "NET=9600:8000:alaw", "DSP_G711=alaw", "NET_RBS=0x08",
+	      "EXPECT_A=(?s)PCM receiver ready at symbol [0-9]+: noise 0.[0-9]+"
+	      ".*robbed [0-5], distinct.*B1d: 0 bit errors in 48 frames of "
+	      "4[0-2] bits",
+	      "EXPECT_B=V.90 connect 5[0-9]+/" });
 	add("open", "open_v90a_dil_pad_rbs", "open", "open8",
 	    "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_PAD=6", "NET_RBS=0x24",
