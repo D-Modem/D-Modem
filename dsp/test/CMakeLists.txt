@@ -81,6 +81,15 @@ if(AMR_FOUND)
 else()
 	message(STATUS "tests: AMR libraries not found, netsim without NET_CODEC")
 endif()
+# V.cvm's signal set back to back and through the codecs (codec_sim, where
+# the AMR libraries are)
+dmodem_test_exe(vcvm_test vcvm_test.cpp codec_sim.cpp ${S}/vcvm.cpp)
+if(AMR_FOUND)
+	target_compile_definitions(vcvm_test PRIVATE DMODEM_HAVE_AMR)
+	target_include_directories(vcvm_test PRIVATE ${AMR_INCLUDE_DIRS})
+	target_link_libraries(vcvm_test PRIVATE ${AMR_LDFLAGS})
+endif()
+dmodem_gtest(vcvm_test LABELS quick)
 # the fax without a core: the modulations, T.4 and TIFF, two T.30 machines
 find_program(TIFFCP tiffcp)
 dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp
