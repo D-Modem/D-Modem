@@ -843,7 +843,8 @@ INF.
 | V23C / 23, V21 / 21 | CONNECT 1200/75, 300 | the same |
 | B103 / 103 | CONNECT 300 (answered after it dials: see below) | CONNECT 300 |
 | V90 / 90 (ours as the digital modem), µ-law and A-law | CONNECT 50666 (31200 upstream) | - |
-| V92 / 92, as it comes and with `+PIG=0` | PCM upstream to CPu, then a retrain and V.90 (49333) | - |
+| V92 / 92, as it comes | CONNECT 49333 (V.90) | - |
+| V92 with `+PIG=0` (PCM upstream) / 92, µ-law and A-law | a retrain, then CONNECT 46666/32000, renegotiated down to some 30666 | - |
 
 V.8 in its automode (V.34), V.44 both ways (60000 octets) and MNP 5
 both ways pass too, and as the other peers':
@@ -900,11 +901,30 @@ and E2u. Its INFO1a has filter sections 0 (p1 and z2 alone, Table 18),
 and our CPd had 4 taps of z1 and p2 in it (for the Smart Link library,
 whose filters have all four): it never took the CPd and retrained after
 half a second. Our CPd now has z1 and p2 only where the INFO1a has them.
-Its B1u after E2u still decodes as noise, though its points come on our
-constellation (grid mse 0.004, plain: no prefilter, precoder or trellis):
-the digits match no reading of B1u (scrambled ones), either scrambler,
-bit or digit order, sign, polarity or offset, so we retrain and the call
-is V.90 (its INFO1a then says V.90).
+Its points then differ from V.92's in two ways, both now taken care of
+in our receiver (`v92.cpp`, data_symbol()):
+
+- without precoding, its negative points are a grid step (16 G) further
+  out than the mirror of its positive ones: they land on the even grid
+  units.  The first 24 symbols' negative ones show it, and from then on
+  they go a step in;
+- its precoder takes its feedback to the grid unit below: it sends
+  x = w - ceil(fb), fb = the sum of p1 over its x before, so that we
+  receive the point less a fraction of a unit (the decisions sit at the
+  edge of their regions, and B1u had some 5 % of its bits wrong).  We
+  rebuild its x from our decisions, and so fb (near a unit, either side,
+  the one nearer a point: its sum is not quite ours); the first 48
+  symbols' grid mse with this and without tell which.
+
+Its B1u on our prefilter (z2, with p1) still decodes as noise, the
+points nowhere near the levels.  So after a PCM upstream that failed with
+the prefilter, we retrain and try it once more without the prefilter,
+nor trellis decoding (which a wrong decision's fb throws off): precoding
+alone, to a V.92 connect at 32000 or 33333 upstream.  The points, off
+G.711's levels, then take its quantization noise, which the training's
+mse that chose the rate misses (G.711's noise grows with the level, and
+TRN2u's points are near ones): the margin renegotiates down, each time a
+rate lower than the last (`drn_cap`), to some 30666, about V.90's 31200.
 
 What it showed in ours: our V.32 and V.32bis caller sent S for 256
 symbols after R1, then S-bar. V.32 (5.4.1) has S for NT first, the round

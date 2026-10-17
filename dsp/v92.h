@@ -145,6 +145,18 @@ enum v92_rx {
 struct V92Up : PcmFrames<V92Up> {
 	int alaw;
 	V92Info1a ia;
+	/* the analogue modem's negative data points a step out (the ESS
+	   modem's), and the first symbols' grid mse that tells it */
+	int neg_step, ns_n;
+	float ns_odd, ns_even;
+	/* the analogue modem's precoder on the grid unit below (the ESS
+	   modem's), the first symbols' grid mse with and without, and its
+	   outputs rebuilt by data symbol */
+	int drn_cap;            /* the rate's most (a renegotiation down
+				   for the margin), 0 none */
+	int pq_on;
+	float pq_eq, pq_ed;
+	double pq_x[V92_PMAX];
 	CoreBits link;          /* the data */
 	long n;                 /* samples since the start */
 	int connected;
@@ -262,6 +274,9 @@ struct V92Up : PcmFrames<V92Up> {
 	/* the prefilter design (DSP_V92_PREFILTER=0: the receiver's feed
 	   forward taps instead) */
 	int pf_ok;
+	int plain;              /* no prefilter nor trellis decoding (a
+				   retry after one with the prefilter
+				   failed) */
 	int pf;                 /* our CPd has the prefilter */
 	int pf_on;              /* data mode: the receiver reads the levels */
 	double ch[V92_CH];      /* the channel from TRN2u */

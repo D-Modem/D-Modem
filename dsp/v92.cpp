@@ -1071,6 +1071,9 @@ void V92Up::symbol(float y)
 			dprev = 0;
 			dframes = derrs = 0;
 			dsn = ddn = 0;
+			neg_step = ns_n = pq_on = 0;
+			ns_odd = ns_even = pq_eq = pq_ed = 0;
+			memset(pq_x, 0, sizeof(pq_x));
 			fpe_rx = fpe_sw = 0;
 			dmse = 0;
 			vi = 0;
@@ -1533,7 +1536,69 @@ void V92Up::data_symbol(float y)
 	/* in grid units: a point is (2 eta + 1) * 16 * G, or with the
 	   prefilter the G.711 levels, at 2 eta + 1 and linear between */
 	float u = pf_on ? pf_grid(&cpd, y) : (float)(y / (16 * cpd.g)), t,
-		err, eg;
+		err, eg, pq_c = 0;
+	/* the ESS modem's negative points are a step (16 G) further out
+	   than its positive ones' mirror, on the even grid units: the first
+	   24 symbols' negative ones tell (and from then on, they go a unit
+	   in) */
+	/* the ESS modem's precoder takes its feedback to the grid unit
+	   below (its output x = w - ceil(fb), fb = sum p1 x before): we
+	   receive w - (ceil(fb) - fb), a fraction of a unit in from its
+	   point.  Its rebuilt outputs (from our decisions) give fb, the
+	   first 48 symbols' grid mse with and without tell */
+	if (!pf_on && b_frozen) {
+		double fb = 0;
+		for (int k = 0; k < cpd.len[1] && k < V92_PMAX; k++)
+			fb += cpd.coef[1][k] *
+				pq_x[(dsn - 1 - k) & (V92_PMAX - 1)];
+		fb /= 16384;
+		/* its sum is not quite ours (its arithmetic): near a unit,
+		   either side, the one nearer a point */
+		double c = ceil(fb - 0.15), c2 = ceil(fb + 0.15);
+		float ur = u + (float)(c - fb), ur2 = u + (float)(c2 - fb);
+		int eq = (int)floorf(ur / 2), eq2 = (int)floorf(ur2 / 2),
+			ed = (int)floorf(u / 2);
+		eq = eq < -lc ? -lc : eq > lc - 1 ? lc - 1 : eq;
+		eq2 = eq2 < -lc ? -lc : eq2 > lc - 1 ? lc - 1 : eq2;
+		ed = ed < -lc ? -lc : ed > lc - 1 ? lc - 1 : ed;
+		if (c2 != c && fabsf(ur2 - 2 * eq2 - 1) < fabsf(ur - 2 * eq - 1)) {
+			c = c2;
+			ur = ur2;
+			eq = eq2;
+		}
+		pq_x[dsn & (V92_PMAX - 1)] = 2 * eq + 1 - c;
+		if (dsn <= 48) {
+			pq_eq += (ur - 2 * eq - 1) * (ur - 2 * eq - 1);
+			pq_ed += (u - 2 * ed - 1) * (u - 2 * ed - 1);
+		}
+		if (dsn == 48 && pq_eq * 3 < pq_ed * 2) {
+			pq_on = 1;
+			DSP_DBG("v92: the analogue modem's precoder on the grid "
+				"unit below (grid mse %.3f, %.3f without)\n",
+				pq_eq / 48, pq_ed / 48);
+		}
+		if (pq_on) {
+			u = ur;
+			pq_c = (float)(c - fb);
+		}
+	}
+	if (!pf_on && !pq_on) {
+		if (dsn <= 24 && u < -0.5f) {
+			float fo = (u - 1) / 2 - floorf((u - 1) / 2 + 0.5f);
+			float fe = u / 2 - floorf(u / 2 + 0.5f);
+			ns_odd += fo * fo;
+			ns_even += fe * fe;
+			ns_n++;
+		}
+		if (dsn == 24 && ns_n >= 6 && ns_even * 4 < ns_odd) {
+			neg_step = 1;
+			DSP_DBG("v92: the analogue modem's negative points a step "
+				"out (grid mse %.3f on them, %.3f a step in)\n",
+				ns_odd / ns_n, ns_even / ns_n);
+		}
+		if (neg_step && u < 0)
+			u += 1;
+	}
 	int eta = (int)floorf(u / 2);
 
 	/* the nearest point (for the equalizer, and without trellis
@@ -1542,7 +1607,9 @@ void V92Up::data_symbol(float y)
 		eta = -lc;
 	if (eta > lc - 1)
 		eta = lc - 1;
-	t = pf_on ? pf_point(&cpd, eta) : (float)((2 * eta + 1) * 16 * cpd.g);
+	t = pf_on ? pf_point(&cpd, eta) :
+		(float)((2 * eta + 1 - (neg_step && eta < 0) - pq_c) *
+			16 * cpd.g);
 	err = t - y;
 	eg = u - (2 * eta + 1);
 	dmse += 0.005 * (err * err - dmse);
@@ -1628,6 +1695,10 @@ void V92Up::data_symbol(float y)
 				rn_req = 1;
 			else if (!pf_on || pf_rate(cpd.drn + 1))
 				fpe_req = 1;
+			/* and down, below this rate from now on: the
+			   training's mse, that chose it, misses G.711's
+			   noise on the far points (without the prefilter) */
+			drn_cap = rn_low ? cpd.drn - 1 : 0;
 			rn_low = rn_high = 0;
 		}
 	}
@@ -1888,8 +1959,8 @@ void V92Up::design()
 		    !atoi(getenv("DSP_V92_PRECODE")));
 	double margin;
 
-	trellis_on = !(getenv("DSP_V92_TRELLIS") &&
-		       !atoi(getenv("DSP_V92_TRELLIS")));
+	trellis_on = !plain && !(getenv("DSP_V92_TRELLIS") &&
+				 !atoi(getenv("DSP_V92_TRELLIS")));
 	/* the prefilter, if it works out (DSP_V92_PREFILTER=0: not) */
 	if (rx == V92R_TRN2 && sym - e2u_sym > V92_PF_FIT + 32 &&
 	    pf_design(fix))
@@ -1920,6 +1991,8 @@ void V92Up::design()
 		int K = 2 * (drn + 17), k, g;
 		double ms3 = 0, ms0 = 0;
 		if (up_mask && !((up_mask >> (drn - 1)) & 1))
+			continue;
+		if (drn_cap > 0 && drn > drn_cap && !fix)
 			continue;
 		M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
 		if (pre) {

@@ -723,6 +723,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=0: not) */
 	V91 v91m;
 	int pcmup_ok;           /* we offer PCM upstream (V.92) */
+	int pcmup_plain;        /* the next try without the prefilter (the
+				   last failed with it) */
 	int quiet_blocks;       /* phase 2: blocks without the remote's tone */
 	int p2_gap;             /* waiting for INFO1a: 1 tone, 2 then a gap */
 	V92Up v92u;
@@ -3698,6 +3700,10 @@ void V34Pump::v92_start()
 	V92Info1a ia;
 	ia.parse(ccr.frame);
 	v92u.init(alaw, &ia, v90tx.fclock, v90tx.fbase);
+	if (pcmup_plain) {
+		v92u.plain = 1;
+		v92u.pf_ok = 0;
+	}
 	v92u.link.modem = modem;
 	if (rt)
 		rt->pcm = 1;
@@ -5863,7 +5869,17 @@ int V34Pump::process(void *in, void *out, int cnt)
 			} else if (ev == V92_FAIL || ev == V92_RETRAIN) {
 				/* before data, V.34 upstream next time; a
 				   renegotiation that fails retrains */
-				if (!v92u.connected) {
+				/* (with the prefilter, and filters p1 and
+				   z2 alone in its INFO1a: once more without
+				   the prefilter, which the ESS modem takes
+				   no B1u on, see v92.cpp) */
+				if (!v92u.connected && ev == V92_FAIL &&
+				    v92u.pf_on && !v92u.ia.sections &&
+				    !pcmup_plain) {
+					pcmup_plain = 1;
+					DSP_DBG("v34: PCM upstream once more, "
+						"without the prefilter\n");
+				} else if (!v92u.connected) {
 					pcmup_ok = 0;
 					DSP_DBG("v34: no PCM upstream offer "
 						"from now on\n");
@@ -5992,6 +6008,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	/* PCM upstream: DSP_V92_PCMUP=0 does not offer it */
 	pcmup_ok = !(getenv("DSP_V92_PCMUP") &&
 		     !atoi(getenv("DSP_V92_PCMUP")));
+	pcmup_plain = 0;
 	/* V.91 with another digital modem: DSP_V91=0 leaves it out */
 	v91 = (id == DP_V90 || id == DP_V92 || id == DP_V91) &&
 		line_rate == 8000 &&

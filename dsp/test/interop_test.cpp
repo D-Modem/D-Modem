@@ -796,7 +796,7 @@ std::vector<Call> calls()
 	add("agere", "agere_v90_reneg_open", "agere", "open8",
 	    "ATX3;AT+MS=V90",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
-	      "STREAM=15", "DSP_V34_RENEG=5000:8",
+	      "STREAM=15", "DSP_V34_RENEG=400:8",
 	      "EXPECT_B=V.90 renegotiated [0-9]+/19200",
 	      "PROTO_B=ATX3;AT+MS=90" });
 	/* class 1 fax both ways at 8000 Hz */
@@ -1139,18 +1139,19 @@ std::vector<Call> calls()
 		add("ess", "ess_v90_" + law, "ess", "open8", "ATX3;AT+MS=V90",
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law, "DSP_G711=" + law,
 		      "EXPECT_B=V.90 connect 5[0-9]{4}/", "PROTO_B=ATX3;AT+MS=90" });
-	/* V.92 as it comes, and with PCM upstream (+PIG=0): it ends in V.90,
-	   its downstream a step below the V.90 call's (49333 for 50666).
-	   PCM upstream gets through phase 4 (its INFO1a has p1 and z2
-	   alone, so our CPd has no z1 or p2: SUVu', E2u), but its B1u
-	   decodes as noise, and after a retrain the call is V.90 */
+	/* V.92 as it comes, and with PCM upstream (+PIG=0), both laws.  Its
+	   INFO1a has p1 and z2 alone (our CPd has no z1 or p2); its B1u on
+	   our prefilter decodes as noise, and after a retrain PCM upstream
+	   goes without it: precoding alone, on its points (the precoder's
+	   feedback a unit below, see v92.cpp), to a V.92 connect */
 	add("ess", "ess_v92", "ess", "open8", "ATX3",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
 	add("ess", "ess_v92_pcmup", "ess", "open8", "ATX3;AT+PIG=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
-	      "EXPECT_B=(?s)SUVu' at symbol.*E2u at symbol.*V.9[02] connect "
-	      "[45][0-9]{4}/", "PROTO_B=ATX3" });
+	      "EXPECT_B=(?s)once more, without the prefilter.*precoder on "
+	      "the grid unit below.*V.92 connect [45][0-9]{4}/[23][0-9]{4}\n",
+	      "PROTO_B=ATX3" });
 	/* V.34 rate renegotiation started by us, both ways; a much noisier
 	   line 10 s in; our INFO0a lost */
 	add("ess", "ess_34_reneg_ess_calls", "ess", "open", "ATX3;AT+MS=V34",
@@ -1167,7 +1168,8 @@ std::vector<Call> calls()
 	      "EXPECT_B=INFO0 again \\(the remote has not taken ours\\)",
 	      "PROTO_B=ATX3;AT+MS=34" });
 	/* V.90: our INFO0d lost; our renegotiation (after its own, to
-	   26400, at the start); echo */
+	   26400, at the start: it may renegotiate again every half second
+	   or so, and our test's time counts from the last); echo */
 	add("ess", "ess_v90_lose_info0", "ess", "open8", "ATX3;AT+MS=V90",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "DSP_V34_LOSE_INFO0=1",
@@ -1175,7 +1177,7 @@ std::vector<Call> calls()
 	      "V.90 connect 5[0-9]{4}/", "PROTO_B=ATX3;AT+MS=90" });
 	add("ess", "ess_v90_reneg_open", "ess", "open8", "ATX3;AT+MS=V90",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
-	      "STREAM=15", "DSP_V34_RENEG=5000:8",
+	      "STREAM=15", "DSP_V34_RENEG=400:8",
 	      "EXPECT_B=V.90 renegotiated [0-9]+/19200",
 	      "PROTO_B=ATX3;AT+MS=90" });
 	add("ess", "ess_v90_echo", "ess", "open8", "ATX3;AT+MS=V90",
@@ -1205,7 +1207,8 @@ std::vector<Call> calls()
 	      "PROTO_B=ATX3;AT+MS=92" });
 	add("ess", "ess_v92_pcmup_alaw", "ess", "open8", "ATX3;AT+PIG=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:alaw", "DSP_G711=alaw",
-	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
+	      "EXPECT_B=V.92 connect [45][0-9]{4}/[23][0-9]{4}\n",
+	      "PROTO_B=ATX3" });
 	/* V.8 agreeing on a lower modulation, both ways; our forced low
 	   speed callers against its automode */
 	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,
