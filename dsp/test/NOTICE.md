@@ -23,6 +23,7 @@ programs in this directory load them.
 | `hsf/hsfengine.o`, `hsf/hsfmc97ich.o`, `hsf/hsfsoar.o`, `hsf/hsfmc97ich.inf`, `hsf/hsf.cty` | Conexant Systems (formerly Rockwell Semiconductor Systems) | Linuxant's hsfmodem-7.80.02.06oem |
 | `intel/537core.lib`, `intel/wwh_dflt.c` | Intel Corporation | Intel537EP 2.37.50.1 for Fedora Core 1 (Intel's licence, `intel/license.txt`) |
 | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | Broadcom Corporation | Dell's "V.92 Soft Modem (Data Fax) Driver" A05 (BCM V.92 56K Modem 3.4.19) |
+| `ess/es56hpi.sys`, `ess/mdmzn.inf` | ESS Technology, Inc. | ESS's ES56H-PI modem driver 5.43.070 (`ess54370.exe`) |
 
 The same holds for Smart Link's AT command manual,
 [docs/legacy/ST56ATCommands.pdf](../../docs/legacy/ST56ATCommands.pdf).

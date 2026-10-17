@@ -171,6 +171,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	int tx_ac_phase;
 	int tx_reverse;         /* repeat one AC symbol: phase reversal */
 	int ca_rev;             /* answerer: the caller's CC reversal seen */
+	long nt_syms = 0;       /* caller: the round trip delay NT (symbols) */
 	unsigned tx_scr;
 	int tx_scr_tap;
 	int tx_4800;            /* 4800 coding state (v32_points_4800 index) */
@@ -715,6 +716,7 @@ void V32Pump::retrain(bool remote)
 	rx_reset();
 	ev_rev = ev_r = ev_e = ev_s = 0;
 	ca_rev = 0;
+	nt_syms = 0;
 	timeout = total + ms2samples(15000, srate);
 	tx_syms = 0;
 	if (caller) {
@@ -838,8 +840,10 @@ int V32Pump::handshake()
 	case A_TRAIN2:
 	case C_TRAIN:
 		/* S, S-bar, TRN; our echo canceller learns while the remote
-		   is silent */
-		if (txm == TXM_S && sym >= 256)
+		   is silent.  The caller's S is NT long before the 256 of
+		   its conditioning signal (5.4.1): the answerer, the ESS
+		   modem's at least, needs it */
+		if (txm == TXM_S && sym >= 256 + (state == C_TRAIN ? nt_syms : 0))
 			set_tx(TXM_SBAR);
 		else if (txm == TXM_SBAR && sym >= 16) {
 			set_tx(TXM_TRN2);
@@ -947,6 +951,9 @@ int V32Pump::handshake()
 		break;
 	case C_CC:
 		if (ev_rev) {
+			/* NT (5.4.1): from our reversal to the answerer's,
+			   less its 64 symbols */
+			nt_syms = sym > 64 ? sym - 64 : 0;
 			set_state(C_WAIT_R1);
 			set_tx(TXM_SILENCE);
 			ev_r = 0;

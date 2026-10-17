@@ -76,6 +76,9 @@ const std::map<std::string, const char *> &programs()
 #ifdef HALF_INTEL
 		{ "intel", HALF_INTEL },
 #endif
+#ifdef HALF_ESS
+		{ "ess", HALF_ESS },
+#endif
 	};
 	return p;
 }
@@ -1084,6 +1087,72 @@ std::vector<Call> calls()
 	      "STREAM=10", "EXPECT_B=V.92 connect 5[0-9]{4}/(3[4-9]|4[0-2])",
 	      "PROTO_B=ATX3;AT+MS=92" });
 
+	/* --- ESS's V.92 soft modem for Windows (its WDM driver on
+	   interop_windows.cpp's kernel and half_ess's ES2838, 8000 Hz) and
+	   the open modem (9600 Hz) call each other at each modulation.  It
+	   says CONNECT a little before it receives (the first octets of
+	   an FSK call lost), so the data waits a second (DATA_WAIT).  As
+	   the caller at Bell 103 it never answers the answer tone (nor
+	   Broadcom's): that call only the other way */
+	const std::string ess_wait = "DATA_WAIT=1";
+	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
+		     { "B103", "103" }, { "V21", "21" }, { "V23C", "23" },
+		     { "V22", "22" }, { "V22B", "122" }, { "V32", "32" },
+		     { "V32B", "132" }, { "V34", "34" } }) {
+		std::string a = std::string("ATX3;AT+MS=") + n;
+		std::string o = std::string("ATX3;AT+MS=") + ms;
+		std::string m = ms;
+		std::string rate = m == "103" || m == "21" ? "DATA_RATE=300" :
+			m == "23" ? "DATA_RATE=75" : m == "22" ? "DATA_RATE=1200" : "";
+		std::vector<std::string> ee = { "NET=8000:9600:ulaw", "PROTO_B=" + o,
+						ess_wait };
+		std::vector<std::string> eo = { "NET=9600:8000:ulaw", "PROTO_B=" + a,
+						ess_wait };
+		if (!rate.empty()) {
+			ee.push_back(rate);
+			eo.push_back(rate);
+		}
+		if (m != "103")
+			add("ess", std::string("ess_") + ms + "_ess_calls", "ess",
+			    "open", a, ee);
+		add("ess", std::string("ess_") + ms + "_open_calls", "open", "ess",
+		    o, eo);
+	}
+	/* in their automodes (V.8: V.34), and V.44 both ways (it offers
+	   it): 60000 octets each way */
+	add("ess", "ess_auto_ess_calls", "ess", "open", "ATX3",
+	    { "NET=8000:9600:ulaw", "PROTO_B=ATX3",
+	      "EXPECT_B=(?s)V.8 CM received.*v34: connect 3[0-9]{4}/" });
+	add("ess", "ess_v44_ess_calls", "ess", "open", "ATX3;AT+MS=V34",
+	    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=34", "BULK=60000",
+	      "EXPECT_B=negotiated: compression 3 \\(V.44\\)" });
+	add("ess", "ess_v44_open_calls", "open", "ess", "ATX3;AT+MS=34",
+	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34", "BULK=60000",
+	      "EXPECT_A=negotiated: compression 3 \\(V.44\\)" });
+	/* V.90: the ESS modem as the analogue modem, the open one as the
+	   digital modem */
+	for (std::string law : { "ulaw", "alaw" })
+		add("ess", "ess_v90_" + law, "ess", "open8", "ATX3;AT+MS=V90",
+		    { "NET_LOOP=0.45", "NET=8000:8000:" + law, "DSP_G711=" + law,
+		      "EXPECT_B=V.90 connect 5[0-9]{4}/", "PROTO_B=ATX3;AT+MS=90" });
+	/* V.92 as it comes, and with PCM upstream (+PIG=0): it ends in V.90,
+	   its downstream a step below the V.90 call's (49333 for 50666) */
+	add("ess", "ess_v92", "ess", "open8", "ATX3",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
+	add("ess", "ess_v92_pcmup", "ess", "open8", "ATX3;AT+PIG=0",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
+	/* class 1 fax at 8000 Hz with it receiving.  As the sender (the
+	   caller) it takes the answerer's DIS but no AT+FTH=3 after it (a
+	   command it never parses until the call is over; with Broadcom's
+	   answerer too): no calls that way */
+	for (int m : { 24, 48, 72, 96, 73, 97, 121, 122, 145, 146 }) {
+		std::string s = std::to_string(m);
+		add("ess", "ess_fax_" + s + "_open_sends", "open8", "ess",
+		    "ATX3")->fax = m;
+	}
+
 	/* --- Intel's 537EP soft modem, its line at 9600 Hz (its codec's
 	   rates are 7200 to 16000 Hz, 9600 by default, 72000 / 7 for V.34,
 	   and its V.90 is better without the resampling to 8000), and the
@@ -1161,7 +1230,7 @@ std::vector<Call> calls()
 	const std::string mnp5 = "mnp: LR: framing mode 3, k 8, N401 256, "
 		"optimization 3, MNP 5";
 	for (const char *p : { "agere", "pctel", "sm56", "hsf", "broadcom",
-			       "intel" }) {
+			       "intel", "ess" }) {
 		std::string n = p;
 		/* (the Intel modem's line at 9600 Hz, the others' 8000;
 		   INTEL_RATE only half_intel reads) */

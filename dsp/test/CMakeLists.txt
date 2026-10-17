@@ -297,6 +297,23 @@ if(EXISTS "${DMODEM_BROADCOM_DIR}/BCMSM.sys")
 	message(STATUS "tests: the Broadcom soft modem: ${DMODEM_BROADCOM_DIR}")
 endif()
 
+# ESS's V.92 soft modem for Windows as a peer (half_ess.cpp): its WDM
+# driver (es56hpi.sys 5.43.070, a PE image) and its INF, on
+# interop_windows.cpp as Broadcom's
+set(DMODEM_ESS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ess" CACHE
+	PATH "es56hpi.sys and mdmzn.inf of the ESS soft modem (interop tests)")
+if(EXISTS "${DMODEM_ESS_DIR}/es56hpi.sys")
+	add_executable(half_ess half_ess.cpp interop_windows.cpp modem_half.cpp)
+	target_compile_definitions(half_ess PRIVATE
+		ESS_SYS="${DMODEM_ESS_DIR}/es56hpi.sys"
+		ESS_INF="${DMODEM_ESS_DIR}/mdmzn.inf")
+	target_compile_options(half_ess PRIVATE ${DMODEM_M32} -g -O1)
+	target_link_options(half_ess PRIVATE ${DMODEM_M32} -no-pie
+		-Wl,-z,noexecstack)
+	target_link_libraries(half_ess PRIVATE m)
+	message(STATUS "tests: the ESS soft modem: ${DMODEM_ESS_DIR}")
+endif()
+
 # Intel's 537EP soft modem as a peer (half_intel.cpp): the core of Intel's
 # Intel537EP 2.37.50.1 driver for Fedora Core 1 (537core.lib) with its
 # country tables (wwh_dflt.c); its own exit, index and pow renamed, and
@@ -345,7 +362,7 @@ target_link_libraries(interop_call PRIVATE interop_driver)
 set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""
 	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
 	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
-foreach(_p agere sm56 spandsp pctel hsf broadcom intel)
+foreach(_p agere sm56 spandsp pctel hsf broadcom intel ess)
 	if(TARGET half_${_p})
 		string(TOUPPER ${_p} _u)
 		list(APPEND _progs "HALF_${_u}=\"$<TARGET_FILE:half_${_p}>\"")
@@ -385,4 +402,7 @@ if(TARGET half_broadcom)
 endif()
 if(TARGET half_intel)
 	interop_tests(intel)
+endif()
+if(TARGET half_ess)
+	interop_tests(ess)
 endif()

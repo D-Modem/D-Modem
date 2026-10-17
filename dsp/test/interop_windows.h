@@ -36,6 +36,9 @@ struct win_dev {
 	   install section [<model>.NT], its AddReg and its service) */
 	const char *sys, *inf, *model;
 	const char *port;               /* the port's name (PortName) */
+	/* AddReg lines of the harness's own after the INF's (INF syntax,
+	   one a line; NULL none) */
+	const char *addreg;
 	/* the PCI device on bus 0: its slot and function, and its
 	   configuration space as the bus driver reports it (IDs, class,
 	   BAR 0, the interrupt line: 64 dwords) */
@@ -46,6 +49,8 @@ struct win_dev {
 	half::u32 mem_size;
 	std::function<half::u32(half::u32 off, int size)> mem_read;
 	std::function<void(half::u32 off, int size, half::u32 v)> mem_write;
+	/* or BAR 0 ports (its bit 0 set): io_size of them */
+	half::u32 io_size;
 	/* port I/O, PCI's configuration ports (0xcf8, 0xcfc) too (none:
 	   all ones) */
 	std::function<half::u32(unsigned port, int size)> io_in;

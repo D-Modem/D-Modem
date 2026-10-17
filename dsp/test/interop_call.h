@@ -49,6 +49,7 @@ namespace interop {
  *   EXPECT_DROP=1     the call is to end on the way: the data unchecked
  *   EXPECT_FAIL=1     the call is to end before CONNECT, modemA with NO
  *                     CARRIER (EXPECT_A, EXPECT_B say how)
+ *   DATA_WAIT=<s>     the moment after CONNECT before the data (0.1)
  *   DATA_RATE=<bit/s> the slowest direction's rate, when the CONNECTs do
  *                     not say it
  *   NET_SYNC=1        netsim's line events count from CONNECT
@@ -70,6 +71,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
  *   RECORD=<dir>      the line both ways (a2b.raw, b2a.raw, 16 bit), and
  *                     the page sent and received (page.tx, page.rx)
  *   SHOW_TCF=1        the TCF's non-zero octets
+ *   DIAL=<number>     modemA's ATD's number (none)
+ *   ANSWER_AFTER=<s>  modemB's ATA that long after modemA's ATD (both at
+ *                     once by default)
  *   LINE_RATE=<Hz>    unpaced, modemA's sample rate, for the line's clock
  *                     (8000; the original library's: 9600)
  *   MODEM_SPEED=<x>   unpaced, no faster than x times real time (10: the

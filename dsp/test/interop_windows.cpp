@@ -21,7 +21,8 @@
  *
  *    The device is the harness's (struct win_dev).  Its registers are a
  *    window of ours that is not accessible: each access faults and is
- *    single-stepped with the device's values (see mm_fault).  in, out,
+ *    single-stepped with the device's values (see mm_fault); or ports
+ *    (BAR 0's bit 0: a port resource), the driver's port I/O.  in, out,
  *    cli, sti, mov to and from CRn and rdtsc trap (no I/O permission,
  *    PR_TSC_SIGSEGV) and are carried out here (hw/x86_traps.hpp,
  *    hw/tsc.hpp); the port I/O, PCI's configuration ports too, is the
@@ -668,6 +669,7 @@ static void kernel_run(void)
 /* a wait of the caller for n objects (all or any), until (interrupt
    time, 0 none); a thread's yields, the main one's runs the line on
    (silent) until it is over */
+static u32 wait_from;            /* (debug: the driver's call of the wait, an RVA) */
 static NTSTATUS wait_for(struct dispatcher **o, int n, int all, u64 until)
 {
 	struct kthread self, *t = cur_thread ? cur_thread : &self;
@@ -692,8 +694,12 @@ static NTSTATUS wait_for(struct dispatcher **o, int n, int all, u64 until)
 		u64 start = itime();
 		for (;;) {
 			kernel_run();
-			if (wait_done(t))
+			if (wait_done(t)) {
+				if (win_debug && itime() - start >= 100000)
+					LOG("main thread waited %u ms (%x)\n",
+					    (unsigned)((itime() - start) / 10000), wait_from);
 				return t->wresult;
+			}
 			if (itime() - start > 600000000ull) {
 				fprintf(stderr, "win: a wait of 60 s in the main thread\n");
 				return STATUS_TIMEOUT;
@@ -1011,11 +1017,10 @@ static int inf_fields(char *l, char **f, int max)
 	return n;
 }
 
-/* section's AddReg lines into the registry, HKR as hkr */
-static void inf_addreg(const char *section, const char *hkr)
+/* an AddReg line (l) into the registry, HKR as hkr */
+static void inf_addreg_line(const char *l, const char *hkr)
 {
-	char *at = NULL, *l;
-	while ((l = inf_line(section, &at))) {
+	{
 		char raw[1024], line[1024], *f[64], path[1024];
 		int n, i;
 		u32 flags;
@@ -1024,13 +1029,13 @@ static void inf_addreg(const char *section, const char *hkr)
 		inf_subst(raw, line, sizeof(line));
 		n = inf_fields(line, f, 64);
 		if (n < 3)
-			continue;
+			return;
 		if (!strcasecmp(f[0], "HKR"))
 			snprintf(path, sizeof(path), "%s%s%s", hkr, *f[1] ? "\\" : "", f[1]);
 		else if (!strcasecmp(f[0], "HKLM"))
 			snprintf(path, sizeof(path), "\\Registry\\Machine\\%s", f[1]);
 		else
-			continue;
+			return;
 		flags = n > 3 && *f[3] ? (u32)strtoul(f[3], NULL, 0) : 0;
 		if ((flags & 0xffff0001) == 0x00000001) {      /* binary */
 			byte b[64];
@@ -1056,6 +1061,14 @@ static void inf_addreg(const char *section, const char *hkr)
 			reg_set_sz(path, f[2], flags & 0x00020000 ? REG_EXPAND_SZ : REG_SZ,
 				   n > 4 ? f[4] : "");
 	}
+}
+
+/* section's AddReg lines into the registry, HKR as hkr */
+static void inf_addreg(const char *section, const char *hkr)
+{
+	char *at = NULL, *l;
+	while ((l = inf_line(section, &at)))
+		inf_addreg_line(l, hkr);
 }
 
 /* the INF at path read; -1 if it cannot be */
@@ -1149,10 +1162,15 @@ static void inf_install(const char *model)
  *    port I/O: the device's (PCI's configuration ports too)
  */
 static u32 mem_phys;                    /* BAR 0, as the device starts */
+/* (debug: the driver's call of the port access, an RVA) */
+static u32 io_from;
+#define IO_FROM() (io_from = (u32)((byte *)__builtin_return_address(0) - img))
 
+/* (a port is 16 bit: dx's, whatever the driver passed above them) */
 static u32 io_in(unsigned a, int size)
 {
 	u32 v = 0xffffffff;
+	a &= 0xffff;
 	if (wdev->io_in)
 		v = wdev->io_in(a, size);
 	else
@@ -1162,14 +1180,15 @@ static u32 io_in(unsigned a, int size)
 	else if (size == 2)
 		v &= 0xffff;
 	if (win_debug > 1)
-		fprintf(stderr, "win: in%d %04x = %x\n", size, a, v);
+		fprintf(stderr, "win: in%d %04x = %x (%x)\n", size, a, v, io_from);
 	return v;
 }
 
 static void io_out(unsigned a, u32 v, int size)
 {
+	a &= 0xffff;
 	if (win_debug > 1)
-		fprintf(stderr, "win: out%d %04x = %x\n", size, a, v);
+		fprintf(stderr, "win: out%d %04x = %x (%x)\n", size, a, v, io_from);
 	if (wdev->io_out)
 		wdev->io_out(a, v, size);
 	else
@@ -1367,12 +1386,12 @@ static void NTAPI MmUnlockPages(struct mdl *m) { (void)m; }
 static void NTAPI IoFreeMdl(struct mdl *m) { free(m); }
 
 /* HAL's port I/O: as the driver's own in and out */
-static u32 NTAPI READ_PORT_ULONG(u32 *port) { return io_in((u32)(uintptr_t)port, 4); }
-static void NTAPI WRITE_PORT_ULONG(u32 *port, u32 v) { io_out((u32)(uintptr_t)port, v, 4); }
-static word NTAPI READ_PORT_USHORT(word *port) { return (word)io_in((u32)(uintptr_t)port, 2); }
-static void NTAPI WRITE_PORT_USHORT(word *port, word v) { io_out((u32)(uintptr_t)port, v, 2); }
-static byte NTAPI READ_PORT_UCHAR(byte *port) { return (byte)io_in((u32)(uintptr_t)port, 1); }
-static void NTAPI WRITE_PORT_UCHAR(byte *port, byte v) { io_out((u32)(uintptr_t)port, v, 1); }
+static u32 NTAPI READ_PORT_ULONG(u32 *port) { IO_FROM(); return io_in((u32)(uintptr_t)port, 4); }
+static void NTAPI WRITE_PORT_ULONG(u32 *port, u32 v) { IO_FROM(); io_out((u32)(uintptr_t)port, v, 4); }
+static word NTAPI READ_PORT_USHORT(word *port) { IO_FROM(); return (word)io_in((u32)(uintptr_t)port, 2); }
+static void NTAPI WRITE_PORT_USHORT(word *port, word v) { IO_FROM(); io_out((u32)(uintptr_t)port, v, 2); }
+static byte NTAPI READ_PORT_UCHAR(byte *port) { IO_FROM(); return (byte)io_in((u32)(uintptr_t)port, 1); }
+static void NTAPI WRITE_PORT_UCHAR(byte *port, byte v) { IO_FROM(); io_out((u32)(uintptr_t)port, v, 1); }
 
 /* the C library of the kernel */
 static void *__attribute__((cdecl)) k_memmove(void *d, const void *s, size_t n)
@@ -1387,6 +1406,76 @@ static wchar *__attribute__((cdecl)) k_wcschr(const wchar *s, wchar c)
 		if (!*s)
 			return NULL;
 	}
+}
+
+static char *__attribute__((cdecl)) k_strstr(const char *h, const char *n)
+{
+	return (char *)strstr(h, n);
+}
+static int __attribute__((cdecl)) k_strncmp(const char *a, const char *b, size_t n)
+{
+	return strncmp(a, b, n);
+}
+static char *__attribute__((cdecl)) k_strncpy(char *d, const char *s, size_t n)
+{
+	return strncpy(d, s, n);
+}
+static int __attribute__((cdecl)) k_strnicmp(const char *a, const char *b, size_t n)
+{
+	return strncasecmp(a, b, n);
+}
+static char *__attribute__((cdecl)) k_strnset(char *s, int c, size_t n)
+{
+	size_t i;
+	for (i = 0; i < n && s[i]; i++)
+		s[i] = (char)c;
+	return s;
+}
+static int __attribute__((cdecl)) k_isdigit(int c) { return c >= '0' && c <= '9'; }
+static int __attribute__((cdecl)) k_tolower(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+static int __attribute__((cdecl)) k_atoi(const char *s) { return atoi(s); }
+static wchar wlower(wchar c) { return c >= 'A' && c <= 'Z' ? (wchar)(c + 32) : c; }
+static int __attribute__((cdecl)) k_wcsicmp(const wchar *a, const wchar *b)
+{
+	for (; *a && wlower(*a) == wlower(*b); a++, b++)
+		;
+	return (int)wlower(*a) - (int)wlower(*b);
+}
+static wchar *__attribute__((cdecl)) k_wcsstr(const wchar *h, const wchar *n)
+{
+	for (; *h; h++) {
+		const wchar *a = h, *b = n;
+		while (*b && *a == *b)
+			a++, b++;
+		if (!*b)
+			return (wchar *)h;
+	}
+	return *n ? NULL : (wchar *)h;
+}
+/* the compiler's 64-bit helpers: _allmul and _alldiv stdcall, the
+   shifts edx:eax by cl */
+static long long NTAPI k_allmul(long long a, long long b) { return a * b; }
+static long long NTAPI k_alldiv(long long a, long long b) { return b ? a / b : 0; }
+extern "C" void k_allshl(void), k_allshr(void);
+__asm__(".text\n"
+	"k_allshl:\n"
+	"	cmpb $64, %cl\n	jae 2f\n"
+	"	cmpb $32, %cl\n	jae 1f\n"
+	"	shldl %cl, %eax, %edx\n	shll %cl, %eax\n	ret\n"
+	"1:	movl %eax, %edx\n	xorl %eax, %eax\n	andb $31, %cl\n"
+	"	shll %cl, %edx\n	ret\n"
+	"2:	xorl %eax, %eax\n	xorl %edx, %edx\n	ret\n"
+	"k_allshr:\n"
+	"	cmpb $64, %cl\n	jae 2f\n"
+	"	cmpb $32, %cl\n	jae 1f\n"
+	"	shrdl %cl, %edx, %eax\n	sarl %cl, %edx\n	ret\n"
+	"1:	movl %edx, %eax\n	sarl $31, %edx\n	andb $31, %cl\n"
+	"	sarl %cl, %eax\n	ret\n"
+	"2:	sarl $31, %edx\n	movl %edx, %eax\n	ret\n");
+static void __attribute__((cdecl, noreturn)) k_purecall(void)
+{
+	fprintf(stderr, "win: the driver called a pure virtual function\n");
+	exit(1);
 }
 
 /* sprintf as Microsoft's C library has it: %S and %ws wide strings, %Z
@@ -1528,6 +1617,20 @@ static int __attribute__((cdecl)) k_sprintf(char *out, const char *fmt, ...)
 	return n;
 }
 
+/* the driver's debug output, at win_debug 2 */
+static unsigned __attribute__((cdecl)) DbgPrint(const char *fmt, ...)
+{
+	char buf[1024];
+	va_list ap;
+	if (win_debug < 2)
+		return 0;
+	va_start(ap, fmt);
+	ms_vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+	LOG("DbgPrint: %s%s", buf, *buf && buf[strlen(buf) - 1] == '\n' ? "" : "\n");
+	return 0;
+}
+
 /* interlocked operations (one thread): fastcall */
 static long FASTCALL InterlockedIncrement(long *p) { return ++*p; }
 static long FASTCALL InterlockedDecrement(long *p) { return --*p; }
@@ -1563,6 +1666,10 @@ static void NTAPI RtlInitAnsiString(struct astr *a, const char *s)
 	a->len = s ? (word)strlen(s) : 0;
 	a->max = s ? (word)(a->len + 1) : 0;
 }
+static void NTAPI RtlInitString(struct astr *a, const char *s) { RtlInitAnsiString(a, s); }
+/* fast mutexes (one thread: none waits) at APC level */
+static void FASTCALL ExAcquireFastMutex(void *m) { (void)m; }
+static void FASTCALL ExReleaseFastMutex(void *m) { (void)m; }
 static NTSTATUS NTAPI RtlAppendUnicodeStringToString(struct ustr *d, const struct ustr *s)
 {
 	if (d->len + s->len > d->max)
@@ -1682,6 +1789,8 @@ static NTSTATUS NTAPI RtlUnicodeStringToAnsiString(struct astr *d, const struct 
 }
 static u32 NTAPI RtlxAnsiStringToUnicodeSize(const struct astr *a) { return (u32)a->len * 2 + 2; }
 static byte NlsMbCodePageTag;   /* (a data import: single byte code page) */
+/* the clock's ticks (a data import, KSYSTEM_TIME), 10 ms each */
+static struct { u32 low; long high1, high2; } KeTickCount;
 
 /* time */
 /* (each read on by 1 us: a busy wait on the time ends, the line not
@@ -1834,6 +1943,7 @@ static NTSTATUS NTAPI KeWaitForSingleObject(void *o, int reason, int mode, byte 
 {
 	struct dispatcher *d = (struct dispatcher *)o;
 	(void)reason; (void)mode; (void)alertable;
+	wait_from = (u32)((byte *)__builtin_return_address(0) - img);
 	return wait_for(&d, 1, 0, timeout_end(timeout));
 }
 static NTSTATUS NTAPI KeWaitForMultipleObjects(u32 n, void **o, int type, int reason,
@@ -1846,6 +1956,7 @@ static NTSTATUS NTAPI KeWaitForMultipleObjects(u32 n, void **o, int type, int re
 static NTSTATUS NTAPI KeDelayExecutionThread(int mode, byte alertable, long long *interval)
 {
 	(void)mode; (void)alertable;
+	wait_from = (u32)((byte *)__builtin_return_address(0) - img);
 	return wait_for(NULL, 0, 0, timeout_end(interval)) == STATUS_TIMEOUT ?
 		STATUS_SUCCESS : STATUS_SUCCESS;
 }
@@ -2832,7 +2943,16 @@ static const struct kexport exports[] = {
 	E(MmUnlockPagableImageSection), E(MmQuerySystemSize), E(MmMapIoSpace),
 	E(MmUnmapIoSpace), E(MmUnlockPages), E(IoFreeMdl),
 	{ "memmove", (void *)k_memmove }, { "wcschr", (void *)k_wcschr },
-	{ "sprintf", (void *)k_sprintf },
+	{ "sprintf", (void *)k_sprintf }, { "strstr", (void *)k_strstr },
+	{ "strncmp", (void *)k_strncmp }, { "strncpy", (void *)k_strncpy },
+	{ "_strnicmp", (void *)k_strnicmp }, { "_strnset", (void *)k_strnset },
+	{ "isdigit", (void *)k_isdigit }, { "tolower", (void *)k_tolower },
+	{ "atoi", (void *)k_atoi }, { "_wcsicmp", (void *)k_wcsicmp },
+	{ "wcsstr", (void *)k_wcsstr }, { "_allmul", (void *)k_allmul },
+	{ "_alldiv", (void *)k_alldiv }, { "_allshl", (void *)k_allshl },
+	{ "_allshr", (void *)k_allshr }, { "_purecall", (void *)k_purecall },
+	E(DbgPrint), E(RtlInitString), E(ExAcquireFastMutex), E(ExReleaseFastMutex),
+	{ "*KeTickCount", &KeTickCount },
 	E(READ_PORT_ULONG), E(WRITE_PORT_ULONG), E(READ_PORT_USHORT), E(WRITE_PORT_USHORT),
 	E(READ_PORT_UCHAR), E(WRITE_PORT_UCHAR),
 	E(InterlockedIncrement), E(InterlockedDecrement), E(InterlockedExchange),
@@ -2844,7 +2964,7 @@ static const struct kexport exports[] = {
 	E(RtlAppendUnicodeToString), E(RtlIntegerToUnicodeString), E(RtlUnicodeStringToInteger),
 	E(RtlEqualUnicodeString), E(RtlFreeUnicodeString), E(RtlFreeAnsiString),
 	E(RtlAnsiStringToUnicodeString), E(RtlUnicodeStringToAnsiString),
-	E(RtlxAnsiStringToUnicodeSize), { "NlsMbCodePageTag", &NlsMbCodePageTag },
+	E(RtlxAnsiStringToUnicodeSize), { "*NlsMbCodePageTag", &NlsMbCodePageTag },
 	E(KeQueryInterruptTime), E(KeQuerySystemTime), E(RtlTimeToTimeFields),
 	E(KeInitializeEvent), E(KeSetEvent), E(KeClearEvent),
 	E(KeInitializeDpc), E(KeInsertQueueDpc), E(KeRemoveQueueDpc),
@@ -2878,7 +2998,7 @@ static const struct kexport *export_find(const char *name)
 {
 	size_t i;
 	for (i = 0; i < sizeof(exports) / sizeof(exports[0]); i++)
-		if (!strcmp(exports[i].name, name))
+		if (!strcmp(exports[i].name + (exports[i].name[0] == '*'), name))
 			return &exports[i];
 	return NULL;
 }
@@ -2892,7 +3012,7 @@ static struct drvext drvext;
 static struct devobj *pdo;
 static char svc_name[64];               /* the driver's service */
 
-/* the device's resources: BAR 0's memory and its interrupt */
+/* the device's resources: BAR 0's memory (or ports) and its interrupt */
 static byte res_raw[4 + 8 + 8 + 2 * 16], res_tr[sizeof(res_raw)];
 static void res_init(byte *r, int translated)
 {
@@ -2905,10 +3025,17 @@ static void res_init(byte *r, int translated)
 	wr16(r + 14, 1);
 	wr32(r + 16, 2);
 	d = r + 20;
-	d[0] = 3; d[1] = 1;                     /* memory, exclusive */
-	wr16(d + 2, 0);   /* (read/write) */
-	wr32(d + 4, mem_phys);
-	wr32(d + 12, wdev->mem_size);
+	if (wdev->cfg[0x10 / 4] & 1) {          /* BAR 0 ports */
+		d[0] = 1; d[1] = 1;             /* port, exclusive */
+		wr16(d + 2, 1);   /* (CM_RESOURCE_PORT_IO) */
+		wr32(d + 4, wdev->cfg[0x10 / 4] & ~3u);
+		wr32(d + 12, wdev->io_size);
+	} else {
+		d[0] = 3; d[1] = 1;             /* memory, exclusive */
+		wr16(d + 2, 0);   /* (read/write) */
+		wr32(d + 4, mem_phys);
+		wr32(d + 12, wdev->mem_size);
+	}
 	d += 16;
 	d[0] = 2; d[1] = 3;                     /* interrupt, shared */
 	wr16(d + 2, 0);   /* (level) */
@@ -3297,6 +3424,9 @@ void win_tick()
 	win_line_n++;
 	if (win_line_n * 1000 / (u64)wdev->rate !=
 	    (win_line_n - 1) * 1000 / (u64)wdev->rate) {
+		u64 t = win_line_n * 100 / (u64)wdev->rate;
+		KeTickCount.high2 = KeTickCount.high1 = (long)(t >> 32);
+		KeTickCount.low = (u32)t;
 		run_timers();
 		kernel_run();
 	}
@@ -3398,6 +3528,12 @@ int win_start(win_dev *dev)
 		 hw_ids + 4, instance);
 	LOG("%s: %s (%s), %s, service %s\n", dev->model, dev_desc, dev_mfg, hw_ids, svc_name);
 	inf_install(dev->model);
+	if (dev->addreg) {
+		char *a = strdup(dev->addreg), *l, *save = NULL;
+		for (l = strtok_r(a, "\n", &save); l; l = strtok_r(NULL, "\n", &save))
+			inf_addreg_line(l, key_driver);
+		free(a);
+	}
 	reg_key(key_service, 1);
 	reg_set_sz(key_device, "PortName", REG_SZ, dev->port);
 

@@ -1,0 +1,601 @@
+;Languages: English, Arabic(0001), Chinese trad(0404), Chinese PRChina(0804), Danish(0006), 
+;Dutch std(0413), Finnish(000B), French std(040C), French Can(0C0C), German std(0407),
+;Hebrew(000D), Italian std(0410), Japan(0011), Korean(0412), Norwegian(Nynorsk)(0814), 
+;Polish(0015), Portuguese std(0816), Portuguese Brazilian(0416), Spanish(040A), Swedish(041D),
+;Thai (001E);
+
+; Windows XP Modem Setup Information File
+; Copyright (c) 2003 ESS Technology Inc.
+; Manufacturer: ESS Technology Inc.
+
+[Version]
+Signature="$CHICAGO$"
+Class=Modem
+ClassGUID={4D36E96D-E325-11CE-BFC1-08002BE10318}
+Provider=%ESS%
+CatalogFile=SLM.CAT
+DriverVer=03/24/2003,5.43.070.1
+
+[DestinationDirs]
+ES56HPI.CopyFiles = 12
+UNINST.CopyFiles = 10
+Spkphone.CopyFiles = 10
+DefaultDestDir  = 12    ;LDID_SYS \Windows\system dir
+
+[Manufacturer]
+%ESSMfgName% = ESS
+
+[ControlFlags]
+ExcludeFromSelect = *
+
+[ESS]
+%ES56HPIZ1% = Modem58,PCI\VEN_125D&DEV_2838&SUBSYS_0432125D    
+%ES56HPIPV% = ModemPV,PCI\VEN_125D&DEV_2838&SUBSYS_2838125D; PView
+%ES56HPIZ1% = ModemHP,PCI\VEN_125D&DEV_2838&SUBSYS_28381468;
+%ES56HPIZ1% = ModemHP,PCI\VEN_125D&DEV_2838&SUBSYS_0020103C; zinf
+%ES56HPIZ1% = ModemHP,PCI\VEN_125D&DEV_2838&SUBSYS_0021103C; 
+%ES56HPIZ1% = ModemHP,PCI\VEN_125D&DEV_2838&SUBSYS_001A103C; 
+%ES56HPIZ1% = ModemHP,PCI\VEN_125D&DEV_2838&SUBSYS_001B103C; 
+%ES56HPIZ1% = ModemHP,PCI\VEN_125D&DEV_2838&SUBSYS_0026103C; 
+%ES56HPIZ1% = ModemPT,PCI\VEN_125D&DEV_2838&SUBSYS_352316C5 ; PTK-CTR21
+%ES56HPIZ1% = ModemPT,PCI\VEN_125D&DEV_2838&SUBSYS_283816C5 ; PTK-FCC
+
+[Modem58.NT]                                       
+DelReg=All, ESS.Reg, responses, DriverParams,uninst.Reg, FMS_Voice,NoHS_Voice
+AddReg=All, ESS.Reg, responses, DriverParams,uninst.Reg, FMS_Voice,NoHS_Voice
+CopyFiles = ES56HPI.CopyFiles,UNINST.CopyFiles,Spkphone.CopyFiles
+
+[ModemPV.NT]
+DelReg=All,ESS.Reg,responses,DriverParams,uninst.Reg,FMS_Voice,NoHS_Voice,CountryPV.Reg
+AddReg=All,ESS.Reg,responses,DriverParams,uninst.Reg,FMS_Voice,NoHS_Voice,CountryPV.Reg
+CopyFiles = ES56HPI.CopyFiles,UNINST.CopyFiles,Spkphone.CopyFiles
+
+[ModemHP.NT]                                       
+DelReg=All,ESS.Reg,responses,DriverParamsHP,uninst.Reg,FMS_Voice,NoHS_Voice
+AddReg=All,ESS.Reg,responses,DriverParamsHP,uninst.Reg,FMS_Voice,NoHS_Voice
+CopyFiles = ES56HPI.CopyFiles,Spkphone.CopyFiles,UNINST.CopyFiles
+
+[ModemPT.NT]                                       
+DelReg=All,ESS.Reg,responses,DriverParams,uninst.Reg,FMS_Voice,NoHS_Voice,CountryPT.Reg
+AddReg=All,ESS.Reg,responses,DriverParams,uninst.Reg,FMS_Voice,NoHS_Voice,CountryPT.Reg
+CopyFiles = ES56HPI.CopyFiles,Spkphone.CopyFiles,UNINST.CopyFiles
+
+[ES56HPI.CopyFiles]
+es56hpi.sys,,,2
+;slm.cat,,,2
+
+[UNINST.CopyFiles]
+remvess.exe,,,2
+
+[Spkphone.CopyFiles]
+essspk.exe,,,2
+
+[SourceDisksNames]
+1=%DiskName%,,
+
+[SourceDisksNames.x86]
+1=%DiskName%,,
+
+;[SourceDisksNames.NTx]
+;1=%DiskName%,,
+
+[SourceDisksFiles]
+es56hpi.sys      = 1 
+essspk.exe		=1
+;slm.cat      = 1
+remvess.exe	= 1
+
+[SourceDisksFiles.x86]
+es56hpi.sys      = 1 
+essspk.exe		=1
+;slm.cat      = 1
+remvess.exe	= 1
+
+[DriverParams]
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport,Country,1,FF,00,14,00,00 ;
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport,W2kComPortFlag,1,01,00,00,00 ;
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,CodecType,1,01,00,00,00
+  ; byte1- 0:no OpAmp, 1:with OpAmp / Krypton DAA
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,DAANegLogic,1,00,00,00,00
+ ; byte1- 1: Active Low on Complex Impedanc (I/Obit8)
+ ; byte2- 1: Active Low on Current Limit(I/Obit7)
+ ; byte3- 1: Active Low on Ring Sensitivity(I/O bit4)
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,OCPPara,1,01
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,BuzzerEnable,1,01
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,CurrentLimit,1,01
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport,OEMATI9,,"Data/Fax/TAM"
+
+[DriverParamsHP]
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport,Country,1,FF,00,14,00,00 ;
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport,W2kComPortFlag,1,01,00,00,00 ;
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country,RegionSetting,1,01
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,CurrentLimit,1,01
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport,OEMATI9,,"Data/Fax/TAM"
+
+[Modem58.NT.HW]
+AddReg=DisconnectLowerFilter
+
+[ModemPV.NT.HW]
+AddReg=DisconnectLowerFilter
+
+[ModemHP.NT.HW]
+AddReg=DisconnectLowerFilter
+
+[ModemPT.NT.HW]
+AddReg=DisconnectLowerFilter
+
+[DisconnectLowerFilter]
+HKR,,"LowerFilters",0x00010000,Edspport
+
+[Modem58.NT.Services]
+AddService = Edspport,0x00000000,essmodem.service
+
+[ModemPV.NT.Services]
+AddService = Edspport,0x00000000,essmodem.service
+
+[ModemHP.NT.Services]
+AddService = Edspport,0x00000000,essmodem.service
+
+[ModemPT.NT.Services]
+AddService = Edspport,0x00000000,essmodem.service
+
+[essmodem.service]
+DisplayName    = "EDSP Port Driver"
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_SYSTEM_START
+ErrorControl   = 0                  ; SERVICE_ERROR_IGNORE
+LoadOrderGroup = base
+ServiceBinary  = %12%\es56hpi.sys
+
+[All]
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Run,EssSpkPhone,,essspk.exe
+HKR,,FriendlyDriver,,es56hpi.sys
+HKR,,DeviceType, 1, 02     ; INTERNAL MODEM, includes ISA + Enhanced Comm Slot
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDrver,0,es56hpi.sys
+HKR,,ConfigDialog,,modemui.dll
+HKR,,EnumPropPages,,"modemui.dll,EnumPropPages"
+HKR,,PortSubClass,1,02
+;HKR,,PortDriver,,es56hpi.sys
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,ErrorControl,1,00,00,00,00  
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,Group,0,"base"  
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,Start,1,03,00,00,00  
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,Tag,1,1b,00,00,00  
+;HKLM,SYSTEM\CurrentControlSet\Services\Edspport,Type,1,01,00,00,00  
+
+[ESS.Reg]
+HKR,  Init, 2,, "AT &F S0=0 V1 &D2 &C1 +ER=1 +DR=1 <cr>";
+HKR,, Properties, 1, 00,01,00,00, FF,00,00,00, 00,00,00,00, 00,00,00,00, 0F,00,00,00, 37,03,00,00, 00,C2,01,00, 00,E1,00,00
+HKR,, InactivityScale, 1, 3c,00,00,00;3c
+HKR, Init, 1,, "AT<cr>"
+HKR, Monitor, 1,, "ATS0=0<cr>"
+HKR, Monitor, 2,, "None"
+HKR, Hangup, 1,, "ATH<cr>"
+HKR, Answer, 1,, "ATA<cr>"
+HKR,, Reset,, "AT&F<cr>"
+HKR, Settings, Prefix,, "AT"
+HKR, Settings, Terminator,, "<cr>"
+HKR, Settings, DialPrefix,, "D"
+HKR, Settings, DialSuffix,, ""
+HKR, Settings, SpeakerMode_Off,, "M0"
+HKR, Settings, SpeakerMode_Dial,, "M1"
+HKR, Settings, SpeakerMode_On,, "M2"
+HKR, Settings, SpeakerMode_Setup,, "M3"
+HKR, Settings, FlowControl_Off,, "+IFC=0,0;"
+HKR, Settings, FlowControl_Hard,, "+IFC=2,2;"
+HKR, Settings, FlowControl_Soft,, "+IFC=1,1;"
+HKR, Settings, ErrorControl_On,, "+ES=3,0,2;"
+HKR, Settings, ErrorControl_Off,, "+ES=1,0,1;"
+HKR, Settings, ErrorControl_Forced,, "+ES=3,3,5;"
+HKR, Settings, Compression_On,, "+DS=3;"  ;V42bis+MNP5
+HKR, Settings, Compression_Off,, "+DS=0;"
+HKR, Settings, Modulation_CCITT,, "B0"
+HKR, Settings, Modulation_Bell,, "B1"
+HKR, Settings, SpeedNegotiation_Off,, "N0"
+HKR, Settings, SpeedNegotiation_On,, "N1"
+HKR, Settings, Pulse,, "P"
+HKR, Settings, Tone,, "T"
+HKR, Settings, Blind_Off,, "X4"
+HKR, Settings, Blind_On,, "X3"
+HKR, Settings, CallSetupFailTimer,, "S7=<#>"
+HKR, Settings, InactivityTimeout,, "S30=<#>"
+
+[uninst.Reg]
+;------ uninstall ----------
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ESSMDM, DisplayName,,"Uninstall ESS Modem"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ESSMDM,UninstallString,,"%10%\remvess"
+HKLM,SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ESSMDM,,,
+
+[FMS_Voice]
+HKR,,Enumerator,,serwave.vxd
+HKR,, VoiceProfile,             1, 23,22,08,02
+HKR, WaveDriver, BaudRate,    1, 00, c2, 01, 00
+HKR, WaveDriver, XformID,     1, 00, 00
+HKR, WaveDriver, WaveDevices, 1, 02, 00
+HKR, WaveDriver, XformModule,  , "umdmxfrm.dll"
+HKR, WaveDriver, WaveHardwareID, , "HALFDUPLEX"
+HKR,, VoiceBaudRate,		1, 00, c2, 01, 00
+
+HKR,, HandsetCloseDelay,        1, 03,00,00,00
+HKR,, VoiceMixerMid,            1, 5c,00
+HKR,, VoiceMixerPid,            1, 84,00
+HKR,, VoiceMixerLineID,         1, 00,00,00,00
+HKR,, ForwardDelay,             1, 88,13
+HKR, EnableCallerID, 1,, "at+vcid=1<cr>"
+HKR, EnableDistinctiveRing, 1,, "at+vdr=1,10<cr>"
+
+HKR,  LineSetPlayFormat,        1,, "None"  ; "at+vls=0<cr>"  3/06/96
+HKR,  LineSetPlayFormat,        2,, "NoResponse"  ; remove  3/06/96
+HKR,  LineSetRecordFormat,      1,, "None"
+HKR,  LineSetRecordFormat,      2,, "NoResponse"
+HKR,  StartPlay,                1,, "at+vtx<cr>"
+HKR,  StopPlay,                 1,, "None"
+HKR,  StopPlay,                 2,, "NoResponse"
+HKR,  StartRecord,              1,, "at+vrx<cr>"
+HKR,  StopRecord,               1,, "None"
+HKR,  StopRecord,               2,, "NoResponse"
+HKR,,  TerminateRecord,,         "<h10>E<cr>"
+HKR,,  TerminatePlay,,           "<h10><h03><cr>"
+HKR,, AbortPlay,,                "<h10><h18><cr>"  ;h21->h18 03/06/96
+HKR,  GenerateDigit,            1,, "at+vts=<Digit><cr>"
+HKR,  VoiceToDataAnswer,        1,, "at+fclass=0<cr>"
+HKR,  VoiceToDataAnswer,        2,, "ata<cr>"
+;HKR,  OpenHandset,              1,, "at+fclass=8<cr>"
+;HKR,  OpenHandset,              2,, "at+vls=2<cr>"  ;
+;HKR,  OpenHandset,              3,, "at+vgt=200<cr>"  ;tranmition gain 0-255
+;HKR,  OpenHandset,              4,, "at+vgr=200<cr>"  ;receive gain 0-255
+;HKR,  CloseHandset,             1,, "at+fclass=0<cr>"
+;HKR,  HandsetSetRecordFormat,   1,, "at+vsm=128<cr>"
+;HKR,  HandsetSetPlayFormat,     1,, "at+vsm=128<cr>"
+HKR,  VoiceAnswer,              1,, "at+fclass=8<cr>"
+HKR,  VoiceAnswer,              2,, "at+vls=1<cr>" ;0
+HKR,  VoiceAnswer,              3,, "at+vgt=128<cr>"  ;tranmition gain 0-128
+HKR,  VoiceAnswer,              4,, "at+vgr=200<cr>"  ;receive gain 0-255
+HKR,  VoiceAnswer,              5,, "ata<cr>"
+HKR,  VoiceDialNumberSetup,     1,, "at+fclass=8<cr>"
+HKR,  VoiceDialNumberSetup,     2,, "at+vls=1<cr>"
+HKR,  Hangup,                   1,, "ATH<cr>"
+HKR,, CallerIDPrivate,,         "P"
+HKR,, CallerIDOutside,,         "O"
+HKR,, VariableTerminator,,      "<cr><lf>"
+HKR,  Responses, "<cr><lf>VOICE<cr><lf>",1,00,00,00,00,00,00,00,00,00,00
+HKR,  Responses, "<cr><lf>DATE=", 1, 93, 00, 00,00,00,00, 00,00,00,00
+HKR,  Responses, "<cr><lf>TIME=",         1, 94, 00, 00,00,00,00, 00,00,00,00
+HKR,  Responses, "<cr><lf>NMBR=",         1, 95, 00, 00,00,00,00, 00,00,00,00
+HKR,  Responses, "<cr><lf>NAME=",         1, 96, 00, 00,00,00,00, 00,00,00,00
+HKR,  Responses, "<cr><lf>MESG=",         1, 97, 00, 00,00,00,00, 00,00,00,00
+HKR,  Responses, "<cr><lf>DRON=",         1, 91, 00, 00,00,00,00, 00,00,00,00
+HKR,  Responses, "<cr><lf>DROF=",         1, 92, 00, 00,00,00,00, 00,00,00,00
+HKR,  Responses, "<cr><lf>RING",  1, 08, 00, 00,00,00,00, 00,00,00,00
+
+[NoHS_Voice]
+HKR,, VoiceProfile,             1, 21,22,08,02
+HKR, WaveDriver,  WaveDevices,1, 01, 00   
+
+[responses]
+;HKR, Responses, "<cr>",        1, 01, 00, 00,00,00,00, 00,00,00,00
+;HKR, Responses, "<lf>",        1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>OK<cr><lf>",          1, 00, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT<cr><lf>",     1, 02, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>RING<cr><lf>",        1, 08, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>NO CARRIER<cr><lf>",  1, 04, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>ERROR<cr><lf>",       1, 03, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>NO DIALTONE<cr><lf>", 1, 05, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>BUSY<cr><lf>",        1, 06, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>NO ANSWER<cr><lf>",   1, 07, 00, 00,00,00,00, 00,00,00,00
+
+HKR, Responses, "0<cr>",       1, 00, 00, 00,00,00,00, 00,00,00,00 ; OK
+HKR, Responses, "1<cr>",       1, 02, 00, 00,00,00,00, 00,00,00,00 ; CONNECT
+HKR, Responses, "2<cr>",       1, 08, 00, 00,00,00,00, 00,00,00,00 ; RING
+HKR, Responses, "3<cr>",       1, 04, 00, 00,00,00,00, 00,00,00,00 ; NO CARRIER
+HKR, Responses, "4<cr>",       1, 03, 00, 00,00,00,00, 00,00,00,00 ; ERROR
+HKR, Responses, "5<cr>",       1, 02, 00, b0,04,00,00, 00,00,00,00 ; CONNECT 1200
+HKR, Responses, "6<cr>",       1, 05, 00, 00,00,00,00, 00,00,00,00 ; NO DIALTONE
+HKR, Responses, "7<cr>",       1, 06, 00, 00,00,00,00, 00,00,00,00 ; BUSY
+HKR, Responses, "8<cr>",       1, 07, 00, 00,00,00,00, 00,00,00,00 ; NO ANSWER
+
+HKR, Responses, "<cr><lf>FAX<cr><lf>",         1, 03, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>DATA<cr><lf>",        1, 03, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>RINGING<cr><lf>",     1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>DELAYED<cr><lf>",     1, 03, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>BLACKLISTED<cr><lf>", 1, 03, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+FCERROR<cr><lf>",    1, 03, 00, 00,00,00,00, 00,00,00,00
+
+;RESPONSE
+HKR, Responses, "<cr><lf>CONNECT 300<cr><lf>",     1, 02, 00, 2C,01,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 600<cr><lf>",     1, 02, 00, 58,02,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 1200<cr><lf>",    1, 02, 00, B0,04,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 75/1200<cr><lf>",    1, 02, 00, B0,04,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 1200/75<cr><lf>",    1, 02, 00, B0,04,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 2400<cr><lf>",    1, 02, 00, 60,09,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 4800<cr><lf>",    1, 02, 00, C0,12,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 7200<cr><lf>",    1, 02, 00, 20,1C,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 9600<cr><lf>",    1, 02, 00, 80,25,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 12000<cr><lf>",   1, 02, 00, E0,2E,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 14400<cr><lf>",   1, 02, 00, 40,38,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 16800<cr><lf>",   1, 02, 00, A0,41,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 19200<cr><lf>",   1, 02, 00, 00,4B,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 21600<cr><lf>",   1, 02, 00, 60,54,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 24000<cr><lf>",   1, 02, 00, C0,5D,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 26400<cr><lf>",   1, 02, 00, 20,67,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 28800<cr><lf>",   1, 02, 00, 80,70,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 31200<cr><lf>",   1, 02, 00, E0,79,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 33600<cr><lf>",   1, 02, 00, 40,83,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 38400<cr><lf>",   1, 02, 00, 00,96,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 57600<cr><lf>",   1, 02, 00, 00,E1,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 115200<cr><lf>",  1, 02, 00, 00,C2,01,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 230400<cr><lf>",  1, 02, 00, 00,84,03,00, 00,00,00,00
+HKR, Responses, "<cr><lf>CONNECT 460800<cr><lf>",  1, 02, 00, 00,08,07,00, 00,00,00,00
+
+HKR, Responses, "<cr><lf>+DR:CLASS 5<cr><lf>",  1, 01, 01, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+DR:V42B<cr><lf>",  	1, 01, 01, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+DR:V44<cr><lf>",  	1, 01, 01, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+DR:NONE<cr><lf>",     1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+ER:NONE<cr><lf>", 	1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+ER:LAPM<cr><lf>",     1, 01, 02, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+ER:ALT<cr><lf>",      1, 01, 02, 00,00,00,00, 00,00,00,00
+
+HKR, Responses, "<cr><lf>+DR: CLASS 5<cr><lf>",  1, 01, 01, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+DR: V42B<cr><lf>",  	 1, 01, 01, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+DR: V44<cr><lf>",  	 1, 01, 01, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+DR: NONE<cr><lf>",     1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+ER: NONE<cr><lf>", 	 1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+ER: LAPM<cr><lf>",     1, 01, 02, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+ER: ALT<cr><lf>",      1, 01, 02, 00,00,00,00, 00,00,00,00
+
+;for 56K
+HKR,Responses,  "<cr><lf>CONNECT 57333<cr><lf>",        1,2,0,F5,DF,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 56000<cr><lf>",        1,2,0,C0,DA,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 54666<cr><lf>",        1,2,0,8A,D5,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 53333<cr><lf>",        1,2,0,55,D0,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 52000<cr><lf>",        1,2,0,20,CB,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 50666<cr><lf>",        1,2,0,EA,C5,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 49333<cr><lf>",        1,2,0,B5,C0,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 48000<cr><lf>",        1,2,0,80,BB,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 46666<cr><lf>",        1,2,0,4A,B6,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 45333<cr><lf>",        1,2,0,15,B1,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 44000<cr><lf>",        1,2,0,E0,AB,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 42666<cr><lf>",        1,2,0,AA,A6,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 41333<cr><lf>",        1,2,0,75,A1,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 40000<cr><lf>",        1,2,0,40,9C,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 38666<cr><lf>",        1,2,0,0A,97,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 37333<cr><lf>",        1,2,0,D5,91,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 36000<cr><lf>",        1,2,0,A0,8C,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 34666<cr><lf>",        1,2,0,6A,87,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 33333<cr><lf>",        1,2,0,35,82,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 32000<cr><lf>",        1,2,0,00,7D,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 30666<cr><lf>",        1,2,0,CA,77,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 29333<cr><lf>",        1,2,0,95,72,00,0,0,0,0,0
+HKR,Responses,  "<cr><lf>CONNECT 28000<cr><lf>",        1,2,0,60,6d,00,0,0,0,0,0
+
+;Modulation in effect,currently not use
+HKR, Responses, "<cr><lf>+MCR: V90<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+;HKR, Responses, "<cr><lf>+MCR: K56<cr><lf>",     1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V34<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V32B<cr><lf>",     1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V32<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V22B<cr><lf>",     1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V22<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V23<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V21<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: B103<cr><lf>",     1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V17<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V17_Short<cr><lf>",1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V27<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V29<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: FAX<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V21_Ch2<cr><lf>",  1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: Voice<cr><lf>",    1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: Tone<cr><lf>",     1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: Cid<cr><lf>",      1, 01, 00, 00,00,00,00, 00,00,00,00
+HKR, Responses, "<cr><lf>+MCR: V21_Ch1<cr><lf>",  1, 01, 00, 00,00,00,00, 00,00,00,00
+
+HKR,Responses,"<cr><lf>+MRR: 300<cr><lf>",1,01,00,2c,01,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 1200<cr><lf>",1,01,00,B0,04,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 2400<cr><lf>",1,01,00,60,09,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 4800<cr><lf>",1,01,00,C0,12,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 7200<cr><lf>",1,01,00,20,1C,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 9600<cr><lf>",1,01,00,80,25,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 12000<cr><lf>",1,01,00,E0,2E,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 14400<cr><lf>",1,01,00,40,38,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 16800<cr><lf>",1,01,00,A0,41,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 19200<cr><lf>",1,01,00,00,4B,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 21600<cr><lf>",1,01,00,60,54,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 24000<cr><lf>",1,01,00,C0,5D,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 26400<cr><lf>",1,01,00,20,67,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 28800<cr><lf>",1,01,00,80,70,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 31200<cr><lf>",1,01,00,E0,79,00,00,00,00,00,00
+HKR,Responses,"<cr><lf>+MRR: 33600<cr><lf>",1,01,00,40,83,00,00,00,00,00,00
+
+[CountryPV.Reg]
+HKLM,System\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\12,BlackList,1,\
+01,0c,00,00,00,00,00,00,00,00,00,00,00,00,00,00
+ ; country_black_list_table, remove the black list function in China
+HKLM,System\CurrentControlSet\Services\EdspPort\Parameters\EdspPort1\Country\12,PTTcp,1,\							;cp_tone_parm 14 Bytes x 4;
+00,00,34,08,6c,07,64,00,00,00,00,00,64,00,\	;Dial Tone
+02,01,86,01,36,01,32,00,86,01,36,01,32,00,\	;Busy tone cadence 	
+01,01,4c,04,84,03,c8,00,30,11,10,0e,c8,00,\	;ring back tone cadence
+01,02,dc,05,84,03,5e,01,30,11,10,0e,5e,01       ;incoming ring cadence
+ ; PTTtable, change the incoming ring from 1100 to 1500, 300/200 to 350
+
+[CountryPT.Reg]
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\30,BlackList,1,0c,0c,20,1c,06,06,06,06,06,06,06,06,06,06,06,06	;country_black_list_table,total 16 bytes 	
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\30,PTTSreg,1,\	
+00,00,ff,00,\ 	;s0							
+06,03,07,00,\	;s6
+3c,01,ff,00,\	;s7
+04,04,0b,00,\	;s8
+64,01,ff,00,\	;s10
+46,46,ff,00,\	;s11
+75,00,ff,01,\	;s22
+36,00,ff,01,\	;s23
+89,00,ff,01,\	;s27
+32,00,ff,00,\	;s29
+0a,00,ff,01,\	;s31
+1E,00,49,01,\	;s88
+09,00,0d,00,\	;s91
+09,00,0d,00	;s92	
+
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\07,DTMFgain,1,e7,23,33,2d	;-8.78/-6.78 dbm	
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\07,RingRange,1,0D,00,3C,00    ;13Hz-60Hz
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\07,DialParameter,1,\ 	;Disable Pause
+44,00,44,00,44,00,44,00,\
+64,00,64,00,64,00,64,00,\
+20,03,\
+46,00,\
+00,00
+
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\40,BlackList,1,50,50,00,00,00,00,00,00,00,00,00,00,00,00,00,00	;country_black_list_table,total 16 bytes 	
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\12,BlackList,1,50,50,00,00,00,00,00,00,00,00,00,00,00,00,00,00	;country_black_list_table,total 16 bytes 	
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\15,BlackList,1,50,50,00,00,00,00,00,00,00,00,00,00,00,00,00,00	;country_black_list_table,total 16 bytes 	
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\14,BlackList,1,50,50,00,00,00,00,00,00,00,00,00,00,00,00,00,00	;country_black_list_table,total 16 bytes 	
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\32,BlackList,1,50,50,00,00,00,00,00,00,00,00,00,00,00,00,00,00	;country_black_list_table,total 16 bytes 	
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\17,BlackList,1,01,0c,00,00,00,00,00,00,00,00,00,00,00,00,00,00	;country_black_list_table,total 16 bytes 	
+HKLM,SYSTEM\CurrentControlSet\Services\Edspport\Parameters\EdspPort1\Country\16,BlackList,1,01,0c,00,00,00,00,00,00,00,00,00,00,00,00,00,00	;country_black_list_table,total 16 bytes 	
+
+[Strings]
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Windows XP Modem Driver Installation Disk"
+ES56HPIZ1="ESS SuperLink-M Data Fax Voice Modem"
+ES56HPIPV="ESS ES56H-PI Data Fax Voice Modem"
+
+[Strings.0001] ;Arabic
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="ﬁ—’ ·Ì‰ · À»Ì  »—‰«„Ã  ‘€Ì· „Êœ„ ≈Ì «” «” ·ÊÌ‰œÊ“ 2000"
+ES56HPIZ1="„Êœ„ »Ì«‰«  ›«ﬂ” ≈Ì «” «”  ≈Ì «” 56 ”Ì ›Ì «„-»Ì ¬Ì"
+ES56HPIPV="„Êœ„ »Ì«‰«  ›«ﬂ” ≈Ì «” «”  ≈Ì «” 56 ”Ì ›Ì «„-»Ì ¬Ì"
+
+[Strings.0404] ;Chinese traditional
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="¶w∏À∫œ∫–"
+ES56HPIZ1="ESS SuperLink-M´¨∏ÍÆ∆∂«Øuªy≠µº∆æ⁄æ˜"
+ES56HPIPV="ESS ES56H-PI´¨∏ÍÆ∆∂«Øuªy≠µº∆æ⁄æ˜"
+
+[Strings.0804] ;Chinese (PR China) - Simplified
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="ESS Windows 2000µ˜÷∆Ω‚µ˜∆˜«˝∂Ø≥Ã–Ú∞≤◊∞¥≈≈Ã"
+ES56HPIZ1="ESS SuperLink-M–Õ ˝æ›¥´’Ê”Ô“Ùµ˜÷∆Ω‚µ˜∆˜"
+ES56HPIPV="ESS ES56H-PI–Õ ˝æ›¥´’Ê”Ô“Ùµ˜÷∆Ω‚µ˜∆˜"
+
+[Strings.0006] ;Danish
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Installationsdiskette til ESS Windows 2000 modemdriver"
+ES56HPIZ1="ESS SuperLink-M data- og faxmodem"
+ES56HPIPV="ESS ES56H-PI data- og faxmodem"
+
+[Strings.0413] ;Dutch std - Netherlands
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Installatieschijf voor ESS Windows 2000 modem-stuurprogramma"
+ES56HPIZ1="ESS SuperLink-M Data Fax Voice Modem"
+ES56HPIPV="ESS ES56H-PI Data Fax Voice Modem"
+
+[Strings.000B] ;Finnish
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="ESS Windows 2000:n modeemiohjaimen asennuslevyke"
+ES56HPIZ1="ESS SuperLink-M -data-faksimodeemi"
+ES56HPIPV="ESS ES56H-PI -data-faksimodeemi"
+
+[Strings.040C] ;French std
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Disquette d'installation du pilote du modem ESS pour Windows 2000"
+ES56HPIZ1="Modem fax donnÈes ESS SuperLink-M"
+ES56HPIPV="Modem fax donnÈes ESS ES56H-PI"
+
+[Strings.0C0C] ;French Canadian
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Disquette d'installation du pilote ESS Modem pour Windows 2000 "
+ES56HPIZ1="ESS SuperLink-M Data Fax Voice Modem"
+ES56HPIPV="ESS ES56H-PI Data Fax Voice Modem"
+
+[Strings.0407] ;German std
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Installationsdiskette f¸r ESS Windows 2000-Modemtreiber"
+ES56HPIZ1="ESS SuperLink-M Data Fax Modem"
+ES56HPIPV="ESS ES56H-PI Data Fax Modem"
+
+[Strings.000D] ;Hebrew
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="„ÈÒ˜ ‰˙˜˙ Ó‰Ï ‰˙˜Ô ÓÂ„Ì ESS Ï-Windows 2000"
+ES56HPIZ1="ÓÂ„Ì Ù˜Ò ˙ÂÈÌ ESS SuperLink-M"
+ES56HPIPV="ÓÂ„Ì Ù˜Ò ˙ÂÈÌ ESS ES56H-PI"
+
+[Strings.0410] ;Italian std
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Disco di installazione del driver per il modem ESS Windows 2000"
+ES56HPIZ1="Modem per dati fax ESS SuperLink-M"
+ES56HPIPV="Modem per dati fax ESS ES56H-PI"
+
+[Strings.0011] ;Japanese
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="ESS Windows 2000ÉÇÉfÉÄÉhÉâÉCÉoÉCÉìÉXÉgÅ[ÉãÉfÉBÉXÉN"
+ES56HPIZ1="ESS SuperLink-MÉfÅ[É^ FAXÉÇÉfÉÄ"
+ES56HPIPV="ESS ES56H-PIÉfÅ[É^ FAXÉÇÉfÉÄ"
+
+[Strings.0412] ;Korean
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="ESS Windows 2000 ∏µ© µÂ∂Û¿Ãπˆ º≥ƒ° µΩ∫≈©"
+ES56HPIZ1="ESS SuperLink-M µ•¿Ã≈Õ ∆—Ω∫ ∏µ©"
+ES56HPIPV="ESS ES56H-PI µ•¿Ã≈Õ ∆—Ω∫ ∏µ©"
+
+[Strings.0814] ;Norwegian(Nynorsk)
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Installasjonsdiskett for ESS Windows 2000-modemdriver"
+ES56HPIZ1="ESS SuperLink-M-data faks-modem"
+ES56HPIPV="ESS ES56H-PI-data faks-modem"
+
+[Strings.0015] ;Polish
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Dyskietka instalacyjna napedu modemu ESS do systemu Windows 2000"
+ES56HPIZ1="Modem do przekazu danych i faksÛw ESS SuperLink-M"
+ES56HPIPV="Modem do przekazu danych i faksÛw ESS ES56H-PI"
+
+[Strings.0816] ;Portuguese std
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Disco de instalaÁ„o de modem ESS Windows 2000"
+ES56HPIZ1="Modem de voz fax e dados ESS SuperLink-M"
+ES56HPIPV="Modem de voz fax e dados ESS ES56H-PI"
+
+[Strings.0416] ;Portuguese Brasilian
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Disco de InstalaÁ„o do Driver do Modem ESS para Windows 2000"
+ES56HPIZ1="Modem de Voz de Fax de Dados ESS SuperLink-M"
+ES56HPIPV="Modem de Voz de Fax de Dados ESS ES56H-PI"
+
+[Strings.040A] ;Spanish
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="Disco de instalaciÛn de controlador de mÛdem ESS Windows 2000"
+ES56HPIZ1="Fax-mÛdem ESS SuperLink-M"
+ES56HPIPV="Fax-mÛdem ESS ES56H-PI"
+
+[Strings.041D] ;Swedish
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="ESS Windows 2000 installationsdisk med modemdrivrutin"
+ES56HPIZ1="ESS SuperLink-M data- och faxmodem"
+ES56HPIPV="ESS ES56H-PI data- och faxmodem"
+
+[Strings.001E] ;Thai
+ESS="ESS"
+ESSMfgName="ESS Technology Inc"
+DiskName="¥‘ °Ï ”À√—∫°“√µ‘¥µ—Èß‰¥√ø‡«Õ√Ï¢Õß‚¡‡¥Á¡ ESS  ”À√—∫ Windows 2000"
+ES56HPIZ1="‚¡‡¥Á¡√—∫ Ëß¢ÈÕ¡Ÿ≈·≈–·ø°´Ï ESS SuperLink-M"
+ES56HPIPV="‚¡‡¥Á¡√—∫ Ëß¢ÈÕ¡Ÿ≈·≈–·ø°´Ï ESS ES56H-PI"

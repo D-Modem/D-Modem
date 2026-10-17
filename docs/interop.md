@@ -2,8 +2,9 @@
 
 Calls between the open modem and other soft modems: Smart Link's on
 our modem core, the Agere, SM56, PCTel, HSF and Intel ones each in user
-space on an emulation of its hardware, Broadcom's Windows driver on a
-Windows kernel of our own and an emulation of its chip, and spandsp's (see
+space on an emulation of its hardware, Broadcom's and ESS's Windows
+drivers on a Windows kernel of our own and an emulation of their chips,
+and spandsp's (see
 [testing.md](testing.md) for the driver, netsim and how the calls keep
 time). Each has a harness, `half_<name>`, which takes the line's audio
 on fd 3, gives its own on fd 4 and is the modem's DTE on a pty, and a
@@ -32,14 +33,15 @@ its codec's registers as the harness's `codec_read()` and
 |---|---|---|
 | `ac97_codec.hpp` | an AC'97 modem codec's registers (`Ac97Codec`) | Agere (Si3038), SM56 (Motorola), HSF (Conexant) |
 | `ich.hpp` | the Intel ICH AC'97 modem controller (`Ich`) | Agere, SM56, HSF |
-| `pci.hpp` | PCI's configuration space of one device and its ports (`PciDevice`) | SM56, HSF, Broadcom |
+| `pci.hpp` | PCI's configuration space of one device and its ports (`PciDevice`) | SM56, HSF, Broadcom, ESS |
 | `x86_traps.hpp` | `in`, `out`, `cli`, `sti` and moves to and from control registers in a driver's own code (`X86Traps`) | SM56, the Windows kernel |
 | `tsc.hpp` | `rdtsc` on the line's clock (`LineTsc`) | HSF, the Windows kernel |
-| `codec_line.hpp` | the line and a codec at a rate of its own: the resamplers and the codec's noise (`CodecLine`, `<NAME>_NOISE`) | SM56, PCTel, HSF, Broadcom, Intel |
+| `codec_line.hpp` | the line and a codec at a rate of its own: the resamplers and the codec's noise (`CodecLine`, `<NAME>_NOISE`) | SM56, PCTel, HSF, Broadcom, Intel, ESS |
 | `smartdaa.hpp` | Conexant's SmartDAA behind its codec (`SmartDaa`) | HSF |
 | `si3034.hpp` | Silicon Labs' Si3034 DAA behind a serial port (`Si3034`) | Broadcom |
 | `bcm4212.hpp` | Broadcom's BCM4212 modem chip: its registers and DMA (`Bcm4212`) | Broadcom |
 | `i537ep.hpp` | Intel's 537EP modem chip: its registers (plain memory) and DMA rings (`I537ep`) | Intel |
+| `es2838.hpp` | ESS's ES2838 modem chip: its ports, its codec's registers and its sample FIFO (`Es2838`) | ESS |
 
 Each mixin's members have its name (`ich_sample()`, `pci_cfg`,
 `si3034_rate`, ...), so that a harness can derive from any of them
@@ -49,7 +51,8 @@ together.
 
 The vendor modems are their own binaries, as their Linux drivers shipped
 them, in `dsp/test/<peer>/` (i386 objects; the harnesses link them in,
-`-m32`); Broadcom's is its Windows driver, which `half_broadcom` loads. Each
+`-m32`); Broadcom's and ESS's are their Windows drivers, which
+`half_broadcom` and `half_ess` load. Each
 is the file of a known release, compared byte for byte where the release
 can still be had. They belong to their owners and are licensed by them,
 not under this repository's terms
@@ -64,6 +67,7 @@ not under this repository's terms
 | HSF | `hsf/hsfengine.o`, `hsfmc97ich.o`, `hsfsoar.o`, `hsfmc97ich.inf`, `hsf.cty` | Linuxant hsfmodem-7.80.02.06oem | 10 May 2010, GCC 3.4.6 (Red Hat) | `modules/imported/<name>-i386.O`, `nvm/inf/hsfmc97ich.inf`, `nvm/inf/hsf.cty` of `hsfmodem-7.80.02.06oem.tar.gz` |
 | Intel | `intel/537core.lib`, `intel/wwh_dflt.c` | Intel537EP 2.37.50.1 for Fedora Core 1 SMP (core "Release 4.65 - Jan 17 2004") | 17 Jan 2004, GCC 3.2 (its IPP parts Intel C++ 7.0 Beta) | `coredrv/537core.lib`, `coredrv/wwh_dflt.c` of `intel-537ep_secure-2.37.50.1-fc1-smp.tgz` |
 | Broadcom | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | BCM V.92 56K Modem 3.4.19, Dell's "V.92 Soft Modem (Data Fax) Driver" A05 | 26 Jul 2002, Microsoft linker 7.0 | the hashes in the package's catalog, signed by Microsoft (WHQL, 31 Jul 2002) |
+| ESS | `ess/es56hpi.sys`, `ess/mdmzn.inf` | ESS ES56H-PI modem driver 5.43.070 (`ess54370.exe`, for Windows 98 to XP) | 24 Mar 2003, Microsoft linker 5.12 | the hashes in the package's catalog, signed by Microsoft (WHQL, 2 Apr 2003) |
 | spandsp | (the system's libspandsp) | spandsp 0.0.6 (release 20110122) | | |
 
 The files' sha256, and what was compared:
@@ -153,6 +157,23 @@ The files' sha256, and what was compared:
   was given to us; it was not compared with a download of Intel's. Its
   licence is a BSD one (redistribution in binary form with the
   notice). The core answers `ATI3` with "537EP".
+- ESS: `es56hpi.sys`
+  `dc0f3b3614dc3cb168759526d47a306977616318e1bc15102987dd1a415d576f`,
+  `mdmzn.inf`
+  `18c4114cfc3c78581791e6d719e1c7e4a41fdde52beca95695ed96c55b4db8ba`,
+  the `WinXP` directory of ESS's installer `ess54370.exe`
+  (`d9d87c53d3a3dd48c11990b8823ab51755861004fbb4fd565e998551726385e7`;
+  its `Win2k` and `Win98` directories carry the same driver). The driver
+  is "ES56H-PI Modem Card", "ESS Telephony Driver", file version
+  V5.43.070, and answers `ATI3` with "V5.43.070-H-PI" and `ATI1` with
+  "ES2838". The package's catalog, `slm.cat` (signed by Microsoft
+  Windows Hardware Compatibility Publisher, 2 Apr 2003), lists the
+  driver's Authenticode SHA-1 (`7ccbff2b0b602f8fddec4557ab6505dde6dc0899`)
+  and the INF's SHA-1 (`5dc97a690730326335a15cc2ba6e8392f2935796`): both
+  files are those Microsoft signed. The installer was given to us; it was
+  not compared with a download of ESS's. An older build of the driver,
+  5.43.064 of March 2002 (`ES2838_2839_XP_583211.zip`, its own catalog
+  matching it too), is not in the tree.
 - spandsp: not in the tree; the build takes the system's (pkg-config
   `spandsp`), 0.0.6 in Debian and Ubuntu.
 
@@ -758,6 +779,103 @@ chooses PCM upstream in INFO1a (`broadcom_v92_pcmup`):
 PCM upstream may well be unfinished in this build, as it is off by
 default.
 
+## Against the ESS soft modem (Windows)
+
+`half_ess` runs ESS's V.92 soft modem for Windows, `es56hpi.sys` 5.43.070:
+the WDM driver of the "ESS ES56H-PI Data Fax Modem", with its controller,
+data pumps (fixed point and MMX), V.42, V.44, MNP and fax in that one
+driver, as ESS shipped it in 2003 (above). It runs on
+`interop_windows.cpp` as the Broadcom driver does, and takes from it
+what that one did not need:
+
+- its BAR 0 is ports, not memory: START_DEVICE gives it a port resource
+  (`win_dev::io_size`), and its port accesses (16 bit: a port is dx's,
+  whatever the driver passes above it) go to the harness;
+- 20 more imports: C library functions (`strstr`, `strncmp`, `_strnicmp`,
+  `atoi`, `wcsstr`, ...), the compiler's 64-bit helpers (`_allmul`,
+  `_alldiv`, and `_allshl` and `_allshr`, which take edx:eax and cl),
+  `DbgPrint`, `RtlInitString`, the fast mutexes, and `KeTickCount`, a data
+  import (a KSYSTEM_TIME the kernel moves on every 10 ms of the line);
+- AddReg lines of the harness's own after the INF's (`win_dev::addreg`):
+  `ESS_DEBUG=2` sets the driver's `DebugLevel`, and its `DbgPrint`s
+  print.
+
+Its hardware is ESS's ES2838 (PCI 125d:2838, ESS's own subsystem; the
+INF's model `ModemPV`), a host signal processing modem: the chip has a
+codec, a sample FIFO and an interrupt, and the driver does everything
+else. There is no datasheet to be had, so the ports below
+(`hw/es2838.hpp`) are what the driver does with them:
+
+| Port | Register |
+|---|---|
+| 0x00, 0x02 | an index and its register's data: the chip's registers below 0x100, its codec's above (0x14c the GPIO configuration, 0x154 the GPIO status, 0x15a the codec's rate in bits 12 to 15) |
+| 0x04 | the FIFO: the driver writes four DAC samples, then reads four ADC samples, and again |
+| 0x06 | the ADC samples in the FIFO (more than 0x1ff is an overrun) |
+| 0x08, 0x0a | a DAA's registers behind a serial port (0x08 the command, bit 7 a read, bit 0 busy; 0x0a the data); this codec type leaves them alone |
+| 0x0c | control: bit 0 the FIFO runs, bit 1 its interrupt |
+| 0x0e | status: bit 1 the FIFO's interrupt, bit 0 the line's |
+
+The interrupt comes with 16 samples in the FIFO; the driver takes 12
+(16 at its V.34 rates) at a time, a block every 1/600 s. The codec's rate
+is in its register 0x5a, from a table in the driver of the rates its
+pumps run at: 6 for 7200 Hz (V.8, V.21 to V.32bis, fax), 5, 4, 3, 2 and 1
+for 8229, 8400, 9000, 9600 and 10286 Hz (V.34's symbol rates at three
+samples a symbol, 2400 baud at four), and 11 for 8000 Hz (call progress
+and V.90). Bit 9 of the GPIO status is the loop current: off hook without
+it, the driver counts on and says OVERLOAD (its over current
+protection). `half_ess` resamples between the codec's rate and the line's
+(`ESS_RATE`, 8000 Hz) and adds the codec's noise (`ESS_NOISE`, rms 5).
+
+`ctest -L ess -j16` runs the tests. `ESS_DEBUG=1` prints the codec's
+rate as it changes, the line's levels each second, the FIFO's state and
+what goes to and from the DTE. `ESS_DEBUG=2` also prints every port and
+register access (with the driver's address of each) and the driver's own
+debug output, and `ESS_DEBUG=3` every call the driver makes into the
+kernel. `ESS_DUMP=<file>` writes the codec's samples, DAC and ADC in
+pairs. `ESS_SYS` and `ESS_INF` name other files for the driver and its
+INF.
+
+| ESS `AT+MS=` / ours | ESS caller → open answerer | open caller → ESS answerer |
+|---|---|---|
+| V34 / 34 | CONNECT 33600 (we receive at 24000) | CONNECT 24000 / 33600 |
+| V32B / 132, V32 / 32 | CONNECT 14400, 9600 | the same |
+| V22B / 122, V22 / 22 | CONNECT 2400, 1200 | the same |
+| V23C / 23, V21 / 21 | CONNECT 1200/75, 300 | the same |
+| B103 / 103 | no call: it never answers the answer tone | CONNECT 300 |
+| V90 / 90 (ours as the digital modem), µ-law and A-law | CONNECT 50666 (31200 upstream) | - |
+| V92 / 92, as it comes and with `+PIG=0` | PCM upstream to CPu, then a retrain and V.90 (49333) | - |
+
+V.8 in its automode (V.34), V.44 both ways (60000 octets) and MNP 5
+both ways pass too. Class 1 fax at 8000 Hz with it receiving
+(`ess_fax_*_open_sends`) passes at all ten modulations. It says CONNECT
+a little before it receives: at 300 bit/s its first octet or more are
+lost, so its FSK calls send their data a second after CONNECT
+(`DATA_WAIT=1`). Its V.29 at 9600 now and then has the page's first
+three octets wrong, which the fax check takes (it finds the page by its
+next 128 bits).
+
+Two things it does not do here, the same against Broadcom's modem:
+
+- As the Bell 103 caller it hears the answer tone (2225 Hz), with
+  `ATB1` or without, in its automode or not, and sends nothing.
+- As the fax sender (the caller) it takes the answerer's frames, but no
+  `AT+FTH=3` after them: the command is in the driver's buffer, but its
+  parser takes it only when the call is over (NO CARRIER). It keeps
+  sending CNG all the while.
+
+Its V.92 offers PCM upstream by default: its INFO0a says V.92, and its
+INFO1a asks for PCM upstream. Phases 3 and 4 get through (Ru, TRN1u,
+SUVu, our CPd, its CPu with 6 constellations), but the frame after has a
+bad CRC and it retrains (tone A); after the retrain its INFO1a says V.90.
+
+What it showed in ours: our V.32 and V.32bis caller sent S for 256
+symbols after R1, then S-bar. V.32 (5.4.1) has S for NT first, the round
+trip delay the caller measured from its CC, and then the 256 of the
+conditioning signal. The ESS answerer stopped R1 at our S and never sent
+its S, TRN and R3 (Broadcom's caller, with NT, got through). Our caller
+now measures NT (its CC reversal to the answerer's, less the answerer's
+64 symbols) and sends S for NT + 256.
+
 ## Against the Intel 537EP soft modem
 
 `half_intel` runs the core of Intel's 537EP driver for Linux
@@ -835,7 +953,7 @@ silence, then S), not 256 symbols.
 
 ## MNP
 
-The Agere, SM56, PCTel, HSF, Broadcom and Intel modems have MNP 2 to 4 and
+The Agere, SM56, PCTel, HSF, Broadcom, Intel and ESS modems have MNP 2 to 4 and
 MNP 5 (Smart Link's library and spandsp have none); with their defaults
 they all take V.42 with us. Forced to MNP, each connects with MNP 4 and
 MNP 5 both ways (`ctest -R mnp`, 20000 octets each way): calling with

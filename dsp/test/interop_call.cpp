@@ -908,8 +908,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		/* a DTE's moment after CONNECT before its data (the SM56
 		   says CONNECT a little ahead of taking data, and echoes
 		   what comes sooner as a command line; unpaced, we might
-		   answer in no time of the line's) */
-		dte.pump(0.1);
+		   answer in no time of the line's; DATA_WAIT=<s> longer,
+		   for a modem that takes a while to receive after it) */
+		dte.pump(atof(env("DATA_WAIT", "0.1").c_str()));
 		dte.buf[0].clear();
 		dte.buf[1].clear();
 
@@ -1464,8 +1465,18 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 					fail("setup");
 		}
 		double t0 = dte.t();
-		dte.send(1, "ATA\r");
-		dte.send(0, "ATD\r");
+		/* ANSWER_AFTER: B off hook that long after A dialed (as on a
+		   line, where the call rings first) */
+		double ans_after = atof(env("ANSWER_AFTER", "0").c_str());
+		std::string atd = "ATD" + env("DIAL") + "\r";
+		if (ans_after > 0) {
+			dte.send(0, atd);
+			dte.pump(ans_after);
+			dte.send(1, "ATA\r");
+		} else {
+			dte.send(1, "ATA\r");
+			dte.send(0, atd);
+		}
 		std::string r = dte.wait_code(1, fax_result(), 30);
 		say("B: ATA -> %s\n", r.empty() ? "None" : r.c_str());
 		if (r != "CONNECT")
@@ -1565,14 +1576,21 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		   anywhere in the page, which the error count takes. */
 		std::vector<int> rb = bits(data), pb = bits(page);
 		long i = -1;
-		long lim = std::min<long>((long)rb.size() - 128, 4000);
-		for (long k = 0; k < lim && i < 0; k++) {
-			int wrong = 0;
-			for (int j = 0; j < 128 && wrong <= 8; j++)
-				wrong += rb[k + j] != pb[j];
-			if (wrong <= 8)
-				i = k;
-		}
+		long lim = std::min<long>((long)rb.size() - 256, 4000);
+		/* (and if the page's first octets came wrong, as from the ESS
+		   modem's V.29 receiver now and then, by its next 128 bits: the
+		   first 128 then left out of the page's check below) */
+		long skip = 0;
+		for (long w : { 0L, 128L })
+			for (long k = w; k < lim + w && i < 0; k++) {
+				int wrong = 0;
+				for (int j = 0; j < 128 && wrong <= 8; j++)
+					wrong += rb[k + j] != pb[w + j];
+				if (wrong <= 8) {
+					i = k - w;
+					skip = w;
+				}
+			}
 		long errs = -1;
 		std::vector<long> pos;
 		if (i >= 0) {
@@ -1600,7 +1618,7 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 		const size_t tail = 64;
 		if (i >= 0 && rb.size() - i + tail >= pb.size()) {
 			size_t wrong = 0;
-			for (size_t k = 0; k + tail < pb.size() &&
+			for (size_t k = skip; k + tail < pb.size() &&
 			     k + i < rb.size(); k++)
 				wrong += rb[k + i] != pb[k];
 			page_ok = wrong <= pb.size() / 1000;
