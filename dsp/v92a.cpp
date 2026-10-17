@@ -63,18 +63,9 @@ void V92ATx::segment(enum v92a_seg s)
 	if (s == V92A_SEQ)
 		pos = 0;
 	if (s == V92A_DATA) {
-		/* everything from zero, B1u in data frame interval 0
-		   (8.7.1/V.92) */
-		scr = 0;
-		K = 2 * (cpd.drn + 17);
-		frames = 0;
 		fi = 0;
-		dprev = 0;
-		tstate = 0;
 		dn = 0;
-		memset(uh, 0, sizeof(uh));
-		memset(xh, 0, sizeof(xh));
-		memset(vh, 0, sizeof(vh));
+		data_reset();
 	}
 	seg = s;
 	n = 0;
@@ -109,12 +100,15 @@ float V92ATx::symbol()
 	case V92A_RUBAR:
 		k = (int)(n % 6);
 		y = (k < 3) == (seg == V92A_RU) ? lu : -lu;
+		/* (TRN2u's differential encoder goes on from its sign) */
+		last_d = y < 0;
 		if (seg == V92A_RU && n + 1 == 384) {
 			segment(V92A_RUBAR);
 			return y;
 		}
 		if (seg == V92A_RUBAR && n + 1 == 24) {
-			segment(V92A_TRN1);
+			/* a renegotiation's: TRN2u (9.8.2/V.92) */
+			segment(rn ? V92A_TRN2 : V92A_TRN1);
 			return y;
 		}
 		break;
@@ -212,6 +206,12 @@ float V92ATx::symbol()
 		}
 		break;
 	case V92A_DATA:
+		if (ru_req && fi == 0) {
+			ru_req = 0;
+			rn = 1;
+			segment(V92A_RU);
+			return symbol();
+		}
 		return data_symbol();
 	}
 	n++;
@@ -283,21 +283,101 @@ struct Wide {
 };
 }
 
-/* a data frame's K bits (B1u's ones the first 48 frames) scrambled,
-   through the modulus encoder (6.4.1/V.92) into kq[]: the sign of R
-   (above (M - 1) / 2) differentially encoded, R turned over (M - 1 - R)
-   when the last frame's was 1 */
+/* B1u's start (8.7.1/V.92): the scrambler, the modulus encoder, the
+   trellis code, the precoder and the prefilter from zero, B1u in data
+   frame interval 0 */
+void V92ATx::data_reset()
+{
+	scr = 0;
+	K = 2 * (cpd.drn + 17);
+	frames = 0;
+	dprev = 0;
+	tstate = 0;
+	dsrc = V92A_D_LINK;
+	memset(uh, 0, sizeof(uh));
+	memset(xh, 0, sizeof(xh));
+	memset(vh, 0, sizeof(vh));
+}
+
+/* a data frame's K bits (B1u's ones the first 48 frames; in a fast
+   parameter exchange the sequences', E2u's zeros, FB1u's ones; RM and
+   RM' their own Ki) scrambled, through the modulus encoder (6.4.1/
+   V.92) into kq[]: the sign of R (above (M - 1) / 2) differentially
+   encoded, R turned over (M - 1 - R) when the last frame's was 1 */
 void V92ATx::data_frame()
 {
+	/* Table 25 and 26/V.92: RM's Ki, 1 for M - 1 */
+	static const char rm[12] = { 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0 };
+	static const char rmp[12] = { 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0 };
 	unsigned char b[80];
 	Wide R, Mt, R2, M1;
 	int j, s;
 
-	if (frames < 48)
+	if (b1u_next) {
+		b1u_next = 0;
+		cpd = cpd_new;
+		e2u_req = 0;
+		data_reset();
+		DSP_DBG("v92a tx: FPE: B1u, %d bits a frame\n", K);
+	}
+	if (dsrc == V92A_D_LINK && fpe_req) {
+		fpe_req = 0;
+		dsrc = V92A_D_RM;
+		dsrc_n = 0;
+	}
+	if (dsrc == V92A_D_RM) {
+		/* 384 T of RM, 24 T of RM' */
+		for (j = 0; j < 12; j++)
+			kq[j] = (dsrc_n < 32 ? rm[j] : rmp[j]) ?
+				cpd.M[j] - 1 : 0;
+		if (++dsrc_n == 34) {
+			/* SUVu next, from cleared scrambler and sign */
+			dsrc = V92A_D_SEQ;
+			dsrc_n = 0;
+			pos = 0;
+			scr = 0;
+			dprev = 0;
+			if (fpe_reset) {
+				memset(uh, 0, sizeof(uh));
+				memset(xh, 0, sizeof(xh));
+				memset(vh, 0, sizeof(vh));
+			}
+		}
+		return;
+	}
+	if (dsrc == V92A_D_SEQ) {
+		for (j = 0; j < K; j++) {
+			b[j] = bits[pos++];
+			if (pos >= nbits) {
+				seqs++;
+				pos = 0;
+				if (nxt_n) {
+					memcpy(bits, nxt, nxt_n);
+					nbits = nxt_n;
+					nxt_n = 0;
+				}
+			}
+		}
+		/* (whole sequences end on a frame's end: E2u after) */
+		if (e2u_req && pos == 0) {
+			dsrc = V92A_D_E2U;
+			dsrc_n = 0;
+		}
+	} else if (dsrc == V92A_D_E2U) {
+		memset(b, 0, K);
+		dsrc = V92A_D_FB1U;
+		dsrc_n = 0;
+	} else if (dsrc == V92A_D_FB1U) {
+		memset(b, 1, K);
+		/* B1u on the new CPd after the 48th, everything anew */
+		if (++dsrc_n == 48)
+			b1u_next = 1;
+	} else if (frames < 48)
 		memset(b, 1, K);
 	else
 		link.get(b, K);
-	frames++;
+	if (dsrc == V92A_D_LINK)
+		frames++;
 	R.set(0);
 	for (j = 0; j < K; j++)
 		if (scramble(&scr, SCR_GPA, b[j]))
@@ -326,12 +406,15 @@ float V92ATx::data_symbol()
 {
 	const short *z1 = cpd.coef[0], *p1 = cpd.coef[1];
 	const short *z2 = cpd.coef[2], *p2 = cpd.coef[3];
-	int c = cpd.con[fi % 6], lc = cpd.lc[c], M = cpd.M[fi];
-	int k = fi % 4, e, step, best = 0, i;
+	int c, lc, M, k = fi % 4, e, step, best = 0, i;
 	double fb = 0, x, v = 0, bd = 1e300;
 
+	/* (a new CPd comes in at a frame's start) */
 	if (fi == 0)
 		data_frame();
+	c = cpd.con[fi % 6];
+	lc = cpd.lc[c];
+	M = cpd.M[fi];
 	/* the past's part of the precoder's output */
 	for (i = 1; i <= cpd.len[0]; i++)
 		fb += z1[i - 1] / 32768.0 * uh[i - 1];

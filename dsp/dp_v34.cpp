@@ -239,6 +239,11 @@ enum v34_state {
 	P4U_SEQ,        /* SUVu, CPu after SUVd, the acknowledged ones
 			   after CPd, until SUVd' or CPd' or Ed */
 	P4U_DATA,       /* E2u, B1u, data; until B1d */
+	P4U_RN,         /* a rate renegotiation (9.8.2/V.92): Ru, Ru-bar,
+			   then P4U_TRN2 */
+	P4U_FSEQ,       /* a fast parameter exchange (9.9.2.2/V.92): RM,
+			   RM', SUVu, CPus, ... in the data mode */
+	P4U_FDATA,      /* E2u, FB1u, B1u; until B1d */
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
@@ -697,6 +702,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 				   offers it (DSP_V92A_UP=0: not) */
 	int v92a_noup;          /* it failed in this call: V.90 next */
 	int v92a_s2_req;        /* our INFO0a asks for short phase 2 */
+	int v92a_renegs;        /* PCM upstream's rate renegotiations */
 	int v92a_short2;        /* and the digital modem's INFO0d too */
 	int v92a_up_on;         /* this phase 3 is PCM upstream's */
 	V92ATx patx;            /* its transmitter */
@@ -786,7 +792,11 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void v92a_up_start();
 	int v92a_cpt();
 	int v92a_up_fail(const char *why);
-	int v92a_next_seq();
+	int v92a_next_seq(int fpe = 0);
+	int v92a_cpd_ok(const V92Cpd &d);
+	void v92a_fpe();
+	void v92a_reneg(int who, const char *why);
+	void v90a_reneg_ours(const char *why);
 	int v90a_cp_design();
 	int v90a_data_setup();
 	long v90a_quiet;        /* data mode: samples of the PCM signal gone */
@@ -3049,31 +3059,110 @@ int V34Pump::v92a_cpt()
    CPu once SUVd is in (again if no acknowledgement 100 ms and a round
    trip after it went), else SUVu; acknowledged once CPd is in.  -1
    when there are no constellations for CPu */
-int V34Pump::v92a_next_seq()
+int V34Pump::v92a_next_seq(int fpe)
 {
-	int ack = v90rx.ev_cpd > 0;
+	int ack = v90rx.ev_cpd > 0, fill = fpe ? patx.K : 24;
 	long again = ms2samples(100, srate) + rtd +
 		ms2samples(1000L * v92a_cpu_n / 2 / 8000, srate);
 	if (v90rx.ev_suvd && v90rx.ev_trn2 &&
 	    (!v92a_cpu || (!v90rx.ev_mpack && total - v92a_cpu_at > again))) {
-		if (!v92a_cpu) {
-			if (v90a_cp_design())
-				return -1;
-			DSP_DBG("v34: V.92: CPu, drn %d\n", v90a_cp.drn);
+		if (fpe) {
+			/* the downstream as it is: CPus */
+			patx.nxt_n = v92_cpus_build(patx.nxt, v90a_cp.drn, ack,
+						    fill);
+			if (!v92a_cpu)
+				DSP_DBG("v34: V.92: FPE: CPus\n");
+		} else {
+			if (!v92a_cpu) {
+				if (v90a_cp_design())
+					return -1;
+				DSP_DBG("v34: V.92: CPu, drn %d\n",
+					v90a_cp.drn);
+			}
+			v90a_cp.ack = ack;
+			patx.nxt_n = v92_cpu_build(patx.nxt, v90a_cp, fill);
 		}
-		v90a_cp.ack = ack;
-		patx.nxt_n = v92_cpu_build(patx.nxt, v90a_cp, 24);
 		v92a_cpu_n = patx.nxt_n;
 		v92a_cpu++;
 		v92a_cpu_at = total;
 	} else
-		patx.nxt_n = v92_suvu_build(patx.nxt, ack, 24);
+		patx.nxt_n = v92_suvu_build(patx.nxt, ack, fill);
 	if (ack && !v92a_acked) {
 		/* (after the one going out and this one) */
 		v92a_acked = 1;
 		v92a_ack_seqs = patx.seqs + 2;
 	}
 	return 0;
+}
+
+/* a rate renegotiation of PCM upstream as the analogue modem (9.8.2/
+   V.92): who 1 the digital modem's (its Rd-bar is in), 2 ours; our Ru
+   at the next data frame's start, Ru-bar, TRN2u, then phase 4 again
+   (its TRN2d, SUVd, CPd, Ed, B1d on the PCM receiver: V.90's
+   renegotiation frames), the data on at the new rates.  No B1d in 25 s
+   (the digital modem's own limit): a retrain */
+void V34Pump::v92a_reneg(int who, const char *why)
+{
+	DSP_DBG("v34: V.92 renegotiation %d (%s%s%s), downstream error %.2f "
+		"rms\n", ++v92a_renegs,
+		who == 1 ? "the digital modem's Rd" : "ours", *why ? ": " : "",
+		why, sqrtf(v90rx.data_mse()));
+	v90a_bad = v90a_good = 0;
+	stat_reneg(who == 1);
+	v90a_rn = who;
+	timeout = total + ms2samples(25000, srate);
+	patx.ru_req = 1;
+	set_state(P4U_RN);
+}
+
+/* see v92a_reneg(): a CPd our transmitter can take (its moduli enough
+   for its bits, each class within its points) */
+int V34Pump::v92a_cpd_ok(const V92Cpd &d)
+{
+	double lm = 0;
+	int i, ok = d.drn >= 1 && d.ncon >= 1 && d.g > 0;
+	for (i = 0; i < 12 && ok; i++) {
+		ok = d.M[i] >= 1 && d.lc[d.con[i % 6]] > 0 &&
+			d.M[i] <= 2 * d.lc[d.con[i % 6]];
+		lm += log2((double)d.M[i]);
+	}
+	return ok && lm >= 2 * (d.drn + 17) - 1e-9;
+}
+
+/* the digital modem's fast parameter exchange (its Rf-bar is in): RM
+   at the next data frame's start, SUVu after RM' (P4U_FSEQ).  With a
+   prefilter our transmitter's filters start anew at SUVu, as the
+   digital modem's receiver has them */
+void V34Pump::v92a_fpe()
+{
+	const V92Cpd &d = patx.cpd;
+	int i, pf = d.coef[2][0] != 32767;
+	for (i = 1; i < d.len[2]; i++)
+		pf |= d.coef[2][i] != 0;
+	for (i = 0; i < d.len[3]; i++)
+		pf |= d.coef[3][i] != 0;
+	DSP_DBG("v34: V.92 fast parameter exchange (the digital modem's "
+		"Rf)%s\n", pf ? ", the prefilter anew" : "");
+	stat_reneg(1);
+	v90a_rn = 1;
+	timeout = total + ms2samples(25000, srate);
+	patx.fpe_reset = pf;
+	patx.nbits = v92_suvu_build(patx.bits, 0, patx.K);
+	patx.nxt_n = 0;
+	patx.e2u_req = 0;
+	patx.fpe_req = 1;
+	v92a_cpu = v92a_acked = 0;
+	set_state(P4U_FSEQ);
+}
+
+/* our own rate renegotiation in the data mode: V.92's with PCM
+   upstream, else V.90's */
+void V34Pump::v90a_reneg_ours(const char *why)
+{
+	if (v92a_up_on)
+		v92a_reneg(2, why);
+	else
+		v90a_reneg(2, why);
 }
 
 /* PCM upstream did not work: V.90 for the rest of the call, after a
@@ -4859,15 +4948,7 @@ int V34Pump::handshake()
 		if (v92a_acked && patx.seqs >= v92a_ack_seqs &&
 		    (v90rx.ev_mpack || v90rx.ev_ed)) {
 			const V92Cpd &d = v90rx.cpd;
-			double lm = 0;
-			int i, ok = d.drn >= 1 && d.ncon >= 1 && d.g > 0;
-			/* (the moduli enough for its bits) */
-			for (i = 0; i < 12 && ok; i++) {
-				ok = d.M[i] >= 1 && d.lc[d.con[i % 6]] > 0 &&
-					d.M[i] <= 2 * d.lc[d.con[i % 6]];
-				lm += log2((double)d.M[i]);
-			}
-			if (!ok || lm < 2 * (d.drn + 17) - 1e-9)
+			if (!v92a_cpd_ok(d))
 				return v92a_up_fail("CPd we can't take");
 			patx.cpd = d;
 			patx.link = CoreBits{ modem };
@@ -4883,8 +4964,74 @@ int V34Pump::handshake()
 					    !v90rx.ev_cpd ? "no CPd" :
 					    "no SUVd' or CPd'");
 		break;
+	/* a fast parameter exchange, the digital modem's (9.9.2.2/V.92):
+	   after its Rf-bar our RM, RM', then the sequences as in phase 4
+	   in the data mode modulation (CPus: the downstream as it is),
+	   E2u, FB1u's 48 frames and B1u on its new CPd; its B1d on our
+	   constellations as they were */
+	case P4U_FSEQ:
+		if (patx.dsrc == V92A_D_SEQ && !patx.nxt_n &&
+		    v92a_next_seq(1))
+			return v92a_up_fail("FPE: no CPus");
+		if (v92a_acked && patx.seqs >= v92a_ack_seqs &&
+		    (v90rx.ev_mpack || v90rx.ev_ed)) {
+			if (!v92a_cpd_ok(v90rx.cpd))
+				return v92a_up_fail("FPE: CPd we can't take");
+			patx.cpd_new = v90rx.cpd;
+			patx.e2u_req = 1;
+			rate_tx = (v90rx.cpd.drn + 17) * 8000 / 6;
+			DSP_DBG("v34: V.92: FPE: E2u, FB1u, B1u at %d bit/s\n",
+				rate_tx);
+			set_state(P4U_FDATA);
+			break;
+		}
+		if (c >= ms2samples(5000, srate))
+			return v92a_up_fail(!v90rx.ev_suvd ? "FPE: no SUVd" :
+					    !v90rx.ev_cpd ? "FPE: no CPd" :
+					    "FPE: no SUVd' or CPd'");
+		break;
+	case P4U_FDATA:
+		if (v90rx.ev_b1d && patx.dsrc == V92A_D_LINK &&
+		    !patx.b1u_next && patx.frames > 48) {
+			set_state(V90A_DATA);
+			set_rates(rate_tx, rate_rx);
+			v90a_quiet = 0;
+			v90a_rn = 0;
+			DSP_DBG("v34: V.92 fast parameter exchange done %d/%d "
+				"(analogue modem)\n", rate_tx, rate_rx);
+			break;
+		}
+		if (c >= ms2samples(4000, srate))
+			return v92a_up_fail(v90rx.ev_ed ? "FPE: no B1d" :
+					    "FPE: no Ed");
+		break;
+	case P4U_RN:
+		/* our Ru and Ru-bar out: TRN2u and phase 4's sequences
+		   again */
+		if (patx.seg == V92A_TRN2) {
+			patx.trn2_stop = patx.e2u_req = 0;
+			patx.nxt_n = 0;
+			v92a_cpu = v92a_acked = 0;
+			set_state(P4U_TRN2);
+			break;
+		}
+		if (c >= ms2samples(1000, srate))
+			return v92a_up_fail("Ru did not go");
+		break;
 	case P4U_DATA:
-		/* B1d in and our B1u out: CONNECT */
+		/* B1d in and our B1u out: CONNECT (or the data on after a
+		   renegotiation) */
+		if (v90rx.ev_b1d && patx.seg == V92A_DATA &&
+		    patx.frames > 48 && v90a_rn) {
+			set_state(V90A_DATA);
+			set_rates(rate_tx, rate_rx);
+			v90a_quiet = 0;
+			v90a_rn = 0;
+			v90rx.ev_rd = v90rx.ev_rdbar = v90rx.rd_run = 0;
+			DSP_DBG("v34: V.92 renegotiated %d/%d (analogue "
+				"modem)\n", rate_tx, rate_rx);
+			break;
+		}
 		if (v90rx.ev_b1d && patx.seg == V92A_DATA &&
 		    patx.frames > 48) {
 			set_state(V90A_DATA);
@@ -5046,9 +5193,14 @@ int V34Pump::handshake()
 				v90rx.ppm(), v90rx.t_phase);
 		/* the digital modem's rate renegotiation: its Rd (no data
 		   from it on), our S after Rd-bar (9.6.2.2/V.90) */
-		if (v90rx.ev_rdbar && v92a_up_on)
-			/* (V.92's renegotiation is not there yet) */
-			return v92a_up_fail("the digital modem renegotiates");
+		if (v90rx.ev_rdbar && v92a_up_on) {
+			v92a_reneg(1, "");
+			break;
+		}
+		if (v90rx.fpe_on && v92a_up_on) {
+			v92a_fpe();
+			break;
+		}
 		if (v90rx.ev_rdbar) {
 			v90a_reneg(1);
 			break;
@@ -5065,18 +5217,18 @@ int V34Pump::handshake()
 			v90a_good = settled && er < 0.5f * v90a_cp_noise &&
 				v90a_cp.drn < 22 ? v90a_good + 1 : 0;
 		}
-		if (v90rx.ev_rd || v92a_up_on)
+		if (v90rx.ev_rd)
 			break;
 		if (v90a_bad >= ms2samples(1000, srate)) {
 			v90rx.reneg_wait();
-			v90a_reneg(2, "errors");
+			v90a_reneg_ours("errors");
 		} else if (v90a_good >= ms2samples(20000, srate)) {
 			v90rx.reneg_wait();
-			v90a_reneg(2, "margin");
+			v90a_reneg_ours("margin");
 		} else if (v90a_rn_at && c >= v90a_rn_at && !v90rx.renegs) {
 			/* test: DSP_V90A_RENEG */
 			v90rx.reneg_wait();
-			v90a_reneg(2, "test");
+			v90a_reneg_ours("test");
 		} else if (retrain_at && c >= retrain_at && !retrains)
 			/* test: DSP_V34_RETRAIN (9.5.2.1/V.90) */
 			retrain("test");
@@ -5832,6 +5984,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v92a_up = !(getenv("DSP_V92A_UP") && !atoi(getenv("DSP_V92A_UP")));
 	v92a_noup = v92a_up_on = 0;
 	v92a_s2_req = v92a_short2 = 0;
+	v92a_renegs = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
 

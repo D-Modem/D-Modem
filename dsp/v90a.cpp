@@ -1213,6 +1213,60 @@ void V90Rx::rd_frame(const int *s, const int *lab)
 	}
 }
 
+/* a data frame's signs and labels against Rf (8.8.4/V.92): + + - - + +
+   and - - + + - - in turn on the loudest points, 8 frames of it; then
+   Rf-bar, the pattern a frame on (two frames alike); after its 4
+   frames the SUVd of a fast parameter exchange */
+void V90Rx::rf_frame(const int *s, const int *lab)
+{
+	static const int p[6] = { 1, 1, -1, -1, 1, 1 };
+	int j, score = 0, top = 1, pat;
+
+	if (ev_rfbar) {
+		if (++rfbar_n == 4) {
+			/* SUVd from cleared descrambler and signs */
+			fpe_on = 1;
+			fscr = 0;
+			flast = 0;
+			mp_n = 0;
+			msr = 0;
+			mp_frame = 0;
+			ed_zero = 0;
+			ev_suvd = ev_cpd = ev_mpack = ev_ed = ev_b1d = 0;
+			ev_rf = ev_rfbar = rf_run = 0;
+			DSP_DBG("v90a: FPE: SUVd from frame %ld\n", frames + 1);
+		}
+		return;
+	}
+	for (j = 0; j < 6; j++) {
+		score += s[j] ? p[j] : -p[j];
+		if (lab[j] > 1)
+			top = 0;
+	}
+	pat = score == 6 ? 1 : score == -6 ? -1 : 0;
+	if (!ev_rf) {
+		if (top && pat && (!rf_run || pat == -rf_last)) {
+			rf_last = pat;
+			if (++rf_run >= 8) {
+				ev_rf = 1;
+				DSP_DBG("v90a: Rf at frame %ld\n", frames);
+			}
+		} else
+			rf_run = 0;
+		return;
+	}
+	if (top && pat && pat == rf_last) {
+		ev_rfbar = 1;
+		rfbar_n = 1;
+		DSP_DBG("v90a: Rf-bar at frame %ld\n", frames);
+	} else if (top && pat == -rf_last)
+		rf_last = pat;
+	else {
+		ev_rf = rf_run = 0;
+		DSP_DBG("v90a: Rf lost at frame %ld\n", frames);
+	}
+}
+
 /* after Rd-bar: phase 4's frames again (9.6.2.2/V.90), TRN2d, MP and
    Ed on CPt's constellations from cleared descrambler and signs, then
    B1d on the new CP's; the bits queued for the caller stay */
@@ -1233,6 +1287,7 @@ void V90Rx::reneg_frames()
 	fe_sum = 0;
 	fe_n = 0;
 	ev_trn2 = ev_mp = ev_mpack = ev_ed = ev_b1d = 0;
+	ev_suvd = ev_cpd = 0;
 	stage = FRAMES;
 }
 
@@ -1410,12 +1465,43 @@ void V90Rx::frame()
 	if (cn == &con_data) {
 		/* data mode: the bits for take(), the signal's power and the
 		   decisions' error */
+		if (frames_b1 >= 48 && fpe_on) {
+			/* a fast parameter exchange's SUVd, CPd, Ed */
+			for (i = 0; i < cn->D; i++)
+				mp_bit(d[i]);
+			if (ev_mpack && !mp_n &&
+			    frames == mp_frame + 1 + ed_zero) {
+				if (ones <= 2) {
+					if (++ed_zero == 2) {
+						ev_ed = 1;
+						fpe_on = 0;
+						fscr = 0;
+						flast = 0;
+						frames_b1 = 0;
+						b1_err = 0;
+						DSP_DBG("v90a: FPE: Ed at frame %ld, "
+							"B1d next\n", frames);
+					}
+				} else
+					ed_zero = 0;
+			}
+			frames++;
+			return;
+		}
 		if (frames_b1 >= 48) {
 			/* Rd: no bits from it on (circuit 104 clamped) */
 			rd_frame(s, lab);
 			if (ev_rd) {
 				frames++;
 				return;
+			}
+			/* Rf (V.92) likewise */
+			if (v92) {
+				rf_frame(s, lab);
+				if (ev_rf) {
+					frames++;
+					return;
+				}
 			}
 			for (i = 0; i < cn->D; i++) {
 				if (qn == V90RX_Q) {

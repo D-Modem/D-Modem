@@ -306,6 +306,23 @@ int v92_suvu_build(unsigned char *b, int ack, int fill)
 	return fill_to(b, n, fill);
 }
 
+/* see v92.h */
+int v92_cpus_build(unsigned char *b, int drn, int ack, int fill)
+{
+	int n = 0;
+	put_bits(b, &n, 0x1FFFF, 17);
+	put_bits(b, &n, 0, 1);
+	put_bits(b, &n, 0, 1);          /* CP */
+	put_bits(b, &n, 2, 2);          /* CPus */
+	put_bits(b, &n, drn, 5);
+	put_bits(b, &n, 0, 7);
+	put_bits(b, &n, ack, 1);
+	put_bits(b, &n, 0, 1);
+	put_frame_crc(b, &n);
+	put_bits(b, &n, 0, 1);
+	return fill_to(b, n, fill);
+}
+
 /* see v92.h: the header to bit 51, then the parts bits 19 to 21 say
    are there (V92Cpd::build()'s layout), a start bit, the CRC */
 int v92_cpd_length(const unsigned char *b, int n)

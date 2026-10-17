@@ -54,10 +54,20 @@ enum v92a_seg {
 				   any) after each; E2u after one once
 				   e2u_req */
 	V92A_E2U,               /* a data frame of zeros, then data */
-	V92A_DATA,              /* B1u, then link's bits */
+	V92A_DATA,              /* B1u, then link's bits; Ru at a data
+				   frame's start once ru_req */
 };
 
 #define V92A_HIST       (V92_PMAX + 1)  /* the filters' past */
+
+/* the data mode's frames (V92ATx::dsrc) */
+enum {
+	V92A_D_LINK,            /* B1u's 48 frames of ones, then link's */
+	V92A_D_RM,              /* RM, RM' */
+	V92A_D_SEQ,             /* SUVu, CPus */
+	V92A_D_E2U,
+	V92A_D_FB1U,
+};
 
 struct V92ATx {
 	int rate;               /* the line's, 9600 or 8000 */
@@ -92,6 +102,23 @@ struct V92ATx {
 	int pos;
 	long seqs;              /* sequences sent whole */
 	int e2u_req;
+	/* a rate renegotiation (9.8/V.92): Ru at the next data frame's
+	   start (ru_req), its Ru-bar then on to TRN2u (rn) */
+	int ru_req, rn;
+	/* a fast parameter exchange (9.9/V.92) in the data mode: RM at
+	   the next data frame's start (fpe_req), its 32 frames and RM''s
+	   2, then the sequences (bits[], nxt[] as in phase 4, each a
+	   whole number of data frames) from cleared scrambler and
+	   modulus encoder sign, E2u after one once e2u_req, FB1u's 48
+	   frames of ones, then B1u and the data on cpd_new */
+	int fpe_req;
+	int dsrc;               /* V92A_D_ */
+	long dsrc_n;            /* its frames */
+	V92Cpd cpd_new;
+	int b1u_next;
+	int fpe_reset;          /* the precoder and prefilter start anew at
+				   SUVu (the digital modem's prefilter
+				   receiver takes them so) */
 	/* the data mode: the CPd's parameters, the bits, the frames sent
 	   (B1u the first 48), the data frame interval, the modulus
 	   encoder's K and its sign's memory, the trellis encoder's state
@@ -131,6 +158,7 @@ private:
 	float sym4(int sign, int mag);
 	float data_symbol();
 	void data_frame();
+	void data_reset();
 	float point(int c, int e) const;
 };
 

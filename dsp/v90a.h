@@ -295,6 +295,14 @@ struct V90Rx {
 	/* V.92's phase 4 (v92): SUVd and CPd in MP's place */
 	int ev_suvd, ev_cpd;
 	V92Cpd cpd;
+	/* V.92's fast parameter exchange (9.9/V.92): Rf (+ + - - + + of
+	   each interval's loudest data point, then the opposite: a 12
+	   symbol pattern) frames in a row, Rf-bar (the pattern a frame on,
+	   4 frames); then SUVd and CPd in the data mode modulation, from
+	   cleared descrambler and signs, until Ed, then B1d */
+	int rf_run, rf_last, rfbar_n;
+	int ev_rf, ev_rfbar;
+	int fpe_on;             /* the frames are SUVd, CPd, Ed */
 	int ev_ed;
 	int ev_b1d;             /* B1d's frames in */
 	/* a rate renegotiation (9.6/V.90): Rd (+ + + - - - of each
@@ -333,6 +341,7 @@ struct V90Rx {
 	{
 		ev_rd = ev_rdbar = rd_run = 0;
 		ev_trn2 = ev_mp = ev_mpack = ev_ed = ev_b1d = 0;
+		ev_suvd = ev_cpd = 0;
 	}
 	/* one sample of the line (9600 or 8000 Hz: init()'s rate) */
 	void line(float v);
@@ -365,6 +374,7 @@ private:
 	void adapt(long kk, float e);
 	void ri_frame(const int *s);
 	void rd_frame(const int *s, const int *lab);
+	void rf_frame(const int *s, const int *lab);
 	void reneg_frames();
 	void frame();
 	void mp_bit(int bit);

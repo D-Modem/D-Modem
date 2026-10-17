@@ -90,6 +90,9 @@ int  v92_cpt_build(unsigned char *b, const V90Cp &cp);
    period), filled to a multiple of fill bits */
 int  v92_cpu_build(unsigned char *b, const V90Cp &cp, int fill);
 int  v92_suvu_build(unsigned char *b, int ack, int fill);
+/* CPus (Table 24/V.92): the digital modem's rate drn and parameters as
+   they are */
+int  v92_cpus_build(unsigned char *b, int drn, int ack, int fill);
 
 /* frames of 17 bit blocks after a sync of 17 ones, in the decoded bits
    of the analogue modem */

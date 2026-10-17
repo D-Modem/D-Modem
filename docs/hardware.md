@@ -95,8 +95,8 @@ that user needs access to `/dev/snd/*`.
 - **Speed.** As the analogue modem the open DSP has V.90, with its
   retrains and rate renegotiations (a line that changes mid-call
   renegotiates, and one PCM cannot use falls back to V.34), and V.92's
-  PCM upstream, quick connect and modem-on-hold, but not yet PCM
-  upstream's own renegotiations (the server's retrains to V.90).
+  PCM upstream (with its renegotiations), quick connect and
+  modem-on-hold.
   The analogue modem has been tested against our own digital modem on
   the simulated network only, not yet against an ISP's server.
 - **Dialling.** DTMF only: `ATDP` dials in DTMF too, as a hook switch

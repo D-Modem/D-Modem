@@ -556,6 +556,45 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)V.92 QC1a.*V.8 JM received.*"
 	      "V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)V.8 CM received.*V.92 connect 5[0-9]+/" });
+	/* PCM upstream's rate renegotiation (9.8.2/V.92): the digital
+	   modem's (DSP_V92_RENEG on it: its Rd, our Ru, TRN2u, phase 4
+	   again), ours (DSP_V90A_RENEG on us: our Ru first); its fast
+	   parameter exchange (9.9.2.2/V.92, DSP_V92_FPE on it: its Rf, our
+	   RM, RM', SUVu, CPus in the data mode, E2u, FB1u, B1u), with its
+	   prefilter and with its plain precoder */
+	add("open", "open_v92a_reneg", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92_RENEG=3000", "BULK=150000",
+	      "EXPECT_A=(?s)V.92 connect [34][0-9]+/5[0-9]+ \\(analogue "
+	      "modem\\).*Rd-bar at symbol.*V.92 renegotiation 1 \\(the "
+	      "digital modem's Rd\\).*SUVd at frame.*CPd'? at frame.*"
+	      "V.92 renegotiated [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)v92: Rd.*v92: Ru at symbol.*rate renegotiation.*"
+	      "TRN2u \\(renegotiation\\).*v92: renegotiated" });
+	add("open", "open_v92a_reneg_ours", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V90A_RENEG=3000c", "BULK=150000",
+	      "EXPECT_A=(?s)V.92 connect.*V.92 renegotiation 1 \\(ours: "
+	      "test\\).*Rd-bar at symbol.*"
+	      "V.92 renegotiated [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)v92: Ru at symbol.*rate renegotiation.*v92: Rd.*"
+	      "v92: renegotiated" });
+	add("open", "open_v92a_fpe", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92_FPE=3000", "BULK=150000",
+	      "EXPECT_A=(?s)V.92 connect.*Rf at frame.*Rf-bar at frame.*"
+	      "FPE: SUVd from frame.*V.92 fast parameter exchange \\(the "
+	      "digital modem's Rf\\), the prefilter anew.*FPE: CPus.*"
+	      "CPd'? at frame.*FPE: E2u, FB1u, B1u.*FPE: Ed at frame.*"
+	      "B1d: 0 bit errors.*V.92 fast parameter exchange done "
+	      "[34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)v92: Rf.*v92: RM at symbol.*FPE: SUVu from.*"
+	      "CPus at symbol.*FPE: E2u.*FPE: B1u at.*"
+	      "fast parameter exchange 1 done" });
+	add("open", "open_v92a_fpe_precoder", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92_FPE=3000", "DSP_V92_PREFILTER=0",
+	      "BULK=150000",
+	      "EXPECT_A=(?s)V.92 fast parameter exchange \\(the digital "
+	      "modem's Rf\\)\n.*V.92 fast parameter exchange done",
+	      "EXPECT_B=(?s)v92: RM at symbol.*FPE: FB1u, [0-9] zeros.*"
+	      "fast parameter exchange 1 done" });
 	/* its symbols on the network's clock as the PCM receiver finds it
 	   (100 ppm off ours: half a symbol off by the second TRN1u's end
 	   otherwise), answering on an A-law network, and its echo */
