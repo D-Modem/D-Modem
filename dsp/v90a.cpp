@@ -92,10 +92,11 @@ int V90Jd::parse(const unsigned char *b)
 
 /* see v90a.h: a Blackman windowed sinc over +-V90_INTERP_T samples,
    at V90_INTERP_P phases between two samples */
-void V90Interp::init()
+void V90Interp::init(int rate)
 {
 	int p, j;
 	memset(this, 0, sizeof(*this));
+	step = rate == 8000 ? 0.5 : 0.6;
 	for (p = 0; p <= V90_INTERP_P; p++)
 		for (j = 0; j < 2 * V90_INTERP_T; j++) {
 			/* the output's time less input j's (from the
@@ -112,7 +113,7 @@ void V90Interp::init()
 	t = V90_INTERP_T;
 }
 
-/* see v90a.h: outputs 0.6 input samples apart, each from the inputs
+/* see v90a.h: outputs step input samples apart, each from the inputs
    either side of its time */
 int V90Interp::run(float x, float *out)
 {
@@ -130,13 +131,13 @@ int V90Interp::run(float x, float *out)
 		for (j = 0; j < L; j++)
 			y += (g0[j] + w * (g1[j] - g0[j])) * bp[j];
 		out[m++] = y;
-		t += 0.6;
+		t += step;
 	}
 	return m;
 }
 
 /* see v90a.h */
-void V90Rx::init(int alaw_, int uinfo_)
+void V90Rx::init(int alaw_, int uinfo_, int rate)
 {
 	int i;
 	memset(this, 0, sizeof(*this));
@@ -149,7 +150,7 @@ void V90Rx::init(int alaw_, int uinfo_)
 		tlev[i] = level;
 		tmag[i] = level;
 	}
-	ip.init();
+	ip.init(rate);
 	stage = WAIT_SD;
 	dip = 1;
 }
@@ -289,7 +290,7 @@ void V90Rx::timing_free()
    phase */
 void V90Rx::timing_step(double dt)
 {
-	ip.shift(0.6 * dt);
+	ip.shift(ip.step * dt);
 	t_phase += dt;
 	t_n++;
 	if (t_n > TIM_LOCK / 3 && t_n <= TIM_LOCK) {

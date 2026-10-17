@@ -47,6 +47,10 @@ void *dp_runtime_create(struct modem *m);
 void dp_runtime_delete(void *runtime);
 /* the network's G.711 law for the call's pumps: 1 mu-law, 2 A-law */
 void dp_runtime_set_law(void *runtime, int law);
+/* 1: the line is an analogue one (a codec on a telephone line, at 9600
+   or 8000 Hz), where the V.34 pump is V.90's analogue modem; 0 (the
+   default): an 8000 Hz line is the G.711 network, the digital modem's */
+void dp_runtime_set_analog(void *runtime, int analog);
 /* 1 while a pump takes the line's exact PCM codes (V.91), when the core
    must not remove DC from them; else 0 */
 int dp_runtime_pcm(void *runtime);

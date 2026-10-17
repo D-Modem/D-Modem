@@ -58,6 +58,10 @@ public:
 	void update_delay(dcore::Modem &, int samples) override {
 		pending_delay_ += samples;
 	}
+	/* MODEM_ANALOG=1 (or =<its name>): an analogue line (the tests'
+	   8000 Hz analogue modem: netsim's NET_ANALOG); it dials there
+	   itself */
+	bool analog_line(dcore::Modem &) override { return analog_; }
 	/* for ATI3 */
 	const char *driver_name() override { return "modem_test driver"; }
 	/* to the pty */
@@ -84,6 +88,7 @@ private:
 	int pending_delay_ = 0;         /* the change not made yet */
 	LineFrames line_;               /* in_'s samples */
 	bool realtime_ = false;
+	bool analog_ = false;
 	double speed_ = 0;
 	/* PIPE_SYNC=<samples>: the DTE's input only every that many samples
 	   of the line, the timers on the line's clock and the line no

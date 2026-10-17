@@ -189,6 +189,11 @@ an analogue line (a raised cosine at 4000 Hz, so that PCM samples stay
 free of intersymbol interference; `NET_PLAIN=1` takes dsp_util's short
 resampler instead, which is not, so V.90 falls back to V.34 through it). `half_open8` is
 the open modem at 8000 Hz (the original library does not work at 8000 Hz).
+`NET_ANALOG=a` (or `b`) with `NET=8000:8000` makes A (or B) an analogue
+modem with its codec at 8000 Hz (the raised cosine sampled at
+`NET_PHASE`, `NET_PPM`), and `MODEM_ANALOG=<name>` (or `1`) gives that
+half_open an analogue line (`Host::analog_line()`: it dials there, and
+its pumps are the analogue modem's).
 `NET_CODEC=amr:12.2` (AMR at 4.75 to 12.2 kbit/s) or `NET_CODEC=amrwb:23.85`
 (AMR-WB at 6.6 to 23.85 kbit/s; `:dtx` after the rate turns their
 discontinuous transmission on) puts a mobile network's speech codec on the

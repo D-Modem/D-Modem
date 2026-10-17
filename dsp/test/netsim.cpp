@@ -26,7 +26,12 @@
  *    NET_PHASE=<fraction> and NET_PPM=<ppm>: the 9600 Hz modem's codec
  *    samples that fraction of a network sample late, its clock that
  *    many parts per million fast (both directions: frac_rs), where
- *    otherwise its samples fall on the network's.
+ *    otherwise its samples fall on the network's.  NET_ANALOG=1 (or a,
+ *    or b for B) with NET=8000:8000: A is an analogue modem with a
+ *    codec at 8000 Hz, on
+ *    the same line as a 9600 Hz one (the raised cosine, NET_PHASE and
+ *    NET_PPM, the pad and robbed bits), its samples on the network's
+ *    clock only at phase 0 and no ppm.
  */
 #include <errno.h>
 #include <math.h>
@@ -336,11 +341,12 @@ struct frac_rs {
 	double t, step;         /* the next output's input time */
 };
 
-/* the converter: up (8000 -> 9600 Hz, the raised cosine) or down;
-   ratio: output samples per input sample, phase the first output's
-   input time */
+/* the converter: up (from the network's 8000 Hz to a codec, the raised
+   cosine) or down (a codec's rate_in to 8000 Hz, its low pass); ratio:
+   output samples per input sample, phase the first output's input
+   time */
 static void frac_init(struct frac_rs *r, int up, double ratio,
-		      double phase)
+		      double phase, int rate_in)
 {
 	const double a = getenv("NET_RC") ? atof(getenv("NET_RC")) : 0.15;
 	int p, j;
@@ -359,7 +365,7 @@ static void frac_init(struct frac_rs *r, int up, double ratio,
 				h *= fabs(d) < 1e-9 ? M_PI / 4 :
 					cos(M_PI * a * u) / d;
 			} else {
-				double f = 2 * 3900.0 / 9600, x = f * u;
+				double f = 2 * 3900.0 / rate_in, x = f * u;
 				h = f * (fabs(x) < 1e-12 ? 1 :
 					 sin(M_PI * x) / (M_PI * x));
 			}
@@ -401,6 +407,9 @@ static int frac_run(struct frac_rs *r, float x, float *out)
 
 struct dir {
 	int in, out, rate_in, rate_out;
+	int to_codec;           /* to an analogue modem's codec: 8000 Hz to
+				   9600, or to 8000 with NET_ANALOG */
+	int from_codec;         /* from one, to the network's 8000 Hz */
 	struct frac_rs *frac;   /* NET_PHASE, NET_PPM: the 9600 Hz codec's
 				   clock */
 	SpeechCodec *codec;     /* NET_CODEC's, in place of the law */
@@ -744,8 +753,7 @@ int Net::run(struct dir *d, int a_out, int a_in)
 		noise = noise_level(t, is_noisy, a_out);
 		if (noise && is_noisy && noise_quiet_ms > 0)
 			noise_quiet(ibuf[i], t, d->rate_in);
-		if (noise && (noise_dir == 3 ||
-			      !(d->rate_in == 8000 && d->rate_out != 8000))) {
+		if (noise && (noise_dir == 3 || !d->to_codec)) {
 			double x = ibuf[i] + noise * noise_gauss();
 			ibuf[i] = (short)(x > 32767 ? 32767 : x < -32768 ?
 					  -32768 : lrint(x));
@@ -756,7 +764,7 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			ibuf[i] = echo_add(ibuf[i]);
 		if (a_out)
 			echo_r++;
-		if (d->rate_in == d->rate_out) {
+		if (!d->to_codec && !d->from_codec) {
 			int s = line_sample(d, ibuf[i]);
 			if (loop_on && a_in) {
 				float v = loop_run((float)s);
@@ -770,7 +778,7 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			wav_put(!a_out, s);
 			continue;
 		}
-		if (d->rate_in == 8000) {
+		if (d->to_codec) {
 			/* the network, then the far codec (with the
 			   analogue loss or gain NET_GAIN on the way): the
 			   raised cosine, or NET_PLAIN's short resampler */
@@ -920,7 +928,20 @@ int main(int argc, char **argv)
 	d[1].out = atoi(argv[5]);
 	d[1].rate_in = rb;
 	d[1].rate_out = ra;
+	/* NET_ANALOG: A (1 or a) or B (b) an analogue modem at 8000 Hz:
+	   the direction to it k_to, from it the other */
+	const char *an = getenv("NET_ANALOG");
+	int analog = an && (atoi(an) == 1 || *an == 'a' || *an == 'b');
+	int k_to = an && *an == 'b' ? 0 : 1;
+	if (analog && (ra != 8000 || rb != 8000)) {
+		fprintf(stderr, "netsim: NET_ANALOG needs NET=8000:8000\n");
+		return 1;
+	}
 	for (k = 0; k < 2; k++) {
+		d[k].to_codec = d[k].rate_in == 8000 &&
+			(d[k].rate_out == 9600 || (analog && k == k_to));
+		d[k].from_codec = d[k].rate_out == 8000 &&
+			(d[k].rate_in == 9600 || (analog && k != k_to));
 		if (d[k].rate_in != d[k].rate_out &&
 		    d[k].rs.init(d[k].rate_out / 1600,
 				   d[k].rate_in / 1600)) {
@@ -929,20 +950,22 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		rc_init(&d[k].rc);
-		if (d[k].rate_in != d[k].rate_out &&
-		    (getenv("NET_PHASE") || getenv("NET_PPM"))) {
+		if ((d[k].to_codec || d[k].from_codec) &&
+		    (getenv("NET_PHASE") || getenv("NET_PPM") || analog)) {
 			/* the codec's clock: ppm fast, its samples phase
-			   late (in network samples) */
+			   late (in network samples); NET_ANALOG's at 8000 Hz
+			   always this way (rc_run and the resampler are
+			   for 9600) */
 			double ppm = getenv("NET_PPM") ?
 				atof(getenv("NET_PPM")) : 0;
 			double ph = getenv("NET_PHASE") ?
 				atof(getenv("NET_PHASE")) : 0;
-			double r = 1.2 * (1 + ppm * 1e-6);
-			int up = d[k].rate_in == 8000;
+			double r = (analog ? 1.0 : 1.2) * (1 + ppm * 1e-6);
+			int up = d[k].to_codec;
 			d[k].frac = static_cast<struct frac_rs *>(
 				calloc(1, sizeof(struct frac_rs)));
 			frac_init(d[k].frac, up, up ? r : 1 / r,
-				  up ? ph : 0);
+				  up ? ph : 0, d[k].rate_in);
 		}
 		d[k].t0 = -1;
 		p[k].fd = d[k].in;

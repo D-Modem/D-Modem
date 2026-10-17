@@ -630,6 +630,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 
 	/* (srate: of the pump, 9600) */
 	int line_rate;          /* 9600, or 8000 through the converters */
+	int analog;             /* an analogue line: 9600 Hz, or 8000 Hz
+				   with dp_runtime_set_analog() */
 	int v90;                /* offer V.90 as the digital modem */
 	int pcm;                /* V.90 agreed in V.8 */
 	int v91;                /* offer V.91 */
@@ -2566,11 +2568,15 @@ void V34Pump::pump_rx_sample(float x)
 	}
 	if (v90a_rx) {
 		/* the digital modem's PCM (V90Rx takes the line at its
-		   9600 Hz), our echo taken away */
-		ec_schedule();
-		if (!ec.bypass)
-			x = ec.run(last_tx, x);
-		v90rx.line(x);
+		   9600 Hz), our echo taken away; on an 8000 Hz line it has
+		   the line's own samples in process() (the converter to
+		   9600 Hz would cut the top of the band) */
+		if (line_rate == V34_SRATE) {
+			ec_schedule();
+			if (!ec.bypass)
+				x = ec.run(last_tx, x);
+			v90rx.line(x);
+		}
 		/* the data mode's bits to the core */
 		if (state == V90A_DATA && v90rx.qn) {
 			unsigned char b[V90RX_Q];
@@ -2790,7 +2796,7 @@ void V34Pump::v90a_start()
 	}
 	ptx.nbits = v90a_dil.build(ptx.bits);
 	txm = TXM_PRIMARY;
-	v90rx.init(alaw, v90a_uinfo);
+	v90rx.init(alaw, v90a_uinfo, line_rate);
 	v90rx.dil_set(v90a_dil);
 	v90a_rx = 1;
 	/* the PCM codes' DC is theirs: the core's DC remover would take
@@ -4953,6 +4959,8 @@ int V34Pump::process(void *in, void *out, int cnt)
 			continue;
 		}
 		/* an 8000 Hz line: the pump runs at 9600 Hz in between */
+		if (test_echo.g)
+			src[i] = dsp_clip16(src[i] + test_echo.echo());
 		if (pcm_tx) {
 			/* V.90: exact PCM codes at 8000 Hz; at 9600 Hz for the
 			   echo canceller */
@@ -4989,6 +4997,18 @@ int V34Pump::process(void *in, void *out, int cnt)
 		if (pcm_tx)
 			y = pcm_;
 		dst[i] = dsp_clip16(y);
+		if (test_echo.g)
+			test_echo.push(dst[i]);
+		/* V.90's analogue modem: the PCM receiver on the line's
+		   samples, our echo (of what goes out with them) taken
+		   away at 8000 Hz */
+		if (v90a_rx) {
+			float x = src[i];
+			ec_schedule();
+			if (!ec.bypass)
+				x = ec.run(dst[i], x);
+			v90rx.line(x);
+		}
 		out_n++;
 	}
 	return ret;
@@ -5047,11 +5067,23 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	alaw = rt && rt->law ? rt->law == 2 :
 		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
 	v8_low = caller_ && rt ? rt->v8_for : 0;
-	/* V.90 as the analogue modem, on a 9600 Hz line (the digital
-	   modem's network is at 8000 Hz): DSP_V90A=0 leaves it out */
-	v90a = (id == DP_V90 || id == DP_V92) && !v90 && !v8_low &&
-		line_rate == 9600 &&
-		!(getenv("DSP_V90A") && !atoi(getenv("DSP_V90A")));
+	/* an analogue line (dp_runtime_set_analog()), at 9600 or 8000 Hz,
+	   has none of the digital modem's modes */
+	analog = line_rate == 9600 || (rt && rt->analog);
+	if (analog)
+		v90 = v91 = v92 = 0;
+	/* V.90 as the analogue modem, on an analogue line at 9600 Hz
+	   (DSP_V90A=0 leaves it out).  At 8000 Hz only with DSP_V90A=1:
+	   there the band's top folds onto itself in the codec, and half a
+	   sample off the network's symbols it cancels (21 dB at best), so
+	   a codec whose clock is not the network's, its phase drifting,
+	   loses the PCM signal every so often (each 1.25 s at 100 ppm) */
+	{
+		const char *e = getenv("DSP_V90A");
+		v90a = (id == DP_V90 || id == DP_V92) && analog && !v8_low &&
+			(line_rate == V34_SRATE ? !(e && !atoi(e)) :
+			 e && atoi(e));
+	}
 	v90a_on = v90a_rx = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
@@ -5089,7 +5121,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   lost to the remote (phase 2's recovery, 11.2.2/V.34), only the
 	   answerer's or the caller's (anything else: either) */
 	lose_info0 = pump_test_env("DSP_V34_LOSE_INFO0", caller_) != NULL;
-	test_echo.init(pump_test_env("DSP_TEST_ECHO", caller_), V34_SRATE);
+	test_echo.init(pump_test_env("DSP_TEST_ECHO", caller_), line_rate);
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
 	   renegotiation to N * 2400 bit/s (what we receive) */
 	if (const char *e = pump_test_env("DSP_V34_RENEG", caller_)) {

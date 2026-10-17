@@ -37,6 +37,9 @@
    Smart Link's library (half_smartlink) has no such function, and then
    the samples are never PCM codes */
 extern "C" int dp_runtime_pcm(void *runtime) __attribute__((weak));
+/* an analogue line for the pumps (dsplibs.h): weak as well */
+extern "C" void dp_runtime_set_analog(void *runtime, int analog)
+	__attribute__((weak));
 
 namespace dcore {
 
@@ -497,6 +500,8 @@ int Modem::start_call()
 		return fail("no memory for the call");
 	if (line_law_)
 		dp_runtime_set_law(dp_runtime_, line_law_);
+	if (dp_runtime_set_analog)
+		dp_runtime_set_analog(dp_runtime_, host_.analog_line(*this));
 	if (link_init())
 		return fail("cannot set up the link");
 	sregs_[SREG_RING_COUNTER] = 0;
@@ -1082,12 +1087,9 @@ void Modem::change_dp()
 		if (id == DP_K56)
 			id = DP_V90;
 		/* an analogue line has no V.91 (that is between two
-		   digital modems); V.90 and V.92 run as the analogue modem,
-		   whose PCM receiver wants the line at 9600 Hz (at 8000 Hz
-		   the pump would take the line for the digital modem's) */
-		if (host_.analog_line(*this) &&
-		    (id == DP_V91 ||
-		     ((id == DP_V90 || id == DP_V92) && srate_ != 9600)))
+		   digital modems); V.90 and V.92 run as the analogue modem
+		   (dp_runtime_set_analog()) */
+		if (host_.analog_line(*this) && id == DP_V91)
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
 			id == DP_V92 ? (unsigned)DP_V8 : id;

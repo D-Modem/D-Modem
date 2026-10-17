@@ -45,6 +45,9 @@ PipeModem::PipeModem(const char *name, int rate, const char *country,
 	o.dev_name = name;
 	o.rate = rate;
 	o.country = country;
+	/* MODEM_ANALOG=1, or =<name> for this one only */
+	if (const char *a = getenv("MODEM_ANALOG"))
+		analog_ = atoi(a) == 1 || !strcmp(a, name);
 	if (getenv("PIPE_SYNC")) {
 		/* whole half frames */
 		sync_ = (atol(getenv("PIPE_SYNC")) + HALF_FRAME - 1) /

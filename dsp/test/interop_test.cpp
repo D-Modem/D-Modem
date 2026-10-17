@@ -423,6 +423,33 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)DIL: pad 6.0 dB.*robbed [0-5],[0-5], distinct.*"
 	      "B1d: 0 bit errors in 48 frames",
 	      "EXPECT_B=V.90 connect [0-9]+/" });
+	/* the analogue modem with its codec at 8000 Hz (MODEM_ANALOG: its
+	   line an analogue one; netsim's NET_ANALOG), on the network's
+	   clock: the PCM receiver on the line's own samples, with
+	   DSP_V90A=1 (at 8000 Hz half a sample off the network's symbols
+	   the band's top cancels, and a codec's clock of its own drifts
+	   through that); at a phase of 0.25, and 0.1 answering on an A-law
+	   network.  Without DSP_V90A=1 such a line is V.34's */
+	add("open", "open_v90a_8k", "open8", "open8", "ATX3;AT+MS=90",
+	    { "NET=8000:8000:ulaw", "NET_ANALOG=a", "MODEM_ANALOG=modemA",
+	      "NET_PHASE=0.25", "DSP_V90A=1", "BULK=100000",
+	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
+	      "B1d: 0 bit errors in 48 frames of 42 bits.*"
+	      "V.90 connect 3[0-9]+/56000 \\(analogue modem\\).*"
+	      "V.90 data: error [0-9].[0-9]+ rms",
+	      "EXPECT_B=V.90 connect 56000/" });
+	add("open", "open_v90a_8k_answers", "open8", "open8",
+	    "ATX3;AT+MS=90",
+	    { "NET=8000:8000:alaw", "DSP_G711=alaw", "NET_ANALOG=b",
+	      "MODEM_ANALOG=modemB", "NET_PHASE=0.1", "DSP_V90A=1",
+	      "EXPECT_B=(?s)V.90 with us as the analogue modem.*"
+	      "V.90 connect 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_A=V.90 connect 5[0-9]+/" });
+	add("open", "open_v90a_8k_off", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "NET_ANALOG=a", "MODEM_ANALOG=modemA",
+	      "NET_PHASE=0.25",
+	      "EXPECT_A=data rates tx [0-9]+ rx [0-9]+, trellis",
+	      "EXPECT_B=data rates tx [0-9]+ rx [0-9]+, trellis" });
 	/* V.90 as the analogue modem is the 9600 Hz modem's default: both
 	   modems with the default AT+MS (92) connect at V.90, the digital
 	   modem offering V.92 (we do not ask for it); DSP_V90A=0 leaves it

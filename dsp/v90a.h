@@ -78,14 +78,16 @@ int  v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
 		    const float lv[6][128], double noise, double limit,
 		    double cpt_power, unsigned jd_rates);
 
-/* the line at 9600 Hz to 16 000 Hz, two samples a PCM symbol, for the
-   PCM receiver's T/2 equaliser: a windowed sinc cut at the line's
-   Nyquist (4800 Hz) keeps the whole band, whatever the phase of the
-   symbols against our samples (at 8000 Hz the band past 4000 Hz folds
-   onto itself, and half a symbol off it cancels: no equaliser brings
-   it back).  The output's time moves with shift(): the timing loop
-   keeps two samples on each of the network's symbols */
-#define V90_INTERP_T    64      /* taps each side, at 9600 Hz */
+/* the line at 9600 Hz (or 8000) to 16 000 Hz, two samples a PCM symbol,
+   for the PCM receiver's T/2 equaliser: a windowed sinc cut at the
+   line's Nyquist (4800 Hz) keeps the whole band, whatever the phase of
+   the symbols against our samples (at 8000 Hz the band past 4000 Hz
+   has folded onto itself in the codec, and half a symbol off it
+   cancels: no equaliser brings it back, and the constellations are
+   designed on what is left).  The output's time moves with shift():
+   the timing loop keeps two samples on each of the network's
+   symbols */
+#define V90_INTERP_T    64      /* taps each side, at the line's rate */
 #define V90_INTERP_P    256     /* phases tabulated, interpolated
 				   between */
 struct V90Interp {
@@ -94,9 +96,11 @@ struct V90Interp {
 	long nin;               /* samples in */
 	double t;               /* the next output's time, in input
 				   samples */
+	double step;            /* input samples an output: 0.6, or 0.5 */
 
-	void init();
-	/* one sample at 9600 Hz in; how many out at 16 000 Hz (0 to 3) */
+	/* the line's rate, 9600 or 8000 */
+	void init(int rate);
+	/* one sample of the line in; how many out at 16 000 Hz (0 to 3) */
 	int run(float x, float *out);
 	/* the outputs from now on dt input samples later */
 	void shift(double dt) { t += dt; }
@@ -284,7 +288,7 @@ struct V90Rx {
 	float dpow, de_mse;
 	V90Mp mp;
 
-	void init(int alaw_, int uinfo_);
+	void init(int alaw_, int uinfo_, int rate = 9600);
 	/* the DIL to measure (N 0: none) */
 	void dil_set(const V90Dil &d);
 	void dil_analyse();
@@ -299,7 +303,7 @@ struct V90Rx {
 	int phase4(const V90Cp &cpt);
 	/* CP's for B1d and data (before Ed): -1 when not usable */
 	int data_cp(const V90Cp &cp);
-	/* one sample of the line at 9600 Hz */
+	/* one sample of the line (9600 or 8000 Hz: init()'s rate) */
 	void line(float v);
 	/* one sample at 16 000 Hz */
 	void sample(float v);

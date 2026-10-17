@@ -208,6 +208,14 @@ void dp_runtime_set_law(void *runtime, int law)
 		rt->law = law;
 }
 
+/* see dsplibs.h */
+void dp_runtime_set_analog(void *runtime, int analog)
+{
+	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
+	if (rt)
+		rt->analog = analog;
+}
+
 /* 1 while a pump takes the exact PCM codes (no DC removal), else 0 */
 int dp_runtime_pcm(void *runtime)
 {

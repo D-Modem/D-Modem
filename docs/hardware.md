@@ -82,9 +82,11 @@ that user needs access to `/dev/snd/*`.
   at 9600 Hz (`-r 9600`, the default), up to 56000 bit/s down and
   33600 up from a V.90 server (see [V.90 analogue modem](dsp/v90a.md)),
   and V.34 (up to 33600 bit/s) and below with any other modem. V.91,
-  between two digital modems, becomes V.34, as do V.90 and V.92 at
-  8000 Hz (`-r 8000`: the PCM receiver wants 9600). It has fax (class
-  1) and voice too.
+  between two digital modems, becomes V.34. At 8000 Hz (`-r 8000`)
+  V.90 is there only with `DSP_V90A=1`: a codec at 8000 Hz on a clock
+  of its own loses the PCM signal every few seconds (see
+  [8000 Hz lines](dsp/v90a.md#8000-hz-lines)), so keep 9600. It has fax
+  (class 1) and voice too.
 
 ## Limits
 

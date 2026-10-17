@@ -70,6 +70,7 @@ struct dp_runtime {
 				   unknown (then $DSP_G711) */
 	int pcm;                /* V.91: the received codes as they are
 				   (no DC removal) */
+	int analog;             /* an analogue line (dp_runtime_set_analog) */
 };
 
 /*
