@@ -263,6 +263,8 @@ struct V90Rx {
 	int ri_run;
 	long ri_seen, ribar_at, frames_at;
 	V90Con con_trn, con_data;
+	V90Con con_next;        /* data_cp_next()'s, if have_next */
+	int have_next;
 	V90Con *con;
 	float fy[6];
 	long frames, frames_b1;
@@ -335,6 +337,11 @@ struct V90Rx {
 	int phase4(const V90Cp &cpt);
 	/* CP's for B1d and data (before Ed): -1 when not usable */
 	int data_cp(const V90Cp &cp);
+	/* in the data mode, our fast parameter exchange's CPu (V.92): its
+	   constellations for B1d and data after the exchange's Ed (the
+	   frames before it stay on those they are on); -1 when not
+	   usable */
+	int data_cp_next(const V90Cp &cp);
 	/* our own rate renegotiation (9.6.2.1/V.90): Rd next, whatever
 	   the frames decode to until it comes */
 	void reneg_wait()
@@ -342,6 +349,14 @@ struct V90Rx {
 		ev_rd = ev_rdbar = rd_run = 0;
 		ev_trn2 = ev_mp = ev_mpack = ev_ed = ev_b1d = 0;
 		ev_suvd = ev_cpd = 0;
+		have_next = 0;
+	}
+	/* our own fast parameter exchange (9.9.2.1/V.92): Rf next, the
+	   frames data until it comes */
+	void fpe_wait()
+	{
+		ev_suvd = ev_cpd = ev_mpack = ev_ed = ev_b1d = 0;
+		have_next = 0;
 	}
 	/* one sample of the line (9600 or 8000 Hz: init()'s rate) */
 	void line(float v);

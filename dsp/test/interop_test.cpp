@@ -580,7 +580,7 @@ std::vector<Call> calls()
 	add("open", "open_v92a_fpe", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "DSP_V92_FPE=3000", "BULK=150000",
 	      "EXPECT_A=(?s)V.92 connect.*Rf at frame.*Rf-bar at frame.*"
-	      "FPE: SUVd from frame.*V.92 fast parameter exchange \\(the "
+	      "FPE: SUVd from frame.*V.92 fast parameter exchange 1 \\(the "
 	      "digital modem's Rf\\), the prefilter anew.*FPE: CPus.*"
 	      "CPd'? at frame.*FPE: E2u, FB1u, B1u.*FPE: Ed at frame.*"
 	      "B1d: 0 bit errors.*V.92 fast parameter exchange done "
@@ -591,9 +591,31 @@ std::vector<Call> calls()
 	add("open", "open_v92a_fpe_precoder", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "DSP_V92_FPE=3000", "DSP_V92_PREFILTER=0",
 	      "BULK=150000",
-	      "EXPECT_A=(?s)V.92 fast parameter exchange \\(the digital "
-	      "modem's Rf\\)\n.*V.92 fast parameter exchange done",
+	      "EXPECT_A=(?s)V.92 fast parameter exchange 1 \\(the digital "
+	      "modem's Rf\\), downstream.*V.92 fast parameter exchange done",
 	      "EXPECT_B=(?s)v92: RM at symbol.*FPE: FB1u, [0-9] zeros.*"
+	      "fast parameter exchange 1 done" });
+	/* our own fast parameter exchange (9.9.2.1/V.92): RM, RM' and
+	   SUVu until the digital modem's Rf, then a CPu designed on the
+	   data mode's error, B1d on it */
+	add("open", "open_v92a_fpe_ours", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92A_FPE=3000c", "BULK=150000",
+	      "EXPECT_A=(?s)V.92 connect.*V.92 fast parameter exchange 1 "
+	      "\\(ours: test\\).*Rf at frame.*Rf-bar at frame.*"
+	      "FPE: SUVd from frame.*FPE: CPu, drn.*FPE: E2u, FB1u, B1u.*"
+	      "FPE: Ed at frame.*B1d: 0 bit errors.*"
+	      "V.92 fast parameter exchange done [34][0-9]+/5[0-9]+ "
+	      "\\(analogue modem\\)",
+	      "EXPECT_B=(?s)v92: RM at symbol.*"
+	      "FPE: SUVu from.*CPu at symbol.*FPE: E2u.*FPE: B1u at.*"
+	      "fast parameter exchange 1 done" });
+	add("open", "open_v92a_fpe_ours_precoder", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92A_FPE=3000c",
+	      "DSP_V92_PREFILTER=0", "BULK=150000",
+	      "EXPECT_A=(?s)V.92 fast parameter exchange 1 \\(ours: test\\), "
+	      "downstream.*FPE: CPu, drn.*B1d: 0 bit errors.*"
+	      "V.92 fast parameter exchange done",
+	      "EXPECT_B=(?s)v92: RM at symbol.*v92: RM' at symbol.*"
 	      "fast parameter exchange 1 done" });
 	/* its symbols on the network's clock as the PCM receiver finds it
 	   (100 ppm off ours: half a symbol off by the second TRN1u's end

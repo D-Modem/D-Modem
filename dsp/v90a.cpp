@@ -1121,6 +1121,13 @@ int V90Rx::data_cp(const V90Cp &cp)
 	return con_data.init(cp, cp.drn + 20, lv4);
 }
 
+/* see v90a.h */
+int V90Rx::data_cp_next(const V90Cp &cp)
+{
+	have_next = !con_next.init(cp, cp.drn + 20, lv4);
+	return have_next ? 0 : -1;
+}
+
 /* the equaliser a step towards e (NLMS) for symbol kk */
 void V90Rx::adapt(long kk, float e)
 {
@@ -1288,6 +1295,7 @@ void V90Rx::reneg_frames()
 	fe_n = 0;
 	ev_trn2 = ev_mp = ev_mpack = ev_ed = ev_b1d = 0;
 	ev_suvd = ev_cpd = 0;
+	have_next = 0;
 	stage = FRAMES;
 }
 
@@ -1479,8 +1487,14 @@ void V90Rx::frame()
 						flast = 0;
 						frames_b1 = 0;
 						b1_err = 0;
+						if (have_next) {
+							/* B1d on our CPu's */
+							con_data = con_next;
+							have_next = 0;
+						}
 						DSP_DBG("v90a: FPE: Ed at frame %ld, "
-							"B1d next\n", frames);
+							"B1d next (D %d)\n", frames,
+							con_data.D);
 					}
 				} else
 					ed_zero = 0;

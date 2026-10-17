@@ -713,6 +713,11 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	long v92a_cpu_at;
 	int v92a_acked;
 	long v92a_ack_seqs;
+	/* a fast parameter exchange: 1 the digital modem's (its Rf first),
+	   2 ours (our RM first, a CPu designed anew); how many, and ours
+	   this far into data mode (test: DSP_V92A_FPE=<ms>[a|c]) */
+	int v92a_fpe_who, v92a_fpes;
+	long v92a_fpe_at;
 	int short2;             /* and both asked for short phase 2 */
 	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=0: not) */
 	V91 v91m;
@@ -794,10 +799,10 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int v92a_up_fail(const char *why);
 	int v92a_next_seq(int fpe = 0);
 	int v92a_cpd_ok(const V92Cpd &d);
-	void v92a_fpe();
+	void v92a_fpe(int who, const char *why = "");
 	void v92a_reneg(int who, const char *why);
 	void v90a_reneg_ours(const char *why);
-	int v90a_cp_design();
+	int v90a_cp_design(int fpe = 0);
 	int v90a_data_setup();
 	long v90a_quiet;        /* data mode: samples of the PCM signal gone */
 	float v90a_cp_noise;    /* the noise CP was designed on */
@@ -3058,7 +3063,10 @@ int V34Pump::v92a_cpt()
 /* phase 4's next sequence after the one going out (9.6.2.1/V.92):
    CPu once SUVd is in (again if no acknowledgement 100 ms and a round
    trip after it went), else SUVu; acknowledged once CPd is in.  -1
-   when there are no constellations for CPu */
+   when there are no constellations for CPu.  In a fast parameter
+   exchange (fpe) the sequences are in the data mode modulation, CPus
+   in the digital modem's (fpe 1: the downstream as it is), CPu in ours
+   (2: designed on the data mode's error) */
 int V34Pump::v92a_next_seq(int fpe)
 {
 	int ack = v90rx.ev_cpd > 0, fill = fpe ? patx.K : 24;
@@ -3066,7 +3074,7 @@ int V34Pump::v92a_next_seq(int fpe)
 		ms2samples(1000L * v92a_cpu_n / 2 / 8000, srate);
 	if (v90rx.ev_suvd && v90rx.ev_trn2 &&
 	    (!v92a_cpu || (!v90rx.ev_mpack && total - v92a_cpu_at > again))) {
-		if (fpe) {
+		if (fpe == 1) {
 			/* the downstream as it is: CPus */
 			patx.nxt_n = v92_cpus_build(patx.nxt, v90a_cp.drn, ack,
 						    fill);
@@ -3074,10 +3082,10 @@ int V34Pump::v92a_next_seq(int fpe)
 				DSP_DBG("v34: V.92: FPE: CPus\n");
 		} else {
 			if (!v92a_cpu) {
-				if (v90a_cp_design())
+				if (v90a_cp_design(fpe))
 					return -1;
-				DSP_DBG("v34: V.92: CPu, drn %d\n",
-					v90a_cp.drn);
+				DSP_DBG("v34: V.92: %sCPu, drn %d\n",
+					fpe ? "FPE: " : "", v90a_cp.drn);
 			}
 			v90a_cp.ack = ack;
 			patx.nxt_n = v92_cpu_build(patx.nxt, v90a_cp, fill);
@@ -3111,6 +3119,7 @@ void V34Pump::v92a_reneg(int who, const char *why)
 	stat_reneg(who == 1);
 	v90a_rn = who;
 	timeout = total + ms2samples(25000, srate);
+	patx.fpe_req = 0;
 	patx.ru_req = 1;
 	set_state(P4U_RN);
 }
@@ -3129,11 +3138,12 @@ int V34Pump::v92a_cpd_ok(const V92Cpd &d)
 	return ok && lm >= 2 * (d.drn + 17) - 1e-9;
 }
 
-/* the digital modem's fast parameter exchange (its Rf-bar is in): RM
-   at the next data frame's start, SUVu after RM' (P4U_FSEQ).  With a
-   prefilter our transmitter's filters start anew at SUVu, as the
-   digital modem's receiver has them */
-void V34Pump::v92a_fpe()
+/* a fast parameter exchange (9.9.2/V.92): who 1 the digital modem's
+   (its Rf-bar is in), 2 ours (9.9.2.1: the digital modem answers our
+   RM, RM' with Rf, Rf-bar).  RM at the next data frame's start, SUVu
+   after RM' (P4U_FSEQ).  With a prefilter our transmitter's filters
+   start anew at SUVu, as the digital modem's receiver has them */
+void V34Pump::v92a_fpe(int who, const char *why)
 {
 	const V92Cpd &d = patx.cpd;
 	int i, pf = d.coef[2][0] != 32767;
@@ -3141,10 +3151,17 @@ void V34Pump::v92a_fpe()
 		pf |= d.coef[2][i] != 0;
 	for (i = 0; i < d.len[3]; i++)
 		pf |= d.coef[3][i] != 0;
-	DSP_DBG("v34: V.92 fast parameter exchange (the digital modem's "
-		"Rf)%s\n", pf ? ", the prefilter anew" : "");
-	stat_reneg(1);
-	v90a_rn = 1;
+	DSP_DBG("v34: V.92 fast parameter exchange %d (%s%s%s)%s, "
+		"downstream error %.2f rms\n", ++v92a_fpes,
+		who == 1 ? "the digital modem's Rf" : "ours",
+		*why ? ": " : "", why, pf ? ", the prefilter anew" : "",
+		sqrtf(v90rx.data_mse()));
+	stat_reneg(who == 1);
+	v90a_bad = v90a_good = 0;
+	v90a_rn = who;
+	v92a_fpe_who = who;
+	if (who == 2)
+		v90rx.fpe_wait();
 	timeout = total + ms2samples(25000, srate);
 	patx.fpe_reset = pf;
 	patx.nbits = v92_suvu_build(patx.bits, 0, patx.K);
@@ -3207,19 +3224,23 @@ int V34Pump::v90a_data_setup()
 /* CP's constellations (8.5.2/V.90), once TRN2d has shown the noise
    with our own signal going out: its echo, what the canceller leaves
    of it, is noise to the data mode as well (phase 3's measure had us
-   silent); -1 when there are none */
-int V34Pump::v90a_cp_design()
+   silent); -1 when there are none.  For our fast parameter exchange
+   (fpe) the noise is the data mode's decisions' error, and the
+   receiver takes the constellations after its Ed */
+int V34Pump::v90a_cp_design(int fpe)
 {
 	float lv[6][128], nz = v90rx.noise();
 	/* (in a renegotiation the noise as it is now: what its frames'
 	   decisions show) */
 	if (v90rx.trn2_noise > nz || v90rx.renegs)
 		nz = v90rx.trn2_noise;
+	if (fpe)
+		nz = sqrtf(v90rx.data_mse());
 	v90a_cp_noise = nz;
 	v90rx.levels(lv);
 	if (v90a_design_cp(&v90a_cp, alaw, v90rx.lin, lv, nz, v90a_limit,
 			   v90a_cpt_pw, v90rx.jd.rate_mask) ||
-	    v90rx.data_cp(v90a_cp)) {
+	    (fpe ? v90rx.data_cp_next(v90a_cp) : v90rx.data_cp(v90a_cp))) {
 		DSP_DBG("v34: V.90: no CP constellations (noise %.1f)\n", nz);
 		return -1;
 	}
@@ -4964,15 +4985,22 @@ int V34Pump::handshake()
 					    !v90rx.ev_cpd ? "no CPd" :
 					    "no SUVd' or CPd'");
 		break;
-	/* a fast parameter exchange, the digital modem's (9.9.2.2/V.92):
+	/* a fast parameter exchange (9.9.2/V.92): the digital modem's,
 	   after its Rf-bar our RM, RM', then the sequences as in phase 4
 	   in the data mode modulation (CPus: the downstream as it is),
-	   E2u, FB1u's 48 frames and B1u on its new CPd; its B1d on our
-	   constellations as they were */
+	   E2u, FB1u's 48 frames and B1u on its new CPd, its B1d on our
+	   constellations as they were; ours, RM, RM' and SUVu until its
+	   Rf, Rf-bar and SUVd, then the same with a CPu, its B1d on that.
+	   Its Rd before then: its renegotiation instead (9.9.2.1.2) */
 	case P4U_FSEQ:
+		if (v90rx.ev_rdbar) {
+			v92a_reneg(1, "");
+			break;
+		}
 		if (patx.dsrc == V92A_D_SEQ && !patx.nxt_n &&
-		    v92a_next_seq(1))
-			return v92a_up_fail("FPE: no CPus");
+		    v92a_next_seq(v92a_fpe_who))
+			return v92a_up_fail(v92a_fpe_who == 1 ?
+					    "FPE: no CPus" : "FPE: no CPu");
 		if (v92a_acked && patx.seqs >= v92a_ack_seqs &&
 		    (v90rx.ev_mpack || v90rx.ev_ed)) {
 			if (!v92a_cpd_ok(v90rx.cpd))
@@ -4980,6 +5008,7 @@ int V34Pump::handshake()
 			patx.cpd_new = v90rx.cpd;
 			patx.e2u_req = 1;
 			rate_tx = (v90rx.cpd.drn + 17) * 8000 / 6;
+			rate_rx = (v90a_cp.drn + 20) * 8000 / 6;
 			DSP_DBG("v34: V.92: FPE: E2u, FB1u, B1u at %d bit/s\n",
 				rate_tx);
 			set_state(P4U_FDATA);
@@ -5198,7 +5227,7 @@ int V34Pump::handshake()
 			break;
 		}
 		if (v90rx.fpe_on && v92a_up_on) {
-			v92a_fpe();
+			v92a_fpe(1);
 			break;
 		}
 		if (v90rx.ev_rdbar) {
@@ -5223,8 +5252,19 @@ int V34Pump::handshake()
 			v90rx.reneg_wait();
 			v90a_reneg_ours("errors");
 		} else if (v90a_good >= ms2samples(20000, srate)) {
-			v90rx.reneg_wait();
-			v90a_reneg_ours("margin");
+			/* with PCM upstream a fast parameter exchange: no
+			   training, the downstream's CPu designed on the
+			   data mode's error */
+			if (v92a_up_on)
+				v92a_fpe(2, "margin");
+			else {
+				v90rx.reneg_wait();
+				v90a_reneg(2, "margin");
+			}
+		} else if (v92a_fpe_at && c >= v92a_fpe_at && v92a_up_on &&
+			   !v92a_fpes) {
+			/* test: DSP_V92A_FPE */
+			v92a_fpe(2, "test");
 		} else if (v90a_rn_at && c >= v90a_rn_at && !v90rx.renegs) {
 			/* test: DSP_V90A_RENEG */
 			v90rx.reneg_wait();
@@ -5985,6 +6025,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v92a_noup = v92a_up_on = 0;
 	v92a_s2_req = v92a_short2 = 0;
 	v92a_renegs = 0;
+	v92a_fpes = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
 
@@ -6001,6 +6042,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   caller or the answerer starts it */
 	retrain_at = test_samples("DSP_V34_RETRAIN");
 	v90a_rn_at = test_samples("DSP_V90A_RENEG");
+	v92a_fpe_at = test_samples("DSP_V92A_FPE");
 	v90a_rn = 0;
 	v90a_v34 = 0;
 	/* test: DSP_V34_PRECODE_MIN=<dB>: ask for precoding from that gain
