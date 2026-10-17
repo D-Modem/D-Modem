@@ -115,6 +115,8 @@ enum v34_state {
 	V8C_CM,
 	V8C_CJ,
 	V8C_GAP,
+	MOH_BACK,               /* back from holding the remote: its ANSam,
+				   then V.8 as the call modem */
 	/* phase 2 answerer */
 	P2A_INFO0,
 	P2A_A,
@@ -421,6 +423,9 @@ struct V34Moh {
 	int mh_event();
 	void moh_respond(int sig);
 	void moh_hold(int secs);
+	void moh_back();
+	long moh_ans;           /* MOH_BACK: samples of the remote's ANSam */
+	int moh_backed;         /* we took the remote back (for the log) */
 	void moh_request(int hold_secs);
 	void moh_req_test();
 	int moh_step(long c);
@@ -649,6 +654,10 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	TestEcho test_echo;     /* DSP_TEST_ECHO */
 	int v92;                /* offer V.92 as the digital modem */
 	int v92_on;             /* both INFO0 said V.92 */
+	int v92a;               /* V.92 as the analogue modem (+MS=92 on an
+				   analogue line; DSP_V92A=0: V.90) */
+	int v92a_on;            /* and the digital modem's INFO0d said V.92
+				   (for the call) */
 	int short2;             /* and both asked for short phase 2 */
 	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=0: not) */
 	V91 v91m;
@@ -826,6 +835,10 @@ void V34Info0<P>::make_info0(BitQ *q)
 		/* short phase 2 (Table 15/V.92) */
 		q->put(self.v92 && self.short2_ok, 1);
 		q->put(self.v92, 1);      /* V.92 */
+	} else if (self.v90a_on && self.v92a) {
+		/* INFO0a (Table 16/V.92): V.92, no short phase 2 */
+		q->put(1, 1);
+		q->put(0, 1);
 	} else
 		q->put(0, 2);        /* internal clock */
 	q->put(info0_again, 1);      /* acknowledge (of INFO0a) */
@@ -949,6 +962,9 @@ void Info0::parse_d(const unsigned char *b)
 	codec_power = b[38];
 	law = b[39];
 	up3429 = b[40];
+	/* (INFO0d has them the other way round, Table 15/V.92) */
+	short2 = b[26];
+	v92 = b[27];
 }
 
 /* the caller's INFO1c (Table 15/V.34): at each symbol rate its
@@ -1665,6 +1681,12 @@ void V34Cc<P>::info_frame(CcRx *r)
 			   what our PCM receiver decodes */
 			rinfo0.parse_d(r->frame);
 			self.alaw = rinfo0.law;
+			/* V.92 both ways: modem-on-hold */
+			if (self.v92a && rinfo0.v92 && !self.v92a_on) {
+				self.v92a_on = 1;
+				DSP_DBG("v34: INFO0d V.92: V.92 as the analogue "
+					"modem\n");
+			}
 			DSP_DBG("v34: INFO0d %s, phase 2 at %d dBm0, at most "
 				"%.1f dBm0%s, 3429 upstream %d\n",
 				rinfo0.law ? "A-law" : "u-law",
@@ -2000,7 +2022,7 @@ int V34Moh<P>::mh_event()
 		(self.state == V34_RT_SILENCE ||
 		 (self.state >= P2A_INFO0 && self.state <= P2C_WAIT_INFO1));
 
-	if (!self.connected || !self.v92)
+	if (!self.connected || !(self.v92 || self.v92a_on))
 		return DPSTAT_OK;
 	if (self.state == MOH_REQ) {
 		/* the answer to ours (Table 34/V.92) */
@@ -2094,6 +2116,9 @@ void V34Moh<P>::moh_hold(int secs)
 	self.aa_blocks = self.toneq_blocks = 0;
 	self.cc_silence();
 	self.cctx.pos = self.cctx.n;
+	/* CM comes on V.21's channel 1 (the call's caller, V.90's
+	   analogue modem, held its receiver on channel 2) */
+	self.v21.init(980, 1180, 300, self.srate);
 	self.ansam_sign = 1;
 	self.txm = TXM_ANSAM;
 	/* the start-up after it as after a retrain */
@@ -2101,6 +2126,32 @@ void V34Moh<P>::moh_hold(int secs)
 			self.total + (long)self.srate * 86400) +
 		ms2samples(60000, self.srate);
 	self.set_state(V8A_ANSAM);
+}
+
+/* back from holding the remote (its MHack to our MHreq): phase 1 from
+   scratch as the call modem once its ANSam is there (MOH_BACK) */
+template <class P>
+void V34Moh<P>::moh_back()
+{
+	P &self = static_cast<P &>(*this);
+	DSP_DBG("v34: taking the remote back from hold\n");
+	self.caller = 1;
+	self.pcm = self.v90a_on = 0;
+	self.v8_ok = self.v8_cj = self.v8_sync = 0;
+	self.v8_n = self.v8_last_n = 0;
+	self.ev_qc = self.qc_done = 0;
+	self.qc_n = -1;
+	self.cc_silence();
+	self.cctx.pos = self.cctx.n;
+	self.txm = TXM_SILENCE;
+	/* CM on V.21's channel 1, JM on 2 */
+	self.v21.init(1650, 1850, 300, self.srate);
+	self.ans_peak = 0;
+	self.ans_gone = 0;
+	moh_ans = 0;
+	moh_backed = 1;
+	self.timeout = self.total + ms2samples(90000, self.srate);
+	self.set_state(MOH_BACK);
 }
 
 /* modem-on-hold of ours in data mode: the DTE's (+PMHR, the remote on
@@ -2112,9 +2163,10 @@ void V34Moh<P>::moh_req_test()
 {
 	P &self = static_cast<P &>(*this);
 	/* the DTE's (+PMHR), once a block */
-	if (moh_poll++ % 160 == 0 && self.connected && self.v92 &&
-	    !self.retraining &&
-	    (self.state == V34_DATA || self.state == V92_RUN)) {
+	if (moh_poll++ % 160 == 0 && self.connected &&
+	    (self.v92 || self.v92a_on) && !self.retraining &&
+	    (self.state == V34_DATA || self.state == V92_RUN ||
+	     self.state == V90A_DATA)) {
 		long secs = modem_get_param(self.modem, MDMPRM_MOH_REQ);
 		if (secs > 0) {
 			modem_set_param(self.modem, MDMPRM_MOH_REQ, 0);
@@ -2123,8 +2175,10 @@ void V34Moh<P>::moh_req_test()
 		}
 	}
 	/* (once a sample: V.92's data mode keeps no total) */
-	if (!moh_req_at || !self.connected || !self.v92 || self.retraining ||
-	    (self.state != V34_DATA && self.state != V92_RUN))
+	if (!moh_req_at || !self.connected || !(self.v92 || self.v92a_on) ||
+	    self.retraining ||
+	    (self.state != V34_DATA && self.state != V92_RUN &&
+	     self.state != V90A_DATA))
 		return;
 	if (++moh_req_n >= moh_req_at) {
 		moh_req_at = 0;
@@ -2561,7 +2615,7 @@ void V34Pump::pump_rx_sample(float x)
 				cc_rx_bit(bit);
 			cc_phase_frame();
 		}
-		if (state == V8C_LISTEN)
+		if (state == V8C_LISTEN || state == MOH_BACK)
 			ans_analyse(x);
 		if (aa_g.run(x)) {
 			if (aa_g.power > tone_power(300))
@@ -3749,7 +3803,7 @@ int V34Moh<P>::moh_step(long c)
 				DSP_DBG("v34: the remote retrains instead of "
 					"answering MHreq\n");
 				moh_req = 0;
-				self.set_state(P2C_B);
+				self.set_state(self.caller ? P2C_B : P2A_A);
 				self.cc_tone();
 				break;
 			}
@@ -3772,15 +3826,31 @@ int V34Moh<P>::moh_step(long c)
 		}
 		break;
 	case MOH_HELD:
-		/* silent until we take the remote back, within its T1:
-		   ANSam, and phase 1 as after its own hold */
+		/* silent until we take the remote back, within its T1: it
+		   sends ANSam meanwhile, and we call it again (CM, phase 1
+		   as the call modem, 9.10.2.1/V.92) */
 		if (c >= ms2samples(1000L * moh_req_hold, self.srate) ||
 		    (moh_t1_secs(moh_req_t1) && moh_req_t1 != 13 &&
 		     c >= ms2samples(1000L * moh_t1_secs(moh_req_t1) - 2000,
-				     self.srate))) {
-			moh_resp = MH_ACK;
-			moh_hold(moh_req_t1 == 13 ? 0 :
-				 moh_t1_secs(moh_req_t1));
+				     self.srate)))
+			moh_back();
+		break;
+	case MOH_BACK:
+		/* its ANSam there 200 ms: V.8 as the call modem (the tone's
+		   modulation measured anew); none in 5 s: it is gone (it
+		   sends ANSam all through its T1) */
+		moh_ans = self.ans_peak > 300 && self.ans_gone == 0 ?
+			moh_ans + 1 : 0;
+		if (moh_ans >= ms2samples(200, self.srate)) {
+			DSP_DBG("v34: back from hold: ANSam, V.8 as the call "
+				"modem\n");
+			self.ans_peak = 0;
+			self.env_sum = self.env15_re = self.env15_im = 0;
+			self.env_n = 0;
+			self.set_state(V8C_LISTEN);
+		} else if (c >= ms2samples(5000, self.srate)) {
+			DSP_DBG("v34: back from hold: no ANSam\n");
+			return DPSTAT_ERROR;
 		}
 		break;
 	case MOH_RESP:
@@ -3923,7 +3993,12 @@ int V34Pump::handshake()
 		   and A as long (200 ms, as the original modems): the caller
 		   takes a reversal only after it has heard A */
 		if (retraining && (rt_blocks < 15 ||
-				      c < ms2samples(200, srate))) {
+				      c < ms2samples(200, srate) ||
+				      /* V.92's analogue modem: the remote's
+				         tone B may be a modem-on-hold
+				         request's, its MHreq some 600 ms
+				         on (9.10.1.1/V.92) */
+				      (v92a_on && c < ms2samples(1000, srate)))) {
 			if (c >= ms2samples(3000, srate)) {
 				DSP_DBG("v34: retrain: no tone B\n");
 				return DPSTAT_ERROR;
@@ -4430,8 +4505,11 @@ int V34Pump::handshake()
 			set_rates(rate_tx, rate_rx);
 			v90a_quiet = 0;
 			retraining = 0;
-			DSP_DBG("v34: V.90 retrained %d/%d (analogue modem)\n",
-				rate_tx, rate_rx);
+			DSP_DBG("v34: V.90 %s %d/%d (analogue modem)\n",
+				moh_end || moh_backed ? "back from hold," :
+				"retrained", rate_tx, rate_rx);
+			moh_end = 0;
+			moh_backed = 0;
 			break;
 		}
 		if (v90rx.ev_b1d && ptx.seg == V34_TX_DATA) {
@@ -4758,10 +4836,11 @@ int V34Pump::handshake()
 			rn_max = rate_rx / 2400;
 			if (retraining && connected) {
 				retraining = 0;
-				DSP_DBG("v34: V.90 %s, %d/%d\n", moh_end ?
+				DSP_DBG("v34: V.90 %s, %d/%d\n", moh_end || moh_backed ?
 					"back from hold" : "retrained",
 					rate_tx, rate_rx);
 				moh_end = 0;
+				moh_backed = 0;
 				break;
 			}
 			retraining = 0;
@@ -4821,10 +4900,11 @@ int V34Pump::handshake()
 			if (retraining && connected) {
 				/* the link goes on (V.42 knows nothing of it) */
 				retraining = 0;
-				DSP_DBG("v34: %s, %d/%d\n", moh_end ?
+				DSP_DBG("v34: %s, %d/%d\n", moh_end || moh_backed ?
 					"back from hold" : "retrained",
 					rate_tx, rate_rx);
 				moh_end = 0;
+				moh_backed = 0;
 				break;
 			}
 			retraining = 0;
@@ -4930,6 +5010,7 @@ int V34Pump::handshake()
 	case MOH_REQ:
 	case MOH_HELD:
 	case MOH_RESP:
+	case MOH_BACK:
 		return moh_step(c);
 	}
 	return DPSTAT_OK;
@@ -5237,6 +5318,9 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 			 e && atoi(e));
 	}
 	v90a_on = v90a_rx = 0;
+	v92a = v90a && id == DP_V92 &&
+		!(getenv("DSP_V92A") && !atoi(getenv("DSP_V92A")));
+	v92a_on = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
 

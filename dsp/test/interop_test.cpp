@@ -223,16 +223,18 @@ std::vector<Call> calls()
 	      "retrained" });
 	/* and with an analogue modem that answers it (netsim's NET_MOH
 	   stands in for one from 22 s on: the original library does not):
-	   MHack, the remote on hold for 5 s, ANSam; MHnack, MHfrr and
-	   ANSam.  The original library is cut off meanwhile and hangs up,
-	   so nothing comes back to ANSam and we disconnect after T1 (10 s) */
+	   MHack, the remote on hold for 5 s, then we take it back (its
+	   ANSam, our CM: 9.10.2.1/V.92); MHnack, MHfrr and ANSam.  The
+	   original library is cut off meanwhile and hangs up, so no ANSam
+	   comes after the hold (we give up after 5 s), and nothing to ours
+	   after MHfrr (we disconnect after T1, 10 s) */
 	add("smartlink", "smartlink_v92_moh_request_ack", "smartlink", "open8",
 	    "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=40", "SMARTLINK_V92FULL=1",
 	      "NET_MOH=ack:1@22", "MIDCALL_B=12:AT+PMHR=5;WAIT 8",
 	      "EXPECT_DROP=1",
-	      "EXPECT_B=(?s)MHack, T1 10 s: the remote on hold for 5 s.*on "
-	      "hold, ANSam for 10 s.*on hold for T1: disconnect" });
+	      "EXPECT_B=(?s)MHack, T1 10 s: the remote on hold for 5 s.*"
+	      "taking the remote back from hold.*back from hold: no ANSam" });
 	add("smartlink", "smartlink_v92_moh_request_nack", "smartlink",
 	    "open8", "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "STREAM=35", "SMARTLINK_V92FULL=1",
@@ -479,6 +481,30 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
 	      "V.90 failed, V.34 next.*V.34 this time.*"
 	      "data rates tx [0-9]+ rx [0-9]+, trellis" });
+	/* V.92 as the analogue modem (V.92 in our INFO0a, the digital
+	   modem's INFO0d): V.90 with V.34 upstream, and modem-on-hold
+	   (9.10/V.92).  Ours (AT+PMHR=5 in the middle of the data): tone
+	   A, MHreq; its MHack (T1 1 min), our silence, its ANSam; after
+	   5 s our CM, phases 1 to 4 again and the data goes on.  Its
+	   (AT+PMHR=5 on the digital modem): its tone B and MHreq, our
+	   MHack, its silence, our ANSam; its CM after 5 s */
+	add("open", "open_v92a_moh", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "STREAM=50",
+	      "MIDCALL_A=8:AT+PMHR=5;WAIT 12",
+	      "EXPECT_A=(?s)INFO0d V.92: V.92 as the analogue modem.*"
+	      "MHack, T1 60 s: the remote on hold for 5 s.*back from hold: "
+	      "ANSam, V.8 as the call modem.*V.90 back from hold, "
+	      "3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)INFO0a V.92 1.*MHreq: MHack \\(on hold\\).*"
+	      "on hold, ANSam.*V.90 back from hold" });
+	add("open", "open_v92a_moh_theirs", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "STREAM=50",
+	      "MIDCALL_B=8:AT+PMHR=5;WAIT 12",
+	      "EXPECT_A=(?s)MHreq: MHack \\(on hold\\).*on hold, ANSam.*"
+	      "V.90 back from hold, 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)MHack, T1 60 s: the remote on hold for 5 s.*"
+	      "back from hold: ANSam, V.8 as the call modem.*V.90 back from "
+	      "hold" });
 	/* the analogue modem with its codec at 8000 Hz (MODEM_ANALOG: its
 	   line an analogue one; netsim's NET_ANALOG), on the network's
 	   clock: the PCM receiver on the line's own samples, with
