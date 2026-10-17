@@ -494,14 +494,14 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)INFO0d V.92: V.92 as the analogue modem.*"
 	      "MHack, T1 60 s: the remote on hold for 5 s.*back from hold: "
 	      "ANSam, V.8 as the call modem.*V.9[02] back from hold, "
-	      "3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "[34][0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)INFO0a V.92 1.*MHreq: MHack \\(on hold\\).*"
 	      "on hold, ANSam.*V.9[02] back from hold" });
 	add("open", "open_v92a_moh_theirs", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "STREAM=50",
 	      "MIDCALL_B=8:AT+PMHR=5;WAIT 12",
 	      "EXPECT_A=(?s)MHreq: MHack \\(on hold\\).*on hold, ANSam.*"
-	      "V.9[02] back from hold, 3[0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "V.9[02] back from hold, [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)MHack, T1 60 s: the remote on hold for 5 s.*"
 	      "back from hold: ANSam, V.8 as the call modem.*V.9[02] back "
 	      "from hold" });
@@ -531,6 +531,31 @@ std::vector<Call> calls()
 	      "EXPECT_B=(?s)CPd: [0-9]+ bit/s, M [0-9]+, [0-9]+ points, G "
 	      "[0-9.]+ \\(mse [0-9.]+\\), precoding.*"
 	      "v92: B1u: 0 zeros.*V.92 connect 5[0-9]+/[34][0-9]+" });
+	/* V.92's quick connect as the analogue modem calling (9.2.1.1 and
+	   9.4.2/V.92): QC1a before CM, the digital modem's QCA1d, ANSpcm
+	   answered with TONEq, short phase 2 (no probing), PCM upstream;
+	   without our QC1a (DSP_V92A_QC=0) V.8 and short phase 2; with a
+	   digital modem that does not answer QC1a (DSP_V92_QC=0), V.8 */
+	add("open", "open_v92a_qc", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "BULK=100000",
+	      "EXPECT_A=(?s)V.92 QC1a.*QCA1d: quick connect.*"
+	      "ANSpcm: TONEq.*ANSpcm ended.*V.92 short phase 2.*"
+	      "PCM upstream phase 3 done.*"
+	      "V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.92 quick connect, UQTS 79.*TONEq heard.*"
+	      "INFO0a V.92 1, short phase 2 1.*V.92 short phase 2.*"
+	      "v92: B1u: 0 zeros.*V.92 connect 5[0-9]+/[34][0-9]+" });
+	add("open", "open_v92a_qc_off", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92A_QC=0",
+	      "EXPECT_A=(?s)V.8 JM received.*V.92 short phase 2.*"
+	      "V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.8 CM received.*short phase 2 1.*"
+	      "V.92 connect 5[0-9]+/" });
+	add("open", "open_v92a_qc_unanswered", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "DSP_V92_QC=0",
+	      "EXPECT_A=(?s)V.92 QC1a.*V.8 JM received.*"
+	      "V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.8 CM received.*V.92 connect 5[0-9]+/" });
 	/* its symbols on the network's clock as the PCM receiver finds it
 	   (100 ppm off ours: half a symbol off by the second TRN1u's end
 	   otherwise), answering on an A-law network, and its echo */

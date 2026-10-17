@@ -118,6 +118,13 @@ enum v34_state {
 	V8C_CM,
 	V8C_CJ,
 	V8C_GAP,
+	/* V.92 short phase 1, we the analogue modem calling (9.2.1.1/V.92):
+	   QC1a ahead of CM; after the digital modem's QCA1d silence until
+	   its ANSpcm, TONEq until ANSpcm ends, 75 ms, phase 2 */
+	QCC_QC1A,
+	QCC_WAIT,
+	QCC_TONEQ,
+	QCC_GAP,
 	MOH_BACK,               /* back from holding the remote: its ANSam,
 				   then V.8 as the call modem */
 	/* phase 2 answerer */
@@ -132,6 +139,10 @@ enum v34_state {
 	P2A_ABAR_10,
 	P2A_SILENCE,
 	P2A_A2,
+	/* V.92's short phase 2 as the analogue modem (9.4.2/V.92): our A
+	   reversed 40 ms after its B's, 10 ms more of it, then INFO1a */
+	P2A_S2_40,
+	P2A_S2_10,
 	P2A_INFO1,
 	/* phase 2 caller */
 	P2C_INFO0,
@@ -637,6 +648,11 @@ struct V34Qc {
 	Goertzel toneq_g;       /* TONEq, 980 Hz */
 	Goertzel toneq_space_g; /* V.21(L)'s space, 1180 Hz: CM, not TONEq */
 	int toneq_blocks;
+	/* the analogue modem calling: we send QC1a (DSP_V92A_QC=0: not),
+	   did, ANSpcm's samples */
+	int qca_ok;
+	int qcc_sent;
+	long qcc_ans;
 	int qc_step(long c);
 };
 
@@ -680,6 +696,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	int v92a_up;            /* we ask for PCM upstream where INFO1d
 				   offers it (DSP_V92A_UP=0: not) */
 	int v92a_noup;          /* it failed in this call: V.90 next */
+	int v92a_s2_req;        /* our INFO0a asks for short phase 2 */
+	int v92a_short2;        /* and the digital modem's INFO0d too */
 	int v92a_up_on;         /* this phase 3 is PCM upstream's */
 	V92ATx patx;            /* its transmitter */
 	/* its phase 4: our CPu sent (when, in samples), our acknowledged
@@ -764,6 +782,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void v90a_start();
 	int v90a_phase4();
 	void make_info1a_v92(BitQ *q);
+	int v90a_pick_uinfo();
 	void v92a_up_start();
 	int v92a_cpt();
 	int v92a_up_fail(const char *why);
@@ -868,13 +887,17 @@ void V34Info0<P>::make_info0(BitQ *q)
 	q->put(0, 1);        /* CME */
 	q->put(1, 1);        /* 1664 point constellations */
 	if (self.pcm) {
-		/* short phase 2 (Table 15/V.92) */
-		q->put(self.v92 && self.short2_ok, 1);
+		/* short phase 2 (Table 15/V.92), not in a retrain (where
+		   we do the full one) */
+		q->put(self.v92 && self.short2_ok && !self.retraining, 1);
 		q->put(self.v92, 1);      /* V.92 */
 	} else if (self.v90a_on && self.v92a) {
-		/* INFO0a (Table 16/V.92): V.92, no short phase 2 */
+		/* INFO0a (Table 16/V.92): V.92, and short phase 2 where we
+		   go for PCM upstream (9.4/V.92), not in a retrain */
+		self.v92a_s2_req = self.v92a_up && !self.v92a_noup &&
+			self.short2_ok && !self.retraining;
 		q->put(1, 1);
-		q->put(0, 1);
+		q->put(self.v92a_s2_req, 1);
 	} else
 		q->put(0, 2);        /* internal clock */
 	q->put(info0_again, 1);      /* acknowledge (of INFO0a) */
@@ -1271,7 +1294,9 @@ void V34V8<P>::v8_rx_bit(int bit)
 		self.qc_n = -1;
 		if (dsplibs_debug_level >= 6)
 			DSP_DBG("v34: QC frame %03x\n", f);
-		if ((f & 7) == 0 && (f >> 9) == 1) {
+		/* (QC1a for the digital modem, QCA1d for the analogue:
+		   bits 21 and 22 say which) */
+		if ((f & 1) == 0 && (f >> 9) == 1) {
 			/* sent twice; the first may come before the
 			   receiver has the carrier */
 			if (!self.ev_qc) {
@@ -1723,6 +1748,10 @@ void V34Cc<P>::info_frame(CcRx *r)
 				DSP_DBG("v34: INFO0d V.92: V.92 as the analogue "
 					"modem\n");
 			}
+			self.v92a_short2 = self.v92a_on &&
+				self.v92a_s2_req && rinfo0.short2;
+			if (self.v92a_short2)
+				DSP_DBG("v34: V.92 short phase 2\n");
 			DSP_DBG("v34: INFO0d %s, phase 2 at %d dBm0, at most "
 				"%.1f dBm0%s, 3429 upstream %d\n",
 				rinfo0.law ? "A-law" : "u-law",
@@ -2648,13 +2677,15 @@ void V34Pump::pump_rx_sample(float x)
 			v8_rx_bit(bit);
 		if (state == V8A_JM || state == V8A_GAP ||
 		    state == V8C_CJ || state == V8C_GAP ||
-		    state == QCA_TONEQ || state == QCA_GAP2) {
+		    state == QCA_TONEQ || state == QCA_GAP2 ||
+		    state == QCC_GAP) {
 			bit = ccr.sample(x);
 			if (bit >= 0)
 				cc_rx_bit(bit);
 			cc_phase_frame();
 		}
-		if (state == V8C_LISTEN || state == MOH_BACK)
+		if (state == V8C_LISTEN || state == MOH_BACK ||
+		    state == QCC_WAIT || state == QCC_TONEQ)
 			ans_analyse(x);
 		if (aa_g.run(x)) {
 			if (aa_g.power > tone_power(300))
@@ -2823,7 +2854,6 @@ void V34Pump::choose_bauds()
 void V34Pump::v90a_choose()
 {
 	int b, best = -1, best_rate = 0, u;
-	double most = -0.5 - rinfo0.max_power / 2.0, rms0;
 
 	for (b = V34_BAUD_3000; b <= V34_BAUD_3429; b++) {
 		int rate = rinfo1c.r[b].max_rate;
@@ -2844,15 +2874,27 @@ void V34Pump::v90a_choose()
 		return;
 	}
 	baud_tx = best;
+	u = v90a_pick_uinfo();
+	DSP_DBG("v34: V.90 upstream %d baud (%d bit/s), UINFO %d\n",
+		v34_bauds[best].nominal, best_rate * 2400, u);
+}
+
+/* the 2 point train's Ucode (v90a_uinfo): the loudest within INFO0d's
+   most power, 68 at least (Table 10/V.90) */
+int V34Pump::v90a_pick_uinfo()
+{
+	double most = -0.5 - rinfo0.max_power / 2.0, rms0;
+	int u;
+
 	rms0 = (alaw ? 32768 : 32636) / M_SQRT2 /
 		pow(10, (alaw ? 3.14 : 3.17) / 20);
 	for (u = 127; u > 67 &&
 	     20 * log10(v90_ucode_linear(alaw, u) / rms0) > most; u--)
 		;
 	v90a_uinfo = u;
-	DSP_DBG("v34: V.90 upstream %d baud (%d bit/s), UINFO %d (%.1f "
-		"dBm0)\n", v34_bauds[best].nominal, best_rate * 2400, u,
+	DSP_DBG("v34: UINFO %d (%.1f dBm0)\n", u,
 		20 * log10(v90_ucode_linear(alaw, u) / rms0));
+	return u;
 }
 
 /* the primary channel at the agreed symbol rates; -1 if the receiver
@@ -3389,6 +3431,7 @@ void V34Retrain<P>::retrain(const char *why, int by)
 	retraining = 1;
 	renegotiating = 0;
 	self.short2 = 0;
+	self.v92a_short2 = 0;
 	if (self.prx_on) {
 		self.prx.release();
 		self.prx_on = 0;
@@ -3602,8 +3645,8 @@ int V34V8<P>::v8_step(long c)
 		break;
 	case V8A_ANSAM:
 		/* V.92's QC1a ahead of CM: short phase 1 (9.2.4.1/V.92) */
-		if (self.ev_qc && self.v92 && self.qc_ok && !self.qc_done &&
-		    !v8_ok) {
+		if (self.ev_qc && !(self.qc_frame & 6) && self.v92 &&
+		    self.qc_ok && !self.qc_done && !v8_ok) {
 			int wxyz = ((self.qc_frame >> 4) & 1) << 3 |
 				((self.qc_frame >> 6) & 1) << 2 |
 				((self.qc_frame >> 7) & 1) << 1 |
@@ -3734,6 +3777,27 @@ int V34V8<P>::v8_step(long c)
 		}
 		break;
 	case V8C_WAIT:
+		/* V.92's QC1a first (Table 2/V.92): bits 20:29 0 0 0 P W 0
+		   X Y Z 1, P 0 (no LAPM without detection: ours always
+		   does V.42's), WXYZ 1010 for UQTS 79; twice */
+		if (self.total >= ms2samples(1000, self.srate) &&
+		    self.v92a && self.qca_ok && !self.moh_backed &&
+		    !self.retraining) {
+			v8tx.reset();
+			for (int r = 0; r < 2; r++) {
+				v8tx.put(0x3FF, 10);
+				v8tx.put(0x2AA, 10);
+				v8tx.put(1 << 4 | 0 << 6 | 1 << 7 | 0 << 8 |
+					 1 << 9, 10);
+			}
+			v8tx_repeat = 0;
+			self.qcc_sent = 1;
+			fsk.init(980, 1180, V34_TONE_AMP, 300, self.srate, 1);
+			self.txm = TXM_FSK;
+			self.set_state(QCC_QC1A);
+			DSP_DBG("v34: V.92 QC1a\n");
+			break;
+		}
 		if (self.total >= ms2samples(1000, self.srate)) {
 			self.set_state(V8C_CM);
 			v8_make_msg(&v8tx);
@@ -3742,6 +3806,17 @@ int V34V8<P>::v8_step(long c)
 		}
 		break;
 	case V8C_CM:
+		/* V.92's QCA1d: CM ends at once (9.2.1.1/V.92) */
+		if (self.qcc_sent && self.ev_qc &&
+		    (self.qc_frame & 6) == 6) {
+			DSP_DBG("v34: V.92 QCA1d: quick connect\n");
+			self.txm = TXM_SILENCE;
+			self.ans_peak = 0;
+			self.ans_gone = 0;
+			self.qcc_ans = 0;
+			self.set_state(QCC_WAIT);
+			break;
+		}
 		/* finish the octet, then CJ */
 		if (v8_ok && fsk.edge() && v8tx.pos % 10 == 0) {
 			v8_dp = 0;
@@ -3827,6 +3902,76 @@ int V34Qc<P>::qc_step(long c)
 	P &self = static_cast<P &>(*this);
 	switch (self.state) {
 	/* V.92 short phase 1, answering */
+	/* V.92 short phase 1, calling: QC1a, then CM (V8C_CM, where a
+	   QCA1d brings us to QCC_WAIT) */
+	case QCC_QC1A:
+		if (self.v8tx.pos >= self.v8tx.n && self.fsk.edge()) {
+			self.v8_make_msg(&self.v8tx);
+			self.set_state(V8C_CM);
+		}
+		break;
+	case QCC_WAIT:
+		/* the digital modem's QTS, QTS-bar (not looked for: our
+		   PCM receiver finds Sd later) and ANSpcm (2100 Hz):
+		   TONEq once it has been there 50 ms (we heard ANSam for a
+		   second already, 9.2.1.3/V.92) */
+		self.qcc_ans = self.ans_peak > 300 && self.ans_gone == 0 ?
+			self.qcc_ans + 1 : 0;
+		if (self.qcc_ans >= ms2samples(50, self.srate)) {
+			DSP_DBG("v34: V.92 ANSpcm: TONEq\n");
+			self.v8tx.reset();
+			self.v8tx_repeat = 0;
+			self.fsk.init(980, 1180, V34_TONE_AMP, 300,
+				      self.srate, 1);
+			self.txm = TXM_FSK;
+			self.set_state(QCC_TONEQ);
+			break;
+		}
+		if (c >= ms2samples(2000, self.srate)) {
+			/* no ANSpcm: CM again, V.8 */
+			DSP_DBG("v34: V.92 no ANSpcm: V.8\n");
+			self.qcc_sent = 0;
+			self.v8_make_msg(&self.v8tx);
+			self.fsk.init(980, 1180, V34_TONE_AMP, 300,
+				      self.srate, 1);
+			self.txm = TXM_FSK;
+			self.set_state(V8C_CM);
+		}
+		break;
+	case QCC_TONEQ:
+		/* until ANSpcm ends (50 ms at least), then 75 ms of
+		   silence */
+		if (c >= ms2samples(50, self.srate) &&
+		    self.ans_gone >= ms2samples(20, self.srate)) {
+			DSP_DBG("v34: V.92 ANSpcm ended\n");
+			self.txm = TXM_SILENCE;
+			self.ccr.init(1200);
+			self.set_state(QCC_GAP);
+			break;
+		}
+		if (c >= ms2samples(3000, self.srate))
+			return self.fallback("ANSpcm did not end");
+		break;
+	case QCC_GAP:
+		if (c >= ms2samples(75, self.srate)) {
+			/* phase 2 as after V.8 for V.90, we the analogue
+			   modem, as the V.34 answerer (9.2.2/V.90) */
+			DSP_DBG("v34: V.92 quick connect: V.90 with us as the "
+				"analogue modem\n");
+			self.pcm = 0;
+			self.v91_on = 0;
+			self.v90a_on = 1;
+			self.caller = 0;
+			self.tone_g.init(1200, PROBE_PERIOD, self.srate);
+			self.rt_g.init(1200, PROBE_PERIOD, self.srate);
+			self.own_g.init(2400, PROBE_PERIOD, self.srate);
+			self.set_state(P2A_INFO0);
+			self.cc.init(self.srate, 2400, CC_BAUD, 0.5f, 4, 1,
+				     V34_TONE_AMP);
+			self.make_info0(&self.cctx);
+			self.cc_send();
+		}
+		break;
 	case QCA_QCA1D:
 		if (self.v8tx.pos >= self.v8tx.n) {
 			self.txm = TXM_SILENCE;
@@ -4110,6 +4255,12 @@ int V34Pump::handshake()
 	case V8C_CJ:
 	case V8C_GAP:
 		return v8_step(c);
+	/* V.92 short phase 1, calling */
+	case QCC_QC1A:
+	case QCC_WAIT:
+	case QCC_TONEQ:
+	case QCC_GAP:
+		return qc_step(c);
 	/* V.92 short phase 1, answering */
 	case QCA_QCA1D:
 	case QCA_GAP:
@@ -4146,6 +4297,20 @@ int V34Pump::handshake()
 		/* phase 2's recovery: our INFO0 again */
 		if (info0_resend(c))
 			break;
+		/* V.92's short phase 2: the digital modem reverses B
+		   first, ours 40 ms after it (9.4.2.1.3/V.92) */
+		if (v92a_short2) {
+			if (ev_info0 && ev_rev && rev_time > info0_at) {
+				set_state(P2A_S2_40);
+				count = total - rev_time;
+				break;
+			}
+			if (c >= ms2samples(2500, srate)) {
+				v92a_short2 = 0;
+				retrain("short phase 2: no tone B reversal");
+			}
+			break;
+		}
 		/* the reversal once the caller's tone B is there
 		   (11.2.1.2.3/V.34): after the recovery, its INFO0s over */
 		if (c >= ms2samples(50, srate) && ev_info0 &&
@@ -4168,6 +4333,23 @@ int V34Pump::handshake()
 			stat_rtd(rtd);
 			set_state(P2A_ABAR_40);
 			count = total - rev_time;
+		}
+		break;
+	case P2A_S2_40:
+		if (c >= REV_WAIT) {
+			set_state(P2A_S2_10);
+			cc_rev = 1;
+		}
+		break;
+	case P2A_S2_10:
+		/* then INFO1a: PCM upstream's (no INFO1d's bit 70 to go
+		   by: the digital modem offering short phase 2 for it) */
+		if (rev_on_line() >= ms2samples(10, srate)) {
+			v90a_pick_uinfo();
+			v92a_up_on = 1;
+			set_state(P2A_INFO1);
+			make_info1a_v92(&cctx);
+			cc_send();
 		}
 		break;
 	case P2A_ABAR_40:
@@ -5597,6 +5779,8 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		      !atoi(getenv("DSP_V92_SHORT2")));
 	/* quick connect: DSP_V92_QC=0 answers QC1a with V.8 instead */
 	qc_ok = !(getenv("DSP_V92_QC") && !atoi(getenv("DSP_V92_QC")));
+	qca_ok = !(getenv("DSP_V92A_QC") && !atoi(getenv("DSP_V92A_QC")));
+	qcc_sent = 0;
 	/* modem-on-hold: the T1 code (Table 33/V.92) we grant, +PMHT's
 	   (0 with +PMH=1), or DSP_V92_MOH=<code> (1 10 s ... 12 16 min, 13
 	   no limit; 0 denies it); 1 min if neither says */
@@ -5647,6 +5831,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v92a_on = 0;
 	v92a_up = !(getenv("DSP_V92A_UP") && !atoi(getenv("DSP_V92A_UP")));
 	v92a_noup = v92a_up_on = 0;
+	v92a_s2_req = v92a_short2 = 0;
 	if (v8_low)
 		v90 = v91 = v92 = 0;
 
