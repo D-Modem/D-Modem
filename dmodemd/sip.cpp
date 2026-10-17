@@ -87,6 +87,7 @@ namespace libre {
 
 #include "g711.h"
 #include "line_recorder.h"
+#include "portable.h"
 #include "rtp_events.h"
 #include "sip.h"
 
@@ -252,7 +253,7 @@ bool write_all(int fd, const void *buf, size_t n)
 {
 	const char *p = static_cast<const char *>(buf);
 	while (n) {
-		ssize_t r = send(fd, p, n, MSG_NOSIGNAL);
+		ssize_t r = send(fd, p, n, dmd::SEND_NOSIGNAL);
 		if (r < 0 && errno == EINTR)
 			continue;
 		if (r <= 0)
@@ -266,9 +267,7 @@ bool write_all(int fd, const void *buf, size_t n)
 /* the modem has closed its end of fd (seen without reading from it) */
 bool peer_closed(int fd)
 {
-	struct pollfd p = { fd, POLLRDHUP, 0 };
-	return poll(&p, 1, 0) > 0 &&
-		(p.revents & (POLLRDHUP | POLLHUP | POLLERR | POLLNVAL));
+	return dmd::peer_closed(fd);
 }
 
 /* (SIP thread) a line to main.cpp's control descriptor (RING, CANCEL,
@@ -289,7 +288,7 @@ int open_udp(int *port, int *family)
 		socklen_t len = af == AF_INET6 ? sizeof(struct sockaddr_in6) :
 			sizeof(struct sockaddr_in);
 		int off = 0;
-		int fd = socket(af, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		int fd = dmd::socket_cloexec(af, SOCK_DGRAM, 0);
 
 		if (fd < 0)
 			continue;
@@ -1083,9 +1082,7 @@ private:
 				next.tv_nsec -= 1000000000L;
 				next.tv_sec++;
 			}
-			while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
-					       &next, nullptr) == EINTR)
-				;
+			dmd::sleep_until(&next);
 			if (quit_)
 				break;
 			clock_gettime(CLOCK_MONOTONIC, &now);

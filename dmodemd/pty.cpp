@@ -34,6 +34,7 @@
 #include <dcore.h>
 #include <log.h>
 
+#include "portable.h"
 #include "pty.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
@@ -199,7 +200,7 @@ ssize_t keeper_receive(char *op, int *fd)
 	for (int sig : ignored)
 		sigaction(sig, &sa, nullptr);
 	if (!keeper_descriptors(sock) ||
-	    send(KEEPER_FD, &KEEPER_READY, 1, MSG_NOSIGNAL) != 1)
+	    send(KEEPER_FD, &KEEPER_READY, 1, dmd::SEND_NOSIGNAL) != 1)
 		_exit(1);
 	for (;;) {
 		char op, path[PATH_MAX];
@@ -225,7 +226,7 @@ ssize_t keeper_receive(char *op, int *fd)
 			if (link && !a.link)
 				memcpy(k.target, path, strlen(path) + 1);
 		}
-		if (send(KEEPER_FD, &a, sizeof(a), MSG_NOSIGNAL) < 0 &&
+		if (send(KEEPER_FD, &a, sizeof(a), dmd::SEND_NOSIGNAL) < 0 &&
 		    errno != EINTR)
 			break;
 	}
@@ -401,7 +402,7 @@ int Pty::keeper_ask(struct keeper_answer *a)
 	c->cmsg_len = CMSG_LEN(sizeof(int));
 	memcpy(CMSG_DATA(c), &fd_, sizeof(int));
 	do
-		n = sendmsg(keeper_, &msg, MSG_NOSIGNAL);
+		n = sendmsg(keeper_, &msg, dmd::SEND_NOSIGNAL);
 	while (n < 0 && errno == EINTR);
 	if (n != 1)
 		return -1;
@@ -470,7 +471,7 @@ int Pty::fork_keeper()
 			k.gid = g->gr_gid;
 		}
 	}
-	if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sv) < 0) {
+	if (dmd::socketpair_cloexec(AF_UNIX, SOCK_SEQPACKET, 0, sv) < 0) {
 		ERR("socketpair: %s\n", strerror(errno));
 		return -1;
 	}
