@@ -47,12 +47,13 @@ struct VcvmComb {
 	int spacing;            /* Hz */
 	int kmin, kmax;         /* the tones' multiples of the spacing */
 	int tones;              /* kmax - kmin + 1 */
-	bool sym22;             /* the 22.5 ms symbol (N200 only) */
+	bool sym22;             /* the 22.5 ms symbol (the 200 Hz combs) */
 	int tu, tg;             /* useful part and prefix, samples */
 	int sps;                /* a symbol, samples */
 
 	/* code (0-8) at fs (the band of the code: N at 8000, W at 16000,
-	   S at 32000), sym22 the 22.5 ms symbol; 0, or -1 if they don't go
+	   S at 32000), sym22 the 22.5 ms symbol (codes 0, 3, 6); 0, or -1
+	   if they don't go
 	   together */
 	int init(int code, int fs, bool sym22 = false);
 	double freq(int i) const { return (double)(kmin + i) * spacing; }
@@ -135,6 +136,11 @@ public:
 	/* samples from the line (16 bit scale) */
 	void push(const float *x, int n);
 	long received() const { return base_ + (long)buf_.size(); }
+	/* nothing received, unlocked: the next sample pushed is sample
+	   base */
+	void restart(long base);
+	/* the next symbol's prefix (once locked) */
+	long next_start() const { return next_; }
 
 	/* the symbol timing from the cyclic prefix over 8 symbols from
 	   sample `from` on (the first symbol: the one whose prefix starts
@@ -211,15 +217,23 @@ public:
 	int init(int fs, bool p10);
 	void push(const float *x, int n);
 	long received() const { return base_ + (long)buf_.size(); }
+	/* nothing received, unlocked: the next sample pushed is sample
+	   base, the preamble looked for from there */
+	void restart(long base);
 
 	/* looks for the preamble in what has come: true once found (the
 	   next symbol is the first after it) */
 	bool search();
 	bool locked() const { return locked_; }
+	/* locked without the search: the next symbol starts at sample at
+	   (the timing known otherwise, as P10's after P20's in L3) */
+	void lock_at(long at);
 	/* the next symbol: its index, the decided lag's normalized
 	   autocorrelation and its margin over the next lag's; true if
-	   there was one */
-	bool next(int *idx, float *c = nullptr, float *margin = nullptr);
+	   there was one; rms the symbol's level (16 bit scale), second the
+	   next best lag's index */
+	bool next(int *idx, float *c = nullptr, float *margin = nullptr,
+		  float *rms = nullptr, int *second = nullptr);
 	/* the symbol's 4 bits (Gray decoded) */
 	static void bits(int idx, uint8_t *b);
 	/* c-bar: the decided c's mean over the last 2 s (0 before any) */
@@ -228,7 +242,7 @@ public:
 
 private:
 	float corr(long a, long b, int lag) const;
-	int decide(long a, float *c, float *margin) const;
+	int decide(long a, float *c, float *margin, int *second = nullptr) const;
 	float at(long i) const;
 	void trim();
 

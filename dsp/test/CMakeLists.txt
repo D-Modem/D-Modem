@@ -84,12 +84,18 @@ endif()
 # V.cvm's signal set back to back and through the codecs (codec_sim, where
 # the AMR libraries are)
 dmodem_test_exe(vcvm_test vcvm_test.cpp codec_sim.cpp ${S}/vcvm.cpp)
-if(AMR_FOUND)
-	target_compile_definitions(vcvm_test PRIVATE DMODEM_HAVE_AMR)
-	target_include_directories(vcvm_test PRIVATE ${AMR_INCLUDE_DIRS})
-	target_link_libraries(vcvm_test PRIVATE ${AMR_LDFLAGS})
-endif()
-dmodem_gtest(vcvm_test LABELS quick)
+# its start-up: the capabilities, the messages and their message mode, the
+# probing and the loading, and two DCEs' start-ups through the codecs
+dmodem_test_exe(vcvm_startup_test vcvm_startup_test.cpp codec_sim.cpp)
+target_link_libraries(vcvm_startup_test PRIVATE dmodem_loopback dmodem_dsp)
+foreach(_t vcvm_test vcvm_startup_test)
+	if(AMR_FOUND)
+		target_compile_definitions(${_t} PRIVATE DMODEM_HAVE_AMR)
+		target_include_directories(${_t} PRIVATE ${AMR_INCLUDE_DIRS})
+		target_link_libraries(${_t} PRIVATE ${AMR_LDFLAGS})
+	endif()
+	dmodem_gtest(${_t} LABELS quick)
+endforeach()
 # the fax without a core: the modulations, T.4 and TIFF, two T.30 machines
 find_program(TIFFCP tiffcp)
 dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp

@@ -33,7 +33,7 @@ int VcvmComb::init(int code_, int fs_, bool sym22_)
 {
 	static const int band_fs[3] = { 8000, 16000, 32000 };
 	if (code_ < 0 || code_ > 8 || fs_ != band_fs[code_ / 3] ||
-	    (sym22_ && code_ != 0))
+	    (sym22_ && code_ % 3 != 0))
 		return -1;
 	code = code_;
 	fs = fs_;
@@ -42,7 +42,8 @@ int VcvmComb::init(int code_, int fs_, bool sym22_)
 	kmax = combs[code].kmax;
 	tones = kmax - kmin + 1;
 	sym22 = sym22_;
-	/* the 22.5 ms symbol: four cycles of 200 Hz and 2.5 ms */
+	/* the 22.5 ms symbol (a 200 Hz comb): four cycles of 200 Hz and
+	   2.5 ms */
 	double tu_ms = sym22 ? 20 : combs[code].tu;
 	double tg_ms = sym22 ? 2.5 : combs[code].tg;
 	tu = (int)lrint(fs * tu_ms / 1000);
@@ -214,6 +215,13 @@ int VcvmCombRx::init(int code, int fs, bool sym22)
 	base_ = 0;
 	locked_ = have_prev_ = false;
 	return 0;
+}
+
+void VcvmCombRx::restart(long base)
+{
+	buf_.clear();
+	base_ = base;
+	locked_ = have_prev_ = false;
 }
 
 void VcvmCombRx::set_load(const VcvmLoad &l)
@@ -555,6 +563,14 @@ int VcvmParamRx::init(int fs, bool p10)
 	return 0;
 }
 
+void VcvmParamRx::restart(long base)
+{
+	buf_.clear();
+	base_ = searched_ = base;
+	locked_ = false;
+	fitn_ = 0;
+}
+
 void VcvmParamRx::push(const float *x, int n)
 {
 	buf_.insert(buf_.end(), x, x + n);
@@ -593,7 +609,7 @@ float VcvmParamRx::corr(long a, long b, int L) const
 
 /* the symbol from a: the lag of the greatest c, the smallest within
    0.02 of it */
-int VcvmParamRx::decide(long a, float *c, float *margin) const
+int VcvmParamRx::decide(long a, float *c, float *margin, int *second) const
 {
 	float cs[16], best = -2;
 	/* the symbol but its first sixteenth (1.25 ms of P20), where the
@@ -607,9 +623,14 @@ int VcvmParamRx::decide(long a, float *c, float *margin) const
 	while (d < 15 && cs[d] < best - 0.02f)
 		d++;
 	float other = -2;
+	int o = d ? 0 : 1;
 	for (int i = 0; i < 16; i++)
-		if (i != d)
-			other = std::max(other, cs[i]);
+		if (i != d && cs[i] > other) {
+			other = cs[i];
+			o = i;
+		}
+	if (second)
+		*second = o;
 	if (c)
 		*c = cs[d];
 	if (margin)
@@ -627,14 +648,22 @@ bool VcvmParamRx::search()
 		return true;
 	if (searched_ < base_ + 8L * T)
 		searched_ = base_ + 8L * T;
+	/* whole windows (their edges set the timing); one of the six inside
+	   may be weak (the codec's), not wrong: the first and last are
+	   strong, so that the preamble is not found a symbol early or
+	   late */
 	auto score = [&](long e) -> float {
 		float sc = 0;
+		int weak = 0;
 		for (int w = 7; w >= 0; w--) {
 			long a = e - (long)(8 - w) * T;
 			float c0 = corr(a, a + T, L0), c1 = corr(a, a + T, L15);
 			bool hi = w & 1;
 			float cw = hi ? c1 : c0, co = hi ? c0 : c1;
-			if (cw < 0.5f || cw < co + 0.1f)
+			if (cw < co)
+				return -1;
+			if ((cw < 0.5f || cw < co + 0.1f) &&
+			    (w == 0 || w == 7 || ++weak > 1))
 				return -1;
 			sc += cw;
 		}
@@ -665,13 +694,28 @@ bool VcvmParamRx::search()
 	return false;
 }
 
-bool VcvmParamRx::next(int *idx, float *c, float *margin)
+void VcvmParamRx::lock_at(long at)
+{
+	next_ = at;
+	locked_ = true;
+	fitn_ = 0;
+	fit_[0] = fit_[1] = fit_[2] = 0;
+}
+
+bool VcvmParamRx::next(int *idx, float *c, float *margin, float *rms,
+		       int *second)
 {
 	const int T = p_.sps;
 	if (!locked_ || received() < next_ + T + 1)
 		return false;
+	if (rms) {
+		double e = 0;
+		for (long m = next_; m < next_ + T; m++)
+			e += (double)at(m) * at(m);
+		*rms = (float)sqrt(e / T);
+	}
 	float cc, mg;
-	int d = decide(next_, &cc, &mg);
+	int d = decide(next_, &cc, &mg, second);
 	*idx = d;
 	if (c)
 		*c = cc;
