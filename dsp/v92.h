@@ -346,6 +346,7 @@ struct V92Up : PcmFrames<V92Up> {
 	bool fs_silence();
 	void fs_data(unsigned char *b, int n);
 	void design();
+	void fit_sections(V92Cpd *c) const;
 	int precoder_fit(double gamma, double *bg, double *fg, double *e2);
 	int ch_fit(double *e2, double *q2);
 	int pf_filter(double n0, double *resid, int dfix = -1);

@@ -1847,6 +1847,21 @@ int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 	return 0;
 }
 
+/* z1 and p2 only where the analogue modem's INFO1a has them (bits
+   12:13, Table 18/V.92: 0 is p1 and z2 alone, 1 adds z1, 2 adds p2): the
+   ESS modem's 0 takes no CPd with them */
+void V92Up::fit_sections(V92Cpd *c) const
+{
+	if (!(ia.sections & 1)) {
+		c->len[0] = 0;
+		memset(c->coef[0], 0, sizeof(c->coef[0]));
+	}
+	if (!(ia.sections & 2)) {
+		c->len[3] = 0;
+		memset(c->coef[3], 0, sizeof(c->coef[3]));
+	}
+}
+
 /* our CPd, in cpd, from TRN2u: with the prefilter when pf_design() has
    one; otherwise the fastest rate of up_mask whose points the mse (of
    the precoder's fit, or TRN1u's without precoding) allows with the
@@ -1964,6 +1979,7 @@ void V92Up::design()
 	cpd.len[1] = pre ? V92_EQ_B : 4;
 	cpd.len[2] = 4;
 	cpd.len[3] = 4;
+	fit_sections(&cpd);
 	cpd.coef[2][0] = 32767;
 	if (pre) {
 		memcpy(f, fgs[best], sizeof(f));
@@ -2613,6 +2629,7 @@ int V92Up::pf_cpd(V92Cpd *c, int drn)
 	c->len[1] = V92_PF_B;
 	c->len[2] = V92_PF_W;
 	c->len[3] = 4;
+	fit_sections(c);
 	for (j = 0; j < V92_PF_B; j++)
 		c->coef[1][j] = pf_p1[j];
 	for (j = 0; j < V92_PF_W; j++)

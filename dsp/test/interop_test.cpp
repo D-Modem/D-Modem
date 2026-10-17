@@ -1140,13 +1140,17 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law, "DSP_G711=" + law,
 		      "EXPECT_B=V.90 connect 5[0-9]{4}/", "PROTO_B=ATX3;AT+MS=90" });
 	/* V.92 as it comes, and with PCM upstream (+PIG=0): it ends in V.90,
-	   its downstream a step below the V.90 call's (49333 for 50666) */
+	   its downstream a step below the V.90 call's (49333 for 50666).
+	   PCM upstream gets through phase 4 (its INFO1a has p1 and z2
+	   alone, so our CPd has no z1 or p2: SUVu', E2u), but its B1u
+	   decodes as noise, and after a retrain the call is V.90 */
 	add("ess", "ess_v92", "ess", "open8", "ATX3",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
 	add("ess", "ess_v92_pcmup", "ess", "open8", "ATX3;AT+PIG=0",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
-	      "EXPECT_B=V.9[02] connect [45][0-9]{4}/", "PROTO_B=ATX3" });
+	      "EXPECT_B=(?s)SUVu' at symbol.*E2u at symbol.*V.9[02] connect "
+	      "[45][0-9]{4}/", "PROTO_B=ATX3" });
 	/* V.34 rate renegotiation started by us, both ways; a much noisier
 	   line 10 s in; our INFO0a lost */
 	add("ess", "ess_34_reneg_ess_calls", "ess", "open", "ATX3;AT+MS=V34",
@@ -1184,13 +1188,16 @@ std::vector<Call> calls()
 	   retrain's, as the Agere modem).  It offers V.92 in INFO0a but
 	   neither short phase 2 nor quick connect (+PQC=0 too), and its
 	   own AT+PMHR needs the +++ escape, after which (its OK given) it
-	   parses no command (ATO goes out as data): no tests of those */
-	add("ess", "ess_v92_moh_request", "ess", "open8", "ATX3;AT+MS=V92",
+	   parses no command (ATO goes out as data): no tests of those.
+	   (+PIG=1: no PCM upstream, whose B1u fails, below) */
+	add("ess", "ess_v92_moh_request", "ess", "open8",
+	    "ATX3;AT+MS=V92;AT+PIG=1",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "STREAM=40", "MIDCALL_B=8:AT+PMHR;WAIT 6",
 	      "EXPECT_B=(?s)modem-on-hold request.*retrains instead.*"
 	      "retrained", "PROTO_B=ATX3;AT+MS=92" });
-	add("ess", "ess_v92_echo", "ess", "open8", "ATX3;AT+MS=V92",
+	add("ess", "ess_v92_echo", "ess", "open8",
+	    "ATX3;AT+MS=V92;AT+PIG=1",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "NET_ECHO=-10:50", "STREAM=10",
 	      "EXPECT_B=(?s)far echo at.*echo canceller took [23][0-9]\\.[0-9] "

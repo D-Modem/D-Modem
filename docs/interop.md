@@ -894,10 +894,17 @@ What it does not do here:
   retrain; with MNP 4 alone (our `%C2`) it gives its DTE no CONNECT after
   it, so that test is only with it calling.
 
-Its V.92 offers PCM upstream by default: its INFO0a says V.92, and its
-INFO1a asks for PCM upstream. Phases 3 and 4 get through (Ru, TRN1u,
-SUVu, our CPd, its CPu with 6 constellations), but the frame after has a
-bad CRC and it retrains (tone A); after the retrain its INFO1a says V.90.
+With `+PIG=0` its INFO1a asks for PCM upstream. Phases 3 and 4 get
+through: Ru, TRN1u, Ja, TRN2u, SUVu, its CPu (6 constellations), SUVu'
+and E2u. Its INFO1a has filter sections 0 (p1 and z2 alone, Table 18),
+and our CPd had 4 taps of z1 and p2 in it (for the Smart Link library,
+whose filters have all four): it never took the CPd and retrained after
+half a second. Our CPd now has z1 and p2 only where the INFO1a has them.
+Its B1u after E2u still decodes as noise, though its points come on our
+constellation (grid mse 0.004, plain: no prefilter, precoder or trellis):
+the digits match no reading of B1u (scrambled ones), either scrambler,
+bit or digit order, sign, polarity or offset, so we retrain and the call
+is V.90 (its INFO1a then says V.90).
 
 What it showed in ours: our V.32 and V.32bis caller sent S for 256
 symbols after R1, then S-bar. V.32 (5.4.1) has S for NT first, the round
