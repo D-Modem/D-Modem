@@ -170,6 +170,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	long tx_syms;           /* symbols sent in the current tx state */
 	int tx_ac_phase;
 	int tx_reverse;         /* repeat one AC symbol: phase reversal */
+	int ca_rev;             /* answerer: the caller's CC reversal seen */
 	unsigned tx_scr;
 	int tx_scr_tap;
 	int tx_4800;            /* 4800 coding state (v32_points_4800 index) */
@@ -713,6 +714,7 @@ void V32Pump::retrain(bool remote)
 	automode = 0;                /* no falling back now */
 	rx_reset();
 	ev_rev = ev_r = ev_e = ev_s = 0;
+	ca_rev = 0;
 	timeout = total + ms2samples(15000, srate);
 	tx_syms = 0;
 	if (caller) {
@@ -797,9 +799,17 @@ int V32Pump::handshake()
 			return fallback();
 		break;
 	case A_CA:
-		/* the caller answers with CC */
-		if (ev_rev) {
+		/* the caller answers with CC; our AC again 64 symbols after
+		   its reversal (6.2/V.32bis), as the caller's CC after ours:
+		   our detector sees it about 26 symbols late.  The caller
+		   measures the round trip delay from this (the Intel 537EP,
+		   with our reversal at once, misses our S) */
+		if (ev_rev && !ca_rev) {
 			ev_rev = 0;
+			ca_rev = 1;
+			tx_syms = 0;
+		} else if (ca_rev && sym >= 38) {
+			ca_rev = 0;
 			set_state(A_AC2);
 			tx_reverse = 1;
 			tx_syms = 0;
@@ -807,10 +817,12 @@ int V32Pump::handshake()
 			return DPSTAT_ERROR;
 		break;
 	case A_AC2:
-		/* AC after CC's reversal for 256 symbols, as the HSF
-		   modem's own answerer: calling, it misses our S (and never
-		   answers R1) after only 64 */
-		if (sym >= 256) {
+		/* AC after CC's reversal until the caller's tone drops
+		   (6.2/V.32bis), 64 symbols at least: the caller stops CC
+		   on our reversal, and our S before it has it misses (the
+		   HSF modem, with 64 symbols of AC), and never answers R1.
+		   1024 at most */
+		if ((sym >= 64 && !aa.on) || sym >= 1024) {
 			set_state(A_QUIET);
 			set_tx(TXM_SILENCE);
 		}

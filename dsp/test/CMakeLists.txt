@@ -297,6 +297,36 @@ if(EXISTS "${DMODEM_BROADCOM_DIR}/BCMSM.sys")
 	message(STATUS "tests: the Broadcom soft modem: ${DMODEM_BROADCOM_DIR}")
 endif()
 
+# Intel's 537EP soft modem as a peer (half_intel.cpp): the core of Intel's
+# Intel537EP 2.37.50.1 driver for Fedora Core 1 (537core.lib) with its
+# country tables (wwh_dflt.c); its own exit, index and pow renamed, and
+# IPP's CPU type and cycle counter made weak (half_intel.cpp's)
+set(DMODEM_INTEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/intel" CACHE
+	PATH "537core.lib and wwh_dflt.c of the Intel 537EP soft modem (interop tests)")
+if(EXISTS "${DMODEM_INTEL_DIR}/537core.lib")
+	set(_io ${CMAKE_CURRENT_BINARY_DIR}/537core_r.o)
+	add_custom_command(OUTPUT ${_io}
+		COMMAND ${CMAKE_OBJCOPY} --redefine-sym exit=intel_core_exit
+			--redefine-sym index=intel_core_index
+			--redefine-sym pow=intel_core_pow
+			--weaken-symbol=ippCoreGetCpuType
+			--weaken-symbol=ipp_get_pentium_counter
+			${DMODEM_INTEL_DIR}/537core.lib ${_io}
+		DEPENDS ${DMODEM_INTEL_DIR}/537core.lib
+		COMMENT "537core.lib's symbols renamed")
+	add_executable(half_intel half_intel.cpp modem_half.cpp
+		${DMODEM_INTEL_DIR}/wwh_dflt.c ${_io})
+	set_source_files_properties(${_io} PROPERTIES EXTERNAL_OBJECT TRUE
+		GENERATED TRUE)
+	set_source_files_properties(${DMODEM_INTEL_DIR}/wwh_dflt.c PROPERTIES
+		COMPILE_OPTIONS "-w")
+	target_compile_options(half_intel PRIVATE ${DMODEM_M32} -g -O1)
+	target_link_options(half_intel PRIVATE ${DMODEM_M32} -no-pie
+		-Wl,-z,noexecstack)
+	target_link_libraries(half_intel PRIVATE m)
+	message(STATUS "tests: the Intel 537EP soft modem: ${DMODEM_INTEL_DIR}")
+endif()
+
 # the interop tests: calls between the open modem and each of the modems
 # above (interop_test.cpp, through interop_call.cpp: what a call does is in
 # its environment, NET for netsim's G.711 network, STREAM, EXPECT_B, ...).
@@ -315,7 +345,7 @@ target_link_libraries(interop_call PRIVATE interop_driver)
 set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""
 	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
 	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
-foreach(_p agere sm56 spandsp pctel hsf broadcom)
+foreach(_p agere sm56 spandsp pctel hsf broadcom intel)
 	if(TARGET half_${_p})
 		string(TOUPPER ${_p} _u)
 		list(APPEND _progs "HALF_${_u}=\"$<TARGET_FILE:half_${_p}>\"")
@@ -352,4 +382,7 @@ foreach(_l sm56 pctel hsf)
 endforeach()
 if(TARGET half_broadcom)
 	interop_tests(broadcom)
+endif()
+if(TARGET half_intel)
+	interop_tests(intel)
 endif()

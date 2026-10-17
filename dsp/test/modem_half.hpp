@@ -4,7 +4,7 @@
  *
  *    modem_half.hpp - what the test peers' harnesses share (half_agere,
  *                     half_sm56, half_pctel, half_hsf, half_broadcom,
- *                     half_spandsp): a modem whose line's audio comes in
+ *                     half_intel, half_spandsp): a modem whose line's audio comes in
  *                     on fd 3 and goes out on fd 4 (16 bit samples), its
  *                     DTE a pty whose name it prints ("created <name>:
  *                     <pty>"), for interop_call
@@ -33,6 +33,7 @@
  *    hw/smartdaa.hpp     Conexant's SmartDAA (HSF)
  *    hw/si3034.hpp       Silicon Labs' Si3034 DAA (Broadcom)
  *    hw/bcm4212.hpp      Broadcom's BCM4212 modem chip
+ *    hw/i537ep.hpp       Intel's 537EP modem chip
  *
  *    interop_windows.h is a Windows kernel for a WDM driver on such a
  *    harness.

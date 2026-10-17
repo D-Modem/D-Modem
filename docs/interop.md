@@ -1,7 +1,7 @@
 # Interop tests against other soft modems
 
 Calls between the open modem and other soft modems: Smart Link's on
-our modem core, the Agere, SM56, PCTel and HSF ones each in user
+our modem core, the Agere, SM56, PCTel, HSF and Intel ones each in user
 space on an emulation of its hardware, Broadcom's Windows driver on a
 Windows kernel of our own and an emulation of its chip, and spandsp's (see
 [testing.md](testing.md) for the driver, netsim and how the calls keep
@@ -35,10 +35,11 @@ its codec's registers as the harness's `codec_read()` and
 | `pci.hpp` | PCI's configuration space of one device and its ports (`PciDevice`) | SM56, HSF, Broadcom |
 | `x86_traps.hpp` | `in`, `out`, `cli`, `sti` and moves to and from control registers in a driver's own code (`X86Traps`) | SM56, the Windows kernel |
 | `tsc.hpp` | `rdtsc` on the line's clock (`LineTsc`) | HSF, the Windows kernel |
-| `codec_line.hpp` | the line and a codec at a rate of its own: the resamplers and the codec's noise (`CodecLine`, `<NAME>_NOISE`) | SM56, PCTel, HSF, Broadcom |
+| `codec_line.hpp` | the line and a codec at a rate of its own: the resamplers and the codec's noise (`CodecLine`, `<NAME>_NOISE`) | SM56, PCTel, HSF, Broadcom, Intel |
 | `smartdaa.hpp` | Conexant's SmartDAA behind its codec (`SmartDaa`) | HSF |
 | `si3034.hpp` | Silicon Labs' Si3034 DAA behind a serial port (`Si3034`) | Broadcom |
 | `bcm4212.hpp` | Broadcom's BCM4212 modem chip: its registers and DMA (`Bcm4212`) | Broadcom |
+| `i537ep.hpp` | Intel's 537EP modem chip: its registers (plain memory) and DMA rings (`I537ep`) | Intel |
 
 Each mixin's members have its name (`ich_sample()`, `pci_cfg`,
 `si3034_rate`, ...), so that a harness can derive from any of them
@@ -61,6 +62,7 @@ not under this repository's terms
 | SM56 | `sm56/sm56.ko` | Motorola sm56-06.09.05 for Fedora Core 3 (2.6.9-1.667) | 17 May 2005, GCC 3.4.2 (Fedora Core 3) | `usr/tmp/sm56.ko` of `sm56-06.09.05-1-fc3-2.6.9-1.667.i686.rpm` |
 | PCTel | `pctel/dsp.o`, `pctel/control.o` | pctel-0.9.7-9 (Linux driver K2.4.7.V92.001) | pumps 21 Jun 2001, GCC 2.95.3; controller dated 26 Mar 2003, GCC 2.96 (Red Hat 7.1) | `src/lib/amr/dsp.a`, `src/lib/control.a` of pctel-0.9.7-9-rht-6 |
 | HSF | `hsf/hsfengine.o`, `hsfmc97ich.o`, `hsfsoar.o`, `hsfmc97ich.inf`, `hsf.cty` | Linuxant hsfmodem-7.80.02.06oem | 10 May 2010, GCC 3.4.6 (Red Hat) | `modules/imported/<name>-i386.O`, `nvm/inf/hsfmc97ich.inf`, `nvm/inf/hsf.cty` of `hsfmodem-7.80.02.06oem.tar.gz` |
+| Intel | `intel/537core.lib`, `intel/wwh_dflt.c` | Intel537EP 2.37.50.1 for Fedora Core 1 SMP (core "Release 4.65 - Jan 17 2004") | 17 Jan 2004, GCC 3.2 (its IPP parts Intel C++ 7.0 Beta) | `coredrv/537core.lib`, `coredrv/wwh_dflt.c` of `intel-537ep_secure-2.37.50.1-fc1-smp.tgz` |
 | Broadcom | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | BCM V.92 56K Modem 3.4.19, Dell's "V.92 Soft Modem (Data Fax) Driver" A05 | 26 Jul 2002, Microsoft linker 7.0 | the hashes in the package's catalog, signed by Microsoft (WHQL, 31 Jul 2002) |
 | spandsp | (the system's libspandsp) | spandsp 0.0.6 (release 20110122) | | |
 
@@ -140,6 +142,17 @@ The files' sha256, and what was compared:
   (`3261275f43309bd1155178d2549b1496ac9552f2`) and the INF's SHA-1
   (`74a33b6de90b0d12e3b688a29c94cc1dd399ea51`): both files are those
   Microsoft signed. Dell's download of the package was not compared.
+- Intel: `537core.lib`
+  `e81d02cbe185191e1bf9ed46672117edb02ccfb7f3d493800c1aa428f9d6f49f`,
+  `wwh_dflt.c`
+  `4d308a3988ae17c9348341feab0f05432e3d6d2483f512667ff09d03a7ccf1e8`,
+  and the archive's `license.txt` with them
+  (`87e01e6b9bf0b40ecf0d665d033348c61f964a1793124e0516908afd4b1518fa`).
+  The archive (`bfc42b0917e1f15cf974de0ddeff7dbf2617316e017888eec1c25574cd5b25c0`,
+  "Intel(R) 537 V9x DF modem Linux driver", for 2.4.22-1.2115.nptlsmp)
+  was given to us; it was not compared with a download of Intel's. Its
+  licence is a BSD one (redistribution in binary form with the
+  notice). The core answers `ATI3` with "537EP".
 - spandsp: not in the tree; the build takes the system's (pkg-config
   `spandsp`), 0.0.6 in Debian and Ubuntu.
 
@@ -745,9 +758,84 @@ chooses PCM upstream in INFO1a (`broadcom_v92_pcmup`):
 PCM upstream may well be unfinished in this build, as it is off by
 default.
 
+## Against the Intel 537EP soft modem
+
+`half_intel` runs the core of Intel's 537EP driver for Linux
+(`537core.lib`, "Release 4.65", of the Intel537EP 2.37.50.1 driver for
+Fedora Core 1): its controller (AT commands, V.42, V.42bis, V.44, MNP,
+fax), and its data pumps, Intel's own on IPP, to V.92. The core runs on
+the host; its "DSP" is a software comm RAM. It needs no kernel: only what
+the driver's open glue (BSD licensed) gave it, which the harness has
+again in C++ (89 symbols):
+
+- the virtual UART's queues and lines (`uart.c`), the DTE on the pty;
+- the real-time service (`rts.c`): every 10 ms of the line the
+  controller's timers (`linux_sys_isr_timer_ticker`, `acu_timer`), and
+  when its time comes the RTS task, `clm_bg()`, on a stack of its own (a
+  `ucontext`): the tasker's `RSATaskYield()` sleeps it until the next
+  time. In the kernel the task's time slice ran out while the timer
+  ticked; here no time passes in the task, so it sleeps at each yield
+  (`fax1_execute_command` waits so for `AT+FTS`);
+- the precise dialer (pulse dialling, hook flash), a task of its own
+  stack that waits with `linux_schedule()`, resumed every ms;
+- the locks (none: one thread), but the core's resources
+  (`linux_RSAGetExclusive`, try-locks in `locks.c`) as they were: the
+  RTS task can yield holding one, and `cp_dsp` gets none from a stub;
+- the DMA rings' memory (`AllocateDmaResources`), the country tables
+  (`wwh_dflt.c`, Intel's data as it is), `gettimeofday` and `rdtsc` on the
+  line's clock, and none of the persistent settings (the hamregistry's
+  requests time out at once).
+
+The chip (8086:1080, `hw/i537ep.hpp`) is an Si3052 DAA with its own
+DMA. The core reaches its registers through four accessors of its own
+on a base pointer (the driver's `iobase`), so they are plain memory, and
+the chip works between the driver's calls: two rings of 32-bit words (a
+sample in the low half each), 32 periods of 96 words, the ADC's at 0x08
+to 0x14 and the DAC's at 0x18 to 0x24 (base, end, interrupt point,
+current word), the interrupt status at 0x04 (written back to clear: the
+handler acknowledges what it read), the codec's rate at 0x37 (7200 to
+16000 Hz, 9600 by default and 72000 / 7 for V.34), the codec's clock lock
+and loop current at 0x3c, the hook at 0x35. Each period's interrupt runs
+the chip's handler (`AfeIRQ`), the comm RAM's and then the DSP tasklet,
+`DspTask()`, with a clean FPU as the kernel gave it (`fnsave`).
+
+IPP picks its pumps' code by `cpuid` (px, m6, a6, w7); the harness makes
+it a Pentium 4 (`ippCoreGetCpuType` 6, w7) whatever the host,
+`INTEL_CPU=<type>` another, and IPP's cycle counter
+(`ipp_get_pentium_counter`, a bare `rdtsc`) the line's. Both are weakened
+in the object; its own `exit` (empty), `index` and `pow` are renamed.
+With the others' code (`INTEL_CPU=0`, 3, 5: px, a6, m6) its V.34, V.32bis,
+V.90 and V.17 fax calls pass as well.
+
+Its line runs at 9600 Hz (`INTEL_RATE=9600`): V.90 connects at
+53333 so, 45333 through the resampling to 8000. Against the open modem
+(`ctest -L intel`):
+
+- V.34 (33600), V.32bis (14400), V.22bis, V.22, V.21, V.23 and Bell 103,
+  each forced, both ways; V.8 in both automodes (V.34), V.44 both ways
+  (60000 octets), MNP 5 both ways;
+- V.90 as the analogue modem, both laws (53333/31200);
+- class 1 fax at all ten modulations both ways.
+
+Its V.92 (`+MS=V92`, the default): its INFO0a says V.92, its INFO1a asks
+for V.90 (no PCM upstream), and the call is V.90. With `+PIG=0` it asks
+for PCM upstream and gets through phase 3 (Ru, Ja, CPt, E1u), TRN2u and
+SUVu, and acknowledges our CPd (SUVu'), but sends no CPu: 0.4 s later
+it retrains (tone A), with or without our prefilter, with a 16 or 64
+state trellis, and the call is V.90 after it (`intel_v92_pcmup`).
+
+What it showed in ours: our V.32bis answerer reversed its CA to AC as
+soon as it saw the caller's CC (6.2/V.32bis: 64 symbols after). The
+caller times the round trip from that reversal, and the Intel modem,
+calling, then missed our training at most alignments of the line (as it
+does the Agere modem's answerer's at 6 of 8). Our answerer now reverses
+38 symbols after its detector's (which is 26 late), as our caller does
+its CC, and sends AC until the caller's tone drops (16 symbols of
+silence, then S), not 256 symbols.
+
 ## MNP
 
-The Agere, SM56, PCTel, HSF and Broadcom modems have MNP 2 to 4 and
+The Agere, SM56, PCTel, HSF, Broadcom and Intel modems have MNP 2 to 4 and
 MNP 5 (Smart Link's library and spandsp have none); with their defaults
 they all take V.42 with us. Forced to MNP, each connects with MNP 4 and
 MNP 5 both ways (`ctest -R mnp`, 20000 octets each way): calling with

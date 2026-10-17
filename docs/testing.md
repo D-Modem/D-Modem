@@ -19,7 +19,7 @@ compiler (`g++ -m32`), for the original library.
                                               # original library) and this one, data and
                                               # class 1 fax (needs g++ -m32)
     ctest --test-dir build -L agere -j16    # calls between the Agere soft modem and this one
-                                            # (sm56, pctel, hsf, broadcom, spanpeer: the other modems;
+                                            # (sm56, pctel, hsf, broadcom, intel, spanpeer: the other modems;
                                             # open: two of this one)
 
 The test programs are in `dsp/test/` (the link layer's and the core's in `link/test/` and `core/test/`). All the tests but one are GoogleTest programs (the system's libgtest-dev, or
@@ -41,7 +41,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `class1_t38_test` | class 1 over T.38: a DTE of the test's own through T.30 on the engine's commands against our T.30 machine over T.38, sending and receiving, ECM, both packet versions, T.38 after a while on the audio; the packets' fields and times |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's, on the audio and over T.38 (its T.38 terminal) |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the core's transcripts against the scripts' `.expect` (slmodemd's old core's, recorded from it; see `docs/core.md`) |
-| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
+| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `intel_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
 | `call_tone_test`, `ring_detect_test` | the call progress tones a voice dial hears (ringing, busy, answer tones) and the ring signal a modem codec hears on hook (`dsp.h`'s `CallToneDetect`, `RingDetect`) |
 | `dmodemd/test/alsa_test.py` (`dmodemd_alsa`, label `alsa`) | two dmodemd on fake ALSA modem cards (alsa-lib plugins), calling each other through a simulated exchange: dial tone, DTMF, rings, caller ID, V.34, busy, a stall, a voice call ([hardware.md](hardware.md)). Needs libasound2-dev |
 | `dmodemd/test/root_test.py` (`dmodemd_root`) | dmodemd started as root: it goes on as nobody, saves its data file, and its pty's group and link (kept by a process of its own) follow the new pty after the DTE hangs up and go when it ends, even killed. Skipped unless ctest runs as root (CI runs it with sudo) |

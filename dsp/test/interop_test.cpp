@@ -73,6 +73,9 @@ const std::map<std::string, const char *> &programs()
 #ifdef HALF_BROADCOM
 		{ "broadcom", HALF_BROADCOM },
 #endif
+#ifdef HALF_INTEL
+		{ "intel", HALF_INTEL },
+#endif
 	};
 	return p;
 }
@@ -1081,6 +1084,74 @@ std::vector<Call> calls()
 	      "STREAM=10", "EXPECT_B=V.92 connect 5[0-9]{4}/(3[4-9]|4[0-2])",
 	      "PROTO_B=ATX3;AT+MS=92" });
 
+	/* --- Intel's 537EP soft modem, its line at 9600 Hz (its codec's
+	   rates are 7200 to 16000 Hz, 9600 by default, 72000 / 7 for V.34,
+	   and its V.90 is better without the resampling to 8000), and the
+	   open modem (9600 Hz): V.34, V.32bis, V.22bis, V.22, V.21, V.23 and
+	   Bell 103 both ways, each forced */
+	const std::string i537 = "INTEL_RATE=9600";
+	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,
+		     const char *, const char *>>{
+		     { "V34", "34", "" }, { "V32B", "132", "" },
+		     { "V22B", "122", "" }, { "V22", "22", "DATA_RATE=1200" },
+		     { "V21", "21", "DATA_RATE=300" },
+		     { "V23C", "23", "DATA_RATE=75" },
+		     { "BELL103", "103", "DATA_RATE=300" } }) {
+		std::string a = std::string("ATX3;AT+MS=") + n;
+		std::string o = std::string("ATX3;AT+MS=") + ms;
+		std::vector<std::string> e = { i537, "NET=9600:9600:ulaw" };
+		if (*rate)
+			e.push_back(rate);
+		auto ei = e, eo = e;
+		ei.push_back("PROTO_B=" + o);
+		eo.push_back("PROTO_B=" + a);
+		add("intel", std::string("intel_") + ms + "_intel_calls", "intel",
+		    "open", a, ei);
+		add("intel", std::string("intel_") + ms + "_open_calls", "open",
+		    "intel", o, eo);
+	}
+	/* in their automodes (V.8: V.34) with V.42bis, and V.44 (it
+	   offers it) both ways, 60000 octets each way */
+	add("intel", "intel_auto_intel_calls", "intel", "open", "ATX3",
+	    { i537, "NET=9600:9600:ulaw", "PROTO_B=ATX3",
+	      "EXPECT_B=(?s)V.8 CM received.*v34: connect 3[0-9]{4}/" });
+	add("intel", "intel_v44_intel_calls", "intel", "open", "ATX3;AT+MS=V34",
+	    { i537, "NET=9600:9600:ulaw", "PROTO_B=ATX3;AT+MS=34",
+	      "BULK=60000", "EXPECT_B=negotiated: compression 3 \\(V.44\\)" });
+	add("intel", "intel_v44_open_calls", "open", "intel", "ATX3;AT+MS=34",
+	    { i537, "NET=9600:9600:ulaw", "PROTO_B=ATX3;AT+MS=V34",
+	      "BULK=60000", "EXPECT_A=negotiated: compression 3 \\(V.44\\)" });
+	/* V.90 with it as the analogue modem, both laws */
+	for (std::string law : { "ulaw", "alaw" })
+		add("intel", "intel_v90_" + law, "intel", "open8",
+		    "ATX3;AT+MS=V90",
+		    { i537, "NET_LOOP=0.45", "NET=9600:8000:" + law,
+		      "DSP_G711=" + law, "STREAM=5",
+		      "EXPECT_B=V.90 connect 5[0-9]{4}/",
+		      "PROTO_B=ATX3;AT+MS=90" });
+	/* V.92 as it comes (+MS=V92): its INFO0a says V.92, its INFO1a asks
+	   for no PCM upstream (V.90 and V.34 upstream).  With +PIG=0 it does
+	   (phase 3, TRN2u, SUVu, and SUVu' to our CPd) but sends no CPu: tone
+	   A 0.4 s after, and V.90 after the retrain */
+	add("intel", "intel_v92", "intel", "open8", "ATX3",
+	    { i537, "NET_LOOP=0.45", "NET=9600:8000:ulaw", "DSP_G711=ulaw",
+	      "STREAM=5",
+	      "EXPECT_B=(?s)INFO0a V.92 1.*INFO1a: V.90.*V.90 connect 5[0-9]{4}/",
+	      "PROTO_B=ATX3" });
+	add("intel", "intel_v92_pcmup", "intel", "open8", "ATX3;AT+PIG=0",
+	    { i537, "NET_LOOP=0.45", "NET=9600:8000:ulaw", "DSP_G711=ulaw",
+	      "STREAM=5",
+	      "EXPECT_B=(?s)v92: Ja: DIL.*v92: SUVu' at.*v92: tone A.*V.90 "
+	      "connect 5[0-9]{4}/", "PROTO_B=ATX3" });
+	/* class 1 fax both ways */
+	for (int m : { 24, 48, 72, 96, 73, 97, 121, 122, 145, 146 }) {
+		std::string s = std::to_string(m);
+		add("intel", "intel_fax_" + s + "_intel_sends", "intel", "open",
+		    "ATX3", { i537, "NET=9600:9600:ulaw" })->fax = m;
+		add("intel", "intel_fax_" + s + "_open_sends", "open", "intel",
+		    "ATX3", { i537, "NET=9600:9600:ulaw" })->fax = m;
+	}
+
 	/* --- MNP 2 to 4 (V.42's alternative procedure) with MNP 5, both
 	   ways with each modem that has it, 20000 octets each way of text,
 	   binary, repeats and noise: it calls with MNP alone (+ES=4,4,6)
@@ -1089,17 +1160,22 @@ std::vector<Call> calls()
 	   8 outstanding, of up to 256 octets */
 	const std::string mnp5 = "mnp: LR: framing mode 3, k 8, N401 256, "
 		"optimization 3, MNP 5";
-	for (const char *p : { "agere", "pctel", "sm56", "hsf", "broadcom" }) {
+	for (const char *p : { "agere", "pctel", "sm56", "hsf", "broadcom",
+			       "intel" }) {
 		std::string n = p;
+		/* (the Intel modem's line at 9600 Hz, the others' 8000;
+		   INTEL_RATE only half_intel reads) */
+		bool i = n == "intel";
+		std::string r = i ? "9600" : "8000";
 		add(p, n + "_mnp5_" + n + "_calls", p, "open",
 		    "ATX3;AT+MS=V34;AT+ES=4,4,6",
-		    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=34",
-		      "BULK=20000", "EXPECT_B=" + mnp5 });
+		    { "NET=" + r + ":9600:ulaw", "PROTO_B=ATX3;AT+MS=34",
+		      "BULK=20000", "EXPECT_B=" + mnp5, i537 });
 		add(p, n + "_mnp5_open_calls", "open", p,
 		    "ATX3;AT+MS=34;AT\\N5",
-		    { "NET=9600:8000:ulaw",
+		    { "NET=9600:" + r + ":ulaw",
 		      "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6", "BULK=20000",
-		      "EXPECT_A=" + mnp5 });
+		      "EXPECT_A=" + mnp5, i537 });
 	}
 	/* and MNP 4 alone (our %C2: no MNP 5) */
 	add("agere", "agere_mnp4_agere_calls", "agere", "open",
