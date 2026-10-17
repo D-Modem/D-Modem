@@ -212,7 +212,12 @@ unless `NET_PHASE=<fraction>` (its samples that fraction of a network
 sample late) or `NET_PPM=<ppm>` (its clock that many parts per million
 fast, both ways) say otherwise: a converter whose output times move
 by the clock (netsim's raised cosine toward it, a 3900 Hz low pass
-from it), what V.90's PCM receiver has to follow; and
+from it), what V.90's PCM receiver has to follow. A modem's own echo
+from its line's hybrid is the modem's to add (netsim has the samples in
+blocks): `DSP_TEST_ECHO=<dB>:<ms>[a|c]` puts in what an open modem at
+9600 Hz receives what it sent <ms> before, <dB> down, through a high
+pass at 300 Hz and a low pass at 3400 Hz (`a` or `c`: the answerer's or
+the caller's only); and
 `NET_ECHO=<dB>:<ms>` the echo of a hybrid at its line (in its own sample
 clock: what it receives comes back with what it sends; from the line,
 before its codec would clip it). The delay has to be more than the

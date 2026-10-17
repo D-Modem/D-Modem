@@ -329,7 +329,7 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*INFO0d u-law"
 	      ".*V.90 upstream 3429 baud.*Sd-bar.*Jd: rates 3fffff.*Jd'"
 	      ".*DIL: pad 0.0 dB.*robbed none.*phase 3 done.*CPt: Ucodes"
-	      ".*CP: D 42 .*Ri-bar.*TRN2d: 0 of 2040 symbols wrong.*MP'"
+	      ".*Ri-bar.*TRN2d: 0 of 2040 symbols wrong.*CP: D 42 .*MP'"
 	      ".*Ed at frame.*B1d: 0 bit errors in 48 frames of 42 bits"
 	      ".*B1d in, 56000 bit/s downstream.*no data mode yet",
 	      "EXPECT_B=(?s)V.90 with us as the digital modem.*INFO1a: V.90, "
@@ -378,6 +378,25 @@ std::vector<Call> calls()
 	      "EXPECT_A=V.90 connect 5[0-9]+/",
 	      "EXPECT_B=(?s)timing -(99.[5-9]|100.[0-4])[0-9]* ppm.*"
 	      "robbed none.*B1d: 0 bit errors in 48 frames of 4[0-2] bits" });
+	/* the analogue modem's own echo from its line's hybrid
+	   (DSP_TEST_ECHO, on its side only): the echo canceller trains on
+	   S, PP, TRN and Ja (the digital modem silent), by least squares
+	   at the end, and takes it from the PCM receiver's line; CP is
+	   designed on TRN2d's noise, our SCR and its echo going out */
+	add("open", "open_v90a_echo", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "DSP_TEST_ECHO=-10:1c", "DSP_V90A=1",
+	      "EXPECT_FAIL=1",
+	      "EXPECT_A=(?s)echo canceller: least squares [4-9][0-9].[0-9] "
+	      "dB.*echo canceller took [4-9][0-9].[0-9] dB away[^:].*"
+	      "B1d: 0 bit errors in 48 frames of 4[0-2] bits",
+	      "EXPECT_B=V.90 connect 5[0-9]+/" });
+	add("open", "open_v90a_echo_answers", "open8", "open",
+	    "ATX3;AT+MS=90",
+	    { "NET=8000:9600:alaw", "DSP_G711=alaw", "DSP_TEST_ECHO=-6:0.4a",
+	      "NET_PPM=50", "NET_PHASE=0.4", "DSP_V90A=1", "EXPECT_FAIL=1",
+	      "EXPECT_A=V.90 connect [0-9]+/",
+	      "EXPECT_B=(?s)echo canceller took [3-9][0-9].[0-9] dB away[^:].*"
+	      "B1d: 0 bit errors in 48 frames" });
 	add("open", "open_v90a_dil_pad", "open", "open8", "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_PAD=3", "DSP_V90A=1",
 	      "EXPECT_FAIL=1", "EXPECT_A=(?s)DIL: pad 3.0 dB.*robbed none.*"

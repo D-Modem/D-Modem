@@ -990,18 +990,21 @@ int v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
 	return 0;
 }
 
-/* see v90a.h */
+/* see v90a.h: after TRN2d, by each interval's gain it found */
 void V90Rx::levels(float lv[6][128]) const
 {
 	int j, u;
 	for (j = 0; j < 6; j++)
-		for (u = 0; u < 128; u++)
+		for (u = 0; u < 128; u++) {
 			if (dil_on)
 				lv[j][u] = dil_usable[j][u] &&
 					dil_level[j][u] > 0 ?
 					dil_level[j][u] : 0;
 			else
 				lv[j][u] = (float)lin[u];
+			if (ev_trn2)
+				lv[j][u] *= t_gain[j];
+		}
 }
 
 /* see v90a.h: UINFO's spread in each frame interval after TRN1d's
@@ -1024,12 +1027,11 @@ float V90Rx::noise() const
 }
 
 /* see v90a.h: Ri next */
-int V90Rx::phase4(const V90Cp &cpt, const V90Cp &cp)
+int V90Rx::phase4(const V90Cp &cpt)
 {
 	int u;
 	levels(lv4);
-	if (con_trn.init(cpt, cpt.drn + 8, lv4) ||
-	    con_data.init(cp, cp.drn + 20, lv4))
+	if (con_trn.init(cpt, cpt.drn + 8, lv4))
 		return -1;
 	for (u = 0; u < 128; u++)
 		ref_lin[u] = u + 1;
@@ -1038,6 +1040,12 @@ int V90Rx::phase4(const V90Cp &cpt, const V90Cp &cp)
 	stage = RI;
 	ri_run = 0;
 	return 0;
+}
+
+/* see v90a.h */
+int V90Rx::data_cp(const V90Cp &cp)
+{
+	return con_data.init(cp, cp.drn + 20, lv4);
 }
 
 /* the equaliser a step towards e (NLMS) for symbol kk */
@@ -1167,6 +1175,14 @@ void V90Rx::frame()
 			trn_sym++;
 			tg = out[j] > 0 ? lv4[j][u] : -lv4[j][u];
 		}
+		/* TRN2d's second half: each interval's gain against the
+		   DIL's levels */
+		if (known && frames >= 170) {
+			t2_yr[j] += (double)fy[j] * tg;
+			t2_rr[j] += (double)tg * tg;
+			t2_yy[j] += (double)fy[j] * fy[j];
+			t2_n++;
+		}
 		adapt(k - 5 + j, tg - fy[j]);
 		timing(k - 5 + j, fy[j], tg);
 		fe_sum += (double)(tg - fy[j]) * (tg - fy[j]);
@@ -1199,11 +1215,35 @@ void V90Rx::frame()
 		frames++;
 		return;
 	}
-	if (known && frames == 339)
-		DSP_DBG("v90a: TRN2d: %ld of %ld symbols wrong, mse %.6f, "
+	if (known && frames == 339) {
+		/* the DIL's levels come out a little high or low in some
+		   intervals (its sign pattern repeats with the segment, so
+		   what the equaliser leaves of the neighbours adds the same
+		   each time); TRN2d's random symbols show by how much: its
+		   levels, the CP's and the decoder's, by each interval's
+		   gain, the noise what is left about them */
+		double rest = 0;
+		int l, u;
+		for (j = 0; j < 6; j++) {
+			double g = t2_rr[j] > 0 ? t2_yr[j] / t2_rr[j] : 1;
+			rest += t2_yy[j] - t2_yr[j] * g;
+			t_gain[j] = (float)g;
+			for (u = 0; u < 128; u++)
+				lv4[j][u] *= (float)g;
+			for (l = 0; l < con_trn.M[j]; l++)
+				con_trn.lev[j][l] *= (float)g;
+		}
+		trn2_noise = (float)sqrt(rest > 0 && t2_n ? rest / t2_n : 0);
+		ev_trn2 = 1;
+		DSP_DBG("v90a: TRN2d: %ld of %ld symbols wrong, noise %.2f, "
+			"interval gains %.4f %.4f %.4f %.4f %.4f %.4f, "
 			"timing %+.1f ppm\n", trn_sym_err, trn_sym,
-			fe_sum / fe_n / ((double)level * level), ppm());
-	if (frames == 339) {
+			trn2_noise, t_gain[0], t_gain[1], t_gain[2], t_gain[3],
+			t_gain[4], t_gain[5], ppm());
+	}
+	/* (TRN2d's noise from its second half: the equaliser and the
+	   timing settle in the first after the DIL) */
+	if (frames == 169 || frames == 339) {
 		fe_sum = 0;
 		fe_n = 0;
 	}

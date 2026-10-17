@@ -201,6 +201,7 @@ enum v34_state {
 	P3V_S3,         /* S, S-bar: enough of it */
 	P3V_SBAR3,
 	P4V_CPT,        /* CPt until Ri-bar */
+	P4V_SCR,        /* SCR while TRN2d shows the noise */
 	P4V_CP,         /* CP until MP */
 	P4V_CPACK,      /* CP' until MP' or Ed */
 	P4V_E,          /* E, then ones until B1d is in */
@@ -330,13 +331,70 @@ struct V34Echo {
 	float pw_est;           /* the echo taken away */
 	float pw_near, pw_far;  /* that of the near, the far part */
 	long dt;                /* samples frozen for the remote's signal */
+	/* ls: the near part solved by least squares at the end of the
+	   training (V.90's analogue modem: its PCM receiver wants more of
+	   the echo away than NLMS takes in the time) on what it stored of
+	   it: our samples (EC_NEAR_LEN - 1 before its first too), the line */
+	int ls;
+	float *ls_tx, *ls_rx;
+	long ls_n;
 
 	void init();
 	void search();
 	float run(float tx, float rx);
+	/* the least squares solution in place of NLMS's when it leaves
+	   less: the dB it takes away, or 0 (none stored, or a far part) */
+	float ls_solve();
+	void ls_free();         /* what was stored */
 };
 
+#define EC_LS_MAX       (2 * 9600)      /* samples stored, at most */
+
 #define V34_FIFO        8
+
+/* DSP_TEST_ECHO=<dB>:<ms>[a|c] (tests): the echo of what the modem sends
+   in what it receives, as a 2-wire line's hybrid gives it back on a
+   9600 Hz line: <ms> late, <dB> down, through a high pass at 300 Hz (the
+   line transformer) and a low pass at 3400 Hz */
+struct TestEcho {
+	enum { MAX = 1024 };
+	float g;
+	int d, pos;
+	float buf[MAX];
+	float hx, hy, ly;
+
+	void init(const char *e, int srate)
+	{
+		float db = 0, ms = 0;
+		memset(this, 0, sizeof(*this));
+		if (!e)
+			return;
+		sscanf(e, "%f:%f", &db, &ms);
+		g = powf(10, db / 20);
+		d = (int)(ms * srate / 1000);
+		if (d < 1)
+			d = 1;
+		if (d >= MAX)
+			d = MAX - 1;
+	}
+	/* the echo in the next sample received */
+	float echo()
+	{
+		const float a = 0.82f;          /* exp(-2 pi 300 / 9600) */
+		const float b = 0.63f;          /* 1 - exp(-2 pi 1500 / 9600) */
+		float x = buf[(pos - d) & (MAX - 1)];
+		hy = a * (hy + x - hx);
+		hx = x;
+		ly += b * (hy - ly);
+		return g * ly;
+	}
+	/* the sample sent */
+	void push(float y)
+	{
+		buf[pos & (MAX - 1)] = y;
+		pos++;
+	}
+};
 
 /* modem-on-hold (9.10/V.92): the remote's MH sequences and our answers
    to them, our own request (MHreq, then MHfrr or MHcda) */
@@ -584,6 +642,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	V90Rx v90rx;    /* the analogue modem's PCM receiver */
 	V90Dil v90a_dil;        /* the DIL our Ja asks for */
 	V90Cp v90a_cpt, v90a_cp;        /* the constellations we ask for */
+	TestEcho test_echo;     /* DSP_TEST_ECHO */
 	int v92;                /* offer V.92 as the digital modem */
 	int v92_on;             /* both INFO0 said V.92 */
 	int short2;             /* and both asked for short phase 2 */
@@ -660,6 +719,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void v90a_choose();
 	void v90a_start();
 	int v90a_phase4();
+	int v90a_cp_design();
+	double v90a_limit, v90a_cpt_pw;	/* Table 15's, CPt's power */
 	int primary_start();
 	int v90_start();
 	void v90_make_mp(int ack);
@@ -2087,6 +2148,97 @@ void V34Echo::init()
 	memset(this, 0, sizeof(*this));
 }
 
+/* see V34Echo */
+void V34Echo::ls_free()
+{
+	free(ls_tx);
+	free(ls_rx);
+	ls_tx = ls_rx = nullptr;
+}
+
+/* see V34Echo: the normal equations of the near part over the n stored
+   samples, its matrix's rows each the one before moved on a sample (the
+   window's first in, its last out), solved by Cholesky */
+float V34Echo::ls_solve()
+{
+	const int L = EC_NEAR_LEN, T = EC_NEAR_LEN - 1;
+	double *R, *ch, p[EC_NEAR_LEN], w[EC_NEAR_LEN], z[EC_NEAR_LEN];
+	double ryy = 0, rest, tr = 0, lam;
+	const float *t = ls_tx, *y = ls_rx;
+	long n, N = ls_n;
+	int i, j, m;
+	float gain = 0;
+
+	if (!ls_tx || !ls_rx || N < 4 * L || far_on)
+		goto out;
+	R = static_cast<double *>(calloc((size_t)L * L, sizeof(double)));
+	ch = static_cast<double *>(calloc((size_t)L * L, sizeof(double)));
+	if (!R || !ch) {
+		free(R);
+		free(ch);
+		goto out;
+	}
+	/* t[T + n] is our sample with the line's y[n] */
+	for (j = 0; j < L; j++) {
+		double r = 0, q = 0;
+		for (n = 0; n < N; n++) {
+			r += (double)t[T + n] * t[T + n - j];
+			q += (double)y[n] * t[T + n - j];
+		}
+		R[j] = r;
+		p[j] = q;
+	}
+	for (n = 0; n < N; n++)
+		ryy += (double)y[n] * y[n];
+	for (i = 0; i < L - 1; i++)
+		for (j = i; j < L - 1; j++)
+			R[(i + 1) * L + j + 1] = R[i * L + j] +
+				(double)t[T - 1 - i] * t[T - 1 - j] -
+				(double)t[T + N - 1 - i] * t[T + N - 1 - j];
+	for (i = 0; i < L; i++)
+		tr += R[i * L + i];
+	/* a little on the diagonal: our signal leaves the band's edges
+	   empty */
+	lam = 1e-7 * tr / L + 1e-6;
+	for (i = 0; i < L; i++)
+		for (j = 0; j <= i; j++) {
+			double v = j < i ? R[j * L + i] : R[i * L + i] + lam;
+			for (m = 0; m < j; m++)
+				v -= ch[i * L + m] * ch[j * L + m];
+			if (i == j)
+				ch[i * L + i] = sqrt(v > 1e-12 ? v : 1e-12);
+			else
+				ch[i * L + j] = v / ch[j * L + j];
+		}
+	for (i = 0; i < L; i++) {
+		double v = p[i];
+		for (m = 0; m < i; m++)
+			v -= ch[i * L + m] * z[m];
+		z[i] = v / ch[i * L + i];
+	}
+	for (i = L - 1; i >= 0; i--) {
+		double v = z[i];
+		for (m = i + 1; m < L; m++)
+			v -= ch[m * L + i] * w[m];
+		w[i] = v / ch[i * L + i];
+	}
+	rest = ryy;
+	for (i = 0; i < L; i++)
+		rest -= w[i] * p[i];
+	free(R);
+	free(ch);
+	gain = (float)(10 * log10((ryy + 1) / (rest > 0 ? rest + 1 : 1)));
+	/* in place of NLMS's when it does better */
+	if (gain > 10 * log10f((pw_rx + 1) / (pw_err + 1))) {
+		for (i = 0; i < L; i++)
+			wn[i] = (float)w[i];
+		pw_err = pw_rx * powf(10, -gain / 10);
+	}
+out:
+	ls_free();
+	return gain;
+}
+
 /* qsort()'s order of floats: ascending */
 static int cmp_float(const void *a, const void *b)
 {
@@ -2200,6 +2352,23 @@ float V34Echo::run(float tx, float rx)
 				sqrtf(es), sqrtf(pw_err));
 		return err;
 	}
+	/* stored for ls_solve() while it trains */
+	if (ls && mu > 0) {
+		if (!ls_tx && !ls_rx && !ls_n) {
+			ls_tx = static_cast<float *>(malloc((EC_LS_MAX +
+					EC_NEAR_LEN) * sizeof(float)));
+			ls_rx = static_cast<float *>(malloc(EC_LS_MAX *
+							   sizeof(float)));
+			if (ls_tx)
+				for (i = 0; i < EC_NEAR_LEN - 1; i++)
+					ls_tx[i] = hist[(pos - (EC_NEAR_LEN -
+							 1) + i) & mask];
+		}
+		if (ls_tx && ls_rx && ls_n < EC_LS_MAX) {
+			ls_tx[EC_NEAR_LEN - 1 + ls_n] = tx;
+			ls_rx[ls_n++] = rx;
+		}
+	}
 	/* normalized by the energy in the taps; not on our own silence */
 	if (mu > 0 && en > 1e4f * (EC_NEAR_LEN + EC_FAR_LEN)) {
 		g = mu * err / en;
@@ -2241,11 +2410,20 @@ void V34Pump::ec_schedule()
 		/* V.90: Sd to Jd, the analogue modem is silent after Ja */
 		state == P3D_SD || state == P3D_JD ||
 		/* V.92 PCM upstream: the same, until Su */
-		(state == V92_RUN && v92u.ec_train());
+		(state == V92_RUN && v92u.ec_train()) ||
+		/* V.90's analogue modem: S to Ja, until the digital
+		   modem's Sd */
+		(v90a_rx && (state == P3V_S || state == P3V_SBAR ||
+			     state == P3V_PP || state == P3V_TRN ||
+			     (state == P3V_JA &&
+			      v90rx.stage == V90Rx::WAIT_SD)));
 	int training;
 
 	if (ours && !e->on) {
 		e->on = 1;
+		e->ls = v90a_rx;
+		e->ls_free();
+		e->ls_n = 0;
 		e->n = e->since = e->filled = 0;
 		e->far_on = 0;
 		e->judged = e->bypass = e->trained = 0;
@@ -2256,7 +2434,7 @@ void V34Pump::ec_schedule()
 	if (ours)
 		e->since++;
 	/* the answerer sends its J until it has heard the caller's S */
-	training = ours && (!caller ||
+	training = ours && (!caller || v90a_rx ||
 		e->since > rtd + ms2samples(150, srate));
 	if (training) {
 		e->n++;
@@ -2284,7 +2462,13 @@ void V34Pump::ec_schedule()
 		   the canceller would only add noise */
 		if (!e->judged) {
 			float erle = 10 * log10f((e->pw_rx + 1) /
-						 (e->pw_err + 1));
+						 (e->pw_err + 1)), g_ls;
+			if (e->ls && (g_ls = e->ls_solve()) != 0) {
+				DSP_DBG("v34: echo canceller: least squares "
+					"%.1f dB, NLMS %.1f dB\n", g_ls, erle);
+				if (g_ls > erle)
+					erle = g_ls;
+			}
 			e->judged = 1;
 			/* V.90: the receiver's error so far had our echo
 			   in it; the precoder our MP asks for is to be found
@@ -2380,7 +2564,10 @@ void V34Pump::pump_rx_sample(float x)
 	}
 	if (v90a_rx) {
 		/* the digital modem's PCM (V90Rx takes the line at its
-		   9600 Hz) */
+		   9600 Hz), our echo taken away */
+		ec_schedule();
+		if (!ec.bypass)
+			x = ec.run(last_tx, x);
 		v90rx.line(x);
 		return;
 	}
@@ -2614,28 +2801,40 @@ int V34Pump::v90a_phase4()
 		3020, 2852, 2692, 2540 };
 	float lv[6][128];
 	int m = rinfo0.max_power;
-	double limit, pw;
 	V90Con c;
 
-	limit = lim[m < 0 ? 0 : m > 31 ? 31 : m];
+	v90a_limit = lim[m < 0 ? 0 : m > 31 ? 31 : m];
 	v90rx.levels(lv);
-	if (v90a_design_cpt(&v90a_cpt, alaw, v90rx.lin, lv, limit)) {
+	if (v90a_design_cpt(&v90a_cpt, alaw, v90rx.lin, lv, v90a_limit) ||
+	    v90rx.phase4(v90a_cpt)) {
 		DSP_DBG("v34: V.90: no CPt constellations\n");
 		return -1;
 	}
 	c.init(v90a_cpt, v90a_cpt.drn + 8, lv);
-	pw = c.power(v90rx.lin);
-	if (v90a_design_cp(&v90a_cp, alaw, v90rx.lin, lv, v90rx.noise(),
-			   limit, pw, v90rx.jd.rate_mask) ||
-	    v90rx.phase4(v90a_cpt, v90a_cp)) {
-		DSP_DBG("v34: V.90: no CP constellations (noise %.1f)\n",
-			v90rx.noise());
-		return -1;
-	}
+	v90a_cpt_pw = c.power(v90rx.lin);
 	ptx.nbits = v90a_cpt.build(ptx.bits);
 	ptx.scr = 0;
 	ptx.idx = 0;
 	tx_next(P4V_CPT, V34_TX_CP);
+	return 0;
+}
+
+/* CP's constellations (8.5.2/V.90), once TRN2d has shown the noise
+   with our own signal going out: its echo, what the canceller leaves
+   of it, is noise to the data mode as well (phase 3's measure had us
+   silent); -1 when there are none */
+int V34Pump::v90a_cp_design()
+{
+	float lv[6][128], nz = v90rx.noise();
+	if (v90rx.trn2_noise > nz)
+		nz = v90rx.trn2_noise;
+	v90rx.levels(lv);
+	if (v90a_design_cp(&v90a_cp, alaw, v90rx.lin, lv, nz, v90a_limit,
+			   v90a_cpt_pw, v90rx.jd.rate_mask) ||
+	    v90rx.data_cp(v90a_cp)) {
+		DSP_DBG("v34: V.90: no CP constellations (noise %.1f)\n", nz);
+		return -1;
+	}
 	return 0;
 }
 
@@ -4029,10 +4228,12 @@ int V34Pump::handshake()
 	   CP' once MP' or Ed is in; B1d on CP's constellations.  The
 	   timeouts end the call (a retrain, 9.5.2.1/V.90, is to come) */
 	case P4V_CPT:
+		/* SCR (ones, as CP is sent: a frame of 2 bits) after the
+		   CPt going out */
 		if (v90rx.ev_ribar) {
-			v90a_cp.ack = 0;
-			ptx.cp_next_n = v90a_cp.build(ptx.cp_next);
-			set_state(P4V_CP);
+			memset(ptx.cp_next, 1, 2);
+			ptx.cp_next_n = 2;
+			set_state(P4V_SCR);
 			break;
 		}
 		if (c >= ms2samples(5000, srate)) {
@@ -4041,8 +4242,25 @@ int V34Pump::handshake()
 			return DPSTAT_ERROR;
 		}
 		break;
+	case P4V_SCR:
+		/* CP once TRN2d's known part is in (SCR for at most
+		   4000 ms, 9.4.2.2/V.90) */
+		if (v90rx.ev_trn2) {
+			if (v90a_cp_design())
+				return DPSTAT_ERROR;
+			v90a_cp.ack = 0;
+			ptx.cp_next_n = v90a_cp.build(ptx.cp_next);
+			set_state(P4V_CP);
+			break;
+		}
+		if (c >= ms2samples(3500, srate)) {
+			DSP_DBG("v34: V.90: no TRN2d\n");
+			return DPSTAT_ERROR;
+		}
+		break;
 	case P4V_CP:
-		if (v90rx.ev_mp) {
+		/* CP' after a CP has gone out whole */
+		if (v90rx.ev_mp && !ptx.cp_next_n && ptx.cp_frames >= 1) {
 			v90a_cp.ack = 1;
 			ptx.cp_next_n = v90a_cp.build(ptx.cp_next);
 			set_state(P4V_CPACK);
@@ -4658,7 +4876,12 @@ int V34Pump::process(void *in, void *out, int cnt)
 			continue;
 		}
 		if (line_rate == V34_SRATE) {
-			r = sample(src[i], &y, NULL);
+			float x = src[i];
+			if (test_echo.g)
+				x += test_echo.echo();
+			r = sample(x, &y, NULL);
+			if (test_echo.g)
+				test_echo.push(y);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 				return r;
 			if (r != DPSTAT_OK)
@@ -4802,6 +5025,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   lost to the remote (phase 2's recovery, 11.2.2/V.34), only the
 	   answerer's or the caller's (anything else: either) */
 	lose_info0 = pump_test_env("DSP_V34_LOSE_INFO0", caller_) != NULL;
+	test_echo.init(pump_test_env("DSP_TEST_ECHO", caller_), V34_SRATE);
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
 	   renegotiation to N * 2400 bit/s (what we receive) */
 	if (const char *e = pump_test_env("DSP_V34_RENEG", caller_)) {
@@ -4835,6 +5059,7 @@ void V34Pump::cleanup()
 		rt->pcm = 0;
 	if (prx_on)
 		prx.release();
+	ec.ls_free();
 }
 
 /* DP_V8 is what the modem core starts for the default (fastest) mode;

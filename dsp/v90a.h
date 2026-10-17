@@ -260,6 +260,12 @@ struct V90Rx {
 
 	int ev_ri;              /* Ri there */
 	int ev_ribar;           /* its reversal: TRN2d follows */
+	int ev_trn2;            /* TRN2d's known frames in: trn2_noise, the
+				   rms error on them */
+	float trn2_noise;
+	float t_gain[6];        /* each interval's gain on the DIL's levels */
+	double t2_yr[6], t2_rr[6], t2_yy[6];
+	long t2_n;
 	int ev_mp;              /* MP frames in */
 	int ev_mpack;           /* MP' */
 	int ev_ed;
@@ -271,13 +277,16 @@ struct V90Rx {
 	void dil_set(const V90Dil &d);
 	void dil_analyse();
 	/* the expected level of each Ucode in each frame interval (0: not
-	   to be used): the DIL's, or without one lin[]; the noise (rms) on
-	   the data mode decisions */
+	   to be used): the DIL's, or without one lin[] (after TRN2d by the
+	   gain it showed in each interval); the noise (rms) on the data
+	   mode decisions */
 	void levels(float lv[6][128]) const;
 	float noise() const;
-	/* phase 4 on CPt's constellations (TRN2d, MP, Ed) and CP's (B1d,
-	   data): -1 when they are not usable */
-	int phase4(const V90Cp &cpt, const V90Cp &cp);
+	/* phase 4 on CPt's constellations (TRN2d, MP, Ed): -1 when they
+	   are not usable */
+	int phase4(const V90Cp &cpt);
+	/* CP's for B1d and data (before Ed): -1 when not usable */
+	int data_cp(const V90Cp &cp);
 	/* one sample of the line at 9600 Hz */
 	void line(float v);
 	/* one sample at 16 000 Hz */
