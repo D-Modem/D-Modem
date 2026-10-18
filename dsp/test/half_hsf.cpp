@@ -274,16 +274,27 @@ unsigned long long hsfmc97ich41_(u32 us)
  *    memory, strings, atomics, locks: one thread
  */
 
+/* n bytes zeroed (one at least) */
 void *OS(OsAllocate)(unsigned n) { return calloc(1, n ? n : 1); }
+/* p freed */
 void OS(OsFree)(void *p) { free(p); }
+/* memcpy */
 void *OS(OsMemCpy)(void *d, void *s, size_t n) { return memcpy(d, s, n); }
+/* memmove */
 void *OS(OsMemMove)(void *d, void *s, size_t n) { return memmove(d, s, n); }
+/* memset */
 void *OS(OsMemSet)(void *d, int c, size_t n) { return memset(d, c, n); }
+/* strcmp */
 int OS(OsStrCmp)(char *a, char *b) { return strcmp(a, b); }
+/* strcpy */
 void *OS(OsStrCpy)(char *d, char *s) { return strcpy(d, s); }
+/* strncpy */
 char *OS(OsStrnCpy)(char *d, char *s, size_t n) { return strncpy(d, s, n); }
+/* strlen */
 size_t OS(OsStrLen)(char *s) { return strlen(s); }
+/* toupper */
 int OS(OsToupper)(int c) { return toupper(c); }
+/* isdigit */
 int OS(OsIsDigit)(int c) { return isdigit(c); }
 /* vsprintf */
 int OS(OsSprintf)(char *b, char *f, ...)
@@ -305,6 +316,7 @@ void OS(OsDebugPrintf)(const char *f, ...)
 	vfprintf(stderr, f, ap);
 	va_end(ap);
 }
+/* the modem's errors: with HSF_DEBUG */
 void OS(OsErrorPrintf)(const char *f, ...)
 {
 	va_list ap;
@@ -315,11 +327,14 @@ void OS(OsErrorPrintf)(const char *f, ...)
 	vfprintf(stderr, f, ap);
 	va_end(ap);
 }
+/* a breakpoint: logged only */
 void OS(OsDebugBreakpoint)(const char *m) { LOG("breakpoint: %s\n", m); }
 
 /* atomics: plain; the new value */
 int OS(OsAtomicAdd)(int a, int *p) { return *p += a; }
+/* *p one up; the new value */
 int OS(OsAtomicIncrement)(int *p) { return ++*p; }
+/* *p one down; the new value */
 int OS(OsAtomicDecrement)(int *p) { return --*p; }
 /* *p = nw if it is old (pointers of 4 bytes only); whether it was */
 int OS(OsAtomicCompareAndSwapEx)(void *old, void *nw, void **p, int size)
@@ -337,31 +352,49 @@ int OS(OsAtomicCompareAndSwapEx)(void *old, void *nw, void **p, int size)
 static int dummy_handle;
 /* critical sections and locks: one handle, never contended */
 void *OS(OsCriticalSectionCreate)(void) { return &dummy_handle; }
+/* nothing to free */
 void OS(OsCriticalSectionDestroy)(void *h) { (void)h; }
+/* OsCriticalSectionAcquire: nothing to wait for */
 void OS(OsCriticalSectionAcquire)(void *h) { (void)h; }
+/* OsCriticalSectionRelease: nothing */
 void OS(OsCriticalSectionRelease)(void *h) { (void)h; }
+/* a lock: the one handle */
 void *OS(OsLockCreate)(void) { return &dummy_handle; }
+/* nothing to free */
 void OS(OsLockDestroy)(void *h) { (void)h; }
+/* OsLockLock: nothing to wait for */
 void OS(OsLockLock)(void *h) { (void)h; }
+/* OsLockUnlock: nothing */
 void OS(OsLockUnlock)(void *h) { (void)h; }
+/* OsLockTry: always gets the lock */
 int OS(OsLockTry)(void *h) { (void)h; return 1; }
+/* OsLockTryUnlock: nothing */
 void OS(OsLockTryUnlock)(void *h) { (void)h; }
 /* one thread; the TSC at 1000 MHz; floating point free to use; the
    module's calls without regparm */
 void *OS(OsGetCurrentThread)(void) { return (void *)1; }
+/* the TSC's rate, MHz: 1000 */
 u32 OS(OsGetProcessorFreq)(void) { return 1000; }      /* MHz: the TSC's */
 int OS(OsFloatPrefix)(void) { return 0; }
+/* the end of floating point use: 1, nothing to restore */
 int OS(OsFloatSuffix)(int id) { (void)id; return 1; }
+/* 0: the module's calls without regparm */
 int OS(OsKernelUsesRegParm)(void) { return 0; }
 
 /* the data call progress monitor (a daemon playing the line) and the
    diagnostics: none */
 void *OS(DcpCreate)(void *dev) { (void)dev; return NULL; }
+/* nothing to free */
 void OS(DcpDestroy)(void *h) { (void)h; }
+/* the monitor's samples: dropped */
 void OS(DcpCallback)(void *h, void *p, u32 n) { (void)h; (void)p; (void)n; }
+/* the monitor's volume: ignored */
 void OS(DcpSetVolume)(void *h, int v) { (void)h; (void)v; }
+/* no diagnostics manager: NULL */
 void *OS(OsDiagMgrOpen)(void *sys, ...) { (void)sys; return NULL; }
+/* nothing to close; 0 */
 int OS(OsDiagMgrClose)(void *h) { (void)h; return 0; }
+/* diagnostics: dropped; 0 */
 int OS(OsDiagMgrNotify)(void *h, ...) { (void)h; return 0; }
 
 }
@@ -446,6 +479,7 @@ void OS(OsSetTimer)(void *h)
 }
 /* disarmed; its time for the next OsSetTimer */
 void OS(OsCancelTimer)(void *h) { ((Hsf::Timer *)h)->armed = false; }
+/* its time ms, for the next OsSetTimer */
 void OS(OsChangeTimerTimeOut)(void *h, u32 ms) { ((Hsf::Timer *)h)->ms = ms; }
 /* freed, or once its function returns if it is running */
 void OS(OsDestroyTimer)(void *h)
@@ -509,8 +543,11 @@ void OS(OsSleep)(u32 ms) { hsf.run_time(ms); }
 struct Event { bool flag; };
 /* an event: a flag */
 void *OS(OsEventCreate)(const char *name) { (void)name; return new Event(); }
+/* the event freed */
 void OS(OsEventDestroy)(void *h) { delete (Event *)h; }
+/* the event set; 0 */
 long OS(OsEventSet)(void *h) { ((Event *)h)->flag = true; return 0; }
+/* the event cleared; 0 */
 long OS(OsEventClear)(void *h) { ((Event *)h)->flag = false; return 0; }
 /* the event, waiting for it a ms of line time at a time, ms at most;
    0 set (and cleared), 1 timeout */
@@ -595,10 +632,15 @@ extern "C" {
 
 /* the configuration space of the one device */
 void OS(OsPciReadConfigb)(void *d, byte o, byte *v) { (void)d; *v = (byte)hsf.pci_read(o, 1); }
+/* *v the word at o */
 void OS(OsPciReadConfigw)(void *d, byte o, word *v) { (void)d; *v = (word)hsf.pci_read(o, 2); }
+/* *v the dword at o */
 void OS(OsPciReadConfigdw)(void *d, byte o, u32 *v) { (void)d; *v = hsf.pci_read(o, 4); }
+/* the byte at o = v */
 void OS(OsPciWriteConfigb)(void *d, byte o, byte v) { (void)d; hsf.pci_write(o, v, 1); }
+/* the word at o = v */
 void OS(OsPciWriteConfigw)(void *d, byte o, word v) { (void)d; hsf.pci_write(o, v, 2); }
+/* the dword at o = v */
 void OS(OsPciWriteConfigdw)(void *d, byte o, u32 v) { (void)d; hsf.pci_write(o, v, 4); }
 
 struct pci_res { u32 addr, len; };
@@ -633,10 +675,15 @@ void OS(OsUnhookInterrupt)(void *dev, void *devid) { (void)dev; (void)devid; hsf
 
 /* the module's port I/O */
 byte OS(OsIoPortReadb)(unsigned p) { return (byte)hsf.io_in(p, 1); }
+/* a word in from port p */
 word OS(OsIoPortReadw)(unsigned p) { return (word)hsf.io_in(p, 2); }
+/* a dword in from port p */
 u32 OS(OsIoPortReadl)(unsigned p) { return hsf.io_in(p, 4); }
+/* byte v out to port p */
 void OS(OsIoPortWriteb)(unsigned p, byte v) { hsf.io_out(p, v, 1); }
+/* word v out to port p */
 void OS(OsIoPortWritew)(unsigned p, word v) { hsf.io_out(p, v, 2); }
+/* dword v out to port p */
 void OS(OsIoPortWritel)(unsigned p, u32 v) { hsf.io_out(p, v, 4); }
 
 }
@@ -956,6 +1003,7 @@ Nvm::CtyEnt &Nvm::cty_get(bool region, const std::string &idx)
 	return ents_.back();
 }
 
+/* see Nvm */
 int Nvm::load(const char *file)
 {
 	std::ifstream f(file);
@@ -1054,6 +1102,7 @@ int Nvm::load(const char *file)
 	return 0;
 }
 
+/* see Nvm */
 void Nvm::cty()
 {
 	/* (the last found first: of two values for one path, the first
@@ -1206,6 +1255,7 @@ int Nvm::read(int code, void *buf, u32 *size) const
 	return 7;
 }
 
+/* see Nvm: kept in memory; 0 */
 int Nvm::write(int code, const void *buf, u32 size)
 {
 	dyn_[code].assign((const byte *)buf, (const byte *)buf + size);
@@ -1216,6 +1266,7 @@ extern "C" {
 
 /* the NVM: no handle of its own */
 void *OS(NVM_Open)(unsigned long dev) { return (void *)dev; }
+/* nothing to close; 0 */
 int OS(NVM_Close)(void *h) { (void)h; return 0; }
 /* value code into buf, *size bytes (Nvm::read) */
 int OS(NVM_Read)(void *h, int code, void *buf, u32 *size)
@@ -1420,6 +1471,7 @@ int Hsf::start()
 	return 0;
 }
 
+/* the HSF as a test peer (HalfModem::run) */
 int main()
 {
 	return hsf.run();

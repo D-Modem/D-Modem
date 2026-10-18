@@ -165,6 +165,7 @@ void clm_bg(void);
 
 class Intel : public HalfModem, public CodecLine<Intel>, public I537ep<Intel> {
 public:
+	/* the modem, its environment's prefix INTEL */
 	Intel() : HalfModem("intel", "INTEL") {}
 
 	/* a task of its own stack: clm_bg (RTS_Task), the precise
@@ -245,6 +246,8 @@ template <class F> static void fpu_clean(F &&f)
  *    the tasks
  */
 
+/* a task's start: its function run, then it is done (back to who
+   ran it) */
 static void task_main(void)
 {
 	Intel::Task *t = intel.cur_task;
@@ -297,6 +300,8 @@ void Intel::yield()
 /* rts.c's RTS_Task_Schedule: clm_bg run, or resumed where it yielded */
 static void rts_task_fn() { clm_bg(); }
 
+/* rts.c's RTS_Task_Schedule: clm_bg started, or resumed where it
+   yielded, its time again the timeout's (while the RTS is enabled) */
 void Intel::rts_schedule()
 {
 	if (!rts_enabled)
@@ -322,6 +327,7 @@ static unsigned the_irq = 5;
 volatile unsigned char line_io_enabled = 0;
 int acu_init_ok = 0;
 
+/* the core's messages: with INTEL_DEBUG=2; the characters printed */
 static int debug_printf(const char *fmt, ...)
 {
 	va_list ap;
@@ -335,6 +341,7 @@ static int debug_printf(const char *fmt, ...)
 }
 int (*Debug_Printf)(const char *, ...) = debug_printf;
 
+/* the kernel debug messages: with INTEL_DEBUG=2 */
 void KdPrintf(const char *fmt, ...)
 {
 	va_list ap;
@@ -346,24 +353,39 @@ void KdPrintf(const char *fmt, ...)
 	va_end(ap);
 }
 
+/* n bytes zeroed (one at least) */
 void *linux_kmalloc(unsigned n) { return calloc(1, n ? n : 1); }
+/* p freed */
 void linux_kfree(void *p) { free(p); }
+/* memset */
 void *linux_memset(void *s, int c, unsigned long n) { return memset(s, c, n); }
+/* memcpy */
 void *linux_memcpy(void *s, const void *c, unsigned long n)
 {
 	return memcpy(s, c, n);
 }
+/* udelay: none (the core waits on its own timers) */
 void linux_udelay(unsigned long) {}
+/* kdelay: none */
 void kdelay(short) {}
+/* kdisable_irq: nothing (one thread) */
 void kdisable_irq(unsigned) {}
+/* kenable_irq: nothing */
 void kenable_irq(unsigned) {}
+/* up_exec_reg_sem: nothing (one thread) */
 void up_exec_reg_sem(void) {}
+/* down_exec_reg_sem: nothing */
 void down_exec_reg_sem(void) {}
+/* the current process's name */
 char *kCurrentComm(void) { static char c[] = "half_intel"; return c; }
+/* wake_up_sound: nothing; 0 */
 int wake_up_sound(void) { return 0; }
+/* release_resources: nothing */
 void release_resources(void *, int) {}
 
+/* the cycle counter: the line's time at 1 GHz */
 long long linux_rdtscll(void) { return (long long)intel.line_us() * 1000; }
+/* the time of day: the line's */
 void linux_gettimeofday(struct timeval *tv)
 {
 	unsigned long long us = intel.line_us();
@@ -379,15 +401,21 @@ void linux_schedule(void)
 
 /* the persistent settings (hamregistry): none, each request times out */
 void wake_up_interruptible_persistWriteQ(void) {}
+/* wake_up_interruptible_persistReadQ: nothing */
 void wake_up_interruptible_persistReadQ(void) {}
+/* interruptible_sleep_on_persistReadQ: back at once */
 void interruptible_sleep_on_persistReadQ(void) {}
+/* interruptible_sleep_on_timeout_persistWriteQ: times out at once */
 void interruptible_sleep_on_timeout_persistWriteQ(int *, unsigned long) {}
+/* interruptible_sleep_on_timeout_persistReadQ: times out at once */
 void interruptible_sleep_on_timeout_persistReadQ(int *, unsigned long) {}
+/* ham_proc_shutdown_wait: back at once */
 void ham_proc_shutdown_wait(void) {}
 
 /* the locks (locks.c): one thread */
 #define LOCK(n) void linux_MT_AcquireLock_##n(void) {} \
 	void linux_MT_ReleaseLock_##n(void) {}
+/* each lock's acquire and release: nothing */
 LOCK(LAPMemptied_que) LOCK(LAPMrx_que) LOCK(LAPMtx_que)
 LOCK(acu_rx_buffer) LOCK(acu_tx_buffer) LOCK(dce_rx_buffer)
 LOCK(dce_tx_buffer) LOCK(dte_rx_buffer) LOCK(dte_tx_buffer)
@@ -396,6 +424,7 @@ void linux_MT_ReleaseLock_transmit_que(void) {}
 /* the core's resources (locks.c's semaphores, taken with down_trylock):
    *got 1 if it was free; the RTS task can yield holding one */
 static bool held[64];
+/* resource r taken: *got 1, or 0 if it was held already */
 void linux_RSAGetExclusive(int r, byte *got)
 {
 	*got = 0;
@@ -404,6 +433,7 @@ void linux_RSAGetExclusive(int r, byte *got)
 	held[r] = true;
 	*got = 1;
 }
+/* resource r free again */
 void linux_RSAFreeExclusive(int r)
 {
 	if (r >= 0 && r < 64)
@@ -433,17 +463,21 @@ int afe_irq(void)
 	intel.dsp_pending = true;
 	return 0;
 }
+/* the controller's DPC, at once: the DCE's transmit on, the comm
+   RAM's callback */
 void kScheduleDPC(void)
 {
 	dce_tx_enabled = 1;
 	if (CRAM_CallBack)
 		CRAM_CallBack();
 }
+/* the DSP's interrupt: the modem task run */
 void InterruptDSP(void *)
 {
 	intel.st_mt++;
 	ModemTask(pDspResources);
 }
+/* the precise dialer, started at the line's next ms */
 void schedule_precdialer(void)
 {
 	intel.prec_pending = true;
@@ -453,8 +487,11 @@ void schedule_precdialer(void)
  *    the RTS and the tasker (rts.c, task.c)
  */
 
+/* the RTS's ticks (ms) */
 ulong RTS_Get_Ticks(void) { return intel.rts_ticks; }
+/* the RTS task's timeout t ms */
 void RTS_Set_Timeout(ulong t) { intel.rts_timeout = t; }
+/* the RTS on: no ticks yet, the task due in 10 ms */
 static void RTS_Enable(void)
 {
 	intel.rts_enabled = true;
@@ -462,6 +499,7 @@ static void RTS_Enable(void)
 	intel.rts_timeout = intel.rts_timer = 10;
 }
 
+/* the task's time slice msecs; the one before */
 ulong RSATaskSetMinRunTime(byte msecs, byte)
 {
 	ulong old = intel.slice;
@@ -500,8 +538,11 @@ static byte tx_fifo[FIFO], rx_fifo[FIFO];
 static unsigned tx_put, tx_get, tx_count, rx_put, rx_get, rx_count;
 static bool ext_int_pending;
 
+/* the controller's external interrupt (a line changed), for
+   clm_rx_int */
 void clm_external_int(void) { ext_int_pending = true; }
 
+/* line l of the UART v (logged when it changes, CTS aside) */
 static void line_set(int l, byte v)
 {
 	if (uart.line[l] != v && intel.dbg && l != L_CTS)
@@ -511,24 +552,38 @@ static void line_set(int l, byte v)
 	uart.line[l] = v;
 }
 
+/* DSR on */
 void UART_dsr_on(void) { line_set(L_DSR, 1); }
+/* DSR off */
 void UART_dsr_off(void) { line_set(L_DSR, 0); }
+/* CTS on */
 void UART_cts_on(void) { line_set(L_CTS, 1); }
+/* CTS off */
 void UART_cts_off(void) { line_set(L_CTS, 0); }
+/* DCD on */
 void UART_rlsd_on(void) { line_set(L_RLSD, 1); }
+/* DCD off */
 void UART_rlsd_off(void) { line_set(L_RLSD, 0); }
+/* RING on */
 void UART_ring_on(void) { line_set(L_RING, 1); }
+/* RING off */
 void UART_ring_off(void) { line_set(L_RING, 0); }
+/* the DTE's DTR on */
 static void UART_dtr_on(void) { line_set(L_DTR, 1); }
+/* the DTE's RTS on (an external interrupt if it was off) */
 static void UART_rts_on(void)
 {
 	if (!uart.line[L_RTS])
 		clm_external_int();
 	line_set(L_RTS, 1);
 }
+/* line l's state, 0 if there is no such line */
 byte UART_line_status(byte l) { return l < 8 ? uart.line[l] : 0; }
+/* the modem's break to the DTE on */
 void UART_start_dce_break(void) { uart.line[L_MODEM_BREAK] = 1; }
+/* the room in the queue to the DTE */
 unsigned UART_dte_to_free(void) { return FIFO - rx_count; }
+/* c on the queue to the DTE; 1 if it is full, else 0 */
 int UART_dte_to_char(byte c)
 {
 	if (rx_count >= FIFO)
@@ -538,20 +593,29 @@ int UART_dte_to_char(byte c)
 	rx_count++;
 	return 0;
 }
+/* the modem's break off, a NUL to the DTE for it (room permitting) */
 void UART_stop_dce_break(void)
 {
 	uart.line[L_MODEM_BREAK] = 0;
 	if (UART_dte_to_free())
 		UART_dte_to_char(0);
 }
+/* the DTE's rate */
 ulong UART_get_baud(void) { return uart.baud; }
+/* the DTE's data bits */
 unsigned UART_get_data_bits(void) { return uart.data_bits; }
+/* the DTE's parity */
 byte UART_get_parity(void) { return uart.parity; }
+/* the DTE's characters queued to the modem */
 unsigned UART_dce_to_num(void) { return tx_count; }
+/* the queue to the modem emptied */
 void UART_dce_flush(void) { tx_put = tx_get = tx_count = 0; }
+/* the queue to the DTE emptied */
 void UART_dte_flush(void) { rx_put = rx_get = rx_count = 0; }
+/* the UART's timer: nothing */
 void UART_timer(uword) {}
 
+/* the next character to the modem, 0 if none */
 static byte UART_dce_from_char(void)
 {
 	byte c = 0;
@@ -563,6 +627,7 @@ static byte UART_dce_from_char(void)
 	return c;
 }
 
+/* the UART at 115200 8N1, its queues empty, its lines off */
 static void UART_init(void)
 {
 	uart.data_bits = 8;
@@ -612,6 +677,8 @@ void clm_rx_int(void)
 	in = false;
 }
 
+/* the controller's output to the DTE (its tx "interrupt"): the
+   AT parser's or the data's */
 static void clm_tx_int(void)
 {
 	if (acu_enabled)
@@ -661,6 +728,8 @@ static void update_min_run_time(void)
 	}
 }
 
+/* the controller's background (RTS_Task): its init the first time,
+   then the AT parser, the DTE's input and output, the task's slice */
 void clm_bg(void)
 {
 	if (!acu_loop) {
@@ -674,6 +743,7 @@ void clm_bg(void)
 	update_min_run_time();
 }
 
+/* the EEPROM's defaults, the maker and model strings */
 static void clm_configure(void)
 {
 	init_eeprom_data();
@@ -681,6 +751,8 @@ static void clm_configure(void)
 	strcpy(mdm_model_name, "Intel(R) 537");
 }
 
+/* clmmain.c's init: the country (USA) and the EEPROM's settings, the
+   RTS, the UART and the queues, DCE flow control, DTR and RTS on */
 static void clm_initialize(void)
 {
 	Init_WWH(0xB5);                 /* USA */
@@ -713,6 +785,7 @@ static void clm_initialize(void)
  *    IPP: its CPU a Pentium 4's, its cycles on the line's clock
  */
 
+/* IPP's CPU type: 6 (INTEL_CPU for another) */
 int ippCoreGetCpuType(void)
 {
 	static int t = -1;
@@ -722,6 +795,7 @@ int ippCoreGetCpuType(void)
 	}
 	return t;
 }
+/* the cycle counter: the line's time at 1 GHz */
 unsigned long long ipp_get_pentium_counter(void)
 {
 	return intel.line_us() * 1000;
@@ -888,6 +962,7 @@ int Intel::start()
 	return 0;
 }
 
+/* the 537EP as a test peer (HalfModem::run) */
 int main()
 {
 	return intel.run();
