@@ -3,9 +3,10 @@
  * Copyright (C) 2026 Neo-Desktop
  *
  *    main_windows.cpp - dmodemd on Windows: the modem core on a SIP line
- *                       (sip_modem.h), its DTE a COM port (--com) or TCP
+ *                       (sip_modem.h), its DTE a COM port (--com), a
+ *                       named pipe (--pipe, --pipe-connect) or TCP
  *                       connections (--tcp, the default 127.0.0.1:2323);
- *                       windows_dte.h has both
+ *                       windows_dte.h has them
  *
  *    What main.cpp does for POSIX's ptys, root and realtime scheduling
  *    has no place here: the process runs as the user who starts it, at
@@ -83,8 +84,8 @@ int main(int argc, char *argv[])
 		ERR("-a: ALSA is Linux's\n");
 		return 255;
 	}
-	if (opt.com && opt.tcp) {
-		ERR("--com or --tcp, not both\n");
+	if (!!opt.com + !!opt.pipe + !!opt.pipe_connect + !!opt.tcp > 1) {
+		ERR("one DTE: --com, --pipe, --pipe-connect or --tcp\n");
 		return 255;
 	}
 	dcore::log_open(name);
@@ -102,6 +103,13 @@ int main(int argc, char *argv[])
 			return 255;
 		where = c->where();
 		dte = std::move(c);
+	} else if (opt.pipe || opt.pipe_connect) {
+		std::unique_ptr<dmd::PipeDte> pp(new dmd::PipeDte);
+		if (!pp->open(opt.pipe ? opt.pipe : opt.pipe_connect,
+			      !opt.pipe))
+			return 255;
+		where = "pipe " + pp->where();
+		dte = std::move(pp);
 	} else {
 		std::unique_ptr<dmd::TcpDte> t(new dmd::TcpDte);
 		if (!t->open(opt.tcp ? opt.tcp : "127.0.0.1:2323"))

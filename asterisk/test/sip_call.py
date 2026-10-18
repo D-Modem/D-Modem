@@ -31,7 +31,9 @@
 # without a 200 OK; 7006 (404) ERROR; ATH then data mode again, where a
 # data call to 7002 is BUSY too.  A Windows dmodemd (<dmodemd> a .exe)
 # runs under Wine, its DTE a TCP connection (--tcp) instead of the pty;
-# WIN_COM=1: a COM port (--com COM9), Wine's COM9 a pty pair's far end.
+# WIN_COM=1: a COM port (--com COM9), Wine's COM9 a pty pair's far end;
+# WIN_PIPE=made (--pipe) or connect (--pipe-connect): a named pipe,
+# which pipe_test.exe's bridge (beside dmodemd.exe) gives us on TCP.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 dmodemd, number = sys.argv[1:3]
@@ -98,6 +100,10 @@ if windows and os.environ.get("WIN_COM"):
         os.unlink(link)
     os.symlink(os.ttyname(slave), link)
     dte_args = ["--com", "COM9"]
+elif windows and os.environ.get("WIN_PIPE"):
+    pipe_mode = "--pipe-connect" if os.environ["WIN_PIPE"] == "connect" else "--pipe"
+    pipe_name = r"\\.\pipe\dmodem-sip-test"
+    dte_args = [pipe_mode, pipe_name]
 else:
     dte_args = ["--tcp", "127.0.0.1:2399"]
 argv = ["stdbuf", "-oL", "-eL"] + (["wine", dmodemd] + dte_args if windows else [dmodemd])
@@ -119,6 +125,18 @@ while time.time() - t0 < (60 if windows else 10):
         tcp = (m.group(1).decode(), int(m.group(2))); break
     if com is not None and re.search(rb"DTE is COM9", l):
         com_up = True; break
+    if re.search(rb"DTE is pipe ", l):
+        # the bridge: the pipe to us on TCP 2398
+        bridge = subprocess.Popen(["wine", os.path.join(os.path.dirname(dmodemd), "pipe_test.exe"),
+                                   "bridge", pipe_mode, pipe_name, "2398"],
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for b in bridge.stdout:
+            log.write(b"pipe_test: " + b); log.flush()
+            if b"listening" in b:
+                tcp = ("127.0.0.1", 2398); break
+        threading.Thread(target=lambda: [log.write(b"pipe_test: " + b) for b in bridge.stdout],
+                         daemon=True).start()
+        break
 # the rest of dmodemd's output into the log
 def copy_log():
     for l in p.stdout:

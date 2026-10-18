@@ -31,6 +31,10 @@ struct Options {
 	   pair such as com0com's), or TCP connections on [address:]port
 	   (--tcp) */
 	const char *com = nullptr;
+	/* or a named pipe dmodemd makes (--pipe) or another program's
+	   (--pipe-connect: a VM's COM port on the host) */
+	const char *pipe = nullptr;
+	const char *pipe_connect = nullptr;
 	const char *tcp = nullptr;
 };
 

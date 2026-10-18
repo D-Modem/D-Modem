@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    windows_dte.cpp - dmodemd's DTE on Windows: a TCP connection or a
- *                      COM port (windows_dte.h)
+ *    windows_dte.cpp - dmodemd's DTE on Windows: a TCP connection, a
+ *                      COM port or a named pipe (windows_dte.h)
  *
  */
 
@@ -27,7 +27,8 @@ namespace dmd {
 
 namespace {
 
-/* the COM port's thread to the main loop: ESC, then what it means */
+/* a reader thread to the main loop: ESC, then what it means (DSR_OFF:
+   the DTE gone, DSR_ON: there) */
 const unsigned char ESC = 0xff, DSR_OFF = 0x00, DSR_ON = 0x01;
 
 /* the COM port's reader: how long it sleeps when the port has nothing
@@ -35,6 +36,10 @@ const unsigned char ESC = 0xff, DSR_OFF = 0x00, DSR_ON = 0x01;
    overlapped read that waits for the first character), and how long a
    write waits for the other end, in ms */
 const DWORD READ_POLL_MS = 5, WRITE_WAIT_MS = 200;
+
+/* a named pipe's buffers each way, and how often --pipe-connect tries
+   a pipe that isn't there (yet), in ms */
+const DWORD PIPE_BUFFER = 64 * 1024, CONNECT_RETRY_MS = 500;
 
 /* n octets to the stream socket fd, all of them (it waits) */
 bool send_all(int fd, const char *p, int n)
@@ -209,24 +214,140 @@ int TcpDte::write(const char *buf, int n)
 }
 
 /*
+ *    a DTE read by a thread of its own
+ */
+
+ThreadDte::~ThreadDte()
+{
+	stop();
+	for (int fd : pair_)
+		if (fd >= 0)
+			fd_close(fd);
+	if (quit_ev_)
+		CloseHandle((HANDLE)quit_ev_);
+}
+
+bool ThreadDte::start()
+{
+	quit_ev_ = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+	if (!quit_ev_ || stream_pair(pair_) < 0) {
+		ERR("%s: no socket pair\n", name_.c_str());
+		return false;
+	}
+	set_nonblocking(pair_[0]);
+	thread_ = std::thread([this] { reader(); });
+	return true;
+}
+
+void ThreadDte::stop()
+{
+	if (!thread_.joinable())
+		return;
+	quit_ = true;
+	SetEvent((HANDLE)quit_ev_);
+	wake();
+	thread_.join();
+}
+
+bool ThreadDte::put(const unsigned char *p, int n)
+{
+	char out[2 * 512];
+	int k = 0;
+
+	for (int i = 0; i < n; i++) {
+		out[k++] = (char)p[i];
+		if (p[i] == ESC)
+			out[k++] = (char)ESC;
+		if (k >= (int)sizeof(out) - 1 || i == n - 1) {
+			if (!send_all(pair_[1], out, k))
+				return false;
+			k = 0;
+		}
+	}
+	return true;
+}
+
+bool ThreadDte::put_state(bool up)
+{
+	const char out[2] = { (char)ESC, (char)(up ? DSR_ON : DSR_OFF) };
+	return send_all(pair_[1], out, 2);
+}
+
+bool ThreadDte::nap(unsigned ms)
+{
+	return WaitForSingleObject((HANDLE)quit_ev_, ms) == WAIT_TIMEOUT &&
+		!quit_;
+}
+
+/* the carrier to the DTE's control lines as it changes; the modem's
+   room */
+bool ThreadDte::want_read(const dcore::Modem &m)
+{
+	bool on = m.link_state() == dcore::LinkState::Online;
+	if (on != carrier_) {
+		carrier_ = on;
+		carrier(on);
+	}
+	return m.dte_space() > 0;
+}
+
+/* the DTE's characters into the modem; its going hangs it up */
+int ThreadDte::serve(dcore::Modem &m)
+{
+	unsigned char raw[4096];
+	char buf[sizeof(raw)];
+	int room = m.dte_space(), n, k = 0;
+	bool gone = false;
+
+	if (room <= 0)
+		return 0;
+	if (room > (int)sizeof(raw))
+		room = sizeof(raw);
+	n = fd_read(pair_[0], raw, room);
+	if (n < 0)
+		return errno == EAGAIN || errno == EINTR ? 0 : -1;
+	if (n == 0) {
+		ERR("%s: the reader has stopped\n", name_.c_str());
+		return 1;
+	}
+	for (int i = 0; i < n; i++) {
+		unsigned char c = raw[i];
+		if (!esc_) {
+			if (c == ESC)
+				esc_ = true;
+			else
+				buf[k++] = (char)c;
+			continue;
+		}
+		esc_ = false;
+		if (c == ESC) {
+			buf[k++] = (char)c;
+		} else if (c == DSR_OFF) {
+			DBG("%s: the DTE has gone\n", name_.c_str());
+			gone = true;
+		} else if (c == DSR_ON) {
+			DBG("%s: the DTE is there\n", name_.c_str());
+		}
+	}
+	if (k > 0)
+		m.dte_input(buf, k);
+	if (gone && m.link_state() != dcore::LinkState::Idle)
+		m.hangup();
+	return 0;
+}
+
+/*
  *    COM port
  */
 
 ComDte::~ComDte()
 {
-	quit_ = true;
-	if (port_)
-		CancelIoEx((HANDLE)port_, nullptr);
-	if (thread_.joinable())
-		thread_.join();
+	stop();
 	if (port_) {
 		EscapeCommFunction((HANDLE)port_, CLRDTR);
 		EscapeCommFunction((HANDLE)port_, CLRRTS);
 		CloseHandle((HANDLE)port_);
 	}
-	for (int fd : pair_)
-		if (fd >= 0)
-			fd_close(fd);
 }
 
 /* see windows_dte.h */
@@ -281,28 +402,20 @@ bool ComDte::open(const char *port)
 	to.WriteTotalTimeoutConstant = WRITE_WAIT_MS;
 	SetCommTimeouts(h, &to);
 	PurgeComm(h, PURGE_RXCLEAR | PURGE_TXCLEAR);
-	if (stream_pair(pair_) < 0) {
-		ERR("--com %s: no socket pair\n", port);
-		return false;
-	}
-	set_nonblocking(pair_[0]);
-	thread_ = std::thread([this] { reader(); });
-	return true;
+	return start();
 }
 
-/* the reader thread: the port's characters (ESC doubled) and its DSR's
-   changes into the pair, until the port closes */
+/* the reader thread: the port's characters and its DSR's changes, until
+   the port closes */
 void ComDte::reader()
 {
 	OVERLAPPED ov = {};
 	unsigned char buf[512];
-	char out[2 * sizeof(buf) + 2];
 	int dsr = -1;
 
 	ov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
 	while (!quit_) {
 		DWORD got = 0, st = 0;
-		int n = 0;
 
 		ResetEvent(ov.hEvent);
 		if (!ReadFile((HANDLE)port_, buf, sizeof(buf), &got, &ov)) {
@@ -316,87 +429,27 @@ void ComDte::reader()
 				got = 0;
 			}
 		}
-		for (DWORD i = 0; i < got; i++) {
-			out[n++] = (char)buf[i];
-			if (buf[i] == ESC)
-				out[n++] = (char)ESC;
-		}
+		if (got > 0 && !put(buf, (int)got))
+			break;
 		if (GetCommModemStatus((HANDLE)port_, &st)) {
 			int now = (st & MS_DSR_ON) ? 1 : 0;
 			if (now != dsr) {
-				out[n++] = (char)ESC;
-				out[n++] = (char)(now ? DSR_ON : DSR_OFF);
+				if (!put_state(now))
+					break;
 				dsr = now;
 			}
 		}
-		if (n > 0 && !send_all(pair_[1], out, n))
+		if (got == 0 && !nap(READ_POLL_MS))
 			break;
-		if (got == 0)
-			Sleep(READ_POLL_MS);
 	}
 	CloseHandle(ov.hEvent);
 }
 
 /* our RTS on while a call is up (com0com gives it to the other end as
-   DCD when set up to); the modem's room */
-bool ComDte::want_read(const dcore::Modem &m)
+   DCD when set up to) */
+void ComDte::carrier(bool on)
 {
-	bool carrier = m.link_state() == dcore::LinkState::Online;
-	if (carrier != rts_)
-		set_rts(carrier);
-	return m.dte_space() > 0;
-}
-
-void ComDte::set_rts(bool on)
-{
-	rts_ = on;
 	EscapeCommFunction((HANDLE)port_, on ? SETRTS : CLRRTS);
-}
-
-/* the port's characters into the modem; the other end's DTR dropped
-   hangs it up */
-int ComDte::serve(dcore::Modem &m)
-{
-	unsigned char raw[4096];
-	char buf[sizeof(raw)];
-	int room = m.dte_space(), n, k = 0;
-	bool dropped = false;
-
-	if (room <= 0)
-		return 0;
-	if (room > (int)sizeof(raw))
-		room = sizeof(raw);
-	n = fd_read(pair_[0], raw, room);
-	if (n < 0)
-		return errno == EAGAIN || errno == EINTR ? 0 : -1;
-	if (n == 0) {
-		ERR("%s: the port's reader has stopped\n", name_.c_str());
-		return 1;
-	}
-	for (int i = 0; i < n; i++) {
-		unsigned char c = raw[i];
-		if (!esc_) {
-			if (c == ESC)
-				esc_ = true;
-			else
-				buf[k++] = (char)c;
-			continue;
-		}
-		esc_ = false;
-		if (c == ESC) {
-			buf[k++] = (char)c;
-		} else if (c == DSR_OFF) {
-			DBG("%s: the DTE dropped DTR\n", name_.c_str());
-			dropped = true;
-		} else if (c == DSR_ON) {
-			DBG("%s: the DTE raised DTR\n", name_.c_str());
-		}
-	}
-	if (k > 0)
-		m.dte_input(buf, k);
-	if (dropped && m.link_state() != dcore::LinkState::Idle)
-		m.hangup();
-	return 0;
 }
 
 /* to the port: what it took within WRITE_WAIT_MS */
@@ -413,6 +466,196 @@ int ComDte::write(const char *buf, int n)
 			GetOverlappedResult((HANDLE)port_, &ov, &done, TRUE);
 		else
 			done = 0;
+	}
+	CloseHandle(ov.hEvent);
+	return (int)done;
+}
+
+/*
+ *    named pipe
+ */
+
+PipeDte::~PipeDte()
+{
+	stop();
+	if (pipe_)
+		CloseHandle((HANDLE)pipe_);
+}
+
+/* see windows_dte.h */
+bool PipeDte::open(const char *name, bool connect)
+{
+	std::string path = name;
+
+	if (path.compare(0, 2, "\\\\") != 0)
+		path = "\\\\.\\pipe\\" + path;
+	name_ = path;
+	connect_ = connect;
+	if (!connect) {
+		/* one instance, ours alone (FIRST_PIPE_INSTANCE: no other
+		   program has the name), for this machine's clients */
+		HANDLE h = CreateNamedPipeA(path.c_str(),
+			PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED |
+			FILE_FLAG_FIRST_PIPE_INSTANCE,
+			PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT |
+			PIPE_REJECT_REMOTE_CLIENTS,
+			1, PIPE_BUFFER, PIPE_BUFFER, 0, nullptr);
+		if (h == INVALID_HANDLE_VALUE) {
+			ERR("--pipe %s: can't make it (error %lu)\n",
+			    path.c_str(), (unsigned long)GetLastError());
+			return false;
+		}
+		pipe_ = h;
+	}
+	return start();
+}
+
+/* (the waits end on quit_ev_; this ends a pending call at once) */
+void PipeDte::wake()
+{
+	std::lock_guard<std::mutex> lk(mu_);
+	if (pipe_)
+		CancelIoEx((HANDLE)pipe_, nullptr);
+}
+
+bool PipeDte::finish(void *h, void *ovp, unsigned long *got)
+{
+	OVERLAPPED *ov = (OVERLAPPED *)ovp;
+	HANDLE w[2] = { ov->hEvent, (HANDLE)quit_ev_ };
+	DWORD n = 0;
+	BOOL ok;
+
+	if (WaitForMultipleObjects(2, w, FALSE, INFINITE) != WAIT_OBJECT_0)
+		CancelIoEx((HANDLE)h, ov);
+	ok = GetOverlappedResult((HANDLE)h, ov, &n, TRUE);
+	if (got)
+		*got = n;
+	/* (a message-mode pipe's longer message: the rest comes next) */
+	return (ok || GetLastError() == ERROR_MORE_DATA) && !quit_;
+}
+
+/* the reader thread: a client at a time (made: connected to our pipe;
+   connecting: the pipe opened when it is there), its characters until
+   it goes */
+void PipeDte::reader()
+{
+	OVERLAPPED ov = {};
+	bool waiting = false;
+
+	ov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+	while (!quit_) {
+		HANDLE h;
+
+		if (connect_) {
+			h = CreateFileA(name_.c_str(),
+					GENERIC_READ | GENERIC_WRITE, 0,
+					nullptr, OPEN_EXISTING,
+					FILE_FLAG_OVERLAPPED, nullptr);
+			if (h == INVALID_HANDLE_VALUE) {
+				if (!waiting)
+					DBG("%s: waiting for the pipe\n",
+					    name_.c_str());
+				waiting = true;
+				if (!nap(CONNECT_RETRY_MS))
+					break;
+				continue;
+			}
+			waiting = false;
+			std::lock_guard<std::mutex> lk(mu_);
+			pipe_ = h;
+		} else {
+			h = (HANDLE)pipe_;
+			ResetEvent(ov.hEvent);
+			if (!ConnectNamedPipe(h, &ov)) {
+				DWORD e = GetLastError();
+				if (e == ERROR_IO_PENDING) {
+					if (!finish(h, &ov, nullptr))
+						break;
+				} else if (e != ERROR_PIPE_CONNECTED) {
+					ERR("%s: no client (error %lu)\n",
+					    name_.c_str(), (unsigned long)e);
+					if (!nap(CONNECT_RETRY_MS))
+						break;
+					continue;
+				}
+			}
+		}
+		{
+			std::lock_guard<std::mutex> lk(mu_);
+			up_ = true;
+		}
+		if (!put_state(true))
+			break;
+		serve_client(h);
+		{
+			std::lock_guard<std::mutex> lk(mu_);
+			up_ = false;
+			if (connect_) {
+				CloseHandle(h);
+				pipe_ = nullptr;
+			} else {
+				DisconnectNamedPipe(h);
+			}
+		}
+		if (quit_ || !put_state(false))
+			break;
+	}
+	CloseHandle(ov.hEvent);
+}
+
+void PipeDte::serve_client(void *h)
+{
+	OVERLAPPED ov = {};
+	unsigned char buf[512];
+
+	ov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+	while (!quit_) {
+		DWORD got = 0;
+
+		ResetEvent(ov.hEvent);
+		if (!ReadFile((HANDLE)h, buf, sizeof(buf), &got, &ov)) {
+			DWORD e = GetLastError();
+			if (e == ERROR_IO_PENDING) {
+				unsigned long n = 0;
+				if (!finish(h, &ov, &n))
+					break;
+				got = n;
+			} else if (e != ERROR_MORE_DATA) {
+				break;          /* (broken: the client went) */
+			}
+		}
+		/* (a zero-length read: a zero-length message, not an end) */
+		if (got > 0 && !put(buf, (int)got))
+			break;
+	}
+	CloseHandle(ov.hEvent);
+}
+
+/* to the client: what it took within WRITE_WAIT_MS; without one the
+   modem's characters go nowhere */
+int PipeDte::write(const char *buf, int n)
+{
+	std::lock_guard<std::mutex> lk(mu_);
+	OVERLAPPED ov = {};
+	DWORD done = 0;
+
+	if (n <= 0)
+		return 0;
+	if (!pipe_ || !up_)
+		return n;
+	ov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+	if (!WriteFile((HANDLE)pipe_, buf, (DWORD)n, &done, &ov)) {
+		if (GetLastError() == ERROR_IO_PENDING) {
+			if (WaitForSingleObject(ov.hEvent, WRITE_WAIT_MS) !=
+			    WAIT_OBJECT_0)
+				CancelIoEx((HANDLE)pipe_, &ov);
+			if (!GetOverlappedResult((HANDLE)pipe_, &ov, &done,
+						 TRUE) &&
+			    GetLastError() != ERROR_OPERATION_ABORTED)
+				done = (DWORD)n;        /* (gone: dropped) */
+		} else {
+			done = (DWORD)n;                /* (gone: dropped) */
+		}
 	}
 	CloseHandle(ov.hEvent);
 	return (int)done;

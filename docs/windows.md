@@ -1,6 +1,6 @@
 # D-Modem on Windows
 
-dmodemd builds for 64-bit Windows with MinGW-w64.  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  Linux's pty becomes one of two DTEs: a COM port or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
+dmodemd builds for 64-bit Windows with MinGW-w64.  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  Linux's pty becomes one of three DTEs: a COM port, a named pipe or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 
 The following are POSIX-only and are not built for Windows:
 - the Asterisk and FreeSWITCH modules
@@ -65,6 +65,32 @@ The program then uses COM6 as its modem.
 
 The COM port's path is tested under Wine, with a pty pair in place of com0com: `WIN_COM=1` in `asterisk/test/sip.sh` (below).  A pty has no modem control lines, so the DSR hang-up and the RTS carrier signal are not covered there.
 
+### Named pipe (`--pipe`, `--pipe-connect`)
+
+A named pipe is how virtual machines give a guest's COM port to a program on the host, so a guest OS (Windows 98's dial-up networking, a DOS BBS, Linux's pppd) can use dmodemd as its modem without com0com.  The name is `\\.\pipe\<name>`, or just `<name>`.  Which side makes the pipe depends on the VM:
+- `--pipe <name>`: dmodemd makes the pipe and the VM connects to it.
+  - Hyper-V: `Set-VMComPort -VMName <vm> -Number 1 -Path \\.\pipe\dmodem`
+  - VirtualBox: Serial Port, mode Host Pipe, path `\\.\pipe\dmodem`, with "Connect to existing pipe/socket" ticked
+  - VMware: "Use named pipe", with "This end is the client"
+- `--pipe-connect <name>`: the VM makes the pipe and dmodemd connects to it.
+  - QEMU: `-serial pipe:dmodem`
+  - VirtualBox: "Connect to existing pipe/socket" unticked
+  - VMware: "This end is the server"
+
+  dmodemd tries every 500 ms until the pipe is there, so the VM can start before or after it.
+
+One client is served at a time:
+- With `--pipe`, when the client goes (the VM stops, or the program closes the pipe), the modem hangs up and dmodemd waits for the next client.
+- With `--pipe-connect`, when the pipe goes, the modem hangs up and dmodemd waits for the pipe to come back.
+- With `--pipe`, the name is dmodemd's alone (`FILE_FLAG_FIRST_PIPE_INSTANCE`): if another program has it, dmodemd says so and stops.
+- The pipe takes local clients only.
+
+A pipe has no control lines, so the guest sees no DCD from the modem and can't hang up by dropping DTR.  It hangs up with `+++` and `ATH`.  If the guest's dial-up stack waits for DCD, set it to ignore DCD.  No real VM has been tried yet: the VM settings above are from their documentation.
+
+The tests cover both ways under Wine:
+- `pipe_test` (in `ctest -L quick`) runs dmodemd.exe with each option, talks AT through the pipe, and checks that a client can go and another be served, and that a taken name is refused.
+- `WIN_PIPE=made` or `WIN_PIPE=connect` in `asterisk/test/sip.sh` makes the test's calls over a pipe (below).
+
 ## Testing dmodemd under Wine
 
 `asterisk/test/sip.sh` makes calls between dmodemd and a private Asterisk.  Given a Windows build, it runs `dmodemd.exe` under Wine:
@@ -73,8 +99,9 @@ The COM port's path is tested under Wine, with a pty pair in place of com0com: `
     INCOMING=1 DMODEMD=... asterisk/test/sip.sh
     VOICE_DIAL=1 DMODEMD=... asterisk/test/sip.sh
     WIN_COM=1 DMODEMD=... asterisk/test/sip.sh
+    WIN_PIPE=made DMODEMD=... asterisk/test/sip.sh      (or WIN_PIPE=connect)
 
-The DTE is a TCP connection by default.  With `WIN_COM=1` it is Wine's COM9, linked to a pty pair whose other end the test holds.  Asterisk and app_dmodem come from the Linux build (`build/`), as for the Linux test.  The variants (outgoing V.91 at 62666, incoming, A-law, voice in and voice dial, and over the COM port) pass as on Linux.
+The DTE is a TCP connection by default.  With `WIN_COM=1` it is Wine's COM9, linked to a pty pair whose other end the test holds.  With `WIN_PIPE` it is a named pipe, which `pipe_test.exe bridge` (beside dmodemd.exe) passes to the test over TCP.  Asterisk and app_dmodem come from the Linux build (`build/`), as for the Linux test.  The variants (outgoing V.91 at 62666, incoming, A-law, voice in and voice dial, and over the COM port or a pipe either way) pass as on Linux.
 
 ## How it is done
 
@@ -85,7 +112,7 @@ The modem core and the DSP needed no changes beyond the build itself:
 The rest is dmodemd's front end (`dmodemd/portable.h`).  Windows' `select()` takes only sockets, so every descriptor of the main loop and the SIP thread is one:
 - `socketpair()` becomes a pair of connected loopback TCP sockets.
 - read, write and close become recv, send and closesocket.
-- The COM port's reader thread feeds such a pair; the port's DSR changes travel in-band, escaped.
+- The COM port's and the pipe's reader threads feed such a pair; the DTE's going and coming (DSR, the pipe's client) travel in-band, escaped (`ThreadDte` in `windows_dte.h`).
 
 Two Windows differences needed care:
 - A plain close behind data the peer hasn't read isn't seen there. The modem's hang-up closes its audio socket with a reset, so the SIP side ends a call that is still ringing.
