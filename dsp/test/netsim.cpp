@@ -34,14 +34,17 @@
  *    clock only at phase 0 and no ppm.
  *
  *    NET_RING=<country> (ring_tones.h's names: USA, UK, GERMANY, ...):
- *    the line rings as that country's does.  The modems say their hook
- *    on NET_HOOK_A and NET_HOOK_B (fds: '1' off hook, '0' on, as
- *    PipeModem's MODEM_HOOK_FD writes it); NET_RING_DELAY seconds (1)
- *    after A goes off hook (its dialling), B's line has the country's
- *    ring signal (its frequency, in the cadence of its ringing tone)
- *    while B is on hook, and A hears the ringing tone; B off hook
- *    answers, and the line is through.  Until then neither hears the
- *    other; A on hook (0.5 s: not a dial pulse) ends the call.
+ *    the call is put through as that country's exchange puts it.  The
+ *    modems say their hook on NET_HOOK_A and NET_HOOK_B (fds: '1' off
+ *    hook, '0' on, as PipeModem's MODEM_HOOK_FD writes it).  A off hook
+ *    hears the country's dial tone until its first digit (DTMF, or a
+ *    dial pulse: a break of under 0.5 s); NET_RING_DELAY seconds (2)
+ *    after its last digit (NET_DIAL_TIMEOUT, 4, of dial tone if it
+ *    dials none), B's line has the country's ring signal (its frequency,
+ *    in the cadence of its ringing tone) while B is on hook, and A hears
+ *    the ringing tone; B off hook answers, and the line is through.
+ *    Until then neither hears the other; A on hook for 0.5 s ends the
+ *    call.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -53,6 +56,9 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+#include <string>
+
 #include "codec_sim.h"
 #include "dsp.h"
 #include "g711.h"
@@ -664,23 +670,30 @@ struct Moh {
 	}
 };
 
-/* NET_RING=<country>, NET_HOOK_A, NET_HOOK_B, NET_RING_DELAY: the call
-   rung through as the country's line rings it (above) */
+/* NET_RING=<country>, NET_HOOK_A, NET_HOOK_B, NET_RING_DELAY,
+   NET_DIAL_TIMEOUT: the call put through as the country's exchange puts
+   it (above) */
 struct Ring {
 	const ring::Country *ring_c = nullptr;
 	int ring_fd[2] = { -1, -1 };    /* A's hook, B's */
 	bool ring_off[2] = {};          /* off hook */
-	enum { IDLE, DIALLING, RINGING, ANSWERED } ring_st = IDLE;
-	double ring_delay = 1;          /* s from A off hook to the ringing */
+	enum { IDLE, DIAL_TONE, DIALLING, RINGING, ANSWERED } ring_st = IDLE;
+	double ring_delay = 2;          /* s from the last digit to ringing */
+	double ring_timeout = 4;        /* s of dial tone with no digit */
 	double ring_now = 0;            /* s: A -> B's samples out */
 	double ring_at = 0;             /* the state's start */
+	double ring_digit_at = 0;       /* the last digit's (or pulse's) */
 	double ring_a_on = -1;          /* since when A is on hook (its
 					   dial pulses and flashes, shorter
 					   than 0.5 s, end no call) */
+	int ring_pulses = 0;            /* of the digit being pulsed */
+	std::string ring_number;        /* the digits dialled */
+	DtmfDetect ring_dtmf;           /* on A's samples */
 	long ring_n[2] = {};            /* samples out, each direction */
 
-	/* from the environment; false (said) if the country is none */
-	bool ring_init()
+	/* from the environment, A's rate ra; false (said) if the country
+	   is none */
+	bool ring_init(int ra)
 	{
 		const char *c = getenv("NET_RING");
 		if (!c)
@@ -700,36 +713,66 @@ struct Ring {
 			}
 		if (getenv("NET_RING_DELAY"))
 			ring_delay = atof(getenv("NET_RING_DELAY"));
-		char tone[64];
-		int n = snprintf(tone, sizeof(tone), "%d", ring_c->f1);
-		if (ring_c->f2)
-			snprintf(tone + n, sizeof(tone) - n, " + %d", ring_c->f2);
-		else if (ring_c->mod > 0)
-			snprintf(tone + n, sizeof(tone) - n, " x %g", ring_c->mod);
-		fprintf(stderr, "netsim: the line rings as in %s: its ringing "
-			"tone %s Hz, the ring signal %d Hz\n", ring_c->name,
-			tone, ring_c->ring_hz);
+		if (getenv("NET_DIAL_TIMEOUT"))
+			ring_timeout = atof(getenv("NET_DIAL_TIMEOUT"));
+		ring_dtmf.init(ra);
+		char r[64], d[64];
+		fprintf(stderr, "netsim: the line as in %s: dial tone %s, "
+			"ringing tone %s, ring signal %d Hz\n", ring_c->name,
+			tone_name(ring_c->dial, d, sizeof(d)),
+			tone_name(ring_c->ringing, r, sizeof(r)),
+			ring_c->ring_hz);
 		return true;
+	}
+	/* "425 Hz", "350 + 440 Hz", "400 x 25 Hz", "... in a cadence" */
+	static const char *tone_name(const ring::Tone &t, char *b, size_t n)
+	{
+		int k = snprintf(b, n, "%d", t.f1);
+		if (t.f2)
+			k += snprintf(b + k, n - k, " + %d", t.f2);
+		else if (t.mod > 0)
+			k += snprintf(b + k, n - k, " x %g", t.mod);
+		snprintf(b + k, n - k, " Hz%s", t.n ? " in a cadence" : "");
+		return b;
 	}
 	/* the state to s from now on */
 	void ring_to(int s)
 	{
-		static const char *const name[] = { "idle", "dialling",
-			"ringing", "answered" };
+		static const char *const name[] = { "idle", "dial tone",
+			"dialling", "ringing", "answered" };
 		if (s == ring_st)
 			return;
-		char after[64] = "";
-		if (s == ANSWERED && ring_st == RINGING)
-			snprintf(after, sizeof(after), " after %.1f s of ringing",
+		char what[96] = "";
+		if (s == RINGING)
+			snprintf(what, sizeof(what), " (dialled %s)",
+				 ring_number.empty() ? "nothing" :
+				 ring_number.c_str());
+		else if (s == ANSWERED && ring_st == RINGING)
+			snprintf(what, sizeof(what), " after %.1f s of ringing",
 				 ring_now - ring_at);
 		fprintf(stderr, "netsim: %.2f s: %s%s\n", ring_now, name[s],
-			after);
+			what);
+		if (s == IDLE || s == DIAL_TONE) {
+			ring_number.clear();
+			ring_pulses = 0;
+		}
 		ring_st = (decltype(ring_st))s;
 		ring_at = ring_now;
+	}
+	/* a digit (or a dial pulse) at ring_now: the dial tone over */
+	void ring_digit(char c)
+	{
+		if (ring_st != DIAL_TONE && ring_st != DIALLING)
+			return;
+		if (c)
+			ring_number += c;
+		ring_digit_at = ring_now;
+		ring_to(DIALLING);
 	}
 	/* the hooks' news, and the call's state at ring_now */
 	void ring_poll()
 	{
+		bool was = ring_off[0];
 		for (int k = 0; k < 2; k++) {
 			char b[64];
 			ssize_t n;
@@ -737,23 +780,48 @@ struct Ring {
 			       (n = read(ring_fd[k], b, sizeof(b))) > 0)
 				ring_off[k] = b[n - 1] == '1';
 		}
-		if (ring_off[0])
-			ring_a_on = -1;
-		else if (ring_a_on < 0)
+		/* A's breaks: under 0.5 s a dial pulse, a digit their count
+		   (10 for 0) once 0.3 s go by without one */
+		if (!ring_off[0] && was)
 			ring_a_on = ring_now;
-		if (ring_a_on >= 0 && ring_now - ring_a_on >= 0.5)
+		if (ring_off[0] && !was && ring_a_on >= 0) {
+			if (ring_now - ring_a_on < 0.5 &&
+			    (ring_st == DIAL_TONE || ring_st == DIALLING)) {
+				ring_pulses++;
+				ring_digit(0);
+			}
+			ring_a_on = -1;
+		}
+		if (ring_pulses && ring_off[0] &&
+		    ring_now - ring_digit_at >= 0.3) {
+			ring_number += (char)('0' + ring_pulses % 10);
+			ring_pulses = 0;
+		}
+		if (!ring_off[0] && ring_a_on < 0)
+			ring_a_on = ring_now;
+		if (!ring_off[0] && ring_now - ring_a_on >= 0.5)
 			ring_to(IDLE);
 		else if (ring_off[0] && ring_st == IDLE)
-			ring_to(DIALLING);
-		if (ring_st == DIALLING && ring_now - ring_at >= ring_delay)
+			ring_to(DIAL_TONE);
+		if ((ring_st == DIAL_TONE && ring_now - ring_at >= ring_timeout) ||
+		    (ring_st == DIALLING && !ring_pulses &&
+		     ring_now - ring_digit_at >= ring_delay))
 			ring_to(RINGING);
 		if (ring_st == RINGING && ring_off[1])
 			ring_to(ANSWERED);
 	}
-	/* a sample of the ringing tone, at t s of it */
-	short ring_tone(double t) const
+	/* A's samples in (before the network): its DTMF digits */
+	void ring_listen(const short *s, int n)
 	{
-		const ring::Country &c = *ring_c;
+		if (ring_st != DIAL_TONE && ring_st != DIALLING)
+			return;
+		for (int i = 0; i < n; i++)
+			if (ring_dtmf.sample(s[i]) == DtmfDetect::ON)
+				ring_digit(ring_dtmf.digit);
+	}
+	/* a sample of tone t, at t s of it, peak level a */
+	static short ring_tone(const ring::Tone &c, double t, double a)
+	{
 		if (!ring::on_at(c, t))
 			return 0;
 		double x = sin(2 * M_PI * c.f1 * t);
@@ -761,12 +829,12 @@ struct Ring {
 			x = (x + sin(2 * M_PI * c.f2 * t)) / 2;
 		if (c.mod > 0)
 			x *= 0.6 + 0.4 * sin(2 * M_PI * c.mod * t);
-		return (short)lrint(5000 * x);
+		return (short)lrint(a * x);
 	}
 	/* the ring signal at t s of it, on B's line on hook */
 	short ring_signal(double t) const
 	{
-		if (!ring::on_at(*ring_c, t))
+		if (!ring::on_at(ring_c->ringing, t))
 			return 0;
 		return (short)lrint(24000 * sin(2 * M_PI * ring_c->ring_hz * t));
 	}
@@ -785,9 +853,14 @@ struct Ring {
 			if (ring_st == ANSWERED)
 				continue;
 			double r = t - ring_at;
-			s[i] = ring_st != RINGING ? 0 :
-				a_out ? (ring_off[1] ? 0 : ring_signal(r)) :
-				ring_tone(r);
+			if (a_out)
+				s[i] = ring_st == RINGING && !ring_off[1] ?
+					ring_signal(r) : 0;
+			else
+				s[i] = ring_st == DIAL_TONE ?
+					ring_tone(ring_c->dial, r, 5000) :
+					ring_st == RINGING ?
+					ring_tone(ring_c->ringing, r, 5000) : 0;
 		}
 	}
 };
@@ -870,6 +943,8 @@ int Net::run(struct dir *d, int a_out, int a_in)
 	if (n <= 0)
 		return n == 0 || errno != EINTR ? -1 : 0;
 	n /= 2;
+	if (ring_c && a_out)
+		ring_listen(ibuf, n);
 	for (i = 0; i < n; i++) {
 		float t = (float)d->nin++ / d->rate_in;
 		if (sync_on) {
@@ -1028,7 +1103,7 @@ int main(int argc, char **argv)
 		signal(SIGUSR1, on_sync);
 	}
 	net.init(ra);
-	if (!net.ring_init())
+	if (!net.ring_init(ra))
 		return 1;
 	if (getenv("NET_CLOCK_FD")) {
 		void *m = mmap(NULL, sizeof(*line_clock), PROT_READ |

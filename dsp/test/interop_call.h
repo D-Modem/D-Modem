@@ -40,7 +40,8 @@ namespace interop {
  *   ANSWER_AFTER=<s>  modemB's ATA that long after modemA's ATD (as it
  *                     rings once A has dialed); 0: both at once
  *   HANGUP_WAIT=<s>   on hook between calls (2)
- *   NET_RING=<country> netsim rings modemB's line (with NET): the modems'
+ *   NET_RING=<country> netsim puts the call through (with NET: dial
+ *                     tone, modemA's digits, ringing): the modems'
  *                     hooks to it (MODEM_HOOK_FD=5), modemB in ATS0 for
  *                     RING_ANSWER=<n> rings (1), modemA's ATD alone, and
  *                     a RING from modemB before its CONNECT

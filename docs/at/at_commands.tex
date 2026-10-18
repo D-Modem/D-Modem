@@ -523,8 +523,10 @@ Results and dial tone, \cmd{X0} to \cmd{X4} (\sreg{56}; default 4):
 \midrule
 \cmd{X0} & without the rate & no wait for a dial tone \\
 \cmd{X1}, \cmd{X3} & with the rate & no wait for a dial tone \\
-\cmd{X2}, \cmd{X4} & with the rate & a dial tone of 1 s, NO DIALTONE if
-  none in \sreg{6} seconds (2 s at least) \\
+\cmd{X2}, \cmd{X4} & with the rate & a dial tone of 1 s (steady, or in a
+  cadence whose gaps are 1 s at most, as Italy's: its tone added up), NO
+  DIALTONE if none in \sreg{6} seconds (2 s at least; 2 s more while a
+  dial tone in a cadence is heard) \\
 \bottomrule
 \end{tabular}
 \end{center}

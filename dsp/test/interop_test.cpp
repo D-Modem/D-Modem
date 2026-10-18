@@ -1411,24 +1411,27 @@ std::vector<Call> calls()
 		add("hda", "hda_fax_" + s + "_open_sends", "open8", "hda",
 		    "ATX3")->fax = m;
 	}
-	/* --- netsim rings the line (NET_RING): two open modems, B
-	   answering at its first RING (ATS0=1), in each country of
-	   ring_tones.cpp (its ring signal's frequency and its ringing
-	   tone's cadence); and at the second ring, two calls, V.34.  A
-	   ringing tone all of whose ons and offs are 0.7 s or less (0.4 s
-	   on and 0.2 off) has a busy tone's cadence: its callers dial in
-	   X1, which takes no notice of a busy tone */
+	/* --- netsim puts the call through (NET_RING): two open modems,
+	   in each country of ring_tones.cpp A waiting for its dial tone
+	   (X4) and dialling 123 in DTMF, the ringing (the ring signal's
+	   frequency, the ringing tone's cadence) after it, B answering at
+	   its first RING (ATS0=1); and with no dial tone wait nor digits
+	   (X3: the ringing NET_DIAL_TIMEOUT after A goes off hook) B at the
+	   second ring, two calls, V.34.  A ringing tone all of whose ons
+	   and offs are 0.7 s or less (0.4 s on and 0.2 off) has a busy
+	   tone's cadence: its callers dial in X2, which waits for the dial
+	   tone and takes no notice of a busy tone */
 	for (const ring::Country *rc = ring::COUNTRIES; rc->name; rc++) {
 		std::string n = rc->name;
 		for (char &ch : n)
 			ch = (char)tolower((unsigned char)ch);
 		bool busy_like = true;
-		for (int k = 0; k < rc->n; k++)
-			busy_like &= rc->cadence[k] <= 0.7f;
+		for (int k = 0; k < rc->ringing.n; k++)
+			busy_like &= rc->ringing.cadence[k] <= 0.7f;
 		add("ring", "ring_" + n, "open", "open",
-		    busy_like ? "ATX1;AT+MS=122" : "ATX3;AT+MS=122",
+		    busy_like ? "ATX2;AT+MS=122" : "ATX4;AT+MS=122",
 		    { "NET=9600:9600:ulaw", std::string("NET_RING=") + rc->name,
-		      "STREAM=1" });
+		      "DIAL=123", "STREAM=1" });
 	}
 	add("ring", "ring_uk_second", "open", "open", "ATX3;AT+MS=122",
 	    { "NET=9600:9600:ulaw", "NET_RING=UK", "RING_ANSWER=2",
@@ -1438,13 +1441,13 @@ std::vector<Call> calls()
 	add("ring", "ring_germany_34", "open", "open", "ATX3;AT+MS=34",
 	    { "NET=9600:9600:ulaw", "NET_RING=GERMANY", "STREAM=3" });
 	/* the HD-audio modem rung (its line monitor on hook hears the
-	   ring signal), and pulse dialling (its breaks too short to end
-	   the call; the ringing after the digits) */
+	   ring signal), and pulse dialling after its dial tone (its breaks
+	   too short to end the call; the ringing after the digits) */
 	add("ring", "ring_hda_answers", "open", "hda", "ATX3;AT+MS=122",
 	    { "NET=9600:8000:ulaw", "NET_RING=GERMANY", "STREAM=1" });
-	add("ring", "ring_hda_pulse_dials", "hda", "open", "ATX3;AT+MS=122",
-	    { "NET=8000:9600:ulaw", "NET_RING=UK", "NET_RING_DELAY=8",
-	      "DIAL=P123", "STREAM=1" });
+	add("ring", "ring_hda_pulse_dials", "hda", "open", "ATX4;AT+MS=122",
+	    { "NET=8000:9600:ulaw", "NET_RING=UK", "DIAL=P123",
+	      "STREAM=1" });
 	return c;
 }
 

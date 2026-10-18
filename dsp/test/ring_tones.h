@@ -2,12 +2,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    ring_tones.h - the countries' ringing for the tests' networks: the
+ *    ring_tones.h - the countries' tones for the tests' networks: the
  *                   ringing tone the caller hears (its frequency, or two,
- *                   or one modulated), its cadence, which the ring signal
- *                   to the called line keeps too, and that signal's
- *                   frequency (ring_tones.cpp, from the ITU's list of
- *                   the tones of national networks, after E.180)
+ *                   or one modulated, and its cadence, which the ring
+ *                   signal to the called line keeps too), that signal's
+ *                   frequency, and the dial tone (ring_tones.cpp, from the
+ *                   ITU's list of the tones of national networks, after
+ *                   E.180)
  *
  */
 #ifndef DMODEM_TEST_RING_TONES_H
@@ -15,14 +16,21 @@
 
 namespace ring {
 
-struct Country {
-	const char *name;       /* upper case, words joined by '_' */
+/* a tone and its cadence */
+struct Tone {
 	int f1, f2;             /* Hz; f2 0: one tone */
 	float mod;              /* f1 modulated at this (Hz), or 0 */
-	int ring_hz;            /* the ring signal's */
 	int n;                  /* the cadence: n seconds, on and off in
-				   turn from on, round and round */
+				   turn from on, round and round; 0:
+				   continuous */
 	float cadence[8];
+};
+
+struct Country {
+	const char *name;       /* upper case, words joined by '_' */
+	Tone ringing;           /* (n > 0) */
+	int ring_hz;            /* the ring signal's */
+	Tone dial;
 };
 
 /* the countries, up to an entry whose name is null */
@@ -38,9 +46,11 @@ extern const Alias ALIASES[];
    or null */
 const Country *find(const char *name);
 
-/* whether the cadence is on at t seconds from the ringing's start */
-inline bool on_at(const Country &c, double t)
+/* whether the tone's cadence is on at t seconds from its start */
+inline bool on_at(const Tone &c, double t)
 {
+	if (c.n <= 0)
+		return true;
 	double period = 0;
 	for (int i = 0; i < c.n; i++)
 		period += c.cadence[i];
@@ -51,6 +61,15 @@ inline bool on_at(const Country &c, double t)
 		x -= c.cadence[i];
 	}
 	return false;
+}
+
+/* the cadence's period (s), 0 if continuous */
+inline double period(const Tone &c)
+{
+	double p = 0;
+	for (int i = 0; i < c.n; i++)
+		p += c.cadence[i];
+	return p;
 }
 
 } // namespace ring

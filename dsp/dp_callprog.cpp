@@ -81,7 +81,8 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	Goertzel fine2225, fine2250;
 	int need_dialtone;
 	int busy_detect;        /* X3, X4: BUSY on a busy tone */
-	int dialtone_blocks;
+	int dialtone_blocks;    /* of dial tone, with gaps of 1 s at most */
+	int dialtone_gap;       /* blocks since the dial tone's last */
 
 	/* busy tone cadence detector: the bounds of its on and off times
 	   (ms), the cycles it takes (the country's, or 200 to 800 ms and
@@ -216,14 +217,18 @@ int CallProgPump::block()
 
 	block_energy = 0;
 
-	/* dial tone: any of the usual frequencies (or the 350+440 pair) */
+	/* dial tone: any of the usual frequencies (or the 350+440 pair),
+	   steady or in a cadence whose gaps are 1 s at most (Italy's 0.2 s
+	   on, 0.2 off, 0.6 on, 1 off): its blocks added up across them */
 	dt = 0;
 	for (i = 0; i < 3; i++)
 		dt += dialtone[i].g.power;
-	if (dt > 0.6f * bp && bp > min)
+	if (dt > 0.6f * bp && bp > min) {
 		dialtone_blocks++;
-	else
+		dialtone_gap = 0;
+	} else if (++dialtone_gap * BLOCK_MS > 1000) {
 		dialtone_blocks = 0;
+	}
 
 	/* @: remote ringing (0.5 s of sound at least), then the quiet
 	   after it */
@@ -370,7 +375,7 @@ float CallProgPump::dial_sample()
 			int s8 = modem_get_sreg(modem, SREG_DIAL_PAUSE_TIME);
 			pause_left = (long)(s8 > 0 ? s8 : 2) * srate;
 		} else if (ch == 'W' || ch == 'w') {
-			dialtone_blocks = 0;
+			dialtone_blocks = dialtone_gap = 0;
 			set_state(CP_WAIT_DIALTONE);
 			return 0;
 		} else if (ch == '@') {
@@ -451,7 +456,13 @@ int CallProgPump::process(void *in, void *out, int cnt)
 				set_state(CP_DIAL);
 			else if (count >= (long)modem_get_sreg(modem,
 						SREG_DIAL_TONE_WAIT_TIME) * srate &&
-				 count >= ms2samples(2000, srate)) {
+				 count >= ms2samples(2000, srate) &&
+				 /* (a dial tone in a cadence being heard:
+				    2 s more for it) */
+				 (!dialtone_blocks ||
+				  count >= (long)modem_get_sreg(modem,
+						SREG_DIAL_TONE_WAIT_TIME) * srate +
+				  ms2samples(2000, srate))) {
 				DSP_DBG("callprog: no dial tone\n");
 				if (ret == DPSTAT_OK)
 					ret = DPSTAT_NODIALTONE;

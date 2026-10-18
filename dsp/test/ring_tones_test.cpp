@@ -64,17 +64,17 @@ unsigned rings(const std::string &out)
 unsigned bursts(const ring::Country &c, double s)
 {
 	bool gap = false;
-	for (int k = 1; k < c.n; k += 2)
-		gap |= c.cadence[k] >= 1.5f;
+	for (int k = 1; k < c.ringing.n; k += 2)
+		gap |= c.ringing.cadence[k] >= 1.5f;
 	if (!gap)
 		return (unsigned)(s / 6) + 1;
 	unsigned n = 0;
 	double t = 0, off = 1e9;
-	for (int k = 0; t < s; k = (k + 1) % c.n) {
+	for (int k = 0; t < s; k = (k + 1) % c.ringing.n) {
 		if (k % 2 == 0 && off >= 1.5)
 			n++;
-		off = k % 2 ? c.cadence[k] : 0;
-		t += c.cadence[k];
+		off = k % 2 ? c.ringing.cadence[k] : 0;
+		t += c.ringing.cadence[k];
 	}
 	return n;
 }
@@ -98,7 +98,7 @@ std::string ring_for(const ring::Country &c, double s, int s0,
 	for (long i = 0; i < n && !l.answered; i++) {
 		double t = i / 8000.0;
 		float x = 0;
-		if (ring::on_at(c, t))
+		if (ring::on_at(c.ringing, t))
 			x = (float)(24000 * sin(2 * M_PI * c.ring_hz * t));
 		if (d.sample(x))
 			m.ring();
@@ -120,14 +120,21 @@ TEST(RingTones, Rows)
 	int n = 0;
 	for (const ring::Country *c = ring::COUNTRIES; c->name; c++, n++) {
 		SCOPED_TRACE(c->name);
-		EXPECT_TRUE(c->f1 >= 300 && c->f1 <= 500);
-		EXPECT_TRUE(!c->f2 || (c->f2 >= 300 && c->f2 <= 700));
-		EXPECT_TRUE(c->mod >= 0 && c->mod < 100);
+		for (const ring::Tone *t : { &c->ringing, &c->dial }) {
+			EXPECT_TRUE(t->f1 >= 300 && t->f1 <= 500);
+			EXPECT_TRUE(!t->f2 || (t->f2 >= 300 && t->f2 <= 700));
+			EXPECT_TRUE(t->mod >= 0 && t->mod < 100);
+		}
+		EXPECT_TRUE(c->dial.n >= 0 && c->dial.n <= 8 &&
+			    c->dial.n % 2 == 0);
+		for (int k = 0; k < c->dial.n; k++)
+			EXPECT_GT(c->dial.cadence[k], 0);
 		EXPECT_TRUE(c->ring_hz == 16 || c->ring_hz == 20 ||
 			    c->ring_hz == 25 || c->ring_hz == 50);
-		EXPECT_TRUE(c->n >= 2 && c->n <= 8 && c->n % 2 == 0);
-		for (int k = 0; k < c->n; k++)
-			EXPECT_GT(c->cadence[k], 0);
+		EXPECT_TRUE(c->ringing.n >= 2 && c->ringing.n <= 8 &&
+			    c->ringing.n % 2 == 0);
+		for (int k = 0; k < c->ringing.n; k++)
+			EXPECT_GT(c->ringing.cadence[k], 0);
 		EXPECT_EQ(ring::find(c->name), c);
 		if (c > ring::COUNTRIES) {
 			EXPECT_LT(strcmp(c[-1].name, c->name), 0);
@@ -137,17 +144,32 @@ TEST(RingTones, Rows)
 	for (const ring::Alias *a = ring::ALIASES; a->alias; a++)
 		EXPECT_EQ(ring::find(a->alias), ring::find(a->name)) << a->alias;
 	ASSERT_TRUE(ring::find("usa"));
-	EXPECT_EQ(ring::find("usa")->f2, 480);
-	EXPECT_EQ(ring::find("United Kingdom")->cadence[3], 2.0f);
+	EXPECT_EQ(ring::find("usa")->ringing.f2, 480);
+	EXPECT_EQ(ring::find("United Kingdom")->ringing.cadence[3], 2.0f);
 	EXPECT_EQ(ring::find("japan")->ring_hz, 16);
 	EXPECT_FALSE(ring::find("ATLANTIS"));
 	/* the cadence round and round: UK's 0.4 on, 0.2 off, 0.4 on, 2 off */
-	const ring::Country &uk = *ring::find("UK");
+	const ring::Tone &uk = ring::find("UK")->ringing;
 	EXPECT_TRUE(ring::on_at(uk, 0.1));
 	EXPECT_FALSE(ring::on_at(uk, 0.5));
 	EXPECT_TRUE(ring::on_at(uk, 0.7));
 	EXPECT_FALSE(ring::on_at(uk, 2.0));
 	EXPECT_TRUE(ring::on_at(uk, 3.1));
+	/* dial tones: the USA's 350 + 440 Hz, Germany's 425 Hz, continuous;
+	   Italy's in a cadence (0.2 s on, 0.2 off, 0.6 on, 1 off) */
+	const ring::Tone &us = ring::find("USA")->dial;
+	EXPECT_EQ(us.f1 + us.f2, 790);
+	EXPECT_EQ(us.n, 0);
+	EXPECT_TRUE(ring::on_at(us, 1234.5));
+	EXPECT_EQ(ring::find("GERMANY")->dial.f1, 425);
+	EXPECT_EQ(ring::find("GERMANY")->dial.n, 0);
+	const ring::Tone &it = ring::find("ITALY")->dial;
+	ASSERT_EQ(it.n, 4);
+	EXPECT_TRUE(ring::on_at(it, 0.1));
+	EXPECT_FALSE(ring::on_at(it, 0.3));
+	EXPECT_TRUE(ring::on_at(it, 0.6));
+	EXPECT_FALSE(ring::on_at(it, 1.5));
+	EXPECT_NEAR(ring::period(it), 2.0, 1e-6);
 }
 
 /* each country's ringing, 26 s of it with no auto answer: a RING for
@@ -174,8 +196,8 @@ TEST(RingTones, AutoAnswerEachCountry)
 	for (const ring::Country *c = ring::COUNTRIES; c->name; c++) {
 		SCOPED_TRACE(c->name);
 		double period = 0;
-		for (int k = 0; k < c->n; k++)
-			period += c->cadence[k];
+		for (int k = 0; k < c->ringing.n; k++)
+			period += c->ringing.cadence[k];
 		unsigned s0 = period <= 10.5 ? 2 : 1;
 		bool answered = false;
 		std::string out = ring_for(*c, 30, s0, &answered);

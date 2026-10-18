@@ -13,14 +13,17 @@
 #
 #    The file is only read: its text is the longest run of 8 bit
 #    characters (Windows-1252) in it, paragraphs split at its marks.
-#    Each country's "Ringing tone" (the first of several, I, II, ..., that
-#    has a cadence, a PABX's or a call waiting's not) gives the row:
+#    Each country's "Ringing tone" and "Dial tone" (the first of several,
+#    I, II, ..., a PABX's, a call waiting's or a message waiting's not;
+#    the ringing tone one with a cadence) give its row:
 #
-#    - the frequency: of alternatives (//, /) the first plain tone or
-#      pair (a+b), else the first modulated one (a x m, or a+m with m
+#    - the frequency: of alternatives (//, or / but for a/b of two voice
+#      band frequencies, a pair) the first plain tone or pair (a+b), else the first modulated one (a x m, or a+m with m
 #      under 100 Hz); none given, the country's busy tone's;
 #    - the cadence: its "on" and "off" seconds in turn ("2x(...)"
-#      repeated), up to eight; continuous ringing is no row.
+#      repeated), up to eight; a dial tone "continuous" (none), a
+#      continuous ringing tone no row.  A country with no dial tone in
+#      the list has a continuous one of its ringing tone's frequency.
 #
 #    The list has no ring signal frequency: 20 Hz with the North
 #    American tone (440 + 480 Hz), 16 Hz in Japan, 50 Hz in France and
@@ -84,6 +87,9 @@ def cadence(text):
 
 def frequency(text):
     """(f1, f2, mod) or None"""
+    # a/b of two voice band frequencies is a pair (350/440); else '/'
+    # parts alternatives, as '//' do
+    text = re.sub(r"\b([3-9]\d\d)/([3-9]\d\d)\b", r"\1+\2", text)
     alts = [a.strip() for a in re.split(r"//|/", text) if a.strip()]
     for a in alts:
         m = re.fullmatch(r"(\d+)(?:\s*\+\s*(\d+))?", a)
@@ -153,68 +159,90 @@ ALIASES = {
 }
 
 
+def pick(tones, kind, continuous_ok):
+    """((f1, f2, mod), cadence) of the country's first tone of kind
+    ("ringing tone", "dial tone") that is not a PABX's, a call waiting's
+    or a message waiting's: cadence [] if continuous (continuous_ok);
+    None if none"""
+    for head, vals in tones:
+        h = head.lower()
+        if not h.startswith(kind) or "pabx" in h or "waiting" in h:
+            continue
+        vals = [v for v in vals if not re.fullmatch(r"\(\d+\)", v)]
+        cad = None
+        f = None
+        for v in vals[:2]:
+            c = cadence(v)
+            if c:
+                cad = c
+            elif continuous_ok and v.strip().lower() == "continuous":
+                cad = []
+            elif f is None and not TONE.match(v):
+                f = frequency(v)
+        if cad is None:
+            continue
+        f = f or busy_frequency(tones)
+        if f:
+            return (f, cad)
+    return None
+
+
+def tone_c(t):
+    """a Tone's initialiser"""
+    (f1, f2, mod), cad = t
+    num = lambda x: "%gf" % x if "." in "%g" % x else "%g.0f" % x
+    return "{ %d, %d, %s, %d, { %s } }" % (
+        f1, f2, num(mod), len(cad), ", ".join(num(c) for c in cad) or "0.0f")
+
+
 def main():
     db = countries(paragraphs(sys.argv[1]))
-    rows, skipped = [], []
+    rows, skipped, no_dial = [], [], []
     for country, tones in db.items():
         name = row_name(country)
-        pick = None
-        for head, vals in tones:
-            h = head.lower()
-            if not h.startswith("ringing tone") or "pabx" in h or "waiting" in h:
-                continue
-            vals = [v for v in vals if not re.fullmatch(r"\(\d+\)", v)]
-            cad = None
-            f = None
-            for v in vals[:2]:
-                c = cadence(v)
-                if c:
-                    cad = c
-                elif f is None and not TONE.match(v):
-                    f = frequency(v)
-            if not cad:
-                continue
-            f = f or busy_frequency(tones)
-            if f:
-                pick = (f, cad)
-                break
-        if not pick:
+        ringing = pick(tones, "ringing tone", False)
+        if not ringing:
             if any(h.lower().startswith("ringing") for h, _ in tones):
                 skipped.append(country)
             continue
-        (f1, f2, mod), cad = pick
-        rows.append((name, f1, f2, mod, ring_hz(name, f1, f2), cad, country))
+        dial = pick(tones, "dial tone", True)
+        if not dial:
+            # none in the list: a continuous tone of the ringing tone's
+            # frequency
+            no_dial.append(name)
+            dial = (ringing[0], [])
+        (f1, f2, _), _ = ringing
+        rows.append((name, ringing, ring_hz(name, f1, f2), dial))
     rows.sort()
     names = {r[0] for r in rows}
     for a, n in ALIASES.items():
         assert n in names, n
     w = sys.stdout.write
     w(HEAD)
-    for name, f1, f2, mod, hz, cad, country in rows:
-        cs = ", ".join("%gf" % c if "." in "%g" % c else "%g.0f" % c for c in cad)
-        w('\t{ "%s", %d, %d, %sf, %d, %d, { %s } },\n' %
-          (name, f1, f2, ("%g" % mod) if "." in "%g" % mod else "%g.0" % mod,
-           hz, len(cad), cs))
-    w("\t{ nullptr, 0, 0, 0.0f, 0, 0, { 0.0f } },\n};\n\n")
+    for name, ringing, hz, dial in rows:
+        w('\t{ "%s",\n\t  %s, %d,\n\t  %s },\n' %
+          (name, tone_c(ringing), hz, tone_c(dial)))
+    w("\t{ nullptr, {}, 0, {} },\n};\n\n")
     w("const Alias ALIASES[] = {\n")
     for a in sorted(ALIASES):
         if a != ALIASES[a]:
             w('\t{ "%s", "%s" },\n' % (a, ALIASES[a]))
     w("\t{ nullptr, nullptr },\n};\n\n")
     w(TAIL)
-    sys.stderr.write("%d rows; no cadence or frequency: %s\n" %
-                     (len(rows), "; ".join(skipped)))
+    sys.stderr.write("%d rows; no ringing tone with a cadence: %s; no dial "
+                     "tone: %s\n" % (len(rows), "; ".join(skipped),
+                                     " ".join(no_dial)))
 
 
 HEAD = """/*
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    ring_tones.cpp - the countries' ringing (ring_tones.h), from the
+ *    ring_tones.cpp - the countries' tones (ring_tones.h), from the
  *                     ITU's list of the tones used in national networks
  *                     (Annex to ITU Operational Bulletin No. 955, position
  *                     on 1 May 2010, after Recommendation E.180): each
- *                     country's ringing tone and its cadence
+ *                     country's ringing tone and dial tone
  *
  *    Generated by ring_tones_gen.py, which says how a row is chosen;
  *    the countries whose ringing tone is continuous or has no cadence

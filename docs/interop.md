@@ -1069,18 +1069,24 @@ codec by themselves.
 
 ## The line rung
 
-With `NET_RING=<country>` netsim rings the call through as that
-country's line does, where it otherwise only carries the samples:
+With `NET_RING=<country>` netsim puts the call through as that
+country's exchange does, where it otherwise only carries the samples:
 
 - the modems say their hook to it (`half_open`'s `PipeModem` and
   `half_hda` write `1` off hook and `0` on to `MODEM_HOOK_FD`, which
   `interop_call` makes their fd 5 and netsim's `NET_HOOK_A` and
   `NET_HOOK_B`);
-- `NET_RING_DELAY` seconds (1) after A goes off hook (its digits), B's
-  line, on hook, has the ring signal (25 Hz, 20 Hz with the North
-  American tone, 16 Hz in Japan, 50 Hz in France's networks; 24000 at its
-  peak) in the cadence of the country's ringing tone, and A hears the
-  ringing tone itself (its frequency or two, or one modulated);
+- A off hook hears the country's dial tone (steady, or in its cadence:
+  Italy's 0.2 s on, 0.2 off, 0.6 on, 1 off) until its first digit.
+  Netsim hears the digits: DTMF on A's line (`DtmfDetect`), or dial
+  pulses, A's breaks of under 0.5 s, a digit their count once 0.3 s go
+  by without one; it logs the number dialled;
+- `NET_RING_DELAY` seconds (2) after the last digit (`NET_DIAL_TIMEOUT`,
+  4, of dial tone if A dials none), B's line, on hook, has the ring
+  signal (25 Hz, 20 Hz with the North American tone, 16 Hz in Japan, 50
+  Hz in France's networks; 24000 at its peak) in the cadence of the
+  country's ringing tone, and A hears the ringing tone itself (its
+  frequency or two, or one modulated);
 - B off hook answers it, and from then on the line is through. Until
   then each hears only that; A on hook for 0.5 s (longer than a dial
   pulse) ends the call.
@@ -1089,18 +1095,28 @@ The countries are those of the ITU's list of the tones used in national
 networks (Annex to ITU Operational Bulletin No. 955, position on 1 May
 2010, after Recommendation E.180), 192 of them: `ring_tones.cpp`,
 generated from the list's Word file by `ring_tones_gen.py`, which says
-how it picks a tone where the list gives several. Names are the list's
+how it picks a tone where the list gives several (and, for the nine
+countries with no dial tone in it, gives them a steady one of their
+ringing tone's frequency). Names are the list's
 in capitals (`UNITED_KINGDOM_OF_GREAT_BRITAIN_AND_NORTHERN_IRELAND`), or
 an alias: the core's country names (`UK`, `USA`, `SOUTHKOREA`, ...) and
 a few short ones.
 
-`ctest -L ring` makes a call between two open modems in each country, B
-answering at its first RING (V.22bis, a second of data), and a few more:
-at the second ring, two calls, V.34, `half_hda` answering, and `half_hda`
-pulse dialling. A ringing tone of 0.4 s on and 0.2 off for ever (as the
-list has for some islands) has a busy tone's cadence to a modem with the
-default country's busy bounds (0.18 to 0.6 s); those countries' callers
-dial in `ATX1`, which takes no notice of a busy tone.
+`ctest -L ring` makes a call between two open modems in each country:
+A waits for the dial tone (`ATX4`) and dials 123 in DTMF, B answers at
+its first RING (V.22bis, a second of data). And a few more: no dial tone
+wait and no digits (`ATX3`) with B at the second ring, two calls, V.34,
+`half_hda` answering, and `half_hda` pulse dialling after its dial tone.
+A ringing tone of 0.4 s on and 0.2 off for ever (as the list has for
+some islands) has a busy tone's cadence to a modem with the default
+country's busy bounds (0.18 to 0.6 s); those countries' callers dial in
+`ATX2`, which waits for the dial tone and takes no notice of a busy
+tone.
+
+The modem's dial tone check (the call progress pump's 350, 425 and 440
+Hz filters, which take 400, 450 and the pairs too) wants 1 s of it; a
+dial tone in a cadence counts too, its tone added up across gaps of up
+to 1 s, with 2 s more than S6 to wait for it while one is heard.
 
 `ring_tones_test` checks every country without the calls: its ring
 signal through `RingDetect` to the core gives a RING for each of its
