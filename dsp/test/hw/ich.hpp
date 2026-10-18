@@ -80,6 +80,7 @@ public:
 			((b.sr & SR_LVBCI) && (b.cr & CR_LVBIE)) ||
 			((b.sr & SR_FIFOE) && (b.cr & CR_FEIE));
 	}
+	/* either bus master's interrupt */
 	bool ich_irq() const { return ich_irq(pcm_in) || ich_irq(pcm_out); }
 	/* GLOB_STA, its PCM in and out interrupt bits as the bus masters
 	   are */
@@ -99,8 +100,11 @@ private:
 	const unsigned nambar_, nabmbar_, codec_at_;
 	const uintptr_t bus_;
 
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
+	/* the harness */
 	const Host &host() const { return static_cast<const Host &>(*this); }
+	/* b's name: "pcm in" or "pcm out" */
 	const char *name(const BusMaster &b) const
 	{
 		return &b == &pcm_in ? "pcm in" : "pcm out";
@@ -167,6 +171,9 @@ void Ich<Host>::control(BusMaster &b, byte v)
 	b.cr = v & 0x1f;
 }
 
+/* a codec sample through b while it runs: in to its buffer (PCM
+   in) or its buffer's out (PCM out); on to the next descriptor,
+   halted at the last valid one */
 template <class Host>
 short Ich<Host>::ich_sample(BusMaster &b, short in)
 {
@@ -210,6 +217,8 @@ short Ich<Host>::ich_sample(BusMaster &b, short in)
 	return out;
 }
 
+/* a port read: the codec's registers at NAMBAR, the bus masters'
+   and GLOB_CNT, GLOB_STA at NABMBAR; false if a is neither */
 template <class Host>
 bool Ich<Host>::ich_io_in(unsigned a, int size, u32 *v)
 {
@@ -253,6 +262,8 @@ bool Ich<Host>::ich_io_in(unsigned a, int size, u32 *v)
 	return true;
 }
 
+/* a port write, to the same registers as ich_io_in's; false if a
+   is not the controller's */
 template <class Host>
 bool Ich<Host>::ich_io_out(unsigned a, u32 v, int size)
 {

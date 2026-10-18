@@ -79,6 +79,7 @@ static int alaw;
 struct Drop {
 	float drop_at = -1, drop_ms = 0;
 
+	/* NET_DROP's value e: the drop's start and length */
 	void drop_init(const char *e)
 	{
 		sscanf(e, "%f:%f", &drop_at, &drop_ms);
@@ -95,6 +96,7 @@ struct Drop {
 struct Step {
 	float step_at = -1, step_g = 1;
 
+	/* NET_STEP's value e: the step's time and its gain */
 	void step_init(const char *e)
 	{
 		float db = 0;
@@ -134,6 +136,8 @@ struct Noise {
 				   the codes */
 	float floor_rms;
 
+	/* the noise's settings from NET_NOISE, NET_NOISE_QUIET, NET_NOISE_DIR
+	   and NET_FLOOR */
 	void noise_init()
 	{
 		if (getenv("NET_NOISE"))

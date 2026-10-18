@@ -32,10 +32,12 @@ struct ScriptCore final : public Core, public dcore::Host {
 		o.rate = 8000;
 		m = new dcore::Modem(*this, o);
 	}
+	/* the modem freed */
 	~ScriptCore() override { delete m; }
 
 	/* Host */
 	int start(dcore::Modem &) override { return 0; }
+	/* (see start()) */
 	int stop(dcore::Modem &) override { return 0; }
 	/* the DTE's output, kept */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
@@ -44,12 +46,14 @@ struct ScriptCore final : public Core, public dcore::Host {
 	}
 	/* the script's clock (ms) */
 	unsigned long now_ms() override { return *clock; }
+	/* for ATI3 */
 	const char *driver_name() override { return "core_script"; }
 
 	/* Core */
 	int dte_in(const char *buf, int n) override {
 		return m->dte_input(buf, n);
 	}
+	/* what the modem's DTE input takes now */
 	int dte_space() override { return m->dte_space(); }
 	/* what was kept, emptied */
 	std::string dte_out() override {
@@ -57,14 +61,21 @@ struct ScriptCore final : public Core, public dcore::Host {
 		s.swap(out);
 		return s;
 	}
+	/* the modem's: whether its line is started */
 	bool started() override { return m->started(); }
+	/* n samples through the modem */
 	void process(const int16_t *in, int16_t *o, int n) override {
 		m->process(in, o, n);
 	}
+	/* the modem's timers */
 	void poll() override { m->poll(); }
+	/* a ring signal to the modem */
 	void ring() override { m->ring(); }
+	/* a call that rings by itself (on = false: the caller gave up) */
 	void ring_signal(bool on) override { m->ring_signal(on); }
+	/* the modem's call hung up */
 	void hangup() override { m->hangup(); }
+	/* the modem's link state, as an int */
 	int link_state() override { return (int)m->link_state(); }
 	/* tx_rate / 100 << 16 | rx_rate / 100 */
 	unsigned rates() override {

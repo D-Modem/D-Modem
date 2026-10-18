@@ -27,6 +27,8 @@ using namespace vcvm_test;
 
 namespace {
 
+/* a loading of comb code at fs: each of its tones pb bits of phase and
+   rb of ring, at rate (and sym22) */
 VcvmLoading comb(int code, int fs, int pb, int rb, int rate, bool sym22 = false)
 {
 	VcvmLoading l;
@@ -43,6 +45,7 @@ VcvmLoading comb(int code, int fs, int pb, int rb, int rate, bool sym22 = false)
 	return l;
 }
 
+/* a parametric loading, P10 or P20, at rate */
 VcvmLoading param(bool p10, int rate)
 {
 	VcvmLoading l;
@@ -104,6 +107,8 @@ Result call(const VcvmLoading &l, int fs, double secs, const char *codec,
 
 } // namespace
 
+/* combs on a clean line, at 8000 and 16000 Hz: every octet through,
+   none corrected, the phase errors small */
 TEST(VcvmData, CombClean)
 {
 	/* N200 with 8-DPSK and four rings: 80 bits a symbol */
@@ -124,6 +129,7 @@ TEST(VcvmData, CombClean)
 	EXPECT_EQ(r.st.failed, 0);
 }
 
+/* P20 and P10 on a clean line: every octet through */
 TEST(VcvmData, ParamClean)
 {
 	for (bool p10 : { false, true }) {
@@ -135,6 +141,7 @@ TEST(VcvmData, ParamClean)
 	}
 }
 
+/* combs and P20 through AMR and AMR-WB: every octet through */
 TEST(VcvmData, Codecs)
 {
 	if (!have_codec())
@@ -171,6 +178,8 @@ TEST(VcvmData, Codecs)
 	EXPECT_EQ(r.wrong, 0) << r.st.failed << " of " << r.st.words << " failed";
 }
 
+/* the control sequence after data: seen, none of it taken for data, and
+   none seen in data alone */
 TEST(VcvmData, Control)
 {
 	/* the control sequence after data: seen, and nothing of it taken
@@ -186,6 +195,7 @@ TEST(VcvmData, Control)
 	}
 }
 
+/* silence after the data: the signal lost after a while, not at once */
 TEST(VcvmData, Lost)
 {
 	/* silence after the data: lost in about 2 s (in 2.5 blocks, 3.2 s,
@@ -198,6 +208,7 @@ TEST(VcvmData, Lost)
 	EXPECT_TRUE(r.lost);
 }
 
+/* AMR 12.2 with 1 per cent of its frames erased: few words failed */
 TEST(VcvmData, Erasures)
 {
 	/* a codec frame lost now and then (1 per cent): the code takes it */
@@ -253,6 +264,8 @@ struct Records {
 	long next = 0;                  /* the source's */
 	long good = 0, bad = 0, last = -1, back = 0;
 	std::vector<uint8_t> part;
+	/* octet i (0..3) of the next record: the sequence number's two, its
+	   check, 0xA5 */
 	int src(int i)
 	{
 		long s = next;
@@ -261,6 +274,7 @@ struct Records {
 		return v;
 	}
 	int pos = 0;
+	/* the source's next octet, the records one after another */
 	int source()
 	{
 		int v = src(pos);
@@ -270,6 +284,8 @@ struct Records {
 		}
 		return v;
 	}
+	/* n octets d received: each whole record counted good (and back, if
+	   out of order) or bad */
 	void sink(const uint8_t *d, int n)
 	{
 		part.insert(part.end(), d, d + n);
@@ -334,6 +350,7 @@ void run(Pair *p, int fs, const char *codec, double secs, double ppm, Hook hook,
 	}
 }
 
+/* both DCEs' logs, the calling one's first */
 std::string logs(const Pair &p)
 {
 	return "calling:\n" + p.a.log() + "answering:\n" + p.b.log();
@@ -341,6 +358,8 @@ std::string logs(const Pair &p)
 
 } // namespace
 
+/* a call on a clean line: connected, the records through both ways
+   without errors or renegotiations */
 TEST(VcvmModem, Clean)
 {
 	Pair p;
@@ -356,6 +375,7 @@ TEST(VcvmModem, Clean)
 	printf("%s", logs(p).c_str());
 }
 
+/* a call through AMR 12.2: connected, the records through, few bad */
 TEST(VcvmModem, Amr122)
 {
 	if (!have_codec())
@@ -373,6 +393,8 @@ TEST(VcvmModem, Amr122)
 	       p.rb.good, p.rb.bad, p.ra_sink.good, p.ra_sink.bad);
 }
 
+/* a renegotiation the calling DCE asks for, 25 s into the call: one on
+   each side, and the data on after it */
 TEST(VcvmModem, Renegotiate)
 {
 	Pair p;
@@ -394,6 +416,8 @@ TEST(VcvmModem, Renegotiate)
 	EXPECT_EQ(p.rb.bad + p.ra_sink.bad, 0);
 }
 
+/* a retrain the answering DCE asks for, 25 s into the call: one on each
+   side, both connected after it */
 TEST(VcvmModem, Retrain)
 {
 	Pair p;
@@ -411,6 +435,8 @@ TEST(VcvmModem, Retrain)
 	EXPECT_TRUE(p.b.connected()) << logs(p);
 }
 
+/* 3 s of nothing either way: a renegotiation or retrain, connected
+   again */
 TEST(VcvmModem, LineCut)
 {
 	/* 3 s of nothing either way: both see codewords fail and
@@ -426,6 +452,8 @@ TEST(VcvmModem, LineCut)
 	EXPECT_EQ(p.rb.back + p.ra_sink.back, 0);
 }
 
+/* a call through AMR 7.4: connected, the parametric mode's retrain
+   (if it is the mode), the records through */
 TEST(VcvmModem, Parametric)
 {
 	/* AMR 7.4: the parametric mode (or four tones of N300); its retrain
@@ -447,6 +475,7 @@ TEST(VcvmModem, Parametric)
 	printf("%s", logs(p).c_str());
 }
 
+/* a call through AMR-WB at 8000 Hz: connected without retrains */
 TEST(VcvmModem, AmrWbNarrow)
 {
 	if (!have_codec())

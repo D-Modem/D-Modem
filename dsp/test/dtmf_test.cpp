@@ -30,7 +30,9 @@ struct Listener {
 	std::string got;
 	int offs = 0;
 
+	/* a listener at srate Hz */
 	explicit Listener(int srate) { det.init(srate); }
+	/* sample x to the detector: an ON's digit onto got, an OFF counted */
 	void feed(float x)
 	{
 		switch (det.sample(x)) {
@@ -44,6 +46,7 @@ struct Listener {
 			break;
 		}
 	}
+	/* n samples of silence fed */
 	void silence(int n)
 	{
 		for (int i = 0; i < n; i++)

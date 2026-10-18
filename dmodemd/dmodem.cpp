@@ -48,7 +48,9 @@ struct dmodem final : public dcore::Host {
 	/* the program's hook flash, if it gave one */
 	void (*flash)(void *, unsigned) = nullptr;
 	void *flash_arg = nullptr;
+	/* a hook flash if the program gave one */
 	bool can_flash(dcore::Modem &) override { return flash != nullptr; }
+	/* the program's hook flash, ms long */
 	void hook_flash(dcore::Modem &, unsigned ms) override {
 		if (flash)
 			flash(flash_arg, ms);

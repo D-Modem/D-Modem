@@ -94,6 +94,7 @@ static inline cplx cplx_mul(cplx a, cplx b)
 {
 	return cplx_make(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re);
 }
+/* a times the conjugate of b */
 static inline cplx cplx_mulc(cplx a, cplx b) /* a * conj(b) */
 {
 	return cplx_make(a.re * b.re + a.im * b.im, a.im * b.re - a.re * b.im);
@@ -333,6 +334,7 @@ struct Bell103Detect {
 	float energy;           /* of the block so far */
 	int blocks;             /* in a row with the tones */
 
+	/* at srate, nothing found yet */
 	void init(int srate)
 	{
 		g1270.init(1270, srate / 50, srate);
@@ -340,6 +342,7 @@ struct Bell103Detect {
 		energy = 0;
 		blocks = 0;
 	}
+	/* a sample in: a block's end counted if it had the tones */
 	void run(float x)
 	{
 		energy += x * x;
@@ -361,11 +364,13 @@ struct Bell103Detect {
 struct CoreBits {
 	struct modem *modem;
 
+	/* n bits to send into bits (ones where the core has none) */
 	void get(unsigned char *bits, int n) const
 	{
 		memset(bits, 1, n);
 		modem_get_bits(modem, 1, bits, n);
 	}
+	/* n bits received to the core */
 	void put(const unsigned char *bits, int n) const
 	{
 		modem_put_bits(modem, 1, (u8 *)bits, n);

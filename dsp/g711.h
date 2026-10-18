@@ -103,6 +103,7 @@ inline int decode(int alaw, unsigned char c)
 {
 	return alaw ? alaw2lin(c) : ulaw2lin(c);
 }
+/* (see decode()) */
 inline unsigned char encode(int alaw, int x)
 {
 	return alaw ? lin2alaw(x) : lin2ulaw(x);

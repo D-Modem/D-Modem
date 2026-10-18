@@ -403,6 +403,7 @@ struct TestEcho {
 	float buf[MAX];
 	float hx, hy, ly;
 
+	/* from e (<dB>:<ms>, NULL: no echo) at srate */
 	void init(const char *e, int srate)
 	{
 		float db = 0, ms = 0;
@@ -783,6 +784,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 
 	int connected;          /* CONNECT has been reported */
 
+	/* its name in the log */
 	const char *tag() const { return "v34"; }
 	void fs_reinit(V90Tx *t);
 	const V90Cp *fs_data_cp();
@@ -795,6 +797,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void make_info1c(BitQ *q);
 	void make_info1a(BitQ *q);
 	void make_info1a_v90(BitQ *q);
+	/* the length of the remote's INFO0 (V.90's INFO0a longer), its
+	   sync and CRC included */
 	int info0_rx_len() const { return v90a_on ? 42 + 16 : 29 + 16; }
 	int info_expected();
 	void v91_start();
@@ -3455,6 +3459,7 @@ void V34Pump::fs_seq_next(int)
 	v90_make_mp(prx.ev_cp);
 }
 
+/* CPs': the remote acknowledged ours (or its E came) */
 bool V34Pump::fs_acked()
 {
 	return prx.ev_cpack || prx.ev_e;
@@ -3466,11 +3471,13 @@ bool V34Pump::fs_silence()
 	return prx.cp_silence;
 }
 
+/* Ed's end: the CPs received by then kept (sil_cp) */
 void V34Pump::fs_ed_end()
 {
 	sil_cp = prx.cp_count;
 }
 
+/* data mode: the core's data bits */
 void V34Pump::fs_data(unsigned char *b, int n)
 {
 	CoreBits{ modem }.get(b, n);

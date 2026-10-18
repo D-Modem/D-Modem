@@ -1873,6 +1873,7 @@ void V92Up::decided(int eta)
    forward taps fitted to the last decisions with that feedback, by least
    squares.  Returns -1 if there is no fit. */
 #define V92_FIT         1536
+/* (see V92_FIT): 0, or -1 if there is no fit */
 int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 {
 	std::vector<double> Av(V92_EQ_F * V92_EQ_F);   /* (as in train) */
@@ -2891,16 +2892,19 @@ void V92Up::fs_seq_next(int first)
 		make_seq(0, rn_silence ? 1 : got_cpu);
 }
 
+/* CPd's: a frame of it went out */
 void V92Up::fs_seq_frame()
 {
 	cpd_at++;
 }
 
+/* CPd's: the remote acknowledged ours (or its E came) */
 bool V92Up::fs_acked()
 {
 	return got_ack || got_e2u;
 }
 
+/* CPd's: Ed begins */
 void V92Up::fs_to_ed()
 {
 	DSP_DBG("v92: Ed\n");
@@ -2912,6 +2916,7 @@ bool V92Up::fs_silence()
 	return rn_silence;
 }
 
+/* data mode: the link's data bits */
 void V92Up::fs_data(unsigned char *b, int n)
 {
 	link.get(b, n);

@@ -19,6 +19,8 @@
 
 #include "codec_sim.h"
 
+/* the samples on stdin through the codec of argv[1] onto stdout, the
+   frames and erasures to stderr: 0, 1 on an error, 2 for the usage */
 int main(int argc, char *argv[])
 {
 	dsp::SpeechCodec codec;

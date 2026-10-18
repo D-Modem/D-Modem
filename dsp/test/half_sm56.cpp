@@ -305,10 +305,15 @@ int k_printk(const char *fmt, ...)
 }
 /* the kernel's library and the like: the C library's, or nothing */
 KAPI void *k_memcpy(void *d, const void *s, size_t n) { return memcpy(d, s, n); }
+/* memset */
 KAPI void *k_memset(void *d, int c, size_t n) { return memset(d, c, n); }
+/* dump_stack: noted */
 KAPI void k_dump_stack(void) { LOG("dump_stack\n"); }
+/* capable: always */
 KAPI int k_capable(int cap) { (void)cap; return 1; }
+/* __might_sleep: nothing to check */
 KAPI void k___might_sleep(const char *file, int line) { (void)file; (void)line; }
+/* __cond_resched: no other task; 0 */
 KAPI int k___cond_resched(void) { return 0; }
 u32 k_kernel_flag[8];
 unsigned char k__ctype[256];
@@ -355,15 +360,20 @@ KAPI void *k_kmem_cache_alloc(void *cachep, unsigned flags)
 /* and the rest of its memory: calloc (64 bytes to spare), no I/O
    mapped */
 KAPI void *k___kmalloc(size_t n, unsigned flags) { (void)flags; return calloc(1, n + 64); }
+/* kfree: free */
 KAPI void k_kfree(const void *p) { free((void *)p); }
+/* vmalloc: n bytes calloc'd (64 to spare) */
 KAPI void *k_vmalloc(unsigned long n) { return calloc(1, n + 64); }
+/* vfree: free */
 KAPI void k_vfree(void *p) { free(p); }
+/* __ioremap: noted; NULL */
 KAPI void *k___ioremap(unsigned long a, unsigned long n, unsigned long flags)
 {
 	(void)flags;
 	LOG("ioremap %lx %lu\n", a, n);
 	return NULL;
 }
+/* iounmap: nothing to do */
 KAPI void k_iounmap(void *p) { (void)p; }
 /* copy_from_user and copy_to_user of FC3: one address space here */
 KAPI unsigned long k_get_user_size(unsigned n, void *to, const void *from)
@@ -371,6 +381,7 @@ KAPI unsigned long k_get_user_size(unsigned n, void *to, const void *from)
 	memcpy(to, from, n);
 	return 0;
 }
+/* n bytes from to to: 0 not copied */
 KAPI unsigned long k_put_user_size(unsigned n, const void *from, void *to)
 {
 	memcpy(to, from, n);
@@ -382,6 +393,7 @@ KAPI void k___udelay(unsigned long us)
 {
 	sm56.line_idle((unsigned)(us * sm56.line_rate / 1000000) + 1);
 }
+/* __const_udelay: xloops (us * 0x10c7) as __udelay */
 KAPI void k___const_udelay(unsigned long xloops) { k___udelay(xloops / 0x10c7); }
 
 }
@@ -392,6 +404,7 @@ __asm__(".globl k___down_failed\n k___down_failed: ret\n"
 
 extern "C" {
 
+/* __wake_up: nobody waits (one thread) */
 KAPI void k___wake_up(void *q, unsigned mode, int nr, void *key)
 {
 	(void)q; (void)mode; (void)nr; (void)key;
@@ -569,6 +582,7 @@ KAPI int k_register_chrdev(unsigned major, const char *name, void *fops)
 	LOG("register_chrdev %u %s\n", major, name);
 	return 0;
 }
+/* unregister_chrdev: 0 */
 KAPI int k_unregister_chrdev(unsigned major, const char *name)
 {
 	(void)major; (void)name;
@@ -576,6 +590,7 @@ KAPI int k_unregister_chrdev(unsigned major, const char *name)
 }
 /* its tty driver: kept; mot_open and mot_write are called directly */
 KAPI int k_tty_register_driver(void *d) { tty_driver = d; return 0; }
+/* tty_unregister_driver: 0 */
 KAPI int k_tty_unregister_driver(void *d) { (void)d; return 0; }
 
 /* the tty's flip buffer work at once; other work noted only */
@@ -685,6 +700,7 @@ int Sm56::start()
 	return 0;
 }
 
+/* the SM56 modem on the line until it ends (HalfModem::run) */
 int main()
 {
 	return sm56.run();

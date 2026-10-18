@@ -44,12 +44,14 @@ struct Tty {
 	std::string out;                /* to the DTE */
 };
 
+/* the modem's output to its DTE, onto the tty's out: all n of it */
 int modem_send_to_tty(struct modem *m, const char *buf, int n)
 {
 	reinterpret_cast<Tty *>(m)->out.append(buf, n);
 	return n;
 }
 
+/* up to n of what the DTE sent the modem, from the tty's in: how many */
 int modem_recv_from_tty(struct modem *m, char *buf, int n)
 {
 	Tty *t = reinterpret_cast<Tty *>(m);
@@ -93,6 +95,8 @@ static std::string page_octets(const T4Page &p)
 	return s;
 }
 
+/* success if pages a and b are the same size with the same rows; else
+   what differs */
 static testing::AssertionResult same_page(const T4Page &a, const T4Page &b)
 {
 	if (a.width != b.width || a.rows != b.rows)
@@ -220,6 +224,7 @@ static std::string frame(int fcf, bool final, bool caller,
 	return f + fif;
 }
 
+/* frame f's FCF, the caller's bit cleared (-1 if it is too short) */
 static int fcf_of(const std::string &f)
 {
 	return f.size() >= 3 ? (unsigned char)f[2] & 0xfe : -1;
@@ -235,11 +240,13 @@ static std::string ident(const char *id)
 	return s;
 }
 
+/* FIF bit bit (from 1, T.30's numbering) set */
 static void set_bit(std::string &fif, int bit)
 {
 	fif[(bit - 1) / 8] |= 1 << ((bit - 1) % 8);
 }
 
+/* FIF bit bit (from 1), 0 past its end */
 static int get_bit(const std::string &fif, int bit)
 {
 	if ((size_t)(bit - 1) / 8 >= fif.size())
@@ -302,6 +309,7 @@ struct Params {
 	int audio_ms;           /* on the audio before T.38 */
 };
 
+/* p, for the test's name: who sends, ECM, the version and the audio */
 static void PrintTo(const Params &p, std::ostream *os)
 {
 	*os << (p.engine_sends ? "sends" : "receives")
@@ -324,6 +332,7 @@ struct World {
 	T4Page sent = {}, got = {};     /* the machine's pages */
 	int got_pages = 0;
 
+	/* the engine, the machine and the pages freed */
 	~World()
 	{
 		if (fax)
@@ -353,6 +362,7 @@ static void fax_tx(void *ctx, const void *ifp)
 		w->sent_log.push_back({ w->now, Bytes(buf, buf + n) });
 }
 
+/* the machine's packet, encoded, onto the line to the engine */
 static void t30_tx(void *ctx, const struct t38_ifp *p)
 {
 	World *w = static_cast<World *>(ctx);
@@ -362,6 +372,8 @@ static void t30_tx(void *ctx, const struct t38_ifp *p)
 	w->to_fax.push_back(Bytes(buf, buf + n));
 }
 
+/* the machine's page to send (the test page, kept in sent): 1, or 0
+   after the one page */
 static int t30_next_page(void *ctx, T4Page *p)
 {
 	World *w = static_cast<World *>(ctx);
@@ -372,6 +384,7 @@ static int t30_next_page(void *ctx, T4Page *p)
 	return 1;
 }
 
+/* a page the machine received, copied into got */
 static void t30_page_received(void *ctx, T4Page *p)
 {
 	World *w = static_cast<World *>(ctx);
@@ -554,6 +567,7 @@ struct Dte {
 		return r == FAX_STATUS_NOCARRIER;
 	}
 
+	/* +FTS=ms10: whether it gives OK */
 	bool fts(unsigned ms10)
 	{
 		return cmd(FAX_CMD_FTS, ms10) == FAX_STATUS_OK;

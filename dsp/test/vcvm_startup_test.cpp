@@ -31,6 +31,8 @@ namespace {
 
 using namespace vcvm_test;
 
+/* the default capabilities, with (fs16) 16000 Hz and both wideband
+   combs */
 VcvmCaps caps(bool fs16 = false)
 {
 	VcvmCaps c;
@@ -45,6 +47,8 @@ VcvmCaps caps(bool fs16 = false)
  *    the field, INFO0 and MP
  */
 
+/* the capabilities' two octets: encoded and decoded back, a later
+   version's read */
 TEST(VcvmCaps, Field)
 {
 	VcvmCaps c;
@@ -65,6 +69,8 @@ TEST(VcvmCaps, Field)
 	EXPECT_EQ(VcvmCaps::decode(o).version, 1);
 }
 
+/* the capabilities in a T.30 NSF: built and found again; found with
+   another provider code's length, not in another use of the category */
 TEST(VcvmCaps, NonStandardFacilities)
 {
 	VcvmCaps c = caps(true), d;
@@ -83,6 +89,8 @@ TEST(VcvmCaps, NonStandardFacilities)
 	EXPECT_FALSE(vcvm_nsf_find(none, 6, &d));
 }
 
+/* the capabilities in a V.8 CM's NS block: extension octets after the
+   standard categories, found again, none read as a category tag */
 TEST(VcvmCaps, V8)
 {
 	/* in a CM: after the standard categories, extension octets only */
@@ -111,6 +119,7 @@ TEST(VcvmCaps, V8)
 			EXPECT_NE(cm[i] & 0x1F, tag);
 }
 
+/* the modes both DCEs allow, and the combs probed at each rate */
 TEST(VcvmCaps, Allowed)
 {
 	VcvmCaps a = caps(true), b = caps(true);
@@ -128,6 +137,7 @@ TEST(VcvmCaps, Allowed)
 	EXPECT_EQ(vcvm_probe_combs(16000, VCVM_M_ALL), 0x18u);
 }
 
+/* INFO0: encoded and decoded back; a bad one refused */
 TEST(VcvmMessages, Info0)
 {
 	VcvmInfo0 i, j;
@@ -147,6 +157,8 @@ TEST(VcvmMessages, Info0)
 	EXPECT_EQ(j.decode(o, 4), -1);
 }
 
+/* MP: a comb's loading, the parametric mode, none and the 22.5 ms
+   symbol, encoded and decoded back; a short or bad one refused */
 TEST(VcvmMessages, Mp)
 {
 	VcvmMp m, d;
@@ -241,6 +253,7 @@ std::vector<VcvmMsg> messages(int fs, bool param, bool calling,
 	return out;
 }
 
+/* both of messages()'s messages there, whole and in their order */
 void expect_messages(const std::vector<VcvmMsg> &v)
 {
 	ASSERT_EQ(v.size(), 2u);
@@ -256,6 +269,7 @@ void expect_messages(const std::vector<VcvmMsg> &v)
 
 } // namespace
 
+/* the messages at both rates, in P20 and V.21, each way, on a clean line */
 TEST(VcvmMessages, Clean)
 {
 	for (int fs : { 8000, 16000 })
@@ -267,6 +281,7 @@ TEST(VcvmMessages, Clean)
 			}
 }
 
+/* the messages through AMR and AMR-WB */
 TEST(VcvmMessages, Codecs)
 {
 	if (!have_codec())
@@ -289,6 +304,8 @@ TEST(VcvmMessages, Codecs)
 	}
 }
 
+/* an MP in V.21 after silences of 27 lengths in turn: each received
+   whole */
 TEST(VcvmMessages, V21Alignments)
 {
 	/* the bit clock pulled in from every phase of the first bit, after a
@@ -326,6 +343,8 @@ TEST(VcvmMessages, V21Alignments)
 
 namespace {
 
+/* c as the measure of comb code (and sym22) with each tone's phase
+   error sigma, its amplitude's sa, at -1 dB and no errors */
 void fill(VcvmCombMeas *c, int code, bool sym22, float sigma, float sa)
 {
 	VcvmComb cb;
@@ -344,6 +363,8 @@ void fill(VcvmCombMeas *c, int code, bool sym22, float sigma, float sa)
 	}
 }
 
+/* a narrowband probe's measures, every tone of each comb (and L2's)
+   with phase error sigma and amplitude error sa, P20 and P10 clean */
 VcvmProbeMeas narrow(float sigma, float sa)
 {
 	VcvmProbeMeas m;
@@ -361,6 +382,8 @@ const int ALL = VCVM_M_ALL | VCVM_M_SYM22;
 
 } // namespace
 
+/* the loading chosen for each phase and amplitude error: the bits a
+   tone, the rings and the code rate at the thresholds */
 TEST(VcvmLoading, Orders)
 {
 	VcvmLoading l = vcvm_choose(narrow(5, 0.3f), ALL);
@@ -385,6 +408,8 @@ TEST(VcvmLoading, Orders)
 	EXPECT_EQ(l.rate, 0);
 }
 
+/* the loading chosen in the codec's band, for a noisy comb, for the
+   22.5 ms symbol and with measured errors */
 TEST(VcvmLoading, BandAndComb)
 {
 	/* the codec's band: the tones over 2500 Hz 25 dB down */
@@ -421,6 +446,8 @@ TEST(VcvmLoading, BandAndComb)
 	EXPECT_EQ(vcvm_choose(m, ALL & ~VCVM_M_8DPSK).rate, 0);
 }
 
+/* the parametric mode chosen for three good tones, P10 or P20 by their
+   errors, none for too many; the comb where four tones carry more */
 TEST(VcvmLoading, Parametric)
 {
 	/* three tones: the parametric mode */
@@ -463,6 +490,8 @@ TEST(VcvmLoading, Parametric)
 
 namespace {
 
+/* the probe at fs (combs) through a line with codec and the clock ppm
+   off, measured: *ok if the receiver finished, its end checked */
 VcvmProbeMeas probe(int fs, unsigned combs, const char *codec, double ppm,
 		    bool *ok)
 {
@@ -490,6 +519,7 @@ VcvmProbeMeas probe(int fs, unsigned combs, const char *codec, double ppm,
 	return rx.meas();
 }
 
+/* the largest phase error of c's tones from to to */
 double max_sigma(const VcvmCombMeas &c, int from, int to)
 {
 	double m = 0;
@@ -500,6 +530,8 @@ double max_sigma(const VcvmCombMeas &c, int from, int to)
 
 } // namespace
 
+/* the probe on a clean line at 8000 and 16000 Hz: every comb measured
+   with small errors, the densest loaded fully */
 TEST(VcvmProbe, Clean)
 {
 	for (int fs : { 8000, 16000 }) {
@@ -528,6 +560,8 @@ TEST(VcvmProbe, Clean)
 	}
 }
 
+/* the probe through AMR 12.2: a comb of 1200 bit/s or more; through
+   AMR 7.4, the parametric mode */
 TEST(VcvmProbe, Amr)
 {
 	if (!have_codec())
@@ -561,6 +595,9 @@ struct Call {
 	double secs = 0;
 };
 
+/* the start-up of both DCEs through a line at fs with codec and the
+   clocks ppm apart, into c: done on both, each one's loading the other's,
+   the round trips checked */
 void startup(Call *c, int fs, const char *codec, double ppm = 0,
 	     VcvmCaps ca = VcvmCaps(), VcvmCaps cb = VcvmCaps(),
 	     int modes_a = VCVM_M_ALL, int modes_b = VCVM_M_ALL)
@@ -623,6 +660,8 @@ void startup(Call *c, int fs, const char *codec, double ppm = 0,
 
 } // namespace
 
+/* the start-up on a clean line: P20 messages, N200 at 4000 bit/s both
+   ways, in under 20 s */
 TEST(VcvmStartup, Clean)
 {
 	Call c;
@@ -640,6 +679,8 @@ TEST(VcvmStartup, Clean)
 	printf("%s", c.a.log().c_str());
 }
 
+/* the start-up with V.21 messages (no parametric mode on one side), and
+   with DQPSK alone */
 TEST(VcvmStartup, V21Messages)
 {
 	/* the answering DCE without the parametric mode: messages in V.21,
@@ -663,6 +704,7 @@ TEST(VcvmStartup, V21Messages)
 	EXPECT_EQ(d.b.rx_loading().raw_bps(), 1600);
 }
 
+/* the start-up through AMR 12.2: a comb of 1200 bit/s or more */
 TEST(VcvmStartup, Amr122)
 {
 	if (!have_codec())
@@ -680,6 +722,7 @@ TEST(VcvmStartup, Amr122)
 	printf("%s", c.b.log().c_str());
 }
 
+/* the start-up through AMR 7.4: 200 bit/s or more */
 TEST(VcvmStartup, Amr74)
 {
 	if (!have_codec())
@@ -702,6 +745,8 @@ TEST(VcvmStartup, Amr74)
 	printf("%s", c.a.log().c_str());
 }
 
+/* the start-up through AMR-WB 23.85 at 16000 Hz: a wideband comb of
+   2400 bit/s or more */
 TEST(VcvmStartup, AmrWb)
 {
 	if (!have_codec())
@@ -720,6 +765,8 @@ TEST(VcvmStartup, AmrWb)
 	printf("%s", c.a.log().c_str());
 }
 
+/* the start-up through a mobile call's delays and clock differences,
+   with AMR 12.2, 10.2 and 7.4 */
 TEST(VcvmStartup, Lines)
 {
 	if (!have_codec())

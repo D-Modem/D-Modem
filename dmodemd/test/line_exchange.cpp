@@ -58,6 +58,7 @@ namespace {
 
 volatile sig_atomic_t quit = 0;
 
+/* SIGTERM, SIGINT: the main loop ends */
 void on_signal(int)
 {
 	quit = 1;
@@ -114,6 +115,7 @@ int listen_at(const std::string &path)
 }
 
 void say(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+/* (as declared above) a line on stdout */
 void say(const char *fmt, ...)
 {
 	va_list ap;
@@ -124,6 +126,7 @@ void say(const char *fmt, ...)
 	fflush(stdout);
 }
 
+/* l in mode m, from its start */
 void set_mode(Line &l, Mode m)
 {
 	l.mode = m;
@@ -135,6 +138,7 @@ void set_mode(Line &l, Mode m)
 struct Fsk {
 	std::vector<int16_t> out;
 	double phase = 0, clock = 0;
+	/* bit b */
 	void bit(int b)
 	{
 		clock += (double)rate / 1200;
@@ -144,6 +148,8 @@ struct Fsk {
 			out.push_back((int16_t)(5000 * sin(phase)));
 		}
 	}
+	/* octet c: a start bit, its 8 bits (LSB first), a stop
+	   bit */
 	void octet(unsigned char c)
 	{
 		bit(0);
@@ -196,12 +202,14 @@ float tones(long t, double f1, double f2, int on, int off)
 			      (f2 ? sin(2 * M_PI * f2 * s) : 0));
 }
 
+/* a sample of noise at rms (uniform, pseudo-random) */
 float noise(float rms)
 {
 	seed = seed * 1103515245 + 12345;
 	return rms * 1.7f * ((float)((seed >> 16) & 0x7fff) / 16384 - 1);
 }
 
+/* the line of number, nullptr if none */
 Line *find(const std::string &number)
 {
 	for (Line &l : lines)
@@ -500,6 +508,8 @@ void tick()
 
 } // namespace
 
+/* the exchange: its lines' sockets, a tick each 20 ms
+   until a signal or stdin's end (the usage: 2) */
 int main(int argc, char *argv[])
 {
 	struct timespec next;

@@ -28,12 +28,14 @@
 /* (Windows: the file binary, not inherited; positioned reads and writes
    by a seek first, the descriptor being this object's alone) */
 #define O_CLOEXEC (O_BINARY | O_NOINHERIT)
+/* pread() by a seek and a read */
 static ssize_t pread(int fd, void *buf, size_t n, off_t at)
 {
 	if (lseek(fd, at, SEEK_SET) < 0)
 		return -1;
 	return read(fd, buf, (unsigned)n);
 }
+/* pwrite() by a seek and a write */
 static ssize_t pwrite(int fd, const void *buf, size_t n, off_t at)
 {
 	if (lseek(fd, at, SEEK_SET) < 0)
@@ -73,6 +75,7 @@ DataFile::DataFile(const char *path) : path_(path)
 		    path, strerror(err));
 }
 
+/* the file closed, if open */
 DataFile::~DataFile()
 {
 	if (fd_ >= 0)

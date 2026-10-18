@@ -21,6 +21,8 @@ namespace dsp {
  *    the transmitter
  */
 
+/* see vcvm_data.h; -1 for no loading, or one the code or the signal
+   set can't take */
 int VcvmDataTx::init(const VcvmLoading &l, int fs, int tap, Source src)
 {
 	if (l.kind == VcvmLoading::NONE)
@@ -45,11 +47,13 @@ int VcvmDataTx::init(const VcvmLoading &l, int fs, int tap, Source src)
 	return 0;
 }
 
+/* a symbol of the loading, samples */
 int VcvmDataTx::sps() const
 {
 	return l_.kind == VcvmLoading::COMB ? ctx_.sps() : ptx_.sps();
 }
 
+/* see vcvm_data.h: the comb's reference three times, or the preamble */
 void VcvmDataTx::start(std::vector<float> &out)
 {
 	size_t at = out.size();
@@ -101,6 +105,7 @@ int VcvmDataTx::bit()
 	return b;
 }
 
+/* one data symbol of the loading's bits, the next coded bits, to out */
 void VcvmDataTx::symbol(std::vector<float> &out)
 {
 	int nb = l_.bits();
@@ -115,6 +120,8 @@ void VcvmDataTx::symbol(std::vector<float> &out)
 		ptx_.data(bits, &out[at]);
 }
 
+/* the control sequence to out: 8 symbols of a half turn on every tone,
+   or 16 of index 0 (the lowest lag) */
 void VcvmDataTx::control(std::vector<float> &out)
 {
 	size_t at = out.size();
@@ -136,6 +143,8 @@ void VcvmDataTx::control(std::vector<float> &out)
  *    the receiver
  */
 
+/* see vcvm_data.h; -1 for no loading, or one the code or the signal
+   set can't take; the receiver started at sample 0 */
 int VcvmDataRx::init(const VcvmLoading &l, int fs, int tap, Sink sink)
 {
 	if (l.kind == VcvmLoading::NONE)
@@ -157,6 +166,7 @@ int VcvmDataRx::init(const VcvmLoading &l, int fs, int tap, Sink sink)
 	return 0;
 }
 
+/* see vcvm_data.h: everything back to unlocked, the statistics too */
 void VcvmDataRx::start(long from)
 {
 	from_ = pos_ = from;
@@ -189,11 +199,14 @@ void VcvmDataRx::start(long from)
 		v = 0;
 }
 
+/* the samples received: the index of the next one pushed */
 long VcvmDataRx::received() const
 {
 	return l_.kind == VcvmLoading::COMB ? crx_.received() : prx_.received();
 }
 
+/* samples from the line (16 bit scale), the symbols they complete
+   taken */
 void VcvmDataRx::push(const float *x, int n)
 {
 	if (l_.kind == VcvmLoading::COMB)
@@ -220,6 +233,10 @@ void VcvmDataRx::line_bit(int b, float rel)
 	}
 }
 
+/* the interleaver block in, decoded: each codeword with errors alone,
+   then with ever more of its least reliable octets erased; the
+   information octets descrambled to the sink once the data is
+   confirmed */
 void VcvmDataRx::decode_block()
 {
 	const int n = VCVM_RS_N, k = rs_.k(), nc = n - k;
@@ -318,6 +335,9 @@ void VcvmDataRx::level(double v)
 		lost_ = true;
 }
 
+/* the symbols received so far taken: phase 4's start found, then each
+   symbol's bits to the octets, its errors and level measured, until
+   the control sequence */
 void VcvmDataRx::run()
 {
 	if (control_)

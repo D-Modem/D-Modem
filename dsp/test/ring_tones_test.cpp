@@ -27,6 +27,7 @@ extern "C" int prop_dp_init(void);
 namespace {
 
 struct Pumps {
+	/* the modem's DSP pumps registered (prop_dp_init()) */
 	Pumps() { prop_dp_init(); }
 } pumps;
 
@@ -36,16 +37,21 @@ unsigned long now = 1000000;      /* (not 0: the core's last pulse "at" 0) */
 struct Line final : public dcore::Host {
 	std::string out;
 	bool answered = false;
+	/* the line answered: answered set */
 	int start(dcore::Modem &) override {
 		answered = true;
 		return 0;
 	}
+	/* (no line to stop) */
 	int stop(dcore::Modem &) override { return 0; }
+	/* (no hook to set) */
 	int set_hook(dcore::Modem &, int) override { return 0; }
+	/* the DTE's output appended to out: all n of it */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		out.append(buf, n);
 		return n;
 	}
+	/* the test's clock, now */
 	unsigned long now_ms() override { return now; }
 };
 

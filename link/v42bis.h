@@ -25,6 +25,7 @@ enum {
 class V42bis {
 public:
 	V42bis() = default;
+	/* the dictionary freed */
 	~V42bis() { exit(); }
 	V42bis(const V42bis &) = delete;
 	V42bis &operator=(const V42bis &) = delete;
@@ -53,6 +54,7 @@ public:
 
 	/* statistics: bits before and after (the encoder) */
 	uint32_t raw_bits() const { return raw_bits_; }
+	/* (see raw_bits()) */
 	uint32_t cmp_bits() const { return cmp_bits_; }
 
 private:

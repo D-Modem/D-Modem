@@ -157,6 +157,7 @@ static void copy_dial(char *dst, size_t size, const char *src)
 
 /* what the link (link.h) asks of the modem that owns it */
 struct LinkOwner final : public dlink::Owner {
+	/* the link's owner for m */
 	explicit LinkOwner(Modem &m) : m_(m) {}
 
 	/* the DTE's characters for the line */

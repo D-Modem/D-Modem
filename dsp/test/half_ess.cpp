@@ -186,6 +186,7 @@ int Ess::start()
 	return win_start(&dev);
 }
 
+/* the ESS modem on the line until it ends (HalfModem::run) */
 int main()
 {
 	return ess.run();

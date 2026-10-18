@@ -486,6 +486,8 @@ static int mod_t38_data(enum fax_mod mod)
 	}
 }
 
+/* T.38's indicator for the training of mod (V.17: long_train or
+   short) */
 static int mod_t38_ind(enum fax_mod mod, int long_train)
 {
 	switch (mod) {
@@ -502,6 +504,7 @@ static int mod_t38_ind(enum fax_mod mod, int long_train)
 	}
 }
 
+/* the ms of mod's training (V.17: long_train or short), for T.38 */
 static int mod_train_ms(enum fax_mod mod, int long_train)
 {
 	switch (mod) {

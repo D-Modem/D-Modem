@@ -113,9 +113,11 @@ protected:
 	/* no more frames: the closing flags (counted from the end of the
 	   last frame) once the frame going out is through */
 	void hdlc_tx_close() { htx_closing = 1; }
+	/* (see hdlc_tx_close()) */
 	bool hdlc_tx_closing() const { return htx_closing; }
 
 private:
+	/* the modem this is part of */
 	Host &host() { return static_cast<Host&>(*this); }
 
 	unsigned char htx_buf[MAX + 2];         /* the frame and its FCS */
@@ -189,8 +191,10 @@ protected:
 	}
 
 private:
+	/* the modem this is part of */
 	Host &host() { return static_cast<Host&>(*this); }
 
+	/* no frame in, its bits dropped */
 	void hrx_clear()
 	{
 		hrx_len = hrx_nbits = hrx_over = 0;

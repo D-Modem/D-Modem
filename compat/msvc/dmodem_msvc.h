@@ -73,6 +73,7 @@ static __inline int usleep(unsigned int us)
 #define strcasecmp _stricmp
 #define strncasecmp _strnicmp
 
+/* POSIX's ftruncate(): fd's file cut (or grown) to length; 0, or -1 */
 static __inline int ftruncate(int fd, int64_t length)
 {
 	return _chsize_s(fd, length) ? -1 : 0;

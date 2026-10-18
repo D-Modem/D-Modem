@@ -62,6 +62,7 @@ public:
 	   clock is the samples taken, or the host's own count of the line
 	   (HalfModem's line_n, which a modem's delay moves on as well) */
 	int block(const short **p, int max) { return block(p, max, taken_); }
+	/* (the same, at the clock given) */
 	int block(const short **p, int max, unsigned long long clock)
 	{
 		int k = frame_ - (int)(clock % frame_);

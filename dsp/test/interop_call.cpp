@@ -82,6 +82,7 @@ public:
 	CallClock() = default;
 	CallClock(const CallClock &) = delete;
 	CallClock &operator=(const CallClock &) = delete;
+	/* the line's clock unmapped (unless it is own_) and its memfd closed */
 	~CallClock()
 	{
 		if (line_ && line_ != &own_)

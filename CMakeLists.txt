@@ -167,4 +167,14 @@ endif()
 if(DMODEM_TESTS)
 	add_subdirectory(dsp/test)
 	add_subdirectory(core/test)
+
+	# every function in the sources has a comment above it
+	find_package(Python3 COMPONENTS Interpreter QUIET)
+	if(Python3_Interpreter_FOUND)
+		dmodem_add_test(doc_check ${Python3_EXECUTABLE}
+			${PROJECT_SOURCE_DIR}/cmake/doc_check.py
+			${PROJECT_SOURCE_DIR})
+		set_tests_properties(doc_check PROPERTIES LABELS quick
+			TIMEOUT 120)
+	endif()
 endif()

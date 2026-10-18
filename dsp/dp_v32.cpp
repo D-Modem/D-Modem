@@ -223,7 +223,9 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	void rx_word_bit(int bit);
 	void rx_symbol();
 	void rx_sample(float x);
+	/* its name in the log */
 	const char *tag() const { return "v32"; }
+	/* in data mode (the carrier watched, no handshake timeout) */
 	bool in_data() const { return state == V32_DATA; }
 	void start_word(enum v32_txm m, unsigned w);
 	int connect();
@@ -237,6 +239,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
 	void cleanup();
 	int sample(float x, float *y);
+	/* cnt samples in and out, through sample() */
 	int process(void *in, void *out, int cnt) override
 	{
 		return pump_loop(in, out, cnt);

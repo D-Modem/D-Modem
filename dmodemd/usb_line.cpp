@@ -121,6 +121,7 @@ uint16_t cword(unsigned rate)
 
 } // namespace
 
+/* the device closed (close()) */
 UsbLine::~UsbLine()
 {
 	close();
@@ -233,6 +234,8 @@ bool UsbLine::set_reg(uint8_t reg, uint16_t v)
 	return err >= 0;
 }
 
+/* a register of the ST7554's read into *v (a vendor
+   request); false (logged) */
 bool UsbLine::get_reg(uint8_t reg, uint16_t *v)
 {
 	uint8_t b[2] = { 0, 0 };
@@ -422,6 +425,8 @@ void LIBUSB_CALL UsbLine::in_done(libusb_transfer *t)
 	static_cast<UsbLine *>(t->user_data)->in_complete(t);
 }
 
+/* an OUT transfer done: idle again, sent once there are
+   lengths for it (the line gone if unplugged) */
 void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 {
 	UsbLine *l = static_cast<UsbLine *>(t->user_data);
@@ -452,6 +457,8 @@ void UsbLine::send_out()
 	}
 }
 
+/* the interrupt transfer done: the FIFO's errors logged,
+   a ring counted, it again (the line gone if unplugged) */
 void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 {
 	UsbLine *l = static_cast<UsbLine *>(t->user_data);

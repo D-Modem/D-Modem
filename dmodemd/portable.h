@@ -311,21 +311,29 @@ inline bool peer_closed(int fd)
 
 /* as the Windows functions above, by POSIX's own calls */
 inline bool net_init() { return true; }
+/* read(): as the Windows fd_read() above */
 inline int fd_read(int fd, void *buf, int n) { return (int)read(fd, buf, n); }
+/* write(): as the Windows fd_write() above */
 inline int fd_write(int fd, const void *buf, int n)
 {
 	return (int)write(fd, buf, n);
 }
+/* O_NONBLOCK on fd: as the Windows set_nonblocking() */
 inline int set_nonblocking(int fd)
 {
 	return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 }
+/* close(): as the Windows fd_close() above */
 inline void fd_close(int fd) { close(fd); }
+/* a Unix socket pair, close on exec: as the Windows
+   stream_pair() */
 inline int stream_pair(int sv[2])
 {
 	return socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, sv);
 }
+/* fd duplicated, close on exec: as the Windows fd_dup() */
 inline int fd_dup(int fd) { return fcntl(fd, F_DUPFD_CLOEXEC, 0); }
+/* localtime_r(): as the Windows local_time() above */
 inline void local_time(time_t t, struct tm *tm) { localtime_r(&t, tm); }
 
 } // namespace dmd

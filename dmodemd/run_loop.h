@@ -29,6 +29,7 @@ public:
 	static void catch_signals();
 	/* the loop ends at its next turn (safe in a signal handler) */
 	static void stop() { running_ = 0; }
+	/* the loop goes on (no stop() yet) */
 	static bool running() { return running_; }
 
 	/* the n modems' work due (poll()): the ms to the first of their
@@ -44,6 +45,7 @@ public:
 	bool ready(int fd) const {
 		return fd >= 0 && FD_ISSET(fd, (fd_set *)&set_);
 	}
+	/* (writable) */
 	bool ready_write(int fd) const {
 		return fd >= 0 && FD_ISSET(fd, (fd_set *)&wset_);
 	}

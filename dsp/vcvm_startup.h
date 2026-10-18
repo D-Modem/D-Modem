@@ -128,6 +128,7 @@ struct VcvmInfo0 {
 	int encode(uint8_t *o) const;           /* 4 octets */
 	int decode(const uint8_t *o, int n);    /* 0, or -1 */
 	bool l2() const { return modes & 0x04; }
+	/* L3 is probed */
 	bool l3() const { return modes & 0x01; }
 };
 
@@ -229,6 +230,7 @@ public:
 	void push(const float *x, int n);
 	/* a transmission received, once its signal has ended */
 	bool get(VcvmMsg *m);
+	/* the samples received: the index of the next one pushed */
 	long received() const { return n_; }
 	/* a transmission is coming in */
 	bool busy() const { return active_; }
@@ -278,6 +280,7 @@ struct VcvmProbe {
 				   SCR_GPA) */
 
 	enum { L1_SYMS = 30, L2_SYMS = 22, L3_P20 = 40, L3_P10 = 80 };
+	/* L2's comb: W200 at 16000 Hz, else N200 */
 	int l2_code() const { return fs == 16000 ? 3 : 0; }
 };
 
@@ -325,11 +328,15 @@ public:
 	void start(long from);
 	/* samples from the line, the next being sample received() */
 	void push(const float *x, int n);
+	/* the index of the next sample pushed */
 	long received() const { return hbase_ + (long)hist_.size(); }
+	/* the probing received */
 	bool done() const { return st_ == DONE; }
+	/* the probing not found or lost */
 	bool failed() const { return st_ == FAILED; }
 	/* the end of the probing (its last symbol's), once done */
 	long end() const { return end_; }
+	/* what has been measured */
 	const VcvmProbeMeas &meas() const { return m_; }
 
 private:
@@ -396,15 +403,22 @@ public:
 	/* n samples from the line in, n to it out */
 	void process(const float *in, float *out, int n);
 
+	/* the state */
 	State state() const { return state_; }
+	/* the reason */
 	const char *why() const { return why_; }        /* if FAILED */
 	/* the loading this DCE asked for (it receives with it) and the one
 	   its peer asked for (it transmits with it) */
 	const VcvmLoading &rx_loading() const { return rxl_; }
+	/* the loading the peer asked for */
 	const VcvmLoading &tx_loading() const { return txl_; }
+	/* the round trip delay measured, ms (-1 not yet) */
 	int rtt_ms() const { return rtt_ms_; }
+	/* what this DCE measured of the peer's probing */
 	const VcvmProbeMeas &meas() const { return prx_.meas(); }
+	/* the messages in P20 (both have the parametric mode) */
 	bool param_messages() const { return msgp_; }
+	/* the sample at which the start-up was done (-1 before) */
 	long done_at() const { return done_at_; }
 	/* the end of the last message received (phase 4's signal is
 	   looked for from there) */

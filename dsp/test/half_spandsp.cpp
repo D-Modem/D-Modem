@@ -48,9 +48,11 @@ static void span_msg(int level, const char *text)
 
 class Spandsp : public HalfModem {
 public:
+	/* the program "spandsp", its settings SPANDSP_* */
 	Spandsp() : HalfModem("spandsp", "SPANDSP") {}
 
 protected:
+	/* nothing to start: the pumps start with a call; 0 */
 	int start() override { return 0; }
 	int line_block(const short *in, short *out, int n) override;
 	void dte_poll() override;
@@ -118,8 +120,11 @@ private:
 	void at_line(char *s);
 
 	/* spandsp's callbacks, to this modem */
+	/* the bit to send */
 	static int get_bit_cb(void *m) { return ((Spandsp *)m)->get_bit(); }
+	/* a bit received */
 	static void put_bit_cb(void *m, int bit) { ((Spandsp *)m)->put_bit(bit); }
+	/* a pump's status change */
 	static void status_cb(void *m, int st) { ((Spandsp *)m)->status(st); }
 	static void v8_cb(void *m, v8_parms_t *r);
 };
@@ -654,6 +659,7 @@ void Spandsp::dte_poll()
 	}
 }
 
+/* the spandsp modem on the line until it ends (HalfModem::run) */
 int main()
 {
 	return spandsp.run();

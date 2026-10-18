@@ -34,6 +34,7 @@ const int BUFFER_PERIODS = 8;
 
 } // namespace
 
+/* the codec closed (close()) */
 AlsaLine::~AlsaLine()
 {
 	close();

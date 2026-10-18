@@ -174,17 +174,20 @@ public:
 			++*(remote ? &stats->retrains_remote :
 			    &stats->retrains_local);
 	}
+	/* (see stat_retrain()) */
 	void stat_reneg(bool remote)
 	{
 		if (stats)
 			++*(remote ? &stats->renegs_remote :
 			    &stats->renegs_local);
 	}
+	/* (see stat_retrain()) */
 	void stat_dp(int id)
 	{
 		if (stats)
 			stats->dp = id;
 	}
+	/* (see stat_retrain()) */
 	void stat_snr(float db)
 	{
 		if (!stats)
@@ -192,6 +195,7 @@ public:
 		stats->snr = db;
 		stats->have |= DP_STATS_SNR;
 	}
+	/* (see stat_retrain()) */
 	void stat_rtd(long samples)
 	{
 		if (!stats || samples <= 0)
@@ -292,7 +296,9 @@ public:
 	}
 
 private:
+	/* the pump this is part of */
 	P &host() { return static_cast<P&>(*this); }
+	/* (see host()) */
 	const P &host() const { return static_cast<const P&>(*this); }
 };
 

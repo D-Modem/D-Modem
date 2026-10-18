@@ -57,6 +57,7 @@ protected:
 	void *t4src = nullptr;
 	std::string page;
 
+	/* the page's encoder freed */
 	~SpandspV17() override { drop_t4(); }
 	/* the page's encoder freed */
 	void drop_t4()

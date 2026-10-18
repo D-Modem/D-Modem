@@ -18,6 +18,8 @@
 
 namespace dsp {
 
+/* see vcvm_startup.h: bit c comb code c (N200 to N400 at 8000 Hz, W200,
+   W300 and W400 at 16000) */
 unsigned vcvm_probe_combs(int fs, int allowed)
 {
 	if (fs == 8000)
@@ -70,6 +72,7 @@ static void comb_part(int code, int fs, bool sym22, int n, unsigned *scr,
 	}
 }
 
+/* a parametric part: its preamble, then n symbols of known lags */
 static void param_part(int fs, bool p10, int n, unsigned *scr, int tap,
 		       std::vector<float> &out)
 {
@@ -87,6 +90,8 @@ static void param_part(int fs, bool p10, int n, unsigned *scr, int tap,
 	}
 }
 
+/* see vcvm_startup.h: L1's combs, L2, L3's P20 and P10, the known
+   steps from one scrambler throughout */
 void vcvm_probe_send(const VcvmProbe &p, std::vector<float> &out)
 {
 	unsigned scr = 0;
@@ -107,6 +112,8 @@ void vcvm_probe_send(const VcvmProbe &p, std::vector<float> &out)
  *    the receiver
  */
 
+/* the receiver for the parts p says (L1's combs, L2, L3), idle until
+   start(); 0, or -1 for a rate not 8000 or 16000 */
 int VcvmProbeRx::init(const VcvmProbe &p)
 {
 	if (p.fs != 8000 && p.fs != 16000)
@@ -131,6 +138,8 @@ int VcvmProbeRx::init(const VcvmProbe &p)
 	return 0;
 }
 
+/* see vcvm_startup.h: L3 at once where there are no combs; 3 s for
+   the onset */
 void VcvmProbeRx::start(long from)
 {
 	hist_.clear();
@@ -147,6 +156,8 @@ void VcvmProbeRx::start(long from)
 		end_ = from;
 }
 
+/* see vcvm_startup.h: the last 3 to 4 s kept, the parts taken as they
+   come */
 void VcvmProbeRx::push(const float *x, int n)
 {
 	hist_.insert(hist_.end(), x, x + n);
@@ -167,6 +178,8 @@ template <class R> static void feed(R &r, const std::vector<float> &h,
 		r.push(&h[(size_t)(a - hbase)], (int)(e - a));
 }
 
+/* the next comb part: its receiver from a symbol before its expected
+   start, its sums cleared, 2 s to receive it */
 void VcvmProbeRx::begin_comb()
 {
 	Part &pt = parts_[(size_t)part_];
@@ -183,6 +196,8 @@ void VcvmProbeRx::begin_comb()
 	st_ = COMB;
 }
 
+/* L3's P20 (or P10) part: locked where the last part ended, or P20's
+   preamble looked for where no comb came before; 1.5 s to receive it */
 void VcvmProbeRx::begin_param(bool p10)
 {
 	prx_.init(p_.fs, p10);
@@ -203,6 +218,8 @@ void VcvmProbeRx::begin_param(bool p10)
 	st_ = p10 ? L3B : L3A;
 }
 
+/* a comb part's sums into its measurements *cm: per tone the phase
+   error, the magnitude's change, the level, the DQPSK errors */
 void VcvmProbeRx::finish_comb(VcvmCombMeas *cm)
 {
 	double mx = 0;
@@ -220,6 +237,9 @@ void VcvmProbeRx::finish_comb(VcvmCombMeas *cm)
 	cm->ok = n_ > 0;
 }
 
+/* the probing received so far taken: L1's onset, each comb part's
+   symbols against the known steps, L3's lags against the known ones;
+   FAILED or DONE at the end */
 void VcvmProbeRx::run()
 {
 	for (;;) {
@@ -406,6 +426,7 @@ static int comb_rate(const VcvmCombMeas &cm, const VcvmLoad &l)
 	return p < 1e-3 ? 2 : p < 1e-2 ? 1 : 0;
 }
 
+/* comb code (sym22: its 22.5 ms symbol) in the modes allowed */
 static bool comb_allowed(int code, bool sym22, int allowed)
 {
 	if (sym22 && !(allowed & VCVM_M_SYM22))
@@ -419,6 +440,9 @@ static bool comb_allowed(int code, bool sym22, int allowed)
 	return false;
 }
 
+/* see vcvm_startup.h: the comb that carries the most (its tones'
+   orders and rings, its code rate) where it loads four tones and
+   carries more than the parametric mode; else that mode, or none */
 VcvmLoading vcvm_choose(const VcvmProbeMeas &m, int allowed)
 {
 	VcvmLoading best;

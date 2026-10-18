@@ -142,6 +142,7 @@ struct T38Line {
 	int lose, sent;
 };
 
+/* a side's packet onto its line, unless it is the lose'th */
 static void t38_send(void *ctx, const unsigned char *pkt, int len)
 {
 	T38Line *l = static_cast<T38Line *>(ctx);

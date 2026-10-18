@@ -95,6 +95,7 @@ std::mutex log_lock;
 
 /* a line to stderr, the time first */
 void say(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+/* (see the declaration above) */
 void say(const char *fmt, ...)
 {
 	char t[32];
@@ -279,6 +280,7 @@ struct Rtp {
 	uint32_t ts = 0, ssrc = 0;
 	bool first = true;
 
+	/* the socket closed */
 	~Rtp() { if (fd >= 0) close(fd); }
 
 	/* a UDP socket on host, any port: its port, -1 if none */
@@ -461,6 +463,7 @@ struct Line {
 	std::shared_ptr<ari::SipLeg> leg;       /* (T.38) */
 	int udptl = -1;                 /* our UDPTL socket */
 
+	/* our UDPTL socket closed */
 	~Line() { if (udptl >= 0) close(udptl); }
 };
 
@@ -470,6 +473,7 @@ struct T38Peer {
 	struct sockaddr_in to;
 };
 
+/* the fax engine's T.38 packet of len octets to ctx's peer (a T38Peer) */
 void t38_send(void *ctx, const unsigned char *pkt, int len)
 {
 	const T38Peer *p = static_cast<const T38Peer *>(ctx);
@@ -980,11 +984,13 @@ void event(const ari::Json &e)
 
 volatile sig_atomic_t stop;
 
+/* SIGINT, SIGTERM: stop set, the main loop ends */
 void on_signal(int)
 {
 	stop = 1;
 }
 
+/* the options to stderr */
 void usage(const char *prog)
 {
 	fprintf(stderr,
@@ -996,6 +1002,8 @@ void usage(const char *prog)
 
 } // namespace
 
+/* the program: the options and dmodem.conf, then ARI's events until
+   SIGINT or SIGTERM; 1 if it cannot start, 2 for bad options */
 int main(int argc, char *argv[])
 {
 	const char *conf_path = "/etc/asterisk/dmodem.conf";

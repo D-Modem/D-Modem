@@ -71,6 +71,7 @@ static const struct {
 		     23.05f, 23.85f }, 9 },
 };
 
+/* see codec_sim.h */
 int SpeechCodec::init(const char *spec, double loss, unsigned seed,
 		      const char **err, int rate)
 {
@@ -149,6 +150,7 @@ int SpeechCodec::init(const char *spec, double loss, unsigned seed,
 #endif
 }
 
+/* the encoder and the decoder freed (none until the next init()) */
 void SpeechCodec::close()
 {
 #ifdef DMODEM_HAVE_AMR
@@ -218,6 +220,7 @@ void SpeechCodec::frame()
 #endif
 }
 
+/* see codec_sim.h */
 int SpeechCodec::sample(int x)
 {
 	int y = 0;

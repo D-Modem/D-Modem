@@ -242,7 +242,9 @@ namespace {
 struct Wide {
 	unsigned w[4];
 
+	/* the value v */
 	void set(unsigned v) { memset(w, 0, sizeof(w)); w[0] = v; }
+	/* this times m (the carry past 2^128 lost) */
 	void mul(unsigned m)
 	{
 		unsigned long long c = 0;
@@ -273,6 +275,7 @@ struct Wide {
 			w[i] = (unsigned)d;
 		}
 	}
+	/* -1, 0 or 1 as this is less than, equal to or more than a */
 	int cmp(const Wide &a) const
 	{
 		for (int i = 3; i >= 0; i--)

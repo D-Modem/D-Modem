@@ -169,6 +169,7 @@ extern "C" {
 /* the library's hardware probe: one ICH4 AC'97 modem controller at our
    NAMBAR, NABMBAR and IRQ; 0 */
 int LXHardwareInfoCreate(void **pp) fnatr;
+/* see above */
 int LXHardwareInfoCreate(void **pp)
 {
 	struct agr_instance_info *i = &infos.slot[0];
@@ -193,6 +194,7 @@ int LXHardwareInfoCreate(void **pp)
 }
 /* nothing to free; 0 */
 int LXHardwareInfoDestroy(void **pp) fnatr;
+/* nothing to free; 0 */
 int LXHardwareInfoDestroy(void **pp) { (void)pp; return 0; }
 
 }
@@ -298,18 +300,31 @@ extern "C" {
 /* the library's port I/O: absolute ports, and ModemReg* from
    BaseAddress */
 fnatr byte agr_inp(unsigned a) { return (byte)agere.io_in(a, 1); }
+/* a 16 bit read of port a */
 fnatr word agr_inpw(unsigned a) { return (word)agere.io_in(a, 2); }
+/* a 32 bit read of port a */
 fnatr unsigned agr_inpl(unsigned a) { return agere.io_in(a, 4); }
+/* an 8 bit write of v to port a */
 fnatr void agr_outp(unsigned a, byte v) { agere.io_out(a, v, 1); }
+/* a 16 bit write of v to port a */
 fnatr void agr_outpw(unsigned a, word v) { agere.io_out(a, v, 2); }
+/* a 32 bit write of v to port a */
 fnatr void agr_outpl(unsigned a, unsigned v) { agere.io_out(a, v, 4); }
+/* a 32 bit read of port a */
 fnatr unsigned long inpd(unsigned long a) { return agere.io_in(a, 4); }
+/* a 32 bit write of v to port a */
 fnatr void outpd(unsigned long a, unsigned long v) { agere.io_out(a, v, 4); }
+/* an 8 bit write of v to BaseAddress + p */
 fnatr void ModemRegOut8(unsigned p, byte v) { agere.io_out(p + BaseAddress, v, 1); }
+/* a 16 bit write of v to BaseAddress + p */
 fnatr void ModemRegOut16(unsigned p, unsigned v) { agere.io_out(p + BaseAddress, v, 2); }
+/* a 32 bit write of v to BaseAddress + p */
 fnatr void ModemRegOut32(unsigned p, unsigned long v) { agere.io_out(p + BaseAddress, v, 4); }
+/* an 8 bit read of BaseAddress + p */
 fnatr byte ModemRegIn8(unsigned p) { return (byte)agere.io_in(p + BaseAddress, 1); }
+/* a 16 bit read of BaseAddress + p */
 fnatr word ModemRegIn16(unsigned p) { return (word)agere.io_in(p + BaseAddress, 2); }
+/* a 32 bit read of BaseAddress + p */
 fnatr unsigned long ModemRegIn32(unsigned p) { return agere.io_in(p + BaseAddress, 4); }
 
 /*
@@ -318,9 +333,13 @@ fnatr unsigned long ModemRegIn32(unsigned p) { return agere.io_in(p + BaseAddres
 
 /* memory: calloc'd; a bus address the pointer (a 32 bit process) */
 fnatr void *x_vmalloc(unsigned n) { return calloc(1, n); }
+/* vfree: free */
 fnatr void x_vfree(void *p) { free(p); }
+/* kmalloc: n bytes calloc'd */
 fnatr void *x_kmalloc(unsigned n) { return calloc(1, n); }
+/* kfree: free */
 fnatr void x_kfree(void *p) { free(p); }
+/* virt_to_bus: the pointer itself */
 fnatr unsigned x_virt_to_bus(void *p) { return (unsigned)(unsigned long)p; }
 /* no memory mapped I/O: NULL */
 fnatr void *x_ioremap_nocache(unsigned a, unsigned n)
@@ -331,21 +350,29 @@ fnatr void *x_ioremap_nocache(unsigned a, unsigned n)
 /* unmapping, the interrupt flag and I/O regions: nothing to do (one
    thread, every port ours) */
 fnatr void x_iounmap(void *p) { (void)p; }
+/* save_flags: 0 */
 fnatr void x_save_flags(unsigned long *f) { *f = 0; }
+/* restore_flags: nothing to do */
 fnatr void x_restore_flags(unsigned long *f) { (void)f; }
+/* sti: nothing to do */
 fnatr void x_sti(void) {}
+/* cli: nothing to do */
 fnatr void x_cli(void) {}
+/* request_region: granted (its name as the resource) */
 fnatr void *x_request_region(unsigned long s, unsigned long n, const char *name)
 {
 	(void)s; (void)n;
 	return (void *)name;
 }
+/* check_region: free; 0 */
 fnatr int x_check_region(unsigned long s, unsigned long n) { (void)s; (void)n; return 0; }
+/* release_region: nothing to do */
 fnatr void x_release_region(unsigned long s, unsigned long n) { (void)s; (void)n; }
 
 /* its interrupt: dev noted for LX_isr_handler, which raise_irq calls */
 int x_request_irq(unsigned irq, void *handler, unsigned long flags,
 		  const char *name, void *dev) fnatr;
+/* see above */
 int x_request_irq(unsigned irq, void *handler, unsigned long flags,
 		  const char *name, void *dev)
 {
@@ -370,6 +397,7 @@ extern "C" {
 
 /* a bottom half: task t for data (its function is LXHardwareBottomHalf) */
 void x_task_queue_init(void *t, x_func_ptr f, void *data) fnatr;
+/* see above */
 void x_task_queue_init(void *t, x_func_ptr f, void *data)
 {
 	struct task *k = (struct task *)t;
@@ -405,16 +433,26 @@ extern "C" {
 
 /* the C library's, by the kernel layer's names */
 fnatr char *x_strcpy(char *d, const char *s) { return strcpy(d, s); }
+/* strncpy */
 fnatr char *x_strncpy(char *d, const char *s, int n) { return strncpy(d, s, n); }
+/* strcat */
 fnatr char *x_strcat(char *d, const char *s) { return strcat(d, s); }
+/* strlen */
 fnatr int x_strlen(const char *s) { return (int)strlen(s); }
+/* strchr */
 fnatr char *x_strchr(const char *s, char c) { return (char *)strchr(s, c); }
+/* memset */
 fnatr void *x_memset(void *d, char c, int n) { return memset(d, c, n); }
+/* memcpy */
 fnatr void *x_memcpy(void *d, const void *s, int n) { return memcpy(d, s, n); }
+/* memcmp */
 fnatr int x_memcmp(const void *a, const void *b, int n) { return memcmp(a, b, n); }
+/* isprint: 1 or 0 */
 fnatr byte x_isprint(char c) { return isprint((unsigned char)c) != 0; }
+/* toupper */
 fnatr byte x_toupper(char c) { return (byte)toupper((unsigned char)c); }
 int x_sprintf(char *buf, const char *fmt, ...) fnatr;
+/* sprintf: the characters written */
 int x_sprintf(char *buf, const char *fmt, ...)
 {
 	va_list ap;
@@ -428,6 +466,7 @@ int x_sprintf(char *buf, const char *fmt, ...)
 /* its log: with AGERE_DEBUG; x_linux_dbg_print_crit's always */
 fnatr void linux_debug_message(byte *msg) { LOG("%s\n", msg); }
 void x_linux_dbg_print(const char *fmt, ...) fnatr;
+/* its debug print: to stderr, with AGERE_DEBUG */
 void x_linux_dbg_print(const char *fmt, ...)
 {
 	va_list ap;
@@ -438,6 +477,7 @@ void x_linux_dbg_print(const char *fmt, ...)
 	va_end(ap);
 }
 void x_linux_dbg_print_crit(const char *fmt, ...) fnatr;
+/* its critical print: to stderr, always */
 void x_linux_dbg_print_crit(const char *fmt, ...)
 {
 	va_list ap;
@@ -449,6 +489,7 @@ void x_linux_dbg_print_crit(const char *fmt, ...)
 /* PCI: there, but no device found and its configuration space zeros
    (LXHardwareInfoCreate gives the hardware) */
 fnatr int x_pcibios_present(void) { return 1; }
+/* pci_find_device: noted; 0, none found */
 fnatr unsigned agr_pci_find_device(unsigned v, unsigned d, unsigned *irq)
 {
 	LOG("pci_find_device %04x:%04x\n", v, d);
@@ -459,23 +500,34 @@ fnatr unsigned agr_pci_find_device(unsigned v, unsigned d, unsigned *irq)
 #define PCICFG(name, type) \
 	fnatr int name(byte bus, byte devfn, byte where, type *val) \
 	{ LOG(#name " %02x\n", where); (void)bus; (void)devfn; *val = 0; return 0; }
+/* the reads of a byte, a word and a dword: 0 */
 PCICFG(x_pcibios_read_config_byte, byte)
 PCICFG(x_pcibios_read_config_word, word)
 PCICFG(x_pcibios_read_config_dword, unsigned)
+/* a configuration space write: nothing to do; 0 */
 fnatr int x_pcibios_write_config_word(byte b, byte df, byte w, word v)
 { (void)b; (void)df; (void)w; (void)v; return 0; }
+/* and of a dword */
 fnatr int x_pcibios_write_config_dword(byte b, byte df, byte w, unsigned v)
 { (void)b; (void)df; (void)w; (void)v; return 0; }
 
 /* one CPU, no module counts, atomics plain */
 fnatr int x_smp_processor_id(void) { return 0; }
+/* smp_num_cpus: 1 */
 fnatr int x_smp_num_cpus(void) { return 1; }
+/* MOD_INC_USE_COUNT: nothing to do */
 fnatr void x_MOD_INC_USE_COUNT(void) {}
+/* MOD_DEC_USE_COUNT: nothing to do */
 fnatr void x_MOD_DEC_USE_COUNT(void) {}
+/* atomic_read: *a */
 fnatr int x_atomic_read(int *a) { return *a; }
+/* atomic_set: *a = v */
 fnatr void x_atomic_set(int *a, int v) { *a = v; }
+/* atomic_inc: *a one up */
 fnatr void x_atomic_inc(int *a) { ++*a; }
+/* atomic_dec: *a one down */
 fnatr void x_atomic_dec(int *a) { --*a; }
+/* atomic_dec_and_test: *a one down; whether it is 0 */
 fnatr int x_atomic_dec_and_test(int *a) { return --*a == 0; }
 
 /* the serial driver's: the library calls it when its UART has news */
@@ -637,6 +689,7 @@ int Agere::start()
 	return 0;
 }
 
+/* the Agere modem on the line until it ends (HalfModem::run) */
 int main()
 {
 	return agere.run();

@@ -31,6 +31,7 @@ public:
 	enum { FRAME = 160 };   /* samples at 8000 Hz */
 
 	SpeechCodec() = default;
+	/* the codec closed */
 	~SpeechCodec() { close(); }
 	SpeechCodec(const SpeechCodec &) = delete;
 	SpeechCodec &operator=(const SpeechCodec &) = delete;
@@ -43,7 +44,10 @@ public:
 	int init(const char *spec, double loss, unsigned seed,
 		 const char **err, int rate = 8000);
 	void close();
+	/* whether init() opened a codec */
 	bool on() const { return state_ != nullptr; }
+	/* the codec and its rate, e.g. "AMR 12.2 kbit/s DTX" ("" before
+	   init()) */
 	const char *name() const { return name_; }
 
 	/* one sample in (at the rate of init()), the codec's one out
@@ -52,6 +56,7 @@ public:
 
 	/* the frames encoded so far, and those erased */
 	long frames() const { return frames_; }
+	/* the frames erased */
 	long erased() const { return erased_; }
 
 private:

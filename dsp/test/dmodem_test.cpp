@@ -698,12 +698,14 @@ TEST(DmodemCxx, VoiceTones)
    one; on a line with one, the program's callback with each flash's
    length, the line silent for as long, the digits around it played */
 static std::vector<unsigned> flashes;
+/* the program's hook flash callback: the flash's length kept in flashes */
 static void on_flash(void *arg, unsigned ms)
 {
 	(void)arg;
 	flashes.push_back(ms);
 }
 
+/* AT+VTS's hook flash, on a line without one and on one with it */
 TEST(DmodemCxx, VoiceHookFlash)
 {
 	dm::init();

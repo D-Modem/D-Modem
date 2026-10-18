@@ -35,6 +35,7 @@ public:
 		if (rx_)
 			fwrite(buf, 1, n, rx_);
 	}
+	/* (n bytes it sent) */
 	void tx(const void *buf, size_t n)
 	{
 		if (tx_)

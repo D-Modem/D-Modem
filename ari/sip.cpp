@@ -37,6 +37,7 @@ namespace {
 #define T1_MS   500
 #define T2_MS   4000
 
+/* milliseconds, monotonic */
 long long now_ms()
 {
 	struct timespec ts;
@@ -56,6 +57,7 @@ std::string random_hex(int n)
 	return s;
 }
 
+/* s in lower case */
 std::string lower(std::string s)
 {
 	for (char &c : s)
@@ -63,6 +65,7 @@ std::string lower(std::string s)
 	return s;
 }
 
+/* s without its leading and trailing blanks */
 std::string trim(const std::string &s)
 {
 	size_t a = s.find_first_not_of(" \t"), b = s.find_last_not_of(" \t");
@@ -77,6 +80,7 @@ struct Msg {
 	std::vector<std::pair<std::string, std::string>> headers;
 	std::string body;
 
+	/* the header name's value (the first one), "" if none */
 	std::string get(const char *name) const
 	{
 		for (const auto &h : headers)
@@ -101,6 +105,8 @@ std::string header_name(const std::string &n)
 	return l;
 }
 
+/* text into m (its folded headers joined, the body cut to its
+   Content-Length); false if it is no SIP message */
 bool parse(const std::string &text, Msg *m)
 {
 	size_t end = text.find("\r\n\r\n"), at, eol;
@@ -296,6 +302,7 @@ T38Params t38_params(const SdpMedia &m)
 
 } /* namespace */
 
+/* see sip.h */
 const SdpMedia *Sdp::find(const std::string &type) const
 {
 	for (const SdpMedia &m : media)
@@ -304,6 +311,8 @@ const SdpMedia *Sdp::find(const std::string &type) const
 	return nullptr;
 }
 
+/* body's media lines into s, each with its address (the session's
+   if it has none); false if there are none */
 bool sdp_parse(const std::string &body, Sdp *s)
 {
 	std::string session_addr;
@@ -369,6 +378,7 @@ bool sdp_parse(const std::string &body, Sdp *s)
 	return !s->media.empty();
 }
 
+/* see sip.h */
 bool SipAgent::start(const std::string &host, int port)
 {
 	struct sockaddr_in sa = {};
@@ -393,6 +403,7 @@ bool SipAgent::start(const std::string &host, int port)
 	return true;
 }
 
+/* see sip.h */
 std::shared_ptr<SipLeg> SipAgent::expect(const std::string &token, int pt,
 					  int rtp_port, int udptl_port)
 {
@@ -407,6 +418,7 @@ std::shared_ptr<SipLeg> SipAgent::expect(const std::string &token, int pt,
 	return leg;
 }
 
+/* see sip.h */
 void SipAgent::forget(const std::shared_ptr<SipLeg> &leg)
 {
 	std::lock_guard<std::mutex> lk(lock_);
@@ -417,6 +429,7 @@ void SipAgent::forget(const std::shared_ptr<SipLeg> &leg)
 		leg->forget_at = now_ms() + 64 * T1_MS;
 }
 
+/* see sip.h */
 bool SipAgent::wait_up(const std::shared_ptr<SipLeg> &leg, int ms)
 {
 	std::unique_lock<std::mutex> lk(lock_);
@@ -425,18 +438,21 @@ bool SipAgent::wait_up(const std::shared_ptr<SipLeg> &leg, int ms)
 		leg->up && !leg->gone;
 }
 
+/* see sip.h */
 SipLeg SipAgent::get(const std::shared_ptr<SipLeg> &leg)
 {
 	std::lock_guard<std::mutex> lk(lock_);
 	return *leg;
 }
 
+/* see sip.h */
 void SipAgent::accept_t38(const std::shared_ptr<SipLeg> &leg, bool on)
 {
 	std::lock_guard<std::mutex> lk(lock_);
 	leg->accept_t38 = on;
 }
 
+/* see sip.h */
 bool SipAgent::ask_t38(const std::shared_ptr<SipLeg> &leg)
 {
 	std::lock_guard<std::mutex> lk(lock_);
@@ -470,12 +486,14 @@ bool SipAgent::ask_t38(const std::shared_ptr<SipLeg> &leg)
 	return true;
 }
 
+/* msg in a datagram to to */
 void SipAgent::send_to(const struct sockaddr_in &to, const std::string &msg)
 {
 	sendto(fd_, msg.data(), msg.size(), 0, (const struct sockaddr *)&to,
 	       sizeof(to));
 }
 
+/* see sip.h: the datagrams that come, and the timers every 50 ms */
 void SipAgent::run()
 {
 	char buf[8192];
@@ -528,6 +546,8 @@ void SipAgent::timers()
 	}
 }
 
+/* a datagram from from: a response to our re-INVITE (ACKed), or a
+   request answered */
 void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 {
 	Msg m;

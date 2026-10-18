@@ -374,6 +374,8 @@ private:
    far one's, each through a band pass of its own */
 class Echoes {
 public:
+	/* both echoes from cfg: their band passes, gains (none for a dB of 0
+	   or more) and the far one's delay, no history */
 	void init(const LoopbackConfig &cfg)
 	{
 		own.assign(ECHO_HISTORY, 0);
@@ -411,6 +413,8 @@ private:
 /* the whole line: the two directions and each side's echoes */
 class Line {
 public:
+	/* the two directions for a run of n samples, the clock offset cfg.ppm
+	   each way, and each side's echoes, from cfg */
 	void init(const LoopbackConfig &cfg, long n)
 	{
 		double offset = cfg.ppm * 1e-6;
@@ -448,6 +452,8 @@ private:
    count realigned after */
 class ErrorCount {
 public:
+	/* a count of rx against tx (each packed into words) for the side name,
+	   the errors shown if SHOW_ERRORS is set */
 	ErrorCount(const std::vector<u8> &rx_, const std::vector<u8> &tx_,
 		   const char *name_)
 		: rx(rx_), tx(tx_), rx_words(pack(rx_)), tx_words(pack(tx_)),

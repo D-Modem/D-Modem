@@ -57,6 +57,7 @@ struct dmodem_glibc_rand_state {
 	int seeded;
 };
 
+/* the one random(3) state */
 static inline struct dmodem_glibc_rand_state *dmodem_glibc_rand_st(void)
 {
 	static struct dmodem_glibc_rand_state s;

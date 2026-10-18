@@ -79,8 +79,10 @@ private:
 	/* (debug: the peaks each way, each second) */
 	int lv_n_ = 0, lv_in_ = 0, lv_out_ = 0;
 
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 
+	/* channel c runs: the DMA on (0x60 of 0) and its control's run bit */
 	bool dma_run(int c) const
 	{
 		return (bcm_regs[0] & 0x60) && (bcm_regs[(0x200 + 0x10 * c) / 4] & 1);
@@ -91,6 +93,8 @@ private:
 	{
 		return dma_cur_[c] == (bcm_regs[(0x208 + 0x10 * c) / 4] & 0xfff);
 	}
+	/* channel c's status: idle (0x2000) or busy (0x1000) and its
+	   current descriptor, while it runs; 0 if not */
 	u32 dma_status(int c) const
 	{
 		return dma_run(c) ? (dma_idle(c) ? 0x2000 : 0x1000) |
@@ -99,6 +103,10 @@ private:
 	short dma_sample(int c, short in);
 };
 
+/* a register write of size bytes at off: the interrupt status
+   written back cleared, the DAA's command to the Si3034, a
+   channel's stop and the DMA's on or off back to the ring's
+   start */
 template <class Host>
 void Bcm4212<Host>::bcm_write(u32 off, int size, u32 v)
 {
@@ -165,6 +173,7 @@ short Bcm4212<Host>::dma_sample(int c, short in)
 	return out;
 }
 
+/* a codec sample each way: TX's to the DAC, the ADC's to RX */
 template <class Host>
 short Bcm4212<Host>::bcm_sample(short adc)
 {

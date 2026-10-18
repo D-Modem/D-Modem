@@ -15,6 +15,7 @@
 
 namespace dsp {
 
+/* see rs.h */
 int ReedSolomon::init(int n, int k)
 {
 	if (n < 2 || n > MAX_N || k < 1 || k >= n || n - k > MAX_CHECK)
@@ -47,6 +48,7 @@ int ReedSolomon::init(int n, int k)
 	return 0;
 }
 
+/* see rs.h */
 void ReedSolomon::encode(const uint8_t *msg, uint8_t *cw) const
 {
 	uint8_t p[MAX_CHECK] = {};
@@ -61,6 +63,7 @@ void ReedSolomon::encode(const uint8_t *msg, uint8_t *cw) const
 	memcpy(cw + k_, p, (size_t)nc_);
 }
 
+/* see rs.h */
 int ReedSolomon::decode(uint8_t *cw, const uint8_t *erased) const
 {
 	const int n = n_, nc = nc_;

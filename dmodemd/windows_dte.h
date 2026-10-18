@@ -47,8 +47,10 @@ public:
 	/* where it listens, for the user ("127.0.0.1:2323") */
 	const std::string &where() const { return where_; }
 
+	/* the client's socket, else the listening one */
 	int fd() const override { return client_ >= 0 ? client_ : listen_; }
 	bool want_read(const dcore::Modem &m) override;
+	/* a client, and output waits for it */
 	bool want_write() const override {
 		return client_ >= 0 && !out_.empty();
 	}
@@ -69,9 +71,11 @@ private:
    and coming travel in-band, escaped; its going hangs the modem up */
 class ThreadDte : public Dte {
 public:
+	/* the pair's main loop end */
 	int fd() const override { return pair_[0]; }
 	bool want_read(const dcore::Modem &m) override;
 	int serve(dcore::Modem &m) override;
+	/* the DTE's name, for the user */
 	const std::string &where() const { return name_; }
 
 protected:

@@ -172,6 +172,7 @@ int Broadcom::start()
 	return win_start(&dev);
 }
 
+/* the Broadcom modem on the line until it ends (HalfModem::run) */
 int main()
 {
 	return broadcom.run();

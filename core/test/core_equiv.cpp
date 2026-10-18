@@ -95,6 +95,7 @@ static std::vector<std::string> scripts()
    .expect */
 class CoreEquiv : public testing::TestWithParam<std::string> {};
 
+/* the script's transcript from the core, against its .expect */
 TEST_P(CoreEquiv, SameTranscript)
 {
 	std::string base = std::string(SCRIPTS_DIR) + "/" + GetParam();

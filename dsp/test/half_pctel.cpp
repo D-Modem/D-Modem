@@ -54,6 +54,7 @@ extern u32 curModem, curMode;           /* the pumps' */
 
 class Pctel : public HalfModem, public CodecLine<Pctel> {
 public:
+	/* the program "pctel", its settings PCTEL_* */
 	Pctel() : HalfModem("pctel", "PCTEL") {}
 
 	/* the codec's rate (SetSampleFreq) and the samples a block
@@ -192,7 +193,9 @@ void WriteSiReg(void)
 
 /* and the rest of the HAL: nothing to do */
 void WriteOutSiReg(void) {}
+/* no Si patch */
 void SiPatch(void) {}
+/* no restart */
 void RestartPt(void) {}
 
 /*
@@ -360,6 +363,7 @@ int Pctel::start()
 	return 0;
 }
 
+/* the PCTel modem on the line until it ends (HalfModem::run) */
 int main()
 {
 	return pctel.run();

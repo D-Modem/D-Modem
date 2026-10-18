@@ -138,6 +138,7 @@ void PowerMeter::init(float time_const_sec, int srate)
  *    the next bit on both sides.
  */
 
+/* see dsp.h */
 int V22Scrambler::scramble(int bit)
 {
 	int out = (bit ^ (reg >> 13) ^ (reg >> 16)) & 1;

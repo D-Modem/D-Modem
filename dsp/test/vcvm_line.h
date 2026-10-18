@@ -28,6 +28,7 @@ namespace vcvm_test {
 using dsp::SpeechCodec;
 #endif
 
+/* whether the speech codecs are built in (DMODEM_HAVE_AMR) */
 inline bool have_codec()
 {
 #ifdef DMODEM_HAVE_AMR
@@ -45,6 +46,8 @@ const int PATH_MARGIN = 96;
    far clock ppm off (windowed sinc), a codec */
 class Path {
 public:
+	/* a path at fs Hz: delay samples of delay, gain, the far clock ppm off,
+	   codec (a codec_sim.h spec, "" or null: none) */
 	Path(int fs, int delay, double gain, double ppm, const char *codec)
 		: fs_(fs), gain_(gain), r_(1 + ppm * 1e-6)
 	{
@@ -63,6 +66,8 @@ public:
 #endif
 	}
 
+	/* n samples x in: resampled to the far clock, through the gain and the
+	   codec, onto those to pull() */
 	void push(const float *x, int n)
 	{
 		in_.insert(in_.end(), x, x + n);
@@ -104,6 +109,8 @@ public:
 	}
 
 private:
+	/* the resampler's sample v through the codec (clipped to 16 bits), if
+	   there is one; else v as it is */
 	float shape(double v)
 	{
 #ifdef DMODEM_HAVE_AMR

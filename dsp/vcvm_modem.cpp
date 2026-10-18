@@ -18,6 +18,8 @@
 
 namespace dsp {
 
+/* the DCE of c, the octets it sends from src, those it decodes to
+   sink, its start-up begun; 0, or -1 if the configuration won't go */
 int VcvmModem::init(const Config &c, Source src, Sink sink)
 {
 	c_ = c;
@@ -40,6 +42,7 @@ int VcvmModem::init(const Config &c, Source src, Sink sink)
 	return state_ == FAILED ? -1 : 0;
 }
 
+/* a line to the log, the time in seconds before it */
 void VcvmModem::note(const char *fmt, ...)
 {
 	char b[300];
@@ -54,6 +57,7 @@ void VcvmModem::note(const char *fmt, ...)
 	log_ += '\n';
 }
 
+/* FAILED (once), why the reason, the transmitter stopped */
 void VcvmModem::fail(const char *why)
 {
 	if (state_ == FAILED)
@@ -64,11 +68,13 @@ void VcvmModem::fail(const char *why)
 	note("failed: %s", why);
 }
 
+/* ms of silence to the transmitter's queue */
 void VcvmModem::silence(int ms)
 {
 	txq_.insert(txq_.end(), (size_t)ms * c_.su.fs / 1000, 0.0f);
 }
 
+/* the line's samples kept since sample from, pushed again to receiver r */
 template <class R> void VcvmModem::replay(R &r, long from)
 {
 	from = std::max(from, hbase_);
@@ -77,11 +83,14 @@ template <class R> void VcvmModem::replay(R &r, long from)
 		r.push(&hist_[(size_t)(from - hbase_)], (int)(e - from));
 }
 
+/* see vcvm_modem.h */
 bool VcvmModem::connected() const
 {
 	return state_ == DATA && tx_data_ && rx_on_ && drx_.confirmed();
 }
 
+/* a new start-up from phase 2 (after a retrain: the calling DCE's
+   INFO0 3 s late); FAILED if its configuration won't go */
 void VcvmModem::start_startup(bool after_retrain)
 {
 	VcvmStartup::Config k = c_.su;
@@ -98,6 +107,8 @@ void VcvmModem::start_startup(bool after_retrain)
 	note(after_retrain ? "retrain: phase 2" : "phase 2");
 }
 
+/* the transmitter into phase 4 with the loading the peer asked for
+   (none: it stays silent) */
 void VcvmModem::start_tx()
 {
 	tx_data_ = false;
@@ -111,6 +122,8 @@ void VcvmModem::start_tx()
 	tx_data_ = true;
 }
 
+/* the receivers from sample from: phase 4's with this DCE's loading,
+   the messages' for a further MP, the kept samples replayed */
 void VcvmModem::start_rx(long from)
 {
 	rx_on_ = false;
@@ -131,6 +144,9 @@ void VcvmModem::start_rx(long from)
 	mrx_on_ = true;
 }
 
+/* phase 4 on the start-up's end: its loadings and round trip, both
+   directions started, the watch and the parametric mode's retrain
+   timer set */
 void VcvmModem::enter_data()
 {
 	rxl_ = su_->rx_loading();
@@ -152,6 +168,8 @@ void VcvmModem::enter_data()
 		t_ + 30L * c_.su.fs : -1;
 }
 
+/* an MP (this DCE's loading, the round trip, ack and retrain) and
+   100 ms of silence to the queue */
 void VcvmModem::send_mp()
 {
 	VcvmMp mp;
@@ -201,6 +219,9 @@ VcvmLoading VcvmModem::rechoose(bool *retrain)
 	return l;
 }
 
+/* a renegotiation (or a retrain): asked for here (the new loading
+   rechosen) or on the peer's control sequence (remote); the control
+   sequence sent, the messages looked for, 25 s to finish */
 void VcvmModem::begin_reneg(bool remote, bool retrain)
 {
 	want_reneg_ = want_retrain_ = false;
@@ -232,6 +253,8 @@ void VcvmModem::begin_reneg(bool remote, bool retrain)
 	deadline_ = t_ + 25L * c_.su.fs;
 }
 
+/* the MPs acknowledged both ways: phase 4 again with the new loadings,
+   or after a retrain the start-up again */
 void VcvmModem::finish_reneg()
 {
 	if (retrain_ || peer_retrain_) {
@@ -251,6 +274,9 @@ void VcvmModem::finish_reneg()
 	words_ = failed_ = 0;
 }
 
+/* a message received: in phase 4 the peer's last MP, a repeated one
+   (answered), or a renegotiation's; in a renegotiation the peer's MP
+   taken */
 void VcvmModem::on_msg(const VcvmMsg &m)
 {
 	VcvmMp mp;
@@ -304,6 +330,9 @@ void VcvmModem::on_msg(const VcvmMsg &m)
 	     mp.retrain ? " (retrain)" : "", mp.l.str().c_str());
 }
 
+/* phase 4's watch (9.5): a retrain on the signal lost, the parametric
+   mode's c-bar and timers; a renegotiation, every 2 s, on codewords
+   failing or a tone's phase error over its order's threshold */
 void VcvmModem::check_data()
 {
 	const int fs = c_.su.fs;
@@ -357,6 +386,8 @@ void VcvmModem::check_data()
 		begin_reneg(false, false);
 }
 
+/* what a block of samples leads to: the messages taken, the
+   renegotiations begun, the MPs sent until both are acknowledged */
 void VcvmModem::step()
 {
 	VcvmMsg m;
@@ -406,6 +437,8 @@ void VcvmModem::step()
 		fail("the renegotiation");
 }
 
+/* n samples from the line in, n out, 10 ms at a time: the start-up's,
+   then phase 4's and the renegotiations' */
 void VcvmModem::process(const float *in, float *out, int n)
 {
 	const int fs = c_.su.fs, B = fs / 100;

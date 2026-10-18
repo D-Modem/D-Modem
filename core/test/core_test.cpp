@@ -29,6 +29,7 @@ using dcore::Result;
 
 /* the data pumps, once for the program */
 static struct Pumps {
+	/* the pumps registered */
 	Pumps() {
 		prop_dp_init();
 	}
@@ -64,6 +65,7 @@ struct Line final : public dcore::Host {
 	void speaker(Modem &, int v) override { volume = v; }
 	/* the line's delay, and the changes asked for, added up */
 	int io_delay(Modem &) override { return delay; }
+	/* (see io_delay()) */
 	void update_delay(Modem &, int samples) override {
 		delay_change += samples;
 	}
@@ -80,7 +82,9 @@ struct Line final : public dcore::Host {
 	bool analog = false, pulses = false;
 	unsigned long samples = 0;
 	std::vector<std::pair<unsigned long, bool>> edges;
+	/* the line analogue, as the test sets it */
 	bool analog_line(Modem &) override { return analog; }
+	/* a break or make kept with the samples by then; -1 unless pulses */
 	int pulse_hook(Modem &, bool broken) override {
 		if (!pulses)
 			return -1;
@@ -416,6 +420,7 @@ struct Pair {
 		la.out.clear();
 		lb.out.clear();
 	}
+	/* the modems freed */
 	~Pair() {
 		delete a;
 		delete b;

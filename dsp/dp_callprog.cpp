@@ -104,6 +104,7 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	int fax;
 	Osc ct;
 
+	/* its name in the log */
 	const char *tag() const { return "callprog"; }
 	int block();
 	bool busy_part(bool on, int len) const;

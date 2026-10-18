@@ -397,6 +397,7 @@ void V34Rx::frame_start()
 	fr->start();
 }
 
+/* a bit of Ja: a good frame's DIL into dil, ev_ja */
 void V34Rx::ja_bit(int bit)
 {
 	int r = fr->add(bit);

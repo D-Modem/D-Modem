@@ -54,6 +54,7 @@ public:
 	enum { I537_SIZE = 0x68 };
 	/* the registers (u32 aligned: read32 and write32 at offsets of 4) */
 	u32 i537_words[I537_SIZE / 4] = {};
+	/* the registers as octets */
 	byte *i537_regs() { return (byte *)i537_words; }
 
 	/* the codec's rate (Hz) by 0x37 */
@@ -117,8 +118,11 @@ private:
 	u32 status_ = 0;
 	bool run_ = false;
 
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
+	/* the register octet at o */
 	byte reg(int o) const { return ((const byte *)i537_words)[o]; }
+	/* the register word at o */
 	u32 &word32(int o) { return i537_words[o / 4]; }
 
 	/* the ring at registers b (base, end, interrupt point, current):

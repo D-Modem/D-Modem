@@ -56,6 +56,7 @@ struct VcvmComb {
 	   if they don't go
 	   together */
 	int init(int code, int fs, bool sym22 = false);
+	/* tone i's frequency, Hz */
 	double freq(int i) const { return (double)(kmin + i) * spacing; }
 	/* the symbol period in ms */
 	double ms() const { return 1000.0 * sps / fs; }
@@ -81,8 +82,11 @@ public:
 	   -12) */
 	int init(int code, int fs, bool sym22 = false, double dbfs = -12);
 	void set_load(const VcvmLoad &l);
+	/* the comb */
 	const VcvmComb &comb() const { return c_; }
+	/* a symbol, samples */
 	int sps() const { return c_.sps; }
+	/* the bits a data symbol takes */
 	int bits() const { return load_.bits(c_.tones); }
 
 	/* the phase reference (10.5): the tones as they are, the rings at
@@ -131,10 +135,12 @@ class VcvmCombRx {
 public:
 	int init(int code, int fs, bool sym22 = false);
 	void set_load(const VcvmLoad &l);
+	/* the comb */
 	const VcvmComb &comb() const { return c_; }
 
 	/* samples from the line (16 bit scale) */
 	void push(const float *x, int n);
+	/* the samples received: the index of the next one pushed */
 	long received() const { return base_ + (long)buf_.size(); }
 	/* nothing received, unlocked: the next sample pushed is sample
 	   base */
@@ -156,6 +162,7 @@ public:
 	   probing, which the timing then follows instead of the
 	   decisions */
 	bool next(VcvmCombSym *s, const uint8_t *known = nullptr);
+	/* the symbol timing acquired */
 	bool locked() const { return locked_; }
 
 private:
@@ -191,6 +198,7 @@ class VcvmParamTx {
 public:
 	/* the alphabet, the level (dBFS rms over a symbol, -15) */
 	int init(int fs, bool p10, double dbfs = -15);
+	/* a symbol, samples */
 	int sps() const { return p_.sps; }
 	/* a symbol of index i (0-15) */
 	void symbol(int i, float *out);
@@ -216,6 +224,7 @@ class VcvmParamRx {
 public:
 	int init(int fs, bool p10);
 	void push(const float *x, int n);
+	/* the samples received: the index of the next one pushed */
 	long received() const { return base_ + (long)buf_.size(); }
 	/* nothing received, unlocked: the next sample pushed is sample
 	   base, the preamble looked for from there */
@@ -224,6 +233,7 @@ public:
 	/* looks for the preamble in what has come: true once found (the
 	   next symbol is the first after it) */
 	bool search();
+	/* the preamble found (or lock_at()) */
 	bool locked() const { return locked_; }
 	/* locked without the search: the next symbol starts at sample at
 	   (the timing known otherwise, as P10's after P20's in L3) */
@@ -238,6 +248,7 @@ public:
 	static void bits(int idx, uint8_t *b);
 	/* c-bar: the decided c's mean over the last 2 s (0 before any) */
 	float cbar() const;
+	/* the next symbol's first sample (once locked) */
 	long next_start() const { return next_; }
 
 private:
@@ -260,6 +271,7 @@ private:
 
 /* the Gray code of i, and its inverse */
 static inline int vcvm_gray(int i) { return i ^ (i >> 1); }
+/* the inverse of vcvm_gray(): the i whose Gray code is g */
 static inline int vcvm_ungray(int g)
 {
 	int i = 0;

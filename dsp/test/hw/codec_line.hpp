@@ -61,8 +61,10 @@ private:
 	float noise_rms_ = -1;  /* (not read yet) */
 	u32 seed_ = 1;
 
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 
+	/* the line's noise: uniform, noise_rms_ RMS, the same every run */
 	float noise()
 	{
 		seed_ = seed_ * 1664525u + 1013904223u; /* (the same every run) */

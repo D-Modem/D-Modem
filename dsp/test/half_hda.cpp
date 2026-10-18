@@ -75,7 +75,9 @@ class HdaModem final : public HalfModem, public HdaController<HdaModem>,
 		       public Si3054Hda<HdaModem>, public CodecLine<HdaModem>,
 		       public dcore::Host {
 public:
+	/* the program "hda", its settings HDA_* */
 	HdaModem() : HalfModem("hda", "HDA") {}
+	/* the modem deleted */
 	~HdaModem() { delete m_; }
 
 	/* the controller's codec on SDIN 0 */
@@ -83,11 +85,15 @@ public:
 
 	/* dcore::Host */
 	int start(dcore::Modem &) override { running_ = true; return 0; }
+	/* the modem stopped: no more process() calls; 0 */
 	int stop(dcore::Modem &) override { running_ = false; return 0; }
 	int set_hook(dcore::Modem &m, int state) override;
+	/* an analogue line: yes */
 	bool analog_line(dcore::Modem &) override { return true; }
+	/* a hook flash: yes */
 	bool can_flash(dcore::Modem &) override { return true; }
 	void hook_flash(dcore::Modem &m, unsigned ms) override;
+	/* a dial pulse's make or break (broken: on hook); 0, -1 if on hook */
 	int pulse_hook(dcore::Modem &, bool broken) override
 	{
 		if (hook_ != MODEM_HOOK_OFF)
@@ -96,14 +102,19 @@ public:
 		set_switch(Si3054Hda::GPIO_OH, !broken);
 		return 0;
 	}
+	/* the samples between the modem's output and the line: LEAD
+	   periods */
 	int io_delay(dcore::Modem &) override { return LEAD * period_; }
+	/* its driver's name */
 	const char *driver_name() override { return "Si3054 (HD audio)"; }
+	/* the modem's output to the DTE (its result codes scanned); n */
 	int dte_write(dcore::Modem &, const char *buf, int n) override
 	{
 		results.scan(buf, (size_t)n);
 		pty.write(buf, (size_t)n);
 		return n;
 	}
+	/* the codec's time: ms of its samples */
 	unsigned long now_ms() override
 	{
 		return (unsigned long)(samples_ * 1000 / rate_);
@@ -140,7 +151,9 @@ private:
 
 	/* the controller's registers */
 	u32 rd(unsigned off, int size) { return hda_read(off, size); }
+	/* a write of v, size octets, at off */
 	void wr(unsigned off, u32 v, int size) { hda_write(off, v, size); }
+	/* stream descriptor d's offset */
 	unsigned sd(int d) const { return SD0 + d * SD_SIZE; }
 
 	/* a command to the codec through the immediate command interface:
@@ -150,6 +163,7 @@ private:
 	u32 verb4(unsigned nid, unsigned verb, unsigned payload);
 	/* the Si3054's registers */
 	word get_reg(unsigned r) { return (word)verb4(r, 0x9, 0); }
+	/* register r written with v (verb 1) */
 	void set_reg(unsigned r, word v) { verb4(r, 0x1, v); }
 	/* an ALSA control's put: the GPIO_CONTROL bit set or cleared */
 	void set_switch(word bit, bool on);
@@ -163,6 +177,8 @@ private:
 static HdaModem hda;
 #define LOG(...) do { if (hda.dbg) hda.log(__VA_ARGS__); } while (0)
 
+/* a command to the codec through the immediate command interface:
+   its response in *res; false if it gave none */
 bool HdaModem::command(u32 cmd, u32 *res)
 {
 	for (int i = 0; i < 1000 && (rd(ICIS, 2) & ICIS_ICB); i++)
@@ -181,6 +197,8 @@ bool HdaModem::command(u32 cmd, u32 *res)
 	return false;
 }
 
+/* verb v (12 bits) with an 8 bit payload to node nid: its
+   response, 0 if none */
 u32 HdaModem::verb(unsigned nid, unsigned v, unsigned payload)
 {
 	u32 r = 0;
@@ -188,6 +206,8 @@ u32 HdaModem::verb(unsigned nid, unsigned v, unsigned payload)
 	return r;
 }
 
+/* verb v (4 bits) with a 16 bit payload to node nid: its
+   response, 0 if none */
 u32 HdaModem::verb4(unsigned nid, unsigned v, unsigned payload)
 {
 	u32 r = 0;
@@ -195,6 +215,8 @@ u32 HdaModem::verb4(unsigned nid, unsigned v, unsigned payload)
 	return r;
 }
 
+/* an ALSA control's put: GPIO_CONTROL's bit set (on) or cleared;
+   the hook to MODEM_HOOK_FD if it changed */
 void HdaModem::set_switch(word bit, bool on)
 {
 	word v = get_reg(Si3054Hda::GPIO_CONTROL);
@@ -331,6 +353,8 @@ bool HdaModem::prepare()
 	return true;
 }
 
+/* the hook (MODEM_HOOK_OFF or on) by the switches: off hook the
+   line, on hook the monitor; 0 */
 int HdaModem::set_hook(dcore::Modem &, int state)
 {
 	bool off = state == MODEM_HOOK_OFF;
@@ -348,6 +372,7 @@ int HdaModem::set_hook(dcore::Modem &, int state)
 	return 0;
 }
 
+/* off hook: ms on hook, back off by period() */
 void HdaModem::hook_flash(dcore::Modem &, unsigned ms)
 {
 	if (hook_ != MODEM_HOOK_OFF)
@@ -381,6 +406,8 @@ void HdaModem::period(u32 pos)
 	m_->poll();
 }
 
+/* a line sample each way through the codec at its rate and the
+   streams; the periods captured to the modem */
 short HdaModem::line_sample(short in)
 {
 	short out = codec_line_sample(in, (double)line_rate / si3054_rate(),
@@ -406,6 +433,7 @@ short HdaModem::line_sample(short in)
 	return out;
 }
 
+/* the modem's output on to the DTE, the DTE's input to the modem */
 void HdaModem::dte_poll()
 {
 	pty.flush();
@@ -416,6 +444,8 @@ void HdaModem::dte_poll()
 	});
 }
 
+/* the codec probed and set up (HDA_CODEC_RATE, HDA_VENDOR), the
+   modem made, the streams run, on hook; 0, or -1 */
 int HdaModem::start()
 {
 	const char *s;
@@ -449,6 +479,8 @@ int HdaModem::start()
 
 } // namespace half
 
+/* the HDA modem (dmodemd's options) on the line until it ends;
+   HalfModem::run's result */
 int main(int argc, char *argv[])
 {
 	dmd::Options opt;

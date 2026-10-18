@@ -79,6 +79,7 @@ struct Fake {
 	int log = 0;
 } fake;
 
+/* a connection to the exchange at path, its first octet kind; -1 */
 int connect_exchange(const char *path, char kind)
 {
 	struct sockaddr_un a = {};
@@ -96,6 +97,8 @@ int connect_exchange(const char *path, char kind)
 	return fd;
 }
 
+/* switch which (0 the hook, 1 caller ID) to the exchange
+   (the device gone if it can't) */
 void switch_to(uint8_t which, bool on)
 {
 	unsigned char m[2] = { which, (unsigned char)on };
@@ -103,6 +106,8 @@ void switch_to(uint8_t which, bool on)
 		fake.gone = true;
 }
 
+/* the samples flow: the codec powered up, the FIFO
+   counter set, a rate known */
 bool streaming()
 {
 	return fake.regs[0x01] & 1 && fake.regs[0x04] && fake.rate;
@@ -164,6 +169,7 @@ unsigned packet_samples(unsigned long long ms)
 	return (unsigned)((ms + 1) * fake.rate / 1000 - ms * fake.rate / 1000);
 }
 
+/* t done with status s: its callback */
 void done(libusb_transfer *t, libusb_transfer_status s)
 {
 	t->status = s;
@@ -261,6 +267,7 @@ libusb_interface_descriptor alts[2];
 libusb_interface iface;
 libusb_config_descriptor config;
 
+/* the configuration's descriptors filled in */
 void make_config()
 {
 	endpoints[0].bEndpointAddress = EP_INTR;
@@ -290,6 +297,7 @@ void make_config()
 
 extern "C" {
 
+/* the context (FAKE_ST7554_LOG read) */
 int LIBUSB_CALL libusb_init(libusb_context **ctx)
 {
 	fake.ctx = new libusb_context();
@@ -299,6 +307,7 @@ int LIBUSB_CALL libusb_init(libusb_context **ctx)
 	return 0;
 }
 
+/* the context freed */
 void LIBUSB_CALL libusb_exit(libusb_context *ctx)
 {
 	if (ctx == fake.ctx) {
@@ -307,6 +316,7 @@ void LIBUSB_CALL libusb_exit(libusb_context *ctx)
 	}
 }
 
+/* libusb's text for the codes usb_line.cpp sees */
 const char *LIBUSB_CALL libusb_strerror(int code)
 {
 	switch (code) {
@@ -321,6 +331,7 @@ const char *LIBUSB_CALL libusb_strerror(int code)
 	return "Other error";
 }
 
+/* the bus: the one device */
 ssize_t LIBUSB_CALL libusb_get_device_list(libusb_context *,
 					   libusb_device ***list)
 {
@@ -332,11 +343,13 @@ ssize_t LIBUSB_CALL libusb_get_device_list(libusb_context *,
 	return 1;
 }
 
+/* the list freed */
 void LIBUSB_CALL libusb_free_device_list(libusb_device **list, int)
 {
 	free(list);
 }
 
+/* an ST7554's descriptor (0483:7554, USB 1.1) */
 int LIBUSB_CALL libusb_get_device_descriptor(libusb_device *,
 					     libusb_device_descriptor *d)
 {
@@ -350,16 +363,22 @@ int LIBUSB_CALL libusb_get_device_descriptor(libusb_device *,
 	return 0;
 }
 
+/* bus 1 */
 uint8_t LIBUSB_CALL libusb_get_bus_number(libusb_device *)
 {
 	return 1;
 }
 
+/* address 7 */
 uint8_t LIBUSB_CALL libusb_get_device_address(libusb_device *)
 {
 	return 7;
 }
 
+/* the device opened: its connections to the exchange
+   at FAKE_ST7554_SOCKET, the line monitor on
+   (LIBUSB_ERROR_BUSY if open, _ACCESS if no socket, _IO
+   if no exchange) */
 int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 {
 	const char *path = getenv("FAKE_ST7554_SOCKET");
@@ -387,6 +406,7 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 	return 0;
 }
 
+/* the connections closed, the device free again */
 void LIBUSB_CALL libusb_close(libusb_device_handle *h)
 {
 	for (int fd : { fake.cap, fake.play, fake.ctl })
@@ -397,38 +417,45 @@ void LIBUSB_CALL libusb_close(libusb_device_handle *h)
 	delete h;
 }
 
+/* h's device */
 libusb_device *LIBUSB_CALL libusb_get_device(libusb_device_handle *h)
 {
 	return h->dev;
 }
 
+/* nothing to detach: 0 */
 int LIBUSB_CALL libusb_set_auto_detach_kernel_driver(libusb_device_handle *,
 						     int)
 {
 	return 0;
 }
 
+/* interface 0 claimed (no other) */
 int LIBUSB_CALL libusb_claim_interface(libusb_device_handle *, int n)
 {
 	return n == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND;
 }
 
+/* interface 0 released (no other) */
 int LIBUSB_CALL libusb_release_interface(libusb_device_handle *, int n)
 {
 	return n == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND;
 }
 
+/* interface 0's setting alt, 0 or 1 */
 int LIBUSB_CALL libusb_set_interface_alt_setting(libusb_device_handle *,
 						 int n, int alt)
 {
 	return n == 0 && (alt == 0 || alt == 1) ? 0 : LIBUSB_ERROR_NOT_FOUND;
 }
 
+/* nothing to clear: 0 */
 int LIBUSB_CALL libusb_clear_halt(libusb_device_handle *, unsigned char)
 {
 	return 0;
 }
 
+/* the configuration (make_config()), static */
 int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *,
 						    libusb_config_descriptor **c)
 {
@@ -437,10 +464,13 @@ int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *,
 	return 0;
 }
 
+/* nothing to free (static) */
 void LIBUSB_CALL libusb_free_config_descriptor(libusb_config_descriptor *)
 {
 }
 
+/* a vendor request: a register read (2 octets) or
+   written (set_reg()); LIBUSB_ERROR_NO_DEVICE once gone */
 int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
 					uint8_t type, uint8_t request,
 					uint16_t value, uint16_t index,
@@ -465,6 +495,7 @@ int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
 	return 0;
 }
 
+/* a transfer of iso_packets packets, zeroed */
 libusb_transfer *LIBUSB_CALL libusb_alloc_transfer(int iso_packets)
 {
 	size_t n = sizeof(libusb_transfer) +
@@ -475,6 +506,8 @@ libusb_transfer *LIBUSB_CALL libusb_alloc_transfer(int iso_packets)
 	return t;
 }
 
+/* t freed (its buffer too if it has
+   LIBUSB_TRANSFER_FREE_BUFFER) */
 void LIBUSB_CALL libusb_free_transfer(libusb_transfer *t)
 {
 	if (!t)
@@ -484,6 +517,7 @@ void LIBUSB_CALL libusb_free_transfer(libusb_transfer *t)
 	free(t);
 }
 
+/* t queued at its endpoint, done in run() */
 int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
 {
 	if (fake.gone)
@@ -499,6 +533,8 @@ int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
 	return 0;
 }
 
+/* t off its queue, done as cancelled in run();
+   LIBUSB_ERROR_NOT_FOUND if not queued */
 int LIBUSB_CALL libusb_cancel_transfer(libusb_transfer *t)
 {
 	for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q })
@@ -511,6 +547,7 @@ int LIBUSB_CALL libusb_cancel_transfer(libusb_transfer *t)
 	return LIBUSB_ERROR_NOT_FOUND;
 }
 
+/* the descriptors to poll: the capture socket (if open) */
 const libusb_pollfd **LIBUSB_CALL libusb_get_pollfds(libusb_context *)
 {
 	const libusb_pollfd **l =
@@ -526,11 +563,13 @@ const libusb_pollfd **LIBUSB_CALL libusb_get_pollfds(libusb_context *)
 	return l;
 }
 
+/* the list freed */
 void LIBUSB_CALL libusb_free_pollfds(const libusb_pollfd **l)
 {
 	free(l);
 }
 
+/* what the device has done (run()), without waiting */
 int LIBUSB_CALL libusb_handle_events_timeout_completed(libusb_context *,
 						       struct timeval *tv,
 						       int *)

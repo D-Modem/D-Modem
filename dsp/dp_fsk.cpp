@@ -177,12 +177,15 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
 	Goertzel g_mark, g_lo, g_hi;
 	int mark_true;
 
+	/* its name in the log (the mode's) */
 	const char *tag() const { return par->name; }
+	/* in data mode (the carrier watched, no handshake timeout) */
 	bool in_data() const { return state == FSK_DATA; }
 	float tx_sample(int data);
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
 	int block_start();
 	int sample(float x, float *y);
+	/* cnt samples in and out, through sample() */
 	int process(void *in, void *out, int cnt) override
 	{
 		return pump_loop(in, out, cnt);

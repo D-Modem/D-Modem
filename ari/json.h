@@ -33,12 +33,14 @@ struct Json {
 	const Json &operator[](const char *key) const;
 	/* element i of an array (null if none) */
 	const Json &operator[](size_t i) const;
+	/* element i of an array, a negative i none (null) */
 	const Json &operator[](int i) const
 	{
 		return i < 0 ? (*this)[(size_t)-1] : (*this)[(size_t)i];
 	}
 	/* the string, else "" */
 	const std::string &str() const;
+	/* whether it is null (also a missing member or element) */
 	bool null() const { return type == NUL; }
 
 	/* text into out; false if it is not one JSON value */

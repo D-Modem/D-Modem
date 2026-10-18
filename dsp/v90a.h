@@ -370,7 +370,9 @@ struct V90Rx {
 	double ppm() const { return t_freq / 2 * 1e6; }
 
 private:
+	/* the sample i of the history */
 	float at(long i) const { return x[i & (V90RX_HIST - 1)]; }
+	/* the sample i of the 8 kHz history */
 	float at8(long i) const { return x8[i & (V90RX_HIST8 - 1)]; }
 	/* tap i's input for symbol kk, d samples later */
 	float xin(long kk, int i, int d = 0) const

@@ -67,7 +67,9 @@ public:
 		word lvi = 0, fmt = 0;
 		int civ = 0;            /* the descriptor entry being done */
 		u32 pos = 0;            /* octets of it done */
+		/* it runs: RUN, not in reset */
 		bool running() const { return (ctl & CTL_RUN) && !(ctl & CTL_SRST); }
+		/* its stream number (SDnCTL bits 20..23) */
 		int tag() const { return (int)(ctl >> 20) & 15; }
 	};
 
@@ -191,23 +193,28 @@ public:
 	}
 
 private:
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 
+	/* the bits of a size octet register */
 	static u32 mask(int size)
 	{
 		return size >= 4 ? 0xffffffffu : (1u << 8 * size) - 1;
 	}
+	/* the little endian 32 bit word at p */
 	static u32 le32(const byte *p)
 	{
 		return p[0] | p[1] << 8 | p[2] << 16 | (u32)p[3] << 24;
 	}
 
+	/* entry i of s's buffer descriptor list */
 	const byte *entry(const Stream &s, int i) const
 	{
 		return (const byte *)(uintptr_t)((s.bdpl & ~0x7fu) |
 						  (uint64_t)s.bdpu << 32) + 16 * i;
 	}
 
+	/* INTSTS: the streams' completions they interrupt for, and GIS */
 	u32 intsts() const
 	{
 		u32 v = 0;
@@ -227,6 +234,7 @@ private:
 		hda_icoi = hda_irii = 0;
 	}
 
+	/* the 32 bit register at off (0 if none) */
 	u32 dword(unsigned off) const
 	{
 		switch (off) {
@@ -255,6 +263,8 @@ private:
 		return 0;
 	}
 
+	/* stream s's register r written with v under m: SDnSTS cleared
+	   by its 1s, a reset, the rest only while it does not run */
 	void sd_write(Stream &s, unsigned r, u32 v, u32 m)
 	{
 		switch (r) {

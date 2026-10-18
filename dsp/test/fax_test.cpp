@@ -57,6 +57,7 @@ protected:
 	float noise = 0;
 	T4Bits page = {};
 
+	/* the test page's bits freed */
 	~FaxModulation() override { page.release(); }
 	/* the transmitter's next bit: the page's or PRBS 2^23-1, kept in
 	   txb; FAX_BIT_END after maxbits */
@@ -421,6 +422,8 @@ static void send_document(const Session &s, const std::string &in)
 
 class T30Pair : public testing::TestWithParam<Session> {};
 
+/* the session's two machines over the line, a document of two test
+   pages (light or not) from one to the other, the pages the same */
 TEST_P(T30Pair, SendsTheDocument)
 {
 	const Session &s = GetParam();

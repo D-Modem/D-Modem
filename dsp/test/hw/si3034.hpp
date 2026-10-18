@@ -59,6 +59,7 @@ public:
 	}
 
 private:
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 
 	/* its sample rate from its PLL (registers 7 to 9: N1 - 1, M1 - 1,

@@ -64,6 +64,7 @@ const unsigned long T38_CATCH_UP = RATE;
    its DTE the SipModem's, its time the monotonic clock */
 class SipLine final : public dcore::Host {
 public:
+	/* the line of dte's modem */
 	explicit SipLine(Dte &dte) : dte_(dte) {}
 	~SipLine();
 	SipLine(const SipLine &) = delete;
@@ -72,9 +73,11 @@ public:
 	/* Host */
 	int start(dcore::Modem &m) override;
 	int stop(dcore::Modem &m) override;
+	/* for ATI3 */
 	const char *driver_name() override { return "SIP"; }
 	/* SIP says when a call we dial is answered, and why it failed */
 	bool signals_answer(dcore::Modem &) override { return true; }
+	/* the modem's characters to the DTE: how many it took */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		return dte_.write(buf, n);
 	}
@@ -83,9 +86,11 @@ public:
 	bool can_flash(dcore::Modem &) override {
 		return audio_ >= 0 && sip::can_flash();
 	}
+	/* (the event of ms) */
 	void hook_flash(dcore::Modem &, unsigned ms) override {
 		sip::flash(ms);
 	}
+	/* the clock: the monotonic one's ms */
 	unsigned long now_ms() override { return dcore::monotonic_ms(); }
 	/* ATM, ATL: to the speaker's owner (SipModem::on_speaker()) */
 	void speaker(dcore::Modem &, int volume) override {
@@ -408,8 +413,10 @@ dcore::Result failure(int code)
    T38, AUDIO, ANSWERED, FAILED), each acted on as it is complete */
 class Control {
 public:
+	/* the control on fd (the caller's) */
 	explicit Control(int fd) : fd_(fd) {}
 
+	/* the descriptor to watch */
 	int fd() const { return fd_; }
 	/* it is readable: what came; -1 if the user agent has gone */
 	int serve(dcore::Modem &m, SipLine &line);

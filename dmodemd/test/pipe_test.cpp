@@ -52,6 +52,8 @@ std::string dmodemd_path()
 /* dmodemd with args, until the end of the test */
 class Daemon {
 public:
+	/* dmodemd started with args (-n, an account nobody
+	   answers) */
 	explicit Daemon(const std::string &args)
 	{
 		std::string cmd = "\"" + dmodemd_path() + "\" -n " + args;
@@ -62,6 +64,7 @@ public:
 		ok_ = CreateProcessA(nullptr, &cmd[0], nullptr, nullptr, FALSE,
 				     0, nullptr, nullptr, &si, &pi_);
 	}
+	/* dmodemd killed, waited for */
 	~Daemon()
 	{
 		if (!ok_)
@@ -71,7 +74,9 @@ public:
 		CloseHandle(pi_.hProcess);
 		CloseHandle(pi_.hThread);
 	}
+	/* it was started */
 	bool ok() const { return ok_; }
+	/* it is still running */
 	bool running() const
 	{
 		return ok_ && WaitForSingleObject(pi_.hProcess, 0) ==
@@ -111,6 +116,8 @@ std::string read_some(HANDLE h, DWORD ms, bool *gone)
 	return std::string(buf, got);
 }
 
+/* s written to h (overlapped, waited for): false if not
+   all of it */
 bool write_all(HANDLE h, const std::string &s)
 {
 	OVERLAPPED ov = {};
@@ -303,6 +310,7 @@ TEST(PipeDte, NameTaken)
 	CloseHandle(h);
 }
 
+/* "bridge" (see above), else the tests */
 int main(int argc, char **argv)
 {
 	if (argc == 5 && !strcmp(argv[1], "bridge") &&

@@ -38,9 +38,11 @@ public:
 private:
 	u32 cr_[8] = { 0x80050033, 0, 0, 0, 0x000006f0 };
 
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 };
 
+/* see above */
 template <class Host>
 bool X86Traps<Host>::traps_step(ucontext_t *uc)
 {

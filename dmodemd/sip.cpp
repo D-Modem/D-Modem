@@ -169,6 +169,7 @@ int start_state;
    SIP messages), if the configuration's level has it: to the modem's
    log hook if it has one, else to stderr with the time */
 void say(int level, const char *fmt, ...) DMODEM_PRINTF(2, 3);
+/* (as declared above) */
 void say(int level, const char *fmt, ...)
 {
 	struct timespec ts;
@@ -201,11 +202,13 @@ void say(int level, const char *fmt, ...)
 		tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000, buf.data());
 }
 
+/* p as a string ("" if it has none) */
 std::string str(const struct pl &p)
 {
 	return std::string(p.p ? p.p : "", p.p ? p.l : 0);
 }
 
+/* s in lower case */
 std::string lower(std::string s)
 {
 	for (char &c : s)
@@ -606,6 +609,7 @@ Line audio_answer(const Sdp &s, const SdpMedia &m)
 	return l;
 }
 
+/* our image (T.38) line, T38FaxVersion version */
 Line image_line(int version)
 {
 	Line l;
@@ -762,6 +766,8 @@ private:
 	uint32_t play_ = 0;     /* the timestamp to play next */
 	uint32_t end_ = 0;      /* the end of the latest packet */
 
+	/* started over at ts of stream ssrc: empty, playing
+	   JB_DELAY behind it */
 	void restart(uint32_t ssrc, uint32_t ts)
 	{
 		memset(valid_, 0, sizeof(valid_));
@@ -778,15 +784,19 @@ private:
    socket is told to the SIP thread (MQ_MODEM_GONE) */
 class Media {
 public:
+	/* audio for the modem's socket modem and RTP socket rtp
+	   (of family), call serial, told on mq; not yet started */
 	Media(int modem, int rtp, int family, unsigned serial, struct mqueue *mq)
 		: modem_(modem), rtp_(rtp), family_(family), serial_(serial),
 		  mq_(mq), seq_(rand_u16()), ts_(rand_u32()), ssrc_(rand_u32())
 	{
 	}
+	/* the thread stopped */
 	~Media() { stop(); }
 	Media(const Media &) = delete;
 	Media &operator=(const Media &) = delete;
 
+	/* the RTP socket's address family */
 	int family() const { return family_; }
 
 	/* the thread started; false if it can't be */
@@ -1181,6 +1191,7 @@ struct Call {
 					   to ask for the audio again */
 	int udptl = -1, udptl_port = 0, udptl_family = AF_INET;
 
+	/* call serial s: no timers running, a new SDP session id */
 	explicit Call(unsigned s) : serial(s)
 	{
 		tmr_init(&ring_tmr);
@@ -1188,6 +1199,7 @@ struct Call {
 		tmr_init(&tell_tmr);
 		sdp_id = std::to_string(rand_u32());
 	}
+	/* its timers cancelled */
 	~Call()
 	{
 		tmr_cancel(&ring_tmr);

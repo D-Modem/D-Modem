@@ -29,6 +29,8 @@ std::vector<uint8_t> pkt(int event, bool end, int volume, unsigned dur)
 		 (uint8_t)(dur >> 8), (uint8_t)dur };
 }
 
+/* an event packet to p at ts: the kind it began (NONE if
+   none) */
 EventPlayer::Kind send(EventPlayer &p, int event, bool end, int volume,
 		       unsigned dur, uint32_t ts)
 {
@@ -55,6 +57,7 @@ std::complex<double> at(const std::vector<int16_t> &x, double f, size_t a,
 	return s * 2.0 / (double)(b - a);
 }
 
+/* x's rms over [a, b) */
 double rms(const std::vector<int16_t> &x, size_t a, size_t b)
 {
 	double e = 0;

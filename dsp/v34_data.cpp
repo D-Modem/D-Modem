@@ -87,10 +87,12 @@ static int subset_label(int x, int y)
 
 /* for V.92's trellis code (6.4.4/V.92): the same converter and encoders */
 int v34_conv_in(int s0, int s1) { return conv_in(s0, s1); }
+/* (see v34.h) */
 int v34_trellis_next(int states, int st, int y)
 {
 	return trellis_next(states, st, y);
 }
+/* (see v34.h) */
 int v34_subset_label(int x, int y) { return subset_label(x, y); }
 
 /* clockwise by k quarter turns */

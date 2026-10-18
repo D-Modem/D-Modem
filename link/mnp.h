@@ -92,15 +92,20 @@ public:
 	void clock(long bits);
 	/* the data phase's frames as HDLC frames (framing mode 3) */
 	bool bit_tx() const { return bit_tx_; }
+	/* (see bit_tx()) */
 	bool bit_rx() const { return mode_ == 3 && phase_ != Phase::Idle &&
 					      phase_ != Phase::Init; }
 
 	/* what the LRs agreed (the framing mode, k, N401, the data phase
 	   optimization, MNP 5) */
 	int mode() const { return mode_; }
+	/* (see mode()) */
 	int k() const { return k_; }
+	/* (see mode()) */
 	int n401() const { return n401_; }
+	/* (see mode()) */
 	int optimization() const { return opt_; }
+	/* (see mode()) */
 	bool mnp5() const { return mnp5_; }
 
 	/* MnpAsync's side: its frames, and one with a bad FCS (bit: an
@@ -112,6 +117,7 @@ public:
 	Frame *next_tx_frame() override;
 	void tx_complete(Frame *f) override;
 	void rx_complete(Frame *f) override;
+	/* a frame with a bad FCS from Hdlc (rx_bad_frame(true)) */
 	void rx_error() override { rx_bad_frame(true); }
 
 private:

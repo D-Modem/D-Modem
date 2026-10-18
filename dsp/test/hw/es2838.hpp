@@ -179,6 +179,7 @@ public:
 			host().log("es reg %03x = %x\n", i, v);
 		return v;
 	}
+	/* indexed register i written with v */
 	void es_reg_write(unsigned i, word v)
 	{
 		if (host().dbg >= 2)
@@ -199,11 +200,17 @@ private:
 	/* (debug: the DAC's and the ADC's samples, in pairs, to <PREFIX>_DUMP) */
 	FILE *dump_ = host().env("DUMP") ? fopen(host().env("DUMP"), "wb") : NULL;
 
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
+	/* the 16 bit port at offset o */
 	word &port16(unsigned o) { return *(word *)&es_ports[o]; }
+	/* its value */
 	word port16c(unsigned o) const { return *(const word *)&es_ports[o]; }
+	/* the index (0x00) of the indexed registers */
 	unsigned idx() const { return port16c(0x00); }
 
+	/* the status (0x0e): bit 1 if the FIFO runs with ES_IRQ_LEVEL
+	   samples in */
 	u32 status() const
 	{
 		u32 s = port16c(0x0e) & ~3u;
@@ -211,6 +218,7 @@ private:
 			s |= 2;
 		return s;
 	}
+	/* the ADC's oldest sample out of the FIFO; 0 if none */
 	short rx_pop()
 	{
 		short v;
@@ -221,6 +229,7 @@ private:
 		rx_n_--;
 		return v;
 	}
+	/* v to the DAC's FIFO, unless it is full */
 	void tx_push(short v)
 	{
 		if (tx_n_ < ES_FIFO) {
@@ -228,6 +237,7 @@ private:
 			tx_n_++;
 		}
 	}
+	/* the DAC's next sample out of its FIFO (there is one) */
 	short tx_pop()
 	{
 		short v = tx_[tx_r_];

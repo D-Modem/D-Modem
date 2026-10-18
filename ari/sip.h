@@ -103,7 +103,9 @@ public:
 	/* bound to host:port (port 0: any), its thread started; false
 	   (errno) if the socket can't be */
 	bool start(const std::string &host, int port);
+	/* the address and port we are bound to */
 	const std::string &host() const { return host_; }
+	/* (see host()) */
 	int port() const { return port_; }
 
 	/* a leg for a call Asterisk is to make to token, its audio in RTP

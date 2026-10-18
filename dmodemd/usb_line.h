@@ -39,6 +39,7 @@ namespace dmd {
 
 class UsbLine final : public dcore::Host {
 public:
+	/* the line of pty's modem, not yet open */
 	explicit UsbLine(Pty &pty) : pty_(pty) {}
 	~UsbLine();
 	UsbLine(const UsbLine &) = delete;
@@ -57,17 +58,24 @@ public:
 
 	/* Host */
 	int start(dcore::Modem &) override { running_ = true; return 0; }
+	/* the samples no longer through the modem */
 	int stop(dcore::Modem &) override { running_ = false; return 0; }
 	int set_hook(dcore::Modem &m, int state) override;
+	/* an analogue line, the modem dialling it itself */
 	bool analog_line(dcore::Modem &) override { return true; }
+	/* a hook flash it can make (hook_flash()) */
 	bool can_flash(dcore::Modem &) override { return true; }
 	void hook_flash(dcore::Modem &m, unsigned ms) override;
 	int pulse_hook(dcore::Modem &m, bool broken) override;
+	/* the playback's lead, in samples */
 	int io_delay(dcore::Modem &) override { return delay_; }
+	/* for ATI3 */
 	const char *driver_name() override { return "ST7554"; }
+	/* the modem's characters to the pty: how many it took */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		return pty_.write(buf, n);
 	}
+	/* the clock: the device's samples so far, in ms */
 	unsigned long now_ms() override {
 		return (unsigned long)(samples_ * 1000 / rate_);
 	}

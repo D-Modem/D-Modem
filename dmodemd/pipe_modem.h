@@ -41,7 +41,9 @@ public:
 	   times the sample clock (0: as fast as it goes); MODEM_REC: the
 	   line both ways into <prefix>.in and <prefix>.out */
 	void set_realtime(bool on) { realtime_ = on; }
+	/* (MODEM_SPEED) */
 	void set_speed(double x) { speed_ = x; }
+	/* (MODEM_REC) */
 	void set_record(const char *prefix) { record_ = prefix; }
 
 	/* the main loop of any number of them, until stop() */
@@ -56,6 +58,7 @@ public:
 	   the lead silence and the changes it asked for in this call; a
 	   change, made in line() */
 	int io_delay(dcore::Modem &) override { return delay_; }
+	/* a change of samples in the delay, made in line() */
 	void update_delay(dcore::Modem &, int samples) override {
 		pending_delay_ += samples;
 	}

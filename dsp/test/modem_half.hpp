@@ -98,7 +98,9 @@ public:
 	~Pty();
 	/* a pty opened, raw and non-blocking; 0, or -1 with a message */
 	int open();
+	/* its fd */
 	int fd() const { return fd_; }
+	/* its name (the DTE's side) */
 	const char *name() const { return name_; }
 
 	/* n octets to the DTE, after what waits; what it does not take now
@@ -126,6 +128,7 @@ class Results {
 public:
 	void scan(byte c);
 	void scan(const void *p, size_t n);
+	/* online: CONNECT the last of them */
 	bool online() const { return online_; }
 
 private:
@@ -159,6 +162,7 @@ public:
 	Pty pty;
 	Results results;
 
+	/* the program's name */
 	const char *name() const { return name_; }
 	/* getenv("<PREFIX>_<what>") */
 	const char *env(const char *what) const;
@@ -172,6 +176,7 @@ public:
 	{
 		return sync_n && (long)(line_n % sync_n) != sync_phase && !online;
 	}
+	/* the same, online as the result codes say */
 	bool dte_waits() const { return dte_waits(results.online()); }
 
 protected:

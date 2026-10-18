@@ -69,6 +69,7 @@ public:
 	int flush_encoder();
 	/* the decoder: one octet in; -1 on an error */
 	int decode(uint8_t octet);
+	/* the decoder: nothing to flush */
 	int flush_decoder() { return 0; }
 	/* the output so far, up to n bytes */
 	int out(uint8_t *buf, int n);
@@ -77,6 +78,7 @@ public:
 
 	/* statistics: characters and compressed bits (the encoder) */
 	uint32_t raw_bits() const { return raw_bits_; }
+	/* (see raw_bits()) */
 	uint32_t cmp_bits() const { return cmp_bits_; }
 
 private:

@@ -54,6 +54,7 @@ public:
 	/* the loading the peer asked for, at fs; tap the scrambler's
 	   (SCR_GPC calling, SCR_GPA answering) */
 	int init(const VcvmLoading &l, int fs, int tap, Source src);
+	/* the loading sent */
 	const VcvmLoading &loading() const { return l_; }
 	int sps() const;
 
@@ -106,6 +107,7 @@ public:
 	/* the loading this DCE asked for, at fs; tap the peer's
 	   scrambler's */
 	int init(const VcvmLoading &l, int fs, int tap, Sink sink);
+	/* the loading received */
 	const VcvmLoading &loading() const { return l_; }
 
 	/* look for phase 4's start from sample from (the samples pushed
@@ -124,6 +126,7 @@ public:
 	bool control() const { return control_; }
 	/* no codeword decoded for 2 s, or the timing lost: a retrain */
 	bool lost() const { return lost_; }
+	/* what has been measured of the data */
 	const VcvmDataStats &stats() const { return st_; }
 	/* the end of the last symbol taken */
 	long position() const { return pos_; }

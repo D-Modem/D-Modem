@@ -26,6 +26,7 @@ enum class VcvmSt { RUN };
 class VcvmPump : public PumpBase<VcvmPump, VcvmSt> {
 public:
 	static constexpr const char *name = "V_CVM";
+	/* its name in the log */
 	const char *tag() const { return "vcvm"; }
 
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_,
@@ -50,6 +51,9 @@ private:
 	size_t su_logged_ = 0, logged_ = 0;
 };
 
+/* the pump at srate_ (8000, or 9600 through the converters) once V.8
+   agreed on V.cvm: the DCE's modes from MDMPRM_VCVM, the peer's from
+   its field; 0, or -1 */
 int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, int srate_,
 		    int)
 {
@@ -97,6 +101,8 @@ int VcvmPump::source()
 	return v;
 }
 
+/* the octets the modem decoded, to the link layer, the first bit the
+   least significant */
 void VcvmPump::sink(const uint8_t *d, int n)
 {
 	for (int i = 0; i < n; i++) {
@@ -149,6 +155,9 @@ void VcvmPump::report()
 	info_->erasures = mdm_.rx_stats().erasures;
 }
 
+/* cnt of the line's samples in, cnt out, through the modem at 8000 Hz:
+   the renegotiations, retrains and CONNECT reported; DPSTAT_ERROR on a
+   failure or no connection in time */
 int VcvmPump::process(void *in, void *out, int cnt)
 {
 	const s16 *src = static_cast<s16 *>(in);

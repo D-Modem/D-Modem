@@ -87,6 +87,8 @@ Trial trials(int n, int k, int v, int e, int count, unsigned seed)
 
 } // namespace
 
+/* RS(32, k)'s codewords: systematic, a^0..a^(31 - k) roots and decoded
+   as they are; a bad n or k refused */
 TEST(ReedSolomon, Roots)
 {
 	for (int k : { 28, 24, 16 }) {
@@ -108,6 +110,7 @@ TEST(ReedSolomon, Roots)
 	EXPECT_EQ(bad.init(32, 32), -1);
 }
 
+/* errors v and erasures e with 2v + e <= n - k all corrected */
 TEST(ReedSolomon, Corrects)
 {
 	/* 2v + e <= n - k: corrected */
@@ -127,6 +130,7 @@ TEST(ReedSolomon, Corrects)
 	EXPECT_EQ(t.ok, 50);
 }
 
+/* one error beyond what the code corrects: seldom right, seldom wrong */
 TEST(ReedSolomon, Beyond)
 {
 	/* one error too many: almost always a failure, seldom wrong (or,

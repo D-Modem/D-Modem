@@ -65,25 +65,37 @@ public:
 	/* ask for a renegotiation (with the loading measured in phase 4)
 	   or a retrain, at the next symbol */
 	void renegotiate() { want_reneg_ = true; }
+	/* ask for a retrain at the next symbol */
 	void retrain() { want_retrain_ = true; }
 
+	/* the state */
 	State state() const { return state_; }
+	/* the reason, if FAILED */
 	const char *why() const { return why_; }
 	/* phase 4 both ways: the transmitter in it, the peer's data
 	   decoding */
 	bool connected() const;
+	/* the loading received */
 	const VcvmLoading &rx_loading() const { return rxl_; }
+	/* the loading sent */
 	const VcvmLoading &tx_loading() const { return txl_; }
+	/* the round trip the start-up measured, ms (-1 before) */
 	int rtt_ms() const { return rtt_ms_; }
+	/* the renegotiations completed */
 	int renegotiations() const { return renegs_; }
+	/* the retrains */
 	int retrains() const { return retrains_; }
+	/* what the receiver has measured of the data */
 	const VcvmDataStats &rx_stats() const { return drx_.stats(); }
+	/* the start-up now (or the last one) */
 	const VcvmStartup *startup() const { return su_.get(); }
+	/* the log, a line an event */
 	const std::string &log() const { return log_; }
 
 private:
 	void note(const char *fmt, ...);
 	void fail(const char *why);
+	/* the sample at which what is queued to send runs out */
 	long queued() const { return t_ + (long)(txq_.size() - txpos_); }
 	void silence(int ms);
 	void send_mp();

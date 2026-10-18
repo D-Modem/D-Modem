@@ -94,6 +94,7 @@ const long HOLD_TONE_MS = 300;
 
 } // namespace
 
+/* the oscillator's sample, its phase on by inc */
 double EventPlayer::Osc::next()
 {
 	double s = sin(2 * M_PI * phase);
@@ -102,16 +103,19 @@ double EventPlayer::Osc::next()
 	return s;
 }
 
+/* a player at rate, nothing playing (its AM at 15 Hz) */
 EventPlayer::EventPlayer(unsigned rate) : rate_(rate)
 {
 	am_.inc = 15.0 / rate;
 }
 
+/* see rtp_events.h */
 void EventPlayer::reset()
 {
 	*this = EventPlayer(rate_);
 }
 
+/* see rtp_events.h */
 EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 				       uint32_t ts)
 {
@@ -203,6 +207,7 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 	return b;
 }
 
+/* see rtp_events.h */
 bool EventPlayer::fill(int16_t *x, unsigned n)
 {
 	if (!on_)

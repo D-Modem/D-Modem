@@ -95,6 +95,7 @@ inline bool frame_crc_ok(const unsigned char *b, int at)
    inverted after them, low octet first; over a frame and its FCS it
    is HDLC_FCS_GOOD */
 #define HDLC_FCS_GOOD   0xF0B8
+/* the FCS of p's n octets (see above) */
 inline unsigned hdlc_fcs(const unsigned char *p, int n)
 {
 	unsigned crc = 0xFFFF;
@@ -111,6 +112,7 @@ inline unsigned hdlc_fcs(const unsigned char *p, int n)
    too, over the register of its last line bits, newest in bit 0: a
    data bit in, its line bit out */
 enum { SCR_GPC = 18, SCR_GPA = 5 };
+/* a data bit through the scrambler (see above) */
 inline int scramble(unsigned *reg, int tap, int bit)
 {
 	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;

@@ -60,6 +60,7 @@ public:
 #endif
 
 private:
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 };
 

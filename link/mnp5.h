@@ -42,6 +42,7 @@ public:
 	   after characters since the last one); the decoder: nothing (the
 	   stream goes on over the frames) */
 	int flush_encoder();
+	/* (see flush_encoder()) */
 	int flush_decoder() { return 0; }
 	/* the output so far, up to n octets */
 	int out(uint8_t *buf, int n);

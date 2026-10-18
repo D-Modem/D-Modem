@@ -207,8 +207,11 @@ struct PcmFrames {
 		static_cast<H*>(ctx)->PcmFrames::pcm_frame(t, b, last);
 	}
 
+	/* the defaults, for a host without its own (see above) */
 	void fs_seq_frame() {}
+	/* (see fs_seq_frame()) */
 	void fs_to_ed() {}
+	/* (see fs_seq_frame()) */
 	void fs_ed_end() {}
 
 	/* the next frame into b; *last at the end of Ed (the encoder

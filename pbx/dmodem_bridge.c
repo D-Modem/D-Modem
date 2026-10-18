@@ -34,6 +34,7 @@
 static void log_line(const struct dmbridge_host *h, void *call,
 		     enum dmbridge_level level, const char *fmt, ...)
 	__attribute__ ((format (printf, 4, 5)));
+/* (see the declaration above) */
 static void log_line(const struct dmbridge_host *h, void *call,
 		     enum dmbridge_level level, const char *fmt, ...)
 {

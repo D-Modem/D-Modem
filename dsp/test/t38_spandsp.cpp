@@ -39,11 +39,14 @@ struct Ours {
 	std::deque<Bytes> to_sp;        /* our packets, for spandsp */
 };
 
+/* our machine's next page, from our document: 1, 0 when there are no
+   more, -1 on an error */
 static int ours_next_page(void *ctx, T4Page *p)
 {
 	return static_cast<Ours *>(ctx)->in.read_page(p);
 }
 
+/* a page our machine received, written to our TIFF */
 static void ours_page_received(void *ctx, T4Page *p)
 {
 	static_cast<Ours *>(ctx)->out.write_page(p);
@@ -85,6 +88,7 @@ struct Sp38 {
 	int version;
 };
 
+/* c, for the test's name: the direction, ECM and the version */
 static void PrintTo(const Sp38 &c, std::ostream *os)
 {
 	*os << (c.to ? "to" : "from") << (c.ecm ? " ecm" : "") << " v"

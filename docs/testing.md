@@ -26,6 +26,9 @@ interop tests are left out there ([windows.md](windows.md)).
     ctest --test-dir build -j16         # all of them (some four times the processors:
                                         # about 1.5 min on 4)
     ctest --test-dir build -L quick     # back-to-back pumps, libdmodem, fax
+    ctest --test-dir build -R doc_check # every function has a comment above it
+                                        # (cmake/doc_check.py; run it on its own as
+                                        # python3 cmake/doc_check.py . [FILE...])
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
     ctest --test-dir build -L smartlink -j16  # calls between Smart Link's soft modem (its
                                               # original library) and this one, data and

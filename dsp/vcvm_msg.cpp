@@ -23,6 +23,7 @@ namespace dsp {
  *    Annex A
  */
 
+/* octet 2 of the field: the modes' bits, its two top bits set */
 uint8_t VcvmCaps::modes() const
 {
 	return (uint8_t)(0xC0 | (wide ? 0x20 : 0) | (wide400 ? 0x10 : 0) |
@@ -30,6 +31,8 @@ uint8_t VcvmCaps::modes() const
 			 (quick ? 0x02 : 0) | (param ? 0x01 : 0));
 }
 
+/* the field's two octets to o: the version, 16000 Hz, fax and rings,
+   then the modes */
 void VcvmCaps::encode(uint8_t o[2]) const
 {
 	o[0] = (uint8_t)(((version & 7) << 5) | (fs16 ? 0x10 : 0) |
@@ -37,6 +40,7 @@ void VcvmCaps::encode(uint8_t o[2]) const
 	o[1] = modes();
 }
 
+/* see vcvm_startup.h */
 VcvmCaps VcvmCaps::decode(const uint8_t o[2])
 {
 	VcvmCaps c;
@@ -53,6 +57,7 @@ VcvmCaps VcvmCaps::decode(const uint8_t o[2])
 	return c;
 }
 
+/* see vcvm_startup.h: 6 octets */
 int vcvm_nsf_build(const VcvmCaps &c, uint8_t *out)
 {
 	out[0] = VCVM_T35_COUNTRY;
@@ -71,6 +76,7 @@ static bool nsf_at(const uint8_t *p, int n, int i)
 	       !(p[i + 1] & 3) && (p[i + 2] & 0xC0) == 0xC0;
 }
 
+/* see vcvm_startup.h */
 bool vcvm_nsf_find(const uint8_t *p, int n, VcvmCaps *c)
 {
 	/* after a country code and a two octet provider code, or
@@ -85,6 +91,7 @@ bool vcvm_nsf_find(const uint8_t *p, int n, VcvmCaps *c)
 	return true;
 }
 
+/* see vcvm_startup.h: the category octet and 13 extension octets */
 int vcvm_v8_ns(const VcvmCaps &c, uint8_t *out)
 {
 	/* the NS field: K + L + M + 1, the country (K = 1), L = 2, the
@@ -110,6 +117,7 @@ int vcvm_v8_ns(const VcvmCaps &c, uint8_t *out)
 	return n;
 }
 
+/* see vcvm_startup.h */
 bool vcvm_v8_find(const uint8_t *msg, int n, VcvmCaps *c)
 {
 	for (int i = 0; i < n; i++) {
@@ -149,6 +157,7 @@ bool vcvm_v8_find(const uint8_t *msg, int n, VcvmCaps *c)
 	return false;
 }
 
+/* see vcvm_startup.h */
 VcvmCaps vcvm_caps_for(int modes, int fs)
 {
 	VcvmCaps c;
@@ -160,6 +169,7 @@ VcvmCaps vcvm_caps_for(int modes, int fs)
 	return c;
 }
 
+/* see vcvm_startup.h */
 int vcvm_allowed(const VcvmCaps &own, const VcvmCaps &peer, int modes)
 {
 	int a = modes & (VCVM_M_ROBUST | VCVM_M_NARROW);
@@ -183,6 +193,8 @@ int vcvm_allowed(const VcvmCaps &own, const VcvmCaps &peer, int modes)
  *    Annex B: the messages
  */
 
+/* INFO0's 4 octets to o: the modes, the combs probed, the quick start
+   and rings bits, the level; 4 */
 int VcvmInfo0::encode(uint8_t *o) const
 {
 	o[0] = modes;
@@ -197,6 +209,7 @@ int VcvmInfo0::encode(uint8_t *o) const
 	return 4;
 }
 
+/* INFO0 from n octets of o: 0, or -1 if too short or not one */
 int VcvmInfo0::decode(const uint8_t *o, int n)
 {
 	if (n < 4 || (o[0] & 0xC0) != 0xC0)
@@ -215,6 +228,7 @@ int VcvmInfo0::decode(const uint8_t *o, int n)
 	return 0;
 }
 
+/* the symbol period in ms */
 double VcvmLoading::sym_ms() const
 {
 	if (kind == PARAM)
@@ -222,26 +236,32 @@ double VcvmLoading::sym_ms() const
 	return sym22 ? 22.5 : 20;
 }
 
+/* the bits a symbol carries (4 parametric, 0 none) */
 int VcvmLoading::bits() const
 {
 	return kind == COMB ? load.bits(tones) : kind == PARAM ? 4 : 0;
 }
 
+/* the line rate before the code, bit/s */
 int VcvmLoading::raw_bps() const
 {
 	return (int)lrint(bits() * 1000.0 / sym_ms());
 }
 
+/* the raw rate times k / 32, bit/s */
 int VcvmLoading::coded_bps() const
 {
 	return raw_bps() * k() / 32;
 }
 
+/* the tones loaded (0 parametric) */
 int VcvmLoading::loaded() const
 {
 	return kind == COMB ? load.loaded(tones) : 0;
 }
 
+/* the loading as the logs show it: the comb or symbol, the tones, the
+   rate before the code and the code rate */
 std::string VcvmLoading::str() const
 {
 	static const char *names[9] = { "N200", "N300", "N400", "W200", "W300",
@@ -274,11 +294,14 @@ static void put_fields(uint8_t *o, const uint8_t *v, int n)
 		o[i / 4] |= (uint8_t)((v[i] & 3) << (6 - 2 * (i % 4)));
 }
 
+/* the 2 bit field of tone i from octet o on */
 static int get_field(const uint8_t *o, int i)
 {
 	return (o[i / 4] >> (6 - 2 * (i % 4))) & 3;
 }
 
+/* INFO1 or MP to o: the octets' number, 5 and one or two octets of
+   2 bit fields per 4 tones */
 int VcvmMp::encode(uint8_t *o) const
 {
 	int per = l.kind == VcvmLoading::PARAM ? (l.p10 ? 2 : 0) :
@@ -307,6 +330,8 @@ int VcvmMp::encode(uint8_t *o) const
 	return 5 + nb * (rg ? 2 : 1);
 }
 
+/* INFO1 or MP from n octets of o: 0, or -1 if malformed or the comb
+   and its tones don't agree */
 int VcvmMp::decode(const uint8_t *o, int n)
 {
 	if (n < 5)
@@ -373,6 +398,7 @@ struct MsgBits : HdlcTx<MsgBits, 64, HdlcMsg> {
 	const uint8_t *m = nullptr;
 	int n = 0, sent = 0;
 
+	/* the frame (at most max octets) to buf, twice: its length, then -1 */
 	int hdlc_tx_next(HdlcMsg, unsigned char *buf, int max)
 	{
 		if (sent == 2)
@@ -382,6 +408,7 @@ struct MsgBits : HdlcTx<MsgBits, 64, HdlcMsg> {
 		sent++;
 		return k;
 	}
+	/* the message's bits to out, lead octets of flags before */
 	void bits(int lead, std::vector<uint8_t> &out)
 	{
 		hdlc_tx_start(8L * lead, 16);
@@ -395,6 +422,7 @@ const float v21_ch[2][2] = { { 980, 1180 }, { 1650, 1850 } };
 
 } // namespace
 
+/* see vcvm_startup.h: 0, or -1 for a rate not 8000 or 16000 */
 int VcvmMsgTx::init(int fs, bool param, bool calling)
 {
 	if (fs != 8000 && fs != 16000)
@@ -406,6 +434,8 @@ int VcvmMsgTx::init(int fs, bool param, bool calling)
 	return param ? ptx_.init(fs, false) : 0;
 }
 
+/* see vcvm_startup.h: P20's symbols, or V.21's FSK at -12 dBFS,
+   phase continuous */
 void VcvmMsgTx::send(const uint8_t *m, int n, std::vector<float> &out)
 {
 	MsgBits mb;
@@ -443,14 +473,18 @@ void VcvmMsgTx::send(const uint8_t *m, int n, std::vector<float> &out)
 
 struct VcvmMsgRx::Hdlc : HdlcRx<Hdlc, 64, HdlcMsg> {
 	VcvmMsgRx *o = nullptr;
+	/* a frame between flags, to the receiver if whole */
 	void hdlc_rx_frame(HdlcMsg, const unsigned char *d, int len, bool whole)
 	{
 		if (whole)
 			o->frame(d, len);
 	}
+	/* the deframer back to hunting for a flag */
 	void reset() { hdlc_rx_reset(); }
 };
 
+/* the two filters, mark and space Hz at fs, over 80 per cent of a bit;
+   the bit clock at 0 */
 void VcvmFskRx::init(float mark, float space, int fs)
 {
 	fs_ = fs;
@@ -468,6 +502,7 @@ void VcvmFskRx::init(float mark, float space, int fs)
 	n_ = 0;
 }
 
+/* see vcvm_startup.h: the bit 1 if the mark's magnitude is the greater */
 int VcvmFskRx::run(float x)
 {
 	/* the window's sums of x against each tone */
@@ -514,6 +549,7 @@ struct VcvmMsgRx::Fsk {
 	VcvmFskRx d;
 };
 
+/* the receiver, its FSK detector and deframer */
 VcvmMsgRx::VcvmMsgRx() : fsk_(new Fsk), hdlc_(new Hdlc)
 {
 	hdlc_->o = this;
@@ -521,6 +557,7 @@ VcvmMsgRx::VcvmMsgRx() : fsk_(new Fsk), hdlc_(new Hdlc)
 
 VcvmMsgRx::~VcvmMsgRx() = default;
 
+/* see vcvm_startup.h: 0, or -1 for a rate not 8000 or 16000 */
 int VcvmMsgRx::init(int fs, bool param, bool peer_calling)
 {
 	if (fs != 8000 && fs != 16000)
@@ -537,6 +574,7 @@ int VcvmMsgRx::init(int fs, bool param, bool peer_calling)
 	return 0;
 }
 
+/* see vcvm_startup.h */
 void VcvmMsgRx::restart(long at)
 {
 	out_.clear();
@@ -551,6 +589,8 @@ void VcvmMsgRx::restart(long at)
 	hdlc_->reset();
 }
 
+/* see vcvm_startup.h: the first whose FCS checks kept, its FCS off,
+   while a transmission is coming in */
 void VcvmMsgRx::frame(const uint8_t *d, int len)
 {
 	if (got_ || !active_ || len < 3 || hdlc_fcs(d, len) != HDLC_FCS_GOOD)
@@ -593,6 +633,8 @@ bool VcvmMsgRx::chase()
 	return false;
 }
 
+/* a transmission's signal ended at sample at: P20's chased if no copy
+   checked, the message queued for get() */
 void VcvmMsgRx::ended(long at)
 {
 	if (param_ && !got_ && !syms_.empty())
@@ -609,6 +651,9 @@ void VcvmMsgRx::ended(long at)
 	hdlc_->reset();
 }
 
+/* samples from the line: P20's symbols or the FSK's bits to the
+   deframer; a transmission's start and end from its level (quiet: 10 ms
+   under -40 dBFS for 30 ms), or P20's preamble */
 void VcvmMsgRx::push(const float *x, int n)
 {
 	/* quiet: 10 ms under -40 dBFS */
@@ -664,6 +709,7 @@ void VcvmMsgRx::push(const float *x, int n)
 		prx_.restart(n_);
 }
 
+/* see vcvm_startup.h: the oldest, true if there was one */
 bool VcvmMsgRx::get(VcvmMsg *m)
 {
 	if (out_.empty())

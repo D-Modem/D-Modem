@@ -60,6 +60,7 @@ bool send_all(int fd, const char *p, int n)
  *    TCP
  */
 
+/* the sockets closed */
 TcpDte::~TcpDte()
 {
 	if (client_ >= 0)
@@ -217,6 +218,7 @@ int TcpDte::write(const char *buf, int n)
  *    a DTE read by a thread of its own
  */
 
+/* the thread stopped, the pair and the event closed */
 ThreadDte::~ThreadDte()
 {
 	stop();
@@ -227,6 +229,7 @@ ThreadDte::~ThreadDte()
 		CloseHandle((HANDLE)quit_ev_);
 }
 
+/* see windows_dte.h */
 bool ThreadDte::start()
 {
 	quit_ev_ = CreateEventA(nullptr, TRUE, FALSE, nullptr);
@@ -239,6 +242,7 @@ bool ThreadDte::start()
 	return true;
 }
 
+/* see windows_dte.h */
 void ThreadDte::stop()
 {
 	if (!thread_.joinable())
@@ -249,6 +253,7 @@ void ThreadDte::stop()
 	thread_.join();
 }
 
+/* see windows_dte.h: p with ESC doubled */
 bool ThreadDte::put(const unsigned char *p, int n)
 {
 	char out[2 * 512];
@@ -267,12 +272,14 @@ bool ThreadDte::put(const unsigned char *p, int n)
 	return true;
 }
 
+/* see windows_dte.h: ESC and DSR_ON or DSR_OFF */
 bool ThreadDte::put_state(bool up)
 {
 	const char out[2] = { (char)ESC, (char)(up ? DSR_ON : DSR_OFF) };
 	return send_all(pair_[1], out, 2);
 }
 
+/* see windows_dte.h */
 bool ThreadDte::nap(unsigned ms)
 {
 	return WaitForSingleObject((HANDLE)quit_ev_, ms) == WAIT_TIMEOUT &&
@@ -340,6 +347,8 @@ int ThreadDte::serve(dcore::Modem &m)
  *    COM port
  */
 
+/* the thread stopped, DTR and RTS dropped, the port
+   closed */
 ComDte::~ComDte()
 {
 	stop();
@@ -475,6 +484,7 @@ int ComDte::write(const char *buf, int n)
  *    named pipe
  */
 
+/* the thread stopped, the pipe closed */
 PipeDte::~PipeDte()
 {
 	stop();
@@ -518,6 +528,7 @@ void PipeDte::wake()
 		CancelIoEx((HANDLE)pipe_, nullptr);
 }
 
+/* see windows_dte.h */
 bool PipeDte::finish(void *h, void *ovp, unsigned long *got)
 {
 	OVERLAPPED *ov = (OVERLAPPED *)ovp;
@@ -603,6 +614,7 @@ void PipeDte::reader()
 	CloseHandle(ov.hEvent);
 }
 
+/* see windows_dte.h */
 void PipeDte::serve_client(void *h)
 {
 	OVERLAPPED ov = {};

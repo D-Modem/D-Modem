@@ -30,6 +30,7 @@ using namespace dlink;
 
 /* a failed check, with a message in printf's format */
 static std::string fmt(const char *f, ...) DMODEM_PRINTF(1, 2);
+/* f's message */
 static std::string fmt(const char *f, ...)
 {
 	char buf[256];
@@ -265,6 +266,7 @@ static int v42bis_stepups(int n)
 	return ret;
 }
 
+/* two STEPUPs taken, a third a C-ERROR */
 TEST(Link, V42bisStepup)
 {
 	CHECK(v42bis_stepups(2) >= 0, "two STEPUPs (to 11 bits) taken");
@@ -303,8 +305,11 @@ struct FrameSource : Framer {
 
 /* an owner that sends nothing and takes all */
 struct NullOwner : Owner {
+	/* nothing to send */
 	int read_chars(uint8_t *, int) override { return 0; }
+	/* all taken */
 	int write_chars(const uint8_t *, int n) override { return n; }
+	/* the link's progress ignored */
 	void status(Status) override {}
 };
 
@@ -373,6 +378,7 @@ struct Dte : Owner {
 	int accept = 1 << 30;           /* characters it takes per call */
 	Config agreed;
 	bool verbose = false;
+	/* the DTE called n in the log */
 	explicit Dte(const char *n) : name(n) {}
 	/* the rest of to_send */
 	int read_chars(uint8_t *buf, int n) override {

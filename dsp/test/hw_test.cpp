@@ -36,6 +36,8 @@ struct ArenaHost : Ich<ArenaHost> {
 	int dbg = 0;
 	u32 *arena;
 
+	/* the host on arena a, its descriptor list at BDL: buffers 0..3 of 4
+	   samples each, with IOC */
 	explicit ArenaHost(u32 *a) :
 		Ich(NAMBAR, NABMBAR, false, (uintptr_t)a), arena(a)
 	{
@@ -46,12 +48,18 @@ struct ArenaHost : Ich<ArenaHost> {
 			arena[BDL / 4 + 2 * i + 1] = 4 | 0x80000000u;
 		}
 	}
+	/* (no log) */
 	void log(const char *, ...) {}
+	/* the time, always 0 ms */
 	unsigned long long ms() const { return 0; }
+	/* (no codec: its registers read 0) */
 	word codec_read(int) { return 0; }
+	/* (no codec: writes to it go nowhere) */
 	void codec_write(int, word) {}
 
+	/* v written to the bus master's register r (size bytes) */
 	void out(unsigned r, u32 v, int size) { ich_io_out(NABMBAR + r, v, size); }
+	/* the bus master's register r (size bytes) */
 	u32 in(unsigned r, int size)
 	{
 		u32 v = 0;
@@ -167,7 +175,9 @@ namespace {
 
 struct HdaHost : HdaController<HdaHost>, Si3054Hda<HdaHost> {
 	int dbg = 0;
+	/* (no log) */
 	void log(const char *, ...) {}
+	/* the controller's codec command, answered by the Si3054 */
 	u32 hda_codec_command(u32 cmd) { return si3054_command(cmd); }
 
 	/* a command through the immediate command interface */
@@ -180,7 +190,9 @@ struct HdaHost : HdaController<HdaHost>, Si3054Hda<HdaHost> {
 		EXPECT_TRUE(hda_read(ICIS, 2) & ICIS_IRV);
 		return hda_read(IRII, 4);
 	}
+	/* the Si3054's register r (read with verb 0x9) */
 	u32 reg(unsigned r) { return cmd(r, 0x9, 0, true); }
+	/* the Si3054's register r set to v (written with verb 0x1) */
 	void set(unsigned r, unsigned v) { cmd(r, 0x1, v, true); }
 };
 
@@ -190,6 +202,8 @@ protected:
 	alignas(128) byte bdl[128] = {};
 	short buf[8] = {};
 
+	/* the controller out of reset, bdl two entries of four samples of buf
+	   each, IOC on the second */
 	void SetUp() override
 	{
 		h.hda_write(HdaHost::GCTL, HdaHost::GCTL_CRST, 4);

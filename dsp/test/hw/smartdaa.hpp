@@ -63,6 +63,7 @@ public:
 	bool smartdaa_loopback() const { return smartdaa_regs[0x0e] & 0x60; }
 
 private:
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 };
 

@@ -38,6 +38,9 @@ static int info0_allowed(const VcvmInfo0 &i)
 	       (m & 0x01 ? VCVM_M_PARAM : 0);
 }
 
+/* the start-up of c: the modes allowed, INFO0, and (the calling DCE)
+   INFO0 and the probing queued after the delay; 0, or -1 if the rate,
+   the combs or the message mode won't go */
 int VcvmStartup::init(const Config &c)
 {
 	c_ = c;
@@ -86,6 +89,7 @@ int VcvmStartup::init(const Config &c)
 	return 0;
 }
 
+/* a line to the log, the time in seconds before it */
 void VcvmStartup::note(const char *fmt, ...)
 {
 	char b[256];
@@ -100,6 +104,7 @@ void VcvmStartup::note(const char *fmt, ...)
 	log_ += '\n';
 }
 
+/* FAILED (once, while running), why the reason */
 void VcvmStartup::fail(const char *why)
 {
 	if (state_ != RUNNING)
@@ -109,11 +114,13 @@ void VcvmStartup::fail(const char *why)
 	note("failed: %s", why);
 }
 
+/* the sample after what is queued to send */
 long VcvmStartup::queued() const
 {
 	return t_ + (long)(txq_.size() - txpos_);
 }
 
+/* ms of silence to the transmitter's queue */
 void VcvmStartup::silence(int ms)
 {
 	txq_.insert(txq_.end(), (size_t)ms * c_.fs / 1000, 0.0f);
@@ -127,11 +134,14 @@ void VcvmStartup::silence_until(long at)
 		txq_.insert(txq_.end(), (size_t)(at - q), 0.0f);
 }
 
+/* a message of n octets to the queue, in the message mode */
 void VcvmStartup::send_msg(const uint8_t *m, int n)
 {
 	mtx_.send(m, n, txq_);
 }
 
+/* this DCE's L1 to L3 (the parts INFO0 said) to the queue, its end
+   noted */
 void VcvmStartup::send_probing()
 {
 	VcvmProbe p;
@@ -144,6 +154,8 @@ void VcvmStartup::send_probing()
 	probe_end_tx_ = queued();
 }
 
+/* an MP (this DCE's loading, the round trip, the acknowledgement once
+   the peer's came) and 100 ms of silence to the queue */
 void VcvmStartup::send_mp()
 {
 	VcvmMp mp;
@@ -166,6 +178,9 @@ template <class R> void VcvmStartup::replay(R &r, long from)
 		r.push(&hist_[(size_t)(from - hbase_)], (int)(e - from));
 }
 
+/* a message received, by the step: the peer's INFO0 (the round trip,
+   its probing looked for), its INFO1 (the loading to send, ours after
+   it), or an MP */
 void VcvmStartup::on_msg(const VcvmMsg &m)
 {
 	last_rx_end_ = m.end;
@@ -251,6 +266,9 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 	}
 }
 
+/* what a block of samples leads to: the messages taken, the probing's
+   outcome (the loading asked for, the answering DCE's INFO0, probing
+   and INFO1), the MPs until both are acknowledged, the deadlines */
 void VcvmStartup::step()
 {
 	VcvmMsg m;
@@ -316,6 +334,8 @@ void VcvmStartup::step()
 		     "the MP exchange");
 }
 
+/* n samples from the line in (to the probing's receiver or the
+   messages'), n out from the queue, 10 ms at a time */
 void VcvmStartup::process(const float *in, float *out, int n)
 {
 	const int B = c_.fs / 100;

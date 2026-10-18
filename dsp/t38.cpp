@@ -35,6 +35,7 @@ namespace dsp {
 #define DATA_EXT        T38_DATA_V8
 #define FIELD_EXT       T38_CM_MESSAGE
 
+/* see t38.h */
 int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 		   int max)
 {
@@ -100,6 +101,7 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 	return at;
 }
 
+/* see t38.h */
 int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 		   int len)
 {
@@ -188,6 +190,7 @@ int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 	return 0;
 }
 
+/* see t38.h */
 void t38_reverse(unsigned char *out, const unsigned char *in, int n)
 {
 	for (int k = 0; k < n; k++) {
@@ -244,6 +247,8 @@ static int get_len(const unsigned char *buf, int len, int *at, unsigned *v)
 	return 0;
 }
 
+/* ec (enum t38_ec) with depth packets before (at most
+   UDPTL_HISTORY), sequence number 0 */
 void UdptlTx::init(int ec_, int depth_)
 {
 	memset(this, 0, sizeof(*this));
@@ -252,6 +257,7 @@ void UdptlTx::init(int ec_, int depth_)
 		depth_;
 }
 
+/* see t38.h */
 int UdptlTx::packet(const unsigned char *ifp, int len, unsigned char *buf,
 		    int max)
 {
@@ -296,11 +302,13 @@ int UdptlTx::packet(const unsigned char *ifp, int len, unsigned char *buf,
 	return at;
 }
 
+/* no packet yet */
 void UdptlRx::init()
 {
 	expected = -1;
 }
 
+/* see t38.h */
 int UdptlRx::packet(const unsigned char *buf, int len,
 		    void (*fn)(void *ctx, const unsigned char *ifp, int len,
 			       unsigned seq),

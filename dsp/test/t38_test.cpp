@@ -35,6 +35,7 @@ static Bytes encode(const struct t38_ifp &p, int version)
 	return n < 0 ? Bytes() : Bytes(buf, buf + n);
 }
 
+/* an IFP packet of indicator ind */
 static struct t38_ifp indicator(int ind)
 {
 	struct t38_ifp p = {};
@@ -131,6 +132,7 @@ struct Got {
 	std::vector<unsigned> seq;
 };
 
+/* an IFP packet UDPTL delivered, with its sequence number, kept in g */
 static void got(void *ctx, const unsigned char *ifp, int len, unsigned seq)
 {
 	Got *g = static_cast<Got *>(ctx);
@@ -192,6 +194,8 @@ struct Net {
 	int depth;      /* UDPTL's redundancy */
 };
 
+/* n, for the test's name: the version, ECM, the rate, the loss and the
+   redundancy */
 static void PrintTo(const Net &n, std::ostream *os)
 {
 	*os << "v" << n.version << (n.ecm ? " ecm " : " ") << n.bps
@@ -209,11 +213,14 @@ struct Side {
 	std::deque<Bytes> *line;        /* to the other side */
 };
 
+/* the side's next page, from its document: 1, 0 when there are no
+   more, -1 on an error */
 static int side_next_page(void *ctx, T4Page *p)
 {
 	return static_cast<Side *>(ctx)->in.read_page(p);
 }
 
+/* a page the side received, written to its TIFF */
 static void side_page_received(void *ctx, T4Page *p)
 {
 	static_cast<Side *>(ctx)->out.write_page(p);

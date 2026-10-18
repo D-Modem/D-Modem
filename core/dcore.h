@@ -86,6 +86,7 @@ public:
 	   itself, which the line signals its own way (the modem's audio is
 	   silent for as long) */
 	virtual bool can_flash(Modem &m) { (void)m; return false; }
+	/* (see can_flash()) */
 	virtual void hook_flash(Modem &m, unsigned ms) { (void)m; (void)ms; }
 	/* the line tells when a call it dials is answered and why one
 	   fails (Modem::line_answered(), line_failed()), as SIP does; else
@@ -98,15 +99,19 @@ public:
 	   V.34).  Else the line is a digital network's (SIP, a PBX's
 	   channel), which dials the number */
 	virtual bool analog_line(Modem &m) { (void)m; return false; }
+	/* the speaker's volume (ATL, S30 with ATM2), 0: off */
 	virtual void speaker(Modem &m, int volume) { (void)m; (void)volume; }
 	/* the line's delay, which Smart Link's original library asks for
 	   (the open data pumps do not): the samples between the modem's
 	   output and its input, and a change of it (> 0: silence out, < 0:
 	   input dropped) */
 	virtual int io_delay(Modem &m) { (void)m; return 0; }
+	/* (see io_delay()) */
 	virtual void update_delay(Modem &m, int samples) { (void)m; (void)samples; }
 	/* codec type, pulse dial */
 	virtual int codec_type(Modem &m) { (void)m; return CODEC_UNKNOWN; }
+	/* a digit dialled in pulses (the pump's MDMPRM_PULSE_DIAL); 0, or -1
+	   for a line that cannot */
 	virtual int pulse_dial(Modem &m, int val) { (void)m; (void)val; return -1; }
 	/* pulse dialling (ATP): the line broken (true: on hook) or made
 	   again, at once; the pump times the pulses (the country's make,
@@ -161,6 +166,7 @@ public:
 	/* characters from the DTE: commands, or data when online; returns
 	   how many it took (see dte_space()) */
 	int dte_input(const char *buf, int n);
+	/* the characters dte_input() takes now */
 	int dte_space() const { return xmit_size_ - xmit_count_; }
 	/* the line's samples, while started(): n in, n out */
 	void process(const int16_t *in, int16_t *out, int n);
@@ -195,6 +201,7 @@ public:
 	int t38_start(int max_data);
 	void t38_stop();
 	void t38_rx(const void *ifp);
+	/* the fax is over T.38 (t38_start() until t38_stop()) */
 	bool t38() const { return t38_; }
 	/* the device reports an error */
 	void error();
@@ -223,6 +230,7 @@ public:
 	bool carrier() const { return carrier_; }
 	/* the pump's rates (bit/s) */
 	unsigned tx_rate() const { return tx_rate_; }
+	/* (see tx_rate()) */
 	unsigned rx_rate() const { return rx_rate_; }
 	/* DTE data the remote does not have yet (with V.42: not
 	   acknowledged) */
@@ -234,6 +242,7 @@ public:
 	/* the pumps' state shared over a call (dsplibs.h), and what they
 	   learn of the line over calls (the program keeps it) */
 	void *dp_runtime() const { return dp_runtime_; }
+	/* (see dp_runtime()) */
 	struct dsp_info &dsp_info() { return dsp_info_; }
 	/* the network's G.711 law for the pumps of this call and the next
 	   ones (dp_runtime_set_law: 1 mu-law, 2 A-law, 0 not known) */
@@ -264,6 +273,7 @@ public:
 	int put_bits(int nbits, const uint8_t *buf, int n);
 	/* characters to and from the DTE, for the pumps (fax, voice) */
 	int send_to_dte(const char *buf, int n) { return put_chars(buf, n); }
+	/* (see send_to_dte()) */
 	int recv_from_dte(char *buf, int n) { return get_chars(buf, n); }
 
 	/* the link layer's side (LinkOwner) */

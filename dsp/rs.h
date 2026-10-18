@@ -26,7 +26,9 @@ public:
 
 	/* n octets a codeword, k of them information: 0, or -1 */
 	int init(int n, int k);
+	/* (see init()) */
 	int n() const { return n_; }
+	/* (see init()) */
 	int k() const { return k_; }
 
 	/* the codeword of k octets (cw may be msg): its n octets */
@@ -37,6 +39,7 @@ public:
 	int decode(uint8_t *cw, const uint8_t *erased = nullptr) const;
 
 private:
+	/* a times b in the field */
 	uint8_t mul(uint8_t a, uint8_t b) const
 	{
 		return a && b ? exp_[log_[a] + log_[b]] : 0;

@@ -57,6 +57,7 @@ public:
    and a new pty stands in for it */
 class PtyDte final : public Dte {
 public:
+	/* pty, which stays the caller's */
 	explicit PtyDte(Pty &pty) : pty_(pty) {}
 	int fd() const override;
 	bool want_read(const dcore::Modem &m) override;
@@ -75,8 +76,10 @@ public:
 	enum { BUFFER = 64 * 1024 };
 	/* fd stays the caller's */
 	explicit FdDte(int fd);
+	/* see Dte */
 	int fd() const override { return fd_; }
 	bool want_read(const dcore::Modem &m) override;
+	/* output waits */
 	bool want_write() const override { return !out_.empty(); }
 	int serve(dcore::Modem &m) override;
 	void flush() override;
@@ -97,10 +100,12 @@ public:
 		dcore::LinkState link = dcore::LinkState::Idle;
 		bool offhook = false;
 		unsigned tx_rate = 0, rx_rate = 0;
+		/* the same state, hook and rates */
 		bool operator==(const Status &o) const {
 			return link == o.link && offhook == o.offhook &&
 				tx_rate == o.tx_rate && rx_rate == o.rx_rate;
 		}
+		/* something has changed */
 		bool operator!=(const Status &o) const { return !(*this == o); }
 	};
 

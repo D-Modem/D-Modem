@@ -108,6 +108,7 @@ struct Pcm {
 	unsigned long long base = 0;
 };
 
+/* the PCM of io */
 Pcm *pcm_of(snd_pcm_ioplug_t *io)
 {
 	return static_cast<Pcm *>(io->private_data);
@@ -163,6 +164,8 @@ unsigned long long played(Pcm *p)
 	return p->base + (unsigned long long)(s * p->io.rate);
 }
 
+/* ioplug's start: the clock running from now (capture:
+   what waited discarded) */
 int pcm_start(snd_pcm_ioplug_t *io)
 {
 	Pcm *p = pcm_of(io);
@@ -174,6 +177,8 @@ int pcm_start(snd_pcm_ioplug_t *io)
 	return 0;
 }
 
+/* ioplug's stop: the playback's position kept, the clock
+   stopped */
 int pcm_stop(snd_pcm_ioplug_t *io)
 {
 	Pcm *p = pcm_of(io);
@@ -183,6 +188,8 @@ int pcm_stop(snd_pcm_ioplug_t *io)
 	return 0;
 }
 
+/* ioplug's prepare: stopped, the positions 0 (capture:
+   what waited discarded) */
 int pcm_prepare(snd_pcm_ioplug_t *io)
 {
 	Pcm *p = pcm_of(io);
@@ -195,6 +202,9 @@ int pcm_prepare(snd_pcm_ioplug_t *io)
 	return 0;
 }
 
+/* ioplug's pointer: the position in the buffer (playback
+   the clock's, capture the samples come); -EPIPE on an
+   overrun */
 snd_pcm_sframes_t pcm_pointer(snd_pcm_ioplug_t *io)
 {
 	Pcm *p = pcm_of(io);
@@ -206,6 +216,9 @@ snd_pcm_sframes_t pcm_pointer(snd_pcm_ioplug_t *io)
 	return (snd_pcm_sframes_t)(p->received % io->buffer_size);
 }
 
+/* ioplug's transfer: size frames at offset of areas,
+   captured from the FIFO (how many it had) or sent to the
+   exchange (all of them; -EIO if it can't) */
 snd_pcm_sframes_t pcm_transfer(snd_pcm_ioplug_t *io,
 			       const snd_pcm_channel_area_t *areas,
 			       snd_pcm_uframes_t offset, snd_pcm_uframes_t size)
@@ -237,6 +250,7 @@ snd_pcm_sframes_t pcm_transfer(snd_pcm_ioplug_t *io,
 	return (snd_pcm_sframes_t)size;
 }
 
+/* ioplug's close: the connection closed, the PCM freed */
 int pcm_close(snd_pcm_ioplug_t *io)
 {
 	Pcm *p = pcm_of(io);
@@ -269,16 +283,20 @@ struct Ctl {
 	long value[2] = {};
 };
 
+/* the control of ext */
 Ctl *ctl_of(snd_ctl_ext_t *ext)
 {
 	return static_cast<Ctl *>(ext->private_data);
 }
 
+/* ctl_ext's elem_count: the two switches */
 int ctl_count(snd_ctl_ext_t *)
 {
 	return 2;
 }
 
+/* ctl_ext's elem_list: switch offset's id (a mixer
+   element); -EINVAL past the two */
 int ctl_list(snd_ctl_ext_t *, unsigned offset, snd_ctl_elem_id_t *id)
 {
 	if (offset >= 2)
@@ -288,6 +306,7 @@ int ctl_list(snd_ctl_ext_t *, unsigned offset, snd_ctl_elem_id_t *id)
 	return 0;
 }
 
+/* ctl_ext's find_elem: the switch of id's numid or name */
 snd_ctl_ext_key_t ctl_find(snd_ctl_ext_t *, const snd_ctl_elem_id_t *id)
 {
 	const char *name = snd_ctl_elem_id_get_name(id);
@@ -301,6 +320,8 @@ snd_ctl_ext_key_t ctl_find(snd_ctl_ext_t *, const snd_ctl_elem_id_t *id)
 	return SND_CTL_EXT_KEY_NOT_FOUND;
 }
 
+/* ctl_ext's get_attribute: a boolean, read and write,
+   one value */
 int ctl_attribute(snd_ctl_ext_t *, snd_ctl_ext_key_t, int *type,
 		  unsigned *acc, unsigned *count)
 {
@@ -310,6 +331,7 @@ int ctl_attribute(snd_ctl_ext_t *, snd_ctl_ext_key_t, int *type,
 	return 0;
 }
 
+/* ctl_ext's get_integer_info: 0 to 1, by 1 */
 int ctl_info(snd_ctl_ext_t *, snd_ctl_ext_key_t, long *min, long *max,
 	     long *step)
 {
@@ -319,12 +341,15 @@ int ctl_info(snd_ctl_ext_t *, snd_ctl_ext_key_t, long *min, long *max,
 	return 0;
 }
 
+/* ctl_ext's read_integer: the switch's value */
 int ctl_read(snd_ctl_ext_t *ext, snd_ctl_ext_key_t key, long *value)
 {
 	*value = ctl_of(ext)->value[key];
 	return 0;
 }
 
+/* ctl_ext's write_integer: the switch set, a change told
+   to the exchange (1; 0 if none, -EIO if it can't) */
 int ctl_write(snd_ctl_ext_t *ext, snd_ctl_ext_key_t key, long *value)
 {
 	Ctl *c = ctl_of(ext);
@@ -338,6 +363,8 @@ int ctl_write(snd_ctl_ext_t *ext, snd_ctl_ext_key_t key, long *value)
 	return 1;
 }
 
+/* ctl_ext's close: the connection closed, the control
+   freed */
 void ctl_close(snd_ctl_ext_t *ext)
 {
 	Ctl *c = ctl_of(ext);
@@ -363,6 +390,9 @@ const snd_ctl_ext_callback_t CTL_CALLBACKS = [] {
 
 extern "C" {
 
+/* the PCM plugin "dmline": stream's way to the
+   exchange at its socket, S16 mono at 8000, 9600 or
+   16000 Hz */
 SND_PCM_PLUGIN_DEFINE_FUNC(dmline)
 {
 	static const unsigned rates[] = { 8000, 9600, 16000 };
@@ -416,6 +446,8 @@ SND_PCM_PLUGIN_DEFINE_FUNC(dmline)
 
 SND_PCM_PLUGIN_SYMBOL(dmline);
 
+/* the control plugin "dmline": the two switches, their
+   changes to the exchange at its socket */
 SND_CTL_PLUGIN_DEFINE_FUNC(dmline)
 {
 	const char *path;

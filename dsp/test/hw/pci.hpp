@@ -100,6 +100,7 @@ public:
 private:
 	u32 cf8_ = 0;
 
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 };
 

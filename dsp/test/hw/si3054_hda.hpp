@@ -67,6 +67,7 @@ public:
 	bool si3054_mei = false;        /* EXTENDED_MID written: ready */
 	unsigned long si3054_bad = 0;   /* commands it has no answer for */
 
+	/* the codec at its defaults */
 	Si3054Hda() { si3054_defaults(); }
 
 	/* a command word: its response */
@@ -123,11 +124,14 @@ public:
 		word r = si3054_regs[LINE_RATE];
 		return r == 8000 || r == 9600 || r == 16000 ? r : 9600;
 	}
+	/* off hook: GPIO_CONTROL's OH */
 	bool si3054_off_hook() const { return si3054_regs[GPIO_CONTROL] & GPIO_OH; }
+	/* the line monitor on: GPIO_CONTROL's CID */
 	bool si3054_monitor() const { return si3054_regs[GPIO_CONTROL] & GPIO_CID; }
 	/* the stream numbers it sends the capture on and takes the
 	   playback from */
 	int si3054_in_tag() const { return (si3054_regs[LINE_LEVEL] >> 4) & 15; }
+	/* the playback's */
 	int si3054_out_tag() const { return (si3054_regs[LINE_LEVEL] >> 12) & 15; }
 
 	/* a codec sample: line, what the line brings; *adc what the ADC
@@ -141,8 +145,11 @@ public:
 	}
 
 private:
+	/* the harness */
 	Host &host() { return static_cast<Host &>(*this); }
 
+	/* the registers at reset: all 0 but LINE_RATE 9600 and the chip
+	   ID; node 1's format and stream 0 */
 	void si3054_defaults()
 	{
 		for (word &r : si3054_regs)
@@ -156,6 +163,7 @@ private:
 		si3054_stream = 0;
 	}
 
+	/* a command it has no answer for: counted, noted; 0 */
 	u32 bad(u32 cmd)
 	{
 		si3054_bad++;
@@ -164,6 +172,8 @@ private:
 		return 0;
 	}
 
+	/* parameter p of node nid (the root's or the modem function
+	   group's) */
 	u32 param(unsigned nid, unsigned p, u32 cmd)
 	{
 		if (nid == 0) {
@@ -185,6 +195,8 @@ private:
 		return bad(cmd);
 	}
 
+	/* register r as read: EXTENDED_MID ready once written,
+	   LINE_STATUS's frame detect */
 	word reg(unsigned r) const
 	{
 		word v = si3054_regs[r];
@@ -195,6 +207,8 @@ private:
 		return v;
 	}
 
+	/* register r written with v (CHIPID read only); the hook's
+	   changes noted */
 	void set_reg(unsigned r, word v)
 	{
 		word was = si3054_regs[r];

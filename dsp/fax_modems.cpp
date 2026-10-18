@@ -116,7 +116,9 @@ float fax_tx_rms(enum fax_mod mod)
 
 /* the modulation families */
 static int is_v17(enum fax_mod m) { return m >= FM_V17_7200; }
+/* (see is_v17()) */
 static int is_v29(enum fax_mod m) { return m >= FM_V29_4800 && m <= FM_V29_9600; }
+/* (see is_v17()) */
 static int is_v27(enum fax_mod m) { return m == FM_V27_2400 || m == FM_V27_4800; }
 
 /* data bits per symbol (V.17: those into the trellis encoder, which

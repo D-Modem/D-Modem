@@ -68,6 +68,7 @@ std::vector<float> line(const std::vector<float> &x, int fs, int delay,
 	return y;
 }
 
+/* whether the speech codecs are built in (DMODEM_HAVE_AMR) */
 bool have_codec()
 {
 #ifdef DMODEM_HAVE_AMR
@@ -146,6 +147,7 @@ CombResult comb_call(int code, int fs, const VcvmLoad &l, int n, double ppm,
 	return r;
 }
 
+/* a load of tones tones, each pb bits of phase and rb of ring */
 VcvmLoad load_of(int tones, int pb, int rb = 0)
 {
 	VcvmLoad l;
@@ -292,6 +294,9 @@ struct ParamResult {
 	bool locked = false;
 };
 
+/* n random symbols of P10 or P20 at fs after the preamble, through a
+   line with codec and the far clock ppm off: whether the receiver
+   locked, the symbols it gave, those wrong and its c-bar */
 ParamResult param_call(int fs, bool p10, int n, double ppm,
 		       const char *codec = "")
 {

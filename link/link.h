@@ -166,6 +166,7 @@ public:
 	/* the call's counts so far (kept after it, until the next init()),
 	   which the framers add to */
 	const Stats &stats() const { return stats_; }
+	/* (see the const one) */
 	Stats &stats() { return stats_; }
 
 	/* for the parts */

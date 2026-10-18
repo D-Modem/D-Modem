@@ -64,6 +64,7 @@ protected:
 		if (!p_)
 			throw std::runtime_error(std::string(what) + " failed");
 	}
+	/* the C object destroyed (reset()) */
 	~Owner() { reset(); }
 
 	T *p_;
@@ -157,6 +158,7 @@ public:
 	{
 		dmodem_fax_t38_rx(p_, pkt, len);
 	}
+	/* n ms gone by */
 	void t38_time(int n) { dmodem_fax_t38_time(p_, n); }
 };
 

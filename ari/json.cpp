@@ -22,12 +22,14 @@ struct Reader {
 	const char *p, *end;
 	int depth = 0;
 
+	/* past the whitespace */
 	void space()
 	{
 		while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' ||
 				   *p == '\r'))
 			p++;
 	}
+	/* past word if it is next; false (p as it was) if not */
 	bool literal(const char *word)
 	{
 		size_t n = strlen(word);
@@ -120,6 +122,8 @@ struct Reader {
 		p++;
 		return true;
 	}
+	/* the value at p into v (nested at most 64 deep); false if there is
+	   none */
 	bool value(Json &v)
 	{
 		space();

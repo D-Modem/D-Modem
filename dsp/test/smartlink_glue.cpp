@@ -64,11 +64,13 @@ int FAX_t38_start(void *obj, void (*tx)(void *ctx, const void *ifp),
 	return -1;
 }
 
+/* no T.38 to stop */
 void FAX_t38_stop(void *obj)
 {
 	(void)obj;
 }
 
+/* T.38 received: ignored */
 void FAX_t38_rx(void *obj, const void *ifp)
 {
 	(void)obj;

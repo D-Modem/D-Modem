@@ -138,7 +138,9 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	V22Scrambler rx_scr12, rx_scr24;
 
 	const char *mode_name() const;
+	/* its name in the log (the mode's) */
 	const char *tag() const { return mode_name(); }
+	/* in data mode (the carrier watched, no handshake timeout) */
 	bool in_data() const { return state == V22_DATA; }
 	void set_state(enum v22_state state_);
 	cplx tx_symbol();
@@ -155,6 +157,7 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	int handshake();
 	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
 	int sample(float x, float *y);
+	/* cnt samples in and out, through sample() */
 	int process(void *in, void *out, int cnt) override
 	{
 		return pump_loop(in, out, cnt);

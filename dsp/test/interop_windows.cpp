@@ -273,9 +273,13 @@ static byte *img;               /* where it is */
 static u32 img_size;
 static void *img_entry;         /* its DriverEntry */
 
+/* the little-endian 32 bits at p */
 static u32 rd32(const byte *p) { u32 v; memcpy(&v, p, 4); return v; }
+/* the little-endian 16 bits at p */
 static word rd16(const byte *p) { word v; memcpy(&v, p, 2); return v; }
+/* v as 32 little-endian bits at p */
 static void wr32(void *p, u32 v) { memcpy(p, &v, 4); }
+/* v as 16 little-endian bits at p */
 static void wr16(void *p, word v) { memcpy(p, &v, 2); }
 
 /* an import of ours: its name, our function (or the variable it is,
@@ -450,6 +454,7 @@ static int pe_load(const char *path)
  *    UTF-16 and the like
  */
 
+/* the length of w (wide characters, to its 0; 0 for NULL) */
 static int wlen(const wchar *w)
 {
 	int n = 0;
@@ -470,6 +475,7 @@ static char *w2a(const wchar *w, int n)
 	s[n] = 0;
 	return s;
 }
+/* u's string as a C string (malloc; "" for none) */
 static char *us2a(const struct ustr *u)
 {
 	return u && u->buf ? w2a(u->buf, u->len / 2) : strdup("");
@@ -494,6 +500,7 @@ unsigned long long win_line_n;          /* line samples so far */
 /* the interrupt time (100 ns since boot): the line's, from 10 s; and
    on by the driver's busy waits (itime_last) while the line stands */
 static u64 itime_last;
+/* the interrupt time now */
 static u64 itime(void)
 {
 	u64 t = 100000000ull + win_line_n * 10000000ull / (u64)wdev->rate;
@@ -638,6 +645,7 @@ static void run_threads(void)
 /* the timers due: off (or on again, periodic), signalled, their DPCs
    queued */
 static int KeInsertQueueDpc_(struct kdpc *d, void *a1, void *a2);
+/* the timers due run (as above) */
 static void run_timers(void)
 {
 	u64 now = itime();
@@ -730,6 +738,8 @@ static u64 timeout_end(const long long *to)
  */
 static byte kpcr[0x1000] __attribute__((aligned(4096)));
 
+/* the KPCR's stack (base, limit: base less size) and current
+   thread */
 static void kpcr_stack(u32 base, u32 size, void *thread)
 {
 	u32 limit = base - size;
@@ -738,6 +748,8 @@ static void kpcr_stack(u32 base, u32 size, void *thread)
 	memcpy(kpcr + 0x124, &thread, 4);
 }
 
+/* the KPCR made and fs set to it, the main thread's stack in it;
+   0, or -1 with a message */
 static int kpcr_init(void)
 {
 	struct user_desc {
@@ -848,6 +860,8 @@ static struct rval *reg_val(struct rkey *k, const char *name, int create)
 	*at = v;
 	return v;
 }
+/* value name of path (both made if none) set to type and len bytes
+   of data (two 0s after them) */
 static void reg_set(const char *path, const char *name, u32 type,
 		    const void *data, u32 len)
 {
@@ -1184,6 +1198,7 @@ static u32 io_in(unsigned a, int size)
 	return v;
 }
 
+/* a port write: the device's (logged if it has no ports) */
 static void io_out(unsigned a, u32 v, int size)
 {
 	a &= 0xffff;
@@ -1322,7 +1337,9 @@ static void on_trap(int sig, siginfo_t *si, void *ctx)
 static struct Kernel : X86Traps<Kernel>, LineTsc<Kernel> {
 	unsigned long long &line_n = win_line_n;
 	int line_rate = 8000;
+	/* the device's port read */
 	u32 io_in(unsigned a, int size) { return ::io_in(a, size); }
+	/* the device's port write */
 	void io_out(unsigned a, u32 v, int size) { ::io_out(a, v, size); }
 } kern;
 
@@ -1363,9 +1380,13 @@ static void *NTAPI ExAllocatePoolWithTag(int type, u32 n, u32 tag)
 	(void)type; (void)tag;
 	return calloc(1, n + 16);
 }
+/* ExFreePool: frees p */
 static void NTAPI ExFreePool(void *p) { free(p); }
+/* MmLockPagableDataSection: nothing to lock (its handle: a) */
 static void *NTAPI MmLockPagableDataSection(void *a) { return a; }
+/* MmUnlockPagableImageSection: nothing to unlock */
 static void NTAPI MmUnlockPagableImageSection(void *h) { (void)h; }
+/* MmQuerySystemSize: the size of the system */
 static int NTAPI MmQuerySystemSize(void) { return 2; }   /* large */
 static void *NTAPI MmMapIoSpace(u64 pa, u32 n, int cache)
 {
@@ -1381,16 +1402,24 @@ static void *NTAPI MmMapIoSpace(u64 pa, u32 n, int cache)
 	LOG("MmMapIoSpace %llx %u: none\n", pa, n);
 	return NULL;
 }
+/* MmUnmapIoSpace: nothing (the window stays) */
 static void NTAPI MmUnmapIoSpace(void *va, u32 n) { (void)va; (void)n; }
+/* MmUnlockPages: nothing (never locked) */
 static void NTAPI MmUnlockPages(struct mdl *m) { (void)m; }
+/* IoFreeMdl: frees the MDL */
 static void NTAPI IoFreeMdl(struct mdl *m) { free(m); }
 
 /* HAL's port I/O: as the driver's own in and out */
 static u32 NTAPI READ_PORT_ULONG(u32 *port) { IO_FROM(); return io_in((u32)(uintptr_t)port, 4); }
+/* WRITE_PORT_ULONG: 32 bits out */
 static void NTAPI WRITE_PORT_ULONG(u32 *port, u32 v) { IO_FROM(); io_out((u32)(uintptr_t)port, v, 4); }
+/* READ_PORT_USHORT: 16 bits in */
 static word NTAPI READ_PORT_USHORT(word *port) { IO_FROM(); return (word)io_in((u32)(uintptr_t)port, 2); }
+/* WRITE_PORT_USHORT: 16 bits out */
 static void NTAPI WRITE_PORT_USHORT(word *port, word v) { IO_FROM(); io_out((u32)(uintptr_t)port, v, 2); }
+/* READ_PORT_UCHAR: 8 bits in */
 static byte NTAPI READ_PORT_UCHAR(byte *port) { IO_FROM(); return (byte)io_in((u32)(uintptr_t)port, 1); }
+/* WRITE_PORT_UCHAR: 8 bits out */
 static void NTAPI WRITE_PORT_UCHAR(byte *port, byte v) { IO_FROM(); io_out((u32)(uintptr_t)port, v, 1); }
 
 /* the C library of the kernel */
@@ -1398,6 +1427,7 @@ static void *__attribute__((cdecl)) k_memmove(void *d, const void *s, size_t n)
 {
 	return memmove(d, s, n);
 }
+/* wcschr: the first c in s (its 0 too), or NULL */
 static wchar *__attribute__((cdecl)) k_wcschr(const wchar *s, wchar c)
 {
 	for (;; s++) {
@@ -1408,22 +1438,27 @@ static wchar *__attribute__((cdecl)) k_wcschr(const wchar *s, wchar c)
 	}
 }
 
+/* strstr: the C library's */
 static char *__attribute__((cdecl)) k_strstr(const char *h, const char *n)
 {
 	return (char *)strstr(h, n);
 }
+/* strncmp: the C library's */
 static int __attribute__((cdecl)) k_strncmp(const char *a, const char *b, size_t n)
 {
 	return strncmp(a, b, n);
 }
+/* strncpy: the C library's */
 static char *__attribute__((cdecl)) k_strncpy(char *d, const char *s, size_t n)
 {
 	return strncpy(d, s, n);
 }
+/* _strnicmp: strncasecmp */
 static int __attribute__((cdecl)) k_strnicmp(const char *a, const char *b, size_t n)
 {
 	return strncasecmp(a, b, n);
 }
+/* _strnset: the first n characters of s (to its 0) set to c; s */
 static char *__attribute__((cdecl)) k_strnset(char *s, int c, size_t n)
 {
 	size_t i;
@@ -1431,16 +1466,22 @@ static char *__attribute__((cdecl)) k_strnset(char *s, int c, size_t n)
 		s[i] = (char)c;
 	return s;
 }
+/* isdigit: c a decimal digit? */
 static int __attribute__((cdecl)) k_isdigit(int c) { return c >= '0' && c <= '9'; }
+/* tolower: c in lower case (ASCII) */
 static int __attribute__((cdecl)) k_tolower(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+/* atoi: the C library's */
 static int __attribute__((cdecl)) k_atoi(const char *s) { return atoi(s); }
+/* the wide character c in lower case (ASCII) */
 static wchar wlower(wchar c) { return c >= 'A' && c <= 'Z' ? (wchar)(c + 32) : c; }
+/* _wcsicmp: wide strings compared without case (ASCII) */
 static int __attribute__((cdecl)) k_wcsicmp(const wchar *a, const wchar *b)
 {
 	for (; *a && wlower(*a) == wlower(*b); a++, b++)
 		;
 	return (int)wlower(*a) - (int)wlower(*b);
 }
+/* wcsstr: the first n in h, or NULL (h for an empty n) */
 static wchar *__attribute__((cdecl)) k_wcsstr(const wchar *h, const wchar *n)
 {
 	for (; *h; h++) {
@@ -1455,6 +1496,7 @@ static wchar *__attribute__((cdecl)) k_wcsstr(const wchar *h, const wchar *n)
 /* the compiler's 64-bit helpers: _allmul and _alldiv stdcall, the
    shifts edx:eax by cl */
 static long long NTAPI k_allmul(long long a, long long b) { return a * b; }
+/* _alldiv: a / b (0 for b 0) */
 static long long NTAPI k_alldiv(long long a, long long b) { return b ? a / b : 0; }
 extern "C" void k_allshl(void), k_allshr(void);
 __asm__(".text\n"
@@ -1472,6 +1514,7 @@ __asm__(".text\n"
 	"1:	movl %edx, %eax\n	sarl $31, %edx\n	andb $31, %cl\n"
 	"	sarl %cl, %eax\n	ret\n"
 	"2:	sarl $31, %edx\n	movl %edx, %eax\n	ret\n");
+/* _purecall: a pure virtual call, the end */
 static void __attribute__((cdecl, noreturn)) k_purecall(void)
 {
 	fprintf(stderr, "win: the driver called a pure virtual function\n");
@@ -1605,6 +1648,7 @@ end:
 #undef PUT
 	return (int)o;
 }
+/* sprintf: Microsoft's (ms_vsnprintf), 4096 octets of room at most */
 static int __attribute__((cdecl)) k_sprintf(char *out, const char *fmt, ...)
 {
 	va_list ap;
@@ -1633,8 +1677,12 @@ static unsigned __attribute__((cdecl)) DbgPrint(const char *fmt, ...)
 
 /* interlocked operations (one thread): fastcall */
 static long FASTCALL InterlockedIncrement(long *p) { return ++*p; }
+/* InterlockedDecrement: *p less 1, the new value */
 static long FASTCALL InterlockedDecrement(long *p) { return --*p; }
+/* InterlockedExchange: *p set to v, the old value */
 static long FASTCALL InterlockedExchange(long *p, long v) { long o = *p; *p = v; return o; }
+/* InterlockedCompareExchange: *p set to v if it is cmp; the old
+   value */
 static long FASTCALL InterlockedCompareExchange(long *p, long v, long cmp)
 {
 	long o = *p;
@@ -1645,12 +1693,19 @@ static long FASTCALL InterlockedCompareExchange(long *p, long v, long cmp)
 
 /* the IRQL and spin locks */
 static byte NTAPI KeGetCurrentIrql(void) { return irql; }
+/* KfRaiseIrql: the IRQL set to n; the old one */
 static byte FASTCALL KfRaiseIrql(byte n) { byte o = irql; irql = n; return o; }
+/* KfLowerIrql: the IRQL back to n */
 static void FASTCALL KfLowerIrql(byte n) { irql = n; }
+/* KfAcquireSpinLock: to dispatch level (none spins); the old IRQL */
 static byte FASTCALL KfAcquireSpinLock(u32 *l) { byte o = irql; (void)l; irql = 2; return o; }
+/* KfReleaseSpinLock: the IRQL back to n */
 static void FASTCALL KfReleaseSpinLock(u32 *l, byte n) { (void)l; irql = n; }
+/* KeInitializeSpinLock: l free */
 static void NTAPI KeInitializeSpinLock(u32 *l) { *l = 0; }
+/* IoAcquireCancelSpinLock: to dispatch level, the old IRQL in *o */
 static void NTAPI IoAcquireCancelSpinLock(byte *o) { *o = irql; irql = 2; }
+/* IoReleaseCancelSpinLock: the IRQL back to n */
 static void NTAPI IoReleaseCancelSpinLock(byte n) { irql = n; }
 
 /* strings */
@@ -1660,16 +1715,21 @@ static void NTAPI RtlInitUnicodeString(struct ustr *u, const wchar *s)
 	u->len = s ? (word)(wlen(s) * 2) : 0;
 	u->max = s ? (word)(u->len + 2) : 0;
 }
+/* RtlInitAnsiString: a counted string of s (not copied) */
 static void NTAPI RtlInitAnsiString(struct astr *a, const char *s)
 {
 	a->buf = (char *)s;
 	a->len = s ? (word)strlen(s) : 0;
 	a->max = s ? (word)(a->len + 1) : 0;
 }
+/* RtlInitString: as RtlInitAnsiString */
 static void NTAPI RtlInitString(struct astr *a, const char *s) { RtlInitAnsiString(a, s); }
 /* fast mutexes (one thread: none waits) at APC level */
 static void FASTCALL ExAcquireFastMutex(void *m) { (void)m; }
+/* ExReleaseFastMutex: nothing */
 static void FASTCALL ExReleaseFastMutex(void *m) { (void)m; }
+/* RtlAppendUnicodeStringToString: s after d (0 ended if there is
+   room); STATUS_BUFFER_TOO_SMALL if it does not fit */
 static NTSTATUS NTAPI RtlAppendUnicodeStringToString(struct ustr *d, const struct ustr *s)
 {
 	if (d->len + s->len > d->max)
@@ -1680,12 +1740,15 @@ static NTSTATUS NTAPI RtlAppendUnicodeStringToString(struct ustr *d, const struc
 		d->buf[d->len / 2] = 0;
 	return STATUS_SUCCESS;
 }
+/* RtlAppendUnicodeToString: the wide string s after d */
 static NTSTATUS NTAPI RtlAppendUnicodeToString(struct ustr *d, const wchar *s)
 {
 	struct ustr u;
 	RtlInitUnicodeString(&u, s);
 	return RtlAppendUnicodeStringToString(d, &u);
 }
+/* RtlIntegerToUnicodeString: v in base (16, 8, 2, else 10) into
+   u, 0 ended; STATUS_BUFFER_OVERFLOW if it does not fit */
 static NTSTATUS NTAPI RtlIntegerToUnicodeString(u32 v, u32 base, struct ustr *u)
 {
 	char b[40];
@@ -1709,6 +1772,8 @@ static NTSTATUS NTAPI RtlIntegerToUnicodeString(u32 v, u32 base, struct ustr *u)
 	u->len = (word)(n * 2);
 	return STATUS_SUCCESS;
 }
+/* RtlUnicodeStringToInteger: u as a number in base (0: by its
+   0x, 0o or 0b prefix, else 10), signed, into *v */
 static NTSTATUS NTAPI RtlUnicodeStringToInteger(const struct ustr *u, u32 base, u32 *v)
 {
 	char *a = us2a(u), *p = a;
@@ -1729,6 +1794,8 @@ static NTSTATUS NTAPI RtlUnicodeStringToInteger(const struct ustr *u, u32 base, 
 	free(a);
 	return STATUS_SUCCESS;
 }
+/* RtlEqualUnicodeString: a and b the same (ci: ASCII without
+   case)? */
 static byte NTAPI RtlEqualUnicodeString(const struct ustr *a, const struct ustr *b, byte ci)
 {
 	int i;
@@ -1745,18 +1812,22 @@ static byte NTAPI RtlEqualUnicodeString(const struct ustr *a, const struct ustr 
 	}
 	return 1;
 }
+/* RtlFreeUnicodeString: u's buffer freed, u empty */
 static void NTAPI RtlFreeUnicodeString(struct ustr *u)
 {
 	free(u->buf);
 	u->buf = NULL;
 	u->len = u->max = 0;
 }
+/* RtlFreeAnsiString: a's buffer freed, a empty */
 static void NTAPI RtlFreeAnsiString(struct astr *a)
 {
 	free(a->buf);
 	a->buf = NULL;
 	a->len = a->max = 0;
 }
+/* RtlAnsiStringToUnicodeString: s widened into d (its buffer
+   allocated, if alloc); STATUS_BUFFER_OVERFLOW if it does not fit */
 static NTSTATUS NTAPI RtlAnsiStringToUnicodeString(struct ustr *d, const struct astr *s, byte alloc)
 {
 	int i;
@@ -1772,6 +1843,9 @@ static NTSTATUS NTAPI RtlAnsiStringToUnicodeString(struct ustr *d, const struct 
 		d->buf[i] = 0;
 	return STATUS_SUCCESS;
 }
+/* RtlUnicodeStringToAnsiString: s narrowed into d ('?' past
+   ASCII; its buffer allocated, if alloc); STATUS_BUFFER_OVERFLOW if
+   it does not fit */
 static NTSTATUS NTAPI RtlUnicodeStringToAnsiString(struct astr *d, const struct ustr *s, byte alloc)
 {
 	int i, n = s->len / 2;
@@ -1787,6 +1861,8 @@ static NTSTATUS NTAPI RtlUnicodeStringToAnsiString(struct astr *d, const struct 
 		d->buf[n] = 0;
 	return STATUS_SUCCESS;
 }
+/* RtlxAnsiStringToUnicodeSize: the octets a widened needs, its 0
+   too */
 static u32 NTAPI RtlxAnsiStringToUnicodeSize(const struct astr *a) { return (u32)a->len * 2 + 2; }
 static byte NlsMbCodePageTag;   /* (a data import: single byte code page) */
 /* the clock's ticks (a data import, KSYSTEM_TIME), 10 ms each */
@@ -1801,12 +1877,15 @@ static u64 NTAPI KeQueryInterruptTime(void)
 	itime_last = t + 10;
 	return t;
 }
+/* KeQuerySystemTime: the system time into *t */
 static void NTAPI KeQuerySystemTime(u64 *t)
 {
 	*t = SYSTIME_BOOT + itime();
 	itime_last = itime() + 10;
 }
 struct time_fields { short year, month, day, hour, minute, second, ms, weekday; };
+/* RtlTimeToTimeFields: the time *t (100 ns since 1601) as its
+   date and time of day */
 static void NTAPI RtlTimeToTimeFields(const u64 *t, struct time_fields *f)
 {
 	u64 s = *t / 10000000ull;
@@ -1846,6 +1925,7 @@ static void NTAPI KeInitializeEvent(struct kevent *e, int type, byte state)
 	e->h.signal = state;
 	e->h.wait.flink = e->h.wait.blink = &e->h.wait;
 }
+/* KeSetEvent: e signalled; its previous state */
 static long NTAPI KeSetEvent(struct kevent *e, long incr, byte wait)
 {
 	long o = e->h.signal;
@@ -1853,6 +1933,7 @@ static long NTAPI KeSetEvent(struct kevent *e, long incr, byte wait)
 	e->h.signal = 1;
 	return o;
 }
+/* KeClearEvent: e not signalled */
 static void NTAPI KeClearEvent(struct kevent *e) { e->h.signal = 0; }
 
 /* DPCs */
@@ -1864,6 +1945,8 @@ static void NTAPI KeInitializeDpc(struct kdpc *d, void *routine, void *ctx)
 	d->ctx = ctx;
 	d->lock = NULL;
 }
+/* the DPC d queued with a1 and a2, unless it is already; whether
+   it was */
 static int KeInsertQueueDpc_(struct kdpc *d, void *a1, void *a2)
 {
 	if (d->lock)
@@ -1878,10 +1961,12 @@ static int KeInsertQueueDpc_(struct kdpc *d, void *a1, void *a2)
 	dpcq[ndpc++] = d;
 	return 1;
 }
+/* KeInsertQueueDpc: d queued; whether it was */
 static byte NTAPI KeInsertQueueDpc(struct kdpc *d, void *a1, void *a2)
 {
 	return (byte)KeInsertQueueDpc_(d, a1, a2);
 }
+/* KeRemoveQueueDpc: d off the queue; whether it was on it */
 static byte NTAPI KeRemoveQueueDpc(struct kdpc *d)
 {
 	int i;
@@ -1902,7 +1987,9 @@ static void NTAPI KeInitializeTimerEx(struct ktimer *t, int type)
 	t->h.size = sizeof(*t) / 4;
 	t->h.wait.flink = t->h.wait.blink = &t->h.wait;
 }
+/* KeInitializeTimer: a notification timer */
 static void NTAPI KeInitializeTimer(struct ktimer *t) { KeInitializeTimerEx(t, 0); }
+/* KeCancelTimer: takes t off the timer list; whether it was on it */
 static byte NTAPI KeCancelTimer(struct ktimer *t)
 {
 	int i;
@@ -1914,6 +2001,8 @@ static byte NTAPI KeCancelTimer(struct ktimer *t)
 		}
 	return 0;
 }
+/* KeSetTimerEx: t due at due (as timeout_end has it), every period
+   ms after if period, its DPC dpc; whether it was set already */
 static byte NTAPI KeSetTimerEx(struct ktimer *t, long long due, long period, struct kdpc *dpc)
 {
 	byte was = KeCancelTimer(t);
@@ -1932,6 +2021,7 @@ static byte NTAPI KeSetTimerEx(struct ktimer *t, long long due, long period, str
 	t->dpc = dpc;
 	return was;
 }
+/* KeSetTimer: a KeSetTimerEx of no period */
 static byte NTAPI KeSetTimer(struct ktimer *t, long long due, struct kdpc *dpc)
 {
 	return KeSetTimerEx(t, due, 0, dpc);
@@ -1946,6 +2036,8 @@ static NTSTATUS NTAPI KeWaitForSingleObject(void *o, int reason, int mode, byte 
 	wait_from = (u32)((byte *)__builtin_return_address(0) - img);
 	return wait_for(&d, 1, 0, timeout_end(timeout));
 }
+/* KeWaitForMultipleObjects: a wait for the n objects o (all if
+   type is WaitAll), until timeout */
 static NTSTATUS NTAPI KeWaitForMultipleObjects(u32 n, void **o, int type, int reason,
 					       int mode, byte alertable, long long *timeout,
 					       void *blocks)
@@ -1953,6 +2045,7 @@ static NTSTATUS NTAPI KeWaitForMultipleObjects(u32 n, void **o, int type, int re
 	(void)reason; (void)mode; (void)alertable; (void)blocks;
 	return wait_for((struct dispatcher **)o, (int)n, type == 0, timeout_end(timeout));
 }
+/* KeDelayExecutionThread: a wait of interval; STATUS_SUCCESS */
 static NTSTATUS NTAPI KeDelayExecutionThread(int mode, byte alertable, long long *interval)
 {
 	(void)mode; (void)alertable;
@@ -1960,6 +2053,8 @@ static NTSTATUS NTAPI KeDelayExecutionThread(int mode, byte alertable, long long
 	return wait_for(NULL, 0, 0, timeout_end(interval)) == STATUS_TIMEOUT ?
 		STATUS_SUCCESS : STATUS_SUCCESS;
 }
+/* PsCreateSystemThread: a coroutine of its own stack that runs
+   start(arg), its handle the thread */
 static NTSTATUS NTAPI PsCreateSystemThread(void **handle, u32 access, void *oa, void *process,
 					   void *client, void *start, void *arg)
 {
@@ -1983,6 +2078,8 @@ static NTSTATUS NTAPI PsCreateSystemThread(void **handle, u32 access, void *oa, 
 	LOG("PsCreateSystemThread %p (%p)\n", start, arg);
 	return STATUS_SUCCESS;
 }
+/* PsTerminateSystemThread: the current thread ended (never
+   returns to it) */
 static NTSTATUS NTAPI PsTerminateSystemThread(NTSTATUS s)
 {
 	struct kthread *t = cur_thread;
@@ -1995,6 +2092,7 @@ static NTSTATUS NTAPI PsTerminateSystemThread(NTSTATUS s)
 	swapcontext(&t->uc, &main_uc);
 	return STATUS_SUCCESS;
 }
+/* KeSetPriorityThread: t's priority set to p; the old one */
 static long NTAPI KeSetPriorityThread(void *t, long p)
 {
 	long o = 0;
@@ -2004,6 +2102,7 @@ static long NTAPI KeSetPriorityThread(void *t, long p)
 	}
 	return o;
 }
+/* ObReferenceObjectByHandle: the object, the handle itself */
 static NTSTATUS NTAPI ObReferenceObjectByHandle(void *h, u32 access, void *type, int mode,
 						void **o, void *info)
 {
@@ -2011,9 +2110,14 @@ static NTSTATUS NTAPI ObReferenceObjectByHandle(void *h, u32 access, void *type,
 	*o = h;
 	return STATUS_SUCCESS;
 }
+/* ObfDereferenceObject: nothing (none freed) */
 static void FASTCALL ObfDereferenceObject(void *o) { (void)o; }
+/* ZwClose: nothing to close */
 static NTSTATUS NTAPI ZwClose(void *h) { (void)h; return STATUS_SUCCESS; }
+/* PsGetCurrentProcessId: the System process's */
 static void *NTAPI PsGetCurrentProcessId(void) { return (void *)4; }
+/* PsGetVersion: Windows XP (5.1.2600), no service pack; a free
+   build */
 static byte NTAPI PsGetVersion(u32 *major, u32 *minor, u32 *build, struct ustr *csd)
 {
 	if (major) *major = 5;
@@ -2022,6 +2126,7 @@ static byte NTAPI PsGetVersion(u32 *major, u32 *minor, u32 *build, struct ustr *
 	if (csd) { csd->len = 0; }
 	return 0;
 }
+/* IoIsWdmVersionAvailable: WDM 1.20 (XP's) or before? */
 static byte NTAPI IoIsWdmVersionAvailable(byte major, byte minor)
 {
 	return major < 1 || (major == 1 && minor <= 0x20);
@@ -2031,6 +2136,7 @@ static byte NTAPI IoIsWdmVersionAvailable(byte major, byte minor)
  *    the I/O manager: devices, IRPs
  */
 
+/* the device at the top of the stack d is in */
 static struct devobj *top_of(struct devobj *d)
 {
 	while (d->attached)
@@ -2043,6 +2149,8 @@ static struct devobj *top_of(struct devobj *d)
 static struct { struct devobj *dev, *lower; char *name; } devs[NDEV];
 static int ndevs;
 
+/* IoCreateDevice: a device object of drv with extsize octets of
+   extension, named name (if any), initializing, into *out */
 static NTSTATUS NTAPI IoCreateDevice(struct drvobj *drv, u32 extsize, struct ustr *name,
 				     u32 type, u32 chars, byte excl, struct devobj **out)
 {
@@ -2070,10 +2178,13 @@ static NTSTATUS NTAPI IoCreateDevice(struct drvobj *drv, u32 extsize, struct ust
 	*out = d;
 	return STATUS_SUCCESS;
 }
+/* IoDeleteDevice: logged only (never freed) */
 static void NTAPI IoDeleteDevice(struct devobj *d)
 {
 	LOG("IoDeleteDevice %p\n", (void *)d);
 }
+/* IoAttachDeviceToDeviceStack: src on the top of target's
+   stack; the device it is on */
 static struct devobj *NTAPI IoAttachDeviceToDeviceStack(struct devobj *src, struct devobj *target)
 {
 	struct devobj *t = top_of(target);
@@ -2086,7 +2197,9 @@ static struct devobj *NTAPI IoAttachDeviceToDeviceStack(struct devobj *src, stru
 	LOG("IoAttachDeviceToDeviceStack %p on %p\n", (void *)src, (void *)t);
 	return t;
 }
+/* IoDetachDevice: nothing on lower */
 static void NTAPI IoDetachDevice(struct devobj *lower) { lower->attached = NULL; }
+/* IoCreateSymbolicLink: logged only */
 static NTSTATUS NTAPI IoCreateSymbolicLink(struct ustr *link, struct ustr *dev)
 {
 	if (win_debug) {
@@ -2097,6 +2210,7 @@ static NTSTATUS NTAPI IoCreateSymbolicLink(struct ustr *link, struct ustr *dev)
 	}
 	return STATUS_SUCCESS;
 }
+/* IoDeleteSymbolicLink: nothing */
 static NTSTATUS NTAPI IoDeleteSymbolicLink(struct ustr *link) { (void)link; return STATUS_SUCCESS; }
 
 /* an IRP of n stack locations, zeroed */
@@ -2111,12 +2225,16 @@ static struct irp *NTAPI IoAllocateIrp(char n, byte quota)
 	irp->csl = (struct iosl *)(irp + 1) + n;
 	return irp;
 }
+/* IoFreeIrp: frees the IRP */
 static void NTAPI IoFreeIrp(struct irp *irp) { free(irp); }
+/* irp's next (lower) stack location */
 static struct iosl *next_sl(struct irp *irp) { return irp->csl - 1; }
 
 typedef NTSTATUS NTAPI (*dispatch_fn)(struct devobj *d, struct irp *irp);
 typedef NTSTATUS NTAPI (*completion_fn)(struct devobj *d, struct irp *irp, void *ctx);
 
+/* IofCallDriver: irp on to its next stack location (d's) and d's
+   dispatch routine for its major function; its status */
 static NTSTATUS FASTCALL IofCallDriver(struct devobj *d, struct irp *irp)
 {
 	struct iosl *sl;
@@ -2130,6 +2248,7 @@ static NTSTATUS FASTCALL IofCallDriver(struct devobj *d, struct irp *irp)
 	sl->dev = d;
 	return ((dispatch_fn)d->driver->major[sl->major])(d, irp);
 }
+/* PoCallDriver: as IofCallDriver */
 static NTSTATUS NTAPI PoCallDriver(struct devobj *d, struct irp *irp) { return IofCallDriver(d, irp); }
 
 /* the IRPs the I/O manager built (IoBuild...): its marker */
@@ -2175,6 +2294,9 @@ static void FASTCALL IofCompleteRequest(struct irp *irp, char boost)
 	}
 }
 
+/* IoBuildDeviceIoControlRequest: an IRP of IOCTL code to d, its
+   buffers by its method (buffered, direct, neither); ev signalled and
+   *iosb set when it completes */
 static struct irp *NTAPI IoBuildDeviceIoControlRequest(u32 code, struct devobj *d, void *in,
 							u32 inlen, void *out, u32 outlen,
 							byte internal, struct kevent *ev,
@@ -2223,6 +2345,9 @@ static struct irp *NTAPI IoBuildDeviceIoControlRequest(u32 code, struct devobj *
 	LOG("IoBuildDeviceIoControlRequest %x to %p\n", code, (void *)d);
 	return irp;
 }
+/* IoBuildSynchronousFsdRequest: an IRP of major (a READ or WRITE
+   of len octets of buf, buffered if d is) to d; ev signalled and
+   *iosb set when it completes */
 static struct irp *NTAPI IoBuildSynchronousFsdRequest(u32 major, struct devobj *d, void *buf,
 						       u32 len, long long *offset,
 						       struct kevent *ev, struct iosb *iosb)
@@ -2251,6 +2376,8 @@ static struct irp *NTAPI IoBuildSynchronousFsdRequest(u32 major, struct devobj *
 	return irp;
 }
 typedef void NTAPI (*cancel_fn)(struct devobj *d, struct irp *irp);
+/* IoCancelIrp: irp cancelled, its cancel routine called (with the
+   cancel spin lock); whether it had one */
 static byte NTAPI IoCancelIrp(struct irp *irp)
 {
 	cancel_fn c = (cancel_fn)irp->cancelroutine;
@@ -2262,10 +2389,12 @@ static byte NTAPI IoCancelIrp(struct irp *irp)
 	c(irp->csl->dev, irp);
 	return 1;
 }
+/* IoGetRelatedDeviceObject: the file object's device */
 static struct devobj *NTAPI IoGetRelatedDeviceObject(void *fileobj)
 {
 	return *(struct devobj **)((byte *)fileobj + 4);
 }
+/* IoGetDeviceObjectPointer: none (STATUS_OBJECT_NAME_NOT_FOUND) */
 static NTSTATUS NTAPI IoGetDeviceObjectPointer(struct ustr *name, u32 access, void **fo,
 					       struct devobj **d)
 {
@@ -2281,6 +2410,7 @@ typedef byte NTAPI (*isr_fn)(void *intr, void *ctx);
 static isr_fn isr;
 static void *isr_ctx;
 static byte intr_obj[64];
+/* IoConnectInterrupt: routine (with ctx) the device's ISR */
 static NTSTATUS NTAPI IoConnectInterrupt(void **out, void *routine, void *ctx, u32 *lock,
 					 u32 vector, byte irq_l, byte sync_l, int mode,
 					 byte share, u32 affinity, byte fsave)
@@ -2292,7 +2422,10 @@ static NTSTATUS NTAPI IoConnectInterrupt(void **out, void *routine, void *ctx, u
 	*out = intr_obj;
 	return STATUS_SUCCESS;
 }
+/* IoDisconnectInterrupt: no ISR */
 static void NTAPI IoDisconnectInterrupt(void *i) { (void)i; isr = NULL; }
+/* KeSynchronizeExecution: routine(ctx) at the ISR's IRQL; what it
+   returns */
 static byte NTAPI KeSynchronizeExecution(void *i, void *routine, void *ctx)
 {
 	byte o = irql, r;
@@ -2305,6 +2438,8 @@ static byte NTAPI KeSynchronizeExecution(void *i, void *routine, void *ctx)
 
 /* DMA: common buffers, their bus address the virtual one */
 static void NTAPI dma_put(struct dma_adapter *a) { (void)a; }
+/* AllocateCommonBuffer: n octets zeroed and page aligned, *bus
+   their address */
 static void *NTAPI dma_alloc(struct dma_adapter *a, u32 n, u64 *bus, byte cache)
 {
 	void *p = NULL;
@@ -2316,16 +2451,20 @@ static void *NTAPI dma_alloc(struct dma_adapter *a, u32 n, u64 *bus, byte cache)
 	LOG("AllocateCommonBuffer %u: %p\n", n, p);
 	return p;
 }
+/* FreeCommonBuffer: frees va */
 static void NTAPI dma_free(struct dma_adapter *a, u32 n, u64 bus, void *va, byte cache)
 {
 	(void)a; (void)n; (void)bus; (void)cache;
 	free(va);
 }
+/* the rest of the DMA operations: the end, with a message */
 static void NTAPI dma_other(void) { fprintf(stderr, "win: a DMA operation we do not have\n"); exit(1); }
 static void *dma_ops[16] = {
 	(void *)(uintptr_t)64, (void *)dma_put, (void *)dma_alloc, (void *)dma_free,
 };
 static struct dma_adapter dma = { 1, 8, dma_ops };
+/* IoGetDmaAdapter: our adapter (common buffers only), 16 map
+   registers */
 static struct dma_adapter *NTAPI IoGetDmaAdapter(struct devobj *pdo, void *desc, u32 *nmap)
 {
 	int i;
@@ -2345,6 +2484,9 @@ static struct dma_adapter *NTAPI IoGetDmaAdapter(struct devobj *pdo, void *desc,
 static char hw_ids[256], compat_ids[256], instance[32];
 static char dev_desc[256], dev_mfg[256], dev_class[64], class_guid[64], drv_key[80];
 
+/* IoGetDeviceProperty: the device's property prop into buf (n
+   octets), its size in *res: strings UTF-16, the IDs multi strings;
+   STATUS_BUFFER_TOO_SMALL if it does not fit */
 static NTSTATUS NTAPI IoGetDeviceProperty(struct devobj *d, int prop, u32 n, void *buf, u32 *res)
 {
 	byte tmp[512];
@@ -2399,6 +2541,8 @@ static NTSTATUS NTAPI IoGetDeviceProperty(struct devobj *d, int prop, u32 n, voi
 	memcpy(buf, tmp, len);
 	return STATUS_SUCCESS;
 }
+/* IoRegisterDeviceInterface: the interface's symbolic link (of
+   the device's IDs, instance and guid) into link */
 static NTSTATUS NTAPI IoRegisterDeviceInterface(struct devobj *pdo, void *guid, struct ustr *ref,
 						struct ustr *link)
 {
@@ -2413,18 +2557,22 @@ static NTSTATUS NTAPI IoRegisterDeviceInterface(struct devobj *pdo, void *guid, 
 	RtlInitUnicodeString(link, a2w(s));
 	return STATUS_SUCCESS;
 }
+/* IoSetDeviceInterfaceState: logged only */
 static NTSTATUS NTAPI IoSetDeviceInterfaceState(struct ustr *link, byte on)
 {
 	(void)link;
 	LOG("IoSetDeviceInterfaceState %d\n", on);
 	return STATUS_SUCCESS;
 }
+/* IoGetDeviceInterfaces: none (an empty list) */
 static NTSTATUS NTAPI IoGetDeviceInterfaces(void *guid, struct devobj *pdo, u32 flags, wchar **list)
 {
 	(void)guid; (void)pdo; (void)flags;
 	*list = (wchar *)calloc(1, 4);
 	return STATUS_SUCCESS;
 }
+/* IoRegisterPlugPlayNotification: an entry that is never
+   notified */
 static NTSTATUS NTAPI IoRegisterPlugPlayNotification(int category, u32 flags, void *data,
 						     struct drvobj *drv, void *cb, void *ctx,
 						     void **entry)
@@ -2434,14 +2582,18 @@ static NTSTATUS NTAPI IoRegisterPlugPlayNotification(int category, u32 flags, vo
 	*entry = calloc(1, 16);
 	return STATUS_SUCCESS;
 }
+/* IoUnregisterPlugPlayNotification: nothing */
 static NTSTATUS NTAPI IoUnregisterPlugPlayNotification(void *entry) { (void)entry; return STATUS_SUCCESS; }
+/* IoWMIRegistrationControl: nothing */
 static NTSTATUS NTAPI IoWMIRegistrationControl(struct devobj *d, u32 action) { (void)d; (void)action; return STATUS_SUCCESS; }
+/* WmiSystemControl: the IRP to be forwarded (IrpForward) */
 static NTSTATUS NTAPI WmiSystemControl(void *info, struct devobj *d, struct irp *irp, int *disp)
 {
 	(void)info; (void)d; (void)irp;
 	*disp = 2;      /* IrpForward */
 	return STATUS_SUCCESS;
 }
+/* WmiCompleteRequest: irp completed with status s */
 static NTSTATUS NTAPI WmiCompleteRequest(struct devobj *d, struct irp *irp, NTSTATUS s, u32 n, char boost)
 {
 	(void)d; (void)n;
@@ -2449,18 +2601,25 @@ static NTSTATUS NTAPI WmiCompleteRequest(struct devobj *d, struct irp *irp, NTST
 	IofCompleteRequest(irp, boost);
 	return s;
 }
+/* WmiFireEvent: the event dropped (its data freed) */
 static NTSTATUS NTAPI WmiFireEvent(struct devobj *d, void *guid, u32 inst, u32 n, void *data)
 {
 	(void)d; (void)guid; (void)inst; (void)n;
 	free(data);
 	return STATUS_SUCCESS;
 }
+/* PoRegisterSystemState: a handle (h, or a new one) */
 static void *NTAPI PoRegisterSystemState(void *h, u32 flags) { (void)flags; return h ? h : calloc(1, 4); }
+/* PoUnregisterSystemState: nothing */
 static void NTAPI PoUnregisterSystemState(void *h) { (void)h; }
+/* PoSetPowerState: nothing; D0 (the old state) */
 static u32 NTAPI PoSetPowerState(struct devobj *d, int type, u32 state) { (void)d; (void)type; (void)state; return 1; }
+/* PoStartNextPowerIrp: nothing */
 static void NTAPI PoStartNextPowerIrp(struct irp *irp) { (void)irp; }
 typedef void NTAPI (*power_done_fn)(struct devobj *d, byte minor, u32 state, void *ctx,
 				     struct iosb *iosb);
+/* PoRequestPowerIrp: a device power IRP (minor, state) sent to
+   the top of pdo's stack and done at once, cb told; STATUS_PENDING */
 static NTSTATUS NTAPI PoRequestPowerIrp(struct devobj *pdo, byte minor, u32 state, void *cb,
 					void *ctx, struct irp **out)
 {
@@ -2490,6 +2649,7 @@ static NTSTATUS NTAPI KsCreatePin(void *filter, void *connect, u32 access, void 
 	(void)filter; (void)connect; (void)access; (void)pin;
 	return STATUS_NOT_SUPPORTED;
 }
+/* KsSynchronousIoControlDevice: not supported */
 static NTSTATUS NTAPI KsSynchronousIoControlDevice(void *fo, int mode, u32 code, void *in,
 						   u32 inlen, void *out, u32 outlen, u32 *ret)
 {
@@ -2510,6 +2670,7 @@ static NTSTATUS NTAPI ZwCreateFile(void **h, u32 access, struct objattr *oa, str
 	free(a);
 	return STATUS_ACCESS_DENIED;
 }
+/* ZwWriteFile: the n octets dropped (all written) */
 static NTSTATUS NTAPI ZwWriteFile(void *h, void *ev, void *apc, void *ctx, struct iosb *iosb,
 				  void *buf, u32 n, long long *off, u32 *key)
 {
@@ -2551,6 +2712,8 @@ static char *oa_path(struct objattr *oa)
 	}
 	return name;
 }
+/* ZwOpenKey: the key oa names into *h; STATUS_OBJECT_NAME_NOT_FOUND
+   if none */
 static NTSTATUS NTAPI ZwOpenKey(void **h, u32 access, struct objattr *oa)
 {
 	char *p = oa_path(oa);
@@ -2563,6 +2726,8 @@ static NTSTATUS NTAPI ZwOpenKey(void **h, u32 access, struct objattr *oa)
 	*h = k;
 	return STATUS_SUCCESS;
 }
+/* ZwCreateKey: the key oa names (made, if none) into *h, *disp
+   whether it was made (1) or there (2) */
 static NTSTATUS NTAPI ZwCreateKey(void **h, u32 access, struct objattr *oa, u32 title,
 				  struct ustr *cls, u32 opts, u32 *disp)
 {
@@ -2576,6 +2741,8 @@ static NTSTATUS NTAPI ZwCreateKey(void **h, u32 access, struct objattr *oa, u32 
 	free(p);
 	return STATUS_SUCCESS;
 }
+/* IoOpenDeviceRegistryKey: the device's driver key (which & 2) or
+   its device key into *h */
 static NTSTATUS NTAPI IoOpenDeviceRegistryKey(struct devobj *d, u32 which, u32 access, void **h)
 {
 	(void)d; (void)access;
@@ -2626,6 +2793,7 @@ static NTSTATUS value_info(struct rval *v, int c, byte *buf, u32 n, u32 *res)
 	}
 	return STATUS_SUCCESS;
 }
+/* ZwQueryValueKey: value name of h as class c into buf */
 static NTSTATUS NTAPI ZwQueryValueKey(void *h, struct ustr *name, int c, void *buf, u32 n, u32 *res)
 {
 	char *a = us2a(name);
@@ -2642,6 +2810,8 @@ static NTSTATUS NTAPI ZwQueryValueKey(void *h, struct ustr *name, int c, void *b
 		return STATUS_OBJECT_NAME_NOT_FOUND;
 	return value_info(v, c, (byte *)buf, n, res);
 }
+/* ZwEnumerateValueKey: the i-th value of h as class c into buf;
+   STATUS_NO_MORE_ENTRIES past the last */
 static NTSTATUS NTAPI ZwEnumerateValueKey(void *h, u32 i, int c, void *buf, u32 n, u32 *res)
 {
 	struct rval *v;
@@ -2654,6 +2824,8 @@ static NTSTATUS NTAPI ZwEnumerateValueKey(void *h, u32 i, int c, void *buf, u32 
 		return STATUS_NO_MORE_ENTRIES;
 	return value_info(v, c, (byte *)buf, n, res);
 }
+/* ZwSetValueKey: value name of h (made, if none) set to type and n
+   octets of data */
 static NTSTATUS NTAPI ZwSetValueKey(void *h, struct ustr *name, u32 title, u32 type, void *data,
 				    u32 n)
 {
@@ -2689,6 +2861,8 @@ static struct rkey *subkey(struct rkey *k, u32 i)
 		}
 	return NULL;
 }
+/* key k as KEY_*_INFORMATION class c (basic, node, full) into buf
+   (n bytes), its size in *res */
 static NTSTATUS key_info(struct rkey *k, int c, byte *buf, u32 n, u32 *res, int full)
 {
 	const char *name = strrchr(k->path, '\\') ? strrchr(k->path, '\\') + 1 : k->path;
@@ -2745,6 +2919,8 @@ static NTSTATUS key_info(struct rkey *k, int c, byte *buf, u32 n, u32 *res, int 
 	}
 	return STATUS_SUCCESS;
 }
+/* ZwEnumerateKey: the i-th subkey of h as class c into buf;
+   STATUS_NO_MORE_ENTRIES past the last */
 static NTSTATUS NTAPI ZwEnumerateKey(void *h, u32 i, int c, void *buf, u32 n, u32 *res)
 {
 	struct rkey *s;
@@ -2755,6 +2931,7 @@ static NTSTATUS NTAPI ZwEnumerateKey(void *h, u32 i, int c, void *buf, u32 n, u3
 		return STATUS_NO_MORE_ENTRIES;
 	return key_info(s, c, (byte *)buf, n, res, 0);
 }
+/* ZwQueryKey: h as class c into buf */
 static NTSTATUS NTAPI ZwQueryKey(void *h, int c, void *buf, u32 n, u32 *res)
 {
 	if (!key_ok(h))
@@ -2822,6 +2999,9 @@ static void direct_value(void *ctx, u32 type, const byte *data, u32 n)
 	}
 }
 
+/* RtlQueryRegistryValues: the query table q run on the key of rel
+   and path: each value to its routine or (DIRECT) into its entry,
+   defaults for the values that are not there */
 static NTSTATUS NTAPI RtlQueryRegistryValues(u32 rel, const wchar *path, struct rtlq *q,
 					     void *ctx, void *env)
 {
@@ -2907,6 +3087,8 @@ static NTSTATUS NTAPI RtlQueryRegistryValues(u32 rel, const wchar *path, struct 
 	free(kpath);
 	return s;
 }
+/* RtlWriteRegistryValue: value name of the key of rel and path
+   (both made, if none) set */
 static NTSTATUS NTAPI RtlWriteRegistryValue(u32 rel, const wchar *path, const wchar *name,
 					    u32 type, void *data, u32 n)
 {
@@ -2917,6 +3099,8 @@ static NTSTATUS NTAPI RtlWriteRegistryValue(u32 rel, const wchar *path, const wc
 	free(a);
 	return STATUS_SUCCESS;
 }
+/* RtlDeleteRegistryValue: value name of the key of rel and path
+   gone; STATUS_OBJECT_NAME_NOT_FOUND if it was not there */
 static NTSTATUS NTAPI RtlDeleteRegistryValue(u32 rel, const wchar *path, const wchar *name)
 {
 	char *p = rtl_path(rel, path), *a = w2a(name, -1);
@@ -2994,6 +3178,7 @@ static const struct kexport exports[] = {
 	E(ZwEnumerateValueKey), E(ZwSetValueKey), E(ZwEnumerateKey), E(ZwQueryKey),
 	E(RtlQueryRegistryValues), E(RtlWriteRegistryValue), E(RtlDeleteRegistryValue),
 };
+/* our export of name, or NULL */
 static const struct kexport *export_find(const char *name)
 {
 	size_t i;
@@ -3014,6 +3199,8 @@ static char svc_name[64];               /* the driver's service */
 
 /* the device's resources: BAR 0's memory (or ports) and its interrupt */
 static byte res_raw[4 + 8 + 8 + 2 * 16], res_tr[sizeof(res_raw)];
+/* the device's resource list into r: raw, or translated (the
+   interrupt's IRQL and vector) */
 static void res_init(byte *r, int translated)
 {
 	u32 irq = wdev->cfg[0x3c / 4] & 0xff;
@@ -3057,6 +3244,8 @@ static u32 NTAPI bus_get(void *ctx, u32 type, void *buf, u32 off, u32 n)
 		((byte *)buf)[i] = off + i < 256 ? ((byte *)wdev->cfg)[off + i] : 0;
 	return n;
 }
+/* SetBusData: n octets of buf into the configuration space at off
+   (past its IDs); n */
 static u32 NTAPI bus_set(void *ctx, u32 type, void *buf, u32 off, u32 n)
 {
 	u32 i;
@@ -3066,6 +3255,8 @@ static u32 NTAPI bus_set(void *ctx, u32 type, void *buf, u32 off, u32 n)
 			((byte *)wdev->cfg)[off + i] = ((byte *)buf)[i];
 	return n;
 }
+/* the interface's InterfaceReference and InterfaceDereference:
+   nothing */
 static void NTAPI if_ref(void *ctx) { (void)ctx; }
 
 /* the PDO's PnP and power IRPs (the rest: not supported) */
@@ -3139,6 +3330,8 @@ static struct devobj *top;
 static byte fileobj[128];
 
 struct req { int done; NTSTATUS status; u32 info; };
+/* our completion routine: the IRP's status and information in the
+   req ctx, it done; the IRP kept */
 static NTSTATUS NTAPI req_done(struct devobj *d, struct irp *irp, void *ctx)
 {
 	struct req *r = (struct req *)ctx;
@@ -3416,6 +3609,7 @@ int win_serial_write(const void *p, int n)
  *    the line's time: the timers each ms, the device's interrupt
  */
 
+/* see interop_windows.h */
 void win_tick()
 {
 	static int irq_was;
@@ -3454,6 +3648,7 @@ void win_tick()
  *    the driver
  */
 
+/* see interop_windows.h */
 int win_start(win_dev *dev)
 {
 	struct sigaction sa;

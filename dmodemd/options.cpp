@@ -120,6 +120,7 @@ bool posix_only(int i)
 /* one reading of a command line */
 class CommandLine {
 public:
+	/* argc arguments argv, not yet read */
 	CommandLine(int argc, char *argv[])
 		: argc_(argc), argv_(argv),
 		  prog_(argc > 0 && argv[0] ? argv[0] : "dmodemd")
@@ -222,6 +223,7 @@ void CommandLine::read()
 	}
 }
 
+/* see above */
 void CommandLine::usage() const
 {
 	fprintf(stderr,
@@ -296,6 +298,7 @@ void list_countries()
 	}
 }
 
+/* see above */
 void CommandLine::apply(Options &opt) const
 {
 	const Option *o = opts_;

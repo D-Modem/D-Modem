@@ -26,6 +26,7 @@ namespace half {
  *    the stack before a call into a closed module
  */
 
+/* see modem_half.hpp */
 void __attribute__((noinline)) stack_clear()
 {
 	static int fill = -1;
@@ -42,11 +43,13 @@ void __attribute__((noinline)) stack_clear()
  *    the pty
  */
 
+/* the queue freed */
 Pty::~Pty()
 {
 	free(q_);
 }
 
+/* see modem_half.hpp */
 int Pty::open()
 {
 	struct termios t;
@@ -64,6 +67,7 @@ int Pty::open()
 	return 0;
 }
 
+/* see modem_half.hpp */
 void Pty::flush()
 {
 	while (n_) {
@@ -80,6 +84,7 @@ void Pty::flush()
 		head_ = 0;
 }
 
+/* see modem_half.hpp */
 void Pty::write(const void *p, size_t n)
 {
 	if (!n)
@@ -113,6 +118,7 @@ void Pty::write(const void *p, size_t n)
 	n_ += n;
 }
 
+/* see modem_half.hpp */
 void Pty::read(int room, const std::function<int(const void *p, int n)> &put)
 {
 	int k;
@@ -139,6 +145,8 @@ void Pty::read(int room, const std::function<int(const void *p, int n)> &put)
  *    the result codes
  */
 
+/* octet c of the output: online on CONNECT, offline on NO
+   CARRIER or OK */
 void Results::scan(byte c)
 {
 	static const char *const pat[] = { "CONNECT", "NO CARRIER",
@@ -157,6 +165,7 @@ void Results::scan(byte c)
 	}
 }
 
+/* n octets of it at p */
 void Results::scan(const void *p, size_t n)
 {
 	for (size_t k = 0; k < n; k++)
@@ -167,11 +176,13 @@ void Results::scan(const void *p, size_t n)
  *    the program
  */
 
+/* see modem_half.hpp */
 HalfModem::HalfModem(const char *name, const char *prefix) :
 	name_(name), prefix_(prefix)
 {
 }
 
+/* see modem_half.hpp */
 const char *HalfModem::env(const char *what) const
 {
 	char v[64];
@@ -179,6 +190,7 @@ const char *HalfModem::env(const char *what) const
 	return getenv(v);
 }
 
+/* see modem_half.hpp */
 void HalfModem::log(const char *fmt, ...) const
 {
 	va_list ap;
@@ -188,6 +200,7 @@ void HalfModem::log(const char *fmt, ...) const
 	va_end(ap);
 }
 
+/* see modem_half.hpp */
 short HalfModem::line_sample(short in)
 {
 	(void)in;
@@ -195,6 +208,7 @@ short HalfModem::line_sample(short in)
 	return 0;
 }
 
+/* see modem_half.hpp */
 int HalfModem::line_block(const short *in, short *out, int n)
 {
 	int i = 0;
@@ -207,12 +221,14 @@ int HalfModem::line_block(const short *in, short *out, int n)
 	return i;
 }
 
+/* see modem_half.hpp */
 void HalfModem::after_read()
 {
 	if (!sync_n)
 		dte_poll();
 }
 
+/* see modem_half.hpp */
 int HalfModem::run()
 {
 	short out[480];

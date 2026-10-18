@@ -38,6 +38,7 @@ int request(const Server &srv, const char *method, const std::string &path,
 /* a WebSocket client: the event stream of /ari/events */
 class WebSocket {
 public:
+	/* the connection closed */
 	~WebSocket() { close(); }
 
 	/* the handshake for path; false (and closed) if it fails */
