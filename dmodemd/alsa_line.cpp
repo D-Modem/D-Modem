@@ -225,6 +225,16 @@ void AlsaLine::hook_flash(dcore::Modem &, unsigned ms)
 }
 
 /* see alsa_line.h */
+int AlsaLine::pulse_hook(dcore::Modem &, bool broken)
+{
+	if (hook_ != MODEM_HOOK_OFF)
+		return -1;
+	flash_end_ = 0;
+	set(off_hook_, !broken);
+	return 0;
+}
+
+/* see alsa_line.h */
 void AlsaLine::watch(RunLoop &loop)
 {
 	struct pollfd fds[8];

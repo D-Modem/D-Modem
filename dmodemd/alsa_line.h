@@ -60,6 +60,9 @@ public:
 	bool analog_line(dcore::Modem &) override { return true; }
 	bool can_flash(dcore::Modem &) override { return true; }
 	void hook_flash(dcore::Modem &m, unsigned ms) override;
+	/* pulse dialling: the hook switch off (broken) or on, while off
+	   hook */
+	int pulse_hook(dcore::Modem &m, bool broken) override;
 	int io_delay(dcore::Modem &) override { return delay_; }
 	const char *driver_name() override { return "ALSA"; }
 	int dte_write(dcore::Modem &, const char *buf, int n) override {

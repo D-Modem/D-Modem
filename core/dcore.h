@@ -102,6 +102,11 @@ public:
 	/* codec type, pulse dial */
 	virtual int codec_type(Modem &m) { (void)m; return CODEC_UNKNOWN; }
 	virtual int pulse_dial(Modem &m, int val) { (void)m; (void)val; return -1; }
+	/* pulse dialling (ATP): the line broken (true: on hook) or made
+	   again, at once; the pump times the pulses (the country's make,
+	   break and gap).  0, or -1 for a line that cannot (a digital
+	   network's: the pump dials in DTMF instead) */
+	virtual int pulse_hook(Modem &m, bool broken) { (void)m; (void)broken; return -1; }
 	/* for ATI3 */
 	virtual const char *driver_name() { return nullptr; }
 

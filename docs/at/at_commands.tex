@@ -341,7 +341,11 @@ negotiation and \cmdl[plusMS]{+MS} choose).
 Dials \p{string} and calls.  The dialer sends the digits and
 \cmd{* \# A B C D} as DTMF (\sreg{11} ms each, as long between them);
 \cmd{T} and \cmd{P} choose tone or pulse dialing (\sreg{16}) for the
-rest of the call, and these modifiers do as V.250 has them:
+rest of the call.  Pulses are dialed on an analogue line (dmodemd's
+\texttt{-a} and \texttt{--usb}), with the country's break, make, gap
+between digits and digit pattern (\cmdl[plusGCI]{+GCI}; \cmd{* \# A B C
+D} skipped); a line that cannot pulse, such as SIP, dials them in DTMF.
+These modifiers do as V.250 has them:
 
 \begin{center}
 \begin{tabular}{>{\ttfamily}l p{0.75\textwidth}}
@@ -491,7 +495,7 @@ call held after a dial string's \cmd{;}, the calling modem's handshake
 \end{command}
 
 \begin{command}{P}{ATP, ATT}
-Pulse or tone dialing (\sreg{16}; default tone).
+Pulse or tone dialing (\sreg{16}; default tone): see \cmdl[D]{ATD}.
 \end{command}
 
 \begin{command}{Q}{ATQ[\p{n}]}

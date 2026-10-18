@@ -111,6 +111,8 @@ enum MODEM_PARAMETER_NAMES {
 				      from a core that has none */
 	MDMPRM_VCVM         = 67,  /* the struct dp_vcvm *; -1 or 0 from a
 				      core that has none */
+	MDMPRM_PULSE_HOOK   = 68,  /* set: pulse dialling's break (1: the line
+				      open, on hook) or make (0) */
 };
 
 /*
@@ -121,7 +123,8 @@ enum MODEM_PARAMETER_NAMES {
    -1 for one the core does not give */
 intptr_t modem_get_param(struct modem *m, unsigned param);
 /* sets parameter name to val: 0, or -1 for one that cannot be set
-   (MDMPRM_HOOK_ON and MDMPRM_PULSE_DIAL: the host's result) */
+   (MDMPRM_HOOK_ON, MDMPRM_PULSE_DIAL and MDMPRM_PULSE_HOOK: the
+   host's result) */
 long modem_set_param(struct modem *m, unsigned name, int val);
 /* S-register sreg_param as modem_get_sreg() gives it */
 long modem_get_sreg_param(struct modem *m, unsigned sreg_param);

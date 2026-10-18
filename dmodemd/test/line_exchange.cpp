@@ -17,9 +17,12 @@
  *      monitor on ("Caller ID Switch"), and after the first ring the
  *      caller's number and the name "D-MODEM" in caller ID (Bell 202,
  *      MDMF);
- *    - off hook: a dial tone (350 + 440 Hz) until the first DTMF digit,
+ *    - off hook: a dial tone (350 + 440 Hz) until the first digit,
  *      then nothing until the number's digits are all there (as many as
- *      a number has); then the ringing tone (440 + 480 Hz, 2 s on, 4 s
+ *      a number has), in DTMF or in pulses: while dialling, the hook
+ *      broken for 200 ms at most is a pulse, a digit ends when it has
+ *      been made again for 300 ms (n pulses n, ten 0), and only on
+ *      hook for longer than 300 ms is the line hung up; then the ringing tone (440 + 480 Hz, 2 s on, 4 s
  *      off) while the number is called, a busy tone (480 + 620 Hz, 0.5 s
  *      on and off) if it is off hook or unknown; once it answers (goes
  *      off hook), the other end at -3 dB with some noise and an echo of
@@ -72,6 +75,11 @@ struct Line {
 	Line *peer = nullptr;           /* Talk, RingBack: the other end */
 	std::string digits;
 	dsp::DtmfDetect dtmf;
+	/* pulse dialling: when the hook broke (ms; -1: not), the pulses of
+	   the digit so far, when it was made after the last one */
+	long broken_at = -1;
+	int pulses = 0;
+	long made_at = 0;
 	/* called: by whom, the samples since, the rings so far, caller ID */
 	Line *caller = nullptr;
 	long ring_t = 0;
@@ -202,6 +210,37 @@ Line *find(const std::string &number)
 	return nullptr;
 }
 
+void route(Line &l);
+
+/* the exchange's time, ms (20 a tick) */
+long now_ms = 0;
+
+/* a digit dialled (DTMF or pulses): the dial tone off; the number
+   routed once it has all its digits */
+void add_digit(Line &l, char d)
+{
+	l.digits += d;
+	if (l.mode == Mode::DialTone)
+		set_mode(l, Mode::Dialling);
+	if (l.digits.size() == l.number.size())
+		route(l);
+}
+
+/* the line on hook: its call over */
+void hang_up(Line &l)
+{
+	say("%s on hook", l.number.c_str());
+	if (l.mode == Mode::Talk && l.peer) {
+		set_mode(*l.peer, Mode::Gone);
+		l.peer->peer = nullptr;
+	}
+	if (l.mode == Mode::RingBack && l.peer)
+		l.peer->caller = nullptr;
+	l.peer = nullptr;
+	l.pulses = 0;
+	set_mode(l, Mode::Idle);
+}
+
 /* the line's hook (the card's switch 0) or line monitor (1) changed */
 void control(Line &l, int sw, bool on)
 {
@@ -212,6 +251,21 @@ void control(Line &l, int sw, bool on)
 	if (on == l.off_hook)
 		return;
 	l.off_hook = on;
+	/* while dialling, a break is a pulse, or the hang-up (tick()
+	   tells once it is long enough) */
+	bool dialling = l.mode == Mode::DialTone || l.mode == Mode::Dialling;
+	if (!on && dialling) {
+		l.broken_at = now_ms;
+		return;
+	}
+	if (on && l.broken_at >= 0) {
+		if (now_ms - l.broken_at <= 200) {
+			l.pulses++;
+			l.made_at = now_ms;
+		}
+		l.broken_at = -1;
+		return;
+	}
 	if (on) {
 		if (l.caller) {
 			Line *c = l.caller;
@@ -230,15 +284,26 @@ void control(Line &l, int sw, bool on)
 		set_mode(l, Mode::DialTone);
 		return;
 	}
-	say("%s on hook", l.number.c_str());
-	if (l.mode == Mode::Talk && l.peer) {
-		set_mode(*l.peer, Mode::Gone);
-		l.peer->peer = nullptr;
+	hang_up(l);
+}
+
+/* a line's pulse dialling as time goes on: a break long enough to be
+   the hang-up, a digit's end */
+void pulse_time(Line &l)
+{
+	if (l.broken_at >= 0 && now_ms - l.broken_at > 300) {
+		l.broken_at = -1;
+		hang_up(l);
+		return;
 	}
-	if (l.mode == Mode::RingBack && l.peer)
-		l.peer->caller = nullptr;
-	l.peer = nullptr;
-	set_mode(l, Mode::Idle);
+	if (l.pulses && l.off_hook && l.broken_at < 0 &&
+	    now_ms - l.made_at > 300) {
+		char d = (char)('0' + l.pulses % 10);
+		say("%s pulse digit %c", l.number.c_str(), d);
+		l.pulses = 0;
+		if (l.mode == Mode::DialTone || l.mode == Mode::Dialling)
+			add_digit(l, d);
+	}
 }
 
 /* a whole number dialled: its line called, or busy */
@@ -268,13 +333,10 @@ void heard(Line &l, const int16_t *out)
 		return;
 	for (int i = 0; i < frame; i++)
 		if (l.dtmf.sample(out[i]) == dsp::DtmfDetect::ON) {
-			l.digits += l.dtmf.digit;
-			if (l.mode == Mode::DialTone)
-				set_mode(l, Mode::Dialling);
-			if (l.digits.size() == l.number.size()) {
-				route(l);
+			add_digit(l, l.dtmf.digit);
+			if (l.mode != Mode::DialTone &&
+			    l.mode != Mode::Dialling)
 				return;
-			}
 		}
 }
 
@@ -396,8 +458,11 @@ void tick()
 					      std::vector<int16_t>(frame, 0));
 	std::vector<int16_t> in(frame);
 
+	now_ms += 20;
 	accept_all();
 	read_all();
+	for (Line &l : lines)
+		pulse_time(l);
 	for (size_t k = 0; k < lines.size(); k++) {
 		Line &l = lines[k];
 		for (int i = 0; i < frame && !l.played.empty(); i++) {

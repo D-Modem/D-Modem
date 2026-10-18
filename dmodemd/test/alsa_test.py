@@ -16,6 +16,8 @@
 # - 1001 stopped for 0.6 s (SIGSTOP): its codec overruns, the line
 #   starts again (its log says so), and it goes on;
 # - 1002 off hook (ATH1), 1001 dials it again: BUSY (the busy tone);
+# - 1001 dials 1002 in pulses (ATDP: the hook switch broken and made,
+#   the exchange counts them): 1002 rings and answers, both CONNECT;
 # - in voice mode (+FCLASS=8) 1001 dials 1002 (DTMF after 2 s), hears
 #   its ringing tone (<DLE>r); 1002, in voice mode too, has the caller ID
 #   as V.253's packet (<DLE>X NMBR = 1001 ... <DLE>.) and answers after
@@ -174,6 +176,24 @@ try:
     m = a.cmd(b"ATD1002", rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO DIALTONE|NO ANSWER)\r\n", 30)
     check("1001 BUSY", m and m.group(1) == b"BUSY")
     check("1002 on hook", b.cmd(b"ATH"))
+
+    # pulse dialling: ATDP, the hook broken and made at 10 pulses/s
+    t = time.time()
+    os.write(a.fd, b"ATDP1002\r")
+    check("1002 RING (pulse)", b.expect(rb"RING\r\n", 30))
+    ca = a.expect(rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO DIALTONE)\r\n", 60)
+    cb = b.expect(rb"(CONNECT[^\r]*|NO CARRIER)\r\n", 10)
+    print("pulse: 1001: %s, 1002: %s, %.1f s" % (ca and ca.group(1).decode(),
+                                                cb and cb.group(1).decode(), time.time() - t))
+    check("pulse dialled: 1001 1002 digits", all(
+        "1001 pulse digit %s" % d in events for d in "102"))
+    check("pulse dialled: both CONNECT", ca and cb and ca.group(1).startswith(b"CONNECT")
+          and cb.group(1).startswith(b"CONNECT"))
+    time.sleep(1.2)
+    os.write(a.fd, b"+++")
+    check("1001 +++ OK (pulse)", a.expect(rb"OK\r\n", 5))
+    check("1001 ATH (pulse)", a.cmd(b"ATH"))
+    check("1002 NO CARRIER (pulse)", b.expect(rb"NO CARRIER\r\n", 30))
 
     check("1002 no auto answer", b.cmd(b"ATS0=0"))
     check("1001 voice mode", a.cmd(b"AT+FCLASS=8"))

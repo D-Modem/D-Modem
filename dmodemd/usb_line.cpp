@@ -538,6 +538,16 @@ void UsbLine::hook_flash(dcore::Modem &, unsigned ms)
 	flash_end_ = samples_ + (unsigned long long)ms * rate_ / 1000;
 }
 
+/* see dcore.h: the hook GPIO cleared (broken) or set again */
+int UsbLine::pulse_hook(dcore::Modem &, bool broken)
+{
+	if (hook_ != MODEM_HOOK_OFF)
+		return -1;
+	flash_end_ = 0;
+	return set_gpio(broken ? (uint16_t)(gpio_ & ~GPIO_HOOK1) :
+			(uint16_t)(gpio_ | GPIO_HOOK1)) ? 0 : -1;
+}
+
 /* see usb_line.h */
 void UsbLine::watch(RunLoop &loop)
 {

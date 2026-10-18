@@ -5,9 +5,9 @@
  *    dp_callprog.cpp - call progress data pump (DP_CALLPROG)
  *
  *    Runs on the calling side between going off hook and the start of
- *    the modulation handshake: optional dial tone detection, DTMF
- *    dialing, the V.25 calling tone, busy tone detection and answer
- *    tone detection.  When an answer tone is found it returns
+ *    the modulation handshake: optional dial tone detection, DTMF or
+ *    pulse dialing, the V.25 calling tone, busy tone detection and
+ *    answer tone detection.  When an answer tone is found it returns
  *    DPSTAT_CHANGEDP and the modem core switches to the configured
  *    data pump.  A ';' in the dial string returns DPSTAT_DIALED, and
  *    the pump holds the line, silent, until the core adds more to the
@@ -53,6 +53,18 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	long digit_left, pause_left;
 	int digit_on;
 	DtmfGen dtmf;
+	/* pulse dialing (ATP, P in the dial string): the country's make,
+	   break and gap between digits (samples) and its digit pattern
+	   (1: n pulses, 0 ten; 2: n + 1; 3: 10 - n); the line's hook
+	   broken (1) or made (0) through MDMPRM_PULSE_HOOK; pulses left of
+	   the digit, the samples left of the break or make; the line
+	   cannot (DTMF then) */
+	int pulse;
+	long pulse_make, pulse_break, pulse_gap;
+	int pulse_pattern;
+	int pulses_left, pulse_broken;
+	long pulse_left;
+	int pulse_unable;
 	int net_dialed;
 	int dialed;
 	/* @: remote ringing heard, blocks of sound and of quiet */
@@ -70,7 +82,11 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	int need_dialtone;
 	int dialtone_blocks;
 
-	/* busy tone cadence detector */
+	/* busy tone cadence detector: the bounds of its on and off times
+	   (ms), the cycles it takes (the country's, or 200 to 800 ms and
+	   4) */
+	int busy_on_min, busy_on_max, busy_off_min, busy_off_max;
+	int busy_need;
 	Biquad cpt_bp;
 	float cpt_energy;
 	int cpt_on;
@@ -85,6 +101,8 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	const char *tag() const { return "callprog"; }
 	int block();
 	float dial_sample();
+	bool pulse_digit(char ch);
+	void hook_pulse(int broken);
 	int start(struct modem *m, enum DP_ID id, int caller, int srate_, int max_frag);
 	int process(void *in, void *out, int cnt) override;
 };
@@ -119,6 +137,36 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 	dial_on = ms2samples(v > 40 ? v : 95, srate_);
 	dial_off = dial_on;
 
+	/* pulse dialing: ATP (the core's flag), the country's times */
+	pulse = modem_get_param(m, GetPulseDialingFlag) > 0;
+	v = (int)modem_get_param(m, GetPulseDialMakeTime);
+	pulse_make = ms2samples(v > 0 ? v : 40, srate_);
+	v = (int)modem_get_param(m, GetPulseDialBreakTime);
+	pulse_break = ms2samples(v > 0 ? v : 60, srate_);
+	v = (int)modem_get_param(m, GetPulseBetweenDigitsInterval);
+	pulse_gap = ms2samples(v > 0 ? 10 * v : 800, srate_);
+	v = (int)modem_get_param(m, GetPulseDialDigitPattern);
+	pulse_pattern = v >= 1 && v <= 3 ? v : 1;
+
+	/* busy tone: the country's cadence (10 ms), 20 ms either side for
+	   the blocks */
+	busy_on_min = 10 * (int)modem_get_param(m, GetMinBusyCadenceOnTime);
+	busy_on_max = 10 * (int)modem_get_param(m, GetMaxBusyCadenceOnTime);
+	busy_off_min = 10 * (int)modem_get_param(m, GetMinBusyCadenceOffTime);
+	busy_off_max = 10 * (int)modem_get_param(m, GetMaxBusyCadenceOffTime);
+	if (busy_on_max <= 0 || busy_off_max <= 0 ||
+	    busy_on_min > busy_on_max || busy_off_min > busy_off_max) {
+		busy_on_min = busy_off_min = 200;
+		busy_on_max = busy_off_max = 800;
+	} else {
+		busy_on_min -= 2 * BLOCK_MS;
+		busy_off_min -= 2 * BLOCK_MS;
+		busy_on_max += 2 * BLOCK_MS;
+		busy_off_max += 2 * BLOCK_MS;
+	}
+	v = (int)modem_get_param(m, GetBusyDetectionCyclesNumber);
+	busy_need = v >= 2 && v <= 8 ? v : 4;
+
 	dial_ = (const char *)modem_get_param(m, MDMPRM_DIALSTR);
 	dial = dial_ ? dial_ : "";
 	/* X2 and X4 wait for a dial tone, the others dial blindly */
@@ -138,7 +186,8 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 		state = CP_WAIT_ANSWER;
 		net_dialed = 1;
 	}
-	DSP_DBG("callprog: create, dial '%s', srate %d\n", dial, srate_);
+	DSP_DBG("callprog: create, dial '%s'%s, srate %d\n", dial,
+		pulse ? " (pulse)" : "", srate_);
 	return 0;
 }
 
@@ -210,7 +259,7 @@ int CallProgPump::block()
 		return DPSTAT_CHANGEDP;
 	}
 
-	/* busy / congestion: 4 cycles of 0.2..0.8 s on and off */
+	/* busy / congestion: busy_need cycles of the cadence on and off */
 	on = cpt_energy / block_len > min &&
 		cpt_energy > 0.5f * block_len * bp;
 	cpt_energy = 0;
@@ -218,13 +267,14 @@ int CallProgPump::block()
 		cpt_run++;
 	} else {
 		int len = cpt_run * BLOCK_MS;
-		if (len >= 200 && len <= 800)
+		if (cpt_on ? len >= busy_on_min && len <= busy_on_max :
+		    len >= busy_off_min && len <= busy_off_max)
 			busy_cycles += cpt_on ? 1 : 0;
 		else
 			busy_cycles = 0;
 		cpt_on = on;
 		cpt_run = 1;
-		if (busy_cycles >= 4) {
+		if (busy_cycles >= busy_need) {
 			DSP_DBG("callprog: busy\n");
 			return DPSTAT_BUSY;
 		}
@@ -232,8 +282,42 @@ int CallProgPump::block()
 	return DPSTAT_OK;
 }
 
-/* the next dialing sample: DTMF digits (S11 ms on and off), ',' a
-   pause of S8 s, 'W' to CP_WAIT_DIALTONE, '@' to CP_WAIT_QUIET, ';' to
+/* the line's hook broken (1) or made (0) for a pulse */
+void CallProgPump::hook_pulse(int broken)
+{
+	pulse_broken = broken;
+	modem_set_param(modem, MDMPRM_PULSE_HOOK, broken);
+}
+
+/* a digit dialed in pulses (the country's pattern): the first break
+   now; false (DTMF instead, from now on) if the line cannot, or if ch
+   is no digit 0 to 9 (*, #, A to D have no pulses: skipped) */
+bool CallProgPump::pulse_digit(char ch)
+{
+	int n;
+
+	if (pulse_unable || ch < '0' || ch > '9')
+		return false;
+	n = ch == '0' ? 10 : ch - '0';
+	if (pulse_pattern == 2)
+		n = ch == '0' ? 1 : n + 1;
+	else if (pulse_pattern == 3)
+		n = ch == '0' ? 10 : 10 - n;
+	if (modem_set_param(modem, MDMPRM_PULSE_HOOK, 1) < 0) {
+		DSP_DBG("callprog: the line has no pulse dialing: DTMF\n");
+		pulse_unable = 1;
+		return false;
+	}
+	pulse_broken = 1;
+	pulses_left = n;
+	pulse_left = pulse_break;
+	return true;
+}
+
+/* the next dialing sample: DTMF digits (S11 ms on and off) or pulses
+   (the country's break and make, then its gap between digits; the
+   line silent), ',' a pause of S8 s, 'P' and 'T' pulse and tone from
+   there on, 'W' to CP_WAIT_DIALTONE, '@' to CP_WAIT_QUIET, ';' to
    CP_HOLD (DPSTAT_DIALED due), other characters skipped; at the end of
    the string to CP_WAIT_ANSWER */
 float CallProgPump::dial_sample()
@@ -241,6 +325,21 @@ float CallProgPump::dial_sample()
 	char ch;
 
 	for (;;) {
+		if (pulses_left > 0) {
+			if (--pulse_left > 0)
+				return 0;
+			if (pulse_broken) {
+				hook_pulse(0);
+				if (--pulses_left > 0)
+					pulse_left = pulse_make;
+				else
+					pause_left = pulse_gap;
+			} else {
+				hook_pulse(1);
+				pulse_left = pulse_break;
+			}
+			return 0;
+		}
 		if (pause_left > 0) {
 			pause_left--;
 			return 0;
@@ -277,11 +376,19 @@ float CallProgPump::dial_sample()
 			dialed = 1;
 			set_state(CP_HOLD);
 			return 0;
+		} else if (ch == 'P' || ch == 'p') {
+			pulse = 1;
+		} else if (ch == 'T' || ch == 't') {
+			pulse = 0;
+		} else if (pulse && pulse_digit(ch)) {
+			return 0;
+		} else if (pulse && !pulse_unable && !strchr("0123456789", ch)) {
+			/* (no pulses for *, #, A to D) */
 		} else if (!dtmf.set(ch, srate)) {
 			digit_on = 1;
 			digit_left = dial_on;
 		}
-		/* other modifiers (T, P, !, spaces, ...) are ignored */
+		/* other modifiers (!, spaces, ...) are ignored */
 	}
 }
 

@@ -14,6 +14,7 @@
 #   the second ring (ATS0=2); both CONNECT, a line of text goes each
 #   way; 1001 hangs up (+++ ATH), 1002 NO CARRIER;
 # - 1002 off hook (ATH1), 1001 dials it again: BUSY;
+# - 1001 dials 1002 in pulses (ATDP): both CONNECT;
 # - in voice mode (+FCLASS=8) 1001 dials 1002, hears its ringing tone
 #   (<DLE>r); 1002 answers (+VLS=1); 1001's +VTS=5 is 1002's <DLE>5;
 #   1002 hangs up, and 1001 hears the busy tone (<DLE>b);
@@ -165,6 +166,21 @@ try:
     m = a.cmd(b"ATD1002", rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO DIALTONE|NO ANSWER)\r\n", 30)
     check("1001 BUSY", m and m.group(1) == b"BUSY")
     check("1002 on hook", b.cmd(b"ATH"))
+
+    # pulse dialling: the hook GPIO broken and made
+    os.write(a.fd, b"ATDP1002\r")
+    check("1002 RING (pulse)", b.expect(rb"RING\r\n", 30))
+    ca = a.expect(rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO DIALTONE)\r\n", 60)
+    cb = b.expect(rb"(CONNECT[^\r]*|NO CARRIER)\r\n", 10)
+    check("pulse dialled: the digits", all(
+        "1001 pulse digit %s" % d in events for d in "102"))
+    check("pulse dialled: both CONNECT", ca and cb and ca.group(1).startswith(b"CONNECT")
+          and cb.group(1).startswith(b"CONNECT"))
+    time.sleep(1.2)
+    os.write(a.fd, b"+++")
+    check("1001 +++ OK (pulse)", a.expect(rb"OK\r\n", 5))
+    check("1001 ATH (pulse)", a.cmd(b"ATH"))
+    check("1002 NO CARRIER (pulse)", b.expect(rb"NO CARRIER\r\n", 30))
 
     check("1002 no auto answer", b.cmd(b"ATS0=0"))
     check("1001 voice mode", a.cmd(b"AT+FCLASS=8"))

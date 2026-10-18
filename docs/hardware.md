@@ -171,8 +171,24 @@ that user needs access to `/dev/snd/*`.
   (`RING`, `ATS0` answering, `S1`).
 - **Caller ID.** At the first ring the core runs its caller ID receiver
   (`AT#CID`) on the monitor's samples for 4 s.
-- **Dialling.** The modem dials the number itself in DTMF. With `ATX4`
-  (the default) it waits for a dial tone first; with `ATX3` it waits 2 s.
+- **Dialling.** The modem dials the number itself, in DTMF, or in pulses
+  with `ATP` or `ATDP` (a `P` or `T` in the dial string changes over for
+  the rest of it). With `ATX4` (the default) it waits for a dial tone
+  first; with `ATX3` it waits 2 s.
+- **Pulse dialling.** The call progress pump times the pulses, by the
+  country's table (`-c`, `AT+GCI`): the break and the make (64 and
+  36 ms for the USA, 67 and 33 for New Zealand, 60 and 40 for most of
+  Europe), the gap between digits (800 ms) and the digit pattern (n
+  pulses for n and ten for 0; Sweden n + 1; New Zealand 10 - n). The line
+  breaks and makes its hook (`Host::pulse_hook()`): the "Off-hook
+  Switch" on ALSA, GPIO 3 on the SmartUSB56. The switch is written as
+  the modem's frames are processed, so an edge comes when its frame does
+  (20 ms apart on ALSA): 60/40 pulses keep their times, others come
+  out within one frame of theirs. `*`, `#` and A to D have no pulses
+  and are skipped. A line that cannot pulse (SIP) dials in DTMF.
+- **Busy tone.** The pump takes the country's busy cadence (the bounds of
+  its on and off times, and how many cycles) where the table has one,
+  and 0.2 to 0.8 s and four cycles where not.
   In voice mode, `ATD` waits 2 s, dials, then takes the call as answered
   by the ringing tone's end (`+VRA`), or by `+VRN` without one (V.253
   9.1.1).
@@ -199,10 +215,14 @@ that user needs access to `/dev/snd/*`.
   modem-on-hold.
   The analogue modem has been tested against our own digital modem on
   the simulated network only, not yet against an ISP's server.
-- **Dialling.** DTMF only: `ATDP` dials in DTMF too, as a hook switch
-  through a mixer control cannot time pulses.
-- **Country rules.** The codec's line settings (impedance, ring
-  thresholds, levels) are what its kernel driver sets.
+- **Pulse timing.** Pulses keep the modem's frames' timing (20 ms on
+  ALSA); not yet tried on a real exchange. `AT&P` (S28's pulse ratio) is
+  kept, but the country's table sets the times.
+- **Country rules.** The country (`-c`, `AT+GCI`) sets the pulse
+  dialling, the busy cadence and the dial pause and hook flash times
+  (S8, S24). The codec's line settings (impedance, ring thresholds,
+  levels) are what its kernel driver sets: ALSA gives no control of
+  them. The DTMF levels stay the pump's own.
 - **Real hardware.** The code has been tested against the fake card
   below, not yet on a real modem codec.
 
@@ -236,6 +256,8 @@ In real time, the test checks:
 - a stall of 0.6 s (SIGSTOP), after which the codec's restart is
   logged;
 - a busy line;
+- a call dialled in pulses (`ATDP`), which the exchange counts (a break
+  of 200 ms at most a pulse, 300 ms made again the digit's end);
 - a voice call: the ringing tone, caller ID in voice mode's packet
   (`<DLE>X` ... `<DLE>.`), OK at `+VRA`, `+VTS` DTMF across, and the
   busy tone after the other end hangs up.
@@ -251,5 +273,5 @@ samples as the exchange sends them, its OUT transfers' samples go to the
 exchange, and its ring detector changes on each half cycle of the ring
 signal. The test checks that an ST75951/2 and a wrong `<bus>:<address>`
 are refused, a data call (rings, the answer at the second ring, V.34 at
-33600, text each way), a busy line, a voice call, and that both exit
-once the exchange (the devices) has gone. It needs libusb-1.0-0-dev.
+33600, text each way), a busy line, a call dialled in pulses, a voice
+call, and that both exit once the exchange (the devices) has gone. It needs libusb-1.0-0-dev.

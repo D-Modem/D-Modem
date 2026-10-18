@@ -74,6 +74,19 @@ struct Line final : public dcore::Host {
 	}
 	/* the test's clock */
 	unsigned long now_ms() override { return now; }
+
+	/* an analogue line (analog), whose hook takes pulses (pulses):
+	   each break and make kept with the samples processed by then */
+	bool analog = false, pulses = false;
+	unsigned long samples = 0;
+	std::vector<std::pair<unsigned long, bool>> edges;
+	bool analog_line(Modem &) override { return analog; }
+	int pulse_hook(Modem &, bool broken) override {
+		if (!pulses)
+			return -1;
+		edges.emplace_back(samples, broken);
+		return 0;
+	}
 };
 
 /* a modem on l at 8000 Hz, in country (NULL: USA) */
@@ -184,6 +197,81 @@ TEST(Core, ModemOnHold)
 	/* ATZ: granted again, 1 min */
 	EXPECT_EQ(cmd(m, l, "ATZ\r"), "OK\r\n");
 	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 5);
+	delete m;
+}
+
+/* pulse dialling (ATDP) on an analogue line, by the country's table:
+   each digit its pulses (the break and the make as long as the
+   country's), the gap between digits; the digit patterns of Sweden
+   (n + 1) and New Zealand (10 - n); 'T' back to DTMF; and a line
+   without pulses dials in DTMF */
+TEST(Core, PulseDialling)
+{
+	struct Want {
+		const char *country, *dial;
+		std::vector<int> pulses;        /* a digit's, in turn */
+		int brk, mk;                    /* ms */
+	};
+	for (const Want &w : { Want{ "USA", "ATX3DP102\r", { 1, 10, 2 }, 64, 36 },
+			       Want{ "SWEDEN", "ATX3DP12\r", { 2, 3 }, 60, 40 },
+			       Want{ "NEW_ZEALAND", "ATX3DP12\r", { 9, 8 }, 67, 33 },
+			       Want{ "USA", "ATX3DP1T2\r", { 1 }, 64, 36 } }) {
+		SCOPED_TRACE(std::string(w.country) + " " + w.dial);
+		Line l;
+		l.analog = l.pulses = true;
+		Modem *m = make(l, "pulse", w.country);
+		int16_t in[80] = {}, out[80];
+		cmd(m, l, w.dial);
+		for (int i = 0; i < 100 * 12; i++) {     /* 12 s of 10 ms */
+			now += 10;
+			if (m->started())
+				m->process(in, out, 80);
+			l.samples += 80;
+			m->poll();
+		}
+		/* breaks and makes in turn, from a break */
+		std::vector<int> got;
+		int n = 0;
+		for (size_t k = 0; k < l.edges.size(); k++) {
+			EXPECT_EQ(l.edges[k].second, k % 2 == 0);
+			if (k % 2 == 0) {
+				if (k > 0 && l.edges[k].first - l.edges[k - 1].first > 8 * 300) {
+					got.push_back(n);       /* a gap: the digit's end */
+					n = 0;
+				}
+				n++;
+			} else {
+				long brk = (long)(l.edges[k].first - l.edges[k - 1].first);
+				EXPECT_NEAR(brk, 8 * w.brk, 80);  /* (a block) */
+			}
+			if (k % 2 == 0 && k > 0 && n > 1) {
+				long mk = (long)(l.edges[k].first - l.edges[k - 1].first);
+				EXPECT_NEAR(mk, 8 * w.mk, 80);
+			}
+		}
+		if (n)
+			got.push_back(n);
+		EXPECT_EQ(got, w.pulses);
+		delete m;
+	}
+	/* no pulses on the line: DTMF, no break */
+	Line l;
+	l.analog = true;
+	Modem *m = make(l, "tone");
+	int16_t in[80] = {}, out[80];
+	cmd(m, l, "ATX3DP5\r");
+	float peak = 0;
+	for (int i = 0; i < 100 * 4; i++) {
+		now += 10;
+		if (m->started()) {
+			m->process(in, out, 80);
+			for (int16_t x : out)
+				peak = std::max(peak, (float)abs(x));
+		}
+		m->poll();
+	}
+	EXPECT_TRUE(l.edges.empty());
+	EXPECT_GT(peak, 3000.0f);               /* the digit's tones */
 	delete m;
 }
 

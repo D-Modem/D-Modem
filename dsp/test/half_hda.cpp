@@ -87,6 +87,14 @@ public:
 	bool analog_line(dcore::Modem &) override { return true; }
 	bool can_flash(dcore::Modem &) override { return true; }
 	void hook_flash(dcore::Modem &m, unsigned ms) override;
+	int pulse_hook(dcore::Modem &, bool broken) override
+	{
+		if (hook_ != MODEM_HOOK_OFF)
+			return -1;
+		flash_end_ = 0;
+		set_switch(Si3054Hda::GPIO_OH, !broken);
+		return 0;
+	}
 	int io_delay(dcore::Modem &) override { return LEAD * period_; }
 	const char *driver_name() override { return "Si3054 (HD audio)"; }
 	int dte_write(dcore::Modem &, const char *buf, int n) override
