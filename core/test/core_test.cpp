@@ -265,6 +265,32 @@ TEST(Core, VoiceLineGone)
 	delete m;
 }
 
+/* V.253's event reports: +VLS=? lists each device with the events it
+   reports in the transmit, receive and command states (Table 1's bits,
+   event 0 leftmost); +VEM, the speakerphone's reports, 0 or 1, back to
+   0 with +VIP; neither outside voice mode */
+TEST(Core, VoiceEvents)
+{
+	Line l;
+	Modem *m = make(l, "events");
+
+	EXPECT_EQ(cmd(m, l, "ATE0+VEM?\r"), "ATE0+VEM?\r\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
+		  "0,\"\",00000000,00000000,10000000\r\n"
+		  "1,\"T\",08043060,08043060,08043060\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM=?\r"), "+VEM=0-1\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=1\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM=2\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=1\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VIP\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=0\r\nOK\r\n");
+	delete m;
+}
+
 /* two modems back to back */
 struct Pair {
 	Line la, lb;

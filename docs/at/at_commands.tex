@@ -864,7 +864,10 @@ the other modes):
 +VSD=\p{s},\p{t} & silence detection: sensitivity and period, 0 to 255 \\
 +VSM=\p{m},8000 & the compression method, 0 or 1, at 8000 samples/s \\
 +VLS=\p{n} & 1 takes the line for voice (on SIP: answers the call
-  that rings), 0 leaves it \\
+  that rings), 0 leaves it.  \cmd{=?} lists the two, each with the events
+  it reports (below) \\
++VEM=\p{n} & 0 or 1: V.253's event reports in the speakerphone state,
+  which the modem has not; kept, 0 at the start and with \cmd{+VIP} \\
 D\p{number} & dials \p{number} and gives OK when the far end answers,
   BUSY, \mbox{NO ANSWER} after S7, or ERROR when the call fails
   otherwise.  An answer tone is the answer and a busy tone BUSY on any
@@ -924,6 +927,17 @@ busy or congestion tone as \cmd{<DLE>b} (four rounds of 0.2 to 0.8~s on
 and off), and an answer tone as \cmd{<DLE>a} (2100~Hz: a fax or data
 answer) or \cmd{<DLE>f} (2225~Hz: a data answer), 0.3~s into it.  A ring
 ends after 0.3~s without the tone.
+
+\cmd{AT+VLS=?} gives V.253's list of the devices, with the events each
+reports in the transmit, receive and command states as hex bit fields
+(bit \p{n} for V.253's event \p{n}, event 0 the leftmost of 32):
+\begin{verbatim}
+0,"",00000000,00000000,10000000
+1,"T",08043060,08043060,08043060
+\end{verbatim}
+On hook (0) that is RING; on the line (1) DTMF, the loop current
+interruption, a ringing tone, a busy tone and the two answer tones,
+in every state.
 
 When the far end ends a voice call, the modem reports \cmd{<DLE>l}
 (V.253's loop current interruption, ``usually a remote hangup'') and

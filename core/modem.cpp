@@ -330,6 +330,7 @@ void Modem::voice_init()
 	voice_info_.tone_default = 100;
 	voice_info_.ring_after = 50;
 	voice_info_.ring_never = 10;
+	voice_events_ = 0;
 }
 
 /*

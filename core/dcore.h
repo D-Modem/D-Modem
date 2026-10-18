@@ -492,6 +492,7 @@ private:
 	int scratch_len_ = 0;
 	void *voice_ = nullptr;
 	struct voice_info voice_info_ = {};
+	unsigned voice_events_ = 0;     /* +VEM */
 	/* the elements of a +VTS string, played in turn: a DTMF digit
 	   (its character), a hook flash, or a tone of f1 and f2 Hz (0:
 	   none); d in 10 ms */

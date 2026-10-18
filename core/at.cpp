@@ -272,8 +272,8 @@ const char *identity(char c)
  */
 
 /* a +V parameter command: the two letters after +V, its values (the
-   fields of struct voice_info, none for +VNH and +VLS), their ranges
-   (a bound 0: none) */
+   fields of struct voice_info, none for +VNH, +VLS and +VEM), their
+   ranges (a bound 0: none) */
 const struct VoiceSetting {
 	const char *name;
 	int n;
@@ -291,12 +291,25 @@ const struct VoiceSetting {
 	{ "SM", 2, { &voice_info::comp_method, &voice_info::sample_rate },
 	  { 0, 8000 }, { 1, 8000 } },
 	{ "LS", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
+	{ "EM", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
 	{ "TD", 1, { &voice_info::tone_default, nullptr }, { 0, 0 },
 	  { 6000, 0 } },
 	{ "RA", 1, { &voice_info::ring_after, nullptr }, { 0, 0 },
 	  { 255, 0 } },
 	{ "RN", 1, { &voice_info::ring_never, nullptr }, { 0, 0 },
 	  { 255, 0 } },
+};
+
+/* +VLS=?: the devices of +VLS (V.253 10.2.4.2): label, primitives, and
+   the events reported in the transmit, receive and command states, a
+   bit each (event n of V.253's Table 1 the nth from the left of 32).
+   On hook (0): RING.  On the line (1), in every state: DTMF (4), loop
+   current interruption (13, <DLE>l), ringing tone (18, <DLE>r), busy
+   (19, <DLE>b), and the answer tones of 2100 Hz (25, <DLE>a) and of
+   2225 Hz (26, <DLE>f). */
+static const char *const voice_devices[] = {
+	"0,\"\",00000000,00000000,10000000",
+	"1,\"T\",08043060,08043060,08043060",
 };
 
 /* v within the bounds lo and hi (0: none) */
@@ -1366,6 +1379,7 @@ int Modem::at_voice(char *p, int *len)
 	cmd[2] = '\0';
 	for (const auto &s : voice_settings) {
 		bool device = !strcmp(s.name, "LS");
+		bool events = !strcmp(s.name, "EM");
 		unsigned long v[2] = { 0, 0 };
 		int ret = 0;
 
@@ -1373,8 +1387,15 @@ int Modem::at_voice(char *p, int *len)
 			continue;
 		for (int i = 0; i < s.n; i++)
 			v[i] = s.field[i] ? voice_info_.*s.field[i] :
+				events ? voice_events_ :
 				device && voice_ ? 1 : 0;
-		if (q[0] == '=' && q[1] == '?') {
+		if (device && q[0] == '=' && q[1] == '?') {
+			for (const char *d : voice_devices) {
+				puts(d);
+				crlf();
+			}
+			q += 2;
+		} else if (q[0] == '=' && q[1] == '?') {
 			int k = snprintf(line, sizeof(line), "+V%s=", s.name);
 			for (int i = 0; i < s.n; i++)
 				k += snprintf(line + k, sizeof(line) - k,
@@ -1405,6 +1426,8 @@ int Modem::at_voice(char *p, int *len)
 				if (s.field[i])
 					voice_info_.*s.field[i] =
 						(unsigned)v[i];
+			if (events)
+				voice_events_ = (unsigned)v[0];
 		} else {
 			return -1;
 		}
