@@ -4,7 +4,8 @@ Calls between the open modem and other soft modems: Smart Link's on
 our modem core, the Agere, SM56, PCTel, HSF and Intel ones each in user
 space on an emulation of its hardware, Broadcom's and ESS's Windows
 drivers on a Windows kernel of our own and an emulation of their chips,
-and spandsp's (see
+spandsp's, and the open modem itself on an emulated HD-audio modem codec
+(see
 [testing.md](testing.md) for the driver, netsim and how the calls keep
 time). Each has a harness, `half_<name>`, which takes the line's audio
 on fd 3, gives its own on fd 4 and is the modem's DTE on a pty, and a
@@ -36,12 +37,14 @@ its codec's registers as the harness's `codec_read()` and
 | `pci.hpp` | PCI's configuration space of one device and its ports (`PciDevice`) | SM56, HSF, Broadcom, ESS |
 | `x86_traps.hpp` | `in`, `out`, `cli`, `sti` and moves to and from control registers in a driver's own code (`X86Traps`) | SM56, the Windows kernel |
 | `tsc.hpp` | `rdtsc` on the line's clock (`LineTsc`) | HSF, the Windows kernel |
-| `codec_line.hpp` | the line and a codec at a rate of its own: the resamplers and the codec's noise (`CodecLine`, `<NAME>_NOISE`) | SM56, PCTel, HSF, Broadcom, Intel, ESS |
+| `codec_line.hpp` | the line and a codec at a rate of its own: the resamplers and the codec's noise (`CodecLine`, `<NAME>_NOISE`) | SM56, PCTel, HSF, Broadcom, Intel, ESS, HDA |
 | `smartdaa.hpp` | Conexant's SmartDAA behind its codec (`SmartDaa`) | HSF |
 | `si3034.hpp` | Silicon Labs' Si3034 DAA behind a serial port (`Si3034`) | Broadcom |
 | `bcm4212.hpp` | Broadcom's BCM4212 modem chip: its registers and DMA (`Bcm4212`) | Broadcom |
 | `i537ep.hpp` | Intel's 537EP modem chip: its registers (plain memory) and DMA rings (`I537ep`) | Intel |
 | `es2838.hpp` | ESS's ES2838 modem chip: its ports, its codec's registers and its sample FIFO (`Es2838`) | ESS |
+| `hda.hpp` | an Intel HD Audio controller: its reset, the immediate command interface, an input and an output stream on buffer descriptor lists (`HdaController`) | HDA |
+| `si3054_hda.hpp` | a Silicon Labs Si3054 HD-audio modem codec: its root and modem function group, its registers as nodes 2 to 21, the hook and the line monitor (`Si3054Hda`) | HDA |
 
 Each mixin's members have its name (`ich_sample()`, `pci_cfg`,
 `si3034_rate`, ...), so that a harness can derive from any of them
@@ -1020,6 +1023,50 @@ does the Agere modem's answerer's at 6 of 8). Our answerer now reverses
 its CC, and sends AC until the caller's tone drops (16 symbols of
 silence, then S), not 256 symbols.
 
+## The open modem on an HD-audio modem codec
+
+`half_hda` is not another vendor's modem: it is the open modem, on the
+modem core as `dmodemd -a` runs it, over an emulation of the hardware of
+an HD-audio softmodem (the laptops of about 2005 to 2010). No closed
+driver of the suite drives HD audio, so the driver is our own, written to
+the interface Linux's `snd-hda-intel` and `snd-hda-codec-si3054` use
+(`sound/pci/hda/patch_si3054.c`); what the calls test is that path: the
+codec's verbs, its registers and switches, the streams' DMA, and the
+modem on the codec's clock.
+
+- `hw/hda.hpp`: the controller's reset and STATESTS, the immediate
+  command interface (ICOI, IRII, ICIS), one input and one output stream
+  (SDnCTL, SDnSTS, LPIB, CBL, LVI, FMT, BDPL/BDPU) walking their buffer
+  descriptor lists in the process's memory.
+- `hw/si3054_hda.hpp`: the Si3054's root node (vendor ID 163c:3055,
+  `HDA_VENDOR` another) and its modem function group, the registers as
+  nodes 2 to 21 (verbs 0x9 and 0x1, 16 bit payloads): EXTENDED_MID's
+  ready bits, LINE_RATE, LINE_LEVEL's stream numbers, GPIO_CONTROL's hook
+  and line monitor, CHIPID, LINE_STATUS's frame detect. Off hook its ADC
+  hears the line and its DAC drives it; on hook the ADC hears it only
+  with the monitor on.
+- `half_hda.cpp`: the driver. It probes the codec (a vendor ID outside
+  the Si3054 driver's list is refused, as no driver would bind it), runs
+  the Si3054 driver's init, prepares both streams (four periods of 10 ms,
+  IOC on each, the stream format of the rate: 48 kHz over 5 for 9600),
+  and sets the switches as ALSA's "Off-hook Switch" and "Caller ID
+  Switch" do. Each period captured is the modem's next 10 ms, its answer
+  written two periods ahead into the playback's buffer, as `AlsaLine`
+  does.
+
+`ctest -L hda` runs its calls with the open modem: every modulation from
+V.34 to V.21 both ways, V.34 with the codec at 8000 Hz, V.90 (56000 down,
+both laws) and V.92 (quick connect, PCM upstream at 37333) with it as the
+analogue modem, and class 1 fax both ways at each modulation. The data
+calls have the codec at 9600 Hz on the 8000 Hz line, through
+`CodecLine`'s resampler. The PCM calls have the line at 9600 Hz
+(`HDA_RATE=9600`), as the Intel modem's: the resampler's gain differs a
+little at each of its five phases, which the DIL measures as a level of
+its own at each frame position, and V.90 falls back to V.34 on it (no
+real PCM line has it). The fax calls are at 8000 Hz with `half_open8`,
+the fax relay being at one rate. `hw_test` checks the controller and the
+codec by themselves.
+
 ## MNP
 
 The Agere, SM56, PCTel, HSF, Broadcom, Intel and ESS modems have MNP 2 to 4 and
@@ -1063,7 +1110,8 @@ calls in between are in it as well. For example:
 (`half_sm56`), `SPANDSP_SYNC=<samples>` (`half_spandsp`),
 `PCTEL_SYNC=<samples>` (`half_pctel`), `HSF_SYNC=<samples>` (`half_hsf`),
 `BROADCOM_SYNC=<samples>` (`half_broadcom`), `INTEL_SYNC=<samples>`
-(`half_intel`) and `ESS_SYNC=<samples>` (`half_ess`) make a call repeat
+(`half_intel`), `ESS_SYNC=<samples>` (`half_ess`) and `HDA_SYNC=<samples>`
+(`half_hda`) make a call repeat
 exactly from run to run: the modems take the DTE's commands only every
 that many line samples (data, once connected, at once), run their timers
 between half frames and keep time by the line; without them, where the

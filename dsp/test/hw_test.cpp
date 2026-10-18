@@ -4,7 +4,9 @@
  *
  *    hw_test.cpp - the hardware the harnesses emulate (hw/), on a host of
  *                  the test's own: the ICH's bus masters as the soft
- *                  modems' drivers run them
+ *                  modems' drivers run them; the HD Audio controller's
+ *                  immediate commands and streams, with the Si3054 modem
+ *                  codec on it
  *
  *    The bus addresses are offsets into an arena (the mixin's bus
  *    offset), so the test runs as a 64 bit program too.
@@ -15,7 +17,9 @@
 
 #include <string.h>
 
+#include "hw/hda.hpp"
 #include "hw/ich.hpp"
+#include "hw/si3054_hda.hpp"
 
 using namespace half;
 
@@ -154,3 +158,169 @@ TEST_F(Ich_, Reset)
 	h.feed(1, 50);
 	EXPECT_EQ(h.at(0, 0), 50);
 }
+
+/*
+ *    the HD Audio controller and the Si3054
+ */
+
+namespace {
+
+struct HdaHost : HdaController<HdaHost>, Si3054Hda<HdaHost> {
+	int dbg = 0;
+	void log(const char *, ...) {}
+	u32 hda_codec_command(u32 cmd) { return si3054_command(cmd); }
+
+	/* a command through the immediate command interface */
+	u32 cmd(unsigned nid, unsigned verb, unsigned payload, bool four = false)
+	{
+		hda_write(ICOI, nid << 20 | (four ? (verb & 0xf) << 16 | (payload & 0xffff) :
+					     (verb & 0xfff) << 8 | (payload & 0xff)), 4);
+		hda_write(ICIS, ICIS_IRV, 2);
+		hda_write(ICIS, ICIS_ICB, 2);
+		EXPECT_TRUE(hda_read(ICIS, 2) & ICIS_IRV);
+		return hda_read(IRII, 4);
+	}
+	u32 reg(unsigned r) { return cmd(r, 0x9, 0, true); }
+	void set(unsigned r, unsigned v) { cmd(r, 0x1, v, true); }
+};
+
+class Hda_ : public ::testing::Test {
+protected:
+	HdaHost h;
+	alignas(128) byte bdl[128] = {};
+	short buf[8] = {};
+
+	void SetUp() override
+	{
+		h.hda_write(HdaHost::GCTL, HdaHost::GCTL_CRST, 4);
+		/* two entries of four samples each, IOC on the second */
+		for (int i = 0; i < 2; i++) {
+			uint64_t a = (uintptr_t)(buf + 4 * i);
+			for (int k = 0; k < 8; k++)
+				bdl[16 * i + k] = (byte)(a >> 8 * k);
+			bdl[16 * i + 8] = 8;
+			bdl[16 * i + 12] = i == 1;
+		}
+	}
+	/* stream d set up on bdl with stream number tag, and run */
+	void run(int d, int tag)
+	{
+		unsigned b = HdaHost::SD0 + d * HdaHost::SD_SIZE;
+		uint64_t a = (uintptr_t)bdl;
+		h.hda_write(b + HdaHost::SD_CTL, HdaHost::CTL_SRST, 1);
+		EXPECT_TRUE(h.hda_read(b + HdaHost::SD_CTL, 1) & HdaHost::CTL_SRST);
+		h.hda_write(b + HdaHost::SD_CTL, 0, 1);
+		h.hda_write(b + HdaHost::SD_BDPL, (u32)a, 4);
+		h.hda_write(b + HdaHost::SD_BDPU, (u32)(a >> 32), 4);
+		h.hda_write(b + HdaHost::SD_CBL, 16, 4);
+		h.hda_write(b + HdaHost::SD_LVI, 1, 2);
+		h.hda_write(b + HdaHost::SD_FMT, HdaHost::hda_fmt(9600), 2);
+		h.hda_write(b + HdaHost::SD_CTL + 2, (u32)tag << 4, 1);
+		h.hda_write(b + HdaHost::SD_CTL, HdaHost::CTL_IOCE | HdaHost::CTL_RUN, 1);
+	}
+};
+
+}
+
+/* out of reset the codec is on SDIN 0, and answers: its IDs, its modem
+   function group, its registers (EXTENDED_MID ready once written, the
+   link's frame detect, CHIPID read only) */
+TEST_F(Hda_, CommandsReachTheCodec)
+{
+	EXPECT_EQ(h.hda_read(HdaHost::STATESTS, 2), 1u);
+	EXPECT_EQ(h.cmd(0, 0xf00, 0x00), 0x163c3055u);
+	EXPECT_EQ(h.cmd(0, 0xf00, 0x04), 0x00010001u);
+	EXPECT_EQ(h.cmd(1, 0xf00, 0x05) & 0xff, 0x02u);
+	EXPECT_EQ(h.reg(HdaHost::EXTENDED_MID) & 0xf, 0u);
+	h.set(HdaHost::EXTENDED_MID, 0);
+	EXPECT_EQ(h.reg(HdaHost::EXTENDED_MID) & 0xf, 0xfu);
+	EXPECT_TRUE(h.reg(HdaHost::LINE_STATUS) & 0x40);
+	u32 id = h.reg(HdaHost::CHIPID);
+	h.set(HdaHost::CHIPID, 0);
+	EXPECT_EQ(h.reg(HdaHost::CHIPID), id);
+	h.set(HdaHost::LINE_RATE, 8000);
+	EXPECT_EQ(h.si3054_rate(), 8000u);
+	h.cmd(0, 0x7ff, 0);             /* the codec's reset */
+	EXPECT_EQ(h.si3054_rate(), 9600u);
+	EXPECT_EQ(h.si3054_bad, 0ul);
+	h.cmd(1, 0x123, 0);             /* no such verb */
+	EXPECT_EQ(h.si3054_bad, 1ul);
+	/* the controller's reset: STATESTS cleared by a write of 1 */
+	h.hda_write(HdaHost::STATESTS, 1, 2);
+	EXPECT_EQ(h.hda_read(HdaHost::STATESTS, 2), 0u);
+}
+
+/* the stream formats of the Si3054's rates: 48 kHz over 6, 5, 3 */
+TEST_F(Hda_, Formats)
+{
+	EXPECT_EQ(HdaHost::hda_fmt(8000), 0x0510);
+	EXPECT_EQ(HdaHost::hda_fmt(9600), 0x0410);
+	EXPECT_EQ(HdaHost::hda_fmt(16000), 0x0210);
+	for (unsigned r : { 8000u, 9600u, 16000u, 48000u, 96000u })
+		EXPECT_EQ(HdaHost::hda_fmt_rate(HdaHost::hda_fmt(r)), r);
+}
+
+/* an input stream: its samples in its entries in turn, LPIB round the
+   cyclic buffer, BCIS (an interrupt with IOCE and GIE) at the IOC
+   entry's end; only its own stream number's samples */
+TEST_F(Hda_, InputStreamWalksItsList)
+{
+	run(HdaHost::IN, 1);
+	short s = 7;
+	EXPECT_FALSE(h.hda_dma(HdaHost::IN, 2, &s));
+	for (short i = 1; i <= 7; i++)
+		EXPECT_TRUE(h.hda_dma(HdaHost::IN, 1, &i));
+	EXPECT_EQ(h.hda_read(HdaHost::SD0 + HdaHost::SD_LPIB, 4), 14u);
+	EXPECT_FALSE(h.hda_read(HdaHost::SD0 + HdaHost::SD_STS, 1) & HdaHost::STS_BCIS);
+	s = 8;
+	h.hda_dma(HdaHost::IN, 1, &s);
+	for (int i = 0; i < 8; i++)
+		EXPECT_EQ(buf[i], i + 1);
+	EXPECT_EQ(h.hda_read(HdaHost::SD0 + HdaHost::SD_LPIB, 4), 0u);
+	EXPECT_TRUE(h.hda_read(HdaHost::SD0 + HdaHost::SD_STS, 1) & HdaHost::STS_BCIS);
+	EXPECT_FALSE(h.hda_irq());
+	h.hda_write(HdaHost::INTCTL, HdaHost::INTCTL_GIE, 4);
+	EXPECT_TRUE(h.hda_irq());
+	h.hda_write(HdaHost::SD0 + HdaHost::SD_STS, HdaHost::STS_BCIS, 1);
+	EXPECT_FALSE(h.hda_irq());
+	s = 9;                          /* round again, from entry 0 */
+	h.hda_dma(HdaHost::IN, 1, &s);
+	EXPECT_EQ(buf[0], 9);
+}
+
+/* an output stream reads its buffer; stopped, nothing */
+TEST_F(Hda_, OutputStream)
+{
+	for (int i = 0; i < 8; i++)
+		buf[i] = (short)(100 + i);
+	run(HdaHost::OUT, 3);
+	short s = 0;
+	EXPECT_TRUE(h.hda_dma(HdaHost::OUT, 3, &s));
+	EXPECT_EQ(s, 100);
+	EXPECT_TRUE(h.hda_dma(HdaHost::OUT, 3, &s));
+	EXPECT_EQ(s, 101);
+	h.hda_write(HdaHost::SD0 + HdaHost::SD_SIZE + HdaHost::SD_CTL, 0, 1);
+	s = 0;
+	EXPECT_FALSE(h.hda_dma(HdaHost::OUT, 3, &s));
+	EXPECT_EQ(s, 0);
+}
+
+/* the codec's line: off hook both ways; on hook the ADC hears the line
+   only with the monitor on, and the DAC is not on the line */
+TEST_F(Hda_, HookAndMonitor)
+{
+	short adc;
+	EXPECT_EQ(h.si3054_sample(500, &adc, 300), 0);
+	EXPECT_EQ(adc, 0);
+	h.set(HdaHost::GPIO_CONTROL, HdaHost::GPIO_CID);
+	EXPECT_EQ(h.si3054_sample(500, &adc, 300), 0);
+	EXPECT_EQ(adc, 500);
+	h.set(HdaHost::GPIO_CONTROL, HdaHost::GPIO_OH);
+	EXPECT_EQ(h.si3054_sample(500, &adc, 300), 300);
+	EXPECT_EQ(adc, 500);
+	/* the stream numbers of LINE_LEVEL */
+	h.set(HdaHost::LINE_LEVEL, 0x2010);
+	EXPECT_EQ(h.si3054_in_tag(), 1);
+	EXPECT_EQ(h.si3054_out_tag(), 2);
+}
+

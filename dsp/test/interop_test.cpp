@@ -79,6 +79,9 @@ const std::map<std::string, const char *> &programs()
 #ifdef HALF_ESS
 		{ "ess", HALF_ESS },
 #endif
+#ifdef HALF_HDA
+		{ "hda", HALF_HDA },
+#endif
 	};
 	return p;
 }
@@ -1369,6 +1372,43 @@ std::vector<Call> calls()
 	    "ATX3;AT+MS=34;AT\\N5%C2",
 	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6",
 	      "BULK=20000", "EXPECT_A=optimization 3\\.\n" });
+	/* --- the open modem on the emulated HD-audio modem codec
+	   (half_hda: an HD Audio controller and a Si3054, its codec at
+	   9600 Hz on the 8000 Hz line) and the open modem (9600 Hz): each
+	   modulation both ways, V.34 with the codec at 8000 Hz too; V.90
+	   and V.92 (PCM upstream) with it as the analogue modem; fax both
+	   ways */
+	for (const char *ms : { "34", "132", "122", "22", "212", "103",
+				"21", "23" }) {
+		std::string p = std::string("ATX3;AT+MS=") + ms;
+		add("hda", std::string("hda_") + ms + "_hda_calls", "hda",
+		    "open", p, { "NET=8000:9600:ulaw" });
+		add("hda", std::string("hda_") + ms + "_open_calls", "open",
+		    "hda", p, { "NET=9600:8000:ulaw" });
+	}
+	add("hda", "hda_34_8k_hda_calls", "hda", "open", "ATX3;AT+MS=34",
+	    { "NET=8000:9600:ulaw", "HDA_CODEC_RATE=8000" });
+	/* (PCM: the line at the codec's 9600 Hz, as the Intel modem's: a
+	   resampler from 8000 Hz, its gain a little different at each of
+	   its five phases, is what the DIL measures and no PCM line has) */
+	for (std::string law : { "ulaw", "alaw" })
+		add("hda", "hda_v90_" + law, "hda", "open8", "ATX3;AT+MS=90",
+		    { "HDA_RATE=9600", "NET=9600:8000:" + law,
+		      "DSP_G711=" + law, "BULK=100000",
+		      "EXPECT_A=V.90 connect [0-9]+/5[0-9]{4} \\(analogue modem\\)",
+		      "EXPECT_B=V.90 connect 5[0-9]{4}/" });
+	add("hda", "hda_v92_pcmup", "hda", "open8", "ATX3",
+	    { "HDA_RATE=9600", "NET=9600:8000:ulaw", "DSP_G711=ulaw",
+	      "STREAM=5", "EXPECT_A=(?s)V.92 quick connect.*PCM upstream "
+	      "phase 3 done.*V.92 connect 3[0-9]{4}/5[0-9]{4}" });
+	/* (fax: at 8000 Hz on the line, with the open modem at 8000) */
+	for (int m : { 24, 48, 72, 96, 73, 97, 121, 122, 145 }) {
+		std::string s = std::to_string(m);
+		add("hda", "hda_fax_" + s + "_hda_sends", "hda", "open8",
+		    "ATX3")->fax = m;
+		add("hda", "hda_fax_" + s + "_open_sends", "open8", "hda",
+		    "ATX3")->fax = m;
+	}
 	return c;
 }
 

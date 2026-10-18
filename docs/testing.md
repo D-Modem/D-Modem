@@ -31,7 +31,7 @@ interop tests are left out there ([windows.md](windows.md)).
                                               # original library) and this one, data and
                                               # class 1 fax (needs g++ -m32)
     ctest --test-dir build -L agere -j16    # calls between the Agere soft modem and this one
-                                            # (sm56, pctel, hsf, broadcom, intel, ess, spanpeer: the other modems;
+                                            # (sm56, pctel, hsf, broadcom, intel, ess, spanpeer: the other modems; hda: ours on HD audio;
                                             # open: two of this one)
 
 The test programs are in `dsp/test/` (the link layer's and the core's in `link/test/` and `core/test/`). All the tests but one are GoogleTest programs (the system's libgtest-dev, or
@@ -46,14 +46,14 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `pump_test` | the data pumps back to back (`loopback.cpp`): each modulation on clean and noisy lines, 8000 Hz, clock offsets, gains, echoes; the answering automode. A side passes connected, with 90% of the bits its rate carries from the CONNECT on, at a BER of 1e-3 at most |
 | `dmodem_test` | libdmodem: pairs of its modems, retrains and renegotiations in the data, V.91 across G.711 networks, the network's law for each call, `dmodem.hpp` |
 | `dmodem_fax_test` | libdmodem's fax: a data modem answering hands the call to a fax receiver; a fax over T.38 through the API, in UDPTL with packets lost, and in IFP packets (`t38_ifp`, as Asterisk's channels have them) no longer than 72 octets |
-| `hw_test` | the hardware the harnesses emulate (`hw/`), on a host of its own: the ICH's bus masters |
+| `hw_test` | the hardware the harnesses emulate (`hw/`), on a host of its own: the ICH's bus masters, the HD Audio controller's commands and streams with the Si3054 on it |
 | `bits_test`, `g711_test`, `pcm_cp_test` | `bits.h`'s fields and CRCs, `g711.h`'s two laws (each octet back to itself, sign and magnitude), the PCM encoders on CPs that cannot carry their rate |
 | `fax_test` | the class 1 modulations, T.4/TIFF (also against libtiff's `tiffcp`), two T.30 machines back to back |
 | `t38_test` | T.38: the IFP packets' encodings (both versions), UDPTL's redundancy, two T.30 machines over T.38 with packets lost |
 | `class1_t38_test` | class 1 over T.38: a DTE of the test's own through T.30 on the engine's commands against our T.30 machine over T.38, sending and receiving, ECM, both packet versions, T.38 after a while on the audio; the packets' fields and times |
 | `spandsp_test` | spandsp's V.17 transmitter and T.4 encoder into ours, our T.30 against spandsp's, on the audio and over T.38 (its T.38 terminal) |
 | `../../link/link_test`, `../../core/test/core_test`, `core_equiv` | the data link layer, the core, the core's transcripts against the scripts' `.expect` (slmodemd's old core's, recorded from it; see `docs/core.md`) |
-| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `intel_test`, `ess_test`, `spanpeer_test`, `open_test` | calls between this modem and the others ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
+| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `intel_test`, `ess_test`, `spanpeer_test`, `open_test`, `hda_test` | calls between this modem and the others (`hda`: the open modem on an emulated HD-audio modem codec) ([interop.md](interop.md); `interop_test.cpp`: one table of the calls, each program a label's) |
 | `call_tone_test`, `ring_detect_test` | the call progress tones a voice dial hears (ringing, busy, answer tones) and the ring signal a modem codec hears on hook (`dsp.h`'s `CallToneDetect`, `RingDetect`) |
 | `dmodemd/test/alsa_test.py` (`dmodemd_alsa`, label `alsa`) | two dmodemd on fake ALSA modem cards (alsa-lib plugins), calling each other through a simulated exchange: dial tone, DTMF, rings, caller ID, V.34, busy, a stall, a voice call ([hardware.md](hardware.md)). Needs libasound2-dev |
 | `dmodemd/test/usb_test.py` (`dmodemd_usb`, label `alsa`) | two dmodemd on fake SmartUSB56s (`fake_st7554.cpp`, a libusb in front of the real one by `LD_PRELOAD`) on the same exchange: the device's checks, rings, V.34, busy, a voice call, unplugging ([hardware.md](hardware.md)). Needs libusb-1.0-0-dev |

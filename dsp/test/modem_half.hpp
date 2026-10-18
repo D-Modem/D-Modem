@@ -4,11 +4,11 @@
  *
  *    modem_half.hpp - what the test peers' harnesses share (half_agere,
  *                     half_sm56, half_pctel, half_hsf, half_broadcom,
- *                     half_ess, half_intel, half_spandsp): a modem whose
- *                     line's audio comes in
- *                     on fd 3 and goes out on fd 4 (16 bit samples), its
- *                     DTE a pty whose name it prints ("created <name>:
- *                     <pty>"), for interop_call
+ *                     half_ess, half_intel, half_spandsp, half_hda): a
+ *                     modem whose line's audio comes in on fd 3 and
+ *                     goes out on fd 4 (16 bit samples), its DTE a pty
+ *                     whose name it prints ("created <name>: <pty>"),
+ *                     for interop_call
  *
  *    HalfModem is the program: its settings from the environment
  *    (<PREFIX>_DEBUG, _RATE, _SYNC, _SYNC_PHASE), the pty, the modem's
@@ -36,6 +36,8 @@
  *    hw/bcm4212.hpp      Broadcom's BCM4212 modem chip
  *    hw/i537ep.hpp       Intel's 537EP modem chip
  *    hw/es2838.hpp       ESS's ES2838 modem chip
+ *    hw/hda.hpp          an Intel HD Audio controller
+ *    hw/si3054_hda.hpp   Silicon Labs' Si3054 HD-audio modem codec (HDA)
  *
  *    interop_windows.h is a Windows kernel for a WDM driver on such a
  *    harness.

@@ -224,6 +224,18 @@ foreach(_n half_open half_open8 half_smartlink)
 	target_link_libraries(${_n} PRIVATE ${DMODEM_LIBM} Threads::Threads)
 endforeach()
 
+# the open modem on an emulated HD-audio modem codec (half_hda.cpp): an
+# Intel HD Audio controller (hw/hda.hpp) and a Silicon Labs Si3054
+# (hw/si3054_hda.hpp), driven as Linux's snd-hda-codec-si3054 drives it
+add_executable(half_hda half_hda.cpp modem_half.cpp ${DMODEM_FRONT_SRCS}
+	${DMODEM_CORE_NEW_SRCS} ${DMODEM_LINK_SRCS} ${_dsp})
+target_include_directories(half_hda PRIVATE ${DMODEM_FRONT_DIR} ${S}
+	${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
+target_compile_definitions(half_hda PRIVATE CONFIG_DEBUG_MODEM)
+target_compile_options(half_hda PRIVATE ${DMODEM_M32} -g -O)
+target_link_options(half_hda PRIVATE ${DMODEM_M32})
+target_link_libraries(half_hda PRIVATE ${DMODEM_LIBM} Threads::Threads)
+
 # the peers' harnesses (modem_half.cpp) read their line as PipeModem does
 # (line_frames.h)
 set_source_files_properties(modem_half.cpp PROPERTIES INCLUDE_DIRECTORIES
@@ -407,7 +419,7 @@ target_link_libraries(interop_call PRIVATE interop_driver)
 set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""
 	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
 	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
-foreach(_p agere sm56 spandsp pctel hsf broadcom intel ess)
+foreach(_p agere sm56 spandsp pctel hsf broadcom intel ess hda)
 	if(TARGET half_${_p})
 		string(TOUPPER ${_p} _u)
 		list(APPEND _progs "HALF_${_u}=\"$<TARGET_FILE:half_${_p}>\"")
@@ -451,3 +463,5 @@ endif()
 if(TARGET half_ess)
 	interop_tests(ess)
 endif()
+# the open modem on the emulated HD-audio modem codec (half_hda)
+interop_tests(hda)
