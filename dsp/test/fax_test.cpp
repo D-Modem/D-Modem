@@ -44,6 +44,8 @@ struct Loopback {
 	float snr;      /* dB */
 	long bits;
 	int srate;
+	int page;       /* the bits of a light test page of this seed in MH
+			   (bits: at least so many a row), 0: PRBS */
 };
 
 class FaxModulation : public testing::TestWithParam<Loopback> {
@@ -53,14 +55,20 @@ protected:
 	long ntx = 0, nrx = 0, maxbits = 0;
 	Biquad tilt;
 	float noise = 0;
+	T4Bits page = {};
 
-	/* the transmitter's next bit: PRBS 2^23-1, kept in txb; FAX_BIT_END
-	   after maxbits */
+	~FaxModulation() override { page.release(); }
+	/* the transmitter's next bit: the page's or PRBS 2^23-1, kept in
+	   txb; FAX_BIT_END after maxbits */
 	static int get_bit(void *ctx) {
 		FaxModulation *t = static_cast<FaxModulation *>(ctx);
 		int b;
 		if (t->ntx >= t->maxbits)
 			return FAX_BIT_END;
+		if (t->page.n) {
+			t->txb[t->ntx] = (u8)t4_bits_get(&t->page, t->ntx);
+			return t->txb[t->ntx++];
+		}
 		b = ((t->prbs >> 22) ^ (t->prbs >> 17)) & 1;
 		t->prbs = (t->prbs << 1) | b;
 		t->txb[t->ntx++] = b;
@@ -93,6 +101,7 @@ testing::AssertionResult FaxModulation::run(enum fax_mod mod, int short_train,
 	const char *train = short_train ? " (short train)" : "";
 
 	ntx = nrx = 0;
+	prbs = 0x1234567;
 	tx.init(mod, short_train, srate, get_bit, this);
 	if (rx.init(mod, short_train, srate, put_bit, this, mem))
 		return testing::AssertionFailure() << "receiver init" << train;
@@ -143,6 +152,13 @@ TEST_P(FaxModulation, BitsArriveIntact)
 	debug_level();
 	ASSERT_TRUE(fax_mod_from_code(p.code, &mod, &short_train));
 	maxbits = p.bits;
+	if (p.page) {
+		T4Page pg;
+		test_page(&pg, 0, p.page, 300);
+		pg.encode_mh(&page, p.bits, 0, 1);
+		pg.release();
+		maxbits = (long)page.n;
+	}
 	txb.assign(maxbits, 0);
 	rxb.assign(2 * maxbits, 0);
 	srand(1);
@@ -157,7 +173,8 @@ TEST_P(FaxModulation, BitsArriveIntact)
 	EXPECT_TRUE(run(mod, short_train, p.srate, &mem));
 }
 
-/* m<code>, then _snr<dB> and _<rate> if not 30 dB and 9600 Hz */
+/* m<code>, then _snr<dB> and _<rate> if not 30 dB and 9600 Hz, and
+   _page<seed>_min<bits> for a page */
 static std::string loopback_name(const testing::TestParamInfo<Loopback> &i)
 {
 	std::string n = "m" + std::to_string(i.param.code);
@@ -165,6 +182,9 @@ static std::string loopback_name(const testing::TestParamInfo<Loopback> &i)
 		n += "_snr" + std::to_string((int)i.param.snr);
 	if (i.param.srate != 9600)
 		n += "_" + std::to_string(i.param.srate);
+	if (i.param.page)
+		n += "_page" + std::to_string(i.param.page) + "_min" +
+			std::to_string(i.param.bits);
 	return n;
 }
 
@@ -177,7 +197,13 @@ INSTANTIATE_TEST_SUITE_P(Class1, FaxModulation, testing::Values(
 	Loopback{ 145, 30, 20000, 9600 }, Loopback{ 146, 30, 20000, 9600 },
 	/* noise; V.17 short train at 8000 Hz */
 	Loopback{ 48, 20, 20000, 9600 }, Loopback{ 96, 25, 20000, 9600 },
-	Loopback{ 98, 25, 20000, 8000 }), loopback_name);
+	Loopback{ 98, 25, 20000, 8000 },
+	/* V.17 14400, long and short train, with pages that once lost a
+	   row: their runs of the same few patterns moved the AGC and the
+	   timing loop */
+	Loopback{ 146, 30, 0, 9600, 7 }, Loopback{ 146, 30, 144, 9600, 16 },
+	Loopback{ 146, 30, 0, 8000, 22 }, Loopback{ 146, 30, 144, 8000, 13 }),
+	loopback_name);
 
 /*
  *    the page coding and TIFF files

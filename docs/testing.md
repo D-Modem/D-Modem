@@ -252,4 +252,10 @@ library makes a few bit errors with some of its own signals.
 
 `fax_test`'s `FaxModulation` cases send random data through each fax
 modulation over a simulated line. The V.17 short train codes run a long
-train first, so the receiver has an equalizer to start from.
+train first, so the receiver has an equalizer to start from. A few
+V.17 14400 cases (`_page<seed>`) send a test page's MH bits instead,
+as do `spandsp_test`'s `_page` cases from spandsp's transmitter. A
+page's runs of the same few patterns move the receiver's loops in a
+way that random data does not, so a page can lose a row where random
+data gets through. The seeds chosen are pages that did lose one before
+the receiver's AGC and timing loop slowed down in the data.

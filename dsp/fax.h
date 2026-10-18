@@ -115,7 +115,7 @@ struct FaxRx {
 	cplx new_eq[QAM_MAX_EQ];
 	float good_gain, new_gain;
 	int have_good, have_new;
-	float mem_gain;
+	float mem_gain;                 /* its AGC gain in the data */
 	int use_mem;
 	int bridge_hits;        /* V.17 short train: the bridge is there? */
 	float zpow, zpow_slow;  /* received data power */
@@ -135,6 +135,7 @@ struct FaxRx {
 	/* free what init took */
 	void release();
 	void bits_out(int q, int n, int msb_first);
+	void data_start();
 	void data_symbol();
 	int window_match(int k);
 	void track_alternations(cplx z);

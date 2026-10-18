@@ -46,6 +46,7 @@ struct V17 {
 	int bps;
 	int t4_min;     /* a fax page's bits (that many bits a row at
 			   least), -1: PRBS */
+	int seed = 1;   /* the page's */
 };
 
 class SpandspV17 : public testing::TestWithParam<V17> {
@@ -186,7 +187,8 @@ TEST_P(SpandspV17, IntoOurReceiver)
 		dsplibs_debug_level = atoi(getenv("DSP_DEBUG"));
 	if (GetParam().t4_min >= 0) {
 		page = fax_file("page.tif");
-		ASSERT_TRUE(write_test_doc(page, true));
+		ASSERT_TRUE(write_test_doc(page, true, false,
+					   GetParam().seed));
 	}
 	memset(&mem, 0, sizeof(mem));
 	EXPECT_TRUE(run(0, &mem));
@@ -196,12 +198,18 @@ TEST_P(SpandspV17, IntoOurReceiver)
 INSTANTIATE_TEST_SUITE_P(Rates, SpandspV17, testing::Values(
 	V17{ 14400, -1 }, V17{ 12000, -1 }, V17{ 9600, -1 }, V17{ 7200, -1 },
 	/* a page, without and with fill bits */
-	V17{ 14400, 0 }, V17{ 14400, 144 }),
-	/* <bps>, and _page_min<bits> for a page */
+	V17{ 14400, 0 }, V17{ 14400, 144 },
+	/* pages that once lost a row: their runs of the same few patterns
+	   moved the AGC and the timing loop */
+	V17{ 14400, 0, 5 }, V17{ 14400, 0, 11 }, V17{ 14400, 0, 25 },
+	V17{ 14400, 144, 16 }),
+	/* <bps>, and _page_min<bits> for a page (_seed<n> if not 1) */
 	[](const testing::TestParamInfo<V17> &i) {
 		std::string n = std::to_string(i.param.bps);
 		if (i.param.t4_min >= 0)
 			n += "_page_min" + std::to_string(i.param.t4_min);
+		if (i.param.seed != 1)
+			n += "_seed" + std::to_string(i.param.seed);
 		return n;
 	});
 

@@ -38,9 +38,9 @@ static void set(T4Page *p, int x, int y)
 		p->bits[(size_t)y * T4_STRIDE(p->width) + (x >> 3)] |= 0x80 >> (x & 7);
 }
 
-/* a page with something of everything: text-like strokes, boxes, a
-   checkerboard, single pels, runs reaching the edges */
-static void test_page(T4Page *p, int fine, int seed, int letters)
+/* (fax_util.h) a page with something of everything: text-like
+   strokes, boxes, a checkerboard, single pels, runs reaching the edges */
+void test_page(T4Page *p, int fine, int seed, int letters)
 {
 	int y, x, k, rows = fine ? 2200 : 1100;
 	srand(seed);
@@ -69,10 +69,10 @@ static void test_page(T4Page *p, int fine, int seed, int letters)
 	}
 }
 
-/* (fax_util.h) a standard page (seed 1) and a fine one (seed 2) into a
+/* (fax_util.h) a standard page (seed) and a fine one (seed + 1) into a
    TIFF; light: 300 "letters" a page instead of 4000 */
 testing::AssertionResult write_test_doc(const std::string &path, bool light,
-					bool rtc)
+					bool rtc, int seed)
 {
 	TiffOut t;
 	T4Page p;
@@ -80,10 +80,10 @@ testing::AssertionResult write_test_doc(const std::string &path, bool light,
 	if (t.open(path.c_str()))
 		return testing::AssertionFailure() << "cannot write " << path;
 	t.rtc = rtc;
-	test_page(&p, 0, 1, letters);
+	test_page(&p, 0, seed, letters);
 	t.write_page(&p);
 	p.release();
-	test_page(&p, 1, 2, letters);
+	test_page(&p, 1, seed + 1, letters);
 	t.write_page(&p);
 	p.release();
 	if (t.close())

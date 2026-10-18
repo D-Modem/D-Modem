@@ -16,10 +16,19 @@
 /* a file of this test's own in the build directory (fax/<test>_<what>) */
 std::string fax_file(const char *what);
 
-/* the test document of two pages (one standard, one fine); light: with
-   less on them, quicker to send; rtc: each page's data ending in RTC */
+namespace dsp {
+struct T4Page;
+}
+
+/* a test page (fine: 196 lines per inch) of so many "letters" placed by
+   rand() from seed */
+void test_page(dsp::T4Page *p, int fine, int seed, int letters);
+
+/* the test document of two pages (one standard, one fine), their seeds
+   seed and seed + 1; light: with less on them, quicker to send; rtc:
+   each page's data ending in RTC */
 testing::AssertionResult write_test_doc(const std::string &path, bool light,
-					bool rtc = false);
+					bool rtc = false, int seed = 1);
 
 /* the same pages in both files */
 testing::AssertionResult same_pages(const std::string &a,

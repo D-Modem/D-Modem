@@ -39,6 +39,8 @@ enum {
 };
 
 #define V17_BRIDGE_WORD 0x8880
+/* how much slower the V.17 AGC is in the data than in the training */
+#define V17_DATA_AGC_SLOWER 16
 
 static const int cdba_to_abcd[4] = { 2, 3, 1, 0 };
 static const int dibit_to_step[4] = { 1, 0, 2, 3 };
@@ -163,6 +165,18 @@ static float mod_power(enum fax_mod m)
 	case FM_V29_9600: return 13.5f;
 	case FM_V29_7200: return 5.5f;
 	default: return 9.0f;
+	}
+}
+
+/* mean power of the data symbols: V.17's constellations at 14400 and
+   12000 are a little stronger than their training (A, B, C and D,
+   mod_power()) */
+static float data_mean_power(enum fax_mod m)
+{
+	switch (m) {
+	case FM_V17_14400: return 41.0f;
+	case FM_V17_12000: return 42.0f;
+	default: return mod_power(m);
 	}
 }
 
@@ -650,6 +664,34 @@ void FaxRx::bits_out(int q, int n, int msb_first)
 	}
 }
 
+/* V.17: the loops at the start of the data.  The training leaves the
+   level and the timing known; what is left, the data itself moves:
+   - the AGC (30 ms, some 70 symbols) follows the mean power of the
+     symbols it has just seen, and at 14400 the corners are some 4
+     times the mean: a run of outer or inner points moves the gain by a
+     few per cent, which a page's rows of the same few patterns do,
+     and the outer points then land a good part of their spacing off.
+     16 times slower, the equalizer and the gain correction in
+     data_symbol() follow the rest.
+   - the AGC aims at the data's mean power, a little higher at 14400
+     and 12000 than the training's; its estimate moves with it, so the
+     gain does not jump.
+   - Gardner's timing error on the data is noisier than on the
+     training: half the training's gain (and a sixth of it after 1000
+     symbols). */
+void FaxRx::data_start()
+{
+	float r;
+
+	if (!is_v17(mod))
+		return;
+	r = data_mean_power(mod) / mod_power(mod);
+	qam.agc_target *= r;
+	qam.agc_pwr *= r;
+	qam.agc_alpha = agc_alpha / V17_DATA_AGC_SLOWER;
+	qam.kt_p = 0.015f * qam.sps;
+}
+
 /* a data symbol: the decision (V.17: the Viterbi decoder's, late), the
    bits out, the error and power estimates, the V.17 gain correction, the
    equalizer's adaptation and the copies of a good one for save() */
@@ -702,7 +744,7 @@ void FaxRx::data_symbol()
 				bits_out(bits, 3, 1);
 		}
 	}
-	mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / mod_power(mod) - mse);
+	mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / data_mean_power(mod) - mse);
 	zpow += 0.01f * (cplx_pow(z) - zpow);
 	/* V.17: the original library's data constellation comes some 1.4 dB
 	   below its training; decisions on the dense rates then miss and
@@ -714,11 +756,11 @@ void FaxRx::data_symbol()
 		zpow_slow = zpow;
 	zpow_slow += 0.002f * (cplx_pow(z) - zpow_slow);
 	if (is_v17(mod) && data_sym >= 600 && (data_sym & 255) == 0 &&
-	    zpow_slow > mse * mod_power(mod)) {
+	    zpow_slow > mse * data_mean_power(mod)) {
 		/* the signal's part of the power: less the noise around the
 		   decisions */
-		float f = sqrtf(mod_power(mod) /
-				(zpow_slow - mse * mod_power(mod)));
+		float f = sqrtf(data_mean_power(mod) /
+				(zpow_slow - mse * data_mean_power(mod)));
 		/* only a clear error */
 		if (fabsf(f - 1) > 0.06f) {
 			f = 1 + 0.5f * (f - 1);
@@ -737,7 +779,7 @@ void FaxRx::data_symbol()
 	if (data_sym % 2400 == 0)
 		DSP_DBG("fax rx: data mse %.5f (%.1f dB), power %.3f of the "
 			"constellation's\n", mse, -10 * log10f(mse + 1e-9f),
-			zpow / mod_power(mod));
+			zpow / data_mean_power(mod));
 	/* the timing loop slows down once it has surely settled (a short
 	   train leaves it little time) */
 	if (data_sym == 1000) {
@@ -753,7 +795,7 @@ void FaxRx::data_symbol()
 			     data_sym < 300 ? 0.015f : 0.005f, 0.02f, 0.0002f);
 	/* keep a copy of a good equalizer for a later short train (the
 	   end of the signal would spoil the live one) */
-	mse_fast += 0.1f * (cplx_pow(cplx_sub(z, d)) / mod_power(mod) -
+	mse_fast += 0.1f * (cplx_pow(cplx_sub(z, d)) / data_mean_power(mod) -
 			       mse_fast);
 	if (data_sym == 1)
 		data_power = qam.power;
@@ -861,6 +903,19 @@ void FaxRx::symbol()
 				   the long train, timing has settled by now */
 				memcpy(qam.eq, mem_eq, sizeof(qam.eq));
 				qam.recompute();
+				/* and its gain: the level here is the one of the
+				   alternations, whose power is in the band edges
+				   and comes out some 0.6 dB off.  A clearly
+				   different level is a new one, kept. */
+				if (mem_gain > 0 && qam.agc_gain > 0 &&
+				    fabsf(20 * log10f(qam.agc_gain / mem_gain)) <
+				    1.5f) {
+					qam.agc_pwr = qam.agc_target /
+						(mem_gain * mem_gain);
+					qam.agc_gain = mem_gain;
+					qam.agc_alpha = agc_alpha /
+						V17_DATA_AGC_SLOWER;
+				}
 				DSP_DBG("fax rx: equalizer of the long train\n");
 			}
 			qam.align_phase(ref_point(k));
@@ -887,6 +942,7 @@ void FaxRx::symbol()
 					"bridge\n");
 				stage = RXS_DATA;
 				data_sym = 8;
+				data_start();
 				vit.last_y12 = 0;
 				DSP_DBG("fax rx: data\n");
 			}
@@ -907,6 +963,7 @@ void FaxRx::symbol()
 		if (++seg_sym >= ref_len) {
 			stage = RXS_DATA;
 			data_sym = 0;
+			data_start();
 			/* the data path continues from the last training
 			   state (V.27ter, V.17 bridge) or from 0 (V.29) */
 			if (is_v17(mod))
