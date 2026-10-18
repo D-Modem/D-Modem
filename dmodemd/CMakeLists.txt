@@ -58,6 +58,10 @@ if(DMODEM_DMODEMD)
 		target_link_libraries(dmodemd PRIVATE dmodem_sip)
 		install(TARGETS dmodemd RUNTIME
 			DESTINATION ${CMAKE_INSTALL_SBINDIR})
+		# HD-audio modem codecs outside snd-hda-codec-si3054's list
+		# for -a (docs/hardware.md)
+		install(PROGRAMS hda-modem-setup
+			DESTINATION ${CMAKE_INSTALL_SBINDIR})
 	endif()
 	dmodem_flags(dmodemd)
 	# -a: a softmodem's codec through ALSA for the line (alsa_line.cpp),
@@ -128,6 +132,11 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_root PROPERTIES LABELS quick
 			SKIP_RETURN_CODE 77 TIMEOUT 60)
+		dmodem_add_test(hda_modem_setup ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/hda_modem_setup_test.py
+			${CMAKE_CURRENT_SOURCE_DIR}/hda-modem-setup)
+		set_tests_properties(hda_modem_setup PROPERTIES LABELS quick
+			TIMEOUT 60)
 		if(ALSA_FOUND)
 			dmodem_add_test(dmodemd_alsa ${Python3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/test/alsa_test.py

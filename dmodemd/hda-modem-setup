@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Neo-Desktop
+#
+# hda-modem-setup [list|write|remove] [options]: HD-audio modem codecs
+# for dmodemd -a.
+#
+# Linux's snd-hda-codec-si3054 drives Silicon Labs' Si3054/3055 and the
+# codecs made to the same interface, but binds only the vendor IDs in
+# its list.  A compatible codec with an ID outside the list gets no
+# driver and no ALSA device.  snd-hda-intel's early patching
+# (CONFIG_SND_HDA_PATCH_LOADER) can give such a codec the Si3054's
+# vendor ID, so that the driver binds it:
+#
+#   list    the codecs with a modem function group: their card and
+#           address, IDs, driver, and whether they are in the list
+#           (the default)
+#   write   for the modem codecs with no driver and not in the list
+#           (or those given with --codec): the patch file
+#           (<firmware dir>/dmodem-hda-modem.fw) and the module option
+#           that loads it (<modprobe dir>/dmodem-hda-modem.conf); the
+#           change takes effect when snd-hda-intel loads again (a reboot)
+#   remove  both files again
+#
+# Whether a codec outside the list really is Si3054-compatible only the
+# driver can tell, once it has bound it: then it reads the line side
+# chip's ID, and an incompatible codec fails its init ("Link Frame
+# Detect(FDT) is not ready" in the kernel log).  `list` afterwards shows
+# the driver bound; remove the files again if it failed.
+#
+# Options: --sysfs <dir> (/sys), --firmware-dir <dir> (/lib/firmware),
+# --modprobe-dir <dir> (/etc/modprobe.d), --kconfig <file> (the running
+# kernel's configuration: /boot/config-<release> or /proc/config.gz),
+# --codec <hdaudioCnDm> (with write: that codec only; more than once for
+# more).
+import argparse, glob, gzip, os, platform, sys
+
+# snd-hda-codec-si3054's vendor IDs (sound/pci/hda/patch_si3054.c, as
+# of Linux 6.x) and its name for the chip
+SI3054_IDS = {
+    0x163c3055: "Silicon Labs Si3054",
+    0x163c3155: "Silicon Labs Si3054",
+    0x11c13026: "Agere",
+    0x11c13055: "Agere",
+    0x11c13155: "Agere",
+    0x10573055: "Motorola",
+    0x10573057: "Motorola",
+    0x10573155: "Motorola",
+    0x11063288: "VIA (Clevo M540)",
+    0x15433155: "SM56 (Asus A8J)",
+    0x18540018: "LG (LW20)",
+}
+SI3054 = 0x163c3055
+PATCH = "dmodem-hda-modem.fw"
+CONF = "dmodem-hda-modem.conf"
+
+
+def read(path):
+    """a sysfs attribute's text, or None"""
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def number(text):
+    """a sysfs number (0x...), 0 if none"""
+    try:
+        return int(text, 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+class Codec:
+    """a codec of /sys/bus/hdaudio/devices: hdaudioC<card>D<addr>"""
+
+    def __init__(self, path):
+        self.name = os.path.basename(path)
+        rest = self.name[len("hdaudioC"):]
+        card, _, addr = rest.partition("D")
+        self.card, self.addr = int(card), int(addr)
+        self.vendor = number(read(os.path.join(path, "vendor_id")))
+        self.subsystem = number(read(os.path.join(path, "subsystem_id")))
+        self.revision = number(read(os.path.join(path, "revision_id")))
+        self.mfg = number(read(os.path.join(path, "mfg")))
+        self.chip = read(os.path.join(path, "chip_name")) or ""
+        drv = os.path.join(path, "driver")
+        self.driver = os.path.basename(os.readlink(drv)) \
+            if os.path.islink(drv) else None
+
+    def ids(self):
+        return "%04x:%04x" % (self.vendor >> 16, self.vendor & 0xffff)
+
+    def status(self):
+        if self.vendor in SI3054_IDS:
+            return "in snd-hda-codec-si3054's list (%s)" % SI3054_IDS[self.vendor]
+        if self.driver:
+            return "driven by %s" % self.driver
+        return "no driver: a candidate for the Si3054 driver"
+
+    def candidate(self):
+        return self.vendor not in SI3054_IDS and not self.driver
+
+
+def modem_codecs(sysfs):
+    """the codecs with a modem function group, by card and address"""
+    codecs = []
+    for p in glob.glob(os.path.join(sysfs, "bus/hdaudio/devices/hdaudioC*D*")):
+        try:
+            c = Codec(p)
+        except ValueError:
+            continue
+        if c.mfg:
+            codecs.append(c)
+    return sorted(codecs, key=lambda c: (c.card, c.addr))
+
+
+def kconfig(path):
+    """the running kernel's configuration as {option: value}, or None"""
+    paths = [path] if path else ["/boot/config-" + platform.release(),
+                                 "/proc/config.gz"]
+    for p in paths:
+        try:
+            opener = gzip.open if p.endswith(".gz") else open
+            with opener(p, "rt") as f:
+                return dict(l.strip().split("=", 1) for l in f
+                            if "=" in l and not l.startswith("#"))
+        except OSError:
+            continue
+    return None
+
+
+def check_kernel(args):
+    """warnings about the running kernel's configuration; True if it
+    has what the patch needs, or cannot be read"""
+    cfg = kconfig(args.kconfig)
+    if cfg is None:
+        print("note: the kernel's configuration cannot be read; it needs "
+              "CONFIG_SND_HDA_PATCH_LOADER=y and CONFIG_SND_HDA_CODEC_SI3054")
+        return True
+    ok = True
+    if cfg.get("CONFIG_SND_HDA_PATCH_LOADER") != "y":
+        print("error: this kernel has no CONFIG_SND_HDA_PATCH_LOADER: "
+              "snd-hda-intel cannot load the patch")
+        ok = False
+    if cfg.get("CONFIG_SND_HDA_CODEC_SI3054") not in ("y", "m"):
+        print("error: this kernel has no snd-hda-codec-si3054 "
+              "(CONFIG_SND_HDA_CODEC_SI3054)")
+        ok = False
+    return ok
+
+
+def patch_text(codecs):
+    """the patch file: each codec's [codec] line, given the Si3054's ID"""
+    out = ["# written by dmodemd's hda-modem-setup: these modem codecs get",
+           "# the Si3054's vendor ID, so that snd-hda-codec-si3054 binds them",
+           "# (hda-modem-setup remove takes this away again)"]
+    for c in codecs:
+        out += ["", "[codec]",
+                "0x%08x 0x%08x %d" % (c.vendor, c.subsystem, c.addr),
+                "", "[vendor_id]", "0x%08x" % SI3054]
+    return "\n".join(out) + "\n"
+
+
+def conf_text(codecs):
+    """the module option: the patch for each card that has one of the
+    codecs (an empty entry for the cards before it that have none)"""
+    cards = {c.card for c in codecs}
+    entries = [PATCH if n in cards else "" for n in range(max(cards) + 1)]
+    return ("# written by dmodemd's hda-modem-setup (see %s)\n"
+            "options snd-hda-intel patch=%s\n" % (PATCH, ",".join(entries)))
+
+
+def other_patch_options(args):
+    """modprobe files of others that give snd-hda-intel a patch already"""
+    found = []
+    for p in sorted(glob.glob(os.path.join(args.modprobe_dir, "*.conf"))):
+        if os.path.basename(p) == CONF:
+            continue
+        try:
+            with open(p) as f:
+                for line in f:
+                    w = line.split()
+                    if len(w) >= 2 and w[0] == "options" and \
+                       w[1].replace("_", "-") == "snd-hda-intel" and \
+                       any(x.startswith("patch=") for x in w[2:]):
+                        found.append(p)
+        except OSError:
+            pass
+    return found
+
+
+def cmd_list(args):
+    codecs = modem_codecs(args.sysfs)
+    if not codecs:
+        print("no HD-audio modem codec")
+        return 0
+    for c in codecs:
+        print("%s: card %d, address %d: %s, subsystem %08x, revision %x%s" %
+              (c.name, c.card, c.addr, c.ids(), c.subsystem, c.revision,
+               " (%s)" % c.chip if c.chip else ""))
+        print("    %s" % c.status())
+    return 0
+
+
+def cmd_write(args):
+    codecs = modem_codecs(args.sysfs)
+    if args.codec:
+        names = {c.name: c for c in codecs}
+        missing = [n for n in args.codec if n not in names]
+        if missing:
+            print("error: no modem codec %s" % ", ".join(missing))
+            return 1
+        chosen = [names[n] for n in args.codec]
+    else:
+        chosen = [c for c in codecs if c.candidate()]
+    if not chosen:
+        print("no modem codec needs it: those there are driven, or in the "
+              "Si3054 driver's list (hda-modem-setup list)")
+        return 0
+    if not check_kernel(args):
+        return 1
+    for p in other_patch_options(args):
+        print("warning: %s gives snd-hda-intel a patch already: only one "
+              "patch= option takes effect" % p)
+    fw = os.path.join(args.firmware_dir, PATCH)
+    conf = os.path.join(args.modprobe_dir, CONF)
+    try:
+        os.makedirs(args.firmware_dir, exist_ok=True)
+        os.makedirs(args.modprobe_dir, exist_ok=True)
+        with open(fw, "w") as f:
+            f.write(patch_text(chosen))
+        with open(conf, "w") as f:
+            f.write(conf_text(chosen))
+    except OSError as e:
+        print("error: %s (as root?)" % e)
+        return 1
+    for c in chosen:
+        print("%s (%s): the Si3054's ID once snd-hda-intel loads again" %
+              (c.name, c.ids()))
+    print("wrote %s and %s" % (fw, conf))
+    print("Reboot (if snd-hda-intel is in the initramfs, rebuild it first:\n"
+          "update-initramfs -u, dracut -f, ...), then check:\n"
+          "  hda-modem-setup list      the codec driven by snd_hda_codec_si3054\n"
+          "  aplay -l                  its \"Modem\" device, for dmodemd -a\n"
+          "  dmesg | grep -i -e si3054 -e 'line side'\n"
+          "\"Link Frame Detect(FDT) is not ready\" there means the codec is not\n"
+          "Si3054-compatible: hda-modem-setup remove, and reboot.")
+    return 0
+
+
+def cmd_remove(args):
+    removed = 0
+    for p in (os.path.join(args.firmware_dir, PATCH),
+              os.path.join(args.modprobe_dir, CONF)):
+        try:
+            os.remove(p)
+            print("removed %s" % p)
+            removed += 1
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            print("error: %s (as root?)" % e)
+            return 1
+    if not removed:
+        print("nothing to remove")
+    else:
+        print("The codecs get their own IDs again when snd-hda-intel "
+              "loads again (a reboot).")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="HD-audio modem codecs for dmodemd -a: list them, or "
+        "give Si3054-compatible ones outside snd-hda-codec-si3054's list "
+        "the Si3054's ID (snd-hda-intel's early patching)")
+    ap.add_argument("action", nargs="?", default="list",
+                    choices=("list", "write", "remove"))
+    ap.add_argument("--sysfs", default="/sys")
+    ap.add_argument("--firmware-dir", default="/lib/firmware")
+    ap.add_argument("--modprobe-dir", default="/etc/modprobe.d")
+    ap.add_argument("--kconfig", default=None)
+    ap.add_argument("--codec", action="append", default=[])
+    args = ap.parse_args()
+    return {"list": cmd_list, "write": cmd_write,
+            "remove": cmd_remove}[args.action](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

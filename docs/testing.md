@@ -57,6 +57,7 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | `call_tone_test`, `ring_detect_test` | the call progress tones a voice dial hears (ringing, busy, answer tones) and the ring signal a modem codec hears on hook (`dsp.h`'s `CallToneDetect`, `RingDetect`) |
 | `dmodemd/test/alsa_test.py` (`dmodemd_alsa`, label `alsa`) | two dmodemd on fake ALSA modem cards (alsa-lib plugins), calling each other through a simulated exchange: dial tone, DTMF, rings, caller ID, V.34, busy, a stall, a voice call ([hardware.md](hardware.md)). Needs libasound2-dev |
 | `dmodemd/test/root_test.py` (`dmodemd_root`) | dmodemd started as root: it goes on as nobody, saves its data file, and its pty's group and link (kept by a process of its own) follow the new pty after the DTE hangs up and go when it ends, even killed. Skipped unless ctest runs as root (CI runs it with sudo) |
+| `dmodemd/test/hda_modem_setup_test.py` (`hda_modem_setup`) | `hda-modem-setup` on a fake sysfs and kernel configuration: the modem codecs listed with their drivers, the early patch (the Si3054's vendor ID) and its module option written for the one with no driver outside snd-hda-codec-si3054's list, or for one named; refused without the patch loader; another `patch=` option warned of; both files removed |
 
 ## Test logs
 

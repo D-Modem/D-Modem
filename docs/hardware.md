@@ -27,11 +27,56 @@ The codec appears as a card's PCM, with two switches among its controls:
 
 An HD-audio modem is a device of the audio card, e.g. `hw:0,6`.
 
+### HD-audio modems outside the Si3054 list
+
+`snd-hda-codec-si3054` binds only the vendor IDs above. A modem codec
+made to the same interface under another ID gets no driver, and so no
+ALSA device. `snd-hda-intel` can give such a codec the Si3054's vendor
+ID through its early patching (`CONFIG_SND_HDA_PATCH_LOADER`, in most
+distributions' kernels), and the driver then binds it.
+`hda-modem-setup` (installed beside dmodemd) does this:
+
+    hda-modem-setup               # list the modem codecs
+    sudo hda-modem-setup write    # the patch for those with no driver
+    sudo reboot
+    hda-modem-setup list          # now driven by snd_hda_codec_si3054?
+
+`list` shows each codec with a modem function group
+(`/sys/bus/hdaudio/devices`): its card and address, its IDs, its
+driver, and whether it is in the Si3054 list. `write` takes the modem
+codecs that have no driver and are not in the list (or those named
+with `--codec hdaudioC<card>D<addr>`). For each it writes a `[codec]`
+section, with `[vendor_id] 0x163c3055`, to
+`/lib/firmware/dmodem-hda-modem.fw`. It also writes the module option
+that loads the file for the codec's card to
+`/etc/modprobe.d/dmodem-hda-modem.conf`
+(`options snd-hda-intel patch=...`). It checks the running kernel's
+configuration for the patch loader and the Si3054 driver, and warns
+of another `patch=` option for `snd-hda-intel`, as only one takes
+effect. The change takes effect the next time `snd-hda-intel` loads.
+If the module is in the initramfs, rebuild that first
+(`update-initramfs -u`, `dracut -f`).
+
+Whether the codec really is Si3054-compatible, only the driver can
+tell once it has bound it. At its init it checks the link to the
+line side chip, and logs the chip's ID. "Link Frame Detect(FDT) is not
+ready" in `dmesg` means the codec is not compatible:
+`sudo hda-modem-setup remove`, and reboot. Conexant's HD-audio modems
+(`14f1:2bfa`, `14f1:2c06` and the others of `14f1`) are of another
+kind: their DAA is behind Conexant's own verbs, and this does not
+cover them.
+
+`dmodemd/test/hda_modem_setup_test.py` (ctest's `hda_modem_setup`,
+label `quick`) runs the helper on a fake sysfs and kernel
+configuration. The patch itself has not been tried on a real codec.
+
 Not covered yet, because Linux has no driver that gives their samples:
 
 - Conexant's AC'97 codecs (their hook is in the SmartDAA behind codec
   register 0x7a, not the standard GPIO);
-- Conexant's and some Agere HD-audio modems not in the Si3054 list;
+- HD-audio modems that are not Si3054-compatible, such as Conexant's
+  (the compatible ones outside the Si3054 list: `hda-modem-setup`,
+  above);
 - modems with their own PCI controller (Smart Link SmartPCI, PCTel HSP,
   Lucent/Agere PCI, Conexant HSF PCI, Broadcom BCM4212);
 - Smart Link's USB modem (ST7554).

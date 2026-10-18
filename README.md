@@ -141,7 +141,7 @@ dmodemd can be the modem of an AC'97 or HD-audio softmodem (the Si3054 kind) tha
 
     # ./build/dmodemd/dmodemd -a hw:1
 
-`aplay -l` lists the card's "Modem" device (an HD-audio modem is a device of the audio card, e.g. `hw:0,6`).  The modem dials in DTMF after the dial tone (`ATX4`), hears rings and caller ID on hook, and connects at V.34 and below, with fax and voice too.  [docs/hardware.md](docs/hardware.md) lists the hardware and the limits.  It has been tested on a simulated line (`ctest -L alsa`), not yet on a real codec.
+`aplay -l` lists the card's "Modem" device (an HD-audio modem is a device of the audio card, e.g. `hw:0,6`).  The modem dials in DTMF after the dial tone (`ATX4`), hears rings and caller ID on hook, and connects at V.34 and below, with fax and voice too.  An HD-audio modem codec that is Si3054-compatible but outside the kernel driver's list of IDs gets the driver with `hda-modem-setup write` (snd-hda-intel's early patching).  [docs/hardware.md](docs/hardware.md) lists the hardware and the limits.  It has been tested on a simulated line (`ctest -L alsa`), not yet on a real codec.
 
 ## Known Issues / Future Work
 - For a server answering many calls (a BBS, PPP dial-in or fax), the Asterisk module in `asterisk/` or the FreeSWITCH module in `freeswitch/` is the better fit than `dmodemd -L`: it answers with the open modem at V.91 (another digital modem calling, up to 62667 bps both ways), V.90 (as the digital modem, up to 56000 bps downstream), V.34, V.32bis, V.22bis, V.22 or V.21.
