@@ -32,8 +32,19 @@
  *    the same line as a 9600 Hz one (the raised cosine, NET_PHASE and
  *    NET_PPM, the pad and robbed bits), its samples on the network's
  *    clock only at phase 0 and no ppm.
+ *
+ *    NET_RING=<country> (ring_tones.h's names: USA, UK, GERMANY, ...):
+ *    the line rings as that country's does.  The modems say their hook
+ *    on NET_HOOK_A and NET_HOOK_B (fds: '1' off hook, '0' on, as
+ *    PipeModem's MODEM_HOOK_FD writes it); NET_RING_DELAY seconds (1)
+ *    after A goes off hook (its dialling), B's line has the country's
+ *    ring signal (its frequency, in the cadence of its ringing tone)
+ *    while B is on hook, and A hears the ringing tone; B off hook
+ *    answers, and the line is through.  Until then neither hears the
+ *    other; A on hook (0.5 s: not a dial pulse) ends the call.
  */
 #include <errno.h>
+#include <fcntl.h>
 #include <math.h>
 #include <poll.h>
 #include <signal.h>
@@ -46,6 +57,7 @@
 #include "dsp.h"
 #include "g711.h"
 #include "qam.h"
+#include "ring_tones.h"
 #include "v34.h"
 
 using namespace dsp;
@@ -652,10 +664,138 @@ struct Moh {
 	}
 };
 
+/* NET_RING=<country>, NET_HOOK_A, NET_HOOK_B, NET_RING_DELAY: the call
+   rung through as the country's line rings it (above) */
+struct Ring {
+	const ring::Country *ring_c = nullptr;
+	int ring_fd[2] = { -1, -1 };    /* A's hook, B's */
+	bool ring_off[2] = {};          /* off hook */
+	enum { IDLE, DIALLING, RINGING, ANSWERED } ring_st = IDLE;
+	double ring_delay = 1;          /* s from A off hook to the ringing */
+	double ring_now = 0;            /* s: A -> B's samples out */
+	double ring_at = 0;             /* the state's start */
+	double ring_a_on = -1;          /* since when A is on hook (its
+					   dial pulses and flashes, shorter
+					   than 0.5 s, end no call) */
+	long ring_n[2] = {};            /* samples out, each direction */
+
+	/* from the environment; false (said) if the country is none */
+	bool ring_init()
+	{
+		const char *c = getenv("NET_RING");
+		if (!c)
+			return true;
+		ring_c = ring::find(c);
+		if (!ring_c) {
+			fprintf(stderr, "netsim: NET_RING=%s: no such country "
+				"(ring_tones.cpp)\n", c);
+			return false;
+		}
+		const char *h[2] = { getenv("NET_HOOK_A"), getenv("NET_HOOK_B") };
+		for (int k = 0; k < 2; k++)
+			if (h[k]) {
+				ring_fd[k] = atoi(h[k]);
+				fcntl(ring_fd[k], F_SETFL,
+				      fcntl(ring_fd[k], F_GETFL) | O_NONBLOCK);
+			}
+		if (getenv("NET_RING_DELAY"))
+			ring_delay = atof(getenv("NET_RING_DELAY"));
+		char tone[64];
+		int n = snprintf(tone, sizeof(tone), "%d", ring_c->f1);
+		if (ring_c->f2)
+			snprintf(tone + n, sizeof(tone) - n, " + %d", ring_c->f2);
+		else if (ring_c->mod > 0)
+			snprintf(tone + n, sizeof(tone) - n, " x %g", ring_c->mod);
+		fprintf(stderr, "netsim: the line rings as in %s: its ringing "
+			"tone %s Hz, the ring signal %d Hz\n", ring_c->name,
+			tone, ring_c->ring_hz);
+		return true;
+	}
+	/* the state to s from now on */
+	void ring_to(int s)
+	{
+		static const char *const name[] = { "idle", "dialling",
+			"ringing", "answered" };
+		if (s == ring_st)
+			return;
+		char after[64] = "";
+		if (s == ANSWERED && ring_st == RINGING)
+			snprintf(after, sizeof(after), " after %.1f s of ringing",
+				 ring_now - ring_at);
+		fprintf(stderr, "netsim: %.2f s: %s%s\n", ring_now, name[s],
+			after);
+		ring_st = (decltype(ring_st))s;
+		ring_at = ring_now;
+	}
+	/* the hooks' news, and the call's state at ring_now */
+	void ring_poll()
+	{
+		for (int k = 0; k < 2; k++) {
+			char b[64];
+			ssize_t n;
+			while (ring_fd[k] >= 0 &&
+			       (n = read(ring_fd[k], b, sizeof(b))) > 0)
+				ring_off[k] = b[n - 1] == '1';
+		}
+		if (ring_off[0])
+			ring_a_on = -1;
+		else if (ring_a_on < 0)
+			ring_a_on = ring_now;
+		if (ring_a_on >= 0 && ring_now - ring_a_on >= 0.5)
+			ring_to(IDLE);
+		else if (ring_off[0] && ring_st == IDLE)
+			ring_to(DIALLING);
+		if (ring_st == DIALLING && ring_now - ring_at >= ring_delay)
+			ring_to(RINGING);
+		if (ring_st == RINGING && ring_off[1])
+			ring_to(ANSWERED);
+	}
+	/* a sample of the ringing tone, at t s of it */
+	short ring_tone(double t) const
+	{
+		const ring::Country &c = *ring_c;
+		if (!ring::on_at(c, t))
+			return 0;
+		double x = sin(2 * M_PI * c.f1 * t);
+		if (c.f2)
+			x = (x + sin(2 * M_PI * c.f2 * t)) / 2;
+		if (c.mod > 0)
+			x *= 0.6 + 0.4 * sin(2 * M_PI * c.mod * t);
+		return (short)lrint(5000 * x);
+	}
+	/* the ring signal at t s of it, on B's line on hook */
+	short ring_signal(double t) const
+	{
+		if (!ring::on_at(*ring_c, t))
+			return 0;
+		return (short)lrint(24000 * sin(2 * M_PI * ring_c->ring_hz * t));
+	}
+	/* a direction's n samples out (to B: a_out) at rate: the line's
+	   until the call is answered */
+	void ring_line(short *s, int n, int a_out, int rate)
+	{
+		int k = a_out ? 0 : 1;
+		for (int i = 0; i < n; i++) {
+			double t = (double)ring_n[k]++ / rate;
+			if (a_out) {
+				ring_now = t;
+				if ((i & 63) == 0)
+					ring_poll();
+			}
+			if (ring_st == ANSWERED)
+				continue;
+			double r = t - ring_at;
+			s[i] = ring_st != RINGING ? 0 :
+				a_out ? (ring_off[1] ? 0 : ring_signal(r)) :
+				ring_tone(r);
+		}
+	}
+};
+
 /* the network: the law (alaw) or a speech codec (NET_CODEC), the far
    codec of a 9600 Hz modem and the gains on the way (NET_PLAIN, NET_GAIN,
    NET_GAIN_UP), the impairments */
-struct Net : Drop, Step, Noise, Loop, Echo, Moh {
+struct Net : Drop, Step, Noise, Loop, Echo, Moh, Ring {
 	int plain;      /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
 			   resampler of dsp_util, not the raised cosine (the
 			   law still on the 8000 Hz samples) */
@@ -820,6 +960,8 @@ int Net::run(struct dir *d, int a_out, int a_in)
 	if (a_out && line_clock)
 		__atomic_store_n(line_clock, (long long)d->nin * 1000000 /
 				 d->rate_in, __ATOMIC_RELAXED);
+	if (ring_c)
+		ring_line(d->obuf, o, a_out, d->rate_out);
 	if (wav)
 		wav_flush(wav_sig > 1);
 	for (i = 0; i < o * 2; ) {
@@ -886,6 +1028,8 @@ int main(int argc, char **argv)
 		signal(SIGUSR1, on_sync);
 	}
 	net.init(ra);
+	if (!net.ring_init())
+		return 1;
 	if (getenv("NET_CLOCK_FD")) {
 		void *m = mmap(NULL, sizeof(*line_clock), PROT_READ |
 			       PROT_WRITE, MAP_SHARED,

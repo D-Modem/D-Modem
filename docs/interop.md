@@ -1067,6 +1067,51 @@ real PCM line has it). The fax calls are at 8000 Hz with `half_open8`,
 the fax relay being at one rate. `hw_test` checks the controller and the
 codec by themselves.
 
+## The line rung
+
+With `NET_RING=<country>` netsim rings the call through as that
+country's line does, where it otherwise only carries the samples:
+
+- the modems say their hook to it (`half_open`'s `PipeModem` and
+  `half_hda` write `1` off hook and `0` on to `MODEM_HOOK_FD`, which
+  `interop_call` makes their fd 5 and netsim's `NET_HOOK_A` and
+  `NET_HOOK_B`);
+- `NET_RING_DELAY` seconds (1) after A goes off hook (its digits), B's
+  line, on hook, has the ring signal (25 Hz, 20 Hz with the North
+  American tone, 16 Hz in Japan, 50 Hz in France's networks; 24000 at its
+  peak) in the cadence of the country's ringing tone, and A hears the
+  ringing tone itself (its frequency or two, or one modulated);
+- B off hook answers it, and from then on the line is through. Until
+  then each hears only that; A on hook for 0.5 s (longer than a dial
+  pulse) ends the call.
+
+The countries are those of the ITU's list of the tones used in national
+networks (Annex to ITU Operational Bulletin No. 955, position on 1 May
+2010, after Recommendation E.180), 192 of them: `ring_tones.cpp`,
+generated from the list's Word file by `ring_tones_gen.py`, which says
+how it picks a tone where the list gives several. Names are the list's
+in capitals (`UNITED_KINGDOM_OF_GREAT_BRITAIN_AND_NORTHERN_IRELAND`), or
+an alias: the core's country names (`UK`, `USA`, `SOUTHKOREA`, ...) and
+a few short ones.
+
+`ctest -L ring` makes a call between two open modems in each country, B
+answering at its first RING (V.22bis, a second of data), and a few more:
+at the second ring, two calls, V.34, `half_hda` answering, and `half_hda`
+pulse dialling. A ringing tone of 0.4 s on and 0.2 off for ever (as the
+list has for some islands) has a busy tone's cadence to a modem with the
+default country's busy bounds (0.18 to 0.6 s); those countries' callers
+dial in `ATX1`, which takes no notice of a busy tone.
+
+`ring_tones_test` checks every country without the calls: its ring
+signal through `RingDetect` to the core gives a RING for each of its
+rings, and the auto answer at S0=2. For that the core's ring check takes
+a burst of four pulses or more (a 16 Hz signal's 0.3 s); a ring still
+going when it is checked (2.5 s after its first pulse) as a ring; ringing
+with no gap of 1.5 s (Egypt's 2 s on and 1 off) as a ring every 6 s; and
+keeps a ring in S1 for 8 s, so that a cadence of up to 10 s (Serbia's 1 s
+on and 9 off) rings in time. Tuvalu's 12.5 s is longer: there each ring
+counts as the first, and only S0=1 answers.
+
 ## MNP
 
 The Agere, SM56, PCTel, HSF, Broadcom, Intel and ESS modems have MNP 2 to 4 and

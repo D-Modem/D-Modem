@@ -246,6 +246,8 @@ struct Modem {
 	std::thread logger;
 	int nice_inc = 0;       /* run it that much nicer (unpaced: the paced
 				   calls next to it first) */
+	int hook_fd = -1;       /* NET_RING: its fd 5 (MODEM_HOOK_FD), the
+				   hook's changes to netsim */
 
 	/* killed if still there */
 	~Modem() { stop(true); }
@@ -261,6 +263,8 @@ struct Modem {
 	{
 		/* ours first: getenv takes the first */
 		std::vector<std::string> envs = { "MODEM_NAME=" + name };
+		if (hook_fd >= 0)
+			envs.push_back("MODEM_HOOK_FD=5");
 		for (auto &e : extra_env)
 			envs.push_back(e);
 		for (char **e = environ; *e; e++)
@@ -282,10 +286,13 @@ struct Modem {
 				setpriority(PRIO_PROCESS, 0, nice_inc);
 			int a = fcntl(rfd, F_DUPFD, 10);
 			int b = fcntl(wfd, F_DUPFD, 10);
+			int h = hook_fd >= 0 ? fcntl(hook_fd, F_DUPFD, 10) : -1;
 			dup2(o.w, 1);
 			dup2(o.w, 2);
 			dup2(a, 3);
 			dup2(b, 4);
+			if (h >= 0)
+				dup2(h, 5);
 			execve(exe.c_str(), argv.data(), envp.data());
 			_exit(127);
 		}
@@ -611,6 +618,14 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 	std::vector<int> fds = { ab.r, ab.w, ba.r, ba.w };
 	pid_t pn = -1;
 	std::string net = env("NET");
+	/* NET_RING: the modems' hooks to netsim, which rings B's line */
+	bool ringing = !net.empty() && !env("NET_RING").empty();
+	Pipe hook[2];
+	if (ringing)
+		for (auto &h : hook) {
+			fds.push_back(h.r);
+			fds.push_back(h.w);
+		}
 	if (!net.empty()) {
 		auto r = split(net, ':');
 		if (r.size() != 3) {
@@ -645,6 +660,10 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		if (unpaced && clock.open_line())
 			envs.push_back("NET_CLOCK_FD=" +
 				       std::to_string(clock.fd()));
+		if (ringing) {
+			envs.push_back("NET_HOOK_A=" + std::to_string(hook[0].r));
+			envs.push_back("NET_HOOK_B=" + std::to_string(hook[1].r));
+		}
 		for (char **e = environ; *e; e++)
 			envs.push_back(*e);
 		std::vector<char *> envp;
@@ -657,7 +676,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			die_with(parent);
 			if (nice_inc)
 				setpriority(PRIO_PROCESS, 0, nice_inc);
-			for (int f : { an.r, na.w, bn.r, nb.w, clock.fd() })
+			for (int f : { an.r, na.w, bn.r, nb.w, clock.fd(),
+				       ringing ? hook[0].r : -1,
+				       ringing ? hook[1].r : -1 })
 				if (f >= 0)
 					cloexec(f, false);
 			if (netsim.find('/') != std::string::npos)
@@ -679,8 +700,11 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 	dte.clock = &clock;
 	std::unique_ptr<Modem> m[2] = { std::make_unique<Modem>(),
 					std::make_unique<Modem>() };
-	for (auto &x : m)
-		x->nice_inc = nice_inc;
+	for (int k = 0; k < 2; k++) {
+		m[k]->nice_inc = nice_inc;
+		if (ringing)
+			m[k]->hook_fd = hook[k].w;
+	}
 	int wav_marks = 0;
 	bool wav = pn > 0 && !env("WAV").empty();
 	/* NET_WAV's start (dial) or end (data done): SIGUSR2 to netsim, twice
@@ -798,6 +822,18 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		}
 		for (int k = 0; k < 2; k++)
 			setup(k);
+		/* NET_RING: B answers when its line rings, after RING_ANSWER
+		   rings (1) */
+		auto auto_answer = [&] {
+			dte.cmd(1, "ATS0=" + env("RING_ANSWER", "1"));
+			if (!dte.wait(1, ok_re, 5)) {
+				say("B ATS0 %s\n", show(dte.buf[1]).c_str());
+				done(false);
+			}
+			dte.buf[1].clear();
+		};
+		if (ringing)
+			auto_answer();
 
 		int calls = atoi(env("CALLS", "1").c_str());
 		for (int call = 0; call < calls; call++) {
@@ -831,6 +867,8 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 					dte.fd[1] = -1;
 					m[1] = std::make_unique<Modem>();
 					m[1]->nice_inc = nice_inc;
+					if (ringing)
+						m[1]->hook_fd = hook[1].w;
 					if (!m[1]->start(exe_b, "modemB2", b_in,
 							 b_out, dbg, {},
 							 log_dir + "/modemB2.log")) {
@@ -847,6 +885,8 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 					}
 					dte.buf[1].clear();
 					setup(1);
+					if (ringing)
+						auto_answer();
 				}
 				dte.buf[0].clear();
 				dte.buf[1].clear();
@@ -858,7 +898,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			   then on a line; else both at once */
 			double t_call = dte.t();
 			double ans_after = atof(env("ANSWER_AFTER", "0").c_str());
-			if (ans_after > 0) {
+			if (ringing) {
+				dte.cmd(0, "ATD" + env("DIAL"));
+			} else if (ans_after > 0) {
 				dte.cmd(0, "ATD" + env("DIAL"));
 				dte.pump(ans_after);
 				dte.cmd(1, "ATA");
@@ -883,6 +925,12 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				     std::string::npos);
 			if (!connected)
 				done(false);
+			/* (B answered the ringing, not by itself) */
+			if (ringing &&
+			    dte.buf[1].find("RING") == std::string::npos) {
+				say("B answered with no RING\n");
+				done(false);
+			}
 		}
 		/* NET_SYNC: netsim's NET_DROP, NET_STEP and NET_NOISE times
 		   count from here */

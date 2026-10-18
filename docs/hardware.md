@@ -168,7 +168,11 @@ that user needs access to `/dev/snd/*`.
   ring signal through the line monitor is a large wave of 15 to 70 Hz,
   and each cycle of a burst is a pulse to the core's `ring()`. That is
   what a ring indicator line gives, and the core checks the cadence
-  (`RING`, `ATS0` answering, `S1`).
+  (`RING`, `ATS0` answering, `S1`): a burst of four pulses or more, after
+  a gap of 1.5 s, is a ring; ringing with no such gap (Egypt's 2 s on
+  and 1 off) rings every 6 s; a ring counts in `S1` for 8 s. Every
+  country of the ITU's list rings this way (`ring_tones_test`,
+  [interop.md](interop.md#the-line-rung)).
 - **Caller ID.** At the first ring the core runs its caller ID receiver
   (`AT#CID`) on the monitor's samples for 4 s.
 - **Dialling.** The modem dials the number itself, in DTMF, or in pulses

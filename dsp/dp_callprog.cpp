@@ -80,6 +80,7 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	   close for the blocks: 200 ms ones tell them apart */
 	Goertzel fine2225, fine2250;
 	int need_dialtone;
+	int busy_detect;        /* X3, X4: BUSY on a busy tone */
 	int dialtone_blocks;
 
 	/* busy tone cadence detector: the bounds of its on and off times
@@ -169,9 +170,13 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 
 	dial_ = (const char *)modem_get_param(m, MDMPRM_DIALSTR);
 	dial = dial_ ? dial_ : "";
-	/* X2 and X4 wait for a dial tone, the others dial blindly */
+	/* X2 and X4 wait for a dial tone, the others dial blindly; X3
+	   and X4 report a busy tone, the others take no notice of it (a
+	   ringing tone of 0.4 s on and 0.2 off, as some countries', has
+	   the cadence of a busy tone) */
 	v = modem_get_sreg(m, SREG_X_CODE);
 	need_dialtone = (v == 2 || v == 4);
+	busy_detect = v >= 3;
 
 	calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
 	fax = modem_get_param(m, MDMPRM_MODE) == MODEM_MODE_FAX;
@@ -274,7 +279,7 @@ int CallProgPump::block()
 			busy_cycles = 0;
 		cpt_on = on;
 		cpt_run = 1;
-		if (busy_cycles >= busy_need) {
+		if (busy_detect && busy_cycles >= busy_need) {
 			DSP_DBG("callprog: busy\n");
 			return DPSTAT_BUSY;
 		}

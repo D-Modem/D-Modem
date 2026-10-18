@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <vector>
 
@@ -132,6 +133,10 @@ private:
 	int hook_ = MODEM_HOOK_ON;
 	unsigned long long samples_ = 0, flash_end_ = 0;
 	dsp::RingDetect ring_;
+	/* MODEM_HOOK_FD=<fd>: the codec's hook (GPIO_CONTROL's OH) written
+	   there on each change, '1' off hook and '0' on (netsim's NET_RING) */
+	int hook_fd_ = getenv("MODEM_HOOK_FD") ? atoi(getenv("MODEM_HOOK_FD")) : -1;
+	char hook_said_ = 0;
 
 	/* the controller's registers */
 	u32 rd(unsigned off, int size) { return hda_read(off, size); }
@@ -194,6 +199,9 @@ void HdaModem::set_switch(word bit, bool on)
 {
 	word v = get_reg(Si3054Hda::GPIO_CONTROL);
 	set_reg(Si3054Hda::GPIO_CONTROL, on ? (word)(v | bit) : (word)(v & ~bit));
+	char c = si3054_off_hook() ? '1' : '0';
+	if (hook_fd_ >= 0 && c != hook_said_ && write(hook_fd_, &c, 1) == 1)
+		hook_said_ = c;
 }
 
 /* the controller out of reset, the codec there, its IDs and its modem

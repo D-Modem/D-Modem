@@ -15,6 +15,7 @@
 #define DMODEMD_PIPE_MODEM_H
 
 #include <dcore.h>
+#include <dsp.h>
 
 #include "line_frames.h"
 #include "line_recorder.h"
@@ -62,6 +63,10 @@ public:
 	   8000 Hz analogue modem: netsim's NET_ANALOG); it dials there
 	   itself */
 	bool analog_line(dcore::Modem &) override { return analog_; }
+	/* MODEM_HOOK_FD=<fd>: each change of the hook written to it, '1'
+	   off hook and '0' on (netsim's NET_HOOK_A and NET_HOOK_B, for its
+	   NET_RING) */
+	int set_hook(dcore::Modem &m, int state) override;
 	/* for ATI3 */
 	const char *driver_name() override { return "modem_test driver"; }
 	/* to the pty */
@@ -89,6 +94,11 @@ private:
 	LineFrames line_;               /* in_'s samples */
 	bool realtime_ = false;
 	bool analog_ = false;
+	int hook_fd_ = -1;              /* MODEM_HOOK_FD */
+	char hook_ = 0;                 /* the last written there */
+	/* on hook: the line's ring signal (netsim's NET_RING), a pulse
+	   each cycle to the core's ring() */
+	dsp::RingDetect ring_;
 	double speed_ = 0;
 	/* PIPE_SYNC=<samples>: the DTE's input only every that many samples
 	   of the line, the timers on the line's clock and the line no

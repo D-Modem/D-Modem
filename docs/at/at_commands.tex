@@ -528,7 +528,10 @@ Results and dial tone, \cmd{X0} to \cmd{X4} (\sreg{56}; default 4):
 \bottomrule
 \end{tabular}
 \end{center}
-BUSY (four cadences of 0.2 to 0.8 s) and NO ANSWER come in all of them,
+BUSY on a busy tone (four cadences of 0.2 to 0.8 s) comes in \cmd{X3}
+and \cmd{X4} only, as in the Hayes set: the others take no notice of a
+busy tone (a ringing tone of 0.4~s on and 0.2~s off, as some countries
+have, keeps a busy tone's cadence).  NO ANSWER comes in all of them,
 and the dial string's \cmd{W} and \cmd{@} wait in all of them.  A SIP
 call has no dial tone: dmodemd wants \cmd{ATX3}.
 \end{command}

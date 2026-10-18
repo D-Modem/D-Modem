@@ -65,12 +65,16 @@ static const unsigned long ESCAPE_MS = 500;
 /* caller ID listens this long after the first ring */
 static const unsigned long CID_MS = 4000;
 /* a ring burst: the least gap before its first pulse, when it is
-   checked, the bounds of its length (first to last pulse), its least
-   pulses; how long a ring counts in S1 without another one */
+   checked, its least length (first to last pulse) and pulses (four
+   cycles: a 16 Hz signal's in 0.3 s); how long a ring counts in S1
+   without another one (8 s: a cadence of up to 10 s, Serbia's 1 s on and
+   9 off, rings in time); and, for ringing with no such gap (Egypt's 2 s
+   on and 1 off, Syria's 1 and 0.5), how long after a burst's first pulse
+   the next pulse starts another */
 static const unsigned long RING_GAP_MS = 1500, RING_CHECK_MS = 2510;
-static const unsigned long RING_MIN_MS = 150, RING_MAX_MS = 2500;
-static const unsigned RING_PULSES = 10;
-static const unsigned long RING_GONE_MS = 6510;
+static const unsigned long RING_MIN_MS = 150;
+static const unsigned RING_PULSES = 4;
+static const unsigned long RING_GONE_MS = 8010, RING_AGAIN_MS = 6000;
 
 /* why a call ended (ATI11), by Modem::Cause */
 static const char *const cause_text[] = {
@@ -219,7 +223,7 @@ Modem::Modem(Host &host, const Options &opt)
 	if (opt.country && homolog_init(-1, opt.country))
 		log_printf(0, "%s: bad country name %s, using default by "
 			   "code!\n", name_, opt.country);
-	ring_last_ = host_.now_ms();
+	ring_last_ = ring_first_ = host_.now_ms();
 	setup_config();
 	logf("created: %d Hz, %s\n", srate_, homolog_->name);
 	voice_init();
@@ -1652,7 +1656,6 @@ void Modem::events(unsigned ev)
 		if (!ring_count_) {
 			sregs_[SREG_RING_COUNTER] = 0;
 		} else if (len < (long)RING_MIN_MS ||
-			   len >= (long)RING_MAX_MS ||
 			   ring_count_ < RING_PULSES) {
 			logf("bad ring: %u pulses in %ld ms\n", ring_count_,
 			     len);
@@ -1691,8 +1694,9 @@ void Modem::events(unsigned ev)
  */
 
 /* a pulse of a ring signal (idle only): a burst's first one, if it comes
-   late enough after the last pulse, has the burst checked later (and
-   starts caller ID before the first ring) */
+   late enough after the last pulse (or, the signal on all along, late
+   enough after the last burst's first, or the start), has the burst
+   checked later (and starts caller ID before the first ring) */
 void Modem::ring()
 {
 	unsigned long now = host_.now_ms();
@@ -1700,7 +1704,8 @@ void Modem::ring()
 	if (state_ != IDLE)
 		return;
 	if (!ring_count_) {
-		if ((long)(now - ring_last_) < (long)RING_GAP_MS) {
+		if ((long)(now - ring_last_) < (long)RING_GAP_MS &&
+		    (long)(now - ring_first_) < (long)RING_AGAIN_MS) {
 			ring_last_ = now;
 			return;
 		}

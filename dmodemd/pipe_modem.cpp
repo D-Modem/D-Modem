@@ -54,6 +54,9 @@ PipeModem::PipeModem(const char *name, int rate, const char *country,
 			HALF_FRAME * HALF_FRAME;
 		next_sync_ = sync_;
 	}
+	if (getenv("MODEM_HOOK_FD"))
+		hook_fd_ = atoi(getenv("MODEM_HOOK_FD"));
+	ring_.init(rate);
 	if (pty_.open() < 0)
 		exit(-1);
 	m_ = new dcore::Modem(*this, o);
@@ -66,6 +69,15 @@ PipeModem::PipeModem(const char *name, int rate, const char *country,
 PipeModem::~PipeModem()
 {
 	delete m_;
+}
+
+/* see pipe_modem.h */
+int PipeModem::set_hook(dcore::Modem &, int state)
+{
+	char c = state == MODEM_HOOK_OFF ? '1' : '0';
+	if (hook_fd_ >= 0 && c != hook_ && write(hook_fd_, &c, 1) == 1)
+		hook_ = c;
+	return 0;
 }
 
 /* the time in ms: the monotonic clock, or with PIPE_SYNC the line's */
@@ -232,8 +244,14 @@ int PipeModem::line(bool rd)
 		}
 	} else if (off_hook)
 		m_->process(in, outbuf, count);
-	else
+	else {
+		/* on hook: the ring signal's pulses, the timers between
+		   (the core checks a burst's cadence by its now_ms()) */
+		for (int k = 0; k < count; k++)
+			if (ring_.sample(in[k]))
+				m_->ring();
 		memset(outbuf, 0, 2 * count);
+	}
 	/* MODEM_REC: the line while off hook */
 	if (off_hook && record_) {
 		if (!rec_tried_) {
