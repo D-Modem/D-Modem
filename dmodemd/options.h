@@ -26,6 +26,9 @@ struct Options {
 	   pumps') */
 	const char *alsa = nullptr;
 	const char *alsa_ctl = nullptr;
+	/* or a Smart Link SmartUSB56 through libusb (--usb: auto, or
+	   <bus>:<address>) */
+	const char *usb = nullptr;
 	unsigned rate = 9600;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem
 	   pair such as com0com's), or TCP connections on [address:]port

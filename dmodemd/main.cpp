@@ -6,7 +6,8 @@
  *               its DTE a pty
  *
  *    With -a the line is a softmodem's codec through ALSA instead
- *    (alsa_line.cpp): a telephone line, its samples pacing the modem.
+ *    (alsa_line.cpp), with --usb a Smart Link SmartUSB56 through libusb
+ *    (usb_line.cpp): a telephone line, its samples pacing the modem.
  *
  *    Started as root, it makes its pty and the link /dev/ttyDM<n> to it,
  *    opens its data file and leaves the link to a keeper process
@@ -38,6 +39,9 @@
 
 #ifdef DMODEM_ALSA
 #include "alsa_line.h"
+#endif
+#ifdef DMODEM_USB
+#include "usb_line.h"
 #endif
 #include "datafile.h"
 #include "options.h"
@@ -139,12 +143,13 @@ void drop_privileges(bool realtime)
 	DBG("running as gid %u, uid %u\n", (unsigned)gid, (unsigned)uid);
 }
 
-#ifdef DMODEM_ALSA
-/* the loop on an ALSA line, until SIGINT or SIGTERM (0) or an error
-   (-1), each turn: the modem's timers, then select() on the codec's
-   capture and the pty (if the modem takes its characters now), then the
-   samples that came */
-int run_alsa(dcore::Modem &m, dmd::AlsaLine &line, dmd::Pty &pty)
+#if defined(DMODEM_ALSA) || defined(DMODEM_USB)
+/* the loop on a telephone line (ALSA's, or the SmartUSB56's), until
+   SIGINT or SIGTERM (0) or an error (-1), each turn: the modem's timers,
+   then select() on the line's descriptors and the pty (if the modem
+   takes its characters now), then the samples that came */
+template <class Line>
+int run_line(dcore::Modem &m, Line &line, dmd::Pty &pty)
 {
 	dcore::Modem *const modems[] = { &m };
 	dmd::RunLoop loop;
@@ -188,6 +193,10 @@ int main(int argc, char *argv[])
 	dmd::AlsaLine alsa(pty);
 	std::unique_ptr<dcore::Modem> am;
 #endif
+#ifdef DMODEM_USB
+	dmd::UsbLine usb(pty);
+	std::unique_ptr<dcore::Modem> um;
+#endif
 
 	dmd::parse_options(argc, argv, opt);
 	slash = strrchr(opt.name, '/');
@@ -204,7 +213,18 @@ int main(int argc, char *argv[])
 	/* the modem: on the ALSA line (the core on it alone), or on SIP */
 	std::unique_ptr<dmd::SipModem> sm;
 	dcore::Modem *m;
-	if (opt.alsa) {
+	if (opt.usb) {
+#ifdef DMODEM_USB
+		mo.rate = (int)opt.rate;
+		um.reset(new dcore::Modem(usb, mo));
+		if (!um->ok())
+			exit(-1);
+		m = um.get();
+#else
+		ERR("--usb: dmodemd was built without libusb (libusb-1.0-0-dev)\n");
+		exit(-1);
+#endif
+	} else if (opt.alsa) {
 #ifdef DMODEM_ALSA
 		mo.rate = (int)opt.rate;
 		am.reset(new dcore::Modem(alsa, mo));
@@ -237,6 +257,11 @@ int main(int argc, char *argv[])
 	if (opt.alsa && !alsa.open(opt.alsa, opt.alsa_ctl, opt.rate))
 		exit(-1);
 #endif
+#ifdef DMODEM_USB
+	/* the device opened as root (its node's is root's alone) */
+	if (opt.usb && !usb.open(opt.usb, opt.rate))
+		exit(-1);
+#endif
 	/* the keeper an ordinary process, forked before any thread */
 	if (geteuid() == 0)
 		pty.fork_keeper();
@@ -251,7 +276,12 @@ int main(int argc, char *argv[])
 
 #ifdef DMODEM_ALSA
 	if (am) {
-		ret = run_alsa(*am, alsa, pty);
+		ret = run_line(*am, alsa, pty);
+	} else
+#endif
+#ifdef DMODEM_USB
+	if (um) {
+		ret = run_line(*um, usb, pty);
 	} else
 #endif
 	{
@@ -264,6 +294,9 @@ int main(int argc, char *argv[])
 	sm.reset();
 #ifdef DMODEM_ALSA
 	am.reset();
+#endif
+#ifdef DMODEM_USB
+	um.reset();
 #endif
 	/* what the modem said last still there for the DTE to read */
 	usleep(100000);

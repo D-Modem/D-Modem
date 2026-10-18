@@ -1,12 +1,14 @@
-# Softmodem hardware: dmodemd on ALSA
+# Softmodem hardware: dmodemd on ALSA and USB
 
 dmodemd's line is normally a SIP call. With `-a` it is instead a
-softmodem's codec on a telephone line, through ALSA. The modem is then
-D-Modem's open DSP, on any architecture. Smart Link's slmodemd, Agere's
-agrsm and their kind were closed, mostly i386-only programs; dmodemd can
-replace them.
+softmodem's codec on a telephone line, through ALSA. With `--usb` it is
+a Smart Link SmartUSB56, through libusb ([below](#smart-link-smartusb56)).
+The modem is then D-Modem's open DSP, on any architecture. Smart Link's
+slmodemd, Agere's agrsm and their kind were closed, mostly i386-only
+programs; dmodemd can replace them.
 
     dmodemd -a hw:1 -r 9600
+    dmodemd --usb=auto
 
 ## The hardware
 
@@ -70,6 +72,52 @@ cover them.
 label `quick`) runs the helper on a fake sysfs and kernel
 configuration. The patch itself has not been tried on a real codec.
 
+### Smart Link SmartUSB56
+
+Smart Link's USB modem (the SmartUSB56 and the modems built on its
+ST7554 bridge, USB `0483:7554`) needs no kernel driver: dmodemd drives
+it through libusb. The ST7554 is a USB bridge to an STLC7550 codec and a
+DAA. Its registers are vendor control requests, its samples isochronous
+transfers both ways, and its GPIOs the hook and the ring detector.
+
+    lsusb -d 0483:7554            # Bus 001 Device 007: ID 0483:7554 ...
+    dmodemd --usb=auto            # the first one; --usb=1:7 that one
+
+Started as root, dmodemd opens the device before it goes on as nobody.
+To start it as a user, give that user the device with a udev rule, e.g.
+`/etc/udev/rules.d/60-smartusb56.rules`:
+
+    SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="7554", MODE="0660", GROUP="dialout"
+
+If Smart Link's own kernel driver (`slusb`) is loaded, dmodemd detaches
+it from the device while it runs. dmodemd is built with `--usb` when
+pkg-config finds libusb-1.0 (libusb-1.0-0-dev).
+
+The ST7554's register values and start-up are those of Smart Link's
+Linux driver for it (`drivers/st7554.c` of slmodem 2.9.11, under a BSD
+licence). In `dmodemd/usb_line.cpp`:
+
+- **Samples.** S16 little-endian mono at 9600 (the default) or 8000 Hz,
+  in isochronous packets of 1 ms. Three transfers of five packets are in
+  flight each way. Each OUT transfer goes when an IN one is done, with
+  that one's packets' lengths, so the playback keeps the codec's clock.
+  It takes the modem's samples queued, a frame and a half ahead. The
+  modem's time is the codec's: the samples it has given.
+- **The hook.** GPIO 3 (and the hook LED, GPIO 7). A hook flash clears
+  it for its length.
+- **Rings.** The ring detector (GPIO 0) changes with the ring signal.
+  Each change comes on the interrupt endpoint and is a pulse to the
+  core's `ring()`, which checks the cadence.
+- **Unplugged.** dmodemd says so and exits.
+
+Limits: the ST7554's codec hears nothing on hook, so there is **no
+caller ID** (Smart Link's driver had none either). The ST75951/2
+"silicon DAA" variant (`MONOLITHIC` in the GPIO status) is refused, as
+Smart Link's driver did not support it. The device's line settings are
+its own, and it has not yet been tried on a real SmartUSB56.
+
+### Not covered
+
 Not covered yet, because Linux has no driver that gives their samples:
 
 - Conexant's AC'97 codecs (their hook is in the SmartDAA behind codec
@@ -78,8 +126,14 @@ Not covered yet, because Linux has no driver that gives their samples:
   (the compatible ones outside the Si3054 list: `hda-modem-setup`,
   above);
 - modems with their own PCI controller (Smart Link SmartPCI, PCTel HSP,
-  Lucent/Agere PCI, Conexant HSF PCI, Broadcom BCM4212);
-- Smart Link's USB modem (ST7554).
+  Lucent/Agere PCI, Conexant HSF PCI, Broadcom BCM4212).
+
+Smart Link's PCI modems are two kinds. Those on an AC'97 controller
+(Intel ICH, VIA, SiS, ALi, ATI, nForce) are AC'97 modem codecs, covered
+by `-a` above. The SmartPCI cards (SL1900, SL2800: PCI vendors 163c,
+10a5, 2000 and 2003) have Smart Link's own controller. Its registers are
+only in Smart Link's closed `amrlibs.o`, so there is no open driver to
+start from.
 
 ## Options
 
@@ -87,13 +141,14 @@ Not covered yet, because Linux has no driver that gives their samples:
 |---|---|
 | `-a <pcm>`, `--alsa=<pcm>` | the codec's PCM (`hw:1`, `hw:0,6`, `plughw:...`): the line is a telephone line, not SIP |
 | `--alsa-ctl=<ctl>` | its controls, if not the card's (`hw:1` for `hw:1,0` or `plughw:1,0`; the PCM's own name otherwise) |
+| `--usb=<dev>` | a SmartUSB56 (`auto`, the first one; or `<bus>:<address>`, as `lsusb` shows it): the line is a telephone line, not SIP |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
 the device's group (usually `audio`) does not matter. Started as a user,
 that user needs access to `/dev/snd/*`.
 
-`SIP_LOGIN` is not needed with `-a`.
+`SIP_LOGIN` is not needed with `-a` or `--usb`.
 
 ## How it works
 
@@ -186,3 +241,15 @@ In real time, the test checks:
   busy tone after the other end hangs up.
 
 `RATE=8000` runs it at 8000 Hz. It needs libasound2-dev.
+
+`dmodemd/test/usb_test.py` (ctest's `dmodemd_usb`, label `alsa`) runs
+two dmodemd with `--usb` on the same exchange. `dmodemd/test/fake_st7554.cpp`
+is the part of libusb-1.0 that dmodemd uses, put in front of the real one
+with `LD_PRELOAD`. Its one device is an ST7554 whose line is the
+exchange's: its registers set the hook, its IN transfers take the line's
+samples as the exchange sends them, its OUT transfers' samples go to the
+exchange, and its ring detector changes on each half cycle of the ring
+signal. The test checks that an ST75951/2 and a wrong `<bus>:<address>`
+are refused, a data call (rings, the answer at the second ring, V.34 at
+33600, text each way), a busy line, a voice call, and that both exit
+once the exchange (the devices) has gone. It needs libusb-1.0-0-dev.

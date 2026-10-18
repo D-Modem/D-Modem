@@ -46,7 +46,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config g++ libssl-dev libgtest-dev \
             libspandsp-dev libtiff-tools asterisk-dev g++-multilib \
-            libasound2-dev
+            libasound2-dev libusb-1.0-0-dev
 
       # libre is fetched and built while configuring: keep it
       - name: libre cache
@@ -89,7 +89,7 @@ jobs:
       - name: Packages
         run: |
           apk add --no-cache build-base cmake samurai git pkgconf \
-            openssl-dev gtest-dev linux-headers alsa-lib-dev python3 \
+            openssl-dev gtest-dev linux-headers alsa-lib-dev libusb-dev python3 \
             bash coreutils spandsp-dev tiff-dev tiff-tools
 
       - uses: actions/checkout@v4

@@ -21,6 +21,16 @@ application of the Asterisk REST Interface, which Asterisk's licence says
 need not be under the GPL. It is under the AGPL-3.0, or the commercial
 licence, like the rest ([docs/ari.md](docs/ari.md)).
 
+## Smart Link's ST7554 driver
+
+`dmodemd/usb_line.cpp` (the SmartUSB56 line) has the ST7554's registers,
+their values and its start-up from Smart Link's Linux driver for it
+(`drivers/st7554.c` of slmodem 2.9.11, copyright 2002 Smart Link Ltd.),
+under the BSD-3-Clause licence. The file keeps that licence's notice
+(`SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause`), and it goes
+with a dmodemd that is shipped. It combines with D-Modem under the AGPL
+and under the commercial licence alike.
+
 ## Not covered: the interop test binaries
 
 The closed modem drivers and objects in `dsp/test/` (`smartlink/`,
@@ -54,7 +64,8 @@ the system:
 
 D-Modem began as Aon's D-Modem (2021, GPL-2.0-or-later), on Smart Link's
 slmodemd (Smart Link Ltd., 2001 to 2004, under a BSD licence). None of
-their code is left. Aon's last, the SIP user agent `dmodemd/sip.cpp`,
+their code is left (dmodemd's SmartUSB56 line takes the ST7554's registers
+from Smart Link's BSD-licensed driver for it, above). Aon's last, the SIP user agent `dmodemd/sip.cpp`,
 and Smart Link's last (the modem core in `core/`, the HDLC framing, LAPM
 and V.42bis in `link/`, the data pumps' interface and two simple pumps in
 `dsp/`, the pumps' test loopback, and dmodemd's main program, options and

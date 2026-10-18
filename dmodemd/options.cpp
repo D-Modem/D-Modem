@@ -45,7 +45,7 @@ struct Option {
 enum {
 	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
-	OPT_ALSA, OPT_ALSA_CTL, OPT_RATE,
+	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_RATE,
 #ifdef _WIN32
 	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP,
 #endif
@@ -82,8 +82,11 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "none", false },
 	{ 0, "alsa-ctl", Takes::Text, true,
 	  "its controls (hw:<card> of -a's)", "-a's", false },
+	{ 0, "usb", Takes::Text, true,
+	  "the line a Smart Link SmartUSB56 (auto, or <bus>:<address>), "
+	  "not SIP", "none", false },
 	{ 'r', "rate", Takes::Number, true,
-	  "the codec's rate with -a (8000 or 9600)", "9600", false },
+	  "the codec's rate with -a or --usb (8000 or 9600)", "9600", false },
 #ifdef _WIN32
 	{ 0, "com", Takes::Text, true,
 	  "the DTE a COM port (COM5: one end of a com0com pair)", "none",
@@ -106,7 +109,7 @@ bool posix_only(int i)
 {
 #ifdef _WIN32
 	return i == OPT_GROUP || i == OPT_PERM || i == OPT_ALSA ||
-		i == OPT_ALSA_CTL || i == OPT_RATE;
+		i == OPT_ALSA_CTL || i == OPT_USB || i == OPT_RATE;
 #else
 	(void)i;
 	return false;
@@ -322,6 +325,12 @@ void CommandLine::apply(Options &opt) const
 		opt.alsa = o[OPT_ALSA].value;
 	if (o[OPT_ALSA_CTL].given)
 		opt.alsa_ctl = o[OPT_ALSA_CTL].value;
+	if (o[OPT_USB].given)
+		opt.usb = o[OPT_USB].value;
+	if (opt.alsa && opt.usb) {
+		fprintf(stderr, "%s: -a or --usb, not both\n", prog_);
+		exit(1);
+	}
 	if (o[OPT_RATE].given) {
 		long rate = strtol(o[OPT_RATE].value, nullptr, 10);
 		if (rate != 8000 && rate != 9600) {

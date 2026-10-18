@@ -87,13 +87,38 @@ if(DMODEM_DMODEMD)
 				PRIVATE PIC)
 			target_link_libraries(asound_module_dmline PRIVATE
 				PkgConfig::ALSA)
-			add_executable(line_exchange test/line_exchange.cpp)
-			dmodem_flags(line_exchange EXTRA)
-			target_link_libraries(line_exchange PRIVATE dmodem_core dmodem_dsp
-				dmodem_link ${DMODEM_LIBM} Threads::Threads)
 		endif()
 	else()
 		message(STATUS "dmodemd: no ALSA (libasound2-dev): no -a")
+	endif()
+	# --usb: a Smart Link SmartUSB56 (ST7554) through libusb for the
+	# line (usb_line.cpp), if libusb-1.0-0-dev is there
+	if(PkgConfig_FOUND AND NOT WIN32)
+		pkg_check_modules(LIBUSB QUIET IMPORTED_TARGET libusb-1.0)
+	endif()
+	if(LIBUSB_FOUND)
+		target_sources(dmodemd PRIVATE usb_line.cpp)
+		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
+		target_link_libraries(dmodemd PRIVATE PkgConfig::LIBUSB)
+		# test/usb_test.py: two dmodemd on fake SmartUSB56s
+		# (test/fake_st7554.cpp, libusb's calls, LD_PRELOAD) calling
+		# each other through the simulated exchange
+		if(DMODEM_TESTS)
+			add_library(dmodem_fake_st7554 SHARED
+				test/fake_st7554.cpp)
+			dmodem_flags(dmodem_fake_st7554 EXTRA NOOPT)
+			target_include_directories(dmodem_fake_st7554 PRIVATE
+				${LIBUSB_INCLUDE_DIRS})
+		endif()
+	else()
+		message(STATUS "dmodemd: no libusb (libusb-1.0-0-dev): no --usb")
+	endif()
+	# the simulated telephone exchange of the ALSA and USB lines' tests
+	if(DMODEM_TESTS AND (ALSA_FOUND OR LIBUSB_FOUND))
+		add_executable(line_exchange test/line_exchange.cpp)
+		dmodem_flags(line_exchange EXTRA)
+		target_link_libraries(line_exchange PRIVATE dmodem_core dmodem_dsp
+			dmodem_link ${DMODEM_LIBM} Threads::Threads)
 	endif()
 
 	# test/root_test.py: dmodemd started as root, what needs root's
@@ -144,6 +169,15 @@ if(DMODEM_DMODEMD)
 				$<TARGET_FILE:line_exchange>
 				$<TARGET_FILE_DIR:asound_module_dmline>)
 			set_tests_properties(dmodemd_alsa PROPERTIES
+				LABELS alsa TIMEOUT 300 COST 1000)
+		endif()
+		if(LIBUSB_FOUND)
+			dmodem_add_test(dmodemd_usb ${Python3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/test/usb_test.py
+				$<TARGET_FILE:dmodemd>
+				$<TARGET_FILE:line_exchange>
+				$<TARGET_FILE:dmodem_fake_st7554>)
+			set_tests_properties(dmodemd_usb PROPERTIES
 				LABELS alsa TIMEOUT 300 COST 1000)
 		endif()
 	endif()
