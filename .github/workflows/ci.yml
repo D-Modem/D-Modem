@@ -6,6 +6,10 @@
 # windows: the Windows build (MinGW-w64, cross from Linux) with its
 # offline tests under Wine; dmodemd.exe kept as an artifact.
 #
+# windows-msvc: the same with Microsoft's compiler (cl.exe, Ninja) on a
+# Windows runner, the offline tests on Windows itself; its dmodemd.exe
+# kept as an artifact too.
+#
 # asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
@@ -128,6 +132,66 @@ jobs:
         with:
           name: dmodemd-windows-x86_64
           path: build-win/dmodemd/dmodemd.exe
+          retention-days: 30
+
+  windows-msvc:
+    runs-on: windows-2022
+    steps:
+      # (LF as in the repository: .gitattributes says so, this makes sure)
+      - name: Line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      # cl.exe and the SDK: the Developer Command Prompt's environment,
+      # for every later step
+      - name: MSVC environment
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -property installationPath `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" |
+            ForEach-Object {
+              if ($_ -match '^([^=]+)=(.*)$') {
+                "$($matches[1])=$($matches[2])" |
+                  Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+              }
+            }
+
+      - name: libre cache
+        uses: actions/cache@v4
+        with:
+          path: build-msvc/_deps/libre-install
+          key: libre-v4.12.0-msvc-${{ hashFiles('cmake/libre.cmake') }}
+
+      - name: Configure
+        run: >
+          cmake -B build-msvc -G Ninja -DDMODEM_WERROR=ON
+          -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+
+      - name: Build
+        run: cmake --build build-msvc
+
+      - name: Tests
+        run: ctest --test-dir build-msvc -L quick -j4 --output-on-failure
+
+      - name: Test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-windows-msvc
+          path: |
+            build-msvc/test-logs/
+            !build-msvc/test-logs/latest
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: dmodemd.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmodemd-windows-msvc-x86_64
+          path: build-msvc/dmodemd/dmodemd.exe
           retention-days: 30
 
   asterisk:

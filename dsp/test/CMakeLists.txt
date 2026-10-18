@@ -19,22 +19,26 @@ set(_fax ${S}/fax_modems.cpp ${S}/qam.cpp ${S}/qam_tables.cpp ${S}/dsp_util.cpp
 
 # Windows: setenv, unsetenv and mkdir's mode for every test source here
 if(WIN32)
-	add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/win_posix.h)
+	if(MSVC)
+		add_compile_options(/FI${CMAKE_CURRENT_SOURCE_DIR}/win_posix.h)
+	else()
+		add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/win_posix.h)
+	endif()
 endif()
 
 function(dmodem_test_exe name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE ${S} ${DMODEM_LINK_DIR}
 		${DMODEM_CORE_NEW_DIR})
-	target_compile_options(${name} PRIVATE -Wall -O2 -g)
-	target_link_libraries(${name} PRIVATE m Threads::Threads)
+	dmodem_flags(${name})
+	target_link_libraries(${name} PRIVATE ${DMODEM_LIBM} Threads::Threads)
 endfunction()
 
 # the data pumps back to back: pump_test, and dsp_loopback to try a line
 # from the command line
 add_library(dmodem_loopback OBJECT loopback.cpp test_util.cpp)
 target_include_directories(dmodem_loopback PRIVATE ${S})
-target_compile_options(dmodem_loopback PRIVATE -Wall -O2 -g)
+dmodem_flags(dmodem_loopback)
 dmodem_test_exe(dsp_loopback dsp_loopback.cpp)
 target_link_libraries(dsp_loopback PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_test_exe(pump_test pump_test.cpp)
@@ -217,7 +221,7 @@ foreach(_n half_open half_open8 half_smartlink)
 		MODEM_RATE=${_rate})
 	target_compile_options(${_n} PRIVATE ${DMODEM_M32} -w -g -O)
 	target_link_options(${_n} PRIVATE ${DMODEM_M32} ${_l})
-	target_link_libraries(${_n} PRIVATE m Threads::Threads)
+	target_link_libraries(${_n} PRIVATE ${DMODEM_LIBM} Threads::Threads)
 endforeach()
 
 # the peers' harnesses (modem_half.cpp) read their line as PipeModem does
@@ -234,7 +238,7 @@ if(EXISTS "${DMODEM_AGERE_LIB}")
 	target_compile_options(half_agere PRIVATE ${DMODEM_M32} -g -O1)
 	target_link_options(half_agere PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
-	target_link_libraries(half_agere PRIVATE m)
+	target_link_libraries(half_agere PRIVATE ${DMODEM_LIBM})
 	message(STATUS "tests: the Agere soft modem: ${DMODEM_AGERE_LIB}")
 endif()
 
@@ -244,7 +248,7 @@ endif()
 if(SPANDSP_FOUND)
 	add_executable(half_spandsp half_spandsp.cpp modem_half.cpp)
 	target_include_directories(half_spandsp PRIVATE ${SPANDSP_INCLUDE_DIRS})
-	target_link_libraries(half_spandsp PRIVATE ${SPANDSP_LDFLAGS} m)
+	target_link_libraries(half_spandsp PRIVATE ${SPANDSP_LDFLAGS} ${DMODEM_LIBM})
 endif()
 
 # Motorola's SM56 soft modem as a peer (half_sm56.cpp): sm56.ko of
@@ -265,7 +269,7 @@ if(EXISTS "${DMODEM_SM56_KO}")
 	target_compile_options(half_sm56 PRIVATE ${DMODEM_M32} -g -O1)
 	target_link_options(half_sm56 PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
-	target_link_libraries(half_sm56 PRIVATE m)
+	target_link_libraries(half_sm56 PRIVATE ${DMODEM_LIBM})
 	message(STATUS "tests: the Motorola SM56 soft modem: ${DMODEM_SM56_KO}")
 endif()
 
@@ -282,7 +286,7 @@ if(EXISTS "${DMODEM_PCTEL_DIR}/dsp.o" AND EXISTS "${DMODEM_PCTEL_DIR}/control.o"
 	target_compile_options(half_pctel PRIVATE ${DMODEM_M32} -g -O1)
 	target_link_options(half_pctel PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
-	target_link_libraries(half_pctel PRIVATE m)
+	target_link_libraries(half_pctel PRIVATE ${DMODEM_LIBM})
 	message(STATUS "tests: the PCTel HSP soft modem: ${DMODEM_PCTEL_DIR}")
 endif()
 
@@ -316,7 +320,7 @@ if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 	target_compile_options(half_hsf PRIVATE ${DMODEM_M32} -g -O1)
 	target_link_options(half_hsf PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
-	target_link_libraries(half_hsf PRIVATE m)
+	target_link_libraries(half_hsf PRIVATE ${DMODEM_LIBM})
 	message(STATUS "tests: the Conexant HSF soft modem: ${DMODEM_HSF_DIR}")
 endif()
 
@@ -334,7 +338,7 @@ if(EXISTS "${DMODEM_BROADCOM_DIR}/BCMSM.sys")
 	target_compile_options(half_broadcom PRIVATE ${DMODEM_M32} -g -O1)
 	target_link_options(half_broadcom PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
-	target_link_libraries(half_broadcom PRIVATE m)
+	target_link_libraries(half_broadcom PRIVATE ${DMODEM_LIBM})
 	message(STATUS "tests: the Broadcom soft modem: ${DMODEM_BROADCOM_DIR}")
 endif()
 
@@ -351,7 +355,7 @@ if(EXISTS "${DMODEM_ESS_DIR}/es56hpi.sys")
 	target_compile_options(half_ess PRIVATE ${DMODEM_M32} -g -O1)
 	target_link_options(half_ess PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
-	target_link_libraries(half_ess PRIVATE m)
+	target_link_libraries(half_ess PRIVATE ${DMODEM_LIBM})
 	message(STATUS "tests: the ESS soft modem: ${DMODEM_ESS_DIR}")
 endif()
 
@@ -381,7 +385,7 @@ if(EXISTS "${DMODEM_INTEL_DIR}/537core.lib")
 	target_compile_options(half_intel PRIVATE ${DMODEM_M32} -g -O1)
 	target_link_options(half_intel PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
-	target_link_libraries(half_intel PRIVATE m)
+	target_link_libraries(half_intel PRIVATE ${DMODEM_LIBM})
 	message(STATUS "tests: the Intel 537EP soft modem: ${DMODEM_INTEL_DIR}")
 endif()
 
@@ -396,7 +400,7 @@ endif()
 # some four times the processors (-j16 on 4).  interop_call makes one by
 # hand.
 add_library(interop_driver STATIC interop_call.cpp)
-target_compile_options(interop_driver PRIVATE -Wall -O2 -g)
+dmodem_flags(interop_driver)
 target_link_libraries(interop_driver PUBLIC Threads::Threads)
 dmodem_test_exe(interop_call interop_call_main.cpp)
 target_link_libraries(interop_call PRIVATE interop_driver)

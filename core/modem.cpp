@@ -33,13 +33,22 @@
 #include "dcore.h"
 #include "log.h"
 
+/* (weak: Smart Link's library, half_smartlink's, has none of these;
+   MSVC has no weak symbols, and links the open DSP, which has them) */
+#ifdef __GNUC__
+#define DCORE_WEAK __attribute__((weak))
+#define DCORE_HAS(f) (f != nullptr)
+#else
+#define DCORE_WEAK
+#define DCORE_HAS(f) true
+#endif
 /* V.91's exact PCM codes, which must keep their DC (dsplibs.h): weak, as
    Smart Link's library (half_smartlink) has no such function, and then
    the samples are never PCM codes */
-extern "C" int dp_runtime_pcm(void *runtime) __attribute__((weak));
+extern "C" int dp_runtime_pcm(void *runtime) DCORE_WEAK;
 /* an analogue line for the pumps (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_analog(void *runtime, int analog)
-	__attribute__((weak));
+	DCORE_WEAK;
 
 namespace dcore {
 
@@ -509,7 +518,7 @@ int Modem::start_call()
 		return fail("no memory for the call");
 	if (line_law_)
 		dp_runtime_set_law(dp_runtime_, line_law_);
-	if (dp_runtime_set_analog)
+	if (DCORE_HAS(dp_runtime_set_analog))
 		dp_runtime_set_analog(dp_runtime_, host_.analog_line(*this));
 	if (link_init())
 		return fail("cannot set up the link");
@@ -970,7 +979,7 @@ void Modem::process(const int16_t *in, int16_t *out, int n)
 		scratch_len_ = n;
 	}
 	memcpy(scratch_, in, n * sizeof(*in));
-	if (dcr_ && !(dp_runtime_pcm && dp_runtime_ &&
+	if (dcr_ && !(DCORE_HAS(dp_runtime_pcm) && dp_runtime_ &&
 		      dp_runtime_pcm(dp_runtime_)))
 		dcr_process(dcr_, scratch_, n);
 	log_data(this, LOG_RX_SAMPLES, scratch_, 2 * n);

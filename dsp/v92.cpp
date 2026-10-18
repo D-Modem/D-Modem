@@ -36,7 +36,7 @@
  */
 
 #include <limits.h>
-#include <pthread.h>
+#include <mutex>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -428,8 +428,8 @@ static void trn_ref_make()
 /* trn_ref, once for all calls (which may run in their own threads) */
 static void trn_ref_init()
 {
-	static pthread_once_t once = PTHREAD_ONCE_INIT;
-	pthread_once(&once, trn_ref_make);
+	static std::once_flag once;
+	std::call_once(once, trn_ref_make);
 }
 
 /* received sample i, from the ring of V92_BUF */
@@ -1264,7 +1264,7 @@ void V92Up::fpe_design(int drn, bool up)
 
 	if (b_frozen)
 		for (j = 0; j < cpd.len[1]; j++)
-			sb += fabs(cpd.coef[1][j]) / 16384.0;
+			sb += fabs((double)cpd.coef[1][j]) / 16384.0;
 	for (d = 19; d >= 1; d--) {
 		int K = 2 * (d + 17);
 		double ms0 = 0, ms3;

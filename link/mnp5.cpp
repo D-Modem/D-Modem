@@ -83,7 +83,9 @@ void Mnp5::put_value(int v)
 		put((uint32_t)v, 4);
 		return;
 	}
-	int h = 31 - __builtin_clz((unsigned)v);
+	int h = 0;              /* (the highest bit's place) */
+	while ((v >> (h + 1)) != 0)
+		h++;
 	uint32_t code = (uint32_t)h << h | (uint32_t)(v - (1 << h));
 	if (v == 255)
 		put(code << 1, 3 + h + 1);

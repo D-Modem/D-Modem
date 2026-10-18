@@ -1,0 +1,5 @@
+# Text files as LF in every checkout, Windows' too (core.autocrlf): the
+# test scripts run under bash and the core's transcripts compare byte
+# for byte.  The drivers' .inf files stay as they came (CRLF).
+* text=auto eol=lf
+*.inf -text

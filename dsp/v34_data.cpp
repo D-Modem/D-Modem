@@ -22,7 +22,7 @@
  */
 
 #include <math.h>
-#include <pthread.h>
+#include <mutex>
 #include <string.h>
 
 #include "bits.h"
@@ -561,8 +561,8 @@ void V34DataRx::init(const V34Params *p_)
 	memset(this, 0, sizeof(*this));
 	p = *p_;
 	{
-		static pthread_once_t once = PTHREAD_ONCE_INIT;
-		pthread_once(&once, make_lookup);
+		static std::once_flag once;
+		std::call_once(once, make_lookup);
 	}
 	viterbi_init();
 }

@@ -22,7 +22,7 @@ set(DMODEM_FRONT_SRCS ${_front} PARENT_SCOPE)
 set(DMODEM_FRONT_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
 add_library(dmodem_front OBJECT ${_front})
 target_link_libraries(dmodem_front PUBLIC dmodem_core)
-target_compile_options(dmodem_front PRIVATE -Wall -Wextra -g -O2)
+dmodem_flags(dmodem_front EXTRA)
 set_target_properties(dmodem_front PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(DMODEM_DMODEMD)
@@ -39,10 +39,10 @@ if(DMODEM_DMODEMD)
 	target_include_directories(dmodem_sip PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR} ${DMODEM_CORE_NEW_DIR}
 		${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR})
-	target_compile_options(dmodem_sip PRIVATE -Wall -Wextra -g -O2)
+	dmodem_flags(dmodem_sip EXTRA)
 	set_target_properties(dmodem_sip PROPERTIES
 		POSITION_INDEPENDENT_CODE ON)
-	target_link_libraries(dmodem_sip PUBLIC libre m Threads::Threads)
+	target_link_libraries(dmodem_sip PUBLIC libre ${DMODEM_LIBM} Threads::Threads)
 
 	# the modem daemon: the modem on a SIP line (or with -a an ALSA
 	# one, below) and a pty
@@ -59,7 +59,7 @@ if(DMODEM_DMODEMD)
 		install(TARGETS dmodemd RUNTIME
 			DESTINATION ${CMAKE_INSTALL_SBINDIR})
 	endif()
-	target_compile_options(dmodemd PRIVATE -Wall -g -O2)
+	dmodem_flags(dmodemd)
 	# -a: a softmodem's codec through ALSA for the line (alsa_line.cpp),
 	# if libasound2-dev is there
 	find_package(PkgConfig QUIET)
@@ -76,8 +76,7 @@ if(DMODEM_DMODEMD)
 		if(DMODEM_TESTS)
 			add_library(asound_module_dmline MODULE
 				test/fake_modem_card.cpp)
-			target_compile_options(asound_module_dmline PRIVATE
-				-Wall -Wextra -g)
+			dmodem_flags(asound_module_dmline EXTRA NOOPT)
 			# (alsa-lib's plugin symbols, as a shared object
 			# has them)
 			target_compile_definitions(asound_module_dmline
@@ -85,10 +84,9 @@ if(DMODEM_DMODEMD)
 			target_link_libraries(asound_module_dmline PRIVATE
 				PkgConfig::ALSA)
 			add_executable(line_exchange test/line_exchange.cpp)
-			target_compile_options(line_exchange PRIVATE -Wall
-				-Wextra -g -O2)
+			dmodem_flags(line_exchange EXTRA)
 			target_link_libraries(line_exchange PRIVATE dmodem_core dmodem_dsp
-				dmodem_link m Threads::Threads)
+				dmodem_link ${DMODEM_LIBM} Threads::Threads)
 		endif()
 	else()
 		message(STATUS "dmodemd: no ALSA (libasound2-dev): no -a")
@@ -101,7 +99,7 @@ if(DMODEM_DMODEMD)
 		add_executable(sip_dial_test test/sip_dial_test.cpp sip_dial.cpp)
 		target_include_directories(sip_dial_test PRIVATE
 			${CMAKE_CURRENT_SOURCE_DIR})
-		target_compile_options(sip_dial_test PRIVATE -Wall -Wextra -g)
+		dmodem_flags(sip_dial_test EXTRA NOOPT)
 		dmodem_gtest(sip_dial_test LABELS quick)
 		# test/rtp_events_test.cpp: the far end's telephone-events
 		# as tones (rtp_events.h)
@@ -109,14 +107,14 @@ if(DMODEM_DMODEMD)
 			rtp_events.cpp)
 		target_include_directories(rtp_events_test PRIVATE
 			${CMAKE_CURRENT_SOURCE_DIR})
-		target_compile_options(rtp_events_test PRIVATE -Wall -Wextra -g)
-		target_link_libraries(rtp_events_test PRIVATE m)
+		dmodem_flags(rtp_events_test EXTRA NOOPT)
+		target_link_libraries(rtp_events_test PRIVATE ${DMODEM_LIBM})
 		dmodem_gtest(rtp_events_test LABELS quick)
 		# test/pipe_test.cpp: dmodemd.exe's named pipe DTE, both
 		# ways (and a bridge for asterisk/test's WIN_PIPE=1)
 		if(WIN32)
 			add_executable(pipe_test test/pipe_test.cpp)
-			target_compile_options(pipe_test PRIVATE -Wall -Wextra -g)
+			dmodem_flags(pipe_test EXTRA NOOPT)
 			target_link_libraries(pipe_test PRIVATE ws2_32)
 			add_dependencies(pipe_test dmodemd)
 			dmodem_gtest(pipe_test LABELS quick TIMEOUT 120)
@@ -145,9 +143,9 @@ endif()
 # modem_test: two modems back to back, each with a pty
 if(NOT WIN32)
 	add_executable(modem_test modem_test.cpp)
-	target_compile_options(modem_test PRIVATE -Wall -Wextra -g -O2)
+	dmodem_flags(modem_test EXTRA)
 	target_link_libraries(modem_test PRIVATE dmodem_front dmodem_core
-		dmodem_dsp dmodem_link m Threads::Threads)
+		dmodem_dsp dmodem_link ${DMODEM_LIBM} Threads::Threads)
 endif()
 
 # libdmodem: the objects of dmodem_core, dmodem_dsp, dmodem_t30 and
@@ -157,9 +155,9 @@ add_library(dmodem STATIC dmodem.cpp dmodem_fax.cpp
 	$<TARGET_OBJECTS:dmodem_t30> $<TARGET_OBJECTS:dmodem_link>)
 target_include_directories(dmodem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 	PRIVATE ${DMODEM_CORE_NEW_DIR} ${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR})
-target_compile_options(dmodem PRIVATE -Wall -g -O2)
+dmodem_flags(dmodem)
 set_target_properties(dmodem PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(dmodem PUBLIC m Threads::Threads)
+target_link_libraries(dmodem PUBLIC ${DMODEM_LIBM} Threads::Threads)
 if(WIN32)
 	# (the DTE's socket: Winsock)
 	target_link_libraries(dmodem PUBLIC ws2_32)

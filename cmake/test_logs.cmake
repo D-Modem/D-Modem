@@ -24,19 +24,25 @@ set(DMODEM_TEST_LOG_ROOT "${PROJECT_BINARY_DIR}/test-logs" CACHE PATH
 set(DMODEM_TEST_LOG_KEEP 20 CACHE STRING
 	"how many ctest runs' test logs are kept")
 set(DMODEM_TEST_FIXTURE dmodem_test_logs)
-set(DMODEM_TEST_LAUNCHER bash "${PROJECT_SOURCE_DIR}/cmake/test_run.sh"
+# (bash: on Windows Git's, not System32's WSL launcher)
+if(CMAKE_HOST_WIN32)
+	find_program(DMODEM_BASH bash HINTS "$ENV{ProgramFiles}/Git/bin"
+		"$ENV{ProgramW6432}/Git/bin" NO_DEFAULT_PATH)
+endif()
+find_program(DMODEM_BASH bash REQUIRED)
+set(DMODEM_TEST_LAUNCHER ${DMODEM_BASH} "${PROJECT_SOURCE_DIR}/cmake/test_run.sh"
 	"${DMODEM_TEST_LOG_ROOT}")
 # (a cross build's programs then through the emulator, Wine for Windows)
 if(CMAKE_CROSSCOMPILING_EMULATOR)
 	list(APPEND DMODEM_TEST_LAUNCHER ${CMAKE_CROSSCOMPILING_EMULATOR})
 endif()
 
-add_test(NAME test_logs_begin COMMAND bash
+add_test(NAME test_logs_begin COMMAND ${DMODEM_BASH}
 	"${PROJECT_SOURCE_DIR}/cmake/test_logs.sh" begin
 	"${DMODEM_TEST_LOG_ROOT}" ${DMODEM_TEST_LOG_KEEP})
 set_tests_properties(test_logs_begin PROPERTIES
 	FIXTURES_SETUP ${DMODEM_TEST_FIXTURE} LABELS logs)
-add_test(NAME test_logs_end COMMAND bash
+add_test(NAME test_logs_end COMMAND ${DMODEM_BASH}
 	"${PROJECT_SOURCE_DIR}/cmake/test_logs.sh" end "${DMODEM_TEST_LOG_ROOT}")
 set_tests_properties(test_logs_end PROPERTIES
 	FIXTURES_CLEANUP ${DMODEM_TEST_FIXTURE} LABELS logs)

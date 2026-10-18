@@ -21,6 +21,13 @@
 #                      against Smart Link's original DSP library)
 #   DMODEM_WERROR      warnings are errors (as in CI)
 cmake_minimum_required(VERSION 3.16)
+# MSVC: the static C runtime (/MT), here and in the projects built for
+# it (libre, Mbed TLS): one dmodemd.exe, no vcruntime DLL beside it
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# (no build type given: MSVC's RelWithDebInfo below, not its Debug)
+if(NOT DEFINED CMAKE_BUILD_TYPE)
+	set(_dmodem_no_build_type TRUE)
+endif()
 project(dmodem VERSION 1.0.0 LANGUAGES C CXX)
 
 # the version the modem gives (ATI, AT+GMR, dmodemd -v), in every program
@@ -57,18 +64,72 @@ option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)"
 option(DMODEM_TESTS "Build the test programs (ctest)" ON)
 option(DMODEM_WERROR "Treat compiler warnings as errors (CI)" OFF)
 
-if(DMODEM_WERROR)
-	add_compile_options(-Werror)
+# the compilers' flags: GCC's and Clang's, or MSVC's (cl.exe, clang-cl).
+# dmodem_flags(<target> [EXTRA] [NOOPT] [NODEBUG]) gives a target the
+# warnings (-Wall, with -Wextra for EXTRA), and with GCC and Clang the
+# debug information (-g) and optimisation (-O2) its own, whatever the
+# build type; MSVC's come from the build type (RelWithDebInfo: Debug's
+# unoptimised modem can't keep up).  DMODEM_LIBM is the maths library
+# to link (none with MSVC).
+if(MSVC)
+	if(_dmodem_no_build_type AND NOT CMAKE_CONFIGURATION_TYPES)
+		set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING
+			"Build type (Debug, Release, RelWithDebInfo)" FORCE)
+	endif()
+	set(DMODEM_LIBM "")
+	# (the C library's POSIX names and its "unsafe" functions as they
+	# are, sources as UTF-8, __cplusplus as the standard's, and the
+	# conversion warnings GCC's -Wall doesn't give either)
+	add_compile_definitions(_CRT_SECURE_NO_WARNINGS
+		_CRT_NONSTDC_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS)
+	add_compile_options(/utf-8
+		$<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>
+		/wd4244 /wd4267 /wd4305 /wd4146 /wd4018 /wd4996)
+	# (cl.exe: the standard's preprocessor and rules, not its old ones;
+	# clang-cl has them already)
+	add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>
+		$<$<CXX_COMPILER_ID:MSVC>:/permissive->)
+	if(DMODEM_WERROR)
+		add_compile_options(/WX)
+	endif()
+	# what of POSIX the C library lacks (compat/msvc/dmodem_msvc.h),
+	# and unistd.h, strings.h, sys/time.h on it
+	include_directories(BEFORE ${PROJECT_SOURCE_DIR}/compat/msvc)
+	add_compile_options(/FI${PROJECT_SOURCE_DIR}/compat/msvc/dmodem_msvc.h)
+else()
+	set(DMODEM_LIBM m)
+	if(DMODEM_WERROR)
+		add_compile_options(-Werror)
+	endif()
 endif()
+function(dmodem_flags target)
+	cmake_parse_arguments(F "EXTRA;NOOPT;NODEBUG" "" "" ${ARGN})
+	if(MSVC)
+		target_compile_options(${target} PRIVATE /W3)
+		return()
+	endif()
+	target_compile_options(${target} PRIVATE -Wall)
+	if(F_EXTRA)
+		target_compile_options(${target} PRIVATE -Wextra)
+	endif()
+	if(NOT F_NODEBUG)
+		target_compile_options(${target} PRIVATE -g)
+	endif()
+	if(NOT F_NOOPT)
+		target_compile_options(${target} PRIVATE -O2)
+	endif()
+endfunction()
 
 if(WIN32)
 	# (M_PI and the like from math.h, which Windows' C library has
-	# only on request), no min/max macros from windows.h, and MinGW's
-	# own C99 printf and scanf: msvcrt's know no %zu or %lld
-	add_compile_definitions(_USE_MATH_DEFINES NOMINMAX
-		__USE_MINGW_ANSI_STDIO=1)
+	# only on request) and no min/max macros from windows.h
+	add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)
+endif()
+if(MINGW)
+	# MinGW's own C99 printf and scanf: msvcrt's know no %zu or %lld.
 	# (GCC checks format(printf) functions against msvcrt's printf
-	# there, which knows no %zu: the POSIX builds check the formats)
+	# there all the same: the POSIX builds check the formats)
+	add_compile_definitions(__USE_MINGW_ANSI_STDIO=1)
 	add_compile_options(-Wno-format)
 endif()
 

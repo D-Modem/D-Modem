@@ -15,7 +15,7 @@
 
 #include <fcntl.h>
 #include <math.h>
-#include <pthread.h>
+#include <thread>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -309,7 +309,7 @@ TEST_P(DmodemPair, DataBothWays)
 {
 	const PairCase &pc = GetParam();
 	std::vector<Pair> p(pc.pairs);
-	std::vector<pthread_t> th(pc.pairs);
+	std::vector<std::thread> th;
 
 	dmodem_init();
 	if (getenv("DMODEM_DEBUG"))
@@ -317,10 +317,10 @@ TEST_P(DmodemPair, DataBothWays)
 	for (int i = 0; i < pc.pairs; i++) {
 		p[i].c = &pc;
 		p[i].id = i;
-		ASSERT_EQ(pthread_create(&th[i], NULL, run, &p[i]), 0);
+		th.emplace_back(run, &p[i]);
 	}
-	for (int i = 0; i < pc.pairs; i++)
-		pthread_join(th[i], NULL);
+	for (auto &t : th)
+		t.join();
 	for (auto &q : p)
 		for (auto &f : q.failures)
 			ADD_FAILURE() << "pair " << q.id << ": " << f;

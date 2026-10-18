@@ -14,7 +14,7 @@ list(TRANSFORM _core PREPEND ${DMODEM_CORE_NEW_DIR}/)
 add_library(dmodem_core OBJECT ${_core})
 target_include_directories(dmodem_core PUBLIC ${DMODEM_CORE_NEW_DIR}
 	${DMODEM_DSP_DIR} ${DMODEM_LINK_DIR})
-target_compile_options(dmodem_core PRIVATE -Wall -Wextra -g -O2)
+dmodem_flags(dmodem_core EXTRA)
 set_target_properties(dmodem_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set(DMODEM_CORE_NEW_DIR ${DMODEM_CORE_NEW_DIR} PARENT_SCOPE)
 # the same as a source list (the 32 bit interop tests)

@@ -15,6 +15,15 @@
 
 #include <stdarg.h>
 
+/* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
+#ifndef DMODEM_PRINTF
+#ifdef __GNUC__
+#define DMODEM_PRINTF(f, a) __attribute__((format(printf, f, a)))
+#else
+#define DMODEM_PRINTF(f, a)
+#endif
+#endif
+
 namespace dcore {
 
 /* the lines up to this level are printed (0: none of the modem's) */
@@ -28,8 +37,7 @@ void log_set_hook(void (*fn)(const char *line));
 bool log_hooked();
 
 /* a line, printed if level is up to log_level; its length */
-int log_printf(unsigned level, const char *fmt, ...)
-	__attribute__ ((format (printf, 2, 3)));
+int log_printf(unsigned level, const char *fmt, ...) DMODEM_PRINTF(2, 3);
 /* the same with a va_list */
 int log_vprintf(unsigned level, const char *fmt, va_list args);
 /* a line of another part of the program, which checked its own level:

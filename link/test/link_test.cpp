@@ -28,7 +28,7 @@
 using namespace dlink;
 
 /* a failed check, with a message in printf's format */
-static std::string fmt(const char *f, ...) __attribute__((format(printf, 1, 2)));
+static std::string fmt(const char *f, ...) DMODEM_PRINTF(1, 2);
 static std::string fmt(const char *f, ...)
 {
 	char buf[256];

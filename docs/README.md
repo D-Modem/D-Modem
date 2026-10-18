@@ -24,7 +24,7 @@ The project's overview, building and usage are in the top
 - [FreeSWITCH: mod_dmodem](freeswitch.md)
 - [Softmodem hardware](hardware.md): dmodemd on an AC'97 or HD-audio
   modem codec through ALSA (`-a`)
-- [Windows](windows.md): dmodemd for Windows (MinGW-w64), its DTE a COM
+- [Windows](windows.md): dmodemd for Windows (MSVC, MinGW-w64), its DTE a COM
   port (com0com), a named pipe (a VM's COM port) or TCP, and its tests
   under Wine
 

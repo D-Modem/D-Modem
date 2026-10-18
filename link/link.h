@@ -28,6 +28,15 @@
 
 #include <stdint.h>
 
+/* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
+#ifndef DMODEM_PRINTF
+#ifdef __GNUC__
+#define DMODEM_PRINTF(f, a) __attribute__((format(printf, f, a)))
+#else
+#define DMODEM_PRINTF(f, a)
+#endif
+#endif
+
 #include "hdlc.h"
 #include "lapm.h"
 #include "mnp.h"
@@ -160,8 +169,7 @@ public:
 	Stats &stats() { return stats_; }
 
 	/* for the parts */
-	void logf(const char *fmt, ...)
-		__attribute__ ((format (printf, 2, 3)));
+	void logf(const char *fmt, ...) DMODEM_PRINTF(2, 3);
 	/* the link's progress to the owner */
 	void status(Status s);
 	/* what the bit timer runs when it fires */

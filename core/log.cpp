@@ -14,12 +14,18 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <dsplibs.h>
 
 #include "log.h"
+
+#ifdef O_BINARY
+#define LOG_O_BINARY O_BINARY
+#else
+#define LOG_O_BINARY 0
+#endif
 
 /* the data pumps' level (dsplibs.h) */
 unsigned int dsplibs_debug_level = 0;
@@ -75,11 +81,11 @@ void log_data(const void *who, unsigned id, const void *data, int count)
 int log_vprintf(unsigned level, const char *fmt, va_list args)
 {
 	char line[512];
-	struct timeval tv;
+	struct timespec ts;
 	int i, len;
-	gettimeofday(&tv, NULL);
+	clock_gettime(CLOCK_REALTIME, &ts);
 	i = snprintf(line, sizeof(line), "<%03ld.%06ld> ",
-		     (long)(tv.tv_sec % 1000), (long)tv.tv_usec);
+		     (long)(ts.tv_sec % 1000), ts.tv_nsec / 1000);
 	len = vsnprintf(line + i, sizeof(line) - i, fmt, args);
 	if (len < 0)
 		return len;
@@ -129,7 +135,9 @@ int log_open(const char *suffix)
 		snprintf(name, sizeof(name), "dmodem.log.%s", suffix);
 	else
 		snprintf(name, sizeof(name), "dmodem.log");
-	log_fd = creat(name, S_IRUSR | S_IWUSR);
+	/* (binary: Windows' creat() would make it text) */
+	log_fd = open(name, O_WRONLY | O_CREAT | O_TRUNC | LOG_O_BINARY,
+		      S_IRUSR | S_IWUSR);
 	if (log_fd < 0) {
 		fprintf(stderr, "cannot create `%s': %s\n", name,
 			strerror(errno));

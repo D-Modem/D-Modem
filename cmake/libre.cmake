@@ -68,6 +68,11 @@ endif()
 if(CMAKE_MAKE_PROGRAM)
 	list(APPEND _cross -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})
 endif()
+# (MSVC: this build's C runtime, the static one, in theirs too)
+if(MSVC)
+	list(APPEND _cross -DCMAKE_POLICY_DEFAULT_CMP0091=NEW
+		"-DCMAKE_MSVC_RUNTIME_LIBRARY=${CMAKE_MSVC_RUNTIME_LIBRARY}")
+endif()
 # (Apple's: the SDK, iphoneos or iphonesimulator, and the oldest
 # system the build runs on)
 foreach(_v CMAKE_TOOLCHAIN_FILE CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION
@@ -103,8 +108,10 @@ function(dmodem_fetch_build name repo tag src build log)
 	endif()
 	file(REMOVE_RECURSE ${build})
 	set(_configure ${CMAKE_COMMAND} -S ${src} -B ${build} ${ARGN})
-	set(_build ${CMAKE_COMMAND} --build ${build} --parallel ${_jobs})
-	set(_install ${CMAKE_COMMAND} --install ${build})
+	# (--config: a multi-config generator's, Visual Studio's, Release)
+	set(_build ${CMAKE_COMMAND} --build ${build} --config Release
+		--parallel ${_jobs})
+	set(_install ${CMAKE_COMMAND} --install ${build} --config Release)
 	foreach(_step configure build install)
 		message(STATUS "${name}: ${_step}")
 		execute_process(COMMAND ${_${_step}}
@@ -129,9 +136,7 @@ if(DMODEM_CRYPTO STREQUAL "mbedtls")
 	endif()
 	set(_re_crypto -DUSE_MBEDTLS=ON -DUSE_OPENSSL=OFF
 		-DMBEDTLS_HINTS=${_re_prefix}
-		-DCMAKE_FIND_ROOT_PATH=${_re_prefix}
-		# (libre doesn't add Mbed TLS's headers to its own)
-		-DCMAKE_C_FLAGS=-I${_re_prefix}/include)
+		-DCMAKE_FIND_ROOT_PATH=${_re_prefix})
 	set(_crypto_libs ${_tls_lib})
 else()
 	find_package(OpenSSL REQUIRED)
@@ -139,12 +144,29 @@ else()
 	set(_crypto_libs OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
-set(_re_lib ${_re_prefix}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}re${CMAKE_STATIC_LIBRARY_SUFFIX})
+# (MSVC's re-static.lib: re.lib would be the DLL's import library)
+if(MSVC)
+	set(_re_lib ${_re_prefix}/lib/re-static.lib)
+else()
+	set(_re_lib ${_re_prefix}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}re${CMAKE_STATIC_LIBRARY_SUFFIX})
+endif()
 # (built with other options before: again)
 set(_re_stamp ${_re_prefix}/dmodem-${DMODEM_LIBRE_TAG}-${DMODEM_CRYPTO})
+# libre's C flags: this build's (a toolchain's system headers among
+# them), Mbed TLS's headers (libre doesn't add them to its own), and
+# with MSVC no typed re_printf() arguments (RE_ARG), whose count of the
+# arguments needs GNU's comma elision (C++, ours, never has them)
+set(_re_cflags "${CMAKE_C_FLAGS}")
+if(DMODEM_CRYPTO STREQUAL "mbedtls")
+	string(APPEND _re_cflags " -I${_re_prefix}/include")
+endif()
+if(MSVC)
+	string(APPEND _re_cflags " -DDISABLE_RE_ARG")
+endif()
 if(NOT EXISTS ${_re_lib} OR NOT EXISTS ${_re_stamp})
 	dmodem_fetch_build(libre ${DMODEM_LIBRE_REPO} ${DMODEM_LIBRE_TAG}
 		${_re_src} ${_re_build} ${_re_log} ${_cross} ${_re_crypto}
+		"-DCMAKE_C_FLAGS=${_re_cflags}"
 		-DLIBRE_BUILD_SHARED=OFF -DLIBRE_BUILD_STATIC=ON
 		-DUSE_REM=OFF -DUSE_BFCP=OFF -DUSE_PCP=OFF -DUSE_RTMP=OFF
 		-DCMAKE_DISABLE_FIND_PACKAGE_ZLIB=ON)
@@ -158,7 +180,7 @@ message(STATUS "libre: ${DMODEM_LIBRE_TAG} (${DMODEM_CRYPTO}) built in "
 add_library(libre INTERFACE IMPORTED)
 target_include_directories(libre INTERFACE ${_re_prefix}/include/re)
 target_link_libraries(libre INTERFACE ${_re_lib} ${_crypto_libs}
-	Threads::Threads m ${CMAKE_DL_LIBS})
+	Threads::Threads ${DMODEM_LIBM} ${CMAKE_DL_LIBS})
 if(WIN32)
 	# (its headers choose Winsock's by WIN32; the system libraries its
 	# .pc and Mbed TLS's name)

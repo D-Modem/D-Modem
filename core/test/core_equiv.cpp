@@ -11,11 +11,11 @@
  *    starts a new script off).
  */
 
-#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -27,7 +27,13 @@ static std::string output(const std::string &cmd, int *status)
 	std::string out;
 	char buf[4096];
 	size_t n;
+#ifdef _WIN32
+	/* (binary, and its CR LF made LF here: the C library's text mode
+	   loses a line's end that falls across its buffer's) */
+	FILE *f = popen(cmd.c_str(), "rb");
+#else
 	FILE *f = popen(cmd.c_str(), "r");
+#endif
 	if (!f) {
 		*status = -1;
 		return out;
@@ -35,6 +41,13 @@ static std::string output(const std::string &cmd, int *status)
 	while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
 		out.append(buf, n);
 	*status = pclose(f);
+#ifdef _WIN32
+	std::string lf;
+	for (size_t i = 0; i < out.size(); i++)
+		if (!(out[i] == '\r' && i + 1 < out.size() && out[i + 1] == '\n'))
+			lf += out[i];
+	out.swap(lf);
+#endif
 	return out;
 }
 
@@ -67,15 +80,13 @@ static bool write_file(const std::string &path, const std::string &s)
 static std::vector<std::string> scripts()
 {
 	std::vector<std::string> v;
-	DIR *d = opendir(SCRIPTS_DIR);
-	struct dirent *e;
-	while (d && (e = readdir(d))) {
-		std::string n = e->d_name;
+	std::error_code ec;
+	for (const auto &e :
+	     std::filesystem::directory_iterator(SCRIPTS_DIR, ec)) {
+		std::string n = e.path().filename().string();
 		if (n.size() > 4 && n.compare(n.size() - 4, 4, ".txt") == 0)
 			v.push_back(n.substr(0, n.size() - 4));
 	}
-	if (d)
-		closedir(d);
 	std::sort(v.begin(), v.end());
 	return v;
 }

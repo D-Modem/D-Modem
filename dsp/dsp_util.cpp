@@ -9,7 +9,7 @@
 #include <math.h>
 
 #include <algorithm>
-#include <pthread.h>
+#include <mutex>
 #include <string.h>
 
 #include "dsp.h"
@@ -506,7 +506,7 @@ static void rs_design(float *h, int L)
 	}
 }
 
-/* both prototype tables, once (pthread_once from Resampler::init) */
+/* both prototype tables, once (std::call_once from Resampler::init) */
 static void rs_tables(void)
 {
 	rs_design(rs_h6, 6);
@@ -517,8 +517,8 @@ static void rs_tables(void)
    0, else -1; the shared tables are built on the first call */
 int Resampler::init(int up, int down)
 {
-	static pthread_once_t once = PTHREAD_ONCE_INIT;
-	pthread_once(&once, rs_tables);
+	static std::once_flag once;
+	std::call_once(once, rs_tables);
 	if (!((up == 6 && down == 5) || (up == 5 && down == 6)))
 		return -1;
 	*this = Resampler();

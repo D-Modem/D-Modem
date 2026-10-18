@@ -116,7 +116,7 @@ private:
 		return (float)v;
 	}
 
-	int fs_;
+	[[maybe_unused]] int fs_;      /* (the rate it was made for) */
 	double gain_, r_, p_ = 0;
 	std::vector<float> in_;
 	long base_ = 0;

@@ -45,7 +45,6 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -169,7 +168,7 @@ int start_state;
 /* a line of the log at level (1 errors, 3 the calls, 4 more, with the
    SIP messages), if the configuration's level has it: to the modem's
    log hook if it has one, else to stderr with the time */
-void say(int level, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void say(int level, const char *fmt, ...) DMODEM_PRINTF(2, 3);
 void say(int level, const char *fmt, ...)
 {
 	struct timespec ts;

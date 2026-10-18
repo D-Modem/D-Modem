@@ -26,7 +26,7 @@ list(TRANSFORM _t30 PREPEND ${DMODEM_DSP_DIR}/)
 foreach(_lib dsp t30)
 	add_library(dmodem_${_lib} OBJECT ${_${_lib}})
 	target_include_directories(dmodem_${_lib} PUBLIC ${DMODEM_DSP_DIR})
-	target_compile_options(dmodem_${_lib} PRIVATE -Wall -g -O2)
+	dmodem_flags(dmodem_${_lib})
 	set_target_properties(dmodem_${_lib} PROPERTIES
 		POSITION_INDEPENDENT_CODE ON)
 endforeach()

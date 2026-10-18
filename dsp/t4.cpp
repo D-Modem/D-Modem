@@ -10,7 +10,7 @@
  *
  */
 
-#include <pthread.h>
+#include <mutex>
 #include <stdlib.h>
 #include <string.h>
 
@@ -129,7 +129,7 @@ struct tree {
 };
 
 static struct tree white_tree, black_tree, mode_tree;
-static pthread_once_t trees_once = PTHREAD_ONCE_INIT;
+static std::once_flag trees_once;
 
 /* the codes of a table into a decoding tree */
 static void tree_add(struct tree *t, const struct code *c)
@@ -150,7 +150,7 @@ static void tree_add(struct tree *t, const struct code *c)
 	}
 }
 
-/* the decoding trees from the tables (once, by pthread_once) */
+/* the decoding trees from the tables (once, by std::call_once) */
 static void trees_build(void)
 {
 	struct tree *t[] = { &white_tree, &black_tree, &mode_tree };
@@ -495,7 +495,7 @@ int T4Reader::decode_2d(int width, const int *ref, int nref, int *ch)
    each EOL) */
 void T4Rx::init(T4Page *page_, int mr_)
 {
-	pthread_once(&trees_once, trees_build);
+	std::call_once(trees_once, trees_build);
 	memset(this, 0, sizeof(*this));
 	page = page_;
 	width = page_->width;
@@ -625,7 +625,7 @@ int T4Page::decode(const unsigned char *data, size_t len, int compression, int t
 	unsigned char *row;
 	T4Reader rd = { data, 0, len * 8, msb_first };
 
-	pthread_once(&trees_once, trees_build);
+	std::call_once(trees_once, trees_build);
 	if (compression == 3) {
 		/* with EOLs: as on the line */
 		T4Rx rx;

@@ -30,6 +30,15 @@
 
 #include "modem_homolog.h"
 
+/* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
+#ifndef DMODEM_PRINTF
+#ifdef __GNUC__
+#define DMODEM_PRINTF(f, a) __attribute__((format(printf, f, a)))
+#else
+#define DMODEM_PRINTF(f, a)
+#endif
+#endif
+
 namespace dlink { class Link; }
 
 namespace dcore { class Modem; }
@@ -261,7 +270,7 @@ public:
 	void negotiated(int comp, bool v44, int dict_size, int max_string,
 			bool mnp5);
 	/* a debug line with the modem's name */
-	void logf(const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
+	void logf(const char *fmt, ...) DMODEM_PRINTF(2, 3);
 
 	/* the version and the name ATI shows */
 	static const char *const author, *const product, *const version;

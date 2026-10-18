@@ -12,7 +12,7 @@
  */
 
 #include <errno.h>
-#include <pthread.h>
+#include <mutex>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -104,9 +104,9 @@ static void cng_sample(struct cng_detect *c, float x)
  *    the library
  */
 
-static pthread_once_t init_once = PTHREAD_ONCE_INIT;
+static std::once_flag init_once;
 
-/* the data pumps registered (once: pthread_once) */
+/* the data pumps registered (once: std::call_once) */
 static void init_all(void)
 {
 	prop_dp_init();
@@ -115,7 +115,7 @@ static void init_all(void)
 /* the pumps, once whatever the threads; 0 */
 int dmodem_init(void)
 {
-	pthread_once(&init_once, init_all);
+	std::call_once(init_once, init_all);
 	return 0;
 }
 

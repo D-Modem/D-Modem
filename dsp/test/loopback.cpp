@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <bitset>
 #include <string>
 #include <vector>
 
@@ -555,12 +556,12 @@ private:
 		uint64_t r0 = bits64(rx_words, j) & m0;
 		uint64_t r1 = bits64(rx_words, j + 64) & m1;
 		for (long o = from; o <= last; o++) {
-			int miss = __builtin_popcountll((bits64(tx_words, o) ^
-							 r0) & m0);
+			int miss = (int)std::bitset<64>((bits64(tx_words, o) ^
+							  r0) & m0).count();
 			if (miss >= MISMATCH_LIMIT)
 				continue;
-			miss += __builtin_popcountll((bits64(tx_words, o + 64) ^
-						      r1) & m1);
+			miss += (int)std::bitset<64>((bits64(tx_words, o + 64) ^
+						       r1) & m1).count();
 			if (miss < MISMATCH_LIMIT)
 				return o;
 		}

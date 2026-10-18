@@ -1,6 +1,6 @@
 # D-Modem on Windows
 
-dmodemd builds for 64-bit Windows with MinGW-w64.  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  Linux's pty becomes one of three DTEs: a COM port, a named pipe or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
+dmodemd builds for 64-bit Windows with MinGW-w64 or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  Linux's pty becomes one of three DTEs: a COM port, a named pipe or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 
 The following are POSIX-only and are not built for Windows:
 - the Asterisk and FreeSWITCH modules
@@ -25,6 +25,35 @@ The build is a cross build from Linux.  On Debian or Ubuntu:
 `cmake/mingw-w64.cmake` takes the posix-thread compilers (`x86_64-w64-mingw32-g++-posix`), which `std::thread` and `std::mutex` need.  `-DMINGW_TRIPLE=i686-w64-mingw32` targets 32-bit Windows instead (not tested).  libre and Mbed TLS (its crypto, since Windows has no OpenSSL) are fetched and built with the same toolchain.  Everything links statically: `build-win/dmodemd/dmodemd.exe` is a single file that needs no DLLs beyond Windows' own.  CI keeps each build's `dmodemd.exe` as an artifact (`dmodemd-windows-x86_64`).
 
 With Wine installed (`wine64`), `ctest --test-dir build-win -L quick` runs the tests under it (`CMAKE_CROSSCOMPILING_EMULATOR`).  Set `WINEDEBUG=-all` for quieter logs.
+
+### MSVC
+
+On Windows, from a Developer Command Prompt for Visual Studio 2022 (cl.exe and the Windows SDK on the path), with CMake, Ninja and Git:
+
+    cmake -B build-msvc -G Ninja
+    cmake --build build-msvc
+    ctest --test-dir build-msvc -L quick
+
+The build:
+- Defaults to RelWithDebInfo, not MSVC's usual Debug: an unoptimised modem can't keep up with a call.  `-DCMAKE_BUILD_TYPE=Debug` is still there to ask for.
+- Links MSVC's static C runtime (`/MT`), into libre and Mbed TLS too, so `dmodemd.exe` needs no vcruntime DLL.
+- Fills in what MSVC's C library lacks of POSIX with small headers in `compat/msvc/`, for MSVC builds only (`unistd.h`, `strings.h`, `sys/time.h`, and `dmodem_msvc.h` for `clock_gettime`, `ssize_t` and the like).
+- Turns off libre's typed `re_printf` arguments (`DISABLE_RE_ARG`), whose argument count needs GNU's comma elision.
+- Needs Git's bash for the tests (they run under `cmake/test_run.sh`).  CMake looks for it in `Program Files\Git`, not System32's WSL launcher.
+- Expects LF line endings, which `.gitattributes` asks for even with `core.autocrlf`.
+
+CI's `windows-msvc` job does this on GitHub's Windows runner and keeps its `dmodemd.exe` (`dmodemd-windows-msvc-x86_64`).  It has not run yet.
+
+From Linux, `cmake/clang-cl.cmake` builds the same way with LLVM's clang-cl and lld-link: MSVC's headers, C runtime and ABI, so it stands in for cl.exe here.  Clang 19 or later is needed (MSVC's current C++ library says so), and Microsoft's C runtime and Windows SDK come from [xwin](https://github.com/Jake-Shadle/xwin).  Its `--accept-license` accepts Microsoft's Visual Studio and Windows SDK license:
+
+    cargo install xwin --locked
+    xwin --accept-license --arch x86_64 splat --output ~/.xwin
+    sudo apt-get install clang-20 clang-tools-20 lld-20
+    cmake -B build-msvc -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/clang-cl.cmake
+    cmake --build build-msvc
+    WINEDEBUG=-all ctest --test-dir build-msvc -L quick
+
+clang-cl defines no `__GNUC__`, so the few GCC attributes and builtins the code uses (printf format checks, weak symbols) are left out there as they are for cl.exe.  The build is warning-free with `-DDMODEM_WERROR=ON`.  Its `dmodemd.exe` passes the quick tests and every `sip.sh` variant above under Wine: TCP, the COM port, both pipe modes, voice.  xwin leaves out the debug C runtime unless given `--include-debug-libs`, which a Debug build needs.
 
 ## Running
 
@@ -105,7 +134,7 @@ The DTE is a TCP connection by default.  With `WIN_COM=1` it is Wine's COM9, lin
 
 ## How it is done
 
-The modem core and the DSP needed no changes beyond the build itself:
+The modem core and the DSP needed no changes beyond the build itself (MSVC added `std::call_once` for `pthread_once`, and a few GCC attributes and builtins kept to GCC and Clang):
 - `_USE_MATH_DEFINES`, `NOMINMAX` and MinGW's C99 printf (`__USE_MINGW_ANSI_STDIO`).
 - The pump interface's `modem_get_param` returns `intptr_t`, since a 64-bit Windows `long` is 32 bits.
 
