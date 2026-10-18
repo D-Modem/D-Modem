@@ -1741,7 +1741,9 @@ int Modem::cid_start(unsigned long ms)
 {
 	if (started_)
 		return -1;
-	cid_ = CID_create(handle(), srate_, cid_requested_);
+	/* voice mode's report is a packet (V.253 9.2.3.1.3, example 3) */
+	cid_ = CID_create(handle(), srate_, cid_requested_,
+			  mode_ == MODEM_MODE_VOICE);
 	if (!cid_)
 		return -1;
 	count_ = 0;

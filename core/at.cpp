@@ -303,12 +303,13 @@ const struct VoiceSetting {
 /* +VLS=?: the devices of +VLS (V.253 10.2.4.2): label, primitives, and
    the events reported in the transmit, receive and command states, a
    bit each (event n of V.253's Table 1 the nth from the left of 32).
-   On hook (0): RING.  On the line (1), in every state: DTMF (4), loop
+   On hook (0): caller ID (0, the <DLE>X packet) and RING (3).  On the
+   line (1), in every state: DTMF (4), loop
    current interruption (13, <DLE>l), ringing tone (18, <DLE>r), busy
    (19, <DLE>b), and the answer tones of 2100 Hz (25, <DLE>a) and of
    2225 Hz (26, <DLE>f). */
 static const char *const voice_devices[] = {
-	"0,\"\",00000000,00000000,10000000",
+	"0,\"\",00000000,00000000,90000000",
 	"1,\"T\",08043060,08043060,08043060",
 };
 

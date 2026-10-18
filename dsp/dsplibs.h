@@ -63,8 +63,10 @@ void dcr_delete(void *dcr);
 int dcr_process(void *dcr, void *buf, int len);
 
 /* a caller ID receiver at rate samples/s, reporting to modem m's DTE
-   the fields formatted (cid_val 1) or the message in hex */
-void *CID_create(struct modem *m, unsigned rate, unsigned cid_val);
+   the fields formatted (cid_val 1) or the message in hex; packet: as
+   voice mode's complex event report, <DLE>X ... <DLE>. (V.253 7.1.2) */
+void *CID_create(struct modem *m, unsigned rate, unsigned cid_val,
+		 int packet);
 void CID_delete(void *cid);
 /* count received samples: 0 to go on, 1 once a message is reported, -1
    on an error */

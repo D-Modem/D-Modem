@@ -136,7 +136,8 @@ In real time, the test checks:
 - a stall of 0.6 s (SIGSTOP), after which the codec's restart is
   logged;
 - a busy line;
-- a voice call: the ringing tone, OK at `+VRA`, `+VTS` DTMF across, and
-  the busy tone after the other end hangs up.
+- a voice call: the ringing tone, caller ID in voice mode's packet
+  (`<DLE>X` ... `<DLE>.`), OK at `+VRA`, `+VTS` DTMF across, and the
+  busy tone after the other end hangs up.
 
 `RATE=8000` runs it at 8000 Hz. It needs libasound2-dev.

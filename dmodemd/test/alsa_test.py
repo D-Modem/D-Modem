@@ -17,7 +17,9 @@
 #   starts again (its log says so), and it goes on;
 # - 1002 off hook (ATH1), 1001 dials it again: BUSY (the busy tone);
 # - in voice mode (+FCLASS=8) 1001 dials 1002 (DTMF after 2 s), hears
-#   its ringing tone (<DLE>r), 1002 answers at its first RING (+VLS=1);
+#   its ringing tone (<DLE>r); 1002, in voice mode too, has the caller ID
+#   as V.253's packet (<DLE>X NMBR = 1001 ... <DLE>.) and answers after
+#   it (+VLS=1);
 #   1001's OK comes once the ringing tone has been gone +VRA (5 s);
 #   1001's +VTS=5 is 1002's <DLE>5; 1002 hangs up (+VLS=0), and 1001
 #   hears the exchange's busy tone (<DLE>b).
@@ -175,11 +177,14 @@ try:
 
     check("1002 no auto answer", b.cmd(b"ATS0=0"))
     check("1001 voice mode", a.cmd(b"AT+FCLASS=8"))
+    check("1002 voice mode", b.cmd(b"AT+FCLASS=8"))
     t = time.time()
     os.write(a.fd, b"ATD1002\r")
     check("1002 RING (voice)", b.expect(rb"RING\r\n", 20))
-    check("1002 answers: +VLS=1", b.cmd(b"AT+FCLASS=8") and
-          b.cmd(b"AT+VLS=1", t=5))
+    cid = b.expect(rb"\x10X([^\x10]*)\x10\.", 6)
+    check("1002 caller ID packet with 1001",
+          cid and b"NMBR = 1001\r\n" in cid.group(1))
+    check("1002 answers: +VLS=1", b.cmd(b"AT+VLS=1", t=5))
     m = a.expect(rb"(\x10r)?(OK|BUSY|NO ANSWER|ERROR)\r\n", 30)
     print("1001 voice dial: %s in %.1f s" % (m and m.group(2).decode(), time.time() - t))
     check("1001 heard the ringing tone and OK", m and m.group(1) and m.group(2) == b"OK")

@@ -277,7 +277,7 @@ TEST(Core, VoiceEvents)
 	EXPECT_EQ(cmd(m, l, "ATE0+VEM?\r"), "ATE0+VEM?\r\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8\r"), "OK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
-		  "0,\"\",00000000,00000000,10000000\r\n"
+		  "0,\"\",00000000,00000000,90000000\r\n"
 		  "1,\"T\",08043060,08043060,08043060\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=0\r\nOK\r\n");

@@ -659,8 +659,12 @@ The numbers barred from dialing: none are kept; OK.
 
 \begin{command}{hashCID}{AT\#CID=\p{n}, AT\#CID?, AT\#CID=?, AT+VCID\ldots}
 Caller ID between the first two rings: \cmd{0} off, \cmd{1} or \cmd{2}
-on (\cmd{=?} gives \cmd{0,1,2}).  \cmd{+VCID} (V.253's) is the same, in
-every mode.  A SIP call rings without it.
+on (\cmd{=?} gives \cmd{0,1,2}).  \cmd{1} gives the fields (\cmd{DATE = },
+\cmd{TIME = }, \cmd{NMBR = }, \cmd{NAME = }, a line each), \cmd{2} the whole
+message in hex (\cmd{MESG = }).  \cmd{+VCID} (V.253's) is the same, in
+every mode.  In voice mode (\cmd{+FCLASS=8}) the lines come as V.253's
+complex event report, between \cmd{<DLE>X} and \cmd{<DLE>.}; in the
+other modes after an empty line.  A SIP call rings without it.
 \end{command}
 
 \section{Extended commands}
@@ -932,10 +936,11 @@ ends after 0.3~s without the tone.
 reports in the transmit, receive and command states as hex bit fields
 (bit \p{n} for V.253's event \p{n}, event 0 the leftmost of 32):
 \begin{verbatim}
-0,"",00000000,00000000,10000000
+0,"",00000000,00000000,90000000
 1,"T",08043060,08043060,08043060
 \end{verbatim}
-On hook (0) that is RING; on the line (1) DTMF, the loop current
+On hook (0) that is caller ID (with \cmdl[hashCID]{+VCID}) and RING; on the
+line (1) DTMF, the loop current
 interruption, a ringing tone, a busy tone and the two answer tones,
 in every state.
 

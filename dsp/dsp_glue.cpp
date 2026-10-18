@@ -235,7 +235,9 @@ void dp_runtime_delete(void *runtime)
 /*
  *    Caller ID: Bell 202 FSK (1200 bit/s, mark 1200 Hz, space 2200 Hz)
  *    with SDMF (0x04) and MDMF (0x80) messages.  cid_val 1 reports the
- *    formatted fields, other values report the raw message in hex.
+ *    formatted fields, other values report the raw message in hex; in
+ *    voice mode (packet) inside <DLE>X and <DLE>. (V.253 7.1.2, its
+ *    example 3), else after an empty line.
  */
 
 #define CID_MAX_MSG 258
@@ -243,6 +245,7 @@ void dp_runtime_delete(void *runtime)
 struct CallerId {
 	struct modem *modem;
 	unsigned format;
+	int packet;
 	FskDemod fsk;
 	/* UART */
 	int in_char, nbits;
@@ -255,19 +258,22 @@ struct CallerId {
 	void send(const char *s);
 	void field(const char *tag, const u8 *p, int n);
 	void report();
+	void report_fields();
 	int byte(u8 b);
 	int process(void *in, int count);
 };
 
 /* a caller ID receiver at rate Hz, cid_val the report format (1:
-   formatted fields); NULL when out of memory */
-void *CID_create(struct modem *m, unsigned rate, unsigned cid_val)
+   formatted fields), packet the voice mode's; NULL when out of memory */
+void *CID_create(struct modem *m, unsigned rate, unsigned cid_val,
+		 int packet)
 {
 	CallerId *c = new (std::nothrow) CallerId();
 	if (!c)
 		return NULL;
 	c->modem = m;
 	c->format = cid_val;
+	c->packet = packet;
 	c->fsk.init(1200, 2200, 1200, rate);
 	DSP_DBG("cid: create, format %u\n", cid_val);
 	return c;
@@ -299,17 +305,28 @@ void CallerId::field(const char *tag, const u8 *p, int n)
 	send(buf);
 }
 
-/* the complete message in msg to the DTE: all of it in hex (MESG) for
-   format != 1, else DATE, TIME, NMBR and NAME from an SDMF message or
-   the MDMF parameters (0x01 date and time, 0x02 number, 0x04 number
-   absent, 0x07 name, 0x08 name absent) */
+/* the complete message in msg to the DTE, after an empty line or (in
+   voice mode) as a packet */
 void CallerId::report()
+{
+	static const char head[] = { 0x10, 'X', 0 }, end[] = { 0x10, '.', 0 };
+
+	send(packet ? head : "\r\n");
+	report_fields();
+	if (packet)
+		send(end);
+}
+
+/* all of the message in hex (MESG) for format != 1, else DATE, TIME,
+   NMBR and NAME from an SDMF message or the MDMF parameters (0x01 date
+   and time, 0x02 number, 0x04 number absent, 0x07 name, 0x08 name
+   absent) */
+void CallerId::report_fields()
 {
 	const u8 *p = msg + 2;
 	int n = msg[1];
 	char buf[8];
 
-	send("\r\n");
 	if (format != 1) {
 		int i;
 		send("MESG = ");
