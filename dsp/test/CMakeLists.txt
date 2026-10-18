@@ -435,7 +435,8 @@ foreach(_p agere sm56 spandsp pctel hsf broadcom intel ess hda)
 endforeach()
 function(interop_tests label)
 	set(_n ${label}_test)
-	dmodem_test_exe(${_n} interop_test.cpp ring_tones.cpp)
+	dmodem_test_exe(${_n} interop_test.cpp ring_tones.cpp
+		${DMODEM_CORE_NEW_DIR}/homolog_data.cpp)
 	target_compile_definitions(${_n} PRIVATE ${_progs}
 		"NETSIM=\"$<TARGET_FILE:netsim>\""
 		"INTEROP_LOG_DIR=\"${CMAKE_CURRENT_BINARY_DIR}/logs\""

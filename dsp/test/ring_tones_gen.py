@@ -13,9 +13,10 @@
 #
 #    The file is only read: its text is the longest run of 8 bit
 #    characters (Windows-1252) in it, paragraphs split at its marks.
-#    Each country's "Ringing tone" and "Dial tone" (the first of several,
-#    I, II, ..., a PABX's, a call waiting's or a message waiting's not;
-#    the ringing tone one with a cadence) give its row:
+#    Each country's "Ringing tone", "Dial tone", "Busy tone" and
+#    "Congestion tone" (or "Re-order tone") (the first of several, I, II, ..., a PABX's, a call
+#    waiting's or a message waiting's not; the ringing tone one with a
+#    cadence) give its row:
 #
 #    - the frequency: of alternatives (//, or / but for a/b of two voice
 #      band frequencies, a pair) the first plain tone or pair (a+b), else the first modulated one (a x m, or a+m with m
@@ -23,7 +24,10 @@
 #    - the cadence: its "on" and "off" seconds in turn ("2x(...)"
 #      repeated), up to eight; a dial tone "continuous" (none), a
 #      continuous ringing tone no row.  A country with no dial tone in
-#      the list has a continuous one of its ringing tone's frequency.
+#      the list has a continuous one of its ringing tone's frequency; with
+#      no congestion tone, its busy tone; with no busy tone, its
+#      congestion tone, or with neither 0.5 s on and off of its ringing
+#      tone's frequency.
 #
 #    The list has no ring signal frequency: 20 Hz with the North
 #    American tone (440 + 480 Hz), 16 Hz in Japan, 50 Hz in France and
@@ -70,7 +74,9 @@ def countries(ps):
 
 
 def cadence(text):
+    # the list's typos: "O.125", "2..0", "037" (0.37)
     text = re.sub(r"\bO\.", "0.", text.replace("..", "."))
+    text = re.sub(r"(?<![\d.])0(\d+)\b(?!\.)", r"0.\1", text)
     # 2x(a on b off) repeated
     text = re.sub(r"(\d)x\(([^)]*)\)", lambda m: " ".join([m.group(2)] * int(m.group(1))), text)
     words = re.findall(r"(\d+(?:\.\d+)?)\s*(on|off)", text)
@@ -94,7 +100,8 @@ def frequency(text):
     for a in alts:
         m = re.fullmatch(r"(\d+)(?:\s*\+\s*(\d+))?", a)
         if m and int(m.group(1)) >= 300 and (not m.group(2) or int(m.group(2)) >= 100):
-            return (int(m.group(1)), int(m.group(2) or 0), 0.0)
+            a, b = int(m.group(1)), int(m.group(2) or 0)
+            return (min(a, b), max(a, b), 0.0) if b else (a, 0, 0.0)
     for a in alts:
         m = re.fullmatch(r"(\d+)\s*[x+]\s*\(?(\d+)(?:~\d+\))?(?:\s+(\d)/(\d))?", a)
         if m and int(m.group(1)) >= 300 and int(m.group(2)) < 100:
@@ -197,7 +204,7 @@ def tone_c(t):
 
 def main():
     db = countries(paragraphs(sys.argv[1]))
-    rows, skipped, no_dial = [], [], []
+    rows, skipped, no_dial, no_busy, no_congestion = [], [], [], [], []
     for country, tones in db.items():
         name = row_name(country)
         ringing = pick(tones, "ringing tone", False)
@@ -211,18 +218,31 @@ def main():
             # frequency
             no_dial.append(name)
             dial = (ringing[0], [])
+        busy = pick(tones, "busy tone", True)
+        congestion = (pick(tones, "congestion tone", True) or
+                      pick(tones, "re-order tone", True) or
+                      pick(tones, "reorder tone", True))
+        if not busy:
+            # none: the congestion tone, or E.180's 0.5 s on and off
+            no_busy.append(name)
+            busy = congestion or (ringing[0], [0.5, 0.5])
+        if not congestion:
+            no_congestion.append(name)
+            congestion = busy
         (f1, f2, _), _ = ringing
-        rows.append((name, ringing, ring_hz(name, f1, f2), dial))
+        rows.append((name, ringing, ring_hz(name, f1, f2), dial, busy,
+                     congestion))
     rows.sort()
     names = {r[0] for r in rows}
     for a, n in ALIASES.items():
         assert n in names, n
     w = sys.stdout.write
     w(HEAD)
-    for name, ringing, hz, dial in rows:
-        w('\t{ "%s",\n\t  %s, %d,\n\t  %s },\n' %
-          (name, tone_c(ringing), hz, tone_c(dial)))
-    w("\t{ nullptr, {}, 0, {} },\n};\n\n")
+    for name, ringing, hz, dial, busy, congestion in rows:
+        w('\t{ "%s",\n\t  %s, %d,\n\t  %s,\n\t  %s,\n\t  %s },\n' %
+          (name, tone_c(ringing), hz, tone_c(dial), tone_c(busy),
+           tone_c(congestion)))
+    w("\t{ nullptr, {}, 0, {}, {}, {} },\n};\n\n")
     w("const Alias ALIASES[] = {\n")
     for a in sorted(ALIASES):
         if a != ALIASES[a]:
@@ -230,8 +250,9 @@ def main():
     w("\t{ nullptr, nullptr },\n};\n\n")
     w(TAIL)
     sys.stderr.write("%d rows; no ringing tone with a cadence: %s; no dial "
-                     "tone: %s\n" % (len(rows), "; ".join(skipped),
-                                     " ".join(no_dial)))
+                     "tone: %s; no busy tone: %s; no congestion tone: %s\n" %
+                     (len(rows), "; ".join(skipped), " ".join(no_dial),
+                      " ".join(no_busy), " ".join(no_congestion)))
 
 
 HEAD = """/*
@@ -242,7 +263,8 @@ HEAD = """/*
  *                     ITU's list of the tones used in national networks
  *                     (Annex to ITU Operational Bulletin No. 955, position
  *                     on 1 May 2010, after Recommendation E.180): each
- *                     country's ringing tone and dial tone
+ *                     country's ringing, dial, busy and congestion
+ *                     tones
  *
  *    Generated by ring_tones_gen.py, which says how a row is chosen;
  *    the countries whose ringing tone is continuous or has no cadence

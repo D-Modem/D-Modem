@@ -43,8 +43,10 @@
  *    dials none), B's line has the country's ring signal (its frequency,
  *    in the cadence of its ringing tone) while B is on hook, and A hears
  *    the ringing tone; B off hook answers, and the line is through.
- *    Until then neither hears the other; A on hook for 0.5 s ends the
- *    call.
+ *    With B off hook already, or NET_BUSY=1, A hears the busy tone in
+ *    place of the ringing; with NET_CONGESTION=1 the congestion tone
+ *    (until it hangs up).  Until then neither hears the other; A on hook
+ *    for 0.5 s ends the call.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -677,7 +679,10 @@ struct Ring {
 	const ring::Country *ring_c = nullptr;
 	int ring_fd[2] = { -1, -1 };    /* A's hook, B's */
 	bool ring_off[2] = {};          /* off hook */
-	enum { IDLE, DIAL_TONE, DIALLING, RINGING, ANSWERED } ring_st = IDLE;
+	enum { IDLE, DIAL_TONE, DIALLING, RINGING, ANSWERED, BUSY,
+	       CONGESTION } ring_st = IDLE;
+	bool ring_busy = false;         /* NET_BUSY: B's line busy */
+	bool ring_congestion = false;   /* NET_CONGESTION: no way to it */
 	double ring_delay = 2;          /* s from the last digit to ringing */
 	double ring_timeout = 4;        /* s of dial tone with no digit */
 	double ring_now = 0;            /* s: A -> B's samples out */
@@ -715,13 +720,20 @@ struct Ring {
 			ring_delay = atof(getenv("NET_RING_DELAY"));
 		if (getenv("NET_DIAL_TIMEOUT"))
 			ring_timeout = atof(getenv("NET_DIAL_TIMEOUT"));
+		ring_busy = getenv("NET_BUSY") && atoi(getenv("NET_BUSY"));
+		ring_congestion = getenv("NET_CONGESTION") &&
+			atoi(getenv("NET_CONGESTION"));
 		ring_dtmf.init(ra);
-		char r[64], d[64];
+		char r[64], d[64], b[64], g[64];
 		fprintf(stderr, "netsim: the line as in %s: dial tone %s, "
-			"ringing tone %s, ring signal %d Hz\n", ring_c->name,
+			"ringing tone %s, ring signal %d Hz, busy tone %s, "
+			"congestion tone %s%s\n", ring_c->name,
 			tone_name(ring_c->dial, d, sizeof(d)),
 			tone_name(ring_c->ringing, r, sizeof(r)),
-			ring_c->ring_hz);
+			ring_c->ring_hz, tone_name(ring_c->busy, b, sizeof(b)),
+			tone_name(ring_c->congestion, g, sizeof(g)),
+			ring_congestion ? " (congested)" : ring_busy ?
+			" (B busy)" : "");
 		return true;
 	}
 	/* "425 Hz", "350 + 440 Hz", "400 x 25 Hz", "... in a cadence" */
@@ -739,11 +751,12 @@ struct Ring {
 	void ring_to(int s)
 	{
 		static const char *const name[] = { "idle", "dial tone",
-			"dialling", "ringing", "answered" };
+			"dialling", "ringing", "answered", "busy",
+			"congestion" };
 		if (s == ring_st)
 			return;
 		char what[96] = "";
-		if (s == RINGING)
+		if (s == RINGING || s == BUSY || s == CONGESTION)
 			snprintf(what, sizeof(what), " (dialled %s)",
 				 ring_number.empty() ? "nothing" :
 				 ring_number.c_str());
@@ -803,10 +816,13 @@ struct Ring {
 			ring_to(IDLE);
 		else if (ring_off[0] && ring_st == IDLE)
 			ring_to(DIAL_TONE);
+		/* the number: the call rings B, or B's line is busy (off hook,
+		   or NET_BUSY), or the network is (NET_CONGESTION) */
 		if ((ring_st == DIAL_TONE && ring_now - ring_at >= ring_timeout) ||
 		    (ring_st == DIALLING && !ring_pulses &&
 		     ring_now - ring_digit_at >= ring_delay))
-			ring_to(RINGING);
+			ring_to(ring_congestion ? CONGESTION :
+				ring_busy || ring_off[1] ? BUSY : RINGING);
 		if (ring_st == RINGING && ring_off[1])
 			ring_to(ANSWERED);
 	}
@@ -860,7 +876,11 @@ struct Ring {
 				s[i] = ring_st == DIAL_TONE ?
 					ring_tone(ring_c->dial, r, 5000) :
 					ring_st == RINGING ?
-					ring_tone(ring_c->ringing, r, 5000) : 0;
+					ring_tone(ring_c->ringing, r, 5000) :
+					ring_st == BUSY ?
+					ring_tone(ring_c->busy, r, 5000) :
+					ring_st == CONGESTION ?
+					ring_tone(ring_c->congestion, r, 5000) : 0;
 		}
 	}
 };

@@ -40,8 +40,11 @@ namespace interop {
  *   ANSWER_AFTER=<s>  modemB's ATA that long after modemA's ATD (as it
  *                     rings once A has dialed); 0: both at once
  *   HANGUP_WAIT=<s>   on hook between calls (2)
+ *   COUNTRY_A=<name>  modemA's --country (the core's names); COUNTRY_B
  *   NET_RING=<country> netsim puts the call through (with NET: dial
- *                     tone, modemA's digits, ringing): the modems'
+ *                     tone, modemA's digits, ringing; NET_BUSY=1 and
+ *                     NET_CONGESTION=1 its busy or congestion tone in
+ *                     place of the ringing): the modems'
  *                     hooks to it (MODEM_HOOK_FD=5), modemB in ATS0 for
  *                     RING_ANSWER=<n> rings (1), modemA's ATD alone, and
  *                     a RING from modemB before its CONNECT
@@ -53,7 +56,8 @@ namespace interop {
  *   REJECT_B=<regex>  and must not have it
  *   EXPECT_DROP=1     the call is to end on the way: the data unchecked
  *   EXPECT_FAIL=1     the call is to end before CONNECT, modemA with NO
- *                     CARRIER (EXPECT_A, EXPECT_B say how)
+ *                     CARRIER (EXPECT_A, EXPECT_B say how); or =<result>
+ *                     with that (BUSY)
  *   DATA_WAIT=<s>     the moment after CONNECT before the data (0.1)
  *   DATA_RATE=<bit/s> the slowest direction's rate, when the CONNECTs do
  *                     not say it

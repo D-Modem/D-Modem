@@ -26,6 +26,7 @@
  */
 
 #include <ctype.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,9 +39,61 @@
 #include <gtest/gtest.h>
 
 #include "interop_call.h"
+#include "modem_homolog.h"
 #include "ring_tones.h"
 
 namespace {
+
+/* the core's country (core/homolog_data.cpp) whose name, or an alias of
+   it, is c's in ring_tones.cpp; null if none */
+const struct homolog_set *core_country(const ring::Country *c)
+{
+	for (const struct homolog_set *h = homolog_set; h->name; h++)
+		if (ring::find(h->name) == c)
+			return h;
+	return nullptr;
+}
+
+/* whether a modem in the core's country p takes tone t for a busy tone:
+   1 (BUSY), 0 (NO ANSWER), or -1 if a part of its cadence is within 30
+   ms of the bounds.  As the call progress pump (dsp/dp_callprog.cpp)
+   does: the country's bounds of on and off (10 ms), 40 ms wider (two
+   blocks), or 0.2 to 0.8 s if it has none; BCy cycles (4) of an on and
+   an off within them, a part outside them starting the count again */
+int busy_seen(const ring::Tone &t, const struct homolog_params &p)
+{
+	int on_lo = 10 * p.MinBusyCadenceOnTime, on_hi = 10 * p.MaxBusyCadenceOnTime;
+	int off_lo = 10 * p.MinBusyCadenceOffTime, off_hi = 10 * p.MaxBusyCadenceOffTime;
+	if (on_hi <= 0 || off_hi <= 0 || on_lo > on_hi || off_lo > off_hi) {
+		on_lo = off_lo = 200;
+		on_hi = off_hi = 800;
+	} else {
+		on_lo -= 40;
+		off_lo -= 40;
+		on_hi += 40;
+		off_hi += 40;
+	}
+	int need = p.BusyDetectionCyclesNumber >= 2 &&
+		p.BusyDetectionCyclesNumber <= 8 ? p.BusyDetectionCyclesNumber : 4;
+	if (!t.n)
+		return 0;               /* (steady: no cadence) */
+	int cycles = 0;
+	for (int i = 0; i < 4 * need * t.n; i++) {
+		int k = i % t.n;
+		int ms = (int)lrintf(t.cadence[k] * 1000);
+		int lo = k % 2 ? off_lo : on_lo, hi = k % 2 ? off_hi : on_hi;
+		bool in = ms >= lo + 30 && ms <= hi - 30;
+		if (!in && ms >= lo - 30 && ms <= hi + 30)
+			return -1;
+		if (!in)
+			cycles = 0;
+		else if (k % 2 == 0)
+			cycles++;
+		if (cycles >= need)
+			return 1;
+	}
+	return 0;
+}
 
 struct Call {
 	std::string label;
@@ -1432,6 +1485,36 @@ std::vector<Call> calls()
 		    busy_like ? "ATX2;AT+MS=122" : "ATX4;AT+MS=122",
 		    { "NET=9600:9600:ulaw", std::string("NET_RING=") + rc->name,
 		      "DIAL=123", "STREAM=1" });
+	}
+	/* and B's line busy (NET_BUSY), the network congested
+	   (NET_CONGESTION): A, in the core's country of the same name if it
+	   has one (else the USA), waits for its dial tone and dials, and
+	   ends with BUSY on the tone where its busy bounds take its
+	   cadence, else NO ANSWER after S7 (busy_seen()); a tone too near
+	   them to say has no call */
+	for (const ring::Country *rc = ring::COUNTRIES; rc->name; rc++) {
+		std::string n = rc->name;
+		for (char &ch : n)
+			ch = (char)tolower((unsigned char)ch);
+		const struct homolog_set *h = core_country(rc);
+		const struct homolog_set *usa = homolog_set;
+		while (strcmp(usa->name, "USA"))
+			usa++;
+		for (int cong = 0; cong < 2; cong++) {
+			int seen = busy_seen(cong ? rc->congestion : rc->busy,
+					     *(h ? h : usa)->params);
+			if (seen < 0)
+				continue;
+			std::vector<std::string> e = {
+				"NET=9600:9600:ulaw",
+				std::string("NET_RING=") + rc->name,
+				cong ? "NET_CONGESTION=1" : "NET_BUSY=1", "DIAL=123",
+				seen ? "EXPECT_FAIL=BUSY" : "EXPECT_FAIL=NO ANSWER" };
+			if (h)
+				e.push_back(std::string("COUNTRY_A=") + h->name);
+			add("ring", "ring_" + n + (cong ? "_congestion" : "_busy"),
+			    "open", "open", "ATX4;ATS7=15;AT+MS=122", e);
+		}
 	}
 	add("ring", "ring_uk_second", "open", "open", "ATX3;AT+MS=122",
 	    { "NET=9600:9600:ulaw", "NET_RING=UK", "RING_ANSWER=2",

@@ -1089,7 +1089,11 @@ country's exchange does, where it otherwise only carries the samples:
   frequency or two, or one modulated);
 - B off hook answers it, and from then on the line is through. Until
   then each hears only that; A on hook for 0.5 s (longer than a dial
-  pulse) ends the call.
+  pulse) ends the call;
+- with B off hook already, or `NET_BUSY=1`, A hears the country's busy
+  tone in place of the ringing (and B is not rung); with
+  `NET_CONGESTION=1` its congestion tone (the network's lines or
+  switches busy). Either goes on until A hangs up.
 
 The countries are those of the ITU's list of the tones used in national
 networks (Annex to ITU Operational Bulletin No. 955, position on 1 May
@@ -1097,7 +1101,8 @@ networks (Annex to ITU Operational Bulletin No. 955, position on 1 May
 generated from the list's Word file by `ring_tones_gen.py`, which says
 how it picks a tone where the list gives several (and, for the nine
 countries with no dial tone in it, gives them a steady one of their
-ringing tone's frequency). Names are the list's
+ringing tone's frequency; a "Re-order tone" is a congestion tone, and a
+country with none takes its busy tone for it). Names are the list's
 in capitals (`UNITED_KINGDOM_OF_GREAT_BRITAIN_AND_NORTHERN_IRELAND`), or
 an alias: the core's country names (`UK`, `USA`, `SOUTHKOREA`, ...) and
 a few short ones.
@@ -1112,6 +1117,18 @@ some islands) has a busy tone's cadence to a modem with the default
 country's busy bounds (0.18 to 0.6 s); those countries' callers dial in
 `ATX2`, which waits for the dial tone and takes no notice of a busy
 tone.
+
+And a busy call and a congestion call in each country: A, in the
+core's country of the same name if the core has it (`COUNTRY_A`, its
+busy bounds; else the USA's, 0.18 to 0.6 s), waits for the dial tone,
+dials 123 and is to end with BUSY where its busy bounds take the tone's
+cadence, else with NO ANSWER after S7 (`EXPECT_FAIL`). The test works
+which out as the call progress pump would (`busy_seen()`), and makes no
+call for a tone within 30 ms of the bounds. Of the 384 tones 339 give
+BUSY and 31 NO ANSWER (the 0.75 and 1 s busy tones of Fiji, Mauritius,
+Sudan, ... to a modem in the USA's bounds; congestion tones faster than
+the core's own country's busy tone, as the UK's, Germany's or India's;
+Ascension's steady one), 14 have no call.
 
 The modem's dial tone check (the call progress pump's 350, 425 and 440
 Hz filters, which take 400, 450 and the pairs too) wants 1 s of it; a

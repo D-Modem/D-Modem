@@ -248,6 +248,7 @@ struct Modem {
 				   calls next to it first) */
 	int hook_fd = -1;       /* NET_RING: its fd 5 (MODEM_HOOK_FD), the
 				   hook's changes to netsim */
+	std::string country;    /* COUNTRY_A, COUNTRY_B: --country=<it> */
 
 	/* killed if still there */
 	~Modem() { stop(true); }
@@ -274,8 +275,11 @@ struct Modem {
 			envp.push_back((char *)e.c_str());
 		envp.push_back(nullptr);
 		std::string dbg = "--debug=" + debug;
+		std::string cty = "--country=" + country;
 		argv.push_back((char *)exe.c_str());
 		argv.push_back((char *)dbg.c_str());
+		if (!country.empty())
+			argv.push_back((char *)cty.c_str());
 		argv.push_back(nullptr);
 		Pipe o;
 		pid_t parent = getpid();
@@ -704,6 +708,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		m[k]->nice_inc = nice_inc;
 		if (ringing)
 			m[k]->hook_fd = hook[k].w;
+		m[k]->country = env(k ? "COUNTRY_B" : "COUNTRY_A");
 	}
 	int wav_marks = 0;
 	bool wav = pn > 0 && !env("WAV").empty();
@@ -869,6 +874,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 					m[1]->nice_inc = nice_inc;
 					if (ringing)
 						m[1]->hook_fd = hook[1].w;
+					m[1]->country = env("COUNTRY_B");
 					if (!m[1]->start(exe_b, "modemB2", b_in,
 							 b_out, dbg, {},
 							 log_dir + "/modemB2.log")) {
@@ -908,7 +914,8 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				dte.cmd(1, "ATA");
 				dte.cmd(0, "ATD" + env("DIAL"));
 			}
-			if (dte.wait(0, connect_a, 90))
+			if (dte.wait(0, connect_a, 90) &&
+			    dte.buf[0].find("CONNECT") != std::string::npos)
 				dte.wait(1, connect_b, 15);
 			say("A: %s\n", show(dte.buf[0]).c_str());
 			say("B: %s\n", show(dte.buf[1]).c_str());
@@ -919,10 +926,11 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				dte.buf[1].find("CONNECT") != std::string::npos;
 			/* EXPECT_FAIL: the call is to end before CONNECT
 			   (EXPECT_A and EXPECT_B say how) */
-			if (!env("EXPECT_FAIL").empty())
+			std::string fail = env("EXPECT_FAIL");
+			if (!fail.empty())
 				done(!connected &&
-				     dte.buf[0].find("NO CARRIER") !=
-				     std::string::npos);
+				     dte.buf[0].find(fail == "1" ? "NO CARRIER" :
+						     fail) != std::string::npos);
 			if (!connected)
 				done(false);
 			/* (B answered the ringing, not by itself) */

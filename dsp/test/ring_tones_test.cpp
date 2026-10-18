@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    ring_tones_test.cpp - the countries' ringing (ring_tones.h): its
+ *    ring_tones_test.cpp - the countries' tones (ring_tones.h): their
  *                          rows, and each country's ring signal, at its
  *                          frequency and in its cadence, through the ring
  *                          detector (dsp.h's RingDetect) to the core, as a
@@ -120,15 +120,19 @@ TEST(RingTones, Rows)
 	int n = 0;
 	for (const ring::Country *c = ring::COUNTRIES; c->name; c++, n++) {
 		SCOPED_TRACE(c->name);
-		for (const ring::Tone *t : { &c->ringing, &c->dial }) {
+		for (const ring::Tone *t : { &c->ringing, &c->dial, &c->busy,
+					     &c->congestion }) {
 			EXPECT_TRUE(t->f1 >= 300 && t->f1 <= 500);
 			EXPECT_TRUE(!t->f2 || (t->f2 >= 300 && t->f2 <= 700));
 			EXPECT_TRUE(t->mod >= 0 && t->mod < 100);
 		}
-		EXPECT_TRUE(c->dial.n >= 0 && c->dial.n <= 8 &&
-			    c->dial.n % 2 == 0);
-		for (int k = 0; k < c->dial.n; k++)
-			EXPECT_GT(c->dial.cadence[k], 0);
+		for (const ring::Tone *t : { &c->dial, &c->busy,
+					     &c->congestion }) {
+			EXPECT_TRUE(t->n >= 0 && t->n <= 8 && t->n % 2 == 0);
+			for (int k = 0; k < t->n; k++)
+				EXPECT_TRUE(t->cadence[k] > 0 &&
+					    t->cadence[k] <= 5);
+		}
 		EXPECT_TRUE(c->ring_hz == 16 || c->ring_hz == 20 ||
 			    c->ring_hz == 25 || c->ring_hz == 50);
 		EXPECT_TRUE(c->ringing.n >= 2 && c->ringing.n <= 8 &&
@@ -170,6 +174,13 @@ TEST(RingTones, Rows)
 	EXPECT_TRUE(ring::on_at(it, 0.6));
 	EXPECT_FALSE(ring::on_at(it, 1.5));
 	EXPECT_NEAR(ring::period(it), 2.0, 1e-6);
+	/* busy and congestion: the USA's 480 + 620 Hz, Germany's 425 Hz at
+	   0.48 s on and off, and twice as fast */
+	const ring::Country &de = *ring::find("GERMANY");
+	EXPECT_EQ(ring::find("USA")->busy.f2, 620);
+	EXPECT_EQ(de.busy.n, 2);
+	EXPECT_EQ(de.busy.cadence[0], 0.48f);
+	EXPECT_EQ(de.congestion.cadence[1], 0.24f);
 }
 
 /* each country's ringing, 26 s of it with no auto answer: a RING for

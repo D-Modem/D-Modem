@@ -6,9 +6,9 @@
  *                   ringing tone the caller hears (its frequency, or two,
  *                   or one modulated, and its cadence, which the ring
  *                   signal to the called line keeps too), that signal's
- *                   frequency, and the dial tone (ring_tones.cpp, from the
- *                   ITU's list of the tones of national networks, after
- *                   E.180)
+ *                   frequency, the dial tone, the busy tone and the
+ *                   congestion tone (ring_tones.cpp, from the ITU's list
+ *                   of the tones of national networks, after E.180)
  *
  */
 #ifndef DMODEM_TEST_RING_TONES_H
@@ -31,6 +31,8 @@ struct Country {
 	Tone ringing;           /* (n > 0) */
 	int ring_hz;            /* the ring signal's */
 	Tone dial;
+	Tone busy;              /* the called line busy */
+	Tone congestion;        /* the network's lines or switches busy */
 };
 
 /* the countries, up to an entry whose name is null */
