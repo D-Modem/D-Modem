@@ -132,6 +132,24 @@ TEST(Core, Options)
 	delete m;
 }
 
+/* the country by the table's name, the ITU list's of the same country
+   (UNITED_KINGDOM: UK), or one only the list has (Fiji: the USA's line
+   settings, its own tones) */
+TEST(Core, Countries)
+{
+	Line l;
+	Modem *m = make(l, "uk", "united kingdom");
+	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: UK\r\nOK\r\n");
+	delete m;
+	m = make(l, "fj", "Fiji");
+	EXPECT_EQ(cmd(m, l, "ATE0I7\r"),
+		  "ATE0I7\r\r\nCountry: FIJI (USA line)\r\nOK\r\n");
+	delete m;
+	m = make(l, "de", "GERMANY");
+	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: GERMANY\r\nOK\r\n");
+	delete m;
+}
+
 /* a line that cannot start or change the hook */
 TEST(Core, FailingLine)
 {

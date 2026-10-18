@@ -530,10 +530,12 @@ Results and dial tone, \cmd{X0} to \cmd{X4} (\sreg{56}; default 4):
 \bottomrule
 \end{tabular}
 \end{center}
-BUSY on a busy tone (four cadences of 0.2 to 0.8 s) comes in \cmd{X3}
-and \cmd{X4} only, as in the Hayes set: the others take no notice of a
-busy tone (a ringing tone of 0.4~s on and 0.2~s off, as some countries
-have, keeps a busy tone's cadence).  NO ANSWER comes in all of them,
+BUSY on a busy tone comes in \cmd{X3} and \cmd{X4} only, as in the Hayes
+set: the others take no notice of a busy tone.  A busy tone is four
+cycles of the country's busy or congestion tone's cadence (the ITU's
+list's, 15\% or 80~ms either side: 0.48~s on and off or 0.24 in
+Germany, 0.75~s in India, 1~s on and 4 off in Egypt), not its ringing
+tone; a country with neither (none of the 192) its table's bounds.  NO ANSWER comes in all of them,
 and the dial string's \cmd{W} and \cmd{@} wait in all of them.  A SIP
 call has no dial tone: dmodemd wants \cmd{ATX3}.
 \end{command}
@@ -755,7 +757,12 @@ The command sets the modem has: \cmd{+GCAP: +FCLASS,+MS}.
 The country by its T.35 code in hexadecimal (\cmd{+GCI:b5}: USA),
 which sets its dial pause (\sreg{8}) and hook flash (\sreg{24}) times; \cmd{=?}
 lists the codes.  dmodemd's \cmd{-c} option names the country it starts
-with (\cmd{--countrylist} lists them).
+with (\cmd{--countrylist} lists them): one of the table's, or any of the
+192 of the ITU's list of the tones of national networks (after E.180),
+by its name there in capitals or the table's (\cmd{-c FIJI},
+\cmd{-c UNITED\_KINGDOM}: \cmd{UK}).  The table's countries have their own
+dialling settings; the others the USA's (\cmd{ATI7}: \cmd{Country: FIJI
+(USA line)}), and all of them their own busy and congestion tones.
 \end{command}
 
 \subsection{Error correction: +ES}

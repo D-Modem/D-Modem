@@ -21,6 +21,7 @@
 
 #include "dsp.h"
 #include "pump.h"
+#include "tones.h"
 
 namespace dsp {
 
@@ -88,6 +89,9 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	   (ms), the cycles it takes (the country's, or 200 to 800 ms and
 	   4) */
 	int busy_on_min, busy_on_max, busy_off_min, busy_off_max;
+	bool busy_bounds;               /* the country's bounds above */
+	const tones::Tone *busy_tone[2]; /* its busy, congestion tone, if
+					   it has them (MDMPRM_TONES) */
 	int busy_need;
 	Biquad cpt_bp;
 	float cpt_energy;
@@ -102,6 +106,7 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 
 	const char *tag() const { return "callprog"; }
 	int block();
+	bool busy_part(bool on, int len) const;
 	float dial_sample();
 	bool pulse_digit(char ch);
 	void hook_pulse(int broken);
@@ -156,11 +161,26 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 	busy_on_max = 10 * (int)modem_get_param(m, GetMaxBusyCadenceOnTime);
 	busy_off_min = 10 * (int)modem_get_param(m, GetMinBusyCadenceOffTime);
 	busy_off_max = 10 * (int)modem_get_param(m, GetMaxBusyCadenceOffTime);
-	if (busy_on_max <= 0 || busy_off_max <= 0 ||
-	    busy_on_min > busy_on_max || busy_off_min > busy_off_max) {
+	/* or rather the country's own busy and congestion tones of the
+	   ITU's list (tones.h), if it has them: a part of either's cadence,
+	   15% or 80 ms either side (the bounds above, Smart Link's table,
+	   are only for a country with neither; with no bounds either, 0.2
+	   to 0.8 s) */
+	{
+		intptr_t t = modem_get_param(m, MDMPRM_TONES);
+		const tones::Country *c = t > 0 ?
+			reinterpret_cast<const tones::Country *>(t) : nullptr;
+		busy_tone[0] = c && c->busy.n ? &c->busy : nullptr;
+		busy_tone[1] = c && c->congestion.n ? &c->congestion : nullptr;
+	}
+	busy_bounds = !busy_tone[0] && !busy_tone[1] &&
+		!(busy_on_max <= 0 || busy_off_max <= 0 ||
+		  busy_on_min > busy_on_max || busy_off_min > busy_off_max);
+	if (!busy_bounds && !busy_tone[0] && !busy_tone[1]) {
 		busy_on_min = busy_off_min = 200;
 		busy_on_max = busy_off_max = 800;
-	} else {
+		busy_bounds = true;
+	} else if (busy_bounds) {
 		busy_on_min -= 2 * BLOCK_MS;
 		busy_off_min -= 2 * BLOCK_MS;
 		busy_on_max += 2 * BLOCK_MS;
@@ -205,6 +225,26 @@ static int cp_tone_block(struct cp_tone *t, float block_power, float min_power)
 	else
 		t->blocks = 0;
 	return t->blocks;
+}
+
+/* whether an on (or off) of len ms is a busy tone's: near a part of the
+   country's busy or congestion tone, or within its bounds */
+bool CallProgPump::busy_part(bool on, int len) const
+{
+	if (busy_bounds && (on ? len >= busy_on_min && len <= busy_on_max :
+			    len >= busy_off_min && len <= busy_off_max))
+		return true;
+	for (const tones::Tone *t : busy_tone) {
+		if (!t)
+			continue;
+		for (int k = on ? 0 : 1; k < t->n; k += 2) {
+			int ms = (int)(t->cadence[k] * 1000 + 0.5f);
+			int tol = ms * 15 / 100 > 80 ? ms * 15 / 100 : 80;
+			if (len >= ms - tol && len <= ms + tol)
+				return true;
+		}
+	}
+	return false;
 }
 
 /* process one complete detector block, returns a DPSTAT_ code */
@@ -277,8 +317,7 @@ int CallProgPump::block()
 		cpt_run++;
 	} else {
 		int len = cpt_run * BLOCK_MS;
-		if (cpt_on ? len >= busy_on_min && len <= busy_on_max :
-		    len >= busy_off_min && len <= busy_off_max)
+		if (busy_part(cpt_on, len))
 			busy_cycles += cpt_on ? 1 : 0;
 		else
 			busy_cycles = 0;

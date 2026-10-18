@@ -126,6 +126,8 @@ intptr_t Modem::get_param(unsigned name)
 	case MDMPRM_VCVM:
 		vcvm_refresh();
 		return param_address(&vcvm_);
+	case MDMPRM_TONES:
+		return tones_ ? param_address(tones_) : 0;
 
 	/* the service class, V.92 modem-on-hold */
 	case MDMPRM_MODE:

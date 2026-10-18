@@ -33,7 +33,7 @@
  *    NET_PPM, the pad and robbed bits), its samples on the network's
  *    clock only at phase 0 and no ppm.
  *
- *    NET_RING=<country> (ring_tones.h's names: USA, UK, GERMANY, ...):
+ *    NET_RING=<country> (tones.h's names: USA, UK, GERMANY, ...):
  *    the call is put through as that country's exchange puts it.  The
  *    modems say their hook on NET_HOOK_A and NET_HOOK_B (fds: '1' off
  *    hook, '0' on, as PipeModem's MODEM_HOOK_FD writes it).  A off hook
@@ -65,7 +65,7 @@
 #include "dsp.h"
 #include "g711.h"
 #include "qam.h"
-#include "ring_tones.h"
+#include "tones.h"
 #include "v34.h"
 
 using namespace dsp;
@@ -676,7 +676,7 @@ struct Moh {
    NET_DIAL_TIMEOUT: the call put through as the country's exchange puts
    it (above) */
 struct Ring {
-	const ring::Country *ring_c = nullptr;
+	const tones::Country *ring_c = nullptr;
 	int ring_fd[2] = { -1, -1 };    /* A's hook, B's */
 	bool ring_off[2] = {};          /* off hook */
 	enum { IDLE, DIAL_TONE, DIALLING, RINGING, ANSWERED, BUSY,
@@ -703,10 +703,10 @@ struct Ring {
 		const char *c = getenv("NET_RING");
 		if (!c)
 			return true;
-		ring_c = ring::find(c);
+		ring_c = tones::find(c);
 		if (!ring_c) {
 			fprintf(stderr, "netsim: NET_RING=%s: no such country "
-				"(ring_tones.cpp)\n", c);
+				"(tones.cpp)\n", c);
 			return false;
 		}
 		const char *h[2] = { getenv("NET_HOOK_A"), getenv("NET_HOOK_B") };
@@ -737,7 +737,7 @@ struct Ring {
 		return true;
 	}
 	/* "425 Hz", "350 + 440 Hz", "400 x 25 Hz", "... in a cadence" */
-	static const char *tone_name(const ring::Tone &t, char *b, size_t n)
+	static const char *tone_name(const tones::Tone &t, char *b, size_t n)
 	{
 		int k = snprintf(b, n, "%d", t.f1);
 		if (t.f2)
@@ -836,9 +836,9 @@ struct Ring {
 				ring_digit(ring_dtmf.digit);
 	}
 	/* a sample of tone t, at t s of it, peak level a */
-	static short ring_tone(const ring::Tone &c, double t, double a)
+	static short ring_tone(const tones::Tone &c, double t, double a)
 	{
-		if (!ring::on_at(c, t))
+		if (!tones::on_at(c, t))
 			return 0;
 		double x = sin(2 * M_PI * c.f1 * t);
 		if (c.f2)
@@ -850,7 +850,7 @@ struct Ring {
 	/* the ring signal at t s of it, on B's line on hook */
 	short ring_signal(double t) const
 	{
-		if (!ring::on_at(ring_c->ringing, t))
+		if (!tones::on_at(ring_c->ringing, t))
 			return 0;
 		return (short)lrint(24000 * sin(2 * M_PI * ring_c->ring_hz * t));
 	}

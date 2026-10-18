@@ -15,6 +15,7 @@
 
 #include <dcore.h>
 #include <log.h>
+#include <tones.h>
 
 #include "options.h"
 
@@ -278,11 +279,21 @@ void CommandLine::usage() const
 	exit(1);
 }
 
-/* the countries of homolog_set, their T.35 code and name, on stderr */
+/* the countries of homolog_set, their T.35 code and name, then those
+   of the ITU's list of tones (tones.h) that it has not, on stderr */
 void list_countries()
 {
 	for (const struct homolog_set *h = homolog_set; h->name; h++)
 		fprintf(stderr, "%02x: %s\n", (unsigned)h->id, h->name);
+	fprintf(stderr, "and with the USA's line settings and their own "
+		"busy tones:\n");
+	for (const tones::Country *c = tones::COUNTRIES; c->name; c++) {
+		const struct homolog_set *h = homolog_set;
+		while (h->name && tones::find(h->name) != c)
+			h++;
+		if (!h->name)
+			fprintf(stderr, "    %s\n", c->name);
+	}
 }
 
 void CommandLine::apply(Options &opt) const

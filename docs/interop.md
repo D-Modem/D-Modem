@@ -1097,8 +1097,8 @@ country's exchange does, where it otherwise only carries the samples:
 
 The countries are those of the ITU's list of the tones used in national
 networks (Annex to ITU Operational Bulletin No. 955, position on 1 May
-2010, after Recommendation E.180), 192 of them: `ring_tones.cpp`,
-generated from the list's Word file by `ring_tones_gen.py`, which says
+2010, after Recommendation E.180), 192 of them: `tones.cpp`,
+generated from the list's Word file by `tones_gen.py`, which says
 how it picks a tone where the list gives several (and, for the nine
 countries with no dial tone in it, gives them a steady one of their
 ringing tone's frequency; a "Re-order tone" is a congestion tone, and a
@@ -1108,27 +1108,24 @@ an alias: the core's country names (`UK`, `USA`, `SOUTHKOREA`, ...) and
 a few short ones.
 
 `ctest -L ring` makes a call between two open modems in each country:
-A waits for the dial tone (`ATX4`) and dials 123 in DTMF, B answers at
-its first RING (V.22bis, a second of data). And a few more: no dial tone
-wait and no digits (`ATX3`) with B at the second ring, two calls, V.34,
-`half_hda` answering, and `half_hda` pulse dialling after its dial tone.
-A ringing tone of 0.4 s on and 0.2 off for ever (as the list has for
-some islands) has a busy tone's cadence to a modem with the default
-country's busy bounds (0.18 to 0.6 s); those countries' callers dial in
-`ATX2`, which waits for the dial tone and takes no notice of a busy
-tone.
+A, set to that country, waits for the dial tone (`ATX4`) and dials 123
+in DTMF, B answers at its first RING (V.22bis, a second of data). And a
+few more: no dial tone wait and no digits (`ATX3`) with B at the second
+ring, two calls, V.34, `half_hda` answering, and `half_hda` pulse
+dialling after its dial tone.
 
-And a busy call and a congestion call in each country: A, in the
-core's country of the same name if the core has it (`COUNTRY_A`, its
-busy bounds; else the USA's, 0.18 to 0.6 s), waits for the dial tone,
-dials 123 and is to end with BUSY where its busy bounds take the tone's
-cadence, else with NO ANSWER after S7 (`EXPECT_FAIL`). The test works
-which out as the call progress pump would (`busy_seen()`), and makes no
-call for a tone within 30 ms of the bounds. Of the 384 tones 339 give
-BUSY and 31 NO ANSWER (the 0.75 and 1 s busy tones of Fiji, Mauritius,
-Sudan, ... to a modem in the USA's bounds; congestion tones faster than
-the core's own country's busy tone, as the UK's, Germany's or India's;
-Ascension's steady one), 14 have no call.
+And a busy call and a congestion call in each country: A, set to the
+country (`COUNTRY_A`, dmodemd's `--country`, which takes every country
+of the list), waits for the dial tone, dials 123 and is to end with
+BUSY (`EXPECT_FAIL`), on a steady tone (Ascension's congestion tone)
+with NO ANSWER after S7. All 384 do. The modem takes the country's own
+busy and congestion tones for busy (`dsp/dp_callprog.cpp`, from
+`dsp/tones.h`): four cycles of either's cadence, 15% or 80 ms either
+side, and not its ringing tone, so the callers of the countries whose
+ringing tone is 0.4 s on and 0.2 off for ever dial in `ATX4` too.
+`ring_tones_test` checks the same without the calls: every country's
+busy and congestion tones are BUSY to a modem in that country, its
+ringing tone is not.
 
 The modem's dial tone check (the call progress pump's 350, 425 and 440
 Hz filters, which take 400, 450 and the pairs too) wants 1 s of it; a

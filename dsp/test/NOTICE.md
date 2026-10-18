@@ -30,10 +30,10 @@ The same holds for Smart Link's AT command manual,
 
 ## The ITU's list of national tones
 
-`ring_tones.cpp` is generated from the ITU's list of the tones used in
+`tones.cpp` is generated from the ITU's list of the tones used in
 national networks (Annex to ITU Operational Bulletin No. 955, position on
 1 May 2010, after Recommendation E.180), which the ITU publishes freely
 at https://www.itu.int/dms_pub/itu-t/opb/sp/T-SP-E.180-2010-MSW-E.doc:
 each country's dial, ringing, busy and congestion tones and their
 cadences, as data. The list itself is not
-in this repository; `ring_tones_gen.py` reads it.
+in this repository; `tones_gen.py` reads it.

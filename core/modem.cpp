@@ -31,6 +31,7 @@
 #include <modem_dp.h>
 
 #include "dcore.h"
+#include "tones.h"
 #include "log.h"
 
 /* (weak: Smart Link's library, half_smartlink's, has none of these;
@@ -225,7 +226,7 @@ Modem::Modem(Host &host, const Options &opt)
 			   "code!\n", name_, opt.country);
 	ring_last_ = ring_first_ = host_.now_ms();
 	setup_config();
-	logf("created: %d Hz, %s\n", srate_, homolog_->name);
+	logf("created: %d Hz, %s\n", srate_, country_name().c_str());
 	voice_init();
 	ok_ = true;
 }
@@ -302,19 +303,45 @@ void Modem::sregs_init()
 }
 
 /* the country: the first of the table whose T.35 code is id, or whose
-   name is name (when there is one), with its S8 and S24; -1 if there is
-   none */
+   name is name (when there is one), or is the same country of the ITU's
+   list of tones as name (dsp/tones.h: UNITED_KINGDOM is UK), with its S8
+   and S24 and its tones; else a country of that list alone, with the
+   default's line settings; -1 if there is none */
 int Modem::homolog_init(int id, const char *name)
 {
+	const tones::Country *t = name && *name ? tones::find(name) : nullptr;
+	const struct homolog_set *dflt = nullptr;
 	for (const struct homolog_set *h = homolog_set; h->name; h++) {
-		if (h->id != id && !(name && *name && !strcmp(h->name, name)))
+		if (h->id == MODEM_DEFAULT_COUNTRY_CODE)
+			dflt = h;
+		if (h->id != id && !(name && *name && !strcmp(h->name, name)) &&
+		    !(t && tones::find(h->name) == t))
 			continue;
 		homolog_ = h;
+		tones_ = tones::find(h->name);
+		tones_only_ = false;
 		sregs_[SREG_DIAL_PAUSE_TIME] = h->params->DialPauseTime;
 		sregs_[SREG_FLASH_TIMER] = h->params->HookFlashTime;
 		return 0;
 	}
-	return -1;
+	if (!t || !dflt)
+		return -1;
+	homolog_ = dflt;
+	tones_ = t;
+	tones_only_ = true;
+	sregs_[SREG_DIAL_PAUSE_TIME] = dflt->params->DialPauseTime;
+	sregs_[SREG_FLASH_TIMER] = dflt->params->HookFlashTime;
+	return 0;
+}
+
+/* the country's name: the table's, or the ITU list's with the line
+   settings' ("FIJI (USA line)") */
+std::string Modem::country_name() const
+{
+	if (!tones_only_)
+		return homolog_->name;
+	return std::string(tones_->name) + " (" + homolog_->name +
+		" line)";
 }
 
 /* the voice parameters' defaults (+VIP) */

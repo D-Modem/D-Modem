@@ -2,19 +2,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    ring_tones.h - the countries' tones for the tests' networks: the
- *                   ringing tone the caller hears (its frequency, or two,
- *                   or one modulated, and its cadence, which the ring
- *                   signal to the called line keeps too), that signal's
- *                   frequency, the dial tone, the busy tone and the
- *                   congestion tone (ring_tones.cpp, from the ITU's list
- *                   of the tones of national networks, after E.180)
+ *    tones.h - the countries' tones, from the ITU's list of the tones
+ *              of national networks (after E.180; tones.cpp): the ringing
+ *              tone the caller hears (its frequency, or two, or one
+ *              modulated, and its cadence, which the ring signal to the
+ *              called line keeps too), that signal's frequency, the dial
+ *              tone, the busy tone and the congestion tone.  The call
+ *              progress pump takes the country's busy and congestion
+ *              tones for busy (dp_callprog.cpp); the tests' network,
+ *              netsim, plays them all
  *
  */
-#ifndef DMODEM_TEST_RING_TONES_H
-#define DMODEM_TEST_RING_TONES_H
+#ifndef DMODEM_TONES_H
+#define DMODEM_TONES_H
 
-namespace ring {
+namespace tones {
 
 /* a tone and its cadence */
 struct Tone {
@@ -74,6 +76,6 @@ inline double period(const Tone &c)
 	return p;
 }
 
-} // namespace ring
+} // namespace tones
 
 #endif

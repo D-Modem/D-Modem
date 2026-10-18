@@ -882,7 +882,7 @@ int Modem::at_I(char *p, int *len)
 		break;
 	case 7:
 		puts("Country: ");
-		puts(homolog_->name);
+		puts(country_name().c_str());
 		crlf();
 		break;
 	case 11:

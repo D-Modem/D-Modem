@@ -23,6 +23,8 @@
 
 #include <stdint.h>
 #include <time.h>
+
+#include <string>
 #include <vector>
 
 #include <modem_defs.h>
@@ -40,6 +42,10 @@
 #endif
 
 namespace dlink { class Link; }
+
+namespace tones {
+struct Country;
+}
 
 namespace dcore { class Modem; }
 
@@ -317,6 +323,7 @@ private:
 	void schedule_event(unsigned mask, unsigned long ms);
 	void sregs_init();
 	int homolog_init(int id, const char *name);
+	std::string country_name() const;
 	int set_mode(enum MODEM_MODE mode);
 	int reset();
 	int online();
@@ -416,6 +423,11 @@ private:
 	unsigned long kept_[KEPT_PARAMS][KEPT_VALUES] = {};
 	unsigned kept_n_[KEPT_PARAMS] = {};
 	const struct homolog_set *homolog_ = nullptr;
+	/* the country's tones (dsp/tones.h: busy and congestion for the
+	   call progress pump), and whether homolog_ is only the default's
+	   line settings for a country the table has not (tones_only_) */
+	const tones::Country *tones_ = nullptr;
+	bool tones_only_ = false;
 
 	/* events and timers */
 	unsigned event_ = 0, new_event_ = 0;

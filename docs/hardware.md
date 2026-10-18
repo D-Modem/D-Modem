@@ -190,9 +190,11 @@ that user needs access to `/dev/snd/*`.
   (20 ms apart on ALSA): 60/40 pulses keep their times, others come
   out within one frame of theirs. `*`, `#` and A to D have no pulses
   and are skipped. A line that cannot pulse (SIP) dials in DTMF.
-- **Busy tone.** The pump takes the country's busy cadence (the bounds of
-  its on and off times, and how many cycles) where the table has one,
-  and 0.2 to 0.8 s and four cycles where not.
+- **Busy tone.** The pump takes the country's busy and congestion
+  tones (`dsp/tones.h`, the ITU's list, 192 countries): four cycles of
+  either's cadence, 15% or 80 ms either side, and not the country's
+  ringing tone. A country with neither would have the table's bounds of
+  on and off times, or 0.2 to 0.8 s.
   In voice mode, `ATD` waits 2 s, dials, then takes the call as answered
   by the ringing tone's end (`+VRA`), or by `+VRN` without one (V.253
   9.1.1).
@@ -224,7 +226,8 @@ that user needs access to `/dev/snd/*`.
   kept, but the country's table sets the times.
 - **Country rules.** The country (`-c`, `AT+GCI`) sets the pulse
   dialling, the busy cadence and the dial pause and hook flash times
-  (S8, S24). The codec's line settings (impedance, ring thresholds,
+  (S8, S24). `-c` takes any country of the ITU's list too: one the table
+  has not dials with the USA's settings and its own busy tones. The codec's line settings (impedance, ring thresholds,
   levels) are what its kernel driver sets: ALSA gives no control of
   them. The DTMF levels stay the pump's own.
 - **Real hardware.** The code has been tested against the fake card

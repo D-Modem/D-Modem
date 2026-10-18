@@ -67,9 +67,9 @@ dmodem_gtest(call_tone_test LABELS quick)
 dmodem_test_exe(ring_detect_test ring_detect_test.cpp)
 target_link_libraries(ring_detect_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_gtest(ring_detect_test LABELS quick)
-# the countries' ringing (ring_tones.cpp, netsim's NET_RING) through the
+# the countries' tones (../tones.cpp, netsim's NET_RING); the ringing through the
 # ring detector to the core: a RING each ring, the auto answer
-dmodem_test_exe(ring_tones_test ring_tones_test.cpp ring_tones.cpp)
+dmodem_test_exe(ring_tones_test ring_tones_test.cpp)
 target_link_libraries(ring_tones_test PRIVATE dmodem_core dmodem_dsp
 	dmodem_link)
 dmodem_gtest(ring_tones_test LABELS quick)
@@ -87,7 +87,7 @@ endif()
 set(_amr_users codec_probe)
 if(NOT WIN32)
 	dmodem_test_exe(netsim netsim.cpp codec_sim.cpp test_util.cpp
-		ring_tones.cpp
+		${S}/tones.cpp
 		${S}/dsp_util.cpp ${S}/qam.cpp ${S}/v34_tables.cpp)
 	list(APPEND _amr_users netsim)
 endif()
@@ -214,7 +214,7 @@ foreach(_n half_open half_open8 half_smartlink)
 		# the library in place of the open data pumps; its runtime and
 		# its V.92 pump come through smartlink_glue.cpp first (and
 		# the ring detector of the line on hook, dsp_util.cpp's)
-		set(_pumps smartlink_glue.cpp ${S}/dsp_util.cpp
+		set(_pumps smartlink_glue.cpp ${S}/dsp_util.cpp ${S}/tones.cpp
 			${CMAKE_CURRENT_SOURCE_DIR}/smartlink/dsplibs.o)
 		set(_l -no-pie -Wl,-z,noexecstack -Wl,--wrap=dp_runtime_create
 			-Wl,--wrap=modem_dp_register)
@@ -435,8 +435,7 @@ foreach(_p agere sm56 spandsp pctel hsf broadcom intel ess hda)
 endforeach()
 function(interop_tests label)
 	set(_n ${label}_test)
-	dmodem_test_exe(${_n} interop_test.cpp ring_tones.cpp
-		${DMODEM_CORE_NEW_DIR}/homolog_data.cpp)
+	dmodem_test_exe(${_n} interop_test.cpp ${S}/tones.cpp)
 	target_compile_definitions(${_n} PRIVATE ${_progs}
 		"NETSIM=\"$<TARGET_FILE:netsim>\""
 		"INTEROP_LOG_DIR=\"${CMAKE_CURRENT_BINARY_DIR}/logs\""

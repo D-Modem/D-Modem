@@ -113,6 +113,9 @@ enum MODEM_PARAMETER_NAMES {
 				      core that has none */
 	MDMPRM_PULSE_HOOK   = 68,  /* set: pulse dialling's break (1: the line
 				      open, on hook) or make (0) */
+	MDMPRM_TONES        = 69,  /* the country's const tones::Country *
+				      (tones.h: its busy and congestion
+				      tones); -1 or 0 if none */
 };
 
 /*
