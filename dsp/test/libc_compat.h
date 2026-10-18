@@ -2,22 +2,26 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    win_posix.h - the few POSIX calls the test programs make that
- *                  Windows' C library (MinGW-w64) has under other names
- *                  or not at all: setenv, unsetenv, mkdir with a mode;
- *                  and glibc's rand() (its TYPE_3 additive generator,
- *                  RAND_MAX 2^31 - 1), so that the tests' noise and
- *                  random documents are the same draws as on Linux,
- *                  where the tests' thresholds were set.
- *                  The build includes it ahead of each test source on
- *                  Windows (dmodem_test_exe); elsewhere it is empty.
+ *    libc_compat.h - the test programs' C library the same everywhere:
+ *                    on Windows the few POSIX calls they make that its
+ *                    C library has under other names or not at all
+ *                    (setenv, unsetenv, mkdir with a mode); and with
+ *                    any C library but glibc (Windows', musl, Apple's,
+ *                    Android's) glibc's rand() (its TYPE_3 additive
+ *                    generator, RAND_MAX 2^31 - 1), so that the tests'
+ *                    noise and random documents are the same draws as
+ *                    with glibc, where the tests' thresholds were set.
+ *                    The build includes it ahead of each test source
+ *                    here; with glibc on Linux it is empty.
  */
-#ifndef DMODEM_WIN_POSIX_H
-#define DMODEM_WIN_POSIX_H
+#ifndef DMODEM_LIBC_COMPAT_H
+#define DMODEM_LIBC_COMPAT_H
+
+/* (any C library header: glibc's defines __GLIBC__) */
+#include <stdlib.h>
 
 #ifdef _WIN32
 #include <direct.h>
-#include <stdlib.h>
 
 /* name=value in the environment (overwrite 0: kept if it is there) */
 static inline int setenv(const char *name, const char *value, int overwrite)
@@ -33,6 +37,16 @@ static inline int unsetenv(const char *name)
 	return _putenv_s(name, "");
 }
 
+#ifdef __cplusplus
+/* a directory (Windows has no mode for it) */
+static inline int mkdir(const char *path, int)
+{
+	return _mkdir(path);
+}
+#endif
+#endif /* _WIN32 */
+
+#ifndef __GLIBC__
 #include <stdint.h>
 
 /* glibc's random(3) state (TYPE_3: x(i) = x(i-3) + x(i-31)), the last 34
@@ -100,14 +114,6 @@ using ::dmodem_glibc_srand;
 #define RAND_MAX 2147483647
 #define rand() dmodem_glibc_rand()
 #define srand(seed) dmodem_glibc_srand(seed)
-
-#ifdef __cplusplus
-/* a directory (Windows has no mode for it) */
-static inline int mkdir(const char *path, int)
-{
-	return _mkdir(path);
-}
-#endif
-#endif /* _WIN32 */
+#endif /* !__GLIBC__ */
 
 #endif

@@ -4,7 +4,7 @@ Or, on an old laptop's softmodem, use it as the modem's open driver on a
 telephone line ([docs/hardware.md](docs/hardware.md)).
 
 ## Building
-You'll need Linux, CMake (3.16 or later), a C++17 compiler (and a C compiler for the Asterisk and FreeSWITCH modules), git and OpenSSL (libssl-dev: libre's digests for SIP's authentication), or Mbed TLS in its place (below).
+You'll need Linux (glibc or musl: Alpine builds and passes the same tests), CMake (3.16 or later), a C++17 compiler (and a C compiler for the Asterisk and FreeSWITCH modules), git and OpenSSL (libssl-dev: libre's digests for SIP's authentication), or Mbed TLS in its place (below).
 
     cmake -B build
     cmake --build build

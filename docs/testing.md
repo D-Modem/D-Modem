@@ -9,6 +9,14 @@ There is no i386 requirement. It builds natively on x86_64, ARM and other
 architectures, and links with `-lm`. Only the interop tests need a 32 bit
 compiler (`g++ -m32`), for the original library.
 
+With a C library other than glibc (musl on Alpine, Windows', Apple's) the
+test programs take glibc's `rand()` sequence from `dsp/test/libc_compat.h`,
+so their noise and random fax pages are the draws the thresholds were set
+with; a different sequence makes a couple of the spandsp tests fail on
+musl. CI's `musl` job builds and runs the offline tests on Alpine; the
+tests there need `coreutils` (`stdbuf`) and `tiff-dev` (spandsp's
+headers).
+
 A Windows build (MinGW-w64, `-DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake`)
 runs its tests under Wine: `ctest --test-dir build-win -L quick`. The
 interop tests are left out there ([windows.md](windows.md)).

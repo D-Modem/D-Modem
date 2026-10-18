@@ -17,13 +17,13 @@ set(_dsp ${DMODEM_DSP_SRCS})
 set(_fax ${S}/fax_modems.cpp ${S}/qam.cpp ${S}/qam_tables.cpp ${S}/dsp_util.cpp
 	${S}/dp_fsk.cpp)
 
-# Windows: setenv, unsetenv and mkdir's mode for every test source here
-if(WIN32)
-	if(MSVC)
-		add_compile_options(/FI${CMAKE_CURRENT_SOURCE_DIR}/win_posix.h)
-	else()
-		add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/win_posix.h)
-	endif()
+# every test source here on the same C library (libc_compat.h): Windows'
+# setenv, unsetenv and mkdir's mode, and glibc's rand() where the C
+# library isn't glibc (empty with glibc)
+if(MSVC)
+	add_compile_options(/FI${CMAKE_CURRENT_SOURCE_DIR}/libc_compat.h)
+else()
+	add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/libc_compat.h)
 endif()
 
 function(dmodem_test_exe name)

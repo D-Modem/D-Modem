@@ -3,6 +3,8 @@
 # (ctest -L "smartlink|agere|open" -j16, about a minute) are left out:
 # they depend on the runner's timing.
 #
+# musl: the same build and offline tests on musl libc (Alpine).
+#
 # windows: the Windows build (MinGW-w64, cross from Linux) with its
 # offline tests under Wine; dmodemd.exe kept as an artifact.
 #
@@ -78,6 +80,29 @@ jobs:
       # dmodemd started as root (ctest skips it as the runner's user)
       - name: dmodemd as root
         run: sudo python3 dmodemd/test/root_test.py build/dmodemd/dmodemd
+
+  musl:
+    runs-on: ubuntu-24.04
+    container: alpine:3.22
+    steps:
+      # (git first: checkout then clones, as libre's fetch wants)
+      - name: Packages
+        run: |
+          apk add --no-cache build-base cmake samurai git pkgconf \
+            openssl-dev gtest-dev linux-headers alsa-lib-dev python3 \
+            bash coreutils spandsp-dev tiff-dev tiff-tools
+
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DDMODEM_WERROR=ON
+
+      - name: Build
+        run: cmake --build build
+
+      # (as root in the container: dmodemd_root runs too)
+      - name: Tests
+        run: ctest --test-dir build -L "quick|spandsp|alsa" -j4 --output-on-failure
 
   windows:
     runs-on: ubuntu-24.04
