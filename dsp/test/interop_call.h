@@ -81,6 +81,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
  *                     the page sent and received (page.tx, page.rx)
  *   SHOW_TCF=1        the TCF's non-zero octets
  *   DIAL=<number>     modemA's ATD's number (none)
+ *   SETUP_B=<cmds>    modemB's own AT commands after setup's (AT+FAA=1:
+ *                     it answers adaptively, FAX before its CONNECT)
+ *   ANSWER_B=<text>   modemB's answer has it before its CONNECT (FAX)
  *   ANSWER_AFTER=<s>  modemB's ATA that long after modemA's ATD (both at
  *                     once by default)
  *   LINE_RATE=<Hz>    unpaced, modemA's sample rate, for the line's clock

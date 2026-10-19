@@ -127,6 +127,11 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	long rx_quiet;          /* samples of silence (FRS) */
 	float in_power;
 
+	/* the caller's CNG (6.6/T.31: 4.2/T.30, 0.5 s of 1100 Hz every 3.5
+	   s) in its first +FRH, until the answerer's flags come: samples
+	   into it, or -1 when off */
+	long cng_n;
+
 	/* frames from the HDLC receiver */
 	int rflags;             /* flags seen with the carrier on */
 	struct rx_frame frames[FRAME_QUEUE];
@@ -1256,14 +1261,32 @@ void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
 	f->srate = srate;
 	f->caller = caller;
 	f->t38_last_ind = -1;
+	f->cng_n = -1;
 	DSP_DBG("fax: create, %s\n", caller ? "caller" : "answerer");
-	if (caller)
+	if (caller) {
 		f->begin_frh();           /* the called fax sends DIS */
-	else {
+		f->cng_n = 0;
+	} else {
 		f->set_state(C1_CED);
 		f->state = C1_CED;
 	}
 	return f;
+}
+
+/* (dsplibs.h) an answerer whose answer tone has been on the line for
+   ms already (adaptive answer: the data answer's ANSam, before the call
+   was found to be a fax call): CED for what is left of its 3 s (none
+   past them), then its gap and the frames */
+void FAX_answer_tone(void *obj, unsigned ms)
+{
+	Fax *f = static_cast<Fax*>(obj);
+
+	if (!f || f->caller || f->state != C1_CED)
+		return;
+	if (ms > FAX_CED_MS)
+		ms = FAX_CED_MS;
+	f->count = ms2samples(ANS_SILENCE_MS + ms, f->srate);
+	DSP_DBG("fax: %u ms of answer tone sent already\n", ms);
 }
 
 /* free what FAX_create made */
@@ -1299,7 +1322,15 @@ int FAX_process(void *obj, void *in, void *out, int count)
 				f->t38_tx_sample();
 		} else if (f->state == C1_CED)
 			y = fax_ced_sample(f->count, f->srate);
-		else if (f->tx_on) {
+		else if (f->cng_n >= 0) {
+			if (f->cng_n % ms2samples(3500, f->srate) <
+			    ms2samples(500, f->srate))
+				y = FAX_CED_RMS * 1.41421f *
+					sinf(2 * (float)M_PI * 1100 *
+					     (float)(f->cng_n % f->srate) /
+					     f->srate);
+			f->cng_n++;
+		} else if (f->tx_on) {
 			y = f->tx.sample();
 			if (f->tx.done) {
 				f->tx_on = 0;
@@ -1314,6 +1345,11 @@ int FAX_process(void *obj, void *in, void *out, int count)
 		if (f->rx_on && !f->tx_on)
 			f->rx.sample(x);
 		f->count++;
+
+		/* the answerer's flags, or the first +FRH over: no more
+		   CNG */
+		if (f->cng_n >= 0 && (f->state != C1_FRH || f->rflags))
+			f->cng_n = -1;
 
 		switch (f->state) {
 		case C1_CED:

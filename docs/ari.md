@@ -128,7 +128,8 @@ take.
 
 - A fax machine that calls a modem profile (`fax` on, the default) is
   received into `<fax_dir>/<date>-<time>-<caller>-<uniqueid>.tif`, as
-  `DModem()` does, with the profile's fax settings. `DMODEMSTATUS` is
+  `DModem()` does, with the profile's fax settings (the machine found
+  out by its CNG or its V.8 CM of a fax call). `DMODEMSTATUS` is
   `FAX`, set as soon as the fax machine is heard.
 - `Stasis(dmodem,receivefax,<file>[,<ident>])` answers as a fax machine and
   receives into the file.

@@ -6,7 +6,7 @@
 - **The AT command interpreter** (`at.cpp`): `A B D E H I L M N O P Q S T V X
   Y Z`, `&A &C &D &E &F &H &K &P &Q &R &S &V`, `\A \N \V`, `%B %C %E`, `*B`,
   `#CID`, `+MS` (by number or V.250's name) `+GCI +GCAP +GMI +GMM +GMR
-  +FCLASS +VCID`, V.92 modem-on-hold (`+PMH +PMHT +PMHR`), class 1 fax
+  +FCLASS +FAA +VCID`, V.92 modem-on-hold (`+PMH +PMHT +PMHR`), class 1 fax
   (`+FTS +FRS +FTM +FRM +FTH +FRH +FMI +FMM +FMR`) and voice (`+V...` in
   `+FCLASS=8`). It takes as well, with no effect, the commands other
   modems' setup strings send (V.250's, Rockwell's and Conexant's,
@@ -32,6 +32,16 @@
   link coming up, online, online command mode (after `+++`), disconnecting;
   dialing and answering, rings (a SIP call's, or ring signals on a line
   with their cadence) and auto answer, caller ID, the fax and voice modes.
+  Adaptive answer (`+FAA=1`): the data answer runs, in data mode or in
+  fax mode, and the call is found out to be a fax call (the caller's
+  CNG, `dsp.h`'s `CngDetect`; the V.8 CM of a fax call, which the V.8
+  pump tells with `DPSTAT_FAX`; T.38 from the far end; from fax mode, a
+  caller silent through ANSam) or a data call (its pump's CONNECT): FAX
+  and class 1, the fax engine's CED cut short by the answer tone sent
+  already (`FAX_answer_tone()`), or DATA and its CONNECT.
+  `Options::fax_detect` has the program take a fax caller itself
+  (libdmodem's fax receiver): `fax_caller()`, the modem staying in data
+  mode.
   A dial string's `;` holds the call in command state once it is dialed
   (call progress's `DPSTAT_DIALED`): `ATD` dials more on it (call progress
   reads `dialing_`, the dial string and what is added, while SIP and `ATDL`
@@ -89,6 +99,8 @@ core has gone beyond the old one where it fell short:
   tone) and `@` (wait for quiet after ringing) do what V.250 says (the
   old core skipped `;` and `@`, and paused 2 s for `W`), and `S=<n>` (a
   stored number: there are none) is ERROR.
+- `+FAA=1` answers adaptively: FAX or DATA, then the call goes on as a
+  fax or a data call (the old core took only `+FAA=0`).
 
 ## Tests
 
@@ -112,7 +124,9 @@ core has gone beyond the old one where it fell short:
   before, during and after calls at V.34 with echoes, V.32bis with MNP
   and without error correction, and one with no answer; `echo A -12 0
   -30 40` sends A's signal back to it, a block and 0 and 40 ms later,
-  at -12 and -30 dB), `voice` (`+VLS=1`, whose OK the voice engine
+  at -12 and -30 dB), `adaptive` (`+FAA=1`: fax and data callers
+  into data and fax mode, FAX or DATA, `+FCLASS` after each call),
+  `voice` (`+VLS=1`, whose OK the voice engine
   gives, and a tone after it).
   `CORE_EXPECT_WRITE=1 core_equiv` writes the `.expect` files anew, to be
   read in `git diff`; an empty one starts a new script off. In a script `\\` is a backslash and `\xNN` any

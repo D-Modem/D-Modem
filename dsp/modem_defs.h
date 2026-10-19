@@ -161,6 +161,9 @@ enum DP_ID {
 #define DPSTAT_DIALED           11  /* a dial string ending in ';' is
 				       dialled: back to command state, the
 				       call kept (V.250 6.3.1) */
+#define DPSTAT_FAX              12  /* answering adaptively
+				       (MDMPRM_ADAPTIVE): the caller is a
+				       fax machine; the pump is done */
 
 /*
  *    The call's statistics (AT I11), which the pumps fill in through

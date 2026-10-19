@@ -116,6 +116,11 @@ enum MODEM_PARAMETER_NAMES {
 	MDMPRM_TONES        = 69,  /* the country's const tones::Country *
 				      (tones.h: its busy and congestion
 				      tones); -1 or 0 if none */
+	MDMPRM_ADAPTIVE     = 70,  /* answering, the call's data or fax
+				      found out (+FAA): 0 not; 1 a fax
+				      caller to be told (DPSTAT_FAX); 2 as
+				      well a caller silent after the answer
+				      tone is fax (+FCLASS=1) */
 };
 
 /*

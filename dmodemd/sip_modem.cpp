@@ -718,6 +718,7 @@ int SipModem::serve(int ctl)
 
 		report();
 		sip::set_fax(m.mode() == MODEM_MODE_FAX);
+		sip::set_t38_offers(m.adaptive_answering());
 		loop.clear();
 		if (audio >= 0)
 			loop.watch(audio);

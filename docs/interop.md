@@ -1142,6 +1142,25 @@ keeps a ring in S1 for 8 s, so that a cadence of up to 10 s (Serbia's 1 s
 on and 9 off) rings in time. Tuvalu's 12.5 s is longer: there each ring
 counts as the first, and only S0=1 answers.
 
+## Adaptive answer
+
+`ctest -L adaptive`: the open modem answers with `AT+FAA=1` (adaptive
+answer: a data answer, the call found out to be a fax or a data call;
+[at_commands.pdf](at_commands.pdf)):
+
+- each modem's class 1 fax sender calls it, answering in fax mode (and
+  the open modem's in data mode too): FAX before its CONNECT
+  (`ANSWER_B`), then the page, checked.  The open modem, Smart Link's
+  library, the Broadcom, Intel and HD-audio modems are found out by their
+  CNG; the Agere and Conexant modems send the V.8 CM of a fax call on
+  our ANSam (they would take V.34 fax), found out by its call function;
+- spandsp's V.8 with the call function of a fax machine
+  (`SPANDSP_V8_CALL=4`) into data mode: FAX, no data call;
+- data callers (the Agere modem at V.34 and V.22bis, Smart Link's at
+  V.34, spandsp's at V.22bis and V.21, the SM56 and Conexant modems at
+  V.90, the open modem at V.92), in data mode and in fax mode: DATA,
+  then the data call.
+
 ## MNP
 
 The Agere, SM56, PCTel, HSF, Broadcom, Intel and ESS modems have MNP 2 to 4 and

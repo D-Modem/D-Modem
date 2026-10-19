@@ -469,6 +469,31 @@ struct CallToneDetect {
 	void block();
 };
 
+/* a calling fax machine's CNG (4.2/T.30: 1100 Hz +-38 Hz, 0.5 s on, 3 s
+   off), heard by an answerer.  On blocks of 20 ms: a block is on when
+   1100 Hz has 60 per cent of its energy, less what an answer tone has
+   (2100 Hz: our own, in an echo), that rest not too quiet (-50 dBFS
+   rms); a burst is a run of 0.36 to 0.7 s of them (a block's dropout
+   taken in) that ends.  A data modem's signals are no pure 1100 Hz
+   (V.22's unscrambled ones are 1050 Hz, a block's null), and one tone
+   held longer is no CNG. */
+struct CngDetect {
+	Goertzel tone, ans;     /* 1100, 2100 Hz */
+	float energy;
+	int n, len;
+	int run, drop;          /* blocks on in the run, off since */
+	unsigned bursts;        /* CNG bursts heard */
+
+	/* at srate, nothing heard */
+	void init(int srate);
+	/* one sample of the line */
+	void sample(float x);
+	/* ms of the tone in the run going on (0 when off) */
+	int run_ms() const { return drop ? 0 : run * 20; }
+	/* one block's verdict */
+	void block();
+};
+
 /* the ring signal of a line on hook, as a modem codec hears it with its
    line monitor (caller ID) path on: a large wave of 15 to 70 Hz (the
    bell's 20 or 25 Hz, Japan's 16 Hz, a few 50 Hz), at 90 V and more on

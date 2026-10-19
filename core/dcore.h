@@ -47,6 +47,10 @@ namespace tones {
 struct Country;
 }
 
+namespace dsp {
+struct CngDetect;
+}
+
 namespace dcore { class Modem; }
 
 /* what the data pumps get as their struct modem (modem_dp.h): the way
@@ -139,11 +143,19 @@ struct Options {
 	const char *dev_name = nullptr; /* for ATI3 */
 	int rate = 8000;                /* the line's sample rate */
 	const char *country = nullptr;  /* by name; NULL: USA */
+	/* the program takes a fax machine that calls itself (libdmodem's
+	   fax receiver): answering in data mode, the modem finds one out
+	   (fax_caller()) and, for a V.8 fax call, stops its data answer;
+	   with +FAA=1 it takes the call on in class 1 instead */
+	bool fax_detect = false;
 };
 
 enum class Result {
 	Ok = 0, Connect = 1, Ring = 2, NoCarrier = 3, Error = 4,
 	NoDialtone = 6, Busy = 7, NoAnswer = 8,
+	/* adaptive answer (+FAA=1): the call is a fax call, or a data
+	   call (with ATV0 88 and 89, D-Modem's own numbers) */
+	Fax = 9, Data = 10,
 };
 
 /* the call (for programs that embed the modem) */
@@ -203,6 +215,15 @@ public:
 	void t38_rx(const void *ifp);
 	/* the fax is over T.38 (t38_start() until t38_stop()) */
 	bool t38() const { return t38_; }
+	/* answering with +FAA=1, the call not yet found to be data or fax
+	   (a T.38 offer now makes it a fax call: t38_start()) */
+	bool adaptive_answering() const {
+		return adapt_ == Adapt::Data || adapt_ == Adapt::Fax;
+	}
+	/* the call we answered is a fax machine's (its CNG, a V.8 CM of a
+	   fax call, T.38): with +FAA=1 the modem has gone over to class 1,
+	   with Options::fax_detect it waits for the program to take it */
+	bool fax_caller() const { return fax_caller_; }
 	/* the device reports an error */
 	void error();
 
@@ -361,6 +382,8 @@ private:
 	void voice_init();
 	void fax_process(int16_t *in, int16_t *out, int n);
 	int fax_start();
+	void fax_found(const char *why);
+	int adaptive_param() const;
 	static void fax_t38_send(void *ctx, const void *ifp);
 	void later(Later what, unsigned long samples);
 	const char *dp_name(int id) const;
@@ -544,6 +567,18 @@ private:
 	bool voice_drain_ = false, voice_drain_dle_ = false;
 	bool voice_drain_duplex_ = false;
 	void *fax_ = nullptr;
+	/* adaptive answer, while the call we answer is not yet known to
+	   be data or fax: Off, or the program's (Options::fax_detect),
+	   or +FAA=1's from data mode (Data) or class 1 (Fax: the data
+	   answer runs, +FCLASS=0 until a fax is found out or the call
+	   ends); the caller found to be a fax machine; its CNG detector;
+	   where the answer tone starts (count_) */
+	enum class Adapt { Off, Detect, Data, Fax };
+	Adapt adapt_ = Adapt::Off;
+	bool fax_detect_ = false;
+	bool fax_caller_ = false;
+	dsp::CngDetect *cng_ = nullptr;
+	unsigned long answer_tone_at_ = 0;
 	/* the call's fax over T.38 (its data octets in a packet) */
 	bool t38_ = false;
 	int t38_max_ = 0;

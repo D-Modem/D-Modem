@@ -62,8 +62,10 @@ struct dmodem_status {
 	unsigned tx_pending;            /* DTE bytes not yet sent (or, with
 					   V.42, not acknowledged): 0 when
 					   all has reached the remote */
-	int fax_caller;                 /* a fax machine's CNG came before
-					   a connection: hand the call to a
+	int fax_caller;                 /* a fax machine's CNG, or its V.8
+					   CM of a fax call (the modem then
+					   silent), came before a
+					   connection: hand the call to a
 					   dmodem_fax */
 };
 

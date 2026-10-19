@@ -132,6 +132,8 @@ intptr_t Modem::get_param(unsigned name)
 	/* the service class, V.92 modem-on-hold */
 	case MDMPRM_MODE:
 		return mode_;
+	case MDMPRM_ADAPTIVE:
+		return adaptive_param();
 	case MDMPRM_MOH_T1:
 		return moh_off_ ? 0 : moh_timer_;
 	case MDMPRM_MOH_REQ:

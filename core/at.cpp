@@ -149,9 +149,9 @@ bool taken(const char *p, int *len)
 	return false;
 }
 
-/* extended parameters kept with no effect but for +ES (which modem.cpp
-   reads): the name, the values at the start, the range groups (one a
-   value) */
+/* extended parameters kept with no effect but for +ES and +FAA (which
+   modem.cpp reads): the name, the values at the start, the range groups
+   (one a value) */
 const struct Kept {
 	const char *name;
 	unsigned n;
@@ -175,7 +175,8 @@ const struct Kept {
 	  "(512-65535),(512-65535)" },
 	{ "+PCW", 1, { 2 }, "(0-2)" },
 	{ "+PIG", 1, { 1 }, "(0,1)" },
-	{ "+FAA", 1, { 0 }, "(0)" },
+	/* +FAA=1, adaptive answer: modem.cpp reads it */
+	{ "+FAA", 1, { 0 }, "(0,1)" },
 	{ "+FPR", 1, { 0 }, "(0,1,2,4,8,10,18)" },
 	{ "-SEC", 1, { 0 }, "(0,1),(0-30)" },
 	/* V.cvm (Table 12-1/V.cvm): the modes, the signal interface's rate,

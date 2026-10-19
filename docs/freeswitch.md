@@ -83,8 +83,8 @@ The module is also a group 3 fax machine:
 It is an alternative to mod_spandsp's `txfax`/`rxfax`:
 
 - `dmodem` receives faxes by itself. When the calling machine's CNG
-  tone comes before a modem connection, the call goes to the fax
-  receiver, which writes `<fax-dir>/<date>-<time>-<caller>-<uuid>.tif`.
+  tone, or its V.8 CM of a fax call, comes before a modem connection,
+  the call goes to the fax receiver, which writes `<fax-dir>/<date>-<time>-<caller>-<uuid>.tif`.
   The profile's `fax` param set to `false` turns this off. `dmodem_status`
   is then `FAX`.
 - `dmodem_receive_fax <file> [ident]` answers as a fax machine and

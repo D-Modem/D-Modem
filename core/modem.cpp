@@ -31,6 +31,7 @@
 #include <modem_dp.h>
 
 #include "dcore.h"
+#include "dsp.h"
 #include "tones.h"
 #include "log.h"
 
@@ -50,6 +51,9 @@ extern "C" int dp_runtime_pcm(void *runtime) DCORE_WEAK;
 /* an analogue line for the pumps (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_analog(void *runtime, int analog)
 	DCORE_WEAK;
+/* the fax engine's CED cut short after an answer tone (dsplibs.h):
+   Smart Link's library's fax engine has none */
+extern "C" void FAX_answer_tone(void *obj, unsigned ms) DCORE_WEAK;
 
 namespace dcore {
 
@@ -87,7 +91,7 @@ static const char *const cause_text[] = {
 /* the result codes in words, by Result */
 static const char *const result_text[] = {
 	"OK", "CONNECT", "RING", "NO CARRIER", "ERROR", "", "NO DIALTONE",
-	"BUSY", "NO ANSWER",
+	"BUSY", "NO ANSWER", "FAX", "DATA",
 };
 
 /* CONNECT's number with ATV0 for a rate (Smart Link's ST56 numbers,
@@ -212,6 +216,9 @@ Modem::Modem(Host &host, const Options &opt)
 	  min_rate_(MODEM_MIN_RATE), max_rate_(MODEM_MAX_RATE)
 {
 	handle_->self = this;
+	fax_detect_ = opt.fax_detect;
+	cng_ = new dsp::CngDetect();
+	cng_->init(srate_);
 	link_owner_ = new LinkOwner(*this);
 	link_ = new dlink::Link;
 	xmit_ = new char[XMIT_SIZE];
@@ -247,6 +254,7 @@ Modem::~Modem()
 	delete link_;
 	delete link_owner_;
 	delete[] scratch_;
+	delete cng_;
 	delete handle_;
 }
 
@@ -585,6 +593,11 @@ int Modem::stop_call()
 	caller_ = false;
 	dialed_ = false;
 	dial_rest_[0] = '\0';
+	/* an adaptive answer from fax mode that found out nothing: back in
+	   fax mode */
+	if (adapt_ == Adapt::Fax)
+		set_mode(MODEM_MODE_FAX);
+	adapt_ = Adapt::Off;
 	if (stats_.call && !stats_.ended) {
 		const char *dp = stats_.connected ? dp_name(stats_.dp) :
 			nullptr;
@@ -783,6 +796,10 @@ void Modem::update_status(Status s)
 	case ST_OK:
 		break;
 	case ST_DP_LINK:
+		/* adaptive answer: a data call (DATA, then its CONNECT) */
+		if (adaptive_answering())
+			report(Result::Data);
+		adapt_ = Adapt::Off;
 		if (dp_ && (dp_->id == DP_V23 || dp_->id == DP_B103 ||
 			    dp_->id == DP_V21)) {
 			cfg_.ec = false;
@@ -1015,6 +1032,13 @@ void Modem::process(const int16_t *in, int16_t *out, int n)
 	if (dcr_ && !(DCORE_HAS(dp_runtime_pcm) && dp_runtime_ &&
 		      dp_runtime_pcm(dp_runtime_)))
 		dcr_process(dcr_, scratch_, n);
+	/* adaptive answer: a calling fax machine's CNG */
+	if (adapt_ != Adapt::Off && state_ == DP_ESTAB) {
+		for (int i = 0; i < n; i++)
+			cng_->sample(scratch_[i]);
+		if (cng_->bursts)
+			fax_found("CNG");
+	}
 	log_data(this, LOG_RX_SAMPLES, scratch_, 2 * n);
 	run(scratch_, out, n);
 	log_data(this, LOG_TX_SAMPLES, out, 2 * n);
@@ -1089,6 +1113,9 @@ void Modem::dp_process(int16_t *in, int16_t *out, int n)
 			if (state_ == DP_ESTAB)
 				dialed();
 			break;
+		case DPSTAT_FAX:
+			fax_found("V.8");
+			break;
 		case DPSTAT_ERROR:
 			failed = true;
 			update_status(ST_DP_ERROR);
@@ -1154,6 +1181,9 @@ void Modem::change_dp()
 	}
 	logf("pump %u (driver %u), %s\n", id, drv,
 	     caller_ ? "caller" : "answerer");
+	/* the answering pump's answer tone after its 0.2 s of silence */
+	if (!caller_ && !dp_)
+		answer_tone_at_ = count_ + (unsigned long)srate_ / 5;
 	d = find_driver(drv);
 	if (d && d->op)
 		dp = d->op->create(handle(), (enum DP_ID)id, caller_, srate_,
@@ -1300,8 +1330,69 @@ int Modem::answer()
 		return -1;
 	caller_ = false;
 	dp_requested_ = 0;
+	/* adaptive answer: +FAA=1 in data or fax mode (from fax mode the
+	   data answer runs, in data mode, until a fax is found), or the
+	   program's own fax receiver in data mode */
+	fax_caller_ = false;
+	cng_->init(srate_);
+	answer_tone_at_ = 0;
+	if (kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
+				mode_ == MODEM_MODE_FAX)) {
+		adapt_ = mode_ == MODEM_MODE_FAX ? Adapt::Fax : Adapt::Data;
+		set_mode(MODEM_MODE_DATA);
+		logf("adaptive answer (+FAA=1, from %s mode)\n",
+		     adapt_ == Adapt::Fax ? "fax" : "data");
+	} else if (fax_detect_ && mode_ == MODEM_MODE_DATA) {
+		adapt_ = Adapt::Detect;
+	}
 	later(Later::ChangeDp, delay);
 	return start_call();
+}
+
+/* adaptive answer: the call we answer is a fax machine's (why: its
+   CNG, its V.8 CM, T.38).  With +FAA=1: FAX to the DTE, class 1
+   (+FCLASS=1), the fax engine as the answerer after the answer tone
+   sent already (its CED cut short), its CONNECT for +FTH=3 to follow.
+   For the program's fax receiver (Options::fax_detect): fax_caller(),
+   and after a V.8 CM no more data answer (the line silent) */
+void Modem::fax_found(const char *why)
+{
+	if (fax_caller_ || adapt_ == Adapt::Off)
+		return;
+	fax_caller_ = true;
+	logf("adaptive answer: a fax call (%s)\n", why);
+	if (adapt_ == Adapt::Detect) {
+		adapt_ = Adapt::Off;
+		if (strcmp(why, "CNG"))
+			run_ = Run::None;
+		return;
+	}
+	unsigned long sent = count_ > answer_tone_at_ && answer_tone_at_ ?
+		(count_ - answer_tone_at_) * 1000 / srate_ : 0;
+	adapt_ = Adapt::Off;
+	set_mode(MODEM_MODE_FAX);
+	stats_.fax = true;
+	report(Result::Fax);
+	if (fax_start() == 0 && DCORE_HAS(FAX_answer_tone))
+		FAX_answer_tone(fax_, (unsigned)sent);
+}
+
+/* MDMPRM_ADAPTIVE: 1 while answering adaptively (a V.8 fax call
+   told with DPSTAT_FAX), 2 from fax mode (a caller silent through
+   ANSam also fax), else 0 */
+int Modem::adaptive_param() const
+{
+	if (caller_)
+		return 0;
+	switch (adapt_) {
+	case Adapt::Detect:
+	case Adapt::Data:
+		return 1;
+	case Adapt::Fax:
+		return 2;
+	default:
+		return 0;
+	}
 }
 
 /* the Host hangs up (DTR, HUPCL) */
@@ -1529,7 +1620,8 @@ void Modem::report(Result r)
 	} else if (verbose) {
 		snprintf(line, sizeof(line), "%s", result_text[(int)r]);
 	} else {
-		snprintf(line, sizeof(line), "%d", (int)r);
+		snprintf(line, sizeof(line), "%d", r == Result::Fax ? 88 :
+			 r == Result::Data ? 89 : (int)r);
 	}
 	puts(line);
 	crlf();
@@ -2242,6 +2334,9 @@ void Modem::fax_t38_send(void *ctx, const void *ifp)
    outside fax mode or if the engine cannot */
 int Modem::t38_start(int max_data)
 {
+	/* adaptive answer: a far end that goes over to T.38 is a fax */
+	if (mode_ != MODEM_MODE_FAX && adaptive_answering())
+		fax_found("T.38");
 	if (mode_ != MODEM_MODE_FAX)
 		return -1;
 	t38_max_ = max_data;

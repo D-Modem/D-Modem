@@ -422,6 +422,56 @@ void CallToneDetect::block()
 }
 
 /*
+ *    CNG
+ */
+
+#define CNG_RUN_MIN     (360 / CT_BLOCK_MS)     /* blocks of a burst */
+#define CNG_RUN_MAX     (700 / CT_BLOCK_MS)
+
+/* see dsp.h */
+void CngDetect::init(int srate)
+{
+	*this = CngDetect();
+	len = srate * CT_BLOCK_MS / 1000;
+	tone.init(1100, len, srate);
+	ans.init(2100, len, srate);
+	drop = CT_GAP;
+}
+
+/* see dsp.h */
+void CngDetect::sample(float x)
+{
+	energy += x * x;
+	tone.run(x);
+	ans.run(x);
+	if (++n < len)
+		return;
+	block();
+	n = 0;
+	energy = 0;
+}
+
+/* see dsp.h: a run ends on its second block off (one is a dropout) */
+void CngDetect::block()
+{
+	float e = energy / len, rest = e - ans.power;
+	bool on = rest > 100.0f * 100.0f && tone.power > 0.6f * rest;
+
+	if (on) {
+		if (drop > 1)
+			run = 0;
+		drop = 0;
+		run++;
+		return;
+	}
+	if (++drop == 2) {
+		if (run >= CNG_RUN_MIN && run <= CNG_RUN_MAX)
+			bursts++;
+		run = 0;
+	}
+}
+
+/*
  *    Ring signal
  */
 

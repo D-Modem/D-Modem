@@ -8,6 +8,7 @@
  *
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -177,6 +178,88 @@ TEST(Core, FailingLine)
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
 	EXPECT_EQ(cmd(m, l, "ATM2L2\r"), "OK\r\n");
 	EXPECT_EQ(l.volume, 2);
+	delete m;
+}
+
+/* n ms of the line into m: silence, or with f a tone of f Hz (half
+   scale) */
+static void line(Modem *m, int ms, double f = 0)
+{
+	static unsigned long t;
+	int16_t in[80], out[80];
+	for (int b = 0; b < ms / 10; b++) {
+		for (int i = 0; i < 80; i++, t++)
+			in[i] = f ? (int16_t)(16000 * sin(2 * M_PI * f * t /
+							   8000)) : 0;
+		m->process(in, out, 80);
+		now += 10;
+		m->poll();
+	}
+}
+
+/* adaptive answer (+FAA=1): answering, a T.38 offer makes the call a
+   fax call (FAX, class 1); without +FAA no; from fax mode the data
+   answer runs in data mode, fax mode back after the call; and the
+   program's fax receiver (Options::fax_detect) told of a CNG burst,
+   the modem staying in data mode */
+TEST(Core, AdaptiveAnswer)
+{
+	Line l;
+	Modem *m = make(l, "faa");
+	EXPECT_EQ(cmd(m, l, "ATE0+FAA=1\r"), "ATE0+FAA=1\r\r\nOK\r\n");
+	cmd(m, l, "ATA\r");
+	line(m, 500);
+	EXPECT_TRUE(m->adaptive_answering());
+	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_ADAPTIVE), 1);
+	l.out.clear();
+	EXPECT_EQ(m->t38_start(300), 0);
+	EXPECT_EQ(l.out, "FAX\r\n");
+	EXPECT_EQ(m->mode(), MODEM_MODE_FAX);
+	EXPECT_TRUE(m->fax_caller());
+	EXPECT_TRUE(!m->adaptive_answering());
+	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_ADAPTIVE), 0);
+	m->hangup_now();
+	line(m, 100);
+	delete m;
+
+	m = make(l, "nofaa");
+	cmd(m, l, "ATE0\r");
+	cmd(m, l, "ATA\r");
+	line(m, 500);
+	EXPECT_TRUE(!m->adaptive_answering());
+	EXPECT_EQ(m->t38_start(300), -1);
+	m->hangup_now();
+	line(m, 100);
+	delete m;
+
+	m = make(l, "faa1");
+	cmd(m, l, "ATE0+FCLASS=1;+FAA=1\r");
+	cmd(m, l, "ATA\r");
+	line(m, 500);
+	EXPECT_EQ(m->mode(), MODEM_MODE_DATA);
+	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_ADAPTIVE), 2);
+	m->hangup_now();
+	line(m, 100);
+	EXPECT_EQ(m->mode(), MODEM_MODE_FAX);
+	delete m;
+
+	dcore::Options o;
+	o.name = "detect";
+	o.rate = 8000;
+	o.fax_detect = true;
+	m = new Modem(l, o);
+	cmd(m, l, "ATE0\r");
+	cmd(m, l, "ATA\r");
+	line(m, 300);
+	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_ADAPTIVE), 1);
+	l.out.clear();
+	line(m, 500, 1100);
+	line(m, 300);
+	EXPECT_TRUE(m->fax_caller());
+	EXPECT_EQ(m->mode(), MODEM_MODE_DATA);
+	EXPECT_EQ(l.out, "");
+	m->hangup_now();
+	line(m, 100);
 	delete m;
 }
 

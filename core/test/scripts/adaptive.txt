@@ -1,0 +1,56 @@
+# adaptive answer (+FAA=1): B answers each call in data mode or in fax
+# mode, and finds out which it is: a class 1 fax caller (its CNG) is FAX,
+# then class 1's CONNECT for +FTH=3 (B in +FCLASS=1, its CED cut short
+# after the data answer's ANSam); a data caller is DATA, then its
+# CONNECT; B's +FCLASS after each call
+B ATE0+FAA=?;+FAA?\r
+B AT+FAA=2\r
+A ATE0X3+FCLASS=1\r
+B AT+FAA=1\r
+B ATA\r
+A ATD\r
+until B FAX 15000
+until B CONNECT 10000
+B \xff\x13\x40\x20\x20\x20\x20\x34\x33\x32\x31\x10\x03
+until A CONNECT 20000
+until A \x10\x03 5000
+until B OK 5000
+A ATH\r
+B ATH\r
+run 500
+B AT+FCLASS?;+FAA?\r
+A AT+FCLASS=0\r
+B AT+FCLASS=0\r
+B ATA\r
+A ATD\r
+until B DATA 30000
+until B CONNECT 2000
+until A CONNECT 2000
+hangup A
+until B NO CARRIER 10000
+run 500
+B AT+FCLASS?\r
+B AT+FCLASS=1\r
+B ATA\r
+A ATD\r
+until B DATA 30000
+until B CONNECT 2000
+until A CONNECT 2000
+hangup B
+until A NO CARRIER 10000
+run 500
+B AT+FCLASS?\r
+A AT+FCLASS=1\r
+B AT+FCLASS=1\r
+B ATA\r
+A ATD\r
+until B FAX 15000
+until B CONNECT 10000
+hangup A
+hangup B
+run 500
+B AT+FCLASS?\r
+B ATZ\r
+B AT+FAA?\r
+run 100
+state

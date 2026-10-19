@@ -86,6 +86,10 @@ void VOICE_tones(void *obj, struct voice_tones *t);
 /* the service class 1 fax engine (T.31) of modem m, on the calling side
    if caller is not 0, at srate samples/s */
 void *FAX_create(struct modem *m, unsigned caller, unsigned srate);
+/* an answerer's answer tone already on the line for ms (adaptive
+   answer): its CED cut short, or none */
+void FAX_answer_tone(void *obj, unsigned ms);
+/* frees it */
 void FAX_delete(void *obj);
 /* count samples in and out: a FAX_STATUS_* to report, 0, or < 0 to end
    the call */

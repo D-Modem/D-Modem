@@ -80,6 +80,7 @@ static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x13, 0x94, 0x2a, 0x0d
 #define V8_CAT_MOD      0x05    /* category tags (bits 0 to 4) */
 #define V8_CAT_ACCESS   0x0D
 #define V8_CAT_PCM      0x07
+#define V8_CAT_CALLF    0x01    /* the call function (Table 3/V.8) */
 #define V8_ACCESS_DIGITAL 0x80
 #define V8_PCM_ANALOGUE 0x20    /* V.90 / V.92 analogue modem */
 #define V8_PCM_DIGITAL  0x40    /* V.90 / V.92 digital modem */
@@ -510,8 +511,12 @@ struct V34V8 {
 	/* V.32 / V.22 callers during ANSam */
 	Goertzel aa_g;
 	int aa_blocks;
+	/* adaptive answer (MDMPRM_ADAPTIVE): 0 none; 1 a CM of a fax call
+	   is told (DPSTAT_FAX); 2 as well a caller silent through ANSam */
+	int v8_adaptive;
 	int v8_remote_cat(int tag);
 	void v8_make_msg(BitQ *q);
+	int v8_fax_call();
 	int v8_remote_v34();
 	int v8_remote_mod(int k);
 	int v8_choice();
@@ -1208,6 +1213,15 @@ void BitQ::make_cj()
 	put_octet(0);
 	put_octet(0);
 	put_octet(0);
+}
+
+/* is the remote's CM a fax call's (its call function, Table 3/V.8:
+   transmit or receive facsimile, T.30)? */
+template <class P>
+int V34V8<P>::v8_fax_call()
+{
+	int c = v8_remote_cat(V8_CAT_CALLF);
+	return c >= 0 && ((c >> 5) == 4 || (c >> 5) == 5);
 }
 
 /* is V.34 in the remote's CM / JM? */
@@ -3864,6 +3878,12 @@ int V34V8<P>::v8_step(long c)
 			self.set_state(QCA_QCA1D);
 			break;
 		}
+		if (v8_ok && v8_adaptive && v8_fax_call()) {
+			/* a fax machine's CM (adaptive answer): the core
+			   takes it on as a fax call */
+			DSP_DBG("v34: V.8: a fax call's CM\n");
+			return DPSTAT_FAX;
+		}
 		if (v8_ok) {
 			/* back from hold with a CM of no modulations: a
 			   cleardown (9.10.2.1/V.92) */
@@ -3909,8 +3929,17 @@ int V34V8<P>::v8_step(long c)
 			}
 		} else if (aa_blocks >= 10)
 			return self.fallback("V.32 caller");
-		else if (c >= ms2samples(5000, self.srate))
+		else if (c >= ms2samples(5000, self.srate)) {
+			/* adaptive answer preferring fax: a caller silent
+			   through ANSam is a fax machine waiting for the DIS
+			   (a V.22, V.21 or Bell 103 caller is too: fax
+			   wins) */
+			if (v8_adaptive == 2) {
+				DSP_DBG("v34: no CM: taken for a fax call\n");
+				return DPSTAT_FAX;
+			}
 			return self.fallback("no CM");
+		}
 		break;
 	case V8A_JM:
 		/* V.cvm: the caller's CM gone quiet is its CJ too.  A codec
@@ -6073,6 +6102,12 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   no limit; 0 denies it); 1 min if neither says */
 	moh_t1 = getenv("DSP_V92_MOH") ? atoi(getenv("DSP_V92_MOH")) & 15 :
 		(int)modem_get_param(m, MDMPRM_MOH_T1);
+	/* adaptive answer: the core's (+FAA, or its program's own fax
+	   receiver), for an answerer */
+	{
+		intptr_t a = caller ? 0 : modem_get_param(m, MDMPRM_ADAPTIVE);
+		v8_adaptive = a == 1 || a == 2 ? (int)a : 0;
+	}
 	if (getenv("DSP_V92_MOH_REQ")) {
 		const char *e = getenv("DSP_V92_MOH_REQ");
 		moh_req_at = ms2samples(atoi(e), srate_);

@@ -1517,6 +1517,10 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 			std::vector<std::string> cs = { "ATZ", "AT+FCLASS=1" };
 			for (auto &c : commands(setup))
 				cs.push_back(c);
+			/* SETUP_B: modemB's own commands after them */
+			if (k == 1)
+				for (auto &c : commands(env("SETUP_B")))
+					cs.push_back(c);
 			for (auto &c : cs)
 				if (fax.cmd(k, c) != "OK")
 					fail("setup");
@@ -1534,10 +1538,16 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 			dte.send(1, "ATA\r");
 			dte.send(0, atd);
 		}
-		std::string r = dte.wait_code(1, fax_result(), 30);
+		std::string answer;
+		std::string r = dte.wait_code(1, fax_result(), 30, &answer);
 		say("B: ATA -> %s\n", r.empty() ? "None" : r.c_str());
 		if (r != "CONNECT")
 			fail("answer");
+		/* ANSWER_B: what B says before it (adaptive answer: FAX) */
+		if (!env("ANSWER_B").empty() &&
+		    answer.find(env("ANSWER_B")) == std::string::npos)
+			fail("B's answer has no " + env("ANSWER_B") + ": " +
+			     show(answer));
 		std::string num = "   4321 555 1+";
 		std::reverse(num.begin(), num.end());
 		num.resize(20, ' ');

@@ -1,0 +1,92 @@
+      0 B< ATE0+FAA=?;+FAA?\r
+      0 B: ATE0+FAA=?;+FAA?\r\r\n
+      0 B: +FAA: (0,1)\r\n
+      0 B: +FAA: 0\r\n
+      0 B: OK\r\n
+      0 B< AT+FAA=2\r
+      0 B: ERROR\r\n
+      0 A< ATE0X3+FCLASS=1\r
+      0 A: ATE0X3+FCLASS=1\r\r\n
+      0 A: OK\r\n
+      0 B< AT+FAA=1\r
+      0 B: OK\r\n
+      0 B< ATA\r
+      0 A< ATD\r
+    560 B: FAX\r\n
+    560 until B 'FAX': yes
+   3620 B: CONNECT\r\n
+   3620 until B 'CONNECT': yes
+   3620 B< \xff\x13\x40\x20\x20\x20\x20\x34\x33\x32\x31\x10\x03
+   3700 A: CONNECT\r\n
+   3700 until A 'CONNECT': yes
+   5040 A: \xff\x13@    4321_]\x10\x03OK\r\n
+   5040 until A '\x10\x03': yes
+   5060 B: OK\r\n
+   5060 until B 'OK': yes
+   5060 A< ATH\r
+   5060 A: OK\r\n
+   5060 B< ATH\r
+   5060 B: OK\r\n
+   5080 A: NO CARRIER\r\n
+   5080 B: NO CARRIER\r\n
+   5560 B< AT+FCLASS?;+FAA?\r
+   5560 B: 1\r\n
+   5560 B: +FAA: 1\r\n
+   5560 B: OK\r\n
+   5560 A< AT+FCLASS=0\r
+   5560 A: OK\r\n
+   5560 B< AT+FCLASS=0\r
+   5560 B: OK\r\n
+   5560 B< ATA\r
+   5560 A< ATD\r
+  11780 B: DATA\r\n
+  11780 until B 'DATA': yes
+  11860 B: CONNECT 62666\r\n
+  11860 until B 'CONNECT': yes
+  11880 A: CONNECT 62666\r\n
+  11880 until A 'CONNECT': yes
+  11900 A: NO CARRIER\r\n
+  11920 B: NO CARRIER\r\n
+  11920 until B 'NO CARRIER': yes
+  12420 B< AT+FCLASS?\r
+  12420 B: 0\r\n
+  12420 B: OK\r\n
+  12420 B< AT+FCLASS=1\r
+  12420 B: OK\r\n
+  12420 B< ATA\r
+  12420 A< ATD\r
+  18640 B: DATA\r\n
+  18640 until B 'DATA': yes
+  18720 B: CONNECT 62666\r\n
+  18720 until B 'CONNECT': yes
+  18740 A: CONNECT 62666\r\n
+  18740 until A 'CONNECT': yes
+  18760 B: NO CARRIER\r\n
+  18780 A: NO CARRIER\r\n
+  18780 until A 'NO CARRIER': yes
+  19280 B< AT+FCLASS?\r
+  19280 B: 0\r\n
+  19280 B: OK\r\n
+  19280 A< AT+FCLASS=1\r
+  19280 A: OK\r\n
+  19280 B< AT+FCLASS=1\r
+  19280 B: OK\r\n
+  19280 B< ATA\r
+  19280 A< ATD\r
+  19840 B: FAX\r\n
+  19840 until B 'FAX': yes
+  22900 B: CONNECT\r\n
+  22900 until B 'CONNECT': yes
+  22920 A: NO CARRIER\r\n
+  22920 B: NO CARRIER\r\n
+  23400 B< AT+FCLASS?\r
+  23400 B: 1\r\n
+  23400 B: OK\r\n
+  23400 B< ATZ\r
+  23400 B: OK\r\n
+  23400 B< AT+FAA?\r
+  23400 B: AT+FAA?\r\r\n
+  23400 B: +FAA: 0\r\n
+  23400 B: OK\r\n
+  23500 A: state 0, tx 62600 rx 62600, idle
+  23500 B: state 0, tx 62600 rx 62600, idle

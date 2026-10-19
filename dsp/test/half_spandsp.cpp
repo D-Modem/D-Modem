@@ -17,7 +17,9 @@
  *    AT+MS=<m> as ours (21, 22, 122, 23, 103; or V21, V22, V22B, V23C,
  *    B103), default V.8 (V.22bis, V.22, V.21 offered); ATD, ATA, ATH, ATO,
  *    +++, ATZ, the rest OK.  SPANDSP_SYNC as the others';
- *    SPANDSP_DEBUG=1 prints spandsp's logs and ours.
+ *    SPANDSP_DEBUG=1 prints spandsp's logs and ours; SPANDSP_V8_CALL=<n>
+ *    the call function its V.8 has (Table 3/V.8, spandsp's V8_CALL_*: 4
+ *    a fax machine's transmit; 6, data, by default).
  */
 
 #include <ctype.h>
@@ -355,7 +357,8 @@ void Spandsp::start_v8()
 		MODEM_CONNECT_TONES_ANSAM_PR;
 	v8_parms.send_ci = 0;
 	v8_parms.v92 = -1;
-	v8_parms.call_function = V8_CALL_V_SERIES;
+	v8_parms.call_function = env("V8_CALL") ? atoi(env("V8_CALL")) :
+		V8_CALL_V_SERIES;
 	v8_parms.modulations = V8_MOD_V21 | V8_MOD_V22 | V8_MOD_V23;
 	v8_parms.protocol = V8_PROTOCOL_NONE;
 	v8_parms.pstn_access = 0;

@@ -62,8 +62,9 @@ error correction mode when the other machine has it), an alternative to
 Asterisk's `res_fax` with spandsp:
 
 - `DModem()` receives faxes by itself: when the calling machine's CNG
-  tone comes before a modem connection, the call goes to the fax
-  receiver, which writes `<fax_dir>/<date>-<time>-<caller>-<uniqueid>.tif`
+  tone, or its V.8 CM of a fax call, comes before a modem connection
+  (the modem answers adaptively: `dmodem_status()`'s `fax_caller`), the
+  call goes to the fax receiver, which writes `<fax_dir>/<date>-<time>-<caller>-<uniqueid>.tif`
   (`fax = no` in the profile turns this off).  `DMODEMSTATUS` is then
   `FAX`.
 - `DModemReceiveFax(file[,ident])` answers as a fax machine and receives

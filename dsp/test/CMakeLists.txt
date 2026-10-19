@@ -10,6 +10,9 @@
 #             the Agere, SM56, PCTel and HSF ones, spandsp's (needs gcc
 #             -m32 on x86_64); long
 #   open      calls between two open modems through the same driver
+#   ring      netsim ringing the line, each country's way
+#   adaptive  adaptive answer (+FAA=1): each modem's fax senders and data
+#             callers into the open modem
 #
 #   ctest --test-dir build -L quick
 set(S ${DMODEM_DSP_DIR})
@@ -475,3 +478,6 @@ endif()
 interop_tests(hda)
 # netsim ringing the line (NET_RING) as each country's rings
 interop_tests(ring)
+# adaptive answer (+FAA=1): fax senders and data callers of each modem
+# into the open modem, which finds out which the call is
+interop_tests(adaptive)

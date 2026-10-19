@@ -1466,6 +1466,69 @@ std::vector<Call> calls()
 	add("ring", "ring_hda_pulse_dials", "hda", "open", "ATX4;AT+MS=122",
 	    { "NET=8000:9600:ulaw", "NET_RING=UK", "DIAL=P123",
 	      "STREAM=1" });
+
+	/* --- adaptive answer (+FAA=1): the answerer finds out whether the
+	   call is a fax machine's or a data modem's.  Each modem's class 1
+	   fax sender calls the open modem, answering in fax mode (and ours
+	   in data mode as well): FAX, then the page (the senders' CNG, or
+	   the V.8 CM of a fax call that the Agere and Conexant modems send
+	   on ANSam) */
+	const std::string faa = "SETUP_B=AT+FAA=1";
+	for (int m : { 96, 145 })
+		add("adaptive", "adaptive_fax_" + std::to_string(m) +
+		    "_open_sends", "open8", "open8", "ATX3",
+		    { faa, "ANSWER_B=FAX" })->fax = m;
+	add("adaptive", "adaptive_fax_96_open_sends_data_mode", "open8",
+	    "open8", "ATX3",
+	    { "SETUP_B=AT+FCLASS=0;AT+FAA=1", "ANSWER_B=FAX" })->fax = 96;
+	add("adaptive", "adaptive_fax_96_smartlink_sends", "smartlink",
+	    "open", "ATX3",
+	    { faa, "ANSWER_B=FAX", "LINE_RATE=9600" })->fax = 96;
+	for (const char *peer : { "agere", "hsf", "broadcom", "hda" })
+		add("adaptive", std::string("adaptive_fax_96_") + peer +
+		    "_sends", peer, "open8", "ATX3",
+		    { faa, "ANSWER_B=FAX" })->fax = 96;
+	add("adaptive", "adaptive_fax_96_intel_sends", "intel", "open",
+	    "ATX3", { faa, "ANSWER_B=FAX", "INTEL_RATE=9600",
+		      "NET=9600:9600:ulaw" })->fax = 96;
+	/* a V.8 fax call (spandsp's CM with the call function of a fax
+	   machine that sends) into the open modem in data mode: FAX, and
+	   no data call (spandsp, no fax machine, gives up) */
+	add("adaptive", "adaptive_v8_fax_cm", "spandsp", "open", "ATX3",
+	    { "NET=8000:9600:ulaw", "SPANDSP_V8_CALL=4",
+	      "PROTO_B=ATX3;AT+FAA=1", "EXPECT_FAIL=1",
+	      "EXPECT_B=(?s)a fax call \\(V.8\\).*result: FAX" });
+	/* data callers into +FAA=1, in data mode and in fax mode: DATA,
+	   then the data call */
+	add("adaptive", "adaptive_data_agere_34", "agere", "open",
+	    "ATX3;AT+MS=V34",
+	    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=34;AT+FAA=1",
+	      "EXPECT_B=result: DATA" });
+	add("adaptive", "adaptive_data_agere_122_fax_mode", "agere", "open",
+	    "ATX3;AT+MS=V22B",
+	    { "NET=8000:9600:ulaw",
+	      "PROTO_B=ATX3;AT+MS=122;AT+FCLASS=1;AT+FAA=1",
+	      "EXPECT_B=result: DATA" });
+	add("adaptive", "adaptive_data_smartlink_34_fax_mode", "smartlink",
+	    "open", "ATX3;AT+MS=34",
+	    { "PROTO_B=ATX3;AT+MS=34;AT+FCLASS=1;AT+FAA=1",
+	      "EXPECT_B=result: DATA" });
+	for (const char *ms : { "122", "21" })
+		add("adaptive", std::string("adaptive_data_spandsp_") + ms,
+		    "spandsp", "open", std::string("ATX3;AT+MS=") + ms,
+		    { "NET=8000:9600:ulaw", std::string("PROTO_B=ATX3;AT+MS=") +
+		      ms + ";AT+FCLASS=1;AT+FAA=1",
+		      "EXPECT_B=result: DATA" });
+	for (const char *peer : { "sm56", "hsf" })
+		add("adaptive", std::string("adaptive_data_") + peer + "_v90",
+		    peer, "open8", "ATX3;AT+MS=V90",
+		    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+		      "EXPECT_B=(?s)V.90 connect.*result: DATA",
+		      "PROTO_B=ATX3;AT+MS=90;AT+FAA=1" });
+	add("adaptive", "adaptive_data_open_92", "open", "open8",
+	    "ATX3;AT+MS=92",
+	    { "NET=9600:8000:ulaw", "EXPECT_B=result: DATA",
+	      "PROTO_B=ATX3;AT+MS=92;AT+FCLASS=1;AT+FAA=1" });
 	return c;
 }
 

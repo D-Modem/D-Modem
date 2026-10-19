@@ -260,6 +260,9 @@ answering, the modems' training) hangs up; after a dial string's
 6 & NO DIALTONE & no dial tone (\cmdl[X]{X2}, \cmdl[X]{X4}) \\
 7 & BUSY & a busy tone \\
 8 & NO ANSWER & no answer within \sreg{7} seconds of dialing \\
+88 & FAX & adaptive answer (\cmdl[plusFAA]{+FAA=1}): a fax call, class 1
+  follows \\
+89 & DATA & adaptive answer: a data call, its CONNECT follows \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -787,6 +790,31 @@ with its values (as it was if none has them).
 (\cmd{=?} gives \cmd{0,1,8}).
 \end{command}
 
+\begin{command}{plusFAA}{AT+FAA=\p{n}, AT+FAA?, AT+FAA=?}
+Adaptive answer.  With \cmd{1}, a call the modem answers (\cmd{ATA},
+\sreg{0}) in data or fax mode is answered as a data call (its answer
+tone, V.8's ANSam, serves a fax machine as its CED), and found out to
+be a fax machine's or a data modem's:
+\begin{itemize}
+\item a fax call by the caller's CNG (1100~Hz, 0.5~s of every 3.5~s),
+  the V.8 CM of a fax call (a call function of facsimile, as V.34 fax
+  machines and some class 1 modems send it on ANSam), the far end
+  going over to T.38 (dmodemd's SIP calls), or, answering in fax mode,
+  a caller that stays silent through ANSam: FAX, \cmdl[plusFCLASS]{+FCLASS}
+  becomes 1, and the modem goes on as a class 1 answerer: what is left
+  of CED's 3~s, then CONNECT, as after \cmd{AT+FTH=3}, for the DTE's
+  first frames;
+\item a data call by its modem's handshake: DATA when it comes up, then
+  its CONNECT; \cmd{+FCLASS} becomes 0.
+\end{itemize}
+A call that ends with neither leaves \cmd{+FCLASS} as it was.  Answering
+in fax mode, a V.22, V.21 or Bell 103 caller (silent until it hears a
+modem's carrier) is taken for a fax machine.  \cmd{0} (default) answers
+as \cmd{+FCLASS} says.  \cmd{=?} gives \cmd{+FAA: (0,1)}; \cmdl[Z]{Z}
+sets 0.  Rockwell's modems give FAX and DATA too, as 33
+and 35 with \cmdl[V]{V0}: here those are rates' CONNECTs, so 88 and 89.
+\end{command}
+
 \subsection{V.92 modem-on-hold}
 
 \begin{command}{plusPMH}{AT+PMH=\p{n}, AT+PMH?, AT+PMH=?}
@@ -832,8 +860,11 @@ the tones loaded and the renegotiations.
 
 With \cmdl[plusFCLASS]{AT+FCLASS=1}, the modem takes T.31's class 1 commands, the
 fax machine's side being the DTE's (the PBX modules and libdmodem have
-a T.30 engine of their own as well).  \cmd{+FAA} and \cmd{+FPR} are
-kept with no effect (section~\ref{sec:compat}).
+a T.30 engine of their own as well).  \cmdl[plusFAA]{+FAA=1} answers
+fax and data calls alike (above); \cmd{+FPR} is kept with no effect
+(section~\ref{sec:compat}).  As the caller, the modem sends CNG after
+dialing until the answerer's flags come in its first \cmd{+FRH=3}
+(T.30 has it until the DIS).
 
 \begin{command}{plusFMI}{AT+FMI?, AT+FMM?, AT+FMR?}
 The manufacturer, the model and the revision, as
@@ -1143,7 +1174,6 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
 +PCW & 2 & V.92's call waiting (none is detected here) \\
 +PIG & 1 & V.92's PCM upstream, an analogue modem's (this one is
   the digital modem) \\
-+FAA & 0 & fax adaptive answer (0 only) \\
 +FPR & 0 & the fax DTE's rate \\
 -SEC & 0 & Rockwell's MNP 10EC, and its transmit level (\cmd{1,12}) \\
 \bottomrule

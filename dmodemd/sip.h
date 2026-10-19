@@ -12,7 +12,8 @@
  *
  *    A fax call may go over to T.38 (SIP_T38, on by default) while the
  *    modem is in fax mode (set_fax()): when the far end asks, or a
- *    second after we answered one.  Its audio stops then (the socket
+ *    second after we answered one; and when the far end asks while the
+ *    modem answers adaptively (set_t38_offers(): +FAA=1).  Its audio stops then (the socket
  *    stays, for the call's end), and the modem's fax engine has the
  *    call's UDPTL instead (t38()); a "T38" line on the control
  *    descriptor says so, an "AUDIO" line that the call is back on the
@@ -83,6 +84,10 @@ int law();
 
 /* the modem is in fax mode: its calls may go over to T.38 */
 void set_fax(bool fax);
+/* the modem answers adaptively (+FAA=1), the call not known to be data
+   or fax yet: a T.38 offer of the far end's is taken (it makes the call
+   a fax call), though we ask for none */
+void set_t38_offers(bool take);
 
 /* telephone-events (RFC 4733): the current call has them (its far end
    offered or took ours); a hook flash of ms on it, as event 16, sent

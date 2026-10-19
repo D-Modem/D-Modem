@@ -21,14 +21,9 @@
 #include <log.h>
 #include "dmodem.h"
 #include "dmodem_g711.h"
+#include "dsp.h"
 #include "dsplibs.h"
 #include "portable.h"
-
-/* a calling fax machine's CNG: 1100 Hz, 0.5 s on, 3 s off */
-struct cng_detect {
-	float s1, s2, energy;
-	int n, on_blocks, bursts;
-};
 
 /* one modem: the core with the library as its Host */
 struct dmodem final : public dcore::Host {
@@ -37,7 +32,9 @@ struct dmodem final : public dcore::Host {
 	enum dmodem_law law = DMODEM_LAW_UNKNOWN;
 	unsigned long long samples = 0; /* the modem's clock: its audio */
 	char name[32] = {};
-	struct cng_detect cng = {};
+	/* a calling fax machine's CNG (on the line before the modem's
+	   own detector, which runs as it answers) */
+	dsp::CngDetect cng;
 
 	/* the line is the caller's: nothing to start */
 	int start(dcore::Modem &) override { return 0; }
@@ -65,42 +62,6 @@ struct dmodem final : public dcore::Host {
 		return (unsigned long)(samples * 1000 / DMODEM_RATE);
 	}
 };
-
-/* 20 ms blocks: most of the power at 1100 Hz for 400 ms or more is a
-   CNG burst (a voice or a modem doesn't hold one pure tone) */
-#define CNG_BLOCK       160
-#define CNG_COEF        1.298896f       /* 2 cos(2 pi 1100 / 8000) */
-
-/* one sample of the line into the CNG detector: a Goertzel filter at
-   1100 Hz over blocks of CNG_BLOCK samples; a block mostly of the tone
-   (60 % of its energy, rms over 100) is on, and 20 to 33 of them in a
-   row (0.4 to 0.66 s) ended by one off make a burst (c->bursts) */
-static void cng_sample(struct cng_detect *c, float x)
-{
-	float s = x + CNG_COEF * c->s1 - c->s2;
-	c->s2 = c->s1;
-	c->s1 = s;
-	c->energy += x * x;
-	if (++c->n < CNG_BLOCK)
-		return;
-	{
-		float tone = c->s1 * c->s1 + c->s2 * c->s2 -
-			CNG_COEF * c->s1 * c->s2;
-		/* the tone's share of the block's energy */
-		float share = c->energy > 0 ?
-			2 * tone / (CNG_BLOCK * c->energy) : 0;
-		int on = share > 0.6f && c->energy / CNG_BLOCK > 100 * 100;
-		if (on) {
-			c->on_blocks++;
-		} else {
-			if (c->on_blocks >= 20 && c->on_blocks <= 33)
-				c->bursts++;
-			c->on_blocks = 0;
-		}
-	}
-	c->s1 = c->s2 = c->energy = 0;
-	c->n = 0;
-}
 
 /*
  *    the library
@@ -152,6 +113,10 @@ struct dmodem *dmodem_create(const struct dmodem_config *cfg)
 	o.name = d->name;
 	o.dev_name = d->name;
 	o.rate = DMODEM_RATE;
+	/* a fax caller is the program's (dmodem_status()'s fax_caller):
+	   the core finds out a V.8 fax call too */
+	o.fax_detect = true;
+	d->cng.init(DMODEM_RATE);
 	d->m = new dcore::Modem(*d, o);
 	if (!d->m->ok()) {
 		delete d->m;
@@ -226,7 +191,7 @@ void dmodem_process(struct dmodem *d, const short *in, short *out, int n)
 	if (m->link_state() != dcore::LinkState::Online) {
 		int i;
 		for (i = 0; i < n; i++)
-			cng_sample(&d->cng, in[i]);
+			d->cng.sample(in[i]);
 	}
 	if (m->started())
 		m->process(in, out, n);
@@ -271,7 +236,8 @@ int dmodem_poll_dte(struct dmodem *d)
 }
 
 /* the core's state into *s: tx_pending one more while V.42 has frames
-   unacknowledged; fax_caller latched by a CNG burst (or 0.4 s of one) */
+   unacknowledged; fax_caller latched by a CNG burst (or 0.4 s of one),
+   or the core's finding (its CNG detector, a V.8 CM of a fax call) */
 void dmodem_status(struct dmodem *d, struct dmodem_status *s)
 {
 	dcore::Modem *m = d->m;
@@ -283,5 +249,6 @@ void dmodem_status(struct dmodem *d, struct dmodem_status *s)
 	/* V.42: frames not sent yet or not acknowledged */
 	if (m->link_tx_pending())
 		s->tx_pending++;
-	s->fax_caller = d->cng.bursts > 0 || d->cng.on_blocks >= 20;
+	s->fax_caller = d->cng.bursts > 0 || d->cng.run_ms() >= 400 ||
+		m->fax_caller();
 }

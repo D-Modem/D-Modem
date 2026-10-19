@@ -152,6 +152,7 @@ std::atomic<int> law_{0};
 std::atomic<int> te_pt_{-1};
 std::atomic<unsigned> flash_ms_{0};
 std::atomic<bool> fax_{false};
+std::atomic<bool> t38_offers_{false};
 std::atomic<bool> running{false};       /* the SIP thread takes requests */
 std::thread sip_thread;
 
@@ -1488,7 +1489,7 @@ int on_offer(struct mbuf **descp, const struct sip_msg *msg, void *arg)
 	}
 	i = line_of(s, true);
 	if (i >= 0) {
-		if (cfg_.t38 && fax_ && open_udptl(c)) {
+		if (cfg_.t38 && (fax_ || t38_offers_) && open_udptl(c)) {
 			Peer p = t38_params(s.media[i]);
 			p.version = std::min(p.version, 3);
 			c->t38_asked = true;
@@ -2214,6 +2215,12 @@ int law()
 void set_fax(bool fax)
 {
 	fax_ = fax;
+}
+
+/* see sip.h */
+void set_t38_offers(bool take)
+{
+	t38_offers_ = take;
 }
 
 /* see sip.h */
