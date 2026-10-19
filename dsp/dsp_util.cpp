@@ -433,7 +433,8 @@ void CngDetect::init(int srate)
 {
 	*this = CngDetect();
 	len = srate * CT_BLOCK_MS / 1000;
-	tone.init(1100, len, srate);
+	for (int k = 0; k < 3; k++)
+		tone[k].init(1075 + 25 * k, len, srate);
 	ans.init(2100, len, srate);
 	drop = CT_GAP;
 }
@@ -442,7 +443,8 @@ void CngDetect::init(int srate)
 void CngDetect::sample(float x)
 {
 	energy += x * x;
-	tone.run(x);
+	for (auto &t : tone)
+		t.run(x);
 	ans.run(x);
 	if (++n < len)
 		return;
@@ -455,7 +457,9 @@ void CngDetect::sample(float x)
 void CngDetect::block()
 {
 	float e = energy / len, rest = e - ans.power;
-	bool on = rest > 100.0f * 100.0f && tone.power > 0.6f * rest;
+	float t = std::max(tone[0].power, std::max(tone[1].power,
+						   tone[2].power));
+	bool on = rest > 100.0f * 100.0f && t > 0.6f * rest;
 
 	if (on) {
 		if (drop > 1)

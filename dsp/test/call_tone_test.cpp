@@ -7,7 +7,8 @@
  *                         of E.180's networks, through G.711, at the
  *                         sample rates the modem runs at, and what is
  *                         neither (speech, noise, a dial tone's level
- *                         too low); the answer tones
+ *                         too low); the answer tones; a calling fax
+ *                         machine's CNG (CngDetect)
  *
  */
 #include <gtest/gtest.h>
@@ -273,4 +274,58 @@ TEST(CallTone, QuietAfterRing)
 	tone(1000, false);
 	EXPECT_EQ(d.rings, 1u);
 	EXPECT_NEAR(d.quiet_ms(), 3200, 20);
+}
+
+/* the CNG bursts (dsp.h's CngDetect) in ms of f Hz on for on_ms of every
+   period_ms (period_ms 0: steady), at dbm0, with an answer tone's echo
+   (2100 Hz) echo times its amplitude (0: none), at srate */
+static unsigned cng_bursts(double f, int on_ms, int period_ms, int ms,
+		    double dbm0 = -15, double echo = 0, int srate = 8000)
+{
+	CngDetect d;
+	double a = 32767 * pow(10, (dbm0 - 3.14) / 20);
+	d.init(srate);
+	for (long i = 0; i < (long)ms * srate / 1000; i++) {
+		long at = i * 1000 / srate;
+		bool on = !period_ms || at % period_ms < on_ms;
+		double t = (double)i / srate;
+		double x = on ? a * sin(2 * M_PI * f * t) : 0;
+		if (echo)
+			x += a * echo * sin(2 * M_PI * 2100 * t);
+		d.sample((float)x);
+	}
+	return d.bursts;
+}
+
+/* CNG (1100 Hz +-38 Hz, 0.5 s of every 3.5 s) found out, at both the
+   modem's rates, quiet, and under an answer tone's echo as loud; not a
+   steady tone, nor V.22's unscrambled ones (1050 Hz, steady or not), an
+   answer tone, V.21's or Bell 103's marks, nor a burst too long */
+TEST(CallTone, Cng)
+{
+	for (int srate : { 8000, 9600 }) {
+		SCOPED_TRACE(srate);
+		EXPECT_EQ(cng_bursts(1100, 500, 3500, 7600, -15, 0, srate),
+			  3u);
+		EXPECT_EQ(cng_bursts(1062, 500, 3500, 4300, -15, 0, srate),
+			  2u);
+		EXPECT_EQ(cng_bursts(1138, 500, 3500, 4300, -15, 0, srate),
+			  2u);
+		EXPECT_EQ(cng_bursts(1100, 500, 3500, 4300, -40, 0, srate),
+			  2u);
+		EXPECT_EQ(cng_bursts(1100, 500, 3500, 4300, -20, 1, srate),
+			  2u);
+		EXPECT_EQ(cng_bursts(1100, 0, 0, 4000, -15, 0, srate), 0u);
+		EXPECT_EQ(cng_bursts(1050, 500, 3500, 4300, -15, 0, srate),
+			  0u);
+		EXPECT_EQ(cng_bursts(1050, 0, 0, 4000, -15, 0, srate), 0u);
+		EXPECT_EQ(cng_bursts(2100, 500, 3500, 4300, -15, 0, srate),
+			  0u);
+		EXPECT_EQ(cng_bursts(980, 500, 3500, 4300, -15, 0, srate),
+			  0u);
+		EXPECT_EQ(cng_bursts(1270, 500, 3500, 4300, -15, 0, srate),
+			  0u);
+		EXPECT_EQ(cng_bursts(1100, 1200, 3500, 4000, -15, 0, srate),
+			  0u);
+	}
 }

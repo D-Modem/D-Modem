@@ -471,14 +471,15 @@ struct CallToneDetect {
 
 /* a calling fax machine's CNG (4.2/T.30: 1100 Hz +-38 Hz, 0.5 s on, 3 s
    off), heard by an answerer.  On blocks of 20 ms: a block is on when
-   1100 Hz has 60 per cent of its energy, less what an answer tone has
-   (2100 Hz: our own, in an echo), that rest not too quiet (-50 dBFS
-   rms); a burst is a run of 0.36 to 0.7 s of them (a block's dropout
-   taken in) that ends.  A data modem's signals are no pure 1100 Hz
-   (V.22's unscrambled ones are 1050 Hz, a block's null), and one tone
-   held longer is no CNG. */
+   1075, 1100 or 1125 Hz (each filter some 25 Hz wide: T.30's tolerance)
+   has 60 per cent of its energy, less what an answer tone has (2100
+   Hz: our own, in an echo), that rest not too quiet (-50 dBFS rms); a
+   burst is a run of 0.36 to 0.7 s of them (a block's dropout taken in)
+   that ends.  A data modem's signals are no pure tone near 1100 Hz
+   before its connection (V.22's unscrambled ones, 1050 Hz, come after
+   the answer tone, and go on), and one tone held longer is no CNG. */
 struct CngDetect {
-	Goertzel tone, ans;     /* 1100, 2100 Hz */
+	Goertzel tone[3], ans;  /* 1075, 1100, 1125; 2100 Hz */
 	float energy;
 	int n, len;
 	int run, drop;          /* blocks on in the run, off since */
