@@ -282,14 +282,17 @@ enum VOICE_CMD {
 /* the call progress tones the voice engine heard (VOICE_tones()): the
    rings of a ringing tone, whether one sounds now, the ms since one
    sounded last (since the engine started if none did), the busy
-   cadences, and the answer tones of 2100 Hz and of 2225 Hz (V.253's
-   <DLE>r, <DLE>b, <DLE>a and <DLE>f, which the engine reports) */
+   cadences, the answer tones of 2100 Hz and of 2225 Hz, and the
+   calling tones' bursts (V.253's <DLE>r, <DLE>b, <DLE>a, <DLE>f,
+   <DLE>c and <DLE>e, which the engine reports) */
 struct voice_tones {
 	unsigned rings;
 	int ringing;
 	long quiet_ms;
 	unsigned busy;
 	unsigned ans2100, ans2225;
+	unsigned cng, ct;       /* calling tones' bursts: a fax machine's
+				   CNG (1100 Hz), V.25's CT (1300 Hz) */
 };
 
 /* the devices of AT+VLS (V.253 10.2.4.1) */

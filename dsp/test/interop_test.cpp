@@ -1525,6 +1525,15 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 		      "EXPECT_B=(?s)V.90 connect.*result: DATA",
 		      "PROTO_B=ATX3;AT+MS=90;AT+FAA=1" });
+	/* fax senders calling the open modem in voice mode, on the line
+	   (+VLS=1) with +FAA=1: their CNG (<DLE>c) makes the call a fax
+	   call, FAX and the class 1 answer on it, then the page (Smart
+	   Link's library sends no CNG on a silent line) */
+	for (const char *peer : { "open8", "agere", "hsf" })
+		add("adaptive", std::string("adaptive_fax_96_") + peer +
+		    "_sends_voice_mode", peer, "open8", "ATX3",
+		    { faa, "ANSWER_VOICE=1", "ANSWER_B=\x10" "cFAX" })->fax =
+			96;
 	/* a fax sender without CNG (DSP_FAX_CNG=0), silent until the DIS,
 	   into fax and data mode: no answer to any stage of the automode
 	   chain, so FAX at its end (Bell 103's 3 s) */

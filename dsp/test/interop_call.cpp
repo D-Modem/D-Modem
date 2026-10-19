@@ -1535,11 +1535,21 @@ bool fax_call(const std::string &exe_a, const std::string &exe_b, int mod,
 			dte.pump(ans_after);
 			dte.send(1, "ATA\r");
 		} else {
-			dte.send(1, "ATA\r");
+			dte.send(1, env("ANSWER_VOICE").empty() ? "ATA\r" :
+				 "AT+FCLASS=8;+VLS=1\r");
 			dte.send(0, atd);
 		}
 		std::string answer;
 		std::string r = dte.wait_code(1, fax_result(), 30, &answer);
+		/* (ANSWER_VOICE: B takes the call in voice mode, +VLS=1's
+		   OK first; with +FAA=1 its CONNECT follows the caller's
+		   CNG) */
+		for (int n = 0; r == "OK" && !env("ANSWER_VOICE").empty() &&
+			     n < 3; n++) {
+			std::string more;
+			r = dte.wait_code(1, fax_result(), 30, &more);
+			answer += more;
+		}
 		say("B: ATA -> %s\n", r.empty() ? "None" : r.c_str());
 		if (r != "CONNECT")
 			fail("answer");

@@ -305,13 +305,14 @@ const struct VoiceSetting {
    the events reported in the transmit, receive and command states, a
    bit each (event n of V.253's Table 1 the nth from the left of 32).
    On hook (0): caller ID (0, the <DLE>X packet) and RING (3).  On the
-   line (1), in every state: DTMF (4), loop
-   current interruption (13, <DLE>l), ringing tone (18, <DLE>r), busy
-   (19, <DLE>b), and the answer tones of 2100 Hz (25, <DLE>a) and of
-   2225 Hz (26, <DLE>f). */
+   line (1), in every state: DTMF (4), the calling tones of a fax
+   machine (6, <DLE>c) and of a data modem (7, <DLE>e), loop current
+   interruption (13, <DLE>l), ringing tone (18, <DLE>r), busy (19,
+   <DLE>b), and the answer tones of 2100 Hz (25, <DLE>a) and of 2225 Hz
+   (26, <DLE>f). */
 static const char *const voice_devices[] = {
 	"0,\"\",00000000,00000000,90000000",
-	"1,\"T\",08043060,08043060,08043060",
+	"1,\"T\",0B043060,0B043060,0B043060",
 };
 
 /* v within the bounds lo and hi (0: none) */

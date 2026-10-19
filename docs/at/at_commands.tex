@@ -791,8 +791,10 @@ with its values (as it was if none has them).
 \end{command}
 
 \begin{command}{plusFAA}{AT+FAA=\p{n}, AT+FAA?, AT+FAA=?}
-Adaptive answer.  With \cmd{1}, a call the modem answers (\cmd{ATA},
-\sreg{0}) in data or fax mode is answered as a data call (its answer
+Adaptive answer.  (In voice mode, see section~\ref{sec:voice}: a
+calling tone on the call switches it to fax or data.)  With \cmd{1}, a
+call the modem answers (\cmd{ATA}, \sreg{0}) in data or fax mode is
+answered as a data call (its answer
 tone, V.8's ANSam, serves a fax machine as its CED), and found out to
 be a fax machine's or a data modem's:
 \begin{itemize}
@@ -901,7 +903,7 @@ Sends or receives HDLC frames at V.21 channel 2 (300 bit/s), the only
 one: \cmd{=?} gives \cmd{3}.
 \end{command}
 
-\subsection{Voice}
+\subsection{Voice}\label{sec:voice}
 
 With \cmdl[plusFCLASS]{AT+FCLASS=8} the modem takes these voice commands (ERROR in
 the other modes):
@@ -980,19 +982,43 @@ as \cmd{<DLE>r} (a tone of 400 to 480~Hz, or 440 and 480~Hz, or 400 and
 busy or congestion tone as \cmd{<DLE>b} (four rounds of 0.2 to 0.8~s on
 and off), and an answer tone as \cmd{<DLE>a} (2100~Hz: a fax or data
 answer) or \cmd{<DLE>f} (2225~Hz: a data answer), 0.3~s into it.  A ring
-ends after 0.3~s without the tone.
+ends after 0.3~s without the tone.  A calling fax machine's CNG
+(1100~Hz, bursts of 0.36 to 0.8~s) is \cmd{<DLE>c}, a calling data
+modem's V.25 tone (1300~Hz) \cmd{<DLE>e}, each as a burst ends and 4~s
+apart at least, as V.253 asks.
 
 \cmd{AT+VLS=?} gives V.253's list of the devices, with the events each
 reports in the transmit, receive and command states as hex bit fields
 (bit \p{n} for V.253's event \p{n}, event 0 the leftmost of 32):
 \begin{verbatim}
 0,"",00000000,00000000,90000000
-1,"T",08043060,08043060,08043060
+1,"T",0B043060,0B043060,0B043060
 \end{verbatim}
 On hook (0) that is caller ID (with \cmdl[hashCID]{+VCID}) and RING; on the
-line (1) DTMF, the loop current
-interruption, a ringing tone, a busy tone and the two answer tones,
-in every state.
+line (1) DTMF, the two calling tones, the loop current interruption, a
+ringing tone, a busy tone and the two answer tones, in every state.
+
+A voice call can become a fax or data call (V.253 5.3.2 and its
+example I.6).  \cmdl[plusFCLASS]{+FCLASS=1} (or \cmd{0}) in the voice
+command state, off hook, keeps the call: the voice engine stops, the
+line stays off hook and silent, and \cmdl[A]{A} answers on it as a fax
+(class 1: CED, then CONNECT for the DIS) or data modem, or
+\cmdl[D]{D} calls on it (call progress waits for the far end's answer
+tone).  \cmdl[H]{H}, \cmdl[Z]{Z} or the far end hanging up ends the held
+call.  For example, a fax machine calls while the greeting plays:
+\begin{verbatim}
+AT+VTX                 CONNECT      the greeting's samples follow
+                       <DLE>c       the caller's CNG
+<DLE><ETX>             OK
+AT+FCLASS=1            OK
+ATA                    CONNECT      class 1, as after AT+FTH=3
+\end{verbatim}
+With \cmdl[plusFAA]{+FAA=1} the modem does it itself, in the voice
+command state (a \cmd{+VTX}, \cmd{+VRX}, \cmd{+VTR} or \cmd{+VTS} under
+way ends first): after \cmd{<DLE>c}, FAX, \cmd{+FCLASS=1} and the fax
+answer's CONNECT; after \cmd{<DLE>e}, \cmd{+FCLASS=0} and the adaptive
+data answer (DATA, then its CONNECT).  \cmd{+VNH} is accepted and has no
+effect: a held call's failed handshake hangs up.
 
 When the far end ends a voice call, the modem reports \cmd{<DLE>l}
 (V.253's loop current interruption, ``usually a remote hangup'') and

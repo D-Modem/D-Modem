@@ -481,6 +481,12 @@ struct Voice {
 	   cadences reported */
 	CallToneDetect rx_cpt;
 	unsigned rings_told, busy_told, answer_told[2];
+	/* the calling tones (a fax machine's CNG, V.25's CT), each
+	   reported 4 s apart at least (V.253 7.3, events 6 and 7): the
+	   bursts reported, the samples since the last report */
+	CngDetect rx_ct[2];
+	unsigned ct_told[2];
+	long ct_since[2];
 
 	struct voice_info *info();
 	int get_tx_sample(float *x);
@@ -503,6 +509,10 @@ void *VOICE_create(struct modem *m, unsigned srate)
 	v->pending = VOICE_STATUS_OK;
 	v->rx_dtmf.init(srate);
 	v->rx_cpt.init(srate);
+	for (int k = 0; k < 2; k++) {
+		v->rx_ct[k].init(srate, k ? 1300 : 1100);
+		v->ct_since[k] = 4L * srate;
+	}
 	DSP_DBG("voice: VOICE_create...\n");
 	return v;
 }
@@ -633,7 +643,9 @@ void Voice::tx_done(char *rxbuf, int *nrx)
    ours plays.  So are a ringing tone's rings (<DLE>r, as one comes on),
    a busy tone's cadences (<DLE>b) and answer tones (<DLE>a for 2100 Hz,
    <DLE>f for 2225 Hz), which the line is quiet for while a tone of ours
-   plays.  Returns the VOICE_STATUS_* due, or 0. */
+   plays, and calling tones: a fax machine's CNG (<DLE>c) and V.25's
+   1300 Hz (<DLE>e), each burst once it ends, 4 s apart at least.
+   Returns the VOICE_STATUS_* due, or 0. */
 int Voice::process(void *in, void *out, int count)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
@@ -702,6 +714,18 @@ int Voice::process(void *in, void *out, int count)
 			answer_told[k] = rx_cpt.answer[k];
 			DSP_DBG("voice: answer tone %s\n", k ? "2225" : "2100");
 			report(k ? 'f' : 'a');
+		}
+		for (int k = 0; k < 2; k++) {
+			rx_ct[k].sample(tone_left > 0 ? 0 : src[i]);
+			ct_since[k]++;
+			if (rx_ct[k].bursts == ct_told[k])
+				continue;
+			ct_told[k] = rx_ct[k].bursts;
+			if (ct_since[k] < 4L * srate)
+				continue;
+			ct_since[k] = 0;
+			DSP_DBG("voice: calling tone %s\n", k ? "1300" : "1100");
+			report(k ? 'e' : 'c');
 		}
 
 		if (tone_left > 0) {
@@ -776,6 +800,8 @@ void VOICE_tones(void *obj, struct voice_tones *t)
 	t->busy = d.busy;
 	t->ans2100 = d.answer[0];
 	t->ans2225 = d.answer[1];
+	t->cng = static_cast<Voice*>(obj)->rx_ct[0].bursts;
+	t->ct = static_cast<Voice*>(obj)->rx_ct[1].bursts;
 }
 
 /* Voice::process() for the C interface */

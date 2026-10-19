@@ -1162,6 +1162,10 @@ answer: a data answer, the call found out to be a fax or a data call;
   V.34, spandsp's at V.22bis and V.21, the SM56 and Conexant modems at
   V.90, the open modem at V.92), in data mode and in fax mode: DATA,
   then the data call;
+- the open, Agere and Conexant fax senders into the open modem in voice
+  mode, on the line with `+FAA=1` (`ANSWER_VOICE`): `<DLE>c`, FAX, the
+  class 1 answer on the call, then the page (Smart Link's library sends
+  no CNG on a silent line);
 - slow legacy callers, silent until they hear their own answer signal
   (the Agere modem forced to Bell 103, V.21 or V.22, no V.8), into fax
   mode with the whole automode chain: each answers its stage, DATA.

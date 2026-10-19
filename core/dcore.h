@@ -201,8 +201,8 @@ public:
 	   result, the line's line_dropped() to follow) */
 	void line_answered();
 	void line_failed(Result r);
-	/* ATA, ATD<number> */
-	int answer();
+	/* ATA, ATD<number> (adaptive false: no +FAA adaptive answer) */
+	int answer(bool adaptive = true);
 	int dial(const char *number);
 	/* the call's fax over T.38 instead of the audio, for the rest of
 	   the call (the line went over to it): the fax engine's packets to
@@ -340,7 +340,7 @@ private:
 	/* the state machine (modem.c) */
 	int set_state(State s);
 	void hup(bool local);
-	int start_call();
+	int start_call(bool keep_line = false);
 	int do_start();
 	int stop_call();
 	int set_hook(int state);
@@ -369,6 +369,8 @@ private:
 	void voice_process(int16_t *in, int16_t *out, int n);
 	int voice_start();
 	void voice_stop();
+	void voice_hold();
+	void voice_calling_tones();
 	int voice_command(enum VOICE_CMD cmd);
 	int voice_tone_next();
 	int voice_dial(const char *number);
@@ -566,6 +568,11 @@ private:
 	   discarded up to their end (a <DLE> code) */
 	bool voice_drain_ = false, voice_drain_dle_ = false;
 	bool voice_drain_duplex_ = false;
+	/* the voice call's line kept off hook after +FCLASS left voice
+	   mode (V.253 5.3.2), for ATA or ATD on it; the calling tones the
+	   voice engine heard so far (CNG, V.25's CT) that +FAA=1 acted on */
+	bool voice_held_ = false;
+	unsigned voice_cng_seen_ = 0, voice_ct_seen_ = 0;
 	void *fax_ = nullptr;
 	/* adaptive answer, while the call we answer is not yet known to
 	   be data or fax: Off, or the program's (Options::fax_detect),

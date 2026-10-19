@@ -44,6 +44,12 @@
   `Options::fax_detect` has the program take a fax caller itself
   (libdmodem's fax receiver): `fax_caller()`, the modem staying in data
   mode.
+  Voice mode: the voice engine reports calling tones (`<DLE>c` for CNG,
+  `<DLE>e` for V.25's 1300 Hz, `VOICE_tones()`'s `cng` and `ct`), and
+  `+FCLASS=0` or `1` off hook keeps the call (`voice_hold()`,
+  `voice_held_`: the line runs on, silent) for `ATA` or `ATD` on it
+  (`start_call(true)`); with `+FAA=1` a calling tone does that itself
+  in the voice command state (`voice_calling_tones()`).
   A dial string's `;` holds the call in command state once it is dialed
   (call progress's `DPSTAT_DIALED`): `ATD` dials more on it (call progress
   reads `dialing_`, the dial string and what is added, while SIP and `ATDL`

@@ -516,9 +516,10 @@ int Modem::do_start()
 }
 
 /* a call starts (dialled or answered, its first pump there or due): its
-   statistics anew, the link set up, off hook, the line started; -1 if
-   any of it fails, the call then stopped with NO CARRIER */
-int Modem::start_call()
+   statistics anew, the link set up, off hook, the line started (with
+   keep_line, the voice call's line held off hook goes on as it is); -1
+   if any of it fails, the call then stopped with NO CARRIER */
+int Modem::start_call(bool keep_line)
 {
 	auto fail = [this](const char *what) {
 		log_printf(1, "err: %s: %s\n", name_, what);
@@ -528,7 +529,7 @@ int Modem::start_call()
 		return -1;
 	};
 
-	if (started_ && stop_call())
+	if (started_ && !keep_line && stop_call())
 		return -1;
 	have_result_ = false;
 	stats_ = CallStats();
@@ -568,7 +569,7 @@ int Modem::start_call()
 	event_ = new_event_ = 0;
 	timer_on_ = false;
 	escape_count_ = 0;
-	if (do_start())
+	if (!(keep_line && started_) && do_start())
 		return fail("the line does not start");
 	return 0;
 }
@@ -592,6 +593,7 @@ int Modem::stop_call()
 		host_.speaker(*this, 0);
 	caller_ = false;
 	dialed_ = false;
+	voice_held_ = false;
 	dial_rest_[0] = '\0';
 	/* an adaptive answer from fax mode that found out nothing: back in
 	   fax mode */
@@ -1229,7 +1231,7 @@ int Modem::dial_start()
 
 	if (dp_)
 		return -1;
-	if (started_ && stop_call())
+	if (started_ && !voice_held_ && stop_call())
 		return -1;
 	caller_ = true;
 	d = find_driver(DP_CALLPROG);
@@ -1269,9 +1271,13 @@ int Modem::dial(const char *number)
 	strcpy(dialing_, dial_string_);
 	logf("dial: %s\n", dialing_);
 	dp_requested_ = 0;
+	/* (on a voice call's held line: call progress there, as after the
+	   number is dialled, its answer tone to come) */
+	bool held = voice_held_;
 	if (dial_start())
 		return -1;
-	return start_call();
+	voice_held_ = false;
+	return start_call(held);
 }
 
 /* call progress has dialled up to the ';': the call is held in command
@@ -1314,10 +1320,16 @@ int Modem::online()
 /* ATA: the answering pump after the answer delay (S92 s, or 10 ms), on
    the held call (call-back: we answer the call we dialled) or a new
    one; -1 if a pump runs already or the call cannot start */
-int Modem::answer()
+int Modem::answer(bool adaptive)
 {
 	unsigned long delay = sregs_[SREG_ANS_DELAY] ?
 		(unsigned long)sregs_[SREG_ANS_DELAY] * srate_ : srate_ / 100;
+	/* a voice call's held line: off hook a while already */
+	bool held = voice_held_;
+
+	if (held)
+		delay = srate_ / 100;
+	voice_held_ = false;
 
 	if (dialed_) {
 		dialed_ = false;
@@ -1339,7 +1351,7 @@ int Modem::answer()
 		log_printf(1, "err: %s: answer: a pump runs\n", name_);
 		return -1;
 	}
-	if (started_ && stop_call())
+	if (started_ && !held && stop_call())
 		return -1;
 	caller_ = false;
 	dp_requested_ = 0;
@@ -1350,8 +1362,8 @@ int Modem::answer()
 	cng_->init(srate_);
 	cng_cut_ = 0;
 	answer_tone_at_ = 0;
-	if (kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
-				mode_ == MODEM_MODE_FAX)) {
+	if (adaptive && kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
+					    mode_ == MODEM_MODE_FAX)) {
 		adapt_ = mode_ == MODEM_MODE_FAX ? Adapt::Fax : Adapt::Data;
 		set_mode(MODEM_MODE_DATA);
 		logf("adaptive answer (+FAA=1, from %s mode)\n",
@@ -1360,7 +1372,7 @@ int Modem::answer()
 		adapt_ = Adapt::Detect;
 	}
 	later(Later::ChangeDp, delay);
-	return start_call();
+	return start_call(held);
 }
 
 /* adaptive answer: the call we answer is a fax machine's (why: its
@@ -1413,6 +1425,8 @@ void Modem::hangup()
 {
 	if (state_ != IDLE)
 		set_cause(Cause::LocalHangup);
+	else if (voice_held_)
+		stop_call();
 	hup(true);
 }
 
@@ -1434,6 +1448,11 @@ void Modem::line_dropped()
 	}
 	if (voice_) {
 		voice_line_gone();
+		return;
+	}
+	if (voice_held_) {
+		logf("voice: the line ended the held call\n");
+		stop_call();
 		return;
 	}
 	if (state_ != IDLE)
@@ -1474,6 +1493,10 @@ void Modem::line_failed(Result r)
    nothing if the hook is there already; the Host's result */
 int Modem::hook(int state)
 {
+	if (state == MODEM_HOOK_ON && voice_held_) {
+		stop_call();
+		return 0;
+	}
 	if (hook_ == state)
 		return 0;
 	if (state_ != IDLE) {
@@ -1511,14 +1534,19 @@ int Modem::reset()
 	return 0;
 }
 
-/* +FCLASS: data, fax or voice (the voice engine stops when voice is
-   left); 0 */
+/* +FCLASS: data, fax or voice; the voice engine stops when voice is
+   left, its line held off hook (V.253 5.3.2: ATA or ATD then starts
+   the fax or data handshake on the call) unless it was dialling; 0 */
 int Modem::set_mode(enum MODEM_MODE mode)
 {
 	if (mode == mode_)
 		return 0;
-	if (mode_ == MODEM_MODE_VOICE && voice_)
-		voice_stop();
+	if (mode_ == MODEM_MODE_VOICE && voice_) {
+		if (voice_dialing_ || mode == MODEM_MODE_VOICE)
+			voice_stop();
+		else
+			voice_hold();
+	}
 	mode_ = mode;
 	return 0;
 }
@@ -1960,6 +1988,7 @@ int Modem::voice_start()
 		return -1;
 	later_ = Later::None;
 	run_ = Run::Voice;
+	voice_cng_seen_ = voice_ct_seen_ = 0;
 	set_hook(MODEM_HOOK_OFF);
 	if (do_start()) {
 		log_printf(1, "err: %s: the line does not start\n", name_);
@@ -1983,6 +2012,48 @@ void Modem::voice_stop()
 	voice_cmd_ = -1;
 	stop_call();
 	set_hook(MODEM_HOOK_ON);
+}
+
+static voice_tones heard(void *voice);
+
+/* the voice engine goes, the line held off hook as it runs (silence
+   on it) for a fax or data handshake on the call */
+void Modem::voice_hold()
+{
+	logf("voice: the call held for a handshake\n");
+	run_ = Run::None;
+	later_ = Later::None;
+	VOICE_delete(voice_);
+	voice_ = nullptr;
+	vts_.clear();
+	vts_next_ = 0;
+	voice_dial_digits_ = false;
+	voice_cmd_ = -1;
+	voice_held_ = started_;
+}
+
+/* +FAA=1 in voice mode, in the voice command state (a +VTX, +VRX,
+   +VTR or +VTS under way first ends): a fax machine's CNG on the call
+   makes it a fax call (FAX, class 1, the fax answerer's CED and DIS on
+   the held line), a data modem's V.25 calling tone a data call (data
+   mode, its adaptive answer: DATA, then the CONNECT) */
+void Modem::voice_calling_tones()
+{
+	voice_tones t = heard(voice_);
+	bool fax = t.cng != voice_cng_seen_, data = t.ct != voice_ct_seen_;
+
+	if ((!fax && !data) || !kept("+FAA")[0] || voice_dialing_ ||
+	    voice_cmd_ != -1 || voice_drain_ || !command_)
+		return;
+	voice_cng_seen_ = t.cng;
+	voice_ct_seen_ = t.ct;
+	logf("voice: %s calling tone, +FAA=1: a %s call\n",
+	     fax ? "a fax machine's" : "a data modem's", fax ? "fax" : "data");
+	set_mode(fax ? MODEM_MODE_FAX : MODEM_MODE_DATA);
+	if (fax)
+		report(Result::Fax);
+	if (answer(!fax))
+		report(Result::Error);
 }
 
 /* +VTS, +VTX, +VRX, +VTR: the voice engine's command, the DTE's
@@ -2258,6 +2329,8 @@ void Modem::voice_process(int16_t *in, int16_t *out, int n)
 	default:
 		break;
 	}
+	if (voice_)
+		voice_calling_tones();
 }
 
 /*

@@ -488,7 +488,7 @@ TEST(Core, VoiceEvents)
 	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8\r"), "OK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
 		  "0,\"\",00000000,00000000,90000000\r\n"
-		  "1,\"T\",08043060,08043060,08043060\r\nOK\r\n");
+		  "1,\"T\",0B043060,0B043060,0B043060\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=0\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VEM=?\r"), "+VEM=0-1\r\nOK\r\n");
@@ -646,6 +646,98 @@ TEST_P(CoreCall, DataBothWaysAndHangup)
 	EXPECT_TRUE(p.got_a.find("NO CARRIER") != std::string::npos);
 	if (getenv("SHOW"))
 		printf("A after the hangup: [%s]\n", p.got_a.c_str());
+}
+
+/* a fax machine (class 1, its CNG) calls a modem in voice mode, on
+   the line (+VLS=1): <DLE>c; +FCLASS=1 keeps the call, and ATA on it
+   is the fax answer (CED and the DIS's flags: the caller's CONNECT).
+   With +FAA=1 the modem switches by itself: FAX, then CONNECT.  ATH
+   ends a held call. */
+TEST(Core, VoiceFaxCall)
+{
+	for (int faa : { 0, 1 }) {
+		Pair p("");
+		auto has = [](const std::string &s, const char *x) {
+			return s.find(x) != std::string::npos;
+		};
+		p.a->dte_input("AT+FCLASS=1\r", 12);
+		std::string vb = std::string("AT+FCLASS=8;+FAA=") +
+			(faa ? "1" : "0") + ";+VLS=1\r";
+		p.b->dte_input(vb.data(), vb.size());
+		p.step();
+		p.a->dte_input("ATD\r", 4);
+		ASSERT_TRUE(p.run_until([](Pair &q) {
+			return q.got_b.find("\x10" "c") != std::string::npos;
+		}, 8000)) << faa;
+		if (!faa) {
+			p.got_b.clear();
+			p.b->dte_input("AT+FCLASS=1\r", 12);
+			p.step();
+			EXPECT_EQ(p.got_b, "OK\r\n");
+			EXPECT_TRUE(p.b->started());
+			EXPECT_EQ(p.b->mode(), MODEM_MODE_FAX);
+			p.b->dte_input("ATA\r", 4);
+		}
+		ASSERT_TRUE(p.run_until([](Pair &q) {
+			return q.got_a.find("CONNECT") != std::string::npos &&
+				q.got_b.find("CONNECT") != std::string::npos;
+		}, 10000)) << faa << ": A [" << p.got_a << "] B [" <<
+			p.got_b << "]";
+		if (getenv("SHOW"))
+			printf("+FAA=%d: A [%s] B [%s]\n", faa,
+			       p.got_a.c_str(), p.got_b.c_str());
+		EXPECT_EQ(has(p.got_b, "FAX\r\n"), faa == 1);
+		EXPECT_EQ(p.b->mode(), MODEM_MODE_FAX);
+	}
+
+	/* ATH on the held line */
+	Line l;
+	Modem *m = make(l, "held");
+	int16_t in[160] = {}, out[160];
+	cmd(m, l, "ATE0+FCLASS=8;+VLS=1\r");
+	m->process(in, out, 160);
+	EXPECT_TRUE(m->started());
+	EXPECT_EQ(cmd(m, l, "AT+FCLASS=0\r"), "OK\r\n");
+	EXPECT_TRUE(m->started());
+	EXPECT_EQ(cmd(m, l, "ATH\r"), "OK\r\n");
+	EXPECT_TRUE(!m->started());
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
+	delete m;
+}
+
+/* a data modem's V.25 calling tone (1300 Hz, 0.6 s every 2.6 s) on a
+   voice call: <DLE>e, at most once in 4 s; with +FAA=1 the modem goes
+   over to data mode and its adaptive answer */
+TEST(Core, VoiceDataCallingTone)
+{
+	for (int faa : { 0, 1 }) {
+		Line l;
+		Modem *m = make(l, "ct");
+		std::string c = std::string("ATE0+FCLASS=8;+FAA=") +
+			(faa ? "1" : "0") + ";+VLS=1\r";
+		cmd(m, l, c.c_str());
+		line(m, 100);
+		l.out.clear();
+		for (int k = 0; k < 3; k++) {
+			line(m, 600, 1300);
+			line(m, 2000);
+		}
+		size_t n = 0;
+		for (size_t i = l.out.find("\x10" "e"); i != std::string::npos;
+		     i = l.out.find("\x10" "e", i + 1))
+			n++;
+		if (faa) {
+			EXPECT_EQ(n, 1u);
+			EXPECT_EQ(m->mode(), MODEM_MODE_DATA);
+			EXPECT_TRUE(m->adaptive_answering());
+		} else {
+			EXPECT_EQ(n, 2u) << l.out;
+			EXPECT_EQ(m->mode(), MODEM_MODE_VOICE);
+		}
+		m->hangup_now();
+		line(m, 100);
+		delete m;
+	}
 }
 
 static int log_lines;
