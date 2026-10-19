@@ -1,0 +1,4 @@
+# (the Docker build's context: the sources alone)
+.git
+build*/
+**/__pycache__
