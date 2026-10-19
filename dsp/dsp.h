@@ -469,24 +469,29 @@ struct CallToneDetect {
 	void block();
 };
 
-/* a calling fax machine's CNG (4.2/T.30: 1100 Hz +-38 Hz, 0.5 s on, 3 s
-   off), heard by an answerer.  On blocks of 20 ms: a block is on when
-   1075, 1100 or 1125 Hz (each filter some 25 Hz wide: T.30's tolerance)
-   has 60 per cent of its energy, less what an answer tone has (2100
-   Hz: our own, in an echo), that rest not too quiet (-50 dBFS rms); a
-   burst is a run of 0.36 to 0.7 s of them (a block's dropout taken in)
-   that ends.  A data modem's signals are no pure tone near 1100 Hz
-   before its connection (V.22's unscrambled ones, 1050 Hz, come after
-   the answer tone, and go on), and one tone held longer is no CNG. */
+/* a calling tone heard by an answerer: a fax machine's CNG (4.2/T.30:
+   1100 Hz +-38 Hz, 0.5 s on, 3 s off), or by init()'s freq the V.25
+   calling tone of a data modem (1300 Hz +-15 Hz, 0.5 to 0.7 s on, 1.5
+   to 2 s off).  On blocks of 20 ms: a block is on when freq - 25, freq
+   or freq + 25 Hz (each filter some 25 Hz wide: T.30's tolerance) has
+   60 per cent of its energy, less what an answer tone has (2100 Hz: our
+   own, in an echo), that rest not too quiet (-50 dBFS rms); a burst is
+   a run of 0.36 to 0.8 s of them (a block's dropout taken in) that
+   ends.  A data modem's signals are no pure tone near 1100 Hz before
+   its connection (V.22's unscrambled ones, 1050 Hz, come after the
+   answer tone, and go on), and one tone held longer is no calling
+   tone.  A run of 0.2 to 0.36 s is a burst cut short (cut): a caller
+   that stops its tone on hearing the answer tone. */
 struct CngDetect {
-	Goertzel tone[3], ans;  /* 1075, 1100, 1125; 2100 Hz */
+	Goertzel tone[3], ans;  /* freq - 25, freq, freq + 25; 2100 Hz */
 	float energy;
 	int n, len;
 	int run, drop;          /* blocks on in the run, off since */
-	unsigned bursts;        /* CNG bursts heard */
+	unsigned bursts;        /* bursts heard */
+	unsigned cut;           /* bursts cut short */
 
-	/* at srate, nothing heard */
-	void init(int srate);
+	/* at srate, the tone at freq Hz, nothing heard */
+	void init(int srate, int freq = 1100);
 	/* one sample of the line */
 	void sample(float x);
 	/* ms of the tone in the run going on (0 when off) */

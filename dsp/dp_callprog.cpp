@@ -101,7 +101,8 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 
 	/* V.25 calling tone, or the T.30 CNG of a fax call */
 	int calling_tone;
-	int fax;
+	int fax;                /* 1 a fax call (CNG); -1 one without its
+				   CNG (DSP_FAX_CNG=0); 0 data */
 	Osc ct;
 
 	/* its name in the log */
@@ -202,6 +203,9 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 
 	calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
 	fax = modem_get_param(m, MDMPRM_MODE) == MODEM_MODE_FAX;
+	/* (tests: DSP_FAX_CNG=0, a fax caller that sends no CNG) */
+	if (fax && getenv("DSP_FAX_CNG") && !atoi(getenv("DSP_FAX_CNG")))
+		fax = -1;
 	ct.set_freq(fax ? 1100 : 1300, srate_);
 
 	/* like the original, X2/X4 insist on a dial tone even when there
@@ -537,12 +541,12 @@ int CallProgPump::process(void *in, void *out, int cnt)
 				set_state(CP_DIAL);
 			break;
 		case CP_WAIT_ANSWER:
-			if (fax) {
+			if (fax > 0) {
 				/* CNG: 0.5 s of 1100 Hz every 3.5 s */
 				if (count % ms2samples(3500, srate) <
 				    ms2samples(500, srate))
 					y = 0.5f * DSP_TX_AMPLITUDE * ct.next();
-			} else if (calling_tone &&
+			} else if (!fax && calling_tone &&
 				   count >= ms2samples(500, srate) &&
 				   (count % ms2samples(2500, srate)) <
 				   ms2samples(600, srate))

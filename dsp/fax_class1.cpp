@@ -1265,7 +1265,9 @@ void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
 	DSP_DBG("fax: create, %s\n", caller ? "caller" : "answerer");
 	if (caller) {
 		f->begin_frh();           /* the called fax sends DIS */
-		f->cng_n = 0;
+		/* its CNG (tests: DSP_FAX_CNG=0, none) */
+		if (!getenv("DSP_FAX_CNG") || atoi(getenv("DSP_FAX_CNG")))
+			f->cng_n = 0;
 	} else {
 		f->set_state(C1_CED);
 		f->state = C1_CED;

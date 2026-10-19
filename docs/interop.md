@@ -1152,14 +1152,19 @@ answer: a data answer, the call found out to be a fax or a data call;
   the open modem's in data mode too): FAX before its CONNECT
   (`ANSWER_B`), then the page, checked.  The open modem, Smart Link's
   library, the Broadcom, Intel and HD-audio modems are found out by their
-  CNG; the Agere and Conexant modems send the V.8 CM of a fax call on
-  our ANSam (they would take V.34 fax), found out by its call function;
+  CNG; the Agere and Conexant modems stop theirs as soon as they hear
+  our ANSam, the burst cut short, which tells too.  The open modem's
+  sender without CNG (`DSP_FAX_CNG=0`), silent until the DIS, into fax
+  and data mode: FAX at the end of the automode chain (Bell 103's 3 s);
 - spandsp's V.8 with the call function of a fax machine
   (`SPANDSP_V8_CALL=4`) into data mode: FAX, no data call;
 - data callers (the Agere modem at V.34 and V.22bis, Smart Link's at
   V.34, spandsp's at V.22bis and V.21, the SM56 and Conexant modems at
   V.90, the open modem at V.92), in data mode and in fax mode: DATA,
-  then the data call.
+  then the data call;
+- slow legacy callers, silent until they hear their own answer signal
+  (the Agere modem forced to Bell 103, V.21 or V.22, no V.8), into fax
+  mode with the whole automode chain: each answers its stage, DATA.
 
 ## MNP
 

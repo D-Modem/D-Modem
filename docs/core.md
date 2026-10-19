@@ -34,9 +34,11 @@
   with their cadence) and auto answer, caller ID, the fax and voice modes.
   Adaptive answer (`+FAA=1`): the data answer runs, in data mode or in
   fax mode, and the call is found out to be a fax call (the caller's
-  CNG, `dsp.h`'s `CngDetect`; the V.8 CM of a fax call, which the V.8
-  pump tells with `DPSTAT_FAX`; T.38 from the far end; from fax mode, a
-  caller silent through ANSam) or a data call (its pump's CONNECT): FAX
+  CNG, `dsp.h`'s `CngDetect`, or a burst of it cut short as our answer
+  tone starts; the V.8 CM of a fax call, which the V.8 pump tells with
+  `DPSTAT_FAX`; T.38 from the far end; a caller silent through the
+  whole automode chain, which its last stage, Bell 103's, tells with
+  `DPSTAT_FAX` after 3 s) or a data call (its pump's CONNECT): FAX
   and class 1, the fax engine's CED cut short by the answer tone sent
   already (`FAX_answer_tone()`), or DATA and its CONNECT.
   `Options::fax_detect` has the program take a fax caller itself

@@ -571,13 +571,15 @@ private:
 	   be data or fax: Off, or the program's (Options::fax_detect),
 	   or +FAA=1's from data mode (Data) or class 1 (Fax: the data
 	   answer runs, +FCLASS=0 until a fax is found out or the call
-	   ends); the caller found to be a fax machine; its CNG detector;
-	   where the answer tone starts (count_) */
+	   ends); the caller found to be a fax machine; its CNG detector
+	   and the bursts it found cut short so far; where the answer
+	   tone starts (count_) */
 	enum class Adapt { Off, Detect, Data, Fax };
 	Adapt adapt_ = Adapt::Off;
 	bool fax_detect_ = false;
 	bool fax_caller_ = false;
 	dsp::CngDetect *cng_ = nullptr;
+	unsigned cng_cut_ = 0;
 	unsigned long answer_tone_at_ = 0;
 	/* the call's fax over T.38 (its data octets in a packet) */
 	bool t38_ = false;

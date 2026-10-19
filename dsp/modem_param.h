@@ -118,9 +118,9 @@ enum MODEM_PARAMETER_NAMES {
 				      tones); -1 or 0 if none */
 	MDMPRM_ADAPTIVE     = 70,  /* answering, the call's data or fax
 				      found out (+FAA): 0 not; 1 a fax
-				      caller to be told (DPSTAT_FAX); 2 as
-				      well a caller silent after the answer
-				      tone is fax (+FCLASS=1) */
+				      caller to be told (DPSTAT_FAX: its V.8
+				      CM, or silence through the whole
+				      automode chain) */
 };
 
 /*

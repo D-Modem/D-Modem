@@ -796,20 +796,23 @@ Adaptive answer.  With \cmd{1}, a call the modem answers (\cmd{ATA},
 tone, V.8's ANSam, serves a fax machine as its CED), and found out to
 be a fax machine's or a data modem's:
 \begin{itemize}
-\item a fax call by the caller's CNG (1100~Hz, 0.5~s of every 3.5~s),
-  the V.8 CM of a fax call (a call function of facsimile, as V.34 fax
-  machines and some class 1 modems send it on ANSam), the far end
-  going over to T.38 (dmodemd's SIP calls), or, answering in fax mode,
-  a caller that stays silent through ANSam: FAX, \cmdl[plusFCLASS]{+FCLASS}
+\item a fax call by the caller's CNG (1100~Hz, 0.5~s of every 3.5~s;
+  or a burst cut short as the answer tone starts, a fax machine that
+  stops its CNG on hearing it), the V.8 CM of a fax call (a call
+  function of facsimile, as V.34 fax machines and some class 1 modems
+  send it on ANSam), the far end going over to T.38 (dmodemd's SIP
+  calls), or a caller silent through every answer signal of the
+  automode chain (ANSam, then V.32's, V.22's, V.21's, V.23's and Bell
+  103's, some 20~s, within T.30's T1 of 35~s): FAX, \cmdl[plusFCLASS]{+FCLASS}
   becomes 1, and the modem goes on as a class 1 answerer: what is left
   of CED's 3~s, then CONNECT, as after \cmd{AT+FTH=3}, for the DTE's
   first frames;
 \item a data call by its modem's handshake: DATA when it comes up, then
   its CONNECT; \cmd{+FCLASS} becomes 0.
 \end{itemize}
-A call that ends with neither leaves \cmd{+FCLASS} as it was.  Answering
-in fax mode, a V.22, V.21 or Bell 103 caller (silent until it hears a
-modem's carrier) is taken for a fax machine.  \cmd{0} (default) answers
+A call that ends with neither leaves \cmd{+FCLASS} as it was.  A V.22,
+V.21 or Bell 103 caller, silent until it hears its own answer signal,
+answers its stage of the chain: DATA.  \cmd{0} (default) answers
 as \cmd{+FCLASS} says.  \cmd{=?} gives \cmd{+FAA: (0,1)}; \cmdl[Z]{Z}
 sets 0.  Rockwell's modems give FAX and DATA too, as 33
 and 35 with \cmdl[V]{V0}: here those are rates' CONNECTs, so 88 and 89.

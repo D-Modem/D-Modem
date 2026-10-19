@@ -422,19 +422,20 @@ void CallToneDetect::block()
 }
 
 /*
- *    CNG
+ *    Calling tones: CNG, V.25's CT
  */
 
-#define CNG_RUN_MIN     (360 / CT_BLOCK_MS)     /* blocks of a burst */
-#define CNG_RUN_MAX     (700 / CT_BLOCK_MS)
+#define CNG_RUN_CUT     (200 / CT_BLOCK_MS)     /* blocks of a burst */
+#define CNG_RUN_MIN     (360 / CT_BLOCK_MS)     /* cut short; of one */
+#define CNG_RUN_MAX     (800 / CT_BLOCK_MS)
 
 /* see dsp.h */
-void CngDetect::init(int srate)
+void CngDetect::init(int srate, int freq)
 {
 	*this = CngDetect();
 	len = srate * CT_BLOCK_MS / 1000;
 	for (int k = 0; k < 3; k++)
-		tone[k].init(1075 + 25 * k, len, srate);
+		tone[k].init(freq - 25 + 25 * k, len, srate);
 	ans.init(2100, len, srate);
 	drop = CT_GAP;
 }
@@ -471,6 +472,8 @@ void CngDetect::block()
 	if (++drop == 2) {
 		if (run >= CNG_RUN_MIN && run <= CNG_RUN_MAX)
 			bursts++;
+		else if (run >= CNG_RUN_CUT && run < CNG_RUN_MIN)
+			cut++;
 		run = 0;
 	}
 }

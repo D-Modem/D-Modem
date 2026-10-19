@@ -170,6 +170,10 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
 				   next */
 	int after_v8;           /* calling after V.8: the answerer's JM may
 				   still be in its channel */
+	int adaptive;           /* answering adaptively (+FAA=1): a caller
+				   silent through the whole automode chain
+				   is a fax machine */
+	int fax_told;           /* DPSTAT_FAX returned */
 	Bell103Detect bell;     /* a Bell 103 caller */
 	/* the caller's check that the mark is really at its frequency:
 	   another answerer's (V.21's 1650 Hz for V.23's 1300) demodulates
@@ -246,6 +250,7 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 			state = FSK_ANS_GAP;
 			automode = 1;
 			bell.init(srate_);
+			adaptive = modem_get_param(m, MDMPRM_ADAPTIVE) != 0;
 		}
 	}
 	DSP_DBG("%s: create %s, srate %d\n", par_->name,
@@ -360,6 +365,18 @@ int FskPump::sample(float x, float *y)
 				"Bell 103 caller" : "no answer",
 				next == DP_B103 ? "Bell 103" : "V.23");
 			return hand_over(next, 1);
+		} else if (!caller && automode && adaptive && !fax_told &&
+			   dp.id == DP_B103 && !bell.found() &&
+			   count >= ms2samples(3000, srate) &&
+			   !rx.carrier && carrier_run <= 0) {
+			/* the chain's end: no V.32, V.22, V.21, V.23 or
+			   Bell 103 caller answered its tone, so the
+			   silent caller is a fax machine waiting for
+			   the DIS */
+			DSP_DBG("%s: no answer to any automode stage: "
+				"a fax call\n", par->name);
+			fax_told = 1;
+			ret = DPSTAT_FAX;
 		}
 		break;
 	case FSK_DATA:

@@ -1038,6 +1038,17 @@ void Modem::process(const int16_t *in, int16_t *out, int n)
 			cng_->sample(scratch_[i]);
 		if (cng_->bursts)
 			fax_found("CNG");
+		/* a burst cut short as our answer tone starts: a fax
+		   machine that stops its CNG on hearing it, silent until
+		   the DIS (the tone reaches it, its burst ends and its end
+		   reaches us within a round trip) */
+		if (cng_->cut != cng_cut_) {
+			cng_cut_ = cng_->cut;
+			if (answer_tone_at_ && count_ >= answer_tone_at_ &&
+			    count_ - answer_tone_at_ <=
+			    (unsigned long)srate_ * 3 / 2)
+				fax_found("CNG cut short by the answer tone");
+		}
 	}
 	log_data(this, LOG_RX_SAMPLES, scratch_, 2 * n);
 	run(scratch_, out, n);
@@ -1114,7 +1125,9 @@ void Modem::dp_process(int16_t *in, int16_t *out, int n)
 				dialed();
 			break;
 		case DPSTAT_FAX:
-			fax_found("V.8");
+			fax_found(dp_->id == DP_B103 ?
+				  "silent through the automode chain" :
+				  "V.8");
 			break;
 		case DPSTAT_ERROR:
 			failed = true;
@@ -1335,6 +1348,7 @@ int Modem::answer()
 	   program's own fax receiver in data mode */
 	fax_caller_ = false;
 	cng_->init(srate_);
+	cng_cut_ = 0;
 	answer_tone_at_ = 0;
 	if (kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
 				mode_ == MODEM_MODE_FAX)) {
@@ -1363,7 +1377,7 @@ void Modem::fax_found(const char *why)
 	logf("adaptive answer: a fax call (%s)\n", why);
 	if (adapt_ == Adapt::Detect) {
 		adapt_ = Adapt::Off;
-		if (strcmp(why, "CNG"))
+		if (strncmp(why, "CNG", 3))
 			run_ = Run::None;
 		return;
 	}
@@ -1377,9 +1391,9 @@ void Modem::fax_found(const char *why)
 		FAX_answer_tone(fax_, (unsigned)sent);
 }
 
-/* MDMPRM_ADAPTIVE: 1 while answering adaptively (a V.8 fax call
-   told with DPSTAT_FAX), 2 from fax mode (a caller silent through
-   ANSam also fax), else 0 */
+/* MDMPRM_ADAPTIVE: 1 while answering adaptively (a V.8 fax call, or
+   a caller silent through the whole automode chain, told with
+   DPSTAT_FAX), else 0 */
 int Modem::adaptive_param() const
 {
 	if (caller_)
@@ -1387,9 +1401,8 @@ int Modem::adaptive_param() const
 	switch (adapt_) {
 	case Adapt::Detect:
 	case Adapt::Data:
-		return 1;
 	case Adapt::Fax:
-		return 2;
+		return 1;
 	default:
 		return 0;
 	}

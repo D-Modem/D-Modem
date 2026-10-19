@@ -511,8 +511,8 @@ struct V34V8 {
 	/* V.32 / V.22 callers during ANSam */
 	Goertzel aa_g;
 	int aa_blocks;
-	/* adaptive answer (MDMPRM_ADAPTIVE): 0 none; 1 a CM of a fax call
-	   is told (DPSTAT_FAX); 2 as well a caller silent through ANSam */
+	/* adaptive answer (MDMPRM_ADAPTIVE): a CM of a fax call is told
+	   (DPSTAT_FAX) */
 	int v8_adaptive;
 	int v8_remote_cat(int tag);
 	void v8_make_msg(BitQ *q);
@@ -3930,14 +3930,11 @@ int V34V8<P>::v8_step(long c)
 		} else if (aa_blocks >= 10)
 			return self.fallback("V.32 caller");
 		else if (c >= ms2samples(5000, self.srate)) {
-			/* adaptive answer preferring fax: a caller silent
-			   through ANSam is a fax machine waiting for the DIS
-			   (a V.22, V.21 or Bell 103 caller is too: fax
-			   wins) */
-			if (v8_adaptive == 2) {
-				DSP_DBG("v34: no CM: taken for a fax call\n");
-				return DPSTAT_FAX;
-			}
+			/* a caller silent through ANSam: a V.32, V.22,
+			   V.21 or Bell 103 modem waiting for its own
+			   answer tone, or a fax machine waiting for the
+			   DIS; the automode chain tells them apart (its
+			   last stage says DPSTAT_FAX) */
 			return self.fallback("no CM");
 		}
 		break;
@@ -6106,7 +6103,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   receiver), for an answerer */
 	{
 		intptr_t a = caller ? 0 : modem_get_param(m, MDMPRM_ADAPTIVE);
-		v8_adaptive = a == 1 || a == 2 ? (int)a : 0;
+		v8_adaptive = a != 0;
 	}
 	if (getenv("DSP_V92_MOH_REQ")) {
 		const char *e = getenv("DSP_V92_MOH_REQ");

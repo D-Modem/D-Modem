@@ -201,7 +201,8 @@ static void line(Modem *m, int ms, double f = 0)
    fax call (FAX, class 1); without +FAA no; from fax mode the data
    answer runs in data mode, fax mode back after the call; and the
    program's fax receiver (Options::fax_detect) told of a CNG burst,
-   the modem staying in data mode */
+   or of one cut short by the answer tone, the modem staying in data
+   mode */
 TEST(Core, AdaptiveAnswer)
 {
 	Line l;
@@ -237,7 +238,7 @@ TEST(Core, AdaptiveAnswer)
 	cmd(m, l, "ATA\r");
 	line(m, 500);
 	EXPECT_EQ(m->mode(), MODEM_MODE_DATA);
-	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_ADAPTIVE), 2);
+	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_ADAPTIVE), 1);
 	m->hangup_now();
 	line(m, 100);
 	EXPECT_EQ(m->mode(), MODEM_MODE_FAX);
@@ -261,6 +262,22 @@ TEST(Core, AdaptiveAnswer)
 	m->hangup_now();
 	line(m, 100);
 	delete m;
+
+	/* a CNG burst cut short (0.25 s) as our answer tone starts (S92's
+	   2 s of silence and 0.2 s of the pump's after ATA): a fax caller;
+	   the same burst 3 s later is not */
+	for (int late : { 0, 1 }) {
+		m = new Modem(l, o);
+		cmd(m, l, "ATE0\r");
+		cmd(m, l, "ATA\r");
+		line(m, late ? 5300 : 2300);
+		line(m, 250, 1100);
+		line(m, 300);
+		EXPECT_EQ(m->fax_caller(), !late) << late;
+		m->hangup_now();
+		line(m, 100);
+		delete m;
+	}
 }
 
 /* the line's delay as Smart Link's original library sees it: asked of

@@ -1525,6 +1525,27 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 		      "EXPECT_B=(?s)V.90 connect.*result: DATA",
 		      "PROTO_B=ATX3;AT+MS=90;AT+FAA=1" });
+	/* a fax sender without CNG (DSP_FAX_CNG=0), silent until the DIS,
+	   into fax and data mode: no answer to any stage of the automode
+	   chain, so FAX at its end (Bell 103's 3 s) */
+	add("adaptive", "adaptive_fax_96_silent_sender", "open8", "open8",
+	    "ATX3", { faa, "ANSWER_B=FAX", "DSP_FAX_CNG=0",
+		      "EXPECT_B=a fax call \\(silent" })->fax = 96;
+	add("adaptive", "adaptive_fax_96_silent_sender_data_mode", "open8",
+	    "open8", "ATX3",
+	    { "SETUP_B=AT+FCLASS=0;AT+FAA=1", "ANSWER_B=FAX",
+	      "DSP_FAX_CNG=0" })->fax = 96;
+	/* slow legacy callers silent until they hear their own answer
+	   signal (the Agere modem forced to Bell 103, V.21 or V.22, no
+	   V.8) into fax mode, the whole automode chain: DATA, then the call */
+	for (auto [n, ms] : std::vector<std::pair<const char *, const char *>>{
+		     { "B103", "103" }, { "V21", "21" }, { "V22", "22" } })
+		add("adaptive", std::string("adaptive_data_agere_") + ms +
+		    "_fax_mode", "agere", "open",
+		    std::string("ATX3;AT+MS=") + n,
+		    { "NET=8000:9600:ulaw",
+		      "PROTO_B=ATX3;AT+FCLASS=1;AT+FAA=1",
+		      "EXPECT_B=result: DATA" });
 	add("adaptive", "adaptive_data_open_92", "open", "open8",
 	    "ATX3;AT+MS=92",
 	    { "NET=9600:8000:ulaw", "EXPECT_B=result: DATA",
