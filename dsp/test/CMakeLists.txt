@@ -7,8 +7,8 @@
 #             (libspandsp-dev)
 #   smartlink, agere, sm56, pctel, hsf, spanpeer   calls with the other
 #             soft modems: Smart Link's (its original binary library),
-#             the Agere, SM56, PCTel and HSF ones, spandsp's (needs gcc
-#             -m32 on x86_64); long
+#             the Agere, SM56, PCTel and HSF ones, spandsp's (needs -m32
+#             on x86_64, Clang's or GCC's, and 32 bit libraries); long
 #   open      calls between two open modems through the same driver
 #   ring      netsim ringing the line, each country's way
 #   adaptive  adaptive answer (+FAA=1): each modem's fax senders and data

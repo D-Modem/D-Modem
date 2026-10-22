@@ -243,9 +243,10 @@ TEST(VcvmData, Erasures)
 	for (size_t i = 0; i < r.got.size(); i++)
 		wrong += r.got[i] != r.sent[i];
 	printf("AMR 12.2, %ld of %ld frames erased: %ld of %ld words failed, "
-	       "%ld octets corrected, %ld marked\n", c.erased(), c.frames(),
+	       "%ld octets corrected, %ld marked; %ld of %zu octets given "
+	       "wrong\n", c.erased(), c.frames(),
 	       rx.stats().failed, rx.stats().words, rx.stats().corrected,
-	       rx.stats().erasures);
+	       rx.stats().erasures, wrong, r.got.size());
 	EXPECT_TRUE(rx.confirmed());
 	EXPECT_LE(rx.stats().failed, rx.stats().words / 20);
 #endif

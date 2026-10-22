@@ -75,7 +75,8 @@ if(MSVC)
 endif()
 # (Apple's: the SDK, iphoneos or iphonesimulator, and the oldest
 # system the build runs on)
-foreach(_v CMAKE_TOOLCHAIN_FILE CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION
+# (MinGW-w64: the compiler and target this build's toolchain file took)
+foreach(_v CMAKE_TOOLCHAIN_FILE MINGW_TRIPLE MINGW_COMPILER CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION
 	CMAKE_SYSROOT CMAKE_OSX_ARCHITECTURES CMAKE_OSX_SYSROOT
 	CMAKE_OSX_DEPLOYMENT_TARGET ANDROID_ABI ANDROID_PLATFORM
 	ANDROID_NDK ANDROID_STL)
@@ -132,7 +133,10 @@ if(DMODEM_CRYPTO STREQUAL "mbedtls")
 		dmodem_fetch_build(mbedtls ${DMODEM_MBEDTLS_REPO}
 			${DMODEM_MBEDTLS_TAG} ${_tls_src} ${_tls_build}
 			${_tls_log} ${_cross} -DENABLE_PROGRAMS=OFF
-			-DENABLE_TESTING=OFF)
+			-DENABLE_TESTING=OFF
+			# (its warnings its own: Clang for MinGW-w64 ignores
+			# its gnu_printf format attribute, and says so)
+			-DMBEDTLS_FATAL_WARNINGS=OFF)
 	endif()
 	set(_re_crypto -DUSE_MBEDTLS=ON -DUSE_OPENSSL=OFF
 		-DMBEDTLS_HINTS=${_re_prefix}

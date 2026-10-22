@@ -1,3 +1,7 @@
+# Every job but windows-msvc builds with Clang: the build takes it where it
+# is installed (DMODEM_PREFER_CLANG, cmake/mingw-w64.cmake for Windows),
+# with GCC's C++ library (libstdc++; g++ and g++-multilib stay for it).
+#
 # build: everything (with the 32 bit interop test programs, against Smart
 # Link's original DSP library) and the offline tests.  The interop calls
 # (ctest -L "smartlink|agere|open" -j16, about a minute) are left out:
@@ -46,7 +50,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++ libssl-dev libgtest-dev \
+            cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev \
             libspandsp-dev libtiff-tools asterisk-dev g++-multilib \
             libasound2-dev libusb-1.0-0-dev
 
@@ -90,7 +94,7 @@ jobs:
       # (git first: checkout then clones, as libre's fetch wants)
       - name: Packages
         run: |
-          apk add --no-cache build-base cmake samurai git pkgconf \
+          apk add --no-cache build-base clang cmake samurai git pkgconf \
             openssl-dev gtest-dev linux-headers alsa-lib-dev libusb-dev python3 \
             bash coreutils spandsp-dev tiff-dev tiff-tools
 
@@ -118,7 +122,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix \
-            wine wine64
+            clang lld wine wine64
 
       # libre and Mbed TLS are fetched and built while configuring: keep
       # them
@@ -242,7 +246,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++ libssl-dev libgtest-dev \
+            cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev \
             libtiff-tools asterisk asterisk-modules asterisk-dev python3 \
             efax
           # the tests run an Asterisk of their own
@@ -320,7 +324,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++ libssl-dev uuid-dev libgtest-dev \
+            cmake ninja-build pkg-config clang g++ libssl-dev uuid-dev libgtest-dev \
             libtiff-tools python3 build-essential autoconf automake \
             libtool libtool-bin yasm libcurl4-openssl-dev libpcre3-dev \
             libspeex-dev libspeexdsp-dev libsqlite3-dev libedit-dev \

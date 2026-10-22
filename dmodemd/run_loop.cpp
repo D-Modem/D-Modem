@@ -56,10 +56,11 @@ void RunLoop::clear()
 	max_ = -1;
 }
 
-/* see run_loop.h */
+/* see run_loop.h (Windows' FD_SET takes a SOCKET: portable.h's sockets
+   are ints) */
 void RunLoop::watch(int fd)
 {
-	FD_SET(fd, &set_);
+	FD_SET(DMODEM_FD_SOCKET(fd), &set_);
 	if (fd > max_)
 		max_ = fd;
 }
@@ -67,7 +68,7 @@ void RunLoop::watch(int fd)
 /* see run_loop.h */
 void RunLoop::watch_write(int fd)
 {
-	FD_SET(fd, &wset_);
+	FD_SET(DMODEM_FD_SOCKET(fd), &wset_);
 	if (fd > max_)
 		max_ = fd;
 }

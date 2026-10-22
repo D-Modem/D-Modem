@@ -29,8 +29,9 @@ FROM alpine:${ALPINE_VERSION} AS build
 
 # (git: libre is cloned while configuring; python3, bash, coreutils,
 # spandsp and the TIFF tools: the tests)
+# (clang: the build takes it where it is there, GCC's libstdc++ with it)
 RUN apk add --no-cache \
-	build-base cmake samurai git pkgconf linux-headers \
+	build-base clang cmake samurai git pkgconf linux-headers \
 	openssl-dev alsa-lib-dev libusb-dev \
 	gtest-dev spandsp-dev tiff-dev tiff-tools python3 bash coreutils
 

@@ -19,6 +19,14 @@
 #include <sys/select.h>
 #endif
 
+/* a descriptor as fd_set's macros take it: Windows' a SOCKET (its
+   descriptors are sockets, ints here: portable.h) */
+#ifdef _WIN32
+#define DMODEM_FD_SOCKET(fd) ((SOCKET)(fd))
+#else
+#define DMODEM_FD_SOCKET(fd) (fd)
+#endif
+
 namespace dcore { class Modem; }
 
 namespace dmd {
@@ -43,11 +51,11 @@ public:
 	void watch_write(int fd);
 	/* fd is readable, writable (after wait()) */
 	bool ready(int fd) const {
-		return fd >= 0 && FD_ISSET(fd, (fd_set *)&set_);
+		return fd >= 0 && FD_ISSET(DMODEM_FD_SOCKET(fd), (fd_set *)&set_);
 	}
 	/* (writable) */
 	bool ready_write(int fd) const {
-		return fd >= 0 && FD_ISSET(fd, (fd_set *)&wset_);
+		return fd >= 0 && FD_ISSET(DMODEM_FD_SOCKET(fd), (fd_set *)&wset_);
 	}
 	/* select() on them for ms: > 0 some are ready, 0 none (or a
 	   signal), < 0 an error (errno) */

@@ -7,7 +7,8 @@
 
 There is no i386 requirement. It builds natively on x86_64, ARM and other
 architectures, and links with `-lm`. Only the interop tests need a 32 bit
-compiler (`g++ -m32`), for the original library.
+build (`-m32`, with 32 bit libraries: `g++-multilib`), for the original
+library; Clang and GCC both build it.
 
 With a C library other than glibc (musl on Alpine, Windows', Apple's) the
 test programs take glibc's `rand()` sequence from `dsp/test/libc_compat.h`,
@@ -32,7 +33,7 @@ interop tests are left out there ([windows.md](windows.md)).
     ctest --test-dir build -L spandsp   # against spandsp (libspandsp-dev)
     ctest --test-dir build -L smartlink -j16  # calls between Smart Link's soft modem (its
                                               # original library) and this one, data and
-                                              # class 1 fax (needs g++ -m32)
+                                              # class 1 fax (needs -m32)
     ctest --test-dir build -L agere -j16    # calls between the Agere soft modem and this one
                                             # (sm56, pctel, hsf, broadcom, intel, ess, spanpeer: the other modems; hda: ours on HD audio;
                                             # open: two of this one)

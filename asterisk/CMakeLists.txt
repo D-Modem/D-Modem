@@ -41,6 +41,12 @@ target_compile_definitions(app_dmodem PRIVATE _GNU_SOURCE
 	AST_MODULE="app_dmodem"
 	AST_MODULE_SELF_SYM=__internal_app_dmodem_self)
 target_compile_options(app_dmodem PRIVATE -Wall -g -O2 -pthread)
+# (Clang: Asterisk's utils.h declares RAII_VAR's cleanup with a block
+# type, Clang's stand-in for GCC's nested functions.  app_dmodem uses no
+# RAII_VAR, so no block is made and the module needs no BlocksRuntime)
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+	target_compile_options(app_dmodem PRIVATE -fblocks)
+endif()
 # the library's symbols stay inside the module
 target_link_libraries(app_dmodem PRIVATE dmodem)
 target_link_options(app_dmodem PRIVATE -Wl,--exclude-libs,ALL)

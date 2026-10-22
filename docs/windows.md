@@ -1,6 +1,6 @@
 # D-Modem on Windows
 
-dmodemd builds for 64-bit Windows with MinGW-w64 or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  The USB modems (Smart Link's SmartUSB56 and the pico-serial Line) are dmodemd.exe's lines too (`--usb`, on WinUSB).  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
+dmodemd builds for 64-bit Windows with MinGW-w64 (Clang or GCC) or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  The USB modems (Smart Link's SmartUSB56 and the pico-serial Line) are dmodemd.exe's lines too (`--usb`, on WinUSB).  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 
 Windows 7 is the oldest Windows it runs on:
 
@@ -26,11 +26,15 @@ They have not run on Windows itself yet.
 
 The build is a cross build from Linux.  On Debian or Ubuntu:
 
-    sudo apt-get install cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix
+    sudo apt-get install cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix clang lld
     cmake -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
     cmake --build build-win
 
-`cmake/mingw-w64.cmake` takes the posix-thread compilers (`x86_64-w64-mingw32-g++-posix`), which `std::thread` and `std::mutex` need.  `-DMINGW_TRIPLE=i686-w64-mingw32` targets 32-bit Windows instead (not tested).  libre and Mbed TLS (its crypto, since Windows has no OpenSSL) are fetched and built with the same toolchain.  Everything links statically: `build-win/dmodemd/dmodemd.exe` is a single file that needs no DLLs beyond Windows' own.  CI keeps each build's `dmodemd.exe` as an artifact (`dmodemd-windows-x86_64`).
+`cmake/mingw-w64.cmake` compiles with Clang (`--target=x86_64-w64-mingw32`, linking with lld) where Clang and lld are installed, else with MinGW-w64's GCC; `-DMINGW_COMPILER=gcc` asks for GCC. Clang uses MinGW-w64's GCC installation all the same: its headers, C runtime, libstdc++ and winpthreads, so the GCC package is needed either way. It takes the posix-thread compilers' installation (`x86_64-w64-mingw32-g++-posix`), which `std::thread` and `std::mutex` need. Two things make Clang's objects fit GCC's libraries:
+- `-femulated-tls`: thread-locals emulated as GCC's are there (libstdc++'s `std::call_once` uses them);
+- `-pthread` on the link, for winpthreads.
+
+Mbed TLS is built without its `-Werror` (`MBEDTLS_FATAL_WARNINGS=OFF`), since Clang warns of its `gnu_printf` format attribute on MinGW-w64.  `-DMINGW_TRIPLE=i686-w64-mingw32` targets 32-bit Windows instead (not tested).  libre and Mbed TLS (its crypto, since Windows has no OpenSSL) are fetched and built with the same toolchain.  Everything links statically: `build-win/dmodemd/dmodemd.exe` is a single file that needs no DLLs beyond Windows' own.  CI keeps each build's `dmodemd.exe` as an artifact (`dmodemd-windows-x86_64`).
 
 With Wine installed (`wine64`), `ctest --test-dir build-win -L quick` runs the tests under it (`CMAKE_CROSSCOMPILING_EMULATOR`).  Set `WINEDEBUG=-all` for quieter logs.
 

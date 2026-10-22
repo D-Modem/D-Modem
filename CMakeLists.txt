@@ -22,7 +22,32 @@
 #   DMODEM_USB         Windows: dmodemd's --usb (the SmartUSB56 and the
 #                      pico-serial Line through libusb, fetched and built)
 #   DMODEM_WERROR      warnings are errors (as in CI)
+#   DMODEM_PREFER_CLANG  Clang where it is installed, not GCC (a first
+#                      configure without CC, CXX or a toolchain file)
 cmake_minimum_required(VERSION 3.16)
+# the compilers: Clang where it is installed (clang and clang++, else the
+# newest clang-<n>), GCC otherwise.  Only when nothing else chose them:
+# CC and CXX, -DCMAKE_C_COMPILER, a toolchain file (cross builds: their
+# own, cmake/mingw-w64.cmake takes Clang too), or an existing build
+# directory's cache; and not on Windows hosts (MSVC's cl.exe)
+option(DMODEM_PREFER_CLANG "Clang where it is installed, not GCC" ON)
+if(DMODEM_PREFER_CLANG AND NOT CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_HOST_WIN32
+   AND NOT CMAKE_C_COMPILER AND NOT CMAKE_CXX_COMPILER
+   AND NOT DEFINED ENV{CC} AND NOT DEFINED ENV{CXX})
+	foreach(_v "" -22 -21 -20 -19 -18 -17 -16 -15)
+		find_program(_dmodem_clang clang${_v})
+		find_program(_dmodem_clangxx clang++${_v})
+		set(_c ${_dmodem_clang})
+		set(_cxx ${_dmodem_clangxx})
+		unset(_dmodem_clang CACHE)
+		unset(_dmodem_clangxx CACHE)
+		if(_c AND _cxx)
+			set(CMAKE_C_COMPILER ${_c})
+			set(CMAKE_CXX_COMPILER ${_cxx})
+			break()
+		endif()
+	endforeach()
+endif()
 # MSVC: the static C runtime (/MT), here and in the projects built for
 # it (libre, Mbed TLS): one dmodemd.exe, no vcruntime DLL beside it
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
