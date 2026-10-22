@@ -132,12 +132,11 @@ dmodemd.exe drives Smart Link's SmartUSB56 (ST7554, USB `0483:7554`) and the pic
     dmodemd.exe --usb auto --tcp 127.0.0.1:2323
 
 Windows has no kernel driver to hold either device. libusb reaches a USB device through WinUSB, Windows' own generic USB driver, so the device must have WinUSB as its driver. That takes one of these:
+- The pico-serial Line asks for WinUSB itself, with no INF and no Zadig. Its firmware has Microsoft OS 2.0 descriptors: the WinUSB compatible ID, and D-Modem's interface GUID, the one `dmodem-usb.inf` gives. Firmware older than that needs one of the two below.
 - `dmodem-usb.inf` (`winmodem/`) gives both devices WinUSB, and `dmodem-driver usb dmodem-usb.inf` installs it. The INF must be signed before Windows takes it (the test signing of the virtual modem driver, above, with `dmodem-usb.cat`).
 - [Zadig](https://zadig.akeo.ie/) does the same and signs what it installs itself: choose the device, then WinUSB.
 
 A SmartUSB56 with Smart Link's own Windows driver installed must be moved to WinUSB first. Until then, `--usb list` says "its driver is not WinUSB".
-
-The pico-serial Line could ask for WinUSB itself, with no INF and no Zadig. That needs Microsoft OS 2.0 descriptors (the WinUSB compatible ID) in its firmware, which it doesn't have yet.
 
 How dmodemd.exe runs a USB line:
 - **libusb:** the pinned release (1.0.27, LGPL-2.1) is fetched and built while configuring (`cmake/libusb.cmake`), for MinGW-w64, MSVC and clang-cl alike. It links into dmodemd.exe, which stays a single file. `-DDMODEM_USB=OFF` builds without it, and `-DDMODEM_LIBUSB_DIR=` takes a libusb source tree already there. WinUSB's isochronous transfers need Windows 8.1 or later.

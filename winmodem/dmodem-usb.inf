@@ -6,6 +6,8 @@
 ; Link's SmartUSB56 (ST7554, USB 0483:7554) and the pico-serial Line
 ; stick (1209:0002).  No driver of D-Modem's: the INF only gives these
 ; devices WinUSB, as Zadig would.
+; (The pico-serial Line's firmware asks for WinUSB itself, with Microsoft
+; OS 2.0 descriptors; older firmware needs this INF.)
 ;
 ; Install with dmodem-driver.exe usb dmodem-usb.inf (as an administrator;
 ; the package must be signed: docs/windows.md), then plug the modem in
