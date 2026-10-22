@@ -11,7 +11,9 @@
  *    CALLER_DP=<id> gives the caller another data pump than the answerer
  *    (automode); FAR_DELAY=<samples> delays the far echo more, as over
  *    VoIP; FLAT=1: no band limitation; DUMP=<name>: what each side hears
- *    into <name>.a and <name>.c; DSP_DEBUG=<level>: the pumps' log.
+ *    into <name>.a and <name>.c; CODEC=<spec>: a speech codec on the
+ *    line each way (codec_sim.h, 8000 Hz: CODEC=amr:12.2);
+ *    DSP_DEBUG=<level>: the pumps' log.
  *
  *    echo_db adds an echo of each modem's own signal to its input
  *    (hybrid echo, about 2 ms delay) at that level relative to the
@@ -56,6 +58,7 @@ int main(int argc, char **argv)
 		c.far_delay = atoi(getenv("FAR_DELAY"));
 	c.flat = getenv("FLAT") != nullptr;
 	c.dump = getenv("DUMP");
+	c.codec = getenv("CODEC");
 	r = loopback_run(c);
 	fail = r.dp_failed;
 	for (int k = 0; k < 2; k++) {

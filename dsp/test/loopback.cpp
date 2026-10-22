@@ -37,6 +37,7 @@
 #include "modem_dp.h"
 #include "modem_param.h"
 #include "dsplibs.h"
+#include "codec_sim.h"
 #include "loopback.h"
 #include "test_util.h"
 
@@ -423,6 +424,20 @@ public:
 		to_caller.init(DELAY_TO_CALLER, 1 - offset, n, cfg);
 		for (Echoes &e : echoes)
 			e.init(cfg);
+		codecs = false;
+		if (cfg.codec && *cfg.codec) {
+			const char *err = "";
+
+			if (cfg.srate != 8000 ||
+			    codec[0].init(cfg.codec, 0, 1, &err) ||
+			    codec[1].init(cfg.codec, 0, 2, &err)) {
+				fprintf(stderr, "loopback: no codec %s: %s\n",
+					cfg.codec, cfg.srate != 8000 ?
+					"8000 Hz only" : err);
+				exit(2);
+			}
+			codecs = true;
+		}
 	}
 
 	/* a block of what each side sent (out) into what each side hears
@@ -433,6 +448,10 @@ public:
 		for (int i = 0; i < FRAG; i++) {
 			float a = to_answerer.run(out[0][i]);
 			float c = to_caller.run(out[1][i]);
+			if (codecs) {
+				a = codec[0].sample(dsp_clip16(a));
+				c = codec[1].sample(dsp_clip16(c));
+			}
 			in[1][i] = dsp_clip16(a + echoes[1].run(out[1][i]));
 			in[0][i] = dsp_clip16(c + echoes[0].run(out[0][i]));
 		}
@@ -441,6 +460,8 @@ public:
 private:
 	LineDirection to_answerer, to_caller;
 	Echoes echoes[2];
+	bool codecs;
+	dsp::SpeechCodec codec[2]; /* to the answerer, to the caller */
 };
 
 /*

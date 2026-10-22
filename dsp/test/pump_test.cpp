@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include "dsplibs.h"
+#include "codec_sim.h"
 #include "loopback.h"
 
 struct Pumps {
@@ -98,6 +99,8 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	/* a far echo over VoIP */
 	Pumps{ "v34_far_echo_voip", line(8, 40, 22, 9600, 0.5f, 0, 0, -15, 1920) },
 	Pumps{ "v22", line(22, 15, 20) },
+	/* its 4 points decided 45 degrees each way, not on the axes */
+	Pumps{ "v22_snr7", line(22, 7, 20) },
 	Pumps{ "bell212", line(212, 15, 20) },
 	Pumps{ "v21", line(21, 8, 20) },
 	Pumps{ "v23", line(23, 12, 30) },
@@ -105,6 +108,28 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	/* a minute at 3000 ppm: the line's clock drifts by 1700 samples,
 	   more than its resampler kept at first */
 	Pumps{ "v21_3000ppm_long", line(21, 20, 60, 9600, 0.5f, 3000) }), name);
+
+/* V.22 through AMR 12.2 (a mobile call): the codec turns the points by
+   20 degrees and more now and then, which 1200 bit/s takes without an
+   error */
+TEST(Loopback, V22ThroughAmr122)
+{
+	dsp::SpeechCodec probe;
+	const char *err = "";
+
+	if (probe.init("amr:12.2", 0, 1, &err))
+		GTEST_SKIP() << "no AMR: " << err;
+	LoopbackConfig c = line(22, 40, 20, 8000);
+	c.codec = "amr:12.2";
+	LoopbackResult r = loopback_run(c);
+
+	EXPECT_FALSE(r.dp_failed);
+	for (int k = 0; k < 2; k++) {
+		const char *who = k ? "answerer" : "caller";
+		EXPECT_TRUE(r.side[k].ok()) << r.side[k].text(who);
+		EXPECT_EQ(r.side[k].errors, 0) << r.side[k].text(who);
+	}
+}
 
 /* a call whose receivers stall halfway (nothing they receive from then
    on comes out) is no good, however right the bits before were: ok()

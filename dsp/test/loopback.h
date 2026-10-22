@@ -28,6 +28,9 @@ struct LoopbackConfig {
 	bool flat = false;      /* no band limitation */
 	float cut_s = 0;        /* > 0: what the pumps receive from then
 				   on dropped (a call that stalls) */
+	const char *codec = nullptr;    /* a speech codec each way on the
+					   line (codec_sim.h's spec, at 8000
+					   Hz alone), e.g. "amr:12.2" */
 	const char *dump = nullptr;     /* what each side hears: <dump>.a
 					   (answerer), <dump>.c (caller) */
 };

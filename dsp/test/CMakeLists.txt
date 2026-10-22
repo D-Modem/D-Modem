@@ -37,11 +37,25 @@ function(dmodem_test_exe name)
 	target_link_libraries(${name} PRIVATE ${DMODEM_LIBM} Threads::Threads)
 endfunction()
 
+# netsim's NET_CODEC, codec_probe and the loopback's codec: AMR and AMR-WB, a mobile network's
+# speech codecs on the line (libopencore-amrnb-dev, libopencore-amrwb-dev,
+# libvo-amrwbenc-dev); without the libraries netsim says so
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+	pkg_check_modules(AMR QUIET opencore-amrnb opencore-amrwb vo-amrwbenc)
+endif()
+
 # the data pumps back to back: pump_test, and dsp_loopback to try a line
-# from the command line
-add_library(dmodem_loopback OBJECT loopback.cpp test_util.cpp)
+# from the command line (with a speech codec on it where the AMR libraries
+# are: codec_sim)
+add_library(dmodem_loopback OBJECT loopback.cpp test_util.cpp codec_sim.cpp)
 target_include_directories(dmodem_loopback PRIVATE ${S})
 dmodem_flags(dmodem_loopback)
+if(AMR_FOUND)
+	target_compile_definitions(dmodem_loopback PRIVATE DMODEM_HAVE_AMR)
+	target_include_directories(dmodem_loopback PRIVATE ${AMR_INCLUDE_DIRS})
+	target_link_libraries(dmodem_loopback PUBLIC ${AMR_LDFLAGS})
+endif()
 dmodem_test_exe(dsp_loopback dsp_loopback.cpp)
 target_link_libraries(dsp_loopback PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_test_exe(pump_test pump_test.cpp)
@@ -79,13 +93,6 @@ dmodem_gtest(ring_tones_test LABELS quick)
 # the emulated hardware's mixins (hw/) on a host of the test's own
 dmodem_test_exe(hw_test hw_test.cpp)
 dmodem_gtest(hw_test LABELS quick)
-# netsim's NET_CODEC and codec_probe: AMR and AMR-WB, a mobile network's
-# speech codecs on the line (libopencore-amrnb-dev, libopencore-amrwb-dev,
-# libvo-amrwbenc-dev); without the libraries netsim says so
-find_package(PkgConfig QUIET)
-if(PKG_CONFIG_FOUND)
-	pkg_check_modules(AMR QUIET opencore-amrnb opencore-amrwb vo-amrwbenc)
-endif()
 # (netsim: the interop calls' network, on POSIX's pipes and poll)
 set(_amr_users codec_probe)
 if(NOT WIN32)
@@ -110,10 +117,10 @@ endif()
 dmodem_test_exe(vcvm_test vcvm_test.cpp codec_sim.cpp ${S}/vcvm.cpp)
 # its start-up: the capabilities, the messages and their message mode, the
 # probing and the loading, and two DCEs' start-ups through the codecs
-dmodem_test_exe(vcvm_startup_test vcvm_startup_test.cpp codec_sim.cpp)
+dmodem_test_exe(vcvm_startup_test vcvm_startup_test.cpp)
 target_link_libraries(vcvm_startup_test PRIVATE dmodem_loopback dmodem_dsp)
 # its data mode, and the Reed-Solomon code under it
-dmodem_test_exe(vcvm_data_test vcvm_data_test.cpp codec_sim.cpp)
+dmodem_test_exe(vcvm_data_test vcvm_data_test.cpp)
 target_link_libraries(vcvm_data_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
 dmodem_gtest(rs_test LABELS quick)

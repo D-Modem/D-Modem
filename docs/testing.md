@@ -188,8 +188,10 @@ for the logs, by default the current directory).
 [echo dB]` runs a caller and an answerer through a simulated line with
 delay, a low-pass filter (`FLAT=1` leaves it out), white noise and an
 optional sample clock offset. It then checks the bit error rate in both
-directions. `DUMP=<prefix>` records what each side hears. It is the
-simulation of `pump_test`, for trying a line from the command line.
+directions. `DUMP=<prefix>` records what each side hears;
+`CODEC=amr:12.2` (at 8000 Hz, where the AMR libraries are) puts a
+speech codec on the line each way. It is the simulation of `pump_test`,
+for trying a line from the command line.
 
 V.34 between two open modems (`dsp_loopback 8 ...`, with the low-pass
 filter, no bit errors): 33600 bit/s at 40 dB (also with near and far

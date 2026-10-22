@@ -269,10 +269,19 @@ int V22Pump::slice(cplx z, cplx *d, int *q34)
 	int quad;
 	cplx r;
 
-	if (z.re >= 0)
-		quad = z.im >= 0 ? 0 : 3;
+	/* 1200 bit/s has one point a quadrant, 01 (3 + j), 18 degrees off
+	   the axes: decide around it, 45 degrees each way, not on the axes,
+	   or a phase error of 18 degrees (a speech codec's) turns it into
+	   its neighbour (z turned by 26.6 degrees, 2 + j, puts it on the
+	   diagonal).  A V.22bis remote may change to all 16 points while
+	   we are still at 1200: the axes then */
+	r = z;
+	if (rx_rate == 1200 && !remote_bis)
+		r = cplx_mul(z, cplx_make(2, 1));
+	if (r.re >= 0)
+		quad = r.im >= 0 ? 0 : 3;
 	else
-		quad = z.im >= 0 ? 1 : 2;
+		quad = r.im >= 0 ? 1 : 2;
 	if (rx_rate == 2400) {
 		r = rot90(z, -quad);
 		*q34 = (r.im > 2) << 1 | (r.re > 2);
