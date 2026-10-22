@@ -1,11 +1,11 @@
 # D-Modem on Windows
 
-dmodemd builds for 64-bit Windows with MinGW-w64 or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
+dmodemd builds for 64-bit Windows with MinGW-w64 or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  The USB modems (Smart Link's SmartUSB56 and the pico-serial Line) are dmodemd.exe's lines too (`--usb`, on WinUSB).  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 
 The following are POSIX-only and are not built for Windows:
 - the Asterisk and FreeSWITCH modules
 - dmodem-ari
-- the ALSA line (`-a`), the pty options (`-g`, `-p`, `-r`) and modem_test
+- the ALSA line (`-a`), the pty options (`-g`, `-p`) and modem_test
 - the interop test peers (`dsp/test`'s `half_*`)
 
 The tests cover Windows under Wine:
@@ -120,6 +120,32 @@ The tests cover both ways under Wine:
 - `pipe_test` (in `ctest -L quick`) runs dmodemd.exe with each option, talks AT through the pipe, and checks that a client can go and another be served, and that a taken name is refused.
 - `WIN_PIPE=made` or `WIN_PIPE=connect` in `asterisk/test/sip.sh` makes the test's calls over a pipe (below).
 
+### USB modems (`--usb`)
+
+dmodemd.exe drives Smart Link's SmartUSB56 (ST7554, USB `0483:7554`) and the pico-serial Line stick (`1209:0002`) as dmodemd does on Linux ([hardware.md](hardware.md#smart-link-smartusb56)). There is no SIP then: the line is the modem's telephone line, and the DTE is any of the others (TCP, a COM port, a pipe, the virtual modem driver's port). The same code runs both:
+- the samples are isochronous transfers;
+- the hook and the ring detector go through the device's own requests and its interrupt endpoint;
+- the pico-serial Line gets caller ID and the country's line settings.
+
+    dmodem-driver usb dmodem-usb.inf      (once, as an administrator)
+    dmodemd.exe --usb list
+    dmodemd.exe --usb auto --tcp 127.0.0.1:2323
+
+Windows has no kernel driver to hold either device. libusb reaches a USB device through WinUSB, Windows' own generic USB driver, so the device must have WinUSB as its driver. That takes one of these:
+- `dmodem-usb.inf` (`winmodem/`) gives both devices WinUSB, and `dmodem-driver usb dmodem-usb.inf` installs it. The INF must be signed before Windows takes it (the test signing of the virtual modem driver, above, with `dmodem-usb.cat`).
+- [Zadig](https://zadig.akeo.ie/) does the same and signs what it installs itself: choose the device, then WinUSB.
+
+A SmartUSB56 with Smart Link's own Windows driver installed must be moved to WinUSB first. Until then, `--usb list` says "its driver is not WinUSB".
+
+The pico-serial Line could ask for WinUSB itself, with no INF and no Zadig. That needs Microsoft OS 2.0 descriptors (the WinUSB compatible ID) in its firmware, which it doesn't have yet.
+
+How dmodemd.exe runs a USB line:
+- **libusb:** the pinned release (1.0.27, LGPL-2.1) is fetched and built while configuring (`cmake/libusb.cmake`), for MinGW-w64, MSVC and clang-cl alike. It links into dmodemd.exe, which stays a single file. `-DDMODEM_USB=OFF` builds without it, and `-DDMODEM_LIBUSB_DIR=` takes a libusb source tree already there. WinUSB's isochronous transfers need Windows 8.1 or later.
+- **Polling:** Windows' libusb has no descriptors to wait on (Linux's main loop waits on its file descriptors), so the main loop handles libusb's events every 2 ms, as well as the DTE's socket.
+- **Messages:** when WinUSB isn't the device's driver, dmodemd.exe says so, and says how to make it so.
+
+**Not yet tried on a real device under Windows.** The USB tests below run dmodemd.exe under Wine against the same fake devices as Linux's tests.
+
 ### The virtual modem driver (`--driver`)
 
 D-Modem has a Windows driver of its own (`winmodem/`): a virtual modem that Device Manager lists under Modems as "D-Modem Virtual Modem", with dmodemd as the modem behind it.  Windows programs use it as they would a modem card:
@@ -196,6 +222,12 @@ The quick tests cover the driver without Windows:
   - `--driver auto`;
   - a second port of the same name refused.
 - `dmodem_driver_list` (Windows): `dmodem-driver.exe list`, with no device installed.
+
+The USB modems' tests run dmodemd.exe under Wine: `dmodemd_usb_windows` and `dmodemd_pico_line_windows` (label `alsa`). They are Linux's `usb_test.py` and `pico_line_test.py`. They check each device's whole set: the two modems' calls through the exchange, rings, caller ID, BUSY, pulse dialling, voice, the country's line settings and unplugging.
+- **The fake devices:** `dmodemd_fake_st7554.exe` and `dmodemd_fake_pico_line.exe` are dmodemd.exe with the test's fake device linked in libusb's place (Windows has no `LD_PRELOAD`).
+- **The DTE:** a TCP connection.
+- **The exchange:** it is the Linux build's `line_exchange` (`DMODEM_HOST_LINE_EXCHANGE`, by default `build/dmodemd/line_exchange`), and the tests run only when it is there. Wine's Winsock has no Unix sockets, so the tests relay the fakes' TCP connections to the exchange's sockets (`dmodemd/test/usb_dte.py`).
+- **Serial:** the tests run one at a time.
 
 ## How it is done
 

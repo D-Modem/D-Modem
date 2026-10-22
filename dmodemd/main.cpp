@@ -195,11 +195,16 @@ int main(int argc, char *argv[])
 	std::unique_ptr<dcore::Modem> am;
 #endif
 #ifdef DMODEM_USB
-	dmd::UsbLine usb(pty);
+	dmd::UsbLine usb(dte);
 	std::unique_ptr<dcore::Modem> um;
 #endif
 
 	dmd::parse_options(argc, argv, opt);
+#ifdef DMODEM_USB
+	/* --usb list: the devices, and no modem */
+	if (opt.usb && !strcmp(opt.usb, "list"))
+		return dmd::UsbLine::list() < 0 ? 255 : 0;
+#endif
 	slash = strrchr(opt.name, '/');
 	name = slash ? slash + 1 : opt.name;
 	dcore::log_open(name);

@@ -9,6 +9,10 @@
  *                       connections (--tcp, the default 127.0.0.1:2323);
  *                       windows_dte.h has them
  *
+ *    With --usb the line is a Smart Link SmartUSB56 or a pico-serial Line
+ *    stick through libusb (usb_line.cpp, on WinUSB), not SIP; the DTE is
+ *    any of the above.
+ *
  *    What main.cpp does for POSIX's ptys, root and realtime scheduling
  *    has no place here: the process runs as the user who starts it, at
  *    high priority with the system's timer at 1 ms (the call's 20 ms
@@ -35,6 +39,9 @@
 #include "run_loop.h"
 #include "sip.h"
 #include "sip_modem.h"
+#ifdef DMODEM_USB
+#include "usb_line.h"
+#endif
 #include "windows_dte.h"
 
 #include <mmsystem.h>
@@ -58,10 +65,55 @@ std::string data_path(const char *name)
 	return dir + "\\data." + name;
 }
 
+#ifdef DMODEM_USB
+/* the modem on a USB line until Ctrl+C (0), the DTE gone for good (0)
+   or an error (-1), each turn: the modem's timers, select() on the DTE
+   (for its characters if the modem takes them now, for its output that
+   waits) for UsbLine::POLL_MS at most (Windows' libusb has no
+   descriptors to watch), then the line's samples */
+int run_usb(dcore::Modem &m, dmd::UsbLine &line, dmd::Dte &dte)
+{
+	dcore::Modem *const modems[] = { &m };
+	dmd::RunLoop loop;
+
+	while (dmd::RunLoop::running()) {
+		long wait = dmd::RunLoop::poll(modems, 1);
+		int fd = dte.fd(), ret;
+
+		if (wait < 0 || wait > dmd::UsbLine::POLL_MS)
+			wait = dmd::UsbLine::POLL_MS;
+		loop.clear();
+		if (fd >= 0 && dte.want_read(m))
+			loop.watch(fd);
+		if (fd >= 0 && dte.want_write())
+			loop.watch_write(fd);
+		ret = loop.wait(wait);
+		if (ret < 0) {
+			ERR("select: error %d\n", WSAGetLastError());
+			return -1;
+		}
+		if (line.pump(m) < 0)
+			return -1;
+		if (ret == 0)
+			continue;
+		if (loop.ready_write(fd))
+			dte.flush();
+		if (loop.ready(fd)) {
+			ret = dte.serve(m);
+			if (ret < 0)
+				return -1;
+			if (ret > 0)
+				return 0;
+		}
+	}
+	return 0;
+}
+#endif
+
 } // namespace
 
-/* the modem on a COM port or TCP and a SIP line until Ctrl+C or the
-   console closing (0), or an error (255) */
+/* the modem on a COM port or TCP and a SIP line (or with --usb a USB
+   modem's) until Ctrl+C or the console closing (0), or an error (255) */
 int main(int argc, char *argv[])
 {
 	dmd::Options opt;
@@ -77,6 +129,11 @@ int main(int argc, char *argv[])
 	setvbuf(stdout, nullptr, _IONBF, 0);
 	setvbuf(stderr, nullptr, _IONBF, 0);
 	dmd::parse_options(argc, argv, opt);
+#ifdef DMODEM_USB
+	/* --usb list: the devices, and no modem */
+	if (opt.usb && !strcmp(opt.usb, "list"))
+		return dmd::UsbLine::list() < 0 ? 255 : 0;
+#endif
 	slash = strrchr(opt.name, '\\');
 	if (!slash)
 		slash = strrchr(opt.name, '/');
@@ -131,14 +188,40 @@ int main(int argc, char *argv[])
 	mo.dev_name = opt.name;
 	mo.rate = RATE;
 	mo.country = opt.country;
-	dmd::SipModem sm(*dte, mo);
-	if (!sm.ok())
+	/* the modem: on the USB line (the core on it alone), or on SIP */
+	std::unique_ptr<dmd::SipModem> sm;
+	dcore::Modem *m;
+#ifdef DMODEM_USB
+	dmd::UsbLine usb(*dte);
+	std::unique_ptr<dcore::Modem> um;
+#endif
+	if (opt.usb) {
+#ifdef DMODEM_USB
+		mo.rate = (int)opt.rate;
+		um.reset(new dcore::Modem(usb, mo));
+		if (!um->ok())
+			return 255;
+		m = um.get();
+#else
+		ERR("--usb: dmodemd.exe was built without libusb "
+		    "(DMODEM_USB)\n");
 		return 255;
+#endif
+	} else {
+		sm.reset(new dmd::SipModem(*dte, mo));
+		if (!sm->ok())
+			return 255;
+		m = &sm->modem();
+	}
 	fprintf(stderr, "modem `%s' created. DTE is %s\n", name,
 		where.c_str());
 
 	dmd::DataFile data(data_path(name).c_str());
-	data.load(&sm.modem().dsp_info());
+	data.load(&m->dsp_info());
+#ifdef DMODEM_USB
+	if (opt.usb && !usb.open(opt.usb, opt.rate))
+		return 255;
+#endif
 
 	/* the 20 ms frames on time: the system's timer at 1 ms, and the
 	   process ahead of the others (-n: not) */
@@ -151,11 +234,22 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "Use %s as the modem, Ctrl+C for termination.\n",
 		where.c_str());
 
-	if (!sip::config_from_env(cfg, opt.listen))
-		return 255;
-	ret = sm.run(cfg);
+#ifdef DMODEM_USB
+	if (um) {
+		ret = run_usb(*um, usb, *dte);
+	} else
+#endif
+	{
+		if (!sip::config_from_env(cfg, opt.listen))
+			return 255;
+		ret = sm->run(cfg);
+	}
 
-	data.save(&sm.modem().dsp_info());
+	data.save(&m->dsp_info());
+	sm.reset();
+#ifdef DMODEM_USB
+	um.reset();
+#endif
 	/* what the modem said last still there for the DTE to read */
 	Sleep(100);
 	timeEndPeriod(1);

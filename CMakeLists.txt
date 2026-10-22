@@ -19,6 +19,8 @@
 #   DMODEM_TESTS       build the test programs and register them with ctest
 #                      (with a 32 bit compiler also the interop tests
 #                      against Smart Link's original DSP library)
+#   DMODEM_USB         Windows: dmodemd's --usb (the SmartUSB56 and the
+#                      pico-serial Line through libusb, fetched and built)
 #   DMODEM_WERROR      warnings are errors (as in CI)
 cmake_minimum_required(VERSION 3.16)
 # MSVC: the static C runtime (/MT), here and in the projects built for
@@ -62,6 +64,8 @@ option(DMODEM_FREESWITCH "Build mod_dmodem when FreeSWITCH is found"
 option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)"
 	${_dmodem_pbx_default})
 option(DMODEM_TESTS "Build the test programs (ctest)" ON)
+# (Windows: libusb is fetched and built for it, cmake/libusb.cmake)
+option(DMODEM_USB "dmodemd's --usb on Windows (libusb, fetched)" ON)
 option(DMODEM_WERROR "Treat compiler warnings as errors (CI)" OFF)
 
 # the compilers' flags: GCC's and Clang's, or MSVC's (cl.exe, clang-cl).

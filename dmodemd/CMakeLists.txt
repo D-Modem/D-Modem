@@ -109,7 +109,55 @@ if(DMODEM_DMODEMD)
 	if(PkgConfig_FOUND AND NOT WIN32)
 		pkg_check_modules(LIBUSB QUIET IMPORTED_TARGET libusb-1.0)
 	endif()
-	if(LIBUSB_FOUND)
+	# (Windows: libusb fetched and built here, cmake/libusb.cmake; its
+	# devices on WinUSB, docs/windows.md)
+	if(WIN32 AND DMODEM_USB)
+		include(libusb)
+		target_sources(dmodemd PRIVATE usb_line.cpp si3056.cpp)
+		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
+		target_link_libraries(dmodemd PRIVATE dmodem_libusb)
+		# the tests' dmodemd.exe with a fake modem in libusb's place
+		# (no LD_PRELOAD on Windows): usb_test.py and pico_line_test.py
+		# run them under Wine, on the exchange of a Linux build
+		# (DMODEM_HOST_LINE_EXCHANGE: its line_exchange)
+		if(DMODEM_TESTS)
+			set(DMODEM_HOST_LINE_EXCHANGE
+				"${PROJECT_SOURCE_DIR}/build/dmodemd/line_exchange"
+				CACHE FILEPATH
+				"a Linux build's line_exchange (Windows USB tests)")
+			find_package(Python3 COMPONENTS Interpreter QUIET)
+			foreach(_f st7554 pico_line)
+				add_executable(dmodemd_fake_${_f} main_windows.cpp
+					usb_line.cpp si3056.cpp test/fake_${_f}.cpp)
+				target_compile_definitions(dmodemd_fake_${_f}
+					PRIVATE DMODEM_USB)
+				target_include_directories(dmodemd_fake_${_f}
+					SYSTEM PRIVATE
+					$<TARGET_PROPERTY:dmodem_libusb,INTERFACE_INCLUDE_DIRECTORIES>)
+				target_link_libraries(dmodemd_fake_${_f} PRIVATE
+					dmodem_sip winmm ws2_32)
+				dmodem_flags(dmodemd_fake_${_f})
+			endforeach()
+			if(Python3_Interpreter_FOUND AND CMAKE_CROSSCOMPILING
+			   AND EXISTS "${DMODEM_HOST_LINE_EXCHANGE}")
+				dmodem_add_test(dmodemd_usb_windows
+					${Python3_EXECUTABLE}
+					${CMAKE_CURRENT_SOURCE_DIR}/test/usb_test.py
+					$<TARGET_FILE:dmodemd_fake_st7554>
+					${DMODEM_HOST_LINE_EXCHANGE} -)
+				dmodem_add_test(dmodemd_pico_line_windows
+					${Python3_EXECUTABLE}
+					${CMAKE_CURRENT_SOURCE_DIR}/test/pico_line_test.py
+					$<TARGET_FILE:dmodemd_fake_pico_line>
+					${DMODEM_HOST_LINE_EXCHANGE} -)
+				# (serial: real-time calls under Wine, each
+				# test's own Wine processes started alone)
+				set_tests_properties(dmodemd_usb_windows
+					dmodemd_pico_line_windows PROPERTIES
+					LABELS alsa TIMEOUT 400 RUN_SERIAL TRUE)
+			endif()
+		endif()
+	elseif(LIBUSB_FOUND)
 		target_sources(dmodemd PRIVATE usb_line.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE PkgConfig::LIBUSB)

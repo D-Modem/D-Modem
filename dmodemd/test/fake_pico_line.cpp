@@ -33,14 +33,11 @@
  *
  */
 #include <errno.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <sys/un.h>
-#include <unistd.h>
+
+#include "fake_net.h"
 
 #include <deque>
 #include <vector>
@@ -103,22 +100,10 @@ struct Fake {
 	int log = 0;
 } fake;
 
-/* a connection to the exchange at path, its first octet kind; -1 */
+/* a connection to the exchange (fake_net.h) */
 int connect_exchange(const char *path, char kind)
 {
-	struct sockaddr_un a = {};
-	int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-
-	if (fd < 0)
-		return -1;
-	a.sun_family = AF_UNIX;
-	strncpy(a.sun_path, path, sizeof(a.sun_path) - 1);
-	if (connect(fd, reinterpret_cast<struct sockaddr *>(&a), sizeof(a)) < 0 ||
-	    write(fd, &kind, 1) != 1) {
-		close(fd);
-		return -1;
-	}
-	return fd;
+	return fake_net::connect_exchange(path, kind);
 }
 
 /* switch which (0 the hook, 1 the line monitor) to the exchange
@@ -126,7 +111,7 @@ int connect_exchange(const char *path, char kind)
 void switch_to(uint8_t which, bool on)
 {
 	unsigned char m[2] = { which, (unsigned char)on };
-	if (fake.ctl >= 0 && write(fake.ctl, m, 2) != 2)
+	if (fake.ctl >= 0 && !fake_net::send_all(fake.ctl, m, 2))
 		fake.gone = true;
 }
 
@@ -157,12 +142,12 @@ bool streaming()
 void take()
 {
 	unsigned char b[4096];
-	ssize_t n;
+	long n;
 
 	if (fake.cap < 0)
 		return;
-	while ((n = recv(fake.cap, b, sizeof(b), MSG_DONTWAIT)) > 0) {
-		for (ssize_t i = 0; i < n; i++) {
+	while ((n = fake_net::recv_now(fake.cap, b, sizeof(b))) > 0) {
+		for (long i = 0; i < n; i++) {
 			if (fake.half < 0) {
 				fake.half = b[i];
 				continue;
@@ -227,8 +212,8 @@ void run()
 			for (int i = 0; i < t->num_iso_packets; i++) {
 				libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
 				if (fake.play >= 0 && p.length &&
-				    send(fake.play, t->buffer + off, p.length,
-					 MSG_NOSIGNAL) != (ssize_t)p.length)
+				    !fake_net::send_all(fake.play, t->buffer + off,
+							 p.length))
 					fake.gone = true;
 				fake.samples_out += p.length / 2;
 				p.actual_length = p.length;
@@ -526,8 +511,7 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 	if (fake.cap < 0 || fake.play < 0 || fake.ctl < 0) {
 		fprintf(stderr, "fake pico-serial Line: no exchange at %s\n", path);
 		for (int fd : { fake.cap, fake.play, fake.ctl })
-			if (fd >= 0)
-				close(fd);
+			fake_net::close_fd(fd);
 		fake.cap = fake.play = fake.ctl = -1;
 		return LIBUSB_ERROR_IO;
 	}
@@ -541,8 +525,7 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 void LIBUSB_CALL libusb_close(libusb_device_handle *h)
 {
 	for (int fd : { fake.cap, fake.play, fake.ctl })
-		if (fd >= 0)
-			close(fd);
+		fake_net::close_fd(fd);
 	fake.cap = fake.play = fake.ctl = -1;
 	fake.open = false;
 	delete h;

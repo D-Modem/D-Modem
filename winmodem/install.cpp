@@ -4,8 +4,8 @@
  *
  *    install.cpp - dmodem-driver.exe: the virtual modem's device (a root
  *                  device, Root\DModemVM) made and its driver installed,
- *                  or removed, as the WDK's devcon would; as an
- *                  administrator.
+ *                  or removed, as the WDK's devcon would; and WinUSB for
+ *                  the USB modems.  As an administrator.
  *
  *      dmodem-driver install <dmodem.inf>   a device, its driver from
  *                                           the INF (another device for
@@ -15,6 +15,11 @@
  *      dmodem-driver remove                 every device of it
  *      dmodem-driver list                   each device, its COM port and
  *                                           the pipe dmodemd takes
+ *      dmodem-driver usb <dmodem-usb.inf>   WinUSB for the USB modems
+ *                                           (SmartUSB56, pico-serial
+ *                                           Line), into the driver store
+ *                                           and onto those plugged in, so
+ *                                           that dmodemd --usb drives them
  *
  */
 
@@ -192,6 +197,33 @@ int list()
 	return 0;
 }
 
+/* usb: dmodem-usb.inf's package (WinUSB for the USB modems) into the
+   driver store, and onto the modems there are now */
+int usb(const char *inf_arg)
+{
+	std::string inf = full_path(inf_arg);
+	BOOL reboot = FALSE;
+	/* (from newdev.dll itself: MinGW's import library hasn't it) */
+	typedef BOOL(WINAPI * DiInstall)(HWND, PCSTR, DWORD, PBOOL);
+	HMODULE nd = LoadLibraryA("newdev.dll");
+	DiInstall install = nd ? (DiInstall)(void *)GetProcAddress(nd,
+		"DiInstallDriverA") : nullptr;
+
+	if (!install) {
+		fail("newdev.dll has no DiInstallDriverA");
+		return 1;
+	}
+	if (!install(nullptr, inf.c_str(), DIIRFLAG_FORCE_INF, &reboot)) {
+		fail("WinUSB can't be installed for them (is the package "
+		     "signed?)");
+		return 1;
+	}
+	printf("dmodem-driver: WinUSB for the USB modems%s; dmodemd --usb "
+	       "list shows them\n",
+	       reboot ? " (Windows must restart first)" : "");
+	return 0;
+}
+
 /* how to use it */
 int usage()
 {
@@ -199,7 +231,8 @@ int usage()
 		"usage: dmodem-driver install <dmodem.inf>\n"
 		"       dmodem-driver update <dmodem.inf>\n"
 		"       dmodem-driver remove\n"
-		"       dmodem-driver list\n");
+		"       dmodem-driver list\n"
+		"       dmodem-driver usb <dmodem-usb.inf>\n");
 	return 2;
 }
 
@@ -216,5 +249,7 @@ int main(int argc, char **argv)
 		return remove_all();
 	if (argc == 2 && !strcmp(argv[1], "list"))
 		return list();
+	if (argc == 3 && !strcmp(argv[1], "usb"))
+		return usb(argv[2]);
 	return usage();
 }

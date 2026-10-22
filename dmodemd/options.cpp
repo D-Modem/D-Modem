@@ -84,8 +84,9 @@ const Option OPTIONS[OPT_COUNT] = {
 	{ 0, "alsa-ctl", Takes::Text, true,
 	  "its controls (hw:<card> of -a's)", "-a's", false },
 	{ 0, "usb", Takes::Text, true,
-	  "the line a Smart Link SmartUSB56 (auto, or <bus>:<address>), "
-	  "not SIP", "none", false },
+	  "the line a Smart Link SmartUSB56 or a pico-serial Line (auto, or "
+	  "<bus>:<address>), not SIP; list: those there are", "none",
+	  false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a or --usb (8000 or 9600)", "9600", false },
 #ifdef _WIN32
@@ -108,12 +109,12 @@ const Option OPTIONS[OPT_COUNT] = {
 };
 
 /* an option of POSIX's alone (the pty's, ALSA's), neither taken nor
-   shown on Windows */
+   shown on Windows (--usb and -r are both's) */
 bool posix_only(int i)
 {
 #ifdef _WIN32
 	return i == OPT_GROUP || i == OPT_PERM || i == OPT_ALSA ||
-		i == OPT_ALSA_CTL || i == OPT_USB || i == OPT_RATE;
+		i == OPT_ALSA_CTL;
 #else
 	(void)i;
 	return false;

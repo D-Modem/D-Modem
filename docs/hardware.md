@@ -116,7 +116,10 @@ To start it as a user, give that user the device with a udev rule, e.g.
 
 If Smart Link's own kernel driver (`slusb`) is loaded, dmodemd detaches
 it from the device while it runs. dmodemd is built with `--usb` when
-pkg-config finds libusb-1.0 (libusb-1.0-0-dev).
+pkg-config finds libusb-1.0 (libusb-1.0-0-dev). `dmodemd --usb list`
+lists the SmartUSB56s and pico-serial Lines there are, and whether each
+can be opened. On Windows dmodemd.exe drives both the same way, on
+WinUSB ([windows.md](windows.md#usb-modems---usb)).
 
 The ST7554's register values and start-up are those of Smart Link's
 Linux driver for it (`drivers/st7554.c` of slmodem 2.9.11, under a BSD
@@ -225,7 +228,7 @@ start from.
 |---|---|
 | `-a <pcm>`, `--alsa=<pcm>` | the codec's PCM (`hw:1`, `hw:0,6`, `plughw:...`): the line is a telephone line, not SIP |
 | `--alsa-ctl=<ctl>` | its controls, if not the card's (`hw:1` for `hw:1,0` or `plughw:1,0`; the PCM's own name otherwise) |
-| `--usb=<dev>` | a SmartUSB56 or pico-serial Line (`auto`, the first one; or `<bus>:<address>`, as `lsusb` shows it): the line is a telephone line, not SIP |
+| `--usb=<dev>` | a SmartUSB56 or pico-serial Line (`auto`, the first one; or `<bus>:<address>`, as `lsusb` and `--usb list` show it): the line is a telephone line, not SIP; `--usb list` lists them and exits |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so

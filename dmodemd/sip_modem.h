@@ -26,31 +26,12 @@
 
 #include <dcore.h>
 
+#include "dte.h"
 #include "sip.h"
 
 namespace dmd {
 
 class Pty;
-
-/* the modem's DTE: a descriptor its characters come on, the modem's
-   go to */
-class Dte {
-public:
-	virtual ~Dte() = default;
-	/* the descriptor, -1 if none */
-	virtual int fd() const = 0;
-	/* select() on it for reading now? */
-	virtual bool want_read(const dcore::Modem &m) = 0;
-	/* select() on it for writing now (output waits)? */
-	virtual bool want_write() const { return false; }
-	/* it is readable: its characters into m.  0; 1 when the DTE has
-	   gone for good (the modem stops); -1 on an error */
-	virtual int serve(dcore::Modem &m) = 0;
-	/* it is writable: what waits */
-	virtual void flush() {}
-	/* the modem's characters: how many it took */
-	virtual int write(const char *buf, int n) = 0;
-};
 
 #ifndef _WIN32
 /* a pty (pty.h) as the DTE: its DTE closing it with HUPCL hangs up,

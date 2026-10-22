@@ -66,7 +66,9 @@
  */
 
 #include <errno.h>
+#ifndef _WIN32
 #include <poll.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -185,7 +187,8 @@ bool UsbLine::find(const char *dev)
 	ssize_t n;
 
 	if (!any && !parse_dev(dev, &bus, &addr)) {
-		ERR("--usb %s: auto, or <bus>:<address> (lsusb's)\n", dev);
+		ERR("--usb %s: auto, or <bus>:<address> (dmodemd --usb list "
+		    "has them)\n", dev);
 		return false;
 	}
 	n = libusb_get_device_list(ctx_, &list);
@@ -209,14 +212,26 @@ bool UsbLine::find(const char *dev)
 		name_ = stick ? "pico-serial Line" : "SmartUSB56";
 		int err = libusb_open(list[i], &h_);
 		if (err < 0) {
-			ERR("%s at %03d:%03d: %s%s%s%s\n", name_,
+			const char *id = stick ? "1209:0002" : "0483:7554";
+			std::string hint;
+#ifdef _WIN32
+			/* (another driver than WinUSB has it: Smart Link's
+			   own, or none) */
+			if (err == LIBUSB_ERROR_NOT_SUPPORTED ||
+			    err == LIBUSB_ERROR_ACCESS)
+				hint = std::string(" (it needs WinUSB as its "
+					"driver: dmodem-driver usb "
+					"dmodem-usb.inf, or Zadig, for ") +
+					id + ")";
+#else
+			if (err == LIBUSB_ERROR_ACCESS)
+				hint = std::string(" (as root, or a udev rule "
+						   "for ") + id + ")";
+#endif
+			ERR("%s at %03d:%03d: %s%s\n", name_,
 			    libusb_get_bus_number(list[i]),
 			    libusb_get_device_address(list[i]),
-			    libusb_strerror(err), err == LIBUSB_ERROR_ACCESS ?
-			    " (as root, or a udev rule for " : "",
-			    err == LIBUSB_ERROR_ACCESS ? (stick ? "1209:0002" :
-							  "0483:7554") : "",
-			    err == LIBUSB_ERROR_ACCESS ? ")" : "");
+			    libusb_strerror(err), hint.c_str());
 			h_ = nullptr;
 			break;
 		}
@@ -231,6 +246,53 @@ bool UsbLine::find(const char *dev)
 		ERR("no SmartUSB56 or pico-serial Line at %s (%d elsewhere)\n",
 		    dev, found);
 	return h_ != nullptr;
+}
+
+/* see usb_line.h */
+int UsbLine::list()
+{
+	libusb_context *ctx;
+	libusb_device **devs;
+	int err, found = 0;
+
+	if ((err = libusb_init(&ctx)) < 0) {
+		ERR("libusb: %s\n", libusb_strerror(err));
+		return -1;
+	}
+	ssize_t n = libusb_get_device_list(ctx, &devs);
+	for (ssize_t i = 0; i < n; i++) {
+		libusb_device_descriptor d;
+		libusb_device_handle *h;
+		if (libusb_get_device_descriptor(devs[i], &d) < 0)
+			continue;
+		bool st7554 = d.idVendor == ST7554_VENDOR &&
+			d.idProduct == ST7554_PRODUCT;
+		bool stick = d.idVendor == STICK_VENDOR &&
+			d.idProduct == STICK_PRODUCT;
+		if (!st7554 && !stick)
+			continue;
+		found++;
+		err = libusb_open(devs[i], &h);
+		if (err == 0)
+			libusb_close(h);
+		printf("%03d:%03d %04x:%04x %s: %s%s\n",
+		       libusb_get_bus_number(devs[i]),
+		       libusb_get_device_address(devs[i]), d.idVendor,
+		       d.idProduct, stick ? "pico-serial Line" : "SmartUSB56",
+		       err == 0 ? "ready" : libusb_strerror(err),
+#ifdef _WIN32
+		       err == LIBUSB_ERROR_NOT_SUPPORTED ?
+		       " (its driver is not WinUSB)" :
+#endif
+		       "");
+	}
+	if (n >= 0)
+		libusb_free_device_list(devs, 1);
+	if (!found)
+		printf("no SmartUSB56 (0483:7554) or pico-serial Line "
+		       "(1209:0002)\n");
+	libusb_exit(ctx);
+	return 0;
 }
 
 /* the endpoints of interface 0, alternate setting 1: interrupt IN,
@@ -585,10 +647,12 @@ void UsbLine::send_out()
 		idle_out_.pop_front();
 		out_fill(t, out_lengths_.front().data());
 		out_lengths_.pop_front();
-		if (libusb_submit_transfer(t) == 0)
+		int err = libusb_submit_transfer(t);
+		if (err == 0)
 			in_flight_++;
 		else
-			gone("an OUT transfer failed");
+			gone(err == LIBUSB_ERROR_NO_DEVICE ? "unplugged" :
+			     "an OUT transfer failed");
 	}
 }
 
@@ -728,10 +792,12 @@ void UsbLine::in_complete(libusb_transfer *t)
 	}
 	out_lengths_.push_back(lens);
 	send_out();
-	if (libusb_submit_transfer(t) == 0)
+	int err = libusb_submit_transfer(t);
+	if (err == 0)
 		in_flight_++;
 	else
-		gone("an IN transfer failed");
+		gone(err == LIBUSB_ERROR_NO_DEVICE ? "unplugged" :
+		     "an IN transfer failed");
 }
 
 /* the device has gone: no more transfers */
@@ -794,6 +860,11 @@ void UsbLine::watch(RunLoop &loop)
 
 	if (!ctx_)
 		return;
+#ifdef _WIN32
+	(void)loop;
+	(void)fds;
+	return;
+#endif
 	fds = libusb_get_pollfds(ctx_);
 	if (!fds)
 		return;

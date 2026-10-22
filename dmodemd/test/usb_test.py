@@ -21,14 +21,22 @@
 # - the exchange gone (the devices unplugged): both dmodemd say so and
 #   exit.
 #
+# A Windows dmodemd (<dmodemd> a .exe, built with the fake in libusb's
+# place; <fake libusb> "-") runs under Wine, its DTE TCP, the fake's
+# connections to the exchange relayed from TCP (usb_dte.py).
+#
 # The calls run in real time (the exchange's clock).  RATE=<Hz> the
 # codec's rate (9600, or 8000); DMODEMD_DEBUG dmodemd's -d (3).  The logs
 # (exchange.log, dmodemd-<line>.log) go to DMODEM_TEST_DIR, without it to
 # the temporary directory, kept with KEEP=1 (and printed).
-import os, re, select, shutil, subprocess, sys, tempfile, threading, time, tty
+import os, re, shutil, subprocess, sys, tempfile, threading, time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import usb_dte  # noqa: E402
 
 dmodemd, exchange, fake = sys.argv[1:4]
-fake = os.path.abspath(fake)
+fake = os.path.abspath(fake) if fake != "-" else None
+run = usb_dte.command(dmodemd)
 rate = os.environ.get("RATE", "9600")
 tmp = tempfile.mkdtemp(prefix="dmodem-usb-")
 os.chmod(tmp, 0o755)
@@ -37,8 +45,10 @@ debug = os.environ.get("DMODEMD_DEBUG", "3")
 
 
 def env_for(n, **more):
-    e = dict(os.environ, LD_PRELOAD=fake,
-             FAKE_ST7554_SOCKET=os.path.join(tmp, n + ".sock"))
+    e = dict(os.environ, FAKE_ST7554_SOCKET=usb_dte.socket_for(
+        dmodemd, os.path.join(tmp, n + ".sock")))
+    if fake:
+        e["LD_PRELOAD"] = fake
     e.update(more)
     return e
 
@@ -75,26 +85,25 @@ class Modem:
     """a dmodemd on line <n>'s SmartUSB56, its pty"""
     def __init__(self, n, name):
         self.log = open(os.path.join(logs, "dmodemd-%s.log" % n), "wb")
-        self.p = subprocess.Popen([dmodemd, "-n", "-d" + debug, "--usb=auto", "-r", rate, name],
+        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto", "-r", rate, name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n))
         procs.append(self.p)
-        pty = None
+        where = None
         t = time.time()
-        while time.time() - t < 10:
+        while time.time() - t < 60:
             l = self.p.stdout.readline()
             if not l:
                 break
             self.log.write(l); self.log.flush()
-            m = re.search(rb"TTY is `(\S+)'", l)
-            if m:
-                pty = m.group(1).decode(); break
-        if pty is None:
+            where = usb_dte.Dte.find(l)
+            if where:
+                break
+        if where is None:
             raise RuntimeError("dmodemd %s gave no pty" % n)
         threading.Thread(target=lambda: [self.log.write(l) or self.log.flush()
                                          for l in self.p.stdout], daemon=True).start()
-        self.fd = os.open(pty, os.O_RDWR | os.O_NOCTTY)
-        tty.setraw(self.fd)
+        self.dte = usb_dte.Dte(*where)
         self.buf = b""
         self.n = n
 
@@ -105,16 +114,15 @@ class Modem:
             if m:
                 self.buf = self.buf[m.end():]
                 return m
-            r, _, _ = select.select([self.fd], [], [], 0.1)
-            if r:
+            if self.dte.wait(0.1):
                 try:
-                    self.buf += os.read(self.fd, 4096)
+                    self.buf += self.dte.read(4096)
                 except OSError:
                     return None
         return None
 
     def cmd(self, c, pat=rb"OK\r\n", t=5):
-        os.write(self.fd, c + b"\r")
+        self.dte.write(c + b"\r")
         return self.expect(pat, t)
 
 ok = True
@@ -124,12 +132,12 @@ def check(what, cond):
     ok = ok and bool(cond)
 
 try:
-    p = subprocess.run([dmodemd, "-n", "--usb=1:7", "-r", rate, "dmodem40"],
+    p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=1:7", "-r", rate, "dmodem40"],
                        env=env_for("1001", FAKE_ST7554_DAA="1"),
-                       capture_output=True, text=True, timeout=20)
+                       capture_output=True, text=True, timeout=60)
     check("an ST75951/2 refused", p.returncode != 0 and "ST75951/2" in p.stderr)
-    p = subprocess.run([dmodemd, "-n", "--usb=2:9", "-r", rate, "dmodem40"],
-                       env=env_for("1001"), capture_output=True, text=True, timeout=20)
+    p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=2:9", "-r", rate, "dmodem40"],
+                       env=env_for("1001"), capture_output=True, text=True, timeout=60)
     check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56 or pico-serial Line at 2:9" in p.stderr)
 
     a = Modem("1001", "dmodem41")
@@ -141,7 +149,7 @@ try:
     check("1001 waits for the dial tone", a.cmd(b"ATX4"))
 
     t = time.time()
-    os.write(a.fd, b"ATD1002\r")
+    a.dte.write(b"ATD1002\r")
     check("1002 RING", b.expect(rb"RING\r\n", 15))
     check("1002 RING again", b.expect(rb"RING\r\n", 8))
     ca = a.expect(rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO DIALTONE)\r\n", 40)
@@ -151,12 +159,12 @@ try:
     check("both CONNECT", ca and cb and ca.group(1).startswith(b"CONNECT")
           and cb.group(1).startswith(b"CONNECT"))
     check("the exchange heard 1002 dialled", "1001 dialled 1002" in events)
-    os.write(a.fd, b"hello from 1001\r\n")
+    a.dte.write(b"hello from 1001\r\n")
     check("1002 gets 1001's line", b.expect(rb"hello from 1001", 10))
-    os.write(b.fd, b"hello from 1002\r\n")
+    b.dte.write(b"hello from 1002\r\n")
     check("1001 gets 1002's line", a.expect(rb"hello from 1002", 10))
     time.sleep(1.2)
-    os.write(a.fd, b"+++")
+    a.dte.write(b"+++")
     check("1001 +++ OK", a.expect(rb"OK\r\n", 5))
     check("1001 ATH", a.cmd(b"ATH"))
     check("1001 NO CARRIER", a.expect(rb"NO CARRIER\r\n", 5))
@@ -168,7 +176,7 @@ try:
     check("1002 on hook", b.cmd(b"ATH"))
 
     # pulse dialling: the hook GPIO broken and made
-    os.write(a.fd, b"ATDP1002\r")
+    a.dte.write(b"ATDP1002\r")
     check("1002 RING (pulse)", b.expect(rb"RING\r\n", 30))
     ca = a.expect(rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO DIALTONE)\r\n", 60)
     cb = b.expect(rb"(CONNECT[^\r]*|NO CARRIER)\r\n", 10)
@@ -177,7 +185,7 @@ try:
     check("pulse dialled: both CONNECT", ca and cb and ca.group(1).startswith(b"CONNECT")
           and cb.group(1).startswith(b"CONNECT"))
     time.sleep(1.2)
-    os.write(a.fd, b"+++")
+    a.dte.write(b"+++")
     check("1001 +++ OK (pulse)", a.expect(rb"OK\r\n", 5))
     check("1001 ATH (pulse)", a.cmd(b"ATH"))
     check("1002 NO CARRIER (pulse)", b.expect(rb"NO CARRIER\r\n", 30))
@@ -186,7 +194,7 @@ try:
     check("1001 voice mode", a.cmd(b"AT+FCLASS=8"))
     check("1002 voice mode", b.cmd(b"AT+FCLASS=8"))
     t = time.time()
-    os.write(a.fd, b"ATD1002\r")
+    a.dte.write(b"ATD1002\r")
     check("1002 RING (voice)", b.expect(rb"RING\r\n", 20))
     check("1002 answers: +VLS=1", b.cmd(b"AT+VLS=1", t=5))
     m = a.expect(rb"(\x10r)?(OK|BUSY|NO ANSWER|ERROR)\r\n", 30)

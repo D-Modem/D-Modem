@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 Neo-Desktop
+ *
+ * libusb's config.h for its Windows backend, built by cmake/libusb.cmake
+ * with MinGW-w64, MSVC or clang-cl (what its configure script and its
+ * msvc/config.h would say)
+ */
+#define DEFAULT_VISIBILITY
+#define ENABLE_LOGGING 1
+#define PLATFORM_WINDOWS 1
+#if defined(__GNUC__) && !defined(__clang__)
+#define PRINTF_FORMAT(a, b) __attribute__((__format__(__gnu_printf__, a, b)))
+#else
+#define PRINTF_FORMAT(a, b)
+#endif
+#ifdef _MSC_VER
+/* (Visual Studio 2015 and later have timespec) */
+#define _TIMESPEC_DEFINED 1
+#pragma warning(disable : 4127 4200 4201 4324 4996)
+#else
+#define HAVE_STRUCT_TIMESPEC 1
+#define HAVE_SYS_TIME_H 1
+#define HAVE_UNISTD_H 1
+#endif
+#define HAVE_STDINT_H 1
+#define HAVE_INTTYPES_H 1
+#define HAVE_STRING_H 1
+#define HAVE_STDLIB_H 1
+/* Windows Vista and later (libusb's minimum) */
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif

@@ -40,11 +40,15 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+/* (Winsock 2 before libusb.h's windows.h, which would take Winsock 1) */
+#include <winsock2.h>
+#endif
 #include <libusb.h>
 
 #include <dcore.h>
 
-#include "pty.h"
+#include "dte.h"
 #include "run_loop.h"
 #include "si3056.h"
 
@@ -52,8 +56,9 @@ namespace dmd {
 
 class UsbLine final : public dcore::Host {
 public:
-	/* the line of pty's modem, not yet open */
-	explicit UsbLine(Pty &pty) : pty_(pty) {}
+	/* the line of dte's modem (a pty, or on Windows any of its DTEs),
+	   not yet open */
+	explicit UsbLine(Dte &dte) : dte_(dte) {}
 	~UsbLine();
 	UsbLine(const UsbLine &) = delete;
 	UsbLine &operator=(const UsbLine &) = delete;
@@ -63,8 +68,10 @@ public:
 	   rate, its samples running, on hook; false with the reason on
 	   stderr */
 	bool open(const char *dev, unsigned rate);
-	/* libusb's descriptors watched this turn */
+	/* libusb's descriptors watched this turn (POSIX: Windows' libusb
+	   has none, and the caller polls every POLL_MS instead) */
 	void watch(RunLoop &loop);
+	enum { POLL_MS = 2 };
 	/* libusb's events (the transfers done), then the samples that have
 	   come, a frame (20 ms) at a time, through the modem; 0, or -1 if
 	   the modem has gone (unplugged) */
@@ -90,9 +97,9 @@ public:
 	const char *driver_name() override {
 		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" : "ST7554";
 	}
-	/* the modem's characters to the pty: how many it took */
+	/* the modem's characters to the DTE: how many it took */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
-		return pty_.write(buf, n);
+		return dte_.write(buf, n);
 	}
 	/* the clock: the device's samples so far, in ms */
 	unsigned long now_ms() override {
@@ -101,6 +108,10 @@ public:
 
 	/* "<bus>:<address>" into bus and addr; false if it is not that */
 	static bool parse_dev(const char *dev, int *bus, int *addr);
+	/* --usb list: each SmartUSB56 and pico-serial Line on stdout, its
+	   <bus>:<address> and whether it can be opened (on Windows: whether
+	   WinUSB is its driver); 0, or -1 if libusb can't start */
+	static int list();
 
 private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
@@ -136,7 +147,7 @@ private:
 	void send_out();
 	void gone(const char *why);
 
-	Pty &pty_;
+	Dte &dte_;
 	Kind kind_ = Kind::St7554;
 	const char *name_ = "SmartUSB56";   /* in the messages */
 	libusb_context *ctx_ = nullptr;

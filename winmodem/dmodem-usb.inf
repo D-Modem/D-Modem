@@ -1,0 +1,60 @@
+; SPDX-License-Identifier: AGPL-3.0-only
+; Copyright (C) 2026 Neo-Desktop
+;
+; dmodem-usb.inf - WinUSB (Windows' own generic USB driver) for the USB
+; modems dmodemd drives itself through libusb (dmodemd --usb): Smart
+; Link's SmartUSB56 (ST7554, USB 0483:7554) and the pico-serial Line
+; stick (1209:0002).  No driver of D-Modem's: the INF only gives these
+; devices WinUSB, as Zadig would.
+;
+; Install with dmodem-driver.exe usb dmodem-usb.inf (as an administrator;
+; the package must be signed: docs/windows.md), then plug the modem in
+; (or in again).  Windows 8.1 or later (WinUSB's isochronous transfers).
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = USBDevice
+ClassGuid   = {88BAE032-5A81-49f0-BC3D-A4FF138216D6}
+Provider    = %Provider%
+CatalogFile = dmodem-usb.cat
+DriverVer   = 10/22/2026,1.0.0.0
+PnpLockdown = 1
+
+[Manufacturer]
+%Mfg% = DModemUsb, NTamd64, NTarm64, NTx86
+
+[DModemUsb.NTamd64]
+%SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
+%PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
+%PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+
+[DModemUsb.NTarm64]
+%SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
+%PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
+%PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+
+[DModemUsb.NTx86]
+%SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
+%PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
+%PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+
+[UsbModem_Install.NT]
+Include = winusb.inf
+Needs   = WINUSB.NT
+
+[UsbModem_Install.NT.Services]
+Include = winusb.inf
+Needs   = WINUSB.NT.Services
+
+[UsbModem_Install.NT.HW]
+AddReg = UsbModem_AddReg
+
+; (an interface GUID of D-Modem's own: WinUSB wants one)
+[UsbModem_AddReg]
+HKR,,DeviceInterfaceGUIDs,0x10000,"{0463C853-BB62-4057-9E76-D14B0E3ACAFD}"
+
+[Strings]
+Provider   = "D-Modem"
+Mfg        = "D-Modem (WinUSB)"
+SmartUSB56 = "Smart Link SmartUSB56 (WinUSB, for D-Modem)"
+PicoLine   = "pico-serial Line (WinUSB, for D-Modem)"

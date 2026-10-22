@@ -14,7 +14,8 @@
 #   dmodemvm_check    (DMODEM_WDF_INCLUDE: the UMDF headers, e.g. from
 #                     github.com/microsoft/Windows-Driver-Frameworks) the
 #                     driver compiled only, where no WDK is (clang-cl)
-#   dmodem-driver.exe (Windows) installs and removes the driver's device
+#   dmodem-driver.exe (Windows) installs and removes the driver's device,
+#                     and WinUSB for the USB modems (dmodem-usb.inf)
 
 add_library(dmodem_winmodem STATIC port.cpp wire.cpp)
 target_include_directories(dmodem_winmodem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -48,6 +49,8 @@ add_executable(dmodem-driver install.cpp)
 target_link_libraries(dmodem-driver PRIVATE setupapi newdev)
 dmodem_flags(dmodem-driver EXTRA)
 install(TARGETS dmodem-driver RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# (WinUSB for the USB modems, dmodemd --usb)
+install(FILES dmodem-usb.inf DESTINATION driver)
 if(DMODEM_TESTS)
 	# (no device installed: listed as none)
 	dmodem_add_test(dmodem_driver_list $<TARGET_FILE:dmodem-driver> list)
