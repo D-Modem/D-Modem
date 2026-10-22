@@ -48,7 +48,7 @@ enum {
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
 	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_RATE,
 #ifdef _WIN32
-	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP,
+	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP, OPT_DRIVER,
 #endif
 	OPT_COUNT
 };
@@ -101,6 +101,9 @@ const Option OPTIONS[OPT_COUNT] = {
 	{ 0, "tcp", Takes::Text, true,
 	  "the DTE a TCP connection on [address:]port",
 	  "127.0.0.1:2323", false },
+	{ 0, "driver", Takes::Text, true,
+	  "the DTE D-Modem's virtual modem driver: its COM port's name "
+	  "(COM7), or auto", "none", false },
 #endif
 };
 
@@ -233,8 +236,9 @@ void CommandLine::usage() const
 		"The name is the modem's (default %s): its data file\n"
 		"%%LOCALAPPDATA%%\\dmodem\\data.<name>, its log\n"
 		"dmodem.log.<name>.  The DTE talks to it on a COM port\n"
-		"(--com), a named pipe (--pipe, --pipe-connect) or by TCP\n"
-		"(--tcp, the default).\n"
+		"(--com), a named pipe (--pipe, --pipe-connect), D-Modem's\n"
+		"virtual modem driver (--driver) or by TCP (--tcp, the\n"
+		"default).\n"
 #else
 		"The name is the modem's (default %s): its pty's link is\n"
 		"/dev/ttyDM<n> (n the digits it ends with), its data file\n"
@@ -362,6 +366,8 @@ void CommandLine::apply(Options &opt) const
 		opt.pipe_connect = o[OPT_PIPE_CONNECT].value;
 	if (o[OPT_TCP].given)
 		opt.tcp = o[OPT_TCP].value;
+	if (o[OPT_DRIVER].given)
+		opt.driver = o[OPT_DRIVER].value;
 #endif
 	opt.name = name_ ? name_ : DEFAULT_NAME;
 }

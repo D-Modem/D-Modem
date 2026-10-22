@@ -11,9 +11,10 @@
 
 set(_front options.cpp datafile.cpp run_loop.cpp line_recorder.cpp)
 if(WIN32)
-	# the DTE a COM port or a TCP connection (windows_dte.cpp), for the
-	# pty and the pipe modems of POSIX
-	list(APPEND _front windows_dte.cpp)
+	# the DTE a COM port, a pipe, the virtual modem driver or a TCP
+	# connection (windows_dte.cpp), for the pty and the pipe modems of
+	# POSIX; with --driver's frames (../winmodem/wire.cpp)
+	list(APPEND _front windows_dte.cpp ../winmodem/wire.cpp)
 else()
 	list(APPEND _front pty.cpp pipe_modem.cpp)
 endif()
@@ -22,6 +23,10 @@ set(DMODEM_FRONT_SRCS ${_front} PARENT_SCOPE)
 set(DMODEM_FRONT_DIR ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
 add_library(dmodem_front OBJECT ${_front})
 target_link_libraries(dmodem_front PUBLIC dmodem_core)
+if(WIN32)
+	target_include_directories(dmodem_front PUBLIC
+		${PROJECT_SOURCE_DIR}/winmodem)
+endif()
 dmodem_flags(dmodem_front EXTRA)
 set_target_properties(dmodem_front PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -176,6 +181,19 @@ if(DMODEM_DMODEMD)
 			target_link_libraries(pipe_test PRIVATE ws2_32)
 			add_dependencies(pipe_test dmodemd)
 			dmodem_gtest(pipe_test LABELS quick TIMEOUT 120)
+			# ../winmodem/test/vmodem_test.cpp: dmodemd.exe on the
+			# virtual modem driver's pipe (--driver), the driver's
+			# end of it run there (and a bridge for asterisk/test's
+			# WIN_DRIVER=1); beside dmodemd.exe.  (Serial: --driver
+			# auto takes the first driver's pipe there is.)
+			add_executable(vmodem_test
+				${PROJECT_SOURCE_DIR}/winmodem/test/vmodem_test.cpp)
+			dmodem_flags(vmodem_test EXTRA NOOPT)
+			target_link_libraries(vmodem_test PRIVATE dmodem_winlink
+				ws2_32)
+			add_dependencies(vmodem_test dmodemd)
+			dmodem_gtest(vmodem_test LABELS quick TIMEOUT 180
+				RUN_SERIAL)
 		endif()
 	endif()
 

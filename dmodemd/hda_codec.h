@@ -29,6 +29,7 @@ namespace dmd {
 class HdaCodec {
 public:
 	HdaCodec() = default;
+	/* (closed) */
 	~HdaCodec() { close(); }
 	HdaCodec(const HdaCodec &) = delete;
 	HdaCodec &operator=(const HdaCodec &) = delete;
@@ -38,6 +39,7 @@ public:
 	   codec), why in *why */
 	bool open(snd_ctl_t *ctl, std::string *why);
 	void close();
+	/* the hwdep device is open */
 	bool is_open() const { return h_ != nullptr; }
 	/* its name ("hw:0,1") */
 	const std::string &name() const { return name_; }

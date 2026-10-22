@@ -1,6 +1,6 @@
 # D-Modem on Windows
 
-dmodemd builds for 64-bit Windows with MinGW-w64 or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  Linux's pty becomes one of three DTEs: a COM port, a named pipe or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
+dmodemd builds for 64-bit Windows with MinGW-w64 or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 
 The following are POSIX-only and are not built for Windows:
 - the Asterisk and FreeSWITCH modules
@@ -120,6 +120,60 @@ The tests cover both ways under Wine:
 - `pipe_test` (in `ctest -L quick`) runs dmodemd.exe with each option, talks AT through the pipe, and checks that a client can go and another be served, and that a taken name is refused.
 - `WIN_PIPE=made` or `WIN_PIPE=connect` in `asterisk/test/sip.sh` makes the test's calls over a pipe (below).
 
+### The virtual modem driver (`--driver`)
+
+D-Modem has a Windows driver of its own (`winmodem/`): a virtual modem that Device Manager lists under Modems as "D-Modem Virtual Modem", with dmodemd as the modem behind it.  Windows programs use it as they would a modem card:
+- through Windows' modem stack (Unimodem and TAPI): dial-up networking, Windows Fax and Scan, HyperTerminal;
+- or by its COM port's name, as a terminal or BBS program would.
+
+No com0com pair is needed.
+
+    dmodem-driver install dmodem.inf      (once, as an administrator)
+    dmodemd.exe --driver auto
+
+The pieces:
+- `dmodemvm.dll` is a UMDF 2 driver (UMDF 2.15, Windows 10 and later). It runs in Windows' driver host as a user-mode driver, so its faults can't crash Windows. Unimodem's `modem.sys` sits above it. Its device is a COM port: the reads, writes and serial IOCTLs a modem card's port answers, with serial.sys's semantics (`winmodem/port.h`):
+  - the serial timeouts;
+  - `WaitCommEvent`'s events;
+  - the modem status lines;
+  - DTR and RTS, set directly or by the handflow;
+  - purges;
+  - `LSRMST_INSERT`'s in-band status.
+- `dmodem.inf` installs it in the Modem class, with Unimodem's settings for D-Modem's commands (init `AT&FE0V1&C1&D2S0=0`, `&H` for flow control, `\N` and `%C`). It also lists every result D-Modem gives as a response, each `CONNECT` rate with it. `winmodem/make_inf.py` makes the INF from the core's table, so a new rate can't be missed (the `winmodem_inf` test checks this). The INF needs Windows 10 1803 or later, for the driver store's DIRID 13.
+- `dmodem-driver.exe` makes the root device (`Root\DModemVM`) and installs the driver, as the WDK's devcon would:
+  - `install` adds a device, and a modem, each time it is run;
+  - `update` moves the devices to a new INF;
+  - `remove` takes the devices away;
+  - `list` gives each device's COM port and pipe.
+- The driver makes a pipe, `\\.\pipe\dmodem-vm-<port>`, for each device (`dmodem-vm-COM3` for COM3). dmodemd connects to it with `--driver COM3`, or with `--driver auto` to the first one there is. dmodemd waits for the pipe and connects again whenever the driver comes back (the device disabled, Windows resumed). Frames on the pipe carry the characters both ways, the modem's lines to the port, and the app's DTR and RTS back (`winmodem/wire.h`).
+  - Who can connect: the pipe takes local clients only, and of those the system, the administrators, the local service and the users logged on here. dmodemd can therefore run as a program or as a service.
+  - One dmodemd at a time per pipe.
+
+Between the app and dmodemd:
+- The modem's DSR and CTS are on while dmodemd is on the pipe, its DCD with the carrier.
+- The app dropping DTR, or closing the port, hangs the modem up, as `&D2` does on a real one.
+- Without dmodemd, the port acts as a modem switched off: no DSR or CTS, and whatever the app writes is dropped.
+- RI isn't driven: Unimodem takes the `RING` result.
+- A break, XON/XOFF and the baud rate are taken but change nothing: the link has no speed or flow control of its own.
+- The port allows one handle at a time, as a serial port does.
+
+The driver must be signed before Windows loads it. A package of your own can be signed for a test machine, with the WDK's `Inf2Cat` and the SDK's `signtool`, in an elevated prompt:
+
+    bcdedit /set testsigning on                (then restart)
+    Inf2Cat /driver:<dir> /os:10_X64           (<dir>: dmodemvm.dll, dmodem.inf)
+    New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=D-Modem test" -CertStoreLocation Cert:\LocalMachine\My
+    (export it and import it into LocalMachine's Root and TrustedPublisher stores)
+    signtool sign /fd sha256 /sm /s My /n "D-Modem test" <dir>\dmodemvm.cat <dir>\dmodemvm.dll
+    dmodem-driver install <dir>\dmodem.inf
+
+Driver signing for release (attestation through Microsoft's Partner Center) needs an EV certificate.
+
+Building the driver:
+- **On Windows:** it needs Visual Studio's compiler and the Windows Driver Kit. CMake finds the WDK's UMDF 2.15 headers and stub library (`DMODEM_WDF_INCLUDE`, `DMODEM_WDF_STUB`) and builds `dmodemvm.dll`; `cmake --install` puts it beside `dmodem.inf` in `driver/`.
+- **On Linux with clang-cl:** there is no WDK there. Give `-DDMODEM_WDF_INCLUDE=` the UMDF 2.15 headers of Microsoft's [Windows-Driver-Frameworks](https://github.com/microsoft/Windows-Driver-Frameworks) (`src/publicinc/wdf/umdf/2.15`, MIT-licensed). The driver is then compiled against them but not linked (`dmodemvm_check`); the WDK's stub library is the one piece missing.
+
+**Not yet tried on Windows itself.** Only the port, the pipe and dmodemd's end have run, under Wine (below). The WDF part (`driver.cpp`) has only been compiled, and the INF has not been installed.
+
 ## Testing dmodemd under Wine
 
 `asterisk/test/sip.sh` makes calls between dmodemd and a private Asterisk.  Given a Windows build, it runs `dmodemd.exe` under Wine:
@@ -129,8 +183,19 @@ The tests cover both ways under Wine:
     VOICE_DIAL=1 DMODEMD=... asterisk/test/sip.sh
     WIN_COM=1 DMODEMD=... asterisk/test/sip.sh
     WIN_PIPE=made DMODEMD=... asterisk/test/sip.sh      (or WIN_PIPE=connect)
+    WIN_DRIVER=1 DMODEMD=... asterisk/test/sip.sh
 
-The DTE is a TCP connection by default.  With `WIN_COM=1` it is Wine's COM9, linked to a pty pair whose other end the test holds.  With `WIN_PIPE` it is a named pipe, which `pipe_test.exe bridge` (beside dmodemd.exe) passes to the test over TCP.  Asterisk and app_dmodem come from the Linux build (`build/`), as for the Linux test.  The variants (outgoing V.91 at 62666, incoming, A-law, voice in and voice dial, and over the COM port or a pipe either way) pass as on Linux.
+The DTE is a TCP connection by default.  With `WIN_COM=1` it is Wine's COM9, linked to a pty pair whose other end the test holds.  With `WIN_PIPE` it is a named pipe, which `pipe_test.exe bridge` (beside dmodemd.exe) passes to the test over TCP.  With `WIN_DRIVER=1` it is the virtual modem driver's port (`--driver SIPTEST`): `vmodem_test.exe bridge` runs the driver's end of the pipe (the port and the pipe, everything but the WDF part) and gives the test the port's app side over TCP. The test also checks that the port's DCD came on for the call and went off after it.  Asterisk and app_dmodem come from the Linux build (`build/`), as for the Linux test.  The variants (outgoing V.91 at 62666, incoming, A-law, voice in and voice dial, and over the COM port, a pipe either way or the driver's port) pass as on Linux.
+
+The quick tests cover the driver without Windows:
+- `port_test` (Linux and Windows): the COM port.
+- `vmodem_test` (Windows): dmodemd.exe on the driver's pipe, with the driver's end of it in the test. It checks:
+  - AT commands and the INF's settings answered;
+  - DSR going when dmodemd does;
+  - the driver going and coming back;
+  - `--driver auto`;
+  - a second port of the same name refused.
+- `dmodem_driver_list` (Windows): `dmodem-driver.exe list`, with no device installed.
 
 ## How it is done
 

@@ -56,6 +56,14 @@ the system:
   `-DDMODEM_CRYPTO=mbedtls` (the default for Android): Apache-2.0 or
   GPL-2.0-or-later, at the shipper's choice.
 - **GoogleTest** (the tests only): BSD-3-Clause.
+- The **Windows Driver Kit**'s UMDF headers and stub library
+  (`WdfDriverStubUm.lib`), which the virtual modem driver
+  (`winmodem/driver.cpp`) is built with on Windows: Microsoft's, under
+  the WDK's licence; the stub is linked into `dmodemvm.dll`. Where there
+  is no WDK the driver is only compiled, against the UMDF headers of
+  Microsoft's Windows-Driver-Frameworks (MIT). The driver's code and its
+  INF are D-Modem's own (Microsoft's VirtualSerial2 sample, MS-PL, was
+  read for how such a driver is installed, not copied).
 - **spandsp** (the tests only): LGPL-2.1.
 - The ITU-T Recommendations that `docs/specs/fetch.sh` downloads are the
   ITU's.

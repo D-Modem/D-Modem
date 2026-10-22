@@ -150,6 +150,7 @@ endif()
 add_subdirectory(link)
 add_subdirectory(dsp)
 add_subdirectory(core)
+add_subdirectory(winmodem)
 add_subdirectory(dmodemd)
 
 # the PBX modules' call on libdmodem (pbx/dmodem_bridge.c), built into each

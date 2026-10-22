@@ -4,7 +4,8 @@
  *
  *    main_windows.cpp - dmodemd on Windows: the modem core on a SIP line
  *                       (sip_modem.h), its DTE a COM port (--com), a
- *                       named pipe (--pipe, --pipe-connect) or TCP
+ *                       named pipe (--pipe, --pipe-connect), D-Modem's
+ *                       virtual modem driver's COM port (--driver) or TCP
  *                       connections (--tcp, the default 127.0.0.1:2323);
  *                       windows_dte.h has them
  *
@@ -84,8 +85,10 @@ int main(int argc, char *argv[])
 		ERR("-a: ALSA is Linux's\n");
 		return 255;
 	}
-	if (!!opt.com + !!opt.pipe + !!opt.pipe_connect + !!opt.tcp > 1) {
-		ERR("one DTE: --com, --pipe, --pipe-connect or --tcp\n");
+	if (!!opt.com + !!opt.pipe + !!opt.pipe_connect + !!opt.tcp +
+	    !!opt.driver > 1) {
+		ERR("one DTE: --com, --pipe, --pipe-connect, --driver or "
+		    "--tcp\n");
 		return 255;
 	}
 	dcore::log_open(name);
@@ -103,6 +106,12 @@ int main(int argc, char *argv[])
 			return 255;
 		where = c->where();
 		dte = std::move(c);
+	} else if (opt.driver) {
+		std::unique_ptr<dmd::DriverDte> d(new dmd::DriverDte);
+		if (!d->open(opt.driver))
+			return 255;
+		where = "the virtual modem driver's port " + d->where();
+		dte = std::move(d);
 	} else if (opt.pipe || opt.pipe_connect) {
 		std::unique_ptr<dmd::PipeDte> pp(new dmd::PipeDte);
 		if (!pp->open(opt.pipe ? opt.pipe : opt.pipe_connect,

@@ -39,6 +39,9 @@ struct Options {
 	const char *pipe = nullptr;
 	const char *pipe_connect = nullptr;
 	const char *tcp = nullptr;
+	/* or the COM port of D-Modem's virtual modem driver (--driver:
+	   its name, or auto for the first there is) */
+	const char *driver = nullptr;
 };
 
 /* parses argv (prints the usage and exits on an error, -h, -v,

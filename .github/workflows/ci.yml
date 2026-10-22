@@ -10,7 +10,9 @@
 #
 # windows-msvc: the same with Microsoft's compiler (cl.exe, Ninja) on a
 # Windows runner, the offline tests on Windows itself; its dmodemd.exe
-# kept as an artifact too.
+# kept as an artifact too, and the virtual modem driver's package
+# (dmodemvm.dll, unsigned, when the runner's WDK has UMDF 2.15; dmodem.inf
+# and dmodem-driver.exe).
 #
 # asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
@@ -217,6 +219,18 @@ jobs:
         with:
           name: dmodemd-windows-msvc-x86_64
           path: build-msvc/dmodemd/dmodemd.exe
+          retention-days: 30
+
+      # (unsigned: docs/windows.md has the test signing)
+      - name: Virtual modem driver
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmodem-driver-windows-x86_64-unsigned
+          path: |
+            build-msvc/winmodem/dmodemvm.dll
+            build-msvc/winmodem/dmodem-driver.exe
+            winmodem/dmodem.inf
+          if-no-files-found: warn
           retention-days: 30
 
   asterisk:

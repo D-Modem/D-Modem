@@ -19,6 +19,7 @@
 
 #include "portable.h"
 #include "windows_dte.h"
+#include "wire.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, "dte: " fmt, ##__VA_ARGS__)
@@ -671,6 +672,293 @@ int PipeDte::write(const char *buf, int n)
 	}
 	CloseHandle(ov.hEvent);
 	return (int)done;
+}
+
+/*
+ *    D-Modem's virtual modem driver
+ */
+
+/* the thread stopped, the pipe closed */
+DriverDte::~DriverDte()
+{
+	stop();
+	if (pipe_)
+		CloseHandle((HANDLE)pipe_);
+	if (kick_ev_)
+		CloseHandle((HANDLE)kick_ev_);
+}
+
+/* see windows_dte.h */
+bool DriverDte::open(const char *port)
+{
+	if (!port || !*port) {
+		ERR("--driver: a COM port's name, or auto\n");
+		return false;
+	}
+	port_ = _stricmp(port, "auto") ? port : "";
+	name_ = port_.empty() ? std::string("auto") : port_;
+	kick_ev_ = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+	return kick_ev_ && start();
+}
+
+/* see windows_dte.h: \\.\pipe\'s names listed (a driver's are
+   dmodem-vm-<port>), else (Windows that lists none) COM1 to COM32's
+   tried */
+std::string DriverDte::find_pipe() const
+{
+	const std::string dir = "\\\\.\\pipe\\", prefix = "dmodem-vm-";
+	if (!port_.empty())
+		return dir + prefix + port_;
+	WIN32_FIND_DATAA fd;
+	HANDLE f = FindFirstFileA((dir + "*").c_str(), &fd);
+	if (f != INVALID_HANDLE_VALUE) {
+		std::string found;
+		do {
+			if (!_strnicmp(fd.cFileName, prefix.c_str(),
+				       prefix.size())) {
+				found = dir + fd.cFileName;
+				break;
+			}
+		} while (FindNextFileA(f, &fd));
+		FindClose(f);
+		if (!found.empty())
+			return found;
+	}
+	for (int i = 1; i <= 32; i++) {
+		std::string name = dir + prefix + "COM" + std::to_string(i);
+		/* (there, free or not: ERROR_SEM_TIMEOUT when taken) */
+		if (WaitNamedPipeA(name.c_str(), 1) ||
+		    GetLastError() == ERROR_SEM_TIMEOUT)
+			return name;
+	}
+	return "";
+}
+
+/* (the waits end on quit_ev_; this ends a pending call at once) */
+void DriverDte::wake()
+{
+	std::lock_guard<std::mutex> lk(mu_);
+	if (pipe_)
+		CancelIoEx((HANDLE)pipe_, nullptr);
+}
+
+/* see windows_dte.h */
+void DriverDte::queue_locked(const std::string &frames)
+{
+	out_ += frames;
+	SetEvent((HANDLE)kick_ev_);
+}
+
+/* the reader thread: the driver's pipe opened when it is there, our
+   HELLO and lines (DSR, CTS, DCD with the carrier) to it, its frames
+   until it goes */
+void DriverDte::reader()
+{
+	bool waiting = false;
+
+	while (!quit_) {
+		std::string name = find_pipe();
+		HANDLE h = INVALID_HANDLE_VALUE;
+		if (!name.empty())
+			h = CreateFileA(name.c_str(),
+					GENERIC_READ | GENERIC_WRITE, 0,
+					nullptr, OPEN_EXISTING,
+					FILE_FLAG_OVERLAPPED, nullptr);
+		if (h == INVALID_HANDLE_VALUE) {
+			if (!waiting)
+				DBG("%s: waiting for the driver\n",
+				    name_.c_str());
+			waiting = true;
+			if (!nap(CONNECT_RETRY_MS))
+				break;
+			continue;
+		}
+		waiting = false;
+		{
+			std::lock_guard<std::mutex> lk(mu_);
+			std::string out;
+			pipe_ = h;
+			out_.clear();
+			vmodem::wire_hello(out, "");
+			vmodem::wire_lines(out, vmodem::LINE_DSR |
+					   vmodem::LINE_CTS |
+					   (dcd_ ? vmodem::LINE_DCD : 0));
+			queue_locked(out);
+		}
+		DBG("%s: on the driver (%s)\n", name_.c_str(), name.c_str());
+		serve_driver(h);
+		{
+			std::lock_guard<std::mutex> lk(mu_);
+			CloseHandle(h);
+			pipe_ = nullptr;
+			out_.clear();
+		}
+		DBG("%s: the driver has gone\n", name_.c_str());
+		if (dte_up_) {
+			dte_up_ = false;
+			if (!put_state(false))
+				break;
+		}
+		/* (a driver that refused us: not again at once) */
+		if (!nap(CONNECT_RETRY_MS))
+			break;
+	}
+}
+
+/* see windows_dte.h: DATA to the modem, STATE's DTR (with the port
+   open) as the DTE come or gone; our frames written as the pipe takes
+   them, a write at a time (never cut short: the frames would be lost
+   with it) */
+void DriverDte::serve_driver(void *h)
+{
+	OVERLAPPED rov = {}, wov = {};
+	unsigned char buf[vmodem::WIRE_MAX_DATA + vmodem::WIRE_HEAD];
+	vmodem::WireReader rd;
+	std::string wbuf;
+	bool reading = false, writing = false, ok = true;
+
+	rov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+	wov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+	while (ok && !quit_) {
+		DWORD got = 0;
+		if (!reading) {
+			ResetEvent(rov.hEvent);
+			/* (done at once or not, the event says so) */
+			if (!ReadFile((HANDLE)h, buf, sizeof(buf), &got,
+				      &rov) && GetLastError() != ERROR_IO_PENDING)
+				break;
+			reading = true;
+		}
+		if (!writing) {
+			{
+				std::lock_guard<std::mutex> lk(mu_);
+				wbuf.swap(out_);
+				out_.clear();
+			}
+			if (!wbuf.empty()) {
+				ResetEvent(wov.hEvent);
+				if (!WriteFile((HANDLE)h, wbuf.data(),
+					       (DWORD)wbuf.size(), nullptr,
+					       &wov) &&
+				    GetLastError() != ERROR_IO_PENDING)
+					break;
+				writing = true;
+			}
+		}
+		HANDLE w[4] = { (HANDLE)quit_ev_, rov.hEvent, (HANDLE)kick_ev_,
+				wov.hEvent };
+		WaitForMultipleObjects(writing ? 4 : 3, w, FALSE, INFINITE);
+		if (quit_)
+			break;
+		if (WaitForSingleObject(rov.hEvent, 0) == WAIT_OBJECT_0) {
+			reading = false;
+			if (!GetOverlappedResult((HANDLE)h, &rov, &got, FALSE))
+				break;
+			rd.feed(buf, got);
+			vmodem::WireReader::Frame f;
+			while (ok && rd.next(f)) {
+				uint16_t ver;
+				std::string port;
+				uint8_t st;
+				uint32_t baud;
+				switch (f.type) {
+				case vmodem::FRAME_HELLO:
+					if (vmodem::WireReader::hello(f, &ver,
+								      &port) &&
+					    ver == vmodem::WIRE_VERSION) {
+						DBG("%s: the driver's port is "
+						    "%s\n", name_.c_str(),
+						    port.c_str());
+					} else {
+						ERR("%s: the driver's version "
+						    "is not ours\n",
+						    name_.c_str());
+						ok = false;
+					}
+					break;
+				case vmodem::FRAME_DATA:
+					ok = put(f.p, (int)f.n);
+					break;
+				case vmodem::FRAME_STATE:
+					if (vmodem::WireReader::state(f, &st,
+								      &baud)) {
+						bool up = (st &
+							   vmodem::STATE_OPEN) &&
+							(st & vmodem::STATE_DTR);
+						if (up != dte_up_) {
+							dte_up_ = up;
+							ok = put_state(up);
+						}
+					}
+					break;
+				default:
+					break;
+				}
+			}
+			if (rd.bad())
+				ok = false;
+		}
+		if (writing && WaitForSingleObject(wov.hEvent, 0) ==
+		    WAIT_OBJECT_0) {
+			DWORD done = 0;
+			writing = false;
+			if (!GetOverlappedResult((HANDLE)h, &wov, &done, FALSE))
+				break;
+			wbuf.erase(0, done);
+			/* (what it didn't take goes again first) */
+			if (!wbuf.empty()) {
+				std::lock_guard<std::mutex> lk(mu_);
+				out_.insert(0, wbuf);
+				wbuf.clear();
+				SetEvent((HANDLE)kick_ev_);
+			}
+		}
+	}
+	if (reading || writing) {
+		DWORD n;
+		CancelIoEx((HANDLE)h, nullptr);
+		if (reading)
+			GetOverlappedResult((HANDLE)h, &rov, &n, TRUE);
+		if (writing)
+			GetOverlappedResult((HANDLE)h, &wov, &n, TRUE);
+	}
+	CloseHandle(rov.hEvent);
+	CloseHandle(wov.hEvent);
+}
+
+/* to the driver's port, as DATA frames queued for the thread: what
+   there is room for (OUT_MAX), the rest the modem's to give again;
+   without the driver the modem's characters go nowhere */
+int DriverDte::write(const char *buf, int n)
+{
+	std::lock_guard<std::mutex> lk(mu_);
+	std::string out;
+
+	if (n <= 0)
+		return 0;
+	if (!pipe_)
+		return n;
+	if (out_.size() >= OUT_MAX)
+		return 0;
+	size_t room = OUT_MAX - out_.size();
+	if ((size_t)n > room)
+		n = (int)room;
+	vmodem::wire_data(out, buf, (size_t)n);
+	queue_locked(out);
+	return n;
+}
+
+/* the carrier as the port's DCD */
+void DriverDte::carrier(bool on)
+{
+	std::lock_guard<std::mutex> lk(mu_);
+	dcd_ = on;
+	if (pipe_) {
+		std::string out;
+		vmodem::wire_lines(out, vmodem::LINE_DSR | vmodem::LINE_CTS |
+				   (on ? vmodem::LINE_DCD : 0));
+		queue_locked(out);
+	}
 }
 
 } // namespace dmd

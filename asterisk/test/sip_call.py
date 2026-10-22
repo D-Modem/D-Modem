@@ -33,7 +33,10 @@
 # runs under Wine, its DTE a TCP connection (--tcp) instead of the pty;
 # WIN_COM=1: a COM port (--com COM9), Wine's COM9 a pty pair's far end;
 # WIN_PIPE=made (--pipe) or connect (--pipe-connect): a named pipe,
-# which pipe_test.exe's bridge (beside dmodemd.exe) gives us on TCP.
+# which pipe_test.exe's bridge (beside dmodemd.exe) gives us on TCP;
+# WIN_DRIVER=1: the virtual modem driver's port (--driver SIPTEST), the
+# driver's end of its pipe run by vmodem_test.exe's bridge, which gives
+# us the port on TCP and its DCD, on during the call and off after.
 import os, re, socket, subprocess, sys, threading, time, tty
 
 dmodemd, number = sys.argv[1:3]
@@ -100,6 +103,8 @@ if windows and os.environ.get("WIN_COM"):
         os.unlink(link)
     os.symlink(os.ttyname(slave), link)
     dte_args = ["--com", "COM9"]
+elif windows and os.environ.get("WIN_DRIVER"):
+    dte_args = ["--driver", "SIPTEST"]
 elif windows and os.environ.get("WIN_PIPE"):
     pipe_mode = "--pipe-connect" if os.environ["WIN_PIPE"] == "connect" else "--pipe"
     pipe_name = r"\\.\pipe\dmodem-sip-test"
@@ -113,6 +118,7 @@ log = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "wb")
 pty = None
 tcp = None
 com_up = False
+dcd = []
 t0 = time.time()
 while time.time() - t0 < (60 if windows else 10):
     l = p.stdout.readline()
@@ -125,6 +131,23 @@ while time.time() - t0 < (60 if windows else 10):
         tcp = (m.group(1).decode(), int(m.group(2))); break
     if com is not None and re.search(rb"DTE is COM9", l):
         com_up = True; break
+    if re.search(rb"DTE is the virtual modem driver's port", l):
+        # the driver's end: the port to us on TCP 2398, its DCD noted
+        bridge = subprocess.Popen(["wine", os.path.join(os.path.dirname(dmodemd), "vmodem_test.exe"),
+                                   "bridge", "SIPTEST", "2398"],
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for b in bridge.stdout:
+            log.write(b"vmodem_test: " + b); log.flush()
+            if b"listening" in b:
+                tcp = ("127.0.0.1", 2398); break
+        def bridge_log():
+            for b in bridge.stdout:
+                log.write(b"vmodem_test: " + b); log.flush()
+                m = re.search(rb"bridge: dcd (on|off)", b)
+                if m:
+                    dcd.append(m.group(1).decode())
+        threading.Thread(target=bridge_log, daemon=True).start()
+        break
     if re.search(rb"DTE is pipe ", l):
         # the bridge: the pipe to us on TCP 2398
         bridge = subprocess.Popen(["wine", os.path.join(os.path.dirname(dmodemd), "pipe_test.exe"),
@@ -401,6 +424,10 @@ for call in range(calls):
         print("hangup:", "NO CARRIER" if hung else "none")
         ok = ok and (hung is not None or calls == 1)
 p.terminate()
+if os.environ.get("WIN_DRIVER") and windows:
+    # (DCD on with the carrier, off at its end)
+    print("dcd:", ", ".join(dcd) or "never")
+    ok = ok and dcd[:2] == ["on", "off"]
 if not ok:
     print("modem said:", buf[-300:])
 print("PASS" if ok else "FAIL")

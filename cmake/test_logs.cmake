@@ -30,8 +30,9 @@ if(CMAKE_HOST_WIN32)
 		"$ENV{ProgramW6432}/Git/bin" NO_DEFAULT_PATH)
 endif()
 find_program(DMODEM_BASH bash REQUIRED)
-set(DMODEM_TEST_LAUNCHER ${DMODEM_BASH} "${PROJECT_SOURCE_DIR}/cmake/test_run.sh"
+set(DMODEM_TEST_RUNNER ${DMODEM_BASH} "${PROJECT_SOURCE_DIR}/cmake/test_run.sh"
 	"${DMODEM_TEST_LOG_ROOT}")
+set(DMODEM_TEST_LAUNCHER ${DMODEM_TEST_RUNNER})
 # (a cross build's programs then through the emulator, Wine for Windows)
 if(CMAKE_CROSSCOMPILING_EMULATOR)
 	list(APPEND DMODEM_TEST_LAUNCHER ${CMAKE_CROSSCOMPILING_EMULATOR})
@@ -53,8 +54,15 @@ function(dmodem_test_launcher target)
 endfunction()
 
 function(dmodem_add_test name)
-	add_test(NAME ${name} COMMAND ${DMODEM_TEST_LAUNCHER} --name ${name}
-		${ARGN})
+	# (a cross build's own program, $<TARGET_FILE:...>, through the
+	# emulator after test_run.sh's --name; the host's, a script's
+	# interpreter, as it is)
+	set(_cmd ${DMODEM_TEST_RUNNER} --name ${name})
+	list(GET ARGN 0 _prog)
+	if(CMAKE_CROSSCOMPILING_EMULATOR AND _prog MATCHES "^\\$<TARGET_FILE:")
+		list(APPEND _cmd ${CMAKE_CROSSCOMPILING_EMULATOR})
+	endif()
+	add_test(NAME ${name} COMMAND ${_cmd} ${ARGN})
 	set_tests_properties(${name} PROPERTIES
 		FIXTURES_REQUIRED ${DMODEM_TEST_FIXTURE})
 endfunction()

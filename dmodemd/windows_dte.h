@@ -12,6 +12,13 @@
  *    PipeDte  a named pipe, made (--pipe) or connected to (--pipe-connect):
  *             a program or a VM's COM port on the host as the DTE, one
  *             at a time; its going hangs the modem up.
+ *    DriverDte  D-Modem's virtual modem driver (winmodem/): its COM port
+ *             is the DTE's (dial-up networking through Unimodem, a
+ *             terminal or fax program), dmodemd on the pipe the driver
+ *             makes (\\.\pipe\dmodem-vm-<port>, framed: winmodem/wire.h).
+ *             The app's DTR dropped (or its port closed) hangs the
+ *             modem up; the modem's DSR and CTS are on while dmodemd is
+ *             there, its DCD with the carrier.
  *    ComDte   a COM port: one end of a virtual null-modem pair (com0com)
  *             whose other end the DTE (dial-up networking, a terminal or
  *             fax program) opens as its modem.  The other end's DTR,
@@ -162,6 +169,39 @@ private:
 	   client is there (under mu_) */
 	void *pipe_ = nullptr;
 	bool up_ = false;
+};
+
+/* see above.  One driver's port at a time: named (COM7), or the first
+   there is (auto); waited for, and again after it goes (the device
+   disabled, the driver restarted) */
+class DriverDte final : public ThreadDte {
+public:
+	~DriverDte() override;
+	/* port: the COM port's name, or "auto": false if it can't be */
+	bool open(const char *port);
+	int write(const char *buf, int n) override;
+
+private:
+	void reader() override;
+	void wake() override;
+	void carrier(bool on) override;
+	/* (reader thread) the pipe's name to try now: the named port's,
+	   or with auto the first dmodem-vm-* pipe; empty if none */
+	std::string find_pipe() const;
+	/* (reader thread) the driver's frames until it goes, and ours to
+	   it (out_) as it takes them */
+	void serve_driver(void *h);
+	/* frames for the driver queued (under mu_), the thread woken */
+	void queue_locked(const std::string &frames);
+
+	enum { OUT_MAX = 64 * 1024 };   /* the frames that may wait */
+	std::string port_;              /* empty: auto */
+	std::mutex mu_;
+	void *pipe_ = nullptr;          /* HANDLE (under mu_) */
+	void *kick_ev_ = nullptr;       /* out_ has more (an event) */
+	std::string out_;               /* (under mu_) frames to write */
+	bool dcd_ = false;              /* (under mu_) */
+	bool dte_up_ = false;           /* the app's DTR, last seen */
 };
 
 } // namespace dmd
