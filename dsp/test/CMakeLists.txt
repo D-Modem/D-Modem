@@ -191,6 +191,11 @@ set(DMODEM_M32 "")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
 	set(DMODEM_M32 -m32)
 endif()
+# (our modem in the 32 bit programs, half_open and the like: its maths in
+# SSE, as the 64 bit dmodemd's, not in x87's wider registers, whose
+# rounding differs from compiler to compiler: Clang's and GCC's x87 code
+# make different calls of it with a marginal peer)
+set(DMODEM_M32_FP -msse2 -mfpmath=sse)
 include(CheckCXXSourceCompiles)
 set(CMAKE_REQUIRED_FLAGS "${DMODEM_M32}")
 set(CMAKE_REQUIRED_LINK_OPTIONS "${DMODEM_M32}")
@@ -230,7 +235,8 @@ foreach(_n half_open half_open8 half_smartlink)
 		${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
 	target_compile_definitions(${_n} PRIVATE CONFIG_DEBUG_MODEM
 		MODEM_RATE=${_rate})
-	target_compile_options(${_n} PRIVATE ${DMODEM_M32} -w -g -O)
+	target_compile_options(${_n} PRIVATE ${DMODEM_M32} ${DMODEM_M32_FP}
+		-w -g -O)
 	target_link_options(${_n} PRIVATE ${DMODEM_M32} ${_l})
 	target_link_libraries(${_n} PRIVATE ${DMODEM_LIBM} Threads::Threads)
 endforeach()
@@ -243,7 +249,7 @@ add_executable(half_hda half_hda.cpp modem_half.cpp ${DMODEM_FRONT_SRCS}
 target_include_directories(half_hda PRIVATE ${DMODEM_FRONT_DIR} ${S}
 	${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
 target_compile_definitions(half_hda PRIVATE CONFIG_DEBUG_MODEM)
-target_compile_options(half_hda PRIVATE ${DMODEM_M32} -g -O)
+target_compile_options(half_hda PRIVATE ${DMODEM_M32} ${DMODEM_M32_FP} -g -O)
 target_link_options(half_hda PRIVATE ${DMODEM_M32})
 target_link_libraries(half_hda PRIVATE ${DMODEM_LIBM} Threads::Threads)
 
