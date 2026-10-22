@@ -11,7 +11,8 @@
 ;
 ; Install with dmodem-driver.exe usb dmodem-usb.inf (as an administrator;
 ; the package must be signed: docs/windows.md), then plug the modem in
-; (or in again).  Windows 8.1 or later (WinUSB's isochronous transfers).
+; (or in again).  Windows 8.1 or later (WinUSB's isochronous transfers;
+; on Windows 7 and 8, Zadig's libusbK or UsbDk instead: docs/windows.md).
 
 [Version]
 Signature   = "$Windows NT$"

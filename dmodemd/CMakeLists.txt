@@ -242,6 +242,32 @@ if(DMODEM_DMODEMD)
 			add_dependencies(vmodem_test dmodemd)
 			dmodem_gtest(vmodem_test LABELS quick TIMEOUT 180
 				RUN_SERIAL)
+			# ../winmodem/test/umdf1_host.cpp: the driver for
+			# Windows 7 and 8 (dmodemvm7.dll, UMDF 1) in a host of
+			# the test's own, dmodemd.exe on its pipe; both beside
+			# it
+			if(TARGET dmodemvm7)
+				add_executable(umdf1_test
+					${PROJECT_SOURCE_DIR}/winmodem/test/umdf1_host.cpp)
+				dmodem_flags(umdf1_test NOOPT)
+				target_include_directories(umdf1_test SYSTEM PRIVATE
+					${DMODEM_UMDF1_INCLUDE})
+				target_link_libraries(umdf1_test PRIVATE
+					dmodem_winmodem ole32 uuid)
+				# (the driver copied beside it whenever it is
+				# built again)
+				add_custom_command(
+					OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/dmodemvm7.dll
+					COMMAND ${CMAKE_COMMAND} -E copy
+					$<TARGET_FILE:dmodemvm7>
+					${CMAKE_CURRENT_BINARY_DIR}/dmodemvm7.dll
+					DEPENDS dmodemvm7)
+				add_custom_target(umdf1_test_driver ALL DEPENDS
+					${CMAKE_CURRENT_BINARY_DIR}/dmodemvm7.dll)
+				add_dependencies(umdf1_test dmodemd umdf1_test_driver)
+				dmodem_gtest(umdf1_test LABELS quick TIMEOUT 180
+					RUN_SERIAL)
+			endif()
 		endif()
 	endif()
 

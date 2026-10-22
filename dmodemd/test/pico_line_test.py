@@ -12,6 +12,10 @@
 # - the country's line settings written to the stick's DAA: -c UK's at
 #   start-up, AT+GCI=09's (Australia) after it, and the USA's for a
 #   country the Si3056 datasheet has none for;
+# - Windows 7 and 8 (under Wine, whose WinUSB is theirs: no
+#   isochronous transfers): a driver that can't stream said so, with what
+#   to do (FAKE_USB_NO_ISO); UsbDk taken where it is installed
+#   (FAKE_USB_USBDK), not with DMODEM_USBDK=0; --usb list says so;
 # - 1001 dials 1002 (ATX4: after the dial tone, in DTMF); 1002 rings
 #   (its ring detector's changes on the interrupt endpoint), shows the
 #   caller ID between the first two rings (AT#CID=1: the stick hears the
@@ -155,6 +159,28 @@ try:
     check("a line side that doesn't answer: said", nl.expect_log(b"line side does not answer", 5))
     nl.p.terminate()
     nl.p.wait(5)
+
+    # Windows 7 and 8 (Wine's WinUSB has no isochronous transfers, as
+    # theirs): a driver that can't stream (WinUSB) said so, with what to
+    # do; UsbDk taken where it is installed (DMODEM_USBDK=0: not)
+    if usb_dte.windows(dmodemd):
+        p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=auto", "-r", rate, "dmodem40"],
+                           env=env_for("1001", FAKE_USB_NO_ISO="1"), capture_output=True,
+                           text=True, timeout=60)
+        check("WinUSB before 8.1: can't stream, libusbK or UsbDk",
+              p.returncode != 0 and "libusbK with Zadig, or install UsbDk" in p.stderr)
+        dk = Modem("1001", "dmodem40", "-usbdk", FAKE_USB_USBDK="1")
+        check("UsbDk installed: taken", dk.expect_log(b"usb: through UsbDk", 5))
+        dk.p.terminate()
+        dk.p.wait(5)
+        nd = Modem("1001", "dmodem40", "-nousbdk", FAKE_USB_USBDK="1", DMODEM_USBDK="0")
+        check("DMODEM_USBDK=0: UsbDk not taken", nd.cmd(b"ATE0") and
+              not nd.expect_log(b"through UsbDk", 1))
+        nd.p.terminate()
+        nd.p.wait(5)
+        p = subprocess.run(run + ["--usb", "list"], env=env_for("1001"), capture_output=True,
+                           text=True, timeout=60)
+        check("--usb list: this WinUSB can't stream", "WinUSB can't stream" in p.stdout)
 
     # the country's line settings in the stick's DAA (a Si3018 line side:
     # ACT/ACT2, no register 30), as Table 15 of the Si3056 datasheet has

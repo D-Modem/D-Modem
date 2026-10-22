@@ -3,14 +3,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Neo-Desktop
 #
-#    make_inf.py - dmodem.inf, the virtual modem driver's INF: the UMDF
-#                  driver's install and Unimodem's settings for D-Modem,
-#                  its result codes in Unimodem's Responses with each
-#                  CONNECT rate the core has (core/modem.cpp's
-#                  connect_codes)
+#    make_inf.py - the virtual modem driver's INFs: the UMDF driver's
+#                  install and Unimodem's settings for D-Modem, its result
+#                  codes in Unimodem's Responses with each CONNECT rate the
+#                  core has (core/modem.cpp's connect_codes):
+#                    dmodem.inf    dmodemvm.dll, UMDF 2 (Windows 10)
+#                    dmodem7.inf   dmodemvm7.dll, UMDF 1.9 (Windows 7 and
+#                                  8, 8.1)
 #
-#    usage: make_inf.py SOURCE_DIR           write winmodem/dmodem.inf
-#           make_inf.py SOURCE_DIR --check   exit 1 if it is not what
+#    usage: make_inf.py SOURCE_DIR           write winmodem/dmodem*.inf
+#           make_inf.py SOURCE_DIR --check   exit 1 if they are not what
 #                                            this would write
 #
 #    A Responses value is Unimodem's MODEMRESPONSE: the state (0 OK,
@@ -27,39 +29,26 @@ import sys
 HEAD = r"""; SPDX-License-Identifier: AGPL-3.0-only
 ; Copyright (C) 2026 Neo-Desktop
 ;
-; dmodem.inf - D-Modem's virtual modem: a modem without hardware whose
-; COM port (dmodemvm.dll, a UMDF 2 driver under Unimodem's modem.sys) is
-; served by dmodemd on its pipe (dmodemd --driver auto).
-;
-; Made by winmodem/make_inf.py from the core's result codes: change that,
-; not this.  Install with dmodem-driver.exe install dmodem.inf (a root
-; device, Root\DModemVM), on Windows 10 1803 or later (the driver store's
-; DIRID 13); the package must be signed (docs/windows.md).
-
+@INTRO@
 [Version]
 Signature   = "$WINDOWS NT$"
 Class       = Modem
 ClassGuid   = {4D36E96D-E325-11CE-BFC1-08002BE10318}
 Provider    = %Provider%
-CatalogFile = dmodemvm.cat
+CatalogFile = @DLL@.cat
 DriverVer   = 10/22/2026,1.0.0.0
 PnpLockdown = 1
 
 [DestinationDirs]
-DefaultDestDir = 13
+DefaultDestDir = @DESTDIR@
 
 [SourceDisksNames]
 1 = %Disk%
 
 [SourceDisksFiles]
-dmodemvm.dll = 1
+@DLL@.dll = 1
 
-[Manufacturer]
-%Mfg% = DModem, NTamd64.10.0...17134
-
-[DModem.NTamd64.10.0...17134]
-%ModemName% = DModem_Install, Root\DModemVM
-
+@MODELS@
 ; ---- the driver: WUDFRd (UMDF's reflector) below modem.sys, our DLL in
 ; its host; modem.sys, a kernel driver, its client
 
@@ -68,7 +57,7 @@ CopyFiles = DModem_Files
 AddReg    = DModem_All, DModem_Settings, DModem_Responses
 
 [DModem_Files]
-dmodemvm.dll
+@DLL@.dll
 
 [DModem_Install.NT.HW]
 AddReg = DModem_HW
@@ -87,15 +76,13 @@ ErrorControl  = 1
 ServiceBinary = %12%\WUDFRd.sys
 
 [DModem_Install.NT.Wdf]
-UmdfService                = dmodemvm, dmodemvm_Install
-UmdfServiceOrder           = dmodemvm
+UmdfService                = @DLL@, @DLL@_Install
+UmdfServiceOrder           = @DLL@
 UmdfKernelModeClientPolicy = AllowKernelModeClients
 UmdfFsContextUsePolicy     = CannotUseFsContexts
 
-[dmodemvm_Install]
-UmdfLibraryVersion = 2.15.0
-ServiceBinary      = %13%\dmodemvm.dll
-
+[@DLL@_Install]
+@SERVICE@
 ; ---- Unimodem's settings for D-Modem's commands (docs/at)
 ;
 ; Properties: dial options (none), call setup timer (S7, up to 255 s),
@@ -151,6 +138,63 @@ Disk      = "D-Modem virtual modem driver"
 WudfRd    = "Windows Driver Foundation - User-mode Driver Framework Reflector"
 """
 
+# each INF's own: its file, what it says of itself, where the DLL goes
+# (DIRID 13: the driver store, Windows 10 1803 and later; 12,UMDF:
+# System32\drivers\UMDF, UMDF 1's), the models (the Windows each is
+# for) and the UMDF service
+VARIANTS = {
+    "dmodem.inf": {
+        "@INTRO@": r"""; dmodem.inf - D-Modem's virtual modem: a modem without hardware whose
+; COM port (dmodemvm.dll, a UMDF 2 driver under Unimodem's modem.sys) is
+; served by dmodemd on its pipe (dmodemd --driver auto).
+;
+; Made by winmodem/make_inf.py from the core's result codes: change that,
+; not this.  Install with dmodem-driver.exe install dmodem.inf (a root
+; device, Root\DModemVM), on Windows 10 1803 or later (the driver store's
+; DIRID 13); the package must be signed (docs/windows.md).  Windows 7 and
+; 8 have dmodem7.inf.
+""",
+        "@DLL@": "dmodemvm",
+        "@DESTDIR@": "13",
+        "@MODELS@": r"""[Manufacturer]
+%Mfg% = DModem, NTamd64.10.0...17134
+
+[DModem.NTamd64.10.0...17134]
+%ModemName% = DModem_Install, Root\DModemVM
+""",
+        "@SERVICE@": r"""UmdfLibraryVersion = 2.15.0
+ServiceBinary      = %13%\dmodemvm.dll
+""",
+    },
+    "dmodem7.inf": {
+        "@INTRO@": r"""; dmodem7.inf - D-Modem's virtual modem for Windows 7 and 8: a modem
+; without hardware whose COM port (dmodemvm7.dll, a UMDF 1.9 driver under
+; Unimodem's modem.sys: Windows 7's own UMDF) is served by dmodemd on its
+; pipe (dmodemd --driver auto).
+;
+; Made by winmodem/make_inf.py from the core's result codes: change that,
+; not this.  Install with dmodem-driver.exe install dmodem7.inf (a root
+; device, Root\DModemVM), on Windows 7, 8 or 8.1 (x64 or x86); the
+; package must be signed (docs/windows.md).  Windows 10 has dmodem.inf.
+""",
+        "@DLL@": "dmodemvm7",
+        "@DESTDIR@": "12,UMDF",
+        "@MODELS@": r"""[Manufacturer]
+%Mfg% = DModem, NTamd64.6.1, NTx86.6.1
+
+[DModem.NTamd64.6.1]
+%ModemName% = DModem_Install, Root\DModemVM
+
+[DModem.NTx86.6.1]
+%ModemName% = DModem_Install, Root\DModemVM
+""",
+        "@SERVICE@": r"""UmdfLibraryVersion = 1.9.0
+ServiceBinary      = %12%\UMDF\dmodemvm7.dll
+DriverCLSID        = @CLSID@
+""",
+    },
+}
+
 # the results with no rate: verbose and numeric (ATV0), as the core
 # gives them (core/modem.cpp: result_text, and 88 and 89 for FAX and
 # DATA)
@@ -180,9 +224,26 @@ def value(state, dce=0):
         ",".join("%02x" % x for x in b[6:10]))
 
 
-def inf(src):
-    """the INF's text"""
-    out = [HEAD]
+def driver_clsid(src):
+    """dmodemvm7.dll's class (driver7.cpp's CLSID_DModemVM7) as the INF
+    writes a GUID"""
+    text = open(os.path.join(src, "winmodem", "driver7.cpp")).read()
+    m = re.search(r"CLSID_DModemVM7 = \{\s*0x([0-9a-f]+),\s*0x([0-9a-f]+),"
+                  r"\s*0x([0-9a-f]+),\s*\{([^}]*)\}", text)
+    b = [int(x, 16) for x in re.findall(r"0x([0-9a-f]+)", m.group(4))]
+    return "{%08x-%04x-%04x-%02x%02x-%s}" % (
+        int(m.group(1), 16), int(m.group(2), 16), int(m.group(3), 16),
+        b[0], b[1], "".join("%02x" % x for x in b[2:]))
+
+
+def inf(src, name="dmodem.inf"):
+    """the INF name's text"""
+    head = HEAD
+    for k, v in VARIANTS[name].items():
+        head = head.replace(k, v)
+    head = head.replace("@CLSID@", driver_clsid(src))
+    assert "@" not in head.replace("@%", "")
+    out = [head]
     line = "HKR,Responses,\"%s\",1,%s\n"
     for words, number, state in RESULTS:
         out.append(line % ("<cr><lf>%s<cr><lf>" % words, value(state)))
@@ -199,21 +260,25 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("usage: make_inf.py SOURCE_DIR [--check]")
     src = sys.argv[1]
-    path = os.path.join(src, "winmodem", "dmodem.inf")
-    text = inf(src)
-    if "--check" in sys.argv[2:]:
-        try:
-            have = open(path, newline="").read()
-        except OSError:
-            have = None
-        if have != text:
-            print("%s is not what make_inf.py makes: run it" % path)
-            return 1
-        print("dmodem.inf: %d responses" % text.count("HKR,Responses"))
-        return 0
-    with open(path, "w", newline="") as f:
-        f.write(text)
-    return 0
+    bad = 0
+    for name in VARIANTS:
+        path = os.path.join(src, "winmodem", name)
+        text = inf(src, name)
+        if "--check" in sys.argv[2:]:
+            try:
+                have = open(path, newline="").read()
+            except OSError:
+                have = None
+            if have != text:
+                print("%s is not what make_inf.py makes: run it" % path)
+                bad = 1
+            else:
+                print("%s: %d responses" %
+                      (name, text.count("HKR,Responses")))
+            continue
+        with open(path, "w", newline="") as f:
+            f.write(text)
+    return bad
 
 
 if __name__ == "__main__":

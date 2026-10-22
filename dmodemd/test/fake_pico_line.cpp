@@ -30,6 +30,8 @@
  *
  *    FAKE_PICO_LINE_NOLINK=1: GET_INFO says the line side does not answer.
  *    FAKE_PICO_LINE_LOG=1: the requests on stderr.
+ *    FAKE_USB_NO_ISO, FAKE_USB_USBDK: fake_usb_backend.h (Windows 7's
+ *    and 8's drivers).
  *
  */
 #include <errno.h>
@@ -415,6 +417,8 @@ int request_out(uint8_t req, uint16_t value)
 
 extern "C" {
 
+#include "fake_usb_backend.h"
+
 /* the context (FAKE_PICO_LINE_LOG read) */
 int LIBUSB_CALL libusb_init(libusb_context **ctx)
 {
@@ -446,6 +450,7 @@ const char *LIBUSB_CALL libusb_strerror(int code)
 	case LIBUSB_ERROR_BUSY: return "Resource busy";
 	case LIBUSB_ERROR_PIPE: return "Pipe error";
 	case LIBUSB_ERROR_INVALID_PARAM: return "Invalid parameter";
+	case LIBUSB_ERROR_NOT_SUPPORTED: return "Operation not supported or unimplemented on this platform";
 	}
 	return "Other error";
 }
@@ -645,6 +650,8 @@ int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
 {
 	if (fake.gone)
 		return LIBUSB_ERROR_NO_DEVICE;
+	if (fake_usb_refused(t))
+		return LIBUSB_ERROR_NOT_SUPPORTED;
 	if (t->endpoint == EP_EVENT)
 		fake.intr_q.push_back(t);
 	else if (t->endpoint == EP_IN)

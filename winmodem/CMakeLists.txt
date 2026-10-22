@@ -14,6 +14,9 @@
 #   dmodemvm_check    (DMODEM_WDF_INCLUDE: the UMDF headers, e.g. from
 #                     github.com/microsoft/Windows-Driver-Frameworks) the
 #                     driver compiled only, where no WDK is (clang-cl)
+#   dmodemvm7.dll     (Windows, with UMDF 1.9's headers:
+#                     DMODEM_UMDF1_INCLUDE) the driver for Windows 7 and 8
+#                     (driver7.cpp), with dmodem7.inf; umdf1_test runs it
 #   dmodem-driver.exe (Windows) installs and removes the driver's device,
 #                     and WinUSB for the USB modems (dmodem-usb.inf)
 
@@ -67,6 +70,28 @@ endif()
 if(NOT MSVC)
 	return()
 endif()
+
+# the driver for Windows 7 and 8 (driver7.cpp): UMDF 1.9, Windows 7's own,
+# a COM DLL that needs only UMDF 1.9's headers (the WDK's
+# Include/wdf/umdf/1.9: DMODEM_UMDF1_INCLUDE).  umdf1_test runs it in a
+# host of its own (test/umdf1_host.cpp) against dmodemd.exe
+set(DMODEM_UMDF1_INCLUDE "${DMODEM_UMDF1_INCLUDE}" CACHE PATH
+	"UMDF 1.9's headers (wudfddi.h's directory)")
+if(NOT DMODEM_UMDF1_INCLUDE AND
+   EXISTS "$ENV{ProgramFiles\(x86\)}/Windows Kits/10/Include/wdf/umdf/1.9/wudfddi.h")
+	set(DMODEM_UMDF1_INCLUDE
+		"$ENV{ProgramFiles\(x86\)}/Windows Kits/10/Include/wdf/umdf/1.9")
+endif()
+if(DMODEM_UMDF1_INCLUDE)
+	add_library(dmodemvm7 SHARED driver7.cpp dmodemvm7.def dmodemvm7.rc)
+	target_include_directories(dmodemvm7 SYSTEM PRIVATE
+		${DMODEM_UMDF1_INCLUDE})
+	target_link_libraries(dmodemvm7 PRIVATE dmodem_winlink ole32 uuid)
+	dmodem_flags(dmodemvm7)
+	install(TARGETS dmodemvm7 RUNTIME DESTINATION driver7)
+	install(FILES dmodem7.inf DESTINATION driver7)
+endif()
+
 set(_kits "$ENV{ProgramFiles\(x86\)}/Windows Kits/10")
 if(NOT DMODEM_WDF_INCLUDE AND EXISTS "${_kits}/Include/wdf/umdf/2.15/wdf.h")
 	set(DMODEM_WDF_INCLUDE "${_kits}/Include/wdf/umdf/2.15")

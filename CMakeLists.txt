@@ -128,6 +128,13 @@ if(WIN32)
 	# (M_PI and the like from math.h, which Windows' C library has
 	# only on request) and no min/max macros from windows.h
 	add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)
+	# the oldest Windows the programs run on: Windows 7 (0x0601), so
+	# windows.h declares nothing newer.  win_imports.py (ctest
+	# win7_imports) checks the programs' imports against it
+	set(DMODEM_WINNT 0x0601 CACHE STRING
+		"_WIN32_WINNT: the oldest Windows to run on (0x0601: Windows 7)")
+	add_compile_definitions(_WIN32_WINNT=${DMODEM_WINNT}
+		WINVER=${DMODEM_WINNT})
 endif()
 if(MINGW)
 	# MinGW's own C99 printf and scanf: msvcrt's know no %zu or %lld.
@@ -181,5 +188,25 @@ if(DMODEM_TESTS)
 			${PROJECT_SOURCE_DIR})
 		set_tests_properties(doc_check PROPERTIES LABELS quick
 			TIMEOUT 120)
+		# Windows: the programs and drivers load on Windows 7
+		# (DMODEM_WINNT): no imports of Windows 8's or later
+		if(WIN32)
+			set(_win7)
+			foreach(_t dmodemd dmodem-driver dmodemvm dmodemvm7)
+				if(TARGET ${_t})
+					get_target_property(_type ${_t} TYPE)
+					if(_type MATCHES "EXECUTABLE|SHARED_LIBRARY|MODULE_LIBRARY")
+						list(APPEND _win7 $<TARGET_FILE:${_t}>)
+					endif()
+				endif()
+			endforeach()
+			if(_win7)
+				dmodem_add_test(win7_imports ${Python3_EXECUTABLE}
+					${PROJECT_SOURCE_DIR}/cmake/win_imports.py
+					${_win7})
+				set_tests_properties(win7_imports PROPERTIES
+					LABELS quick TIMEOUT 60)
+			endif()
+		endif()
 	endif()
 endif()

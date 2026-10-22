@@ -23,6 +23,8 @@
  *
  *    FAKE_ST7554_DAA=1: the GPIO status says an ST75951/2 (silicon DAA).
  *    FAKE_ST7554_LOG=1: the register writes on stderr.
+ *    FAKE_USB_NO_ISO, FAKE_USB_USBDK: fake_usb_backend.h (Windows 7's
+ *    and 8's drivers).
  *
  */
 #include <errno.h>
@@ -282,6 +284,8 @@ void make_config()
 
 extern "C" {
 
+#include "fake_usb_backend.h"
+
 /* the context (FAKE_ST7554_LOG read) */
 int LIBUSB_CALL libusb_init(libusb_context **ctx)
 {
@@ -312,6 +316,7 @@ const char *LIBUSB_CALL libusb_strerror(int code)
 	case LIBUSB_ERROR_NOT_FOUND: return "Entity not found";
 	case LIBUSB_ERROR_BUSY: return "Resource busy";
 	case LIBUSB_ERROR_INVALID_PARAM: return "Invalid parameter";
+	case LIBUSB_ERROR_NOT_SUPPORTED: return "Operation not supported or unimplemented on this platform";
 	}
 	return "Other error";
 }
@@ -505,6 +510,8 @@ int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
 {
 	if (fake.gone)
 		return LIBUSB_ERROR_NO_DEVICE;
+	if (fake_usb_refused(t))
+		return LIBUSB_ERROR_NOT_SUPPORTED;
 	if (t->endpoint == EP_INTR)
 		fake.intr_q.push_back(t);
 	else if (t->endpoint == EP_IN)

@@ -8,7 +8,8 @@
 ; Made by winmodem/make_inf.py from the core's result codes: change that,
 ; not this.  Install with dmodem-driver.exe install dmodem.inf (a root
 ; device, Root\DModemVM), on Windows 10 1803 or later (the driver store's
-; DIRID 13); the package must be signed (docs/windows.md).
+; DIRID 13); the package must be signed (docs/windows.md).  Windows 7 and
+; 8 have dmodem7.inf.
 
 [Version]
 Signature   = "$WINDOWS NT$"

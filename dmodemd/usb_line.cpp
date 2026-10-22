@@ -80,6 +80,50 @@
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, "usb: " fmt, ##__VA_ARGS__)
 
+#ifdef _WIN32
+/* WinUSB streams (isochronous transfers) from Windows 8.1 on: its
+   winusb.dll has WinUsb_ReadIsochPipeAsap then */
+static bool winusb_streams()
+{
+	HMODULE m = LoadLibraryA("winusb.dll");
+	bool yes = m && GetProcAddress(m, "WinUsb_ReadIsochPipeAsap") != nullptr;
+	if (m)
+		FreeLibrary(m);
+	return yes;
+}
+
+/* libusb's backend on ctx: UsbDk where it is installed and WinUSB can't
+   stream (Windows 7 and 8), else WinUSB's (which drives libusbK's
+   devices too: Zadig's driver for those Windows).  DMODEM_USBDK=1 takes
+   UsbDk whatever the Windows, =0 never.  True if UsbDk it is */
+static bool use_usbdk(libusb_context *ctx)
+{
+	const char *e = getenv("DMODEM_USBDK");
+	if (e && *e == '0')
+		return false;
+	if (!(e && *e == '1') && winusb_streams())
+		return false;
+	return libusb_set_option(ctx, LIBUSB_OPTION_USE_USBDK) ==
+		LIBUSB_SUCCESS;
+}
+
+#endif
+
+/* what to do when a transfer fails with err: on Windows, a driver that
+   can't stream (WinUSB before 8.1); "" */
+static const char *no_streams(int err)
+{
+#ifdef _WIN32
+	if (err == LIBUSB_ERROR_NOT_SUPPORTED)
+		return " (WinUSB streams only from Windows 8.1 on: on "
+			"Windows 7 and 8 give the modem libusbK with Zadig, "
+			"or install UsbDk)";
+#else
+	(void)err;
+#endif
+	return "";
+}
+
 namespace dmd {
 
 namespace {
@@ -220,7 +264,8 @@ bool UsbLine::find(const char *dev)
 			if (err == LIBUSB_ERROR_NOT_SUPPORTED ||
 			    err == LIBUSB_ERROR_ACCESS)
 				hint = std::string(" (it needs WinUSB as its "
-					"driver: dmodem-driver usb "
+					"driver, or libusbK on Windows 7 "
+					"and 8: dmodem-driver usb "
 					"dmodem-usb.inf, or Zadig, for ") +
 					id + ")";
 #else
@@ -259,6 +304,9 @@ int UsbLine::list()
 		ERR("libusb: %s\n", libusb_strerror(err));
 		return -1;
 	}
+#ifdef _WIN32
+	bool usbdk = use_usbdk(ctx);
+#endif
 	ssize_t n = libusb_get_device_list(ctx, &devs);
 	for (ssize_t i = 0; i < n; i++) {
 		libusb_device_descriptor d;
@@ -282,7 +330,7 @@ int UsbLine::list()
 		       err == 0 ? "ready" : libusb_strerror(err),
 #ifdef _WIN32
 		       err == LIBUSB_ERROR_NOT_SUPPORTED ?
-		       " (its driver is not WinUSB)" :
+		       " (its driver is not WinUSB or libusbK)" :
 #endif
 		       "");
 	}
@@ -291,6 +339,14 @@ int UsbLine::list()
 	if (!found)
 		printf("no SmartUSB56 (0483:7554) or pico-serial Line "
 		       "(1209:0002)\n");
+#ifdef _WIN32
+	else if (usbdk)
+		printf("(through UsbDk)\n");
+	else if (!winusb_streams())
+		printf("(this Windows' WinUSB can't stream: a modem whose "
+		       "driver is WinUSB is listed ready but can't be used;"
+		       " libusbK's or UsbDk can)\n");
+#endif
 	libusb_exit(ctx);
 	return 0;
 }
@@ -392,6 +448,10 @@ bool UsbLine::open(const char *dev, unsigned rate)
 		ctx_ = nullptr;
 		return false;
 	}
+#ifdef _WIN32
+	if (use_usbdk(ctx_))
+		DBG("through UsbDk\n");
+#endif
 	if (!find(dev)) {
 		close();
 		return false;
@@ -572,16 +632,16 @@ bool UsbLine::start_streams()
 					 out_done, this, 0);
 		out_[i]->flags = LIBUSB_TRANSFER_FREE_BUFFER;
 		if ((err = libusb_submit_transfer(in_[i])) < 0) {
-			ERR("%s: an IN transfer: %s\n", name_,
-			    libusb_strerror(err));
+			ERR("%s: an IN transfer: %s%s\n", name_,
+			    libusb_strerror(err), no_streams(err));
 			return false;
 		}
 		in_flight_++;
 		std::vector<int> lens(ISO_PACKETS, pkt > max_out_ ? max_out_ : pkt);
 		out_fill(out_[i], lens.data());
 		if ((err = libusb_submit_transfer(out_[i])) < 0) {
-			ERR("%s: an OUT transfer: %s\n", name_,
-			    libusb_strerror(err));
+			ERR("%s: an OUT transfer: %s%s\n", name_,
+			    libusb_strerror(err), no_streams(err));
 			return false;
 		}
 		in_flight_++;

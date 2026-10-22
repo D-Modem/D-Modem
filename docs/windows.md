@@ -2,6 +2,14 @@
 
 dmodemd builds for 64-bit Windows with MinGW-w64 or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  The USB modems (Smart Link's SmartUSB56 and the pico-serial Line) are dmodemd.exe's lines too (`--usb`, on WinUSB).  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 
+Windows 7 is the oldest Windows it runs on:
+
+| Part | Windows |
+|---|---|
+| dmodemd.exe, dmodem-driver.exe | 7 and later |
+| USB modems (`--usb`) | 8.1 and later on WinUSB; 7 and 8 on libusbK or UsbDk ([below](#windows-7-and-8)) |
+| Virtual modem driver (`--driver`) | 10 (1803 and later): `dmodemvm.dll`, `dmodem.inf`; 7, 8 and 8.1: `dmodemvm7.dll`, `dmodem7.inf` ([below](#windows-7-8-and-81)) |
+
 The following are POSIX-only and are not built for Windows:
 - the Asterisk and FreeSWITCH modules
 - dmodem-ari
@@ -54,6 +62,19 @@ From Linux, `cmake/clang-cl.cmake` builds the same way with LLVM's clang-cl and 
     WINEDEBUG=-all ctest --test-dir build-msvc -L quick
 
 clang-cl defines no `__GNUC__`, so the few GCC attributes and builtins the code uses (printf format checks, weak symbols) are left out there as they are for cl.exe.  The build is warning-free with `-DDMODEM_WERROR=ON`.  Its `dmodemd.exe` passes the quick tests and every `sip.sh` variant above under Wine: TCP, the COM port, both pipe modes, voice.  xwin leaves out the debug C runtime unless given `--include-debug-libs`, which a Debug build needs.
+
+### Windows 7
+
+The builds target Windows 7: `_WIN32_WINNT` and `WINVER` are `0x0601` (`DMODEM_WINNT`), so Windows' headers declare nothing newer. The `win7_imports` test (`ctest -L quick`, `cmake/win_imports.py`) reads dmodemd.exe's, dmodem-driver.exe's and the drivers' PE headers. It fails on any of these:
+- a subsystem version newer than 6.1;
+- an import of a Universal CRT, Visual C++ runtime or API-set DLL;
+- an import of a function Windows 8 or later brought, from its list of the ones libraries reach for.
+
+`python3 cmake/win_imports.py --list <file>` prints every import, to check a new one against Microsoft's "minimum supported client".
+
+Every function the programs import today was already in Windows Vista or 7, and libre and libusb included. The toolchains:
+- **MinGW-w64:** its `msvcrt.dll` runtime is in every Windows.
+- **MSVC:** Visual Studio 2022's build tools still support Windows 7. Later ones may not: Microsoft's C++ library dropped Windows 7, 8 and 8.1 in the 14.50 tools (Visual Studio 2026). `win7_imports` shows whether a build still loads there.
 
 ## Running
 
@@ -136,10 +157,18 @@ Windows has no kernel driver to hold either device. libusb reaches a USB device 
 - `dmodem-usb.inf` (`winmodem/`) gives both devices WinUSB, and `dmodem-driver usb dmodem-usb.inf` installs it. The INF must be signed before Windows takes it (the test signing of the virtual modem driver, above, with `dmodem-usb.cat`).
 - [Zadig](https://zadig.akeo.ie/) does the same and signs what it installs itself: choose the device, then WinUSB.
 
-A SmartUSB56 with Smart Link's own Windows driver installed must be moved to WinUSB first. Until then, `--usb list` says "its driver is not WinUSB".
+A SmartUSB56 with Smart Link's own Windows driver installed must be moved to WinUSB first. Until then, `--usb list` says "its driver is not WinUSB or libusbK".
+
+#### Windows 7 and 8
+
+WinUSB can't stream before Windows 8.1: it has no isochronous transfers, which both modems' samples are. On Windows 7 and 8 the modem needs one of these instead:
+- **libusbK** as its driver: in [Zadig](https://zadig.akeo.ie/), choose the device, then libusbK. libusb drives it as it drives WinUSB, isochronous transfers included.
+- **[UsbDk](https://github.com/daynix/UsbDk)** installed (its MSI): a filter that lends libusb any USB device, whatever its driver. dmodemd.exe uses it by itself when WinUSB can't stream and UsbDk is there (`usb: through UsbDk` in its log). `DMODEM_USBDK=1` in the environment makes it use UsbDk on any Windows, and `DMODEM_USBDK=0` never.
+
+The pico-serial Line's Microsoft OS 2.0 descriptors don't help there: Windows 7 and 8 don't read them, and the WinUSB they would give couldn't stream anyway. When the driver can't stream, dmodemd.exe says so and what to do: "WinUSB streams only from Windows 8.1 on: on Windows 7 and 8 give the modem libusbK with Zadig, or install UsbDk". `--usb list` adds that a modem listed ready on WinUSB can't be used, and `dmodem-driver usb` says it after installing.
 
 How dmodemd.exe runs a USB line:
-- **libusb:** the pinned release (1.0.27, LGPL-2.1) is fetched and built while configuring (`cmake/libusb.cmake`), for MinGW-w64, MSVC and clang-cl alike. It links into dmodemd.exe, which stays a single file. `-DDMODEM_USB=OFF` builds without it, and `-DDMODEM_LIBUSB_DIR=` takes a libusb source tree already there. WinUSB's isochronous transfers need Windows 8.1 or later.
+- **libusb:** the pinned release (1.0.27, LGPL-2.1) is fetched and built while configuring (`cmake/libusb.cmake`), for MinGW-w64, MSVC and clang-cl alike. It links into dmodemd.exe, which stays a single file. `-DDMODEM_USB=OFF` builds without it, and `-DDMODEM_LIBUSB_DIR=` takes a libusb source tree already there. WinUSB's isochronous transfers need Windows 8.1 or later; libusbK's and UsbDk's work from Windows 7 (above).
 - **Polling:** Windows' libusb has no descriptors to wait on (Linux's main loop waits on its file descriptors), so the main loop handles libusb's events every 2 ms, as well as the DTE's socket.
 - **Messages:** when WinUSB isn't the device's driver, dmodemd.exe says so, and says how to make it so.
 
@@ -199,6 +228,26 @@ Building the driver:
 
 **Not yet tried on Windows itself.** Only the port, the pipe and dmodemd's end have run, under Wine (below). The WDF part (`driver.cpp`) has only been compiled, and the INF has not been installed.
 
+#### Windows 7, 8 and 8.1
+
+UMDF 2 begins with Windows 8.1, and its 2.15 with Windows 10. Windows 7 and 8 get `dmodemvm7.dll` (`winmodem/driver7.cpp`) instead:
+- **The framework:** it is the same device on UMDF 1.9, Windows 7's own user-mode framework, which later Windows still run. It is a COM DLL that UMDF's host loads. The COM port and the pipe to dmodemd are the same code (`port.h`, `link.h`), and so are dmodemd's side and everything an app sees.
+- **The INF:** `dmodem7.inf`, made by `make_inf.py` with `dmodem.inf`'s Unimodem settings and responses, for x64 and x86. The DLL goes to `System32\drivers\UMDF`, with `UmdfLibraryVersion` 1.9.0 and the driver's class (`DriverCLSID`). Windows 7 has UMDF 1.9 built in, so no co-installer is needed.
+- **Installing:**
+
+      dmodem-driver install dmodem7.inf     (once, as an administrator)
+      dmodemd.exe --driver auto
+
+- **Signing:** as for Windows 10, with `Inf2Cat /os:7_X64` (or `7_X86`, `8_X64`, `6_3_X64`). 64-bit Windows 7 also needs `bcdedit /set testsigning on` for a test-signed package.
+- **One difference inside:** a request the port holds has a buffer of its own. Whichever completes the request, the port or a cancel, copies that buffer into the request's memory. A request cancelled before the port has it is never touched again: UMDF 1 can cancel a request as it is marked cancelable.
+
+Building it needs only UMDF 1.9's headers, no library:
+- **On Windows:** CMake finds them in the WDK (`Include\wdf\umdf\1.9`).
+- **Elsewhere (clang-cl):** give `-DDMODEM_UMDF1_INCLUDE=` the directory. The WDK's NuGet package `Microsoft.Windows.WDK.x64` has it as `c/Include/wdf/umdf/1.9` (`wudfddi.h`, `wudfddi_types.h`). The WDK's licence applies to the headers, so they aren't in this repository.
+- **The output:** `cmake --install` puts `dmodemvm7.dll` beside `dmodem7.inf` in `driver7/`.
+
+**Not yet tried on Windows itself either.** `umdf1_test` runs the DLL whole under Wine, in a UMDF 1 host of its own (below). Windows' own host, the reflector and the INF haven't run it.
+
 ## Testing dmodemd under Wine
 
 `asterisk/test/sip.sh` makes calls between dmodemd and a private Asterisk.  Given a Windows build, it runs `dmodemd.exe` under Wine:
@@ -221,8 +270,21 @@ The quick tests cover the driver without Windows:
   - `--driver auto`;
   - a second port of the same name refused.
 - `dmodem_driver_list` (Windows): `dmodem-driver.exe list`, with no device installed.
+- `umdf1_test` (Windows, with `DMODEM_UMDF1_INCLUDE`): `dmodemvm7.dll`, the Windows 7 driver, in a UMDF 1 host of the test's own (`winmodem/test/umdf1_host.cpp`: the framework's objects the driver uses, recording what it asks of them), with dmodemd.exe on its pipe. It checks:
+  - the class factory, the device, its interface and its queue;
+  - the COM port's symbolic link and SERIALCOMM value, made and taken back;
+  - one handle at a time;
+  - AT commands through the driver's reads, writes and IOCTLs;
+  - a read cancelled while the port holds it, and one cancelled as it is marked cancelable;
+  - `WaitCommEvent`;
+  - no object of the DLL left at the end.
+- `win7_imports` (Windows): the programs and drivers load on Windows 7 (above).
+- `winmodem_inf`: both INFs are what `make_inf.py` makes.
 
-The USB modems' tests run dmodemd.exe under Wine: `dmodemd_usb_windows` and `dmodemd_pico_line_windows` (label `alsa`). They are Linux's `usb_test.py` and `pico_line_test.py`. They check each device's whole set: the two modems' calls through the exchange, rings, caller ID, BUSY, pulse dialling, voice, the country's line settings and unplugging.
+The USB modems' tests run dmodemd.exe under Wine: `dmodemd_usb_windows` and `dmodemd_pico_line_windows` (label `alsa`). They are Linux's `usb_test.py` and `pico_line_test.py`. They check each device's whole set: the two modems' calls through the exchange, rings, caller ID, BUSY, pulse dialling, voice, the country's line settings and unplugging. Wine's WinUSB has no isochronous transfers, as Windows 7's hasn't, so `pico_line_test.py` also checks Windows 7 and 8 there:
+- a driver that can't stream (the fake's `FAKE_USB_NO_ISO`) said so, with what to do;
+- UsbDk taken when it is installed (`FAKE_USB_USBDK`), and not with `DMODEM_USBDK=0`;
+- `--usb list`'s note.
 - **The fake devices:** `dmodemd_fake_st7554.exe` and `dmodemd_fake_pico_line.exe` are dmodemd.exe with the test's fake device linked in libusb's place (Windows has no `LD_PRELOAD`).
 - **The DTE:** a TCP connection.
 - **The exchange:** it is the Linux build's `line_exchange` (`DMODEM_HOST_LINE_EXCHANGE`, by default `build/dmodemd/line_exchange`), and the tests run only when it is there. Wine's Winsock has no Unix sockets, so the tests relay the fakes' TCP connections to the exchange's sockets (`dmodemd/test/usb_dte.py`).

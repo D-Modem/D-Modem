@@ -9,7 +9,9 @@
  *
  *      dmodem-driver install <dmodem.inf>   a device, its driver from
  *                                           the INF (another device for
- *                                           each install: another port)
+ *                                           each install: another port;
+ *                                           dmodem7.inf on Windows 7 and
+ *                                           8)
  *      dmodem-driver update <dmodem.inf>    the devices there are to the
  *                                           INF's driver
  *      dmodem-driver remove                 every device of it
@@ -197,6 +199,17 @@ int list()
 	return 0;
 }
 
+/* WinUSB streams (isochronous transfers) from Windows 8.1 on: its
+   winusb.dll has WinUsb_ReadIsochPipeAsap then */
+bool winusb_streams()
+{
+	HMODULE m = LoadLibraryA("winusb.dll");
+	bool yes = m && GetProcAddress(m, "WinUsb_ReadIsochPipeAsap") != nullptr;
+	if (m)
+		FreeLibrary(m);
+	return yes;
+}
+
 /* usb: dmodem-usb.inf's package (WinUSB for the USB modems) into the
    driver store, and onto the modems there are now */
 int usb(const char *inf_arg)
@@ -221,6 +234,10 @@ int usb(const char *inf_arg)
 	printf("dmodem-driver: WinUSB for the USB modems%s; dmodemd --usb "
 	       "list shows them\n",
 	       reboot ? " (Windows must restart first)" : "");
+	if (!winusb_streams())
+		printf("dmodem-driver: this Windows' WinUSB can't stream "
+		       "(Windows 8.1 and later can): give the modems libusbK "
+		       "with Zadig instead, or install UsbDk\n");
 	return 0;
 }
 
