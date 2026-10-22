@@ -273,10 +273,11 @@ int V22Pump::slice(cplx z, cplx *d, int *q34)
 	   the axes: decide around it, 45 degrees each way, not on the axes,
 	   or a phase error of 18 degrees (a speech codec's) turns it into
 	   its neighbour (z turned by 26.6 degrees, 2 + j, puts it on the
-	   diagonal).  A V.22bis remote may change to all 16 points while
-	   we are still at 1200: the axes then */
+	   diagonal).  Only with a remote known to be V.22: as V.22bis
+	   ourselves, before data a remote may yet turn out V.22bis (S1)
+	   and change to all 16 points while we are at 1200; the axes then */
 	r = z;
-	if (rx_rate == 1200 && !remote_bis)
+	if (rx_rate == 1200 && !remote_bis && (!bis || state == V22_DATA))
 		r = cplx_mul(z, cplx_make(2, 1));
 	if (r.re >= 0)
 		quad = r.im >= 0 ? 0 : 3;
