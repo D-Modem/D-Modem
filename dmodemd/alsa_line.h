@@ -16,6 +16,12 @@
  *    call).  On hook the line monitor is on.  The modem dials itself, in
  *    DTMF.  Time is the codec's: the samples it has given.
  *
+ *    An HD-audio Si3054 with a Si3018 line side also gets the country's
+ *    line settings (si3054.h) through the kernel's hwdep device
+ *    (hda_codec.h): at open(), on each change of the country, and before
+ *    each going off hook (a resume's codec reset undone).  Other codecs
+ *    keep their kernel driver's.
+ *
  */
 #ifndef DMODEMD_ALSA_LINE_H
 #define DMODEMD_ALSA_LINE_H
@@ -30,8 +36,10 @@
 #include <dcore.h>
 #include <dsp.h>
 
+#include "hda_codec.h"
 #include "pty.h"
 #include "run_loop.h"
+#include "si3054.h"
 
 namespace dmd {
 
@@ -69,6 +77,9 @@ public:
 	int pulse_hook(dcore::Modem &m, bool broken) override;
 	/* the playback's lead, in samples */
 	int io_delay(dcore::Modem &) override { return delay_; }
+	/* the country: an Si3054's line settings, written now on hook,
+	   else once on hook again */
+	void country(dcore::Modem &m, const char *name) override;
 	/* for ATI3 */
 	const char *driver_name() override { return "ALSA"; }
 	/* the modem's characters to the pty: how many it took */
@@ -99,6 +110,12 @@ private:
 	   modem; the answer in out */
 	void frame(dcore::Modem &m, const int16_t *in, int16_t *out);
 	void close();
+	/* the HD-audio modem codec, if it is a Si3054 the country's line
+	   settings can go into (open()'s) */
+	void daa_open();
+	/* the country's settings into its registers, RZ off (off_hook) or
+	   the country's; false (logged) on an error */
+	bool daa_write(bool off_hook);
 
 	Pty &pty_;
 	snd_pcm_t *cap_ = nullptr, *play_ = nullptr;
@@ -114,6 +131,13 @@ private:
 	int hook_ = MODEM_HOOK_ON;
 	unsigned long long flash_end_ = 0;
 	dsp::RingDetect ring_;
+	/* the codec's registers, if they take the country's settings; the
+	   country, its name, still to be written */
+	HdaCodec hda_;
+	bool daa_ = false;
+	const Si3054Country *daa_country_ = &si3054_usa();
+	std::string daa_name_ = "USA";
+	bool daa_due_ = true;
 };
 
 } // namespace dmd

@@ -102,6 +102,7 @@ bool AlsaLine::open(const char *pcm, const char *ctl, unsigned rate)
 	ring_.init((int)rate);
 	set(off_hook_, false);
 	set(caller_id_, true);
+	daa_open();
 	if (!restart(nullptr)) {
 		close();
 		return false;
@@ -210,9 +211,100 @@ int AlsaLine::set_hook(dcore::Modem &, int state)
 	    "on hook, snooping");
 	hook_ = state;
 	flash_end_ = 0;
+	/* (off hook: the settings again, a resume may have reset them;
+	   on hook: RZ the country's again) */
+	if (daa_ && off)
+		daa_write(true);
 	set(caller_id_, !off);
 	set(off_hook_, off);
+	if (daa_ && !off)
+		daa_write(false);
 	return 0;
+}
+
+/* see alsa_line.h: a country the datasheet has no settings for keeps
+   the USA's */
+void AlsaLine::country(dcore::Modem &, const char *name)
+{
+	daa_name_ = name ? name : "USA";
+	daa_country_ = si3054_country(name);
+	if (!daa_country_) {
+		if (daa_)
+			DBG("no Si3054 line settings for %s: the USA's\n",
+			    daa_name_.c_str());
+		daa_country_ = &si3054_usa();
+	}
+	daa_due_ = true;
+	if (daa_ && hook_ != MODEM_HOOK_OFF)
+		daa_write(false);
+}
+
+/* see alsa_line.h: a Si3054 with a Si3018 line side (its chip ID) */
+void AlsaLine::daa_open()
+{
+	std::string why;
+	uint16_t id = 0;
+
+	daa_ = false;
+	if (!hda_.open(ctl_, &why)) {
+		DBG("line settings: the kernel driver's (%s)\n", why.c_str());
+		return;
+	}
+	if (!hda_.read(SI3054_CHIPID, &id) || !si3054_chip_ok(id)) {
+		DBG("line settings: the kernel driver's (%s: chip ID %04x, "
+		    "not a Si3054 with a Si3018)\n", hda_.name().c_str(), id);
+		hda_.close();
+		return;
+	}
+	DBG("%s: a Si3054 (chip ID %04x): the country's line settings\n",
+	    hda_.name().c_str(), id);
+	daa_ = true;
+	if (!daa_country_)
+		daa_country_ = &si3054_usa();
+	daa_write(false);
+}
+
+/* see alsa_line.h: nodes 13, 15, 16 and 18, each read, written if the
+   country's bits change it */
+bool AlsaLine::daa_write(bool off_hook)
+{
+	Si3054Regs r;
+	struct {
+		int nid;
+		uint16_t *val;
+	} regs[] = { { SI3054_LINE_CFG1, &r.n13 }, { SI3054_DC_TERM, &r.n15 },
+		     { SI3054_LINE_CFG, &r.n16 },
+		     { SI3054_SQ_CONTROL, &r.n18 } };
+	uint16_t old[4];
+	bool changed = false;
+	int i = 0;
+
+	for (auto &x : regs) {
+		if (!hda_.read(x.nid, x.val)) {
+			ERR("%s: register %d: cannot read it\n",
+			    hda_.name().c_str(), x.nid);
+			return false;
+		}
+		old[i++] = *x.val;
+	}
+	si3054_apply(*daa_country_, off_hook, r);
+	i = 0;
+	for (auto &x : regs) {
+		if (*x.val != old[i++]) {
+			changed = true;
+			if (!hda_.write(x.nid, *x.val)) {
+				ERR("%s: register %d: cannot write it\n",
+				    hda_.name().c_str(), x.nid);
+				return false;
+			}
+		}
+	}
+	if (changed || daa_due_)
+		DBG("%s's line%s: registers 13 %04x, 15 %04x, 16 %04x, 18 "
+		    "%04x\n", daa_name_.c_str(), off_hook ? " (off hook)" :
+		    "", r.n13, r.n15, r.n16, r.n18);
+	daa_due_ = false;
+	return true;
 }
 
 /* see dcore.h: on hook for ms, then off again (if it still is) */
@@ -347,6 +439,8 @@ int AlsaLine::pump(dcore::Modem &m)
 /* the codec's PCM and control closed, the switches off first */
 void AlsaLine::close()
 {
+	hda_.close();
+	daa_ = false;
 	if (ctl_) {
 		set(off_hook_, false);
 		set(caller_id_, false);

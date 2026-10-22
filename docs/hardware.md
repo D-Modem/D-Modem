@@ -30,6 +30,30 @@ The codec appears as a card's PCM, with two switches among its controls:
 
 An HD-audio modem is a device of the audio card, e.g. `hw:0,6`.
 
+### Si3054 line settings
+
+On an HD-audio Si3054 with a Si3018 line side, dmodemd also writes the
+country's line settings (`-c`, `AT+GCI`) into the codec's DAA
+registers, through the kernel's HD-audio hwdep device
+(`/dev/snd/hwC<card>D<codec>`, which needs `CONFIG_SND_HDA_HWDEP`).
+They are the datasheet's (Si3054/18 Rev. 1.0, Table 19, the HD-audio
+columns): the on-hook speed (OHS, OHS2), the ringer impedance and
+threshold (RZ, RT), the AC termination (ACT), the DC termination (DCV,
+MINI) and the loop current limit (ILIM), in nodes 13, 15, 16 and 18
+(the spark quenching OHS needs). Each register is read first and only
+those bits changed. Where the table allows ACT 0 or 1 (the TBR21
+countries, Egypt), dmodemd takes 1, the complex impedance. RZ is
+cleared off hook, as the datasheet asks for pulse dialling, and set
+again on hook. The settings are written again before each off-hook,
+since the kernel's driver resets the codec on resume. A country the
+table has not gets the USA's.
+
+dmodemd writes nothing (and logs `line settings: the kernel driver's`)
+on an AC'97 modem, on a kernel without the hwdep device, and on a codec
+whose chip ID (node 12) is not a Si3054 with a Si3018, such as the
+other vendors' chips the Si3054 driver binds: those keep the kernel
+driver's settings, the USA's.
+
 ### HD-audio modems outside the Si3054 list
 
 `snd-hda-codec-si3054` binds only the vendor IDs above. A modem codec
@@ -288,8 +312,10 @@ that user needs access to `/dev/snd/*`.
   dialling, the busy cadence and the dial pause and hook flash times
   (S8, S24). `-c` takes any country of the ITU's list too: one the table
   has not dials with the USA's settings and its own busy tones. The codec's line settings (impedance, ring thresholds,
-  levels) are what its kernel driver sets: ALSA gives no control of
-  them. The DTMF levels stay the pump's own.
+  current limit) are the country's on an HD-audio Si3054 with a Si3018
+  ([above](#si3054-line-settings)); any other codec keeps its kernel
+  driver's, the USA's: ALSA gives no control of them. The DTMF levels
+  stay the pump's own.
 - **Real hardware.** The code has been tested against the fake card
   below, not yet on a real modem codec.
 

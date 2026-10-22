@@ -71,7 +71,7 @@ if(DMODEM_DMODEMD)
 		pkg_check_modules(ALSA QUIET IMPORTED_TARGET alsa)
 	endif()
 	if(ALSA_FOUND)
-		target_sources(dmodemd PRIVATE alsa_line.cpp)
+		target_sources(dmodemd PRIVATE alsa_line.cpp hda_codec.cpp si3054.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_ALSA)
 		target_link_libraries(dmodemd PRIVATE PkgConfig::ALSA)
 		# test/alsa_test.py: two dmodemd on fake ALSA modem cards
@@ -86,6 +86,13 @@ if(DMODEM_DMODEMD)
 			target_compile_definitions(asound_module_dmline
 				PRIVATE PIC)
 			target_link_libraries(asound_module_dmline PRIVATE
+				PkgConfig::ALSA)
+			# and an HD-audio Si3054's hwdep device in front of
+			# alsa-lib's (LD_PRELOAD): the country's line settings
+			add_library(dmodem_fake_hda_hwdep SHARED
+				test/fake_hda_hwdep.cpp)
+			dmodem_flags(dmodem_fake_hda_hwdep EXTRA NOOPT)
+			target_link_libraries(dmodem_fake_hda_hwdep PRIVATE
 				PkgConfig::ALSA)
 		endif()
 	else()
@@ -154,6 +161,13 @@ if(DMODEM_DMODEMD)
 			${CMAKE_CURRENT_SOURCE_DIR})
 		dmodem_flags(si3056_test EXTRA NOOPT)
 		dmodem_gtest(si3056_test LABELS quick)
+		# test/si3054_test.cpp: the same for an HD-audio Si3054's
+		# (si3054.h)
+		add_executable(si3054_test test/si3054_test.cpp si3054.cpp)
+		target_include_directories(si3054_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR})
+		dmodem_flags(si3054_test EXTRA NOOPT)
+		dmodem_gtest(si3054_test LABELS quick)
 		# test/pipe_test.cpp: dmodemd.exe's named pipe DTE, both
 		# ways (and a bridge for asterisk/test's WIN_PIPE=1)
 		if(WIN32)
@@ -182,7 +196,8 @@ if(DMODEM_DMODEMD)
 				${CMAKE_CURRENT_SOURCE_DIR}/test/alsa_test.py
 				$<TARGET_FILE:dmodemd>
 				$<TARGET_FILE:line_exchange>
-				$<TARGET_FILE_DIR:asound_module_dmline>)
+				$<TARGET_FILE_DIR:asound_module_dmline>
+				$<TARGET_FILE:dmodem_fake_hda_hwdep>)
 			set_tests_properties(dmodemd_alsa PROPERTIES
 				LABELS alsa TIMEOUT 300 COST 1000)
 		endif()

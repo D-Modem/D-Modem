@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Neo-Desktop
 #
-# alsa_test.py <dmodemd> <line_exchange> <plugin dir>: dmodemd on a
+# alsa_test.py <dmodemd> <line_exchange> <plugin dir> [<fake hwdep>]: dmodemd on a
 # softmodem codec through ALSA (-a), two of them on fake modem cards
 # (fake_modem_card.cpp, alsa-lib's plugins, loaded through an ALSA
 # configuration of their own) whose lines are line_exchange's, 1001 and
@@ -24,7 +24,12 @@
 #   it (+VLS=1);
 #   1001's OK comes once the ringing tone has been gone +VRA (5 s);
 #   1001's +VTS=5 is 1002's <DLE>5; 1002 hangs up (+VLS=0), and 1001
-#   hears the exchange's busy tone (<DLE>b).
+#   hears the exchange's busy tone (<DLE>b);
+# - with a fake HD-audio Si3054's hwdep device (fake_hda_hwdep.cpp,
+#   LD_PRELOAD): the country's line settings in its registers (-c UK's,
+#   then South Africa's after AT+GCI=9F, its RZ cleared off hook and set
+#   again on hook, and Australia's), none written to a codec of another
+#   chip ID, and the kernel driver's kept on a card without one.
 #
 # The calls run in real time (the exchange's clock).  RATE=<Hz> the
 # codec's rate (9600, or 8000); LINE_LOSS, LINE_ECHO (line_exchange's)
@@ -35,6 +40,7 @@
 import os, re, select, shutil, signal, subprocess, sys, tempfile, threading, time, tty
 
 dmodemd, exchange, plugdir = sys.argv[1:4]
+hwdep = os.path.abspath(sys.argv[4]) if len(sys.argv) > 4 else None
 rate = os.environ.get("RATE", "9600")
 tmp = tempfile.mkdtemp(prefix="dmodem-alsa-")
 os.chmod(tmp, 0o755)
@@ -80,10 +86,12 @@ while "ready" not in events and time.time() - t0 < 5:
 
 class Modem:
     """a dmodemd on line <n>'s card, its pty"""
-    def __init__(self, n, name):
+    def __init__(self, n, name, tag="", args=(), **more):
         env = dict(os.environ, ALSA_CONFIG_PATH=conf)
-        self.log = open(os.path.join(logs, "dmodemd-%s.log" % n), "wb")
-        self.p = subprocess.Popen([dmodemd, "-n", "-d" + debug, "-a", "line" + n, "-r", rate, name],
+        env.update(more)
+        self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
+        self.p = subprocess.Popen([dmodemd, "-n", "-d" + debug, "-a", "line" + n, "-r", rate]
+                                  + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
         procs.append(self.p)
         pty = None
@@ -104,6 +112,21 @@ class Modem:
         tty.setraw(self.fd)
         self.buf = b""
         self.n = n
+
+    def logged(self, text, t, times=1):
+        """text in dmodemd's output (its log) times times within t s"""
+        end = time.time() + t
+        while time.time() < end:
+            self.log.flush()
+            if open(self.log.name, "rb").read().count(text) >= times:
+                return True
+            time.sleep(0.1)
+        return False
+
+    def stop(self):
+        self.p.terminate()
+        self.p.wait(5)
+        os.close(self.fd)
 
     def expect(self, pat, t):
         end = time.time() + t
@@ -131,8 +154,40 @@ def check(what, cond):
     ok = ok and bool(cond)
 
 try:
+    if hwdep:
+        # Table 19 of the Si3054 datasheet, its HD audio columns, on
+        # the kernel's values (node 13 0x200, 15 0x6000, 16 0x400, 18 0)
+        c = Modem("1001", "dmodem40", "-country", ["-c", "UK"],
+                  LD_PRELOAD=hwdep, FAKE_HDA_LOG="1")
+        check("a Si3054 with a Si3018: found",
+              c.logged(b"hw:0,0: a Si3054 (chip ID 1155)", 5))
+        check("-c UK: TBR21 (ACT, ILIM, OHS2)",
+              c.logged(b"UK's line: registers 13 0220, 15 6302, 16 0600, 18 0000", 5))
+        check("-c UK: written to the codec", c.logged(b"fake hda: node 15 6302", 5))
+        check("UK: ATE0", c.cmd(b"ATE0"))
+        check("AT+GCI=9F (South Africa)", c.cmd(b"AT+GCI=9F"))
+        sa = b"SOUTHAFRICA's line: registers 13 0204, 15 6300, 16 0400, 18 0000"
+        check("South Africa: RZ on hook", c.logged(sa, 5))
+        check("off hook (ATH1)", c.cmd(b"ATH1"))
+        check("South Africa: RZ cleared off hook",
+              c.logged(b"SOUTHAFRICA's line (off hook): registers 13 0200", 5))
+        check("on hook (ATH)", c.cmd(b"ATH"))
+        check("South Africa: RZ again on hook", c.logged(sa, 5, 2))
+        check("AT+GCI=09 (Australia)", c.cmd(b"AT+GCI=09"))
+        check("Australia: OHS, spark quenching, Japan's DC termination",
+              c.logged(b"AUSTRALIA's line: registers 13 02a0, 15 6110, 16 0400, 18 5000", 5))
+        c.stop()
+        o = Modem("1001", "dmodem40", "-otherchip", LD_PRELOAD=hwdep,
+                  FAKE_HDA_LOG="1", FAKE_HDA_CHIPID="1207")
+        check("another line side: left alone",
+              o.logged(b"not a Si3054 with a Si3018", 5) and
+              not o.logged(b"fake hda: node", 1))
+        o.stop()
+
     a = Modem("1001", "dmodem41")
     b = Modem("1002", "dmodem42")
+    check("no hwdep device: the kernel driver's line settings",
+          a.logged(b"line settings: the kernel driver's (no HD-audio codec device", 5))
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
     check("1002 caller ID on", b.cmd(b"AT#CID=1"))

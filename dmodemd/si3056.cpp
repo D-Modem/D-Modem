@@ -18,7 +18,7 @@
 
 #include "si3056.h"
 
-#include <ctype.h>
+#include "daa_name.h"
 
 namespace dmd {
 
@@ -103,21 +103,6 @@ const Si3056Country countries[] = {
 	{ "YEMEN", FCC },
 };
 
-/* a and b the same name, case and '_' (or ' ') ignored */
-bool same(const char *a, const char *b)
-{
-	for (;;) {
-		while (*a == '_' || *a == ' ')
-			a++;
-		while (*b == '_' || *b == ' ')
-			b++;
-		if (!*a || !*b)
-			return !*a && !*b;
-		if (toupper((unsigned char)*a++) != toupper((unsigned char)*b++))
-			return false;
-	}
-}
-
 } // namespace
 
 /* see si3056.h */
@@ -126,7 +111,7 @@ const Si3056Country *si3056_country(const char *name)
 	if (!name)
 		return nullptr;
 	for (const Si3056Country &c : countries)
-		if (same(c.name, name))
+		if (daa_same_name(c.name, name))
 			return &c;
 	return nullptr;
 }
