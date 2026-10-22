@@ -124,6 +124,10 @@ public:
 	virtual int pulse_hook(Modem &m, bool broken) { (void)m; (void)broken; return -1; }
 	/* for ATI3 */
 	virtual const char *driver_name() { return nullptr; }
+	/* the country (-c, +GCI) by its name, at the start and on each
+	   change: a line that sets its own termination and ring detection
+	   (a DAA's registers) sets the country's */
+	virtual void country(Modem &m, const char *name) { (void)m; (void)name; }
 
 	/* the DTE: responses and received data; returns how many it took */
 	virtual int dte_write(Modem &m, const char *buf, int n) = 0;

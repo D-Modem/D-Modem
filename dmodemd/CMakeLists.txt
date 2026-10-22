@@ -98,7 +98,7 @@ if(DMODEM_DMODEMD)
 		pkg_check_modules(LIBUSB QUIET IMPORTED_TARGET libusb-1.0)
 	endif()
 	if(LIBUSB_FOUND)
-		target_sources(dmodemd PRIVATE usb_line.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE PkgConfig::LIBUSB)
 		# test/usb_test.py: two dmodemd on fake SmartUSB56s
@@ -147,6 +147,13 @@ if(DMODEM_DMODEMD)
 		dmodem_flags(rtp_events_test EXTRA NOOPT)
 		target_link_libraries(rtp_events_test PRIVATE ${DMODEM_LIBM})
 		dmodem_gtest(rtp_events_test LABELS quick)
+		# test/si3056_test.cpp: a country's line settings for the
+		# pico-serial Line's DAA (si3056.h)
+		add_executable(si3056_test test/si3056_test.cpp si3056.cpp)
+		target_include_directories(si3056_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR})
+		dmodem_flags(si3056_test EXTRA NOOPT)
+		dmodem_gtest(si3056_test LABELS quick)
 		# test/pipe_test.cpp: dmodemd.exe's named pipe DTE, both
 		# ways (and a bridge for asterisk/test's WIN_PIPE=1)
 		if(WIN32)

@@ -315,7 +315,8 @@ void Modem::sregs_init()
    name is name (when there is one), or is the same country of the ITU's
    list of tones as name (dsp/tones.h: UNITED_KINGDOM is UK), with its S8
    and S24 and its tones; else a country of that list alone, with the
-   default's line settings; -1 if there is none */
+   default's line settings; the Host told (Host::country()); -1 if there
+   is none */
 int Modem::homolog_init(int id, const char *name)
 {
 	const tones::Country *t = name && *name ? tones::find(name) : nullptr;
@@ -331,6 +332,7 @@ int Modem::homolog_init(int id, const char *name)
 		tones_only_ = false;
 		sregs_[SREG_DIAL_PAUSE_TIME] = h->params->DialPauseTime;
 		sregs_[SREG_FLASH_TIMER] = h->params->HookFlashTime;
+		host_.country(*this, h->name);
 		return 0;
 	}
 	if (!t || !dflt)
@@ -340,6 +342,7 @@ int Modem::homolog_init(int id, const char *name)
 	tones_only_ = true;
 	sregs_[SREG_DIAL_PAUSE_TIME] = dflt->params->DialPauseTime;
 	sregs_[SREG_FLASH_TIMER] = dflt->params->HookFlashTime;
+	host_.country(*this, t->name);
 	return 0;
 }
 

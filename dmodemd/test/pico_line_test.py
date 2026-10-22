@@ -9,6 +9,9 @@
 #
 # - a stick whose line side does not answer (FAKE_PICO_LINE_NOLINK):
 #   dmodemd says so, and goes on;
+# - the country's line settings written to the stick's DAA: -c UK's at
+#   start-up, AT+GCI=09's (Australia) after it, and the USA's for a
+#   country the Si3056 datasheet has none for;
 # - 1001 dials 1002 (ATX4: after the dial tone, in DTMF); 1002 rings
 #   (its ring detector's changes on the interrupt endpoint), shows the
 #   caller ID between the first two rings (AT#CID=1: the stick hears the
@@ -75,9 +78,10 @@ while "ready" not in events and time.time() - t0 < 5:
 
 class Modem:
     """a dmodemd on line <n>'s pico-serial Line, its pty"""
-    def __init__(self, n, name, **env):
-        self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, "-nolink" if env else "")), "wb")
-        self.p = subprocess.Popen([dmodemd, "-n", "-d" + debug, "--usb=auto", "-r", rate, name],
+    def __init__(self, n, name, tag="", args=(), **env):
+        self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
+        self.p = subprocess.Popen([dmodemd, "-n", "-d" + debug, "--usb=auto", "-r", rate]
+                                  + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n, **env))
         procs.append(self.p)
@@ -139,10 +143,30 @@ try:
     p = subprocess.run([dmodemd, "-n", "--usb=2:9", "-r", rate, "dmodem40"],
                        env=env_for("1001"), capture_output=True, text=True, timeout=20)
     check("nothing at 2:9", p.returncode != 0 and "no SmartUSB56 or pico-serial Line at 2:9" in p.stderr)
-    nl = Modem("1001", "dmodem40", FAKE_PICO_LINE_NOLINK="1")
+    nl = Modem("1001", "dmodem40", "-nolink", FAKE_PICO_LINE_NOLINK="1")
     check("a line side that doesn't answer: said", nl.expect_log(b"line side does not answer", 5))
     nl.p.terminate()
     nl.p.wait(5)
+
+    # the country's line settings in the stick's DAA (a Si3018 line side:
+    # ACT/ACT2, no register 30), as Table 15 of the Si3056 datasheet has
+    # them: -c UK's at start-up, Australia's after AT+GCI=09, and the
+    # USA's for a country it has no row for (Tunisia)
+    uk = Modem("1001", "dmodem40", "-country", ["-c", "UK"], FAKE_PICO_LINE_LOG="1")
+    check("-c UK: its line settings",
+          uk.expect_log(b"UK's line: registers 16 80, 26 c2, 30 -, 31 08, 59 00", 5))
+    check("-c UK: written to the stick (register 16 = 0x80)",
+          uk.expect_log(b"request 21 out 4224: 0", 5))
+    check("UK: ATE0", uk.cmd(b"ATE0"))
+    check("AT+GCI=09 (Australia)", uk.cmd(b"AT+GCI=09"))
+    check("Australia's line settings",
+          uk.expect_log(b"AUSTRALIA's line: registers 16 c0, 26 50, 30 -, 31 00, 59 50", 5))
+    check("AT+GCI=AD (Tunisia)", uk.cmd(b"AT+GCI=AD"))
+    check("Tunisia: none in the datasheet, the USA's",
+          uk.expect_log(b"no Si3056 line settings for TUNISIA: the USA's", 5) and
+          uk.expect_log(b"TUNISIA's line: registers 16 00, 26 c0, 30 -, 31 00, 59 00", 5))
+    uk.p.terminate()
+    uk.p.wait(5)
 
     a = Modem("1001", "dmodem41")
     b = Modem("1002", "dmodem42")

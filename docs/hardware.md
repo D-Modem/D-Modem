@@ -153,13 +153,26 @@ shaped like the ST7554's on purpose. In `dmodemd/usb_line.cpp`:
 - **At start-up** dmodemd reads its version and line side (`GET_INFO`),
   and says so if the line side does not answer across the isolation
   barrier. ATI3 says `pico-serial Line (Si3056)`.
+- **The country's line.** dmodemd writes the country's settings (`-c`,
+  and again on each `AT+GCI`) into the DAA: its AC termination (ACT and
+  ACT2 on the stick's Si3018 line side, ACIM on a Si3019), DC termination
+  (DCV, MINI), TBR21 current limit (ILIM), ringer impedance and threshold
+  (RZ, RT) and on-hook speed (OHS, OHS2, with Australia's spark
+  quenching). The values are the Si3056 datasheet's (Rev. 1.03, Table 15,
+  "Country Specific Register Settings"), in `dmodemd/si3056.cpp`. Each
+  register (16, 26, 30, 31, 59) is read first (`DAA_READ`) and only the
+  country's bits change (`DAA_WRITE`). A change while off hook waits
+  until the line is on hook again. Countries the table has no row for
+  (Algeria, Brunei, Estonia, Lithuania, Sri Lanka, Tunisia, Turkey,
+  Uruguay, Vietnam and most of the ITU list's) keep the USA's settings,
+  the Si3056's reset values, and dmodemd's log says so (`-d1`); the
+  datasheet's TBR21 row is `-c CTR21EUROPE`.
 - **Unplugged.** dmodemd says so and exits.
 
-Limits: the stick's line settings are the Si3056's after reset (the
-USA's: 600 Ω, its DC termination). Each country's (the datasheet's
-registers 16, 26, 30 and 31) would be written with its `DAA_WRITE`
-request, but D-Modem has no table of them yet, so `-c` changes the
-modem's dialling and tones, not the line's termination. The stick's
+Limits: the transmit and receive gains stay at their reset values (Table
+15 lists none), and Australia keeps its Japan-mode DC termination
+throughout the call (the datasheet's option of FCC mode 500 ms after
+going off hook, for a higher transmit level, is not taken). The stick's
 USB ID is a pid.codes test PID until it has its own. It has been tested
 against a fake of it (below), not yet on a real one.
 

@@ -59,8 +59,9 @@
  *    pico-serial): the same transfers on interface 0, alternate setting
  *    1 (selecting it starts the samples, its rate set before), 8-octet
  *    events on the interrupt endpoint, vendor requests for the rest.
- *    Its line settings are the Si3056's after reset (FCC): D-Modem has
- *    no per-country table of DAA registers to write yet.
+ *    The country's line settings (si3056.h) go into its DAA's registers
+ *    16, 26, 30, 31 and 59 (DAA_READ, then DAA_WRITE), at start-up and
+ *    when the country changes (+GCI), on hook.
  *
  */
 
@@ -95,6 +96,8 @@ const uint8_t LP_SET_RATE = 0x10;
 const uint8_t LP_SET_HOOK = 0x11;
 const uint8_t LP_HOOK_FLASH = 0x12;
 const uint8_t LP_SET_MONITOR = 0x13;
+const uint8_t LP_DAA_READ = 0x20;
+const uint8_t LP_DAA_WRITE = 0x21;
 /* its state bits, and the Si3056's interrupt sources it passes on */
 const uint8_t LP_ST_LINK = 0x01;
 const uint8_t LP_INT_OVERLOAD = 0x40;
@@ -408,6 +411,7 @@ bool UsbLine::open_stick(unsigned rate)
 		    "firmware than this dmodemd knows\n", info[0]);
 		return false;
 	}
+	si3019_ = (info[8] >> 4) == 3;
 	DBG("pico-serial Line, firmware %u.%u.%u, line side %s rev %u\n",
 	    info[1], info[2], info[3], (info[8] >> 4) == 3 ? "Si3019" :
 	    (info[8] >> 4) == 1 ? "Si3018" : "unknown", (info[9] >> 2) & 0xf);
@@ -417,6 +421,8 @@ bool UsbLine::open_stick(unsigned rate)
 	if (!stick_out(LP_SET_RATE, (uint16_t)rate) ||
 	    !stick_out(LP_SET_HOOK, 0) || !stick_out(LP_SET_MONITOR, 1) ||
 	    !stick_in(LP_GET_STATUS, 0, status, sizeof(status)))
+		return false;
+	if (!stick_country())
 		return false;
 	ring_edges_ = status[18];
 	underruns_ = (uint16_t)(status[6] | status[7] << 8);
@@ -615,6 +621,58 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 		l->in_flight_++;
 }
 
+/* see usb_line.h: a country the datasheet has no settings for keeps the
+   USA's (the Si3056's reset values) */
+void UsbLine::country(dcore::Modem &, const char *name)
+{
+	daa_name_ = name ? name : "USA";
+	daa_ = si3056_country(name);
+	if (!daa_) {
+		DBG("no Si3056 line settings for %s: the USA's\n",
+		    daa_name_.c_str());
+		daa_ = &si3056_usa();
+	}
+	daa_due_ = true;
+	if (h_ && kind_ == Kind::Stick && claimed_ && hook_ != MODEM_HOOK_OFF)
+		stick_country();
+}
+
+/* see usb_line.h: registers 16, 26, 31, 59, and 30 on a Si3019 */
+bool UsbLine::stick_country()
+{
+	Si3056Regs r;
+	uint8_t v;
+	struct {
+		uint8_t reg;
+		uint8_t *val;
+	} regs[] = { { 16, &r.r16 }, { 26, &r.r26 }, { 30, &r.r30 },
+		     { 31, &r.r31 }, { 59, &r.r59 } };
+
+	for (auto &x : regs) {
+		if (x.reg == 30 && !si3019_) {
+			*x.val = 0;
+			continue;
+		}
+		if (!stick_in(LP_DAA_READ, x.reg, &v, 1))
+			return false;
+		*x.val = v;
+	}
+	si3056_apply(*daa_, si3019_, r);
+	for (auto &x : regs) {
+		if (x.reg == 30 && !si3019_)
+			continue;
+		if (!stick_out(LP_DAA_WRITE, (uint16_t)(x.reg << 8 | *x.val)))
+			return false;
+	}
+	daa_due_ = false;
+	char r30[4] = "-";
+	if (si3019_)
+		snprintf(r30, sizeof(r30), "%02x", r.r30);
+	DBG("%s's line: registers 16 %02x, 26 %02x, 30 %s, 31 %02x, 59 %02x\n",
+	    daa_name_.c_str(), r.r16, r.r26, r30, r.r31, r.r59);
+	return true;
+}
+
 /* see usb_line.h: the ring detector's changes since the last event a
    ring pulse each (the core checks the cadence, as with the ST7554's
    GPIO), the line's events and the FIFOs' errors logged */
@@ -697,7 +755,8 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 		return off ? (stick_out(LP_SET_HOOK, 1) &&
 			      stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
 			(stick_out(LP_SET_HOOK, 0) &&
-			 stick_out(LP_SET_MONITOR, 1) ? 0 : -1);
+			 stick_out(LP_SET_MONITOR, 1) &&
+			 (!daa_due_ || stick_country()) ? 0 : -1);
 	return set_gpio(off ? (uint16_t)(gpio_ | GPIO_HOOK1 | GPIO_LED_HOOK) :
 			(uint16_t)(gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK))) ? 0 : -1;
 }

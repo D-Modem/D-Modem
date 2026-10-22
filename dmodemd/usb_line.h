@@ -27,7 +27,8 @@
  *    detector's changes counted, a pulse each to ring()), its hook, hook
  *    flash and line monitor vendor requests.  It hears the line on hook
  *    with its monitor on, so caller ID comes in the samples as on an ALSA
- *    codec.
+ *    codec.  The country's line settings (termination, current limit,
+ *    ringer, on-hook speed: si3056.h) go into its DAA's registers.
  *
  */
 #ifndef DMODEMD_USB_LINE_H
@@ -45,6 +46,7 @@
 
 #include "pty.h"
 #include "run_loop.h"
+#include "si3056.h"
 
 namespace dmd {
 
@@ -81,6 +83,9 @@ public:
 	int pulse_hook(dcore::Modem &m, bool broken) override;
 	/* the playback's lead, in samples */
 	int io_delay(dcore::Modem &) override { return delay_; }
+	/* the country: the stick's line settings (si3056.h), written now
+	   on hook, else once the line is on hook again */
+	void country(dcore::Modem &m, const char *name) override;
 	/* for ATI3 */
 	const char *driver_name() override {
 		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" : "ST7554";
@@ -117,6 +122,9 @@ private:
 	bool stick_in(uint8_t req, uint16_t value, uint8_t *buf, uint16_t len);
 	/* an event from the stick's interrupt endpoint */
 	void stick_event(const uint8_t *b, int len);
+	/* the country's settings into the stick's DAA (each register read,
+	   its own bits changed); false (logged) */
+	bool stick_country();
 	bool start_streams();
 	void close();
 
@@ -149,6 +157,12 @@ private:
 	   errors last seen */
 	uint8_t ring_edges_ = 0;
 	uint16_t underruns_ = 0, overruns_ = 0;
+	/* its line side a Si3019 (else a Si3018); the country's settings,
+	   its name, and whether they are still to be written */
+	bool si3019_ = false;
+	const Si3056Country *daa_ = &si3056_usa();
+	std::string daa_name_ = "USA";
+	bool daa_due_ = true;
 	unsigned rate_ = 9600;
 	int frame_ = 192;               /* 20 ms */
 	int delay_ = 0;
