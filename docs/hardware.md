@@ -2,7 +2,8 @@
 
 dmodemd's line is normally a SIP call. With `-a` it is instead a
 softmodem's codec on a telephone line, through ALSA. With `--usb` it is
-a Smart Link SmartUSB56, through libusb ([below](#smart-link-smartusb56)).
+a Smart Link SmartUSB56 ([below](#smart-link-smartusb56)) or a
+pico-serial Line stick ([below](#pico-serial-line)), through libusb.
 The modem is then D-Modem's open DSP, on any architecture. Smart Link's
 slmodemd, Agere's agrsm and their kind were closed, mostly i386-only
 programs; dmodemd can replace them.
@@ -116,6 +117,52 @@ caller ID** (Smart Link's driver had none either). The ST75951/2
 Smart Link's driver did not support it. The device's line settings are
 its own, and it has not yet been tried on a real SmartUSB56.
 
+### pico-serial Line
+
+The [pico-serial](https://github.com/Neo-Desktop/pico-serial) project's
+phone-line stick ([SPEC-L.md](https://github.com/Neo-Desktop/pico-serial/blob/main/SPEC-L.md)):
+a USB-C stick with an RJ11 socket, made for D-Modem. It is a softmodem's
+line and nothing more: a Skyworks Si3056 DAA and its Si3018 line side
+behind an RP2040, at 9600 Hz so the open DSP's V.90 works. dmodemd drives
+it through libusb, as the SmartUSB56, and it needs no kernel driver.
+
+    lsusb -d 1209:0002            # Bus 001 Device 008: ID 1209:0002 ...
+    dmodemd --usb=auto            # the first SmartUSB56 or stick; --usb=1:8 that one
+
+A udev rule to start dmodemd as a user, e.g.
+`/etc/udev/rules.d/60-pico-serial-line.rules`:
+
+    SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="0002", MODE="0660", GROUP="dialout"
+
+Its protocol is its firmware's (`firmware/PROTOCOL.md`, "Line stick"),
+shaped like the ST7554's on purpose. In `dmodemd/usb_line.cpp`:
+
+- **Samples.** S16 little-endian mono at 9600 (the default) or 8000 Hz,
+  isochronous both ways in interface 0's alternate setting 1, which
+  starts them (the rate is set first, `SET_RATE`). Each IN packet holds
+  the samples the stick's codec gave in that millisecond, and each OUT
+  transfer goes with an IN one's lengths, as for the ST7554.
+- **The hook.** A vendor request (`SET_HOOK`); a hook flash the stick
+  times itself (`HOOK_FLASH`); pulse dialling `SET_HOOK` for each break
+  and make, as the modem's frames are processed.
+- **Rings and caller ID.** On hook the stick's line monitor is on
+  (`SET_MONITOR`), so it hears the line: **caller ID** comes in its
+  samples, as on an ALSA codec. Rings come from its ring detector: each
+  change it counts (an 8-octet event on the interrupt endpoint) is a
+  pulse to the core's `ring()`, as the ST7554's ring GPIO's are.
+- **At start-up** dmodemd reads its version and line side (`GET_INFO`),
+  and says so if the line side does not answer across the isolation
+  barrier. ATI3 says `pico-serial Line (Si3056)`.
+- **Unplugged.** dmodemd says so and exits.
+
+Limits: the stick's line settings are the Si3056's after reset (the
+USA's: 600 Ω, its DC termination). Each country's (the datasheet's
+registers 16, 26, 30 and 31) would be written with its `DAA_WRITE`
+request, but D-Modem has no table of them yet, so `-c` changes the
+modem's dialling and tones, not the line's termination. The stick's
+USB ID is a pid.codes test PID until it has its own. It has been tested
+against a fake of it (below), not yet on a real one.
+
 ### Not covered
 
 Not covered yet, because Linux has no driver that gives their samples:
@@ -141,7 +188,7 @@ start from.
 |---|---|
 | `-a <pcm>`, `--alsa=<pcm>` | the codec's PCM (`hw:1`, `hw:0,6`, `plughw:...`): the line is a telephone line, not SIP |
 | `--alsa-ctl=<ctl>` | its controls, if not the card's (`hw:1` for `hw:1,0` or `plughw:1,0`; the PCM's own name otherwise) |
-| `--usb=<dev>` | a SmartUSB56 (`auto`, the first one; or `<bus>:<address>`, as `lsusb` shows it): the line is a telephone line, not SIP |
+| `--usb=<dev>` | a SmartUSB56 or pico-serial Line (`auto`, the first one; or `<bus>:<address>`, as `lsusb` shows it): the line is a telephone line, not SIP |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
@@ -282,3 +329,13 @@ signal. The test checks that an ST75951/2 and a wrong `<bus>:<address>`
 are refused, a data call (rings, the answer at the second ring, V.34 at
 33600, text each way), a busy line, a call dialled in pulses, a voice
 call, and that both exit once the exchange (the devices) has gone. It needs libusb-1.0-0-dev.
+
+`dmodemd/test/pico_line_test.py` (ctest's `dmodemd_pico_line`, label
+`alsa`) does the same with two pico-serial Line sticks:
+`dmodemd/test/fake_pico_line.cpp` is a stick (1209:0002) whose line is
+the exchange's, speaking its firmware's protocol: `SET_HOOK` and
+`SET_MONITOR` are the exchange's switches, alternate setting 1 starts
+its samples, its ring detector's changes come as events. On top of the
+SmartUSB56's checks it has caller ID between the first two rings (the
+stick hears the line on hook), and a stick whose line side does not
+answer (said, and dmodemd goes on).

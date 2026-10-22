@@ -3,8 +3,9 @@
  * Copyright (C) 2026 Neo-Desktop
  *
  *    usb_line.h - the modem's line a Smart Link SmartUSB56 (ST7554, USB
- *                 0483:7554 with an STLC7550 codec) through libusb: no
- *                 kernel driver
+ *                 0483:7554 with an STLC7550 codec) or a pico-serial Line
+ *                 stick (USB 1209:0002, a Si3056 DAA behind an RP2040)
+ *                 through libusb: no kernel driver
  *
  *    The ST7554 is a USB bridge to a codec and a DAA: its registers are
  *    vendor control requests, its samples isochronous transfers both
@@ -17,6 +18,16 @@
  *    modem's ring(); the codec hears nothing on hook, so there is no
  *    caller ID.  The modem dials itself, in DTMF.  Time is the codec's:
  *    the samples it has given.
+ *
+ *    The pico-serial Line stick (github.com/Neo-Desktop/pico-serial,
+ *    SPEC-L.md and firmware/PROTOCOL.md "Line stick") is shaped the same
+ *    way on purpose: its samples isochronous both ways in alternate
+ *    setting 1 (S16 little-endian, mono, at any of the Si3056's rates,
+ *    9600 Hz by default), its events on an interrupt endpoint (the ring
+ *    detector's changes counted, a pulse each to ring()), its hook, hook
+ *    flash and line monitor vendor requests.  It hears the line on hook
+ *    with its monitor on, so caller ID comes in the samples as on an ALSA
+ *    codec.
  *
  */
 #ifndef DMODEMD_USB_LINE_H
@@ -45,9 +56,10 @@ public:
 	UsbLine(const UsbLine &) = delete;
 	UsbLine &operator=(const UsbLine &) = delete;
 
-	/* the modem dev ("" or "auto": the first SmartUSB56; <bus>:<address>
-	   one of them, as lsusb shows them) opened at rate, its samples
-	   running, on hook; false with the reason on stderr */
+	/* the modem dev ("" or "auto": the first SmartUSB56 or pico-serial
+	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
+	   rate, its samples running, on hook; false with the reason on
+	   stderr */
 	bool open(const char *dev, unsigned rate);
 	/* libusb's descriptors watched this turn */
 	void watch(RunLoop &loop);
@@ -70,7 +82,9 @@ public:
 	/* the playback's lead, in samples */
 	int io_delay(dcore::Modem &) override { return delay_; }
 	/* for ATI3 */
-	const char *driver_name() override { return "ST7554"; }
+	const char *driver_name() override {
+		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" : "ST7554";
+	}
 	/* the modem's characters to the pty: how many it took */
 	int dte_write(dcore::Modem &, const char *buf, int n) override {
 		return pty_.write(buf, n);
@@ -85,12 +99,24 @@ public:
 
 private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
+	/* the two devices it drives */
+	enum class Kind { St7554, Stick };
 
 	bool find(const char *dev);
 	bool endpoints();
 	bool set_reg(uint8_t reg, uint16_t v);
 	bool get_reg(uint8_t reg, uint16_t *v);
 	bool set_gpio(uint16_t v);
+	/* the ST7554's start-up (its registers), and the stick's (its rate,
+	   the line side checked) */
+	bool open_st7554(unsigned rate);
+	bool open_stick(unsigned rate);
+	/* a vendor request to the stick's interface: OUT with value, or IN
+	   into buf (len octets, all of them wanted); false (logged) */
+	bool stick_out(uint8_t req, uint16_t value);
+	bool stick_in(uint8_t req, uint16_t value, uint8_t *buf, uint16_t len);
+	/* an event from the stick's interrupt endpoint */
+	void stick_event(const uint8_t *b, int len);
 	bool start_streams();
 	void close();
 
@@ -103,6 +129,8 @@ private:
 	void gone(const char *why);
 
 	Pty &pty_;
+	Kind kind_ = Kind::St7554;
+	const char *name_ = "SmartUSB56";   /* in the messages */
 	libusb_context *ctx_ = nullptr;
 	libusb_device_handle *h_ = nullptr;
 	bool claimed_ = false;
@@ -114,7 +142,13 @@ private:
 	std::deque<std::vector<int>> out_lengths_;
 	std::deque<libusb_transfer *> idle_out_;  /* OUT ones not in flight */
 	int in_flight_ = 0;             /* transfers submitted */
-	uint8_t intr_buf_[4] = {};
+	uint8_t intr_buf_[8] = {};      /* the ST7554's 4 octets, the stick's 8 */
+	int intr_len_ = 4;
+	int fifo_samples_ = 0;          /* the device's own delay */
+	/* the stick: its ring detector's changes (mod 256) so far, its
+	   errors last seen */
+	uint8_t ring_edges_ = 0;
+	uint16_t underruns_ = 0, overruns_ = 0;
 	unsigned rate_ = 9600;
 	int frame_ = 192;               /* 20 ms */
 	int delay_ = 0;

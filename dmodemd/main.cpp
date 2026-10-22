@@ -6,8 +6,9 @@
  *               its DTE a pty
  *
  *    With -a the line is a softmodem's codec through ALSA instead
- *    (alsa_line.cpp), with --usb a Smart Link SmartUSB56 through libusb
- *    (usb_line.cpp): a telephone line, its samples pacing the modem.
+ *    (alsa_line.cpp), with --usb a Smart Link SmartUSB56 or a
+ *    pico-serial Line stick through libusb (usb_line.cpp): a telephone
+ *    line, its samples pacing the modem.
  *
  *    Started as root, it makes its pty and the link /dev/ttyDM<n> to it,
  *    opens its data file and leaves the link to a keeper process

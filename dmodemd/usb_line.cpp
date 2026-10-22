@@ -3,7 +3,8 @@
  * Copyright (C) 2026 Neo-Desktop
  *
  *    usb_line.cpp - the modem's line a Smart Link SmartUSB56 (ST7554)
- *                   through libusb (usb_line.h)
+ *                   or a pico-serial Line stick through libusb
+ *                   (usb_line.h)
  *
  *    The ST7554's registers, their values and its start-up are those of
  *    Smart Link's Linux driver for it (drivers/st7554.c of slmodem
@@ -53,6 +54,14 @@
  *    (silence if there are too few: the queue starts a frame and a
  *    half ahead).
  *
+ *    The pico-serial Line stick's protocol is its firmware's
+ *    (firmware/PROTOCOL.md "Line stick", github.com/Neo-Desktop/
+ *    pico-serial): the same transfers on interface 0, alternate setting
+ *    1 (selecting it starts the samples, its rate set before), 8-octet
+ *    events on the interrupt endpoint, vendor requests for the rest.
+ *    Its line settings are the Si3056's after reset (FCC): D-Modem has
+ *    no per-country table of DAA registers to write yet.
+ *
  */
 
 #include <errno.h>
@@ -75,6 +84,36 @@ namespace {
 /* the ST7554 */
 const uint16_t ST7554_VENDOR = 0x0483;
 const uint16_t ST7554_PRODUCT = 0x7554;
+
+/* the pico-serial Line stick (a pid.codes test PID until it has its own) */
+const uint16_t STICK_VENDOR = 0x1209;
+const uint16_t STICK_PRODUCT = 0x0002;
+/* its vendor requests (firmware/src/core/line_proto.h) */
+const uint8_t LP_GET_INFO = 0x01;
+const uint8_t LP_GET_STATUS = 0x02;
+const uint8_t LP_SET_RATE = 0x10;
+const uint8_t LP_SET_HOOK = 0x11;
+const uint8_t LP_HOOK_FLASH = 0x12;
+const uint8_t LP_SET_MONITOR = 0x13;
+/* its state bits, and the Si3056's interrupt sources it passes on */
+const uint8_t LP_ST_LINK = 0x01;
+const uint8_t LP_INT_OVERLOAD = 0x40;
+const uint8_t LP_INT_LINK_LOST = 0x20;
+const uint8_t LP_INT_DROPOUT = 0x08;
+const uint8_t LP_INT_POLARITY = 0x01;
+/* its delay: the playback's head start, the Si3056's filters both ways */
+const int STICK_FIFO_SAMPLES = 32 + 12 + 12;
+
+/* the Si3056's rates (register 7's) */
+bool stick_rate(unsigned rate)
+{
+	static const unsigned rates[] = { 7200, 8000, 8229, 8400, 9000, 9600,
+					  10286, 12000, 13714, 16000 };
+	for (unsigned r : rates)
+		if (r == rate)
+			return true;
+	return false;
+}
 
 /* its vendor requests (registers) */
 const uint8_t SSI1_CONTROL = 0x01;
@@ -153,32 +192,41 @@ bool UsbLine::find(const char *dev)
 	}
 	for (ssize_t i = 0; i < n && !h_; i++) {
 		libusb_device_descriptor d;
-		if (libusb_get_device_descriptor(list[i], &d) < 0 ||
-		    d.idVendor != ST7554_VENDOR || d.idProduct != ST7554_PRODUCT)
+		if (libusb_get_device_descriptor(list[i], &d) < 0)
+			continue;
+		bool st7554 = d.idVendor == ST7554_VENDOR && d.idProduct == ST7554_PRODUCT;
+		bool stick = d.idVendor == STICK_VENDOR && d.idProduct == STICK_PRODUCT;
+		if (!st7554 && !stick)
 			continue;
 		found++;
 		if (!any && (libusb_get_bus_number(list[i]) != bus ||
 			     libusb_get_device_address(list[i]) != addr))
 			continue;
+		kind_ = stick ? Kind::Stick : Kind::St7554;
+		name_ = stick ? "pico-serial Line" : "SmartUSB56";
 		int err = libusb_open(list[i], &h_);
 		if (err < 0) {
-			ERR("SmartUSB56 at %03d:%03d: %s%s\n",
+			ERR("%s at %03d:%03d: %s%s%s%s\n", name_,
 			    libusb_get_bus_number(list[i]),
 			    libusb_get_device_address(list[i]),
 			    libusb_strerror(err), err == LIBUSB_ERROR_ACCESS ?
-			    " (as root, or a udev rule for 0483:7554)" : "");
+			    " (as root, or a udev rule for " : "",
+			    err == LIBUSB_ERROR_ACCESS ? (stick ? "1209:0002" :
+							  "0483:7554") : "",
+			    err == LIBUSB_ERROR_ACCESS ? ")" : "");
 			h_ = nullptr;
 			break;
 		}
-		DBG("SmartUSB56 at %03d:%03d\n", libusb_get_bus_number(list[i]),
+		DBG("%s at %03d:%03d\n", name_, libusb_get_bus_number(list[i]),
 		    libusb_get_device_address(list[i]));
 	}
 	libusb_free_device_list(list, 1);
 	if (!h_ && !found)
-		ERR("no Smart Link SmartUSB56 (USB 0483:7554)%s%s\n",
-		    any ? "" : " at ", any ? "" : dev);
+		ERR("no Smart Link SmartUSB56 (USB 0483:7554) or pico-serial "
+		    "Line (1209:0002)%s%s\n", any ? "" : " at ", any ? "" : dev);
 	else if (!h_ && found && !any)
-		ERR("no SmartUSB56 at %s (%d elsewhere)\n", dev, found);
+		ERR("no SmartUSB56 or pico-serial Line at %s (%d elsewhere)\n",
+		    dev, found);
 	return h_ != nullptr;
 }
 
@@ -190,7 +238,7 @@ bool UsbLine::endpoints()
 	int err = libusb_get_active_config_descriptor(libusb_get_device(h_),
 						      &cfg);
 	if (err < 0) {
-		ERR("SmartUSB56: its configuration: %s\n", libusb_strerror(err));
+		ERR("%s: its configuration: %s\n", name_, libusb_strerror(err));
 		return false;
 	}
 	if (cfg->bNumInterfaces >= 1 && cfg->interface[0].num_altsetting >= 2) {
@@ -213,7 +261,8 @@ bool UsbLine::endpoints()
 	}
 	libusb_free_config_descriptor(cfg);
 	if (!ep_intr_ || !ep_in_ || !ep_out_ || !max_in_ || !max_out_) {
-		ERR("SmartUSB56: not the endpoints of an ST7554\n");
+		ERR("%s: not the endpoints of %s\n", name_,
+		    kind_ == Kind::Stick ? "a pico-serial Line" : "an ST7554");
 		return false;
 	}
 	DBG("endpoints: interrupt %02x, out %02x (%d), in %02x (%d)\n",
@@ -262,22 +311,17 @@ bool UsbLine::set_gpio(uint16_t v)
 	return true;
 }
 
-/* see usb_line.h: the device, its interface, its codec checked, its
-   registers as Smart Link's driver sets them, the rate, on hook, the
-   transfers both ways and the interrupt's */
+/* see usb_line.h: the device, its interface, then its own start-up
+   (open_st7554(), open_stick()), on hook, the transfers both ways and
+   the interrupt's */
 bool UsbLine::open(const char *dev, unsigned rate)
 {
-	uint16_t status;
 	int err;
 
 	rate_ = rate;
 	frame_ = (int)rate / 50;
 	frame_in_.assign(frame_, 0);
 	frame_out_.assign(frame_, 0);
-	if (!cword(rate)) {
-		ERR("SmartUSB56: no rate of %u Hz (8000, 9600)\n", rate);
-		return false;
-	}
 	if ((err = libusb_init(&ctx_)) < 0) {
 		ERR("libusb: %s\n", libusb_strerror(err));
 		ctx_ = nullptr;
@@ -290,25 +334,41 @@ bool UsbLine::open(const char *dev, unsigned rate)
 	/* (slusb, Smart Link's kernel driver, if it is there) */
 	libusb_set_auto_detach_kernel_driver(h_, 1);
 	if ((err = libusb_claim_interface(h_, 0)) < 0) {
-		ERR("SmartUSB56: its interface: %s\n", libusb_strerror(err));
+		ERR("%s: its interface: %s\n", name_, libusb_strerror(err));
 		close();
 		return false;
 	}
 	claimed_ = true;
+	if (!(kind_ == Kind::Stick ? open_stick(rate) : open_st7554(rate)) ||
+	    !start_streams()) {
+		close();
+		return false;
+	}
+	DBG("%u Hz, %d samples ahead\n", rate, delay_);
+	return true;
+}
+
+/* the ST7554: the rate's control word, alternate setting 1, its codec
+   checked, its registers as Smart Link's driver sets them, on hook */
+bool UsbLine::open_st7554(unsigned rate)
+{
+	uint16_t status;
+	int err;
+
+	if (!cword(rate)) {
+		ERR("SmartUSB56: no rate of %u Hz (8000, 9600)\n", rate);
+		return false;
+	}
 	if ((err = libusb_set_interface_alt_setting(h_, 0, 1)) < 0) {
 		ERR("SmartUSB56: alternate setting 1: %s\n",
 		    libusb_strerror(err));
-		close();
 		return false;
 	}
-	if (!endpoints() || !get_reg(GPIO_STATUS, &status)) {
-		close();
+	if (!endpoints() || !get_reg(GPIO_STATUS, &status))
 		return false;
-	}
 	if (status & GPIO_MONOLITHIC) {
 		ERR("SmartUSB56: an ST75951/2 silicon DAA codec, which Smart "
 		    "Link's driver did not support either\n");
-		close();
 		return false;
 	}
 	gpio_ = 0;
@@ -319,17 +379,85 @@ bool UsbLine::open(const char *dev, unsigned rate)
 	    !set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN) ||
 	    !set_reg(SSI1_COUNTER, 0) || !set_reg(SSI2_COUNTER, 0) ||
 	    !set_reg(SSI1_CONTROL, SSI1_POWERUP) ||
-	    !set_reg(SSI1_CWORD, cword(rate)) || !set_reg(GPIO_INV, 0)) {
-		close();
+	    !set_reg(SSI1_CWORD, cword(rate)) || !set_reg(GPIO_INV, 0))
 		return false;
-	}
 	libusb_clear_halt(h_, ep_in_);
 	libusb_clear_halt(h_, ep_out_);
-	if (!start_streams()) {
-		close();
+	intr_len_ = 4;
+	fifo_samples_ = FIFO_SAMPLES;
+	return true;
+}
+
+/* the stick: its version and line side (GET_INFO), the rate, on hook with
+   the line monitor on, its ring detector's count so far, then alternate
+   setting 1, which starts its samples */
+bool UsbLine::open_stick(unsigned rate)
+{
+	uint8_t info[12], status[20];
+	int err;
+
+	if (!stick_rate(rate)) {
+		ERR("pico-serial Line: no rate of %u Hz (8000, 9600, 16000 and "
+		    "the Si3056's others)\n", rate);
 		return false;
 	}
-	DBG("%u Hz, %d samples ahead\n", rate, delay_);
+	if (!stick_in(LP_GET_INFO, 0, info, sizeof(info)))
+		return false;
+	if (info[0] != 1) {
+		ERR("pico-serial Line: protocol version %u, not 1: newer "
+		    "firmware than this dmodemd knows\n", info[0]);
+		return false;
+	}
+	DBG("pico-serial Line, firmware %u.%u.%u, line side %s rev %u\n",
+	    info[1], info[2], info[3], (info[8] >> 4) == 3 ? "Si3019" :
+	    (info[8] >> 4) == 1 ? "Si3018" : "unknown", (info[9] >> 2) & 0xf);
+	if (!(info[7] & LP_ST_LINK))
+		ERR("pico-serial Line: its line side does not answer (the "
+		    "isolation link is down); going on\n");
+	if (!stick_out(LP_SET_RATE, (uint16_t)rate) ||
+	    !stick_out(LP_SET_HOOK, 0) || !stick_out(LP_SET_MONITOR, 1) ||
+	    !stick_in(LP_GET_STATUS, 0, status, sizeof(status)))
+		return false;
+	ring_edges_ = status[18];
+	underruns_ = (uint16_t)(status[6] | status[7] << 8);
+	overruns_ = (uint16_t)(status[8] | status[9] << 8);
+	if ((err = libusb_set_interface_alt_setting(h_, 0, 1)) < 0) {
+		ERR("pico-serial Line: alternate setting 1: %s\n",
+		    libusb_strerror(err));
+		return false;
+	}
+	if (!endpoints())
+		return false;
+	intr_len_ = 8;
+	fifo_samples_ = STICK_FIFO_SAMPLES;
+	return true;
+}
+
+/* see usb_line.h */
+bool UsbLine::stick_out(uint8_t req, uint16_t value)
+{
+	int err = libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_VENDOR |
+					  LIBUSB_RECIPIENT_INTERFACE |
+					  LIBUSB_ENDPOINT_OUT, req, value, 0,
+					  nullptr, 0, TIMEOUT_MS);
+	if (err < 0)
+		ERR("pico-serial Line: request %02x (%u): %s\n", req, value,
+		    libusb_strerror(err));
+	return err >= 0;
+}
+
+/* see usb_line.h */
+bool UsbLine::stick_in(uint8_t req, uint16_t value, uint8_t *buf, uint16_t len)
+{
+	int err = libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_VENDOR |
+					  LIBUSB_RECIPIENT_INTERFACE |
+					  LIBUSB_ENDPOINT_IN, req, value, 0,
+					  buf, len, TIMEOUT_MS);
+	if (err < 0 || err < len) {
+		ERR("pico-serial Line: request %02x: %s\n", req, err < 0 ?
+		    libusb_strerror(err) : "too short");
+		return false;
+	}
 	return true;
 }
 
@@ -343,14 +471,14 @@ bool UsbLine::start_streams()
 
 	out_buf_.assign(frame_ + frame_ / 2, 0);
 	delay_ = (int)out_buf_.size() + ISO_TRANSFERS * ISO_PACKETS *
-		(int)rate_ / 1000 + FIFO_SAMPLES;
+		(int)rate_ / 1000 + fifo_samples_;
 	intr_ = libusb_alloc_transfer(0);
 	if (!intr_)
 		return false;
 	libusb_fill_interrupt_transfer(intr_, h_, ep_intr_, intr_buf_,
-				       sizeof(intr_buf_), intr_done, this, 0);
+				       intr_len_, intr_done, this, 0);
 	if ((err = libusb_submit_transfer(intr_)) < 0) {
-		ERR("SmartUSB56: its interrupt: %s\n", libusb_strerror(err));
+		ERR("%s: its interrupt: %s\n", name_, libusb_strerror(err));
 		return false;
 	}
 	in_flight_++;
@@ -376,7 +504,7 @@ bool UsbLine::start_streams()
 					 out_done, this, 0);
 		out_[i]->flags = LIBUSB_TRANSFER_FREE_BUFFER;
 		if ((err = libusb_submit_transfer(in_[i])) < 0) {
-			ERR("SmartUSB56: an IN transfer: %s\n",
+			ERR("%s: an IN transfer: %s\n", name_,
 			    libusb_strerror(err));
 			return false;
 		}
@@ -384,15 +512,16 @@ bool UsbLine::start_streams()
 		std::vector<int> lens(ISO_PACKETS, pkt > max_out_ ? max_out_ : pkt);
 		out_fill(out_[i], lens.data());
 		if ((err = libusb_submit_transfer(out_[i])) < 0) {
-			ERR("SmartUSB56: an OUT transfer: %s\n",
+			ERR("%s: an OUT transfer: %s\n", name_,
 			    libusb_strerror(err));
 			return false;
 		}
 		in_flight_++;
 	}
-	/* the FIFO: started, its errors on the interrupt */
-	return set_reg(SSI1_COUNTER, FRAGSIZE) &&
-		set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN);
+	/* the ST7554's FIFO: started, its errors on the interrupt (the
+	   stick's samples run since its alternate setting 1) */
+	return kind_ == Kind::Stick || (set_reg(SSI1_COUNTER, FRAGSIZE) &&
+					set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN));
 }
 
 /* an OUT transfer's packets of lengths octets (even), the modem's
@@ -469,7 +598,10 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 	}
 	if (l->dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
-	if (t->status == LIBUSB_TRANSFER_COMPLETED && t->actual_length >= 4) {
+	if (l->kind_ == Kind::Stick) {
+		if (t->status == LIBUSB_TRANSFER_COMPLETED)
+			l->stick_event(t->buffer, t->actual_length);
+	} else if (t->status == LIBUSB_TRANSFER_COMPLETED && t->actual_length >= 4) {
 		uint16_t fifo = (uint16_t)(t->buffer[0] | t->buffer[1] << 8);
 		uint16_t gpio = (uint16_t)(t->buffer[2] | t->buffer[3] << 8);
 		if (fifo & SSI1_UNDERRUN)
@@ -481,6 +613,35 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 	}
 	if (libusb_submit_transfer(t) == 0)
 		l->in_flight_++;
+}
+
+/* see usb_line.h: the ring detector's changes since the last event a
+   ring pulse each (the core checks the cadence, as with the ST7554's
+   GPIO), the line's events and the FIFOs' errors logged */
+void UsbLine::stick_event(const uint8_t *b, int len)
+{
+	if (len < 8)
+		return;
+	uint8_t edges = (uint8_t)(b[1] - ring_edges_);
+	uint16_t under = (uint16_t)(b[4] | b[5] << 8);
+	uint16_t over = (uint16_t)(b[6] | b[7] << 8);
+
+	ring_edges_ = b[1];
+	rings_ += edges;
+	if (b[2] & LP_INT_LINK_LOST)
+		ERR("pico-serial Line: the isolation link was lost\n");
+	if (b[2] & LP_INT_OVERLOAD)
+		DBG("receive overload\n");
+	if (b[2] & LP_INT_DROPOUT)
+		DBG("the line dropped out\n");
+	if (b[2] & LP_INT_POLARITY)
+		DBG("polarity reversal\n");
+	if (under != underruns_)
+		DBG("playback underrun (%u)\n", (unsigned)(uint16_t)(under - underruns_));
+	if (over != overruns_)
+		DBG("FIFO overrun (%u)\n", (unsigned)(uint16_t)(over - overruns_));
+	underruns_ = under;
+	overruns_ = over;
 }
 
 /* an IN transfer done: its samples queued for the modem, its packets'
@@ -519,11 +680,12 @@ void UsbLine::in_complete(libusb_transfer *t)
 void UsbLine::gone(const char *why)
 {
 	if (!dead_)
-		ERR("SmartUSB56: %s\n", why);
+		ERR("%s: %s\n", name_, why);
 	dead_ = true;
 }
 
-/* see usb_line.h */
+/* see usb_line.h: the stick's line monitor on while on hook (rings and
+   caller ID heard), off off hook, as an ALSA codec's "Caller ID Switch" */
 int UsbLine::set_hook(dcore::Modem &, int state)
 {
 	bool off = state == MODEM_HOOK_OFF;
@@ -531,6 +693,11 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 	DBG("%s\n", off ? "off hook" : "on hook");
 	hook_ = state;
 	flash_end_ = 0;
+	if (kind_ == Kind::Stick)
+		return off ? (stick_out(LP_SET_HOOK, 1) &&
+			      stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
+			(stick_out(LP_SET_HOOK, 0) &&
+			 stick_out(LP_SET_MONITOR, 1) ? 0 : -1);
 	return set_gpio(off ? (uint16_t)(gpio_ | GPIO_HOOK1 | GPIO_LED_HOOK) :
 			(uint16_t)(gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK))) ? 0 : -1;
 }
@@ -541,6 +708,10 @@ void UsbLine::hook_flash(dcore::Modem &, unsigned ms)
 	if (hook_ != MODEM_HOOK_OFF)
 		return;
 	DBG("hook flash, %u ms\n", ms);
+	if (kind_ == Kind::Stick) {   /* the stick times it */
+		stick_out(LP_HOOK_FLASH, (uint16_t)(ms < 1 ? 1 : ms > 2000 ? 2000 : ms));
+		return;
+	}
 	set_gpio((uint16_t)(gpio_ & ~GPIO_HOOK1));
 	flash_end_ = samples_ + (unsigned long long)ms * rate_ / 1000;
 }
@@ -551,6 +722,8 @@ int UsbLine::pulse_hook(dcore::Modem &, bool broken)
 	if (hook_ != MODEM_HOOK_OFF)
 		return -1;
 	flash_end_ = 0;
+	if (kind_ == Kind::Stick)
+		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
 	return set_gpio(broken ? (uint16_t)(gpio_ & ~GPIO_HOOK1) :
 			(uint16_t)(gpio_ | GPIO_HOOK1)) ? 0 : -1;
 }
@@ -622,7 +795,7 @@ int UsbLine::pump(dcore::Modem &m)
    powered down, the interface released, libusb closed */
 void UsbLine::close()
 {
-	if (h_ && !dead_) {
+	if (h_ && !dead_ && kind_ == Kind::St7554) {
 		set_reg(FIFO_MASK, 0);
 		set_reg(SSI1_COUNTER, 0);
 	}
@@ -647,11 +820,22 @@ void UsbLine::close()
 	for (int i = 0; i < ISO_TRANSFERS; i++)
 		in_[i] = out_[i] = nullptr;
 	intr_ = nullptr;
-	if (h_) {
+	if (h_ && kind_ == Kind::Stick) {
+		/* on hook, the samples stopped (alternate setting 0) */
+		if (claimed_) {
+			libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_VENDOR |
+						LIBUSB_RECIPIENT_INTERFACE |
+						LIBUSB_ENDPOINT_OUT, LP_SET_HOOK, 0,
+						0, nullptr, 0, TIMEOUT_MS);
+			libusb_set_interface_alt_setting(h_, 0, 0);
+		}
+	} else if (h_) {
 		set_reg(FIFO_MASK, 0);
 		set_reg(GPIO_MASK, 0);
 		set_reg(GPIO_OUT, 0);
 		set_reg(SSI1_CONTROL, SSI1_POWERDOWN);
+	}
+	if (h_) {
 		if (claimed_)
 			libusb_release_interface(h_, 0);
 		libusb_close(h_);

@@ -91,8 +91,9 @@ if(DMODEM_DMODEMD)
 	else()
 		message(STATUS "dmodemd: no ALSA (libasound2-dev): no -a")
 	endif()
-	# --usb: a Smart Link SmartUSB56 (ST7554) through libusb for the
-	# line (usb_line.cpp), if libusb-1.0-0-dev is there
+	# --usb: a Smart Link SmartUSB56 (ST7554) or a pico-serial Line stick
+	# through libusb for the line (usb_line.cpp), if libusb-1.0-0-dev is
+	# there
 	if(PkgConfig_FOUND AND NOT WIN32)
 		pkg_check_modules(LIBUSB QUIET IMPORTED_TARGET libusb-1.0)
 	endif()
@@ -108,6 +109,13 @@ if(DMODEM_DMODEMD)
 				test/fake_st7554.cpp)
 			dmodem_flags(dmodem_fake_st7554 EXTRA NOOPT)
 			target_include_directories(dmodem_fake_st7554 PRIVATE
+				${LIBUSB_INCLUDE_DIRS})
+			# test/pico_line_test.py: the same on fake pico-serial
+			# Line sticks (test/fake_pico_line.cpp)
+			add_library(dmodem_fake_pico_line SHARED
+				test/fake_pico_line.cpp)
+			dmodem_flags(dmodem_fake_pico_line EXTRA NOOPT)
+			target_include_directories(dmodem_fake_pico_line PRIVATE
 				${LIBUSB_INCLUDE_DIRS})
 		endif()
 	else()
@@ -178,6 +186,13 @@ if(DMODEM_DMODEMD)
 				$<TARGET_FILE:line_exchange>
 				$<TARGET_FILE:dmodem_fake_st7554>)
 			set_tests_properties(dmodemd_usb PROPERTIES
+				LABELS alsa TIMEOUT 300 COST 1000)
+			dmodem_add_test(dmodemd_pico_line ${Python3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/test/pico_line_test.py
+				$<TARGET_FILE:dmodemd>
+				$<TARGET_FILE:line_exchange>
+				$<TARGET_FILE:dmodem_fake_pico_line>)
+			set_tests_properties(dmodemd_pico_line PROPERTIES
 				LABELS alsa TIMEOUT 300 COST 1000)
 		endif()
 	endif()

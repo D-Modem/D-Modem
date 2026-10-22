@@ -130,7 +130,7 @@ try:
     check("an ST75951/2 refused", p.returncode != 0 and "ST75951/2" in p.stderr)
     p = subprocess.run([dmodemd, "-n", "--usb=2:9", "-r", rate, "dmodem40"],
                        env=env_for("1001"), capture_output=True, text=True, timeout=20)
-    check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56 at 2:9" in p.stderr)
+    check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56 or pico-serial Line at 2:9" in p.stderr)
 
     a = Modem("1001", "dmodem41")
     b = Modem("1002", "dmodem42")
