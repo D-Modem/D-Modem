@@ -70,8 +70,11 @@ std::wstring port_name()
    where I is one) */
 template <class I> class Unk : public I {
 public:
+	/* (what it holds let go) */
 	virtual ~Unk() {}
+	/* IUnknown's: one more reference */
 	ULONG STDMETHODCALLTYPE AddRef() override { return (ULONG)++refs; }
+	/* IUnknown's: one reference less (the last deletes) */
 	ULONG STDMETHODCALLTYPE Release() override
 	{
 		long n = --refs;
@@ -79,6 +82,7 @@ public:
 			delete this;
 		return (ULONG)n;
 	}
+	/* IUnknown's: the interfaces it has */
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override
 	{
 		if (IsEqualIID(iid, __uuidof(I)) || IsEqualIID(iid, IID_IUnknown) ||
@@ -102,25 +106,33 @@ public:
 /* IWDFObject's methods, none used */
 template <class I> class Obj : public Unk<I> {
 public:
+	/* (the framework's DeleteWdfObject: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE DeleteWdfObject() override { return E_NOTIMPL; }
+	/* (the framework's AssignContext: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE AssignContext(IObjectCleanup *, void *) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's RetrieveContext: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveContext(void **) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's AcquireLock: not used by the driver) */
 	void STDMETHODCALLTYPE AcquireLock() override {}
+	/* (the framework's ReleaseLock: not used by the driver) */
 	void STDMETHODCALLTYPE ReleaseLock() override {}
 };
 
 /* a request's buffer */
 class Memory final : public Obj<IWDFMemory> {
 public:
+	/* (see the class) */
 	explicit Memory(size_t n) : buf(n) {}
+	/* (the framework's CopyFromMemory: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE CopyFromMemory(IWDFMemory *,
 		PWDFMEMORY_OFFSET) override { return E_NOTIMPL; }
+	/* (the framework's CopyToBuffer: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE CopyToBuffer(ULONG_PTR off, void *to,
 					       SIZE_T n) override
 	{
@@ -129,6 +141,7 @@ public:
 		memcpy(to, buf.data() + off, n);
 		return S_OK;
 	}
+	/* (the framework's CopyFromBuffer, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE CopyFromBuffer(ULONG_PTR off, void *from,
 						 SIZE_T n) override
 	{
@@ -137,13 +150,16 @@ public:
 		memcpy(buf.data() + off, from, n);
 		return S_OK;
 	}
+	/* (the framework's GetSize: not used by the driver) */
 	SIZE_T STDMETHODCALLTYPE GetSize() override { return buf.size(); }
+	/* (the framework's GetDataBuffer, as the driver uses it) */
 	void *STDMETHODCALLTYPE GetDataBuffer(SIZE_T *n) override
 	{
 		if (n)
 			*n = buf.size();
 		return buf.empty() ? nullptr : buf.data();
 	}
+	/* (the framework's SetBuffer: not used by the driver) */
 	void STDMETHODCALLTYPE SetBuffer(void *, SIZE_T) override {}
 
 	std::vector<uint8_t> buf;
@@ -152,10 +168,12 @@ public:
 /* a file object (the port's handle) */
 class File final : public Obj<IWDFFile> {
 public:
+	/* (the framework's RetrieveFileName: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveFileName(PWSTR, DWORD *) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's GetDevice: not used by the driver) */
 	void STDMETHODCALLTYPE GetDevice(IWDFDevice **d) override { *d = nullptr; }
 };
 
@@ -163,10 +181,12 @@ public:
    completion recorded and waited for */
 class Request final : public Obj<IWDFIoRequest> {
 public:
+	/* (see the class) */
 	Request(WDF_REQUEST_TYPE t, size_t in, size_t out, ULONG code = 0)
 		: type(t), code(code),
 		  input(in ? new Memory(in) : nullptr),
 		  output(out ? new Memory(out) : nullptr) {}
+	/* (what it holds let go) */
 	~Request() override
 	{
 		if (input)
@@ -204,6 +224,7 @@ public:
 				   output->buf.begin() + info);
 	}
 
+	/* (the framework's CompleteWithInformation, as the driver uses it) */
 	void STDMETHODCALLTYPE CompleteWithInformation(HRESULT hr,
 						       SIZE_T n) override
 	{
@@ -214,28 +235,36 @@ public:
 		done = true;
 		cv.notify_all();
 	}
+	/* (the framework's SetInformation: not used by the driver) */
 	void STDMETHODCALLTYPE SetInformation(ULONG_PTR n) override { info = n; }
+	/* (the framework's Complete, as the driver uses it) */
 	void STDMETHODCALLTYPE Complete(HRESULT hr) override
 	{
 		CompleteWithInformation(hr, info);
 	}
+	/* (the framework's SetCompletionCallback: not used by the driver) */
 	void STDMETHODCALLTYPE SetCompletionCallback(
 		IRequestCallbackRequestCompletion *, void *) override {}
+	/* (the framework's GetType: not used by the driver) */
 	WDF_REQUEST_TYPE STDMETHODCALLTYPE GetType() override { return type; }
+	/* (the framework's GetCreateParameters: not used by the driver) */
 	void STDMETHODCALLTYPE GetCreateParameters(ULONG *, USHORT *,
 						   USHORT *) override {}
+	/* (the framework's GetReadParameters: not used by the driver) */
 	void STDMETHODCALLTYPE GetReadParameters(SIZE_T *n, LONGLONG *,
 						 ULONG *) override
 	{
 		if (n)
 			*n = output ? output->buf.size() : 0;
 	}
+	/* (the framework's GetWriteParameters: not used by the driver) */
 	void STDMETHODCALLTYPE GetWriteParameters(SIZE_T *n, LONGLONG *,
 						  ULONG *) override
 	{
 		if (n)
 			*n = input ? input->buf.size() : 0;
 	}
+	/* (the framework's GetDeviceIoControlParameters: not used by the driver) */
 	void STDMETHODCALLTYPE GetDeviceIoControlParameters(ULONG *c,
 		SIZE_T *in, SIZE_T *out) override
 	{
@@ -246,18 +275,21 @@ public:
 		if (out)
 			*out = output ? output->buf.size() : 0;
 	}
+	/* (the framework's GetOutputMemory, as the driver uses it) */
 	void STDMETHODCALLTYPE GetOutputMemory(IWDFMemory **m) override
 	{
 		*m = output;
 		if (output)
 			output->AddRef();
 	}
+	/* (the framework's GetInputMemory, as the driver uses it) */
 	void STDMETHODCALLTYPE GetInputMemory(IWDFMemory **m) override
 	{
 		*m = input;
 		if (input)
 			input->AddRef();
 	}
+	/* (the framework's MarkCancelable, as the driver uses it) */
 	void STDMETHODCALLTYPE MarkCancelable(IRequestCallbackCancel *cb) override
 	{
 		marks++;
@@ -279,6 +311,7 @@ public:
 			cb->Release();
 		}
 	}
+	/* (the framework's UnmarkCancelable, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE UnmarkCancelable() override
 	{
 		IRequestCallbackCancel *cb;
@@ -292,22 +325,32 @@ public:
 		cb->Release();
 		return S_OK;
 	}
+	/* (the framework's CancelSentRequest: not used by the driver) */
 	BOOL STDMETHODCALLTYPE CancelSentRequest() override { return FALSE; }
+	/* (the framework's ForwardToIoQueue: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE ForwardToIoQueue(IWDFIoQueue *) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's Send: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE Send(IWDFIoTarget *, ULONG, LONGLONG) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's GetFileObject: not used by the driver) */
 	void STDMETHODCALLTYPE GetFileObject(IWDFFile **f) override { *f = nullptr; }
+	/* (the framework's FormatUsingCurrentType: not used by the driver) */
 	void STDMETHODCALLTYPE FormatUsingCurrentType() override {}
+	/* (the framework's GetRequestorProcessId: not used by the driver) */
 	ULONG STDMETHODCALLTYPE GetRequestorProcessId() override { return 0; }
+	/* (the framework's GetIoQueue: not used by the driver) */
 	void STDMETHODCALLTYPE GetIoQueue(IWDFIoQueue **q) override { *q = nullptr; }
+	/* (the framework's Impersonate: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE Impersonate(SECURITY_IMPERSONATION_LEVEL,
 		IImpersonateCallback *, void *) override { return E_NOTIMPL; }
+	/* (the framework's IsFrom32BitProcess: not used by the driver) */
 	BOOL STDMETHODCALLTYPE IsFrom32BitProcess() override { return FALSE; }
+	/* (the framework's GetCompletionParams: not used by the driver) */
 	void STDMETHODCALLTYPE GetCompletionParams(
 		IWDFRequestCompletionParams **p) override { *p = nullptr; }
 
@@ -326,34 +369,47 @@ public:
 /* the device's default queue (the driver's callbacks are the device's) */
 class Queue final : public Obj<IWDFIoQueue> {
 public:
+	/* (the framework's GetDevice: not used by the driver) */
 	void STDMETHODCALLTYPE GetDevice(IWDFDevice **d) override { *d = nullptr; }
+	/* (the framework's ConfigureRequestDispatching: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE ConfigureRequestDispatching(WDF_REQUEST_TYPE,
 							      BOOL) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's GetState: not used by the driver) */
 	WDF_IO_QUEUE_STATE STDMETHODCALLTYPE GetState(ULONG *, ULONG *) override
 	{
 		return (WDF_IO_QUEUE_STATE)0;
 	}
+	/* (the framework's RetrieveNextRequest: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveNextRequest(IWDFIoRequest **) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's RetrieveNextRequestByFileObject: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveNextRequestByFileObject(IWDFFile *,
 		IWDFIoRequest **) override { return E_NOTIMPL; }
+	/* (the framework's Start: not used by the driver) */
 	void STDMETHODCALLTYPE Start() override {}
+	/* (the framework's Stop: not used by the driver) */
 	void STDMETHODCALLTYPE Stop(IQueueCallbackStateChange *) override {}
+	/* (the framework's StopSynchronously: not used by the driver) */
 	void STDMETHODCALLTYPE StopSynchronously() override {}
+	/* (the framework's Drain: not used by the driver) */
 	void STDMETHODCALLTYPE Drain(IQueueCallbackStateChange *) override {}
+	/* (the framework's DrainSynchronously: not used by the driver) */
 	void STDMETHODCALLTYPE DrainSynchronously() override {}
+	/* (the framework's Purge: not used by the driver) */
 	void STDMETHODCALLTYPE Purge(IQueueCallbackStateChange *) override {}
+	/* (the framework's PurgeSynchronously: not used by the driver) */
 	void STDMETHODCALLTYPE PurgeSynchronously() override {}
 };
 
 /* a registry key: the device's (PortName) or SERIALCOMM's */
 class Store final : public Unk<IWDFNamedPropertyStore2> {
 public:
+	/* (the framework's more: not used by the driver) */
 	HRESULT more(REFIID iid, void **out) override
 	{
 		if (IsEqualIID(iid, __uuidof(IWDFNamedPropertyStore))) {
@@ -364,6 +420,7 @@ public:
 		*out = nullptr;
 		return E_NOINTERFACE;
 	}
+	/* (the framework's GetNamedValue, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE GetNamedValue(LPCWSTR name, PROPVARIANT *v) override
 	{
 		std::lock_guard<std::mutex> lk(mu);
@@ -376,6 +433,7 @@ public:
 		memcpy(v->pwszVal, i->second.c_str(), n);
 		return S_OK;
 	}
+	/* (the framework's SetNamedValue, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE SetNamedValue(LPCWSTR name,
 						const PROPVARIANT *v) override
 	{
@@ -389,15 +447,18 @@ public:
 			values.push_back({ name, v->pwszVal });
 		return S_OK;
 	}
+	/* (the framework's GetNameCount: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE GetNameCount(DWORD *n) override
 	{
 		*n = (DWORD)values.size();
 		return S_OK;
 	}
+	/* (the framework's GetNameAt: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE GetNameAt(DWORD, PWSTR *) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's DeleteNamedValue, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE DeleteNamedValue(LPCWSTR name) override
 	{
 		std::lock_guard<std::mutex> lk(mu);
@@ -419,6 +480,7 @@ public:
 	std::vector<std::pair<std::wstring, std::wstring>> values;
 
 private:
+	/* name's value, or the end */
 	std::vector<std::pair<std::wstring, std::wstring>>::iterator
 	find(LPCWSTR name)
 	{
@@ -432,12 +494,14 @@ private:
 /* the device: what the driver made of it recorded; its property stores */
 class Device final : public Obj<IWDFDevice>, public IWDFPropertyStoreFactory {
 public:
+	/* (see the class) */
 	Device()
 	{
 		hw = new Store();
 		serialcomm = new Store();
 		queue = new Queue();
 	}
+	/* (what it holds let go) */
 	~Device() override
 	{
 		hw->Release();
@@ -447,6 +511,7 @@ public:
 			queue_cb->Release();
 	}
 
+	/* (the framework's more: not used by the driver) */
 	HRESULT more(REFIID iid, void **out) override
 	{
 		if (IsEqualIID(iid, __uuidof(IWDFPropertyStoreFactory))) {
@@ -459,12 +524,15 @@ public:
 	}
 	/* (IWDFPropertyStoreFactory's IUnknown: the device's) */
 	ULONG STDMETHODCALLTYPE AddRef() override { return Obj::AddRef(); }
+	/* IUnknown's: one reference less (the last deletes) */
 	ULONG STDMETHODCALLTYPE Release() override { return Obj::Release(); }
+	/* IUnknown's: the interfaces it has */
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override
 	{
 		return Obj::QueryInterface(iid, out);
 	}
 
+	/* (the framework's RetrieveDevicePropertyStore, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE RetrieveDevicePropertyStore(
 		PWDF_PROPERTY_STORE_ROOT root, WDF_PROPERTY_STORE_RETRIEVE_FLAGS,
 		REGSAM, PCWSTR, IWDFNamedPropertyStore2 **s,
@@ -487,25 +555,32 @@ public:
 		return S_OK;
 	}
 
+	/* (the framework's RetrieveDevicePropertyStore: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveDevicePropertyStore(PCWSTR,
 		WDF_PROPERTY_STORE_RETRIEVE_FLAGS, IWDFNamedPropertyStore **,
 		WDF_PROPERTY_STORE_DISPOSITION *) override { return E_NOTIMPL; }
+	/* (the framework's GetDriver: not used by the driver) */
 	void STDMETHODCALLTYPE GetDriver(IWDFDriver **d) override { *d = nullptr; }
+	/* (the framework's RetrieveDeviceInstanceId: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveDeviceInstanceId(PWSTR, DWORD *) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's GetDefaultIoTarget: not used by the driver) */
 	void STDMETHODCALLTYPE GetDefaultIoTarget(IWDFIoTarget **t) override
 	{
 		*t = nullptr;
 	}
+	/* (the framework's CreateWdfFile: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE CreateWdfFile(LPCWSTR,
 		IWDFDriverCreatedFile **) override { return E_NOTIMPL; }
+	/* (the framework's GetDefaultIoQueue: not used by the driver) */
 	void STDMETHODCALLTYPE GetDefaultIoQueue(IWDFIoQueue **q) override
 	{
 		*q = queue;
 		queue->AddRef();
 	}
+	/* (the framework's CreateIoQueue, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE CreateIoQueue(IUnknown *cb, BOOL dflt,
 		WDF_IO_QUEUE_DISPATCH_TYPE type, BOOL power, BOOL zero,
 		IWDFIoQueue **q) override
@@ -521,16 +596,19 @@ public:
 		*q = queue;
 		return S_OK;
 	}
+	/* (the framework's CreateDeviceInterface, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE CreateDeviceInterface(LPCGUID g, PCWSTR) override
 	{
 		interface_guid = *g;
 		return S_OK;
 	}
+	/* (the framework's AssignDeviceInterfaceState: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE AssignDeviceInterfaceState(LPCGUID, PCWSTR,
 							     BOOL) override
 	{
 		return S_OK;
 	}
+	/* (the framework's RetrieveDeviceName, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE RetrieveDeviceName(PWSTR name, DWORD *n) override
 	{
 		DWORD need = (DWORD)wcslen(DEVICE_NAME) + 1;
@@ -542,8 +620,10 @@ public:
 		*n = need;
 		return S_OK;
 	}
+	/* (the framework's PostEvent: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE PostEvent(REFGUID, WDF_EVENT_TYPE, BYTE *,
 					    DWORD) override { return E_NOTIMPL; }
+	/* (the framework's ConfigureRequestDispatching, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE ConfigureRequestDispatching(IWDFIoQueue *q,
 		WDF_REQUEST_TYPE t, BOOL fwd) override
 	{
@@ -551,17 +631,22 @@ public:
 			creates_to_queue = true;
 		return S_OK;
 	}
+	/* (the framework's SetPnpState: not used by the driver) */
 	void STDMETHODCALLTYPE SetPnpState(WDF_PNP_STATE, WDF_TRI_STATE) override {}
+	/* (the framework's GetPnpState: not used by the driver) */
 	WDF_TRI_STATE STDMETHODCALLTYPE GetPnpState(WDF_PNP_STATE) override
 	{
 		return WdfUseDefault;
 	}
+	/* (the framework's CommitPnpState: not used by the driver) */
 	void STDMETHODCALLTYPE CommitPnpState() override {}
+	/* (the framework's CreateRequest: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE CreateRequest(IUnknown *, IWDFObject *,
 						IWDFIoRequest **) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's CreateSymbolicLink, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE CreateSymbolicLink(PCWSTR link) override
 	{
 		symlink = link;
@@ -583,25 +668,33 @@ public:
 /* the device's initialization: what the driver asked of it */
 class DeviceInit final : public Unk<IWDFDeviceInitialize> {
 public:
+	/* (the framework's SetFilter: not used by the driver) */
 	void STDMETHODCALLTYPE SetFilter() override { filter = true; }
+	/* (the framework's SetLockingConstraint, as the driver uses it) */
 	void STDMETHODCALLTYPE SetLockingConstraint(WDF_CALLBACK_CONSTRAINT c) override
 	{
 		locking = c;
 	}
+	/* (the framework's RetrieveDevicePropertyStore: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveDevicePropertyStore(PCWSTR,
 		WDF_PROPERTY_STORE_RETRIEVE_FLAGS, IWDFNamedPropertyStore **,
 		WDF_PROPERTY_STORE_DISPOSITION *) override { return E_NOTIMPL; }
+	/* (the framework's SetPowerPolicyOwnership, as the driver uses it) */
 	void STDMETHODCALLTYPE SetPowerPolicyOwnership(BOOL b) override
 	{
 		power_owner = b;
 	}
+	/* (the framework's AutoForwardCreateCleanupClose: not used by the driver) */
 	void STDMETHODCALLTYPE AutoForwardCreateCleanupClose(WDF_TRI_STATE) override {}
+	/* (the framework's RetrieveDeviceInstanceId: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveDeviceInstanceId(PWSTR, DWORD *) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's SetPnpCapability: not used by the driver) */
 	void STDMETHODCALLTYPE SetPnpCapability(WDF_PNP_CAPABILITY,
 						WDF_TRI_STATE) override {}
+	/* (the framework's GetPnpCapability: not used by the driver) */
 	WDF_TRI_STATE STDMETHODCALLTYPE GetPnpCapability(WDF_PNP_CAPABILITY) override
 	{
 		return WdfUseDefault;
@@ -615,6 +708,7 @@ public:
 /* the driver object: its device made */
 class Driver final : public Obj<IWDFDriver> {
 public:
+	/* (the framework's CreateDevice, as the driver uses it) */
 	HRESULT STDMETHODCALLTYPE CreateDevice(IWDFDeviceInitialize *,
 		IUnknown *cb, IWDFDevice **d) override
 	{
@@ -625,22 +719,27 @@ public:
 		*d = device;
 		return S_OK;
 	}
+	/* (the framework's CreateWdfObject: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE CreateWdfObject(IUnknown *, IWDFObject *,
 						  IWDFObject **) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's CreatePreallocatedWdfMemory: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE CreatePreallocatedWdfMemory(BYTE *, SIZE_T,
 		IUnknown *, IWDFObject *, IWDFMemory **) override
 	{
 		return E_NOTIMPL;
 	}
+	/* (the framework's CreateWdfMemory: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE CreateWdfMemory(SIZE_T, IUnknown *,
 		IWDFObject *, IWDFMemory **) override { return E_NOTIMPL; }
+	/* (the framework's IsVersionAvailable: not used by the driver) */
 	BOOL STDMETHODCALLTYPE IsVersionAvailable(UMDF_VERSION_DATA *) override
 	{
 		return TRUE;
 	}
+	/* (the framework's RetrieveVersionString: not used by the driver) */
 	HRESULT STDMETHODCALLTYPE RetrieveVersionString(PWSTR, DWORD *) override
 	{
 		return E_NOTIMPL;
@@ -698,6 +797,7 @@ template <class F> bool within(DWORD ms, F ok)
    app's side through the device's queue callbacks */
 class Host {
 public:
+	/* (see the class) */
 	Host()
 	{
 		dll = LoadLibraryA(beside("dmodemvm7.dll").c_str());
@@ -708,6 +808,7 @@ public:
 		can_unload = (decltype(can_unload))(void *)GetProcAddress(dll,
 			"DllCanUnloadNow");
 	}
+	/* (what it holds let go) */
 	~Host()
 	{
 		if (entry)
@@ -899,6 +1000,8 @@ public:
 	BOOL power_owner = FALSE;
 };
 
+/* the driver's class factory, its device, the port's names made and
+   taken back; nothing of the DLL left */
 TEST(Umdf1Driver, Device)
 {
 	Host h;
@@ -943,6 +1046,8 @@ TEST(Umdf1Driver, Device)
 	h.wdf->device = nullptr;
 }
 
+/* AT commands, cancels and WaitCommEvent through the driver, with
+   dmodemd on its pipe */
 TEST(Umdf1Driver, AtCommands)
 {
 	Host h;

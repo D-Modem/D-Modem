@@ -92,11 +92,15 @@ HRESULT hr_of(uint32_t st)
 /* IUnknown's counting, for the classes below (each its QueryInterface) */
 class Counted {
 public:
+	/* (see the class) */
 	Counted() { g_objects++; }
+	/* (what it holds let go) */
 	virtual ~Counted() { g_objects--; }
 
 protected:
+	/* one more reference */
 	ULONG add() { return (ULONG)++refs_; }
+	/* one reference less: the last deletes */
 	ULONG release()
 	{
 		long n = --refs_;
@@ -141,6 +145,7 @@ public:
 		if (in && n)
 			memcpy(buf_.data(), in, n);
 	}
+	/* (what it holds let go) */
 	~Held() override
 	{
 		if (out_)
@@ -148,7 +153,9 @@ public:
 		req_->Release();
 	}
 
+	/* (Request's) the buffer of its own */
 	uint8_t *data() override { return buf_.data(); }
+	/* (Request's) its size */
 	size_t size() const override { return buf_.size(); }
 
 	/* see port.h: the request completed unless its cancel has it */
@@ -202,8 +209,11 @@ public:
 	/* the request marked cancelable (its cancel may come at once) */
 	void mark() { req_->MarkCancelable(this); }
 
+	/* IUnknown's: one more reference */
 	ULONG STDMETHODCALLTYPE AddRef() override { return add(); }
+	/* IUnknown's: one reference less (the last deletes) */
 	ULONG STDMETHODCALLTYPE Release() override { return release(); }
+	/* IUnknown's: the interfaces it has */
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override
 	{
 		if (offer<IRequestCallbackCancel>(this, iid, out))
@@ -245,6 +255,7 @@ class Device final : public IPnpCallbackHardware, public IFileCallbackCleanup,
 		     public IQueueCallbackWrite,
 		     public IQueueCallbackDeviceIoControl, public Counted {
 public:
+	/* (see the class) */
 	Device() : link_(link_log) {}
 
 	/* the framework's device made on init, with the default queue */
@@ -435,8 +446,11 @@ public:
 			om->Release();
 	}
 
+	/* IUnknown's: one more reference */
 	ULONG STDMETHODCALLTYPE AddRef() override { return add(); }
+	/* IUnknown's: one reference less (the last deletes) */
 	ULONG STDMETHODCALLTYPE Release() override { return release(); }
+	/* IUnknown's: the interfaces it has */
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override
 	{
 		if (offer<IPnpCallbackHardware>(this, iid, out) ||
@@ -575,6 +589,7 @@ private:
 /* the driver: a device for each of ours */
 class Driver final : public IDriverEntry, public Counted {
 public:
+	/* IDriverEntry: nothing to set up */
 	HRESULT STDMETHODCALLTYPE OnInitialize(IWDFDriver *) override
 	{
 		return S_OK;
@@ -589,10 +604,14 @@ public:
 		d->Release();
 		return hr;
 	}
+	/* IDriverEntry: nothing to let go */
 	void STDMETHODCALLTYPE OnDeinitialize(IWDFDriver *) override {}
 
+	/* IUnknown's: one more reference */
 	ULONG STDMETHODCALLTYPE AddRef() override { return add(); }
+	/* IUnknown's: one reference less (the last deletes) */
 	ULONG STDMETHODCALLTYPE Release() override { return release(); }
+	/* IUnknown's: the interfaces it has */
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override
 	{
 		if (offer<IDriverEntry>(this, iid, out))
@@ -610,6 +629,7 @@ public:
 /* the class factory UMDF's host asks for the driver (DllGetClassObject) */
 class Factory final : public IClassFactory {
 public:
+	/* IClassFactory: a driver object */
 	HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown *outer, REFIID iid,
 						 void **out) override
 	{
@@ -621,6 +641,7 @@ public:
 		d->Release();
 		return hr;
 	}
+	/* IClassFactory: the DLL held loaded (or let go) */
 	HRESULT STDMETHODCALLTYPE LockServer(BOOL lock) override
 	{
 		if (lock)
@@ -631,7 +652,9 @@ public:
 	}
 	/* (a static object: no counting) */
 	ULONG STDMETHODCALLTYPE AddRef() override { return 2; }
+	/* IUnknown's: one reference less (the last deletes) */
 	ULONG STDMETHODCALLTYPE Release() override { return 1; }
+	/* IUnknown's: the interfaces it has */
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override
 	{
 		if (IsEqualIID(iid, IID_IClassFactory) ||
