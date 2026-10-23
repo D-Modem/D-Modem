@@ -43,6 +43,7 @@
 #include <dsp.h>
 
 #include "ac97_ports.h"
+#include "cx_country.h"
 #include "cx_daa.h"
 #include "hda_codec.h"
 #include "pty.h"
@@ -151,6 +152,8 @@ private:
 	bool daa_ = false;
 	const Si3054Country *daa_country_ = &si3054_usa();
 	std::string daa_name_ = "USA";
+	/* the country's Conexant SmartDAA setting (cx_country.h) */
+	const CxCountry *cx_country_ = &cx_usa();
 	bool daa_due_ = true;
 	/* a Conexant codec's SmartDAA, if its hook is there */
 	Ac97Ports ac97_;

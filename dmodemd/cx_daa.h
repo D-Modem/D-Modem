@@ -41,6 +41,9 @@
 
 namespace dmd {
 
+struct CxBoard;
+struct CxCountry;
+
 /* an AC'97 codec's registers (16 bit, at even numbers to 0x7e) */
 class Ac97Regs {
 public:
@@ -102,7 +105,8 @@ public:
 	/* the SmartDAA behind regs's register 0x7a, an SSD of kind v */
 	explicit CxDaa(Ac97Regs &regs, CxVariant v = CxVariant(),
 		       int kind = -1)
-		: regs_(regs), kind_(kind), v_(v) {}
+		: regs_(regs), kind_(kind), v_(v), board_(default_board()),
+		  country_(default_country()) {}
 
 	/* an SSD register into *v, or written with v */
 	bool ssd_read(int reg, uint8_t *v);
@@ -134,6 +138,12 @@ public:
 	   does (after power_up() for kind 0x12), else set_hook() alone */
 	bool go_off_hook();
 	bool go_on_hook();
+	/* the board's parameters power_up() takes (cx_country.h; the HSF
+	   .inf's SmartDAAParamsK3 by default) */
+	void set_board(const CxBoard &b);
+	/* the country's setting (cx_country.h; the USA's by default), at
+	   once if the line is set up and on hook */
+	bool set_country(const CxCountry &c);
 	/* what the last failure was */
 	const std::string &error() const { return error_; }
 
@@ -146,6 +156,9 @@ private:
 	/* for read(): the link up (status bits 1, then 2), a while at most */
 	void wait_ready();
 	bool fail(const char *fmt, ...);
+	/* cx_country.h's K3 board and the USA */
+	static const CxBoard *default_board();
+	static const CxCountry *default_country();
 
 	Ac97Regs &regs_;
 	int kind_;              /* SOAR's kind, -1 not known */
@@ -153,9 +166,14 @@ private:
 	bool run(const Op *ops, int n);
 	/* LSD register 2 0x0f after 3 and 4 written: the LSD powered */
 	bool wait_power();
+	/* Op::Param p's byte, the board's or the country's */
+	uint8_t param(int p) const;
 
 	CxVariant v_;
 	bool setup_ = false;    /* power_up() set the line up */
+	bool off_hook_ = false; /* go_off_hook() the last */
+	const CxBoard *board_;
+	const CxCountry *country_;
 	uint8_t version_ = 0;
 	std::string error_;
 };

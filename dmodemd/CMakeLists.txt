@@ -77,7 +77,7 @@ if(DMODEM_DMODEMD)
 	endif()
 	if(ALSA_FOUND)
 		target_sources(dmodemd PRIVATE alsa_line.cpp hda_codec.cpp si3054.cpp
-			cx_daa.cpp ac97_ports.cpp)
+			cx_daa.cpp cx_country.cpp ac97_ports.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_ALSA)
 		target_link_libraries(dmodemd PRIVATE PkgConfig::ALSA)
 		# test/alsa_test.py: two dmodemd on fake ALSA modem cards
@@ -224,7 +224,8 @@ if(DMODEM_DMODEMD)
 		dmodem_gtest(si3054_test LABELS quick)
 		# test/cx_daa_test.cpp: a Conexant AC'97 codec's SmartDAA
 		# (cx_daa.h) against a simulated one
-		add_executable(cx_daa_test test/cx_daa_test.cpp cx_daa.cpp)
+		add_executable(cx_daa_test test/cx_daa_test.cpp cx_daa.cpp
+			       cx_country.cpp)
 		target_include_directories(cx_daa_test PRIVATE
 			${CMAKE_CURRENT_SOURCE_DIR})
 		dmodem_flags(cx_daa_test EXTRA NOOPT)

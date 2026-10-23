@@ -11,6 +11,8 @@
 
 #include "cx_daa.h"
 
+#include "cx_country.h"
+
 namespace dmd {
 
 namespace {
@@ -281,13 +283,20 @@ bool CxDaa::lsd_field(int reg, uint8_t mask, uint8_t val)
  *    F (old & keep) | set, written; B the same, written if it changes
  *    (the library's set and clear); on the SSD or the LSD.  VERSION
  *    writes the version back to LSD register 0x22, POWER powers the LSD
- *    up (wait_power()), DELAY waits set ms.
+ *    up (wait_power()), DELAY waits set ms.  The board's bytes (SSD
+ *    registers 0x06, 0x0b, 0x21) and the country's (LSD 0x12's bits
+ *    6:5) are the HSF .inf's and the USA's in the tables, set_board()'s
+ *    and set_country()'s when they run (param()).
  */
 
 struct CxDaa::Op {
 	enum Kind : uint8_t { W, F, B, VERSION, POWER, DELAY } kind;
 	bool lsd;
 	uint8_t reg, keep, set;
+	/* set the board's or the country's instead (param()) */
+	enum Param : uint8_t {
+		NONE, SSD21, SSD0B, SSD06, IDLE, OFF
+	} param;
 };
 
 namespace {
@@ -295,31 +304,36 @@ namespace {
 typedef uint8_t u8;
 constexpr bool SSD = false, LSD = true;
 
-#define SW(r, v)        { CxDaa::Op::W, SSD, r, 0, v }
-#define SF(r, k, v)     { CxDaa::Op::B, SSD, r, k, v }
-#define LW(r, v)        { CxDaa::Op::W, LSD, r, 0, v }
-#define LF(r, k, v)     { CxDaa::Op::F, LSD, r, k, v }
-#define LB(r, k, v)     { CxDaa::Op::B, LSD, r, k, v }
+#define SW(r, v)        { CxDaa::Op::W, SSD, r, 0, v, CxDaa::Op::NONE }
+#define SF(r, k, v)     { CxDaa::Op::B, SSD, r, k, v, CxDaa::Op::NONE }
+#define LW(r, v)        { CxDaa::Op::W, LSD, r, 0, v, CxDaa::Op::NONE }
+#define LF(r, k, v)     { CxDaa::Op::F, LSD, r, k, v, CxDaa::Op::NONE }
+#define LB(r, k, v)     { CxDaa::Op::B, LSD, r, k, v, CxDaa::Op::NONE }
+/* the same, set the board's or the country's p */
+#define SWP(r, v, p)    { CxDaa::Op::W, SSD, r, 0, v, CxDaa::Op::p }
+#define SFP(r, k, v, p) { CxDaa::Op::B, SSD, r, k, v, CxDaa::Op::p }
+#define LFP(r, k, v, p) { CxDaa::Op::F, LSD, r, k, v, CxDaa::Op::p }
 
 } // namespace
 
 /* power up: the SSD, the LSD's version read between (power_up()) */
 static const CxDaa::Op ssd_start[] = {
 	SF(0x1c, 0xbf, 0x40), SF(0x0c, 0xfe, 0x00), SF(0x17, 0xfb, 0x04),
-	SF(0x14, 0xf7, 0x08), SW(0x0b, 0x5f), SF(0x06, 0x0f, 0xc0),
+	SF(0x14, 0xf7, 0x08), SWP(0x0b, 0x5f, SSD0B),
+	SFP(0x06, 0x0f, 0xc0, SSD06),
 	SF(0x19, 0xdf, 0x20), SW(0x05, 0x00), SW(0x04, 0x00),
 	SW(0x07, 0x00), SW(0x08, 0x00), SW(0x09, 0x00), SW(0x0a, 0x00),
 	SW(0x0d, 0x10), SW(0x1e, 0x00), SF(0x0f, 0x7f, 0x00),
 	SF(0x14, 0x4c, 0x00), SF(0x19, 0x94, 0x28), SW(0x1c, 0x7f),
 	SW(0x1d, 0x00), SW(0x1b, 0x00), SW(0x1a, 0x00), SW(0x25, 0x5a),
 	SW(0x23, 0x43), SW(0x24, 0x80), SW(0x22, 0x5a), SW(0x20, 0x63),
-	SW(0x21, 0xa8),
+	SWP(0x21, 0xa8, SSD21),
 };
 static const CxDaa::Op line_start[] = {
 	SW(0x07, 0x00), SW(0x08, 0x00), SW(0x09, 0x00), SW(0x0a, 0x00),
 	SW(0x0c, 0x14), SW(0x1d, 0x00), SW(0x1b, 0x00), SW(0x1a, 0x00),
-	{ CxDaa::Op::VERSION, LSD, 0x22, 0, 0 },
-	LB(0x1c, 0xfe, 0x00), { CxDaa::Op::POWER, LSD, 0x02, 0, 0 },
+	{ CxDaa::Op::VERSION, LSD, 0x22, 0, 0, CxDaa::Op::NONE },
+	LB(0x1c, 0xfe, 0x00), { CxDaa::Op::POWER, LSD, 0x02, 0, 0, CxDaa::Op::NONE },
 	LW(0x20, 0x00), LW(0x25, 0x29), LW(0x24, 0x28), LW(0x21, 0x80),
 	LF(0x19, 0x7f, 0x80), LW(0x08, 0x00), LW(0x0a, 0xd9), LW(0x0e, 0x00),
 	LW(0x0c, 0x07), LF(0x12, 0x9f, 0x00), LW(0x10, 0x00),
@@ -328,15 +342,15 @@ static const CxDaa::Op line_start[] = {
 	LF(0x07, 0xe0, 0x04), LW(0x18, 0x43), LW(0x19, 0xcb),
 	LB(0x07, 0x64, 0x00), LB(0x14, 0xe3, 0x00), LB(0x15, 0x40, 0x00),
 	LB(0x06, 0xe2, 0x00), LF(0x06, 0x60, 0x02), LW(0x0c, 0x06),
-	LF(0x12, 0x9f, 0x60), LF(0x1c, 0x82, 0x30), LW(0x0e, 0x00),
+	LFP(0x12, 0x9f, 0x60, IDLE), LF(0x1c, 0x82, 0x30), LW(0x0e, 0x00),
 	LW(0x18, 0x43), LW(0x10, 0x00), LF(0x1c, 0x82, 0x68),
 	LB(0x1c, 0xfd, 0x02), LW(0x0c, 0x02), LW(0x0a, 0xdf), LW(0x10, 0x00),
 	LW(0x0e, 0x02), LW(0x10, 0x00),
 };
 /* off hook (the answer's or the dial's): 0x15 = 0x41 a while first */
 static const CxDaa::Op off_hook[] = {
-	LW(0x15, 0x41), { CxDaa::Op::DELAY, LSD, 0, 0, 100 },
-	LF(0x12, 0x9f, 0x40), LW(0x0e, 0x00), LF(0x14, 0x03, 0x20),
+	LW(0x15, 0x41), { CxDaa::Op::DELAY, LSD, 0, 0, 100, CxDaa::Op::NONE },
+	LFP(0x12, 0x9f, 0x40, OFF), LW(0x0e, 0x00), LF(0x14, 0x03, 0x20),
 	LW(0x18, 0x43), LW(0x10, 0x00), LW(0x21, 0x82), LF(0x1c, 0x80, 0x32),
 	LW(0x15, 0x40), LW(0x15, 0x80), LW(0x19, 0x8b),
 	SF(0x14, 0xfc, 0x01),
@@ -344,7 +358,8 @@ static const CxDaa::Op off_hook[] = {
 /* on hook, the line as power_up() left it */
 static const CxDaa::Op on_hook[] = {
 	SF(0x14, 0xfc, 0x00),
-	LF(0x12, 0x9f, 0x60), LW(0x15, 0x40), LW(0x19, 0xcb), LW(0x0e, 0x00),
+	LFP(0x12, 0x9f, 0x60, IDLE), LW(0x15, 0x40), LW(0x19, 0xcb),
+	LW(0x0e, 0x00),
 	LW(0x21, 0x80), LF(0x14, 0x03, 0xe0), LW(0x18, 0x43), LW(0x10, 0x00),
 	LF(0x1c, 0x80, 0x6a), LW(0x10, 0x00), LW(0x0e, 0x02), LW(0x10, 0x00),
 };
@@ -354,6 +369,9 @@ static const CxDaa::Op on_hook[] = {
 #undef LW
 #undef LF
 #undef LB
+#undef SWP
+#undef SFP
+#undef LFP
 
 #define N(a) ((int)(sizeof(a) / sizeof((a)[0])))
 
@@ -363,6 +381,8 @@ bool CxDaa::run(const Op *ops, int n)
 	for (int i = 0; i < n; i++) {
 		const Op &o = ops[i];
 		uint8_t old = 0, v;
+
+		uint8_t set = o.param ? param(o.param) : o.set;
 
 		switch (o.kind) {
 		case Op::VERSION:
@@ -377,13 +397,13 @@ bool CxDaa::run(const Op *ops, int n)
 			regs_.delay_us(o.set * 1000u);
 			continue;
 		case Op::W:
-			v = o.set;
+			v = set;
 			break;
 		default:
 			if (!(o.lsd ? lsd_read(o.reg, &old) :
 				      ssd_read(o.reg, &old)))
 				return false;
-			v = (uint8_t)((old & o.keep) | o.set);
+			v = (uint8_t)((old & o.keep) | set);
 			if (o.kind == Op::B && v == old)
 				continue;
 			break;
@@ -392,6 +412,47 @@ bool CxDaa::run(const Op *ops, int n)
 			return false;
 	}
 	return true;
+}
+
+/* see cx_daa.h (private) */
+uint8_t CxDaa::param(int p) const
+{
+	switch (p) {
+	case Op::SSD21: return board_->ssd21();
+	case Op::SSD0B: return board_->ssd0b();
+	case Op::SSD06: return board_->ssd06();
+	case Op::IDLE:  return (uint8_t)(country_->idle << 5);
+	case Op::OFF:   return (uint8_t)(country_->off << 5);
+	default:        return 0;
+	}
+}
+
+/* see cx_daa.h (private): the HSF codec's (DAA type 0x29) */
+const CxBoard *CxDaa::default_board()
+{
+	return &cx_board(0x29);
+}
+
+/* see cx_daa.h (private) */
+const CxCountry *CxDaa::default_country()
+{
+	return &cx_usa();
+}
+
+/* see cx_daa.h */
+void CxDaa::set_board(const CxBoard &b)
+{
+	board_ = &b;
+}
+
+/* see cx_daa.h: on hook the line's setting at once */
+bool CxDaa::set_country(const CxCountry &c)
+{
+	country_ = &c;
+	if (!setup_ || off_hook_)
+		return true;
+	static const Op idle = { Op::F, true, 0x12, 0x9f, 0, Op::IDLE };
+	return run(&idle, 1);
 }
 
 /* see cx_daa.h (private): as the library, 3 = 0 and 4 = 0x2f again
@@ -415,6 +476,7 @@ bool CxDaa::wait_power()
 bool CxDaa::power_up(uint8_t *version)
 {
 	setup_ = false;
+	off_hook_ = false;
 	if (kind_ != 0x12)
 		return probe(version);
 	if (!run(ssd_start, N(ssd_start)) || !probe(&version_))
@@ -432,12 +494,14 @@ bool CxDaa::power_up(uint8_t *version)
 /* see cx_daa.h */
 bool CxDaa::go_off_hook()
 {
+	off_hook_ = true;
 	return setup_ ? run(off_hook, N(off_hook)) : set_hook(HOOK_OFF);
 }
 
 /* see cx_daa.h */
 bool CxDaa::go_on_hook()
 {
+	off_hook_ = false;
 	return setup_ ? run(on_hook, N(on_hook)) : set_hook(HOOK_ON);
 }
 

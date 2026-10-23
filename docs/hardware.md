@@ -142,10 +142,33 @@ hook bits alone. For the other kinds the setup is not known: dmodemd
 reads the line side's version and puts the hook bits alone, which
 holds the line only if something else has set the line side up.
 
-The values are the USA's, for the board's parameters in the HSF
-`.inf` (its `SmartDAAParamsK3`), against a simulated line side whose
-measurements (the loop voltage, registers 0x16 and 0x1e) read 0: on
-a real line the library may adjust the drive (0x18, 0x19) to what it
+The country and the board's parameters are Conexant's, as the other
+backends' are their datasheets' (`cx_country.cpp`, generated from the
+HSF driver's files):
+
+- the country: of the line settings above only LSD 0x12's bits 6:5
+  change with it, in the library's runs for a country of each of
+  `hsf.cty`'s 14 `SMART_RELAYS` tables (`HSF_COUNTRY=<T.35 code>`):
+  they are bits 7:6 of the low byte of the table's off-hook and on-hook
+  state words. That gives three settings, 11 on hook and 10 off (the
+  USA, Japan, ...), 10 and 10 (most, the ITU's), 00 and 00 (the TBR21
+  countries). The table has all 242 of `hsf.cty`'s regions under its
+  names, and D-Modem's for the three it names otherwise (BAHREIN,
+  SOUTHKOREA, UAE). `-c` and `+GCI` choose the row, as for the Si3054;
+  on hook the new setting goes to the line side at once;
+- the board: the `.inf`'s `SmartDAAParamsK3` for DAA types 0x22 to
+  0x24, 0x29, 0x30 and 0x31, its `SmartDAAParams` for the others, as
+  the ICH driver chooses (95 bytes each). Changing each byte of the
+  block in turn (`HSF_NVM` with an edited `.inf`), three change the
+  library's writes: byte 87 is SSD 0x21 (0x80 | it), byte 93 SSD 0x0b,
+  byte 94 SSD 0x06's bits 7:4. The others (its resistors and DC tables)
+  change nothing here: the library uses them, it seems, only on what
+  the line side measures, which the simulated one does not.
+
+`cx_daa_test` checks the writes against the library's for the USA,
+Germany and Canada, from both starts. The simulated line side's
+measurements (the loop voltage, registers 0x16 and 0x1e) read 0: on a
+real line the library may adjust the drive (0x18, 0x19) to what it
 measures, and dmodemd does not. It has not yet run on a real codec.
 
 ### HD-audio modems outside the Si3054 list

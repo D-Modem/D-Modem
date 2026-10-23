@@ -36,7 +36,8 @@
  *    the modem's own messages and the port accesses we do not know, 2
  *    every access, 3 every SmartDAA access too.  HSF_DAA_FILL=<byte>
  *    starts the line side's plain registers at that byte, not 0 (two
- *    runs show which bits the library's writes keep).
+ *    runs show which bits the library's writes keep); HSF_COUNTRY=<T.35
+ *    code> the country, not the USA (0xb5).
  */
 
 #include <ctype.h>
@@ -1232,8 +1233,11 @@ int Nvm::read(int code, void *buf, u32 *size) const
 			return 0;
 		}
 		if (code == CFG_COUNTRY_CODE && *size == 2) {
-			((byte *)buf)[0] = 0xb5;        /* USA */
-			((byte *)buf)[1] = 0;
+			/* the USA's, or HSF_COUNTRY's (a T.35 code) */
+			const char *c = hsf.env("COUNTRY");
+			unsigned t35 = c ? (unsigned)strtoul(c, nullptr, 0) : 0xb5;
+			((byte *)buf)[0] = (byte)t35;
+			((byte *)buf)[1] = (byte)(t35 >> 8);
 			return 0;
 		}
 		if (code == CFG_PROFILE_STORED && *size == sizeof(factory_profile)) {

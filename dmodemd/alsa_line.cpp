@@ -241,6 +241,15 @@ void AlsaLine::country(dcore::Modem &, const char *name)
 	daa_due_ = true;
 	if (daa_ && hook_ != MODEM_HOOK_OFF)
 		daa_write(false);
+	cx_country_ = cx_country(name);
+	if (!cx_country_) {
+		if (cx_)
+			DBG("no Conexant line setting for %s: the USA's\n",
+			    daa_name_.c_str());
+		cx_country_ = &cx_usa();
+	}
+	if (cx_ && !cx_->set_country(*cx_country_))
+		ERR("SmartDAA country: %s\n", cx_->error().c_str());
 }
 
 /* see alsa_line.h: a Si3054 with a Si3018 line side (its chip ID) */
@@ -339,6 +348,8 @@ void AlsaLine::cx_open(int card)
 		return;
 	}
 	cx_.reset(new CxDaa(ac97_, cx_variant(kind), kind));
+	cx_->set_board(cx_board((uint8_t)id2));
+	cx_->set_country(*cx_country_);
 	if (!cx_->power_up(&version)) {
 		ERR("Conexant codec at %s (%04x %04x, SSD kind %#x): its line "
 		    "side does not answer (%s)\n", ac97_.name().c_str(), id1,
@@ -347,10 +358,11 @@ void AlsaLine::cx_open(int card)
 		return;
 	}
 	DBG("Conexant codec at %s (%04x %04x, SSD kind %#x), line side "
-	    "version %02x: the hook in its SmartDAA%s\n",
+	    "version %02x: the hook in its SmartDAA%s%s\n",
 	    ac97_.name().c_str(), id1, id2, kind, version,
-	    kind == 0x12 ? ", its line set up as Conexant's driver does" :
-	    " (its line setup not known)");
+	    kind == 0x12 ? ", its line set up as Conexant's driver does, "
+	    "board " : " (its line setup not known)",
+	    kind == 0x12 ? cx_board((uint8_t)id2).name : "");
 }
 
 /* see alsa_line.h */

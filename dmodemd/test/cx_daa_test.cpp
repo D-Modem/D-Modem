@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include "cx_country.h"
 #include "cx_daa.h"
 
 using dmd::CxDaa;
@@ -465,4 +466,165 @@ TEST(CxDaa, PowerUp)
 	ASSERT_EQ(c.lsd_writes.size(), 1u);
 	EXPECT_EQ(c.lsd_writes[0].first, 0x15);
 	EXPECT_EQ(c.lsd_writes[0].second, 0x87);
+}
+
+/* Conexant's library's LSD writes in the HSF harness (HSF_COUNTRY,
+   HSF_DAA_FILL): the start, an answer, a hangup, the LSD first 0 and
+   then first 0xff, for a country of each of hsf.cty's three line
+   settings */
+static const struct {
+	const char *country;
+	const char *w[6];
+} lib_countries[] = {
+	{ "USA", {
+		"22=05 03=00 04=2f 20=00 25=29 24=28 21=80 19=80 08=00 0a=d9 "
+		"0e=00 0c=07 12=00 10=00 19=c0 1f=08 15=40 1c=78 14=e0 07=04 "
+		"18=43 19=cb 06=02 0c=06 12=60 1c=30 0e=00 18=43 10=00 1c=68 "
+		"1c=6a 0c=02 0a=df 10=00 0e=02 10=00",
+		"15=41 12=40 0e=00 14=20 18=43 10=00 21=82 1c=32 15=40 15=80 "
+		"19=8b",
+		"12=60 15=40 19=cb 0e=00 21=80 14=e0 18=43 10=00 1c=6a 10=00 "
+		"0e=02 10=00",
+		"22=05 1c=fe 03=00 04=2f 20=00 25=29 24=28 21=80 19=ff 08=00 "
+		"0a=d9 0e=00 0c=07 12=9f 10=00 19=ff 1f=08 15=6f 1c=fa 15=68 "
+		"14=e7 07=e4 18=43 19=cb 07=64 14=e3 15=40 06=e2 06=62 0c=06 "
+		"12=ff 1c=b2 0e=00 18=43 10=00 1c=ea 0c=02 0a=df 10=00 0e=02 "
+		"10=00",
+		"15=41 12=df 0e=00 14=23 18=43 10=00 21=82 1c=b2 15=40 15=80 "
+		"19=8b",
+		"12=ff 15=40 19=cb 0e=00 21=80 14=e3 18=43 10=00 1c=ea 10=00 "
+		"0e=02 10=00" } },
+	{ "GERMANY", {
+		"22=05 03=00 04=2f 20=00 25=29 24=28 21=80 19=80 08=00 0a=d9 "
+		"0e=00 0c=07 12=00 10=00 19=c0 1f=08 15=40 1c=78 14=e0 07=04 "
+		"18=43 19=cb 06=02 0c=06 12=00 1c=30 0e=00 18=43 10=00 1c=68 "
+		"1c=6a 0c=02 0a=df 10=00 0e=02 10=00",
+		"15=41 12=00 0e=00 14=20 18=43 10=00 21=82 1c=32 15=40 15=80 "
+		"19=8b",
+		"12=00 15=40 19=cb 0e=00 21=80 14=e0 18=43 10=00 1c=6a 10=00 "
+		"0e=02 10=00",
+		"22=05 1c=fe 03=00 04=2f 20=00 25=29 24=28 21=80 19=ff 08=00 "
+		"0a=d9 0e=00 0c=07 12=9f 10=00 19=ff 1f=08 15=6f 1c=fa 15=68 "
+		"14=e7 07=e4 18=43 19=cb 07=64 14=e3 15=40 06=e2 06=62 0c=06 "
+		"12=9f 1c=b2 0e=00 18=43 10=00 1c=ea 0c=02 0a=df 10=00 0e=02 "
+		"10=00",
+		"15=41 12=9f 0e=00 14=23 18=43 10=00 21=82 1c=b2 15=40 15=80 "
+		"19=8b",
+		"12=9f 15=40 19=cb 0e=00 21=80 14=e3 18=43 10=00 1c=ea 10=00 "
+		"0e=02 10=00" } },
+	{ "CANADA", {
+		"22=05 03=00 04=2f 20=00 25=29 24=28 21=80 19=80 08=00 0a=d9 "
+		"0e=00 0c=07 12=00 10=00 19=c0 1f=08 15=40 1c=78 14=e0 07=04 "
+		"18=43 19=cb 06=02 0c=06 12=40 1c=30 0e=00 18=43 10=00 1c=68 "
+		"1c=6a 0c=02 0a=df 10=00 0e=02 10=00",
+		"15=41 12=40 0e=00 14=20 18=43 10=00 21=82 1c=32 15=40 15=80 "
+		"19=8b",
+		"12=40 15=40 19=cb 0e=00 21=80 14=e0 18=43 10=00 1c=6a 10=00 "
+		"0e=02 10=00",
+		"22=05 1c=fe 03=00 04=2f 20=00 25=29 24=28 21=80 19=ff 08=00 "
+		"0a=d9 0e=00 0c=07 12=9f 10=00 19=ff 1f=08 15=6f 1c=fa 15=68 "
+		"14=e7 07=e4 18=43 19=cb 07=64 14=e3 15=40 06=e2 06=62 0c=06 "
+		"12=df 1c=b2 0e=00 18=43 10=00 1c=ea 0c=02 0a=df 10=00 0e=02 "
+		"10=00",
+		"15=41 12=df 0e=00 14=23 18=43 10=00 21=82 1c=b2 15=40 15=80 "
+		"19=8b",
+		"12=df 15=40 19=cb 0e=00 21=80 14=e3 18=43 10=00 1c=ea 10=00 "
+		"0e=02 10=00" } },
+};
+
+/* kind 0x12's setup and hook for each country as the library's */
+TEST(CxDaa, CountriesLikeTheLibrary)
+{
+	for (auto &lc : lib_countries) {
+		const dmd::CxCountry *cc = dmd::cx_country(lc.country);
+		ASSERT_NE(cc, nullptr) << lc.country;
+		for (int f = 0; f < 2; f++) {
+			SCOPED_TRACE(std::string(lc.country) +
+				     (f ? ", LSD from 0xff" : ", LSD from 0"));
+			FakeCodec c(true);
+			c.fill_lsd(f ? 0xff : 0x00);
+			CxDaa d(c, dmd::cx_variant(0x12), 0x12);
+			uint8_t v;
+			d.set_country(*cc);
+			ASSERT_TRUE(d.power_up(&v)) << d.error();
+			EXPECT_EQ(text(c.lsd_writes), text(writes(lc.w[3 * f])));
+			c.lsd_writes.clear();
+			ASSERT_TRUE(d.go_off_hook()) << d.error();
+			EXPECT_EQ(text(c.lsd_writes),
+				  text(writes(lc.w[3 * f + 1])));
+			c.lsd_writes.clear();
+			ASSERT_TRUE(d.go_on_hook()) << d.error();
+			EXPECT_EQ(text(c.lsd_writes),
+				  text(writes(lc.w[3 * f + 2])));
+		}
+	}
+}
+
+/* hsf.cty's countries by name (D-Modem's too), their three settings;
+   a country changed on hook goes to LSD 0x12 at once, off hook at the
+   next hangup */
+TEST(CxDaa, Countries)
+{
+	struct { const char *name; uint8_t idle, off; } want[] = {
+		{ "USA", 3, 2 }, { "japan", 3, 2 }, { "El Salvador", 3, 2 },
+		{ "GERMANY", 0, 0 }, { "UK", 0, 0 }, { "FRANCE", 0, 0 },
+		{ "CANADA", 2, 2 }, { "NEW_ZEALAND", 2, 2 },
+		{ "BAHREIN", 2, 2 }, { "SOUTHKOREA", 2, 2 }, { "UAE", 0, 0 },
+		{ "SAUDIARABIA", 2, 2 }, { "SOUTH AFRICA", 2, 2 },
+	};
+	for (auto &w : want) {
+		const dmd::CxCountry *c = dmd::cx_country(w.name);
+		ASSERT_NE(c, nullptr) << w.name;
+		EXPECT_EQ(c->idle, w.idle) << w.name;
+		EXPECT_EQ(c->off, w.off) << w.name;
+	}
+	EXPECT_EQ(dmd::cx_country("ATLANTIS"), nullptr);
+	EXPECT_EQ(dmd::cx_country(nullptr), nullptr);
+	EXPECT_STREQ(dmd::cx_usa().name, "USA");
+
+	FakeCodec c(true);
+	CxDaa d(c, dmd::cx_variant(0x12), 0x12);
+	uint8_t v;
+	ASSERT_TRUE(d.power_up(&v)) << d.error();
+	EXPECT_EQ(c.lsd[0x12] & 0x60, 0x60);
+	ASSERT_TRUE(d.set_country(*dmd::cx_country("GERMANY")));
+	EXPECT_EQ(c.lsd[0x12] & 0x60, 0x00);
+	ASSERT_TRUE(d.go_off_hook()) << d.error();
+	ASSERT_TRUE(d.set_country(*dmd::cx_country("CANADA")));
+	EXPECT_EQ(c.lsd[0x12] & 0x60, 0x00);
+	ASSERT_TRUE(d.go_on_hook()) << d.error();
+	EXPECT_EQ(c.lsd[0x12] & 0x60, 0x40);
+}
+
+/* the board blocks by DAA type, and their bytes in the SSD's setup:
+   K3's as the library's (the HSF codec), the other's, and each byte
+   the library was seen to take (the HSF .inf changed a byte at a
+   time: 87 to SSD 0x21, 93 to 0x0b, 94 to 0x06) */
+TEST(CxDaa, Boards)
+{
+	EXPECT_STREQ(dmd::cx_board(0x29).name, "SmartDAAParamsK3");
+	EXPECT_STREQ(dmd::cx_board(0x30).name, "SmartDAAParamsK3");
+	EXPECT_STREQ(dmd::cx_board(0x28).name, "SmartDAAParams");
+	EXPECT_STREQ(dmd::cx_board(0x20).name, "SmartDAAParams");
+	const dmd::CxBoard &k3 = dmd::cx_board(0x29);
+	EXPECT_EQ(k3.ssd21(), 0xa8);
+	EXPECT_EQ(k3.ssd0b(), 0x5f);
+	EXPECT_EQ(k3.ssd06(), 0xc0);
+	const dmd::CxBoard &plain = dmd::cx_board(0x28);
+	EXPECT_EQ(plain.ssd0b(), 0x3f);
+	EXPECT_EQ(plain.ssd06(), 0x50);
+
+	dmd::CxBoard b = k3;
+	b.p[87]++;
+	b.p[93]++;
+	b.p[94]++;
+	FakeCodec c(true);
+	CxDaa d(c, dmd::cx_variant(0x12), 0x12);
+	d.set_board(b);
+	uint8_t v;
+	ASSERT_TRUE(d.power_up(&v)) << d.error();
+	std::string w = text(c.ssd_writes);
+	EXPECT_NE(w.find("21=a9"), std::string::npos) << w;
+	EXPECT_NE(w.find("0b=60"), std::string::npos) << w;
+	EXPECT_NE(w.find("06=d0"), std::string::npos) << w;
 }
