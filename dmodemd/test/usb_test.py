@@ -7,6 +7,12 @@
 # a libusb in front of the real one through LD_PRELOAD) whose lines are
 # line_exchange's, 1001 and 1002:
 #
+# - the international line controls (--usb-international, Windows'
+#   Options.International), 1001 alone: in Australia off hook DP and RFC
+#   (0x0588), RFC off 350 ms later (0x0488), a digit pulse dialled with
+#   RFC set through it, and DP and RFC cleared on hook; in France DC off
+#   hook (0x1488); on an ST75951 DC the other way (the USA's off hook
+#   0x1488);
 # - 1002's fake says its codec is an ST75951/2 silicon DAA
 #   (FAKE_ST7554_DAA): dmodemd starts it up with its control words
 #   (register 3 = 0x050), 1001's an STLC7550;
@@ -97,9 +103,9 @@ while "ready" not in events and time.time() - t0 < 5:
 
 class Modem:
     """a dmodemd on line <n>'s SmartUSB56 (its options args, the fake's
-    environment more), its pty"""
-    def __init__(self, n, name, args=(), **more):
-        self.log = open(os.path.join(logs, "dmodemd-%s.log" % n), "wb")
+    environment more), its pty; its log dmodemd-<n><tag>.log"""
+    def __init__(self, n, name, args=(), tag="", **more):
+        self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
         self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto", "-r", rate] + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n, **more))
@@ -151,6 +157,48 @@ try:
                        env=env_for("1001"), capture_output=True, text=True, timeout=60)
     check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56 or pico-serial Line at 2:9" in p.stderr)
 
+    def log_of(m):
+        m.log.flush()
+        return open(m.log.name, "rb").read()
+    gpio = lambda m: [int(v, 16) for v in
+                      re.findall(rb"fake st7554: 0a = ([0-9a-f]{4})", log_of(m))]
+    def intl(country, **more):
+        """1001 alone with --usb-international in country, the fake's
+        environment more: its GPIO writes off hook (ATH1, 1 s) and on hook
+        again"""
+        m = Modem("1001", "dmodem40", ["--usb-international", "-c", country],
+                  "-intl-" + country.lower() + ("-75951" if more else ""),
+                  FAKE_ST7554_LOG="1", **more)
+        m.cmd(b"ATE0")
+        n = len(gpio(m))
+        m.cmd(b"ATH1")
+        time.sleep(1)
+        m.cmd(b"ATH")
+        time.sleep(0.3)
+        return m, gpio(m)[n:]
+    m, g = intl("AUSTRALIA")
+    check("Australia: off hook DP and RFC, RFC off after 350 ms, all off on hook",
+          g[:3] == [0x0588, 0x0488, 0x0000])
+    n = len(gpio(m))
+    m.dte.write(b"ATX0DP1\r")
+    end = time.time() + 10
+    while time.time() < end and b"pulse dialling over" not in log_of(m):
+        time.sleep(0.1)
+    g = gpio(m)[n:]
+    check("Australia: pulse dialled with RFC and DP set (0x0580/0x0588), RFC off after",
+          0x0580 in g and 0x0588 in g and g[-1] == 0x0488)
+    m.cmd(b"ATH", rb"(OK|NO CARRIER)\r\n")
+    m.p.terminate()
+    m.p.wait(5)
+    m, g = intl("FRANCE")
+    check("France: DC off hook (0x1488)", g[:2] == [0x1488, 0x0000])
+    m.p.terminate()
+    m.p.wait(5)
+    m, g = intl("USA", FAKE_ST7554_DAA="1")
+    check("an ST75951 in the USA: DC the other way (0x1488)", g[:2] == [0x1488, 0x0000])
+    m.p.terminate()
+    m.p.wait(5)
+
     a = Modem("1001", "dmodem41", ["--usb-leds"], FAKE_ST7554_LOG="1")
     suspend = os.path.join(tmp, "1002.suspend")
     handset = os.path.join(tmp, "1002.handset")
@@ -161,9 +209,6 @@ try:
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
         check("%s ATI3: ST7554" % m.n, m.cmd(b"ATI3", rb"ST7554\r\n(\r\n)?OK\r\n"))
-    def log_of(m):
-        m.log.flush()
-        return open(m.log.name, "rb").read()
     b_log = lambda: log_of(b)
     check("1002 an ST75951/2", b"codec: ST75951/2 (silicon DAA)" in b_log())
     check("1002 its start-up (register 3 = 0x050)",
@@ -196,8 +241,6 @@ try:
     check("1002 gets 1001's line", b.expect(rb"hello from 1001", 10))
     b.dte.write(b"hello from 1002\r\n")
     check("1001 gets 1002's line", a.expect(rb"hello from 1002", 10))
-    gpio = lambda m: [int(v, 16) for v in
-                      re.findall(rb"fake st7554: 0a = ([0-9a-f]{4})", log_of(m))]
     check("1001 the carrier LED (0x40) lit", 0x00c8 in gpio(a))
     check("1001 the data LED (0x2000) lit", 0x20c8 in gpio(a))
     time.sleep(1.2)

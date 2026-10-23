@@ -121,6 +121,9 @@ enum MODEM_PARAMETER_NAMES {
 				      caller to be told (DPSTAT_FAX: its V.8
 				      CM, or silence through the whole
 				      automode chain) */
+	MDMPRM_PULSE_DIALLING = 71, /* set: pulse dialling begins (1, at
+				      its first digit) or is over (0: the
+				      dial string's end, a ';' or a 'T') */
 };
 
 /*
@@ -131,8 +134,8 @@ enum MODEM_PARAMETER_NAMES {
    -1 for one the core does not give */
 intptr_t modem_get_param(struct modem *m, unsigned param);
 /* sets parameter name to val: 0, or -1 for one that cannot be set
-   (MDMPRM_HOOK_ON, MDMPRM_PULSE_DIAL and MDMPRM_PULSE_HOOK: the
-   host's result) */
+   (MDMPRM_HOOK_ON, MDMPRM_PULSE_DIAL, MDMPRM_PULSE_HOOK and
+   MDMPRM_PULSE_DIALLING: the host's result) */
 long modem_set_param(struct modem *m, unsigned name, int val);
 /* S-register sreg_param as modem_get_sreg() gives it */
 long modem_get_sreg_param(struct modem *m, unsigned sreg_param);

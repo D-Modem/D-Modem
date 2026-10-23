@@ -544,7 +544,7 @@ decodes caller ID itself; this one does not [inferred].
 ## What this means for dmodemd
 
 `dmodemd/usb_line.cpp` follows Linux, with more taken from Windows
-(items 1, 2, 6, 7 and 8). Against Windows:
+(items 1, 2, 6, 7, 8 and 9). Against Windows:
 
 1. **Caller ID: done.** With `AT#CID=1`, from the first ring dmodemd
    sets GPIO 0x0020 (CID1) while the core listens on hook, and clears
@@ -577,7 +577,13 @@ decodes caller ID itself; this one does not [inferred].
    GPIO on each change and reports the phone on the modem's jack off or
    on hook (V.253's `<DLE>H` and `<DLE>h` in voice mode). That set means
    off hook is inferred.
-9. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
+9. **International line controls: done, behind `--usb-international`.**
+   DP, DC (per country, inverted on the ST75951), the Australian timer
+   and RFC through pulse dialling, as Windows' `SetHookOn`,
+   `CalculateGPIOBits`, `SpawnAustralianTimerIfNeeded` and
+   `OnDigitPulseDialing` do them. The countries are those of the table's
+   byte 90 (France, Algeria, Tunisia; Australia).
+10. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
    Linux.
 
 ## Open questions

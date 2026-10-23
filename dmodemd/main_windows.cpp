@@ -222,6 +222,7 @@ int main(int argc, char *argv[])
 	usb.set_leds(opt.usb_leds);
 	usb.set_wake(opt.usb_wake);
 	usb.set_handset(opt.usb_handset);
+	usb.set_international(opt.usb_international);
 	if (opt.usb && !usb.open(opt.usb, opt.rate))
 		return 255;
 #endif

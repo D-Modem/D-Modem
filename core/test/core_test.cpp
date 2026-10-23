@@ -96,6 +96,12 @@ struct Line final : public dcore::Host {
 		edges.emplace_back(samples, broken);
 		return 0;
 	}
+	/* pulse dialling's start and end, kept with the samples by then */
+	std::vector<std::pair<unsigned long, bool>> dialling;
+	/* (see dialling) */
+	void pulse_dialling(Modem &, bool on) override {
+		dialling.emplace_back(samples, on);
+	}
 };
 
 /* a modem on l at 8000 Hz, in country (NULL: USA) */
@@ -378,6 +384,14 @@ TEST(Core, PulseDialling)
 		if (n)
 			got.push_back(n);
 		EXPECT_EQ(got, w.pulses);
+		/* pulse dialling on before the first break, over after the
+		   last make (at the string's end or its T) */
+		ASSERT_EQ(l.dialling.size(), 2u);
+		EXPECT_TRUE(l.dialling[0].second);
+		EXPECT_FALSE(l.dialling[1].second);
+		ASSERT_FALSE(l.edges.empty());
+		EXPECT_LE(l.dialling[0].first, l.edges.front().first);
+		EXPECT_GE(l.dialling[1].first, l.edges.back().first);
 		delete m;
 	}
 	/* no pulses on the line: DTMF, no break */
@@ -398,6 +412,10 @@ TEST(Core, PulseDialling)
 	}
 	EXPECT_TRUE(l.edges.empty());
 	EXPECT_GT(peak, 3000.0f);               /* the digit's tones */
+	/* (pulse dialling begun and over at once) */
+	ASSERT_EQ(l.dialling.size(), 2u);
+	EXPECT_TRUE(l.dialling[0].second);
+	EXPECT_FALSE(l.dialling[1].second);
 	delete m;
 }
 

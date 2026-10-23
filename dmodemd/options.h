@@ -36,6 +36,10 @@ struct Options {
 	   GPIO 2) */
 	bool usb_wake = false;
 	bool usb_handset = false;
+	/* the SmartUSB56's international line controls, as Smart Link's
+	   Windows driver has them with Options.International
+	   (--usb-international) */
+	bool usb_international = false;
 	unsigned rate = 9600;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem
 	   pair such as com0com's), or TCP connections on [address:]port

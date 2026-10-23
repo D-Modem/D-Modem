@@ -325,6 +325,22 @@ licence). In `dmodemd/usb_line.cpp`:
   off hook, as far as is known (no driver says). The core reports it in
   voice mode as V.253's local phone event, `<DLE>H` off hook and
   `<DLE>h` on hook, and lists event 8 in `+VLS=?`.
+- **International line controls.** With `--usb-international`
+  dmodemd drives three more outputs, as Smart Link's Windows driver
+  does with its `Options.International` (off in Creative's INF):
+  - DP (GPIO 10): set off hook; cleared on hook with RFC.
+  - DC (GPIO 12): set off hook in France, Algeria and Tunisia, the
+    countries whose record asks for it (byte 90, bit 0, of Smart
+    Link's table). On an ST75951 it is the other way: set off hook in
+    every other country.
+  - RFC (GPIO 8): for 350 ms after each off hook in Australia (bit 1,
+    "the Australian timer"), and all through pulse dialling (DP and RFC
+    left alone then, DC cleared on each break).
+
+  What the three switch in the DAA is not known (Smart Link's names
+  only); they are for a board built for these countries. The country
+  is `-c` or `+GCI`'s. dmodemd learns when pulse dialling begins and
+  ends from the call progress pump (`MDMPRM_PULSE_DIALLING`).
 - **Unplugged.** dmodemd says so and exits.
 
 Limits: the device's line settings are its own, and it has not yet been
@@ -418,6 +434,7 @@ start from.
 | `--usb-leds` | a SmartUSB56's carrier and data LEDs lit (GPIO 6 and 13), as on Creative's Modem Blaster; only for a board that has them |
 | `--usb-wake` | a ring wakes the computer: the SmartUSB56's USB remote wakeup armed (and on Linux the kernel's `power/wakeup` of it enabled, as root) |
 | `--usb-handset` | the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook, `<DLE>H` and `<DLE>h` in voice mode |
+| `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
@@ -562,7 +579,9 @@ start-up. The test checks that a wrong `<bus>:<address>` is refused, a
 data call (rings, caller ID between the first two rings, the answer at
 the second ring, V.34 at 33600, text each way, the LEDs of the one with
 `--usb-leds` and none on the other), a busy line, a call
-dialled in pulses, a voice call, the handset detector in voice mode, a
+dialled in pulses, a voice call, the handset detector in voice mode,
+the international line controls (Australia's timer and pulse dialling,
+France's DC bit, the ST75951's inverted one), a
 call that wakes a suspended 1002 (`--usb-wake`: the fake's ring with its
 remote wakeup armed; the device reset on resume, set up again, the call
 answered), and that both exit once the exchange (the devices) has

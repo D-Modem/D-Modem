@@ -195,6 +195,21 @@ const uint16_t GPIO_HOOK1 = 0x0008;
 const uint16_t GPIO_CID1 = 0x0020;        /* the codec on the line on hook */
 const uint16_t GPIO_LED_CARRIER = 0x0040;  /* --usb-leds */
 const uint16_t GPIO_LED_DATA = 0x2000;
+/* --usb-international's: Smart Link's names (st7554.c) */
+const uint16_t GPIO_RFC = 0x0100;
+const uint16_t GPIO_DP = 0x0400;
+const uint16_t GPIO_DC = 0x1000;
+/* the Australian timer: RFC after an off hook, ms */
+const unsigned AUSTRALIAN_MS = 350;
+
+/* a equals b, case aside */
+bool same_name(const char *a, const char *b)
+{
+	for (; *a && *b; a++, b++)
+		if ((*a | 0x20) != (*b | 0x20))
+			return false;
+	return *a == *b;
+}
 const uint16_t GPIO_LED_HOOK = 0x0080;
 const uint16_t GPIO_MONOLITHIC = 0x4000;   /* an ST75951/2 silicon DAA */
 const uint16_t BYTE_ORDER_LE = 0x8000;
@@ -869,6 +884,12 @@ void UsbLine::country(dcore::Modem &, const char *name)
 		daa_ = &si3056_usa();
 	}
 	daa_due_ = true;
+	/* (--usb-international: the country record's byte 90 as Smart
+	   Link's table has it, docs/smartusb56-windows.md) */
+	const char *n = daa_name_.c_str();
+	intl_dc_ = same_name(n, "FRANCE") || same_name(n, "ALGERIA") ||
+		same_name(n, "TUNISIA");
+	intl_aus_ = same_name(n, "AUSTRALIA");
 	if (h_ && kind_ == Kind::Stick && claimed_ && hook_ != MODEM_HOOK_OFF)
 		stick_country();
 }
@@ -1065,6 +1086,7 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 			 stick_out(LP_SET_MONITOR, 1) &&
 			 (!daa_due_ || stick_country()) ? 0 : -1);
 	bool cid = state == MODEM_HOOK_SNOOPING;
+	bool now_off = off && !(gpio_ & GPIO_HOOK1);
 	if ((gpio_ & GPIO_CID1) && !cid &&
 	    !set_gpio((uint16_t)(gpio_ & ~GPIO_CID1)))
 		return -1;
@@ -1072,7 +1094,9 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 		(uint16_t)(gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK |
 				     GPIO_LED_CARRIER | GPIO_LED_DATA));
 	if (!off)
-		data_seen_ = online_seen_ = false;
+		data_seen_ = online_seen_ = pulse_active_ = false;
+	if (intl_)
+		v = intl_hook(v, off, now_off);
 	if (cid)
 		v |= GPIO_CID1;
 	return v == gpio_ || set_gpio(v) ? 0 : -1;
@@ -1121,8 +1145,48 @@ int UsbLine::pulse_hook(dcore::Modem &, bool broken)
 	flash_end_ = 0;
 	if (kind_ == Kind::Stick)
 		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
-	return set_gpio(broken ? (uint16_t)(gpio_ & ~GPIO_HOOK1) :
-			(uint16_t)(gpio_ | GPIO_HOOK1)) ? 0 : -1;
+	uint16_t v = broken ? (uint16_t)(gpio_ & ~GPIO_HOOK1) :
+		(uint16_t)(gpio_ | GPIO_HOOK1);
+	if (intl_)
+		v = intl_hook(v, !broken, false);
+	return set_gpio(v) ? 0 : -1;
+}
+
+/* the international line controls (set_international()) of v, the GPIOs'
+   outputs to be, as Windows' driver has them in its SetHookOn: off (off
+   hook) or not, now_off a change to off hook.  Outside pulse dialling
+   DP set off hook, DP and RFC cleared on hook; DC off hook as the
+   country has it (the other way on an ST75951), else cleared; on hook
+   the Australian timer cancelled, off hook (a change) started in
+   Australia, RFC set till it ends */
+uint16_t UsbLine::intl_hook(uint16_t v, bool off, bool now_off)
+{
+	if (!pulse_active_)
+		v = off ? (uint16_t)(v | GPIO_DP) :
+			(uint16_t)(v & ~(GPIO_RFC | GPIO_DP));
+	bool dc = st75951_ ? !intl_dc_ : intl_dc_;
+	v = off && dc ? (uint16_t)(v | GPIO_DC) : (uint16_t)(v & ~GPIO_DC);
+	if (!off) {
+		aus_end_ = 0;
+	} else if (now_off && intl_aus_ && !pulse_active_) {
+		v |= GPIO_RFC;
+		aus_end_ = samples_ + (unsigned long long)rate_ * AUSTRALIAN_MS / 1000 + 1;
+		DBG("Australian timer: RFC for %u ms\n", AUSTRALIAN_MS);
+	}
+	return v;
+}
+
+/* see usb_line.h: as Windows' driver, RFC set through pulse dialling
+   (the Australian timer cancelled) and cleared after it */
+void UsbLine::pulse_dialling(dcore::Modem &, bool on)
+{
+	if (!intl_ || kind_ != Kind::St7554 || on == pulse_active_)
+		return;
+	pulse_active_ = on;
+	if (on)
+		aus_end_ = 0;
+	DBG("pulse dialling %s: RFC %s\n", on ? "begins" : "over", on ? "on" : "off");
+	set_gpio(on ? (uint16_t)(gpio_ | GPIO_RFC) : (uint16_t)(gpio_ & ~GPIO_RFC));
 }
 
 /* see usb_line.h */
@@ -1176,6 +1240,11 @@ int UsbLine::pump(dcore::Modem &m)
 		memcpy(frame_in_.data(), in_buf_.data() + used,
 		       frame_ * sizeof(int16_t));
 		used += frame_;
+		if (aus_end_ && samples_ >= aus_end_) {
+			aus_end_ = 0;
+			DBG("Australian timer over: RFC off\n");
+			set_gpio((uint16_t)(gpio_ & ~GPIO_RFC));
+		}
 		if (flash_end_ && samples_ >= flash_end_) {
 			flash_end_ = 0;
 			if (hook_ == MODEM_HOOK_OFF)

@@ -66,6 +66,7 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	int pulses_left, pulse_broken;
 	long pulse_left;
 	int pulse_unable;
+	int pulse_dialling;     /* MDMPRM_PULSE_DIALLING said 1 */
 	int net_dialed;
 	int dialed;
 	/* @: remote ringing heard, blocks of sound and of quiet */
@@ -111,6 +112,7 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	bool busy_part(bool on, int len) const;
 	float dial_sample();
 	bool pulse_digit(char ch);
+	void pulse_dialling_now(int on);
 	void hook_pulse(int broken);
 	int start(struct modem *m, enum DP_ID id, int caller, int srate_, int max_frag);
 	int process(void *in, void *out, int cnt) override;
@@ -343,6 +345,16 @@ void CallProgPump::hook_pulse(int broken)
 	modem_set_param(modem, MDMPRM_PULSE_HOOK, broken);
 }
 
+/* pulse dialling begun (on) or over, told the line (MDMPRM_PULSE_DIALLING)
+   once each */
+void CallProgPump::pulse_dialling_now(int on)
+{
+	if (on == pulse_dialling)
+		return;
+	pulse_dialling = on;
+	modem_set_param(modem, MDMPRM_PULSE_DIALLING, on);
+}
+
 /* a digit dialed in pulses (the country's pattern): the first break
    now; false (DTMF instead, from now on) if the line cannot, or if ch
    is no digit 0 to 9 (*, #, A to D have no pulses: skipped) */
@@ -357,9 +369,11 @@ bool CallProgPump::pulse_digit(char ch)
 		n = ch == '0' ? 1 : n + 1;
 	else if (pulse_pattern == 3)
 		n = ch == '0' ? 10 : 10 - n;
+	pulse_dialling_now(1);
 	if (modem_set_param(modem, MDMPRM_PULSE_HOOK, 1) < 0) {
 		DSP_DBG("callprog: the line has no pulse dialing: DTMF\n");
 		pulse_unable = 1;
+		pulse_dialling_now(0);
 		return false;
 	}
 	pulse_broken = 1;
@@ -411,6 +425,7 @@ float CallProgPump::dial_sample()
 		}
 		ch = dial[dial_pos];
 		if (!ch) {
+			pulse_dialling_now(0);
 			set_state(CP_WAIT_ANSWER);
 			return 0;
 		}
@@ -427,12 +442,14 @@ float CallProgPump::dial_sample()
 			set_state(CP_WAIT_QUIET);
 			return 0;
 		} else if (ch == ';') {
+			pulse_dialling_now(0);
 			dialed = 1;
 			set_state(CP_HOLD);
 			return 0;
 		} else if (ch == 'P' || ch == 'p') {
 			pulse = 1;
 		} else if (ch == 'T' || ch == 't') {
+			pulse_dialling_now(0);
 			pulse = 0;
 		} else if (pulse && pulse_digit(ch)) {
 			return 0;

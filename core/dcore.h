@@ -125,6 +125,10 @@ public:
 	   break and gap).  0, or -1 for a line that cannot (a digital
 	   network's: the pump dials in DTMF instead) */
 	virtual int pulse_hook(Modem &m, bool broken) { (void)m; (void)broken; return -1; }
+	/* pulse dialling begins (on: before its first break) or is over
+	   (the dial string's end, a ';' or a 'T'), for a line that does
+	   something of its own meanwhile */
+	virtual void pulse_dialling(Modem &m, bool on) { (void)m; (void)on; }
 	/* for ATI3 */
 	virtual const char *driver_name() { return nullptr; }
 	/* the country (-c, +GCI) by its name, at the start and on each

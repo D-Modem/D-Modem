@@ -263,6 +263,9 @@ long Modem::set_param(unsigned name, int val)
 		return host_.pulse_dial(*this, val);
 	case MDMPRM_PULSE_HOOK:
 		return host_.pulse_hook(*this, val != 0);
+	case MDMPRM_PULSE_DIALLING:
+		host_.pulse_dialling(*this, val != 0);
+		return 0;
 	default:
 		return -1;
 	}

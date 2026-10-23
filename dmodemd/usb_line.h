@@ -81,6 +81,14 @@ public:
 	   enabled): a phone on its PHONE jack off hook (the GPIO set) or on
 	   hook, to the modem's local_phone() */
 	void set_handset(bool on) { handset_ = on; }
+	/* the SmartUSB56's international line controls, as Smart Link's
+	   Windows driver drives them with Options.International: DP (GPIO
+	   10) set off hook, DP and RFC (GPIO 8) cleared on hook; DC (GPIO
+	   12) off hook for France, Algeria and Tunisia (the country
+	   record's byte 90, bit 0; the other way on an ST75951); RFC for
+	   350 ms after each off hook in Australia (bit 1), and all through
+	   pulse dialling */
+	void set_international(bool on) { intl_ = on; }
 	/* the modem dev ("" or "auto": the first SmartUSB56 or pico-serial
 	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
 	   rate, its samples running, on hook; false with the reason on
@@ -110,6 +118,8 @@ public:
 	bool can_flash(dcore::Modem &) override { return true; }
 	void hook_flash(dcore::Modem &m, unsigned ms) override;
 	int pulse_hook(dcore::Modem &m, bool broken) override;
+	/* (see set_international()) */
+	void pulse_dialling(dcore::Modem &m, bool on) override;
 	/* the playback's lead, in samples */
 	int io_delay(dcore::Modem &) override { return delay_; }
 	/* the country: the stick's line settings (si3056.h), written now
@@ -179,6 +189,7 @@ private:
 	void send_out();
 	void gone(const char *why);
 	void update_leds(dcore::Modem &m);
+	uint16_t intl_hook(uint16_t v, bool off, bool now_off);
 
 	Dte &dte_;
 	Kind kind_ = Kind::St7554;
@@ -225,6 +236,12 @@ private:
 	bool wake_ = false;             /* set_wake() */
 	bool handset_ = false;          /* set_handset() */
 	bool handset_due_ = false;      /* GPIO 2 changed: to be read */
+	/* set_international(); the country's DC bit and Australian timer
+	   (country()); pulse dialling under way; the timer's end (the
+	   samples' count; 0: none) */
+	bool intl_ = false, intl_dc_ = false, intl_aus_ = false;
+	bool pulse_active_ = false;
+	unsigned long long aus_end_ = 0;
 	/* transfers that could not be submitted again (the device
 	   suspended): retried every RESUME_MS by resume(), the time of the
 	   first (ms of the system's clock) */
