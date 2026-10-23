@@ -37,11 +37,19 @@
  *    cleared).  Its configuration says it can wake.
  *    FAKE_ST7554_HANDSET=<file>: the handset detector (GPIO 2) says off
  *    hook while the file is there; its change an interrupt if enabled.
+ *    FAKE_ST7554_VOICE=<file>: a voice codec on SSI2, a handset's: the
+ *    configuration has alternate settings 2 (its isochronous endpoints)
+ *    and 3 (the codec's and its: five endpoints); it streams once
+ *    powered up (SSI2_CONTROL 0x21) and its counter set, 8000 octets a
+ *    second of mu-law, its IN transfers kept in step with the codec's.
+ *    The microphone's is a 1000 Hz tone; the earpiece's octets go to the
+ *    file, as they come.
  *    FAKE_USB_NO_ISO, FAKE_USB_USBDK: fake_usb_backend.h (Windows 7's
  *    and 8's drivers).
  *
  */
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +61,8 @@
 #include <vector>
 
 #include <libusb.h>
+
+#include <g711.h>
 
 struct libusb_context {
 	int dummy;
@@ -69,6 +79,11 @@ struct libusb_device_handle {
 namespace {
 
 const uint8_t EP_INTR = 0x81, EP_OUT = 0x02, EP_IN = 0x83;
+/* the voice codec's (FAKE_ST7554_VOICE), its packets' octets a ms, its
+   microphone's tone */
+const uint8_t EP_VOUT = 0x04, EP_VIN = 0x85;
+const uint16_t VOICE_PACKET = 16;
+const unsigned VOICE_PER_MS = 8, MIC_HZ = 1000, MIC_LEVEL = 8000;
 const uint16_t MAX_PACKET = 32;
 const uint16_t GPIO_RING1 = 0x0001, GPIO_HANDSET = 0x0004, GPIO_HOOK1 = 0x0008,
 	GPIO_CID1 = 0x0020;
@@ -98,6 +113,11 @@ struct Fake {
 	const char *suspend_file = nullptr, *handset_file = nullptr;
 	bool wakeup = false, suspended = false, woke = false;
 	uint16_t events = 0;            /* GPIO events not yet on the interrupt */
+	/* FAKE_ST7554_VOICE's: the earpiece's file, the voice transfers
+	   queued, the voice IN packets given, the microphone's samples */
+	FILE *ear = nullptr;
+	std::deque<libusb_transfer *> vin_q, vout_q;
+	unsigned long long vms = 0, mic_n = 0;
 } fake;
 
 /* the files of FAKE_ST7554_SUSPEND and _HANDSET looked at again: every
@@ -144,6 +164,19 @@ bool streaming()
 	if (fake.st75951 && (!(fake.regs[0x01] & 2) || fake.cw[3] != 0x050))
 		return false;
 	return fake.regs[0x01] & 1 && fake.regs[0x04] && fake.rate;
+}
+
+/* the voice codec streams: powered up, its counter set */
+bool voice_streaming()
+{
+	return fake.ear && fake.regs[0x02] == 0x21 && fake.regs[0x06];
+}
+
+/* the microphone's next sample, in mu-law */
+uint8_t mic_sample()
+{
+	double t = (double)fake.mic_n++ * MIC_HZ / 8000.0;
+	return dsp::g711::lin2ulaw((int)(MIC_LEVEL * sin(2 * M_PI * t)));
 }
 
 /* the rate of a control word (the STLC7550's, the ST75951's register 0);
@@ -240,7 +273,8 @@ void run()
 		fake.suspended = true;
 		fake.woke = false;
 		std::deque<libusb_transfer *> all;
-		for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q }) {
+		for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q,
+				 &fake.vin_q, &fake.vout_q }) {
 			all.insert(all.end(), q->begin(), q->end());
 			q->clear();
 		}
@@ -282,7 +316,8 @@ void run()
 		}
 		if (fake.gone) {
 			std::deque<libusb_transfer *> all;
-			for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q }) {
+			for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q,
+					 &fake.vin_q, &fake.vout_q }) {
 				all.insert(all.end(), q->begin(), q->end());
 				q->clear();
 			}
@@ -303,6 +338,44 @@ void run()
 				p.actual_length = p.length;
 				p.status = LIBUSB_TRANSFER_COMPLETED;
 				off += (int)p.length;
+			}
+			t->actual_length = off;
+			done(t, LIBUSB_TRANSFER_COMPLETED);
+			more = true;
+		}
+		/* the earpiece's octets to its file; the microphone's as
+		   the codec's samples have come (its ms) */
+		while (!fake.vout_q.empty()) {
+			libusb_transfer *t = fake.vout_q.front();
+			fake.vout_q.pop_front();
+			int off = 0;
+			for (int i = 0; i < t->num_iso_packets; i++) {
+				libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
+				if (voice_streaming() && p.length)
+					fwrite(t->buffer + off, 1, p.length, fake.ear);
+				p.actual_length = p.length;
+				p.status = LIBUSB_TRANSFER_COMPLETED;
+				off += (int)p.length;
+			}
+			fflush(fake.ear);
+			t->actual_length = off;
+			done(t, LIBUSB_TRANSFER_COMPLETED);
+			more = true;
+		}
+		if (!fake.vin_q.empty() && voice_streaming() &&
+		    fake.vms + (unsigned)fake.vin_q.front()->num_iso_packets <= fake.ms) {
+			libusb_transfer *t = fake.vin_q.front();
+			fake.vin_q.pop_front();
+			int off = 0;
+			for (int i = 0; i < t->num_iso_packets; i++) {
+				libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
+				unsigned n = VOICE_PER_MS < p.length ? VOICE_PER_MS : p.length;
+				for (unsigned k = 0; k < n; k++)
+					t->buffer[off + k] = mic_sample();
+				p.actual_length = n;
+				p.status = LIBUSB_TRANSFER_COMPLETED;
+				off += (int)p.length;
+				fake.vms++;
 			}
 			t->actual_length = off;
 			done(t, LIBUSB_TRANSFER_COMPLETED);
@@ -357,9 +430,10 @@ void run()
 }
 
 /* the configuration: interface 0, alternate settings 0 (no endpoints)
-   and 1 (interrupt IN, isochronous OUT and IN) */
-libusb_endpoint_descriptor endpoints[3];
-libusb_interface_descriptor alts[2];
+   and 1 (interrupt IN, isochronous OUT and IN); with the voice codec 2
+   (interrupt IN, its OUT and IN) and 3 (the five) */
+libusb_endpoint_descriptor endpoints[5], voice_endpoints[3];
+libusb_interface_descriptor alts[4];
 libusb_interface iface;
 libusb_config_descriptor config;
 
@@ -384,8 +458,25 @@ void make_config()
 	alts[1].bAlternateSetting = 1;
 	alts[1].bNumEndpoints = 3;
 	alts[1].endpoint = endpoints;
+	endpoints[3] = endpoints[1];
+	endpoints[3].bEndpointAddress = EP_VOUT;
+	endpoints[3].wMaxPacketSize = VOICE_PACKET;
+	endpoints[4] = endpoints[2];
+	endpoints[4].bEndpointAddress = EP_VIN;
+	endpoints[4].wMaxPacketSize = VOICE_PACKET;
+	voice_endpoints[0] = endpoints[0];
+	voice_endpoints[1] = endpoints[3];
+	voice_endpoints[2] = endpoints[4];
+	alts[2].bInterfaceNumber = 0;
+	alts[2].bAlternateSetting = 2;
+	alts[2].bNumEndpoints = 3;
+	alts[2].endpoint = voice_endpoints;
+	alts[3].bInterfaceNumber = 0;
+	alts[3].bAlternateSetting = 3;
+	alts[3].bNumEndpoints = 5;
+	alts[3].endpoint = endpoints;
 	iface.altsetting = alts;
-	iface.num_altsetting = 2;
+	iface.num_altsetting = fake.ear ? 4 : 2;
 	config.bNumInterfaces = 1;
 	config.interface = &iface;
 }
@@ -512,6 +603,11 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 	fake.st75951 = getenv("FAKE_ST7554_DAA") != nullptr;
 	fake.suspend_file = getenv("FAKE_ST7554_SUSPEND");
 	fake.handset_file = getenv("FAKE_ST7554_HANDSET");
+	if (const char *v = getenv("FAKE_ST7554_VOICE")) {
+		fake.ear = fopen(v, "wb");
+		if (!fake.ear)
+			fprintf(stderr, "fake st7554: %s: %s\n", v, strerror(errno));
+	}
 	if (fake.st75951)
 		fake.regs[0x15] = GPIO_MONOLITHIC;
 	fake.open = true;
@@ -525,6 +621,9 @@ void LIBUSB_CALL libusb_close(libusb_device_handle *h)
 	for (int fd : { fake.cap, fake.play, fake.ctl })
 		fake_net::close_fd(fd);
 	fake.cap = fake.play = fake.ctl = -1;
+	if (fake.ear)
+		fclose(fake.ear);
+	fake.ear = nullptr;
 	fake.open = false;
 	delete h;
 }
@@ -554,11 +653,17 @@ int LIBUSB_CALL libusb_release_interface(libusb_device_handle *, int n)
 	return n == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND;
 }
 
-/* interface 0's setting alt, 0 or 1 */
+/* interface 0's setting alt, 0 or 1 (to 3 with the voice codec) */
 int LIBUSB_CALL libusb_set_interface_alt_setting(libusb_device_handle *,
 						 int n, int alt)
 {
-	return n == 0 && (alt == 0 || alt == 1) ? 0 : LIBUSB_ERROR_NOT_FOUND;
+	int most = fake.ear ? 3 : 1;
+	if (n == 0 && alt >= 0 && alt <= most) {
+		if (fake.log)
+			fprintf(stderr, "fake st7554: alternate setting %d\n", alt);
+		return 0;
+	}
+	return LIBUSB_ERROR_NOT_FOUND;
 }
 
 /* nothing to clear: 0 */
@@ -655,6 +760,10 @@ int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
 		fake.in_q.push_back(t);
 	else if (t->endpoint == EP_OUT)
 		fake.out_q.push_back(t);
+	else if (t->endpoint == EP_VIN && fake.ear)
+		fake.vin_q.push_back(t);
+	else if (t->endpoint == EP_VOUT && fake.ear)
+		fake.vout_q.push_back(t);
 	else
 		return LIBUSB_ERROR_NOT_FOUND;
 	return 0;
@@ -664,7 +773,8 @@ int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
    LIBUSB_ERROR_NOT_FOUND if not queued */
 int LIBUSB_CALL libusb_cancel_transfer(libusb_transfer *t)
 {
-	for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q })
+	for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q, &fake.vin_q,
+			 &fake.vout_q })
 		for (auto i = q->begin(); i != q->end(); ++i)
 			if (*i == t) {
 				q->erase(i);

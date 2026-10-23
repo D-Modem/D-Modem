@@ -920,7 +920,7 @@ the other modes):
 +VSD=\p{s},\p{t} & silence detection: sensitivity and period, 0 to 255 \\
 +VSM=\p{m},8000 & the compression method, 0 or 1, at 8000 samples/s \\
 +VLS=\p{n} & 1 takes the line for voice (on SIP: answers the call
-  that rings), 0 leaves it.  \cmd{=?} lists the two, each with the events
+  that rings), 0 leaves it; 14 and 15 a handset's (below).  \cmd{=?} lists them, each with the events
   it reports (below) \\
 +VEM=\p{n} & 0 or 1: V.253's event reports in the speakerphone state,
   which the modem has not; kept, 0 at the start and with \cmd{+VIP} \\
@@ -1000,7 +1000,18 @@ ringing tone, a busy tone and the two answer tones, in every state.  A
 line that senses the phone on the modem's own jack (a SmartUSB56 with
 \texttt{dmodemd --usb-handset}) adds event 8 to both, in every state
 (\texttt{00800000}, \texttt{0B843060}, \ldots): that phone off hook is
-\cmd{<DLE>H}, on hook again \cmd{<DLE>h}.
+\cmd{<DLE>H}, on hook again \cmd{<DLE>h}.  A modem with a handset of its own
+(a SmartUSB56 with \texttt{dmodemd --usb-voice-codec}) lists two more:
+\begin{verbatim}
+14,"H",08000000,08000000,08000000
+15,"HT",0B043060,0B043060,0B043060
+\end{verbatim}
+\cmd{+VLS=14} puts the voice engine on the handset alone, the line on
+hook: \cmd{+VRX} records its microphone, \cmd{+VTX} plays to its
+earpiece, and DTMF from it is reported.  \cmd{+VLS=15} takes the line
+with the handset on the call: the DTE hears the line and the handset,
+the line gets the DTE's samples and the handset.  Moving between 1, 14
+and 15 keeps the voice engine running, the line taken or left.
 
 A voice call can become a fax or data call (V.253 5.3.2 and its
 example I.6).  \cmdl[plusFCLASS]{+FCLASS=1} (or \cmd{0}) in the voice

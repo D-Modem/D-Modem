@@ -78,6 +78,7 @@
 
 #include <chrono>
 
+#include <g711.h>
 #include <log.h>
 
 #include "usb_line.h"
@@ -171,6 +172,7 @@ bool stick_rate(unsigned rate)
 
 /* its vendor requests (registers) */
 const uint8_t SSI1_CONTROL = 0x01;
+const uint8_t SSI2_CONTROL = 0x02;
 const uint8_t FIFO_MASK = 0x03;
 const uint8_t SSI1_COUNTER = 0x04;
 const uint8_t SSI2_COUNTER = 0x06;
@@ -189,6 +191,18 @@ const uint16_t SSI1_POWERUP = 0x0001;
 const uint16_t SSI1_ST75951 = 0x0002;      /* kept set on an ST75951 */
 const uint16_t SSI1_UNDERRUN = 0x0040;
 const uint16_t SSI1_OVERRUN = 0x0020;
+/* the voice codec's (SSI2): its power, as Windows' driver has it
+   (KSGSCodecInterface::Power), and its FIFO's errors, the SSI1 bits'
+   counterparts (EnableFIFOInterrupts, TranslateInterruptData) */
+const uint16_t SSI2_POWERUP = 0x0021;
+const uint16_t SSI2_UNDERRUN = 0x0004;
+const uint16_t SSI2_OVERRUN = 0x0002;
+/* its rate (the only one: K7554VoiceCodecInterface::SetSampleRate), and
+   its period, 5 ms (SetPTCPeriod: the rate times the ms, less 1) */
+const unsigned VOICE_RATE = 8000;
+const uint16_t VOICE_PERIOD = VOICE_RATE * 5 / 1000 - 1;
+/* the alternate settings: the codec's streams, and the voice codec's too */
+const int ALT_MODEM = 1, ALT_VOICE = 3;
 const uint16_t GPIO_RING1 = 0x0001;
 const uint16_t GPIO_HANDSET = 0x0004;      /* the PHONE jack's off hook */
 const uint16_t GPIO_HOOK1 = 0x0008;
@@ -243,6 +257,34 @@ uint16_t cword(unsigned rate)
 	case 16000: return 0x3f0;
 	}
 	return 0;
+}
+
+/* in's n samples at rate from appended to out at rate to, by linear
+   interpolation (between the two codecs' rates: the voice codec's and
+   the line's); pos (the phase) and last (the sample before in's first)
+   kept for the next ones */
+void resample(const int16_t *in, size_t n, unsigned from, unsigned to,
+	      double &pos, int16_t &last, std::deque<int16_t> &out)
+{
+	double step = (double)from / to;
+	/* (t: 0 at last, k + 1 at in[k]) */
+	for (; n && pos < (double)n; pos += step) {
+		size_t i = (size_t)pos;
+		double f = pos - (double)i;
+		double a = i ? in[i - 1] : last, b = in[i];
+		out.push_back((int16_t)(a + (b - a) * f));
+	}
+	if (n) {
+		pos -= (double)n;
+		last = in[n - 1];
+	}
+}
+
+/* a + b, within 16 bits */
+int16_t mix(int a, int b)
+{
+	int x = a + b;
+	return (int16_t)(x > 32767 ? 32767 : x < -32768 ? -32768 : x);
 }
 
 } // namespace
@@ -389,9 +431,11 @@ int UsbLine::list()
 	return 0;
 }
 
-/* the endpoints of interface 0, alternate setting 1: interrupt IN,
-   isochronous OUT, isochronous IN */
-bool UsbLine::endpoints()
+/* the endpoints of interface 0's alternate setting alt: interrupt IN,
+   then isochronous OUT and IN, the codec's; in ALT_VOICE another OUT and
+   IN after them, the voice codec's (as Windows' driver takes them, its
+   pipes 3 and 4) */
+bool UsbLine::endpoints(int alt)
 {
 	libusb_config_descriptor *cfg;
 	int err = libusb_get_active_config_descriptor(libusb_get_device(h_),
@@ -400,32 +444,43 @@ bool UsbLine::endpoints()
 		ERR("%s: its configuration: %s\n", name_, libusb_strerror(err));
 		return false;
 	}
-	if (cfg->bNumInterfaces >= 1 && cfg->interface[0].num_altsetting >= 2) {
-		const libusb_interface_descriptor &alt =
-			cfg->interface[0].altsetting[1];
-		for (int i = 0; i < alt.bNumEndpoints; i++) {
-			const libusb_endpoint_descriptor &e = alt.endpoint[i];
-			int type = e.bmAttributes & LIBUSB_TRANSFER_TYPE_MASK;
-			bool in = e.bEndpointAddress & LIBUSB_ENDPOINT_IN;
-			if (type == LIBUSB_TRANSFER_TYPE_INTERRUPT && in)
-				ep_intr_ = e.bEndpointAddress;
-			else if (type == LIBUSB_TRANSFER_TYPE_ISOCHRONOUS && in) {
-				ep_in_ = e.bEndpointAddress;
-				max_in_ = e.wMaxPacketSize & 0x7ff;
-			} else if (type == LIBUSB_TRANSFER_TYPE_ISOCHRONOUS) {
-				ep_out_ = e.bEndpointAddress;
-				max_out_ = e.wMaxPacketSize & 0x7ff;
-			}
+	const libusb_interface_descriptor *d = nullptr;
+	if (cfg->bNumInterfaces >= 1)
+		for (int i = 0; i < cfg->interface[0].num_altsetting; i++)
+			if (cfg->interface[0].altsetting[i].bAlternateSetting == alt)
+				d = &cfg->interface[0].altsetting[i];
+	for (int i = 0; d && i < d->bNumEndpoints; i++) {
+		const libusb_endpoint_descriptor &e = d->endpoint[i];
+		int type = e.bmAttributes & LIBUSB_TRANSFER_TYPE_MASK;
+		bool in = e.bEndpointAddress & LIBUSB_ENDPOINT_IN;
+		int max = e.wMaxPacketSize & 0x7ff;
+		if (type == LIBUSB_TRANSFER_TYPE_INTERRUPT && in) {
+			ep_intr_ = e.bEndpointAddress;
+		} else if (type == LIBUSB_TRANSFER_TYPE_ISOCHRONOUS) {
+			Iso &st = (in ? iso_.ep_in : iso_.ep_out) ? viso_ : iso_;
+			(in ? st.ep_in : st.ep_out) = e.bEndpointAddress;
+			(in ? st.max_in : st.max_out) = max;
 		}
 	}
 	libusb_free_config_descriptor(cfg);
-	if (!ep_intr_ || !ep_in_ || !ep_out_ || !max_in_ || !max_out_) {
+	if (!ep_intr_ || !iso_.ep_in || !iso_.ep_out || !iso_.max_in ||
+	    !iso_.max_out) {
 		ERR("%s: not the endpoints of %s\n", name_,
 		    kind_ == Kind::Stick ? "a pico-serial Line" : "an ST7554");
 		return false;
 	}
+	if (alt == ALT_VOICE && (!viso_.ep_in || !viso_.ep_out ||
+				 !viso_.max_in || !viso_.max_out)) {
+		ERR("%s: no voice codec's endpoints in alternate setting %d: "
+		    "this board has none (no --usb-voice-codec)\n", name_, alt);
+		viso_ = Iso();
+		return false;
+	}
 	DBG("endpoints: interrupt %02x, out %02x (%d), in %02x (%d)\n",
-	    ep_intr_, ep_out_, max_out_, ep_in_, max_in_);
+	    ep_intr_, iso_.ep_out, iso_.max_out, iso_.ep_in, iso_.max_in);
+	if (viso_.ep_in)
+		DBG("the voice codec's: out %02x (%d), in %02x (%d)\n",
+		    viso_.ep_out, viso_.max_out, viso_.ep_in, viso_.max_in);
 	return true;
 }
 
@@ -481,6 +536,12 @@ bool UsbLine::open(const char *dev, unsigned rate)
 	frame_ = (int)rate / 50;
 	frame_in_.assign(frame_, 0);
 	frame_out_.assign(frame_, 0);
+	frame_mic_.assign(frame_, 0);
+	frame_ear_.assign(frame_, 0);
+	iso_ = Iso();
+	viso_ = Iso();
+	iso_.line = viso_.line = this;
+	viso_.voice = true;
 	if ((err = libusb_init(&ctx_)) < 0) {
 		ERR("libusb: %s\n", libusb_strerror(err));
 		ctx_ = nullptr;
@@ -511,31 +572,37 @@ bool UsbLine::open(const char *dev, unsigned rate)
 	return true;
 }
 
-/* the ST7554: the rate's control word, alternate setting 1, its codec
-   checked, its registers as Smart Link's driver sets them, on hook */
+/* the ST7554: the rate's control word, alternate setting 1 (3 with the
+   voice codec), its codec checked, its registers as Smart Link's driver
+   sets them, on hook */
 bool UsbLine::open_st7554(unsigned rate)
 {
 	uint16_t status;
 	int err;
+	int alt = voice_law_ != VoiceLaw::None ? ALT_VOICE : ALT_MODEM;
 
 	if (!cword(rate)) {
 		ERR("SmartUSB56: no rate of %u Hz (8000, 9600)\n", rate);
 		return false;
 	}
-	if ((err = libusb_set_interface_alt_setting(h_, 0, 1)) < 0) {
-		ERR("SmartUSB56: alternate setting 1: %s\n",
-		    libusb_strerror(err));
+	if ((err = libusb_set_interface_alt_setting(h_, 0, alt)) < 0) {
+		ERR("SmartUSB56: alternate setting %d: %s%s\n", alt,
+		    libusb_strerror(err), alt == ALT_VOICE ?
+		    " (no voice codec: no --usb-voice-codec)" : "");
 		return false;
 	}
-	if (!endpoints() || !get_reg(GPIO_STATUS, &status))
+	if (!endpoints(alt) || !get_reg(GPIO_STATUS, &status))
 		return false;
 	st75951_ = status & GPIO_MONOLITHIC;
 	DBG("codec: %s\n", st75951_ ? "ST75951/2 (silicon DAA)" : "STLC7550");
 	gpio_ = 0;
 	if (!init_st7554_regs())
 		return false;
-	libusb_clear_halt(h_, ep_in_);
-	libusb_clear_halt(h_, ep_out_);
+	for (Iso *st : { &iso_, &viso_ })
+		if (st->ep_in) {
+			libusb_clear_halt(h_, st->ep_in);
+			libusb_clear_halt(h_, st->ep_out);
+		}
 	intr_len_ = 4;
 	fifo_samples_ = FIFO_SAMPLES;
 	if (handset_)
@@ -548,7 +615,8 @@ bool UsbLine::open_st7554(unsigned rate)
 /* the ST7554's registers as Smart Link's driver sets them, the GPIOs'
    outputs gpio_ (on hook at the start, the hook as it was after a
    resume), the ring detector's interrupt and with set_handset() the
-   handset detector's; false (logged) */
+   handset detector's; the voice codec powered up after the codec (as
+   Windows' UpdateCodecPowerMode does) if it streams; false (logged) */
 bool UsbLine::init_st7554_regs()
 {
 	uint16_t mask = (uint16_t)(GPIO_RING1 | (handset_ ? GPIO_HANDSET : 0));
@@ -559,7 +627,8 @@ bool UsbLine::init_st7554_regs()
 		set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN) &&
 		set_reg(SSI1_COUNTER, 0) && set_reg(SSI2_COUNTER, 0) &&
 		(st75951_ ? start_st75951() : set_reg(SSI1_CONTROL, SSI1_POWERUP)) &&
-		set_reg(SSI1_CWORD, cword(rate_)) && set_reg(GPIO_INV, 0);
+		set_reg(SSI1_CWORD, cword(rate_)) && set_reg(GPIO_INV, 0) &&
+		(!viso_.ep_in || set_reg(SSI2_CONTROL, SSI2_POWERUP));
 }
 
 /* the device's USB remote wakeup armed (on) or cleared: SET_FEATURE or
@@ -677,7 +746,9 @@ bool UsbLine::open_stick(unsigned rate)
 		    libusb_strerror(err));
 		return false;
 	}
-	if (!endpoints())
+	if (voice_law_ != VoiceLaw::None)
+		ERR("pico-serial Line: no voice codec (--usb-voice-codec)\n");
+	if (!endpoints(ALT_MODEM))
 		return false;
 	intr_len_ = 8;
 	fifo_samples_ = STICK_FIFO_SAMPLES;
@@ -712,16 +783,15 @@ bool UsbLine::stick_in(uint8_t req, uint16_t value, uint8_t *buf, uint16_t len)
 	return true;
 }
 
-/* the transfers: the interrupt's, ISO_TRANSFERS IN ones, the OUT ones
-   (each sent when an IN one is done; the first ones now, a frame's
-   worth of silence each), then the FIFO started */
+/* the transfers: the interrupt's, then each stream's (start_iso()),
+   then the FIFOs started */
 bool UsbLine::start_streams()
 {
 	int err;
 	int pkt = (int)((rate_ * 2 + 999) / 1000);   /* octets a ms, at most */
 
-	out_buf_.assign(frame_ + frame_ / 2, 0);
-	delay_ = (int)out_buf_.size() + ISO_TRANSFERS * ISO_PACKETS *
+	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
+	delay_ = (int)iso_.out_buf.size() + ISO_TRANSFERS * ISO_PACKETS *
 		(int)rate_ / 1000 + fifo_samples_;
 	intr_ = libusb_alloc_transfer(0);
 	if (!intr_)
@@ -733,66 +803,102 @@ bool UsbLine::start_streams()
 		return false;
 	}
 	in_flight_++;
-	for (int i = 0; i < ISO_TRANSFERS; i++) {
-		in_[i] = libusb_alloc_transfer(ISO_PACKETS);
-		out_[i] = libusb_alloc_transfer(ISO_PACKETS);
-		if (!in_[i] || !out_[i])
+	if (!start_iso(iso_, pkt))
+		return false;
+	if (viso_.ep_in) {
+		viso_.out_buf.assign(VOICE_RATE / 50 + VOICE_RATE / 100, 0);
+		if (!start_iso(viso_, (int)(VOICE_RATE / 1000)))
 			return false;
-		uint8_t *ib = (uint8_t *)calloc(ISO_PACKETS, max_in_);
-		uint8_t *ob = (uint8_t *)calloc(ISO_PACKETS, max_out_);
+	}
+	/* (the stick's samples run since its alternate setting 1) */
+	return kind_ == Kind::Stick || start_fifos();
+}
+
+/* stream s's transfers: ISO_TRANSFERS IN ones, the OUT ones (each sent
+   when an IN one is done; the first ones now, pkt octets a packet of
+   what s has to send, silence past it) */
+bool UsbLine::start_iso(Iso &s, int pkt)
+{
+	int err;
+	for (int i = 0; i < ISO_TRANSFERS; i++) {
+		s.in[i] = libusb_alloc_transfer(ISO_PACKETS);
+		s.out[i] = libusb_alloc_transfer(ISO_PACKETS);
+		if (!s.in[i] || !s.out[i])
+			return false;
+		uint8_t *ib = (uint8_t *)calloc(ISO_PACKETS, s.max_in);
+		uint8_t *ob = (uint8_t *)calloc(ISO_PACKETS, s.max_out);
 		if (!ib || !ob) {
 			free(ib);
 			free(ob);
 			return false;
 		}
-		libusb_fill_iso_transfer(in_[i], h_, ep_in_, ib,
-					 ISO_PACKETS * max_in_, ISO_PACKETS,
-					 in_done, this, 0);
-		libusb_set_iso_packet_lengths(in_[i], max_in_);
-		in_[i]->flags = LIBUSB_TRANSFER_FREE_BUFFER;
-		libusb_fill_iso_transfer(out_[i], h_, ep_out_, ob,
-					 ISO_PACKETS * max_out_, ISO_PACKETS,
-					 out_done, this, 0);
-		out_[i]->flags = LIBUSB_TRANSFER_FREE_BUFFER;
-		if ((err = libusb_submit_transfer(in_[i])) < 0) {
+		libusb_fill_iso_transfer(s.in[i], h_, s.ep_in, ib,
+					 ISO_PACKETS * s.max_in, ISO_PACKETS,
+					 in_done, &s, 0);
+		libusb_set_iso_packet_lengths(s.in[i], s.max_in);
+		s.in[i]->flags = LIBUSB_TRANSFER_FREE_BUFFER;
+		libusb_fill_iso_transfer(s.out[i], h_, s.ep_out, ob,
+					 ISO_PACKETS * s.max_out, ISO_PACKETS,
+					 out_done, &s, 0);
+		s.out[i]->flags = LIBUSB_TRANSFER_FREE_BUFFER;
+		if ((err = libusb_submit_transfer(s.in[i])) < 0) {
 			ERR("%s: an IN transfer: %s%s\n", name_,
 			    libusb_strerror(err), no_streams(err));
 			return false;
 		}
 		in_flight_++;
-		std::vector<int> lens(ISO_PACKETS, pkt > max_out_ ? max_out_ : pkt);
-		out_fill(out_[i], lens.data());
-		if ((err = libusb_submit_transfer(out_[i])) < 0) {
+		std::vector<int> lens(ISO_PACKETS, pkt > s.max_out ? s.max_out : pkt);
+		out_fill(s, s.out[i], lens.data());
+		if ((err = libusb_submit_transfer(s.out[i])) < 0) {
 			ERR("%s: an OUT transfer: %s%s\n", name_,
 			    libusb_strerror(err), no_streams(err));
 			return false;
 		}
 		in_flight_++;
 	}
-	/* the ST7554's FIFO: started, its errors on the interrupt (the
-	   stick's samples run since its alternate setting 1) */
-	return kind_ == Kind::Stick || (set_reg(SSI1_COUNTER, FRAGSIZE) &&
-					set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN));
+	return true;
 }
 
-/* an OUT transfer's packets of lengths octets (even), the modem's
-   samples queued in them (silence past them) */
-void UsbLine::out_fill(libusb_transfer *t, const int *lengths)
+/* the ST7554's FIFOs started (their counters), their errors on the
+   interrupt: the codec's, and the voice codec's if it streams; false
+   (logged) */
+bool UsbLine::start_fifos()
+{
+	uint16_t mask = SSI1_UNDERRUN | SSI1_OVERRUN;
+	if (viso_.ep_in)
+		mask |= SSI2_UNDERRUN | SSI2_OVERRUN;
+	return set_reg(SSI1_COUNTER, FRAGSIZE) &&
+		(!viso_.ep_in || set_reg(SSI2_COUNTER, VOICE_PERIOD)) &&
+		set_reg(FIFO_MASK, mask);
+}
+
+/* an OUT transfer of s's packets of lengths octets (whole samples), the
+   samples queued in them (silence past them): S16 little-endian, or the
+   voice codec's octets in its law */
+void UsbLine::out_fill(Iso &s, libusb_transfer *t, const int *lengths)
 {
 	int off = 0;
+	int bps = s.voice ? 1 : 2;
 	for (int i = 0; i < ISO_PACKETS; i++) {
-		int len = lengths[i] & ~1;
-		if (len > max_out_)
-			len = max_out_;
+		int len = lengths[i] - lengths[i] % bps;
+		if (len > s.max_out)
+			len = s.max_out - s.max_out % bps;
 		t->iso_packet_desc[i].length = (unsigned)len;
-		for (int k = 0; k < len / 2; k++) {
-			int16_t s = 0;
-			if (!out_buf_.empty()) {
-				s = out_buf_.front();
-				out_buf_.pop_front();
+		for (int k = 0; k < len / bps; k++) {
+			int16_t x = 0;
+			if (!s.out_buf.empty()) {
+				x = s.out_buf.front();
+				s.out_buf.pop_front();
 			}
-			t->buffer[off + 2 * k] = (uint8_t)s;
-			t->buffer[off + 2 * k + 1] = (uint8_t)(s >> 8);
+			if (!s.voice) {
+				t->buffer[off + 2 * k] = (uint8_t)x;
+				t->buffer[off + 2 * k + 1] = (uint8_t)(x >> 8);
+			} else if (voice_law_ == VoiceLaw::Linear) {
+				t->buffer[off + k] = (uint8_t)(x >> 8);
+			} else {
+				t->buffer[off + k] = dsp::g711::encode(
+					voice_law_ == VoiceLaw::Alaw, x);
+			}
 		}
 		off += len;
 	}
@@ -802,14 +908,16 @@ void UsbLine::out_fill(libusb_transfer *t, const int *lengths)
 /* libusb's callbacks: to the line */
 void LIBUSB_CALL UsbLine::in_done(libusb_transfer *t)
 {
-	static_cast<UsbLine *>(t->user_data)->in_complete(t);
+	Iso *s = static_cast<Iso *>(t->user_data);
+	s->line->in_complete(*s, t);
 }
 
 /* an OUT transfer done: idle again, sent once there are
    lengths for it (the line gone if unplugged) */
 void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 {
-	UsbLine *l = static_cast<UsbLine *>(t->user_data);
+	Iso *s = static_cast<Iso *>(t->user_data);
+	UsbLine *l = s->line;
 	l->in_flight_--;
 	if (t->status == LIBUSB_TRANSFER_NO_DEVICE)
 		l->gone("unplugged");
@@ -817,19 +925,19 @@ void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 		return;
 	/* sent again with the lengths an IN transfer has given, or once
 	   one does */
-	l->idle_out_.push_back(t);
-	l->send_out();
+	s->idle_out.push_back(t);
+	l->send_out(*s);
 }
 
-/* the idle OUT transfers sent, as many as there are IN transfers' lengths
-   for */
-void UsbLine::send_out()
+/* s's idle OUT transfers sent, as many as there are IN transfers'
+   lengths for */
+void UsbLine::send_out(Iso &s)
 {
-	while (!idle_out_.empty() && !out_lengths_.empty()) {
-		libusb_transfer *t = idle_out_.front();
-		idle_out_.pop_front();
-		out_fill(t, out_lengths_.front().data());
-		out_lengths_.pop_front();
+	while (!s.idle_out.empty() && !s.out_lengths.empty()) {
+		libusb_transfer *t = s.idle_out.front();
+		s.idle_out.pop_front();
+		out_fill(s, t, s.out_lengths.front().data());
+		s.out_lengths.pop_front();
 		int err = libusb_submit_transfer(t);
 		if (err == 0)
 			in_flight_++;
@@ -860,6 +968,10 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 			DBG("FIFO underrun\n");
 		if (fifo & SSI1_OVERRUN)
 			DBG("FIFO overrun\n");
+		if (fifo & SSI2_UNDERRUN)
+			DBG("the voice codec's FIFO underrun\n");
+		if (fifo & SSI2_OVERRUN)
+			DBG("the voice codec's FIFO overrun\n");
 		if (gpio & GPIO_RING1)
 			l->rings_++;
 		if ((gpio & GPIO_HANDSET) && l->handset_)
@@ -959,9 +1071,10 @@ void UsbLine::stick_event(const uint8_t *b, int len)
 	overruns_ = over;
 }
 
-/* an IN transfer done: its samples queued for the modem, its packets'
-   lengths for an OUT transfer (one waiting sent now), and it again */
-void UsbLine::in_complete(libusb_transfer *t)
+/* s's IN transfer done: its samples queued (S16 little-endian, or the
+   voice codec's octets in its law), its packets' lengths for an OUT
+   transfer (one waiting sent now), and it again */
+void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 {
 	std::vector<int> lens(ISO_PACKETS, 0);
 
@@ -978,13 +1091,21 @@ void UsbLine::in_complete(libusb_transfer *t)
 			const uint8_t *b = libusb_get_iso_packet_buffer_simple(t, i);
 			if (p.status != LIBUSB_TRANSFER_COMPLETED)
 				continue;
-			for (unsigned k = 0; k + 1 < p.actual_length; k += 2)
-				in_buf_.push_back((int16_t)(b[k] | b[k + 1] << 8));
+			if (!s.voice)
+				for (unsigned k = 0; k + 1 < p.actual_length; k += 2)
+					s.in_buf.push_back((int16_t)(b[k] | b[k + 1] << 8));
+			else if (voice_law_ == VoiceLaw::Linear)
+				for (unsigned k = 0; k < p.actual_length; k++)
+					s.in_buf.push_back((int16_t)((int8_t)b[k] * 256));
+			else
+				for (unsigned k = 0; k < p.actual_length; k++)
+					s.in_buf.push_back((int16_t)dsp::g711::decode(
+						voice_law_ == VoiceLaw::Alaw, b[k]));
 			lens[i] = (int)p.actual_length;
 		}
 	}
-	out_lengths_.push_back(lens);
-	send_out();
+	s.out_lengths.push_back(lens);
+	send_out(s);
 	int err = libusb_submit_transfer(t);
 	if (err == 0)
 		in_flight_++;
@@ -1023,8 +1144,7 @@ void UsbLine::resume()
 		return;
 	}
 	if (kind_ == Kind::St7554) {
-		if (!init_st7554_regs() || !set_reg(SSI1_COUNTER, FRAGSIZE) ||
-		    !set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN))
+		if (!init_st7554_regs() || !start_fifos())
 			return;
 		if (wake_)
 			arm_wake(true);
@@ -1032,9 +1152,13 @@ void UsbLine::resume()
 	}
 	/* the streams from their start again: nothing kept from before
 	   the suspend, the playback's lead a frame and a half */
-	in_buf_.clear();
-	out_lengths_.clear();
-	out_buf_.assign(frame_ + frame_ / 2, 0);
+	for (Iso *st : { &iso_, &viso_ }) {
+		st->in_buf.clear();
+		st->out_lengths.clear();
+	}
+	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
+	viso_.out_buf.assign(VOICE_RATE / 50 + VOICE_RATE / 100, 0);
+	mic_.clear();
 	std::vector<libusb_transfer *> again;
 	again.swap(parked_);
 	for (libusb_transfer *t : again) {
@@ -1044,8 +1168,8 @@ void UsbLine::resume()
 				in_flight_++;
 			else
 				park(t, err);
-		} else if (t->endpoint == ep_out_) {
-			idle_out_.push_back(t);
+		} else if (!(t->endpoint & LIBUSB_ENDPOINT_IN)) {
+			static_cast<Iso *>(t->user_data)->idle_out.push_back(t);
 		} else {
 			int err = libusb_submit_transfer(t);
 			if (err == 0)
@@ -1056,7 +1180,8 @@ void UsbLine::resume()
 	}
 	if (parked_.empty())
 		DBG("resumed\n");
-	send_out();
+	send_out(iso_);
+	send_out(viso_);
 }
 
 /* the device has gone: no more transfers */
@@ -1235,9 +1360,15 @@ int UsbLine::pump(dcore::Modem &m)
 		if (hook_ != MODEM_HOOK_OFF)
 			m.ring();
 	}
+	if (viso_.ep_in) {
+		/* the handset's microphone at the line's rate */
+		resample(viso_.in_buf.data(), viso_.in_buf.size(), VOICE_RATE,
+			 rate_, mic_pos_, mic_last_, mic_);
+		viso_.in_buf.clear();
+	}
 	size_t used = 0;
-	while (in_buf_.size() - used >= (size_t)frame_) {
-		memcpy(frame_in_.data(), in_buf_.data() + used,
+	while (iso_.in_buf.size() - used >= (size_t)frame_) {
+		memcpy(frame_in_.data(), iso_.in_buf.data() + used,
 		       frame_ * sizeof(int16_t));
 		used += frame_;
 		if (aus_end_ && samples_ >= aus_end_) {
@@ -1251,24 +1382,88 @@ int UsbLine::pump(dcore::Modem &m)
 				set_gpio((uint16_t)(gpio_ | GPIO_HOOK1));
 		}
 		samples_ += frame_;
-		if (running_ && m.started())
+		if (viso_.ep_in)
+			voice_frame(m);
+		else if (running_ && m.started())
 			m.process(frame_in_.data(), frame_out_.data(), frame_);
 		else
 			memset(frame_out_.data(), 0, frame_ * sizeof(int16_t));
-		out_buf_.insert(out_buf_.end(), frame_out_.begin(),
-				frame_out_.end());
+		iso_.out_buf.insert(iso_.out_buf.end(), frame_out_.begin(),
+				    frame_out_.end());
 	}
-	in_buf_.erase(in_buf_.begin(), in_buf_.begin() + used);
+	iso_.in_buf.erase(iso_.in_buf.begin(), iso_.in_buf.begin() + used);
 	update_leds(m);
-	/* (a playback that has drifted ahead: dropped back to its lead) */
+	/* (a playback that has drifted ahead: dropped back to its lead;
+	   so is the handset's, and its microphone's samples not taken) */
 	size_t most = (size_t)(3 * frame_);
-	if (out_buf_.size() > most) {
+	if (iso_.out_buf.size() > most) {
 		DBG("playback ahead: %zu samples dropped\n",
-		    out_buf_.size() - most);
-		out_buf_.erase(out_buf_.begin(),
-			       out_buf_.begin() + (out_buf_.size() - most));
+		    iso_.out_buf.size() - most);
+		iso_.out_buf.erase(iso_.out_buf.begin(), iso_.out_buf.begin() +
+				   (iso_.out_buf.size() - most));
 	}
+	size_t vmost = 3 * VOICE_RATE / 50;
+	if (viso_.out_buf.size() > vmost)
+		viso_.out_buf.erase(viso_.out_buf.begin(), viso_.out_buf.begin() +
+				    (viso_.out_buf.size() - vmost));
+	if (mic_.size() > most)
+		mic_.erase(mic_.begin(), mic_.begin() + (mic_.size() - most));
 	return 0;
+}
+
+/* see dcore.h: the next frames' samples routed so (voice_frame()) */
+int UsbLine::voice_route(dcore::Modem &, unsigned device)
+{
+	if (device != VOICE_DEVICE_LINE && !viso_.ep_in)
+		return -1;
+	if (device != route_)
+		DBG("voice: %s\n", device == VOICE_DEVICE_HANDSET ?
+		    "the handset's audio, the line's left" :
+		    device == VOICE_DEVICE_HANDSET_LINE ?
+		    "the handset on the call" : "the line's audio");
+	route_ = device;
+	return 0;
+}
+
+/* a frame with the voice codec (pump(), frame_in_ the line's): the
+   modem's samples the line's (frame_out_ to it, the handset silent),
+   the handset's (+VLS=14: its microphone in, the modem's out to its
+   earpiece, the line silent), or with the handset on the call (15: the
+   modem hears the line and the microphone, the line gets the modem's
+   and the microphone, the earpiece the line and the modem); the
+   earpiece's samples to the voice codec at its rate */
+void UsbLine::voice_frame(dcore::Modem &m)
+{
+	bool on = running_ && m.started();
+	for (int i = 0; i < frame_; i++) {
+		if (mic_.empty()) {
+			frame_mic_[i] = 0;
+		} else {
+			frame_mic_[i] = mic_.front();
+			mic_.pop_front();
+		}
+	}
+	if (!on) {
+		memset(frame_out_.data(), 0, frame_ * sizeof(int16_t));
+		memset(frame_ear_.data(), 0, frame_ * sizeof(int16_t));
+	} else if (route_ == VOICE_DEVICE_HANDSET) {
+		m.process(frame_mic_.data(), frame_ear_.data(), frame_);
+		memset(frame_out_.data(), 0, frame_ * sizeof(int16_t));
+	} else if (route_ == VOICE_DEVICE_HANDSET_LINE) {
+		std::vector<int16_t> &both = frame_ear_;
+		for (int i = 0; i < frame_; i++)
+			both[i] = mix(frame_in_[i], frame_mic_[i]);
+		m.process(both.data(), frame_out_.data(), frame_);
+		for (int i = 0; i < frame_; i++) {
+			frame_ear_[i] = mix(frame_in_[i], frame_out_[i]);
+			frame_out_[i] = mix(frame_out_[i], frame_mic_[i]);
+		}
+	} else {
+		m.process(frame_in_.data(), frame_out_.data(), frame_);
+		memset(frame_ear_.data(), 0, frame_ * sizeof(int16_t));
+	}
+	resample(frame_ear_.data(), (size_t)frame_, rate_, VOICE_RATE,
+		 ear_pos_, ear_last_, viso_.out_buf);
 }
 
 /* the transfers cancelled (and their callbacks run), on hook, the codec
@@ -1278,15 +1473,18 @@ void UsbLine::close()
 	if (h_ && !dead_ && kind_ == Kind::St7554) {
 		set_reg(FIFO_MASK, 0);
 		set_reg(SSI1_COUNTER, 0);
+		if (viso_.ep_in)
+			set_reg(SSI2_COUNTER, 0);
 		if (wake_)
 			arm_wake(false);
 	}
-	libusb_transfer *all[2 * ISO_TRANSFERS + 1];
+	libusb_transfer *all[4 * ISO_TRANSFERS + 1];
 	int n = 0;
-	for (int i = 0; i < ISO_TRANSFERS; i++) {
-		all[n++] = in_[i];
-		all[n++] = out_[i];
-	}
+	for (Iso *st : { &iso_, &viso_ })
+		for (int i = 0; i < ISO_TRANSFERS; i++) {
+			all[n++] = st->in[i];
+			all[n++] = st->out[i];
+		}
 	all[n++] = intr_;
 	dead_ = true;
 	for (int i = 0; i < n; i++)
@@ -1299,8 +1497,9 @@ void UsbLine::close()
 	for (int i = 0; i < n; i++)
 		if (all[i])
 			libusb_free_transfer(all[i]);
-	for (int i = 0; i < ISO_TRANSFERS; i++)
-		in_[i] = out_[i] = nullptr;
+	for (Iso *st : { &iso_, &viso_ })
+		for (int i = 0; i < ISO_TRANSFERS; i++)
+			st->in[i] = st->out[i] = nullptr;
 	intr_ = nullptr;
 	if (h_ && kind_ == Kind::Stick) {
 		/* on hook, the samples stopped (alternate setting 0) */
@@ -1316,6 +1515,8 @@ void UsbLine::close()
 		set_reg(GPIO_MASK, 0);
 		set_reg(GPIO_OUT, 0);
 		set_reg(SSI1_CONTROL, st75951_ ? SSI1_ST75951 : SSI1_POWERDOWN);
+		if (viso_.ep_in)
+			set_reg(SSI2_CONTROL, 0);
 	}
 	if (h_) {
 		if (claimed_)

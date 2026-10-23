@@ -644,6 +644,7 @@ int Modem::stop_call()
 		VOICE_delete(voice_);
 		voice_ = nullptr;
 	}
+	voice_unroute();
 	if (fax_) {
 		FAX_delete(fax_);
 		fax_ = nullptr;
@@ -1545,7 +1546,9 @@ int Modem::set_mode(enum MODEM_MODE mode)
 	if (mode == mode_)
 		return 0;
 	if (mode_ == MODEM_MODE_VOICE && voice_) {
-		if (voice_dialing_ || mode == MODEM_MODE_VOICE)
+		/* (the handset's alone: no call to hold) */
+		if (voice_dialing_ || mode == MODEM_MODE_VOICE ||
+		    voice_device_ == VOICE_DEVICE_HANDSET)
 			voice_stop();
 		else
 			voice_hold();
@@ -1971,28 +1974,61 @@ void Modem::cid_stop()
  *    voice
  */
 
-/* +VLS: the voice engine on the line (1: started, its OK to come; 0: it
-   was there) or off (0); -1 for another device or if it cannot start.
-   The line is taken to answer (a ringing call's, on SIP) */
+/* +VLS: the voice engine on the line (1), on the handset alone (14,
+   the line on hook) or on the call with the handset too (15), the last
+   two where the Host has a handset (has_handset()): 1 started, its OK
+   to come; 0 it was there (moved from one to another: the line taken or
+   left, the engine going on), or off (0); -1 for another device or if
+   it cannot.  The line is taken to answer (a ringing call's, on SIP) */
 int Modem::voice_set_device(unsigned device)
 {
-	switch (device) {
-	case VOICE_DEVICE_NONE:
+	bool handset = device == VOICE_DEVICE_HANDSET ||
+		device == VOICE_DEVICE_HANDSET_LINE;
+
+	if (handset && !host_.has_handset(*this))
+		return -1;
+	if (device == VOICE_DEVICE_NONE) {
 		if (voice_)
 			voice_stop();
 		return 0;
-	case VOICE_DEVICE_LINE:
-		if (voice_)
+	}
+	if (device != VOICE_DEVICE_LINE && !handset)
+		return -1;
+	bool off = device != VOICE_DEVICE_HANDSET;
+	if (voice_) {
+		if (device == voice_device_)
 			return 0;
-		caller_ = false;
-		return voice_start() ? -1 : 1;
-	default:
+		if (host_.voice_route(*this, device) ||
+		    set_hook(off ? MODEM_HOOK_OFF : MODEM_HOOK_ON))
+			return -1;
+		logf("voice: +VLS=%u\n", device);
+		voice_device_ = device;
+		return 0;
+	}
+	caller_ = false;
+	if (host_.voice_route(*this, device))
+		return -1;
+	voice_device_ = device;
+	if (voice_start(off)) {
+		voice_unroute();
 		return -1;
 	}
+	return 1;
 }
 
-/* the voice engine off hook on the line: 0, or -1 */
-int Modem::voice_start()
+/* the voice engine's audio back on the line (the Host's voice_route()),
+   if +VLS had it on the handset */
+void Modem::voice_unroute()
+{
+	if (voice_device_ == VOICE_DEVICE_HANDSET ||
+	    voice_device_ == VOICE_DEVICE_HANDSET_LINE)
+		host_.voice_route(*this, VOICE_DEVICE_LINE);
+	voice_device_ = VOICE_DEVICE_NONE;
+}
+
+/* the voice engine started, off hook on the line (else on hook: +VLS=14,
+   the handset's alone): 0, or -1 */
+int Modem::voice_start(bool off_hook)
 {
 	if (voice_)
 		return 0;
@@ -2002,10 +2038,13 @@ int Modem::voice_start()
 	voice_ = VOICE_create(handle(), srate_);
 	if (!voice_)
 		return -1;
+	if (voice_device_ == VOICE_DEVICE_NONE)
+		voice_device_ = VOICE_DEVICE_LINE;
 	later_ = Later::None;
 	run_ = Run::Voice;
 	voice_cng_seen_ = voice_ct_seen_ = 0;
-	set_hook(MODEM_HOOK_OFF);
+	if (off_hook)
+		set_hook(MODEM_HOOK_OFF);
 	if (do_start()) {
 		log_printf(1, "err: %s: the line does not start\n", name_);
 		voice_stop();
@@ -2041,6 +2080,7 @@ void Modem::voice_hold()
 	later_ = Later::None;
 	VOICE_delete(voice_);
 	voice_ = nullptr;
+	voice_unroute();
 	vts_.clear();
 	vts_next_ = 0;
 	voice_dial_digits_ = false;

@@ -217,7 +217,25 @@ values [seen].
 `K7554VoiceCodecInterface` is a second codec on SSI2 [seen]: 8 kHz only,
 8-bit samples, powered through SSI_CTRL = 0x21, period in register 6. It
 is used only with `Alt` ≥ 2; the INF sets 1. Inference: a handset or
-speakerphone codec on other boards.
+speakerphone codec on other boards. More [seen]:
+- `Format()` is 3 (the STLC7550's 1), `BytesPerSample()` 1; nothing
+  calls `Format()`, so which 8-bit format it is (G.711, or linear) is
+  not known.
+- `SetSampleRate` takes 8000 only; `SetPTCPeriod` writes register 6 =
+  rate × ms / 1000 − 1; `Initialize` writes SSI_CTRL = 0; `Power(1)`
+  writes 0x21.
+- `UpdateCodecPowerMode` powers it with the STLC7550 when `Alt` ≥ 2.
+- Its FIFO bits are SSI1's counterparts: underrun 0x04, overrun 0x02 in
+  FIFO_MASK and on the interrupt; thresholds in bits 0–6 of registers
+  0x19 and 0x1A.
+- `ConfigureDevice` gives the channels their pipes: Alt 1 the codec's
+  pipes 1 and 2, Alt 2 the voice codec's 1 and 2, Alt 3 the codec's 1
+  and 2 and the voice codec's 3 and 4.
+- Only the driver's test interface (`IoControl`, codes 0x10A, 0x10D and
+  0x10E with the voice flag; trace names `IsoModem`, `IsoVoice`,
+  `TransferTest`) streams the voice channel; the soft modem's
+  `VModemLine` interface has the codec's channel only, and
+  `CaptureHandset` is a stub. Device property 4 changes `Alt`.
 
 ## Start-up
 
@@ -544,7 +562,7 @@ decodes caller ID itself; this one does not [inferred].
 ## What this means for dmodemd
 
 `dmodemd/usb_line.cpp` follows Linux, with more taken from Windows
-(items 1, 2, 6, 7, 8 and 9). Against Windows:
+(items 1, 2, 6, 7, 8, 9 and 10). Against Windows:
 
 1. **Caller ID: done.** With `AT#CID=1`, from the first ring dmodemd
    sets GPIO 0x0020 (CID1) while the core listens on hook, and clears
@@ -583,13 +601,20 @@ decodes caller ID itself; this one does not [inferred].
    `CalculateGPIOBits`, `SpawnAustralianTimerIfNeeded` and
    `OnDigitPulseDialing` do them. The countries are those of the table's
    byte 90 (France, Algeria, Tunisia; Australia).
-10. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
+10. **The voice codec: done, behind `--usb-voice-codec`.** Alternate
+   setting 3, SSI2 powered up and its period set as Windows does; the
+   handset is V.253's `+VLS=14` and `15`. Windows itself never streams
+   it outside its tests, and the sample format is a guess the option
+   names.
+11. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
    Linux.
 
 ## Open questions
 
 - What DP (0x0400), RFC (0x0100), DC (0x1000) and GPIO 0x0002 do
   electrically.
+- Which boards have the SSI2 voice codec, and whether its octets are
+  mu-law, A-law or linear.
 - What "RHOM" stands for, and what FIFO_CTRL2 bit 15 does.
 - How the soft modem produces the caller ID labels (DATE/NMBR/NAME):
   they are not plain strings in any driver.

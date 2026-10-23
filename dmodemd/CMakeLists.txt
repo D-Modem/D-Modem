@@ -170,7 +170,7 @@ if(DMODEM_DMODEMD)
 				test/fake_st7554.cpp)
 			dmodem_flags(dmodem_fake_st7554 EXTRA NOOPT)
 			target_include_directories(dmodem_fake_st7554 PRIVATE
-				${LIBUSB_INCLUDE_DIRS})
+				${LIBUSB_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR}/dsp)
 			# test/pico_line_test.py: the same on fake pico-serial
 			# Line sticks (test/fake_pico_line.cpp)
 			add_library(dmodem_fake_pico_line SHARED

@@ -291,7 +291,7 @@ const struct VoiceSetting {
 	  { 255, 255 } },
 	{ "SM", 2, { &voice_info::comp_method, &voice_info::sample_rate },
 	  { 0, 8000 }, { 1, 8000 } },
-	{ "LS", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
+	{ "LS", 1, { nullptr, nullptr }, { 0, 0 }, { 15, 0 } },
 	{ "EM", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
 	{ "TD", 1, { &voice_info::tone_default, nullptr }, { 0, 0 },
 	  { 6000, 0 } },
@@ -311,13 +311,18 @@ const struct VoiceSetting {
    <DLE>b), and the answer tones of 2100 Hz (25, <DLE>a) and of 2225 Hz
    (26, <DLE>f).  A line that senses the local phone (Host's
    senses_local_phone()) adds its going off or on hook (8, <DLE>H and
-   <DLE>h) to both in every state (LOCAL_PHONE_EVENT). */
+   <DLE>h) to both in every state (LOCAL_PHONE_EVENT).  A Host with a
+   handset (has_handset()) adds it alone (14, "H", on hook: its DTMF
+   digits, 4) and on the call (15, "HT": the line's events). */
 static const struct {
 	const char *label;
 	unsigned long events[3];
+	bool handset;
 } voice_devices[] = {
-	{ "0,\"\"", { 0x00000000, 0x00000000, 0x90000000 } },
-	{ "1,\"T\"", { 0x0B043060, 0x0B043060, 0x0B043060 } },
+	{ "0,\"\"", { 0x00000000, 0x00000000, 0x90000000 }, false },
+	{ "1,\"T\"", { 0x0B043060, 0x0B043060, 0x0B043060 }, false },
+	{ "14,\"H\"", { 0x08000000, 0x08000000, 0x08000000 }, true },
+	{ "15,\"HT\"", { 0x0B043060, 0x0B043060, 0x0B043060 }, true },
 };
 const unsigned long LOCAL_PHONE_EVENT = 0x00800000;
 
@@ -1397,11 +1402,14 @@ int Modem::at_voice(char *p, int *len)
 		for (int i = 0; i < s.n; i++)
 			v[i] = s.field[i] ? voice_info_.*s.field[i] :
 				events ? voice_events_ :
-				device && voice_ ? 1 : 0;
+				device && voice_ ? voice_device_ : 0;
 		if (device && q[0] == '=' && q[1] == '?') {
 			unsigned long more = host_.senses_local_phone(*this) ?
 				LOCAL_PHONE_EVENT : 0;
+			bool handset = host_.has_handset(*this);
 			for (const auto &d : voice_devices) {
+				if (d.handset && !handset)
+					continue;
 				snprintf(line, sizeof(line), "%s,%08lX,%08lX,%08lX",
 					 d.label, d.events[0] | more,
 					 d.events[1] | more, d.events[2] | more);

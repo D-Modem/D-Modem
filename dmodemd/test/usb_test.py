@@ -13,6 +13,14 @@
 #   RFC set through it, and DP and RFC cleared on hook; in France DC off
 #   hook (0x1488); on an ST75951 DC the other way (the USA's off hook
 #   0x1488);
+# - the voice codec as a handset (--usb-voice-codec=ulaw, the fake's
+#   FAKE_ST7554_VOICE: its microphone a 1000 Hz tone, its earpiece's
+#   octets to a file), 1001 alone: alternate setting 3, the codec on SSI2
+#   powered up (0x21) and its period set; +VLS=? lists 14 ("H") and 15
+#   ("HT"); +VLS=14 stays on hook, +VRX gets the microphone's tone, +VTX's
+#   500 Hz tone comes out of the earpiece; +VLS=15 goes off hook, +VRX
+#   gets the microphone's tone with the line (its dial tone), which the
+#   earpiece gets too; +VLS=0 on hook;
 # - 1002's fake says its codec is an ST75951/2 silicon DAA
 #   (FAKE_ST7554_DAA): dmodemd starts it up with its control words
 #   (register 3 = 0x050), 1001's an STLC7550;
@@ -176,6 +184,98 @@ try:
         m.cmd(b"ATH")
         time.sleep(0.3)
         return m, gpio(m)[n:]
+    def tone(x, f):
+        """the power of x (16-bit samples at 8000/s) at f Hz (Goertzel),
+        to its whole power"""
+        import math
+        k = 2 * math.cos(2 * math.pi * f / 8000)
+        a = b = 0.0
+        for v in x:
+            a, b = v + k * a - b, a
+        e = sum(v * v for v in x) or 1
+        return (a * a + b * b - k * a * b) / (len(x) / 2) / e
+    def ulaw(c):
+        """a mu-law octet's 16-bit sample"""
+        c = ~c & 0xff
+        t = (((c & 0x0f) << 3) + 0x84) << ((c & 0x70) >> 4)
+        return (0x84 - t) if c & 0x80 else (t - 0x84)
+    def unstuff(b):
+        """+VRX's octets, <DLE><DLE> one, other <DLE> pairs out; the
+        samples ((b - 128) * 256)"""
+        out, i = [], 0
+        while i < len(b):
+            if b[i] == 0x10:
+                if i + 1 < len(b) and b[i + 1] == 0x10:
+                    out.append(0x10)
+                i += 2
+                continue
+            out.append(b[i])
+            i += 1
+        return [(v - 128) * 256 for v in out]
+    ear = os.path.join(tmp, "1001.ear")
+    m = Modem("1001", "dmodem39", ["--usb-voice-codec=ulaw"], "-voice",
+              FAKE_ST7554_LOG="1", FAKE_ST7554_VOICE=usb_dte.file_for(dmodemd, ear))
+    want = (b"fake st7554: alternate setting 3", b"fake st7554: 02 = 0021",
+            b"fake st7554: 06 = 0027")
+    end = time.time() + 10
+    while time.time() < end and not all(w in log_of(m) for w in want):
+        time.sleep(0.1)
+    check("voice codec: alternate setting 3, SSI2 powered up, its period",
+          all(w in log_of(m) for w in want))
+    m.cmd(b"ATE0")
+    check("voice codec: voice mode", m.cmd(b"AT+FCLASS=8"))
+    check("voice codec: +VLS=? lists 14 and 15",
+          m.cmd(b"AT+VLS=?", rb'14,"H",08000000,08000000,08000000\r\n'
+                rb'15,"HT",0B043060,0B043060,0B043060\r\nOK\r\n'))
+    n = len(gpio(m))
+    check("voice codec: +VLS=14", m.cmd(b"AT+VLS=14"))
+    def record(t):
+        """+VRX for t s: its samples (OK after)"""
+        if not m.cmd(b"AT+VRX", rb"CONNECT\r\n"):
+            return []
+        end, got = time.time() + t, b""
+        while time.time() < end:
+            if m.dte.wait(0.1):
+                got += m.dte.read(65536)
+        m.dte.write(b"x")
+        got += m.buf
+        m.buf = b""
+        check("voice codec: +VRX ends", m.expect(rb"\x10\x03(\r\n)?OK\r\n", 5))
+        return unstuff(got)[2000:]
+    x = record(1.5)
+    check("voice codec: on hook with +VLS=14", not any(v & 0x0008 for v in gpio(m)[n:]))
+    check("voice codec: +VRX gets the handset's 1000 Hz (%.2f)" % (tone(x, 1000) if x else 0),
+          x and tone(x, 1000) > 0.5)
+    size = os.path.getsize(ear)
+    check("voice codec: +VTX", m.cmd(b"AT+VTX", rb"CONNECT\r\n"))
+    import math
+    tx = bytes(max(0, min(255, int(128 + 60 * math.sin(2 * math.pi * 500 * i / 8000))))
+               for i in range(8000))
+    m.dte.write(tx.replace(b"\x10", b"\x10\x10") + b"\x10\x03")
+    check("voice codec: +VTX's OK", m.expect(rb"OK\r\n", 10))
+    time.sleep(0.3)
+    played = [ulaw(c) for c in open(ear, "rb").read()[size:]]
+    best = max((tone(played[i:i + 2000], 500), i) for i in range(0, max(1, len(played) - 2000), 1000)) if len(played) > 2000 else (0, 0)
+    check("voice codec: the earpiece plays +VTX's 500 Hz (%.2f)" % best[0], best[0] > 0.5)
+    n = len(gpio(m))
+    check("voice codec: +VLS=15", m.cmd(b"AT+VLS=15"))
+    check("voice codec: off hook with +VLS=15", any(v & 0x0008 for v in gpio(m)[n:]))
+    size = os.path.getsize(ear)
+    x = record(2)
+    m.expect(rb"OK\r\n", 3)
+    heard = [ulaw(c) for c in open(ear, "rb").read()[size:]]
+    print("voice codec, +VLS=15: +VRX 1000 Hz %.2f, 350 Hz %.2f, 440 Hz %.2f; earpiece 350 Hz %.2f, 440 Hz %.2f" % (
+        tone(x, 1000) if x else 0, tone(x, 350) if x else 0, tone(x, 440) if x else 0,
+        tone(heard[4000:], 350) if len(heard) > 4000 else 0, tone(heard[4000:], 440) if len(heard) > 4000 else 0))
+    check("voice codec: +VRX gets the handset and the line (its dial tone)",
+          x and tone(x, 1000) > 0.1 and tone(x, 350) + tone(x, 440) > 0.1)
+    check("voice codec: the earpiece gets the line",
+          len(heard) > 4000 and tone(heard[4000:], 350) + tone(heard[4000:], 440) > 0.3)
+    check("voice codec: +VLS=0", m.cmd(b"AT+VLS=0"))
+    check("voice codec: on hook again", gpio(m)[-1] & 0x0008 == 0)
+    m.p.terminate()
+    m.p.wait(5)
+
     m, g = intl("AUSTRALIA")
     check("Australia: off hook DP and RFC, RFC off after 350 ms, all off on hook",
           g[:3] == [0x0588, 0x0488, 0x0000])

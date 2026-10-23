@@ -40,6 +40,9 @@ struct Options {
 	   Windows driver has them with Options.International
 	   (--usb-international) */
 	bool usb_international = false;
+	/* the SmartUSB56's second codec as a handset, its octets "ulaw",
+	   "alaw" or "linear" (--usb-voice-codec); NULL: not used */
+	const char *usb_voice_codec = nullptr;
 	unsigned rate = 9600;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem
 	   pair such as com0com's), or TCP connections on [address:]port

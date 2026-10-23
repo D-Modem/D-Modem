@@ -341,6 +341,23 @@ licence). In `dmodemd/usb_line.cpp`:
   only); they are for a board built for these countries. The country
   is `-c` or `+GCI`'s. dmodemd learns when pulse dialling begins and
   ends from the call progress pump (`MDMPRM_PULSE_DIALLING`).
+- **The voice codec (a handset).** With `--usb-voice-codec=<law>`
+  dmodemd takes alternate setting 3 instead of 1, whose second pair of
+  isochronous endpoints is the ST7554's SSI2 codec (Smart Link's
+  `K7554VoiceCodecInterface`: 8000 octets a second, powered up with
+  SSI_CTRL = 0x21, its period in register 6). In voice mode `+VLS=?`
+  then lists V.253's 14 (`"H"`: the handset alone, the line on hook)
+  and 15 (`"HT"`: the handset on the call, off hook). With 14 the voice
+  engine's samples are the handset's (its microphone to `+VRX`, `+VTX`
+  to its earpiece); with 15 they are the line's, and dmodemd mixes the
+  handset in both ways (the line and the modem's samples to the
+  earpiece, the microphone to the line and to `+VRX`). The two codecs'
+  rates are bridged by linear interpolation. What the octets are is not
+  known (the Windows driver calls its format 3 and never uses it, and
+  streams this codec only from its test interface): `ulaw`, `alaw` or
+  `linear` (signed 8-bit). Creative's INF uses alternate setting 1, so
+  the DE5671 may have no codec there; a board whose alternate setting 3
+  has no such endpoints is refused.
 - **Unplugged.** dmodemd says so and exits.
 
 Limits: the device's line settings are its own, and it has not yet been
@@ -434,6 +451,7 @@ start from.
 | `--usb-leds` | a SmartUSB56's carrier and data LEDs lit (GPIO 6 and 13), as on Creative's Modem Blaster; only for a board that has them |
 | `--usb-wake` | a ring wakes the computer: the SmartUSB56's USB remote wakeup armed (and on Linux the kernel's `power/wakeup` of it enabled, as root) |
 | `--usb-handset` | the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook, `<DLE>H` and `<DLE>h` in voice mode |
+| `--usb-voice-codec=<law>` | the SmartUSB56's second codec (SSI2, alternate setting 3) as a handset: `+VLS=14` and `15` in voice mode; its octets `ulaw`, `alaw` or `linear` |
 | `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
 
@@ -581,7 +599,9 @@ the second ring, V.34 at 33600, text each way, the LEDs of the one with
 `--usb-leds` and none on the other), a busy line, a call
 dialled in pulses, a voice call, the handset detector in voice mode,
 the international line controls (Australia's timer and pulse dialling,
-France's DC bit, the ST75951's inverted one), a
+France's DC bit, the ST75951's inverted one), the voice codec as a
+handset (the fake's `FAKE_ST7554_VOICE`: its microphone a 1000 Hz
+tone, its earpiece to a file; `+VLS=14` and `15`, `+VRX` and `+VTX`), a
 call that wakes a suspended 1002 (`--usb-wake`: the fake's ring with its
 remote wakeup armed; the device reset on resume, set up again, the call
 answered), and that both exit once the exchange (the devices) has

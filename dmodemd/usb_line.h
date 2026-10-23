@@ -89,6 +89,15 @@ public:
 	   350 ms after each off hook in Australia (bit 1), and all through
 	   pulse dialling */
 	void set_international(bool on) { intl_ = on; }
+	/* the SmartUSB56's second codec, on the ST7554's SSI2, as a handset
+	   (V.253's H0: +VLS=14 and 15): alternate setting 3, its own
+	   isochronous endpoints both ways, 8000 samples a second of an
+	   octet each, in law.  Smart Link's Windows driver has it
+	   (K7554VoiceCodecInterface) but streams it only for its tests;
+	   which law the octets are is not known: VoiceLaw::None, none */
+	enum class VoiceLaw { None, Ulaw, Alaw, Linear };
+	/* (see VoiceLaw) */
+	void set_voice_codec(VoiceLaw law) { voice_law_ = law; }
 	/* the modem dev ("" or "auto": the first SmartUSB56 or pico-serial
 	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
 	   rate, its samples running, on hook; false with the reason on
@@ -112,6 +121,15 @@ public:
 	bool senses_local_phone(dcore::Modem &) override {
 		return handset_ && kind_ == Kind::St7554;
 	}
+	/* the handset on the voice codec (set_voice_codec(), a SmartUSB56
+	   whose alternate setting 3 has its endpoints) */
+	bool has_handset(dcore::Modem &) override {
+		return voice_law_ != VoiceLaw::None && kind_ == Kind::St7554 &&
+			viso_.ep_in;
+	}
+	/* where the modem's samples are (pump()): the line's, the
+	   handset's, or the line's with the handset on the call */
+	int voice_route(dcore::Modem &, unsigned device) override;
 	/* an analogue line, the modem dialling it itself */
 	bool analog_line(dcore::Modem &) override { return true; }
 	/* a hook flash it can make (hook_flash()) */
@@ -154,9 +172,26 @@ private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
 	/* the two devices it drives */
 	enum class Kind { St7554, Stick };
+	/* an isochronous stream both ways: the codec's (the modem's line,
+	   S16 little-endian) or the voice codec's (set_voice_codec(): an
+	   octet a sample, at VOICE_RATE).  An OUT transfer goes when an
+	   IN one is done, with its packets' lengths */
+	struct Iso {
+		UsbLine *line = nullptr;
+		bool voice = false;
+		uint8_t ep_out = 0, ep_in = 0;
+		int max_out = 0, max_in = 0;
+		libusb_transfer *in[ISO_TRANSFERS] = {}, *out[ISO_TRANSFERS] = {};
+		/* each IN transfer's packets' lengths, for the OUT one it
+		   frees; the OUT ones not in flight */
+		std::deque<std::vector<int>> out_lengths;
+		std::deque<libusb_transfer *> idle_out;
+		std::vector<int16_t> in_buf;    /* the samples come, not taken */
+		std::deque<int16_t> out_buf;    /* the samples to send */
+	};
 
 	bool find(const char *dev);
-	bool endpoints();
+	bool endpoints(int alt);
 	bool set_reg(uint8_t reg, uint16_t v);
 	bool get_reg(uint8_t reg, uint16_t *v);
 	bool set_gpio(uint16_t v);
@@ -179,14 +214,17 @@ private:
 	   its own bits changed); false (logged) */
 	bool stick_country();
 	bool start_streams();
+	bool start_iso(Iso &s, int pkt);
+	bool start_fifos();
 	void close();
 
 	static void LIBUSB_CALL in_done(libusb_transfer *t);
 	static void LIBUSB_CALL out_done(libusb_transfer *t);
 	static void LIBUSB_CALL intr_done(libusb_transfer *t);
-	void in_complete(libusb_transfer *t);
-	void out_fill(libusb_transfer *t, const int *lengths);
-	void send_out();
+	void in_complete(Iso &s, libusb_transfer *t);
+	void out_fill(Iso &s, libusb_transfer *t, const int *lengths);
+	void send_out(Iso &s);
+	void voice_frame(dcore::Modem &m);
 	void gone(const char *why);
 	void update_leds(dcore::Modem &m);
 	uint16_t intl_hook(uint16_t v, bool off, bool now_off);
@@ -197,13 +235,10 @@ private:
 	libusb_context *ctx_ = nullptr;
 	libusb_device_handle *h_ = nullptr;
 	bool claimed_ = false;
-	uint8_t ep_intr_ = 0, ep_out_ = 0, ep_in_ = 0;
-	int max_out_ = 0, max_in_ = 0;
-	libusb_transfer *in_[ISO_TRANSFERS] = {}, *out_[ISO_TRANSFERS] = {},
-		*intr_ = nullptr;
-	/* each IN transfer's packets' lengths, for the OUT one it frees */
-	std::deque<std::vector<int>> out_lengths_;
-	std::deque<libusb_transfer *> idle_out_;  /* OUT ones not in flight */
+	uint8_t ep_intr_ = 0;
+	libusb_transfer *intr_ = nullptr;
+	/* the codec's stream, and the voice codec's (set_voice_codec()) */
+	Iso iso_, viso_;
 	int in_flight_ = 0;             /* transfers submitted */
 	uint8_t intr_buf_[8] = {};      /* the ST7554's 4 octets, the stick's 8 */
 	int intr_len_ = 4;
@@ -221,9 +256,17 @@ private:
 	unsigned rate_ = 9600;
 	int frame_ = 192;               /* 20 ms */
 	int delay_ = 0;
-	std::vector<int16_t> in_buf_;   /* the codec's samples to process */
-	std::deque<int16_t> out_buf_;   /* the modem's samples to send */
 	std::vector<int16_t> frame_in_, frame_out_;
+	/* set_voice_codec(); +VLS's device (voice_route()); the handset's
+	   microphone at the line's rate, not yet taken; the rate changes
+	   between the two codecs (their phases), and a frame's samples for
+	   the handset */
+	VoiceLaw voice_law_ = VoiceLaw::None;
+	unsigned route_ = VOICE_DEVICE_LINE;
+	std::deque<int16_t> mic_;
+	double mic_pos_ = 0, ear_pos_ = 0;
+	int16_t mic_last_ = 0, ear_last_ = 0;
+	std::vector<int16_t> frame_mic_, frame_ear_;
 	unsigned long long samples_ = 0;
 	bool running_ = false;
 	bool dead_ = false;

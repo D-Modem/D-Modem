@@ -298,6 +298,10 @@ struct voice_tones {
 /* the devices of AT+VLS (V.253 10.2.4.1) */
 #define VOICE_DEVICE_NONE       0   /* on hook */
 #define VOICE_DEVICE_LINE       1   /* the telephone line */
+#define VOICE_DEVICE_HANDSET    14  /* V.253's H: a handset on the modem,
+                                       the line on hook */
+#define VOICE_DEVICE_HANDSET_LINE 15 /* HT: the handset on the call, the
+                                       line off hook */
 
 /* the core's +V settings, handed out with MDMPRM_VOICEINFO; Smart Link's
    library reads them at these offsets */

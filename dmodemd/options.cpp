@@ -47,7 +47,7 @@ enum {
 	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
 	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_USB_LEDS, OPT_USB_WAKE,
-	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_RATE,
+	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_RATE,
 #ifdef _WIN32
 	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP, OPT_DRIVER,
 #endif
@@ -101,6 +101,10 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "a SmartUSB56's international line controls (GPIO 8, 10, 12: the "
 	  "country's DC bit, Australia's 350 ms after off hook, pulse "
 	  "dialling's)", nullptr, false },
+	{ 0, "usb-voice-codec", Takes::Text, true,
+	  "a SmartUSB56's second codec (SSI2, alternate setting 3) as a "
+	  "handset, +VLS=14 and 15 in voice mode; its octets ulaw, alaw or "
+	  "linear", nullptr, false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a or --usb (8000 or 9600)", "9600", false },
 #ifdef _WIN32
@@ -368,6 +372,15 @@ void CommandLine::apply(Options &opt) const
 		opt.usb_handset = true;
 	if (o[OPT_USB_INTERNATIONAL].given)
 		opt.usb_international = true;
+	if (o[OPT_USB_VOICE_CODEC].given) {
+		const char *v = o[OPT_USB_VOICE_CODEC].value;
+		if (strcmp(v, "ulaw") && strcmp(v, "alaw") && strcmp(v, "linear")) {
+			fprintf(stderr, "%s: --usb-voice-codec: ulaw, alaw or "
+				"linear\n", prog_);
+			exit(1);
+		}
+		opt.usb_voice_codec = v;
+	}
 	if (opt.alsa && opt.usb) {
 		fprintf(stderr, "%s: -a or --usb, not both\n", prog_);
 		exit(1);

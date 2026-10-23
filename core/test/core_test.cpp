@@ -101,6 +101,16 @@ struct Line final : public dcore::Host {
 	/* (see dialling) */
 	void pulse_dialling(Modem &, bool on) override {
 		dialling.emplace_back(samples, on);
+	}	/* a handset on the modem (handset), the voice engine's routes
+	   asked for, kept */
+	bool handset = false;
+	std::vector<unsigned> routes;
+	/* (see handset) */
+	bool has_handset(Modem &) override { return handset; }
+	/* (see handset) */
+	int voice_route(Modem &, unsigned device) override {
+		routes.push_back(device);
+		return device == VOICE_DEVICE_LINE || handset ? 0 : -1;
 	}
 };
 
@@ -523,6 +533,75 @@ TEST(Core, LocalPhone)
 	EXPECT_EQ(change(true), "");            /* no change */
 	EXPECT_EQ(change(false), "\x10h");
 	EXPECT_FALSE(m->local_phone_off_hook());
+	delete m;
+}
+
+/* a handset on the modem (has_handset()): +VLS=? lists it alone (14,
+   its DTMF digits) and on the call (15); +VLS=14 starts the voice engine
+   on it with the line on hook, 15 or 1 takes the line (the engine going
+   on), 14 leaves it again, and each move is a voice_route(); +VLS=0, or
+   ATH, puts the audio back on the line.  Without a handset 14 and 15 are
+   an ERROR, as is any other device */
+TEST(Core, VoiceHandset)
+{
+	Line l;
+	Modem *m = make(l, "handset");
+	int16_t in[160] = {}, out[160];
+	auto run = [&](int blocks) {
+		l.out.clear();
+		for (int i = 0; i < blocks; i++) {
+			now += 20;
+			if (m->started())
+				m->process(in, out, 160);
+			m->poll();
+		}
+		return l.out;
+	};
+
+	EXPECT_EQ(cmd(m, l, "ATE0+FCLASS=8\r"), "ATE0+FCLASS=8\r\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=14\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=15\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=2\r"), "ERROR\r\n");
+	EXPECT_TRUE(l.routes.empty());
+	l.handset = true;
+	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
+		  "0,\"\",00000000,00000000,90000000\r\n"
+		  "1,\"T\",0B043060,0B043060,0B043060\r\n"
+		  "14,\"H\",08000000,08000000,08000000\r\n"
+		  "15,\"HT\",0B043060,0B043060,0B043060\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=13\r"), "ERROR\r\n");
+
+	l.last_hook = -1;
+	cmd(m, l, "AT+VLS=14\r");
+	EXPECT_EQ(run(1), "OK\r\n");
+	EXPECT_TRUE(m->started());
+	EXPECT_EQ(l.last_hook, -1);             /* still on hook */
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=14\r\nOK\r\n");
+	cmd(m, l, "AT+VRX\r");
+	EXPECT_EQ(run(1).substr(0, 9), "CONNECT\r\n");
+	run(5);
+	cmd(m, l, "x");
+	run(1);
+	EXPECT_NE(l.out.find("\x10\x03OK\r\n"), std::string::npos);
+	EXPECT_EQ(cmd(m, l, "AT+VLS=15\r"), "OK\r\n");
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=15\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=1\r"), "OK\r\n");
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
+	EXPECT_EQ(cmd(m, l, "AT+VLS=14\r"), "OK\r\n");
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
+	EXPECT_TRUE(m->started());
+	EXPECT_EQ(cmd(m, l, "AT+VLS=0\r"), "OK\r\n");
+	EXPECT_FALSE(m->started());
+	EXPECT_EQ(l.routes, (std::vector<unsigned>{ 14, 15, 1, 14, 1 }));
+
+	l.routes.clear();
+	cmd(m, l, "AT+VLS=15\r");
+	EXPECT_EQ(run(1), "OK\r\n");
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
+	EXPECT_EQ(cmd(m, l, "ATH\r"), "OK\r\n");
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
+	EXPECT_EQ(l.routes, (std::vector<unsigned>{ 15, 1 }));
 	delete m;
 }
 

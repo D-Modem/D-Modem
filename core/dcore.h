@@ -106,6 +106,20 @@ public:
 	/* the line tells when a phone on the modem's own jack (the local
 	   phone, V.253's) goes off or on hook (Modem::local_phone()) */
 	virtual bool senses_local_phone(Modem &m) { (void)m; return false; }
+	/* a handset or headset on the modem itself, on a codec of its own
+	   (V.253's H0): +VLS=14, the handset alone with the line on hook,
+	   and 15, the handset on the call with the line off hook */
+	virtual bool has_handset(Modem &m) { (void)m; return false; }
+	/* where the voice engine's audio is (+VLS, has_handset()):
+	   VOICE_DEVICE_LINE the line's, as always (and in every other
+	   mode); _HANDSET the handset's instead (process() gets its
+	   microphone, its output goes to the handset's earpiece);
+	   _HANDSET_LINE the line's, with the handset on the call too (the
+	   Host mixes it into the line both ways).  0, or -1 if it cannot */
+	virtual int voice_route(Modem &m, unsigned device) {
+		(void)m;
+		return device == VOICE_DEVICE_LINE ? 0 : -1;
+	}
 	/* the speaker's volume (ATL, S30 with ATM2), 0: off */
 	virtual void speaker(Modem &m, int volume) { (void)m; (void)volume; }
 	/* the line's delay, which Smart Link's original library asks for
@@ -384,7 +398,7 @@ private:
 	void cid_stop();
 	int cid_start(unsigned long ms);
 	void voice_process(int16_t *in, int16_t *out, int n);
-	int voice_start();
+	int voice_start(bool off_hook = true);
 	void voice_stop();
 	void voice_hold();
 	void voice_calling_tones();
@@ -398,6 +412,7 @@ private:
 	void voice_line_gone();
 	void voice_drain();
 	int voice_set_device(unsigned device);
+	void voice_unroute();
 	void voice_init();
 	void fax_process(int16_t *in, int16_t *out, int n);
 	int fax_start();
@@ -560,6 +575,8 @@ private:
 	int16_t *scratch_ = nullptr;
 	int scratch_len_ = 0;
 	void *voice_ = nullptr;
+	/* +VLS's device while voice_ runs (VOICE_DEVICE_*) */
+	unsigned voice_device_ = VOICE_DEVICE_NONE;
 	struct voice_info voice_info_ = {};
 	unsigned voice_events_ = 0;     /* +VEM */
 	bool local_phone_off_ = false;  /* local_phone() */
