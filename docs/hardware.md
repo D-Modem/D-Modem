@@ -295,6 +295,13 @@ licence). In `dmodemd/usb_line.cpp`:
   (`MONOLITHIC`, GPIO status bit 14). The ST75951's control words name
   one of its four registers; dmodemd starts it up as the Windows driver
   does. Hook, ring and caller ID are the same GPIOs.
+- **LEDs.** The hook LED (GPIO 7) goes with the hook. With
+  `--usb-leds`, as Smart Link's Windows driver does on boards whose INF
+  says they have them (Creative's Modem Blaster V.92 USB): the carrier
+  LED (GPIO 6) is lit while the call is online, the data LED (GPIO 13)
+  once data has passed in it, both off on hook. Without the option
+  dmodemd leaves those GPIOs alone, as another board may use them for
+  something else.
 - **Unplugged.** dmodemd says so and exits.
 
 Limits: the device's line settings are its own, and it has not yet been
@@ -385,6 +392,7 @@ start from.
 | `-a <pcm>`, `--alsa=<pcm>` | the codec's PCM (`hw:1`, `hw:0,6`, `plughw:...`): the line is a telephone line, not SIP |
 | `--alsa-ctl=<ctl>` | its controls, if not the card's (`hw:1` for `hw:1,0` or `plughw:1,0`; the PCM's own name otherwise) |
 | `--usb=<dev>` | a SmartUSB56 or pico-serial Line (`auto`, the first one; or `<bus>:<address>`, as `lsusb` and `--usb list` show it): the line is a telephone line, not SIP; `--usb list` lists them and exits |
+| `--usb-leds` | a SmartUSB56's carrier and data LEDs lit (GPIO 6 and 13), as on Creative's Modem Blaster; only for a board that has them |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
@@ -527,7 +535,8 @@ signal; it hears the line on hook only with CID1 set. One of the two
 fakes says it is an ST75951/2 (`FAKE_ST7554_DAA`) and checks its
 start-up. The test checks that a wrong `<bus>:<address>` is refused, a
 data call (rings, caller ID between the first two rings, the answer at
-the second ring, V.34 at 33600, text each way), a busy line, a call
+the second ring, V.34 at 33600, text each way, the LEDs of the one with
+`--usb-leds` and none on the other), a busy line, a call
 dialled in pulses, a voice call, and that both exit once the exchange
 (the devices) has gone. It needs libusb-1.0-0-dev.
 

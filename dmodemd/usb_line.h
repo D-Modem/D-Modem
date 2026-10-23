@@ -66,6 +66,11 @@ public:
 	UsbLine(const UsbLine &) = delete;
 	UsbLine &operator=(const UsbLine &) = delete;
 
+	/* a SmartUSB56's LEDs, GPIO 6 (carrier: the call online) and 13
+	   (data: some has passed in the call), lit, as Smart Link's
+	   Windows driver lights them with Options.ExtraLeds; both off on
+	   hook.  Not every board has them: off by default */
+	void set_leds(bool on) { leds_ = on; }
 	/* the modem dev ("" or "auto": the first SmartUSB56 or pico-serial
 	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
 	   rate, its samples running, on hook; false with the reason on
@@ -100,8 +105,13 @@ public:
 	const char *driver_name() override {
 		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" : "ST7554";
 	}
-	/* the modem's characters to the DTE: how many it took */
-	int dte_write(dcore::Modem &, const char *buf, int n) override {
+	/* the modem's characters to the DTE: how many it took (data, for
+	   the data LED, once the call has been seen online: not its
+	   CONNECT) */
+	int dte_write(dcore::Modem &m, const char *buf, int n) override {
+		if (n > 0 && online_seen_ &&
+		    m.link_state() == dcore::LinkState::Online)
+			data_seen_ = true;
 		return dte_.write(buf, n);
 	}
 	/* the clock: the device's samples so far, in ms */
@@ -150,6 +160,7 @@ private:
 	void out_fill(libusb_transfer *t, const int *lengths);
 	void send_out();
 	void gone(const char *why);
+	void update_leds(dcore::Modem &m);
 
 	Dte &dte_;
 	Kind kind_ = Kind::St7554;
@@ -190,6 +201,9 @@ private:
 	int hook_ = MODEM_HOOK_ON;
 	uint16_t gpio_ = 0;
 	bool st75951_ = false;          /* the ST7554's codec an ST75951/2 */
+	bool leds_ = false;             /* set_leds() */
+	bool data_seen_ = false;        /* data in this call (the data LED) */
+	bool online_seen_ = false;      /* the call online at a pump's end */
 	unsigned long long flash_end_ = 0;
 	unsigned rings_ = 0;            /* ring detector changes not given */
 };

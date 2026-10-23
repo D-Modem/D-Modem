@@ -543,7 +543,7 @@ decodes caller ID itself; this one does not [inferred].
 
 ## What this means for dmodemd
 
-`dmodemd/usb_line.cpp` follows Linux, with two things taken from
+`dmodemd/usb_line.cpp` follows Linux, with three things taken from
 Windows. Against Windows:
 
 1. **Caller ID: done.** With `AT#CID=1`, from the first ring dmodemd
@@ -563,11 +563,14 @@ Windows. Against Windows:
    hook flash differs. The DE5671 applies no DAA settings per country.
    Australia's 350 ms RFC and France/Algeria/Tunisia's DC bit apply only
    in International mode, which this modem's INF leaves off.
-6. **Extras, not taken**: the carrier and activity LEDs (0x0040,
-   0x2000; Windows drives them only when the INF says the board has
-   them), wake on ring, and an unused handset detector (GPIO 2) that
-   might show a parallel phone off hook.
-7. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
+6. **LEDs: done, behind `--usb-leds`.** The carrier LED (0x0040)
+   while the call is online and the activity LED (0x2000) once data
+   has passed, both off on hook. Windows drives them only when the INF
+   says the board has them (`Options.ExtraLeds`), so dmodemd only with
+   the option.
+7. **Not taken**: wake on ring, and an unused handset detector (GPIO 2)
+   that might show a parallel phone off hook.
+8. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
    Linux.
 
 ## Open questions

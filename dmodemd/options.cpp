@@ -46,7 +46,7 @@ struct Option {
 enum {
 	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
-	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_RATE,
+	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_USB_LEDS, OPT_RATE,
 #ifdef _WIN32
 	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP, OPT_DRIVER,
 #endif
@@ -87,6 +87,9 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "the line a Smart Link SmartUSB56 or a pico-serial Line (auto, or "
 	  "<bus>:<address>), not SIP; list: those there are", "none",
 	  false },
+	{ 0, "usb-leds", Takes::Nothing, false,
+	  "a SmartUSB56's carrier and data LEDs (GPIO 6 and 13) lit, on a "
+	  "board that has them (Creative's Modem Blaster)", nullptr, false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a or --usb (8000 or 9600)", "9600", false },
 #ifdef _WIN32
@@ -346,6 +349,8 @@ void CommandLine::apply(Options &opt) const
 		opt.alsa_ctl = o[OPT_ALSA_CTL].value;
 	if (o[OPT_USB].given)
 		opt.usb = o[OPT_USB].value;
+	if (o[OPT_USB_LEDS].given)
+		opt.usb_leds = true;
 	if (opt.alsa && opt.usb) {
 		fprintf(stderr, "%s: -a or --usb, not both\n", prog_);
 		exit(1);

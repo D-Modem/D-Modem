@@ -219,6 +219,7 @@ int main(int argc, char *argv[])
 	dmd::DataFile data(data_path(name).c_str());
 	data.load(&m->dsp_info());
 #ifdef DMODEM_USB
+	usb.set_leds(opt.usb_leds);
 	if (opt.usb && !usb.open(opt.usb, opt.rate))
 		return 255;
 #endif

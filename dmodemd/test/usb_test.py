@@ -16,6 +16,9 @@
 #   while it listens on hook, the fake's codec hearing the line only
 #   then), answers at the second ring (ATS0=2); both CONNECT, a line of
 #   text goes each way; 1001 hangs up (+++ ATH), 1002 NO CARRIER;
+#   1001's LEDs (--usb-leds) lit in the call, the carrier's (GPIO 6)
+#   and the data one (GPIO 13), off on hook; 1002 (no --usb-leds) never
+#   sets them;
 # - 1002 off hook (ATH1), 1001 dials it again: BUSY;
 # - 1001 dials 1002 in pulses (ATDP): both CONNECT;
 # - in voice mode (+FCLASS=8) 1001 dials 1002, hears its ringing tone
@@ -85,11 +88,11 @@ while "ready" not in events and time.time() - t0 < 5:
     time.sleep(0.05)
 
 class Modem:
-    """a dmodemd on line <n>'s SmartUSB56 (the fake's environment more),
-    its pty"""
-    def __init__(self, n, name, **more):
+    """a dmodemd on line <n>'s SmartUSB56 (its options args, the fake's
+    environment more), its pty"""
+    def __init__(self, n, name, args=(), **more):
         self.log = open(os.path.join(logs, "dmodemd-%s.log" % n), "wb")
-        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto", "-r", rate, name],
+        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto", "-r", rate] + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n, **more))
         procs.append(self.p)
@@ -140,7 +143,7 @@ try:
                        env=env_for("1001"), capture_output=True, text=True, timeout=60)
     check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56 or pico-serial Line at 2:9" in p.stderr)
 
-    a = Modem("1001", "dmodem41")
+    a = Modem("1001", "dmodem41", ["--usb-leds"], FAKE_ST7554_LOG="1")
     b = Modem("1002", "dmodem42", FAKE_ST7554_DAA="1", FAKE_ST7554_LOG="1")
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
@@ -175,10 +178,16 @@ try:
     check("1002 gets 1001's line", b.expect(rb"hello from 1001", 10))
     b.dte.write(b"hello from 1002\r\n")
     check("1001 gets 1002's line", a.expect(rb"hello from 1002", 10))
+    gpio = lambda m: [int(v, 16) for v in
+                      re.findall(rb"fake st7554: 0a = ([0-9a-f]{4})", log_of(m))]
+    check("1001 the carrier LED (0x40) lit", 0x00c8 in gpio(a))
+    check("1001 the data LED (0x2000) lit", 0x20c8 in gpio(a))
     time.sleep(1.2)
     a.dte.write(b"+++")
     check("1001 +++ OK", a.expect(rb"OK\r\n", 5))
     check("1001 ATH", a.cmd(b"ATH"))
+    check("1001 its LEDs off on hook", gpio(a)[-1] & 0x20c8 == 0)
+    check("1002 no LEDs (no --usb-leds)", not any(v & 0x2040 for v in gpio(b)))
     check("1001 NO CARRIER", a.expect(rb"NO CARRIER\r\n", 5))
     check("1002 NO CARRIER", b.expect(rb"NO CARRIER\r\n", 30))
 

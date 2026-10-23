@@ -27,8 +27,10 @@ struct Options {
 	const char *alsa = nullptr;
 	const char *alsa_ctl = nullptr;
 	/* or a Smart Link SmartUSB56 through libusb (--usb: auto, or
-	   <bus>:<address>) */
+	   <bus>:<address>), its carrier and data LEDs lit (--usb-leds: on
+	   boards that have them) */
 	const char *usb = nullptr;
+	bool usb_leds = false;
 	unsigned rate = 9600;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem
 	   pair such as com0com's), or TCP connections on [address:]port

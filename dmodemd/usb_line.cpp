@@ -190,6 +190,8 @@ const uint16_t SSI1_OVERRUN = 0x0020;
 const uint16_t GPIO_RING1 = 0x0001;
 const uint16_t GPIO_HOOK1 = 0x0008;
 const uint16_t GPIO_CID1 = 0x0020;        /* the codec on the line on hook */
+const uint16_t GPIO_LED_CARRIER = 0x0040;  /* --usb-leds */
+const uint16_t GPIO_LED_DATA = 0x2000;
 const uint16_t GPIO_LED_HOOK = 0x0080;
 const uint16_t GPIO_MONOLITHIC = 0x4000;   /* an ST75951/2 silicon DAA */
 const uint16_t BYTE_ORDER_LE = 0x8000;
@@ -908,10 +910,34 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 	    !set_gpio((uint16_t)(gpio_ & ~GPIO_CID1)))
 		return -1;
 	uint16_t v = off ? (uint16_t)(gpio_ | GPIO_HOOK1 | GPIO_LED_HOOK) :
-		(uint16_t)(gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK));
+		(uint16_t)(gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK |
+				     GPIO_LED_CARRIER | GPIO_LED_DATA));
+	if (!off)
+		data_seen_ = online_seen_ = false;
 	if (cid)
 		v |= GPIO_CID1;
 	return v == gpio_ || set_gpio(v) ? 0 : -1;
+}
+
+/* the SmartUSB56's LEDs (set_leds()): the carrier's while the call is
+   online, the data one once data has passed (the DTE's waiting, or the
+   modem's to it after the pump that saw the call online), until on
+   hook */
+void UsbLine::update_leds(dcore::Modem &m)
+{
+	if (!leds_ || kind_ != Kind::St7554 || hook_ != MODEM_HOOK_OFF)
+		return;
+	bool online = m.link_state() == dcore::LinkState::Online;
+	if (online && m.tx_pending())
+		data_seen_ = true;
+	online_seen_ = online_seen_ || online;
+	uint16_t v = (uint16_t)(gpio_ & ~(GPIO_LED_CARRIER | GPIO_LED_DATA));
+	if (online)
+		v |= GPIO_LED_CARRIER;
+	if (data_seen_)
+		v |= GPIO_LED_DATA;
+	if (v != gpio_)
+		set_gpio(v);
 }
 
 /* see dcore.h: on hook for ms, then off again (if it still is) */
@@ -997,6 +1023,7 @@ int UsbLine::pump(dcore::Modem &m)
 				frame_out_.end());
 	}
 	in_buf_.erase(in_buf_.begin(), in_buf_.begin() + used);
+	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead) */
 	size_t most = (size_t)(3 * frame_);
 	if (out_buf_.size() > most) {

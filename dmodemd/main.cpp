@@ -265,6 +265,7 @@ int main(int argc, char *argv[])
 #endif
 #ifdef DMODEM_USB
 	/* the device opened as root (its node's is root's alone) */
+	usb.set_leds(opt.usb_leds);
 	if (opt.usb && !usb.open(opt.usb, opt.rate))
 		exit(-1);
 #endif
