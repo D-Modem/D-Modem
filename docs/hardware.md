@@ -78,28 +78,58 @@ and its DAA library `hsfsoar.o`), from the code and its debug messages:
   before each access;
 - an LSD register goes through SSD registers 1 to 3 and a status: the
   byte to write into 2, the command into 3 (the register in bits 5:0,
-  bit 7 a write, bit 6 with the line's control registers 0x03, 0x14,
-  0x15, 0x17 and 0x1c to 0x25), the answer from 1. The status is SSD
-  register 0, or 4 on some SSDs: bit 4 done and bit 3 an error, both
-  cleared before each command, bit 2 toggling at each frame over the
-  barrier, bit 1 the link up. A write is good when its answer is the
-  byte written; the driver tries 5 times;
+  bit 7 a write), the answer from 1. The status is SSD register 0, or 4
+  on some SSDs: bit 4 done and bit 3 an error, both cleared before each
+  command, bit 2 toggling at each frame over the barrier, bit 1 the
+  link up. A write to one of the line's control registers (0x03, 0x14,
+  0x15, 0x1c to 0x25) first sets SSD register 0x17's bit 1; one kind of
+  SSD (below, 0x1a) has the command's bit 6 for them instead. A write
+  is good when its answer is the byte written; the driver tries 5 times
+  (LSD register 0x17 once);
 - the hook is LSD register 0x15, bits 7:6: 01 on hook, 10 off hook, 00
   and 11 a dial pulse's make and break;
 - the driver's library knows 39 kinds of SSD, which differ in the LSD
   access: some prime SSD register 1 before each command (0x55 for a
   read, the byte's inverse for a write) to tell an absent LSD, some
   have the status in register 4, some send a read's command before
-  clearing the status. dmodemd takes the plain kind, which the newest
-  ones are.
+  clearing the status. The ICH driver takes the kind from the codec's
+  DAA type, register 0x7e's low byte: 0x20 kind 5, 0x21 0x0c, 0x22
+  0x13, 0x23 0x15, 0x28 0x0d, 0x29 0x12, 0x30 0x17, 0x31 0x20, others
+  5; type 0x24's SSD is in the codec's own registers, not behind 0x7a.
+  dmodemd does the same (`cx_kind()`), and leaves a type 0x24 codec's
+  hook to the kernel.
 
-Only the hook is done yet. Conexant's driver also sets the line's DC
-termination and voltage on going off hook (LSD registers 0x18, 0x19 and
-0x1d), detects rings and reads caller ID through the LSD, and keeps
-country settings there. A codec whose SSD is of another kind, or whose
-line side needs that setup to hold the line, may not go off hook yet.
-It has been tested against a simulated SmartDAA (`cx_daa_test`), not
-yet on a real codec.
+The HSF interop harness (`half_hsf`, [interop.md](interop.md)) runs
+Conexant's library against a simulated SmartDAA of this kind (codec
+0x5429, kind 0x12). With the LSD answering as above, its version 5 and
+its register 2 reading 0x0f once powered, the library sets the line up
+as follows for the USA (LSD writes, in order):
+
+- start: 0x03 = 00 and 0x04 = 2f, then waits for 0x02 to read 0x0f (the
+  LSD powered); 0x20 = 00, 0x25 = 29, 0x24 = 28, 0x21 = 80, 0x19 = 80,
+  0x08 = 00, 0x0a = d9, 0x0e = 00, 0x0c = 07, 0x12 = 00, 0x10 = 00,
+  0x19 = c0, 0x1f = 08, 0x15 = 40 (on hook), 0x1c = 78, 0x14 = e0,
+  0x07 = 04, 0x18 = 43, 0x19 = cb, 0x06 = 02; then 0x0c = 06, 0x12 =
+  60, 0x1c = 30, 0x0e = 00, 0x18 = 43, 0x10 = 00, 0x1c = 68, 0x1c = 6a,
+  0x0c = 02, 0x0a = df, 0x10 = 00, 0x0e = 02, 0x10 = 00;
+- ATA: 0x15 = 41, 0x12 = 40, 0x0e = 00, 0x14 = 20, 0x18 = 43, 0x10 =
+  00, 0x21 = 82, 0x1c = 32, 0x15 = 40, then 0x15 = 80 (off hook) and
+  0x19 = 8b.
+
+Before that it writes SSD registers directly: 0x1c = 40, 0x17 = 04,
+0x14 = 08, 0x0b = 5f, 0x06 = c0, 0x19 = 20, 0x05, 0x04 and 0x07 to
+0x0a = 00, 0x0d = 10, 0x1e = 00, 0x19 = 28, 0x1c = 7f, 0x1a, 0x1b and
+0x1d = 00, 0x25 = 5a, 0x23 = 43, 0x24 = 80, 0x22 = 5a, 0x20 = 63, 0x21
+= a8. The simulated LSD's status registers (0x16, 0x1a, 0x1e, 0x1f)
+read 0, so a real line may take other values where the library adjusts
+to what it measures (the loop voltage, the drive).
+
+Only the hook is done yet. dmodemd does none of the setup above: it
+assumes a line side already powered and set up, and probes it by its
+version. Without the SSD writes and the power-up a codec's line side
+may not answer, and dmodemd then leaves the hook to the kernel. It has
+been tested against a simulated SmartDAA (`cx_daa_test`), not yet on a
+real codec.
 
 ### HD-audio modems outside the Si3054 list
 

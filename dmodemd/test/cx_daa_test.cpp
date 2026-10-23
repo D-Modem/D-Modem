@@ -27,6 +27,8 @@ namespace {
    has them; what went through 0x7a kept */
 class FakeCodec : public dmd::Ac97Regs {
 public:
+	/* the status in SSD register 4 (status4) or 0; the SSD ready, the
+	   LSD on hook with a version */
 	explicit FakeCodec(bool status4 = false) : st_(status4 ? 4 : 0)
 	{
 		memset(ssd, 0, sizeof(ssd));
@@ -66,6 +68,7 @@ public:
 		return true;
 	}
 
+	/* see dmd::Ac97Regs: the delays added up, none waited */
 	void delay_us(unsigned us) override { delayed += us; }
 
 	/* the LSD writes (register, byte) the SSD passed on, in order */
@@ -105,6 +108,9 @@ private:
 						 CxDaa::ST_READY)));
 		ssd[r] = v;
 		if (r == CxDaa::SSD_COMMAND && !absent_lsd) {
+			/* a new command's status (as SOAR's kind 0x1a,
+			   which does not clear it, has it) */
+			ssd[st_] &= (uint8_t)~(CxDaa::ST_DONE | CxDaa::ST_ERROR);
 			cmd_ = v;
 			busy_ = true;
 			wait_ = latency;
@@ -159,27 +165,58 @@ TEST(CxDaa, SsdWindow)
 	EXPECT_FALSE(d.ssd_read(0x14, &v));
 }
 
+/* the commands written to SSD 3 */
+static std::vector<uint16_t> commands(const FakeCodec &c)
+{
+	std::vector<uint16_t> cmds;
+	for (uint16_t w : c.log)
+		if ((w >> 8) == CxDaa::SSD_COMMAND)
+			cmds.push_back(w & 0xff);
+	return cmds;
+}
+
 /* an LSD write: the byte into SSD 2, the status cleared, the command
-   (bit 7; bit 6 for the line's control) into SSD 3, its answer in SSD 1
-   the byte */
+   (bit 7) into SSD 3, its answer in SSD 1 the byte; a control
+   register's (0x15, not 0x17) with SSD 0x17's bit 1 set first */
 TEST(CxDaa, LsdWrite)
 {
 	FakeCodec c;
 	CxDaa d(c);
 
 	ASSERT_TRUE(d.lsd_write(0x0a, 0xdf)) << d.error();
+	EXPECT_FALSE(c.ssd[0x17] & 0x02);
+	ASSERT_TRUE(d.lsd_write(0x17, 0x01)) << d.error();
+	EXPECT_FALSE(c.ssd[0x17] & 0x02);
 	ASSERT_TRUE(d.lsd_write(0x15, 0x87)) << d.error();
-	ASSERT_EQ(c.lsd_writes.size(), 2u);
+	EXPECT_TRUE(c.ssd[0x17] & 0x02);
+	ASSERT_EQ(c.lsd_writes.size(), 3u);
 	EXPECT_EQ(c.lsd[0x0a], 0xdf);
 	EXPECT_EQ(c.lsd[0x15], 0x87);
-	std::vector<uint16_t> cmds;
-	for (uint16_t w : c.log)
-		if ((w >> 8) == CxDaa::SSD_COMMAND)
-			cmds.push_back(w & 0xff);
-	ASSERT_EQ(cmds.size(), 2u);
+	std::vector<uint16_t> cmds = commands(c);
+	ASSERT_EQ(cmds.size(), 3u);
 	EXPECT_EQ(cmds[0], 0x8a);       /* 0x80 | 0x0a */
-	EXPECT_EQ(cmds[1], 0xd5);       /* 0xc0 | 0x15 */
-	EXPECT_TRUE(c.ssd[0x17] & 0x02);
+	EXPECT_EQ(cmds[1], 0x97);
+	EXPECT_EQ(cmds[2], 0x95);
+}
+
+/* SOAR's kind 0x1a: a control register's write with the command's bit
+   6, SSD 0x17 untouched */
+TEST(CxDaa, LsdWriteControlBit6)
+{
+	CxVariant v = dmd::cx_variant(0x1a);
+	EXPECT_TRUE(v.control_bit6);
+	EXPECT_FALSE(dmd::cx_variant(0x12).control_bit6);
+
+	FakeCodec c(v.status4);
+	CxDaa d(c, v);
+	ASSERT_TRUE(d.lsd_write(0x15, 0x87)) << d.error();
+	ASSERT_TRUE(d.lsd_write(0x0a, 0xdf)) << d.error();
+	EXPECT_EQ(c.lsd[0x15], 0x87);
+	EXPECT_FALSE(c.ssd[0x17] & 0x02);
+	std::vector<uint16_t> cmds = commands(c);
+	ASSERT_EQ(cmds.size(), 2u);
+	EXPECT_EQ(cmds[0], 0xd5);       /* 0xc0 | 0x15 */
+	EXPECT_EQ(cmds[1], 0x8a);
 }
 
 /* an error over the barrier: tried again, 5 times at most (0x17
@@ -279,4 +316,9 @@ TEST(CxDaa, Codecs)
 	EXPECT_TRUE(dmd::cx_codec(0x5253, 0x5301));
 	EXPECT_FALSE(dmd::cx_codec(0x4358, 0x5928));
 	EXPECT_FALSE(dmd::cx_codec(0x5349, 0x4c27));    /* Silicon Labs */
+	EXPECT_EQ(dmd::cx_kind(0x5429), 0x12);
+	EXPECT_EQ(dmd::cx_kind(0x5428), 0x0d);
+	EXPECT_EQ(dmd::cx_kind(0x5431), 0x20);
+	EXPECT_EQ(dmd::cx_kind(0x5424), -1);
+	EXPECT_EQ(dmd::cx_kind(0x5401), 0x05);
 }

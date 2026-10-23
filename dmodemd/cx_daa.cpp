@@ -29,11 +29,20 @@ const uint32_t kind_flags[39] = {
 	0x00000000, 0x00000000, 0x87402057, 0x87402057,
 };
 
-/* LSD registers whose writes carry the command's bit 6: the line's
-   control (hook, DC, ring) */
+/* SOAR's second flag word per kind; the bit that matters here: 4 the
+   line's control registers written with the command's bit 6 */
+const uint32_t kind_flags2[39] = {
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0x001, 0x400, 0x400, 0x400,
+	0x400, 0x400, 0x400, 0x480, 0x10a, 0x10a, 0x078, 0, 0, 0,
+	0, 0x600, 0x600, 0x200, 0x200, 0, 0, 0x200, 0x200,
+};
+
+/* LSD registers of the line's control (power, hook, DC, ring), as
+   SOAR's write has them */
 bool control_reg(int reg)
 {
-	return reg == 0x03 || reg == 0x14 || reg == 0x15 || reg == 0x17 ||
+	return reg == 0x03 || reg == 0x14 || reg == 0x15 ||
 	       (reg >= 0x1c && reg <= 0x25);
 }
 
@@ -55,6 +64,7 @@ CxVariant cx_variant(int kind)
 	v.no_ready = f & (1u << 9);
 	v.cmd_first = f & (1u << 14);
 	v.status4 = f & (1u << 19);
+	v.control_bit6 = kind_flags2[kind] & (1u << 4);
 	return v;
 }
 
@@ -64,6 +74,23 @@ bool cx_codec(uint16_t id1, uint16_t id2)
 {
 	return (id1 == 0x4358 && (id2 & 0xff00) == 0x5400) ||
 	       (id1 == 0x5253 && (id2 & 0xff00) == 0x5300);
+}
+
+/* see cx_daa.h: hsfmc97ich.o's table of DAA types (0x20 to 0x31),
+   kind 5 for the others */
+int cx_kind(uint16_t id2)
+{
+	switch (id2 & 0xff) {
+	case 0x21: return 0x0c;
+	case 0x22: return 0x13;
+	case 0x23: return 0x15;
+	case 0x24: return -1;
+	case 0x28: return 0x0d;
+	case 0x29: return 0x12;
+	case 0x30: return 0x17;
+	case 0x31: return 0x20;
+	default: return 0x05;
+	}
 }
 
 /* the failure's text kept; false */
@@ -195,8 +222,10 @@ bool CxDaa::lsd_read(int reg, uint8_t *v)
 	return false;
 }
 
-/* see cx_daa.h: a control register's write also sets SSD register
-   0x17's bit 1 first, as SOAR does */
+/* see cx_daa.h: as SOAR's: with control_bit6, the byte and the
+   command alone; else a control register's write sets SSD register
+   0x17's bit 1 first, the status is cleared, with echo SSD register 1
+   primed with the byte's inverse */
 bool CxDaa::lsd_write(int reg, uint8_t v)
 {
 	bool control = control_reg(reg & 0x3f);
@@ -204,20 +233,23 @@ bool CxDaa::lsd_write(int reg, uint8_t v)
 	uint8_t x, cmd;
 
 	reg &= 0x3f;
-	cmd = (uint8_t)(reg | CMD_WRITE | (control ? CMD_CONTROL : 0));
+	cmd = (uint8_t)(reg | CMD_WRITE);
+	if (control && v_.control_bit6)
+		cmd |= CMD_CONTROL;
 	for (int t = 0; t < tries; t++) {
 		if (!ssd_write(SSD_DATA, v))
 			return false;
-		if (control) {
+		if (!v_.control_bit6) {
 			uint8_t s;
-			if (!ssd_read(0x17, &s) ||
-			    (!(s & 0x02) && !ssd_write(0x17, s | 0x02)))
+			if (control &&
+			    (!ssd_read(0x17, &s) ||
+			     (!(s & 0x02) && !ssd_write(0x17, s | 0x02))))
+				return false;
+			if (!clear_status(ST_DONE | ST_ERROR))
+				return false;
+			if (v_.echo && !ssd_write(SSD_ANSWER, (uint8_t)~v))
 				return false;
 		}
-		if (!clear_status(ST_DONE | ST_ERROR))
-			return false;
-		if (v_.echo && !ssd_write(SSD_ANSWER, (uint8_t)~v))
-			return false;
 		if (!ssd_write(SSD_COMMAND, cmd))
 			return false;
 		if (!wait_done())

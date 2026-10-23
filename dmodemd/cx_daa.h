@@ -16,12 +16,15 @@
  *      0x7a read again (its low byte; 0xffff, none).  SSD register 3
  *      wants 40 us before each access to it and before its reading;
  *    - an LSD register through four SSD ones: 2 the byte to write, 3 the
- *      command (the LSD register in bits 5:0; bit 7 a write; bit 6 with
- *      the writes to the line's control registers), 1 the LSD's answer,
- *      and a status register (0, or 4 on some SSDs): bit 4 done, bit 3
- *      an error (both cleared before each command), bit 2 toggling at
- *      each frame over the barrier, bit 1 the link up.  A write is good
- *      when the answer is the byte written;
+ *      command (the LSD register in bits 5:0; bit 7 a write), 1 the
+ *      LSD's answer, and a status register (0, or 4 on some SSDs): bit 4
+ *      done, bit 3 an error (both cleared before each command), bit 2
+ *      toggling at each frame over the barrier, bit 1 the link up.  A
+ *      write to one of the line's control registers (0x03, 0x14, 0x15,
+ *      0x1c to 0x25) first sets SSD register 0x17's bit 1; on one SSD
+ *      (SOAR's kind 0x1a) it has the command's bit 6 instead, and no
+ *      status cleared.  A write is good when the answer is the byte
+ *      written;
  *    - the hook: LSD register 0x15, bits 7:6: 01 on hook, 10 off hook,
  *      00 a dial pulse's make, 11 its break.
  *
@@ -60,6 +63,10 @@ struct CxVariant {
 	bool cmd_first = false; /* a read's command before the status
 				   is cleared */
 	bool status4 = false;   /* the status in SSD register 4, not 0 */
+	bool control_bit6 = false; /* a control register's write: the
+				   command's bit 6, not SSD register
+				   0x17's bit 1; the status not cleared,
+				   SSD register 1 not primed */
 };
 
 /* SOAR's kind kind's differences (0 to 0x26); the plain one for others */
@@ -68,6 +75,11 @@ CxVariant cx_variant(int kind);
 /* whether the codec's vendor ID (registers 0x7c, 0x7e) is a Conexant
    or Rockwell modem codec with a SmartDAA */
 bool cx_codec(uint16_t id1, uint16_t id2);
+
+/* the SSD's kind of a cx_codec() codec, from register 0x7e's low byte
+   (its DAA type) as Conexant's ICH driver takes it; -1 for type 0x24,
+   whose SSD is in the codec's own registers, not behind 0x7a */
+int cx_kind(uint16_t id2);
 
 class CxDaa {
 public:

@@ -534,7 +534,10 @@ the interrupt) and its NVM (the `HKR` lines of the `.inf` and the
 country's of `hsf.cty`), and models what the modules drive: an ICH's
 AC'97 bus master (PCM in and out, pausing and resuming at the position it
 was at), a secondary MC'97 codec (Conexant, 0x4358/0x5429) at 15999 Hz
-and the SmartDAA behind its register 0x7a. The modem's `ComCtrl` is the
+and the SmartDAA behind its register 0x7a, its line side answering
+commands as the DAA library drives them (its kind 0x12; see
+[hardware.md](hardware.md)), so the library powers it up, sets the line
+up and takes it off hook. The modem's `ComCtrl` is the
 DTE, on a pty. The engine reads the TSC: the harness traps `rdtsc`
 (`PR_SET_TSC`) and gives the line's time at 1000 MHz, on by 0.1 µs a
 read while the line stands still (a busy wait would never end). The ICH

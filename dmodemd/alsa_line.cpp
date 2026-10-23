@@ -331,17 +331,24 @@ void AlsaLine::cx_open(int card)
 		    "kernel's\n", ac97_.name().c_str(), id1, id2);
 		return;
 	}
-	cx_.reset(new CxDaa(ac97_));
+	int kind = cx_kind(id2);
+	if (kind < 0) {
+		ERR("Conexant codec at %s (%04x %04x): its SmartDAA is not "
+		    "behind register 0x7a; the hook the kernel's\n",
+		    ac97_.name().c_str(), id1, id2);
+		return;
+	}
+	cx_.reset(new CxDaa(ac97_, cx_variant(kind)));
 	if (!cx_->probe(&version)) {
-		ERR("Conexant codec at %s (%04x %04x): its line side does not "
-		    "answer (%s)\n", ac97_.name().c_str(), id1, id2,
-		    cx_->error().c_str());
+		ERR("Conexant codec at %s (%04x %04x, SSD kind %#x): its line "
+		    "side does not answer (%s)\n", ac97_.name().c_str(), id1,
+		    id2, kind, cx_->error().c_str());
 		cx_.reset();
 		return;
 	}
-	DBG("Conexant codec at %s (%04x %04x), line side version %02x: the "
-	    "hook in its SmartDAA\n", ac97_.name().c_str(), id1, id2,
-	    version);
+	DBG("Conexant codec at %s (%04x %04x, SSD kind %#x), line side "
+	    "version %02x: the hook in its SmartDAA\n",
+	    ac97_.name().c_str(), id1, id2, kind, version);
 }
 
 /* see alsa_line.h */
