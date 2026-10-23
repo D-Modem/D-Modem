@@ -288,11 +288,14 @@ licence). In `dmodemd/usb_line.cpp`:
   core's `ring()`, which checks the cadence.
 - **Unplugged.** dmodemd says so and exits.
 
-Limits: the ST7554's codec hears nothing on hook, so there is **no
-caller ID** (Smart Link's driver had none either). The ST75951/2
-"silicon DAA" variant (`MONOLITHIC` in the GPIO status) is refused, as
-Smart Link's driver did not support it. The device's line settings are
-its own, and it has not yet been tried on a real SmartUSB56.
+Limits: there is **no caller ID** yet. On hook the codec hears nothing
+unless GPIO 5 (CID1) connects it, which Smart Link's Linux driver never
+did, but its Windows driver does. The ST75951/2 "silicon DAA" variant
+(`MONOLITHIC` in the GPIO status) is refused, as the Linux driver did not
+support it; the Windows driver does. The device's line settings are its
+own, and it has not yet been tried on a real SmartUSB56. What the
+Windows drivers do (caller ID, the silicon DAA, LEDs, countries) is in
+[smartusb56-windows.md](smartusb56-windows.md).
 
 ### pico-serial Line
 

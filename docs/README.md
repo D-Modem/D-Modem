@@ -24,6 +24,8 @@ The project's overview, building and usage are in the top
 - [FreeSWITCH: mod_dmodem](freeswitch.md)
 - [Softmodem hardware](hardware.md): dmodemd on an AC'97 or HD-audio
   modem codec through ALSA (`-a`)
+- [The SmartUSB56 under Windows](smartusb56-windows.md): what Smart Link's
+  Windows drivers for the ST7554 (Creative's Modem Blaster V.92 USB) do
 - [Windows](windows.md): dmodemd for Windows (MSVC, MinGW-w64), its DTE a COM
   port (com0com), a named pipe (a VM's COM port) or TCP, and its tests
   under Wine
