@@ -100,9 +100,13 @@ bool AlsaLine::open(const char *pcm, const char *ctl, unsigned rate)
 		ERR("ALSA control %s has no \"Caller ID Switch\": rings and "
 		    "caller ID may not be heard\n", ctl_name.c_str());
 	ring_.init((int)rate);
-	set(off_hook_, false);
 	set(caller_id_, true);
 	daa_open();
+	snd_ctl_card_info_t *info;
+	snd_ctl_card_info_alloca(&info);
+	if (snd_ctl_card_info(ctl_, info) >= 0)
+		cx_open(snd_ctl_card_info_get_card(info));
+	hook_switch(false);
 	if (!restart(nullptr)) {
 		close();
 		return false;
@@ -216,7 +220,7 @@ int AlsaLine::set_hook(dcore::Modem &, int state)
 	if (daa_ && off)
 		daa_write(true);
 	set(caller_id_, !off);
-	set(off_hook_, off);
+	hook_switch(off);
 	if (daa_ && !off)
 		daa_write(false);
 	return 0;
@@ -307,13 +311,54 @@ bool AlsaLine::daa_write(bool off_hook)
 	return true;
 }
 
+/* see alsa_line.h: the codec's vendor ID one of cx_codec()'s, its
+   line side's version read through the SmartDAA */
+void AlsaLine::cx_open(int card)
+{
+	std::string why;
+	uint16_t id1 = 0, id2 = 0;
+	uint8_t version = 0;
+
+	cx_.reset();
+	if (!ac97_.is_open() && !ac97_.open(card, &why)) {
+		DBG("no AC'97 codec registers (%s): the hook the kernel's\n",
+		    why.c_str());
+		return;
+	}
+	if (!ac97_.read(0x7c, &id1) || !ac97_.read(0x7e, &id2) ||
+	    !cx_codec(id1, id2)) {
+		DBG("AC'97 codec at %s: vendor %04x %04x, its hook the "
+		    "kernel's\n", ac97_.name().c_str(), id1, id2);
+		return;
+	}
+	cx_.reset(new CxDaa(ac97_));
+	if (!cx_->probe(&version)) {
+		ERR("Conexant codec at %s (%04x %04x): its line side does not "
+		    "answer (%s)\n", ac97_.name().c_str(), id1, id2,
+		    cx_->error().c_str());
+		cx_.reset();
+		return;
+	}
+	DBG("Conexant codec at %s (%04x %04x), line side version %02x: the "
+	    "hook in its SmartDAA\n", ac97_.name().c_str(), id1, id2,
+	    version);
+}
+
+/* see alsa_line.h */
+void AlsaLine::hook_switch(bool off)
+{
+	if (cx_ && !cx_->set_hook(off ? CxDaa::HOOK_OFF : CxDaa::HOOK_ON))
+		ERR("SmartDAA hook: %s\n", cx_->error().c_str());
+	set(off_hook_, off);
+}
+
 /* see dcore.h: on hook for ms, then off again (if it still is) */
 void AlsaLine::hook_flash(dcore::Modem &, unsigned ms)
 {
 	if (hook_ != MODEM_HOOK_OFF)
 		return;
 	DBG("hook flash, %u ms\n", ms);
-	set(off_hook_, false);
+	hook_switch(false);
 	flash_end_ = samples_ + (unsigned long long)ms * rate_ / 1000;
 }
 
@@ -323,6 +368,11 @@ int AlsaLine::pulse_hook(dcore::Modem &, bool broken)
 	if (hook_ != MODEM_HOOK_OFF)
 		return -1;
 	flash_end_ = 0;
+	if (cx_) {
+		if (!cx_->set_hook(broken ? CxDaa::PULSE_BREAK :
+				   CxDaa::HOOK_OFF))
+			ERR("SmartDAA: %s\n", cx_->error().c_str());
+	}
 	set(off_hook_, !broken);
 	return 0;
 }
@@ -381,7 +431,7 @@ void AlsaLine::frame(dcore::Modem &m, const int16_t *in, int16_t *out)
 	if (flash_end_ && samples_ >= flash_end_) {
 		flash_end_ = 0;
 		if (hook_ == MODEM_HOOK_OFF)
-			set(off_hook_, true);
+			hook_switch(true);
 	}
 	if (hook_ != MODEM_HOOK_OFF) {
 		for (int i = 0; i < frame_; i++)
@@ -442,7 +492,7 @@ void AlsaLine::close()
 	hda_.close();
 	daa_ = false;
 	if (ctl_) {
-		set(off_hook_, false);
+		hook_switch(false);
 		set(caller_id_, false);
 		snd_ctl_close(ctl_);
 		ctl_ = nullptr;
@@ -450,6 +500,7 @@ void AlsaLine::close()
 	snd_ctl_elem_id_free(off_hook_.id);
 	snd_ctl_elem_id_free(caller_id_.id);
 	off_hook_ = caller_id_ = Switch();
+	cx_.reset();
 	if (cap_) {
 		snd_pcm_close(cap_);
 		cap_ = nullptr;

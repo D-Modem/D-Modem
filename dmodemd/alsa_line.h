@@ -16,6 +16,11 @@
  *    call).  On hook the line monitor is on.  The modem dials itself, in
  *    DTMF.  Time is the codec's: the samples it has given.
  *
+ *    A Conexant (Rockwell) AC'97 modem codec on an ICH modem controller
+ *    has its hook in its SmartDAA, not the GPIO the kernel's switch
+ *    drives: as root, the hook goes there too (cx_daa.h, through the
+ *    controller's I/O ports, ac97_ports.h).
+ *
  *    An HD-audio Si3054 with a Si3018 line side also gets the country's
  *    line settings (si3054.h) through the kernel's hwdep device
  *    (hda_codec.h): at open(), on each change of the country, and before
@@ -28,6 +33,7 @@
 
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -36,6 +42,8 @@
 #include <dcore.h>
 #include <dsp.h>
 
+#include "ac97_ports.h"
+#include "cx_daa.h"
 #include "hda_codec.h"
 #include "pty.h"
 #include "run_loop.h"
@@ -116,6 +124,12 @@ private:
 	/* the country's settings into its registers, RZ off (off_hook) or
 	   the country's; false (logged) on an error */
 	bool daa_write(bool off_hook);
+	/* a Conexant SmartDAA on card card's codec, if there is one and
+	   its line side answers (open()'s) */
+	void cx_open(int card);
+	/* the hook switch: the kernel's, and the SmartDAA's if there is
+	   one (an error logged) */
+	void hook_switch(bool off);
 
 	Pty &pty_;
 	snd_pcm_t *cap_ = nullptr, *play_ = nullptr;
@@ -138,6 +152,9 @@ private:
 	const Si3054Country *daa_country_ = &si3054_usa();
 	std::string daa_name_ = "USA";
 	bool daa_due_ = true;
+	/* a Conexant codec's SmartDAA, if its hook is there */
+	Ac97Ports ac97_;
+	std::unique_ptr<CxDaa> cx_;
 };
 
 } // namespace dmd

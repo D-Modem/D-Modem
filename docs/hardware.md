@@ -19,7 +19,7 @@ monitor.
 
 | Kind | Kernel driver | Codecs |
 |---|---|---|
-| AC'97 modem (MC97, AMR and CNR risers, laptops of about 2000 to 2006) | `snd-intel8x0m` (Intel ICH to ICH7, AMD-768/8111, nForce, SiS 7013, ALi), `snd-atiixp-modem` (ATI IXP), `snd-via82xx-modem` (VIA) | the codec's own AC'97 modem GPIOs: Silicon Labs Si3036/38, Agere, Motorola and others |
+| AC'97 modem (MC97, AMR and CNR risers, laptops of about 2000 to 2006) | `snd-intel8x0m` (Intel ICH to ICH7, AMD-768/8111, nForce, SiS 7013, ALi), `snd-atiixp-modem` (ATI IXP), `snd-via82xx-modem` (VIA) | the codec's own AC'97 modem GPIOs: Silicon Labs Si3036/38, Agere, Motorola and others; Conexant's SmartDAA (below) |
 | HD-audio modem (laptops of about 2005 to 2010) | `snd-hda-intel` with `snd-hda-codec-si3054` | Silicon Labs Si3054/3055, Agere (11c1:3026, 3055, 3155), Motorola (1057:3055, 3057, 3155), SM56 (1543:3155), LG (1854:0018), a VIA board's (1106:3288) |
 
 The codec appears as a card's PCM, with two switches among its controls:
@@ -53,6 +53,53 @@ on an AC'97 modem, on a kernel without the hwdep device, and on a codec
 whose chip ID (node 12) is not a Si3054 with a Si3018, such as the
 other vendors' chips the Si3054 driver binds: those keep the kernel
 driver's settings, the USA's.
+
+### Conexant AC'97 codecs
+
+Conexant's (and Rockwell's) AC'97 modem codecs, vendor ID `CX` with a
+device 0x54xx or `RS` with 0x53xx, keep their hook in their SmartDAA,
+not in the AC'97 modem GPIO that the kernel's "Off-hook Switch" drives.
+The kernel gives their samples, so `-a` works with them except for the
+hook. On an ICH modem controller (`snd-intel8x0m`), dmodemd run as root
+also puts the hook into the SmartDAA. It reaches the codec's registers
+through the controller's I/O ports, under the codec access semaphore
+the kernel's driver also keeps to, and logs `the hook in its SmartDAA`
+with the line side's version. Without root, on another controller, or
+on another codec, it logs why and the hook stays the kernel's.
+
+The SmartDAA is two chips: the system side (SSD) in the codec and the
+line side (LSD) beyond the isolation barrier. What dmodemd knows of
+them comes from Conexant's HSF driver for ICH modems (`hsfmc97ich.o`
+and its DAA library `hsfsoar.o`), from the code and its debug messages:
+
+- an SSD register (a byte, 0 to 63) is codec register 0x7a: written
+  with `(reg << 8) | value`, read by writing `0x8000 | (reg << 8)` and
+  reading 0x7a's low byte (0xffff: no SSD). SSD register 3 wants 40 us
+  before each access;
+- an LSD register goes through SSD registers 1 to 3 and a status: the
+  byte to write into 2, the command into 3 (the register in bits 5:0,
+  bit 7 a write, bit 6 with the line's control registers 0x03, 0x14,
+  0x15, 0x17 and 0x1c to 0x25), the answer from 1. The status is SSD
+  register 0, or 4 on some SSDs: bit 4 done and bit 3 an error, both
+  cleared before each command, bit 2 toggling at each frame over the
+  barrier, bit 1 the link up. A write is good when its answer is the
+  byte written; the driver tries 5 times;
+- the hook is LSD register 0x15, bits 7:6: 01 on hook, 10 off hook, 00
+  and 11 a dial pulse's make and break;
+- the driver's library knows 39 kinds of SSD, which differ in the LSD
+  access: some prime SSD register 1 before each command (0x55 for a
+  read, the byte's inverse for a write) to tell an absent LSD, some
+  have the status in register 4, some send a read's command before
+  clearing the status. dmodemd takes the plain kind, which the newest
+  ones are.
+
+Only the hook is done yet. Conexant's driver also sets the line's DC
+termination and voltage on going off hook (LSD registers 0x18, 0x19 and
+0x1d), detects rings and reads caller ID through the LSD, and keeps
+country settings there. A codec whose SSD is of another kind, or whose
+line side needs that setup to hold the line, may not go off hook yet.
+It has been tested against a simulated SmartDAA (`cx_daa_test`), not
+yet on a real codec.
 
 ### HD-audio modems outside the Si3054 list
 
@@ -207,8 +254,6 @@ against a fake of it (below), not yet on a real one.
 
 Not covered yet, because Linux has no driver that gives their samples:
 
-- Conexant's AC'97 codecs (their hook is in the SmartDAA behind codec
-  register 0x7a, not the standard GPIO);
 - HD-audio modems that are not Si3054-compatible, such as Conexant's
   (the compatible ones outside the Si3054 list: `hda-modem-setup`,
   above);
