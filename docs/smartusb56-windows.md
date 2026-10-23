@@ -543,16 +543,18 @@ decodes caller ID itself; this one does not [inferred].
 
 ## What this means for dmodemd
 
-`dmodemd/usb_line.cpp` follows Linux. Against Windows:
+`dmodemd/usb_line.cpp` follows Linux, with two things taken from
+Windows. Against Windows:
 
-1. **Caller ID is possible.** Set GPIO 0x0020 on hook (between the
-   first and second rings, the usual window) and clear it before going
-   off hook. Then run the core's caller ID decoder on the samples. Not
-   yet tried on hardware.
-2. **The ST75951 silicon DAA works.** Its start-up and control words
-   are above, and hook, ring and caller ID are the same GPIOs. dmodemd
-   could take it instead of refusing it, with the DC bit inverted if it
-   is ever used.
+1. **Caller ID: done.** With `AT#CID=1`, from the first ring dmodemd
+   sets GPIO 0x0020 (CID1) while the core listens on hook, and clears
+   it before the hook changes. Tested on the fake device, not yet on
+   hardware.
+2. **The ST75951 silicon DAA: done.** dmodemd starts it up as Windows
+   does (power 3, codec register 3 = 0x050, register 0 = 0x3C0, power
+   2, then 3 and the rate's word) and powers it down to 2. Hook, ring
+   and caller ID are the same GPIOs. The DC bit, inverted on it, is not
+   used.
 3. **The idle GPIO state differs**: Windows holds DP (0x0400) high.
    The Linux values work, but DP's role is not known.
 4. **Clock drift**: Windows adds or drops whole packets from the FIFO
@@ -561,9 +563,10 @@ decodes caller ID itself; this one does not [inferred].
    hook flash differs. The DE5671 applies no DAA settings per country.
    Australia's 350 ms RFC and France/Algeria/Tunisia's DC bit apply only
    in International mode, which this modem's INF leaves off.
-6. **Extras**: the carrier and activity LEDs (0x0040, 0x2000), wake on
-   ring, and an unused handset detector (GPIO 2) that might show a
-   parallel phone off hook.
+6. **Extras, not taken**: the carrier and activity LEDs (0x0040,
+   0x2000; Windows drives them only when the INF says the board has
+   them), wake on ring, and an unused handset detector (GPIO 2) that
+   might show a parallel phone off hook.
 7. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
    Linux.
 

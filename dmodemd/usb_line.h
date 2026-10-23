@@ -15,9 +15,12 @@
  *    from open() on; each IN transfer's byte count is the next OUT
  *    transfer's, so the modem's samples go out at the codec's own clock.
  *    Each ring signal's change on the ring detector is a pulse to the
- *    modem's ring(); the codec hears nothing on hook, so there is no
- *    caller ID.  The modem dials itself, in DTMF.  Time is the codec's:
- *    the samples it has given.
+ *    modem's ring().  On hook the codec hears the line only with GPIO 5
+ *    (CID1) set: while the modem listens for caller ID
+ *    (MODEM_HOOK_SNOOPING, AT#CID=1, from the first ring).  The codec is
+ *    an STLC7550 or an ST75951/2 silicon DAA (GPIO_STATUS bit 14), whose
+ *    start-up differs (docs/smartusb56-windows.md).  The modem dials
+ *    itself, in DTMF.  Time is the codec's: the samples it has given.
  *
  *    The pico-serial Line stick (github.com/Neo-Desktop/pico-serial,
  *    SPEC-L.md and firmware/PROTOCOL.md "Line stick") is shaped the same
@@ -126,6 +129,7 @@ private:
 	/* the ST7554's start-up (its registers), and the stick's (its rate,
 	   the line side checked) */
 	bool open_st7554(unsigned rate);
+	bool start_st75951();
 	bool open_stick(unsigned rate);
 	/* a vendor request to the stick's interface: OUT with value, or IN
 	   into buf (len octets, all of them wanted); false (logged) */
@@ -185,6 +189,7 @@ private:
 	bool dead_ = false;
 	int hook_ = MODEM_HOOK_ON;
 	uint16_t gpio_ = 0;
+	bool st75951_ = false;          /* the ST7554's codec an ST75951/2 */
 	unsigned long long flash_end_ = 0;
 	unsigned rings_ = 0;            /* ring detector changes not given */
 };

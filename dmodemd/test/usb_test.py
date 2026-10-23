@@ -7,12 +7,15 @@
 # a libusb in front of the real one through LD_PRELOAD) whose lines are
 # line_exchange's, 1001 and 1002:
 #
-# - with the fake saying its codec is an ST75951/2 (FAKE_ST7554_DAA),
-#   dmodemd refuses it and exits;
+# - 1002's fake says its codec is an ST75951/2 silicon DAA
+#   (FAKE_ST7554_DAA): dmodemd starts it up with its control words
+#   (register 3 = 0x050), 1001's an STLC7550;
 # - 1001 dials 1002 (ATX4: after the dial tone, in DTMF); 1002 rings
-#   (its ring detector's changes on the interrupt endpoint), answers at
-#   the second ring (ATS0=2); both CONNECT, a line of text goes each
-#   way; 1001 hangs up (+++ ATH), 1002 NO CARRIER;
+#   (its ring detector's changes on the interrupt endpoint), shows the
+#   caller ID between the first two rings (AT#CID=1: GPIO 5, CID1, set
+#   while it listens on hook, the fake's codec hearing the line only
+#   then), answers at the second ring (ATS0=2); both CONNECT, a line of
+#   text goes each way; 1001 hangs up (+++ ATH), 1002 NO CARRIER;
 # - 1002 off hook (ATH1), 1001 dials it again: BUSY;
 # - 1001 dials 1002 in pulses (ATDP): both CONNECT;
 # - in voice mode (+FCLASS=8) 1001 dials 1002, hears its ringing tone
@@ -82,12 +85,13 @@ while "ready" not in events and time.time() - t0 < 5:
     time.sleep(0.05)
 
 class Modem:
-    """a dmodemd on line <n>'s SmartUSB56, its pty"""
-    def __init__(self, n, name):
+    """a dmodemd on line <n>'s SmartUSB56 (the fake's environment more),
+    its pty"""
+    def __init__(self, n, name, **more):
         self.log = open(os.path.join(logs, "dmodemd-%s.log" % n), "wb")
         self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto", "-r", rate, name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  env=env_for(n))
+                                  env=env_for(n, **more))
         procs.append(self.p)
         where = None
         t = time.time()
@@ -132,25 +136,33 @@ def check(what, cond):
     ok = ok and bool(cond)
 
 try:
-    p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=1:7", "-r", rate, "dmodem40"],
-                       env=env_for("1001", FAKE_ST7554_DAA="1"),
-                       capture_output=True, text=True, timeout=60)
-    check("an ST75951/2 refused", p.returncode != 0 and "ST75951/2" in p.stderr)
     p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=2:9", "-r", rate, "dmodem40"],
                        env=env_for("1001"), capture_output=True, text=True, timeout=60)
     check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56 or pico-serial Line at 2:9" in p.stderr)
 
     a = Modem("1001", "dmodem41")
-    b = Modem("1002", "dmodem42")
+    b = Modem("1002", "dmodem42", FAKE_ST7554_DAA="1", FAKE_ST7554_LOG="1")
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
         check("%s ATI3: ST7554" % m.n, m.cmd(b"ATI3", rb"ST7554\r\n(\r\n)?OK\r\n"))
+    def log_of(m):
+        m.log.flush()
+        return open(m.log.name, "rb").read()
+    b_log = lambda: log_of(b)
+    check("1002 an ST75951/2", b"codec: ST75951/2 (silicon DAA)" in b_log())
+    check("1002 its start-up (register 3 = 0x050)",
+          b"fake st7554: 17 = 3050" in b_log())
+    check("1001 an STLC7550", b"codec: STLC7550" in log_of(a))
     check("1002 answers at the 2nd ring", b.cmd(b"ATS0=2"))
+    check("1002 caller ID on", b.cmd(b"AT#CID=1"))
     check("1001 waits for the dial tone", a.cmd(b"ATX4"))
 
     t = time.time()
     a.dte.write(b"ATD1002\r")
     check("1002 RING", b.expect(rb"RING\r\n", 15))
+    cid = b.expect(rb"NMBR = (\d+)\r\n", 6)
+    check("1002 caller ID 1001", cid and cid.group(1) == b"1001")
+    check("1002 CID1 set on hook", b"fake st7554: 0a = 0020" in b_log())
     check("1002 RING again", b.expect(rb"RING\r\n", 8))
     ca = a.expect(rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO DIALTONE)\r\n", 40)
     cb = b.expect(rb"(CONNECT[^\r]*|NO CARRIER)\r\n", 5)

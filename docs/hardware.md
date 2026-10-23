@@ -286,16 +286,21 @@ licence). In `dmodemd/usb_line.cpp`:
 - **Rings.** The ring detector (GPIO 0) changes with the ring signal.
   Each change comes on the interrupt endpoint and is a pulse to the
   core's `ring()`, which checks the cadence.
+- **Caller ID.** On hook the codec hears nothing unless GPIO 5 (CID1)
+  connects it to the line. With `AT#CID=1` dmodemd sets it from the
+  first ring while the core's caller ID receiver listens, and clears it
+  before the hook changes, as Smart Link's Windows driver does (its
+  Linux one never did). So caller ID comes between the first two rings.
+- **The codec.** An STLC7550, or an ST75951/2 "silicon DAA"
+  (`MONOLITHIC`, GPIO status bit 14). The ST75951's control words name
+  one of its four registers; dmodemd starts it up as the Windows driver
+  does. Hook, ring and caller ID are the same GPIOs.
 - **Unplugged.** dmodemd says so and exits.
 
-Limits: there is **no caller ID** yet. On hook the codec hears nothing
-unless GPIO 5 (CID1) connects it, which Smart Link's Linux driver never
-did, but its Windows driver does. The ST75951/2 "silicon DAA" variant
-(`MONOLITHIC` in the GPIO status) is refused, as the Linux driver did not
-support it; the Windows driver does. The device's line settings are its
-own, and it has not yet been tried on a real SmartUSB56. What the
-Windows drivers do (caller ID, the silicon DAA, LEDs, countries) is in
-[smartusb56-windows.md](smartusb56-windows.md).
+Limits: the device's line settings are its own, and it has not yet been
+tried on a real SmartUSB56; caller ID and the ST75951 follow the Windows
+driver (read from its code, [smartusb56-windows.md](smartusb56-windows.md))
+and have been tested on the fake device only.
 
 ### pico-serial Line
 
@@ -518,10 +523,13 @@ with `LD_PRELOAD`. Its one device is an ST7554 whose line is the
 exchange's: its registers set the hook, its IN transfers take the line's
 samples as the exchange sends them, its OUT transfers' samples go to the
 exchange, and its ring detector changes on each half cycle of the ring
-signal. The test checks that an ST75951/2 and a wrong `<bus>:<address>`
-are refused, a data call (rings, the answer at the second ring, V.34 at
-33600, text each way), a busy line, a call dialled in pulses, a voice
-call, and that both exit once the exchange (the devices) has gone. It needs libusb-1.0-0-dev.
+signal; it hears the line on hook only with CID1 set. One of the two
+fakes says it is an ST75951/2 (`FAKE_ST7554_DAA`) and checks its
+start-up. The test checks that a wrong `<bus>:<address>` is refused, a
+data call (rings, caller ID between the first two rings, the answer at
+the second ring, V.34 at 33600, text each way), a busy line, a call
+dialled in pulses, a voice call, and that both exit once the exchange
+(the devices) has gone. It needs libusb-1.0-0-dev.
 
 `dmodemd/test/pico_line_test.py` (ctest's `dmodemd_pico_line`, label
 `alsa`) does the same with two pico-serial Line sticks:
@@ -529,6 +537,5 @@ call, and that both exit once the exchange (the devices) has gone. It needs libu
 the exchange's, speaking its firmware's protocol: `SET_HOOK` and
 `SET_MONITOR` are the exchange's switches, alternate setting 1 starts
 its samples, its ring detector's changes come as events. On top of the
-SmartUSB56's checks it has caller ID between the first two rings (the
-stick hears the line on hook), and a stick whose line side does not
-answer (said, and dmodemd goes on).
+SmartUSB56's checks it has the country's line settings, and a stick
+whose line side does not answer (said, and dmodemd goes on).

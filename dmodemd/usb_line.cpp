@@ -44,6 +44,9 @@
  *      OF SUCH DAMAGE.
  *
  *    The rest is ours: the transfers on libusb, the line for the core.
+ *    Caller ID (GPIO 5, CID1, while the core snoops on hook) and the
+ *    ST75951/2 silicon DAA's start-up (its control words) are what
+ *    Smart Link's Windows driver does (docs/smartusb56-windows.md).
  *
  *    Interface 0, alternate setting 1: an interrupt IN endpoint (4
  *    octets: the FIFO's status, the GPIOs' changes), an isochronous OUT
@@ -181,10 +184,12 @@ const uint8_t FIFO_CONTROL2 = 0x1a;
 /* their values */
 const uint16_t SSI1_POWERDOWN = 0x0000;
 const uint16_t SSI1_POWERUP = 0x0001;
+const uint16_t SSI1_ST75951 = 0x0002;      /* kept set on an ST75951 */
 const uint16_t SSI1_UNDERRUN = 0x0040;
 const uint16_t SSI1_OVERRUN = 0x0020;
 const uint16_t GPIO_RING1 = 0x0001;
 const uint16_t GPIO_HOOK1 = 0x0008;
+const uint16_t GPIO_CID1 = 0x0020;        /* the codec on the line on hook */
 const uint16_t GPIO_LED_HOOK = 0x0080;
 const uint16_t GPIO_MONOLITHIC = 0x4000;   /* an ST75951/2 silicon DAA */
 const uint16_t BYTE_ORDER_LE = 0x8000;
@@ -196,7 +201,8 @@ const int FIFO_SAMPLES = 64 + 24;
 
 const unsigned TIMEOUT_MS = 1000;
 
-/* the STLC7550's control word for a rate; 0 if it has none */
+/* the codec's control word for a rate (the STLC7550's, and the
+   ST75951's register 0); 0 if it has none */
 uint16_t cword(unsigned rate)
 {
 	switch (rate) {
@@ -491,11 +497,8 @@ bool UsbLine::open_st7554(unsigned rate)
 	}
 	if (!endpoints() || !get_reg(GPIO_STATUS, &status))
 		return false;
-	if (status & GPIO_MONOLITHIC) {
-		ERR("SmartUSB56: an ST75951/2 silicon DAA codec, which Smart "
-		    "Link's driver did not support either\n");
-		return false;
-	}
+	st75951_ = status & GPIO_MONOLITHIC;
+	DBG("codec: %s\n", st75951_ ? "ST75951/2 (silicon DAA)" : "STLC7550");
 	gpio_ = 0;
 	if (!set_reg(GPIO_DIR, 0x3ff8) || !set_gpio(0) ||
 	    !set_reg(GPIO_MASK, GPIO_RING1) ||
@@ -503,7 +506,7 @@ bool UsbLine::open_st7554(unsigned rate)
 	    !set_reg(FIFO_CONTROL2, 0x2828) || !set_reg(FIFO_MASK, 0) ||
 	    !set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN) ||
 	    !set_reg(SSI1_COUNTER, 0) || !set_reg(SSI2_COUNTER, 0) ||
-	    !set_reg(SSI1_CONTROL, SSI1_POWERUP) ||
+	    !(st75951_ ? start_st75951() : set_reg(SSI1_CONTROL, SSI1_POWERUP)) ||
 	    !set_reg(SSI1_CWORD, cword(rate)) || !set_reg(GPIO_INV, 0))
 		return false;
 	libusb_clear_halt(h_, ep_in_);
@@ -511,6 +514,20 @@ bool UsbLine::open_st7554(unsigned rate)
 	intr_len_ = 4;
 	fifo_samples_ = FIFO_SAMPLES;
 	return true;
+}
+
+/* the ST75951/2's start-up, as Windows' driver does it: its control
+   words (register 0x17: the register in bits 12 to 15, the value
+   below) 3 = 0x050 and 0 = 0x3c0 while SSI1_CONTROL is 3, then 2 (kept
+   set from then on), then powered up (3); the rate's word goes into its
+   register 0 after it */
+bool UsbLine::start_st75951()
+{
+	return set_reg(SSI1_CONTROL, SSI1_ST75951 | SSI1_POWERUP) &&
+		set_reg(SSI1_CWORD, 3 << 12 | 0x050) &&
+		set_reg(SSI1_CWORD, 0 << 12 | 0x3c0) &&
+		set_reg(SSI1_CONTROL, SSI1_ST75951) &&
+		set_reg(SSI1_CONTROL, SSI1_ST75951 | SSI1_POWERUP);
 }
 
 /* the stick: its version and line side (GET_INFO), the rate, on hook with
@@ -869,7 +886,10 @@ void UsbLine::gone(const char *why)
 }
 
 /* see usb_line.h: the stick's line monitor on while on hook (rings and
-   caller ID heard), off off hook, as an ALSA codec's "Caller ID Switch" */
+   caller ID heard), off off hook, as an ALSA codec's "Caller ID Switch";
+   the ST7554's CID1 GPIO on only while the core snoops for caller ID
+   (MODEM_HOOK_SNOOPING), cleared before the hook changes, as Windows'
+   driver does */
 int UsbLine::set_hook(dcore::Modem &, int state)
 {
 	bool off = state == MODEM_HOOK_OFF;
@@ -883,8 +903,15 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 			(stick_out(LP_SET_HOOK, 0) &&
 			 stick_out(LP_SET_MONITOR, 1) &&
 			 (!daa_due_ || stick_country()) ? 0 : -1);
-	return set_gpio(off ? (uint16_t)(gpio_ | GPIO_HOOK1 | GPIO_LED_HOOK) :
-			(uint16_t)(gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK))) ? 0 : -1;
+	bool cid = state == MODEM_HOOK_SNOOPING;
+	if ((gpio_ & GPIO_CID1) && !cid &&
+	    !set_gpio((uint16_t)(gpio_ & ~GPIO_CID1)))
+		return -1;
+	uint16_t v = off ? (uint16_t)(gpio_ | GPIO_HOOK1 | GPIO_LED_HOOK) :
+		(uint16_t)(gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK));
+	if (cid)
+		v |= GPIO_CID1;
+	return v == gpio_ || set_gpio(v) ? 0 : -1;
 }
 
 /* see dcore.h: on hook for ms, then off again (if it still is) */
@@ -1023,7 +1050,7 @@ void UsbLine::close()
 		set_reg(FIFO_MASK, 0);
 		set_reg(GPIO_MASK, 0);
 		set_reg(GPIO_OUT, 0);
-		set_reg(SSI1_CONTROL, SSI1_POWERDOWN);
+		set_reg(SSI1_CONTROL, st75951_ ? SSI1_ST75951 : SSI1_POWERDOWN);
 	}
 	if (h_) {
 		if (claimed_)

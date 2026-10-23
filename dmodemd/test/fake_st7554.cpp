@@ -12,7 +12,8 @@
  *    line's samples, 'P' the modem's, 'K' the switches), with the line
  *    monitor on, so that the exchange sends the ring signal: the fake's
  *    ring detector (GPIO 0) changes on each half cycle of it, a change
- *    each on the interrupt endpoint.  On hook the codec hears nothing.
+ *    each on the interrupt endpoint.  On hook the codec hears the line
+ *    only with GPIO 5 (CID1) set, as caller ID wants.
  *
  *    The samples flow once the codec is powered up and the FIFO counter
  *    set (SSI1_CONTROL, SSI1_COUNTER): each IN transfer done takes 1 ms
@@ -21,7 +22,11 @@
  *    The capture socket is libusb's descriptor to poll.  The device is
  *    gone (LIBUSB_TRANSFER_NO_DEVICE) when the exchange is.
  *
- *    FAKE_ST7554_DAA=1: the GPIO status says an ST75951/2 (silicon DAA).
+ *    FAKE_ST7554_DAA=1: the GPIO status says an ST75951/2 (silicon DAA),
+ *    whose control words (register 0x17) name one of its 4 registers in
+ *    bits 12 to 15: register 0 has the rate; it streams with SSI1_CONTROL
+ *    bit 0 set and its start-up done (register 3 = 0x050, SSI1_CONTROL
+ *    bit 1).
  *    FAKE_ST7554_LOG=1: the register writes on stderr.
  *    FAKE_USB_NO_ISO, FAKE_USB_USBDK: fake_usb_backend.h (Windows 7's
  *    and 8's drivers).
@@ -55,7 +60,7 @@ namespace {
 
 const uint8_t EP_INTR = 0x81, EP_OUT = 0x02, EP_IN = 0x83;
 const uint16_t MAX_PACKET = 32;
-const uint16_t GPIO_RING1 = 0x0001, GPIO_HOOK1 = 0x0008;
+const uint16_t GPIO_RING1 = 0x0001, GPIO_HOOK1 = 0x0008, GPIO_CID1 = 0x0020;
 const uint16_t GPIO_MONOLITHIC = 0x4000;
 const int RING_LEVEL = 8000;
 
@@ -67,6 +72,8 @@ struct Fake {
 	int cap = -1, play = -1, ctl = -1;
 	uint16_t regs[0x20] = {};
 	unsigned rate = 0;              /* from the control word */
+	bool st75951 = false;           /* FAKE_ST7554_DAA */
+	uint16_t cw[4] = {};            /* the ST75951's registers */
 	bool hook = false;              /* off hook */
 	bool ring_state = false;
 	unsigned ring_changes = 0;      /* not yet on the interrupt */
@@ -94,10 +101,19 @@ void switch_to(uint8_t which, bool on)
 }
 
 /* the samples flow: the codec powered up, the FIFO
-   counter set, a rate known */
+   counter set, a rate known (an ST75951 started up too) */
 bool streaming()
 {
+	if (fake.st75951 && (!(fake.regs[0x01] & 2) || fake.cw[3] != 0x050))
+		return false;
 	return fake.regs[0x01] & 1 && fake.regs[0x04] && fake.rate;
+}
+
+/* the rate of a control word (the STLC7550's, the ST75951's register 0);
+   0 if none */
+unsigned cword_rate(uint16_t v)
+{
+	return v == 0x3c8 ? 8000 : v == 0x3c0 ? 9600 : v == 0x3f0 ? 16000 : 0;
 }
 
 /* a register written (a vendor request) */
@@ -108,9 +124,13 @@ void set_reg(uint8_t reg, uint16_t v)
 	if (reg >= 0x20)
 		return;
 	fake.regs[reg] = v;
-	if (reg == 0x17)
-		fake.rate = v == 0x3c8 ? 8000 : v == 0x3c0 ? 9600 :
-			v == 0x3f0 ? 16000 : 0;
+	if (reg == 0x17 && fake.st75951) {
+		fake.cw[(v >> 12) & 3] = v & 0x4fff;
+		if (!(v >> 12))
+			fake.rate = cword_rate(v & 0xfff);
+	} else if (reg == 0x17) {
+		fake.rate = cword_rate(v);
+	}
 	if (reg == 0x0a) {
 		bool off = v & GPIO_HOOK1;
 		if (off != fake.hook) {
@@ -143,7 +163,8 @@ void take()
 					fake.ring_changes++;
 			}
 			if (streaming())
-				fake.in.push_back(fake.hook ? s : 0);
+				fake.in.push_back(fake.hook || fake.regs[0x0a] &
+						  GPIO_CID1 ? s : 0);
 		}
 	}
 	if (n == 0)
@@ -388,7 +409,8 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 		return LIBUSB_ERROR_IO;
 	}
 	switch_to(1, true);             /* the ring signal heard */
-	if (getenv("FAKE_ST7554_DAA"))
+	fake.st75951 = getenv("FAKE_ST7554_DAA") != nullptr;
+	if (fake.st75951)
 		fake.regs[0x15] = GPIO_MONOLITHIC;
 	fake.open = true;
 	*h = new libusb_device_handle{ dev };
