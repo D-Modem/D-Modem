@@ -67,7 +67,7 @@ public:
 			return;
 		}
 		byte b = (byte)v;
-		if (smartdaa_regs[reg] != b && host().dbg)
+		if ((smartdaa_regs[reg] != b && host().dbg) || host().dbg > 2)
 			host().log("daa %02x = %02x\n", reg, b);
 		if (reg == 0)
 			b = (byte)((b & ~(ST_READY | ST_TICK)) |
@@ -75,6 +75,17 @@ public:
 		smartdaa_regs[reg] = b;
 		if (reg == SSD_COMMAND)
 			command(b);
+	}
+
+	/* the LSD's registers but its status, power and version (0x02,
+	   0x16, 0x1a, 0x1e, 0x1f, 0x22, 0x23), all f */
+	void smartdaa_fill(byte f)
+	{
+		for (int r = 0; r < 0x40; r++)
+			if (r != LSD_POWER && r != 0x16 && r != 0x1a &&
+			    r != 0x1e && r != 0x1f && r != LSD_VERSION &&
+			    r != 0x23)
+				smartdaa_line_side[r] = f;
 	}
 
 	/* the DAC's samples back to the ADC (register 0x0e, bit 5 or 6) */

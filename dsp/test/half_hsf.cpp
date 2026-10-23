@@ -34,7 +34,9 @@
  *    Linuxant shipped them; -DDMODEM_HSF_DIR=<dir> for another copy, or
  *    HSF_NVM=<dir> for the .inf and .cty at run time.  HSF_DEBUG=1 prints
  *    the modem's own messages and the port accesses we do not know, 2
- *    every access.
+ *    every access, 3 every SmartDAA access too.  HSF_DAA_FILL=<byte>
+ *    starts the line side's plain registers at that byte, not 0 (two
+ *    runs show which bits the library's writes keep).
  */
 
 #include <ctype.h>
@@ -1411,6 +1413,8 @@ int Hsf::start()
 	int r;
 
 	keep8 = env("KEEP8") != nullptr;
+	if (env("DAA_FILL"))
+		smartdaa_fill((byte)strtol(env("DAA_FILL"), nullptr, 0));
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_sigaction = on_segv;
 	sa.sa_flags = SA_SIGINFO;

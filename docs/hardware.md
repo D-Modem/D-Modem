@@ -124,12 +124,29 @@ Before that it writes SSD registers directly: 0x1c = 40, 0x17 = 04,
 read 0, so a real line may take other values where the library adjusts
 to what it measures (the loop voltage, the drive).
 
-Only the hook is done yet. dmodemd does none of the setup above: it
-assumes a line side already powered and set up, and probes it by its
-version. Without the SSD writes and the power-up a codec's line side
-may not answer, and dmodemd then leaves the hook to the kernel. It has
-been tested against a simulated SmartDAA (`cx_daa_test`), not yet on a
-real codec.
+Two runs, the simulated line side's registers starting at 0 and at
+0xff (`HSF_DAA_FILL=0xff`), show which bits each of the library's
+writes keeps. A third, over two calls, gives its hangup: SSD register
+0x14's bits 1:0 back to 0, LSD 0x12's bits 6:5 = 11, 0x15 = 40, 0x19 =
+cb, 0x0e = 00, 0x21 = 80, 0x14's bits 7:2 = 111000, 0x18 = 43, 0x10 =
+00, 0x1c's bits 6:0 = 6a, 0x10 = 00, 0x0e = 02, 0x10 = 00; going off
+hook ends with SSD 0x14's bits 1:0 = 01.
+
+For a codec of kind 0x12 dmodemd does the same (`CxDaa::power_up()`,
+`go_off_hook()`, `go_on_hook()`): the SSD's writes, the LSD's power
+up, its version (0 to 0x11, as the library takes), the line's writes
+with the bits the library keeps, and the hook's sequences, with the
+100 ms the library waits after 0x15 = 41. `cx_daa_test` checks its LSD
+writes against the library's, from both starts. A dial pulse is the
+hook bits alone. For the other kinds the setup is not known: dmodemd
+reads the line side's version and puts the hook bits alone, which
+holds the line only if something else has set the line side up.
+
+The values are the USA's, for the board's parameters in the HSF
+`.inf` (its `SmartDAAParamsK3`), against a simulated line side whose
+measurements (the loop voltage, registers 0x16 and 0x1e) read 0: on
+a real line the library may adjust the drive (0x18, 0x19) to what it
+measures, and dmodemd does not. It has not yet run on a real codec.
 
 ### HD-audio modems outside the Si3054 list
 

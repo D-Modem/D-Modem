@@ -177,10 +177,19 @@ bool Ac97Ports::write(int reg, uint16_t v)
 #endif
 }
 
-/* see ac97_ports.h: a busy wait, the waits being short */
+/* see ac97_ports.h: a busy wait for the short waits, a sleep from a
+   millisecond on */
 void Ac97Ports::delay_us(unsigned us)
 {
 	struct timespec t0, t;
+
+	if (us >= 1000) {
+		t.tv_sec = us / 1000000;
+		t.tv_nsec = (long)(us % 1000000) * 1000;
+		while (nanosleep(&t, &t) < 0 && errno == EINTR)
+			;
+		return;
+	}
 
 	clock_gettime(CLOCK_MONOTONIC, &t0);
 	do

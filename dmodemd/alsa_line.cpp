@@ -338,8 +338,8 @@ void AlsaLine::cx_open(int card)
 		    ac97_.name().c_str(), id1, id2);
 		return;
 	}
-	cx_.reset(new CxDaa(ac97_, cx_variant(kind)));
-	if (!cx_->probe(&version)) {
+	cx_.reset(new CxDaa(ac97_, cx_variant(kind), kind));
+	if (!cx_->power_up(&version)) {
 		ERR("Conexant codec at %s (%04x %04x, SSD kind %#x): its line "
 		    "side does not answer (%s)\n", ac97_.name().c_str(), id1,
 		    id2, kind, cx_->error().c_str());
@@ -347,14 +347,16 @@ void AlsaLine::cx_open(int card)
 		return;
 	}
 	DBG("Conexant codec at %s (%04x %04x, SSD kind %#x), line side "
-	    "version %02x: the hook in its SmartDAA\n",
-	    ac97_.name().c_str(), id1, id2, kind, version);
+	    "version %02x: the hook in its SmartDAA%s\n",
+	    ac97_.name().c_str(), id1, id2, kind, version,
+	    kind == 0x12 ? ", its line set up as Conexant's driver does" :
+	    " (its line setup not known)");
 }
 
 /* see alsa_line.h */
 void AlsaLine::hook_switch(bool off)
 {
-	if (cx_ && !cx_->set_hook(off ? CxDaa::HOOK_OFF : CxDaa::HOOK_ON))
+	if (cx_ && !(off ? cx_->go_off_hook() : cx_->go_on_hook()))
 		ERR("SmartDAA hook: %s\n", cx_->error().c_str());
 	set(off_hook_, off);
 }

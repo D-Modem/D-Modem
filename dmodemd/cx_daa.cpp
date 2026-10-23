@@ -274,6 +274,173 @@ bool CxDaa::lsd_field(int reg, uint8_t mask, uint8_t val)
 	return v == old || lsd_write(reg, v);
 }
 
+/*
+ *    The library's setup for kind 0x12, from its writes in the HSF
+ *    harness (docs/hardware.md): twice, its line side's registers first
+ *    all 0 and then all 0xff, which bits each write keeps.  W a write;
+ *    F (old & keep) | set, written; B the same, written if it changes
+ *    (the library's set and clear); on the SSD or the LSD.  VERSION
+ *    writes the version back to LSD register 0x22, POWER powers the LSD
+ *    up (wait_power()), DELAY waits set ms.
+ */
+
+struct CxDaa::Op {
+	enum Kind : uint8_t { W, F, B, VERSION, POWER, DELAY } kind;
+	bool lsd;
+	uint8_t reg, keep, set;
+};
+
+namespace {
+
+typedef uint8_t u8;
+constexpr bool SSD = false, LSD = true;
+
+#define SW(r, v)        { CxDaa::Op::W, SSD, r, 0, v }
+#define SF(r, k, v)     { CxDaa::Op::B, SSD, r, k, v }
+#define LW(r, v)        { CxDaa::Op::W, LSD, r, 0, v }
+#define LF(r, k, v)     { CxDaa::Op::F, LSD, r, k, v }
+#define LB(r, k, v)     { CxDaa::Op::B, LSD, r, k, v }
+
+} // namespace
+
+/* power up: the SSD, the LSD's version read between (power_up()) */
+static const CxDaa::Op ssd_start[] = {
+	SF(0x1c, 0xbf, 0x40), SF(0x0c, 0xfe, 0x00), SF(0x17, 0xfb, 0x04),
+	SF(0x14, 0xf7, 0x08), SW(0x0b, 0x5f), SF(0x06, 0x0f, 0xc0),
+	SF(0x19, 0xdf, 0x20), SW(0x05, 0x00), SW(0x04, 0x00),
+	SW(0x07, 0x00), SW(0x08, 0x00), SW(0x09, 0x00), SW(0x0a, 0x00),
+	SW(0x0d, 0x10), SW(0x1e, 0x00), SF(0x0f, 0x7f, 0x00),
+	SF(0x14, 0x4c, 0x00), SF(0x19, 0x94, 0x28), SW(0x1c, 0x7f),
+	SW(0x1d, 0x00), SW(0x1b, 0x00), SW(0x1a, 0x00), SW(0x25, 0x5a),
+	SW(0x23, 0x43), SW(0x24, 0x80), SW(0x22, 0x5a), SW(0x20, 0x63),
+	SW(0x21, 0xa8),
+};
+static const CxDaa::Op line_start[] = {
+	SW(0x07, 0x00), SW(0x08, 0x00), SW(0x09, 0x00), SW(0x0a, 0x00),
+	SW(0x0c, 0x14), SW(0x1d, 0x00), SW(0x1b, 0x00), SW(0x1a, 0x00),
+	{ CxDaa::Op::VERSION, LSD, 0x22, 0, 0 },
+	LB(0x1c, 0xfe, 0x00), { CxDaa::Op::POWER, LSD, 0x02, 0, 0 },
+	LW(0x20, 0x00), LW(0x25, 0x29), LW(0x24, 0x28), LW(0x21, 0x80),
+	LF(0x19, 0x7f, 0x80), LW(0x08, 0x00), LW(0x0a, 0xd9), LW(0x0e, 0x00),
+	LW(0x0c, 0x07), LF(0x12, 0x9f, 0x00), LW(0x10, 0x00),
+	LF(0x19, 0x3f, 0xc0), LW(0x1f, 0x08), LF(0x15, 0x2f, 0x40),
+	LF(0x1c, 0x82, 0x78), LB(0x15, 0x68, 0x00), LF(0x14, 0x07, 0xe0),
+	LF(0x07, 0xe0, 0x04), LW(0x18, 0x43), LW(0x19, 0xcb),
+	LB(0x07, 0x64, 0x00), LB(0x14, 0xe3, 0x00), LB(0x15, 0x40, 0x00),
+	LB(0x06, 0xe2, 0x00), LF(0x06, 0x60, 0x02), LW(0x0c, 0x06),
+	LF(0x12, 0x9f, 0x60), LF(0x1c, 0x82, 0x30), LW(0x0e, 0x00),
+	LW(0x18, 0x43), LW(0x10, 0x00), LF(0x1c, 0x82, 0x68),
+	LB(0x1c, 0xfd, 0x02), LW(0x0c, 0x02), LW(0x0a, 0xdf), LW(0x10, 0x00),
+	LW(0x0e, 0x02), LW(0x10, 0x00),
+};
+/* off hook (the answer's or the dial's): 0x15 = 0x41 a while first */
+static const CxDaa::Op off_hook[] = {
+	LW(0x15, 0x41), { CxDaa::Op::DELAY, LSD, 0, 0, 100 },
+	LF(0x12, 0x9f, 0x40), LW(0x0e, 0x00), LF(0x14, 0x03, 0x20),
+	LW(0x18, 0x43), LW(0x10, 0x00), LW(0x21, 0x82), LF(0x1c, 0x80, 0x32),
+	LW(0x15, 0x40), LW(0x15, 0x80), LW(0x19, 0x8b),
+	SF(0x14, 0xfc, 0x01),
+};
+/* on hook, the line as power_up() left it */
+static const CxDaa::Op on_hook[] = {
+	SF(0x14, 0xfc, 0x00),
+	LF(0x12, 0x9f, 0x60), LW(0x15, 0x40), LW(0x19, 0xcb), LW(0x0e, 0x00),
+	LW(0x21, 0x80), LF(0x14, 0x03, 0xe0), LW(0x18, 0x43), LW(0x10, 0x00),
+	LF(0x1c, 0x80, 0x6a), LW(0x10, 0x00), LW(0x0e, 0x02), LW(0x10, 0x00),
+};
+
+#undef SW
+#undef SF
+#undef LW
+#undef LF
+#undef LB
+
+#define N(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+/* see cx_daa.h (private): the steps in turn, the first failure the end */
+bool CxDaa::run(const Op *ops, int n)
+{
+	for (int i = 0; i < n; i++) {
+		const Op &o = ops[i];
+		uint8_t old = 0, v;
+
+		switch (o.kind) {
+		case Op::VERSION:
+			if (!lsd_write(LSD_VERSION, version_))
+				return false;
+			continue;
+		case Op::POWER:
+			if (!wait_power())
+				return false;
+			continue;
+		case Op::DELAY:
+			regs_.delay_us(o.set * 1000u);
+			continue;
+		case Op::W:
+			v = o.set;
+			break;
+		default:
+			if (!(o.lsd ? lsd_read(o.reg, &old) :
+				      ssd_read(o.reg, &old)))
+				return false;
+			v = (uint8_t)((old & o.keep) | o.set);
+			if (o.kind == Op::B && v == old)
+				continue;
+			break;
+		}
+		if (!(o.lsd ? lsd_write(o.reg, v) : ssd_write(o.reg, v)))
+			return false;
+	}
+	return true;
+}
+
+/* see cx_daa.h (private): as the library, 3 = 0 and 4 = 0x2f again
+   at each try, 50 tries 1 ms apart */
+bool CxDaa::wait_power()
+{
+	uint8_t p = 0;
+
+	for (int i = 0; i < 50; i++) {
+		if (!lsd_write(0x03, 0x00) || !lsd_write(0x04, 0x2f) ||
+		    !lsd_read(0x02, &p))
+			return false;
+		if (p == 0x0f)
+			return true;
+		regs_.delay_us(1000);
+	}
+	return fail("LSD: not powered up (register 2 %#x)", p);
+}
+
+/* see cx_daa.h */
+bool CxDaa::power_up(uint8_t *version)
+{
+	setup_ = false;
+	if (kind_ != 0x12)
+		return probe(version);
+	if (!run(ssd_start, N(ssd_start)) || !probe(&version_))
+		return false;
+	if ((version_ & 0x3f) > 0x11)
+		return fail("LSD version %#x not one the library takes",
+			    version_);
+	if (!run(line_start, N(line_start)))
+		return false;
+	*version = version_;
+	setup_ = true;
+	return true;
+}
+
+/* see cx_daa.h */
+bool CxDaa::go_off_hook()
+{
+	return setup_ ? run(off_hook, N(off_hook)) : set_hook(HOOK_OFF);
+}
+
+/* see cx_daa.h */
+bool CxDaa::go_on_hook()
+{
+	return setup_ ? run(on_hook, N(on_hook)) : set_hook(HOOK_ON);
+}
+
 /* see cx_daa.h */
 bool CxDaa::probe(uint8_t *version)
 {

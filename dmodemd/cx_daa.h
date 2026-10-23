@@ -100,8 +100,9 @@ public:
 	};
 
 	/* the SmartDAA behind regs's register 0x7a, an SSD of kind v */
-	explicit CxDaa(Ac97Regs &regs, CxVariant v = CxVariant())
-		: regs_(regs), v_(v) {}
+	explicit CxDaa(Ac97Regs &regs, CxVariant v = CxVariant(),
+		       int kind = -1)
+		: regs_(regs), kind_(kind), v_(v) {}
 
 	/* an SSD register into *v, or written with v */
 	bool ssd_read(int reg, uint8_t *v);
@@ -117,8 +118,22 @@ public:
 	/* whether the line side answers: its version (LSD register 0x22)
 	   into *version */
 	bool probe(uint8_t *version);
-	/* the hook (LSD register 0x15's bits 7:6), its other bits kept */
+	/* the hook (LSD register 0x15's bits 7:6), its other bits kept:
+	   that alone (a dial pulse's make and break) */
 	bool set_hook(Hook h);
+	/* a step of the library's setup (cx_daa.cpp) */
+	struct Op;
+
+	/* the SSD and LSD set up as Conexant's library does for the SSD of
+	   kind 0x12 (the HSF codec 0x5429's), for the USA: the SSD's
+	   registers, the LSD powered up (its register 2 reading 0x0f), its
+	   version (0 to 0x11) into *version, the line's registers; on
+	   hook.  The line side's version read alone for another kind */
+	bool power_up(uint8_t *version);
+	/* off hook (or on hook) with the line set up for it as the library
+	   does (after power_up() for kind 0x12), else set_hook() alone */
+	bool go_off_hook();
+	bool go_on_hook();
 	/* what the last failure was */
 	const std::string &error() const { return error_; }
 
@@ -133,7 +148,15 @@ private:
 	bool fail(const char *fmt, ...);
 
 	Ac97Regs &regs_;
+	int kind_;              /* SOAR's kind, -1 not known */
+	/* the steps ops[0 .. n - 1] of the library's setup, in turn */
+	bool run(const Op *ops, int n);
+	/* LSD register 2 0x0f after 3 and 4 written: the LSD powered */
+	bool wait_power();
+
 	CxVariant v_;
+	bool setup_ = false;    /* power_up() set the line up */
+	uint8_t version_ = 0;
 	std::string error_;
 };
 
