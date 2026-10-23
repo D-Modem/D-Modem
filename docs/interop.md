@@ -707,6 +707,8 @@ what the driver does with them:
 | 0x24 | interrupt mask (the driver sets 0x101c000) |
 | 0x38 | the DAA's serial port: the DAA register in bits 8 to 12, 0x2000 for a read, the data in bits 0 to 7 |
 | 0x3c | the DAA read's result (bit 15: busy) |
+| 0xb0, 0xb4 | two control words the driver sets to 0x80 (0x81 with `UseGPIOHook`); bit 2 is cleared in 0xb0 before each reset, and with `DaisyChainMode` it stays clear in 0xb0 and is set in 0xb4 |
+| 0xc8, 0xca | 16 bit, both set to 0x3f at reset |
 | 0x200, 0x204, 0x208, 0x20c | TX DMA: control, the descriptor ring's address, the last descriptor posted, status (0x1000 active or 0x2000 idle, with the current descriptor's offset) |
 | 0x210 to 0x21c | the same for RX |
 
@@ -737,6 +739,51 @@ The line side is a Silicon Labs Si3034 DAA behind the chip's serial port:
   its low four bits. 1111 there is an overload, and the driver hangs up
   at once (it went off hook and straight back on). The harness reports
   1000, half the scale.
+
+How the driver starts the chip (from `BCMSM.sys`'s code, read with REA's
+disassembly, and its register trace under `BROADCOM_DEBUG=2`, which
+prints each access with the address of the instruction):
+
+1. It maps the BAR and reads its settings from the registry: `SiSetup`
+   (20 bytes of DAA setup, else it works out the PLL itself for a 4 MHz
+   clock), `UseGPIOHook`, `DaisyChainMode` and
+   `OffHookWatchdogTimeout`.
+2. Reset (CodecType 0x15): control (0x00) = 0x1001, a short wait, then
+   0x2000; 0xb0 and 0xb4 = 0x80; 0xc8 and 0xca = 0x3f; both DMA
+   channels (0x200, 0x210) and the interrupt mask (0x24) to 0. Then
+   0xb0's bit 2 is cleared, control = 0x1000 for ten reads of it, and
+   control = 0x2000. The driver tries this for up to 100 ms until the
+   DAA answers.
+3. The DAA's setup, each write read back and retried up to 25 times:
+   register 1 = 0x80 (soft reset); the PLL (7 = 0x18, 8 = 0xff, 10 = 0,
+   9 = 0: 8000 Hz); 6 = 0xe0; 5 = 0. It waits for frame detect
+   (register 12, bit 6), then reads register 13: bit 6 set is an
+   Si3034 ("International"), and the driver sets register 18's bit 1
+   and writes the country's registers 16, 17 and 18 (the US: 0x08,
+   0x00, 0x02). Bit 6 clear is an Si3035 ("USA Only"), which keeps the
+   US alone (`AT+GCI=?` lists only B5). The model answers 0 there, so
+   the tests run an Si3035. The other countries' values come from the
+   registry (`SOFTWARE\BCMSM\Modem\Country\`), which this INF does
+   not fill.
+4. DMA: both channels off, then on (0x200, 0x210 = 1), the rings'
+   addresses (0x204, 0x214), the interrupt mask (0x24 = 0x101c000),
+   the last descriptors posted (0x208, 0x218 = 0xff8), and control |=
+   0x60.
+
+A DAA write waits for 0x3c's bit 15 to clear, then writes `reg << 8 |
+value` to 0x38. A read writes `0x2000 | reg << 8`, waits again and takes
+0x3c's low byte. The driver polls register 12 (the line's state) about
+500 times a second.
+
+Off hook, the driver sets register 18's bit 0, then 5 = 0x01 (the hook),
+17 = 0x20, 20 = 0x60 and then 0, and 6 = 0xe3. On hook it undoes them:
+18's bit 0 clear, 5 = 0, 17 = 0, 6 = 0xe0.
+
+CodecType 0x19 and 0x1c are other chips: a Sonics backplane like the
+BCM4401's, whose V.90 core (core ID 0x807 at 0xffc) the driver resets
+through 0xf98 (0x30001, then 0x30000), with its interrupt routed by
+0xf94 and a serial clock divider in control's bits 16 and up (from
+`BackplaneFreq` and `MasterClockDiv`). The BCM4212 has none of this.
 
 `half_broadcom` resamples between the codec's rate and the line's
 (`BROADCOM_RATE`, 8000 Hz) and adds the codec's noise (`BROADCOM_NOISE`,
