@@ -761,10 +761,12 @@ prints each access with the address of the instruction):
    Si3034 ("International"), and the driver sets register 18's bit 1
    and writes the country's registers 16, 17 and 18 (the US: 0x08,
    0x00, 0x02). Bit 6 clear is an Si3035 ("USA Only"), which keeps the
-   US alone (`AT+GCI=?` lists only B5). The model answers 0 there, so
-   the tests run an Si3035. The other countries' values come from the
-   registry (`SOFTWARE\BCMSM\Modem\Country\`), which this INF does
-   not fill.
+   US alone (`AT+GCI=?` lists only B5). The model is an Si3035 by
+   default; `BROADCOM_DAA=3034` makes it an Si3034
+   (`broadcom_si3034_broadcom_calls` tests that: off hook, register 18
+   is then 0x03, not 0x01). Even so, `AT+GCI=?` lists only B5: the
+   other countries' values come from the registry
+   (`SOFTWARE\BCMSM\Modem\Country\`), which this INF does not fill.
 4. DMA: both channels off, then on (0x200, 0x210 = 1), the rings'
    addresses (0x204, 0x214), the interrupt mask (0x24 = 0x101c000),
    the last descriptors posted (0x208, 0x218 = 0xff8), and control |=
@@ -797,7 +799,8 @@ Two of the driver's own ways:
   in its device extension). Windows answers STATUS_INVALID_HANDLE, and so
   does our kernel.
 
-`ctest -L broadcom -j16` runs the tests. `BROADCOM_DEBUG=1` prints the
+`ctest -L broadcom -j16` runs the tests. `BROADCOM_DAA=3034` or `3035`
+(the default) picks the DAA. `BROADCOM_DEBUG=1` prints the
 driver's calls of note, the hook, the rate and the line's levels each
 second. `BROADCOM_DEBUG=2` also prints every register, DAA and port
 access, and `BROADCOM_DEBUG=3` every call the driver makes into the

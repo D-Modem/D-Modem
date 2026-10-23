@@ -9,7 +9,9 @@
  *    the data in bits 0..7), a read's result at si3034_data; its PLL
  *    (registers 7 to 9) sets its sample rate on a 4 MHz clock, register
  *    5 bit 0 its hook, register 12 its line side's frame detect and loop
- *    current.
+ *    current, register 13's bit 6 the chip: set for an Si3034
+ *    (international), clear for an Si3035 (the USA only), as
+ *    si3034_intl says.
  *
  *    The harness (Host, a half::HalfModem) has its controller give the
  *    commands to si3034_cmd(); the codec runs at si3034_rate.
@@ -32,6 +34,7 @@ public:
 	u32 si3034_data = 0;            /* the last read's result */
 	unsigned si3034_rate = 8000;    /* its sample rate */
 	bool si3034_off_hook = false;
+	bool si3034_intl = false;       /* an Si3034, not an Si3035 */
 
 	/* a command: a register read or write */
 	void si3034_cmd(u32 v)
@@ -42,6 +45,9 @@ public:
 			if (r == 12)    /* line side: frame detect, loop current
 					   (half the scale: 1111 is an overload) */
 				si3034_data = 0x40 | (si3034_off_hook ? 0x08 : 0);
+			if (r == 13)    /* line side revision: international */
+				si3034_data = (si3034_regs[r] & ~0x40u) |
+					(si3034_intl ? 0x40 : 0);
 			if (host().dbg > 1)
 				host().log("daa %2d r = %02x\n", r, si3034_data);
 			return;

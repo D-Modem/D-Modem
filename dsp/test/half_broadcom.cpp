@@ -28,12 +28,16 @@
  *    The driver is test/broadcom/BCMSM.sys as Broadcom shipped it (sha256
  *    033c6716...), its INF BCMSMwxp.inf; -DDMODEM_BROADCOM_DIR=<dir> for
  *    another copy, BROADCOM_SYS and BROADCOM_INF for other files.
+ *    BROADCOM_DAA=3034 makes the DAA an Si3034 (international: the
+ *    driver then sets up the country's registers 16 to 18), 3035 (the
+ *    default) an Si3035, which the driver keeps to the USA.
  *    BROADCOM_DEBUG=1 prints the driver's calls of note, the hook, the
  *    rate and the line's levels, 2 every register and port access, 3
  *    every call the driver makes into the kernel.
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "hw/bcm4212.hpp"
 #include "hw/codec_line.hpp"
@@ -168,6 +172,14 @@ int Broadcom::start()
 		dev.sys = env("SYS");
 	if (env("INF"))
 		dev.inf = env("INF");
+	if (env("DAA")) {
+		if (strcmp(env("DAA"), "3034") && strcmp(env("DAA"), "3035")) {
+			fprintf(stderr, "broadcom: BROADCOM_DAA=%s: 3034 or 3035\n",
+				env("DAA"));
+			return -1;
+		}
+		si3034_intl = !strcmp(env("DAA"), "3034");
+	}
 	dev.rate = line_rate;
 	return win_start(&dev);
 }

@@ -918,6 +918,13 @@ std::vector<Call> calls()
 	add("broadcom", "broadcom_v44_open_calls", "open", "broadcom",
 	    "ATX3;AT+MS=34",
 	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34", "BULK=60000" });
+	/* its DAA an Si3034 (BROADCOM_DAA=3034): the driver sets up the
+	   international registers and calls as before; off hook its
+	   register 18 is 0x03 (an Si3035's 0x01) */
+	add("broadcom", "broadcom_si3034_broadcom_calls", "broadcom", "open",
+	    "ATX3;AT+MS=V34",
+	    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=34", "BROADCOM_DAA=3034",
+	      "BROADCOM_DEBUG=1", "EXPECT_A=daa 18 w = 03" });
 	/* V.90: the Broadcom modem as the analogue modem, the open one as the
 	   digital modem */
 	for (std::string law : { "ulaw", "alaw" })
