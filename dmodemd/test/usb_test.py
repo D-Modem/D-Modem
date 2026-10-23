@@ -33,7 +33,9 @@
 #   while it listens on hook, the fake's codec hearing the line only
 #   then), answers at the second ring (ATS0=2); both CONNECT, a line of
 #   text goes each way; 1001 hangs up (+++ ATH), 1002 NO CARRIER;
-#   1001's LEDs (--usb-leds) lit in the call, the carrier's (GPIO 6)
+#   1001's buzzer (--usb-buzzer, GPIO 11) on as it dials (ATM1) and off
+#   at the CONNECT, 1002's (none) never; 1001's LEDs (--usb-leds) lit in
+#   the call, the carrier's (GPIO 6)
 #   and the data one (GPIO 13), off on hook; 1002 (no --usb-leds) never
 #   sets them;
 # - 1002 off hook (ATH1), 1001 dials it again: BUSY;
@@ -318,7 +320,7 @@ try:
     m.p.terminate()
     m.p.wait(5)
 
-    a = Modem("1001", "dmodem41", ["--usb-leds"], FAKE_ST7554_LOG="1")
+    a = Modem("1001", "dmodem41", ["--usb-leds", "--usb-buzzer"], FAKE_ST7554_LOG="1")
     suspend = os.path.join(tmp, "1002.suspend")
     handset = os.path.join(tmp, "1002.handset")
     b = Modem("1002", "dmodem42", ["--usb-wake", "--usb-handset"],
@@ -360,6 +362,11 @@ try:
     check("1002 gets 1001's line", b.expect(rb"hello from 1001", 10))
     b.dte.write(b"hello from 1002\r\n")
     check("1001 gets 1002's line", a.expect(rb"hello from 1002", 10))
+    g = gpio(a)
+    on = [i for i, v in enumerate(g) if v & 0x0800]
+    check("1001 its buzzer (0x0800) on as it dials, off at the CONNECT",
+          on and any(not v & 0x0800 for v in g[on[0]:]) and 0x00c8 in g[on[-1]:])
+    check("1002 no buzzer (no --usb-buzzer)", not any(v & 0x0800 for v in gpio(b)))
     check("1001 the carrier LED (0x40) lit", 0x00c8 in gpio(a))
     check("1001 the data LED (0x2000) lit", 0x20c8 in gpio(a))
     time.sleep(1.2)

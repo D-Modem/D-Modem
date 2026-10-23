@@ -565,7 +565,7 @@ decodes caller ID itself; this one does not [inferred].
 ## What this means for dmodemd
 
 `dmodemd/usb_line.cpp` follows Linux, with more taken from Windows
-(items 1, 2, 6, 7, 8, 9, 10 and 11). Against Windows:
+(items 1, 2, 6, 7, 8, 9, 10, 11 and 12). Against Windows:
 
 1. **Caller ID: done.** With `AT#CID=1`, from the first ring dmodemd
    sets GPIO 0x0020 (CID1) while the core listens on hook, and clears
@@ -614,7 +614,10 @@ decodes caller ID itself; this one does not [inferred].
    modem has the stream enabled (`VModemLine::Enable` to `Disable`;
    dmodemd: the core's `start()` to `stop()`), never below revision
    0x200. What it does is still unknown.
-12. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
+12. **The buzzer: done, behind `--usb-buzzer`.** As `SetSpeakerVolume`
+   (0x16d46) with `Options.Buzzer`: BUZEN (0x0800) set for any level but
+   0, cleared at 0; dmodemd's levels are the core's ATM/ATL speaker.
+13. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
    Linux.
 
 ## Open questions

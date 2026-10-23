@@ -104,6 +104,11 @@ public:
 	   (ConfigureRHOM); never on a chip whose revision (register 0) is
 	   below 0x200.  What it does is not known */
 	void set_rhom(bool on) { rhom_ = on; }
+	/* the SmartUSB56's buzzer (GPIO 11, BUZEN) as the modem's speaker:
+	   on while the core has it on (ATM, ATL: any volume but 0), as Smart
+	   Link's Windows driver drives it with Options.Buzzer
+	   (SetSpeakerVolume).  Not every board has one: off by default */
+	void set_buzzer(bool on) { buzzer_ = on; }
 	/* the modem dev ("" or "auto": the first SmartUSB56 or pico-serial
 	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
 	   rate, its samples running, on hook; false with the reason on
@@ -144,6 +149,8 @@ public:
 	/* where the modem's samples are (pump()): the line's, the
 	   handset's, or the line's with the handset on the call */
 	int voice_route(dcore::Modem &, unsigned device) override;
+	/* the speaker's volume (set_buzzer()): the buzzer on or off */
+	void speaker(dcore::Modem &m, int volume) override;
 	/* an analogue line, the modem dialling it itself */
 	bool analog_line(dcore::Modem &) override { return true; }
 	/* a hook flash it can make (hook_flash()) */
@@ -281,6 +288,7 @@ private:
 	/* set_rhom(), and whether the chip takes it (its revision); the
 	   FIFO_CONTROL2 written last */
 	bool rhom_ = false, rhom_ok_ = false;
+	bool buzzer_ = false;           /* set_buzzer() */
 	uint16_t fifo2_ = 0;
 	unsigned route_ = VOICE_DEVICE_LINE;
 	std::deque<int16_t> mic_;

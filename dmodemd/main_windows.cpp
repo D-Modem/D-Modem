@@ -224,6 +224,7 @@ int main(int argc, char *argv[])
 	usb.set_handset(opt.usb_handset);
 	usb.set_international(opt.usb_international);
 	usb.set_rhom(opt.usb_rhom);
+	usb.set_buzzer(opt.usb_buzzer);
 	if (opt.usb_voice_codec)
 		usb.set_voice_codec(!strcmp(opt.usb_voice_codec, "alaw") ?
 				    dmd::UsbLine::VoiceLaw::Alaw :

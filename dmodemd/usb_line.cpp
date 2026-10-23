@@ -214,6 +214,8 @@ const uint16_t GPIO_LED_DATA = 0x2000;
 const uint16_t GPIO_RFC = 0x0100;
 const uint16_t GPIO_DP = 0x0400;
 const uint16_t GPIO_DC = 0x1000;
+/* --usb-buzzer's: the speaker's buzzer (Windows' BUZEN) */
+const uint16_t GPIO_BUZEN = 0x0800;
 /* the Australian timer: RFC after an off hook, ms */
 const unsigned AUSTRALIAN_MS = 350;
 
@@ -1240,6 +1242,20 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 	if (cid)
 		v |= GPIO_CID1;
 	return v == gpio_ || set_gpio(v) ? 0 : -1;
+}
+
+/* see usb_line.h: GPIO 11 set for any volume but 0, as Windows'
+   SetSpeakerVolume with Options.Buzzer */
+void UsbLine::speaker(dcore::Modem &, int volume)
+{
+	if (!buzzer_ || kind_ != Kind::St7554 || !h_ || dead_)
+		return;
+	uint16_t v = volume > 0 ? (uint16_t)(gpio_ | GPIO_BUZEN) :
+		(uint16_t)(gpio_ & ~GPIO_BUZEN);
+	if (v == gpio_)
+		return;
+	DBG("buzzer %s (volume %d)\n", volume > 0 ? "on" : "off", volume);
+	set_gpio(v);
 }
 
 /* the SmartUSB56's LEDs (set_leds()): the carrier's while the call is

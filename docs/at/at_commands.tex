@@ -482,7 +482,8 @@ The speaker's volume, \cmd{L0} to \cmd{L3} (\sreg{30}; default 3), and when it
 is on, \cmd{M0} never, \cmd{M1} until the call is up, \cmd{M2} always,
 \cmd{M3} as \cmd{M1} (on other modems not while dialing) (\sreg{29};
 default 1).  A SIP line has no speaker: kept for the commands that set
-them.
+them.  A SmartUSB56 with \texttt{dmodemd --usb-buzzer} sounds its
+buzzer while the speaker is on (at any volume but \cmd{L0}).
 \end{command}
 
 \begin{command}{N}{ATN[\p{n}]}

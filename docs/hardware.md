@@ -365,6 +365,13 @@ licence). In `dmodemd/usb_line.cpp`:
   which Creative's INF leaves off. A chip whose revision (register 0)
   is below 0x200 never gets it, as on Windows. What RHOM does is not
   known.
+- **The buzzer.** With `--usb-buzzer` the modem's speaker is GPIO 11
+  (BUZEN): on whenever the core has the speaker on at any volume (ATM1,
+  the default: from dialling or answering to the CONNECT; ATM2 always;
+  ATM0 never; ATL0 is off too), off otherwise, as Smart Link's Windows
+  driver does in `SetSpeakerVolume` with `Options.Buzzer` (off in
+  Creative's INF). A buzzer has no volume, so ATL1 to 3 are the same.
+  Not every board has one.
 - **Unplugged.** dmodemd says so and exits.
 
 Limits: the device's line settings are its own, and it has not yet been
@@ -459,6 +466,7 @@ start from.
 | `--usb-wake` | a ring wakes the computer: the SmartUSB56's USB remote wakeup armed (and on Linux the kernel's `power/wakeup` of it enabled, as root) |
 | `--usb-handset` | the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook, `<DLE>H` and `<DLE>h` in voice mode |
 | `--usb-voice-codec=<law>` | the SmartUSB56's second codec (SSI2, alternate setting 3) as a handset: `+VLS=14` and `15` in voice mode; its octets `ulaw`, `alaw` or `linear` |
+| `--usb-buzzer` | the SmartUSB56's buzzer (GPIO 11, BUZEN) as the speaker: on while ATM/ATL have it on, as Windows' `Options.Buzzer` |
 | `--usb-rhom` | the SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15, and the voice codec's bit 7) while the modem runs, as Windows' `Options.RHOM`; not below revision 0x200 |
 | `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
@@ -604,7 +612,8 @@ fakes says it is an ST75951/2 (`FAKE_ST7554_DAA`) and checks its
 start-up. The test checks that a wrong `<bus>:<address>` is refused, a
 data call (rings, caller ID between the first two rings, the answer at
 the second ring, V.34 at 33600, text each way, the LEDs of the one with
-`--usb-leds` and none on the other), a busy line, a call
+`--usb-leds` and none on the other, the buzzer of the one with
+`--usb-buzzer` on as it dials and off at the CONNECT), a busy line, a call
 dialled in pulses, a voice call, the handset detector in voice mode,
 the international line controls (Australia's timer and pulse dialling,
 France's DC bit, the ST75951's inverted one), the voice codec as a
