@@ -273,6 +273,23 @@ unsigned long long hsfmc97ich41_(u32 us)
 	return 100 * n / 1000;
 }
 
+/* the DAA library's messages (hsfmc97ich57_, made weak by
+   hsf_obj.cmake; the module's own prints nothing): its print function,
+   called with what seems a level, its object and a printf format, the
+   messages with HSF_DEBUG */
+void hsfmc97ich57_(u32 level, void *obj, const char *f, ...)
+{
+	va_list ap;
+	(void)obj;
+	if (!hsf.dbg || !f)
+		return;
+	fprintf(stderr, "hsf soar(%u): ", level);
+	va_start(ap, f);
+	vfprintf(stderr, f, ap);
+	va_end(ap);
+	fputc('\n', stderr);
+}
+
 /*
  *    memory, strings, atomics, locks: one thread
  */
@@ -1417,6 +1434,21 @@ int Hsf::start()
 	int r;
 
 	keep8 = env("KEEP8") != nullptr;
+	/* HSF_ADC=<on|off>:<channel>:<code>,...: the ADC's readings */
+	if (const char *a = env("ADC")) {
+		adc_on = true;
+		char hook[4];
+		unsigned ch, code;
+		int n;
+		while (sscanf(a, " %3[a-z]:%u:%u%n", hook, &ch, &code, &n) == 3) {
+			adc_code[!strcmp(hook, "off")][ch & 7] = (byte)code;
+			a += n;
+			if (*a == ',')
+				a++;
+		}
+	}
+	if (const char *v = env("LSD_VERSION"))
+		smartdaa_line_side[LSD_VERSION] = (byte)strtol(v, nullptr, 0);
 	if (env("DAA_FILL"))
 		smartdaa_fill((byte)strtol(env("DAA_FILL"), nullptr, 0));
 	memset(&sa, 0, sizeof(sa));

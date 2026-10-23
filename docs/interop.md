@@ -548,7 +548,14 @@ counter over the wait at once, to where those reads left it, with the
 same result (a call trains the same, sample for sample); the HSF calls
 take about a quarter of the time they did. `ctest -L hsf -j8` runs the
 tests; `HSF_DEBUG=1` prints the modem's own messages and
-the port accesses the harness does not know, `HSF_DEBUG=2` every access.
+the port accesses the harness does not know and the DAA library's own
+messages (its ICH module's empty print function, `hsfmc97ich57_`, the
+harness's), `HSF_DEBUG=2` every access, 3 every SmartDAA access.
+`HSF_COUNTRY=<T.35 code>` sets the country, `HSF_LSD_VERSION=<n>` the
+simulated line side's version (5 by default), `HSF_DAA_FILL=<byte>` its
+registers' start (to see which bits the library's writes keep), and
+`HSF_ADC=<on|off>:<channel>:<reading>,...` its monitor ADC's readings
+on and off hook (none by default; [hardware.md](hardware.md)).
 
 | HSF `AT+MS=` / ours | HSF caller → open answerer | open caller → HSF answerer |
 |---|---|---|

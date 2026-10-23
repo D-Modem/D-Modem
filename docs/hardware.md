@@ -162,14 +162,47 @@ HSF driver's files):
   block in turn (`HSF_NVM` with an edited `.inf`), three change the
   library's writes: byte 87 is SSD 0x21 (0x80 | it), byte 93 SSD 0x0b,
   byte 94 SSD 0x06's bits 7:4. The others (its resistors and DC tables)
-  change nothing here: the library uses them, it seems, only on what
-  the line side measures, which the simulated one does not.
+  change nothing on the line sides dmodemd sets up (below): the
+  library uses them only for the line side of version 0x11, which it
+  measures.
 
 `cx_daa_test` checks the writes against the library's for the USA,
-Germany and Canada, from both starts. The simulated line side's
-measurements (the loop voltage, registers 0x16 and 0x1e) read 0: on a
-real line the library may adjust the drive (0x18, 0x19) to what it
-measures, and dmodemd does not. It has not yet run on a real codec.
+Germany and Canada, from both starts.
+
+The line side's version (LSD 0x22's bits 5:0) changes what the library
+does (`HSF_LSD_VERSION` in the harness, each version tried):
+
+- 1 and 3 to 0x0f: the setup above;
+- 2: the same but for three things: no writes to 0x24 and 0x25, 0x21's
+  bit 7 clear in each of its writes (00 and 02, not 80 and 82), 0x19's
+  plain writes with bit 5 (eb and ab, not cb and 8b). Conexant's own
+  `hsfconfig --info` has shown `SmartDAA SSD=10 LSD=0x2` for an HSF PCI
+  modem, so it is one real line sides have;
+- 0x10 and 0x11: another setup altogether (0x1d, 0x1f = 30, 0x15 = c0
+  on hook and 00 off hook, the hook's bit 7 the other way), and for 0x11
+  the line measured (below);
+- 0: the library reads the monitor ADC over and over.
+
+dmodemd does the library's setup for versions 1 to 0x0f, 2's
+differences included (`cx_daa_test` checks version 2's writes too).
+For 0, 0x10 and 0x11 it reads the version and puts the hook bits alone,
+bit 7 the other way for 0x10 and 0x11.
+
+The line side's monitor ADC: LSD 0x16's bits 6:4 choose the channel,
+its bit 3 starts a conversion and reads 1 when it is done, LSD 0x17 is
+the reading (8 bits, written back when read). The library takes it as
+reading * 2000 / 255 mV plus an offset (500 mV, for version 0x10
+calibrated on channel 3 against a reference it wants at 1350 to 1650
+mV); versions 0 and 2 have 4000 mV for 255 (7 bits on 0). Only on
+version 0x11 does the library measure the line with it: the battery on
+hook on channel 1 (Vbatt = 28.2 times the reading's mV plus 400, the
+factor from the board's resistors), off hook channel 0 (the receiver's
+DC offset) and channel 1 again (the tip-ring voltage, from which it
+works out the loop's resistance, current and power), a DAC (LSD 0x19)
+calibrated on channel 4, then set so that the tip-ring voltage meets
+its DC curve, and adjusted while the line settles ("adaptive
+offhook"). dmodemd does none of that, as it does no version 0x11 setup.
+None of this has run on a real codec yet.
 
 ### HD-audio modems outside the Si3054 list
 

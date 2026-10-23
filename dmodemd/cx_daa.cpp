@@ -295,7 +295,10 @@ struct CxDaa::Op {
 	uint8_t reg, keep, set;
 	/* set the board's or the country's instead (param()) */
 	enum Param : uint8_t {
-		NONE, SSD21, SSD0B, SSD06, IDLE, OFF
+		NONE, SSD21, SSD0B, SSD06, IDLE, OFF,
+		V19,            /* set, bit 5 too on LSD version 2 */
+		V21,            /* set, bit 7 not on version 2 */
+		NOT_V2          /* not on version 2 */
 	} param;
 };
 
@@ -313,6 +316,7 @@ constexpr bool SSD = false, LSD = true;
 #define SWP(r, v, p)    { CxDaa::Op::W, SSD, r, 0, v, CxDaa::Op::p }
 #define SFP(r, k, v, p) { CxDaa::Op::B, SSD, r, k, v, CxDaa::Op::p }
 #define LFP(r, k, v, p) { CxDaa::Op::F, LSD, r, k, v, CxDaa::Op::p }
+#define LWP(r, v, p)    { CxDaa::Op::W, LSD, r, 0, v, CxDaa::Op::p }
 
 } // namespace
 
@@ -334,12 +338,13 @@ static const CxDaa::Op line_start[] = {
 	SW(0x0c, 0x14), SW(0x1d, 0x00), SW(0x1b, 0x00), SW(0x1a, 0x00),
 	{ CxDaa::Op::VERSION, LSD, 0x22, 0, 0, CxDaa::Op::NONE },
 	LB(0x1c, 0xfe, 0x00), { CxDaa::Op::POWER, LSD, 0x02, 0, 0, CxDaa::Op::NONE },
-	LW(0x20, 0x00), LW(0x25, 0x29), LW(0x24, 0x28), LW(0x21, 0x80),
+	LW(0x20, 0x00), LWP(0x25, 0x29, NOT_V2), LWP(0x24, 0x28, NOT_V2),
+	LWP(0x21, 0x80, V21),
 	LF(0x19, 0x7f, 0x80), LW(0x08, 0x00), LW(0x0a, 0xd9), LW(0x0e, 0x00),
 	LW(0x0c, 0x07), LF(0x12, 0x9f, 0x00), LW(0x10, 0x00),
 	LF(0x19, 0x3f, 0xc0), LW(0x1f, 0x08), LF(0x15, 0x2f, 0x40),
 	LF(0x1c, 0x82, 0x78), LB(0x15, 0x68, 0x00), LF(0x14, 0x07, 0xe0),
-	LF(0x07, 0xe0, 0x04), LW(0x18, 0x43), LW(0x19, 0xcb),
+	LF(0x07, 0xe0, 0x04), LW(0x18, 0x43), LWP(0x19, 0xcb, V19),
 	LB(0x07, 0x64, 0x00), LB(0x14, 0xe3, 0x00), LB(0x15, 0x40, 0x00),
 	LB(0x06, 0xe2, 0x00), LF(0x06, 0x60, 0x02), LW(0x0c, 0x06),
 	LFP(0x12, 0x9f, 0x60, IDLE), LF(0x1c, 0x82, 0x30), LW(0x0e, 0x00),
@@ -351,16 +356,16 @@ static const CxDaa::Op line_start[] = {
 static const CxDaa::Op off_hook[] = {
 	LW(0x15, 0x41), { CxDaa::Op::DELAY, LSD, 0, 0, 100, CxDaa::Op::NONE },
 	LFP(0x12, 0x9f, 0x40, OFF), LW(0x0e, 0x00), LF(0x14, 0x03, 0x20),
-	LW(0x18, 0x43), LW(0x10, 0x00), LW(0x21, 0x82), LF(0x1c, 0x80, 0x32),
-	LW(0x15, 0x40), LW(0x15, 0x80), LW(0x19, 0x8b),
+	LW(0x18, 0x43), LW(0x10, 0x00), LWP(0x21, 0x82, V21),
+	LF(0x1c, 0x80, 0x32), LW(0x15, 0x40), LW(0x15, 0x80), LWP(0x19, 0x8b, V19),
 	SF(0x14, 0xfc, 0x01),
 };
 /* on hook, the line as power_up() left it */
 static const CxDaa::Op on_hook[] = {
 	SF(0x14, 0xfc, 0x00),
-	LFP(0x12, 0x9f, 0x60, IDLE), LW(0x15, 0x40), LW(0x19, 0xcb),
+	LFP(0x12, 0x9f, 0x60, IDLE), LW(0x15, 0x40), LWP(0x19, 0xcb, V19),
 	LW(0x0e, 0x00),
-	LW(0x21, 0x80), LF(0x14, 0x03, 0xe0), LW(0x18, 0x43), LW(0x10, 0x00),
+	LWP(0x21, 0x80, V21), LF(0x14, 0x03, 0xe0), LW(0x18, 0x43), LW(0x10, 0x00),
 	LF(0x1c, 0x80, 0x6a), LW(0x10, 0x00), LW(0x0e, 0x02), LW(0x10, 0x00),
 };
 
@@ -372,6 +377,7 @@ static const CxDaa::Op on_hook[] = {
 #undef SWP
 #undef SFP
 #undef LFP
+#undef LWP
 
 #define N(a) ((int)(sizeof(a) / sizeof((a)[0])))
 
@@ -382,7 +388,10 @@ bool CxDaa::run(const Op *ops, int n)
 		const Op &o = ops[i];
 		uint8_t old = 0, v;
 
-		uint8_t set = o.param ? param(o.param) : o.set;
+		if (o.param == Op::NOT_V2 && (version_ & 0x3f) == 2)
+			continue;
+		uint8_t set = o.param == Op::NOT_V2 ? o.set :
+			      o.param ? param(o.param, o.set) : o.set;
 
 		switch (o.kind) {
 		case Op::VERSION:
@@ -415,9 +424,13 @@ bool CxDaa::run(const Op *ops, int n)
 }
 
 /* see cx_daa.h (private) */
-uint8_t CxDaa::param(int p) const
+uint8_t CxDaa::param(int p, uint8_t set) const
 {
+	bool v2 = (version_ & 0x3f) == 2;
+
 	switch (p) {
+	case Op::V19:   return (uint8_t)(v2 ? set | 0x20 : set);
+	case Op::V21:   return (uint8_t)(v2 ? set & 0x7f : set);
 	case Op::SSD21: return board_->ssd21();
 	case Op::SSD0B: return board_->ssd0b();
 	case Op::SSD06: return board_->ssd06();
@@ -484,9 +497,11 @@ bool CxDaa::power_up(uint8_t *version)
 	if ((version_ & 0x3f) > 0x11)
 		return fail("LSD version %#x not one the library takes",
 			    version_);
+	*version = version_;
+	if ((version_ & 0x3f) == 0 || (version_ & 0x3f) >= 0x10)
+		return true;    /* the library's setup for it not known */
 	if (!run(line_start, N(line_start)))
 		return false;
-	*version = version_;
 	setup_ = true;
 	return true;
 }
@@ -511,10 +526,15 @@ bool CxDaa::probe(uint8_t *version)
 	return lsd_read(LSD_VERSION, version);
 }
 
-/* see cx_daa.h */
+/* see cx_daa.h: LSD versions 0x10 and 0x11 with bit 7 the other way
+   (the library's 0xc0 on hook, 0x00 off) */
 bool CxDaa::set_hook(Hook h)
 {
-	return lsd_field(LSD_HOOK, HOOK_MASK, h);
+	uint8_t b = h;
+
+	if ((version_ & 0x3f) >= 0x10)
+		b ^= 0x80;
+	return lsd_field(LSD_HOOK, HOOK_MASK, b);
 }
 
 } // namespace dmd

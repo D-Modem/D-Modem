@@ -17,7 +17,10 @@
  *    barrier (bit 2).  The LSD's version is its register 0x22 (the
  *    library takes 0 to 0x11); its register 2 reads 0x0f when it has
  *    powered up (the library waits for that after writing 3 and 4).
- *    The LSD's other registers read as written.  SSD register 0x0e,
+ *    Its monitor ADC (adc_on, adc_code): LSD 0x16's bits 6:4 the
+ *    channel, its bit 3 read 1 (a conversion done), LSD 0x17 the
+ *    channel's reading on hook or off (smartdaa_off_hook()).  The LSD's
+ *    other registers read as written.  SSD register 0x0e,
  *    bits 5 and 6, are the loopbacks: the DAC's samples back to the ADC
  *    (the library measures the path's delay by them).
  *
@@ -40,7 +43,8 @@ public:
 	enum {
 		SSD_ANSWER = 1, SSD_DATA = 2, SSD_COMMAND = 3, SSD_STATUS = 4,
 		ST_READY = 0x02, ST_TICK = 0x04, ST_DONE = 0x10,
-		LSD_POWER = 0x02, LSD_VERSION = 0x22
+		LSD_POWER = 0x02, LSD_ADC_CTL = 0x16, LSD_ADC = 0x17,
+		LSD_VERSION = 0x22
 	};
 
 	byte smartdaa_regs[0x40] = { ST_READY };
@@ -88,6 +92,21 @@ public:
 				smartdaa_line_side[r] = f;
 	}
 
+	/* the line side's monitor ADC: its reading of channel ch (LSD
+	   0x16's bits 6:4) on hook or off (LSD 0x15's bits 7:6 10), 0 to
+	   255; adc_on false: no conversions */
+	bool adc_on = false;
+	byte adc_code[2][8] = {};
+
+	/* whether the line side is off hook: LSD 0x15's bits 7:6 10, or
+	   00 for version 0x11's (its bit 7 the other way) */
+	bool smartdaa_off_hook() const
+	{
+		byte h = smartdaa_line_side[0x15] & 0xc0;
+		return smartdaa_line_side[LSD_VERSION] == 0x11 ? h == 0x00 :
+								  h == 0x80;
+	}
+
 	/* the DAC's samples back to the ADC (register 0x0e, bit 5 or 6) */
 	bool smartdaa_loopback() const { return smartdaa_regs[0x0e] & 0x60; }
 
@@ -97,6 +116,13 @@ private:
 	void command(byte c)
 	{
 		int lr = c & 0x3f;
+		if (adc_on && !(c & 0x80) && lr == LSD_ADC_CTL)
+			smartdaa_line_side[lr] |= 0x08;         /* ready */
+		if (adc_on && !(c & 0x80) && lr == LSD_ADC) {
+			bool off = smartdaa_off_hook();
+			smartdaa_line_side[lr] = adc_code[off]
+				[(smartdaa_line_side[LSD_ADC_CTL] >> 4) & 7];
+		}
 		if (c & 0x80) {
 			byte d = smartdaa_regs[SSD_DATA];
 			if (host().dbg)

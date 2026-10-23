@@ -33,10 +33,11 @@ struct CxBoard {
 	const char *name;       /* the .inf's value name */
 	uint8_t p[95];
 
-	/* the bytes the SSD's setup takes: register 0x21 (0x80 | p[87]),
-	   0x0b (p[93]), 0x06's bits 7:4 (p[94]) */
+	/* the bytes the SSD's setup takes: register 0x21, 0x80 | p[87] */
 	uint8_t ssd21() const { return (uint8_t)(0x80 | p[87]); }
+	/* register 0x0b, p[93] */
 	uint8_t ssd0b() const { return p[93]; }
+	/* register 0x06's bits 7:4, p[94] */
 	uint8_t ssd06() const { return (uint8_t)(p[94] << 4); }
 };
 

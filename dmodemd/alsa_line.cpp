@@ -360,9 +360,9 @@ void AlsaLine::cx_open(int card)
 	DBG("Conexant codec at %s (%04x %04x, SSD kind %#x), line side "
 	    "version %02x: the hook in its SmartDAA%s%s\n",
 	    ac97_.name().c_str(), id1, id2, kind, version,
-	    kind == 0x12 ? ", its line set up as Conexant's driver does, "
+	    cx_->setup() ? ", its line set up as Conexant's driver does, "
 	    "board " : " (its line setup not known)",
-	    kind == 0x12 ? cx_board((uint8_t)id2).name : "");
+	    cx_->setup() ? cx_board((uint8_t)id2).name : "");
 }
 
 /* see alsa_line.h */

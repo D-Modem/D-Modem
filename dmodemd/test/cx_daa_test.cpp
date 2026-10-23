@@ -628,3 +628,70 @@ TEST(CxDaa, Boards)
 	EXPECT_NE(w.find("0b=60"), std::string::npos) << w;
 	EXPECT_NE(w.find("06=d0"), std::string::npos) << w;
 }
+
+/* LSD version 2's (the one Conexant's own tool has shown on a SmartDAA)
+   setup and hook as the library's: no 0x24, 0x25, 0x21's bit 7 clear,
+   0x19's writes with bit 5 */
+static const char *const lib_v2[6] = {
+	"22=02 03=00 04=2f 20=00 21=00 19=80 08=00 0a=d9 0e=00 0c=07 12=00 "
+	"10=00 19=c0 1f=08 15=40 1c=78 14=e0 07=04 18=43 19=eb 06=02 0c=06 "
+	"12=60 1c=30 0e=00 18=43 10=00 1c=68 1c=6a 0c=02 0a=df 10=00 0e=02 "
+	"10=00",
+	"15=41 12=40 0e=00 14=20 18=43 10=00 21=02 1c=32 15=40 15=80 19=ab",
+	"12=60 15=40 19=eb 0e=00 21=00 14=e0 18=43 10=00 1c=6a 10=00 0e=02 "
+	"10=00",
+	"22=02 1c=fe 03=00 04=2f 20=00 21=00 19=ff 08=00 0a=d9 0e=00 0c=07 "
+	"12=9f 10=00 19=ff 1f=08 15=6f 1c=fa 15=68 14=e7 07=e4 18=43 19=eb "
+	"07=64 14=e3 15=40 06=e2 06=62 0c=06 12=ff 1c=b2 0e=00 18=43 10=00 "
+	"1c=ea 0c=02 0a=df 10=00 0e=02 10=00",
+	"15=41 12=df 0e=00 14=23 18=43 10=00 21=02 1c=b2 15=40 15=80 19=ab",
+	"12=ff 15=40 19=eb 0e=00 21=00 14=e3 18=43 10=00 1c=ea 10=00 0e=02 "
+	"10=00",
+};
+
+/* version 2's writes as the library's, from either start */
+TEST(CxDaa, Version2LikeTheLibrary)
+{
+	for (int f = 0; f < 2; f++) {
+		SCOPED_TRACE(f ? "LSD from 0xff" : "LSD from 0");
+		FakeCodec c(true);
+		c.fill_lsd(f ? 0xff : 0x00);
+		c.lsd[0x22] = 0x02;
+		CxDaa d(c, dmd::cx_variant(0x12), 0x12);
+		uint8_t v;
+		ASSERT_TRUE(d.power_up(&v)) << d.error();
+		EXPECT_EQ(v, 0x02);
+		EXPECT_TRUE(d.setup());
+		EXPECT_EQ(text(c.lsd_writes), text(writes(lib_v2[3 * f])));
+		c.lsd_writes.clear();
+		ASSERT_TRUE(d.go_off_hook()) << d.error();
+		EXPECT_EQ(text(c.lsd_writes), text(writes(lib_v2[3 * f + 1])));
+		c.lsd_writes.clear();
+		ASSERT_TRUE(d.go_on_hook()) << d.error();
+		EXPECT_EQ(text(c.lsd_writes), text(writes(lib_v2[3 * f + 2])));
+	}
+}
+
+/* the LSD versions whose setup the library does otherwise (0, 0x10,
+   0x11): the version read, no setup, the hook bits alone */
+TEST(CxDaa, VersionsWithoutSetup)
+{
+	for (uint8_t ver : { 0x00, 0x10, 0x11 }) {
+		SCOPED_TRACE(ver);
+		FakeCodec c(true);
+		c.lsd[0x22] = ver;
+		CxDaa d(c, dmd::cx_variant(0x12), 0x12);
+		uint8_t v = 0xff;
+		ASSERT_TRUE(d.power_up(&v)) << d.error();
+		EXPECT_EQ(v, ver);
+		EXPECT_FALSE(d.setup());
+		EXPECT_TRUE(c.lsd_writes.empty());
+		ASSERT_TRUE(d.go_off_hook()) << d.error();
+		ASSERT_EQ(c.lsd_writes.size(), 1u);
+		EXPECT_EQ(c.lsd_writes[0].first, 0x15);
+		/* off hook 10, or 00 on 0x10 and 0x11's */
+		EXPECT_EQ(c.lsd[0x15] & 0xc0, ver ? 0x00 : 0x80);
+		ASSERT_TRUE(d.go_on_hook()) << d.error();
+		EXPECT_EQ(c.lsd[0x15] & 0xc0, ver ? 0xc0 : 0x40);
+	}
+}

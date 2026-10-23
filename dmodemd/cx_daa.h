@@ -26,7 +26,9 @@
  *      status cleared.  A write is good when the answer is the byte
  *      written;
  *    - the hook: LSD register 0x15, bits 7:6: 01 on hook, 10 off hook,
- *      00 a dial pulse's make, 11 its break.
+ *      00 a dial pulse's make, 11 its break; on the line sides of
+ *      versions 0x10 and 0x11 bit 7 the other way (11 on hook, 00 off,
+ *      as the library has them; the pulses' so too, by that).
  *
  *    The SSDs differ (Conexant's SOAR library has 39 kinds): CxVariant
  *    holds the differences in the LSD's access.
@@ -129,11 +131,16 @@ public:
 	struct Op;
 
 	/* the SSD and LSD set up as Conexant's library does for the SSD of
-	   kind 0x12 (the HSF codec 0x5429's), for the USA: the SSD's
-	   registers, the LSD powered up (its register 2 reading 0x0f), its
-	   version (0 to 0x11) into *version, the line's registers; on
-	   hook.  The line side's version read alone for another kind */
+	   kind 0x12 (the HSF codec 0x5429's): the SSD's registers, the
+	   LSD's version (0 to 0x11) into *version, for versions 1 to 0x0f
+	   the LSD powered up (its register 2 reading 0x0f) and the line's
+	   registers, on hook.  For versions 0, 0x10 and 0x11 (whose setup
+	   the library does otherwise) and for another kind of SSD the
+	   version read alone (setup() false) */
 	bool power_up(uint8_t *version);
+	/* whether power_up() set the line up (go_off_hook() and
+	   go_on_hook() then do the library's sequences) */
+	bool setup() const { return setup_; }
 	/* off hook (or on hook) with the line set up for it as the library
 	   does (after power_up() for kind 0x12), else set_hook() alone */
 	bool go_off_hook();
@@ -166,8 +173,9 @@ private:
 	bool run(const Op *ops, int n);
 	/* LSD register 2 0x0f after 3 and 4 written: the LSD powered */
 	bool wait_power();
-	/* Op::Param p's byte, the board's or the country's */
-	uint8_t param(int p) const;
+	/* Op::Param p's byte for a step's set, the board's, the country's
+	   or the line side's version's */
+	uint8_t param(int p, uint8_t set) const;
 
 	CxVariant v_;
 	bool setup_ = false;    /* power_up() set the line up */

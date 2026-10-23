@@ -329,13 +329,14 @@ endif()
 # Conexant's HSF soft modem as a peer (half_hsf.cpp): hsfmodem-7.80.02.06oem's
 # engine (hsfengine), its AC'97 ICH codec module (hsfmc97ich) and its
 # soft DAA module (hsfsoar), their sections renamed per object (and the
-# ICH module's microsecond busy wait, hsfmc97ich41_, half_hsf.cpp's), and the
+# ICH module's microsecond busy wait, hsfmc97ich41_, and its empty print
+# function for the DAA module, hsfmc97ich57_, half_hsf.cpp's), and the
 # modem's .inf and country file for its NVM
 set(DMODEM_HSF_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hsf" CACHE
 	PATH "objects and NVM files of the HSF soft modem (interop tests)")
 if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 	set(_hsfo "")
-	set(_weak_hsfmc97ich hsfmc97ich41_)
+	set(_weak_hsfmc97ich hsfmc97ich41_,hsfmc97ich57_)
 	foreach(_b hsfengine hsfmc97ich hsfsoar)
 		set(_o ${CMAKE_CURRENT_BINARY_DIR}/${_b}_r.o)
 		add_custom_command(OUTPUT ${_o}
