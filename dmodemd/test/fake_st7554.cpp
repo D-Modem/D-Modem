@@ -44,6 +44,8 @@
  *    second of mu-law, its IN transfers kept in step with the codec's.
  *    The microphone's is a 1000 Hz tone; the earpiece's octets go to the
  *    file, as they come.
+ *    FAKE_ST7554_REVISION=<hex>: the chip's revision (register 0x00),
+ *    0x0200 without it.
  *    FAKE_USB_NO_ISO, FAKE_USB_USBDK: fake_usb_backend.h (Windows 7's
  *    and 8's drivers).
  *
@@ -283,10 +285,11 @@ void run()
 	} else if (!s && fake.suspended) {
 		fprintf(stderr, "fake st7554: resumed (reset)\n");
 		fake.suspended = false;
-		uint16_t status = fake.regs[0x15];
+		uint16_t status = fake.regs[0x15], rev = fake.regs[0x00];
 		memset(fake.regs, 0, sizeof(fake.regs));
 		memset(fake.cw, 0, sizeof(fake.cw));
 		fake.regs[0x15] = status;
+		fake.regs[0x00] = rev;
 		fake.rate = 0;
 		fake.wakeup = false;
 		fake.ring_changes = 0;
@@ -610,6 +613,8 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 	}
 	if (fake.st75951)
 		fake.regs[0x15] = GPIO_MONOLITHIC;
+	const char *rev = getenv("FAKE_ST7554_REVISION");
+	fake.regs[0x00] = (uint16_t)(rev ? strtoul(rev, nullptr, 16) : 0x0200);
 	fake.open = true;
 	*h = new libusb_device_handle{ dev };
 	return 0;

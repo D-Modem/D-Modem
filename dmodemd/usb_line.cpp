@@ -171,6 +171,7 @@ bool stick_rate(unsigned rate)
 }
 
 /* its vendor requests (registers) */
+const uint8_t REVISION = 0x00;
 const uint8_t SSI1_CONTROL = 0x01;
 const uint8_t SSI2_CONTROL = 0x02;
 const uint8_t FIFO_MASK = 0x03;
@@ -227,6 +228,12 @@ bool same_name(const char *a, const char *b)
 const uint16_t GPIO_LED_HOOK = 0x0080;
 const uint16_t GPIO_MONOLITHIC = 0x4000;   /* an ST75951/2 silicon DAA */
 const uint16_t BYTE_ORDER_LE = 0x8000;
+/* FIFO_CONTROL2: both FIFOs' high thresholds (Linux's 0x28), "RHOM"
+   for the codec (bit 15) and the voice codec (bit 7), and the first
+   revision that has it (Windows' InitializeRegisters) */
+const uint16_t FIFO2_THRESHOLDS = 0x2828;
+const uint16_t RHOM_SSI1 = 0x8000, RHOM_SSI2 = 0x0080;
+const uint16_t RHOM_REVISION = 0x0200;
 
 /* the FIFO's start: its count, and the octets of its own (and the
    device's) delay */
@@ -593,6 +600,13 @@ bool UsbLine::open_st7554(unsigned rate)
 	}
 	if (!endpoints(alt) || !get_reg(GPIO_STATUS, &status))
 		return false;
+	if (rhom_) {
+		uint16_t rev = 0;
+		get_reg(REVISION, &rev);
+		rhom_ok_ = rev >= RHOM_REVISION;
+		DBG("revision %04x: %s\n", rev, rhom_ok_ ? "RHOM while the modem runs" :
+		    "below 0200, no RHOM (as Windows)");
+	}
 	st75951_ = status & GPIO_MONOLITHIC;
 	DBG("codec: %s\n", st75951_ ? "ST75951/2 (silicon DAA)" : "STLC7550");
 	gpio_ = 0;
@@ -623,7 +637,8 @@ bool UsbLine::init_st7554_regs()
 	return set_reg(GPIO_DIR, 0x3ff8) && set_gpio(gpio_) &&
 		set_reg(GPIO_MASK, mask) &&
 		set_reg(FIFO_CONTROL1, 0x2828 | BYTE_ORDER_LE) &&
-		set_reg(FIFO_CONTROL2, 0x2828) && set_reg(FIFO_MASK, 0) &&
+		set_reg(FIFO_CONTROL2, fifo2_ = fifo_control2()) &&
+		set_reg(FIFO_MASK, 0) &&
 		set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN) &&
 		set_reg(SSI1_COUNTER, 0) && set_reg(SSI2_COUNTER, 0) &&
 		(st75951_ ? start_st75951() : set_reg(SSI1_CONTROL, SSI1_POWERUP)) &&
@@ -1409,6 +1424,29 @@ int UsbLine::pump(dcore::Modem &m)
 	if (mic_.size() > most)
 		mic_.erase(mic_.begin(), mic_.begin() + (mic_.size() - most));
 	return 0;
+}
+
+/* FIFO_CONTROL2 as it is to be: the thresholds, and with set_rhom()
+   while the modem runs RHOM for the codec, and for the voice codec if
+   it streams (Windows' ConfigureRHOM) */
+uint16_t UsbLine::fifo_control2() const
+{
+	uint16_t v = FIFO2_THRESHOLDS;
+	if (rhom_ && rhom_ok_ && running_)
+		v |= RHOM_SSI1 | (viso_.ep_in ? RHOM_SSI2 : 0);
+	return v;
+}
+
+/* RHOM set or cleared (start(), stop()): FIFO_CONTROL2 written if it
+   changes */
+void UsbLine::update_rhom()
+{
+	uint16_t v = fifo_control2();
+	if (kind_ != Kind::St7554 || !h_ || dead_ || v == fifo2_)
+		return;
+	DBG("RHOM %s\n", v & RHOM_SSI1 ? "on" : "off");
+	if (set_reg(FIFO_CONTROL2, v))
+		fifo2_ = v;
 }
 
 /* see dcore.h: the next frames' samples routed so (voice_frame()) */

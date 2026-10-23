@@ -358,6 +358,13 @@ licence). In `dmodemd/usb_line.cpp`:
   `linear` (signed 8-bit). Creative's INF uses alternate setting 1, so
   the DE5671 may have no codec there; a board whose alternate setting 3
   has no such endpoints is refused.
+- **RHOM.** With `--usb-rhom` dmodemd sets FIFO_CONTROL2's bit 15 (and
+  bit 7, the voice codec's, with `--usb-voice-codec`) while the modem
+  runs (from the line's start to its stop), as Smart Link's Windows
+  driver does with `Options.RHOM` (`ConfigureRHOM`, `EnableRHOM`),
+  which Creative's INF leaves off. A chip whose revision (register 0)
+  is below 0x200 never gets it, as on Windows. What RHOM does is not
+  known.
 - **Unplugged.** dmodemd says so and exits.
 
 Limits: the device's line settings are its own, and it has not yet been
@@ -452,6 +459,7 @@ start from.
 | `--usb-wake` | a ring wakes the computer: the SmartUSB56's USB remote wakeup armed (and on Linux the kernel's `power/wakeup` of it enabled, as root) |
 | `--usb-handset` | the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook, `<DLE>H` and `<DLE>h` in voice mode |
 | `--usb-voice-codec=<law>` | the SmartUSB56's second codec (SSI2, alternate setting 3) as a handset: `+VLS=14` and `15` in voice mode; its octets `ulaw`, `alaw` or `linear` |
+| `--usb-rhom` | the SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15, and the voice codec's bit 7) while the modem runs, as Windows' `Options.RHOM`; not below revision 0x200 |
 | `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
 
@@ -601,7 +609,8 @@ dialled in pulses, a voice call, the handset detector in voice mode,
 the international line controls (Australia's timer and pulse dialling,
 France's DC bit, the ST75951's inverted one), the voice codec as a
 handset (the fake's `FAKE_ST7554_VOICE`: its microphone a 1000 Hz
-tone, its earpiece to a file; `+VLS=14` and `15`, `+VRX` and `+VTX`), a
+tone, its earpiece to a file; `+VLS=14` and `15`, `+VRX` and `+VTX`), RHOM (`--usb-rhom`: on while
+the modem runs, none on a revision 0x0100 chip, `FAKE_ST7554_REVISION`), a
 call that wakes a suspended 1002 (`--usb-wake`: the fake's ring with its
 remote wakeup armed; the device reset on resume, set up again, the call
 answered), and that both exit once the exchange (the devices) has

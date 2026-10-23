@@ -21,6 +21,9 @@
 #   500 Hz tone comes out of the earpiece; +VLS=15 goes off hook, +VRX
 #   gets the microphone's tone with the line (its dial tone), which the
 #   earpiece gets too; +VLS=0 on hook;
+#   with --usb-rhom FIFO_CONTROL2 is 0xa8a8 (RHOM for both codecs) while
+#   the modem runs and 0x2828 when it stops; a chip of revision 0x0100
+#   gets no RHOM;
 # - 1002's fake says its codec is an ST75951/2 silicon DAA
 #   (FAKE_ST7554_DAA): dmodemd starts it up with its control words
 #   (register 3 = 0x050), 1001's an STLC7550;
@@ -213,7 +216,7 @@ try:
             i += 1
         return [(v - 128) * 256 for v in out]
     ear = os.path.join(tmp, "1001.ear")
-    m = Modem("1001", "dmodem39", ["--usb-voice-codec=ulaw"], "-voice",
+    m = Modem("1001", "dmodem39", ["--usb-voice-codec=ulaw", "--usb-rhom"], "-voice",
               FAKE_ST7554_LOG="1", FAKE_ST7554_VOICE=usb_dte.file_for(dmodemd, ear))
     want = (b"fake st7554: alternate setting 3", b"fake st7554: 02 = 0021",
             b"fake st7554: 06 = 0027")
@@ -227,8 +230,13 @@ try:
     check("voice codec: +VLS=? lists 14 and 15",
           m.cmd(b"AT+VLS=?", rb'14,"H",08000000,08000000,08000000\r\n'
                 rb'15,"HT",0B043060,0B043060,0B043060\r\nOK\r\n'))
+    fifo2 = lambda m: [int(v, 16) for v in
+                       re.findall(rb"fake st7554: 1a = ([0-9a-f]{4})", log_of(m))]
+    check("RHOM off while the modem stops", fifo2(m)[-1:] == [0x2828])
     n = len(gpio(m))
     check("voice codec: +VLS=14", m.cmd(b"AT+VLS=14"))
+    check("RHOM on for both codecs while the modem runs (0xa8a8)",
+          fifo2(m)[-1:] == [0xa8a8])
     def record(t):
         """+VRX for t s: its samples (OK after)"""
         if not m.cmd(b"AT+VRX", rb"CONNECT\r\n"):
@@ -273,6 +281,17 @@ try:
           len(heard) > 4000 and tone(heard[4000:], 350) + tone(heard[4000:], 440) > 0.3)
     check("voice codec: +VLS=0", m.cmd(b"AT+VLS=0"))
     check("voice codec: on hook again", gpio(m)[-1] & 0x0008 == 0)
+    check("RHOM off again", fifo2(m)[-1:] == [0x2828])
+    m.p.terminate()
+    m.p.wait(5)
+    m = Modem("1001", "dmodem38", ["--usb-rhom"], "-rhom-0100",
+              FAKE_ST7554_LOG="1", FAKE_ST7554_REVISION="0100")
+    m.cmd(b"ATE0+FCLASS=8")
+    m.cmd(b"AT+VLS=1")
+    time.sleep(0.5)
+    m.cmd(b"AT+VLS=0")
+    check("revision 0x0100: no RHOM", b"no RHOM" in log_of(m) and
+          all(v & 0x8000 == 0 for v in fifo2(m)))
     m.p.terminate()
     m.p.wait(5)
 

@@ -43,6 +43,8 @@ struct Options {
 	/* the SmartUSB56's second codec as a handset, its octets "ulaw",
 	   "alaw" or "linear" (--usb-voice-codec); NULL: not used */
 	const char *usb_voice_codec = nullptr;
+	/* the ST7554's RHOM bit while the modem runs (--usb-rhom) */
+	bool usb_rhom = false;
 	unsigned rate = 9600;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem
 	   pair such as com0com's), or TCP connections on [address:]port

@@ -146,9 +146,12 @@ The FIFO thresholds (low/high) while streaming are 0x20/0x3E at 8000 Hz,
 0x20/0x3A at 9600 Hz and 0x0E/0x2E at 16000 Hz. Linux writes 0x28/0x28
 [seen].
 
-RHOM (`ConfigureRHOM` → `EnableRHOM`) only sets FIFO_CTRL2's bit 15.
-It follows `Options.RHOM`, which the INF does not set. What it stands
-for is not known.
+RHOM (`ConfigureRHOM` 0x163e8 → `EnableRHOM` 0x1d872) only sets
+FIFO_CTRL2's bit 15, and bit 7 for the voice codec when `Alt` ≥ 2. It
+is on when `Options.RHOM` is set (the INF does not set it, and
+`ConfigureDevice` clears it below revision 0x200) and the soft modem
+has the stream enabled (`VModemLine::Enable`, `Disable`, which both
+call it). What it stands for is not known [seen].
 
 ## The GPIOs
 
@@ -562,7 +565,7 @@ decodes caller ID itself; this one does not [inferred].
 ## What this means for dmodemd
 
 `dmodemd/usb_line.cpp` follows Linux, with more taken from Windows
-(items 1, 2, 6, 7, 8, 9 and 10). Against Windows:
+(items 1, 2, 6, 7, 8, 9, 10 and 11). Against Windows:
 
 1. **Caller ID: done.** With `AT#CID=1`, from the first ring dmodemd
    sets GPIO 0x0020 (CID1) while the core listens on hook, and clears
@@ -606,7 +609,12 @@ decodes caller ID itself; this one does not [inferred].
    handset is V.253's `+VLS=14` and `15`. Windows itself never streams
    it outside its tests, and the sample format is a guess the option
    names.
-11. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
+11. **RHOM: done, behind `--usb-rhom`.** As `ConfigureRHOM`: FIFO_CTRL2
+   bit 15 (bit 7 for the voice codec when it streams) while the soft
+   modem has the stream enabled (`VModemLine::Enable` to `Disable`;
+   dmodemd: the core's `start()` to `stop()`), never below revision
+   0x200. What it does is still unknown.
+12. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
    Linux.
 
 ## Open questions

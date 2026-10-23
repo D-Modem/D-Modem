@@ -47,7 +47,7 @@ enum {
 	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
 	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_USB_LEDS, OPT_USB_WAKE,
-	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_RATE,
+	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_USB_RHOM, OPT_RATE,
 #ifdef _WIN32
 	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP, OPT_DRIVER,
 #endif
@@ -105,6 +105,9 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "a SmartUSB56's second codec (SSI2, alternate setting 3) as a "
 	  "handset, +VLS=14 and 15 in voice mode; its octets ulaw, alaw or "
 	  "linear", nullptr, false },
+	{ 0, "usb-rhom", Takes::Nothing, false,
+	  "a SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15) while the modem "
+	  "runs, as Windows' Options.RHOM", nullptr, false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a or --usb (8000 or 9600)", "9600", false },
 #ifdef _WIN32
@@ -381,6 +384,8 @@ void CommandLine::apply(Options &opt) const
 		}
 		opt.usb_voice_codec = v;
 	}
+	if (o[OPT_USB_RHOM].given)
+		opt.usb_rhom = true;
 	if (opt.alsa && opt.usb) {
 		fprintf(stderr, "%s: -a or --usb, not both\n", prog_);
 		exit(1);

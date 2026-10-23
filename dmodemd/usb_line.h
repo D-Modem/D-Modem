@@ -98,6 +98,12 @@ public:
 	enum class VoiceLaw { None, Ulaw, Alaw, Linear };
 	/* (see VoiceLaw) */
 	void set_voice_codec(VoiceLaw law) { voice_law_ = law; }
+	/* the ST7554's "RHOM" (FIFO_CONTROL2 bit 15, the voice codec's bit
+	   7 too if it streams) set while the modem runs (start() to
+	   stop()), as Smart Link's Windows driver does with Options.RHOM
+	   (ConfigureRHOM); never on a chip whose revision (register 0) is
+	   below 0x200.  What it does is not known */
+	void set_rhom(bool on) { rhom_ = on; }
 	/* the modem dev ("" or "auto": the first SmartUSB56 or pico-serial
 	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
 	   rate, its samples running, on hook; false with the reason on
@@ -113,9 +119,17 @@ public:
 	int pump(dcore::Modem &m);
 
 	/* Host */
-	int start(dcore::Modem &) override { running_ = true; return 0; }
+	int start(dcore::Modem &) override {
+		running_ = true;
+		update_rhom();
+		return 0;
+	}
 	/* the samples no longer through the modem */
-	int stop(dcore::Modem &) override { running_ = false; return 0; }
+	int stop(dcore::Modem &) override {
+		running_ = false;
+		update_rhom();
+		return 0;
+	}
 	int set_hook(dcore::Modem &m, int state) override;
 	/* the local phone sensed (set_handset(), a SmartUSB56) */
 	bool senses_local_phone(dcore::Modem &) override {
@@ -225,6 +239,8 @@ private:
 	void out_fill(Iso &s, libusb_transfer *t, const int *lengths);
 	void send_out(Iso &s);
 	void voice_frame(dcore::Modem &m);
+	uint16_t fifo_control2() const;
+	void update_rhom();
 	void gone(const char *why);
 	void update_leds(dcore::Modem &m);
 	uint16_t intl_hook(uint16_t v, bool off, bool now_off);
@@ -262,6 +278,10 @@ private:
 	   between the two codecs (their phases), and a frame's samples for
 	   the handset */
 	VoiceLaw voice_law_ = VoiceLaw::None;
+	/* set_rhom(), and whether the chip takes it (its revision); the
+	   FIFO_CONTROL2 written last */
+	bool rhom_ = false, rhom_ok_ = false;
+	uint16_t fifo2_ = 0;
 	unsigned route_ = VOICE_DEVICE_LINE;
 	std::deque<int16_t> mic_;
 	double mic_pos_ = 0, ear_pos_ = 0;
