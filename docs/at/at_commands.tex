@@ -996,7 +996,11 @@ reports in the transmit, receive and command states as hex bit fields
 \end{verbatim}
 On hook (0) that is caller ID (with \cmdl[hashCID]{+VCID}) and RING; on the
 line (1) DTMF, the two calling tones, the loop current interruption, a
-ringing tone, a busy tone and the two answer tones, in every state.
+ringing tone, a busy tone and the two answer tones, in every state.  A
+line that senses the phone on the modem's own jack (a SmartUSB56 with
+\texttt{dmodemd --usb-handset}) adds event 8 to both, in every state
+(\texttt{00800000}, \texttt{0B843060}, \ldots): that phone off hook is
+\cmd{<DLE>H}, on hook again \cmd{<DLE>h}.
 
 A voice call can become a fax or data call (V.253 5.3.2 and its
 example I.6).  \cmdl[plusFCLASS]{+FCLASS=1} (or \cmd{0}) in the voice

@@ -1882,6 +1882,19 @@ void Modem::ring()
 	ring_count_++;
 }
 
+/* see dcore.h: a change only (the line may say it twice) */
+void Modem::local_phone(bool off_hook)
+{
+	static const char ev[2][2] = { { 0x10, 'h' }, { 0x10, 'H' } };
+
+	if (off_hook == local_phone_off_)
+		return;
+	local_phone_off_ = off_hook;
+	logf("the local phone %s hook\n", off_hook ? "off" : "on");
+	if (mode_ == MODEM_MODE_VOICE)
+		host_.dte_write(*this, ev[off_hook], 2);
+}
+
 /* a call that rings by itself (SIP): RING each time, the auto answer
    (idle, line stopped); on false the rings are over */
 void Modem::ring_signal(bool on)

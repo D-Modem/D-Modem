@@ -28,6 +28,15 @@
  *    bit 0 set and its start-up done (register 3 = 0x050, SSI1_CONTROL
  *    bit 1).
  *    FAKE_ST7554_LOG=1: the register writes on stderr.
+ *    FAKE_ST7554_SUSPEND=<file>: while the file is there the device is
+ *    suspended (the computer asleep): its transfers fail
+ *    (LIBUSB_TRANSFER_ERROR, then LIBUSB_ERROR_IO), so do its requests,
+ *    and a ring with its remote wakeup armed (SET_FEATURE) and the ring
+ *    detector's interrupt enabled says "remote wakeup" (once); when the
+ *    file has gone it resumes reset (its registers 0, the remote wakeup
+ *    cleared).  Its configuration says it can wake.
+ *    FAKE_ST7554_HANDSET=<file>: the handset detector (GPIO 2) says off
+ *    hook while the file is there; its change an interrupt if enabled.
  *    FAKE_USB_NO_ISO, FAKE_USB_USBDK: fake_usb_backend.h (Windows 7's
  *    and 8's drivers).
  *
@@ -39,6 +48,7 @@
 
 #include "fake_net.h"
 
+#include <chrono>
 #include <deque>
 #include <vector>
 
@@ -60,7 +70,8 @@ namespace {
 
 const uint8_t EP_INTR = 0x81, EP_OUT = 0x02, EP_IN = 0x83;
 const uint16_t MAX_PACKET = 32;
-const uint16_t GPIO_RING1 = 0x0001, GPIO_HOOK1 = 0x0008, GPIO_CID1 = 0x0020;
+const uint16_t GPIO_RING1 = 0x0001, GPIO_HANDSET = 0x0004, GPIO_HOOK1 = 0x0008,
+	GPIO_CID1 = 0x0020;
 const uint16_t GPIO_MONOLITHIC = 0x4000;
 const int RING_LEVEL = 8000;
 
@@ -83,7 +94,33 @@ struct Fake {
 	unsigned long long ms = 0;      /* IN packets given */
 	std::deque<libusb_transfer *> in_q, out_q, intr_q, cancelled;
 	int log = 0;
+	/* FAKE_ST7554_SUSPEND, FAKE_ST7554_HANDSET's files, their states */
+	const char *suspend_file = nullptr, *handset_file = nullptr;
+	bool wakeup = false, suspended = false, woke = false;
+	uint16_t events = 0;            /* GPIO events not yet on the interrupt */
 } fake;
+
+/* the files of FAKE_ST7554_SUSPEND and _HANDSET looked at again: every
+   100 ms (a file's open is slow under Wine) */
+bool look_again()
+{
+	using namespace std::chrono;
+	static steady_clock::time_point last;
+	steady_clock::time_point now = steady_clock::now();
+	if (now - last < milliseconds(100))
+		return false;
+	last = now;
+	return true;
+}
+
+/* the file path is there */
+bool there(const char *path)
+{
+	FILE *f = path ? fopen(path, "r") : nullptr;
+	if (f)
+		fclose(f);
+	return f != nullptr;
+}
 
 /* a connection to the exchange (fake_net.h) */
 int connect_exchange(const char *path, char kind)
@@ -159,10 +196,18 @@ void take()
 			bool r = s > RING_LEVEL;
 			if (r != fake.ring_state && !fake.hook) {
 				fake.ring_state = r;
-				if (fake.regs[0x0c] & GPIO_RING1)
+				if (fake.suspended) {
+					if (fake.wakeup && !fake.woke &&
+					    fake.regs[0x0c] & GPIO_RING1) {
+						fake.woke = true;
+						fprintf(stderr, "fake st7554: remote "
+							"wakeup\n");
+					}
+				} else if (fake.regs[0x0c] & GPIO_RING1) {
 					fake.ring_changes++;
+				}
 			}
-			if (streaming())
+			if (streaming() && !fake.suspended)
 				fake.in.push_back(fake.hook || fake.regs[0x0a] &
 						  GPIO_CID1 ? s : 0);
 		}
@@ -188,6 +233,44 @@ void done(libusb_transfer *t, libusb_transfer_status s)
    (which may submit more, done in the same turn) */
 void run()
 {
+	bool look = (fake.suspend_file || fake.handset_file) && look_again();
+	bool s = look ? there(fake.suspend_file) : fake.suspended;
+	if (s && !fake.suspended) {
+		fprintf(stderr, "fake st7554: suspended\n");
+		fake.suspended = true;
+		fake.woke = false;
+		std::deque<libusb_transfer *> all;
+		for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q }) {
+			all.insert(all.end(), q->begin(), q->end());
+			q->clear();
+		}
+		for (libusb_transfer *t : all)
+			done(t, LIBUSB_TRANSFER_ERROR);
+	} else if (!s && fake.suspended) {
+		fprintf(stderr, "fake st7554: resumed (reset)\n");
+		fake.suspended = false;
+		uint16_t status = fake.regs[0x15];
+		memset(fake.regs, 0, sizeof(fake.regs));
+		memset(fake.cw, 0, sizeof(fake.cw));
+		fake.regs[0x15] = status;
+		fake.rate = 0;
+		fake.wakeup = false;
+		fake.ring_changes = 0;
+		fake.events = 0;
+		fake.in.clear();
+		if (fake.hook) {
+			fake.hook = false;
+			switch_to(0, false);
+		}
+	}
+	bool h = look ? there(fake.handset_file) :
+		(bool)(fake.regs[0x15] & GPIO_HANDSET);
+	if (h != (bool)(fake.regs[0x15] & GPIO_HANDSET)) {
+		fake.regs[0x15] = (uint16_t)(h ? fake.regs[0x15] | GPIO_HANDSET :
+					     fake.regs[0x15] & ~GPIO_HANDSET);
+		if (fake.regs[0x0c] & GPIO_HANDSET)
+			fake.events |= GPIO_HANDSET;
+	}
 	take();
 	for (bool more = true; more;) {
 		more = false;
@@ -225,11 +308,16 @@ void run()
 			done(t, LIBUSB_TRANSFER_COMPLETED);
 			more = true;
 		}
-		while (fake.ring_changes && !fake.intr_q.empty()) {
+		while ((fake.ring_changes || fake.events) && !fake.intr_q.empty()) {
 			libusb_transfer *t = fake.intr_q.front();
 			fake.intr_q.pop_front();
-			fake.ring_changes--;
-			uint8_t b[4] = { 0, 0, (uint8_t)GPIO_RING1, 0 };
+			uint16_t ev = fake.events;
+			fake.events = 0;
+			if (fake.ring_changes) {
+				fake.ring_changes--;
+				ev |= GPIO_RING1;
+			}
+			uint8_t b[4] = { 0, 0, (uint8_t)ev, (uint8_t)(ev >> 8) };
 			memcpy(t->buffer, b, t->length < 4 ? (size_t)t->length : 4);
 			t->actual_length = t->length < 4 ? t->length : 4;
 			done(t, LIBUSB_TRANSFER_COMPLETED);
@@ -290,6 +378,7 @@ void make_config()
 	endpoints[2].bmAttributes = LIBUSB_TRANSFER_TYPE_ISOCHRONOUS;
 	endpoints[2].wMaxPacketSize = MAX_PACKET;
 	endpoints[2].bInterval = 1;
+	config.bmAttributes = 0xa0;     /* bus powered, remote wakeup */
 	alts[0].bInterfaceNumber = 0;
 	alts[1].bInterfaceNumber = 0;
 	alts[1].bAlternateSetting = 1;
@@ -380,6 +469,17 @@ uint8_t LIBUSB_CALL libusb_get_bus_number(libusb_device *)
 	return 1;
 }
 
+/* its ports from the root: port 250, which no real hub has (so that
+   the kernel's power/wakeup of it is no real device's) */
+int LIBUSB_CALL libusb_get_port_numbers(libusb_device *, uint8_t *ports,
+					int len)
+{
+	if (len < 1)
+		return LIBUSB_ERROR_OVERFLOW;
+	ports[0] = 250;
+	return 1;
+}
+
 /* address 7 */
 uint8_t LIBUSB_CALL libusb_get_device_address(libusb_device *)
 {
@@ -410,6 +510,8 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 	}
 	switch_to(1, true);             /* the ring signal heard */
 	fake.st75951 = getenv("FAKE_ST7554_DAA") != nullptr;
+	fake.suspend_file = getenv("FAKE_ST7554_SUSPEND");
+	fake.handset_file = getenv("FAKE_ST7554_HANDSET");
 	if (fake.st75951)
 		fake.regs[0x15] = GPIO_MONOLITHIC;
 	fake.open = true;
@@ -489,6 +591,17 @@ int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
 {
 	if (fake.gone)
 		return LIBUSB_ERROR_NO_DEVICE;
+	if (fake.suspended)
+		return LIBUSB_ERROR_IO;
+	/* USB's SET_FEATURE and CLEAR_FEATURE(DEVICE_REMOTE_WAKEUP) */
+	if (type == (LIBUSB_REQUEST_TYPE_STANDARD | LIBUSB_RECIPIENT_DEVICE) &&
+	    (request == LIBUSB_REQUEST_SET_FEATURE ||
+	     request == LIBUSB_REQUEST_CLEAR_FEATURE) && value == 1) {
+		fake.wakeup = request == LIBUSB_REQUEST_SET_FEATURE;
+		fprintf(stderr, "fake st7554: remote wakeup %s\n",
+			fake.wakeup ? "armed" : "cleared");
+		return 0;
+	}
 	if ((type & LIBUSB_REQUEST_TYPE_VENDOR) != LIBUSB_REQUEST_TYPE_VENDOR ||
 	    index != 0)
 		return LIBUSB_ERROR_PIPE;
@@ -532,6 +645,8 @@ int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
 {
 	if (fake.gone)
 		return LIBUSB_ERROR_NO_DEVICE;
+	if (fake.suspended)
+		return LIBUSB_ERROR_IO;
 	if (fake_usb_refused(t))
 		return LIBUSB_ERROR_NOT_SUPPORTED;
 	if (t->endpoint == EP_INTR)

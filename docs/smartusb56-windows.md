@@ -543,8 +543,8 @@ decodes caller ID itself; this one does not [inferred].
 
 ## What this means for dmodemd
 
-`dmodemd/usb_line.cpp` follows Linux, with three things taken from
-Windows. Against Windows:
+`dmodemd/usb_line.cpp` follows Linux, with more taken from Windows
+(items 1, 2, 6, 7 and 8). Against Windows:
 
 1. **Caller ID: done.** With `AT#CID=1`, from the first ring dmodemd
    sets GPIO 0x0020 (CID1) while the core listens on hook, and clears
@@ -568,9 +568,16 @@ Windows. Against Windows:
    has passed, both off on hook. Windows drives them only when the INF
    says the board has them (`Options.ExtraLeds`), so dmodemd only with
    the option.
-7. **Not taken**: wake on ring, and an unused handset detector (GPIO 2)
-   that might show a parallel phone off hook.
-8. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
+7. **Wake on ring: done, behind `--usb-wake`.** The remote wakeup is
+   armed at the start (Windows arms it when the PC sleeps), and dmodemd
+   survives the suspend: it sets the device up again after a resume, as
+   Windows does.
+8. **The handset detector: done, behind `--usb-handset`.** Windows
+   enables GPIO 2's interrupt but drops its events. dmodemd reads the
+   GPIO on each change and reports the phone on the modem's jack off or
+   on hook (V.253's `<DLE>H` and `<DLE>h` in voice mode). That set means
+   off hook is inferred.
+9. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
    Linux.
 
 ## Open questions

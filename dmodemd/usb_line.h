@@ -71,6 +71,16 @@ public:
 	   Windows driver lights them with Options.ExtraLeds; both off on
 	   hook.  Not every board has them: off by default */
 	void set_leds(bool on) { leds_ = on; }
+	/* a ring wakes the computer: the SmartUSB56's USB remote wakeup
+	   armed (SET_FEATURE) at open() and after a resume, cleared at
+	   the end; on Linux the kernel's power/wakeup of the device enabled
+	   too (as root).  The ring detector's interrupt stays enabled on
+	   hook, as always */
+	void set_wake(bool on) { wake_ = on; }
+	/* the SmartUSB56's handset detector (GPIO 2, its interrupt
+	   enabled): a phone on its PHONE jack off hook (the GPIO set) or on
+	   hook, to the modem's local_phone() */
+	void set_handset(bool on) { handset_ = on; }
 	/* the modem dev ("" or "auto": the first SmartUSB56 or pico-serial
 	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
 	   rate, its samples running, on hook; false with the reason on
@@ -90,6 +100,10 @@ public:
 	/* the samples no longer through the modem */
 	int stop(dcore::Modem &) override { running_ = false; return 0; }
 	int set_hook(dcore::Modem &m, int state) override;
+	/* the local phone sensed (set_handset(), a SmartUSB56) */
+	bool senses_local_phone(dcore::Modem &) override {
+		return handset_ && kind_ == Kind::St7554;
+	}
 	/* an analogue line, the modem dialling it itself */
 	bool analog_line(dcore::Modem &) override { return true; }
 	/* a hook flash it can make (hook_flash()) */
@@ -140,6 +154,10 @@ private:
 	   the line side checked) */
 	bool open_st7554(unsigned rate);
 	bool start_st75951();
+	bool init_st7554_regs();
+	void arm_wake(bool on, bool kernel = false);
+	void park(libusb_transfer *t, int err);
+	void resume();
 	bool open_stick(unsigned rate);
 	/* a vendor request to the stick's interface: OUT with value, or IN
 	   into buf (len octets, all of them wanted); false (logged) */
@@ -204,6 +222,15 @@ private:
 	bool leds_ = false;             /* set_leds() */
 	bool data_seen_ = false;        /* data in this call (the data LED) */
 	bool online_seen_ = false;      /* the call online at a pump's end */
+	bool wake_ = false;             /* set_wake() */
+	bool handset_ = false;          /* set_handset() */
+	bool handset_due_ = false;      /* GPIO 2 changed: to be read */
+	/* transfers that could not be submitted again (the device
+	   suspended): retried every RESUME_MS by resume(), the time of the
+	   first (ms of the system's clock) */
+	std::vector<libusb_transfer *> parked_;
+	unsigned long long parked_since_ = 0, resume_tried_ = 0;
+	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
 	unsigned long long flash_end_ = 0;
 	unsigned rings_ = 0;            /* ring detector changes not given */
 };

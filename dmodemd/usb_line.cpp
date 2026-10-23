@@ -76,6 +76,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <chrono>
+
 #include <log.h>
 
 #include "usb_line.h"
@@ -188,6 +190,7 @@ const uint16_t SSI1_ST75951 = 0x0002;      /* kept set on an ST75951 */
 const uint16_t SSI1_UNDERRUN = 0x0040;
 const uint16_t SSI1_OVERRUN = 0x0020;
 const uint16_t GPIO_RING1 = 0x0001;
+const uint16_t GPIO_HANDSET = 0x0004;      /* the PHONE jack's off hook */
 const uint16_t GPIO_HOOK1 = 0x0008;
 const uint16_t GPIO_CID1 = 0x0020;        /* the codec on the line on hook */
 const uint16_t GPIO_LED_CARRIER = 0x0040;  /* --usb-leds */
@@ -202,6 +205,18 @@ const uint16_t FRAGSIZE = 96;
 const int FIFO_SAMPLES = 64 + 24;
 
 const unsigned TIMEOUT_MS = 1000;
+
+/* the configuration's remote wakeup bit; USB's DEVICE_REMOTE_WAKEUP */
+const uint8_t CONFIG_REMOTE_WAKEUP = 0x20;
+const uint16_t FEATURE_REMOTE_WAKEUP = 1;
+
+/* the system's clock, in ms (for the retries of a suspended device) */
+unsigned long long clock_ms()
+{
+	using namespace std::chrono;
+	return (unsigned long long)duration_cast<milliseconds>(
+		steady_clock::now().time_since_epoch()).count();
+}
 
 /* the codec's control word for a rate (the STLC7550's, and the
    ST75951's register 0); 0 if it has none */
@@ -502,20 +517,94 @@ bool UsbLine::open_st7554(unsigned rate)
 	st75951_ = status & GPIO_MONOLITHIC;
 	DBG("codec: %s\n", st75951_ ? "ST75951/2 (silicon DAA)" : "STLC7550");
 	gpio_ = 0;
-	if (!set_reg(GPIO_DIR, 0x3ff8) || !set_gpio(0) ||
-	    !set_reg(GPIO_MASK, GPIO_RING1) ||
-	    !set_reg(FIFO_CONTROL1, 0x2828 | BYTE_ORDER_LE) ||
-	    !set_reg(FIFO_CONTROL2, 0x2828) || !set_reg(FIFO_MASK, 0) ||
-	    !set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN) ||
-	    !set_reg(SSI1_COUNTER, 0) || !set_reg(SSI2_COUNTER, 0) ||
-	    !(st75951_ ? start_st75951() : set_reg(SSI1_CONTROL, SSI1_POWERUP)) ||
-	    !set_reg(SSI1_CWORD, cword(rate)) || !set_reg(GPIO_INV, 0))
+	if (!init_st7554_regs())
 		return false;
 	libusb_clear_halt(h_, ep_in_);
 	libusb_clear_halt(h_, ep_out_);
 	intr_len_ = 4;
 	fifo_samples_ = FIFO_SAMPLES;
+	if (handset_)
+		handset_due_ = true;    /* (its state now, at the first pump) */
+	if (wake_)
+		arm_wake(true, true);
 	return true;
+}
+
+/* the ST7554's registers as Smart Link's driver sets them, the GPIOs'
+   outputs gpio_ (on hook at the start, the hook as it was after a
+   resume), the ring detector's interrupt and with set_handset() the
+   handset detector's; false (logged) */
+bool UsbLine::init_st7554_regs()
+{
+	uint16_t mask = (uint16_t)(GPIO_RING1 | (handset_ ? GPIO_HANDSET : 0));
+	return set_reg(GPIO_DIR, 0x3ff8) && set_gpio(gpio_) &&
+		set_reg(GPIO_MASK, mask) &&
+		set_reg(FIFO_CONTROL1, 0x2828 | BYTE_ORDER_LE) &&
+		set_reg(FIFO_CONTROL2, 0x2828) && set_reg(FIFO_MASK, 0) &&
+		set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN) &&
+		set_reg(SSI1_COUNTER, 0) && set_reg(SSI2_COUNTER, 0) &&
+		(st75951_ ? start_st75951() : set_reg(SSI1_CONTROL, SSI1_POWERUP)) &&
+		set_reg(SSI1_CWORD, cword(rate_)) && set_reg(GPIO_INV, 0);
+}
+
+/* the device's USB remote wakeup armed (on) or cleared: SET_FEATURE or
+   CLEAR_FEATURE(DEVICE_REMOTE_WAKEUP), if its configuration says it can
+   wake; with kernel, on Linux the kernel's power/wakeup of it enabled
+   too (at open(): it needs root, and dmodemd opens the device before it
+   drops root; the kernel keeps it across a resume) */
+void UsbLine::arm_wake(bool on, bool kernel)
+{
+	libusb_config_descriptor *cfg;
+	bool can = false;
+	if (libusb_get_active_config_descriptor(libusb_get_device(h_), &cfg) == 0) {
+		can = cfg->bmAttributes & CONFIG_REMOTE_WAKEUP;
+		libusb_free_config_descriptor(cfg);
+	}
+	if (!can) {
+		if (on)
+			ERR("%s: its configuration says it cannot wake the "
+			    "computer: no wake on ring\n", name_);
+		return;
+	}
+	int err = libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_STANDARD |
+					  LIBUSB_RECIPIENT_DEVICE |
+					  LIBUSB_ENDPOINT_OUT, on ?
+					  LIBUSB_REQUEST_SET_FEATURE :
+					  LIBUSB_REQUEST_CLEAR_FEATURE,
+					  FEATURE_REMOTE_WAKEUP, 0, nullptr, 0,
+					  TIMEOUT_MS);
+	if (err < 0) {
+		ERR("%s: its remote wakeup %s: %s\n", name_,
+		    on ? "armed" : "cleared", libusb_strerror(err));
+		return;
+	}
+	DBG("remote wakeup %s\n", on ? "armed" : "cleared");
+#ifdef __linux__
+	if (!on || !kernel)
+		return;
+	/* /sys/bus/usb/devices/<bus>-<port>[.<port>...]/power/wakeup */
+	uint8_t ports[8];
+	libusb_device *d = libusb_get_device(h_);
+	int n = libusb_get_port_numbers(d, ports, (int)sizeof(ports));
+	if (n <= 0)
+		return;
+	std::string path = "/sys/bus/usb/devices/" +
+		std::to_string(libusb_get_bus_number(d)) + "-";
+	for (int i = 0; i < n; i++)
+		path += (i ? "." : "") + std::to_string(ports[i]);
+	path += "/power/wakeup";
+	FILE *f = fopen(path.c_str(), "w");
+	bool ok = f && fputs("enabled", f) >= 0;
+	if (f && fclose(f) != 0)
+		ok = false;
+	if (!ok) {
+		ERR("%s: %s: %s (as root, or a udev rule's "
+		    "ATTR{power/wakeup}=\"enabled\"): the computer may not "
+		    "wake on a ring\n", name_, path.c_str(), strerror(errno));
+		return;
+	}
+	DBG("%s enabled\n", path.c_str());
+#endif
 }
 
 /* the ST75951/2's start-up, as Windows' driver does it: its control
@@ -730,8 +819,7 @@ void UsbLine::send_out()
 		if (err == 0)
 			in_flight_++;
 		else
-			gone(err == LIBUSB_ERROR_NO_DEVICE ? "unplugged" :
-			     "an OUT transfer failed");
+			park(t, err);
 	}
 }
 
@@ -759,9 +847,14 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 			DBG("FIFO overrun\n");
 		if (gpio & GPIO_RING1)
 			l->rings_++;
+		if ((gpio & GPIO_HANDSET) && l->handset_)
+			l->handset_due_ = true;
 	}
-	if (libusb_submit_transfer(t) == 0)
+	int err = libusb_submit_transfer(t);
+	if (err == 0)
 		l->in_flight_++;
+	else
+		l->park(t, err);
 }
 
 /* see usb_line.h: a country the datasheet has no settings for keeps the
@@ -875,8 +968,74 @@ void UsbLine::in_complete(libusb_transfer *t)
 	if (err == 0)
 		in_flight_++;
 	else
-		gone(err == LIBUSB_ERROR_NO_DEVICE ? "unplugged" :
-		     "an IN transfer failed");
+		park(t, err);
+}
+
+/* a transfer that could not be submitted again (err): the device gone
+   if unplugged; else (suspended, the computer asleep) kept for
+   resume() */
+void UsbLine::park(libusb_transfer *t, int err)
+{
+	if (err == LIBUSB_ERROR_NO_DEVICE) {
+		gone("unplugged");
+		return;
+	}
+	if (parked_.empty()) {
+		DBG("transfers fail (%s): suspended?\n", libusb_strerror(err));
+		parked_since_ = resume_tried_ = clock_ms();
+	}
+	parked_.push_back(t);
+}
+
+/* see usb_line.h (pump()): every RESUME_MS the device set up again (its
+   registers, its remote wakeup, the FIFO started; a resume may have
+   reset it), the streams started afresh, then the parked transfers
+   submitted again; gone after RESUME_GIVE_UP_MS of failures */
+void UsbLine::resume()
+{
+	unsigned long long now = clock_ms();
+	if (now - resume_tried_ < RESUME_MS)
+		return;
+	resume_tried_ = now;
+	if (now - parked_since_ > RESUME_GIVE_UP_MS) {
+		gone("its transfers fail");
+		return;
+	}
+	if (kind_ == Kind::St7554) {
+		if (!init_st7554_regs() || !set_reg(SSI1_COUNTER, FRAGSIZE) ||
+		    !set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN))
+			return;
+		if (wake_)
+			arm_wake(true);
+		handset_due_ = handset_;
+	}
+	/* the streams from their start again: nothing kept from before
+	   the suspend, the playback's lead a frame and a half */
+	in_buf_.clear();
+	out_lengths_.clear();
+	out_buf_.assign(frame_ + frame_ / 2, 0);
+	std::vector<libusb_transfer *> again;
+	again.swap(parked_);
+	for (libusb_transfer *t : again) {
+		if (t == intr_) {
+			int err = libusb_submit_transfer(t);
+			if (err == 0)
+				in_flight_++;
+			else
+				park(t, err);
+		} else if (t->endpoint == ep_out_) {
+			idle_out_.push_back(t);
+		} else {
+			int err = libusb_submit_transfer(t);
+			if (err == 0)
+				in_flight_++;
+			else
+				park(t, err);
+		}
+	}
+	if (parked_.empty())
+		DBG("resumed\n");
+	send_out();
 }
 
 /* the device has gone: no more transfers */
@@ -997,8 +1156,16 @@ int UsbLine::pump(dcore::Modem &m)
 	if (dead_)
 		return -1;
 	libusb_handle_events_timeout_completed(ctx_, &zero, nullptr);
+	if (!dead_ && !parked_.empty())
+		resume();
 	if (dead_)
 		return -1;
+	if (handset_due_ && parked_.empty()) {
+		uint16_t status;
+		handset_due_ = false;
+		if (get_reg(GPIO_STATUS, &status))
+			m.local_phone(status & GPIO_HANDSET);
+	}
 	while (rings_) {
 		rings_--;
 		if (hook_ != MODEM_HOOK_OFF)
@@ -1042,6 +1209,8 @@ void UsbLine::close()
 	if (h_ && !dead_ && kind_ == Kind::St7554) {
 		set_reg(FIFO_MASK, 0);
 		set_reg(SSI1_COUNTER, 0);
+		if (wake_)
+			arm_wake(false);
 	}
 	libusb_transfer *all[2 * ISO_TRANSFERS + 1];
 	int n = 0;

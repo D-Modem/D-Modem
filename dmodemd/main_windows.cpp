@@ -220,6 +220,8 @@ int main(int argc, char *argv[])
 	data.load(&m->dsp_info());
 #ifdef DMODEM_USB
 	usb.set_leds(opt.usb_leds);
+	usb.set_wake(opt.usb_wake);
+	usb.set_handset(opt.usb_handset);
 	if (opt.usb && !usb.open(opt.usb, opt.rate))
 		return 255;
 #endif

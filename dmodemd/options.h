@@ -31,6 +31,11 @@ struct Options {
 	   boards that have them) */
 	const char *usb = nullptr;
 	bool usb_leds = false;
+	/* a ring wakes the computer (--usb-wake: the SmartUSB56's USB
+	   remote wakeup armed); the local phone sensed (--usb-handset: its
+	   GPIO 2) */
+	bool usb_wake = false;
+	bool usb_handset = false;
 	unsigned rate = 9600;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem
 	   pair such as com0com's), or TCP connections on [address:]port

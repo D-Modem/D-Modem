@@ -103,6 +103,9 @@ public:
 	   V.34).  Else the line is a digital network's (SIP, a PBX's
 	   channel), which dials the number */
 	virtual bool analog_line(Modem &m) { (void)m; return false; }
+	/* the line tells when a phone on the modem's own jack (the local
+	   phone, V.253's) goes off or on hook (Modem::local_phone()) */
+	virtual bool senses_local_phone(Modem &m) { (void)m; return false; }
 	/* the speaker's volume (ATL, S30 with ATM2), 0: off */
 	virtual void speaker(Modem &m, int volume) { (void)m; (void)volume; }
 	/* the line's delay, which Smart Link's original library asks for
@@ -192,6 +195,12 @@ public:
 
 	/* a ring signal on the line (its cadence is checked) */
 	void ring();
+	/* the local phone (a phone on the modem's own jack: Host's
+	   senses_local_phone()) off or on hook: in voice mode V.253's
+	   event 8, <DLE>H or <DLE>h, to the DTE; logged */
+	void local_phone(bool off_hook);
+	/* (see local_phone()) */
+	bool local_phone_off_hook() const { return local_phone_off_; }
 	/* a call that rings by itself (SIP): on = false, the caller gave up */
 	void ring_signal(bool on);
 	/* hang up (ATH, DTR off); hangup_now() also stops at once;
@@ -549,6 +558,7 @@ private:
 	void *voice_ = nullptr;
 	struct voice_info voice_info_ = {};
 	unsigned voice_events_ = 0;     /* +VEM */
+	bool local_phone_off_ = false;  /* local_phone() */
 	/* the elements of a +VTS string, played in turn: a DTMF digit
 	   (its character), a hook flash, or a tone of f1 and f2 Hz (0:
 	   none); d in 10 ms */

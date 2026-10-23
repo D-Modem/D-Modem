@@ -302,6 +302,29 @@ licence). In `dmodemd/usb_line.cpp`:
   once data has passed in it, both off on hook. Without the option
   dmodemd leaves those GPIOs alone, as another board may use them for
   something else.
+- **Wake on ring.** With `--usb-wake` dmodemd arms the device's USB
+  remote wakeup (SET_FEATURE) if its configuration says it can wake,
+  as Smart Link's Windows driver does when the PC sleeps. The ring
+  detector's interrupt is on while on hook, so a ring wakes the
+  computer. On Linux the kernel must allow it too: dmodemd writes
+  `enabled` to the device's `/sys/bus/usb/devices/<bus>-<ports>/power/wakeup`
+  while it is still root. Started as a user, a udev rule does it:
+  `ATTR{power/wakeup}="enabled"` in the rule above. On Windows,
+  Device Manager's "Allow this device to wake the computer" is the
+  kernel's half. The remote wakeup is cleared when dmodemd exits.
+- **Suspend and resume.** While the computer sleeps the transfers
+  fail. dmodemd keeps them and, every second, sets the device up again
+  (its registers, the remote wakeup, the FIFO: a resume may have reset
+  it) and submits them again. It gives up after 30 s, as for a device
+  gone. A call is lost across a sleep; the rings after the one that woke
+  the computer are heard as usual, so the modem can still answer.
+- **The handset detector.** With `--usb-handset` dmodemd enables the
+  interrupt of GPIO 2 (`GPIO_HANDSET` in Smart Link's Linux source; the
+  Windows driver enables it too and does nothing with it). On each
+  change it reads the GPIO: set is the phone on the modem's PHONE jack
+  off hook, as far as is known (no driver says). The core reports it in
+  voice mode as V.253's local phone event, `<DLE>H` off hook and
+  `<DLE>h` on hook, and lists event 8 in `+VLS=?`.
 - **Unplugged.** dmodemd says so and exits.
 
 Limits: the device's line settings are its own, and it has not yet been
@@ -393,6 +416,8 @@ start from.
 | `--alsa-ctl=<ctl>` | its controls, if not the card's (`hw:1` for `hw:1,0` or `plughw:1,0`; the PCM's own name otherwise) |
 | `--usb=<dev>` | a SmartUSB56 or pico-serial Line (`auto`, the first one; or `<bus>:<address>`, as `lsusb` and `--usb list` show it): the line is a telephone line, not SIP; `--usb list` lists them and exits |
 | `--usb-leds` | a SmartUSB56's carrier and data LEDs lit (GPIO 6 and 13), as on Creative's Modem Blaster; only for a board that has them |
+| `--usb-wake` | a ring wakes the computer: the SmartUSB56's USB remote wakeup armed (and on Linux the kernel's `power/wakeup` of it enabled, as root) |
+| `--usb-handset` | the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook, `<DLE>H` and `<DLE>h` in voice mode |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
@@ -537,8 +562,11 @@ start-up. The test checks that a wrong `<bus>:<address>` is refused, a
 data call (rings, caller ID between the first two rings, the answer at
 the second ring, V.34 at 33600, text each way, the LEDs of the one with
 `--usb-leds` and none on the other), a busy line, a call
-dialled in pulses, a voice call, and that both exit once the exchange
-(the devices) has gone. It needs libusb-1.0-0-dev.
+dialled in pulses, a voice call, the handset detector in voice mode, a
+call that wakes a suspended 1002 (`--usb-wake`: the fake's ring with its
+remote wakeup armed; the device reset on resume, set up again, the call
+answered), and that both exit once the exchange (the devices) has
+gone. It needs libusb-1.0-0-dev.
 
 `dmodemd/test/pico_line_test.py` (ctest's `dmodemd_pico_line`, label
 `alsa`) does the same with two pico-serial Line sticks:

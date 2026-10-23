@@ -93,6 +93,12 @@ class Relay:
 _relays = {}
 
 
+def file_for(dmodemd, path):
+    """a file at path as the fake is given it: the path, or (Windows,
+    under Wine) on its Z: drive"""
+    return "Z:" + path if windows(dmodemd) else path
+
+
 def socket_for(dmodemd, path):
     """what the fake is given for the exchange's socket at path: the
     path, or (Windows) a relay's tcp:<host>:<port>"""

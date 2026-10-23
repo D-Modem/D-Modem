@@ -85,6 +85,10 @@ struct Line final : public dcore::Host {
 	std::vector<std::pair<unsigned long, bool>> edges;
 	/* the line analogue, as the test sets it */
 	bool analog_line(Modem &) override { return analog; }
+	/* the local phone sensed, as the test sets it */
+	bool local_phone = false;
+	/* (see local_phone) */
+	bool senses_local_phone(Modem &) override { return local_phone; }
 	/* a break or make kept with the samples by then; -1 unless pulses */
 	int pulse_hook(Modem &, bool broken) override {
 		if (!pulses)
@@ -472,6 +476,35 @@ TEST(Core, VoiceLineGone)
 	EXPECT_EQ(cmd(m, l, "ATD5551000\r"), "");
 	EXPECT_EQ(gone(), "ERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
+	delete m;
+}
+
+/* the local phone (a phone on the modem's jack) off and on hook: in
+   voice mode V.253's event 8, <DLE>H and <DLE>h, once a change (in any
+   other mode nothing); +VLS=? lists event 8 in every state of both
+   devices on a line that senses it */
+TEST(Core, LocalPhone)
+{
+	Line l;
+	Modem *m = make(l, "phone");
+	l.local_phone = true;
+	auto change = [&](bool off) {
+		l.out.clear();
+		m->local_phone(off);
+		return l.out;
+	};
+
+	EXPECT_EQ(change(true), "");            /* data mode */
+	EXPECT_TRUE(m->local_phone_off_hook());
+	EXPECT_EQ(change(false), "");
+	EXPECT_EQ(cmd(m, l, "ATE0+FCLASS=8\r"), "ATE0+FCLASS=8\r\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
+		  "0,\"\",00800000,00800000,90800000\r\n"
+		  "1,\"T\",0B843060,0B843060,0B843060\r\nOK\r\n");
+	EXPECT_EQ(change(true), "\x10H");
+	EXPECT_EQ(change(true), "");            /* no change */
+	EXPECT_EQ(change(false), "\x10h");
+	EXPECT_FALSE(m->local_phone_off_hook());
 	delete m;
 }
 

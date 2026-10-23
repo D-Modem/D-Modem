@@ -21,9 +21,17 @@
 #   sets them;
 # - 1002 off hook (ATH1), 1001 dials it again: BUSY;
 # - 1001 dials 1002 in pulses (ATDP): both CONNECT;
+# - 1002's handset detector (--usb-handset, the fake's FAKE_ST7554_HANDSET
+#   file): +VLS=? lists V.253's event 8, and the phone on its jack off
+#   and on hook is <DLE>H and <DLE>h in voice mode;
 # - in voice mode (+FCLASS=8) 1001 dials 1002, hears its ringing tone
 #   (<DLE>r); 1002 answers (+VLS=1); 1001's +VTS=5 is 1002's <DLE>5;
 #   1002 hangs up, and 1001 hears the busy tone (<DLE>b);
+# - wake on ring: 1002's remote wakeup armed at the start (--usb-wake;
+#   1001's not); 1002 suspended (the fake's FAKE_ST7554_SUSPEND file: its
+#   transfers fail), 1001 dials it, its ring wakes it (the fake's "remote
+#   wakeup"); resumed (the file gone, the device reset) dmodemd sets it up
+#   again, and 1002 answers: both CONNECT;
 # - the exchange gone (the devices unplugged): both dmodemd say so and
 #   exit.
 #
@@ -144,7 +152,12 @@ try:
     check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56 or pico-serial Line at 2:9" in p.stderr)
 
     a = Modem("1001", "dmodem41", ["--usb-leds"], FAKE_ST7554_LOG="1")
-    b = Modem("1002", "dmodem42", FAKE_ST7554_DAA="1", FAKE_ST7554_LOG="1")
+    suspend = os.path.join(tmp, "1002.suspend")
+    handset = os.path.join(tmp, "1002.handset")
+    b = Modem("1002", "dmodem42", ["--usb-wake", "--usb-handset"],
+              FAKE_ST7554_DAA="1", FAKE_ST7554_LOG="1",
+              FAKE_ST7554_SUSPEND=usb_dte.file_for(dmodemd, suspend),
+              FAKE_ST7554_HANDSET=usb_dte.file_for(dmodemd, handset))
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
         check("%s ATI3: ST7554" % m.n, m.cmd(b"ATI3", rb"ST7554\r\n(\r\n)?OK\r\n"))
@@ -156,6 +169,11 @@ try:
     check("1002 its start-up (register 3 = 0x050)",
           b"fake st7554: 17 = 3050" in b_log())
     check("1001 an STLC7550", b"codec: STLC7550" in log_of(a))
+    check("1002 its remote wakeup armed", b"fake st7554: remote wakeup armed" in b_log())
+    check("1001 its remote wakeup not armed", b"remote wakeup armed" not in log_of(a))
+    if not usb_dte.windows(dmodemd):
+        check("1002 the kernel's power/wakeup tried",
+              b"1-250/power/wakeup" in b_log())
     check("1002 answers at the 2nd ring", b.cmd(b"ATS0=2"))
     check("1002 caller ID on", b.cmd(b"AT#CID=1"))
     check("1001 waits for the dial tone", a.cmd(b"ATX4"))
@@ -214,6 +232,12 @@ try:
     check("1002 no auto answer", b.cmd(b"ATS0=0"))
     check("1001 voice mode", a.cmd(b"AT+FCLASS=8"))
     check("1002 voice mode", b.cmd(b"AT+FCLASS=8"))
+    check("1002 +VLS=? lists event 8 (the local phone)",
+          b.cmd(b"AT+VLS=?", rb'0,"",00800000,00800000,90800000\r\n1,"T",0B843060'))
+    open(handset, "w").close()
+    check("1002 the local phone off hook: <DLE>H", b.expect(rb"\x10H", 5))
+    os.remove(handset)
+    check("1002 the local phone on hook: <DLE>h", b.expect(rb"\x10h", 5))
     t = time.time()
     a.dte.write(b"ATD1002\r")
     check("1002 RING (voice)", b.expect(rb"RING\r\n", 20))
@@ -226,6 +250,35 @@ try:
     check("1002 hangs up", b.cmd(b"AT+VLS=0"))
     check("1001 <DLE>b (the busy tone)", a.expect(rb"\x10b", 10))
     check("1001 ATH", a.cmd(b"ATH"))
+
+    # wake on ring: 1002 asleep, 1001's call wakes it
+    check("1001 data mode", a.cmd(b"AT+FCLASS=0"))
+    check("1002 data mode, answers at the 1st ring", b.cmd(b"AT+FCLASS=0;S0=1"))
+    def wait_log(m, pat, t):
+        """m's log has pat (a regular expression) within t s"""
+        end = time.time() + t
+        while time.time() < end:
+            if re.search(pat, log_of(m)):
+                return True
+            time.sleep(0.1)
+        return False
+    open(suspend, "w").close()
+    check("1002 suspended", wait_log(b, b"fake st7554: suspended", 5))
+    a.dte.write(b"ATD1002\r")
+    check("1002's ring wakes it", wait_log(b, rb"fake st7554: remote wakeup\r?\n", 20))
+    os.remove(suspend)
+    check("1002 resumed", wait_log(b, b"usb: resumed", 10))
+    check("1002 its remote wakeup armed again",
+          log_of(b).count(b"fake st7554: remote wakeup armed") >= 2)
+    check("1002 RING (woken)", b.expect(rb"RING\r\n", 20))
+    ca = a.expect(rb"(CONNECT[^\r]*|NO CARRIER|BUSY|NO DIALTONE|NO ANSWER)\r\n", 60)
+    cb = b.expect(rb"(CONNECT[^\r]*|NO CARRIER)\r\n", 10)
+    check("woken: both CONNECT", ca and cb and ca.group(1).startswith(b"CONNECT")
+          and cb.group(1).startswith(b"CONNECT"))
+    time.sleep(1.2)
+    a.dte.write(b"+++")
+    check("1001 +++ OK (woken)", a.expect(rb"OK\r\n", 5))
+    check("1001 ATH (woken)", a.cmd(b"ATH"))
 
     ex.terminate()
     ex.wait(5)

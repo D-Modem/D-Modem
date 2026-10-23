@@ -309,11 +309,17 @@ const struct VoiceSetting {
    machine (6, <DLE>c) and of a data modem (7, <DLE>e), loop current
    interruption (13, <DLE>l), ringing tone (18, <DLE>r), busy (19,
    <DLE>b), and the answer tones of 2100 Hz (25, <DLE>a) and of 2225 Hz
-   (26, <DLE>f). */
-static const char *const voice_devices[] = {
-	"0,\"\",00000000,00000000,90000000",
-	"1,\"T\",0B043060,0B043060,0B043060",
+   (26, <DLE>f).  A line that senses the local phone (Host's
+   senses_local_phone()) adds its going off or on hook (8, <DLE>H and
+   <DLE>h) to both in every state (LOCAL_PHONE_EVENT). */
+static const struct {
+	const char *label;
+	unsigned long events[3];
+} voice_devices[] = {
+	{ "0,\"\"", { 0x00000000, 0x00000000, 0x90000000 } },
+	{ "1,\"T\"", { 0x0B043060, 0x0B043060, 0x0B043060 } },
 };
+const unsigned long LOCAL_PHONE_EVENT = 0x00800000;
 
 /* v within the bounds lo and hi (0: none) */
 bool in_bounds(unsigned long v, unsigned lo, unsigned hi)
@@ -1393,8 +1399,13 @@ int Modem::at_voice(char *p, int *len)
 				events ? voice_events_ :
 				device && voice_ ? 1 : 0;
 		if (device && q[0] == '=' && q[1] == '?') {
-			for (const char *d : voice_devices) {
-				puts(d);
+			unsigned long more = host_.senses_local_phone(*this) ?
+				LOCAL_PHONE_EVENT : 0;
+			for (const auto &d : voice_devices) {
+				snprintf(line, sizeof(line), "%s,%08lX,%08lX,%08lX",
+					 d.label, d.events[0] | more,
+					 d.events[1] | more, d.events[2] | more);
+				puts(line);
 				crlf();
 			}
 			q += 2;
