@@ -56,7 +56,8 @@ leaves it out: see [V.90 analogue modem](v90a.md)). V.92 as the
 analogue modem has PCM upstream (up to 48000 bit/s; `DSP_V92A_UP=0`
 leaves it out, with its renegotiations and the digital modem's fast
 parameter exchange), quick connect calling and modem-on-hold. K56flex
-and V.8bis are not there (`AT+MS=56`, K56flex, runs V.90). Between two
+and V.8bis are not there (`AT+MS=56`, K56flex, runs V.90; what is known
+of K56flex is in [K56flex](k56flex.md)). Between two
 digital modems V.91 (see [V.91](v91.md#v91-digital-to-digital)) takes
 the place of V.90.
 
