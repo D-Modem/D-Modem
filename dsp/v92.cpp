@@ -188,7 +188,7 @@ int v92_cp_parse(V90Cp *c, const unsigned char *b, int len)
 
 	if (!frame_crc_ok(b, len - 16))
 		return -1;
-	memset(c, 0, sizeof(*c));
+	zero(*c);
 	c->cp = field(b, 19, 2) == 1;
 	c->drn = field(b, 21, 5);
 	c->sr = field(b, 31, 2);
@@ -507,8 +507,8 @@ int V92Up::train(long start, int lo, int hi)
 	DSP_DBG("v92: TRN1u at %+d (of %d..%d): main tap %.0f, %.0f%% of "
 		"the power\n", bl, lo, hi, best / TRN_NC,
 		100 * best * best / (TRN_NC * c0 + 1));
-	memset(A, 0, Av.size() * sizeof(*A));
-	memset(v, 0, sizeof(v));
+	std::fill_n(A, Av.size(), 0);
+	zero(v);
 	for (s = 40; s < TRN_NT; s++) {
 		long base = eqL + s - V92_EQ_PRE;
 		for (i = 0; i < V92_EQ_F; i++)
@@ -622,7 +622,7 @@ void V92Up::adapt(long s, float err, float mu)
 /* t into the past decisions, newest first */
 static void push(float *dh, float t)
 {
-	memmove(dh + 1, dh, (V92_EQ_B - 1) * sizeof(*dh));
+	std::copy_backward(dh, dh + (V92_EQ_B - 1), dh + V92_EQ_B);
 	dh[0] = t;
 }
 
@@ -1066,7 +1066,7 @@ void V92Up::symbol(float y)
 				if (pf_d + V92_PF_F / 2 > ahead)
 					eqL += pf_d + V92_PF_F / 2 - ahead;
 				pf_rx_take();
-				memset(pf_xr, 0, sizeof(pf_xr));
+				zero(pf_xr);
 				pf_rst = -1;
 				dmse_g = 0;
 			}
@@ -1076,7 +1076,7 @@ void V92Up::symbol(float y)
 			dsn = ddn = 0;
 			neg_step = ns_n = pq_on = 0;
 			ns_odd = ns_even = pq_eq = pq_ed = 0;
-			memset(pq_x, 0, sizeof(pq_x));
+			zero(pq_x);
 			fpe_rx = fpe_sw = 0;
 			dmse = 0;
 			vi = 0;
@@ -1432,7 +1432,7 @@ struct Big {
 	unsigned w[4];          /* least significant first */
 
 	/* this = v */
-	void set(unsigned v) { memset(w, 0, sizeof(w)); w[0] = v; }
+	void set(unsigned v) { zero(w); w[0] = v; }
 	/* this = this * m + a, modulo 2^128 */
 	void muladd(unsigned m, unsigned a)
 	{
@@ -1896,8 +1896,8 @@ int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 		g *= gamma;
 		bg[j] = b[j] * g;
 	}
-	memset(A, 0, Av.size() * sizeof(*A));
-	memset(v, 0, sizeof(v));
+	std::fill_n(A, Av.size(), 0);
+	zero(v);
 	for (sn = s0; sn < sym; sn++) {
 		long base = eqL + sn - V92_EQ_PRE;
 		double t = dring[sn & (V92_DR - 1)];
@@ -1936,11 +1936,11 @@ void V92Up::fit_sections(V92Cpd *c) const
 {
 	if (!(ia.sections & 1)) {
 		c->len[0] = 0;
-		memset(c->coef[0], 0, sizeof(c->coef[0]));
+		zero(c->coef[0]);
 	}
 	if (!(ia.sections & 2)) {
 		c->len[3] = 0;
-		memset(c->coef[3], 0, sizeof(c->coef[3]));
+		zero(c->coef[3]);
 	}
 }
 
@@ -2052,7 +2052,7 @@ void V92Up::design()
 		pre = 0;
 		best = 0;
 	}
-	memset(&cpd, 0, sizeof(cpd));
+	zero(cpd);
 	cpd.drn = drn;
 	for (i = 0; i < 12; i++)
 		cpd.M[i] = M;
@@ -2066,7 +2066,7 @@ void V92Up::design()
 	fit_sections(&cpd);
 	cpd.coef[2][0] = 32767;
 	if (pre) {
-		memcpy(f, fgs[best], sizeof(f));
+		copy_array(f, fgs[best]);
 		mse_trn = static_cast<float>(e2s[best]);
 		for (j = 0; j < V92_EQ_B; j++) {
 			long q = lrint(-bgs[best][j] * 16384);
@@ -2133,8 +2133,8 @@ int V92Up::ch_fit(double *e2, double *q2)
 	long cnt = 0;
 	int i, j;
 
-	memset(A, 0, Av.size() * sizeof(*A));
-	memset(v, 0, sizeof(v));
+	std::fill_n(A, Av.size(), 0);
+	zero(v);
 	for (sn = s0; sn <= s1; sn++) {
 		double r = at(buf, eqL + sn);
 		for (j = 0; j < V92_CH; j++)
@@ -2203,7 +2203,7 @@ int V92Up::pf_filter(double n0, double *resid, int dfix)
 		double J = 0, ww = 0, r = 0;
 		if (kd + V92_PF_B >= K)
 			break;
-		memcpy(A, G, Av.size() * sizeof(*A));
+		std::copy_n(G, Av.size(), A);
 		/* the main tap and the precoder's are free */
 		for (k = kd; k <= kd + V92_PF_B; k++)
 			for (i = 0; i < V92_PF_W; i++) {
@@ -2244,7 +2244,7 @@ int V92Up::pf_filter(double n0, double *resid, int dfix)
 		if (best < 0 || J < best) {
 			best = J;
 			pf_d = d;
-			memcpy(pf_w, w, sizeof(w));
+			copy_array(pf_w, w);
 			for (k = 0; k < V92_PF_B; k++)
 				pf_b[k] = c[kd + 1 + k];
 		}
@@ -2526,10 +2526,10 @@ void V92Up::pf_reset(long r)
    nothing (against this channel) */
 void V92Up::pf_rx_take()
 {
-	memcpy(pf_rw, pf_w, sizeof(pf_rw));
-	memcpy(pf_rb, pf_b, sizeof(pf_rb));
+	copy_array(pf_rw, pf_w);
+	copy_array(pf_rb, pf_b);
 	pf_rcd = pf_cd;
-	memset(pf_f, 0, sizeof(pf_f));
+	zero(pf_f);
 	pf_f[V92_PF_F / 2] = 1 / pf_rcd;
 	pf_new = 0;
 	/* the channel's derivative: band limited, d/dt of the sinc
@@ -2656,16 +2656,16 @@ int V92Up::pf_slip_design()
 	   design */
 	if (sym - sl_t1 > 8000)
 		t += (t - sl_tau1) / (sym - sl_t1) * (8000 + 3000);
-	memcpy(ch0, ch, sizeof(ch));
+	copy_array(ch0, ch);
 	for (j = 0; j < V92_CH; j++) {
 		ch[j] = (1 + g) * ch[j] + t * pf_dch[j];
 		hh += ch[j] * ch[j];
 	}
 	if (pf_filter(1e-3 + pf_noise * pf_noise / hh, &resid, pf_d) ||
 	    pf_quant()) {
-		memcpy(ch, ch0, sizeof(ch));
-		memcpy(pf_w, pf_rw, sizeof(pf_w));
-		memcpy(pf_b, pf_rb, sizeof(pf_b));
+		copy_array(ch, ch0);
+		copy_array(pf_w, pf_rw);
+		copy_array(pf_b, pf_rb);
 		pf_cd = pf_rcd;
 		return -1;
 	}
@@ -2713,7 +2713,7 @@ int V92Up::pf_cpd(V92Cpd *c, int drn)
 	if (lc > V92_LC_MAX || !gap || !pf_points(gap, lc, pts))
 		return -1;
 	int ack = c->ack;
-	memset(c, 0, sizeof(*c));
+	zero(*c);
 	c->ack = ack;
 	c->drn = drn;
 	for (j = 0; j < 12; j++)

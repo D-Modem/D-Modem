@@ -534,8 +534,8 @@ void V90Rx::dil_analyse()
 	char rb[16] = "none";
 	int j, u, m, nr = 0, nm, pd, most = 0;
 
-	memset(dil_level, 0, sizeof(dil_level));
-	memset(dil_usable, 0, sizeof(dil_usable));
+	zero(dil_level);
+	zero(dil_usable);
 	for (j = 0; j < 6; j++)
 		for (u = 0; u < 128; u++) {
 			int n_ = dcnt[j][u];
@@ -776,8 +776,8 @@ void V90Rx::sample(float v)
 		if (!ev_ready && t_n >= TIM_LOCK && ls2_n < V90RX_LS) {
 			int j;
 			if (!ls2_n) {
-				memset(R, 0, sizeof(R));
-				memset(p, 0, sizeof(p));
+				zero(R);
+				zero(p);
 			}
 			for (i = 0; i < V90RX_TAPS; i++) {
 				float xi = xin(k, i);
@@ -908,10 +908,10 @@ static void cp_masks(V90Cp *cp, const int pts[6][128], const int *n)
 	int i, j, m;
 
 	cp->ncon = 0;
-	memset(cp->mask, 0, sizeof(cp->mask));
+	zero(cp->mask);
 	for (i = 0; i < 6; i++) {
 		unsigned char mk[128];
-		memset(mk, 0, sizeof(mk));
+		zero(mk);
 		for (m = 0; m < n[i]; m++)
 			mk[pts[i][m]] = 1;
 		for (j = 0; j < cp->ncon; j++)
@@ -927,7 +927,7 @@ static void cp_masks(V90Cp *cp, const int pts[6][128], const int *n)
    upstream rate */
 static void cp_common(V90Cp *cp, int alaw)
 {
-	memset(cp, 0, sizeof(*cp));
+	zero(*cp);
 	cp->alaw = alaw;
 	cp->rate_mask = 0x1FFF;
 }
@@ -1396,7 +1396,7 @@ void V90Rx::mp_bit(int bit)
 		return;
 	}
 	if ((msr & 0x3FFFF) == 0x3FFFE) {
-		memset(mpb, 1, 17);
+		std::fill_n(mpb, 17, 1);
 		mpb[17] = 0;
 		mp_n = 18;
 		mp_len = 0;
@@ -1419,7 +1419,7 @@ void V90Rx::frame()
 
 	if (known) {
 		unsigned char one[48];
-		memset(one, 1, sizeof(one));
+		std::fill(std::begin(one), std::end(one), 1);
 		ref.push(one, 0);
 		ref.pop(out);
 	}

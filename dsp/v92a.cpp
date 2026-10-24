@@ -244,7 +244,7 @@ struct Wide {
 	unsigned w[4];
 
 	/* the value v */
-	void set(unsigned v) { memset(w, 0, sizeof(w)); w[0] = v; }
+	void set(unsigned v) { zero(w); w[0] = v; }
 	/* this times m (the carry past 2^128 lost) */
 	void mul(unsigned m)
 	{
@@ -299,9 +299,9 @@ void V92ATx::data_reset()
 	dprev = 0;
 	tstate = 0;
 	dsrc = V92A_D_LINK;
-	memset(uh, 0, sizeof(uh));
-	memset(xh, 0, sizeof(xh));
-	memset(vh, 0, sizeof(vh));
+	zero(uh);
+	zero(xh);
+	zero(vh);
 }
 
 /* a data frame's K bits (B1u's ones the first 48 frames; in a fast
@@ -343,9 +343,9 @@ void V92ATx::data_frame()
 			scr = 0;
 			dprev = 0;
 			if (fpe_reset) {
-				memset(uh, 0, sizeof(uh));
-				memset(xh, 0, sizeof(xh));
-				memset(vh, 0, sizeof(vh));
+				zero(uh);
+				zero(xh);
+				zero(vh);
 			}
 		}
 		return;
@@ -369,16 +369,16 @@ void V92ATx::data_frame()
 			dsrc_n = 0;
 		}
 	} else if (dsrc == V92A_D_E2U) {
-		memset(b, 0, K);
+		std::fill_n(b, K, 0);
 		dsrc = V92A_D_FB1U;
 		dsrc_n = 0;
 	} else if (dsrc == V92A_D_FB1U) {
-		memset(b, 1, K);
+		std::fill_n(b, K, 1);
 		/* B1u on the new CPd after the 48th, everything anew */
 		if (++dsrc_n == 48)
 			b1u_next = 1;
 	} else if (frames < 48)
-		memset(b, 1, K);
+		std::fill_n(b, K, 1);
 	else
 		link.get(b, K);
 	if (dsrc == V92A_D_LINK)
@@ -448,15 +448,15 @@ float V92ATx::data_symbol()
 	eta[k] = best;
 	x = point(c, best) + fb;
 	/* the prefilter */
-	memmove(uh + 1, uh, (V92A_HIST - 1) * sizeof(*uh));
-	memmove(xh + 1, xh, (V92A_HIST - 1) * sizeof(*xh));
+	std::copy_backward(uh, uh + (V92A_HIST - 1), uh + V92A_HIST);
+	std::copy_backward(xh, xh + (V92A_HIST - 1), xh + V92A_HIST);
 	uh[0] = point(c, best);
 	xh[0] = x;
 	for (i = 0; i < cpd.len[2]; i++)
 		v += z2[i] / 32768.0 * xh[i];
 	for (i = 1; i <= cpd.len[3]; i++)
 		v += p2[i - 1] / 16384.0 * vh[i - 1];
-	memmove(vh + 1, vh, (V92A_HIST - 1) * sizeof(*vh));
+	std::copy_backward(vh, vh + (V92A_HIST - 1), vh + V92A_HIST);
 	vh[0] = v;
 	if (k == 3) {
 		int l0 = v34_subset_label(2 * eta[0] + 1, 2 * eta[1] + 1);

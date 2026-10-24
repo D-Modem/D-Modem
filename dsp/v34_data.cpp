@@ -120,8 +120,8 @@ int V34Params::shell_tables()
 	int M_ = M, i, j;
 	if (M_ < 1 || 2 * M_ - 1 > V34_G2_LEN || 8 * M_ - 6 > V34_Z8_LEN)
 		return -1;
-	memset(g2, 0, sizeof(g2));
-	memset(g4, 0, sizeof(g4));
+	zero(g2);
+	zero(g4);
 	for (i = 0; i < M_; i++)
 		for (j = 0; j < M_; j++)
 			g2[i + j]++;
@@ -474,8 +474,8 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 			if (i < bb - 8)
 				ib[i] |= bits[n++] << 2;
 		}
-		memset(m, 0, sizeof(m));
-		memset(qb, 0, sizeof(qb));
+		zero(m);
+		zero(qb);
 	}
 
 	for (i = 0; i < 4; i++) {
@@ -550,7 +550,8 @@ static short lookup[46][46];
 static void make_lookup(void)
 {
 	int i, k;
-	memset(lookup, 0xFF, sizeof(lookup));
+	for (auto &row : lookup)
+		std::fill(std::begin(row), std::end(row), -1);
 	for (i = 0; i < 416; i++)
 		for (k = 0; k < 4; k++) {
 			int x = v34_quarter[i][0], y = v34_quarter[i][1];

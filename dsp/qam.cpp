@@ -44,7 +44,7 @@ void QamTx::init(int srate_, float carrier_, float baud,
 /* the symbols still in the pulse shaping filter are dropped */
 void QamTx::flush()
 {
-	memset(sym, 0, sizeof(sym));
+	zero(sym);
 }
 
 /* the root raised cosine pulse at t_ symbol periods from its centre,
@@ -137,7 +137,7 @@ void QamRx::release()
    frequency and the timing integrator to 0; AGC and buffers are kept */
 void QamRx::reset()
 {
-	memset(eq, 0, sizeof(eq));
+	zero(eq);
 	eq[eq_len / 2 & ~1].re = 1;
 	theta = dtheta = 0;
 	t_adj = 0;
@@ -186,7 +186,8 @@ int QamRx::sample(float x)
 		}
 		s = cplx_scale(s, agc_gain);
 
-		memmove(eq_buf + 1, eq_buf, (eq_len - 1) * sizeof(cplx));
+		std::copy_backward(eq_buf, eq_buf + eq_len - 1,
+				   eq_buf + eq_len);
 		eq_buf[0] = s;
 		t_next += sps / 2;
 

@@ -531,7 +531,7 @@ void Fax::t38_ind(int ind)
 	if (ind == t38_last_ind)
 		return;
 	t38_last_ind = ind;
-	memset(&p, 0, sizeof(p));
+	zero(p);
 	p.type = ind;
 	if (t38_tx)
 		t38_tx(t38_ctx, &p);
@@ -544,7 +544,7 @@ void Fax::t38_data(int ftype, const u8 *d, int n, int end)
 {
 	struct t38_ifp p;
 
-	memset(&p, 0, sizeof(p));
+	zero(p);
 	p.data = 1;
 	p.type = t38_kind == TK_V21 ? T38_DATA_V21 : mod_t38_data(t38_mod);
 	if (n > 0) {
@@ -1457,7 +1457,7 @@ int FAX_process(void *obj, void *in, void *out, int count)
 
 	if (f->nstatus) {
 		status = f->status[0];
-		memmove(f->status, f->status + 1, (f->nstatus - 1) * sizeof(int));
+		std::copy(f->status + 1, f->status + f->nstatus, f->status);
 		f->nstatus--;
 		DSP_DBG("fax: status %d\n", status);
 	}

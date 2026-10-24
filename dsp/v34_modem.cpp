@@ -728,8 +728,8 @@ void V34Rx::ls_window(cplx d, long start)
 		qam.recompute();
 		have_ls = 1;
 		/* the error of the new solution from here on */
-		memset(err_r, 0, sizeof(err_r));
-		memset(err_h, 0, sizeof(err_h));
+		zero(err_r);
+		zero(err_h);
 		err_n = 0;
 		c0 = eq_delay();
 		/* the sample clock offset from the delays of successive
@@ -908,7 +908,7 @@ void V34Rx::symbol()
 			if (phase4 && have_good) {
 				/* the same channel as in phase 3 (or in data
 				   mode, without the precoder's 1 + H(z)) */
-				memcpy(qam.eq, good_eq, sizeof(qam.eq));
+				copy_array(qam.eq, good_eq);
 				qam.eq_len = V34_EQ_LEN;
 				mse = 0.05f;
 			}
@@ -965,7 +965,7 @@ void V34Rx::symbol()
 			}
 		}
 		if (mse < 0.02f && (n & 255) == 0) {
-			memcpy(good_eq, qam.eq, sizeof(good_eq));
+			copy_array(good_eq, qam.eq);
 			have_good = 1;
 		}
 		ls_train(d);
@@ -1008,7 +1008,7 @@ void V34Rx::symbol()
 			/* the equalizer to go back to in a renegotiation (with
 			   precoding, the one from the training) */
 			if (!drx.p.precode && mse < 0.15f && (n & 255) == 0)
-				memcpy(good_eq, qam.eq, sizeof(good_eq));
+				copy_array(good_eq, qam.eq);
 			if ((n & 63) == 0) {
 				mse_old = mse_mid;
 				mse_mid = mse;
@@ -1040,7 +1040,7 @@ void V34Rx::reneg_s()
 	mp_n = 0;
 	after_mp = 0;
 	ones = 0;
-	memset(&mp, 0, sizeof(mp));
+	zero(mp);
 	s_count = 0;
 	set_stage(V34_RX_S);
 }
@@ -1055,13 +1055,13 @@ void V34Rx::precode_eq(const V34Params *p)
 	/* never on top of an earlier 1 + H(z): from the equalizer
 	   without it */
 	if (qam.eq_len > V34_EQ_LEN && have_good) {
-		memcpy(qam.eq, good_eq, sizeof(qam.eq));
+		copy_array(qam.eq, good_eq);
 		qam.eq_len = V34_EQ_LEN;
 	}
 	/* the one a renegotiation goes back to (S-bar), when the training
 	   kept none: this one, as trained */
 	if (!have_good) {
-		memcpy(good_eq, qam.eq, sizeof(good_eq));
+		copy_array(good_eq, qam.eq);
 		for (i = qam.eq_len; i < QAM_MAX_EQ; i++)
 			good_eq[i] = cplx_make(0, 0);
 		have_good = 1;
@@ -1082,7 +1082,7 @@ void V34Rx::precode_eq(const V34Params *p)
 	}
 	DSP_DBG("v34 rx: the precoder's 1 + H(z) into the equalizer: %d "
 		"taps -> %d\n", qam.eq_len, len);
-	memcpy(qam.eq, eq, len * sizeof(cplx));
+	std::copy_n(eq, len, qam.eq);
 	qam.eq_len = len;
 }
 
@@ -1111,7 +1111,7 @@ float V34Rx::precoder(int h[6]) const
 	double eps, s;
 	int i, j, k;
 
-	memset(h, 0, 6 * sizeof(int));
+	std::fill_n(h, 6, 0);
 	if (err_n < 500 || err_r[0] <= 0)
 		return 0;
 	for (k = 0; k < 4; k++) {

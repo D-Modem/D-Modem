@@ -13,6 +13,7 @@
 #include <cstring>
 
 #include "bits.h"
+#include "reinit.h"
 #include "vcvm_startup.h"
 
 namespace dsp {
@@ -392,7 +393,7 @@ void VcvmProbeRx::run()
    phase error says no have none */
 static double load_comb(const VcvmCombMeas &cm, int allowed, VcvmLoad *l)
 {
-	memset(l, 0, sizeof(*l));
+	zero(*l);
 	double bits = 0;
 	for (int k = 0; k < cm.tones; k++) {
 		if (cm.level_db[k] < -20)

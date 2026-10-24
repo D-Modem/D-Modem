@@ -730,7 +730,7 @@ void T30::got_dcs(const unsigned char *fif, int len)
 		ecm_on ? ", ECM" : "");
 	/* the training check follows on the fast modulation */
 	zero_run = max_zero_run = tcf_trained = 0;
-	memset(&mem, 0, sizeof(mem));
+	zero(mem);
 	start_fast(0);
 	set_state(S_RX_TCF);
 	start_timer(T4_MS + 1500);
@@ -1157,7 +1157,7 @@ void T30::sender_message()
 			int map_len = msg_len[nmsg - 1] - 3;
 			tries = 0;
 			rnr_count = 0;
-			memset(ecm_send, 0, sizeof(ecm_send));
+			zero(ecm_send);
 			for (k = 0; k < ecm_frames && k / 8 < map_len; k++)
 				if (map[k / 8] >> (k % 8) & 1) {
 					ecm_send[k / 8] |= 1 << (k % 8);
@@ -1237,7 +1237,7 @@ void T30::start_ecm_block()
 		n = ECM_FRAMES;
 	ecm_frames = static_cast<int>(n);
 	ecm_last = ecm_doc_pos + n * ecm_size >= ecm_doc.size();
-	memset(ecm_send, 0, sizeof(ecm_send));
+	zero(ecm_send);
 	for (int k = 0; k < ecm_frames; k++)
 		ecm_send[k / 8] |= 1 << (k % 8);
 	ppr_count = 0;
@@ -1474,7 +1474,7 @@ void T30::got_pps(const unsigned char *fif, int len)
 	   burst's on the later ones */
 	if (n > ecm_rx_frames)
 		ecm_rx_frames = n;
-	memset(map, 0, sizeof(map));
+	zero(map);
 	for (k = 0; k < ecm_rx_frames; k++)
 		if (ecm_rx_len[k] < 0) {
 			map[k / 8] |= 1 << (k % 8);
@@ -1575,7 +1575,7 @@ void T30::t38_ind(int ind)
 	if (ind == t38_last_ind)
 		return;
 	t38_last_ind = ind;
-	memset(&p, 0, sizeof(p));
+	zero(p);
 	p.type = ind;
 	if (!tx_mute && cfg.t38_tx)
 		cfg.t38_tx(cfg.ctx, &p);
@@ -1586,7 +1586,7 @@ void T30::t38_ind(int ind)
 void T30::t38_data(int type, const unsigned char *d, int n, int end)
 {
 	struct t38_ifp p;
-	memset(&p, 0, sizeof(p));
+	zero(p);
 	p.data = 1;
 	p.type = t38_kind == T38_TX_V21 ? T38_DATA_V21 : rates[rate].t38_data;
 	if (n > 0) {
@@ -2241,7 +2241,7 @@ void t30_free(T30 *t)
 /* how the call goes, into s */
 void t30_get_status(T30 *t, struct t30_status *s)
 {
-	memset(s, 0, sizeof(*s));
+	zero(*s);
 	s->result = t->result;
 	s->done = t->state == S_DONE;
 	/* sending: the MCF to our EOP made it OK (send_dcn()); receiving:
@@ -2254,7 +2254,7 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->bps = rates[t->rate].bps;
 	s->fine = t->fine;
 	s->ecm = t->ecm_on;
-	memcpy(s->remote_ident, t->remote_ident, sizeof(s->remote_ident));
+	copy_array(s->remote_ident, t->remote_ident);
 	s->phase = state_name[t->state];
 }
 

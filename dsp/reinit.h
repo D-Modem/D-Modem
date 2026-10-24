@@ -3,15 +3,19 @@
  * Copyright (C) 2026 Neo-Desktop
  *
  *    reinit.h - an object back to its value-initialised state, in place;
- *               a buffer allocated without an exception
+ *               a buffer allocated without an exception; plain arrays
+ *               and records zeroed and copied with their types checked
  *
  */
 
 #ifndef DSP_REINIT_H
 #define DSP_REINIT_H
 
+#include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <new>
+#include <type_traits>
 
 namespace dsp {
 
@@ -59,6 +63,46 @@ template <class V>
 inline void free_buffer(V &v) noexcept
 {
 	V().swap(v);
+}
+
+/* o all zeros, as a memset() of it: o is a plain record or number (no
+   constructor, no default member values, not a pointer) */
+template <class T>
+inline void zero(T &o)
+{
+	static_assert(std::is_trivially_default_constructible<T>::value &&
+			      std::is_trivially_copyable<T>::value &&
+			      !std::is_pointer<T>::value,
+		      "zero() is for plain records and numbers");
+	o = T();
+}
+
+/* every element of a all zeros (see zero(T &)), arrays of arrays too */
+template <class T, std::size_t N>
+inline void zero(T (&a)[N])
+{
+	if constexpr (std::is_array<T>::value) {
+		for (auto &x : a)
+			zero(x);
+	} else {
+		static_assert(
+			std::is_trivially_default_constructible<T>::value &&
+				std::is_trivially_copyable<T>::value,
+			"zero() is for arrays of plain records and numbers");
+		std::fill(std::begin(a), std::end(a), T());
+	}
+}
+
+/* d a copy of s: arrays of one type and size, arrays of arrays too */
+template <class T, std::size_t N>
+inline void copy_array(T (&d)[N], const T (&s)[N])
+{
+	if constexpr (std::is_array<T>::value) {
+		for (std::size_t i = 0; i < N; i++)
+			copy_array(d[i], s[i]);
+	} else {
+		std::copy(std::begin(s), std::end(s), d);
+	}
 }
 
 } // namespace dsp

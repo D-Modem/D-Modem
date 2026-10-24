@@ -343,7 +343,7 @@ void V22Pump::rx_bits(int dquad, int q34_16, int dq_raw)
 /* the equalizer back to a single centre tap */
 void V22Pump::eq_reset()
 {
-	memset(eq, 0, sizeof(eq));
+	zero(eq);
 	eq[V22_EQ_LEN / 2].re = 1;
 }
 
@@ -448,7 +448,7 @@ void V22Pump::rx_symbol(cplx y)
 void V22Pump::rx_reset()
 {
 	eq_reset();
-	memset(eq_buf, 0, sizeof(eq_buf));
+	zero(eq_buf);
 	theta = dtheta = 0;
 	t_adj = 0;
 	agc_pwr = 0;
@@ -496,7 +496,7 @@ void V22Pump::rx_sample(float x)
 		sqrtf(V22_SYM_POWER * (1 - V22_ALPHA / 4) / agc_pwr) : 0;
 	y = cplx_scale(y, g);
 
-	memmove(hist, hist + 1, 3 * sizeof(cplx));
+	std::copy(hist + 1, hist + 4, hist);
 	hist[3] = y;
 
 	/* T/2 samples at t_next (in samples behind hist[2]) */
@@ -514,8 +514,8 @@ void V22Pump::rx_sample(float x)
 		s.im = c0 * hist[0].im + c1 * hist[1].im +
 			c2 * hist[2].im + c3 * hist[3].im;
 
-		memmove(eq_buf + 1, eq_buf,
-			(V22_EQ_LEN - 1) * sizeof(cplx));
+		std::copy_backward(eq_buf, eq_buf + V22_EQ_LEN - 1,
+				   eq_buf + V22_EQ_LEN);
 		eq_buf[0] = s;
 		t_next += sps / 2;
 

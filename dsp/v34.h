@@ -478,8 +478,8 @@ struct V34Rx {
 	/* clears the error autocorrelation that precoder() works from */
 	void err_reset()
 	{
-		memset(err_r, 0, sizeof(err_r));
-		memset(err_h, 0, sizeof(err_h));
+		zero(err_r);
+		zero(err_h);
 		err_n = 0;
 	}
 	void start_data(const V34Params *p, CoreBits link);

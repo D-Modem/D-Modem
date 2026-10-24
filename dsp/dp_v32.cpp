@@ -381,7 +381,7 @@ cplx V32Pump::tx_data_symbol()
 	if (r->nbits == 2)
 		return tx_word_symbol(0, 1);
 	if (tx_syms < V32_B1_SYMS)
-		memset(bits, 1, r->nbits);
+		std::fill_n(bits, r->nbits, 1);
 	else
 		modem_get_bits(modem, 1, bits, r->nbits);
 	for (k = 0; k < r->nbits; k++)

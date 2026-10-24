@@ -1763,7 +1763,7 @@ int V34Probe<P>::probe_analyse()
 	       ptone[26];
 	int i, k, n, b, best = 1;
 
-	memset(rate_of_baud, 0, sizeof(rate_of_baud));
+	zero(rate_of_baud);
 	if (periods < 4)
 		return 1;
 	pt = ptotal / pcount;
@@ -1838,7 +1838,7 @@ void V34Cc<P>::info_frame(CcRx *r)
 	r->zeros = 0;
 	r->rev_cand = 0;
 	r->hist_n = 0;
-	memset(r->ph_n, 0, sizeof(r->ph_n));
+	zero(r->ph_n);
 	if (!ev_info0) {
 		if (self.v90a_on) {
 			/* the digital modem's INFO0d: its network's law is
@@ -3023,7 +3023,7 @@ void V34Pump::v90a_start()
 					      0, 1, 0, 0, 1, 1 };
 	int i;
 	ptx.init(baud_tx, rinfo1c.r[baud_tx].high, 0);
-	memset(&v90a_dil, 0, sizeof(v90a_dil));
+	zero(v90a_dil);
 	v90a_dil.lsp = v90a_dil.ltp = 1;
 	if (env_on("DSP_V90A_DIL")) {
 		v90a_dil.n = 128;
@@ -3036,7 +3036,7 @@ void V34Pump::v90a_start()
 			v90a_dil.ref[i] = v90a_uinfo;
 		}
 		v90a_dil.lsp = 12;
-		memcpy(v90a_dil.sp, sp, sizeof(sp));
+		std::copy(std::begin(sp), std::end(sp), v90a_dil.sp);
 		v90a_dil.tp[0] = 1;
 	}
 	ptx.nbits = v90a_dil.build(ptx.bits);
@@ -3436,7 +3436,7 @@ void V34Pump::v90_make_mp(int ack)
 			"symbols): h %d %d %d %d %d %d\n", gain, prx.err_n,
 			mp_h[0], mp_h[1], mp_h[2], mp_h[3], mp_h[4], mp_h[5]);
 		if (gain < precode_min)
-			memset(mp_h, 0, sizeof(mp_h));
+			zero(mp_h);
 	}
 	seq_len = v90_mp_build(seq, max_rate_rx, V34_TRELLIS, 1, ack,
 				 0x1FFF, mp_h);
@@ -3583,7 +3583,7 @@ int V34Pump::data_setup()
 void V34Pump::mp_start()
 {
 	V34Mp *mp = &ptx.mp;
-	memset(mp, 0, sizeof(*mp));
+	zero(*mp);
 	mp->type = 1;
 	/* test: DSP_V34_RX_MAX=<n> asks for at most n * 2400 bit/s */
 	if (int m = env_int("DSP_V34_RX_MAX"); m > 0 && max_rate_rx > m)
@@ -3604,7 +3604,7 @@ void V34Pump::mp_start()
 			"%d\n", gain, mp->h[0], mp->h[1], mp->h[2], mp->h[3],
 			mp->h[4], mp->h[5]);
 		if (gain < precode_min)
-			memset(mp->h, 0, sizeof(mp->h));
+			zero(mp->h);
 	}
 	tx_next(P4_MP, V34_TX_MP);
 }
@@ -3668,8 +3668,8 @@ void V34Retrain<P>::retrain(const char *why, int by)
 	self.tone_blocks = self.probe_blocks = 0;
 	self.pblock_e = 0;
 	self.l1_start = 0;
-	memset(self.pacc, 0, sizeof(self.pacc));
-	memset(self.pprev, 0, sizeof(self.pprev));
+	zero(self.pacc);
+	zero(self.pprev);
 	self.ptotal = self.pdiff = 0;
 	self.pcount = 0;
 	rt_blocks = rt_heard = 0;
@@ -5203,7 +5203,7 @@ int V34Pump::handshake()
 		/* SCR (ones, as CP is sent: a frame of 2 bits) after the
 		   CPt going out */
 		if (v90rx.ev_ribar) {
-			memset(ptx.cp_next, 1, 2);
+			std::fill_n(ptx.cp_next, 2, 1);
 			ptx.cp_next_n = 2;
 			set_state(P4V_SCR);
 			break;
@@ -5899,7 +5899,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 
 	/* silence where an early return (V.8 done, another pump, an error)
 	   leaves the block unwritten */
-	memset(dst, 0, cnt * sizeof(*dst));
+	std::fill_n(dst, cnt, 0);
 	for (i = 0; i < cnt; i++) {
 		if (state == V91_RUN) {
 			int y91, ev = v91m.sample(src[i], &y91);
@@ -6026,8 +6026,9 @@ int V34Pump::process(void *in, void *out, int cnt)
 			float rf = 0;
 			if (pcm_tx && ref_n) {
 				rf = ref_fifo[0];
-				memmove(ref_fifo, ref_fifo + 1,
-					--ref_n * sizeof(float));
+				std::copy(ref_fifo + 1, ref_fifo + ref_n,
+					  ref_fifo);
+				ref_n--;
 			}
 			r = sample(up[k], &y, pcm_tx ? &rf : nullptr);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
@@ -6041,8 +6042,8 @@ int V34Pump::process(void *in, void *out, int cnt)
 		y = 0;
 		if (fifo_n) {
 			y = fifo[0];
-			memmove(fifo, fifo + 1,
-				--fifo_n * sizeof(fifo[0]));
+			std::copy(fifo + 1, fifo + fifo_n, fifo);
+			fifo_n--;
 		}
 		if (pcm_tx)
 			y = pcm_;

@@ -11,6 +11,7 @@
 
 #include <cstring>
 
+#include "reinit.h"
 #include "rs.h"
 
 namespace dsp {
@@ -92,7 +93,7 @@ int ReedSolomon::decode(uint8_t *cw, const uint8_t *erased) const
 		for (int j = ne; j > 0; j--)
 			lam[j] ^= mul(lam[j - 1], X);
 	}
-	memcpy(b, lam, sizeof(lam));
+	copy_array(b, lam);
 	int L = ne;
 	for (int r = ne; r < nc; r++) {
 		uint8_t d = 0;
@@ -115,7 +116,7 @@ int ReedSolomon::decode(uint8_t *cw, const uint8_t *erased) const
 			memmove(b + 1, b, static_cast<size_t>(nc));
 			b[0] = 0;
 		}
-		memcpy(lam, t, sizeof(t));
+		copy_array(lam, t);
 	}
 	int deg = 0;
 	for (int i = 0; i <= nc; i++)

@@ -476,7 +476,7 @@ void SyncFrames::init(Kind k, int max_len)
 /* see v34.h */
 void SyncFrames::start()
 {
-	memset(b, 1, 17);
+	std::fill_n(b, 17, 1);
 	b[17] = 0;
 	n = 18;
 	len = 0;
@@ -886,7 +886,7 @@ void V90Enc::decide_frame(int depth)
 			bw = w;
 			best = r;
 			bsg = sg;
-			memcpy(bst, st, sizeof(st));
+			copy_array(bst, st);
 		}
 	}
 	Q = best;
@@ -895,7 +895,7 @@ void V90Enc::decide_frame(int depth)
 	y1 = bst[1];
 	v1 = bst[2];
 	/* into the data frame */
-	memcpy(mag_acc + nsh * s->fs, s->mag, s->fs * sizeof(int));
+	std::copy_n(s->mag, s->fs, mag_acc + nsh * s->fs);
 	sign_acc |= bsg << (nsh * s->fs);
 	if (++nsh == sr) {
 		int i;
@@ -906,7 +906,8 @@ void V90Enc::decide_frame(int depth)
 		nsh = 0;
 		sign_acc = 0;
 	}
-	memmove(q, q + 1, --qn * sizeof(q[0]));
+	std::copy(q + 1, q + qn, q);
+	qn--;
 }
 
 /* a data frame of D bits in (see v90.h): the modulus encoder, the sign
@@ -946,7 +947,7 @@ void V90Enc::push(const unsigned char *bits, int last_)
 			s->fs = fs;
 			s->p = 0;
 			s->last = last_ && f == sr - 1;
-			memcpy(s->mag, mag + f * fs, fs * sizeof(int));
+			std::copy_n(mag + f * fs, fs, s->mag);
 			for (i = 1; i < fs; i++) {
 				int bit = d[k++];
 				if (i & 1) {
@@ -977,7 +978,7 @@ int V90Enc::pop(int out[6])
 {
 	if (!outn)
 		return 0;
-	memcpy(out, outq[0], 6 * sizeof(int));
+	std::copy_n(outq[0], 6, out);
 	memmove(outq, outq + 1, --outn * sizeof(outq[0]));
 	return 1;
 }

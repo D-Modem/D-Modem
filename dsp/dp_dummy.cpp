@@ -98,11 +98,11 @@ int DummyPump::handshake(const s16 *rx, s16 *tx, int cnt)
 	int i;
 
 	if (++blocks <= SILENT_BLOCKS) {
-		memset(tx, 0, cnt * sizeof(*tx));
+		std::fill_n(tx, cnt, 0);
 		return DPSTAT_OK;
 	}
 	if (blocks > LAST_TONE_BLOCK) {
-		memset(tx, 0, cnt * sizeof(*tx));
+		std::fill_n(tx, cnt, 0);
 		DSP_DBG("dummy: no tone from the other end\n");
 		return DPSTAT_ERROR;
 	}

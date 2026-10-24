@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "reinit.h"
 #include "vcvm.h"
 
 namespace dsp {
@@ -54,8 +55,8 @@ int VcvmComb::init(int code_, int fs_, bool sym22_)
 /* every tone of n at phase bits pb, no rings */
 void VcvmLoad::all(int n, int pb)
 {
-	memset(phase, 0, sizeof(phase));
-	memset(ring, 0, sizeof(ring));
+	zero(phase);
+	zero(ring);
 	for (int i = 0; i < n && i < VCVM_TONES; i++)
 		phase[i] = static_cast<uint8_t>(pb);
 }
@@ -163,8 +164,8 @@ void VcvmCombTx::emit(float *out)
 		for (int t = 0; t < tu; t++)
 			u[t] += ca * co[t] - sa * si[t];
 	}
-	memcpy(out, &u[tu - tg], tg * sizeof(float));
-	memcpy(out + tg, u.data(), tu * sizeof(float));
+	std::copy_n(&u[tu - tg], tg, out);
+	std::copy_n(u.data(), tu, out + tg);
 }
 
 /* the phase reference: the tones as they are, the rings at 0 */
@@ -391,7 +392,7 @@ bool VcvmCombRx::next(VcvmCombSym *s, const uint8_t *known)
 		lv[k] = std::abs(r[k]);
 		maxl = std::max(maxl, lv[k]);
 	}
-	memset(s, 0, sizeof(*s));
+	zero(*s);
 	s->start = next_;
 	for (int k = 0; k < K; k++)
 		s->level[k] = static_cast<float>(lv[k]);

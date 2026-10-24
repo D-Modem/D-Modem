@@ -49,8 +49,8 @@ struct QamTx {
 		t += 1.0f / sps;
 		if (t >= 1) {
 			t -= 1;
-			memmove(sym + 1, sym,
-				(2 * span - 1) * sizeof(sym[0]));
+			std::copy_backward(sym, sym + 2 * span - 1,
+					   sym + 2 * span);
 			sym[0] = next();
 		}
 		return out();

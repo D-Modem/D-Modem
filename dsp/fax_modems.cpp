@@ -625,7 +625,7 @@ int FaxRx::init(enum fax_mod mod_, int short_train_, int srate_, fax_put_bit_t p
 		vit.init(v17_points(mod_), data_bits(mod_));
 	/* a short train only touches up what the long one learned */
 	if (short_train_ && mem && mem->valid && is_v17(mem->mod)) {
-		memcpy(mem_eq, mem->eq, sizeof(mem_eq));
+		copy_array(mem_eq, mem->eq);
 		mem_gain = mem->agc_gain;
 		use_mem = 1;
 	}
@@ -639,7 +639,7 @@ void FaxRx::save(FaxRxMemory *mem)
 	if (!is_v17(mod) || !have_good)
 		return;
 	mem->mod = mod;
-	memcpy(mem->eq, good_eq, sizeof(mem->eq));
+	copy_array(mem->eq, good_eq);
 	mem->agc_gain = good_gain;
 	mem->valid = 1;
 }
@@ -806,10 +806,10 @@ void FaxRx::data_symbol()
 	    qam.power > 0.5f * data_power && (data_sym & 127) == 0) {
 		/* the newest copy may already see the end of the signal, the
 		   saved one is the copy before it */
-		memcpy(good_eq, new_eq, sizeof(good_eq));
+		copy_array(good_eq, new_eq);
 		good_gain = new_gain;
 		have_good = have_new;
-		memcpy(new_eq, qam.eq, sizeof(new_eq));
+		copy_array(new_eq, qam.eq);
 		new_gain = qam.agc_gain;
 		have_new = 1;
 	}
@@ -870,7 +870,7 @@ void FaxRx::symbol()
 		}
 		track_alternations(z);
 		s = state_of(z);
-		memmove(steps, steps + 1, 31 * sizeof(int));
+		std::copy(steps + 1, steps + 32, steps);
 		steps[31] = (s - last_state) & (nstates - 1);
 		last_state = s;
 		if (nsteps < 32)
@@ -904,7 +904,7 @@ void FaxRx::symbol()
 			if (use_mem) {
 				/* short train: continue with the equalizer of
 				   the long train, timing has settled by now */
-				memcpy(qam.eq, mem_eq, sizeof(qam.eq));
+				copy_array(qam.eq, mem_eq);
 				qam.recompute();
 				/* and its gain: the level here is the one of the
 				   alternations, whose power is in the band edges

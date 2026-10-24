@@ -372,7 +372,7 @@ struct CoreBits {
 	/* n bits to send into bits (ones where the core has none) */
 	void get(unsigned char *bits, int n) const
 	{
-		memset(bits, 1, n);
+		std::fill_n(bits, n, 1);
 		modem_get_bits(modem, 1, bits, n);
 	}
 	/* n bits received to the core */

@@ -112,7 +112,7 @@ int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 {
 	int at, k, count, present, half = 0;
 
-	memset(p, 0, sizeof(*p));
+	zero(*p);
 	if (len < 1)
 		return -1;
 	present = buf[0] & 0x80;

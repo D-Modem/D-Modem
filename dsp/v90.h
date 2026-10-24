@@ -231,7 +231,7 @@ struct PcmFrames {
 		fcount++;
 		switch (fmode) {
 		case PCM_TRN:
-			memset(b, 1, D);
+			std::fill_n(b, D, 1);
 			/* TRN2d: 2160 symbols */
 			if (fcount >= 360) {
 				fmode = PCM_SEQ;
@@ -255,7 +255,7 @@ struct PcmFrames {
 			break;
 		case PCM_ED:
 			/* 2 frames of zeros */
-			memset(b, 0, D);
+			std::fill_n(b, D, 0);
 			if (fcount >= 2) {
 				*last = 1;
 				fcount = 0;
@@ -268,10 +268,10 @@ struct PcmFrames {
 			}
 			break;
 		case PCM_SIL:
-			memset(b, 0, D);
+			std::fill_n(b, D, 0);
 			break;
 		case PCM_B1:
-			memset(b, 1, D);
+			std::fill_n(b, D, 1);
 			if (fcount >= 48)
 				fmode = PCM_DATA;
 			break;

@@ -268,7 +268,7 @@ public:
 		s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 		int ret, r, i;
 
-		memset(dst, 0, cnt * sizeof(*dst));
+		std::fill_n(dst, cnt, 0);
 		ret = host().block_start();
 		if (ret != DPSTAT_OK)
 			return ret;

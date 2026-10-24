@@ -157,7 +157,7 @@ static void trees_build(void)
 	struct tree *t[] = { &white_tree, &black_tree, &mode_tree };
 	int k;
 	for (k = 0; k < 3; k++) {
-		memset(t[k], 0, sizeof(*t[k]));
+		zero(*t[k]);
 		t[k]->n = 1;
 		t[k]->value[0] = -1;
 	}

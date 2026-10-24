@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "bits.h"
+#include "reinit.h"
 #include "vcvm_data.h"
 
 namespace dsp {
@@ -265,7 +266,7 @@ void VcvmDataRx::decode_block()
 		for (int e = 2; r < 0 && e <= nc - 2; e += 2) {
 			if (rl[ord[e - 1]] >= 0.5f)
 				break;          /* no octet so unsure */
-			memset(er, 0, sizeof(er));
+			zero(er);
 			for (int i = 0; i < e; i++)
 				er[ord[i]] = 1;
 			r = rs_.decode(cw, er);

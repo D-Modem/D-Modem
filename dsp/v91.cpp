@@ -51,7 +51,7 @@ namespace dsp {
 static void default_dil(V90Dil *d)
 {
 	int i;
-	memset(d, 0, sizeof(*d));
+	zero(*d);
 	d->n = 125;
 	d->lsp = d->ltp = 12;
 	for (i = 0; i < 12; i++) {
@@ -277,7 +277,7 @@ void V91::make_cp(int ack)
 {
 	int n_ = 0, i, j, c;
 
-	memset(tb, 0, sizeof(tb));
+	zero(tb);
 	dsp::put_bits(tb, &n_, 0x1FFFF, 17);
 	dsp::put_bits(tb, &n_, 0, 1);
 	dsp::put_bits(tb, &n_, 0, 1);        /* 18: no transparent mode */
@@ -458,7 +458,7 @@ int V91::tx_sample()
 			if (tx == V91T_B1 && tn == 2)
 				tx_segment(V91T_DATA);
 			if (tx == V91T_B1) {
-				memset(b, 1, sizeof(b));
+				std::fill(std::begin(b), std::end(b), 1);
 				tn++;
 			} else {
 				int nb;
@@ -495,7 +495,7 @@ void V91::rx_restart()
 	cp_pad = 0;
 	since_info = zeros = 0;
 	rd_seg = rd_k = 0;
-	memset(seen, 0, sizeof(seen));
+	zero(seen);
 }
 
 /* a bit (decoded differentially) into the INFO window; 1 at the end of a
@@ -549,8 +549,8 @@ int V91::choose()
 	double bits = 0, prod = 1;
 	int i, j, u, s, K;
 
-	memset(&map, 0, sizeof(map));
-	memset(&cp_tx, 0, sizeof(cp_tx));
+	zero(map);
+	zero(cp_tx);
 	for (i = 0; i < 6; i++) {
 		/* both signs seen, the same each time and different, and
 		   neither value taken by another code: where codes arrive as
