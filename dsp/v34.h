@@ -205,7 +205,8 @@ struct Viterbi4d {
 	float metric[V34_STATES];
 	unsigned char prev[TB][V34_STATES];
 	s32 pa[TB][V34_STATES], pb[TB][V34_STATES];
-	s16 t, n;
+	s16 t;
+	s32 n;                  /* symbols decoded (it grows with the call) */
 
 	/* the paths cleared: from any state (start < 0: a receiver turned
 	   by 90, 180 or 270 degrees sees the code sequence of another start
