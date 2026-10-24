@@ -11,6 +11,7 @@
  *
  */
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -196,7 +197,7 @@ void dmodem_process(struct dmodem *d, const short *in, short *out, int n)
 	if (m->started())
 		m->process(in, out, n);
 	else
-		memset(out, 0, n * sizeof(short));
+		std::fill_n(out, n, 0);
 	d->samples += n;
 	m->poll();
 }

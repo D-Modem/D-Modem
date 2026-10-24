@@ -21,6 +21,7 @@
  *
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -35,6 +36,7 @@
 #include "tones.h"
 #include "log.h"
 #include "str.h"
+#include "reinit.h"
 
 /* (weak: Smart Link's library, half_smartlink's, has none of these;
    MSVC has no weak symbols, and links the open DSP, which has them) */
@@ -550,7 +552,7 @@ int Modem::start_call(bool keep_line)
 	}
 	stats_.fax = mode_ == MODEM_MODE_FAX;
 	stats_.start = host_.now_ms();
-	memset(&dp_stats_, 0, sizeof(dp_stats_));
+	dsp::zero(dp_stats_);
 	setup_config();
 	set_state(DP_ESTAB);
 	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
@@ -1037,7 +1039,7 @@ void Modem::process(const int16_t *in, int16_t *out, int n)
 		scratch_ = new int16_t[n];
 		scratch_len_ = n;
 	}
-	memcpy(scratch_, in, n * sizeof(*in));
+	std::copy_n(in, n, scratch_);
 	if (dcr_ && !(DCORE_HAS(dp_runtime_pcm) && dp_runtime_ &&
 		      dp_runtime_pcm(dp_runtime_)))
 		dcr_process(dcr_, scratch_, n);
@@ -1099,7 +1101,7 @@ void Modem::run(int16_t *in, int16_t *out, int n)
 		fax_process(in, out, n);
 		break;
 	case Run::None:
-		memset(out, 0, n * sizeof(*out));
+		std::fill_n(out, n, 0);
 		break;
 	}
 }
@@ -1115,7 +1117,7 @@ void Modem::dp_process(int16_t *in, int16_t *out, int n)
 	for (int done = 0; done < n;) {
 		int len = n - done < frag_ ? n - done : frag_, st;
 		if (!dp_ || run_ != Run::Dp) {
-			memset(out + done, 0, (n - done) * sizeof(*out));
+			std::fill_n(out + done, n - done, 0);
 			break;
 		}
 		st = dp_->op->process(dp_, in + done, out + done, len);
@@ -1305,7 +1307,7 @@ void Modem::dialed()
 		report(Result::Ok);
 		return;
 	}
-	memcpy(cmd, dial_rest_, sizeof(cmd));
+	dsp::copy_array(cmd, dial_rest_);
 	dial_rest_[0] = '\0';
 	logf("run cmd: %s\n", cmd);
 	ret = at_command(cmd);
@@ -1956,7 +1958,7 @@ int Modem::cid_start(unsigned long ms)
 void Modem::cid_process(int16_t *in, int16_t *out, int n)
 {
 	int ret;
-	memset(out, 0, n * sizeof(*out));
+	std::fill_n(out, n, 0);
 	ret = CID_process(cid_, in, n);
 	if (ret < 0)
 		logf("caller ID failed\n");

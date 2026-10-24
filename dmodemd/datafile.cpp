@@ -97,7 +97,7 @@ int DataFile::load(struct dsp_info *info) const
 	/* a simple check */
 	if (ret != static_cast<ssize_t>(sizeof(dr)) || dr.size != sizeof(dr))
 		return -1;
-	memcpy(info, &dr.dsp_info, sizeof(*info));
+	*info = dr.dsp_info;
 	return ret;
 }
 
@@ -109,7 +109,7 @@ int DataFile::save(const struct dsp_info *info)
 
 	if (!writable_)
 		return -EBADF;
-	memcpy(&dr.dsp_info, info, sizeof(*info));
+	dr.dsp_info = *info;
 	dr.size = sizeof(dr);
 	ret = pwrite(fd_, &dr, sizeof(dr), 0);
 	if (ret == static_cast<ssize_t>(sizeof(dr)) &&

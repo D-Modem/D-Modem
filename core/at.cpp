@@ -16,6 +16,7 @@
  *
  */
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -27,6 +28,7 @@
 
 #include "dcore.h"
 #include "str.h"
+#include "reinit.h"
 
 namespace dcore {
 
@@ -1583,7 +1585,7 @@ int Modem::at_kept(const char *p, int *len)
 	}
 	if (*q && *q != ',' && *q != ';' && !is_digit(*q))
 		return -1;
-	memcpy(v, kept_[i], sizeof(v));
+	dsp::copy_array(v, kept_[i]);
 	for (unsigned pos = 0;; pos++) {
 		if (is_digit(*q)) {
 			const char *g = pos < KEPT_VALUES ?
@@ -1600,7 +1602,7 @@ int Modem::at_kept(const char *p, int *len)
 			break;
 		q++;
 	}
-	memcpy(kept_[i], v, sizeof(v));
+	dsp::copy_array(kept_[i], v);
 	kept_n_[i] = n;
 	if (name == "+ES")
 		ec_mode_from_es();
@@ -1612,8 +1614,7 @@ int Modem::at_kept(const char *p, int *len)
 void Modem::kept_init()
 {
 	for (int i = 0; i < KEPT_COUNT; i++) {
-		memcpy(kept_[i], kept_params[i].values,
-		       sizeof(kept_params[i].values));
+		dsp::copy_array(kept_[i], kept_params[i].values);
 		kept_n_[i] = kept_params[i].n;
 	}
 }
@@ -1631,7 +1632,7 @@ void Modem::set_ec_mode(int n)
 {
 	int i = kept_index("+ES");
 	sregs_[SREG_EC] = static_cast<unsigned char>(n);
-	memcpy(kept_[i], ec_modes[n], sizeof(ec_modes[n]));
+	std::copy(std::begin(ec_modes[n]), std::end(ec_modes[n]), kept_[i]);
 	kept_n_[i] = 3;
 }
 

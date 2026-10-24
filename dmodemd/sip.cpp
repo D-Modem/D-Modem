@@ -91,6 +91,7 @@ namespace libre {
 #include "portable.h"
 #include "rtp_events.h"
 #include "sip.h"
+#include "reinit.h"
 
 namespace sip {
 
@@ -333,7 +334,7 @@ bool sockaddr_of(const std::string &addr, int port, int family,
 	struct sockaddr_in6 *a6 = reinterpret_cast<struct sockaddr_in6 *>(a);
 	struct in_addr in4;
 
-	memset(a, 0, sizeof(*a));
+	dsp::zero(*a);
 	if (inet_pton(AF_INET, addr.c_str(), &in4) == 1) {
 		if (family == AF_INET) {
 			a4->sin_family = AF_INET;
@@ -780,7 +781,7 @@ private:
 	   JB_DELAY behind it */
 	void restart(uint32_t ssrc, uint32_t ts)
 	{
-		memset(valid_, 0, sizeof(valid_));
+		dsp::zero(valid_);
 		started_ = true;
 		ssrc_ = ssrc;
 		play_ = ts - static_cast<uint32_t>(JB_DELAY);

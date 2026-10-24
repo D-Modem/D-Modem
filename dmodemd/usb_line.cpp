@@ -68,6 +68,7 @@
  *
  */
 
+#include <algorithm>
 #include <cerrno>
 #ifndef _WIN32
 #include <poll.h>
@@ -1430,8 +1431,8 @@ int UsbLine::pump(dcore::Modem &m)
 	}
 	size_t used = 0;
 	while (iso_.in_buf.size() - used >= static_cast<size_t>(frame_)) {
-		memcpy(frame_in_.data(), iso_.in_buf.data() + used,
-		       frame_ * sizeof(int16_t));
+		std::copy_n(iso_.in_buf.data() + used, frame_,
+			    frame_in_.data());
 		used += frame_;
 		if (aus_end_ && samples_ >= aus_end_) {
 			aus_end_ = 0;
@@ -1450,7 +1451,7 @@ int UsbLine::pump(dcore::Modem &m)
 		else if (running_ && m.started())
 			m.process(frame_in_.data(), frame_out_.data(), frame_);
 		else
-			memset(frame_out_.data(), 0, frame_ * sizeof(int16_t));
+			std::fill_n(frame_out_.data(), frame_, 0);
 		iso_.out_buf.insert(iso_.out_buf.end(), frame_out_.begin(),
 				    frame_out_.end());
 	}
@@ -1530,11 +1531,11 @@ void UsbLine::voice_frame(dcore::Modem &m)
 		}
 	}
 	if (!on) {
-		memset(frame_out_.data(), 0, frame_ * sizeof(int16_t));
-		memset(frame_ear_.data(), 0, frame_ * sizeof(int16_t));
+		std::fill_n(frame_out_.data(), frame_, 0);
+		std::fill_n(frame_ear_.data(), frame_, 0);
 	} else if (route_ == VOICE_DEVICE_HANDSET) {
 		m.process(frame_mic_.data(), frame_ear_.data(), frame_);
-		memset(frame_out_.data(), 0, frame_ * sizeof(int16_t));
+		std::fill_n(frame_out_.data(), frame_, 0);
 	} else if (route_ == VOICE_DEVICE_HANDSET_LINE) {
 		std::vector<int16_t> &both = frame_ear_;
 		for (int i = 0; i < frame_; i++)
@@ -1546,7 +1547,7 @@ void UsbLine::voice_frame(dcore::Modem &m)
 		}
 	} else {
 		m.process(frame_in_.data(), frame_out_.data(), frame_);
-		memset(frame_ear_.data(), 0, frame_ * sizeof(int16_t));
+		std::fill_n(frame_ear_.data(), frame_, 0);
 	}
 	resample(frame_ear_.data(), static_cast<size_t>(frame_), rate_,
 		 VOICE_RATE, ear_pos_, ear_last_, viso_.out_buf);

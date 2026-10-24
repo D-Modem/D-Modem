@@ -36,6 +36,7 @@
 
 #include "portable.h"
 #include "pty.h"
+#include "reinit.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, "pty: " fmt, ##__VA_ARGS__)
@@ -170,8 +171,8 @@ ssize_t keeper_receive(char *op, int *fd)
 	struct cmsghdr *c;
 	ssize_t n;
 
-	memset(&ctl, 0, sizeof(ctl));
-	memset(&msg, 0, sizeof(msg));
+	dsp::zero(ctl);
+	dsp::zero(msg);
 	msg.msg_iov = &iov;
 	msg.msg_iovlen = 1;
 	msg.msg_control = ctl.buf;
@@ -197,7 +198,7 @@ ssize_t keeper_receive(char *op, int *fd)
 	};
 	struct sigaction sa;
 
-	memset(&sa, 0, sizeof(sa));
+	dsp::zero(sa);
 	sa.sa_handler = SIG_IGN;
 	for (int sig : ignored)
 		sigaction(sig, &sa, nullptr);
@@ -392,8 +393,8 @@ int Pty::keeper_ask(struct keeper_answer *a)
 	struct cmsghdr *c;
 	ssize_t n;
 
-	memset(&ctl, 0, sizeof(ctl));
-	memset(&msg, 0, sizeof(msg));
+	dsp::zero(ctl);
+	dsp::zero(msg);
 	msg.msg_iov = &iov;
 	msg.msg_iovlen = 1;
 	msg.msg_control = ctl.buf;
@@ -462,7 +463,7 @@ int Pty::fork_keeper()
 	if (link_.empty() || keeper_ >= 0 || link_.size() >= sizeof(k.link) ||
 	    name_.size() >= sizeof(k.target))
 		return -1;
-	memset(&k, 0, sizeof(k));
+	dsp::zero(k);
 	memcpy(k.link, link_.c_str(), link_.size() + 1);
 	memcpy(k.target, name_.c_str(), name_.size() + 1);
 	k.perm = perm_;

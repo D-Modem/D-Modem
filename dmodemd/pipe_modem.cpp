@@ -7,6 +7,7 @@
  *
  */
 
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstdio>
@@ -239,7 +240,7 @@ int PipeModem::line(bool rd)
 			if (m_->started())
 				m_->process(in + k, outbuf + k, len);
 			else
-				memset(outbuf + k, 0, 2 * len);
+				std::fill_n(outbuf + k, len, 0);
 			m_->poll();
 		}
 	} else if (off_hook)
@@ -250,7 +251,7 @@ int PipeModem::line(bool rd)
 		for (int k = 0; k < count; k++)
 			if (ring_.sample(in[k]))
 				m_->ring();
-		memset(outbuf, 0, 2 * count);
+		std::fill_n(outbuf, count, 0);
 	}
 	/* MODEM_REC: the line while off hook */
 	if (off_hook && record_) {

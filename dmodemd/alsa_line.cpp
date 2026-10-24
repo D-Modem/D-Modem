@@ -13,6 +13,7 @@
  *
  */
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -466,7 +467,7 @@ void AlsaLine::frame(dcore::Modem &m, const int16_t *in, int16_t *out)
 	if (running_ && m.started())
 		m.process(in, out, frame_);
 	else
-		memset(out, 0, frame_ * sizeof(*out));
+		std::fill_n(out, frame_, 0);
 }
 
 /* see alsa_line.h */

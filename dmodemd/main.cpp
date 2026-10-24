@@ -49,6 +49,7 @@
 #include "run_loop.h"
 #include "sip.h"
 #include "sip_modem.h"
+#include "reinit.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, "dmodemd: " fmt, ##__VA_ARGS__)
@@ -89,7 +90,7 @@ void go_realtime()
 
 	if (mlockall(MCL_CURRENT) < 0)
 		ERR("cannot lock the memory: %s\n", strerror(errno));
-	memset(&sp, 0, sizeof(sp));
+	dsp::zero(sp);
 	sp.sched_priority = sched_get_priority_max(SCHED_FIFO);
 	if (sched_setscheduler(0, SCHED_FIFO, &sp) < 0)
 		ERR("cannot have realtime scheduling: %s\n", strerror(errno));

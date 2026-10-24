@@ -18,6 +18,7 @@
 
 #include "dmodem.h"
 #include "dmodem_g711.h"
+#include "reinit.h"
 #include "t30.h"
 #include "t38.h"
 
@@ -188,7 +189,7 @@ void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s)
 
 	t30_get_status(f->t30, &ts);
 	r = ts.complete ? T30_OK : ts.result;
-	memset(s, 0, sizeof(*s));
+	zero(*s);
 	s->done = ts.done;
 	s->complete = ts.complete;
 	s->ok = r == T30_OK && !f->file_error;
@@ -196,7 +197,7 @@ void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s)
 	s->bps = ts.bps;
 	s->fine = ts.fine;
 	s->ecm = ts.ecm;
-	memcpy(s->remote_ident, ts.remote_ident, sizeof(s->remote_ident));
+	copy_array(s->remote_ident, ts.remote_ident);
 	s->result = f->file_error ? t30_result_text(T30_ERR_FILE) :
 		t30_result_text(r);
 	s->phase = ts.phase;

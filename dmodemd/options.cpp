@@ -19,6 +19,7 @@
 #include <tones.h>
 
 #include "options.h"
+#include "reinit.h"
 
 namespace dmd {
 
@@ -154,7 +155,7 @@ public:
 		: argc_(argc), argv_(argv),
 		  prog_(argc > 0 && argv[0] ? argv[0] : "dmodemd")
 	{
-		memcpy(opts_, OPTIONS, sizeof(opts_));
+		dsp::copy_array(opts_, OPTIONS);
 	}
 
 	/* every argument read (the usage and exit 1 on an error) */

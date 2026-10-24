@@ -7,6 +7,7 @@
  *
  */
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -244,7 +245,7 @@ int SipLine::audio(dcore::Modem &m)
 	if (count == 0)
 		return 0;
 	if (t38_ >= 0) {
-		memset(out, 0, 2 * count);
+		std::fill_n(out, count, 0);
 	} else {
 		int law = sip::law();
 		if (law)
