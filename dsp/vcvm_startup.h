@@ -38,11 +38,11 @@
 #ifndef DSP_VCVM_STARTUP_H
 #define DSP_VCVM_STARTUP_H
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "dm_types.h"
 #include "vcvm.h"
 
 namespace dsp {
@@ -64,11 +64,11 @@ struct VcvmCaps {
 	bool quick = false;     /* quick start, 10.10 */
 	bool param = true;      /* the parametric mode, 10.6 */
 
-	void encode(uint8_t o[2]) const;
+	void encode(u8 o[2]) const;
 	/* a field of another version: version 1 and the bits it knows */
-	static VcvmCaps decode(const uint8_t o[2]);
-	uint8_t modes() const;  /* octet 2: the modes */
-	int32_t fs() const { return fs16 ? 16000 : 8000; }
+	static VcvmCaps decode(const u8 o[2]);
+	u8 modes() const;       /* octet 2: the modes */
+	s32 fs() const { return fs16 ? 16000 : 8000; }
 };
 
 /* the identifier octet before the field in the non-standard facilities */
@@ -81,9 +81,9 @@ struct VcvmCaps {
 
 /* the non-standard facilities' octets (country, provider, 'C', the
    field): their number */
-int vcvm_nsf_build(const VcvmCaps &c, uint8_t *out);
+int vcvm_nsf_build(const VcvmCaps &c, u8 *out);
 /* the field in non-standard facilities' octets, if there */
-bool vcvm_nsf_find(const uint8_t *p, int n, VcvmCaps *c);
+bool vcvm_nsf_find(const u8 *p, int n, VcvmCaps *c);
 
 /* V.8's non-standard facilities category for CM and JM (6.6/V.8): the
    category octet (0x0F), then the NS field (its length, the T.35
@@ -91,9 +91,9 @@ bool vcvm_nsf_find(const uint8_t *p, int n, VcvmCaps *c);
    identifier and the information field) in extension octets of five
    bits each (b0-b2 and b6-b7), the field's bits least significant
    first.  Its octets to out (21 at most): their number */
-int vcvm_v8_ns(const VcvmCaps &c, uint8_t *out);
+int vcvm_v8_ns(const VcvmCaps &c, u8 *out);
 /* the information field among a CM's or JM's octets, if there */
-bool vcvm_v8_find(const uint8_t *msg, int n, VcvmCaps *c);
+bool vcvm_v8_find(const u8 *msg, int n, VcvmCaps *c);
 
 /* +CVM's mode set (Table 12-1) */
 enum {
@@ -106,7 +106,7 @@ enum {
 
 /* this DCE's information field for +CVM's mode set (VCVM_M_*) at the
    signal interface's fs */
-VcvmCaps vcvm_caps_for(int modes, int32_t fs);
+VcvmCaps vcvm_caps_for(int modes, s32 fs);
 
 /* what both DCEs have and the mode set allows, as VCVM_M_* bits */
 int vcvm_allowed(const VcvmCaps &own, const VcvmCaps &peer, int modes);
@@ -117,15 +117,15 @@ int vcvm_allowed(const VcvmCaps &own, const VcvmCaps &peer, int modes);
 
 /* INFO0 (Table B.1) */
 struct VcvmInfo0 {
-	uint8_t modes = 0;      /* the information field's octet 2 */
+	u8 modes = 0;           /* the information field's octet 2 */
 	unsigned combs = 0;     /* bit c: comb code c is probed */
 	bool quick_offer = false, quick_accept = false;
 	bool rings = true;      /* octet 3 bit 5: the amplitude rings allowed
 				   (where both have them) */
 	int level = 6;          /* the transmit level, 0.5 dB below -9 dBFS */
 
-	int encode(uint8_t *o) const;           /* 4 octets */
-	int decode(const uint8_t *o, int n);    /* 0, or -1 */
+	int encode(u8 *o) const;                /* 4 octets */
+	int decode(const u8 *o, int n);         /* 0, or -1 */
 	bool l2() const { return modes & 0x04; }
 	/* L3 is probed */
 	bool l3() const { return modes & 0x01; }
@@ -144,8 +144,8 @@ struct VcvmLoading {
 
 	double sym_ms() const;
 	int bits() const;               /* a symbol's */
-	int32_t raw_bps() const;
-	int32_t coded_bps() const;      /* the raw rate times k / 32 */
+	s32 raw_bps() const;
+	s32 coded_bps() const;          /* the raw rate times k / 32 */
 	int k() const { return rate == 2 ? 28 : rate == 1 ? 24 : 16; }
 	int loaded() const;             /* tones loaded (0 parametric) */
 	std::string str() const;        /* for the logs */
@@ -160,28 +160,28 @@ struct VcvmMp {
 	int rtt = 255;          /* the round trip delay, 10 ms; 255 unknown */
 	VcvmLoading l;
 
-	int encode(uint8_t *o) const;           /* octets, 5 to 39 */
-	int decode(const uint8_t *o, int n);    /* 0, or -1 */
+	int encode(u8 *o) const;                /* octets, 5 to 39 */
+	int decode(const u8 *o, int n);         /* 0, or -1 */
 };
 
 /* one received message mode transmission */
 struct VcvmMsg {
-	std::vector<uint8_t> octets;    /* the first copy whose FCS checked */
+	std::vector<u8> octets;         /* the first copy whose FCS checked */
 	bool ok = false;                /* there was one */
-	int32_t start = 0, end = 0;     /* the signal's, samples received */
+	s32 start = 0, end = 0;         /* the signal's, samples received */
 };
 
 /* the message mode's transmitter */
 class VcvmMsgTx {
 public:
 	/* P20 (param) or V.21's channel of the calling or answering DCE */
-	int init(int32_t fs, bool param, bool calling);
+	int init(s32 fs, bool param, bool calling);
 	/* a message (its octets) appended to out: P20's preamble, or
 	   flags, then its frame twice and flags */
-	void send(const uint8_t *m, int n, std::vector<float> &out);
+	void send(const u8 *m, int n, std::vector<float> &out);
 
 private:
-	int32_t fs_ = 8000;
+	s32 fs_ = 8000;
 	bool param_ = true;
 	bool calling_ = true;
 	VcvmParamTx ptx_;
@@ -194,14 +194,14 @@ private:
    zero crossings of the difference of their magnitudes */
 class VcvmFskRx {
 public:
-	void init(float mark, float space, int32_t fs);
+	void init(float mark, float space, s32 fs);
 	/* a sample in: the bit decided at its centre, or -1 */
 	int run(float x);
 	/* a signal begins: the bit clock acquired anew */
 	void resync() { acq_ = 0; }
 
 private:
-	int32_t fs_ = 8000;
+	s32 fs_ = 8000;
 	int w_ = 0;
 	double wm_ = 0, ws_ = 0;        /* rad a sample */
 	double pm_ = 0, ps_ = 0;        /* the mixers' phases */
@@ -210,7 +210,7 @@ private:
 	double sum_[4] = {};
 	double phase_ = 0, inc_ = 0;    /* the bit clock: a bit at 1 */
 	double last_ = 0;
-	uint32_t n_ = 0;
+	u32 n_ = 0;
 	int acq_ = 0;                   /* crossings since the resync */
 };
 
@@ -223,43 +223,43 @@ public:
 	VcvmMsgRx &operator=(const VcvmMsgRx &) = delete;
 
 	/* P20, or the channel the peer (calling or answering) sends on */
-	int init(int32_t fs, bool param, bool peer_calling);
+	int init(s32 fs, bool param, bool peer_calling);
 	/* nothing received (nor kept): the next sample pushed is sample
 	   at */
-	void restart(int32_t at);
+	void restart(s32 at);
 	void push(const float *x, int n);
 	/* a transmission received, once its signal has ended */
 	bool get(VcvmMsg *m);
 	/* the samples received: the index of the next one pushed */
-	int32_t received() const { return n_; }
+	s32 received() const { return n_; }
 	/* a transmission is coming in */
 	bool busy() const { return active_; }
 
 	/* the deframer's: a frame between flags */
-	void frame(const uint8_t *d, int len);
+	void frame(const u8 *d, int len);
 
 private:
 	struct Hdlc;
 	struct Fsk;
-	void ended(int32_t at);
+	void ended(s32 at);
 
-	int32_t fs_ = 8000;
+	s32 fs_ = 8000;
 	bool param_ = true;
 	VcvmParamRx prx_;
 	std::unique_ptr<Fsk> fsk_;
 	std::unique_ptr<Hdlc> hdlc_;
-	int32_t n_ = 0;                 /* samples received */
+	s32 n_ = 0;                     /* samples received */
 	bool active_ = false;           /* a signal is being received */
-	int32_t start_ = 0;
+	s32 start_ = 0;
 	std::vector<double> win_;       /* the last 10 ms, squared */
 	double wsum_ = 0;
 	size_t wpos_ = 0;
-	int32_t quiet_ = 0;             /* samples quiet in a row */
-	int32_t loud_ = 0;              /* and loud */
+	s32 quiet_ = 0;                 /* samples quiet in a row */
+	s32 loud_ = 0;                  /* and loud */
 	bool got_ = false;
-	std::vector<uint8_t> first_;    /* this transmission's first copy */
+	std::vector<u8> first_;         /* this transmission's first copy */
 	struct Sym {
-		uint8_t idx, second;
+		u8 idx, second;
 		float margin;
 	};
 	std::vector<Sym> syms_;         /* P20's, this transmission's */
@@ -273,7 +273,7 @@ private:
 
 /* the probing's parts at a rate */
 struct VcvmProbe {
-	int32_t fs = 8000;
+	s32 fs = 8000;
 	unsigned combs = 0;     /* L1: bit c comb code c */
 	bool l2 = false, l3 = false;
 	int tap = 18;           /* the transmitter's scrambler (SCR_GPC,
@@ -285,7 +285,7 @@ struct VcvmProbe {
 };
 
 /* the combs a DCE probes with at fs (its band's), as allowed */
-unsigned vcvm_probe_combs(int32_t fs, int allowed);
+unsigned vcvm_probe_combs(s32 fs, int allowed);
 
 /* the probing's transmitter: L1, L2, L3 appended to out */
 void vcvm_probe_send(const VcvmProbe &p, std::vector<float> &out);
@@ -325,20 +325,20 @@ class VcvmProbeRx {
 public:
 	int init(const VcvmProbe &p);
 	/* L1's onset looked for from sample from */
-	void start(int32_t from);
+	void start(s32 from);
 	/* samples from the line, the next being sample received() */
 	void push(const float *x, int n);
 	/* the index of the next sample pushed */
-	int32_t received() const
+	s32 received() const
 	{
-		return hbase_ + static_cast<int32_t>(hist_.size());
+		return hbase_ + static_cast<s32>(hist_.size());
 	}
 	/* the probing received */
 	bool done() const { return st_ == DONE; }
 	/* the probing not found or lost */
 	bool failed() const { return st_ == FAILED; }
 	/* the end of the probing (its last symbol's), once done */
-	int32_t end() const { return end_; }
+	s32 end() const { return end_; }
 	/* what has been measured */
 	const VcvmProbeMeas &meas() const { return m_; }
 
@@ -360,15 +360,15 @@ private:
 	std::vector<Part> parts_;       /* L1's combs, then L2 */
 	St st_ = IDLE;
 	std::vector<float> hist_;       /* what came, from hbase_ */
-	int32_t hbase_ = 0;
-	int32_t scan_ = 0;              /* the onset's search */
-	int32_t first_ = 0;             /* the part's expected start */
-	int32_t end_ = 0;
-	int32_t deadline_ = 0;
-	uint32_t scr_ = 0;              /* the known sequence's scrambler */
+	s32 hbase_ = 0;
+	s32 scan_ = 0;                  /* the onset's search */
+	s32 first_ = 0;                 /* the part's expected start */
+	s32 end_ = 0;
+	s32 deadline_ = 0;
+	u32 scr_ = 0;                   /* the known sequence's scrambler */
 	bool pend_ = false;             /* the next symbol's known steps or
 					   lag already taken from it */
-	uint8_t ph8_[VCVM_TONES] = {};
+	u8 ph8_[VCVM_TONES] = {};
 	int want_ = 0;
 	/* the comb being received */
 	VcvmCombRx crx_;
@@ -391,7 +391,7 @@ class VcvmStartup {
 public:
 	struct Config {
 		bool calling = true;
-		int32_t fs = 8000;      /* the signal interface (both DCEs') */
+		s32 fs = 8000;          /* the signal interface (both DCEs') */
 		VcvmCaps own, peer;     /* from CM and JM */
 		int modes = VCVM_M_ALL; /* +CVM's */
 		int level = 6;          /* INFO0's transmit level */
@@ -422,10 +422,10 @@ public:
 	/* the messages in P20 (both have the parametric mode) */
 	bool param_messages() const { return msgp_; }
 	/* the sample at which the start-up was done (-1 before) */
-	int32_t done_at() const { return done_at_; }
+	s32 done_at() const { return done_at_; }
 	/* the end of the last message received (phase 4's signal is
 	   looked for from there) */
-	int32_t last_rx_end() const { return last_rx_end_; }
+	s32 last_rx_end() const { return last_rx_end_; }
 	/* what happened, a line a step */
 	const std::string &log() const { return log_; }
 
@@ -438,11 +438,11 @@ private:
 	};
 	void note(const char *fmt, ...);
 	void fail(const char *why);
-	int32_t queued() const;         /* the sample after what is queued */
+	s32 queued() const;             /* the sample after what is queued */
 	void silence(int ms);
-	void silence_until(int32_t at);
-	template <class R> void replay(R &r, int32_t from);
-	void send_msg(const uint8_t *m, int n);
+	void silence_until(s32 at);
+	template <class R> void replay(R &r, s32 from);
+	void send_msg(const u8 *m, int n);
 	void send_probing();
 	void send_mp();
 	void on_msg(const VcvmMsg &m);
@@ -462,18 +462,18 @@ private:
 	std::vector<float> txq_;
 	size_t txpos_ = 0;
 	std::vector<float> hist_;       /* received, from hbase_ */
-	int32_t hbase_ = 0;
-	int32_t t_ = 0;                 /* samples so far, both ways */
-	int32_t probe_end_tx_ = -1;     /* our L3's end, sent */
-	int32_t info1_end_tx_ = -1;     /* our INFO1's end, sent */
+	s32 hbase_ = 0;
+	s32 t_ = 0;                     /* samples so far, both ways */
+	s32 probe_end_tx_ = -1;         /* our L3's end, sent */
+	s32 info1_end_tx_ = -1;         /* our INFO1's end, sent */
 	bool got_mp_ = false, got_ack_ = false;
 	bool sent_ack_ = false;         /* an MP with the acknowledgement sent
 					   after the peer's came */
 	bool mp_on_ = false;
 	int rtt_ms_ = -1;
-	int32_t deadline_ = 0;
-	int32_t done_at_ = -1;
-	int32_t last_rx_end_ = 0;
+	s32 deadline_ = 0;
+	s32 done_at_ = -1;
+	s32 last_rx_end_ = 0;
 	int mps_ = 0;
 	std::string log_;
 };

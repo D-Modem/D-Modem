@@ -15,6 +15,7 @@
 #include <cstring>
 #include <vector>
 
+#include "dm_types.h"
 #include "dsp.h"
 #include "pump.h"
 #include "vcvm_modem.h"
@@ -29,13 +30,13 @@ public:
 	/* its name in the log */
 	const char *tag() const { return "vcvm"; }
 
-	int start(struct modem *m, enum DP_ID id, int caller_, int32_t srate_,
+	int start(struct modem *m, enum DP_ID id, int caller_, s32 srate_,
 		  int max_frag);
 	int process(void *in, void *out, int cnt) override;
 
 private:
 	int source();
-	void sink(const uint8_t *d, int n);
+	void sink(const u8 *d, int n);
 	void report();
 	void log_lines();
 
@@ -43,7 +44,7 @@ private:
 	struct dp_vcvm *info_ = nullptr;
 	bool up_ = false;               /* CONNECT reported */
 	int renegs_ = 0, retrains_ = 0;
-	int32_t line_rate_ = 8000;
+	s32 line_rate_ = 8000;
 	Resampler rs_up_, rs_down_;     /* 9600 -> 8000, 8000 -> 9600 */
 	std::vector<float> in8_, out8_, back_;
 	size_t back_pos_ = 0;
@@ -54,7 +55,7 @@ private:
 /* the pump at srate_ (8000, or 9600 through the converters) once V.8
    agreed on V.cvm: the DCE's modes from MDMPRM_VCVM, the peer's from
    its field; 0, or -1 */
-int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, int32_t srate_,
+int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, s32 srate_,
 		    int)
 {
 	if (srate_ != 8000 && srate_ != 9600) {
@@ -82,7 +83,7 @@ int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, int32_t srate_,
 	c.su.own = vcvm_caps_for(c.su.modes, 8000);
 	c.su.peer = VcvmCaps::decode(rt->vcvm_info);
 	if (mdm_.init(c, [this]() { return source(); },
-		      [this](const uint8_t *d, int n) { sink(d, n); }))
+		      [this](const u8 *d, int n) { sink(d, n); }))
 		return -1;
 	stat_dp(DP_VCVM);
 	DSP_DBG("vcvm: %s, the peer's field %02x %02x\n",
@@ -105,7 +106,7 @@ int VcvmPump::source()
 
 /* the octets the modem decoded, to the link layer, the first bit the
    least significant */
-void VcvmPump::sink(const uint8_t *d, int n)
+void VcvmPump::sink(const u8 *d, int n)
 {
 	for (int i = 0; i < n; i++) {
 		u8 b[8];
@@ -200,7 +201,7 @@ int VcvmPump::process(void *in, void *out, int cnt)
 		if (back_pos_ > 4096) {
 			back_.erase(back_.begin(),
 				    back_.begin() +
-					    static_cast<int32_t>(back_pos_));
+					    static_cast<s32>(back_pos_));
 			back_pos_ = 0;
 		}
 	}
@@ -225,7 +226,7 @@ int VcvmPump::process(void *in, void *out, int cnt)
 	if (!up_ && mdm_.connected()) {
 		up_ = true;
 		if (mdm_.rtt_ms() > 0)
-			stat_rtd(static_cast<int32_t>(mdm_.rtt_ms()) * srate /
+			stat_rtd(static_cast<s32>(mdm_.rtt_ms()) * srate /
 				 1000);
 		report();
 		DSP_DBG("vcvm: phase 4: transmitting %s, receiving %s\n",

@@ -15,13 +15,14 @@
 
 #include <charconv>
 #include <cstddef>
-#include <cstdint>
 #include <iomanip>
 #include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <type_traits>
+
+#include "dm_types.h"
 
 namespace dcore {
 
@@ -39,7 +40,7 @@ inline std::string dec(T v, int width = 0)
 
 /* v in hexadecimal, lower case (upper with upper_case), at least width
    digits */
-inline std::string hex(uint32_t v, int width = 0, bool upper_case = false)
+inline std::string hex(u32 v, int width = 0, bool upper_case = false)
 {
 	char buf[2 * sizeof(v)];
 	auto r = std::to_chars(buf, buf + sizeof(buf), v, 16);
@@ -56,21 +57,21 @@ inline std::string hex(uint32_t v, int width = 0, bool upper_case = false)
 /* the unsigned number in base at the start of [p, last), *end after
    its digits (p and 0 when there are none); too large a number is
    UINT32_MAX, as strtoul() has it with a 32-bit long */
-inline uint32_t to_ulong(const char *p, const char *last,
+inline u32 to_ulong(const char *p, const char *last,
 			 const char **end, int base = 10)
 {
-	uint32_t v = 0;
+	u32 v = 0;
 	auto r = std::from_chars(p, last, v, base);
 	*end = r.ptr;
 	if (r.ec == std::errc::result_out_of_range) {
 		/* past the digits that did not fit */
 		const char *q = p;
-		uint32_t d;
+		u32 d;
 		while (q < last && std::from_chars(q, q + 1, d, base).ec ==
 		       std::errc())
 			q++;
 		*end = q;
-		return std::numeric_limits<uint32_t>::max();
+		return std::numeric_limits<u32>::max();
 	}
 	return v;
 }
@@ -98,10 +99,10 @@ inline bool parse_long(std::string_view s, T &v, int base = 10)
 	}
 	if (s.empty())
 		return false;
-	uint64_t u;
+	u64 u;
 	auto r = std::from_chars(s.data(), s.data() + s.size(), u, base);
 	if (r.ec != std::errc() || r.ptr != s.data() + s.size() ||
-	    u > static_cast<uint64_t>(std::numeric_limits<T>::max()))
+	    u > static_cast<u64>(std::numeric_limits<T>::max()))
 		return false;
 	v = neg ? -static_cast<T>(u) : static_cast<T>(u);
 	return true;
@@ -109,7 +110,7 @@ inline bool parse_long(std::string_view s, T &v, int base = 10)
 
 /* the decimal number at the start of s, after blanks and a sign, as
    C's atoi() reads it: 0 if there is none */
-inline int32_t leading_long(std::string_view s)
+inline s32 leading_long(std::string_view s)
 {
 	std::size_t i = 0;
 	bool neg = false;
@@ -117,7 +118,7 @@ inline int32_t leading_long(std::string_view s)
 		i++;
 	if (i < s.size() && (s[i] == '+' || s[i] == '-'))
 		neg = s[i++] == '-';
-	int32_t v = 0;
+	s32 v = 0;
 	std::from_chars(s.data() + i, s.data() + s.size(), v);
 	return neg ? -v : v;
 }

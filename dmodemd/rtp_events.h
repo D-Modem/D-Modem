@@ -29,7 +29,8 @@
 #define DMODEMD_RTP_EVENTS_H
 
 #include <cstddef>
-#include <cstdint>
+
+#include "dm_types.h"
 
 namespace dmd {
 
@@ -49,15 +50,15 @@ public:
 		const char *name;
 	};
 
-	explicit EventPlayer(uint32_t rate = 8000);
+	explicit EventPlayer(u32 rate = 8000);
 
 	/* a telephone-event packet's payload p (n octets) at timestamp
 	   ts: an event's start (its kind), or NONE for its going on, its
 	   end, a copy of its end packet, or a payload too short */
-	Began packet(const uint8_t *p, size_t n, uint32_t ts);
+	Began packet(const u8 *p, size_t n, u32 ts);
 	/* n samples: the tone over them while one plays (true), else x
 	   untouched (false) */
-	bool fill(int16_t *x, uint32_t n);
+	bool fill(s16 *x, u32 n);
 	/* a tone plays */
 	bool playing() const { return on_; }
 	/* the call ended: nothing plays, nothing is known */
@@ -69,22 +70,22 @@ private:
 		double next();
 	};
 
-	uint32_t rate_;
+	u32 rate_;
 	bool on_ = false, known_ = false;
 	bool ended_ = false;            /* its end packet came */
-	uint32_t ts_ = 0;               /* the played event's timestamp */
+	u32 ts_ = 0;                    /* the played event's timestamp */
 	/* the last event not played (its start told once), -1 if none */
 	int other_ = -1;
-	uint32_t other_ts_ = 0;
-	int32_t left_ = 0;              /* samples it plays on without a
+	u32 other_ts_ = 0;
+	s32 left_ = 0;                  /* samples it plays on without a
 					   packet */
-	int32_t hold_ = 0;              /* left_ again at each packet */
+	s32 hold_ = 0;                  /* left_ again at each packet */
 	Osc o1_, o2_, am_;
 	double a1_ = 0, a2_ = 0;
 	double f1_ = 0;
 	bool mod_ = false;              /* ANSam's 15 Hz */
 	bool rev_ = false;              /* phase reversals every 450 ms */
-	int32_t rev_count_ = 0;
+	s32 rev_count_ = 0;
 };
 
 } // namespace dmd

@@ -7,6 +7,7 @@
  *
  */
 
+#include "dm_types.h"
 #include "hda_codec.h"
 
 #include <cstdio>
@@ -19,17 +20,17 @@ namespace {
 
 /* the kernel's include/sound/hda_hwdep.h */
 struct hda_verb_ioctl {
-	uint32_t verb;          /* node << 24 | verb << 8 | parameter */
-	uint32_t res;
+	u32 verb;               /* node << 24 | verb << 8 | parameter */
+	u32 res;
 };
 const unsigned long HDA_IOCTL_VERB_WRITE =
 	_IOWR('H', 0x11, struct hda_verb_ioctl);
 
 /* the verbs and parameters (the HD Audio specification's) */
-const uint32_t GET_PARAMETER = 0xf00;
-const uint32_t PAR_NODE_COUNT = 0x04, PAR_FUNCTION_TYPE = 0x05;
-const uint32_t GRP_MODEM = 0x02;
-const uint32_t SI3054_READ = 0x900, SI3054_WRITE = 0x1;
+const u32 GET_PARAMETER = 0xf00;
+const u32 PAR_NODE_COUNT = 0x04, PAR_FUNCTION_TYPE = 0x05;
+const u32 GRP_MODEM = 0x02;
+const u32 SI3054_READ = 0x900, SI3054_WRITE = 0x1;
 
 } // namespace
 
@@ -82,11 +83,11 @@ void HdaCodec::close()
 }
 
 /* see hda_codec.h */
-bool HdaCodec::verb(int nid, uint32_t verb, uint32_t param, uint32_t *res)
+bool HdaCodec::verb(int nid, u32 verb, u32 param, u32 *res)
 {
 	hda_verb_ioctl v;
 
-	v.verb = static_cast<uint32_t>(nid) << 24 | verb << 8 | param;
+	v.verb = static_cast<u32>(nid) << 24 | verb << 8 | param;
 	v.res = 0;
 	if (snd_hwdep_ioctl(h_, HDA_IOCTL_VERB_WRITE, &v) < 0)
 		return false;
@@ -97,7 +98,7 @@ bool HdaCodec::verb(int nid, uint32_t verb, uint32_t param, uint32_t *res)
 /* see hda_codec.h: the root's function groups (its node count) */
 bool HdaCodec::is_modem()
 {
-	uint32_t r;
+	u32 r;
 
 	if (!verb(0, GET_PARAMETER, PAR_NODE_COUNT, &r))
 		return false;
@@ -111,24 +112,24 @@ bool HdaCodec::is_modem()
 }
 
 /* see hda_codec.h */
-bool HdaCodec::read(int nid, uint16_t *v)
+bool HdaCodec::read(int nid, u16 *v)
 {
-	uint32_t r;
+	u32 r;
 
 	if (!h_ || !verb(nid, SI3054_READ, 0, &r))
 		return false;
-	*v = static_cast<uint16_t>(r);
+	*v = static_cast<u16>(r);
 	return true;
 }
 
 /* see hda_codec.h: the 4 bit verb and its 16 bit payload, as the
    kernel takes them (its verb 0x1vv, parameter the low octet) */
-bool HdaCodec::write(int nid, uint16_t v)
+bool HdaCodec::write(int nid, u16 v)
 {
-	uint32_t r;
+	u32 r;
 
-	return h_ && verb(nid, SI3054_WRITE << 8 | uint32_t{v} >> 8,
-			  uint32_t{v} & 0xff, &r);
+	return h_ && verb(nid, SI3054_WRITE << 8 | u32{v} >> 8,
+			  u32{v} & 0xff, &r);
 }
 
 } // namespace dmd

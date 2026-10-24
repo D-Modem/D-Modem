@@ -38,7 +38,6 @@
 #include <cinttypes>
 #include <climits>
 #include <cmath>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -46,6 +45,7 @@
 #include <mutex>
 #include <vector>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "env.h"
 #include "dsp.h"
@@ -88,7 +88,7 @@ static int fill_to(unsigned char *b, int n, int fill)
 int V92Cpd::build(unsigned char *b, int fill) const
 {
 	int n = 0, i, j;
-	int32_t g4 = static_cast<int32_t>(lrint(4 * g * 65536));
+	s32 g4 = static_cast<s32>(lrint(4 * g * 65536));
 
 	if (g4 > 65535)
 		g4 = 65535;
@@ -120,7 +120,7 @@ int V92Cpd::build(unsigned char *b, int fill) const
 	for (i = 0; i < 4; i++)
 		for (j = 0; j < len[i]; j++) {
 			put_bits(b, &n, 0, 1);
-			put_bits(b, &n, static_cast<uint16_t>(coef[i][j]),
+			put_bits(b, &n, static_cast<u16>(coef[i][j]),
 				 16);
 		}
 	/* constellations */
@@ -217,7 +217,7 @@ int v92_cp_parse(V90Cp *c, const unsigned char *b, int len)
 
 /* see v92.h: V.90's descriptor up to its Ucodes (V90Dil::build), then
    the rate mask in two 16 bit fields after start bits, the CRC */
-int v92_dil_build(unsigned char *b, const V90Dil &d, uint32_t up_mask)
+int v92_dil_build(unsigned char *b, const V90Dil &d, u32 up_mask)
 {
 	int n;
 
@@ -330,9 +330,9 @@ int v92_cpus_build(unsigned char *b, int drn, int ack, int fill)
 
 /* see v92.h: the header to bit 51, then the parts bits 19 to 21 say
    are there (V92Cpd::build()'s layout), a start bit, the CRC */
-int32_t v92_cpd_length(const unsigned char *b, int n)
+s32 v92_cpd_length(const unsigned char *b, int n)
 {
-	int32_t p = 51, l;
+	s32 p = 51, l;
 	int i;
 
 	if (n < 22)
@@ -360,7 +360,7 @@ int32_t v92_cpd_length(const unsigned char *b, int n)
 int V92Cpd::parse(const unsigned char *b, int nb)
 {
 	int p = 51, i, j;
-	int32_t g4;
+	s32 g4;
 
 	if (nb < 68 || !frame_crc_ok(b, nb - 16) || b[18])
 		return -1;
@@ -387,7 +387,7 @@ int V92Cpd::parse(const unsigned char *b, int nb)
 		p += 68;
 		for (i = 0; i < 4; i++)
 			for (j = 0; j < len[i]; j++, p += 17)
-				coef[i][j] = static_cast<int16_t>(
+				coef[i][j] = static_cast<s16>(
 					field(b, p + 1, 16));
 	}
 	if (b[21]) {
@@ -427,7 +427,7 @@ static signed char trn_ref[TRN_NT];
 /* TRN1u: scrambled ones from a cleared scrambler, 0 positive */
 static void trn_ref_make()
 {
-	uint32_t r = 0;
+	u32 r = 0;
 	int m;
 	for (m = 0; m < TRN_NT; m++)
 		trn_ref[m] = scramble(&r, SCR_GPA, 1) ? -1 : 1;
@@ -441,7 +441,7 @@ static void trn_ref_init()
 }
 
 /* received sample i, from the ring of V92_BUF */
-static inline float at(const float *buf, int32_t i)
+static inline float at(const float *buf, s32 i)
 {
 	return buf[i & (V92_BUF - 1)];
 }
@@ -487,7 +487,7 @@ static int solve(double *A, double *v, double *w, int dim)
 
 /* TRN1u from about start on: find its first symbol in [lo, hi] by the
    correlation with the known sequence, and fit the equalizer */
-int V92Up::train(int32_t start, int lo, int hi)
+int V92Up::train(s32 start, int lo, int hi)
 {
 	/* (on the heap: per call, as calls run in their own threads,
 	   and too big for small thread stacks) */
@@ -515,7 +515,7 @@ int V92Up::train(int32_t start, int lo, int hi)
 	std::fill_n(A, Av.size(), 0);
 	zero(v);
 	for (s = 40; s < TRN_NT; s++) {
-		int32_t base = eqL + s - V92_EQ_PRE;
+		s32 base = eqL + s - V92_EQ_PRE;
 		for (i = 0; i < V92_EQ_F; i++)
 			phi[i] = at(buf, base + i);
 		for (j = 0; j < V92_EQ_B; j++)
@@ -540,7 +540,7 @@ int V92Up::train(int32_t start, int lo, int hi)
 		b[j] = w[V92_EQ_F + j];
 	for (s = 40; s < TRN_NT; s++) {
 		double y = 0;
-		int32_t base = eqL + s - V92_EQ_PRE;
+		s32 base = eqL + s - V92_EQ_PRE;
 		for (i = 0; i < V92_EQ_F; i++)
 			y += f[i] * at(buf, base + i);
 		for (j = 0; j < V92_EQ_B; j++)
@@ -571,9 +571,9 @@ int V92Up::train(int32_t start, int lo, int hi)
    left of the symbols before B1u, where the analogue modem's
    transmitter starts anew (pf_rst) and the design for the slip comes
    in (pf_new_at) */
-float V92Up::equalize(int32_t s)
+float V92Up::equalize(s32 s)
 {
-	int32_t base = eqL + s - V92_EQ_PRE;
+	s32 base = eqL + s - V92_EQ_PRE;
 	double y = 0;
 	int i;
 
@@ -604,9 +604,9 @@ float V92Up::equalize(int32_t s)
    (over the received power for the feed forward taps); the feedback
    taps too unless the precoder has them (b_frozen).  The caller then
    pushes the decision into the feedback */
-void V92Up::adapt(int32_t s, float err, float mu)
+void V92Up::adapt(s32 s, float err, float mu)
 {
-	int32_t base = eqL + s - V92_EQ_PRE;
+	s32 base = eqL + s - V92_EQ_PRE;
 	float g = mu / (V92_EQ_F * pr + 1);
 	int i;
 
@@ -766,7 +766,7 @@ void V92Up::tone_sample(float x)
 		{
 			/* Ru starts on a data frame boundary, Ru-bar 384
 			   symbols later, TRN2u 24 after it */
-			int32_t r = rev_at - eqL;
+			s32 r = rev_at - eqL;
 			rn_trn = (r + 6) / 12 * 12 + 24;
 			rx = V92R_RN_WAIT;
 			DSP_DBG("v92: Ru-bar at symbol %" PRId32 ", TRN2u at "
@@ -875,8 +875,8 @@ void V92Up::frame_bits(int bit)
 		int o = 188 + beta + (nn + 1) / 2 * 17;
 		if (dil.parse(fr.b, fr.len))
 			return;
-		up_mask = static_cast<uint16_t>(field(fr.b, o, 16)) |
-			static_cast<uint32_t>(field(fr.b, o + 17, 3)) << 16;
+		up_mask = static_cast<u16>(field(fr.b, o, 16)) |
+			static_cast<u32>(field(fr.b, o + 17, 3)) << 16;
 		got_ja = 1;
 		DSP_DBG("v92: Ja: DIL N %d, LSP %d, LTP %d, rates "
 			"%05" PRIx32 "\n", dil.n, dil.lsp, dil.ltp, up_mask);
@@ -1448,29 +1448,29 @@ int V92Up::fpe_frame(const V92Cpd *c)
 
 /* the modulus encoder's numbers: up to 12 * 8 bits */
 struct Big {
-	uint32_t w[4];          /* least significant first */
+	u32 w[4];               /* least significant first */
 
 	/* this = v */
-	void set(uint32_t v) { zero(w); w[0] = v; }
+	void set(u32 v) { zero(w); w[0] = v; }
 	/* this = this * m + a, modulo 2^128 */
-	void muladd(uint32_t m, uint32_t a)
+	void muladd(u32 m, u32 a)
 	{
-		uint64_t c = a;
+		u64 c = a;
 		for (int i = 0; i < 4; i++) {
-			c += static_cast<uint64_t>(w[i]) * m;
-			w[i] = static_cast<uint32_t>(c);
+			c += static_cast<u64>(w[i]) * m;
+			w[i] = static_cast<u32>(c);
 			c >>= 32;
 		}
 	}
 	/* this = a - this */
 	void rsub(const Big &a)
 	{
-		int64_t br = 0;
+		s64 br = 0;
 		for (int i = 0; i < 4; i++) {
-			int64_t d =
-				static_cast<int64_t>(a.w[i]) - w[i] - br;
+			s64 d =
+				static_cast<s64>(a.w[i]) - w[i] - br;
 			br = d < 0;
-			w[i] = static_cast<uint32_t>(d);
+			w[i] = static_cast<u32>(d);
 		}
 	}
 	/* -1, 0 or 1 as this is less than, equal to or more than a */
@@ -1488,7 +1488,7 @@ struct Big {
 /* the nearest point of each 2D subset to (u, v), in grid units (the
    odd coordinates 2 eta + 1, up to lim) */
 static void subset_pts(float u, float v, int lim, float dist[8],
-		       int32_t pt[8])
+		       s32 pt[8])
 {
 	int x0 = 2 * static_cast<int>(floorf(u / 2)) + 1,
 	    y0 = 2 * static_cast<int>(floorf(v / 2)) + 1;
@@ -1512,8 +1512,8 @@ static void subset_pts(float u, float v, int lim, float dist[8],
 			dd = (u - x) * (u - x) + (v - y) * (v - y);
 			if (dd < dist[l]) {
 				dist[l] = dd;
-				pt[l] = (static_cast<int32_t>(x) & 0xFFFF) |
-					static_cast<int32_t>(y) << 16;
+				pt[l] = (static_cast<s32>(x) & 0xFFFF) |
+					static_cast<s32>(y) << 16;
 			}
 		}
 }
@@ -1524,7 +1524,7 @@ static void subset_pts(float u, float v, int lim, float dist[8],
 void V92Up::trellis_frame()
 {
 	float da[8], db[8];
-	int32_t ca[8], cb[8], out[2];
+	s32 ca[8], cb[8], out[2];
 	int lim = 2 * cpd.lc[0] - 1;
 
 	subset_pts(tu[0], tu[1], lim, da, ca);
@@ -1532,9 +1532,9 @@ void V92Up::trellis_frame()
 	if (!vit.step(16 << cpd.trellis, 0, da, ca, db, cb, out))
 		return;
 	/* the odd coordinates back to indices */
-	decided((static_cast<int16_t>(out[0] & 0xFFFF) - 1) / 2);
+	decided((static_cast<s16>(out[0] & 0xFFFF) - 1) / 2);
 	decided(((out[0] >> 16) - 1) / 2);
-	decided((static_cast<int16_t>(out[1] & 0xFFFF) - 1) / 2);
+	decided((static_cast<s16>(out[1] & 0xFFFF) - 1) / 2);
 	decided(((out[1] >> 16) - 1) / 2);
 }
 
@@ -1761,7 +1761,7 @@ void V92Up::data_symbol(float y)
 /* a decided symbol, eta, of data frame interval vi */
 void V92Up::decided(int eta)
 {
-	int32_t idx = ddn++;
+	s32 idx = ddn++;
 	if (fpe_sw && idx >= fpe_b1)
 		fpe_sw = 0;
 	/* until B1u of a fast parameter exchange: the CPd before it */
@@ -1913,7 +1913,7 @@ int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 	double *A = Av.data();
 	double v[V92_EQ_F], phi[V92_EQ_F], g = 1;
 	int i, j;
-	int32_t s0 = sym - V92_FIT, sn;
+	s32 s0 = sym - V92_FIT, sn;
 
 	for (j = 0; j < V92_EQ_B; j++) {
 		g *= gamma;
@@ -1922,7 +1922,7 @@ int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 	std::fill_n(A, Av.size(), 0);
 	zero(v);
 	for (sn = s0; sn < sym; sn++) {
-		int32_t base = eqL + sn - V92_EQ_PRE;
+		s32 base = eqL + sn - V92_EQ_PRE;
 		double t = dring[sn & (V92_DR - 1)];
 		for (j = 0; j < V92_EQ_B; j++)
 			t += bg[j] * dring[(sn - 1 - j) & (V92_DR - 1)];
@@ -1940,7 +1940,7 @@ int V92Up::precoder_fit(double gamma, double *bg, double *fg, double *e2)
 		return -1;
 	*e2 = 0;
 	for (sn = s0; sn < sym; sn++) {
-		int32_t base = eqL + sn - V92_EQ_PRE;
+		s32 base = eqL + sn - V92_EQ_PRE;
 		double t = dring[sn & (V92_DR - 1)], y = 0;
 		for (j = 0; j < V92_EQ_B; j++)
 			t += bg[j] * dring[(sn - 1 - j) & (V92_DR - 1)];
@@ -2094,7 +2094,7 @@ void V92Up::design()
 		for (j = 0; j < V92_EQ_B; j++) {
 			long q = lrint(-bgs[best][j] * 16384);
 			q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
-			cpd.coef[1][j] = static_cast<int16_t>(q);
+			cpd.coef[1][j] = static_cast<s16>(q);
 			b[j] = -q / 16384.0;
 		}
 		b_frozen = 1;
@@ -2153,9 +2153,9 @@ int V92Up::ch_fit(double *e2, double *q2)
 	std::vector<double> Av(V92_CH * V92_CH);       /* (as in train) */
 	double *A = Av.data();
 	double v[V92_CH], phi[V92_CH];
-	int32_t s0 = sym - V92_PF_FIT + V92_CH_POST, s1 = sym - 1 - V92_CH_PRE,
+	s32 s0 = sym - V92_PF_FIT + V92_CH_POST, s1 = sym - 1 - V92_CH_PRE,
 		sn;
-	int32_t cnt = 0;
+	s32 cnt = 0;
 	int i, j;
 
 	std::fill_n(A, Av.size(), 0);
@@ -2295,14 +2295,14 @@ int V92Up::pf_filter(double n0, double *resid, int dfix)
 
 /* lc positive points: G.711 levels, each gap at least gap (the first
    from 0 at least half of it); 0 if the levels run out */
-int V92Up::pf_points(int gap, int lc, int16_t *pts)
+int V92Up::pf_points(int gap, int lc, s16 *pts)
 {
 	int k, n = 0;
 	for (k = 0; k < 128 && n < lc; k++) {
-		int32_t v = pf_lev[k];
+		s32 v = pf_lev[k];
 		if ((n == 0 && 2 * v >= gap && v > 0) ||
 		    (n > 0 && v - pts[n - 1] >= gap))
-			pts[n++] = static_cast<int16_t>(v);
+			pts[n++] = static_cast<s16>(v);
 	}
 	return n == lc;
 }
@@ -2311,7 +2311,7 @@ int V92Up::pf_points(int gap, int lc, int16_t *pts)
    2 eta + 1, linear in between */
 float V92Up::pf_grid(const V92Cpd *c, float r) const
 {
-	const int32_t *p = c->pts[0];
+	const s32 *p = c->pts[0];
 	int lc = c->lc[0], lo = 0, hi = lc - 1;
 	float a = fabsf(r), u;
 
@@ -2347,7 +2347,7 @@ float V92Up::pf_point(const V92Cpd *c, int eta) const
 /* nsym symbols of the design (modulus M, the points) through ch and
    G.711: the transmitter's power (E (w * x)^2, 1 the most), the grid
    mse; the symbol errors */
-int V92Up::pf_sim(int M, const int16_t *pts, int lc, int nsym, double *pw,
+int V92Up::pf_sim(int M, const s16 *pts, int lc, int nsym, double *pw,
 		  double *mseg)
 {
 	enum { NS = 4096 };
@@ -2357,7 +2357,7 @@ int V92Up::pf_sim(int M, const int16_t *pts, int lc, int nsym, double *pw,
 	double *xs = xsv.data(), *ts = tsv.data();
 	int *want = wantv.data();
 	V92Cpd c;
-	uint32_t rnd = 12345;
+	u32 rnd = 12345;
 	int n, k, errs = 0, cnt = 0;
 	double p = 0;
 
@@ -2372,7 +2372,7 @@ int V92Up::pf_sim(int M, const int16_t *pts, int lc, int nsym, double *pw,
 		for (k = 0; k < V92_PF_B && n - 1 - k >= 0; k++)
 			fb += pf_b[k] * xs[n - 1 - k];
 		rnd = rnd * 1103515245 + 12345;
-		K = static_cast<int>((rnd >> 8) % static_cast<uint32_t>(M));
+		K = static_cast<int>((rnd >> 8) % static_cast<u32>(M));
 		rnd = rnd * 1103515245 + 12345;
 		par = (rnd >> 16) & 1;
 		/* the class's point nearest the feedback: the least output */
@@ -2400,7 +2400,7 @@ int V92Up::pf_sim(int M, const int16_t *pts, int lc, int nsym, double *pw,
 	*pw = p / nsym;
 	*mseg = 0;
 	for (n = 64; n < nsym - 64; n++) {
-		int32_t m = n + pf_d;
+		s32 m = n + pf_d;
 		double r = 0, a, lev;
 		int j, lo = 0, hi = 127, eta;
 		float u;
@@ -2473,7 +2473,7 @@ int V92Up::pf_rate(int drn)
 {
 	int K = 2 * (drn + 17), M, lc, lo = 8, hi = 2048, errs;
 	double sb = 0, pw, mg;
-	int16_t pts[V92_LC_MAX];
+	s16 pts[V92_LC_MAX];
 
 	pf_gap[drn] = 0;
 	M = static_cast<int>(ceil(pow(2.0, K / 12.0) - 1e-9));
@@ -2510,7 +2510,7 @@ int V92Up::pf_rate(int drn)
 	/* a few in 4000 the trellis code takes care of */
 	if (errs > 2)
 		return 0;
-	pf_gap[drn] = static_cast<int16_t>(lo);
+	pf_gap[drn] = static_cast<s16>(lo);
 	pf_mseg[drn] = mg;
 	return 1;
 }
@@ -2518,7 +2518,7 @@ int V92Up::pf_rate(int drn)
 /* the received sample of symbol k (relative to the channel's main tap),
    less what the plain channel still has of the symbols before B1u (in
    TRN2u's modulation) */
-double V92Up::pf_sample(int32_t k)
+double V92Up::pf_sample(s32 k)
 {
 	double r = at(buf, pf_eqL + k);
 	int j = static_cast<int>(k - pf_s0 + 1);
@@ -2532,9 +2532,9 @@ double V92Up::pf_sample(int32_t k)
 /* the analogue modem's transmitter starts anew at symbol r: what the
    line still has of the signal before it is like TRN2u's before B1u,
    its line signal rebuilt from the decisions */
-void V92Up::pf_reset(int32_t r)
+void V92Up::pf_reset(s32 r)
 {
-	for (int32_t m = r - V92_CH_POST - V92_PF_F; m < r; m++) {
+	for (s32 m = r - V92_CH_POST - V92_PF_F; m < r; m++) {
 		double v = 0;
 		for (int i = 0; i < V92_PF_W && m - i >= pf_s0; i++)
 			v += pf_rw[i] * pf_xr[(m - i) & (V92_PF_XR - 1)];
@@ -2638,7 +2638,7 @@ double V92Up::pf_qslope(double v) const
 	/* the thresholds within 5 sigma on either side (and the one at
 	   zero, between -L0 and L0) */
 	for (j = 0; j < 127; j++) {
-		double b = (static_cast<int32_t>(pf_lev[j]) + pf_lev[j + 1]) /
+		double b = (static_cast<s32>(pf_lev[j]) + pf_lev[j + 1]) /
 			2.0,
 			z = (b - a) / sg;
 		if (fabs(z) < 5)
@@ -2726,7 +2726,7 @@ int V92Up::pf_cpd(V92Cpd *c, int drn)
 {
 	int K = 2 * (drn + 17), M, lc, j;
 	double sb = 0;
-	int16_t pts[V92_LC_MAX];
+	s16 pts[V92_LC_MAX];
 
 	M = static_cast<int>(ceil(pow(2.0, K / 12.0) - 1e-9));
 	for (j = 0; j < V92_PF_B; j++)
@@ -2773,19 +2773,19 @@ int V92Up::pf_quant()
 {
 	double mx = 0;
 	int i, j;
-	int32_t g4;
+	s32 g4;
 
 	for (i = 0; i < V92_PF_W; i++)
 		if (fabs(pf_w[i]) > mx)
 			mx = fabs(pf_w[i]);
-	g4 = static_cast<int32_t>(ceil(4 * mx * 65536 * 1.0001));
+	g4 = static_cast<s32>(ceil(4 * mx * 65536 * 1.0001));
 	if (g4 < 1 || g4 > 65535)
 		return -1;
 	pf_g = g4 / (4 * 65536.0);
 	for (i = 0; i < V92_PF_W; i++) {
 		long q = lrint(pf_w[i] / pf_g * 32768);
 		q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
-		pf_z2[i] = static_cast<int16_t>(q);
+		pf_z2[i] = static_cast<s16>(q);
 		pf_w[i] = pf_g * q / 32768;
 	}
 	/* the response with them, and the precoder for it */
@@ -2801,7 +2801,7 @@ int V92Up::pf_quant()
 	for (j = 0; j < V92_PF_B; j++) {
 		long q = lrint(-c[kd + 1 + j] / pf_cd * 16384);
 		q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
-		pf_p1[j] = static_cast<int16_t>(q);
+		pf_p1[j] = static_cast<s16>(q);
 		pf_b[j] = -q / 16384.0;
 	}
 	return 0;
@@ -2819,10 +2819,10 @@ int V92Up::pf_design(const char *fix)
 	    ia.ltot < 8 + V92_PF_B + V92_PF_W)
 		return 0;
 	for (i = 0; i < 128; i++)
-		pf_lev[i] = static_cast<int16_t>(v90_ucode_linear(alaw, i));
+		pf_lev[i] = static_cast<s16>(v90_ucode_linear(alaw, i));
 	for (i = 1; i < 128; i++)
 		for (j = i; j > 0 && pf_lev[j] < pf_lev[j - 1]; j--) {
-			int16_t t = pf_lev[j];
+			s16 t = pf_lev[j];
 			pf_lev[j] = pf_lev[j - 1];
 			pf_lev[j - 1] = t;
 		}
@@ -3168,8 +3168,8 @@ int V92Up::tx_step()
 /* the start, after an INFO1a (ia_) that asks for PCM upstream: alaw_
    the network's law, fclock and fbase the symbol clock for V.90's
    transmitter (see V90Tx); the receiver waits for Ru */
-void V92Up::init(int alaw_, const V92Info1a *ia_, const int32_t *fclock,
-		 int32_t fbase)
+void V92Up::init(int alaw_, const V92Info1a *ia_, const s32 *fclock,
+		 s32 fbase)
 {
 	reinit(*this);
 	trn_ref_init();

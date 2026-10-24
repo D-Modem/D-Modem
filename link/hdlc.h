@@ -15,19 +15,20 @@
 #ifndef DMODEM_LINK_HDLC_H
 #define DMODEM_LINK_HDLC_H
 
-#include <cstdint>
+
+#include "dm_types.h"
 
 namespace dlink {
 
 class Link;
 
 /* the line sends the least significant bit of a character first */
-inline uint8_t reverse_bits(uint8_t c)
+inline u8 reverse_bits(u8 c)
 {
-	static const uint8_t nibble[16] = {
+	static const u8 nibble[16] = {
 		0x0, 0x8, 0x4, 0xc, 0x2, 0xa, 0x6, 0xe,
 		0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf };
-	return static_cast<uint8_t>(nibble[c & 0xf] << 4 | nibble[c >> 4]);
+	return static_cast<u8>(nibble[c & 0xf] << 4 | nibble[c >> 4]);
 }
 
 /* a frame: address, control, information (no FCS) */
@@ -35,14 +36,14 @@ struct Frame {
 	Frame *next;            /* the frame lists of LAPM are rings */
 	int count;              /* bytes sent or received so far */
 	int size;               /* to send / room */
-	uint16_t fcs;
-	uint8_t *buf;
+	u16 fcs;
+	u8 *buf;
 };
 
 /* the bits not yet given out or taken in */
 struct BitQueue {
 	int bit = 0;
-	uint32_t data = 0;
+	u32 data = 0;
 	/* empty */
 	void clear() { bit = 0; data = 0; }
 };
@@ -73,8 +74,8 @@ template <class F>
 class BitFramer {
 public:
 	/* n items of nbits bits for the data pump, and from it; how many */
-	int get_bits(int nbits, uint8_t *buf, int n);
-	int put_bits(int nbits, const uint8_t *buf, int n);
+	int get_bits(int nbits, u8 *buf, int n);
+	int put_bits(int nbits, const u8 *buf, int n);
 	/* the received bits not taken yet (for the framer after this one) */
 	const BitQueue &rx_queue() const { return rx_; }
 
@@ -88,7 +89,7 @@ protected:
 	}
 	/* (F's) the rest of the n items when tx_fill() has nothing: none
 	   here; how many it filled */
-	int tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n)
+	int tx_idle(int nbits, u8 mask, u8 *&buf, int &n)
 	{
 		(void)nbits;
 		(void)mask;
@@ -114,13 +115,13 @@ private:
 	friend class BitFramer<Hdlc>;
 	bool tx_fill();
 	void rx_scan();
-	void put_byte(uint8_t in);
+	void put_byte(u8 in);
 
 	Framer *framer_ = nullptr;
 	bool tx_on_ = false;
 	Frame *tx_frame_ = nullptr;
 	Frame rx_frame_ = {};
-	uint8_t rx_buf_[512];
+	u8 rx_buf_[512];
 	int rx_error_ = 0;
 	int rx_ones_ = 0, tx_ones_ = 0;
 };
@@ -133,7 +134,7 @@ public:
 private:
 	friend class BitFramer<Async>;
 	bool tx_fill();
-	int tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n);
+	int tx_idle(int nbits, u8 mask, u8 *&buf, int &n);
 	void rx_scan();
 };
 
@@ -155,12 +156,12 @@ private:
 	void rx_scan();
 
 	int tx_count_ = 0;
-	uint8_t tx_pattern_[2] = {};
+	u8 tx_pattern_[2] = {};
 	int rx_count_ = 0;
-	uint8_t rx_pattern_[2] = {};
+	u8 rx_pattern_[2] = {};
 	bool ec_enable_ = false;
 	bool refused_ = false;          /* ADP "E" NUL: no error correction */
-	uint32_t rx_chars_ = 0;         /* the last three characters */
+	u32 rx_chars_ = 0;              /* the last three characters */
 };
 
 } // namespace dlink

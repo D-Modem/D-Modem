@@ -24,32 +24,33 @@
 #define DMODEM_WINMODEM_WIRE_H
 
 #include <cstddef>
-#include <cstdint>
 #include <string>
+
+#include "dm_types.h"
 
 namespace vmodem {
 
-enum : uint16_t { WIRE_VERSION = 1 };
+enum : u16 { WIRE_VERSION = 1 };
 enum : size_t { WIRE_HEAD = 3, WIRE_MAX_DATA = 4096 };
 
-enum FrameType : uint8_t {
+enum FrameType : u8 {
 	FRAME_HELLO = 'H', FRAME_DATA = 'D', FRAME_LINES = 'L',
 	FRAME_STATE = 'S',
 };
 
 /* the modem's lines, as dmodemd gives them (LINES) */
-enum : uint8_t { LINE_DCD = 1, LINE_RI = 2, LINE_DSR = 4, LINE_CTS = 8 };
+enum : u8 { LINE_DCD = 1, LINE_RI = 2, LINE_DSR = 4, LINE_CTS = 8 };
 /* the app's side, as the driver gives it (STATE) */
-enum : uint8_t { STATE_OPEN = 1, STATE_DTR = 2, STATE_RTS = 4 };
+enum : u8 { STATE_OPEN = 1, STATE_DTR = 2, STATE_RTS = 4 };
 
 /* a frame of type t with payload p (n bytes) appended to out */
 void wire_put(std::string &out, FrameType t, const void *p, size_t n);
 /* HELLO: our version and (the driver's) port name */
 void wire_hello(std::string &out, const std::string &port);
 /* LINES: lines (LINE_*) */
-void wire_lines(std::string &out, uint8_t lines);
+void wire_lines(std::string &out, u8 lines);
 /* STATE: state (STATE_*) and the baud rate */
-void wire_state(std::string &out, uint8_t state, uint32_t baud);
+void wire_state(std::string &out, u8 state, u32 baud);
 /* DATA: p (n bytes), in frames of WIRE_MAX_DATA */
 void wire_data(std::string &out, const void *p, size_t n);
 
@@ -59,7 +60,7 @@ class WireReader {
 public:
 	struct Frame {
 		FrameType type;
-		const uint8_t *p;       /* the payload, valid until feed() */
+		const u8 *p;            /* the payload, valid until feed() */
 		size_t n;
 	};
 	/* bytes read appended */
@@ -74,12 +75,12 @@ public:
 	size_t pending() const { return buf_.size() - pos_; }
 
 	/* a HELLO's version and port name: false if it is short */
-	static bool hello(const Frame &f, uint16_t *version,
+	static bool hello(const Frame &f, u16 *version,
 			  std::string *port);
 	/* a LINES frame's lines, a STATE frame's state and baud rate:
 	   false if short */
-	static bool lines(const Frame &f, uint8_t *lines);
-	static bool state(const Frame &f, uint8_t *state, uint32_t *baud);
+	static bool lines(const Frame &f, u8 *lines);
+	static bool state(const Frame &f, u8 *state, u32 *baud);
 
 private:
 	std::string buf_;

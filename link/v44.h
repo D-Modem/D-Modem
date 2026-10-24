@@ -33,8 +33,9 @@
 #ifndef DMODEM_LINK_V44_H
 #define DMODEM_LINK_V44_H
 
-#include <cstdint>
 #include <vector>
+
+#include "dm_types.h"
 
 namespace dlink {
 
@@ -54,9 +55,9 @@ public:
 	V44 &operator=(const V44 &) = delete;
 
 	/* the largest dictionary and history (what XID can agree on) */
-	int init(int32_t codewords, int32_t max_string, int32_t history);
+	int init(s32 codewords, s32 max_string, s32 history);
 	/* what was agreed (no more than init's); -1 if out of range */
-	int config(int32_t codewords, int32_t max_string, int32_t history);
+	int config(s32 codewords, s32 max_string, s32 history);
 	/* frees it all (not ready() any more) */
 	void exit();
 	/* init() was done */
@@ -64,80 +65,80 @@ public:
 
 	/* the encoder: one character in; the tokens come once there are
 	   enough characters to look ahead, or at the flush */
-	int encode(uint8_t ch);
+	int encode(u8 ch);
 	int flush_encoder();
 	/* the decoder: one octet in; -1 on an error */
-	int decode(uint8_t octet);
+	int decode(u8 octet);
 	/* the decoder: nothing to flush */
 	int flush_decoder() { return 0; }
 	/* the output so far, up to n bytes */
-	int out(uint8_t *buf, int n);
+	int out(u8 *buf, int n);
 	/* output waiting */
 	bool has_out() const { return ohead_ < obuf_.size(); }
 
 	/* statistics: characters and compressed bits (the encoder) */
-	uint32_t raw_bits() const { return raw_bits_; }
+	u32 raw_bits() const { return raw_bits_; }
 	/* (see raw_bits()) */
-	uint32_t cmp_bits() const { return cmp_bits_; }
+	u32 cmp_bits() const { return cmp_bits_; }
 
 private:
 	enum { NONE = 1, ORD = 0, CW = 2, EXT = 3 };    /* token types */
 	enum { ETM = 0, FLUSH = 1, STEPUP = 2, REINIT = 3 };
 	struct Entry {
-		uint16_t len;
-		uint32_t last;          /* the history position of its last
+		u16 len;
+		u32 last;               /* the history position of its last
 					   character */
-		int32_t next;           /* the encoder's hash chain */
+		s32 next;               /* the encoder's hash chain */
 	};
 
 	void reset();
-	void add(int len, uint32_t last);
-	void after_token(int type, uint32_t value);
+	void add(int len, u32 last);
+	void after_token(int type, u32 value);
 	/* encoder */
 	void step();
-	void put_bits(uint32_t v, int n);
+	void put_bits(u32 v, int n);
 	void put_control(int code);
-	void put_ordinal(uint8_t ch);
-	void put_codeword(uint32_t cw);
+	void put_ordinal(u8 ch);
+	void put_codeword(u32 cw);
 	void put_extension(int n);
 	void reinit();
-	int32_t find(uint32_t pos, uint32_t avail, int *len) const;
+	s32 find(u32 pos, u32 avail, int *len) const;
 	/* decoder */
-	bool get_bits(int n, uint32_t *v);
-	bool read_token(int *type, uint32_t *value);
+	bool get_bits(int n, u32 *v);
+	bool read_token(int *type, u32 *value);
 	int run_decoder();
-	int token(int type, uint32_t value);
-	int put_hist(uint8_t ch);
+	int token(int type, u32 value);
+	int put_hist(u8 ch);
 
-	int32_t n2_ = 0, n7_ = 0, n8_ = 0;      /* agreed */
-	int32_t max_n2_ = 0, max_n7_ = 0, max_n8_ = 0;
+	s32 n2_ = 0, n7_ = 0, n8_ = 0;          /* agreed */
+	s32 max_n2_ = 0, max_n7_ = 0, max_n8_ = 0;
 	std::vector<Entry> dict_;
-	std::vector<uint8_t> hist_;
-	uint32_t hp_ = 0;                       /* history: written */
-	uint32_t c1_ = 0;                       /* the next codeword */
+	std::vector<u8> hist_;
+	u32 hp_ = 0;                            /* history: written */
+	u32 c1_ = 0;                            /* the next codeword */
 	int c2_ = 0, c5_ = 0;                   /* codeword, ordinal size */
-	uint32_t c3_ = 0;                       /* 1 << c2_ */
+	u32 c3_ = 0;                            /* 1 << c2_ */
 	int last_type_ = NONE;                  /* for the dictionary */
-	uint32_t last_value_ = 0;
+	u32 last_value_ = 0;
 	int prev_type_ = NONE;                  /* any token, controls too */
 	/* encoder */
-	std::vector<int32_t> head_;             /* the first two characters
+	std::vector<s32> head_;                 /* the first two characters
 						   of a string -> its entry */
-	uint32_t end_ = 0;                      /* characters in hist_ */
-	uint32_t bits_ = 0;
+	u32 end_ = 0;                           /* characters in hist_ */
+	u32 bits_ = 0;
 	int nbits_ = 0;
 	/* decoder */
 	bool transparent_ = false;
 	bool escape_ = false;
-	uint8_t escape_char_ = 0;
+	u8 escape_char_ = 0;
 	bool stepup_ = false;
-	std::vector<uint8_t> in_;               /* octets not decoded yet */
+	std::vector<u8> in_;                    /* octets not decoded yet */
 	size_t in_pos_ = 0;
 	int in_bit_ = 0;                        /* bits used of in_[in_pos_] */
 	/* output */
-	std::vector<uint8_t> obuf_;
+	std::vector<u8> obuf_;
 	size_t ohead_ = 0;
-	uint32_t raw_bits_ = 0, cmp_bits_ = 0;
+	u32 raw_bits_ = 0, cmp_bits_ = 0;
 };
 
 } // namespace dlink

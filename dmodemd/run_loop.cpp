@@ -10,6 +10,7 @@
 
 #include <dcore.h>
 
+#include "dm_types.h"
 #include "run_loop.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -35,15 +36,15 @@ void RunLoop::catch_signals()
 }
 
 /* see run_loop.h */
-int32_t RunLoop::poll(dcore::Modem *const *m, int n)
+s32 RunLoop::poll(dcore::Modem *const *m, int n)
 {
-	int32_t next = 1000;
+	s32 next = 1000;
 	for (int i = 0; i < n; i++) {
-		int64_t t;
+		s64 t;
 		m[i]->poll();
 		t = m[i]->next_timer_ms();
 		if (t >= 0 && t < next)
-			next = static_cast<int32_t>(t);
+			next = static_cast<s32>(t);
 	}
 	return next;
 }
@@ -74,7 +75,7 @@ void RunLoop::watch_write(int fd)
 }
 
 /* see run_loop.h */
-int RunLoop::wait(int32_t ms)
+int RunLoop::wait(s32 ms)
 {
 	struct timeval tmo;
 	int ret;

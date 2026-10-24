@@ -19,20 +19,21 @@
 #ifndef DMODEMD_SI3056_H
 #define DMODEMD_SI3056_H
 
-#include <cstdint>
+
+#include "dm_types.h"
 
 namespace dmd {
 
 /* a row of Table 15 */
 struct Si3056Country {
 	const char *name;       /* D-Modem's (-c, +GCI), and its aliases */
-	uint8_t ohs, ohs2, rz, rt, ilim, dcv, mini, acim, act, act2;
+	u8 ohs, ohs2, rz, rt, ilim, dcv, mini, acim, act, act2;
 };
 
 /* the registers a country's settings go into, as read and then as they
    are to be written */
 struct Si3056Regs {
-	uint8_t r16, r26, r30, r31, r59;
+	u8 r16, r26, r30, r31, r59;
 };
 
 /* the row of the country named name (D-Modem's names, case and '_'

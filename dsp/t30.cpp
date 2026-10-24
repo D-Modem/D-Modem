@@ -37,7 +37,6 @@
 
 #include <cinttypes>
 #include <cmath>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -45,6 +44,7 @@
 #include <utility>
 #include <vector>
 
+#include "dm_types.h"
 #include "dsp.h"
 #include "env.h"
 #include "bits.h"
@@ -99,7 +99,7 @@ enum {
    training, the long one is the next) and the training's time */
 static const struct rate {
 	enum fax_mod mod;
-	int32_t bps;
+	s32 bps;
 	unsigned bits;
 	int family;                     /* 2: V.17, 1: V.29, 0: V.27ter */
 	int t38_data, t38_ind;
@@ -187,12 +187,12 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	typedef HdlcRx<T30, ECM_RX_MAX, HdlcEcm> EcmRx;
 
 	struct t30_config cfg;
-	int32_t srate;
+	s32 srate;
 	enum state state, after_tx;     /* where to go when the frames went */
 	enum t30_result result;
-	int32_t count;                  /* samples in this state */
-	int32_t timer;                  /* samples left, 0: none */
-	int32_t t1;                     /* samples to T1, 0: off */
+	s32 count;                      /* samples in this state */
+	s32 timer;                      /* samples left, 0: none */
+	s32 t1;                         /* samples to T1, 0: off */
 	int tries;
 
 	/* the transmitter: frames, a modem or a tone */
@@ -200,9 +200,9 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	FaxTx tx;
 	struct frame frames[MAX_FRAMES];
 	int nframes, cur_frame;         /* the next one to send */
-	int32_t gap;                    /* S_GAP: samples left */
+	s32 gap;                        /* S_GAP: samples left */
 	void (T30::*after_gap)();
-	int32_t tcf_bits;               /* to send */
+	s32 tcf_bits;                   /* to send */
 	T4Bits page_bits;
 	size_t page_pos;
 
@@ -237,7 +237,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	int rx_page_on;
 	int page_ok;
 	int eop_acked;                  /* MCF to an EOP sent: all came */
-	int32_t zero_run, max_zero_run, tcf_trained;
+	s32 zero_run, max_zero_run, tcf_trained;
 
 	int pages;
 
@@ -257,7 +257,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	int etx_frame, etx_rcp;         /* the next frame to look at, RCPs */
 	/* receiving */
 	std::vector<unsigned char> ecm_rx;      /* the block's frames */
-	int16_t ecm_rx_len[ECM_FRAMES]; /* -1: not (yet) received */
+	s16 ecm_rx_len[ECM_FRAMES]; /* -1: not (yet) received */
 	int ecm_rx_frames;              /* in the block, -1: not known */
 	int ecm_rcp;
 	/* non-ECM: our last post-page response, to the command post_fcf,
@@ -274,9 +274,9 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	/* T.38: the transmission going out as packets */
 	int t38_kind;                   /* enum t38_tx */
 	int t38_step;                   /* enum t38_step */
-	int32_t t38_wait;               /* samples left in the step, -1:
+	s32 t38_wait;                   /* samples left in the step, -1:
 					   it starts */
-	int32_t t38_acc;                /* the data's time: bits x srate */
+	s32 t38_acc;                    /* the data's time: bits x srate */
 	int t38_due;                    /* octets the line had time for */
 	int t38_debt;                   /* octets of time to go first (the
 					   frame's FCS and a flag) */
@@ -293,14 +293,14 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	int t38_heard;                  /* the fast modulation came */
 
 	void set_state(enum state s);
-	void start_timer(int32_t ms);
+	void start_timer(s32 ms);
 	void stop_fast();
 	void start_fast(int short_train);
 	void restart_v21();
 	void add_frame(int fcf, const unsigned char *fif, int len);
 	void send_frames(enum state next_);
 	void new_frames();
-	void gap_then(int32_t ms, void (T30::*f)());
+	void gap_then(s32 ms, void (T30::*f)());
 	void finish(enum t30_result r);
 	void send_dcn(enum t30_result r);
 	void send_dis();
@@ -356,7 +356,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void t38_sample();
 	void t38_rx(const struct t38_ifp *p);
 	void t38_frame_in(const unsigned char *d, int len);
-	void t38_t4_in(const unsigned char *d, int32_t n);
+	void t38_t4_in(const unsigned char *d, s32 n);
 	void t38_signal_end();
 };
 
@@ -458,7 +458,7 @@ void T30::set_state(enum state s)
 }
 
 /* on_timeout() in ms */
-void T30::start_timer(int32_t ms)
+void T30::start_timer(s32 ms)
 {
 	timer = ms2samples(ms, srate);
 }
@@ -558,7 +558,7 @@ void T30::new_frames()
 }
 
 /* silence, then f */
-void T30::gap_then(int32_t ms, void (T30::*f)())
+void T30::gap_then(s32 ms, void (T30::*f)())
 {
 	set_state(S_GAP);
 	gap = ms2samples(ms, srate);
@@ -692,7 +692,7 @@ void T30::page_done()
    row, else FTT */
 void T30::tcf_done()
 {
-	int32_t bps = rates[rate].bps;
+	s32 bps = rates[rate].bps;
 	int ok = max_zero_run >= bps * 3 / 4;        /* 750 ms */
 	DSP_DBG("t30: TCF: %" PRId32 " zeros in a row (of %" PRId32 "): %s\n",
 		max_zero_run, bps * 3 / 2, ok ? "ok" : "failed");
@@ -882,7 +882,7 @@ void T30::rx_message()
    time at the call's rate, RTC at the end */
 void T30::encode_page()
 {
-	int32_t bps = rates[rate].bps;
+	s32 bps = rates[rate].bps;
 	page_bits.release();
 	page.encode_mh(&page_bits, min_ms * bps / 1000, 0, 1);
 	page_pos = 0;
@@ -1032,7 +1032,7 @@ void T30::page_settings()
 	if (page.fine && !fine) {
 		/* the remote takes only standard: every other row */
 		T4Page p;
-		int32_t y;
+		s32 y;
 		int s = T4_STRIDE(page.width);
 		p.init(page.width, 0);
 		for (y = 0; y < page.rows; y += 2)
@@ -1380,7 +1380,7 @@ void T30::ecm_frame_in(const unsigned char *d, int len)
 		if (n > ECM_SIZE)
 			n = ECM_SIZE;
 		memcpy(&ecm_rx[static_cast<size_t>(fn) * ECM_SIZE], d + 4, n);
-		ecm_rx_len[fn] = static_cast<int16_t>(n);
+		ecm_rx_len[fn] = static_cast<s16>(n);
 	} else if ((d[2] & 0xfe) == FCF_RCP) {
 		if (!ecm_rcp++)
 			DSP_DBG("t30: RCP\n");
@@ -1798,9 +1798,9 @@ void T30::t38_frame_in(const unsigned char *d, int len)
 
 /* T.4 octets (the first bit at the top): the TCF's longest run of zeros,
    or the page's bits up to its RTC */
-void T30::t38_t4_in(const unsigned char *d, int32_t n)
+void T30::t38_t4_in(const unsigned char *d, s32 n)
 {
-	for (int32_t k = 0; k < n * 8; k++) {
+	for (s32 k = 0; k < n * 8; k++) {
 		int bit = d[k / 8] >> (7 - k % 8) & 1;
 		if (state == S_RX_TCF) {
 			tcf_trained = 1;
@@ -2051,7 +2051,7 @@ float T30::tone(float freq)
 float T30::tx_sample()
 {
 	float y = 0;
-	int32_t c = count;
+	s32 c = count;
 
 	if (tx_on) {
 		y = tx_mute ? (tx.sample(), 0.0f) : tx.sample();
@@ -2141,7 +2141,7 @@ void T30::take_message()
 
 /* n samples of 16 bit audio in and out (in NULL: silence, out NULL:
    none wanted), the timers by them */
-void t30_process(T30 *t, const int16_t *in, int16_t *out, int n)
+void t30_process(T30 *t, const s16 *in, s16 *out, int n)
 {
 	int i;
 	for (i = 0; i < n; i++) {

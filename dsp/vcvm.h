@@ -32,8 +32,9 @@
 #define DSP_VCVM_H
 
 #include <complex>
-#include <cstdint>
 #include <vector>
+
+#include "dm_types.h"
 
 namespace dsp {
 
@@ -42,7 +43,7 @@ namespace dsp {
 /* a comb of Table 10-2 at a signal interface rate */
 struct VcvmComb {
 	int code;               /* 0 N200 ... 8 S400 */
-	int32_t fs;             /* the interface's rate: 8000, 16000, 32000 */
+	s32 fs;                 /* the interface's rate: 8000, 16000, 32000 */
 	int spacing;            /* Hz */
 	int kmin, kmax;         /* the tones' multiples of the spacing */
 	int tones;              /* kmax - kmin + 1 */
@@ -54,7 +55,7 @@ struct VcvmComb {
 	   S at 32000), sym22 the 22.5 ms symbol (codes 0, 3, 6); 0, or -1
 	   if they don't go
 	   together */
-	int init(int code, int32_t fs, bool sym22 = false);
+	int init(int code, s32 fs, bool sym22 = false);
 	/* tone i's frequency, Hz */
 	double freq(int i) const
 	{
@@ -67,8 +68,8 @@ struct VcvmComb {
 /* a loading: per tone (the lowest first) the phase bits (0 not loaded,
    2 DQPSK, 3 8-DPSK) and the ring bits (0 none, 1 two rings, 2 four) */
 struct VcvmLoad {
-	uint8_t phase[VCVM_TONES];
-	uint8_t ring[VCVM_TONES];
+	u8 phase[VCVM_TONES];
+	u8 ring[VCVM_TONES];
 
 	/* every tone of n at phase bits pb, no rings */
 	void all(int n, int pb);
@@ -82,7 +83,7 @@ class VcvmCombTx {
 public:
 	/* the comb, the level over the loaded tones (dBFS rms, 10.11's
 	   -12) */
-	int init(int code, int32_t fs, bool sym22 = false,
+	int init(int code, s32 fs, bool sym22 = false,
 		 double dbfs = -12);
 	void set_load(const VcvmLoad &l);
 	/* the comb */
@@ -97,11 +98,11 @@ public:
 	void reference(float *out);
 	/* a data symbol from bits() bits (0/1, the first the lowest tone's
 	   first phase bit), Gray coded onto the phase and ring steps */
-	void data(const uint8_t *bits, float *out);
+	void data(const u8 *bits, float *out);
 	/* a symbol of the steps themselves: per tone the phase step in
 	   eighths of a turn and the ring step (the probing's known steps,
 	   the control sequence's half turns) */
-	void steps(const uint8_t *ph8, const uint8_t *rs, float *out);
+	void steps(const u8 *ph8, const u8 *rs, float *out);
 
 private:
 	void emit(float *out);
@@ -117,16 +118,16 @@ private:
 
 /* one received comb symbol */
 struct VcvmCombSym {
-	int32_t start;                  /* its prefix's first sample */
+	s32 start;                      /* its prefix's first sample */
 	int nbits;
-	uint8_t bits[VCVM_TONES * 5];   /* the decisions, as data() takes */
+	u8 bits[VCVM_TONES * 5];        /* the decisions, as data() takes */
 	float rel[VCVM_TONES * 5];      /* each bit's reliability, 0..1 */
 	float dphi[VCVM_TONES];         /* the phase step, radians, the
 					   clock's rotation taken off */
 	float ratio_db[VCVM_TONES];     /* the magnitude's step, dB */
 	float level[VCVM_TONES];        /* |r|, 16 bit scale */
-	uint8_t ph8[VCVM_TONES];        /* the decided phase step, eighths */
-	uint8_t rs[VCVM_TONES];         /* the decided ring step */
+	u8 ph8[VCVM_TONES];             /* the decided phase step, eighths */
+	u8 rs[VCVM_TONES];              /* the decided ring step */
 	float perr[VCVM_TONES];         /* the phase error of the decision */
 	float tau;                      /* the timing, samples past the
 					   window */
@@ -136,7 +137,7 @@ struct VcvmCombSym {
 /* the comb's receiver: samples in (push()), symbols out (next()) */
 class VcvmCombRx {
 public:
-	int init(int code, int32_t fs, bool sym22 = false);
+	int init(int code, s32 fs, bool sym22 = false);
 	void set_load(const VcvmLoad &l);
 	/* the comb */
 	const VcvmComb &comb() const { return c_; }
@@ -144,45 +145,45 @@ public:
 	/* samples from the line (16 bit scale) */
 	void push(const float *x, int n);
 	/* the samples received: the index of the next one pushed */
-	int32_t received() const
+	s32 received() const
 	{
-		return base_ + static_cast<int32_t>(buf_.size());
+		return base_ + static_cast<s32>(buf_.size());
 	}
 	/* nothing received, unlocked: the next sample pushed is sample
 	   base */
-	void restart(int32_t base);
+	void restart(s32 base);
 	/* the next symbol's prefix (once locked) */
-	int32_t next_start() const { return next_; }
+	s32 next_start() const { return next_; }
 
 	/* the symbol timing from the cyclic prefix over 8 symbols from
 	   sample `from` on (the first symbol: the one whose prefix starts
 	   nearest `first`, the signal's onset; -1 for the first after
 	   from): 0, or -1 if the samples aren't in yet */
-	int acquire(int32_t from, int32_t first = -1);
+	int acquire(s32 from, s32 first = -1);
 	/* the signal's onset: the first sample from `from` at which 5 ms
 	   of it reach dbfs (rms); -1 if none yet */
-	int32_t onset(int32_t from, double dbfs = -45) const;
+	s32 onset(s32 from, double dbfs = -45) const;
 	/* the next symbol (the first after acquire() is the reference,
 	   which gives only its levels): true if there was one.  known
 	   (optional): the transmitted phase steps in eighths, for the
 	   probing, which the timing then follows instead of the
 	   decisions */
-	bool next(VcvmCombSym *s, const uint8_t *known = nullptr);
+	bool next(VcvmCombSym *s, const u8 *known = nullptr);
 	/* the symbol timing acquired */
 	bool locked() const { return locked_; }
 
 private:
-	std::complex<double> tone(int32_t u, int k) const;
-	float at(int32_t i) const;
+	std::complex<double> tone(s32 u, int k) const;
+	float at(s32 i) const;
 	void trim();
 
 	VcvmComb c_{};
 	VcvmLoad load_{};
 	std::vector<float> buf_;
-	int32_t base_ = 0;              /* the absolute index of buf_[0] */
+	s32 base_ = 0;                  /* the absolute index of buf_[0] */
 	bool locked_ = false;
 	bool have_prev_ = false;
-	int32_t next_ = 0;              /* the next symbol's prefix */
+	s32 next_ = 0;                  /* the next symbol's prefix */
 	double tau_ = 0, drift_ = 0;    /* timing, samples */
 	double rot_ = 0;                /* common rotation a symbol */
 	std::complex<double> prev_[VCVM_TONES];
@@ -191,26 +192,26 @@ private:
 
 /* the parametric mode's alphabets (Table 10-3) */
 struct VcvmParam {
-	int32_t fs;             /* 8000 or 16000 */
+	s32 fs;                 /* 8000 or 16000 */
 	bool p10;               /* the 10 ms symbol */
 	int sps;                /* the symbol, samples */
 	int lag[16];            /* samples at fs */
 
-	int init(int32_t fs, bool p10);
+	int init(s32 fs, bool p10);
 };
 
 /* the parametric transmitter */
 class VcvmParamTx {
 public:
 	/* the alphabet, the level (dBFS rms over a symbol, -15) */
-	int init(int32_t fs, bool p10, double dbfs = -15);
+	int init(s32 fs, bool p10, double dbfs = -15);
 	/* a symbol, samples */
 	int sps() const { return p_.sps; }
 	/* a symbol of index i (0-15) */
 	void symbol(int i, float *out);
 	/* the symbol of 4 bits (the first the most significant), Gray
 	   coded onto the index */
-	void data(const uint8_t *bits, float *out);
+	void data(const u8 *bits, float *out);
 	/* the preamble: 8 symbols, index 0 and 15 alternately */
 	void preamble(float *out);
 
@@ -228,16 +229,16 @@ private:
 /* the parametric receiver */
 class VcvmParamRx {
 public:
-	int init(int32_t fs, bool p10);
+	int init(s32 fs, bool p10);
 	void push(const float *x, int n);
 	/* the samples received: the index of the next one pushed */
-	int32_t received() const
+	s32 received() const
 	{
-		return base_ + static_cast<int32_t>(buf_.size());
+		return base_ + static_cast<s32>(buf_.size());
 	}
 	/* nothing received, unlocked: the next sample pushed is sample
 	   base, the preamble looked for from there */
-	void restart(int32_t base);
+	void restart(s32 base);
 
 	/* looks for the preamble in what has come: true once found (the
 	   next symbol is the first after it) */
@@ -246,7 +247,7 @@ public:
 	bool locked() const { return locked_; }
 	/* locked without the search: the next symbol starts at sample at
 	   (the timing known otherwise, as P10's after P20's in L3) */
-	void lock_at(int32_t at);
+	void lock_at(s32 at);
 	/* the next symbol: its index, the decided lag's normalized
 	   autocorrelation and its margin over the next lag's; true if
 	   there was one; rms the symbol's level (16 bit scale), second the
@@ -254,25 +255,25 @@ public:
 	bool next(int *idx, float *c = nullptr, float *margin = nullptr,
 		  float *rms = nullptr, int *second = nullptr);
 	/* the symbol's 4 bits (Gray decoded) */
-	static void bits(int idx, uint8_t *b);
+	static void bits(int idx, u8 *b);
 	/* c-bar: the decided c's mean over the last 2 s (0 before any) */
 	float cbar() const;
 	/* the next symbol's first sample (once locked) */
-	int32_t next_start() const { return next_; }
+	s32 next_start() const { return next_; }
 
 private:
-	float corr(int32_t a, int32_t b, int lag) const;
-	int decide(int32_t a, float *c, float *margin,
+	float corr(s32 a, s32 b, int lag) const;
+	int decide(s32 a, float *c, float *margin,
 		   int *second = nullptr) const;
-	float at(int32_t i) const;
+	float at(s32 i) const;
 	void trim();
 
 	VcvmParam p_{};
 	std::vector<float> buf_;
-	int32_t base_ = 0;
+	s32 base_ = 0;
 	bool locked_ = false;
-	int32_t next_ = 0;
-	int32_t searched_ = 0;
+	s32 next_ = 0;
+	s32 searched_ = 0;
 	std::vector<float> cs_;         /* the last 2 s of c */
 	int csn_ = 0, csi_ = 0;
 	float fit_[3] = {};             /* the timing's fit at -1, 0, +1 */

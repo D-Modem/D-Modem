@@ -20,20 +20,21 @@
 #ifndef DMODEMD_SI3054_H
 #define DMODEMD_SI3054_H
 
-#include <cstdint>
+
+#include "dm_types.h"
 
 namespace dmd {
 
 /* a row of Table 19 (HD audio mode) */
 struct Si3054Country {
 	const char *name;       /* D-Modem's (-c, +GCI), and its aliases */
-	uint8_t ohs, rz, rt, act, ohs2, dcv, mini, ilim;
+	u8 ohs, rz, rt, act, ohs2, dcv, mini, ilim;
 };
 
 /* the registers (nodes) a country's settings go into, as read and then
    as they are to be written */
 struct Si3054Regs {
-	uint16_t n13, n15, n16, n18;
+	u16 n13, n15, n16, n18;
 };
 
 /* the nodes */
@@ -49,7 +50,7 @@ const Si3054Country &si3054_usa();
 
 /* whether chipid (node 12) is a Si3054's with a Si3018 line side: the
    codec the table is for (SID 1, LSID 0001) */
-bool si3054_chip_ok(uint16_t chipid);
+bool si3054_chip_ok(u16 chipid);
 
 /* r, as read, with c's settings; off hook (off_hook) RZ cleared, as the
    datasheet has it during pulse dialling, set again on hook */

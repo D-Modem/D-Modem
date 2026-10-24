@@ -11,8 +11,9 @@
 #define __T4_H__
 
 #include <cstddef>
-#include <cstdint>
 #include <vector>
+
+#include "dm_types.h"
 
 namespace dsp {
 
@@ -24,10 +25,10 @@ struct T4Bits;
    of the first byte */
 struct T4Page {
 	int width = 0;
-	int32_t rows = 0, cap = 0;
+	s32 rows = 0, cap = 0;
 	int fine = 0;                   /* 196 lines per inch (else 98) */
 	std::vector<unsigned char> bits;
-	int32_t bad_rows = 0;           /* received with errors */
+	s32 bad_rows = 0;               /* received with errors */
 
 	int init(int width_, int fine_);
 	void release();
@@ -42,7 +43,7 @@ struct T4Page {
 	   EOLs, 3 T.4 with EOLs, 1D or, t4opts & 1, 2D; 4 T.6), msb_first as
 	   TIFF's FillOrder 1; rows: how many to expect (0: until the end of
 	   data) */
-	int decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, int32_t rows_);
+	int decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, s32 rows_);
 
 	/* src to this page's width (scaled down, or centred), every
 	   row_step-th row */
@@ -75,7 +76,7 @@ struct T4Rx {
 	int width, mr;
 	T4Page *page;
 	T4Bits line;            /* bits of the row being received */
-	int32_t zeros;                  /* zeros in a row (an EOL coming) */
+	s32 zeros;                      /* zeros in a row (an EOL coming) */
 	int eols;                       /* EOLs in a row with nothing in
 					   between (6: RTC) */
 	int started;                    /* the first EOL went by */
@@ -117,18 +118,18 @@ struct TiffIn {
 	std::vector<unsigned char> data;
 	size_t len;
 	int big_endian;
-	uint32_t next_ifd;
+	u32 next_ifd;
 	int page;
 	/* the IFDs read, for a chain that links back; plain data, as it
 	   sits in calloc()ed C structs */
-	uint32_t ifds[TIFF_MAX_PAGES];
+	u32 ifds[TIFF_MAX_PAGES];
 
-	unsigned get16(uint64_t at) const;
-	uint32_t get32(uint64_t at) const;
+	unsigned get16(u64 at) const;
+	u32 get32(u64 at) const;
 	int open(const char *path);
 	void close();
-	uint32_t tag_value(uint64_t e, uint64_t index) const;
-	double tag_rational(uint64_t e) const;
+	u32 tag_value(u64 e, u64 index) const;
+	double tag_rational(u64 e) const;
 	/* the next page (scaled to T4_WIDTH if narrower or wider); 0 when
 	   there are no more, -1 on an error */
 	int read_page(T4Page *p);

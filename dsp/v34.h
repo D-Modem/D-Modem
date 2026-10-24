@@ -9,11 +9,11 @@
 #ifndef __V34_H__
 #define __V34_H__
 
-#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <vector>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "qam.h"
 
@@ -56,7 +56,7 @@ struct v34_rate {
 extern const struct v34_rate v34_rates[V34_NBAUDS][14];
 extern const signed char v34_quarter[416][2];
 extern const cplx v34_trn4[4];
-cplx v34_pp(int32_t i);
+cplx v34_pp(s32 i);
 
 /* MP style frames coming in (bits.h): V.90's Ja and CP, V.92's Ja,
    CPt, CPu, CPus and SUVu.  After a sync of 17 ones and a zero their
@@ -76,7 +76,7 @@ struct SyncFrames {
 
 	Kind kind;
 	int max;                /* the longest frame taken */
-	uint32_t sr;            /* bit()'s last bits, the newest in bit 0 */
+	u32 sr;                 /* bit()'s last bits, the newest in bit 0 */
 	unsigned char b[SYNC_FRAME_MAX];
 	int n;                  /* bits in b: 0, none (looking for a sync) */
 	int len;                /* the frame's length, 0 until known */
@@ -124,7 +124,7 @@ struct V34Mp {
 struct V34Precoder;
 
 struct V34Params {
-	int32_t rate;           /* bit/s */
+	s32 rate;               /* bit/s */
 	int b;                  /* bits in a high mapping frame */
 	int K, q, M;            /* shell mapping bits, uncoded bits, rings */
 	int J, P, r;            /* data frames per superframe, mapping frames
@@ -140,11 +140,11 @@ struct V34Params {
 				   0.3125, transmitter only */
 	float nl_gain;          /* after it: the power without it */
 	double pw_;             /* mean power of the points (integers) */
-	uint64_t g2[V34_G2_LEN], g4[V34_G4_LEN], z8[V34_Z8_LEN];
+	u64 g2[V34_G2_LEN], g4[V34_G4_LEN], z8[V34_Z8_LEN];
 
 	int shell_tables();
-	uint64_t g2p(int i) const;
-	uint64_t g4p(int i) const;
+	u64 g2p(int i) const;
+	u64 g4p(int i) const;
 	double frame_power(int k, double theta = 0, double e0 = 1) const;
 	void set_nonlinear(double theta_);
 	/* n: the rate in units of 2400 bit/s; returns -1 when not allowed */
@@ -152,18 +152,18 @@ struct V34Params {
 	/* precoding with the coefficients of an MP sequence */
 	void set_precoder(const int h_[6]);
 	void precoder_push(V34Precoder *pc, int yr, int yi) const;
-	void shell_map(uint32_t r0, int m[8]) const;
+	void shell_map(u32 r0, int m[8]) const;
 	int pair_index(int x, int y) const;
-	uint32_t shell_demap(const int m[8]) const;
+	u32 shell_demap(const int m[8]) const;
 	int decide(cplx z, int *px, int *py) const;
 	void subset_points(float u, float v, float dist[8],
-			   int32_t pt[8]) const;
+			   s32 pt[8]) const;
 };
 
 /* the precoder's tap delay line (9.6.2/V.34) */
 struct V34Precoder {
-	int32_t x[3][2];        /* x(n - 1) .. x(n - 3), units of 2^-7 */
-	int32_t p[2], c[2];     /* p(n) (units of 2^-7) and c(n) */
+	s32 x[3][2];            /* x(n - 1) .. x(n - 3), units of 2^-7 */
+	s32 p[2], c[2];         /* p(n) (units of 2^-7) and c(n) */
 
 	int c_parity() const;
 };
@@ -180,8 +180,8 @@ struct V34DataTx {
 	int pos;
 
 	void init(const V34Params *p_);
-	void encode_frame(uint32_t *scr, int tap);
-	cplx symbol(uint32_t *scr, int tap);
+	void encode_frame(u32 *scr, int tap);
+	cplx symbol(u32 *scr, int tap);
 };
 
 
@@ -204,7 +204,7 @@ template <int TB>
 struct Viterbi4d {
 	float metric[V34_STATES];
 	unsigned char prev[TB][V34_STATES];
-	int32_t pa[TB][V34_STATES], pb[TB][V34_STATES];
+	s32 pa[TB][V34_STATES], pb[TB][V34_STATES];
 	int t, n;
 
 	/* the paths cleared: from any state (start < 0: a receiver turned
@@ -222,11 +222,11 @@ struct Viterbi4d {
 	   superframe sync, 0 else).  1 with out[] the points of the 4D
 	   symbol TB - 1 back, 0 while the paths fill */
 	int step(int states, int v0, const float da[8],
-		 const int32_t ca[8], const float db[8],
-		 const int32_t cb[8], int32_t out[2])
+		 const s32 ca[8], const float db[8],
+		 const s32 cb[8], s32 out[2])
 	{
 		float gm[32], m2[V34_STATES], best;
-		int32_t ga[32], gb[32];
+		s32 ga[32], gb[32];
 		int l0, l1, g, s, y, bs, k, tt = t;
 		/* the 16 state code only uses Y1 and Y2 */
 		int ny = states == 16 ? 4 : 16;
@@ -300,14 +300,14 @@ struct V34DataRx {
 	int half, pat, v0;      /* superframe inversions, as the transmitter */
 	int half2;              /* the first 2D symbol of a 4D one is in: */
 	float da[8];
-	int32_t ca[8];
+	s32 ca[8];
 	V34Precoder pc; /* the receiver's copy of the precoder */
 
 	void viterbi_init();
 	void init(const V34Params *p_);
-	void decode_frame(uint32_t *scr, int tap);
-	void point(int32_t pt, uint32_t *scr, int tap);
-	cplx symbol(cplx z_, uint32_t *scr, int tap);
+	void decode_frame(u32 *scr, int tap);
+	void point(s32 pt, u32 *scr, int tap);
+	cplx symbol(cplx z_, u32 *scr, int tap);
 };
 
 
@@ -334,10 +334,10 @@ enum v34_txseg {
 struct V34Tx {
 	QamTx qam;
 	int baud;
-	uint32_t scr;
+	u32 scr;
 	int tap;
 	enum v34_txseg seg;
-	int32_t n;              /* symbols sent in this segment */
+	s32 n;                  /* symbols sent in this segment */
 	int idx;                /* last training point, for differential coding */
 	int s_odd;              /* S-bar after an S of odd length */
 	int trn16;              /* phase 4 TRN, MP and E of 16 points (the
@@ -351,7 +351,7 @@ struct V34Tx {
 	   bits: the same again), whole frames of it sent, E instead */
 	unsigned char cp_next[1024];
 	int cp_next_n;
-	int32_t cp_frames;
+	s32 cp_frames;
 	int cp_to_e;
 	V34DataTx dtx;     /* data mode, when data_on */
 	int data_on;
@@ -396,8 +396,8 @@ struct V34Rx {
 	int tap;                /* the remote's scrambler */
 	int phase4;             /* the next S starts phase 4 (no PP) */
 	enum v34_rxstage stage;
-	int32_t n;              /* symbols in this stage */
-	int32_t sym;
+	s32 n;                  /* symbols in this stage */
+	s32 sym;
 	cplx z1, z2;            /* the last symbols, for S detection */
 	float s_score, sbar_score;
 	int s_count;
@@ -415,13 +415,13 @@ struct V34Rx {
 	std::vector<lscplx> ls_r, ls_p; /* least squares training */
 	int phase4_ls, have_ls;
 	float ls_d;             /* delay of the last solution */
-	int32_t ls_sym;         /* at this symbol */
-	int32_t ls_n;           /* TRN symbols */
+	s32 ls_sym;             /* at this symbol */
+	s32 ls_n;               /* TRN symbols */
 	float x_ref;            /* equalizer input energy when trained */
 	/* differential decoder for J, MP and E */
 	int idx;
-	uint32_t scr;
-	uint32_t sr;            /* last decoded bits, newest in bit 0 */
+	u32 scr;
+	u32 sr;                 /* last decoded bits, newest in bit 0 */
 	int j_count, ev_j, ev_jp, ev_s, ev_e;
 	int j16;                /* the remote asked for 16 point TRN */
 	int jword;
@@ -443,12 +443,12 @@ struct V34Rx {
 	int after_mp;
 	int ev_mp;
 	V34Mp mp;       /* the remote's MP */
-	int32_t mp_end;         /* symbol of the end of the last MP frame */
+	s32 mp_end;             /* symbol of the end of the last MP frame */
 	V34DataRx drx;     /* data mode, when data_on */
 	cplx last_d[3];         /* the last symbols before data mode */
 	double err_r[8];        /* error autocorrelation, lags 0 to 3 */
 	cplx err_h[3];
-	int32_t err_n;
+	s32 err_n;
 	int data_on;
 	/* rate renegotiation (11.6/V.34): the remote's S in data mode */
 	int ev_reneg;
@@ -468,7 +468,7 @@ struct V34Rx {
 	void timing_fix();
 	void ls_collect(cplx d);
 	int ls_solve();
-	void ls_window(cplx d, int32_t start);
+	void ls_window(cplx d, s32 start);
 	void ls_train(cplx d);
 	void timing_dd(cplx d);
 	int level_ok();

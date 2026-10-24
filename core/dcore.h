@@ -21,7 +21,6 @@
 #ifndef DMODEM_CORE_DCORE_H
 #define DMODEM_CORE_DCORE_H
 
-#include <cstdint>
 #include <ctime>
 #include <string>
 #include <vector>
@@ -68,12 +67,12 @@ class Modem;
 struct LinkOwner;
 
 /* CLOCK_MONOTONIC in ms (a Host's now_ms() on a real line) */
-inline uint64_t monotonic_ms()
+inline u64 monotonic_ms()
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return static_cast<uint64_t>(ts.tv_sec) * 1000 +
-		static_cast<uint64_t>(ts.tv_nsec) / 1000000;
+	return static_cast<u64>(ts.tv_sec) * 1000 +
+		static_cast<u64>(ts.tv_nsec) / 1000000;
 }
 
 /* the program around the modem */
@@ -158,7 +157,7 @@ public:
 	virtual void t38_send(Modem &m, const void *ifp) { (void)m; (void)ifp; }
 
 	/* the time in ms, from any origin */
-	virtual uint64_t now_ms() = 0;
+	virtual u64 now_ms() = 0;
 protected:
 	~Host() = default;
 };
@@ -166,7 +165,7 @@ protected:
 struct Options {
 	const char *name = "modem";     /* for the log */
 	const char *dev_name = nullptr; /* for ATI3 */
-	int32_t rate = 8000;            /* the line's sample rate */
+	s32 rate = 8000;                /* the line's sample rate */
 	const char *country = nullptr;  /* by name; NULL: USA */
 	/* the program takes a fax machine that calls itself (libdmodem's
 	   fax receiver): answering in data mode, the modem finds one out
@@ -206,10 +205,10 @@ public:
 	/* the characters dte_input() takes now */
 	int dte_space() const { return xmit_size_ - xmit_count_; }
 	/* the line's samples, while started(): n in, n out */
-	void process(const int16_t *in, int16_t *out, int n);
+	void process(const s16 *in, s16 *out, int n);
 	/* the timers: what is due now; the ms until the next one, or -1 */
 	void poll();
-	int32_t next_timer_ms();
+	s32 next_timer_ms();
 
 	/* a ring signal on the line (its cadence is checked) */
 	void ring();
@@ -267,7 +266,7 @@ public:
 	/* the device's name (ATI3) */
 	const char *dev_name() const { return dev_name_; }
 	/* the line's sample rate (Hz) */
-	int32_t rate() const { return srate_; }
+	s32 rate() const { return srate_; }
 	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
 	/* we dialled */
@@ -281,9 +280,9 @@ public:
 	/* a data connection is (or was, in this call) up */
 	bool carrier() const { return carrier_; }
 	/* the pump's rates (bit/s) */
-	uint32_t tx_rate() const { return tx_rate_; }
+	u32 tx_rate() const { return tx_rate_; }
 	/* (see tx_rate()) */
-	uint32_t rx_rate() const { return rx_rate_; }
+	u32 rx_rate() const { return rx_rate_; }
 	/* DTE data the remote does not have yet (with V.42: not
 	   acknowledged) */
 	bool tx_pending() const;
@@ -319,10 +318,10 @@ public:
 	/* modem_get_param(), modem_set_param(): MDMPRM_ and the country's
 	   parameters; -1 if unknown */
 	intptr_t get_param(unsigned name);
-	int32_t set_param(unsigned name, int32_t val);
+	s32 set_param(unsigned name, s32 val);
 	/* the pumps' bits to and from the link */
-	int get_bits(int nbits, uint8_t *buf, int n);
-	int put_bits(int nbits, const uint8_t *buf, int n);
+	int get_bits(int nbits, u8 *buf, int n);
+	int put_bits(int nbits, const u8 *buf, int n);
 	/* characters to and from the DTE, for the pumps (fax, voice) */
 	int send_to_dte(const char *buf, int n) { return put_chars(buf, n); }
 	/* (see send_to_dte()) */
@@ -340,8 +339,8 @@ public:
 	/* what the core does with it */
 	void update_status(Status s);
 	/* what XID (or MNP's LRs) agreed */
-	void negotiated(int comp, bool v44, int32_t dict_size,
-			int32_t max_string, bool mnp5);
+	void negotiated(int comp, bool v44, s32 dict_size,
+			s32 max_string, bool mnp5);
 	/* a debug line with the modem's name */
 	void logf(const char *fmt, ...) DMODEM_PRINTF(2, 3);
 
@@ -382,9 +381,9 @@ private:
 	int link_init();
 	void report(Result r);
 	void events(unsigned ev);
-	void schedule_event(unsigned mask, uint32_t ms);
+	void schedule_event(unsigned mask, u32 ms);
 	void sregs_init();
-	int homolog_init(int32_t id, const char *name);
+	int homolog_init(s32 id, const char *name);
 	std::string country_name() const;
 	int set_mode(enum MODEM_MODE mode);
 	int reset();
@@ -392,12 +391,12 @@ private:
 	int hook(int state);
 	void update_speaker();
 	int check_escape(const char *buf, int n);
-	void run(int16_t *in, int16_t *out, int n);
-	void dp_process(int16_t *in, int16_t *out, int n);
-	void cid_process(int16_t *in, int16_t *out, int n);
+	void run(s16 *in, s16 *out, int n);
+	void dp_process(s16 *in, s16 *out, int n);
+	void cid_process(s16 *in, s16 *out, int n);
 	void cid_stop();
-	int cid_start(uint32_t ms);
-	void voice_process(int16_t *in, int16_t *out, int n);
+	int cid_start(u32 ms);
+	void voice_process(s16 *in, s16 *out, int n);
 	int voice_start(bool off_hook = true);
 	void voice_stop();
 	void voice_hold();
@@ -407,19 +406,19 @@ private:
 	int voice_dial(const char *number);
 	void keep_dial_string(const char *number);
 	void voice_dial_check();
-	int32_t voice_dial_left_ms();
+	s32 voice_dial_left_ms();
 	void voice_dial_end(Result r);
 	void voice_line_gone();
 	void voice_drain();
 	int voice_set_device(unsigned device);
 	void voice_unroute();
 	void voice_init();
-	void fax_process(int16_t *in, int16_t *out, int n);
+	void fax_process(s16 *in, s16 *out, int n);
 	int fax_start();
 	void fax_found(const char *why);
 	int adaptive_param() const;
 	static void fax_t38_send(void *ctx, const void *ifp);
-	void later(Later what, uint32_t samples);
+	void later(Later what, u32 samples);
 	const char *dp_name(int id) const;
 	const char *protocol_name() const;
 	const char *compression_name() const;
@@ -450,7 +449,7 @@ private:
 	int at_kept(const char *p, int *len);
 	void kept_init();
 	/* a kept parameter's values (its name as kept_params has it) */
-	const uint32_t *kept(const char *name) const;
+	const u32 *kept(const char *name) const;
 	/* \N<n>: S103 and +ES; and +ES's values as a \N in S103 */
 	void set_ec_mode(int n);
 	void ec_mode_from_es();
@@ -466,7 +465,7 @@ private:
 	struct modem *handle_;
 	bool ok_ = false;
 	const char *name_, *dev_name_;
-	int32_t srate_;
+	s32 srate_;
 	int frag_;
 
 	/* the call */
@@ -481,16 +480,16 @@ private:
 	int hook_ = MODEM_HOOK_ON;
 	bool caller_ = false;
 	bool carrier_ = false;
-	uint32_t rx_rate_ = 0, tx_rate_ = 0;
+	u32 rx_rate_ = 0, tx_rate_ = 0;
 	enum MODEM_MODE mode_ = MODEM_MODE_DATA;
-	uint32_t min_rate_, max_rate_;
+	u32 min_rate_, max_rate_;
 	/* V.92 modem-on-hold: +PMH (0 on), +PMHT (the T1 code we grant),
 	   +PMHR (ours, until the pump takes it) */
 	int moh_off_ = 0, moh_timer_ = 5, moh_req_ = 0;
 	unsigned char sregs_[256] = {};
 	/* the extended parameters of other modems' setup strings, kept
 	   with no effect (at.cpp): their values, how many */
-	uint32_t kept_[KEPT_PARAMS][KEPT_VALUES] = {};
+	u32 kept_[KEPT_PARAMS][KEPT_VALUES] = {};
 	unsigned kept_n_[KEPT_PARAMS] = {};
 	const struct homolog_set *homolog_ = nullptr;
 	/* the country's tones (dsp/tones.h: busy and congestion for the
@@ -502,9 +501,9 @@ private:
 	/* events and timers */
 	unsigned event_ = 0, new_event_ = 0;
 	bool timer_on_ = false;
-	uint32_t timer_at_ = 0;
-	uint64_t count_ = 0;
-	uint64_t later_at_ = 0;
+	u32 timer_at_ = 0;
+	u64 count_ = 0;
+	u64 later_at_ = 0;
 	Later later_ = Later::None;
 
 	/* AT */
@@ -514,7 +513,7 @@ private:
 
 	/* rings */
 	unsigned ring_count_ = 0;
-	uint32_t ring_first_ = 0, ring_last_ = 0;
+	u32 ring_first_ = 0, ring_last_ = 0;
 	unsigned cid_requested_ = 0;
 	void *cid_ = nullptr;
 
@@ -526,7 +525,7 @@ private:
 	bool dialed_ = false;
 	char dial_rest_[64] = {};
 	unsigned escape_count_ = 0;
-	uint32_t last_esc_check_ = 0;
+	u32 last_esc_check_ = 0;
 
 	/* the DTE's characters on their way to the line or the AT
 	   interpreter */
@@ -541,7 +540,7 @@ private:
 		int mnp_info;           /* N401 */
 		int tx_win, rx_win, tx_info, rx_info;
 		int comp;
-		int32_t dict_size, max_string;
+		s32 dict_size, max_string;
 		bool v44;               /* V.44 rather than V.42bis */
 		bool mnp5;
 		bool mnp_on;            /* the call has MNP */
@@ -569,14 +568,14 @@ private:
 	void vcvm_refresh();
 	struct CallStats {
 		bool call, fax, connected, ended;
-		uint32_t start, up, end;
+		u32 start, up, end;
 		int dp;
-		uint32_t tx0, rx0, tx1, rx1;
+		u32 tx0, rx0, tx1, rx1;
 		Cause cause;
 		double rx_pow, tx_pow;
-		uint64_t samples;
+		u64 samples;
 	} stats_ = {};
-	int16_t *scratch_ = nullptr;
+	s16 *scratch_ = nullptr;
 	int scratch_len_ = 0;
 	void *voice_ = nullptr;
 	/* +VLS's device while voice_ runs (VOICE_DEVICE_*) */
@@ -597,7 +596,7 @@ private:
 	std::vector<VoiceTone> dtmf_tones(const char *number);
 	/* a voice dial under way (ATD in voice mode): since when (ms) */
 	bool voice_dialing_ = false;
-	uint32_t voice_dial_since_ = 0;
+	u32 voice_dial_since_ = 0;
 	/* it dials the number (in vts_) first; its timers from then */
 	bool voice_dial_digits_ = false;
 	/* the voice engine's command (a VOICE_CMD: +VTS's tones, +VTX,
@@ -626,7 +625,7 @@ private:
 	bool fax_caller_ = false;
 	dsp::CngDetect *cng_ = nullptr;
 	unsigned cng_cut_ = 0;
-	uint64_t answer_tone_at_ = 0;
+	u64 answer_tone_at_ = 0;
 	/* the call's fax over T.38 (its data octets in a packet) */
 	bool t38_ = false;
 	int t38_max_ = 0;

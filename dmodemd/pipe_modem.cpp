@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <log.h>
 
+#include "dm_types.h"
 #include "env.h"
 #include "pipe_modem.h"
 
@@ -38,7 +39,7 @@ static const int MAX_SAMPLES = 42 * HALF_FRAME;
 
 /* the core at rate on the line in -> out, with a new pty for its DTE;
    PIPE_SYNC read here.  Exits if the pty or the core can't be made */
-PipeModem::PipeModem(const char *name, int32_t rate, const char *country,
+PipeModem::PipeModem(const char *name, s32 rate, const char *country,
 		     int in, int out)
 	: in_(in), out_(out), rate_(rate), line_(in, HALF_FRAME)
 {
@@ -82,18 +83,18 @@ int PipeModem::set_hook(dcore::Modem &, int state)
 }
 
 /* the time in ms: the monotonic clock, or with PIPE_SYNC the line's */
-uint64_t PipeModem::now_ms()
+u64 PipeModem::now_ms()
 {
 	if (sync_) {
 		/* the line's clock while it runs (the wall clock's while it
 		   does not), so that the timers meet it at the same samples */
-		int64_t line_ms = samples() * 1000 / rate_;
-		uint64_t t;
+		s64 line_ms = samples() * 1000 / rate_;
+		u64 t;
 		if (line_idle())
 			clock_off_ =
-				static_cast<int64_t>(dcore::monotonic_ms()) -
+				static_cast<s64>(dcore::monotonic_ms()) -
 				line_ms;
-		t = static_cast<uint64_t>(line_ms + clock_off_);
+		t = static_cast<u64>(line_ms + clock_off_);
 		if (t < last_ms_)
 			t = last_ms_;
 		return last_ms_ = t;
@@ -179,8 +180,8 @@ void PipeModem::pace(int samples)
    to out_; 0, or -1 on an error */
 int PipeModem::line(bool rd)
 {
-	int16_t outbuf[MAX_SAMPLES];
-	const int16_t *in;
+	s16 outbuf[MAX_SAMPLES];
+	const s16 *in;
 	int count, max = MAX_SAMPLES;
 	bool off_hook;
 
@@ -274,7 +275,7 @@ int PipeModem::line(bool rd)
 		DBG("dev write = 0\n");
 	/* a longer line (update_delay(), as the modem ran): silence out */
 	while (pending_delay_ > 0) {
-		static const int16_t zeros[MAX_SAMPLES] = {};
+		static const s16 zeros[MAX_SAMPLES] = {};
 		int n = pending_delay_ < MAX_SAMPLES ? pending_delay_ :
 			MAX_SAMPLES;
 		DBG("change delay %d...\n", n);
@@ -336,7 +337,7 @@ int PipeModem::run(PipeModem **modems, int n)
 	for (int i = 0; i < n; i++)
 		m[i] = modems[i]->m_;
 	while (RunLoop::running()) {
-		int32_t next = RunLoop::poll(m.data(), n);
+		s32 next = RunLoop::poll(m.data(), n);
 		int ret;
 
 		loop.clear();

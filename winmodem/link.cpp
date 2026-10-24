@@ -6,6 +6,7 @@
  *
  */
 
+#include "dm_types.h"
 #include "link.h"
 
 #include <cstdarg>
@@ -21,7 +22,7 @@ namespace {
 const DWORD PIPE_BUFFER = 8192, RETRY_MS = 1000;
 
 /* (the port's clock) */
-uint64_t now_ms()
+u64 now_ms()
 {
 	return GetTickCount64();
 }
@@ -137,7 +138,7 @@ void Link::state_changed()
 }
 
 /* see link.h */
-void Link::timer(uint64_t due)
+void Link::timer(u64 due)
 {
 	due_ = due;
 	if (kick_ev_)
@@ -149,21 +150,21 @@ void Link::flush_rx()
 {
 	if (rx_held_.empty())
 		return;
-	size_t k = port_.rx_put((const uint8_t *)rx_held_.data(),
+	size_t k = port_.rx_put((const u8 *)rx_held_.data(),
 				rx_held_.size());
 	rx_held_.erase(0, k);
 }
 
 /* what dmodemd sent, into frames, each done: false if they can't be
    (the stream lost, another version) */
-bool Link::feed(const uint8_t *p, size_t n)
+bool Link::feed(const u8 *p, size_t n)
 {
 	WireReader::Frame f;
 
 	rd_.feed(p, n);
 	while (rd_.next(f)) {
-		uint16_t ver;
-		uint8_t lines;
+		u16 ver;
+		u8 lines;
 		switch (f.type) {
 		case FRAME_HELLO:
 			if (!WireReader::hello(f, &ver, nullptr) ||
@@ -218,7 +219,7 @@ bool Link::listen()
 	}
 	for (;;) {
 		HANDLE w[3] = { (HANDLE)quit_ev_, ov.hEvent, (HANDLE)kick_ev_ };
-		uint64_t due = due_, now = now_ms();
+		u64 due = due_, now = now_ms();
 		DWORD wait = due ? (due > now ? (DWORD)(due - now) : 0) :
 			INFINITE;
 		DWORD r = WaitForMultipleObjects(3, w, FALSE, wait);
@@ -249,7 +250,7 @@ bool Link::listen()
 void Link::serve()
 {
 	OVERLAPPED rov = {}, wov = {};
-	uint8_t buf[WIRE_MAX_DATA + WIRE_HEAD];
+	u8 buf[WIRE_MAX_DATA + WIRE_HEAD];
 	bool reading = false, writing = false;
 	std::string wbuf;
 
@@ -280,7 +281,7 @@ void Link::serve()
 				wire_state(wbuf, port_.app_state(),
 					   port_.baud());
 			if (want_tx_.exchange(false)) {
-				uint8_t tx[WIRE_MAX_DATA];
+				u8 tx[WIRE_MAX_DATA];
 				size_t n;
 				while (wbuf.size() < 4 * WIRE_MAX_DATA &&
 				       (n = port_.tx_take(tx, sizeof(tx))) > 0)
@@ -305,7 +306,7 @@ void Link::serve()
 			w[nw++] = rov.hEvent;
 		if (writing)
 			w[nw++] = wov.hEvent;
-		uint64_t due = due_, now = now_ms();
+		u64 due = due_, now = now_ms();
 		DWORD wait = due ? (due > now ? (DWORD)(due - now) : 0) :
 			INFINITE;
 		if (WaitForMultipleObjects(nw, w, FALSE, wait) == WAIT_OBJECT_0)

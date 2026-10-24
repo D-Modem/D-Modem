@@ -26,6 +26,7 @@
 #include <string>
 #include <thread>
 
+#include "dm_types.h"
 #include "port.h"
 #include "wire.h"
 
@@ -54,7 +55,7 @@ public:
 	void tx_ready() override;
 	void rx_room() override;
 	void state_changed() override;
-	void timer(uint64_t due) override;
+	void timer(u64 due) override;
 
 	/* the pipe's name for port name */
 	static std::string pipe_for(const std::string &name);
@@ -63,7 +64,7 @@ private:
 	void run();
 	bool listen();
 	void serve();
-	bool feed(const uint8_t *p, size_t n);
+	bool feed(const u8 *p, size_t n);
 	void flush_rx();
 	void say(const char *fmt, ...);
 
@@ -73,7 +74,7 @@ private:
 	std::thread thread_;
 	std::atomic<bool> quit_{false}, up_{false};
 	std::atomic<bool> want_tx_{false}, want_state_{false}, want_room_{false};
-	std::atomic<uint64_t> due_{0};
+	std::atomic<u64> due_{0};
 	void *pipe_ = nullptr;          /* HANDLE */
 	void *quit_ev_ = nullptr, *kick_ev_ = nullptr, *io_ev_ = nullptr;
 	void *wr_ev_ = nullptr;

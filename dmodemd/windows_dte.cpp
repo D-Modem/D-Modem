@@ -16,6 +16,7 @@
 #include <dcore.h>
 #include <log.h>
 
+#include "dm_types.h"
 #include "portable.h"
 #include "windows_dte.h"
 #include "wire.h"
@@ -207,7 +208,7 @@ int TcpDte::write(const char *buf, int n)
 			took = done;
 		}
 	}
-	if (n > (int32_t)(BUFFER - out_.size()))
+	if (n > (s32)(BUFFER - out_.size()))
 		n = (int)(BUFFER - out_.size());
 	if (n > 0)
 		out_.append(buf, n);
@@ -856,10 +857,10 @@ void DriverDte::serve_driver(void *h)
 			rd.feed(buf, got);
 			vmodem::WireReader::Frame f;
 			while (ok && rd.next(f)) {
-				uint16_t ver;
+				u16 ver;
 				std::string port;
-				uint8_t st;
-				uint32_t baud;
+				u8 st;
+				u32 baud;
 				switch (f.type) {
 				case vmodem::FRAME_HELLO:
 					if (vmodem::WireReader::hello(f, &ver,

@@ -43,7 +43,7 @@ struct dp_operations {
 	   more than max_frag samples; op is this table.  Its id, modem and
 	   op are set, status 0.  NULL if it cannot run */
 	struct dp *(*create)(struct modem *m, enum DP_ID id, int caller,
-			     int32_t srate, int max_frag,
+			     s32 srate, int max_frag,
 			     struct dp_operations *op);
 	/* frees the pump */
 	int (*destroy)(struct dp *d);

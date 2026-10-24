@@ -24,9 +24,9 @@
 #ifndef __SIP_H__
 #define __SIP_H__
 
-#include <cstdint>
 #include <string>
 
+#include "dm_types.h"
 #include "portable.h"
 
 namespace sip {
@@ -35,7 +35,7 @@ struct Config {
 	const char *user;       /* account (SIP_LOGIN=user:password@domain) */
 	const char *password;
 	const char *domain;     /* host[:port] of the registrar / proxy */
-	int32_t port;           /* local UDP port (5060) */
+	s32 port;               /* local UDP port (5060) */
 	bool listen;            /* register, and take calls in */
 	const char *record;     /* $DMODEM_REC: the audio both ways in
 				   <record>.rx and <record>.tx */
@@ -96,7 +96,7 @@ void set_t38_offers(bool take);
    RFC 4734's tones sent as events reach the modem as their tones, as on
    an analogue line (rtp_events.h). */
 bool can_flash();
-void flash(uint32_t ms);
+void flash(u32 ms);
 
 /* the current call's T.38, as the far end has it */
 struct T38 {
@@ -105,7 +105,7 @@ struct T38 {
 	struct sockaddr_storage peer;   /* the far end's UDPTL */
 	socklen_t peer_len;
 	int version;                    /* T38FaxVersion agreed */
-	int32_t max_datagram;           /* its T38FaxMaxDatagram, 0 if
+	s32 max_datagram;               /* its T38FaxMaxDatagram, 0 if
 					   none */
 	bool redundancy;                /* T38FaxUdpEC t38UDPRedundancy */
 };

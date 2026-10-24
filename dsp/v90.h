@@ -9,9 +9,9 @@
 #ifndef V90_H
 #define V90_H
 
-#include <cstdint>
 #include <cstring>
 
+#include "dm_types.h"
 #include "v34.h"
 
 namespace dsp {
@@ -90,7 +90,7 @@ struct V90Enc {
 	int Q;                          /* shaper trellis state */
 	int t_prev;                     /* signs of the last shaping frame */
 	int last;                       /* differential sign coding */
-	uint32_t scr;
+	u32 scr;
 	struct v90_shf q[V90_SHQ];      /* shaping frames not decided yet */
 	int qn;
 	int sign_acc, mag_acc[6], nsh;  /* the data frame being decided */
@@ -114,27 +114,27 @@ struct V90Tx {
 	int alaw;
 	int lin[128];           /* Ucode -> linear value, positive */
 	enum v90_seg seg;
-	int32_t n;              /* symbols of the segment so far */
-	int32_t sym;            /* symbols since Sd: the data frame interval
+	s32 n;                  /* symbols of the segment so far */
+	s32 sym;                /* symbols since Sd: the data frame interval
 				   is sym % 6 */
 	int uinfo;
-	uint32_t scr;           /* GPC scrambler */
+	u32 scr;                /* GPC scrambler */
 	int sign;               /* the last sign sent, 1: positive */
 	unsigned char bits[80]; /* the Jd frame */
 	int nbits, pos;
 	int jd_end;             /* complete the Jd frame, then Jd' */
-	int32_t jd_frames;      /* Jd frames sent */
+	s32 jd_frames;          /* Jd frames sent */
 	V90Dil dil;
 	int dil_seg, dil_k, dil_end;
-	int32_t dil_rounds;
+	s32 dil_rounds;
 	int next;               /* after Jd' / DIL: 1 when the next
 				   segment may start */
-	int32_t trn1d_len;      /* then Jd */
+	s32 trn1d_len;          /* then Jd */
 	/* V.92 PCM upstream: end_jd() goes to Jp first, and after Jp' comes
 	   SCR when there is no DIL */
 	int v92;
 	int jp;                 /* Jp frames go out */
-	int32_t jp_frac;        /* Jp: Su's extension, 1/65536 symbol */
+	s32 jp_frac;            /* Jp: Su's extension, 1/65536 symbol */
 	int rd_req;             /* Rd at the next data frame */
 	int rf_req;             /* Rf at the next data frame */
 	int sil_req;            /* silence after the encoder's last frame */
@@ -148,10 +148,10 @@ struct V90Tx {
 	int out[6], opos;
 	/* V.92 short phase 1 */
 	int uqts;
-	int16_t anspcm[301];    /* one period of ANSpcm, linear */
-	const int32_t *fclock;     /* the line's symbol clock (the caller's
+	s16 anspcm[301];        /* one period of ANSpcm, linear */
+	const s32 *fclock;         /* the line's symbol clock (the caller's
 				   count of symbols sent), null: no QTS */
-	int32_t fbase;             /* its symbol at the start of QTS: the
+	s32 fbase;                 /* its symbol at the start of QTS: the
 				   data frame interval is (*fclock - fbase)
 				   % 6 from there on */
 
@@ -195,7 +195,7 @@ enum pcm_fmode { PCM_TRN, PCM_SEQ, PCM_ED, PCM_B1, PCM_DATA, PCM_SIL };
 template <class H>
 struct PcmFrames {
 	enum pcm_fmode fmode;
-	int32_t fcount;         /* frames in the mode */
+	s32 fcount;             /* frames in the mode */
 	int D;                  /* bits per frame */
 	unsigned char seq[PCM_SEQ_MAX]; /* one bit each, in whole frames */
 	int seq_len, seq_pos;

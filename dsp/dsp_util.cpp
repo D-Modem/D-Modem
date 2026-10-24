@@ -11,6 +11,7 @@
 #include <cstring>
 #include <mutex>
 
+#include "dm_types.h"
 #include "dsp.h"
 
 namespace dsp {
@@ -22,7 +23,7 @@ namespace dsp {
 
 /* freq Hz at srate samples/s: only the increment changes, so the phase
    is continuous */
-void Osc::set_freq(float freq, int32_t srate)
+void Osc::set_freq(float freq, s32 srate)
 {
 	inc = static_cast<double>(freq) / srate;
 }
@@ -65,7 +66,7 @@ void Biquad::set(double nb0, double nb1, double nb2, double a0, double na1,
 }
 
 /* band pass, 0 dB peak gain at freq Hz, bandwidth freq / q */
-void Biquad::bandpass(float freq, float q, int32_t srate)
+void Biquad::bandpass(float freq, float q, s32 srate)
 {
 	double w = 2 * M_PI * freq / srate;
 	double alpha = sin(w) / (2 * q);
@@ -73,7 +74,7 @@ void Biquad::bandpass(float freq, float q, int32_t srate)
 }
 
 /* low pass with its corner at freq Hz (q 0.707: Butterworth) */
-void Biquad::lowpass(float freq, float q, int32_t srate)
+void Biquad::lowpass(float freq, float q, s32 srate)
 {
 	double w = 2 * M_PI * freq / srate;
 	double alpha = sin(w) / (2 * q);
@@ -82,7 +83,7 @@ void Biquad::lowpass(float freq, float q, int32_t srate)
 }
 
 /* high pass with its corner at freq Hz (q 0.707: Butterworth) */
-void Biquad::highpass(float freq, float q, int32_t srate)
+void Biquad::highpass(float freq, float q, s32 srate)
 {
 	double w = 2 * M_PI * freq / srate;
 	double alpha = sin(w) / (2 * q);
@@ -96,7 +97,7 @@ void Biquad::highpass(float freq, float q, int32_t srate)
  */
 
 /* a detector for freq Hz over blocks of block samples, state cleared */
-void Goertzel::init(float freq, int block, int32_t srate)
+void Goertzel::init(float freq, int block, s32 srate)
 {
 	*this = Goertzel();
 	coef = 2 * cos(2 * M_PI * freq / srate);
@@ -124,7 +125,7 @@ int Goertzel::run(float x)
 
 /* single pole smoothing with a time constant of time_const_sec at
    srate (one sample at the least), power back to 0 */
-void PowerMeter::init(float time_const_sec, int32_t srate)
+void PowerMeter::init(float time_const_sec, s32 srate)
 {
 	alpha = 1.0f / (time_const_sec * srate);
 	if (alpha > 1)
@@ -199,7 +200,7 @@ static const float dtmf_hi[] = { 1209, 1336, 1477, 1633 };
 
 /* the tone pair of digit (0-9, *, #, A-D, a-d) at srate, from phase 0;
    0, or -1 (state unchanged) when it is no DTMF digit */
-int DtmfGen::set(char digit, int32_t srate)
+int DtmfGen::set(char digit, s32 srate)
 {
 	const char *p;
 	int i;
@@ -230,7 +231,7 @@ float DtmfGen::next()
 
 /* see dsp.h: blocks of 205 samples at 8000 Hz (the bins 39 Hz apart,
    half the spacing of the tones), as many ms at srate */
-void DtmfDetect::init(int32_t srate)
+void DtmfDetect::init(s32 srate)
 {
 	*this = DtmfDetect();
 	n_block = (205 * srate + 4000) / 8000;
@@ -320,7 +321,7 @@ DtmfDetect::Event DtmfDetect::sample(float x)
 #define CT_GAP          (300 / CT_BLOCK_MS)     /* of quiet: a ring ends */
 
 /* see dsp.h */
-void CallToneDetect::init(int32_t srate)
+void CallToneDetect::init(s32 srate)
 {
 	static const float f[5] = { 400, 425, 440, 450, 480 };
 
@@ -410,7 +411,7 @@ void CallToneDetect::block()
 	if (b == (band_on != 0)) {
 		band_run++;
 	} else {
-		int32_t ms = band_run * CT_BLOCK_MS;
+		s32 ms = band_run * CT_BLOCK_MS;
 		if (ms >= 200 && ms <= 800)
 			rounds += band_on;
 		else
@@ -433,7 +434,7 @@ void CallToneDetect::block()
 #define CNG_RUN_MAX     (800 / CT_BLOCK_MS)
 
 /* see dsp.h */
-void CngDetect::init(int32_t srate, int freq)
+void CngDetect::init(s32 srate, int freq)
 {
 	*this = CngDetect();
 	len = srate * CT_BLOCK_MS / 1000;
@@ -487,7 +488,7 @@ void CngDetect::block()
 
 /* see dsp.h: two sections of 80 Hz low pass, the envelope's time
    constant 100 ms */
-void RingDetect::init(int32_t srate_)
+void RingDetect::init(s32 srate_)
 {
 	*this = RingDetect();
 	srate = srate_;

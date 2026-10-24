@@ -22,7 +22,6 @@
  */
 
 #include <cstdarg>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -234,16 +233,16 @@ intptr_t Modem::get_param(unsigned name)
    to change to, a modem-on-hold request taken, or something for the
    host (the line's delay, the hook, a pulse); 0 (the host's result for
    the hook and the pulse), -1 for a number that cannot be set */
-int32_t Modem::set_param(unsigned name, int32_t val)
+s32 Modem::set_param(unsigned name, s32 val)
 {
 	switch (name) {
 	case MDMPRM_NONE:
 		return 0;
 	case MDMPRM_RX_RATE:
-		rx_rate_ = static_cast<uint32_t>(val);
+		rx_rate_ = static_cast<u32>(val);
 		return 0;
 	case MDMPRM_TX_RATE:
-		tx_rate_ = static_cast<uint32_t>(val);
+		tx_rate_ = static_cast<u32>(val);
 		return 0;
 	case MDMPRM_DP_REQUESTED:
 		/* change_dp() takes it when the pump says DPSTAT_CHANGEDP */

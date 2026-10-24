@@ -19,7 +19,6 @@
 #include <netinet/in.h>
 
 #include <condition_variable>
-#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -27,12 +26,14 @@
 #include <thread>
 #include <vector>
 
+#include "dm_types.h"
+
 namespace ari {
 
 /* an SDP's media line */
 struct SdpMedia {
 	std::string type;               /* audio, image */
-	int32_t port = 0;
+	s32 port = 0;
 	std::string proto;              /* RTP/AVP, udptl */
 	std::vector<std::string> fmts;
 	std::string addr;               /* its c= (or the session's) */
@@ -51,11 +52,11 @@ bool sdp_parse(const std::string &body, Sdp *s);
 /* T.38's settings as SDP says them (T38Fax...) */
 struct T38Params {
 	int version = 0;
-	int32_t max_bitrate = 14400;
-	int32_t max_datagram = 0;       /* 0: not said */
+	s32 max_bitrate = 14400;
+	s32 max_datagram = 0;           /* 0: not said */
 	bool redundancy = false;        /* T38FaxUdpEC: t38UDPRedundancy */
 	std::string addr;               /* where the UDPTL goes */
-	int32_t port = 0;
+	s32 port = 0;
 };
 
 /* where a leg is with T.38 */
@@ -65,7 +66,7 @@ enum T38State { T38_NONE, T38_ASKED, T38_ON, T38_REFUSED };
 struct SipLeg {
 	std::string token;              /* the user Asterisk calls */
 	int pt = 0;                     /* our G.711: 0 PCMU, 8 PCMA */
-	int32_t rtp_port = 0, udptl_port = 0;   /* ours */
+	s32 rtp_port = 0, udptl_port = 0;       /* ours */
 
 	/* the dialog */
 	bool up = false, gone = false;
@@ -73,26 +74,26 @@ struct SipLeg {
 	std::string local_uri, remote_uri;      /* To and From, untagged */
 	std::string target;                     /* Asterisk's Contact */
 	struct sockaddr_in peer = {};           /* where requests go */
-	uint32_t local_cseq = 0, sdp_version = 1;
+	u32 local_cseq = 0, sdp_version = 1;
 	/* the last INVITE that came: its CSeq, our response, which goes
 	   again until its ACK comes */
-	uint32_t rx_cseq = 0;
+	u32 rx_cseq = 0;
 	std::string response;
 	struct sockaddr_in response_to = {};
 	bool acked = true;
-	int64_t retx_at = 0, retx_ms = 0, retx_end = 0;
+	s64 retx_at = 0, retx_ms = 0, retx_end = 0;
 	/* our re-INVITE, again until a response */
 	bool asking = false;
 	std::string request, request_branch;
-	uint32_t request_cseq = 0;
-	int64_t req_at = 0, req_ms = 0, req_end = 0;
+	u32 request_cseq = 0;
+	s64 req_at = 0, req_ms = 0, req_end = 0;
 
-	int64_t forget_at = 0;          /* forgotten: kept for its BYE till
+	s64 forget_at = 0;              /* forgotten: kept for its BYE till
 					   then */
 
 	/* the media */
 	std::string rtp_addr;           /* the audio's other end */
-	int32_t rtp_peer_port = 0;
+	s32 rtp_peer_port = 0;
 	bool accept_t38 = false;        /* a T.38 offer is answered */
 	T38State t38 = T38_NONE;
 	T38Params t38_peer;             /* the other end's, once on */
@@ -103,16 +104,16 @@ class SipAgent {
 public:
 	/* bound to host:port (port 0: any), its thread started; false
 	   (errno) if the socket can't be */
-	bool start(const std::string &host, int32_t port);
+	bool start(const std::string &host, s32 port);
 	/* the address and port we are bound to */
 	const std::string &host() const { return host_; }
 	/* (see host()) */
-	int32_t port() const { return port_; }
+	s32 port() const { return port_; }
 
 	/* a leg for a call Asterisk is to make to token, its audio in RTP
 	   payload type pt to our rtp_port, UDPTL to our udptl_port */
 	std::shared_ptr<SipLeg> expect(const std::string &token, int pt,
-				       int32_t rtp_port, int32_t udptl_port);
+				       s32 rtp_port, s32 udptl_port);
 	/* the leg forgotten (its call is over; its BYE still answered) */
 	void forget(const std::shared_ptr<SipLeg> &leg);
 	/* the leg up (Asterisk has our answer) within ms; false if not */
@@ -131,7 +132,7 @@ public:
 private:
 	int fd_ = -1;
 	std::string host_;
-	int32_t port_ = 0;
+	s32 port_ = 0;
 	std::mutex lock_;
 	std::condition_variable changed_;
 	std::vector<std::shared_ptr<SipLeg>> legs_;

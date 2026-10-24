@@ -183,6 +183,9 @@ if(DMODEM_TESTS)
 	include(test_logs)
 	include(gtest)
 endif()
+# u8 .. s64 (include/dm_types.h), for every part of the tree
+include_directories(${PROJECT_SOURCE_DIR}/include)
+
 add_subdirectory(link)
 add_subdirectory(dsp)
 add_subdirectory(core)

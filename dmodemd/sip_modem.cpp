@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cerrno>
 #include <cinttypes>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -23,6 +22,7 @@
 #include <str.h>
 #include <t38.h>
 
+#include "dm_types.h"
 #include "portable.h"
 #ifndef _WIN32
 #include "pty.h"
@@ -39,7 +39,7 @@ namespace dmd {
 namespace {
 
 /* the line: 8000 samples a second, in frames of 20 ms */
-const int32_t RATE = 8000;
+const s32 RATE = 8000;
 const int FRAME = RATE / 50;
 /* the most samples one read of the call's audio takes */
 const int AUDIO_MAX = 2048;
@@ -57,8 +57,8 @@ const int T38_DATAGRAM_MIN = 32;
 const int T38_IFP_HEADERS = 16;
 const int T38_DEPTH = 3;
 const int T38_RX_MAX = 2048;
-const int32_t T38_WAIT_MS = 20;
-const uint64_t T38_CATCH_UP = RATE;
+const s32 T38_WAIT_MS = 20;
+const u64 T38_CATCH_UP = RATE;
 
 } // namespace
 
@@ -94,7 +94,7 @@ public:
 		sip::flash(ms);
 	}
 	/* the clock: the monotonic one's ms */
-	uint64_t now_ms() override { return dcore::monotonic_ms(); }
+	u64 now_ms() override { return dcore::monotonic_ms(); }
 	/* ATM, ATL: to the speaker's owner (SipModem::on_speaker()) */
 	void speaker(dcore::Modem &, int volume) override {
 		speaker_level_ = volume;
@@ -142,11 +142,11 @@ private:
 	struct sockaddr_storage peer_ = {};
 	socklen_t peer_len_ = 0;
 	int version_ = 0;
-	int32_t datagram_ = T38_DATAGRAM;
+	s32 datagram_ = T38_DATAGRAM;
 	dsp::UdptlTx tx_ = {};
 	dsp::UdptlRx rx_ = {};
-	uint64_t t38_start_ = 0;
-	uint64_t t38_samples_ = 0;
+	u64 t38_start_ = 0;
+	u64 t38_samples_ = 0;
 	/* the modem t38_receive() gives the packets to */
 	dcore::Modem *rx_modem_ = nullptr;
 };
@@ -165,7 +165,7 @@ SipLine::~SipLine()
    agent to dial with or to answer the ringing call */
 int SipLine::start(dcore::Modem &m)
 {
-	static const int16_t silence[FRAME] = {};
+	static const s16 silence[FRAME] = {};
 	int sv[2];
 
 	if (dmd::socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
@@ -217,7 +217,7 @@ int SipLine::stop(dcore::Modem &)
    the answer silence */
 int SipLine::audio(dcore::Modem &m)
 {
-	int16_t in[AUDIO_MAX], out[AUDIO_MAX];
+	s16 in[AUDIO_MAX], out[AUDIO_MAX];
 	char *bytes = reinterpret_cast<char *>(in);
 	if (carry_n_)
 		bytes[0] = carry_;
@@ -332,7 +332,7 @@ void SipLine::t38_send(dcore::Modem &, const void *ifp)
 				version_, pkt, sizeof(pkt));
 	if (n < 0)
 		return;
-	max = datagram_ < static_cast<int32_t>(sizeof(dgram)) ?
+	max = datagram_ < static_cast<s32>(sizeof(dgram)) ?
 		      static_cast<int>(datagram_) :
 		      static_cast<int>(sizeof(dgram));
 	len = tx_.packet(pkt, n, dgram, max);
@@ -379,16 +379,16 @@ void SipLine::t38_receive(dcore::Modem &m)
    its fax engine's timers and packets */
 void SipLine::t38_clock(dcore::Modem &m)
 {
-	static const int16_t silence[FRAME] = {};
-	int16_t out[FRAME];
-	uint64_t due;
+	static const s16 silence[FRAME] = {};
+	s16 out[FRAME];
+	u64 due;
 
 	if (t38_ < 0)
 		return;
 	due = (dcore::monotonic_ms() - t38_start_) * (RATE / 1000);
 	if (due - t38_samples_ > T38_CATCH_UP)
 		t38_samples_ = due - T38_CATCH_UP;
-	while (due - t38_samples_ >= static_cast<uint64_t>(FRAME) &&
+	while (due - t38_samples_ >= static_cast<u64>(FRAME) &&
 	       t38_ >= 0 && m.started()) {
 		m.process(silence, out, FRAME);
 		t38_samples_ += FRAME;
@@ -603,7 +603,7 @@ int FdDte::write(const char *buf, int n)
 	} else {
 		took = 0;
 	}
-	if (n > static_cast<int32_t>(BUFFER - out_.size()))
+	if (n > static_cast<s32>(BUFFER - out_.size()))
 		n = static_cast<int>(BUFFER - out_.size());
 	if (n > 0)
 		out_.append(buf, n);
@@ -720,7 +720,7 @@ int SipModem::serve(int ctl)
 	RunLoop loop;
 
 	while (RunLoop::running() && !stopped_) {
-		int32_t wait = RunLoop::poll(modems, 1);
+		s32 wait = RunLoop::poll(modems, 1);
 		int audio = m.started() ? line.audio_fd() : -1;
 		int dte = dte_.fd();
 		int ret;

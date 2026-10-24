@@ -32,7 +32,6 @@
 
 #include <atomic>
 #include <cstdarg>
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -43,6 +42,7 @@
 #include <windows.h>
 #include <wudfddi.h>
 
+#include "dm_types.h"
 #include "link.h"
 #include "port.h"
 
@@ -63,7 +63,7 @@ const wchar_t PORT_NAME[] = L"PortName";
 const char NO_NAME[] = "modem";
 
 /* the DLL's live objects (DllCanUnloadNow) */
-std::atomic<int32_t> g_objects{0};
+std::atomic<s32> g_objects{0};
 
 /* a message for the debugger (DebugView) */
 void dbg(const char *fmt, ...)
@@ -85,7 +85,7 @@ void link_log(const char *msg)
 }
 
 /* a port's status as the HRESULT UMDF completes a request with */
-HRESULT hr_of(uint32_t st)
+HRESULT hr_of(u32 st)
 {
 	return st == vmodem::ST_SUCCESS ? S_OK : HRESULT_FROM_NT(st);
 }
@@ -104,12 +104,12 @@ protected:
 	/* one reference less: the last deletes */
 	ULONG release()
 	{
-		int32_t n = --refs_;
+		s32 n = --refs_;
 		if (n == 0)
 			delete this;
 		return (ULONG)n;
 	}
-	std::atomic<int32_t> refs_{1};
+	std::atomic<s32> refs_{1};
 };
 
 /* *out = p (counted) if iid is one of p's; E_NOINTERFACE */
@@ -155,12 +155,12 @@ public:
 	}
 
 	/* (Request's) the buffer of its own */
-	uint8_t *data() override { return buf_.data(); }
+	u8 *data() override { return buf_.data(); }
 	/* (Request's) its size */
 	size_t size() const override { return buf_.size(); }
 
 	/* see port.h: the request completed unless its cancel has it */
-	void complete(uint32_t status, size_t info) override
+	void complete(u32 status, size_t info) override
 	{
 		bool mine = false;
 		{
@@ -243,7 +243,7 @@ private:
 	IWDFIoRequest *req_;
 	vmodem::Port &port_;
 	IWDFMemory *out_;
-	std::vector<uint8_t> buf_;
+	std::vector<u8> buf_;
 	std::mutex mu_;
 	bool cancelling_ = false, cancelled_ = false, done_ = false;
 };
@@ -419,7 +419,7 @@ public:
 				req->Complete(hr_of(vmodem::ST_BUFFER_TOO_SMALL));
 			} else {
 				hold(req, om, ol, nullptr, [&](Held *r) {
-					uint32_t st = port.ioctl(code, nullptr,
+					u32 st = port.ioctl(code, nullptr,
 						0, nullptr, 0, &info, r);
 					/* (refused: completed as any would
 					   be) */
@@ -430,8 +430,8 @@ public:
 		} else {
 			/* (the reply in a buffer of ours, then the
 			   request's) */
-			std::vector<uint8_t> reply(ol);
-			uint32_t st = port.ioctl(code, in, il,
+			std::vector<u8> reply(ol);
+			u32 st = port.ioctl(code, in, il,
 						 ol ? reply.data() : nullptr, ol,
 						 &info, nullptr);
 			if (om && info) {

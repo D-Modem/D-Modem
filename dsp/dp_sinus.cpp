@@ -13,6 +13,7 @@
  *
  */
 
+#include "dm_types.h"
 #include "dsp.h"
 #include "pump.h"
 
@@ -23,7 +24,7 @@ struct SinusPump : Pump {
 
 	unsigned phase;         /* the next sample's entry in the table */
 
-	int start(struct modem *, enum DP_ID, int, int32_t, int);
+	int start(struct modem *, enum DP_ID, int, s32, int);
 	~SinusPump();
 	int process(void *in, void *out, int cnt) override;
 };
@@ -46,7 +47,7 @@ static s16 sine32(unsigned k)
 }
 
 /* the tone from phase 0, whatever the arguments; always 0 */
-int SinusPump::start(struct modem *, enum DP_ID, int, int32_t, int)
+int SinusPump::start(struct modem *, enum DP_ID, int, s32, int)
 {
 	DSP_DBG("sinus: start\n");
 	return 0;

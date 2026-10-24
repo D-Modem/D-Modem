@@ -22,9 +22,9 @@
  */
 
 #include <cmath>
-#include <cstdint>
 #include <cstring>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "g711.h"
 #include "v90.h"
@@ -100,8 +100,8 @@ int v92_uqts(int wxyz)
    levels of Table 6/V.92, quantized by G.711 */
 void V90Tx::anspcm_init(int level)
 {
-	static const int16_t scl_u[4] = { 1334, 1000, 708, 500 };
-	static const int16_t scl_a[4] = { 667, 500, 354, 250 };
+	static const s16 scl_u[4] = { 1334, 1000, 708, 500 };
+	static const s16 scl_a[4] = { 667, 500, 354, 250 };
 	double scl = alaw ? scl_a[level & 3] : scl_u[level & 3];
 	int k;
 	for (k = 0; k < 301; k++) {
@@ -109,7 +109,7 @@ void V90Tx::anspcm_init(int level)
 						  0.25 * M_PI / 301) + 0.5;
 		int v = static_cast<int>(floor(x));
 		/* (v: 13 bits for A-law, 14 for mu-law) */
-		anspcm[k] = static_cast<int16_t>(g711::decode(
+		anspcm[k] = static_cast<s16>(g711::decode(
 			alaw, g711::encode_sm(alaw, alaw ? 8 * v : 4 * v)));
 	}
 }
@@ -916,7 +916,7 @@ void V90Enc::decide_frame(int depth)
 void V90Enc::push(const unsigned char *bits, int last_)
 {
 	unsigned char d[48];
-	uint64_t r = 0;
+	u64 r = 0;
 	int D = S + K, mag[6], i;
 
 	for (i = 0; i < D; i++)

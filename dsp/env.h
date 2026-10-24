@@ -11,9 +11,10 @@
 #ifndef DSP_ENV_H
 #define DSP_ENV_H
 
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+
+#include "dm_types.h"
 
 namespace dsp {
 
@@ -31,9 +32,9 @@ inline long env_long(const char *var, long def = 0)
 }
 
 /* (see env_long()) */
-inline int32_t env_int(const char *var, int32_t def = 0)
+inline s32 env_int(const char *var, s32 def = 0)
 {
-	return static_cast<int32_t>(env_long(var, def));
+	return static_cast<s32>(env_long(var, def));
 }
 
 /* var as a real number, def when it is not set */

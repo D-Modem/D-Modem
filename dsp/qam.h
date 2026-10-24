@@ -11,10 +11,10 @@
 #ifndef __QAM_H__
 #define __QAM_H__
 
-#include <cstdint>
 #include <cstring>
 #include <vector>
 
+#include "dm_types.h"
 #include "dsp.h"
 
 namespace dsp {
@@ -29,7 +29,7 @@ namespace dsp {
  *    from the source sample() is given, at the symbol rate
  */
 struct QamTx {
-	int32_t srate;
+	s32 srate;
 	float sps;
 	float t;
 	int span;
@@ -41,7 +41,7 @@ struct QamTx {
 	/* carrier (Hz), baud, root raised cosine roll off alpha over span
 	   symbols each side; symbols of rms rms_symbol give a pass band rms
 	   of amplitude / sqrt(2) (that of a sine of amplitude amplitude) */
-	void  init(int32_t srate, float carrier, float baud, float alpha,
+	void  init(s32 srate, float carrier, float baud, float alpha,
 		   int span, float rms_symbol, float amplitude);
 	/* the next line sample; at a symbol boundary the next symbol from
 	   next() */
@@ -71,7 +71,7 @@ private:
  *    calls adapt() with that decision.
  */
 struct QamRx {
-	int32_t srate;
+	s32 srate;
 	float sps;
 	float baud;
 	Osc lo;
@@ -101,12 +101,12 @@ struct QamRx {
 	cplx eq_out;            /* equalizer output before rotation */
 	cplx z;                 /* rotated equalizer output */
 	cplx rot;
-	int32_t symbols;
+	s32 symbols;
 
 	/* carrier (Hz), baud, roll off alpha, matched filter span symbols
 	   each side, eq_len T/2 taps, AGC to target_power at the symbol
 	   instants; 0, or -1 when out of memory */
-	int   init(int32_t srate, float carrier, float baud, float alpha,
+	int   init(s32 srate, float carrier, float baud, float alpha,
 		   int span, int eq_len, float target_power);
 	void  release();        /* the buffers init took */
 	void  reset();          /* eq to centre tap, PLL to 0 */

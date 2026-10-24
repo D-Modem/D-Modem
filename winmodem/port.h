@@ -35,17 +35,18 @@
 #define DMODEM_WINMODEM_PORT_H
 
 #include <cstddef>
-#include <cstdint>
 #include <deque>
 #include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "dm_types.h"
+
 namespace vmodem {
 
 /* the NTSTATUS values requests complete with */
-enum : uint32_t {
+enum : u32 {
 	ST_SUCCESS = 0x00000000, ST_TIMEOUT = 0x00000102,
 	ST_PENDING = 0x00000103, ST_CANCELLED = 0xC0000120,
 	ST_INVALID_PARAMETER = 0xC000000D, ST_BUFFER_TOO_SMALL = 0xC0000023,
@@ -54,8 +55,8 @@ enum : uint32_t {
 
 /* the serial IOCTLs: CTL_CODE(FILE_DEVICE_SERIAL_PORT, fn,
    METHOD_BUFFERED, FILE_ANY_ACCESS) (ntddser.h's IOCTL_SERIAL_*) */
-constexpr uint32_t serial_ioctl(uint32_t fn) { return 0x1b0000u | fn << 2; }
-enum : uint32_t {
+constexpr u32 serial_ioctl(u32 fn) { return 0x1b0000u | fn << 2; }
+enum : u32 {
 	IO_SET_BAUD_RATE = serial_ioctl(1), IO_SET_QUEUE_SIZE = serial_ioctl(2),
 	IO_SET_LINE_CONTROL = serial_ioctl(3), IO_SET_BREAK_ON = serial_ioctl(4),
 	IO_SET_BREAK_OFF = serial_ioctl(5), IO_IMMEDIATE_CHAR = serial_ioctl(6),
@@ -82,7 +83,7 @@ enum : uint32_t {
 };
 
 /* the wait mask's events (winbase.h's EV_*) */
-enum : uint32_t {
+enum : u32 {
 	PEV_RXCHAR = 0x0001, PEV_RXFLAG = 0x0002, PEV_TXEMPTY = 0x0004,
 	PEV_CTS = 0x0008, PEV_DSR = 0x0010, PEV_RLSD = 0x0020,
 	PEV_BREAK = 0x0040, PEV_ERR = 0x0080, PEV_RING = 0x0100,
@@ -91,62 +92,62 @@ enum : uint32_t {
 };
 
 /* the modem status register (SERIAL_MSR_*): deltas, then the lines */
-enum : uint8_t {
+enum : u8 {
 	PMSR_DCTS = 0x01, PMSR_DDSR = 0x02, PMSR_TERI = 0x04, PMSR_DDCD = 0x08,
 	PMSR_CTS = 0x10, PMSR_DSR = 0x20, PMSR_RI = 0x40, PMSR_DCD = 0x80,
 };
 
 /* the requests' structures, as ntddser.h has them */
 struct SerialTimeouts {
-	uint32_t read_interval, read_multiplier, read_constant;
-	uint32_t write_multiplier, write_constant;
+	u32 read_interval, read_multiplier, read_constant;
+	u32 write_multiplier, write_constant;
 };
 struct SerialHandflow {
-	uint32_t control_handshake, flow_replace;
-	int32_t xon_limit, xoff_limit;
+	u32 control_handshake, flow_replace;
+	s32 xon_limit, xoff_limit;
 };
 struct SerialChars {
-	uint8_t eof, error, brk, event, xon, xoff;
+	u8 eof, error, brk, event, xon, xoff;
 };
 struct SerialLineControl {
-	uint8_t stop_bits, parity, word_length;
+	u8 stop_bits, parity, word_length;
 };
 struct SerialStatus {
-	uint32_t errors, hold_reasons, in_queue, out_queue;
-	uint8_t eof_received, wait_for_immediate;
+	u32 errors, hold_reasons, in_queue, out_queue;
+	u8 eof_received, wait_for_immediate;
 };
 struct SerialStats {
-	uint32_t received, transmitted, frame_errors, overrun_errors,
+	u32 received, transmitted, frame_errors, overrun_errors,
 		buffer_overruns, parity_errors;
 };
 /* SERIAL_COMMPROP (its ProvChar[1] and the padding after it) */
 struct SerialCommProp {
-	uint16_t packet_length, packet_version;
-	uint32_t service_mask, reserved1, max_tx_queue, max_rx_queue, max_baud;
-	uint32_t prov_sub_type, prov_capabilities, settable_params;
-	uint32_t settable_baud;
-	uint16_t settable_data, settable_stop_parity;
-	uint32_t current_tx_queue, current_rx_queue, prov_spec1, prov_spec2;
-	uint16_t prov_char[2];
+	u16 packet_length, packet_version;
+	u32 service_mask, reserved1, max_tx_queue, max_rx_queue, max_baud;
+	u32 prov_sub_type, prov_capabilities, settable_params;
+	u32 settable_baud;
+	u16 settable_data, settable_stop_parity;
+	u32 current_tx_queue, current_rx_queue, prov_spec1, prov_spec2;
+	u16 prov_char[2];
 };
 
 /* the handflow's bits (SERIAL_DTR_*, SERIAL_RTS_*) */
-enum : uint32_t {
+enum : u32 {
 	HF_DTR_MASK = 0x03, HF_DTR_CONTROL = 0x01, HF_DTR_HANDSHAKE = 0x02,
 	HF_NULL_STRIPPING = 0x08,
 	HF_RTS_MASK = 0xc0, HF_RTS_CONTROL = 0x40, HF_RTS_HANDSHAKE = 0x80,
 	HF_TRANSMIT_TOGGLE = 0xc0,
 };
 /* IOCTL_SERIAL_PURGE's (SERIAL_PURGE_*) */
-enum : uint32_t {
+enum : u32 {
 	PRG_TXABORT = 1, PRG_RXABORT = 2, PRG_TXCLEAR = 4,
 	PRG_RXCLEAR = 8,
 };
 /* IOCTL_SERIAL_GET_DTRRTS's, and the modem control register's DTR and
    RTS (SERIAL_DTR_STATE, SERIAL_MCR_DTR...) */
-enum : uint32_t { DTRRTS_DTR = 1, DTRRTS_RTS = 2 };
+enum : u32 { DTRRTS_DTR = 1, DTRRTS_RTS = 2 };
 /* LSRMST_INSERT's in-band status: escape, then what follows */
-enum : uint8_t { LSRMST_ESCAPE = 0, LSRMST_LSR_DATA = 1,
+enum : u8 { LSRMST_ESCAPE = 0, LSRMST_LSR_DATA = 1,
 		 LSRMST_LSR_NODATA = 2, LSRMST_MST = 3 };
 
 /* an app's read, write or IOCTL_SERIAL_WAIT_ON_MASK while the port holds
@@ -155,17 +156,17 @@ enum : uint8_t { LSRMST_ESCAPE = 0, LSRMST_LSR_DATA = 1,
 class Request {
 public:
 	virtual ~Request() = default;
-	virtual uint8_t *data() = 0;
+	virtual u8 *data() = 0;
 	virtual size_t size() const = 0;
 	/* done: the status, and the bytes read or written (a wait's 4);
 	   called once, with the port's lock not held */
-	virtual void complete(uint32_t status, size_t info) = 0;
+	virtual void complete(u32 status, size_t info) = 0;
 
 private:
 	friend class Port;
 	size_t done_ = 0;               /* bytes so far */
 	bool started_ = false;          /* the head of its queue: timed */
-	uint64_t total_due_ = 0, interval_due_ = 0;  /* ms; 0: none */
+	u64 total_due_ = 0, interval_due_ = 0;       /* ms; 0: none */
 };
 
 /* the port's callbacks to its driver (called with the lock not held) */
@@ -180,14 +181,14 @@ public:
 	virtual void state_changed() {}
 	/* the next timeout is at due (ms by the clock), 0: none; tick()
 	   then */
-	virtual void timer(uint64_t /*due*/) {}
+	virtual void timer(u64 /*due*/) {}
 };
 
 /* see above */
 class Port {
 public:
 	enum : size_t { RX_SIZE = 16384, TX_SIZE = 4096 };
-	typedef uint64_t (*Clock)();
+	typedef u64 (*Clock)();
 
 	/* a port reporting to host (may be null), its time by clock (ms) */
 	Port(PortHost *host, Clock clock);
@@ -202,7 +203,7 @@ public:
 	/* an IOCTL: its status, and in *info the bytes of out it filled;
 	   IO_WAIT_ON_MASK takes r and gives ST_PENDING (r completes then,
 	   now or later), unless it is refused */
-	uint32_t ioctl(uint32_t code, const void *in, size_t inlen, void *out,
+	u32 ioctl(u32 code, const void *in, size_t inlen, void *out,
 		       size_t outlen, size_t *info, Request *r);
 	/* r no longer held (true) to be completed as cancelled by the
 	   caller, with done(r) bytes; false: not held (completed or about
@@ -217,40 +218,40 @@ public:
 	   app's characters dropped) */
 	void connect(bool up);
 	/* the modem's lines (LINE_*) */
-	void set_lines(uint8_t lines);
+	void set_lines(u8 lines);
 	/* the modem's characters for the app: how many were taken (the
 	   rest when there is room: PortHost::rx_room) */
-	size_t rx_put(const uint8_t *p, size_t n);
+	size_t rx_put(const u8 *p, size_t n);
 	/* up to max of the app's characters for the modem */
-	size_t tx_take(uint8_t *p, size_t max);
+	size_t tx_take(u8 *p, size_t max);
 	/* the app's side (STATE_*), its baud rate */
-	uint8_t app_state();
-	uint32_t baud();
+	u8 app_state();
+	u32 baud();
 
 private:
 	/* what the public calls collect under the lock and do after */
 	struct Batch {
-		std::vector<std::pair<Request *, std::pair<uint32_t, size_t>>>
+		std::vector<std::pair<Request *, std::pair<u32, size_t>>>
 			done;
 		bool tx = false, room = false, state = false;
 	};
-	void finish(Batch &b, Request *r, uint32_t status, size_t info);
+	void finish(Batch &b, Request *r, u32 status, size_t info);
 	void run(Batch &b, std::unique_lock<std::mutex> &lk);
-	void event(Batch &b, uint32_t ev);
-	void pump_reads(Batch &b, uint64_t now);
-	void pump_writes(Batch &b, uint64_t now);
+	void event(Batch &b, u32 ev);
+	void pump_reads(Batch &b, u64 now);
+	void pump_writes(Batch &b, u64 now);
 	void after(Batch &b);
 	void set_dtr_rts(Batch &b, bool dtr, bool rts);
 	void apply_handflow(Batch &b);
-	void put_msr(uint8_t msr_old);
-	uint8_t msr() const;
+	void put_msr(u8 msr_old);
+	u8 msr() const;
 	/* the receive buffer's room */
 	size_t rx_room_left() const { return RX_SIZE - rx_.size(); }
-	bool rx_push(uint8_t c);
-	uint32_t do_ioctl(Batch &b, uint32_t code, const void *in,
+	bool rx_push(u8 c);
+	u32 do_ioctl(Batch &b, u32 code, const void *in,
 			  size_t inlen, void *out, size_t outlen,
 			  size_t *info, Request *r);
-	uint64_t next_due() const;
+	u64 next_due() const;
 
 	PortHost *host_;
 	Clock clock_;
@@ -258,24 +259,24 @@ private:
 
 	bool open_ = false, connected_ = false;
 	bool dtr_ = false, rts_ = false;
-	uint8_t lines_ = 0;             /* the modem's (LINE_*) */
-	uint8_t deltas_ = 0;            /* PMSR_D*, TERI since read */
-	uint32_t baud_ = 115200;
+	u8 lines_ = 0;                  /* the modem's (LINE_*) */
+	u8 deltas_ = 0;                 /* PMSR_D*, TERI since read */
+	u32 baud_ = 115200;
 	SerialLineControl lc_ = { 0, 0, 8 };
 	SerialHandflow hf_ = { HF_DTR_CONTROL, HF_RTS_CONTROL, 0, 0 };
 	SerialChars chars_ = { 0, 0, 0, 0, 0x11, 0x13 };
 	SerialTimeouts to_ = {};
 	SerialStats stats_ = {};
-	uint32_t wait_mask_ = 0, events_ = 0;
-	uint8_t lsrmst_ = 0;            /* the escape, 0: none */
+	u32 wait_mask_ = 0, events_ = 0;
+	u8 lsrmst_ = 0;                 /* the escape, 0: none */
 	bool tx_busy_ = false;          /* written since TXEMPTY */
 	bool rx_full_ = false;          /* RX80FULL given */
 	bool rx_blocked_ = false;       /* rx_put() turned some away */
 
-	std::deque<uint8_t> rx_, tx_;
+	std::deque<u8> rx_, tx_;
 	std::deque<Request *> reads_, writes_;
 	Request *wait_ = nullptr;
-	uint64_t due_ = 0;              /* the timer as last given */
+	u64 due_ = 0;                   /* the timer as last given */
 };
 
 } // namespace vmodem

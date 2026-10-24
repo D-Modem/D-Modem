@@ -10,9 +10,10 @@
 #ifndef DMODEMD_OPTIONS_H
 #define DMODEMD_OPTIONS_H
 
-#include <cstdint>
 
 #include <sys/types.h>
+
+#include "dm_types.h"
 
 namespace dmd {
 
@@ -49,7 +50,7 @@ struct Options {
 	bool usb_rhom = false;
 	/* the SmartUSB56's buzzer as the speaker (--usb-buzzer) */
 	bool usb_buzzer = false;
-	uint32_t rate = 9600;
+	u32 rate = 9600;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem
 	   pair such as com0com's), or TCP connections on [address:]port
 	   (--tcp) */

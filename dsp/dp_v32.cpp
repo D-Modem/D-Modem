@@ -31,11 +31,11 @@
 
 #include <cinttypes>
 #include <cmath>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "pump.h"
 #include "qam.h"
@@ -66,7 +66,7 @@ namespace dsp {
 #define RB_RATES        (RB_4800 | RB_9600 | RB_TCM | RB_7200 | RB_12000 | RB_14400)
 
 struct v32_rate {
-	int32_t bps;
+	s32 bps;
 	unsigned bits;
 	int nbits;
 	const cplx *points;
@@ -148,14 +148,14 @@ struct ToneTrk {
 	cplx lp1, lp2;
 	float a;
 	cplx hist[128];
-	uint32_t pos;
+	u32 pos;
 	int lag;
 	int on;
-	int32_t on_count;
+	s32 on_count;
 	int hold;
 
-	void init(float freq, int32_t srate);
-	int run(float x, float in_power, int32_t srate);
+	void init(float freq, s32 srate);
+	int run(float x, float in_power, s32 srate);
 };
 
 struct V32Pump : PumpBase<V32Pump, v32_state> {
@@ -171,12 +171,12 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	/* transmitter */
 	QamTx tx;
 	enum v32_txm txm;
-	int32_t tx_syms;        /* symbols sent in the current tx state */
+	s32 tx_syms;            /* symbols sent in the current tx state */
 	int tx_ac_phase;
 	int tx_reverse;         /* repeat one AC symbol: phase reversal */
 	int ca_rev;             /* answerer: the caller's CC reversal seen */
-	int32_t nt_syms = 0;    /* caller: the round trip delay NT (symbols) */
-	uint32_t tx_scr;
+	s32 nt_syms = 0;        /* caller: the round trip delay NT (symbols) */
+	u32 tx_scr;
 	int tx_scr_tap;
 	int tx_4800;            /* 4800 coding state (v32_points_4800 index) */
 	int tx_last_abcd;
@@ -197,11 +197,11 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	enum v32_rxp rxp;
 	int run_s, last_sgn, s_miss;
 	cplx last_z;
-	uint32_t rx_scr;
+	u32 rx_scr;
 	int rx_scr_tap;
 	int rx_4800;
-	uint32_t rx_bits;       /* last 32 descrambled bits */
-	int32_t rx_nbits;
+	u32 rx_bits;            /* last 32 descrambled bits */
+	s32 rx_nbits;
 	unsigned rx_word, rx_r_word;
 	int rx_word_align;
 	float rx_mse;
@@ -215,7 +215,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	int ev_aa, ev_ac, ev_rev, ev_s, ev_r, ev_e, ev_usb1;
 	int retraining;         /* a retrain in data mode (no new CONNECT) */
 	int retrains;
-	int32_t retrain_at;     /* test: our own retrain this far (samples)
+	s32 retrain_at;         /* test: our own retrain this far (samples)
 				   into the data, $DSP_V32_RETRAIN ms */
 	unsigned r_word;        /* last R word received */
 
@@ -240,7 +240,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	const struct v32_rate *choose(unsigned w);
 	int handshake();
 	cplx abcd_point(int k);
-	int start(struct modem *m, enum DP_ID id, int caller_, int32_t srate_,
+	int start(struct modem *m, enum DP_ID id, int caller_, s32 srate_,
 		  int max_frag);
 	void cleanup();
 	int sample(float x, float *y);
@@ -279,7 +279,7 @@ static unsigned final_word(const struct v32_rate *r)
 
 /* tracks a tone at freq Hz: two pole low pass of 1.5 ms after the down
    conversion, phase compared with 10 ms ago */
-void ToneTrk::init(float freq, int32_t srate)
+void ToneTrk::init(float freq, s32 srate)
 {
 	reinit(*this);
 	lo.set_freq(-freq, srate);
@@ -291,7 +291,7 @@ void ToneTrk::init(float freq, int32_t srate)
 
 /* returns 1 on a phase reversal; the tone has to carry a fair part of
    the total input power (in_power), noise alone does not turn it on */
-int ToneTrk::run(float x, float in_power, int32_t srate)
+int ToneTrk::run(float x, float in_power, s32 srate)
 {
 	cplx v = cplx_scale(lo.next_cplx(), x), old;
 	float p, po;
@@ -777,7 +777,7 @@ const struct v32_rate *V32Pump::choose(unsigned w)
 /* called once per transmitted symbol, before the symbol is made */
 int V32Pump::handshake()
 {
-	int32_t sym = tx_syms;
+	s32 sym = tx_syms;
 	const struct v32_rate *r;
 
 	switch (state) {
@@ -1052,18 +1052,18 @@ int V32Pump::sample(float x, float *y)
    from S7 and S10; an answerer after V.8 starts at the gap.  0, or -1
    when out of memory. */
 int V32Pump::start(struct modem *m, enum DP_ID id, int caller_,
-		   int32_t srate_, int max_frag)
+		   s32 srate_, int max_frag)
 {
 	int i;
-	int32_t min_rate, max_rate;
+	s32 min_rate, max_rate;
 
 	pump_setup(m, srate_, caller_);
 	automode = (id != DP_V32 && id != DP_V32BIS) ||
 		(rt && rt->v32_automode);
 
 	/* rates we offer */
-	min_rate = static_cast<int32_t>(modem_get_param(m, MDMPRM_MIN_RATE));
-	max_rate = static_cast<int32_t>(modem_get_param(m, MDMPRM_MAX_RATE));
+	min_rate = static_cast<s32>(modem_get_param(m, MDMPRM_MIN_RATE));
+	max_rate = static_cast<s32>(modem_get_param(m, MDMPRM_MAX_RATE));
 	for (i = 0; i < V32_NRATES; i++) {
 		const struct v32_rate *r = &v32_rates[i];
 		if (id == DP_V32 && r->bps != 9600 && r->bps != 4800)
@@ -1103,7 +1103,7 @@ int V32Pump::start(struct modem *m, enum DP_ID id, int caller_,
 	rx_rate = tx_rate;
 
 	/* test: DSP_V32_RETRAIN=<ms in data mode>[a|c] */
-	retrain_at = static_cast<int32_t>(test_samples("DSP_V32_RETRAIN"));
+	retrain_at = static_cast<s32>(test_samples("DSP_V32_RETRAIN"));
 
 	if (caller_) {
 		state = C_AA;

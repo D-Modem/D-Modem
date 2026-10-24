@@ -37,8 +37,9 @@
 #ifndef DMODEMD_CX_DAA_H
 #define DMODEMD_CX_DAA_H
 
-#include <cstdint>
 #include <string>
+
+#include "dm_types.h"
 
 namespace dmd {
 
@@ -50,10 +51,10 @@ class Ac97Regs {
 public:
 	virtual ~Ac97Regs() = default;
 	/* register reg into *v, or written with v; false on an error */
-	virtual bool read(int reg, uint16_t *v) = 0;
-	virtual bool write(int reg, uint16_t v) = 0;
+	virtual bool read(int reg, u16 *v) = 0;
+	virtual bool write(int reg, u16 v) = 0;
 	/* at least us microseconds gone */
-	virtual void delay_us(uint32_t us) = 0;
+	virtual void delay_us(u32 us) = 0;
 };
 
 /* how an SSD gives its LSD's registers (SOAR's flags per kind) */
@@ -78,17 +79,17 @@ CxVariant cx_variant(int kind);
 
 /* whether the codec's vendor ID (registers 0x7c, 0x7e) is a Conexant
    or Rockwell modem codec with a SmartDAA */
-bool cx_codec(uint16_t id1, uint16_t id2);
+bool cx_codec(u16 id1, u16 id2);
 
 /* the SSD's kind of a cx_codec() codec, from register 0x7e's low byte
    (its DAA type) as Conexant's ICH driver takes it; -1 for type 0x24,
    whose SSD is in the codec's own registers, not behind 0x7a */
-int cx_kind(uint16_t id2);
+int cx_kind(u16 id2);
 
 class CxDaa {
 public:
 	/* LSD register 0x15's hook states (bits 7:6) */
-	enum Hook : uint8_t {
+	enum Hook : u8 {
 		HOOK_ON = 0x40, HOOK_OFF = 0x80, PULSE_MAKE = 0x00,
 		PULSE_BREAK = 0xc0
 	};
@@ -110,19 +111,19 @@ public:
 		  country_(default_country()) {}
 
 	/* an SSD register into *v, or written with v */
-	bool ssd_read(int reg, uint8_t *v);
-	bool ssd_write(int reg, uint8_t v);
+	bool ssd_read(int reg, u8 *v);
+	bool ssd_write(int reg, u8 v);
 	/* an LSD register into *v (from the line side, not a copy), or
 	   written with v (the answer checked; tried again 4 times, LSD
 	   register 0x17 once) */
-	bool lsd_read(int reg, uint8_t *v);
-	bool lsd_write(int reg, uint8_t v);
+	bool lsd_read(int reg, u8 *v);
+	bool lsd_write(int reg, u8 v);
 	/* the bits mask of LSD register reg made val's, the rest kept;
 	   not written if they are already */
-	bool lsd_field(int reg, uint8_t mask, uint8_t val);
+	bool lsd_field(int reg, u8 mask, u8 val);
 	/* whether the line side answers: its version (LSD register 0x22)
 	   into *version */
-	bool probe(uint8_t *version);
+	bool probe(u8 *version);
 	/* the hook (LSD register 0x15's bits 7:6), its other bits kept:
 	   that alone (a dial pulse's make and break) */
 	bool set_hook(Hook h);
@@ -136,7 +137,7 @@ public:
 	   registers, on hook.  For versions 0, 0x10 and 0x11 (whose setup
 	   the library does otherwise) and for another kind of SSD the
 	   version read alone (setup() false) */
-	bool power_up(uint8_t *version);
+	bool power_up(u8 *version);
 	/* whether power_up() set the line up (go_off_hook() and
 	   go_on_hook() then do the library's sequences) */
 	bool setup() const { return setup_; }
@@ -155,7 +156,7 @@ public:
 
 private:
 	/* the status register's bits clear mask cleared */
-	bool clear_status(uint8_t mask);
+	bool clear_status(u8 mask);
 	/* the command's end: true if done, false on its error or no end
 	   within 9 frames */
 	bool wait_done();
@@ -174,14 +175,14 @@ private:
 	bool wait_power();
 	/* Op::Param p's byte for a step's set, the board's, the country's
 	   or the line side's version's */
-	uint8_t param(int p, uint8_t set) const;
+	u8 param(int p, u8 set) const;
 
 	CxVariant v_;
 	bool setup_ = false;    /* power_up() set the line up */
 	bool off_hook_ = false; /* go_off_hook() the last */
 	const CxBoard *board_;
 	const CxCountry *country_;
-	uint8_t version_ = 0;
+	u8 version_ = 0;
 	std::string error_;
 };
 

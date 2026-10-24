@@ -47,7 +47,6 @@
 #include <csignal>
 #include <cstdarg>
 #include <cstddef>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -78,6 +77,7 @@
 /* libre's declarations in a namespace of their own: its struct sip
    would be the namespace sip's name (the system headers it has are
    above; on Windows Winsock's, by portable.h) */
+#include "dm_types.h"
 #include "portable.h"
 namespace libre {
 #include <re.h>
@@ -100,14 +100,14 @@ namespace {
 using namespace libre;
 
 /* the modem's audio: 8000 Hz, mono, 16 bit, frames of 20 ms */
-const uint32_t RATE = 8000;
+const u32 RATE = 8000;
 const unsigned SAMPLES = RATE / 50;
 const size_t FRAME = SAMPLES * 2;
-const int32_t TICK_NS = 1000000000L / 50;
+const s32 TICK_NS = 1000000000L / 50;
 
 /* the jitter buffer, fixed (samples): its delay, its longest backlog */
-const int32_t JB_DELAY = 60 * RATE / 1000;
-const int32_t JB_MAX = 2000 * RATE / 1000;
+const s32 JB_DELAY = 60 * RATE / 1000;
+const s32 JB_MAX = 2000 * RATE / 1000;
 
 /* late packets in a row, the buffer dry, for it to start over (a
    moment's lateness only loses their time) */
@@ -115,7 +115,7 @@ const unsigned LATE_RUN = 5;
 
 /* the audio thread's clock: behind by more than this (ns), it starts
    over from now */
-const int32_t LATE_NS = 200000000L;
+const s32 LATE_NS = 200000000L;
 
 /* a ringing call's RING lines, the look at the current call (ms) */
 const int RING_MS = 3000;
@@ -127,7 +127,7 @@ const int T38_ASK_MS = 1000;
 
 /* the registration's lifetime (s); the longest stop() waits for the
    last transactions (ms) */
-const uint32_t REG_EXPIRES = 300;
+const u32 REG_EXPIRES = 300;
 const int QUIT_MS = 2000;
 
 /* the SIP thread's queue */
@@ -138,7 +138,7 @@ enum { MQ_DIAL, MQ_ANSWER, MQ_MODEM_GONE, MQ_QUIT };
    samples), the copies of its last packet */
 const int TE_PT = 101;
 const unsigned EV_FLASH = 16;
-const uint32_t EV_MAX = 65535;
+const u32 EV_MAX = 65535;
 const int EV_ENDS = 3;
 
 /* start()'s copy of the configuration */
@@ -152,7 +152,7 @@ std::atomic<int> law_{0};
 /* the current call's telephone-event payload type (the far end's), -1
    if it has none; a hook flash asked for (ms), 0 if none */
 std::atomic<int> te_pt_{-1};
-std::atomic<uint32_t> flash_ms_{0};
+std::atomic<u32> flash_ms_{0};
 std::atomic<bool> fax_{false};
 std::atomic<bool> t38_offers_{false};
 std::atomic<bool> running{false};       /* the SIP thread takes requests */
@@ -288,7 +288,7 @@ void ctl_line(const char *s)
 
 /* a UDP socket on a port of its own (into *port), both IPv6 and IPv4 if
    it can (its family into *family); -1 if it can't be had */
-int open_udp(int32_t *port, int *family)
+int open_udp(s32 *port, int *family)
 {
 	for (int af : { AF_INET6, AF_INET }) {
 		struct sockaddr_storage a = {};
@@ -327,7 +327,7 @@ int open_udp(int32_t *port, int *family)
 
 /* the socket address of addr:port for a socket of family (an IPv4
    address mapped for an IPv6 one); false if addr is none of either */
-bool sockaddr_of(const std::string &addr, int32_t port, int family,
+bool sockaddr_of(const std::string &addr, s32 port, int family,
 		 struct sockaddr_storage *a, socklen_t *len)
 {
 	struct sockaddr_in *a4 = reinterpret_cast<struct sockaddr_in *>(a);
@@ -339,7 +339,7 @@ bool sockaddr_of(const std::string &addr, int32_t port, int family,
 		if (family == AF_INET) {
 			a4->sin_family = AF_INET;
 			a4->sin_addr = in4;
-			a4->sin_port = htons((uint16_t)port);
+			a4->sin_port = htons((u16)port);
 			*len = sizeof(*a4);
 			return true;
 		}
@@ -347,14 +347,14 @@ bool sockaddr_of(const std::string &addr, int32_t port, int family,
 		a6->sin6_addr.s6_addr[10] = 0xff;
 		a6->sin6_addr.s6_addr[11] = 0xff;
 		memcpy(&a6->sin6_addr.s6_addr[12], &in4, 4);
-		a6->sin6_port = htons((uint16_t)port);
+		a6->sin6_port = htons((u16)port);
 		*len = sizeof(*a6);
 		return true;
 	}
 	if (family == AF_INET6 &&
 	    inet_pton(AF_INET6, addr.c_str(), &a6->sin6_addr) == 1) {
 		a6->sin6_family = AF_INET6;
-		a6->sin6_port = htons((uint16_t)port);
+		a6->sin6_port = htons((u16)port);
 		*len = sizeof(*a6);
 		return true;
 	}
@@ -369,7 +369,7 @@ bool sockaddr_of(const std::string &addr, int32_t port, int family,
 /* an SDP's media line */
 struct SdpMedia {
 	std::string type;               /* audio, image */
-	int32_t port = 0;
+	s32 port = 0;
 	std::string proto;              /* RTP/AVP, udptl */
 	std::vector<std::string> fmts;
 	std::string addr;               /* its c= (or the session's) */
@@ -425,7 +425,7 @@ bool sdp_parse(const char *body, size_t n, Sdp *s)
 			/* <media> <port>[/<count>] <proto> <fmt>... */
 			SdpMedia m;
 			std::vector<std::string> w;
-			int32_t port;
+			s32 port;
 			for (size_t i = 0; i < v.size();) {
 				size_t e = v.find(' ', i);
 				if (e == std::string::npos)
@@ -439,7 +439,7 @@ bool sdp_parse(const char *body, size_t n, Sdp *s)
 					       port))
 				return false;
 			m.type = w[0];
-			m.port = static_cast<int32_t>(port);
+			m.port = static_cast<s32>(port);
 			m.proto = w[2];
 			m.addr = session_addr;
 			m.fmts.assign(w.begin() + 3, w.end());
@@ -496,7 +496,7 @@ int line_of(const Sdp &s, bool t38)
 int g711_pt(const SdpMedia &m, int *law)
 {
 	for (const std::string &f : m.fmts) {
-		int32_t pt;
+		s32 pt;
 		std::string enc;
 
 		if (!dcore::parse_long(f, pt) || pt < 0 || pt > 127)
@@ -526,7 +526,7 @@ int g711_pt(const SdpMedia &m, int *law)
 int te_pt(const SdpMedia &m)
 {
 	for (const std::string &f : m.fmts) {
-		int32_t pt;
+		s32 pt;
 
 		if (!dcore::parse_long(f, pt) || pt < 96 || pt > 127)
 			continue;
@@ -562,9 +562,9 @@ std::string direction(const Sdp &s, const SdpMedia &m)
 /* the far end's T.38, from its image line */
 struct Peer {
 	std::string addr;
-	int32_t port = 0;
+	s32 port = 0;
 	int version = 0;
-	int32_t max_datagram = 0;
+	s32 max_datagram = 0;
 	bool redundancy = false;
 };
 
@@ -581,7 +581,7 @@ Peer t38_params(const SdpMedia &m)
 			p.version =
 				static_cast<int>(dcore::leading_long(a.second));
 		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
-			p.max_datagram = static_cast<int32_t>(
+			p.max_datagram = static_cast<s32>(
 				dcore::leading_long(a.second));
 		else if (n == "t38faxudpec")
 			p.redundancy = lower(a.second) == "t38udpredundancy";
@@ -676,7 +676,7 @@ struct mbuf *mbuf_of(const std::string &s)
 
 	if (!mb)
 		return nullptr;
-	if (mbuf_write_mem(mb, reinterpret_cast<const uint8_t *>(s.data()),
+	if (mbuf_write_mem(mb, reinterpret_cast<const u8 *>(s.data()),
 			   s.size())) {
 		mem_deref(mb);
 		return nullptr;
@@ -699,11 +699,11 @@ public:
 
 	/* a packet of n G.711 octets (alaw: A-law) at ts from source ssrc;
 	   why the buffer started over for it, or NULL */
-	const char *put(uint32_t ssrc, uint32_t ts, const uint8_t *p,
+	const char *put(u32 ssrc, u32 ts, const u8 *p,
 			size_t n, bool alaw)
 	{
 		const char *why = nullptr;
-		int32_t d;
+		s32 d;
 
 		if (!n || n > static_cast<size_t>(JB_MAX))
 			return nullptr;
@@ -713,20 +713,20 @@ public:
 				why = "another source";
 			restart(ssrc, ts);
 		}
-		d = static_cast<int32_t>(ts - play_);
-		if (d + static_cast<int32_t>(n) > JB_MAX || d < -JB_MAX) {
+		d = static_cast<s32>(ts - play_);
+		if (d + static_cast<s32>(n) > JB_MAX || d < -JB_MAX) {
 			/* a jump, or the backlog too long */
 			why = "a jump in time";
 			restart(ssrc, ts);
-		} else if (d + static_cast<int32_t>(n) <= 0) {
+		} else if (d + static_cast<s32>(n) <= 0) {
 			/* late: dropped (its time played as silence),
 			   unless they have been late for a while, the
 			   buffer dry (the far end's clock slower than
 			   ours) */
 			late++;
 			late_max = std::max(late_max,
-					    static_cast<uint32_t>(-d));
-			if (static_cast<int32_t>(end_ - play_) > 0 ||
+					    static_cast<u32>(-d));
+			if (static_cast<s32>(end_ - play_) > 0 ||
 			    ++late_run < LATE_RUN)
 				return nullptr;
 			why = "run dry";
@@ -735,56 +735,56 @@ public:
 		late_run = 0;
 		if (why)
 			restarts++;
-		d = static_cast<int32_t>(ts - play_);
+		d = static_cast<s32>(ts - play_);
 		for (size_t k = 0; k < n; k++) {
-			uint32_t i;
-			if (d + static_cast<int32_t>(k) < 0)
+			u32 i;
+			if (d + static_cast<s32>(k) < 0)
 				continue;
-			i = (ts + static_cast<uint32_t>(k)) & MASK;
-			buf_[i] = static_cast<int16_t>(
+			i = (ts + static_cast<u32>(k)) & MASK;
+			buf_[i] = static_cast<s16>(
 				dsp::g711::decode(alaw, p[k]));
 			valid_[i] = 1;
 		}
-		if (static_cast<int32_t>(ts + static_cast<uint32_t>(n) - end_) >
+		if (static_cast<s32>(ts + static_cast<u32>(n) - end_) >
 		    0)
-			end_ = ts + static_cast<uint32_t>(n);
+			end_ = ts + static_cast<u32>(n);
 		return why;
 	}
 
 	/* the packets put, those late and the latest of them (samples),
 	   the times it started over */
-	uint32_t packets = 0, late = 0, late_max = 0, restarts = 0;
+	u32 packets = 0, late = 0, late_max = 0, restarts = 0;
 
 	/* the next n samples to play (silence where none came) */
-	void get(int16_t *out, size_t n)
+	void get(s16 *out, size_t n)
 	{
 		for (size_t k = 0; k < n; k++) {
-			uint32_t i = (play_ + static_cast<uint32_t>(k)) & MASK;
+			u32 i = (play_ + static_cast<u32>(k)) & MASK;
 			out[k] = started_ && valid_[i] ? buf_[i] : 0;
 			valid_[i] = 0;
 		}
 		if (started_)
-			play_ += static_cast<uint32_t>(n);
+			play_ += static_cast<u32>(n);
 	}
 
 private:
-	static const uint32_t SIZE = 32768, MASK = SIZE - 1;
-	int16_t buf_[SIZE];
-	uint8_t valid_[SIZE] = {};
+	static const u32 SIZE = 32768, MASK = SIZE - 1;
+	s16 buf_[SIZE];
+	u8 valid_[SIZE] = {};
 	bool started_ = false;
 	unsigned late_run = 0;  /* late packets in a row, the buffer dry */
-	uint32_t ssrc_ = 0;
-	uint32_t play_ = 0;     /* the timestamp to play next */
-	uint32_t end_ = 0;      /* the end of the latest packet */
+	u32 ssrc_ = 0;
+	u32 play_ = 0;          /* the timestamp to play next */
+	u32 end_ = 0;           /* the end of the latest packet */
 
 	/* started over at ts of stream ssrc: empty, playing
 	   JB_DELAY behind it */
-	void restart(uint32_t ssrc, uint32_t ts)
+	void restart(u32 ssrc, u32 ts)
 	{
 		dsp::zero(valid_);
 		started_ = true;
 		ssrc_ = ssrc;
-		play_ = ts - static_cast<uint32_t>(JB_DELAY);
+		play_ = ts - static_cast<u32>(JB_DELAY);
 		end_ = ts;
 	}
 };
@@ -797,7 +797,7 @@ class Media {
 public:
 	/* audio for the modem's socket modem and RTP socket rtp
 	   (of family), call serial, told on mq; not yet started */
-	Media(int modem, int rtp, int family, uint32_t serial, struct mqueue *mq)
+	Media(int modem, int rtp, int family, u32 serial, struct mqueue *mq)
 		: modem_(modem), rtp_(rtp), family_(family), serial_(serial),
 		  mq_(mq), seq_(rand_u16()), ts_(rand_u32()), ssrc_(rand_u32())
 	{
@@ -870,7 +870,7 @@ public:
 
 private:
 	int modem_, rtp_, family_;
-	uint32_t serial_;
+	u32 serial_;
 	struct mqueue *mq_;
 	std::thread thread_;
 	std::atomic<bool> quit_{false};
@@ -884,15 +884,15 @@ private:
 
 	/* the thread's own */
 	Jitter jb_;
-	uint16_t seq_;
-	uint32_t ts_, ssrc_;
+	u16 seq_;
+	u32 ts_, ssrc_;
 	bool marker_ = true;
 
 	/* the hook flash being sent (RFC 4733): its timestamp, length and
 	   duration so far (samples), its last packet's copies sent (0 while
 	   it lasts), whether one is on */
-	uint32_t ev_ts_ = 0;
-	uint32_t ev_len_ = 0, ev_dur_ = 0;
+	u32 ev_ts_ = 0;
+	u32 ev_len_ = 0, ev_dur_ = 0;
 	int ev_ends_ = 0;
 	bool ev_on_ = false, ev_first_ = false;
 
@@ -911,7 +911,7 @@ private:
 
 	/* a telephone-event packet's payload b (n octets) at timestamp ts
 	   to the player; what began, told */
-	void event_in(const uint8_t *b, size_t n, uint32_t ts)
+	void event_in(const u8 *b, size_t n, u32 ts)
 	{
 		dmd::EventPlayer::Began e = rx_events_.packet(b, n, ts);
 
@@ -943,7 +943,7 @@ private:
 	   event_in() */
 	void drain(bool on, int pt, int law, int te)
 	{
-		uint8_t b[2048];
+		u8 b[2048];
 
 		for (;;) {
 			ssize_t n = recv(rtp_, reinterpret_cast<char *>(b),
@@ -973,9 +973,9 @@ private:
 			p = b[1] & 0x7f;
 			if (p == te && te >= 0) {
 				event_in(b + h, end - h,
-					 static_cast<uint32_t>(b[4]) << 24 |
-						 uint32_t{b[5]} << 16 |
-						 uint32_t{b[6]} << 8 | b[7]);
+					 static_cast<u32>(b[4]) << 24 |
+						 u32{b[5]} << 16 |
+						 u32{b[6]} << 8 | b[7]);
 				continue;
 			}
 			if (p == pt)
@@ -985,12 +985,12 @@ private:
 			else
 				continue;
 			const char *why =
-				jb_.put(static_cast<uint32_t>(b[8]) << 24 |
-						uint32_t{b[9]} << 16 |
-						uint32_t{b[10]} << 8 | b[11],
-					static_cast<uint32_t>(b[4]) << 24 |
-						uint32_t{b[5]} << 16 |
-						uint32_t{b[6]} << 8 | b[7],
+				jb_.put(static_cast<u32>(b[8]) << 24 |
+						u32{b[9]} << 16 |
+						u32{b[10]} << 8 | b[11],
+					static_cast<u32>(b[4]) << 24 |
+						u32{b[5]} << 16 |
+						u32{b[6]} << 8 | b[7],
 					b + h, end - h, l == 2);
 			if (why)
 				say(3, "call %" PRIu32 ": the jitter buffer "
@@ -1000,28 +1000,28 @@ private:
 
 	/* an RTP header into p: payload type pt, the marker if marker,
 	   timestamp ts, the next sequence number */
-	void header(uint8_t *p, int pt, bool marker, uint32_t ts)
+	void header(u8 *p, int pt, bool marker, u32 ts)
 	{
 		p[0] = 0x80;
-		p[1] = static_cast<uint8_t>((marker ? 0x80 : 0) | (pt & 0x7f));
-		p[2] = static_cast<uint8_t>(seq_ >> 8);
-		p[3] = static_cast<uint8_t>(seq_);
-		p[4] = static_cast<uint8_t>(ts >> 24);
-		p[5] = static_cast<uint8_t>(ts >> 16);
-		p[6] = static_cast<uint8_t>(ts >> 8);
-		p[7] = static_cast<uint8_t>(ts);
-		p[8] = static_cast<uint8_t>(ssrc_ >> 24);
-		p[9] = static_cast<uint8_t>(ssrc_ >> 16);
-		p[10] = static_cast<uint8_t>(ssrc_ >> 8);
-		p[11] = static_cast<uint8_t>(ssrc_);
+		p[1] = static_cast<u8>((marker ? 0x80 : 0) | (pt & 0x7f));
+		p[2] = static_cast<u8>(seq_ >> 8);
+		p[3] = static_cast<u8>(seq_);
+		p[4] = static_cast<u8>(ts >> 24);
+		p[5] = static_cast<u8>(ts >> 16);
+		p[6] = static_cast<u8>(ts >> 8);
+		p[7] = static_cast<u8>(ts);
+		p[8] = static_cast<u8>(ssrc_ >> 24);
+		p[9] = static_cast<u8>(ssrc_ >> 16);
+		p[10] = static_cast<u8>(ssrc_ >> 8);
+		p[11] = static_cast<u8>(ssrc_);
 		seq_++;
 	}
 
 	/* a frame of the modem's (out) in RTP to peer */
-	void send_rtp(const int16_t *out, int pt, int law,
+	void send_rtp(const s16 *out, int pt, int law,
 		      const struct sockaddr_storage &peer, socklen_t len)
 	{
-		uint8_t p[12 + SAMPLES];
+		u8 p[12 + SAMPLES];
 
 		header(p, pt, marker_, ts_);
 		for (unsigned i = 0; i < SAMPLES; i++)
@@ -1039,15 +1039,15 @@ private:
 	void send_flash(int te, const struct sockaddr_storage &peer,
 			socklen_t len)
 	{
-		uint8_t p[12 + 4];
+		u8 p[12 + 4];
 		bool end = ev_ends_ > 0;
 
 		header(p, te, ev_first_, ev_ts_);
 		ev_first_ = false;
 		p[12] = EV_FLASH;
 		p[13] = end ? 0x80 : 0;
-		p[14] = static_cast<uint8_t>(ev_dur_ >> 8);
-		p[15] = static_cast<uint8_t>(ev_dur_);
+		p[14] = static_cast<u8>(ev_dur_ >> 8);
+		p[15] = static_cast<u8>(ev_dur_);
 		(void)sendto(rtp_, reinterpret_cast<const char *>(p), sizeof(p),
 			     MSG_DONTWAIT,
 			     reinterpret_cast<const struct sockaddr *>(&peer),
@@ -1062,7 +1062,7 @@ private:
 	bool flash(int te, bool send, const struct sockaddr_storage &peer,
 		   socklen_t len)
 	{
-		uint32_t ms = ev_on_ ? 0 : flash_ms_.exchange(0);
+		u32 ms = ev_on_ ? 0 : flash_ms_.exchange(0);
 
 		if (ms) {
 			if (te < 0 || !send) {
@@ -1113,7 +1113,7 @@ private:
 			struct timespec now;
 			struct sockaddr_storage peer;
 			socklen_t len;
-			int16_t in[SAMPLES], out[SAMPLES];
+			s16 in[SAMPLES], out[SAMPLES];
 			bool on, send;
 			int pt, law, te;
 
@@ -1181,13 +1181,13 @@ private:
 
 /* the current call */
 struct Call {
-	uint32_t serial;                /* for the log */
+	u32 serial;                     /* for the log */
 	struct sipsess *sess = nullptr;
 	bool incoming = false;
 	bool ringing = false;           /* came in, not answered yet */
 	bool confirmed = false;
 	bool closed = false;            /* by the far end, or failed */
-	uint64_t up = 0;                /* confirmed then (ms) */
+	u64 up = 0;                     /* confirmed then (ms) */
 	struct tmr ring_tmr, poll_tmr;
 	struct tmr tell_tmr;            /* the T38 and AUDIO lines, after
 					   the SIP message that has them */
@@ -1195,7 +1195,7 @@ struct Call {
 
 	std::unique_ptr<Media> media;   /* from dial or answer on */
 	int rtp = -1;
-	int32_t rtp_port = 0;
+	s32 rtp_port = 0;
 	std::string ip;                 /* our address, in our SDP */
 	bool audio_up = false;          /* its audio agreed, once */
 
@@ -1207,7 +1207,7 @@ struct Call {
 	   session id and version, the media lines of the version */
 	std::vector<Line> lines, offered;
 	std::string sdp_id;
-	uint32_t sdp_version = 0;
+	u32 sdp_version = 0;
 	std::string sdp_media;
 
 	/* T.38 */
@@ -1216,10 +1216,10 @@ struct Call {
 	bool restore = false;           /* our ask refused, the audio off:
 					   to ask for the audio again */
 	int udptl = -1, udptl_family = AF_INET;
-	int32_t udptl_port = 0;
+	s32 udptl_port = 0;
 
 	/* call serial s: no timers running, a new SDP session id */
-	explicit Call(uint32_t s) : serial(s)
+	explicit Call(u32 s) : serial(s)
 	{
 		tmr_init(&ring_tmr);
 		tmr_init(&poll_tmr);
@@ -1302,7 +1302,7 @@ struct tmr quit_tmr;
 bool quitting;
 bool sip_closing, sip_closed;
 bool registered;
-uint32_t last_serial;
+u32 last_serial;
 Call *cur;
 
 /* (under mu) the current call's T.38, for t38() */
@@ -1942,7 +1942,7 @@ void on_reg(int err, const struct sip_msg *msg, void *)
 
 /* the SIP messages, into the log */
 void on_trace(bool tx, enum sip_transp, const struct sa *src,
-	      const struct sa *dst, const uint8_t *pkt, size_t len, void *)
+	      const struct sa *dst, const u8 *pkt, size_t len, void *)
 {
 	say(4, "%s %s:\n%.*s", tx ? "TX to" : "RX from",
 	    addr_of(tx ? dst : src).c_str(), static_cast<int>(len),
@@ -1960,7 +1960,7 @@ bool add_transport(const char *ifname, const struct sa *a, void *arg)
 	if (sa_is_linklocal(a))
 		return false;
 	sa_cpy(&l, a);
-	sa_set_port(&l, static_cast<uint16_t>(cfg_.port));
+	sa_set_port(&l, static_cast<u16>(cfg_.port));
 	for (const struct sa &o : *added)
 		if (sa_cmp(&o, &l, SA_ADDR))
 			return false;
@@ -1978,9 +1978,9 @@ bool add_transport(const char *ifname, const struct sa *a, void *arg)
 /* the DNS servers of a list (addresses apart by commas or spaces, with
    :port or port 53) into srvv, max at most: how many (one that can't be
    read left out, with a message) */
-uint32_t dns_servers(const std::string &list, struct sa *srvv, uint32_t max)
+u32 dns_servers(const std::string &list, struct sa *srvv, u32 max)
 {
-	uint32_t n = 0;
+	u32 n = 0;
 	size_t i = 0;
 
 	while (i < list.size() && n < max) {
@@ -2007,7 +2007,7 @@ bool init()
 {
 	std::vector<struct sa> added;
 	struct sa nsv[8];
-	uint32_t nsn = 8;
+	u32 nsn = 8;
 	char dom[256] = "";
 	int err;
 
@@ -2153,7 +2153,7 @@ bool config_from_env(Config &cfg, bool listen)
 	cfg.password = password.c_str();
 	cfg.domain = domain.c_str();
 	cfg.port = port && *port ?
-		   static_cast<int32_t>(dcore::leading_long(port)) : 5060;
+		   static_cast<s32>(dcore::leading_long(port)) : 5060;
 	cfg.listen = listen;
 	cfg.record = record.empty() ? nullptr : record.c_str();
 	cfg.t38 = !t38 || !(dcore::same_nocase(t38, "no") ||
@@ -2266,7 +2266,7 @@ bool can_flash()
 }
 
 /* see sip.h */
-void flash(uint32_t ms)
+void flash(u32 ms)
 {
 	if (ms)
 		flash_ms_ = ms;

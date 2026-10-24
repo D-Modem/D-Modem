@@ -26,6 +26,7 @@
  *
  */
 
+#include "dm_types.h"
 #include "cx_country.h"
 
 #include "daa_name.h"
@@ -342,7 +343,7 @@ const CxCountry &cx_usa()
 
 /* see cx_country.h: hsfmc97ich.o's choice (hsfmc97ich152_), types 0x22
    to 0x24, 0x29, 0x30 and 0x31 K3's */
-const CxBoard &cx_board(uint8_t daa_type)
+const CxBoard &cx_board(u8 daa_type)
 {
 	switch (daa_type) {
 	case 0x22: case 0x23: case 0x24: case 0x29: case 0x30: case 0x31:

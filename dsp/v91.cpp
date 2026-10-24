@@ -36,10 +36,10 @@
 
 #include <cinttypes>
 #include <cmath>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "env.h"
 #include "v91.h"
@@ -47,7 +47,7 @@
 namespace dsp {
 
 #define INFO_UCODE      66      /* INFO, J, PHIL, SCR, CP: its sign */
-#define MS(ms)          ((int32_t)(ms) * 8)        /* symbols */
+#define MS(ms)          ((s32)(ms) * 8)            /* symbols */
 
 /* Table 5/V.91 */
 static void default_dil(V90Dil *d)
@@ -107,7 +107,7 @@ void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 		   int out_[6])
 {
 	unsigned char d[48];
-	uint64_t r = 0;
+	u64 r = 0;
 	int S = cc ? 0 : 6, i;
 
 	for (i = 0; i < S + K; i++)
@@ -135,7 +135,7 @@ int V91Dec::init(const V90Cp *cp, int D)
 	for (i = 0; i < 6; i++) {
 		const unsigned char *m = cp->mask[cp->con[i]];
 		for (u = 127; u >= 0; u--)
-			label[i][u] = m[u] ? static_cast<int16_t>(M[i]++) : -1;
+			label[i][u] = m[u] ? static_cast<s16>(M[i]++) : -1;
 		if (!M[i])
 			return -1;
 	}
@@ -147,7 +147,7 @@ int V91Dec::init(const V90Cp *cp, int D)
 int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 		  unsigned char *cc)
 {
-	uint64_t r = 0;
+	u64 r = 0;
 	unsigned char d[48];
 	int S = cc ? 0 : 6, bad = 0, i;
 
@@ -181,10 +181,10 @@ int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 
 /* i: the data frame interval, x: the received value; by binary search
    in val[i] (no codes: the distance 1 << 20) */
-int32_t V91Map::decode(int i, int x, int *u, int *s) const
+s32 V91Map::decode(int i, int x, int *u, int *s) const
 {
 	int lo = 0, hi = n[i] - 1, b;
-	int32_t d;
+	s32 d;
 
 	if (n[i] == 0) {
 		*u = *s = 0;
@@ -198,10 +198,10 @@ int32_t V91Map::decode(int i, int x, int *u, int *s) const
 			hi = mid;
 	}
 	b = lo;
-	if (lo > 0 && std::abs(int32_t{x} - val[i][lo - 1]) <
-	    std::abs(val[i][lo] - int32_t{x}))
+	if (lo > 0 && std::abs(s32{x} - val[i][lo - 1]) <
+	    std::abs(val[i][lo] - s32{x}))
 		b = lo - 1;
-	d = std::abs(int32_t{x} - val[i][b]);
+	d = std::abs(s32{x} - val[i][b]);
 	*u = ucode[i][b];
 	*s = sign[i][b];
 	return d;
@@ -537,7 +537,7 @@ void V91::dil_record(int x)
 	sg = rdil.sp[k % rdil.lsp];
 	if (!seen[i][code][sg]) {
 		seen[i][code][sg] = 1;
-		obs[i][code][sg] = static_cast<int16_t>(x);
+		obs[i][code][sg] = static_cast<s16>(x);
 	} else if (obs[i][code][sg] != x)
 		seen[i][code][sg] = 2;  /* not the same each time */
 	if (++rd_k >= len) {
@@ -622,7 +622,7 @@ int V91::cp_bit(int bit)
 {
 	V90Cp c;
 
-	sync = (sync << 1) | static_cast<uint32_t>(bit);
+	sync = (sync << 1) | static_cast<u32>(bit);
 	/* the fill after a frame, to a multiple of 6 bits */
 	if (cp_pad)
 		return --cp_pad == 0;
@@ -736,7 +736,7 @@ int V91::rx_sample(int x)
 		break;
 	case V91R_J:
 		b = descramble(&rscr, SCR_GPC, bit);
-		sync = (sync << 1) | static_cast<uint32_t>(b);
+		sync = (sync << 1) | static_cast<u32>(b);
 		if (!fr.busy()) {
 			if ((sync & 0x3FFFF) == 0x3FFFE) {
 				fr.init(SyncFrames::DIL90);
@@ -797,7 +797,7 @@ int V91::rx_sample(int x)
 	case V91R_ES:
 		/* after a CP frame: Es, or the next CP */
 		b = descramble(&rscr, SCR_GPC, bit);
-		sync = (sync << 1) | static_cast<uint32_t>(b);
+		sync = (sync << 1) | static_cast<u32>(b);
 		if (b)
 			rx = V91R_CP;
 		else if (++esn == 12) {

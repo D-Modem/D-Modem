@@ -43,7 +43,6 @@
 #include <cinttypes>
 #include <csignal>
 #include <cstdarg>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -64,6 +63,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "dm_types.h"
 #include "client.h"
 #include "dmodem.h"
 #include "dmodem_bridge.h"
@@ -276,16 +276,16 @@ void set_var(const std::string &id, const std::string &name,
 struct Rtp {
 	int fd = -1;
 	struct sockaddr_in peer = {};   /* Asterisk's end */
-	uint8_t pt = 0;                 /* 0 PCMU, 8 PCMA */
-	uint16_t seq = 0;
-	uint32_t ts = 0, ssrc = 0;
+	u8 pt = 0;                      /* 0 PCMU, 8 PCMA */
+	u16 seq = 0;
+	u32 ts = 0, ssrc = 0;
 	bool first = true;
 
 	/* the socket closed */
 	~Rtp() { if (fd >= 0) close(fd); }
 
 	/* a UDP socket on host, any port: its port, -1 if none */
-	int32_t open(const std::string &host)
+	s32 open(const std::string &host)
 	{
 		struct sockaddr_in a = {};
 		socklen_t len = sizeof(a);
@@ -298,8 +298,8 @@ struct Rtp {
 		    getsockname(fd, reinterpret_cast<struct sockaddr *>(&a),
 				&len))
 			return -1;
-		ssrc = static_cast<uint32_t>(random());
-		seq = static_cast<uint16_t>(random());
+		ssrc = static_cast<u32>(random());
+		seq = static_cast<u16>(random());
 		return ntohs(a.sin_port);
 	}
 	/* where Asterisk takes the packets; false if not an address */
@@ -307,17 +307,17 @@ struct Rtp {
 	{
 		peer.sin_family = AF_INET;
 		peer.sin_port =
-			htons(static_cast<uint16_t>(
+			htons(static_cast<u16>(
 				strtol(port.c_str(), nullptr, 10)));
 		return inet_pton(AF_INET, addr.c_str(), &peer.sin_addr) == 1 &&
 			peer.sin_port;
 	}
 	/* a packet's payload into buf (its octets), within timeout_ms: >0
 	   the samples, 0 none came, -1 an error */
-	int recv(uint8_t *buf, int max, int timeout_ms)
+	int recv(u8 *buf, int max, int timeout_ms)
 	{
 		struct pollfd p = { fd, POLLIN, 0 };
-		uint8_t pkt[12 + 60 + MAX_SAMPLES];
+		u8 pkt[12 + 60 + MAX_SAMPLES];
 		int r = poll(&p, 1, timeout_ms);
 		if (r <= 0)
 			return r < 0 && errno != EINTR ? -1 : 0;
@@ -340,9 +340,9 @@ struct Rtp {
 		return static_cast<int>(n);
 	}
 	/* n samples (octets) to Asterisk */
-	void send(const uint8_t *buf, int n)
+	void send(const u8 *buf, int n)
 	{
-		uint8_t pkt[12 + MAX_SAMPLES];
+		u8 pkt[12 + MAX_SAMPLES];
 		pkt[0] = 0x80;
 		pkt[1] = pt | (first ? 0x80 : 0);
 		pkt[2] = seq >> 8;
@@ -401,7 +401,7 @@ enum dmodem_law call_law(const Call &c, enum dmodem_law law)
 
 /* the line's next block into in: a packet's samples, or silence once
    IDLE_MS went by without one; 0 if the call has gone, -1 on an error */
-int next_block(Call &c, Rtp &rtp, enum dmodem_law law, uint8_t *in)
+int next_block(Call &c, Rtp &rtp, enum dmodem_law law, u8 *in)
 {
 	if (c.hungup)
 		return 0;
@@ -482,7 +482,7 @@ struct T38Peer {
 };
 
 /* the fax engine's T.38 packet of len octets to ctx's peer (a T38Peer) */
-void t38_send(void *ctx, const unsigned char *pkt, int32_t len)
+void t38_send(void *ctx, const unsigned char *pkt, s32 len)
 {
 	const T38Peer *p = static_cast<const T38Peer *>(ctx);
 	sendto(p->fd, pkt, len, 0,
@@ -491,11 +491,11 @@ void t38_send(void *ctx, const unsigned char *pkt, int32_t len)
 }
 
 /* microseconds, monotonic */
-int64_t now_us()
+s64 now_us()
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return static_cast<int64_t>(ts.tv_sec) * 1000000 + ts.tv_nsec / 1000;
+	return static_cast<s64>(ts.tv_sec) * 1000000 + ts.tv_nsec / 1000;
 }
 
 /* the fax machine on the call's line (dir: send file, or receive into
@@ -517,11 +517,11 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	struct dmodem_fax_config cfg = {};
 	struct dmodem_fax_status st = {};
 	struct dmodem_fax *f;
-	uint8_t in[MAX_SAMPLES], out[MAX_SAMPLES];
+	u8 in[MAX_SAMPLES], out[MAX_SAMPLES];
 	bool sending = dir == DMODEM_FAX_SEND, told = false, t38 = false;
 	bool may_switch = line.leg != nullptr && fs.t38, asking = false;
 	T38Peer peer = { line.udptl, {} };
-	int64_t t0 = 0, samples = 0, asked = 0;
+	s64 t0 = 0, samples = 0, asked = 0;
 
 	cfg.law = law;
 	cfg.dir = dir;
@@ -570,7 +570,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 				cfg.t38_ctx = &peer;
 				peer.to.sin_family = AF_INET;
 				peer.to.sin_port = htons(
-					static_cast<uint16_t>(l.t38_peer.port));
+					static_cast<u16>(l.t38_peer.port));
 				inet_pton(AF_INET, l.t38_peer.addr.c_str(),
 					  &peer.to.sin_addr);
 				f = dmodem_fax_create(&cfg);
@@ -604,7 +604,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 			unsigned char pkt[2048];
 			struct pollfd pf = { line.udptl, POLLIN, 0 };
 			ssize_t n;
-			int64_t due;
+			s64 due;
 			if (c.hungup) {
 				dmodem_fax_hangup(f);
 				break;
@@ -669,7 +669,7 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 {
 	struct dmbridge_call bc;
 	char *who = const_cast<char *>(c.name.c_str());
-	uint8_t in[MAX_SAMPLES], out[MAX_SAMPLES];
+	u8 in[MAX_SAMPLES], out[MAX_SAMPLES];
 	std::string status;
 	bool orig = c.options.find('o') != std::string::npos, fax = false;
 
@@ -721,7 +721,7 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 				nullptr
 			};
 			snprintf(connected, sizeof(connected), "%" PRId64,
-				 static_cast<int64_t>(time(nullptr)));
+				 static_cast<s64>(time(nullptr)));
 			set_var(c.id, "DMODEMRATE", bc.rate);
 			if (verbose >= 1)
 				say("%s: dmodem connected at %s bit/s",
@@ -754,7 +754,7 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 
 /* a UDP socket of ours on host, any port, into *fd: its port, -1 if
    none */
-int32_t udp_open(const std::string &host, int *fd)
+s32 udp_open(const std::string &host, int *fd)
 {
 	struct sockaddr_in a = {};
 	socklen_t len = sizeof(a);
@@ -791,7 +791,7 @@ bool media_started(const std::string &id, int ms)
 bool open_leg(Call &c, enum dmodem_law &law, Line &line, bool t38)
 {
 	std::string token = "dmodem-" + std::to_string(random());
-	int32_t rtp_port, udptl_port;
+	s32 rtp_port, udptl_port;
 
 	line.rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
 	rtp_port = line.rtp.open(sip.host());
@@ -822,7 +822,7 @@ bool open_leg(Call &c, enum dmodem_law &law, Line &line, bool t38)
 		return false;
 	}
 	ari::SipLeg l = sip.get(line.leg);
-	line.rtp.pt = static_cast<uint8_t>(l.pt);
+	line.rtp.pt = static_cast<u8>(l.pt);
 	law = l.pt == 8 ? DMODEM_LAW_ALAW : DMODEM_LAW_ULAW;
 	if (!line.rtp.set_peer(l.rtp_addr, std::to_string(l.rtp_peer_port))) {
 		say("ERROR %s: no RTP address in Asterisk's SDP",
@@ -839,7 +839,7 @@ bool open_leg(Call &c, enum dmodem_law &law, Line &line, bool t38)
 bool open_line(Call &c, enum dmodem_law &law, Line &line, bool t38)
 {
 	ari::Json r;
-	int32_t port;
+	s32 port;
 
 	line.rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
 	if (c.state != "Up" &&

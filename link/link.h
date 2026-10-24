@@ -26,7 +26,6 @@
 #ifndef DMODEM_LINK_H
 #define DMODEM_LINK_H
 
-#include <cstdint>
 
 /* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
 #ifndef DMODEM_PRINTF
@@ -37,6 +36,7 @@
 #endif
 #endif
 
+#include "dm_types.h"
 #include "hdlc.h"
 #include "lapm.h"
 #include "mnp.h"
@@ -71,14 +71,14 @@ struct Config {
 	int tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
 	int comp = 0;                   /* V.42bis: bit 0 decoder (what we
 					   receive), bit 1 encoder */
-	int32_t dict_size = V42BIS_MAX_CODEWORDS;
-	int32_t max_string = V42BIS_MAX_STRING;
+	s32 dict_size = V42BIS_MAX_CODEWORDS;
+	s32 max_string = V42BIS_MAX_STRING;
 	/* V.44 offered with compression; after XID: it, rather than
 	   V.42bis, is what the call has */
 	bool v44 = true;
-	int32_t v44_codewords = V44_MAX_CODEWORDS;
-	int32_t v44_max_string = V44_MAX_STRING;
-	int32_t v44_history = V44_MAX_HISTORY;
+	s32 v44_codewords = V44_MAX_CODEWORDS;
+	s32 v44_max_string = V44_MAX_STRING;
+	s32 v44_history = V44_MAX_HISTORY;
 };
 
 /* the error correction a call has */
@@ -89,9 +89,9 @@ enum class Protocol { None, Lapm, Mnp };
    among them sent again, the frames received intact and those received
    with a bad FCS */
 struct Stats {
-	uint32_t tx_chars = 0, rx_chars = 0;
-	uint32_t tx_frames = 0, tx_again = 0;
-	uint32_t rx_frames = 0, rx_errors = 0;
+	u32 tx_chars = 0, rx_chars = 0;
+	u32 tx_frames = 0, tx_again = 0;
+	u32 rx_frames = 0, rx_errors = 0;
 };
 
 enum class Status {
@@ -105,13 +105,13 @@ enum class Status {
 class Owner {
 public:
 	/* the DTE's characters to send; 0 if none */
-	virtual int read_chars(uint8_t *buf, int n) = 0;
+	virtual int read_chars(u8 *buf, int n) = 0;
 	/* received characters for the DTE; returns how many it took */
-	virtual int write_chars(const uint8_t *buf, int n) = 0;
+	virtual int write_chars(const u8 *buf, int n) = 0;
 	/* the link's progress */
 	virtual void status(Status s) = 0;
 	/* the data pump's transmit rate (bit timers), 0 if not known */
-	virtual int32_t tx_rate() { return 0; }
+	virtual s32 tx_rate() { return 0; }
 	/* parameters agreed in an XID exchange */
 	virtual void negotiated(const Config &cfg) { (void)cfg; }
 	/* one line of debug output (without the modem's name) */
@@ -145,8 +145,8 @@ public:
 	void set_online(bool on) { online_ = on; }
 
 	/* the data pump's bits: nbits bits in each byte of buf */
-	int get_bits(int nbits, uint8_t *buf, int n);
-	int put_bits(int nbits, const uint8_t *buf, int n);
+	int get_bits(int nbits, u8 *buf, int n);
+	int put_bits(int nbits, const u8 *buf, int n);
 
 	/* what was asked for, then what XID (or MNP's LRs) agreed */
 	const Config &config() const { return cfg_; }
@@ -162,7 +162,7 @@ public:
 			(mode_ == Mode::Mnp && mnp_.tx_pending());
 	}
 	/* the data pump's transmit rate (bit/s), 0 if not known */
-	int32_t tx_rate() const { return owner_->tx_rate(); }
+	s32 tx_rate() const { return owner_->tx_rate(); }
 	/* the call's counts so far (kept after it, until the next init()),
 	   which the framers add to */
 	const Stats &stats() const { return stats_; }
@@ -182,12 +182,12 @@ public:
 		Negotiate,      /* the caller's XID (Lapm::negotiate) */
 	};
 	/* the bit timer: what once bits more bits went out (0: none) */
-	void set_timer(int32_t bits, Timer what) {
+	void set_timer(s32 bits, Timer what) {
 		timer_ = bits;
 		timer_what_ = what;
 	}
 	/* the bits left before it fires, 0 if it does not run */
-	int32_t timer() const { return timer_; }
+	s32 timer() const { return timer_; }
 	/* what it runs (or last ran) */
 	Timer timer_what() const { return timer_what_; }
 	/* LAPM's frames on the line */
@@ -206,8 +206,8 @@ public:
 	Config &cfg() { return cfg_; }
 	/* characters between the DTE and LAPM or the async framer,
 	   through V.42bis when it is on in that direction */
-	int read_chars(uint8_t *buf, int n);
-	int write_chars(const uint8_t *buf, int n);
+	int read_chars(u8 *buf, int n);
+	int write_chars(const u8 *buf, int n);
 	/* LAPM's XID: what the remote wants (Config's V.42bis part) */
 	void update_config(const Config &remote);
 	/* what MNP's LRs agreed (cfg()) to the owner */
@@ -221,15 +221,15 @@ private:
 	void no_ec();
 	enum class Mode { Idle, Detect, Lapm, Mnp, Async };
 	void run_timer();
-	int comp_read(uint8_t *buf, int n);
-	int comp_write(const uint8_t *buf, int n);
+	int comp_read(u8 *buf, int n);
+	int comp_write(const u8 *buf, int n);
 	bool comp_flush_output();
-	template <class E> int comp_read_with(E &enc, uint8_t *buf, int n);
-	template <class D> int comp_write_with(D &dec, const uint8_t *buf,
+	template <class E> int comp_read_with(E &enc, u8 *buf, int n);
+	template <class D> int comp_write_with(D &dec, const u8 *buf,
 					       int n);
 	template <class D> bool comp_flush_with(D &dec);
-	int dte_read(uint8_t *buf, int n);
-	int dte_write(const uint8_t *buf, int n);
+	int dte_read(u8 *buf, int n);
+	int dte_write(const u8 *buf, int n);
 
 	Owner *owner_ = nullptr;
 	bool caller_ = false;
@@ -239,7 +239,7 @@ private:
 	Mode mode_ = Mode::Idle;
 	Protocol proto_ = Protocol::None;
 	bool mnp_tried_ = false;
-	int32_t timer_ = 0;
+	s32 timer_ = 0;
 	Timer timer_what_ = Timer::None;
 
 	Detector det_;
@@ -252,7 +252,7 @@ private:
 	V44 enc44_, dec44_;
 	Mnp5 enc5_, dec5_;
 	/* decoded characters the DTE has not taken yet */
-	uint8_t dec_out_[256];
+	u8 dec_out_[256];
 	int dec_head_ = 0, dec_count_ = 0;
 };
 

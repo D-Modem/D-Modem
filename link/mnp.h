@@ -20,8 +20,8 @@
 #ifndef DMODEM_LINK_MNP_H
 #define DMODEM_LINK_MNP_H
 
-#include <cstdint>
 
+#include "dm_types.h"
 #include "hdlc.h"
 
 namespace dlink {
@@ -52,10 +52,10 @@ private:
 	enum class Tx { Idle, Start, Body, End, Done };
 	enum class Rx { Hunt, Syn, Dle, Body, BodyDle, Fcs1, Fcs2 };
 	bool tx_fill();
-	int tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n);
+	int tx_idle(int nbits, u8 mask, u8 *&buf, int &n);
 	void rx_scan();
-	void rx_char(uint8_t ch);
-	void tx_char(uint8_t ch);
+	void rx_char(u8 ch);
+	void tx_char(u8 ch);
 	void rx_restart(Rx state);
 
 	Mnp *mnp_ = nullptr;
@@ -63,12 +63,12 @@ private:
 	Tx tx_state_ = Tx::Idle;
 	int tx_step_ = 0;               /* within Start and End */
 	bool tx_dle_ = false;           /* a DLE to double */
-	uint16_t tx_fcs_ = 0;
+	u16 tx_fcs_ = 0;
 	Rx rx_state_ = Rx::Hunt;
 	Frame rx_frame_ = {};
-	uint8_t rx_buf_[3 + 300];
-	uint16_t rx_fcs_ = 0;
-	uint8_t rx_fcs_lo_ = 0;
+	u8 rx_buf_[3 + 300];
+	u16 rx_fcs_ = 0;
+	u8 rx_fcs_lo_ = 0;
 };
 
 /* the procedure: establishment as initiator (the originator) or
@@ -89,7 +89,7 @@ public:
 	/* LT frames not sent yet or not acknowledged */
 	bool tx_pending() const;
 	/* the timers: bits more have gone out */
-	void clock(int32_t bits);
+	void clock(s32 bits);
 	/* the data phase's frames as HDLC frames (framing mode 3) */
 	bool bit_tx() const { return bit_tx_; }
 	/* (see bit_tx()) */
@@ -139,7 +139,7 @@ private:
 	enum { LR = 1, LD = 2, LT = 4, LA = 5, LN = 6, LNA = 7 };
 	struct Slot {
 		Frame frame;
-		uint8_t buf[5 + MNP_MAX_INFO];
+		u8 buf[5 + MNP_MAX_INFO];
 	};
 
 	Frame *next_frame();
@@ -150,19 +150,19 @@ private:
 	Frame *build_lna();
 	Frame *next_lt();
 	void rx_frame(Frame *f, bool bit);
-	bool rx_lr(const uint8_t *h, int len);
-	void rx_lt(const uint8_t *h, int len, const uint8_t *info, int n);
-	void rx_la(const uint8_t *h, int len);
-	void rx_ln(const uint8_t *h, int len);
-	void rx_ld(const uint8_t *h, int len);
+	bool rx_lr(const u8 *h, int len);
+	void rx_lt(const u8 *h, int len, const u8 *info, int n);
+	void rx_la(const u8 *h, int len);
+	void rx_ln(const u8 *h, int len);
+	void rx_ld(const u8 *h, int len);
 	void data_phase();
 	void fail(int reason);
 	void fallback();
 	void t401_expired();
-	bool can_send(uint8_t ns) const;
-	int32_t t401_est() const;
-	int32_t t401_data() const;
-	int32_t rate() const;
+	bool can_send(u8 ns) const;
+	s32 t401_est() const;
+	s32 t401_data() const;
+	s32 rate() const;
 
 	Link *link_ = nullptr;
 	Phase phase_ = Phase::Idle;
@@ -186,33 +186,33 @@ private:
 	/* control frames to send when the framer asks */
 	bool lr_due_ = false, ld_due_ = false;
 	/* timers: bits left, 0 when stopped */
-	int32_t t_start_ = 0, t401_ = 0, t402_ = 0, t404_ = 0;
+	s32 t_start_ = 0, t401_ = 0, t402_ = 0, t404_ = 0;
 	/* sending: V(S) the next new N(S), the oldest not acknowledged,
 	   the next to (re)send; the remote's last N(R) and N(k) */
-	uint8_t vs_ = 1, una_ = 1, nxt_ = 1;
-	uint8_t nr_ = 0, nk_ = 0;
+	u8 vs_ = 1, una_ = 1, nxt_ = 1;
+	u8 nr_ = 0, nk_ = 0;
 	bool have_la_ = false;          /* an LA came in the data phase */
 	int rtx_count_ = 0;
 	int dup_ignore_ = 0;            /* duplicate LAs from frames sent
 					   before our retransmission */
 	/* receiving: V(R), LTs not acknowledged, an LA due, V(R) - 1 seen
 	   once, the DTE busy (no credit) */
-	uint8_t vr_ = 1, vra_ = 1;
+	u8 vr_ = 1, vra_ = 1;
 	int unacked_ = 0;
 	bool la_due_ = false;
 	bool dup_seen_ = false;
 	bool busy_ = false;
 	/* an LNA due, with this N(RA) */
 	bool lna_due_ = false;
-	uint8_t lna_nr_ = 0;
+	u8 lna_nr_ = 0;
 	/* received characters the DTE has not taken */
 	int rx_count_ = 0, rx_head_ = 0;
-	uint8_t rx_buf_[MNP_MAX_INFO];
+	u8 rx_buf_[MNP_MAX_INFO];
 	/* the call's LTs: sent, sent again, received in sequence */
-	int32_t lt_sent_ = 0, lt_again_ = 0, lt_rcvd_ = 0;
+	s32 lt_sent_ = 0, lt_again_ = 0, lt_rcvd_ = 0;
 	/* the control frame being sent, the LT frames */
 	Frame ctrl_ = {};
-	uint8_t ctrl_buf_[64];
+	u8 ctrl_buf_[64];
 	Slot slot_[MNP_MAX_K];
 };
 

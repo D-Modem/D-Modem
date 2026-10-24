@@ -28,6 +28,7 @@
 #include <cstring>
 #include <new>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "v34.h"
 #include "v90.h"
@@ -122,7 +123,7 @@ int V34Mp::parse(const unsigned char *b, int len)
 	asym = b[50];
 	for (i = 0; i < 6; i++)
 		h[i] = type ?
-			static_cast<int16_t>(field(b, 52 + 17 * i, 16)) : 0;
+			static_cast<s16>(field(b, 52 + 17 * i, 16)) : 0;
 	return 0;
 }
 
@@ -168,7 +169,7 @@ static cplx tx_symbol(V34Tx *t)
 {
 	cplx z = { 0, 0 };
 	int k;
-	uint32_t w;
+	u32 w;
 
 	if (t->seg == V34_TX_CP && t->pos >= t->nbits) {
 		/* a CP frame out: E, or the next frame */
@@ -718,7 +719,7 @@ int V34Rx::ls_solve()
 /* a least squares solution over TRN symbols start to start + LS_LEN - 1
    (counted in ls_n): at its end the new equalizer, its delay and the
    sample clock offset from the delay of the solution before */
-void V34Rx::ls_window(cplx d, int32_t start)
+void V34Rx::ls_window(cplx d, s32 start)
 {
 	if (ls_n == start) {
 		std::fill(ls_r.begin(), ls_r.end(), lscplx());
@@ -728,7 +729,7 @@ void V34Rx::ls_window(cplx d, int32_t start)
 		ls_collect(d);
 	if (ls_n == start + LS_LEN) {
 		float before = mse;
-		int32_t sym_ = static_cast<int32_t>(qam.symbols - LS_LEN / 2);
+		s32 sym_ = static_cast<s32>(qam.symbols - LS_LEN / 2);
 		if (ls_solve())
 			return;
 		qam.recompute();

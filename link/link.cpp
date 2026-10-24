@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "dm_types.h"
 #include "link.h"
 
 namespace dlink {
@@ -240,7 +241,7 @@ void Link::disconnect()
    framer (marks when idle; MNP's octets, or HDLC frames in its data
    phase); the bit timer and MNP's timers count them, and characters
    LAPM or MNP still holds are pushed on; returns n */
-int Link::get_bits(int nbits, uint8_t *buf, int n)
+int Link::get_bits(int nbits, u8 *buf, int n)
 {
 	switch (mode_) {
 	case Mode::Detect:
@@ -252,7 +253,7 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 	case Mode::Mnp:
 		n = mnp_.bit_tx() ? hdlc_.get_bits(nbits, buf, n) :
 			mnp_async_.get_bits(nbits, buf, n);
-		mnp_.clock(static_cast<int32_t>(nbits) * n);
+		mnp_.clock(static_cast<s32>(nbits) * n);
 		break;
 	case Mode::Async:
 		n = async_.get_bits(nbits, buf, n);
@@ -262,7 +263,7 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 		break;
 	}
 	/* the bit timer counts what goes out */
-	if (timer_ && (timer_ -= static_cast<int32_t>(nbits) * n) <= 0) {
+	if (timer_ && (timer_ -= static_cast<s32>(nbits) * n) <= 0) {
 		timer_ = 0;
 		run_timer();
 	}
@@ -300,7 +301,7 @@ void Link::run_timer()
    framer (dropped when idle); the detection phase's an item at a time,
    the rest to MNP once an LR starts in it; MNP's octets, and HDLC
    frames as well once the LRs agreed on them; returns n */
-int Link::put_bits(int nbits, const uint8_t *buf, int n)
+int Link::put_bits(int nbits, const u8 *buf, int n)
 {
 	switch (mode_) {
 	case Mode::Detect:
@@ -335,10 +336,10 @@ void Link::update_config(const Config &remote)
 	int dir = remote.comp & cfg_.comp;
 
 	if (dir && remote.v44 && cfg_.v44 && enc44_.ready()) {
-		int32_t n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
-		int32_t n7 = std::min(cfg_.v44_max_string,
+		s32 n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
+		s32 n7 = std::min(cfg_.v44_max_string,
 				      remote.v44_max_string);
-		int32_t n8 = std::min(cfg_.v44_history, remote.v44_history);
+		s32 n8 = std::min(cfg_.v44_history, remote.v44_history);
 		if (!enc44_.config(n2, n7, n8) && !dec44_.config(n2, n7, n8)) {
 			cfg_.comp = dir;
 			cfg_.v44_codewords = n2;
@@ -355,8 +356,8 @@ void Link::update_config(const Config &remote)
 	cfg_.v44 = false;
 	cfg_.comp = 0;
 	if (dir) {
-		int32_t n2 = std::min(cfg_.dict_size, remote.dict_size);
-		int32_t n7 = std::min(cfg_.max_string, remote.max_string);
+		s32 n2 = std::min(cfg_.dict_size, remote.dict_size);
+		s32 n7 = std::min(cfg_.max_string, remote.max_string);
 		if (!enc_.config(n2, n7) && !dec_.config(n2, n7)) {
 			cfg_.comp = dir;
 			cfg_.dict_size = n2;
@@ -377,7 +378,7 @@ void Link::update_config(const Config &remote)
 /* characters for LAPM's I frames, MNP's LT frames or the async
    framer: the DTE's, through the encoder when we compress; 0 while not
    online */
-int Link::read_chars(uint8_t *buf, int n)
+int Link::read_chars(u8 *buf, int n)
 {
 	if (!online_)
 		return 0;
@@ -391,7 +392,7 @@ int Link::read_chars(uint8_t *buf, int n)
 
 /* received characters to the DTE, through the decoder when the remote
    compresses; returns how many were taken (0 while not online) */
-int Link::write_chars(const uint8_t *buf, int n)
+int Link::write_chars(const u8 *buf, int n)
 {
 	if (!online_)
 		return 0;
@@ -404,7 +405,7 @@ int Link::write_chars(const uint8_t *buf, int n)
 }
 
 /* the DTE's characters (the owner's), counted */
-int Link::dte_read(uint8_t *buf, int n)
+int Link::dte_read(u8 *buf, int n)
 {
 	int r = owner_->read_chars(buf, n);
 	if (r > 0)
@@ -413,7 +414,7 @@ int Link::dte_read(uint8_t *buf, int n)
 }
 
 /* characters to the DTE (the owner), those it took counted */
-int Link::dte_write(const uint8_t *buf, int n)
+int Link::dte_write(const u8 *buf, int n)
 {
 	int w = owner_->write_chars(buf, n);
 	if (w > 0)
@@ -422,14 +423,14 @@ int Link::dte_write(const uint8_t *buf, int n)
 }
 
 /* read_chars() through V.44's or V.42bis's encoder */
-int Link::comp_read(uint8_t *buf, int n)
+int Link::comp_read(u8 *buf, int n)
 {
 	return cfg_.v44 ? comp_read_with(enc44_, buf, n) :
 		comp_read_with(enc_, buf, n);
 }
 
 /* write_chars() through V.44's or V.42bis's decoder */
-int Link::comp_write(const uint8_t *buf, int n)
+int Link::comp_write(const u8 *buf, int n)
 {
 	return cfg_.v44 ? comp_write_with(dec44_, buf, n) :
 		comp_write_with(dec_, buf, n);
@@ -446,10 +447,10 @@ bool Link::comp_flush_output()
 /* the DTE's characters through the encoder: as many as fit, then a
    flush when the DTE has no more */
 template <class E>
-int Link::comp_read_with(E &enc, uint8_t *buf, int n)
+int Link::comp_read_with(E &enc, u8 *buf, int n)
 {
 	int ret = 0;
-	uint8_t ch;
+	u8 ch;
 	while (ret < n) {
 		ret += enc.out(buf + ret, n - ret);
 		if (ret == n)
@@ -488,7 +489,7 @@ bool Link::comp_flush_with(D &dec)
 /* received characters through the decoder; returns how many it took
    (LAPM keeps the rest until the DTE takes the output) */
 template <class D>
-int Link::comp_write_with(D &dec, const uint8_t *buf, int n)
+int Link::comp_write_with(D &dec, const u8 *buf, int n)
 {
 	int i = 0;
 	if (!comp_flush_output())

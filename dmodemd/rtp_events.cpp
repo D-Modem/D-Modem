@@ -6,6 +6,7 @@
  *                     stand for (rtp_events.h)
  *
  */
+#include "dm_types.h"
 #include "rtp_events.h"
 
 #include <cmath>
@@ -89,8 +90,8 @@ double peak(double dbm0)
 
 /* the time a tone plays on without a packet of it (ms): a digit not
    long (two like digits stay two), a tone through late packets */
-const int32_t HOLD_DIGIT_MS = 100;
-const int32_t HOLD_TONE_MS = 300;
+const s32 HOLD_DIGIT_MS = 100;
+const s32 HOLD_TONE_MS = 300;
 
 } // namespace
 
@@ -104,7 +105,7 @@ double EventPlayer::Osc::next()
 }
 
 /* a player at rate, nothing playing (its AM at 15 Hz) */
-EventPlayer::EventPlayer(uint32_t rate) : rate_(rate)
+EventPlayer::EventPlayer(u32 rate) : rate_(rate)
 {
 	am_.inc = 15.0 / rate;
 }
@@ -116,8 +117,8 @@ void EventPlayer::reset()
 }
 
 /* see rtp_events.h */
-EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
-				       uint32_t ts)
+EventPlayer::Began EventPlayer::packet(const u8 *p, size_t n,
+				       u32 ts)
 {
 	Began b = { NONE, -1, nullptr };
 	if (n < 4)
@@ -168,7 +169,7 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 		b.name = DIGIT_NAMES[event];
 		f1 = DTMF_LO[ROW[event]];
 		f2 = DTMF_HI[COL[event]];
-		hold_ = HOLD_DIGIT_MS * static_cast<int32_t>(rate_) / 1000;
+		hold_ = HOLD_DIGIT_MS * static_cast<s32>(rate_) / 1000;
 	} else {
 		b.kind = PLAYED;
 		b.name = d->name;
@@ -177,7 +178,7 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 		mod = d->mod;
 		rev = d->rev;
 		dbm0 = d->dbm0;
-		hold_ = HOLD_TONE_MS * static_cast<int32_t>(rate_) / 1000;
+		hold_ = HOLD_TONE_MS * static_cast<s32>(rate_) / 1000;
 	}
 	if (volume)
 		dbm0 = volume;
@@ -208,12 +209,12 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 }
 
 /* see rtp_events.h */
-bool EventPlayer::fill(int16_t *x, uint32_t n)
+bool EventPlayer::fill(s16 *x, u32 n)
 {
 	if (!on_)
 		return false;
-	const int32_t rev_every = 450 * static_cast<int32_t>(rate_) / 1000;
-	for (uint32_t i = 0; i < n; i++) {
+	const s32 rev_every = 450 * static_cast<s32>(rate_) / 1000;
+	for (u32 i = 0; i < n; i++) {
 		double y = a1_ * o1_.next() + a2_ * o2_.next();
 		if (mod_)
 			y *= 1.0 + 0.2 * am_.next();
@@ -222,11 +223,11 @@ bool EventPlayer::fill(int16_t *x, uint32_t n)
 			o1_.phase -= floor(o1_.phase);
 			rev_count_ = 0;
 		}
-		x[i] = static_cast<int16_t>(y > 32767  ? 32767 :
+		x[i] = static_cast<s16>(y > 32767  ? 32767 :
 					    y < -32768 ? -32768 :
 							 y);
 	}
-	left_ -= static_cast<int32_t>(n);
+	left_ -= static_cast<s32>(n);
 	if (left_ <= 0)
 		on_ = false;
 	return true;

@@ -5,10 +5,10 @@
  *    json.cpp - a JSON reader (see json.h)
  *
  */
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
+#include "dm_types.h"
 #include "json.h"
 
 namespace ari {
@@ -40,7 +40,7 @@ struct Reader {
 		return true;
 	}
 	/* four hex digits of a \u escape */
-	bool hex4(uint32_t &v)
+	bool hex4(u32 &v)
 	{
 		v = 0;
 		for (int i = 0; i < 4; i++, p++) {
@@ -60,7 +60,7 @@ struct Reader {
 		return true;
 	}
 	/* code point u as UTF-8 */
-	static void utf8(std::string &s, uint32_t u)
+	static void utf8(std::string &s, u32 u)
 	{
 		if (u < 0x80) {
 			s += static_cast<char>(u);
@@ -92,7 +92,7 @@ struct Reader {
 			if (++p >= end)
 				return false;
 			char c = *p++;
-			uint32_t u, lo;
+			u32 u, lo;
 			switch (c) {
 			case '"': case '\\': case '/': s += c; break;
 			case 'b': s += '\b'; break;

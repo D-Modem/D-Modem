@@ -16,7 +16,8 @@
 #ifndef DSP_RS_H
 #define DSP_RS_H
 
-#include <cstdint>
+
+#include "dm_types.h"
 
 namespace dsp {
 
@@ -32,22 +33,22 @@ public:
 	int k() const { return k_; }
 
 	/* the codeword of k octets (cw may be msg): its n octets */
-	void encode(const uint8_t *msg, uint8_t *cw) const;
+	void encode(const u8 *msg, u8 *cw) const;
 	/* the codeword corrected in place, erased[i] (or none) the octets
 	   known to be unreliable: the octets corrected, or -1 if it could
 	   not be (cw is then as it came) */
-	int decode(uint8_t *cw, const uint8_t *erased = nullptr) const;
+	int decode(u8 *cw, const u8 *erased = nullptr) const;
 
 private:
 	/* a times b in the field */
-	uint8_t mul(uint8_t a, uint8_t b) const
+	u8 mul(u8 a, u8 b) const
 	{
 		return a && b ? exp_[log_[a] + log_[b]] : 0;
 	}
 
 	int n_ = 0, k_ = 0, nc_ = 0;    /* nc_ check octets, 2t */
-	uint8_t gen_[MAX_CHECK + 1] = {};       /* the generator, x^nc_ first */
-	uint8_t exp_[512] = {};
+	u8 gen_[MAX_CHECK + 1] = {};            /* the generator, x^nc_ first */
+	u8 exp_[512] = {};
 	int log_[256] = {};
 };
 

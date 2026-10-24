@@ -27,20 +27,14 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include "dm_types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* the modem core, opaque to the data pumps */
 struct modem;
-
-/* integers of a fixed width; s16 is a 16 bit linear sample */
-typedef uint8_t  u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef int8_t   s8;
-typedef int16_t  s16;
-typedef int32_t  s32;
 
 /* the service class, numbered as AT+FCLASS sets it (V.250; T.31 8.2;
    V.253) */
@@ -199,8 +193,8 @@ struct dp_vcvm {
 				   renegotiation */
 	int on;                 /* the pump has a connection: what
 				   follows is valid */
-	int32_t raw_tx, raw_rx; /* bit/s */
-	int32_t coded_tx, coded_rx;
+	s32 raw_tx, raw_rx; /* bit/s */
+	s32 coded_tx, coded_rx;
 	int sym_tenths;         /* the receive direction's symbol, 0.1 ms */
 	int tones_tx, tones_rx; /* 0 in the parametric mode */
 	int code_rate;          /* the receive direction's: 0 1/2, 1 3/4,
@@ -307,7 +301,7 @@ struct voice_tones {
    library reads them at these offsets */
 struct voice_info {
 	unsigned comp_method;
-	uint32_t sample_rate;
+	u32 sample_rate;
 	unsigned rx_gain;
 	unsigned tx_gain;
 	unsigned dtmf_symbol;

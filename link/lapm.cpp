@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "dm_types.h"
 #include "link.h"
 
 namespace dlink {
@@ -25,36 +26,36 @@ namespace dlink {
 /* the address octet (8.2.1, Table 6; DLCI 0, one octet): the
    originator's commands and the answerer's responses carry ADDR_ORIG,
    the answerer's commands and the originator's responses ADDR_ANS */
-static const uint8_t ADDR_ORIG = 0x03, ADDR_ANS = 0x01;
+static const u8 ADDR_ORIG = 0x03, ADDR_ANS = 0x01;
 
 /* the first control octet (8.2.2, Tables 7 and 8, modulo 128): S frames
    as a whole (N(R) and P/F are in the second octet), U frames with
    their P/F bit (PF) masked off */
-static const uint8_t S_RR = 0x01, S_RNR = 0x05, S_REJ = 0x09, S_SREJ = 0x0d;
-static const uint8_t U_SABME = 0x6f, U_DM = 0x0f, U_UI = 0x03, U_DISC = 0x43,
+static const u8 S_RR = 0x01, S_RNR = 0x05, S_REJ = 0x09, S_SREJ = 0x0d;
+static const u8 U_SABME = 0x6f, U_DM = 0x0f, U_UI = 0x03, U_DISC = 0x43,
 	U_UA = 0x63, U_FRMR = 0x87, U_XID = 0xaf, U_TEST = 0xe3;
-static const uint8_t PF = 0x10;
+static const u8 PF = 0x10;
 
 /* the XID information field (12.2): the general purpose format, the
    parameter negotiation and private parameter groups and the user data
    subfield (which has no GL), and their parameters (Tables 11a, b, c) */
-static const uint8_t FI_GENERAL = 0x82;
-static const uint8_t GI_PARAM = 0x80, GI_PRIVATE = 0xf0, GI_USER = 0xff;
-static const uint8_t PI_HDLC_OPT = 3, PI_N401_TX = 5, PI_N401_RX = 6,
+static const u8 FI_GENERAL = 0x82;
+static const u8 GI_PARAM = 0x80, GI_PRIVATE = 0xf0, GI_USER = 0xff;
+static const u8 PI_HDLC_OPT = 3, PI_N401_TX = 5, PI_N401_RX = 6,
 	PI_K_TX = 7, PI_K_RX = 8;
-static const uint8_t PI_V42BIS_SET = 0, PI_V42BIS_P0 = 1, PI_V42BIS_N2 = 2,
+static const u8 PI_V42BIS_SET = 0, PI_V42BIS_P0 = 1, PI_V42BIS_N2 = 2,
 	PI_V42BIS_N7 = 3;
-static const uint8_t PI_V44_SET = 0x40, PI_V44_C0 = 0x41, PI_V44_P0 = 0x42,
+static const u8 PI_V44_SET = 0x40, PI_V44_C0 = 0x41, PI_V44_P0 = 0x42,
 	PI_V44_P1T = 0x43, PI_V44_P1R = 0x44, PI_V44_P2T = 0x45,
 	PI_V44_P2R = 0x46, PI_V44_P3T = 0x47, PI_V44_P3R = 0x48;
 
 /* the HDLC optional functions we send (PL 3): the ISO bit positions 2,
    4, 8, 9, 12 and 16 only (Note 1 of Table 11a), so neither SREJ, TEST
    nor the 32-bit FCS is asked for */
-static const uint32_t HDLC_OPT = 0x8a8900;
+static const u32 HDLC_OPT = 0x8a8900;
 
 /* T401's bits when the data pump's rate is not known */
-static const int32_t T401_NO_RATE = 57600;
+static const s32 T401_NO_RATE = 57600;
 
 enum {
 	SEQ_MASK = 0x7f,                /* sequence numbers modulo 128 */
@@ -77,15 +78,15 @@ static_assert(XID_MAX <= 4 + LAPM_MAX_INFO, "an XID fits a frame slot");
  */
 
 /* b - a, modulo 128 */
-static int seq_diff(uint8_t b, uint8_t a)
+static int seq_diff(u8 b, u8 a)
 {
 	return (b - a) & SEQ_MASK;
 }
 
 /* T401 (9.2.1): 2 s at the data pump's rate, in bits */
-static int32_t t401_bits(const Link *link)
+static s32 t401_bits(const Link *link)
 {
-	int32_t rate = link->tx_rate();
+	s32 rate = link->tx_rate();
 	return rate ? 2 * rate : T401_NO_RATE;
 }
 
@@ -100,7 +101,7 @@ static int swap_dirs(int dirs)
 /* the value for k or N401 when ours and the remote's differ (9.2.3,
    9.2.4: between the initiator's and the default dflt): the default
    when they lie on its two sides, else the one nearer to it */
-static uint32_t settle(uint32_t ours, uint32_t remote, uint32_t dflt)
+static u32 settle(u32 ours, u32 remote, u32 dflt)
 {
 	if ((ours < dflt) != (remote < dflt))
 		return dflt;
@@ -109,18 +110,18 @@ static uint32_t settle(uint32_t ours, uint32_t remote, uint32_t dflt)
 
 /* a parameter: PI, PL, and v in PL octets, the most significant first;
    where the next one goes */
-static uint8_t *put_param(uint8_t *p, uint8_t pi, uint32_t v, int pl)
+static u8 *put_param(u8 *p, u8 pi, u32 v, int pl)
 {
 	*p++ = pi;
-	*p++ = static_cast<uint8_t>(pl);
+	*p++ = static_cast<u8>(pl);
 	while (pl--)
-		*p++ = static_cast<uint8_t>(v >> 8 * pl);
+		*p++ = static_cast<u8>(v >> 8 * pl);
 	return p;
 }
 
 /* a parameter set identification: PI, PL 3 and the three characters of
    id; where the next parameter goes */
-static uint8_t *put_id(uint8_t *p, uint8_t pi, const char *id)
+static u8 *put_id(u8 *p, u8 pi, const char *id)
 {
 	*p++ = pi;
 	*p++ = 3;
@@ -130,42 +131,42 @@ static uint8_t *put_id(uint8_t *p, uint8_t pi, const char *id)
 
 /* the GI and GL of the group whose three header octets are at g and
    whose parameters end at end */
-static void put_group(uint8_t *g, uint8_t gi, const uint8_t *end)
+static void put_group(u8 *g, u8 gi, const u8 *end)
 {
 	const int gl = static_cast<int>(end - g - 3);
 	g[0] = gi;
-	g[1] = static_cast<uint8_t>(gl >> 8);
-	g[2] = static_cast<uint8_t>(gl);
+	g[1] = static_cast<u8>(gl >> 8);
+	g[2] = static_cast<u8>(gl);
 }
 
 /* a parameter value of n octets, the most significant first */
-static uint32_t get_be(const uint8_t *p, int n)
+static u32 get_be(const u8 *p, int n)
 {
-	uint32_t v = 0;
+	u32 v = 0;
 	while (n--)
 		v = v << 8 | *p++;
 	return v;
 }
 
 /* a parameter value of n octets, the least significant first */
-static uint32_t get_le(const uint8_t *p, int n)
+static u32 get_le(const u8 *p, int n)
 {
-	uint32_t v = 0;
+	u32 v = 0;
 	while (n--)
 		v = v << 8 | p[n];
 	return v;
 }
 
 /* a received value as a Config field: at most NO_LIMIT */
-static int32_t bounded(uint32_t v)
+static s32 bounded(u32 v)
 {
-	return static_cast<int32_t>(std::min<uint32_t>(v, NO_LIMIT));
+	return static_cast<s32>(std::min<u32>(v, NO_LIMIT));
 }
 
 /* the parameters (PI, PL, PV) in the n octets at p, each given to
    fn(pi, pv, pl); one that runs past the end ends them */
 template <class Fn>
-static void for_each_param(const uint8_t *p, int n, Fn fn)
+static void for_each_param(const u8 *p, int n, Fn fn)
 {
 	for (int i = 0; i + 2 <= n;) {
 		const int pl = p[i + 1];
@@ -260,7 +261,7 @@ void Lapm::negotiate()
 void Lapm::disconnect()
 {
 	state_ = DISC;
-	tx_unnum(cmd_addr_, static_cast<uint8_t>(U_DISC | PF));
+	tx_unnum(cmd_addr_, static_cast<u8>(U_DISC | PF));
 	timer_start();
 }
 
@@ -356,9 +357,9 @@ void Lapm::t401_timeout()
 		if (config_)
 			tx_xid(cmd_addr_);
 		else if (state_ == ESTAB)
-			tx_unnum(cmd_addr_, static_cast<uint8_t>(U_SABME | PF));
+			tx_unnum(cmd_addr_, static_cast<u8>(U_SABME | PF));
 		else if (state_ == DISC)
-			tx_unnum(cmd_addr_, static_cast<uint8_t>(U_DISC | PF));
+			tx_unnum(cmd_addr_, static_cast<u8>(U_DISC | PF));
 		else
 			tx_super(cmd_addr_, busy_ ? S_RNR : S_RR, 1);
 		link_->set_timer(t401_bits(link_), Link::Timer::T401);
@@ -414,7 +415,7 @@ Frame *Lapm::ctrl_frame()
 
 /* a U frame queued: address addr, control octet ctrl (P/F included);
    -1 if the queue is full */
-int Lapm::tx_unnum(uint8_t addr, uint8_t ctrl)
+int Lapm::tx_unnum(u8 addr, u8 ctrl)
 {
 	Frame *f = ctrl_frame();
 	if (!f)
@@ -427,14 +428,14 @@ int Lapm::tx_unnum(uint8_t addr, uint8_t ctrl)
 
 /* an S frame queued: address addr, function ctrl, N(R) = V(R) now and
    P/F pf; -1 if the queue is full */
-int Lapm::tx_super(uint8_t addr, uint8_t ctrl, int pf)
+int Lapm::tx_super(u8 addr, u8 ctrl, int pf)
 {
 	Frame *f = ctrl_frame();
 	if (!f)
 		return -1;
 	f->buf[0] = addr;
 	f->buf[1] = ctrl;
-	f->buf[2] = static_cast<uint8_t>(vr_ << 1 | (pf ? 1 : 0));
+	f->buf[2] = static_cast<u8>(vr_ << 1 | (pf ? 1 : 0));
 	f->size = 3;
 	return 0;
 }
@@ -444,7 +445,7 @@ int Lapm::tx_super(uint8_t addr, uint8_t ctrl, int pf)
    a command offers the compression asked for (V.42bis, and V.44 in the
    user data subfield), a response says what was agreed (one algorithm,
    7.3/V.44); -1 if the queue is full */
-int Lapm::tx_xid(uint8_t addr)
+int Lapm::tx_xid(u8 addr)
 {
 	Frame *f = ctrl_frame();
 	if (!f)
@@ -460,7 +461,7 @@ int Lapm::tx_xid(uint8_t addr)
 	const int p0 = response ? c.comp & 3 : swap_dirs(c.comp);
 	const bool v44 = c.comp && c.v44;
 	const bool v42bis = c.comp && !(response && c.v44);
-	uint8_t *p = f->buf, *g;
+	u8 *p = f->buf, *g;
 
 	*p++ = addr;
 	*p++ = U_XID;
@@ -535,9 +536,9 @@ Frame *Lapm::next_tx_frame()
 		return nullptr;
 	Frame *f = tx_info_frame_;
 	f->buf[0] = cmd_addr_;
-	f->buf[1] = static_cast<uint8_t>(vs_ << 1);
-	f->buf[2] = static_cast<uint8_t>(vr_ << 1);
-	vs_ = static_cast<uint8_t>((vs_ + 1) & SEQ_MASK);
+	f->buf[1] = static_cast<u8>(vs_ << 1);
+	f->buf[2] = static_cast<u8>(vr_ << 1);
+	vs_ = static_cast<u8>((vs_ + 1) & SEQ_MASK);
 	tx_info_frame_ = f->next;
 	if (!link_->timer())
 		timer_start();
@@ -568,7 +569,7 @@ void Lapm::rx_complete(Frame *f)
 		return;
 	}
 	const bool cmd = f->buf[0] == rsp_addr_;
-	const uint8_t ctrl = f->buf[1];
+	const u8 ctrl = f->buf[1];
 	if ((ctrl & 3) == 3) {
 		if (cmd)
 			rx_unnum_cmd(f);
@@ -625,7 +626,7 @@ bool Lapm::valid_data_state()
    N(R) - 1 acknowledged and freed (not past V(S)); out of timer
    recovery T401 stops when some were, and starts again while others
    are outstanding; how many */
-int Lapm::ack_info(uint8_t nr)
+int Lapm::ack_info(u8 nr)
 {
 	const int sent = seq_diff(vs_, va_);
 	int n = seq_diff(nr, va_);
@@ -636,7 +637,7 @@ int Lapm::ack_info(uint8_t nr)
 	}
 	for (int i = 0; i < n; i++)
 		sent_info_ = sent_info_->next;
-	va_ = static_cast<uint8_t>((va_ + n) & SEQ_MASK);
+	va_ = static_cast<u8>((va_ + n) & SEQ_MASK);
 	if (n && !rtx_count_) {
 		timer_stop();
 		if (vs_ != va_)
@@ -667,7 +668,7 @@ int Lapm::reject_info()
    about to go acknowledges it; 1 if it was taken */
 int Lapm::rx_info(Frame *f)
 {
-	const uint8_t ns = f->buf[1] >> 1, nr = f->buf[2] >> 1;
+	const u8 ns = f->buf[1] >> 1, nr = f->buf[2] >> 1;
 	const int pf = f->buf[2] & 1;
 
 	ack_info(nr);
@@ -695,7 +696,7 @@ int Lapm::rx_info(Frame *f)
 		busy_ = true;
 		link_->push_pending = true;
 	}
-	vr_ = static_cast<uint8_t>((vr_ + 1) & SEQ_MASK);
+	vr_ = static_cast<u8>((vr_ + 1) & SEQ_MASK);
 	if (busy_)
 		tx_super(f->buf[0], S_RNR, pf);
 	else if (peer_busy_ || pf || !tx_info())
@@ -711,7 +712,7 @@ int Lapm::rx_info(Frame *f)
    was never agreed (8.4.5.1) */
 void Lapm::rx_super_cmd(Frame *f)
 {
-	const uint8_t nr = f->buf[2] >> 1;
+	const u8 nr = f->buf[2] >> 1;
 	const int pf = f->buf[2] & 1;
 
 	switch (f->buf[1]) {
@@ -751,7 +752,7 @@ void Lapm::rx_super_cmd(Frame *f)
    recovery or with F 1 (8.4.4 a, b), else only acknowledges (8.4.4 c) */
 void Lapm::rx_super_rsp(Frame *f)
 {
-	const uint8_t nr = f->buf[2] >> 1;
+	const u8 nr = f->buf[2] >> 1;
 	const bool fin = f->buf[2] & 1;
 
 	if (fin && !rtx_count_) {
@@ -801,22 +802,22 @@ void Lapm::rx_super_rsp(Frame *f)
    (8.10); UI (break) and TEST (loop-back) are not implemented */
 void Lapm::rx_unnum_cmd(Frame *f)
 {
-	const uint8_t pf = f->buf[1] & PF;
+	const u8 pf = f->buf[1] & PF;
 
 	switch (f->buf[1] & ~PF) {
 	case U_SABME:
 		connect();
-		tx_unnum(rsp_addr_, static_cast<uint8_t>(U_UA | pf));
+		tx_unnum(rsp_addr_, static_cast<u8>(U_UA | pf));
 		timer_stop();
 		break;
 	case U_DISC:
 		if (state_ == IDLE) {
-			tx_unnum(rsp_addr_, static_cast<uint8_t>(U_DM | PF));
+			tx_unnum(rsp_addr_, static_cast<u8>(U_DM | PF));
 			break;
 		}
 		reset();
 		state_ = IDLE;
-		tx_unnum(rsp_addr_, static_cast<uint8_t>(U_UA | pf));
+		tx_unnum(rsp_addr_, static_cast<u8>(U_UA | pf));
 		timer_stop();
 		link_->logf("ec: released by the remote.");
 		link_->status(Status::Released);
@@ -857,7 +858,7 @@ void Lapm::rx_unnum_rsp(Frame *f)
 	auto establish = [this]() {
 		reset();
 		state_ = ESTAB;
-		tx_unnum(cmd_addr_, static_cast<uint8_t>(U_SABME | PF));
+		tx_unnum(cmd_addr_, static_cast<u8>(U_SABME | PF));
 		timer_start();
 	};
 
@@ -911,7 +912,7 @@ void Lapm::rx_unnum_rsp(Frame *f)
    format */
 void Lapm::rx_xid(Frame *f, bool response)
 {
-	const uint8_t *x = f->buf + 2;
+	const u8 *x = f->buf + 2;
 	const int len = f->count - 2;
 
 	if (len < 1 || x[0] != FI_GENERAL) {
@@ -932,8 +933,8 @@ void Lapm::rx_xid(Frame *f, bool response)
 	unsigned &win_i = response ? tx_win_ : rx_win_;
 	unsigned &win_r = response ? rx_win_ : tx_win_;
 
-	auto param = [&](uint8_t pi, const uint8_t *pv, int pl) {
-		const uint32_t v = get_be(pv, pl);
+	auto param = [&](u8 pi, const u8 *pv, int pl) {
+		const u32 v = get_be(pv, pl);
 		switch (pi) {
 		case PI_N401_TX:
 			info_i = settle(info_i, v / 8, LAPM_DFLT_INFO);
@@ -949,7 +950,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 			break;
 		}
 	};
-	auto priv = [&](uint8_t pi, const uint8_t *pv, int pl) {
+	auto priv = [&](u8 pi, const u8 *pv, int pl) {
 		switch (pi) {
 		case PI_V42BIS_P0:
 			p0 = static_cast<int>(get_le(pv, pl) & 3);
@@ -962,8 +963,8 @@ void Lapm::rx_xid(Frame *f, bool response)
 			break;
 		}
 	};
-	auto user = [&](uint8_t pi, const uint8_t *pv, int pl) {
-		const int32_t v = bounded(get_be(pv, pl));
+	auto user = [&](u8 pi, const u8 *pv, int pl) {
+		const s32 v = bounded(get_be(pv, pl));
 		switch (pi) {
 		case PI_V44_SET:
 			v44_set = pl == 3 && !memcmp(pv, "V44", 3);
@@ -987,15 +988,15 @@ void Lapm::rx_xid(Frame *f, bool response)
 	};
 
 	for (int i = 1; i < len;) {
-		const uint8_t gi = x[i];
+		const u8 gi = x[i];
 		if (gi == GI_USER) {
 			for_each_param(x + i + 1, len - i - 1, user);
 			break;
 		}
 		if (i + 3 > len)
 			break;
-		const int32_t gl =
-			static_cast<int32_t>(x[i + 1]) << 8 | x[i + 2];
+		const s32 gl =
+			static_cast<s32>(x[i + 1]) << 8 | x[i + 2];
 		if (i + 3 + gl > len)
 			break;
 		if (gi == GI_PARAM)

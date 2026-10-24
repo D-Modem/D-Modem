@@ -9,7 +9,6 @@
  *
  */
 
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -17,6 +16,7 @@
 
 #include <unistd.h>
 
+#include "dm_types.h"
 #include "dmodem.h"
 #include "dmodem_g711.h"
 #include "reinit.h"
@@ -38,10 +38,10 @@ struct dmodem_fax {
 	char path[1024];
 	/* T.38 */
 	int t38_version, t38_ifp;
-	int32_t t38_max_datagram;
+	s32 t38_max_datagram;
 	UdptlTx tx;
 	UdptlRx rx;
-	void (*t38_send)(void *ctx, const unsigned char *pkt, int32_t len);
+	void (*t38_send)(void *ctx, const unsigned char *pkt, s32 len);
 	void *t38_ctx;
 };
 
@@ -78,7 +78,7 @@ static void t38_tx(void *ctx, const struct t38_ifp *p)
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	unsigned char ifp[UDPTL_IFP_MAX], pkt[UDPTL_IFP_MAX * 2];
 	int n = t38_ifp_encode(p, f->t38_version, ifp, sizeof(ifp)), m;
-	int max = f->t38_max_datagram < static_cast<int32_t>(sizeof(pkt)) ?
+	int max = f->t38_max_datagram < static_cast<s32>(sizeof(pkt)) ?
 		static_cast<int>(f->t38_max_datagram) :
 		static_cast<int>(sizeof(pkt));
 	if (n < 0)
@@ -166,17 +166,17 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 }
 
 /* n samples through T.30 */
-void dmodem_fax_process(struct dmodem_fax *f, const int16_t *in,
-			int16_t *out, int32_t n)
+void dmodem_fax_process(struct dmodem_fax *f, const s16 *in,
+			s16 *out, s32 n)
 {
 	t30_process(f->t30, in, out, n);
 }
 
 /* G.711 octets through T.30, 160 at a time */
 void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
-			     unsigned char *out, int32_t n)
+			     unsigned char *out, s32 n)
 {
-	auto process = [f](const int16_t *li, int16_t *lo, int k) {
+	auto process = [f](const s16 *li, s16 *lo, int k) {
 		t30_process(f->t30, li, lo, k);
 	};
 	dmodem_g711_blocks(f->law == DMODEM_LAW_ALAW, in, out, n, process);
@@ -215,7 +215,7 @@ void dmodem_fax_hangup(struct dmodem_fax *f)
 /* a UDPTL packet: its IFP packets to T.30, in their order (an IFP
    packet: to T.30) */
 void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
-		       int32_t len)
+		       s32 len)
 {
 	if (f->t38_ifp)
 		t38_ifp_in(f, pkt, len, 0);
@@ -224,7 +224,7 @@ void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
 }
 
 /* T.38's time going by */
-void dmodem_fax_t38_time(struct dmodem_fax *f, int32_t n)
+void dmodem_fax_t38_time(struct dmodem_fax *f, s32 n)
 {
 	t30_t38_time(f->t30, n);
 }

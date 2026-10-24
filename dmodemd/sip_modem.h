@@ -18,13 +18,13 @@
 #define DMODEMD_SIP_MODEM_H
 
 #include <atomic>
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
 
 #include <dcore.h>
 
+#include "dm_types.h"
 #include "dte.h"
 #include "sip.h"
 
@@ -53,7 +53,7 @@ private:
    What the descriptor can't take now waits (up to BUFFER octets) */
 class FdDte final : public Dte {
 public:
-	enum : int32_t { BUFFER = INT32_C(64) * 1024 };
+	enum : s32 { BUFFER = INT32_C(64) * 1024 };
 	/* fd stays the caller's */
 	explicit FdDte(int fd);
 	/* see Dte */
@@ -79,7 +79,7 @@ public:
 	struct Status {
 		dcore::LinkState link = dcore::LinkState::Idle;
 		bool offhook = false;
-		uint32_t tx_rate = 0, rx_rate = 0;
+		u32 tx_rate = 0, rx_rate = 0;
 		/* the same state, hook and rates */
 		bool operator==(const Status &o) const {
 			return link == o.link && offhook == o.offhook &&
@@ -113,7 +113,7 @@ public:
 	   On run()'s thread, before run() */
 	struct Speaker {
 		std::function<void(int level)> volume;
-		std::function<void(const int16_t *rx, const int16_t *tx,
+		std::function<void(const s16 *rx, const s16 *tx,
 				   int n)> audio;
 	};
 	void on_speaker(Speaker s);

@@ -17,7 +17,6 @@
 #include <cerrno>
 #include <climits>
 #include <csignal>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -35,6 +34,7 @@
 #include <dcore.h>
 #include <log.h>
 
+#include "dm_types.h"
 #include "portable.h"
 #include "pty.h"
 #include "reinit.h"
@@ -65,7 +65,7 @@ const unsigned CLOSED_PAUSE_ON_HOOK = 1;
 /* the keeper's socket, and the most descriptors it closes one by one
    (when the kernel has no close_range) */
 const int KEEPER_FD = 3;
-const int32_t KEEPER_FD_SCAN = 65536;
+const s32 KEEPER_FD_SCAN = 65536;
 
 /* a request's octet: the link as well, or only the group and mode */
 const char ASK_LINK = 'L';
@@ -121,7 +121,7 @@ void remove_link(const char *link, const char *target)
 void close_from(int first)
 {
 	struct rlimit rl;
-	int32_t last = KEEPER_FD_SCAN;
+	s32 last = KEEPER_FD_SCAN;
 
 #ifdef SYS_close_range
 	if (syscall(SYS_close_range, static_cast<unsigned>(first), ~0U, 0U) ==
@@ -130,8 +130,8 @@ void close_from(int first)
 #endif
 	if (getrlimit(RLIMIT_NOFILE, &rl) == 0 &&
 	    rl.rlim_cur < static_cast<rlim_t>(last))
-		last = static_cast<int32_t>(rl.rlim_cur);
-	for (int32_t fd = first; fd < last; fd++)
+		last = static_cast<s32>(rl.rlim_cur);
+	for (s32 fd = first; fd < last; fd++)
 		close(static_cast<int>(fd));
 }
 

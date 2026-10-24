@@ -24,7 +24,8 @@
 #ifndef DMODEM_LINK_MNP5_H
 #define DMODEM_LINK_MNP5_H
 
-#include <cstdint>
+
+#include "dm_types.h"
 
 namespace dlink {
 
@@ -36,8 +37,8 @@ public:
 	bool ready() const { return true; }
 
 	/* one character in; then out() gives what it produced */
-	int encode(uint8_t ch);
-	int decode(uint8_t ch);
+	int encode(u8 ch);
+	int decode(u8 ch);
 	/* the encoder: the count held, the flush and the octet's rest (only
 	   after characters since the last one); the decoder: nothing (the
 	   stream goes on over the frames) */
@@ -45,30 +46,30 @@ public:
 	/* (see flush_encoder()) */
 	int flush_decoder() { return 0; }
 	/* the output so far, up to n octets */
-	int out(uint8_t *buf, int n);
+	int out(u8 *buf, int n);
 
 private:
 	void rank_up(int r);
-	void put(uint32_t bits, int len);
+	void put(u32 bits, int len);
 	void put_value(int v);
-	void put_char(uint8_t ch);
-	void out_char(uint8_t ch, int n);
+	void put_char(u8 ch);
+	void out_char(u8 ch, int n);
 	void token(int v);
 
 	/* the characters by rank, their ranks, the counts by rank */
-	uint8_t char_[256], rank_[256], count_[256];
+	u8 char_[256], rank_[256], count_[256];
 	/* the run: none yet (first_), its character, how many */
 	bool first_ = true;
-	uint8_t run_ch_ = 0;
+	u8 run_ch_ = 0;
 	int run_ = 0;
 	/* the encoder's bits not out yet (the last bits_ of acc_), coded
 	   since the last flush; the decoder's bits not parsed yet */
-	uint32_t acc_ = 0;
+	u32 acc_ = 0;
 	int bits_ = 0;
 	bool dirty_ = false;
 	/* output */
 	int olen_ = 0, ohead_ = 0;
-	uint8_t obuf_[1024];
+	u8 obuf_[1024];
 };
 
 } // namespace dlink

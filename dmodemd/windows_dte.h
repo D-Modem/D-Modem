@@ -35,11 +35,11 @@
 #define DMODEMD_WINDOWS_DTE_H
 
 #include <atomic>
-#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
 
+#include "dm_types.h"
 #include "sip_modem.h"
 
 namespace dmd {
@@ -47,7 +47,7 @@ namespace dmd {
 /* see above */
 class TcpDte final : public Dte {
 public:
-	enum : int32_t { BUFFER = INT32_C(64) * 1024 };
+	enum : s32 { BUFFER = INT32_C(64) * 1024 };
 	~TcpDte();
 	/* listening on spec ([address:]port; 127.0.0.1 if no address):
 	   false if it can't */
@@ -196,7 +196,7 @@ private:
 	void queue_locked(const std::string &frames);
 
 	/* the frames that may wait */
-	enum : int32_t { OUT_MAX = INT32_C(64) * 1024 };
+	enum : s32 { OUT_MAX = INT32_C(64) * 1024 };
 	std::string port_;              /* empty: auto */
 	std::mutex mu_;
 	void *pipe_ = nullptr;          /* HANDLE (under mu_) */

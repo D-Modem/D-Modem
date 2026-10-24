@@ -13,15 +13,16 @@
 #include <cstdarg>
 #include <cstdio>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "vcvm_startup.h"
 
 namespace dsp {
 
 /* the modes INFO0's octet 1 says this DCE will use (allowed) */
-static uint8_t info0_modes(int a)
+static u8 info0_modes(int a)
 {
-	return static_cast<uint8_t>(0xC0 | (a & VCVM_M_WIDE ? 0x20 : 0) |
+	return static_cast<u8>(0xC0 | (a & VCVM_M_WIDE ? 0x20 : 0) |
 			 (a & VCVM_M_WIDE400 ? 0x10 : 0) |
 			 (a & VCVM_M_8DPSK ? 0x08 : 0) |
 			 (a & VCVM_M_SYM22 ? 0x04 : 0) |
@@ -31,7 +32,7 @@ static uint8_t info0_modes(int a)
 /* and back: what the peer will use */
 static int info0_allowed(const VcvmInfo0 &i)
 {
-	uint8_t m = i.modes;
+	u8 m = i.modes;
 	return VCVM_M_ROBUST | VCVM_M_NARROW | (i.rings ? VCVM_M_RINGS : 0) |
 	       (m & 0x20 ? VCVM_M_WIDE : 0) | (m & 0x10 ? VCVM_M_WIDE400 : 0) |
 	       (m & 0x08 ? VCVM_M_8DPSK : 0) | (m & 0x04 ? VCVM_M_SYM22 : 0) |
@@ -80,7 +81,7 @@ int VcvmStartup::init(const Config &c)
 	step_ = WAIT_INFO0;
 	if (c.calling) {
 		silence(c.delay_ms);
-		uint8_t o[4];
+		u8 o[4];
 		send_msg(o, info0_.encode(o));
 		silence(100);
 		send_probing();
@@ -116,9 +117,9 @@ void VcvmStartup::fail(const char *why)
 }
 
 /* the sample after what is queued to send */
-int32_t VcvmStartup::queued() const
+s32 VcvmStartup::queued() const
 {
-	return t_ + static_cast<int32_t>(txq_.size() - txpos_);
+	return t_ + static_cast<s32>(txq_.size() - txpos_);
 }
 
 /* ms of silence to the transmitter's queue */
@@ -128,15 +129,15 @@ void VcvmStartup::silence(int ms)
 }
 
 /* silence until sample at (what is queued counted) */
-void VcvmStartup::silence_until(int32_t at)
+void VcvmStartup::silence_until(s32 at)
 {
-	int32_t q = queued();
+	s32 q = queued();
 	if (at > q)
 		txq_.insert(txq_.end(), static_cast<size_t>(at - q), 0.0f);
 }
 
 /* a message of n octets to the queue, in the message mode */
-void VcvmStartup::send_msg(const uint8_t *m, int n)
+void VcvmStartup::send_msg(const u8 *m, int n)
 {
 	mtx_.send(m, n, txq_);
 }
@@ -163,7 +164,7 @@ void VcvmStartup::send_mp()
 	mp.ack = got_mp_;
 	mp.rtt = rtt_ms_ < 0 ? 255 : std::min(rtt_ms_ / 10, 254);
 	mp.l = rxl_;
-	uint8_t o[48];
+	u8 o[48];
 	send_msg(o, mp.encode(o));
 	silence(100);
 	sent_ack_ = mp.ack && got_ack_;
@@ -171,10 +172,10 @@ void VcvmStartup::send_mp()
 }
 
 /* the received samples from `from` to now to a receiver */
-template <class R> void VcvmStartup::replay(R &r, int32_t from)
+template <class R> void VcvmStartup::replay(R &r, s32 from)
 {
 	from = std::max(from, hbase_);
-	int32_t e = hbase_ + static_cast<int32_t>(hist_.size());
+	s32 e = hbase_ + static_cast<s32>(hist_.size());
 	if (from < e)
 		r.push(&hist_[static_cast<size_t>(from - hbase_)],
 		       static_cast<int>(e - from));
@@ -204,7 +205,7 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 			return;
 		}
 		if (c_.calling && probe_end_tx_ >= 0)
-			rtt_ms_ = static_cast<int>(std::max<int32_t>(
+			rtt_ms_ = static_cast<int>(std::max<s32>(
 				0, (m.start - probe_end_tx_ - c_.fs / 20) *
 					   1000 / c_.fs));
 		note("INFO0: modes %#x, combs %#x (%.3f to %.3f s)",
@@ -244,12 +245,12 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 			VcvmMp i1;
 			i1.rtt = rtt_ms_ < 0 ? 255 : std::min(rtt_ms_ / 10, 254);
 			i1.l = rxl_;
-			uint8_t o[48];
+			u8 o[48];
 			send_msg(o, i1.encode(o));
 			silence(100);
 		} else
 			rtt_ms_ = static_cast<int>(
-				std::max<int32_t>(0, (m.start - info1_end_tx_ -
+				std::max<s32>(0, (m.start - info1_end_tx_ -
 						      c_.fs / 20 - c_.fs / 100) *
 							     1000 / c_.fs));
 		step_ = MP;
@@ -303,7 +304,7 @@ void VcvmStartup::step()
 				replay(mrx_, prx_.end());
 			} else {
 				silence_until(prx_.end() + c_.fs / 20);
-				uint8_t o[48];
+				u8 o[48];
 				send_msg(o, info0_.encode(o));
 				silence(100);
 				send_probing();
@@ -353,8 +354,8 @@ void VcvmStartup::process(const float *in, float *out, int n)
 		int k = std::min(n, B);
 		/* in */
 		hist_.insert(hist_.end(), in, in + k);
-		if (static_cast<int32_t>(hist_.size()) > 3L * c_.fs) {
-			int32_t cut = static_cast<int32_t>(hist_.size()) -
+		if (static_cast<s32>(hist_.size()) > 3L * c_.fs) {
+			s32 cut = static_cast<s32>(hist_.size()) -
 				      2L * c_.fs;
 			hist_.erase(hist_.begin(), hist_.begin() + cut);
 			hbase_ += cut;

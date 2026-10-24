@@ -31,7 +31,6 @@
 #ifndef DMODEMD_ALSA_LINE_H
 #define DMODEMD_ALSA_LINE_H
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -40,6 +39,7 @@
 #include <dcore.h>
 #include <dsp.h>
 
+#include "dm_types.h"
 #include "ac97_ports.h"
 #include "cx_country.h"
 #include "cx_daa.h"
@@ -61,7 +61,7 @@ public:
 	/* the codec's PCM pcm (both ways) and its controls' ctl (nullptr:
 	   the card of pcm's, or pcm's name) opened at rate, running, on
 	   hook; false with the reason on stderr */
-	bool open(const char *pcm, const char *ctl, uint32_t rate);
+	bool open(const char *pcm, const char *ctl, u32 rate);
 	/* the line's samples: its descriptors watched this turn */
 	void watch(RunLoop &loop);
 	/* the samples that have come, a frame (20 ms) at a time, through
@@ -94,7 +94,7 @@ public:
 		return pty_.write(buf, n);
 	}
 	/* the clock: the codec's samples so far, in ms */
-	uint64_t now_ms() override {
+	u64 now_ms() override {
 		return samples_ * 1000 / rate_;
 	}
 
@@ -115,7 +115,7 @@ private:
 	bool restart(const char *why);
 	/* frame_ samples of the line's through the ring detector and the
 	   modem; the answer in out */
-	void frame(dcore::Modem &m, const int16_t *in, int16_t *out);
+	void frame(dcore::Modem &m, const s16 *in, s16 *out);
 	void close();
 	/* the HD-audio modem codec, if it is a Si3054 the country's line
 	   settings can go into (open()'s) */
@@ -134,15 +134,15 @@ private:
 	snd_pcm_t *cap_ = nullptr, *play_ = nullptr;
 	snd_ctl_t *ctl_ = nullptr;
 	Switch off_hook_, caller_id_;
-	uint32_t rate_ = 9600;
+	u32 rate_ = 9600;
 	int frame_ = 192;               /* 20 ms */
 	int delay_ = 0;                 /* the playback's lead (samples) */
-	std::vector<int16_t> in_, out_;
+	std::vector<s16> in_, out_;
 	int have_ = 0;                  /* of in_ */
-	uint64_t samples_ = 0;
+	u64 samples_ = 0;
 	bool running_ = false;
 	int hook_ = MODEM_HOOK_ON;
-	uint64_t flash_end_ = 0;
+	u64 flash_end_ = 0;
 	dsp::RingDetect ring_;
 	/* the codec's registers, if they take the country's settings; the
 	   country, its name, still to be written */

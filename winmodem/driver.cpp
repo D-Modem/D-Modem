@@ -37,6 +37,7 @@
 
 #include <wdf.h>
 
+#include "dm_types.h"
 #include "link.h"
 #include "port.h"
 
@@ -111,13 +112,13 @@ class WdfReq final : public vmodem::Request {
 public:
 	/* (buf, len: the request's buffer, from the framework) */
 	WdfReq(WDFREQUEST req, vmodem::Port &port, void *buf, size_t len)
-		: req_(req), port_(port), buf_((uint8_t *)buf), len_(len) {}
+		: req_(req), port_(port), buf_((u8 *)buf), len_(len) {}
 
-	uint8_t *data() override { return buf_; }
+	u8 *data() override { return buf_; }
 	size_t size() const override { return len_; }
 
 	/* see port.h: the request completed unless its cancel has it */
-	void complete(uint32_t status, size_t info) override
+	void complete(u32 status, size_t info) override
 	{
 		bool mine = false;
 		{
@@ -162,7 +163,7 @@ public:
 private:
 	WDFREQUEST req_;
 	vmodem::Port &port_;
-	uint8_t *buf_;
+	u8 *buf_;
 	size_t len_;
 	std::mutex mu_;
 	bool cancelled_ = false;
@@ -257,7 +258,7 @@ VOID on_ioctl(WDFQUEUE q, WDFREQUEST req, size_t out_len, size_t in_len,
 			return;
 		}
 		hold(req, port, out, ol, [&](WdfReq *r) {
-			uint32_t st = port.ioctl(code, nullptr, 0, nullptr, 0,
+			u32 st = port.ioctl(code, nullptr, 0, nullptr, 0,
 						 &info, r);
 			/* (refused: completed as any would be) */
 			if (st != vmodem::ST_PENDING)
@@ -265,7 +266,7 @@ VOID on_ioctl(WDFQUEUE q, WDFREQUEST req, size_t out_len, size_t in_len,
 		});
 		return;
 	}
-	uint32_t st = port.ioctl(code, in, il, out, ol, &info, nullptr);
+	u32 st = port.ioctl(code, in, il, out, ol, &info, nullptr);
 	WdfRequestCompleteWithInformation(req, (NTSTATUS)st, info);
 }
 

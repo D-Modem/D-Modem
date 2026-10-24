@@ -26,6 +26,7 @@
 #include <strings.h>
 #include <dsplibs.h>
 
+#include "dm_types.h"
 #include "dcore.h"
 #include "str.h"
 #include "reinit.h"
@@ -59,12 +60,12 @@ bool dtmf_digit(char c)
 
 /* the number at p as C's strtoul() with base 0 reads it (0x hex, 0
    octal, else decimal), *end after it (p if there are no digits: 0) */
-uint32_t number(const char *p, const char **end)
+u32 number(const char *p, const char **end)
 {
 	const char *q = p;
 	bool neg = false;
 	int base = 10;
-	uint32_t v;
+	u32 v;
 
 	while (isspace(static_cast<unsigned char>(*q)))
 		q++;
@@ -87,7 +88,7 @@ uint32_t number(const char *p, const char **end)
 
 /* the decimal digits at p, *end after them (p and 0 if there are
    none) */
-uint32_t decimal(const char *p, const char **end)
+u32 decimal(const char *p, const char **end)
 {
 	if (!is_digit(*p)) {
 		*end = p;
@@ -98,11 +99,11 @@ uint32_t decimal(const char *p, const char **end)
 
 /* v is an item of list: single values and ranges a-b, separated by
    commas, up to the list's end or a ')' */
-bool in_list(const char *list, uint32_t v)
+bool in_list(const char *list, u32 v)
 {
 	while (is_digit(*list)) {
 		const char *e;
-		uint32_t lo = decimal(list, &e), hi = lo;
+		u32 lo = decimal(list, &e), hi = lo;
 		if (*e == '-')
 			hi = decimal(e + 1, &e);
 		if (v >= lo && v <= hi)
@@ -154,7 +155,7 @@ bool taken(const char *p, int *len)
 		std::string_view name = t.name;
 		size_t n = name.size();
 		const char *e;
-		uint32_t v;
+		u32 v;
 		if (!starts_nocase(p, name))
 			continue;
 		if (!is_digit(p[n]) && name == "B")
@@ -174,7 +175,7 @@ bool taken(const char *p, int *len)
 const struct Kept {
 	const char *name;
 	unsigned n;
-	uint32_t values[Modem::KEPT_VALUES];
+	u32 values[Modem::KEPT_VALUES];
 	const char *ranges;
 } kept_params[] = {
 	{ "+IFC", 2, { 2, 2 }, "(0-3),(0-2)" },
@@ -230,7 +231,7 @@ int kept_index(const char *name)
 }
 
 /* \N0 to \N5 as +ES's orig_rqst, orig_fbk, ans_fbk */
-const uint32_t ec_modes[6][3] = {
+const u32 ec_modes[6][3] = {
 	{ 1, 0, 1 }, { 0, 0, 0 }, { 3, 2, 4 }, { 3, 0, 2 }, { 3, 3, 5 },
 	{ 4, 4, 6 },
 };
@@ -253,20 +254,20 @@ const struct {
 };
 
 /* pump id is registered */
-bool registered(uint32_t id)
+bool registered(u32 id)
 {
 	for (const DpDriver *d = dp_drivers(); d->id; d++)
-		if (static_cast<uint32_t>(d->id) == id)
+		if (static_cast<u32>(d->id) == id)
 			return d->op != nullptr;
 	return false;
 }
 
 /* +MS may choose pump id: it has a code and is registered (K56flex
    while V.90 is, which runs for it) */
-bool ms_choosable(uint32_t id)
+bool ms_choosable(u32 id)
 {
 	for (const DpDriver *d = dp_drivers(); d->id; d++)
-		if (static_cast<uint32_t>(d->id) == id)
+		if (static_cast<u32>(d->id) == id)
 			return d->code && (d->op || (id == DP_K56 &&
 						     registered(DP_V90)));
 	return false;
@@ -336,7 +337,7 @@ const struct VoiceSetting {
    digits, 4) and on the call (15, "HT": the line's events). */
 static const struct {
 	const char *label;
-	uint32_t events[3];
+	u32 events[3];
 	bool handset;
 } voice_devices[] = {
 	{ "0,\"\"", { 0x00000000, 0x00000000, 0x90000000 }, false },
@@ -344,10 +345,10 @@ static const struct {
 	{ "14,\"H\"", { 0x08000000, 0x08000000, 0x08000000 }, true },
 	{ "15,\"HT\"", { 0x0B043060, 0x0B043060, 0x0B043060 }, true },
 };
-const uint32_t LOCAL_PHONE_EVENT = 0x00800000;
+const u32 LOCAL_PHONE_EVENT = 0x00800000;
 
 /* v within the bounds lo and hi (0: none) */
-bool in_bounds(uint32_t v, unsigned lo, unsigned hi)
+bool in_bounds(u32 v, unsigned lo, unsigned hi)
 {
 	return !(lo && v < lo) && !(hi && v > hi);
 }
@@ -873,7 +874,7 @@ int Modem::at_H(char *p, int *len)
 int Modem::at_I(char *p, int *len)
 {
 	const char *e;
-	uint32_t n = number(p + 1, &e);
+	u32 n = number(p + 1, &e);
 
 	*len = static_cast<int>(e - p);
 	switch (n) {
@@ -935,7 +936,7 @@ int Modem::at_O(char *p, int *len)
 int Modem::at_S(char *p, int *len)
 {
 	const char *e;
-	uint32_t n = number(p + 1, &e), v;
+	u32 n = number(p + 1, &e), v;
 
 	if (n >= sizeof(sregs_))
 		return -1;
@@ -1059,8 +1060,8 @@ int Modem::at_ampV(char *p, int *len)
 int Modem::at_MS(char *p, int *len)
 {
 	const char *q = p + 3, *e;
-	uint32_t mod = sregs_[SREG_DP], automode = sregs_[SREG_AUTOMODE];
-	uint32_t min = min_rate_, max = max_rate_, v;
+	u32 mod = sregs_[SREG_DP], automode = sregs_[SREG_AUTOMODE];
+	u32 min = min_rate_, max = max_rate_, v;
 
 	if (upper(p[2]) != 'S')
 		return -1;
@@ -1162,9 +1163,9 @@ int Modem::at_GCI(char *p, int *len)
 	}
 	{
 		const char *e;
-		uint32_t code = to_ulong(q, q + strlen(q), &e, 16);
+		u32 code = to_ulong(q, q + strlen(q), &e, 16);
 		if (e == q || code > 0xffff ||
-		    homolog_init(static_cast<int32_t>(code), nullptr))
+		    homolog_init(static_cast<s32>(code), nullptr))
 			return -1;
 		*len = static_cast<int>(e - p);
 	}
@@ -1205,7 +1206,7 @@ int Modem::at_fax(char *p, int *len)
 	char what = static_cast<char>(upper(q[0])),
 	     kind = static_cast<char>(upper(q[1]));
 	enum FAX_CMD cmd;
-	uint32_t v;
+	u32 v;
 
 	if (what == 'M' && identity(kind)) {
 		puts(identity(kind));
@@ -1277,12 +1278,12 @@ int Modem::at_PMH(char *p, int *len)
 {
 	const char *q = p + 4, *e;
 	bool timer;
-	uint32_t v;
+	u32 v;
 
 	if (!starts_nocase(p, "+PMH"))
 		return -1;
 	if (upper(*q) == 'R') {
-		uint32_t secs = 10;
+		u32 secs = 10;
 		q++;
 		if (state_ != COMMAND_ONLINE || !dp_ || dp_->id != DP_V92)
 			return -1;
@@ -1367,7 +1368,7 @@ int Modem::at_voice(char *p, int *len)
 		std::string_view name = s.name;
 		bool device = name == "LS";
 		bool events = name == "EM";
-		uint32_t v[2] = { 0, 0 };
+		u32 v[2] = { 0, 0 };
 		int ret = 0;
 
 		if (name != cmd)
@@ -1377,7 +1378,7 @@ int Modem::at_voice(char *p, int *len)
 				events ? voice_events_ :
 				device && voice_ ? voice_device_ : 0;
 		if (device && q[0] == '=' && q[1] == '?') {
-			uint32_t more = host_.senses_local_phone(*this) ?
+			u32 more = host_.senses_local_phone(*this) ?
 				LOCAL_PHONE_EVENT : 0;
 			bool handset = host_.has_handset(*this);
 			for (const auto &d : voice_devices) {
@@ -1472,7 +1473,7 @@ int Modem::at_voice(char *p, int *len)
 	for (;;) {
 		VoiceTone t = { 0, 0, 0, dflt, false };
 		if (*q == '[') {
-			uint32_t v[3] = { 0, 0, dflt };
+			u32 v[3] = { 0, 0, dflt };
 			q++;
 			for (int i = 0; i < 3 && *q != ']'; i++) {
 				if (i && *q++ != ',')
@@ -1499,7 +1500,7 @@ int Modem::at_voice(char *p, int *len)
 			if (*q == ',') {
 				q++;
 				if (is_digit(*q)) {
-					uint32_t d = number(q, &e);
+					u32 d = number(q, &e);
 					q = e;
 					if (d > 6000)
 						return -1;
@@ -1548,7 +1549,7 @@ int Modem::at_kept(const char *p, int *len)
 	const Kept &k = kept_params[i];
 	const std::string_view name = k.name;
 	const char *q = p + name.size(), *e;
-	uint32_t v[KEPT_VALUES];
+	u32 v[KEPT_VALUES];
 	unsigned n = kept_n_[i];
 
 	if (*q == '?') {
@@ -1590,7 +1591,7 @@ int Modem::at_kept(const char *p, int *len)
 		if (is_digit(*q)) {
 			const char *g = pos < KEPT_VALUES ?
 				range_group(k.ranges, pos) : nullptr;
-			uint32_t x = decimal(q, &e);
+			u32 x = decimal(q, &e);
 			if (!g || !in_list(g, x))
 				return -1;
 			v[pos] = x;
@@ -1621,7 +1622,7 @@ void Modem::kept_init()
 
 /* the values of the kept parameter called name (as kept_params spells
    it); NULL for one there is not */
-const uint32_t *Modem::kept(const char *name) const
+const u32 *Modem::kept(const char *name) const
 {
 	int i = kept_index(name);
 	return i < 0 ? nullptr : kept_[i];
@@ -1639,7 +1640,7 @@ void Modem::set_ec_mode(int n)
 /* +ES's values as S103's \N, if one has them (else S103 stays) */
 void Modem::ec_mode_from_es()
 {
-	const uint32_t *es = kept_[kept_index("+ES")];
+	const u32 *es = kept_[kept_index("+ES")];
 	for (int n = 0; n < 6; n++)
 		if (!memcmp(es, ec_modes[n], sizeof(ec_modes[n]))) {
 			sregs_[SREG_EC] = static_cast<unsigned char>(n);

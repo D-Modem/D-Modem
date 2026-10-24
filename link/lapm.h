@@ -14,8 +14,8 @@
 #ifndef DMODEM_LINK_LAPM_H
 #define DMODEM_LINK_LAPM_H
 
-#include <cstdint>
 
+#include "dm_types.h"
 #include "hdlc.h"
 
 namespace dlink {
@@ -63,7 +63,7 @@ private:
 	};
 	struct Slot {
 		Frame frame;
-		uint8_t buf[4 + LAPM_MAX_INFO];
+		u8 buf[4 + LAPM_MAX_INFO];
 	};
 
 	void reset();
@@ -72,13 +72,13 @@ private:
 	void timer_start();
 	void timer_stop();
 	Frame *ctrl_frame();
-	int tx_unnum(uint8_t addr, uint8_t ctrl);
-	int tx_super(uint8_t addr, uint8_t ctrl, int pf);
-	int tx_xid(uint8_t addr);
+	int tx_unnum(u8 addr, u8 ctrl);
+	int tx_super(u8 addr, u8 ctrl, int pf);
+	int tx_xid(u8 addr);
 	void rx_xid(Frame *f, bool response);
 	int tx_info();
 	int reject_info();
-	int ack_info(uint8_t nr);
+	int ack_info(u8 nr);
 	int rx_info(Frame *f);
 	void rx_super_cmd(Frame *f);
 	void rx_super_rsp(Frame *f);
@@ -94,8 +94,8 @@ private:
 	bool reject_ = false;
 	bool busy_ = false;     /* we cannot take more */
 	bool peer_busy_ = false;
-	uint8_t cmd_addr_ = 0, rsp_addr_ = 0;
-	uint8_t vs_ = 0, va_ = 0, vr_ = 0;
+	u8 cmd_addr_ = 0, rsp_addr_ = 0;
+	u8 vs_ = 0, va_ = 0, vr_ = 0;
 	int rtx_count_ = 0;
 	unsigned tx_win_ = 0, rx_win_ = 0, tx_info_ = 0, rx_info_ = 0;
 	/* rings of frames: info frames from sent (not acknowledged) over
@@ -106,7 +106,7 @@ private:
 	Frame *tx_ctrl_ = nullptr, *ctrl_list_ = nullptr;
 	/* received characters the DTE has not taken */
 	int rx_count_ = 0, rx_head_ = 0;
-	uint8_t rx_buf_[LAPM_MAX_INFO];
+	u8 rx_buf_[LAPM_MAX_INFO];
 	Slot info_buf_[INFO_FRAMES];
 	Slot ctrl_buf_[CTRL_FRAMES];
 };

@@ -18,6 +18,7 @@
 #include <log.h>
 #include <tones.h>
 
+#include "dm_types.h"
 #include "options.h"
 #include "reinit.h"
 
@@ -347,7 +348,7 @@ void CommandLine::apply(Options &opt) const
 	if (o[OPT_GROUP].given)
 		opt.group = o[OPT_GROUP].value;
 	if (o[OPT_PERM].given) {
-		int32_t perm = 0;
+		s32 perm = 0;
 		if (!dcore::parse_long(o[OPT_PERM].value, perm, 8) || perm <= 0)
 			usage();
 		opt.perm = static_cast<mode_t>(perm);
@@ -355,12 +356,12 @@ void CommandLine::apply(Options &opt) const
 	if (o[OPT_NORT].given)
 		opt.realtime = false;
 	if (o[OPT_DEBUG].given) {
-		int32_t level = 0;
+		s32 level = 0;
 		dcore::parse_long(o[OPT_DEBUG].value, level, 0);
 		dcore::log_level = level > 0 ? static_cast<unsigned>(level) : 1;
 	}
 	if (o[OPT_LOG].given) {
-		int32_t level = 0;
+		s32 level = 0;
 		dcore::parse_long(o[OPT_LOG].value, level, 0);
 		dcore::log_data_level =
 			level > 0 ? static_cast<unsigned>(level) : 5;
@@ -400,13 +401,13 @@ void CommandLine::apply(Options &opt) const
 		exit(1);
 	}
 	if (o[OPT_RATE].given) {
-		int32_t rate = 0;
+		s32 rate = 0;
 		dcore::parse_long(o[OPT_RATE].value, rate);
 		if (rate != 8000 && rate != 9600) {
 			fprintf(stderr, "%s: -r: 8000 or 9600\n", prog_);
 			exit(1);
 		}
-		opt.rate = static_cast<uint32_t>(rate);
+		opt.rate = static_cast<u32>(rate);
 	}
 #ifdef _WIN32
 	if (o[OPT_COM].given)

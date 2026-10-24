@@ -16,7 +16,8 @@
 #ifndef DMODEM_TONES_H
 #define DMODEM_TONES_H
 
-#include <cstdint>
+
+#include "dm_types.h"
 
 namespace tones {
 
@@ -61,7 +62,7 @@ inline bool on_at(const Tone &c, double t)
 	for (int i = 0; i < c.n; i++)
 		period += c.cadence[i];
 	double x = t - period * static_cast<double>(
-				       static_cast<int64_t>(t / period));
+				       static_cast<s64>(t / period));
 	for (int i = 0; i < c.n; i++) {
 		if (x < c.cadence[i])
 			return i % 2 == 0;

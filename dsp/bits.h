@@ -18,12 +18,13 @@
 #ifndef DSP_BITS_H
 #define DSP_BITS_H
 
-#include <cstdint>
+
+#include "dm_types.h"
 
 namespace dsp {
 
 /* nbits of val at b[*n] on, least significant first; *n past them */
-inline void put_bits(unsigned char *b, int *n, uint32_t val, int nbits)
+inline void put_bits(unsigned char *b, int *n, u32 val, int nbits)
 {
 	for (int i = 0; i < nbits; i++)
 		b[(*n)++] = (val >> i) & 1;
@@ -31,23 +32,23 @@ inline void put_bits(unsigned char *b, int *n, uint32_t val, int nbits)
 
 /* nbits of val at b[*n] on, most significant first (a CRC); *n past
    them */
-inline void put_bits_msb(unsigned char *b, int *n, uint32_t val, int nbits)
+inline void put_bits_msb(unsigned char *b, int *n, u32 val, int nbits)
 {
 	for (int i = nbits - 1; i >= 0; i--)
 		b[(*n)++] = (val >> i) & 1;
 }
 
 /* the nbits wide field at bit first, least significant bit first */
-inline int32_t field(const unsigned char *b, int first, int nbits)
+inline s32 field(const unsigned char *b, int first, int nbits)
 {
-	int32_t v = 0;
+	s32 v = 0;
 	for (int i = nbits - 1; i >= 0; i--)
 		v = (v << 1) | b[first + i];
 	return v;
 }
 
 /* 1 if the nbits at b[at] on are val, most significant first */
-inline bool bits_msb_are(const unsigned char *b, int at, uint32_t val,
+inline bool bits_msb_are(const unsigned char *b, int at, u32 val,
 			 int nbits)
 {
 	for (int i = 0; i < nbits; i++)
@@ -59,10 +60,10 @@ inline bool bits_msb_are(const unsigned char *b, int at, uint32_t val,
 /* CRC-16 (x^16 + x^12 + x^5 + 1, preset to ones) over n bits in time
    order, from register crc (0xFFFF to start); the new register.  As
    V.34's INFO and MP sequences have it (10.1.2.3.2/V.34) */
-inline uint32_t v34_crc_bits(const unsigned char *bits, int n, uint32_t crc)
+inline u32 v34_crc_bits(const unsigned char *bits, int n, u32 crc)
 {
 	for (int i = 0; i < n; i++) {
-		uint32_t top = (crc >> 15) & 1;
+		u32 top = (crc >> 15) & 1;
 		crc = (crc << 1) & 0xFFFF;
 		if (top ^ (bits[i] & 1))
 			crc ^= 0x1021;
@@ -72,9 +73,9 @@ inline uint32_t v34_crc_bits(const unsigned char *bits, int n, uint32_t crc)
 
 /* the CRC of an MP style frame's fields before bit end (where the CRC
    goes): the 16 bits after each start bit */
-inline uint32_t frame_crc(const unsigned char *b, int end)
+inline u32 frame_crc(const unsigned char *b, int end)
 {
-	uint32_t crc = 0xFFFF;
+	u32 crc = 0xFFFF;
 	for (int i = 18; i < end - 1; i += 17)
 		crc = v34_crc_bits(b + i, 16, crc);
 	return crc;
@@ -98,9 +99,9 @@ inline bool frame_crc_ok(const unsigned char *b, int at)
    is HDLC_FCS_GOOD */
 #define HDLC_FCS_GOOD   0xF0B8
 /* the FCS of p's n octets (see above) */
-inline uint32_t hdlc_fcs(const unsigned char *p, int n)
+inline u32 hdlc_fcs(const unsigned char *p, int n)
 {
-	uint32_t crc = 0xFFFF;
+	u32 crc = 0xFFFF;
 	for (int i = 0; i < n; i++) {
 		crc ^= p[i];
 		for (int k = 0; k < 8; k++)
@@ -115,7 +116,7 @@ inline uint32_t hdlc_fcs(const unsigned char *p, int n)
    data bit in, its line bit out */
 enum { SCR_GPC = 18, SCR_GPA = 5 };
 /* a data bit through the scrambler (see above) */
-inline int scramble(uint32_t *reg, int tap, int bit)
+inline int scramble(u32 *reg, int tap, int bit)
 {
 	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
 	*reg = (*reg << 1) | out;
@@ -124,7 +125,7 @@ inline int scramble(uint32_t *reg, int tap, int bit)
 
 /* its descrambler: a line bit in (into the register), the data bit
    out */
-inline int descramble(uint32_t *reg, int tap, int bit)
+inline int descramble(u32 *reg, int tap, int bit)
 {
 	int out = (bit ^ (*reg >> (tap - 1)) ^ (*reg >> 22)) & 1;
 	*reg = (*reg << 1) | (bit & 1);

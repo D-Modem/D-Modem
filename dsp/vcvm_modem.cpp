@@ -12,6 +12,7 @@
 #include <cstdarg>
 #include <cstdio>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "vcvm_modem.h"
 
@@ -75,10 +76,10 @@ void VcvmModem::silence(int ms)
 }
 
 /* the line's samples kept since sample from, pushed again to receiver r */
-template <class R> void VcvmModem::replay(R &r, int32_t from)
+template <class R> void VcvmModem::replay(R &r, s32 from)
 {
 	from = std::max(from, hbase_);
-	int32_t e = hbase_ + static_cast<int32_t>(hist_.size());
+	s32 e = hbase_ + static_cast<s32>(hist_.size());
 	if (from < e)
 		r.push(&hist_[static_cast<size_t>(from - hbase_)],
 		       static_cast<int>(e - from));
@@ -125,7 +126,7 @@ void VcvmModem::start_tx()
 
 /* the receivers from sample from: phase 4's with this DCE's loading,
    the messages' for a further MP, the kept samples replayed */
-void VcvmModem::start_rx(int32_t from)
+void VcvmModem::start_rx(s32 from)
 {
 	rx_on_ = false;
 	rx_from_ = from;
@@ -178,7 +179,7 @@ void VcvmModem::send_mp()
 	mp.retrain = retrain_ || peer_retrain_;
 	mp.rtt = rtt_ms_ < 0 ? 255 : std::min(rtt_ms_ / 10, 254);
 	mp.l = rxl_;
-	uint8_t o[48];
+	u8 o[48];
 	mtx_.send(o, mp.encode(o), txq_);
 	silence(100);
 	sent_ack_ = mp.ack && got_ack_;
@@ -209,7 +210,7 @@ VcvmLoading VcvmModem::rechoose(bool *retrain)
 		int npb = std::min(pb, rule);
 		if (npb != pb || s > (pb == 3 ? 7 : 15))
 			l.load.ring[k] = 0;
-		l.load.phase[k] = static_cast<uint8_t>(npb);
+		l.load.phase[k] = static_cast<u8>(npb);
 		if (!npb)
 			l.load.ring[k] = 0;
 	}
@@ -246,7 +247,7 @@ void VcvmModem::begin_reneg(bool remote, bool retrain)
 	if (tx_data_)
 		dtx_.control(txq_);
 	tx_data_ = false;
-	int32_t from = remote ? drx_.position() : t_;
+	s32 from = remote ? drx_.position() : t_;
 	rx_on_ = false;
 	mrx_.restart(from);
 	replay(mrx_, from);
@@ -337,7 +338,7 @@ void VcvmModem::on_msg(const VcvmMsg &m)
    failing or a tone's phase error over its order's threshold */
 void VcvmModem::check_data()
 {
-	const int32_t fs = c_.su.fs;
+	const s32 fs = c_.su.fs;
 	if (!rx_on_ || !drx_.confirmed()) {
 		/* no data mode: the periodic retrain alone */
 		if (next_retrain_ >= 0 && t_ >= next_retrain_ &&
@@ -443,13 +444,13 @@ void VcvmModem::step()
    then phase 4's and the renegotiations' */
 void VcvmModem::process(const float *in, float *out, int n)
 {
-	const int32_t fs = c_.su.fs;
+	const s32 fs = c_.su.fs;
 	const int B = fs / 100;
 	while (n > 0) {
 		int k = std::min(n, B);
 		hist_.insert(hist_.end(), in, in + k);
-		if (static_cast<int32_t>(hist_.size()) > 4L * fs) {
-			int32_t cut = static_cast<int32_t>(hist_.size()) -
+		if (static_cast<s32>(hist_.size()) > 4L * fs) {
+			s32 cut = static_cast<s32>(hist_.size()) -
 				      3L * fs;
 			hist_.erase(hist_.begin(), hist_.begin() + cut);
 			hbase_ += cut;

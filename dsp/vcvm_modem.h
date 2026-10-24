@@ -36,11 +36,11 @@
 #ifndef DSP_VCVM_MODEM_H
 #define DSP_VCVM_MODEM_H
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "dm_types.h"
 #include "vcvm_data.h"
 #include "vcvm_startup.h"
 
@@ -95,14 +95,14 @@ private:
 	void note(const char *fmt, ...);
 	void fail(const char *why);
 	/* the sample at which what is queued to send runs out */
-	int32_t queued() const
+	s32 queued() const
 	{
-		return t_ + static_cast<int32_t>(txq_.size() - txpos_);
+		return t_ + static_cast<s32>(txq_.size() - txpos_);
 	}
 	void silence(int ms);
 	void send_mp();
 	void start_tx();
-	void start_rx(int32_t from);
+	void start_rx(s32 from);
 	void enter_data();
 	void begin_reneg(bool remote, bool retrain);
 	void finish_reneg();
@@ -110,7 +110,7 @@ private:
 	VcvmLoading rechoose(bool *retrain);
 	void check_data();
 	void on_msg(const VcvmMsg &m);
-	template <class R> void replay(R &r, int32_t from);
+	template <class R> void replay(R &r, s32 from);
 	void step();
 
 	Config c_{};
@@ -119,7 +119,7 @@ private:
 	State state_ = STARTUP;
 	const char *why_ = "";
 	std::unique_ptr<VcvmStartup> su_;
-	int32_t su_at_ = 0;             /* where it started */
+	s32 su_at_ = 0;                 /* where it started */
 	VcvmDataTx dtx_;
 	VcvmDataRx drx_;
 	VcvmMsgTx mtx_;
@@ -130,27 +130,27 @@ private:
 	std::vector<float> txq_;
 	size_t txpos_ = 0;
 	std::vector<float> hist_;
-	int32_t hbase_ = 0;
-	int32_t t_ = 0;
+	s32 hbase_ = 0;
+	s32 t_ = 0;
 	bool tx_data_ = false;          /* the transmitter in phase 4 */
 	bool rx_on_ = false, mrx_on_ = false;
-	int32_t rx_from_ = 0;
+	s32 rx_from_ = 0;
 	/* the renegotiation */
 	bool want_reneg_ = false, want_retrain_ = false;
 	bool retrain_ = false, peer_retrain_ = false;
 	bool got_mp_ = false, got_ack_ = false, sent_ack_ = false;
 	int mps_ = 0;
-	int32_t deadline_ = 0;
-	int32_t last_rx_end_ = 0;
+	s32 deadline_ = 0;
+	s32 last_rx_end_ = 0;
 	int p4_mps_ = 0;                /* the peer's MPs in phase 4 (the
 					   first its last of the exchange) */
 	int renegs_ = 0, retrains_ = 0;
 	/* phase 4's watch */
-	int32_t data_at_ = 0;           /* phase 4 (re)entered */
-	int32_t confirmed_at_ = 0;      /* the peer's data decoding since */
-	int32_t next_check_ = 0;
-	int32_t words_ = 0, failed_ = 0; /* at the last check */
-	int32_t next_retrain_ = -1;     /* the parametric mode's timer */
+	s32 data_at_ = 0;               /* phase 4 (re)entered */
+	s32 confirmed_at_ = 0;          /* the peer's data decoding since */
+	s32 next_check_ = 0;
+	s32 words_ = 0, failed_ = 0; /* at the last check */
+	s32 next_retrain_ = -1;         /* the parametric mode's timer */
 	bool cbar_low_ = false;
 	std::string log_;
 };

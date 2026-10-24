@@ -19,7 +19,6 @@
 #include <cctype>
 #include <cerrno>
 #include <csignal>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -38,6 +37,7 @@
 #include <log.h>
 
 #ifdef DMODEM_ALSA
+#include "dm_types.h"
 #include "alsa_line.h"
 #endif
 #ifdef DMODEM_USB
@@ -57,7 +57,7 @@
 namespace {
 
 /* the line: 8000 samples a second */
-const int32_t RATE = 8000;
+const s32 RATE = 8000;
 
 /* the user dmodemd goes on as, started as root, and the locked memory
    it then needs with realtime scheduling */
@@ -156,7 +156,7 @@ int run_line(dcore::Modem &m, Line &line, dmd::Pty &pty)
 	dmd::RunLoop loop;
 
 	while (dmd::RunLoop::running()) {
-		int32_t wait = dmd::RunLoop::poll(modems, 1);
+		s32 wait = dmd::RunLoop::poll(modems, 1);
 		int ret;
 
 		loop.clear();
@@ -221,7 +221,7 @@ int main(int argc, char *argv[])
 	dcore::Modem *m;
 	if (opt.usb) {
 #ifdef DMODEM_USB
-		mo.rate = static_cast<int32_t>(opt.rate);
+		mo.rate = static_cast<s32>(opt.rate);
 		um.reset(new dcore::Modem(usb, mo));
 		if (!um->ok())
 			exit(-1);
@@ -232,7 +232,7 @@ int main(int argc, char *argv[])
 #endif
 	} else if (opt.alsa) {
 #ifdef DMODEM_ALSA
-		mo.rate = static_cast<int32_t>(opt.rate);
+		mo.rate = static_cast<s32>(opt.rate);
 		am.reset(new dcore::Modem(alsa, mo));
 		if (!am->ok())
 			exit(-1);

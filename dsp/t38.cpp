@@ -24,10 +24,10 @@
  *
  */
 
-#include <cstdint>
 #include <cstring>
 #include <iterator>
 
+#include "dm_types.h"
 #include "reinit.h"
 #include "t38.h"
 
@@ -109,9 +109,9 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 
 /* see t38.h */
 int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
-		   int32_t len)
+		   s32 len)
 {
-	int32_t at;
+	s32 at;
 	int k, count, present, half = 0;
 
 	zero(*p);
@@ -186,7 +186,7 @@ int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 		if (fp) {
 			if (at + 2 > len)
 				return -1;
-			f->len = (static_cast<int32_t>(buf[at]) << 8 |
+			f->len = (static_cast<s32>(buf[at]) << 8 |
 				  buf[at + 1]) + 1;
 			at += 2;
 			if (at + f->len > len)
@@ -241,7 +241,7 @@ static int len_len(unsigned v)
 
 /* a length from buf[*at] (len octets) into *v; -1 if there is none, or
    it is a fragment's (16 K or more) */
-static int get_len(const unsigned char *buf, int32_t len, int32_t *at,
+static int get_len(const unsigned char *buf, s32 len, s32 *at,
 		   unsigned *v)
 {
 	if (*at >= len)
@@ -319,21 +319,21 @@ void UdptlRx::init()
 }
 
 /* see t38.h */
-int UdptlRx::packet(const unsigned char *buf, int32_t len,
+int UdptlRx::packet(const unsigned char *buf, s32 len,
 		    void (*fn)(void *ctx, const unsigned char *ifp, int len,
 			       unsigned seq),
 		    void *ctx)
 {
 	const unsigned char *prim, *sec[UDPTL_HISTORY * 2];
 	int sec_len[UDPTL_HISTORY * 2], nsec = 0, k, prim_len;
-	int32_t at = 2;
+	s32 at = 2;
 	unsigned seq, n, count, d;
 
 	if (len < 4)
 		return -1;
 	seq = static_cast<unsigned>(buf[0]) << 8 | buf[1];
 	if (get_len(buf, len, &at, &n) || n == 0 ||
-	    at + static_cast<int32_t>(n) > len)
+	    at + static_cast<s32>(n) > len)
 		return -1;
 	prim = buf + at;
 	prim_len = static_cast<int>(n);
@@ -346,7 +346,7 @@ int UdptlRx::packet(const unsigned char *buf, int32_t len,
 			return -1;
 		for (k = 0; k < static_cast<int>(count); k++) {
 			if (get_len(buf, len, &at, &n) ||
-			    at + static_cast<int32_t>(n) > len)
+			    at + static_cast<s32>(n) > len)
 				return -1;
 			if (nsec < static_cast<int>(std::size(sec))) {
 				sec[nsec] = buf + at;

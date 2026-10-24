@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <iterator>
 
+#include "dm_types.h"
 #include "cx_daa.h"
 
 #include "cx_country.h"
@@ -21,7 +22,7 @@ namespace {
 /* SOAR's flag word per kind (0 to 0x26); the bits that matter here:
    8 echo, 9 no wait for the link, 14 a read's command first, 19 the
    status in register 4 */
-const uint32_t kind_flags[39] = {
+const u32 kind_flags[39] = {
 	0x01000000, 0x01000000, 0x01000000, 0x0000f840, 0x00004040,
 	0x004040c4, 0x004040c4, 0x004042c4, 0x3000f840, 0x3000f840,
 	0x00000000, 0x00003836, 0x004000d6, 0x004000d6, 0x00002057,
@@ -34,7 +35,7 @@ const uint32_t kind_flags[39] = {
 
 /* SOAR's second flag word per kind; the bit that matters here: 4 the
    line's control registers written with the command's bit 6 */
-const uint32_t kind_flags2[39] = {
+const u32 kind_flags2[39] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0x001, 0x400, 0x400, 0x400,
 	0x400, 0x400, 0x400, 0x480, 0x10a, 0x10a, 0x078, 0, 0, 0,
@@ -62,7 +63,7 @@ CxVariant cx_variant(int kind)
 	if (kind < 0 || kind >= static_cast<int>(sizeof(kind_flags) /
 				      sizeof(kind_flags[0])))
 		return v;
-	uint32_t f = kind_flags[kind];
+	u32 f = kind_flags[kind];
 	v.echo = f & (1u << 8);
 	v.no_ready = f & (1u << 9);
 	v.cmd_first = f & (1u << 14);
@@ -73,7 +74,7 @@ CxVariant cx_variant(int kind)
 
 /* see cx_daa.h: "CX" with a device 0x54xx, "RS" with 0x53xx, as
    hsfmc97ich.o takes them */
-bool cx_codec(uint16_t id1, uint16_t id2)
+bool cx_codec(u16 id1, u16 id2)
 {
 	return (id1 == 0x4358 && (id2 & 0xff00) == 0x5400) ||
 	       (id1 == 0x5253 && (id2 & 0xff00) == 0x5300);
@@ -81,7 +82,7 @@ bool cx_codec(uint16_t id1, uint16_t id2)
 
 /* see cx_daa.h: hsfmc97ich.o's table of DAA types (0x20 to 0x31),
    kind 5 for the others */
-int cx_kind(uint16_t id2)
+int cx_kind(u16 id2)
 {
 	switch (id2 & 0xff) {
 	case 0x21: return 0x0c;
@@ -110,39 +111,39 @@ bool CxDaa::fail(const char *fmt, ...)
 }
 
 /* see cx_daa.h */
-bool CxDaa::ssd_read(int reg, uint8_t *v)
+bool CxDaa::ssd_read(int reg, u8 *v)
 {
-	uint16_t x;
+	u16 x;
 
 	reg &= 0x3f;
 	if (reg == SSD_COMMAND)
 		regs_.delay_us(40);
-	if (!regs_.write(AC97_WINDOW, static_cast<uint16_t>(0x8000 | reg << 8)))
+	if (!regs_.write(AC97_WINDOW, static_cast<u16>(0x8000 | reg << 8)))
 		return fail("SSD %#x: codec register 0x7a not written", reg);
 	if (reg == SSD_COMMAND)
 		regs_.delay_us(40);
 	if (!regs_.read(AC97_WINDOW, &x) || x == 0xffff)
 		return fail("SSD %#x: no answer", reg);
-	*v = static_cast<uint8_t>(x);
+	*v = static_cast<u8>(x);
 	return true;
 }
 
 /* see cx_daa.h */
-bool CxDaa::ssd_write(int reg, uint8_t v)
+bool CxDaa::ssd_write(int reg, u8 v)
 {
 	reg &= 0x3f;
 	if (reg == SSD_COMMAND)
 		regs_.delay_us(40);
-	if (!regs_.write(AC97_WINDOW, static_cast<uint16_t>(reg << 8 | v)))
+	if (!regs_.write(AC97_WINDOW, static_cast<u16>(reg << 8 | v)))
 		return fail("SSD %#x: codec register 0x7a not written", reg);
 	return true;
 }
 
 /* see cx_daa.h (private) */
-bool CxDaa::clear_status(uint8_t mask)
+bool CxDaa::clear_status(u8 mask)
 {
 	int st = v_.status4 ? 4 : 0;
-	uint8_t s;
+	u8 s;
 
 	if (!ssd_read(st, &s))
 		return false;
@@ -157,7 +158,7 @@ bool CxDaa::wait_done()
 {
 	int st = v_.status4 ? 4 : 0;
 	int frames = 9;
-	uint8_t s, tick = 0xff;
+	u8 s, tick = 0xff;
 
 	for (int i = 0; i < MAX_POLLS; i++) {
 		if (!ssd_read(st, &s))
@@ -180,7 +181,7 @@ bool CxDaa::wait_done()
 /* see cx_daa.h (private) */
 void CxDaa::wait_ready()
 {
-	uint8_t s = 0;
+	u8 s = 0;
 
 	for (int i = 0; i < MAX_POLLS; i++)
 		if (!ssd_read(0, &s) || (s & ST_READY))
@@ -192,9 +193,9 @@ void CxDaa::wait_ready()
 
 /* see cx_daa.h: up to 5 tries; with echo, an answer still the pattern
    (0x55, shifted at each try) is none */
-bool CxDaa::lsd_read(int reg, uint8_t *v)
+bool CxDaa::lsd_read(int reg, u8 *v)
 {
-	uint8_t pattern = 0x55, x;
+	u8 pattern = 0x55, x;
 
 	reg &= 0x3f;
 	for (int t = 0; t < 5; t++) {
@@ -203,12 +204,12 @@ bool CxDaa::lsd_read(int reg, uint8_t *v)
 		if (!v_.echo && !v_.no_ready)
 			wait_ready();
 		if (v_.cmd_first &&
-		    !ssd_write(SSD_COMMAND, static_cast<uint8_t>(reg)))
+		    !ssd_write(SSD_COMMAND, static_cast<u8>(reg)))
 			return false;
 		if (!clear_status(ST_DONE | ST_ERROR))
 			return false;
 		if (!v_.cmd_first &&
-		    !ssd_write(SSD_COMMAND, static_cast<uint8_t>(reg)))
+		    !ssd_write(SSD_COMMAND, static_cast<u8>(reg)))
 			return false;
 		if (!wait_done())
 			continue;
@@ -216,7 +217,7 @@ bool CxDaa::lsd_read(int reg, uint8_t *v)
 			return false;
 		if (v_.echo && x == pattern) {
 			fail("LSD %#x: no answer (%#x)", reg, x);
-			pattern = static_cast<uint8_t>(pattern << 1);
+			pattern = static_cast<u8>(pattern << 1);
 			continue;
 		}
 		*v = x;
@@ -231,21 +232,21 @@ bool CxDaa::lsd_read(int reg, uint8_t *v)
    command alone; else a control register's write sets SSD register
    0x17's bit 1 first, the status is cleared, with echo SSD register 1
    primed with the byte's inverse */
-bool CxDaa::lsd_write(int reg, uint8_t v)
+bool CxDaa::lsd_write(int reg, u8 v)
 {
 	bool control = control_reg(reg & 0x3f);
 	int tries = (reg & 0x3f) == 0x17 ? 1 : 5;
-	uint8_t x, cmd;
+	u8 x, cmd;
 
 	reg &= 0x3f;
-	cmd = static_cast<uint8_t>(reg | CMD_WRITE);
+	cmd = static_cast<u8>(reg | CMD_WRITE);
 	if (control && v_.control_bit6)
 		cmd |= CMD_CONTROL;
 	for (int t = 0; t < tries; t++) {
 		if (!ssd_write(SSD_DATA, v))
 			return false;
 		if (!v_.control_bit6) {
-			uint8_t s;
+			u8 s;
 			if (control &&
 			    (!ssd_read(0x17, &s) ||
 			     (!(s & 0x02) && !ssd_write(0x17, s | 0x02))))
@@ -253,7 +254,7 @@ bool CxDaa::lsd_write(int reg, uint8_t v)
 			if (!clear_status(ST_DONE | ST_ERROR))
 				return false;
 			if (v_.echo &&
-			    !ssd_write(SSD_ANSWER, static_cast<uint8_t>(~v)))
+			    !ssd_write(SSD_ANSWER, static_cast<u8>(~v)))
 				return false;
 		}
 		if (!ssd_write(SSD_COMMAND, cmd))
@@ -270,13 +271,13 @@ bool CxDaa::lsd_write(int reg, uint8_t v)
 }
 
 /* see cx_daa.h */
-bool CxDaa::lsd_field(int reg, uint8_t mask, uint8_t val)
+bool CxDaa::lsd_field(int reg, u8 mask, u8 val)
 {
-	uint8_t old;
+	u8 old;
 
 	if (!lsd_read(reg, &old))
 		return false;
-	uint8_t v = static_cast<uint8_t>((old & ~mask) | (val & mask));
+	u8 v = static_cast<u8>((old & ~mask) | (val & mask));
 	return v == old || lsd_write(reg, v);
 }
 
@@ -294,11 +295,11 @@ bool CxDaa::lsd_field(int reg, uint8_t mask, uint8_t val)
  */
 
 struct CxDaa::Op {
-	enum Kind : uint8_t { W, F, B, VERSION, POWER, DELAY } kind;
+	enum Kind : u8 { W, F, B, VERSION, POWER, DELAY } kind;
 	bool lsd;
-	uint8_t reg, keep, set;
+	u8 reg, keep, set;
 	/* set the board's or the country's instead (param()) */
-	enum Param : uint8_t {
+	enum Param : u8 {
 		NONE, SSD21, SSD0B, SSD06, IDLE, OFF,
 		V19,            /* set, bit 5 too on LSD version 2 */
 		V21,            /* set, bit 7 not on version 2 */
@@ -308,7 +309,7 @@ struct CxDaa::Op {
 
 namespace {
 
-typedef uint8_t u8;
+typedef u8 u8;
 constexpr bool SSD = false, LSD = true;
 
 #define SW(r, v)        { CxDaa::Op::W, SSD, r, 0, v, CxDaa::Op::NONE }
@@ -388,11 +389,11 @@ bool CxDaa::run(const Op *ops, int n)
 {
 	for (int i = 0; i < n; i++) {
 		const Op &o = ops[i];
-		uint8_t old = 0, v;
+		u8 old = 0, v;
 
 		if (o.param == Op::NOT_V2 && (version_ & 0x3f) == 2)
 			continue;
-		uint8_t set = o.param == Op::NOT_V2 ? o.set :
+		u8 set = o.param == Op::NOT_V2 ? o.set :
 			      o.param ? param(o.param, o.set) : o.set;
 
 		switch (o.kind) {
@@ -405,7 +406,7 @@ bool CxDaa::run(const Op *ops, int n)
 				return false;
 			continue;
 		case Op::DELAY:
-			regs_.delay_us(uint32_t{o.set} * 1000u);
+			regs_.delay_us(u32{o.set} * 1000u);
 			continue;
 		case Op::W:
 			v = set;
@@ -414,7 +415,7 @@ bool CxDaa::run(const Op *ops, int n)
 			if (!(o.lsd ? lsd_read(o.reg, &old) :
 				      ssd_read(o.reg, &old)))
 				return false;
-			v = static_cast<uint8_t>((old & o.keep) | set);
+			v = static_cast<u8>((old & o.keep) | set);
 			if (o.kind == Op::B && v == old)
 				continue;
 			break;
@@ -426,18 +427,18 @@ bool CxDaa::run(const Op *ops, int n)
 }
 
 /* see cx_daa.h (private) */
-uint8_t CxDaa::param(int p, uint8_t set) const
+u8 CxDaa::param(int p, u8 set) const
 {
 	bool v2 = (version_ & 0x3f) == 2;
 
 	switch (p) {
-	case Op::V19:   return static_cast<uint8_t>(v2 ? set | 0x20 : set);
-	case Op::V21:   return static_cast<uint8_t>(v2 ? set & 0x7f : set);
+	case Op::V19:   return static_cast<u8>(v2 ? set | 0x20 : set);
+	case Op::V21:   return static_cast<u8>(v2 ? set & 0x7f : set);
 	case Op::SSD21: return board_->ssd21();
 	case Op::SSD0B: return board_->ssd0b();
 	case Op::SSD06: return board_->ssd06();
-	case Op::IDLE:  return static_cast<uint8_t>(country_->idle << 5);
-	case Op::OFF:   return static_cast<uint8_t>(country_->off << 5);
+	case Op::IDLE:  return static_cast<u8>(country_->idle << 5);
+	case Op::OFF:   return static_cast<u8>(country_->off << 5);
 	default:        return 0;
 	}
 }
@@ -474,7 +475,7 @@ bool CxDaa::set_country(const CxCountry &c)
    at each try, 50 tries 1 ms apart */
 bool CxDaa::wait_power()
 {
-	uint8_t p = 0;
+	u8 p = 0;
 
 	for (int i = 0; i < 50; i++) {
 		if (!lsd_write(0x03, 0x00) || !lsd_write(0x04, 0x2f) ||
@@ -488,7 +489,7 @@ bool CxDaa::wait_power()
 }
 
 /* see cx_daa.h */
-bool CxDaa::power_up(uint8_t *version)
+bool CxDaa::power_up(u8 *version)
 {
 	setup_ = false;
 	off_hook_ = false;
@@ -526,7 +527,7 @@ bool CxDaa::go_on_hook()
 }
 
 /* see cx_daa.h */
-bool CxDaa::probe(uint8_t *version)
+bool CxDaa::probe(u8 *version)
 {
 	return lsd_read(LSD_VERSION, version);
 }
@@ -535,7 +536,7 @@ bool CxDaa::probe(uint8_t *version)
    (the library's 0xc0 on hook, 0x00 off) */
 bool CxDaa::set_hook(Hook h)
 {
-	uint8_t b = h;
+	u8 b = h;
 
 	if ((version_ & 0x3f) >= 0x10)
 		b ^= 0x80;

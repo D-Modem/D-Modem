@@ -9,7 +9,6 @@
 
 #include <cerrno>
 #include <climits>
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -19,6 +18,7 @@
 #include <unistd.h>
 #include <dsplibs.h>
 
+#include "dm_types.h"
 #include "log.h"
 
 #ifdef O_BINARY
@@ -41,9 +41,9 @@ static int log_fd = -1;
 /* a record of the binary log: the modem (its address), the category
    (LogData), the octets that follow */
 struct LogHeader {
-	uint32_t modem_id;
-	uint32_t id;
-	uint32_t length;
+	u32 modem_id;
+	u32 id;
+	u32 length;
 };
 
 /* the lines to fn (without their time stamp), or to stderr (NULL) */
@@ -65,7 +65,7 @@ void log_data(const void *who, unsigned id, const void *data, int count)
 	LogHeader hdr;
 	if (id > log_data_level || log_fd < 0)
 		return;
-	hdr.modem_id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(who));
+	hdr.modem_id = static_cast<u32>(reinterpret_cast<uintptr_t>(who));
 	hdr.id = id;
 	hdr.length = count;
 	if (write(log_fd, &hdr, sizeof(hdr)) < 0 ||

@@ -7,7 +7,6 @@
  */
 #include <cerrno>
 #include <cinttypes>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -19,6 +18,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "dm_types.h"
 #include "client.h"
 
 namespace ari {
@@ -38,22 +38,22 @@ std::string base64(const std::string &s)
 	size_t i;
 
 	for (i = 0; i + 2 < s.size(); i += 3) {
-		uint32_t v = uint32_t{static_cast<uint8_t>(s[i])} << 16 |
-			     uint32_t{static_cast<uint8_t>(s[i + 1])} << 8 |
-			     static_cast<uint8_t>(s[i + 2]);
+		u32 v = u32{static_cast<u8>(s[i])} << 16 |
+			     u32{static_cast<u8>(s[i + 1])} << 8 |
+			     static_cast<u8>(s[i + 2]);
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
 		out += abc[v >> 6 & 63];
 		out += abc[v & 63];
 	}
 	if (i + 1 == s.size()) {
-		uint32_t v = uint32_t{static_cast<uint8_t>(s[i])} << 16;
+		u32 v = u32{static_cast<u8>(s[i])} << 16;
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
 		out += "==";
 	} else if (i + 2 == s.size()) {
-		uint32_t v = uint32_t{static_cast<uint8_t>(s[i])} << 16 |
-			     uint32_t{static_cast<uint8_t>(s[i + 1])} << 8;
+		u32 v = u32{static_cast<u8>(s[i])} << 16 |
+			     u32{static_cast<u8>(s[i + 1])} << 8;
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
 		out += abc[v >> 6 & 63];
@@ -178,7 +178,7 @@ bool Server::set_url(const std::string &url)
 		port = 80;
 	} else {
 		host = rest.substr(0, colon);
-		port = static_cast<int32_t>(
+		port = static_cast<s32>(
 			strtol(rest.c_str() + colon + 1, nullptr, 10));
 	}
 	return !host.empty() && port > 0;
@@ -299,7 +299,7 @@ bool WebSocket::send_frame(int opcode, const std::string &payload)
 {
 	std::random_device rd;
 	std::string f;
-	uint8_t mask[4];
+	u8 mask[4];
 
 	f += static_cast<char>(0x80 | opcode);
 	if (payload.size() < 126) {
@@ -321,9 +321,9 @@ bool WebSocket::send_frame(int opcode, const std::string &payload)
 /* see client.h */
 int WebSocket::frame(int &opcode, bool &fin, std::string &payload)
 {
-	const uint8_t *b = reinterpret_cast<const uint8_t *>(in_.data());
+	const u8 *b = reinterpret_cast<const u8 *>(in_.data());
 	size_t have = in_.size(), hdr = 2;
-	uint64_t len;
+	u64 len;
 	bool masked;
 
 	if (have < 2)
@@ -335,7 +335,7 @@ int WebSocket::frame(int &opcode, bool &fin, std::string &payload)
 	if (len == 126) {
 		if (have < 4)
 			return 0;
-		len = static_cast<uint64_t>(b[2]) << 8 | b[3];
+		len = static_cast<u64>(b[2]) << 8 | b[3];
 		hdr = 4;
 	} else if (len == 127) {
 		if (have < 10)

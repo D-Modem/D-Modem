@@ -8,7 +8,6 @@
  */
 
 #include <cerrno>
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -21,6 +20,7 @@
 
 #include <log.h>
 
+#include "dm_types.h"
 #include "datafile.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
@@ -50,9 +50,9 @@ namespace dmd {
 
 /* the file: one record, its own size last as the check */
 struct datafile_record {
-	uint32_t minor;
+	u32 minor;
 	struct dsp_info dsp_info;
-	uint32_t size;
+	u32 size;
 };
 
 /* see datafile.h.  No directory (ENOENT) is the usual case of no data

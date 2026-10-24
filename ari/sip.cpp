@@ -17,7 +17,6 @@
 #include <cctype>
 #include <cerrno>
 #include <cinttypes>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -30,6 +29,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "dm_types.h"
 #include "sip.h"
 
 namespace ari {
@@ -40,11 +40,11 @@ namespace {
 #define T2_MS   4000
 
 /* milliseconds, monotonic */
-int64_t now_ms()
+s64 now_ms()
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+	return static_cast<s64>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
 }
 
 /* n random hex digits, for tags, branches and Call-IDs */
@@ -218,7 +218,7 @@ bool addr_of(const std::string &uri, struct sockaddr_in *sa)
 	memset(sa, 0, sizeof(*sa));
 	sa->sin_family = AF_INET;
 	sa->sin_port = htons(colon == std::string::npos ? 5060 :
-			     static_cast<uint16_t>(strtol(
+			     static_cast<u16>(strtol(
 				     hp.c_str() + colon + 1, nullptr, 10)));
 	return inet_pton(AF_INET, hp.substr(0, colon).c_str(),
 			 &sa->sin_addr) == 1;
@@ -262,7 +262,7 @@ std::string t38_attrs(int version)
 }
 
 /* an SDP of ours: its session lines, then the media lines */
-std::string sdp(const std::string &host, uint32_t version,
+std::string sdp(const std::string &host, u32 version,
 		const std::string &media)
 {
 	return "v=0\r\n"
@@ -274,7 +274,7 @@ std::string sdp(const std::string &host, uint32_t version,
 }
 
 /* our audio line: the leg's G.711 on our RTP port (0: the line off) */
-std::string audio_line(const SipLeg &leg, int32_t port)
+std::string audio_line(const SipLeg &leg, s32 port)
 {
 	std::string pt = std::to_string(leg.pt);
 	return "m=audio " + std::to_string(port) + " RTP/AVP " + pt + "\r\n"
@@ -293,10 +293,10 @@ T38Params t38_params(const SdpMedia &m)
 		if (n == "t38faxversion")
 			p.version = atoi(a.second.c_str());
 		else if (n == "t38maxbitrate")
-			p.max_bitrate = static_cast<int32_t>(
+			p.max_bitrate = static_cast<s32>(
 				strtol(a.second.c_str(), nullptr, 10));
 		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
-			p.max_datagram = static_cast<int32_t>(
+			p.max_datagram = static_cast<s32>(
 				strtol(a.second.c_str(), nullptr, 10));
 		else if (n == "t38faxudpec")
 			p.redundancy = lower(a.second) == "t38udpredundancy";
@@ -350,7 +350,7 @@ bool sdp_parse(const std::string &body, Sdp *s)
 		case 'm': {
 			SdpMedia m;
 			char type[32], proto[32];
-			int32_t port;
+			s32 port;
 			int n = 0;
 			if (sscanf(v.c_str(), "%31s %" SCNd32 " %31s %n", type,
 				   &port, proto, &n) < 3)
@@ -386,7 +386,7 @@ bool sdp_parse(const std::string &body, Sdp *s)
 }
 
 /* see sip.h */
-bool SipAgent::start(const std::string &host, int32_t port)
+bool SipAgent::start(const std::string &host, s32 port)
 {
 	struct sockaddr_in sa = {};
 	socklen_t len = sizeof(sa);
@@ -395,7 +395,7 @@ bool SipAgent::start(const std::string &host, int32_t port)
 	if (fd_ < 0)
 		return false;
 	sa.sin_family = AF_INET;
-	sa.sin_port = htons(static_cast<uint16_t>(port));
+	sa.sin_port = htons(static_cast<u16>(port));
 	if (inet_pton(AF_INET, host.c_str(), &sa.sin_addr) != 1) {
 		errno = EINVAL;
 		return false;
@@ -412,7 +412,7 @@ bool SipAgent::start(const std::string &host, int32_t port)
 
 /* see sip.h */
 std::shared_ptr<SipLeg> SipAgent::expect(const std::string &token, int pt,
-					  int32_t rtp_port, int32_t udptl_port)
+					  s32 rtp_port, s32 udptl_port)
 {
 	auto leg = std::make_shared<SipLeg>();
 	leg->token = token;
@@ -526,7 +526,7 @@ void SipAgent::run()
    the forgotten legs whose BYE never came */
 void SipAgent::timers()
 {
-	int64_t now = now_ms();
+	s64 now = now_ms();
 	legs_.erase(std::remove_if(legs_.begin(), legs_.end(),
 				   [now](const std::shared_ptr<SipLeg> &l) {
 					   return l->forget_at &&
@@ -541,7 +541,7 @@ void SipAgent::timers()
 				send_to(l.response_to, l.response);
 				l.retx_ms =
 					std::min(l.retx_ms * 2,
-						 static_cast<int64_t>(T2_MS));
+						 static_cast<s64>(T2_MS));
 				l.retx_at = now + l.retx_ms;
 			}
 		}
@@ -552,7 +552,7 @@ void SipAgent::timers()
 		} else if (l.asking && l.req_ms && now >= l.req_at) {
 			send_to(l.peer, l.request);
 			l.req_ms = std::min(l.req_ms * 2,
-					    static_cast<int64_t>(T2_MS));
+					    static_cast<s64>(T2_MS));
 			l.req_at = now + l.req_ms;
 		}
 	}
@@ -580,7 +580,7 @@ void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 	if (!m.request) {
 		/* a response to our re-INVITE */
 		if (!leg ||
-		    static_cast<uint32_t>(strtoul(m.get("cseq").c_str(),
+		    static_cast<u32>(strtoul(m.get("cseq").c_str(),
 						  nullptr, 10)) !=
 			    leg->request_cseq ||
 		    m.get("cseq").find("INVITE") == std::string::npos)
@@ -661,7 +661,7 @@ void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 			l.peer = from;
 		l.rtp_addr = audio->addr;
 		l.rtp_peer_port = audio->port;
-		l.rx_cseq = static_cast<uint32_t>(
+		l.rx_cseq = static_cast<u32>(
 			strtoul(m.get("cseq").c_str(), nullptr, 10));
 		l.response = response(m, 200, "OK", l.local_tag,
 				      contact + allow,
@@ -689,7 +689,7 @@ void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 	}
 
 	SipLeg &l = *leg;
-	uint32_t cseq = static_cast<uint32_t>(
+	u32 cseq = static_cast<u32>(
 		strtoul(m.get("cseq").c_str(), nullptr, 10));
 	if (m.method == "ACK") {
 		if (cseq == l.rx_cseq)

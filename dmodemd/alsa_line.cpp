@@ -21,6 +21,7 @@
 
 #include <log.h>
 
+#include "dm_types.h"
 #include "alsa_line.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
@@ -62,7 +63,7 @@ std::string AlsaLine::ctl_of(const char *pcm)
 
 /* see alsa_line.h: the hook switch is a must, the caller ID one is not
    (no rings then while on hook, maybe) */
-bool AlsaLine::open(const char *pcm, const char *ctl, uint32_t rate)
+bool AlsaLine::open(const char *pcm, const char *ctl, u32 rate)
 {
 	std::string ctl_name = ctl ? ctl : ctl_of(pcm);
 	int err;
@@ -101,7 +102,7 @@ bool AlsaLine::open(const char *pcm, const char *ctl, uint32_t rate)
 	if (!find(caller_id_, "Caller ID Switch"))
 		ERR("ALSA control %s has no \"Caller ID Switch\": rings and "
 		    "caller ID may not be heard\n", ctl_name.c_str());
-	ring_.init(static_cast<int32_t>(rate));
+	ring_.init(static_cast<s32>(rate));
 	set(caller_id_, true);
 	daa_open();
 	snd_ctl_card_info_t *info;
@@ -260,7 +261,7 @@ void AlsaLine::country(dcore::Modem &, const char *name)
 void AlsaLine::daa_open()
 {
 	std::string why;
-	uint16_t id = 0;
+	u16 id = 0;
 
 	daa_ = false;
 	if (!hda_.open(ctl_, &why)) {
@@ -288,11 +289,11 @@ bool AlsaLine::daa_write(bool off_hook)
 	Si3054Regs r;
 	struct {
 		int nid;
-		uint16_t *val;
+		u16 *val;
 	} regs[] = { { SI3054_LINE_CFG1, &r.n13 }, { SI3054_DC_TERM, &r.n15 },
 		     { SI3054_LINE_CFG, &r.n16 },
 		     { SI3054_SQ_CONTROL, &r.n18 } };
-	uint16_t old[4];
+	u16 old[4];
 	bool changed = false;
 	int i = 0;
 
@@ -329,8 +330,8 @@ bool AlsaLine::daa_write(bool off_hook)
 void AlsaLine::cx_open(int card)
 {
 	std::string why;
-	uint16_t id1 = 0, id2 = 0;
-	uint8_t version = 0;
+	u16 id1 = 0, id2 = 0;
+	u8 version = 0;
 
 	cx_.reset();
 	if (!ac97_.is_open() && !ac97_.open(card, &why)) {
@@ -352,7 +353,7 @@ void AlsaLine::cx_open(int card)
 		return;
 	}
 	cx_.reset(new CxDaa(ac97_, cx_variant(kind), kind));
-	cx_->set_board(cx_board(static_cast<uint8_t>(id2)));
+	cx_->set_board(cx_board(static_cast<u8>(id2)));
 	cx_->set_country(*cx_country_);
 	if (!cx_->power_up(&version)) {
 		ERR("Conexant codec at %s (%04x %04x, SSD kind %#x): its line "
@@ -366,7 +367,7 @@ void AlsaLine::cx_open(int card)
 	    ac97_.name().c_str(), id1, id2, kind, version,
 	    cx_->setup() ? ", its line set up as Conexant's driver does, "
 	    "board " : " (its line setup not known)",
-	    cx_->setup() ? cx_board((uint8_t)id2).name : "");
+	    cx_->setup() ? cx_board((u8)id2).name : "");
 }
 
 /* see alsa_line.h */
@@ -385,7 +386,7 @@ void AlsaLine::hook_flash(dcore::Modem &, unsigned ms)
 	DBG("hook flash, %u ms\n", ms);
 	hook_switch(false);
 	flash_end_ =
-		samples_ + static_cast<uint64_t>(ms) * rate_ / 1000;
+		samples_ + static_cast<u64>(ms) * rate_ / 1000;
 }
 
 /* see alsa_line.h */
@@ -421,7 +422,7 @@ void AlsaLine::watch(RunLoop &loop)
    start) in the log */
 bool AlsaLine::restart(const char *why)
 {
-	std::vector<int16_t> lead(delay_, 0);
+	std::vector<s16> lead(delay_, 0);
 	int err;
 
 	if (why)
@@ -452,7 +453,7 @@ bool AlsaLine::restart(const char *why)
 }
 
 /* see alsa_line.h */
-void AlsaLine::frame(dcore::Modem &m, const int16_t *in, int16_t *out)
+void AlsaLine::frame(dcore::Modem &m, const s16 *in, s16 *out)
 {
 	if (flash_end_ && samples_ >= flash_end_) {
 		flash_end_ = 0;

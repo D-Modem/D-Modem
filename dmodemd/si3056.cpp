@@ -16,6 +16,7 @@
  *
  */
 
+#include "dm_types.h"
 #include "si3056.h"
 
 #include "daa_name.h"
@@ -130,16 +131,16 @@ const Si3056Country &si3056_usa()
    the reserved bits written as zeros */
 void si3056_apply(const Si3056Country &c, bool si3019, Si3056Regs &r)
 {
-	uint8_t act = si3019 ? 0 : c.act, act2 = si3019 ? 0 : c.act2;
+	u8 act = si3019 ? 0 : c.act, act2 = si3019 ? 0 : c.act2;
 
-	r.r16 = static_cast<uint8_t>((r.r16 & 0x10) | act2 << 7 | c.ohs << 6 |
+	r.r16 = static_cast<u8>((r.r16 & 0x10) | act2 << 7 | c.ohs << 6 |
 				     act << 5 | c.rz << 1 | c.rt);
-	r.r26 = static_cast<uint8_t>((r.r26 & 0x0c) | c.dcv << 6 | c.mini << 4 |
+	r.r26 = static_cast<u8>((r.r26 & 0x0c) | c.dcv << 6 | c.mini << 4 |
 				     c.ilim << 1);
 	if (si3019)
-		r.r30 = static_cast<uint8_t>((r.r30 & 0x10) | c.acim);
-	r.r31 = static_cast<uint8_t>((r.r31 & ~0x08) | c.ohs2 << 3);
-	r.r59 = static_cast<uint8_t>((r.r59 & 0x06) | (c.ohs ? 0x50 : 0));
+		r.r30 = static_cast<u8>((r.r30 & 0x10) | c.acim);
+	r.r31 = static_cast<u8>((r.r31 & ~0x08) | c.ohs2 << 3);
+	r.r59 = static_cast<u8>((r.r59 & 0x06) | (c.ohs ? 0x50 : 0));
 }
 
 } // namespace dmd

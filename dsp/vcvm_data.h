@@ -30,10 +30,10 @@
 #ifndef DSP_VCVM_DATA_H
 #define DSP_VCVM_DATA_H
 
-#include <cstdint>
 #include <functional>
 #include <vector>
 
+#include "dm_types.h"
 #include "rs.h"
 #include "vcvm.h"
 #include "vcvm_startup.h"
@@ -52,7 +52,7 @@ public:
 
 	/* the loading the peer asked for, at fs; tap the scrambler's
 	   (SCR_GPC calling, SCR_GPA answering) */
-	int init(const VcvmLoading &l, int32_t fs, int tap, Source src);
+	int init(const VcvmLoading &l, s32 fs, int tap, Source src);
 	/* the loading sent */
 	const VcvmLoading &loading() const { return l_; }
 	int sps() const;
@@ -65,33 +65,33 @@ public:
 	/* the control sequence (10.8) to out */
 	void control(std::vector<float> &out);
 	/* the information octets sent so far */
-	int32_t octets() const { return sent_; }
+	s32 octets() const { return sent_; }
 
 private:
 	int bit();
 	void block();
 
 	VcvmLoading l_{};
-	int32_t fs_ = 8000;
+	s32 fs_ = 8000;
 	int tap_ = 18, D_ = 4;
 	Source src_;
 	ReedSolomon rs_;
 	VcvmCombTx ctx_;
 	VcvmParamTx ptx_;
-	uint32_t scr_ = 0;
-	std::vector<uint8_t> line_;     /* the block's octets, interleaved */
+	u32 scr_ = 0;
+	std::vector<u8> line_;          /* the block's octets, interleaved */
 	size_t pos_ = 0;                /* its next bit */
-	int32_t sent_ = 0;
+	s32 sent_ = 0;
 };
 
 /* what the receiver has measured of the data (for 9.5's renegotiation
    and retrain) */
 struct VcvmDataStats {
-	int32_t symbols = 0;
-	int32_t blocks = 0;
-	int32_t words = 0, failed = 0;  /* codewords, those not decoded */
-	int32_t corrected = 0;          /* octets the code corrected */
-	int32_t erasures = 0;           /* octets marked */
+	s32 symbols = 0;
+	s32 blocks = 0;
+	s32 words = 0, failed = 0;      /* codewords, those not decoded */
+	s32 corrected = 0;              /* octets the code corrected */
+	s32 erasures = 0;               /* octets marked */
 	float sigma[VCVM_TONES] = {};   /* each tone's phase error, degrees
 					   rms (decision directed, the last
 					   few seconds) */
@@ -102,19 +102,19 @@ struct VcvmDataStats {
 class VcvmDataRx {
 public:
 	/* the information octets decoded, a block at a time */
-	using Sink = std::function<void(const uint8_t *d, int n)>;
+	using Sink = std::function<void(const u8 *d, int n)>;
 
 	/* the loading this DCE asked for, at fs; tap the peer's
 	   scrambler's */
-	int init(const VcvmLoading &l, int32_t fs, int tap, Sink sink);
+	int init(const VcvmLoading &l, s32 fs, int tap, Sink sink);
 	/* the loading received */
 	const VcvmLoading &loading() const { return l_; }
 
 	/* look for phase 4's start from sample from (the samples pushed
 	   next are from there) */
-	void start(int32_t from);
+	void start(s32 from);
 	void push(const float *x, int n);
-	int32_t received() const;
+	s32 received() const;
 
 	/* phase 4's start found */
 	bool locked() const { return locked_; }
@@ -129,17 +129,17 @@ public:
 	/* what has been measured of the data */
 	const VcvmDataStats &stats() const { return st_; }
 	/* the end of the last symbol taken */
-	int32_t position() const { return pos_; }
+	s32 position() const { return pos_; }
 
 private:
-	void symbol(const uint8_t *bits, const float *rel, int nb);
+	void symbol(const u8 *bits, const float *rel, int nb);
 	void line_bit(int b, float rel);
 	void level(double v);
 	void decode_block();
 	void run();
 
 	VcvmLoading l_{};
-	int32_t fs_ = 8000;
+	s32 fs_ = 8000;
 	int tap_ = 18, D_ = 4;
 	Sink sink_;
 	ReedSolomon rs_;
@@ -147,32 +147,32 @@ private:
 	VcvmParamRx prx_;
 	bool locked_ = false, confirmed_ = false, control_ = false,
 		lost_ = false;
-	int32_t from_ = 0, pos_ = 0;
+	s32 from_ = 0, pos_ = 0;
 	bool onset_ = false;
 	int lead_ = 0;                  /* the reference symbols taken */
 	/* the symbols held back three, for the control sequence */
 	struct Held {
-		std::vector<uint8_t> bits;
+		std::vector<u8> bits;
 		std::vector<float> rel;
 	};
 	std::vector<Held> held_;
 	int ctl_run_ = 0;
 	/* the descrambler, on the decoded information octets */
-	uint32_t scr_ = 0;
+	u32 scr_ = 0;
 	/* the octets coming */
 	int nbit_ = 0;
 	unsigned oct_ = 0;
 	float orel_ = 1;
-	std::vector<uint8_t> blk_;
+	std::vector<u8> blk_;
 	std::vector<float> rel_;        /* each octet's reliability */
-	std::vector<uint8_t> early_;    /* decoded before the confirmation */
-	int32_t bad_since_ = -1;        /* symbols since a codeword was last
+	std::vector<u8> early_;         /* decoded before the confirmation */
+	s32 bad_since_ = -1;            /* symbols since a codeword was last
 					   decoded */
-	int32_t quiet_ = 0;             /* symbols in a row far under the
+	s32 quiet_ = 0;                 /* symbols in a row far under the
 					   level */
 	double ref_ = 0;                /* the symbols' level */
-	int32_t lost_after_ = 0;        /* symbols: 2 s, or 2.5 blocks */
-	int32_t sym_ = 0;
+	s32 lost_after_ = 0;            /* symbols: 2 s, or 2.5 blocks */
+	s32 sym_ = 0;
 	VcvmDataStats st_;
 	double se2_[VCVM_TONES] = {};
 };

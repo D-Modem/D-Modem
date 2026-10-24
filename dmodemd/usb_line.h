@@ -37,7 +37,6 @@
 #ifndef DMODEMD_USB_LINE_H
 #define DMODEMD_USB_LINE_H
 
-#include <cstdint>
 #include <deque>
 #include <string>
 #include <vector>
@@ -49,6 +48,7 @@
 #include <libusb.h>
 #include <dcore.h>
 
+#include "dm_types.h"
 #include "dte.h"
 #include "run_loop.h"
 #include "si3056.h"
@@ -111,7 +111,7 @@ public:
 	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
 	   rate, its samples running, on hook; false with the reason on
 	   stderr */
-	bool open(const char *dev, uint32_t rate);
+	bool open(const char *dev, u32 rate);
 	/* libusb's descriptors watched this turn (POSIX: Windows' libusb
 	   has none, and the caller polls every POLL_MS instead) */
 	void watch(RunLoop &loop);
@@ -176,7 +176,7 @@ public:
 		return dte_.write(buf, n);
 	}
 	/* the clock: the device's samples so far, in ms */
-	uint64_t now_ms() override {
+	u64 now_ms() override {
 		return samples_ * 1000 / rate_;
 	}
 
@@ -198,37 +198,37 @@ private:
 	struct Iso {
 		UsbLine *line = nullptr;
 		bool voice = false;
-		uint8_t ep_out = 0, ep_in = 0;
+		u8 ep_out = 0, ep_in = 0;
 		int max_out = 0, max_in = 0;
 		libusb_transfer *in[ISO_TRANSFERS] = {}, *out[ISO_TRANSFERS] = {};
 		/* each IN transfer's packets' lengths, for the OUT one it
 		   frees; the OUT ones not in flight */
 		std::deque<std::vector<int>> out_lengths;
 		std::deque<libusb_transfer *> idle_out;
-		std::vector<int16_t> in_buf;    /* the samples come, not taken */
-		std::deque<int16_t> out_buf;    /* the samples to send */
+		std::vector<s16> in_buf;        /* the samples come, not taken */
+		std::deque<s16> out_buf;        /* the samples to send */
 	};
 
 	bool find(const char *dev);
 	bool endpoints(int alt);
-	bool set_reg(uint8_t reg, uint16_t v);
-	bool get_reg(uint8_t reg, uint16_t *v);
-	bool set_gpio(uint16_t v);
+	bool set_reg(u8 reg, u16 v);
+	bool get_reg(u8 reg, u16 *v);
+	bool set_gpio(u16 v);
 	/* the ST7554's start-up (its registers), and the stick's (its rate,
 	   the line side checked) */
-	bool open_st7554(uint32_t rate);
+	bool open_st7554(u32 rate);
 	bool start_st75951();
 	bool init_st7554_regs();
 	void arm_wake(bool on, bool kernel = false);
 	void park(libusb_transfer *t, int err);
 	void resume();
-	bool open_stick(uint32_t rate);
+	bool open_stick(u32 rate);
 	/* a vendor request to the stick's interface: OUT with value, or IN
 	   into buf (len octets, all of them wanted); false (logged) */
-	bool stick_out(uint8_t req, uint16_t value);
-	bool stick_in(uint8_t req, uint16_t value, uint8_t *buf, uint16_t len);
+	bool stick_out(u8 req, u16 value);
+	bool stick_in(u8 req, u16 value, u8 *buf, u16 len);
 	/* an event from the stick's interrupt endpoint */
-	void stick_event(const uint8_t *b, int len);
+	void stick_event(const u8 *b, int len);
 	/* the country's settings into the stick's DAA (each register read,
 	   its own bits changed); false (logged) */
 	bool stick_country();
@@ -244,11 +244,11 @@ private:
 	void out_fill(Iso &s, libusb_transfer *t, const int *lengths);
 	void send_out(Iso &s);
 	void voice_frame(dcore::Modem &m);
-	uint16_t fifo_control2() const;
+	u16 fifo_control2() const;
 	void update_rhom();
 	void gone(const char *why);
 	void update_leds(dcore::Modem &m);
-	uint16_t intl_hook(uint16_t v, bool off, bool now_off);
+	u16 intl_hook(u16 v, bool off, bool now_off);
 
 	Dte &dte_;
 	Kind kind_ = Kind::St7554;
@@ -256,28 +256,28 @@ private:
 	libusb_context *ctx_ = nullptr;
 	libusb_device_handle *h_ = nullptr;
 	bool claimed_ = false;
-	uint8_t ep_intr_ = 0;
+	u8 ep_intr_ = 0;
 	libusb_transfer *intr_ = nullptr;
 	/* the codec's stream, and the voice codec's (set_voice_codec()) */
 	Iso iso_, viso_;
 	int in_flight_ = 0;             /* transfers submitted */
-	uint8_t intr_buf_[8] = {};      /* the ST7554's 4 octets, the stick's 8 */
+	u8 intr_buf_[8] = {};           /* the ST7554's 4 octets, the stick's 8 */
 	int intr_len_ = 4;
 	int fifo_samples_ = 0;          /* the device's own delay */
 	/* the stick: its ring detector's changes (mod 256) so far, its
 	   errors last seen */
-	uint8_t ring_edges_ = 0;
-	uint16_t underruns_ = 0, overruns_ = 0;
+	u8 ring_edges_ = 0;
+	u16 underruns_ = 0, overruns_ = 0;
 	/* its line side a Si3019 (else a Si3018); the country's settings,
 	   its name, and whether they are still to be written */
 	bool si3019_ = false;
 	const Si3056Country *daa_ = &si3056_usa();
 	std::string daa_name_ = "USA";
 	bool daa_due_ = true;
-	uint32_t rate_ = 9600;
+	u32 rate_ = 9600;
 	int frame_ = 192;               /* 20 ms */
 	int delay_ = 0;
-	std::vector<int16_t> frame_in_, frame_out_;
+	std::vector<s16> frame_in_, frame_out_;
 	/* set_voice_codec(); +VLS's device (voice_route()); the handset's
 	   microphone at the line's rate, not yet taken; the rate changes
 	   between the two codecs (their phases), and a frame's samples for
@@ -287,17 +287,17 @@ private:
 	   FIFO_CONTROL2 written last */
 	bool rhom_ = false, rhom_ok_ = false;
 	bool buzzer_ = false;           /* set_buzzer() */
-	uint16_t fifo2_ = 0;
+	u16 fifo2_ = 0;
 	unsigned route_ = VOICE_DEVICE_LINE;
-	std::deque<int16_t> mic_;
+	std::deque<s16> mic_;
 	double mic_pos_ = 0, ear_pos_ = 0;
-	int16_t mic_last_ = 0, ear_last_ = 0;
-	std::vector<int16_t> frame_mic_, frame_ear_;
-	uint64_t samples_ = 0;
+	s16 mic_last_ = 0, ear_last_ = 0;
+	std::vector<s16> frame_mic_, frame_ear_;
+	u64 samples_ = 0;
 	bool running_ = false;
 	bool dead_ = false;
 	int hook_ = MODEM_HOOK_ON;
-	uint16_t gpio_ = 0;
+	u16 gpio_ = 0;
 	bool st75951_ = false;          /* the ST7554's codec an ST75951/2 */
 	bool leds_ = false;             /* set_leds() */
 	bool data_seen_ = false;        /* data in this call (the data LED) */
@@ -310,14 +310,14 @@ private:
 	   samples' count; 0: none) */
 	bool intl_ = false, intl_dc_ = false, intl_aus_ = false;
 	bool pulse_active_ = false;
-	uint64_t aus_end_ = 0;
+	u64 aus_end_ = 0;
 	/* transfers that could not be submitted again (the device
 	   suspended): retried every RESUME_MS by resume(), the time of the
 	   first (ms of the system's clock) */
 	std::vector<libusb_transfer *> parked_;
-	uint64_t parked_since_ = 0, resume_tried_ = 0;
+	u64 parked_since_ = 0, resume_tried_ = 0;
 	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
-	uint64_t flash_end_ = 0;
+	u64 flash_end_ = 0;
 	unsigned rings_ = 0;            /* ring detector changes not given */
 };
 

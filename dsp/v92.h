@@ -13,8 +13,8 @@
 #ifndef V92_H
 #define V92_H
 
-#include <cstdint>
 
+#include "dm_types.h"
 #include "v90.h"
 
 namespace dsp {
@@ -48,12 +48,12 @@ struct V92Cpd {
 	/* LZ1, LP1, LZ2, LP2 and their coefficients: z1 and z2 in Q0.15,
 	   p1 and p2 in Q1.14 */
 	int len[4];
-	int16_t coef[4][V92_PMAX];
+	s16 coef[4][V92_PMAX];
 	int M[12];
 	int ncon;
 	int con[6];             /* constellation of intervals i and i + 6 */
 	int lc[6];              /* positive points of each constellation */
-	int32_t pts[6][V92_LC_MAX]; /* their linear values, smallest first */
+	s32 pts[6][V92_LC_MAX]; /* their linear values, smallest first */
 
 	int e2u_extend;         /* bit 29: E2u a symbol longer */
 
@@ -68,7 +68,7 @@ struct V92Cpd {
 
 /* a CPd's length up to its CRC's end, from its first n bits (its
    parts' lengths are in them); 0 while more are needed */
-int32_t v92_cpd_length(const unsigned char *b, int n);
+s32 v92_cpd_length(const unsigned char *b, int n);
 
 /* SUVd (Table 31/V.92) */
 int  v92_suv_build(unsigned char *b, int ack, int fill);
@@ -86,7 +86,7 @@ int  v92_cp_parse(V90Cp *cp, const unsigned char *b, int len);
    and CPt (Table 23/V.92: cp's fields as V.90's, cp.cp 0), one bit a
    byte, filled with zeros to a multiple of 12 bits; return the count */
 int  v92_dil_build(unsigned char *b, const V90Dil &d,
-		     uint32_t up_mask);
+		     u32 up_mask);
 int  v92_cpt_build(unsigned char *b, const V90Cp &cp);
 /* and CPu (type 1, cp.drn for (drn + 20) * 8000 / 6 bit/s) and SUVu
    (Table 27/V.92: no wait for CPu, no level measured, no silent
@@ -161,17 +161,17 @@ struct V92Up : PcmFrames<V92Up> {
 	float pq_eq, pq_ed;
 	double pq_x[V92_PMAX];
 	CoreBits link;          /* the data */
-	int32_t n;              /* samples since the start */
+	s32 n;                  /* samples since the start */
 	int connected;
 
 	/* transmitter */
 	V90Tx tx;
 	int tstep;
-	int32_t tstep_at;
+	s32 tstep_at;
 	V90Cp cpt, cpu;         /* the analogue modem's CPt and CPu */
 	int seq_cpd;            /* the sequence is CPd */
 	int cpd_sent;
-	int32_t cpd_at;         /* frames after our last CPd */
+	s32 cpd_at;             /* frames after our last CPd */
 	V92Cpd cpd;             /* ours */
 
 	/* receiver */
@@ -183,7 +183,7 @@ struct V92Up : PcmFrames<V92Up> {
 	unsigned char tcoh[32];
 	int tone_n, tone_miss, rev_n, rev_hold;
 	float rev_min;
-	int32_t rev_cand, rev_at;
+	s32 rev_cand, rev_at;
 	Goertzel ta_g;          /* tone A */
 	float ta_e;
 	int ta_blocks;
@@ -194,9 +194,9 @@ struct V92Up : PcmFrames<V92Up> {
 	double f[V92_EQ_F], b[V92_EQ_B];
 	float dh[V92_EQ_B];     /* past decisions, newest first */
 	float dring[V92_DR];    /* the decisions, by symbol */
-	int32_t t0;             /* the sample of TRN1u's first symbol (est.) */
-	int32_t eqL;            /* the sample of symbol 0's main tap */
-	int32_t sym;            /* the next symbol to equalize */
+	s32 t0;                 /* the sample of TRN1u's first symbol (est.) */
+	s32 eqL;                /* the sample of symbol 0's main tap */
+	s32 sym;                /* the next symbol to equalize */
 	int trained;
 	float pr;               /* received power, for the step size */
 	double mse;
@@ -205,26 +205,26 @@ struct V92Up : PcmFrames<V92Up> {
 				   precoder, its fit) */
 	/* bits */
 	int last_d;             /* differential decoding */
-	uint32_t dscr;          /* GPA descrambler */
+	u32 dscr;               /* GPA descrambler */
 	int order;              /* TRN2u: 0 sign bit first, 1 the other */
-	uint32_t dscr2[2];
-	int32_t ones2[2];
+	u32 dscr2[2];
+	s32 ones2[2];
 	SyncFrames fr;
 	int got_ja, got_cpt, got_e1u, got_suvu, got_cpu, got_ack, got_e2u;
-	int32_t frame_zero;     /* zero bits of the current data frame */
-	int32_t cpt_sym;        /* the symbol the last CPt ended on */
-	int32_t seq_sym;        /* and the last SUVu or CPu */
+	s32 frame_zero;         /* zero bits of the current data frame */
+	s32 cpt_sym;            /* the symbol the last CPt ended on */
+	s32 seq_sym;            /* and the last SUVu or CPu */
 	V90Dil dil;
-	uint32_t up_mask;       /* the analogue modem's rates, bit 0: 24 000 */
-	int32_t e2u_sym;
+	u32 up_mask;            /* the analogue modem's rates, bit 0: 24 000 */
+	s32 e2u_sym;
 	/* rate renegotiation */
 	int rn;                 /* one is going on */
 	int rn_req;             /* we start one */
 	int rn_sent;            /* our Rd has been asked for */
 	int rn_tx_init;         /* the encoder starts on CPt again */
 	int cpd_new;            /* a new CPd for it */
-	int32_t rn_trn;         /* the symbol of TRN2u's start */
-	int32_t rn_at;          /* its start (samples) */
+	s32 rn_trn;             /* the symbol of TRN2u's start */
+	s32 rn_at;              /* its start (samples) */
 	int renegs;
 	int rn_silence;         /* SUVu asked for a silent period */
 	int rn_wait_suv2;       /* in it: until SUVu with bit 32 clear */
@@ -241,24 +241,24 @@ struct V92Up : PcmFrames<V92Up> {
 	int fpe_rx;             /* 1 RM, 2 RM', 3 SUVu to E2u, 4 FB1u,
 				   5 B1u */
 	int fpe_rm, fpe_fb;     /* frames of RM, of FB1u */
-	int32_t fpe_suv;        /* the decision where SUVu begins */
-	int32_t fpe_b1;         /* B1u's first symbol (data symbols) */
-	int32_t dsn, ddn;       /* data symbols in, decided */
+	s32 fpe_suv;            /* the decision where SUVu begins */
+	s32 fpe_b1;             /* B1u's first symbol (data symbols) */
+	s32 dsn, ddn;           /* data symbols in, decided */
 	V92Cpd cpd_fpe;         /* the new CPd */
 	V92Cpd cpd_old;         /* the decisions' until B1u */
 	int fpes;
-	int32_t fpe_at;         /* our Rf asked for here (samples) */
+	s32 fpe_at;             /* our Rf asked for here (samples) */
 	int fpe_none;           /* no RM came to it: the analogue modem has
 				   no fast parameter exchange, renegotiations
 				   instead */
 	int fpe_drn;            /* test: the rate it asks for */
-	int32_t fpe_test_at;    /* test: ours, this far into data */
+	s32 fpe_test_at;        /* test: ours, this far into data */
 	int rn_drn;             /* test: the rate it asks for */
-	int32_t rn_test_at;     /* test: our own, this far into data */
-	int32_t connect_n;      /* data from here on (samples) */
-	int32_t rn_low, rn_high; /* data symbols with too little, more than
+	s32 rn_test_at;         /* test: our own, this far into data */
+	s32 connect_n;          /* data from here on (samples) */
+	s32 rn_low, rn_high; /* data symbols with too little, more than
 				   enough margin */
-	int32_t rn_last;        /* the last one ended here (samples) */
+	s32 rn_last;            /* the last one ended here (samples) */
 	double margin_used;     /* the margin of our CPd's rate */
 	/* data mode */
 	int b_frozen;           /* b is the precoder's (in CPd) */
@@ -270,7 +270,7 @@ struct V92Up : PcmFrames<V92Up> {
 				   symbol */
 	int dk[12];
 	int dprev;              /* the modulus encoder's sign */
-	int32_t dframes, derrs, dfar;
+	s32 dframes, derrs, dfar;
 	int b1_bad;
 	unsigned char b1z[48];
 	double dmse;
@@ -285,8 +285,8 @@ struct V92Up : PcmFrames<V92Up> {
 	double ch[V92_CH];      /* the channel from TRN2u */
 	double pf_w[V92_PF_W];  /* G times the prefilter, as sent */
 	double pf_b[V92_PF_B];  /* the precoder's taps, as sent */
-	int16_t pf_z2[V92_PF_W]; /* CPd's z2, Q0.15 */
-	int16_t pf_p1[V92_PF_B]; /* CPd's p1, Q1.14 */
+	s16 pf_z2[V92_PF_W]; /* CPd's z2, Q0.15 */
+	s16 pf_p1[V92_PF_B]; /* CPd's p1, Q1.14 */
 	double pf_g;            /* CPd's G */
 	int pf_d;               /* decision delay, symbols */
 	double pf_cd;           /* main tap of channel and prefilter */
@@ -295,10 +295,10 @@ struct V92Up : PcmFrames<V92Up> {
 				   (the echo canceller's, taken away after
 				   it) */
 	double pf_echo_res;     /* rms of what the canceller leaves of it */
-	int32_t pf_s0;          /* the first symbol through the prefilter */
-	int32_t pf_eqL;         /* eqL of the plain channel */
-	int16_t pf_lev[128];    /* the G.711 levels, ascending */
-	int16_t pf_gap[20];     /* by drn: the points' least gap, 0 none */
+	s32 pf_s0;              /* the first symbol through the prefilter */
+	s32 pf_eqL;             /* eqL of the plain channel */
+	s16 pf_lev[128];        /* the G.711 levels, ascending */
+	s16 pf_gap[20];         /* by drn: the points' least gap, 0 none */
 	double pf_mseg[20];     /* by drn: the simulated mse, grid units */
 	double dmse_g;          /* data mode mse, grid units */
 	/* with the prefilter, a few receiver taps around the delay: they
@@ -310,7 +310,7 @@ struct V92Up : PcmFrames<V92Up> {
 	   fast parameter exchange) */
 #define V92_PF_XR       256
 	double pf_xr[V92_PF_XR];
-	int32_t pf_rst;
+	s32 pf_rst;
 	/* with the prefilter the analogue modem takes up the new
 	   constellation of a fast parameter exchange once it has our CPd
 	   (SUVu', E2u and FB1u on it): the grid mse on the old one and on
@@ -327,21 +327,21 @@ struct V92Up : PcmFrames<V92Up> {
 	double pf_ln[V92_PF_XR];
 	double pf_dch[V92_CH];
 	double sl_uu, sl_ud, sl_dd, sl_ue, sl_de, sl_ee;
-	int32_t sl_n;
+	s32 sl_n;
 	double sl_gm;           /* the grid mse, over a second */
 	double sl_base;         /* it, 3 s into the design */
 	double sl_g1, sl_tau1, sl_x1;   /* the fit 2 s into it, */
-	int32_t sl_t1;          /* at that symbol */
+	s32 sl_t1;              /* at that symbol */
 	int fpe_slip;           /* this fast parameter exchange: the design
 				   for the slip, at the same rate */
 	int pf_new;             /* its prefilter and precoder: in at B1u */
-	int32_t pf_new_at;      /* (that symbol, once known) */
+	s32 pf_new_at;          /* (that symbol, once known) */
 	int slips;
 	int slip_ok;            /* DSP_V92_SLIP=0: no design for the slip */
 
 	/* the start after INFO1a; fclock and fbase as in V90Tx */
-	void init(int alaw_, const V92Info1a *ia_, const int32_t *fclock,
-		  int32_t fbase);
+	void init(int alaw_, const V92Info1a *ia_, const s32 *fclock,
+		  s32 fbase);
 	/* a network sample in (x) and out (*y), linear; a V92_ event */
 	int sample(int x, int *y);
 	/* the echo canceller may train: we send, the analogue modem is
@@ -374,23 +374,23 @@ struct V92Up : PcmFrames<V92Up> {
 	int pf_slip_fit(double *gain, double *tau, double *expl);
 	int pf_slip_design();
 	double pf_qslope(double v) const;
-	int pf_points(int gap, int lc, int16_t *pts);
-	int pf_sim(int M, const int16_t *pts, int lc, int nsym, double *pw,
+	int pf_points(int gap, int lc, s16 *pts);
+	int pf_sim(int M, const s16 *pts, int lc, int nsym, double *pw,
 		   double *mseg);
 	int pf_rate(int drn);
 	int pf_design(const char *fix);
 	int pf_cpd(V92Cpd *c, int drn);
 	void pf_margin();
-	void pf_reset(int32_t r);
-	double pf_sample(int32_t k);
+	void pf_reset(s32 r);
+	double pf_sample(s32 k);
 	float pf_grid(const V92Cpd *c, float r) const;
 	float pf_point(const V92Cpd *c, int eta) const;
 	/* receiver */
 	void rx_sample(float x);
 	void tone_sample(float x);
-	int train(int32_t start, int search_lo, int search_hi);
-	float equalize(int32_t s);
-	void adapt(int32_t s, float err, float mu);
+	int train(s32 start, int search_lo, int search_hi);
+	float equalize(s32 s);
+	void adapt(s32 s, float err, float mu);
 	void symbol(float y);
 	void bit2(int d);
 	void bits4(int s, int m);

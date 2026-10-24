@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "reinit.h"
 #include "vcvm_data.h"
@@ -23,7 +24,7 @@ namespace dsp {
 
 /* see vcvm_data.h; -1 for no loading, or one the code or the signal
    set can't take */
-int VcvmDataTx::init(const VcvmLoading &l, int32_t fs, int tap,
+int VcvmDataTx::init(const VcvmLoading &l, s32 fs, int tap,
 		     Source src)
 {
 	if (l.kind == VcvmLoading::NONE)
@@ -77,7 +78,7 @@ void VcvmDataTx::block()
 {
 	const int k = rs_.k(), n = VCVM_RS_N;
 	line_.assign(static_cast<size_t>(n) * D_, 0);
-	uint8_t cw[VCVM_RS_N];
+	u8 cw[VCVM_RS_N];
 	for (int c = 0; c < D_; c++) {
 		for (int j = 0; j < k; j++) {
 			int v = src_ ? src_() : -1;
@@ -91,7 +92,7 @@ void VcvmDataTx::block()
 				sc |= static_cast<unsigned>(scramble(
 					      &scr_, tap_, (o >> b) & 1))
 				      << b;
-			cw[j] = static_cast<uint8_t>(sc);
+			cw[j] = static_cast<u8>(sc);
 		}
 		rs_.encode(cw, cw);
 		for (int j = 0; j < n; j++)
@@ -114,9 +115,9 @@ int VcvmDataTx::bit()
 void VcvmDataTx::symbol(std::vector<float> &out)
 {
 	int nb = l_.bits();
-	uint8_t bits[VCVM_TONES * 5];
+	u8 bits[VCVM_TONES * 5];
 	for (int i = 0; i < nb; i++)
-		bits[i] = static_cast<uint8_t>(bit());
+		bits[i] = static_cast<u8>(bit());
 	size_t at = out.size();
 	out.resize(at + static_cast<size_t>(sps()));
 	if (l_.kind == VcvmLoading::COMB)
@@ -131,7 +132,7 @@ void VcvmDataTx::control(std::vector<float> &out)
 {
 	size_t at = out.size();
 	if (l_.kind == VcvmLoading::COMB) {
-		uint8_t ph8[VCVM_TONES], rs[VCVM_TONES] = {};
+		u8 ph8[VCVM_TONES], rs[VCVM_TONES] = {};
 		for (int k = 0; k < VCVM_TONES; k++)
 			ph8[k] = 4;
 		out.resize(at + 8 * static_cast<size_t>(sps()));
@@ -152,7 +153,7 @@ void VcvmDataTx::control(std::vector<float> &out)
 
 /* see vcvm_data.h; -1 for no loading, or one the code or the signal
    set can't take; the receiver started at sample 0 */
-int VcvmDataRx::init(const VcvmLoading &l, int32_t fs, int tap,
+int VcvmDataRx::init(const VcvmLoading &l, s32 fs, int tap,
 		     Sink sink)
 {
 	if (l.kind == VcvmLoading::NONE)
@@ -175,7 +176,7 @@ int VcvmDataRx::init(const VcvmLoading &l, int32_t fs, int tap,
 }
 
 /* see vcvm_data.h: everything back to unlocked, the statistics too */
-void VcvmDataRx::start(int32_t from)
+void VcvmDataRx::start(s32 from)
 {
 	from_ = pos_ = from;
 	locked_ = confirmed_ = control_ = lost_ = false;
@@ -197,7 +198,7 @@ void VcvmDataRx::start(int32_t from)
 	ref_ = 0;
 	/* 2 s without a codeword decoded, or two and a half blocks where
 	   a block takes longer */
-	lost_after_ = static_cast<int32_t>(std::max(
+	lost_after_ = static_cast<s32>(std::max(
 		lrint(2000 / l_.sym_ms()),
 		static_cast<long>(2.5 * VCVM_RS_N * 8 * D_ / l_.bits()) + 1));
 	early_.clear();
@@ -209,7 +210,7 @@ void VcvmDataRx::start(int32_t from)
 }
 
 /* the samples received: the index of the next one pushed */
-int32_t VcvmDataRx::received() const
+s32 VcvmDataRx::received() const
 {
 	return l_.kind == VcvmLoading::COMB ? crx_.received() : prx_.received();
 }
@@ -232,7 +233,7 @@ void VcvmDataRx::line_bit(int b, float rel)
 	oct_ |= static_cast<unsigned>(b & 1) << nbit_;
 	orel_ = std::min(orel_, rel);
 	if (++nbit_ == 8) {
-		blk_.push_back(static_cast<uint8_t>(oct_));
+		blk_.push_back(static_cast<u8>(oct_));
 		rel_.push_back(orel_);
 		oct_ = 0;
 		orel_ = 1;
@@ -249,10 +250,10 @@ void VcvmDataRx::line_bit(int b, float rel)
 void VcvmDataRx::decode_block()
 {
 	const int n = VCVM_RS_N, k = rs_.k(), nc = n - k;
-	std::vector<uint8_t> out;
+	std::vector<u8> out;
 	int ok = 0;
 	for (int c = 0; c < D_; c++) {
-		uint8_t cw[VCVM_RS_N], er[VCVM_RS_N];
+		u8 cw[VCVM_RS_N], er[VCVM_RS_N];
 		float rl[VCVM_RS_N];
 		int ord[VCVM_RS_N];
 		for (int j = 0; j < n; j++) {
@@ -290,7 +291,7 @@ void VcvmDataRx::decode_block()
 				o |= static_cast<unsigned>(descramble(
 					     &scr_, tap_, (cw[j] >> b) & 1))
 				     << b;
-			out.push_back(static_cast<uint8_t>(o));
+			out.push_back(static_cast<u8>(o));
 		}
 	}
 	st_.blocks++;
@@ -319,7 +320,7 @@ void VcvmDataRx::decode_block()
 
 /* a symbol's bits, held back so that the control sequence's are not
    taken for data */
-void VcvmDataRx::symbol(const uint8_t *bits, const float *rel, int nb)
+void VcvmDataRx::symbol(const u8 *bits, const float *rel, int nb)
 {
 	Held h;
 	h.bits.assign(bits, bits + nb);
@@ -357,7 +358,7 @@ void VcvmDataRx::run()
 	if (l_.kind == VcvmLoading::COMB) {
 		if (!locked_) {
 			if (!onset_) {
-				int32_t o = crx_.onset(from_, -35);
+				s32 o = crx_.onset(from_, -35);
 				if (o < 0 || crx_.acquire(o, o))
 					return;
 				onset_ = true;
@@ -430,7 +431,7 @@ void VcvmDataRx::run()
 			held_.clear();
 			break;
 		}
-		uint8_t b[4];
+		u8 b[4];
 		float r[4];
 		VcvmParamRx::bits(idx, b);
 		float rel = std::min(1.0f, std::max(0.0f, mg / 0.1f));

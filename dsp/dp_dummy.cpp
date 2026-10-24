@@ -19,9 +19,9 @@
  *
  */
 
-#include <cstdint>
 #include <cstring>
 
+#include "dm_types.h"
 #include "dsp.h"
 #include "pump.h"
 
@@ -32,8 +32,8 @@ struct DummyPump : Pump {
 
 	/* blocks 1 to SILENT_BLOCKS are silent, the tone runs up to
 	   LAST_TONE_BLOCK, and the next block without a link fails */
-	static constexpr int32_t SILENT_BLOCKS = 99;
-	static constexpr int32_t LAST_TONE_BLOCK = 300;
+	static constexpr s32 SILENT_BLOCKS = 99;
+	static constexpr s32 LAST_TONE_BLOCK = 300;
 	/* the tone's level (the code of 'A'), +TONE first in each block */
 	static constexpr s16 TONE = 65;
 	/* the bits handed to or taken from the core at a time */
@@ -42,10 +42,10 @@ struct DummyPump : Pump {
 	CoreBits core;
 	struct dp_runtime *rt;  /* the core's (NULL: none) */
 	int saved_pcm;          /* rt->pcm as it was before the pump */
-	int32_t blocks;         /* process() calls before the link */
+	s32 blocks;             /* process() calls before the link */
 	bool linked;            /* the other end was heard: data */
 
-	int start(struct modem *m, enum DP_ID, int, int32_t, int);
+	int start(struct modem *m, enum DP_ID, int, s32, int);
 	~DummyPump();
 	int process(void *in, void *out, int cnt) override;
 
@@ -57,7 +57,7 @@ private:
 /* the pump for modem m (the id, the side, the sample rate and the
    block size make no difference): the core's DC removal turned off
    while it runs; always 0 */
-int DummyPump::start(struct modem *m, enum DP_ID, int, int32_t, int)
+int DummyPump::start(struct modem *m, enum DP_ID, int, s32, int)
 {
 	core.modem = m;
 	rt = reinterpret_cast<struct dp_runtime *>(

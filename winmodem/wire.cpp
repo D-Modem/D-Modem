@@ -6,6 +6,7 @@
  *
  */
 
+#include "dm_types.h"
 #include "wire.h"
 
 #include <cstring>
@@ -32,25 +33,25 @@ void wire_hello(std::string &out, const std::string &port)
 }
 
 /* see wire.h */
-void wire_lines(std::string &out, uint8_t lines)
+void wire_lines(std::string &out, u8 lines)
 {
 	wire_put(out, FRAME_LINES, &lines, 1);
 }
 
 /* see wire.h */
-void wire_state(std::string &out, uint8_t state, uint32_t baud)
+void wire_state(std::string &out, u8 state, u32 baud)
 {
-	uint8_t p[5] = { state, static_cast<uint8_t>(baud),
-			 static_cast<uint8_t>(baud >> 8),
-			 static_cast<uint8_t>(baud >> 16),
-			 static_cast<uint8_t>(baud >> 24) };
+	u8 p[5] = { state, static_cast<u8>(baud),
+			 static_cast<u8>(baud >> 8),
+			 static_cast<u8>(baud >> 16),
+			 static_cast<u8>(baud >> 24) };
 	wire_put(out, FRAME_STATE, p, sizeof(p));
 }
 
 /* see wire.h */
 void wire_data(std::string &out, const void *p, size_t n)
 {
-	const uint8_t *b = static_cast<const uint8_t *>(p);
+	const u8 *b = static_cast<const u8 *>(p);
 	while (n > 0) {
 		size_t k = n < WIRE_MAX_DATA ? n : WIRE_MAX_DATA;
 		wire_put(out, FRAME_DATA, b, k);
@@ -74,8 +75,8 @@ bool WireReader::next(Frame &f)
 {
 	if (bad_ || buf_.size() - pos_ < WIRE_HEAD)
 		return false;
-	const uint8_t *h =
-		reinterpret_cast<const uint8_t *>(buf_.data()) + pos_;
+	const u8 *h =
+		reinterpret_cast<const u8 *>(buf_.data()) + pos_;
 	size_t n = h[1] | static_cast<size_t>(h[2]) << 8;
 	switch (h[0]) {
 	case FRAME_DATA:
@@ -106,18 +107,18 @@ bool WireReader::next(Frame &f)
 }
 
 /* see wire.h */
-bool WireReader::hello(const Frame &f, uint16_t *version, std::string *port)
+bool WireReader::hello(const Frame &f, u16 *version, std::string *port)
 {
 	if (f.type != FRAME_HELLO || f.n < 2)
 		return false;
-	*version = static_cast<uint16_t>(f.p[0] | uint16_t{f.p[1]} << 8);
+	*version = static_cast<u16>(f.p[0] | u16{f.p[1]} << 8);
 	if (port)
 		port->assign(reinterpret_cast<const char *>(f.p) + 2, f.n - 2);
 	return true;
 }
 
 /* see wire.h */
-bool WireReader::lines(const Frame &f, uint8_t *lines)
+bool WireReader::lines(const Frame &f, u8 *lines)
 {
 	if (f.type != FRAME_LINES || f.n < 1)
 		return false;
@@ -126,14 +127,14 @@ bool WireReader::lines(const Frame &f, uint8_t *lines)
 }
 
 /* see wire.h */
-bool WireReader::state(const Frame &f, uint8_t *state, uint32_t *baud)
+bool WireReader::state(const Frame &f, u8 *state, u32 *baud)
 {
 	if (f.type != FRAME_STATE || f.n < 5)
 		return false;
 	*state = f.p[0];
-	*baud = f.p[1] | static_cast<uint32_t>(f.p[2]) << 8 |
-		static_cast<uint32_t>(f.p[3]) << 16 |
-		static_cast<uint32_t>(f.p[4]) << 24;
+	*baud = f.p[1] | static_cast<u32>(f.p[2]) << 8 |
+		static_cast<u32>(f.p[3]) << 16 |
+		static_cast<u32>(f.p[4]) << 24;
 	return true;
 }
 

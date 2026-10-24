@@ -30,11 +30,11 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
+#include "dm_types.h"
 #include "bits.h"
 #include "dsp.h"
 #include "g711.h"
@@ -85,8 +85,8 @@ int V90Jd::parse(const unsigned char *b)
 	if (b[17] || b[34] || b[51] || b[68] || b[69] || b[70] || b[71] ||
 	    !frame_crc_ok(b, 52))
 		return -1;
-	rate_mask = static_cast<uint32_t>(field(b, 18, 16)) |
-		(static_cast<uint32_t>(field(b, 35, 7)) << 16);
+	rate_mask = static_cast<u32>(field(b, 18, 16)) |
+		(static_cast<u32>(field(b, 35, 7)) << 16);
 	cp16_train = b[47];
 	cp16_reneg = b[48];
 	lookahead = field(b, 49, 2);
@@ -128,7 +128,7 @@ int V90Interp::run(float x, float *out)
 	hist[nin % L] = hist[nin % L + L] = x;
 	nin++;
 	while (t + V90_INTERP_T <= nin - 1 && m < 3) {
-		int32_t n0 = static_cast<int32_t>(floor(t));
+		s32 n0 = static_cast<s32>(floor(t));
 		double fp = (t - n0) * V90_INTERP_P;
 		int p = static_cast<int>(fp), j;
 		float w = static_cast<float>(fp - p), y = 0;
@@ -167,7 +167,7 @@ void V90Rx::init(int alaw_, int uinfo_, int rate)
    a6_6 / e6 once it has gone below -0.5 and come back */
 void V90Rx::sd_detect(float v)
 {
-	int32_t i = n8 - 1;
+	s32 i = n8 - 1;
 	double r, q;
 	int there;
 
@@ -254,7 +254,7 @@ void V90Rx::sd_detect(float v)
 }
 
 /* the equaliser's output for symbol kk, on its input d samples later */
-float V90Rx::equalize(int32_t kk, int d) const
+float V90Rx::equalize(s32 kk, int d) const
 {
 	float y = 0;
 	int i;
@@ -272,7 +272,7 @@ float V90Rx::equalize(int32_t kk, int d) const
    has moved is fitted to a line, whose slope is the clock's offset far
    more closely than the frequency term (it then runs on that, with
    TIM_KP2 and TIM_KI2) */
-void V90Rx::timing(int32_t kk, float y, float a)
+void V90Rx::timing(s32 kk, float y, float a)
 {
 	double e, dt;
 	if (!t_on)
@@ -331,7 +331,7 @@ void V90Rx::timing_step(double dt)
    correlates best with TRN1d's first REFINE_N signs (either polarity) */
 void V90Rx::refine()
 {
-	uint32_t scr = 0;
+	u32 scr = 0;
 	signed char a[REFINE_N];
 	double best = -1;
 	int d, j, bd = 0;
@@ -542,7 +542,7 @@ void V90Rx::dil_analyse()
 	zero(dil_usable);
 	for (j = 0; j < 6; j++)
 		for (u = 0; u < 128; u++) {
-			int32_t n_ = dcnt[j][u];
+			s32 n_ = dcnt[j][u];
 			double mu, var;
 			nz[j][u] = 0;
 			if (!n_)
@@ -674,7 +674,7 @@ void V90Rx::sample(float v)
 	}
 	/* symbol k's samples are in */
 	while (b + 2 * k + EQ_D <= n - 1) {
-		int32_t t = k - TRN1D_K0;
+		s32 t = k - TRN1D_K0;
 		float a = 0, y;
 		int i;
 
@@ -854,7 +854,7 @@ int V90Mp::parse(const unsigned char *b, int len)
 	ack = b[33];
 	rate_mask = field(b, 36, 13);
 	for (i = 0; i < 6; i++)
-		h[i] = t ? static_cast<int16_t>(field(b, 52 + 17 * i, 16)) : 0;
+		h[i] = t ? static_cast<s16>(field(b, 52 + 17 * i, 16)) : 0;
 	return 0;
 }
 
@@ -884,15 +884,15 @@ int V90Con::init(const V90Cp &cp, int D_, const float lv[6][128])
    the modulus encoder's R, with A the product of the M before i */
 double V90Con::power(const int *lin) const
 {
-	uint64_t two_k = UINT64_C(1) << K, A = 1;
+	u64 two_k = UINT64_C(1) << K, A = 1;
 	double sum = 0;
 	int i, j;
 
 	for (i = 0; i < 6; i++) {
-		uint64_t am = A * static_cast<unsigned>(M[i]);
-		uint64_t full = two_k / am, rem = two_k % am;
+		u64 am = A * static_cast<unsigned>(M[i]);
+		u64 full = two_k / am, rem = two_k % am;
 		for (j = 0; j < M[i]; j++) {
-			uint64_t lo = static_cast<uint64_t>(j) * A, n;
+			u64 lo = static_cast<u64>(j) * A, n;
 			n = full * A + (rem > lo ? (rem - lo < A ? rem - lo : A) :
 					0);
 			sum += static_cast<double>(lin[ucode[i][j]]) *
@@ -1000,7 +1000,7 @@ int v90a_design_cpt(V90Cp *cp, int alaw, const int *lin,
    36), as Jd allows (bit 0: K 15, 28 000 bit/s) */
 int v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
 		   const float lv[6][128], double noise, double limit,
-		   double cpt_power, uint32_t jd_rates)
+		   double cpt_power, u32 jd_rates)
 {
 	double dmin = 10 * noise, most = limit * limit, pw = -1;
 	int pts[6][128], n[6], i, u, K = 0;
@@ -1054,7 +1054,7 @@ int v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
 	}
 	DSP_DBG("v90a: CP: D %d (%" PRId32 " bit/s), M %d %d %d %d %d %d, %d "
 		"constellations, spacing %.0f, %.1f dBm0 (CPt %.1f)\n", K + 6,
-		int32_t{K + 6} * 8000 / 6, n[0], n[1], n[2], n[3], n[4], n[5],
+		s32{K + 6} * 8000 / 6, n[0], n[1], n[2], n[3], n[4], n[5],
 		cp->ncon, dmin, dbm0(alaw, pw), dbm0(alaw, cpt_power));
 	return 0;
 }
@@ -1139,7 +1139,7 @@ int V90Rx::data_cp_next(const V90Cp &cp)
 }
 
 /* the equaliser a step towards e (NLMS) for symbol kk */
-void V90Rx::adapt(int32_t kk, float e)
+void V90Rx::adapt(s32 kk, float e)
 {
 	float pw = 0;
 	int i;
@@ -1315,7 +1315,7 @@ void V90Rx::reneg_frames()
 /* an MP bit (9.4.1.3/V.90): frame sync, then 86 bits (type 0) or 188 */
 void V90Rx::mp_bit(int bit)
 {
-	msr = (msr << 1) | static_cast<uint32_t>(bit);
+	msr = (msr << 1) | static_cast<u32>(bit);
 	if (mp_n && v92) {
 		/* SUVd (bit 18 set: Table 31/V.92) or CPd (Table 30) */
 		mpb[mp_n++] = static_cast<unsigned char>(bit);
@@ -1352,7 +1352,7 @@ void V90Rx::mp_bit(int bit)
 							"trellis %d, taps %d %d "
 							"%d %d\n", ack ? "'" : "",
 							frames,
-							int32_t{c.drn + 17} *
+							s32{c.drn + 17} *
 							8000 / 6, c.M[0],
 							2 * c.lc[0], c.g,
 							16 << c.trellis,
@@ -1390,7 +1390,7 @@ void V90Rx::mp_bit(int bit)
 						"%04x, trellis %d\n",
 						m.ack ? "'" : "", frames,
 						m.type,
-						int32_t{m.rate_max} * 2400,
+						s32{m.rate_max} * 2400,
 						m.rate_mask, m.trellis);
 				mp = m;
 				ev_mp++;
@@ -1421,7 +1421,7 @@ void V90Rx::frame()
 {
 	V90Con *cn = con;
 	unsigned char d[48];
-	uint64_t R = 0, A = 1;
+	u64 R = 0, A = 1;
 	int j, i, s[6], lab[6], ones = 0;
 	int known = cn == &con_trn && frames < 340 && !renegs;
 	int out[6];
@@ -1444,7 +1444,7 @@ void V90Rx::frame()
 		}
 		s[j] = fy[j] > 0;
 		lab[j] = bl;
-		R += static_cast<uint64_t>(bl) * A;
+		R += static_cast<u64>(bl) * A;
 		A *= static_cast<unsigned>(cn->M[j]);
 		tg = s[j] ? cn->lev[j][bl] : -cn->lev[j][bl];
 		if (known) {

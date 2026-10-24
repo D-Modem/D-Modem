@@ -34,6 +34,7 @@
 #include <iterator>
 #include <vector>
 
+#include "dm_types.h"
 #include "pump.h"
 #include "v34.h"
 #include "v90.h"
@@ -62,7 +63,7 @@ namespace dsp {
    was on the line: answers that must follow 40 ms after a reversal
    wait the rest */
 #define CC_TX_DELAY     (4 * CC_SPS)
-#define CC_RX_DELAY     (13 * static_cast<int32_t>(V34_SRATE) / 1000)
+#define CC_RX_DELAY     (13 * static_cast<s32>(V34_SRATE) / 1000)
 #define REV_WAIT        (ms2samples(40, V34_SRATE) - CC_TX_DELAY - CC_RX_DELAY)
 
 /* our CM / JM: V-series data call; V.34, V.32bis, V.22bis, V.23 (duplex)
@@ -273,7 +274,7 @@ struct BitQ {
 	int n, pos;
 
 	void reset();
-	void put(uint32_t val, int nbits);
+	void put(u32 val, int nbits);
 	void info_start();
 	void info_end();
 	void put_octet(unsigned char c);
@@ -295,7 +296,7 @@ struct CcRx {
 	int pos;
 	float phase_e[CC_SPS];
 	int best;
-	int32_t n, last;        /* samples, at the last decision */
+	s32 n, last;            /* samples, at the last decision */
 	float dmin;
 	float rmin;             /* the most reversed step of a steady tone */
 	int rmin_pos;           /* at this sampling phase */
@@ -305,16 +306,16 @@ struct CcRx {
 	float p;                /* |b|^2 of the last symbol */
 	int on, on_count;
 	int zeros;              /* '0' decisions in a row (tone) */
-	uint32_t sr;            /* last bits, newest in bit 0 */
-	int32_t rev_cand;       /* a 1 after a tone: a reversal if 0 follows */
+	u32 sr;                 /* last bits, newest in bit 0 */
+	s32 rev_cand;           /* a 1 after a tone: a reversal if 0 follows */
 	int frame_len;          /* > 0: within an INFO frame */
 	unsigned char frame[128];
 	unsigned char hist[CC_HIST];
-	int32_t hist_n;
+	s32 hist_n;
 	/* the decisions at every sampling phase, for INFO frames whatever
 	   the symbol timing does */
 	unsigned char ph[CC_SPS][CC_HIST];
-	int32_t ph_n[CC_SPS];
+	s32 ph_n[CC_SPS];
 	int ph_last;            /* the phase of the last sample */
 
 	void init(float fc);
@@ -372,20 +373,20 @@ struct V34Echo {
 	int pos, rpos;
 	int on, far_on, far_delay, trained;
 	int judged, bypass;     /* the echo was measured; none: off */
-	int32_t n, since, filled, far_since;
+	s32 n, since, filled, far_since;
 	float mu, dbg_rx, dbg_err, dbg_tx, dbg_est;
 	float pw_rx, pw_err;    /* in and out while training */
 	float es;               /* the error's short term power */
 	float pw_est;           /* the echo taken away */
 	float pw_near, pw_far;  /* that of the near, the far part */
-	int32_t dt;             /* samples frozen for the remote's signal */
+	s32 dt;                 /* samples frozen for the remote's signal */
 	/* ls: the near part solved by least squares at the end of the
 	   training (V.90's analogue modem: its PCM receiver wants more of
 	   the echo away than NLMS takes in the time) on what it stored of
 	   it: our samples (EC_NEAR_LEN - 1 before its first too), the line */
 	int ls;
 	std::vector<float> ls_tx, ls_rx;
-	int32_t ls_n;
+	s32 ls_n;
 
 	void init();
 	void search();
@@ -412,7 +413,7 @@ struct TestEcho {
 	float hx, hy, ly;
 
 	/* from e (<dB>:<ms>, NULL: no echo) at srate */
-	void init(const char *e, int32_t srate)
+	void init(const char *e, s32 srate)
 	{
 		float db = 0, ms = 0;
 		reinit(*this);
@@ -452,28 +453,28 @@ struct V34Moh {
 	int moh_t1;             /* the T1 code we grant (Table 33/V.92), 0:
 				   we deny it (DSP_V92_MOH) */
 	int ev_mh, mh_sig, mh_info;     /* an MH sequence came in */
-	int32_t mh_seen;        /* when */
+	s32 mh_seen;            /* when */
 	int moh_resp;           /* what we answer it with */
 	int moh_drop;           /* MHcda after our MHnack: disconnect */
-	int32_t moh_end;        /* on hold (or reconnecting): disconnect then
+	s32 moh_end;            /* on hold (or reconnecting): disconnect then
 				   unless phase 1 has come */
 	int moh_req;            /* what we send of ours: MHreq, then MHfrr or
 				   MHcda */
 	int moh_req_hold;       /* seconds we keep the remote on hold */
 	int moh_req_t1;         /* the T1 code of its MHack */
-	int32_t moh_req_at;     /* test: ours this far into data mode */
-	int32_t moh_req_n;      /* (samples of it so far) */
-	uint32_t moh_poll;      /* when to look for the DTE's request */
+	s32 moh_req_at;         /* test: ours this far into data mode */
+	s32 moh_req_n;          /* (samples of it so far) */
+	u32 moh_poll;           /* when to look for the DTE's request */
 	void mh_check(CcRx *r);
 	int mh_event();
 	void moh_respond(int sig);
 	void moh_hold(int secs);
 	void moh_back();
-	int32_t moh_ans;        /* MOH_BACK: samples of the remote's ANSam */
+	s32 moh_ans;            /* MOH_BACK: samples of the remote's ANSam */
 	int moh_backed;         /* we took the remote back (for the log) */
 	void moh_request(int hold_secs);
 	void moh_req_test();
-	int moh_step(int32_t c);
+	int moh_step(s32 c);
 };
 
 /* V.8 (and V.92's short phase 1 around it): ANSam, CM / JM / CJ out
@@ -493,7 +494,7 @@ struct V34V8 {
 	int v8tx_repeat;        /* restart the message when it is done */
 	/* V.8 receiver */
 	FskDemod v21;
-	uint32_t v8_sr;         /* bit window, newest in bit 19 */
+	u32 v8_sr;              /* bit window, newest in bit 19 */
 	int v8_sync;
 	int v8_bits;
 	unsigned char v8_rx[32], v8_last[32];
@@ -514,7 +515,7 @@ struct V34V8 {
 	double env_sum, env15_re, env15_im;
 	float ans_peak;          /* the answer tone's envelope at most */
 	int ans_gone;            /* samples of it below a third of that */
-	int32_t env_n;
+	s32 env_n;
 	/* V.32 / V.22 callers during ANSam */
 	Goertzel aa_g;
 	int aa_blocks;
@@ -537,7 +538,7 @@ struct V34V8 {
 	void v8_quiet_run(float x);
 	void ans_analyse(float x);
 	float ans_am_depth();
-	int v8_step(int32_t c);
+	int v8_step(s32 c);
 };
 
 /* our INFO0 and the remote's (11.2/V.34): what ours offers, its
@@ -555,15 +556,15 @@ struct V34Info0 {
 	int info0_rec;          /* recovering: our INFO0s back to back */
 	int info0_recovered;    /* (in this phase 2) */
 	int info0_acked;        /* the remote's acknowledgement in that */
-	int32_t info0_tx_at;    /* when ours last went out */
-	int32_t info0_at;       /* when the remote's INFO0 last came */
+	s32 info0_tx_at;        /* when ours last went out */
+	s32 info0_at;           /* when the remote's INFO0 last came */
 	int lose_info0;         /* test: our first INFO0 spoilt */
 	int info0_rates;        /* our INFO0's bits 12:19 (rates, carriers,
 				   3429 allowed): all, or a test's */
 	void make_info0(BitQ *q);
-	void rt_info0_frame(const unsigned char *h, int32_t n);
-	void info0_repeat_frame(const unsigned char *h, int32_t n);
-	bool info0_resend(int32_t c);
+	void rt_info0_frame(const unsigned char *h, s32 n);
+	void info0_repeat_frame(const unsigned char *h, s32 n);
+	bool info0_resend(s32 c);
 	bool info0_more();
 };
 
@@ -575,7 +576,7 @@ struct V34Probe {
 	float probe[PROBE_PERIOD];
 	int probe_pos;
 	float probe_gain;
-	int32_t probe_start;
+	s32 probe_start;
 	/* the remote's L1/L2 */
 	Goertzel probe_g[2];
 	/* the remote's tone A or B during our own L2: exactly on a bin of
@@ -584,11 +585,11 @@ struct V34Probe {
 	int tone_blocks;
 	float pblock_e;
 	int probe_blocks;
-	int32_t l1_start;
+	s32 l1_start;
 	double pacc[PROBE_PERIOD];
 	float pprev[PROBE_PERIOD];
 	double ptotal, pdiff;
-	int32_t pcount;
+	s32 pcount;
 	float snr_db;
 	float tone_db[26];      /* received level of each 150 Hz tone */
 	int rate_of_baud[V34_NBAUDS];   /* receivable rates (N), by probing */
@@ -608,21 +609,21 @@ struct V34Cc {
 	float cc_sym;           /* +-1, 0: silence */
 	int cc_rev;             /* reverse at the next symbol */
 	BitQ cctx;       /* INFO bits, a 1 reverses the phase */
-	int32_t cc_syms;
+	s32 cc_syms;
 	/* phase 2 receiver */
 	CcRx ccr;
 	int ev_info0, ev_info1, ev_rev;
-	int32_t rev_time;
+	s32 rev_time;
 	Info0 rinfo0;
 	Info1c rinfo1c;
 	Info1a rinfo1a;
-	int32_t rtd;            /* round trip delay, samples */
-	int32_t rev_sent;       /* when our reversal went out */
+	s32 rtd;                /* round trip delay, samples */
+	s32 rev_sent;           /* when our reversal went out */
 	void cc_tone();
 	void cc_send();
 	int cc_busy();
 	void cc_silence();
-	int32_t rev_on_line();
+	s32 rev_on_line();
 	void cc_rx_bit(int bit);
 	void cc_phase_frame();
 	void info_frame(CcRx *r);
@@ -641,25 +642,25 @@ struct V34Retrain {
 	float rt_e;
 	int rt_blocks;
 	int rt_heard;           /* the tone has been there a while */
-	int32_t bad;            /* data mode: samples with a poor mse */
+	s32 bad;                /* data mode: samples with a poor mse */
 	int retraining;         /* back to data mode without a new CONNECT */
 	int retrains;
-	int32_t retrain_at;     /* test: our own retrain this far (samples) */
+	s32 retrain_at;         /* test: our own retrain this far (samples) */
 	/* rate renegotiation */
 	int renegotiating;
 	int renegs;
 	int rn_max;             /* the most we may ask for (the probing's) */
-	int32_t rn_hi, rn_lo;   /* data mode: samples with an mse for a lower,
+	s32 rn_hi, rn_lo;       /* data mode: samples with an mse for a lower,
 				   a higher rate */
 	float mse_good;         /* data mode: the mse while it was fine */
-	int32_t reneg_at;       /* test: our own renegotiation this far */
+	s32 reneg_at;           /* test: our own renegotiation this far */
 	bool reneg_test;        /* (done, whatever the remote's before it) */
 	int reneg_to;           /* test: to this rate (N) */
 	void rt_tone(float x);
 	void retrain(const char *why, int by = RT_OURS);
 	int reneg_rate(int up);
 	void renegotiate(const char *why, int n, bool remote = false);
-	int rt_step(int32_t c);
+	int rt_step(s32 c);
 };
 
 /* V.92's quick connect (short phase 1, 9.2.4/V.92): QC1a and QCA1d,
@@ -679,8 +680,8 @@ struct V34Qc {
 	   did, ANSpcm's samples */
 	int qca_ok;
 	int qcc_sent;
-	int32_t qcc_ans;
-	int qc_step(int32_t c);
+	s32 qcc_ans;
+	int qc_step(s32 c);
 };
 
 /* (PcmFrames: V.90's phase 4 frames, MP the sequence) */
@@ -698,7 +699,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	~V34Pump() { cleanup(); }
 
 	/* (srate: of the pump, 9600) */
-	int32_t line_rate;      /* 9600, or 8000 through the converters */
+	s32 line_rate;          /* 9600, or 8000 through the converters */
 	int analog;             /* an analogue line: 9600 Hz, or 8000 Hz
 				   with dp_runtime_set_analog() */
 	int v90;                /* offer V.90 as the digital modem */
@@ -736,14 +737,14 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	   sequences queued (sent whole once patx.seqs reaches
 	   v92a_ack_seqs) */
 	int v92a_cpu, v92a_cpu_n;
-	int32_t v92a_cpu_at;
+	s32 v92a_cpu_at;
 	int v92a_acked;
-	int32_t v92a_ack_seqs;
+	s32 v92a_ack_seqs;
 	/* a fast parameter exchange: 1 the digital modem's (its Rf first),
 	   2 ours (our RM first, a CPu designed anew); how many, and ours
 	   this far into data mode (test: DSP_V92A_FPE=<ms>[a|c]) */
 	int v92a_fpe_who, v92a_fpes;
-	int32_t v92a_fpe_at;
+	s32 v92a_fpe_at;
 	int short2;             /* and both asked for short phase 2 */
 	int short2_ok;          /* we ask for it (DSP_V92_SHORT2=0: not) */
 	V91 v91m;
@@ -768,7 +769,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	Resampler rs_up, rs_down;
 	float fifo[V34_FIFO];   /* converted output, 8000 Hz */
 	int fifo_n;
-	int32_t out_n;             /* samples sent on the 8000 Hz line */
+	s32 out_n;                 /* samples sent on the 8000 Hz line */
 	Resampler rs_ref;        /* V.90: our PCM signal at 9600 Hz */
 	float ref_fifo[V34_FIFO];
 	int ref_n;
@@ -791,8 +792,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	float precode_min;      /* dB: V34_PRECODE_MIN, or a test's */
 	int preemph_tx;
 	int max_rate_tx, max_rate_rx;
-	int32_t rate_tx, rate_rx; /* data mode, bit/s */
-	int32_t lost;           /* data mode: samples without the signal */
+	s32 rate_tx, rate_rx; /* data mode, bit/s */
+	s32 lost;               /* data mode: samples without the signal */
 
 	int connected;          /* CONNECT has been reported */
 
@@ -835,13 +836,13 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void v90a_reneg_ours(const char *why);
 	int v90a_cp_design(int fpe = 0);
 	int v90a_data_setup();
-	int32_t v90a_quiet;     /* data mode: samples of the PCM signal gone */
+	s32 v90a_quiet;         /* data mode: samples of the PCM signal gone */
 	float v90a_cp_noise;    /* the noise CP was designed on */
-	int32_t v90a_bad, v90a_good;    /* data mode: samples of the error
+	s32 v90a_bad, v90a_good;        /* data mode: samples of the error
 					   far above it, or well below */
 	int v90a_rn;            /* a rate renegotiation: 1 the digital
 				   modem's (its Rd first), 2 ours */
-	int32_t v90a_rn_at;     /* test: ours this far into data mode
+	s32 v90a_rn_at;         /* test: ours this far into data mode
 				   (DSP_V90A_RENEG=<ms>[a|c]) */
 	void v90a_reneg(int who, const char *why = "");
 	int v90a_v34;           /* V.90 failed: V.34 after the next retrain */
@@ -890,7 +891,7 @@ void BitQ::reset()
 }
 
 /* nbits of val, least significant first in time (what fits of them) */
-void BitQ::put(uint32_t val, int nbits)
+void BitQ::put(u32 val, int nbits)
 {
 	int i;
 	for (i = 0; i < nbits && n < static_cast<int>(sizeof(b)); i++)
@@ -1205,7 +1206,7 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 		q->put_octet(V8_CAT_PCM | pcm_);
 	/* V.cvm's field (Annex A/V.cvm); in a JM where the CM had it */
 	if (self.vcvm && (self.caller || v8_vcvm())) {
-		uint8_t ns[24];
+		u8 ns[24];
 		int n = vcvm_v8_ns(self.vcvm_caps, ns);
 		for (int j = 0; j < n; j++)
 			q->put_octet(ns[j]);
@@ -1374,7 +1375,7 @@ template <class P>
 void V34V8<P>::v8_rx_bit(int bit)
 {
 	P &self = static_cast<P &>(*this);
-	v8_sr = (v8_sr >> 1) | (static_cast<uint32_t>(bit) << 19);
+	v8_sr = (v8_sr >> 1) | (static_cast<u32>(bit) << 19);
 	/* V.92's QC1a before CM (Table 2/V.92): ten ones, 0101010101, then
 	   a frame of ten bits, twice */
 	if (self.qc_n >= 0 && ++self.qc_n == 10) {
@@ -1561,7 +1562,7 @@ void V34Cc<P>::cc_silence()
 
 /* our last reversal has been on the line for this long */
 template <class P>
-int32_t V34Cc<P>::rev_on_line()
+s32 V34Cc<P>::rev_on_line()
 {
 	P &self = static_cast<P &>(*this);
 	return cc_rev ? -1 : self.total - rev_sent - CC_TX_DELAY;
@@ -1573,7 +1574,7 @@ void V34Probe<P>::probe_init()
 {
 	/* Table 17/V.34: 150 Hz multiples, without 900, 1200, 1800 and
 	   2400 Hz (the control channel carriers and their neighbours) */
-	static const int16_t f[] = { 150, 300, 450, 600, 750, 1050, 1350,
+	static const s16 f[] = { 150, 300, 450, 600, 750, 1050, 1350,
 				     1500, 1650, 1950, 2100, 2250, 2550, 2700,
 				     2850, 3000, 3150, 3300, 3450, 3600, 3750 };
 	static const char inv[] = { 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1,
@@ -1839,7 +1840,7 @@ void V34Cc<P>::info_frame(CcRx *r)
 
 	/* no reversals within the frame */
 	if (ev_rev && self.total - rev_time <
-	    static_cast<int32_t>(len) * CC_SPS)
+	    static_cast<s32>(len) * CC_SPS)
 		ev_rev = 0;
 	r->zeros = 0;
 	r->rev_cand = 0;
@@ -1907,7 +1908,7 @@ void V34Cc<P>::info_frame(CcRx *r)
    V.92's retrains, 11.5.1.1/V.34): the last INFO0 length of bits of a
    history */
 template <class P>
-void V34Info0<P>::rt_info0_frame(const unsigned char *h, int32_t n)
+void V34Info0<P>::rt_info0_frame(const unsigned char *h, s32 n)
 {
 	P &self = static_cast<P &>(*this);
 	unsigned char f[64];
@@ -1934,7 +1935,7 @@ void V34Info0<P>::rt_info0_frame(const unsigned char *h, int32_t n)
    little longer having taken it (1).  A frame is taken once (the
    sampling phases' histories each have it) */
 template <class P>
-void V34Info0<P>::info0_repeat_frame(const unsigned char *h, int32_t n)
+void V34Info0<P>::info0_repeat_frame(const unsigned char *h, s32 n)
 {
 	P &self = static_cast<P &>(*this);
 	unsigned char f[64];
@@ -1952,7 +1953,7 @@ void V34Info0<P>::info0_repeat_frame(const unsigned char *h, int32_t n)
 		return;
 	/* no reversals within the frame */
 	if (self.ev_rev &&
-	    self.total - self.rev_time < static_cast<int32_t>(len) * CC_SPS)
+	    self.total - self.rev_time < static_cast<s32>(len) * CC_SPS)
 		self.ev_rev = 0;
 	info0_at = self.total;
 	info0_rep++;
@@ -1973,7 +1974,7 @@ void V34Info0<P>::info0_repeat_frame(const unsigned char *h, int32_t n)
    over: its first INFO0a, then, and ours once more.  c: the time in the
    tone; whether ours went out again */
 template <class P>
-bool V34Info0<P>::info0_resend(int32_t c)
+bool V34Info0<P>::info0_resend(s32 c)
 {
 	P &self = static_cast<P &>(*this);
 	bool qc_late = self.qc_done && self.ev_info0 && !info0_again;
@@ -2030,7 +2031,7 @@ void V34Cc<P>::cc_phase_frame()
 	P &self = static_cast<P &>(*this);
 	CcRx *r = &ccr;
 	int i = r->ph_last, len = self.info_expected(), k;
-	int32_t n = r->ph_n[i];
+	s32 n = r->ph_n[i];
 	const unsigned char *h = r->ph[i];
 
 	self.rt_info0_frame(h, n);
@@ -2183,7 +2184,7 @@ static const char *mh_name(int sig)
    to 13: 60 s) */
 static int moh_t1_secs(int code)
 {
-	static const int16_t t[] = { 0, 10, 20, 30, 40, 60, 120, 180, 240,
+	static const s16 t[] = { 0, 10, 20, 30, 40, 60, 120, 180, 240,
 				     360, 480, 720, 960, 0 };
 	return code > 0 && code < 14 ? t[code] : 60;
 }
@@ -2281,7 +2282,7 @@ void V34Moh<P>::moh_hold(int secs)
 	P &self = static_cast<P &>(*this);
 	DSP_DBG("v34: on hold%s, ANSam for %d s\n",
 		moh_resp == MH_ACK ? "" : " (reconnect)", secs);
-	moh_end = secs ? self.total + static_cast<int32_t>(secs) * self.srate :
+	moh_end = secs ? self.total + static_cast<s32>(secs) * self.srate :
 		-1;
 	/* phase 1 from scratch (9.10.2.1/V.92: what earlier phase 1
 	   signals said does not count) */
@@ -2301,7 +2302,7 @@ void V34Moh<P>::moh_hold(int secs)
 	self.txm = TXM_ANSAM;
 	/* the start-up after it as after a retrain */
 	self.timeout = (moh_end > 0 ? moh_end :
-			self.total + static_cast<int32_t>(self.srate) * 86400) +
+			self.total + static_cast<s32>(self.srate) * 86400) +
 		ms2samples(60000, self.srate);
 	self.set_state(V8A_ANSAM);
 }
@@ -2345,7 +2346,7 @@ void V34Moh<P>::moh_req_test()
 	    (self.v92 || self.v92a_on) && !self.retraining &&
 	    (self.state == V34_DATA || self.state == V92_RUN ||
 	     self.state == V90A_DATA)) {
-		int32_t secs = static_cast<int32_t>(
+		s32 secs = static_cast<s32>(
 			modem_get_param(self.modem, MDMPRM_MOH_REQ));
 		if (secs > 0) {
 			modem_set_param(self.modem, MDMPRM_MOH_REQ, 0);
@@ -2414,7 +2415,7 @@ float V34Echo::ls_solve()
 	double *R, *ch, p[EC_NEAR_LEN], w[EC_NEAR_LEN], z[EC_NEAR_LEN];
 	double ryy = 0, rest, tr = 0, lam;
 	const float *t = ls_tx.data(), *y = ls_rx.data();
-	int32_t n, N = ls_n;
+	s32 n, N = ls_n;
 	int i, j, m;
 	float gain = 0;
 
@@ -2498,7 +2499,7 @@ void V34Echo::search()
 	float best = 0, run = 0, c, floor;
 	int d, k, best_d = -1;
 	/* only where our signal has been sent */
-	int32_t n_ = filled - EC_SEARCH;
+	s32 n_ = filled - EC_SEARCH;
 
 	if (n_ > EC_HIST - EC_SEARCH)
 		n_ = EC_HIST - EC_SEARCH;
@@ -2691,7 +2692,7 @@ void V34Pump::ec_schedule()
 		/* fast at first, also for a far part found late */
 		e->far_since++;
 		{
-			int32_t t = e->n;
+			s32 t = e->n;
 			if (e->far_on && e->far_since < t)
 				t = e->far_since;
 			e->mu = t < ms2samples(300, srate) ? 0.5f :
@@ -3067,7 +3068,7 @@ void V34Pump::v90a_start()
    -1 when there are no constellations to ask for */
 int V34Pump::v90a_phase4()
 {
-	static const int16_t lim[32] = {
+	static const s16 lim[32] = {
 		15124, 14276, 13480, 12724, 12012, 11340, 10708, 10108,
 		9544, 9008, 8504, 8028, 7580, 7156, 6756, 6380, 6020, 5684,
 		5368, 5068, 4784, 4516, 4264, 4024, 3800, 3588, 3388, 3196,
@@ -3129,7 +3130,7 @@ void V34Pump::v92a_up_start()
    Ri.  -1 when there are none */
 int V34Pump::v92a_cpt()
 {
-	static const int16_t lim[32] = {
+	static const s16 lim[32] = {
 		15124, 14276, 13480, 12724, 12012, 11340, 10708, 10108,
 		9544, 9008, 8504, 8028, 7580, 7156, 6756, 6380, 6020, 5684,
 		5368, 5068, 4784, 4516, 4264, 4024, 3800, 3588, 3388, 3196,
@@ -3161,7 +3162,7 @@ int V34Pump::v92a_cpt()
 int V34Pump::v92a_next_seq(int fpe)
 {
 	int ack = v90rx.ev_cpd > 0, fill = fpe ? patx.K : 24;
-	int32_t again = ms2samples(100, srate) + rtd +
+	s32 again = ms2samples(100, srate) + rtd +
 		ms2samples(1000L * v92a_cpu_n / 2 / 8000, srate);
 	if (v90rx.ev_suvd && v90rx.ev_trn2 &&
 	    (!v92a_cpu || (!v90rx.ev_mpack && total - v92a_cpu_at > again))) {
@@ -3840,7 +3841,7 @@ int V34Pump::v91_escape()
    answerer's ANSam and JM, the caller's CM and CJ, then what they
    agreed on (another modulation, V.91, phase 2) */
 template <class P>
-int V34V8<P>::v8_step(int32_t c)
+int V34V8<P>::v8_step(s32 c)
 {
 	P &self = static_cast<P &>(*this);
 	switch (self.state) {
@@ -4127,7 +4128,7 @@ int V34V8<P>::v8_step(int32_t c)
    answering (9.2.4/V.92): QCA1d, then QTS and ANSpcm until TONEq, then
    phase 2 (c: the samples in the state) */
 template <class P>
-int V34Qc<P>::qc_step(int32_t c)
+int V34Qc<P>::qc_step(s32 c)
 {
 	P &self = static_cast<P &>(*this);
 	switch (self.state) {
@@ -4290,7 +4291,7 @@ int V34Qc<P>::qc_step(int32_t c)
    state): our MHreq and its answer, on hold, our answer to the
    remote's */
 template <class P>
-int V34Moh<P>::moh_step(int32_t c)
+int V34Moh<P>::moh_step(s32 c)
 {
 	P &self = static_cast<P &>(*this);
 	switch (self.state) {
@@ -4414,7 +4415,7 @@ int V34Moh<P>::moh_step(int32_t c)
 /* handshake()'s states of a rate renegotiation (S, S-bar, TRN, then
    MP) and of a retrain's silence (c: the samples in the state) */
 template <class P>
-int V34Retrain<P>::rt_step(int32_t c)
+int V34Retrain<P>::rt_step(s32 c)
 {
 	P &self = static_cast<P &>(*this);
 	switch (self.state) {
@@ -4453,7 +4454,7 @@ int V34Retrain<P>::rt_step(int32_t c)
 int V34Pump::handshake()
 {
 	moh_req_test();
-	int32_t c = count;
+	s32 c = count;
 
 	/* V.90: the analogue modem asks for a retrain in phase 3 or 4 with
 	   silence and its tone A (it is the V.34 answerer in phase 2) */

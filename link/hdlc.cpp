@@ -14,16 +14,17 @@
 
 #include <cinttypes>
 
+#include "dm_types.h"
 #include "link.h"
 
 namespace dlink {
 
 /* the HDLC flag, 01111110 */
-static const uint8_t FLAG = 0x7e;
+static const u8 FLAG = 0x7e;
 
 /* the FCS-16 register before a frame, and after a whole good frame,
    its FCS included (8.1.1.6.1/V.42) */
-static const uint16_t FCS_INIT = 0xffff, FCS_GOOD = 0xf0b8;
+static const u16 FCS_INIT = 0xffff, FCS_GOOD = 0xf0b8;
 
 enum {
 	RX_LOOKAHEAD = 18,      /* bits the HDLC receiver needs for a step:
@@ -34,9 +35,9 @@ enum {
 /* the detection phase's characters: ODP (DC1 with even, then odd
    parity), ADP ('E', then 'C' for V.42 or NUL for no error correction),
    and the start of an MNP frame (SYN DLE STX, A.3/V.42 (10/96)) */
-static const uint8_t DC1_EVEN = 0x11, DC1_ODD = 0x91;
-static const uint8_t ADP_E = 'E', ADP_C = 'C', ADP_NUL = 0x00;
-static const uint32_t MNP_START = UINT32_C(0x16) << 16 | 0x10 << 8 | 0x02;
+static const u8 DC1_EVEN = 0x11, DC1_ODD = 0x91;
+static const u8 ADP_E = 'E', ADP_C = 'C', ADP_NUL = 0x00;
+static const u32 MNP_START = UINT32_C(0x16) << 16 | 0x10 << 8 | 0x02;
 
 enum {
 	DETECT_MARKS = 512,     /* the originator's marks before its ODPs */
@@ -58,7 +59,7 @@ enum { RX_NONE, RX_FIRST, RX_DECIDED };
 
 /* the k low bits of bits (the first on the line the most significant
    of them) queued in q after those already there */
-static inline void queue_bits(BitQueue &q, uint32_t bits, int k)
+static inline void queue_bits(BitQueue &q, u32 bits, int k)
 {
 	q.data = q.data << k | bits;
 	q.bit += k;
@@ -72,28 +73,28 @@ static inline int take_bit(BitQueue &q)
 
 /* the 8 oldest bits queued in q (at least 8), left in it: the oldest
    in the most significant */
-static inline uint8_t peek_octet(const BitQueue &q)
+static inline u8 peek_octet(const BitQueue &q)
 {
-	return static_cast<uint8_t>(q.data >> (q.bit - 8));
+	return static_cast<u8>(q.data >> (q.bit - 8));
 }
 
 /* a start-stop character into q: start bit, the 8 data bits least
    significant first, stop bit */
-static void queue_char(BitQueue &q, uint8_t ch)
+static void queue_char(BitQueue &q, u8 ch)
 {
-	queue_bits(q, static_cast<uint32_t>(reverse_bits(ch)) << 1 | 1, 10);
+	queue_bits(q, static_cast<u32>(reverse_bits(ch)) << 1 | 1, 10);
 }
 
 /* a start-stop character from q into ch: the marks before its start
    bit dropped, then its 10 bits taken (the stop bit is not checked);
    false while q holds no whole character */
-static bool take_char(BitQueue &q, uint8_t &ch)
+static bool take_char(BitQueue &q, u8 &ch)
 {
 	while (q.bit && q.data >> (q.bit - 1) & 1)
 		q.bit--;
 	if (q.bit < 10)
 		return false;
-	ch = reverse_bits(static_cast<uint8_t>(q.data >> (q.bit - 9)));
+	ch = reverse_bits(static_cast<u8>(q.data >> (q.bit - 9)));
 	q.bit -= 10;
 	return true;
 }
@@ -108,10 +109,10 @@ static bool take_char(BitQueue &q, uint8_t &ch)
    tx_fill() queueing one more unit each time fewer than nbits are left,
    F's tx_idle() for the rest once it has none; how many items */
 template <class F>
-int BitFramer<F>::get_bits(int nbits, uint8_t *buf, int n)
+int BitFramer<F>::get_bits(int nbits, u8 *buf, int n)
 {
 	F &f = static_cast<F &>(*this);
-	const uint8_t mask = static_cast<uint8_t>((1 << nbits) - 1);
+	const u8 mask = static_cast<u8>((1 << nbits) - 1);
 	int done = 0;
 
 	while (n > 0) {
@@ -122,7 +123,7 @@ int BitFramer<F>::get_bits(int nbits, uint8_t *buf, int n)
 			break;
 		}
 		tx_.bit -= nbits;
-		*buf++ = static_cast<uint8_t>(tx_.data >> tx_.bit & mask);
+		*buf++ = static_cast<u8>(tx_.data >> tx_.bit & mask);
 		n--;
 		done++;
 	}
@@ -132,10 +133,10 @@ int BitFramer<F>::get_bits(int nbits, uint8_t *buf, int n)
 /* n items of nbits bits from the data pump, each queued and then
    scanned by F's rx_scan(); returns n */
 template <class F>
-int BitFramer<F>::put_bits(int nbits, const uint8_t *buf, int n)
+int BitFramer<F>::put_bits(int nbits, const u8 *buf, int n)
 {
 	F &f = static_cast<F &>(*this);
-	const uint8_t mask = static_cast<uint8_t>((1 << nbits) - 1);
+	const u8 mask = static_cast<u8>((1 << nbits) - 1);
 
 	for (int i = 0; i < n; i++) {
 		queue_bits(rx_, buf[i] & mask, nbits);
@@ -160,7 +161,7 @@ void Async::start(Link *link)
 /* the DTE's next character, queued; false if it has none */
 bool Async::tx_fill()
 {
-	uint8_t ch;
+	u8 ch;
 
 	if (link_->read_chars(&ch, 1) != 1)
 		return false;
@@ -170,13 +171,13 @@ bool Async::tx_fill()
 
 /* the rest of the n items while the DTE has nothing: what is left of
    its last character, completed with marks, then marks; how many */
-int Async::tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n)
+int Async::tx_idle(int nbits, u8 mask, u8 *&buf, int &n)
 {
 	int done = 0;
 
 	if (tx_.bit && n > 0) {
 		int marks = nbits - tx_.bit;
-		*buf++ = static_cast<uint8_t>(
+		*buf++ = static_cast<u8>(
 			(tx_.data << marks | ((1u << marks) - 1)) & mask);
 		tx_.bit = 0;
 		n--;
@@ -191,7 +192,7 @@ int Async::tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n)
    the DTE does not take it) */
 void Async::rx_scan()
 {
-	uint8_t ch;
+	u8 ch;
 
 	while (take_char(rx_, ch))
 		link_->write_chars(&ch, 1);
@@ -204,9 +205,9 @@ void Async::rx_scan()
  */
 
 /* T400 (750 ms, 9.1.1/V.42) in bits at the pump's rate */
-static int32_t t400(const Link *link)
+static s32 t400(const Link *link)
 {
-	int32_t rate = link->tx_rate();
+	s32 rate = link->tx_rate();
 	if (!rate)
 		rate = NOMINAL_RATE;
 	return rate * 3 / 4;
@@ -233,7 +234,7 @@ void Detector::start(Link *link)
 		tx_pattern_[0] = ADP_E;
 		tx_pattern_[1] = ADP_C;
 		rx_pattern_[0] = DC1_EVEN;
-		int32_t t = t400(link);
+		s32 t = t400(link);
 		link->set_timer(link->asked().mnp ? 3 * t : t,
 				Link::Timer::DetectEnd);
 	}
@@ -243,7 +244,7 @@ void Detector::start(Link *link)
    or T400 */
 void Detector::begin()
 {
-	int32_t t = t400(link_);
+	s32 t = t400(link_);
 
 	link_->logf("detect: ODPs, T400 %" PRId32 " bits.", t);
 	tx_count_ = 1;
@@ -268,7 +269,7 @@ bool Detector::tx_fill()
 		queue_bits(tx_, 0x1ff, 9);
 		return true;
 	}
-	uint8_t ch = tx_pattern_[tx_count_++ & 1];
+	u8 ch = tx_pattern_[tx_count_++ & 1];
 	queue_bits(tx_, UINT32_C(0x1ff) << 9 | reverse_bits(ch), 18);
 	return true;
 }
@@ -281,7 +282,7 @@ bool Detector::tx_fill()
    passed over without), anything else starts the search again */
 void Detector::rx_scan()
 {
-	uint8_t ch;
+	u8 ch;
 
 	while (take_char(rx_, ch)) {
 		link_->logf("detect: rx 0x%02x.", ch);
@@ -342,12 +343,12 @@ void Detector::rx_scan()
 
 /* the FCS-16 (x^16 + x^12 + x^5 + 1, the register reflected) after one
    more octet */
-static uint16_t fcs_add(uint16_t fcs, uint8_t c)
+static u16 fcs_add(u16 fcs, u8 c)
 {
 	fcs ^= c;
 	for (int i = 0; i < 8; i++)
-		fcs = fcs & 1 ? static_cast<uint16_t>(fcs >> 1 ^ 0x8408) :
-			static_cast<uint16_t>(fcs >> 1);
+		fcs = fcs & 1 ? static_cast<u16>(fcs >> 1 ^ 0x8408) :
+			static_cast<u16>(fcs >> 1);
 	return fcs;
 }
 
@@ -409,11 +410,11 @@ void Hdlc::start(Link *link)
 
 /* octet in, least significant bit first, with a 0 after each fifth 1
    in a row (the run going on from the octet before) */
-void Hdlc::put_byte(uint8_t in)
+void Hdlc::put_byte(u8 in)
 {
 	for (int i = 0; i < 8; i++, in >>= 1) {
 		int b = in & 1;
-		queue_bits(tx_, static_cast<uint32_t>(b), 1);
+		queue_bits(tx_, static_cast<u32>(b), 1);
 		if (!b) {
 			tx_ones_ = 0;
 		} else if (++tx_ones_ == 5) {
@@ -440,14 +441,14 @@ bool Hdlc::tx_fill()
 		return true;
 	}
 	if (tx_frame_->count < tx_frame_->size) {
-		uint8_t c = tx_frame_->buf[tx_frame_->count++];
+		u8 c = tx_frame_->buf[tx_frame_->count++];
 		tx_frame_->fcs = fcs_add(tx_frame_->fcs, c);
 		put_byte(c);
 		return true;
 	}
-	uint16_t fcs = static_cast<uint16_t>(~tx_frame_->fcs);
-	put_byte(static_cast<uint8_t>(fcs));
-	put_byte(static_cast<uint8_t>(fcs >> 8));
+	u16 fcs = static_cast<u16>(~tx_frame_->fcs);
+	put_byte(static_cast<u8>(fcs));
+	put_byte(static_cast<u8>(fcs >> 8));
 	tx_ones_ = 0;
 	Frame *f = tx_frame_;
 	tx_frame_ = nullptr;
@@ -462,7 +463,7 @@ bool Hdlc::tx_fill()
    past the buffer drops the frame */
 void Hdlc::rx_scan()
 {
-	uint8_t octet = 0;
+	u8 octet = 0;
 	int n = 0;              /* data bits, or positions while hunting */
 
 	if (rx_.bit < RX_LOOKAHEAD)
@@ -488,7 +489,7 @@ void Hdlc::rx_scan()
 		int b = take_bit(rx_);
 		if (!rx_error_) {
 			rx_ones_ = b ? rx_ones_ + 1 : 0;
-			octet |= static_cast<uint8_t>(b << n);
+			octet |= static_cast<u8>(b << n);
 		}
 		n++;
 	}

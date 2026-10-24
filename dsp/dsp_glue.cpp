@@ -14,6 +14,7 @@
 #include <cstring>
 #include <new>
 
+#include "dm_types.h"
 #include "dsp.h"
 #include "env.h"
 #include <dsplibs.h>
@@ -75,9 +76,9 @@ struct DcRemover {
 	int state;
 	s16 dc;
 	s16 threshold;
-	int32_t sum;
-	int32_t count;
-	int32_t skip_len, init_len, update_len;
+	s32 sum;
+	s32 count;
+	s32 skip_len, init_len, update_len;
 
 	void reset();
 	int process(void *buf, int len);
@@ -163,7 +164,7 @@ int DcRemover::process(void *buf, int len)
 			sum += s[i];
 		count += len;
 		if (count >= update_len) {
-			dc = (int32_t{dc} * 0x7333 + (sum / count) * 0xccd +
+			dc = (s32{dc} * 0x7333 + (sum / count) * 0xccd +
 				 0x4000) >> 15;
 			sum = 0;
 			count = 0;
@@ -265,7 +266,7 @@ struct CallerId {
 
 /* a caller ID receiver at rate Hz, cid_val the report format (1:
    formatted fields), packet the voice mode's; NULL when out of memory */
-void *CID_create(struct modem *m, uint32_t rate, unsigned cid_val,
+void *CID_create(struct modem *m, u32 rate, unsigned cid_val,
 		 int packet)
 {
 	CallerId *c = new (std::nothrow) CallerId();
@@ -464,7 +465,7 @@ int CID_process(void *obj, void *in, int count)
 
 struct Voice {
 	struct modem *modem;
-	int32_t srate;
+	s32 srate;
 	unsigned state;
 	int pending;            /* status to return from VOICE_process */
 	/* resampling between srate and 8000 Hz */
@@ -473,7 +474,7 @@ struct Voice {
 	int dle;
 	int tx_end;
 	/* tones */
-	int32_t tone_left;
+	s32 tone_left;
 	Osc t1, t2;
 	int tone1, tone2;      /* each sounds (its frequency is not 0) */
 	DtmfGen dtmf;
@@ -481,7 +482,7 @@ struct Voice {
 	/* DTMF on the line: the detector, the samples since the digit on
 	   was last reported, whether it is held off (our own tone plays) */
 	DtmfDetect rx_dtmf;
-	int32_t dtmf_since;
+	s32 dtmf_since;
 	int dtmf_held;
 	/* the call progress tones on the line, the rings and busy
 	   cadences reported */
@@ -492,7 +493,7 @@ struct Voice {
 	   bursts reported, the samples since the last report */
 	CngDetect rx_ct[2];
 	unsigned ct_told[2];
-	int32_t ct_since[2];
+	s32 ct_since[2];
 
 	struct voice_info *info();
 	int get_tx_sample(float *x);
@@ -504,7 +505,7 @@ struct Voice {
 /* a voice object at srate Hz in command state, its OK (the line is
    taken: AT+VLS=1's result, which the core leaves to it) due from the
    first process(); NULL when out of memory */
-void *VOICE_create(struct modem *m, uint32_t srate)
+void *VOICE_create(struct modem *m, u32 srate)
 {
 	Voice *v = new (std::nothrow) Voice();
 	if (!v)

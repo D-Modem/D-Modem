@@ -26,6 +26,7 @@
 
 #include <new>
 
+#include "dm_types.h"
 #include "v42bis.h"
 
 namespace dlink {
@@ -52,17 +53,17 @@ enum {
 
 /* the estimate after one codeword of size bits stood for len more
    characters: it loses len / WINDOW of itself and gains the codeword */
-static uint16_t estimate(uint16_t est, int len, int size)
+static u16 estimate(u16 est, int len, int size)
 {
-	return static_cast<uint16_t>(est + size -
-				     static_cast<int32_t>(est) * len / WINDOW);
+	return static_cast<u16>(est + size -
+				     static_cast<s32>(est) * len / WINDOW);
 }
 
 /* allocates the dictionary for N2 codewords and strings of up to N7
    characters, and starts the coder in the initial state with no
    statistics and no output; -1 if out of range (codewords are 16 bits,
    the string buffer holds V42BIS_MAX_STRING) or out of memory */
-int V42bis::init(int32_t dict_size, int32_t max_string)
+int V42bis::init(s32 dict_size, s32 max_string)
 {
 	exit();
 	if (dict_size < MIN_CODEWORDS || dict_size > 65535 ||
@@ -83,7 +84,7 @@ int V42bis::init(int32_t dict_size, int32_t max_string)
    than now, strings of MIN_STRING to V42BIS_MAX_STRING characters.  The
    dictionary stays as it is; -1, and nothing changed, if out of range
    (always when not ready()) */
-int V42bis::config(int32_t dict_size, int32_t max_string)
+int V42bis::config(s32 dict_size, s32 max_string)
 {
 	if (dict_size < MIN_CODEWORDS || dict_size > dict_size_ ||
 	    max_string < MIN_STRING || max_string > V42BIS_MAX_STRING)
@@ -110,9 +111,9 @@ void V42bis::exit()
    estimate at its start.  The statistics and the output stay */
 void V42bis::dict_init()
 {
-	for (int32_t i = 0; i < dict_size_; i++) {
+	for (s32 i = 0; i < dict_size_; i++) {
 		Node &n = dict_[i];
-		n.ch = i >= N6 && i < N5 ? static_cast<uint8_t>(i - N6) : 0;
+		n.ch = i >= N6 && i < N5 ? static_cast<u8>(i - N6) : 0;
 		n.parent = n.child = n.next = 0;
 	}
 	next_free_ = N5;
@@ -132,11 +133,11 @@ void V42bis::dict_init()
 
 /* the codeword of the string at + ch, 0 if the dictionary has no such
    string; at 0 is the empty string, whose extensions are the roots */
-uint16_t V42bis::match_char(uint16_t at, uint8_t ch) const
+u16 V42bis::match_char(u16 at, u8 ch) const
 {
 	if (!at)
 		return N6 + ch;
-	for (uint16_t c = dict_[at].child; c; c = dict_[c].next)
+	for (u16 c = dict_[at].child; c; c = dict_[c].next)
 		if (dict_[c].ch == ch)
 			return c;
 	return 0;
@@ -148,11 +149,11 @@ uint16_t V42bis::match_char(uint16_t at, uint8_t ch) const
    that is empty or a leaf, and a leaf there is detached from its parent.
    Callers never pass a string of N7 characters (6.4 a), so no string is
    longer than N7.  Returns the new entry's codeword, 0 if none */
-uint16_t V42bis::add_char(uint16_t at, uint8_t ch)
+u16 V42bis::add_char(u16 at, u8 ch)
 {
 	if (match_char(at, ch))
 		return 0;
-	uint16_t cw = next_free_;
+	u16 cw = next_free_;
 	Node &n = dict_[cw];
 	n.ch = ch;
 	n.parent = at;
@@ -167,7 +168,7 @@ uint16_t V42bis::add_char(uint16_t at, uint8_t ch)
 	} while (dict_[next_free_].child);
 	Node &r = dict_[next_free_];
 	if (r.parent) {
-		uint16_t *link = &dict_[r.parent].child;
+		u16 *link = &dict_[r.parent].child;
 		while (*link != next_free_)
 			link = &dict_[*link].next;
 		*link = r.next;
@@ -187,13 +188,13 @@ uint16_t V42bis::add_char(uint16_t at, uint8_t ch)
    now pending, at the excluded entry nothing is and the entry is not
    excluded any more.  After 0 the caller ends the string and matches ch
    again, which then starts the next string */
-int V42bis::recv_data(uint16_t ch)
+int V42bis::recv_data(u16 ch)
 {
 	if (update_at_) {
-		add_char(update_at_, static_cast<uint8_t>(ch));
+		add_char(update_at_, static_cast<u8>(ch));
 		update_at_ = 0;
 	}
-	uint16_t at = match_char(last_matched_, static_cast<uint8_t>(ch));
+	u16 at = match_char(last_matched_, static_cast<u8>(ch));
 	if (!at) {
 		update_at_ = last_matched_;
 		return 0;
@@ -216,7 +217,7 @@ int V42bis::recv_data(uint16_t ch)
    ends passed on (7.5), the compressibility test after each of these
    and after the character joins a string (7.8).  Returns the octets it
    queued */
-int V42bis::encode(uint8_t ch)
+int V42bis::encode(u8 ch)
 {
 	int before = olen_;
 	int r;
@@ -295,15 +296,15 @@ int V42bis::test_mode()
 
 /* the codeword cw in C2 bits (7.4), after as many STEPUPs as it needs
    (each in the size it leaves, C3 doubling); its whole octets go out */
-void V42bis::send_cw(uint16_t cw)
+void V42bis::send_cw(u16 cw)
 {
 	while (cw > threshold_) {
-		bit_data_ |= static_cast<uint32_t>(STEPUP) << bit_len_;
+		bit_data_ |= static_cast<u32>(STEPUP) << bit_len_;
 		bit_len_ += cw_size_++;
-		threshold_ = static_cast<uint16_t>(threshold_ << 1 | 1);
+		threshold_ = static_cast<u16>(threshold_ << 1 | 1);
 		send_bits();
 	}
-	bit_data_ |= static_cast<uint32_t>(cw) << bit_len_;
+	bit_data_ |= static_cast<u32>(cw) << bit_len_;
 	bit_len_ += cw_size_;
 	send_bits();
 }
@@ -370,17 +371,17 @@ int V42bis::flush_encoder()
 
 /* one octet of a received I frame (8); the characters it gives join the
    output.  Returns how many, or -1 on C-ERROR (5.8) */
-int V42bis::decode(uint8_t ch)
+int V42bis::decode(u8 ch)
 {
 	if (mode_ == COMPRESSED) {
 		/* the octet's bits join the reservoir, the least significant
 		   first (Figure 3); a codeword has 9 bits or more, so no more
 		   than one ends in this octet */
-		bit_data_ |= static_cast<uint32_t>(ch) << bit_len_;
+		bit_data_ |= static_cast<u32>(ch) << bit_len_;
 		bit_len_ += 8;
 		if (bit_len_ < cw_size_)
 			return 0;
-		uint16_t cw = static_cast<uint16_t>(bit_data_ & threshold_);
+		u16 cw = static_cast<u16>(bit_data_ & threshold_);
 		bit_data_ >>= cw_size_;
 		bit_len_ -= cw_size_;
 		switch (cw) {
@@ -404,7 +405,7 @@ int V42bis::decode(uint8_t ch)
 			if (threshold_ >= dict_size_ - 1)
 				return -1;
 			cw_size_++;
-			threshold_ = static_cast<uint16_t>(threshold_ << 1 | 1);
+			threshold_ = static_cast<u16>(threshold_ << 1 | 1);
 			return 0;
 		}
 		/* a string: not beyond the dictionary nor an empty entry, such
@@ -414,7 +415,7 @@ int V42bis::decode(uint8_t ch)
 		/* spelled from the leaf up into the end of str_data_ (no string
 		   is longer than N7) */
 		int pos = V42BIS_MAX_STRING;
-		for (uint16_t at = cw;; at = dict_[at].parent) {
+		for (u16 at = cw;; at = dict_[at].parent) {
 			str_data_[--pos] = dict_[at].ch;
 			if (at < N5)
 				break;
@@ -433,7 +434,7 @@ int V42bis::decode(uint8_t ch)
 			update_at_ = cw;
 		/* out, the escape character cycling on its own (9.2 b) */
 		for (; pos < V42BIS_MAX_STRING; pos++) {
-			uint8_t c = str_data_[pos];
+			u8 c = str_data_[pos];
 			send_data(c);
 			if (c == escape_char_)
 				escape_char_ += ESCAPE_STEP;
@@ -501,18 +502,18 @@ int V42bis::flush_decoder()
    of the output queue; dropped if it is full (callers take the output
    before each encode() and decode(), which queue far less).  Returns 1
    if queued */
-int V42bis::send_data(uint16_t ch)
+int V42bis::send_data(u16 ch)
 {
 	if (olen_ >= static_cast<int>(sizeof(obuf_)))
 		return 0;
 	obuf_[(ohead_ + olen_++) % static_cast<int>(sizeof(obuf_))] =
-		static_cast<uint8_t>(ch);
+		static_cast<u8>(ch);
 	return 1;
 }
 
 /* takes up to n octets from the front of the output queue into buf;
    returns how many */
-int V42bis::out(uint8_t *buf, int n)
+int V42bis::out(u8 *buf, int n)
 {
 	if (n > olen_)
 		n = olen_;

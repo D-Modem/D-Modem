@@ -10,6 +10,7 @@
  *
  */
 
+#include "dm_types.h"
 #include "port.h"
 
 #include <cstring>
@@ -28,14 +29,14 @@ static_assert(sizeof(SerialCommProp) == 64, "SERIAL_COMMPROP");
 
 namespace {
 
-const uint32_t MAXT = 0xffffffffu;
+const u32 MAXT = 0xffffffffu;
 
 /* SERIAL_COMMPROP's values: an RS-232 port (SERIAL_SP_RS232) taking any
    baud rate (SERIAL_BAUD_USER), 5 to 8 data bits, every stop bit and
    parity setting, both timeouts and the handshakes */
-const uint32_t SP_SERIALCOMM = 1, SP_RS232 = 1, BAUD_USER = 0x10000000,
+const u32 SP_SERIALCOMM = 1, SP_RS232 = 1, BAUD_USER = 0x10000000,
 	PCF_ALL = 0x1ff, SP_ALL = 0x7f, BAUD_ALL = 0x1007ffff;
-const uint16_t DATABITS_ALL = 0x0f, STOPPARITY_ALL = 0x1f07;
+const u16 DATABITS_ALL = 0x0f, STOPPARITY_ALL = 0x1f07;
 
 } // namespace
 
@@ -43,7 +44,7 @@ const uint16_t DATABITS_ALL = 0x0f, STOPPARITY_ALL = 0x1f07;
 Port::Port(PortHost *host, Clock clock) : host_(host), clock_(clock) {}
 
 /* r done: completed once the lock is let go */
-void Port::finish(Batch &b, Request *r, uint32_t status, size_t info)
+void Port::finish(Batch &b, Request *r, u32 status, size_t info)
 {
 	b.done.push_back({ r, { status, info } });
 }
@@ -52,7 +53,7 @@ void Port::finish(Batch &b, Request *r, uint32_t status, size_t info)
 void Port::run(Batch &b, std::unique_lock<std::mutex> &lk)
 {
 	after(b);
-	uint64_t due = next_due();
+	u64 due = next_due();
 	bool timer = due != due_;
 	due_ = due;
 	lk.unlock();
@@ -88,14 +89,14 @@ void Port::after(Batch &b)
 
 /* ev happened: a waiting IOCTL_SERIAL_WAIT_ON_MASK given it if the mask
    has it, else kept for the next */
-void Port::event(Batch &b, uint32_t ev)
+void Port::event(Batch &b, u32 ev)
 {
 	ev &= wait_mask_;
 	if (!ev)
 		return;
 	events_ |= ev;
 	if (wait_) {
-		uint32_t got = events_;
+		u32 got = events_;
 		events_ = 0;
 		memcpy(wait_->data(), &got, 4);
 		finish(b, wait_, ST_SUCCESS, 4);
@@ -105,10 +106,10 @@ void Port::event(Batch &b, uint32_t ev)
 
 /* the earliest of the head read's and the head write's timeouts, 0 if
    neither has one */
-uint64_t Port::next_due() const
+u64 Port::next_due() const
 {
-	uint64_t due = 0;
-	auto at = [&due](uint64_t t) {
+	u64 due = 0;
+	auto at = [&due](u64 t) {
 		if (t && (!due || t < due))
 			due = t;
 	};
@@ -129,7 +130,7 @@ uint64_t Port::next_due() const
        something, else at the first character or after c ms;
      - else full, or the total time (multiplier * length + constant)
        gone, or the interval gone between two characters */
-void Port::pump_reads(Batch &b, uint64_t now)
+void Port::pump_reads(Batch &b, u64 now)
 {
 	while (!reads_.empty()) {
 		Request *r = reads_.front();
@@ -143,12 +144,12 @@ void Port::pump_reads(Batch &b, uint64_t now)
 
 		if (!r->started_) {
 			r->started_ = true;
-			uint64_t total = 0;
+			u64 total = 0;
 			if (first)
 				total = t.read_constant;
 			else if (!at_once && (t.read_multiplier ||
 					      t.read_constant))
-				total = static_cast<uint64_t>(
+				total = static_cast<u64>(
 						t.read_multiplier) *
 						want +
 					t.read_constant;
@@ -164,7 +165,7 @@ void Port::pump_reads(Batch &b, uint64_t now)
 		    t.read_interval != MAXT)
 			r->interval_due_ = now + t.read_interval;
 
-		uint32_t st = ST_SUCCESS;
+		u32 st = ST_SUCCESS;
 		bool end = r->done_ == want || at_once ||
 			(first && r->done_ > 0);
 		if (!end && ((r->total_due_ && now >= r->total_due_) ||
@@ -182,7 +183,7 @@ void Port::pump_reads(Batch &b, uint64_t now)
 /* the writes, in turn, into the transmit buffer (all of it at once
    without dmodemd: dropped); the head write timed by the total time
    (multiplier * length + constant) */
-void Port::pump_writes(Batch &b, uint64_t now)
+void Port::pump_writes(Batch &b, u64 now)
 {
 	while (!writes_.empty()) {
 		Request *r = writes_.front();
@@ -190,15 +191,15 @@ void Port::pump_writes(Batch &b, uint64_t now)
 
 		if (!r->started_) {
 			r->started_ = true;
-			uint64_t total =
-				static_cast<uint64_t>(to_.write_multiplier) *
+			u64 total =
+				static_cast<u64>(to_.write_multiplier) *
 					want +
 				to_.write_constant;
 			r->total_due_ = total ? now + total : 0;
 		}
 		if (!connected_) {
 			stats_.transmitted +=
-				static_cast<uint32_t>(want - r->done_);
+				static_cast<u32>(want - r->done_);
 			r->done_ = want;
 		}
 		size_t k = 0;
@@ -207,12 +208,12 @@ void Port::pump_writes(Batch &b, uint64_t now)
 			k++;
 		}
 		if (k) {
-			stats_.transmitted += static_cast<uint32_t>(k);
+			stats_.transmitted += static_cast<u32>(k);
 			b.tx = true;
 		}
 		if (want)
 			tx_busy_ = true;
-		uint32_t st = ST_SUCCESS;
+		u32 st = ST_SUCCESS;
 		if (r->done_ < want) {
 			if (!r->total_due_ || now < r->total_due_)
 				break;
@@ -225,9 +226,9 @@ void Port::pump_writes(Batch &b, uint64_t now)
 
 /* the modem status register: the lines (none without dmodemd) and the
    deltas since it was read */
-uint8_t Port::msr() const
+u8 Port::msr() const
 {
-	uint8_t l = connected_ ? lines_ : 0, m = deltas_;
+	u8 l = connected_ ? lines_ : 0, m = deltas_;
 	if (l & LINE_CTS)
 		m |= PMSR_CTS;
 	if (l & LINE_DSR)
@@ -241,7 +242,7 @@ uint8_t Port::msr() const
 
 /* a received character into the buffer, escaped for LSRMST_INSERT:
    false if there is no room */
-bool Port::rx_push(uint8_t c)
+bool Port::rx_push(u8 c)
 {
 	if (lsrmst_ && c == lsrmst_) {
 		if (rx_room_left() < 2)
@@ -258,9 +259,9 @@ bool Port::rx_push(uint8_t c)
 
 /* the modem status as it now is after old, in-band for LSRMST_INSERT
    (escape, LSRMST_MST, the register with its deltas) if it changed */
-void Port::put_msr(uint8_t msr_old)
+void Port::put_msr(u8 msr_old)
 {
-	uint8_t now = msr();
+	u8 now = msr();
 	if (!lsrmst_ || (now & 0xf0) == (msr_old & 0xf0))
 		return;
 	if (rx_room_left() >= 3) {
@@ -392,7 +393,7 @@ bool Port::cancel(Request *r)
 		found = true;
 	}
 	/* (the next read or write is the head now: timed from now) */
-	uint64_t now = clock_();
+	u64 now = clock_();
 	pump_reads(b, now);
 	pump_writes(b, now);
 	run(b, lk);
@@ -404,7 +405,7 @@ void Port::tick()
 {
 	Batch b;
 	std::unique_lock<std::mutex> lk(mu_);
-	uint64_t now = clock_();
+	u64 now = clock_();
 	pump_reads(b, now);
 	pump_writes(b, now);
 	run(b, lk);
@@ -416,7 +417,7 @@ void Port::connect(bool up)
 {
 	Batch b;
 	std::unique_lock<std::mutex> lk(mu_);
-	uint8_t old = msr(), was = connected_ ? lines_ : 0;
+	u8 old = msr(), was = connected_ ? lines_ : 0;
 	connected_ = up;
 	lines_ = 0;
 	if (!up) {
@@ -445,7 +446,7 @@ void Port::connect(bool up)
 
 /* see port.h: each line's change a delta and an event (RI's rising
    edge EV_RING, its falling one TERI, as a UART has it) */
-void Port::set_lines(uint8_t lines)
+void Port::set_lines(u8 lines)
 {
 	Batch b;
 	std::unique_lock<std::mutex> lk(mu_);
@@ -453,7 +454,7 @@ void Port::set_lines(uint8_t lines)
 		run(b, lk);
 		return;
 	}
-	uint8_t old = msr(), ch = static_cast<uint8_t>(lines ^ lines_);
+	u8 old = msr(), ch = static_cast<u8>(lines ^ lines_);
 	lines_ = lines;
 	if (ch & LINE_CTS) {
 		deltas_ |= PMSR_DCTS;
@@ -482,7 +483,7 @@ void Port::set_lines(uint8_t lines)
 /* see port.h: with the app's port closed the characters go nowhere;
    NUL stripped if the handflow says so; the event character EV_RXFLAG;
    the buffer at 80% EV_RX80FULL */
-size_t Port::rx_put(const uint8_t *p, size_t n)
+size_t Port::rx_put(const u8 *p, size_t n)
 {
 	Batch b;
 	std::unique_lock<std::mutex> lk(mu_);
@@ -493,7 +494,7 @@ size_t Port::rx_put(const uint8_t *p, size_t n)
 	}
 	bool any = false, flag = false;
 	for (; i < n; i++) {
-		uint8_t c = p[i];
+		u8 c = p[i];
 		if (c == 0 && (hf_.flow_replace & HF_NULL_STRIPPING))
 			continue;
 		if (!rx_push(c)) {
@@ -519,7 +520,7 @@ size_t Port::rx_put(const uint8_t *p, size_t n)
 }
 
 /* see port.h */
-size_t Port::tx_take(uint8_t *p, size_t max)
+size_t Port::tx_take(u8 *p, size_t max)
 {
 	Batch b;
 	std::unique_lock<std::mutex> lk(mu_);
@@ -535,48 +536,48 @@ size_t Port::tx_take(uint8_t *p, size_t max)
 }
 
 /* see port.h */
-uint8_t Port::app_state()
+u8 Port::app_state()
 {
 	std::lock_guard<std::mutex> lk(mu_);
-	return static_cast<uint8_t>((open_ ? STATE_OPEN : 0) |
+	return static_cast<u8>((open_ ? STATE_OPEN : 0) |
 				    (dtr_ ? STATE_DTR : 0) |
 				    (rts_ ? STATE_RTS : 0));
 }
 
 /* see port.h */
-uint32_t Port::baud()
+u32 Port::baud()
 {
 	std::lock_guard<std::mutex> lk(mu_);
 	return baud_;
 }
 
 /* see port.h */
-uint32_t Port::ioctl(uint32_t code, const void *in, size_t inlen, void *out,
+u32 Port::ioctl(u32 code, const void *in, size_t inlen, void *out,
 		     size_t outlen, size_t *info, Request *r)
 {
 	Batch b;
 	std::unique_lock<std::mutex> lk(mu_);
 	*info = 0;
-	uint32_t st = do_ioctl(b, code, in, inlen, out, outlen, info, r);
+	u32 st = do_ioctl(b, code, in, inlen, out, outlen, info, r);
 	run(b, lk);
 	return st;
 }
 
 /* ioctl() under the lock */
-uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
+u32 Port::do_ioctl(Batch &b, u32 code, const void *in,
 			size_t inlen, void *out, size_t outlen, size_t *info,
 			Request *r)
 {
 	/* in: at least n bytes of input; give: v (n bytes) as the output */
 	auto need = [&](size_t n) { return inlen >= n && in; };
-	auto give = [&](const void *v, size_t n) -> uint32_t {
+	auto give = [&](const void *v, size_t n) -> u32 {
 		if (outlen < n || !out)
 			return ST_BUFFER_TOO_SMALL;
 		memcpy(out, v, n);
 		*info = n;
 		return ST_SUCCESS;
 	};
-	uint32_t u = 0;
+	u32 u = 0;
 
 	switch (code) {
 	case IO_SET_BAUD_RATE:
@@ -656,15 +657,15 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 		return ST_SUCCESS;
 	case IO_SET_RTS:
 	case IO_CLR_RTS: {
-		uint32_t m = hf_.flow_replace & HF_RTS_MASK;
+		u32 m = hf_.flow_replace & HF_RTS_MASK;
 		if (m == HF_RTS_HANDSHAKE || m == HF_TRANSMIT_TOGGLE)
 			return ST_INVALID_PARAMETER;
 		set_dtr_rts(b, dtr_, code == IO_SET_RTS);
 		return ST_SUCCESS;
 	}
 	case IO_GET_DTRRTS:
-		u = (dtr_ ? static_cast<uint32_t>(DTRRTS_DTR) : 0u) |
-		    (rts_ ? static_cast<uint32_t>(DTRRTS_RTS) : 0u);
+		u = (dtr_ ? static_cast<u32>(DTRRTS_DTR) : 0u) |
+		    (rts_ ? static_cast<u32>(DTRRTS_RTS) : 0u);
 		return give(&u, 4);
 	case IO_GET_MODEM_CONTROL:
 		/* (MCR: DTR, RTS, and OUT2 as a PC's UART has it) */
@@ -688,7 +689,7 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 			return ST_INVALID_PARAMETER;
 		/* (a wait waiting ends with no event) */
 		if (wait_) {
-			uint32_t none = 0;
+			u32 none = 0;
 			memcpy(wait_->data(), &none, 4);
 			finish(b, wait_, ST_SUCCESS, 4);
 			wait_ = nullptr;
@@ -705,7 +706,7 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 			return ST_INVALID_PARAMETER;
 		r->done_ = 0;
 		if (events_) {
-			uint32_t got = events_;
+			u32 got = events_;
 			events_ = 0;
 			memcpy(r->data(), &got, 4);
 			finish(b, r, ST_SUCCESS, 4);
@@ -736,11 +737,11 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 		return ST_SUCCESS;
 	case IO_GET_COMMSTATUS: {
 		SerialStatus s = {};
-		s.in_queue = static_cast<uint32_t>(rx_.size());
-		s.out_queue = static_cast<uint32_t>(tx_.size());
+		s.in_queue = static_cast<u32>(rx_.size());
+		s.out_queue = static_cast<u32>(tx_.size());
 		for (Request *q : writes_)
 			s.out_queue +=
-				static_cast<uint32_t>(q->size() - q->done_);
+				static_cast<u32>(q->size() - q->done_);
 		return give(&s, sizeof(s));
 	}
 	case IO_GET_PROPERTIES: {
@@ -773,7 +774,7 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 	case IO_LSRMST_INSERT:
 		if (!need(1))
 			return ST_BUFFER_TOO_SMALL;
-		lsrmst_ = *static_cast<const uint8_t *>(in);
+		lsrmst_ = *static_cast<const u8 *>(in);
 		return ST_SUCCESS;
 	case IO_IMMEDIATE_CHAR:
 		if (!need(1))
@@ -781,7 +782,7 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 		if (connected_) {
 			if (tx_.size() >= TX_SIZE)
 				return ST_INVALID_PARAMETER;
-			tx_.push_back(*static_cast<const uint8_t *>(in));
+			tx_.push_back(*static_cast<const u8 *>(in));
 			b.tx = true;
 		}
 		tx_busy_ = true;
