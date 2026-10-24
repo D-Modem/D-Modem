@@ -547,9 +547,9 @@ int FaxRx::make_reference()
 
 	if (is_v17(mod))
 		n += 64;                /* the bridge is known as well */
-	ref_ = ref = static_cast<signed char*>(malloc(n));
-	if (!ref_)
+	if (!alloc_zeroed(ref, n))
 		return -1;
+	ref_ = ref.data();
 	ref_len = n;
 	if (is_v17(mod)) {
 		scr_ = 0x2ECDD5;
@@ -648,8 +648,7 @@ void FaxRx::release()
 	if (mod == FM_V21 || mod == FM_NONE)
 		return;
 	qam.release();
-	free(ref);
-	ref = NULL;
+	free_buffer(ref);
 }
 
 /* the n bits of a symbol's value q (the highest first if msb_first)

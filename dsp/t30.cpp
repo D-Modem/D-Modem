@@ -35,6 +35,7 @@
  *
  */
 
+#include <utility>
 #include <vector>
 
 #include <math.h>
@@ -1017,7 +1018,7 @@ void T30::next_page_or_end()
 		page.release();
 	have_page = 0;
 	if (have_next) {
-		page = next;
+		page = std::move(next);
 		have_page = 1;
 		have_next = 0;
 	}
@@ -1033,9 +1034,9 @@ void T30::page_settings()
 		int y, s = T4_STRIDE(page.width);
 		p.init(page.width, 0);
 		for (y = 0; y < page.rows; y += 2)
-			p.add_row(page.bits + (size_t)y * s);
+			p.add_row(page.bits.data() + (size_t)y * s);
 		page.release();
-		page = p;
+		page = std::move(p);
 	}
 }
 

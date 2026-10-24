@@ -250,7 +250,7 @@ TEST_P(SpandspT4, IntoOurLineReceiver)
 			break;
 	rx.end();
 	for (y = 0; y < ref.rows && y < got.rows; y++)
-		if (memcmp(ref.bits + (size_t)y * 216, got.bits + (size_t)y * 216, 216)) {
+		if (memcmp(ref.bits.data() + (size_t)y * 216, got.bits.data() + (size_t)y * 216, 216)) {
 			if (first < 0)
 				first = y;
 			diff++;

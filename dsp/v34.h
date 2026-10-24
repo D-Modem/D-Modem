@@ -10,6 +10,10 @@
 #define __V34_H__
 
 #include <string.h>
+
+#include <memory>
+#include <vector>
+
 #include "bits.h"
 #include "qam.h"
 
@@ -405,7 +409,7 @@ struct V34Rx {
 	int have_good;
 	int timing_fixed;       /* the timing follows the equalizer */
 	float c0, t_freq;       /* trained equalizer delay, clock offset */
-	lscplx *ls_r, *ls_p;    /* least squares training */
+	std::vector<lscplx> ls_r, ls_p; /* least squares training */
 	int phase4_ls, have_ls;
 	float ls_d;             /* delay of the last solution */
 	long ls_sym;            /* at this symbol */
@@ -429,7 +433,7 @@ struct V34Rx {
 	int cp_count;           /* good CP frames (not CPt) so far */
 	int cp_silence;         /* the last one asked for silence (CPs) */
 	unsigned char cpraw[1800];      /* the last good CP frame */
-	SyncFrames *fr;         /* Ja, then CP (set_v90()) */
+	std::unique_ptr<SyncFrames> fr; /* Ja, then CP (set_v90()) */
 	V90Dil dil;
 	int mp_n, mp_len;       /* collecting an MP frame */
 	int ones;               /* ones since the end of the last MP frame */

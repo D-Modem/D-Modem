@@ -30,6 +30,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <vector>
+
 #include "pump.h"
 #include "v34.h"
 #include "v90.h"
@@ -377,7 +379,7 @@ struct V34Echo {
 	   the echo away than NLMS takes in the time) on what it stored of
 	   it: our samples (EC_NEAR_LEN - 1 before its first too), the line */
 	int ls;
-	float *ls_tx, *ls_rx;
+	std::vector<float> ls_tx, ls_rx;
 	long ls_n;
 
 	void init();
@@ -2383,9 +2385,8 @@ void V34Echo::init()
 /* see V34Echo */
 void V34Echo::ls_free()
 {
-	free(ls_tx);
-	free(ls_rx);
-	ls_tx = ls_rx = nullptr;
+	free_buffer(ls_tx);
+	free_buffer(ls_rx);
 }
 
 /* see V34Echo: the normal equations of the near part over the n stored
@@ -2394,22 +2395,21 @@ void V34Echo::ls_free()
 float V34Echo::ls_solve()
 {
 	const int L = EC_NEAR_LEN, T = EC_NEAR_LEN - 1;
+	std::vector<double> R_, ch_;
 	double *R, *ch, p[EC_NEAR_LEN], w[EC_NEAR_LEN], z[EC_NEAR_LEN];
 	double ryy = 0, rest, tr = 0, lam;
-	const float *t = ls_tx, *y = ls_rx;
+	const float *t = ls_tx.data(), *y = ls_rx.data();
 	long n, N = ls_n;
 	int i, j, m;
 	float gain = 0;
 
-	if (!ls_tx || !ls_rx || N < 4 * L || far_on)
+	if (ls_tx.empty() || ls_rx.empty() || N < 4 * L || far_on)
 		goto out;
-	R = static_cast<double *>(calloc((size_t)L * L, sizeof(double)));
-	ch = static_cast<double *>(calloc((size_t)L * L, sizeof(double)));
-	if (!R || !ch) {
-		free(R);
-		free(ch);
+	if (!alloc_zeroed(R_, (size_t)L * L) ||
+	    !alloc_zeroed(ch_, (size_t)L * L))
 		goto out;
-	}
+	R = R_.data();
+	ch = ch_.data();
 	/* t[T + n] is our sample with the line's y[n] */
 	for (j = 0; j < L; j++) {
 		double r = 0, q = 0;
@@ -2457,8 +2457,6 @@ float V34Echo::ls_solve()
 	rest = ryy;
 	for (i = 0; i < L; i++)
 		rest -= w[i] * p[i];
-	free(R);
-	free(ch);
 	gain = (float)(10 * log10((ryy + 1) / (rest > 0 ? rest + 1 : 1)));
 	/* in place of NLMS's when it does better */
 	if (gain > 10 * log10f((pw_rx + 1) / (pw_err + 1))) {
@@ -2586,17 +2584,15 @@ float V34Echo::run(float tx, float rx)
 	}
 	/* stored for ls_solve() while it trains */
 	if (ls && mu > 0) {
-		if (!ls_tx && !ls_rx && !ls_n) {
-			ls_tx = static_cast<float *>(malloc((EC_LS_MAX +
-					EC_NEAR_LEN) * sizeof(float)));
-			ls_rx = static_cast<float *>(malloc(EC_LS_MAX *
-							   sizeof(float)));
-			if (ls_tx)
+		if (ls_tx.empty() && ls_rx.empty() && !ls_n) {
+			if (alloc_zeroed(ls_tx, EC_LS_MAX + EC_NEAR_LEN))
+				alloc_zeroed(ls_rx, EC_LS_MAX);
+			if (!ls_tx.empty())
 				for (i = 0; i < EC_NEAR_LEN - 1; i++)
 					ls_tx[i] = hist[(pos - (EC_NEAR_LEN -
 							 1) + i) & mask];
 		}
-		if (ls_tx && ls_rx && ls_n < EC_LS_MAX) {
+		if (!ls_tx.empty() && !ls_rx.empty() && ls_n < EC_LS_MAX) {
 			ls_tx[EC_NEAR_LEN - 1 + ls_n] = tx;
 			ls_rx[ls_n++] = rx;
 		}

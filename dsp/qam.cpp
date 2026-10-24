@@ -8,6 +8,8 @@
  */
 
 #include <math.h>
+
+#include <algorithm>
 #include <stdlib.h>
 #include <string.h>
 
@@ -97,10 +99,9 @@ int QamRx::init(int srate_, float carrier, float baud_,
 	mf_len = (int)(2 * span * sps) | 1;
 	/* the matched filter is evaluated at the T/2 instants themselves,
 	   from a table of QAM_MF_RES points per sample */
-	mf = static_cast<float*>(calloc((mf_len + 2) * QAM_MF_RES + 2, sizeof(float)));
 	/* the last mf_len + 1 samples, twice */
-	mf_buf = static_cast<cplx*>(calloc(2 * (mf_len + 1), sizeof(cplx)));
-	if (!mf || !mf_buf) {
+	if (!alloc_zeroed(mf, (mf_len + 2) * QAM_MF_RES + 2) ||
+	    !alloc_zeroed(mf_buf, 2 * (mf_len + 1))) {
 		release();
 		return -1;
 	}
@@ -128,10 +129,8 @@ int QamRx::init(int srate_, float carrier, float baud_,
 /* frees the matched filter buffers (also after a failed init) */
 void QamRx::release()
 {
-	free(mf);
-	free(mf_buf);
-	mf = NULL;
-	mf_buf = NULL;
+	free_buffer(mf);
+	free_buffer(mf_buf);
 }
 
 /* equalizer back to a single (even, centre) tap, carrier phase and
@@ -167,7 +166,7 @@ int QamRx::sample(float x)
 		/* the matched filter output at t_next (<= 0) samples before
 		   the previous sample (the latency the handshake timings
 		   were tuned with) */
-		const cplx *buf = mf_buf + mf_pos + 1;
+		const cplx *buf = mf_buf.data() + mf_pos + 1;
 		float p = (1 + t_next) * QAM_MF_RES, f;
 		int k;
 		cplx s = { 0, 0 };
@@ -382,9 +381,7 @@ int EchoCanceller::init(int len_)
 {
 	reinit(*this);
 	len = len_;
-	w = static_cast<float*>(calloc(len_, sizeof(float)));
-	hist = static_cast<float*>(calloc(2 * len_, sizeof(float)));
-	if (!w || !hist) {
+	if (!alloc_zeroed(w, len_) || !alloc_zeroed(hist, 2 * len_)) {
 		release();
 		return -1;
 	}
@@ -394,9 +391,8 @@ int EchoCanceller::init(int len_)
 /* frees the taps and the history (also after a failed init) */
 void EchoCanceller::release()
 {
-	free(w);
-	free(hist);
-	w = hist = NULL;
+	free_buffer(w);
+	free_buffer(hist);
 }
 
 /* tx the sample we send, rx the one received at the same time: returns
@@ -420,7 +416,7 @@ float EchoCanceller::run(float tx, float rx, float mu)
 		pos = len - 1;
 	hist[pos] = hist[pos + len] = tx;
 	tx_power += 0.001f * (tx * tx - tx_power);
-	h = hist + pos;
+	h = hist.data() + pos;
 	for (i = 0; i < len; i++)
 		est += w[i] * h[i];
 	err = rx - est;
@@ -444,7 +440,7 @@ float EchoCanceller::judge()
 	training = 0;
 	if (erle < 6) {
 		off = 1;
-		memset(w, 0, len * sizeof(*w));
+		std::fill(w.begin(), w.end(), 0.0f);
 	}
 	return erle;
 }

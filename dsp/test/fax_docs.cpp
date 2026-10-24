@@ -111,11 +111,11 @@ testing::AssertionResult same_pages(const std::string &a,
 			break;
 		n++;
 		if (pa.rows != pb.rows || pa.fine != pb.fine ||
-		    memcmp(pa.bits, pb.bits, (size_t)pa.rows * T4_STRIDE(T4_WIDTH))) {
+		    memcmp(pa.bits.data(), pb.bits.data(), (size_t)pa.rows * T4_STRIDE(T4_WIDTH))) {
 			int y, diff = 0, first = -1;
 			for (y = 0; y < pa.rows && y < pb.rows; y++)
-				if (memcmp(pa.bits + (size_t)y * 216,
-					   pb.bits + (size_t)y * 216, 216)) {
+				if (memcmp(pa.bits.data() + (size_t)y * 216,
+					   pb.bits.data() + (size_t)y * 216, 216)) {
 					if (first < 0)
 						first = y;
 					diff++;

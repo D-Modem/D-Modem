@@ -12,6 +12,8 @@
 
 #include <stddef.h>
 
+#include <vector>
+
 namespace dsp {
 
 #define T4_WIDTH        1728    /* A4 at 204 pels per inch */
@@ -21,10 +23,10 @@ struct T4Bits;
 /* a page: rows of width bits, 1 = black, the first pel in the top bit
    of the first byte */
 struct T4Page {
-	int width, rows, cap;
-	int fine;                       /* 196 lines per inch (else 98) */
-	unsigned char *bits;
-	int bad_rows;                   /* received with errors */
+	int width = 0, rows = 0, cap = 0;
+	int fine = 0;                   /* 196 lines per inch (else 98) */
+	std::vector<unsigned char> bits;
+	int bad_rows = 0;               /* received with errors */
 
 	int init(int width_, int fine_);
 	void release();
@@ -50,8 +52,8 @@ struct T4Page {
 
 /* a growing string of bits, in the order they go out */
 struct T4Bits {
-	unsigned char *buf;
-	size_t n, cap;                  /* bits */
+	std::vector<unsigned char> buf;
+	size_t n = 0, cap = 0;          /* bits */
 
 	void put(unsigned code, int len);
 	void release();
@@ -79,7 +81,7 @@ struct T4Rx {
 	int next_2d;                    /* MR: the tag bit after the EOL */
 	int tag_pending;
 	int done;
-	unsigned char *ref;             /* the last good row */
+	std::vector<unsigned char> ref; /* the last good row */
 
 	void init(T4Page *page_, int mr_);
 	void release();
@@ -111,7 +113,7 @@ struct TiffOut {
 
 /* the pages of a TIFF file, read one at a time */
 struct TiffIn {
-	unsigned char *data;
+	std::vector<unsigned char> data;
 	size_t len;
 	int big_endian;
 	unsigned long next_ifd;

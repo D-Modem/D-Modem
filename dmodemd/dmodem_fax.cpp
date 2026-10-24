@@ -14,6 +14,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <new>
+
 #include "dmodem.h"
 #include "dmodem_g711.h"
 #include "t30.h"
@@ -109,14 +111,14 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 	dmodem_init();
 	if (!cfg->file)
 		return NULL;
-	f = static_cast<dmodem_fax*>(calloc(1, sizeof(*f)));
+	f = new (std::nothrow) dmodem_fax();
 	if (!f)
 		return NULL;
 	f->law = cfg->law;
 	f->sending = cfg->dir == DMODEM_FAX_SEND;
 	snprintf(f->path, sizeof(f->path), "%s", cfg->file);
 	if (f->sending && f->in.open(f->path)) {
-		free(f);
+		delete f;
 		return NULL;
 	}
 	c.sending = f->sending;
@@ -153,7 +155,7 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 	if (!f->t30) {
 		if (f->sending)
 			f->in.close();
-		free(f);
+		delete f;
 		return NULL;
 	}
 	return f;
@@ -233,5 +235,5 @@ void dmodem_fax_destroy(struct dmodem_fax *f)
 		f->in.close();
 	if (f->out_open)
 		f->out.close();
-	free(f);
+	delete f;
 }

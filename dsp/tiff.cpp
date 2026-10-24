@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <utility>
+
 #include "reinit.h"
 #include "t4.h"
 
@@ -77,7 +79,7 @@ static unsigned char *entry(unsigned char *e, unsigned tag, unsigned type,
 int TiffOut::write_page(const T4Page *p)
 {
 	FILE *f_ = static_cast<FILE*>(f);
-	T4Bits b = { 0 };
+	T4Bits b;
 	unsigned char ifd[2 + 20 * 12 + 4 + 16], *e = ifd + 2, link[4];
 	long data_at, ifd_at, res_at;
 	size_t len;
@@ -89,7 +91,7 @@ int TiffOut::write_page(const T4Page *p)
 	len = (b.n + 7) / 8;
 	fseek(f_, 0, SEEK_END);
 	data_at = ftell(f_);
-	if (len && fwrite(b.buf, 1, len, f_) != len) {
+	if (len && fwrite(b.buf.data(), 1, len, f_) != len) {
 		b.release();
 		return -1;
 	}
@@ -162,9 +164,10 @@ int TiffOut::close()
 /* a 16 bit value at offset at, in the file's byte order; 0 beyond it */
 unsigned TiffIn::get16(unsigned long at) const
 {
-	const unsigned char *p = data + at;
+	const unsigned char *p;
 	if (at + 2 > len)
 		return 0;
+	p = data.data() + at;
 	return big_endian ? (p[0] << 8) | p[1] : p[0] | (p[1] << 8);
 }
 
@@ -191,11 +194,10 @@ int TiffIn::open(const char *path)
 	fseek(f, 0, SEEK_END);
 	len_ = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	if (len_ < 8 || !(data = static_cast<unsigned char*>(malloc(len_))) ||
-	    fread(data, 1, len_, f) != (size_t)len_) {
+	if (len_ < 8 || !alloc_zeroed(data, (size_t)len_) ||
+	    fread(data.data(), 1, len_, f) != (size_t)len_) {
 		fclose(f);
-		free(data);
-		data = NULL;
+		free_buffer(data);
 		return -1;
 	}
 	fclose(f);
@@ -217,8 +219,7 @@ int TiffIn::open(const char *path)
 /* free the file's data */
 void TiffIn::close()
 {
-	free(data);
-	data = NULL;
+	free_buffer(data);
 }
 
 /* a tag's value: the index-th one of an array of SHORTs or LONGs */
@@ -250,11 +251,13 @@ double TiffIn::tag_rational(unsigned long e) const
 void T4Page::fit(const T4Page *src, int row_step)
 {
 	int y, x, ss = T4_STRIDE(src->width), ds = T4_STRIDE(width);
-	unsigned char *row = static_cast<unsigned char*>(calloc(1, ds));
-	if (!row)
+	std::vector<unsigned char> row_;
+	unsigned char *row;
+	if (!alloc_zeroed(row_, ds))
 		return;
+	row = row_.data();
 	for (y = 0; y < src->rows; y += row_step) {
-		const unsigned char *s = src->bits + (size_t)y * ss;
+		const unsigned char *s = src->bits.data() + (size_t)y * ss;
 		memset(row, 0, ds);
 		for (x = 0; x < width; x++) {
 			int sx;
@@ -268,7 +271,6 @@ void T4Page::fit(const T4Page *src, int row_step)
 		}
 		add_row(row);
 	}
-	free(row);
 }
 
 /* the next page (scaled to T4_WIDTH if narrower or wider, superfine to
@@ -336,9 +338,9 @@ int TiffIn::read_page(T4Page *p)
 			len_ = len - off;
 		if (comp == 1) {
 			for (k = 0; k < want && (k + 1) * stride <= len_; k++)
-				src.add_row(data + off + k * stride);
+				src.add_row(data.data() + off + k * stride);
 		} else {
-			src.decode(data + off, len_, (int)comp,
+			src.decode(data.data() + off, len_, (int)comp,
 				  (int)t4opts, fill != 2, (int)want);
 		}
 	}
@@ -360,7 +362,7 @@ int TiffIn::read_page(T4Page *p)
 
 	p->init(T4_WIDTH, fine);
 	if (src.width == T4_WIDTH && step == 1) {
-		*p = src;
+		*p = std::move(src);
 		p->fine = fine;
 		return 1;
 	}

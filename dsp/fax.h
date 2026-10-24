@@ -12,6 +12,8 @@
 
 #include <math.h>
 
+#include <vector>
+
 #include "qam.h"
 
 namespace dsp {
@@ -89,7 +91,7 @@ struct FaxRx {
 	int steps[32];
 	int nsteps;
 	/* reference training symbols (absolute phase states) */
-	signed char *ref;
+	std::vector<signed char> ref;
 	int ref_len;
 	unsigned scr;
 	int scr_count;

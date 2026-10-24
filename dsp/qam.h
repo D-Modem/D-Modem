@@ -13,6 +13,8 @@
 
 #include <string.h>
 
+#include <vector>
+
 #include "dsp.h"
 
 namespace dsp {
@@ -73,8 +75,8 @@ struct QamRx {
 	float sps;
 	float baud;
 	Osc lo;
-	float *mf;
-	cplx *mf_buf;
+	std::vector<float> mf;
+	std::vector<cplx> mf_buf;
 	int mf_len, mf_pos;
 	/* level */
 	float power;            /* input power (tc 20 ms) */
@@ -173,8 +175,8 @@ struct Viterbi {
  */
 struct EchoCanceller {
 	int len;
-	float *w;
-	float *hist;
+	std::vector<float> w;
+	std::vector<float> hist;
 	int pos;
 	float tx_power;
 	float pw_rx, pw_err;    /* in and out while it adapts */

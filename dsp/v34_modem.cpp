@@ -27,6 +27,8 @@
 
 #include <new>
 
+#include <algorithm>
+
 #include "bits.h"
 #include "v34.h"
 #include "v90.h"
@@ -327,9 +329,8 @@ int V34Rx::init(int baud_, int high, int caller)
 	baud = baud_;
 	tap = caller ? 5 : 18;
 	stage = V34_RX_IDLE;
-	ls_r = static_cast<lscplx*>(calloc(V34_EQ_LEN * V34_EQ_LEN, sizeof(*ls_r)));
-	ls_p = static_cast<lscplx*>(calloc(V34_EQ_LEN, sizeof(*ls_p)));
-	if (!ls_r || !ls_p)
+	if (!alloc_zeroed(ls_r, V34_EQ_LEN * V34_EQ_LEN) ||
+	    !alloc_zeroed(ls_p, V34_EQ_LEN))
 		return -1;
 	return qam.init(V34_SRATE, v34_carrier(baud_, high),
 			   v34_symbol_rate(baud_), V34_ALPHA, V34_SPAN,
@@ -340,18 +341,16 @@ int V34Rx::init(int baud_, int high, int caller)
 int V34Rx::set_v90()
 {
 	v90 = 1;
-	fr = new (std::nothrow) SyncFrames();
+	fr.reset(new (std::nothrow) SyncFrames());
 	return fr ? 0 : -1;
 }
 
 /* frees what init() and set_v90() allocated */
 void V34Rx::release()
 {
-	delete fr;
-	fr = nullptr;
-	free(ls_r);
-	free(ls_p);
-	ls_r = ls_p = NULL;
+	fr.reset();
+	free_buffer(ls_r);
+	free_buffer(ls_p);
 	qam.release();
 }
 
@@ -625,7 +624,7 @@ void V34Rx::ls_collect(cplx d)
 	int i, j;
 	for (i = 0; i < n_; i++) {
 		double xr = x[i].re, xi = -x[i].im;     /* conj(x_i) */
-		lscplx *row = ls_r + i * n_;
+		lscplx *row = ls_r.data() + i * n_;
 		for (j = i; j < n_; j++) {
 			row[j].re += xr * x[j].re - xi * x[j].im;
 			row[j].im += xr * x[j].im + xi * x[j].re;
@@ -641,7 +640,7 @@ void V34Rx::ls_collect(cplx d)
 int V34Rx::ls_solve()
 {
 	const int n_ = V34_EQ_LEN;
-	lscplx *a = ls_r, *p = ls_p, w[V34_EQ_LEN];
+	lscplx *a = ls_r.data(), *p = ls_p.data(), w[V34_EQ_LEN];
 	double load = 0;
 	int i, j, k;
 
@@ -715,8 +714,8 @@ int V34Rx::ls_solve()
 void V34Rx::ls_window(cplx d, long start)
 {
 	if (ls_n == start) {
-		memset(ls_r, 0, V34_EQ_LEN * V34_EQ_LEN * sizeof(*ls_r));
-		memset(ls_p, 0, V34_EQ_LEN * sizeof(*ls_p));
+		std::fill(ls_r.begin(), ls_r.end(), lscplx());
+		std::fill(ls_p.begin(), ls_p.end(), lscplx());
 	}
 	if (ls_n >= start && ls_n < start + LS_LEN)
 		ls_collect(d);

@@ -185,8 +185,7 @@ int T4Page::init(int width_, int fine_)
 /* free the rows */
 void T4Page::release()
 {
-	free(bits);
-	bits = NULL;
+	free_buffer(bits);
 	rows = cap = 0;
 }
 
@@ -198,13 +197,11 @@ unsigned char *T4Page::add_row(const unsigned char *row)
 	unsigned char *r;
 	if (rows == cap) {
 		int cap_ = cap ? cap * 2 : 1200;
-		unsigned char *b = static_cast<unsigned char*>(realloc(bits, (size_t)cap_ * stride));
-		if (!b)
+		if (!resize_zeroed(bits, (size_t)cap_ * stride))
 			return NULL;
-		bits = b;
 		cap = cap_;
 	}
-	r = bits + (size_t)rows * stride;
+	r = bits.data() + (size_t)rows * stride;
 	if (row)
 		memcpy(r, row, stride);
 	else if (rows)
@@ -222,11 +219,8 @@ void T4Bits::put(unsigned code, int len)
 	while (len-- > 0) {
 		if (n == cap * 8) {
 			size_t cap_ = cap ? cap * 2 : 4096;
-			unsigned char *nb = static_cast<unsigned char*>(realloc(buf, cap_));
-			if (!nb)
+			if (!resize_zeroed(buf, cap_))
 				return;
-			memset(nb + cap, 0, cap_ - cap);
-			buf = nb;
 			cap = cap_;
 		}
 		if ((code >> len) & 1)
@@ -238,7 +232,6 @@ void T4Bits::put(unsigned code, int len)
 /* free the bits, empty again */
 void T4Bits::release()
 {
-	free(buf);
 	reinit(*this);
 }
 
@@ -334,15 +327,17 @@ void T4Bits::put_eol(int align)
 void T4Page::encode_mh(T4Bits *out, int min_bits, int align, int rtc) const
 {
 	int stride = T4_STRIDE(width), y, k;
-	int *ch = static_cast<int*>(malloc((width + 2) * sizeof(int)));
+	std::vector<int> ch_;
+	int *ch;
 
-	if (!ch)
+	if (!alloc_zeroed(ch_, width + 2))
 		return;
+	ch = ch_.data();
 	for (y = 0; y < rows; y++) {
 		size_t start = out->n;
 		int n, a0 = 0;
 		out->put_eol(align);
-		n = row_changes(bits + (size_t)y * stride, width, ch);
+		n = row_changes(bits.data() + (size_t)y * stride, width, ch);
 		for (k = 0; k <= n; k++) {
 			int end = k < n ? ch[k] : width;
 			out->put_run(end - a0, k & 1);
@@ -355,7 +350,6 @@ void T4Page::encode_mh(T4Bits *out, int min_bits, int align, int rtc) const
 	if (rtc)
 		for (k = 0; k < 6; k++)
 			out->put_eol(align);
-	free(ch);
 }
 
 
@@ -501,15 +495,14 @@ void T4Rx::init(T4Page *page_, int mr_)
 	page = page_;
 	width = page_->width;
 	mr = mr_;
-	ref = static_cast<unsigned char*>(calloc(1, T4_STRIDE(width)));
+	alloc_zeroed(ref, T4_STRIDE(width));
 }
 
 /* free the buffers (the page stays) */
 void T4Rx::release()
 {
 	line.release();
-	free(ref);
-	ref = NULL;
+	free_buffer(ref);
 }
 
 /* no 1 among the bits: nothing but fill */
@@ -526,17 +519,18 @@ int T4Bits::line_empty() const
 void T4Rx::row(int two_d)
 {
 	int w = width, n, nref;
-	int *ch = static_cast<int*>(malloc((w + 4) * sizeof(int))), *ref_ = NULL;
-	T4Reader rd = { line.buf, 0, line.n, 1 };
+	std::vector<int> ch_, ref_;
+	int *ch;
+	T4Reader rd = { line.buf.data(), 0, line.n, 1 };
 	unsigned char *row;
 
-	if (!ch)
+	if (ref.empty() || !alloc_zeroed(ch_, w + 4))
 		return;
+	ch = ch_.data();
 	if (two_d) {
-		ref_ = static_cast<int*>(malloc((w + 4) * sizeof(int)));
-		if (ref_) {
-			nref = row_changes(ref, w, ref_);
-			n = rd.decode_2d(w, ref_, nref, ch);
+		if (alloc_zeroed(ref_, w + 4)) {
+			nref = row_changes(ref.data(), w, ref_.data());
+			n = rd.decode_2d(w, ref_.data(), nref, ch);
 		} else
 			n = -1;
 	} else {
@@ -545,16 +539,14 @@ void T4Rx::row(int two_d)
 	if (n < 0) {
 		/* a bad row: the one above again */
 		page->bad_rows++;
-		page->add_row(page->rows ? NULL : ref);
+		page->add_row(page->rows ? nullptr : ref.data());
 	} else {
 		row = page->add_row(NULL);
 		if (row) {
 			row_from_changes(row, w, ch, n);
-			memcpy(ref, row, T4_STRIDE(w));
+			memcpy(ref.data(), row, T4_STRIDE(w));
 		}
 	}
-	free(ch);
-	free(ref_);
 }
 
 /* one bit; 1 once the page has ended (RTC).  An EOL completes the row
@@ -584,7 +576,7 @@ int T4Rx::bit(int bit)
 		} else {
 			eols++;
 		}
-		memset(line.buf, 0, line.cap);
+		std::fill(line.buf.begin(), line.buf.end(), 0);
 		line.n = 0;
 		started = 1;
 		zeros = 0;
@@ -622,6 +614,7 @@ void T4Rx::end()
 int T4Page::decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, int rows_)
 {
 	int w = width, n, nref, y = 0;
+	std::vector<int> ch_, ref_;
 	int *ch, *ref;
 	unsigned char *row;
 	T4Reader rd = { data, 0, len * 8, msb_first };
@@ -640,13 +633,10 @@ int T4Page::decode(const unsigned char *data, size_t len, int compression, int t
 		rx.release();
 		return 0;
 	}
-	ch = static_cast<int*>(malloc((w + 4) * sizeof(int)));
-	ref = static_cast<int*>(malloc((w + 4) * sizeof(int)));
-	if (!ch || !ref) {
-		free(ch);
-		free(ref);
+	if (!alloc_zeroed(ch_, w + 4) || !alloc_zeroed(ref_, w + 4))
 		return -1;
-	}
+	ch = ch_.data();
+	ref = ref_.data();
 	ref[0] = ref[1] = w;            /* white above the first row */
 	nref = 0;
 	while (!rows_ || y < rows_) {
@@ -667,8 +657,6 @@ int T4Page::decode(const unsigned char *data, size_t len, int compression, int t
 		if (rd.pos >= rd.end)
 			break;
 	}
-	free(ch);
-	free(ref);
 	return 0;
 }
 

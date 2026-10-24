@@ -103,7 +103,7 @@ static testing::AssertionResult same_page(const T4Page &a, const T4Page &b)
 		return testing::AssertionFailure()
 			<< a.width << "x" << a.rows << " against " << b.width
 			<< "x" << b.rows;
-	if (memcmp(a.bits, b.bits, (size_t)a.rows * T4_STRIDE(a.width)))
+	if (memcmp(a.bits.data(), b.bits.data(), (size_t)a.rows * T4_STRIDE(a.width)))
 		return testing::AssertionFailure() << "the rows differ";
 	return testing::AssertionSuccess();
 }
@@ -392,7 +392,7 @@ static void t30_page_received(void *ctx, T4Page *p)
 	w->got.release();
 	w->got.init(p->width, p->fine);
 	for (int y = 0; y < p->rows; y++)
-		w->got.add_row(p->bits + (size_t)y * T4_STRIDE(p->width));
+		w->got.add_row(p->bits.data() + (size_t)y * T4_STRIDE(p->width));
 }
 
 /* 20 ms: the packets of the last tick there, the engine's samples (on
