@@ -10,6 +10,7 @@
  *
  */
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -124,8 +125,8 @@ static const struct code mode_codes[] = {
 #define TREE_MAX 512
 
 struct tree {
-	short next[TREE_MAX][2];        /* 0: none */
-	short value[TREE_MAX];          /* -1: inner node */
+	int16_t next[TREE_MAX][2];      /* 0: none */
+	int16_t value[TREE_MAX];        /* -1: inner node */
 	int n;
 };
 
@@ -141,13 +142,13 @@ static void tree_add(struct tree *t, const struct code *c)
 		for (b = c->bits; *b; b++) {
 			int k = *b - '0';
 			if (!t->next[node][k]) {
-				t->next[node][k] = static_cast<short>(t->n);
+				t->next[node][k] = static_cast<int16_t>(t->n);
 				t->value[t->n] = -1;
 				t->n++;
 			}
 			node = t->next[node][k];
 		}
-		t->value[node] = static_cast<short>(c->run);
+		t->value[node] = static_cast<int16_t>(c->run);
 	}
 }
 
@@ -196,7 +197,7 @@ unsigned char *T4Page::add_row(const unsigned char *row)
 	int stride = T4_STRIDE(width);
 	unsigned char *r;
 	if (rows == cap) {
-		int cap_ = cap ? cap * 2 : 1200;
+		int32_t cap_ = cap ? cap * 2 : 1200;
 		if (!resize_zeroed(bits, static_cast<size_t>(cap_) * stride))
 			return nullptr;
 		cap = cap_;
@@ -326,7 +327,8 @@ void T4Bits::put_eol(int align)
    ending on a byte boundary (align, as TIFF's T4Options bit 2) */
 void T4Page::encode_mh(T4Bits *out, int min_bits, int align, int rtc) const
 {
-	int stride = T4_STRIDE(width), y, k;
+	int stride = T4_STRIDE(width), k;
+	int32_t y;
 	std::vector<int> ch_;
 	int *ch;
 
@@ -365,7 +367,7 @@ struct T4Reader {
 
 	int bit();
 	int code(const struct tree *t);
-	int run_length(int black);
+	int32_t run_length(int black);
 	int decode_1d(int width, int *ch);
 	int decode_2d(int width, const int *ref, int nref, int *ch);
 };
@@ -398,10 +400,11 @@ int T4Reader::code(const struct tree *t)
 }
 
 /* a run of one colour: make-up codes, then a terminating one */
-int T4Reader::run_length(int black)
+int32_t T4Reader::run_length(int black)
 {
 	const struct tree *t = black ? &black_tree : &white_tree;
-	int run = 0, v;
+	int32_t run = 0;
+	int v;
 	do {
 		v = code(t);
 		if (v < 0)
@@ -414,7 +417,8 @@ int T4Reader::run_length(int black)
 /* one MH row into ch; the number of changes, -1 on an error */
 int T4Reader::decode_1d(int width, int *ch)
 {
-	int x = 0, n = 0, black = 0, run;
+	int32_t x = 0, run;
+	int n = 0, black = 0;
 	while (x < width) {
 		run = run_length(black);
 		if (run < 0)
@@ -456,7 +460,7 @@ int T4Reader::decode_2d(int width, const int *ref, int nref, int *ch)
 				return -1;
 			a0 = b2;
 		} else if (mode == M_HORIZ) {
-			int x = a0 < 0 ? 0 : a0, r1, r2;
+			int32_t x = a0 < 0 ? 0 : a0, r1, r2;
 			r1 = run_length(colour);
 			r2 = r1 < 0 ? -1 : run_length(!colour);
 			if (r1 < 0 || r2 < 0 || x + r1 + r2 > width)
@@ -612,9 +616,10 @@ void T4Rx::end()
    3 T.4 with EOLs, 1D or, t4opts & 1, 2D; 4 T.6), msb_first as TIFF's
    FillOrder 1; rows: how many to expect (0: until the end of data).
    The rows are added to the page; 0, or -1 when out of memory */
-int T4Page::decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, int rows_)
+int T4Page::decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, int32_t rows_)
 {
-	int w = width, n, nref, y = 0;
+	int w = width, n, nref;
+	int32_t y = 0;
 	std::vector<int> ch_, ref_;
 	int *ch, *ref;
 	unsigned char *row;
@@ -625,7 +630,7 @@ int T4Page::decode(const unsigned char *data, size_t len, int compression, int t
 		/* with EOLs: as on the line */
 		T4Rx rx;
 		size_t i;
-		int start = rows;       /* (the page's rows so far: strips) */
+		int32_t start = rows;   /* (the page's rows so far: strips) */
 		rx.init(this, t4opts & 1);
 		for (i = 0; i < rd.end && (!rows_ || rows - start < rows_); i++)
 			if (rx.bit(rd.bit()))

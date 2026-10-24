@@ -32,9 +32,9 @@ public:
 
 	/* N2 codewords and strings of up to N7 characters allocated; -1 if
 	   out of range or no memory */
-	int init(int dict_size, int max_string);
+	int init(int32_t dict_size, int32_t max_string);
 	/* smaller values from the remote (within what init allocated) */
-	int config(int dict_size, int max_string);
+	int config(int32_t dict_size, int32_t max_string);
 	/* frees the dictionary (not ready() any more) */
 	void exit();
 	/* init() was done */
@@ -85,7 +85,7 @@ private:
 	uint16_t threshold_ = 0;
 	uint8_t escape_char_ = 0;
 	int max_string_ = 0;
-	int dict_size_ = 0;
+	int32_t dict_size_ = 0;
 	Node *dict_ = nullptr;
 	int bit_len_ = 0;
 	uint32_t bit_data_ = 0;

@@ -54,14 +54,15 @@ enum {
    characters: it loses len / WINDOW of itself and gains the codeword */
 static uint16_t estimate(uint16_t est, int len, int size)
 {
-	return static_cast<uint16_t>(est + size - est * len / WINDOW);
+	return static_cast<uint16_t>(est + size -
+				     static_cast<int32_t>(est) * len / WINDOW);
 }
 
 /* allocates the dictionary for N2 codewords and strings of up to N7
    characters, and starts the coder in the initial state with no
    statistics and no output; -1 if out of range (codewords are 16 bits,
    the string buffer holds V42BIS_MAX_STRING) or out of memory */
-int V42bis::init(int dict_size, int max_string)
+int V42bis::init(int32_t dict_size, int32_t max_string)
 {
 	exit();
 	if (dict_size < MIN_CODEWORDS || dict_size > 65535 ||
@@ -82,7 +83,7 @@ int V42bis::init(int dict_size, int max_string)
    than now, strings of MIN_STRING to V42BIS_MAX_STRING characters.  The
    dictionary stays as it is; -1, and nothing changed, if out of range
    (always when not ready()) */
-int V42bis::config(int dict_size, int max_string)
+int V42bis::config(int32_t dict_size, int32_t max_string)
 {
 	if (dict_size < MIN_CODEWORDS || dict_size > dict_size_ ||
 	    max_string < MIN_STRING || max_string > V42BIS_MAX_STRING)
@@ -109,7 +110,7 @@ void V42bis::exit()
    estimate at its start.  The statistics and the output stay */
 void V42bis::dict_init()
 {
-	for (int i = 0; i < dict_size_; i++) {
+	for (int32_t i = 0; i < dict_size_; i++) {
 		Node &n = dict_[i];
 		n.ch = i >= N6 && i < N5 ? static_cast<uint8_t>(i - N6) : 0;
 		n.parent = n.child = n.next = 0;

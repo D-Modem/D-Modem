@@ -36,7 +36,7 @@ static struct Pumps {
 	}
 } pumps;
 
-static unsigned long now;
+static uint64_t now;
 
 /* the Host: a DTE that keeps the output, a line that can fail to start
    or to change the hook */
@@ -76,7 +76,7 @@ struct Line final : public dcore::Host {
 		return n;
 	}
 	/* the test's clock */
-	unsigned long now_ms() override { return now; }
+	uint64_t now_ms() override { return now; }
 
 	/* an analogue line (analog), whose hook takes pulses (pulses):
 	   each break and make kept with the samples processed by then */

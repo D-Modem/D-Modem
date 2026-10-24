@@ -9,6 +9,7 @@
  */
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdarg>
 #include <cstdio>
 
@@ -73,8 +74,9 @@ int VcvmStartup::init(const Config &c)
 	if (mtx_.init(c.fs, msgp_, c.calling) ||
 	    mrx_.init(c.fs, msgp_, !c.calling))
 		return -1;
-	note("%s, %d Hz, messages in %s, modes %#x", c.calling ? "calling" :
-	     "answering", c.fs, msgp_ ? "P20" : "V.21", allowed_);
+	note("%s, %" PRId32 " Hz, messages in %s, modes %#x",
+	     c.calling ? "calling" : "answering", c.fs,
+	     msgp_ ? "P20" : "V.21", allowed_);
 	step_ = WAIT_INFO0;
 	if (c.calling) {
 		silence(c.delay_ms);
@@ -114,9 +116,9 @@ void VcvmStartup::fail(const char *why)
 }
 
 /* the sample after what is queued to send */
-long VcvmStartup::queued() const
+int32_t VcvmStartup::queued() const
 {
-	return t_ + static_cast<long>(txq_.size() - txpos_);
+	return t_ + static_cast<int32_t>(txq_.size() - txpos_);
 }
 
 /* ms of silence to the transmitter's queue */
@@ -126,9 +128,9 @@ void VcvmStartup::silence(int ms)
 }
 
 /* silence until sample at (what is queued counted) */
-void VcvmStartup::silence_until(long at)
+void VcvmStartup::silence_until(int32_t at)
 {
-	long q = queued();
+	int32_t q = queued();
 	if (at > q)
 		txq_.insert(txq_.end(), static_cast<size_t>(at - q), 0.0f);
 }
@@ -169,10 +171,10 @@ void VcvmStartup::send_mp()
 }
 
 /* the received samples from `from` to now to a receiver */
-template <class R> void VcvmStartup::replay(R &r, long from)
+template <class R> void VcvmStartup::replay(R &r, int32_t from)
 {
 	from = std::max(from, hbase_);
-	long e = hbase_ + static_cast<long>(hist_.size());
+	int32_t e = hbase_ + static_cast<int32_t>(hist_.size());
 	if (from < e)
 		r.push(&hist_[static_cast<size_t>(from - hbase_)],
 		       static_cast<int>(e - from));
@@ -202,9 +204,9 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 			return;
 		}
 		if (c_.calling && probe_end_tx_ >= 0)
-			rtt_ms_ = static_cast<int>(std::max(
-				0L, (m.start - probe_end_tx_ - c_.fs / 20) *
-					    1000 / c_.fs));
+			rtt_ms_ = static_cast<int>(std::max<int32_t>(
+				0, (m.start - probe_end_tx_ - c_.fs / 20) *
+					   1000 / c_.fs));
 		note("INFO0: modes %#x, combs %#x (%.3f to %.3f s)",
 		     peer0_.modes, peer0_.combs,
 		     static_cast<double>(m.start) / c_.fs,
@@ -247,9 +249,9 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 			silence(100);
 		} else
 			rtt_ms_ = static_cast<int>(
-				std::max(0L, (m.start - info1_end_tx_ -
-					      c_.fs / 20 - c_.fs / 100) *
-						     1000 / c_.fs));
+				std::max<int32_t>(0, (m.start - info1_end_tx_ -
+						      c_.fs / 20 - c_.fs / 100) *
+							     1000 / c_.fs));
 		step_ = MP;
 		mp_on_ = true;
 		/* MP, 2.5 s at most each way (W200's), a few times */
@@ -351,8 +353,9 @@ void VcvmStartup::process(const float *in, float *out, int n)
 		int k = std::min(n, B);
 		/* in */
 		hist_.insert(hist_.end(), in, in + k);
-		if (static_cast<long>(hist_.size()) > 3L * c_.fs) {
-			long cut = static_cast<long>(hist_.size()) - 2L * c_.fs;
+		if (static_cast<int32_t>(hist_.size()) > 3L * c_.fs) {
+			int32_t cut = static_cast<int32_t>(hist_.size()) -
+				      2L * c_.fs;
 			hist_.erase(hist_.begin(), hist_.begin() + cut);
 			hbase_ += cut;
 		}

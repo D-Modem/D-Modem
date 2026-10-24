@@ -20,7 +20,7 @@ namespace dsp {
 
 /* see vcvm_startup.h: bit c comb code c (N200 to N400 at 8000 Hz, W200,
    W300 and W400 at 16000) */
-unsigned vcvm_probe_combs(int fs, int allowed)
+unsigned vcvm_probe_combs(int32_t fs, int allowed)
 {
 	if (fs == 8000)
 		return allowed & VCVM_M_NARROW ? 0x7 : 0;
@@ -32,7 +32,7 @@ unsigned vcvm_probe_combs(int fs, int allowed)
 
 /* the known phase steps of a symbol: two bits a tone, from the lowest,
    from the scrambler fed with ones, Gray coded as DQPSK */
-static void known_steps(unsigned *scr, int tap, int tones, uint8_t *ph8)
+static void known_steps(uint32_t *scr, int tap, int tones, uint8_t *ph8)
 {
 	for (int k = 0; k < tones; k++) {
 		int b1 = scramble(scr, tap, 1), b0 = scramble(scr, tap, 1);
@@ -41,7 +41,7 @@ static void known_steps(unsigned *scr, int tap, int tones, uint8_t *ph8)
 }
 
 /* the known lag symbol's four bits, and its index */
-static int known_lag(unsigned *scr, int tap, uint8_t *b)
+static int known_lag(uint32_t *scr, int tap, uint8_t *b)
 {
 	int v = 0;
 	for (int i = 0; i < 4; i++) {
@@ -52,7 +52,7 @@ static int known_lag(unsigned *scr, int tap, uint8_t *b)
 }
 
 /* a comb part: its reference, then n - 1 symbols of known steps */
-static void comb_part(int code, int fs, bool sym22, int n, unsigned *scr,
+static void comb_part(int code, int32_t fs, bool sym22, int n, uint32_t *scr,
 		      int tap, std::vector<float> &out)
 {
 	VcvmCombTx tx;
@@ -73,7 +73,7 @@ static void comb_part(int code, int fs, bool sym22, int n, unsigned *scr,
 }
 
 /* a parametric part: its preamble, then n symbols of known lags */
-static void param_part(int fs, bool p10, int n, unsigned *scr, int tap,
+static void param_part(int32_t fs, bool p10, int n, uint32_t *scr, int tap,
 		       std::vector<float> &out)
 {
 	VcvmParamTx tx;
@@ -94,7 +94,7 @@ static void param_part(int fs, bool p10, int n, unsigned *scr, int tap,
    steps from one scrambler throughout */
 void vcvm_probe_send(const VcvmProbe &p, std::vector<float> &out)
 {
-	unsigned scr = 0;
+	uint32_t scr = 0;
 	for (int c = 0; c < 9; c++)
 		if (p.combs & (1u << c))
 			comb_part(c, p.fs, false, VcvmProbe::L1_SYMS, &scr,
@@ -140,7 +140,7 @@ int VcvmProbeRx::init(const VcvmProbe &p)
 
 /* see vcvm_startup.h: L3 at once where there are no combs; 3 s for
    the onset */
-void VcvmProbeRx::start(long from)
+void VcvmProbeRx::start(int32_t from)
 {
 	hist_.clear();
 	hbase_ = scan_ = from;
@@ -161,8 +161,8 @@ void VcvmProbeRx::start(long from)
 void VcvmProbeRx::push(const float *x, int n)
 {
 	hist_.insert(hist_.end(), x, x + n);
-	if (static_cast<long>(hist_.size()) > 4L * p_.fs) {
-		long cut = static_cast<long>(hist_.size()) - 3L * p_.fs;
+	if (static_cast<int32_t>(hist_.size()) > 4L * p_.fs) {
+		int32_t cut = static_cast<int32_t>(hist_.size()) - 3L * p_.fs;
 		hist_.erase(hist_.begin(), hist_.begin() + cut);
 		hbase_ += cut;
 	}
@@ -171,10 +171,10 @@ void VcvmProbeRx::push(const float *x, int n)
 
 /* the samples a receiver has not had yet */
 template <class R> static void feed(R &r, const std::vector<float> &h,
-				    long hbase)
+				    int32_t hbase)
 {
-	long a = std::max(r.received(), hbase),
-	     e = hbase + static_cast<long>(h.size());
+	int32_t a = std::max(r.received(), hbase),
+		e = hbase + static_cast<int32_t>(h.size());
 	if (a < e)
 		r.push(&h[static_cast<size_t>(a - hbase)],
 		       static_cast<int>(e - a));
@@ -257,7 +257,7 @@ void VcvmProbeRx::run()
 			   which a codec's tail after a message may keep */
 			const int w = p_.fs / 200, step = p_.fs / 1000;
 			const double thr = pow(32767 * pow(10, -35 / 20.0), 2) * w;
-			long e = received();
+			int32_t e = received();
 			for (; scan_ + w <= e; scan_ += step) {
 				double s = 0;
 				for (int t = 0; t < w; t++) {
@@ -283,7 +283,8 @@ void VcvmProbeRx::run()
 			feed(crx_, hist_, hbase_);
 			const int sps = crx_.comb().sps;
 			if (!acquired_) {
-				long from = onset_ ? first_ : first_ + sps / 4;
+				int32_t from =
+					onset_ ? first_ : first_ + sps / 4;
 				if (crx_.acquire(from, first_)) {
 					if (received() > deadline_)
 						st_ = FAILED;

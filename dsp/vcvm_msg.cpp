@@ -9,6 +9,7 @@
  */
 
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
 #include <cstring>
 
@@ -163,7 +164,7 @@ bool vcvm_v8_find(const uint8_t *msg, int n, VcvmCaps *c)
 }
 
 /* see vcvm_startup.h */
-VcvmCaps vcvm_caps_for(int modes, int fs)
+VcvmCaps vcvm_caps_for(int modes, int32_t fs)
 {
 	VcvmCaps c;
 	c.fs16 = fs == 16000;
@@ -248,13 +249,13 @@ int VcvmLoading::bits() const
 }
 
 /* the line rate before the code, bit/s */
-int VcvmLoading::raw_bps() const
+int32_t VcvmLoading::raw_bps() const
 {
-	return static_cast<int>(lrint(bits() * 1000.0 / sym_ms()));
+	return static_cast<int32_t>(lrint(bits() * 1000.0 / sym_ms()));
 }
 
 /* the raw rate times k / 32, bit/s */
-int VcvmLoading::coded_bps() const
+int32_t VcvmLoading::coded_bps() const
 {
 	return raw_bps() * k() / 32;
 }
@@ -276,7 +277,7 @@ std::string VcvmLoading::str() const
 	if (kind == NONE)
 		return "no data mode";
 	if (kind == PARAM)
-		snprintf(b, sizeof(b), "%s, %d bit/s, rate %s",
+		snprintf(b, sizeof(b), "%s, %" PRId32 " bit/s, rate %s",
 			 p10 ? "P10" : "P20", raw_bps(), rates[rate]);
 	else {
 		int d8 = 0, r = 0;
@@ -285,9 +286,9 @@ std::string VcvmLoading::str() const
 			r += load.ring[k] != 0;
 		}
 		snprintf(b, sizeof(b), "%s%s, %d of %d tones (%d 8-DPSK, %d "
-			 "with rings), %d bit/s, rate %s", names[code % 9],
-			 sym22 ? " 22.5 ms" : "", loaded(), tones, d8, r,
-			 raw_bps(), rates[rate]);
+			 "with rings), %" PRId32 " bit/s, rate %s",
+			 names[code % 9], sym22 ? " 22.5 ms" : "", loaded(),
+			 tones, d8, r, raw_bps(), rates[rate]);
 	}
 	return b;
 }
@@ -367,7 +368,7 @@ int VcvmMp::decode(const uint8_t *o, int n)
 	l.kind = VcvmLoading::COMB;
 	l.code = o[3] >> 4;
 	l.sym22 = per == 1;
-	static const int band_fs[3] = { 8000, 16000, 32000 };
+	static const int32_t band_fs[3] = { 8000, 16000, 32000 };
 	VcvmComb c;
 	if (l.code > 8 || c.init(l.code, band_fs[l.code / 3], l.sym22) ||
 	    c.tones != N)
@@ -431,7 +432,7 @@ const float v21_ch[2][2] = { { 980, 1180 }, { 1650, 1850 } };
 } // namespace
 
 /* see vcvm_startup.h: 0, or -1 for a rate not 8000 or 16000 */
-int VcvmMsgTx::init(int fs, bool param, bool calling)
+int VcvmMsgTx::init(int32_t fs, bool param, bool calling)
 {
 	if (fs != 8000 && fs != 16000)
 		return -1;
@@ -494,7 +495,7 @@ struct VcvmMsgRx::Hdlc : HdlcRx<Hdlc, 64, HdlcMsg> {
 
 /* the two filters, mark and space Hz at fs, over 80 per cent of a bit;
    the bit clock at 0 */
-void VcvmFskRx::init(float mark, float space, int fs)
+void VcvmFskRx::init(float mark, float space, int32_t fs)
 {
 	fs_ = fs;
 	wm_ = 2 * M_PI * mark / fs;
@@ -568,7 +569,7 @@ VcvmMsgRx::VcvmMsgRx() : fsk_(new Fsk), hdlc_(new Hdlc)
 VcvmMsgRx::~VcvmMsgRx() = default;
 
 /* see vcvm_startup.h: 0, or -1 for a rate not 8000 or 16000 */
-int VcvmMsgRx::init(int fs, bool param, bool peer_calling)
+int VcvmMsgRx::init(int32_t fs, bool param, bool peer_calling)
 {
 	if (fs != 8000 && fs != 16000)
 		return -1;
@@ -585,7 +586,7 @@ int VcvmMsgRx::init(int fs, bool param, bool peer_calling)
 }
 
 /* see vcvm_startup.h */
-void VcvmMsgRx::restart(long at)
+void VcvmMsgRx::restart(int32_t at)
 {
 	out_.clear();
 	n_ = at;
@@ -622,11 +623,11 @@ bool VcvmMsgRx::chase()
 			  [&](size_t a, size_t b) {
 				  return syms_[a].margin < syms_[b].margin;
 			  });
-	auto trial = [&](long x, long y) {
+	auto trial = [&](int32_t x, int32_t y) {
 		hdlc_->reset();
 		for (size_t i = 0; i < syms_.size() && !got_; i++) {
-			bool flip = static_cast<long>(i) == x ||
-				    static_cast<long>(i) == y;
+			bool flip = static_cast<int32_t>(i) == x ||
+				    static_cast<int32_t>(i) == y;
 			uint8_t b[4];
 			VcvmParamRx::bits(flip ? syms_[i].second : syms_[i].idx, b);
 			for (int j = 0; j < 4; j++)
@@ -635,19 +636,19 @@ bool VcvmMsgRx::chase()
 		return got_;
 	};
 	for (size_t i = 0; i < k; i++)
-		if (trial(static_cast<long>(low[i]), -1))
+		if (trial(static_cast<int32_t>(low[i]), -1))
 			return true;
 	for (size_t i = 0; i < k; i++)
 		for (size_t j = i + 1; j < k; j++)
-			if (trial(static_cast<long>(low[i]),
-				  static_cast<long>(low[j])))
+			if (trial(static_cast<int32_t>(low[i]),
+				  static_cast<int32_t>(low[j])))
 				return true;
 	return false;
 }
 
 /* a transmission's signal ended at sample at: P20's chased if no copy
    checked, the message queued for get() */
-void VcvmMsgRx::ended(long at)
+void VcvmMsgRx::ended(int32_t at)
 {
 	if (param_ && !got_ && !syms_.empty())
 		chase();
@@ -671,7 +672,7 @@ void VcvmMsgRx::push(const float *x, int n)
 	/* quiet: 10 ms under -40 dBFS */
 	const double thr =
 		pow(32767 * 0.01, 2) * static_cast<double>(win_.size());
-	const long hold = fs_ * 30 / 1000, longest = 6L * fs_;
+	const int32_t hold = fs_ * 30 / 1000, longest = 6L * fs_;
 	if (param_) {
 		prx_.push(x, n);
 		if (!prx_.locked() && prx_.search()) {

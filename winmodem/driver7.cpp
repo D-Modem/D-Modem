@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -62,7 +63,7 @@ const wchar_t PORT_NAME[] = L"PortName";
 const char NO_NAME[] = "modem";
 
 /* the DLL's live objects (DllCanUnloadNow) */
-std::atomic<long> g_objects{0};
+std::atomic<int32_t> g_objects{0};
 
 /* a message for the debugger (DebugView) */
 void dbg(const char *fmt, ...)
@@ -103,12 +104,12 @@ protected:
 	/* one reference less: the last deletes */
 	ULONG release()
 	{
-		long n = --refs_;
+		int32_t n = --refs_;
 		if (n == 0)
 			delete this;
 		return (ULONG)n;
 	}
-	std::atomic<long> refs_{1};
+	std::atomic<int32_t> refs_{1};
 };
 
 /* *out = p (counted) if iid is one of p's; E_NOINTERFACE */

@@ -11,6 +11,8 @@
 #ifndef V91_H
 #define V91_H
 
+#include <cstdint>
+
 #include "v90.h"
 
 namespace dsp {
@@ -22,7 +24,7 @@ struct V91Enc {
 	int M[6];
 	unsigned char ucode[6][128];    /* label -> Ucode, largest first */
 	const int *lin;
-	unsigned scr;
+	uint32_t scr;
 	int last;                       /* the last sign */
 
 	int init(const V90Cp *cp, int D, const int *lin_);
@@ -36,24 +38,24 @@ struct V91Enc {
    received values of the codes that come through distinguishably */
 struct V91Map {
 	int n[6];
-	short val[6][256];              /* sorted */
+	int16_t val[6][256];            /* sorted */
 	unsigned char ucode[6][256];
 	unsigned char sign[6][256];
 	unsigned char ok[6][128];       /* usable Ucodes */
 
 	/* the Ucode and sign nearest to a received value; returns the
 	   distance */
-	int decode(int i, int x, int *u, int *s) const;
+	int32_t decode(int i, int x, int *u, int *s) const;
 };
 
 /* and its decoder, for the constellations of our own CP */
 struct V91Dec {
 	int K;
 	int M[6];
-	short label[6][128];            /* Ucode -> label, -1: none */
-	unsigned scr;
+	int16_t label[6][128];          /* Ucode -> label, -1: none */
+	uint32_t scr;
 	int last;
-	long errors;                    /* symbols off the constellation */
+	int32_t errors;                 /* symbols off the constellation */
 
 	int init(const V90Cp *cp, int D);
 	/* the bits of a data frame (K + 6, or K with cc); -1 if it cannot
@@ -90,20 +92,20 @@ struct V91 {
 	int want_cc;            /* we ask for the control channel */
 	int max_k;              /* the most we take (64 000 needs 42) */
 	CoreBits link;          /* the data */
-	long n;                 /* symbols since the start */
+	int32_t n;              /* symbols since the start */
 	int esn;
-	long phase_start;       /* of the last INFO exchange */
+	int32_t phase_start;    /* of the last INFO exchange */
 	int connected, retraining;
-	long retrain_at;        /* test: our own retrain (symbols) */
+	int32_t retrain_at;     /* test: our own retrain (symbols) */
 	struct dp_stats *stats; /* the call's statistics (NULL: none) */
 	int mute;               /* test: we send nothing */
 
 	/* transmitter */
 	enum v91_tx tx;
-	long tn;                /* symbols of the segment */
-	long tk;                /* since Eu / Em: the data frame interval */
+	int32_t tn;             /* symbols of the segment */
+	int32_t tk;             /* since Eu / Em: the data frame interval */
 	int t;                  /* the differential encoder: last sign */
-	unsigned tscr;
+	uint32_t tscr;
 	unsigned char tb[V91_CP_MAX];   /* INFO or CP bits */
 	int tbn, tbpos;
 	int info_ack_sent, cp_ack_sent, cp_sent;
@@ -111,22 +113,22 @@ struct V91 {
 	int dil_seg, dil_k;
 	V91Enc enc;
 	int out[6], opos;
-	long tframes;           /* data frames sent */
+	int32_t tframes;        /* data frames sent */
 	unsigned char ccseq[96];
 
 	/* receiver */
 	enum v91_rx rx;
-	long rk;                /* since the remote's Eu / Em */
+	int32_t rk;             /* since the remote's Eu / Em */
 	int rs;                 /* last sign received */
-	unsigned rscr;
+	uint32_t rscr;
 	unsigned char ib[V91_INFO_BITS];        /* the last bits, oldest first */
-	int since_info, zeros;
+	int32_t since_info, zeros;
 	int got_info, got_info_ack, peer_default, peer_cc, peer_alaw;
 	int peer_transparent;
 	int have_j;
 	V90Dil rdil;            /* the DIL we asked for */
 	int rd_seg, rd_k;
-	short obs[6][128][2];
+	int16_t obs[6][128][2];
 	unsigned char seen[6][128][2];
 	V91Map map;
 	V90Cp cp_tx;            /* our CP: what the remote sends us */
@@ -135,11 +137,11 @@ struct V91 {
 	SyncFrames fr;          /* J, then CP */
 	int cp_pad;             /* the fill after a CP frame still to come */
 	int got_cp, got_cp_ack, got_es;
-	unsigned sync;          /* the last bits, newest in bit 0 */
+	uint32_t sync;          /* the last bits, newest in bit 0 */
 	V91Dec dec;
 	int ru[6], rsg[6], rpos, bframes;
-	long rframes;
-	long err_window, err_count;
+	int32_t rframes;
+	int32_t err_window, err_count;
 
 	void init(int alaw_, int caller_, int max_k_, int want_cc_);
 	int sample(int x, int *y);

@@ -23,13 +23,13 @@ enum { HASH = 4096 };
 /* the encoder's hash of a string's first two characters */
 static unsigned hash2(uint8_t a, uint8_t b)
 {
-	return (static_cast<unsigned>(a) * 263 + b) & (HASH - 1);
+	return (static_cast<uint32_t>(a) * 263 + b) & (HASH - 1);
 }
 
 /* allocates for the largest parameters (N2 codewords, N7 characters,
    N8 octets of history) and starts both coders' state; -1 if out of
    range */
-int V44::init(int codewords, int max_string, int history)
+int V44::init(int32_t codewords, int32_t max_string, int32_t history)
 {
 	exit();
 	if (codewords < V44_MIN_CODEWORDS || codewords > 65535 ||
@@ -63,7 +63,7 @@ int V44::init(int codewords, int max_string, int history)
 
 /* what XID agreed (no more than init()'s): the dictionary and the
    history from the start; -1 if out of range */
-int V44::config(int codewords, int max_string, int history)
+int V44::config(int32_t codewords, int32_t max_string, int32_t history)
 {
 	if (!ready() || codewords < V44_MIN_CODEWORDS ||
 	    codewords > max_n2_ || max_string < V44_MIN_STRING ||
@@ -94,7 +94,7 @@ void V44::reset()
 {
 	c1_ = 4;
 	c2_ = 6;
-	c3_ = 1u << c2_;
+	c3_ = UINT32_C(1) << c2_;
 	c5_ = 7;
 	hp_ = 0;
 	last_type_ = NONE;
@@ -240,9 +240,9 @@ void V44::reinit()
 
 /* the longest string of the dictionary at pos (avail characters there);
    -1 if none */
-int V44::find(uint32_t pos, uint32_t avail, int *len) const
+int32_t V44::find(uint32_t pos, uint32_t avail, int *len) const
 {
-	int best = -1, best_len = 0;
+	int32_t best = -1, best_len = 0;
 	if (avail < 2)
 		return -1;
 	for (int32_t e = head_[hash2(hist_[pos], hist_[pos + 1])]; e >= 0;
@@ -264,7 +264,7 @@ void V44::step()
 {
 	uint32_t avail = end_ - hp_;
 	int len;
-	int cw = find(hp_, avail, &len);
+	int32_t cw = find(hp_, avail, &len);
 
 	if (cw < 0) {
 		uint8_t ch = hist_[hp_];
@@ -362,7 +362,7 @@ bool V44::read_token(int *type, uint32_t *value)
 	if (b) {
 		if (stepup_) {
 			stepup_ = false;
-			if ((1u << c2_) >= static_cast<uint32_t>(n2_))
+			if ((UINT32_C(1) << c2_) >= static_cast<uint32_t>(n2_))
 				return true;            /* an error */
 			c2_++;
 		}

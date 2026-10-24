@@ -29,7 +29,9 @@
  *
  */
 
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -64,7 +66,7 @@ namespace dsp {
 #define RB_RATES        (RB_4800 | RB_9600 | RB_TCM | RB_7200 | RB_12000 | RB_14400)
 
 struct v32_rate {
-	int bps;
+	int32_t bps;
 	unsigned bits;
 	int nbits;
 	const cplx *points;
@@ -146,13 +148,14 @@ struct ToneTrk {
 	cplx lp1, lp2;
 	float a;
 	cplx hist[128];
-	int pos, lag;
+	uint32_t pos;
+	int lag;
 	int on;
-	long on_count;
+	int32_t on_count;
 	int hold;
 
-	void init(float freq, int srate);
-	int run(float x, float in_power, int srate);
+	void init(float freq, int32_t srate);
+	int run(float x, float in_power, int32_t srate);
 };
 
 struct V32Pump : PumpBase<V32Pump, v32_state> {
@@ -168,12 +171,12 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	/* transmitter */
 	QamTx tx;
 	enum v32_txm txm;
-	long tx_syms;           /* symbols sent in the current tx state */
+	int32_t tx_syms;        /* symbols sent in the current tx state */
 	int tx_ac_phase;
 	int tx_reverse;         /* repeat one AC symbol: phase reversal */
 	int ca_rev;             /* answerer: the caller's CC reversal seen */
-	long nt_syms = 0;       /* caller: the round trip delay NT (symbols) */
-	unsigned tx_scr;
+	int32_t nt_syms = 0;    /* caller: the round trip delay NT (symbols) */
+	uint32_t tx_scr;
 	int tx_scr_tap;
 	int tx_4800;            /* 4800 coding state (v32_points_4800 index) */
 	int tx_last_abcd;
@@ -194,11 +197,11 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	enum v32_rxp rxp;
 	int run_s, last_sgn, s_miss;
 	cplx last_z;
-	unsigned rx_scr;
+	uint32_t rx_scr;
 	int rx_scr_tap;
 	int rx_4800;
-	unsigned rx_bits;       /* last 32 descrambled bits */
-	int rx_nbits;
+	uint32_t rx_bits;       /* last 32 descrambled bits */
+	int32_t rx_nbits;
 	unsigned rx_word, rx_r_word;
 	int rx_word_align;
 	float rx_mse;
@@ -212,7 +215,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	int ev_aa, ev_ac, ev_rev, ev_s, ev_r, ev_e, ev_usb1;
 	int retraining;         /* a retrain in data mode (no new CONNECT) */
 	int retrains;
-	long retrain_at;        /* test: our own retrain this far (samples)
+	int32_t retrain_at;     /* test: our own retrain this far (samples)
 				   into the data, $DSP_V32_RETRAIN ms */
 	unsigned r_word;        /* last R word received */
 
@@ -237,7 +240,8 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	const struct v32_rate *choose(unsigned w);
 	int handshake();
 	cplx abcd_point(int k);
-	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
+	int start(struct modem *m, enum DP_ID id, int caller_, int32_t srate_,
+		  int max_frag);
 	void cleanup();
 	int sample(float x, float *y);
 	/* cnt samples in and out, through sample() */
@@ -275,7 +279,7 @@ static unsigned final_word(const struct v32_rate *r)
 
 /* tracks a tone at freq Hz: two pole low pass of 1.5 ms after the down
    conversion, phase compared with 10 ms ago */
-void ToneTrk::init(float freq, int srate)
+void ToneTrk::init(float freq, int32_t srate)
 {
 	reinit(*this);
 	lo.set_freq(-freq, srate);
@@ -287,7 +291,7 @@ void ToneTrk::init(float freq, int srate)
 
 /* returns 1 on a phase reversal; the tone has to carry a fair part of
    the total input power (in_power), noise alone does not turn it on */
-int ToneTrk::run(float x, float in_power, int srate)
+int ToneTrk::run(float x, float in_power, int32_t srate)
 {
 	cplx v = cplx_scale(lo.next_cplx(), x), old;
 	float p, po;
@@ -498,7 +502,8 @@ void V32Pump::rx_word_bit(int bit)
 		   constellations */
 		rx.kt_p = 0.004f * rx.sps;
 		rx.kt_gi = 0.003f;
-		DSP_DBG("v32: E word %04X, rx rate %d\n", w, rx_rate->bps);
+		DSP_DBG("v32: E word %04X, rx rate %" PRId32 "\n", w,
+			rx_rate->bps);
 	}
 }
 
@@ -699,8 +704,8 @@ int V32Pump::connect()
 		/* the link goes on (V.42 knows nothing of it) */
 		set_rates(tx_rate->bps, rx_rate->bps);
 		retraining = 0;
-		DSP_DBG("v32: retrained, %d/%d\n", tx_rate->bps,
-			rx_rate->bps);
+		DSP_DBG("v32: retrained, %" PRId32 "/%" PRId32 "\n",
+			tx_rate->bps, rx_rate->bps);
 		return DPSTAT_OK;
 	}
 	return connect_at(tx_rate->bps, rx_rate->bps);
@@ -772,7 +777,7 @@ const struct v32_rate *V32Pump::choose(unsigned w)
 /* called once per transmitted symbol, before the symbol is made */
 int V32Pump::handshake()
 {
-	long sym = tx_syms;
+	int32_t sym = tx_syms;
 	const struct v32_rate *r;
 
 	switch (state) {
@@ -1046,18 +1051,19 @@ int V32Pump::sample(float x, float *y)
    transmitter, receiver, echo canceller and tone trackers; timeouts
    from S7 and S10; an answerer after V.8 starts at the gap.  0, or -1
    when out of memory. */
-int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
+int V32Pump::start(struct modem *m, enum DP_ID id, int caller_,
+		   int32_t srate_, int max_frag)
 {
 	int i;
-	long min_rate, max_rate;
+	int32_t min_rate, max_rate;
 
 	pump_setup(m, srate_, caller_);
 	automode = (id != DP_V32 && id != DP_V32BIS) ||
 		(rt && rt->v32_automode);
 
 	/* rates we offer */
-	min_rate = modem_get_param(m, MDMPRM_MIN_RATE);
-	max_rate = modem_get_param(m, MDMPRM_MAX_RATE);
+	min_rate = static_cast<int32_t>(modem_get_param(m, MDMPRM_MIN_RATE));
+	max_rate = static_cast<int32_t>(modem_get_param(m, MDMPRM_MAX_RATE));
 	for (i = 0; i < V32_NRATES; i++) {
 		const struct v32_rate *r = &v32_rates[i];
 		if (id == DP_V32 && r->bps != 9600 && r->bps != 4800)
@@ -1097,7 +1103,7 @@ int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	rx_rate = tx_rate;
 
 	/* test: DSP_V32_RETRAIN=<ms in data mode>[a|c] */
-	retrain_at = test_samples("DSP_V32_RETRAIN");
+	retrain_at = static_cast<int32_t>(test_samples("DSP_V32_RETRAIN"));
 
 	if (caller_) {
 		state = C_AA;
@@ -1111,7 +1117,7 @@ int V32Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		state = A_SILENCE;
 		txm = TXM_SILENCE;
 	}
-	DSP_DBG("v32: create %s (dp %d), rates %04X, srate %d\n",
+	DSP_DBG("v32: create %s (dp %d), rates %04X, srate %" PRId32 "\n",
 		caller_ ? "caller" : "answerer", id, caps, srate_);
 	return 0;
 }

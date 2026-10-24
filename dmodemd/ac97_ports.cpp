@@ -8,6 +8,7 @@
  */
 
 #include <cerrno>
+#include <cinttypes>
 #include <climits>
 #include <cstdio>
 #include <cstring>
@@ -29,21 +30,21 @@ namespace {
 
 const unsigned ICH_GLOB_STA = 0x30, ICH_CAS = 0x34;
 const unsigned ICH_RCS = 0x8000;        /* GLOB_STA: read timed out */
-const unsigned long IORESOURCE_IO = 0x100;
+const uint64_t IORESOURCE_IO = 0x100;
 
 /* the I/O ranges of PCI device dev (its sysfs directory): BARs 0 and
    1's starts; false if they are not I/O ranges */
 bool io_ranges(const std::string &dev, unsigned *bar0, unsigned *bar1)
 {
 	FILE *f = fopen((dev + "/resource").c_str(), "r");
-	unsigned long long start, end, flags;
+	uint64_t start, end, flags;
 	unsigned bars[2] = { 0, 0 };
 	int i = 0;
 
 	if (!f)
 		return false;
-	while (i < 2 && fscanf(f, "%llx %llx %llx", &start, &end,
-			       &flags) == 3) {
+	while (i < 2 && fscanf(f, "%" SCNx64 " %" SCNx64 " %" SCNx64,
+			       &start, &end, &flags) == 3) {
 		if (!(flags & IORESOURCE_IO) || start == 0 || start > 0xffff)
 			break;
 		bars[i++] = static_cast<unsigned>(start);
@@ -150,7 +151,7 @@ bool Ac97Ports::read(int reg, uint16_t *v)
 	if (!mixer_ || !acquire())
 		return false;
 	*v = inw(mixer_ + codec_ * 0x80 + (reg & 0x7e));
-	unsigned sta = inl(bm_ + ICH_GLOB_STA);
+	uint32_t sta = inl(bm_ + ICH_GLOB_STA);
 	if (sta & ICH_RCS) {
 		outl(ICH_RCS, bm_ + ICH_GLOB_STA);
 		return false;
@@ -180,7 +181,7 @@ bool Ac97Ports::write(int reg, uint16_t v)
 
 /* see ac97_ports.h: a busy wait for the short waits, a sleep from a
    millisecond on */
-void Ac97Ports::delay_us(unsigned us)
+void Ac97Ports::delay_us(uint32_t us)
 {
 	struct timespec t0, t;
 

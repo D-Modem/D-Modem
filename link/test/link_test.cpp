@@ -404,7 +404,7 @@ struct Dte : Owner {
 		}
 	}
 	/* the pump's rate, for T400 and T401 */
-	int tx_rate() override { return 9600; }
+	int32_t tx_rate() override { return 9600; }
 	/* what XID agreed */
 	void negotiated(const Config &c) override { agreed = c; }
 	/* the link's lines (LINK_DEBUG) */

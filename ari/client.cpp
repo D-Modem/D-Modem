@@ -6,6 +6,7 @@
  *
  */
 #include <cerrno>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -37,8 +38,8 @@ std::string base64(const std::string &s)
 	size_t i;
 
 	for (i = 0; i + 2 < s.size(); i += 3) {
-		uint32_t v = static_cast<uint8_t>(s[i]) << 16 |
-			     static_cast<uint8_t>(s[i + 1]) << 8 |
+		uint32_t v = uint32_t{static_cast<uint8_t>(s[i])} << 16 |
+			     uint32_t{static_cast<uint8_t>(s[i + 1])} << 8 |
 			     static_cast<uint8_t>(s[i + 2]);
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
@@ -46,13 +47,13 @@ std::string base64(const std::string &s)
 		out += abc[v & 63];
 	}
 	if (i + 1 == s.size()) {
-		uint32_t v = static_cast<uint8_t>(s[i]) << 16;
+		uint32_t v = uint32_t{static_cast<uint8_t>(s[i])} << 16;
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
 		out += "==";
 	} else if (i + 2 == s.size()) {
-		uint32_t v = static_cast<uint8_t>(s[i]) << 16 |
-			     static_cast<uint8_t>(s[i + 1]) << 8;
+		uint32_t v = uint32_t{static_cast<uint8_t>(s[i])} << 16 |
+			     uint32_t{static_cast<uint8_t>(s[i + 1])} << 8;
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
 		out += abc[v >> 6 & 63];
@@ -69,7 +70,7 @@ int connect_to(const Server &srv)
 	int fd = -1;
 
 	hints.ai_socktype = SOCK_STREAM;
-	snprintf(port, sizeof(port), "%d", srv.port);
+	snprintf(port, sizeof(port), "%" PRId32, srv.port);
 	if (getaddrinfo(srv.host.c_str(), port, &hints, &res))
 		return -1;
 	for (ai = res; ai; ai = ai->ai_next) {
@@ -177,7 +178,8 @@ bool Server::set_url(const std::string &url)
 		port = 80;
 	} else {
 		host = rest.substr(0, colon);
-		port = atoi(rest.c_str() + colon + 1);
+		port = static_cast<int32_t>(
+			strtol(rest.c_str() + colon + 1, nullptr, 10));
 	}
 	return !host.empty() && port > 0;
 }
@@ -343,7 +345,7 @@ int WebSocket::frame(int &opcode, bool &fin, std::string &payload)
 			len = len << 8 | b[2 + i];
 		hdr = 10;
 	}
-	if (len > (1u << 24))
+	if (len > (UINT32_C(1) << 24))
 		return -1;      /* (no event is that long) */
 	if (masked)
 		hdr += 4;

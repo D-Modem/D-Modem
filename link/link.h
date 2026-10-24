@@ -71,14 +71,14 @@ struct Config {
 	int tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
 	int comp = 0;                   /* V.42bis: bit 0 decoder (what we
 					   receive), bit 1 encoder */
-	int dict_size = V42BIS_MAX_CODEWORDS;
-	int max_string = V42BIS_MAX_STRING;
+	int32_t dict_size = V42BIS_MAX_CODEWORDS;
+	int32_t max_string = V42BIS_MAX_STRING;
 	/* V.44 offered with compression; after XID: it, rather than
 	   V.42bis, is what the call has */
 	bool v44 = true;
-	int v44_codewords = V44_MAX_CODEWORDS;
-	int v44_max_string = V44_MAX_STRING;
-	int v44_history = V44_MAX_HISTORY;
+	int32_t v44_codewords = V44_MAX_CODEWORDS;
+	int32_t v44_max_string = V44_MAX_STRING;
+	int32_t v44_history = V44_MAX_HISTORY;
 };
 
 /* the error correction a call has */
@@ -89,9 +89,9 @@ enum class Protocol { None, Lapm, Mnp };
    among them sent again, the frames received intact and those received
    with a bad FCS */
 struct Stats {
-	unsigned long tx_chars = 0, rx_chars = 0;
-	unsigned long tx_frames = 0, tx_again = 0;
-	unsigned long rx_frames = 0, rx_errors = 0;
+	uint32_t tx_chars = 0, rx_chars = 0;
+	uint32_t tx_frames = 0, tx_again = 0;
+	uint32_t rx_frames = 0, rx_errors = 0;
 };
 
 enum class Status {
@@ -111,7 +111,7 @@ public:
 	/* the link's progress */
 	virtual void status(Status s) = 0;
 	/* the data pump's transmit rate (bit timers), 0 if not known */
-	virtual int tx_rate() { return 0; }
+	virtual int32_t tx_rate() { return 0; }
 	/* parameters agreed in an XID exchange */
 	virtual void negotiated(const Config &cfg) { (void)cfg; }
 	/* one line of debug output (without the modem's name) */
@@ -162,7 +162,7 @@ public:
 			(mode_ == Mode::Mnp && mnp_.tx_pending());
 	}
 	/* the data pump's transmit rate (bit/s), 0 if not known */
-	int tx_rate() const { return owner_->tx_rate(); }
+	int32_t tx_rate() const { return owner_->tx_rate(); }
 	/* the call's counts so far (kept after it, until the next init()),
 	   which the framers add to */
 	const Stats &stats() const { return stats_; }
@@ -182,12 +182,12 @@ public:
 		Negotiate,      /* the caller's XID (Lapm::negotiate) */
 	};
 	/* the bit timer: what once bits more bits went out (0: none) */
-	void set_timer(long bits, Timer what) {
+	void set_timer(int32_t bits, Timer what) {
 		timer_ = bits;
 		timer_what_ = what;
 	}
 	/* the bits left before it fires, 0 if it does not run */
-	long timer() const { return timer_; }
+	int32_t timer() const { return timer_; }
 	/* what it runs (or last ran) */
 	Timer timer_what() const { return timer_what_; }
 	/* LAPM's frames on the line */
@@ -239,7 +239,7 @@ private:
 	Mode mode_ = Mode::Idle;
 	Protocol proto_ = Protocol::None;
 	bool mnp_tried_ = false;
-	long timer_ = 0;
+	int32_t timer_ = 0;
 	Timer timer_what_ = Timer::None;
 
 	Detector det_;

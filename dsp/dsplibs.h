@@ -21,6 +21,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "modem_defs.h"
 
@@ -65,7 +66,7 @@ int dcr_process(void *dcr, void *buf, int len);
 /* a caller ID receiver at rate samples/s, reporting to modem m's DTE
    the fields formatted (cid_val 1) or the message in hex; packet: as
    voice mode's complex event report, <DLE>X ... <DLE>. (V.253 7.1.2) */
-void *CID_create(struct modem *m, unsigned rate, unsigned cid_val,
+void *CID_create(struct modem *m, uint32_t rate, unsigned cid_val,
 		 int packet);
 void CID_delete(void *cid);
 /* count received samples: 0 to go on, 1 once a message is reported, -1
@@ -73,7 +74,7 @@ void CID_delete(void *cid);
 int CID_process(void *cid, void *in, int count);
 
 /* the voice engine (V.253) of modem m at srate samples/s */
-void *VOICE_create(struct modem *m, unsigned srate);
+void *VOICE_create(struct modem *m, uint32_t srate);
 void VOICE_delete(void *obj);
 /* count samples in and out: a VOICE_STATUS_* to report, 0, or < 0 to
    stop voice */
@@ -85,10 +86,10 @@ void VOICE_tones(void *obj, struct voice_tones *t);
 
 /* the service class 1 fax engine (T.31) of modem m, on the calling side
    if caller is not 0, at srate samples/s */
-void *FAX_create(struct modem *m, unsigned caller, unsigned srate);
+void *FAX_create(struct modem *m, unsigned caller, uint32_t srate);
 /* an answerer's answer tone already on the line for ms (adaptive
    answer): its CED cut short, or none */
-void FAX_answer_tone(void *obj, unsigned ms);
+void FAX_answer_tone(void *obj, uint32_t ms);
 /* frees it */
 void FAX_delete(void *obj);
 /* count samples in and out: a FAX_STATUS_* to report, 0, or < 0 to end
@@ -116,7 +117,11 @@ void FAX_t38_rx(void *obj, const void *ifp);
 /* the level of the library's debug lines (defined by the core) */
 extern unsigned int dsplibs_debug_level;
 /* a debug line to the core's log, as printf(); its length */
-int dsplibs_debug_printf(const char *fmt, ...);
+int dsplibs_debug_printf(const char *fmt, ...)
+#if defined(__GNUC__) || defined(__clang__)
+	__attribute__((format(printf, 1, 2)))
+#endif
+	;
 
 /* up to n characters of buf to modem m's DTE: how many it took */
 int modem_send_to_tty(struct modem *m, const char *buf, int n);

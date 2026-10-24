@@ -11,6 +11,7 @@
  *
  */
 
+#include <cinttypes>
 #include <cstring>
 #include <vector>
 
@@ -28,7 +29,7 @@ public:
 	/* its name in the log */
 	const char *tag() const { return "vcvm"; }
 
-	int start(struct modem *m, enum DP_ID id, int caller_, int srate_,
+	int start(struct modem *m, enum DP_ID id, int caller_, int32_t srate_,
 		  int max_frag);
 	int process(void *in, void *out, int cnt) override;
 
@@ -42,7 +43,7 @@ private:
 	struct dp_vcvm *info_ = nullptr;
 	bool up_ = false;               /* CONNECT reported */
 	int renegs_ = 0, retrains_ = 0;
-	int line_rate_ = 8000;
+	int32_t line_rate_ = 8000;
 	Resampler rs_up_, rs_down_;     /* 9600 -> 8000, 8000 -> 9600 */
 	std::vector<float> in8_, out8_, back_;
 	size_t back_pos_ = 0;
@@ -53,11 +54,12 @@ private:
 /* the pump at srate_ (8000, or 9600 through the converters) once V.8
    agreed on V.cvm: the DCE's modes from MDMPRM_VCVM, the peer's from
    its field; 0, or -1 */
-int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, int srate_,
+int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, int32_t srate_,
 		    int)
 {
 	if (srate_ != 8000 && srate_ != 9600) {
-		DSP_DBG("vcvm: sample rate %d not supported\n", srate_);
+		DSP_DBG("vcvm: sample rate %" PRId32 " not supported\n",
+			srate_);
 		return -1;
 	}
 	pump_setup(m, srate_, caller_);
@@ -198,7 +200,7 @@ int VcvmPump::process(void *in, void *out, int cnt)
 		if (back_pos_ > 4096) {
 			back_.erase(back_.begin(),
 				    back_.begin() +
-					    static_cast<long>(back_pos_));
+					    static_cast<int32_t>(back_pos_));
 			back_pos_ = 0;
 		}
 	}
@@ -223,7 +225,7 @@ int VcvmPump::process(void *in, void *out, int cnt)
 	if (!up_ && mdm_.connected()) {
 		up_ = true;
 		if (mdm_.rtt_ms() > 0)
-			stat_rtd(static_cast<long>(mdm_.rtt_ms()) * srate /
+			stat_rtd(static_cast<int32_t>(mdm_.rtt_ms()) * srate /
 				 1000);
 		report();
 		DSP_DBG("vcvm: phase 4: transmitting %s, receiving %s\n",

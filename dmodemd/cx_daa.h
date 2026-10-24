@@ -53,7 +53,7 @@ public:
 	virtual bool read(int reg, uint16_t *v) = 0;
 	virtual bool write(int reg, uint16_t v) = 0;
 	/* at least us microseconds gone */
-	virtual void delay_us(unsigned us) = 0;
+	virtual void delay_us(uint32_t us) = 0;
 };
 
 /* how an SSD gives its LSD's registers (SOAR's flags per kind) */

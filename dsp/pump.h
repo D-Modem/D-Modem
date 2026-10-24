@@ -31,6 +31,8 @@
 #ifndef __PUMP_H__
 #define __PUMP_H__
 
+#include <cinttypes>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -57,7 +59,7 @@ struct PumpOps {
 	/* dp_operations.create: a zeroed T, its struct dp filled in, then
 	   T::start(); NULL when out of memory or start() fails */
 	static struct dp *create(struct modem *m, enum DP_ID id, int caller,
-				 int srate, int max_frag,
+				 int32_t srate, int max_frag,
 				 struct dp_operations *op)
 	{
 		T *p = new (std::nothrow) T();
@@ -132,15 +134,15 @@ public:
 	struct dp_runtime *rt;          /* the core's (NULL: none) */
 	struct dp_stats *stats;         /* the call's statistics, the core's
 					   (NULL: none) */
-	int srate;
+	int32_t srate;
 	int caller;
 	S state;
-	long count;                     /* samples in the state */
-	long total;                     /* samples since the start */
-	long timeout;                   /* the handshake's end, in total */
-	long carrier_loss;              /* samples without carrier that end
+	int32_t count;                     /* samples in the state */
+	int32_t total;                     /* samples since the start */
+	int32_t timeout;                   /* the handshake's end, in total */
+	int32_t carrier_loss;              /* samples without carrier that end
 					   the call */
-	long carrier_run;               /* >0 samples with, <0 without
+	int32_t carrier_run;               /* >0 samples with, <0 without
 					   carrier */
 
 	/* nothing before the samples */
@@ -149,7 +151,7 @@ public:
 	/* for modem m at srate_ samples/s, calling or not: the runtime,
 	   the handshake's time from S7 (50 s if 0) and the carrier's from
 	   S10 (1.4 s if 0) */
-	void pump_setup(struct modem *m, int srate_, int caller_)
+	void pump_setup(struct modem *m, int32_t srate_, int caller_)
 	{
 		int s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
 		int s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
@@ -199,7 +201,7 @@ public:
 		stats->have |= DP_STATS_SNR;
 	}
 	/* (see stat_retrain()) */
-	void stat_rtd(long samples)
+	void stat_rtd(int32_t samples)
 	{
 		if (!stats || samples <= 0)
 			return;
@@ -210,8 +212,9 @@ public:
 	/* to state s, count from 0 */
 	void set_state(S s)
 	{
-		DSP_DBG("%s: state %d -> %d at %ld ms\n", host().tag(),
-			(int)state, (int)s, total * 1000 / srate);
+		DSP_DBG("%s: state %d -> %d at %" PRId64 " ms\n",
+			host().tag(), (int)state, (int)s,
+			int64_t{total} * 1000 / srate);
 		state = s;
 		count = 0;
 	}
@@ -226,17 +229,18 @@ public:
 	}
 
 	/* the data rates to the core */
-	void set_rates(int tx, int rx)
+	void set_rates(int32_t tx, int32_t rx)
 	{
 		modem_set_param(modem, MDMPRM_TX_RATE, tx);
 		modem_set_param(modem, MDMPRM_RX_RATE, rx);
 	}
 
 	/* the data rates to the core: DPSTAT_CONNECT */
-	int connect_at(int tx, int rx)
+	int connect_at(int32_t tx, int32_t rx)
 	{
 		set_rates(tx, rx);
-		DSP_DBG("%s: connect %d/%d\n", host().tag(), tx, rx);
+		DSP_DBG("%s: connect %" PRId32 "/%" PRId32 "\n", host().tag(),
+			tx, rx);
 		return DPSTAT_CONNECT;
 	}
 
@@ -252,10 +256,11 @@ public:
 
 	/* a test's time var=<ms>[a|c] (pump_test_env) in samples, 0 when
 	   not set for this side */
-	long test_samples(const char *var) const
+	int32_t test_samples(const char *var) const
 	{
 		const char *e = pump_test_env(var, caller);
-		return e ? ms2samples(atoi(e), srate) : 0;
+		return e ? ms2samples(static_cast<int32_t>(
+				   std::strtol(e, nullptr, 10)), srate) : 0;
 	}
 
 	/* process() by the sample: P's block_start(), then sample() for

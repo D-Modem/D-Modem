@@ -15,6 +15,8 @@
 #ifndef __T30_H__
 #define __T30_H__
 
+#include <cstdint>
+
 #include "t4.h"
 #include "t38.h"
 
@@ -42,9 +44,9 @@ struct t30_config {
 				   receives */
 	const char *ident;      /* our identity (TSI/CSI), up to 20 of
 				   0-9 + and space */
-	int max_bps;            /* 14400 (V.17), 9600 (V.29), 4800 (V.27) */
+	int32_t max_bps;        /* 14400 (V.17), 9600 (V.29), 4800 (V.27) */
 	int ecm;                /* offer and take error correction mode */
-	int srate;              /* sample rate of the audio (8000) */
+	int32_t srate;          /* sample rate of the audio (8000) */
 	/* sending: the next page, 1; no more, 0 */
 	int  (*next_page)(void *ctx, T4Page *page);
 	/* receiving: a page that came; it stays the caller's to free */
@@ -66,7 +68,7 @@ struct t30_status {
 				   to its EOP sent or received): the
 				   result is OK however the call ends */
 	int pages;              /* sent or received */
-	int bps;                /* the rate of the pages */
+	int32_t bps;            /* the rate of the pages */
 	int fine;
 	int ecm;                /* the call has error correction mode */
 	char remote_ident[21];
@@ -80,7 +82,7 @@ T30 *t30_create(const struct t30_config *cfg);
 /* free it, and the pages it still holds */
 void t30_free(T30 *t);
 /* audio: n samples in and n out, 16 bit linear */
-void t30_process(T30 *t, const short *in, short *out, int n);
+void t30_process(T30 *t, const int16_t *in, int16_t *out, int n);
 /* T.38: n samples' time going by (at srate): the timers, and the
    packets that are due */
 void t30_t38_time(T30 *t, int n);

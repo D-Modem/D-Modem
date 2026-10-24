@@ -21,6 +21,7 @@
  */
 
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -120,7 +121,8 @@ int V34Mp::parse(const unsigned char *b, int len)
 	rate_mask = field(b, 35, 14);
 	asym = b[50];
 	for (i = 0; i < 6; i++)
-		h[i] = type ? static_cast<short>(field(b, 52 + 17 * i, 16)) : 0;
+		h[i] = type ?
+			static_cast<int16_t>(field(b, 52 + 17 * i, 16)) : 0;
 	return 0;
 }
 
@@ -165,7 +167,8 @@ int V34Tx::dibit(int b0, int b1)
 static cplx tx_symbol(V34Tx *t)
 {
 	cplx z = { 0, 0 };
-	int k, w;
+	int k;
+	uint32_t w;
 
 	if (t->seg == V34_TX_CP && t->pos >= t->nbits) {
 		/* a CP frame out: E, or the next frame */
@@ -276,7 +279,8 @@ void V34Tx::init(int baud_, int high, int caller)
 /* the next segment, from its first symbol */
 void V34Tx::segment(enum v34_txseg seg_)
 {
-	DSP_DBG("v34 tx: segment %d -> %d after %ld symbols\n", seg, seg_, n);
+	DSP_DBG("v34 tx: segment %d -> %d after %" PRId32 " symbols\n", seg,
+		seg_, n);
 	s_odd = seg_ == V34_TX_SBAR && seg == V34_TX_S ?
 			static_cast<int>(n & 1) :
 			0;
@@ -358,7 +362,8 @@ void V34Rx::release()
    progress is dropped */
 void V34Rx::set_stage(enum v34_rxstage s)
 {
-	DSP_DBG("v34 rx: stage %d -> %d at symbol %ld\n", stage, s, sym);
+	DSP_DBG("v34 rx: stage %d -> %d at symbol %" PRId32 "\n", stage, s,
+		sym);
 	stage = s;
 	n = 0;
 	ls_n = 0;
@@ -404,9 +409,9 @@ void V34Rx::ja_bit(int bit)
 		if (r == SyncFrames::GOOD && dil.parse(fr->b, fr->len) == 0) {
 			if (!ev_ja) {
 				int i;
-				DSP_DBG("v34 rx: Ja at symbol %ld: DIL N %d, "
-					"LSP %d, LTP %d\n", sym, dil.n,
-					dil.lsp, dil.ltp);
+				DSP_DBG("v34 rx: Ja at symbol %" PRId32
+					": DIL N %d, LSP %d, LTP %d\n", sym,
+					dil.n, dil.lsp, dil.ltp);
 				for (i = 0; i < 8; i++)
 					DSP_DBG("v34 rx: DIL H%d %d REF%d %d\n",
 						i + 1, dil.h[i], i + 1,
@@ -450,9 +455,9 @@ void V34Rx::cp_bit(int bit)
 			if (!(cp.cp ? ev_cp : ev_cpt) ||
 			    (cp.ack && !ev_cpack) ||
 			    (cp.cp && cp.silence != cp_silence))
-				DSP_DBG("v34 rx: CP%s%s at symbol %ld: drn %d "
-					"Sr %d ld %d, %d constellations, "
-					"mask %04x\n", cp.cp ? (cp.silence ?
+				DSP_DBG("v34 rx: CP%s%s at symbol %" PRId32
+					": drn %d Sr %d ld %d, %d "
+					"constellations, mask %04x\n", cp.cp ? (cp.silence ?
 					"s" : "") : "t",
 					cp.ack ? "'" : "", sym, cp.drn,
 					cp.sr, cp.ld, cp.ncon, cp.rate_mask);
@@ -497,7 +502,8 @@ void V34Rx::got_bit(int bit)
 			ones = bit ? ones + 1 : 0;
 			if (ones == 20) {
 				ev_e = 1;
-				DSP_DBG("v34 rx: E at symbol %ld\n", sym);
+				DSP_DBG("v34 rx: E at symbol %" PRId32 "\n",
+					sym);
 				set_stage(V34_RX_DATA);
 			}
 		}
@@ -539,8 +545,8 @@ void V34Rx::got_bit(int bit)
 		ones = bit ? ones + 1 : 0;
 		if (ones == 20) {
 			ev_e = 1;
-			DSP_DBG("v34 rx: E at symbol %ld (MP end %ld), "
-				"mse %.5f\n", sym, mp_end, mse);
+			DSP_DBG("v34 rx: E at symbol %" PRId32 " (MP end %"
+				PRId32 "), mse %.5f\n", sym, mp_end, mse);
 			set_stage(V34_RX_DATA);
 			return;
 		}
@@ -561,13 +567,13 @@ void V34Rx::got_bit(int bit)
 		if (++j_count >= 2 && !ev_j) {
 			ev_j = 1;
 			j16 = (sr & 0xFFFF) == rev16(J_16POINT);
-			DSP_DBG("v34 rx: J at symbol %ld%s\n", sym,
+			DSP_DBG("v34 rx: J at symbol %" PRId32 "%s\n", sym,
 				j16 ? " (16 point TRN)" : "");
 		}
 	} else if ((sr & 0xFFFF) == rev16(J_DASH) && ev_j && !ev_jp) {
 		ev_jp = 1;
 		ls_n = 0;            /* the caller's phase 4 TRN */
-		DSP_DBG("v34 rx: J' at symbol %ld\n", sym);
+		DSP_DBG("v34 rx: J' at symbol %" PRId32 "\n", sym);
 	}
 }
 
@@ -712,7 +718,7 @@ int V34Rx::ls_solve()
 /* a least squares solution over TRN symbols start to start + LS_LEN - 1
    (counted in ls_n): at its end the new equalizer, its delay and the
    sample clock offset from the delay of the solution before */
-void V34Rx::ls_window(cplx d, long start)
+void V34Rx::ls_window(cplx d, int32_t start)
 {
 	if (ls_n == start) {
 		std::fill(ls_r.begin(), ls_r.end(), lscplx());
@@ -722,7 +728,7 @@ void V34Rx::ls_window(cplx d, long start)
 		ls_collect(d);
 	if (ls_n == start + LS_LEN) {
 		float before = mse;
-		long sym_ = qam.symbols - LS_LEN / 2;
+		int32_t sym_ = static_cast<int32_t>(qam.symbols - LS_LEN / 2);
 		if (ls_solve())
 			return;
 		qam.recompute();
@@ -865,8 +871,8 @@ void V34Rx::symbol()
 	sym++;
 	n++;
 	if (dsplibs_debug_level >= 5 && sym % 500 == 0)
-		DSP_DBG("v34 rx%d: %ld st %d mse %.5f d %.3f/%.3f f %.2e "
-			"dth %.2e tadj %.2e\n", tap, sym, stage, mse,
+		DSP_DBG("v34 rx%d: %" PRId32 " st %d mse %.5f d %.3f/%.3f "
+			"f %.2e dth %.2e tadj %.2e\n", tap, sym, stage, mse,
 			eq_delay(), c0, t_freq, qam.dtheta,
 			qam.t_adj);
 	p = cplx_pow(z) + cplx_pow(z2) + 1e-3f;
@@ -879,7 +885,8 @@ void V34Rx::symbol()
 	switch (stage) {
 	case V34_RX_IDLE:
 		if (dsplibs_debug_level >= 7)
-			DSP_DBG("v34 rx%d idle %ld z %.2f %.2f s %.3f pw %.0f/%.0f\n",
+			DSP_DBG("v34 rx%d idle %" PRId32 " z %.2f %.2f s %.3f "
+				"pw %.0f/%.0f\n",
 				tap, sym, z.re, z.im, s_score, qam.power,
 				ref_power);
 		/* S: the symbols repeat every other symbol (and are there:
@@ -888,7 +895,8 @@ void V34Rx::symbol()
 		    cplx_pow(z2) > 0.5f) {
 			if (++s_count >= 24) {
 				ev_s = 1;
-				DSP_DBG("v34 rx: S at symbol %ld\n", sym);
+				DSP_DBG("v34 rx: S at symbol %" PRId32 "\n",
+					sym);
 				set_stage(V34_RX_S);
 			}
 		} else
@@ -940,7 +948,8 @@ void V34Rx::symbol()
 		if (s_in_trn && s_score < 0.05f) {
 			if (++s_count >= 24) {
 				ev_s = 1;
-				DSP_DBG("v34 rx: S in TRN at symbol %ld\n", sym);
+				DSP_DBG("v34 rx: S in TRN at symbol %" PRId32
+					"\n", sym);
 				set_stage(V34_RX_S);
 				break;
 			}
@@ -998,7 +1007,8 @@ void V34Rx::symbol()
 			if (!level_ok())
 				break;
 			if (dsplibs_debug_level >= 8)
-				DSP_DBG("v34 rx%d: data %ld %.5f %.5f %.5f %.5f\n",
+				DSP_DBG("v34 rx%d: data %" PRId32
+					" %.5f %.5f %.5f %.5f\n",
 					tap, n, z.re, z.im, d.re, d.im);
 			e = cplx_pow(cplx_sub(z, d)) / g2;
 			mse += 0.01f * (e - mse);
@@ -1027,7 +1037,8 @@ void V34Rx::reneg_s()
 	/* the mse of the data before S */
 	if (mse_old > 0)
 		mse = mse_old;
-	DSP_DBG("v34 rx: S in data mode at symbol %ld, mse %.3f\n", sym, mse);
+	DSP_DBG("v34 rx: S in data mode at symbol %" PRId32 ", mse %.3f\n",
+		sym, mse);
 	data_on = 0;
 	mse_mid = mse_old = 0;
 	ev_reneg = ev_s = 1;
@@ -1224,7 +1235,8 @@ void V34Rx::sample(float x)
 	on_ = qam.power > 300.0f * 300.0f / 2 &&
 		(!ref_power || qam.power > 0.25f * ref_power);
 	if (on && !on_ && stage != V34_RX_IDLE && stage != V34_RX_DATA) {
-		DSP_DBG("v34 rx%d: signal lost at symbol %ld\n", tap, sym);
+		DSP_DBG("v34 rx%d: signal lost at symbol %" PRId32 "\n",
+			tap, sym);
 		set_stage(V34_RX_IDLE);
 		s_count = 0;
 	}

@@ -72,7 +72,7 @@ public:
 	}
 
 	/* see dmd::Ac97Regs: the delays added up, none waited */
-	void delay_us(unsigned us) override { delayed += us; }
+	void delay_us(uint32_t us) override { delayed += us; }
 
 	/* the LSD's registers but its status, power and version, all f */
 	void fill_lsd(uint8_t f)

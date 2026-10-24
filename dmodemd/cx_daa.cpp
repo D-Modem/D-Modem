@@ -66,7 +66,7 @@ CxVariant cx_variant(int kind)
 	v.echo = f & (1u << 8);
 	v.no_ready = f & (1u << 9);
 	v.cmd_first = f & (1u << 14);
-	v.status4 = f & (1u << 19);
+	v.status4 = f & (UINT32_C(1) << 19);
 	v.control_bit6 = kind_flags2[kind] & (1u << 4);
 	return v;
 }
@@ -405,7 +405,7 @@ bool CxDaa::run(const Op *ops, int n)
 				return false;
 			continue;
 		case Op::DELAY:
-			regs_.delay_us(o.set * 1000u);
+			regs_.delay_us(uint32_t{o.set} * 1000u);
 			continue;
 		case Op::W:
 			v = set;

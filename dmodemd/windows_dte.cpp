@@ -39,7 +39,7 @@ const DWORD READ_POLL_MS = 5, WRITE_WAIT_MS = 200;
 
 /* a named pipe's buffers each way, and how often --pipe-connect tries
    a pipe that isn't there (yet), in ms */
-const DWORD PIPE_BUFFER = 64 * 1024, CONNECT_RETRY_MS = 500;
+const DWORD PIPE_BUFFER = DWORD{64} * 1024, CONNECT_RETRY_MS = 500;
 
 /* n octets to the stream socket fd, all of them (it waits) */
 bool send_all(int fd, const char *p, int n)
@@ -207,7 +207,7 @@ int TcpDte::write(const char *buf, int n)
 			took = done;
 		}
 	}
-	if (n > (int)(BUFFER - out_.size()))
+	if (n > (int32_t)(BUFFER - out_.size()))
 		n = (int)(BUFFER - out_.size());
 	if (n > 0)
 		out_.append(buf, n);

@@ -12,6 +12,8 @@
  *
  */
 
+#include <cinttypes>
+
 #include "link.h"
 
 namespace dlink {
@@ -34,7 +36,7 @@ enum {
    and the start of an MNP frame (SYN DLE STX, A.3/V.42 (10/96)) */
 static const uint8_t DC1_EVEN = 0x11, DC1_ODD = 0x91;
 static const uint8_t ADP_E = 'E', ADP_C = 'C', ADP_NUL = 0x00;
-static const uint32_t MNP_START = 0x16 << 16 | 0x10 << 8 | 0x02;
+static const uint32_t MNP_START = UINT32_C(0x16) << 16 | 0x10 << 8 | 0x02;
 
 enum {
 	DETECT_MARKS = 512,     /* the originator's marks before its ODPs */
@@ -202,9 +204,9 @@ void Async::rx_scan()
  */
 
 /* T400 (750 ms, 9.1.1/V.42) in bits at the pump's rate */
-static long t400(const Link *link)
+static int32_t t400(const Link *link)
 {
-	long rate = link->tx_rate();
+	int32_t rate = link->tx_rate();
 	if (!rate)
 		rate = NOMINAL_RATE;
 	return rate * 3 / 4;
@@ -231,7 +233,7 @@ void Detector::start(Link *link)
 		tx_pattern_[0] = ADP_E;
 		tx_pattern_[1] = ADP_C;
 		rx_pattern_[0] = DC1_EVEN;
-		long t = t400(link);
+		int32_t t = t400(link);
 		link->set_timer(link->asked().mnp ? 3 * t : t,
 				Link::Timer::DetectEnd);
 	}
@@ -241,9 +243,9 @@ void Detector::start(Link *link)
    or T400 */
 void Detector::begin()
 {
-	long t = t400(link_);
+	int32_t t = t400(link_);
 
-	link_->logf("detect: ODPs, T400 %ld bits.", t);
+	link_->logf("detect: ODPs, T400 %" PRId32 " bits.", t);
 	tx_count_ = 1;
 	link_->set_timer(t, Link::Timer::DetectEnd);
 }
@@ -267,7 +269,7 @@ bool Detector::tx_fill()
 		return true;
 	}
 	uint8_t ch = tx_pattern_[tx_count_++ & 1];
-	queue_bits(tx_, 0x1ffu << 9 | reverse_bits(ch), 18);
+	queue_bits(tx_, UINT32_C(0x1ff) << 9 | reverse_bits(ch), 18);
 	return true;
 }
 

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -37,7 +38,7 @@ static const int MAX_SAMPLES = 42 * HALF_FRAME;
 
 /* the core at rate on the line in -> out, with a new pty for its DTE;
    PIPE_SYNC read here.  Exits if the pty or the core can't be made */
-PipeModem::PipeModem(const char *name, int rate, const char *country,
+PipeModem::PipeModem(const char *name, int32_t rate, const char *country,
 		     int in, int out)
 	: in_(in), out_(out), rate_(rate), line_(in, HALF_FRAME)
 {
@@ -81,17 +82,18 @@ int PipeModem::set_hook(dcore::Modem &, int state)
 }
 
 /* the time in ms: the monotonic clock, or with PIPE_SYNC the line's */
-unsigned long PipeModem::now_ms()
+uint64_t PipeModem::now_ms()
 {
 	if (sync_) {
 		/* the line's clock while it runs (the wall clock's while it
 		   does not), so that the timers meet it at the same samples */
-		long line_ms = samples() * 1000 / rate_;
-		unsigned long t;
+		int64_t line_ms = samples() * 1000 / rate_;
+		uint64_t t;
 		if (line_idle())
-			clock_off_ = static_cast<long>(dcore::monotonic_ms()) -
-				     line_ms;
-		t = static_cast<unsigned long>(line_ms + clock_off_);
+			clock_off_ =
+				static_cast<int64_t>(dcore::monotonic_ms()) -
+				line_ms;
+		t = static_cast<uint64_t>(line_ms + clock_off_);
 		if (t < last_ms_)
 			t = last_ms_;
 		return last_ms_ = t;
@@ -178,7 +180,7 @@ void PipeModem::pace(int samples)
 int PipeModem::line(bool rd)
 {
 	int16_t outbuf[MAX_SAMPLES];
-	const short *in;
+	const int16_t *in;
 	int count, max = MAX_SAMPLES;
 	bool off_hook;
 
@@ -311,7 +313,7 @@ void PipeModem::dte_input()
 	struct pollfd p = { pty_.fd(), POLLIN, 0 };
 	if (!pty_.want_read(*m_) || poll(&p, 1, 0) <= 0)
 		return;
-	DBG("DTE input at line sample %ld\n", samples());
+	DBG("DTE input at line sample %" PRId64 "\n", samples());
 	pty_.serve(*m_);
 }
 
@@ -334,7 +336,7 @@ int PipeModem::run(PipeModem **modems, int n)
 	for (int i = 0; i < n; i++)
 		m[i] = modems[i]->m_;
 	while (RunLoop::running()) {
-		long next = RunLoop::poll(m.data(), n);
+		int32_t next = RunLoop::poll(m.data(), n);
 		int ret;
 
 		loop.clear();

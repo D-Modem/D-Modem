@@ -21,7 +21,9 @@
  *
  */
 
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -90,11 +92,11 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	using EcmRx = HdlcRx<Fax, ECM_MAX, HdlcEcm>;
 
 	struct modem *modem;
-	int srate;
+	int32_t srate;
 	int caller;
 	enum c1_state state;
-	long count;
-	long duration;
+	int32_t count;
+	int32_t duration;
 
 	int status[4];
 	int nstatus;
@@ -124,13 +126,13 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	FaxRxMemory rx_mem;    /* for V.17 short trains */
 	int rx_trained;
 	int rx_carrier;
-	long rx_quiet;          /* samples of silence (FRS) */
+	int32_t rx_quiet;       /* samples of silence (FRS) */
 	float in_power;
 
 	/* the caller's CNG (6.6/T.31: 4.2/T.30, 0.5 s of 1100 Hz every 3.5
 	   s) in its first +FRH, until the answerer's flags come: samples
 	   into it, or -1 when off */
-	long cng_n;
+	int32_t cng_n;
 
 	/* frames from the HDLC receiver */
 	int rflags;             /* flags seen with the carrier on */
@@ -154,8 +156,8 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	enum t38_step t38_step;
 	enum fax_mod t38_mod;
 	int t38_long;                   /* long training */
-	long t38_wait;                  /* samples left of the step */
-	long t38_acc;                   /* bit time, in 1/srate */
+	int32_t t38_wait;               /* samples left of the step */
+	int32_t t38_acc;                /* bit time, in 1/srate */
 	int t38_due;                    /* octets the line has had time for */
 	int t38_debt;                   /* octets of time owed (an FCS) */
 	int t38_close;                  /* FTH: no more frames */
@@ -878,7 +880,7 @@ void Fax::t38_rx_fast(const struct t38_ifp *p)
 		case T38_T4_DATA:
 		case T38_T4_SIG_END:
 			if (take && rx_trained) {
-				int i;
+				int32_t i;
 				for (i = 0; i < fl->len; i++) {
 					u8 c;
 					flip_octets(&c, fl->data + i, 1);
@@ -1109,12 +1111,12 @@ int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
 	case FAX_CMD_FTS:
 		f->stop_tx();
 		f->set_state(C1_FTS);
-		f->duration = static_cast<long>(param) * f->srate / 100;
+		f->duration = static_cast<int32_t>(param) * f->srate / 100;
 		return 1;
 	case FAX_CMD_FRS:
 		f->stop_tx();
 		f->set_state(C1_FRS);
-		f->duration = static_cast<long>(param) * f->srate / 100;
+		f->duration = static_cast<int32_t>(param) * f->srate / 100;
 		f->rx_quiet = 0;
 		return 1;
 	case FAX_CMD_FTH:
@@ -1252,7 +1254,7 @@ void FAX_t38_rx(void *obj, const void *ifp)
 /* class 1 on modem m at srate samples/s once the call is up: the caller
    receives the DIS, the answerer sends CED first.  NULL when out of
    memory */
-void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
+void *FAX_create(struct modem *m, unsigned caller, uint32_t srate)
 {
 	Fax *f = new (std::nothrow) Fax();
 	if (!f)
@@ -1279,7 +1281,7 @@ void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
    ms already (adaptive answer: the data answer's ANSam, before the call
    was found to be a fax call): CED for what is left of its 3 s (none
    past them), then its gap and the frames */
-void FAX_answer_tone(void *obj, unsigned ms)
+void FAX_answer_tone(void *obj, uint32_t ms)
 {
 	Fax *f = static_cast<Fax*>(obj);
 
@@ -1288,7 +1290,7 @@ void FAX_answer_tone(void *obj, unsigned ms)
 	if (ms > FAX_CED_MS)
 		ms = FAX_CED_MS;
 	f->count = ms2samples(ANS_SILENCE_MS + ms, f->srate);
-	DSP_DBG("fax: %u ms of answer tone sent already\n", ms);
+	DSP_DBG("fax: %" PRIu32 " ms of answer tone sent already\n", ms);
 }
 
 /* free what FAX_create made */

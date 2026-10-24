@@ -110,7 +110,7 @@ bool WireReader::hello(const Frame &f, uint16_t *version, std::string *port)
 {
 	if (f.type != FRAME_HELLO || f.n < 2)
 		return false;
-	*version = static_cast<uint16_t>(f.p[0] | f.p[1] << 8);
+	*version = static_cast<uint16_t>(f.p[0] | uint16_t{f.p[1]} << 8);
 	if (port)
 		port->assign(reinterpret_cast<const char *>(f.p) + 2, f.n - 2);
 	return true;

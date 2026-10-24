@@ -18,6 +18,7 @@
 #define DMODEMD_LINE_FRAMES_H
 
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 
 #include <unistd.h>
@@ -57,15 +58,15 @@ public:
 	/* the whole samples waiting */
 	int waiting() const { return n_ / 2; }
 	/* the line's samples taken so far */
-	unsigned long long taken() const { return taken_; }
+	uint64_t taken() const { return taken_; }
 
 	/* the samples waiting up to the next frame end of the line's clock,
 	   max at most: at *p (until read()), how many; 0 if none wait.  The
 	   clock is the samples taken, or the host's own count of the line
 	   (HalfModem's line_n, which a modem's delay moves on as well) */
-	int block(const short **p, int max) { return block(p, max, taken_); }
+	int block(const int16_t **p, int max) { return block(p, max, taken_); }
 	/* (the same, at the clock given) */
-	int block(const short **p, int max, unsigned long long clock)
+	int block(const int16_t **p, int max, uint64_t clock)
 	{
 		int k = frame_ - static_cast<int>(clock % frame_);
 		return take(p, k < max ? k : max);
@@ -81,9 +82,9 @@ public:
 	/* the samples waiting up to the last frame end there is among
 	   them, max at most: at *p (until read()), how many; 0 if no frame
 	   end is that near */
-	int frames(const short **p, int max)
+	int frames(const int16_t **p, int max)
 	{
-		unsigned long long end;
+		uint64_t end;
 		int n = waiting() < max ? waiting() : max;
 
 		end = (taken_ + n) / frame_ * frame_;
@@ -95,7 +96,7 @@ private:
 	enum { SIZE = 8192 };
 
 	/* n of the samples waiting, fewer if fewer wait */
-	int take(const short **p, int n)
+	int take(const int16_t **p, int n)
 	{
 		if (n > waiting())
 			n = waiting();
@@ -112,10 +113,10 @@ private:
 	char *bytes() { return reinterpret_cast<char *>(buf_); }
 
 	int fd_, frame_;
-	short buf_[SIZE / 2];
+	int16_t buf_[SIZE / 2];
 	int head_ = 0, n_ = 0;          /* bytes()[head_ .. head_ + n_)
 					   waits, head_ even */
-	unsigned long long taken_ = 0;
+	uint64_t taken_ = 0;
 };
 
 } // namespace dmd

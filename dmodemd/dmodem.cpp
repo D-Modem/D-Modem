@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -31,7 +32,7 @@ struct dmodem final : public dcore::Host {
 	dcore::Modem *m = nullptr;
 	int dte_fd = -1;
 	enum dmodem_law law = DMODEM_LAW_UNKNOWN;
-	unsigned long long samples = 0; /* the modem's clock: its audio */
+	uint64_t samples = 0; /* the modem's clock: its audio */
 	char name[32] = {};
 	/* a calling fax machine's CNG (on the line before the modem's
 	   own detector, which runs as it answers) */
@@ -59,8 +60,8 @@ struct dmodem final : public dcore::Host {
 		return ret < 0 ? 0 : ret;
 	}
 	/* the clock: the samples processed so far, in ms */
-	unsigned long now_ms() override {
-		return static_cast<unsigned long>(samples * 1000 / DMODEM_RATE);
+	uint64_t now_ms() override {
+		return samples * 1000 / DMODEM_RATE;
 	}
 };
 
@@ -184,13 +185,14 @@ void dmodem_hangup(struct dmodem *d)
 /* n samples of the line: the CNG detector while not online, the core
    (silence out while on hook); the clock moves by n samples and the
    timers run */
-void dmodem_process(struct dmodem *d, const short *in, short *out, int n)
+void dmodem_process(struct dmodem *d, const int16_t *in, int16_t *out,
+		    int32_t n)
 {
 	dcore::Modem *m = d->m;
 
 	/* a fax machine calling, while there is no connection */
 	if (m->link_state() != dcore::LinkState::Online) {
-		int i;
+		int32_t i;
 		for (i = 0; i < n; i++)
 			d->cng.sample(in[i]);
 	}
@@ -204,9 +206,9 @@ void dmodem_process(struct dmodem *d, const short *in, short *out, int n)
 
 /* G.711 octets through dmodem_process(), 160 at a time */
 void dmodem_process_g711(struct dmodem *d, const unsigned char *in,
-			 unsigned char *out, int n)
+			 unsigned char *out, int32_t n)
 {
-	auto process = [d](const short *li, short *lo, int k) {
+	auto process = [d](const int16_t *li, int16_t *lo, int k) {
 		dmodem_process(d, li, lo, k);
 	};
 	dmodem_g711_blocks(d->law == DMODEM_LAW_ALAW, in, out, n, process);

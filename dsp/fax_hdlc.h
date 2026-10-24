@@ -100,7 +100,7 @@ public:
 protected:
 	/* lead flag bits before the first frame (whole flags, so up to 7
 	   more), close after the last one */
-	void hdlc_tx_start(long lead, long close)
+	void hdlc_tx_start(int32_t lead, int32_t close)
 	{
 		htx_len = htx_pos = htx_bit = htx_ones = 0;
 		htx_flag_bit = 0;
@@ -124,8 +124,8 @@ private:
 	int htx_len, htx_pos, htx_bit;          /* going out: octet, bit */
 	int htx_ones;                           /* ones in a row in it */
 	int htx_flag_bit;                       /* of the flag going out */
-	long htx_flags;                         /* flag bits since a frame */
-	long htx_min, htx_close;                /* before a frame, the end */
+	int32_t htx_flags;                      /* flag bits since a frame */
+	int32_t htx_min, htx_close;             /* before a frame, the end */
 	int htx_closing;
 };
 

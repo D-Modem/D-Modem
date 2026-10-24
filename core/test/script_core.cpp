@@ -45,7 +45,7 @@ struct ScriptCore final : public Core, public dcore::Host {
 		return n;
 	}
 	/* the script's clock (ms) */
-	unsigned long now_ms() override { return *clock; }
+	uint64_t now_ms() override { return *clock; }
 	/* for ATI3 */
 	const char *driver_name() override { return "core_script"; }
 

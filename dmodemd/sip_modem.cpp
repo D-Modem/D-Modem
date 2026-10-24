@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -38,7 +39,7 @@ namespace dmd {
 namespace {
 
 /* the line: 8000 samples a second, in frames of 20 ms */
-const int RATE = 8000;
+const int32_t RATE = 8000;
 const int FRAME = RATE / 50;
 /* the most samples one read of the call's audio takes */
 const int AUDIO_MAX = 2048;
@@ -56,8 +57,8 @@ const int T38_DATAGRAM_MIN = 32;
 const int T38_IFP_HEADERS = 16;
 const int T38_DEPTH = 3;
 const int T38_RX_MAX = 2048;
-const long T38_WAIT_MS = 20;
-const unsigned long T38_CATCH_UP = RATE;
+const int32_t T38_WAIT_MS = 20;
+const uint64_t T38_CATCH_UP = RATE;
 
 } // namespace
 
@@ -93,7 +94,7 @@ public:
 		sip::flash(ms);
 	}
 	/* the clock: the monotonic one's ms */
-	unsigned long now_ms() override { return dcore::monotonic_ms(); }
+	uint64_t now_ms() override { return dcore::monotonic_ms(); }
 	/* ATM, ATL: to the speaker's owner (SipModem::on_speaker()) */
 	void speaker(dcore::Modem &, int volume) override {
 		speaker_level_ = volume;
@@ -141,11 +142,11 @@ private:
 	struct sockaddr_storage peer_ = {};
 	socklen_t peer_len_ = 0;
 	int version_ = 0;
-	int datagram_ = T38_DATAGRAM;
+	int32_t datagram_ = T38_DATAGRAM;
 	dsp::UdptlTx tx_ = {};
 	dsp::UdptlRx rx_ = {};
-	unsigned long t38_start_ = 0;
-	unsigned long t38_samples_ = 0;
+	uint64_t t38_start_ = 0;
+	uint64_t t38_samples_ = 0;
 	/* the modem t38_receive() gives the packets to */
 	dcore::Modem *rx_modem_ = nullptr;
 };
@@ -304,8 +305,8 @@ void SipLine::t38_begin(dcore::Modem &m)
 		t38_end();
 		return;
 	}
-	DBG("T.38 on: version %d, datagrams of %d octets, %s\n", version_,
-	    datagram_, t.redundancy ? "redundancy" : "no redundancy");
+	DBG("T.38 on: version %d, datagrams of %" PRId32 " octets, %s\n",
+	    version_, datagram_, t.redundancy ? "redundancy" : "no redundancy");
 }
 
 /* off T.38: the UDPTL socket closed */
@@ -331,8 +332,8 @@ void SipLine::t38_send(dcore::Modem &, const void *ifp)
 				version_, pkt, sizeof(pkt));
 	if (n < 0)
 		return;
-	max = datagram_ < static_cast<int>(sizeof(dgram)) ?
-		      datagram_ :
+	max = datagram_ < static_cast<int32_t>(sizeof(dgram)) ?
+		      static_cast<int>(datagram_) :
 		      static_cast<int>(sizeof(dgram));
 	len = tx_.packet(pkt, n, dgram, max);
 	if (len <= 0)
@@ -380,14 +381,14 @@ void SipLine::t38_clock(dcore::Modem &m)
 {
 	static const int16_t silence[FRAME] = {};
 	int16_t out[FRAME];
-	unsigned long due;
+	uint64_t due;
 
 	if (t38_ < 0)
 		return;
 	due = (dcore::monotonic_ms() - t38_start_) * (RATE / 1000);
 	if (due - t38_samples_ > T38_CATCH_UP)
 		t38_samples_ = due - T38_CATCH_UP;
-	while (due - t38_samples_ >= static_cast<unsigned long>(FRAME) &&
+	while (due - t38_samples_ >= static_cast<uint64_t>(FRAME) &&
 	       t38_ >= 0 && m.started()) {
 		m.process(silence, out, FRAME);
 		t38_samples_ += FRAME;
@@ -602,7 +603,7 @@ int FdDte::write(const char *buf, int n)
 	} else {
 		took = 0;
 	}
-	if (n > static_cast<int>(BUFFER - out_.size()))
+	if (n > static_cast<int32_t>(BUFFER - out_.size()))
 		n = static_cast<int>(BUFFER - out_.size());
 	if (n > 0)
 		out_.append(buf, n);
@@ -719,7 +720,7 @@ int SipModem::serve(int ctl)
 	RunLoop loop;
 
 	while (RunLoop::running() && !stopped_) {
-		long wait = RunLoop::poll(modems, 1);
+		int32_t wait = RunLoop::poll(modems, 1);
 		int audio = m.started() ? line.audio_fd() : -1;
 		int dte = dte_.fd();
 		int ret;

@@ -130,7 +130,7 @@ int V34Params::shell_tables()
 			g4[i + j] += g2[i] * g2[j];
 	z8[0] = 0;
 	for (i = 0; i < 8 * M_ - 7; i++) {
-		unsigned long long g8 = 0;
+		uint64_t g8 = 0;
 		for (j = 0; j <= i; j++)
 			if (j < 4 * M_ - 3 && i - j < 4 * M_ - 3)
 				g8 += g4[j] * g4[i - j];
@@ -140,13 +140,13 @@ int V34Params::shell_tables()
 }
 
 /* g2(i), 0 outside the table */
-unsigned long long V34Params::g2p(int i) const
+uint64_t V34Params::g2p(int i) const
 {
 	return i >= 0 && i < 2 * M - 1 ? g2[i] : 0;
 }
 
 /* g4(i), 0 outside the table */
-unsigned long long V34Params::g4p(int i) const
+uint64_t V34Params::g4p(int i) const
 {
 	return i >= 0 && i < 4 * M - 3 ? g4[i] : 0;
 }
@@ -278,25 +278,25 @@ void V34Params::set_precoder(const int h_[6])
 }
 
 /* to the nearest multiple of 2^s; half way: to the smaller magnitude */
-static int round_shift(long long v, int s)
+static int32_t round_shift(int64_t v, int s)
 {
-	return static_cast<int>((v + (1LL << (s - 1)) - 1 + (v < 0)) >> s);
+	return static_cast<int32_t>((v + (1LL << (s - 1)) - 1 + (v < 0)) >> s);
 }
 
 /* x(n) = y(n) - p(n) goes in: p(n + 1) and c(n + 1) */
 void V34Params::precoder_push(V34Precoder *pc, int yr, int yi) const
 {
-	long long qr = 0, qi = 0;
+	int64_t qr = 0, qi = 0;
 	int k;
 
 	for (k = 2; k > 0; k--) {
 		pc->x[k][0] = pc->x[k - 1][0];
 		pc->x[k][1] = pc->x[k - 1][1];
 	}
-	pc->x[0][0] = yr * 128 - pc->p[0];
-	pc->x[0][1] = yi * 128 - pc->p[1];
+	pc->x[0][0] = static_cast<int32_t>(yr) * 128 - pc->p[0];
+	pc->x[0][1] = static_cast<int32_t>(yi) * 128 - pc->p[1];
 	for (k = 0; k < 3; k++) {
-		long long xr = pc->x[k][0], xi = pc->x[k][1];
+		int64_t xr = pc->x[k][0], xi = pc->x[k][1];
 		int hr = h[2 * k], hi = h[2 * k + 1];
 		qr += xr * hr - xi * hi;
 		qi += xr * hi + xi * hr;
@@ -315,9 +315,9 @@ int V34Precoder::c_parity() const
 
 /* the shell mapper (9.4/V.34): the rings m[0..7] of a mapping frame
    from the value r0 of its shell mapping bits */
-void V34Params::shell_map(unsigned long r0, int m[8]) const
+void V34Params::shell_map(uint32_t r0, int m[8]) const
 {
-	unsigned long long r1, r2, r3, r4, r5, t;
+	uint64_t r1, r2, r3, r4, r5, t;
 	int a, b_, c, d, e, f, g_, h_, M_ = M;
 
 	for (a = 1; a < 8 * M_ - 6 && z8[a] <= r0; a++)
@@ -371,10 +371,10 @@ int V34Params::pair_index(int x, int y) const
 }
 
 /* the inverse of shell_map(): r0 from the rings m[0..7] */
-unsigned long V34Params::shell_demap(const int m[8]) const
+uint32_t V34Params::shell_demap(const int m[8]) const
 {
 	int a = 0, b_, c, d, i;
-	unsigned long long r_;
+	uint64_t r_;
 
 	for (i = 0; i < 8; i++)
 		a += m[i];
@@ -386,20 +386,20 @@ unsigned long V34Params::shell_demap(const int m[8]) const
 		r_ += g4p(i) * g4p(a - i);
 	/* r1 = r2 + r3 g4(b) */
 	{
-		unsigned long long r2 = 0, r3 = 0;
+		uint64_t r2 = 0, r3 = 0;
 		for (i = 0; i < c; i++)
 			r2 += g2p(i) * g2p(b_ - i);
 		r2 += pair_index(m[0], m[1]) +
-		      static_cast<unsigned long long>(pair_index(m[2], m[3])) *
+		      static_cast<uint64_t>(pair_index(m[2], m[3])) *
 			      g2p(c);
 		for (i = 0; i < d; i++)
 			r3 += g2p(i) * g2p(a - b_ - i);
 		r3 += pair_index(m[4], m[5]) +
-		      static_cast<unsigned long long>(pair_index(m[6], m[7])) *
+		      static_cast<uint64_t>(pair_index(m[6], m[7])) *
 			      g2p(d);
 		r_ += r2 + r3 * g4p(b_);
 	}
-	return static_cast<unsigned long>(r_);
+	return static_cast<uint32_t>(r_);
 }
 
 
@@ -433,12 +433,12 @@ static cplx nonlinear(cplx s, float theta)
    the primary channel's scrambler), shell mapped, coded differentially
    and by the trellis code, precoded and through the non-linear encoder
    as set */
-void V34DataTx::encode_frame(unsigned *scr, int tap)
+void V34DataTx::encode_frame(uint32_t *scr, int tap)
 {
 	const V34Params *p_ = &p;
 	unsigned char bits[V34_MAX_B];
 	int bb = p_->b, kk = p_->K, n = 0, i, j, m[8], ib[4], qb[8];
-	unsigned long r0 = 0;
+	uint32_t r0 = 0;
 
 	sbc += p_->r;
 	if (sbc >= p_->P)
@@ -453,7 +453,7 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 			static_cast<unsigned char>(scramble(scr, tap, bits[i]));
 	if (p_->K) {
 		for (i = 0; i < kk; i++)
-			r0 |= static_cast<unsigned long>(bits[n++]) << i;
+			r0 |= static_cast<uint32_t>(bits[n++]) << i;
 		for (i = 0; i < 4; i++) {
 			ib[i] = bits[n] | bits[n + 1] << 1 | bits[n + 2] << 2;
 			n += 3;
@@ -495,7 +495,7 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 			y[k] = v[1];
 			rotate(&x[k], &y[k], rot);
 			if (p_->precode) {
-				int px = pc.p[0], py = pc.p[1];
+				int32_t px = pc.p[0], py = pc.p[1];
 				/* y(n) = u(n) + c(n) */
 				x[k] += pc.c[0];
 				y[k] += pc.c[1];
@@ -528,7 +528,7 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 
 /* the next data symbol, in units of the training points: a new mapping
    frame every 8 */
-cplx V34DataTx::symbol(unsigned *scr, int tap)
+cplx V34DataTx::symbol(uint32_t *scr, int tap)
 {
 	if (pos >= 8) {
 		encode_frame(scr, tap);
@@ -544,7 +544,7 @@ cplx V34DataTx::symbol(unsigned *scr, int tap)
  */
 
 /* rotation << 9 | index of each odd point with |x|, |y| <= 45 */
-static short lookup[46][46];
+static int16_t lookup[46][46];
 
 /* lookup[] from the quarter superconstellation and its rotations */
 static void make_lookup(void)
@@ -557,7 +557,7 @@ static void make_lookup(void)
 			int x = v34_quarter[i][0], y = v34_quarter[i][1];
 			rotate(&x, &y, k);
 			lookup[(x + 45) / 2][(y + 45) / 2] =
-				static_cast<short>(k << 9 | i);
+				static_cast<int16_t>(k << 9 | i);
 		}
 }
 
@@ -617,12 +617,12 @@ int V34Params::decide(cplx z, int *px, int *py) const
 /* the bits of the mapping frame of the 8 decided points in e[]: shell
    demapping, the differential decoding of the rotations, descrambling
    (scr, tap), out to link */
-void V34DataRx::decode_frame(unsigned *scr, int tap)
+void V34DataRx::decode_frame(uint32_t *scr, int tap)
 {
 	const V34Params *p_ = &p;
 	unsigned char bits[V34_MAX_B];
 	int bb = p_->b, kk = p_->K, n = 0, i, j, m[8];
-	unsigned long r0;
+	uint32_t r0;
 
 	sbc += p_->r;
 	if (sbc >= p_->P)
@@ -664,13 +664,14 @@ void V34DataRx::decode_frame(unsigned *scr, int tap)
  */
 
 /* a point (x, y) as one int, and back */
-#define PACK(x, y)      ((int)(((x) & 0xFFFF) | (unsigned)(y) << 16))
-#define UNPACK_X(v)     ((short)((v) & 0xFFFF))
+#define PACK(x, y)      ((int32_t)(((x) & 0xFFFF) | (uint32_t)(y) << 16))
+#define UNPACK_X(v)     ((int16_t)((v) & 0xFFFF))
 #define UNPACK_Y(v)     ((v) >> 16)
 
 /* the nearest point of each 2D subset to (u, v) (in units of the grid):
    among the points in use, or with precoding on the whole grid */
-void V34Params::subset_points(float u, float v, float dist[8], int pt[8]) const
+void V34Params::subset_points(float u, float v, float dist[8],
+			      int32_t pt[8]) const
 {
 	int x0 = 2 * static_cast<int>(floorf(u / 2)) + 1,
 	    y0 = 2 * static_cast<int>(floorf(v / 2)) + 1;
@@ -720,12 +721,12 @@ void V34DataRx::viterbi_init()
 
 /* a decided channel output point y(n): with precoding u(n) = y(n) - c(n),
    as the transmitter's precoder had it */
-void V34DataRx::point(int pt, unsigned *scr, int tap)
+void V34DataRx::point(int32_t pt, uint32_t *scr, int tap)
 {
 	int x = UNPACK_X(pt), y = UNPACK_Y(pt), e_ = -1;
 
 	if (p.precode) {
-		int cx = pc.c[0], cy = pc.c[1];
+		int32_t cx = pc.c[0], cy = pc.c[1];
 		p.precoder_push(&pc, x, y);
 		x -= cx;
 		y -= cy;
@@ -742,12 +743,12 @@ void V34DataRx::point(int pt, unsigned *scr, int tap)
 /* z: the equalized symbol, in units of the training points (with
    precoding: equalized to 1 + H(z)); returns the (tentative) decided
    point for the adaptation */
-cplx V34DataRx::symbol(cplx z_, unsigned *scr, int tap)
+cplx V34DataRx::symbol(cplx z_, uint32_t *scr, int tap)
 {
 	const V34Params *p_ = &p;
 	float u = z_.re / p_->g, v = z_.im / p_->g;
 	cplx ret;
-	int out[2];
+	int32_t out[2];
 
 	if (p_->precode) {
 		/* z is y(n) + noise (the receiver's equalizer includes
@@ -766,7 +767,7 @@ cplx V34DataRx::symbol(cplx z_, unsigned *scr, int tap)
 		half2 = 1;
 	} else {
 		float db[8];
-		int cb[8];
+		int32_t cb[8];
 		p_->subset_points(u, v, db, cb);
 		half2 = 0;
 		int got = vit.step(p.states, v0, da, ca, db, cb, out);

@@ -23,7 +23,9 @@
  *
  */
 
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -41,7 +43,7 @@ namespace dsp {
 #define V22_EQ_LEN    16                /* T/2 spaced taps */
 #define V22_SYM_POWER 10.0f             /* mean power of both constellations */
 
-#define MS2SYM(ms) ((ms) * V22_BAUD / 1000)
+#define MS2SYM(ms) (static_cast<int32_t>(ms) * V22_BAUD / 1000)
 
 enum v22_tx {
 	TX_SILENCE,
@@ -90,7 +92,7 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 
 	/* transmitter */
 	enum v22_tx tx_mode;
-	int tx_rate;
+	int32_t tx_rate;
 	int tx_quad;
 	int tx_s1_phase;
 	V22Scrambler tx_scr;
@@ -123,18 +125,19 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	int eq_train;           /* remote sends scrambled data now */
 	int eq_freeze;          /* remote is changing to 16 points */
 	float theta, dtheta;
-	int rx_rate;            /* 1200 or 2400: slicer and data path */
+	int32_t rx_rate;        /* 1200 or 2400: slicer and data path */
 	int rx_quad;
 
 	/* pattern detectors */
-	int run_usb1, run_s1, run_sb1_12, run_sb1_24;
+	int32_t run_usb1, run_s1, run_sb1_12, run_sb1_24;
 	int last_dibit;
-	int dq1, dq2, run_periodic;     /* tone like (period 1 or 2) input */
+	int dq1, dq2;
+	int32_t run_periodic;   /* tone like (period 1 or 2) input */
 	cplx last_y;
 	float rot_avg;          /* mean phase step per symbol of the input */
-	long s1_seen;           /* sample time when remote S1 was detected */
+	int32_t s1_seen;        /* sample time when remote S1 was detected */
 	int sb1_seen;           /* remote scrambled ones at 1200 bit/s */
-	long sb1_at;            /* when 270 ms of them were in */
+	int32_t sb1_at;         /* when 270 ms of them were in */
 	V22Scrambler rx_scr12, rx_scr24;
 
 	const char *mode_name() const;
@@ -151,11 +154,12 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	void rx_symbol(cplx y);
 	void rx_reset();
 	void rx_sample(float x);
-	void set_rx_rate(int rate);
+	void set_rx_rate(int32_t rate);
 	void set_tx(enum v22_tx mode);
 	int connect();
 	int handshake();
-	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
+	int start(struct modem *m, enum DP_ID id, int caller_, int32_t srate_,
+		  int max_frag);
 	int sample(float x, float *y);
 	/* cnt samples in and out, through sample() */
 	int process(void *in, void *out, int cnt) override
@@ -423,7 +427,7 @@ void V22Pump::rx_symbol(cplx y)
 	theta += dtheta;
 	theta = remainderf(theta, 2 * static_cast<float>(M_PI));
 
-	DSP_TRACE("%s: %ld sym %6.2f %6.2f q %d dq %d th %5.2f c %d\n",
+	DSP_TRACE("%s: %" PRId32 " sym %6.2f %6.2f q %d dq %d th %5.2f c %d\n",
 		 caller ? "C" : "A", total, z.re, z.im, quad,
 		 (quad - rx_quad) & 3, theta, carrier.on);
 	i = (quad - rx_quad) & 3;
@@ -469,10 +473,10 @@ void V22Pump::rx_sample(float x)
 	switch (carrier.run(in_pwr.power)) {
 	case 1:
 		rx_reset();
-		DSP_DBG("%s: carrier on at %ld\n", mode_name(), total);
+		DSP_DBG("%s: carrier on at %" PRId32 "\n", mode_name(), total);
 		break;
 	case -1:
-		DSP_DBG("%s: carrier off at %ld\n", mode_name(), total);
+		DSP_DBG("%s: carrier off at %" PRId32 "\n", mode_name(), total);
 		break;
 	}
 	carrier_tick(carrier.on);
@@ -551,9 +555,9 @@ void V22Pump::rx_sample(float x)
 }
 
 /* the receiver's slicer and bit path to rate (1200 or 2400) */
-void V22Pump::set_rx_rate(int rate)
+void V22Pump::set_rx_rate(int32_t rate)
 {
-	DSP_DBG("%s: rx rate %d\n", mode_name(), rate);
+	DSP_DBG("%s: rx rate %" PRId32 "\n", mode_name(), rate);
 	rx_rate = rate;
 }
 
@@ -581,7 +585,7 @@ int V22Pump::connect()
    DPSTAT_CONNECT or DPSTAT_CHANGEDP. */
 int V22Pump::handshake()
 {
-	long ms = count * 1000 / srate;
+	int32_t ms = static_cast<int32_t>(int64_t{count} * 1000 / srate);
 
 	switch (state) {
 	/* answering modem */
@@ -765,7 +769,8 @@ int V22Pump::sample(float x, float *y)
    and the first state (an automode answerer whose answer tone is sent
    starts at the gap; a Bell 212A caller after a 2225 Hz tone at once
    with scrambled ones); 0 */
-int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
+int V22Pump::start(struct modem *m, enum DP_ID id, int caller_,
+		   int32_t srate_, int max_frag)
 {
 	int i;
 	float sum;
@@ -817,7 +822,7 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		set_tx(TX_SB1_1200);
 	} else
 		state = C_WAIT_USB1;
-	DSP_DBG("%s: create %s (dp %d), srate %d\n", mode_name(),
+	DSP_DBG("%s: create %s (dp %d), srate %" PRId32 "\n", mode_name(),
 		caller_ ? "caller" : "answerer", id, srate_);
 	return 0;
 }

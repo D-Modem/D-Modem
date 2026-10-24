@@ -16,6 +16,8 @@
 #ifndef __T38_H__
 #define __T38_H__
 
+#include <cstdint>
+
 namespace dsp {
 
 /* t30-indicator (T.38 Table 3); from T38_IND_V8_ANSAM on only in the
@@ -56,7 +58,7 @@ enum t38_field_type {
 struct t38_field {
 	int type;                       /* enum t38_field_type */
 	const unsigned char *data;      /* len octets, NULL for none */
-	int len;
+	int32_t len;
 };
 
 /* an IFP packet: an indicator, or data of a modulation in fields */
@@ -76,7 +78,7 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
    if they are no IFP packet of version (or have more fields than p
    takes) */
 int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
-		   int len);
+		   int32_t len);
 
 /* n octets of in into out (they may be the same), the bits of each the
    other way round */
@@ -111,13 +113,13 @@ struct UdptlTx {
    one from the next packet's redundancy where it has it (FEC: the
    primary packets only) */
 struct UdptlRx {
-	long expected;                  /* the next sequence number, -1:
+	int32_t expected;               /* the next sequence number, -1:
 					   none yet */
 
 	void init();
 	/* len octets of a UDPTL packet: each IFP packet not had before to
 	   fn, oldest first; -1 if it is no UDPTL packet */
-	int packet(const unsigned char *buf, int len,
+	int packet(const unsigned char *buf, int32_t len,
 		   void (*fn)(void *ctx, const unsigned char *ifp, int len,
 			      unsigned seq),
 		   void *ctx);

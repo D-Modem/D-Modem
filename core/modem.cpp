@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cinttypes>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -67,11 +68,11 @@ const char *const Modem::version = DMODEM_VERSION;
 /* the DTE's characters waiting for the line or the interpreter */
 static const int XMIT_SIZE = 4096;
 /* a hang-up's stop: the samples after it */
-static const unsigned long STOP_SAMPLES = 48;
+static const uint32_t STOP_SAMPLES = 48;
 /* the escape's guard time (before, between and after the S2s) */
-static const unsigned long ESCAPE_MS = 500;
+static const uint32_t ESCAPE_MS = 500;
 /* caller ID listens this long after the first ring */
-static const unsigned long CID_MS = 4000;
+static const uint32_t CID_MS = 4000;
 /* a ring burst: the least gap before its first pulse, when it is
    checked, its least length (first to last pulse) and pulses (four
    cycles: a 16 Hz signal's in 0.3 s); how long a ring counts in S1
@@ -79,10 +80,10 @@ static const unsigned long CID_MS = 4000;
    9 off, rings in time); and, for ringing with no such gap (Egypt's 2 s
    on and 1 off, Syria's 1 and 0.5), how long after a burst's first pulse
    the next pulse starts another */
-static const unsigned long RING_GAP_MS = 1500, RING_CHECK_MS = 2510;
-static const unsigned long RING_MIN_MS = 150;
+static const uint32_t RING_GAP_MS = 1500, RING_CHECK_MS = 2510;
+static const uint32_t RING_MIN_MS = 150;
 static const unsigned RING_PULSES = 4;
-static const unsigned long RING_GONE_MS = 8010, RING_AGAIN_MS = 6000;
+static const uint32_t RING_GONE_MS = 8010, RING_AGAIN_MS = 6000;
 
 /* why a call ended (ATI11), by Modem::Cause */
 static const char *const cause_text[] = {
@@ -100,7 +101,8 @@ static const char *const result_text[] = {
 /* CONNECT's number with ATV0 for a rate (Smart Link's ST56 numbers,
    D-Modem's own from 80) */
 static const struct {
-	unsigned rate, code;
+	uint32_t rate;
+	unsigned code;
 } connect_codes[] = {
 	{ 300, 9 }, { 600, 10 }, { 1200, 5 }, { 2400, 11 }, { 4800, 12 },
 	{ 7200, 13 }, { 9600, 27 }, { 12000, 14 }, { 14400, 15 },
@@ -120,7 +122,7 @@ static const struct {
 };
 
 /* the number CONNECT has for rate with ATV0; 1 for a rate without one */
-static unsigned connect_code(unsigned rate)
+static unsigned connect_code(uint32_t rate)
 {
 	for (const auto &c : connect_codes)
 		if (c.rate == rate)
@@ -193,7 +195,9 @@ struct LinkOwner final : public dlink::Owner {
 		}
 	}
 	/* the pump's transmit rate, for the link's bit timers */
-	int tx_rate() override { return static_cast<int>(m_.tx_rate()); }
+	int32_t tx_rate() override {
+		return static_cast<int32_t>(m_.tx_rate());
+	}
 	/* what XID or MNP's LRs agreed */
 	void negotiated(const dlink::Config &c) override {
 		m_.negotiated(c.comp, c.v44, c.dict_size, c.max_string,
@@ -235,9 +239,9 @@ Modem::Modem(Host &host, const Options &opt)
 	if (opt.country && homolog_init(-1, opt.country))
 		log_printf(0, "%s: bad country name %s, using default by "
 			   "code!\n", name_, opt.country);
-	ring_last_ = ring_first_ = host_.now_ms();
+	ring_last_ = ring_first_ = static_cast<uint32_t>(host_.now_ms());
 	setup_config();
-	logf("created: %d Hz, %s\n", srate_, country_name().c_str());
+	logf("created: %" PRId32 " Hz, %s\n", srate_, country_name().c_str());
 	voice_init();
 	ok_ = true;
 }
@@ -320,7 +324,7 @@ void Modem::sregs_init()
    and S24 and its tones; else a country of that list alone, with the
    default's line settings; the Host told (Host::country()); -1 if there
    is none */
-int Modem::homolog_init(int id, const char *name)
+int Modem::homolog_init(int32_t id, const char *name)
 {
 	const tones::Country *t = name && *name ? tones::find(name) : nullptr;
 	const struct homolog_set *dflt = nullptr;
@@ -551,7 +555,7 @@ int Modem::start_call(bool keep_line)
 		vcvm_refresh();
 	}
 	stats_.fax = mode_ == MODEM_MODE_FAX;
-	stats_.start = host_.now_ms();
+	stats_.start = static_cast<uint32_t>(host_.now_ms());
 	dsp::zero(dp_stats_);
 	setup_config();
 	set_state(DP_ESTAB);
@@ -613,10 +617,11 @@ int Modem::stop_call()
 		if (stats_.cause == Cause::None)
 			stats_.cause = Cause::NoCarrier;
 		stats_.ended = true;
-		stats_.end = host_.now_ms();
+		stats_.end = static_cast<uint32_t>(host_.now_ms());
 		stats_.tx1 = tx_rate_;
 		stats_.rx1 = rx_rate_;
-		logf("call over: %s, %u/%u bit/s, %lu ms, %s\n",
+		logf("call over: %s, %" PRIu32 "/%" PRIu32 " bit/s, %" PRIu32
+		     " ms, %s\n",
 		     stats_.fax ? "fax" : dp ? dp : "no connection",
 		     stats_.tx1, stats_.rx1, stats_.end - stats_.start,
 		     cause_text[static_cast<int>(stats_.cause)]);
@@ -665,7 +670,7 @@ int Modem::stop_call()
 
 /* what to do once samples more of the line's samples have gone through,
    in place of what was due; due after 0 samples, it is done at once */
-void Modem::later(Later what, unsigned long samples)
+void Modem::later(Later what, uint32_t samples)
 {
 	later_ = what;
 	later_at_ = count_ + samples;
@@ -696,12 +701,12 @@ void Modem::later(Later what, unsigned long samples)
    skip V.42's detection phase (qc_lapm) */
 void Modem::setup_config()
 {
-	const unsigned long *es = kept("+ES");
+	const uint32_t *es = kept("+ES");
 	unsigned comp = sregs_[SREG_COMP];
 	Cfg c = {};
 
 	if (caller_) {
-		unsigned long rqst = es[0], fbk = es[1];
+		uint32_t rqst = es[0], fbk = es[1];
 		c.ec_detector = true;
 		switch (rqst) {
 		case 2:
@@ -727,7 +732,7 @@ void Modem::setup_config()
 		}
 		c.required = (c.ec || c.mnp) && fbk >= 2;
 	} else {
-		unsigned long fbk = es[2];
+		uint32_t fbk = es[2];
 		c.ec = fbk >= 2 && fbk != 6;
 		c.mnp = fbk >= 2 && fbk != 5;
 		c.required = fbk >= 4 && fbk <= 6;
@@ -768,15 +773,16 @@ int Modem::link_init()
 }
 
 /* what XID or MNP's LRs agreed: the call's compression */
-void Modem::negotiated(int comp, bool v44, int dict_size, int max_string,
-		       bool mnp5)
+void Modem::negotiated(int comp, bool v44, int32_t dict_size,
+		       int32_t max_string, bool mnp5)
 {
 	cfg_.comp = comp;
 	cfg_.v44 = v44;
 	cfg_.dict_size = dict_size;
 	cfg_.max_string = max_string;
 	cfg_.mnp5 = mnp5;
-	logf("negotiated: compression %d%s, %d codewords, strings of %d%s\n",
+	logf("negotiated: compression %d%s, %" PRId32 " codewords, strings of %"
+	     PRId32 "%s\n",
 	     comp, v44 ? " (V.44)" : "", dict_size, max_string,
 	     mnp5 ? ", MNP 5" : "");
 }
@@ -836,7 +842,7 @@ void Modem::update_status(Status s)
 		set_state(ONLINE);
 		if (!stats_.connected) {
 			stats_.connected = true;
-			stats_.up = host_.now_ms();
+			stats_.up = static_cast<uint32_t>(host_.now_ms());
 			stats_.dp = modulation(dp_stats_, dp_);
 			stats_.tx0 = tx_rate_;
 			stats_.rx0 = rx_rate_;
@@ -1001,16 +1007,17 @@ void Modem::crlf()
    so far */
 int Modem::check_escape(const char *buf, int n)
 {
-	unsigned long now = host_.now_ms();
-	long since = static_cast<long>(now - last_esc_check_);
+	uint32_t now = static_cast<uint32_t>(host_.now_ms());
+	int32_t since = static_cast<int32_t>(now - last_esc_check_);
 	bool escape = escape_count_ + n <= 3;
 
 	for (int i = 0; escape && i < n; i++)
 		escape = static_cast<unsigned char>(buf[i]) ==
 			 sregs_[SREG_ESCAPE_CHAR];
 	if (escape)
-		escape = escape_count_ ? since < static_cast<long>(ESCAPE_MS) :
-					 since >= static_cast<long>(ESCAPE_MS);
+		escape = escape_count_ ?
+			since < static_cast<int32_t>(ESCAPE_MS) :
+			since >= static_cast<int32_t>(ESCAPE_MS);
 	last_esc_check_ = now;
 	if (!escape) {
 		escape_count_ = 0;
@@ -1057,7 +1064,7 @@ void Modem::process(const int16_t *in, int16_t *out, int n)
 			cng_cut_ = cng_->cut;
 			if (answer_tone_at_ && count_ >= answer_tone_at_ &&
 			    count_ - answer_tone_at_ <=
-			    static_cast<unsigned long>(srate_) * 3 / 2)
+			    static_cast<uint32_t>(srate_) * 3 / 2)
 				fax_found("CNG cut short by the answer tone");
 		}
 	}
@@ -1074,7 +1081,8 @@ void Modem::process(const int16_t *in, int16_t *out, int n)
 		stats_.samples += n;
 	}
 	count_ += n;
-	if (later_ != Later::None && static_cast<long>(count_ - later_at_) >= 0)
+	if (later_ != Later::None &&
+	    static_cast<int64_t>(count_ - later_at_) >= 0)
 		later(later_, 0);
 	if (commands_due_) {
 		commands_due_ = false;
@@ -1212,7 +1220,7 @@ void Modem::change_dp()
 	/* the answering pump's answer tone after its 0.2 s of silence */
 	if (!caller_ && !dp_)
 		answer_tone_at_ =
-			count_ + static_cast<unsigned long>(srate_) / 5;
+			count_ + static_cast<uint32_t>(srate_) / 5;
 	d = find_driver(drv);
 	if (d && d->op)
 		dp = d->op->create(handle(), static_cast<enum DP_ID>(id),
@@ -1336,9 +1344,9 @@ int Modem::online()
    one; -1 if a pump runs already or the call cannot start */
 int Modem::answer(bool adaptive)
 {
-	unsigned long delay =
+	uint32_t delay =
 		sregs_[SREG_ANS_DELAY] ?
-			static_cast<unsigned long>(sregs_[SREG_ANS_DELAY]) *
+			static_cast<uint32_t>(sregs_[SREG_ANS_DELAY]) *
 				srate_ :
 			srate_ / 100;
 	/* a voice call's held line: off hook a while already */
@@ -1410,7 +1418,7 @@ void Modem::fax_found(const char *why)
 			run_ = Run::None;
 		return;
 	}
-	unsigned long sent = count_ > answer_tone_at_ && answer_tone_at_ ?
+	uint64_t sent = count_ > answer_tone_at_ && answer_tone_at_ ?
 		(count_ - answer_tone_at_) * 1000 / srate_ : 0;
 	adapt_ = Adapt::Off;
 	set_mode(MODEM_MODE_FAX);
@@ -1595,7 +1603,7 @@ void Modem::set_line_law(int law)
    figures of the call (the last one's, once it has ended) */
 void Modem::vcvm_refresh()
 {
-	const unsigned long *c = kept("+CVM");
+	const uint32_t *c = kept("+CVM");
 	if (c) {
 		vcvm_.modes = static_cast<int>(c[0]);
 		vcvm_.rate = static_cast<int>(c[1]);
@@ -1696,7 +1704,7 @@ void Modem::call_stats()
 		puts(line + value);
 		crlf();
 	};
-	auto number = [&row](const char *label, unsigned long n) {
+	auto number = [&row](const char *label, uint64_t n) {
 		row(label, dec(n));
 	};
 	auto decibels = [&row](const char *label, double db) {
@@ -1759,8 +1767,9 @@ void Modem::call_stats()
 		number("Rate Renegotiation by Remote Modem", d.renegs_remote);
 	}
 	if (stats_.connected) {
-		unsigned long s = ((stats_.ended ? stats_.end :
-				    host_.now_ms()) - stats_.up) / 1000;
+		uint32_t s = ((stats_.ended ? stats_.end :
+			       static_cast<uint32_t>(host_.now_ms())) -
+			      stats_.up) / 1000;
 		row("Call Duration", dec(s / 3600) + ":" + dec(s / 60 % 60, 2) +
 		    ":" + dec(s % 60, 2));
 	}
@@ -1774,10 +1783,10 @@ void Modem::call_stats()
  */
 
 /* events (mask) due ms from now: the timer's deadline is that */
-void Modem::schedule_event(unsigned mask, unsigned long ms)
+void Modem::schedule_event(unsigned mask, uint32_t ms)
 {
 	new_event_ |= mask;
-	timer_at_ = host_.now_ms() + ms;
+	timer_at_ = static_cast<uint32_t>(host_.now_ms()) + ms;
 	timer_on_ = true;
 }
 
@@ -1789,7 +1798,8 @@ void Modem::poll()
 
 	if (voice_dialing_ && !voice_dial_digits_)
 		voice_dial_check();
-	if (timer_on_ && static_cast<long>(host_.now_ms() - timer_at_) >= 0) {
+	if (timer_on_ &&
+	    static_cast<int32_t>(host_.now_ms() - timer_at_) >= 0) {
 		timer_on_ = false;
 		event_ |= new_event_;
 		new_event_ = 0;
@@ -1803,18 +1813,18 @@ void Modem::poll()
 
 /* the ms until the timer's events or a voice dial's timer (0: due), -1
    without any */
-long Modem::next_timer_ms()
+int32_t Modem::next_timer_ms()
 {
-	long left = -1;
+	int32_t left = -1;
 	if (event_)
 		return 0;
 	if (timer_on_) {
-		left = static_cast<long>(timer_at_ - host_.now_ms());
+		left = static_cast<int32_t>(timer_at_ - host_.now_ms());
 		if (left < 0)
 			left = 0;
 	}
 	if (voice_dialing_ && !voice_dial_digits_) {
-		long vd = voice_dial_left_ms();
+		int32_t vd = voice_dial_left_ms();
 		if (left < 0 || vd < left)
 			left = vd;
 	}
@@ -1826,13 +1836,13 @@ long Modem::next_timer_ms()
 void Modem::events(unsigned ev)
 {
 	if (ev & EV_RING_CHECK) {
-		long len = static_cast<long>(ring_last_ - ring_first_);
+		int32_t len = static_cast<int32_t>(ring_last_ - ring_first_);
 		if (!ring_count_) {
 			sregs_[SREG_RING_COUNTER] = 0;
-		} else if (len < static_cast<long>(RING_MIN_MS) ||
+		} else if (len < static_cast<int32_t>(RING_MIN_MS) ||
 			   ring_count_ < RING_PULSES) {
-			logf("bad ring: %u pulses in %ld ms\n", ring_count_,
-			     len);
+			logf("bad ring: %u pulses in %" PRId32 " ms\n",
+			     ring_count_, len);
 			sregs_[SREG_RING_COUNTER] = 0;
 			ring_count_ = 0;
 		} else {
@@ -1873,15 +1883,15 @@ void Modem::events(unsigned ev)
    checked later (and starts caller ID before the first ring) */
 void Modem::ring()
 {
-	unsigned long now = host_.now_ms();
+	uint32_t now = static_cast<uint32_t>(host_.now_ms());
 
 	if (state_ != IDLE)
 		return;
 	if (!ring_count_) {
-		if (static_cast<long>(now - ring_last_) <
-			    static_cast<long>(RING_GAP_MS) &&
-		    static_cast<long>(now - ring_first_) <
-			    static_cast<long>(RING_AGAIN_MS)) {
+		if (static_cast<int32_t>(now - ring_last_) <
+			    static_cast<int32_t>(RING_GAP_MS) &&
+		    static_cast<int32_t>(now - ring_first_) <
+			    static_cast<int32_t>(RING_AGAIN_MS)) {
 			ring_last_ = now;
 			return;
 		}
@@ -1931,7 +1941,7 @@ void Modem::ring_signal(bool on)
 
 /* caller ID for ms: its receiver on the line, the hook snooping; -1 if
    the line runs already or the receiver cannot be had */
-int Modem::cid_start(unsigned long ms)
+int Modem::cid_start(uint32_t ms)
 {
 	if (started_)
 		return -1;
@@ -1942,7 +1952,7 @@ int Modem::cid_start(unsigned long ms)
 		return -1;
 	count_ = 0;
 	later(Later::CallerIdStop,
-	      static_cast<unsigned long>(srate_) * ms / 1000);
+	      static_cast<uint32_t>(srate_) * ms / 1000);
 	run_ = Run::CallerId;
 	set_hook(MODEM_HOOK_SNOOPING);
 	if (do_start()) {
@@ -2185,20 +2195,22 @@ static voice_tones heard(void *voice)
 /* the ms until a voice dial's next timer: on a line that does not tell
    of the answer, +VRN's while no ring was heard (when not beyond S7),
    +VRA's once one ended; S7's */
-long Modem::voice_dial_left_ms()
+int32_t Modem::voice_dial_left_ms()
 {
-	unsigned long s7 = sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * 1000UL;
-	long left = static_cast<long>(voice_dial_since_ + s7 - host_.now_ms());
+	uint32_t s7 = sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * UINT32_C(1000);
+	int32_t left =
+		static_cast<int32_t>(voice_dial_since_ + s7 - host_.now_ms());
 	voice_tones t = heard(voice_);
 
 	if (!host_.signals_answer(*this)) {
-		long due = -1;
-		if (!t.rings && voice_info_.ring_never * 1000UL <= s7)
-			due = static_cast<long>(voice_dial_since_ +
-				     voice_info_.ring_never * 1000UL -
+		int32_t due = -1;
+		if (!t.rings && voice_info_.ring_never * UINT32_C(1000) <= s7)
+			due = static_cast<int32_t>(voice_dial_since_ +
+				     voice_info_.ring_never * UINT32_C(1000) -
 				     host_.now_ms());
 		else if (t.rings && !t.ringing)
-			due = voice_info_.ring_after * 100L - t.quiet_ms;
+			due = static_cast<int32_t>(
+				voice_info_.ring_after * 100L - t.quiet_ms);
 		if (due >= 0 && due < left)
 			left = due;
 	}
@@ -2214,7 +2226,8 @@ long Modem::voice_dial_left_ms()
    ended without another (10.2.5).  NO ANSWER after S7. */
 void Modem::voice_dial_check()
 {
-	unsigned long gone = host_.now_ms() - voice_dial_since_;
+	uint32_t gone = static_cast<uint32_t>(host_.now_ms()) -
+		voice_dial_since_;
 	voice_tones t = heard(voice_);
 
 	if (t.busy) {
@@ -2229,7 +2242,8 @@ void Modem::voice_dial_check()
 		return;
 	}
 	if (!host_.signals_answer(*this)) {
-		if (!t.rings && gone >= voice_info_.ring_never * 1000UL &&
+		if (!t.rings &&
+		    gone >= voice_info_.ring_never * UINT32_C(1000) &&
 		    voice_info_.ring_never <=
 		    sregs_[SREG_WAIT_CARRIER_AFTER_DIAL]) {
 			logf("voice dial: no ringing tone in +VRN\n");
@@ -2245,7 +2259,7 @@ void Modem::voice_dial_check()
 			return;
 		}
 	}
-	if (gone >= sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * 1000UL) {
+	if (gone >= sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * UINT32_C(1000)) {
 		logf("voice dial: no answer in S7\n");
 		voice_dial_end(Result::NoAnswer);
 	}
@@ -2359,7 +2373,8 @@ void Modem::voice_process(int16_t *in, int16_t *out, int n)
 			voice_cmd_ = -1;
 			vts_.clear();
 			vts_next_ = 0;
-			voice_dial_since_ = host_.now_ms();
+			voice_dial_since_ =
+				static_cast<uint32_t>(host_.now_ms());
 			logf("voice dial: dialled\n");
 		}
 		if (st == VOICE_STATUS_OK)
@@ -2450,7 +2465,7 @@ void Modem::fax_process(int16_t *in, int16_t *out, int n)
 	case FAX_STATUS_CONNECT:
 		if (!stats_.connected) {
 			stats_.connected = true;
-			stats_.up = host_.now_ms();
+			stats_.up = static_cast<uint32_t>(host_.now_ms());
 		}
 		set_state(ONLINE);
 		report(Result::Connect);

@@ -53,7 +53,7 @@ private:
    What the descriptor can't take now waits (up to BUFFER octets) */
 class FdDte final : public Dte {
 public:
-	enum { BUFFER = 64 * 1024 };
+	enum : int32_t { BUFFER = INT32_C(64) * 1024 };
 	/* fd stays the caller's */
 	explicit FdDte(int fd);
 	/* see Dte */
@@ -79,7 +79,7 @@ public:
 	struct Status {
 		dcore::LinkState link = dcore::LinkState::Idle;
 		bool offhook = false;
-		unsigned tx_rate = 0, rx_rate = 0;
+		uint32_t tx_rate = 0, rx_rate = 0;
 		/* the same state, hook and rates */
 		bool operator==(const Status &o) const {
 			return link == o.link && offhook == o.offhook &&

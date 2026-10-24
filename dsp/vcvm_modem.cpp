@@ -75,10 +75,10 @@ void VcvmModem::silence(int ms)
 }
 
 /* the line's samples kept since sample from, pushed again to receiver r */
-template <class R> void VcvmModem::replay(R &r, long from)
+template <class R> void VcvmModem::replay(R &r, int32_t from)
 {
 	from = std::max(from, hbase_);
-	long e = hbase_ + static_cast<long>(hist_.size());
+	int32_t e = hbase_ + static_cast<int32_t>(hist_.size());
 	if (from < e)
 		r.push(&hist_[static_cast<size_t>(from - hbase_)],
 		       static_cast<int>(e - from));
@@ -125,7 +125,7 @@ void VcvmModem::start_tx()
 
 /* the receivers from sample from: phase 4's with this DCE's loading,
    the messages' for a further MP, the kept samples replayed */
-void VcvmModem::start_rx(long from)
+void VcvmModem::start_rx(int32_t from)
 {
 	rx_on_ = false;
 	rx_from_ = from;
@@ -246,7 +246,7 @@ void VcvmModem::begin_reneg(bool remote, bool retrain)
 	if (tx_data_)
 		dtx_.control(txq_);
 	tx_data_ = false;
-	long from = remote ? drx_.position() : t_;
+	int32_t from = remote ? drx_.position() : t_;
 	rx_on_ = false;
 	mrx_.restart(from);
 	replay(mrx_, from);
@@ -337,7 +337,7 @@ void VcvmModem::on_msg(const VcvmMsg &m)
    failing or a tone's phase error over its order's threshold */
 void VcvmModem::check_data()
 {
-	const int fs = c_.su.fs;
+	const int32_t fs = c_.su.fs;
 	if (!rx_on_ || !drx_.confirmed()) {
 		/* no data mode: the periodic retrain alone */
 		if (next_retrain_ >= 0 && t_ >= next_retrain_ &&
@@ -443,12 +443,14 @@ void VcvmModem::step()
    then phase 4's and the renegotiations' */
 void VcvmModem::process(const float *in, float *out, int n)
 {
-	const int fs = c_.su.fs, B = fs / 100;
+	const int32_t fs = c_.su.fs;
+	const int B = fs / 100;
 	while (n > 0) {
 		int k = std::min(n, B);
 		hist_.insert(hist_.end(), in, in + k);
-		if (static_cast<long>(hist_.size()) > 4L * fs) {
-			long cut = static_cast<long>(hist_.size()) - 3L * fs;
+		if (static_cast<int32_t>(hist_.size()) > 4L * fs) {
+			int32_t cut = static_cast<int32_t>(hist_.size()) -
+				      3L * fs;
 			hist_.erase(hist_.begin(), hist_.begin() + cut);
 			hbase_ += cut;
 		}

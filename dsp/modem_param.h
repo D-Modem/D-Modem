@@ -136,7 +136,7 @@ intptr_t modem_get_param(struct modem *m, unsigned param);
 /* sets parameter name to val: 0, or -1 for one that cannot be set
    (MDMPRM_HOOK_ON, MDMPRM_PULSE_DIAL, MDMPRM_PULSE_HOOK and
    MDMPRM_PULSE_DIALLING: the host's result) */
-long modem_set_param(struct modem *m, unsigned name, int val);
+long modem_set_param(struct modem *m, unsigned name, int32_t val);
 /* S-register sreg_param as modem_get_sreg() gives it */
 long modem_get_sreg_param(struct modem *m, unsigned sreg_param);
 

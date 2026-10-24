@@ -111,7 +111,7 @@ public:
 	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
 	   rate, its samples running, on hook; false with the reason on
 	   stderr */
-	bool open(const char *dev, unsigned rate);
+	bool open(const char *dev, uint32_t rate);
 	/* libusb's descriptors watched this turn (POSIX: Windows' libusb
 	   has none, and the caller polls every POLL_MS instead) */
 	void watch(RunLoop &loop);
@@ -176,8 +176,8 @@ public:
 		return dte_.write(buf, n);
 	}
 	/* the clock: the device's samples so far, in ms */
-	unsigned long now_ms() override {
-		return static_cast<unsigned long>(samples_ * 1000 / rate_);
+	uint64_t now_ms() override {
+		return samples_ * 1000 / rate_;
 	}
 
 	/* "<bus>:<address>" into bus and addr; false if it is not that */
@@ -216,13 +216,13 @@ private:
 	bool set_gpio(uint16_t v);
 	/* the ST7554's start-up (its registers), and the stick's (its rate,
 	   the line side checked) */
-	bool open_st7554(unsigned rate);
+	bool open_st7554(uint32_t rate);
 	bool start_st75951();
 	bool init_st7554_regs();
 	void arm_wake(bool on, bool kernel = false);
 	void park(libusb_transfer *t, int err);
 	void resume();
-	bool open_stick(unsigned rate);
+	bool open_stick(uint32_t rate);
 	/* a vendor request to the stick's interface: OUT with value, or IN
 	   into buf (len octets, all of them wanted); false (logged) */
 	bool stick_out(uint8_t req, uint16_t value);
@@ -274,7 +274,7 @@ private:
 	const Si3056Country *daa_ = &si3056_usa();
 	std::string daa_name_ = "USA";
 	bool daa_due_ = true;
-	unsigned rate_ = 9600;
+	uint32_t rate_ = 9600;
 	int frame_ = 192;               /* 20 ms */
 	int delay_ = 0;
 	std::vector<int16_t> frame_in_, frame_out_;
@@ -293,7 +293,7 @@ private:
 	double mic_pos_ = 0, ear_pos_ = 0;
 	int16_t mic_last_ = 0, ear_last_ = 0;
 	std::vector<int16_t> frame_mic_, frame_ear_;
-	unsigned long long samples_ = 0;
+	uint64_t samples_ = 0;
 	bool running_ = false;
 	bool dead_ = false;
 	int hook_ = MODEM_HOOK_ON;
@@ -310,14 +310,14 @@ private:
 	   samples' count; 0: none) */
 	bool intl_ = false, intl_dc_ = false, intl_aus_ = false;
 	bool pulse_active_ = false;
-	unsigned long long aus_end_ = 0;
+	uint64_t aus_end_ = 0;
 	/* transfers that could not be submitted again (the device
 	   suspended): retried every RESUME_MS by resume(), the time of the
 	   first (ms of the system's clock) */
 	std::vector<libusb_transfer *> parked_;
-	unsigned long long parked_since_ = 0, resume_tried_ = 0;
+	uint64_t parked_since_ = 0, resume_tried_ = 0;
 	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
-	unsigned long long flash_end_ = 0;
+	uint64_t flash_end_ = 0;
 	unsigned rings_ = 0;            /* ring detector changes not given */
 };
 

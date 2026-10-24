@@ -115,9 +115,9 @@ public:
 		return n;
 	}
 	/* the codec's time: ms of its samples */
-	unsigned long now_ms() override
+	uint64_t now_ms() override
 	{
-		return (unsigned long)(samples_ * 1000 / rate_);
+		return static_cast<uint64_t>(samples_ * 1000 / rate_);
 	}
 
 	const char *country = nullptr;

@@ -42,7 +42,7 @@ namespace dsp {
 /* a comb of Table 10-2 at a signal interface rate */
 struct VcvmComb {
 	int code;               /* 0 N200 ... 8 S400 */
-	int fs;                 /* the interface's rate: 8000, 16000, 32000 */
+	int32_t fs;             /* the interface's rate: 8000, 16000, 32000 */
 	int spacing;            /* Hz */
 	int kmin, kmax;         /* the tones' multiples of the spacing */
 	int tones;              /* kmax - kmin + 1 */
@@ -54,7 +54,7 @@ struct VcvmComb {
 	   S at 32000), sym22 the 22.5 ms symbol (codes 0, 3, 6); 0, or -1
 	   if they don't go
 	   together */
-	int init(int code, int fs, bool sym22 = false);
+	int init(int code, int32_t fs, bool sym22 = false);
 	/* tone i's frequency, Hz */
 	double freq(int i) const
 	{
@@ -82,7 +82,8 @@ class VcvmCombTx {
 public:
 	/* the comb, the level over the loaded tones (dBFS rms, 10.11's
 	   -12) */
-	int init(int code, int fs, bool sym22 = false, double dbfs = -12);
+	int init(int code, int32_t fs, bool sym22 = false,
+		 double dbfs = -12);
 	void set_load(const VcvmLoad &l);
 	/* the comb */
 	const VcvmComb &comb() const { return c_; }
@@ -116,7 +117,7 @@ private:
 
 /* one received comb symbol */
 struct VcvmCombSym {
-	long start;                     /* its prefix's first sample */
+	int32_t start;                  /* its prefix's first sample */
 	int nbits;
 	uint8_t bits[VCVM_TONES * 5];   /* the decisions, as data() takes */
 	float rel[VCVM_TONES * 5];      /* each bit's reliability, 0..1 */
@@ -135,7 +136,7 @@ struct VcvmCombSym {
 /* the comb's receiver: samples in (push()), symbols out (next()) */
 class VcvmCombRx {
 public:
-	int init(int code, int fs, bool sym22 = false);
+	int init(int code, int32_t fs, bool sym22 = false);
 	void set_load(const VcvmLoad &l);
 	/* the comb */
 	const VcvmComb &comb() const { return c_; }
@@ -143,21 +144,24 @@ public:
 	/* samples from the line (16 bit scale) */
 	void push(const float *x, int n);
 	/* the samples received: the index of the next one pushed */
-	long received() const { return base_ + static_cast<long>(buf_.size()); }
+	int32_t received() const
+	{
+		return base_ + static_cast<int32_t>(buf_.size());
+	}
 	/* nothing received, unlocked: the next sample pushed is sample
 	   base */
-	void restart(long base);
+	void restart(int32_t base);
 	/* the next symbol's prefix (once locked) */
-	long next_start() const { return next_; }
+	int32_t next_start() const { return next_; }
 
 	/* the symbol timing from the cyclic prefix over 8 symbols from
 	   sample `from` on (the first symbol: the one whose prefix starts
 	   nearest `first`, the signal's onset; -1 for the first after
 	   from): 0, or -1 if the samples aren't in yet */
-	int acquire(long from, long first = -1);
+	int acquire(int32_t from, int32_t first = -1);
 	/* the signal's onset: the first sample from `from` at which 5 ms
 	   of it reach dbfs (rms); -1 if none yet */
-	long onset(long from, double dbfs = -45) const;
+	int32_t onset(int32_t from, double dbfs = -45) const;
 	/* the next symbol (the first after acquire() is the reference,
 	   which gives only its levels): true if there was one.  known
 	   (optional): the transmitted phase steps in eighths, for the
@@ -168,17 +172,17 @@ public:
 	bool locked() const { return locked_; }
 
 private:
-	std::complex<double> tone(long u, int k) const;
-	float at(long i) const;
+	std::complex<double> tone(int32_t u, int k) const;
+	float at(int32_t i) const;
 	void trim();
 
 	VcvmComb c_{};
 	VcvmLoad load_{};
 	std::vector<float> buf_;
-	long base_ = 0;                 /* the absolute index of buf_[0] */
+	int32_t base_ = 0;              /* the absolute index of buf_[0] */
 	bool locked_ = false;
 	bool have_prev_ = false;
-	long next_ = 0;                 /* the next symbol's prefix */
+	int32_t next_ = 0;              /* the next symbol's prefix */
 	double tau_ = 0, drift_ = 0;    /* timing, samples */
 	double rot_ = 0;                /* common rotation a symbol */
 	std::complex<double> prev_[VCVM_TONES];
@@ -187,19 +191,19 @@ private:
 
 /* the parametric mode's alphabets (Table 10-3) */
 struct VcvmParam {
-	int fs;                 /* 8000 or 16000 */
+	int32_t fs;             /* 8000 or 16000 */
 	bool p10;               /* the 10 ms symbol */
 	int sps;                /* the symbol, samples */
 	int lag[16];            /* samples at fs */
 
-	int init(int fs, bool p10);
+	int init(int32_t fs, bool p10);
 };
 
 /* the parametric transmitter */
 class VcvmParamTx {
 public:
 	/* the alphabet, the level (dBFS rms over a symbol, -15) */
-	int init(int fs, bool p10, double dbfs = -15);
+	int init(int32_t fs, bool p10, double dbfs = -15);
 	/* a symbol, samples */
 	int sps() const { return p_.sps; }
 	/* a symbol of index i (0-15) */
@@ -224,13 +228,16 @@ private:
 /* the parametric receiver */
 class VcvmParamRx {
 public:
-	int init(int fs, bool p10);
+	int init(int32_t fs, bool p10);
 	void push(const float *x, int n);
 	/* the samples received: the index of the next one pushed */
-	long received() const { return base_ + static_cast<long>(buf_.size()); }
+	int32_t received() const
+	{
+		return base_ + static_cast<int32_t>(buf_.size());
+	}
 	/* nothing received, unlocked: the next sample pushed is sample
 	   base, the preamble looked for from there */
-	void restart(long base);
+	void restart(int32_t base);
 
 	/* looks for the preamble in what has come: true once found (the
 	   next symbol is the first after it) */
@@ -239,7 +246,7 @@ public:
 	bool locked() const { return locked_; }
 	/* locked without the search: the next symbol starts at sample at
 	   (the timing known otherwise, as P10's after P20's in L3) */
-	void lock_at(long at);
+	void lock_at(int32_t at);
 	/* the next symbol: its index, the decided lag's normalized
 	   autocorrelation and its margin over the next lag's; true if
 	   there was one; rms the symbol's level (16 bit scale), second the
@@ -251,20 +258,21 @@ public:
 	/* c-bar: the decided c's mean over the last 2 s (0 before any) */
 	float cbar() const;
 	/* the next symbol's first sample (once locked) */
-	long next_start() const { return next_; }
+	int32_t next_start() const { return next_; }
 
 private:
-	float corr(long a, long b, int lag) const;
-	int decide(long a, float *c, float *margin, int *second = nullptr) const;
-	float at(long i) const;
+	float corr(int32_t a, int32_t b, int lag) const;
+	int decide(int32_t a, float *c, float *margin,
+		   int *second = nullptr) const;
+	float at(int32_t i) const;
 	void trim();
 
 	VcvmParam p_{};
 	std::vector<float> buf_;
-	long base_ = 0;
+	int32_t base_ = 0;
 	bool locked_ = false;
-	long next_ = 0;
-	long searched_ = 0;
+	int32_t next_ = 0;
+	int32_t searched_ = 0;
 	std::vector<float> cs_;         /* the last 2 s of c */
 	int csn_ = 0, csi_ = 0;
 	float fit_[3] = {};             /* the timing's fit at -1, 0, +1 */

@@ -23,7 +23,8 @@ namespace dsp {
 
 /* see vcvm_data.h; -1 for no loading, or one the code or the signal
    set can't take */
-int VcvmDataTx::init(const VcvmLoading &l, int fs, int tap, Source src)
+int VcvmDataTx::init(const VcvmLoading &l, int32_t fs, int tap,
+		     Source src)
 {
 	if (l.kind == VcvmLoading::NONE)
 		return -1;
@@ -151,7 +152,8 @@ void VcvmDataTx::control(std::vector<float> &out)
 
 /* see vcvm_data.h; -1 for no loading, or one the code or the signal
    set can't take; the receiver started at sample 0 */
-int VcvmDataRx::init(const VcvmLoading &l, int fs, int tap, Sink sink)
+int VcvmDataRx::init(const VcvmLoading &l, int32_t fs, int tap,
+		     Sink sink)
 {
 	if (l.kind == VcvmLoading::NONE)
 		return -1;
@@ -173,7 +175,7 @@ int VcvmDataRx::init(const VcvmLoading &l, int fs, int tap, Sink sink)
 }
 
 /* see vcvm_data.h: everything back to unlocked, the statistics too */
-void VcvmDataRx::start(long from)
+void VcvmDataRx::start(int32_t from)
 {
 	from_ = pos_ = from;
 	locked_ = confirmed_ = control_ = lost_ = false;
@@ -195,9 +197,9 @@ void VcvmDataRx::start(long from)
 	ref_ = 0;
 	/* 2 s without a codeword decoded, or two and a half blocks where
 	   a block takes longer */
-	lost_after_ = std::max(
+	lost_after_ = static_cast<int32_t>(std::max(
 		lrint(2000 / l_.sym_ms()),
-		static_cast<long>(2.5 * VCVM_RS_N * 8 * D_ / l_.bits()) + 1);
+		static_cast<long>(2.5 * VCVM_RS_N * 8 * D_ / l_.bits()) + 1));
 	early_.clear();
 	bad_since_ = 0;
 	sym_ = 0;
@@ -207,7 +209,7 @@ void VcvmDataRx::start(long from)
 }
 
 /* the samples received: the index of the next one pushed */
-long VcvmDataRx::received() const
+int32_t VcvmDataRx::received() const
 {
 	return l_.kind == VcvmLoading::COMB ? crx_.received() : prx_.received();
 }
@@ -355,7 +357,7 @@ void VcvmDataRx::run()
 	if (l_.kind == VcvmLoading::COMB) {
 		if (!locked_) {
 			if (!onset_) {
-				long o = crx_.onset(from_, -35);
+				int32_t o = crx_.onset(from_, -35);
 				if (o < 0 || crx_.acquire(o, o))
 					return;
 				onset_ = true;

@@ -18,6 +18,7 @@
 /* the interface to the modem core: the data pumps register and exchange
    bits through modem_dp.h, read and set parameters through modem_param.h,
    and dsplibs.h is the rest of the library's interface (both ways) */
+#include <cstdint>
 #include <cstring>
 
 #include "reinit.h"
@@ -57,7 +58,7 @@ namespace dsp {
 struct dp_runtime {
 	struct modem *modem;
 	int answer_tone;
-	long answer_tone_end;   /* sample counter when the tone was seen */
+	int32_t answer_tone_end;   /* sample counter when the tone was seen */
 	int ans_sent;           /* the answer tone is already sent: an
 				   automode fallback skips it */
 	int v32_automode;       /* V.32bis started by the V.8/V.34 pump:
@@ -119,7 +120,7 @@ struct Osc {
 
 	/* freq in Hz (negative: the other way round), srate in samples/s;
 	   the phase goes on from where it is */
-	void  set_freq(float freq, int srate);
+	void  set_freq(float freq, int32_t srate);
 	float next();           /* sin(), then advance */
 	cplx  next_cplx();      /* exp(j phase), then advance */
 };
@@ -131,9 +132,9 @@ struct Biquad {
 
 	/* design for a centre or corner freq (Hz) and q at srate, and
 	   clear the state */
-	void bandpass(float freq, float q, int srate);
-	void lowpass(float freq, float q, int srate);
-	void highpass(float freq, float q, int srate);
+	void bandpass(float freq, float q, int32_t srate);
+	void lowpass(float freq, float q, int32_t srate);
+	void highpass(float freq, float q, int32_t srate);
 	/* one sample through the section (transposed direct form II) */
 	float run(float x)
 	{
@@ -160,7 +161,7 @@ struct Goertzel {
 	float power;    /* last complete block: mean square of the tone */
 
 	/* tone freq (Hz), block of len samples at srate */
-	void init(float freq, int len, int srate);
+	void init(float freq, int len, int32_t srate);
 	int  run(float x);      /* 1 when a block is complete */
 };
 
@@ -170,7 +171,7 @@ struct PowerMeter {
 	float power;
 
 	/* time constant in seconds at srate; power back to 0 */
-	void init(float time_const_sec, int srate);
+	void init(float time_const_sec, int32_t srate);
 	/* one sample in, the running mean of x^2 out */
 	float run(float x)
 	{
@@ -181,7 +182,7 @@ struct PowerMeter {
 
 /* V.22 / V.22bis scrambler (1 + x^-14 + x^-17) */
 struct V22Scrambler {
-	unsigned reg;
+	uint32_t reg;
 	int ones;
 
 	/* one bit (0/1) in, the line bit out */
@@ -212,9 +213,9 @@ struct Resampler {
 static inline float tone_power(float a) { return a * a / 2; }
 
 /* timing helpers: ms milliseconds as a number of samples at srate */
-static inline long ms2samples(int ms, int srate)
+static inline int32_t ms2samples(int32_t ms, int32_t srate)
 {
-	return static_cast<long>(ms) * srate / 1000;
+	return static_cast<int32_t>(int64_t{ms} * srate / 1000);
 }
 
 /*
@@ -224,16 +225,16 @@ struct FskMod {
 	Osc osc;
 	float mark, space;
 	float amp;
-	int srate;
+	int32_t srate;
 
 	/* mark and space in Hz, amp the peak sample value */
-	void  init(float mark, float space, float amp, int srate);
+	void  init(float mark, float space, float amp, int32_t srate);
 	/* the next sample of the tone for bit (1 mark, 0 space) */
 	float next(int bit);
 };
 
 struct FskDemod {
-	int srate;
+	int32_t srate;
 	float sign;             /* +1 if mark is above space */
 	float half_shift;
 	Biquad pre;             /* channel band pass */
@@ -250,7 +251,7 @@ struct FskDemod {
 	int last_dec;
 
 	/* mark and space in Hz, baud in bit/s */
-	void init(float mark, float space, float baud, int srate);
+	void init(float mark, float space, float baud, int32_t srate);
 	/* returns the recovered bit (0/1) at the bit center, or -1 */
 	int  run(float x);
 };
@@ -267,7 +268,7 @@ struct FskBitTx {
 	/* mark and space (Hz), peak amplitude amp, baud bit/s at srate;
 	   the clock from phase_ (1: the first bit at once), a mark until
 	   then */
-	void init(float mark, float space, float amp, float baud, int srate,
+	void init(float mark, float space, float amp, float baud, int32_t srate,
 		  float phase_ = 0)
 	{
 		mod.init(mark, space, amp, srate);
@@ -340,7 +341,7 @@ struct Bell103Detect {
 	int blocks;             /* in a row with the tones */
 
 	/* at srate, nothing found yet */
-	void init(int srate)
+	void init(int32_t srate)
 	{
 		g1270.init(1270, srate / 50, srate);
 		g1070.init(1070, srate / 50, srate);
@@ -405,7 +406,7 @@ struct DtmfGen {
 	float amp_lo, amp_hi;
 
 	/* 0-9, *, #, A-D (or a-d); -1 for anything else */
-	int   set(char digit, int srate);
+	int   set(char digit, int32_t srate);
 	/* the next sample of the dual tone */
 	float next();
 };
@@ -427,7 +428,7 @@ struct DtmfDetect {
 	float ref;              /* its first block's energy */
 
 	/* at srate, nothing on */
-	void init(int srate);
+	void init(int32_t srate);
 	/* one sample: ON when a digit comes on (digit has it), OFF when it
 	   goes, else NONE */
 	Event sample(float x);
@@ -447,17 +448,17 @@ struct DtmfDetect {
 struct CallToneDetect {
 	Goertzel g[5];          /* 400, 425, 440, 450, 480 Hz */
 	Goertzel ans[2];        /* 2100, 2225 Hz */
-	int ans_run[2], ans_drop[2];
+	int32_t ans_run[2], ans_drop[2];
 	Biquad band;            /* the busy tones' band, around 480 Hz */
 	float energy, band_energy;
 	int n, len;
 	/* the ringing tone: blocks of the segment that goes on (gaps of 40
 	   ms at most), off since its last block, of segments of 0.3 s or
 	   more in the burst; blocks since the ring sounded last */
-	int seg, drop, burst;
-	long since_ring;
+	int32_t seg, drop, burst;
+	int32_t since_ring;
 	/* the busy tone's cadence: the band on, blocks of its run, rounds */
-	int band_on, band_run, rounds;
+	int32_t band_on, band_run, rounds;
 
 	unsigned rings;         /* rings heard */
 	bool ringing;           /* one sounds */
@@ -465,11 +466,11 @@ struct CallToneDetect {
 	unsigned answer[2];     /* answer tones heard: 2100, 2225 Hz */
 
 	/* at srate, nothing heard */
-	void init(int srate);
+	void init(int32_t srate);
 	/* one sample of the line */
 	void sample(float x);
 	/* ms since a ring sounded last (since the start if none did) */
-	long quiet_ms() const { return since_ring * 20; }
+	int32_t quiet_ms() const { return since_ring * 20; }
 	/* one block's verdicts */
 	void block();
 };
@@ -491,16 +492,16 @@ struct CngDetect {
 	Goertzel tone[3], ans;  /* freq - 25, freq, freq + 25; 2100 Hz */
 	float energy;
 	int n, len;
-	int run, drop;          /* blocks on in the run, off since */
+	int32_t run, drop;      /* blocks on in the run, off since */
 	unsigned bursts;        /* bursts heard */
 	unsigned cut;           /* bursts cut short */
 
 	/* at srate, the tone at freq Hz, nothing heard */
-	void init(int srate, int freq = 1100);
+	void init(int32_t srate, int freq = 1100);
 	/* one sample of the line */
 	void sample(float x);
 	/* ms of the tone in the run going on (0 when off) */
-	int run_ms() const { return drop ? 0 : run * 20; }
+	int32_t run_ms() const { return drop ? 0 : run * 20; }
 	/* one block's verdict */
 	void block();
 };
@@ -518,12 +519,12 @@ struct RingDetect {
 	Biquad lp[2];
 	float env, decay;
 	bool on;                /* a burst */
-	long on_samples, off_samples;
+	int32_t on_samples, off_samples;
 	int sign;               /* the wave's last (1 up, -1 down, 0 none) */
-	int srate;
+	int32_t srate;
 
 	/* at srate, no burst */
-	void init(int srate);
+	void init(int32_t srate);
 	/* one sample: true at a pulse */
 	bool sample(float x);
 };

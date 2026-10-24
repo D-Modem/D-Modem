@@ -61,7 +61,7 @@ public:
 	/* the codec's PCM pcm (both ways) and its controls' ctl (nullptr:
 	   the card of pcm's, or pcm's name) opened at rate, running, on
 	   hook; false with the reason on stderr */
-	bool open(const char *pcm, const char *ctl, unsigned rate);
+	bool open(const char *pcm, const char *ctl, uint32_t rate);
 	/* the line's samples: its descriptors watched this turn */
 	void watch(RunLoop &loop);
 	/* the samples that have come, a frame (20 ms) at a time, through
@@ -94,8 +94,8 @@ public:
 		return pty_.write(buf, n);
 	}
 	/* the clock: the codec's samples so far, in ms */
-	unsigned long now_ms() override {
-		return static_cast<unsigned long>(samples_ * 1000 / rate_);
+	uint64_t now_ms() override {
+		return samples_ * 1000 / rate_;
 	}
 
 	/* the control's name for PCM pcm: hw:<card> for hw:<card>,<dev> or
@@ -134,15 +134,15 @@ private:
 	snd_pcm_t *cap_ = nullptr, *play_ = nullptr;
 	snd_ctl_t *ctl_ = nullptr;
 	Switch off_hook_, caller_id_;
-	unsigned rate_ = 9600;
+	uint32_t rate_ = 9600;
 	int frame_ = 192;               /* 20 ms */
 	int delay_ = 0;                 /* the playback's lead (samples) */
 	std::vector<int16_t> in_, out_;
 	int have_ = 0;                  /* of in_ */
-	unsigned long long samples_ = 0;
+	uint64_t samples_ = 0;
 	bool running_ = false;
 	int hook_ = MODEM_HOOK_ON;
-	unsigned long long flash_end_ = 0;
+	uint64_t flash_end_ = 0;
 	dsp::RingDetect ring_;
 	/* the codec's registers, if they take the country's settings; the
 	   country, its name, still to be written */

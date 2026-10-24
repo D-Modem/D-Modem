@@ -8,6 +8,7 @@
  *
  */
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -31,7 +32,7 @@ static void put16(unsigned char *p, unsigned v)
 }
 
 /* a 32 bit one */
-static void put32(unsigned char *p, unsigned long v)
+static void put32(unsigned char *p, uint32_t v)
 {
 	put16(p, v & 0xffff);
 	put16(p + 2, (v >> 16) & 0xffff);
@@ -59,7 +60,7 @@ enum { T_SHORT = 3, T_LONG = 4, T_RATIONAL = 5 };
 /* an IFD entry at e, a single SHORT in the first half of the value
    field; where the next one goes */
 static unsigned char *entry(unsigned char *e, unsigned tag, unsigned type,
-			    unsigned long count, unsigned long value)
+			    uint32_t count, uint32_t value)
 {
 	put16(e, tag);
 	put16(e + 2, type);
@@ -161,23 +162,24 @@ int TiffOut::close()
  */
 
 /* a 16 bit value at offset at, in the file's byte order; 0 beyond it */
-unsigned TiffIn::get16(unsigned long at) const
+unsigned TiffIn::get16(uint64_t at) const
 {
 	const unsigned char *p;
 	if (at + 2 > len)
 		return 0;
 	p = data.data() + at;
-	return big_endian ? (p[0] << 8) | p[1] : p[0] | (p[1] << 8);
+	return big_endian ? (static_cast<unsigned>(p[0]) << 8) | p[1] :
+		p[0] | (static_cast<unsigned>(p[1]) << 8);
 }
 
 /* a 32 bit value at offset at, in the file's byte order; 0 beyond it */
-unsigned long TiffIn::get32(unsigned long at) const
+uint32_t TiffIn::get32(uint64_t at) const
 {
 	if (at + 4 > len)
 		return 0;
 	return big_endian ?
-		(static_cast<unsigned long>(get16(at)) << 16) | get16(at + 2) :
-		get16(at) | (static_cast<unsigned long>(get16(at + 2)) << 16);
+		(static_cast<uint32_t>(get16(at)) << 16) | get16(at + 2) :
+		get16(at) | (static_cast<uint32_t>(get16(at + 2)) << 16);
 }
 
 /* the whole file at path into memory, its header checked; 0, or -1 if
@@ -222,10 +224,10 @@ void TiffIn::close()
 }
 
 /* a tag's value: the index-th one of an array of SHORTs or LONGs */
-unsigned long TiffIn::tag_value(unsigned long e, unsigned long index) const
+uint32_t TiffIn::tag_value(uint64_t e, uint64_t index) const
 {
 	unsigned type = get16(e + 2);
-	unsigned long count = get32(e + 4), at = e + 8;
+	uint64_t count = get32(e + 4), at = e + 8;
 	int size = type == T_SHORT ? 2 : 4;
 
 	if (index >= count)
@@ -237,9 +239,10 @@ unsigned long TiffIn::tag_value(unsigned long e, unsigned long index) const
 }
 
 /* a RATIONAL tag's value (a SHORT or LONG one's too) */
-double TiffIn::tag_rational(unsigned long e) const
+double TiffIn::tag_rational(uint64_t e) const
 {
-	unsigned long at = get32(e + 8), d;
+	uint64_t at = get32(e + 8);
+	uint32_t d;
 	if (get16(e + 2) != T_RATIONAL)
 		return tag_value(e, 0);
 	d = get32(at + 4);
@@ -249,7 +252,8 @@ double TiffIn::tag_rational(unsigned long e) const
 /* a page of another width (or resolution) to the fax's */
 void T4Page::fit(const T4Page *src, int row_step)
 {
-	int y, x, ss = T4_STRIDE(src->width), ds = T4_STRIDE(width);
+	int32_t y;
+	int x, ss = T4_STRIDE(src->width), ds = T4_STRIDE(width);
 	std::vector<unsigned char> row_;
 	unsigned char *row;
 	if (!alloc_zeroed(row_, ds))
@@ -262,7 +266,7 @@ void T4Page::fit(const T4Page *src, int row_step)
 		for (x = 0; x < width; x++) {
 			int sx;
 			if (src->width > width)
-				sx = static_cast<int>(static_cast<long>(x) *
+				sx = static_cast<int>(static_cast<int32_t>(x) *
 						      src->width / width);
 			else
 				sx = x - (width - src->width) / 2;
@@ -278,11 +282,11 @@ void T4Page::fit(const T4Page *src, int row_step)
    fine); 1, 0 when there are no more, -1 on an error */
 int TiffIn::read_page(T4Page *p)
 {
-	unsigned long e, ifd = next_ifd, nstrips = 0, so_e = 0, sc_e = 0;
-	unsigned long width = 0, rows = 0, rps = 0, bps = 1, comp = 1;
-	unsigned long photo = 0, fill = 1, t4opts = 0, unit = 2, s, k;
+	uint64_t e, ifd = next_ifd, nstrips = 0, so_e = 0, sc_e = 0;
+	uint64_t width = 0, rows = 0, rps = 0, bps = 1, comp = 1;
+	uint64_t photo = 0, fill = 1, t4opts = 0, unit = 2, s, k;
 	double yres = 98;
-	unsigned n, i;
+	uint32_t n, i;
 	T4Page src;
 	int stride, fine, step = 1;
 
@@ -330,9 +334,9 @@ int TiffIn::read_page(T4Page *p)
 	src.init(static_cast<int>(width), fine);
 	stride = T4_STRIDE(width);
 	for (s = 0; s < nstrips; s++) {
-		unsigned long off = tag_value(so_e, s);
-		unsigned long len_ = tag_value(sc_e, s);
-		unsigned long want = rows - src.rows < rps ? rows - src.rows : rps;
+		uint64_t off = tag_value(so_e, s);
+		uint64_t len_ = tag_value(sc_e, s);
+		uint64_t want = rows - src.rows < rps ? rows - src.rows : rps;
 		if (off >= len)
 			break;
 		if (off + len_ > len)
@@ -344,7 +348,7 @@ int TiffIn::read_page(T4Page *p)
 			src.decode(data.data() + off, len_,
 				   static_cast<int>(comp),
 				   static_cast<int>(t4opts), fill != 2,
-				   static_cast<int>(want));
+				   static_cast<int32_t>(want));
 		}
 	}
 	if (fill == 2 && comp == 1) {

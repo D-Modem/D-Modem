@@ -13,6 +13,7 @@
 #ifndef DMODEM_ARI_CLIENT_H
 #define DMODEM_ARI_CLIENT_H
 
+#include <cstdint>
 #include <string>
 
 namespace ari {
@@ -20,7 +21,7 @@ namespace ari {
 /* Asterisk's HTTP server and the ARI user */
 struct Server {
 	std::string host = "127.0.0.1";
-	int port = 8088;
+	int32_t port = 8088;
 	std::string user, password;
 
 	/* http://host[:port] into host and port; false if it is not that */

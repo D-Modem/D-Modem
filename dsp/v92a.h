@@ -28,6 +28,8 @@
 #ifndef V92A_H
 #define V92A_H
 
+#include <cstdint>
+
 #include "v92.h"
 
 namespace dsp {
@@ -70,27 +72,27 @@ enum {
 };
 
 struct V92ATx {
-	int rate;               /* the line's, 9600 or 8000 */
+	int32_t rate;           /* the line's, 9600 or 8000 */
 	float lu;               /* LU (8.5.7/V.92) on the line */
 	double T;               /* line samples a symbol */
 	float pulse[2 * V92A_SPAN * V92A_P + 2];
 	/* the symbols out, by symbol, at their times (line samples) */
 	float a[V92A_RING];
 	double at[V92A_RING];
-	long nsym;              /* symbols made */
+	int32_t nsym;           /* symbols made */
 	double tnext;           /* the next one's time */
 	double delay;           /* symbols to move it later by */
-	long m;                 /* line samples out */
+	int32_t m;              /* line samples out */
 
 	enum v92a_seg seg;
-	long n;                 /* symbols in the segment */
+	int32_t n;              /* symbols in the segment */
 	int second;             /* Su and TRN1u: the second ones */
-	long su_k;              /* Su's pattern position */
-	unsigned scr;           /* GPA */
+	int32_t su_k;           /* Su's pattern position */
+	uint32_t scr;           /* GPA */
 	int last_d;             /* the differential encoder: 1 negative */
 	unsigned char bits[V92A_BITS];
 	int nbits;
-	long bn;                /* bits sent of Ja or CPt */
+	int32_t bn;             /* bits sent of Ja or CPt */
 	int ja_stop, jp_req, trn_stop, ri_seen;
 	double jp_frac;         /* of a symbol */
 	int next;               /* E1u is made */
@@ -100,7 +102,7 @@ struct V92ATx {
 	unsigned char nxt[V92A_BITS];
 	int nxt_n;              /* 0: the current sequence again */
 	int pos;
-	long seqs;              /* sequences sent whole */
+	int32_t seqs;           /* sequences sent whole */
 	int e2u_req;
 	/* a rate renegotiation (9.8/V.92): Ru at the next data frame's
 	   start (ru_req), its Ru-bar then on to TRN2u (rn) */
@@ -113,7 +115,7 @@ struct V92ATx {
 	   frames of ones, then B1u and the data on cpd_new */
 	int fpe_req;
 	int dsrc;               /* V92A_D_ */
-	long dsrc_n;            /* its frames */
+	int32_t dsrc_n;         /* its frames */
 	V92Cpd cpd_new;
 	int b1u_next;
 	int fpe_reset;          /* the precoder and prefilter start anew at
@@ -126,17 +128,17 @@ struct V92ATx {
 	V92Cpd cpd;
 	CoreBits link;
 	int K;
-	long frames;
+	int32_t frames;
 	int fi;
 	int kq[12];
 	int dprev;
 	int tstate;
 	int eta[4];
 	double uh[V92A_HIST], xh[V92A_HIST], vh[V92A_HIST];
-	long dn;                /* data symbols */
+	int32_t dn;             /* data symbols */
 
 	/* silent, on a line of rate (9600 or 8000), at level lu */
-	void init(int rate_, float lu_);
+	void init(int32_t rate_, float lu_);
 	/* the network's clock against ours, parts per million (the PCM
 	   receiver's) */
 	void set_ppm(double ppm);

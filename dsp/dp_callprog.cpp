@@ -15,7 +15,9 @@
  *
  */
 
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -50,8 +52,8 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	   network dialed it (created with it hidden), a ';' to report */
 	const char *dial;
 	int dial_pos;
-	long dial_on, dial_off;
-	long digit_left, pause_left;
+	int32_t dial_on, dial_off;
+	int32_t digit_left, pause_left;
 	int digit_on;
 	DtmfGen dtmf;
 	/* pulse dialing (ATP, P in the dial string): the country's make,
@@ -61,17 +63,17 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	   the digit, the samples left of the break or make; the line
 	   cannot (DTMF then) */
 	int pulse;
-	long pulse_make, pulse_break, pulse_gap;
+	int32_t pulse_make, pulse_break, pulse_gap;
 	int pulse_pattern;
 	int pulses_left, pulse_broken;
-	long pulse_left;
+	int32_t pulse_left;
 	int pulse_unable;
 	int pulse_dialling;     /* MDMPRM_PULSE_DIALLING said 1 */
 	int net_dialed;
 	int dialed;
 	/* @: remote ringing heard, blocks of sound and of quiet */
 	int rang;
-	int sound_blocks, quiet_blocks;
+	int32_t sound_blocks, quiet_blocks;
 
 	/* tone detectors on BLOCK_MS blocks */
 	int block_len, block_n;
@@ -83,8 +85,8 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	Goertzel fine2225, fine2250;
 	int need_dialtone;
 	int busy_detect;        /* X3, X4: BUSY on a busy tone */
-	int dialtone_blocks;    /* of dial tone, with gaps of 1 s at most */
-	int dialtone_gap;       /* blocks since the dial tone's last */
+	int32_t dialtone_blocks; /* of dial tone, with gaps of 1 s at most */
+	int32_t dialtone_gap;   /* blocks since the dial tone's last */
 
 	/* busy tone cadence detector: the bounds of its on and off times
 	   (ms), the cycles it takes (the country's, or 200 to 800 ms and
@@ -97,7 +99,7 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	Biquad cpt_bp;
 	float cpt_energy;
 	int cpt_on;
-	int cpt_run;            /* blocks in the current on/off run */
+	int32_t cpt_run;        /* blocks in the current on/off run */
 	int busy_cycles;
 
 	/* V.25 calling tone, or the T.30 CNG of a fax call */
@@ -109,12 +111,13 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	/* its name in the log */
 	const char *tag() const { return "callprog"; }
 	int block();
-	bool busy_part(bool on, int len) const;
+	bool busy_part(bool on, int32_t len) const;
 	float dial_sample();
 	bool pulse_digit(char ch);
 	void pulse_dialling_now(int on);
 	void hook_pulse(int broken);
-	int start(struct modem *m, enum DP_ID id, int caller, int srate_, int max_frag);
+	int start(struct modem *m, enum DP_ID id, int caller, int32_t srate_,
+		  int max_frag);
 	int process(void *in, void *out, int cnt) override;
 };
 
@@ -122,7 +125,8 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
    timings (S11 DTMF ms, S8 comma pause), dial tone wait (X2/X4), the
    answer timeout (S7 s) and the calling tone (V.25 1300 Hz, or the 1100
    Hz CNG in fax mode); forgets any answer tone in the runtime; 0 */
-int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, int max_frag)
+int CallProgPump::start(struct modem *m, enum DP_ID id, int caller,
+			 int32_t srate_, int max_frag)
 {
 	const char *dial_;
 	int i, v;
@@ -226,7 +230,7 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 		state = CP_WAIT_ANSWER;
 		net_dialed = 1;
 	}
-	DSP_DBG("callprog: create, dial '%s'%s, srate %d\n", dial,
+	DSP_DBG("callprog: create, dial '%s'%s, srate %" PRId32 "\n", dial,
 		pulse ? " (pulse)" : "", srate_);
 	return 0;
 }
@@ -243,7 +247,7 @@ static int cp_tone_block(struct cp_tone *t, float block_power, float min_power)
 
 /* whether an on (or off) of len ms is a busy tone's: near a part of the
    country's busy or congestion tone, or within its bounds */
-bool CallProgPump::busy_part(bool on, int len) const
+bool CallProgPump::busy_part(bool on, int32_t len) const
 {
 	if (busy_bounds && (on ? len >= busy_on_min && len <= busy_on_max :
 			    len >= busy_off_min && len <= busy_off_max))
@@ -252,8 +256,9 @@ bool CallProgPump::busy_part(bool on, int len) const
 		if (!t)
 			continue;
 		for (int k = on ? 0 : 1; k < t->n; k += 2) {
-			int ms = static_cast<int>(t->cadence[k] * 1000 + 0.5f);
-			int tol = ms * 15 / 100 > 80 ? ms * 15 / 100 : 80;
+			int32_t ms = static_cast<int32_t>(
+				t->cadence[k] * 1000 + 0.5f);
+			int32_t tol = ms * 15 / 100 > 80 ? ms * 15 / 100 : 80;
 			if (len >= ms - tol && len <= ms + tol)
 				return true;
 		}
@@ -330,7 +335,7 @@ int CallProgPump::block()
 	if (on == cpt_on) {
 		cpt_run++;
 	} else {
-		int len = cpt_run * BLOCK_MS;
+		int32_t len = cpt_run * BLOCK_MS;
 		if (busy_part(cpt_on, len))
 			busy_cycles += cpt_on ? 1 : 0;
 		else

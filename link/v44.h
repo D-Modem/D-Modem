@@ -54,9 +54,9 @@ public:
 	V44 &operator=(const V44 &) = delete;
 
 	/* the largest dictionary and history (what XID can agree on) */
-	int init(int codewords, int max_string, int history);
+	int init(int32_t codewords, int32_t max_string, int32_t history);
 	/* what was agreed (no more than init's); -1 if out of range */
-	int config(int codewords, int max_string, int history);
+	int config(int32_t codewords, int32_t max_string, int32_t history);
 	/* frees it all (not ready() any more) */
 	void exit();
 	/* init() was done */
@@ -101,7 +101,7 @@ private:
 	void put_codeword(uint32_t cw);
 	void put_extension(int n);
 	void reinit();
-	int find(uint32_t pos, uint32_t avail, int *len) const;
+	int32_t find(uint32_t pos, uint32_t avail, int *len) const;
 	/* decoder */
 	bool get_bits(int n, uint32_t *v);
 	bool read_token(int *type, uint32_t *value);
@@ -109,8 +109,8 @@ private:
 	int token(int type, uint32_t value);
 	int put_hist(uint8_t ch);
 
-	int n2_ = 0, n7_ = 0, n8_ = 0;          /* agreed */
-	int max_n2_ = 0, max_n7_ = 0, max_n8_ = 0;
+	int32_t n2_ = 0, n7_ = 0, n8_ = 0;      /* agreed */
+	int32_t max_n2_ = 0, max_n7_ = 0, max_n8_ = 0;
 	std::vector<Entry> dict_;
 	std::vector<uint8_t> hist_;
 	uint32_t hp_ = 0;                       /* history: written */

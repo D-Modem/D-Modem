@@ -49,7 +49,7 @@ public:
 		const char *name;
 	};
 
-	explicit EventPlayer(unsigned rate = 8000);
+	explicit EventPlayer(uint32_t rate = 8000);
 
 	/* a telephone-event packet's payload p (n octets) at timestamp
 	   ts: an event's start (its kind), or NONE for its going on, its
@@ -57,7 +57,7 @@ public:
 	Began packet(const uint8_t *p, size_t n, uint32_t ts);
 	/* n samples: the tone over them while one plays (true), else x
 	   untouched (false) */
-	bool fill(int16_t *x, unsigned n);
+	bool fill(int16_t *x, uint32_t n);
 	/* a tone plays */
 	bool playing() const { return on_; }
 	/* the call ended: nothing plays, nothing is known */
@@ -69,22 +69,22 @@ private:
 		double next();
 	};
 
-	unsigned rate_;
+	uint32_t rate_;
 	bool on_ = false, known_ = false;
 	bool ended_ = false;            /* its end packet came */
 	uint32_t ts_ = 0;               /* the played event's timestamp */
 	/* the last event not played (its start told once), -1 if none */
 	int other_ = -1;
 	uint32_t other_ts_ = 0;
-	long left_ = 0;                 /* samples it plays on without a
+	int32_t left_ = 0;              /* samples it plays on without a
 					   packet */
-	long hold_ = 0;                 /* left_ again at each packet */
+	int32_t hold_ = 0;              /* left_ again at each packet */
 	Osc o1_, o2_, am_;
 	double a1_ = 0, a2_ = 0;
 	double f1_ = 0;
 	bool mod_ = false;              /* ANSam's 15 Hz */
 	bool rev_ = false;              /* phase reversals every 450 ms */
-	long rev_count_ = 0;
+	int32_t rev_count_ = 0;
 };
 
 } // namespace dmd

@@ -8,6 +8,7 @@
  */
 
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -49,9 +50,9 @@ namespace dmd {
 
 /* the file: one record, its own size last as the check */
 struct datafile_record {
-	unsigned minor;
+	uint32_t minor;
 	struct dsp_info dsp_info;
-	unsigned size;
+	uint32_t size;
 };
 
 /* see datafile.h.  No directory (ENOENT) is the usual case of no data

@@ -8,6 +8,7 @@
  */
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -251,7 +252,7 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 	case Mode::Mnp:
 		n = mnp_.bit_tx() ? hdlc_.get_bits(nbits, buf, n) :
 			mnp_async_.get_bits(nbits, buf, n);
-		mnp_.clock(static_cast<long>(nbits) * n);
+		mnp_.clock(static_cast<int32_t>(nbits) * n);
 		break;
 	case Mode::Async:
 		n = async_.get_bits(nbits, buf, n);
@@ -261,7 +262,7 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 		break;
 	}
 	/* the bit timer counts what goes out */
-	if (timer_ && (timer_ -= static_cast<long>(nbits) * n) <= 0) {
+	if (timer_ && (timer_ -= static_cast<int32_t>(nbits) * n) <= 0) {
 		timer_ = 0;
 		run_timer();
 	}
@@ -334,32 +335,35 @@ void Link::update_config(const Config &remote)
 	int dir = remote.comp & cfg_.comp;
 
 	if (dir && remote.v44 && cfg_.v44 && enc44_.ready()) {
-		int n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
-		int n7 = std::min(cfg_.v44_max_string, remote.v44_max_string);
-		int n8 = std::min(cfg_.v44_history, remote.v44_history);
+		int32_t n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
+		int32_t n7 = std::min(cfg_.v44_max_string,
+				      remote.v44_max_string);
+		int32_t n8 = std::min(cfg_.v44_history, remote.v44_history);
 		if (!enc44_.config(n2, n7, n8) && !dec44_.config(n2, n7, n8)) {
 			cfg_.comp = dir;
 			cfg_.v44_codewords = n2;
 			cfg_.v44_max_string = n7;
 			cfg_.v44_history = n8;
-			logf("v44: %d codewords, strings of %d, history %d",
-			     n2, n7, n8);
+			logf("v44: %" PRId32 " codewords, strings of %" PRId32
+			     ", history %" PRId32, n2, n7, n8);
 			owner_->negotiated(cfg_);
 			return;
 		}
-		logf("err: v44: setup failed (%d/%d/%d).", n2, n7, n8);
+		logf("err: v44: setup failed (%" PRId32 "/%" PRId32 "/%" PRId32
+		     ").", n2, n7, n8);
 	}
 	cfg_.v44 = false;
 	cfg_.comp = 0;
 	if (dir) {
-		int n2 = std::min(cfg_.dict_size, remote.dict_size);
-		int n7 = std::min(cfg_.max_string, remote.max_string);
+		int32_t n2 = std::min(cfg_.dict_size, remote.dict_size);
+		int32_t n7 = std::min(cfg_.max_string, remote.max_string);
 		if (!enc_.config(n2, n7) && !dec_.config(n2, n7)) {
 			cfg_.comp = dir;
 			cfg_.dict_size = n2;
 			cfg_.max_string = n7;
 		} else
-			logf("err: v42bis: setup failed (%d/%d).", n2, n7);
+			logf("err: v42bis: setup failed (%" PRId32 "/%" PRId32
+			     ").", n2, n7);
 	}
 	owner_->negotiated(cfg_);
 }

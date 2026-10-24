@@ -21,6 +21,7 @@
  *
  */
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -50,7 +51,7 @@
 namespace {
 
 /* the line: 8000 samples a second */
-const int RATE = 8000;
+const int32_t RATE = 8000;
 
 /* where the modems' data files are: %LOCALAPPDATA%\dmodem (made if it
    isn't there), else the current directory */
@@ -76,7 +77,7 @@ int run_usb(dcore::Modem &m, dmd::UsbLine &line, dmd::Dte &dte)
 	dmd::RunLoop loop;
 
 	while (dmd::RunLoop::running()) {
-		long wait = dmd::RunLoop::poll(modems, 1);
+		int32_t wait = dmd::RunLoop::poll(modems, 1);
 		int fd = dte.fd(), ret;
 
 		if (wait < 0 || wait > dmd::UsbLine::POLL_MS)
@@ -196,7 +197,7 @@ int main(int argc, char *argv[])
 #endif
 	if (opt.usb) {
 #ifdef DMODEM_USB
-		mo.rate = (int)opt.rate;
+		mo.rate = (int32_t)opt.rate;
 		um.reset(new dcore::Modem(usb, mo));
 		if (!um->ok())
 			return 255;

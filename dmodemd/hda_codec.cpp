@@ -26,10 +26,10 @@ const unsigned long HDA_IOCTL_VERB_WRITE =
 	_IOWR('H', 0x11, struct hda_verb_ioctl);
 
 /* the verbs and parameters (the HD Audio specification's) */
-const unsigned GET_PARAMETER = 0xf00;
-const unsigned PAR_NODE_COUNT = 0x04, PAR_FUNCTION_TYPE = 0x05;
-const unsigned GRP_MODEM = 0x02;
-const unsigned SI3054_READ = 0x900, SI3054_WRITE = 0x1;
+const uint32_t GET_PARAMETER = 0xf00;
+const uint32_t PAR_NODE_COUNT = 0x04, PAR_FUNCTION_TYPE = 0x05;
+const uint32_t GRP_MODEM = 0x02;
+const uint32_t SI3054_READ = 0x900, SI3054_WRITE = 0x1;
 
 } // namespace
 
@@ -82,7 +82,7 @@ void HdaCodec::close()
 }
 
 /* see hda_codec.h */
-bool HdaCodec::verb(int nid, unsigned verb, unsigned param, uint32_t *res)
+bool HdaCodec::verb(int nid, uint32_t verb, uint32_t param, uint32_t *res)
 {
 	hda_verb_ioctl v;
 
@@ -127,7 +127,8 @@ bool HdaCodec::write(int nid, uint16_t v)
 {
 	uint32_t r;
 
-	return h_ && verb(nid, SI3054_WRITE << 8 | v >> 8, v & 0xff, &r);
+	return h_ && verb(nid, SI3054_WRITE << 8 | uint32_t{v} >> 8,
+			  uint32_t{v} & 0xff, &r);
 }
 
 } // namespace dmd

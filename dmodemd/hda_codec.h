@@ -49,7 +49,7 @@ public:
 
 private:
 	/* a command (node, verb, parameter) and its response */
-	bool verb(int nid, unsigned verb, unsigned param, uint32_t *res);
+	bool verb(int nid, uint32_t verb, uint32_t param, uint32_t *res);
 	/* whether the codec has a modem function group */
 	bool is_modem();
 

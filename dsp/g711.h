@@ -19,12 +19,14 @@
 #ifndef DSP_G711_H
 #define DSP_G711_H
 
+#include <cstdint>
+
 namespace dsp {
 namespace g711 {
 
 /* the segment of v: the first of the 8 ends in t that v does not pass,
    8 beyond the last */
-inline int seg_search(int v, const short *t)
+inline int seg_search(int32_t v, const int16_t *t)
 {
 	for (int i = 0; i < 8; i++)
 		if (v <= t[i])
@@ -33,9 +35,9 @@ inline int seg_search(int v, const short *t)
 }
 
 /* 16 bit linear to mu-law (14 bits, clipped at 8159) */
-inline unsigned char lin2ulaw(int x)
+inline unsigned char lin2ulaw(int32_t x)
 {
-	static const short seg_end[8] = { 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF,
+	static const int16_t seg_end[8] = { 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF,
 					  0x7FF, 0xFFF, 0x1FFF };
 	int mask = 0xFF, seg;
 	x >>= 2;
@@ -64,9 +66,9 @@ inline int ulaw2lin(unsigned char u)
 }
 
 /* 16 bit linear to A-law (13 bits, even bits inverted) */
-inline unsigned char lin2alaw(int x)
+inline unsigned char lin2alaw(int32_t x)
 {
-	static const short seg_end[8] = { 0x1F, 0x3F, 0x7F, 0xFF, 0x1FF,
+	static const int16_t seg_end[8] = { 0x1F, 0x3F, 0x7F, 0xFF, 0x1FF,
 					  0x3FF, 0x7FF, 0xFFF };
 	int mask = 0xD5, seg, aval;
 	x >>= 3;
@@ -105,14 +107,14 @@ inline int decode(int alaw, unsigned char c)
 	return alaw ? alaw2lin(c) : ulaw2lin(c);
 }
 /* (see decode()) */
-inline unsigned char encode(int alaw, int x)
+inline unsigned char encode(int alaw, int32_t x)
 {
 	return alaw ? lin2alaw(x) : lin2ulaw(x);
 }
 
 /* the octet of x's magnitude, its sign bit (the MSB) cleared for a
    negative x */
-inline unsigned char encode_sm(int alaw, int x)
+inline unsigned char encode_sm(int alaw, int32_t x)
 {
 	return x < 0 ? static_cast<unsigned char>(encode(alaw, -x) ^ 0x80) :
 		encode(alaw, x);

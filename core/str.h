@@ -15,6 +15,7 @@
 
 #include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -38,7 +39,7 @@ inline std::string dec(T v, int width = 0)
 
 /* v in hexadecimal, lower case (upper with upper_case), at least width
    digits */
-inline std::string hex(unsigned long v, int width = 0, bool upper_case = false)
+inline std::string hex(uint32_t v, int width = 0, bool upper_case = false)
 {
 	char buf[2 * sizeof(v)];
 	auto r = std::to_chars(buf, buf + sizeof(buf), v, 16);
@@ -54,31 +55,34 @@ inline std::string hex(unsigned long v, int width = 0, bool upper_case = false)
 
 /* the unsigned number in base at the start of [p, last), *end after
    its digits (p and 0 when there are none); too large a number is
-   ULONG_MAX, as strtoul() has it */
-inline unsigned long to_ulong(const char *p, const char *last,
-			      const char **end, int base = 10)
+   UINT32_MAX, as strtoul() has it with a 32-bit long */
+inline uint32_t to_ulong(const char *p, const char *last,
+			 const char **end, int base = 10)
 {
-	unsigned long v = 0;
+	uint32_t v = 0;
 	auto r = std::from_chars(p, last, v, base);
 	*end = r.ptr;
 	if (r.ec == std::errc::result_out_of_range) {
 		/* past the digits that did not fit */
 		const char *q = p;
-		unsigned long d;
+		uint32_t d;
 		while (q < last && std::from_chars(q, q + 1, d, base).ec ==
 		       std::errc())
 			q++;
 		*end = q;
-		return std::numeric_limits<unsigned long>::max();
+		return std::numeric_limits<uint32_t>::max();
 	}
 	return v;
 }
 
 /* the whole of s as a number in base (0: as C's strtol() has it, 0x
    hex, 0 octal, else decimal), a sign allowed: false if s is anything
-   else, or too large */
-inline bool parse_long(std::string_view s, long &v, int base = 10)
+   else, or too large for v (a signed integer of any width) */
+template <class T>
+inline bool parse_long(std::string_view s, T &v, int base = 10)
 {
+	static_assert(std::is_integral<T>::value && std::is_signed<T>::value,
+		      "parse_long() takes signed integers");
 	bool neg = false;
 	if (!s.empty() && (s[0] == '+' || s[0] == '-')) {
 		neg = s[0] == '-';
@@ -94,18 +98,18 @@ inline bool parse_long(std::string_view s, long &v, int base = 10)
 	}
 	if (s.empty())
 		return false;
-	unsigned long u;
+	uint64_t u;
 	auto r = std::from_chars(s.data(), s.data() + s.size(), u, base);
 	if (r.ec != std::errc() || r.ptr != s.data() + s.size() ||
-	    u > static_cast<unsigned long>(std::numeric_limits<long>::max()))
+	    u > static_cast<uint64_t>(std::numeric_limits<T>::max()))
 		return false;
-	v = neg ? -static_cast<long>(u) : static_cast<long>(u);
+	v = neg ? -static_cast<T>(u) : static_cast<T>(u);
 	return true;
 }
 
 /* the decimal number at the start of s, after blanks and a sign, as
    C's atoi() reads it: 0 if there is none */
-inline long leading_long(std::string_view s)
+inline int32_t leading_long(std::string_view s)
 {
 	std::size_t i = 0;
 	bool neg = false;
@@ -113,7 +117,7 @@ inline long leading_long(std::string_view s)
 		i++;
 	if (i < s.size() && (s[i] == '+' || s[i] == '-'))
 		neg = s[i++] == '-';
-	long v = 0;
+	int32_t v = 0;
 	std::from_chars(s.data() + i, s.data() + s.size(), v);
 	return neg ? -v : v;
 }

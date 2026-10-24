@@ -89,7 +89,7 @@ public:
 	/* LT frames not sent yet or not acknowledged */
 	bool tx_pending() const;
 	/* the timers: bits more have gone out */
-	void clock(long bits);
+	void clock(int32_t bits);
 	/* the data phase's frames as HDLC frames (framing mode 3) */
 	bool bit_tx() const { return bit_tx_; }
 	/* (see bit_tx()) */
@@ -160,9 +160,9 @@ private:
 	void fallback();
 	void t401_expired();
 	bool can_send(uint8_t ns) const;
-	long t401_est() const;
-	long t401_data() const;
-	int rate() const;
+	int32_t t401_est() const;
+	int32_t t401_data() const;
+	int32_t rate() const;
 
 	Link *link_ = nullptr;
 	Phase phase_ = Phase::Idle;
@@ -186,7 +186,7 @@ private:
 	/* control frames to send when the framer asks */
 	bool lr_due_ = false, ld_due_ = false;
 	/* timers: bits left, 0 when stopped */
-	long t_start_ = 0, t401_ = 0, t402_ = 0, t404_ = 0;
+	int32_t t_start_ = 0, t401_ = 0, t402_ = 0, t404_ = 0;
 	/* sending: V(S) the next new N(S), the oldest not acknowledged,
 	   the next to (re)send; the remote's last N(R) and N(k) */
 	uint8_t vs_ = 1, una_ = 1, nxt_ = 1;
@@ -209,7 +209,7 @@ private:
 	int rx_count_ = 0, rx_head_ = 0;
 	uint8_t rx_buf_[MNP_MAX_INFO];
 	/* the call's LTs: sent, sent again, received in sequence */
-	long lt_sent_ = 0, lt_again_ = 0, lt_rcvd_ = 0;
+	int32_t lt_sent_ = 0, lt_again_ = 0, lt_rcvd_ = 0;
 	/* the control frame being sent, the LT frames */
 	Frame ctrl_ = {};
 	uint8_t ctrl_buf_[64];

@@ -12,6 +12,7 @@
 #define DMODEMD_RUN_LOOP_H
 
 #include <csignal>
+#include <cstdint>
 #ifdef _WIN32
 /* (Windows: select() on sockets alone, a descriptor here a SOCKET) */
 #include <winsock2.h>
@@ -42,7 +43,7 @@ public:
 
 	/* the n modems' work due (poll()): the ms to the first of their
 	   next timers, 1000 at most */
-	static long poll(dcore::Modem *const *m, int n);
+	static int32_t poll(dcore::Modem *const *m, int n);
 
 	/* this turn's descriptors: none, then each to watch (to read
 	   from, or to write to) */
@@ -59,7 +60,7 @@ public:
 	}
 	/* select() on them for ms: > 0 some are ready, 0 none (or a
 	   signal), < 0 an error (errno) */
-	int wait(long ms);
+	int wait(int32_t ms);
 
 private:
 	static volatile sig_atomic_t running_;

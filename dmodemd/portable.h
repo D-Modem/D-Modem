@@ -22,6 +22,7 @@
 #define DMODEMD_PORTABLE_H
 
 #include <cerrno>
+#include <cstdint>
 #include <ctime>
 
 #include <fcntl.h>
@@ -136,7 +137,7 @@ inline void sleep_until(const struct timespec *at)
 {
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	long long ms = (at->tv_sec - now.tv_sec) * 1000LL +
+	int64_t ms = (at->tv_sec - now.tv_sec) * 1000LL +
 		(at->tv_nsec - now.tv_nsec) / 1000000;
 	if (ms > 0)
 		Sleep((DWORD)ms);

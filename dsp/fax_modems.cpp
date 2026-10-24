@@ -15,7 +15,9 @@
  *
  */
 
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -93,10 +95,10 @@ int fax_mod_from_code(int code, enum fax_mod *mod, int *short_train)
 }
 
 /* the data rate of a modulation, bit/s */
-int fax_mod_bps(enum fax_mod mod)
+int32_t fax_mod_bps(enum fax_mod mod)
 {
-	static const int bps[] = { 0, 300, 2400, 4800, 4800, 7200, 9600,
-				   7200, 9600, 12000, 14400 };
+	static const int32_t bps[] = { 0, 300, 2400, 4800, 4800, 7200, 9600,
+				       7200, 9600, 12000, 14400 };
 	return bps[mod];
 }
 
@@ -227,7 +229,7 @@ static int ones_len(enum fax_mod m)
  */
 
 /* 1 + x^-6 + x^-7 with the V.27ter repeated pattern guard */
-static int scr7(unsigned *reg, int *count, int bit)
+static int scr7(uint32_t *reg, int *count, int bit)
 {
 	int out = (bit ^ (*reg >> 5) ^ (*reg >> 6)) & 1;
 	if (*count >= 33) {
@@ -244,7 +246,7 @@ static int scr7(unsigned *reg, int *count, int bit)
 
 /* its descrambler, the guard counting on the received bits as the
    scrambler's does on the sent ones */
-static int descr7(unsigned *reg, int *count, int bit)
+static int descr7(uint32_t *reg, int *count, int bit)
 {
 	int out = (bit ^ (*reg >> 5) ^ (*reg >> 6)) & 1;
 	if (*count >= 33) {
@@ -260,7 +262,7 @@ static int descr7(unsigned *reg, int *count, int bit)
 }
 
 /* V.29 training sequence generator (1 + x^-6 + x^-7, seed 0x2A) */
-static int v29_trn_bit(unsigned *reg)
+static int v29_trn_bit(uint32_t *reg)
 {
 	int bit = *reg & 1;
 	*reg >>= 1;
@@ -450,7 +452,7 @@ static cplx fax_tx_symbol(FaxTx *t)
 /* a transmitter for mod_ at srate_ samples/s, short_train_ for the V.17
    short training; get_bit_(ctx_) gives the data bits.  V.21 sends the
    caller's bits from the start (the HDLC flags are the caller's) */
-void FaxTx::init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t get_bit_, void *ctx_)
+void FaxTx::init(enum fax_mod mod_, int short_train_, int32_t srate_, fax_get_bit_t get_bit_, void *ctx_)
 {
 	reinit(*this);
 	mod = mod_;
@@ -543,7 +545,7 @@ cplx FaxRx::ref_point(int k)
 int FaxRx::make_reference()
 {
 	int n = trn_len(mod, short_train), k, b1, b2, shift, state_ = 0;
-	unsigned scr_ = 0, tscr = 0x2A;
+	uint32_t scr_ = 0, tscr = 0x2A;
 	int count = 0;
 	signed char *ref_;
 
@@ -596,7 +598,7 @@ int FaxRx::make_reference()
    short training; put_bit_(ctx_) gets the descrambled data bits once it
    has trained.  mem: what a V.17 long train left (may be NULL).  0, or
    -1 when out of memory */
-int FaxRx::init(enum fax_mod mod_, int short_train_, int srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem)
+int FaxRx::init(enum fax_mod mod_, int short_train_, int32_t srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem)
 {
 	reinit(*this);
 	mod = mod_;
@@ -849,7 +851,8 @@ void FaxRx::track_alternations(cplx z)
 void FaxRx::symbol()
 {
 	cplx z = qam.z;
-	int s, k, match;
+	int s, match;
+	int32_t k;
 
 	switch (stage) {
 	case RXS_SEARCH:
@@ -883,7 +886,8 @@ void FaxRx::symbol()
 			break;
 		{
 			/* where in the training is this symbol? */
-			int lo = 32, hi = 32, best = 32, m;
+			int32_t lo = 32, hi = 32, best = 32;
+			int m;
 			if (alt_end >= 0) {
 				lo = onset - alt_end - 4;
 				hi = onset - alt_end + 8;
@@ -925,7 +929,7 @@ void FaxRx::symbol()
 			seg_sym = k + 1;
 			stage = RXS_TRAIN;
 			bridge_hits = 0;
-			DSP_DBG("fax rx: training found at %d\n", k);
+			DSP_DBG("fax rx: training found at %" PRId32 "\n", k);
 		}
 		break;
 	case RXS_TRAIN: {

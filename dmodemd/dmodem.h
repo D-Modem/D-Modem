@@ -27,6 +27,8 @@
 #ifndef DMODEM_H
 #define DMODEM_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -58,8 +60,8 @@ enum dmodem_link { DMODEM_IDLE, DMODEM_CONNECTING, DMODEM_ONLINE,
 struct dmodem_status {
 	enum dmodem_link link;
 	int offhook;
-	unsigned tx_rate, rx_rate;      /* bit/s, once online */
-	unsigned tx_pending;            /* DTE bytes not yet sent (or, with
+	uint32_t tx_rate, rx_rate;      /* bit/s, once online */
+	uint32_t tx_pending;            /* DTE bytes not yet sent (or, with
 					   V.42, not acknowledged): 0 when
 					   all has reached the remote */
 	int fax_caller;                 /* a fax machine's CNG, or its V.8
@@ -87,11 +89,12 @@ int  dmodem_dial(struct dmodem *d, const char *number);
    (none with ATQ1): what it did shows in dmodem_status() */
 int  dmodem_command(struct dmodem *d, const char *line);
 /* n samples in, n samples out */
-void dmodem_process(struct dmodem *d, const short *in, short *out, int n);
+void dmodem_process(struct dmodem *d, const int16_t *in, int16_t *out,
+		    int32_t n);
 /* the same with the network's G.711 octets (the law of the
    configuration, mu-law if unknown) */
 void dmodem_process_g711(struct dmodem *d, const unsigned char *in,
-			 unsigned char *out, int n);
+			 unsigned char *out, int32_t n);
 /* take what the DTE wrote (call it when dte_fd is readable, or with each
    block of samples); returns -1 when the DTE side is closed */
 int  dmodem_poll_dte(struct dmodem *d);
@@ -123,7 +126,7 @@ struct dmodem_fax_config {
 	enum dmodem_fax_dir dir;
 	const char *file;               /* the TIFF to send, or to write */
 	const char *ident;              /* our number (TSI/CSI), 20 chars */
-	int max_bps;                    /* 14400 if 0 */
+	int32_t max_bps;                /* 14400 if 0 */
 	int no_ecm;                     /* without error correction mode */
 	/* T.38 instead of audio: our UDPTL packets to t38_send, the other
 	   end's by dmodem_fax_t38_rx() */
@@ -132,7 +135,7 @@ struct dmodem_fax_config {
 	enum dmodem_t38_ec t38_ec;
 	int t38_redundancy;             /* the packets before in each (with
 					   DMODEM_T38_EC_REDUNDANCY; 0: 3) */
-	int t38_max_datagram;           /* the other end's T38FaxMaxDatagram
+	int32_t t38_max_datagram;       /* the other end's T38FaxMaxDatagram
 					   (0: 400); with t38_ifp the
 					   longest IFP packet it takes */
 	int t38_ifp;                    /* the packets are IFP packets, not
@@ -141,7 +144,7 @@ struct dmodem_fax_config {
 					   t38_ec and t38_redundancy
 					   unused, the packets that come in
 					   their order */
-	void (*t38_send)(void *ctx, const unsigned char *pkt, int len);
+	void (*t38_send)(void *ctx, const unsigned char *pkt, int32_t len);
 	void *t38_ctx;
 };
 
@@ -150,7 +153,8 @@ struct dmodem_fax_status {
 					   in, a hangup, or an error) */
 	int ok;                         /* the document went through */
 	int pages;                      /* sent or received */
-	int bps, fine;
+	int32_t bps;
+	int fine;
 	char remote_ident[21];
 	const char *result;             /* how it ended (or "in progress") */
 	const char *phase;
@@ -169,11 +173,11 @@ struct dmodem_fax;
 /* NULL if the file to send can't be read */
 struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg);
 /* n samples in, n samples out (16 bit linear, 8000 Hz) */
-void dmodem_fax_process(struct dmodem_fax *f, const short *in, short *out,
-			int n);
+void dmodem_fax_process(struct dmodem_fax *f, const int16_t *in,
+			int16_t *out, int32_t n);
 /* the same with G.711 octets (the law of cfg, mu-law if unknown) */
 void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
-			     unsigned char *out, int n);
+			     unsigned char *out, int32_t n);
 /* how the call goes, into *s (done once it has ended) */
 void dmodem_fax_status(struct dmodem_fax *f, struct dmodem_fax_status *s);
 /* the call went away */
@@ -181,10 +185,10 @@ void dmodem_fax_hangup(struct dmodem_fax *f);
 /* T.38: a UDPTL packet of len octets that came (with t38_ifp an IFP
    packet) */
 void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
-		       int len);
+		       int32_t len);
 /* T.38: n samples' time (at 8000 Hz) going by: the timers, and the
    packets due by now to t38_send */
-void dmodem_fax_t38_time(struct dmodem_fax *f, int n);
+void dmodem_fax_t38_time(struct dmodem_fax *f, int32_t n);
 /* also closes the received file (none if no page came) */
 void dmodem_fax_destroy(struct dmodem_fax *f);
 

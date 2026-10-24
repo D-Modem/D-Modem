@@ -68,11 +68,12 @@ class Modem;
 struct LinkOwner;
 
 /* CLOCK_MONOTONIC in ms (a Host's now_ms() on a real line) */
-inline unsigned long monotonic_ms()
+inline uint64_t monotonic_ms()
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return ts.tv_sec * 1000UL + ts.tv_nsec / 1000000;
+	return static_cast<uint64_t>(ts.tv_sec) * 1000 +
+		static_cast<uint64_t>(ts.tv_nsec) / 1000000;
 }
 
 /* the program around the modem */
@@ -157,7 +158,7 @@ public:
 	virtual void t38_send(Modem &m, const void *ifp) { (void)m; (void)ifp; }
 
 	/* the time in ms, from any origin */
-	virtual unsigned long now_ms() = 0;
+	virtual uint64_t now_ms() = 0;
 protected:
 	~Host() = default;
 };
@@ -165,7 +166,7 @@ protected:
 struct Options {
 	const char *name = "modem";     /* for the log */
 	const char *dev_name = nullptr; /* for ATI3 */
-	int rate = 8000;                /* the line's sample rate */
+	int32_t rate = 8000;            /* the line's sample rate */
 	const char *country = nullptr;  /* by name; NULL: USA */
 	/* the program takes a fax machine that calls itself (libdmodem's
 	   fax receiver): answering in data mode, the modem finds one out
@@ -208,7 +209,7 @@ public:
 	void process(const int16_t *in, int16_t *out, int n);
 	/* the timers: what is due now; the ms until the next one, or -1 */
 	void poll();
-	long next_timer_ms();
+	int32_t next_timer_ms();
 
 	/* a ring signal on the line (its cadence is checked) */
 	void ring();
@@ -266,7 +267,7 @@ public:
 	/* the device's name (ATI3) */
 	const char *dev_name() const { return dev_name_; }
 	/* the line's sample rate (Hz) */
-	int rate() const { return srate_; }
+	int32_t rate() const { return srate_; }
 	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
 	/* we dialled */
@@ -280,9 +281,9 @@ public:
 	/* a data connection is (or was, in this call) up */
 	bool carrier() const { return carrier_; }
 	/* the pump's rates (bit/s) */
-	unsigned tx_rate() const { return tx_rate_; }
+	uint32_t tx_rate() const { return tx_rate_; }
 	/* (see tx_rate()) */
-	unsigned rx_rate() const { return rx_rate_; }
+	uint32_t rx_rate() const { return rx_rate_; }
 	/* DTE data the remote does not have yet (with V.42: not
 	   acknowledged) */
 	bool tx_pending() const;
@@ -318,7 +319,7 @@ public:
 	/* modem_get_param(), modem_set_param(): MDMPRM_ and the country's
 	   parameters; -1 if unknown */
 	intptr_t get_param(unsigned name);
-	long set_param(unsigned name, int val);
+	int32_t set_param(unsigned name, int32_t val);
 	/* the pumps' bits to and from the link */
 	int get_bits(int nbits, uint8_t *buf, int n);
 	int put_bits(int nbits, const uint8_t *buf, int n);
@@ -339,8 +340,8 @@ public:
 	/* what the core does with it */
 	void update_status(Status s);
 	/* what XID (or MNP's LRs) agreed */
-	void negotiated(int comp, bool v44, int dict_size, int max_string,
-			bool mnp5);
+	void negotiated(int comp, bool v44, int32_t dict_size,
+			int32_t max_string, bool mnp5);
 	/* a debug line with the modem's name */
 	void logf(const char *fmt, ...) DMODEM_PRINTF(2, 3);
 
@@ -381,9 +382,9 @@ private:
 	int link_init();
 	void report(Result r);
 	void events(unsigned ev);
-	void schedule_event(unsigned mask, unsigned long ms);
+	void schedule_event(unsigned mask, uint32_t ms);
 	void sregs_init();
-	int homolog_init(int id, const char *name);
+	int homolog_init(int32_t id, const char *name);
 	std::string country_name() const;
 	int set_mode(enum MODEM_MODE mode);
 	int reset();
@@ -395,7 +396,7 @@ private:
 	void dp_process(int16_t *in, int16_t *out, int n);
 	void cid_process(int16_t *in, int16_t *out, int n);
 	void cid_stop();
-	int cid_start(unsigned long ms);
+	int cid_start(uint32_t ms);
 	void voice_process(int16_t *in, int16_t *out, int n);
 	int voice_start(bool off_hook = true);
 	void voice_stop();
@@ -406,7 +407,7 @@ private:
 	int voice_dial(const char *number);
 	void keep_dial_string(const char *number);
 	void voice_dial_check();
-	long voice_dial_left_ms();
+	int32_t voice_dial_left_ms();
 	void voice_dial_end(Result r);
 	void voice_line_gone();
 	void voice_drain();
@@ -418,7 +419,7 @@ private:
 	void fax_found(const char *why);
 	int adaptive_param() const;
 	static void fax_t38_send(void *ctx, const void *ifp);
-	void later(Later what, unsigned long samples);
+	void later(Later what, uint32_t samples);
 	const char *dp_name(int id) const;
 	const char *protocol_name() const;
 	const char *compression_name() const;
@@ -449,7 +450,7 @@ private:
 	int at_kept(const char *p, int *len);
 	void kept_init();
 	/* a kept parameter's values (its name as kept_params has it) */
-	const unsigned long *kept(const char *name) const;
+	const uint32_t *kept(const char *name) const;
 	/* \N<n>: S103 and +ES; and +ES's values as a \N in S103 */
 	void set_ec_mode(int n);
 	void ec_mode_from_es();
@@ -465,7 +466,8 @@ private:
 	struct modem *handle_;
 	bool ok_ = false;
 	const char *name_, *dev_name_;
-	int srate_, frag_;
+	int32_t srate_;
+	int frag_;
 
 	/* the call */
 	unsigned state_ = IDLE;
@@ -479,16 +481,16 @@ private:
 	int hook_ = MODEM_HOOK_ON;
 	bool caller_ = false;
 	bool carrier_ = false;
-	unsigned rx_rate_ = 0, tx_rate_ = 0;
+	uint32_t rx_rate_ = 0, tx_rate_ = 0;
 	enum MODEM_MODE mode_ = MODEM_MODE_DATA;
-	unsigned min_rate_, max_rate_;
+	uint32_t min_rate_, max_rate_;
 	/* V.92 modem-on-hold: +PMH (0 on), +PMHT (the T1 code we grant),
 	   +PMHR (ours, until the pump takes it) */
 	int moh_off_ = 0, moh_timer_ = 5, moh_req_ = 0;
 	unsigned char sregs_[256] = {};
 	/* the extended parameters of other modems' setup strings, kept
 	   with no effect (at.cpp): their values, how many */
-	unsigned long kept_[KEPT_PARAMS][KEPT_VALUES] = {};
+	uint32_t kept_[KEPT_PARAMS][KEPT_VALUES] = {};
 	unsigned kept_n_[KEPT_PARAMS] = {};
 	const struct homolog_set *homolog_ = nullptr;
 	/* the country's tones (dsp/tones.h: busy and congestion for the
@@ -500,9 +502,9 @@ private:
 	/* events and timers */
 	unsigned event_ = 0, new_event_ = 0;
 	bool timer_on_ = false;
-	unsigned long timer_at_ = 0;
-	unsigned long count_ = 0;
-	unsigned long later_at_ = 0;
+	uint32_t timer_at_ = 0;
+	uint64_t count_ = 0;
+	uint64_t later_at_ = 0;
 	Later later_ = Later::None;
 
 	/* AT */
@@ -512,7 +514,7 @@ private:
 
 	/* rings */
 	unsigned ring_count_ = 0;
-	unsigned long ring_first_ = 0, ring_last_ = 0;
+	uint32_t ring_first_ = 0, ring_last_ = 0;
 	unsigned cid_requested_ = 0;
 	void *cid_ = nullptr;
 
@@ -524,7 +526,7 @@ private:
 	bool dialed_ = false;
 	char dial_rest_[64] = {};
 	unsigned escape_count_ = 0;
-	unsigned long last_esc_check_ = 0;
+	uint32_t last_esc_check_ = 0;
 
 	/* the DTE's characters on their way to the line or the AT
 	   interpreter */
@@ -538,7 +540,8 @@ private:
 		bool mnp, mnp_first, required;
 		int mnp_info;           /* N401 */
 		int tx_win, rx_win, tx_info, rx_info;
-		int comp, dict_size, max_string;
+		int comp;
+		int32_t dict_size, max_string;
 		bool v44;               /* V.44 rather than V.42bis */
 		bool mnp5;
 		bool mnp_on;            /* the call has MNP */
@@ -566,12 +569,12 @@ private:
 	void vcvm_refresh();
 	struct CallStats {
 		bool call, fax, connected, ended;
-		unsigned long start, up, end;
+		uint32_t start, up, end;
 		int dp;
-		unsigned tx0, rx0, tx1, rx1;
+		uint32_t tx0, rx0, tx1, rx1;
 		Cause cause;
 		double rx_pow, tx_pow;
-		unsigned long samples;
+		uint64_t samples;
 	} stats_ = {};
 	int16_t *scratch_ = nullptr;
 	int scratch_len_ = 0;
@@ -594,7 +597,7 @@ private:
 	std::vector<VoiceTone> dtmf_tones(const char *number);
 	/* a voice dial under way (ATD in voice mode): since when (ms) */
 	bool voice_dialing_ = false;
-	unsigned long voice_dial_since_ = 0;
+	uint32_t voice_dial_since_ = 0;
 	/* it dials the number (in vts_) first; its timers from then */
 	bool voice_dial_digits_ = false;
 	/* the voice engine's command (a VOICE_CMD: +VTS's tones, +VTX,
@@ -623,7 +626,7 @@ private:
 	bool fax_caller_ = false;
 	dsp::CngDetect *cng_ = nullptr;
 	unsigned cng_cut_ = 0;
-	unsigned long answer_tone_at_ = 0;
+	uint64_t answer_tone_at_ = 0;
 	/* the call's fax over T.38 (its data octets in a packet) */
 	bool t38_ = false;
 	int t38_max_ = 0;

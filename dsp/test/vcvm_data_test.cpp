@@ -153,17 +153,17 @@ TEST(VcvmData, Codecs)
 	EXPECT_EQ(r.wrong, 0) << r.st.failed << " of " << r.st.words << " failed";
 	EXPECT_EQ(r.st.failed, 0);
 	printf("AMR 12.2 N200 DQPSK: %ld octets corrected, %ld marked, of %ld words\n",
-	       r.st.corrected, r.st.erasures, r.st.words);
+	       (long)r.st.corrected, (long)r.st.erasures, (long)r.st.words);
 	/* N300 with 8-DPSK at rate 3/4 */
 	r = call(comb(1, 8000, 3, 0, 1), 8000, 8, "amr:12.2", 0);
 	printf("AMR 12.2 N300 8-DPSK: %ld corrected, %ld failed of %ld words\n",
-	       r.st.corrected, r.st.failed, r.st.words);
+	       (long)r.st.corrected, (long)r.st.failed, (long)r.st.words);
 	EXPECT_TRUE(r.confirmed);
 	EXPECT_EQ(r.wrong, 0) << r.st.failed << " of " << r.st.words << " failed";
 	/* P20 through AMR 7.4 at rate 7/8 */
 	r = call(param(false, 2), 8000, 12, "amr:7.4", 0);
 	printf("AMR 7.4 P20: %ld corrected, %ld failed of %ld words\n",
-	       r.st.corrected, r.st.failed, r.st.words);
+	       (long)r.st.corrected, (long)r.st.failed, (long)r.st.words);
 	EXPECT_TRUE(r.confirmed);
 	EXPECT_GE(r.got.size(), 28u * 4);
 	EXPECT_EQ(r.wrong, 0) << r.st.failed << " of " << r.st.words << " failed";
@@ -173,7 +173,7 @@ TEST(VcvmData, Codecs)
 		w.load.phase[k] = 0;
 	r = call(w, 16000, 5, "amrwb:23.85", 0);
 	printf("AMR-WB 23.85 W200 DQPSK: %ld corrected, %ld failed of %ld words\n",
-	       r.st.corrected, r.st.failed, r.st.words);
+	       (long)r.st.corrected, (long)r.st.failed, (long)r.st.words);
 	EXPECT_TRUE(r.confirmed);
 	EXPECT_EQ(r.wrong, 0) << r.st.failed << " of " << r.st.words << " failed";
 }
@@ -245,8 +245,9 @@ TEST(VcvmData, Erasures)
 	printf("AMR 12.2, %ld of %ld frames erased: %ld of %ld words failed, "
 	       "%ld octets corrected, %ld marked; %ld of %zu octets given "
 	       "wrong\n", c.erased(), c.frames(),
-	       rx.stats().failed, rx.stats().words, rx.stats().corrected,
-	       rx.stats().erasures, wrong, r.got.size());
+	       (long)rx.stats().failed, (long)rx.stats().words,
+	       (long)rx.stats().corrected, (long)rx.stats().erasures, wrong,
+	       r.got.size());
 	EXPECT_TRUE(rx.confirmed());
 	EXPECT_LE(rx.stats().failed, rx.stats().words / 20);
 #endif

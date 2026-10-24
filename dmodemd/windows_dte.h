@@ -35,6 +35,7 @@
 #define DMODEMD_WINDOWS_DTE_H
 
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -46,7 +47,7 @@ namespace dmd {
 /* see above */
 class TcpDte final : public Dte {
 public:
-	enum { BUFFER = 64 * 1024 };
+	enum : int32_t { BUFFER = INT32_C(64) * 1024 };
 	~TcpDte();
 	/* listening on spec ([address:]port; 127.0.0.1 if no address):
 	   false if it can't */
@@ -194,7 +195,8 @@ private:
 	/* frames for the driver queued (under mu_), the thread woken */
 	void queue_locked(const std::string &frames);
 
-	enum { OUT_MAX = 64 * 1024 };   /* the frames that may wait */
+	/* the frames that may wait */
+	enum : int32_t { OUT_MAX = INT32_C(64) * 1024 };
 	std::string port_;              /* empty: auto */
 	std::mutex mu_;
 	void *pipe_ = nullptr;          /* HANDLE (under mu_) */

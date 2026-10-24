@@ -35,15 +35,15 @@ void RunLoop::catch_signals()
 }
 
 /* see run_loop.h */
-long RunLoop::poll(dcore::Modem *const *m, int n)
+int32_t RunLoop::poll(dcore::Modem *const *m, int n)
 {
-	long next = 1000;
+	int32_t next = 1000;
 	for (int i = 0; i < n; i++) {
-		long t;
+		int64_t t;
 		m[i]->poll();
 		t = m[i]->next_timer_ms();
 		if (t >= 0 && t < next)
-			next = t;
+			next = static_cast<int32_t>(t);
 	}
 	return next;
 }
@@ -74,7 +74,7 @@ void RunLoop::watch_write(int fd)
 }
 
 /* see run_loop.h */
-int RunLoop::wait(long ms)
+int RunLoop::wait(int32_t ms)
 {
 	struct timeval tmo;
 	int ret;

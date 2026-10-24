@@ -28,7 +28,9 @@
  */
 
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -83,8 +85,8 @@ int V90Jd::parse(const unsigned char *b)
 	if (b[17] || b[34] || b[51] || b[68] || b[69] || b[70] || b[71] ||
 	    !frame_crc_ok(b, 52))
 		return -1;
-	rate_mask = static_cast<unsigned>(field(b, 18, 16)) |
-		(static_cast<unsigned>(field(b, 35, 7)) << 16);
+	rate_mask = static_cast<uint32_t>(field(b, 18, 16)) |
+		(static_cast<uint32_t>(field(b, 35, 7)) << 16);
 	cp16_train = b[47];
 	cp16_reneg = b[48];
 	lookahead = field(b, 49, 2);
@@ -126,7 +128,7 @@ int V90Interp::run(float x, float *out)
 	hist[nin % L] = hist[nin % L + L] = x;
 	nin++;
 	while (t + V90_INTERP_T <= nin - 1 && m < 3) {
-		long n0 = static_cast<long>(floor(t));
+		int32_t n0 = static_cast<int32_t>(floor(t));
 		double fp = (t - n0) * V90_INTERP_P;
 		int p = static_cast<int>(fp), j;
 		float w = static_cast<float>(fp - p), y = 0;
@@ -165,7 +167,7 @@ void V90Rx::init(int alaw_, int uinfo_, int rate)
    a6_6 / e6 once it has gone below -0.5 and come back */
 void V90Rx::sd_detect(float v)
 {
-	long i = n8 - 1;
+	int32_t i = n8 - 1;
 	double r, q;
 	int there;
 
@@ -199,7 +201,7 @@ void V90Rx::sd_detect(float v)
 			stage = SD;
 			ev_sd = 1;
 			dip = 1;
-			DSP_DBG("v90a: Sd at sample %ld\n", i);
+			DSP_DBG("v90a: Sd at sample %" PRId32 "\n", i);
 		}
 		return;
 	}
@@ -222,7 +224,7 @@ void V90Rx::sd_detect(float v)
 		/* the lag 6 correlation never went the other way: not the
 		   reversal (an echo of ours over Sd, as after a hold), on
 		   to the next dip */
-		DSP_DBG("v90a: not Sd-bar at sample %ld (%.2f)\n",
+		DSP_DBG("v90a: not Sd-bar at sample %" PRId32 " (%.2f)\n",
 			2 * (dip_at - 5), dip);
 		sd_dip = 0;
 		dip = 1;
@@ -235,7 +237,7 @@ void V90Rx::sd_detect(float v)
 		k = 0;
 		stage = TRAIN;
 		ev_sdbar = 1;
-		DSP_DBG("v90a: Sd-bar at sample %ld (%.2f)\n", b, dip);
+		DSP_DBG("v90a: Sd-bar at sample %" PRId32 " (%.2f)\n", b, dip);
 		return;
 	}
 	if (sd_dip)
@@ -252,7 +254,7 @@ void V90Rx::sd_detect(float v)
 }
 
 /* the equaliser's output for symbol kk, on its input d samples later */
-float V90Rx::equalize(long kk, int d) const
+float V90Rx::equalize(int32_t kk, int d) const
 {
 	float y = 0;
 	int i;
@@ -270,7 +272,7 @@ float V90Rx::equalize(long kk, int d) const
    has moved is fitted to a line, whose slope is the clock's offset far
    more closely than the frequency term (it then runs on that, with
    TIM_KP2 and TIM_KI2) */
-void V90Rx::timing(long kk, float y, float a)
+void V90Rx::timing(int32_t kk, float y, float a)
 {
 	double e, dt;
 	if (!t_on)
@@ -329,7 +331,7 @@ void V90Rx::timing_step(double dt)
    correlates best with TRN1d's first REFINE_N signs (either polarity) */
 void V90Rx::refine()
 {
-	unsigned scr = 0;
+	uint32_t scr = 0;
 	signed char a[REFINE_N];
 	double best = -1;
 	int d, j, bd = 0;
@@ -408,13 +410,14 @@ void V90Rx::jd_bit(int bit)
 			   on, in data frame interval 0 */
 			dil_start = k + 5;
 			if (dil_start % 6) {
-				DSP_DBG("v90a: Jd' %ld symbols off its "
+				DSP_DBG("v90a: Jd' %" PRId32 " symbols off its "
 					"frame\n", dil_start % 6);
 				dil_start = (dil_start + 3) / 6 * 6;
 			}
-			DSP_DBG("v90a: %s after %d %s, DIL from symbol %ld\n",
-				v92 ? "Jp'" : "Jd'", v92 ? ev_jp : ev_jd,
-				v92 ? "Jp" : "Jd", dil_start);
+			DSP_DBG("v90a: %s after %d %s, DIL from symbol %"
+				PRId32 "\n", v92 ? "Jp'" : "Jd'",
+				v92 ? ev_jp : ev_jd, v92 ? "Jp" : "Jd",
+				dil_start);
 		}
 	}
 	if (jbits < 72)
@@ -439,8 +442,9 @@ void V90Rx::jd_bit(int bit)
 		if (v92)
 			jd.cp16_train = jd.cp16_reneg = 0;
 		if (!ev_jd)
-			DSP_DBG("v90a: Jd: rates %06x, %s points in training, "
-				"%s in renegotiation, look-ahead %d\n",
+			DSP_DBG("v90a: Jd: rates %06" PRIx32 ", %s points in "
+				"training, %s in renegotiation, look-ahead "
+				"%d\n",
 				jd.rate_mask, jd.cp16_train ? "16" : "4",
 				jd.cp16_reneg ? "16" : "4", jd.lookahead);
 		ev_jd++;
@@ -538,7 +542,7 @@ void V90Rx::dil_analyse()
 	zero(dil_usable);
 	for (j = 0; j < 6; j++)
 		for (u = 0; u < 128; u++) {
-			int n_ = dcnt[j][u];
+			int32_t n_ = dcnt[j][u];
 			double mu, var;
 			nz[j][u] = 0;
 			if (!n_)
@@ -670,7 +674,7 @@ void V90Rx::sample(float v)
 	}
 	/* symbol k's samples are in */
 	while (b + 2 * k + EQ_D <= n - 1) {
-		long t = k - TRN1D_K0;
+		int32_t t = k - TRN1D_K0;
 		float a = 0, y;
 		int i;
 
@@ -789,7 +793,8 @@ void V90Rx::sample(float v)
 			if (++ls2_n == V90RX_LS) {
 				solve();
 				DSP_DBG("v90a: equaliser solved again at symbol "
-					"%ld, timing %+.1f ppm\n", k, ppm());
+					"%" PRId32 ", timing %+.1f ppm\n", k,
+					ppm());
 				y = equalize(k);
 			}
 		} else if (!ev_ready && ls2_n == V90RX_LS) {
@@ -799,8 +804,8 @@ void V90Rx::sample(float v)
 			un[j]++;
 			if (un[0] >= NOISE_N / 6 && un[5] >= NOISE_N / 6) {
 				ev_ready = 1;
-				DSP_DBG("v90a: PCM receiver ready at symbol %ld: "
-					"noise %.2f\n", k, noise());
+				DSP_DBG("v90a: PCM receiver ready at symbol %"
+					PRId32 ": noise %.2f\n", k, noise());
 			}
 		}
 		{
@@ -815,8 +820,8 @@ void V90Rx::sample(float v)
 					(static_cast<double>(level) * level));
 				if (t < TRN1D_MIN || !ev_jd)
 					DSP_DBG("v90a: equaliser mse %.4f "
-						"(%.1f dB) at symbol %ld, "
-						"timing %+.1f ppm\n", mse,
+						"(%.1f dB) at symbol %" PRId32
+						", timing %+.1f ppm\n", mse,
 						-10 * log10(mse + 1e-12), k,
 						ppm());
 				err_sum = 0;
@@ -849,7 +854,7 @@ int V90Mp::parse(const unsigned char *b, int len)
 	ack = b[33];
 	rate_mask = field(b, 36, 13);
 	for (i = 0; i < 6; i++)
-		h[i] = t ? static_cast<short>(field(b, 52 + 17 * i, 16)) : 0;
+		h[i] = t ? static_cast<int16_t>(field(b, 52 + 17 * i, 16)) : 0;
 	return 0;
 }
 
@@ -879,18 +884,15 @@ int V90Con::init(const V90Cp &cp, int D_, const float lv[6][128])
    the modulus encoder's R, with A the product of the M before i */
 double V90Con::power(const int *lin) const
 {
-	unsigned long long two_k = 1ULL << K, A = 1;
+	uint64_t two_k = UINT64_C(1) << K, A = 1;
 	double sum = 0;
 	int i, j;
 
 	for (i = 0; i < 6; i++) {
-		unsigned long long am = A * static_cast<unsigned>(M[i]);
-		unsigned long long full = two_k / am, rem = two_k % am;
+		uint64_t am = A * static_cast<unsigned>(M[i]);
+		uint64_t full = two_k / am, rem = two_k % am;
 		for (j = 0; j < M[i]; j++) {
-			unsigned long long lo = static_cast<unsigned long long>(
-							j) *
-						A,
-					   n;
+			uint64_t lo = static_cast<uint64_t>(j) * A, n;
 			n = full * A + (rem > lo ? (rem - lo < A ? rem - lo : A) :
 					0);
 			sum += static_cast<double>(lin[ucode[i][j]]) *
@@ -998,7 +1000,7 @@ int v90a_design_cpt(V90Cp *cp, int alaw, const int *lin,
    36), as Jd allows (bit 0: K 15, 28 000 bit/s) */
 int v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
 		   const float lv[6][128], double noise, double limit,
-		   double cpt_power, unsigned jd_rates)
+		   double cpt_power, uint32_t jd_rates)
 {
 	double dmin = 10 * noise, most = limit * limit, pw = -1;
 	int pts[6][128], n[6], i, u, K = 0;
@@ -1050,9 +1052,9 @@ int v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
 		if (--n[j] < 2)
 			return -1;
 	}
-	DSP_DBG("v90a: CP: D %d (%d bit/s), M %d %d %d %d %d %d, %d "
+	DSP_DBG("v90a: CP: D %d (%" PRId32 " bit/s), M %d %d %d %d %d %d, %d "
 		"constellations, spacing %.0f, %.1f dBm0 (CPt %.1f)\n", K + 6,
-		(K + 6) * 8000 / 6, n[0], n[1], n[2], n[3], n[4], n[5],
+		int32_t{K + 6} * 8000 / 6, n[0], n[1], n[2], n[3], n[4], n[5],
 		cp->ncon, dmin, dbm0(alaw, pw), dbm0(alaw, cpt_power));
 	return 0;
 }
@@ -1137,7 +1139,7 @@ int V90Rx::data_cp_next(const V90Cp &cp)
 }
 
 /* the equaliser a step towards e (NLMS) for symbol kk */
-void V90Rx::adapt(long kk, float e)
+void V90Rx::adapt(int32_t kk, float e)
 {
 	float pw = 0;
 	int i;
@@ -1167,7 +1169,7 @@ void V90Rx::ri_frame(const int *s)
 		if (ri_run >= 8) {
 			ev_ri = 1;
 			ri_seen = k;
-			DSP_DBG("v90a: Ri at symbol %ld\n", k - 47);
+			DSP_DBG("v90a: Ri at symbol %" PRId32 "\n", k - 47);
 		}
 		return;
 	}
@@ -1175,12 +1177,12 @@ void V90Rx::ri_frame(const int *s)
 		ev_ribar = 1;
 		ribar_at = k - 5;
 		frames_at = ribar_at + 24;
-		DSP_DBG("v90a: Ri-bar at symbol %ld, TRN2d from %ld\n",
-			ribar_at, frames_at);
+		DSP_DBG("v90a: Ri-bar at symbol %" PRId32 ", TRN2d from %"
+			PRId32 "\n", ribar_at, frames_at);
 	} else if (score < 4) {
 		ri_run = 0;
 		ev_ri = 0;
-		DSP_DBG("v90a: Ri lost at symbol %ld\n", k);
+		DSP_DBG("v90a: Ri lost at symbol %" PRId32 "\n", k);
 	}
 }
 
@@ -1207,7 +1209,8 @@ void V90Rx::rd_frame(const int *s, const int *lab)
 			rd_pol = score > 0 ? 1 : -1;
 			if (++rd_run >= 8) {
 				ev_rd = 1;
-				DSP_DBG("v90a: Rd at symbol %ld\n", k - 47);
+				DSP_DBG("v90a: Rd at symbol %" PRId32 "\n",
+					k - 47);
 			}
 		} else
 			rd_run = 0;
@@ -1218,13 +1221,13 @@ void V90Rx::rd_frame(const int *s, const int *lab)
 		ribar_at = k - 5;
 		frames_at = ribar_at + 24;
 		stage = RD;
-		DSP_DBG("v90a: Rd-bar at symbol %ld, TRN2d from %ld\n",
-			ribar_at, frames_at);
+		DSP_DBG("v90a: Rd-bar at symbol %" PRId32 ", TRN2d from %"
+			PRId32 "\n", ribar_at, frames_at);
 	} else if (score * rd_pol < 4) {
 		/* (the frames before it were not data: Rd lost) */
 		rd_run = 0;
 		ev_rd = 0;
-		DSP_DBG("v90a: Rd lost at symbol %ld\n", k);
+		DSP_DBG("v90a: Rd lost at symbol %" PRId32 "\n", k);
 	}
 }
 
@@ -1249,7 +1252,8 @@ void V90Rx::rf_frame(const int *s, const int *lab)
 			ed_zero = 0;
 			ev_suvd = ev_cpd = ev_mpack = ev_ed = ev_b1d = 0;
 			ev_rf = ev_rfbar = rf_run = 0;
-			DSP_DBG("v90a: FPE: SUVd from frame %ld\n", frames + 1);
+			DSP_DBG("v90a: FPE: SUVd from frame %" PRId32 "\n",
+				frames + 1);
 		}
 		return;
 	}
@@ -1264,7 +1268,8 @@ void V90Rx::rf_frame(const int *s, const int *lab)
 			rf_last = pat;
 			if (++rf_run >= 8) {
 				ev_rf = 1;
-				DSP_DBG("v90a: Rf at frame %ld\n", frames);
+				DSP_DBG("v90a: Rf at frame %" PRId32 "\n",
+					frames);
 			}
 		} else
 			rf_run = 0;
@@ -1273,12 +1278,12 @@ void V90Rx::rf_frame(const int *s, const int *lab)
 	if (top && pat && pat == rf_last) {
 		ev_rfbar = 1;
 		rfbar_n = 1;
-		DSP_DBG("v90a: Rf-bar at frame %ld\n", frames);
+		DSP_DBG("v90a: Rf-bar at frame %" PRId32 "\n", frames);
 	} else if (top && pat == -rf_last)
 		rf_last = pat;
 	else {
 		ev_rf = rf_run = 0;
-		DSP_DBG("v90a: Rf lost at frame %ld\n", frames);
+		DSP_DBG("v90a: Rf lost at frame %" PRId32 "\n", frames);
 	}
 }
 
@@ -1310,7 +1315,7 @@ void V90Rx::reneg_frames()
 /* an MP bit (9.4.1.3/V.90): frame sync, then 86 bits (type 0) or 188 */
 void V90Rx::mp_bit(int bit)
 {
-	msr = (msr << 1) | static_cast<unsigned>(bit);
+	msr = (msr << 1) | static_cast<uint32_t>(bit);
 	if (mp_n && v92) {
 		/* SUVd (bit 18 set: Table 31/V.92) or CPd (Table 30) */
 		mpb[mp_n++] = static_cast<unsigned char>(bit);
@@ -1331,8 +1336,8 @@ void V90Rx::mp_bit(int bit)
 					ack = mpb[33];
 					if (!ev_suvd || (ack && !ev_mpack))
 						DSP_DBG("v90a: SUVd%s at frame "
-							"%ld\n", ack ? "'" : "",
-							frames);
+							"%" PRId32 "\n",
+							ack ? "'" : "", frames);
 					ev_suvd++;
 				}
 			} else {
@@ -1341,11 +1346,13 @@ void V90Rx::mp_bit(int bit)
 					ack = c.ack;
 					if (!ev_cpd || (ack && !ev_mpack))
 						DSP_DBG("v90a: CPd%s at frame "
-							"%ld: %d bit/s, M %d, "
+							"%" PRId32 ": %" PRId32
+							" bit/s, M %d, "
 							"%d points, G %.5f, "
 							"trellis %d, taps %d %d "
 							"%d %d\n", ack ? "'" : "",
-							frames, (c.drn + 17) *
+							frames,
+							int32_t{c.drn + 17} *
 							8000 / 6, c.M[0],
 							2 * c.lc[0], c.g,
 							16 << c.trellis,
@@ -1357,8 +1364,8 @@ void V90Rx::mp_bit(int bit)
 			}
 			if (ack < 0) {
 				DSP_DBG("v90a: %s with a bad CRC at frame "
-					"%ld\n", mp_len == 51 ? "SUVd" : "CPd",
-					frames);
+					"%" PRId32 "\n",
+					mp_len == 51 ? "SUVd" : "CPd", frames);
 				return;
 			}
 			if (ack)
@@ -1377,11 +1384,13 @@ void V90Rx::mp_bit(int bit)
 			mp_n = 0;
 			if (m.parse(mpb, mp_len) == 0) {
 				if (!ev_mp || (m.ack && !ev_mpack))
-					DSP_DBG("v90a: MP%s at frame %ld: type "
-						"%d, upstream at most %d, mask "
+					DSP_DBG("v90a: MP%s at frame %" PRId32
+						": type %d, upstream at most %"
+						PRId32 ", mask "
 						"%04x, trellis %d\n",
 						m.ack ? "'" : "", frames,
-						m.type, m.rate_max * 2400,
+						m.type,
+						int32_t{m.rate_max} * 2400,
 						m.rate_mask, m.trellis);
 				mp = m;
 				ev_mp++;
@@ -1390,8 +1399,8 @@ void V90Rx::mp_bit(int bit)
 				mp_frame = frames;
 				ed_zero = 0;
 			} else
-				DSP_DBG("v90a: MP with bad CRC at frame %ld\n",
-					frames);
+				DSP_DBG("v90a: MP with bad CRC at frame %"
+					PRId32 "\n", frames);
 		}
 		return;
 	}
@@ -1412,7 +1421,7 @@ void V90Rx::frame()
 {
 	V90Con *cn = con;
 	unsigned char d[48];
-	unsigned long long R = 0, A = 1;
+	uint64_t R = 0, A = 1;
 	int j, i, s[6], lab[6], ones = 0;
 	int known = cn == &con_trn && frames < 340 && !renegs;
 	int out[6];
@@ -1435,7 +1444,7 @@ void V90Rx::frame()
 		}
 		s[j] = fy[j] > 0;
 		lab[j] = bl;
-		R += static_cast<unsigned long long>(bl) * A;
+		R += static_cast<uint64_t>(bl) * A;
 		A *= static_cast<unsigned>(cn->M[j]);
 		tg = s[j] ? cn->lev[j][bl] : -cn->lev[j][bl];
 		if (known) {
@@ -1501,8 +1510,10 @@ void V90Rx::frame()
 							con_data = con_next;
 							have_next = 0;
 						}
-						DSP_DBG("v90a: FPE: Ed at frame %ld, "
-							"B1d next (D %d)\n", frames,
+						DSP_DBG("v90a: FPE: Ed at "
+							"frame %" PRId32
+							", B1d next (D %d)\n",
+							frames,
 							con_data.D);
 					}
 				} else
@@ -1542,9 +1553,9 @@ void V90Rx::frame()
 			b1_err += cn->D - ones;
 			if (++frames_b1 == 48) {
 				ev_b1d = 1;
-				DSP_DBG("v90a: B1d: %ld bit errors in 48 frames "
-					"of %d bits, mse %.6f, timing %+.1f "
-					"ppm\n", b1_err, cn->D,
+				DSP_DBG("v90a: B1d: %" PRId32 " bit errors in "
+					"48 frames of %d bits, mse %.6f, "
+					"timing %+.1f ppm\n", b1_err, cn->D,
 					fe_n ? fe_sum / fe_n / ((double)level *
 						level) : 0, ppm());
 			}
@@ -1573,7 +1584,7 @@ void V90Rx::frame()
 		trn2_noise = static_cast<float>(
 			sqrt(rest > 0 && t2_n ? rest / t2_n : 0));
 		ev_trn2 = 1;
-		DSP_DBG("v90a: TRN2d: %ld of %ld symbols wrong, noise %.2f, "
+		DSP_DBG("v90a: TRN2d: %" PRId32 " of %" PRId32 " symbols wrong, noise %.2f, "
 			"interval gains %.4f %.4f %.4f %.4f %.4f %.4f, "
 			"timing %+.1f ppm\n", trn_sym_err, trn_sym,
 			trn2_noise, t_gain[0], t_gain[1], t_gain[2], t_gain[3],
@@ -1605,8 +1616,8 @@ void V90Rx::frame()
 				flast = 0;
 				fe_sum = 0;
 				fe_n = 0;
-				DSP_DBG("v90a: Ed at frame %ld, B1d next "
-					"(D %d)\n", frames, con_data.D);
+				DSP_DBG("v90a: Ed at frame %" PRId32 ", B1d "
+					"next (D %d)\n", frames, con_data.D);
 			}
 		} else
 			ed_zero = 0;

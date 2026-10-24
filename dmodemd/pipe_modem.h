@@ -14,6 +14,8 @@
 #ifndef DMODEMD_PIPE_MODEM_H
 #define DMODEMD_PIPE_MODEM_H
 
+#include <cstdint>
+
 #include <dcore.h>
 #include <dsp.h>
 
@@ -27,7 +29,7 @@ namespace dmd {
 class PipeModem final : public dcore::Host {
 public:
 	/* name: the modem's; in, out: its line */
-	PipeModem(const char *name, int rate, const char *country, int in,
+	PipeModem(const char *name, int32_t rate, const char *country, int in,
 		  int out);
 	/* the core and the recordings (in and out stay the caller's) */
 	~PipeModem();
@@ -77,7 +79,7 @@ public:
 		return pty_.write(buf, n);
 	}
 	/* ms: the line's clock with PIPE_SYNC, else the monotonic one */
-	unsigned long now_ms() override;
+	uint64_t now_ms() override;
 
 private:
 	int line(bool rd = true);       /* the line's audio is readable (rd:
@@ -89,7 +91,7 @@ private:
 	dcore::Modem *m_ = nullptr;
 	Pty pty_;
 	int in_, out_;
-	int rate_;
+	int32_t rate_;
 	bool lead_done_ = false;        /* the silence before the first call */
 	int lead_ = 0;                  /* its samples */
 	int delay_ = 0;                 /* io_delay() */
@@ -107,13 +109,13 @@ private:
 	   of the line, the timers on the line's clock and the line no
 	   faster than real time on hook, so that a test's commands meet
 	   the line at the same samples every time */
-	long sync_ = 0;
+	int64_t sync_ = 0;
 	/* of the line, so far */
-	long samples() const { return static_cast<long>(line_.taken()); }
-	long next_sync_ = 0;
+	int64_t samples() const { return static_cast<int64_t>(line_.taken()); }
+	int64_t next_sync_ = 0;
 	double line_at_ = 0;    /* when the line last had samples (s) */
-	long clock_off_ = 0;    /* now_ms() - the line's ms while idle */
-	unsigned long last_ms_ = 0;
+	int64_t clock_off_ = 0; /* now_ms() - the line's ms while idle */
+	uint64_t last_ms_ = 0;
 	/* PIPE_SYNC: nothing on the line for 0.5 s */
 	bool line_idle() const;
 	/* PIPE_SYNC: the DTE's input at a sync point */

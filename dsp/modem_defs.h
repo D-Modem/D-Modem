@@ -199,8 +199,8 @@ struct dp_vcvm {
 				   renegotiation */
 	int on;                 /* the pump has a connection: what
 				   follows is valid */
-	int raw_tx, raw_rx;     /* bit/s */
-	int coded_tx, coded_rx;
+	int32_t raw_tx, raw_rx; /* bit/s */
+	int32_t coded_tx, coded_rx;
 	int sym_tenths;         /* the receive direction's symbol, 0.1 ms */
 	int tones_tx, tones_rx; /* 0 in the parametric mode */
 	int code_rate;          /* the receive direction's: 0 1/2, 1 3/4,
@@ -307,7 +307,7 @@ struct voice_tones {
    library reads them at these offsets */
 struct voice_info {
 	unsigned comp_method;
-	unsigned sample_rate;
+	uint32_t sample_rate;
 	unsigned rx_gain;
 	unsigned tx_gain;
 	unsigned dtmf_symbol;

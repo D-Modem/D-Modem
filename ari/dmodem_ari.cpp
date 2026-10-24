@@ -40,6 +40,7 @@
 #include <atomic>
 #include <cctype>
 #include <cerrno>
+#include <cinttypes>
 #include <csignal>
 #include <cstdarg>
 #include <cstdint>
@@ -284,7 +285,7 @@ struct Rtp {
 	~Rtp() { if (fd >= 0) close(fd); }
 
 	/* a UDP socket on host, any port: its port, -1 if none */
-	int open(const std::string &host)
+	int32_t open(const std::string &host)
 	{
 		struct sockaddr_in a = {};
 		socklen_t len = sizeof(a);
@@ -306,7 +307,8 @@ struct Rtp {
 	{
 		peer.sin_family = AF_INET;
 		peer.sin_port =
-			htons(static_cast<uint16_t>(atoi(port.c_str())));
+			htons(static_cast<uint16_t>(
+				strtol(port.c_str(), nullptr, 10)));
 		return inet_pton(AF_INET, addr.c_str(), &peer.sin_addr) == 1 &&
 			peer.sin_port;
 	}
@@ -325,7 +327,8 @@ struct Rtp {
 		/* past the CSRCs and an extension; the padding off */
 		size_t off = 12 + 4 * (pkt[0] & 0x0f);
 		if ((pkt[0] & 0x10) && static_cast<size_t>(n) >= off + 4)
-			off += 4 + 4 * ((pkt[off + 2] << 8) | pkt[off + 3]);
+			off += 4 + 4 * (static_cast<size_t>(pkt[off + 2]) << 8 |
+					 pkt[off + 3]);
 		if (pkt[0] & 0x20)
 			n -= pkt[n - 1];
 		if (static_cast<size_t>(n) <= off || (pkt[1] & 0x7f) != pt)
@@ -479,7 +482,7 @@ struct T38Peer {
 };
 
 /* the fax engine's T.38 packet of len octets to ctx's peer (a T38Peer) */
-void t38_send(void *ctx, const unsigned char *pkt, int len)
+void t38_send(void *ctx, const unsigned char *pkt, int32_t len)
 {
 	const T38Peer *p = static_cast<const T38Peer *>(ctx);
 	sendto(p->fd, pkt, len, 0,
@@ -488,11 +491,11 @@ void t38_send(void *ctx, const unsigned char *pkt, int len)
 }
 
 /* microseconds, monotonic */
-long long now_us()
+int64_t now_us()
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return static_cast<long long>(ts.tv_sec) * 1000000 + ts.tv_nsec / 1000;
+	return static_cast<int64_t>(ts.tv_sec) * 1000000 + ts.tv_nsec / 1000;
 }
 
 /* the fax machine on the call's line (dir: send file, or receive into
@@ -518,7 +521,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	bool sending = dir == DMODEM_FAX_SEND, told = false, t38 = false;
 	bool may_switch = line.leg != nullptr && fs.t38, asking = false;
 	T38Peer peer = { line.udptl, {} };
-	long long t0 = 0, samples = 0, asked = 0;
+	int64_t t0 = 0, samples = 0, asked = 0;
 
 	cfg.law = law;
 	cfg.dir = dir;
@@ -580,7 +583,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 				}
 				if (verbose >= 1)
 					say("%s: dmodem fax: T.38 (version %d, "
-					    "%s:%d%s)", c.name.c_str(),
+					    "%s:%" PRId32 "%s)", c.name.c_str(),
 					    l.t38_peer.version,
 					    l.t38_peer.addr.c_str(), l.t38_peer.port,
 					    l.t38_peer.redundancy ?
@@ -601,7 +604,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 			unsigned char pkt[2048];
 			struct pollfd pf = { line.udptl, POLLIN, 0 };
 			ssize_t n;
-			long long due;
+			int64_t due;
 			if (c.hungup) {
 				dmodem_fax_hangup(f);
 				break;
@@ -650,8 +653,9 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	/* (the received file closed with it) */
 	dmodem_fax_destroy(f);
 	if (verbose >= 1)
-		say("%s: dmodem fax %s: %s, %d pages at %d bit/s%s%s, remote "
-		    "'%s'", c.name.c_str(), sending ? "sent" : "received",
+		say("%s: dmodem fax %s: %s, %d pages at %" PRId32 " bit/s%s%s, "
+		    "remote '%s'", c.name.c_str(),
+		    sending ? "sent" : "received",
 		    st.result, st.pages, st.bps, st.ecm ? " (ECM)" : "",
 		    t38 ? " over T.38" : "", st.remote_ident);
 }
@@ -716,8 +720,8 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 				"DMODEM_CONNECTED", connected,
 				nullptr
 			};
-			snprintf(connected, sizeof(connected), "%lld",
-				 static_cast<long long>(time(nullptr)));
+			snprintf(connected, sizeof(connected), "%" PRId64,
+				 static_cast<int64_t>(time(nullptr)));
 			set_var(c.id, "DMODEMRATE", bc.rate);
 			if (verbose >= 1)
 				say("%s: dmodem connected at %s bit/s",
@@ -750,7 +754,7 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 
 /* a UDP socket of ours on host, any port, into *fd: its port, -1 if
    none */
-int udp_open(const std::string &host, int *fd)
+int32_t udp_open(const std::string &host, int *fd)
 {
 	struct sockaddr_in a = {};
 	socklen_t len = sizeof(a);
@@ -787,7 +791,7 @@ bool media_started(const std::string &id, int ms)
 bool open_leg(Call &c, enum dmodem_law &law, Line &line, bool t38)
 {
 	std::string token = "dmodem-" + std::to_string(random());
-	int rtp_port, udptl_port;
+	int32_t rtp_port, udptl_port;
 
 	line.rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
 	rtp_port = line.rtp.open(sip.host());
@@ -835,7 +839,7 @@ bool open_leg(Call &c, enum dmodem_law &law, Line &line, bool t38)
 bool open_line(Call &c, enum dmodem_law &law, Line &line, bool t38)
 {
 	ari::Json r;
-	int port;
+	int32_t port;
 
 	line.rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
 	if (c.state != "Up" &&
@@ -1056,7 +1060,7 @@ int main(int argc, char *argv[])
 		sip_endpoint = general("sip_endpoint", sip_endpoint);
 		if (!sip.start(bind.substr(0, colon),
 			       colon == std::string::npos ? 5090 :
-			       atoi(bind.c_str() + colon + 1))) {
+			       strtol(bind.c_str() + colon + 1, nullptr, 10))) {
 			fprintf(stderr, "dmodem-ari: no SIP socket on %s: %s\n",
 				bind.c_str(), strerror(errno));
 			return 1;
@@ -1084,11 +1088,12 @@ int main(int argc, char *argv[])
 				sleep(1);
 				continue;
 			}
-			say("dmodem-ari: app %s on %s:%d", app.c_str(),
+			say("dmodem-ari: app %s on %s:%" PRId32, app.c_str(),
 			    server.host.c_str(), server.port);
 			if (use_sip)
 				say("dmodem-ari: T.38: the calls' legs on "
-				    "PJSIP/%s to %s:%d", sip_endpoint.c_str(),
+				    "PJSIP/%s to %s:%" PRId32,
+				    sip_endpoint.c_str(),
 				    sip.host().c_str(), sip.port());
 		}
 		int r = ws.read(msg, 500);

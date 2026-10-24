@@ -52,7 +52,7 @@ public:
 
 	/* the loading the peer asked for, at fs; tap the scrambler's
 	   (SCR_GPC calling, SCR_GPA answering) */
-	int init(const VcvmLoading &l, int fs, int tap, Source src);
+	int init(const VcvmLoading &l, int32_t fs, int tap, Source src);
 	/* the loading sent */
 	const VcvmLoading &loading() const { return l_; }
 	int sps() const;
@@ -65,32 +65,33 @@ public:
 	/* the control sequence (10.8) to out */
 	void control(std::vector<float> &out);
 	/* the information octets sent so far */
-	long octets() const { return sent_; }
+	int32_t octets() const { return sent_; }
 
 private:
 	int bit();
 	void block();
 
 	VcvmLoading l_{};
-	int fs_ = 8000, tap_ = 18, D_ = 4;
+	int32_t fs_ = 8000;
+	int tap_ = 18, D_ = 4;
 	Source src_;
 	ReedSolomon rs_;
 	VcvmCombTx ctx_;
 	VcvmParamTx ptx_;
-	unsigned scr_ = 0;
+	uint32_t scr_ = 0;
 	std::vector<uint8_t> line_;     /* the block's octets, interleaved */
 	size_t pos_ = 0;                /* its next bit */
-	long sent_ = 0;
+	int32_t sent_ = 0;
 };
 
 /* what the receiver has measured of the data (for 9.5's renegotiation
    and retrain) */
 struct VcvmDataStats {
-	long symbols = 0;
-	long blocks = 0;
-	long words = 0, failed = 0;     /* codewords, those not decoded */
-	long corrected = 0;             /* octets the code corrected */
-	long erasures = 0;              /* octets marked */
+	int32_t symbols = 0;
+	int32_t blocks = 0;
+	int32_t words = 0, failed = 0;  /* codewords, those not decoded */
+	int32_t corrected = 0;          /* octets the code corrected */
+	int32_t erasures = 0;           /* octets marked */
 	float sigma[VCVM_TONES] = {};   /* each tone's phase error, degrees
 					   rms (decision directed, the last
 					   few seconds) */
@@ -105,15 +106,15 @@ public:
 
 	/* the loading this DCE asked for, at fs; tap the peer's
 	   scrambler's */
-	int init(const VcvmLoading &l, int fs, int tap, Sink sink);
+	int init(const VcvmLoading &l, int32_t fs, int tap, Sink sink);
 	/* the loading received */
 	const VcvmLoading &loading() const { return l_; }
 
 	/* look for phase 4's start from sample from (the samples pushed
 	   next are from there) */
-	void start(long from);
+	void start(int32_t from);
 	void push(const float *x, int n);
-	long received() const;
+	int32_t received() const;
 
 	/* phase 4's start found */
 	bool locked() const { return locked_; }
@@ -128,7 +129,7 @@ public:
 	/* what has been measured of the data */
 	const VcvmDataStats &stats() const { return st_; }
 	/* the end of the last symbol taken */
-	long position() const { return pos_; }
+	int32_t position() const { return pos_; }
 
 private:
 	void symbol(const uint8_t *bits, const float *rel, int nb);
@@ -138,14 +139,15 @@ private:
 	void run();
 
 	VcvmLoading l_{};
-	int fs_ = 8000, tap_ = 18, D_ = 4;
+	int32_t fs_ = 8000;
+	int tap_ = 18, D_ = 4;
 	Sink sink_;
 	ReedSolomon rs_;
 	VcvmCombRx crx_;
 	VcvmParamRx prx_;
 	bool locked_ = false, confirmed_ = false, control_ = false,
 		lost_ = false;
-	long from_ = 0, pos_ = 0;
+	int32_t from_ = 0, pos_ = 0;
 	bool onset_ = false;
 	int lead_ = 0;                  /* the reference symbols taken */
 	/* the symbols held back three, for the control sequence */
@@ -156,7 +158,7 @@ private:
 	std::vector<Held> held_;
 	int ctl_run_ = 0;
 	/* the descrambler, on the decoded information octets */
-	unsigned scr_ = 0;
+	uint32_t scr_ = 0;
 	/* the octets coming */
 	int nbit_ = 0;
 	unsigned oct_ = 0;
@@ -164,13 +166,13 @@ private:
 	std::vector<uint8_t> blk_;
 	std::vector<float> rel_;        /* each octet's reliability */
 	std::vector<uint8_t> early_;    /* decoded before the confirmation */
-	long bad_since_ = -1;           /* symbols since a codeword was last
+	int32_t bad_since_ = -1;        /* symbols since a codeword was last
 					   decoded */
-	long quiet_ = 0;                /* symbols in a row far under the
+	int32_t quiet_ = 0;             /* symbols in a row far under the
 					   level */
 	double ref_ = 0;                /* the symbols' level */
-	long lost_after_ = 0;           /* symbols: 2 s, or 2.5 blocks */
-	long sym_ = 0;
+	int32_t lost_after_ = 0;        /* symbols: 2 s, or 2.5 blocks */
+	int32_t sym_ = 0;
 	VcvmDataStats st_;
 	double se2_[VCVM_TONES] = {};
 };

@@ -89,8 +89,8 @@ double peak(double dbm0)
 
 /* the time a tone plays on without a packet of it (ms): a digit not
    long (two like digits stay two), a tone through late packets */
-const long HOLD_DIGIT_MS = 100;
-const long HOLD_TONE_MS = 300;
+const int32_t HOLD_DIGIT_MS = 100;
+const int32_t HOLD_TONE_MS = 300;
 
 } // namespace
 
@@ -104,7 +104,7 @@ double EventPlayer::Osc::next()
 }
 
 /* a player at rate, nothing playing (its AM at 15 Hz) */
-EventPlayer::EventPlayer(unsigned rate) : rate_(rate)
+EventPlayer::EventPlayer(uint32_t rate) : rate_(rate)
 {
 	am_.inc = 15.0 / rate;
 }
@@ -168,7 +168,7 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 		b.name = DIGIT_NAMES[event];
 		f1 = DTMF_LO[ROW[event]];
 		f2 = DTMF_HI[COL[event]];
-		hold_ = HOLD_DIGIT_MS * static_cast<long>(rate_) / 1000;
+		hold_ = HOLD_DIGIT_MS * static_cast<int32_t>(rate_) / 1000;
 	} else {
 		b.kind = PLAYED;
 		b.name = d->name;
@@ -177,7 +177,7 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 		mod = d->mod;
 		rev = d->rev;
 		dbm0 = d->dbm0;
-		hold_ = HOLD_TONE_MS * static_cast<long>(rate_) / 1000;
+		hold_ = HOLD_TONE_MS * static_cast<int32_t>(rate_) / 1000;
 	}
 	if (volume)
 		dbm0 = volume;
@@ -208,12 +208,12 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 }
 
 /* see rtp_events.h */
-bool EventPlayer::fill(int16_t *x, unsigned n)
+bool EventPlayer::fill(int16_t *x, uint32_t n)
 {
 	if (!on_)
 		return false;
-	const long rev_every = 450L * rate_ / 1000;
-	for (unsigned i = 0; i < n; i++) {
+	const int32_t rev_every = 450 * static_cast<int32_t>(rate_) / 1000;
+	for (uint32_t i = 0; i < n; i++) {
 		double y = a1_ * o1_.next() + a2_ * o2_.next();
 		if (mod_)
 			y *= 1.0 + 0.2 * am_.next();
@@ -226,7 +226,7 @@ bool EventPlayer::fill(int16_t *x, unsigned n)
 					    y < -32768 ? -32768 :
 							 y);
 	}
-	left_ -= n;
+	left_ -= static_cast<int32_t>(n);
 	if (left_ <= 0)
 		on_ = false;
 	return true;

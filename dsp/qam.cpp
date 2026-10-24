@@ -23,7 +23,7 @@ namespace dsp {
 
 /* pulse table and carrier; scale so that the symbols' rms rms_symbol
    gives a pass band rms of amplitude / sqrt(2) */
-void QamTx::init(int srate_, float carrier_, float baud,
+void QamTx::init(int32_t srate_, float carrier_, float baud,
 		 float alpha, int span_, float rms_symbol, float amplitude)
 {
 	int i, n;
@@ -85,10 +85,10 @@ float QamTx::out()
 /* allocates the matched filter table (QAM_MF_RES points per sample, unit
    energy) and its delay line; sets the loop gains and the AGC target
    (target_power less the roll off's share); 0, or -1 when out of memory */
-int QamRx::init(int srate_, float carrier, float baud_,
+int QamRx::init(int32_t srate_, float carrier, float baud_,
 		float alpha, int span, int eq_len_, float target_power)
 {
-	int i;
+	int32_t i;
 	float sum;
 
 	reinit(*this);
@@ -100,7 +100,8 @@ int QamRx::init(int srate_, float carrier, float baud_,
 	/* the matched filter is evaluated at the T/2 instants themselves,
 	   from a table of QAM_MF_RES points per sample */
 	/* the last mf_len + 1 samples, twice */
-	if (!alloc_zeroed(mf, (mf_len + 2) * QAM_MF_RES + 2) ||
+	if (!alloc_zeroed(mf, (static_cast<int32_t>(mf_len) + 2) *
+				      QAM_MF_RES + 2) ||
 	    !alloc_zeroed(mf_buf, 2 * (mf_len + 1))) {
 		release();
 		return -1;
@@ -109,7 +110,8 @@ int QamRx::init(int srate_, float carrier, float baud_,
 		float h = rrc_pulse((i - mf_len / 2) / sps, alpha);
 		sum += h * h;
 	}
-	for (i = 0; i < (mf_len + 2) * QAM_MF_RES + 2; i++)
+	for (i = 0; i < (static_cast<int32_t>(mf_len) + 2) * QAM_MF_RES + 2;
+	     i++)
 		mf[i] = rrc_pulse((static_cast<float>(i) / QAM_MF_RES - 1 -
 				      mf_len / 2) / sps, alpha) / sqrtf(sum);
 	power_alpha = 1.0f / (0.02f * srate_);
@@ -168,11 +170,11 @@ int QamRx::sample(float x)
 		   were tuned with) */
 		const cplx *buf = mf_buf.data() + mf_pos + 1;
 		float p = (1 + t_next) * QAM_MF_RES, f;
-		int k;
+		int32_t k;
 		cplx s = { 0, 0 };
 		if (p < 0)
 			p = 0;
-		k = static_cast<int>(p);
+		k = static_cast<int32_t>(p);
 		f = p - k;
 		for (i = 0; i < mf_len; i++, k += QAM_MF_RES) {
 			float h = mf[k] + f * (mf[k + 1] - mf[k]);

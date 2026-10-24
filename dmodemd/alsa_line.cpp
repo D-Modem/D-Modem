@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 
@@ -61,13 +62,13 @@ std::string AlsaLine::ctl_of(const char *pcm)
 
 /* see alsa_line.h: the hook switch is a must, the caller ID one is not
    (no rings then while on hook, maybe) */
-bool AlsaLine::open(const char *pcm, const char *ctl, unsigned rate)
+bool AlsaLine::open(const char *pcm, const char *ctl, uint32_t rate)
 {
 	std::string ctl_name = ctl ? ctl : ctl_of(pcm);
 	int err;
 
 	rate_ = rate;
-	frame_ = static_cast<int>(rate) / 50;
+	frame_ = static_cast<int>(rate / 50);
 	in_.assign(frame_, 0);
 	out_.assign(frame_, 0);
 	err = snd_pcm_open(&cap_, pcm, SND_PCM_STREAM_CAPTURE,
@@ -100,7 +101,7 @@ bool AlsaLine::open(const char *pcm, const char *ctl, unsigned rate)
 	if (!find(caller_id_, "Caller ID Switch"))
 		ERR("ALSA control %s has no \"Caller ID Switch\": rings and "
 		    "caller ID may not be heard\n", ctl_name.c_str());
-	ring_.init(static_cast<int>(rate));
+	ring_.init(static_cast<int32_t>(rate));
 	set(caller_id_, true);
 	daa_open();
 	snd_ctl_card_info_t *info;
@@ -112,7 +113,7 @@ bool AlsaLine::open(const char *pcm, const char *ctl, unsigned rate)
 		close();
 		return false;
 	}
-	DBG("%s (control %s): %u Hz, %d samples ahead\n", pcm,
+	DBG("%s (control %s): %" PRIu32 " Hz, %d samples ahead\n", pcm,
 	    ctl_name.c_str(), rate, delay_);
 	return true;
 }
@@ -142,8 +143,8 @@ bool AlsaLine::setup(snd_pcm_t *pcm, bool capture)
 	}
 	err = snd_pcm_hw_params_set_rate_near(pcm, hw, &rate, &dir);
 	if (err < 0 || rate != rate_) {
-		ERR("ALSA %s: no rate of %u Hz (%u nearest)\n", way, rate_,
-		    rate);
+		ERR("ALSA %s: no rate of %" PRIu32 " Hz (%u nearest)\n", way,
+		    rate_, rate);
 		return false;
 	}
 	if ((err = snd_pcm_hw_params_set_period_size_near(pcm, hw, &period,
@@ -384,7 +385,7 @@ void AlsaLine::hook_flash(dcore::Modem &, unsigned ms)
 	DBG("hook flash, %u ms\n", ms);
 	hook_switch(false);
 	flash_end_ =
-		samples_ + static_cast<unsigned long long>(ms) * rate_ / 1000;
+		samples_ + static_cast<uint64_t>(ms) * rate_ / 1000;
 }
 
 /* see alsa_line.h */

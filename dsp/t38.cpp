@@ -24,6 +24,7 @@
  *
  */
 
+#include <cstdint>
 #include <cstring>
 #include <iterator>
 
@@ -108,9 +109,10 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 
 /* see t38.h */
 int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
-		   int len)
+		   int32_t len)
 {
-	int at, k, count, present, half = 0;
+	int32_t at;
+	int k, count, present, half = 0;
 
 	zero(*p);
 	if (len < 1)
@@ -184,7 +186,8 @@ int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 		if (fp) {
 			if (at + 2 > len)
 				return -1;
-			f->len = (buf[at] << 8 | buf[at + 1]) + 1;
+			f->len = (static_cast<int32_t>(buf[at]) << 8 |
+				  buf[at + 1]) + 1;
 			at += 2;
 			if (at + f->len > len)
 				return -1;
@@ -238,7 +241,8 @@ static int len_len(unsigned v)
 
 /* a length from buf[*at] (len octets) into *v; -1 if there is none, or
    it is a fragment's (16 K or more) */
-static int get_len(const unsigned char *buf, int len, int *at, unsigned *v)
+static int get_len(const unsigned char *buf, int32_t len, int32_t *at,
+		   unsigned *v)
 {
 	if (*at >= len)
 		return -1;
@@ -315,20 +319,21 @@ void UdptlRx::init()
 }
 
 /* see t38.h */
-int UdptlRx::packet(const unsigned char *buf, int len,
+int UdptlRx::packet(const unsigned char *buf, int32_t len,
 		    void (*fn)(void *ctx, const unsigned char *ifp, int len,
 			       unsigned seq),
 		    void *ctx)
 {
 	const unsigned char *prim, *sec[UDPTL_HISTORY * 2];
-	int sec_len[UDPTL_HISTORY * 2], nsec = 0, at = 2, k, prim_len;
+	int sec_len[UDPTL_HISTORY * 2], nsec = 0, k, prim_len;
+	int32_t at = 2;
 	unsigned seq, n, count, d;
 
 	if (len < 4)
 		return -1;
-	seq = static_cast<unsigned>(buf[0] << 8 | buf[1]);
+	seq = static_cast<unsigned>(buf[0]) << 8 | buf[1];
 	if (get_len(buf, len, &at, &n) || n == 0 ||
-	    at + static_cast<int>(n) > len)
+	    at + static_cast<int32_t>(n) > len)
 		return -1;
 	prim = buf + at;
 	prim_len = static_cast<int>(n);
@@ -341,7 +346,7 @@ int UdptlRx::packet(const unsigned char *buf, int len,
 			return -1;
 		for (k = 0; k < static_cast<int>(count); k++) {
 			if (get_len(buf, len, &at, &n) ||
-			    at + static_cast<int>(n) > len)
+			    at + static_cast<int32_t>(n) > len)
 				return -1;
 			if (nsec < static_cast<int>(std::size(sec))) {
 				sec[nsec] = buf + at;

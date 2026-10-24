@@ -7,7 +7,9 @@
  *
  */
 
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 
 #include "bits.h"
@@ -18,7 +20,7 @@ namespace dsp {
 
 /* see v92a.h: the pulse a Blackman windowed sinc over V92A_SPAN symbols
    either side, tabulated by symbol from -V92A_SPAN */
-void V92ATx::init(int rate_, float lu_)
+void V92ATx::init(int32_t rate_, float lu_)
 {
 	int i;
 	reinit(*this);
@@ -47,7 +49,8 @@ void V92ATx::set_ppm(double ppm)
    their bits */
 void V92ATx::segment(enum v92a_seg s)
 {
-	DSP_DBG("v92a tx: segment %d -> %d after %ld symbols\n", seg, s, n);
+	DSP_DBG("v92a tx: segment %d -> %d after %" PRId32 " symbols\n", seg,
+		s, n);
 	if (s == V92A_SU && seg != V92A_SUBAR) {
 		su_k = 0;
 		second = 0;
@@ -241,40 +244,40 @@ float V92ATx::point(int c, int e) const
    modulus encoder's R and the product of the moduli (up to 2^96) */
 namespace {
 struct Wide {
-	unsigned w[4];
+	uint32_t w[4];
 
 	/* the value v */
-	void set(unsigned v) { zero(w); w[0] = v; }
+	void set(uint32_t v) { zero(w); w[0] = v; }
 	/* this times m (the carry past 2^128 lost) */
-	void mul(unsigned m)
+	void mul(uint32_t m)
 	{
-		unsigned long long c = 0;
+		uint64_t c = 0;
 		for (int i = 0; i < 4; i++) {
-			c += static_cast<unsigned long long>(w[i]) * m;
-			w[i] = static_cast<unsigned>(c);
+			c += static_cast<uint64_t>(w[i]) * m;
+			w[i] = static_cast<uint32_t>(c);
 			c >>= 32;
 		}
 	}
 	/* this / m, the remainder returned */
-	unsigned div(unsigned m)
+	uint32_t div(uint32_t m)
 	{
-		unsigned long long r = 0;
+		uint64_t r = 0;
 		for (int i = 3; i >= 0; i--) {
 			r = r << 32 | w[i];
-			w[i] = static_cast<unsigned>(r / m);
+			w[i] = static_cast<uint32_t>(r / m);
 			r %= m;
 		}
-		return static_cast<unsigned>(r);
+		return static_cast<uint32_t>(r);
 	}
 	/* a - this */
 	void rsub(const Wide &a)
 	{
-		long long br = 0;
+		int64_t br = 0;
 		for (int i = 0; i < 4; i++) {
-			long long d =
-				static_cast<long long>(a.w[i]) - w[i] - br;
+			int64_t d =
+				static_cast<int64_t>(a.w[i]) - w[i] - br;
 			br = d < 0;
-			w[i] = static_cast<unsigned>(d);
+			w[i] = static_cast<uint32_t>(d);
 		}
 	}
 	/* -1, 0 or 1 as this is less than, equal to or more than a */
@@ -386,10 +389,10 @@ void V92ATx::data_frame()
 	R.set(0);
 	for (j = 0; j < K; j++)
 		if (scramble(&scr, SCR_GPA, b[j]))
-			R.w[j >> 5] |= 1u << (j & 31);
+			R.w[j >> 5] |= UINT32_C(1) << (j & 31);
 	Mt.set(1);
 	for (j = 0; j < 12; j++)
-		Mt.mul(static_cast<unsigned>(cpd.M[j]));
+		Mt.mul(static_cast<uint32_t>(cpd.M[j]));
 	/* M - 1, and 2 R */
 	M1.set(1);
 	M1.rsub(Mt);
@@ -401,7 +404,7 @@ void V92ATx::data_frame()
 	dprev ^= s;
 	for (j = 0; j < 12; j++)
 		kq[j] = static_cast<int>(
-			R.div(static_cast<unsigned>(cpd.M[j])));
+			R.div(static_cast<uint32_t>(cpd.M[j])));
 }
 
 /* a data mode symbol (6.4.2/V.92): of the class of its K (on a trellis
@@ -410,8 +413,8 @@ void V92ATx::data_frame()
    output through the prefilter, times G, in LU */
 float V92ATx::data_symbol()
 {
-	const short *z1 = cpd.coef[0], *p1 = cpd.coef[1];
-	const short *z2 = cpd.coef[2], *p2 = cpd.coef[3];
+	const int16_t *z1 = cpd.coef[0], *p1 = cpd.coef[1];
+	const int16_t *z2 = cpd.coef[2], *p2 = cpd.coef[3];
 	int c, lc, M, k = fi % 4, e, step, best = 0, i;
 	double fb = 0, x, v = 0, bd = 1e300;
 
@@ -476,7 +479,7 @@ float V92ATx::sample()
 {
 	double reach = V92A_SPAN * T;
 	float y = 0;
-	long j;
+	int32_t j;
 
 	while (tnext <= m + reach) {
 		int r = static_cast<int>(nsym & (V92A_RING - 1));

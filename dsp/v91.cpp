@@ -34,7 +34,9 @@
  *
  */
 
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -45,7 +47,7 @@
 namespace dsp {
 
 #define INFO_UCODE      66      /* INFO, J, PHIL, SCR, CP: its sign */
-#define MS(ms)          ((long)(ms) * 8)        /* symbols */
+#define MS(ms)          ((int32_t)(ms) * 8)        /* symbols */
 
 /* Table 5/V.91 */
 static void default_dil(V90Dil *d)
@@ -105,7 +107,7 @@ void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 		   int out_[6])
 {
 	unsigned char d[48];
-	unsigned long long r = 0;
+	uint64_t r = 0;
 	int S = cc ? 0 : 6, i;
 
 	for (i = 0; i < S + K; i++)
@@ -133,7 +135,7 @@ int V91Dec::init(const V90Cp *cp, int D)
 	for (i = 0; i < 6; i++) {
 		const unsigned char *m = cp->mask[cp->con[i]];
 		for (u = 127; u >= 0; u--)
-			label[i][u] = m[u] ? static_cast<short>(M[i]++) : -1;
+			label[i][u] = m[u] ? static_cast<int16_t>(M[i]++) : -1;
 		if (!M[i])
 			return -1;
 	}
@@ -145,7 +147,7 @@ int V91Dec::init(const V90Cp *cp, int D)
 int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 		  unsigned char *cc)
 {
-	unsigned long long r = 0;
+	uint64_t r = 0;
 	unsigned char d[48];
 	int S = cc ? 0 : 6, bad = 0, i;
 
@@ -179,13 +181,14 @@ int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 
 /* i: the data frame interval, x: the received value; by binary search
    in val[i] (no codes: the distance 1 << 20) */
-int V91Map::decode(int i, int x, int *u, int *s) const
+int32_t V91Map::decode(int i, int x, int *u, int *s) const
 {
-	int lo = 0, hi = n[i] - 1, b, d;
+	int lo = 0, hi = n[i] - 1, b;
+	int32_t d;
 
 	if (n[i] == 0) {
 		*u = *s = 0;
-		return 1 << 20;
+		return INT32_C(1) << 20;
 	}
 	while (lo < hi) {
 		int mid = (lo + hi) / 2;
@@ -195,9 +198,10 @@ int V91Map::decode(int i, int x, int *u, int *s) const
 			hi = mid;
 	}
 	b = lo;
-	if (lo > 0 && abs(x - val[i][lo - 1]) < abs(val[i][lo] - x))
+	if (lo > 0 && std::abs(int32_t{x} - val[i][lo - 1]) <
+	    std::abs(val[i][lo] - int32_t{x}))
 		b = lo - 1;
-	d = abs(x - val[i][b]);
+	d = std::abs(int32_t{x} - val[i][b]);
 	*u = ucode[i][b];
 	*s = sign[i][b];
 	return d;
@@ -342,7 +346,7 @@ void V91::tx_segment(enum v91_tx s)
 	default:
 		break;
 	}
-	DSP_DBG("v91: tx segment %d at %ld\n", s, n);
+	DSP_DBG("v91: tx segment %d at %" PRId32 "\n", s, n);
 }
 
 /* a bit as the sign of Ucode 66, coded differentially */
@@ -533,7 +537,7 @@ void V91::dil_record(int x)
 	sg = rdil.sp[k % rdil.lsp];
 	if (!seen[i][code][sg]) {
 		seen[i][code][sg] = 1;
-		obs[i][code][sg] = static_cast<short>(x);
+		obs[i][code][sg] = static_cast<int16_t>(x);
 	} else if (obs[i][code][sg] != x)
 		seen[i][code][sg] = 2;  /* not the same each time */
 	if (++rd_k >= len) {
@@ -618,7 +622,7 @@ int V91::cp_bit(int bit)
 {
 	V90Cp c;
 
-	sync = (sync << 1) | static_cast<unsigned>(bit);
+	sync = (sync << 1) | static_cast<uint32_t>(bit);
 	/* the fill after a frame, to a multiple of 6 bits */
 	if (cp_pad)
 		return --cp_pad == 0;
@@ -672,7 +676,7 @@ void V91::data_symbol(int x)
 		if (++bframes == 2) {
 			rx = V91R_DATA;
 			rframes = 0;
-			DSP_DBG("v91: rx data at %ld\n", n);
+			DSP_DBG("v91: rx data at %" PRId32 "\n", n);
 		}
 	} else {
 		unsigned char b[48], c6[6];
@@ -708,7 +712,7 @@ int V91::rx_sample(int x)
 			peer_transparent = ib[40] | ib[41] << 1;
 			if (ack && !got_info_ack) {
 				got_info_ack = 1;
-				DSP_DBG("v91: INFO' at %ld\n", n);
+				DSP_DBG("v91: INFO' at %" PRId32 "\n", n);
 				if (!peer_default) {
 					/* J follows, scrambled from zero */
 					rx = V91R_J;
@@ -724,7 +728,7 @@ int V91::rx_sample(int x)
 			}
 		} else if (got_info && peer_default && since_info == 12 &&
 			   zeros >= 12) {
-			DSP_DBG("v91: Eu at %ld\n", n);
+			DSP_DBG("v91: Eu at %" PRId32 "\n", n);
 			rx = V91R_DIL;
 			rk = 0;
 			return 0;
@@ -732,7 +736,7 @@ int V91::rx_sample(int x)
 		break;
 	case V91R_J:
 		b = descramble(&rscr, SCR_GPC, bit);
-		sync = (sync << 1) | static_cast<unsigned>(b);
+		sync = (sync << 1) | static_cast<uint32_t>(b);
 		if (!fr.busy()) {
 			if ((sync & 0x3FFFF) == 0x3FFFE) {
 				fr.init(SyncFrames::DIL90);
@@ -764,7 +768,7 @@ int V91::rx_sample(int x)
 		b = descramble(&rscr, SCR_GPC, bit);
 		zeros = b ? 0 : zeros + 1;
 		if (zeros == 12) {
-			DSP_DBG("v91: Em at %ld\n", n);
+			DSP_DBG("v91: Em at %" PRId32 "\n", n);
 			rx = V91R_DIL;
 			rk = 0;
 			return 0;
@@ -793,13 +797,13 @@ int V91::rx_sample(int x)
 	case V91R_ES:
 		/* after a CP frame: Es, or the next CP */
 		b = descramble(&rscr, SCR_GPC, bit);
-		sync = (sync << 1) | static_cast<unsigned>(b);
+		sync = (sync << 1) | static_cast<uint32_t>(b);
 		if (b)
 			rx = V91R_CP;
 		else if (++esn == 12) {
 			got_es = 1;
-			DSP_DBG("v91: Es at %ld (data frame interval %ld)\n",
-				n, (rk + 1) % 6);
+			DSP_DBG("v91: Es at %" PRId32 " (data frame interval %"
+				PRId32 ")\n", n, (rk + 1) % 6);
 			rx = V91R_B1;
 			rpos = bframes = 0;
 		}
@@ -867,8 +871,8 @@ int V91::sample(int x, int *y)
 		/* poor decoding: retrain */
 		if (n - err_window >= MS(1000)) {
 			if (err_count > MS(1000) / 20) {
-				DSP_DBG("v91: %ld errors, %ld frames\n",
-					err_count, dec.errors);
+				DSP_DBG("v91: %" PRId32 " errors, %" PRId32
+					" frames\n", err_count, dec.errors);
 				retrain("decoding errors");
 			}
 			err_window = n;

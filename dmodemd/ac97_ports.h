@@ -39,7 +39,7 @@ public:
 	/* see Ac97Regs: each under the controller's semaphore */
 	bool read(int reg, uint16_t *v) override;
 	bool write(int reg, uint16_t v) override;
-	void delay_us(unsigned us) override;
+	void delay_us(uint32_t us) override;
 
 private:
 	/* the codec access semaphore ours (about 1 ms at most) */

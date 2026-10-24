@@ -70,6 +70,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #ifndef _WIN32
 #include <poll.h>
 #endif
@@ -160,11 +161,11 @@ const uint8_t LP_INT_POLARITY = 0x01;
 const int STICK_FIFO_SAMPLES = 32 + 12 + 12;
 
 /* the Si3056's rates (register 7's) */
-bool stick_rate(unsigned rate)
+bool stick_rate(uint32_t rate)
 {
-	static const unsigned rates[] = { 7200, 8000, 8229, 8400, 9000, 9600,
+	static const uint32_t rates[] = { 7200, 8000, 8229, 8400, 9000, 9600,
 					  10286, 12000, 13714, 16000 };
-	for (unsigned r : rates)
+	for (uint32_t r : rates)
 		if (r == rate)
 			return true;
 	return false;
@@ -200,7 +201,7 @@ const uint16_t SSI2_UNDERRUN = 0x0004;
 const uint16_t SSI2_OVERRUN = 0x0002;
 /* its rate (the only one: K7554VoiceCodecInterface::SetSampleRate), and
    its period, 5 ms (SetPTCPeriod: the rate times the ms, less 1) */
-const unsigned VOICE_RATE = 8000;
+const uint32_t VOICE_RATE = 8000;
 const uint16_t VOICE_PERIOD = VOICE_RATE * 5 / 1000 - 1;
 /* the alternate settings: the codec's streams, and the voice codec's too */
 const int ALT_MODEM = 1, ALT_VOICE = 3;
@@ -249,16 +250,16 @@ const uint8_t CONFIG_REMOTE_WAKEUP = 0x20;
 const uint16_t FEATURE_REMOTE_WAKEUP = 1;
 
 /* the system's clock, in ms (for the retries of a suspended device) */
-unsigned long long clock_ms()
+uint64_t clock_ms()
 {
 	using namespace std::chrono;
-	return static_cast<unsigned long long>(duration_cast<milliseconds>(
+	return static_cast<uint64_t>(duration_cast<milliseconds>(
 		steady_clock::now().time_since_epoch()).count());
 }
 
 /* the codec's control word for a rate (the STLC7550's, and the
    ST75951's register 0); 0 if it has none */
-uint16_t cword(unsigned rate)
+uint16_t cword(uint32_t rate)
 {
 	switch (rate) {
 	case 8000: return 0x3c8;
@@ -272,7 +273,7 @@ uint16_t cword(unsigned rate)
    interpolation (between the two codecs' rates: the voice codec's and
    the line's); pos (the phase) and last (the sample before in's first)
    kept for the next ones */
-void resample(const int16_t *in, size_t n, unsigned from, unsigned to,
+void resample(const int16_t *in, size_t n, uint32_t from, uint32_t to,
 	      double &pos, int16_t &last, std::deque<int16_t> &out)
 {
 	double step = static_cast<double>(from) / to;
@@ -290,9 +291,9 @@ void resample(const int16_t *in, size_t n, unsigned from, unsigned to,
 }
 
 /* a + b, within 16 bits */
-int16_t mix(int a, int b)
+int16_t mix(int32_t a, int32_t b)
 {
-	int x = a + b;
+	int32_t x = a + b;
 	return static_cast<int16_t>(x > 32767  ? 32767 :
 				    x < -32768 ? -32768 :
 						 x);
@@ -523,7 +524,7 @@ bool UsbLine::get_reg(uint8_t reg, uint16_t *v)
 		    libusb_strerror(err));
 		return false;
 	}
-	*v = static_cast<uint16_t>(b[0] | b[1] << 8);
+	*v = static_cast<uint16_t>(b[0] | uint16_t{b[1]} << 8);
 	return true;
 }
 
@@ -539,12 +540,12 @@ bool UsbLine::set_gpio(uint16_t v)
 /* see usb_line.h: the device, its interface, then its own start-up
    (open_st7554(), open_stick()), on hook, the transfers both ways and
    the interrupt's */
-bool UsbLine::open(const char *dev, unsigned rate)
+bool UsbLine::open(const char *dev, uint32_t rate)
 {
 	int err;
 
 	rate_ = rate;
-	frame_ = static_cast<int>(rate) / 50;
+	frame_ = static_cast<int>(rate / 50);
 	frame_in_.assign(frame_, 0);
 	frame_out_.assign(frame_, 0);
 	frame_mic_.assign(frame_, 0);
@@ -579,21 +580,22 @@ bool UsbLine::open(const char *dev, unsigned rate)
 		close();
 		return false;
 	}
-	DBG("%u Hz, %d samples ahead\n", rate, delay_);
+	DBG("%" PRIu32 " Hz, %d samples ahead\n", rate, delay_);
 	return true;
 }
 
 /* the ST7554: the rate's control word, alternate setting 1 (3 with the
    voice codec), its codec checked, its registers as Smart Link's driver
    sets them, on hook */
-bool UsbLine::open_st7554(unsigned rate)
+bool UsbLine::open_st7554(uint32_t rate)
 {
 	uint16_t status;
 	int err;
 	int alt = voice_law_ != VoiceLaw::None ? ALT_VOICE : ALT_MODEM;
 
 	if (!cword(rate)) {
-		ERR("SmartUSB56: no rate of %u Hz (8000, 9600)\n", rate);
+		ERR("SmartUSB56: no rate of %" PRIu32 " Hz (8000, 9600)\n",
+		    rate);
 		return false;
 	}
 	if ((err = libusb_set_interface_alt_setting(h_, 0, alt)) < 0) {
@@ -729,14 +731,14 @@ bool UsbLine::start_st75951()
 /* the stick: its version and line side (GET_INFO), the rate, on hook with
    the line monitor on, its ring detector's count so far, then alternate
    setting 1, which starts its samples */
-bool UsbLine::open_stick(unsigned rate)
+bool UsbLine::open_stick(uint32_t rate)
 {
 	uint8_t info[12], status[20];
 	int err;
 
 	if (!stick_rate(rate)) {
-		ERR("pico-serial Line: no rate of %u Hz (8000, 9600, 16000 and "
-		    "the Si3056's others)\n", rate);
+		ERR("pico-serial Line: no rate of %" PRIu32 " Hz (8000, 9600, "
+		    "16000 and the Si3056's others)\n", rate);
 		return false;
 	}
 	if (!stick_in(LP_GET_INFO, 0, info, sizeof(info)))
@@ -760,8 +762,10 @@ bool UsbLine::open_stick(unsigned rate)
 	if (!stick_country())
 		return false;
 	ring_edges_ = status[18];
-	underruns_ = static_cast<uint16_t>(status[6] | status[7] << 8);
-	overruns_ = static_cast<uint16_t>(status[8] | status[9] << 8);
+	underruns_ = static_cast<uint16_t>(status[6] |
+					   uint16_t{status[7]} << 8);
+	overruns_ = static_cast<uint16_t>(status[8] |
+					  uint16_t{status[9]} << 8);
 	if ((err = libusb_set_interface_alt_setting(h_, 0, 1)) < 0) {
 		ERR("pico-serial Line: alternate setting 1: %s\n",
 		    libusb_strerror(err));
@@ -814,7 +818,8 @@ bool UsbLine::start_streams()
 
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
 	delay_ = static_cast<int>(iso_.out_buf.size()) +
-		 ISO_TRANSFERS * ISO_PACKETS * static_cast<int>(rate_) / 1000 +
+		 ISO_TRANSFERS * ISO_PACKETS * static_cast<int32_t>(rate_) /
+			 1000 +
 		 fifo_samples_;
 	intr_ = libusb_alloc_transfer(0);
 	if (!intr_)
@@ -991,9 +996,11 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 			l->stick_event(t->buffer, t->actual_length);
 	} else if (t->status == LIBUSB_TRANSFER_COMPLETED && t->actual_length >= 4) {
 		uint16_t fifo =
-			static_cast<uint16_t>(t->buffer[0] | t->buffer[1] << 8);
+			static_cast<uint16_t>(t->buffer[0] |
+					      uint16_t{t->buffer[1]} << 8);
 		uint16_t gpio =
-			static_cast<uint16_t>(t->buffer[2] | t->buffer[3] << 8);
+			static_cast<uint16_t>(t->buffer[2] |
+					      uint16_t{t->buffer[3]} << 8);
 		if (fifo & SSI1_UNDERRUN)
 			DBG("FIFO underrun\n");
 		if (fifo & SSI1_OVERRUN)
@@ -1081,8 +1088,8 @@ void UsbLine::stick_event(const uint8_t *b, int len)
 	if (len < 8)
 		return;
 	uint8_t edges = static_cast<uint8_t>(b[1] - ring_edges_);
-	uint16_t under = static_cast<uint16_t>(b[4] | b[5] << 8);
-	uint16_t over = static_cast<uint16_t>(b[6] | b[7] << 8);
+	uint16_t under = static_cast<uint16_t>(b[4] | uint16_t{b[5]} << 8);
+	uint16_t over = static_cast<uint16_t>(b[6] | uint16_t{b[7]} << 8);
 
 	ring_edges_ = b[1];
 	rings_ += edges;
@@ -1125,7 +1132,8 @@ void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 			if (!s.voice)
 				for (unsigned k = 0; k + 1 < p.actual_length; k += 2)
 					s.in_buf.push_back(static_cast<int16_t>(
-						b[k] | b[k + 1] << 8));
+						b[k] |
+						uint16_t{b[k + 1]} << 8));
 			else if (voice_law_ == VoiceLaw::Linear)
 				for (unsigned k = 0; k < p.actual_length; k++)
 					s.in_buf.push_back(static_cast<int16_t>(
@@ -1172,7 +1180,7 @@ void UsbLine::park(libusb_transfer *t, int err)
    submitted again; gone after RESUME_GIVE_UP_MS of failures */
 void UsbLine::resume()
 {
-	unsigned long long now = clock_ms();
+	uint64_t now = clock_ms();
 	if (now - resume_tried_ < RESUME_MS)
 		return;
 	resume_tried_ = now;
@@ -1317,7 +1325,7 @@ void UsbLine::hook_flash(dcore::Modem &, unsigned ms)
 	}
 	set_gpio(static_cast<uint16_t>(gpio_ & ~GPIO_HOOK1));
 	flash_end_ =
-		samples_ + static_cast<unsigned long long>(ms) * rate_ / 1000;
+		samples_ + static_cast<uint64_t>(ms) * rate_ / 1000;
 }
 
 /* see dcore.h: the hook GPIO cleared (broken) or set again */
@@ -1355,7 +1363,7 @@ uint16_t UsbLine::intl_hook(uint16_t v, bool off, bool now_off)
 	} else if (now_off && intl_aus_ && !pulse_active_) {
 		v |= GPIO_RFC;
 		aus_end_ = samples_ +
-			   static_cast<unsigned long long>(rate_) *
+			   static_cast<uint64_t>(rate_) *
 				   AUSTRALIAN_MS / 1000 +
 			   1;
 		DBG("Australian timer: RFC for %u ms\n", AUSTRALIAN_MS);

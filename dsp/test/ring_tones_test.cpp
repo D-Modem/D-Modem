@@ -31,7 +31,7 @@ struct Pumps {
 	Pumps() { prop_dp_init(); }
 } pumps;
 
-unsigned long now = 1000000;      /* (not 0: the core's last pulse "at" 0) */
+uint64_t now = 1000000;      /* (not 0: the core's last pulse "at" 0) */
 
 /* the core's host: a line on hook, its DTE's output kept */
 struct Line final : public dcore::Host {
@@ -52,7 +52,7 @@ struct Line final : public dcore::Host {
 		return n;
 	}
 	/* the test's clock, now */
-	unsigned long now_ms() override { return now; }
+	uint64_t now_ms() override { return now; }
 };
 
 /* the RINGs in out */

@@ -7,7 +7,9 @@
  *
  */
 
+#include <cinttypes>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -21,7 +23,7 @@ namespace dsp {
  */
 
 /* mark m and space s (Hz), peak amplitude a, at rate samples/s */
-void FskMod::init(float m, float s, float a, int rate)
+void FskMod::init(float m, float s, float a, int32_t rate)
 {
 	*this = FskMod();
 	mark = m;
@@ -47,7 +49,7 @@ float FskMod::next(int bit)
 /* mark and space (Hz), baud (bit/s): pre filter around the channel
    centre, base band low pass of shift / 2 + 0.6 baud, carrier on and off
    levels for 200 and 140 amplitude tones */
-void FskDemod::init(float mark, float space, float baud, int rate)
+void FskDemod::init(float mark, float space, float baud, int32_t rate)
 {
 	float fc = (mark + space) / 2;
 	float shift = fabsf(mark - space);
@@ -162,7 +164,7 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
 	static constexpr const char *name = "FSK (V.21/V.23/Bell103) data pump";
 
 	const struct fsk_params *par;
-	long mark_count;        /* consecutive samples of steady mark */
+	int32_t mark_count;     /* consecutive samples of steady mark */
 	Osc ans;         /* answer tone */
 	FskBitTx tx;
 	FskDemod rx;
@@ -186,7 +188,8 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
 	/* in data mode (the carrier watched, no handshake timeout) */
 	bool in_data() const { return state == FSK_DATA; }
 	float tx_sample(int data);
-	int start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag);
+	int start(struct modem *m, enum DP_ID id, int caller_, int32_t srate_,
+		  int max_frag);
 	int block_start();
 	int sample(float x, float *y);
 	/* cnt samples in and out, through sample() */
@@ -200,7 +203,8 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
    S7 and S10; the first state from the runtime (after V.8, after a Bell
    212A or automode fallback the answer tone or the mark is already
    there).  0, or -1 for another id. */
-int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int max_frag)
+int FskPump::start(struct modem *m, enum DP_ID id, int caller_,
+		   int32_t srate_, int max_frag)
 {
 	const struct fsk_params *par_;
 
@@ -253,7 +257,7 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 			adaptive = modem_get_param(m, MDMPRM_ADAPTIVE) != 0;
 		}
 	}
-	DSP_DBG("%s: create %s, srate %d\n", par_->name,
+	DSP_DBG("%s: create %s, srate %" PRId32 "\n", par_->name,
 		caller_ ? "caller" : "answerer", srate_);
 	return 0;
 }
@@ -349,8 +353,8 @@ int FskPump::sample(float x, float *y)
 		     carrier_run : mark_count) >=
 		    ms2samples(after_v8 ? 400 : 150, srate)) {
 			set_state(FSK_DATA);
-			ret = connect_at(static_cast<int>(par->tx_baud),
-					 static_cast<int>(par->rx_baud));
+			ret = connect_at(static_cast<int32_t>(par->tx_baud),
+					 static_cast<int32_t>(par->rx_baud));
 		} else if (!caller && automode &&
 			   dp.id != DP_B103 &&
 			   (bell.found() ||

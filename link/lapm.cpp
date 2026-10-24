@@ -54,13 +54,13 @@ static const uint8_t PI_V44_SET = 0x40, PI_V44_C0 = 0x41, PI_V44_P0 = 0x42,
 static const uint32_t HDLC_OPT = 0x8a8900;
 
 /* T401's bits when the data pump's rate is not known */
-static const long T401_NO_RATE = 57600;
+static const int32_t T401_NO_RATE = 57600;
 
 enum {
 	SEQ_MASK = 0x7f,                /* sequence numbers modulo 128 */
 	XID_DELAY = 384,                /* the originator's flags before its
 					   first XID (48 octets) */
-	NO_LIMIT = 1 << 30,             /* a V.44 parameter the remote does
+	NO_LIMIT = INT32_C(1) << 30,    /* a V.44 parameter the remote does
 					   not limit */
 	V42BIS_DFLT_N2 = 512,           /* V.42bis's defaults (5.1) */
 	V42BIS_DFLT_N7 = 6,
@@ -83,9 +83,9 @@ static int seq_diff(uint8_t b, uint8_t a)
 }
 
 /* T401 (9.2.1): 2 s at the data pump's rate, in bits */
-static long t401_bits(const Link *link)
+static int32_t t401_bits(const Link *link)
 {
-	long rate = link->tx_rate();
+	int32_t rate = link->tx_rate();
 	return rate ? 2 * rate : T401_NO_RATE;
 }
 
@@ -100,7 +100,7 @@ static int swap_dirs(int dirs)
 /* the value for k or N401 when ours and the remote's differ (9.2.3,
    9.2.4: between the initiator's and the default dflt): the default
    when they lie on its two sides, else the one nearer to it */
-static unsigned settle(unsigned ours, unsigned remote, unsigned dflt)
+static uint32_t settle(uint32_t ours, uint32_t remote, uint32_t dflt)
 {
 	if ((ours < dflt) != (remote < dflt))
 		return dflt;
@@ -157,9 +157,9 @@ static uint32_t get_le(const uint8_t *p, int n)
 }
 
 /* a received value as a Config field: at most NO_LIMIT */
-static int bounded(uint32_t v)
+static int32_t bounded(uint32_t v)
 {
-	return static_cast<int>(std::min<uint32_t>(v, NO_LIMIT));
+	return static_cast<int32_t>(std::min<uint32_t>(v, NO_LIMIT));
 }
 
 /* the parameters (PI, PL, PV) in the n octets at p, each given to
@@ -963,7 +963,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 		}
 	};
 	auto user = [&](uint8_t pi, const uint8_t *pv, int pl) {
-		const int v = bounded(get_be(pv, pl));
+		const int32_t v = bounded(get_be(pv, pl));
 		switch (pi) {
 		case PI_V44_SET:
 			v44_set = pl == 3 && !memcmp(pv, "V44", 3);
@@ -994,7 +994,8 @@ void Lapm::rx_xid(Frame *f, bool response)
 		}
 		if (i + 3 > len)
 			break;
-		const int gl = x[i + 1] << 8 | x[i + 2];
+		const int32_t gl =
+			static_cast<int32_t>(x[i + 1]) << 8 | x[i + 2];
 		if (i + 3 + gl > len)
 			break;
 		if (gi == GI_PARAM)

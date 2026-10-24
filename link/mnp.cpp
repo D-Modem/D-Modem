@@ -8,6 +8,7 @@
  */
 
 #include <algorithm>
+#include <cinttypes>
 #include <cstring>
 
 #include "link.h"
@@ -179,7 +180,7 @@ void MnpAsync::rx_scan()
 {
 	for (;;) {
 		/* marks before a start bit */
-		while (rx_.bit && rx_.data & (1u << (rx_.bit - 1)))
+		while (rx_.bit && rx_.data & (UINT32_C(1) << (rx_.bit - 1)))
 			rx_.bit--;
 		if (rx_.bit < 10)
 			break;
@@ -247,7 +248,7 @@ void MnpAsync::rx_char(uint8_t ch)
 		rx_state_ = Rx::Fcs2;
 		break;
 	case Rx::Fcs2:
-		if ((rx_fcs_lo_ | ch << 8) != rx_fcs_) {
+		if ((rx_fcs_lo_ | static_cast<uint32_t>(ch) << 8) != rx_fcs_) {
 			link_->logf("mnp: rx frame fcs error.");
 			link_->stats().rx_errors++;
 			mnp_->rx_bad_frame(false);
@@ -270,37 +271,37 @@ void MnpAsync::rx_char(uint8_t ch)
  */
 
 /* the data pump's rate (a nominal 28800 bit/s if not known) */
-int Mnp::rate() const
+int32_t Mnp::rate() const
 {
-	int r = link_->tx_rate();
+	int32_t r = link_->tx_rate();
 	return r ? r : 28800;
 }
 
 /* T401 in the establishment (0.5 to 9 s): 2 s, and the time of three
    LRs (at 300 bit/s an LR takes a second) */
-long Mnp::t401_est() const
+int32_t Mnp::t401_est() const
 {
-	return rate() * 2L + 3 * 40 * 10;
+	return rate() * 2 + 3 * 40 * 10;
 }
 
 /* T401 in the data phase (A.7.5.1): k frames of N401 octets and an LA
    at the line's rate, and a round trip of 1 s */
-long Mnp::t401_data() const
+int32_t Mnp::t401_data() const
 {
 	const int lb = mode_ == 3 ? 8 : 10, lf = mode_ == 3 ? 4 : 7;
 	const int llt = opt_ & 2 ? 3 : 5, lla = opt_ & 2 ? 4 : 8;
-	return static_cast<long>(k_) * lb * (lf + llt + n401_) +
+	return static_cast<int32_t>(k_) * lb * (lf + llt + n401_) +
 	       lb * (lf + lla) + rate();
 }
 
 /* T404 (A.7.5.4): 3 s at 2400 bit/s and above, else 7 s */
-static long t404(int rate)
+static int32_t t404(int32_t rate)
 {
-	return rate * (rate >= 2400 ? 3L : 7L);
+	return rate * (rate >= 2400 ? 3 : 7);
 }
 
 /* bits more have gone out: the timers that run out */
-void Mnp::clock(long bits)
+void Mnp::clock(int32_t bits)
 {
 	if (t_start_ > 0 && (t_start_ -= bits) <= 0) {
 		/* the initiator's LR after the marks */
@@ -639,18 +640,19 @@ bool Mnp::rx_lr(const uint8_t *h, int len)
 	int k = param(h, len, 3, 3);
 	int opt = param(h, len, 3, 8);
 	int mnp5 = param(h, len, 3, 9);
-	int n401 = MNP_DFLT_INFO;
+	int32_t n401 = MNP_DFLT_INFO;
 	for (int i = 3; i + 2 <= len && i + 2 + h[i + 1] <= len;
 	     i += 2 + h[i + 1])
 		if (h[i] == 4)
-			n401 = h[i + 1] >= 2 ? h[i + 2] | h[i + 3] << 8 :
+			n401 = h[i + 1] >= 2 ?
+				h[i + 2] | static_cast<int32_t>(h[i + 3]) << 8 :
 				h[i + 1] == 1 ? h[i + 2] : n401;
 	mode = std::min(mode < 0 ? 2 : mode, our_mode_);
 	k = std::min(k < 0 ? 1 : k, our_k_);
-	n401 = std::min(n401, our_n401_);
+	n401 = std::min(n401, static_cast<int32_t>(our_n401_));
 	if (mode < 2 || k < 1 || n401 < 1) {
-		link_->logf("mnp: LR: mode %d, k %d, N401 %d not supported.",
-			    mode, k, n401);
+		link_->logf("mnp: LR: mode %d, k %d, N401 %" PRId32
+			    " not supported.", mode, k, n401);
 		ld_reason_ = 3;
 		return false;
 	}
@@ -1063,7 +1065,8 @@ void Mnp::init(Link *link, const Config &cfg)
 void Mnp::exit()
 {
 	if (link_ && (lt_sent_ || lt_rcvd_))
-		link_->logf("mnp: %ld LTs sent (%ld again), %ld received.",
+		link_->logf("mnp: %" PRId32 " LTs sent (%" PRId32 " again), %"
+			    PRId32 " received.",
 			    lt_sent_, lt_again_, lt_rcvd_);
 	lt_sent_ = lt_again_ = lt_rcvd_ = 0;
 	phase_ = Phase::Idle;
