@@ -7,16 +7,16 @@
  *
  */
 
-#include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <time.h>
-#include <unistd.h>
+#include <cerrno>
+#include <climits>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <dsplibs.h>
 
 #include "log.h"

@@ -7,15 +7,15 @@
  *
  */
 
-#include <errno.h>
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
 #include <fcntl.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-
 #include <dcore.h>
 #include <log.h>
 #include <str.h>

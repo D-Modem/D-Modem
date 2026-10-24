@@ -7,11 +7,10 @@
  *
  */
 
-#include <math.h>
-
 #include <algorithm>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 
 #include "qam.h"
 

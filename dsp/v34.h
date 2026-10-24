@@ -9,8 +9,7 @@
 #ifndef __V34_H__
 #define __V34_H__
 
-#include <string.h>
-
+#include <cstring>
 #include <memory>
 #include <vector>
 

@@ -13,7 +13,7 @@
 #ifndef DMODEM_CORE_LOG_H
 #define DMODEM_CORE_LOG_H
 
-#include <stdarg.h>
+#include <cstdarg>
 
 /* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
 #ifndef DMODEM_PRINTF

@@ -15,9 +15,9 @@
  *
  */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 
 #include "bits.h"
 #include "fax.h"
@@ -706,7 +706,7 @@ void FaxRx::data_symbol()
 		int q;
 		best = nearest_point(pts, 1 << (n + 1), z);
 		d = pts[best];
-		q = vit.decode(z, NULL);
+		q = vit.decode(z, nullptr);
 		data_sym++;
 		if (q >= 0) {
 			/* symbols leave the decoder VITERBI_DEPTH - 1 late */

@@ -31,9 +31,8 @@
 #ifndef DSP_VCVM_H
 #define DSP_VCVM_H
 
-#include <stdint.h>
-
 #include <complex>
+#include <cstdint>
 #include <vector>
 
 namespace dsp {

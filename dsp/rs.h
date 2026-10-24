@@ -16,7 +16,7 @@
 #ifndef DSP_RS_H
 #define DSP_RS_H
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace dsp {
 

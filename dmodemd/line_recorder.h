@@ -11,8 +11,8 @@
 #ifndef DMODEMD_LINE_RECORDER_H
 #define DMODEMD_LINE_RECORDER_H
 
-#include <stddef.h>
-#include <stdio.h>
+#include <cstddef>
+#include <cstdio>
 
 namespace dmd {
 

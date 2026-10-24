@@ -37,8 +37,7 @@
 #ifndef DMODEMD_USB_LINE_H
 #define DMODEMD_USB_LINE_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <deque>
 #include <string>
 #include <vector>
@@ -48,7 +47,6 @@
 #include <winsock2.h>
 #endif
 #include <libusb.h>
-
 #include <dcore.h>
 
 #include "dte.h"

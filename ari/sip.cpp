@@ -13,20 +13,20 @@
  *    to T2, for 64 T1).
  *
  */
+#include <algorithm>
+#include <cctype>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <random>
+
 #include <arpa/inet.h>
-#include <ctype.h>
-#include <errno.h>
 #include <netinet/in.h>
 #include <poll.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
-#include <time.h>
 #include <unistd.h>
-
-#include <algorithm>
-#include <random>
 
 #include "sip.h"
 

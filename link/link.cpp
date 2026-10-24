@@ -7,11 +7,10 @@
  *
  */
 
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
 
 #include "link.h"
 

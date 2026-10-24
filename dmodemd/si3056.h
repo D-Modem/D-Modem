@@ -19,7 +19,7 @@
 #ifndef DMODEMD_SI3056_H
 #define DMODEMD_SI3056_H
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace dmd {
 

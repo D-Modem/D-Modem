@@ -35,14 +35,13 @@
  *
  */
 
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
+#include <new>
 #include <utility>
 #include <vector>
-
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <new>
 
 #include "dsp.h"
 #include "env.h"
@@ -121,7 +120,7 @@ static const struct rate {
 	{ FM_V27_2400,  2400,  0x0, 0, T38_DATA_V27_2400,
 	  T38_IND_V27_2400, 943, 943 },
 };
-#define NRATES ((int)(sizeof(rates) / sizeof(rates[0])))
+#define NRATES ((int)std::size(rates))
 
 enum state {
 	S_IDLE,
@@ -581,7 +580,7 @@ void T30::send_dcn(enum t30_result r)
 	if (result == T30_RUNNING)
 		result = r;
 	new_frames();
-	add_frame(FCF_DCN, NULL, 0);
+	add_frame(FCF_DCN, nullptr, 0);
 	send_frames(S_DONE);
 }
 
@@ -697,7 +696,7 @@ void T30::tcf_done()
 		max_zero_run, bps * 3 / 2, ok ? "ok" : "failed");
 	stop_fast();
 	new_frames();
-	add_frame(ok ? FCF_CFR : FCF_FTT, NULL, 0);
+	add_frame(ok ? FCF_CFR : FCF_FTT, nullptr, 0);
 	if (ok) {
 		tries = 0;
 		send_frames(S_RX_PAGE);      /* start_page_rx after */
@@ -743,7 +742,7 @@ void T30::got_dcs(const unsigned char *fif, int len)
 void T30::rx_message()
 {
 	int k, fcf = 0, last = nmsg - 1;
-	const unsigned char *fif = NULL;
+	const unsigned char *fif = nullptr;
 	int fif_len = 0;
 
 	/* the identity, then the command */
@@ -804,7 +803,7 @@ void T30::rx_message()
 		if (state == S_RX_ECM)
 			ecm_block_end();
 		ecm_long_train = 1;
-		ecm_respond(FCF_CTR, NULL, 0, S_RX_ECM);
+		ecm_respond(FCF_CTR, nullptr, 0, S_RX_ECM);
 		break;
 	case FCF_EOR:
 		/* the sender gives up on the block: what came of it is
@@ -815,7 +814,7 @@ void T30::rx_message()
 			ecm_rx_len[k] = -1;
 		ecm_rx_frames = -1;
 		ecm_block++;
-		ecm_respond(FCF_ERR, NULL, 0,
+		ecm_respond(FCF_ERR, nullptr, 0,
 			    fif_len >= 1 && (fif[0] & 0xfe) != FCF_NULL ?
 			    ecm_page_end(fif[0] & 0xfe) : S_RX_ECM);
 		break;
@@ -838,7 +837,7 @@ void T30::rx_message()
 			DSP_DBG("t30: the post-page command again: our %02x "
 				"again\n", post_resp);
 			new_frames();
-			add_frame(post_resp, NULL, 0);
+			add_frame(post_resp, nullptr, 0);
 			send_frames(post_state == S_WAIT_DCS ? S_CED :
 				    post_state);
 			break;
@@ -848,7 +847,7 @@ void T30::rx_message()
 			page_done();
 		}
 		new_frames();
-		add_frame(page_ok ? FCF_MCF : FCF_RTN, NULL, 0);
+		add_frame(page_ok ? FCF_MCF : FCF_RTN, nullptr, 0);
 		post_fcf = fcf;
 		post_resp = page_ok ? FCF_MCF : FCF_RTN;
 		if (!page_ok) {
@@ -990,7 +989,7 @@ void T30::send_post_page()
 {
 	last_post = post_command();
 	new_frames();
-	add_frame(last_post, NULL, 0);
+	add_frame(last_post, nullptr, 0);
 	send_frames(S_WAIT_MCF);
 }
 
@@ -1334,7 +1333,7 @@ void T30::send_ctc()
 void T30::send_rr()
 {
 	new_frames();
-	add_frame(FCF_RR, NULL, 0);
+	add_frame(FCF_RR, nullptr, 0);
 	send_frames(S_WAIT_PPS_RESP);
 }
 
@@ -1459,7 +1458,7 @@ void T30::got_pps(const unsigned char *fif, int len)
 		    ((page_no == (ecm_page & 0xff) &&
 		      block == ((ecm_block - 1) & 0xff)) ||
 		     (page_no == ((ecm_page - 1) & 0xff) && ecm_block == 0))) {
-			ecm_respond(FCF_MCF, NULL, 0, last_resp_next);
+			ecm_respond(FCF_MCF, nullptr, 0, last_resp_next);
 			return;
 		}
 		DSP_DBG("t30: PPS for page %d block %d, not %d/%d\n",
@@ -1494,12 +1493,12 @@ void T30::got_pps(const unsigned char *fif, int len)
 	ecm_rx_frames = -1;
 	ecm_block++;
 	if (fcf2 == FCF_NULL) {
-		ecm_respond(FCF_MCF, NULL, 0, S_RX_ECM);
+		ecm_respond(FCF_MCF, nullptr, 0, S_RX_ECM);
 		return;
 	}
 	/* the frames came without errors: MCF, whatever the page */
 	enum state next_ = ecm_page_end(fcf2);
-	ecm_respond(FCF_MCF, NULL, 0, next_);
+	ecm_respond(FCF_MCF, nullptr, 0, next_);
 }
 
 
@@ -1531,7 +1530,7 @@ void T30::hdlc_rx_frame(HdlcV21, const unsigned char *d, int len,
 void T30::restart_v21()
 {
 	if (!cfg.t38)
-		v21.init(FM_V21, 0, srate, V21Rx::hdlc_rx_cb, this, NULL);
+		v21.init(FM_V21, 0, srate, V21Rx::hdlc_rx_cb, this, nullptr);
 	V21Rx::hdlc_rx_reset();
 	nmsg = 0;
 	msg_ready = 0;
@@ -1634,7 +1633,7 @@ void T30::t38_flush()
 				t38_frame_pos = 0;
 				if (t38_frame_len < 0) {
 					/* (no frame at all) */
-					t38_data(0, NULL, 0, T38_HDLC_SIG_END);
+					t38_data(0, nullptr, 0, T38_HDLC_SIG_END);
 					t38_step = T38_STEP_TAIL;
 					t38_wait = ms2samples(100, srate);
 					break;
@@ -2182,7 +2181,7 @@ T30 *t30_create(const struct t30_config *cfg)
 {
 	T30 *t = new (std::nothrow) T30();
 	if (!t)
-		return NULL;
+		return nullptr;
 	t->cfg = *cfg;
 	t->srate = cfg->srate ? cfg->srate : 8000;
 	t->t38_last_ind = -1;

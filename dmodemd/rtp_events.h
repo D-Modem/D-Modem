@@ -28,8 +28,8 @@
 #ifndef DMODEMD_RTP_EVENTS_H
 #define DMODEMD_RTP_EVENTS_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
 namespace dmd {
 

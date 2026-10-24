@@ -20,7 +20,7 @@
 #ifndef DMODEM_LINK_MNP_H
 #define DMODEM_LINK_MNP_H
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "hdlc.h"
 

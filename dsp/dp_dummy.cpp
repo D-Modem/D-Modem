@@ -19,7 +19,7 @@
  *
  */
 
-#include <string.h>
+#include <cstring>
 
 #include "dsp.h"
 #include "pump.h"

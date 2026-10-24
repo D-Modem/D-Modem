@@ -5,18 +5,18 @@
  *    client.cpp - ARI's HTTP and WebSocket transport (see client.h)
  *
  */
-#include <errno.h>
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <random>
+
 #include <netdb.h>
 #include <poll.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#include <random>
 
 #include "client.h"
 
@@ -226,7 +226,7 @@ int request(const Server &srv, const char *method, const std::string &path,
 			std::string len = header(reply.substr(0, end + 2),
 						 "content-length");
 			if (!len.empty() &&
-			    reply.size() >= end + 4 + strtoul(len.c_str(), 0, 10))
+			    reply.size() >= end + 4 + strtoul(len.c_str(), nullptr, 10))
 				break;
 		}
 	}

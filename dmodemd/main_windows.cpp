@@ -21,14 +21,13 @@
  *
  */
 
-#include <direct.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 
+#include <direct.h>
 #include <dcore.h>
 #include <dsplibs.h>
 #include <log.h>

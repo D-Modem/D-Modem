@@ -8,11 +8,10 @@
  *
  */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <new>
 
 #include "dsp.h"
@@ -91,7 +90,7 @@ void *dcr_create(void)
 {
 	DcRemover *d = new (std::nothrow) DcRemover();
 	if (!d)
-		return NULL;
+		return nullptr;
 	d->flags = DCR_ENABLE | DCR_SUBTRACT | DCR_TRACK;
 	d->state = 0;
 	d->skip_len = 5760;
@@ -271,7 +270,7 @@ void *CID_create(struct modem *m, unsigned rate, unsigned cid_val,
 {
 	CallerId *c = new (std::nothrow) CallerId();
 	if (!c)
-		return NULL;
+		return nullptr;
 	c->modem = m;
 	c->format = cid_val;
 	c->packet = packet;
@@ -503,7 +502,7 @@ void *VOICE_create(struct modem *m, unsigned srate)
 {
 	Voice *v = new (std::nothrow) Voice();
 	if (!v)
-		return NULL;
+		return nullptr;
 	v->modem = m;
 	v->srate = srate;
 	v->state = VOICE_STATE_COMMAND;

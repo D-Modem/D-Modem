@@ -13,7 +13,7 @@
 #ifndef DMODEM_LINK_V42BIS_H
 #define DMODEM_LINK_V42BIS_H
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace dlink {
 

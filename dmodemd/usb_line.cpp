@@ -68,15 +68,14 @@
  *
  */
 
-#include <errno.h>
+#include <cerrno>
 #ifndef _WIN32
 #include <poll.h>
 #endif
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include <g711.h>
 #include <log.h>

@@ -18,8 +18,7 @@
 #ifndef DMODEMD_HDA_CODEC_H
 #define DMODEMD_HDA_CODEC_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <string>
 
 #include <alsa/asoundlib.h>

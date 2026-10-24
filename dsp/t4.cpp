@@ -10,9 +10,9 @@
  *
  */
 
+#include <cstdlib>
+#include <cstring>
 #include <mutex>
-#include <stdlib.h>
-#include <string.h>
 
 #include "reinit.h"
 #include "t4.h"
@@ -55,7 +55,7 @@ static const struct code white_codes[] = {
 	{1280, "011011001"}, {1344, "011011010"}, {1408, "011011011"},
 	{1472, "010011000"}, {1536, "010011001"}, {1600, "010011010"},
 	{1664, "011000"}, {1728, "010011011"},
-	{-1, NULL}
+	{-1, nullptr}
 };
 
 static const struct code black_codes[] = {
@@ -90,7 +90,7 @@ static const struct code black_codes[] = {
 	{1408, "0000001010100"}, {1472, "0000001010101"},
 	{1536, "0000001011010"}, {1600, "0000001011011"},
 	{1664, "0000001100100"}, {1728, "0000001100101"},
-	{-1, NULL}
+	{-1, nullptr}
 };
 
 /* make-up codes for both colours (Table 3) */
@@ -100,7 +100,7 @@ static const struct code ext_codes[] = {
 	{2176, "000000010101"}, {2240, "000000010110"}, {2304, "000000010111"},
 	{2368, "000000011100"}, {2432, "000000011101"}, {2496, "000000011110"},
 	{2560, "000000011111"},
-	{-1, NULL}
+	{-1, nullptr}
 };
 
 /* two dimensional modes (Table 4); the vertical ones by their offset */
@@ -111,7 +111,7 @@ static const struct code mode_codes[] = {
 	{M_V0, "1"}, {M_V0 + 1, "011"}, {M_V0 + 2, "000011"},
 	{M_V0 + 3, "0000011"}, {M_V0 - 1, "010"}, {M_V0 - 2, "000010"},
 	{M_V0 - 3, "0000010"},
-	{-1, NULL}
+	{-1, nullptr}
 };
 
 #define EOL_BITS        12      /* 000000000001 */
@@ -198,7 +198,7 @@ unsigned char *T4Page::add_row(const unsigned char *row)
 	if (rows == cap) {
 		int cap_ = cap ? cap * 2 : 1200;
 		if (!resize_zeroed(bits, (size_t)cap_ * stride))
-			return NULL;
+			return nullptr;
 		cap = cap_;
 	}
 	r = bits.data() + (size_t)rows * stride;
@@ -248,7 +248,7 @@ static const char *code_of(const struct code *t, int run)
 	for (; t->bits; t++)
 		if (t->run == run)
 			return t->bits;
-	return NULL;
+	return nullptr;
 }
 
 
@@ -541,7 +541,7 @@ void T4Rx::row(int two_d)
 		page->bad_rows++;
 		page->add_row(page->rows ? nullptr : ref.data());
 	} else {
-		row = page->add_row(NULL);
+		row = page->add_row(nullptr);
 		if (row) {
 			row_from_changes(row, w, ch, n);
 			memcpy(ref.data(), row, T4_STRIDE(w));
@@ -648,7 +648,7 @@ int T4Page::decode(const unsigned char *data, size_t len, int compression, int t
 		}
 		if (n < 0)
 			break;                  /* the end (EOFB) or an error */
-		row = add_row(NULL);
+		row = add_row(nullptr);
 		if (!row)
 			break;
 		row_from_changes(row, w, ch, n);

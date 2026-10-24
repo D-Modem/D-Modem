@@ -21,9 +21,9 @@
  *
  */
 
-#include <math.h>
+#include <cmath>
+#include <cstring>
 #include <mutex>
-#include <string.h>
 
 #include "bits.h"
 #include "v34.h"

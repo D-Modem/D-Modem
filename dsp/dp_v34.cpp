@@ -25,11 +25,12 @@
  *
  */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
 #include <vector>
 
 #include "pump.h"
@@ -2469,13 +2470,6 @@ out:
 	return gain;
 }
 
-/* qsort()'s order of floats: ascending */
-static int cmp_float(const void *a, const void *b)
-{
-	float x = *(const float *)a, y = *(const float *)b;
-	return x < y ? -1 : x > y;
-}
-
 /* where the far echo is: the received signal of the last EC_SEARCH
    samples against our (scrambled, nearly white) transmitted signal at
    every delay beyond the near part.  The far part then covers
@@ -2515,7 +2509,7 @@ void V34Echo::search()
 		}
 	}
 	/* against the median window: the floor without any echo */
-	qsort(win_, (size_t)n_, sizeof(float), cmp_float);
+	std::sort(win_, win_ + n_);
 	floor = win_[n_ / 2] + 1e-9f;
 	if (best_d < 0 || best < 16 * floor) {
 		far_on = 0;
@@ -4220,7 +4214,7 @@ int V34Qc<P>::qc_step(long c)
 			   (9.2.1.1/V.92); answer that with JM */
 			DSP_DBG("v34: CM after QCA1d: V.8\n");
 			self.pcm_tx = 0;
-			self.v90tx.fclock = NULL;
+			self.v90tx.fclock = nullptr;
 			self.txm = TXM_ANSAM;
 			self.set_state(V8A_ANSAM);
 		} else if (toneq_blocks >= 16) {
@@ -4233,7 +4227,7 @@ int V34Qc<P>::qc_step(long c)
 		} else if (c >= ms2samples(2000, self.srate)) {
 			DSP_DBG("v34: no TONEq: V.8\n");
 			self.pcm_tx = 0;
-			self.v90tx.fclock = NULL;
+			self.v90tx.fclock = nullptr;
 			self.v8_ok = self.v8_cj = 0;
 			self.v8_sync = 0;
 			self.txm = TXM_ANSAM;
@@ -5993,7 +5987,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 			float x = src[i];
 			if (test_echo.g)
 				x += test_echo.echo();
-			r = sample(x, &y, NULL);
+			r = sample(x, &y, nullptr);
 			if (test_echo.g)
 				test_echo.push(y);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
@@ -6024,7 +6018,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 				memmove(ref_fifo, ref_fifo + 1,
 					--ref_n * sizeof(float));
 			}
-			r = sample(up[k], &y, pcm_tx ? &rf : NULL);
+			r = sample(up[k], &y, pcm_tx ? &rf : nullptr);
 			if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 				return r;
 			if (r != DPSTAT_OK)
@@ -6195,7 +6189,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	/* test: DSP_V34_LOSE_INFO0=[a|c]: our first INFO0 with a bad CRC,
 	   lost to the remote (phase 2's recovery, 11.2.2/V.34), only the
 	   answerer's or the caller's (anything else: either) */
-	lose_info0 = pump_test_env("DSP_V34_LOSE_INFO0", caller_) != NULL;
+	lose_info0 = pump_test_env("DSP_V34_LOSE_INFO0", caller_) != nullptr;
 	reneg_test = false;
 	test_echo.init(pump_test_env("DSP_TEST_ECHO", caller_), line_rate);
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
@@ -6243,7 +6237,7 @@ static const enum DP_ID v34_ids[] = { DP_V8, DP_V34, DP_V90, DP_V91, DP_V92 };
 int dp_v34_init(void)
 {
 	int i;
-	for (i = 0; i < (int)(sizeof(v34_ids) / sizeof(v34_ids[0])); i++)
+	for (i = 0; i < (int)std::size(v34_ids); i++)
 		modem_dp_register(v34_ids[i], &PumpOps<V34Pump>::ops);
 	return 0;
 }
@@ -6252,7 +6246,7 @@ int dp_v34_init(void)
 void dp_v34_exit(void)
 {
 	int i;
-	for (i = 0; i < (int)(sizeof(v34_ids) / sizeof(v34_ids[0])); i++)
+	for (i = 0; i < (int)std::size(v34_ids); i++)
 		modem_dp_deregister(v34_ids[i], &PumpOps<V34Pump>::ops);
 }
 

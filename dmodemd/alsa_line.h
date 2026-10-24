@@ -31,14 +31,12 @@
 #ifndef DMODEMD_ALSA_LINE_H
 #define DMODEMD_ALSA_LINE_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <alsa/asoundlib.h>
-
 #include <dcore.h>
 #include <dsp.h>
 

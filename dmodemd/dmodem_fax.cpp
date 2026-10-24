@@ -9,12 +9,12 @@
  *
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <new>
+
+#include <unistd.h>
 
 #include "dmodem.h"
 #include "dmodem_g711.h"
@@ -110,16 +110,16 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 
 	dmodem_init();
 	if (!cfg->file)
-		return NULL;
+		return nullptr;
 	f = new (std::nothrow) dmodem_fax();
 	if (!f)
-		return NULL;
+		return nullptr;
 	f->law = cfg->law;
 	f->sending = cfg->dir == DMODEM_FAX_SEND;
 	snprintf(f->path, sizeof(f->path), "%s", cfg->file);
 	if (f->sending && f->in.open(f->path)) {
 		delete f;
-		return NULL;
+		return nullptr;
 	}
 	c.sending = f->sending;
 	c.ident = cfg->ident;
@@ -156,7 +156,7 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 		if (f->sending)
 			f->in.close();
 		delete f;
-		return NULL;
+		return nullptr;
 	}
 	return f;
 }

@@ -30,17 +30,17 @@
  *
  */
 
-#include <windows.h>
-#include <wudfddi.h>
-
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-
 #include <atomic>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <vector>
+
+#include <windows.h>
+#include <wudfddi.h>
 
 #include "link.h"
 #include "port.h"
@@ -543,8 +543,8 @@ private:
 		PropVariantInit(&v);
 		if (SUCCEEDED(s->GetNamedValue(PORT_NAME, &v)) &&
 		    v.vt == VT_LPWSTR && v.pwszVal) {
-			wcsncpy(port_, v.pwszVal, sizeof(port_) / sizeof(port_[0]) - 1);
-			port_[sizeof(port_) / sizeof(port_[0]) - 1] = 0;
+			wcsncpy(port_, v.pwszVal, std::size(port_) - 1);
+			port_[std::size(port_) - 1] = 0;
 		}
 		PropVariantClear(&v);
 		s->Release();
@@ -563,7 +563,7 @@ private:
 			dbg("no symbolic link for %ls (0x%08lx)", port_,
 			    (unsigned long)hr);
 
-		DWORD n = sizeof(pdo_) / sizeof(pdo_[0]);
+		DWORD n = (DWORD)std::size(pdo_);
 		if (FAILED(dev->RetrieveDeviceName(pdo_, &n))) {
 			pdo_[0] = 0;
 			return;

@@ -34,9 +34,9 @@
  *
  */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 
 #include "bits.h"
 #include "env.h"
@@ -466,7 +466,7 @@ int V91::tx_sample()
 						c6[i] = ccseq[(tframes / 64 * 6 + i) % 96];
 				tframes++;
 			}
-			enc.frame(b, cc ? c6 : NULL, out);
+			enc.frame(b, cc ? c6 : nullptr, out);
 			opos = 0;
 		}
 		return out[opos++];
@@ -664,7 +664,7 @@ void V91::data_symbol(int x)
 	rpos = 0;
 	if (rx == V91R_B1) {
 		unsigned char b[48];
-		dec.frame(ru, rsg, b, NULL);
+		dec.frame(ru, rsg, b, nullptr);
 		if (++bframes == 2) {
 			rx = V91R_DATA;
 			rframes = 0;
@@ -673,7 +673,7 @@ void V91::data_symbol(int x)
 	} else {
 		unsigned char b[48], c6[6];
 		int cc = want_cc && rframes % 64 == 0, nb;
-		if (dec.frame(ru, rsg, b, cc ? c6 : NULL) < 0)
+		if (dec.frame(ru, rsg, b, cc ? c6 : nullptr) < 0)
 			err_count++;
 		nb = dec.K + (cc ? 0 : 6);
 		rframes++;

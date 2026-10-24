@@ -33,8 +33,7 @@
 #ifndef DMODEM_LINK_V44_H
 #define DMODEM_LINK_V44_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <vector>
 
 namespace dlink {

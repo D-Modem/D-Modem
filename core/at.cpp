@@ -16,12 +16,13 @@
  *
  */
 
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
 
+#include <strings.h>
 #include <dsplibs.h>
 
 #include "dcore.h"
@@ -199,7 +200,7 @@ const struct Kept {
 	   +CVMR */
 	{ "+CVM", 3, { 63, 8000, 0 }, "(0-63),(8000,16000),(0,1)" },
 };
-const int KEPT_COUNT = sizeof(kept_params) / sizeof(kept_params[0]);
+const int KEPT_COUNT = (int)std::size(kept_params);
 static_assert(KEPT_COUNT <= Modem::KEPT_PARAMS,
 	      "the kept parameters do not fit the modem's storage");
 

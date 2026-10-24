@@ -27,10 +27,11 @@
  *
  */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "bits.h"
 #include "dsp.h"
@@ -487,19 +488,12 @@ static inline void dil_add(V90Rx *r, float y)
 	}
 }
 
-/* a value's place in a sorted array of floats (qsort()) */
-static int cmp_float(const void *a, const void *b)
-{
-	float x = *(const float *)a, y = *(const float *)b;
-	return x < y ? -1 : x > y;
-}
-
 /* the median of n values (sorted in place); 0 for none */
 static float median(float *v, int n)
 {
 	if (!n)
 		return 0;
-	qsort(v, n, sizeof(*v), cmp_float);
+	std::sort(v, v + n);
 	return n & 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
 }
 
@@ -569,7 +563,7 @@ void V90Rx::dil_analyse()
 		for (u = 0; u < 128; u++)
 			if (dil_usable[j][u])
 				lv[n_++] = dil_level[j][u];
-		qsort(lv, n_, sizeof(*lv), cmp_float);
+		std::sort(lv, lv + n_);
 		dil_distinct[j] = n_ ? 1 : 0;
 		for (i = 1, m = 0; i < n_; i++)
 			if (lv[i] - lv[m] > 3 * dil_noise) {

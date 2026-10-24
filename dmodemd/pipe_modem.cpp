@@ -7,19 +7,18 @@
  *
  */
 
-#include <errno.h>
-#include <poll.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/select.h>
-#include <sys/time.h>
-#include <time.h>
-#include <unistd.h>
-
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <vector>
 
+#include <poll.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <unistd.h>
 #include <log.h>
 
 #include "env.h"
@@ -156,7 +155,7 @@ void PipeModem::pace(int samples)
 	}
 	if (speed <= 0)
 		return;
-	gettimeofday(&tv, NULL);
+	gettimeofday(&tv, nullptr);
 	now = tv.tv_sec + tv.tv_usec * 1e-6;
 	if (clock_done_ == 0 ||
 	    now - clock_start_ - clock_done_ / rate_ / speed > 0.5) {
@@ -193,7 +192,7 @@ int PipeModem::line(bool rd)
 			   here */
 			if (line_idle())
 				next_sync_ = samples() + sync_;
-			gettimeofday(&tv, NULL);
+			gettimeofday(&tv, nullptr);
 			line_at_ = tv.tv_sec + tv.tv_usec * 1e-6;
 		}
 		if (count < 0) {
@@ -300,7 +299,7 @@ void PipeModem::stop()
 bool PipeModem::line_idle() const
 {
 	struct timeval tv;
-	gettimeofday(&tv, NULL);
+	gettimeofday(&tv, nullptr);
 	return tv.tv_sec + tv.tv_usec * 1e-6 - line_at_ > 0.5;
 }
 

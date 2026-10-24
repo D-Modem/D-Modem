@@ -37,23 +37,16 @@
  *               [-a app] [-v]...
  *
  */
-#include <arpa/inet.h>
-#include <ctype.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <signal.h>
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <time.h>
-#include <unistd.h>
-
 #include <atomic>
+#include <cctype>
+#include <cerrno>
+#include <csignal>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -62,6 +55,13 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "client.h"
 #include "dmodem.h"
@@ -99,7 +99,7 @@ void say(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void say(const char *fmt, ...)
 {
 	char t[32];
-	time_t now = time(NULL);
+	time_t now = time(nullptr);
 	va_list ap;
 
 	strftime(t, sizeof(t), "%H:%M:%S", localtime(&now));
@@ -426,7 +426,7 @@ void make_dirs(const std::string &dir)
 std::string fax_file_name(const Call &c, const char *dir)
 {
 	char when[32];
-	time_t now = time(NULL);
+	time_t now = time(nullptr);
 	std::string caller, id = c.id;
 
 	strftime(when, sizeof(when), "%Y%m%d-%H%M%S", localtime(&now));
@@ -704,10 +704,10 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 				"DMODEM_CALLERID", c.caller.c_str(),
 				"DMODEM_DIALED", c.exten.c_str(),
 				"DMODEM_CONNECTED", connected,
-				NULL
+				nullptr
 			};
 			snprintf(connected, sizeof(connected), "%lld",
-				 (long long)time(NULL));
+				 (long long)time(nullptr));
 			set_var(c.id, "DMODEMRATE", bc.rate);
 			if (verbose >= 1)
 				say("%s: dmodem connected at %s bit/s",
@@ -1056,7 +1056,7 @@ int main(int argc, char *argv[])
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
-	srandom((unsigned)time(NULL) ^ (unsigned)getpid());
+	srandom((unsigned)time(nullptr) ^ (unsigned)getpid());
 	dmodem_set_log(modem_log);
 	dmodem_init();
 	dmodem_set_debug(atoi(general("debug", "0").c_str()));

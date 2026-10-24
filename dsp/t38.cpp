@@ -24,7 +24,8 @@
  *
  */
 
-#include <string.h>
+#include <cstring>
+#include <iterator>
 
 #include "reinit.h"
 #include "t38.h"
@@ -336,7 +337,7 @@ int UdptlRx::packet(const unsigned char *buf, int len,
 		for (k = 0; k < (int)count; k++) {
 			if (get_len(buf, len, &at, &n) || at + (int)n > len)
 				return -1;
-			if (nsec < (int)(sizeof(sec) / sizeof(sec[0]))) {
+			if (nsec < (int)std::size(sec)) {
 				sec[nsec] = buf + at;
 				sec_len[nsec++] = n;
 			}

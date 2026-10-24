@@ -17,9 +17,8 @@
 #ifndef DMODEMD_SIP_MODEM_H
 #define DMODEMD_SIP_MODEM_H
 
-#include <stdint.h>
-
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>

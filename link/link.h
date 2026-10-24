@@ -26,7 +26,7 @@
 #ifndef DMODEM_LINK_H
 #define DMODEM_LINK_H
 
-#include <stdint.h>
+#include <cstdint>
 
 /* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
 #ifndef DMODEM_PRINTF

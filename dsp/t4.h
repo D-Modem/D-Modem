@@ -10,8 +10,7 @@
 #ifndef __T4_H__
 #define __T4_H__
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <vector>
 
 namespace dsp {

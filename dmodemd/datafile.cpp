@@ -7,10 +7,11 @@
  *
  */
 
-#include <errno.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+
 #include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #ifdef _WIN32

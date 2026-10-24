@@ -7,8 +7,8 @@
  *
  */
 
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
 
 #include "bits.h"
 #include "dsp.h"

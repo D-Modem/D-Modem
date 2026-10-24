@@ -38,8 +38,7 @@
 #ifndef DSP_VCVM_STARTUP_H
 #define DSP_VCVM_STARTUP_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>

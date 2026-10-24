@@ -29,9 +29,10 @@
  *
  */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
 
 #include "bits.h"
 #include "pump.h"
@@ -76,7 +77,7 @@ static const struct v32_rate v32_rates[] = {
 	{ 7200, RB_TCM | RB_7200, 3, v32_points_7200 },
 	{ 4800, RB_4800, 2, v32_points_4800 },
 };
-#define V32_NRATES (int)(sizeof(v32_rates) / sizeof(v32_rates[0]))
+#define V32_NRATES (int)std::size(v32_rates)
 
 /* 4800 bit/s differential code: next point index from previous index
    and dibit (first bit in bit 0); points indexed as v32_points_4800 */
@@ -263,7 +264,7 @@ static const struct v32_rate *rate_of_word(unsigned w)
 	for (i = 0; i < V32_NRATES; i++)
 		if ((w & v32_rates[i].bits) == v32_rates[i].bits)
 			return &v32_rates[i];
-	return NULL;
+	return nullptr;
 }
 
 /* the rate word naming r alone (R3, and E with RB_HEADER added) */
@@ -621,7 +622,7 @@ void V32Pump::rx_symbol()
 						break;
 				rx_4800 = k;
 			} else
-				q = vit.decode(z, NULL);
+				q = vit.decode(z, nullptr);
 			if (q >= 0 && state == V32_DATA) {
 				for (k = 0; k < n; k++)
 					bits[k] = descramble(&rx_scr,
@@ -1130,7 +1131,7 @@ static const enum DP_ID v32_ids[] = { DP_V32, DP_V32BIS };
 int dp_v32_init(void)
 {
 	unsigned i;
-	for (i = 0; i < sizeof(v32_ids) / sizeof(v32_ids[0]); i++)
+	for (i = 0; i < std::size(v32_ids); i++)
 		modem_dp_register(v32_ids[i], &PumpOps<V32Pump>::ops);
 	return 0;
 }
@@ -1139,7 +1140,7 @@ int dp_v32_init(void)
 void dp_v32_exit(void)
 {
 	unsigned i;
-	for (i = 0; i < sizeof(v32_ids) / sizeof(v32_ids[0]); i++)
+	for (i = 0; i < std::size(v32_ids); i++)
 		modem_dp_deregister(v32_ids[i], &PumpOps<V32Pump>::ops);
 }
 

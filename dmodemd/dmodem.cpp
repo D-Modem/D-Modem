@@ -11,11 +11,11 @@
  *
  */
 
-#include <errno.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <mutex>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <dcore.h>
 #include <log.h>
@@ -121,7 +121,7 @@ struct dmodem *dmodem_create(const struct dmodem_config *cfg)
 	if (!d->m->ok()) {
 		delete d->m;
 		delete d;
-		return NULL;
+		return nullptr;
 	}
 	/* (enum dmodem_law is the pumps' code: 1 mu-law, 2 A-law) */
 	d->m->set_line_law(d->law);

@@ -21,10 +21,9 @@
  *
  */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <new>
 
 #include "bits.h"
@@ -660,7 +659,7 @@ void Fax::t38_flush_v21()
 					report_status(FAX_STATUS_CONNECT);
 			} else if (t38_close) {
 				/* an empty frame: the end */
-				t38_data(0, NULL, 0, T38_HDLC_SIG_END);
+				t38_data(0, nullptr, 0, T38_HDLC_SIG_END);
 				t38_tail(T38_HDLC_TAIL_MS);
 				return;
 			} else {
@@ -732,7 +731,7 @@ void Fax::t38_flush_fast()
 					EcmRx::hdlc_rx_bit((d[i] >> k) & 1);
 			t38_send_ecm();
 			if (ended)
-				t38_data(0, NULL, 0, T38_HDLC_SIG_END);
+				t38_data(0, nullptr, 0, T38_HDLC_SIG_END);
 		}
 		if (ended) {
 			t38_tail(t38_fmode == FMODE_T4 ? T38_T4_TAIL_MS :
@@ -1257,7 +1256,7 @@ void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
 {
 	Fax *f = new (std::nothrow) Fax();
 	if (!f)
-		return NULL;
+		return nullptr;
 	f->modem = m;
 	f->srate = srate;
 	f->caller = caller;

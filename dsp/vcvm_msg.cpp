@@ -8,10 +8,9 @@
  *
  */
 
-#include <math.h>
-#include <string.h>
-
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
 #include "dsp.h"
 #include "fax_hdlc.h"

@@ -23,9 +23,8 @@
 #ifndef DMODEM_WINMODEM_WIRE_H
 #define DMODEM_WINMODEM_WIRE_H
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace vmodem {

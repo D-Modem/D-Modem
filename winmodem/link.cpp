@@ -8,11 +8,11 @@
 
 #include "link.h"
 
+#include <cstdarg>
+#include <cstdio>
+
 #include <windows.h>
 #include <sddl.h>
-
-#include <stdarg.h>
-#include <stdio.h>
 
 namespace vmodem {
 

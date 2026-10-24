@@ -21,9 +21,8 @@
 #ifndef DMODEM_CORE_DCORE_H
 #define DMODEM_CORE_DCORE_H
 
-#include <stdint.h>
-#include <time.h>
-
+#include <cstdint>
+#include <ctime>
 #include <string>
 #include <vector>
 

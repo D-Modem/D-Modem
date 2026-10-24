@@ -34,9 +34,8 @@
 #ifndef DMODEM_WINMODEM_PORT_H
 #define DMODEM_WINMODEM_PORT_H
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <mutex>
 #include <string>

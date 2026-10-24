@@ -11,9 +11,9 @@
  *
  */
 
-#include <stdio.h>
-#include <unistd.h>
+#include <cstdio>
 
+#include <unistd.h>
 #include <dsplibs.h>
 #include <log.h>
 

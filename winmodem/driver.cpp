@@ -29,14 +29,13 @@
 #define WIN32_NO_STATUS
 #include <windows.h>
 #undef WIN32_NO_STATUS
-#include <wdf.h>
-
-#include <stdarg.h>
-#include <stdio.h>
-
 #include <atomic>
+#include <cstdarg>
+#include <cstdio>
 #include <mutex>
 #include <string>
+
+#include <wdf.h>
 
 #include "link.h"
 #include "port.h"

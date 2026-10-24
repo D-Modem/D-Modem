@@ -7,10 +7,9 @@
  *
  */
 
-#include <math.h>
-#include <string.h>
-
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
 #include "vcvm.h"
 

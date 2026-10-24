@@ -6,8 +6,9 @@
  *
  */
 
-#include <stdarg.h>
-#include <stdio.h>
+#include <cstdarg>
+#include <cstdio>
+#include <iterator>
 
 #include "cx_daa.h"
 
@@ -379,8 +380,6 @@ static const CxDaa::Op on_hook[] = {
 #undef LFP
 #undef LWP
 
-#define N(a) ((int)(sizeof(a) / sizeof((a)[0])))
-
 /* see cx_daa.h (private): the steps in turn, the first failure the end */
 bool CxDaa::run(const Op *ops, int n)
 {
@@ -492,7 +491,8 @@ bool CxDaa::power_up(uint8_t *version)
 	off_hook_ = false;
 	if (kind_ != 0x12)
 		return probe(version);
-	if (!run(ssd_start, N(ssd_start)) || !probe(&version_))
+	if (!run(ssd_start, static_cast<int>(std::size(ssd_start))) ||
+	    !probe(&version_))
 		return false;
 	if ((version_ & 0x3f) > 0x11)
 		return fail("LSD version %#x not one the library takes",
@@ -500,7 +500,7 @@ bool CxDaa::power_up(uint8_t *version)
 	*version = version_;
 	if ((version_ & 0x3f) == 0 || (version_ & 0x3f) >= 0x10)
 		return true;    /* the library's setup for it not known */
-	if (!run(line_start, N(line_start)))
+	if (!run(line_start, static_cast<int>(std::size(line_start))))
 		return false;
 	setup_ = true;
 	return true;
@@ -510,14 +510,16 @@ bool CxDaa::power_up(uint8_t *version)
 bool CxDaa::go_off_hook()
 {
 	off_hook_ = true;
-	return setup_ ? run(off_hook, N(off_hook)) : set_hook(HOOK_OFF);
+	return setup_ ? run(off_hook, static_cast<int>(std::size(off_hook)))
+		      : set_hook(HOOK_OFF);
 }
 
 /* see cx_daa.h */
 bool CxDaa::go_on_hook()
 {
 	off_hook_ = false;
-	return setup_ ? run(on_hook, N(on_hook)) : set_hook(HOOK_ON);
+	return setup_ ? run(on_hook, static_cast<int>(std::size(on_hook)))
+		      : set_hook(HOOK_ON);
 }
 
 /* see cx_daa.h */

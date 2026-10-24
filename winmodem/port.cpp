@@ -12,7 +12,7 @@
 
 #include "port.h"
 
-#include <string.h>
+#include <cstring>
 
 #include "wire.h"
 

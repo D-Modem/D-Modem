@@ -10,8 +10,7 @@
 #ifndef __FAX_H__
 #define __FAX_H__
 
-#include <math.h>
-
+#include <cmath>
 #include <vector>
 
 #include "qam.h"

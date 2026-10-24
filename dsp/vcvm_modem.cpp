@@ -7,11 +7,10 @@
  *
  */
 
-#include <math.h>
-#include <stdarg.h>
-#include <stdio.h>
-
 #include <algorithm>
+#include <cmath>
+#include <cstdarg>
+#include <cstdio>
 
 #include "bits.h"
 #include "vcvm_modem.h"

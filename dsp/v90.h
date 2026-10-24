@@ -9,7 +9,7 @@
 #ifndef V90_H
 #define V90_H
 
-#include <string.h>
+#include <cstring>
 
 #include "v34.h"
 

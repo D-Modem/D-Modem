@@ -17,7 +17,7 @@
 #ifndef DMODEMD_CX_COUNTRY_H
 #define DMODEMD_CX_COUNTRY_H
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace dmd {
 

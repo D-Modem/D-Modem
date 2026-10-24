@@ -23,10 +23,10 @@
  *
  */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
 #include <vector>
 
 #include "dsp.h"
@@ -828,7 +828,7 @@ static const enum DP_ID v22_ids[] = {
 int dp_v22_init(void)
 {
 	unsigned i;
-	for (i = 0; i < sizeof(v22_ids) / sizeof(v22_ids[0]); i++)
+	for (i = 0; i < std::size(v22_ids); i++)
 		modem_dp_register(v22_ids[i], &PumpOps<V22Pump>::ops);
 	return 0;
 }
@@ -837,7 +837,7 @@ int dp_v22_init(void)
 void dp_v22_exit(void)
 {
 	unsigned i;
-	for (i = 0; i < sizeof(v22_ids) / sizeof(v22_ids[0]); i++)
+	for (i = 0; i < std::size(v22_ids); i++)
 		modem_dp_deregister(v22_ids[i], &PumpOps<V22Pump>::ops);
 }
 

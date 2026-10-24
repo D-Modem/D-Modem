@@ -39,25 +39,25 @@
  *
  */
 
-#include <assert.h>
-#include <ctype.h>
-#include <errno.h>
+#include <cassert>
+#include <cctype>
+#include <cerrno>
+#include <cinttypes>
+#include <climits>
+#include <csignal>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <cwchar>
+
 #include <fcntl.h>
-#include <inttypes.h>
-#include <limits.h>
-#include <signal.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <strings.h>
 #include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
-#include <wchar.h>
 #ifndef _WIN32
 #include <arpa/inet.h>
 #include <netinet/in.h>

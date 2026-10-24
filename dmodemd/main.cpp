@@ -16,24 +16,23 @@
  *
  */
 
-#include <ctype.h>
-#include <errno.h>
+#include <cctype>
+#include <cerrno>
+#include <csignal>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <string>
+
 #include <grp.h>
 #include <pwd.h>
 #include <sched.h>
-#include <signal.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#include <memory>
-#include <string>
-
 #include <dcore.h>
 #include <dsplibs.h>
 #include <log.h>

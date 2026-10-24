@@ -7,12 +7,13 @@
  *
  */
 
+#include <cerrno>
+#include <climits>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+
 #include <dirent.h>
-#include <errno.h>
-#include <limits.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
 #include <unistd.h>
 
 #if defined(__linux__) && (defined(__i386__) || defined(__x86_64__))

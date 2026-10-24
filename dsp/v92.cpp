@@ -35,13 +35,13 @@
  *
  */
 
-#include <limits.h>
+#include <climits>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
 #include <mutex>
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-
 #include <vector>
 
 #include "bits.h"
@@ -1945,7 +1945,7 @@ void V92Up::design()
 {
 	static const double gammas[] = { 1, 0.97, 0.94, 0.9, 0.85, 0.8,
 					 0.7, 0.6, 0.5 };
-#define NG      (int)(sizeof(gammas) / sizeof(gammas[0]))
+#define NG      (int)std::size(gammas)
 	double bgs[NG][V92_EQ_B], fgs[NG][V92_EQ_F], e2s[NG], sbs[NG];
 	int ng = 0, drn, M = 8, i, j, lc = 0, best = -1;
 	double msa = 0;

@@ -8,10 +8,9 @@
  *
  */
 
-#include <stdarg.h>
-#include <stdio.h>
-
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 
 #include "bits.h"
 #include "vcvm_startup.h"

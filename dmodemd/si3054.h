@@ -20,7 +20,7 @@
 #ifndef DMODEMD_SI3054_H
 #define DMODEMD_SI3054_H
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace dmd {
 

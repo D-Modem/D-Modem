@@ -8,7 +8,7 @@
  */
 #include "rtp_events.h"
 
-#include <math.h>
+#include <cmath>
 
 namespace dmd {
 

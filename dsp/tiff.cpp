@@ -8,10 +8,9 @@
  *
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <utility>
 
 #include "reinit.h"
@@ -48,7 +47,7 @@ int TiffOut::open(const char *path)
 		return -1;
 	if (fwrite(h, 1, 8, static_cast<FILE*>(f)) != 8) {
 		fclose(static_cast<FILE*>(f));
-		f = NULL;
+		f = nullptr;
 		return -1;
 	}
 	last_ifd_next = 4;           /* the header's first IFD offset */
@@ -151,7 +150,7 @@ int TiffOut::close()
 	int r = 0;
 	if (f) {
 		r = fclose(static_cast<FILE*>(f)) ? -1 : 0;
-		f = NULL;
+		f = nullptr;
 	}
 	return r;
 }

@@ -9,7 +9,8 @@
 
 #include "hda_codec.h"
 
-#include <stdio.h>
+#include <cstdio>
+
 #include <sys/ioctl.h>
 
 namespace dmd {

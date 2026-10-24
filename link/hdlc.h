@@ -15,7 +15,7 @@
 #ifndef DMODEM_LINK_HDLC_H
 #define DMODEM_LINK_HDLC_H
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace dlink {
 

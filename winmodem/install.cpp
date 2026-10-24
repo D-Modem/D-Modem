@@ -25,15 +25,14 @@
  *
  */
 
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
 #include <windows.h>
 #include <newdev.h>
 #include <setupapi.h>
-
-#include <stdio.h>
-#include <string.h>
-
-#include <string>
-#include <vector>
 
 namespace {
 

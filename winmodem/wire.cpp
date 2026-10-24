@@ -8,7 +8,7 @@
 
 #include "wire.h"
 
-#include <string.h>
+#include <cstring>
 
 namespace vmodem {
 

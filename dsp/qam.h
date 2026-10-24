@@ -11,8 +11,7 @@
 #ifndef __QAM_H__
 #define __QAM_H__
 
-#include <string.h>
-
+#include <cstring>
 #include <vector>
 
 #include "dsp.h"

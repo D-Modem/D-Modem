@@ -24,7 +24,7 @@
 #ifndef DMODEM_LINK_MNP5_H
 #define DMODEM_LINK_MNP5_H
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace dlink {
 

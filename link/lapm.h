@@ -14,7 +14,7 @@
 #ifndef DMODEM_LINK_LAPM_H
 #define DMODEM_LINK_LAPM_H
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "hdlc.h"
 

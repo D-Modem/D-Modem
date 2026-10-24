@@ -14,14 +14,15 @@
 #define _GNU_SOURCE
 #endif
 
-#include <errno.h>
+#include <cerrno>
+#include <climits>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
 #include <fcntl.h>
 #include <grp.h>
-#include <limits.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -30,7 +31,6 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
-
 #include <dcore.h>
 #include <log.h>
 

@@ -21,9 +21,10 @@
 #ifndef DMODEMD_PORTABLE_H
 #define DMODEMD_PORTABLE_H
 
-#include <errno.h>
+#include <cerrno>
+#include <ctime>
+
 #include <fcntl.h>
-#include <time.h>
 
 #ifdef _WIN32
 

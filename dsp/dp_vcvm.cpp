@@ -11,8 +11,7 @@
  *
  */
 
-#include <string.h>
-
+#include <cstring>
 #include <vector>
 
 #include "dsp.h"

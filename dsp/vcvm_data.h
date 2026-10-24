@@ -30,8 +30,7 @@
 #ifndef DSP_VCVM_DATA_H
 #define DSP_VCVM_DATA_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <functional>
 #include <vector>
 

@@ -21,10 +21,10 @@
  *
  */
 
-#include <math.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
+#include <cmath>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
 
 #include <dsplibs.h>
 #include <link.h>

@@ -17,8 +17,9 @@
 #ifndef DMODEMD_LINE_FRAMES_H
 #define DMODEMD_LINE_FRAMES_H
 
-#include <errno.h>
-#include <string.h>
+#include <cerrno>
+#include <cstring>
+
 #include <unistd.h>
 
 namespace dmd {

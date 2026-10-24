@@ -7,9 +7,8 @@
  *
  */
 
-#include <string.h>
-
 #include <algorithm>
+#include <cstring>
 
 #include "link.h"
 

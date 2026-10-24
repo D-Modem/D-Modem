@@ -37,8 +37,7 @@
 #ifndef DMODEMD_CX_DAA_H
 #define DMODEMD_CX_DAA_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <string>
 
 namespace dmd {

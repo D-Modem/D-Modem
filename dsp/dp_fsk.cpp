@@ -7,9 +7,9 @@
  *
  */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 
 #include "dsp.h"
 #include "pump.h"

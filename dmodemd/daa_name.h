@@ -9,7 +9,7 @@
 #ifndef DMODEMD_DAA_NAME_H
 #define DMODEMD_DAA_NAME_H
 
-#include <ctype.h>
+#include <cctype>
 
 namespace dmd {
 

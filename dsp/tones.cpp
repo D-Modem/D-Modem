@@ -17,7 +17,7 @@
  *
  */
 
-#include <string.h>
+#include <cstring>
 
 #include "tones.h"
 

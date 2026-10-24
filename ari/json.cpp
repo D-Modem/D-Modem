@@ -5,8 +5,8 @@
  *    json.cpp - a JSON reader (see json.h)
  *
  */
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 
 #include "json.h"
 

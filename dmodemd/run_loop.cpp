@@ -6,7 +6,7 @@
  *
  */
 
-#include <errno.h>
+#include <cerrno>
 
 #include <dcore.h>
 
@@ -88,14 +88,14 @@ int RunLoop::wait(long ms)
 		Sleep((DWORD)ms);
 		return 0;
 	}
-	ret = select(0, &set_, &wset_, NULL, &tmo);
+	ret = select(0, &set_, &wset_, nullptr, &tmo);
 	if (ret == SOCKET_ERROR) {
 		errno = WSAGetLastError() == WSAEINTR ? EINTR : EIO;
 		return errno == EINTR ? 0 : -1;
 	}
 	return ret;
 #else
-	ret = select(max_ + 1, &set_, &wset_, NULL, &tmo);
+	ret = select(max_ + 1, &set_, &wset_, nullptr, &tmo);
 	if (ret < 0 && errno == EINTR)
 		return 0;
 	return ret;

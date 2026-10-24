@@ -14,10 +14,9 @@
  *
  */
 
-#include <stdio.h>
-#include <string.h>
-
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 
 #include "link.h"
 

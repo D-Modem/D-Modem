@@ -11,7 +11,7 @@
 #ifndef DMODEMD_RUN_LOOP_H
 #define DMODEMD_RUN_LOOP_H
 
-#include <signal.h>
+#include <csignal>
 #ifdef _WIN32
 /* (Windows: select() on sockets alone, a descriptor here a SOCKET) */
 #include <winsock2.h>

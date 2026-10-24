@@ -31,9 +31,8 @@
 #ifndef __PUMP_H__
 #define __PUMP_H__
 
-#include <stdlib.h>
-#include <string.h>
-
+#include <cstdlib>
+#include <cstring>
 #include <new>
 
 #include "dsp.h"
@@ -63,14 +62,14 @@ struct PumpOps {
 	{
 		T *p = new (std::nothrow) T();
 		if (!p)
-			return NULL;
+			return nullptr;
 		p->dp.id = id;
 		p->dp.modem = m;
 		p->dp.op = op;
 		p->dp.dp_data = static_cast<Pump *>(p);
 		if (p->start(m, id, caller, srate, max_frag)) {
 			delete p;
-			return NULL;
+			return nullptr;
 		}
 		return &p->dp;
 	}
@@ -108,7 +107,7 @@ static inline const char *pump_test_env(const char *var, int caller)
 	if (!e)
 		return nullptr;
 	side = e + strcspn(e, "ac");
-	return !*side || *side == (caller ? 'c' : 'a') ? e : NULL;
+	return !*side || *side == (caller ? 'c' : 'a') ? e : nullptr;
 }
 
 /* the pump P with its states S.  P has
