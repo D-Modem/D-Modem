@@ -22,6 +22,7 @@
 
 #include <log.h>
 
+#include "env.h"
 #include "pipe_modem.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
@@ -46,16 +47,15 @@ PipeModem::PipeModem(const char *name, int rate, const char *country,
 	o.rate = rate;
 	o.country = country;
 	/* MODEM_ANALOG=1, or =<name> for this one only */
-	if (const char *a = getenv("MODEM_ANALOG"))
+	if (const char *a = dsp::env("MODEM_ANALOG"))
 		analog_ = atoi(a) == 1 || !strcmp(a, name);
-	if (getenv("PIPE_SYNC")) {
+	if (dsp::env("PIPE_SYNC")) {
 		/* whole half frames */
-		sync_ = (atol(getenv("PIPE_SYNC")) + HALF_FRAME - 1) /
+		sync_ = (dsp::env_long("PIPE_SYNC") + HALF_FRAME - 1) /
 			HALF_FRAME * HALF_FRAME;
 		next_sync_ = sync_;
 	}
-	if (getenv("MODEM_HOOK_FD"))
-		hook_fd_ = atoi(getenv("MODEM_HOOK_FD"));
+	hook_fd_ = dsp::env_int("MODEM_HOOK_FD", hook_fd_);
 	ring_.init(rate);
 	if (pty_.open() < 0)
 		exit(-1);
@@ -108,7 +108,7 @@ int PipeModem::lead()
 	if (lead_done_)
 		return 0;
 	lead_done_ = true;
-	n = getenv("PIPE_LEAD") ? 2 * atoi(getenv("PIPE_LEAD")) : 256;
+	n = dsp::env("PIPE_LEAD") ? 2 * dsp::env_int("PIPE_LEAD") : 256;
 	if (n > (int)sizeof(zeros))
 		n = sizeof(zeros);
 	lead_ = n / 2;

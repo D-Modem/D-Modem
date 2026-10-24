@@ -28,6 +28,7 @@
 #include <new>
 
 #include "bits.h"
+#include "env.h"
 #include "fax.h"
 #include "fax_hdlc.h"
 #include "t38.h"
@@ -1266,7 +1267,7 @@ void *FAX_create(struct modem *m, unsigned caller, unsigned srate)
 	if (caller) {
 		f->begin_frh();           /* the called fax sends DIS */
 		/* its CNG (tests: DSP_FAX_CNG=0, none) */
-		if (!getenv("DSP_FAX_CNG") || atoi(getenv("DSP_FAX_CNG")))
+		if (env_on("DSP_FAX_CNG"))
 			f->cng_n = 0;
 	} else {
 		f->set_state(C1_CED);

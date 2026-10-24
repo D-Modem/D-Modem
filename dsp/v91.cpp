@@ -39,6 +39,7 @@
 #include <string.h>
 
 #include "bits.h"
+#include "env.h"
 #include "v91.h"
 
 namespace dsp {
@@ -229,16 +230,15 @@ void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
 	dsp::put_bits(ccseq, &n_, 0, 27);
 	put_bits_msb(ccseq, &n_, v34_crc_bits(ccseq, 78, 0xFFFF), 16);
 	dsp::put_bits(ccseq, &n_, 0, 2);
-	if (getenv("DSP_V91_RETRAIN")) {
-		const char *e = getenv("DSP_V91_RETRAIN");
+	if (const char *e = env("DSP_V91_RETRAIN")) {
 		const char *side = e + strspn(e, "0123456789");
 		if (!*side || *side == (caller_ ? 'c' : 'a'))
 			retrain_at = MS(atoi(e));
 	}
 	/* test: DSP_V91_MUTE=a or c: that modem is silent (both go to
 	   V.34) */
-	if (getenv("DSP_V91_MUTE"))
-		mute = *getenv("DSP_V91_MUTE") == (caller_ ? 'c' : 'a');
+	if (const char *e = env("DSP_V91_MUTE"))
+		mute = *e == (caller_ ? 'c' : 'a');
 	rx = V91R_INFO;
 	tx_segment(V91T_EZ);
 	DSP_DBG("v91: start, %s, %s\n", caller ? "caller" : "answerer",

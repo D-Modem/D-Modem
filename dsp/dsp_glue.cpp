@@ -16,6 +16,7 @@
 #include <new>
 
 #include "dsp.h"
+#include "env.h"
 #include <dsplibs.h>
 
 using namespace dsp;
@@ -819,7 +820,7 @@ int dsp::dp_v8_first(struct modem *m, enum DP_ID id)
 		modem_get_param(m, MDMPRM_DPRUNTIME);
 	if (!rt || rt->answer_tone != ANSTONE_2100 || rt->v8_tried ||
 	    rt->after_v8 ||
-	    (getenv("DSP_V8_LOWSPEED") && !atoi(getenv("DSP_V8_LOWSPEED"))))
+	    env_off("DSP_V8_LOWSPEED"))
 		return 0;
 	rt->v8_tried = 1;
 	rt->v8_for = id;

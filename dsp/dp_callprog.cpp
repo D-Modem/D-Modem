@@ -206,7 +206,7 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 	calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
 	fax = modem_get_param(m, MDMPRM_MODE) == MODEM_MODE_FAX;
 	/* (tests: DSP_FAX_CNG=0, a fax caller that sends no CNG) */
-	if (fax && getenv("DSP_FAX_CNG") && !atoi(getenv("DSP_FAX_CNG")))
+	if (fax && env_off("DSP_FAX_CNG"))
 		fax = -1;
 	ct.set_freq(fax ? 1100 : 1300, srate_);
 

@@ -44,6 +44,7 @@
 #include <new>
 
 #include "dsp.h"
+#include "env.h"
 #include "bits.h"
 #include "fax.h"
 #include "fax_hdlc.h"
@@ -2188,9 +2189,9 @@ T30 *t30_create(const struct t30_config *cfg)
 		t->cfg.max_bps = 14400;
 	t->result = T30_RUNNING;
 	/* test: DSP_T30_LOSE=<fcf in hex>[:<n>], see send_frames() */
-	if (getenv("DSP_T30_LOSE")) {
+	if (const char *v = env("DSP_T30_LOSE")) {
 		char *e;
-		t->lose_fcf = (int)strtol(getenv("DSP_T30_LOSE"), &e, 16) &
+		t->lose_fcf = (int)strtol(v, &e, 16) &
 			0xfe;
 		t->lose_n = *e == ':' ? atoi(e + 1) : 1;
 		if (t->lose_n < 1)

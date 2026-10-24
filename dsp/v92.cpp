@@ -45,6 +45,7 @@
 #include <vector>
 
 #include "bits.h"
+#include "env.h"
 #include "dsp.h"
 #include "v92.h"
 
@@ -1948,7 +1949,7 @@ void V92Up::design()
 	double bgs[NG][V92_EQ_B], fgs[NG][V92_EQ_F], e2s[NG], sbs[NG];
 	int ng = 0, drn, M = 8, i, j, lc = 0, best = -1;
 	double msa = 0;
-	const char *fix = getenv("DSP_V92_UP_DRN");
+	const char *fix = env("DSP_V92_UP_DRN");
 	char fixb[16];
 
 	if (rn_drn) {
@@ -1956,12 +1957,10 @@ void V92Up::design()
 		fix = fixb;
 		rn_drn = 0;
 	}
-	int pre = !(getenv("DSP_V92_PRECODE") &&
-		    !atoi(getenv("DSP_V92_PRECODE")));
+	int pre = env_on("DSP_V92_PRECODE");
 	double margin;
 
-	trellis_on = !plain && !(getenv("DSP_V92_TRELLIS") &&
-				 !atoi(getenv("DSP_V92_TRELLIS")));
+	trellis_on = !plain && env_on("DSP_V92_TRELLIS");
 	/* the prefilter, if it works out (DSP_V92_PREFILTER=0: not) */
 	if (rx == V92R_TRN2 && sym - e2u_sym > V92_PF_FIT + 32 &&
 	    pf_design(fix))
@@ -1985,7 +1984,7 @@ void V92Up::design()
 		}
 	if (!ng)
 		pre = 0;
-	margin = getenv("DSP_V92_MARGIN") ? atof(getenv("DSP_V92_MARGIN")) :
+	margin = env("DSP_V92_MARGIN") ? env_double("DSP_V92_MARGIN") :
 		pre && trellis_on ? V92_MARGIN_CODED : V92_MARGIN;
 	margin_used = margin;
 	for (drn = fix ? 19 : V92_DRN_MAX; drn >= 1 && best < 0; drn--) {
@@ -2075,9 +2074,9 @@ void V92Up::design()
 	   none decoded): at 38667 bit/s it makes half the errors of the
 	   16 state one */
 	cpd.trellis = 2;
-	if (getenv("DSP_V92_TRELLIS"))
-		cpd.trellis = atoi(getenv("DSP_V92_TRELLIS")) == 16 ? 0 :
-			atoi(getenv("DSP_V92_TRELLIS")) == 32 ? 1 : 2;
+	if (env("DSP_V92_TRELLIS"))
+		cpd.trellis = env_int("DSP_V92_TRELLIS") == 16 ? 0 :
+			env_int("DSP_V92_TRELLIS") == 32 ? 1 : 2;
 	DSP_DBG("v92: CPd: %d bit/s, M %d, %d points, G %.5f (mse %.5f)%s, "
 		"%d state trellis%s\n", (drn + 17) * 8000 / 6, M, 2 * lc,
 		cpd.g, mse_trn, pre ? ", precoding" : "", 16 << cpd.trellis,
@@ -2720,9 +2719,9 @@ int V92Up::pf_cpd(V92Cpd *c, int drn)
 	for (j = 0; j < lc; j++)
 		c->pts[0][j] = pts[j];
 	c->trellis = 2;
-	if (getenv("DSP_V92_TRELLIS"))
-		c->trellis = atoi(getenv("DSP_V92_TRELLIS")) == 16 ? 0 :
-			atoi(getenv("DSP_V92_TRELLIS")) == 32 ? 1 : 2;
+	if (env("DSP_V92_TRELLIS"))
+		c->trellis = env_int("DSP_V92_TRELLIS") == 16 ? 0 :
+			env_int("DSP_V92_TRELLIS") == 32 ? 1 : 2;
 	return gap;
 }
 
@@ -3009,9 +3008,9 @@ int V92Up::tx_step()
 			break;
 		/* test: DSP_V92_RENEG=<ms>[:<drn>], our own renegotiation
 		   that far into data (to that rate) */
-		if (!rn_test_at && getenv("DSP_V92_RENEG")) {
+		if (!rn_test_at && env("DSP_V92_RENEG")) {
 			int ms = 0, d_ = 0;
-			sscanf(getenv("DSP_V92_RENEG"), "%d:%d", &ms, &d_);
+			sscanf(env("DSP_V92_RENEG"), "%d:%d", &ms, &d_);
 			rn_test_at = connect_n + 8L * ms;
 			rn_drn = d_;
 		}
@@ -3022,9 +3021,9 @@ int V92Up::tx_step()
 		}
 		/* test: DSP_V92_FPE=<ms>[:<drn>], our own fast parameter
 		   exchange that far into data (to that rate) */
-		if (!fpe_test_at && getenv("DSP_V92_FPE")) {
+		if (!fpe_test_at && env("DSP_V92_FPE")) {
 			int ms = 0, d_ = 0;
-			sscanf(getenv("DSP_V92_FPE"), "%d:%d", &ms, &d_);
+			sscanf(env("DSP_V92_FPE"), "%d:%d", &ms, &d_);
 			fpe_test_at = connect_n + 8L * ms;
 			fpe_drn = d_;
 		}
@@ -3142,9 +3141,8 @@ void V92Up::init(int alaw_, const V92Info1a *ia_, const long *fclock,
 	rx = V92R_RU;
 	fr.init(SyncFrames::DIL92);
 	ta_g.init(2400, 64, 8000);
-	pf_ok = !(getenv("DSP_V92_PREFILTER") &&
-		  !atoi(getenv("DSP_V92_PREFILTER")));
-	slip_ok = !(getenv("DSP_V92_SLIP") && !atoi(getenv("DSP_V92_SLIP")));
+	pf_ok = env_on("DSP_V92_PREFILTER");
+	slip_ok = env_on("DSP_V92_SLIP");
 	DSP_DBG("v92: PCM upstream: filter sections %d, coefficients %d "
 		"(%d each), MD %d, UINFO %d\n", ia.sections, ia.ltot, ia.lmax,
 		ia.md, ia.uinfo);

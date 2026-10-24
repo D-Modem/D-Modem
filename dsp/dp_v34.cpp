@@ -2711,8 +2711,7 @@ void V34Pump::ec_schedule()
 			if (v90_digital())
 				prx.err_reset();
 			/* (DSP_EC=0: off anyway, for tests) */
-			e->bypass = erle < 6 || (getenv("DSP_EC") &&
-						 !atoi(getenv("DSP_EC")));
+			e->bypass = erle < 6 || env_off("DSP_EC");
 			DSP_DBG("v34: echo canceller took %.1f dB away%s\n",
 				erle, e->bypass ? ": off" : "");
 		}
@@ -3028,7 +3027,7 @@ void V34Pump::v90a_start()
 	ptx.init(baud_tx, rinfo1c.r[baud_tx].high, 0);
 	memset(&v90a_dil, 0, sizeof(v90a_dil));
 	v90a_dil.lsp = v90a_dil.ltp = 1;
-	if (!(getenv("DSP_V90A_DIL") && !atoi(getenv("DSP_V90A_DIL")))) {
+	if (env_on("DSP_V90A_DIL")) {
 		v90a_dil.n = 128;
 		/* the loudest first: what clips spills over only into
 		   the louder ones after it */
@@ -3589,9 +3588,8 @@ void V34Pump::mp_start()
 	memset(mp, 0, sizeof(*mp));
 	mp->type = 1;
 	/* test: DSP_V34_RX_MAX=<n> asks for at most n * 2400 bit/s */
-	if (getenv("DSP_V34_RX_MAX") && atoi(getenv("DSP_V34_RX_MAX")) > 0 &&
-	    max_rate_rx > atoi(getenv("DSP_V34_RX_MAX")))
-		max_rate_rx = atoi(getenv("DSP_V34_RX_MAX"));
+	if (int m = env_int("DSP_V34_RX_MAX"); m > 0 && max_rate_rx > m)
+		max_rate_rx = m;
 	/* (no less than the symbol rate has: no common rate else) */
 	if (max_rate_rx < rate_floor())
 		max_rate_rx = rate_floor();
@@ -3797,9 +3795,8 @@ void V34Pump::v92_start()
 /* V.91 after V.8: v91.cpp from here on, at 8000 Hz */
 void V34Pump::v91_start()
 {
-	const char *k = getenv("DSP_V91_K");
 	DSP_DBG("v34: V.91\n");
-	v91m.init(alaw, caller, k ? atoi(k) : 0, getenv("DSP_V91_CC") != NULL);
+	v91m.init(alaw, caller, env_int("DSP_V91_K"), env("DSP_V91_CC") != nullptr);
 	v91m.link.modem = modem;
 	v91m.stats = stats;
 	if (rt)
@@ -6086,18 +6083,17 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v90 = (id == DP_V90 || id == DP_V92) && line_rate == 8000;
 	/* V.92 (the digital modem's side): DSP_V92=0 leaves it out */
 	v92 = id == DP_V92 && v90 &&
-		!(getenv("DSP_V92") && !atoi(getenv("DSP_V92")));
+		env_on("DSP_V92");
 	qc_n = -1;
-	short2_ok = !(getenv("DSP_V92_SHORT2") &&
-		      !atoi(getenv("DSP_V92_SHORT2")));
+	short2_ok = env_on("DSP_V92_SHORT2");
 	/* quick connect: DSP_V92_QC=0 answers QC1a with V.8 instead */
-	qc_ok = !(getenv("DSP_V92_QC") && !atoi(getenv("DSP_V92_QC")));
-	qca_ok = !(getenv("DSP_V92A_QC") && !atoi(getenv("DSP_V92A_QC")));
+	qc_ok = env_on("DSP_V92_QC");
+	qca_ok = env_on("DSP_V92A_QC");
 	qcc_sent = 0;
 	/* modem-on-hold: the T1 code (Table 33/V.92) we grant, +PMHT's
 	   (0 with +PMH=1), or DSP_V92_MOH=<code> (1 10 s ... 12 16 min, 13
 	   no limit; 0 denies it); 1 min if neither says */
-	moh_t1 = getenv("DSP_V92_MOH") ? atoi(getenv("DSP_V92_MOH")) & 15 :
+	moh_t1 = env("DSP_V92_MOH") ? env_int("DSP_V92_MOH") & 15 :
 		(int)modem_get_param(m, MDMPRM_MOH_T1);
 	/* adaptive answer: the core's (+FAA, or its program's own fax
 	   receiver), for an answerer */
@@ -6105,8 +6101,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		intptr_t a = caller ? 0 : modem_get_param(m, MDMPRM_ADAPTIVE);
 		v8_adaptive = a != 0;
 	}
-	if (getenv("DSP_V92_MOH_REQ")) {
-		const char *e = getenv("DSP_V92_MOH_REQ");
+	if (const char *e = env("DSP_V92_MOH_REQ")) {
 		moh_req_at = ms2samples(atoi(e), srate_);
 		moh_req_hold = strchr(e, ':') ? atoi(strchr(e, ':') + 1) : 10;
 	}
@@ -6115,13 +6110,12 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	ev_mh = moh_resp = moh_drop = 0;
 	moh_end = 0;
 	/* PCM upstream: DSP_V92_PCMUP=0 does not offer it */
-	pcmup_ok = !(getenv("DSP_V92_PCMUP") &&
-		     !atoi(getenv("DSP_V92_PCMUP")));
+	pcmup_ok = env_on("DSP_V92_PCMUP");
 	pcmup_plain = 0;
 	/* V.91 with another digital modem: DSP_V91=0 leaves it out */
 	v91 = (id == DP_V90 || id == DP_V92 || id == DP_V91) &&
 		line_rate == 8000 &&
-		!(getenv("DSP_V91") && !atoi(getenv("DSP_V91")));
+		env_on("DSP_V91");
 	/* V.cvm (+MS=V_CVM): its field after +CVM's mode set, the pump
 	   at 8000 Hz (a 9600 Hz line through converters) */
 	vcvm = id == DP_VCVM;
@@ -6135,7 +6129,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   the call) */
 	pump_setup(m, srate_, caller_);
 	alaw = rt && rt->law ? rt->law == 2 :
-		getenv("DSP_G711") && !strcmp(getenv("DSP_G711"), "alaw");
+		env_is("DSP_G711", "alaw");
 	v8_low = caller_ && rt ? rt->v8_for : 0;
 	if (rt)
 		rt->vcvm_peer = 0;
@@ -6153,16 +6147,16 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   a codec whose clock is not the network's, its phase drifting,
 	   loses the PCM signal every so often (each 1.25 s at 100 ppm) */
 	{
-		const char *e = getenv("DSP_V90A");
+		const char *e = env("DSP_V90A");
 		v90a = (id == DP_V90 || id == DP_V92) && analog && !v8_low &&
 			(line_rate == V34_SRATE ? !(e && !atoi(e)) :
 			 e && atoi(e));
 	}
 	v90a_on = v90a_rx = 0;
 	v92a = v90a && id == DP_V92 &&
-		!(getenv("DSP_V92A") && !atoi(getenv("DSP_V92A")));
+		env_on("DSP_V92A");
 	v92a_on = 0;
-	v92a_up = !(getenv("DSP_V92A_UP") && !atoi(getenv("DSP_V92A_UP")));
+	v92a_up = env_on("DSP_V92A_UP");
 	v92a_noup = v92a_up_on = 0;
 	v92a_s2_req = v92a_short2 = 0;
 	v92a_renegs = 0;
@@ -6188,14 +6182,13 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	v90a_v34 = 0;
 	/* test: DSP_V34_PRECODE_MIN=<dB>: ask for precoding from that gain
 	   on (V34_PRECODE_MIN) */
-	precode_min = getenv("DSP_V34_PRECODE_MIN") ?
-		(float)atof(getenv("DSP_V34_PRECODE_MIN")) : V34_PRECODE_MIN;
+	precode_min = static_cast<float>(env_double("DSP_V34_PRECODE_MIN",
+						      V34_PRECODE_MIN));
 	/* test: DSP_V34_INFO0=<hex>[,a|,c]: our INFO0's bits 12:19 (what
 	   it offers of the symbol rates and carriers), on both sides or
 	   only the answerer's or the caller's */
 	info0_rates = 0xFF;
-	if (getenv("DSP_V34_INFO0")) {
-		const char *e = getenv("DSP_V34_INFO0");
+	if (const char *e = env("DSP_V34_INFO0")) {
 		char *side;
 		long v = strtol(e, &side, 16);
 		if (*side == ',')

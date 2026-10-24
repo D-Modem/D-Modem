@@ -37,6 +37,7 @@
 #include <new>
 
 #include "dsp.h"
+#include "env.h"
 
 namespace dsp {
 
@@ -103,9 +104,9 @@ struct dp_operations PumpOps<T>::ops = {
    when it is for this side, else NULL */
 static inline const char *pump_test_env(const char *var, int caller)
 {
-	const char *e = getenv(var), *side;
+	const char *e = env(var), *side;
 	if (!e)
-		return NULL;
+		return nullptr;
 	side = e + strcspn(e, "ac");
 	return !*side || *side == (caller ? 'c' : 'a') ? e : NULL;
 }
