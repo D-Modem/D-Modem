@@ -88,8 +88,9 @@ unsigned long PipeModem::now_ms()
 		long line_ms = samples() * 1000 / rate_;
 		unsigned long t;
 		if (line_idle())
-			clock_off_ = (long)dcore::monotonic_ms() - line_ms;
-		t = (unsigned long)(line_ms + clock_off_);
+			clock_off_ = static_cast<long>(dcore::monotonic_ms()) -
+				     line_ms;
+		t = static_cast<unsigned long>(line_ms + clock_off_);
 		if (t < last_ms_)
 			t = last_ms_;
 		return last_ms_ = t;
@@ -108,7 +109,7 @@ int PipeModem::lead()
 		return 0;
 	lead_done_ = true;
 	n = dsp::env("PIPE_LEAD") ? 2 * dsp::env_int("PIPE_LEAD") : 256;
-	if (n > (int)sizeof(zeros))
+	if (n > static_cast<int>(sizeof(zeros)))
 		n = sizeof(zeros);
 	lead_ = n / 2;
 	if (write(out_, zeros, n) != n)
@@ -208,7 +209,7 @@ int PipeModem::line(bool rd)
 	}
 	/* up to the next sample the DTE's input is taken at */
 	if (sync_ && max > next_sync_ - samples())
-		max = (int)(next_sync_ - samples());
+		max = static_cast<int>(next_sync_ - samples());
 	count = line_.frames(&in, max);
 	if (count == 0)
 		return 0;

@@ -23,7 +23,8 @@ void dmodem_g711_blocks(int alaw, const unsigned char *in,
 	while (n > 0) {
 		int k = n < 160 ? n : 160;
 		for (int i = 0; i < k; i++)
-			li[i] = (short)dsp::g711::decode(alaw, in[i]);
+			li[i] = static_cast<short>(
+				dsp::g711::decode(alaw, in[i]));
 		process(li, lo, k);
 		for (int i = 0; i < k; i++)
 			out[i] = dsp::g711::encode(alaw, lo[i]);

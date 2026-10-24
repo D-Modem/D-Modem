@@ -42,7 +42,7 @@ long long now_ms()
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+	return static_cast<long long>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
 }
 
 /* n random hex digits, for tags, branches and Call-IDs */
@@ -61,7 +61,7 @@ std::string random_hex(int n)
 std::string lower(std::string s)
 {
 	for (char &c : s)
-		c = (char)tolower((unsigned char)c);
+		c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
 	return s;
 }
 
@@ -148,7 +148,8 @@ bool parse(const std::string &text, Msg *m)
 	}
 	/* the body as long as its Content-Length says */
 	std::string cl = m->get("content-length");
-	if (!cl.empty() && (size_t)atoi(cl.c_str()) < m->body.size())
+	if (!cl.empty() &&
+	    static_cast<size_t>(atoi(cl.c_str())) < m->body.size())
 		m->body.resize(atoi(cl.c_str()));
 	return true;
 }
@@ -393,8 +394,8 @@ bool SipAgent::start(const std::string &host, int port)
 		errno = EINVAL;
 		return false;
 	}
-	if (bind(fd_, (struct sockaddr *)&sa, sizeof(sa)) ||
-	    getsockname(fd_, (struct sockaddr *)&sa, &len))
+	if (bind(fd_, reinterpret_cast<struct sockaddr *>(&sa), sizeof(sa)) ||
+	    getsockname(fd_, reinterpret_cast<struct sockaddr *>(&sa), &len))
 		return false;
 	host_ = host;
 	port_ = ntohs(sa.sin_port);
@@ -489,8 +490,8 @@ bool SipAgent::ask_t38(const std::shared_ptr<SipLeg> &leg)
 /* msg in a datagram to to */
 void SipAgent::send_to(const struct sockaddr_in &to, const std::string &msg)
 {
-	sendto(fd_, msg.data(), msg.size(), 0, (const struct sockaddr *)&to,
-	       sizeof(to));
+	sendto(fd_, msg.data(), msg.size(), 0,
+	       reinterpret_cast<const struct sockaddr *>(&to), sizeof(to));
 }
 
 /* see sip.h: the datagrams that come, and the timers every 50 ms */
@@ -504,8 +505,10 @@ void SipAgent::run()
 		if (r > 0) {
 			struct sockaddr_in from;
 			socklen_t len = sizeof(from);
-			ssize_t n = recvfrom(fd_, buf, sizeof(buf) - 1, 0,
-					     (struct sockaddr *)&from, &len);
+			ssize_t n = recvfrom(
+				fd_, buf, sizeof(buf) - 1, 0,
+				reinterpret_cast<struct sockaddr *>(&from),
+				&len);
 			if (n > 0)
 				received(std::string(buf, n), from);
 		}
@@ -530,7 +533,9 @@ void SipAgent::timers()
 				l.acked = true;         /* (no ACK came) */
 			} else {
 				send_to(l.response_to, l.response);
-				l.retx_ms = std::min(l.retx_ms * 2, (long long)T2_MS);
+				l.retx_ms =
+					std::min(l.retx_ms * 2,
+						 static_cast<long long>(T2_MS));
 				l.retx_at = now + l.retx_ms;
 			}
 		}
@@ -540,7 +545,8 @@ void SipAgent::timers()
 			changed_.notify_all();
 		} else if (l.asking && l.req_ms && now >= l.req_at) {
 			send_to(l.peer, l.request);
-			l.req_ms = std::min(l.req_ms * 2, (long long)T2_MS);
+			l.req_ms = std::min(l.req_ms * 2,
+					    static_cast<long long>(T2_MS));
 			l.req_at = now + l.req_ms;
 		}
 	}
@@ -567,9 +573,10 @@ void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 
 	if (!m.request) {
 		/* a response to our re-INVITE */
-		if (!leg || atoi(m.get("cseq").c_str()) !=
-		    (int)leg->request_cseq || m.get("cseq").find("INVITE") ==
-		    std::string::npos)
+		if (!leg ||
+		    atoi(m.get("cseq").c_str()) !=
+			    static_cast<int>(leg->request_cseq) ||
+		    m.get("cseq").find("INVITE") == std::string::npos)
 			return;
 		SipLeg &l = *leg;
 		if (m.code < 200) {

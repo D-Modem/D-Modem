@@ -177,7 +177,7 @@ public:
 	}
 	/* the clock: the device's samples so far, in ms */
 	unsigned long now_ms() override {
-		return (unsigned long)(samples_ * 1000 / rate_);
+		return static_cast<unsigned long>(samples_ * 1000 / rate_);
 	}
 
 	/* "<bus>:<address>" into bus and addr; false if it is not that */

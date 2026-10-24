@@ -169,7 +169,7 @@ static inline float fax_ced_sample(long t, int srate)
 	    t >= ms2samples(ANS_SILENCE_MS + FAX_CED_MS, srate))
 		return 0;
 	return FAX_CED_RMS * 1.41421f *
-		sinf(2 * (float)M_PI * 2100 * t / srate);
+		sinf(2 * static_cast<float>(M_PI) * 2100 * t / srate);
 }
 
 } // namespace dsp

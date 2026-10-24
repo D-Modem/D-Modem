@@ -75,8 +75,8 @@ static void t38_tx(void *ctx, const struct t38_ifp *p)
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	unsigned char ifp[UDPTL_IFP_MAX], pkt[UDPTL_IFP_MAX * 2];
 	int n = t38_ifp_encode(p, f->t38_version, ifp, sizeof(ifp)), m;
-	int max = f->t38_max_datagram < (int)sizeof(pkt) ?
-		f->t38_max_datagram : (int)sizeof(pkt);
+	int max = f->t38_max_datagram < static_cast<int>(sizeof(pkt)) ?
+		f->t38_max_datagram : static_cast<int>(sizeof(pkt));
 	if (n < 0)
 		return;
 	if (f->t38_ifp) {

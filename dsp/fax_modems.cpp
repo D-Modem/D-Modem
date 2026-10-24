@@ -374,7 +374,7 @@ static cplx fax_tx_symbol(FaxTx *t)
 		   14400.  100 ms of them cover that. */
 		if (t->seg_sym >= ((is_v17(t->mod) && t->short_train) ||
 				    is_v27(t->mod) ?
-				    (int)mod_baud(t->mod) / 10 :
+				    static_cast<int>(mod_baud(t->mod)) / 10 :
 				    ones_len(t->mod)))
 			t->next_segment(SEG_DATA);
 		break;
@@ -512,7 +512,9 @@ int FaxRx::state_of(cplx z)
 {
 	if (is_v17(mod))
 		return nearest_point(v32_abcd, 4, z);
-	return (int)lrintf(atan2f(z.im, z.re) / (float)(M_PI / 4)) & 7;
+	return static_cast<int>(lrintf(atan2f(z.im, z.re) /
+				       static_cast<float>(M_PI / 4))) &
+	       7;
 }
 
 /* the absolute phase state of a training point */

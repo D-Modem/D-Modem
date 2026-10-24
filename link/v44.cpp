@@ -23,7 +23,7 @@ enum { HASH = 4096 };
 /* the encoder's hash of a string's first two characters */
 static unsigned hash2(uint8_t a, uint8_t b)
 {
-	return ((unsigned)a * 263 + b) & (HASH - 1);
+	return (static_cast<unsigned>(a) * 263 + b) & (HASH - 1);
 }
 
 /* allocates for the largest parameters (N2 codewords, N7 characters,
@@ -109,13 +109,13 @@ void V44::reset()
 void V44::add(int len, uint32_t last)
 {
 	Entry &e = dict_[c1_];
-	e.len = (uint16_t)len;
+	e.len = static_cast<uint16_t>(len);
 	e.last = last;
 	/* the encoder finds it by its first two characters */
 	uint32_t start = last - len + 1;
 	unsigned k = hash2(hist_[start], hist_[start + 1]);
 	e.next = head_[k];
-	head_[k] = (int32_t)c1_;
+	head_[k] = static_cast<int32_t>(c1_);
 	c1_++;
 }
 
@@ -125,7 +125,7 @@ void V44::add(int len, uint32_t last)
    string */
 void V44::after_token(int type, uint32_t value)
 {
-	if (c1_ < (uint32_t)n2_) {
+	if (c1_ < static_cast<uint32_t>(n2_)) {
 		if (type == ORD || type == CW) {
 			uint32_t first = type == ORD ? hp_ - 1 :
 				hp_ - dict_[value].len;
@@ -137,7 +137,8 @@ void V44::after_token(int type, uint32_t value)
 					add(l + 1, first);
 			}
 		} else if (type == EXT && last_type_ == CW) {
-			int l = dict_[last_value_].len + (int)value;
+			int l = dict_[last_value_].len +
+				static_cast<int>(value);
 			if (l <= n7_)
 				add(l, hp_ - 1);
 		}
@@ -158,7 +159,7 @@ void V44::put_bits(uint32_t v, int n)
 	nbits_ += n;
 	cmp_bits_ += n;
 	while (nbits_ >= 8) {
-		obuf_.push_back((uint8_t)bits_);
+		obuf_.push_back(static_cast<uint8_t>(bits_));
 		bits_ >>= 8;
 		nbits_ -= 8;
 	}
@@ -287,7 +288,8 @@ void V44::step()
 			after_token(EXT, n);
 		}
 	}
-	if (c1_ >= (uint32_t)n2_ || hp_ >= (uint32_t)n8_)
+	if (c1_ >= static_cast<uint32_t>(n2_) ||
+	    hp_ >= static_cast<uint32_t>(n8_))
 		reinit();
 }
 
@@ -298,15 +300,15 @@ int V44::encode(uint8_t ch)
 {
 	if (!ready())
 		return -1;
-	if (end_ == (uint32_t)n8_) {
+	if (end_ == static_cast<uint32_t>(n8_)) {
 		/* the history is full: what is in it, then REINIT */
-		while (end_ == (uint32_t)n8_)
+		while (end_ == static_cast<uint32_t>(n8_))
 			step();
 	}
 	hist_[end_++] = ch;
 	raw_bits_ += 8;
 	/* enough to look ahead for the longest string */
-	while (end_ - hp_ > (uint32_t)n7_)
+	while (end_ - hp_ > static_cast<uint32_t>(n7_))
 		step();
 	return 0;
 }
@@ -336,10 +338,10 @@ bool V44::get_bits(int n, uint32_t *v)
 {
 	size_t have = (in_.size() - in_pos_) * 8 - in_bit_;
 	*v = 0;
-	if ((size_t)n > have)
+	if (static_cast<size_t>(n) > have)
 		return false;
 	for (int k = 0; k < n; k++) {
-		*v |= (uint32_t)((in_[in_pos_] >> in_bit_) & 1) << k;
+		*v |= static_cast<uint32_t>((in_[in_pos_] >> in_bit_) & 1) << k;
 		if (++in_bit_ == 8) {
 			in_bit_ = 0;
 			in_pos_++;
@@ -360,7 +362,7 @@ bool V44::read_token(int *type, uint32_t *value)
 	if (b) {
 		if (stepup_) {
 			stepup_ = false;
-			if ((1u << c2_) >= (uint32_t)n2_)
+			if ((1u << c2_) >= static_cast<uint32_t>(n2_))
 				return true;            /* an error */
 			c2_++;
 		}
@@ -420,7 +422,7 @@ bool V44::read_token(int *type, uint32_t *value)
    the history is full */
 int V44::put_hist(uint8_t ch)
 {
-	if (hp_ >= (uint32_t)n8_)
+	if (hp_ >= static_cast<uint32_t>(n8_))
 		return -1;
 	hist_[hp_++] = ch;
 	obuf_.push_back(ch);
@@ -456,7 +458,7 @@ int V44::token(int type, uint32_t value)
 		}
 		return 0;
 	case ORD:
-		if (put_hist((uint8_t)value))
+		if (put_hist(static_cast<uint8_t>(value)))
 			return -1;
 		after_token(ORD, value);
 		return 0;
@@ -464,14 +466,14 @@ int V44::token(int type, uint32_t value)
 		if (value < c1_) {
 			const Entry &e = dict_[value];
 			uint32_t start = e.last - e.len + 1;
-			if (hp_ + e.len > (uint32_t)n8_)
+			if (hp_ + e.len > static_cast<uint32_t>(n8_))
 				return -1;
 			for (int k = 0; k < e.len; k++)
 				put_hist(hist_[start + k]);
 			after_token(CW, value);
 			return 0;
 		}
-		if (value == c1_ && c1_ < (uint32_t)n2_) {
+		if (value == c1_ && c1_ < static_cast<uint32_t>(n2_)) {
 			/* the string being defined: the last one and its
 			   first character */
 			uint32_t start, l;
@@ -487,7 +489,7 @@ int V44::token(int type, uint32_t value)
 				return -1;
 			}
 			uint32_t at = hp_;
-			if (hp_ + l + 1 > (uint32_t)n8_)
+			if (hp_ + l + 1 > static_cast<uint32_t>(n8_))
 				return -1;
 			for (uint32_t k = 0; k < l; k++)
 				put_hist(hist_[start + k]);
@@ -503,7 +505,7 @@ int V44::token(int type, uint32_t value)
 			return -1;
 		{
 			uint32_t src = dict_[last_value_].last + 1;
-			if (hp_ + value > (uint32_t)n8_)
+			if (hp_ + value > static_cast<uint32_t>(n8_))
 				return -1;
 			for (uint32_t k = 0; k < value; k++)
 				put_hist(hist_[src + k]);
@@ -582,7 +584,7 @@ int V44::decode(uint8_t octet)
 int V44::out(uint8_t *buf, int n)
 {
 	size_t k = obuf_.size() - ohead_;
-	if (k > (size_t)n)
+	if (k > static_cast<size_t>(n))
 		k = n;
 	if (k)
 		memcpy(buf, &obuf_[ohead_], k);
@@ -591,7 +593,7 @@ int V44::out(uint8_t *buf, int n)
 		obuf_.clear();
 		ohead_ = 0;
 	}
-	return (int)k;
+	return static_cast<int>(k);
 }
 
 } // namespace dlink

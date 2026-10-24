@@ -24,13 +24,13 @@ namespace dsp {
    is continuous */
 void Osc::set_freq(float freq, int srate)
 {
-	inc = (double)freq / srate;
+	inc = static_cast<double>(freq) / srate;
 }
 
 /* sin(2 pi phase), then one sample on */
 float Osc::next()
 {
-	float v = (float)sin(2 * M_PI * phase);
+	float v = static_cast<float>(sin(2 * M_PI * phase));
 	phase += inc;
 	phase -= floor(phase);
 	return v;
@@ -40,7 +40,8 @@ float Osc::next()
 cplx Osc::next_cplx()
 {
 	double a = 2 * M_PI * phase;
-	cplx v = cplx_make((float)cos(a), (float)sin(a));
+	cplx v = cplx_make(static_cast<float>(cos(a)),
+			   static_cast<float>(sin(a)));
 	phase += inc;
 	phase -= floor(phase);
 	return v;
@@ -113,7 +114,8 @@ int Goertzel::run(float x)
 	if (++n < len)
 		return 0;
 	/* |X(k)|^2 scaled so that a sine of amplitude A gives A^2/2 */
-	power = (s1 * s1 + s2 * s2 - coef * s1 * s2) * 2 / ((float)len * len);
+	power = (s1 * s1 + s2 * s2 - coef * s1 * s2) * 2 /
+		(static_cast<float>(len) * len);
 	s1 = s2 = 0;
 	n = 0;
 	return 1;
@@ -233,8 +235,10 @@ void DtmfDetect::init(int srate)
 	*this = DtmfDetect();
 	n_block = (205 * srate + 4000) / 8000;
 	for (int k = 0; k < 4; k++) {
-		coef[k] = 2 * cosf(2 * (float)M_PI * dtmf_lo[k] / srate);
-		coef[4 + k] = 2 * cosf(2 * (float)M_PI * dtmf_hi[k] / srate);
+		coef[k] = 2 * cosf(2 * static_cast<float>(M_PI) * dtmf_lo[k] /
+				   srate);
+		coef[4 + k] = 2 * cosf(2 * static_cast<float>(M_PI) *
+				       dtmf_hi[k] / srate);
 	}
 }
 
@@ -248,7 +252,7 @@ char DtmfDetect::classify(float e, const float *p) const
 	static const char keys[] = "123A456B789C*0#D";
 	int lo = 0, hi = 4;
 
-	if (e < (float)n_block * 100.0f * 100.0f)
+	if (e < static_cast<float>(n_block) * 100.0f * 100.0f)
 		return 0;
 	for (int k = 1; k < 4; k++) {
 		if (p[k] > p[lo])
@@ -559,7 +563,7 @@ static void rs_design(float *h, int L)
 		double w = bessel_i0(beta * sqrt(1 - r * r)) / bessel_i0(beta);
 		/* gain L: each output sees one phase of the zero stuffed
 		   input */
-		h[(n % L) * taps + n / L] = (float)(L * s * w);
+		h[(n % L) * taps + n / L] = static_cast<float>(L * s * w);
 	}
 }
 

@@ -20,7 +20,7 @@ namespace dsp {
 /* the modes INFO0's octet 1 says this DCE will use (allowed) */
 static uint8_t info0_modes(int a)
 {
-	return (uint8_t)(0xC0 | (a & VCVM_M_WIDE ? 0x20 : 0) |
+	return static_cast<uint8_t>(0xC0 | (a & VCVM_M_WIDE ? 0x20 : 0) |
 			 (a & VCVM_M_WIDE400 ? 0x10 : 0) |
 			 (a & VCVM_M_8DPSK ? 0x08 : 0) |
 			 (a & VCVM_M_SYM22 ? 0x04 : 0) |
@@ -97,7 +97,7 @@ void VcvmStartup::note(const char *fmt, ...)
 	vsnprintf(b, sizeof(b), fmt, ap);
 	va_end(ap);
 	char t[32];
-	snprintf(t, sizeof(t), "%7.3f ", (double)t_ / c_.fs);
+	snprintf(t, sizeof(t), "%7.3f ", static_cast<double>(t_) / c_.fs);
 	log_ += t;
 	log_ += b;
 	log_ += '\n';
@@ -116,13 +116,13 @@ void VcvmStartup::fail(const char *why)
 /* the sample after what is queued to send */
 long VcvmStartup::queued() const
 {
-	return t_ + (long)(txq_.size() - txpos_);
+	return t_ + static_cast<long>(txq_.size() - txpos_);
 }
 
 /* ms of silence to the transmitter's queue */
 void VcvmStartup::silence(int ms)
 {
-	txq_.insert(txq_.end(), (size_t)ms * c_.fs / 1000, 0.0f);
+	txq_.insert(txq_.end(), static_cast<size_t>(ms) * c_.fs / 1000, 0.0f);
 }
 
 /* silence until sample at (what is queued counted) */
@@ -130,7 +130,7 @@ void VcvmStartup::silence_until(long at)
 {
 	long q = queued();
 	if (at > q)
-		txq_.insert(txq_.end(), (size_t)(at - q), 0.0f);
+		txq_.insert(txq_.end(), static_cast<size_t>(at - q), 0.0f);
 }
 
 /* a message of n octets to the queue, in the message mode */
@@ -172,9 +172,10 @@ void VcvmStartup::send_mp()
 template <class R> void VcvmStartup::replay(R &r, long from)
 {
 	from = std::max(from, hbase_);
-	long e = hbase_ + (long)hist_.size();
+	long e = hbase_ + static_cast<long>(hist_.size());
 	if (from < e)
-		r.push(&hist_[(size_t)(from - hbase_)], (int)(e - from));
+		r.push(&hist_[static_cast<size_t>(from - hbase_)],
+		       static_cast<int>(e - from));
 }
 
 /* a message received, by the step: the peer's INFO0 (the round trip,
@@ -185,7 +186,8 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 	last_rx_end_ = m.end;
 	if (!m.ok) {
 		note("a transmission without a good frame (%.3f to %.3f s)",
-		     (double)m.start / c_.fs, (double)m.end / c_.fs);
+		     static_cast<double>(m.start) / c_.fs,
+		     static_cast<double>(m.end) / c_.fs);
 		/* a lost INFO1 is MP's layout, which comes again until it is
 		   acknowledged: on to the MP exchange, its timing kept for
 		   the round trip */
@@ -194,15 +196,19 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 	}
 	switch (step_) {
 	case WAIT_INFO0: {
-		if (peer0_.decode(m.octets.data(), (int)m.octets.size())) {
+		if (peer0_.decode(m.octets.data(),
+				  static_cast<int>(m.octets.size()))) {
 			note("not an INFO0");
 			return;
 		}
 		if (c_.calling && probe_end_tx_ >= 0)
-			rtt_ms_ = (int)std::max(0L, (m.start - probe_end_tx_ -
-						     c_.fs / 20) * 1000 / c_.fs);
-		note("INFO0: modes %#x, combs %#x (%.3f to %.3f s)", peer0_.modes,
-		     peer0_.combs, (double)m.start / c_.fs, (double)m.end / c_.fs);
+			rtt_ms_ = static_cast<int>(std::max(
+				0L, (m.start - probe_end_tx_ - c_.fs / 20) *
+					    1000 / c_.fs));
+		note("INFO0: modes %#x, combs %#x (%.3f to %.3f s)",
+		     peer0_.modes, peer0_.combs,
+		     static_cast<double>(m.start) / c_.fs,
+		     static_cast<double>(m.end) / c_.fs);
 		VcvmProbe p;
 		p.fs = c_.fs;
 		p.combs = peer0_.combs & vcvm_probe_combs(c_.fs, VCVM_M_ALL |
@@ -221,7 +227,8 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 	}
 	case WAIT_INFO1: {
 		VcvmMp mp;
-		if (m.ok && mp.decode(m.octets.data(), (int)m.octets.size())) {
+		if (m.ok && mp.decode(m.octets.data(),
+				      static_cast<int>(m.octets.size()))) {
 			note("not an INFO1");
 			return;
 		}
@@ -239,9 +246,10 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 			send_msg(o, i1.encode(o));
 			silence(100);
 		} else
-			rtt_ms_ = (int)std::max(0L, (m.start - info1_end_tx_ -
-						     c_.fs / 20 - c_.fs / 100) *
-						1000 / c_.fs);
+			rtt_ms_ = static_cast<int>(
+				std::max(0L, (m.start - info1_end_tx_ -
+					      c_.fs / 20 - c_.fs / 100) *
+						     1000 / c_.fs));
 		step_ = MP;
 		mp_on_ = true;
 		/* MP, 2.5 s at most each way (W200's), a few times */
@@ -250,7 +258,8 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 	}
 	case MP: {
 		VcvmMp mp;
-		if (mp.decode(m.octets.data(), (int)m.octets.size())) {
+		if (mp.decode(m.octets.data(),
+			      static_cast<int>(m.octets.size()))) {
 			note("not an MP");
 			return;
 		}
@@ -342,8 +351,8 @@ void VcvmStartup::process(const float *in, float *out, int n)
 		int k = std::min(n, B);
 		/* in */
 		hist_.insert(hist_.end(), in, in + k);
-		if ((long)hist_.size() > 3L * c_.fs) {
-			long cut = (long)hist_.size() - 2L * c_.fs;
+		if (static_cast<long>(hist_.size()) > 3L * c_.fs) {
+			long cut = static_cast<long>(hist_.size()) - 2L * c_.fs;
 			hist_.erase(hist_.begin(), hist_.begin() + cut);
 			hbase_ += cut;
 		}

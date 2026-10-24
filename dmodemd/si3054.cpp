@@ -143,12 +143,12 @@ void si3054_apply(const Si3054Country &c, bool off_hook, Si3054Regs &r)
 {
 	uint16_t rz = off_hook ? 0 : c.rz;
 
-	r.n13 = (uint16_t)((r.n13 & 0x0a40) | c.ohs << 7 | c.act << 5 |
-			   rz << 2 | c.rt);
-	r.n15 = (uint16_t)((r.n15 & 0xfccc) | c.dcv << 8 | c.mini << 4 |
-			   c.ilim << 1);
-	r.n16 = (uint16_t)((r.n16 & 0x2c00) | c.ohs2 << 9);
-	r.n18 = (uint16_t)((r.n18 & 0x8400) | (c.ohs ? 0x5000 : 0));
+	r.n13 = static_cast<uint16_t>((r.n13 & 0x0a40) | c.ohs << 7 |
+				      c.act << 5 | rz << 2 | c.rt);
+	r.n15 = static_cast<uint16_t>((r.n15 & 0xfccc) | c.dcv << 8 |
+				      c.mini << 4 | c.ilim << 1);
+	r.n16 = static_cast<uint16_t>((r.n16 & 0x2c00) | c.ohs2 << 9);
+	r.n18 = static_cast<uint16_t>((r.n18 & 0x8400) | (c.ohs ? 0x5000 : 0));
 }
 
 } // namespace dmd

@@ -59,7 +59,7 @@ CxVariant cx_variant(int kind)
 {
 	CxVariant v;
 
-	if (kind < 0 || kind >= (int)(sizeof(kind_flags) /
+	if (kind < 0 || kind >= static_cast<int>(sizeof(kind_flags) /
 				      sizeof(kind_flags[0])))
 		return v;
 	uint32_t f = kind_flags[kind];
@@ -117,13 +117,13 @@ bool CxDaa::ssd_read(int reg, uint8_t *v)
 	reg &= 0x3f;
 	if (reg == SSD_COMMAND)
 		regs_.delay_us(40);
-	if (!regs_.write(AC97_WINDOW, (uint16_t)(0x8000 | reg << 8)))
+	if (!regs_.write(AC97_WINDOW, static_cast<uint16_t>(0x8000 | reg << 8)))
 		return fail("SSD %#x: codec register 0x7a not written", reg);
 	if (reg == SSD_COMMAND)
 		regs_.delay_us(40);
 	if (!regs_.read(AC97_WINDOW, &x) || x == 0xffff)
 		return fail("SSD %#x: no answer", reg);
-	*v = (uint8_t)x;
+	*v = static_cast<uint8_t>(x);
 	return true;
 }
 
@@ -133,7 +133,7 @@ bool CxDaa::ssd_write(int reg, uint8_t v)
 	reg &= 0x3f;
 	if (reg == SSD_COMMAND)
 		regs_.delay_us(40);
-	if (!regs_.write(AC97_WINDOW, (uint16_t)(reg << 8 | v)))
+	if (!regs_.write(AC97_WINDOW, static_cast<uint16_t>(reg << 8 | v)))
 		return fail("SSD %#x: codec register 0x7a not written", reg);
 	return true;
 }
@@ -202,11 +202,13 @@ bool CxDaa::lsd_read(int reg, uint8_t *v)
 			return false;
 		if (!v_.echo && !v_.no_ready)
 			wait_ready();
-		if (v_.cmd_first && !ssd_write(SSD_COMMAND, (uint8_t)reg))
+		if (v_.cmd_first &&
+		    !ssd_write(SSD_COMMAND, static_cast<uint8_t>(reg)))
 			return false;
 		if (!clear_status(ST_DONE | ST_ERROR))
 			return false;
-		if (!v_.cmd_first && !ssd_write(SSD_COMMAND, (uint8_t)reg))
+		if (!v_.cmd_first &&
+		    !ssd_write(SSD_COMMAND, static_cast<uint8_t>(reg)))
 			return false;
 		if (!wait_done())
 			continue;
@@ -214,7 +216,7 @@ bool CxDaa::lsd_read(int reg, uint8_t *v)
 			return false;
 		if (v_.echo && x == pattern) {
 			fail("LSD %#x: no answer (%#x)", reg, x);
-			pattern = (uint8_t)(pattern << 1);
+			pattern = static_cast<uint8_t>(pattern << 1);
 			continue;
 		}
 		*v = x;
@@ -236,7 +238,7 @@ bool CxDaa::lsd_write(int reg, uint8_t v)
 	uint8_t x, cmd;
 
 	reg &= 0x3f;
-	cmd = (uint8_t)(reg | CMD_WRITE);
+	cmd = static_cast<uint8_t>(reg | CMD_WRITE);
 	if (control && v_.control_bit6)
 		cmd |= CMD_CONTROL;
 	for (int t = 0; t < tries; t++) {
@@ -250,7 +252,8 @@ bool CxDaa::lsd_write(int reg, uint8_t v)
 				return false;
 			if (!clear_status(ST_DONE | ST_ERROR))
 				return false;
-			if (v_.echo && !ssd_write(SSD_ANSWER, (uint8_t)~v))
+			if (v_.echo &&
+			    !ssd_write(SSD_ANSWER, static_cast<uint8_t>(~v)))
 				return false;
 		}
 		if (!ssd_write(SSD_COMMAND, cmd))
@@ -273,7 +276,7 @@ bool CxDaa::lsd_field(int reg, uint8_t mask, uint8_t val)
 
 	if (!lsd_read(reg, &old))
 		return false;
-	uint8_t v = (uint8_t)((old & ~mask) | (val & mask));
+	uint8_t v = static_cast<uint8_t>((old & ~mask) | (val & mask));
 	return v == old || lsd_write(reg, v);
 }
 
@@ -411,7 +414,7 @@ bool CxDaa::run(const Op *ops, int n)
 			if (!(o.lsd ? lsd_read(o.reg, &old) :
 				      ssd_read(o.reg, &old)))
 				return false;
-			v = (uint8_t)((old & o.keep) | set);
+			v = static_cast<uint8_t>((old & o.keep) | set);
 			if (o.kind == Op::B && v == old)
 				continue;
 			break;
@@ -428,13 +431,13 @@ uint8_t CxDaa::param(int p, uint8_t set) const
 	bool v2 = (version_ & 0x3f) == 2;
 
 	switch (p) {
-	case Op::V19:   return (uint8_t)(v2 ? set | 0x20 : set);
-	case Op::V21:   return (uint8_t)(v2 ? set & 0x7f : set);
+	case Op::V19:   return static_cast<uint8_t>(v2 ? set | 0x20 : set);
+	case Op::V21:   return static_cast<uint8_t>(v2 ? set & 0x7f : set);
 	case Op::SSD21: return board_->ssd21();
 	case Op::SSD0B: return board_->ssd0b();
 	case Op::SSD06: return board_->ssd06();
-	case Op::IDLE:  return (uint8_t)(country_->idle << 5);
-	case Op::OFF:   return (uint8_t)(country_->off << 5);
+	case Op::IDLE:  return static_cast<uint8_t>(country_->idle << 5);
+	case Op::OFF:   return static_cast<uint8_t>(country_->off << 5);
 	default:        return 0;
 	}
 }

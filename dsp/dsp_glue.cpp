@@ -176,7 +176,7 @@ int DcRemover::process(void *buf, int len)
 		ret = 1;
 	if (flags & DCR_SUBTRACT && dc)
 		for (i = 0; i < len; i++)
-			s[i] = dsp_clip16((float)s[i] - dc);
+			s[i] = dsp_clip16(static_cast<float>(s[i]) - dc);
 	return ret;
 }
 
@@ -297,7 +297,7 @@ void CallerId::field(const char *tag, const u8 *p, int n)
 {
 	char buf[128];
 	int k = snprintf(buf, sizeof(buf), "%s = ", tag);
-	while (n-- > 0 && k < (int)sizeof(buf) - 3)
+	while (n-- > 0 && k < static_cast<int>(sizeof(buf)) - 3)
 		buf[k++] = (*p >= 0x20 && *p < 0x7f) ? *p : '?', p++;
 	buf[k++] = '\r';
 	buf[k++] = '\n';
@@ -360,11 +360,17 @@ void CallerId::report_fields()
 		/* the reason there is none: 'O' (out of area) or 'P'
 		   (private) */
 		case 0x04:
-			field("NMBR", l >= 1 ? p + 2 : (const u8 *)"O", 1);
+			field("NMBR",
+			      l >= 1 ? p + 2 :
+				       reinterpret_cast<const u8 *>("O"),
+			      1);
 			break;
 		case 0x07: field("NAME", p + 2, l); break;
 		case 0x08:
-			field("NAME", l >= 1 ? p + 2 : (const u8 *)"O", 1);
+			field("NAME",
+			      l >= 1 ? p + 2 :
+				       reinterpret_cast<const u8 *>("O"),
+			      1);
 			break;
 		default: break;
 		}
@@ -527,7 +533,8 @@ void VOICE_delete(void *obj)
 /* the core's voice settings (MDMPRM_VOICEINFO), may be NULL */
 struct voice_info *Voice::info()
 {
-	return (struct voice_info *)modem_get_param(modem, MDMPRM_VOICEINFO);
+	return reinterpret_cast<struct voice_info *>(
+		modem_get_param(modem, MDMPRM_VOICEINFO));
 }
 
 /* a +V command: receive, transmit or duplex streaming (CONNECT on the
@@ -554,7 +561,7 @@ int Voice::command(enum VOICE_CMD cmd)
 	case VOICE_CMD_DTMF:
 		if (!vi)
 			return -1;
-		tone_left = (long)vi->tone_duration * srate / 100;
+		tone_left = static_cast<long>(vi->tone_duration) * srate / 100;
 		tone_dtmf = cmd == VOICE_CMD_DTMF;
 		if (tone_dtmf) {
 			if (dtmf.set(vi->dtmf_symbol, srate))
@@ -598,7 +605,7 @@ int Voice::get_tx_sample(float *x)
 		if (dle) {
 			dle = 0;
 			if (c == DLE) {
-				*x = ((int)c - 128) * 256.0f;
+				*x = (static_cast<int>(c) - 128) * 256.0f;
 				return 1;
 			}
 			if (state == VOICE_STATE_DUPLEX ? c == '^' :
@@ -612,7 +619,7 @@ int Voice::get_tx_sample(float *x)
 			dle = 1;
 			continue;
 		}
-		*x = ((int)c - 128) * 256.0f;
+		*x = (static_cast<int>(c) - 128) * 256.0f;
 		return 1;
 	}
 	return 0;
@@ -652,9 +659,9 @@ int Voice::process(void *in, void *out, int count)
 	double step = 8000.0 / srate;
 	char rxbuf[512];        /* tx_done() knows its size */
 	int nrx = 0, i, status;
-	const long repeat = (long)srate * 70 / 1000;
+	const long repeat = static_cast<long>(srate) * 70 / 1000;
 	auto report = [&](char c) {
-		if (nrx < (int)sizeof(rxbuf) - 2) {
+		if (nrx < static_cast<int>(sizeof(rxbuf)) - 2) {
 			rxbuf[nrx++] = DLE;
 			rxbuf[nrx++] = c;
 		}
@@ -693,7 +700,8 @@ int Voice::process(void *in, void *out, int count)
 					tx_cur = 0;
 				}
 			}
-			y = tx_prev + (float)tx_pos * (tx_cur - tx_prev);
+			y = tx_prev +
+			    static_cast<float>(tx_pos) * (tx_cur - tx_prev);
 		}
 		dst[i] = dsp_clip16(y);
 
@@ -762,7 +770,7 @@ int Voice::process(void *in, void *out, int count)
 				int c = rx_dtmf.digit ? 128 :
 					(src[i] >> 8) + 128;
 				rx_pos -= 1;
-				if (nrx < (int)sizeof(rxbuf) - 2) {
+				if (nrx < static_cast<int>(sizeof(rxbuf)) - 2) {
 					rxbuf[nrx++] = c;
 					if (c == DLE)
 						rxbuf[nrx++] = DLE;
@@ -815,8 +823,8 @@ int VOICE_process(void *obj, void *in, void *out, int count)
    alone if the tone is ANSam and else hands back */
 int dsp::dp_v8_first(struct modem *m, enum DP_ID id)
 {
-	struct dp_runtime *rt = (struct dp_runtime *)
-		modem_get_param(m, MDMPRM_DPRUNTIME);
+	struct dp_runtime *rt = reinterpret_cast<struct dp_runtime *>(
+		modem_get_param(m, MDMPRM_DPRUNTIME));
 	if (!rt || rt->answer_tone != ANSTONE_2100 || rt->v8_tried ||
 	    rt->after_v8 ||
 	    env_off("DSP_V8_LOWSPEED"))

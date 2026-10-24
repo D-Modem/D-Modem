@@ -313,11 +313,14 @@ inline bool peer_closed(int fd)
 /* as the Windows functions above, by POSIX's own calls */
 inline bool net_init() { return true; }
 /* read(): as the Windows fd_read() above */
-inline int fd_read(int fd, void *buf, int n) { return (int)read(fd, buf, n); }
+inline int fd_read(int fd, void *buf, int n)
+{
+	return static_cast<int>(read(fd, buf, n));
+}
 /* write(): as the Windows fd_write() above */
 inline int fd_write(int fd, const void *buf, int n)
 {
-	return (int)write(fd, buf, n);
+	return static_cast<int>(write(fd, buf, n));
 }
 /* O_NONBLOCK on fd: as the Windows set_nonblocking() */
 inline int set_nonblocking(int fd)

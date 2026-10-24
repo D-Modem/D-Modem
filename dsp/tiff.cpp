@@ -131,7 +131,7 @@ int TiffOut::write_page(const T4Page *p)
 	put32(e + 8, p->fine ? 196 : 98);
 	put32(e + 12, 1);
 	e += 16;
-	if (fwrite(ifd, 1, e - ifd, f_) != (size_t)(e - ifd))
+	if (fwrite(ifd, 1, e - ifd, f_) != static_cast<size_t>(e - ifd))
 		return -1;
 
 	/* link it in */
@@ -176,8 +176,8 @@ unsigned long TiffIn::get32(unsigned long at) const
 	if (at + 4 > len)
 		return 0;
 	return big_endian ?
-		((unsigned long)get16(at) << 16) | get16(at + 2) :
-		get16(at) | ((unsigned long)get16(at + 2) << 16);
+		(static_cast<unsigned long>(get16(at)) << 16) | get16(at + 2) :
+		get16(at) | (static_cast<unsigned long>(get16(at + 2)) << 16);
 }
 
 /* the whole file at path into memory, its header checked; 0, or -1 if
@@ -193,8 +193,8 @@ int TiffIn::open(const char *path)
 	fseek(f, 0, SEEK_END);
 	len_ = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	if (len_ < 8 || !alloc_zeroed(data, (size_t)len_) ||
-	    fread(data.data(), 1, len_, f) != (size_t)len_) {
+	if (len_ < 8 || !alloc_zeroed(data, static_cast<size_t>(len_)) ||
+	    fread(data.data(), 1, len_, f) != static_cast<size_t>(len_)) {
 		fclose(f);
 		free_buffer(data);
 		return -1;
@@ -243,7 +243,7 @@ double TiffIn::tag_rational(unsigned long e) const
 	if (get16(e + 2) != T_RATIONAL)
 		return tag_value(e, 0);
 	d = get32(at + 4);
-	return d ? (double)get32(at) / d : 0;
+	return d ? static_cast<double>(get32(at)) / d : 0;
 }
 
 /* a page of another width (or resolution) to the fax's */
@@ -256,12 +256,14 @@ void T4Page::fit(const T4Page *src, int row_step)
 		return;
 	row = row_.data();
 	for (y = 0; y < src->rows; y += row_step) {
-		const unsigned char *s = src->bits.data() + (size_t)y * ss;
+		const unsigned char *s =
+			src->bits.data() + static_cast<size_t>(y) * ss;
 		memset(row, 0, ds);
 		for (x = 0; x < width; x++) {
 			int sx;
 			if (src->width > width)
-				sx = (int)((long)x * src->width / width);
+				sx = static_cast<int>(static_cast<long>(x) *
+						      src->width / width);
 			else
 				sx = x - (width - src->width) / 2;
 			if (sx >= 0 && sx < src->width &&
@@ -325,7 +327,7 @@ int TiffIn::read_page(T4Page *p)
 	if (yres > 300)
 		step = 2;                       /* superfine: every other row */
 
-	src.init((int)width, fine);
+	src.init(static_cast<int>(width), fine);
 	stride = T4_STRIDE(width);
 	for (s = 0; s < nstrips; s++) {
 		unsigned long off = tag_value(so_e, s);
@@ -339,14 +341,16 @@ int TiffIn::read_page(T4Page *p)
 			for (k = 0; k < want && (k + 1) * stride <= len_; k++)
 				src.add_row(data.data() + off + k * stride);
 		} else {
-			src.decode(data.data() + off, len_, (int)comp,
-				  (int)t4opts, fill != 2, (int)want);
+			src.decode(data.data() + off, len_,
+				   static_cast<int>(comp),
+				   static_cast<int>(t4opts), fill != 2,
+				   static_cast<int>(want));
 		}
 	}
 	if (fill == 2 && comp == 1) {
 		/* the pels of each byte the other way round */
 		size_t j;
-		for (j = 0; j < (size_t)src.rows * stride; j++) {
+		for (j = 0; j < static_cast<size_t>(src.rows) * stride; j++) {
 			unsigned char c = src.bits[j], r = 0;
 			for (k = 0; k < 8; k++)
 				r |= ((c >> k) & 1) << (7 - k);
@@ -355,7 +359,7 @@ int TiffIn::read_page(T4Page *p)
 	}
 	if (photo == 1) {                       /* black is zero */
 		size_t j;
-		for (j = 0; j < (size_t)src.rows * stride; j++)
+		for (j = 0; j < static_cast<size_t>(src.rows) * stride; j++)
 			src.bits[j] ^= 0xff;
 	}
 

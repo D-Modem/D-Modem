@@ -328,7 +328,10 @@ public:
 	/* samples from the line, the next being sample received() */
 	void push(const float *x, int n);
 	/* the index of the next sample pushed */
-	long received() const { return hbase_ + (long)hist_.size(); }
+	long received() const
+	{
+		return hbase_ + static_cast<long>(hist_.size());
+	}
 	/* the probing received */
 	bool done() const { return st_ == DONE; }
 	/* the probing not found or lost */

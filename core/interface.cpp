@@ -240,14 +240,14 @@ long Modem::set_param(unsigned name, int val)
 	case MDMPRM_NONE:
 		return 0;
 	case MDMPRM_RX_RATE:
-		rx_rate_ = (unsigned)val;
+		rx_rate_ = static_cast<unsigned>(val);
 		return 0;
 	case MDMPRM_TX_RATE:
-		tx_rate_ = (unsigned)val;
+		tx_rate_ = static_cast<unsigned>(val);
 		return 0;
 	case MDMPRM_DP_REQUESTED:
 		/* change_dp() takes it when the pump says DPSTAT_CHANGEDP */
-		dp_requested_ = (unsigned)val;
+		dp_requested_ = static_cast<unsigned>(val);
 		return 0;
 	case MDMPRM_UPDATE_DELAY:
 		host_.update_delay(*this, val);

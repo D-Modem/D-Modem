@@ -307,7 +307,7 @@ public:
 	int set_sreg(unsigned num, int val) {
 		if (num >= sizeof(sregs_))
 			return -1;
-		sregs_[num] = (unsigned char)val;
+		sregs_[num] = static_cast<unsigned char>(val);
 		return 0;
 	}
 

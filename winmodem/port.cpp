@@ -148,7 +148,9 @@ void Port::pump_reads(Batch &b, uint64_t now)
 				total = t.read_constant;
 			else if (!at_once && (t.read_multiplier ||
 					      t.read_constant))
-				total = (uint64_t)t.read_multiplier * want +
+				total = static_cast<uint64_t>(
+						t.read_multiplier) *
+						want +
 					t.read_constant;
 			r->total_due_ = total ? now + total : 0;
 		}
@@ -188,12 +190,15 @@ void Port::pump_writes(Batch &b, uint64_t now)
 
 		if (!r->started_) {
 			r->started_ = true;
-			uint64_t total = (uint64_t)to_.write_multiplier * want +
+			uint64_t total =
+				static_cast<uint64_t>(to_.write_multiplier) *
+					want +
 				to_.write_constant;
 			r->total_due_ = total ? now + total : 0;
 		}
 		if (!connected_) {
-			stats_.transmitted += (uint32_t)(want - r->done_);
+			stats_.transmitted +=
+				static_cast<uint32_t>(want - r->done_);
 			r->done_ = want;
 		}
 		size_t k = 0;
@@ -202,7 +207,7 @@ void Port::pump_writes(Batch &b, uint64_t now)
 			k++;
 		}
 		if (k) {
-			stats_.transmitted += (uint32_t)k;
+			stats_.transmitted += static_cast<uint32_t>(k);
 			b.tx = true;
 		}
 		if (want)
@@ -448,7 +453,7 @@ void Port::set_lines(uint8_t lines)
 		run(b, lk);
 		return;
 	}
-	uint8_t old = msr(), ch = (uint8_t)(lines ^ lines_);
+	uint8_t old = msr(), ch = static_cast<uint8_t>(lines ^ lines_);
 	lines_ = lines;
 	if (ch & LINE_CTS) {
 		deltas_ |= PMSR_DCTS;
@@ -533,8 +538,9 @@ size_t Port::tx_take(uint8_t *p, size_t max)
 uint8_t Port::app_state()
 {
 	std::lock_guard<std::mutex> lk(mu_);
-	return (uint8_t)((open_ ? STATE_OPEN : 0) | (dtr_ ? STATE_DTR : 0) |
-			 (rts_ ? STATE_RTS : 0));
+	return static_cast<uint8_t>((open_ ? STATE_OPEN : 0) |
+				    (dtr_ ? STATE_DTR : 0) |
+				    (rts_ ? STATE_RTS : 0));
 }
 
 /* see port.h */
@@ -621,8 +627,8 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 		memcpy(&h, in, sizeof(h));
 		if ((h.control_handshake & HF_DTR_MASK) == HF_DTR_MASK ||
 		    h.xon_limit < 0 || h.xoff_limit < 0 ||
-		    (size_t)h.xon_limit > RX_SIZE ||
-		    (size_t)h.xoff_limit > RX_SIZE)
+		    static_cast<size_t>(h.xon_limit) > RX_SIZE ||
+		    static_cast<size_t>(h.xoff_limit) > RX_SIZE)
 			return ST_INVALID_PARAMETER;
 		hf_ = h;
 		apply_handflow(b);
@@ -657,8 +663,8 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 		return ST_SUCCESS;
 	}
 	case IO_GET_DTRRTS:
-		u = (dtr_ ? (uint32_t)DTRRTS_DTR : 0u) |
-		    (rts_ ? (uint32_t)DTRRTS_RTS : 0u);
+		u = (dtr_ ? static_cast<uint32_t>(DTRRTS_DTR) : 0u) |
+		    (rts_ ? static_cast<uint32_t>(DTRRTS_RTS) : 0u);
 		return give(&u, 4);
 	case IO_GET_MODEM_CONTROL:
 		/* (MCR: DTR, RTS, and OUT2 as a PC's UART has it) */
@@ -730,10 +736,11 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 		return ST_SUCCESS;
 	case IO_GET_COMMSTATUS: {
 		SerialStatus s = {};
-		s.in_queue = (uint32_t)rx_.size();
-		s.out_queue = (uint32_t)tx_.size();
+		s.in_queue = static_cast<uint32_t>(rx_.size());
+		s.out_queue = static_cast<uint32_t>(tx_.size());
 		for (Request *q : writes_)
-			s.out_queue += (uint32_t)(q->size() - q->done_);
+			s.out_queue +=
+				static_cast<uint32_t>(q->size() - q->done_);
 		return give(&s, sizeof(s));
 	}
 	case IO_GET_PROPERTIES: {
@@ -766,7 +773,7 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 	case IO_LSRMST_INSERT:
 		if (!need(1))
 			return ST_BUFFER_TOO_SMALL;
-		lsrmst_ = *(const uint8_t *)in;
+		lsrmst_ = *static_cast<const uint8_t *>(in);
 		return ST_SUCCESS;
 	case IO_IMMEDIATE_CHAR:
 		if (!need(1))
@@ -774,7 +781,7 @@ uint32_t Port::do_ioctl(Batch &b, uint32_t code, const void *in,
 		if (connected_) {
 			if (tx_.size() >= TX_SIZE)
 				return ST_INVALID_PARAMETER;
-			tx_.push_back(*(const uint8_t *)in);
+			tx_.push_back(*static_cast<const uint8_t *>(in));
 			b.tx = true;
 		}
 		tx_busy_ = true;

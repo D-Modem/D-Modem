@@ -416,11 +416,11 @@ static int dis_rate_ok(const unsigned char *fif, int len, const struct rate *r)
 /* a CSI / TSI: 20 characters, the last first */
 static int put_ident(unsigned char *d, const char *id)
 {
-	int k, n = id ? (int)strlen(id) : 0;
+	int k, n = id ? static_cast<int>(strlen(id)) : 0;
 	if (n > 20)
 		n = 20;
 	for (k = 0; k < 20; k++)
-		d[k] = k < n ? (unsigned char)id[n - 1 - k] : ' ';
+		d[k] = k < n ? static_cast<unsigned char>(id[n - 1 - k]) : ' ';
 	return 20;
 }
 
@@ -500,7 +500,7 @@ void T30::add_frame(int fcf, const unsigned char *fif, int len)
 	f->data[0] = HDLC_ADDR;
 	f->data[1] = HDLC_CTRL;
 	/* the lowest bit says who sent it (the one that got the DIS) */
-	f->data[2] = (unsigned char)(fcf | (cfg.sending ? 1 : 0));
+	f->data[2] = static_cast<unsigned char>(fcf | (cfg.sending ? 1 : 0));
 	if (len > FRAME_MAX - 3)
 		len = FRAME_MAX - 3;
 	if (len)
@@ -770,7 +770,7 @@ void T30::rx_message()
 		/* the calling machine */
 		switch (fcf) {
 		case FCF_DIS:
-			if (fif_len > (int)sizeof(dis))
+			if (fif_len > static_cast<int>(sizeof(dis)))
 				fif_len = sizeof(dis);
 			memcpy(dis, fif, fif_len);
 			dis_len = fif_len;
@@ -1033,7 +1033,8 @@ void T30::page_settings()
 		int y, s = T4_STRIDE(page.width);
 		p.init(page.width, 0);
 		for (y = 0; y < page.rows; y += 2)
-			p.add_row(page.bits.data() + (size_t)y * s);
+			p.add_row(page.bits.data() +
+				  static_cast<size_t>(y) * s);
 		page.release();
 		page = std::move(p);
 	}
@@ -1127,7 +1128,8 @@ void T30::sender_message()
 			rnr_count = 0;
 			if (!ecm_last) {
 				/* the next block of the page */
-				ecm_doc_pos += (size_t)ecm_frames * ecm_size;
+				ecm_doc_pos += static_cast<size_t>(ecm_frames) *
+					       ecm_size;
 				ecm_block++;
 				gap_then(RESPONSE_GAP_MS,
 					 &T30::start_ecm_block);
@@ -1233,7 +1235,7 @@ void T30::start_ecm_block()
 		n = 1;
 	if (n > ECM_FRAMES)
 		n = ECM_FRAMES;
-	ecm_frames = (int)n;
+	ecm_frames = static_cast<int>(n);
 	ecm_last = ecm_doc_pos + n * ecm_size >= ecm_doc.size();
 	memset(ecm_send, 0, sizeof(ecm_send));
 	for (int k = 0; k < ecm_frames; k++)
@@ -1252,14 +1254,15 @@ int T30::hdlc_tx_next(HdlcEcm, unsigned char *buf, int /* max */)
 	       !(ecm_send[etx_frame / 8] >> (etx_frame % 8) & 1))
 		etx_frame++;
 	if (etx_frame < ecm_frames) {
-		size_t at = ecm_doc_pos + (size_t)etx_frame * ecm_size;
+		size_t at =
+			ecm_doc_pos + static_cast<size_t>(etx_frame) * ecm_size;
 		size_t n = at < ecm_doc.size() ? ecm_doc.size() - at : 0;
-		if (n > (size_t)ecm_size)
+		if (n > static_cast<size_t>(ecm_size))
 			n = ecm_size;
 		buf[0] = HDLC_ADDR;
 		buf[1] = HDLC_CTRL;
 		buf[2] = FCF_FCD;
-		buf[3] = (unsigned char)etx_frame;
+		buf[3] = static_cast<unsigned char>(etx_frame);
 		/* the last frame padded to the size, as most receivers
 		   expect */
 		memset(buf + 4, 0, ecm_size);
@@ -1307,11 +1310,12 @@ void T30::send_pps()
 	unsigned char fif[4];
 	if (ecm_last)
 		last_post = post_command();
-	fif[0] = ecm_last ? (unsigned char)(last_post | (cfg.sending ? 1 : 0)) :
-		FCF_NULL;
-	fif[1] = (unsigned char)ecm_page;
-	fif[2] = (unsigned char)ecm_block;
-	fif[3] = (unsigned char)(ecm_frames - 1);
+	fif[0] = ecm_last ? static_cast<unsigned char>(last_post |
+						       (cfg.sending ? 1 : 0)) :
+			    FCF_NULL;
+	fif[1] = static_cast<unsigned char>(ecm_page);
+	fif[2] = static_cast<unsigned char>(ecm_block);
+	fif[3] = static_cast<unsigned char>(ecm_frames - 1);
 	new_frames();
 	add_frame(FCF_PPS, fif, 4);
 	send_frames(S_WAIT_PPS_RESP);
@@ -1323,7 +1327,7 @@ void T30::send_ctc()
 {
 	unsigned char fif[2];
 	fif[0] = 0;
-	fif[1] = (unsigned char)(rates[rate].bits << 2);
+	fif[1] = static_cast<unsigned char>(rates[rate].bits << 2);
 	new_frames();
 	add_frame(FCF_CTC, fif, 2);
 	send_frames(S_WAIT_CTR);
@@ -1372,8 +1376,8 @@ void T30::ecm_frame_in(const unsigned char *d, int len)
 		int fn = d[3], n = len - 4;
 		if (n > ECM_SIZE)
 			n = ECM_SIZE;
-		memcpy(&ecm_rx[(size_t)fn * ECM_SIZE], d + 4, n);
-		ecm_rx_len[fn] = (short)n;
+		memcpy(&ecm_rx[static_cast<size_t>(fn) * ECM_SIZE], d + 4, n);
+		ecm_rx_len[fn] = static_cast<short>(n);
 	} else if ((d[2] & 0xfe) == FCF_RCP) {
 		if (!ecm_rcp++)
 			DSP_DBG("t30: RCP\n");
@@ -1484,7 +1488,8 @@ void T30::got_pps(const unsigned char *fif, int len)
 	}
 	/* the block to the page, bit by bit as on the line */
 	for (k = 0; k < ecm_rx_frames && rx_page_on && !t4rx.done; k++) {
-		const unsigned char *d = &ecm_rx[(size_t)k * ECM_SIZE];
+		const unsigned char *d =
+			&ecm_rx[static_cast<size_t>(k) * ECM_SIZE];
 		for (int i = 0; i < ecm_rx_len[k] * 8 && !t4rx.done; i++)
 			t4rx.bit(d[i / 8] >> (i % 8) & 1);
 	}
@@ -1558,7 +1563,7 @@ void T30::t38_start(int kind)
 	t38_frame_len = t38_next_len = -1;
 	t38_frame_pos = 0;
 	t38_t4_pos = 0;
-	t38_t4_len = kind == T38_TX_TCF ? (size_t)tcf_bits / 8 :
+	t38_t4_len = kind == T38_TX_TCF ? static_cast<size_t>(tcf_bits) / 8 :
 		kind == T38_TX_PAGE ? (page_bits.n + 7) / 8 : 0;
 }
 
@@ -1665,9 +1670,9 @@ void T30::t38_flush()
 		} else {
 			/* T.4: the TCF's zeros, or the page's octets */
 			size_t left = t38_t4_len - t38_t4_pos;
-			int last = (size_t)n >= left, k;
+			int last = static_cast<size_t>(n) >= left, k;
 			if (last)
-				n = (int)left;
+				n = static_cast<int>(left);
 			memset(buf, 0, n);
 			if (t38_kind == T38_TX_PAGE)
 				for (k = 0; k < n * 8; k++) {
@@ -2034,7 +2039,7 @@ void T30::tx_done()
 float T30::tone(float freq)
 {
 	return FAX_CED_RMS * 1.41421f *
-		sinf(2 * (float)M_PI * freq * count / srate);
+		sinf(2 * static_cast<float>(M_PI) * freq * count / srate);
 }
 
 /* the next output sample: the transmitter, else CNG, CED or silence;
@@ -2191,14 +2196,14 @@ T30 *t30_create(const struct t30_config *cfg)
 	/* test: DSP_T30_LOSE=<fcf in hex>[:<n>], see send_frames() */
 	if (const char *v = env("DSP_T30_LOSE")) {
 		char *e;
-		t->lose_fcf = (int)strtol(v, &e, 16) &
+		t->lose_fcf = static_cast<int>(strtol(v, &e, 16)) &
 			0xfe;
 		t->lose_n = *e == ':' ? atoi(e + 1) : 1;
 		if (t->lose_n < 1)
 			t->lose_fcf = 0;
 	}
 	if (!cfg->sending && cfg->ecm)
-		t->ecm_rx.assign((size_t)ECM_FRAMES * ECM_SIZE, 0);
+		t->ecm_rx.assign(static_cast<size_t>(ECM_FRAMES) * ECM_SIZE, 0);
 	t->restart_v21();
 	if (cfg->sending) {
 		t->set_state(S_CNG);

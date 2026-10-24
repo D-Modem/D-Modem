@@ -73,7 +73,7 @@ std::string link_path(const char *name)
 	const char *end = name + strlen(name), *p = end;
 	unsigned long n = 0;
 
-	while (p > name && isdigit((unsigned char)p[-1]))
+	while (p > name && isdigit(static_cast<unsigned char>(p[-1])))
 		p--;
 	if (p < end)
 		n = strtoul(p, nullptr, 10);
@@ -220,7 +220,7 @@ int main(int argc, char *argv[])
 	dcore::Modem *m;
 	if (opt.usb) {
 #ifdef DMODEM_USB
-		mo.rate = (int)opt.rate;
+		mo.rate = static_cast<int>(opt.rate);
 		um.reset(new dcore::Modem(usb, mo));
 		if (!um->ok())
 			exit(-1);
@@ -231,7 +231,7 @@ int main(int argc, char *argv[])
 #endif
 	} else if (opt.alsa) {
 #ifdef DMODEM_ALSA
-		mo.rate = (int)opt.rate;
+		mo.rate = static_cast<int>(opt.rate);
 		am.reset(new dcore::Modem(alsa, mo));
 		if (!am->ok())
 			exit(-1);

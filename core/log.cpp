@@ -65,7 +65,7 @@ void log_data(const void *who, unsigned id, const void *data, int count)
 	LogHeader hdr;
 	if (id > log_data_level || log_fd < 0)
 		return;
-	hdr.modem_id = (unsigned)(uintptr_t)who;
+	hdr.modem_id = static_cast<unsigned>(reinterpret_cast<uintptr_t>(who));
 	hdr.id = id;
 	hdr.length = count;
 	if (write(log_fd, &hdr, sizeof(hdr)) < 0 ||
@@ -85,11 +85,11 @@ int log_vprintf(unsigned level, const char *fmt, va_list args)
 	int i, len;
 	clock_gettime(CLOCK_REALTIME, &ts);
 	i = snprintf(line, sizeof(line), "<%03ld.%06ld> ",
-		     (long)(ts.tv_sec % 1000), ts.tv_nsec / 1000);
+		     static_cast<long>(ts.tv_sec % 1000), ts.tv_nsec / 1000);
 	len = vsnprintf(line + i, sizeof(line) - i, fmt, args);
 	if (len < 0)
 		return len;
-	if (len > (int)sizeof(line) - i - 1)
+	if (len > static_cast<int>(sizeof(line)) - i - 1)
 		len = sizeof(line) - i - 1;
 	if (log_data_level)
 		log_data(nullptr, LOG_TEXT, line, len + i);

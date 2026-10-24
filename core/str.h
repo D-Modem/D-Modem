@@ -31,7 +31,7 @@ inline std::string dec(T v, int width = 0)
 	static_assert(std::is_integral<T>::value, "dec() takes integers");
 	std::string s = std::to_string(v);
 	std::size_t digits = s.size() - (v < 0 ? 1 : 0);
-	if ((int)digits < width)
+	if (static_cast<int>(digits) < width)
 		s.insert(v < 0 ? 1 : 0, width - digits, '0');
 	return s;
 }
@@ -47,7 +47,7 @@ inline std::string hex(unsigned long v, int width = 0, bool upper_case = false)
 		for (char &c : s)
 			if (c >= 'a' && c <= 'f')
 				c = static_cast<char>(c - 'a' + 'A');
-	if ((int)s.size() < width)
+	if (static_cast<int>(s.size()) < width)
 		s.insert(0, width - s.size(), '0');
 	return s;
 }
@@ -97,9 +97,9 @@ inline bool parse_long(std::string_view s, long &v, int base = 10)
 	unsigned long u;
 	auto r = std::from_chars(s.data(), s.data() + s.size(), u, base);
 	if (r.ec != std::errc() || r.ptr != s.data() + s.size() ||
-	    u > (unsigned long)std::numeric_limits<long>::max())
+	    u > static_cast<unsigned long>(std::numeric_limits<long>::max()))
 		return false;
-	v = neg ? -(long)u : (long)u;
+	v = neg ? -static_cast<long>(u) : static_cast<long>(u);
 	return true;
 }
 

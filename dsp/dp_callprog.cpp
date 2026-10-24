@@ -150,21 +150,27 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 
 	/* pulse dialing: ATP (the core's flag), the country's times */
 	pulse = modem_get_param(m, GetPulseDialingFlag) > 0;
-	v = (int)modem_get_param(m, GetPulseDialMakeTime);
+	v = static_cast<int>(modem_get_param(m, GetPulseDialMakeTime));
 	pulse_make = ms2samples(v > 0 ? v : 40, srate_);
-	v = (int)modem_get_param(m, GetPulseDialBreakTime);
+	v = static_cast<int>(modem_get_param(m, GetPulseDialBreakTime));
 	pulse_break = ms2samples(v > 0 ? v : 60, srate_);
-	v = (int)modem_get_param(m, GetPulseBetweenDigitsInterval);
+	v = static_cast<int>(modem_get_param(m, GetPulseBetweenDigitsInterval));
 	pulse_gap = ms2samples(v > 0 ? 10 * v : 800, srate_);
-	v = (int)modem_get_param(m, GetPulseDialDigitPattern);
+	v = static_cast<int>(modem_get_param(m, GetPulseDialDigitPattern));
 	pulse_pattern = v >= 1 && v <= 3 ? v : 1;
 
 	/* busy tone: the country's cadence (10 ms), 20 ms either side for
 	   the blocks */
-	busy_on_min = 10 * (int)modem_get_param(m, GetMinBusyCadenceOnTime);
-	busy_on_max = 10 * (int)modem_get_param(m, GetMaxBusyCadenceOnTime);
-	busy_off_min = 10 * (int)modem_get_param(m, GetMinBusyCadenceOffTime);
-	busy_off_max = 10 * (int)modem_get_param(m, GetMaxBusyCadenceOffTime);
+	busy_on_min = 10 * static_cast<int>(
+				   modem_get_param(m, GetMinBusyCadenceOnTime));
+	busy_on_max = 10 * static_cast<int>(
+				   modem_get_param(m, GetMaxBusyCadenceOnTime));
+	busy_off_min =
+		10 *
+		static_cast<int>(modem_get_param(m, GetMinBusyCadenceOffTime));
+	busy_off_max =
+		10 *
+		static_cast<int>(modem_get_param(m, GetMaxBusyCadenceOffTime));
 	/* or rather the country's own busy and congestion tones of the
 	   ITU's list (tones.h), if it has them: a part of either's cadence,
 	   15% or 80 ms either side (the bounds above, Smart Link's table,
@@ -190,10 +196,11 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller, int srate_, 
 		busy_on_max += 2 * BLOCK_MS;
 		busy_off_max += 2 * BLOCK_MS;
 	}
-	v = (int)modem_get_param(m, GetBusyDetectionCyclesNumber);
+	v = static_cast<int>(modem_get_param(m, GetBusyDetectionCyclesNumber));
 	busy_need = v >= 2 && v <= 8 ? v : 4;
 
-	dial_ = (const char *)modem_get_param(m, MDMPRM_DIALSTR);
+	dial_ = reinterpret_cast<const char *>(
+		modem_get_param(m, MDMPRM_DIALSTR));
 	dial = dial_ ? dial_ : "";
 	/* X2 and X4 wait for a dial tone, the others dial blindly; X3
 	   and X4 report a busy tone, the others take no notice of it (a
@@ -245,7 +252,7 @@ bool CallProgPump::busy_part(bool on, int len) const
 		if (!t)
 			continue;
 		for (int k = on ? 0 : 1; k < t->n; k += 2) {
-			int ms = (int)(t->cadence[k] * 1000 + 0.5f);
+			int ms = static_cast<int>(t->cadence[k] * 1000 + 0.5f);
 			int tol = ms * 15 / 100 > 80 ? ms * 15 / 100 : 80;
 			if (len >= ms - tol && len <= ms + tol)
 				return true;
@@ -306,8 +313,8 @@ int CallProgPump::block()
 		/* the runtime comes with modem_start(), after we were
 		   created for a dial */
 		if (!rt)
-			rt = (struct dp_runtime *)
-				modem_get_param(modem, MDMPRM_DPRUNTIME);
+			rt = reinterpret_cast<struct dp_runtime *>(
+				modem_get_param(modem, MDMPRM_DPRUNTIME));
 		if (rt) {
 			rt->answer_tone = tone;
 			rt->answer_tone_end = total;
@@ -432,7 +439,7 @@ float CallProgPump::dial_sample()
 		dial_pos++;
 		if (ch == ',') {
 			int s8 = modem_get_sreg(modem, SREG_DIAL_PAUSE_TIME);
-			pause_left = (long)(s8 > 0 ? s8 : 2) * srate;
+			pause_left = static_cast<long>(s8 > 0 ? s8 : 2) * srate;
 		} else if (ch == 'W' || ch == 'w') {
 			dialtone_blocks = dialtone_gap = 0;
 			set_state(CP_WAIT_DIALTONE);
@@ -515,15 +522,19 @@ int CallProgPump::process(void *in, void *out, int cnt)
 			    (!need_dialtone &&
 			     count >= ms2samples(2000, srate)))
 				set_state(CP_DIAL);
-			else if (count >= (long)modem_get_sreg(modem,
-						SREG_DIAL_TONE_WAIT_TIME) * srate &&
+			else if (count >= static_cast<long>(modem_get_sreg(
+						  modem,
+						  SREG_DIAL_TONE_WAIT_TIME)) *
+						  srate &&
 				 count >= ms2samples(2000, srate) &&
 				 /* (a dial tone in a cadence being heard:
 				    2 s more for it) */
 				 (!dialtone_blocks ||
-				  count >= (long)modem_get_sreg(modem,
-						SREG_DIAL_TONE_WAIT_TIME) * srate +
-				  ms2samples(2000, srate))) {
+				  count >= static_cast<long>(modem_get_sreg(
+						   modem,
+						   SREG_DIAL_TONE_WAIT_TIME)) *
+							   srate +
+						   ms2samples(2000, srate))) {
 				DSP_DBG("callprog: no dial tone\n");
 				if (ret == DPSTAT_OK)
 					ret = DPSTAT_NODIALTONE;

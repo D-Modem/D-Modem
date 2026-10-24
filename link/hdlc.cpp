@@ -65,21 +65,21 @@ static inline void queue_bits(BitQueue &q, uint32_t bits, int k)
 /* the oldest bit queued in q, taken */
 static inline int take_bit(BitQueue &q)
 {
-	return (int)(q.data >> --q.bit & 1);
+	return static_cast<int>(q.data >> --q.bit & 1);
 }
 
 /* the 8 oldest bits queued in q (at least 8), left in it: the oldest
    in the most significant */
 static inline uint8_t peek_octet(const BitQueue &q)
 {
-	return (uint8_t)(q.data >> (q.bit - 8));
+	return static_cast<uint8_t>(q.data >> (q.bit - 8));
 }
 
 /* a start-stop character into q: start bit, the 8 data bits least
    significant first, stop bit */
 static void queue_char(BitQueue &q, uint8_t ch)
 {
-	queue_bits(q, (uint32_t)reverse_bits(ch) << 1 | 1, 10);
+	queue_bits(q, static_cast<uint32_t>(reverse_bits(ch)) << 1 | 1, 10);
 }
 
 /* a start-stop character from q into ch: the marks before its start
@@ -91,7 +91,7 @@ static bool take_char(BitQueue &q, uint8_t &ch)
 		q.bit--;
 	if (q.bit < 10)
 		return false;
-	ch = reverse_bits((uint8_t)(q.data >> (q.bit - 9)));
+	ch = reverse_bits(static_cast<uint8_t>(q.data >> (q.bit - 9)));
 	q.bit -= 10;
 	return true;
 }
@@ -109,7 +109,7 @@ template <class F>
 int BitFramer<F>::get_bits(int nbits, uint8_t *buf, int n)
 {
 	F &f = static_cast<F &>(*this);
-	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
+	const uint8_t mask = static_cast<uint8_t>((1 << nbits) - 1);
 	int done = 0;
 
 	while (n > 0) {
@@ -120,7 +120,7 @@ int BitFramer<F>::get_bits(int nbits, uint8_t *buf, int n)
 			break;
 		}
 		tx_.bit -= nbits;
-		*buf++ = (uint8_t)(tx_.data >> tx_.bit & mask);
+		*buf++ = static_cast<uint8_t>(tx_.data >> tx_.bit & mask);
 		n--;
 		done++;
 	}
@@ -133,7 +133,7 @@ template <class F>
 int BitFramer<F>::put_bits(int nbits, const uint8_t *buf, int n)
 {
 	F &f = static_cast<F &>(*this);
-	const uint8_t mask = (uint8_t)((1 << nbits) - 1);
+	const uint8_t mask = static_cast<uint8_t>((1 << nbits) - 1);
 
 	for (int i = 0; i < n; i++) {
 		queue_bits(rx_, buf[i] & mask, nbits);
@@ -174,8 +174,8 @@ int Async::tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n)
 
 	if (tx_.bit && n > 0) {
 		int marks = nbits - tx_.bit;
-		*buf++ = (uint8_t)((tx_.data << marks | ((1u << marks) - 1)) &
-				   mask);
+		*buf++ = static_cast<uint8_t>(
+			(tx_.data << marks | ((1u << marks) - 1)) & mask);
 		tx_.bit = 0;
 		n--;
 		done++;
@@ -344,8 +344,8 @@ static uint16_t fcs_add(uint16_t fcs, uint8_t c)
 {
 	fcs ^= c;
 	for (int i = 0; i < 8; i++)
-		fcs = fcs & 1 ? (uint16_t)(fcs >> 1 ^ 0x8408) :
-			(uint16_t)(fcs >> 1);
+		fcs = fcs & 1 ? static_cast<uint16_t>(fcs >> 1 ^ 0x8408) :
+			static_cast<uint16_t>(fcs >> 1);
 	return fcs;
 }
 
@@ -411,7 +411,7 @@ void Hdlc::put_byte(uint8_t in)
 {
 	for (int i = 0; i < 8; i++, in >>= 1) {
 		int b = in & 1;
-		queue_bits(tx_, (uint32_t)b, 1);
+		queue_bits(tx_, static_cast<uint32_t>(b), 1);
 		if (!b) {
 			tx_ones_ = 0;
 		} else if (++tx_ones_ == 5) {
@@ -443,9 +443,9 @@ bool Hdlc::tx_fill()
 		put_byte(c);
 		return true;
 	}
-	uint16_t fcs = (uint16_t)~tx_frame_->fcs;
-	put_byte((uint8_t)fcs);
-	put_byte((uint8_t)(fcs >> 8));
+	uint16_t fcs = static_cast<uint16_t>(~tx_frame_->fcs);
+	put_byte(static_cast<uint8_t>(fcs));
+	put_byte(static_cast<uint8_t>(fcs >> 8));
 	tx_ones_ = 0;
 	Frame *f = tx_frame_;
 	tx_frame_ = nullptr;
@@ -486,7 +486,7 @@ void Hdlc::rx_scan()
 		int b = take_bit(rx_);
 		if (!rx_error_) {
 			rx_ones_ = b ? rx_ones_ + 1 : 0;
-			octet |= (uint8_t)(b << n);
+			octet |= static_cast<uint8_t>(b << n);
 		}
 		n++;
 	}

@@ -59,7 +59,8 @@ private:
 int DummyPump::start(struct modem *m, enum DP_ID, int, int, int)
 {
 	core.modem = m;
-	rt = (struct dp_runtime *)modem_get_param(m, MDMPRM_DPRUNTIME);
+	rt = reinterpret_cast<struct dp_runtime *>(
+		modem_get_param(m, MDMPRM_DPRUNTIME));
 	if (rt) {
 		saved_pcm = rt->pcm;
 		rt->pcm = 1;
@@ -127,7 +128,7 @@ void DummyPump::exchange(const s16 *rx, s16 *tx, int cnt)
 	for (i = 0; i < cnt; i += n) {
 		n = cnt - i < BIT_CHUNK ? cnt - i : BIT_CHUNK;
 		for (j = 0; j < n; j++)
-			bits[j] = (u16)rx[i + j] & 1;
+			bits[j] = static_cast<u16>(rx[i + j]) & 1;
 		core.put(bits, n);
 	}
 	for (i = 0; i < cnt; i += n) {

@@ -71,7 +71,8 @@ int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, int srate_,
 		rs_up_.init(6, 5);
 	}
 	intptr_t v = modem_get_param(m, MDMPRM_VCVM);
-	info_ = v == -1 || v == 0 ? nullptr : (struct dp_vcvm *)v;
+	info_ = v == -1 || v == 0 ? nullptr :
+				    reinterpret_cast<struct dp_vcvm *>(v);
 	VcvmModem::Config c;
 	c.su.calling = caller_;
 	c.su.fs = 8000;
@@ -146,7 +147,7 @@ void VcvmPump::report()
 	info_->raw_rx = r.raw_bps();
 	info_->coded_tx = t.coded_bps();
 	info_->coded_rx = r.coded_bps();
-	info_->sym_tenths = (int)(r.sym_ms() * 10 + 0.5);
+	info_->sym_tenths = static_cast<int>(r.sym_ms() * 10 + 0.5);
 	info_->tones_tx = t.loaded();
 	info_->tones_rx = r.loaded();
 	info_->code_rate = r.rate;
@@ -176,11 +177,12 @@ int VcvmPump::process(void *in, void *out, int cnt)
 	}
 	out8_.assign(in8_.size(), 0.0f);
 	if (!in8_.empty())
-		mdm_.process(in8_.data(), out8_.data(), (int)in8_.size());
+		mdm_.process(in8_.data(), out8_.data(),
+			     static_cast<int>(in8_.size()));
 	log_lines();
 	if (line_rate_ == 8000) {
 		for (int i = 0; i < cnt; i++)
-			dst[i] = dsp_clip16(out8_[(size_t)i]);
+			dst[i] = dsp_clip16(out8_[static_cast<size_t>(i)]);
 	} else {
 		/* 8000 -> 9600: what comes out a block, kept in back_ to
 		   give exactly cnt */
@@ -194,7 +196,9 @@ int VcvmPump::process(void *in, void *out, int cnt)
 			dst[i] = back_pos_ < back_.size() ?
 				dsp_clip16(back_[back_pos_++]) : 0;
 		if (back_pos_ > 4096) {
-			back_.erase(back_.begin(), back_.begin() + (long)back_pos_);
+			back_.erase(back_.begin(),
+				    back_.begin() +
+					    static_cast<long>(back_pos_));
 			back_pos_ = 0;
 		}
 	}
@@ -219,7 +223,8 @@ int VcvmPump::process(void *in, void *out, int cnt)
 	if (!up_ && mdm_.connected()) {
 		up_ = true;
 		if (mdm_.rtt_ms() > 0)
-			stat_rtd((long)mdm_.rtt_ms() * srate / 1000);
+			stat_rtd(static_cast<long>(mdm_.rtt_ms()) * srate /
+				 1000);
 		report();
 		DSP_DBG("vcvm: phase 4: transmitting %s, receiving %s\n",
 			mdm_.tx_loading().str().c_str(),

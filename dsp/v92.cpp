@@ -85,7 +85,7 @@ static int fill_to(unsigned char *b, int n, int fill)
    multiple of fill bits, returns the count */
 int V92Cpd::build(unsigned char *b, int fill) const
 {
-	int n = 0, i, j, g4 = (int)lrint(4 * g * 65536);
+	int n = 0, i, j, g4 = static_cast<int>(lrint(4 * g * 65536));
 
 	if (g4 > 65535)
 		g4 = 65535;
@@ -117,7 +117,8 @@ int V92Cpd::build(unsigned char *b, int fill) const
 	for (i = 0; i < 4; i++)
 		for (j = 0; j < len[i]; j++) {
 			put_bits(b, &n, 0, 1);
-			put_bits(b, &n, (unsigned short)coef[i][j], 16);
+			put_bits(b, &n, static_cast<unsigned short>(coef[i][j]),
+				 16);
 		}
 	/* constellations */
 	put_bits(b, &n, 0, 1);
@@ -194,10 +195,10 @@ int v92_cp_parse(V90Cp *c, const unsigned char *b, int len)
 	c->ack = b[33];
 	c->alaw = b[35];
 	c->ld = field(b, 49, 2);
-	c->a1 = (signed char)field(b, 69, 8);
-	c->a2 = (signed char)field(b, 77, 8);
-	c->b1 = (signed char)field(b, 86, 8);
-	c->b2 = (signed char)field(b, 94, 8);
+	c->a1 = static_cast<signed char>(field(b, 69, 8));
+	c->a2 = static_cast<signed char>(field(b, 77, 8));
+	c->b1 = static_cast<signed char>(field(b, 86, 8));
+	c->b2 = static_cast<signed char>(field(b, 94, 8));
 	for (i = 0; i < 6; i++) {
 		c->con[i] = field(b, con_bit[i], 4);
 		if (c->con[i] + 1 > c->ncon)
@@ -381,7 +382,8 @@ int V92Cpd::parse(const unsigned char *b, int nb)
 		p += 68;
 		for (i = 0; i < 4; i++)
 			for (j = 0; j < len[i]; j++, p += 17)
-				coef[i][j] = (short)field(b, p + 1, 16);
+				coef[i][j] =
+					static_cast<short>(field(b, p + 1, 16));
 	}
 	if (b[21]) {
 		for (i = 0; i < 4; i++)
@@ -399,7 +401,7 @@ int V92Cpd::parse(const unsigned char *b, int nb)
 		p += 85;
 		for (i = 0; i < ncon; i++)
 			for (j = 0; j < lc[i]; j++, p += 17)
-				pts[i][j] = (int)field(b, p + 1, 16);
+				pts[i][j] = field(b, p + 1, 16);
 		for (i = 0; i < 6; i++)
 			if (con[i] >= ncon)
 				return -1;
@@ -540,7 +542,7 @@ int V92Up::train(long start, int lo, int hi)
 			y -= b[j] * trn_ref[s - 1 - j];
 		e2 += (trn_ref[s] - y) * (trn_ref[s] - y);
 	}
-	mse_trn = (float)(e2 / (TRN_NT - 40));
+	mse_trn = static_cast<float>(e2 / (TRN_NT - 40));
 	DSP_DBG("v92: equalizer fitted, mse %.5f (%.1f dB)\n", mse_trn,
 		-10 * log10f(mse_trn + 1e-9f));
 	/* on from the end of the fit, with its decisions */
@@ -584,13 +586,13 @@ float V92Up::equalize(long s)
 		   that follow the timing */
 		for (i = 0; i < V92_PF_F; i++)
 			y += pf_f[i] * pf_sample(s + pf_d + i - V92_PF_F / 2);
-		return (float)y;
+		return static_cast<float>(y);
 	}
 	for (i = 0; i < V92_EQ_F; i++)
 		y += f[i] * at(buf, base + i);
 	for (i = 0; i < V92_EQ_B; i++)
 		y -= b[i] * dh[i];
-	return (float)y;
+	return static_cast<float>(y);
 }
 
 /* LMS on symbol s's taps, err the decision less the output, mu the step
@@ -638,7 +640,7 @@ void V92Up::tone_sample(float x)
 	static const float c6[6] = { 1, 0.5f, -0.5f, -1, -0.5f, 0.5f };
 	static const float s6[6] = { 0, -0.8660254f, -0.8660254f, 0,
 				     0.8660254f, 0.8660254f };
-	int k = (int)(n % 6), j, coh, h = (int)(n & 31);
+	int k = static_cast<int>(n % 6), j, coh, h = static_cast<int>(n & 31);
 	cplx bb = cplx_make(0, 0);
 	float e = 0, r = 0, d;
 
@@ -660,7 +662,7 @@ void V92Up::tone_sample(float x)
 	coh = e > TONE_MIN_E * 2 && (cplx_pow(bb) > 0.6f * e * TONE_W / 2 ||
 		(tx.seg == V90_JD && r < 0.02f * e &&
 		 cplx_pow(bb) > 0.08f * e * TONE_W / 2));
-	tcoh[h] = (unsigned char)coh;
+	tcoh[h] = static_cast<unsigned char>(coh);
 	if (coh) {
 		tone_n++;
 		tone_miss = 0;
@@ -982,7 +984,7 @@ void V92Up::bits4(int s, int m)
 void V92Up::symbol(float y)
 {
 	float t, err;
-	int d, i = (int)(sym % 12);
+	int d, i = static_cast<int>(sym % 12);
 
 	switch (rx) {
 	case V92R_JA:
@@ -1265,15 +1267,16 @@ void V92Up::fpe_design(int drn, bool up)
 
 	if (b_frozen)
 		for (j = 0; j < cpd.len[1]; j++)
-			sb += fabs((double)cpd.coef[1][j]) / 16384.0;
+			sb += fabs(static_cast<double>(cpd.coef[1][j])) /
+			      16384.0;
 	for (d = 19; d >= 1; d--) {
 		int K = 2 * (d + 17);
 		double ms0 = 0, ms3;
 		if (up_mask && !((up_mask >> (d - 1)) & 1))
 			continue;
-		M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
+		M = static_cast<int>(ceil(pow(2.0, K / 12.0) - 1e-9));
 		if (b_frozen) {
-			ms0 = (double)M * M / 3;
+			ms0 = static_cast<double>(M) * M / 3;
 			ms3 = 4.0 * M * M / 3;
 		} else {
 			for (k = 0; k < M; k++) {
@@ -1284,7 +1287,7 @@ void V92Up::fpe_design(int drn, bool up)
 			ms3 = (4.0 * M * M - 1) / 3;
 		}
 		msa = (9 * ms0 + 3 * ms3) / 12;
-		lc = (int)ceil(M * (1 + sb)) + 2;
+		lc = static_cast<int>(ceil(M * (1 + sb))) + 2;
 		if (lc < 2 * M)
 			lc = 2 * M;
 		lc += lc & 1;
@@ -1435,8 +1438,8 @@ struct Big {
 	{
 		unsigned long long c = a;
 		for (int i = 0; i < 4; i++) {
-			c += (unsigned long long)w[i] * m;
-			w[i] = (unsigned)c;
+			c += static_cast<unsigned long long>(w[i]) * m;
+			w[i] = static_cast<unsigned>(c);
 			c >>= 32;
 		}
 	}
@@ -1445,9 +1448,10 @@ struct Big {
 	{
 		long long br = 0;
 		for (int i = 0; i < 4; i++) {
-			long long d = (long long)a.w[i] - w[i] - br;
+			long long d =
+				static_cast<long long>(a.w[i]) - w[i] - br;
 			br = d < 0;
-			w[i] = (unsigned)d;
+			w[i] = static_cast<unsigned>(d);
 		}
 	}
 	/* -1, 0 or 1 as this is less than, equal to or more than a */
@@ -1466,7 +1470,8 @@ struct Big {
    odd coordinates 2 eta + 1, up to lim) */
 static void subset_pts(float u, float v, int lim, float dist[8], int pt[8])
 {
-	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
+	int x0 = 2 * static_cast<int>(floorf(u / 2)) + 1,
+	    y0 = 2 * static_cast<int>(floorf(v / 2)) + 1;
 	int dx, dy, i;
 
 	if (x0 > lim) x0 = lim;
@@ -1506,9 +1511,9 @@ void V92Up::trellis_frame()
 	if (!vit.step(16 << cpd.trellis, 0, da, ca, db, cb, out))
 		return;
 	/* the odd coordinates back to indices */
-	decided(((short)(out[0] & 0xFFFF) - 1) / 2);
+	decided((static_cast<short>(out[0] & 0xFFFF) - 1) / 2);
 	decided(((out[0] >> 16) - 1) / 2);
-	decided(((short)(out[1] & 0xFFFF) - 1) / 2);
+	decided((static_cast<short>(out[1] & 0xFFFF) - 1) / 2);
 	decided(((out[1] >> 16) - 1) / 2);
 }
 
@@ -1533,11 +1538,12 @@ void V92Up::data_symbol(float y)
 		DSP_DBG("v92: FPE: B1u at symbol %ld\n", sym);
 	}
 	dsn++;
-	int i = (int)(sym % 12), lc = cpd.lc[0];
+	int i = static_cast<int>(sym % 12), lc = cpd.lc[0];
 	/* in grid units: a point is (2 eta + 1) * 16 * G, or with the
 	   prefilter the G.711 levels, at 2 eta + 1 and linear between */
-	float u = pf_on ? pf_grid(&cpd, y) : (float)(y / (16 * cpd.g)), t,
-		err, eg, pq_c = 0;
+	float u = pf_on ? pf_grid(&cpd, y) :
+			  static_cast<float>(y / (16 * cpd.g)),
+	      t, err, eg, pq_c = 0;
 	/* the ESS modem's negative points are a step (16 G) further out
 	   than its positive ones' mirror, on the even grid units: the first
 	   24 symbols' negative ones tell (and from then on, they go a unit
@@ -1556,9 +1562,11 @@ void V92Up::data_symbol(float y)
 		/* its sum is not quite ours (its arithmetic): near a unit,
 		   either side, the one nearer a point */
 		double c = ceil(fb - 0.15), c2 = ceil(fb + 0.15);
-		float ur = u + (float)(c - fb), ur2 = u + (float)(c2 - fb);
-		int eq = (int)floorf(ur / 2), eq2 = (int)floorf(ur2 / 2),
-			ed = (int)floorf(u / 2);
+		float ur = u + static_cast<float>(c - fb),
+		      ur2 = u + static_cast<float>(c2 - fb);
+		int eq = static_cast<int>(floorf(ur / 2)),
+		    eq2 = static_cast<int>(floorf(ur2 / 2)),
+		    ed = static_cast<int>(floorf(u / 2));
 		eq = eq < -lc ? -lc : eq > lc - 1 ? lc - 1 : eq;
 		eq2 = eq2 < -lc ? -lc : eq2 > lc - 1 ? lc - 1 : eq2;
 		ed = ed < -lc ? -lc : ed > lc - 1 ? lc - 1 : ed;
@@ -1580,7 +1588,7 @@ void V92Up::data_symbol(float y)
 		}
 		if (pq_on) {
 			u = ur;
-			pq_c = (float)(c - fb);
+			pq_c = static_cast<float>(c - fb);
 		}
 	}
 	if (!pf_on && !pq_on) {
@@ -1600,7 +1608,7 @@ void V92Up::data_symbol(float y)
 		if (neg_step && u < 0)
 			u += 1;
 	}
-	int eta = (int)floorf(u / 2);
+	int eta = static_cast<int>(floorf(u / 2));
 
 	/* the nearest point (for the equalizer, and without trellis
 	   decoding the decision) */
@@ -1609,8 +1617,9 @@ void V92Up::data_symbol(float y)
 	if (eta > lc - 1)
 		eta = lc - 1;
 	t = pf_on ? pf_point(&cpd, eta) :
-		(float)((2 * eta + 1 - (neg_step && eta < 0) - pq_c) *
-			16 * cpd.g);
+		    static_cast<float>(
+			    (2 * eta + 1 - (neg_step && eta < 0) - pq_c) * 16 *
+			    cpd.g);
 	err = t - y;
 	eg = u - (2 * eta + 1);
 	dmse += 0.005 * (err * err - dmse);
@@ -1619,7 +1628,7 @@ void V92Up::data_symbol(float y)
 	   CPd? (the grid mse on it, against the old one's) */
 	if (pf_on && fpe_rx == 3 && cpd_sent && !fpe_early) {
 		float un = pf_grid(&cpd_fpe, y);
-		int en = (int)floorf(un / 2);
+		int en = static_cast<int>(floorf(un / 2));
 		if (en < -cpd_fpe.lc[0])
 			en = -cpd_fpe.lc[0];
 		if (en > cpd_fpe.lc[0] - 1)
@@ -1774,8 +1783,8 @@ void V92Up::decided(int eta)
 		}
 		dprev ^= sgn;
 		for (j = 0; j < nb; j++)
-			bits[j] = (unsigned char)descramble(&dscr, SCR_GPA,
-							    R.bit(j));
+			bits[j] = static_cast<unsigned char>(
+				descramble(&dscr, SCR_GPA, R.bit(j)));
 		if (fpe_rx == 3) {
 			/* SUVu, CPu, SUVu', then E2u: a frame of zeros */
 			int z = 0;
@@ -1819,7 +1828,7 @@ void V92Up::decided(int eta)
 			for (j = 0; j < nb; j++)
 				z += !bits[j];
 			derrs += z;
-			b1z[dframes - 1] = (unsigned char)z;
+			b1z[dframes - 1] = static_cast<unsigned char>(z);
 			if (dframes == 48) {
 				char zs[200];
 				int q, o = 0;
@@ -1994,11 +2003,11 @@ void V92Up::design()
 			continue;
 		if (drn_cap > 0 && drn > drn_cap && !fix)
 			continue;
-		M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
+		M = static_cast<int>(ceil(pow(2.0, K / 12.0) - 1e-9));
 		if (pre) {
 			/* the precoder's output: uniform over M points (2M
 			   on the trellis frame's 4th symbol) */
-			ms0 = (double)M * M / 3;
+			ms0 = static_cast<double>(M) * M / 3;
 			ms3 = 4.0 * M * M / 3;
 		} else {
 			/* least power of a class (points 2j + 1), and all
@@ -2017,7 +2026,9 @@ void V92Up::design()
 			   M (1 + sum |b|); 2M at least, and an even number
 			   of positive ones (the original library takes one
 			   point too many on the 4th symbol otherwise) */
-			int l = (int)ceil(M * (1 + (pre ? sbs[g] : 0))) + 2;
+			int l = static_cast<int>(
+					ceil(M * (1 + (pre ? sbs[g] : 0)))) +
+				2;
 			if (l < 2 * M)
 				l = 2 * M;
 			l += l & 1;
@@ -2056,11 +2067,11 @@ void V92Up::design()
 	cpd.coef[2][0] = 32767;
 	if (pre) {
 		memcpy(f, fgs[best], sizeof(f));
-		mse_trn = (float)e2s[best];
+		mse_trn = static_cast<float>(e2s[best]);
 		for (j = 0; j < V92_EQ_B; j++) {
 			long q = lrint(-bgs[best][j] * 16384);
 			q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
-			cpd.coef[1][j] = (short)q;
+			cpd.coef[1][j] = static_cast<short>(q);
 			b[j] = -q / 16384.0;
 		}
 		b_frozen = 1;
@@ -2266,7 +2277,7 @@ int V92Up::pf_points(int gap, int lc, short *pts)
 		int v = pf_lev[k];
 		if ((n == 0 && 2 * v >= gap && v > 0) ||
 		    (n > 0 && v - pts[n - 1] >= gap))
-			pts[n++] = (short)v;
+			pts[n++] = static_cast<short>(v);
 	}
 	return n == lc;
 }
@@ -2282,8 +2293,10 @@ float V92Up::pf_grid(const V92Cpd *c, float r) const
 	if (a < p[0])
 		u = a / p[0];
 	else if (a >= p[lc - 1])
-		u = 2 * lc - 1 + 2 * (a - p[lc - 1]) /
-			(float)(lc > 1 ? p[lc - 1] - p[lc - 2] : p[0]);
+		u = 2 * lc - 1 +
+		    2 * (a - p[lc - 1]) /
+			    static_cast<float>(lc > 1 ? p[lc - 1] - p[lc - 2] :
+							p[0]);
 	else {
 		while (hi - lo > 1) {
 			int m = (lo + hi) / 2;
@@ -2292,7 +2305,8 @@ float V92Up::pf_grid(const V92Cpd *c, float r) const
 			else
 				hi = m;
 		}
-		u = 2 * lo + 1 + 2 * (a - p[lo]) / (float)(p[hi] - p[lo]);
+		u = 2 * lo + 1 +
+		    2 * (a - p[lo]) / static_cast<float>(p[hi] - p[lo]);
 	}
 	return r < 0 ? -u : u;
 }
@@ -2301,7 +2315,8 @@ float V92Up::pf_grid(const V92Cpd *c, float r) const
    pts[-eta - 1] for a negative one */
 float V92Up::pf_point(const V92Cpd *c, int eta) const
 {
-	return eta >= 0 ? (float)c->pts[0][eta] : -(float)c->pts[0][-eta - 1];
+	return eta >= 0 ? static_cast<float>(c->pts[0][eta]) :
+			  -static_cast<float>(c->pts[0][-eta - 1]);
 }
 
 /* nsym symbols of the design (modulus M, the points) through ch and
@@ -2332,7 +2347,7 @@ int V92Up::pf_sim(int M, const short *pts, int lc, int nsym, double *pw,
 		for (k = 0; k < V92_PF_B && n - 1 - k >= 0; k++)
 			fb += pf_b[k] * xs[n - 1 - k];
 		rnd = rnd * 1103515245 + 12345;
-		K = (int)((rnd >> 8) % (unsigned)M);
+		K = static_cast<int>((rnd >> 8) % static_cast<unsigned>(M));
 		rnd = rnd * 1103515245 + 12345;
 		par = (rnd >> 16) & 1;
 		/* the class's point nearest the feedback: the least output */
@@ -2410,8 +2425,9 @@ int V92Up::pf_sim(int M, const short *pts, int lc, int nsym, double *pw,
 			ec -= pf_echo_res * sqrt(-2 * log(u1)) *
 				cos(2 * M_PI * u2);
 		}
-		u = pf_grid(&c, (float)(((r < 0 ? -lev : lev) - ec) / pf_cd));
-		eta = (int)floorf(u / 2);
+		u = pf_grid(&c, static_cast<float>(((r < 0 ? -lev : lev) - ec) /
+						   pf_cd));
+		eta = static_cast<int>(floorf(u / 2));
 		if (eta < -lc)
 			eta = -lc;
 		if (eta > lc - 1)
@@ -2435,13 +2451,13 @@ int V92Up::pf_rate(int drn)
 	short pts[V92_LC_MAX];
 
 	pf_gap[drn] = 0;
-	M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
+	M = static_cast<int>(ceil(pow(2.0, K / 12.0) - 1e-9));
 	for (int k = 0; k < V92_PF_B; k++)
 		sb += fabs(pf_b[k]);
 	/* the trellis frame's 4th symbol: classes of 2M, so 2M points at
 	   least (as in design(): the ESS modem's precoder goes past
 	   M (1 + sum |b|) there, and past the last point it sends 0) */
-	lc = (int)ceil(M * (1 + sb)) + 2;
+	lc = static_cast<int>(ceil(M * (1 + sb))) + 2;
 	if (lc < 2 * M)
 		lc = 2 * M;
 	lc += lc & 1;
@@ -2469,7 +2485,7 @@ int V92Up::pf_rate(int drn)
 	/* a few in 4000 the trellis code takes care of */
 	if (errs > 2)
 		return 0;
-	pf_gap[drn] = (short)lo;
+	pf_gap[drn] = static_cast<short>(lo);
 	pf_mseg[drn] = mg;
 	return 1;
 }
@@ -2480,7 +2496,7 @@ int V92Up::pf_rate(int drn)
 double V92Up::pf_sample(long k)
 {
 	double r = at(buf, pf_eqL + k);
-	int j = (int)(k - pf_s0 + 1);
+	int j = static_cast<int>(k - pf_s0 + 1);
 	if (j < -V92_CH_PRE)
 		j = -V92_CH_PRE;
 	for (; j <= V92_CH_POST; j++)
@@ -2686,10 +2702,10 @@ int V92Up::pf_cpd(V92Cpd *c, int drn)
 	double sb = 0;
 	short pts[V92_LC_MAX];
 
-	M = (int)ceil(pow(2.0, K / 12.0) - 1e-9);
+	M = static_cast<int>(ceil(pow(2.0, K / 12.0) - 1e-9));
 	for (j = 0; j < V92_PF_B; j++)
 		sb += fabs(pf_b[j]);
-	lc = (int)ceil(M * (1 + sb)) + 2;
+	lc = static_cast<int>(ceil(M * (1 + sb))) + 2;
 	if (lc < 2 * M)
 		lc = 2 * M;
 	lc += lc & 1;
@@ -2735,14 +2751,14 @@ int V92Up::pf_quant()
 	for (i = 0; i < V92_PF_W; i++)
 		if (fabs(pf_w[i]) > mx)
 			mx = fabs(pf_w[i]);
-	g4 = (int)ceil(4 * mx * 65536 * 1.0001);
+	g4 = static_cast<int>(ceil(4 * mx * 65536 * 1.0001));
 	if (g4 < 1 || g4 > 65535)
 		return -1;
 	pf_g = g4 / (4 * 65536.0);
 	for (i = 0; i < V92_PF_W; i++) {
 		long q = lrint(pf_w[i] / pf_g * 32768);
 		q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
-		pf_z2[i] = (short)q;
+		pf_z2[i] = static_cast<short>(q);
 		pf_w[i] = pf_g * q / 32768;
 	}
 	/* the response with them, and the precoder for it */
@@ -2758,7 +2774,7 @@ int V92Up::pf_quant()
 	for (j = 0; j < V92_PF_B; j++) {
 		long q = lrint(-c[kd + 1 + j] / pf_cd * 16384);
 		q = q > 32767 ? 32767 : q < -32768 ? -32768 : q;
-		pf_p1[j] = (short)q;
+		pf_p1[j] = static_cast<short>(q);
 		pf_b[j] = -q / 16384.0;
 	}
 	return 0;
@@ -2776,7 +2792,7 @@ int V92Up::pf_design(const char *fix)
 	    ia.ltot < 8 + V92_PF_B + V92_PF_W)
 		return 0;
 	for (i = 0; i < 128; i++)
-		pf_lev[i] = (short)v90_ucode_linear(alaw, i);
+		pf_lev[i] = static_cast<short>(v90_ucode_linear(alaw, i));
 	for (i = 1; i < 128; i++)
 		for (j = i; j > 0 && pf_lev[j] < pf_lev[j - 1]; j--) {
 			short t = pf_lev[j];
@@ -3153,7 +3169,7 @@ void V92Up::init(int alaw_, const V92Info1a *ia_, const long *fclock,
 int V92Up::sample(int x, int *y)
 {
 	int ev;
-	rx_sample((float)x);
+	rx_sample(static_cast<float>(x));
 	ev = tx_step();
 	*y = tx.sample();
 	n++;

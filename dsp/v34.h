@@ -255,7 +255,8 @@ struct Viterbi4d {
 				float m = metric[s] + gm[y + y0 * ny];
 				if (m < m2[ns]) {
 					m2[ns] = m;
-					prev[tt][ns] = (unsigned char)s;
+					prev[tt][ns] =
+						static_cast<unsigned char>(s);
 					pa[tt][ns] = ga[y + y0 * ny];
 					pb[tt][ns] = gb[y + y0 * ny];
 				}

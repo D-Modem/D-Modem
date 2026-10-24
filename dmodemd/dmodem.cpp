@@ -59,7 +59,7 @@ struct dmodem final : public dcore::Host {
 	}
 	/* the clock: the samples processed so far, in ms */
 	unsigned long now_ms() override {
-		return (unsigned long)(samples * 1000 / DMODEM_RATE);
+		return static_cast<unsigned long>(samples * 1000 / DMODEM_RATE);
 	}
 };
 
@@ -155,7 +155,7 @@ int dmodem_command(struct dmodem *d, const char *line)
 {
 	char cmd[128];
 	int n = snprintf(cmd, sizeof(cmd), "%s\r", line);
-	if (n < 0 || n >= (int)sizeof(cmd))
+	if (n < 0 || n >= static_cast<int>(sizeof(cmd)))
 		return -1;
 	d->m->dte_input(cmd, n);
 	d->m->poll();
@@ -168,7 +168,7 @@ int dmodem_dial(struct dmodem *d, const char *number)
 {
 	char cmd[128];
 	int n = snprintf(cmd, sizeof(cmd), "ATD%s", number);
-	if (n < 0 || n >= (int)sizeof(cmd) - 1)
+	if (n < 0 || n >= static_cast<int>(sizeof(cmd)) - 1)
 		return -1;
 	return dmodem_command(d, cmd);
 }
@@ -223,7 +223,7 @@ int dmodem_poll_dte(struct dmodem *d)
 	m->poll();
 	if (n <= 0)
 		return 0;
-	if (n > (int)sizeof(buf))
+	if (n > static_cast<int>(sizeof(buf)))
 		n = sizeof(buf);
 	n = dmd::fd_read(d->dte_fd, buf, n);
 	if (n < 0)
@@ -241,7 +241,7 @@ int dmodem_poll_dte(struct dmodem *d)
 void dmodem_status(struct dmodem *d, struct dmodem_status *s)
 {
 	dcore::Modem *m = d->m;
-	s->link = (enum dmodem_link)m->link_state();
+	s->link = static_cast<enum dmodem_link>(m->link_state());
 	s->offhook = m->started();
 	s->tx_rate = m->tx_rate();
 	s->rx_rate = m->rx_rate();

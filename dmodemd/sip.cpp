@@ -187,7 +187,7 @@ void say(int level, const char *fmt, ...)
 	va_end(ap);
 	if (n < 0)
 		return;
-	if ((size_t)n >= buf.size()) {
+	if (static_cast<size_t>(n) >= buf.size()) {
 		buf.resize(n + 1);
 		va_start(ap, fmt);
 		vsnprintf(buf.data(), buf.size(), fmt, ap);
@@ -214,7 +214,7 @@ std::string str(const struct pl &p)
 std::string lower(std::string s)
 {
 	for (char &c : s)
-		c = (char)tolower((unsigned char)c);
+		c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
 	return s;
 }
 
@@ -242,7 +242,7 @@ bool read_all(int fd, void *buf, size_t n)
 {
 	char *p = static_cast<char *>(buf);
 	while (n) {
-		ssize_t r = dmd::fd_read(fd, p, (int)n);
+		ssize_t r = dmd::fd_read(fd, p, static_cast<int>(n));
 		if (r < 0 && errno == EINTR)
 			continue;
 		if (r <= 0)
@@ -258,7 +258,8 @@ bool write_all(int fd, const void *buf, size_t n)
 {
 	const char *p = static_cast<const char *>(buf);
 	while (n) {
-		ssize_t r = send(fd, p, (int)n, dmd::SEND_NOSIGNAL);
+		ssize_t r =
+			send(fd, p, static_cast<int>(n), dmd::SEND_NOSIGNAL);
 		if (r < 0 && errno == EINTR)
 			continue;
 		if (r <= 0)
@@ -279,7 +280,7 @@ bool peer_closed(int fd)
    T38, AUDIO) */
 void ctl_line(const char *s)
 {
-	say(4, "control: %.*s", (int)strlen(s) - 1, s);
+	say(4, "control: %.*s", static_cast<int>(strlen(s)) - 1, s);
 	if (!write_all(ctl[0], s, strlen(s)))
 		say(1, "control socket: %s", strerror(errno));
 }
@@ -297,11 +298,13 @@ int open_udp(int *port, int *family)
 
 		if (fd < 0)
 			continue;
-		a.ss_family = (decltype(a.ss_family))af;
+		a.ss_family = static_cast<decltype(a.ss_family)>(af);
 		if ((af == AF_INET6 &&
 		     setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-				(const char *)&off, sizeof(off)) < 0) ||
-		    bind(fd, reinterpret_cast<struct sockaddr *>(&a), len) < 0 ||
+				reinterpret_cast<const char *>(&off),
+				sizeof(off)) < 0) ||
+		    bind(fd, reinterpret_cast<struct sockaddr *>(&a), len) <
+			    0 ||
 		    getsockname(fd, reinterpret_cast<struct sockaddr *>(&a),
 				&len) < 0) {
 			dmd::fd_close(fd);
@@ -435,7 +438,7 @@ bool sdp_parse(const char *body, size_t n, Sdp *s)
 					       port))
 				return false;
 			m.type = w[0];
-			m.port = (int)port;
+			m.port = static_cast<int>(port);
 			m.proto = w[2];
 			m.addr = session_addr;
 			m.fmts.assign(w.begin() + 3, w.end());
@@ -483,7 +486,7 @@ int line_of(const Sdp &s, bool t38)
 		if (s.media[i].port > 0 &&
 		    (t38 ? is_t38(s.media[i]) :
 		     lower(s.media[i].type) == "audio"))
-			return (int)i;
+			return static_cast<int>(i);
 	return -1;
 }
 
@@ -513,7 +516,7 @@ int g711_pt(const SdpMedia &m, int *law)
 			*law = 2;
 		else
 			continue;
-		return (int)pt;
+		return static_cast<int>(pt);
 	}
 	return -1;
 }
@@ -534,7 +537,7 @@ int te_pt(const SdpMedia &m)
 			    a.second.substr(0, sp) == f &&
 			    lower(a.second.substr(sp + 1)).compare(
 				    0, 20, "telephone-event/8000") == 0)
-				return (int)pt;
+				return static_cast<int>(pt);
 		}
 	}
 	return -1;
@@ -574,9 +577,11 @@ Peer t38_params(const SdpMedia &m)
 	for (const auto &a : m.attrs) {
 		std::string n = lower(a.first);
 		if (n == "t38faxversion")
-			p.version = (int)dcore::leading_long(a.second);
+			p.version =
+				static_cast<int>(dcore::leading_long(a.second));
 		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
-			p.max_datagram = (int)dcore::leading_long(a.second);
+			p.max_datagram =
+				static_cast<int>(dcore::leading_long(a.second));
 		else if (n == "t38faxudpec")
 			p.redundancy = lower(a.second) == "t38udpredundancy";
 	}
@@ -647,7 +652,7 @@ int find(const std::vector<Line> &lines, Line::Kind kind)
 {
 	for (size_t i = 0; i < lines.size(); i++)
 		if (lines[i].kind == kind)
-			return (int)i;
+			return static_cast<int>(i);
 	return -1;
 }
 
@@ -699,7 +704,7 @@ public:
 		const char *why = nullptr;
 		int32_t d;
 
-		if (!n || n > (size_t)JB_MAX)
+		if (!n || n > static_cast<size_t>(JB_MAX))
 			return nullptr;
 		packets++;
 		if (!started_ || ssrc != ssrc_) {
@@ -707,19 +712,21 @@ public:
 				why = "another source";
 			restart(ssrc, ts);
 		}
-		d = (int32_t)(ts - play_);
-		if (d + (int32_t)n > JB_MAX || d < -JB_MAX) {
+		d = static_cast<int32_t>(ts - play_);
+		if (d + static_cast<int32_t>(n) > JB_MAX || d < -JB_MAX) {
 			/* a jump, or the backlog too long */
 			why = "a jump in time";
 			restart(ssrc, ts);
-		} else if (d + (int32_t)n <= 0) {
+		} else if (d + static_cast<int32_t>(n) <= 0) {
 			/* late: dropped (its time played as silence),
 			   unless they have been late for a while, the
 			   buffer dry (the far end's clock slower than
 			   ours) */
 			late++;
-			late_max = std::max(late_max, (unsigned long)-d);
-			if ((int32_t)(end_ - play_) > 0 || ++late_run < LATE_RUN)
+			late_max = std::max(late_max,
+					    static_cast<unsigned long>(-d));
+			if (static_cast<int32_t>(end_ - play_) > 0 ||
+			    ++late_run < LATE_RUN)
 				return nullptr;
 			why = "run dry";
 			restart(ssrc, ts);
@@ -727,17 +734,19 @@ public:
 		late_run = 0;
 		if (why)
 			restarts++;
-		d = (int32_t)(ts - play_);
+		d = static_cast<int32_t>(ts - play_);
 		for (size_t k = 0; k < n; k++) {
 			uint32_t i;
-			if (d + (int32_t)k < 0)
+			if (d + static_cast<int32_t>(k) < 0)
 				continue;
-			i = (ts + (uint32_t)k) & MASK;
-			buf_[i] = (int16_t)dsp::g711::decode(alaw, p[k]);
+			i = (ts + static_cast<uint32_t>(k)) & MASK;
+			buf_[i] = static_cast<int16_t>(
+				dsp::g711::decode(alaw, p[k]));
 			valid_[i] = 1;
 		}
-		if ((int32_t)(ts + (uint32_t)n - end_) > 0)
-			end_ = ts + (uint32_t)n;
+		if (static_cast<int32_t>(ts + static_cast<uint32_t>(n) - end_) >
+		    0)
+			end_ = ts + static_cast<uint32_t>(n);
 		return why;
 	}
 
@@ -749,12 +758,12 @@ public:
 	void get(int16_t *out, size_t n)
 	{
 		for (size_t k = 0; k < n; k++) {
-			uint32_t i = (play_ + (uint32_t)k) & MASK;
+			uint32_t i = (play_ + static_cast<uint32_t>(k)) & MASK;
 			out[k] = started_ && valid_[i] ? buf_[i] : 0;
 			valid_[i] = 0;
 		}
 		if (started_)
-			play_ += (uint32_t)n;
+			play_ += static_cast<uint32_t>(n);
 	}
 
 private:
@@ -774,7 +783,7 @@ private:
 		memset(valid_, 0, sizeof(valid_));
 		started_ = true;
 		ssrc_ = ssrc;
-		play_ = ts - (uint32_t)JB_DELAY;
+		play_ = ts - static_cast<uint32_t>(JB_DELAY);
 		end_ = ts;
 	}
 };
@@ -893,7 +902,8 @@ private:
 	{
 		say(4, "audio socket %d: %s", modem_, what);
 		mqueue_push(mq_, MQ_MODEM_GONE,
-			    reinterpret_cast<void *>((uintptr_t)serial_));
+			    reinterpret_cast<void *>(
+				    static_cast<uintptr_t>(serial_)));
 	}
 
 	/* a telephone-event packet's payload b (n octets) at timestamp ts
@@ -933,8 +943,8 @@ private:
 		uint8_t b[2048];
 
 		for (;;) {
-			ssize_t n = recv(rtp_, (char *)b, sizeof(b),
-					 MSG_DONTWAIT);
+			ssize_t n = recv(rtp_, reinterpret_cast<char *>(b),
+					 sizeof(b), MSG_DONTWAIT);
 			size_t h, end;
 			int p, l;
 
@@ -944,13 +954,15 @@ private:
 				return;
 			if (!on || n < 12 || (b[0] >> 6) != 2)
 				continue;
-			h = 12 + 4 * (size_t)(b[0] & 15);
+			h = 12 + 4 * static_cast<size_t>(b[0] & 15);
 			if (b[0] & 0x10) {
-				if ((size_t)n < h + 4)
+				if (static_cast<size_t>(n) < h + 4)
 					continue;
-				h += 4 + 4 * (size_t)((b[h + 2] << 8) | b[h + 3]);
+				h += 4 +
+				     4 * static_cast<size_t>((b[h + 2] << 8) |
+							     b[h + 3]);
 			}
-			end = (size_t)n;
+			end = static_cast<size_t>(n);
 			if ((b[0] & 0x20) && b[n - 1] <= end)
 				end -= b[n - 1];
 			if (h >= end)
@@ -958,8 +970,8 @@ private:
 			p = b[1] & 0x7f;
 			if (p == te && te >= 0) {
 				event_in(b + h, end - h,
-					 (uint32_t)b[4] << 24 | b[5] << 16 |
-					 b[6] << 8 | b[7]);
+					 static_cast<uint32_t>(b[4]) << 24 |
+						 b[5] << 16 | b[6] << 8 | b[7]);
 				continue;
 			}
 			if (p == pt)
@@ -968,10 +980,12 @@ private:
 				l = p == 8 ? 2 : 1;
 			else
 				continue;
-			const char *why = jb_.put((uint32_t)b[8] << 24 |
-				b[9] << 16 | b[10] << 8 | b[11],
-				(uint32_t)b[4] << 24 | b[5] << 16 | b[6] << 8 |
-				b[7], b + h, end - h, l == 2);
+			const char *why =
+				jb_.put(static_cast<uint32_t>(b[8]) << 24 |
+						b[9] << 16 | b[10] << 8 | b[11],
+					static_cast<uint32_t>(b[4]) << 24 |
+						b[5] << 16 | b[6] << 8 | b[7],
+					b + h, end - h, l == 2);
 			if (why)
 				say(3, "call %u: the jitter buffer starts over "
 				    "(%s)", serial_, why);
@@ -983,17 +997,17 @@ private:
 	void header(uint8_t *p, int pt, bool marker, uint32_t ts)
 	{
 		p[0] = 0x80;
-		p[1] = (uint8_t)((marker ? 0x80 : 0) | (pt & 0x7f));
-		p[2] = (uint8_t)(seq_ >> 8);
-		p[3] = (uint8_t)seq_;
-		p[4] = (uint8_t)(ts >> 24);
-		p[5] = (uint8_t)(ts >> 16);
-		p[6] = (uint8_t)(ts >> 8);
-		p[7] = (uint8_t)ts;
-		p[8] = (uint8_t)(ssrc_ >> 24);
-		p[9] = (uint8_t)(ssrc_ >> 16);
-		p[10] = (uint8_t)(ssrc_ >> 8);
-		p[11] = (uint8_t)ssrc_;
+		p[1] = static_cast<uint8_t>((marker ? 0x80 : 0) | (pt & 0x7f));
+		p[2] = static_cast<uint8_t>(seq_ >> 8);
+		p[3] = static_cast<uint8_t>(seq_);
+		p[4] = static_cast<uint8_t>(ts >> 24);
+		p[5] = static_cast<uint8_t>(ts >> 16);
+		p[6] = static_cast<uint8_t>(ts >> 8);
+		p[7] = static_cast<uint8_t>(ts);
+		p[8] = static_cast<uint8_t>(ssrc_ >> 24);
+		p[9] = static_cast<uint8_t>(ssrc_ >> 16);
+		p[10] = static_cast<uint8_t>(ssrc_ >> 8);
+		p[11] = static_cast<uint8_t>(ssrc_);
 		seq_++;
 	}
 
@@ -1006,7 +1020,8 @@ private:
 		header(p, pt, marker_, ts_);
 		for (unsigned i = 0; i < SAMPLES; i++)
 			p[12 + i] = dsp::g711::encode(law == 2, out[i]);
-		(void)sendto(rtp_, (const char *)p, sizeof(p), MSG_DONTWAIT,
+		(void)sendto(rtp_, reinterpret_cast<const char *>(p), sizeof(p),
+			     MSG_DONTWAIT,
 			     reinterpret_cast<const struct sockaddr *>(&peer),
 			     len);
 		marker_ = false;
@@ -1025,9 +1040,10 @@ private:
 		ev_first_ = false;
 		p[12] = EV_FLASH;
 		p[13] = end ? 0x80 : 0;
-		p[14] = (uint8_t)(ev_dur_ >> 8);
-		p[15] = (uint8_t)ev_dur_;
-		(void)sendto(rtp_, (const char *)p, sizeof(p), MSG_DONTWAIT,
+		p[14] = static_cast<uint8_t>(ev_dur_ >> 8);
+		p[15] = static_cast<uint8_t>(ev_dur_);
+		(void)sendto(rtp_, reinterpret_cast<const char *>(p), sizeof(p),
+			     MSG_DONTWAIT,
 			     reinterpret_cast<const struct sockaddr *>(&peer),
 			     len);
 	}
@@ -1536,8 +1552,8 @@ int on_answer(const struct sip_msg *msg, void *arg)
 	i = find(c->offered, Line::IMAGE);
 	if (i >= 0) {
 		c->lines = c->offered;
-		if ((size_t)i < s.media.size() && is_t38(s.media[i]) &&
-		    s.media[i].port > 0) {
+		if (static_cast<size_t>(i) < s.media.size() &&
+		    is_t38(s.media[i]) && s.media[i].port > 0) {
 			Peer p = t38_params(s.media[i]);
 			p.version = std::min(p.version, c->offered[i].version);
 			take_t38(c, p);
@@ -1548,7 +1564,7 @@ int on_answer(const struct sip_msg *msg, void *arg)
 		return 0;
 	}
 	i = line_of(s, false);
-	if (i < 0 || (size_t)i >= c->offered.size() ||
+	if (i < 0 || static_cast<size_t>(i) >= c->offered.size() ||
 	    c->offered[i].kind != Line::AUDIO) {
 		say(1, "call %u: an answer without our audio", c->serial);
 		return c->confirmed ? 0 : EPROTO;
@@ -1865,7 +1881,7 @@ void on_mq(int id, void *data, void *)
 		break;
 	}
 	case MQ_MODEM_GONE:
-		if (cur && (uintptr_t)cur->serial ==
+		if (cur && static_cast<uintptr_t>(cur->serial) ==
 		    reinterpret_cast<uintptr_t>(data)) {
 			say(3, "call %u: the modem has gone", cur->serial);
 			end_call();
@@ -1912,7 +1928,7 @@ void on_trace(bool tx, enum sip_transp, const struct sa *src,
 	      const struct sa *dst, const uint8_t *pkt, size_t len, void *)
 {
 	say(4, "%s %s:\n%.*s", tx ? "TX to" : "RX from",
-	    addr_of(tx ? dst : src).c_str(), (int)len,
+	    addr_of(tx ? dst : src).c_str(), static_cast<int>(len),
 	    reinterpret_cast<const char *>(pkt));
 }
 
@@ -1927,7 +1943,7 @@ bool add_transport(const char *ifname, const struct sa *a, void *arg)
 	if (sa_is_linklocal(a))
 		return false;
 	sa_cpy(&l, a);
-	sa_set_port(&l, (uint16_t)cfg_.port);
+	sa_set_port(&l, static_cast<uint16_t>(cfg_.port));
 	for (const struct sa &o : *added)
 		if (sa_cmp(&o, &l, SA_ADDR))
 			return false;
@@ -2119,7 +2135,8 @@ bool config_from_env(Config &cfg, bool listen)
 	cfg.user = user.c_str();
 	cfg.password = password.c_str();
 	cfg.domain = domain.c_str();
-	cfg.port = port && *port ? (int)dcore::leading_long(port) : 5060;
+	cfg.port = port && *port ? static_cast<int>(dcore::leading_long(port)) :
+				   5060;
 	cfg.listen = listen;
 	cfg.record = record.empty() ? nullptr : record.c_str();
 	cfg.t38 = !t38 || !(dcore::same_nocase(t38, "no") ||
@@ -2143,8 +2160,10 @@ int start(const Config &cfg)
 	if (cfg.log_level >= 0)
 		log_level = cfg.log_level;
 	else
-		log_level = level && *level ? (int)dcore::leading_long(level) :
-			4;
+		log_level =
+			level && *level ?
+				static_cast<int>(dcore::leading_long(level)) :
+				4;
 	if (cfg.record)
 		rec.open(cfg.record, ".rx", ".tx");
 

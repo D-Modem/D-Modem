@@ -60,11 +60,12 @@ void VcvmDataTx::start(std::vector<float> &out)
 		/* the reference three times: the first two are the codec's,
 		   which takes a symbol or two to follow a signal out of
 		   silence */
-		out.resize(at + 3 * (size_t)sps());
+		out.resize(at + 3 * static_cast<size_t>(sps()));
 		for (int i = 0; i < 3; i++)
-			ctx_.reference(&out[at + (size_t)i * sps()]);
+			ctx_.reference(
+				&out[at + static_cast<size_t>(i) * sps()]);
 	} else {
-		out.resize(at + 8 * (size_t)sps());
+		out.resize(at + 8 * static_cast<size_t>(sps()));
 		ptx_.preamble(&out[at]);
 	}
 }
@@ -73,23 +74,26 @@ void VcvmDataTx::start(std::vector<float> &out)
 void VcvmDataTx::block()
 {
 	const int k = rs_.k(), n = VCVM_RS_N;
-	line_.assign((size_t)n * D_, 0);
+	line_.assign(static_cast<size_t>(n) * D_, 0);
 	uint8_t cw[VCVM_RS_N];
 	for (int c = 0; c < D_; c++) {
 		for (int j = 0; j < k; j++) {
 			int v = src_ ? src_() : -1;
-			unsigned o = (unsigned)(v < 0 ? 0x7e : v), sc = 0;
+			unsigned o = static_cast<unsigned>(v < 0 ? 0x7e : v),
+				 sc = 0;
 			sent_ += v >= 0;
 			/* scrambled before the code, least significant bit
 			   first: a line error costs the decoder one octet,
 			   not the three the descrambler would make of it */
 			for (int b = 0; b < 8; b++)
-				sc |= (unsigned)scramble(&scr_, tap_, (o >> b) & 1) << b;
-			cw[j] = (uint8_t)sc;
+				sc |= static_cast<unsigned>(scramble(
+					      &scr_, tap_, (o >> b) & 1))
+				      << b;
+			cw[j] = static_cast<uint8_t>(sc);
 		}
 		rs_.encode(cw, cw);
 		for (int j = 0; j < n; j++)
-			line_[(size_t)j * D_ + c] = cw[j];
+			line_[static_cast<size_t>(j) * D_ + c] = cw[j];
 	}
 	pos_ = 0;
 }
@@ -110,9 +114,9 @@ void VcvmDataTx::symbol(std::vector<float> &out)
 	int nb = l_.bits();
 	uint8_t bits[VCVM_TONES * 5];
 	for (int i = 0; i < nb; i++)
-		bits[i] = (uint8_t)bit();
+		bits[i] = static_cast<uint8_t>(bit());
 	size_t at = out.size();
-	out.resize(at + (size_t)sps());
+	out.resize(at + static_cast<size_t>(sps()));
 	if (l_.kind == VcvmLoading::COMB)
 		ctx_.data(bits, &out[at]);
 	else
@@ -128,13 +132,15 @@ void VcvmDataTx::control(std::vector<float> &out)
 		uint8_t ph8[VCVM_TONES], rs[VCVM_TONES] = {};
 		for (int k = 0; k < VCVM_TONES; k++)
 			ph8[k] = 4;
-		out.resize(at + 8 * (size_t)sps());
+		out.resize(at + 8 * static_cast<size_t>(sps()));
 		for (int s = 0; s < 8; s++)
-			ctx_.steps(ph8, rs, &out[at + (size_t)s * sps()]);
+			ctx_.steps(ph8, rs,
+				   &out[at + static_cast<size_t>(s) * sps()]);
 	} else {
-		out.resize(at + 16 * (size_t)sps());
+		out.resize(at + 16 * static_cast<size_t>(sps()));
 		for (int s = 0; s < 16; s++)
-			ptx_.symbol(0, &out[at + (size_t)s * sps()]);
+			ptx_.symbol(0,
+				    &out[at + static_cast<size_t>(s) * sps()]);
 	}
 }
 
@@ -188,8 +194,9 @@ void VcvmDataRx::start(long from)
 	ref_ = 0;
 	/* 2 s without a codeword decoded, or two and a half blocks where
 	   a block takes longer */
-	lost_after_ = std::max((long)lrint(2000 / l_.sym_ms()),
-			       (long)(2.5 * VCVM_RS_N * 8 * D_ / l_.bits()) + 1);
+	lost_after_ = std::max(
+		lrint(2000 / l_.sym_ms()),
+		static_cast<long>(2.5 * VCVM_RS_N * 8 * D_ / l_.bits()) + 1);
 	early_.clear();
 	bad_since_ = 0;
 	sym_ = 0;
@@ -219,15 +226,15 @@ void VcvmDataRx::push(const float *x, int n)
    least reliable bit */
 void VcvmDataRx::line_bit(int b, float rel)
 {
-	oct_ |= (unsigned)(b & 1) << nbit_;
+	oct_ |= static_cast<unsigned>(b & 1) << nbit_;
 	orel_ = std::min(orel_, rel);
 	if (++nbit_ == 8) {
-		blk_.push_back((uint8_t)oct_);
+		blk_.push_back(static_cast<uint8_t>(oct_));
 		rel_.push_back(orel_);
 		oct_ = 0;
 		orel_ = 1;
 		nbit_ = 0;
-		if ((int)blk_.size() == VCVM_RS_N * D_)
+		if (static_cast<int>(blk_.size()) == VCVM_RS_N * D_)
 			decode_block();
 	}
 }
@@ -246,8 +253,8 @@ void VcvmDataRx::decode_block()
 		float rl[VCVM_RS_N];
 		int ord[VCVM_RS_N];
 		for (int j = 0; j < n; j++) {
-			cw[j] = blk_[(size_t)j * D_ + c];
-			rl[j] = rel_[(size_t)j * D_ + c];
+			cw[j] = blk_[static_cast<size_t>(j) * D_ + c];
+			rl[j] = rel_[static_cast<size_t>(j) * D_ + c];
 			ord[j] = j;
 		}
 		/* the errors alone, then the 2, 4, ... least reliable octets
@@ -277,8 +284,10 @@ void VcvmDataRx::decode_block()
 		for (int j = 0; j < k; j++) {
 			unsigned o = 0;
 			for (int b = 0; b < 8; b++)
-				o |= (unsigned)descramble(&scr_, tap_, (cw[j] >> b) & 1) << b;
-			out.push_back((uint8_t)o);
+				o |= static_cast<unsigned>(descramble(
+					     &scr_, tap_, (cw[j] >> b) & 1))
+				     << b;
+			out.push_back(static_cast<uint8_t>(o));
 		}
 	}
 	st_.blocks++;
@@ -294,14 +303,15 @@ void VcvmDataRx::decode_block()
 			return;
 		}
 		early_.insert(early_.end(), out.begin(), out.end());
-		if ((int)early_.size() < (D_ == 1 ? 2 : 1) * k * D_)
+		if (static_cast<int>(early_.size()) <
+		    (D_ == 1 ? 2 : 1) * k * D_)
 			return;
 		confirmed_ = true;
 		out.swap(early_);
 		early_.clear();
 	}
 	if (sink_)
-		sink_(out.data(), (int)out.size());
+		sink_(out.data(), static_cast<int>(out.size()));
 }
 
 /* a symbol's bits, held back so that the control sequence's are not
@@ -372,7 +382,8 @@ void VcvmDataRx::run()
 				double e = s.perr[k] * 180 / M_PI;
 				se2_[k] = sym_ < 20 ? (se2_[k] * (sym_ - 1) + e * e) / sym_ :
 					0.98 * se2_[k] + 0.02 * e * e;
-				st_.sigma[k] = (float)sqrt(se2_[k]);
+				st_.sigma[k] =
+					static_cast<float>(sqrt(se2_[k]));
 			}
 			double lv = 0;
 			for (int k = 0; k < K; k++)

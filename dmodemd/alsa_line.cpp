@@ -66,7 +66,7 @@ bool AlsaLine::open(const char *pcm, const char *ctl, unsigned rate)
 	int err;
 
 	rate_ = rate;
-	frame_ = (int)rate / 50;
+	frame_ = static_cast<int>(rate) / 50;
 	in_.assign(frame_, 0);
 	out_.assign(frame_, 0);
 	err = snd_pcm_open(&cap_, pcm, SND_PCM_STREAM_CAPTURE,
@@ -99,7 +99,7 @@ bool AlsaLine::open(const char *pcm, const char *ctl, unsigned rate)
 	if (!find(caller_id_, "Caller ID Switch"))
 		ERR("ALSA control %s has no \"Caller ID Switch\": rings and "
 		    "caller ID may not be heard\n", ctl_name.c_str());
-	ring_.init((int)rate);
+	ring_.init(static_cast<int>(rate));
 	set(caller_id_, true);
 	daa_open();
 	snd_ctl_card_info_t *info;
@@ -158,11 +158,13 @@ bool AlsaLine::setup(snd_pcm_t *pcm, bool capture)
 		return false;
 	}
 	if (!capture)
-		delay_ = (int)period * LEAD_PERIODS;
+		delay_ = static_cast<int>(period) * LEAD_PERIODS;
 	if ((err = snd_pcm_sw_params_current(pcm, sw)) < 0 ||
 	    (err = snd_pcm_sw_params_set_avail_min(pcm, sw, period)) < 0 ||
-	    (err = snd_pcm_sw_params_set_start_threshold(pcm, sw,
-			capture ? buffer * 2 : (snd_pcm_uframes_t)delay_)) < 0 ||
+	    (err = snd_pcm_sw_params_set_start_threshold(
+		     pcm, sw,
+		     capture ? buffer * 2 :
+			       static_cast<snd_pcm_uframes_t>(delay_))) < 0 ||
 	    (err = snd_pcm_sw_params(pcm, sw)) < 0) {
 		ERR("ALSA %s: software parameters: %s\n", way,
 		    snd_strerror(err));
@@ -348,7 +350,7 @@ void AlsaLine::cx_open(int card)
 		return;
 	}
 	cx_.reset(new CxDaa(ac97_, cx_variant(kind), kind));
-	cx_->set_board(cx_board((uint8_t)id2));
+	cx_->set_board(cx_board(static_cast<uint8_t>(id2)));
 	cx_->set_country(*cx_country_);
 	if (!cx_->power_up(&version)) {
 		ERR("Conexant codec at %s (%04x %04x, SSD kind %#x): its line "
@@ -380,7 +382,8 @@ void AlsaLine::hook_flash(dcore::Modem &, unsigned ms)
 		return;
 	DBG("hook flash, %u ms\n", ms);
 	hook_switch(false);
-	flash_end_ = samples_ + (unsigned long long)ms * rate_ / 1000;
+	flash_end_ =
+		samples_ + static_cast<unsigned long long>(ms) * rate_ / 1000;
 }
 
 /* see alsa_line.h */
@@ -429,7 +432,7 @@ bool AlsaLine::restart(const char *why)
 		ERR("ALSA prepare: %s\n", snd_strerror(err));
 		return false;
 	}
-	err = (int)snd_pcm_writei(play_, lead.data(), lead.size());
+	err = static_cast<int>(snd_pcm_writei(play_, lead.data(), lead.size()));
 	if (err < 0) {
 		ERR("ALSA playback: %s\n", snd_strerror(err));
 		return false;
@@ -476,11 +479,11 @@ int AlsaLine::pump(dcore::Modem &m)
 			return 0;
 		if (n < 0) {
 			if (!restart(n == -EPIPE ? "capture overrun" :
-				     snd_strerror((int)n)))
+				     snd_strerror(static_cast<int>(n))))
 				return -1;
 			continue;
 		}
-		have_ += (int)n;
+		have_ += static_cast<int>(n);
 		if (have_ < frame_)
 			return 0;
 		have_ = 0;
@@ -498,11 +501,11 @@ int AlsaLine::pump(dcore::Modem &m)
 			}
 			if (n < 0) {
 				if (!restart(n == -EPIPE ? "playback underrun" :
-					     snd_strerror((int)n)))
+					     snd_strerror(static_cast<int>(n))))
 					return -1;
 				break;
 			}
-			done += (int)n;
+			done += static_cast<int>(n);
 		}
 	}
 }

@@ -168,7 +168,7 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 		b.name = DIGIT_NAMES[event];
 		f1 = DTMF_LO[ROW[event]];
 		f2 = DTMF_HI[COL[event]];
-		hold_ = HOLD_DIGIT_MS * (long)rate_ / 1000;
+		hold_ = HOLD_DIGIT_MS * static_cast<long>(rate_) / 1000;
 	} else {
 		b.kind = PLAYED;
 		b.name = d->name;
@@ -177,14 +177,14 @@ EventPlayer::Began EventPlayer::packet(const uint8_t *p, size_t n,
 		mod = d->mod;
 		rev = d->rev;
 		dbm0 = d->dbm0;
-		hold_ = HOLD_TONE_MS * (long)rate_ / 1000;
+		hold_ = HOLD_TONE_MS * static_cast<long>(rate_) / 1000;
 	}
 	if (volume)
 		dbm0 = volume;
 	/* two tones share the power; a tone of the same frequency as the
 	   one before goes on in its phase (reversed now if this is the
 	   form after a reversal) */
-	double a = peak(-(double)dbm0 - (f2 > 0 ? 3.0103 : 0.0));
+	double a = peak(-static_cast<double>(dbm0) - (f2 > 0 ? 3.0103 : 0.0));
 	if (f1 != f1_) {
 		o1_ = Osc();
 		am_.phase = 0;
@@ -222,7 +222,9 @@ bool EventPlayer::fill(int16_t *x, unsigned n)
 			o1_.phase -= floor(o1_.phase);
 			rev_count_ = 0;
 		}
-		x[i] = (int16_t)(y > 32767 ? 32767 : y < -32768 ? -32768 : y);
+		x[i] = static_cast<int16_t>(y > 32767  ? 32767 :
+					    y < -32768 ? -32768 :
+							 y);
 	}
 	left_ -= n;
 	if (left_ <= 0)

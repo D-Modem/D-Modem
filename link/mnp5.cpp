@@ -22,7 +22,7 @@ static const int MAX_COUNT = 250;
 void Mnp5::init()
 {
 	for (int i = 0; i < 256; i++) {
-		char_[i] = rank_[i] = (uint8_t)i;
+		char_[i] = rank_[i] = static_cast<uint8_t>(i);
 		count_[i] = 0;
 	}
 	first_ = true;
@@ -46,8 +46,8 @@ void Mnp5::rank_up(int r)
 		c = char_[r];
 		char_[r] = char_[r - 1];
 		char_[r - 1] = c;
-		rank_[char_[r]] = (uint8_t)r;
-		rank_[char_[r - 1]] = (uint8_t)(r - 1);
+		rank_[char_[r]] = static_cast<uint8_t>(r);
+		rank_[char_[r - 1]] = static_cast<uint8_t>(r - 1);
 		r--;
 	}
 	if (count_[0] == 255)
@@ -58,7 +58,7 @@ void Mnp5::rank_up(int r)
 /* an octet out */
 void Mnp5::out_char(uint8_t ch, int n)
 {
-	while (n-- > 0 && olen_ < (int)sizeof(obuf_))
+	while (n-- > 0 && olen_ < static_cast<int>(sizeof(obuf_)))
 		obuf_[(ohead_ + olen_++) % sizeof(obuf_)] = ch;
 }
 
@@ -69,7 +69,7 @@ void Mnp5::put(uint32_t bits, int len)
 	bits_ += len;
 	while (bits_ >= 8) {
 		bits_ -= 8;
-		out_char((uint8_t)(acc_ >> bits_), 1);
+		out_char(static_cast<uint8_t>(acc_ >> bits_), 1);
 	}
 	acc_ &= (1u << bits_) - 1;
 }
@@ -80,13 +80,14 @@ void Mnp5::put(uint32_t bits, int len)
 void Mnp5::put_value(int v)
 {
 	if (v < 2) {
-		put((uint32_t)v, 4);
+		put(static_cast<uint32_t>(v), 4);
 		return;
 	}
 	int h = 0;              /* (the highest bit's place) */
 	while ((v >> (h + 1)) != 0)
 		h++;
-	uint32_t code = (uint32_t)h << h | (uint32_t)(v - (1 << h));
+	uint32_t code = static_cast<uint32_t>(h) << h |
+			static_cast<uint32_t>(v - (1 << h));
 	if (v == 255)
 		put(code << 1, 3 + h + 1);
 	else
@@ -185,12 +186,13 @@ int Mnp5::decode(uint8_t ch)
 	acc_ = acc_ << 8 | ch;
 	bits_ += 8;
 	while (bits_ >= 3) {
-		const int h = (int)(acc_ >> (bits_ - 3)) & 7;
+		const int h = static_cast<int>(acc_ >> (bits_ - 3)) & 7;
 		const int blen = h ? h : 1;
 		if (bits_ < 3 + blen)
 			break;
 		int v = (h ? 1 << h : 0) +
-			(int)((acc_ >> (bits_ - 3 - blen)) & ((1u << blen) - 1));
+			static_cast<int>((acc_ >> (bits_ - 3 - blen)) &
+					 ((1u << blen) - 1));
 		int len = 3 + blen;
 		if (v == 255) {
 			if (bits_ < 11)
@@ -219,7 +221,7 @@ int Mnp5::out(uint8_t *buf, int n)
 	int k = 0;
 	while (k < n && olen_) {
 		buf[k++] = obuf_[ohead_];
-		ohead_ = (ohead_ + 1) % (int)sizeof(obuf_);
+		ohead_ = (ohead_ + 1) % static_cast<int>(sizeof(obuf_));
 		olen_--;
 	}
 	return k;

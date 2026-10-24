@@ -95,7 +95,7 @@ public:
 	}
 	/* the clock: the codec's samples so far, in ms */
 	unsigned long now_ms() override {
-		return (unsigned long)(samples_ * 1000 / rate_);
+		return static_cast<unsigned long>(samples_ * 1000 / rate_);
 	}
 
 	/* the control's name for PCM pcm: hw:<card> for hw:<card>,<dev> or

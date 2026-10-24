@@ -470,7 +470,7 @@ static void flip_octets(u8 *out, const u8 *in, int n)
 		c = (c & 0xf0) >> 4 | (c & 0x0f) << 4;
 		c = (c & 0xcc) >> 2 | (c & 0x33) << 2;
 		c = (c & 0xaa) >> 1 | (c & 0x55) << 1;
-		out[i] = (u8)c;
+		out[i] = static_cast<u8>(c);
 	}
 }
 
@@ -1109,12 +1109,12 @@ int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
 	case FAX_CMD_FTS:
 		f->stop_tx();
 		f->set_state(C1_FTS);
-		f->duration = (long)param * f->srate / 100;
+		f->duration = static_cast<long>(param) * f->srate / 100;
 		return 1;
 	case FAX_CMD_FRS:
 		f->stop_tx();
 		f->set_state(C1_FRS);
-		f->duration = (long)param * f->srate / 100;
+		f->duration = static_cast<long>(param) * f->srate / 100;
 		f->rx_quiet = 0;
 		return 1;
 	case FAX_CMD_FTH:
@@ -1328,9 +1328,10 @@ int FAX_process(void *obj, void *in, void *out, int count)
 			if (f->cng_n % ms2samples(3500, f->srate) <
 			    ms2samples(500, f->srate))
 				y = FAX_CED_RMS * 1.41421f *
-					sinf(2 * (float)M_PI * 1100 *
-					     (float)(f->cng_n % f->srate) /
-					     f->srate);
+				    sinf(2 * static_cast<float>(M_PI) * 1100 *
+					 static_cast<float>(f->cng_n %
+							    f->srate) /
+					 f->srate);
 			f->cng_n++;
 		} else if (f->tx_on) {
 			y = f->tx.sample();

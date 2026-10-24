@@ -34,11 +34,11 @@ struct CxBoard {
 	uint8_t p[95];
 
 	/* the bytes the SSD's setup takes: register 0x21, 0x80 | p[87] */
-	uint8_t ssd21() const { return (uint8_t)(0x80 | p[87]); }
+	uint8_t ssd21() const { return static_cast<uint8_t>(0x80 | p[87]); }
 	/* register 0x0b, p[93] */
 	uint8_t ssd0b() const { return p[93]; }
 	/* register 0x06's bits 7:4, p[94] */
-	uint8_t ssd06() const { return (uint8_t)(p[94] << 4); }
+	uint8_t ssd06() const { return static_cast<uint8_t>(p[94] << 4); }
 };
 
 /* the row of the country named name (case, ' ' and '_' ignored), or

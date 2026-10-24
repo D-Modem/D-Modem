@@ -47,24 +47,25 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 		return -1;
 	if (!p->data) {
 		if (p->type >= 0 && p->type < IND_EXT) {
-			buf[0] = (unsigned char)(p->type << 1);
+			buf[0] = static_cast<unsigned char>(p->type << 1);
 			return 1;
 		}
 		if (version && p->type <= T38_IND_V33_14400) {
 			int v = p->type - IND_EXT;
-			buf[0] = (unsigned char)(0x20 | v >> 2);
-			buf[1] = (unsigned char)((v & 3) << 6);
+			buf[0] = static_cast<unsigned char>(0x20 | v >> 2);
+			buf[1] = static_cast<unsigned char>((v & 3) << 6);
 			return 2;
 		}
 		return -1;
 	}
 	present = p->nfields > 0 ? 0x80 : 0;
 	if (p->type >= 0 && p->type < DATA_EXT) {
-		buf[at++] = (unsigned char)(present | 0x40 | p->type << 1);
+		buf[at++] = static_cast<unsigned char>(present | 0x40 |
+						       p->type << 1);
 	} else if (version && p->type <= T38_DATA_V33_14400) {
 		int v = p->type - DATA_EXT;
-		buf[at++] = (unsigned char)(present | 0x60 | v >> 2);
-		buf[at++] = (unsigned char)((v & 3) << 6);
+		buf[at++] = static_cast<unsigned char>(present | 0x60 | v >> 2);
+		buf[at++] = static_cast<unsigned char>((v & 3) << 6);
 	} else {
 		return -1;
 	}
@@ -72,7 +73,7 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 		return at;
 	if (p->nfields > T38_MAX_FIELDS)
 		return -1;
-	buf[at++] = (unsigned char)p->nfields;
+	buf[at++] = static_cast<unsigned char>(p->nfields);
 	for (k = 0; k < p->nfields; k++) {
 		const struct t38_field *f = &p->field[k];
 		int fp = f->len > 0 ? 0x80 : 0;
@@ -82,20 +83,22 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 		if (at + 2 > max || f->type < 0)
 			return -1;
 		if (f->type < FIELD_EXT) {
-			buf[at++] = (unsigned char)(fp | f->type <<
-						    (version ? 3 : 4));
+			buf[at++] = static_cast<unsigned char>(
+				fp | f->type << (version ? 3 : 4));
 		} else if (version && f->type <= T38_V34RATE) {
 			int v = f->type - FIELD_EXT;
-			buf[at++] = (unsigned char)(fp | 0x40 | v >> 2);
-			buf[at++] = (unsigned char)((v & 3) << 6);
+			buf[at++] =
+				static_cast<unsigned char>(fp | 0x40 | v >> 2);
+			buf[at++] = static_cast<unsigned char>((v & 3) << 6);
 		} else {
 			return -1;
 		}
 		if (fp) {
 			if (f->len > 65535 || at + 2 + f->len > max)
 				return -1;
-			buf[at++] = (unsigned char)((f->len - 1) >> 8);
-			buf[at++] = (unsigned char)(f->len - 1);
+			buf[at++] =
+				static_cast<unsigned char>((f->len - 1) >> 8);
+			buf[at++] = static_cast<unsigned char>(f->len - 1);
 			memcpy(buf + at, f->data, f->len);
 			at += f->len;
 		}
@@ -118,8 +121,9 @@ int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 		/* an extension: six bits over the octet's end */
 		if (!version || len < 2)
 			return -1;
-		p->type = (p->data ? (int)DATA_EXT : (int)IND_EXT) +
-			((buf[0] << 2 & 0x3c) | buf[1] >> 6);
+		p->type = (p->data ? static_cast<int>(DATA_EXT) :
+				     static_cast<int>(IND_EXT)) +
+			  ((buf[0] << 2 & 0x3c) | buf[1] >> 6);
 		at = 2;
 	} else {
 		p->type = (buf[0] >> 1) & 0xf;
@@ -200,7 +204,7 @@ void t38_reverse(unsigned char *out, const unsigned char *in, int n)
 		v = (v & 0xf0) >> 4 | (v & 0x0f) << 4;
 		v = (v & 0xcc) >> 2 | (v & 0x33) << 2;
 		v = (v & 0xaa) >> 1 | (v & 0x55) << 1;
-		out[k] = (unsigned char)v;
+		out[k] = static_cast<unsigned char>(v);
 	}
 }
 
@@ -216,13 +220,13 @@ static int put_len(unsigned char *buf, int at, int max, unsigned v)
 	if (v < 0x80) {
 		if (at + 1 > max)
 			return 0;
-		buf[at] = (unsigned char)v;
+		buf[at] = static_cast<unsigned char>(v);
 		return 1;
 	}
 	if (at + 2 > max)
 		return 0;
-	buf[at] = (unsigned char)(0x80 | v >> 8);
-	buf[at + 1] = (unsigned char)v;
+	buf[at] = static_cast<unsigned char>(0x80 | v >> 8);
+	buf[at + 1] = static_cast<unsigned char>(v);
 	return 2;
 }
 
@@ -268,8 +272,8 @@ int UdptlTx::packet(const unsigned char *ifp, int len, unsigned char *buf,
 	if (len <= 0 || len > UDPTL_IFP_MAX ||
 	    2 + len_len(len) + len + 2 > max)
 		return -1;
-	buf[0] = (unsigned char)(seq >> 8);
-	buf[1] = (unsigned char)seq;
+	buf[0] = static_cast<unsigned char>(seq >> 8);
+	buf[1] = static_cast<unsigned char>(seq);
 	at = 2;
 	at += put_len(buf, at, max, len);
 	memcpy(buf + at, ifp, len);
@@ -322,11 +326,12 @@ int UdptlRx::packet(const unsigned char *buf, int len,
 
 	if (len < 4)
 		return -1;
-	seq = (unsigned)(buf[0] << 8 | buf[1]);
-	if (get_len(buf, len, &at, &n) || n == 0 || at + (int)n > len)
+	seq = static_cast<unsigned>(buf[0] << 8 | buf[1]);
+	if (get_len(buf, len, &at, &n) || n == 0 ||
+	    at + static_cast<int>(n) > len)
 		return -1;
 	prim = buf + at;
-	prim_len = (int)n;
+	prim_len = static_cast<int>(n);
 	at += n;
 	if (at >= len)
 		return -1;
@@ -334,10 +339,11 @@ int UdptlRx::packet(const unsigned char *buf, int len,
 		/* the packets before, newest first */
 		if (get_len(buf, len, &at, &count))
 			return -1;
-		for (k = 0; k < (int)count; k++) {
-			if (get_len(buf, len, &at, &n) || at + (int)n > len)
+		for (k = 0; k < static_cast<int>(count); k++) {
+			if (get_len(buf, len, &at, &n) ||
+			    at + static_cast<int>(n) > len)
 				return -1;
-			if (nsec < (int)std::size(sec)) {
+			if (nsec < static_cast<int>(std::size(sec))) {
 				sec[nsec] = buf + at;
 				sec_len[nsec++] = n;
 			}
@@ -350,12 +356,12 @@ int UdptlRx::packet(const unsigned char *buf, int len,
 		expected = (seq + 1) & 0xffff;
 		return 0;
 	}
-	d = (seq - (unsigned)expected) & 0xffff;
+	d = (seq - static_cast<unsigned>(expected)) & 0xffff;
 	if (d >= 0x8000)
 		return 0;                       /* had it, or too late */
 	/* the lost ones from the packets before, oldest first (an empty
 	   one stands for none) */
-	for (k = (int)d; k >= 1; k--)
+	for (k = static_cast<int>(d); k >= 1; k--)
 		if (k <= nsec && sec_len[k - 1] > 0)
 			fn(ctx, sec[k - 1], sec_len[k - 1], (seq - k) & 0xffff);
 	fn(ctx, prim, prim_len, seq);

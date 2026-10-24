@@ -362,7 +362,9 @@ void V22Pump::rx_symbol(cplx y)
 	last_y = y;
 	step = atan2f(d.im, d.re);
 	rot_avg += 0.1f * (step - rot_avg);
-	dq_raw = (int)lrintf(step / ((float)M_PI / 2)) & 3;
+	dq_raw = static_cast<int>(
+			 lrintf(step / (static_cast<float>(M_PI) / 2))) &
+		 3;
 
 	/* equalizer (the delay line was fed with both half symbols) */
 	for (i = 0; i < V22_EQ_LEN; i++)
@@ -419,7 +421,7 @@ void V22Pump::rx_symbol(cplx y)
 		}
 	}
 	theta += dtheta;
-	theta = remainderf(theta, 2 * (float)M_PI);
+	theta = remainderf(theta, 2 * static_cast<float>(M_PI));
 
 	DSP_TRACE("%s: %ld sym %6.2f %6.2f q %d dq %d th %5.2f c %d\n",
 		 caller ? "C" : "A", total, z.re, z.im, quad,
@@ -652,7 +654,7 @@ int V22Pump::handshake()
 	/* calling modem */
 	case C_WAIT_USB1:
 		if (run_usb1 >= MS2SYM(155) &&
-		    fabsf(rot_avg + (float)M_PI / 2) < 0.1f) {
+		    fabsf(rot_avg + static_cast<float>(M_PI) / 2) < 0.1f) {
 			DSP_DBG("%s: unscrambled ones received\n", mode_name());
 			set_state(C_GAP);
 		} else if (run_sb1_12 >= MS2SYM(270)) {
@@ -770,7 +772,7 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 
 	pump_setup(m, srate_, caller_);
 	bis = !(id == DP_V22 || id == DP_B212);
-	sps = (float)srate_ / V22_BAUD;
+	sps = static_cast<float>(srate_) / V22_BAUD;
 
 	/* a pass band rms of DSP_TX_AMPLITUDE / sqrt(2) */
 	tx.init(srate_, caller_ ? 1200 : 2400, V22_BAUD, V22_ALPHA, V22_SPAN,
@@ -780,7 +782,7 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 
 	rx_bp.bandpass(caller_ ? 2400 : 1200, 1.0f, srate_);
 	rx_lo.set_freq(caller_ ? -2400 : -1200, srate_);
-	mf_len = (int)(2 * V22_SPAN * sps) | 1;
+	mf_len = static_cast<int>(2 * V22_SPAN * sps) | 1;
 	mf.assign(mf_len, 0);
 	mf_buf.assign(mf_len, cplx());
 	for (i = 0, sum = 0; i < mf_len; i++) {

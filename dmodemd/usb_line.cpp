@@ -251,8 +251,8 @@ const uint16_t FEATURE_REMOTE_WAKEUP = 1;
 unsigned long long clock_ms()
 {
 	using namespace std::chrono;
-	return (unsigned long long)duration_cast<milliseconds>(
-		steady_clock::now().time_since_epoch()).count();
+	return static_cast<unsigned long long>(duration_cast<milliseconds>(
+		steady_clock::now().time_since_epoch()).count());
 }
 
 /* the codec's control word for a rate (the STLC7550's, and the
@@ -274,16 +274,16 @@ uint16_t cword(unsigned rate)
 void resample(const int16_t *in, size_t n, unsigned from, unsigned to,
 	      double &pos, int16_t &last, std::deque<int16_t> &out)
 {
-	double step = (double)from / to;
+	double step = static_cast<double>(from) / to;
 	/* (t: 0 at last, k + 1 at in[k]) */
-	for (; n && pos < (double)n; pos += step) {
-		size_t i = (size_t)pos;
-		double f = pos - (double)i;
+	for (; n && pos < static_cast<double>(n); pos += step) {
+		size_t i = static_cast<size_t>(pos);
+		double f = pos - static_cast<double>(i);
 		double a = i ? in[i - 1] : last, b = in[i];
-		out.push_back((int16_t)(a + (b - a) * f));
+		out.push_back(static_cast<int16_t>(a + (b - a) * f));
 	}
 	if (n) {
-		pos -= (double)n;
+		pos -= static_cast<double>(n);
 		last = in[n - 1];
 	}
 }
@@ -292,7 +292,9 @@ void resample(const int16_t *in, size_t n, unsigned from, unsigned to,
 int16_t mix(int a, int b)
 {
 	int x = a + b;
-	return (int16_t)(x > 32767 ? 32767 : x < -32768 ? -32768 : x);
+	return static_cast<int16_t>(x > 32767  ? 32767 :
+				    x < -32768 ? -32768 :
+						 x);
 }
 
 } // namespace
@@ -520,7 +522,7 @@ bool UsbLine::get_reg(uint8_t reg, uint16_t *v)
 		    libusb_strerror(err));
 		return false;
 	}
-	*v = (uint16_t)(b[0] | b[1] << 8);
+	*v = static_cast<uint16_t>(b[0] | b[1] << 8);
 	return true;
 }
 
@@ -541,7 +543,7 @@ bool UsbLine::open(const char *dev, unsigned rate)
 	int err;
 
 	rate_ = rate;
-	frame_ = (int)rate / 50;
+	frame_ = static_cast<int>(rate) / 50;
 	frame_in_.assign(frame_, 0);
 	frame_out_.assign(frame_, 0);
 	frame_mic_.assign(frame_, 0);
@@ -634,7 +636,8 @@ bool UsbLine::open_st7554(unsigned rate)
    Windows' UpdateCodecPowerMode does) if it streams; false (logged) */
 bool UsbLine::init_st7554_regs()
 {
-	uint16_t mask = (uint16_t)(GPIO_RING1 | (handset_ ? GPIO_HANDSET : 0));
+	uint16_t mask = static_cast<uint16_t>(GPIO_RING1 |
+					      (handset_ ? GPIO_HANDSET : 0));
 	return set_reg(GPIO_DIR, 0x3ff8) && set_gpio(gpio_) &&
 		set_reg(GPIO_MASK, mask) &&
 		set_reg(FIFO_CONTROL1, 0x2828 | BYTE_ORDER_LE) &&
@@ -685,7 +688,8 @@ void UsbLine::arm_wake(bool on, bool kernel)
 	/* /sys/bus/usb/devices/<bus>-<port>[.<port>...]/power/wakeup */
 	uint8_t ports[8];
 	libusb_device *d = libusb_get_device(h_);
-	int n = libusb_get_port_numbers(d, ports, (int)sizeof(ports));
+	int n = libusb_get_port_numbers(d, ports,
+					static_cast<int>(sizeof(ports)));
 	if (n <= 0)
 		return;
 	std::string path = "/sys/bus/usb/devices/" +
@@ -748,15 +752,15 @@ bool UsbLine::open_stick(unsigned rate)
 	if (!(info[7] & LP_ST_LINK))
 		ERR("pico-serial Line: its line side does not answer (the "
 		    "isolation link is down); going on\n");
-	if (!stick_out(LP_SET_RATE, (uint16_t)rate) ||
+	if (!stick_out(LP_SET_RATE, static_cast<uint16_t>(rate)) ||
 	    !stick_out(LP_SET_HOOK, 0) || !stick_out(LP_SET_MONITOR, 1) ||
 	    !stick_in(LP_GET_STATUS, 0, status, sizeof(status)))
 		return false;
 	if (!stick_country())
 		return false;
 	ring_edges_ = status[18];
-	underruns_ = (uint16_t)(status[6] | status[7] << 8);
-	overruns_ = (uint16_t)(status[8] | status[9] << 8);
+	underruns_ = static_cast<uint16_t>(status[6] | status[7] << 8);
+	overruns_ = static_cast<uint16_t>(status[8] | status[9] << 8);
 	if ((err = libusb_set_interface_alt_setting(h_, 0, 1)) < 0) {
 		ERR("pico-serial Line: alternate setting 1: %s\n",
 		    libusb_strerror(err));
@@ -804,11 +808,13 @@ bool UsbLine::stick_in(uint8_t req, uint16_t value, uint8_t *buf, uint16_t len)
 bool UsbLine::start_streams()
 {
 	int err;
-	int pkt = (int)((rate_ * 2 + 999) / 1000);   /* octets a ms, at most */
+	/* octets a ms, at most */
+	int pkt = static_cast<int>((rate_ * 2 + 999) / 1000);
 
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
-	delay_ = (int)iso_.out_buf.size() + ISO_TRANSFERS * ISO_PACKETS *
-		(int)rate_ / 1000 + fifo_samples_;
+	delay_ = static_cast<int>(iso_.out_buf.size()) +
+		 ISO_TRANSFERS * ISO_PACKETS * static_cast<int>(rate_) / 1000 +
+		 fifo_samples_;
 	intr_ = libusb_alloc_transfer(0);
 	if (!intr_)
 		return false;
@@ -823,7 +829,7 @@ bool UsbLine::start_streams()
 		return false;
 	if (viso_.ep_in) {
 		viso_.out_buf.assign(VOICE_RATE / 50 + VOICE_RATE / 100, 0);
-		if (!start_iso(viso_, (int)(VOICE_RATE / 1000)))
+		if (!start_iso(viso_, static_cast<int>(VOICE_RATE / 1000)))
 			return false;
 	}
 	/* (the stick's samples run since its alternate setting 1) */
@@ -841,8 +847,10 @@ bool UsbLine::start_iso(Iso &s, int pkt)
 		s.out[i] = libusb_alloc_transfer(ISO_PACKETS);
 		if (!s.in[i] || !s.out[i])
 			return false;
-		uint8_t *ib = (uint8_t *)calloc(ISO_PACKETS, s.max_in);
-		uint8_t *ob = (uint8_t *)calloc(ISO_PACKETS, s.max_out);
+		uint8_t *ib =
+			static_cast<uint8_t *>(calloc(ISO_PACKETS, s.max_in));
+		uint8_t *ob =
+			static_cast<uint8_t *>(calloc(ISO_PACKETS, s.max_out));
 		if (!ib || !ob) {
 			free(ib);
 			free(ob);
@@ -899,7 +907,7 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const int *lengths)
 		int len = lengths[i] - lengths[i] % bps;
 		if (len > s.max_out)
 			len = s.max_out - s.max_out % bps;
-		t->iso_packet_desc[i].length = (unsigned)len;
+		t->iso_packet_desc[i].length = static_cast<unsigned>(len);
 		for (int k = 0; k < len / bps; k++) {
 			int16_t x = 0;
 			if (!s.out_buf.empty()) {
@@ -907,10 +915,13 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const int *lengths)
 				s.out_buf.pop_front();
 			}
 			if (!s.voice) {
-				t->buffer[off + 2 * k] = (uint8_t)x;
-				t->buffer[off + 2 * k + 1] = (uint8_t)(x >> 8);
+				t->buffer[off + 2 * k] =
+					static_cast<uint8_t>(x);
+				t->buffer[off + 2 * k + 1] =
+					static_cast<uint8_t>(x >> 8);
 			} else if (voice_law_ == VoiceLaw::Linear) {
-				t->buffer[off + k] = (uint8_t)(x >> 8);
+				t->buffer[off + k] =
+					static_cast<uint8_t>(x >> 8);
 			} else {
 				t->buffer[off + k] = dsp::g711::encode(
 					voice_law_ == VoiceLaw::Alaw, x);
@@ -978,8 +989,10 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 		if (t->status == LIBUSB_TRANSFER_COMPLETED)
 			l->stick_event(t->buffer, t->actual_length);
 	} else if (t->status == LIBUSB_TRANSFER_COMPLETED && t->actual_length >= 4) {
-		uint16_t fifo = (uint16_t)(t->buffer[0] | t->buffer[1] << 8);
-		uint16_t gpio = (uint16_t)(t->buffer[2] | t->buffer[3] << 8);
+		uint16_t fifo =
+			static_cast<uint16_t>(t->buffer[0] | t->buffer[1] << 8);
+		uint16_t gpio =
+			static_cast<uint16_t>(t->buffer[2] | t->buffer[3] << 8);
 		if (fifo & SSI1_UNDERRUN)
 			DBG("FIFO underrun\n");
 		if (fifo & SSI1_OVERRUN)
@@ -1046,7 +1059,8 @@ bool UsbLine::stick_country()
 	for (auto &x : regs) {
 		if (x.reg == 30 && !si3019_)
 			continue;
-		if (!stick_out(LP_DAA_WRITE, (uint16_t)(x.reg << 8 | *x.val)))
+		if (!stick_out(LP_DAA_WRITE,
+			       static_cast<uint16_t>(x.reg << 8 | *x.val)))
 			return false;
 	}
 	daa_due_ = false;
@@ -1065,9 +1079,9 @@ void UsbLine::stick_event(const uint8_t *b, int len)
 {
 	if (len < 8)
 		return;
-	uint8_t edges = (uint8_t)(b[1] - ring_edges_);
-	uint16_t under = (uint16_t)(b[4] | b[5] << 8);
-	uint16_t over = (uint16_t)(b[6] | b[7] << 8);
+	uint8_t edges = static_cast<uint8_t>(b[1] - ring_edges_);
+	uint16_t under = static_cast<uint16_t>(b[4] | b[5] << 8);
+	uint16_t over = static_cast<uint16_t>(b[6] | b[7] << 8);
 
 	ring_edges_ = b[1];
 	rings_ += edges;
@@ -1109,15 +1123,21 @@ void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 				continue;
 			if (!s.voice)
 				for (unsigned k = 0; k + 1 < p.actual_length; k += 2)
-					s.in_buf.push_back((int16_t)(b[k] | b[k + 1] << 8));
+					s.in_buf.push_back(static_cast<int16_t>(
+						b[k] | b[k + 1] << 8));
 			else if (voice_law_ == VoiceLaw::Linear)
 				for (unsigned k = 0; k < p.actual_length; k++)
-					s.in_buf.push_back((int16_t)((int8_t)b[k] * 256));
+					s.in_buf.push_back(static_cast<int16_t>(
+						static_cast<int8_t>(b[k]) *
+						256));
 			else
 				for (unsigned k = 0; k < p.actual_length; k++)
-					s.in_buf.push_back((int16_t)dsp::g711::decode(
-						voice_law_ == VoiceLaw::Alaw, b[k]));
-			lens[i] = (int)p.actual_length;
+					s.in_buf.push_back(static_cast<int16_t>(
+						dsp::g711::decode(
+							voice_law_ ==
+								VoiceLaw::Alaw,
+							b[k])));
+			lens[i] = static_cast<int>(p.actual_length);
 		}
 	}
 	s.out_lengths.push_back(lens);
@@ -1229,11 +1249,13 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 	bool cid = state == MODEM_HOOK_SNOOPING;
 	bool now_off = off && !(gpio_ & GPIO_HOOK1);
 	if ((gpio_ & GPIO_CID1) && !cid &&
-	    !set_gpio((uint16_t)(gpio_ & ~GPIO_CID1)))
+	    !set_gpio(static_cast<uint16_t>(gpio_ & ~GPIO_CID1)))
 		return -1;
-	uint16_t v = off ? (uint16_t)(gpio_ | GPIO_HOOK1 | GPIO_LED_HOOK) :
-		(uint16_t)(gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK |
-				     GPIO_LED_CARRIER | GPIO_LED_DATA));
+	uint16_t v = off ? static_cast<uint16_t>(gpio_ | GPIO_HOOK1 |
+						 GPIO_LED_HOOK) :
+			   static_cast<uint16_t>(
+				   gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK |
+					     GPIO_LED_CARRIER | GPIO_LED_DATA));
 	if (!off)
 		data_seen_ = online_seen_ = pulse_active_ = false;
 	if (intl_)
@@ -1249,8 +1271,8 @@ void UsbLine::speaker(dcore::Modem &, int volume)
 {
 	if (!buzzer_ || kind_ != Kind::St7554 || !h_ || dead_)
 		return;
-	uint16_t v = volume > 0 ? (uint16_t)(gpio_ | GPIO_BUZEN) :
-		(uint16_t)(gpio_ & ~GPIO_BUZEN);
+	uint16_t v = volume > 0 ? static_cast<uint16_t>(gpio_ | GPIO_BUZEN) :
+		static_cast<uint16_t>(gpio_ & ~GPIO_BUZEN);
 	if (v == gpio_)
 		return;
 	DBG("buzzer %s (volume %d)\n", volume > 0 ? "on" : "off", volume);
@@ -1269,7 +1291,8 @@ void UsbLine::update_leds(dcore::Modem &m)
 	if (online && m.tx_pending())
 		data_seen_ = true;
 	online_seen_ = online_seen_ || online;
-	uint16_t v = (uint16_t)(gpio_ & ~(GPIO_LED_CARRIER | GPIO_LED_DATA));
+	uint16_t v = static_cast<uint16_t>(gpio_ &
+					   ~(GPIO_LED_CARRIER | GPIO_LED_DATA));
 	if (online)
 		v |= GPIO_LED_CARRIER;
 	if (data_seen_)
@@ -1285,11 +1308,15 @@ void UsbLine::hook_flash(dcore::Modem &, unsigned ms)
 		return;
 	DBG("hook flash, %u ms\n", ms);
 	if (kind_ == Kind::Stick) {   /* the stick times it */
-		stick_out(LP_HOOK_FLASH, (uint16_t)(ms < 1 ? 1 : ms > 2000 ? 2000 : ms));
+		stick_out(LP_HOOK_FLASH,
+			  static_cast<uint16_t>(ms < 1	  ? 1 :
+						ms > 2000 ? 2000 :
+							    ms));
 		return;
 	}
-	set_gpio((uint16_t)(gpio_ & ~GPIO_HOOK1));
-	flash_end_ = samples_ + (unsigned long long)ms * rate_ / 1000;
+	set_gpio(static_cast<uint16_t>(gpio_ & ~GPIO_HOOK1));
+	flash_end_ =
+		samples_ + static_cast<unsigned long long>(ms) * rate_ / 1000;
 }
 
 /* see dcore.h: the hook GPIO cleared (broken) or set again */
@@ -1300,8 +1327,8 @@ int UsbLine::pulse_hook(dcore::Modem &, bool broken)
 	flash_end_ = 0;
 	if (kind_ == Kind::Stick)
 		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
-	uint16_t v = broken ? (uint16_t)(gpio_ & ~GPIO_HOOK1) :
-		(uint16_t)(gpio_ | GPIO_HOOK1);
+	uint16_t v = broken ? static_cast<uint16_t>(gpio_ & ~GPIO_HOOK1) :
+		static_cast<uint16_t>(gpio_ | GPIO_HOOK1);
 	if (intl_)
 		v = intl_hook(v, !broken, false);
 	return set_gpio(v) ? 0 : -1;
@@ -1317,15 +1344,19 @@ int UsbLine::pulse_hook(dcore::Modem &, bool broken)
 uint16_t UsbLine::intl_hook(uint16_t v, bool off, bool now_off)
 {
 	if (!pulse_active_)
-		v = off ? (uint16_t)(v | GPIO_DP) :
-			(uint16_t)(v & ~(GPIO_RFC | GPIO_DP));
+		v = off ? static_cast<uint16_t>(v | GPIO_DP) :
+			  static_cast<uint16_t>(v & ~(GPIO_RFC | GPIO_DP));
 	bool dc = st75951_ ? !intl_dc_ : intl_dc_;
-	v = off && dc ? (uint16_t)(v | GPIO_DC) : (uint16_t)(v & ~GPIO_DC);
+	v = off && dc ? static_cast<uint16_t>(v | GPIO_DC) :
+			static_cast<uint16_t>(v & ~GPIO_DC);
 	if (!off) {
 		aus_end_ = 0;
 	} else if (now_off && intl_aus_ && !pulse_active_) {
 		v |= GPIO_RFC;
-		aus_end_ = samples_ + (unsigned long long)rate_ * AUSTRALIAN_MS / 1000 + 1;
+		aus_end_ = samples_ +
+			   static_cast<unsigned long long>(rate_) *
+				   AUSTRALIAN_MS / 1000 +
+			   1;
 		DBG("Australian timer: RFC for %u ms\n", AUSTRALIAN_MS);
 	}
 	return v;
@@ -1341,7 +1372,8 @@ void UsbLine::pulse_dialling(dcore::Modem &, bool on)
 	if (on)
 		aus_end_ = 0;
 	DBG("pulse dialling %s: RFC %s\n", on ? "begins" : "over", on ? "on" : "off");
-	set_gpio(on ? (uint16_t)(gpio_ | GPIO_RFC) : (uint16_t)(gpio_ & ~GPIO_RFC));
+	set_gpio(on ? static_cast<uint16_t>(gpio_ | GPIO_RFC) :
+		      static_cast<uint16_t>(gpio_ & ~GPIO_RFC));
 }
 
 /* see usb_line.h */
@@ -1397,19 +1429,20 @@ int UsbLine::pump(dcore::Modem &m)
 		viso_.in_buf.clear();
 	}
 	size_t used = 0;
-	while (iso_.in_buf.size() - used >= (size_t)frame_) {
+	while (iso_.in_buf.size() - used >= static_cast<size_t>(frame_)) {
 		memcpy(frame_in_.data(), iso_.in_buf.data() + used,
 		       frame_ * sizeof(int16_t));
 		used += frame_;
 		if (aus_end_ && samples_ >= aus_end_) {
 			aus_end_ = 0;
 			DBG("Australian timer over: RFC off\n");
-			set_gpio((uint16_t)(gpio_ & ~GPIO_RFC));
+			set_gpio(static_cast<uint16_t>(gpio_ & ~GPIO_RFC));
 		}
 		if (flash_end_ && samples_ >= flash_end_) {
 			flash_end_ = 0;
 			if (hook_ == MODEM_HOOK_OFF)
-				set_gpio((uint16_t)(gpio_ | GPIO_HOOK1));
+				set_gpio(static_cast<uint16_t>(gpio_ |
+							       GPIO_HOOK1));
 		}
 		samples_ += frame_;
 		if (viso_.ep_in)
@@ -1425,7 +1458,7 @@ int UsbLine::pump(dcore::Modem &m)
 	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
-	size_t most = (size_t)(3 * frame_);
+	size_t most = static_cast<size_t>(3 * frame_);
 	if (iso_.out_buf.size() > most) {
 		DBG("playback ahead: %zu samples dropped\n",
 		    iso_.out_buf.size() - most);
@@ -1515,8 +1548,8 @@ void UsbLine::voice_frame(dcore::Modem &m)
 		m.process(frame_in_.data(), frame_out_.data(), frame_);
 		memset(frame_ear_.data(), 0, frame_ * sizeof(int16_t));
 	}
-	resample(frame_ear_.data(), (size_t)frame_, rate_, VOICE_RATE,
-		 ear_pos_, ear_last_, viso_.out_buf);
+	resample(frame_ear_.data(), static_cast<size_t>(frame_), rate_,
+		 VOICE_RATE, ear_pos_, ear_last_, viso_.out_buf);
 }
 
 /* the transfers cancelled (and their callbacks run), on hook, the codec

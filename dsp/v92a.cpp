@@ -25,10 +25,10 @@ void V92ATx::init(int rate_, float lu_)
 	rate = rate_;
 	lu = lu_;
 	for (i = 0; i <= 2 * V92A_SPAN * V92A_P; i++) {
-		double u = (double)i / V92A_P - V92A_SPAN;
+		double u = static_cast<double>(i) / V92A_P - V92A_SPAN;
 		double x = M_PI * u / V92A_SPAN;
 		double h = fabs(u) < 1e-12 ? 1 : sin(M_PI * u) / (M_PI * u);
-		pulse[i] = (float)(h * (0.42 + 0.5 * cos(x) +
+		pulse[i] = static_cast<float>(h * (0.42 + 0.5 * cos(x) +
 					0.08 * cos(2 * x)));
 	}
 	pulse[2 * V92A_SPAN * V92A_P + 1] = 0;
@@ -98,7 +98,7 @@ float V92ATx::symbol()
 		break;
 	case V92A_RU:
 	case V92A_RUBAR:
-		k = (int)(n % 6);
+		k = static_cast<int>(n % 6);
 		y = (k < 3) == (seg == V92A_RU) ? lu : -lu;
 		/* (TRN2u's differential encoder goes on from its sign) */
 		last_d = y < 0;
@@ -233,7 +233,8 @@ float V92ATx::sym4(int sign, int mag)
 /* point e (-LC .. LC - 1, negative ones negative) of constellation c */
 float V92ATx::point(int c, int e) const
 {
-	return e >= 0 ? (float)cpd.pts[c][e] : -(float)cpd.pts[c][-e - 1];
+	return e >= 0 ? static_cast<float>(cpd.pts[c][e]) :
+			-static_cast<float>(cpd.pts[c][-e - 1]);
 }
 
 /* an unsigned integer of 4 words, least significant first: the
@@ -249,8 +250,8 @@ struct Wide {
 	{
 		unsigned long long c = 0;
 		for (int i = 0; i < 4; i++) {
-			c += (unsigned long long)w[i] * m;
-			w[i] = (unsigned)c;
+			c += static_cast<unsigned long long>(w[i]) * m;
+			w[i] = static_cast<unsigned>(c);
 			c >>= 32;
 		}
 	}
@@ -260,19 +261,20 @@ struct Wide {
 		unsigned long long r = 0;
 		for (int i = 3; i >= 0; i--) {
 			r = r << 32 | w[i];
-			w[i] = (unsigned)(r / m);
+			w[i] = static_cast<unsigned>(r / m);
 			r %= m;
 		}
-		return (unsigned)r;
+		return static_cast<unsigned>(r);
 	}
 	/* a - this */
 	void rsub(const Wide &a)
 	{
 		long long br = 0;
 		for (int i = 0; i < 4; i++) {
-			long long d = (long long)a.w[i] - w[i] - br;
+			long long d =
+				static_cast<long long>(a.w[i]) - w[i] - br;
 			br = d < 0;
-			w[i] = (unsigned)d;
+			w[i] = static_cast<unsigned>(d);
 		}
 	}
 	/* -1, 0 or 1 as this is less than, equal to or more than a */
@@ -387,7 +389,7 @@ void V92ATx::data_frame()
 			R.w[j >> 5] |= 1u << (j & 31);
 	Mt.set(1);
 	for (j = 0; j < 12; j++)
-		Mt.mul((unsigned)cpd.M[j]);
+		Mt.mul(static_cast<unsigned>(cpd.M[j]));
 	/* M - 1, and 2 R */
 	M1.set(1);
 	M1.rsub(Mt);
@@ -398,7 +400,8 @@ void V92ATx::data_frame()
 		R.rsub(M1);
 	dprev ^= s;
 	for (j = 0; j < 12; j++)
-		kq[j] = (int)R.div((unsigned)cpd.M[j]);
+		kq[j] = static_cast<int>(
+			R.div(static_cast<unsigned>(cpd.M[j])));
 }
 
 /* a data mode symbol (6.4.2/V.92): of the class of its K (on a trellis
@@ -464,7 +467,7 @@ float V92ATx::data_symbol()
 	fi = (fi + 1) % 12;
 	dn++;
 	n++;
-	return (float)(lu * cpd.g * v);
+	return static_cast<float>(lu * cpd.g * v);
 }
 
 /* see v92a.h: the symbols whose pulses reach this sample made, then
@@ -476,7 +479,7 @@ float V92ATx::sample()
 	long j;
 
 	while (tnext <= m + reach) {
-		int r = (int)(nsym & (V92A_RING - 1));
+		int r = static_cast<int>(nsym & (V92A_RING - 1));
 		int was = next;
 		a[r] = symbol();
 		at[r] = tnext;
@@ -487,7 +490,7 @@ float V92ATx::sample()
 		delay = 0;
 	}
 	for (j = nsym - 1; j >= 0 && j >= nsym - V92A_RING; j--) {
-		int r = (int)(j & (V92A_RING - 1));
+		int r = static_cast<int>(j & (V92A_RING - 1));
 		double u = (m - at[r]) / T;
 		double f;
 		int i;
@@ -496,8 +499,8 @@ float V92ATx::sample()
 		if (u <= -V92A_SPAN || a[r] == 0)
 			continue;
 		f = (u + V92A_SPAN) * V92A_P;
-		i = (int)f;
-		y += a[r] * (pulse[i] + (float)(f - i) *
+		i = static_cast<int>(f);
+		y += a[r] * (pulse[i] + static_cast<float>(f - i) *
 			     (pulse[i + 1] - pulse[i]));
 	}
 	m++;

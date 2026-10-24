@@ -95,7 +95,7 @@ int DataFile::load(struct dsp_info *info) const
 	if (ret < 0)
 		return -errno;
 	/* a simple check */
-	if (ret != (ssize_t)sizeof(dr) || dr.size != sizeof(dr))
+	if (ret != static_cast<ssize_t>(sizeof(dr)) || dr.size != sizeof(dr))
 		return -1;
 	memcpy(info, &dr.dsp_info, sizeof(*info));
 	return ret;
@@ -112,9 +112,11 @@ int DataFile::save(const struct dsp_info *info)
 	memcpy(&dr.dsp_info, info, sizeof(*info));
 	dr.size = sizeof(dr);
 	ret = pwrite(fd_, &dr, sizeof(dr), 0);
-	if (ret == (ssize_t)sizeof(dr) && !ftruncate(fd_, sizeof(dr)))
+	if (ret == static_cast<ssize_t>(sizeof(dr)) &&
+	    !ftruncate(fd_, sizeof(dr)))
 		return ret;
-	int err = ret < 0 || ret == (ssize_t)sizeof(dr) ? errno : EIO;
+	int err = ret < 0 || ret == static_cast<ssize_t>(sizeof(dr)) ? errno :
+								       EIO;
 	ERR("cannot save '%s': %s\n", path_.c_str(), strerror(err));
 	return -err;
 }

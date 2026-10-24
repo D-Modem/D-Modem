@@ -1022,7 +1022,9 @@ const Alias ALIASES[] = {
 static bool same(const char *n, const char *name)
 {
 	for (; *n && *name; n++, name++) {
-		char x = *name >= 'a' && *name <= 'z' ? (char)(*name - 32) : *name;
+		char x = *name >= 'a' && *name <= 'z' ?
+				 static_cast<char>(*name - 32) :
+				 *name;
 		if (x == ' ' || x == '-' || x == '.')
 			x = '_';
 		if (x != *n)

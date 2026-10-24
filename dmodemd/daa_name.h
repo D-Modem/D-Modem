@@ -24,7 +24,8 @@ inline bool daa_same_name(const char *a, const char *b)
 			b++;
 		if (!*a || !*b)
 			return !*a && !*b;
-		if (toupper((unsigned char)*a++) != toupper((unsigned char)*b++))
+		if (toupper(static_cast<unsigned char>(*a++)) !=
+		    toupper(static_cast<unsigned char>(*b++)))
 			return false;
 	}
 }

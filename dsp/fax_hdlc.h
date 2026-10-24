@@ -165,10 +165,11 @@ public:
 			}
 			hrx_ones = 0;
 		}
-		hrx_byte |= (unsigned)bit << hrx_nbits;
+		hrx_byte |= static_cast<unsigned>(bit) << hrx_nbits;
 		if (++hrx_nbits == 8) {
 			if (hrx_len < MAX)
-				hrx_buf[hrx_len++] = (unsigned char)hrx_byte;
+				hrx_buf[hrx_len++] =
+					static_cast<unsigned char>(hrx_byte);
 			else
 				hrx_over = 1;
 			hrx_nbits = 0;

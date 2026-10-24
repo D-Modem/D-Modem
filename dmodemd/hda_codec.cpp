@@ -86,7 +86,7 @@ bool HdaCodec::verb(int nid, unsigned verb, unsigned param, uint32_t *res)
 {
 	hda_verb_ioctl v;
 
-	v.verb = (uint32_t)nid << 24 | verb << 8 | param;
+	v.verb = static_cast<uint32_t>(nid) << 24 | verb << 8 | param;
 	v.res = 0;
 	if (snd_hwdep_ioctl(h_, HDA_IOCTL_VERB_WRITE, &v) < 0)
 		return false;
@@ -103,7 +103,8 @@ bool HdaCodec::is_modem()
 		return false;
 	unsigned start = r >> 16 & 0xff, n = r & 0xff;
 	for (unsigned nid = start; nid < start + n; nid++)
-		if (verb((int)nid, GET_PARAMETER, PAR_FUNCTION_TYPE, &r) &&
+		if (verb(static_cast<int>(nid), GET_PARAMETER,
+			 PAR_FUNCTION_TYPE, &r) &&
 		    (r & 0xff) == GRP_MODEM)
 			return true;
 	return false;
@@ -116,7 +117,7 @@ bool HdaCodec::read(int nid, uint16_t *v)
 
 	if (!h_ || !verb(nid, SI3054_READ, 0, &r))
 		return false;
-	*v = (uint16_t)r;
+	*v = static_cast<uint16_t>(r);
 	return true;
 }
 

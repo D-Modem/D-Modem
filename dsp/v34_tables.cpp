@@ -104,7 +104,8 @@ const struct v34_rate v34_rates[V34_NBAUDS][14] = {
 cplx v34_pp(int i)
 {
 	int k = (i % 48) / 4, I = i % 4;
-	float th = (float)M_PI * (k * I + (k % 3 == 1 ? 4 : 0)) / 6;
+	float th =
+		static_cast<float>(M_PI) * (k * I + (k % 3 == 1 ? 4 : 0)) / 6;
 	return cplx_make(cosf(th), sinf(th));
 }
 

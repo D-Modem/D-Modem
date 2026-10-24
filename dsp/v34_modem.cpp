@@ -120,7 +120,7 @@ int V34Mp::parse(const unsigned char *b, int len)
 	rate_mask = field(b, 35, 14);
 	asym = b[50];
 	for (i = 0; i < 6; i++)
-		h[i] = type ? (short)field(b, 52 + 17 * i, 16) : 0;
+		h[i] = type ? static_cast<short>(field(b, 52 + 17 * i, 16)) : 0;
 	return 0;
 }
 
@@ -277,7 +277,9 @@ void V34Tx::init(int baud_, int high, int caller)
 void V34Tx::segment(enum v34_txseg seg_)
 {
 	DSP_DBG("v34 tx: segment %d -> %d after %ld symbols\n", seg, seg_, n);
-	s_odd = seg_ == V34_TX_SBAR && seg == V34_TX_S ? (int)(n & 1) : 0;
+	s_odd = seg_ == V34_TX_SBAR && seg == V34_TX_S ?
+			static_cast<int>(n & 1) :
+			0;
 	seg = seg_;
 	n = 0;
 	if (seg_ == V34_TX_MP)
@@ -388,7 +390,7 @@ static void ja_dump_bits(const char *what, const unsigned char *b, int n)
 void V34Rx::frame_start()
 {
 	if (ev_ja)
-		fr->init(SyncFrames::CP90, (int)sizeof(cpraw));
+		fr->init(SyncFrames::CP90, static_cast<int>(sizeof(cpraw)));
 	else
 		fr->init(SyncFrames::DIL90, V90_JA_MAX);
 	fr->start();
@@ -698,7 +700,8 @@ int V34Rx::ls_solve()
 		w[i].im = im / a[i * n_ + i].re;
 	}
 	for (i = 0; i < n_; i++)
-		qam.eq[i] = cplx_make((float)w[i].re, (float)w[i].im);
+		qam.eq[i] = cplx_make(static_cast<float>(w[i].re),
+				      static_cast<float>(w[i].im));
 	return 0;
 }
 
@@ -765,7 +768,7 @@ void V34Rx::ls_train(cplx d)
 float V34Rx::eq_delay() const
 {
 	cplx hp = { 0, 0 }, hm = { 0, 0 }, c;
-	float w = 2 * (float)M_PI * 0.25f / 2;  /* per T/2 tap */
+	float w = 2 * static_cast<float>(M_PI) * 0.25f / 2;  /* per T/2 tap */
 	int i;
 	for (i = 0; i < qam.eq_len; i++) {
 		c = cplx_make(cosf(w * i), sinf(w * i));
@@ -774,7 +777,7 @@ float V34Rx::eq_delay() const
 	}
 	/* phase(H(f)) - phase(H(-f)) = -2 pi 2f delay */
 	return -atan2f(cplx_mulc(hp, hm).im, cplx_mulc(hp, hm).re) /
-		(2 * (float)M_PI * 0.5f) * qam.sps;
+		(2 * static_cast<float>(M_PI) * 0.5f) * qam.sps;
 }
 
 /* trained: from now on the timing follows the equalizer, the
@@ -1087,7 +1090,7 @@ void V34Rx::precode_eq(const V34Params *p)
 cplx V34Rx::precode_start(cplx z)
 {
 	const V34Params *p = &drx.p;
-	int k, n_ = (int)n - 1;
+	int k, n_ = static_cast<int>(n) - 1;
 
 	for (k = n_ + 1; k <= 3; k++) {
 		cplx h = cplx_make(p->h[2 * k - 2] / 16384.0f,
@@ -1170,8 +1173,8 @@ float V34Rx::precoder(int h[6]) const
 		double hr = -a[k].re, hi = -a[k].im;
 		hr = hr > 1.99 ? 1.99 : hr < -1.99 ? -1.99 : hr;
 		hi = hi > 1.99 ? 1.99 : hi < -1.99 ? -1.99 : hi;
-		h[2 * k] = (int)lrint(hr * 16384);
-		h[2 * k + 1] = (int)lrint(hi * 16384);
+		h[2 * k] = static_cast<int>(lrint(hr * 16384));
+		h[2 * k + 1] = static_cast<int>(lrint(hi * 16384));
 		a[k].re = -h[2 * k] / 16384.0;
 		a[k].im = -h[2 * k + 1] / 16384.0;
 	}
@@ -1193,7 +1196,7 @@ float V34Rx::precoder(int h[6]) const
 		}
 	if (eps <= 0)
 		return 0;
-	return (float)(10 * log10(R[0].re / eps));
+	return static_cast<float>(10 * log10(R[0].re / eps));
 }
 
 /* the data mode parameters, before the end of E (precode_eq() applies

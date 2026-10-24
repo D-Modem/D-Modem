@@ -26,7 +26,7 @@ int ReedSolomon::init(int n, int k)
 	/* the field: a the root of x^8 + x^4 + x^3 + x^2 + 1 (0x11d) */
 	int x = 1;
 	for (int i = 0; i < 255; i++) {
-		exp_[i] = exp_[i + 255] = (uint8_t)x;
+		exp_[i] = exp_[i + 255] = static_cast<uint8_t>(x);
 		log_[x] = i;
 		x <<= 1;
 		if (x & 0x100)
@@ -44,7 +44,7 @@ int ReedSolomon::init(int n, int k)
 			g[j] ^= mul(g[j - 1], exp_[i]);
 		deg++;
 	}
-	memcpy(gen_, g, (size_t)nc_ + 1);
+	memcpy(gen_, g, static_cast<size_t>(nc_) + 1);
 	return 0;
 }
 
@@ -59,8 +59,8 @@ void ReedSolomon::encode(const uint8_t *msg, uint8_t *cw) const
 		p[nc_ - 1] = mul(fb, gen_[nc_]);
 	}
 	if (cw != msg)
-		memmove(cw, msg, (size_t)k_);
-	memcpy(cw + k_, p, (size_t)nc_);
+		memmove(cw, msg, static_cast<size_t>(k_));
+	memcpy(cw + k_, p, static_cast<size_t>(nc_));
 }
 
 /* see rs.h */
@@ -99,7 +99,7 @@ int ReedSolomon::decode(uint8_t *cw, const uint8_t *erased) const
 		for (int i = 0; i <= r && i <= nc; i++)
 			d ^= mul(lam[i], S[r - i]);
 		if (!d) {
-			memmove(b + 1, b, (size_t)nc);
+			memmove(b + 1, b, static_cast<size_t>(nc));
 			b[0] = 0;
 			continue;
 		}
@@ -112,7 +112,7 @@ int ReedSolomon::decode(uint8_t *cw, const uint8_t *erased) const
 			for (int i = 0; i <= nc; i++)
 				b[i] = mul(lam[i], inv);
 		} else {
-			memmove(b + 1, b, (size_t)nc);
+			memmove(b + 1, b, static_cast<size_t>(nc));
 			b[0] = 0;
 		}
 		memcpy(lam, t, sizeof(t));
@@ -130,7 +130,8 @@ int ReedSolomon::decode(uint8_t *cw, const uint8_t *erased) const
 		uint8_t v = 0;
 		int xi = (255 - p) % 255;       /* log of a^-p */
 		for (int i = deg; i >= 0; i--)
-			v = (uint8_t)(lam[i] ^ (v ? exp_[log_[v] + xi] : 0));
+			v = static_cast<uint8_t>(lam[i] ^
+						 (v ? exp_[log_[v] + xi] : 0));
 		if (!v) {
 			if (nr == MAX_CHECK)
 				return -1;
@@ -149,20 +150,21 @@ int ReedSolomon::decode(uint8_t *cw, const uint8_t *erased) const
 		om[i] = v;
 	}
 	uint8_t save[MAX_N];
-	memcpy(save, cw, (size_t)n);
+	memcpy(save, cw, static_cast<size_t>(n));
 	int fixed = 0;
 	for (int k = 0; k < nr; k++) {
 		int p = pos[k];
 		int xi = (255 - p) % 255;
 		uint8_t o = 0, dl = 0;
 		for (int i = nc - 1; i >= 0; i--)
-			o = (uint8_t)(om[i] ^ (o ? exp_[log_[o] + xi] : 0));
+			o = static_cast<uint8_t>(om[i] ^
+						 (o ? exp_[log_[o] + xi] : 0));
 		/* Lambda'(x) = the odd terms, lambda_i x^(i - 1) */
 		for (int i = 1; i <= deg; i += 2)
 			if (lam[i])
 				dl ^= exp_[(log_[lam[i]] + xi * (i - 1)) % 255];
 		if (!dl) {
-			memcpy(cw, save, (size_t)n);
+			memcpy(cw, save, static_cast<size_t>(n));
 			return -1;
 		}
 		uint8_t e = o ? exp_[(log_[o] + p + 255 - log_[dl]) % 255] : 0;
@@ -177,7 +179,7 @@ int ReedSolomon::decode(uint8_t *cw, const uint8_t *erased) const
 		for (int i = 0; i < n; i++)
 			s = mul(s, exp_[j]) ^ cw[i];
 		if (s) {
-			memcpy(cw, save, (size_t)n);
+			memcpy(cw, save, static_cast<size_t>(n));
 			return -1;
 		}
 	}

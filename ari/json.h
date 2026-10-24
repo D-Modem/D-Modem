@@ -36,7 +36,8 @@ struct Json {
 	/* element i of an array, a negative i none (null) */
 	const Json &operator[](int i) const
 	{
-		return i < 0 ? (*this)[(size_t)-1] : (*this)[(size_t)i];
+		return i < 0 ? (*this)[static_cast<size_t>(-1)] :
+			       (*this)[static_cast<size_t>(i)];
 	}
 	/* the string, else "" */
 	const std::string &str() const;

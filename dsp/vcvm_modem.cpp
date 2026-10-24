@@ -50,7 +50,7 @@ void VcvmModem::note(const char *fmt, ...)
 	vsnprintf(b, sizeof(b), fmt, ap);
 	va_end(ap);
 	char t[32];
-	snprintf(t, sizeof(t), "%7.3f ", (double)t_ / c_.su.fs);
+	snprintf(t, sizeof(t), "%7.3f ", static_cast<double>(t_) / c_.su.fs);
 	log_ += t;
 	log_ += b;
 	log_ += '\n';
@@ -70,16 +70,18 @@ void VcvmModem::fail(const char *why)
 /* ms of silence to the transmitter's queue */
 void VcvmModem::silence(int ms)
 {
-	txq_.insert(txq_.end(), (size_t)ms * c_.su.fs / 1000, 0.0f);
+	txq_.insert(txq_.end(), static_cast<size_t>(ms) * c_.su.fs / 1000,
+		    0.0f);
 }
 
 /* the line's samples kept since sample from, pushed again to receiver r */
 template <class R> void VcvmModem::replay(R &r, long from)
 {
 	from = std::max(from, hbase_);
-	long e = hbase_ + (long)hist_.size();
+	long e = hbase_ + static_cast<long>(hist_.size());
 	if (from < e)
-		r.push(&hist_[(size_t)(from - hbase_)], (int)(e - from));
+		r.push(&hist_[static_cast<size_t>(from - hbase_)],
+		       static_cast<int>(e - from));
 }
 
 /* see vcvm_modem.h */
@@ -207,7 +209,7 @@ VcvmLoading VcvmModem::rechoose(bool *retrain)
 		int npb = std::min(pb, rule);
 		if (npb != pb || s > (pb == 3 ? 7 : 15))
 			l.load.ring[k] = 0;
-		l.load.phase[k] = (uint8_t)npb;
+		l.load.phase[k] = static_cast<uint8_t>(npb);
 		if (!npb)
 			l.load.ring[k] = 0;
 	}
@@ -279,7 +281,8 @@ void VcvmModem::finish_reneg()
 void VcvmModem::on_msg(const VcvmMsg &m)
 {
 	VcvmMp mp;
-	if (!m.ok || mp.decode(m.octets.data(), (int)m.octets.size()))
+	if (!m.ok ||
+	    mp.decode(m.octets.data(), static_cast<int>(m.octets.size())))
 		return;
 	last_rx_end_ = m.end;
 	if (state_ == DATA) {
@@ -444,8 +447,8 @@ void VcvmModem::process(const float *in, float *out, int n)
 	while (n > 0) {
 		int k = std::min(n, B);
 		hist_.insert(hist_.end(), in, in + k);
-		if ((long)hist_.size() > 4L * fs) {
-			long cut = (long)hist_.size() - 3L * fs;
+		if (static_cast<long>(hist_.size()) > 4L * fs) {
+			long cut = static_cast<long>(hist_.size()) - 3L * fs;
 			hist_.erase(hist_.begin(), hist_.begin() + cut);
 			hbase_ += cut;
 		}

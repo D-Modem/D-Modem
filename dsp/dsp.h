@@ -212,7 +212,10 @@ struct Resampler {
 static inline float tone_power(float a) { return a * a / 2; }
 
 /* timing helpers: ms milliseconds as a number of samples at srate */
-static inline long ms2samples(int ms, int srate) { return (long)ms * srate / 1000; }
+static inline long ms2samples(int ms, int srate)
+{
+	return static_cast<long>(ms) * srate / 1000;
+}
 
 /*
  *    FSK modulator / demodulator (dp_fsk.cpp), also used for caller ID
@@ -375,7 +378,7 @@ struct CoreBits {
 	/* n bits received to the core */
 	void put(const unsigned char *bits, int n) const
 	{
-		modem_put_bits(modem, 1, (u8 *)bits, n);
+		modem_put_bits(modem, 1, const_cast<u8 *>(bits), n);
 	}
 };
 
@@ -533,7 +536,7 @@ static inline s16 dsp_clip16(float x)
 		return 32767;
 	if (x < -32768.0f)
 		return -32768;
-	return (s16)x;
+	return static_cast<s16>(x);
 }
 
 } // namespace dsp

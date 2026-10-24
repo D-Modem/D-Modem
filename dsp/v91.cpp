@@ -64,7 +64,8 @@ static void default_dil(V90Dil *d)
 	}
 	/* 124 0 123 1 122 2 ... 62 */
 	for (i = 0; i < 125; i++)
-		d->ucode[i] = (unsigned char)(i & 1 ? i / 2 : 124 - i / 2);
+		d->ucode[i] =
+			static_cast<unsigned char>(i & 1 ? i / 2 : 124 - i / 2);
 }
 
 /*
@@ -92,7 +93,8 @@ int V91Enc::init(const V90Cp *cp, int D, const int *lin_)
 		M[i] = 0;
 		for (u = 127; u >= 0; u--)
 			if (m[u])
-				ucode[i][M[i]++] = (unsigned char)u;
+				ucode[i][M[i]++] =
+					static_cast<unsigned char>(u);
 	}
 	return 0;
 }
@@ -107,12 +109,13 @@ void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 	int S = cc ? 0 : 6, i;
 
 	for (i = 0; i < S + K; i++)
-		d[i] = (unsigned char)scramble(&scr, SCR_GPC, bits[i]);
+		d[i] = static_cast<unsigned char>(
+			scramble(&scr, SCR_GPC, bits[i]));
 	for (i = K - 1; i >= 0; i--)
 		r = (r << 1) | d[S + i];
 	for (i = 0; i < 6; i++) {
-		int k = (int)(r % (unsigned)M[i]), mag;
-		r /= (unsigned)M[i];
+		int k = static_cast<int>(r % static_cast<unsigned>(M[i])), mag;
+		r /= static_cast<unsigned>(M[i]);
 		mag = lin[ucode[i][k]];
 		/* 5.4.5.1/V.90 with Sr = 0 */
 		last ^= cc ? cc[i] : d[i];
@@ -130,7 +133,7 @@ int V91Dec::init(const V90Cp *cp, int D)
 	for (i = 0; i < 6; i++) {
 		const unsigned char *m = cp->mask[cp->con[i]];
 		for (u = 127; u >= 0; u--)
-			label[i][u] = m[u] ? (short)M[i]++ : -1;
+			label[i][u] = m[u] ? static_cast<short>(M[i]++) : -1;
 		if (!M[i])
 			return -1;
 	}
@@ -152,7 +155,7 @@ int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 			bad = 1;
 			l = 0;
 		}
-		r = r * (unsigned)M[i] + (unsigned)l;
+		r = r * static_cast<unsigned>(M[i]) + static_cast<unsigned>(l);
 	}
 	if (r >> K)
 		bad = 1;
@@ -160,14 +163,15 @@ int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 		int b = s[i] ^ last;
 		last = s[i];
 		if (cc)
-			cc[i] = (unsigned char)b;
+			cc[i] = static_cast<unsigned char>(b);
 		else
-			d[i] = (unsigned char)b;
+			d[i] = static_cast<unsigned char>(b);
 	}
 	for (i = 0; i < K; i++)
 		d[S + i] = (r >> i) & 1;
 	for (i = 0; i < S + K; i++)
-		bits[i] = (unsigned char)descramble(&scr, SCR_GPC, d[i]);
+		bits[i] = static_cast<unsigned char>(
+			descramble(&scr, SCR_GPC, d[i]));
 	if (bad)
 		errors++;
 	return bad ? -1 : S + K;
@@ -224,7 +228,7 @@ void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
 	   retrain asked for, no secondary channel; the CRC over bits 0 to
 	   77 */
 	for (i = 0; i < 16; i++)
-		ccseq[n_++] = (unsigned char)(slip[i] - '0');
+		ccseq[n_++] = static_cast<unsigned char>(slip[i] - '0');
 	dsp::put_bits(ccseq, &n_, 0, 8);
 	dsp::put_bits(ccseq, &n_, 0, 27);
 	dsp::put_bits(ccseq, &n_, 0, 27);
@@ -502,7 +506,7 @@ int V91::info_bit(int bit)
 	int i;
 
 	memmove(ib, ib + 1, V91_INFO_BITS - 1);
-	ib[V91_INFO_BITS - 1] = (unsigned char)bit;
+	ib[V91_INFO_BITS - 1] = static_cast<unsigned char>(bit);
 	since_info++;
 	zeros = bit ? 0 : zeros + 1;
 	for (i = 0; i < 4; i++)
@@ -523,13 +527,13 @@ int V91::info_bit(int bit)
 void V91::dil_record(int x)
 {
 	int u = rdil.ucode[rd_seg], c = u >> 4, len = (rdil.h[c] + 1) * 6;
-	int k = rd_k, i = (int)(rk % 6), code, sg;
+	int k = rd_k, i = static_cast<int>(rk % 6), code, sg;
 
 	code = rdil.tp[k % rdil.ltp] ? u : rdil.ref[c];
 	sg = rdil.sp[k % rdil.lsp];
 	if (!seen[i][code][sg]) {
 		seen[i][code][sg] = 1;
-		obs[i][code][sg] = (short)x;
+		obs[i][code][sg] = static_cast<short>(x);
 	} else if (obs[i][code][sg] != x)
 		seen[i][code][sg] = 2;  /* not the same each time */
 	if (++rd_k >= len) {
@@ -576,12 +580,12 @@ int V91::choose()
 					k--;
 				}
 				map.val[i][k] = obs[i][u][s];
-				map.ucode[i][k] = (unsigned char)u;
-				map.sign[i][k] = (unsigned char)s;
+				map.ucode[i][k] = static_cast<unsigned char>(u);
+				map.sign[i][k] = static_cast<unsigned char>(s);
 			}
 		if (!map.n[i])
 			return -1;
-		bits += log2((double)(map.n[i] / 2));
+		bits += log2(static_cast<double>(map.n[i] / 2));
 		/* one constellation per distinct set */
 		for (j = 0; j < cp_tx.ncon; j++)
 			if (!memcmp(cp_tx.mask[j], map.ok[i], 128))
@@ -591,8 +595,8 @@ int V91::choose()
 		cp_tx.con[i] = j;
 		prod *= map.n[i] / 2;
 	}
-	K = (int)bits;
-	while (K > 0 && prod < (double)(1ULL << K))
+	K = static_cast<int>(bits);
+	while (K > 0 && prod < static_cast<double>(1ULL << K))
 		K--;
 	DSP_DBG("v91: DIL: %d %d %d %d %d %d codes, %d constellations, K %d\n",
 		map.n[0] / 2, map.n[1] / 2, map.n[2] / 2, map.n[3] / 2,
@@ -614,7 +618,7 @@ int V91::cp_bit(int bit)
 {
 	V90Cp c;
 
-	sync = (sync << 1) | (unsigned)bit;
+	sync = (sync << 1) | static_cast<unsigned>(bit);
 	/* the fill after a frame, to a multiple of 6 bits */
 	if (cp_pad)
 		return --cp_pad == 0;
@@ -655,7 +659,7 @@ int V91::cp_bit(int bit)
 /* a symbol of B1 or data */
 void V91::data_symbol(int x)
 {
-	int i = (int)(rk % 6);
+	int i = static_cast<int>(rk % 6);
 
 	if (map.decode(i, x, &ru[rpos], &rsg[rpos]))
 		err_count++;
@@ -728,7 +732,7 @@ int V91::rx_sample(int x)
 		break;
 	case V91R_J:
 		b = descramble(&rscr, SCR_GPC, bit);
-		sync = (sync << 1) | (unsigned)b;
+		sync = (sync << 1) | static_cast<unsigned>(b);
 		if (!fr.busy()) {
 			if ((sync & 0x3FFFF) == 0x3FFFE) {
 				fr.init(SyncFrames::DIL90);
@@ -789,7 +793,7 @@ int V91::rx_sample(int x)
 	case V91R_ES:
 		/* after a CP frame: Es, or the next CP */
 		b = descramble(&rscr, SCR_GPC, bit);
-		sync = (sync << 1) | (unsigned)b;
+		sync = (sync << 1) | static_cast<unsigned>(b);
 		if (b)
 			rx = V91R_CP;
 		else if (++esn == 12) {

@@ -37,20 +37,22 @@ std::string base64(const std::string &s)
 	size_t i;
 
 	for (i = 0; i + 2 < s.size(); i += 3) {
-		uint32_t v = (uint8_t)s[i] << 16 | (uint8_t)s[i + 1] << 8 |
-			(uint8_t)s[i + 2];
+		uint32_t v = static_cast<uint8_t>(s[i]) << 16 |
+			     static_cast<uint8_t>(s[i + 1]) << 8 |
+			     static_cast<uint8_t>(s[i + 2]);
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
 		out += abc[v >> 6 & 63];
 		out += abc[v & 63];
 	}
 	if (i + 1 == s.size()) {
-		uint32_t v = (uint8_t)s[i] << 16;
+		uint32_t v = static_cast<uint8_t>(s[i]) << 16;
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
 		out += "==";
 	} else if (i + 2 == s.size()) {
-		uint32_t v = (uint8_t)s[i] << 16 | (uint8_t)s[i + 1] << 8;
+		uint32_t v = static_cast<uint8_t>(s[i]) << 16 |
+			     static_cast<uint8_t>(s[i + 1]) << 8;
 		out += abc[v >> 18];
 		out += abc[v >> 12 & 63];
 		out += abc[v >> 6 & 63];
@@ -187,7 +189,7 @@ std::string url_encode(const std::string &s)
 	std::string out;
 	for (unsigned char c : s) {
 		if (isalnum(c) || strchr("-_.~", c)) {
-			out += (char)c;
+			out += static_cast<char>(c);
 		} else {
 			out += '%';
 			out += hex[c >> 4];
@@ -251,7 +253,7 @@ bool WebSocket::open(const Server &srv, const std::string &path)
 	if (fd_ < 0)
 		return false;
 	for (int i = 0; i < 16; i++)
-		key += (char)(rd() & 0xff);
+		key += static_cast<char>(rd() & 0xff);
 	if (!send_all(fd_, head(srv, "GET", path) +
 		      "Upgrade: websocket\r\nConnection: Upgrade\r\n"
 		      "Sec-WebSocket-Key: " + base64(key) + "\r\n"
@@ -271,7 +273,7 @@ bool WebSocket::open(const Server &srv, const std::string &path)
 	if (sscanf(reply.c_str(), "HTTP/1.%*d %d", &status) != 1 ||
 	    status != 101) {
 		fprintf(stderr, "dmodem-ari: %s: %.*s\n", path.c_str(),
-			(int)reply.find("\r\n"), reply.c_str());
+			static_cast<int>(reply.find("\r\n")), reply.c_str());
 		close();
 		return false;
 	}
@@ -297,27 +299,27 @@ bool WebSocket::send_frame(int opcode, const std::string &payload)
 	std::string f;
 	uint8_t mask[4];
 
-	f += (char)(0x80 | opcode);
+	f += static_cast<char>(0x80 | opcode);
 	if (payload.size() < 126) {
-		f += (char)(0x80 | payload.size());
+		f += static_cast<char>(0x80 | payload.size());
 	} else {
-		f += (char)(0x80 | 126);
-		f += (char)(payload.size() >> 8);
-		f += (char)(payload.size() & 0xff);
+		f += static_cast<char>(0x80 | 126);
+		f += static_cast<char>(payload.size() >> 8);
+		f += static_cast<char>(payload.size() & 0xff);
 	}
 	for (auto &m : mask) {
 		m = rd() & 0xff;
-		f += (char)m;
+		f += static_cast<char>(m);
 	}
 	for (size_t i = 0; i < payload.size(); i++)
-		f += (char)(payload[i] ^ mask[i & 3]);
+		f += static_cast<char>(payload[i] ^ mask[i & 3]);
 	return send_all(fd_, f);
 }
 
 /* see client.h */
 int WebSocket::frame(int &opcode, bool &fin, std::string &payload)
 {
-	const uint8_t *b = (const uint8_t *)in_.data();
+	const uint8_t *b = reinterpret_cast<const uint8_t *>(in_.data());
 	size_t have = in_.size(), hdr = 2;
 	uint64_t len;
 	bool masked;
@@ -331,7 +333,7 @@ int WebSocket::frame(int &opcode, bool &fin, std::string &payload)
 	if (len == 126) {
 		if (have < 4)
 			return 0;
-		len = (uint64_t)b[2] << 8 | b[3];
+		len = static_cast<uint64_t>(b[2]) << 8 | b[3];
 		hdr = 4;
 	} else if (len == 127) {
 		if (have < 10)

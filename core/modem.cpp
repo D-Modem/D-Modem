@@ -130,7 +130,7 @@ static unsigned connect_code(unsigned rate)
 static const DpDriver *find_driver(unsigned id)
 {
 	for (const DpDriver *d = dp_drivers(); d->id; d++)
-		if ((unsigned)d->id == id)
+		if (static_cast<unsigned>(d->id) == id)
 			return d;
 	return nullptr;
 }
@@ -139,7 +139,7 @@ static const DpDriver *find_driver(unsigned id)
    statistics, else the pump's own id, else 0 */
 static int modulation(const struct dp_stats &st, const struct dp *dp)
 {
-	return st.dp ? st.dp : dp ? (int)dp->id : 0;
+	return st.dp ? st.dp : dp ? static_cast<int>(dp->id) : 0;
 }
 
 /* src into dst (size octets), cut after its first ';' (which stays) */
@@ -191,7 +191,7 @@ struct LinkOwner final : public dlink::Owner {
 		}
 	}
 	/* the pump's transmit rate, for the link's bit timers */
-	int tx_rate() override { return (int)m_.tx_rate(); }
+	int tx_rate() override { return static_cast<int>(m_.tx_rate()); }
 	/* what XID or MNP's LRs agreed */
 	void negotiated(const dlink::Config &c) override {
 		m_.negotiated(c.comp, c.v44, c.dict_size, c.max_string,
@@ -406,9 +406,9 @@ LinkState Modem::link_state() const
    already; 0 */
 int Modem::set_state(State s)
 {
-	if (state_ == (unsigned)s)
+	if (state_ == static_cast<unsigned>(s))
 		return 0;
-	logf("state %u -> %u\n", state_, (unsigned)s);
+	logf("state %u -> %u\n", state_, static_cast<unsigned>(s));
 	state_ = s;
 	switch (s) {
 	case IDLE:
@@ -617,7 +617,7 @@ int Modem::stop_call()
 		logf("call over: %s, %u/%u bit/s, %lu ms, %s\n",
 		     stats_.fax ? "fax" : dp ? dp : "no connection",
 		     stats_.tx1, stats_.rx1, stats_.end - stats_.start,
-		     cause_text[(int)stats_.cause]);
+		     cause_text[static_cast<int>(stats_.cause)]);
 	}
 	/* data that did not go out is no command */
 	if (!command_)
@@ -983,7 +983,7 @@ int Modem::put_chars(const char *buf, int n)
 /* a string to the DTE */
 void Modem::puts(const char *s)
 {
-	put_chars(s, (int)strlen(s));
+	put_chars(s, static_cast<int>(strlen(s)));
 }
 
 /* the end of a line to the DTE: S3, S4 */
@@ -1000,14 +1000,15 @@ void Modem::crlf()
 int Modem::check_escape(const char *buf, int n)
 {
 	unsigned long now = host_.now_ms();
-	long since = (long)(now - last_esc_check_);
+	long since = static_cast<long>(now - last_esc_check_);
 	bool escape = escape_count_ + n <= 3;
 
 	for (int i = 0; escape && i < n; i++)
-		escape = (unsigned char)buf[i] == sregs_[SREG_ESCAPE_CHAR];
+		escape = static_cast<unsigned char>(buf[i]) ==
+			 sregs_[SREG_ESCAPE_CHAR];
 	if (escape)
-		escape = escape_count_ ? since < (long)ESCAPE_MS :
-			since >= (long)ESCAPE_MS;
+		escape = escape_count_ ? since < static_cast<long>(ESCAPE_MS) :
+					 since >= static_cast<long>(ESCAPE_MS);
 	last_esc_check_ = now;
 	if (!escape) {
 		escape_count_ = 0;
@@ -1054,7 +1055,7 @@ void Modem::process(const int16_t *in, int16_t *out, int n)
 			cng_cut_ = cng_->cut;
 			if (answer_tone_at_ && count_ >= answer_tone_at_ &&
 			    count_ - answer_tone_at_ <=
-			    (unsigned long)srate_ * 3 / 2)
+			    static_cast<unsigned long>(srate_) * 3 / 2)
 				fax_found("CNG cut short by the answer tone");
 		}
 	}
@@ -1064,13 +1065,14 @@ void Modem::process(const int16_t *in, int16_t *out, int n)
 	if (stats_.connected && !stats_.ended && !stats_.fax &&
 	    (state_ == ONLINE || state_ == COMMAND_ONLINE)) {
 		for (int i = 0; i < n; i++) {
-			stats_.rx_pow += (double)scratch_[i] * scratch_[i];
-			stats_.tx_pow += (double)out[i] * out[i];
+			stats_.rx_pow +=
+				static_cast<double>(scratch_[i]) * scratch_[i];
+			stats_.tx_pow += static_cast<double>(out[i]) * out[i];
 		}
 		stats_.samples += n;
 	}
 	count_ += n;
-	if (later_ != Later::None && (long)(count_ - later_at_) >= 0)
+	if (later_ != Later::None && static_cast<long>(count_ - later_at_) >= 0)
 		later(later_, 0);
 	if (commands_due_) {
 		commands_due_ = false;
@@ -1167,7 +1169,8 @@ void Modem::dp_process(int16_t *in, int16_t *out, int n)
    have */
 const char *Modem::dp_name(int id) const
 {
-	const DpDriver *d = id > 0 ? find_driver((unsigned)id) : nullptr;
+	const DpDriver *d =
+		id > 0 ? find_driver(static_cast<unsigned>(id)) : nullptr;
 	return d ? d->name : nullptr;
 }
 
@@ -1198,17 +1201,20 @@ void Modem::change_dp()
 		if (host_.analog_line(*this) && id == DP_V91)
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
-			id == DP_V92 || id == DP_VCVM ? (unsigned)DP_V8 : id;
+				      id == DP_V92 || id == DP_VCVM ?
+			      static_cast<unsigned>(DP_V8) :
+			      id;
 	}
 	logf("pump %u (driver %u), %s\n", id, drv,
 	     caller_ ? "caller" : "answerer");
 	/* the answering pump's answer tone after its 0.2 s of silence */
 	if (!caller_ && !dp_)
-		answer_tone_at_ = count_ + (unsigned long)srate_ / 5;
+		answer_tone_at_ =
+			count_ + static_cast<unsigned long>(srate_) / 5;
 	d = find_driver(drv);
 	if (d && d->op)
-		dp = d->op->create(handle(), (enum DP_ID)id, caller_, srate_,
-				   frag_, d->op);
+		dp = d->op->create(handle(), static_cast<enum DP_ID>(id),
+				   caller_, srate_, frag_, d->op);
 	if (!dp) {
 		log_printf(1, "err: %s: cannot create pump %u\n", name_, id);
 		hup(true);
@@ -1328,8 +1334,11 @@ int Modem::online()
    one; -1 if a pump runs already or the call cannot start */
 int Modem::answer(bool adaptive)
 {
-	unsigned long delay = sregs_[SREG_ANS_DELAY] ?
-		(unsigned long)sregs_[SREG_ANS_DELAY] * srate_ : srate_ / 100;
+	unsigned long delay =
+		sregs_[SREG_ANS_DELAY] ?
+			static_cast<unsigned long>(sregs_[SREG_ANS_DELAY]) *
+				srate_ :
+			srate_ / 100;
 	/* a voice call's held line: off hook a while already */
 	bool held = voice_held_;
 
@@ -1406,7 +1415,7 @@ void Modem::fax_found(const char *why)
 	stats_.fax = true;
 	report(Result::Fax);
 	if (fax_start() == 0 && DCORE_HAS(FAX_answer_tone))
-		FAX_answer_tone(fax_, (unsigned)sent);
+		FAX_answer_tone(fax_, static_cast<unsigned>(sent));
 }
 
 /* MDMPRM_ADAPTIVE: 1 while answering adaptively (a V.8 fax call, or
@@ -1586,13 +1595,15 @@ void Modem::vcvm_refresh()
 {
 	const unsigned long *c = kept("+CVM");
 	if (c) {
-		vcvm_.modes = (int)c[0];
-		vcvm_.rate = (int)c[1];
-		vcvm_.report = (int)c[2];
+		vcvm_.modes = static_cast<int>(c[0]);
+		vcvm_.rate = static_cast<int>(c[1]);
+		vcvm_.report = static_cast<int>(c[2]);
 	}
 	if (vcvm_.on) {
-		sregs_[SREG_VCVM_TONES] = (unsigned char)std::min(vcvm_.tones_rx, 255);
-		sregs_[SREG_VCVM_RENEGS] = (unsigned char)std::min(vcvm_.renegs, 255);
+		sregs_[SREG_VCVM_TONES] = static_cast<unsigned char>(
+			std::min(vcvm_.tones_rx, 255));
+		sregs_[SREG_VCVM_RENEGS] =
+			static_cast<unsigned char>(std::min(vcvm_.renegs, 255));
 	}
 }
 
@@ -1604,7 +1615,7 @@ void Modem::report(Result r)
 	bool verbose = sregs_[SREG_VERBOSE] != 0;
 	std::string line;
 
-	logf("result: %s\n", result_text[(int)r]);
+	logf("result: %s\n", result_text[static_cast<int>(r)]);
 	if (sregs_[SREG_QUIET])
 		return;
 	if (r == Result::Connect) {
@@ -1662,10 +1673,10 @@ void Modem::report(Result r)
 			line = "CONNECT " + dec(rx_rate_) + (cvm ? "/CVM" : "");
 		}
 	} else if (verbose) {
-		line = result_text[(int)r];
+		line = result_text[static_cast<int>(r)];
 	} else {
 		line = dec(r == Result::Fax ? 88 : r == Result::Data ? 89 :
-			   (int)r);
+			   static_cast<int>(r));
 	}
 	puts(line);
 	crlf();
@@ -1752,7 +1763,8 @@ void Modem::call_stats()
 		    ":" + dec(s % 60, 2));
 	}
 	if (stats_.ended)
-		row("Call Termination Cause", cause_text[(int)stats_.cause]);
+		row("Call Termination Cause",
+		    cause_text[static_cast<int>(stats_.cause)]);
 }
 
 /*
@@ -1775,7 +1787,7 @@ void Modem::poll()
 
 	if (voice_dialing_ && !voice_dial_digits_)
 		voice_dial_check();
-	if (timer_on_ && (long)(host_.now_ms() - timer_at_) >= 0) {
+	if (timer_on_ && static_cast<long>(host_.now_ms() - timer_at_) >= 0) {
 		timer_on_ = false;
 		event_ |= new_event_;
 		new_event_ = 0;
@@ -1795,7 +1807,7 @@ long Modem::next_timer_ms()
 	if (event_)
 		return 0;
 	if (timer_on_) {
-		left = (long)(timer_at_ - host_.now_ms());
+		left = static_cast<long>(timer_at_ - host_.now_ms());
 		if (left < 0)
 			left = 0;
 	}
@@ -1812,10 +1824,10 @@ long Modem::next_timer_ms()
 void Modem::events(unsigned ev)
 {
 	if (ev & EV_RING_CHECK) {
-		long len = (long)(ring_last_ - ring_first_);
+		long len = static_cast<long>(ring_last_ - ring_first_);
 		if (!ring_count_) {
 			sregs_[SREG_RING_COUNTER] = 0;
-		} else if (len < (long)RING_MIN_MS ||
+		} else if (len < static_cast<long>(RING_MIN_MS) ||
 			   ring_count_ < RING_PULSES) {
 			logf("bad ring: %u pulses in %ld ms\n", ring_count_,
 			     len);
@@ -1864,8 +1876,10 @@ void Modem::ring()
 	if (state_ != IDLE)
 		return;
 	if (!ring_count_) {
-		if ((long)(now - ring_last_) < (long)RING_GAP_MS &&
-		    (long)(now - ring_first_) < (long)RING_AGAIN_MS) {
+		if (static_cast<long>(now - ring_last_) <
+			    static_cast<long>(RING_GAP_MS) &&
+		    static_cast<long>(now - ring_first_) <
+			    static_cast<long>(RING_AGAIN_MS)) {
 			ring_last_ = now;
 			return;
 		}
@@ -1925,7 +1939,8 @@ int Modem::cid_start(unsigned long ms)
 	if (!cid_)
 		return -1;
 	count_ = 0;
-	later(Later::CallerIdStop, (unsigned long)srate_ * ms / 1000);
+	later(Later::CallerIdStop,
+	      static_cast<unsigned long>(srate_) * ms / 1000);
 	run_ = Run::CallerId;
 	set_hook(MODEM_HOOK_SNOOPING);
 	if (do_start()) {
@@ -2142,7 +2157,7 @@ int Modem::voice_tone_next()
 		return voice_command(VOICE_CMD_BEEP);
 	}
 	if (t.dtmf) {
-		voice_info_.dtmf_symbol = (unsigned char)t.dtmf;
+		voice_info_.dtmf_symbol = static_cast<unsigned char>(t.dtmf);
 		return voice_command(VOICE_CMD_DTMF);
 	}
 	voice_info_.tone1_freq = t.f1;
@@ -2171,13 +2186,13 @@ static voice_tones heard(void *voice)
 long Modem::voice_dial_left_ms()
 {
 	unsigned long s7 = sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] * 1000UL;
-	long left = (long)(voice_dial_since_ + s7 - host_.now_ms());
+	long left = static_cast<long>(voice_dial_since_ + s7 - host_.now_ms());
 	voice_tones t = heard(voice_);
 
 	if (!host_.signals_answer(*this)) {
 		long due = -1;
 		if (!t.rings && voice_info_.ring_never * 1000UL <= s7)
-			due = (long)(voice_dial_since_ +
+			due = static_cast<long>(voice_dial_since_ +
 				     voice_info_.ring_never * 1000UL -
 				     host_.now_ms());
 		else if (t.rings && !t.ringing)
@@ -2220,7 +2235,8 @@ void Modem::voice_dial_check()
 			return;
 		}
 		if (t.rings && !t.ringing &&
-		    t.quiet_ms >= (long)voice_info_.ring_after * 100) {
+		    t.quiet_ms >=
+			    static_cast<long>(voice_info_.ring_after) * 100) {
 			logf("voice dial: ringing tone gone (%u rings)\n",
 			     t.rings);
 			line_answered();

@@ -109,7 +109,7 @@ private:
 	   the line at the same samples every time */
 	long sync_ = 0;
 	/* of the line, so far */
-	long samples() const { return (long)line_.taken(); }
+	long samples() const { return static_cast<long>(line_.taken()); }
 	long next_sync_ = 0;
 	double line_at_ = 0;    /* when the line last had samples (s) */
 	long clock_off_ = 0;    /* now_ms() - the line's ms while idle */

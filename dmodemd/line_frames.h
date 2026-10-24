@@ -47,7 +47,8 @@ public:
 			return -1;
 		}
 		do
-			r = (int)::read(fd_, bytes() + n_, fill - n_);
+			r = static_cast<int>(
+				::read(fd_, bytes() + n_, fill - n_));
 		while (r < 0 && errno == EINTR);
 		if (r > 0)
 			n_ += r;
@@ -66,7 +67,7 @@ public:
 	/* (the same, at the clock given) */
 	int block(const short **p, int max, unsigned long long clock)
 	{
-		int k = frame_ - (int)(clock % frame_);
+		int k = frame_ - static_cast<int>(clock % frame_);
 		return take(p, k < max ? k : max);
 	}
 	/* the last n samples taken wait again (a host that did fewer of
@@ -86,7 +87,8 @@ public:
 		int n = waiting() < max ? waiting() : max;
 
 		end = (taken_ + n) / frame_ * frame_;
-		return end > taken_ ? take(p, (int)(end - taken_)) : 0;
+		return end > taken_ ? take(p, static_cast<int>(end - taken_)) :
+				      0;
 	}
 
 private:

@@ -171,7 +171,7 @@ int SipLine::start(dcore::Modem &m)
 		return -1;
 	}
 	if (dmd::fd_write(sv[0], silence, sizeof(silence)) !=
-	    (int)sizeof(silence)) {
+	    static_cast<int>(sizeof(silence))) {
 		ERR("dev write: %s\n", strerror(errno));
 		dmd::fd_close(sv[0]);
 		dmd::fd_close(sv[1]);
@@ -220,7 +220,7 @@ int SipLine::audio(dcore::Modem &m)
 	if (carry_n_)
 		bytes[0] = carry_;
 	ssize_t n = dmd::fd_read(audio_, bytes + carry_n_,
-				 (int)sizeof(in) - carry_n_), done;
+				 static_cast<int>(sizeof(in)) - carry_n_), done;
 	int count;
 
 	if (n < 0 && (errno == EINTR || errno == EAGAIN))
@@ -237,10 +237,10 @@ int SipLine::audio(dcore::Modem &m)
 	/* (the user agent writes whole frames; a read may end inside a
 	   sample all the same) */
 	n += carry_n_;
-	carry_n_ = (int)(n & 1);
+	carry_n_ = static_cast<int>(n & 1);
 	if (carry_n_)
 		carry_ = bytes[n - 1];
-	count = (int)n / 2;
+	count = static_cast<int>(n) / 2;
 	if (count == 0)
 		return 0;
 	if (t38_ >= 0) {
@@ -330,12 +330,14 @@ void SipLine::t38_send(dcore::Modem &, const void *ifp)
 				version_, pkt, sizeof(pkt));
 	if (n < 0)
 		return;
-	max = datagram_ < (int)sizeof(dgram) ? datagram_ : (int)sizeof(dgram);
+	max = datagram_ < static_cast<int>(sizeof(dgram)) ?
+		      datagram_ :
+		      static_cast<int>(sizeof(dgram));
 	len = tx_.packet(pkt, n, dgram, max);
 	if (len <= 0)
 		return;
-	if (sendto(t38_, (const char *)dgram, len, 0,
-		   (const struct sockaddr *)&peer_,
+	if (sendto(t38_, reinterpret_cast<const char *>(dgram), len, 0,
+		   reinterpret_cast<const struct sockaddr *>(&peer_),
 		   peer_len_) < 0)
 		DBG("T.38 send: %s\n", strerror(errno));
 }
@@ -362,10 +364,11 @@ void SipLine::t38_receive(dcore::Modem &m)
 
 	rx_modem_ = &m;
 	while (t38_ >= 0) {
-		ssize_t n = recv(t38_, (char *)buf, sizeof(buf), MSG_DONTWAIT);
+		ssize_t n = recv(t38_, reinterpret_cast<char *>(buf),
+				 sizeof(buf), MSG_DONTWAIT);
 		if (n < 0)
 			break;
-		rx_.packet(buf, (int)n, ifp_in, this);
+		rx_.packet(buf, static_cast<int>(n), ifp_in, this);
 	}
 }
 
@@ -383,8 +386,8 @@ void SipLine::t38_clock(dcore::Modem &m)
 	due = (dcore::monotonic_ms() - t38_start_) * (RATE / 1000);
 	if (due - t38_samples_ > T38_CATCH_UP)
 		t38_samples_ = due - T38_CATCH_UP;
-	while (due - t38_samples_ >= (unsigned long)FRAME && t38_ >= 0 &&
-	       m.started()) {
+	while (due - t38_samples_ >= static_cast<unsigned long>(FRAME) &&
+	       t38_ >= 0 && m.started()) {
 		m.process(silence, out, FRAME);
 		t38_samples_ += FRAME;
 	}
@@ -478,7 +481,8 @@ void Control::act(const char *s, dcore::Modem &m, SipLine &line)
 	} else if (c == "ANSWERED") {
 		m.line_answered();
 	} else if (dcore::starts_with(c, "FAILED ")) {
-		m.line_failed(failure((int)dcore::leading_long(c.substr(7))));
+		m.line_failed(failure(
+			static_cast<int>(dcore::leading_long(c.substr(7)))));
 	}
 }
 
@@ -537,7 +541,7 @@ int FdDte::serve(dcore::Modem &m)
 
 	if (room <= 0)
 		return 0;
-	if (room > (int)sizeof(buf))
+	if (room > static_cast<int>(sizeof(buf)))
 		room = sizeof(buf);
 	n = dmd::fd_read(fd_, buf, room);
 	if (n < 0) {
@@ -552,7 +556,7 @@ int FdDte::serve(dcore::Modem &m)
 			m.hangup_now();
 		return 1;
 	}
-	m.dte_input(buf, (int)n);
+	m.dte_input(buf, static_cast<int>(n));
 	return 0;
 }
 
@@ -560,7 +564,8 @@ int FdDte::serve(dcore::Modem &m)
 void FdDte::flush()
 {
 	while (!out_.empty()) {
-		ssize_t n = dmd::fd_write(fd_, out_.data(), (int)out_.size());
+		ssize_t n = dmd::fd_write(fd_, out_.data(),
+					  static_cast<int>(out_.size()));
 		if (n <= 0) {
 			if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
 			    errno != EINTR) {
@@ -591,13 +596,13 @@ int FdDte::write(const char *buf, int n)
 		if (done < 0)
 			done = 0;
 		buf += done;
-		n -= (int)done;
-		took = (int)done;
+		n -= static_cast<int>(done);
+		took = static_cast<int>(done);
 	} else {
 		took = 0;
 	}
-	if (n > (int)(BUFFER - out_.size()))
-		n = (int)(BUFFER - out_.size());
+	if (n > static_cast<int>(BUFFER - out_.size()))
+		n = static_cast<int>(BUFFER - out_.size());
 	if (n > 0)
 		out_.append(buf, n);
 	return took + (n > 0 ? n : 0);

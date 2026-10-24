@@ -416,7 +416,7 @@ struct TestEcho {
 			return;
 		sscanf(e, "%f:%f", &db, &ms);
 		g = powf(10, db / 20);
-		d = (int)(ms * srate / 1000);
+		d = static_cast<int>(ms * srate / 1000);
 		if (d < 1)
 			d = 1;
 		if (d >= MAX)
@@ -889,7 +889,7 @@ void BitQ::reset()
 void BitQ::put(unsigned val, int nbits)
 {
 	int i;
-	for (i = 0; i < nbits && n < (int)sizeof(b); i++)
+	for (i = 0; i < nbits && n < static_cast<int>(sizeof(b)); i++)
 		b[n++] = (val >> i) & 1;
 }
 
@@ -1162,7 +1162,7 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 		if (!(c & V8_PCM_V91))
 			pcm_ &= ~V8_PCM_V91;
 	}
-	for (i = 0, k = -1; i < (int)sizeof(v8_msg); i++) {
+	for (i = 0, k = -1; i < static_cast<int>(sizeof(v8_msg)); i++) {
 		int c = v8_msg[i];
 		/* the modulation octets: in a JM what the CM has too */
 		if ((c & 0x1F) == V8_CAT_MOD)
@@ -1296,7 +1296,7 @@ int V34V8<P>::v8_back(const char *why)
 		v8_dp_name(v8_low));
 	if (self.rt)
 		self.rt->v8_for = 0;
-	return self.hand_over((enum DP_ID)v8_low, 0);
+	return self.hand_over(static_cast<enum DP_ID>(v8_low), 0);
 }
 
 /* 75 ms after CJ (both sides, 8.1.2 and 8.2.3/V.8): to the pump of
@@ -1324,7 +1324,7 @@ int V34V8<P>::v8_handover()
 		if (self.rt->vcvm_peer)
 			pc.encode(self.rt->vcvm_info);
 	}
-	return self.hand_over((enum DP_ID)v8_dp, 0);
+	return self.hand_over(static_cast<enum DP_ID>(v8_dp), 0);
 }
 
 /* V.90 with us as the digital modem: both offer it */
@@ -1370,7 +1370,7 @@ template <class P>
 void V34V8<P>::v8_rx_bit(int bit)
 {
 	P &self = static_cast<P &>(*this);
-	v8_sr = (v8_sr >> 1) | ((unsigned)bit << 19);
+	v8_sr = (v8_sr >> 1) | (static_cast<unsigned>(bit) << 19);
 	/* V.92's QC1a before CM (Table 2/V.92): ten ones, 0101010101, then
 	   a frame of ten bits, twice */
 	if (self.qc_n >= 0 && ++self.qc_n == 10) {
@@ -1442,7 +1442,7 @@ void V34V8<P>::v8_rx_bit(int bit)
 				v8_cj = 1;
 		} else
 			v8_zeros = 0;
-		if (v8_n < (int)sizeof(v8_rx))
+		if (v8_n < static_cast<int>(sizeof(v8_rx)))
 			v8_rx[v8_n++] = c;
 	} else if (v8_bits == 9 && v8_zeros == 2 && !(v8_sr & 0xFF800))
 		/* CJ's third zero octet without its stop bit: the HSF
@@ -1481,7 +1481,7 @@ void V34V8<P>::ans_analyse(float x)
 	if (e > ans_peak)
 		ans_peak = e;
 	ans_gone = e < ans_peak / 3 ? ans_gone + 1 : 0;
-	w = 2 * (float)M_PI * 15 * env_n / V34_SRATE;
+	w = 2 * static_cast<float>(M_PI) * 15 * env_n / V34_SRATE;
 	env_sum += e;
 	env15_re += e * cosf(w);
 	env15_im += e * sinf(w);
@@ -1577,7 +1577,9 @@ void V34Probe<P>::probe_init()
 	int i, k;
 	for (i = 0; i < PROBE_PERIOD; i++) {
 		double x = 0;
-		for (k = 0; k < (int)sizeof(f) / (int)sizeof(f[0]); k++)
+		for (k = 0; k < static_cast<int>(sizeof(f)) /
+					static_cast<int>(sizeof(f[0]));
+		     k++)
 			x += (inv[k] ? -1 : 1) *
 				cos(2 * M_PI * f[k] * i / V34_SRATE);
 		probe[i] = x;
@@ -1726,11 +1728,11 @@ void V34Probe<P>::probe_collect(float x)
 {
 	int i = pcount % PROBE_PERIOD;
 	pacc[i] += x;
-	ptotal += (double)x * x;
+	ptotal += static_cast<double>(x) * x;
 	/* the noise from the differences of successive periods: a sample
 	   clock offset does not count as noise then */
 	if (pcount >= PROBE_PERIOD)
-		pdiff += (double)(x - pprev[i]) * (x - pprev[i]);
+		pdiff += static_cast<double>(x - pprev[i]) * (x - pprev[i]);
 	pprev[i] = x;
 	pcount++;
 }
@@ -1757,7 +1759,8 @@ static int v34_min_rate(int baud)
 template <class P>
 int V34Probe<P>::probe_analyse()
 {
-	double periods = (double)pcount / PROBE_PERIOD, pt, pn, ptone[26];
+	double periods = static_cast<double>(pcount) / PROBE_PERIOD, pt, pn,
+	       ptone[26];
 	int i, k, n, b, best = 1;
 
 	memset(rate_of_baud, 0, sizeof(rate_of_baud));
@@ -1830,7 +1833,7 @@ void V34Cc<P>::info_frame(CcRx *r)
 
 	/* no reversals within the frame */
 	if (ev_rev && self.total - rev_time <
-	    (long)len * CC_SPS)
+	    static_cast<long>(len) * CC_SPS)
 		ev_rev = 0;
 	r->zeros = 0;
 	r->rev_cand = 0;
@@ -1942,7 +1945,8 @@ void V34Info0<P>::info0_repeat_frame(const unsigned char *h, long n)
 	if (!info_crc_ok(f, len - 16))
 		return;
 	/* no reversals within the frame */
-	if (self.ev_rev && self.total - self.rev_time < (long)len * CC_SPS)
+	if (self.ev_rev &&
+	    self.total - self.rev_time < static_cast<long>(len) * CC_SPS)
 		self.ev_rev = 0;
 	info0_at = self.total;
 	info0_rep++;
@@ -2269,7 +2273,7 @@ void V34Moh<P>::moh_hold(int secs)
 	P &self = static_cast<P &>(*this);
 	DSP_DBG("v34: on hold%s, ANSam for %d s\n",
 		moh_resp == MH_ACK ? "" : " (reconnect)", secs);
-	moh_end = secs ? self.total + (long)secs * self.srate : -1;
+	moh_end = secs ? self.total + static_cast<long>(secs) * self.srate : -1;
 	/* phase 1 from scratch (9.10.2.1/V.92: what earlier phase 1
 	   signals said does not count) */
 	self.caller = 0;
@@ -2288,7 +2292,7 @@ void V34Moh<P>::moh_hold(int secs)
 	self.txm = TXM_ANSAM;
 	/* the start-up after it as after a retrain */
 	self.timeout = (moh_end > 0 ? moh_end :
-			self.total + (long)self.srate * 86400) +
+			self.total + static_cast<long>(self.srate) * 86400) +
 		ms2samples(60000, self.srate);
 	self.set_state(V8A_ANSAM);
 }
@@ -2335,7 +2339,7 @@ void V34Moh<P>::moh_req_test()
 		long secs = modem_get_param(self.modem, MDMPRM_MOH_REQ);
 		if (secs > 0) {
 			modem_set_param(self.modem, MDMPRM_MOH_REQ, 0);
-			moh_request((int)secs);
+			moh_request(static_cast<int>(secs));
 			return;
 		}
 	}
@@ -2406,8 +2410,8 @@ float V34Echo::ls_solve()
 
 	if (ls_tx.empty() || ls_rx.empty() || N < 4 * L || far_on)
 		goto out;
-	if (!alloc_zeroed(R_, (size_t)L * L) ||
-	    !alloc_zeroed(ch_, (size_t)L * L))
+	if (!alloc_zeroed(R_, static_cast<size_t>(L) * L) ||
+	    !alloc_zeroed(ch_, static_cast<size_t>(L) * L))
 		goto out;
 	R = R_.data();
 	ch = ch_.data();
@@ -2415,19 +2419,22 @@ float V34Echo::ls_solve()
 	for (j = 0; j < L; j++) {
 		double r = 0, q = 0;
 		for (n = 0; n < N; n++) {
-			r += (double)t[T + n] * t[T + n - j];
-			q += (double)y[n] * t[T + n - j];
+			r += static_cast<double>(t[T + n]) * t[T + n - j];
+			q += static_cast<double>(y[n]) * t[T + n - j];
 		}
 		R[j] = r;
 		p[j] = q;
 	}
 	for (n = 0; n < N; n++)
-		ryy += (double)y[n] * y[n];
+		ryy += static_cast<double>(y[n]) * y[n];
 	for (i = 0; i < L - 1; i++)
 		for (j = i; j < L - 1; j++)
-			R[(i + 1) * L + j + 1] = R[i * L + j] +
-				(double)t[T - 1 - i] * t[T - 1 - j] -
-				(double)t[T + N - 1 - i] * t[T + N - 1 - j];
+			R[(i + 1) * L + j + 1] =
+				R[i * L + j] +
+				static_cast<double>(t[T - 1 - i]) *
+					t[T - 1 - j] -
+				static_cast<double>(t[T + N - 1 - i]) *
+					t[T + N - 1 - j];
 	for (i = 0; i < L; i++)
 		tr += R[i * L + i];
 	/* a little on the diagonal: our signal leaves the band's edges
@@ -2458,11 +2465,12 @@ float V34Echo::ls_solve()
 	rest = ryy;
 	for (i = 0; i < L; i++)
 		rest -= w[i] * p[i];
-	gain = (float)(10 * log10((ryy + 1) / (rest > 0 ? rest + 1 : 1)));
+	gain = static_cast<float>(10 *
+				  log10((ryy + 1) / (rest > 0 ? rest + 1 : 1)));
 	/* in place of NLMS's when it does better */
 	if (gain > 10 * log10f((pw_rx + 1) / (pw_err + 1))) {
 		for (i = 0; i < L; i++)
-			wn[i] = (float)w[i];
+			wn[i] = static_cast<float>(w[i]);
 		pw_err = pw_rx * powf(10, -gain / 10);
 	}
 out:
@@ -3022,7 +3030,7 @@ void V34Pump::v90a_start()
 		/* the loudest first: what clips spills over only into
 		   the louder ones after it */
 		for (i = 0; i < 128; i++)
-			v90a_dil.ucode[i] = (unsigned char)(127 - i);
+			v90a_dil.ucode[i] = static_cast<unsigned char>(127 - i);
 		for (i = 0; i < 8; i++) {
 			v90a_dil.h[i] = 5;
 			v90a_dil.ref[i] = v90a_uinfo;
@@ -3206,7 +3214,7 @@ int V34Pump::v92a_cpd_ok(const V92Cpd &d)
 	for (i = 0; i < 12 && ok; i++) {
 		ok = d.M[i] >= 1 && d.lc[d.con[i % 6]] > 0 &&
 			d.M[i] <= 2 * d.lc[d.con[i % 6]];
-		lm += log2((double)d.M[i]);
+		lm += log2(static_cast<double>(d.M[i]));
 	}
 	return ok && lm >= 2 * (d.drn + 17) - 1e-9;
 }
@@ -3689,7 +3697,8 @@ int V34Retrain<P>::reneg_rate(int up)
 	if (up > 0 || (!up && mse * powf(10, step / 10) < V34_RN_UP))
 		return n < rn_max ? n + 1 : n;
 	if (up < 0 || mse > V34_RN_DOWN) {
-		k = (int)ceilf(10 * log10f(mse / V34_RN_TARGET) / step);
+		k = static_cast<int>(
+			ceilf(10 * log10f(mse / V34_RN_TARGET) / step));
 		n -= k < 1 ? 1 : k;
 	}
 	return n < self.rate_floor() ? self.rate_floor() : n;
@@ -5823,7 +5832,9 @@ float V34Pump::pump_tx_sample()
 		y = fsk.sample([this] {
 			if (v8tx.pos >= v8tx.n && v8tx_repeat)
 				v8tx.pos = 0;
-			return v8tx.pos < v8tx.n ? (int)v8tx.b[v8tx.pos++] : 1;
+			return v8tx.pos < v8tx.n ?
+				       static_cast<int>(v8tx.b[v8tx.pos++]) :
+				       1;
 		});
 		break;
 	case TXM_CC:
@@ -5892,7 +5903,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 	for (i = 0; i < cnt; i++) {
 		if (state == V91_RUN) {
 			int y91, ev = v91m.sample(src[i], &y91);
-			dst[i] = (s16)y91;
+			dst[i] = static_cast<s16>(y91);
 			if (ev == V91_CONNECT) {
 				rate_tx = (v91m.cp_rx.drn + 20) * 8000 / 6;
 				rate_rx = (v91m.our_drn + 20) * 8000 / 6;
@@ -5925,9 +5936,9 @@ int V34Pump::process(void *in, void *out, int cnt)
 			/* and what the canceller leaves of it */
 			v92u.pf_echo_res = v92u.pf_echo *
 				sqrtf((ec.pw_err + 1) / (ec.pw_rx + 1));
-			ev = v92u.sample((int)lrintf(x92), &y92);
-			last_tx = (float)y92;
-			dst[i] = (s16)y92;
+			ev = v92u.sample(static_cast<int>(lrintf(x92)), &y92);
+			last_tx = static_cast<float>(y92);
+			dst[i] = static_cast<s16>(y92);
 			out_n++;
 			if (ev == V92_CONNECT) {
 				rate_tx = (v92u.cpu.drn + 20) * 8000 / 6;
@@ -5994,7 +6005,7 @@ int V34Pump::process(void *in, void *out, int cnt)
 				return r;
 			if (r != DPSTAT_OK)
 				ret = r;
-			dst[i] = (s16)y;
+			dst[i] = static_cast<s16>(y);
 			continue;
 		}
 		/* an 8000 Hz line: the pump runs at 9600 Hz in between */
@@ -6084,7 +6095,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	   (0 with +PMH=1), or DSP_V92_MOH=<code> (1 10 s ... 12 16 min, 13
 	   no limit; 0 denies it); 1 min if neither says */
 	moh_t1 = env("DSP_V92_MOH") ? env_int("DSP_V92_MOH") & 15 :
-		(int)modem_get_param(m, MDMPRM_MOH_T1);
+		static_cast<int>(modem_get_param(m, MDMPRM_MOH_T1));
 	/* adaptive answer: the core's (+FAA, or its program's own fax
 	   receiver), for an answerer */
 	{
@@ -6112,7 +6123,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 	{
 		intptr_t v = modem_get_param(m, MDMPRM_VCVM);
 		const struct dp_vcvm *vi = v == -1 || v == 0 ? nullptr :
-			(const struct dp_vcvm *)v;
+			reinterpret_cast<const struct dp_vcvm *>(v);
 		vcvm_caps = vcvm_caps_for(vi ? vi->modes : VCVM_M_ALL, 8000);
 	}
 	/* the G.711 law of the network (D-Modem knows it from the codec of
@@ -6184,7 +6195,7 @@ int V34Pump::start(struct modem *m, enum DP_ID id, int caller_, int srate_, int 
 		if (*side == ',')
 			side++;
 		if (!*side || *side == (caller_ ? 'c' : 'a'))
-			info0_rates = (int)(v & 0xFF);
+			info0_rates = static_cast<int>(v & 0xFF);
 	}
 	/* test: DSP_V34_LOSE_INFO0=[a|c]: our first INFO0 with a bad CRC,
 	   lost to the remote (phase 2's recovery, 11.2.2/V.34), only the
@@ -6237,7 +6248,7 @@ static const enum DP_ID v34_ids[] = { DP_V8, DP_V34, DP_V90, DP_V91, DP_V92 };
 int dp_v34_init(void)
 {
 	int i;
-	for (i = 0; i < (int)std::size(v34_ids); i++)
+	for (i = 0; i < static_cast<int>(std::size(v34_ids)); i++)
 		modem_dp_register(v34_ids[i], &PumpOps<V34Pump>::ops);
 	return 0;
 }
@@ -6246,7 +6257,7 @@ int dp_v34_init(void)
 void dp_v34_exit(void)
 {
 	int i;
-	for (i = 0; i < (int)std::size(v34_ids); i++)
+	for (i = 0; i < static_cast<int>(std::size(v34_ids)); i++)
 		modem_dp_deregister(v34_ids[i], &PumpOps<V34Pump>::ops);
 }
 

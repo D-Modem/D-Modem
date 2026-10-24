@@ -192,7 +192,7 @@ bool fits(const Option &o, const char *rest, const char **value)
 		*value = *(rest + 1) ? rest + 1 : nullptr;
 		return true;
 	}
-	if (isdigit((unsigned char)*rest)) {
+	if (isdigit(static_cast<unsigned char>(*rest))) {
 		*value = rest;
 		return true;
 	}
@@ -239,8 +239,9 @@ void CommandLine::read()
 		Option &o = opts_[k];
 		if (o.takes != Takes::Nothing && !value && i + 1 < argc_) {
 			const char *next = argv_[i + 1];
-			if (*next != '-' && (o.takes != Takes::Number ||
-					     isdigit((unsigned char)*next))) {
+			if (*next != '-' &&
+			    (o.takes != Takes::Number ||
+			     isdigit(static_cast<unsigned char>(*next)))) {
 				value = next;
 				i++;
 			}
@@ -312,7 +313,8 @@ void CommandLine::usage() const
 void list_countries()
 {
 	for (const struct homolog_set *h = homolog_set; h->name; h++)
-		fprintf(stderr, "%02x: %s\n", (unsigned)h->id, h->name);
+		fprintf(stderr, "%02x: %s\n", static_cast<unsigned>(h->id),
+			h->name);
 	fprintf(stderr, "and with the USA's line settings and their own "
 		"busy tones:\n");
 	for (const tones::Country *c = tones::COUNTRIES; c->name; c++) {
@@ -347,19 +349,20 @@ void CommandLine::apply(Options &opt) const
 		long perm = 0;
 		if (!dcore::parse_long(o[OPT_PERM].value, perm, 8) || perm <= 0)
 			usage();
-		opt.perm = (mode_t)perm;
+		opt.perm = static_cast<mode_t>(perm);
 	}
 	if (o[OPT_NORT].given)
 		opt.realtime = false;
 	if (o[OPT_DEBUG].given) {
 		long level = 0;
 		dcore::parse_long(o[OPT_DEBUG].value, level, 0);
-		dcore::log_level = level > 0 ? (unsigned)level : 1;
+		dcore::log_level = level > 0 ? static_cast<unsigned>(level) : 1;
 	}
 	if (o[OPT_LOG].given) {
 		long level = 0;
 		dcore::parse_long(o[OPT_LOG].value, level, 0);
-		dcore::log_data_level = level > 0 ? (unsigned)level : 5;
+		dcore::log_data_level =
+			level > 0 ? static_cast<unsigned>(level) : 5;
 	}
 	if (o[OPT_LISTEN].given)
 		opt.listen = true;
@@ -402,7 +405,7 @@ void CommandLine::apply(Options &opt) const
 			fprintf(stderr, "%s: -r: 8000 or 9600\n", prog_);
 			exit(1);
 		}
-		opt.rate = (unsigned)rate;
+		opt.rate = static_cast<unsigned>(rate);
 	}
 #ifdef _WIN32
 	if (o[OPT_COM].given)

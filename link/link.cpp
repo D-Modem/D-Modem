@@ -251,7 +251,7 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 	case Mode::Mnp:
 		n = mnp_.bit_tx() ? hdlc_.get_bits(nbits, buf, n) :
 			mnp_async_.get_bits(nbits, buf, n);
-		mnp_.clock((long)nbits * n);
+		mnp_.clock(static_cast<long>(nbits) * n);
 		break;
 	case Mode::Async:
 		n = async_.get_bits(nbits, buf, n);
@@ -261,7 +261,7 @@ int Link::get_bits(int nbits, uint8_t *buf, int n)
 		break;
 	}
 	/* the bit timer counts what goes out */
-	if (timer_ && (timer_ -= (long)nbits * n) <= 0) {
+	if (timer_ && (timer_ -= static_cast<long>(nbits) * n) <= 0) {
 		timer_ = 0;
 		run_timer();
 	}

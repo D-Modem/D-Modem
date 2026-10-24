@@ -90,7 +90,7 @@ void setup_slave(const char *path, bool have_gid, gid_t gid, mode_t perm,
 		 const char *link, keeper_answer *a)
 {
 	a->group = a->mode = a->link = 0;
-	if (have_gid && chown(path, (uid_t)-1, gid) < 0)
+	if (have_gid && chown(path, static_cast<uid_t>(-1), gid) < 0)
 		a->group = errno;
 	if (perm && chmod(path, perm) < 0)
 		a->mode = errno;
@@ -122,11 +122,13 @@ void close_from(int first)
 	int last = KEEPER_FD_SCAN;
 
 #ifdef SYS_close_range
-	if (syscall(SYS_close_range, (unsigned)first, ~0U, 0U) == 0)
+	if (syscall(SYS_close_range, static_cast<unsigned>(first), ~0U, 0U) ==
+	    0)
 		return;
 #endif
-	if (getrlimit(RLIMIT_NOFILE, &rl) == 0 && rl.rlim_cur < (rlim_t)last)
-		last = (int)rl.rlim_cur;
+	if (getrlimit(RLIMIT_NOFILE, &rl) == 0 &&
+	    rl.rlim_cur < static_cast<rlim_t>(last))
+		last = static_cast<int>(rl.rlim_cur);
 	for (int fd = first; fd < last; fd++)
 		close(fd);
 }
@@ -409,7 +411,7 @@ int Pty::keeper_ask(struct keeper_answer *a)
 	do
 		n = recv(keeper_, a, sizeof(*a), 0);
 	while (n < 0 && errno == EINTR);
-	if (n != (ssize_t)sizeof(*a)) {
+	if (n != static_cast<ssize_t>(sizeof(*a))) {
 		if (n >= 0)
 			errno = ECONNRESET;
 		return -1;
@@ -563,7 +565,7 @@ Pty::Read Pty::read(dcore::Modem &m)
 		DBG("%s: read 0 octets\n", name_.c_str());
 	closed_ = false;
 	if (n > 0)
-		m.dte_input(buf, (int)n);
+		m.dte_input(buf, static_cast<int>(n));
 	return DATA;
 }
 
@@ -597,7 +599,7 @@ int Pty::write(const char *buf, int n)
 	if (fd_ < 0 || n <= 0)
 		return 0;
 	done = ::write(fd_, buf, n);
-	return done > 0 ? (int)done : 0;
+	return done > 0 ? static_cast<int>(done) : 0;
 }
 
 } // namespace dmd

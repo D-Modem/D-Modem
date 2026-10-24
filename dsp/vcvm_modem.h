@@ -95,7 +95,10 @@ private:
 	void note(const char *fmt, ...);
 	void fail(const char *why);
 	/* the sample at which what is queued to send runs out */
-	long queued() const { return t_ + (long)(txq_.size() - txpos_); }
+	long queued() const
+	{
+		return t_ + static_cast<long>(txq_.size() - txpos_);
+	}
 	void silence(int ms);
 	void send_mp();
 	void start_tx();

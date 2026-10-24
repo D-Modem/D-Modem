@@ -42,7 +42,7 @@ static s16 sine32(unsigned k)
 	unsigned q = k % 16;
 	s16 v = quarter_wave[q <= 8 ? q : 16 - q];
 
-	return k < 16 ? v : (s16)-v;
+	return k < 16 ? v : static_cast<s16>(-v);
 }
 
 /* the tone from phase 0, whatever the arguments; always 0 */

@@ -141,13 +141,13 @@ static void tree_add(struct tree *t, const struct code *c)
 		for (b = c->bits; *b; b++) {
 			int k = *b - '0';
 			if (!t->next[node][k]) {
-				t->next[node][k] = (short)t->n;
+				t->next[node][k] = static_cast<short>(t->n);
 				t->value[t->n] = -1;
 				t->n++;
 			}
 			node = t->next[node][k];
 		}
-		t->value[node] = (short)c->run;
+		t->value[node] = static_cast<short>(c->run);
 	}
 }
 
@@ -197,11 +197,11 @@ unsigned char *T4Page::add_row(const unsigned char *row)
 	unsigned char *r;
 	if (rows == cap) {
 		int cap_ = cap ? cap * 2 : 1200;
-		if (!resize_zeroed(bits, (size_t)cap_ * stride))
+		if (!resize_zeroed(bits, static_cast<size_t>(cap_) * stride))
 			return nullptr;
 		cap = cap_;
 	}
-	r = bits.data() + (size_t)rows * stride;
+	r = bits.data() + static_cast<size_t>(rows) * stride;
 	if (row)
 		memcpy(r, row, stride);
 	else if (rows)
@@ -337,14 +337,15 @@ void T4Page::encode_mh(T4Bits *out, int min_bits, int align, int rtc) const
 		size_t start = out->n;
 		int n, a0 = 0;
 		out->put_eol(align);
-		n = row_changes(bits.data() + (size_t)y * stride, width, ch);
+		n = row_changes(bits.data() + static_cast<size_t>(y) * stride,
+				width, ch);
 		for (k = 0; k <= n; k++) {
 			int end = k < n ? ch[k] : width;
 			out->put_run(end - a0, k & 1);
 			a0 = end;
 		}
 		/* fill up to the minimum line time (counted from the EOL) */
-		while (out->n - start < (size_t)min_bits)
+		while (out->n - start < static_cast<size_t>(min_bits))
 			out->put(0, 1);
 	}
 	if (rtc)

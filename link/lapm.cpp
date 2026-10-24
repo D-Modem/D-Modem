@@ -112,9 +112,9 @@ static unsigned settle(unsigned ours, unsigned remote, unsigned dflt)
 static uint8_t *put_param(uint8_t *p, uint8_t pi, uint32_t v, int pl)
 {
 	*p++ = pi;
-	*p++ = (uint8_t)pl;
+	*p++ = static_cast<uint8_t>(pl);
 	while (pl--)
-		*p++ = (uint8_t)(v >> 8 * pl);
+		*p++ = static_cast<uint8_t>(v >> 8 * pl);
 	return p;
 }
 
@@ -132,10 +132,10 @@ static uint8_t *put_id(uint8_t *p, uint8_t pi, const char *id)
    whose parameters end at end */
 static void put_group(uint8_t *g, uint8_t gi, const uint8_t *end)
 {
-	const int gl = (int)(end - g - 3);
+	const int gl = static_cast<int>(end - g - 3);
 	g[0] = gi;
-	g[1] = (uint8_t)(gl >> 8);
-	g[2] = (uint8_t)gl;
+	g[1] = static_cast<uint8_t>(gl >> 8);
+	g[2] = static_cast<uint8_t>(gl);
 }
 
 /* a parameter value of n octets, the most significant first */
@@ -159,7 +159,7 @@ static uint32_t get_le(const uint8_t *p, int n)
 /* a received value as a Config field: at most NO_LIMIT */
 static int bounded(uint32_t v)
 {
-	return (int)std::min<uint32_t>(v, NO_LIMIT);
+	return static_cast<int>(std::min<uint32_t>(v, NO_LIMIT));
 }
 
 /* the parameters (PI, PL, PV) in the n octets at p, each given to
@@ -196,10 +196,14 @@ void Lapm::init(Link *link, int tx_win, int rx_win, int tx_info,
 	rx_count_ = rx_head_ = 0;
 	cmd_addr_ = link->caller() ? ADDR_ORIG : ADDR_ANS;
 	rsp_addr_ = link->caller() ? ADDR_ANS : ADDR_ORIG;
-	tx_win_ = (unsigned)std::clamp(tx_win, 0, (int)LAPM_MAX_WIN);
-	rx_win_ = (unsigned)std::clamp(rx_win, 0, (int)LAPM_MAX_WIN);
-	tx_info_ = (unsigned)std::clamp(tx_info, 0, (int)LAPM_MAX_INFO);
-	rx_info_ = (unsigned)std::clamp(rx_info, 0, (int)LAPM_MAX_INFO);
+	tx_win_ = static_cast<unsigned>(
+		std::clamp(tx_win, 0, static_cast<int>(LAPM_MAX_WIN)));
+	rx_win_ = static_cast<unsigned>(
+		std::clamp(rx_win, 0, static_cast<int>(LAPM_MAX_WIN)));
+	tx_info_ = static_cast<unsigned>(
+		std::clamp(tx_info, 0, static_cast<int>(LAPM_MAX_INFO)));
+	rx_info_ = static_cast<unsigned>(
+		std::clamp(rx_info, 0, static_cast<int>(LAPM_MAX_INFO)));
 	for (int i = 0; i < INFO_FRAMES; i++) {
 		Frame &f = info_buf_[i].frame;
 		f = Frame();
@@ -256,7 +260,7 @@ void Lapm::negotiate()
 void Lapm::disconnect()
 {
 	state_ = DISC;
-	tx_unnum(cmd_addr_, (uint8_t)(U_DISC | PF));
+	tx_unnum(cmd_addr_, static_cast<uint8_t>(U_DISC | PF));
 	timer_start();
 }
 
@@ -352,9 +356,9 @@ void Lapm::t401_timeout()
 		if (config_)
 			tx_xid(cmd_addr_);
 		else if (state_ == ESTAB)
-			tx_unnum(cmd_addr_, (uint8_t)(U_SABME | PF));
+			tx_unnum(cmd_addr_, static_cast<uint8_t>(U_SABME | PF));
 		else if (state_ == DISC)
-			tx_unnum(cmd_addr_, (uint8_t)(U_DISC | PF));
+			tx_unnum(cmd_addr_, static_cast<uint8_t>(U_DISC | PF));
 		else
 			tx_super(cmd_addr_, busy_ ? S_RNR : S_RR, 1);
 		link_->set_timer(t401_bits(link_), Link::Timer::T401);
@@ -430,7 +434,7 @@ int Lapm::tx_super(uint8_t addr, uint8_t ctrl, int pf)
 		return -1;
 	f->buf[0] = addr;
 	f->buf[1] = ctrl;
-	f->buf[2] = (uint8_t)(vr_ << 1 | (pf ? 1 : 0));
+	f->buf[2] = static_cast<uint8_t>(vr_ << 1 | (pf ? 1 : 0));
 	f->size = 3;
 	return 0;
 }
@@ -488,7 +492,7 @@ int Lapm::tx_xid(uint8_t addr)
 		p = put_param(p, PI_V44_P3T, c.v44_history, 2);
 		p = put_param(p, PI_V44_P3R, c.v44_history, 2);
 	}
-	f->size = (int)(p - f->buf);
+	f->size = static_cast<int>(p - f->buf);
 	return 0;
 }
 
@@ -498,12 +502,12 @@ int Lapm::tx_xid(uint8_t addr)
    characters; 1 if so.  A read error is reported to the Link */
 int Lapm::tx_info()
 {
-	if (peer_busy_ || (unsigned)seq_diff(vs_, va_) >= tx_win_)
+	if (peer_busy_ || static_cast<unsigned>(seq_diff(vs_, va_)) >= tx_win_)
 		return 0;
 	if (tx_info_frame_ != info_list_)
 		return 1;
 	Frame *f = info_list_;
-	int n = link_->read_chars(f->buf + 3, (int)tx_info_);
+	int n = link_->read_chars(f->buf + 3, static_cast<int>(tx_info_));
 	if (n < 0) {
 		link_->logf("err: ec: DTE read error (%d).", n);
 		link_->status(Status::Error);
@@ -531,9 +535,9 @@ Frame *Lapm::next_tx_frame()
 		return nullptr;
 	Frame *f = tx_info_frame_;
 	f->buf[0] = cmd_addr_;
-	f->buf[1] = (uint8_t)(vs_ << 1);
-	f->buf[2] = (uint8_t)(vr_ << 1);
-	vs_ = (uint8_t)((vs_ + 1) & SEQ_MASK);
+	f->buf[1] = static_cast<uint8_t>(vs_ << 1);
+	f->buf[2] = static_cast<uint8_t>(vr_ << 1);
+	vs_ = static_cast<uint8_t>((vs_ + 1) & SEQ_MASK);
 	tx_info_frame_ = f->next;
 	if (!link_->timer())
 		timer_start();
@@ -632,7 +636,7 @@ int Lapm::ack_info(uint8_t nr)
 	}
 	for (int i = 0; i < n; i++)
 		sent_info_ = sent_info_->next;
-	va_ = (uint8_t)((va_ + n) & SEQ_MASK);
+	va_ = static_cast<uint8_t>((va_ + n) & SEQ_MASK);
 	if (n && !rtx_count_) {
 		timer_stop();
 		if (vs_ != va_)
@@ -691,7 +695,7 @@ int Lapm::rx_info(Frame *f)
 		busy_ = true;
 		link_->push_pending = true;
 	}
-	vr_ = (uint8_t)((vr_ + 1) & SEQ_MASK);
+	vr_ = static_cast<uint8_t>((vr_ + 1) & SEQ_MASK);
 	if (busy_)
 		tx_super(f->buf[0], S_RNR, pf);
 	else if (peer_busy_ || pf || !tx_info())
@@ -802,17 +806,17 @@ void Lapm::rx_unnum_cmd(Frame *f)
 	switch (f->buf[1] & ~PF) {
 	case U_SABME:
 		connect();
-		tx_unnum(rsp_addr_, (uint8_t)(U_UA | pf));
+		tx_unnum(rsp_addr_, static_cast<uint8_t>(U_UA | pf));
 		timer_stop();
 		break;
 	case U_DISC:
 		if (state_ == IDLE) {
-			tx_unnum(rsp_addr_, (uint8_t)(U_DM | PF));
+			tx_unnum(rsp_addr_, static_cast<uint8_t>(U_DM | PF));
 			break;
 		}
 		reset();
 		state_ = IDLE;
-		tx_unnum(rsp_addr_, (uint8_t)(U_UA | pf));
+		tx_unnum(rsp_addr_, static_cast<uint8_t>(U_UA | pf));
 		timer_stop();
 		link_->logf("ec: released by the remote.");
 		link_->status(Status::Released);
@@ -853,7 +857,7 @@ void Lapm::rx_unnum_rsp(Frame *f)
 	auto establish = [this]() {
 		reset();
 		state_ = ESTAB;
-		tx_unnum(cmd_addr_, (uint8_t)(U_SABME | PF));
+		tx_unnum(cmd_addr_, static_cast<uint8_t>(U_SABME | PF));
 		timer_start();
 	};
 
@@ -948,7 +952,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 	auto priv = [&](uint8_t pi, const uint8_t *pv, int pl) {
 		switch (pi) {
 		case PI_V42BIS_P0:
-			p0 = (int)(get_le(pv, pl) & 3);
+			p0 = static_cast<int>(get_le(pv, pl) & 3);
 			break;
 		case PI_V42BIS_N2:
 			r.dict_size = bounded(get_be(pv, pl));
@@ -1006,10 +1010,10 @@ void Lapm::rx_xid(Frame *f, bool response)
 	if (r.v44)
 		p0 = v44_p0 & 3;
 	r.comp = response ? swap_dirs(p0) : p0;
-	r.tx_win = (int)tx_win_;
-	r.rx_win = (int)rx_win_;
-	r.tx_info = (int)tx_info_;
-	r.rx_info = (int)rx_info_;
+	r.tx_win = static_cast<int>(tx_win_);
+	r.rx_win = static_cast<int>(rx_win_);
+	r.tx_info = static_cast<int>(tx_info_);
+	r.rx_info = static_cast<int>(rx_info_);
 	r.ec = r.detect = true;
 	link_->logf("ec: XID %s: compression %d%s, k %u/%u, N401 %u/%u.",
 		    response ? "response" : "command", r.comp,

@@ -56,7 +56,10 @@ struct VcvmComb {
 	   together */
 	int init(int code, int fs, bool sym22 = false);
 	/* tone i's frequency, Hz */
-	double freq(int i) const { return (double)(kmin + i) * spacing; }
+	double freq(int i) const
+	{
+		return static_cast<double>(kmin + i) * spacing;
+	}
 	/* the symbol period in ms */
 	double ms() const { return 1000.0 * sps / fs; }
 };
@@ -140,7 +143,7 @@ public:
 	/* samples from the line (16 bit scale) */
 	void push(const float *x, int n);
 	/* the samples received: the index of the next one pushed */
-	long received() const { return base_ + (long)buf_.size(); }
+	long received() const { return base_ + static_cast<long>(buf_.size()); }
 	/* nothing received, unlocked: the next sample pushed is sample
 	   base */
 	void restart(long base);
@@ -224,7 +227,7 @@ public:
 	int init(int fs, bool p10);
 	void push(const float *x, int n);
 	/* the samples received: the index of the next one pushed */
-	long received() const { return base_ + (long)buf_.size(); }
+	long received() const { return base_ + static_cast<long>(buf_.size()); }
 	/* nothing received, unlocked: the next sample pushed is sample
 	   base, the preamble looked for from there */
 	void restart(long base);

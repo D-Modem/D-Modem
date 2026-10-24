@@ -34,7 +34,8 @@ void QamTx::init(int srate_, float carrier_, float baud,
 	span = span_ > QAM_MAX_SPAN ? QAM_MAX_SPAN : span_;
 	n = 2 * span * QAM_PULSE_RES;
 	for (i = 0; i <= n + 1; i++)
-		pulse[i] = rrc_pulse((float)i / QAM_PULSE_RES - span, alpha);
+		pulse[i] = rrc_pulse(
+			static_cast<float>(i) / QAM_PULSE_RES - span, alpha);
 	/* unit energy pulses: the pass band rms is amplitude / sqrt(2) */
 	scale = amplitude / rms_symbol;
 	carrier.set_freq(carrier_, srate_);
@@ -54,7 +55,7 @@ float QamTx::pulse_at(float t_)
 	int i;
 	if (p < 0 || p >= 2 * span * QAM_PULSE_RES)
 		return 0;
-	i = (int)p;
+	i = static_cast<int>(p);
 	p -= i;
 	return pulse[i] + p * (pulse[i + 1] - pulse[i]);
 }
@@ -95,7 +96,7 @@ int QamRx::init(int srate_, float carrier, float baud_,
 	baud = baud_;
 	sps = srate_ / baud_;
 	lo.set_freq(-carrier, srate_);
-	mf_len = (int)(2 * span * sps) | 1;
+	mf_len = static_cast<int>(2 * span * sps) | 1;
 	/* the matched filter is evaluated at the T/2 instants themselves,
 	   from a table of QAM_MF_RES points per sample */
 	/* the last mf_len + 1 samples, twice */
@@ -109,7 +110,7 @@ int QamRx::init(int srate_, float carrier, float baud_,
 		sum += h * h;
 	}
 	for (i = 0; i < (mf_len + 2) * QAM_MF_RES + 2; i++)
-		mf[i] = rrc_pulse(((float)i / QAM_MF_RES - 1 -
+		mf[i] = rrc_pulse((static_cast<float>(i) / QAM_MF_RES - 1 -
 				      mf_len / 2) / sps, alpha) / sqrtf(sum);
 	power_alpha = 1.0f / (0.02f * srate_);
 	agc_alpha = 1.0f / (0.03f * 2 * baud_);
@@ -171,7 +172,7 @@ int QamRx::sample(float x)
 		cplx s = { 0, 0 };
 		if (p < 0)
 			p = 0;
-		k = (int)p;
+		k = static_cast<int>(p);
 		f = p - k;
 		for (i = 0; i < mf_len; i++, k += QAM_MF_RES) {
 			float h = mf[k] + f * (mf[k + 1] - mf[k]);
@@ -217,7 +218,7 @@ int QamRx::sample(float x)
 			rot = cplx_make(cosf(theta), -sinf(theta));
 			z = cplx_mul(out, rot);
 			theta += dtheta;
-			theta = remainderf(theta, 2 * (float)M_PI);
+			theta = remainderf(theta, 2 * static_cast<float>(M_PI));
 			symbols++;
 			ret = 1;
 		} else
@@ -267,7 +268,7 @@ void QamRx::adapt(cplx d, float mu, float k1, float k2)
 void QamRx::align_phase(cplx d)
 {
 	float a = atan2f(z.im, z.re) - atan2f(d.im, d.re);
-	theta = remainderf(theta + a, 2 * (float)M_PI);
+	theta = remainderf(theta + a, 2 * static_cast<float>(M_PI));
 }
 
 

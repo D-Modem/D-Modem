@@ -22,8 +22,8 @@ static uint16_t crc_add(uint16_t crc, uint8_t c)
 {
 	crc ^= c;
 	for (int i = 0; i < 8; i++)
-		crc = crc & 1 ? (uint16_t)(crc >> 1 ^ 0xa001) :
-			(uint16_t)(crc >> 1);
+		crc = crc & 1 ? static_cast<uint16_t>(crc >> 1 ^ 0xa001) :
+			static_cast<uint16_t>(crc >> 1);
 	return crc;
 }
 
@@ -75,7 +75,7 @@ void MnpAsync::start_in_frame(const BitQueue &rx)
 void MnpAsync::tx_char(uint8_t ch)
 {
 	tx_.data <<= 10;
-	tx_.data |= (uint32_t)reverse_bits(ch) << 1 | 1;
+	tx_.data |= static_cast<uint32_t>(reverse_bits(ch)) << 1 | 1;
 	tx_.bit += 10;
 }
 
@@ -127,10 +127,10 @@ bool MnpAsync::tx_fill()
 			tx_char(ETX);
 			break;
 		case 2:
-			tx_char((uint8_t)tx_fcs_);
+			tx_char(static_cast<uint8_t>(tx_fcs_));
 			break;
 		default:
-			tx_char((uint8_t)(tx_fcs_ >> 8));
+			tx_char(static_cast<uint8_t>(tx_fcs_ >> 8));
 			tx_state_ = Tx::Done;
 			break;
 		}
@@ -155,7 +155,7 @@ int MnpAsync::tx_idle(int nbits, uint8_t mask, uint8_t *&buf, int &n)
 	int ret = 0;
 
 	if (tx_.bit && n > 0) {
-		*buf++ = (uint8_t)(tx_.data << (nbits - tx_.bit) |
+		*buf++ = static_cast<uint8_t>(tx_.data << (nbits - tx_.bit) |
 				   ((1 << (nbits - tx_.bit)) - 1)) & mask;
 		ret++;
 		n--;
@@ -183,7 +183,7 @@ void MnpAsync::rx_scan()
 			rx_.bit--;
 		if (rx_.bit < 10)
 			break;
-		uint8_t ch = (uint8_t)(rx_.data >> (rx_.bit - 9));
+		uint8_t ch = static_cast<uint8_t>(rx_.data >> (rx_.bit - 9));
 		rx_.bit -= 10;
 		rx_char(reverse_bits(ch));
 	}
@@ -289,7 +289,8 @@ long Mnp::t401_data() const
 {
 	const int lb = mode_ == 3 ? 8 : 10, lf = mode_ == 3 ? 4 : 7;
 	const int llt = opt_ & 2 ? 3 : 5, lla = opt_ & 2 ? 4 : 8;
-	return (long)k_ * lb * (lf + llt + n401_) + lb * (lf + lla) + rate();
+	return static_cast<long>(k_) * lb * (lf + llt + n401_) +
+	       lb * (lf + lla) + rate();
 }
 
 /* T404 (A.7.5.4): 3 s at 2400 bit/s and above, else 7 s */
@@ -393,7 +394,7 @@ Frame *Mnp::ctrl(int len)
 {
 	ctrl_.buf = ctrl_buf_;
 	ctrl_.size = len;
-	ctrl_buf_[0] = (uint8_t)(len - 1);
+	ctrl_buf_[0] = static_cast<uint8_t>(len - 1);
 	return &ctrl_;
 }
 
@@ -417,18 +418,18 @@ Frame *Mnp::build_lr()
 	n += sizeof(constant2);
 	b[n++] = 2;
 	b[n++] = 1;
-	b[n++] = (uint8_t)mode;
+	b[n++] = static_cast<uint8_t>(mode);
 	b[n++] = 3;
 	b[n++] = 1;
-	b[n++] = (uint8_t)k;
+	b[n++] = static_cast<uint8_t>(k);
 	b[n++] = 4;
 	b[n++] = 2;
-	b[n++] = (uint8_t)n401;
-	b[n++] = (uint8_t)(n401 >> 8);
+	b[n++] = static_cast<uint8_t>(n401);
+	b[n++] = static_cast<uint8_t>(n401 >> 8);
 	if (initiator_ || lr_opt_) {
 		b[n++] = 8;
 		b[n++] = 1;
-		b[n++] = (uint8_t)(initiator_ ? our_opt_ : opt_);
+		b[n++] = static_cast<uint8_t>(initiator_ ? our_opt_ : opt_);
 	}
 	if (initiator_ ? our_mnp5_ : mnp5_) {
 		b[n++] = 9;
@@ -443,8 +444,8 @@ Frame *Mnp::build_lr()
    the LTs received are acknowledged, T404 again */
 Frame *Mnp::build_la()
 {
-	const uint8_t nr = (uint8_t)(vr_ - 1);
-	const uint8_t nk = (uint8_t)(busy_ ? 0 : k_);
+	const uint8_t nr = static_cast<uint8_t>(vr_ - 1);
+	const uint8_t nk = static_cast<uint8_t>(busy_ ? 0 : k_);
 	Frame *f;
 	if (opt_ & 2) {
 		f = ctrl(4);
@@ -476,7 +477,7 @@ Frame *Mnp::build_ld()
 	ctrl_buf_[1] = LD;
 	ctrl_buf_[2] = 1;
 	ctrl_buf_[3] = 1;
-	ctrl_buf_[4] = (uint8_t)ld_reason_;
+	ctrl_buf_[4] = static_cast<uint8_t>(ld_reason_);
 	return f;
 }
 
@@ -494,7 +495,7 @@ Frame *Mnp::build_lna()
 /* may the LT numbered ns go: after N(R), within the credit N(k) */
 bool Mnp::can_send(uint8_t ns) const
 {
-	const uint8_t d = (uint8_t)(ns - nr_);
+	const uint8_t d = static_cast<uint8_t>(ns - nr_);
 	return d >= 1 && d <= nk_;
 }
 
@@ -512,7 +513,7 @@ Frame *Mnp::next_lt()
 		lt_again_++;
 		link_->stats().tx_again++;
 	} else {
-		if ((uint8_t)(vs_ - una_) >= k_ || !can_send(vs_))
+		if (static_cast<uint8_t>(vs_ - una_) >= k_ || !can_send(vs_))
 			return nullptr;
 		s = &slot_[vs_ % MNP_MAX_K];
 		const int hdr = opt_ & 2 ? 3 : 5;
@@ -685,7 +686,7 @@ void Mnp::rx_lt(const uint8_t *h, int len, const uint8_t *info, int n)
 	if (!t402_)
 		t402_ = t401_data() / 2;
 	if (ns != vr_) {
-		if (ns == (uint8_t)(vr_ - 1) && !dup_seen_) {
+		if (ns == static_cast<uint8_t>(vr_ - 1) && !dup_seen_) {
 			dup_seen_ = true;
 			return;
 		}
@@ -728,22 +729,24 @@ void Mnp::rx_la(const uint8_t *h, int len)
 		link_->logf("mnp: bad LA.");
 		return;
 	}
-	const uint8_t out = (uint8_t)(vs_ - una_);
-	const uint8_t acked = (uint8_t)(nr - (uint8_t)(una_ - 1));
+	const uint8_t out = static_cast<uint8_t>(vs_ - una_);
+	const uint8_t acked =
+		static_cast<uint8_t>(nr - static_cast<uint8_t>(una_ - 1));
 	if (acked > out) {
 		link_->logf("mnp: LA N(R) %d out of %d..%d.", nr,
-			    (uint8_t)(una_ - 1), (uint8_t)(vs_ - 1));
+			    static_cast<uint8_t>(una_ - 1),
+			    static_cast<uint8_t>(vs_ - 1));
 		return;
 	}
 	const bool dup = have_la_ && nr == nr_;
 	have_la_ = true;
-	nr_ = (uint8_t)nr;
-	nk_ = (uint8_t)nk;
+	nr_ = static_cast<uint8_t>(nr);
+	nk_ = static_cast<uint8_t>(nk);
 	if (acked) {
 		/* those still to be sent again from below N(R) are not */
-		if ((uint8_t)(nxt_ - una_) < acked)
-			nxt_ = (uint8_t)(nr + 1);
-		una_ = (uint8_t)(nr + 1);
+		if (static_cast<uint8_t>(nxt_ - una_) < acked)
+			nxt_ = static_cast<uint8_t>(nr + 1);
+		una_ = static_cast<uint8_t>(nr + 1);
 		rtx_count_ = 0;
 		dup_ignore_ = 0;
 		t401_ = una_ == vs_ ? 0 : t401_data();
@@ -760,7 +763,7 @@ void Mnp::rx_la(const uint8_t *h, int len)
 		}
 		/* the LTs that went out after the one lost each bring
 		   their LA */
-		dup_ignore_ = (uint8_t)(nxt_ - una_) - 1;
+		dup_ignore_ = static_cast<uint8_t>(nxt_ - una_) - 1;
 		nxt_ = una_;
 		t401_ = t401_data();
 	}
@@ -780,7 +783,7 @@ void Mnp::rx_ln(const uint8_t *h, int len)
 		vra_++;
 		link_->logf("mnp: break (type %d).", type);
 	}
-	lna_nr_ = (uint8_t)nsa;
+	lna_nr_ = static_cast<uint8_t>(nsa);
 	lna_due_ = true;
 }
 
@@ -843,7 +846,7 @@ void Mnp::rx_frame(Frame *f, bool bit)
 			data_phase();
 			const int nk = len == 4 ? b[3] : param(b, len, 2, 2);
 			if (nk >= 0)
-				nk_ = (uint8_t)nk;
+				nk_ = static_cast<uint8_t>(nk);
 		} else if ((type == LT || type == LA) && data) {
 			/* the LA was lost: the initiator is in the data
 			   phase */
@@ -932,7 +935,7 @@ void Mnp::data_phase()
 	phase_ = Phase::Data;
 	vs_ = una_ = nxt_ = 1;
 	nr_ = 0;
-	nk_ = (uint8_t)k_;
+	nk_ = static_cast<uint8_t>(k_);
 	have_la_ = false;
 	rtx_count_ = dup_ignore_ = 0;
 	vr_ = vra_ = 1;
@@ -1043,8 +1046,8 @@ void Mnp::init(Link *link, const Config &cfg)
 	link_ = link;
 	phase_ = Phase::Idle;
 	our_mode_ = cfg.mnp_mode == 2 ? 2 : 3;
-	our_k_ = std::clamp(cfg.mnp_k, 1, (int)MNP_MAX_K);
-	our_n401_ = std::clamp(cfg.mnp_info, 1, (int)MNP_MAX_INFO);
+	our_k_ = std::clamp(cfg.mnp_k, 1, static_cast<int>(MNP_MAX_K));
+	our_n401_ = std::clamp(cfg.mnp_info, 1, static_cast<int>(MNP_MAX_INFO));
 	our_opt_ = cfg.mnp_opt & (our_n401_ == MNP_MAX_INFO ? 3 : 2);
 	our_mnp5_ = cfg.mnp5;
 	for (auto &s : slot_) {

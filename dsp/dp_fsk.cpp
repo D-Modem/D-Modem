@@ -93,7 +93,7 @@ int FskDemod::run(float x)
 	/* instantaneous frequency relative to the channel centre */
 	d = cplx_mulc(z, prev);
 	prev = z;
-	dev = atan2f(d.im, d.re) * srate / (2 * (float)M_PI);
+	dev = atan2f(d.im, d.re) * srate / (2 * static_cast<float>(M_PI));
 
 	/* carrier detector: level plus a sane frequency deviation, so that
 	   e.g. a 2100 Hz answer tone is not taken for a V.21 carrier */
@@ -266,7 +266,7 @@ float FskPump::tx_sample(int data)
 		u8 b = 1;
 		if (data)
 			modem_get_bits(modem, 1, &b, 1);
-		return (int)b;
+		return static_cast<int>(b);
 	});
 }
 
@@ -349,7 +349,8 @@ int FskPump::sample(float x, float *y)
 		     carrier_run : mark_count) >=
 		    ms2samples(after_v8 ? 400 : 150, srate)) {
 			set_state(FSK_DATA);
-			ret = connect_at((int)par->tx_baud, (int)par->rx_baud);
+			ret = connect_at(static_cast<int>(par->tx_baud),
+					 static_cast<int>(par->rx_baud));
 		} else if (!caller && automode &&
 			   dp.id != DP_B103 &&
 			   (bell.found() ||

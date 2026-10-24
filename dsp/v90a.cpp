@@ -83,8 +83,8 @@ int V90Jd::parse(const unsigned char *b)
 	if (b[17] || b[34] || b[51] || b[68] || b[69] || b[70] || b[71] ||
 	    !frame_crc_ok(b, 52))
 		return -1;
-	rate_mask = (unsigned)field(b, 18, 16) |
-		((unsigned)field(b, 35, 7) << 16);
+	rate_mask = static_cast<unsigned>(field(b, 18, 16)) |
+		(static_cast<unsigned>(field(b, 35, 7)) << 16);
 	cp16_train = b[47];
 	cp16_reneg = b[48];
 	lookahead = field(b, 49, 2);
@@ -102,13 +102,16 @@ void V90Interp::init(int rate)
 		for (j = 0; j < 2 * V90_INTERP_T; j++) {
 			/* the output's time less input j's (from the
 			   oldest of those it takes) */
-			double u = (double)p / V90_INTERP_P + V90_INTERP_T -
-				1 - j, x = M_PI * u / V90_INTERP_T;
+			double u = static_cast<double>(p) / V90_INTERP_P +
+				   V90_INTERP_T - 1 - j,
+			       x = M_PI * u / V90_INTERP_T;
 			double h = fabs(u) < 1e-12 ? 1 : sin(M_PI * u) /
 				(M_PI * u);
-			g[p][j] = fabs(u) >= V90_INTERP_T ? 0 :
-				(float)(h * (0.42 + 0.5 * cos(x) +
-					     0.08 * cos(2 * x)));
+			g[p][j] = fabs(u) >= V90_INTERP_T ?
+					  0 :
+					  static_cast<float>(
+						  h * (0.42 + 0.5 * cos(x) +
+						       0.08 * cos(2 * x)));
 		}
 	/* (the inputs it needs before the first output) */
 	t = V90_INTERP_T;
@@ -123,10 +126,10 @@ int V90Interp::run(float x, float *out)
 	hist[nin % L] = hist[nin % L + L] = x;
 	nin++;
 	while (t + V90_INTERP_T <= nin - 1 && m < 3) {
-		long n0 = (long)floor(t);
+		long n0 = static_cast<long>(floor(t));
 		double fp = (t - n0) * V90_INTERP_P;
-		int p = (int)fp, j;
-		float w = (float)(fp - p), y = 0;
+		int p = static_cast<int>(fp), j;
+		float w = static_cast<float>(fp - p), y = 0;
 		const float *bp = hist + (n0 - V90_INTERP_T + 1) % L;
 		const float *g0 = g[p], *g1 = g[p + 1];
 		for (j = 0; j < L; j++)
@@ -146,7 +149,7 @@ void V90Rx::init(int alaw_, int uinfo_, int rate)
 	uinfo = uinfo_;
 	for (i = 0; i < 128; i++)
 		lin[i] = v90_ucode_linear(alaw_, i);
-	level = (float)lin[uinfo & 127];
+	level = static_cast<float>(lin[uinfo & 127]);
 	for (i = 0; i < 6; i++) {
 		tlev[i] = level;
 		tmag[i] = level;
@@ -166,24 +169,24 @@ void V90Rx::sd_detect(float v)
 	double r, q;
 	int there;
 
-	e24 += (double)v * v;
-	e6 += (double)v * v;
+	e24 += static_cast<double>(v) * v;
+	e6 += static_cast<double>(v) * v;
 	if (i >= 6) {
-		a6_24 += (double)v * at8(i - 6);
-		a6_6 += (double)v * at8(i - 6);
+		a6_24 += static_cast<double>(v) * at8(i - 6);
+		a6_6 += static_cast<double>(v) * at8(i - 6);
 	}
 	if (i >= 3)
-		a3_24 += (double)v * at8(i - 3);
+		a3_24 += static_cast<double>(v) * at8(i - 3);
 	if (i >= SD_WIN + 6) {
 		float o = at8(i - SD_WIN);
-		e24 -= (double)o * o;
-		a6_24 -= (double)o * at8(i - SD_WIN - 6);
-		a3_24 -= (double)o * at8(i - SD_WIN - 3);
+		e24 -= static_cast<double>(o) * o;
+		a6_24 -= static_cast<double>(o) * at8(i - SD_WIN - 6);
+		a3_24 -= static_cast<double>(o) * at8(i - SD_WIN - 3);
 	}
 	if (i >= 12) {
 		float o = at8(i - 6);
-		e6 -= (double)o * o;
-		a6_6 -= (double)o * at8(i - 12);
+		e6 -= static_cast<double>(o) * o;
+		a6_6 -= static_cast<double>(o) * at8(i - 12);
 	}
 	if (i < SD_WIN + 6)
 		return;
@@ -272,9 +275,9 @@ void V90Rx::timing(long kk, float y, float a)
 	double e, dt;
 	if (!t_on)
 		return;
-	t_pow += 0.05 * ((double)a * a - t_pow);
-	e = (double)(a - y) * (equalize(kk, 1) - equalize(kk, -1)) /
-		(t_pow + 1e-3 * (double)level * level);
+	t_pow += 0.05 * (static_cast<double>(a) * a - t_pow);
+	e = static_cast<double>(a - y) * (equalize(kk, 1) - equalize(kk, -1)) /
+		(t_pow + 1e-3 * static_cast<double>(level) * level);
 	if (e > 0.05)
 		e = 0.05;
 	if (e < -0.05)
@@ -305,7 +308,7 @@ void V90Rx::timing_step(double dt)
 	t_phase += dt;
 	t_n++;
 	if (t_n > TIM_LOCK / 3 && t_n <= TIM_LOCK) {
-		double x = (double)t_n;
+		double x = static_cast<double>(t_n);
 		t_sx += x;
 		t_sy += t_phase;
 		t_sxx += x * x;
@@ -381,7 +384,7 @@ void V90Rx::solve()
 		z[i] = s / L[i][i];
 	}
 	for (i = 0; i < V90RX_TAPS; i++)
-		c[i] = (float)z[i];
+		c[i] = static_cast<float>(z[i]);
 }
 
 /* a Jd bit: the last 72 a Jd frame?  After one, Jd' is 12 zeros where
@@ -392,7 +395,7 @@ void V90Rx::jd_bit(int bit)
 	int i, ones = 0;
 	V90Jd jp;
 
-	jb[jpos] = (unsigned char)bit;
+	jb[jpos] = static_cast<unsigned char>(bit);
 	jpos = (jpos + 1) % 72;
 	jbits++;
 	if (!ev_jdp && (v92 ? ev_jp && jbits - jp_end == 8 :
@@ -471,13 +474,14 @@ static inline void dil_add(V90Rx *r, float y)
 {
 	const V90Dil *d = &r->dil;
 	int u = d->ucode[r->dil_seg], c = u >> 4;
-	int len = (d->h[c] + 1) * 6, k = r->dil_k, j = (int)(r->k % 6);
+	int len = (d->h[c] + 1) * 6, k = r->dil_k,
+	    j = static_cast<int>(r->k % 6);
 	float s = d->sp[k % d->lsp] ? 1.0f : -1.0f;
 
 	if (!d->tp[k % d->ltp])
 		u = d->ref[c];
 	r->dsum[j][u] += s * y;
-	r->dsq[j][u] += (double)y * y;
+	r->dsq[j][u] += static_cast<double>(y) * y;
 	r->dcnt[j][u]++;
 	if (++r->dil_k >= len) {
 		r->dil_k = 0;
@@ -506,11 +510,12 @@ static void pad_levels(int alaw, const int *lin, int uinfo, float db,
 	double g = pow(10, -db / 20), ref;
 	int u;
 	for (u = 0; u < 128; u++)
-		out[u] = (float)g711::decode(alaw, g711::encode(alaw,
-				(int)lrint(lin[u] * g)));
+		out[u] = static_cast<float>(g711::decode(
+			alaw, g711::encode(alaw, static_cast<int>(
+							 lrint(lin[u] * g)))));
 	ref = out[uinfo] > 0 ? lin[uinfo] / out[uinfo] : 1;
 	for (u = 0; u < 128; u++)
-		out[u] = (float)(out[u] * ref);
+		out[u] = static_cast<float>(out[u] * ref);
 }
 
 /* see v90a.h: the levels and their noise (each Ucode's; the median of
@@ -540,8 +545,8 @@ void V90Rx::dil_analyse()
 				continue;
 			mu = dsum[j][u] / n_;
 			var = dsq[j][u] / n_ - mu * mu;
-			dil_level[j][u] = (float)mu;
-			nz[j][u] = (float)sqrt(var > 0 ? var : 0);
+			dil_level[j][u] = static_cast<float>(mu);
+			nz[j][u] = static_cast<float>(sqrt(var > 0 ? var : 0));
 			r[nr++] = nz[j][u];
 		}
 	nm = nr;
@@ -586,7 +591,8 @@ void V90Rx::dil_analyse()
 			int pairs = 0, alike = 0;
 			for (m = 0; 2 * m + off + 1 < 128; m++) {
 				int a = 2 * m + off, b_ = a + 1;
-				float step = (float)(lin[b_] - lin[a]);
+				float step =
+					static_cast<float>(lin[b_] - lin[a]);
 				if (!dil_usable[j][a] || !dil_usable[j][b_] ||
 				    step < 4 * dil_noise)
 					continue;
@@ -680,16 +686,17 @@ void V90Rx::sample(float v)
 			for (i = 0; i < V90RX_TAPS; i++)
 				xv[i] = xin(k, i);
 			for (i = 0; i < V90RX_TAPS; i++) {
-				p[i] += (double)a * xv[i];
+				p[i] += static_cast<double>(a) * xv[i];
 				for (j = i; j < V90RX_TAPS; j++)
-					R[i][j] += (double)xv[i] * xv[j];
+					R[i][j] += static_cast<double>(xv[i]) *
+						   xv[j];
 			}
 			if (t == REFINE_N + V90RX_LS) {
 				solve();
 				stage = DECIDE;
 				ev_trained = 1;
 				t_on = 1;
-				t_pow = (double)level * level;
+				t_pow = static_cast<double>(level) * level;
 				err_sum = 0;
 				err_n = 0;
 			}
@@ -706,7 +713,7 @@ void V90Rx::sample(float v)
 		if (stage == RI && ev_ribar && k >= frames_at)
 			stage = FRAMES;
 		if (stage == RI) {
-			int j = (int)(k % 6);
+			int j = static_cast<int>(k % 6);
 			rs[j] = y > 0;
 			if (ev_ri) {
 				float a4 = y > 0 ? tlev[j] : -tlev[j];
@@ -753,14 +760,15 @@ void V90Rx::sample(float v)
 		   same for all six cannot make one interval's level its
 		   own, so what it gives there is the line's) */
 		{
-			int j = (int)(k % 6), i2;
+			int j = static_cast<int>(k % 6), i2;
 			double mx = 0;
 			tmag[j] += 0.01 * (fabsf(y) - tmag[j]);
 			for (i2 = 0; i2 < 6; i2++)
 				if (tmag[i2] > mx)
 					mx = tmag[i2];
 			for (i2 = 0; i2 < 6; i2++)
-				tlev[i2] = (float)(level * tmag[i2] / mx);
+				tlev[i2] = static_cast<float>(level * tmag[i2] /
+							      mx);
 		}
 		/* once the timing has locked: the equaliser solved again on
 		   what is known (TRN1d's first solution spans a drifting
@@ -773,9 +781,10 @@ void V90Rx::sample(float v)
 			}
 			for (i = 0; i < V90RX_TAPS; i++) {
 				float xi = xin(k, i);
-				p[i] += (double)a * xi;
+				p[i] += static_cast<double>(a) * xi;
 				for (j = i; j < V90RX_TAPS; j++)
-					R[i][j] += (double)xi * xin(k, j);
+					R[i][j] += static_cast<double>(xi) *
+						   xin(k, j);
 			}
 			if (++ls2_n == V90RX_LS) {
 				solve();
@@ -784,9 +793,9 @@ void V90Rx::sample(float v)
 				y = equalize(k);
 			}
 		} else if (!ev_ready && ls2_n == V90RX_LS) {
-			int j = (int)(k % 6);
+			int j = static_cast<int>(k % 6);
 			usum[j] += fabsf(y);
-			usq[j] += (double)y * y;
+			usq[j] += static_cast<double>(y) * y;
 			un[j]++;
 			if (un[0] >= NOISE_N / 6 && un[5] >= NOISE_N / 6) {
 				ev_ready = 1;
@@ -798,11 +807,12 @@ void V90Rx::sample(float v)
 			float e = a - y;
 			adapt(k, e);
 			timing(k, y, a);
-			err_sum += (double)e * e;
+			err_sum += static_cast<double>(e) * e;
 			err_n++;
 			if (err_n == 512) {
-				mse = (float)(err_sum / err_n /
-					      ((double)level * level));
+				mse = static_cast<float>(
+					err_sum / err_n /
+					(static_cast<double>(level) * level));
 				if (t < TRN1D_MIN || !ev_jd)
 					DSP_DBG("v90a: equaliser mse %.4f "
 						"(%.1f dB) at symbol %ld, "
@@ -839,7 +849,7 @@ int V90Mp::parse(const unsigned char *b, int len)
 	ack = b[33];
 	rate_mask = field(b, 36, 13);
 	for (i = 0; i < 6; i++)
-		h[i] = t ? (short)field(b, 52 + 17 * i, 16) : 0;
+		h[i] = t ? static_cast<short>(field(b, 52 + 17 * i, 16)) : 0;
 	return 0;
 }
 
@@ -858,7 +868,7 @@ int V90Con::init(const V90Cp &cp, int D_, const float lv[6][128])
 		const unsigned char *m = cp.mask[cp.con[i]];
 		for (u = 127; u >= 0; u--)
 			if (m[u]) {
-				ucode[i][M[i]] = (unsigned char)u;
+				ucode[i][M[i]] = static_cast<unsigned char>(u);
 				lev[i][M[i]++] = lv[i][u];
 			}
 	}
@@ -874,18 +884,21 @@ double V90Con::power(const int *lin) const
 	int i, j;
 
 	for (i = 0; i < 6; i++) {
-		unsigned long long am = A * (unsigned)M[i];
+		unsigned long long am = A * static_cast<unsigned>(M[i]);
 		unsigned long long full = two_k / am, rem = two_k % am;
 		for (j = 0; j < M[i]; j++) {
-			unsigned long long lo = (unsigned long long)j * A, n;
+			unsigned long long lo = static_cast<unsigned long long>(
+							j) *
+						A,
+					   n;
 			n = full * A + (rem > lo ? (rem - lo < A ? rem - lo : A) :
 					0);
-			sum += (double)lin[ucode[i][j]] * lin[ucode[i][j]] *
-				(double)n;
+			sum += static_cast<double>(lin[ucode[i][j]]) *
+			       lin[ucode[i][j]] * static_cast<double>(n);
 		}
 		A = am;
 	}
-	return sum / (6.0 * (double)two_k);
+	return sum / (6.0 * static_cast<double>(two_k));
 }
 
 /* a CP's constellations from each interval's Ucodes (pts[i][0..n[i]-1]):
@@ -1013,8 +1026,8 @@ int v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
 		double bits = 0;
 		int j;
 		for (i = 0; i < 6; i++)
-			bits += log2((double)n[i]);
-		K = (int)floor(bits + 1e-9);
+			bits += log2(static_cast<double>(n[i]));
+		K = static_cast<int>(floor(bits + 1e-9));
 		if (K > 36)
 			K = 36;
 		while (K >= 15 && !(jd_rates >> (K - 15) & 1))
@@ -1055,7 +1068,7 @@ void V90Rx::levels(float lv[6][128]) const
 					dil_level[j][u] > 0 ?
 					dil_level[j][u] : 0;
 			else
-				lv[j][u] = (float)lin[u];
+				lv[j][u] = static_cast<float>(lin[u]);
 			if (ev_trn2)
 				lv[j][u] *= t_gain[j];
 		}
@@ -1076,7 +1089,8 @@ float V90Rx::noise() const
 		mu = usum[j] / un[j];
 		v += usq[j] / un[j] - mu * mu;
 	}
-	nz = j == 6 ? (float)sqrt(v > 0 ? v / 6 : 0) : sqrtf(mse) * level;
+	nz = j == 6 ? static_cast<float>(sqrt(v > 0 ? v / 6 : 0)) :
+		      sqrtf(mse) * level;
 	return dil_on && dil_noise > nz ? dil_noise : nz;
 }
 
@@ -1296,10 +1310,10 @@ void V90Rx::reneg_frames()
 /* an MP bit (9.4.1.3/V.90): frame sync, then 86 bits (type 0) or 188 */
 void V90Rx::mp_bit(int bit)
 {
-	msr = (msr << 1) | (unsigned)bit;
+	msr = (msr << 1) | static_cast<unsigned>(bit);
 	if (mp_n && v92) {
 		/* SUVd (bit 18 set: Table 31/V.92) or CPd (Table 30) */
-		mpb[mp_n++] = (unsigned char)bit;
+		mpb[mp_n++] = static_cast<unsigned char>(bit);
 		if (mp_n == 19)
 			mp_len = bit ? 51 : 0;
 		if (!mp_len && mp_n > 19) {
@@ -1355,7 +1369,7 @@ void V90Rx::mp_bit(int bit)
 		return;
 	}
 	if (mp_n) {
-		mpb[mp_n++] = (unsigned char)bit;
+		mpb[mp_n++] = static_cast<unsigned char>(bit);
 		if (mp_n == 19)
 			mp_len = bit ? 188 : 86;
 		if (mp_n == mp_len) {
@@ -1421,8 +1435,8 @@ void V90Rx::frame()
 		}
 		s[j] = fy[j] > 0;
 		lab[j] = bl;
-		R += (unsigned long long)bl * A;
-		A *= (unsigned)cn->M[j];
+		R += static_cast<unsigned long long>(bl) * A;
+		A *= static_cast<unsigned>(cn->M[j]);
 		tg = s[j] ? cn->lev[j][bl] : -cn->lev[j][bl];
 		if (known) {
 			int u = (out[j] > 0 ? out[j] : -out[j]) - 1;
@@ -1434,9 +1448,9 @@ void V90Rx::frame()
 		/* TRN2d's second half: each interval's gain against the
 		   DIL's levels */
 		if (known && frames >= 170) {
-			t2_yr[j] += (double)fy[j] * tg;
-			t2_rr[j] += (double)tg * tg;
-			t2_yy[j] += (double)fy[j] * fy[j];
+			t2_yr[j] += static_cast<double>(fy[j]) * tg;
+			t2_rr[j] += static_cast<double>(tg) * tg;
+			t2_yy[j] += static_cast<double>(fy[j]) * fy[j];
 			t2_n++;
 		}
 		adapt(k - 5 + j, tg - fy[j]);
@@ -1450,17 +1464,18 @@ void V90Rx::frame()
 			de_mse += 0.0002f * ((tg - fy[j]) * (tg - fy[j]) -
 					     de_mse);
 		}
-		fe_sum += (double)(tg - fy[j]) * (tg - fy[j]);
+		fe_sum += static_cast<double>(tg - fy[j]) * (tg - fy[j]);
 		fe_n++;
 	}
 	for (j = 0; j < 6; j++) {
-		d[j] = (unsigned char)(s[j] ^ flast);
+		d[j] = static_cast<unsigned char>(s[j] ^ flast);
 		flast = s[j];
 	}
 	for (i = 0; i < cn->K; i++)
-		d[6 + i] = (unsigned char)(R >> i & 1);
+		d[6 + i] = static_cast<unsigned char>(R >> i & 1);
 	for (i = 0; i < cn->D; i++) {
-		d[i] = (unsigned char)descramble(&fscr, SCR_GPC, d[i]);
+		d[i] = static_cast<unsigned char>(
+			descramble(&fscr, SCR_GPC, d[i]));
 		ones += d[i];
 	}
 
@@ -1549,13 +1564,14 @@ void V90Rx::frame()
 		for (j = 0; j < 6; j++) {
 			double g = t2_rr[j] > 0 ? t2_yr[j] / t2_rr[j] : 1;
 			rest += t2_yy[j] - t2_yr[j] * g;
-			t_gain[j] = (float)g;
+			t_gain[j] = static_cast<float>(g);
 			for (u = 0; u < 128; u++)
-				lv4[j][u] *= (float)g;
+				lv4[j][u] *= static_cast<float>(g);
 			for (l = 0; l < con_trn.M[j]; l++)
-				con_trn.lev[j][l] *= (float)g;
+				con_trn.lev[j][l] *= static_cast<float>(g);
 		}
-		trn2_noise = (float)sqrt(rest > 0 && t2_n ? rest / t2_n : 0);
+		trn2_noise = static_cast<float>(
+			sqrt(rest > 0 && t2_n ? rest / t2_n : 0));
 		ev_trn2 = 1;
 		DSP_DBG("v90a: TRN2d: %ld of %ld symbols wrong, noise %.2f, "
 			"interval gains %.4f %.4f %.4f %.4f %.4f %.4f, "
@@ -1566,7 +1582,7 @@ void V90Rx::frame()
 	/* a renegotiation's TRN2d (if any: the decisions, on CPt's
 	   points): the noise from the error over the same frames */
 	if (renegs && cn == &con_trn && frames == 339) {
-		trn2_noise = (float)sqrt(fe_n ? fe_sum / fe_n : 0);
+		trn2_noise = static_cast<float>(sqrt(fe_n ? fe_sum / fe_n : 0));
 		ev_trn2 = 1;
 		DSP_DBG("v90a: renegotiation's TRN2d (or MP): noise %.2f, "
 			"timing %+.1f ppm\n", trn2_noise, ppm());

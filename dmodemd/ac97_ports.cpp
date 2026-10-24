@@ -46,7 +46,7 @@ bool io_ranges(const std::string &dev, unsigned *bar0, unsigned *bar1)
 			       &flags) == 3) {
 		if (!(flags & IORESOURCE_IO) || start == 0 || start > 0xffff)
 			break;
-		bars[i++] = (unsigned)start;
+		bars[i++] = static_cast<unsigned>(start);
 	}
 	fclose(f);
 	*bar0 = bars[0];
@@ -186,7 +186,7 @@ void Ac97Ports::delay_us(unsigned us)
 
 	if (us >= 1000) {
 		t.tv_sec = us / 1000000;
-		t.tv_nsec = (long)(us % 1000000) * 1000;
+		t.tv_nsec = static_cast<long>(us % 1000000) * 1000;
 		while (nanosleep(&t, &t) < 0 && errno == EINTR)
 			;
 		return;
@@ -196,7 +196,7 @@ void Ac97Ports::delay_us(unsigned us)
 	do
 		clock_gettime(CLOCK_MONOTONIC, &t);
 	while ((t.tv_sec - t0.tv_sec) * 1000000L +
-	       (t.tv_nsec - t0.tv_nsec) / 1000 < (long)us);
+	       (t.tv_nsec - t0.tv_nsec) / 1000 < static_cast<long>(us));
 }
 
 } // namespace dmd

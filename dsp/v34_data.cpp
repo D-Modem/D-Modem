@@ -179,12 +179,13 @@ double V34Params::frame_power(int k, double theta, double e0) const
 		for (i = 0; i <= a; i++) {
 			double g3 = 0;
 			for (m = 0; m < M_ && m <= a - i; m++)
-				g3 += (double)g2p(a - i - m);
-			g7[a] += (double)g4p(i) * g3;
+				g3 += static_cast<double>(g2p(a - i - m));
+			g7[a] += static_cast<double>(g4p(i)) * g3;
 		}
 	}
 	for (a = 0; a <= 8 * (M_ - 1) && left > 0; a++) {
-		double g8 = (double)(z8[a + 1] - z8[a]), take, ea = 0;
+		double g8 = static_cast<double>(z8[a + 1] - z8[a]), take,
+		       ea = 0;
 		take = g8 < left ? g8 : left;
 		for (m = 0; m < M_ && m <= a; m++)
 			if (a - m <= 7 * (M_ - 1))
@@ -234,7 +235,7 @@ int V34Params::init(int baud, int n, int expanded)
 	if (b > 12)
 		pw = (r * pw + (P - r) * frame_power(K - 1)) / P;
 	/* the same power as the 4 point training signals */
-	g = (float)sqrt(2 / pw);
+	g = static_cast<float>(sqrt(2 / pw));
 	pw_ = pw;
 	w = b < 56 ? 1 : 2;
 	return 0;
@@ -246,14 +247,14 @@ void V34Params::set_nonlinear(double theta_)
 {
 	double pw;
 
-	theta = (float)theta_;
+	theta = static_cast<float>(theta_);
 	nl_gain = 1;
 	if (theta <= 0)
 		return;
 	pw = frame_power(K, theta, pw_);
 	if (b > 12)
 		pw = (r * pw + (P - r) * frame_power(K - 1, theta, pw_)) / P;
-	nl_gain = (float)sqrt(pw_ / pw);
+	nl_gain = static_cast<float>(sqrt(pw_ / pw));
 }
 
 /* precoding with the coefficients h_ of an MP sequence (14 fractional
@@ -273,13 +274,13 @@ void V34Params::set_precoder(const int h_[6])
 	/* x(n) = u(n) + c(n) - p(n): u(n) plus a component uniform over
 	   a 2^w square; the same power as without precoding */
 	if (precode)
-		g = (float)sqrt(2 / (pw + (1 << 2 * w) / 6.0));
+		g = static_cast<float>(sqrt(2 / (pw + (1 << 2 * w) / 6.0)));
 }
 
 /* to the nearest multiple of 2^s; half way: to the smaller magnitude */
 static int round_shift(long long v, int s)
 {
-	return (int)((v + (1LL << (s - 1)) - 1 + (v < 0)) >> s);
+	return static_cast<int>((v + (1LL << (s - 1)) - 1 + (v < 0)) >> s);
 }
 
 /* x(n) = y(n) - p(n) goes in: p(n + 1) and c(n + 1) */
@@ -345,10 +346,10 @@ void V34Params::shell_map(unsigned long r0, int m[8]) const
 		r3 -= t;
 	}
 	r5 = r3;
-	e = (int)(r4 % g2p(c));
-	f = (int)(r4 / g2p(c));
-	g_ = (int)(r5 % g2p(d));
-	h_ = (int)(r5 / g2p(d));
+	e = static_cast<int>(r4 % g2p(c));
+	f = static_cast<int>(r4 / g2p(c));
+	g_ = static_cast<int>(r5 % g2p(d));
+	h_ = static_cast<int>(r5 / g2p(d));
 /* m[i], m[i + 1]: the pair of rings with index v among those with that
    sum */
 #define PAIR(i, sum, v) do { \
@@ -389,14 +390,16 @@ unsigned long V34Params::shell_demap(const int m[8]) const
 		for (i = 0; i < c; i++)
 			r2 += g2p(i) * g2p(b_ - i);
 		r2 += pair_index(m[0], m[1]) +
-			(unsigned long long)pair_index(m[2], m[3]) * g2p(c);
+		      static_cast<unsigned long long>(pair_index(m[2], m[3])) *
+			      g2p(c);
 		for (i = 0; i < d; i++)
 			r3 += g2p(i) * g2p(a - b_ - i);
 		r3 += pair_index(m[4], m[5]) +
-			(unsigned long long)pair_index(m[6], m[7]) * g2p(d);
+		      static_cast<unsigned long long>(pair_index(m[6], m[7])) *
+			      g2p(d);
 		r_ += r2 + r3 * g4p(b_);
 	}
-	return (unsigned long)r_;
+	return static_cast<unsigned long>(r_);
 }
 
 
@@ -446,10 +449,11 @@ void V34DataTx::encode_frame(unsigned *scr, int tap)
 	}
 	link.get(bits, bb);
 	for (i = 0; i < bb; i++)
-		bits[i] = (unsigned char)scramble(scr, tap, bits[i]);
+		bits[i] =
+			static_cast<unsigned char>(scramble(scr, tap, bits[i]));
 	if (p_->K) {
 		for (i = 0; i < kk; i++)
-			r0 |= (unsigned long)bits[n++] << i;
+			r0 |= static_cast<unsigned long>(bits[n++]) << i;
 		for (i = 0; i < 4; i++) {
 			ib[i] = bits[n] | bits[n + 1] << 1 | bits[n + 2] << 2;
 			n += 3;
@@ -551,7 +555,8 @@ static void make_lookup(void)
 		for (k = 0; k < 4; k++) {
 			int x = v34_quarter[i][0], y = v34_quarter[i][1];
 			rotate(&x, &y, k);
-			lookup[(x + 45) / 2][(y + 45) / 2] = (short)(k << 9 | i);
+			lookup[(x + 45) / 2][(y + 45) / 2] =
+				static_cast<short>(k << 9 | i);
 		}
 }
 
@@ -575,7 +580,8 @@ void V34DataRx::init(const V34Params *p_)
 int V34Params::decide(cplx z, int *px, int *py) const
 {
 	float u = z.re / g, v = z.im / g, best = 1e9f;
-	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
+	int x0 = 2 * static_cast<int>(floorf(u / 2)) + 1,
+	    y0 = 2 * static_cast<int>(floorf(v / 2)) + 1;
 	int dx, dy, ret = -1, lim = M << q;
 
 	for (dx = -2; dx <= 2; dx += 2)
@@ -647,7 +653,8 @@ void V34DataRx::decode_frame(unsigned *scr, int tap)
 		}
 	}
 	for (i = 0; i < n; i++)
-		bits[i] = (unsigned char)descramble(scr, tap, bits[i]);
+		bits[i] = static_cast<unsigned char>(
+			descramble(scr, tap, bits[i]));
 	link.put(bits, n);
 }
 
@@ -664,7 +671,8 @@ void V34DataRx::decode_frame(unsigned *scr, int tap)
    among the points in use, or with precoding on the whole grid */
 void V34Params::subset_points(float u, float v, float dist[8], int pt[8]) const
 {
-	int x0 = 2 * (int)floorf(u / 2) + 1, y0 = 2 * (int)floorf(v / 2) + 1;
+	int x0 = 2 * static_cast<int>(floorf(u / 2)) + 1,
+	    y0 = 2 * static_cast<int>(floorf(v / 2)) + 1;
 	int dx, dy, i, lim = M << q, edge = precode ? 261 : 45;
 
 	/* outside: from the edge */

@@ -35,7 +35,7 @@ static void known_steps(unsigned *scr, int tap, int tones, uint8_t *ph8)
 {
 	for (int k = 0; k < tones; k++) {
 		int b1 = scramble(scr, tap, 1), b0 = scramble(scr, tap, 1);
-		ph8[k] = (uint8_t)(2 * vcvm_ungray(b1 << 1 | b0));
+		ph8[k] = static_cast<uint8_t>(2 * vcvm_ungray(b1 << 1 | b0));
 	}
 }
 
@@ -44,7 +44,7 @@ static int known_lag(unsigned *scr, int tap, uint8_t *b)
 {
 	int v = 0;
 	for (int i = 0; i < 4; i++) {
-		b[i] = (uint8_t)scramble(scr, tap, 1);
+		b[i] = static_cast<uint8_t>(scramble(scr, tap, 1));
 		v = v << 1 | b[i];
 	}
 	return vcvm_ungray(v);
@@ -62,12 +62,12 @@ static void comb_part(int code, int fs, bool sym22, int n, unsigned *scr,
 	tx.set_load(l);
 	const int sps = tx.sps();
 	size_t at = out.size();
-	out.resize(at + (size_t)n * sps);
+	out.resize(at + static_cast<size_t>(n) * sps);
 	tx.reference(&out[at]);
 	uint8_t ph8[VCVM_TONES], rs[VCVM_TONES] = {};
 	for (int s = 1; s < n; s++) {
 		known_steps(scr, tap, tx.comb().tones, ph8);
-		tx.steps(ph8, rs, &out[at + (size_t)s * sps]);
+		tx.steps(ph8, rs, &out[at + static_cast<size_t>(s) * sps]);
 	}
 }
 
@@ -80,12 +80,12 @@ static void param_part(int fs, bool p10, int n, unsigned *scr, int tap,
 		return;
 	const int T = tx.sps();
 	size_t at = out.size();
-	out.resize(at + (size_t)(8 + n) * T);
+	out.resize(at + static_cast<size_t>(8 + n) * T);
 	tx.preamble(&out[at]);
 	uint8_t b[4];
 	for (int s = 0; s < n; s++) {
 		known_lag(scr, tap, b);
-		tx.data(b, &out[at + (size_t)(8 + s) * T]);
+		tx.data(b, &out[at + static_cast<size_t>(8 + s) * T]);
 	}
 }
 
@@ -160,8 +160,8 @@ void VcvmProbeRx::start(long from)
 void VcvmProbeRx::push(const float *x, int n)
 {
 	hist_.insert(hist_.end(), x, x + n);
-	if ((long)hist_.size() > 4L * p_.fs) {
-		long cut = (long)hist_.size() - 3L * p_.fs;
+	if (static_cast<long>(hist_.size()) > 4L * p_.fs) {
+		long cut = static_cast<long>(hist_.size()) - 3L * p_.fs;
 		hist_.erase(hist_.begin(), hist_.begin() + cut);
 		hbase_ += cut;
 	}
@@ -172,16 +172,18 @@ void VcvmProbeRx::push(const float *x, int n)
 template <class R> static void feed(R &r, const std::vector<float> &h,
 				    long hbase)
 {
-	long a = std::max(r.received(), hbase), e = hbase + (long)h.size();
+	long a = std::max(r.received(), hbase),
+	     e = hbase + static_cast<long>(h.size());
 	if (a < e)
-		r.push(&h[(size_t)(a - hbase)], (int)(e - a));
+		r.push(&h[static_cast<size_t>(a - hbase)],
+		       static_cast<int>(e - a));
 }
 
 /* the next comb part: its receiver from a symbol before its expected
    start, its sums cleared, 2 s to receive it */
 void VcvmProbeRx::begin_comb()
 {
-	Part &pt = parts_[(size_t)part_];
+	Part &pt = parts_[static_cast<size_t>(part_)];
 	crx_.init(pt.code, p_.fs, pt.sym22);
 	const int sps = crx_.comb().sps;
 	crx_.restart(std::max(hbase_, first_ - sps));
@@ -227,11 +229,12 @@ void VcvmProbeRx::finish_comb(VcvmCombMeas *cm)
 	cm->n = n_;
 	for (int k = 0; k < cm->tones; k++) {
 		double n = std::max(n_, 1), mu = se_[k] / n;
-		cm->sigma[k] = (float)sqrt(std::max(0.0, see_[k] / n - mu * mu));
-		cm->sigma_a[k] = (float)sqrt(sa_[k] / n);
-		cm->level_db[k] = (float)(20 * log10((lv_[k] + 1e-9) /
-						     (mx + 1e-9)));
-		cm->errs[k] = (int)err_[k];
+		cm->sigma[k] = static_cast<float>(
+			sqrt(std::max(0.0, see_[k] / n - mu * mu)));
+		cm->sigma_a[k] = static_cast<float>(sqrt(sa_[k] / n));
+		cm->level_db[k] = static_cast<float>(
+			20 * log10((lv_[k] + 1e-9) / (mx + 1e-9)));
+		cm->errs[k] = static_cast<int>(err_[k]);
 	}
 	cm->ok = n_ > 0;
 }
@@ -257,7 +260,8 @@ void VcvmProbeRx::run()
 			for (; scan_ + w <= e; scan_ += step) {
 				double s = 0;
 				for (int t = 0; t < w; t++) {
-					double v = hist_[(size_t)(scan_ - hbase_ + t)];
+					double v = hist_[static_cast<size_t>(
+						scan_ - hbase_ + t)];
 					s += v * v;
 				}
 				if (s >= thr)
@@ -274,7 +278,7 @@ void VcvmProbeRx::run()
 			break;
 		}
 		case COMB: {
-			Part &pt = parts_[(size_t)part_];
+			Part &pt = parts_[static_cast<size_t>(part_)];
 			feed(crx_, hist_, hbase_);
 			const int sps = crx_.comb().sps;
 			if (!acquired_) {
@@ -304,7 +308,10 @@ void VcvmProbeRx::run()
 						double e = s.perr[k] * 180 / M_PI;
 						se_[k] += e;
 						see_[k] += e * e;
-						sa_[k] += (double)s.ratio_db[k] * s.ratio_db[k];
+						sa_[k] +=
+							static_cast<double>(
+								s.ratio_db[k]) *
+							s.ratio_db[k];
 						lv_[k] += s.level[k];
 						err_[k] += fabs(s.perr[k]) > M_PI / 4;
 					}
@@ -316,7 +323,7 @@ void VcvmProbeRx::run()
 			finish_comb(pt.m);
 			first_ = crx_.next_start();
 			end_ = first_;
-			if (++part_ < (int)parts_.size())
+			if (++part_ < static_cast<int>(parts_.size()))
 				begin_comb();
 			else if (p_.l3)
 				begin_param(false);
@@ -366,7 +373,7 @@ void VcvmProbeRx::run()
 			}
 			first_ = end_ = prx_.next_start();
 			if (!p10) {
-				m_.cbar = (float)(csum_ / N);
+				m_.cbar = static_cast<float>(csum_ / N);
 				m_.l3 = true;
 				begin_param(true);
 			} else
@@ -397,8 +404,8 @@ static double load_comb(const VcvmCombMeas &cm, int allowed, VcvmLoad *l)
 		int rb = 0;
 		if (allowed & VCVM_M_RINGS)
 			rb = cm.sigma_a[k] <= 0.4f ? 2 : cm.sigma_a[k] <= 0.8f ? 1 : 0;
-		l->phase[k] = (uint8_t)pb;
-		l->ring[k] = (uint8_t)rb;
+		l->phase[k] = static_cast<uint8_t>(pb);
+		l->ring[k] = static_cast<uint8_t>(rb);
 		bits += pb + rb;
 	}
 	return bits * 1000 / (cm.sym22 ? 22.5 : 20);
@@ -417,7 +424,7 @@ static int comb_rate(const VcvmCombMeas &cm, const VcvmLoad &l)
 		double M = l.phase[k] == 2 ? 4 : 8;
 		double sr = std::max(cm.sigma[k], 0.1f) * M_PI / 180;
 		double pred = erfc(M_PI / M / (sr * sqrt(2.0)));
-		double meas = cm.n ? (double)cm.errs[k] / cm.n : 0;
+		double meas = cm.n ? static_cast<double>(cm.errs[k]) / cm.n : 0;
 		p += std::max(pred, l.phase[k] == 2 ? meas : 0.0);
 		n++;
 	}

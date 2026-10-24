@@ -33,7 +33,7 @@ struct Reader {
 	bool literal(const char *word)
 	{
 		size_t n = strlen(word);
-		if ((size_t)(end - p) < n || memcmp(p, word, n))
+		if (static_cast<size_t>(end - p) < n || memcmp(p, word, n))
 			return false;
 		p += n;
 		return true;
@@ -62,19 +62,19 @@ struct Reader {
 	static void utf8(std::string &s, unsigned u)
 	{
 		if (u < 0x80) {
-			s += (char)u;
+			s += static_cast<char>(u);
 		} else if (u < 0x800) {
-			s += (char)(0xc0 | u >> 6);
-			s += (char)(0x80 | (u & 0x3f));
+			s += static_cast<char>(0xc0 | u >> 6);
+			s += static_cast<char>(0x80 | (u & 0x3f));
 		} else if (u < 0x10000) {
-			s += (char)(0xe0 | u >> 12);
-			s += (char)(0x80 | (u >> 6 & 0x3f));
-			s += (char)(0x80 | (u & 0x3f));
+			s += static_cast<char>(0xe0 | u >> 12);
+			s += static_cast<char>(0x80 | (u >> 6 & 0x3f));
+			s += static_cast<char>(0x80 | (u & 0x3f));
 		} else {
-			s += (char)(0xf0 | u >> 18);
-			s += (char)(0x80 | (u >> 12 & 0x3f));
-			s += (char)(0x80 | (u >> 6 & 0x3f));
-			s += (char)(0x80 | (u & 0x3f));
+			s += static_cast<char>(0xf0 | u >> 18);
+			s += static_cast<char>(0x80 | (u >> 12 & 0x3f));
+			s += static_cast<char>(0x80 | (u >> 6 & 0x3f));
+			s += static_cast<char>(0x80 | (u & 0x3f));
 		}
 	}
 	/* a string, p at its opening quote */
@@ -82,7 +82,7 @@ struct Reader {
 	{
 		p++;
 		while (p < end && *p != '"') {
-			if ((unsigned char)*p < 0x20)
+			if (static_cast<unsigned char>(*p) < 0x20)
 				return false;
 			if (*p != '\\') {
 				s += *p++;

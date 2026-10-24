@@ -48,15 +48,16 @@ inline unsigned char lin2ulaw(int x)
 	x += 0x84 >> 2;
 	seg = seg_search(x, seg_end);
 	if (seg >= 8)
-		return (unsigned char)(0x7F ^ mask);
-	return (unsigned char)(((seg << 4) | ((x >> (seg + 1)) & 15)) ^ mask);
+		return static_cast<unsigned char>(0x7F ^ mask);
+	return static_cast<unsigned char>(
+		((seg << 4) | ((x >> (seg + 1)) & 15)) ^ mask);
 }
 
 /* mu-law to 16 bit linear */
 inline int ulaw2lin(unsigned char u)
 {
 	int t;
-	u = (unsigned char)~u;
+	u = static_cast<unsigned char>(~u);
 	t = ((u & 15) << 3) + 0x84;
 	t <<= (u & 0x70) >> 4;
 	return (u & 0x80) ? 0x84 - t : t - 0x84;
@@ -75,10 +76,10 @@ inline unsigned char lin2alaw(int x)
 	}
 	seg = seg_search(x, seg_end);
 	if (seg >= 8)
-		return (unsigned char)(0x7F ^ mask);
+		return static_cast<unsigned char>(0x7F ^ mask);
 	aval = seg << 4;
 	aval |= seg < 2 ? (x >> 1) & 15 : (x >> seg) & 15;
-	return (unsigned char)(aval ^ mask);
+	return static_cast<unsigned char>(aval ^ mask);
 }
 
 /* A-law to 16 bit linear */
@@ -113,7 +114,7 @@ inline unsigned char encode(int alaw, int x)
    negative x */
 inline unsigned char encode_sm(int alaw, int x)
 {
-	return x < 0 ? (unsigned char)(encode(alaw, -x) ^ 0x80) :
+	return x < 0 ? static_cast<unsigned char>(encode(alaw, -x) ^ 0x80) :
 		encode(alaw, x);
 }
 

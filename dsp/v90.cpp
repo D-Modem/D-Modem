@@ -106,10 +106,10 @@ void V90Tx::anspcm_init(int level)
 	for (k = 0; k < 301; k++) {
 		double x = scl * sqrt(2.0) * cos(2 * M_PI * k * 79 / 301 +
 						  0.25 * M_PI / 301) + 0.5;
-		int v = (int)floor(x);
+		int v = static_cast<int>(floor(x));
 		/* (v: 13 bits for A-law, 14 for mu-law) */
-		anspcm[k] = (short)g711::decode(alaw, g711::encode_sm(alaw,
-						alaw ? 8 * v : 4 * v));
+		anspcm[k] = static_cast<short>(g711::decode(
+			alaw, g711::encode_sm(alaw, alaw ? 8 * v : 4 * v)));
 	}
 }
 
@@ -239,7 +239,8 @@ int V90Tx::sample()
 	case V90_QTS:
 	case V90_QTSBAR: {
 		/* as Sd, with V of Ucode UQTS: QTS 128 times, QTS-bar 8 */
-		int k = (int)(n % 6), s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
+		int k = static_cast<int>(n % 6),
+		    s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
 		x = (sd[k] ? lin[uqts & 127] : z) *
 			(seg == V90_QTS ? s : -s);
 		if (seg == V90_QTS && n + 1 == 768)
@@ -328,7 +329,7 @@ int V90Tx::sample()
 	case V90_RI:
 	case V90_RIBAR: {
 		/* + + + - - - of UINFO, Ri-bar the opposite */
-		int k = (int)(sym % 6), pos_ = k < 3;
+		int k = static_cast<int>(sym % 6), pos_ = k < 3;
 		if (seg == V90_RIBAR)
 			pos_ = !pos_;
 		x = pos_ ? lin[uinfo] : -lin[uinfo];
@@ -346,7 +347,7 @@ int V90Tx::sample()
 		/* + + + - - - of each interval's largest code (Rd: of the
 		   data mode constellations, Rt: the training ones), the bar
 		   the opposite */
-		int k = (int)(sym % 6), pos_ = k < 3;
+		int k = static_cast<int>(sym % 6), pos_ = k < 3;
 		if (seg == V90_RDBAR)
 			pos_ = !pos_;
 		x = pos_ ? lin[rd_code[k]] : -lin[rd_code[k]];
@@ -363,7 +364,7 @@ int V90Tx::sample()
 	case V90_RFBAR: {
 		/* + + - - of each interval's largest data mode code, the
 		   bar the opposite (8.8.4/V.92) */
-		int k = (int)(sym % 6), pos_ = (n & 3) < 2;
+		int k = static_cast<int>(sym % 6), pos_ = (n & 3) < 2;
 		if (seg == V90_RFBAR)
 			pos_ = !pos_;
 		x = pos_ ? lin[rd_code[k]] : -lin[rd_code[k]];
@@ -388,7 +389,7 @@ int V90Tx::sample()
 			   before (get_frame starts the encoder again) */
 			enc.outn = enc.qn = 0;
 			segment(V90_RF);
-			x = lin[rd_code[(int)(sym % 6)]];
+			x = lin[rd_code[static_cast<int>(sym % 6)]];
 			break;
 		}
 		if (opos >= 6 && rd_req) {
@@ -399,7 +400,7 @@ int V90Tx::sample()
 			for (k = 0; k < 6; k++)
 				rd_code[k] = enc.ucode[k][0];
 			segment(V90_RD);
-			int k2 = (int)(sym % 6), p2 = k2 < 3;
+			int k2 = static_cast<int>(sym % 6), p2 = k2 < 3;
 			x = p2 ? lin[rd_code[k2]] : -lin[rd_code[k2]];
 			break;
 		}
@@ -652,10 +653,10 @@ int V90Cp::parse(const unsigned char *b, int len)
 	alaw = b[35];
 	rate_mask = field(b, 36, 13);
 	ld = field(b, 49, 2);
-	a1 = (signed char)field(b, 69, 8);
-	a2 = (signed char)field(b, 77, 8);
-	b1 = (signed char)field(b, 86, 8);
-	b2 = (signed char)field(b, 94, 8);
+	a1 = static_cast<signed char>(field(b, 69, 8));
+	a2 = static_cast<signed char>(field(b, 77, 8));
+	b1 = static_cast<signed char>(field(b, 86, 8));
+	b2 = static_cast<signed char>(field(b, 94, 8));
 	for (i = 0; i < 6; i++) {
 		con[i] = field(b, con_bit[i], 4);
 		if (con[i] + 1 > ncon)
@@ -736,7 +737,7 @@ int V90Cp::usable(int D, int S) const
 			return 0;
 		prod *= n;
 	}
-	return prod >= (double)(1ULL << K);
+	return prod >= static_cast<double>(1ULL << K);
 }
 
 /*
@@ -809,7 +810,8 @@ int V90Enc::init(const V90Cp *cp, int D, const int *lin_)
 		M[i] = 0;
 		for (u = 127; u >= 0; u--)
 			if (m[u])
-				ucode[i][M[i]++] = (unsigned char)u;
+				ucode[i][M[i]++] =
+					static_cast<unsigned char>(u);
 	}
 	a1 = cp->a1 / 64.0;
 	a2 = cp->a2 / 64.0;
@@ -916,12 +918,13 @@ void V90Enc::push(const unsigned char *bits, int last_)
 	int D = S + K, mag[6], i;
 
 	for (i = 0; i < D; i++)
-		d[i] = (unsigned char)scramble(&scr, SCR_GPC, bits[i]);
+		d[i] = static_cast<unsigned char>(
+			scramble(&scr, SCR_GPC, bits[i]));
 	for (i = K - 1; i >= 0; i--)
 		r = (r << 1) | d[S + i];
 	for (i = 0; i < 6; i++) {
-		int k = (int)(r % (unsigned)M[i]);
-		r /= (unsigned)M[i];
+		int k = static_cast<int>(r % static_cast<unsigned>(M[i]));
+		r /= static_cast<unsigned>(M[i]);
 		mag[i] = lin[ucode[i][k]];
 	}
 	if (sr == 0) {

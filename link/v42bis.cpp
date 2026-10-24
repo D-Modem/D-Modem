@@ -54,7 +54,7 @@ enum {
    characters: it loses len / WINDOW of itself and gains the codeword */
 static uint16_t estimate(uint16_t est, int len, int size)
 {
-	return (uint16_t)(est + size - est * len / WINDOW);
+	return static_cast<uint16_t>(est + size - est * len / WINDOW);
 }
 
 /* allocates the dictionary for N2 codewords and strings of up to N7
@@ -111,7 +111,7 @@ void V42bis::dict_init()
 {
 	for (int i = 0; i < dict_size_; i++) {
 		Node &n = dict_[i];
-		n.ch = i >= N6 && i < N5 ? (uint8_t)(i - N6) : 0;
+		n.ch = i >= N6 && i < N5 ? static_cast<uint8_t>(i - N6) : 0;
 		n.parent = n.child = n.next = 0;
 	}
 	next_free_ = N5;
@@ -189,10 +189,10 @@ uint16_t V42bis::add_char(uint16_t at, uint8_t ch)
 int V42bis::recv_data(uint16_t ch)
 {
 	if (update_at_) {
-		add_char(update_at_, (uint8_t)ch);
+		add_char(update_at_, static_cast<uint8_t>(ch));
 		update_at_ = 0;
 	}
-	uint16_t at = match_char(last_matched_, (uint8_t)ch);
+	uint16_t at = match_char(last_matched_, static_cast<uint8_t>(ch));
 	if (!at) {
 		update_at_ = last_matched_;
 		return 0;
@@ -297,12 +297,12 @@ int V42bis::test_mode()
 void V42bis::send_cw(uint16_t cw)
 {
 	while (cw > threshold_) {
-		bit_data_ |= (uint32_t)STEPUP << bit_len_;
+		bit_data_ |= static_cast<uint32_t>(STEPUP) << bit_len_;
 		bit_len_ += cw_size_++;
-		threshold_ = (uint16_t)(threshold_ << 1 | 1);
+		threshold_ = static_cast<uint16_t>(threshold_ << 1 | 1);
 		send_bits();
 	}
-	bit_data_ |= (uint32_t)cw << bit_len_;
+	bit_data_ |= static_cast<uint32_t>(cw) << bit_len_;
 	bit_len_ += cw_size_;
 	send_bits();
 }
@@ -375,11 +375,11 @@ int V42bis::decode(uint8_t ch)
 		/* the octet's bits join the reservoir, the least significant
 		   first (Figure 3); a codeword has 9 bits or more, so no more
 		   than one ends in this octet */
-		bit_data_ |= (uint32_t)ch << bit_len_;
+		bit_data_ |= static_cast<uint32_t>(ch) << bit_len_;
 		bit_len_ += 8;
 		if (bit_len_ < cw_size_)
 			return 0;
-		uint16_t cw = (uint16_t)(bit_data_ & threshold_);
+		uint16_t cw = static_cast<uint16_t>(bit_data_ & threshold_);
 		bit_data_ >>= cw_size_;
 		bit_len_ -= cw_size_;
 		switch (cw) {
@@ -403,7 +403,7 @@ int V42bis::decode(uint8_t ch)
 			if (threshold_ >= dict_size_ - 1)
 				return -1;
 			cw_size_++;
-			threshold_ = (uint16_t)(threshold_ << 1 | 1);
+			threshold_ = static_cast<uint16_t>(threshold_ << 1 | 1);
 			return 0;
 		}
 		/* a string: not beyond the dictionary nor an empty entry, such
@@ -502,9 +502,10 @@ int V42bis::flush_decoder()
    if queued */
 int V42bis::send_data(uint16_t ch)
 {
-	if (olen_ >= (int)sizeof(obuf_))
+	if (olen_ >= static_cast<int>(sizeof(obuf_)))
 		return 0;
-	obuf_[(ohead_ + olen_++) % (int)sizeof(obuf_)] = (uint8_t)ch;
+	obuf_[(ohead_ + olen_++) % static_cast<int>(sizeof(obuf_))] =
+		static_cast<uint8_t>(ch);
 	return 1;
 }
 
@@ -518,7 +519,7 @@ int V42bis::out(uint8_t *buf, int n)
 		return 0;
 	for (int i = 0; i < n; i++) {
 		buf[i] = obuf_[ohead_];
-		ohead_ = (ohead_ + 1) % (int)sizeof(obuf_);
+		ohead_ = (ohead_ + 1) % static_cast<int>(sizeof(obuf_));
 	}
 	olen_ -= n;
 	return n;
