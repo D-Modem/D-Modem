@@ -27,7 +27,7 @@ void QamTx::init(int srate_, float carrier_, float baud,
 {
 	int i, n;
 
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	srate = srate_;
 	sps = srate_ / baud;
 	span = span_ > QAM_MAX_SPAN ? QAM_MAX_SPAN : span_;
@@ -89,7 +89,7 @@ int QamRx::init(int srate_, float carrier, float baud_,
 	int i;
 	float sum;
 
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	srate = srate_;
 	baud = baud_;
 	sps = srate_ / baud_;
@@ -297,7 +297,7 @@ int TrellisEnc::encode(int q, int bits)
 /* a new decoder for the 2^(nbits_ + 1) points of points_ */
 void Viterbi::init(const cplx *points_, int nbits_)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	points = points_;
 	nbits = nbits_;
 	npoints = 1 << (nbits_ + 1);
@@ -380,7 +380,7 @@ int Viterbi::decode(cplx z, cplx *decided)
 /* len_ taps, all 0; 0, or -1 when out of memory */
 int EchoCanceller::init(int len_)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	len = len_;
 	w = static_cast<float*>(calloc(len_, sizeof(float)));
 	hist = static_cast<float*>(calloc(2 * len_, sizeof(float)));

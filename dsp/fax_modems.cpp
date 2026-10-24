@@ -452,7 +452,7 @@ static cplx fax_tx_symbol(FaxTx *t)
    caller's bits from the start (the HDLC flags are the caller's) */
 void FaxTx::init(enum fax_mod mod_, int short_train_, int srate_, fax_get_bit_t get_bit_, void *ctx_)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	mod = mod_;
 	short_train = short_train_;
 	srate = srate_;
@@ -596,7 +596,7 @@ int FaxRx::make_reference()
    -1 when out of memory */
 int FaxRx::init(enum fax_mod mod_, int short_train_, int srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	mod = mod_;
 	short_train = short_train_;
 	srate = srate_;

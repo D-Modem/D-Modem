@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "reinit.h"
 #include "t4.h"
 
 namespace dsp {
@@ -39,7 +40,7 @@ static void put32(unsigned char *p, unsigned long v)
 int TiffOut::open(const char *path)
 {
 	unsigned char h[8] = { 'I', 'I', 42, 0, 0, 0, 0, 0 };
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	f = fopen(path, "wb");
 	if (!f)
 		return -1;
@@ -184,7 +185,7 @@ int TiffIn::open(const char *path)
 	FILE *f = fopen(path, "rb");
 	long len_;
 
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	if (!f)
 		return -1;
 	fseek(f, 0, SEEK_END);

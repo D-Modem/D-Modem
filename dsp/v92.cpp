@@ -358,7 +358,7 @@ int V92Cpd::parse(const unsigned char *b, int nb)
 
 	if (nb < 68 || !frame_crc_ok(b, nb - 16) || b[18])
 		return -1;
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	drn = field(b, 22, 5);
 	trellis = field(b, 27, 2);
 	e2u_extend = b[29];
@@ -3127,7 +3127,7 @@ int V92Up::tx_step()
 void V92Up::init(int alaw_, const V92Info1a *ia_, const long *fclock,
 		 long fbase)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	trn_ref_init();
 	alaw = alaw_;
 	ia = *ia_;

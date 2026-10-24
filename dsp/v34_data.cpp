@@ -205,7 +205,7 @@ int V34Params::init(int baud, int n, int expanded)
 	const struct v34_rate *rt;
 	double pw;
 
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	if (baud < 0 || baud >= V34_NBAUDS || n < 1 || n > 14)
 		return -1;
 	rt = &v34_rates[baud][n - 1];
@@ -409,7 +409,7 @@ unsigned long V34Params::shell_demap(const int m[8]) const
    2J - 2, a new mapping frame at the first symbol */
 void V34DataTx::init(const V34Params *p_)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	p = *p_;
 	pat = 2 * p_->J - 2;
 	v0 = v34_sync_pattern[pat];
@@ -560,7 +560,7 @@ static void make_lookup(void)
    transmitter) */
 void V34DataRx::init(const V34Params *p_)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	p = *p_;
 	{
 		static std::once_flag once;

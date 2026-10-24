@@ -95,7 +95,7 @@ int V90Jd::parse(const unsigned char *b)
 void V90Interp::init(int rate)
 {
 	int p, j;
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	step = rate == 8000 ? 0.5 : 0.6;
 	for (p = 0; p <= V90_INTERP_P; p++)
 		for (j = 0; j < 2 * V90_INTERP_T; j++) {
@@ -140,7 +140,7 @@ int V90Interp::run(float x, float *out)
 void V90Rx::init(int alaw_, int uinfo_, int rate)
 {
 	int i;
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	alaw = alaw_;
 	uinfo = uinfo_;
 	for (i = 0; i < 128; i++)
@@ -854,7 +854,7 @@ int V90Con::init(const V90Cp &cp, int D_, const float lv[6][128])
 {
 	int i, u;
 
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	if (cp.sr || !cp.usable(D_, 6))
 		return -1;
 	D = D_;

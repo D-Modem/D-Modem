@@ -276,7 +276,7 @@ static unsigned final_word(const struct v32_rate *r)
    conversion, phase compared with 10 ms ago */
 void ToneTrk::init(float freq, int srate)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	lo.set_freq(-freq, srate);
 	a = 1.0f / (0.0015f * srate);
 	lag = srate / 100;   /* compare with 10 ms ago */

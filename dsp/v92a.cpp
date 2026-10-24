@@ -21,7 +21,7 @@ namespace dsp {
 void V92ATx::init(int rate_, float lu_)
 {
 	int i;
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	rate = rate_;
 	lu = lu_;
 	for (i = 0; i <= 2 * V92A_SPAN * V92A_P; i++) {

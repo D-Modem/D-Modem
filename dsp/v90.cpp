@@ -118,7 +118,7 @@ void V90Tx::anspcm_init(int level)
 void V90Tx::init(int alaw_, int uinfo_)
 {
 	int i;
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	alaw = alaw_;
 	for (i = 0; i < 128; i++)
 		lin[i] = v90_ucode_linear(alaw_, i);
@@ -467,7 +467,7 @@ int v90_dil_length(const unsigned char *b, int n)
 /* see v34.h */
 void SyncFrames::init(Kind k, int max_len)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	kind = k;
 	max = max_len < SYNC_FRAME_MAX ? max_len : SYNC_FRAME_MAX;
 }
@@ -643,7 +643,7 @@ int V90Cp::parse(const unsigned char *b, int len)
 
 	if (!frame_crc_ok(b, len - 16))
 		return -1;
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	cp = b[19];
 	drn = field(b, 20, 5);
 	silence = b[30];
@@ -793,7 +793,7 @@ int V90Enc::init(const V90Cp *cp, int D, const int *lin_)
 
 	/* one point per interval and no bits until it works: an unusable
 	   CP gives silence, not a division by zero */
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	lin = lin_;
 	for (i = 0; i < 6; i++)
 		M[i] = 1;

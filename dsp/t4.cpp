@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "reinit.h"
 #include "t4.h"
 
 namespace dsp {
@@ -175,7 +176,7 @@ static void trees_build(void)
 /* an empty page width_ pels wide; fine_: 196 lines per inch.  0 */
 int T4Page::init(int width_, int fine_)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	width = width_;
 	fine = fine_;
 	return 0;
@@ -238,7 +239,7 @@ void T4Bits::put(unsigned code, int len)
 void T4Bits::release()
 {
 	free(buf);
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 }
 
 /* a code written as a string of '0' and '1' */
@@ -496,7 +497,7 @@ int T4Reader::decode_2d(int width, const int *ref, int nref, int *ch)
 void T4Rx::init(T4Page *page_, int mr_)
 {
 	std::call_once(trees_once, trees_build);
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	page = page_;
 	width = page_->width;
 	mr = mr_;

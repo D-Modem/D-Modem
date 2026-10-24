@@ -80,7 +80,7 @@ int V91Enc::init(const V90Cp *cp, int D, const int *lin_)
 
 	/* one point per interval and no bits until it works: an unusable
 	   CP gives silence, not a division by zero */
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	lin = lin_;
 	for (i = 0; i < 6; i++)
 		M[i] = 1;
@@ -125,7 +125,7 @@ void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 int V91Dec::init(const V90Cp *cp, int D)
 {
 	int i, u;
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	K = D - 6;
 	for (i = 0; i < 6; i++) {
 		const unsigned char *m = cp->mask[cp->con[i]];
@@ -212,7 +212,7 @@ void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
 	static const char slip[] = "0111011111111010";
 	int i, n_ = 0;
 
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	alaw = alaw_;
 	for (i = 0; i < 128; i++)
 		lin[i] = v90_ucode_linear(alaw, i);

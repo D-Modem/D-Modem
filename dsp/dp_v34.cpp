@@ -408,7 +408,7 @@ struct TestEcho {
 	void init(const char *e, int srate)
 	{
 		float db = 0, ms = 0;
-		memset(this, 0, sizeof(*this));
+		reinit(*this);
 		if (!e)
 			return;
 		sscanf(e, "%f:%f", &db, &ms);
@@ -1601,7 +1601,7 @@ void V34Probe<P>::start_probe()
    cleared */
 void CcRx::init(float fc)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	lo.set_freq(-fc, V34_SRATE);
 }
 
@@ -2377,7 +2377,7 @@ void V34Moh<P>::moh_request(int hold_secs)
 /* off, taps and powers cleared */
 void V34Echo::init()
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 }
 
 /* see V34Echo */

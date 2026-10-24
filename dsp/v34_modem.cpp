@@ -264,7 +264,7 @@ static cplx tx_symbol(V34Tx *t)
    GPA */
 void V34Tx::init(int baud_, int high, int caller)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	baud = baud_;
 	qam.init(V34_SRATE, v34_carrier(baud_, high),
 		    v34_symbol_rate(baud_), V34_ALPHA, V34_SPAN, 1.41421f,
@@ -323,7 +323,7 @@ float V34Tx::sample()
    scrambles with GPA.  Returns -1 when out of memory */
 int V34Rx::init(int baud_, int high, int caller)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	baud = baud_;
 	tap = caller ? 5 : 18;
 	stage = V34_RX_IDLE;

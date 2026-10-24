@@ -20,6 +20,8 @@
    and dsplibs.h is the rest of the library's interface (both ways) */
 #include <string.h>
 
+#include "reinit.h"
+
 #include <modem_dp.h>
 #include <modem_param.h>
 #include <dsplibs.h>

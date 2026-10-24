@@ -26,6 +26,7 @@
 
 #include <string.h>
 
+#include "reinit.h"
 #include "t38.h"
 
 namespace dsp {
@@ -251,7 +252,7 @@ static int get_len(const unsigned char *buf, int len, int *at, unsigned *v)
    UDPTL_HISTORY), sequence number 0 */
 void UdptlTx::init(int ec_, int depth_)
 {
-	memset(this, 0, sizeof(*this));
+	reinit(*this);
 	ec = ec_;
 	depth = depth_ < 0 ? 0 : depth_ > UDPTL_HISTORY ? UDPTL_HISTORY :
 		depth_;
