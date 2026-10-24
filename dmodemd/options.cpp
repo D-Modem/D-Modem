@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include <dcore.h>
+#include <str.h>
 #include <log.h>
 #include <tones.h>
 
@@ -203,10 +204,11 @@ int CommandLine::match(const char *text, const char **value) const
 {
 	for (int i = 0; i < OPT_COUNT; i++) {
 		const Option &o = opts_[i];
-		size_t len = strlen(o.name);
+		size_t len = std::string_view(o.name).size();
 		if (posix_only(i))
 			continue;
-		if (!strncmp(text, o.name, len) && fits(o, text + len, value))
+		if (dcore::starts_with(text, o.name) &&
+		    fits(o, text + len, value))
 			return i;
 		if (o.letter && *text == o.letter &&
 		    fits(o, text + 1, value))
@@ -273,22 +275,17 @@ void CommandLine::usage() const
 		"Options:\n", prog_, DEFAULT_NAME);
 	for (int i = 0; i < OPT_COUNT; i++) {
 		const Option &o = opts_[i];
-		char head[48];
 		if (posix_only(i))
 			continue;
 		const char *eq = o.takes != Takes::Nothing ? "=VAL" : "";
-		int len, width;
+		std::string head = o.letter ?
+			std::string("  -") + o.letter + ", --" : "      --";
 
-		if (o.letter)
-			len = snprintf(head, sizeof(head), "  -%c, --%s%s",
-				       o.letter, o.name, eq);
-		else
-			len = snprintf(head, sizeof(head), "      --%s%s",
-				       o.name, eq);
+		head += std::string(o.name) + eq;
 		/* the help from column 24, a space after the option at
 		   least */
-		width = len + 1 > 24 ? len + 1 : 24;
-		fprintf(stderr, "%-*s%s", width, head, o.help);
+		head.append(head.size() + 1 > 24 ? 1 : 24 - head.size(), ' ');
+		fprintf(stderr, "%s%s", head.c_str(), o.help);
 		if (o.takes != Takes::Nothing)
 			fprintf(stderr, " (default `%s')", o.value);
 		fputc('\n', stderr);
@@ -347,19 +344,21 @@ void CommandLine::apply(Options &opt) const
 	if (o[OPT_GROUP].given)
 		opt.group = o[OPT_GROUP].value;
 	if (o[OPT_PERM].given) {
-		long perm = strtol(o[OPT_PERM].value, nullptr, 8);
-		if (perm <= 0)
+		long perm = 0;
+		if (!dcore::parse_long(o[OPT_PERM].value, perm, 8) || perm <= 0)
 			usage();
 		opt.perm = (mode_t)perm;
 	}
 	if (o[OPT_NORT].given)
 		opt.realtime = false;
 	if (o[OPT_DEBUG].given) {
-		long level = strtol(o[OPT_DEBUG].value, nullptr, 0);
+		long level = 0;
+		dcore::parse_long(o[OPT_DEBUG].value, level, 0);
 		dcore::log_level = level > 0 ? (unsigned)level : 1;
 	}
 	if (o[OPT_LOG].given) {
-		long level = strtol(o[OPT_LOG].value, nullptr, 0);
+		long level = 0;
+		dcore::parse_long(o[OPT_LOG].value, level, 0);
 		dcore::log_data_level = level > 0 ? (unsigned)level : 5;
 	}
 	if (o[OPT_LISTEN].given)
@@ -380,7 +379,8 @@ void CommandLine::apply(Options &opt) const
 		opt.usb_international = true;
 	if (o[OPT_USB_VOICE_CODEC].given) {
 		const char *v = o[OPT_USB_VOICE_CODEC].value;
-		if (strcmp(v, "ulaw") && strcmp(v, "alaw") && strcmp(v, "linear")) {
+		const std::string_view c = v;
+		if (c != "ulaw" && c != "alaw" && c != "linear") {
 			fprintf(stderr, "%s: --usb-voice-codec: ulaw, alaw or "
 				"linear\n", prog_);
 			exit(1);
@@ -396,7 +396,8 @@ void CommandLine::apply(Options &opt) const
 		exit(1);
 	}
 	if (o[OPT_RATE].given) {
-		long rate = strtol(o[OPT_RATE].value, nullptr, 10);
+		long rate = 0;
+		dcore::parse_long(o[OPT_RATE].value, rate);
 		if (rate != 8000 && rate != 9600) {
 			fprintf(stderr, "%s: -r: 8000 or 9600\n", prog_);
 			exit(1);
@@ -434,14 +435,12 @@ void parse_options(int argc, char *argv[], Options &opt)
    file was compiled, on stdout and at level 1 in the log */
 void print_version()
 {
-	char line[128];
-
-	snprintf(line, sizeof(line), "%s: version %s %s %s",
-		 dcore::Modem::product, dcore::Modem::version, __DATE__,
-		 __TIME__);
-	printf("%s\n", line);
+	const std::string line = std::string(dcore::Modem::product) +
+		": version " + dcore::Modem::version + " " + __DATE__ + " " +
+		__TIME__;
+	printf("%s\n", line.c_str());
 	fflush(stdout);
-	dcore::log_printf(1, "%s\n", line);
+	dcore::log_printf(1, "%s\n", line.c_str());
 }
 
 } // namespace dmd

@@ -18,6 +18,7 @@
 
 #include <dcore.h>
 #include <log.h>
+#include <str.h>
 #include <t38.h>
 
 #include "portable.h"
@@ -462,21 +463,22 @@ int Control::serve(dcore::Modem &m, SipLine &line)
 /* a control line */
 void Control::act(const char *s, dcore::Modem &m, SipLine &line)
 {
+	const std::string_view c = s;
 	DBG("SIP: %s\n", s);
-	if (!strcmp(s, "RING")) {
+	if (c == "RING") {
 		m.ring_signal(true);
-	} else if (!strcmp(s, "CANCEL")) {
+	} else if (c == "CANCEL") {
 		m.ring_signal(false);
-	} else if (!strcmp(s, "T38")) {
+	} else if (c == "T38") {
 		if (m.started())
 			line.t38_begin(m);
-	} else if (!strcmp(s, "AUDIO")) {
+	} else if (c == "AUDIO") {
 		m.t38_stop();
 		line.t38_end();
-	} else if (!strcmp(s, "ANSWERED")) {
+	} else if (c == "ANSWERED") {
 		m.line_answered();
-	} else if (!strncmp(s, "FAILED ", 7)) {
-		m.line_failed(failure(atoi(s + 7)));
+	} else if (dcore::starts_with(c, "FAILED ")) {
+		m.line_failed(failure((int)dcore::leading_long(c.substr(7))));
 	}
 }
 

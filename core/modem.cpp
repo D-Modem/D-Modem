@@ -34,6 +34,7 @@
 #include "dsp.h"
 #include "tones.h"
 #include "log.h"
+#include "str.h"
 
 /* (weak: Smart Link's library, half_smartlink's, has none of these;
    MSVC has no weak symbols, and links the open DSP, which has them) */
@@ -324,7 +325,8 @@ int Modem::homolog_init(int id, const char *name)
 	for (const struct homolog_set *h = homolog_set; h->name; h++) {
 		if (h->id == MODEM_DEFAULT_COUNTRY_CODE)
 			dflt = h;
-		if (h->id != id && !(name && *name && !strcmp(h->name, name)) &&
+		if (h->id != id && !(name && *name &&
+				     std::string_view(h->name) == name) &&
 		    !(t && tones::find(h->name) == t))
 			continue;
 		homolog_ = h;
@@ -1393,7 +1395,7 @@ void Modem::fax_found(const char *why)
 	logf("adaptive answer: a fax call (%s)\n", why);
 	if (adapt_ == Adapt::Detect) {
 		adapt_ = Adapt::Off;
-		if (strncmp(why, "CNG", 3))
+		if (!starts_with(why, "CNG"))
 			run_ = Run::None;
 		return;
 	}
@@ -1600,7 +1602,7 @@ void Modem::vcvm_refresh()
 void Modem::report(Result r)
 {
 	bool verbose = sregs_[SREG_VERBOSE] != 0;
-	char line[64];
+	std::string line;
 
 	logf("result: %s\n", result_text[(int)r]);
 	if (sregs_[SREG_QUIET])
@@ -1612,37 +1614,34 @@ void Modem::report(Result r)
 		if ((a & 1) && (m || verbose)) {
 			const char *name = dp_name(m);
 			if (verbose)
-				snprintf(line, sizeof(line), "Modulation: %s",
-					 name ? name : "NONE");
+				line = std::string("Modulation: ") +
+					(name ? name : "NONE");
 			else
-				snprintf(line, sizeof(line), "%d", 1000 + m);
+				line = dec(1000 + m);
 			puts(line);
 			crlf();
 		}
 		if (a & 2) {
 			if (verbose)
-				snprintf(line, sizeof(line), "Protocol: %s",
-					 protocol_name());
+				line = std::string("Protocol: ") +
+					protocol_name();
 			else
-				snprintf(line, sizeof(line), "%d", cfg_.ec ?
-					 77 : cfg_.mnp_on ? 78 : 76);
+				line = dec(cfg_.ec ? 77 : cfg_.mnp_on ? 78 : 76);
 			puts(line);
 			crlf();
 		}
 		if ((a & 3) == 3) {
+			const std::string_view c = comp;
 			if (verbose)
-				snprintf(line, sizeof(line), "Compression: %s",
-					 comp);
+				line = "Compression: " + std::string(c);
 			else
-				snprintf(line, sizeof(line), "%d",
-					 !strcmp(comp, "MNP5") ? 66 :
-					 !strcmp(comp, "V42bis") ? 67 :
-					 !strcmp(comp, "V44") ? 68 : 69);
+				line = dec(c == "MNP5" ? 66 : c == "V42bis" ? 67 :
+					   c == "V44" ? 68 : 69);
 			puts(line);
 			crlf();
 		}
 		if ((a & 4) && verbose && tx_rate_) {
-			snprintf(line, sizeof(line), "TxRate: %u", tx_rate_);
+			line = "TxRate: " + dec(tx_rate_);
 			puts(line);
 			crlf();
 		}
@@ -1652,23 +1651,21 @@ void Modem::report(Result r)
 	if (r == Result::Connect && mode_ == MODEM_MODE_DATA && rx_rate_ &&
 	    sregs_[SREG_X_CODE]) {
 		if (!verbose) {
-			snprintf(line, sizeof(line), "%u",
-				 connect_code(rx_rate_));
+			line = dec(connect_code(rx_rate_));
 		} else if (sregs_[SREG_CONNECT_PROTOCOL]) {
-			const char *comp = compression_name();
-			snprintf(line, sizeof(line), "CONNECT %u%s/%s%s%s",
-				 rx_rate_, cvm ? "/CVM" : "", protocol_name(),
-				 strcmp(comp, "NONE") ? "/" : "",
-				 strcmp(comp, "NONE") ? comp : "");
+			const std::string_view comp = compression_name();
+			line = "CONNECT " + dec(rx_rate_) + (cvm ? "/CVM" : "") +
+				"/" + protocol_name();
+			if (comp != "NONE")
+				line += "/" + std::string(comp);
 		} else {
-			snprintf(line, sizeof(line), "CONNECT %u%s", rx_rate_,
-				 cvm ? "/CVM" : "");
+			line = "CONNECT " + dec(rx_rate_) + (cvm ? "/CVM" : "");
 		}
 	} else if (verbose) {
-		snprintf(line, sizeof(line), "%s", result_text[(int)r]);
+		line = result_text[(int)r];
 	} else {
-		snprintf(line, sizeof(line), "%d", r == Result::Fax ? 88 :
-			 r == Result::Data ? 89 : (int)r);
+		line = dec(r == Result::Fax ? 88 : r == Result::Data ? 89 :
+			   (int)r);
 	}
 	puts(line);
 	crlf();
@@ -1679,20 +1676,18 @@ void Modem::report(Result r)
    the first */
 void Modem::call_stats()
 {
-	char v[48];
-	auto row = [this](const char *label, const char *value) {
-		char line[96];
-		snprintf(line, sizeof(line), "%-36s%s", label, value);
-		puts(line);
+	auto row = [this](const std::string &label, const std::string &value) {
+		std::string line = label;
+		if (line.size() < 36)
+			line.append(36 - line.size(), ' ');
+		puts(line + value);
 		crlf();
 	};
-	auto number = [&v, &row](const char *label, unsigned long n) {
-		snprintf(v, sizeof(v), "%lu", n);
-		row(label, v);
+	auto number = [&row](const char *label, unsigned long n) {
+		row(label, dec(n));
 	};
-	auto decibels = [&v, &row](const char *label, double db) {
-		snprintf(v, sizeof(v), "%.1f", db);
-		row(label, v);
+	auto decibels = [&row](const char *label, double db) {
+		row(label, fixed(db, 1));
 	};
 
 	if (!stats_.call) {
@@ -1730,8 +1725,7 @@ void Modem::call_stats()
 					    DP_DBM0_POWER + 1e-9));
 		}
 		if (d.have & DP_STATS_RTD) {
-			snprintf(v, sizeof(v), "%d", d.rtd);
-			row("Round Trip Delay (ms)", v);
+			row("Round Trip Delay (ms)", dec(d.rtd));
 		}
 		if (d.have & DP_STATS_NEAR_ECHO)
 			decibels("Near Echo Level (dBm0)", d.near_echo);
@@ -1754,9 +1748,8 @@ void Modem::call_stats()
 	if (stats_.connected) {
 		unsigned long s = ((stats_.ended ? stats_.end :
 				    host_.now_ms()) - stats_.up) / 1000;
-		snprintf(v, sizeof(v), "%lu:%02lu:%02lu", s / 3600,
-			 s / 60 % 60, s % 60);
-		row("Call Duration", v);
+		row("Call Duration", dec(s / 3600) + ":" + dec(s / 60 % 60, 2) +
+		    ":" + dec(s % 60, 2));
 	}
 	if (stats_.ended)
 		row("Call Termination Cause", cause_text[(int)stats_.cause]);

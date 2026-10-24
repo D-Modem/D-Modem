@@ -25,6 +25,7 @@
 #include <dsplibs.h>
 
 #include "dcore.h"
+#include "str.h"
 
 namespace dcore {
 
@@ -57,25 +58,39 @@ bool dtmf_digit(char c)
    octal, else decimal), *end after it (p if there are no digits: 0) */
 unsigned long number(const char *p, const char **end)
 {
-	char *e;
-	unsigned long v = strtoul(p, &e, 0);
-	*end = e;
-	return v;
+	const char *q = p;
+	bool neg = false;
+	int base = 10;
+	unsigned long v;
+
+	while (isspace((unsigned char)*q))
+		q++;
+	if (*q == '+' || *q == '-')
+		neg = *q++ == '-';
+	if (q[0] == '0' && (q[1] == 'x' || q[1] == 'X') &&
+	    isxdigit((unsigned char)q[2])) {
+		base = 16;
+		q += 2;
+	} else if (q[0] == '0') {
+		base = 8;
+	}
+	v = to_ulong(q, q + strlen(q), end, base);
+	if (*end == q) {
+		*end = p;
+		return 0;
+	}
+	return neg ? 0 - v : v;
 }
 
 /* the decimal digits at p, *end after them (p and 0 if there are
    none) */
 unsigned long decimal(const char *p, const char **end)
 {
-	char *e;
-	unsigned long v;
 	if (!is_digit(*p)) {
 		*end = p;
 		return 0;
 	}
-	v = strtoul(p, &e, 10);
-	*end = e;
-	return v;
+	return to_ulong(p, p + strlen(p), end);
 }
 
 /* v is an item of list: single values and ranges a-b, separated by
@@ -133,12 +148,13 @@ const struct {
 bool taken(const char *p, int *len)
 {
 	for (const auto &t : taken_cmds) {
-		size_t n = strlen(t.name);
+		std::string_view name = t.name;
+		size_t n = name.size();
 		const char *e;
 		unsigned long v;
-		if (strncasecmp(p, t.name, n))
+		if (!starts_nocase(p, name))
 			continue;
-		if (!is_digit(p[n]) && !strcmp(t.name, "B"))
+		if (!is_digit(p[n]) && name == "B")
 			continue;
 		v = decimal(p + n, &e);
 		if (!in_list(t.values, v))
@@ -192,8 +208,9 @@ static_assert(KEPT_COUNT <= Modem::KEPT_PARAMS,
 int kept_command(const char *p)
 {
 	for (int i = 0; i < KEPT_COUNT; i++) {
-		size_t n = strlen(kept_params[i].name);
-		if (!strncasecmp(p, kept_params[i].name, n) &&
+		std::string_view name = kept_params[i].name;
+		size_t n = name.size();
+		if (starts_nocase(p, name) &&
 		    (p[n] == '=' || p[n] == '?'))
 			return i;
 	}
@@ -204,7 +221,7 @@ int kept_command(const char *p)
 int kept_index(const char *name)
 {
 	for (int i = 0; i < KEPT_COUNT; i++)
-		if (!strcmp(kept_params[i].name, name))
+		if (std::string_view(kept_params[i].name) == name)
 			return i;
 	return -1;
 }
@@ -523,7 +540,7 @@ int Modem::at_command(char *cmd)
 				ret = at_Z(p, &len);
 				break;
 			case '#':
-				ret = strncasecmp(p, "#CID", 4) ? -1 :
+				ret = !starts_nocase(p, "#CID") ? -1 :
 					at_CID(p, &len);
 				break;
 			case '%':
@@ -631,15 +648,14 @@ int Modem::at_command(char *cmd)
 			case '+':
 				switch (upper(p[1])) {
 				case 'F':
-					ret = strncasecmp(p, "+FCLASS", 7) ?
+					ret = !starts_nocase(p, "+FCLASS") ?
 						at_fax(p, &len) :
 						at_FCLASS(p, &len);
 					break;
 				case 'G':
-					if (!strncasecmp(p, "+GCI", 4)) {
+					if (starts_nocase(p, "+GCI")) {
 						ret = at_GCI(p, &len);
-					} else if (!strncasecmp(p, "+GCAP",
-								5)) {
+					} else if (starts_nocase(p, "+GCAP")) {
 						puts("+GCAP: +FCLASS,+MS");
 						crlf();
 						len = 5;
@@ -853,7 +869,6 @@ int Modem::at_I(char *p, int *len)
 {
 	const char *e;
 	unsigned long n = number(p + 1, &e);
-	char line[64];
 
 	*len = (int)(e - p);
 	switch (n) {
@@ -863,8 +878,7 @@ int Modem::at_I(char *p, int *len)
 		break;
 	case 1:
 	case 2:
-		snprintf(line, sizeof(line), "%s, %s", product, version);
-		puts(line);
+		puts(std::string(product) + ", " + version);
 		crlf();
 		puts(author);
 		crlf();
@@ -879,9 +893,7 @@ int Modem::at_I(char *p, int *len)
 	}
 	case 4:
 		for (int i = 0; i < 24; i++) {
-			snprintf(line, sizeof(line), "s%02d=%03d ", i,
-				 sregs_[i]);
-			puts(line);
+			puts("s" + dec(i, 2) + "=" + dec(sregs_[i], 3) + " ");
 			if (i % 8 == 7)
 				crlf();
 		}
@@ -889,8 +901,7 @@ int Modem::at_I(char *p, int *len)
 		break;
 	case 5:
 	case 6:
-		snprintf(line, sizeof(line), "Stored Profile %lu:", n - 5);
-		puts(line);
+		puts("Stored Profile " + dec(n - 5) + ":");
 		crlf();
 		break;
 	case 7:
@@ -920,15 +931,13 @@ int Modem::at_S(char *p, int *len)
 {
 	const char *e;
 	unsigned long n = number(p + 1, &e), v;
-	char line[16];
 
 	if (n >= sizeof(sregs_))
 		return -1;
 	if (*e == '?') {
 		if (n == SREG_VCVM_TONES || n == SREG_VCVM_RENEGS)
 			vcvm_refresh();
-		snprintf(line, sizeof(line), "%u", sregs_[n]);
-		puts(line);
+		puts(dec(sregs_[n]));
 		crlf();
 		*len = (int)(e + 1 - p);
 		return 0;
@@ -963,12 +972,11 @@ int Modem::at_ampV(char *p, int *len)
 		28, 29, 30, 31, 32, 39, 56, 60, 62, 70, 71, 92, 103, 104, 105,
 		106, 161,
 	};
-	char item[96];
 	int col = 0;
 	/* an item of the current group, on a new line if it does not fit
 	   on this one */
-	auto put = [this, &col](const char *s) {
-		int n = (int)strlen(s);
+	auto put = [this, &col](const std::string &s) {
+		int n = (int)s.size();
 		if (col && col + 1 + n > PROFILE_COLUMNS) {
 			crlf();
 			col = 0;
@@ -992,70 +1000,42 @@ int Modem::at_ampV(char *p, int *len)
 	*len = 2 + is_digit(p[2]);
 	puts("ACTIVE PROFILE:");
 	crlf();
-	snprintf(item, sizeof(item), "E%u", sregs_[SREG_ECHO]);
-	put(item);
-	snprintf(item, sizeof(item), "L%u", sregs_[SREG_SPEAKER_VOLUME]);
-	put(item);
-	snprintf(item, sizeof(item), "M%u", sregs_[SREG_SPEAKER_CONTROL]);
-	put(item);
-	snprintf(item, sizeof(item), "N%u", sregs_[SREG_AUTOMODE]);
-	put(item);
-	snprintf(item, sizeof(item), "Q%u", sregs_[SREG_QUIET]);
-	put(item);
+	put("E" + dec(sregs_[SREG_ECHO]));
+	put("L" + dec(sregs_[SREG_SPEAKER_VOLUME]));
+	put("M" + dec(sregs_[SREG_SPEAKER_CONTROL]));
+	put("N" + dec(sregs_[SREG_AUTOMODE]));
+	put("Q" + dec(sregs_[SREG_QUIET]));
 	put(sregs_[SREG_TONE_OR_PULSE] ? "T" : "P");
-	snprintf(item, sizeof(item), "V%u", sregs_[SREG_VERBOSE]);
-	put(item);
-	snprintf(item, sizeof(item), "X%u", sregs_[SREG_X_CODE]);
-	put(item);
-	snprintf(item, sizeof(item), "Y%u", sregs_[SREG_DEFAULT_SETTING]);
-	put(item);
-	snprintf(item, sizeof(item), "&A%u", sregs_[SREG_CONNNECT_MSG_FORMAT]);
-	put(item);
-	snprintf(item, sizeof(item), "&C%u", sregs_[SREG_CD]);
-	put(item);
-	snprintf(item, sizeof(item), "&E%u",
-		 sregs_[SREG_CONNNECT_MSG_SPEED_SRC]);
-	put(item);
-	snprintf(item, sizeof(item), "&H%u", sregs_[SREG_FLOW_CONTROL]);
-	put(item);
-	snprintf(item, sizeof(item), "&P%u", sregs_[SREG_PULSE_RATIO]);
-	put(item);
-	snprintf(item, sizeof(item), "\\A%u", sregs_[SREG_MNP_BLOCK]);
-	put(item);
-	snprintf(item, sizeof(item), "\\N%u", sregs_[SREG_EC]);
-	put(item);
-	snprintf(item, sizeof(item), "\\V%u", sregs_[SREG_CONNECT_PROTOCOL]);
-	put(item);
-	snprintf(item, sizeof(item), "%%C%u", sregs_[SREG_COMP]);
-	put(item);
-	snprintf(item, sizeof(item), "%%E%u",
-		 sregs_[SREG_LINE_QUALITY_CONTROL]);
-	put(item);
+	put("V" + dec(sregs_[SREG_VERBOSE]));
+	put("X" + dec(sregs_[SREG_X_CODE]));
+	put("Y" + dec(sregs_[SREG_DEFAULT_SETTING]));
+	put("&A" + dec(sregs_[SREG_CONNNECT_MSG_FORMAT]));
+	put("&C" + dec(sregs_[SREG_CD]));
+	put("&E" + dec(sregs_[SREG_CONNNECT_MSG_SPEED_SRC]));
+	put("&H" + dec(sregs_[SREG_FLOW_CONTROL]));
+	put("&P" + dec(sregs_[SREG_PULSE_RATIO]));
+	put("\\A" + dec(sregs_[SREG_MNP_BLOCK]));
+	put("\\N" + dec(sregs_[SREG_EC]));
+	put("\\V" + dec(sregs_[SREG_CONNECT_PROTOCOL]));
+	put("%C" + dec(sregs_[SREG_COMP]));
+	put("%E" + dec(sregs_[SREG_LINE_QUALITY_CONTROL]));
 	end();
 	for (unsigned char r : regs) {
-		snprintf(item, sizeof(item), "S%02u:%03u", r, sregs_[r]);
-		put(item);
+		put("S" + dec(r, 2) + ":" + dec(sregs_[r], 3));
 	}
 	end();
-	snprintf(item, sizeof(item), "+MS=%u,%u,%u,%u", sregs_[SREG_DP],
-		 sregs_[SREG_AUTOMODE], min_rate_, max_rate_);
-	put(item);
-	snprintf(item, sizeof(item), "+FCLASS=%d", (int)mode_);
-	put(item);
-	snprintf(item, sizeof(item), "+GCI=%x", (unsigned)homolog_->id);
-	put(item);
-	snprintf(item, sizeof(item), "+PMH=%d", moh_off_);
-	put(item);
-	snprintf(item, sizeof(item), "+PMHT=%d", moh_timer_);
-	put(item);
-	snprintf(item, sizeof(item), "#CID=%u", cid_requested_);
-	put(item);
+	put("+MS=" + dec(sregs_[SREG_DP]) + "," +
+	    dec(sregs_[SREG_AUTOMODE]) + "," + dec(min_rate_) + "," +
+	    dec(max_rate_));
+	put("+FCLASS=" + dec((int)mode_));
+	put("+GCI=" + hex(homolog_->id));
+	put("+PMH=" + dec(moh_off_));
+	put("+PMHT=" + dec(moh_timer_));
+	put("#CID=" + dec(cid_requested_));
 	for (int i = 0; i < KEPT_COUNT; i++) {
-		int k = snprintf(item, sizeof(item), "%s=",
-				 kept_params[i].name);
+		std::string item = std::string(kept_params[i].name) + "=";
 		for (unsigned j = 0; j < kept_n_[i]; j++)
-			k += snprintf(item + k, sizeof(item) - k, "%s%lu",
-				      j ? "," : "", kept_[i][j]);
+			item += (j ? "," : "") + dec(kept_[i][j]);
 		put(item);
 	}
 	end();
@@ -1076,14 +1056,12 @@ int Modem::at_MS(char *p, int *len)
 	const char *q = p + 3, *e;
 	unsigned long mod = sregs_[SREG_DP], automode = sregs_[SREG_AUTOMODE];
 	unsigned long min = min_rate_, max = max_rate_, v;
-	char line[128];
 
 	if (upper(p[2]) != 'S')
 		return -1;
 	if (*q == '?') {
-		snprintf(line, sizeof(line), "%u,%u,%u,%u", sregs_[SREG_DP],
-			 sregs_[SREG_AUTOMODE], min_rate_, max_rate_);
-		puts(line);
+		puts(dec(sregs_[SREG_DP]) + "," + dec(sregs_[SREG_AUTOMODE]) +
+		     "," + dec(min_rate_) + "," + dec(max_rate_));
 		crlf();
 		*len = (int)(q + 1 - p);
 		return 0;
@@ -1091,16 +1069,14 @@ int Modem::at_MS(char *p, int *len)
 	if (*q++ != '=')
 		return -1;
 	if (*q == '?') {
-		int k = snprintf(line, sizeof(line), "(");
+		std::string line = "(";
 		for (const DpDriver *d = dp_drivers(); d->id; d++)
 			if (d->code && ms_choosable(d->id))
-				k += snprintf(line + k, sizeof(line) - k,
-					      "%s%d", k > 1 ? "," : "",
-					      (int)d->id);
-		snprintf(line + k, sizeof(line) - k,
-			 "),(0,1),(%d-%d),(%d-%d)", MODEM_MIN_RATE,
-			 MODEM_MAX_RATE, MODEM_MIN_RATE, MODEM_MAX_RATE);
-		puts(line);
+				line += (line.size() > 1 ? "," : "") +
+					dec((int)d->id);
+		const std::string rates = "(" + dec(MODEM_MIN_RATE) + "-" +
+			dec(MODEM_MAX_RATE) + ")";
+		puts(line + "),(0,1)," + rates + "," + rates);
 		crlf();
 		*len = (int)(q + 1 - p);
 		return 0;
@@ -1111,8 +1087,7 @@ int Modem::at_MS(char *p, int *len)
 		while (isalnum((unsigned char)q[n]) || q[n] == '_')
 			n++;
 		for (const auto &m : ms_names)
-			if (strlen(m.name) == n &&
-			    !strncasecmp(q, m.name, n)) {
+			if (same_nocase(std::string_view(q, n), m.name)) {
 				mod = m.id;
 				found = true;
 				break;
@@ -1161,12 +1136,9 @@ int Modem::at_MS(char *p, int *len)
 int Modem::at_GCI(char *p, int *len)
 {
 	const char *q = p + 4;
-	char line[16];
 
 	if (*q == '?') {
-		snprintf(line, sizeof(line), "+GCI:%x",
-			 (unsigned)homolog_->id);
-		puts(line);
+		puts("+GCI:" + hex(homolog_->id));
 		crlf();
 		*len = 5;
 		return 0;
@@ -1176,8 +1148,7 @@ int Modem::at_GCI(char *p, int *len)
 	if (*q == '?') {
 		puts("+GCI:(");
 		for (const struct homolog_set *h = homolog_set; h->name; h++) {
-			snprintf(line, sizeof(line), "%x,", (unsigned)h->id);
-			puts(line);
+			puts(hex(h->id) + ",");
 		}
 		puts(")");
 		crlf();
@@ -1185,8 +1156,8 @@ int Modem::at_GCI(char *p, int *len)
 		return 0;
 	}
 	{
-		char *e;
-		unsigned long code = strtoul(q, &e, 16);
+		const char *e;
+		unsigned long code = to_ulong(q, q + strlen(q), &e, 16);
 		if (e == q || code > 0xffff || homolog_init((int)code, nullptr))
 			return -1;
 		*len = (int)(e - p);
@@ -1199,7 +1170,6 @@ int Modem::at_GCI(char *p, int *len)
 int Modem::at_FCLASS(char *p, int *len)
 {
 	const char *q = p + 7;
-	char line[8];
 
 	if (q[0] == '=' && q[1] == '?') {
 		puts("0,1,8");
@@ -1208,8 +1178,7 @@ int Modem::at_FCLASS(char *p, int *len)
 		return 0;
 	}
 	if (q[0] == '?') {
-		snprintf(line, sizeof(line), "%d", (int)mode_);
-		puts(line);
+		puts(dec((int)mode_));
 		crlf();
 		*len = 8;
 		return 0;
@@ -1300,11 +1269,10 @@ int Modem::fax_command(enum FAX_CMD cmd, unsigned val)
 int Modem::at_PMH(char *p, int *len)
 {
 	const char *q = p + 4, *e;
-	char line[32];
 	bool timer;
 	unsigned long v;
 
-	if (strncasecmp(p, "+PMH", 4))
+	if (!starts_nocase(p, "+PMH"))
 		return -1;
 	if (upper(*q) == 'R') {
 		unsigned long secs = 10;
@@ -1329,9 +1297,8 @@ int Modem::at_PMH(char *p, int *len)
 		crlf();
 		q += 2;
 	} else if (q[0] == '?') {
-		snprintf(line, sizeof(line), timer ? "+PMHT: %d" : "+PMH: %d",
-			 timer ? moh_timer_ : moh_off_);
-		puts(line);
+		puts(std::string(timer ? "+PMHT: " : "+PMH: ") +
+		     dec(timer ? moh_timer_ : moh_off_));
 		crlf();
 		q++;
 	} else if (q[0] == '=' && is_digit(q[1])) {
@@ -1355,15 +1322,13 @@ int Modem::at_PMH(char *p, int *len)
 int Modem::at_CID(char *p, int *len)
 {
 	const char *q = p + (*p == '#' ? 4 : 5);
-	char line[8];
 
 	if (q[0] == '=' && q[1] == '?') {
 		puts("0,1,2");
 		crlf();
 		q += 2;
 	} else if (q[0] == '?') {
-		snprintf(line, sizeof(line), "%u", cid_requested_);
-		puts(line);
+		puts(dec(cid_requested_));
 		crlf();
 		q++;
 	} else if (q[0] == '=' && q[1] >= '0' && q[1] <= '2') {
@@ -1382,9 +1347,9 @@ int Modem::at_CID(char *p, int *len)
 int Modem::at_voice(char *p, int *len)
 {
 	const char *q = p + 4, *e;
-	char cmd[3], line[64];
+	char cmd[3];
 
-	if (!strncasecmp(p + 2, "CID", 3))
+	if (starts_nocase(p + 2, "CID"))
 		return at_CID(p, len);
 	if (mode_ != MODEM_MODE_VOICE || !p[2] || !p[3])
 		return -1;
@@ -1392,12 +1357,13 @@ int Modem::at_voice(char *p, int *len)
 	cmd[1] = (char)upper(p[3]);
 	cmd[2] = '\0';
 	for (const auto &s : voice_settings) {
-		bool device = !strcmp(s.name, "LS");
-		bool events = !strcmp(s.name, "EM");
+		std::string_view name = s.name;
+		bool device = name == "LS";
+		bool events = name == "EM";
 		unsigned long v[2] = { 0, 0 };
 		int ret = 0;
 
-		if (strcmp(s.name, cmd))
+		if (name != cmd)
 			continue;
 		for (int i = 0; i < s.n; i++)
 			v[i] = s.field[i] ? voice_info_.*s.field[i] :
@@ -1410,27 +1376,25 @@ int Modem::at_voice(char *p, int *len)
 			for (const auto &d : voice_devices) {
 				if (d.handset && !handset)
 					continue;
-				snprintf(line, sizeof(line), "%s,%08lX,%08lX,%08lX",
-					 d.label, d.events[0] | more,
-					 d.events[1] | more, d.events[2] | more);
-				puts(line);
+				puts(std::string(d.label) + "," +
+				     hex(d.events[0] | more, 8, true) + "," +
+				     hex(d.events[1] | more, 8, true) + "," +
+				     hex(d.events[2] | more, 8, true));
 				crlf();
 			}
 			q += 2;
 		} else if (q[0] == '=' && q[1] == '?') {
-			int k = snprintf(line, sizeof(line), "+V%s=", s.name);
+			std::string line = "+V" + std::string(name) + "=";
 			for (int i = 0; i < s.n; i++)
-				k += snprintf(line + k, sizeof(line) - k,
-					      "%s%u-%u", i ? "," : "", s.lo[i],
-					      s.hi[i]);
+				line += (i ? "," : "") + dec(s.lo[i]) + "-" +
+					dec(s.hi[i]);
 			puts(line);
 			crlf();
 			q += 2;
 		} else if (q[0] == '?') {
-			int k = snprintf(line, sizeof(line), "+V%s=", s.name);
+			std::string line = "+V" + std::string(name) + "=";
 			for (int i = 0; i < s.n; i++)
-				k += snprintf(line + k, sizeof(line) - k,
-					      "%s%lu", i ? "," : "", v[i]);
+				line += (i ? "," : "") + dec(v[i]);
 			puts(line);
 			crlf();
 			q++;
@@ -1458,30 +1422,29 @@ int Modem::at_voice(char *p, int *len)
 			ret = voice_set_device((unsigned)v[0]);
 		return ret;
 	}
-	if (!strcmp(cmd, "IP")) {
+	const std::string_view c = cmd;
+	if (c == "IP") {
 		voice_init();
 		*len = 4;
 		return 0;
 	}
 	*len = (int)strlen(p);
-	if (!strcmp(cmd, "TX"))
+	if (c == "TX")
 		return voice_command(VOICE_CMD_STATE_TX);
-	if (!strcmp(cmd, "RX"))
+	if (c == "RX")
 		return voice_command(VOICE_CMD_STATE_RX);
-	if (!strcmp(cmd, "TR"))
+	if (c == "TR")
 		return voice_command(VOICE_CMD_STATE_DUPLEX);
-	if (strcmp(cmd, "TS"))
+	if (c != "TS")
 		return -1;
 	/* +VTS: the tone settings, or a tone or a DTMF digit played */
 	if (q[0] == '?' || (q[0] == '=' && q[1] == '?')) {
 		if (q[0] == '?')
-			snprintf(line, sizeof(line), "+VTS=%u,%u,%u",
-				 voice_info_.tone1_freq,
-				 voice_info_.tone2_freq,
-				 voice_info_.tone_duration);
+			puts("+VTS=" + dec(voice_info_.tone1_freq) + "," +
+			     dec(voice_info_.tone2_freq) + "," +
+			     dec(voice_info_.tone_duration));
 		else
-			snprintf(line, sizeof(line), "+VTS=0-4000,0-4000,0-6000");
-		puts(line);
+			puts("+VTS=0-4000,0-4000,0-6000");
 		crlf();
 		*len = q[0] == '?' ? 5 : 6;
 		return 0;
@@ -1576,33 +1539,31 @@ int Modem::at_kept(const char *p, int *len)
 {
 	int i = kept_command(p);
 	const Kept &k = kept_params[i];
-	const char *q = p + strlen(k.name), *e;
+	const std::string_view name = k.name;
+	const char *q = p + name.size(), *e;
 	unsigned long v[KEPT_VALUES];
 	unsigned n = kept_n_[i];
-	char line[128];
 
 	if (*q == '?') {
 		/* (-SEC, Rockwell's, without its name) */
-		int c = 0;
-		line[0] = '\0';
-		if (strcmp(k.name, "-SEC"))
-			c = snprintf(line, sizeof(line), "%s: ", k.name);
+		std::string line;
+		if (name != "-SEC")
+			line = std::string(name) + ": ";
 		for (unsigned j = 0; j < n; j++)
-			c += snprintf(line + c, sizeof(line) - c, "%s%lu",
-				      j ? "," : "", kept_[i][j]);
+			line += (j ? "," : "") + dec(kept_[i][j]);
 		puts(line);
 		crlf();
 		/* +CVM? while connected: the connection's figures */
-		if (!strcmp(k.name, "+CVM") && vcvm_.on) {
+		if (name == "+CVM" && vcvm_.on) {
 			static const char *rates[3] = { "1/2", "3/4", "7/8" };
-			snprintf(line, sizeof(line), "+CVM: %d,%d,%d,%d,%d.%d,"
-				 "%d,%d,%s,%d,%ld", vcvm_.raw_tx, vcvm_.raw_rx,
-				 vcvm_.coded_tx, vcvm_.coded_rx,
-				 vcvm_.sym_tenths / 10, vcvm_.sym_tenths % 10,
-				 vcvm_.tones_tx, vcvm_.tones_rx,
-				 rates[vcvm_.code_rate % 3], vcvm_.renegs,
-				 vcvm_.erasures);
-			puts(line);
+			puts("+CVM: " + dec(vcvm_.raw_tx) + "," +
+			     dec(vcvm_.raw_rx) + "," + dec(vcvm_.coded_tx) +
+			     "," + dec(vcvm_.coded_rx) + "," +
+			     dec(vcvm_.sym_tenths / 10) + "." +
+			     dec(vcvm_.sym_tenths % 10) + "," +
+			     dec(vcvm_.tones_tx) + "," + dec(vcvm_.tones_rx) +
+			     "," + rates[vcvm_.code_rate % 3] + "," +
+			     dec(vcvm_.renegs) + "," + dec(vcvm_.erasures));
 			crlf();
 		}
 		*len = (int)(q + 1 - p);
@@ -1610,8 +1571,7 @@ int Modem::at_kept(const char *p, int *len)
 	}
 	q++;
 	if (*q == '?') {
-		snprintf(line, sizeof(line), "%s: %s", k.name, k.ranges);
-		puts(line);
+		puts(std::string(name) + ": " + k.ranges);
 		crlf();
 		*len = (int)(q + 1 - p);
 		return 0;
@@ -1637,7 +1597,7 @@ int Modem::at_kept(const char *p, int *len)
 	}
 	memcpy(kept_[i], v, sizeof(v));
 	kept_n_[i] = n;
-	if (!strcmp(k.name, "+ES"))
+	if (name == "+ES")
 		ec_mode_from_es();
 	*len = (int)(q - p);
 	return 0;

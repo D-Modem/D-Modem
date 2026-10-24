@@ -458,6 +458,8 @@ private:
 	int voice_params(char *p, const char *cmd, VoiceParam *param,
 			 int *len, const char *prefix, const char *suffix);
 	void puts(const char *s);
+	/* (see puts(const char *)) */
+	void puts(const std::string &s) { puts(s.c_str()); }
 	void crlf();
 
 	Host &host_;

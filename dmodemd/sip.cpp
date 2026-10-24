@@ -84,6 +84,7 @@ namespace libre {
 }
 
 #include <log.h>
+#include <str.h>
 
 #include "g711.h"
 #include "line_recorder.h"
@@ -374,7 +375,7 @@ struct SdpMedia {
 	const std::string *attr(const char *name) const
 	{
 		for (const auto &a : attrs)
-			if (!strcasecmp(a.first.c_str(), name))
+			if (dcore::same_nocase(a.first, name))
 				return &a.second;
 		return nullptr;
 	}
@@ -417,26 +418,27 @@ bool sdp_parse(const char *body, size_t n, Sdp *s)
 			break;
 		}
 		case 'm': {
+			/* <media> <port>[/<count>] <proto> <fmt>... */
 			SdpMedia m;
-			char type[32], proto[32];
-			int port, k = 0;
-			if (sscanf(v.c_str(), "%31s %d%*[^ ] %31s %n", type,
-				   &port, proto, &k) < 3 &&
-			    sscanf(v.c_str(), "%31s %d %31s %n", type, &port,
-				   proto, &k) < 3)
-				return false;
-			m.type = type;
-			m.port = port;
-			m.proto = proto;
-			m.addr = session_addr;
-			for (size_t i = k; i < v.size();) {
+			std::vector<std::string> w;
+			long port;
+			for (size_t i = 0; i < v.size();) {
 				size_t e = v.find(' ', i);
-				std::string f = v.substr(i, e == std::string::npos ?
-							 std::string::npos : e - i);
-				if (!f.empty())
-					m.fmts.push_back(f);
-				i = e == std::string::npos ? v.size() : e + 1;
+				if (e == std::string::npos)
+					e = v.size();
+				if (e > i)
+					w.push_back(v.substr(i, e - i));
+				i = e + 1;
 			}
+			if (w.size() < 3 ||
+			    !dcore::parse_long(w[1].substr(0, w[1].find('/')),
+					       port))
+				return false;
+			m.type = w[0];
+			m.port = (int)port;
+			m.proto = w[2];
+			m.addr = session_addr;
+			m.fmts.assign(w.begin() + 3, w.end());
 			s->media.push_back(m);
 			break;
 		}
@@ -490,14 +492,13 @@ int line_of(const Sdp &s, bool t38)
 int g711_pt(const SdpMedia &m, int *law)
 {
 	for (const std::string &f : m.fmts) {
-		char *end;
-		long pt = strtol(f.c_str(), &end, 10);
+		long pt;
 		std::string enc;
 
-		if (*end || pt < 0 || pt > 127)
+		if (!dcore::parse_long(f, pt) || pt < 0 || pt > 127)
 			continue;
 		for (const auto &a : m.attrs) {
-			if (strcasecmp(a.first.c_str(), "rtpmap"))
+			if (!dcore::same_nocase(a.first, "rtpmap"))
 				continue;
 			size_t sp = a.second.find(' ');
 			if (sp != std::string::npos &&
@@ -521,13 +522,12 @@ int g711_pt(const SdpMedia &m, int *law)
 int te_pt(const SdpMedia &m)
 {
 	for (const std::string &f : m.fmts) {
-		char *end;
-		long pt = strtol(f.c_str(), &end, 10);
+		long pt;
 
-		if (*end || pt < 96 || pt > 127)
+		if (!dcore::parse_long(f, pt) || pt < 96 || pt > 127)
 			continue;
 		for (const auto &a : m.attrs) {
-			if (strcasecmp(a.first.c_str(), "rtpmap"))
+			if (!dcore::same_nocase(a.first, "rtpmap"))
 				continue;
 			size_t sp = a.second.find(' ');
 			if (sp != std::string::npos &&
@@ -550,7 +550,7 @@ std::string direction(const Sdp &s, const SdpMedia &m)
 			return d;
 	for (const char *d : dirs)
 		for (const auto &a : s.attrs)
-			if (!strcasecmp(a.first.c_str(), d))
+			if (dcore::same_nocase(a.first, d))
 				return d;
 	return "sendrecv";
 }
@@ -574,9 +574,9 @@ Peer t38_params(const SdpMedia &m)
 	for (const auto &a : m.attrs) {
 		std::string n = lower(a.first);
 		if (n == "t38faxversion")
-			p.version = atoi(a.second.c_str());
+			p.version = (int)dcore::leading_long(a.second);
 		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
-			p.max_datagram = atoi(a.second.c_str());
+			p.max_datagram = (int)dcore::leading_long(a.second);
 		else if (n == "t38faxudpec")
 			p.redundancy = lower(a.second) == "t38udpredundancy";
 	}
@@ -1612,10 +1612,8 @@ void on_close(int err, const struct sip_msg *msg, void *arg)
 	/* a call we made that never came up: why, ahead of its audio's
 	   end */
 	if (!c->incoming && !c->confirmed) {
-		char line[32];
-		snprintf(line, sizeof(line), "FAILED %u\n",
-			 msg ? msg->scode : 0);
-		ctl_line(line);
+		ctl_line(("FAILED " + dcore::dec(msg ? msg->scode : 0) +
+			  "\n").c_str());
 	}
 	end_call();
 }
@@ -2121,12 +2119,13 @@ bool config_from_env(Config &cfg, bool listen)
 	cfg.user = user.c_str();
 	cfg.password = password.c_str();
 	cfg.domain = domain.c_str();
-	cfg.port = port && *port ? atoi(port) : 5060;
+	cfg.port = port && *port ? (int)dcore::leading_long(port) : 5060;
 	cfg.listen = listen;
 	cfg.record = record.empty() ? nullptr : record.c_str();
-	cfg.t38 = !t38 || !(!strcasecmp(t38, "no") || !strcmp(t38, "0") ||
-			    !strcasecmp(t38, "off") ||
-			    !strcasecmp(t38, "false"));
+	cfg.t38 = !t38 || !(dcore::same_nocase(t38, "no") ||
+			    std::string_view(t38) == "0" ||
+			    dcore::same_nocase(t38, "off") ||
+			    dcore::same_nocase(t38, "false"));
 	return true;
 }
 
@@ -2144,7 +2143,8 @@ int start(const Config &cfg)
 	if (cfg.log_level >= 0)
 		log_level = cfg.log_level;
 	else
-		log_level = level && *level ? atoi(level) : 4;
+		log_level = level && *level ? (int)dcore::leading_long(level) :
+			4;
 	if (cfg.record)
 		rec.open(cfg.record, ".rx", ".tx");
 
