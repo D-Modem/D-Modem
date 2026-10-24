@@ -46,7 +46,7 @@ public:
 	/* what a packet began: its kind, the event, a name for the log */
 	struct Began {
 		Kind kind;
-		int event;
+		s16 event;
 		const char *name;
 	};
 
@@ -75,7 +75,7 @@ private:
 	bool ended_ = false;            /* its end packet came */
 	u32 ts_ = 0;                    /* the played event's timestamp */
 	/* the last event not played (its start told once), -1 if none */
-	int other_ = -1;
+	s16 other_ = -1;
 	u32 other_ts_ = 0;
 	s32 left_ = 0;                  /* samples it plays on without a
 					   packet */

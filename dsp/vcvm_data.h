@@ -48,14 +48,14 @@ class VcvmDataTx {
 public:
 	/* the octets to send: the next, or -1 for none now (then an HDLC
 	   flag, 0x7e, which is what the link layer sends when idle) */
-	using Source = std::function<int()>;
+	using Source = std::function<s16()>;
 
 	/* the loading the peer asked for, at fs; tap the scrambler's
 	   (SCR_GPC calling, SCR_GPA answering) */
-	int init(const VcvmLoading &l, s32 fs, int tap, Source src);
+	s16 init(const VcvmLoading &l, s32 fs, s16 tap, Source src);
 	/* the loading sent */
 	const VcvmLoading &loading() const { return l_; }
-	int sps() const;
+	s16 sps() const;
 
 	/* the start of phase 4 (the phase reference, or the preamble) to
 	   out, its samples */
@@ -68,12 +68,12 @@ public:
 	s32 octets() const { return sent_; }
 
 private:
-	int bit();
+	s16 bit();
 	void block();
 
 	VcvmLoading l_{};
 	s32 fs_ = 8000;
-	int tap_ = 18, D_ = 4;
+	s16 tap_ = 18, D_ = 4;
 	Source src_;
 	ReedSolomon rs_;
 	VcvmCombTx ctx_;
@@ -102,18 +102,18 @@ struct VcvmDataStats {
 class VcvmDataRx {
 public:
 	/* the information octets decoded, a block at a time */
-	using Sink = std::function<void(const u8 *d, int n)>;
+	using Sink = std::function<void(const u8 *d, s32 n)>;
 
 	/* the loading this DCE asked for, at fs; tap the peer's
 	   scrambler's */
-	int init(const VcvmLoading &l, s32 fs, int tap, Sink sink);
+	s16 init(const VcvmLoading &l, s32 fs, s16 tap, Sink sink);
 	/* the loading received */
 	const VcvmLoading &loading() const { return l_; }
 
 	/* look for phase 4's start from sample from (the samples pushed
 	   next are from there) */
 	void start(s32 from);
-	void push(const float *x, int n);
+	void push(const float *x, s32 n);
 	s32 received() const;
 
 	/* phase 4's start found */
@@ -132,15 +132,15 @@ public:
 	s32 position() const { return pos_; }
 
 private:
-	void symbol(const u8 *bits, const float *rel, int nb);
-	void line_bit(int b, float rel);
+	void symbol(const u8 *bits, const float *rel, s16 nb);
+	void line_bit(s16 b, float rel);
 	void level(double v);
 	void decode_block();
 	void run();
 
 	VcvmLoading l_{};
 	s32 fs_ = 8000;
-	int tap_ = 18, D_ = 4;
+	s16 tap_ = 18, D_ = 4;
 	Sink sink_;
 	ReedSolomon rs_;
 	VcvmCombRx crx_;
@@ -149,19 +149,19 @@ private:
 		lost_ = false;
 	s32 from_ = 0, pos_ = 0;
 	bool onset_ = false;
-	int lead_ = 0;                  /* the reference symbols taken */
+	s16 lead_ = 0;                  /* the reference symbols taken */
 	/* the symbols held back three, for the control sequence */
 	struct Held {
 		std::vector<u8> bits;
 		std::vector<float> rel;
 	};
 	std::vector<Held> held_;
-	int ctl_run_ = 0;
+	s16 ctl_run_ = 0;
 	/* the descrambler, on the decoded information octets */
 	u32 scr_ = 0;
 	/* the octets coming */
-	int nbit_ = 0;
-	unsigned oct_ = 0;
+	s16 nbit_ = 0;
+	u16 oct_ = 0;
 	float orel_ = 1;
 	std::vector<u8> blk_;
 	std::vector<float> rel_;        /* each octet's reliability */

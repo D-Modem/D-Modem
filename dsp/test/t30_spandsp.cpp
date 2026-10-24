@@ -35,7 +35,7 @@ struct doc {
 };
 
 /* our sender's next page: read_page's result */
-static int next_page(void *ctx, T4Page *p)
+static s16 next_page(void *ctx, T4Page *p)
 {
 	return static_cast<doc*>(ctx)->in.read_page(p);
 }

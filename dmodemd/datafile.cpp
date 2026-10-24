@@ -85,7 +85,7 @@ DataFile::~DataFile()
 }
 
 /* see datafile.h */
-int DataFile::load(struct dsp_info *info) const
+s32 DataFile::load(struct dsp_info *info) const
 {
 	struct datafile_record dr;
 	ssize_t ret;
@@ -103,7 +103,7 @@ int DataFile::load(struct dsp_info *info) const
 }
 
 /* see datafile.h */
-int DataFile::save(const struct dsp_info *info)
+s32 DataFile::save(const struct dsp_info *info)
 {
 	struct datafile_record dr = {};
 	ssize_t ret;

@@ -41,7 +41,7 @@ enum cp_state {
 
 struct cp_tone {
 	Goertzel g;
-	int blocks;             /* consecutive blocks where the tone is on */
+	s16 blocks;             /* consecutive blocks where the tone is on */
 };
 
 /* (S10's carrier_loss and carrier_run are not used) */
@@ -51,10 +51,10 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	/* dialing: the core's dial string (more comes after a ';'), the
 	   network dialed it (created with it hidden), a ';' to report */
 	const char *dial;
-	int dial_pos;
+	s16 dial_pos;
 	s32 dial_on, dial_off;
 	s32 digit_left, pause_left;
-	int digit_on;
+	s16 digit_on;
 	DtmfGen dtmf;
 	/* pulse dialing (ATP, P in the dial string): the country's make,
 	   break and gap between digits (samples) and its digit pattern
@@ -62,74 +62,74 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	   broken (1) or made (0) through MDMPRM_PULSE_HOOK; pulses left of
 	   the digit, the samples left of the break or make; the line
 	   cannot (DTMF then) */
-	int pulse;
+	s16 pulse;
 	s32 pulse_make, pulse_break, pulse_gap;
-	int pulse_pattern;
-	int pulses_left, pulse_broken;
+	s16 pulse_pattern;
+	s16 pulses_left, pulse_broken;
 	s32 pulse_left;
-	int pulse_unable;
-	int pulse_dialling;     /* MDMPRM_PULSE_DIALLING said 1 */
-	int net_dialed;
-	int dialed;
+	s16 pulse_unable;
+	s16 pulse_dialling;     /* MDMPRM_PULSE_DIALLING said 1 */
+	s16 net_dialed;
+	s16 dialed;
 	/* @: remote ringing heard, blocks of sound and of quiet */
-	int rang;
+	s16 rang;
 	s32 sound_blocks, quiet_blocks;
 
 	/* tone detectors on BLOCK_MS blocks */
-	int block_len, block_n;
+	s16 block_len, block_n;
 	float block_energy;
 	struct cp_tone dialtone[3];     /* 350, 440, 425 Hz */
 	struct cp_tone ans2100, ans2225, usb1;
 	/* 2225 Hz (Bell) and 2250 Hz (V.22 unscrambled ones) are too
 	   close for the blocks: 200 ms ones tell them apart */
 	Goertzel fine2225, fine2250;
-	int need_dialtone;
-	int busy_detect;        /* X3, X4: BUSY on a busy tone */
+	s16 need_dialtone;
+	s16 busy_detect;        /* X3, X4: BUSY on a busy tone */
 	s32 dialtone_blocks; /* of dial tone, with gaps of 1 s at most */
 	s32 dialtone_gap;       /* blocks since the dial tone's last */
 
 	/* busy tone cadence detector: the bounds of its on and off times
 	   (ms), the cycles it takes (the country's, or 200 to 800 ms and
 	   4) */
-	int busy_on_min, busy_on_max, busy_off_min, busy_off_max;
+	s16 busy_on_min, busy_on_max, busy_off_min, busy_off_max;
 	bool busy_bounds;               /* the country's bounds above */
 	const tones::Tone *busy_tone[2]; /* its busy, congestion tone, if
 					   it has them (MDMPRM_TONES) */
-	int busy_need;
+	s16 busy_need;
 	Biquad cpt_bp;
 	float cpt_energy;
-	int cpt_on;
+	s16 cpt_on;
 	s32 cpt_run;            /* blocks in the current on/off run */
-	int busy_cycles;
+	s16 busy_cycles;
 
 	/* V.25 calling tone, or the T.30 CNG of a fax call */
-	int calling_tone;
-	int fax;                /* 1 a fax call (CNG); -1 one without its
+	s16 calling_tone;
+	s16 fax;                /* 1 a fax call (CNG); -1 one without its
 				   CNG (DSP_FAX_CNG=0); 0 data */
 	Osc ct;
 
 	/* its name in the log */
 	const char *tag() const { return "callprog"; }
-	int block();
+	s16 block();
 	bool busy_part(bool on, s32 len) const;
 	float dial_sample();
 	bool pulse_digit(char ch);
-	void pulse_dialling_now(int on);
-	void hook_pulse(int broken);
-	int start(struct modem *m, enum DP_ID id, int caller, s32 srate_,
-		  int max_frag);
-	int process(void *in, void *out, int cnt) override;
+	void pulse_dialling_now(s16 on);
+	void hook_pulse(s16 broken);
+	s16 start(struct modem *m, enum DP_ID id, s16 caller, s32 srate_,
+		  s32 max_frag);
+	s16 process(void *in, void *out, s32 cnt) override;
 };
 
 /* sets up the detectors on BLOCK_MS blocks, the dial string and its
    timings (S11 DTMF ms, S8 comma pause), dial tone wait (X2/X4), the
    answer timeout (S7 s) and the calling tone (V.25 1300 Hz, or the 1100
    Hz CNG in fax mode); forgets any answer tone in the runtime; 0 */
-int CallProgPump::start(struct modem *m, enum DP_ID id, int caller,
-			 s32 srate_, int max_frag)
+s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
+			 s32 srate_, s32 max_frag)
 {
 	const char *dial_;
-	int i, v;
+	s16 i, v;
 	static const float dt_freq[3] = { 350, 440, 425 };
 
 	pump_setup(m, srate_, caller);
@@ -154,27 +154,27 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller,
 
 	/* pulse dialing: ATP (the core's flag), the country's times */
 	pulse = modem_get_param(m, GetPulseDialingFlag) > 0;
-	v = static_cast<int>(modem_get_param(m, GetPulseDialMakeTime));
+	v = static_cast<s16>(modem_get_param(m, GetPulseDialMakeTime));
 	pulse_make = ms2samples(v > 0 ? v : 40, srate_);
-	v = static_cast<int>(modem_get_param(m, GetPulseDialBreakTime));
+	v = static_cast<s16>(modem_get_param(m, GetPulseDialBreakTime));
 	pulse_break = ms2samples(v > 0 ? v : 60, srate_);
-	v = static_cast<int>(modem_get_param(m, GetPulseBetweenDigitsInterval));
+	v = static_cast<s16>(modem_get_param(m, GetPulseBetweenDigitsInterval));
 	pulse_gap = ms2samples(v > 0 ? 10 * v : 800, srate_);
-	v = static_cast<int>(modem_get_param(m, GetPulseDialDigitPattern));
+	v = static_cast<s16>(modem_get_param(m, GetPulseDialDigitPattern));
 	pulse_pattern = v >= 1 && v <= 3 ? v : 1;
 
 	/* busy tone: the country's cadence (10 ms), 20 ms either side for
 	   the blocks */
-	busy_on_min = 10 * static_cast<int>(
+	busy_on_min = 10 * static_cast<s16>(
 				   modem_get_param(m, GetMinBusyCadenceOnTime));
-	busy_on_max = 10 * static_cast<int>(
+	busy_on_max = 10 * static_cast<s16>(
 				   modem_get_param(m, GetMaxBusyCadenceOnTime));
 	busy_off_min =
 		10 *
-		static_cast<int>(modem_get_param(m, GetMinBusyCadenceOffTime));
+		static_cast<s16>(modem_get_param(m, GetMinBusyCadenceOffTime));
 	busy_off_max =
 		10 *
-		static_cast<int>(modem_get_param(m, GetMaxBusyCadenceOffTime));
+		static_cast<s16>(modem_get_param(m, GetMaxBusyCadenceOffTime));
 	/* or rather the country's own busy and congestion tones of the
 	   ITU's list (tones.h), if it has them: a part of either's cadence,
 	   15% or 80 ms either side (the bounds above, Smart Link's table,
@@ -200,7 +200,7 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller,
 		busy_on_max += 2 * BLOCK_MS;
 		busy_off_max += 2 * BLOCK_MS;
 	}
-	v = static_cast<int>(modem_get_param(m, GetBusyDetectionCyclesNumber));
+	v = static_cast<s16>(modem_get_param(m, GetBusyDetectionCyclesNumber));
 	busy_need = v >= 2 && v <= 8 ? v : 4;
 
 	dial_ = reinterpret_cast<const char *>(
@@ -236,7 +236,7 @@ int CallProgPump::start(struct modem *m, enum DP_ID id, int caller,
 }
 
 /* one tone is "on" when it dominates the block energy */
-static int cp_tone_block(struct cp_tone *t, float block_power, float min_power)
+static s16 cp_tone_block(struct cp_tone *t, float block_power, float min_power)
 {
 	if (t->g.power > min_power && t->g.power > 0.5f * block_power)
 		t->blocks++;
@@ -255,7 +255,7 @@ bool CallProgPump::busy_part(bool on, s32 len) const
 	for (const tones::Tone *t : busy_tone) {
 		if (!t)
 			continue;
-		for (int k = on ? 0 : 1; k < t->n; k += 2) {
+		for (s16 k = on ? 0 : 1; k < t->n; k += 2) {
 			s32 ms = static_cast<s32>(
 				t->cadence[k] * 1000 + 0.5f);
 			s32 tol = ms * 15 / 100 > 80 ? ms * 15 / 100 : 80;
@@ -267,12 +267,12 @@ bool CallProgPump::busy_part(bool on, s32 len) const
 }
 
 /* process one complete detector block, returns a DPSTAT_ code */
-int CallProgPump::block()
+s16 CallProgPump::block()
 {
 	float bp = block_energy / block_len;
 	float min = tone_power(150);    /* about -43 dBm0 */
 	float dt;
-	int i, on;
+	s16 i, on;
 
 	block_energy = 0;
 
@@ -310,7 +310,7 @@ int CallProgPump::block()
 	if (cp_tone_block(&ans2100, bp, min) >= 300 / BLOCK_MS ||
 	    cp_tone_block(&ans2225, bp, min) >= 300 / BLOCK_MS ||
 	    cp_tone_block(&usb1, bp, min) >= 300 / BLOCK_MS) {
-		int tone = ans2225.blocks >= 300 / BLOCK_MS &&
+		s16 tone = ans2225.blocks >= 300 / BLOCK_MS &&
 			fine2225.power > fine2250.power ? ANSTONE_2225 :
 			ANSTONE_2100;
 		DSP_DBG("callprog: answer tone %s detected\n",
@@ -351,7 +351,7 @@ int CallProgPump::block()
 }
 
 /* the line's hook broken (1) or made (0) for a pulse */
-void CallProgPump::hook_pulse(int broken)
+void CallProgPump::hook_pulse(s16 broken)
 {
 	pulse_broken = broken;
 	modem_set_param(modem, MDMPRM_PULSE_HOOK, broken);
@@ -359,7 +359,7 @@ void CallProgPump::hook_pulse(int broken)
 
 /* pulse dialling begun (on) or over, told the line (MDMPRM_PULSE_DIALLING)
    once each */
-void CallProgPump::pulse_dialling_now(int on)
+void CallProgPump::pulse_dialling_now(s16 on)
 {
 	if (on == pulse_dialling)
 		return;
@@ -372,7 +372,7 @@ void CallProgPump::pulse_dialling_now(int on)
    is no digit 0 to 9 (*, #, A to D have no pulses: skipped) */
 bool CallProgPump::pulse_digit(char ch)
 {
-	int n;
+	s16 n;
 
 	if (pulse_unable || ch < '0' || ch > '9')
 		return false;
@@ -443,7 +443,7 @@ float CallProgPump::dial_sample()
 		}
 		dial_pos++;
 		if (ch == ',') {
-			int s8 = modem_get_sreg(modem, SREG_DIAL_PAUSE_TIME);
+			s16 s8 = modem_get_sreg(modem, SREG_DIAL_PAUSE_TIME);
 			pause_left = static_cast<long>(s8 > 0 ? s8 : 2) * srate;
 		} else if (ch == 'W' || ch == 'w') {
 			dialtone_blocks = dialtone_gap = 0;
@@ -483,11 +483,11 @@ float CallProgPump::dial_sample()
    or the wait for an answer with the calling tone (DPSTAT_NOANSWER
    after S7 s); block() adds DPSTAT_CHANGEDP or DPSTAT_BUSY.  The first
    non OK status of the block is returned. */
-int CallProgPump::process(void *in, void *out, int cnt)
+s16 CallProgPump::process(void *in, void *out, s32 cnt)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
-	int ret = DPSTAT_OK;
-	int i;
+	s16 ret = DPSTAT_OK;
+	s32 i;
 
 	/* the network dialed the number up to a ';': held at once */
 	if (net_dialed) {
@@ -502,7 +502,7 @@ int CallProgPump::process(void *in, void *out, int cnt)
 
 	for (i = 0; i < cnt; i++) {
 		float x = src[i], y = 0, b;
-		int k;
+		s16 k;
 
 		for (k = 0; k < 3; k++)
 			dialtone[k].g.run(x);
@@ -600,7 +600,7 @@ int CallProgPump::process(void *in, void *out, int cnt)
 }
 
 /* registers the pump as DP_CALLPROG: modem_dp_register()'s result */
-int dp_callprog_init(void)
+s16 dp_callprog_init(void)
 {
 	return modem_dp_register(DP_CALLPROG, &PumpOps<CallProgPump>::ops);
 }

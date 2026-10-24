@@ -22,11 +22,11 @@ namespace dsp {
 struct SinusPump : Pump {
 	static constexpr const char *name = "Sinus";
 
-	unsigned phase;         /* the next sample's entry in the table */
+	u16 phase;              /* the next sample's entry in the table */
 
-	int start(struct modem *, enum DP_ID, int, s32, int);
+	s16 start(struct modem *, enum DP_ID, s16, s32, s32);
 	~SinusPump();
-	int process(void *in, void *out, int cnt) override;
+	s16 process(void *in, void *out, s32 cnt) override;
 };
 
 /* trunc(16384 sin(2 pi k / 32)) for k = 0..8: the first quarter of the
@@ -38,16 +38,16 @@ static const s16 quarter_wave[9] = {
 /* entry k (0..31) of the table trunc(16384 sin(2 pi k / 32)): the
    quarter wave, mirrored in the second quarter, negated in the second
    half */
-static s16 sine32(unsigned k)
+static s16 sine32(u16 k)
 {
-	unsigned q = k % 16;
+	u16 q = k % 16;
 	s16 v = quarter_wave[q <= 8 ? q : 16 - q];
 
 	return k < 16 ? v : static_cast<s16>(-v);
 }
 
 /* the tone from phase 0, whatever the arguments; always 0 */
-int SinusPump::start(struct modem *, enum DP_ID, int, s32, int)
+s16 SinusPump::start(struct modem *, enum DP_ID, s16, s32, s32)
 {
 	DSP_DBG("sinus: start\n");
 	return 0;
@@ -60,11 +60,11 @@ SinusPump::~SinusPump()
 }
 
 /* cnt samples of the tone, the input unread: DPSTAT_OK */
-int SinusPump::process(void *, void *out, int cnt)
+s16 SinusPump::process(void *, void *out, s32 cnt)
 {
 	s16 *tx = static_cast<s16 *>(out);
 
-	for (int i = 0; i < cnt; i++) {
+	for (s32 i = 0; i < cnt; i++) {
 		tx[i] = sine32(phase);
 		phase = (phase + 1) % 32;
 	}
@@ -74,7 +74,7 @@ int SinusPump::process(void *, void *out, int cnt)
 } // namespace dsp
 
 /* registers the pump as DP_SINUS: modem_dp_register()'s result */
-int dp_sinus_init(void)
+s16 dp_sinus_init(void)
 {
 	return modem_dp_register(DP_SINUS, &dsp::PumpOps<dsp::SinusPump>::ops);
 }

@@ -159,7 +159,7 @@ const u8 LP_INT_LINK_LOST = 0x20;
 const u8 LP_INT_DROPOUT = 0x08;
 const u8 LP_INT_POLARITY = 0x01;
 /* its delay: the playback's head start, the Si3056's filters both ways */
-const int STICK_FIFO_SAMPLES = 32 + 12 + 12;
+const s16 STICK_FIFO_SAMPLES = 32 + 12 + 12;
 
 /* the Si3056's rates (register 7's) */
 bool stick_rate(u32 rate)
@@ -205,7 +205,7 @@ const u16 SSI2_OVERRUN = 0x0002;
 const u32 VOICE_RATE = 8000;
 const u16 VOICE_PERIOD = VOICE_RATE * 5 / 1000 - 1;
 /* the alternate settings: the codec's streams, and the voice codec's too */
-const int ALT_MODEM = 1, ALT_VOICE = 3;
+const s16 ALT_MODEM = 1, ALT_VOICE = 3;
 const u16 GPIO_RING1 = 0x0001;
 const u16 GPIO_HANDSET = 0x0004;           /* the PHONE jack's off hook */
 const u16 GPIO_HOOK1 = 0x0008;
@@ -219,7 +219,7 @@ const u16 GPIO_DC = 0x1000;
 /* --usb-buzzer's: the speaker's buzzer (Windows' BUZEN) */
 const u16 GPIO_BUZEN = 0x0800;
 /* the Australian timer: RFC after an off hook, ms */
-const unsigned AUSTRALIAN_MS = 350;
+const u16 AUSTRALIAN_MS = 350;
 
 /* a equals b, case aside */
 bool same_name(const char *a, const char *b)
@@ -242,9 +242,9 @@ const u16 RHOM_REVISION = 0x0200;
 /* the FIFO's start: its count, and the octets of its own (and the
    device's) delay */
 const u16 FRAGSIZE = 96;
-const int FIFO_SAMPLES = 64 + 24;
+const s16 FIFO_SAMPLES = 64 + 24;
 
-const unsigned TIMEOUT_MS = 1000;
+const u16 TIMEOUT_MS = 1000;
 
 /* the configuration's remote wakeup bit; USB's DEVICE_REMOTE_WAKEUP */
 const u8 CONFIG_REMOTE_WAKEUP = 0x20;
@@ -319,7 +319,8 @@ bool UsbLine::parse_dev(const char *dev, int *bus, int *addr)
 bool UsbLine::find(const char *dev)
 {
 	libusb_device **list;
-	int bus = -1, addr = -1, found = 0;
+	int bus = -1, addr = -1;
+	s16 found = 0;
 	bool any = !dev || !*dev || !strcmp(dev, "auto");
 	ssize_t n;
 
@@ -387,11 +388,12 @@ bool UsbLine::find(const char *dev)
 }
 
 /* see usb_line.h */
-int UsbLine::list()
+s16 UsbLine::list()
 {
 	libusb_context *ctx;
 	libusb_device **devs;
-	int err, found = 0;
+	int err;
+	s16 found = 0;
 
 	if ((err = libusb_init(&ctx)) < 0) {
 		ERR("libusb: %s\n", libusb_strerror(err));
@@ -448,7 +450,7 @@ int UsbLine::list()
    then isochronous OUT and IN, the codec's; in ALT_VOICE another OUT and
    IN after them, the voice codec's (as Windows' driver takes them, its
    pipes 3 and 4) */
-bool UsbLine::endpoints(int alt)
+bool UsbLine::endpoints(s16 alt)
 {
 	libusb_config_descriptor *cfg;
 	int err = libusb_get_active_config_descriptor(libusb_get_device(h_),
@@ -459,14 +461,14 @@ bool UsbLine::endpoints(int alt)
 	}
 	const libusb_interface_descriptor *d = nullptr;
 	if (cfg->bNumInterfaces >= 1)
-		for (int i = 0; i < cfg->interface[0].num_altsetting; i++)
+		for (s16 i = 0; i < cfg->interface[0].num_altsetting; i++)
 			if (cfg->interface[0].altsetting[i].bAlternateSetting == alt)
 				d = &cfg->interface[0].altsetting[i];
-	for (int i = 0; d && i < d->bNumEndpoints; i++) {
+	for (s16 i = 0; d && i < d->bNumEndpoints; i++) {
 		const libusb_endpoint_descriptor &e = d->endpoint[i];
-		int type = e.bmAttributes & LIBUSB_TRANSFER_TYPE_MASK;
+		s16 type = e.bmAttributes & LIBUSB_TRANSFER_TYPE_MASK;
 		bool in = e.bEndpointAddress & LIBUSB_ENDPOINT_IN;
-		int max = e.wMaxPacketSize & 0x7ff;
+		s16 max = e.wMaxPacketSize & 0x7ff;
 		if (type == LIBUSB_TRANSFER_TYPE_INTERRUPT && in) {
 			ep_intr_ = e.bEndpointAddress;
 		} else if (type == LIBUSB_TRANSFER_TYPE_ISOCHRONOUS) {
@@ -546,7 +548,7 @@ bool UsbLine::open(const char *dev, u32 rate)
 	int err;
 
 	rate_ = rate;
-	frame_ = static_cast<int>(rate / 50);
+	frame_ = static_cast<s16>(rate / 50);
 	frame_in_.assign(frame_, 0);
 	frame_out_.assign(frame_, 0);
 	frame_mic_.assign(frame_, 0);
@@ -592,7 +594,7 @@ bool UsbLine::open_st7554(u32 rate)
 {
 	u16 status;
 	int err;
-	int alt = voice_law_ != VoiceLaw::None ? ALT_VOICE : ALT_MODEM;
+	s16 alt = voice_law_ != VoiceLaw::None ? ALT_VOICE : ALT_MODEM;
 
 	if (!cword(rate)) {
 		ERR("SmartUSB56: no rate of %" PRIu32 " Hz (8000, 9600)\n",
@@ -698,7 +700,7 @@ void UsbLine::arm_wake(bool on, bool kernel)
 		return;
 	std::string path = "/sys/bus/usb/devices/" +
 		std::to_string(libusb_get_bus_number(d)) + "-";
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		path += (i ? "." : "") + std::to_string(ports[i]);
 	path += "/power/wakeup";
 	FILE *f = fopen(path.c_str(), "w");
@@ -815,10 +817,10 @@ bool UsbLine::start_streams()
 {
 	int err;
 	/* octets a ms, at most */
-	int pkt = static_cast<int>((rate_ * 2 + 999) / 1000);
+	s16 pkt = static_cast<s16>((rate_ * 2 + 999) / 1000);
 
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
-	delay_ = static_cast<int>(iso_.out_buf.size()) +
+	delay_ = static_cast<s16>(iso_.out_buf.size()) +
 		 ISO_TRANSFERS * ISO_PACKETS * static_cast<s32>(rate_) /
 			 1000 +
 		 fifo_samples_;
@@ -836,7 +838,7 @@ bool UsbLine::start_streams()
 		return false;
 	if (viso_.ep_in) {
 		viso_.out_buf.assign(VOICE_RATE / 50 + VOICE_RATE / 100, 0);
-		if (!start_iso(viso_, static_cast<int>(VOICE_RATE / 1000)))
+		if (!start_iso(viso_, static_cast<s16>(VOICE_RATE / 1000)))
 			return false;
 	}
 	/* (the stick's samples run since its alternate setting 1) */
@@ -846,10 +848,10 @@ bool UsbLine::start_streams()
 /* stream s's transfers: ISO_TRANSFERS IN ones, the OUT ones (each sent
    when an IN one is done; the first ones now, pkt octets a packet of
    what s has to send, silence past it) */
-bool UsbLine::start_iso(Iso &s, int pkt)
+bool UsbLine::start_iso(Iso &s, s16 pkt)
 {
 	int err;
-	for (int i = 0; i < ISO_TRANSFERS; i++) {
+	for (s16 i = 0; i < ISO_TRANSFERS; i++) {
 		s.in[i] = libusb_alloc_transfer(ISO_PACKETS);
 		s.out[i] = libusb_alloc_transfer(ISO_PACKETS);
 		if (!s.in[i] || !s.out[i])
@@ -878,7 +880,7 @@ bool UsbLine::start_iso(Iso &s, int pkt)
 			return false;
 		}
 		in_flight_++;
-		std::vector<int> lens(ISO_PACKETS, pkt > s.max_out ? s.max_out : pkt);
+		std::vector<s16> lens(ISO_PACKETS, pkt > s.max_out ? s.max_out : pkt);
 		out_fill(s, s.out[i], lens.data());
 		if ((err = libusb_submit_transfer(s.out[i])) < 0) {
 			ERR("%s: an OUT transfer: %s%s\n", name_,
@@ -906,16 +908,16 @@ bool UsbLine::start_fifos()
 /* an OUT transfer of s's packets of lengths octets (whole samples), the
    samples queued in them (silence past them): S16 little-endian, or the
    voice codec's octets in its law */
-void UsbLine::out_fill(Iso &s, libusb_transfer *t, const int *lengths)
+void UsbLine::out_fill(Iso &s, libusb_transfer *t, const s16 *lengths)
 {
-	int off = 0;
-	int bps = s.voice ? 1 : 2;
-	for (int i = 0; i < ISO_PACKETS; i++) {
-		int len = lengths[i] - lengths[i] % bps;
+	s16 off = 0;
+	s16 bps = s.voice ? 1 : 2;
+	for (s16 i = 0; i < ISO_PACKETS; i++) {
+		s16 len = lengths[i] - lengths[i] % bps;
 		if (len > s.max_out)
 			len = s.max_out - s.max_out % bps;
 		t->iso_packet_desc[i].length = static_cast<unsigned>(len);
-		for (int k = 0; k < len / bps; k++) {
+		for (s16 k = 0; k < len / bps; k++) {
 			s16 x = 0;
 			if (!s.out_buf.empty()) {
 				x = s.out_buf.front();
@@ -1084,7 +1086,7 @@ bool UsbLine::stick_country()
 /* see usb_line.h: the ring detector's changes since the last event a
    ring pulse each (the core checks the cadence, as with the ST7554's
    GPIO), the line's events and the FIFOs' errors logged */
-void UsbLine::stick_event(const u8 *b, int len)
+void UsbLine::stick_event(const u8 *b, s16 len)
 {
 	if (len < 8)
 		return;
@@ -1115,7 +1117,7 @@ void UsbLine::stick_event(const u8 *b, int len)
    transfer (one waiting sent now), and it again */
 void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 {
-	std::vector<int> lens(ISO_PACKETS, 0);
+	std::vector<s16> lens(ISO_PACKETS, 0);
 
 	in_flight_--;
 	if (t->status == LIBUSB_TRANSFER_NO_DEVICE) {
@@ -1125,29 +1127,29 @@ void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 	if (dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
 	if (t->status == LIBUSB_TRANSFER_COMPLETED) {
-		for (int i = 0; i < t->num_iso_packets; i++) {
+		for (s16 i = 0; i < t->num_iso_packets; i++) {
 			const libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
 			const u8 *b = libusb_get_iso_packet_buffer_simple(t, i);
 			if (p.status != LIBUSB_TRANSFER_COMPLETED)
 				continue;
 			if (!s.voice)
-				for (unsigned k = 0; k + 1 < p.actual_length; k += 2)
+				for (u32 k = 0; k + 1 < p.actual_length; k += 2)
 					s.in_buf.push_back(static_cast<s16>(
 						b[k] |
 						u16{b[k + 1]} << 8));
 			else if (voice_law_ == VoiceLaw::Linear)
-				for (unsigned k = 0; k < p.actual_length; k++)
+				for (u16 k = 0; k < p.actual_length; k++)
 					s.in_buf.push_back(static_cast<s16>(
 						static_cast<s8>(b[k]) *
 						256));
 			else
-				for (unsigned k = 0; k < p.actual_length; k++)
+				for (u16 k = 0; k < p.actual_length; k++)
 					s.in_buf.push_back(static_cast<s16>(
 						dsp::g711::decode(
 							voice_law_ ==
 								VoiceLaw::Alaw,
 							b[k])));
-			lens[i] = static_cast<int>(p.actual_length);
+			lens[i] = static_cast<s16>(p.actual_length);
 		}
 	}
 	s.out_lengths.push_back(lens);
@@ -1243,7 +1245,7 @@ void UsbLine::gone(const char *why)
    the ST7554's CID1 GPIO on only while the core snoops for caller ID
    (MODEM_HOOK_SNOOPING), cleared before the hook changes, as Windows'
    driver does */
-int UsbLine::set_hook(dcore::Modem &, int state)
+s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 {
 	bool off = state == MODEM_HOOK_OFF;
 
@@ -1277,7 +1279,7 @@ int UsbLine::set_hook(dcore::Modem &, int state)
 
 /* see usb_line.h: GPIO 11 set for any volume but 0, as Windows'
    SetSpeakerVolume with Options.Buzzer */
-void UsbLine::speaker(dcore::Modem &, int volume)
+void UsbLine::speaker(dcore::Modem &, s16 volume)
 {
 	if (!buzzer_ || kind_ != Kind::St7554 || !h_ || dead_)
 		return;
@@ -1312,7 +1314,7 @@ void UsbLine::update_leds(dcore::Modem &m)
 }
 
 /* see dcore.h: on hook for ms, then off again (if it still is) */
-void UsbLine::hook_flash(dcore::Modem &, unsigned ms)
+void UsbLine::hook_flash(dcore::Modem &, u16 ms)
 {
 	if (hook_ != MODEM_HOOK_OFF)
 		return;
@@ -1330,7 +1332,7 @@ void UsbLine::hook_flash(dcore::Modem &, unsigned ms)
 }
 
 /* see dcore.h: the hook GPIO cleared (broken) or set again */
-int UsbLine::pulse_hook(dcore::Modem &, bool broken)
+s16 UsbLine::pulse_hook(dcore::Modem &, bool broken)
 {
 	if (hook_ != MODEM_HOOK_OFF)
 		return -1;
@@ -1401,7 +1403,7 @@ void UsbLine::watch(RunLoop &loop)
 	fds = libusb_get_pollfds(ctx_);
 	if (!fds)
 		return;
-	for (int i = 0; fds[i]; i++)
+	for (s16 i = 0; fds[i]; i++)
 		if (fds[i]->events & POLLIN)
 			loop.watch(fds[i]->fd);
 		else if (fds[i]->events & POLLOUT)
@@ -1410,7 +1412,7 @@ void UsbLine::watch(RunLoop &loop)
 }
 
 /* see usb_line.h */
-int UsbLine::pump(dcore::Modem &m)
+s16 UsbLine::pump(dcore::Modem &m)
 {
 	struct timeval zero = { 0, 0 };
 
@@ -1508,7 +1510,7 @@ void UsbLine::update_rhom()
 }
 
 /* see dcore.h: the next frames' samples routed so (voice_frame()) */
-int UsbLine::voice_route(dcore::Modem &, unsigned device)
+s16 UsbLine::voice_route(dcore::Modem &, u16 device)
 {
 	if (device != VOICE_DEVICE_LINE && !viso_.ep_in)
 		return -1;
@@ -1531,7 +1533,7 @@ int UsbLine::voice_route(dcore::Modem &, unsigned device)
 void UsbLine::voice_frame(dcore::Modem &m)
 {
 	bool on = running_ && m.started();
-	for (int i = 0; i < frame_; i++) {
+	for (s16 i = 0; i < frame_; i++) {
 		if (mic_.empty()) {
 			frame_mic_[i] = 0;
 		} else {
@@ -1547,10 +1549,10 @@ void UsbLine::voice_frame(dcore::Modem &m)
 		std::fill_n(frame_out_.data(), frame_, 0);
 	} else if (route_ == VOICE_DEVICE_HANDSET_LINE) {
 		std::vector<s16> &both = frame_ear_;
-		for (int i = 0; i < frame_; i++)
+		for (s16 i = 0; i < frame_; i++)
 			both[i] = mix(frame_in_[i], frame_mic_[i]);
 		m.process(both.data(), frame_out_.data(), frame_);
-		for (int i = 0; i < frame_; i++) {
+		for (s16 i = 0; i < frame_; i++) {
 			frame_ear_[i] = mix(frame_in_[i], frame_out_[i]);
 			frame_out_[i] = mix(frame_out_[i], frame_mic_[i]);
 		}
@@ -1575,26 +1577,26 @@ void UsbLine::close()
 			arm_wake(false);
 	}
 	libusb_transfer *all[4 * ISO_TRANSFERS + 1];
-	int n = 0;
+	s16 n = 0;
 	for (Iso *st : { &iso_, &viso_ })
-		for (int i = 0; i < ISO_TRANSFERS; i++) {
+		for (s16 i = 0; i < ISO_TRANSFERS; i++) {
 			all[n++] = st->in[i];
 			all[n++] = st->out[i];
 		}
 	all[n++] = intr_;
 	dead_ = true;
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		if (all[i])
 			libusb_cancel_transfer(all[i]);
-	for (int tries = 0; ctx_ && in_flight_ > 0 && tries < 100; tries++) {
+	for (s16 tries = 0; ctx_ && in_flight_ > 0 && tries < 100; tries++) {
 		struct timeval tv = { 0, 10000 };
 		libusb_handle_events_timeout_completed(ctx_, &tv, nullptr);
 	}
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		if (all[i])
 			libusb_free_transfer(all[i]);
 	for (Iso *st : { &iso_, &viso_ })
-		for (int i = 0; i < ISO_TRANSFERS; i++)
+		for (s16 i = 0; i < ISO_TRANSFERS; i++)
 			st->in[i] = st->out[i] = nullptr;
 	intr_ = nullptr;
 	if (h_ && kind_ == Kind::Stick) {

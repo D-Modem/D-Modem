@@ -72,8 +72,8 @@
 
 namespace {
 
-const int IDLE_MS = 200;        /* no packet this long: go on alone */
-const int MAX_SAMPLES = 1600;   /* in a packet, 200 ms */
+const s16 IDLE_MS = 200;        /* no packet this long: go on alone */
+const s16 MAX_SAMPLES = 1600;   /* in a packet, 200 ms */
 
 /*
  *    configuration and logging
@@ -85,7 +85,7 @@ std::map<std::string, Section> conf;
 
 ari::Server server;
 std::string app = "dmodem";
-int verbose;                    /* -v: 1 the calls, 2 the bridge's details */
+s16 verbose;                    /* -v: 1 the calls, 2 the bridge's details */
 /* T.38: the calls' lines are legs to our SIP side, on Asterisk's PJSIP
    endpoint sip_endpoint, instead of external media */
 bool use_sip;
@@ -236,7 +236,7 @@ bool ari_call(const char *method, const std::string &path,
 	      ari::Json *reply = nullptr)
 {
 	std::string body;
-	int status = ari::request(server, method, "/ari/" + path, &body);
+	s32 status = ari::request(server, method, "/ari/" + path, &body);
 	/* (a DELETE of what has gone already is no news) */
 	if (status == 404 && !strcmp(method, "DELETE"))
 		return true;
@@ -314,7 +314,7 @@ struct Rtp {
 	}
 	/* a packet's payload into buf (its octets), within timeout_ms: >0
 	   the samples, 0 none came, -1 an error */
-	int recv(u8 *buf, int max, int timeout_ms)
+	s16 recv(u8 *buf, s16 max, s16 timeout_ms)
 	{
 		struct pollfd p = { fd, POLLIN, 0 };
 		u8 pkt[12 + 60 + MAX_SAMPLES];
@@ -337,10 +337,10 @@ struct Rtp {
 		if (n > max)
 			n = max;
 		memcpy(buf, pkt + off, n);
-		return static_cast<int>(n);
+		return static_cast<s16>(n);
 	}
 	/* n samples (octets) to Asterisk */
-	void send(const u8 *buf, int n)
+	void send(const u8 *buf, s16 n)
 	{
 		u8 pkt[12 + MAX_SAMPLES];
 		pkt[0] = 0x80;
@@ -401,11 +401,11 @@ enum dmodem_law call_law(const Call &c, enum dmodem_law law)
 
 /* the line's next block into in: a packet's samples, or silence once
    IDLE_MS went by without one; 0 if the call has gone, -1 on an error */
-int next_block(Call &c, Rtp &rtp, enum dmodem_law law, u8 *in)
+s16 next_block(Call &c, Rtp &rtp, enum dmodem_law law, u8 *in)
 {
 	if (c.hungup)
 		return 0;
-	int n = rtp.recv(in, MAX_SAMPLES, IDLE_MS);
+	s16 n = rtp.recv(in, MAX_SAMPLES, IDLE_MS);
 	if (n == 0) {
 		n = 160;
 		memset(in, law == DMODEM_LAW_ALAW ? 0xd5 : 0xff, n);
@@ -624,7 +624,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 				samples = due;
 			}
 		} else {
-			int n = next_block(c, line.rtp, law, in);
+			s16 n = next_block(c, line.rtp, law, in);
 			if (n <= 0) {
 				dmodem_fax_hangup(f);
 				break;
@@ -687,7 +687,7 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 		sip.accept_t38(line.leg, true);
 	for (;;) {
 		enum dmbridge_event ev;
-		int n;
+		s16 n;
 
 		if (line.leg) {
 			ari::SipLeg l = sip.get(line.leg);
@@ -768,9 +768,9 @@ s32 udp_open(const std::string &host, int *fd)
 }
 
 /* true once channel id has had its StasisStart, within ms */
-bool media_started(const std::string &id, int ms)
+bool media_started(const std::string &id, s16 ms)
 {
-	for (int k = 0; k < ms / 10; k++) {
+	for (s16 k = 0; k < ms / 10; k++) {
 		{
 			std::lock_guard<std::mutex> lk(calls_lock);
 			auto it = media_channels.find(id);
@@ -1096,7 +1096,7 @@ int main(int argc, char *argv[])
 				    sip_endpoint.c_str(),
 				    sip.host().c_str(), sip.port());
 		}
-		int r = ws.read(msg, 500);
+		s16 r = ws.read(msg, 500);
 		if (r < 0) {
 			say("dmodem-ari: the event stream has gone");
 			up = false;

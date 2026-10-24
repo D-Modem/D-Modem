@@ -14,6 +14,8 @@
 
 #include <string>
 
+#include "dm_types.h"
+
 namespace dmd {
 
 class DataFile {
@@ -30,10 +32,10 @@ public:
 	/* the record into *info: the bytes read; -errno if the file can't
 	   be read, -1 if it is empty, short or of another size (info
 	   untouched then) */
-	int load(struct dsp_info *info) const;
+	s32 load(struct dsp_info *info) const;
 	/* *info as the file's record (written over in place, the file cut
 	   to its size): the bytes written, -errno on failure (logged) */
-	int save(const struct dsp_info *info);
+	s32 save(const struct dsp_info *info);
 
 private:
 	std::string path_;

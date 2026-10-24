@@ -104,7 +104,7 @@ const struct v34_rate v34_rates[V34_NBAUDS][14] = {
 /* 10.1.3.6/V.34: the 48 symbol PP sequence */
 cplx v34_pp(s32 i)
 {
-	int k = (i % 48) / 4, I = i % 4;
+	s16 k = (i % 48) / 4, I = i % 4;
 	float th =
 		static_cast<float>(M_PI) * (k * I + (k % 3 == 1 ? 4 : 0)) / 6;
 	return cplx_make(cosf(th), sinf(th));

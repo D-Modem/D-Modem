@@ -34,16 +34,16 @@ namespace dsp {
 
 /* Table 1/V.90: mu-law 0xFF - Ucode, A-law Ucode ^ 0xD5 for the positive
    codewords; the sign bit is the MSB */
-int v90_ucode_octet(int alaw, int ucode, int positive)
+s16 v90_ucode_octet(s16 alaw, s16 ucode, s16 positive)
 {
-	int c = alaw ? (ucode ^ 0x55) | 0x80 : 0xFF - ucode;
+	s16 c = alaw ? (ucode ^ 0x55) | 0x80 : 0xFF - ucode;
 	return positive ? c : c & 0x7F;
 }
 
 /* the linear value (16 bit scale) of the positive codeword of a Ucode */
-int v90_ucode_linear(int alaw, int ucode)
+s16 v90_ucode_linear(s16 alaw, s16 ucode)
 {
-	int c = v90_ucode_octet(alaw, ucode, 1);
+	s16 c = v90_ucode_octet(alaw, ucode, 1);
 	return g711::decode(alaw, c);
 }
 
@@ -51,7 +51,7 @@ int v90_ucode_linear(int alaw, int ucode)
    and SCR on 4 points, look-ahead up to 1 */
 void V90Tx::make_jd()
 {
-	int n_ = 0;
+	s32 n_ = 0;
 
 	put_bits(bits, &n_, 0x1FFFF, 17);
 	put_bits(bits, &n_, 0, 1);
@@ -71,7 +71,7 @@ void V90Tx::make_jd()
 /* Jp (Table 22/V.92): the extension of Su, TRN2u on 4 points */
 void V90Tx::make_jp()
 {
-	int n_ = 0;
+	s32 n_ = 0;
 
 	put_bits(bits, &n_, 0x1FFFF, 17);
 	put_bits(bits, &n_, 0, 1);
@@ -89,7 +89,7 @@ void V90Tx::make_jp()
 }
 
 /* Table 2/V.92 (see v90.h) */
-int v92_uqts(int wxyz)
+s16 v92_uqts(s16 wxyz)
 {
 	static const signed char u[16] = { 61, 62, 63, 66, 67, 70, 71, 74,
 					   75, 78, 79, 82, 83, 86, 87, -1 };
@@ -98,16 +98,16 @@ int v92_uqts(int wxyz)
 
 /* ANSpcm (8.3.1/V.92): the 301 symbols of a 2100 Hz tone at one of the
    levels of Table 6/V.92, quantized by G.711 */
-void V90Tx::anspcm_init(int level)
+void V90Tx::anspcm_init(s16 level)
 {
 	static const s16 scl_u[4] = { 1334, 1000, 708, 500 };
 	static const s16 scl_a[4] = { 667, 500, 354, 250 };
 	double scl = alaw ? scl_a[level & 3] : scl_u[level & 3];
-	int k;
+	s16 k;
 	for (k = 0; k < 301; k++) {
 		double x = scl * sqrt(2.0) * cos(2 * M_PI * k * 79 / 301 +
 						  0.25 * M_PI / 301) + 0.5;
-		int v = static_cast<int>(floor(x));
+		s16 v = static_cast<s16>(floor(x));
 		/* (v: 13 bits for A-law, 14 for mu-law) */
 		anspcm[k] = static_cast<s16>(g711::decode(
 			alaw, g711::encode_sm(alaw, alaw ? 8 * v : 4 * v)));
@@ -116,9 +116,9 @@ void V90Tx::anspcm_init(int level)
 
 /* the transmitter, silent: A-law when alaw_, uinfo_ the Ucode of
    TRN1d, Jd and Ri */
-void V90Tx::init(int alaw_, int uinfo_)
+void V90Tx::init(s16 alaw_, s16 uinfo_)
 {
-	int i;
+	s16 i;
 	reinit(*this);
 	alaw = alaw_;
 	for (i = 0; i < 128; i++)
@@ -194,7 +194,7 @@ void V90Tx::end_ri()
 }
 
 /* a bit, scrambled and coded into the sign of UINFO */
-int V90Tx::diff_bit(int bit)
+s16 V90Tx::diff_bit(s16 bit)
 {
 	sign ^= scramble(&scr, SCR_GPC, bit);
 	return sign ? lin[uinfo] : -lin[uinfo];
@@ -203,11 +203,11 @@ int V90Tx::diff_bit(int bit)
 /* the next DIL sample (8.4.1/V.90): the Ucode of the segment or its
    reference by TP, the sign by SP; the segments repeat until end_dil(),
    then silence */
-int V90Tx::dil_sample()
+s16 V90Tx::dil_sample()
 {
 	const V90Dil *d = &dil;
-	int u = d->ucode[dil_seg], c = u >> 4, len = (d->h[c] + 1) * 6;
-	int k = dil_k, x;
+	s16 u = d->ucode[dil_seg], c = u >> 4, len = (d->h[c] + 1) * 6;
+	s16 k = dil_k, x;
 
 	x = d->tp[k % d->ltp] ? lin[u] : lin[d->ref[c]];
 	if (!d->sp[k % d->lsp])
@@ -229,10 +229,10 @@ int V90Tx::dil_sample()
 /* the next PCM sample (linear, 16 bit scale) of the current segment;
    goes on to the next segment at the end of each, and from ENC to Rd, Rf
    or silence when asked to */
-int V90Tx::sample()
+s16 V90Tx::sample()
 {
 	static const signed char sd[6] = { 1, 0, 1, -1, 0, -1 };
-	int x = 0, w = lin[(16 + uinfo) & 127], z = lin[0];
+	s16 x = 0, w = lin[(16 + uinfo) & 127], z = lin[0];
 
 	switch (seg) {
 	case V90_SILENCE:
@@ -240,7 +240,7 @@ int V90Tx::sample()
 	case V90_QTS:
 	case V90_QTSBAR: {
 		/* as Sd, with V of Ucode UQTS: QTS 128 times, QTS-bar 8 */
-		int k = static_cast<int>(n % 6),
+		s16 k = static_cast<s16>(n % 6),
 		    s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
 		x = (sd[k] ? lin[uqts & 127] : z) *
 			(seg == V90_QTS ? s : -s);
@@ -264,7 +264,7 @@ int V90Tx::sample()
 		if (seg == V90_SD && n == 0 && fclock &&
 		    (*fclock - fbase) % 6)
 			return 0;
-		int k = sym % 6, s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
+		s16 k = sym % 6, s = sd[k] ? sd[k] : (k < 3 ? 1 : -1);
 		x = (sd[k] ? w : z) * (seg == V90_SD ? s : -s);
 		if (seg == V90_SD && n + 1 == 384)
 			segment(V90_SDBAR);
@@ -330,7 +330,7 @@ int V90Tx::sample()
 	case V90_RI:
 	case V90_RIBAR: {
 		/* + + + - - - of UINFO, Ri-bar the opposite */
-		int k = static_cast<int>(sym % 6), pos_ = k < 3;
+		s16 k = static_cast<s16>(sym % 6), pos_ = k < 3;
 		if (seg == V90_RIBAR)
 			pos_ = !pos_;
 		x = pos_ ? lin[uinfo] : -lin[uinfo];
@@ -348,7 +348,7 @@ int V90Tx::sample()
 		/* + + + - - - of each interval's largest code (Rd: of the
 		   data mode constellations, Rt: the training ones), the bar
 		   the opposite */
-		int k = static_cast<int>(sym % 6), pos_ = k < 3;
+		s16 k = static_cast<s16>(sym % 6), pos_ = k < 3;
 		if (seg == V90_RDBAR)
 			pos_ = !pos_;
 		x = pos_ ? lin[rd_code[k]] : -lin[rd_code[k]];
@@ -365,7 +365,7 @@ int V90Tx::sample()
 	case V90_RFBAR: {
 		/* + + - - of each interval's largest data mode code, the
 		   bar the opposite (8.8.4/V.92) */
-		int k = static_cast<int>(sym % 6), pos_ = (n & 3) < 2;
+		s16 k = static_cast<s16>(sym % 6), pos_ = (n & 3) < 2;
 		if (seg == V90_RFBAR)
 			pos_ = !pos_;
 		x = pos_ ? lin[rd_code[k]] : -lin[rd_code[k]];
@@ -382,7 +382,7 @@ int V90Tx::sample()
 		if (opos >= 6 && rf_req) {
 			/* Rf (V.92's fast parameter exchange), on the
 			   boundary of a data frame */
-			int k;
+			s16 k;
 			rf_req = 0;
 			for (k = 0; k < 6; k++)
 				rd_code[k] = enc.ucode[k][0];
@@ -390,18 +390,18 @@ int V90Tx::sample()
 			   before (get_frame starts the encoder again) */
 			enc.outn = enc.qn = 0;
 			segment(V90_RF);
-			x = lin[rd_code[static_cast<int>(sym % 6)]];
+			x = lin[rd_code[static_cast<s16>(sym % 6)]];
 			break;
 		}
 		if (opos >= 6 && rd_req) {
 			/* Rd (V.92's rate renegotiation), on the boundary of
 			   a data frame; the encoder starts again after it */
-			int k;
+			s16 k;
 			rd_req = 0;
 			for (k = 0; k < 6; k++)
 				rd_code[k] = enc.ucode[k][0];
 			segment(V90_RD);
-			int k2 = static_cast<int>(sym % 6), p2 = k2 < 3;
+			s16 k2 = static_cast<s16>(sym % 6), p2 = k2 < 3;
 			x = p2 ? lin[rd_code[k2]] : -lin[rd_code[k2]];
 			break;
 		}
@@ -418,7 +418,7 @@ int V90Tx::sample()
 			/* frames go in ahead of the shaper's decisions */
 			while (!enc.pop(out)) {
 				unsigned char bits_[48];
-				int last_ = 0;
+				s16 last_ = 0;
 				get_frame(ctx, this, bits_, &last_);
 				enc.push(bits_, last_);
 			}
@@ -438,27 +438,27 @@ int V90Tx::sample()
  */
 
 /* bits of a pattern of len bits from first on, past the start bits */
-static void pattern(unsigned char *p, const unsigned char *b, int first,
-		    int len)
+static void pattern(unsigned char *p, const unsigned char *b, s16 first,
+		    s16 len)
 {
-	int i;
+	s16 i;
 	for (i = 0; i < len; i++)
 		p[i] = b[first + 17 * (i / 16) + i % 16];
 }
 
 /* the offsets from the start of SP of TP (into *alpha) and of the H
    fields (returned), in bits */
-static int dil_beta(const unsigned char *b, int *alpha)
+static s16 dil_beta(const unsigned char *b, s16 *alpha)
 {
-	int lsp = field(b, 35, 7) + 1, ltp = field(b, 43, 7) + 1;
+	s16 lsp = field(b, 35, 7) + 1, ltp = field(b, 43, 7) + 1;
 	*alpha = (lsp + 15) / 16 * 17;
 	return *alpha + (ltp + 15) / 16 * 17;
 }
 
 /* see v90.h */
-int v90_dil_length(const unsigned char *b, int n)
+s16 v90_dil_length(const unsigned char *b, s16 n)
 {
-	int alpha, beta;
+	s16 alpha, beta;
 	if (n < 50)
 		return -1;
 	beta = dil_beta(b, &alpha);
@@ -467,7 +467,7 @@ int v90_dil_length(const unsigned char *b, int n)
 }
 
 /* see v34.h */
-void SyncFrames::init(Kind k, int max_len)
+void SyncFrames::init(Kind k, s16 max_len)
 {
 	reinit(*this);
 	kind = k;
@@ -484,7 +484,7 @@ void SyncFrames::start()
 }
 
 /* see v34.h */
-int SyncFrames::bit(int x)
+s16 SyncFrames::bit(s16 x)
 {
 	sr = (sr << 1) | (x & 1);
 	if (!n) {
@@ -497,7 +497,7 @@ int SyncFrames::bit(int x)
 
 /* see v34.h: the length at bit 50 (Ja) or 129 (CP), earlier for V.92's
    51 bit CPus (bit 18 set) and SUVu (type 2 at bit 19) */
-int SyncFrames::add(int x)
+s16 SyncFrames::add(s16 x)
 {
 	b[n++] = x & 1;
 	switch (kind) {
@@ -539,9 +539,9 @@ int SyncFrames::add(int x)
 
 /* the DIL descriptor of len bits (v90_dil_length()) from its frame sync
    on; returns 0 when the CRC is good, -1 otherwise */
-int V90Dil::parse(const unsigned char *b, int len)
+s16 V90Dil::parse(const unsigned char *b, s16 len)
 {
-	int alpha, beta, i;
+	s16 alpha, beta, i;
 
 	if (!frame_crc_ok(b, len - 16))
 		return -1;
@@ -553,7 +553,7 @@ int V90Dil::parse(const unsigned char *b, int len)
 	pattern(tp, b, 52 + alpha, ltp);
 	for (i = 0; i < 8; i++) {
 		/* two 7 bit fields per 17 bit block */
-		int o = 52 + beta + 17 * (i / 2) + 8 * (i % 2);
+		s16 o = 52 + beta + 17 * (i / 2) + 8 * (i % 2);
 		h[i] = field(b, o, 7);
 		ref[i] = field(b, o + 68, 7);
 	}
@@ -565,9 +565,10 @@ int V90Dil::parse(const unsigned char *b, int len)
 /* see v34.h: Table 12/V.90, SP and TP padded with zeros to 16 bits, a
    start bit before each 16, the Ucodes two to a 16 (with their reserved
    bits), the CRC, a fill bit, and another to make it even */
-int V90Dil::build(unsigned char *b) const
+s16 V90Dil::build(unsigned char *b) const
 {
-	int m = 0, i, j;
+	s32 m = 0;
+	s16 i, j;
 
 	put_bits(b, &m, 0x1FFFF, 17);
 	put_bits(b, &m, 0, 1);
@@ -580,7 +581,7 @@ int V90Dil::build(unsigned char *b) const
 	put_bits(b, &m, 0, 1);
 	for (i = 0; i < 2; i++) {
 		const unsigned char *pat = i ? tp : sp;
-		int len = i ? ltp : lsp;
+		s16 len = i ? ltp : lsp;
 		for (j = 0; j < (len + 15) / 16 * 16; j++) {
 			if (j % 16 == 0)
 				put_bits(b, &m, 0, 1);
@@ -590,7 +591,7 @@ int V90Dil::build(unsigned char *b) const
 	/* H1..H8, REF1..REF8, then the N Ucodes: two 7 bit fields (each
 	   with a reserved bit) after a start bit */
 	for (i = 0; i < 16 + n + (n & 1); i++) {
-		int v = i < 8 ? h[i] : i < 16 ? ref[i - 8] :
+		s16 v = i < 8 ? h[i] : i < 16 ? ref[i - 8] :
 			i - 16 < n ? ucode[i - 16] : 0;
 		if (i % 2 == 0)
 			put_bits(b, &m, 0, 1);
@@ -611,10 +612,10 @@ int V90Dil::build(unsigned char *b) const
 
 /* the bits of CP beyond its shortest form, from the constellation
    indices and bit 128; -1 when an index is above 5 */
-static int cp_delta(const unsigned char *b)
+static s16 cp_delta(const unsigned char *b)
 {
-	int i, maxidx = 0, gamma;
-	static const int con_bit[6] = { 103, 107, 111, 115, 120, 124 };
+	s16 i, maxidx = 0, gamma;
+	static const s16 con_bit[6] = { 103, 107, 111, 115, 120, 124 };
 	for (i = 0; i < 6; i++)
 		if (field(b, con_bit[i], 4) > maxidx)
 			maxidx = field(b, con_bit[i], 4);
@@ -626,9 +627,9 @@ static int cp_delta(const unsigned char *b)
 
 /* the length of a CP frame up to the end of its CRC from its first 129
    bits; 0 when it cannot be one, -1 before bit 128 is in */
-int v90_cp_length(const unsigned char *b, int n)
+s16 v90_cp_length(const unsigned char *b, s16 n)
 {
-	int delta;
+	s16 delta;
 	if (n < 129)
 		return -1;
 	delta = cp_delta(b);
@@ -638,10 +639,10 @@ int v90_cp_length(const unsigned char *b, int n)
 
 /* a CP or CPt frame of len bits (v90_cp_length()) from its frame sync
    on; returns 0 when the CRC is good, -1 (fields unchanged) otherwise */
-int V90Cp::parse(const unsigned char *b, int len)
+s16 V90Cp::parse(const unsigned char *b, s16 len)
 {
-	static const int con_bit[6] = { 103, 107, 111, 115, 120, 124 };
-	int i, j, c;
+	static const s16 con_bit[6] = { 103, 107, 111, 115, 120, 124 };
+	s16 i, j, c;
 
 	if (!frame_crc_ok(b, len - 16))
 		return -1;
@@ -672,10 +673,11 @@ int V90Cp::parse(const unsigned char *b, int len)
 }
 
 /* see v90.h: the inverse of parse() */
-int V90Cp::build(unsigned char *b) const
+s16 V90Cp::build(unsigned char *b) const
 {
-	static const int sbit[6] = { 0, 0, 0, 0, 1, 1 };
-	int n = 0, i, j, c;
+	static const s16 sbit[6] = { 0, 0, 0, 0, 1, 1 };
+	s32 n = 0;
+	s16 i, j, c;
 
 	put_bits(b, &n, 0x1FFFF, 17);
 	put_bits(b, &n, 0, 1);
@@ -722,10 +724,10 @@ int V90Cp::build(unsigned char *b) const
    bits: none empty, enough points for the K = D - S modulus bits, and
    frames that fit the encoders' 48 bits (a CP may pass its CRC and still
    ask for more) */
-int V90Cp::usable(int D, int S) const
+s16 V90Cp::usable(s16 D, s16 S) const
 {
 	double prod = 1;
-	int K = D - S, i, u, n;
+	s16 K = D - S, i, u, n;
 
 	if (D > 48 || K < 1 || S < 0)
 		return 0;
@@ -747,10 +749,11 @@ int V90Cp::usable(int D, int S) const
 
 /* the bits of the digital modem's MP, one per byte in time order: type
    1 when h has a non-zero coefficient; rate_mask from 4800 bit/s on */
-int v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
-		 int ack, int rate_mask, const int *h)
+s16 v90_mp_build(unsigned char *b, s16 drn_max, s16 trellis, s16 expanded,
+		 s16 ack, s16 rate_mask, const s16 *h)
 {
-	int n = 0, i, type = 0;
+	s32 n = 0;
+	s16 i, type = 0;
 
 	for (i = 0; i < 6; i++)
 		if (h && h[i])
@@ -789,9 +792,9 @@ int v90_mp_build(unsigned char *b, int drn_max, int trellis, int expanded,
 
 /* the encoder for the constellations of cp; lin_: Ucode -> linear (see
    v90.h) */
-int V90Enc::init(const V90Cp *cp, int D, const int *lin_)
+s16 V90Enc::init(const V90Cp *cp, s16 D, const s16 *lin_)
 {
-	int i, u;
+	s16 i, u;
 
 	/* one point per interval and no bits until it works: an unusable
 	   CP gives silence, not a division by zero */
@@ -823,10 +826,10 @@ int V90Enc::init(const V90Cp *cp, int D, const int *lin_)
 
 /* the shaping filter F(z) over a frame with the given signs, from the
    state f[3] (updated); returns the sum of v^2 */
-double V90Enc::shape_metric(const int *mag, int n, int signs, double *f) const
+double V90Enc::shape_metric(const s16 *mag, s16 n, s16 signs, double *f) const
 {
 	double x1_ = f[0], y1_ = f[1], v1_ = f[2], w = 0;
-	int i;
+	s16 i;
 	for (i = 0; i < n; i++) {
 		double x = signs >> i & 1 ? mag[i] : -mag[i];
 		double y = x - b1 * x1_ + a1 * y1_;
@@ -844,22 +847,22 @@ double V90Enc::shape_metric(const int *mag, int n, int signs, double *f) const
 
 /* the sign inversion of rule r (0, 1) from state Q: A, B from state 0;
    C, D from state 1; the next state is r */
-static int rule_mask(int fs, int Q, int r)
+static s16 rule_mask(s16 fs, s16 Q, s16 r)
 {
-	int all = (1 << fs) - 1, even = fs == 6 ? 0x15 : fs == 3 ? 5 : 1;
+	s16 all = (1 << fs) - 1, even = fs == 6 ? 0x15 : fs == 3 ? 5 : 1;
 	if (Q == 0)
 		return r ? all : 0;
 	return r ? all & ~even : even;
 }
 
 /* the least metric of the rule sequences for frames k..depth from a state */
-double V90Enc::best_path(int k, int depth, int Q_, int tprev, const double *f) const
+double V90Enc::best_path(s16 k, s16 depth, s16 Q_, s16 tprev, const double *f) const
 {
 	double best = 1e300;
-	int r;
+	s16 r;
 	for (r = 0; r < 2; r++) {
 		const struct v90_shf *s = &q[k];
-		int sg = (s->p ^ tprev) ^ rule_mask(s->fs, Q_, r);
+		s16 sg = (s->p ^ tprev) ^ rule_mask(s->fs, Q_, r);
 		double st[3] = { f[0], f[1], f[2] };
 		double w = shape_metric(s->mag, s->fs, sg, st);
 		if (k < depth)
@@ -871,14 +874,14 @@ double V90Enc::best_path(int k, int depth, int Q_, int tprev, const double *f) c
 }
 
 /* decide the signs of the oldest shaping frame */
-void V90Enc::decide_frame(int depth)
+void V90Enc::decide_frame(s16 depth)
 {
 	const struct v90_shf *s = &q[0];
 	double f[3] = { x1, y1, v1 }, bw = 1e300, bst[3] = { 0, 0, 0 };
-	int r, best = 0, bsg = 0;
+	s16 r, best = 0, bsg = 0;
 
 	for (r = 0; r < 2; r++) {
-		int sg = (s->p ^ t_prev) ^ rule_mask(s->fs, Q, r);
+		s16 sg = (s->p ^ t_prev) ^ rule_mask(s->fs, Q, r);
 		double st[3] = { f[0], f[1], f[2] };
 		double w = shape_metric(s->mag, s->fs, sg, st);
 		if (depth > 0)
@@ -899,7 +902,7 @@ void V90Enc::decide_frame(int depth)
 	std::copy_n(s->mag, s->fs, mag_acc + nsh * s->fs);
 	sign_acc |= bsg << (nsh * s->fs);
 	if (++nsh == sr) {
-		int i;
+		s16 i;
 		for (i = 0; i < 6; i++)
 			outq[outn][i] = sign_acc >> i & 1 ?
 				mag_acc[i] : -mag_acc[i];
@@ -913,11 +916,11 @@ void V90Enc::decide_frame(int depth)
 
 /* a data frame of D bits in (see v90.h): the modulus encoder, the sign
    bits into shaping frames, then the decisions the look-ahead allows */
-void V90Enc::push(const unsigned char *bits, int last_)
+void V90Enc::push(const unsigned char *bits, s16 last_)
 {
 	unsigned char d[48];
 	u64 r = 0;
-	int D = S + K, mag[6], i;
+	s16 D = S + K, mag[6], i;
 
 	for (i = 0; i < D; i++)
 		d[i] = static_cast<unsigned char>(
@@ -925,13 +928,13 @@ void V90Enc::push(const unsigned char *bits, int last_)
 	for (i = K - 1; i >= 0; i--)
 		r = (r << 1) | d[S + i];
 	for (i = 0; i < 6; i++) {
-		int k = static_cast<int>(r % static_cast<unsigned>(M[i]));
-		r /= static_cast<unsigned>(M[i]);
+		s16 k = static_cast<s16>(r % static_cast<u16>(M[i]));
+		r /= static_cast<u16>(M[i]);
 		mag[i] = lin[ucode[i][k]];
 	}
 	if (sr == 0) {
 		/* 5.4.5.1: differential, no shaping */
-		int l = last;
+		s16 l = last;
 		for (i = 0; i < 6; i++) {
 			l ^= d[i];
 			outq[outn][i] = l ? mag[i] : -mag[i];
@@ -942,7 +945,7 @@ void V90Enc::push(const unsigned char *bits, int last_)
 	} else {
 		/* shaping frames of 6, 3 or 2 symbols; p' with the odd bit
 		   coded differentially (Tables 3 and 4/V.90) */
-		int fs = 6 / sr, f, k = 0;
+		s16 fs = 6 / sr, f, k = 0;
 		for (f = 0; f < sr; f++) {
 			struct v90_shf *s = &q[qn++];
 			s->fs = fs;
@@ -950,7 +953,7 @@ void V90Enc::push(const unsigned char *bits, int last_)
 			s->last = last_ && f == sr - 1;
 			std::copy_n(mag + f * fs, fs, s->mag);
 			for (i = 1; i < fs; i++) {
-				int bit = d[k++];
+				s16 bit = d[k++];
 				if (i & 1) {
 					bit ^= last;
 					last = bit;
@@ -961,7 +964,7 @@ void V90Enc::push(const unsigned char *bits, int last_)
 	}
 	/* decide what the look-ahead allows */
 	while (qn) {
-		int depth = ld, j;
+		s16 depth = ld, j;
 		for (j = 0; j < qn && j <= ld; j++)
 			if (q[j].last) {
 				depth = j;
@@ -975,7 +978,7 @@ void V90Enc::push(const unsigned char *bits, int last_)
 
 /* the oldest data frame ready, as 6 linear values; returns 0 when there
    is none */
-int V90Enc::pop(int out[6])
+s16 V90Enc::pop(s16 out[6])
 {
 	if (!outn)
 		return 0;

@@ -32,8 +32,8 @@ namespace dmd {
 namespace {
 
 /* the periods the playback leads by, and the buffer's */
-const int LEAD_PERIODS = 2;
-const int BUFFER_PERIODS = 8;
+const s16 LEAD_PERIODS = 2;
+const s16 BUFFER_PERIODS = 8;
 
 } // namespace
 
@@ -69,7 +69,7 @@ bool AlsaLine::open(const char *pcm, const char *ctl, u32 rate)
 	int err;
 
 	rate_ = rate;
-	frame_ = static_cast<int>(rate / 50);
+	frame_ = static_cast<s16>(rate / 50);
 	in_.assign(frame_, 0);
 	out_.assign(frame_, 0);
 	err = snd_pcm_open(&cap_, pcm, SND_PCM_STREAM_CAPTURE,
@@ -161,7 +161,7 @@ bool AlsaLine::setup(snd_pcm_t *pcm, bool capture)
 		return false;
 	}
 	if (!capture)
-		delay_ = static_cast<int>(period) * LEAD_PERIODS;
+		delay_ = static_cast<s32>(period) * LEAD_PERIODS;
 	if ((err = snd_pcm_sw_params_current(pcm, sw)) < 0 ||
 	    (err = snd_pcm_sw_params_set_avail_min(pcm, sw, period)) < 0 ||
 	    (err = snd_pcm_sw_params_set_start_threshold(
@@ -212,7 +212,7 @@ void AlsaLine::set(Switch &s, bool on)
 
 /* see alsa_line.h: off hook the line monitor off; on hook, or snooping
    for caller ID, on */
-int AlsaLine::set_hook(dcore::Modem &, int state)
+s16 AlsaLine::set_hook(dcore::Modem &, s16 state)
 {
 	bool off = state == MODEM_HOOK_OFF;
 
@@ -288,14 +288,14 @@ bool AlsaLine::daa_write(bool off_hook)
 {
 	Si3054Regs r;
 	struct {
-		int nid;
+		s16 nid;
 		u16 *val;
 	} regs[] = { { SI3054_LINE_CFG1, &r.n13 }, { SI3054_DC_TERM, &r.n15 },
 		     { SI3054_LINE_CFG, &r.n16 },
 		     { SI3054_SQ_CONTROL, &r.n18 } };
 	u16 old[4];
 	bool changed = false;
-	int i = 0;
+	s16 i = 0;
 
 	for (auto &x : regs) {
 		if (!hda_.read(x.nid, x.val)) {
@@ -345,7 +345,7 @@ void AlsaLine::cx_open(int card)
 		    "kernel's\n", ac97_.name().c_str(), id1, id2);
 		return;
 	}
-	int kind = cx_kind(id2);
+	s16 kind = cx_kind(id2);
 	if (kind < 0) {
 		ERR("Conexant codec at %s (%04x %04x): its SmartDAA is not "
 		    "behind register 0x7a; the hook the kernel's\n",
@@ -379,7 +379,7 @@ void AlsaLine::hook_switch(bool off)
 }
 
 /* see dcore.h: on hook for ms, then off again (if it still is) */
-void AlsaLine::hook_flash(dcore::Modem &, unsigned ms)
+void AlsaLine::hook_flash(dcore::Modem &, u16 ms)
 {
 	if (hook_ != MODEM_HOOK_OFF)
 		return;
@@ -390,7 +390,7 @@ void AlsaLine::hook_flash(dcore::Modem &, unsigned ms)
 }
 
 /* see alsa_line.h */
-int AlsaLine::pulse_hook(dcore::Modem &, bool broken)
+s16 AlsaLine::pulse_hook(dcore::Modem &, bool broken)
 {
 	if (hook_ != MODEM_HOOK_OFF)
 		return -1;
@@ -413,7 +413,7 @@ void AlsaLine::watch(RunLoop &loop)
 	if (!cap_)
 		return;
 	n = snd_pcm_poll_descriptors(cap_, fds, 8);
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		loop.watch(fds[i].fd);
 }
 
@@ -461,7 +461,7 @@ void AlsaLine::frame(dcore::Modem &m, const s16 *in, s16 *out)
 			hook_switch(true);
 	}
 	if (hook_ != MODEM_HOOK_OFF) {
-		for (int i = 0; i < frame_; i++)
+		for (s16 i = 0; i < frame_; i++)
 			if (ring_.sample(in[i]))
 				m.ring();
 	}
@@ -473,7 +473,7 @@ void AlsaLine::frame(dcore::Modem &m, const s16 *in, s16 *out)
 }
 
 /* see alsa_line.h */
-int AlsaLine::pump(dcore::Modem &m)
+s16 AlsaLine::pump(dcore::Modem &m)
 {
 	for (;;) {
 		snd_pcm_sframes_t n = snd_pcm_readi(cap_, in_.data() + have_,
@@ -486,12 +486,12 @@ int AlsaLine::pump(dcore::Modem &m)
 				return -1;
 			continue;
 		}
-		have_ += static_cast<int>(n);
+		have_ += static_cast<s16>(n);
 		if (have_ < frame_)
 			return 0;
 		have_ = 0;
 		frame(m, in_.data(), out_.data());
-		int done = 0;
+		s16 done = 0;
 		while (done < frame_) {
 			n = snd_pcm_writei(play_, out_.data() + done,
 					   frame_ - done);
@@ -508,7 +508,7 @@ int AlsaLine::pump(dcore::Modem &m)
 					return -1;
 				break;
 			}
-			done += static_cast<int>(n);
+			done += static_cast<s16>(n);
 		}
 	}
 }

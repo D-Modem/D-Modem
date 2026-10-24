@@ -49,19 +49,19 @@ public:
 	void set_record(const char *prefix) { record_ = prefix; }
 
 	/* the main loop of any number of them, until stop() */
-	static int run(PipeModem **modems, int n);
+	static s16 run(PipeModem **modems, s16 n);
 	/* run() returns at its next turn (safe in a signal handler) */
 	static void stop();
 
 	/* Host */
-	int start(dcore::Modem &m) override;
-	int stop(dcore::Modem &m) override;
+	s16 start(dcore::Modem &m) override;
+	s16 stop(dcore::Modem &m) override;
 	/* the line's delay, which Smart Link's original library asks for:
 	   the lead silence and the changes it asked for in this call; a
 	   change, made in line() */
-	int io_delay(dcore::Modem &) override { return delay_; }
+	s32 io_delay(dcore::Modem &) override { return delay_; }
 	/* a change of samples in the delay, made in line() */
-	void update_delay(dcore::Modem &, int samples) override {
+	void update_delay(dcore::Modem &, s32 samples) override {
 		pending_delay_ += samples;
 	}
 	/* MODEM_ANALOG=1 (or =<its name>): an analogue line (the tests'
@@ -71,31 +71,31 @@ public:
 	/* MODEM_HOOK_FD=<fd>: each change of the hook written to it, '1'
 	   off hook and '0' on (netsim's NET_HOOK_A and NET_HOOK_B, for its
 	   NET_RING) */
-	int set_hook(dcore::Modem &m, int state) override;
+	s16 set_hook(dcore::Modem &m, s16 state) override;
 	/* for ATI3 */
 	const char *driver_name() override { return "modem_test driver"; }
 	/* to the pty */
-	int dte_write(dcore::Modem &, const char *buf, int n) override {
+	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
 		return pty_.write(buf, n);
 	}
 	/* ms: the line's clock with PIPE_SYNC, else the monotonic one */
 	u64 now_ms() override;
 
 private:
-	int line(bool rd = true);       /* the line's audio is readable (rd:
+	s16 line(bool rd = true);       /* the line's audio is readable (rd:
 					   read it; else what is left) */
 	/* with realtime_, sleep until the clock has these samples' time */
-	void pace(int samples);
-	int lead();                     /* the line's lead silence, once */
+	void pace(s16 samples);
+	s16 lead();                     /* the line's lead silence, once */
 
 	dcore::Modem *m_ = nullptr;
 	Pty pty_;
 	int in_, out_;
 	s32 rate_;
 	bool lead_done_ = false;        /* the silence before the first call */
-	int lead_ = 0;                  /* its samples */
-	int delay_ = 0;                 /* io_delay() */
-	int pending_delay_ = 0;         /* the change not made yet */
+	s16 lead_ = 0;                  /* its samples */
+	s32 delay_ = 0;                 /* io_delay() */
+	s32 pending_delay_ = 0;         /* the change not made yet */
 	LineFrames line_;               /* in_'s samples */
 	bool realtime_ = false;
 	bool analog_ = false;

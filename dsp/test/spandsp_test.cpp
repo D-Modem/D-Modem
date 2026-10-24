@@ -88,7 +88,7 @@ protected:
 		return b;
 	}
 	/* a bit from our receiver into rxb */
-	static void put_bit(void *ctx, int bit) {
+	static void put_bit(void *ctx, s16 bit) {
 		SpandspV17 *t = static_cast<SpandspV17 *>(ctx);
 		if (t->nrx < (long)t->rxb.size())
 			t->rxb[t->nrx++] = bit;
@@ -103,7 +103,8 @@ protected:
    first 256 sent; then no bit may differ at it */
 testing::AssertionResult SpandspV17::run(int short_train, FaxRxMemory *mem)
 {
-	int bps = GetParam().bps, st;
+	int bps = GetParam().bps;
+	s16 st;
 	const char *train = short_train ? "short train: " : "long train: ";
 	void *tx;
 	FaxRx rx;

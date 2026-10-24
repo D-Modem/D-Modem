@@ -39,9 +39,9 @@ struct dmodem final : public dcore::Host {
 	dsp::CngDetect cng;
 
 	/* the line is the caller's: nothing to start */
-	int start(dcore::Modem &) override { return 0; }
+	s16 start(dcore::Modem &) override { return 0; }
 	/* nor to stop */
-	int stop(dcore::Modem &) override { return 0; }
+	s16 stop(dcore::Modem &) override { return 0; }
 	/* for ATI3 */
 	const char *driver_name() override { return "dmodem"; }
 	/* the program's hook flash, if it gave one */
@@ -50,12 +50,12 @@ struct dmodem final : public dcore::Host {
 	/* a hook flash if the program gave one */
 	bool can_flash(dcore::Modem &) override { return flash != nullptr; }
 	/* the program's hook flash, ms long */
-	void hook_flash(dcore::Modem &, unsigned ms) override {
+	void hook_flash(dcore::Modem &, u16 ms) override {
 		if (flash)
 			flash(flash_arg, ms);
 	}
 	/* to the DTE's fd (non-blocking): what it took, 0 if nothing */
-	int dte_write(dcore::Modem &, const char *buf, int n) override {
+	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
 		int ret = dmd::fd_write(dte_fd, buf, n);
 		return ret < 0 ? 0 : ret;
 	}
@@ -208,7 +208,7 @@ void dmodem_process(struct dmodem *d, const s16 *in, s16 *out,
 void dmodem_process_g711(struct dmodem *d, const unsigned char *in,
 			 unsigned char *out, s32 n)
 {
-	auto process = [d](const s16 *li, s16 *lo, int k) {
+	auto process = [d](const s16 *li, s16 *lo, s16 k) {
 		dmodem_process(d, li, lo, k);
 	};
 	dmodem_g711_blocks(d->law == DMODEM_LAW_ALAW, in, out, n, process);

@@ -55,12 +55,12 @@ struct keeper_answer {
 namespace {
 
 /* the most octets one read of the DTE's takes */
-const int READ_MAX = 4096;
+const s16 READ_MAX = 4096;
 
 /* after the DTE closed the slave: the turns the master is left out of
    select() off hook, and on hook */
-const unsigned CLOSED_PAUSE_OFF_HOOK = 100;
-const unsigned CLOSED_PAUSE_ON_HOOK = 1;
+const u16 CLOSED_PAUSE_OFF_HOOK = 100;
+const u16 CLOSED_PAUSE_ON_HOOK = 1;
 
 /* the keeper's socket, and the most descriptors it closes one by one
    (when the kernel has no close_range) */
@@ -302,7 +302,7 @@ Pty::~Pty()
    number; then a new pty as the DTE had the last one (or the first one
    raw at 115200 bit/s), and its slave's group, mode and link (what of
    these fails is only reported) */
-int Pty::open(const char *group, mode_t perm, const char *link)
+s16 Pty::open(const char *group, mode_t perm, const char *link)
 {
 	/* (link may be link_'s own string) */
 	std::string want_link = link ? link : "";
@@ -382,7 +382,7 @@ void Pty::set_slave(const char *group, mode_t perm, const char *link)
 /* the master to the keeper with an octet that says whether the link is
    wanted (link_), its answer into *a; 0, or -1 (errno) if the keeper
    could not be asked or did not answer */
-int Pty::keeper_ask(struct keeper_answer *a)
+s16 Pty::keeper_ask(struct keeper_answer *a)
 {
 	char op = link_.empty() ? ASK_SLAVE : ASK_LINK;
 	struct iovec iov = { &op, 1 };
@@ -453,7 +453,7 @@ void Pty::close()
 
 /* the keeper forked, with the link, group and mode of the current pty;
    it has closed all it had of ours when this returns 0 */
-int Pty::fork_keeper()
+s16 Pty::fork_keeper()
 {
 	KeeperSetup k;
 	int sv[2];
@@ -513,7 +513,7 @@ int Pty::fork_keeper()
 bool Pty::want_read(const dcore::Modem &m)
 {
 	if (closed_) {
-		unsigned pause = m.started() ? CLOSED_PAUSE_OFF_HOOK :
+		u16 pause = m.started() ? CLOSED_PAUSE_OFF_HOOK :
 			CLOSED_PAUSE_ON_HOOK;
 		if (close_count_ < pause) {
 			close_count_++;
@@ -529,7 +529,7 @@ Pty::Read Pty::read(dcore::Modem &m)
 {
 	struct termios t;
 	char buf[READ_MAX];
-	int room;
+	s32 room;
 	ssize_t n;
 
 	if (tcgetattr(fd_, &t) == 0 && !same_settings(t, termios_)) {
@@ -573,7 +573,7 @@ Pty::Read Pty::read(dcore::Modem &m)
 
 /* read(); the DTE closing the slave with HUPCL hangs up, and with
    new_pty a new pty takes this one's place */
-int Pty::serve(dcore::Modem &m, bool new_pty)
+s16 Pty::serve(dcore::Modem &m, bool new_pty)
 {
 	switch (read(m)) {
 	case ERROR:
@@ -594,14 +594,14 @@ int Pty::serve(dcore::Modem &m, bool new_pty)
 }
 
 /* to the master as much of buf as it takes now */
-int Pty::write(const char *buf, int n)
+s32 Pty::write(const char *buf, s32 n)
 {
 	ssize_t done;
 
 	if (fd_ < 0 || n <= 0)
 		return 0;
 	done = ::write(fd_, buf, n);
-	return done > 0 ? static_cast<int>(done) : 0;
+	return done > 0 ? static_cast<s32>(done) : 0;
 }
 
 } // namespace dmd

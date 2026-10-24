@@ -58,8 +58,8 @@ public:
 	};
 	enum State { STARTUP, DATA, RENEG, FAILED };
 
-	int init(const Config &c, Source src, Sink sink);
-	void process(const float *in, float *out, int n);
+	s16 init(const Config &c, Source src, Sink sink);
+	void process(const float *in, float *out, s32 n);
 
 	/* ask for a renegotiation (with the loading measured in phase 4)
 	   or a retrain, at the next symbol */
@@ -79,11 +79,11 @@ public:
 	/* the loading sent */
 	const VcvmLoading &tx_loading() const { return txl_; }
 	/* the round trip the start-up measured, ms (-1 before) */
-	int rtt_ms() const { return rtt_ms_; }
+	s16 rtt_ms() const { return rtt_ms_; }
 	/* the renegotiations completed */
-	int renegotiations() const { return renegs_; }
+	s32 renegotiations() const { return renegs_; }
 	/* the retrains */
-	int retrains() const { return retrains_; }
+	s32 retrains() const { return retrains_; }
 	/* what the receiver has measured of the data */
 	const VcvmDataStats &rx_stats() const { return drx_.stats(); }
 	/* the start-up now (or the last one) */
@@ -99,7 +99,7 @@ private:
 	{
 		return t_ + static_cast<s32>(txq_.size() - txpos_);
 	}
-	void silence(int ms);
+	void silence(s16 ms);
 	void send_mp();
 	void start_tx();
 	void start_rx(s32 from);
@@ -126,7 +126,7 @@ private:
 	VcvmMsgRx mrx_;
 	bool msgp_ = false;
 	VcvmLoading rxl_{}, txl_{};
-	int rtt_ms_ = -1;
+	s16 rtt_ms_ = -1;
 	std::vector<float> txq_;
 	size_t txpos_ = 0;
 	std::vector<float> hist_;
@@ -139,12 +139,12 @@ private:
 	bool want_reneg_ = false, want_retrain_ = false;
 	bool retrain_ = false, peer_retrain_ = false;
 	bool got_mp_ = false, got_ack_ = false, sent_ack_ = false;
-	int mps_ = 0;
+	s16 mps_ = 0;
 	s32 deadline_ = 0;
 	s32 last_rx_end_ = 0;
-	int p4_mps_ = 0;                /* the peer's MPs in phase 4 (the
+	s16 p4_mps_ = 0;                /* the peer's MPs in phase 4 (the
 					   first its last of the exchange) */
-	int renegs_ = 0, retrains_ = 0;
+	s32 renegs_ = 0, retrains_ = 0;
 	/* phase 4's watch */
 	s32 data_at_ = 0;               /* phase 4 (re)entered */
 	s32 confirmed_at_ = 0;          /* the peer's data decoding since */

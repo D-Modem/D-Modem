@@ -37,38 +37,38 @@ public:
 	bool ready() const { return true; }
 
 	/* one character in; then out() gives what it produced */
-	int encode(u8 ch);
-	int decode(u8 ch);
+	s16 encode(u8 ch);
+	s16 decode(u8 ch);
 	/* the encoder: the count held, the flush and the octet's rest (only
 	   after characters since the last one); the decoder: nothing (the
 	   stream goes on over the frames) */
-	int flush_encoder();
+	s16 flush_encoder();
 	/* (see flush_encoder()) */
-	int flush_decoder() { return 0; }
+	s16 flush_decoder() { return 0; }
 	/* the output so far, up to n octets */
-	int out(u8 *buf, int n);
+	s16 out(u8 *buf, s16 n);
 
 private:
-	void rank_up(int r);
-	void put(u32 bits, int len);
-	void put_value(int v);
+	void rank_up(s16 r);
+	void put(u32 bits, s16 len);
+	void put_value(s16 v);
 	void put_char(u8 ch);
-	void out_char(u8 ch, int n);
-	void token(int v);
+	void out_char(u8 ch, s16 n);
+	void token(s16 v);
 
 	/* the characters by rank, their ranks, the counts by rank */
 	u8 char_[256], rank_[256], count_[256];
 	/* the run: none yet (first_), its character, how many */
 	bool first_ = true;
 	u8 run_ch_ = 0;
-	int run_ = 0;
+	s16 run_ = 0;
 	/* the encoder's bits not out yet (the last bits_ of acc_), coded
 	   since the last flush; the decoder's bits not parsed yet */
 	u32 acc_ = 0;
-	int bits_ = 0;
+	s16 bits_ = 0;
 	bool dirty_ = false;
 	/* output */
-	int olen_ = 0, ohead_ = 0;
+	s16 olen_ = 0, ohead_ = 0;
 	u8 obuf_[1024];
 };
 

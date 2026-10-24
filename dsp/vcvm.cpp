@@ -20,7 +20,7 @@ namespace dsp {
 /* Table 10-2: spacing, the tones' multiples, the useful part and the
    prefix in ms (the 20 ms symbol) */
 static const struct {
-	int spacing, kmin, kmax;
+	s16 spacing, kmin, kmax;
 	double tu, tg;
 } combs[9] = {
 	{ 200, 2, 17, 15, 5 },  { 300, 1, 11, 10, 10 }, { 400, 1, 8, 15, 5 },
@@ -30,7 +30,7 @@ static const struct {
 
 /* the comb (the band of its code at its rate: N at 8000, W at 16000,
    S at 32000 Hz) */
-int VcvmComb::init(int code_, s32 fs_, bool sym22_)
+s16 VcvmComb::init(s16 code_, s32 fs_, bool sym22_)
 {
 	static const s32 band_fs[3] = { 8000, 16000, 32000 };
 	if (code_ < 0 || code_ > 8 || fs_ != band_fs[code_ / 3] ||
@@ -47,36 +47,36 @@ int VcvmComb::init(int code_, s32 fs_, bool sym22_)
 	   2.5 ms */
 	double tu_ms = sym22 ? 20 : combs[code].tu;
 	double tg_ms = sym22 ? 2.5 : combs[code].tg;
-	tu = static_cast<int>(lrint(fs * tu_ms / 1000));
-	tg = static_cast<int>(lrint(fs * tg_ms / 1000));
+	tu = static_cast<s16>(lrint(fs * tu_ms / 1000));
+	tg = static_cast<s16>(lrint(fs * tg_ms / 1000));
 	sps = tu + tg;
 	return 0;
 }
 
 /* every tone of n at phase bits pb, no rings */
-void VcvmLoad::all(int n, int pb)
+void VcvmLoad::all(s16 n, s16 pb)
 {
 	zero(phase);
 	zero(ring);
-	for (int i = 0; i < n && i < VCVM_TONES; i++)
+	for (s16 i = 0; i < n && i < VCVM_TONES; i++)
 		phase[i] = static_cast<u8>(pb);
 }
 
 /* the tones of n loaded */
-int VcvmLoad::loaded(int n) const
+s16 VcvmLoad::loaded(s16 n) const
 {
-	int c = 0;
-	for (int i = 0; i < n && i < VCVM_TONES; i++)
+	s16 c = 0;
+	for (s16 i = 0; i < n && i < VCVM_TONES; i++)
 		c += phase[i] != 0;
 	return c;
 }
 
 /* the bits a symbol of the n tones carries: the loaded tones' phase
    and ring bits */
-int VcvmLoad::bits(int n) const
+s16 VcvmLoad::bits(s16 n) const
 {
-	int b = 0;
-	for (int i = 0; i < n && i < VCVM_TONES; i++)
+	s16 b = 0;
+	for (s16 i = 0; i < n && i < VCVM_TONES; i++)
 		if (phase[i])
 			b += phase[i] + ring[i];
 	return b;
@@ -88,9 +88,9 @@ static void tone_tables(const VcvmComb &c, std::vector<float> &co,
 {
 	co.assign(static_cast<size_t>(c.tones) * c.tu, 0);
 	si.assign(static_cast<size_t>(c.tones) * c.tu, 0);
-	for (int k = 0; k < c.tones; k++) {
+	for (s16 k = 0; k < c.tones; k++) {
 		double w = 2 * M_PI * c.freq(k) / c.fs;
-		for (int t = 0; t < c.tu; t++) {
+		for (s16 t = 0; t < c.tu; t++) {
 			co[static_cast<size_t>(k) * c.tu + t] =
 				static_cast<float>(cos(w * t));
 			si[static_cast<size_t>(k) * c.tu + t] =
@@ -100,32 +100,32 @@ static void tone_tables(const VcvmComb &c, std::vector<float> &co,
 }
 
 /* the ring's step (dB) for ring bits rb, the number of rings */
-static double ring_db(int rb) { return rb == 1 ? 6.0 : 3.0; }
+static double ring_db(s16 rb) { return rb == 1 ? 6.0 : 3.0; }
 /* the number of rings for ring bits rb */
-static int rings(int rb) { return rb == 1 ? 2 : 4; }
+static s16 rings(s16 rb) { return rb == 1 ? 2 : 4; }
 
 /* g_R of 10.11: the rings' mean power that of a tone without */
-static double ring_gain(int rb)
+static double ring_gain(s16 rb)
 {
 	if (!rb)
 		return 1;
-	int R = rings(rb);
+	s16 R = rings(rb);
 	double s = 0;
-	for (int r = 0; r < R; r++)
+	for (s16 r = 0; r < R; r++)
 		s += pow(10, r * ring_db(rb) / 10);
 	return 1 / sqrt(s / R);
 }
 
 /* the comb at fs, every tone DQPSK at dbfs, the tones from Schroeder's
    phases; 0, or -1 if code and fs don't go together */
-int VcvmCombTx::init(int code, s32 fs, bool sym22, double dbfs)
+s16 VcvmCombTx::init(s16 code, s32 fs, bool sym22, double dbfs)
 {
 	if (c_.init(code, fs, sym22))
 		return -1;
 	rms_ = 32767 * pow(10, dbfs / 20);
 	tone_tables(c_, cos_, sin_);
 	/* the tones start at Schroeder's phases, for a low peak factor */
-	for (int k = 0; k < c_.tones; k++)
+	for (s16 k = 0; k < c_.tones; k++)
 		ph_[k] = M_PI * k * k / c_.tones;
 	VcvmLoad l;
 	l.all(c_.tones, 2);
@@ -138,9 +138,9 @@ int VcvmCombTx::init(int code, s32 fs, bool sym22, double dbfs)
 void VcvmCombTx::set_load(const VcvmLoad &l)
 {
 	load_ = l;
-	int n = load_.loaded(c_.tones);
+	s16 n = load_.loaded(c_.tones);
 	double a = n ? rms_ * sqrt(2.0 / n) : 0;
-	for (int k = 0; k < c_.tones; k++) {
+	for (s16 k = 0; k < c_.tones; k++) {
 		ring_[k] = 0;
 		amp_[k] = load_.phase[k] ? a * ring_gain(load_.ring[k]) : 0;
 	}
@@ -150,9 +150,9 @@ void VcvmCombTx::set_load(const VcvmLoad &l)
    then the useful part */
 void VcvmCombTx::emit(float *out)
 {
-	const int tu = c_.tu, tg = c_.tg;
+	const s16 tu = c_.tu, tg = c_.tg;
 	std::vector<float> u(tu, 0.0f);
-	for (int k = 0; k < c_.tones; k++) {
+	for (s16 k = 0; k < c_.tones; k++) {
 		if (amp_[k] == 0)
 			continue;
 		double a = amp_[k];
@@ -162,7 +162,7 @@ void VcvmCombTx::emit(float *out)
 		      sa = static_cast<float>(a * sin(ph_[k]));
 		const float *co = &cos_[static_cast<size_t>(k) * tu],
 			    *si = &sin_[static_cast<size_t>(k) * tu];
-		for (int t = 0; t < tu; t++)
+		for (s16 t = 0; t < tu; t++)
 			u[t] += ca * co[t] - sa * si[t];
 	}
 	std::copy_n(&u[tu - tg], tg, out);
@@ -172,7 +172,7 @@ void VcvmCombTx::emit(float *out)
 /* the phase reference: the tones as they are, the rings at 0 */
 void VcvmCombTx::reference(float *out)
 {
-	for (int k = 0; k < c_.tones; k++)
+	for (s16 k = 0; k < c_.tones; k++)
 		ring_[k] = 0;
 	emit(out);
 }
@@ -181,7 +181,7 @@ void VcvmCombTx::reference(float *out)
    steps rs (optional) on the loaded tones */
 void VcvmCombTx::steps(const u8 *ph8, const u8 *rs, float *out)
 {
-	for (int k = 0; k < c_.tones; k++) {
+	for (s16 k = 0; k < c_.tones; k++) {
 		if (!load_.phase[k])
 			continue;
 		ph_[k] = fmod(ph_[k] + ph8[k] * M_PI / 4, 2 * M_PI);
@@ -192,9 +192,9 @@ void VcvmCombTx::steps(const u8 *ph8, const u8 *rs, float *out)
 }
 
 /* n bits, the first the most significant */
-static int take(const u8 *&b, int n)
+static s16 take(const u8 *&b, s16 n)
 {
-	int v = 0;
+	s16 v = 0;
 	while (n--)
 		v = (v << 1) | (*b++ & 1);
 	return v;
@@ -206,11 +206,11 @@ void VcvmCombTx::data(const u8 *bits, float *out)
 {
 	u8 ph8[VCVM_TONES] = {}, rs[VCVM_TONES] = {};
 	const u8 *b = bits;
-	for (int k = 0; k < c_.tones; k++) {
-		int pb = load_.phase[k];
+	for (s16 k = 0; k < c_.tones; k++) {
+		s16 pb = load_.phase[k];
 		if (!pb)
 			continue;
-		int q = vcvm_ungray(take(b, pb));
+		s16 q = vcvm_ungray(take(b, pb));
 		ph8[k] = static_cast<u8>(pb == 2 ? 2 * q : q);
 		if (load_.ring[k])
 			rs[k] = static_cast<u8>(
@@ -225,7 +225,7 @@ void VcvmCombTx::data(const u8 *bits, float *out)
 
 /* the comb at fs, every tone DQPSK, nothing received, unlocked; 0, or
    -1 if code and fs don't go together */
-int VcvmCombRx::init(int code, s32 fs, bool sym22)
+s16 VcvmCombRx::init(s16 code, s32 fs, bool sym22)
 {
 	if (c_.init(code, fs, sym22))
 		return -1;
@@ -254,7 +254,7 @@ void VcvmCombRx::set_load(const VcvmLoad &l)
 }
 
 /* samples from the line (16 bit scale), into the buffer */
-void VcvmCombRx::push(const float *x, int n)
+void VcvmCombRx::push(const float *x, s32 n)
 {
 	buf_.insert(buf_.end(), x, x + n);
 	trim();
@@ -281,7 +281,7 @@ void VcvmCombRx::trim()
 }
 
 /* the useful part from sample u against tone k */
-std::complex<double> VcvmCombRx::tone(s32 u, int k) const
+std::complex<double> VcvmCombRx::tone(s32 u, s16 k) const
 {
 	const float *co = &cos_[static_cast<size_t>(k) * c_.tu],
 		    *si = &sin_[static_cast<size_t>(k) * c_.tu];
@@ -289,12 +289,12 @@ std::complex<double> VcvmCombRx::tone(s32 u, int k) const
 	s32 i = u - base_;
 	if (i >= 0 && i + c_.tu <= static_cast<s32>(buf_.size())) {
 		const float *y = &buf_[static_cast<size_t>(i)];
-		for (int t = 0; t < c_.tu; t++) {
+		for (s16 t = 0; t < c_.tu; t++) {
 			re += y[t] * co[t];
 			im -= y[t] * si[t];
 		}
 	} else {
-		for (int t = 0; t < c_.tu; t++) {
+		for (s16 t = 0; t < c_.tu; t++) {
 			re += at(u + t) * co[t];
 			im -= at(u + t) * si[t];
 		}
@@ -306,13 +306,13 @@ std::complex<double> VcvmCombRx::tone(s32 u, int k) const
    which 5 ms of it reach dbfs (rms); -1 if none yet */
 s32 VcvmCombRx::onset(s32 from, double dbfs) const
 {
-	int w = c_.fs / 200, step = c_.fs / 1000;
+	s16 w = c_.fs / 200, step = c_.fs / 1000;
 	double thr = pow(32767 * pow(10, dbfs / 20), 2) * w;
 	if (from < base_)
 		from = base_;
 	for (s32 a = from; a + w <= received(); a += step) {
 		double e = 0;
-		for (int t = 0; t < w; t++)
+		for (s16 t = 0; t < w; t++)
 			e += static_cast<double>(at(a + t)) * at(a + t);
 		if (e >= thr)
 			return a;
@@ -322,19 +322,19 @@ s32 VcvmCombRx::onset(s32 from, double dbfs) const
 
 /* the prefix's correlation with the useful part's end, over 8 symbols,
    at each phase of the symbol: the best is the prefix's start */
-int VcvmCombRx::acquire(s32 from, s32 first)
+s16 VcvmCombRx::acquire(s32 from, s32 first)
 {
-	const int S = 8, sps = c_.sps, tu = c_.tu, tg = c_.tg;
+	const s16 S = 8, sps = c_.sps, tu = c_.tu, tg = c_.tg;
 	if (from < base_ ||
 	    received() < from + static_cast<s32>(S + 1) * sps + tu)
 		return -1;
 	double best = -1e300;
-	int bt = 0;
-	for (int th = 0; th < sps; th++) {
+	s16 bt = 0;
+	for (s16 th = 0; th < sps; th++) {
 		double m = 0, e1 = 0, e2 = 0;
-		for (int s = 0; s < S; s++) {
+		for (s16 s = 0; s < S; s++) {
 			s32 a = from + th + static_cast<s32>(s) * sps;
-			for (int t = 0; t < tg; t++) {
+			for (s16 t = 0; t < tg; t++) {
 				double x = at(a + t), y = at(a + t + tu);
 				m += x * y;
 				e1 += x * x;
@@ -375,7 +375,7 @@ static double wrap(double a)
    followed from the phase errors; true if there was one */
 bool VcvmCombRx::next(VcvmCombSym *s, const u8 *known)
 {
-	const int K = c_.tones;
+	const s16 K = c_.tones;
 	if (!locked_ || received() < next_ + c_.sps + 2)
 		return false;
 	/* the useful part, an eighth of the prefix early: the timing may
@@ -386,7 +386,7 @@ bool VcvmCombRx::next(VcvmCombSym *s, const u8 *known)
 	double tp = tau_ + drift_;              /* this symbol's timing */
 	std::complex<double> r[VCVM_TONES];
 	double lv[VCVM_TONES], w[VCVM_TONES], maxl = 0;
-	for (int k = 0; k < K; k++) {
+	for (s16 k = 0; k < K; k++) {
 		w[k] = 2 * M_PI * c_.freq(k) / c_.fs;
 		r[k] = tone(u, k) * std::polar(1.0, w[k] * tp) *
 			(2.0 / c_.tu);
@@ -395,12 +395,12 @@ bool VcvmCombRx::next(VcvmCombSym *s, const u8 *known)
 	}
 	zero(*s);
 	s->start = next_;
-	for (int k = 0; k < K; k++)
+	for (s16 k = 0; k < K; k++)
 		s->level[k] = static_cast<float>(lv[k]);
 	if (!have_prev_) {
 		/* the reference: its tones are the next symbol's */
 		have_prev_ = true;
-		for (int k = 0; k < K; k++)
+		for (s16 k = 0; k < K; k++)
 			prev_[k] = r[k];
 		tau_ = tp;
 		next_ += c_.sps;
@@ -408,20 +408,20 @@ bool VcvmCombRx::next(VcvmCombSym *s, const u8 *known)
 		return true;
 	}
 	double se = 0, sw = 0, swx = 0, swxx = 0, swy = 0, swxy = 0;
-	int nb = 0;
-	for (int k = 0; k < K; k++) {
+	s16 nb = 0;
+	for (s16 k = 0; k < K; k++) {
 		std::complex<double> z = r[k] * std::conj(prev_[k]);
 		double d = wrap(std::arg(z) - rot_);
-		int pb = load_.phase[k], rb = load_.ring[k];
-		int q8;
+		s16 pb = load_.phase[k], rb = load_.ring[k];
+		s16 q8;
 		if (known)
 			q8 = known[k] & 7;
 		else if (pb == 2)
-			q8 = 2 * ((static_cast<int>(lrint(d / (M_PI / 2))) % 4 +
+			q8 = 2 * ((static_cast<s16>(lrint(d / (M_PI / 2))) % 4 +
 				   4) %
 				  4);
 		else
-			q8 = (static_cast<int>(lrint(d / (M_PI / 4))) % 8 + 8) %
+			q8 = (static_cast<s16>(lrint(d / (M_PI / 4))) % 8 + 8) %
 			     8;
 		double e = wrap(d - q8 * M_PI / 4);
 		double rdb = 20 * log10((lv[k] + 1e-9) /
@@ -431,25 +431,25 @@ bool VcvmCombRx::next(VcvmCombSym *s, const u8 *known)
 		s->ph8[k] = static_cast<u8>(q8);
 		s->perr[k] = static_cast<float>(e);
 		if (pb) {
-			int M = pb == 2 ? 4 : 8;
-			int q = pb == 2 ? q8 / 2 : q8;
-			int g = vcvm_gray(q);
+			s16 M = pb == 2 ? 4 : 8;
+			s16 q = pb == 2 ? q8 / 2 : q8;
+			s16 g = vcvm_gray(q);
 			float rel = static_cast<float>(
 				std::max(0.0, 1 - fabs(e) / (M_PI / M)));
-			for (int i = pb - 1; i >= 0; i--) {
+			for (s16 i = pb - 1; i >= 0; i--) {
 				s->bits[nb] =
 					static_cast<u8>((g >> i) & 1);
 				s->rel[nb++] = rel;
 			}
 			if (rb) {
-				int R = rings(rb);
+				s16 R = rings(rb);
 				double st = ring_db(rb);
-				int dd = static_cast<int>(lrint(rdb / st));
+				s16 dd = static_cast<s16>(lrint(rdb / st));
 				double re = fabs(rdb - dd * st) / (st / 2);
 				dd = (dd % R + R) % R;
 				s->rs[k] = static_cast<u8>(dd);
-				int gg = vcvm_gray(dd);
-				for (int i = rb - 1; i >= 0; i--) {
+				s16 gg = vcvm_gray(dd);
+				for (s16 i = rb - 1; i >= 0; i--) {
 					s->bits[nb] = static_cast<u8>(
 						(gg >> i) & 1);
 					s->rel[nb++] = static_cast<float>(
@@ -486,7 +486,7 @@ bool VcvmCombRx::next(VcvmCombSym *s, const u8 *known)
 	drift_ += 0.05 * eps;
 	rot_ += 0.2 * a;
 	/* the tones as the next symbol's reference, at the timing now */
-	for (int k = 0; k < K; k++)
+	for (s16 k = 0; k < K; k++)
 		prev_[k] = r[k] * std::polar(1.0, w[k] * (tau_ - tp));
 	s->tau = static_cast<float>(tau_);
 	s->drift = static_cast<float>(drift_);
@@ -509,32 +509,32 @@ bool VcvmCombRx::next(VcvmCombSym *s, const u8 *known)
 
 /* Table 10-3's alphabet at fs (8000 or 16000), p10 the 10 ms symbol;
    0, or -1 for another rate */
-int VcvmParam::init(s32 fs_, bool p10_)
+s16 VcvmParam::init(s32 fs_, bool p10_)
 {
 	if (fs_ != 8000 && fs_ != 16000)
 		return -1;
 	fs = fs_;
 	p10 = p10_;
-	int m = fs / 8000;
+	s16 m = fs / 8000;
 	sps = (p10 ? 80 : 160) * m;
-	for (int i = 0; i < 16; i++)
+	for (s16 i = 0; i < 16; i++)
 		lag[i] = (p10 ? 20 + i : 40 + 2 * i) * m;
 	return 0;
 }
 
 /* the alphabet, the band-pass pulse and each lag's gain for a symbol
    at dbfs; 0, or -1 for another rate */
-int VcvmParamTx::init(s32 fs, bool p10, double dbfs)
+s16 VcvmParamTx::init(s32 fs, bool p10, double dbfs)
 {
 	if (p_.init(fs, p10))
 		return -1;
 	/* the band-pass pulse: 300 Hz to the band's top under a Hamming
 	   window, 33 taps at 8000 Hz */
-	int n = 33 * fs / 8000;
+	s16 n = 33 * fs / 8000;
 	double top = fs == 8000 ? 3400 : 7000;
 	h_.assign(n, 0);
-	for (int i = 0; i < n; i++) {
-		int k = i - n / 2;
+	for (s16 i = 0; i < n; i++) {
+		s16 k = i - n / 2;
 		auto sinc = [&](double fc) {
 			return k == 0 ? 2 * fc / fs :
 				sin(2 * M_PI * fc / fs * k) / (M_PI * k);
@@ -546,12 +546,12 @@ int VcvmParamTx::init(s32 fs, bool p10, double dbfs)
 	   state of a train of it */
 	double want = 32767 * pow(10, dbfs / 20);
 	std::vector<float> y(p_.sps);
-	for (int i = 0; i < 16; i++) {
+	for (s16 i = 0; i < 16; i++) {
 		gain_[i] = 1;
 		fir_.assign(n, 0);
 		pos_ = 0;
 		tilt_ = 0;
-		for (int s = 0; s < 4; s++)
+		for (s16 s = 0; s < 4; s++)
 			symbol(i, y.data());
 		double e = 0;
 		for (float v : y)
@@ -568,10 +568,10 @@ int VcvmParamTx::init(s32 fs, bool p10, double dbfs)
 float VcvmParamTx::step(float e)
 {
 	tilt_ = e + 0.7f * tilt_;
-	int n = static_cast<int>(h_.size());
+	s16 n = static_cast<s16>(h_.size());
 	fir_[pos_] = tilt_;
 	double y = 0;
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		y += h_[i] * fir_[(pos_ - i + n) % n];
 	pos_ = (pos_ + 1) % n;
 	return static_cast<float>(y);
@@ -579,10 +579,10 @@ float VcvmParamTx::step(float e)
 
 /* a symbol of index i: a pulse every lag[i] samples, through the tilt
    and the band-pass pulse */
-void VcvmParamTx::symbol(int i, float *out)
+void VcvmParamTx::symbol(s16 i, float *out)
 {
-	int L = p_.lag[i & 15];
-	for (int m = 0; m < p_.sps; m++)
+	s16 L = p_.lag[i & 15];
+	for (s16 m = 0; m < p_.sps; m++)
 		out[m] = step(m % L == 0 ? gain_[i & 15] : 0.0f);
 }
 
@@ -597,13 +597,13 @@ void VcvmParamTx::data(const u8 *bits, float *out)
 /* the preamble: 8 symbols, index 0 and 15 alternately */
 void VcvmParamTx::preamble(float *out)
 {
-	for (int s = 0; s < 8; s++)
+	for (s16 s = 0; s < 8; s++)
 		symbol(s & 1 ? 15 : 0, out + s * p_.sps);
 }
 
 /* the alphabet at fs, nothing received, unlocked, c-bar's history
    cleared; 0, or -1 for another rate */
-int VcvmParamRx::init(s32 fs, bool p10)
+s16 VcvmParamRx::init(s32 fs, bool p10)
 {
 	if (p_.init(fs, p10))
 		return -1;
@@ -628,7 +628,7 @@ void VcvmParamRx::restart(s32 base)
 }
 
 /* samples from the line (16 bit scale), into the buffer */
-void VcvmParamRx::push(const float *x, int n)
+void VcvmParamRx::push(const float *x, s32 n)
 {
 	buf_.insert(buf_.end(), x, x + n);
 	trim();
@@ -658,7 +658,7 @@ void VcvmParamRx::trim()
 }
 
 /* the normalized autocorrelation of [a, b) at lag L (10.6.5) */
-float VcvmParamRx::corr(s32 a, s32 b, int L) const
+float VcvmParamRx::corr(s32 a, s32 b, s16 L) const
 {
 	double xy = 0, xx = 0, yy = 0;
 	for (s32 m = a; m + L < b; m++) {
@@ -672,22 +672,22 @@ float VcvmParamRx::corr(s32 a, s32 b, int L) const
 
 /* the symbol from a: the lag of the greatest c, the smallest within
    0.02 of it */
-int VcvmParamRx::decide(s32 a, float *c, float *margin, int *second) const
+s16 VcvmParamRx::decide(s32 a, float *c, float *margin, s16 *second) const
 {
 	float cs[16], best = -2;
 	/* the symbol but its first sixteenth (1.25 ms of P20), where the
 	   codec's predictor goes over to the new lag */
 	s32 a0 = a + p_.sps / 16;
-	for (int i = 0; i < 16; i++) {
+	for (s16 i = 0; i < 16; i++) {
 		cs[i] = corr(a0, a + p_.sps, p_.lag[i]);
 		best = std::max(best, cs[i]);
 	}
-	int d = 0;
+	s16 d = 0;
 	while (d < 15 && cs[d] < best - 0.02f)
 		d++;
 	float other = -2;
-	int o = d ? 0 : 1;
-	for (int i = 0; i < 16; i++)
+	s16 o = d ? 0 : 1;
+	for (s16 i = 0; i < 16; i++)
 		if (i != d && cs[i] > other) {
 			other = cs[i];
 			o = i;
@@ -705,8 +705,8 @@ int VcvmParamRx::decide(s32 a, float *c, float *margin, int *second) const
    two lags; the score their c's sum, or -1 */
 bool VcvmParamRx::search()
 {
-	const int T = p_.sps, L0 = p_.lag[0], L15 = p_.lag[15];
-	const int step = p_.fs / 4000;
+	const s16 T = p_.sps, L0 = p_.lag[0], L15 = p_.lag[15];
+	const s16 step = p_.fs / 4000;
 	if (locked_)
 		return true;
 	if (searched_ < base_ + 8L * T)
@@ -717,8 +717,8 @@ bool VcvmParamRx::search()
 	   late */
 	auto score = [&](s32 e) -> float {
 		float sc = 0;
-		int weak = 0;
-		for (int w = 7; w >= 0; w--) {
+		s16 weak = 0;
+		for (s16 w = 7; w >= 0; w--) {
 			s32 a = e - static_cast<s32>(8 - w) * T;
 			float c0 = corr(a, a + T, L0), c1 = corr(a, a + T, L15);
 			bool hi = w & 1;
@@ -769,10 +769,10 @@ void VcvmParamRx::lock_at(s32 at)
 /* the next symbol: its index, c, margin, level and second best lag;
    c into c-bar's history, the timing moved a sample when 8 symbols'
    fit is better there; true if there was one */
-bool VcvmParamRx::next(int *idx, float *c, float *margin, float *rms,
-		       int *second)
+bool VcvmParamRx::next(s16 *idx, float *c, float *margin, float *rms,
+		       s16 *second)
 {
-	const int T = p_.sps;
+	const s16 T = p_.sps;
 	if (!locked_ || received() < next_ + T + 1)
 		return false;
 	if (rms) {
@@ -782,18 +782,18 @@ bool VcvmParamRx::next(int *idx, float *c, float *margin, float *rms,
 		*rms = static_cast<float>(sqrt(e / T));
 	}
 	float cc, mg;
-	int d = decide(next_, &cc, &mg, second);
+	s16 d = decide(next_, &cc, &mg, second);
 	*idx = d;
 	if (c)
 		*c = cc;
 	if (margin)
 		*margin = mg;
 	cs_[static_cast<size_t>(csi_)] = cc;
-	csi_ = (csi_ + 1) % static_cast<int>(cs_.size());
-	csn_ = std::min(csn_ + 1, static_cast<int>(cs_.size()));
+	csi_ = (csi_ + 1) % static_cast<s16>(cs_.size());
+	csn_ = std::min<s16>(csn_ + 1, static_cast<s16>(cs_.size()));
 	/* the timing: the decided lag's c a sample either side, over 8
 	   symbols, against here */
-	int L = p_.lag[d];
+	s16 L = p_.lag[d];
 	fit_[0] += corr(next_ - 1, next_ - 1 + T, L);
 	fit_[1] += cc;
 	fit_[2] += corr(next_ + 1, next_ + 1 + T, L);
@@ -812,10 +812,10 @@ bool VcvmParamRx::next(int *idx, float *c, float *margin, float *rms,
 
 /* symbol idx's 4 bits, the first the most significant: the Gray code
    of the index */
-void VcvmParamRx::bits(int idx, u8 *b)
+void VcvmParamRx::bits(s16 idx, u8 *b)
 {
-	int g = vcvm_gray(idx & 15);
-	for (int i = 0; i < 4; i++)
+	s16 g = vcvm_gray(idx & 15);
+	for (s16 i = 0; i < 4; i++)
 		b[i] = static_cast<u8>((g >> (3 - i)) & 1);
 }
 
@@ -825,7 +825,7 @@ float VcvmParamRx::cbar() const
 	if (!csn_)
 		return 0;
 	double s = 0;
-	for (int i = 0; i < csn_; i++)
+	for (s16 i = 0; i < csn_; i++)
 		s += cs_[static_cast<size_t>(i)];
 	return static_cast<float>(s / csn_);
 }

@@ -18,12 +18,12 @@ namespace {
 /* what an event is: its tones (Hz, 0: none), ANSam's modulation, the
    phase reversals, its nominal power (dBm0, for a volume of 0) */
 struct Def {
-	int event;
+	s16 event;
 	const char *name;
 	EventPlayer::Kind kind;
 	double f1, f2;
 	bool mod, rev;
-	int dbm0;
+	s16 dbm0;
 };
 
 const Def DEFS[] = {
@@ -73,8 +73,8 @@ const Def DEFS[] = {
 const double DTMF_LO[] = { 697, 770, 852, 941 };
 const double DTMF_HI[] = { 1209, 1336, 1477, 1633 };
 /* the key's row and column in RFC 4733's order 0-9 * # A-D */
-const int ROW[] = { 3, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 0, 1, 2, 3 };
-const int COL[] = { 1, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 2, 3, 3, 3, 3 };
+const s16 ROW[] = { 3, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 0, 1, 2, 3 };
+const s16 COL[] = { 1, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 2, 3, 3, 3, 3 };
 const char *const DIGIT_NAMES[] = {
 	"DTMF 0", "DTMF 1", "DTMF 2", "DTMF 3", "DTMF 4", "DTMF 5",
 	"DTMF 6", "DTMF 7", "DTMF 8", "DTMF 9", "DTMF *", "DTMF #",
@@ -123,9 +123,9 @@ EventPlayer::Began EventPlayer::packet(const u8 *p, size_t n,
 	Began b = { NONE, -1, nullptr };
 	if (n < 4)
 		return b;
-	int event = p[0];
+	s16 event = p[0];
 	bool end = p[1] & 0x80;
-	int volume = p[1] & 0x3f;
+	s16 volume = p[1] & 0x3f;
 
 	const Def *d = nullptr;
 	if (event >= 16) {
@@ -163,7 +163,7 @@ EventPlayer::Began EventPlayer::packet(const u8 *p, size_t n,
 
 	double f1 = 0, f2 = 0;
 	bool mod = false, rev = false;
-	int dbm0 = 10;
+	s16 dbm0 = 10;
 	if (event < 16) {
 		b.kind = PLAYED;
 		b.name = DIGIT_NAMES[event];

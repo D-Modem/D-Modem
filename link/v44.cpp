@@ -22,7 +22,7 @@ namespace dlink {
 enum { HASH = 4096 };
 
 /* the encoder's hash of a string's first two characters */
-static unsigned hash2(u8 a, u8 b)
+static u16 hash2(u8 a, u8 b)
 {
 	return (static_cast<u32>(a) * 263 + b) & (HASH - 1);
 }
@@ -30,7 +30,7 @@ static unsigned hash2(u8 a, u8 b)
 /* allocates for the largest parameters (N2 codewords, N7 characters,
    N8 octets of history) and starts both coders' state; -1 if out of
    range */
-int V44::init(s32 codewords, s32 max_string, s32 history)
+s16 V44::init(s32 codewords, s32 max_string, s32 history)
 {
 	exit();
 	if (codewords < V44_MIN_CODEWORDS || codewords > 65535 ||
@@ -64,7 +64,7 @@ int V44::init(s32 codewords, s32 max_string, s32 history)
 
 /* what XID agreed (no more than init()'s): the dictionary and the
    history from the start; -1 if out of range */
-int V44::config(s32 codewords, s32 max_string, s32 history)
+s16 V44::config(s32 codewords, s32 max_string, s32 history)
 {
 	if (!ready() || codewords < V44_MIN_CODEWORDS ||
 	    codewords > max_n2_ || max_string < V44_MIN_STRING ||
@@ -107,14 +107,14 @@ void V44::reset()
 }
 
 /* a new string in the dictionary */
-void V44::add(int len, u32 last)
+void V44::add(s16 len, u32 last)
 {
 	Entry &e = dict_[c1_];
 	e.len = static_cast<u16>(len);
 	e.last = last;
 	/* the encoder finds it by its first two characters */
 	u32 start = last - len + 1;
-	unsigned k = hash2(hist_[start], hist_[start + 1]);
+	u16 k = hash2(hist_[start], hist_[start + 1]);
 	e.next = head_[k];
 	head_[k] = static_cast<s32>(c1_);
 	c1_++;
@@ -124,7 +124,7 @@ void V44::add(int len, u32 last)
    in the encoder and the decoder: the last string (an ordinal, or a
    codeword's string) plus the first character of this one; an extended
    string */
-void V44::after_token(int type, u32 value)
+void V44::after_token(s16 type, u32 value)
 {
 	if (c1_ < static_cast<u32>(n2_)) {
 		if (type == ORD || type == CW) {
@@ -133,13 +133,13 @@ void V44::after_token(int type, u32 value)
 			if (last_type_ == ORD) {
 				add(2, first);
 			} else if (last_type_ == CW) {
-				int l = dict_[last_value_].len;
+				s16 l = dict_[last_value_].len;
 				if (l < n7_)
 					add(l + 1, first);
 			}
 		} else if (type == EXT && last_type_ == CW) {
-			int l = dict_[last_value_].len +
-				static_cast<int>(value);
+			s16 l = dict_[last_value_].len +
+				static_cast<s16>(value);
 			if (l <= n7_)
 				add(l, hp_ - 1);
 		}
@@ -154,7 +154,7 @@ void V44::after_token(int type, u32 value)
  */
 
 /* the encoder: n bits of v into the octets, the lowest first */
-void V44::put_bits(u32 v, int n)
+void V44::put_bits(u32 v, s16 n)
 {
 	bits_ |= v << nbits_;
 	nbits_ += n;
@@ -167,7 +167,7 @@ void V44::put_bits(u32 v, int n)
 }
 
 /* the encoder: a control code, prefix 1 and C2 bits */
-void V44::put_control(int code)
+void V44::put_control(s16 code)
 {
 	put_bits(1, 1);
 	put_bits(code, c2_);
@@ -202,7 +202,7 @@ void V44::put_codeword(u32 cw)
 }
 
 /* the bits of a length of 13 and up: by the longest string */
-static int ext_bits(int n7)
+static s16 ext_bits(s16 n7)
 {
 	return n7 <= 46 ? 5 : n7 <= 78 ? 6 : n7 <= 142 ? 7 : 8;
 }
@@ -210,7 +210,7 @@ static int ext_bits(int n7)
 /* the encoder: the string extended by n characters: 0 1, then the
    length (1: 1; 2-4: 0, 2 bits; 5-12: 0, 00, 0, 3 bits; 13 and up: 0,
    00, 1, ext_bits() bits) */
-void V44::put_extension(int n)
+void V44::put_extension(s16 n)
 {
 	put_bits(2, 2);                 /* 0 1 */
 	if (n == 1) {
@@ -241,7 +241,7 @@ void V44::reinit()
 
 /* the longest string of the dictionary at pos (avail characters there);
    -1 if none */
-s32 V44::find(u32 pos, u32 avail, int *len) const
+s32 V44::find(u32 pos, u32 avail, s16 *len) const
 {
 	s32 best = -1, best_len = 0;
 	if (avail < 2)
@@ -264,7 +264,7 @@ s32 V44::find(u32 pos, u32 avail, int *len) const
 void V44::step()
 {
 	u32 avail = end_ - hp_;
-	int len;
+	s16 len;
 	s32 cw = find(hp_, avail, &len);
 
 	if (cw < 0) {
@@ -279,7 +279,7 @@ void V44::step()
 		/* the string goes on as it did where it was: an extension,
 		   to no more than the longest string */
 		u32 src = dict_[cw].last + 1;
-		int n = 0, max = n7_ - len;
+		s16 n = 0, max = n7_ - len;
 		while (n < max && hp_ + n < end_ &&
 		       hist_[src + n] == hist_[hp_ + n])
 			n++;
@@ -297,7 +297,7 @@ void V44::step()
 /* the encoder: one character from the DTE into the history; tokens for
    what is more than a longest string ahead (the history full: all of
    it, then REINIT); -1 if not ready */
-int V44::encode(u8 ch)
+s16 V44::encode(u8 ch)
 {
 	if (!ready())
 		return -1;
@@ -315,7 +315,7 @@ int V44::encode(u8 ch)
 }
 
 /* all the characters so far, then FLUSH and the rest of the octet */
-int V44::flush_encoder()
+s16 V44::flush_encoder()
 {
 	if (!ready())
 		return 0;
@@ -335,13 +335,13 @@ int V44::flush_encoder()
  */
 
 /* n bits, the lowest first; false if they are not there yet */
-bool V44::get_bits(int n, u32 *v)
+bool V44::get_bits(s16 n, u32 *v)
 {
 	size_t have = (in_.size() - in_pos_) * 8 - in_bit_;
 	*v = 0;
 	if (static_cast<size_t>(n) > have)
 		return false;
-	for (int k = 0; k < n; k++) {
+	for (s16 k = 0; k < n; k++) {
 		*v |= static_cast<u32>((in_[in_pos_] >> in_bit_) & 1) << k;
 		if (++in_bit_ == 8) {
 			in_bit_ = 0;
@@ -353,7 +353,7 @@ bool V44::get_bits(int n, u32 *v)
 
 /* the next token; false if its bits are not all there yet (or on an
    error: *type -1) */
-bool V44::read_token(int *type, u32 *value)
+bool V44::read_token(s16 *type, u32 *value)
 {
 	u32 b, v;
 
@@ -421,7 +421,7 @@ bool V44::read_token(int *type, u32 *value)
 
 /* the decoder: one character into the history and the output; -1 if
    the history is full */
-int V44::put_hist(u8 ch)
+s16 V44::put_hist(u8 ch)
 {
 	if (hp_ >= static_cast<u32>(n8_))
 		return -1;
@@ -434,7 +434,7 @@ int V44::put_hist(u8 ch)
    extension) into the history and the dictionary; the codeword being
    defined is the last string and its own first character; -1 on an
    error */
-int V44::token(int type, u32 value)
+s16 V44::token(s16 type, u32 value)
 {
 	prev_type_ = type;
 	switch (type) {
@@ -469,7 +469,7 @@ int V44::token(int type, u32 value)
 			u32 start = e.last - e.len + 1;
 			if (hp_ + e.len > static_cast<u32>(n8_))
 				return -1;
-			for (int k = 0; k < e.len; k++)
+			for (s16 k = 0; k < e.len; k++)
 				put_hist(hist_[start + k]);
 			after_token(CW, value);
 			return 0;
@@ -520,7 +520,7 @@ int V44::token(int type, u32 value)
 /* the decoder: the octets received so far, as tokens while whole ones
    are there (one cut short waits for more), or as transparent octets;
    the used octets dropped; -1 on an error */
-int V44::run_decoder()
+s16 V44::run_decoder()
 {
 	for (;;) {
 		if (transparent_) {
@@ -550,9 +550,9 @@ int V44::run_decoder()
 		}
 		/* a token, if its bits are all there */
 		size_t pos = in_pos_;
-		int bit = in_bit_, c2 = c2_, c5 = c5_;
+		s16 bit = in_bit_, c2 = c2_, c5 = c5_;
 		bool stepup = stepup_;
-		int type;
+		s16 type;
 		u32 value;
 		if (!read_token(&type, &value)) {
 			in_pos_ = pos;
@@ -573,7 +573,7 @@ int V44::run_decoder()
 }
 
 /* the decoder: one octet from the line; -1 on an error */
-int V44::decode(u8 octet)
+s16 V44::decode(u8 octet)
 {
 	if (!ready())
 		return -1;
@@ -582,7 +582,7 @@ int V44::decode(u8 octet)
 }
 
 /* up to n octets of the output into buf; returns how many */
-int V44::out(u8 *buf, int n)
+s16 V44::out(u8 *buf, s16 n)
 {
 	size_t k = obuf_.size() - ohead_;
 	if (k > static_cast<size_t>(n))
@@ -594,7 +594,7 @@ int V44::out(u8 *buf, int n)
 		obuf_.clear();
 		ohead_ = 0;
 	}
-	return static_cast<int>(k);
+	return static_cast<s16>(k);
 }
 
 } // namespace dlink

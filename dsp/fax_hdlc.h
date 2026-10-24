@@ -16,8 +16,8 @@
  *    Tag> (Tag an empty type naming the use, so that a host may have
  *    two) and has
  *
- *        int hdlc_tx_next(Tag, unsigned char *buf, int max);
- *        void hdlc_rx_frame(Tag, const unsigned char *d, int len,
+ *        s16 hdlc_tx_next(Tag, unsigned char *buf, s16 max);
+ *        void hdlc_rx_frame(Tag, const unsigned char *d, s16 len,
  *                           bool whole);
  *
  */
@@ -40,19 +40,19 @@ struct HdlcEcm {};
    hdlc_tx_next(Tag(), buf, MAX) puts the next frame in buf and returns
    its length, 0 when there is none yet (a flag goes out and it is asked
    again after it), -1 when there are no more */
-template <class Host, int MAX, class Tag>
+template <class Host, s16 MAX, class Tag>
 class HdlcTx {
 public:
 	/* FaxTx bit callback, ctx the host */
-	static int hdlc_tx_cb(void *ctx)
+	static s16 hdlc_tx_cb(void *ctx)
 	{
 		return static_cast<HdlcTx*>(static_cast<Host*>(ctx))->hdlc_tx_bit();
 	}
 
 	/* the next bit to send, FAX_BIT_END after the closing flags */
-	int hdlc_tx_bit()
+	s16 hdlc_tx_bit()
 	{
-		int bit;
+		s16 bit;
 
 		/* a stuffed zero, also after the FCS's last bit */
 		if (htx_ones == 5) {
@@ -77,9 +77,9 @@ public:
 		/* at a flag boundary: the next frame, the end, or a flag */
 		if (htx_flag_bit == 0) {
 			if (!htx_closing && htx_flags >= htx_min) {
-				int n = host().hdlc_tx_next(Tag(), htx_buf, MAX);
+				s16 n = host().hdlc_tx_next(Tag(), htx_buf, MAX);
 				if (n > 0) {
-					unsigned crc = hdlc_fcs(htx_buf, n) ^ 0xffff;
+					u16 crc = hdlc_fcs(htx_buf, n) ^ 0xffff;
 					htx_buf[n] = crc & 0xff;
 					htx_buf[n + 1] = crc >> 8;
 					htx_len = n + 2;
@@ -122,28 +122,28 @@ private:
 	Host &host() { return static_cast<Host&>(*this); }
 
 	unsigned char htx_buf[MAX + 2];         /* the frame and its FCS */
-	int htx_len, htx_pos, htx_bit;          /* going out: octet, bit */
-	int htx_ones;                           /* ones in a row in it */
-	int htx_flag_bit;                       /* of the flag going out */
+	s16 htx_len, htx_pos, htx_bit;          /* going out: octet, bit */
+	s16 htx_ones;                           /* ones in a row in it */
+	s16 htx_flag_bit;                       /* of the flag going out */
 	s32 htx_flags;                          /* flag bits since a frame */
 	s32 htx_min, htx_close;                 /* before a frame, the end */
-	int htx_closing;
+	s16 htx_closing;
 };
 
 /* frames of up to MAX octets (with their FCS) in.  At each flag the
    host's hdlc_rx_frame(Tag(), d, len, whole) gets the len octets before
    it: whole when they were a whole number of octets, MAX at most */
-template <class Host, int MAX, class Tag>
+template <class Host, s16 MAX, class Tag>
 class HdlcRx {
 public:
 	/* FaxRx bit callback, ctx the host */
-	static void hdlc_rx_cb(void *ctx, int bit)
+	static void hdlc_rx_cb(void *ctx, s16 bit)
 	{
 		static_cast<HdlcRx*>(static_cast<Host*>(ctx))->hdlc_rx_bit(bit);
 	}
 
 	/* a received bit: flags, stuffed zeros and aborts (7 ones) */
-	void hdlc_rx_bit(int bit)
+	void hdlc_rx_bit(s16 bit)
 	{
 		if (bit) {
 			if (++hrx_ones > 6) {           /* idle or abort */
@@ -166,7 +166,7 @@ public:
 			}
 			hrx_ones = 0;
 		}
-		hrx_byte |= static_cast<unsigned>(bit) << hrx_nbits;
+		hrx_byte |= static_cast<u16>(bit) << hrx_nbits;
 		if (++hrx_nbits == 8) {
 			if (hrx_len < MAX)
 				hrx_buf[hrx_len++] =
@@ -204,10 +204,10 @@ private:
 	}
 
 	unsigned char hrx_buf[MAX];
-	int hrx_len, hrx_nbits;         /* octets in, bits of the next */
-	int hrx_ones;                   /* ones in a row */
-	int hrx_over;                   /* longer than MAX */
-	unsigned hrx_byte;
+	s16 hrx_len, hrx_nbits;         /* octets in, bits of the next */
+	s16 hrx_ones;                   /* ones in a row */
+	s16 hrx_over;                   /* longer than MAX */
+	u16 hrx_byte;
 };
 
 } // namespace dsp

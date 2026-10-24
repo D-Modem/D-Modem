@@ -137,7 +137,7 @@ const Option OPTIONS[OPT_COUNT] = {
 
 /* an option of POSIX's alone (the pty's, ALSA's), neither taken nor
    shown on Windows (--usb and -r are both's) */
-bool posix_only(int i)
+bool posix_only(s16 i)
 {
 #ifdef _WIN32
 	return i == OPT_GROUP || i == OPT_PERM || i == OPT_ALSA ||
@@ -169,7 +169,7 @@ private:
 	/* the option text (an argument without its dashes) is: its index,
 	   and in *value what was glued to it (nullptr if nothing); -1 if
 	   none */
-	int match(const char *text, const char **value) const;
+	s16 match(const char *text, const char **value) const;
 	/* the usage on stderr, exit 1 */
 	[[noreturn]] void usage() const;
 
@@ -202,9 +202,9 @@ bool fits(const Option &o, const char *rest, const char **value)
 }
 
 /* each option in turn: by its whole long name, else by its letter */
-int CommandLine::match(const char *text, const char **value) const
+s16 CommandLine::match(const char *text, const char **value) const
 {
-	for (int i = 0; i < OPT_COUNT; i++) {
+	for (s16 i = 0; i < OPT_COUNT; i++) {
 		const Option &o = opts_[i];
 		size_t len = std::string_view(o.name).size();
 		if (posix_only(i))
@@ -223,9 +223,9 @@ int CommandLine::match(const char *text, const char **value) const
    argument if it may be one) and the name */
 void CommandLine::read()
 {
-	for (int i = 1; i < argc_; i++) {
+	for (s32 i = 1; i < argc_; i++) {
 		const char *arg = argv_[i], *text = arg, *value;
-		int k;
+		s16 k;
 
 		if (*arg != '-') {
 			if (name_)
@@ -276,7 +276,7 @@ void CommandLine::usage() const
 #endif
 		"\n"
 		"Options:\n", prog_, DEFAULT_NAME);
-	for (int i = 0; i < OPT_COUNT; i++) {
+	for (s16 i = 0; i < OPT_COUNT; i++) {
 		const Option &o = opts_[i];
 		if (posix_only(i))
 			continue;
@@ -315,7 +315,7 @@ void CommandLine::usage() const
 void list_countries()
 {
 	for (const struct homolog_set *h = homolog_set; h->name; h++)
-		fprintf(stderr, "%02x: %s\n", static_cast<unsigned>(h->id),
+		fprintf(stderr, "%02x: %s\n", static_cast<u16>(h->id),
 			h->name);
 	fprintf(stderr, "and with the USA's line settings and their own "
 		"busy tones:\n");
@@ -358,13 +358,13 @@ void CommandLine::apply(Options &opt) const
 	if (o[OPT_DEBUG].given) {
 		s32 level = 0;
 		dcore::parse_long(o[OPT_DEBUG].value, level, 0);
-		dcore::log_level = level > 0 ? static_cast<unsigned>(level) : 1;
+		dcore::log_level = level > 0 ? static_cast<u32>(level) : 1;
 	}
 	if (o[OPT_LOG].given) {
 		s32 level = 0;
 		dcore::parse_long(o[OPT_LOG].value, level, 0);
 		dcore::log_data_level =
-			level > 0 ? static_cast<unsigned>(level) : 5;
+			level > 0 ? static_cast<u32>(level) : 5;
 	}
 	if (o[OPT_LISTEN].given)
 		opt.listen = true;

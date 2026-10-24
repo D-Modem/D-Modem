@@ -14,6 +14,8 @@
 
 #include <string>
 
+#include "dm_types.h"
+
 namespace dcore { class Modem; }
 
 namespace dmd {
@@ -31,10 +33,10 @@ public:
 	/* a raw pty, 115200 bit/s, non-blocking (a new one keeps the old
 	   one's settings); group, perm: its slave's; link: a symbolic link
 	   to the slave.  -1 on failure. */
-	int open(const char *group = nullptr, mode_t perm = 0,
+	s16 open(const char *group = nullptr, mode_t perm = 0,
 		 const char *link = nullptr);
 	/* a new one, as open() made the last (the DTE hung up) */
-	int reopen() {
+	s16 reopen() {
 		std::string g = group_, l = link_;
 		return open(g.c_str(), perm_, l.c_str());
 	}
@@ -49,7 +51,7 @@ public:
 	   close() or this process's end, even killed.  Called before any
 	   thread is made.  0, or -1 if there is no link or no keeper (all
 	   done here as before then) */
-	int fork_keeper();
+	s16 fork_keeper();
 	/* the master, -1 if none */
 	int fd() const { return fd_; }
 	/* the slave's path */
@@ -71,10 +73,10 @@ public:
 	/* it is readable: read(), and the DTE closing the slave with HUPCL
 	   hangs m up (with new_pty, a new pty then stands in for this one,
 	   as the next line would).  -1 on an error */
-	int serve(dcore::Modem &m, bool new_pty = false);
+	s16 serve(dcore::Modem &m, bool new_pty = false);
 
 	/* the modem's characters to the DTE */
-	int write(const char *buf, int n);
+	s32 write(const char *buf, s32 n);
 
 private:
 	int fd_ = -1;
@@ -83,13 +85,13 @@ private:
 	struct termios termios_ = {};
 	bool have_termios_ = false;
 	bool closed_ = false;
-	unsigned close_count_ = 0;
+	u16 close_count_ = 0;
 	/* the keeper (fork_keeper()): the socket to it, its pid */
 	int keeper_ = -1;
 	pid_t keeper_pid_ = -1;
 
 	void set_slave(const char *group, mode_t perm, const char *link);
-	int keeper_ask(struct keeper_answer *a);
+	s16 keeper_ask(struct keeper_answer *a);
 	void end_keeper();
 };
 

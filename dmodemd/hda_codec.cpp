@@ -83,7 +83,7 @@ void HdaCodec::close()
 }
 
 /* see hda_codec.h */
-bool HdaCodec::verb(int nid, u32 verb, u32 param, u32 *res)
+bool HdaCodec::verb(s16 nid, u32 verb, u32 param, u32 *res)
 {
 	hda_verb_ioctl v;
 
@@ -102,9 +102,9 @@ bool HdaCodec::is_modem()
 
 	if (!verb(0, GET_PARAMETER, PAR_NODE_COUNT, &r))
 		return false;
-	unsigned start = r >> 16 & 0xff, n = r & 0xff;
-	for (unsigned nid = start; nid < start + n; nid++)
-		if (verb(static_cast<int>(nid), GET_PARAMETER,
+	u16 start = r >> 16 & 0xff, n = r & 0xff;
+	for (u16 nid = start; nid < start + n; nid++)
+		if (verb(static_cast<s16>(nid), GET_PARAMETER,
 			 PAR_FUNCTION_TYPE, &r) &&
 		    (r & 0xff) == GRP_MODEM)
 			return true;
@@ -112,7 +112,7 @@ bool HdaCodec::is_modem()
 }
 
 /* see hda_codec.h */
-bool HdaCodec::read(int nid, u16 *v)
+bool HdaCodec::read(s16 nid, u16 *v)
 {
 	u32 r;
 
@@ -124,7 +124,7 @@ bool HdaCodec::read(int nid, u16 *v)
 
 /* see hda_codec.h: the 4 bit verb and its 16 bit payload, as the
    kernel takes them (its verb 0x1vv, parameter the low octet) */
-bool HdaCodec::write(int nid, u16 v)
+bool HdaCodec::write(s16 nid, u16 v)
 {
 	u32 r;
 

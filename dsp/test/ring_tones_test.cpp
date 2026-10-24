@@ -38,16 +38,16 @@ struct Line final : public dcore::Host {
 	std::string out;
 	bool answered = false;
 	/* the line answered: answered set */
-	int start(dcore::Modem &) override {
+	s16 start(dcore::Modem &) override {
 		answered = true;
 		return 0;
 	}
 	/* (no line to stop) */
-	int stop(dcore::Modem &) override { return 0; }
+	s16 stop(dcore::Modem &) override { return 0; }
 	/* (no hook to set) */
-	int set_hook(dcore::Modem &, int) override { return 0; }
+	s16 set_hook(dcore::Modem &, s16) override { return 0; }
 	/* the DTE's output appended to out: all n of it */
-	int dte_write(dcore::Modem &, const char *buf, int n) override {
+	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
 		out.append(buf, n);
 		return n;
 	}

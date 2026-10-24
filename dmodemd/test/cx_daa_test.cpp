@@ -42,7 +42,7 @@ public:
 
 	/* see dmd::Ac97Regs: 0x7a's latched SSD register, (reg << 8) | its
 	   byte (0xffff without the SSD); the vendor ID; others 0 */
-	bool read(int reg, uint16_t *v) override
+	bool read(s16 reg, uint16_t *v) override
 	{
 		if (reg == 0x7c) {
 			*v = 0x4358;
@@ -58,7 +58,7 @@ public:
 	}
 
 	/* see dmd::Ac97Regs: 0x7a's writes, bit 15 a read's request */
-	bool write(int reg, uint16_t v) override
+	bool write(s16 reg, uint16_t v) override
 	{
 		if (reg != CxDaa::AC97_WINDOW)
 			return true;

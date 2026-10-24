@@ -28,7 +28,8 @@
 int main(int argc, char *argv[])
 {
 	dmd::Options opt;
-	int pipe1[2], pipe2[2], ret;
+	int pipe1[2], pipe2[2];
+	s16 ret;
 
 	dcore::log_level = 1;
 	dmd::parse_options(argc, argv, opt);

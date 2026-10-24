@@ -62,14 +62,14 @@ struct Config {
 	   the data phase optimizations (bit 0: 256-octet information
 	   fields, with N401 256; bit 1: fixed-field LT and LA), MNP 5
 	   (after the LRs: whether the call has it) */
-	int mnp_mode = 3;
-	int mnp_k = MNP_MAX_K;
-	int mnp_info = MNP_MAX_INFO;
-	int mnp_opt = 3;
+	s16 mnp_mode = 3;
+	s16 mnp_k = MNP_MAX_K;
+	s16 mnp_info = MNP_MAX_INFO;
+	s16 mnp_opt = 3;
 	bool mnp5 = false;
-	int tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
-	int tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
-	int comp = 0;                   /* V.42bis: bit 0 decoder (what we
+	s16 tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
+	s16 tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
+	s16 comp = 0;                   /* V.42bis: bit 0 decoder (what we
 					   receive), bit 1 encoder */
 	s32 dict_size = V42BIS_MAX_CODEWORDS;
 	s32 max_string = V42BIS_MAX_STRING;
@@ -105,9 +105,9 @@ enum class Status {
 class Owner {
 public:
 	/* the DTE's characters to send; 0 if none */
-	virtual int read_chars(u8 *buf, int n) = 0;
+	virtual s16 read_chars(u8 *buf, s16 n) = 0;
 	/* received characters for the DTE; returns how many it took */
-	virtual int write_chars(const u8 *buf, int n) = 0;
+	virtual s16 write_chars(const u8 *buf, s16 n) = 0;
 	/* the link's progress */
 	virtual void status(Status s) = 0;
 	/* the data pump's transmit rate (bit timers), 0 if not known */
@@ -129,7 +129,7 @@ public:
 
 	/* a call: allocate what cfg needs (V.42bis dictionaries); -1 on
 	   failure */
-	int init(Owner *owner, bool caller, const Config &cfg);
+	s16 init(Owner *owner, bool caller, const Config &cfg);
 	/* the end of the call */
 	void exit();
 
@@ -145,8 +145,8 @@ public:
 	void set_online(bool on) { online_ = on; }
 
 	/* the data pump's bits: nbits bits in each byte of buf */
-	int get_bits(int nbits, u8 *buf, int n);
-	int put_bits(int nbits, const u8 *buf, int n);
+	s32 get_bits(s16 nbits, u8 *buf, s32 n);
+	s32 put_bits(s16 nbits, const u8 *buf, s32 n);
 
 	/* what was asked for, then what XID (or MNP's LRs) agreed */
 	const Config &config() const { return cfg_; }
@@ -206,8 +206,8 @@ public:
 	Config &cfg() { return cfg_; }
 	/* characters between the DTE and LAPM or the async framer,
 	   through V.42bis when it is on in that direction */
-	int read_chars(u8 *buf, int n);
-	int write_chars(const u8 *buf, int n);
+	s16 read_chars(u8 *buf, s16 n);
+	s16 write_chars(const u8 *buf, s16 n);
 	/* LAPM's XID: what the remote wants (Config's V.42bis part) */
 	void update_config(const Config &remote);
 	/* what MNP's LRs agreed (cfg()) to the owner */
@@ -221,15 +221,15 @@ private:
 	void no_ec();
 	enum class Mode { Idle, Detect, Lapm, Mnp, Async };
 	void run_timer();
-	int comp_read(u8 *buf, int n);
-	int comp_write(const u8 *buf, int n);
+	s16 comp_read(u8 *buf, s16 n);
+	s16 comp_write(const u8 *buf, s16 n);
 	bool comp_flush_output();
-	template <class E> int comp_read_with(E &enc, u8 *buf, int n);
-	template <class D> int comp_write_with(D &dec, const u8 *buf,
-					       int n);
+	template <class E> s16 comp_read_with(E &enc, u8 *buf, s16 n);
+	template <class D> s16 comp_write_with(D &dec, const u8 *buf,
+					       s16 n);
 	template <class D> bool comp_flush_with(D &dec);
-	int dte_read(u8 *buf, int n);
-	int dte_write(const u8 *buf, int n);
+	s16 dte_read(u8 *buf, s16 n);
+	s16 dte_write(const u8 *buf, s16 n);
 
 	Owner *owner_ = nullptr;
 	bool caller_ = false;
@@ -253,7 +253,7 @@ private:
 	Mnp5 enc5_, dec5_;
 	/* decoded characters the DTE has not taken yet */
 	u8 dec_out_[256];
-	int dec_head_ = 0, dec_count_ = 0;
+	s16 dec_head_ = 0, dec_count_ = 0;
 };
 
 } // namespace dlink

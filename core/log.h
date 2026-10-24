@@ -15,6 +15,8 @@
 
 #include <cstdarg>
 
+#include "dm_types.h"
+
 /* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
 #ifndef DMODEM_PRINTF
 #ifdef __GNUC__
@@ -27,19 +29,19 @@
 namespace dcore {
 
 /* the lines up to this level are printed (0: none of the modem's) */
-extern unsigned log_level;
+extern u32 log_level;
 /* the categories of the binary log up to this one are written (0: only
    the text, when the log is open) */
-extern unsigned log_data_level;
+extern u32 log_data_level;
 
 /* NULL: stderr, with a time stamp; else each line goes to fn */
 void log_set_hook(void (*fn)(const char *line));
 bool log_hooked();
 
 /* a line, printed if level is up to log_level; its length */
-int log_printf(unsigned level, const char *fmt, ...) DMODEM_PRINTF(2, 3);
+s16 log_printf(u16 level, const char *fmt, ...) DMODEM_PRINTF(2, 3);
 /* the same with a va_list */
-int log_vprintf(unsigned level, const char *fmt, va_list args);
+s16 log_vprintf(u32 level, const char *fmt, va_list args);
 /* a line of another part of the program, which checked its own level:
    to the hook, else to stderr as it is (with its newline) */
 void log_line(const char *line);
@@ -51,11 +53,11 @@ enum LogData {
 	LOG_TX_DATA, LOG_RX_CHARS, LOG_TX_CHARS,
 };
 /* opens it (and the pumps' level follows log_level); -1 on failure */
-int log_open(const char *suffix);
+s16 log_open(const char *suffix);
 /* closes it */
 void log_close();
 /* a record of count octets of category id from modem who */
-void log_data(const void *who, unsigned id, const void *data, int count);
+void log_data(const void *who, u16 id, const void *data, s32 count);
 
 } // namespace dcore
 

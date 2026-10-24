@@ -34,8 +34,8 @@ namespace dmd {
 
 /* the core gets whole periods: the line's samples in frames of these,
    MAX_SAMPLES at a time at most */
-static const int HALF_FRAME = 48;
-static const int MAX_SAMPLES = 42 * HALF_FRAME;
+static const s16 HALF_FRAME = 48;
+static const s16 MAX_SAMPLES = 42 * HALF_FRAME;
 
 /* the core at rate on the line in -> out, with a new pty for its DTE;
    PIPE_SYNC read here.  Exits if the pty or the core can't be made */
@@ -74,7 +74,7 @@ PipeModem::~PipeModem()
 }
 
 /* see pipe_modem.h */
-int PipeModem::set_hook(dcore::Modem &, int state)
+s16 PipeModem::set_hook(dcore::Modem &, s16 state)
 {
 	char c = state == MODEM_HOOK_OFF ? '1' : '0';
 	if (hook_fd_ >= 0 && c != hook_ && write(hook_fd_, &c, 1) == 1)
@@ -105,15 +105,15 @@ u64 PipeModem::now_ms()
 /* the silence ahead of everything on the line (PIPE_LEAD=<samples>,
    128): once, as the line keeps it, so that every call has the same
    delay; 0, or -1 if it can't be written */
-int PipeModem::lead()
+s16 PipeModem::lead()
 {
 	char zeros[2048] = {};
-	int n;
+	s32 n;
 	if (lead_done_)
 		return 0;
 	lead_done_ = true;
 	n = dsp::env("PIPE_LEAD") ? 2 * dsp::env_int("PIPE_LEAD") : 256;
-	if (n > static_cast<int>(sizeof(zeros)))
+	if (n > static_cast<s32>(sizeof(zeros)))
 		n = sizeof(zeros);
 	lead_ = n / 2;
 	if (write(out_, zeros, n) != n)
@@ -124,9 +124,9 @@ int PipeModem::lead()
 /* off hook (the line is always there, with PIPE_SYNC from the start:
    run()), its delay the lead silence's; 0, or -1 if the lead silence
    can't be written */
-int PipeModem::start(dcore::Modem &)
+s16 PipeModem::start(dcore::Modem &)
 {
-	int ret;
+	s16 ret;
 	DBG("modem_test_start...\n");
 	ret = lead();
 	delay_ = lead_;
@@ -135,7 +135,7 @@ int PipeModem::start(dcore::Modem &)
 }
 
 /* on hook: nothing to do, the line stays */
-int PipeModem::stop(dcore::Modem &)
+s16 PipeModem::stop(dcore::Modem &)
 {
 	DBG("modem_test_stop...\n");
 	delay_ = 0;
@@ -149,7 +149,7 @@ int PipeModem::stop(dcore::Modem &)
    however late the DTE answers what the modem said), and off hook as
    fast as it goes (speed_ times the sample clock at most), the timers
    on the line's clock */
-void PipeModem::pace(int samples)
+void PipeModem::pace(s16 samples)
 {
 	struct timeval tv;
 	double now, ahead, speed;
@@ -178,11 +178,11 @@ void PipeModem::pace(int samples)
    it holds), whole half frames of it through the core (2016 samples at
    most, with PIPE_SYNC up to the next sync point), the answer written
    to out_; 0, or -1 on an error */
-int PipeModem::line(bool rd)
+s16 PipeModem::line(bool rd)
 {
 	s16 outbuf[MAX_SAMPLES];
 	const s16 *in;
-	int count, max = MAX_SAMPLES;
+	s16 count, max = MAX_SAMPLES;
 	bool off_hook;
 
 	if (sync_ && samples() >= next_sync_) {
@@ -213,13 +213,13 @@ int PipeModem::line(bool rd)
 	}
 	/* up to the next sample the DTE's input is taken at */
 	if (sync_ && max > next_sync_ - samples())
-		max = static_cast<int>(next_sync_ - samples());
+		max = static_cast<s16>(next_sync_ - samples());
 	count = line_.frames(&in, max);
 	if (count == 0)
 		return 0;
 	/* a shorter line (update_delay()): input dropped */
 	if (pending_delay_ < 0) {
-		int n = -pending_delay_ < count ? -pending_delay_ : count;
+		s16 n = -pending_delay_ < count ? -pending_delay_ : count;
 		DBG("change delay -%d...\n", n);
 		in += n;
 		count -= n;
@@ -237,8 +237,8 @@ int PipeModem::line(bool rd)
 		/* a half frame at a time, with the timers in between: they
 		   meet the line at the same samples whatever the reads
 		   bring */
-		for (int k = 0; k < count; k += HALF_FRAME) {
-			int len = count - k < HALF_FRAME ? count - k :
+		for (s16 k = 0; k < count; k += HALF_FRAME) {
+			s16 len = count - k < HALF_FRAME ? count - k :
 				HALF_FRAME;
 			if (m_->started())
 				m_->process(in + k, outbuf + k, len);
@@ -251,7 +251,7 @@ int PipeModem::line(bool rd)
 	else {
 		/* on hook: the ring signal's pulses, the timers between
 		   (the core checks a burst's cadence by its now_ms()) */
-		for (int k = 0; k < count; k++)
+		for (s16 k = 0; k < count; k++)
 			if (ring_.sample(in[k]))
 				m_->ring();
 		std::fill_n(outbuf, count, 0);
@@ -276,7 +276,7 @@ int PipeModem::line(bool rd)
 	/* a longer line (update_delay(), as the modem ran): silence out */
 	while (pending_delay_ > 0) {
 		static const s16 zeros[MAX_SAMPLES] = {};
-		int n = pending_delay_ < MAX_SAMPLES ? pending_delay_ :
+		s16 n = pending_delay_ < MAX_SAMPLES ? pending_delay_ :
 			MAX_SAMPLES;
 		DBG("change delay %d...\n", n);
 		if (write(out_, zeros, 2 * n) != 2 * n) {
@@ -320,7 +320,7 @@ void PipeModem::dte_input()
 
 /* select() on the lines and the ptys of the n modems, their timers in
    between; 0 once stopped, -1 on an error */
-int PipeModem::run(PipeModem **modems, int n)
+s16 PipeModem::run(PipeModem **modems, s16 n)
 {
 	RunLoop loop;
 	std::vector<dcore::Modem *> m(n);
@@ -331,17 +331,17 @@ int PipeModem::run(PipeModem **modems, int n)
 	   first, and a call starts at the same sample every time, not
 	   wherever the scheduler had it when a line that stood still came
 	   to life */
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		if (modems[i]->sync_ && modems[i]->lead() < 0)
 			return -1;
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		m[i] = modems[i]->m_;
 	while (RunLoop::running()) {
 		s32 next = RunLoop::poll(m.data(), n);
 		int ret;
 
 		loop.clear();
-		for (int i = 0; i < n; i++) {
+		for (s16 i = 0; i < n; i++) {
 			PipeModem *p = modems[i];
 			loop.watch(p->in_);
 			/* with PIPE_SYNC, commands only at the line's
@@ -358,11 +358,11 @@ int PipeModem::run(PipeModem **modems, int n)
 		}
 		if (ret == 0)
 			continue;
-		for (int i = 0; i < n; i++)
+		for (s16 i = 0; i < n; i++)
 			if (loop.ready(modems[i]->in_) &&
 			    modems[i]->line() < 0)
 				return -1;
-		for (int i = 0; i < n; i++) {
+		for (s16 i = 0; i < n; i++) {
 			PipeModem *p = modems[i];
 			if (loop.ready(p->pty_.fd()) &&
 			    p->pty_.serve(*p->m_) < 0)

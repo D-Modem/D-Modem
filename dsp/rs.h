@@ -26,18 +26,18 @@ public:
 	enum { MAX_N = 255, MAX_CHECK = 64 };
 
 	/* n octets a codeword, k of them information: 0, or -1 */
-	int init(int n, int k);
+	s16 init(s16 n, s16 k);
 	/* (see init()) */
-	int n() const { return n_; }
+	s16 n() const { return n_; }
 	/* (see init()) */
-	int k() const { return k_; }
+	s16 k() const { return k_; }
 
 	/* the codeword of k octets (cw may be msg): its n octets */
 	void encode(const u8 *msg, u8 *cw) const;
 	/* the codeword corrected in place, erased[i] (or none) the octets
 	   known to be unreliable: the octets corrected, or -1 if it could
 	   not be (cw is then as it came) */
-	int decode(u8 *cw, const u8 *erased = nullptr) const;
+	s16 decode(u8 *cw, const u8 *erased = nullptr) const;
 
 private:
 	/* a times b in the field */
@@ -46,10 +46,10 @@ private:
 		return a && b ? exp_[log_[a] + log_[b]] : 0;
 	}
 
-	int n_ = 0, k_ = 0, nc_ = 0;    /* nc_ check octets, 2t */
+	s16 n_ = 0, k_ = 0, nc_ = 0;    /* nc_ check octets, 2t */
 	u8 gen_[MAX_CHECK + 1] = {};            /* the generator, x^nc_ first */
 	u8 exp_[512] = {};
-	int log_[256] = {};
+	s16 log_[256] = {};
 };
 
 } // namespace dsp

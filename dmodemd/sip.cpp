@@ -101,7 +101,7 @@ using namespace libre;
 
 /* the modem's audio: 8000 Hz, mono, 16 bit, frames of 20 ms */
 const u32 RATE = 8000;
-const unsigned SAMPLES = RATE / 50;
+const u16 SAMPLES = RATE / 50;
 const size_t FRAME = SAMPLES * 2;
 const s32 TICK_NS = 1000000000L / 50;
 
@@ -111,24 +111,24 @@ const s32 JB_MAX = 2000 * RATE / 1000;
 
 /* late packets in a row, the buffer dry, for it to start over (a
    moment's lateness only loses their time) */
-const unsigned LATE_RUN = 5;
+const u16 LATE_RUN = 5;
 
 /* the audio thread's clock: behind by more than this (ns), it starts
    over from now */
 const s32 LATE_NS = 200000000L;
 
 /* a ringing call's RING lines, the look at the current call (ms) */
-const int RING_MS = 3000;
-const int POLL_MS = 200;
+const s16 RING_MS = 3000;
+const s16 POLL_MS = 200;
 
 /* T.38: our ask, after answering a fax call (ms): one sooner may cross
    the call's ACK */
-const int T38_ASK_MS = 1000;
+const s16 T38_ASK_MS = 1000;
 
 /* the registration's lifetime (s); the longest stop() waits for the
    last transactions (ms) */
 const u32 REG_EXPIRES = 300;
-const int QUIT_MS = 2000;
+const s16 QUIT_MS = 2000;
 
 /* the SIP thread's queue */
 enum { MQ_DIAL, MQ_ANSWER, MQ_MODEM_GONE, MQ_QUIT };
@@ -136,22 +136,22 @@ enum { MQ_DIAL, MQ_ANSWER, MQ_MODEM_GONE, MQ_QUIT };
 /* RFC 4733 telephone-events: the payload type of ours in an offer; the
    events (hook flash), the longest one (its 16 bit duration, in
    samples), the copies of its last packet */
-const int TE_PT = 101;
-const unsigned EV_FLASH = 16;
+const s16 TE_PT = 101;
+const u16 EV_FLASH = 16;
 const u32 EV_MAX = 65535;
-const int EV_ENDS = 3;
+const s16 EV_ENDS = 3;
 
 /* start()'s copy of the configuration */
 Config cfg_;
 std::string user_, password_, domain_, dns_;
-int log_level = 4;
+s32 log_level = 4;
 
 dmd::LineRecorder rec;
 int ctl[2] = { -1, -1 };        /* our lines: written to [0] */
-std::atomic<int> law_{0};
+std::atomic<s16> law_{0};
 /* the current call's telephone-event payload type (the far end's), -1
    if it has none; a hook flash asked for (ms), 0 if none */
-std::atomic<int> te_pt_{-1};
+std::atomic<s16> te_pt_{-1};
 std::atomic<u32> flash_ms_{0};
 std::atomic<bool> fax_{false};
 std::atomic<bool> t38_offers_{false};
@@ -161,7 +161,7 @@ std::thread sip_thread;
 /* the SIP thread's start: 0 under way, 1 up, -1 failed */
 std::mutex start_mu;
 std::condition_variable start_cv;
-int start_state;
+s16 start_state;
 
 
 /*
@@ -171,9 +171,9 @@ int start_state;
 /* a line of the log at level (1 errors, 3 the calls, 4 more, with the
    SIP messages), if the configuration's level has it: to the modem's
    log hook if it has one, else to stderr with the time */
-void say(int level, const char *fmt, ...) DMODEM_PRINTF(2, 3);
+void say(s16 level, const char *fmt, ...) DMODEM_PRINTF(2, 3);
 /* (as declared above) */
-void say(int level, const char *fmt, ...)
+void say(s16 level, const char *fmt, ...)
 {
 	struct timespec ts;
 	struct tm tm;
@@ -481,19 +481,19 @@ bool is_t38(const SdpMedia &m)
 }
 
 /* the first line of s on of type audio or (t38) T.38, -1 if none */
-int line_of(const Sdp &s, bool t38)
+s16 line_of(const Sdp &s, bool t38)
 {
 	for (size_t i = 0; i < s.media.size(); i++)
 		if (s.media[i].port > 0 &&
 		    (t38 ? is_t38(s.media[i]) :
 		     lower(s.media[i].type) == "audio"))
-			return static_cast<int>(i);
+			return static_cast<s16>(i);
 	return -1;
 }
 
 /* the first G.711 format of audio line m, its law into *law (1 mu-law,
    2 A-law); -1 if it has none */
-int g711_pt(const SdpMedia &m, int *law)
+s16 g711_pt(const SdpMedia &m, s16 *law)
 {
 	for (const std::string &f : m.fmts) {
 		s32 pt;
@@ -517,13 +517,13 @@ int g711_pt(const SdpMedia &m, int *law)
 			*law = 2;
 		else
 			continue;
-		return static_cast<int>(pt);
+		return static_cast<s16>(pt);
 	}
 	return -1;
 }
 
 /* the telephone-event format of audio line m, -1 if it has none */
-int te_pt(const SdpMedia &m)
+s16 te_pt(const SdpMedia &m)
 {
 	for (const std::string &f : m.fmts) {
 		s32 pt;
@@ -538,7 +538,7 @@ int te_pt(const SdpMedia &m)
 			    a.second.substr(0, sp) == f &&
 			    lower(a.second.substr(sp + 1)).compare(
 				    0, 20, "telephone-event/8000") == 0)
-				return static_cast<int>(pt);
+				return static_cast<s16>(pt);
 		}
 	}
 	return -1;
@@ -563,7 +563,7 @@ std::string direction(const Sdp &s, const SdpMedia &m)
 struct Peer {
 	std::string addr;
 	s32 port = 0;
-	int version = 0;
+	s32 version = 0;
 	s32 max_datagram = 0;
 	bool redundancy = false;
 };
@@ -579,7 +579,7 @@ Peer t38_params(const SdpMedia &m)
 		std::string n = lower(a.first);
 		if (n == "t38faxversion")
 			p.version =
-				static_cast<int>(dcore::leading_long(a.second));
+				static_cast<s32>(dcore::leading_long(a.second));
 		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
 			p.max_datagram = static_cast<s32>(
 				dcore::leading_long(a.second));
@@ -593,13 +593,13 @@ Peer t38_params(const SdpMedia &m)
    line off */
 struct Line {
 	enum Kind { AUDIO, IMAGE, OFF } kind = AUDIO;
-	int pt = -1;                    /* audio: the format agreed, -1 if
+	s16 pt = -1;                    /* audio: the format agreed, -1 if
 					   none yet (both offered) */
-	int law = 0;
-	int te = -1;                    /* audio: telephone-event's format
+	s16 law = 0;
+	s16 te = -1;                    /* audio: telephone-event's format
 					   agreed, -1 if none */
 	std::string dir = "sendrecv";
-	int version = 0;                /* image: T38FaxVersion */
+	s32 version = 0;                /* image: T38FaxVersion */
 	std::string type, proto, fmts;  /* off: the far end's line */
 };
 
@@ -617,7 +617,7 @@ Line audio_answer(const Sdp &s, const SdpMedia &m)
 }
 
 /* our image (T.38) line, T38FaxVersion version */
-Line image_line(int version)
+Line image_line(s32 version)
 {
 	Line l;
 	l.kind = Line::IMAGE;
@@ -649,17 +649,17 @@ std::vector<Line> mirror(const Sdp &s, size_t i, const Line &l)
 }
 
 /* the index of the first of lines of kind, -1 if none */
-int find(const std::vector<Line> &lines, Line::Kind kind)
+s16 find(const std::vector<Line> &lines, Line::Kind kind)
 {
 	for (size_t i = 0; i < lines.size(); i++)
 		if (lines[i].kind == kind)
-			return static_cast<int>(i);
+			return static_cast<s16>(i);
 	return -1;
 }
 
 /* our T.38 line's attributes: version, with redundancy, datagrams of
    400 octets */
-std::string t38_attrs(int version)
+std::string t38_attrs(s32 version)
 {
 	return "a=T38FaxVersion:" + std::to_string(version) + "\r\n"
 		"a=T38MaxBitRate:14400\r\n"
@@ -772,7 +772,7 @@ private:
 	s16 buf_[SIZE];
 	u8 valid_[SIZE] = {};
 	bool started_ = false;
-	unsigned late_run = 0;  /* late packets in a row, the buffer dry */
+	u16 late_run = 0;       /* late packets in a row, the buffer dry */
 	u32 ssrc_ = 0;
 	u32 play_ = 0;          /* the timestamp to play next */
 	u32 end_ = 0;           /* the end of the latest packet */
@@ -849,8 +849,8 @@ public:
 	/* the far end's RTP at a (len), in payload type pt of law, its
 	   telephone-events in te (-1: none); send: whether it is to have
 	   ours */
-	void remote(const struct sockaddr_storage &a, socklen_t len, int pt,
-		    int law, int te, bool send)
+	void remote(const struct sockaddr_storage &a, socklen_t len, s16 pt,
+		    s16 law, s16 te, bool send)
 	{
 		std::lock_guard<std::mutex> lk(mu_);
 		peer_ = a;
@@ -880,7 +880,7 @@ private:
 	bool active_ = false, send_ = false;
 	struct sockaddr_storage peer_ = {};
 	socklen_t peer_len_ = 0;
-	int pt_ = 0, law_ = 1, te_ = -1;
+	s16 pt_ = 0, law_ = 1, te_ = -1;
 
 	/* the thread's own */
 	Jitter jb_;
@@ -893,7 +893,7 @@ private:
 	   it lasts), whether one is on */
 	u32 ev_ts_ = 0;
 	u32 ev_len_ = 0, ev_dur_ = 0;
-	int ev_ends_ = 0;
+	s16 ev_ends_ = 0;
 	bool ev_on_ = false, ev_first_ = false;
 
 	/* the far end's telephone-events, played into the modem's audio
@@ -941,7 +941,7 @@ private:
 	/* the packets that have come: into the jitter buffer if on, those
 	   in G.711 (pt of law, or a static one); telephone-events (te) to
 	   event_in() */
-	void drain(bool on, int pt, int law, int te)
+	void drain(bool on, s16 pt, s16 law, s16 te)
 	{
 		u8 b[2048];
 
@@ -949,7 +949,7 @@ private:
 			ssize_t n = recv(rtp_, reinterpret_cast<char *>(b),
 					 sizeof(b), MSG_DONTWAIT);
 			size_t h, end;
-			int p, l;
+			s16 p, l;
 
 			if (n < 0 && errno == EINTR)
 				continue;
@@ -1000,7 +1000,7 @@ private:
 
 	/* an RTP header into p: payload type pt, the marker if marker,
 	   timestamp ts, the next sequence number */
-	void header(u8 *p, int pt, bool marker, u32 ts)
+	void header(u8 *p, s16 pt, bool marker, u32 ts)
 	{
 		p[0] = 0x80;
 		p[1] = static_cast<u8>((marker ? 0x80 : 0) | (pt & 0x7f));
@@ -1018,13 +1018,13 @@ private:
 	}
 
 	/* a frame of the modem's (out) in RTP to peer */
-	void send_rtp(const s16 *out, int pt, int law,
+	void send_rtp(const s16 *out, s16 pt, s16 law,
 		      const struct sockaddr_storage &peer, socklen_t len)
 	{
 		u8 p[12 + SAMPLES];
 
 		header(p, pt, marker_, ts_);
-		for (unsigned i = 0; i < SAMPLES; i++)
+		for (u16 i = 0; i < SAMPLES; i++)
 			p[12 + i] = dsp::g711::encode(law == 2, out[i]);
 		(void)sendto(rtp_, reinterpret_cast<const char *>(p), sizeof(p),
 			     MSG_DONTWAIT,
@@ -1036,7 +1036,7 @@ private:
 	/* the hook flash's packet in payload type te to peer (RFC 4733:
 	   event 16, its duration so far, the end bit on its last; the
 	   marker on its first) */
-	void send_flash(int te, const struct sockaddr_storage &peer,
+	void send_flash(s16 te, const struct sockaddr_storage &peer,
 			socklen_t len)
 	{
 		u8 p[12 + 4];
@@ -1059,7 +1059,7 @@ private:
 	   for while another is on waits for its end), its packet while it
 	   lasts (true: no audio with it), the copies of its last after
 	   it */
-	bool flash(int te, bool send, const struct sockaddr_storage &peer,
+	bool flash(s16 te, bool send, const struct sockaddr_storage &peer,
 		   socklen_t len)
 	{
 		u32 ms = ev_on_ ? 0 : flash_ms_.exchange(0);
@@ -1115,7 +1115,7 @@ private:
 			socklen_t len;
 			s16 in[SAMPLES], out[SAMPLES];
 			bool on, send;
-			int pt, law, te;
+			s16 pt, law, te;
 
 			next.tv_nsec += TICK_NS;
 			if (next.tv_nsec >= 1000000000L) {
@@ -1423,7 +1423,7 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 	struct sockaddr_storage a;
 	socklen_t len;
 	std::string d = direction(s, m);
-	int law = 0, pt = g711_pt(m, &law);
+	s16 law = 0, pt = g711_pt(m, &law);
 
 	if (pt < 0 || !c->media)
 		return false;
@@ -1432,7 +1432,7 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 		    m.addr.c_str());
 		return false;
 	}
-	int te = te_pt(m);
+	s16 te = te_pt(m);
 	c->media->remote(a, len, pt, law, te,
 			 d != "sendonly" && d != "inactive" &&
 			 m.addr != "0.0.0.0");
@@ -1502,7 +1502,7 @@ int on_offer(struct mbuf **descp, const struct sip_msg *msg, void *arg)
 {
 	Call *c = static_cast<Call *>(arg);
 	Sdp s;
-	int i, law;
+	s16 i, law;
 
 	if (c != cur)
 		return EPROTO;
@@ -1554,7 +1554,7 @@ int on_answer(const struct sip_msg *msg, void *arg)
 {
 	Call *c = static_cast<Call *>(arg);
 	Sdp s;
-	int i;
+	s16 i;
 
 	if (c != cur)
 		return 0;
@@ -1653,7 +1653,8 @@ void on_close(int err, const struct sip_msg *msg, void *arg)
 void ask_t38(Call *c)
 {
 	struct mbuf *mb;
-	int i = find(c->lines, Line::AUDIO), err;
+	s16 i = find(c->lines, Line::AUDIO);
+	int err;
 
 	c->t38_asked = true;
 	if (i < 0 || !open_udptl(c))
@@ -1678,7 +1679,8 @@ void ask_t38(Call *c)
 void ask_audio(Call *c)
 {
 	struct mbuf *mb;
-	int i = find(c->lines, Line::IMAGE), err;
+	s16 i = find(c->lines, Line::IMAGE);
+	int err;
 
 	if (i < 0)
 		return;
@@ -1733,7 +1735,8 @@ void on_invite(const struct sip_msg *msg, void *)
 	std::string from = str(msg->from.auri);
 	Sdp s;
 	bool sdp = mbuf_get_left(msg->mb) > 0;
-	int law, i = -1, err;
+	s16 law, i = -1;
+	int err;
 	Call *c;
 
 	if (sdp && sdp_of(msg, &s))
@@ -1821,7 +1824,8 @@ void do_answer(int fd)
 	Call *c = cur;
 	std::vector<Line> v;
 	struct mbuf *mb;
-	int i = -1, err;
+	s16 i = -1;
+	int err;
 
 	if (!c || !c->ringing) {
 		say(3, "answer: no call rings");
@@ -2115,7 +2119,7 @@ void serve()
 }
 
 /* a request for the SIP thread; without one, fd closed at once */
-void queue(int id, Request *r)
+void queue(s16 id, Request *r)
 {
 	if (!running || mqueue_push(mq_, id, r)) {
 		dmd::fd_close(r->fd);
@@ -2179,7 +2183,7 @@ int start(const Config &cfg)
 	else
 		log_level =
 			level && *level ?
-				static_cast<int>(dcore::leading_long(level)) :
+				static_cast<s32>(dcore::leading_long(level)) :
 				4;
 	if (cfg.record)
 		rec.open(cfg.record, ".rx", ".tx");
@@ -2242,7 +2246,7 @@ void answer(int audio_fd)
 }
 
 /* see sip.h */
-int law()
+s16 law()
 {
 	return law_;
 }

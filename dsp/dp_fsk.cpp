@@ -34,7 +34,7 @@ void FskMod::init(float m, float s, float a, s32 rate)
 
 /* the next sample of the mark (bit 1) or space (bit 0) tone, phase
    continuous */
-float FskMod::next(int bit)
+float FskMod::next(s16 bit)
 {
 	osc.set_freq(bit ? mark : space, srate);
 	return amp * osc.next();
@@ -54,7 +54,7 @@ void FskDemod::init(float mark, float space, float baud, s32 rate)
 	float fc = (mark + space) / 2;
 	float shift = fabsf(mark - space);
 	float bw = shift / 2 + baud * 0.6f;
-	int i;
+	s16 i;
 
 	*this = FskDemod();
 	srate = rate;
@@ -79,11 +79,11 @@ void FskDemod::init(float mark, float space, float baud, s32 rate)
 /* one sample x: updates carrier (on with level and a deviation near
    +-shift / 2) and last_dec (1: mark); returns the bit decided at the
    centre of a bit, or -1 */
-int FskDemod::run(float x)
+s16 FskDemod::run(float x)
 {
 	cplx z, d;
 	float dev, p;
-	int dec, bit = -1, i;
+	s16 dec, bit = -1, i;
 
 	x = pre.run(x);
 	z = cplx_scale(lo.next_cplx(), x);
@@ -168,32 +168,32 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
 	Osc ans;         /* answer tone */
 	FskBitTx tx;
 	FskDemod rx;
-	int automode;           /* answering after V.22bis: V.23, Bell 103
+	s16 automode;           /* answering after V.22bis: V.23, Bell 103
 				   next */
-	int after_v8;           /* calling after V.8: the answerer's JM may
+	s16 after_v8;           /* calling after V.8: the answerer's JM may
 				   still be in its channel */
-	int adaptive;           /* answering adaptively (+FAA=1): a caller
+	s16 adaptive;           /* answering adaptively (+FAA=1): a caller
 				   silent through the whole automode chain
 				   is a fax machine */
-	int fax_told;           /* DPSTAT_FAX returned */
+	s16 fax_told;           /* DPSTAT_FAX returned */
 	Bell103Detect bell;     /* a Bell 103 caller */
 	/* the caller's check that the mark is really at its frequency:
 	   another answerer's (V.21's 1650 Hz for V.23's 1300) demodulates
 	   as a mark too */
 	Goertzel g_mark, g_lo, g_hi;
-	int mark_true;
+	s16 mark_true;
 
 	/* its name in the log (the mode's) */
 	const char *tag() const { return par->name; }
 	/* in data mode (the carrier watched, no handshake timeout) */
 	bool in_data() const { return state == FSK_DATA; }
-	float tx_sample(int data);
-	int start(struct modem *m, enum DP_ID id, int caller_, s32 srate_,
-		  int max_frag);
-	int block_start();
-	int sample(float x, float *y);
+	float tx_sample(s16 data);
+	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
+		  s32 max_frag);
+	s16 block_start();
+	s16 sample(float x, float *y);
 	/* cnt samples in and out, through sample() */
-	int process(void *in, void *out, int cnt) override
+	s16 process(void *in, void *out, s32 cnt) override
 	{
 		return pump_loop(in, out, cnt);
 	}
@@ -203,8 +203,8 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
    S7 and S10; the first state from the runtime (after V.8, after a Bell
    212A or automode fallback the answer tone or the mark is already
    there).  0, or -1 for another id. */
-int FskPump::start(struct modem *m, enum DP_ID id, int caller_,
-		   s32 srate_, int max_frag)
+s16 FskPump::start(struct modem *m, enum DP_ID id, s16 caller_,
+		   s32 srate_, s32 max_frag)
 {
 	const struct fsk_params *par_;
 
@@ -264,13 +264,13 @@ int FskPump::start(struct modem *m, enum DP_ID id, int caller_,
 
 /* the next transmit sample; at each bit boundary a new bit from the
    link layer when data, else a mark */
-float FskPump::tx_sample(int data)
+float FskPump::tx_sample(s16 data)
 {
 	return tx.sample([&] {
 		u8 b = 1;
 		if (data)
 			modem_get_bits(modem, 1, &b, 1);
-		return static_cast<int>(b);
+		return static_cast<s16>(b);
 	});
 }
 
@@ -278,7 +278,7 @@ float FskPump::tx_sample(int data)
    75 bit/s side as the answerer, the HSF modem the 1200 bit/s one, and
    both answer V.22, V.22bis and V.23 without V.8: DPSTAT_CHANGEDP to
    another pump, else DPSTAT_OK */
-int FskPump::block_start()
+s16 FskPump::block_start()
 {
 	if (caller && !total && state == FSK_WAIT_CARRIER &&
 	    dp.id == DP_V21 && dp_v8_first(modem, dp.id))
@@ -291,9 +291,9 @@ int FskPump::block_start()
    the mark until the remote's carrier or mark is steady) and data.
    DPSTAT_CONNECT once, DPSTAT_CHANGEDP for an automode fallback (the
    time limit, S7, and the loss of carrier, S10, are pump_loop()'s) */
-int FskPump::sample(float x, float *y)
+s16 FskPump::sample(float x, float *y)
 {
-	int ret = DPSTAT_OK, bit;
+	s16 ret = DPSTAT_OK, bit;
 
 	bit = rx.run(x);
 	carrier_tick(rx.carrier);
@@ -400,7 +400,7 @@ int FskPump::sample(float x, float *y)
 }
 
 /* registers the pump as DP_V21, DP_V23 and DP_B103; 0 */
-int dp_fsk_init(void)
+s16 dp_fsk_init(void)
 {
 	modem_dp_register(DP_V21, &PumpOps<FskPump>::ops);
 	modem_dp_register(DP_V23, &PumpOps<FskPump>::ops);

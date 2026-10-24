@@ -41,8 +41,8 @@ public:
 	explicit PtyDte(Pty &pty) : pty_(pty) {}
 	int fd() const override;
 	bool want_read(const dcore::Modem &m) override;
-	int serve(dcore::Modem &m) override;
-	int write(const char *buf, int n) override;
+	s16 serve(dcore::Modem &m) override;
+	s32 write(const char *buf, s32 n) override;
 private:
 	Pty &pty_;
 };
@@ -61,9 +61,9 @@ public:
 	bool want_read(const dcore::Modem &m) override;
 	/* output waits */
 	bool want_write() const override { return !out_.empty(); }
-	int serve(dcore::Modem &m) override;
+	s16 serve(dcore::Modem &m) override;
 	void flush() override;
-	int write(const char *buf, int n) override;
+	s32 write(const char *buf, s32 n) override;
 private:
 	int fd_;
 	std::string out_;
@@ -112,9 +112,9 @@ public:
 	   call's samples as it passes: what came, and the modem's answer.
 	   On run()'s thread, before run() */
 	struct Speaker {
-		std::function<void(int level)> volume;
+		std::function<void(s16 level)> volume;
 		std::function<void(const s16 *rx, const s16 *tx,
-				   int n)> audio;
+				   s16 n)> audio;
 	};
 	void on_speaker(Speaker s);
 
@@ -122,13 +122,13 @@ public:
 	   stop() or SIGINT/SIGTERM (RunLoop::catch_signals()), or the DTE
 	   has gone: 0; -1 on an error (the user agent failing to start, or
 	   going).  The user agent stopped again when it returns */
-	int run(const sip::Config &cfg);
+	s16 run(const sip::Config &cfg);
 	/* run() returns at its next turn: from any thread, or a signal
 	   handler; before run() it returns at once */
 	void stop();
 
 private:
-	int serve(int ctl);
+	s16 serve(int ctl);
 	void report();
 
 	Dte &dte_;

@@ -32,8 +32,8 @@ unsigned int dsplibs_debug_level = 0;
 
 namespace dcore {
 
-unsigned log_level = 0;
-unsigned log_data_level = 0;
+u32 log_level = 0;
+u32 log_data_level = 0;
 
 static void (*hook)(const char *line);
 static int log_fd = -1;
@@ -60,7 +60,7 @@ bool log_hooked()
 
 /* a record of count octets to the binary log, if it is open and id is
    up to log_data_level */
-void log_data(const void *who, unsigned id, const void *data, int count)
+void log_data(const void *who, u16 id, const void *data, s32 count)
 {
 	LogHeader hdr;
 	if (id > log_data_level || log_fd < 0)
@@ -78,7 +78,7 @@ void log_data(const void *who, unsigned id, const void *data, int count)
    it is on, to the hook (without the stamp) or stderr when level is up
    to log_level; returns the length without the stamp (511 octets at
    most with it) */
-int log_vprintf(unsigned level, const char *fmt, va_list args)
+s16 log_vprintf(u32 level, const char *fmt, va_list args)
 {
 	char line[512];
 	struct timespec ts;
@@ -112,10 +112,10 @@ void log_line(const char *line)
 }
 
 /* log_vprintf() with the arguments */
-int log_printf(unsigned level, const char *fmt, ...)
+s16 log_printf(u16 level, const char *fmt, ...)
 {
 	va_list args;
-	int len;
+	s16 len;
 	va_start(args, fmt);
 	len = log_vprintf(level, fmt, args);
 	va_end(args);
@@ -125,7 +125,7 @@ int log_printf(unsigned level, const char *fmt, ...)
 /* the pumps' level follows the modem's; with log_data_level, the
    binary log dmodem.log[.suffix] in the current directory (and the
    pumps at level 3 at least); -1 if it cannot be created */
-int log_open(const char *suffix)
+s16 log_open(const char *suffix)
 {
 	char name[PATH_MAX];
 	dsplibs_debug_level = log_level;

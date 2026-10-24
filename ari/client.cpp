@@ -26,7 +26,7 @@ namespace ari {
 namespace {
 
 /* the longest a request waits for Asterisk, ms */
-const int REQUEST_MS = 10000;
+const s16 REQUEST_MS = 10000;
 
 /* RFC 4648 base64 of s */
 std::string base64(const std::string &s)
@@ -105,7 +105,7 @@ bool send_all(int fd, const std::string &s)
 
 /* what fd has within timeout_ms onto buf: the bytes read, 0 at its end
    or on a timeout (*timed_out), -1 on an error */
-ssize_t recv_some(int fd, std::string &buf, int timeout_ms, bool *timed_out)
+ssize_t recv_some(int fd, std::string &buf, s16 timeout_ms, bool *timed_out)
 {
 	struct pollfd p = { fd, POLLIN, 0 };
 	char tmp[4096];
@@ -202,7 +202,7 @@ std::string url_encode(const std::string &s)
 }
 
 /* see client.h */
-int request(const Server &srv, const char *method, const std::string &path,
+s32 request(const Server &srv, const char *method, const std::string &path,
 	    std::string *body)
 {
 	std::string reply;
@@ -254,7 +254,7 @@ bool WebSocket::open(const Server &srv, const std::string &path)
 	fd_ = connect_to(srv);
 	if (fd_ < 0)
 		return false;
-	for (int i = 0; i < 16; i++)
+	for (s16 i = 0; i < 16; i++)
 		key += static_cast<char>(rd() & 0xff);
 	if (!send_all(fd_, head(srv, "GET", path) +
 		      "Upgrade: websocket\r\nConnection: Upgrade\r\n"
@@ -295,7 +295,7 @@ void WebSocket::close()
 }
 
 /* a frame of ours: masked, as a client's must be */
-bool WebSocket::send_frame(int opcode, const std::string &payload)
+bool WebSocket::send_frame(s16 opcode, const std::string &payload)
 {
 	std::random_device rd;
 	std::string f;
@@ -319,7 +319,7 @@ bool WebSocket::send_frame(int opcode, const std::string &payload)
 }
 
 /* see client.h */
-int WebSocket::frame(int &opcode, bool &fin, std::string &payload)
+s16 WebSocket::frame(s16 &opcode, bool &fin, std::string &payload)
 {
 	const u8 *b = reinterpret_cast<const u8 *>(in_.data());
 	size_t have = in_.size(), hdr = 2;
@@ -341,7 +341,7 @@ int WebSocket::frame(int &opcode, bool &fin, std::string &payload)
 		if (have < 10)
 			return 0;
 		len = 0;
-		for (int i = 0; i < 8; i++)
+		for (s16 i = 0; i < 8; i++)
 			len = len << 8 | b[2 + i];
 		hdr = 10;
 	}
@@ -360,12 +360,12 @@ int WebSocket::frame(int &opcode, bool &fin, std::string &payload)
 }
 
 /* see client.h */
-int WebSocket::read(std::string &msg, int timeout_ms)
+s16 WebSocket::read(std::string &msg, s16 timeout_ms)
 {
 	if (fd_ < 0)
 		return -1;
 	for (;;) {
-		int opcode, r;
+		s16 opcode, r;
 		bool fin, timed_out;
 		std::string payload;
 

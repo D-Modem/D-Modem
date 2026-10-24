@@ -67,7 +67,7 @@ const char *const Modem::product = "D-Modem";
 const char *const Modem::version = DMODEM_VERSION;
 
 /* the DTE's characters waiting for the line or the interpreter */
-static const int XMIT_SIZE = 4096;
+static const s16 XMIT_SIZE = 4096;
 /* a hang-up's stop: the samples after it */
 static const u32 STOP_SAMPLES = 48;
 /* the escape's guard time (before, between and after the S2s) */
@@ -83,7 +83,7 @@ static const u32 CID_MS = 4000;
    the next pulse starts another */
 static const u32 RING_GAP_MS = 1500, RING_CHECK_MS = 2510;
 static const u32 RING_MIN_MS = 150;
-static const unsigned RING_PULSES = 4;
+static const u16 RING_PULSES = 4;
 static const u32 RING_GONE_MS = 8010, RING_AGAIN_MS = 6000;
 
 /* why a call ended (ATI11), by Modem::Cause */
@@ -103,7 +103,7 @@ static const char *const result_text[] = {
    D-Modem's own from 80) */
 static const struct {
 	u32 rate;
-	unsigned code;
+	u16 code;
 } connect_codes[] = {
 	{ 300, 9 }, { 600, 10 }, { 1200, 5 }, { 2400, 11 }, { 4800, 12 },
 	{ 7200, 13 }, { 9600, 27 }, { 12000, 14 }, { 14400, 15 },
@@ -123,7 +123,7 @@ static const struct {
 };
 
 /* the number CONNECT has for rate with ATV0; 1 for a rate without one */
-static unsigned connect_code(u32 rate)
+static u16 connect_code(u32 rate)
 {
 	for (const auto &c : connect_codes)
 		if (c.rate == rate)
@@ -132,19 +132,19 @@ static unsigned connect_code(u32 rate)
 }
 
 /* the driver table's entry for pump id, NULL if there is none */
-static const DpDriver *find_driver(unsigned id)
+static const DpDriver *find_driver(u32 id)
 {
 	for (const DpDriver *d = dp_drivers(); d->id; d++)
-		if (static_cast<unsigned>(d->id) == id)
+		if (static_cast<u32>(d->id) == id)
 			return d;
 	return nullptr;
 }
 
 /* the modulation a call has: the one the pumps reported in its
    statistics, else the pump's own id, else 0 */
-static int modulation(const struct dp_stats &st, const struct dp *dp)
+static s16 modulation(const struct dp_stats &st, const struct dp *dp)
 {
-	return st.dp ? st.dp : dp ? static_cast<int>(dp->id) : 0;
+	return st.dp ? st.dp : dp ? static_cast<s16>(dp->id) : 0;
 }
 
 /* src into dst (size octets), cut after its first ';' (which stays) */
@@ -171,11 +171,11 @@ struct LinkOwner final : public dlink::Owner {
 	explicit LinkOwner(Modem &m) : m_(m) {}
 
 	/* the DTE's characters for the line */
-	int read_chars(u8 *buf, int n) override {
+	s16 read_chars(u8 *buf, s16 n) override {
 		return m_.get_chars(reinterpret_cast<char *>(buf), n);
 	}
 	/* the remote's characters for the DTE: what it took */
-	int write_chars(const u8 *buf, int n) override {
+	s16 write_chars(const u8 *buf, s16 n) override {
 		return m_.put_chars(reinterpret_cast<const char *>(buf), n);
 	}
 	/* the link's progress as the modem's */
@@ -325,7 +325,7 @@ void Modem::sregs_init()
    and S24 and its tones; else a country of that list alone, with the
    default's line settings; the Host told (Host::country()); -1 if there
    is none */
-int Modem::homolog_init(s32 id, const char *name)
+s16 Modem::homolog_init(s32 id, const char *name)
 {
 	const tones::Country *t = name && *name ? tones::find(name) : nullptr;
 	const struct homolog_set *dflt = nullptr;
@@ -411,11 +411,11 @@ LinkState Modem::link_state() const
    whether they (and the remote's) flow through the link, whether the
    link still runs, and the carrier once online; nothing if it is there
    already; 0 */
-int Modem::set_state(State s)
+s16 Modem::set_state(State s)
 {
-	if (state_ == static_cast<unsigned>(s))
+	if (state_ == static_cast<u16>(s))
 		return 0;
-	logf("state %u -> %u\n", state_, static_cast<unsigned>(s));
+	logf("state %u -> %u\n", state_, static_cast<u16>(s));
 	state_ = s;
 	switch (s) {
 	case IDLE:
@@ -454,9 +454,9 @@ int Modem::set_state(State s)
 
 /* the Host's hook to state, unless it is there already: the Host's
    result, the state kept only when it is 0 */
-int Modem::set_hook(int state)
+s16 Modem::set_hook(s16 state)
 {
-	int ret;
+	s16 ret;
 	if (hook_ == state)
 		return 0;
 	ret = host_.set_hook(*this, state);
@@ -517,9 +517,9 @@ void Modem::hup(bool local)
 
 /* the line starts: its samples counted from 0, the Host's start();
    0, or the Host's error */
-int Modem::do_start()
+s16 Modem::do_start()
 {
-	int ret;
+	s16 ret;
 	count_ = 0;
 	ret = host_.start(*this);
 	if (!ret)
@@ -531,7 +531,7 @@ int Modem::do_start()
    statistics anew, the link set up, off hook, the line started (with
    keep_line, the voice call's line held off hook goes on as it is); -1
    if any of it fails, the call then stopped with NO CARRIER */
-int Modem::start_call(bool keep_line)
+s16 Modem::start_call(bool keep_line)
 {
 	auto fail = [this](const char *what) {
 		log_printf(1, "err: %s: %s\n", name_, what);
@@ -589,7 +589,7 @@ int Modem::start_call(bool keep_line)
 /* the call (or caller ID, or voice) ends: whatever runs goes, on hook,
    the statistics closed, command state, idle, and the result due
    reported; whether the line still runs (the Host could not stop it) */
-int Modem::stop_call()
+s16 Modem::stop_call()
 {
 	run_ = Run::None;
 	later_ = Later::None;
@@ -625,7 +625,7 @@ int Modem::stop_call()
 		     " ms, %s\n",
 		     stats_.fax ? "fax" : dp ? dp : "no connection",
 		     stats_.tx1, stats_.rx1, stats_.end - stats_.start,
-		     cause_text[static_cast<int>(stats_.cause)]);
+		     cause_text[static_cast<s16>(stats_.cause)]);
 	}
 	/* data that did not go out is no command */
 	if (!command_)
@@ -703,7 +703,7 @@ void Modem::later(Later what, u32 samples)
 void Modem::setup_config()
 {
 	const u32 *es = kept("+ES");
-	unsigned comp = sregs_[SREG_COMP];
+	u16 comp = sregs_[SREG_COMP];
 	Cfg c = {};
 
 	if (caller_) {
@@ -753,7 +753,7 @@ void Modem::setup_config()
 }
 
 /* the link set up for the call as configured; -1 if it cannot be */
-int Modem::link_init()
+s16 Modem::link_init()
 {
 	dlink::Config c;
 	c.ec = cfg_.ec;
@@ -774,7 +774,7 @@ int Modem::link_init()
 }
 
 /* what XID or MNP's LRs agreed: the call's compression */
-void Modem::negotiated(int comp, bool v44, s32 dict_size,
+void Modem::negotiated(s16 comp, bool v44, s32 dict_size,
 		       s32 max_string, bool mnp5)
 {
 	cfg_.comp = comp;
@@ -892,17 +892,17 @@ void Modem::update_status(Status s)
 }
 
 /* the pumps' bits for the line, from the link */
-int Modem::get_bits(int nbits, u8 *buf, int n)
+s32 Modem::get_bits(s16 nbits, u8 *buf, s32 n)
 {
-	int ret = link_->get_bits(nbits, buf, n);
+	s32 ret = link_->get_bits(nbits, buf, n);
 	log_data(this, LOG_TX_BITS, buf, n);
 	return ret;
 }
 
 /* the pumps' bits from the line, to the link */
-int Modem::put_bits(int nbits, const u8 *buf, int n)
+s32 Modem::put_bits(s16 nbits, const u8 *buf, s32 n)
 {
-	int ret = link_->put_bits(nbits, buf, n);
+	s32 ret = link_->put_bits(nbits, buf, n);
 	log_data(this, LOG_RX_BITS, buf, n);
 	return ret;
 }
@@ -927,9 +927,9 @@ bool Modem::link_tx_pending() const
    are checked for the escape; they wait in the buffer (as many as fit),
    and in command state the interpreter takes them; how many were
    taken */
-int Modem::dte_input(const char *buf, int n)
+s32 Modem::dte_input(const char *buf, s32 n)
 {
-	int k = 0;
+	s16 k = 0;
 
 	if (n <= 0)
 		return 0;
@@ -942,7 +942,7 @@ int Modem::dte_input(const char *buf, int n)
 	if (state_ == ONLINE)
 		check_escape(buf, n);
 	while (k < n && xmit_count_ < xmit_size_) {
-		int run = xmit_size_ - xmit_head_;
+		s16 run = xmit_size_ - xmit_head_;
 		if (run > xmit_size_ - xmit_count_)
 			run = xmit_size_ - xmit_count_;
 		if (run > n - k)
@@ -962,11 +962,11 @@ int Modem::dte_input(const char *buf, int n)
 }
 
 /* up to n of the DTE's characters, oldest first: how many */
-int Modem::get_chars(char *buf, int n)
+s32 Modem::get_chars(char *buf, s32 n)
 {
-	int k = 0;
+	s16 k = 0;
 	while (k < n && xmit_count_ > 0) {
-		int run = xmit_size_ - xmit_tail_;
+		s16 run = xmit_size_ - xmit_tail_;
 		if (run > xmit_count_)
 			run = xmit_count_;
 		if (run > n - k)
@@ -980,7 +980,7 @@ int Modem::get_chars(char *buf, int n)
 }
 
 /* n characters to the DTE: how many the Host took */
-int Modem::put_chars(const char *buf, int n)
+s32 Modem::put_chars(const char *buf, s32 n)
 {
 	int ret;
 	if (n <= 0)
@@ -992,7 +992,7 @@ int Modem::put_chars(const char *buf, int n)
 /* a string to the DTE */
 void Modem::puts(const char *s)
 {
-	put_chars(s, static_cast<int>(strlen(s)));
+	put_chars(s, static_cast<s32>(strlen(s)));
 }
 
 /* the end of a line to the DTE: S3, S4 */
@@ -1006,13 +1006,13 @@ void Modem::crlf()
    three, the first a guard time after the input before, the others
    within one; the third arms the escape a guard time later.  The S2s
    so far */
-int Modem::check_escape(const char *buf, int n)
+s16 Modem::check_escape(const char *buf, s32 n)
 {
 	u32 now = static_cast<u32>(host_.now_ms());
 	s32 since = static_cast<s32>(now - last_esc_check_);
 	bool escape = escape_count_ + n <= 3;
 
-	for (int i = 0; escape && i < n; i++)
+	for (s16 i = 0; escape && i < n; i++)
 		escape = static_cast<unsigned char>(buf[i]) ==
 			 sregs_[SREG_ESCAPE_CHAR];
 	if (escape)
@@ -1038,7 +1038,7 @@ int Modem::check_escape(const char *buf, int n)
    runs on them, the line's power while the data call is up, then what
    falls due after them and the commands waiting after a fax or voice
    command */
-void Modem::process(const s16 *in, s16 *out, int n)
+void Modem::process(const s16 *in, s16 *out, s32 n)
 {
 	if (n <= 0)
 		return;
@@ -1053,7 +1053,7 @@ void Modem::process(const s16 *in, s16 *out, int n)
 		dcr_process(dcr_, scratch_, n);
 	/* adaptive answer: a calling fax machine's CNG */
 	if (adapt_ != Adapt::Off && state_ == DP_ESTAB) {
-		for (int i = 0; i < n; i++)
+		for (s32 i = 0; i < n; i++)
 			cng_->sample(scratch_[i]);
 		if (cng_->bursts)
 			fax_found("CNG");
@@ -1074,7 +1074,7 @@ void Modem::process(const s16 *in, s16 *out, int n)
 	log_data(this, LOG_TX_SAMPLES, out, 2 * n);
 	if (stats_.connected && !stats_.ended && !stats_.fax &&
 	    (state_ == ONLINE || state_ == COMMAND_ONLINE)) {
-		for (int i = 0; i < n; i++) {
+		for (s32 i = 0; i < n; i++) {
 			stats_.rx_pow +=
 				static_cast<double>(scratch_[i]) * scratch_[i];
 			stats_.tx_pow += static_cast<double>(out[i]) * out[i];
@@ -1094,7 +1094,7 @@ void Modem::process(const s16 *in, s16 *out, int n)
 
 /* the samples through what runs: a pump, caller ID, voice, fax, or
    nothing (silence) */
-void Modem::run(s16 *in, s16 *out, int n)
+void Modem::run(s16 *in, s16 *out, s32 n)
 {
 	switch (run_) {
 	case Run::Dp:
@@ -1119,12 +1119,13 @@ void Modem::run(s16 *in, s16 *out, int n)
    piece's status acted on; silence once there is no pump; after a
    failure the rest goes to the pump, and from the next samples on
    nothing runs */
-void Modem::dp_process(s16 *in, s16 *out, int n)
+void Modem::dp_process(s16 *in, s16 *out, s32 n)
 {
 	bool failed = false;
 
-	for (int done = 0; done < n;) {
-		int len = n - done < frag_ ? n - done : frag_, st;
+	for (s32 done = 0; done < n;) {
+		s32 len = n - done < frag_ ? n - done : frag_;
+		int st;
 		if (!dp_ || run_ != Run::Dp) {
 			std::fill_n(out + done, n - done, 0);
 			break;
@@ -1178,10 +1179,10 @@ void Modem::dp_process(s16 *in, s16 *out, int n)
 
 /* the pump's name in the driver table, NULL for an id it does not
    have */
-const char *Modem::dp_name(int id) const
+const char *Modem::dp_name(s16 id) const
 {
 	const DpDriver *d =
-		id > 0 ? find_driver(static_cast<unsigned>(id)) : nullptr;
+		id > 0 ? find_driver(static_cast<u32>(id)) : nullptr;
 	return d ? d->name : nullptr;
 }
 
@@ -1193,7 +1194,7 @@ void Modem::change_dp()
 {
 	const DpDriver *d;
 	struct dp *dp = nullptr, *old;
-	unsigned id, drv;
+	u32 id, drv;
 
 	if (mode_ == MODEM_MODE_FAX) {
 		fax_start();
@@ -1213,7 +1214,7 @@ void Modem::change_dp()
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
 				      id == DP_V92 || id == DP_VCVM ?
-			      static_cast<unsigned>(DP_V8) :
+			      static_cast<u32>(DP_V8) :
 			      id;
 	}
 	logf("pump %u (driver %u), %s\n", id, drv,
@@ -1247,7 +1248,7 @@ void Modem::change_dp()
    network dials it (unless the pump has to wait for a dial tone; on an
    analogue line, Host::analog_line(), the modem dials it); -1 if there
    is a pump already or none can be made */
-int Modem::dial_start()
+s16 Modem::dial_start()
 {
 	const DpDriver *d;
 	char first;
@@ -1276,7 +1277,7 @@ int Modem::dial_start()
 /* ATD<number>, ATDL (number NULL: the last one again): call progress and
    the call; on a call held after a ';', number is dialled on it (a
    blank for none: the pump goes on to the handshake); 0, or -1 */
-int Modem::dial(const char *number)
+s16 Modem::dial(const char *number)
 {
 	if (dialed_) {
 		size_t len = strlen(dialing_);
@@ -1308,7 +1309,7 @@ int Modem::dial(const char *number)
 void Modem::dialed()
 {
 	char cmd[sizeof(dial_rest_)];
-	int ret;
+	s16 ret;
 
 	dialed_ = true;
 	command_ = true;
@@ -1328,7 +1329,7 @@ void Modem::dialed()
 
 /* ATO: on a held call the handshake (as ATD); in online command state
    back online with CONNECT; -1 otherwise */
-int Modem::online()
+s16 Modem::online()
 {
 	if (dialed_)
 		return dial("");
@@ -1343,7 +1344,7 @@ int Modem::online()
 /* ATA: the answering pump after the answer delay (S92 s, or 10 ms), on
    the held call (call-back: we answer the call we dialled) or a new
    one; -1 if a pump runs already or the call cannot start */
-int Modem::answer(bool adaptive)
+s16 Modem::answer(bool adaptive)
 {
 	u32 delay =
 		sregs_[SREG_ANS_DELAY] ?
@@ -1432,7 +1433,7 @@ void Modem::fax_found(const char *why)
 /* MDMPRM_ADAPTIVE: 1 while answering adaptively (a V.8 fax call, or
    a caller silent through the whole automode chain, told with
    DPSTAT_FAX), else 0 */
-int Modem::adaptive_param() const
+s16 Modem::adaptive_param() const
 {
 	if (caller_)
 		return 0;
@@ -1517,7 +1518,7 @@ void Modem::line_failed(Result r)
 
 /* ATH (MODEM_HOOK_ON), ATH1: a call hangs up when the hook goes on;
    nothing if the hook is there already; the Host's result */
-int Modem::hook(int state)
+s16 Modem::hook(s16 state)
 {
 	if (state == MODEM_HOOK_ON && voice_held_) {
 		stop_call();
@@ -1535,7 +1536,7 @@ int Modem::hook(int state)
 /* ATZ: the call hung up (its stop still to come), the line stopped or on
    hook; the S-registers, +MS, modem-on-hold, the kept parameters and
    data mode as at the start, the country's S8 and S24 again; 0 */
-int Modem::reset()
+s16 Modem::reset()
 {
 	if (state_ != IDLE) {
 		set_cause(Cause::LocalHangup);
@@ -1563,7 +1564,7 @@ int Modem::reset()
 /* +FCLASS: data, fax or voice; the voice engine stops when voice is
    left, its line held off hook (V.253 5.3.2: ATA or ATD then starts
    the fax or data handshake on the call) unless it was dialling; 0 */
-int Modem::set_mode(enum MODEM_MODE mode)
+s16 Modem::set_mode(enum MODEM_MODE mode)
 {
 	if (mode == mode_)
 		return 0;
@@ -1587,7 +1588,7 @@ void Modem::update_speaker()
 }
 
 /* the network's G.711 law, for this call's pumps and the next ones' */
-void Modem::set_line_law(int law)
+void Modem::set_line_law(s16 law)
 {
 	if (law == line_law_)
 		return;
@@ -1626,12 +1627,12 @@ void Modem::report(Result r)
 	bool verbose = sregs_[SREG_VERBOSE] != 0;
 	std::string line;
 
-	logf("result: %s\n", result_text[static_cast<int>(r)]);
+	logf("result: %s\n", result_text[static_cast<s16>(r)]);
 	if (sregs_[SREG_QUIET])
 		return;
 	if (r == Result::Connect) {
-		unsigned a = sregs_[SREG_CONNNECT_MSG_FORMAT];
-		int m = modulation(dp_stats_, dp_);
+		u16 a = sregs_[SREG_CONNNECT_MSG_FORMAT];
+		s16 m = modulation(dp_stats_, dp_);
 		const char *comp = compression_name();
 		if ((a & 1) && (m || verbose)) {
 			const char *name = dp_name(m);
@@ -1684,10 +1685,10 @@ void Modem::report(Result r)
 			line = "CONNECT " + dec(rx_rate_) + (cvm ? "/CVM" : "");
 		}
 	} else if (verbose) {
-		line = result_text[static_cast<int>(r)];
+		line = result_text[static_cast<s16>(r)];
 	} else {
 		line = dec(r == Result::Fax ? 88 : r == Result::Data ? 89 :
-			   static_cast<int>(r));
+			   static_cast<s16>(r));
 	}
 	puts(line);
 	crlf();
@@ -1776,7 +1777,7 @@ void Modem::call_stats()
 	}
 	if (stats_.ended)
 		row("Call Termination Cause",
-		    cause_text[static_cast<int>(stats_.cause)]);
+		    cause_text[static_cast<s16>(stats_.cause)]);
 }
 
 /*
@@ -1784,7 +1785,7 @@ void Modem::call_stats()
  */
 
 /* events (mask) due ms from now: the timer's deadline is that */
-void Modem::schedule_event(unsigned mask, u32 ms)
+void Modem::schedule_event(u16 mask, u32 ms)
 {
 	new_event_ |= mask;
 	timer_at_ = static_cast<u32>(host_.now_ms()) + ms;
@@ -1795,7 +1796,7 @@ void Modem::schedule_event(unsigned mask, u32 ms)
    timers */
 void Modem::poll()
 {
-	unsigned ev;
+	u16 ev;
 
 	if (voice_dialing_ && !voice_dial_digits_)
 		voice_dial_check();
@@ -1834,7 +1835,7 @@ s32 Modem::next_timer_ms()
 
 /* the events due: the ring check (a burst ends: RING, the auto answer,
    or the ring gone), then the escape (online command state, OK) */
-void Modem::events(unsigned ev)
+void Modem::events(u16 ev)
 {
 	if (ev & EV_RING_CHECK) {
 		s32 len = static_cast<s32>(ring_last_ - ring_first_);
@@ -1942,7 +1943,7 @@ void Modem::ring_signal(bool on)
 
 /* caller ID for ms: its receiver on the line, the hook snooping; -1 if
    the line runs already or the receiver cannot be had */
-int Modem::cid_start(u32 ms)
+s16 Modem::cid_start(u32 ms)
 {
 	if (started_)
 		return -1;
@@ -1966,7 +1967,7 @@ int Modem::cid_start(u32 ms)
 
 /* the caller ID receiver on the samples (silence out) until it has
    reported (or failed) */
-void Modem::cid_process(s16 *in, s16 *out, int n)
+void Modem::cid_process(s16 *in, s16 *out, s32 n)
 {
 	int ret;
 	std::fill_n(out, n, 0);
@@ -2001,7 +2002,7 @@ void Modem::cid_stop()
    to come; 0 it was there (moved from one to another: the line taken or
    left, the engine going on), or off (0); -1 for another device or if
    it cannot.  The line is taken to answer (a ringing call's, on SIP) */
-int Modem::voice_set_device(unsigned device)
+s16 Modem::voice_set_device(u16 device)
 {
 	bool handset = device == VOICE_DEVICE_HANDSET ||
 		device == VOICE_DEVICE_HANDSET_LINE;
@@ -2049,7 +2050,7 @@ void Modem::voice_unroute()
 
 /* the voice engine started, off hook on the line (else on hook: +VLS=14,
    the handset's alone): 0, or -1 */
-int Modem::voice_start(bool off_hook)
+s16 Modem::voice_start(bool off_hook)
 {
 	if (voice_)
 		return 0;
@@ -2136,7 +2137,7 @@ void Modem::voice_calling_tones()
 /* +VTS, +VTX, +VRX, +VTR: the voice engine's command, the DTE's
    characters its own until it reports; 1, or -1 without an engine or
    for another command */
-int Modem::voice_command(enum VOICE_CMD cmd)
+s16 Modem::voice_command(enum VOICE_CMD cmd)
 {
 	switch (cmd) {
 	case VOICE_CMD_BEEP:
@@ -2157,7 +2158,7 @@ int Modem::voice_command(enum VOICE_CMD cmd)
 
 /* the next element of the +VTS string to the voice engine: 1, or -1
    without an engine */
-int Modem::voice_tone_next()
+s16 Modem::voice_tone_next()
 {
 	const VoiceTone &t = vts_[vts_next_++];
 
@@ -2292,7 +2293,7 @@ void Modem::voice_line_gone()
 {
 	static const char lci[2] = { 0x10, 'l' };
 	static const char etx[2] = { 0x10, 0x03 };
-	int cmd = voice_cmd_;
+	s16 cmd = voice_cmd_;
 
 	logf("voice: the line ended the call\n");
 	host_.dte_write(*this, lci, 2);
@@ -2351,7 +2352,7 @@ void Modem::voice_drain()
 /* the voice engine on the samples, its results to the DTE: after OK or
    ERROR the DTE's characters are commands again (those already there
    run); a +VTS string's OK comes after its last element */
-void Modem::voice_process(s16 *in, s16 *out, int n)
+void Modem::voice_process(s16 *in, s16 *out, s32 n)
 {
 	int st = VOICE_process(voice_, in, out, n);
 
@@ -2422,7 +2423,7 @@ void Modem::voice_process(s16 *in, s16 *out, int n)
 
 /* the fax engine in the pump's place (on T.38 if that was asked for);
    the line silent if it cannot be had; 0, or -1 */
-int Modem::fax_start()
+s16 Modem::fax_start()
 {
 	struct dp *old = dp_;
 
@@ -2447,7 +2448,7 @@ int Modem::fax_start()
 /* the fax engine on the samples, its results to the DTE: after OK, NO
    CARRIER or ERROR the DTE's characters are commands again (those
    already there run) */
-void Modem::fax_process(s16 *in, s16 *out, int n)
+void Modem::fax_process(s16 *in, s16 *out, s32 n)
 {
 	int st = FAX_process(fax_, in, out, n);
 
@@ -2501,7 +2502,7 @@ void Modem::fax_t38_send(void *ctx, const void *ifp)
 
 /* the call's fax goes over T.38, now or as its engine starts; 0, or -1
    outside fax mode or if the engine cannot */
-int Modem::t38_start(int max_data)
+s16 Modem::t38_start(s32 max_data)
 {
 	/* adaptive answer: a far end that goes over to T.38 is a fax */
 	if (mode_ != MODEM_MODE_FAX && adaptive_answering())

@@ -30,8 +30,8 @@ enum {
 class Lapm : public Framer {
 public:
 	/* a call: our windows (frames) and information fields (octets) */
-	void init(Link *link, int tx_win, int rx_win, int tx_info,
-		  int rx_info);
+	void init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
+		  s16 rx_info);
 	/* the end of the call: no frame lists */
 	void exit();
 	/* the link is up at the bit level */
@@ -72,14 +72,14 @@ private:
 	void timer_start();
 	void timer_stop();
 	Frame *ctrl_frame();
-	int tx_unnum(u8 addr, u8 ctrl);
-	int tx_super(u8 addr, u8 ctrl, int pf);
-	int tx_xid(u8 addr);
+	s16 tx_unnum(u8 addr, u8 ctrl);
+	s16 tx_super(u8 addr, u8 ctrl, s16 pf);
+	s16 tx_xid(u8 addr);
 	void rx_xid(Frame *f, bool response);
-	int tx_info();
-	int reject_info();
-	int ack_info(u8 nr);
-	int rx_info(Frame *f);
+	s16 tx_info();
+	s16 reject_info();
+	s16 ack_info(u8 nr);
+	s16 rx_info(Frame *f);
 	void rx_super_cmd(Frame *f);
 	void rx_super_rsp(Frame *f);
 	void rx_unnum_cmd(Frame *f);
@@ -96,8 +96,8 @@ private:
 	bool peer_busy_ = false;
 	u8 cmd_addr_ = 0, rsp_addr_ = 0;
 	u8 vs_ = 0, va_ = 0, vr_ = 0;
-	int rtx_count_ = 0;
-	unsigned tx_win_ = 0, rx_win_ = 0, tx_info_ = 0, rx_info_ = 0;
+	s16 rtx_count_ = 0;
+	u16 tx_win_ = 0, rx_win_ = 0, tx_info_ = 0, rx_info_ = 0;
 	/* rings of frames: info frames from sent (not acknowledged) over
 	   tx (not sent) to info_list (free); control frames from tx_ctrl
 	   (not sent) to ctrl_list (free) */
@@ -105,7 +105,7 @@ private:
 	Frame *info_list_ = nullptr;
 	Frame *tx_ctrl_ = nullptr, *ctrl_list_ = nullptr;
 	/* received characters the DTE has not taken */
-	int rx_count_ = 0, rx_head_ = 0;
+	s16 rx_count_ = 0, rx_head_ = 0;
 	u8 rx_buf_[LAPM_MAX_INFO];
 	Slot info_buf_[INFO_FRAMES];
 	Slot ctrl_buf_[CTRL_FRAMES];

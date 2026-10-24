@@ -37,27 +37,27 @@ struct DummyPump : Pump {
 	/* the tone's level (the code of 'A'), +TONE first in each block */
 	static constexpr s16 TONE = 65;
 	/* the bits handed to or taken from the core at a time */
-	static constexpr int BIT_CHUNK = 64;
+	static constexpr s16 BIT_CHUNK = 64;
 
 	CoreBits core;
 	struct dp_runtime *rt;  /* the core's (NULL: none) */
-	int saved_pcm;          /* rt->pcm as it was before the pump */
+	s16 saved_pcm;          /* rt->pcm as it was before the pump */
 	s32 blocks;             /* process() calls before the link */
 	bool linked;            /* the other end was heard: data */
 
-	int start(struct modem *m, enum DP_ID, int, s32, int);
+	s16 start(struct modem *m, enum DP_ID, s16, s32, s32);
 	~DummyPump();
-	int process(void *in, void *out, int cnt) override;
+	s16 process(void *in, void *out, s32 cnt) override;
 
 private:
-	int handshake(const s16 *rx, s16 *tx, int cnt);
-	void exchange(const s16 *rx, s16 *tx, int cnt);
+	s16 handshake(const s16 *rx, s16 *tx, s32 cnt);
+	void exchange(const s16 *rx, s16 *tx, s32 cnt);
 };
 
 /* the pump for modem m (the id, the side, the sample rate and the
    block size make no difference): the core's DC removal turned off
    while it runs; always 0 */
-int DummyPump::start(struct modem *m, enum DP_ID, int, s32, int)
+s16 DummyPump::start(struct modem *m, enum DP_ID, s16, s32, s32)
 {
 	core.modem = m;
 	rt = reinterpret_cast<struct dp_runtime *>(
@@ -79,7 +79,7 @@ DummyPump::~DummyPump()
 }
 
 /* one block: the start until the other end is heard, data after it */
-int DummyPump::process(void *in, void *out, int cnt)
+s16 DummyPump::process(void *in, void *out, s32 cnt)
 {
 	const s16 *rx = static_cast<const s16 *>(in);
 	s16 *tx = static_cast<s16 *>(out);
@@ -94,9 +94,9 @@ int DummyPump::process(void *in, void *out, int cnt)
    the tone, and DPSTAT_CONNECT as soon as a received sample is +TONE or
    -TONE (the rest of the block's input unread); after LAST_TONE_BLOCK,
    silence and DPSTAT_ERROR */
-int DummyPump::handshake(const s16 *rx, s16 *tx, int cnt)
+s16 DummyPump::handshake(const s16 *rx, s16 *tx, s32 cnt)
 {
-	int i;
+	s32 i;
 
 	if (++blocks <= SILENT_BLOCKS) {
 		std::fill_n(tx, cnt, 0);
@@ -121,10 +121,11 @@ int DummyPump::handshake(const s16 *rx, s16 *tx, int cnt)
 /* a block of data: the low bit of each received sample to the core,
    all of them first, then as many bits from the core, each one sent as
    a sample of 0 or 1 */
-void DummyPump::exchange(const s16 *rx, s16 *tx, int cnt)
+void DummyPump::exchange(const s16 *rx, s16 *tx, s32 cnt)
 {
 	u8 bits[BIT_CHUNK];
-	int i, j, n;
+	s32 i;
+	s16 j, n;
 
 	for (i = 0; i < cnt; i += n) {
 		n = cnt - i < BIT_CHUNK ? cnt - i : BIT_CHUNK;
@@ -143,7 +144,7 @@ void DummyPump::exchange(const s16 *rx, s16 *tx, int cnt)
 } // namespace dsp
 
 /* registers the pump as DP_DUMMY: modem_dp_register()'s result */
-int dp_dummy_init(void)
+s16 dp_dummy_init(void)
 {
 	return modem_dp_register(DP_DUMMY, &dsp::PumpOps<dsp::DummyPump>::ops);
 }

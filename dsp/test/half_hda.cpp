@@ -84,17 +84,17 @@ public:
 	u32 hda_codec_command(u32 cmd) { return si3054_command(cmd); }
 
 	/* dcore::Host */
-	int start(dcore::Modem &) override { running_ = true; return 0; }
+	s16 start(dcore::Modem &) override { running_ = true; return 0; }
 	/* the modem stopped: no more process() calls; 0 */
-	int stop(dcore::Modem &) override { running_ = false; return 0; }
-	int set_hook(dcore::Modem &m, int state) override;
+	s16 stop(dcore::Modem &) override { running_ = false; return 0; }
+	s16 set_hook(dcore::Modem &m, s16 state) override;
 	/* an analogue line: yes */
 	bool analog_line(dcore::Modem &) override { return true; }
 	/* a hook flash: yes */
 	bool can_flash(dcore::Modem &) override { return true; }
-	void hook_flash(dcore::Modem &m, unsigned ms) override;
+	void hook_flash(dcore::Modem &m, u16 ms) override;
 	/* a dial pulse's make or break (broken: on hook); 0, -1 if on hook */
-	int pulse_hook(dcore::Modem &, bool broken) override
+	s16 pulse_hook(dcore::Modem &, bool broken) override
 	{
 		if (hook_ != MODEM_HOOK_OFF)
 			return -1;
@@ -104,11 +104,11 @@ public:
 	}
 	/* the samples between the modem's output and the line: LEAD
 	   periods */
-	int io_delay(dcore::Modem &) override { return LEAD * period_; }
+	s32 io_delay(dcore::Modem &) override { return LEAD * period_; }
 	/* its driver's name */
 	const char *driver_name() override { return "Si3054 (HD audio)"; }
 	/* the modem's output to the DTE (its result codes scanned); n */
-	int dte_write(dcore::Modem &, const char *buf, int n) override
+	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override
 	{
 		results.scan(buf, (size_t)n);
 		pty.write(buf, (size_t)n);
@@ -355,7 +355,7 @@ bool HdaModem::prepare()
 
 /* the hook (MODEM_HOOK_OFF or on) by the switches: off hook the
    line, on hook the monitor; 0 */
-int HdaModem::set_hook(dcore::Modem &, int state)
+s16 HdaModem::set_hook(dcore::Modem &, s16 state)
 {
 	bool off = state == MODEM_HOOK_OFF;
 	hook_ = state;
@@ -373,7 +373,7 @@ int HdaModem::set_hook(dcore::Modem &, int state)
 }
 
 /* off hook: ms on hook, back off by period() */
-void HdaModem::hook_flash(dcore::Modem &, unsigned ms)
+void HdaModem::hook_flash(dcore::Modem &, u16 ms)
 {
 	if (hook_ != MODEM_HOOK_OFF)
 		return;

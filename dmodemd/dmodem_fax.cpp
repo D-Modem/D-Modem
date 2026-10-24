@@ -29,15 +29,15 @@ using namespace dsp;
 struct dmodem_fax {
 	T30 *t30;
 	enum dmodem_law law;
-	int sending;
+	s16 sending;
 	TiffIn in;
 	TiffOut out;
-	int out_open;
-	int pages_written;
-	int file_error;
+	s16 out_open;
+	s16 pages_written;
+	s16 file_error;
 	char path[1024];
 	/* T.38 */
-	int t38_version, t38_ifp;
+	s32 t38_version, t38_ifp;
 	s32 t38_max_datagram;
 	UdptlTx tx;
 	UdptlRx rx;
@@ -47,7 +47,7 @@ struct dmodem_fax {
 
 /* T.30's next page to send: 1 with *p filled, 0 when there are no more
    (or on an error) */
-static int next_page(void *ctx, T4Page *p)
+static s16 next_page(void *ctx, T4Page *p)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	return f->in.read_page(p) == 1 ? 1 : 0;
@@ -77,10 +77,10 @@ static void t38_tx(void *ctx, const struct t38_ifp *p)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	unsigned char ifp[UDPTL_IFP_MAX], pkt[UDPTL_IFP_MAX * 2];
-	int n = t38_ifp_encode(p, f->t38_version, ifp, sizeof(ifp)), m;
-	int max = f->t38_max_datagram < static_cast<s32>(sizeof(pkt)) ?
-		static_cast<int>(f->t38_max_datagram) :
-		static_cast<int>(sizeof(pkt));
+	s16 n = t38_ifp_encode(p, f->t38_version, ifp, sizeof(ifp)), m;
+	s16 max = f->t38_max_datagram < static_cast<s32>(sizeof(pkt)) ?
+		static_cast<s16>(f->t38_max_datagram) :
+		static_cast<s16>(sizeof(pkt));
 	if (n < 0)
 		return;
 	if (f->t38_ifp) {
@@ -94,8 +94,8 @@ static void t38_tx(void *ctx, const struct t38_ifp *p)
 }
 
 /* an IFP packet out of UDPTL, to T.30 (one it does not know dropped) */
-static void t38_ifp_in(void *ctx, const unsigned char *ifp, int len,
-		       unsigned seq)
+static void t38_ifp_in(void *ctx, const unsigned char *ifp, s16 len,
+		       u16 seq)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	struct t38_ifp p;
@@ -176,7 +176,7 @@ void dmodem_fax_process(struct dmodem_fax *f, const s16 *in,
 void dmodem_fax_process_g711(struct dmodem_fax *f, const unsigned char *in,
 			     unsigned char *out, s32 n)
 {
-	auto process = [f](const s16 *li, s16 *lo, int k) {
+	auto process = [f](const s16 *li, s16 *lo, s16 k) {
 		t30_process(f->t30, li, lo, k);
 	};
 	dmodem_g711_blocks(f->law == DMODEM_LAW_ALAW, in, out, n, process);

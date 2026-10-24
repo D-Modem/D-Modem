@@ -67,30 +67,30 @@ public:
 	/* the samples that have come, a frame (20 ms) at a time, through
 	   the ring detector and the modem, its answer out; 0, or -1 if the
 	   codec has failed for good */
-	int pump(dcore::Modem &m);
+	s16 pump(dcore::Modem &m);
 
 	/* Host */
-	int start(dcore::Modem &) override { running_ = true; return 0; }
+	s16 start(dcore::Modem &) override { running_ = true; return 0; }
 	/* the samples no longer through the modem */
-	int stop(dcore::Modem &) override { running_ = false; return 0; }
-	int set_hook(dcore::Modem &m, int state) override;
+	s16 stop(dcore::Modem &) override { running_ = false; return 0; }
+	s16 set_hook(dcore::Modem &m, s16 state) override;
 	/* an analogue line, the modem dialling it itself */
 	bool analog_line(dcore::Modem &) override { return true; }
 	/* a hook flash it can make (hook_flash()) */
 	bool can_flash(dcore::Modem &) override { return true; }
-	void hook_flash(dcore::Modem &m, unsigned ms) override;
+	void hook_flash(dcore::Modem &m, u16 ms) override;
 	/* pulse dialling: the hook switch off (broken) or on, while off
 	   hook */
-	int pulse_hook(dcore::Modem &m, bool broken) override;
+	s16 pulse_hook(dcore::Modem &m, bool broken) override;
 	/* the playback's lead, in samples */
-	int io_delay(dcore::Modem &) override { return delay_; }
+	s32 io_delay(dcore::Modem &) override { return delay_; }
 	/* the country: an Si3054's line settings, written now on hook,
 	   else once on hook again */
 	void country(dcore::Modem &m, const char *name) override;
 	/* for ATI3 */
 	const char *driver_name() override { return "ALSA"; }
 	/* the modem's characters to the pty: how many it took */
-	int dte_write(dcore::Modem &, const char *buf, int n) override {
+	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
 		return pty_.write(buf, n);
 	}
 	/* the clock: the codec's samples so far, in ms */
@@ -135,13 +135,13 @@ private:
 	snd_ctl_t *ctl_ = nullptr;
 	Switch off_hook_, caller_id_;
 	u32 rate_ = 9600;
-	int frame_ = 192;               /* 20 ms */
-	int delay_ = 0;                 /* the playback's lead (samples) */
+	s16 frame_ = 192;               /* 20 ms */
+	s32 delay_ = 0;                 /* the playback's lead (samples) */
 	std::vector<s16> in_, out_;
-	int have_ = 0;                  /* of in_ */
+	s16 have_ = 0;                  /* of in_ */
 	u64 samples_ = 0;
 	bool running_ = false;
-	int hook_ = MODEM_HOOK_ON;
+	s16 hook_ = MODEM_HOOK_ON;
 	u64 flash_end_ = 0;
 	dsp::RingDetect ring_;
 	/* the codec's registers, if they take the country's settings; the

@@ -46,32 +46,32 @@ struct Line final : public dcore::Host {
 	int starts = 0, stops = 0, last_hook = -1, volume = -1;
 	int delay = 0, delay_change = 0;
 	/* counted; fail_start fails it */
-	int start(Modem &) override {
+	s16 start(Modem &) override {
 		starts++;
 		return fail_start;
 	}
 	/* counted */
-	int stop(Modem &) override {
+	s16 stop(Modem &) override {
 		stops++;
 		return 0;
 	}
 	/* fail_hook fails it, else the state is kept */
-	int set_hook(Modem &, int state) override {
+	s16 set_hook(Modem &, s16 state) override {
 		if (fail_hook)
 			return -1;
 		last_hook = state;
 		return 0;
 	}
 	/* the volume, kept */
-	void speaker(Modem &, int v) override { volume = v; }
+	void speaker(Modem &, s16 v) override { volume = v; }
 	/* the line's delay, and the changes asked for, added up */
-	int io_delay(Modem &) override { return delay; }
+	s32 io_delay(Modem &) override { return delay; }
 	/* (see io_delay()) */
-	void update_delay(Modem &, int samples) override {
+	void update_delay(Modem &, s32 samples) override {
 		delay_change += samples;
 	}
 	/* the DTE's output, kept */
-	int dte_write(Modem &, const char *buf, int n) override {
+	s32 dte_write(Modem &, const char *buf, s32 n) override {
 		out.append(buf, n);
 		return n;
 	}
@@ -90,7 +90,7 @@ struct Line final : public dcore::Host {
 	/* (see local_phone) */
 	bool senses_local_phone(Modem &) override { return local_phone; }
 	/* a break or make kept with the samples by then; -1 unless pulses */
-	int pulse_hook(Modem &, bool broken) override {
+	s16 pulse_hook(Modem &, bool broken) override {
 		if (!pulses)
 			return -1;
 		edges.emplace_back(samples, broken);
@@ -108,7 +108,7 @@ struct Line final : public dcore::Host {
 	/* (see handset) */
 	bool has_handset(Modem &) override { return handset; }
 	/* (see handset) */
-	int voice_route(Modem &, unsigned device) override {
+	s16 voice_route(Modem &, u16 device) override {
 		routes.push_back(device);
 		return device == VOICE_DEVICE_LINE || handset ? 0 : -1;
 	}

@@ -86,39 +86,39 @@ struct V92ATx {
 
 	enum v92a_seg seg;
 	s32 n;                  /* symbols in the segment */
-	int second;             /* Su and TRN1u: the second ones */
+	s16 second;             /* Su and TRN1u: the second ones */
 	s32 su_k;               /* Su's pattern position */
 	u32 scr;                /* GPA */
-	int last_d;             /* the differential encoder: 1 negative */
+	s16 last_d;             /* the differential encoder: 1 negative */
 	unsigned char bits[V92A_BITS];
-	int nbits;
+	s16 nbits;
 	s32 bn;                 /* bits sent of Ja or CPt */
-	int ja_stop, jp_req, trn_stop, ri_seen;
+	s16 ja_stop, jp_req, trn_stop, ri_seen;
 	double jp_frac;         /* of a symbol */
-	int next;               /* E1u is made */
+	s16 next;               /* E1u is made */
 	double next_at;         /* the time of its last symbol */
 	/* phase 4 */
-	int trn2_stop;
+	s16 trn2_stop;
 	unsigned char nxt[V92A_BITS];
-	int nxt_n;              /* 0: the current sequence again */
-	int pos;
+	s16 nxt_n;              /* 0: the current sequence again */
+	s16 pos;
 	s32 seqs;               /* sequences sent whole */
-	int e2u_req;
+	s16 e2u_req;
 	/* a rate renegotiation (9.8/V.92): Ru at the next data frame's
 	   start (ru_req), its Ru-bar then on to TRN2u (rn) */
-	int ru_req, rn;
+	s16 ru_req, rn;
 	/* a fast parameter exchange (9.9/V.92) in the data mode: RM at
 	   the next data frame's start (fpe_req), its 32 frames and RM''s
 	   2, then the sequences (bits[], nxt[] as in phase 4, each a
 	   whole number of data frames) from cleared scrambler and
 	   modulus encoder sign, E2u after one once e2u_req, FB1u's 48
 	   frames of ones, then B1u and the data on cpd_new */
-	int fpe_req;
-	int dsrc;               /* V92A_D_ */
+	s16 fpe_req;
+	s16 dsrc;               /* V92A_D_ */
 	s32 dsrc_n;             /* its frames */
 	V92Cpd cpd_new;
-	int b1u_next;
-	int fpe_reset;          /* the precoder and prefilter start anew at
+	s16 b1u_next;
+	s16 fpe_reset;          /* the precoder and prefilter start anew at
 				   SUVu (the digital modem's prefilter
 				   receiver takes them so) */
 	/* the data mode: the CPd's parameters, the bits, the frames sent
@@ -127,13 +127,13 @@ struct V92ATx {
 	   and the frame's points, the filters' past (u, x, v by symbol) */
 	V92Cpd cpd;
 	CoreBits link;
-	int K;
+	s16 K;
 	s32 frames;
-	int fi;
-	int kq[12];
-	int dprev;
-	int tstate;
-	int eta[4];
+	s16 fi;
+	s16 kq[12];
+	s16 dprev;
+	s16 tstate;
+	s16 eta[4];
 	double uh[V92A_HIST], xh[V92A_HIST], vh[V92A_HIST];
 	s32 dn;                 /* data symbols */
 
@@ -155,13 +155,13 @@ struct V92ATx {
 
 private:
 	float symbol();
-	float dbit(int bit);
+	float dbit(s16 bit);
 	float trn();
-	float sym4(int sign, int mag);
+	float sym4(s16 sign, s16 mag);
 	float data_symbol();
 	void data_frame();
 	void data_reset();
-	float point(int c, int e) const;
+	float point(s16 c, s16 e) const;
 };
 
 } // namespace dsp

@@ -59,16 +59,16 @@ enum { RX_NONE, RX_FIRST, RX_DECIDED };
 
 /* the k low bits of bits (the first on the line the most significant
    of them) queued in q after those already there */
-static inline void queue_bits(BitQueue &q, u32 bits, int k)
+static inline void queue_bits(BitQueue &q, u32 bits, s16 k)
 {
 	q.data = q.data << k | bits;
 	q.bit += k;
 }
 
 /* the oldest bit queued in q, taken */
-static inline int take_bit(BitQueue &q)
+static inline s16 take_bit(BitQueue &q)
 {
-	return static_cast<int>(q.data >> --q.bit & 1);
+	return static_cast<s16>(q.data >> --q.bit & 1);
 }
 
 /* the 8 oldest bits queued in q (at least 8), left in it: the oldest
@@ -109,11 +109,11 @@ static bool take_char(BitQueue &q, u8 &ch)
    tx_fill() queueing one more unit each time fewer than nbits are left,
    F's tx_idle() for the rest once it has none; how many items */
 template <class F>
-int BitFramer<F>::get_bits(int nbits, u8 *buf, int n)
+s32 BitFramer<F>::get_bits(s16 nbits, u8 *buf, s32 n)
 {
 	F &f = static_cast<F &>(*this);
 	const u8 mask = static_cast<u8>((1 << nbits) - 1);
-	int done = 0;
+	s32 done = 0;
 
 	while (n > 0) {
 		if (tx_.bit < nbits) {
@@ -133,12 +133,12 @@ int BitFramer<F>::get_bits(int nbits, u8 *buf, int n)
 /* n items of nbits bits from the data pump, each queued and then
    scanned by F's rx_scan(); returns n */
 template <class F>
-int BitFramer<F>::put_bits(int nbits, const u8 *buf, int n)
+s32 BitFramer<F>::put_bits(s16 nbits, const u8 *buf, s32 n)
 {
 	F &f = static_cast<F &>(*this);
 	const u8 mask = static_cast<u8>((1 << nbits) - 1);
 
-	for (int i = 0; i < n; i++) {
+	for (s32 i = 0; i < n; i++) {
 		queue_bits(rx_, buf[i] & mask, nbits);
 		f.rx_scan();
 	}
@@ -171,12 +171,12 @@ bool Async::tx_fill()
 
 /* the rest of the n items while the DTE has nothing: what is left of
    its last character, completed with marks, then marks; how many */
-int Async::tx_idle(int nbits, u8 mask, u8 *&buf, int &n)
+s32 Async::tx_idle(s16 nbits, u8 mask, u8 *&buf, s32 &n)
 {
-	int done = 0;
+	s32 done = 0;
 
 	if (tx_.bit && n > 0) {
-		int marks = nbits - tx_.bit;
+		s16 marks = nbits - tx_.bit;
 		*buf++ = static_cast<u8>(
 			(tx_.data << marks | ((1u << marks) - 1)) & mask);
 		tx_.bit = 0;
@@ -346,7 +346,7 @@ void Detector::rx_scan()
 static u16 fcs_add(u16 fcs, u8 c)
 {
 	fcs ^= c;
-	for (int i = 0; i < 8; i++)
+	for (s16 i = 0; i < 8; i++)
 		fcs = fcs & 1 ? static_cast<u16>(fcs >> 1 ^ 0x8408) :
 			static_cast<u16>(fcs >> 1);
 	return fcs;
@@ -362,7 +362,7 @@ static void frame_reset(Frame &f)
 /* a flag has ended frame f (bits: the data bits after its last whole
    octet): a good one to framer (its octets without the FCS, counted),
    one with a bad FCS reported to it (counted), the rest dropped */
-static void frame_end(Link *link, Framer *framer, Frame &f, int bits)
+static void frame_end(Link *link, Framer *framer, Frame &f, s16 bits)
 {
 	if (!f.count)
 		return;
@@ -412,8 +412,8 @@ void Hdlc::start(Link *link)
    in a row (the run going on from the octet before) */
 void Hdlc::put_byte(u8 in)
 {
-	for (int i = 0; i < 8; i++, in >>= 1) {
-		int b = in & 1;
+	for (s16 i = 0; i < 8; i++, in >>= 1) {
+		s16 b = in & 1;
 		queue_bits(tx_, static_cast<u32>(b), 1);
 		if (!b) {
 			tx_ones_ = 0;
@@ -464,7 +464,7 @@ bool Hdlc::tx_fill()
 void Hdlc::rx_scan()
 {
 	u8 octet = 0;
-	int n = 0;              /* data bits, or positions while hunting */
+	s16 n = 0;              /* data bits, or positions while hunting */
 
 	if (rx_.bit < RX_LOOKAHEAD)
 		return;
@@ -486,7 +486,7 @@ void Hdlc::rx_scan()
 			rx_ones_ = 0;
 			return;
 		}
-		int b = take_bit(rx_);
+		s16 b = take_bit(rx_);
 		if (!rx_error_) {
 			rx_ones_ = b ? rx_ones_ + 1 : 0;
 			octet |= static_cast<u8>(b << n);

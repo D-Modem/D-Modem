@@ -57,33 +57,33 @@ enum t38_field_type {
 #define T38_MAX_FIELDS  8
 
 struct t38_field {
-	int type;                       /* enum t38_field_type */
+	s16 type;                       /* enum t38_field_type */
 	const unsigned char *data;      /* len octets, NULL for none */
 	s32 len;
 };
 
 /* an IFP packet: an indicator, or data of a modulation in fields */
 struct t38_ifp {
-	int data;                       /* t30-data, else t30-indicator */
-	int type;                       /* the indicator, or the data's
+	s16 data;                       /* t30-data, else t30-indicator */
+	s16 type;                       /* the indicator, or the data's
 					   modulation */
-	int nfields;
+	s16 nfields;
 	struct t38_field field[T38_MAX_FIELDS];
 };
 
 /* p into buf (max octets) as version (0: 1998, else 2002) has it; its
    length, or -1 if it can't be (a field without data goes last only) */
-int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
-		   int max);
+s32 t38_ifp_encode(const struct t38_ifp *p, s16 version, unsigned char *buf,
+		   s32 max);
 /* len octets of buf into p, its fields' data pointing into buf; 0, or -1
    if they are no IFP packet of version (or have more fields than p
    takes) */
-int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
+s16 t38_ifp_decode(struct t38_ifp *p, s16 version, const unsigned char *buf,
 		   s32 len);
 
 /* n octets of in into out (they may be the same), the bits of each the
    other way round */
-void t38_reverse(unsigned char *out, const unsigned char *in, int n);
+void t38_reverse(unsigned char *out, const unsigned char *in, s32 n);
 
 /* UDPTL's error recovery (T38FaxUdpEC): what we send */
 enum t38_ec { T38_EC_NONE, T38_EC_REDUNDANCY };
@@ -94,20 +94,20 @@ enum t38_ec { T38_EC_NONE, T38_EC_REDUNDANCY };
 /* UDPTL, sending: each IFP packet numbered, with the ones before it
    again for redundancy */
 struct UdptlTx {
-	int ec;                         /* enum t38_ec */
-	int depth;                      /* the packets before, at most
+	s16 ec;                         /* enum t38_ec */
+	s16 depth;                      /* the packets before, at most
 					   UDPTL_HISTORY */
-	unsigned seq;
+	u16 seq;
 	unsigned char hist[UDPTL_HISTORY][UDPTL_IFP_MAX];
-	int hist_len[UDPTL_HISTORY];
-	int nhist;
+	s16 hist_len[UDPTL_HISTORY];
+	s16 nhist;
 
-	void init(int ec_, int depth_);
+	void init(s16 ec_, s16 depth_);
 	/* the UDPTL packet for len octets of ifp into buf (max octets, as
 	   many of the packets before as fit); its length, -1 if even the
 	   IFP packet does not */
-	int packet(const unsigned char *ifp, int len, unsigned char *buf,
-		   int max);
+	s32 packet(const unsigned char *ifp, s32 len, unsigned char *buf,
+		   s32 max);
 };
 
 /* UDPTL, receiving: the IFP packets once each, in their order; a lost
@@ -120,9 +120,9 @@ struct UdptlRx {
 	void init();
 	/* len octets of a UDPTL packet: each IFP packet not had before to
 	   fn, oldest first; -1 if it is no UDPTL packet */
-	int packet(const unsigned char *buf, s32 len,
-		   void (*fn)(void *ctx, const unsigned char *ifp, int len,
-			      unsigned seq),
+	s16 packet(const unsigned char *buf, s32 len,
+		   void (*fn)(void *ctx, const unsigned char *ifp, s16 len,
+			      u16 seq),
 		   void *ctx);
 };
 

@@ -52,7 +52,7 @@ namespace dsp {
 /* Table 5/V.91 */
 static void default_dil(V90Dil *d)
 {
-	int i;
+	s16 i;
 	zero(*d);
 	d->n = 125;
 	d->lsp = d->ltp = 12;
@@ -77,9 +77,9 @@ static void default_dil(V90Dil *d)
 /* the encoder for the constellations of cp (the remote's CP) and D bits
    per data frame, lin_: Ucode -> linear; returns -1 when they cannot
    carry K = D - 6 bits */
-int V91Enc::init(const V90Cp *cp, int D, const int *lin_)
+s16 V91Enc::init(const V90Cp *cp, s16 D, const s16 *lin_)
 {
-	int i, u;
+	s16 i, u;
 
 	/* one point per interval and no bits until it works: an unusable
 	   CP gives silence, not a division by zero */
@@ -104,11 +104,11 @@ int V91Enc::init(const V90Cp *cp, int D, const int *lin_)
 /* bits: the 6 sign bits, then the K bits (only the K bits with cc);
    all scrambled, the cc bits not */
 void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
-		   int out_[6])
+		   s16 out_[6])
 {
 	unsigned char d[48];
 	u64 r = 0;
-	int S = cc ? 0 : 6, i;
+	s16 S = cc ? 0 : 6, i;
 
 	for (i = 0; i < S + K; i++)
 		d[i] = static_cast<unsigned char>(
@@ -116,8 +116,8 @@ void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 	for (i = K - 1; i >= 0; i--)
 		r = (r << 1) | d[S + i];
 	for (i = 0; i < 6; i++) {
-		int k = static_cast<int>(r % static_cast<unsigned>(M[i])), mag;
-		r /= static_cast<unsigned>(M[i]);
+		s16 k = static_cast<s16>(r % static_cast<u16>(M[i])), mag;
+		r /= static_cast<u16>(M[i]);
 		mag = lin[ucode[i][k]];
 		/* 5.4.5.1/V.90 with Sr = 0 */
 		last ^= cc ? cc[i] : d[i];
@@ -127,9 +127,9 @@ void V91Enc::frame(const unsigned char *bits, const unsigned char *cc,
 
 /* the decoder for the constellations of cp (our CP) and D bits per data
    frame; returns -1 when a constellation is empty */
-int V91Dec::init(const V90Cp *cp, int D)
+s16 V91Dec::init(const V90Cp *cp, s16 D)
 {
-	int i, u;
+	s16 i, u;
 	reinit(*this);
 	K = D - 6;
 	for (i = 0; i < 6; i++) {
@@ -144,25 +144,25 @@ int V91Dec::init(const V90Cp *cp, int D)
 
 /* u, s: the Ucodes and signs (1: positive) of the 6 symbols; frames
    that cannot be one are counted in errors */
-int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
+s16 V91Dec::frame(const s16 *u, const s16 *s, unsigned char *bits,
 		  unsigned char *cc)
 {
 	u64 r = 0;
 	unsigned char d[48];
-	int S = cc ? 0 : 6, bad = 0, i;
+	s16 S = cc ? 0 : 6, bad = 0, i;
 
 	for (i = 5; i >= 0; i--) {
-		int l = label[i][u[i] & 127];
+		s16 l = label[i][u[i] & 127];
 		if (l < 0) {
 			bad = 1;
 			l = 0;
 		}
-		r = r * static_cast<unsigned>(M[i]) + static_cast<unsigned>(l);
+		r = r * static_cast<u16>(M[i]) + static_cast<u16>(l);
 	}
 	if (r >> K)
 		bad = 1;
 	for (i = 0; i < 6; i++) {
-		int b = s[i] ^ last;
+		s16 b = s[i] ^ last;
 		last = s[i];
 		if (cc)
 			cc[i] = static_cast<unsigned char>(b);
@@ -181,9 +181,9 @@ int V91Dec::frame(const int *u, const int *s, unsigned char *bits,
 
 /* i: the data frame interval, x: the received value; by binary search
    in val[i] (no codes: the distance 1 << 20) */
-s32 V91Map::decode(int i, int x, int *u, int *s) const
+s32 V91Map::decode(s16 i, s16 x, s16 *u, s16 *s) const
 {
-	int lo = 0, hi = n[i] - 1, b;
+	s16 lo = 0, hi = n[i] - 1, b;
 	s32 d;
 
 	if (n[i] == 0) {
@@ -191,7 +191,7 @@ s32 V91Map::decode(int i, int x, int *u, int *s) const
 		return INT32_C(1) << 20;
 	}
 	while (lo < hi) {
-		int mid = (lo + hi) / 2;
+		s16 mid = (lo + hi) / 2;
 		if (val[i][mid] < x)
 			lo = mid + 1;
 		else
@@ -215,10 +215,11 @@ s32 V91Map::decode(int i, int x, int *u, int *s) const
    max_k_ bits through the modulus encoder (up to 41), want_cc_: we ask
    for the control channel.  Tests: DSP_V91_RETRAIN=<ms>[a|c] (our own
    retrain that long after connecting), DSP_V91_MUTE=a|c */
-void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
+void V91::init(s16 alaw_, s16 caller_, s32 max_k_, s16 want_cc_)
 {
 	static const char slip[] = "0111011111111010";
-	int i, n_ = 0;
+	s16 i;
+	s32 n_ = 0;
 
 	reinit(*this);
 	alaw = alaw_;
@@ -254,9 +255,9 @@ void V91::init(int alaw_, int caller_, int max_k_, int want_cc_)
 }
 
 /* INFO (Table 6/V.91): the default DIL, our law */
-void V91::make_info(int ack)
+void V91::make_info(s16 ack)
 {
-	int n_ = 0;
+	s32 n_ = 0;
 
 	dsp::put_bits(tb, &n_, 0xF, 4);
 	dsp::put_bits(tb, &n_, 0x4E, 8);     /* 01110010 sent from the left */
@@ -277,9 +278,10 @@ void V91::make_info(int ack)
 }
 
 /* CP (Table 4/V.91) from cp_tx, filled to whole data frames */
-void V91::make_cp(int ack)
+void V91::make_cp(s16 ack)
 {
-	int n_ = 0, i, j, c;
+	s32 n_ = 0;
+	s16 i, j, c;
 
 	zero(tb);
 	dsp::put_bits(tb, &n_, 0x1FFFF, 17);
@@ -350,24 +352,24 @@ void V91::tx_segment(enum v91_tx s)
 }
 
 /* a bit as the sign of Ucode 66, coded differentially */
-int V91::sign_sample(int bit)
+s16 V91::sign_sample(s16 bit)
 {
 	t ^= bit & 1;
 	return t ? lin[INFO_UCODE] : -lin[INFO_UCODE];
 }
 
 /* a bit scrambled (GPC), then as sign_sample() */
-int V91::scr_sample(int bit)
+s16 V91::scr_sample(s16 bit)
 {
 	return sign_sample(scramble(&tscr, SCR_GPC, bit));
 }
 
 /* the next sample of the DIL the remote asked for (8.4.1/V.90), then
    SCR */
-int V91::dil_sample()
+s16 V91::dil_sample()
 {
-	int u = dil.ucode[dil_seg], c = u >> 4, len = (dil.h[c] + 1) * 6;
-	int k = dil_k, x;
+	s16 u = dil.ucode[dil_seg], c = u >> 4, len = (dil.h[c] + 1) * 6;
+	s16 k = dil_k, x;
 
 	x = dil.tp[k % dil.ltp] ? lin[u] : lin[dil.ref[c]];
 	if (!dil.sp[k % dil.lsp])
@@ -382,9 +384,9 @@ int V91::dil_sample()
 
 /* the next sample we send (linear), going on from segment to segment
    as the receiver's progress allows */
-int V91::tx_sample()
+s16 V91::tx_sample()
 {
-	int x = 0;
+	s16 x = 0;
 
 	switch (tx) {
 	case V91T_EZ:
@@ -458,14 +460,14 @@ int V91::tx_sample()
 	case V91T_DATA:
 		if (opos >= 6) {
 			unsigned char b[48], c6[6];
-			int cc = 0, i;
+			s16 cc = 0, i;
 			if (tx == V91T_B1 && tn == 2)
 				tx_segment(V91T_DATA);
 			if (tx == V91T_B1) {
 				std::fill(std::begin(b), std::end(b), 1);
 				tn++;
 			} else {
-				int nb;
+				s16 nb;
 				cc = peer_cc && tframes % 64 == 0;
 				nb = enc.K + (cc ? 0 : 6);
 				link.get(b, nb);
@@ -504,10 +506,10 @@ void V91::rx_restart()
 
 /* a bit (decoded differentially) into the INFO window; 1 at the end of a
    good INFO frame */
-int V91::info_bit(int bit)
+s16 V91::info_bit(s16 bit)
 {
 	static const unsigned char syn[8] = { 0, 1, 1, 1, 0, 0, 1, 0 };
-	int i;
+	s16 i;
 
 	memmove(ib, ib + 1, V91_INFO_BITS - 1);
 	ib[V91_INFO_BITS - 1] = static_cast<unsigned char>(bit);
@@ -528,10 +530,10 @@ int V91::info_bit(int bit)
 /* a received symbol of the DIL we asked for: the value each code and
    sign arrives as in each data frame interval (seen 2: not the same each
    time) */
-void V91::dil_record(int x)
+void V91::dil_record(s16 x)
 {
-	int u = rdil.ucode[rd_seg], c = u >> 4, len = (rdil.h[c] + 1) * 6;
-	int k = rd_k, i = static_cast<int>(rk % 6), code, sg;
+	s16 u = rdil.ucode[rd_seg], c = u >> 4, len = (rdil.h[c] + 1) * 6;
+	s16 k = rd_k, i = static_cast<s16>(rk % 6), code, sg;
 
 	code = rdil.tp[k % rdil.ltp] ? u : rdil.ref[c];
 	sg = rdil.sp[k % rdil.lsp];
@@ -548,10 +550,10 @@ void V91::dil_record(int x)
 
 /* from the remote's DIL: the codes that come through, our CP, the
    decoder; -1 if too few do */
-int V91::choose()
+s16 V91::choose()
 {
 	double bits = 0, prod = 1;
-	int i, j, u, s, K;
+	s16 i, j, u, s, K;
 
 	zero(map);
 	zero(cp_tx);
@@ -560,7 +562,7 @@ int V91::choose()
 		   neither value taken by another code: where codes arrive as
 		   one (robbed bits, a pad), one of them */
 		for (u = 127; u >= 0; u--) {
-			int v, s2, clash = 0;
+			s16 v, s2, clash = 0;
 			map.ok[i][u] = 0;
 			if (seen[i][u][0] != 1 || seen[i][u][1] != 1 ||
 			    obs[i][u][0] == obs[i][u][1])
@@ -576,7 +578,7 @@ int V91::choose()
 		/* the decoding table, sorted by the received value */
 		for (u = 0; u < 128; u++)
 			for (s = 0; s < 2 && map.ok[i][u]; s++) {
-				int k = map.n[i]++;
+				s16 k = map.n[i]++;
 				while (k > 0 && map.val[i][k - 1] > obs[i][u][s]) {
 					map.val[i][k] = map.val[i][k - 1];
 					map.ucode[i][k] = map.ucode[i][k - 1];
@@ -599,7 +601,7 @@ int V91::choose()
 		cp_tx.con[i] = j;
 		prod *= map.n[i] / 2;
 	}
-	K = static_cast<int>(bits);
+	K = static_cast<s16>(bits);
 	while (K > 0 && prod < static_cast<double>(1ULL << K))
 		K--;
 	DSP_DBG("v91: DIL: %d %d %d %d %d %d codes, %d constellations, K %d\n",
@@ -618,7 +620,7 @@ int V91::choose()
 }
 
 /* a descrambled bit in CP; 1 when a CP frame is complete */
-int V91::cp_bit(int bit)
+s16 V91::cp_bit(s16 bit)
 {
 	V90Cp c;
 
@@ -661,9 +663,9 @@ int V91::cp_bit(int bit)
 }
 
 /* a symbol of B1 or data */
-void V91::data_symbol(int x)
+void V91::data_symbol(s16 x)
 {
-	int i = static_cast<int>(rk % 6);
+	s16 i = static_cast<s16>(rk % 6);
 
 	if (map.decode(i, x, &ru[rpos], &rsg[rpos]))
 		err_count++;
@@ -680,7 +682,7 @@ void V91::data_symbol(int x)
 		}
 	} else {
 		unsigned char b[48], c6[6];
-		int cc = want_cc && rframes % 64 == 0, nb;
+		s16 cc = want_cc && rframes % 64 == 0, nb;
 		if (dec.frame(ru, rsg, b, cc ? c6 : nullptr) < 0)
 			err_count++;
 		nb = dec.K + (cc ? 0 : 6);
@@ -691,15 +693,15 @@ void V91::data_symbol(int x)
 
 /* a received sample through the receiver's stages; returns V91_ESCAPE
    or V91_FAIL to give up, else 0 */
-int V91::rx_sample(int x)
+s16 V91::rx_sample(s16 x)
 {
-	int s = x > 0, bit = s ^ rs, b;
+	s16 s = x > 0, bit = s ^ rs, b;
 
 	rs = s;
 	switch (rx) {
 	case V91R_INFO:
 		if (info_bit(bit)) {
-			int ack = ib[28];
+			s16 ack = ib[28];
 			if (!got_info)
 				DSP_DBG("v91: INFO: default DIL %d, control channel"
 					" %d, %s, transparent %d\n", !ib[26],
@@ -845,9 +847,9 @@ void V91::retrain(const char *why)
    first time data mode is up both ways, V91_ESCAPE or V91_FAIL to give up
    (also on the timeouts of 8.3), else V91_NONE; retrains on too many
    decoding errors */
-int V91::sample(int x, int *y)
+s16 V91::sample(s16 x, s16 *y)
 {
-	int r;
+	s16 r;
 
 	*y = tx_sample();
 	if (mute)

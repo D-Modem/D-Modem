@@ -34,7 +34,7 @@ std::string url_encode(const std::string &s);
 
 /* method path (with its query) on the server; the reply's status (-1 if
    none came) and body */
-int request(const Server &srv, const char *method, const std::string &path,
+s32 request(const Server &srv, const char *method, const std::string &path,
 	    std::string *body);
 
 /* a WebSocket client: the event stream of /ari/events */
@@ -47,7 +47,7 @@ public:
 	bool open(const Server &srv, const std::string &path);
 	/* the next text message into msg, waiting up to timeout_ms (-1:
 	   for good); 1 a message, 0 none yet, -1 the connection is gone */
-	int read(std::string &msg, int timeout_ms);
+	s16 read(std::string &msg, s16 timeout_ms);
 	void close();
 
 private:
@@ -55,9 +55,9 @@ private:
 	std::string in_;        /* bytes read, not yet a whole frame */
 	std::string partial_;   /* a fragmented message so far */
 
-	bool send_frame(int opcode, const std::string &payload);
+	bool send_frame(s16 opcode, const std::string &payload);
 	/* a whole frame from in_, if there is one: 1, 0, -1 */
-	int frame(int &opcode, bool &fin, std::string &payload);
+	s16 frame(s16 &opcode, bool &fin, std::string &payload);
 };
 
 } // namespace ari

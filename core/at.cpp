@@ -36,9 +36,9 @@ namespace dcore {
 namespace {
 
 /* the longest command line: at_line_ holds it and its end */
-const unsigned LINE_CHARS = 63;
+const u16 LINE_CHARS = 63;
 /* &V's lines at most */
-const int PROFILE_COLUMNS = 72;
+const s16 PROFILE_COLUMNS = 72;
 
 /* c is a decimal digit */
 bool is_digit(char c)
@@ -47,7 +47,7 @@ bool is_digit(char c)
 }
 
 /* c in upper case */
-int upper(char c)
+s16 upper(char c)
 {
 	return toupper(static_cast<unsigned char>(c));
 }
@@ -64,7 +64,7 @@ u32 number(const char *p, const char **end)
 {
 	const char *q = p;
 	bool neg = false;
-	int base = 10;
+	s16 base = 10;
 	u32 v;
 
 	while (isspace(static_cast<unsigned char>(*q)))
@@ -117,10 +117,10 @@ bool in_list(const char *list, u32 v)
 
 /* the list of range group pos (from 0) of ranges "(...),(...)", after
    its '('; NULL if there is no such group */
-const char *range_group(const char *ranges, unsigned pos)
+const char *range_group(const char *ranges, u16 pos)
 {
 	const char *p = ranges;
-	for (unsigned i = 0;; i++) {
+	for (u16 i = 0;; i++) {
 		p = strchr(p, '(');
 		if (!p)
 			return nullptr;
@@ -149,7 +149,7 @@ const struct {
 };
 
 /* the command at p is a taken one: *len its characters */
-bool taken(const char *p, int *len)
+bool taken(const char *p, s16 *len)
 {
 	for (const auto &t : taken_cmds) {
 		std::string_view name = t.name;
@@ -163,7 +163,7 @@ bool taken(const char *p, int *len)
 		v = decimal(p + n, &e);
 		if (!in_list(t.values, v))
 			continue;
-		*len = static_cast<int>(e - p);
+		*len = static_cast<s16>(e - p);
 		return true;
 	}
 	return false;
@@ -174,7 +174,7 @@ bool taken(const char *p, int *len)
    (one a value) */
 const struct Kept {
 	const char *name;
-	unsigned n;
+	u16 n;
 	u32 values[Modem::KEPT_VALUES];
 	const char *ranges;
 } kept_params[] = {
@@ -203,15 +203,15 @@ const struct Kept {
 	   +CVMR */
 	{ "+CVM", 3, { 63, 8000, 0 }, "(0-63),(8000,16000),(0,1)" },
 };
-const int KEPT_COUNT = static_cast<int>(std::size(kept_params));
+const s16 KEPT_COUNT = static_cast<s16>(std::size(kept_params));
 static_assert(KEPT_COUNT <= Modem::KEPT_PARAMS,
 	      "the kept parameters do not fit the modem's storage");
 
 /* the kept parameter whose name (any case) is at p followed by '=' or
    '?'; -1 if none is */
-int kept_command(const char *p)
+s16 kept_command(const char *p)
 {
-	for (int i = 0; i < KEPT_COUNT; i++) {
+	for (s16 i = 0; i < KEPT_COUNT; i++) {
 		std::string_view name = kept_params[i].name;
 		size_t n = name.size();
 		if (starts_nocase(p, name) &&
@@ -222,9 +222,9 @@ int kept_command(const char *p)
 }
 
 /* the kept parameter called name; -1 if there is none */
-int kept_index(const char *name)
+s16 kept_index(const char *name)
 {
-	for (int i = 0; i < KEPT_COUNT; i++)
+	for (s16 i = 0; i < KEPT_COUNT; i++)
 		if (std::string_view(kept_params[i].name) == name)
 			return i;
 	return -1;
@@ -243,7 +243,7 @@ const u32 ec_modes[6][3] = {
 /* +MS's carrier names (V.250 Table 13, USRobotics' Bell ones, K56flex) */
 const struct {
 	const char *name;
-	unsigned id;
+	u16 id;
 } ms_names[] = {
 	{ "V21", DP_V21 }, { "V22", DP_V22 }, { "V22B", DP_V22BIS },
 	{ "V23C", DP_V23 }, { "V32", DP_V32 }, { "V32B", DP_V32BIS },
@@ -298,9 +298,9 @@ const char *identity(char c)
    ranges (a bound 0: none) */
 const struct VoiceSetting {
 	const char *name;
-	int n;
+	s16 n;
 	unsigned voice_info::*field[2];
-	unsigned lo[2], hi[2];
+	u16 lo[2], hi[2];
 } voice_settings[] = {
 	{ "NH", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
 	{ "GT", 1, { &voice_info::tx_gain, nullptr }, { 0, 0 }, { 128, 0 } },
@@ -348,7 +348,7 @@ static const struct {
 const u32 LOCAL_PHONE_EVENT = 0x00800000;
 
 /* v within the bounds lo and hi (0: none) */
-bool in_bounds(u32 v, unsigned lo, unsigned hi)
+bool in_bounds(u32 v, u16 lo, u16 hi)
 {
 	return !(lo && v < lo) && !(hi && v > hi);
 }
@@ -371,10 +371,10 @@ void Modem::at_process()
 	auto line_end = [this]() {
 		bool echo = sregs_[SREG_ECHO] != 0;
 		char cmd[LINE_CHARS + 1];
-		unsigned typed = at_count_, k = 0;
-		int ret;
+		u16 typed = at_count_, k = 0;
+		s16 ret;
 
-		for (unsigned i = 0; i < typed && at_line_[i]; i++)
+		for (u16 i = 0; i < typed && at_line_[i]; i++)
 			if (at_line_[i] != ' ' && at_line_[i] != '\t')
 				cmd[k++] = at_line_[i];
 		cmd[k] = '\0';
@@ -384,7 +384,7 @@ void Modem::at_process()
 				const char *cr = reinterpret_cast<const char *>(
 					&sregs_[SREG_CR_CHAR]);
 				put_chars(cr, 1);
-				for (unsigned i = 0; i < typed; i++)
+				for (u16 i = 0; i < typed; i++)
 					put_chars(" ", 1);
 				put_chars(cr, 1);
 			}
@@ -420,7 +420,7 @@ void Modem::at_process()
 				at_count_ = n;
 				if (echo)
 					put_chars(at_cmd_ + 1,
-						  static_cast<int>(n) - 1);
+						  static_cast<s32>(n) - 1);
 			}
 			if (echo)
 				put_chars(reinterpret_cast<const char *>(
@@ -461,19 +461,19 @@ void Modem::at_process()
 /* a command line (AT and the commands, without blanks), each command in
    turn until one fails: 0 for OK, < 0 for ERROR, > 0 when the result
    comes later (the line ends there) */
-int Modem::at_command(char *cmd)
+s16 Modem::at_command(char *cmd)
 {
 	char *p;
 
 	if (upper(cmd[0]) != 'A' || upper(cmd[1]) != 'T')
 		return -1;
 	for (p = cmd + 2; *p;) {
-		int len = 1, ret = 0;
+		s16 len = 1, ret = 0;
 		/* a one-digit setting in S-register reg, skip characters
 		   in */
-		auto setting = [this, &p, &len](int reg, int skip, int lo,
-						int hi) {
-			int k, r = at_set_sreg(reg, p[skip], lo, hi, &k);
+		auto setting = [this, &p, &len](s16 reg, s16 skip, s16 lo,
+						s16 hi) {
+			s16 k, r = at_set_sreg(reg, p[skip], lo, hi, &k);
 			len = skip + k;
 			return r;
 		};
@@ -607,7 +607,7 @@ int Modem::at_command(char *cmd)
 				case 'Q': {
 					/* other modems' error control, as
 					   \N0 or \N3 */
-					int d = is_digit(p[2]) ? p[2] - '0' : 0;
+					s16 d = is_digit(p[2]) ? p[2] - '0' : 0;
 					len = 2 + is_digit(p[2]);
 					if (d == 0 || d == 6)
 						set_ec_mode(0);
@@ -702,9 +702,9 @@ int Modem::at_command(char *cmd)
 /* a one-digit setting: S-register num to the digit c (none: 0) if it is
    within lo and hi, *len the digits read (0 or 1); 0, or -1 (the
    register unchanged) */
-int Modem::at_set_sreg(int num, char c, int lo, int hi, int *len)
+s16 Modem::at_set_sreg(s16 num, char c, s16 lo, s16 hi, s16 *len)
 {
-	int v = 0;
+	s16 v = 0;
 	*len = 0;
 	if (is_digit(c)) {
 		v = c - '0';
@@ -721,14 +721,14 @@ int Modem::at_set_sreg(int num, char c, int lo, int hi, int *len)
  */
 
 /* ATA: answers (the held call too); its result later, or ERROR */
-int Modem::at_A(char *p, int *len)
+s16 Modem::at_A(char *p, s16 *len)
 {
-	*len = static_cast<int>(strlen(p));
+	*len = static_cast<s16>(strlen(p));
 	return answer() ? -1 : 1;
 }
 
 /* ATB alone: V.22 at 1200 bit/s, no automode (+MS=22,0,1200,1200) */
-int Modem::at_B(char *, int *len)
+s16 Modem::at_B(char *, s16 *len)
 {
 	*len = 1;
 	sregs_[SREG_DP] = DP_V22;
@@ -740,13 +740,13 @@ int Modem::at_B(char *, int *len)
 /* ATD<dial string>: the rest of the line; after its first ';' the rest
    of the line runs once the number is dialled; ATDL the last number
    again; S=<n> (a stored number) ERROR; its result later, or ERROR */
-int Modem::at_D(char *p, int *len)
+s16 Modem::at_D(char *p, s16 *len)
 {
 	char *s = p + 1, *semi = strchr(s, ';');
 	char number[LINE_CHARS + 1];
 	size_t n;
 
-	*len = static_cast<int>(strlen(p));
+	*len = static_cast<s16>(strlen(p));
 	dial_rest_[0] = '\0';
 	for (char *q = s; *q && q != semi; q++)
 		if (upper(q[0]) == 'S' && q[1] == '=' && is_digit(q[2]))
@@ -791,7 +791,7 @@ int Modem::at_D(char *p, int *len)
    number's digits are dialled on it as DTMF (S11 ms each, S11 ms
    apart), as on a line off hook, and OK follows them.  number NULL: the
    last one (ATDL).  1 (the result to come), 0 (OK now), or -1 */
-int Modem::voice_dial(const char *number)
+s16 Modem::voice_dial(const char *number)
 {
 	if (voice_) {
 		std::vector<VoiceTone> tones =
@@ -832,7 +832,7 @@ int Modem::voice_dial(const char *number)
 std::vector<Modem::VoiceTone> Modem::dtmf_tones(const char *number)
 {
 	std::vector<VoiceTone> tones;
-	unsigned d = sregs_[SREG_DTMF_DURATION] / 10;
+	u16 d = sregs_[SREG_DTMF_DURATION] / 10;
 
 	for (const char *p = number; *p; p++) {
 		if (!dtmf_digit(*p))
@@ -847,9 +847,9 @@ std::vector<Modem::VoiceTone> Modem::dtmf_tones(const char *number)
 
 /* ATH, ATH0 on hook (a call hangs up), ATH1 off hook; ERROR when the
    hook does not change, or for another digit */
-int Modem::at_H(char *p, int *len)
+s16 Modem::at_H(char *p, s16 *len)
 {
-	int state = MODEM_HOOK_ON;
+	s16 state = MODEM_HOOK_ON;
 	*len = 1;
 	if (is_digit(p[1])) {
 		if (p[1] == '1')
@@ -871,12 +871,12 @@ int Modem::at_H(char *p, int *len)
 
 /* ATI<n>: what the modem is, its S-registers, its country, the last
    call's statistics */
-int Modem::at_I(char *p, int *len)
+s16 Modem::at_I(char *p, s16 *len)
 {
 	const char *e;
 	u32 n = number(p + 1, &e);
 
-	*len = static_cast<int>(e - p);
+	*len = static_cast<s16>(e - p);
 	switch (n) {
 	case 0:
 		puts(product);
@@ -898,7 +898,7 @@ int Modem::at_I(char *p, int *len)
 		break;
 	}
 	case 4:
-		for (int i = 0; i < 24; i++) {
+		for (s16 i = 0; i < 24; i++) {
 			puts("s" + dec(i, 2) + "=" + dec(sregs_[i], 3) + " ");
 			if (i % 8 == 7)
 				crlf();
@@ -926,14 +926,14 @@ int Modem::at_I(char *p, int *len)
 
 /* ATO: back online (or the held call's handshake); its result later, or
    ERROR */
-int Modem::at_O(char *p, int *len)
+s16 Modem::at_O(char *p, s16 *len)
 {
-	*len = static_cast<int>(strlen(p));
+	*len = static_cast<s16>(strlen(p));
 	return online() ? -1 : 1;
 }
 
 /* ATS<n>? reads S-register n, ATS<n>=<v> sets it (S103 as \N) */
-int Modem::at_S(char *p, int *len)
+s16 Modem::at_S(char *p, s16 *len)
 {
 	const char *e;
 	u32 n = number(p + 1, &e), v;
@@ -945,7 +945,7 @@ int Modem::at_S(char *p, int *len)
 			vcvm_refresh();
 		puts(dec(sregs_[n]));
 		crlf();
-		*len = static_cast<int>(e + 1 - p);
+		*len = static_cast<s16>(e + 1 - p);
 		return 0;
 	}
 	if (*e != '=')
@@ -954,35 +954,35 @@ int Modem::at_S(char *p, int *len)
 	/* S44 and S45 (V.cvm's) are read only */
 	if (n == SREG_VCVM_TONES || n == SREG_VCVM_RENEGS)
 		return -1;
-	set_sreg(static_cast<unsigned>(n), static_cast<int>(v));
+	set_sreg(static_cast<u32>(n), static_cast<s32>(v));
 	if (n == SREG_EC && v <= 5)
-		set_ec_mode(static_cast<int>(v));
-	*len = static_cast<int>(e - p);
+		set_ec_mode(static_cast<s16>(v));
+	*len = static_cast<s16>(e - p);
 	return 0;
 }
 
 /* ATZ: the modem as at the start (but the country), the rest of the
    line not read */
-int Modem::at_Z(char *p, int *len)
+s16 Modem::at_Z(char *p, s16 *len)
 {
-	*len = static_cast<int>(strlen(p));
+	*len = static_cast<s16>(strlen(p));
 	return reset();
 }
 
 /* AT&V, AT&V0: the active settings, in lines of PROFILE_COLUMNS at
    most */
-int Modem::at_ampV(char *p, int *len)
+s16 Modem::at_ampV(char *p, s16 *len)
 {
 	static const unsigned char regs[] = {
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24,
 		28, 29, 30, 31, 32, 39, 56, 60, 62, 70, 71, 92, 103, 104, 105,
 		106, 161,
 	};
-	int col = 0;
+	s16 col = 0;
 	/* an item of the current group, on a new line if it does not fit
 	   on this one */
 	auto put = [this, &col](const std::string &s) {
-		int n = static_cast<int>(s.size());
+		s16 n = static_cast<s16>(s.size());
 		if (col && col + 1 + n > PROFILE_COLUMNS) {
 			crlf();
 			col = 0;
@@ -1033,14 +1033,14 @@ int Modem::at_ampV(char *p, int *len)
 	put("+MS=" + dec(sregs_[SREG_DP]) + "," +
 	    dec(sregs_[SREG_AUTOMODE]) + "," + dec(min_rate_) + "," +
 	    dec(max_rate_));
-	put("+FCLASS=" + dec(static_cast<int>(mode_)));
+	put("+FCLASS=" + dec(static_cast<s16>(mode_)));
 	put("+GCI=" + hex(homolog_->id));
 	put("+PMH=" + dec(moh_off_));
 	put("+PMHT=" + dec(moh_timer_));
 	put("#CID=" + dec(cid_requested_));
-	for (int i = 0; i < KEPT_COUNT; i++) {
+	for (s16 i = 0; i < KEPT_COUNT; i++) {
 		std::string item = std::string(kept_params[i].name) + "=";
-		for (unsigned j = 0; j < kept_n_[i]; j++)
+		for (u16 j = 0; j < kept_n_[i]; j++)
 			item += (j ? "," : "") + dec(kept_[i][j]);
 		put(item);
 	}
@@ -1057,7 +1057,7 @@ int Modem::at_ampV(char *p, int *len)
 /* +MS?, +MS=?, +MS=[<mod>][,[<automode>][,[<min>][,[<max>]]]]: the
    modulation (a pump's number or a carrier's name), automode and the
    rates; an item left out stays as it is */
-int Modem::at_MS(char *p, int *len)
+s16 Modem::at_MS(char *p, s16 *len)
 {
 	const char *q = p + 3, *e;
 	u32 mod = sregs_[SREG_DP], automode = sregs_[SREG_AUTOMODE];
@@ -1069,7 +1069,7 @@ int Modem::at_MS(char *p, int *len)
 		puts(dec(sregs_[SREG_DP]) + "," + dec(sregs_[SREG_AUTOMODE]) +
 		     "," + dec(min_rate_) + "," + dec(max_rate_));
 		crlf();
-		*len = static_cast<int>(q + 1 - p);
+		*len = static_cast<s16>(q + 1 - p);
 		return 0;
 	}
 	if (*q++ != '=')
@@ -1079,12 +1079,12 @@ int Modem::at_MS(char *p, int *len)
 		for (const DpDriver *d = dp_drivers(); d->id; d++)
 			if (d->code && ms_choosable(d->id))
 				line += (line.size() > 1 ? "," : "") +
-					dec(static_cast<int>(d->id));
+					dec(static_cast<s16>(d->id));
 		const std::string rates = "(" + dec(MODEM_MIN_RATE) + "-" +
 			dec(MODEM_MAX_RATE) + ")";
 		puts(line + "),(0,1)," + rates + "," + rates);
 		crlf();
-		*len = static_cast<int>(q + 1 - p);
+		*len = static_cast<s16>(q + 1 - p);
 		return 0;
 	}
 	if (isalpha(static_cast<unsigned char>(*q))) {
@@ -1134,12 +1134,12 @@ int Modem::at_MS(char *p, int *len)
 	sregs_[SREG_AUTOMODE] = static_cast<unsigned char>(automode);
 	min_rate_ = min;
 	max_rate_ = max;
-	*len = static_cast<int>(q - p);
+	*len = static_cast<s16>(q - p);
 	return 0;
 }
 
 /* +GCI?, +GCI=?, +GCI=<hex>: the country by its T.35 code */
-int Modem::at_GCI(char *p, int *len)
+s16 Modem::at_GCI(char *p, s16 *len)
 {
 	const char *q = p + 4;
 
@@ -1167,14 +1167,14 @@ int Modem::at_GCI(char *p, int *len)
 		if (e == q || code > 0xffff ||
 		    homolog_init(static_cast<s32>(code), nullptr))
 			return -1;
-		*len = static_cast<int>(e - p);
+		*len = static_cast<s16>(e - p);
 	}
 	return 0;
 }
 
 /* +FCLASS=?, +FCLASS?, +FCLASS=<d>: data (0), class 1 fax (1), voice
    (8) */
-int Modem::at_FCLASS(char *p, int *len)
+s16 Modem::at_FCLASS(char *p, s16 *len)
 {
 	const char *q = p + 7;
 
@@ -1185,7 +1185,7 @@ int Modem::at_FCLASS(char *p, int *len)
 		return 0;
 	}
 	if (q[0] == '?') {
-		puts(dec(static_cast<int>(mode_)));
+		puts(dec(static_cast<s16>(mode_)));
 		crlf();
 		*len = 8;
 		return 0;
@@ -1200,7 +1200,7 @@ int Modem::at_FCLASS(char *p, int *len)
 /* +FMI, +FMM, +FMR (T.31 Annex A); the class 1 commands +FTS, +FRS
    (silence), +FTM, +FRM (data), +FTH, +FRH (HDLC frames), for the fax
    engine (T.31 8.3) */
-int Modem::at_fax(char *p, int *len)
+s16 Modem::at_fax(char *p, s16 *len)
 {
 	const char *q = p + 2, *e;
 	char what = static_cast<char>(upper(q[0])),
@@ -1229,7 +1229,7 @@ int Modem::at_fax(char *p, int *len)
 		if (*q == '?') {
 			puts("24,48,72,73,74,96,97,98,121,122,145,146");
 			crlf();
-			*len = static_cast<int>(q + 1 - p);
+			*len = static_cast<s16>(q + 1 - p);
 			return 0;
 		}
 		cmd = what == 'T' ? FAX_CMD_FTM : FAX_CMD_FRM;
@@ -1241,7 +1241,7 @@ int Modem::at_fax(char *p, int *len)
 		if (*q == '?') {
 			puts("3");
 			crlf();
-			*len = static_cast<int>(q + 1 - p);
+			*len = static_cast<s16>(q + 1 - p);
 			return 0;
 		}
 		if (!is_digit(*q))
@@ -1251,14 +1251,14 @@ int Modem::at_fax(char *p, int *len)
 		e = q + 1;
 		break;
 	}
-	*len = static_cast<int>(e - p);
-	return fax_command(cmd, static_cast<unsigned>(v));
+	*len = static_cast<s16>(e - p);
+	return fax_command(cmd, static_cast<u32>(v));
 }
 
 /* a class 1 command for the fax engine: once it has started, the DTE's
    characters are the engine's until it reports (1); ERROR without an
    engine or when it refuses */
-int Modem::fax_command(enum FAX_CMD cmd, unsigned val)
+s16 Modem::fax_command(enum FAX_CMD cmd, u32 val)
 {
 	int ret;
 	if (!fax_)
@@ -1274,7 +1274,7 @@ int Modem::fax_command(enum FAX_CMD cmd, unsigned val)
 /* V.92 modem-on-hold: +PMH (0 granted, 1 not), +PMHT (the time we
    grant, as V.250's code), +PMHR[=<s>] (we ask for s seconds, 10 if
    not said: online command state of a V.92 call only) */
-int Modem::at_PMH(char *p, int *len)
+s16 Modem::at_PMH(char *p, s16 *len)
 {
 	const char *q = p + 4, *e;
 	bool timer;
@@ -1293,8 +1293,8 @@ int Modem::at_PMH(char *p, int *len)
 				return -1;
 			q = e;
 		}
-		moh_req_ = static_cast<int>(secs);
-		*len = static_cast<int>(q - p);
+		moh_req_ = static_cast<s32>(secs);
+		*len = static_cast<s16>(q - p);
 		return 0;
 	}
 	timer = upper(*q) == 'T';
@@ -1314,20 +1314,20 @@ int Modem::at_PMH(char *p, int *len)
 		if (v > (timer ? 13u : 1u))
 			return -1;
 		if (timer)
-			moh_timer_ = static_cast<int>(v);
+			moh_timer_ = static_cast<s16>(v);
 		else
-			moh_off_ = static_cast<int>(v);
+			moh_off_ = static_cast<s16>(v);
 		q = e;
 	} else {
 		return -1;
 	}
-	*len = static_cast<int>(q - p);
+	*len = static_cast<s16>(q - p);
 	return 0;
 }
 
 /* #CID, +VCID (V.253 9.2.3): caller ID, 0 off, 1 formatted, 2 the
    message as it is */
-int Modem::at_CID(char *p, int *len)
+s16 Modem::at_CID(char *p, s16 *len)
 {
 	const char *q = p + (*p == '#' ? 4 : 5);
 
@@ -1345,14 +1345,14 @@ int Modem::at_CID(char *p, int *len)
 	} else {
 		return -1;
 	}
-	*len = static_cast<int>(q - p);
+	*len = static_cast<s16>(q - p);
 	return 0;
 }
 
 /* +V...: caller ID in any mode, the rest in voice mode only: the
    parameters (? =? =<values>), +VIP, +VLS, and what the voice engine
    does: +VTX, +VRX, +VTR, +VTS */
-int Modem::at_voice(char *p, int *len)
+s16 Modem::at_voice(char *p, s16 *len)
 {
 	const char *q = p + 4, *e;
 	char cmd[3];
@@ -1369,11 +1369,11 @@ int Modem::at_voice(char *p, int *len)
 		bool device = name == "LS";
 		bool events = name == "EM";
 		u32 v[2] = { 0, 0 };
-		int ret = 0;
+		s16 ret = 0;
 
 		if (name != cmd)
 			continue;
-		for (int i = 0; i < s.n; i++)
+		for (s16 i = 0; i < s.n; i++)
 			v[i] = s.field[i] ? voice_info_.*s.field[i] :
 				events ? voice_events_ :
 				device && voice_ ? voice_device_ : 0;
@@ -1393,7 +1393,7 @@ int Modem::at_voice(char *p, int *len)
 			q += 2;
 		} else if (q[0] == '=' && q[1] == '?') {
 			std::string line = "+V" + std::string(name) + "=";
-			for (int i = 0; i < s.n; i++)
+			for (s16 i = 0; i < s.n; i++)
 				line += (i ? "," : "") + dec(s.lo[i]) + "-" +
 					dec(s.hi[i]);
 			puts(line);
@@ -1401,14 +1401,14 @@ int Modem::at_voice(char *p, int *len)
 			q += 2;
 		} else if (q[0] == '?') {
 			std::string line = "+V" + std::string(name) + "=";
-			for (int i = 0; i < s.n; i++)
+			for (s16 i = 0; i < s.n; i++)
 				line += (i ? "," : "") + dec(v[i]);
 			puts(line);
 			crlf();
 			q++;
 		} else if (q[0] == '=') {
 			q++;
-			for (int i = 0; i < s.n; i++) {
+			for (s16 i = 0; i < s.n; i++) {
 				if (i && *q++ != ',')
 					return -1;
 				v[i] = number(q, &e);
@@ -1416,18 +1416,18 @@ int Modem::at_voice(char *p, int *len)
 				if (!in_bounds(v[i], s.lo[i], s.hi[i]))
 					return -1;
 			}
-			for (int i = 0; i < s.n; i++)
+			for (s16 i = 0; i < s.n; i++)
 				if (s.field[i])
 					voice_info_.*s.field[i] =
 						static_cast<unsigned>(v[i]);
 			if (events)
-				voice_events_ = static_cast<unsigned>(v[0]);
+				voice_events_ = static_cast<u16>(v[0]);
 		} else {
 			return -1;
 		}
-		*len = static_cast<int>(q - p);
+		*len = static_cast<s16>(q - p);
 		if (device)
-			ret = voice_set_device(static_cast<unsigned>(v[0]));
+			ret = voice_set_device(static_cast<u16>(v[0]));
 		return ret;
 	}
 	const std::string_view c = cmd;
@@ -1436,7 +1436,7 @@ int Modem::at_voice(char *p, int *len)
 		*len = 4;
 		return 0;
 	}
-	*len = static_cast<int>(strlen(p));
+	*len = static_cast<s16>(strlen(p));
 	if (c == "TX")
 		return voice_command(VOICE_CMD_STATE_TX);
 	if (c == "RX")
@@ -1468,14 +1468,14 @@ int Modem::at_voice(char *p, int *len)
 	   checked before any of it plays, a flash on a line that can have
 	   none an ERROR */
 	std::vector<VoiceTone> tones;
-	const unsigned dflt = voice_info_.tone_default ?
+	const u16 dflt = voice_info_.tone_default ?
 		voice_info_.tone_default : 100;
 	for (;;) {
 		VoiceTone t = { 0, 0, 0, dflt, false };
 		if (*q == '[') {
 			u32 v[3] = { 0, 0, dflt };
 			q++;
-			for (int i = 0; i < 3 && *q != ']'; i++) {
+			for (s16 i = 0; i < 3 && *q != ']'; i++) {
 				if (i && *q++ != ',')
 					return -1;
 				if (is_digit(*q)) {
@@ -1486,9 +1486,9 @@ int Modem::at_voice(char *p, int *len)
 			if (*q++ != ']' || v[0] > 4000 || v[1] > 4000 ||
 			    v[2] > 6000)
 				return -1;
-			t.f1 = static_cast<unsigned>(v[0]);
-			t.f2 = static_cast<unsigned>(v[1]);
-			t.d = static_cast<unsigned>(v[2]);
+			t.f1 = static_cast<u16>(v[0]);
+			t.f2 = static_cast<u16>(v[1]);
+			t.d = static_cast<u16>(v[2]);
 		} else if (*q == '{') {
 			q++;
 			if (dtmf_digit(*q)) {
@@ -1504,7 +1504,7 @@ int Modem::at_voice(char *p, int *len)
 					q = e;
 					if (d > 6000)
 						return -1;
-					t.d = static_cast<unsigned>(d);
+					t.d = static_cast<u16>(d);
 				}
 			}
 			if (*q++ != '}')
@@ -1543,21 +1543,21 @@ int Modem::at_voice(char *p, int *len)
 /* a kept parameter: <name>? its values, <name>=? its ranges,
    <name>=<values> new ones (each in its range group, those left out as
    they are; nothing changes on an error) */
-int Modem::at_kept(const char *p, int *len)
+s16 Modem::at_kept(const char *p, s16 *len)
 {
-	int i = kept_command(p);
+	s16 i = kept_command(p);
 	const Kept &k = kept_params[i];
 	const std::string_view name = k.name;
 	const char *q = p + name.size(), *e;
 	u32 v[KEPT_VALUES];
-	unsigned n = kept_n_[i];
+	u16 n = kept_n_[i];
 
 	if (*q == '?') {
 		/* (-SEC, Rockwell's, without its name) */
 		std::string line;
 		if (name != "-SEC")
 			line = std::string(name) + ": ";
-		for (unsigned j = 0; j < n; j++)
+		for (u16 j = 0; j < n; j++)
 			line += (j ? "," : "") + dec(kept_[i][j]);
 		puts(line);
 		crlf();
@@ -1574,20 +1574,20 @@ int Modem::at_kept(const char *p, int *len)
 			     dec(vcvm_.renegs) + "," + dec(vcvm_.erasures));
 			crlf();
 		}
-		*len = static_cast<int>(q + 1 - p);
+		*len = static_cast<s16>(q + 1 - p);
 		return 0;
 	}
 	q++;
 	if (*q == '?') {
 		puts(std::string(name) + ": " + k.ranges);
 		crlf();
-		*len = static_cast<int>(q + 1 - p);
+		*len = static_cast<s16>(q + 1 - p);
 		return 0;
 	}
 	if (*q && *q != ',' && *q != ';' && !is_digit(*q))
 		return -1;
 	dsp::copy_array(v, kept_[i]);
-	for (unsigned pos = 0;; pos++) {
+	for (u16 pos = 0;; pos++) {
 		if (is_digit(*q)) {
 			const char *g = pos < KEPT_VALUES ?
 				range_group(k.ranges, pos) : nullptr;
@@ -1607,14 +1607,14 @@ int Modem::at_kept(const char *p, int *len)
 	kept_n_[i] = n;
 	if (name == "+ES")
 		ec_mode_from_es();
-	*len = static_cast<int>(q - p);
+	*len = static_cast<s16>(q - p);
 	return 0;
 }
 
 /* every kept parameter's values as at the start */
 void Modem::kept_init()
 {
-	for (int i = 0; i < KEPT_COUNT; i++) {
+	for (s16 i = 0; i < KEPT_COUNT; i++) {
 		dsp::copy_array(kept_[i], kept_params[i].values);
 		kept_n_[i] = kept_params[i].n;
 	}
@@ -1624,14 +1624,14 @@ void Modem::kept_init()
    it); NULL for one there is not */
 const u32 *Modem::kept(const char *name) const
 {
-	int i = kept_index(name);
+	s16 i = kept_index(name);
 	return i < 0 ? nullptr : kept_[i];
 }
 
 /* \N<n>: S103, and +ES as V.250 has the same error control */
-void Modem::set_ec_mode(int n)
+void Modem::set_ec_mode(s16 n)
 {
-	int i = kept_index("+ES");
+	s16 i = kept_index("+ES");
 	sregs_[SREG_EC] = static_cast<unsigned char>(n);
 	std::copy(std::begin(ec_modes[n]), std::end(ec_modes[n]), kept_[i]);
 	kept_n_[i] = 3;
@@ -1641,7 +1641,7 @@ void Modem::set_ec_mode(int n)
 void Modem::ec_mode_from_es()
 {
 	const u32 *es = kept_[kept_index("+ES")];
-	for (int n = 0; n < 6; n++)
+	for (s16 n = 0; n < 6; n++)
 		if (!memcmp(es, ec_modes[n], sizeof(ec_modes[n]))) {
 			sregs_[SREG_EC] = static_cast<unsigned char>(n);
 			return;

@@ -22,9 +22,9 @@
 using namespace dsp;
 
 /* slmodemd's own pumps without a modulation (dp_dummy.cpp, dp_sinus.cpp) */
-extern int  dp_dummy_init(void);
+extern s16  dp_dummy_init(void);
 extern void dp_dummy_exit(void);
-extern int  dp_sinus_init(void);
+extern s16  dp_sinus_init(void);
 extern void dp_sinus_exit(void);
 
 
@@ -72,8 +72,8 @@ void prop_dp_exit(void)
 #define DCR_TRACK    0x4
 
 struct DcRemover {
-	unsigned flags;
-	int state;
+	u16 flags;
+	s16 state;
 	s16 dc;
 	s16 threshold;
 	s32 sum;
@@ -81,7 +81,7 @@ struct DcRemover {
 	s32 skip_len, init_len, update_len;
 
 	void reset();
-	int process(void *buf, int len);
+	s16 process(void *buf, s32 len);
 };
 
 /* a DC remover with the original's settings (the lengths in samples at
@@ -124,10 +124,11 @@ void dcr_reset(void *obj)
 /* len s16 samples in place: steps the estimator (skip, initial average,
    then, while tracking, updates that ignore all zero buffers) and
    subtracts the estimate; returns 1 when |dc| >= threshold, else 0 */
-int DcRemover::process(void *buf, int len)
+s16 DcRemover::process(void *buf, s32 len)
 {
 	s16 *s = static_cast<s16*>(buf);
-	int ret = 0, i;
+	s16 ret = 0;
+	s32 i;
 
 	if (!(flags & DCR_ENABLE))
 		return 0;
@@ -245,23 +246,23 @@ void dp_runtime_delete(void *runtime)
 
 struct CallerId {
 	struct modem *modem;
-	unsigned format;
-	int packet;
+	u16 format;
+	s16 packet;
 	FskDemod fsk;
 	/* UART */
-	int in_char, nbits;
-	unsigned shift;
-	int marks;
+	s16 in_char, nbits;
+	u16 shift;
+	s32 marks;
 	/* message */
 	u8 msg[CID_MAX_MSG];
-	int len;
+	s16 len;
 
 	void send(const char *s);
-	void field(const char *tag, const u8 *p, int n);
+	void field(const char *tag, const u8 *p, s16 n);
 	void report();
 	void report_fields();
-	int byte(u8 b);
-	int process(void *in, int count);
+	s16 byte(u8 b);
+	s16 process(void *in, s32 count);
 };
 
 /* a caller ID receiver at rate Hz, cid_val the report format (1:
@@ -294,11 +295,11 @@ void CallerId::send(const char *s)
 
 /* "tag = value\r\n" to the DTE, value the n bytes at p, unprintable
    ones as '?', cut to fit 128 bytes */
-void CallerId::field(const char *tag, const u8 *p, int n)
+void CallerId::field(const char *tag, const u8 *p, s16 n)
 {
 	char buf[128];
-	int k = snprintf(buf, sizeof(buf), "%s = ", tag);
-	while (n-- > 0 && k < static_cast<int>(sizeof(buf)) - 3)
+	s16 k = snprintf(buf, sizeof(buf), "%s = ", tag);
+	while (n-- > 0 && k < static_cast<s16>(sizeof(buf)) - 3)
 		buf[k++] = (*p >= 0x20 && *p < 0x7f) ? *p : '?', p++;
 	buf[k++] = '\r';
 	buf[k++] = '\n';
@@ -325,11 +326,11 @@ void CallerId::report()
 void CallerId::report_fields()
 {
 	const u8 *p = msg + 2;
-	int n = msg[1];
+	s16 n = msg[1];
 	char buf[8];
 
 	if (format != 1) {
-		int i;
+		s16 i;
 		send("MESG = ");
 		for (i = 0; i < len; i++) {
 			sprintf(buf, "%02X", msg[i]);
@@ -347,7 +348,7 @@ void CallerId::report_fields()
 		return;
 	}
 	while (n >= 2) {                /* MDMF parameters */
-		int t = p[0], l = p[1];
+		s16 t = p[0], l = p[1];
 		if (l + 2 > n)
 			break;
 		switch (t) {
@@ -381,9 +382,9 @@ void CallerId::report_fields()
 }
 
 /* returns 0 to continue, 1 when a message was reported, -1 on error */
-int CallerId::byte(u8 b)
+s16 CallerId::byte(u8 b)
 {
-	int i;
+	s16 i;
 	u8 sum = 0;
 
 	if (len == 0 && b != 0x04 && b != 0x80)
@@ -405,10 +406,11 @@ int CallerId::byte(u8 b)
    receiver (start bit only after 10 marks before the first byte, bytes
    with framing errors dropped): 1 when a message was reported, -1 on a
    checksum error or an overflow of msg, else 0 */
-int CallerId::process(void *in, int count)
+s16 CallerId::process(void *in, s32 count)
 {
 	s16 *s = static_cast<s16*>(in);
-	int i, bit, r;
+	s32 i;
+	s16 bit, r;
 
 	for (i = 0; i < count; i++) {
 		bit = fsk.run(s[i]);
@@ -466,40 +468,40 @@ int CID_process(void *obj, void *in, int count)
 struct Voice {
 	struct modem *modem;
 	s32 srate;
-	unsigned state;
-	int pending;            /* status to return from VOICE_process */
+	u16 state;
+	s16 pending;            /* status to return from VOICE_process */
 	/* resampling between srate and 8000 Hz */
 	double rx_pos, tx_pos;
 	float tx_prev, tx_cur;
-	int dle;
-	int tx_end;
+	s16 dle;
+	s16 tx_end;
 	/* tones */
 	s32 tone_left;
 	Osc t1, t2;
-	int tone1, tone2;      /* each sounds (its frequency is not 0) */
+	s16 tone1, tone2;      /* each sounds (its frequency is not 0) */
 	DtmfGen dtmf;
-	int tone_dtmf;
+	s16 tone_dtmf;
 	/* DTMF on the line: the detector, the samples since the digit on
 	   was last reported, whether it is held off (our own tone plays) */
 	DtmfDetect rx_dtmf;
 	s32 dtmf_since;
-	int dtmf_held;
+	s16 dtmf_held;
 	/* the call progress tones on the line, the rings and busy
 	   cadences reported */
 	CallToneDetect rx_cpt;
-	unsigned rings_told, busy_told, answer_told[2];
+	u16 rings_told, busy_told, answer_told[2];
 	/* the calling tones (a fax machine's CNG, V.25's CT), each
 	   reported 4 s apart at least (V.253 7.3, events 6 and 7): the
 	   bursts reported, the samples since the last report */
 	CngDetect rx_ct[2];
-	unsigned ct_told[2];
+	u16 ct_told[2];
 	s32 ct_since[2];
 
 	struct voice_info *info();
-	int get_tx_sample(float *x);
-	void tx_done(char *rxbuf, int *nrx);
-	int command(enum VOICE_CMD cmd);
-	int process(void *in, void *out, int count);
+	s16 get_tx_sample(float *x);
+	void tx_done(char *rxbuf, s16 *nrx);
+	s16 command(enum VOICE_CMD cmd);
+	s16 process(void *in, void *out, s32 count);
 };
 
 /* a voice object at srate Hz in command state, its OK (the line is
@@ -516,7 +518,7 @@ void *VOICE_create(struct modem *m, u32 srate)
 	v->pending = VOICE_STATUS_OK;
 	v->rx_dtmf.init(srate);
 	v->rx_cpt.init(srate);
-	for (int k = 0; k < 2; k++) {
+	for (s16 k = 0; k < 2; k++) {
 		v->rx_ct[k].init(srate, k ? 1300 : 1100);
 		v->ct_since[k] = 4L * srate;
 	}
@@ -542,7 +544,7 @@ struct voice_info *Voice::info()
    next process()), a beep or a DTMF tone of tone_duration * 10 ms (OK
    when it is over), abort or back to command state (OK); 0, or -1 for an
    unknown command or a tone without voice settings */
-int Voice::command(enum VOICE_CMD cmd)
+s16 Voice::command(enum VOICE_CMD cmd)
 {
 	struct voice_info *vi = info();
 
@@ -598,7 +600,7 @@ int VOICE_command(void *obj, enum VOICE_CMD cmd)
    <DLE><CAN> end the transmission, in duplex state <DLE><^> does and
    the others are ignored (V.253 10.1.4.1): tx_end), as a 16 bit level in
    *x; returns 1 for a sample, 0 when there is none (yet or any more) */
-int Voice::get_tx_sample(float *x)
+s16 Voice::get_tx_sample(float *x)
 {
 	char ch;
 	while (!tx_end && modem_recv_from_tty(modem, &ch, 1) == 1) {
@@ -606,7 +608,7 @@ int Voice::get_tx_sample(float *x)
 		if (dle) {
 			dle = 0;
 			if (c == DLE) {
-				*x = (static_cast<int>(c) - 128) * 256.0f;
+				*x = (static_cast<s16>(c) - 128) * 256.0f;
 				return 1;
 			}
 			if (state == VOICE_STATE_DUPLEX ? c == '^' :
@@ -620,7 +622,7 @@ int Voice::get_tx_sample(float *x)
 			dle = 1;
 			continue;
 		}
-		*x = (static_cast<int>(c) - 128) * 256.0f;
+		*x = (static_cast<s16>(c) - 128) * 256.0f;
 		return 1;
 	}
 	return 0;
@@ -629,7 +631,7 @@ int Voice::get_tx_sample(float *x)
 /* the DTE's stream over: transmit state back to command state; duplex
    state too, its samples to the DTE ended with <DLE><ETX> (after those
    in rxbuf so far, *nrx of them); OK due */
-void Voice::tx_done(char *rxbuf, int *nrx)
+void Voice::tx_done(char *rxbuf, s16 *nrx)
 {
 	DSP_DBG("voice: the DTE's stream ends\n");
 	if (state == VOICE_STATE_DUPLEX && *nrx <= 512 - 2) {
@@ -654,15 +656,16 @@ void Voice::tx_done(char *rxbuf, int *nrx)
    plays, and calling tones: a fax machine's CNG (<DLE>c) and V.25's
    1300 Hz (<DLE>e), each burst once it ends, 4 s apart at least.
    Returns the VOICE_STATUS_* due, or 0. */
-int Voice::process(void *in, void *out, int count)
+s16 Voice::process(void *in, void *out, s32 count)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
 	double step = 8000.0 / srate;
 	char rxbuf[512];        /* tx_done() knows its size */
-	int nrx = 0, i, status;
+	s16 nrx = 0, status;
+	s32 i;
 	const long repeat = static_cast<long>(srate) * 70 / 1000;
 	auto report = [&](char c) {
-		if (nrx < static_cast<int>(sizeof(rxbuf)) - 2) {
+		if (nrx < static_cast<s16>(sizeof(rxbuf)) - 2) {
 			rxbuf[nrx++] = DLE;
 			rxbuf[nrx++] = c;
 		}
@@ -717,14 +720,14 @@ int Voice::process(void *in, void *out, int count)
 			DSP_DBG("voice: busy tone\n");
 			report('b');
 		}
-		for (int k = 0; k < 2; k++) {
+		for (s16 k = 0; k < 2; k++) {
 			if (rx_cpt.answer[k] == answer_told[k])
 				continue;
 			answer_told[k] = rx_cpt.answer[k];
 			DSP_DBG("voice: answer tone %s\n", k ? "2225" : "2100");
 			report(k ? 'f' : 'a');
 		}
-		for (int k = 0; k < 2; k++) {
+		for (s16 k = 0; k < 2; k++) {
 			rx_ct[k].sample(tone_left > 0 ? 0 : src[i]);
 			ct_since[k]++;
 			if (rx_ct[k].bursts == ct_told[k])
@@ -768,10 +771,10 @@ int Voice::process(void *in, void *out, int count)
 		if ((state & VOICE_STATE_RX) && pending != VOICE_STATUS_CONNECT) {
 			rx_pos += step;
 			if (rx_pos >= 1) {
-				int c = rx_dtmf.digit ? 128 :
+				s16 c = rx_dtmf.digit ? 128 :
 					(src[i] >> 8) + 128;
 				rx_pos -= 1;
-				if (nrx < static_cast<int>(sizeof(rxbuf)) - 2) {
+				if (nrx < static_cast<s16>(sizeof(rxbuf)) - 2) {
 					rxbuf[nrx++] = c;
 					if (c == DLE)
 						rxbuf[nrx++] = DLE;
@@ -822,7 +825,7 @@ int VOICE_process(void *obj, void *in, void *out, int count)
 /* a forced V.21 caller's first block: after a 2100 Hz answer tone, once
    a call, to the V.8 pump (DSP_V8_LOWSPEED=0: not), which offers V.21
    alone if the tone is ANSam and else hands back */
-int dsp::dp_v8_first(struct modem *m, enum DP_ID id)
+s16 dsp::dp_v8_first(struct modem *m, enum DP_ID id)
 {
 	struct dp_runtime *rt = reinterpret_cast<struct dp_runtime *>(
 		modem_get_param(m, MDMPRM_DPRUNTIME));

@@ -78,7 +78,7 @@ static_assert(XID_MAX <= 4 + LAPM_MAX_INFO, "an XID fits a frame slot");
  */
 
 /* b - a, modulo 128 */
-static int seq_diff(u8 b, u8 a)
+static s16 seq_diff(u8 b, u8 a)
 {
 	return (b - a) & SEQ_MASK;
 }
@@ -93,7 +93,7 @@ static s32 t401_bits(const Link *link)
 /* P0 (V.42bis Annex A) counts its directions from the negotiation's
    initiator, Config::comp from us (bit 0: we decode): the two bits
    exchanged */
-static int swap_dirs(int dirs)
+static s16 swap_dirs(s16 dirs)
 {
 	return (dirs & 1) << 1 | (dirs >> 1 & 1);
 }
@@ -110,7 +110,7 @@ static u32 settle(u32 ours, u32 remote, u32 dflt)
 
 /* a parameter: PI, PL, and v in PL octets, the most significant first;
    where the next one goes */
-static u8 *put_param(u8 *p, u8 pi, u32 v, int pl)
+static u8 *put_param(u8 *p, u8 pi, u32 v, s16 pl)
 {
 	*p++ = pi;
 	*p++ = static_cast<u8>(pl);
@@ -133,14 +133,14 @@ static u8 *put_id(u8 *p, u8 pi, const char *id)
    whose parameters end at end */
 static void put_group(u8 *g, u8 gi, const u8 *end)
 {
-	const int gl = static_cast<int>(end - g - 3);
+	const s16 gl = static_cast<s16>(end - g - 3);
 	g[0] = gi;
 	g[1] = static_cast<u8>(gl >> 8);
 	g[2] = static_cast<u8>(gl);
 }
 
 /* a parameter value of n octets, the most significant first */
-static u32 get_be(const u8 *p, int n)
+static u32 get_be(const u8 *p, s16 n)
 {
 	u32 v = 0;
 	while (n--)
@@ -149,7 +149,7 @@ static u32 get_be(const u8 *p, int n)
 }
 
 /* a parameter value of n octets, the least significant first */
-static u32 get_le(const u8 *p, int n)
+static u32 get_le(const u8 *p, s16 n)
 {
 	u32 v = 0;
 	while (n--)
@@ -166,10 +166,10 @@ static s32 bounded(u32 v)
 /* the parameters (PI, PL, PV) in the n octets at p, each given to
    fn(pi, pv, pl); one that runs past the end ends them */
 template <class Fn>
-static void for_each_param(const u8 *p, int n, Fn fn)
+static void for_each_param(const u8 *p, s16 n, Fn fn)
 {
-	for (int i = 0; i + 2 <= n;) {
-		const int pl = p[i + 1];
+	for (s16 i = 0; i + 2 <= n;) {
+		const s16 pl = p[i + 1];
 		if (i + 2 + pl > n)
 			break;
 		fn(p[i], p + i + 2, pl);
@@ -187,8 +187,8 @@ static void for_each_param(const u8 *p, int n, Fn fn)
    condition, never up; the addresses of our role; our windows and
    information fields (bounded by what the frame slots hold); both
    rings empty, sequence numbers 0 */
-void Lapm::init(Link *link, int tx_win, int rx_win, int tx_info,
-		int rx_info)
+void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
+		s16 rx_info)
 {
 	link_ = link;
 	state_ = IDLE;
@@ -197,21 +197,21 @@ void Lapm::init(Link *link, int tx_win, int rx_win, int tx_info,
 	rx_count_ = rx_head_ = 0;
 	cmd_addr_ = link->caller() ? ADDR_ORIG : ADDR_ANS;
 	rsp_addr_ = link->caller() ? ADDR_ANS : ADDR_ORIG;
-	tx_win_ = static_cast<unsigned>(
-		std::clamp(tx_win, 0, static_cast<int>(LAPM_MAX_WIN)));
-	rx_win_ = static_cast<unsigned>(
-		std::clamp(rx_win, 0, static_cast<int>(LAPM_MAX_WIN)));
-	tx_info_ = static_cast<unsigned>(
-		std::clamp(tx_info, 0, static_cast<int>(LAPM_MAX_INFO)));
-	rx_info_ = static_cast<unsigned>(
-		std::clamp(rx_info, 0, static_cast<int>(LAPM_MAX_INFO)));
-	for (int i = 0; i < INFO_FRAMES; i++) {
+	tx_win_ = static_cast<u16>(
+		std::clamp<s16>(tx_win, 0, LAPM_MAX_WIN));
+	rx_win_ = static_cast<u16>(
+		std::clamp<s16>(rx_win, 0, LAPM_MAX_WIN));
+	tx_info_ = static_cast<u16>(
+		std::clamp<s16>(tx_info, 0, LAPM_MAX_INFO));
+	rx_info_ = static_cast<u16>(
+		std::clamp<s16>(rx_info, 0, LAPM_MAX_INFO));
+	for (s16 i = 0; i < INFO_FRAMES; i++) {
 		Frame &f = info_buf_[i].frame;
 		f = Frame();
 		f.buf = info_buf_[i].buf;
 		f.next = &info_buf_[(i + 1) % INFO_FRAMES].frame;
 	}
-	for (int i = 0; i < CTRL_FRAMES; i++) {
+	for (s16 i = 0; i < CTRL_FRAMES; i++) {
 		Frame &f = ctrl_buf_[i].frame;
 		f = Frame();
 		f.buf = ctrl_buf_[i].buf;
@@ -272,7 +272,7 @@ void Lapm::push_rest()
 {
 	if (state_ != DATA || !rx_count_)
 		return;
-	int taken = link_->write_chars(rx_buf_ + rx_head_, rx_count_);
+	s16 taken = link_->write_chars(rx_buf_ + rx_head_, rx_count_);
 	if (taken > 0) {
 		rx_head_ += taken;
 		rx_count_ -= taken;
@@ -415,7 +415,7 @@ Frame *Lapm::ctrl_frame()
 
 /* a U frame queued: address addr, control octet ctrl (P/F included);
    -1 if the queue is full */
-int Lapm::tx_unnum(u8 addr, u8 ctrl)
+s16 Lapm::tx_unnum(u8 addr, u8 ctrl)
 {
 	Frame *f = ctrl_frame();
 	if (!f)
@@ -428,7 +428,7 @@ int Lapm::tx_unnum(u8 addr, u8 ctrl)
 
 /* an S frame queued: address addr, function ctrl, N(R) = V(R) now and
    P/F pf; -1 if the queue is full */
-int Lapm::tx_super(u8 addr, u8 ctrl, int pf)
+s16 Lapm::tx_super(u8 addr, u8 ctrl, s16 pf)
 {
 	Frame *f = ctrl_frame();
 	if (!f)
@@ -445,7 +445,7 @@ int Lapm::tx_super(u8 addr, u8 ctrl, int pf)
    a command offers the compression asked for (V.42bis, and V.44 in the
    user data subfield), a response says what was agreed (one algorithm,
    7.3/V.44); -1 if the queue is full */
-int Lapm::tx_xid(u8 addr)
+s16 Lapm::tx_xid(u8 addr)
 {
 	Frame *f = ctrl_frame();
 	if (!f)
@@ -453,12 +453,12 @@ int Lapm::tx_xid(u8 addr)
 	const Config &c = link_->cfg();
 	const bool response = addr == rsp_addr_;
 	/* Table 11a's directions are the initiator's (its Note 2) */
-	const unsigned info_i = response ? rx_info_ : tx_info_;
-	const unsigned info_r = response ? tx_info_ : rx_info_;
-	const unsigned win_i = response ? rx_win_ : tx_win_;
-	const unsigned win_r = response ? tx_win_ : rx_win_;
+	const u16 info_i = response ? rx_info_ : tx_info_;
+	const u16 info_r = response ? tx_info_ : rx_info_;
+	const u16 win_i = response ? rx_win_ : tx_win_;
+	const u16 win_r = response ? tx_win_ : rx_win_;
 	/* P0 counts from the initiator, for V.42bis and V.44 alike */
-	const int p0 = response ? c.comp & 3 : swap_dirs(c.comp);
+	const s16 p0 = response ? c.comp & 3 : swap_dirs(c.comp);
 	const bool v44 = c.comp && c.v44;
 	const bool v42bis = c.comp && !(response && c.v44);
 	u8 *p = f->buf, *g;
@@ -493,7 +493,7 @@ int Lapm::tx_xid(u8 addr)
 		p = put_param(p, PI_V44_P3T, c.v44_history, 2);
 		p = put_param(p, PI_V44_P3R, c.v44_history, 2);
 	}
-	f->size = static_cast<int>(p - f->buf);
+	f->size = static_cast<s16>(p - f->buf);
 	return 0;
 }
 
@@ -501,14 +501,14 @@ int Lapm::tx_xid(u8 addr)
    fewer than k frames are outstanding, and one waits to be sent (again,
    after a go back) or is filled now with up to N401 of the DTE's
    characters; 1 if so.  A read error is reported to the Link */
-int Lapm::tx_info()
+s16 Lapm::tx_info()
 {
-	if (peer_busy_ || static_cast<unsigned>(seq_diff(vs_, va_)) >= tx_win_)
+	if (peer_busy_ || static_cast<u16>(seq_diff(vs_, va_)) >= tx_win_)
 		return 0;
 	if (tx_info_frame_ != info_list_)
 		return 1;
 	Frame *f = info_list_;
-	int n = link_->read_chars(f->buf + 3, static_cast<int>(tx_info_));
+	s16 n = link_->read_chars(f->buf + 3, static_cast<s16>(tx_info_));
 	if (n < 0) {
 		link_->logf("err: ec: DTE read error (%d).", n);
 		link_->status(Status::Error);
@@ -626,16 +626,16 @@ bool Lapm::valid_data_state()
    N(R) - 1 acknowledged and freed (not past V(S)); out of timer
    recovery T401 stops when some were, and starts again while others
    are outstanding; how many */
-int Lapm::ack_info(u8 nr)
+s16 Lapm::ack_info(u8 nr)
 {
-	const int sent = seq_diff(vs_, va_);
-	int n = seq_diff(nr, va_);
+	const s16 sent = seq_diff(vs_, va_);
+	s16 n = seq_diff(nr, va_);
 	if (n > sent) {
 		link_->logf("err: ec: N(R) %d past V(S) %d (V(A) %d).", nr, vs_,
 			    va_);
 		n = sent;
 	}
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		sent_info_ = sent_info_->next;
 	va_ = static_cast<u8>((va_ + n) & SEQ_MASK);
 	if (n && !rtx_count_) {
@@ -649,11 +649,11 @@ int Lapm::ack_info(u8 nr)
 /* go back N (8.4.4, 8.4.8): in the data phase the frames outstanding
    wait to be sent again from the oldest (with new numbers), before any
    new one, and are counted as sent again; how many */
-int Lapm::reject_info()
+s16 Lapm::reject_info()
 {
 	if (state_ != DATA)
 		return 0;
-	const int n = seq_diff(vs_, va_);
+	const s16 n = seq_diff(vs_, va_);
 	vs_ = va_;
 	tx_info_frame_ = sent_info_;
 	link_->stats().tx_again += n;
@@ -666,10 +666,10 @@ int Lapm::reject_info()
    it does not take kept (our receiver busy until push_rest() delivers
    it), V(R) on, and an answer at its own address unless an I frame
    about to go acknowledges it; 1 if it was taken */
-int Lapm::rx_info(Frame *f)
+s16 Lapm::rx_info(Frame *f)
 {
 	const u8 ns = f->buf[1] >> 1, nr = f->buf[2] >> 1;
-	const int pf = f->buf[2] & 1;
+	const s16 pf = f->buf[2] & 1;
 
 	ack_info(nr);
 	if (busy_) {
@@ -685,8 +685,8 @@ int Lapm::rx_info(Frame *f)
 		return 0;
 	}
 	reject_ = false;
-	const int n = f->count - 3;
-	int taken = link_->write_chars(f->buf + 3, n);
+	const s16 n = f->count - 3;
+	s16 taken = link_->write_chars(f->buf + 3, n);
 	if (taken < 0)
 		taken = 0;
 	if (taken < n) {
@@ -713,7 +713,7 @@ int Lapm::rx_info(Frame *f)
 void Lapm::rx_super_cmd(Frame *f)
 {
 	const u8 nr = f->buf[2] >> 1;
-	const int pf = f->buf[2] & 1;
+	const s16 pf = f->buf[2] & 1;
 
 	switch (f->buf[1]) {
 	case S_RR:
@@ -913,7 +913,7 @@ void Lapm::rx_unnum_rsp(Frame *f)
 void Lapm::rx_xid(Frame *f, bool response)
 {
 	const u8 *x = f->buf + 2;
-	const int len = f->count - 2;
+	const s16 len = f->count - 2;
 
 	if (len < 1 || x[0] != FI_GENERAL) {
 		link_->logf("ec: XID %s without parameters.",
@@ -921,19 +921,20 @@ void Lapm::rx_xid(Frame *f, bool response)
 		return;
 	}
 	Config r;
-	int p0 = 0, v44_p0 = 0;
+	s16 p0 = 0;
+	s32 v44_p0 = 0;
 	bool v44_set = false;
 	r.dict_size = V42BIS_DFLT_N2;
 	r.max_string = V42BIS_DFLT_N7;
 	r.v44_codewords = r.v44_max_string = r.v44_history = NO_LIMIT;
 	/* Table 11a's directions are the initiator's (its Note 2): ours
 	   when this answers our command */
-	unsigned &info_i = response ? tx_info_ : rx_info_;
-	unsigned &info_r = response ? rx_info_ : tx_info_;
-	unsigned &win_i = response ? tx_win_ : rx_win_;
-	unsigned &win_r = response ? rx_win_ : tx_win_;
+	u16 &info_i = response ? tx_info_ : rx_info_;
+	u16 &info_r = response ? rx_info_ : tx_info_;
+	u16 &win_i = response ? tx_win_ : rx_win_;
+	u16 &win_r = response ? rx_win_ : tx_win_;
 
-	auto param = [&](u8 pi, const u8 *pv, int pl) {
+	auto param = [&](u8 pi, const u8 *pv, s16 pl) {
 		const u32 v = get_be(pv, pl);
 		switch (pi) {
 		case PI_N401_TX:
@@ -950,10 +951,10 @@ void Lapm::rx_xid(Frame *f, bool response)
 			break;
 		}
 	};
-	auto priv = [&](u8 pi, const u8 *pv, int pl) {
+	auto priv = [&](u8 pi, const u8 *pv, s16 pl) {
 		switch (pi) {
 		case PI_V42BIS_P0:
-			p0 = static_cast<int>(get_le(pv, pl) & 3);
+			p0 = static_cast<s16>(get_le(pv, pl) & 3);
 			break;
 		case PI_V42BIS_N2:
 			r.dict_size = bounded(get_be(pv, pl));
@@ -963,7 +964,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 			break;
 		}
 	};
-	auto user = [&](u8 pi, const u8 *pv, int pl) {
+	auto user = [&](u8 pi, const u8 *pv, s16 pl) {
 		const s32 v = bounded(get_be(pv, pl));
 		switch (pi) {
 		case PI_V44_SET:
@@ -987,7 +988,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 		}
 	};
 
-	for (int i = 1; i < len;) {
+	for (s16 i = 1; i < len;) {
 		const u8 gi = x[i];
 		if (gi == GI_USER) {
 			for_each_param(x + i + 1, len - i - 1, user);
@@ -1012,10 +1013,10 @@ void Lapm::rx_xid(Frame *f, bool response)
 	if (r.v44)
 		p0 = v44_p0 & 3;
 	r.comp = response ? swap_dirs(p0) : p0;
-	r.tx_win = static_cast<int>(tx_win_);
-	r.rx_win = static_cast<int>(rx_win_);
-	r.tx_info = static_cast<int>(tx_info_);
-	r.rx_info = static_cast<int>(rx_info_);
+	r.tx_win = static_cast<s16>(tx_win_);
+	r.rx_win = static_cast<s16>(rx_win_);
+	r.tx_info = static_cast<s16>(tx_info_);
+	r.rx_info = static_cast<s16>(rx_info_);
 	r.ec = r.detect = true;
 	link_->logf("ec: XID %s: compression %d%s, k %u/%u, N401 %u/%u.",
 		    response ? "response" : "command", r.comp,
@@ -1029,9 +1030,9 @@ void Lapm::rx_xid(Frame *f, bool response)
 void Lapm::log_frame(const char *title, bool cmd, const Frame *f)
 {
 	char hex[3 * 3 + 1] = "";
-	const int n = std::min(f->count, 3);
+	const s16 n = std::min<s16>(f->count, 3);
 
-	for (int i = 0; i < n; i++)
+	for (s16 i = 0; i < n; i++)
 		snprintf(hex + 3 * i, sizeof(hex) - 3 * i, " %02x", f->buf[i]);
 	link_->logf("%s (%s, %d octets):%s.", title,
 		    cmd ? "command" : "response", f->count, hex);

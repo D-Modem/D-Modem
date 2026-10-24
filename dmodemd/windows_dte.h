@@ -62,9 +62,9 @@ public:
 	bool want_write() const override {
 		return client_ >= 0 && !out_.empty();
 	}
-	int serve(dcore::Modem &m) override;
+	s16 serve(dcore::Modem &m) override;
 	void flush() override;
-	int write(const char *buf, int n) override;
+	s32 write(const char *buf, s32 n) override;
 
 private:
 	void drop(dcore::Modem &m, const char *why);
@@ -82,7 +82,7 @@ public:
 	/* the pair's main loop end */
 	int fd() const override { return pair_[0]; }
 	bool want_read(const dcore::Modem &m) override;
-	int serve(dcore::Modem &m) override;
+	s16 serve(dcore::Modem &m) override;
 	/* the DTE's name, for the user */
 	const std::string &where() const { return name_; }
 
@@ -102,11 +102,11 @@ protected:
 	virtual void carrier(bool) {}
 	/* (reader thread) characters, and the DTE come or gone, to the
 	   main loop: false when that can't be */
-	bool put(const unsigned char *p, int n);
+	bool put(const unsigned char *p, s32 n);
 	bool put_state(bool up);
 	/* (reader thread) ms in which quit_ breaks the wait: false
 	   then */
-	bool nap(unsigned ms);
+	bool nap(u16 ms);
 
 	std::string name_;
 	std::atomic<bool> quit_{false};
@@ -130,7 +130,7 @@ public:
 	/* the port (COM5, or \\.\COM12), opened at 115200 8N1 with DTR on and
 	   RTS's flow control off: false if it can't be */
 	bool open(const char *port);
-	int write(const char *buf, int n) override;
+	s32 write(const char *buf, s32 n) override;
 
 private:
 	void reader() override;
@@ -153,7 +153,7 @@ public:
 	   now, so that its name is ours) or connected to (true: whenever
 	   it is there): false if it can't be */
 	bool open(const char *name, bool connect);
-	int write(const char *buf, int n) override;
+	s32 write(const char *buf, s32 n) override;
 
 private:
 	void reader() override;
@@ -180,7 +180,7 @@ public:
 	~DriverDte() override;
 	/* port: the COM port's name, or "auto": false if it can't be */
 	bool open(const char *port);
-	int write(const char *buf, int n) override;
+	s32 write(const char *buf, s32 n) override;
 
 private:
 	void reader() override;

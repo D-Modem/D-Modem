@@ -29,18 +29,18 @@ namespace dmd {
 
 namespace {
 
-const unsigned ICH_GLOB_STA = 0x30, ICH_CAS = 0x34;
-const unsigned ICH_RCS = 0x8000;        /* GLOB_STA: read timed out */
+const u16 ICH_GLOB_STA = 0x30, ICH_CAS = 0x34;
+const u16 ICH_RCS = 0x8000;             /* GLOB_STA: read timed out */
 const u64 IORESOURCE_IO = 0x100;
 
 /* the I/O ranges of PCI device dev (its sysfs directory): BARs 0 and
    1's starts; false if they are not I/O ranges */
-bool io_ranges(const std::string &dev, unsigned *bar0, unsigned *bar1)
+bool io_ranges(const std::string &dev, u16 *bar0, u16 *bar1)
 {
 	FILE *f = fopen((dev + "/resource").c_str(), "r");
 	u64 start, end, flags;
-	unsigned bars[2] = { 0, 0 };
-	int i = 0;
+	u16 bars[2] = { 0, 0 };
+	s16 i = 0;
 
 	if (!f)
 		return false;
@@ -48,7 +48,7 @@ bool io_ranges(const std::string &dev, unsigned *bar0, unsigned *bar1)
 			       &start, &end, &flags) == 3) {
 		if (!(flags & IORESOURCE_IO) || start == 0 || start > 0xffff)
 			break;
-		bars[i++] = static_cast<unsigned>(start);
+		bars[i++] = static_cast<u16>(start);
 	}
 	fclose(f);
 	*bar0 = bars[0];
@@ -58,10 +58,10 @@ bool io_ranges(const std::string &dev, unsigned *bar0, unsigned *bar1)
 
 /* the modem codec's number on card card (its mc97#0-<n> in procfs),
    0 if there is none */
-unsigned modem_codec(int card)
+u32 modem_codec(int card)
 {
 	char path[64];
-	unsigned n = 0;
+	u32 n = 0;
 
 	snprintf(path, sizeof(path), "/proc/asound/card%d/codec97#0", card);
 	DIR *d = opendir(path);
@@ -84,7 +84,7 @@ unsigned modem_codec(int card)
 bool Ac97Ports::open(int card, std::string *why)
 {
 	char dev[64], link[PATH_MAX];
-	unsigned bar0, bar1;
+	u16 bar0, bar1;
 
 	snprintf(dev, sizeof(dev), "/sys/class/sound/card%d/device", card);
 	ssize_t n = readlink((std::string(dev) + "/driver").c_str(), link,
@@ -135,7 +135,7 @@ std::string Ac97Ports::name() const
 bool Ac97Ports::acquire()
 {
 #ifdef AC97_PORTS
-	for (int i = 0; i < 100; i++) {
+	for (s16 i = 0; i < 100; i++) {
 		if (!(inb(bm_ + ICH_CAS) & 1))
 			return true;
 		delay_us(10);
@@ -146,7 +146,7 @@ bool Ac97Ports::acquire()
 
 /* see ac97_ports.h: a read that timed out (GLOB_STA's RCS) cleared and
    an error */
-bool Ac97Ports::read(int reg, u16 *v)
+bool Ac97Ports::read(s16 reg, u16 *v)
 {
 #ifdef AC97_PORTS
 	if (!mixer_ || !acquire())
@@ -166,7 +166,7 @@ bool Ac97Ports::read(int reg, u16 *v)
 }
 
 /* see ac97_ports.h */
-bool Ac97Ports::write(int reg, u16 v)
+bool Ac97Ports::write(s16 reg, u16 v)
 {
 #ifdef AC97_PORTS
 	if (!mixer_ || !acquire())

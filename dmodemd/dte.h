@@ -28,11 +28,11 @@ public:
 	virtual bool want_write() const { return false; }
 	/* it is readable: its characters into m.  0; 1 when the DTE has
 	   gone for good (the modem stops); -1 on an error */
-	virtual int serve(dcore::Modem &m) = 0;
+	virtual s16 serve(dcore::Modem &m) = 0;
 	/* it is writable: what waits */
 	virtual void flush() {}
 	/* the modem's characters: how many it took */
-	virtual int write(const char *buf, int n) = 0;
+	virtual s32 write(const char *buf, s32 n) = 0;
 };
 
 } // namespace dmd

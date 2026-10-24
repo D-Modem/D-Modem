@@ -9,10 +9,10 @@
  *    Pump and has
  *
  *        static constexpr const char *name    for the table
- *        int start(struct modem *m, enum DP_ID id, int caller, int srate,
- *                  int max_frag)               0, or -1 if it cannot run
- *        int process(void *in, void *out, int cnt)    DPSTAT_*
- *        int hangup()                          (optional)
+ *        s16 start(struct modem *m, enum DP_ID id, s16 caller, s32 srate,
+ *                  s32 max_frag)               0, or -1 if it cannot run
+ *        s16 process(void *in, void *out, s32 cnt)   DPSTAT_*
+ *        s16 hangup()                                (optional)
  *
  *    and PumpOps<T>::ops is the table to register.  A pump is created
  *    zeroed (value initialized), as the C pumps were with calloc, so its
@@ -47,9 +47,9 @@ public:
 	/* a derived pump's destructor frees what its start() took */
 	virtual ~Pump() {}
 	/* cnt s16 samples from the line in, cnt to it out: a DPSTAT_* */
-	virtual int process(void *in, void *out, int cnt) = 0;
+	virtual s16 process(void *in, void *out, s32 cnt) = 0;
 	/* the call is being hung up: nothing to do by default */
-	virtual int hangup() { return 0; }
+	virtual s16 hangup() { return 0; }
 
 	struct dp dp;           /* what the modem core holds */
 };
@@ -103,7 +103,7 @@ struct dp_operations PumpOps<T>::ops = {
 /* a test's setting var=<n>...[a|c] (the first a or c in it, if any,
    names the side it is for: a the answerer, c the caller): the setting
    when it is for this side, else NULL */
-static inline const char *pump_test_env(const char *var, int caller)
+static inline const char *pump_test_env(const char *var, s16 caller)
 {
 	const char *e = env(var), *side;
 	if (!e)
@@ -135,7 +135,7 @@ public:
 	struct dp_stats *stats;         /* the call's statistics, the core's
 					   (NULL: none) */
 	s32 srate;
-	int caller;
+	s16 caller;
 	S state;
 	s32 count;                         /* samples in the state */
 	s32 total;                         /* samples since the start */
@@ -146,15 +146,15 @@ public:
 					   carrier */
 
 	/* nothing before the samples */
-	int block_start() { return DPSTAT_OK; }
+	s16 block_start() { return DPSTAT_OK; }
 
 	/* for modem m at srate_ samples/s, calling or not: the runtime,
 	   the handshake's time from S7 (50 s if 0) and the carrier's from
 	   S10 (1.4 s if 0) */
-	void pump_setup(struct modem *m, s32 srate_, int caller_)
+	void pump_setup(struct modem *m, s32 srate_, s16 caller_)
 	{
-		int s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
-		int s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
+		s16 s7 = modem_get_sreg(m, SREG_WAIT_CARRIER_AFTER_DIAL);
+		s16 s10 = modem_get_sreg(m, SREG_CARRIER_LOSS_DISCONNECT_TIME);
 
 		modem = m;
 		srate = srate_;
@@ -187,7 +187,7 @@ public:
 			    &stats->renegs_local);
 	}
 	/* (see stat_retrain()) */
-	void stat_dp(int id)
+	void stat_dp(s16 id)
 	{
 		if (stats)
 			stats->dp = id;
@@ -213,14 +213,14 @@ public:
 	void set_state(S s)
 	{
 		DSP_DBG("%s: state %d -> %d at %" PRId64 " ms\n",
-			host().tag(), (int)state, (int)s,
+			host().tag(), (s16)state, (s16)s,
 			s64{total} * 1000 / srate);
 		state = s;
 		count = 0;
 	}
 
 	/* a sample with or without carrier into carrier_run */
-	void carrier_tick(int on)
+	void carrier_tick(s16 on)
 	{
 		if (on)
 			carrier_run = carrier_run > 0 ? carrier_run + 1 : 1;
@@ -236,7 +236,7 @@ public:
 	}
 
 	/* the data rates to the core: DPSTAT_CONNECT */
-	int connect_at(s32 tx, s32 rx)
+	s16 connect_at(s32 tx, s32 rx)
 	{
 		set_rates(tx, rx);
 		DSP_DBG("%s: connect %" PRId32 "/%" PRId32 "\n", host().tag(),
@@ -246,7 +246,7 @@ public:
 
 	/* the call to the pump id, the answer tone marked as sent if
 	   ans_sent: DPSTAT_CHANGEDP */
-	int hand_over(enum DP_ID id, int ans_sent)
+	s16 hand_over(enum DP_ID id, s16 ans_sent)
 	{
 		if (ans_sent && rt)
 			rt->ans_sent = 1;
@@ -268,10 +268,11 @@ public:
 	   it (DPSTAT_ERROR); the first other status it gives is returned
 	   at the end of the block.  What is not sent of the block is
 	   silent */
-	int pump_loop(void *in, void *out, int cnt)
+	s16 pump_loop(void *in, void *out, s32 cnt)
 	{
 		s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
-		int ret, r, i;
+		s16 ret, r;
+		s32 i;
 
 		std::fill_n(dst, cnt, 0);
 		ret = host().block_start();
@@ -293,7 +294,7 @@ public:
 				}
 			} else if (total >= timeout) {
 				DSP_DBG("%s: handshake timeout in state %d\n",
-					host().tag(), (int)state);
+					host().tag(), (s16)state);
 				return DPSTAT_ERROR;
 			}
 			dst[i] = dsp_clip16(y);

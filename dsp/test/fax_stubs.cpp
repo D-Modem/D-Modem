@@ -29,4 +29,4 @@ int modem_get_bits(struct modem *, int, u8 *, int n) { return n; }
 /* the bits given: all n taken */
 int modem_put_bits(struct modem *, int, u8 *, int n) { return n; }
 /* no V.8 for the FSK pump's low speed caller without a core */
-int dsp::dp_v8_first(struct modem *, enum DP_ID) { return 0; }
+s16 dsp::dp_v8_first(struct modem *, enum DP_ID) { return 0; }

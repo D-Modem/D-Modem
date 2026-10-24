@@ -38,16 +38,16 @@ public:
 	std::string name() const;
 
 	/* see Ac97Regs: each under the controller's semaphore */
-	bool read(int reg, u16 *v) override;
-	bool write(int reg, u16 v) override;
+	bool read(s16 reg, u16 *v) override;
+	bool write(s16 reg, u16 v) override;
 	void delay_us(u32 us) override;
 
 private:
 	/* the codec access semaphore ours (about 1 ms at most) */
 	bool acquire();
 
-	unsigned mixer_ = 0, bm_ = 0;   /* the two I/O ranges */
-	unsigned codec_ = 0;            /* the modem codec's 0x80s */
+	u16 mixer_ = 0, bm_ = 0;        /* the two I/O ranges */
+	u32 codec_ = 0;                 /* the modem codec's 0x80s */
 };
 
 } // namespace dmd

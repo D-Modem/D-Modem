@@ -25,9 +25,9 @@ namespace dsp {
 /* pulse table and carrier; scale so that the symbols' rms rms_symbol
    gives a pass band rms of amplitude / sqrt(2) */
 void QamTx::init(s32 srate_, float carrier_, float baud,
-		 float alpha, int span_, float rms_symbol, float amplitude)
+		 float alpha, s16 span_, float rms_symbol, float amplitude)
 {
-	int i, n;
+	s16 i, n;
 
 	reinit(*this);
 	srate = srate_;
@@ -53,10 +53,10 @@ void QamTx::flush()
 float QamTx::pulse_at(float t_)
 {
 	float p = (t_ + span) * QAM_PULSE_RES;
-	int i;
+	s16 i;
 	if (p < 0 || p >= 2 * span * QAM_PULSE_RES)
 		return 0;
-	i = static_cast<int>(p);
+	i = static_cast<s16>(p);
 	p -= i;
 	return pulse[i] + p * (pulse[i + 1] - pulse[i]);
 }
@@ -67,7 +67,7 @@ float QamTx::pulse_at(float t_)
 float QamTx::out()
 {
 	cplx s = { 0, 0 }, c;
-	int k;
+	s16 k;
 
 	for (k = 0; k < 2 * span; k++) {
 		float g = pulse_at(t + k - span);
@@ -86,8 +86,8 @@ float QamTx::out()
 /* allocates the matched filter table (QAM_MF_RES points per sample, unit
    energy) and its delay line; sets the loop gains and the AGC target
    (target_power less the roll off's share); 0, or -1 when out of memory */
-int QamRx::init(s32 srate_, float carrier, float baud_,
-		float alpha, int span, int eq_len_, float target_power)
+s16 QamRx::init(s32 srate_, float carrier, float baud_,
+		float alpha, s16 span, s16 eq_len_, float target_power)
 {
 	s32 i;
 	float sum;
@@ -97,7 +97,7 @@ int QamRx::init(s32 srate_, float carrier, float baud_,
 	baud = baud_;
 	sps = srate_ / baud_;
 	lo.set_freq(-carrier, srate_);
-	mf_len = static_cast<int>(2 * span * sps) | 1;
+	mf_len = static_cast<s16>(2 * span * sps) | 1;
 	/* the matched filter is evaluated at the T/2 instants themselves,
 	   from a table of QAM_MF_RES points per sample */
 	/* the last mf_len + 1 samples, twice */
@@ -151,10 +151,10 @@ void QamRx::reset()
    delay line; every second instant the Gardner timing update, the
    equalizer output and its rotation by the carrier phase (y, eq_out, z,
    rot).  Returns 1 when a new symbol is in z. */
-int QamRx::sample(float x)
+s16 QamRx::sample(float x)
 {
 	cplx b;
-	int i, ret = 0;
+	s16 i, ret = 0;
 
 	power += power_alpha * (x * x - power);
 
@@ -239,7 +239,7 @@ int QamRx::sample(float x)
 void QamRx::adapt(cplx d, float mu, float k1, float k2)
 {
 	float p = cplx_pow(d), perr;
-	int i;
+	s16 i;
 
 	if (p > 0 && (k1 > 0 || k2 > 0)) {
 		perr = (z.im * d.re - z.re * d.im) / p;
@@ -289,7 +289,7 @@ static const unsigned char conv_next[8][4] = {
 /* one symbol: Q1Q2 added to the differential state, which drives the
    convolutional encoder; returns Y0 | Y1Y2 << 1 | Q3.. << 3 (bits data
    bits per symbol) */
-int TrellisEnc::encode(int q, int bits)
+s16 TrellisEnc::encode(s16 q, s16 bits)
 {
 	diff = (diff + (q & 3)) & 3;
 	conv = conv_next[conv][diff];
@@ -298,7 +298,7 @@ int TrellisEnc::encode(int q, int bits)
 }
 
 /* a new decoder for the 2^(nbits_ + 1) points of points_ */
-void Viterbi::init(const cplx *points_, int nbits_)
+void Viterbi::init(const cplx *points_, s16 nbits_)
 {
 	reinit(*this);
 	points = points_;
@@ -312,10 +312,10 @@ void Viterbi::init(const cplx *points_, int nbits_)
    data bits of that old symbol (Q1Q2 differentially decoded, Q3.. in
    bits 2..), its point in *decided (if not NULL), or -1 while the paths
    fill */
-int Viterbi::decode(cplx z, cplx *decided)
+s16 Viterbi::decode(cplx z, cplx *decided)
 {
 	float best_d[8], m[8];
-	int best_i[8], i, s, k, pos_, ret = -1;
+	s16 best_i[8], i, s, k, pos_, ret = -1;
 	float bm;
 
 	/* nearest point of each of the 8 subsets (index bits 0-2) */
@@ -335,8 +335,8 @@ int Viterbi::decode(cplx z, cplx *decided)
 		m[s] = 1e30f;
 	for (s = 0; s < 8; s++) {
 		for (k = 0; k < 4; k++) {
-			int ns = conv_next[s][k];
-			int sub = (k << 1) | ((ns >> 2) & 1);
+			s16 ns = conv_next[s][k];
+			s16 sub = (k << 1) | ((ns >> 2) & 1);
 			float metric_ = metric[s] + best_d[sub];
 			if (metric_ < m[ns]) {
 				m[ns] = metric_;
@@ -353,7 +353,7 @@ int Viterbi::decode(cplx z, cplx *decided)
 		metric[s] = m[s] - bm;
 
 	if (++filled >= VITERBI_DEPTH) {
-		int idx, y12, q;
+		s16 idx, y12, q;
 		/* trace back from the best state */
 		for (s = 0, k = 0; k < 8; k++)
 			if (metric[k] == 0)
@@ -381,7 +381,7 @@ int Viterbi::decode(cplx z, cplx *decided)
  */
 
 /* len_ taps, all 0; 0, or -1 when out of memory */
-int EchoCanceller::init(int len_)
+s16 EchoCanceller::init(s16 len_)
 {
 	reinit(*this);
 	len = len_;
@@ -406,7 +406,7 @@ void EchoCanceller::release()
 float EchoCanceller::run(float tx, float rx, float mu)
 {
 	float est = 0, err, *h;
-	int i;
+	s16 i;
 
 	if (mu > 0 && !training) {
 		training = 1;
@@ -453,7 +453,7 @@ float EchoCanceller::judge()
 void QamRx::recompute()
 {
 	cplx out = { 0, 0 };
-	int i;
+	s16 i;
 	for (i = 0; i < eq_len; i++)
 		out = cplx_add(out, cplx_mul(eq[i], eq_buf[i]));
 	eq_out = out;

@@ -88,7 +88,7 @@ static intptr_t param_address(const void *p)
    host's answer, the address of one of the Modem's objects, an
    S-register, a field of the current country, or a constant; -1 for a
    number that can only be set and for an unknown one */
-intptr_t Modem::get_param(unsigned name)
+intptr_t Modem::get_param(u32 name)
 {
 	const struct homolog_params &c = *homolog_->params;
 
@@ -103,8 +103,8 @@ intptr_t Modem::get_param(unsigned name)
 	case MDMPRM_IODELAY:
 		return host_.io_delay(*this);
 	case MDMPRM_CODECTYPE: {
-		int codec = host_.codec_type(*this);
-		return codec < 0 ? CODEC_UNKNOWN : codec;
+		s16 codec = host_.codec_type(*this);
+		return codec < 0 ? static_cast<s16>(CODEC_UNKNOWN) : codec;
 	}
 
 	/* the Modem's own objects, which the pumps read (and write) in
@@ -233,7 +233,7 @@ intptr_t Modem::get_param(unsigned name)
    to change to, a modem-on-hold request taken, or something for the
    host (the line's delay, the hook, a pulse); 0 (the host's result for
    the hook and the pulse), -1 for a number that cannot be set */
-s32 Modem::set_param(unsigned name, s32 val)
+s32 Modem::set_param(u32 name, s32 val)
 {
 	switch (name) {
 	case MDMPRM_NONE:
@@ -246,7 +246,7 @@ s32 Modem::set_param(unsigned name, s32 val)
 		return 0;
 	case MDMPRM_DP_REQUESTED:
 		/* change_dp() takes it when the pump says DPSTAT_CHANGEDP */
-		dp_requested_ = static_cast<unsigned>(val);
+		dp_requested_ = static_cast<u32>(val);
 		return 0;
 	case MDMPRM_UPDATE_DELAY:
 		host_.update_delay(*this, val);

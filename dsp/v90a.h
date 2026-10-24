@@ -29,43 +29,43 @@ namespace dsp {
 /* Jd (Table 13/V.90), the digital modem's capabilities */
 struct V90Jd {
 	u32 rate_mask;          /* bit 0: 28 000 bit/s ... bit 22: 56 000 */
-	int cp16_train;         /* bit 47: CP, E and SCR on 16 points in
+	s16 cp16_train;         /* bit 47: CP, E and SCR on 16 points in
 				   training */
-	int cp16_reneg;         /* bit 48: and in rate renegotiation */
-	int lookahead;          /* bits 49:50 */
+	s16 cp16_reneg;         /* bit 48: and in rate renegotiation */
+	s16 lookahead;          /* bits 49:50 */
 
 	/* 72 bits (the first in b[0]): 0, or -1 when they are not a Jd */
-	int parse(const unsigned char *b);
+	s16 parse(const unsigned char *b);
 };
 
 /* MP (Table 16/V.90), the digital modem's modulation parameters */
 struct V90Mp {
-	int type;               /* 1: with precoding coefficients */
-	int rate_max;           /* most upstream data rate, N * 2400 */
-	int trellis, nonlinear, expanded, ack;
-	int rate_mask;          /* bit 0: 4800 .. bit 12: 33 600 */
-	int h[6];
+	s16 type;               /* 1: with precoding coefficients */
+	s16 rate_max;           /* most upstream data rate, N * 2400 */
+	s16 trellis, nonlinear, expanded, ack;
+	s16 rate_mask;          /* bit 0: 4800 .. bit 12: 33 600 */
+	s16 h[6];
 
 	/* the bits of a frame of len (86 or 188) bits from its frame sync
 	   on: 0, or -1 (fields unchanged) on a bad CRC */
-	int parse(const unsigned char *b, int len);
+	s16 parse(const unsigned char *b, s16 len);
 };
 
 /* the constellations of a CP as the decoder takes them: by frame
    interval its points by label (0: the largest Ucode), each with its
    level at our receiver (the equaliser's scale) */
 struct V90Con {
-	int D, S, K;
-	int M[6];
+	s16 D, S, K;
+	s16 M[6];
 	unsigned char ucode[6][128];
 	float lev[6][128];
 
 	/* from a CP of D bits per data frame and the levels of each
 	   Ucode in each interval: -1 when it can't carry them */
-	int init(const V90Cp &cp, int D_, const float lv[6][128]);
+	s16 init(const V90Cp &cp, s16 D_, const float lv[6][128]);
 	/* the average power (Table 15/V.90, the transmitter's linear
 	   values lin) */
-	double power(const int *lin) const;
+	double power(const s16 *lin) const;
 };
 
 /* the analogue modem's constellations (8.5.2/V.90) from the levels of
@@ -75,9 +75,9 @@ struct V90Con {
    at about 1 dB below the limit; CP the fastest set whose points are
    10 noise apart (a symbol error in 10^6), within the limit and 3 dB
    of CPt's power.  Returns -1 when there is no such set */
-int  v90a_design_cpt(V90Cp *cp, int alaw, const int *lin,
+s16  v90a_design_cpt(V90Cp *cp, s16 alaw, const s16 *lin,
 		     const float lv[6][128], double limit);
-int  v90a_design_cp(V90Cp *cp, int alaw, const int *lin,
+s16  v90a_design_cp(V90Cp *cp, s16 alaw, const s16 *lin,
 		    const float lv[6][128], double noise, double limit,
 		    double cpt_power, u32 jd_rates);
 
@@ -102,9 +102,9 @@ struct V90Interp {
 	double step;            /* input samples an output: 0.6, or 0.5 */
 
 	/* the line's rate, 9600 or 8000 */
-	void init(int rate);
+	void init(s16 rate);
 	/* one sample of the line in; how many out at 16 000 Hz (0 to 3) */
-	int run(float x, float *out);
+	s16 run(float x, float *out);
 	/* the outputs from now on dt input samples later */
 	void shift(double dt) { t += dt; }
 };
@@ -136,8 +136,8 @@ struct V90Rx {
 				   symbols, then FRAMES again */
 	};
 
-	int alaw, uinfo;
-	int lin[128];           /* Ucode -> linear value, positive */
+	s16 alaw, uinfo;
+	s16 lin[128];           /* Ucode -> linear value, positive */
 	enum Stage stage;
 
 	V90Interp ip;           /* the line at 16 000 Hz */
@@ -150,15 +150,15 @@ struct V90Rx {
 	   x(n) x(n - 6), x(n) x(n - 3), and over the last 6 of the first
 	   two (the reversal) */
 	double e24, a6_24, a3_24, e6, a6_6;
-	int sd_run;             /* samples Sd has been there */
-	int sd_dip;             /* the 24 sample sums say it is reversing */
+	s16 sd_run;             /* samples Sd has been there */
+	s16 sd_dip;             /* the 24 sample sums say it is reversing */
 	double dip;             /* the reversal: its least a6_6 / e6 */
 	s32 dip_at;
 
 	/* symbol k (0: the first of S-bar d) is around sample b + 2 k */
 	s32 b;
 	s32 k;                  /* the next symbol to decide */
-	int refined;
+	s16 refined;
 	float c[V90RX_TAPS];
 	/* least squares: the normal equations, R's Cholesky factor (some
 	   250 KB: the pump is on the heap) */
@@ -178,7 +178,7 @@ struct V90Rx {
 	/* the timing loop, from the equaliser's error times its slope
 	   (its output a sample either side): the frequency term (16 kHz
 	   samples a symbol) */
-	int t_on;
+	s16 t_on;
 	s32 t_n;                /* symbols it has followed */
 	double t_freq, t_pow;   /* t_pow: the targets' power */
 	double t_phase;         /* the phase it has moved (16 kHz samples) */
@@ -190,38 +190,38 @@ struct V90Rx {
 	   interval (their spread about each interval's own mean is the
 	   noise: a robbed bit or the network's gain moves the mean, not
 	   the decisions) */
-	int ls2_n;
+	s16 ls2_n;
 	double usum[6], usq[6];
 	s32 un[6];
 
 	/* Jd: the decisions' signs differentially decoded and
 	   descrambled */
-	int last_sign;
+	s16 last_sign;
 	u32 dscr;
 	unsigned char jb[72];   /* the last 72 bits, the newest at jpos - 1 */
-	int jpos;
+	s16 jpos;
 	s32 jbits;
 	s32 jd_end;             /* bit count at the end of the last Jd */
-	int zeros;              /* zeros since then */
+	s16 zeros;              /* zeros since then */
 
 	/* events (cleared by the caller) */
-	int ev_sd;              /* Sd there */
-	int ev_sdbar;           /* its reversal */
-	int ev_trained;
-	int ev_ready;           /* solved again on the locked timing, the
+	s16 ev_sd;              /* Sd there */
+	s16 ev_sdbar;           /* its reversal */
+	s16 ev_trained;
+	s16 ev_ready;           /* solved again on the locked timing, the
 				   noise measured: our S may go */
-	int ev_jd;              /* Jd frames received */
-	int ev_jdp;             /* Jd' after them */
-	int ev_dil;             /* the DIL's rounds measured */
+	s16 ev_jd;              /* Jd frames received */
+	s16 ev_jdp;             /* Jd' after them */
+	s16 ev_dil;             /* the DIL's rounds measured */
 	V90Jd jd;
 	/* V.92 (v92): Jd's bit 47 makes it Jp (Table 22/V.92), whose
 	   fraction of a symbol extends our Su-bar; its Jp' follows (as
 	   Jd' does in V.90) */
-	int v92;
-	int ev_jp;
+	s16 v92;
+	s16 ev_jp;
 	s32 jp_end;
 	double jp_frac;
-	int jp_con, jp_con_rn;  /* TRN2u and CPu on 8 points: in training,
+	s16 jp_con, jp_con_rn;  /* TRN2u and CPu on 8 points: in training,
 				   in renegotiation */
 
 	/* the DIL our Ja asked for (8.4.1/V.90): it follows Jd' (in data
@@ -229,9 +229,9 @@ struct V90Rx {
 	   (the equaliser still) by frame interval and Ucode, the sign
 	   SP's.  Its first symbol, a round's length, where in it we are */
 	V90Dil dil;
-	int dil_on;
+	s16 dil_on;
 	s32 dil_start, dil_len;
-	int dil_seg, dil_k;
+	s16 dil_seg, dil_k;
 	double dsum[6][128], dsq[6][128];
 	s32 dcnt[6][128];
 	/* what it shows (dil_analyse()): each Ucode's level in each frame
@@ -251,8 +251,8 @@ struct V90Rx {
 	float dil_noise;
 	float dil_pad_db;       /* the network's digital loss: the pad whose
 				   requantized levels fit the DIL's best */
-	int dil_robbed;
-	int dil_distinct[6];
+	s16 dil_robbed;
+	s16 dil_distinct[6];
 
 	/* phase 4: Ri (+ + + - - - of UINFO) frames in a row, Ri-bar's
 	   first symbol; from TRN2d (24 on) the data frames: the
@@ -262,69 +262,70 @@ struct V90Rx {
 	   1 for the linear values) and the errors on them; the frame
 	   bits that make MP sequences; Ed (2 frames of zeros after an
 	   MP' sequence's last), B1d's 48 frames of ones */
-	int ri_run;
+	s16 ri_run;
 	s32 ri_seen, ribar_at, frames_at;
 	V90Con con_trn, con_data;
 	V90Con con_next;        /* data_cp_next()'s, if have_next */
-	int have_next;
+	s16 have_next;
 	V90Con *con;
 	float fy[6];
 	s32 frames, frames_b1;
-	int flast;
+	s16 flast;
 	u32 fscr;
 	V90Enc ref;
-	int ref_lin[128];
+	s16 ref_lin[128];
 	float lv4[6][128];      /* levels(), at phase4() */
-	int rs[6];              /* Ri: the frame's signs */
+	s16 rs[6];              /* Ri: the frame's signs */
 	s32 trn_sym_err, trn_sym;
 	unsigned char mpb[V90RX_SEQ];
-	int mp_n, mp_len;
+	s16 mp_n;
+	s32 mp_len;
 	u32 msr;
 	s32 mp_frame;           /* frame the last good MP ended in */
-	int ed_zero;            /* zero frames after an MP' */
+	s16 ed_zero;            /* zero frames after an MP' */
 	s32 b1_err;
 	double fe_sum;
 	s32 fe_n;
 
-	int ev_ri;              /* Ri there */
-	int ev_ribar;           /* its reversal: TRN2d follows */
-	int ev_trn2;            /* TRN2d's known frames in: trn2_noise, the
+	s16 ev_ri;              /* Ri there */
+	s16 ev_ribar;           /* its reversal: TRN2d follows */
+	s16 ev_trn2;            /* TRN2d's known frames in: trn2_noise, the
 				   rms error on them */
 	float trn2_noise;
 	float t_gain[6];        /* each interval's gain on the DIL's levels */
 	double t2_yr[6], t2_rr[6], t2_yy[6];
 	s32 t2_n;
-	int ev_mp;              /* MP frames in */
-	int ev_mpack;           /* MP' (V.92: SUVd' or CPd') */
+	s16 ev_mp;              /* MP frames in */
+	s16 ev_mpack;           /* MP' (V.92: SUVd' or CPd') */
 	/* V.92's phase 4 (v92): SUVd and CPd in MP's place */
-	int ev_suvd, ev_cpd;
+	s16 ev_suvd, ev_cpd;
 	V92Cpd cpd;
 	/* V.92's fast parameter exchange (9.9/V.92): Rf (+ + - - + + of
 	   each interval's loudest data point, then the opposite: a 12
 	   symbol pattern) frames in a row, Rf-bar (the pattern a frame on,
 	   4 frames); then SUVd and CPd in the data mode modulation, from
 	   cleared descrambler and signs, until Ed, then B1d */
-	int rf_run, rf_last, rfbar_n;
-	int ev_rf, ev_rfbar;
-	int fpe_on;             /* the frames are SUVd, CPd, Ed */
-	int ev_ed;
-	int ev_b1d;             /* B1d's frames in */
+	s16 rf_run, rf_last, rfbar_n;
+	s16 ev_rf, ev_rfbar;
+	s16 fpe_on;             /* the frames are SUVd, CPd, Ed */
+	s16 ev_ed;
+	s16 ev_b1d;             /* B1d's frames in */
 	/* a rate renegotiation (9.6/V.90): Rd (+ + + - - - of each
 	   interval's loudest data point, either polarity) frames in a row,
 	   its polarity, Rd-bar; then TRN2d (on the decisions: it may be
 	   left out), MP, Ed and B1d as in phase 4 */
-	int rd_run, rd_pol;
-	int ev_rd, ev_rdbar;
-	int renegs;             /* phase 4 done again so many times */
+	s16 rd_run, rd_pol;
+	s16 ev_rd, ev_rdbar;
+	s16 renegs;             /* phase 4 done again so many times */
 	V90Cp cpt_s;            /* CPt (TRN2d and MP's constellations) */
 	/* data mode: the bits of the frames after B1d (take()), the
 	   signal's power (lost, it is gone), the decisions' error */
 	unsigned char q[V90RX_Q];
-	int qh, qn;
+	s16 qh, qn;
 	float dpow, de_mse;
 	V90Mp mp;
 
-	void init(int alaw_, int uinfo_, int rate = 9600);
+	void init(s16 alaw_, s16 uinfo_, s16 rate = 9600);
 	/* the DIL to measure (N 0: none) */
 	void dil_set(const V90Dil &d);
 	void dil_analyse();
@@ -336,14 +337,14 @@ struct V90Rx {
 	float noise() const;
 	/* phase 4 on CPt's constellations (TRN2d, MP, Ed): -1 when they
 	   are not usable */
-	int phase4(const V90Cp &cpt);
+	s16 phase4(const V90Cp &cpt);
 	/* CP's for B1d and data (before Ed): -1 when not usable */
-	int data_cp(const V90Cp &cp);
+	s16 data_cp(const V90Cp &cp);
 	/* in the data mode, our fast parameter exchange's CPu (V.92): its
 	   constellations for B1d and data after the exchange's Ed (the
 	   frames before it stay on those they are on); -1 when not
 	   usable */
-	int data_cp_next(const V90Cp &cp);
+	s16 data_cp_next(const V90Cp &cp);
 	/* our own rate renegotiation (9.6.2.1/V.90): Rd next, whatever
 	   the frames decode to until it comes */
 	void reneg_wait()
@@ -365,7 +366,7 @@ struct V90Rx {
 	/* one sample at 16 000 Hz */
 	void sample(float v);
 	/* data mode: up to n of its bits into b, oldest first (how many) */
-	int take(unsigned char *b, int n);
+	s16 take(unsigned char *b, s16 n);
 	/* its decisions' mean square error of late (16 bit scale) */
 	float data_mse() const { return de_mse; }
 	/* the codec's clock against the network's, parts per million */
@@ -377,7 +378,7 @@ private:
 	/* the sample i of the 8 kHz history */
 	float at8(s32 i) const { return x8[i & (V90RX_HIST8 - 1)]; }
 	/* tap i's input for symbol kk, d samples later */
-	float xin(s32 kk, int i, int d = 0) const
+	float xin(s32 kk, s16 i, s16 d = 0) const
 	{
 		return at(b + 2 * kk + V90RX_EQ_D + d - i);
 	}
@@ -387,16 +388,16 @@ private:
 	void sd_detect(float v);
 	void refine();
 	void solve();
-	float equalize(s32 kk, int d = 0) const;
+	float equalize(s32 kk, s16 d = 0) const;
 	void decide(float y);
-	void jd_bit(int bit);
+	void jd_bit(s16 bit);
 	void adapt(s32 kk, float e);
-	void ri_frame(const int *s);
-	void rd_frame(const int *s, const int *lab);
-	void rf_frame(const int *s, const int *lab);
+	void ri_frame(const s16 *s);
+	void rd_frame(const s16 *s, const s16 *lab);
+	void rf_frame(const s16 *s, const s16 *lab);
 	void reneg_frames();
 	void frame();
-	void mp_bit(int bit);
+	void mp_bit(s16 bit);
 };
 
 } // namespace dsp

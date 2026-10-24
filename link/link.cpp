@@ -27,7 +27,7 @@ Link::~Link()
 /* a call: the V.42bis and V.44 coders at the largest sizes XID can
    agree on (with ec and comp), LAPM's frames; -1 if they cannot be
    allocated */
-int Link::init(Owner *owner, bool caller, const Config &cfg)
+s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 {
 	owner_ = owner;
 	caller_ = caller;
@@ -241,7 +241,7 @@ void Link::disconnect()
    framer (marks when idle; MNP's octets, or HDLC frames in its data
    phase); the bit timer and MNP's timers count them, and characters
    LAPM or MNP still holds are pushed on; returns n */
-int Link::get_bits(int nbits, u8 *buf, int n)
+s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 {
 	switch (mode_) {
 	case Mode::Detect:
@@ -301,11 +301,11 @@ void Link::run_timer()
    framer (dropped when idle); the detection phase's an item at a time,
    the rest to MNP once an LR starts in it; MNP's octets, and HDLC
    frames as well once the LRs agreed on them; returns n */
-int Link::put_bits(int nbits, const u8 *buf, int n)
+s32 Link::put_bits(s16 nbits, const u8 *buf, s32 n)
 {
 	switch (mode_) {
 	case Mode::Detect:
-		for (int i = 0; i < n; i++) {
+		for (s32 i = 0; i < n; i++) {
 			det_.put_bits(nbits, buf + i, 1);
 			if (mode_ != Mode::Detect)
 				return i + 1 + put_bits(nbits, buf + i + 1,
@@ -333,7 +333,7 @@ int Link::put_bits(int nbits, const u8 *buf, int n)
    no compression if they cannot be had */
 void Link::update_config(const Config &remote)
 {
-	int dir = remote.comp & cfg_.comp;
+	s16 dir = remote.comp & cfg_.comp;
 
 	if (dir && remote.v44 && cfg_.v44 && enc44_.ready()) {
 		s32 n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
@@ -378,7 +378,7 @@ void Link::update_config(const Config &remote)
 /* characters for LAPM's I frames, MNP's LT frames or the async
    framer: the DTE's, through the encoder when we compress; 0 while not
    online */
-int Link::read_chars(u8 *buf, int n)
+s16 Link::read_chars(u8 *buf, s16 n)
 {
 	if (!online_)
 		return 0;
@@ -392,7 +392,7 @@ int Link::read_chars(u8 *buf, int n)
 
 /* received characters to the DTE, through the decoder when the remote
    compresses; returns how many were taken (0 while not online) */
-int Link::write_chars(const u8 *buf, int n)
+s16 Link::write_chars(const u8 *buf, s16 n)
 {
 	if (!online_)
 		return 0;
@@ -405,32 +405,32 @@ int Link::write_chars(const u8 *buf, int n)
 }
 
 /* the DTE's characters (the owner's), counted */
-int Link::dte_read(u8 *buf, int n)
+s16 Link::dte_read(u8 *buf, s16 n)
 {
-	int r = owner_->read_chars(buf, n);
+	s16 r = owner_->read_chars(buf, n);
 	if (r > 0)
 		stats_.tx_chars += r;
 	return r;
 }
 
 /* characters to the DTE (the owner), those it took counted */
-int Link::dte_write(const u8 *buf, int n)
+s16 Link::dte_write(const u8 *buf, s16 n)
 {
-	int w = owner_->write_chars(buf, n);
+	s16 w = owner_->write_chars(buf, n);
 	if (w > 0)
 		stats_.rx_chars += w;
 	return w;
 }
 
 /* read_chars() through V.44's or V.42bis's encoder */
-int Link::comp_read(u8 *buf, int n)
+s16 Link::comp_read(u8 *buf, s16 n)
 {
 	return cfg_.v44 ? comp_read_with(enc44_, buf, n) :
 		comp_read_with(enc_, buf, n);
 }
 
 /* write_chars() through V.44's or V.42bis's decoder */
-int Link::comp_write(const u8 *buf, int n)
+s16 Link::comp_write(const u8 *buf, s16 n)
 {
 	return cfg_.v44 ? comp_write_with(dec44_, buf, n) :
 		comp_write_with(dec_, buf, n);
@@ -447,9 +447,9 @@ bool Link::comp_flush_output()
 /* the DTE's characters through the encoder: as many as fit, then a
    flush when the DTE has no more */
 template <class E>
-int Link::comp_read_with(E &enc, u8 *buf, int n)
+s16 Link::comp_read_with(E &enc, u8 *buf, s16 n)
 {
-	int ret = 0;
+	s16 ret = 0;
 	u8 ch;
 	while (ret < n) {
 		ret += enc.out(buf + ret, n - ret);
@@ -478,7 +478,7 @@ bool Link::comp_flush_with(D &dec)
 			if (!dec_count_)
 				return true;
 		}
-		int w = dte_write(dec_out_ + dec_head_, dec_count_);
+		s16 w = dte_write(dec_out_ + dec_head_, dec_count_);
 		if (w <= 0)
 			return false;
 		dec_head_ += w;
@@ -489,9 +489,9 @@ bool Link::comp_flush_with(D &dec)
 /* received characters through the decoder; returns how many it took
    (LAPM keeps the rest until the DTE takes the output) */
 template <class D>
-int Link::comp_write_with(D &dec, const u8 *buf, int n)
+s16 Link::comp_write_with(D &dec, const u8 *buf, s16 n)
 {
-	int i = 0;
+	s16 i = 0;
 	if (!comp_flush_output())
 		return 0;
 	while (i < n) {

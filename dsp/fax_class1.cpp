@@ -74,14 +74,14 @@ enum t38_fmode { FMODE_UNKNOWN, FMODE_T4, FMODE_HDLC };
 
 struct rx_frame {
 	u8 data[HDLC_MAX];
-	int len;
-	int ok;
+	s16 len;
+	s16 ok;
 };
 
 struct ecm_frame {
 	u8 data[ECM_MAX];
-	int len;
-	int ok;
+	s16 len;
+	s16 ok;
 };
 
 struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
@@ -93,39 +93,39 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 
 	struct modem *modem;
 	s32 srate;
-	int caller;
+	u32 caller;
 	enum c1_state state;
 	s32 count;
 	s32 duration;
 
-	int status[4];
-	int nstatus;
+	s16 status[4];
+	s16 nstatus;
 
 	/* transmitter */
 	FaxTx tx;
-	int tx_on;
+	s16 tx_on;
 	enum fax_mod tx_mod;            /* FTM's */
-	int tx_short;
+	s16 tx_short;
 
 	/* bytes from the DTE */
-	int dle;
-	int eod;                /* <DLE><ETX> seen */
+	s16 dle;
+	s16 eod;                /* <DLE><ETX> seen */
 	u8 buf[TX_BUF];         /* FTM data ring */
-	int head, tail;
-	int byte, nbits;
+	s16 head, tail;
+	s16 byte, nbits;
 
 	/* the next frame for the HDLC transmitter (FTH) */
 	u8 hframe[HDLC_MAX - 2];
-	int hlen;               /* bytes of the frame being built */
-	int hready;             /* frame complete, waiting to be sent */
+	s16 hlen;               /* bytes of the frame being built */
+	s16 hready;             /* frame complete, waiting to be sent */
 
 	/* receiver */
 	FaxRx rx;
-	int rx_on;
+	s16 rx_on;
 	enum fax_mod rx_mod;
 	FaxRxMemory rx_mem;    /* for V.17 short trains */
-	int rx_trained;
-	int rx_carrier;
+	s16 rx_trained;
+	s16 rx_carrier;
 	s32 rx_quiet;           /* samples of silence (FRS) */
 	float in_power;
 
@@ -135,81 +135,81 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	s32 cng_n;
 
 	/* frames from the HDLC receiver */
-	int rflags;             /* flags seen with the carrier on */
+	s32 rflags;             /* flags seen with the carrier on */
 	struct rx_frame frames[FRAME_QUEUE];
-	int fhead, ftail;
-	int frh_connected;
+	s16 fhead, ftail;
+	s16 frh_connected;
 
 	/* FRM byte assembly and output to the DTE */
-	int rbyte, rbitn;
+	s16 rbyte, rbitn;
 	char out[RX_OUT + 8];
-	int nout;
+	s16 nout;
 
 	/* T.38 */
-	int t38;                        /* the line is T.38 */
+	s16 t38;                        /* the line is T.38 */
 	void (*t38_tx)(void *ctx, const void *ifp);
 	void *t38_ctx;
-	int t38_max;                    /* data octets in a packet */
-	int t38_last_ind;
+	s32 t38_max;                    /* data octets in a packet */
+	s16 t38_last_ind;
 	/* sending */
 	enum t38_kind t38_kind;
 	enum t38_step t38_step;
 	enum fax_mod t38_mod;
-	int t38_long;                   /* long training */
+	s16 t38_long;                   /* long training */
 	s32 t38_wait;                   /* samples left of the step */
 	s32 t38_acc;                    /* bit time, in 1/srate */
-	int t38_due;                    /* octets the line has had time for */
-	int t38_debt;                   /* octets of time owed (an FCS) */
-	int t38_close;                  /* FTH: no more frames */
-	int t38_sent;                   /* FTH: frames out */
+	s16 t38_due;                    /* octets the line has had time for */
+	s16 t38_debt;                   /* octets of time owed (an FCS) */
+	s16 t38_close;                  /* FTH: no more frames */
+	s16 t38_sent;                   /* FTH: frames out */
 	u8 t38_hbuf[HDLC_MAX];          /* FTH: the frame going out, the
 					   T.38 way round */
-	int t38_hlen, t38_hpos;         /* its length, -1: none */
-	int t38_final;
+	s16 t38_hlen, t38_hpos;         /* its length, -1: none */
+	s16 t38_final;
 	enum t38_fmode t38_fmode;
 	struct ecm_frame ecm_q[ECM_QUEUE];      /* FTM: the DTE's frames */
-	int eq_head, eq_tail;
-	int eq_pos;                     /* octets of the first one out */
+	s16 eq_head, eq_tail;
+	s16 eq_pos;                     /* octets of the first one out */
 	/* receiving */
-	int t38_rx_v21;                 /* V.21 frames are taken */
-	int t38_sig;                    /* a signal is on */
-	int t38_v21_sig;                /* V.21's, since its preamble */
+	s16 t38_rx_v21;                 /* V.21 frames are taken */
+	s16 t38_sig;                    /* a signal is on */
+	s16 t38_v21_sig;                /* V.21's, since its preamble */
 	u8 t38_rframe[HDLC_MAX];        /* the V.21 frame coming in */
-	int t38_rlen;
-	int t38_rover;
+	s16 t38_rlen;
+	s16 t38_rover;
 	u8 t38_eframe[ECM_MAX];         /* FRM: an ECM frame coming in */
-	int t38_elen;
-	int t38_eover;
-	int t38_hdlc_out;               /* FRM: the DTE has had flags */
-	int t38_ones;                   /* FRM: ones in a row to the DTE */
+	s16 t38_elen;
+	s16 t38_eover;
+	s16 t38_hdlc_out;               /* FRM: the DTE has had flags */
+	s16 t38_ones;                   /* FRM: ones in a row to the DTE */
 
-	void report_status(int status_);
+	void report_status(s16 status_);
 	void out_flush();
 	void out_byte(u8 c);
 	void out_end();
 	void stop_tx();
 	void stop_rx();
-	int hdlc_tx_next(HdlcV21, u8 *frame, int max);
-	void hdlc_rx_frame(HdlcV21, const u8 *d, int len, bool whole);
-	void hdlc_rx_frame(HdlcEcm, const u8 *d, int len, bool whole);
+	s16 hdlc_tx_next(HdlcV21, u8 *frame, s16 max);
+	void hdlc_rx_frame(HdlcV21, const u8 *d, s16 len, bool whole);
+	void hdlc_rx_frame(HdlcEcm, const u8 *d, s16 len, bool whole);
 	void read_dte();
 	void fth_close();
 	bool fth_closing() const;
-	void start_tx(enum fax_mod mod, int short_train, fax_get_bit_t get_bit);
-	int start_rx(enum fax_mod mod, int short_train, fax_put_bit_t put_bit);
+	void start_tx(enum fax_mod mod, s16 short_train, fax_get_bit_t get_bit);
+	s16 start_rx(enum fax_mod mod, s16 short_train, fax_put_bit_t put_bit);
 	void set_state(enum c1_state s);
 	void begin_fth();
 	void begin_frh();
-	void begin_ftm(enum fax_mod mod, int short_train);
-	int begin_frm(enum fax_mod mod, int short_train);
-	void queue_frame(const u8 *d, int len, int ok);
+	void begin_ftm(enum fax_mod mod, s16 short_train);
+	s16 begin_frm(enum fax_mod mod, s16 short_train);
+	void queue_frame(const u8 *d, s16 len, s16 ok);
 
 	/* T.38 */
-	void t38_ind(int ind);
-	void t38_data(int ftype, const u8 *d, int n, int end);
-	void t38_tx_start(enum t38_kind kind, enum fax_mod mod, int long_train);
+	void t38_ind(s16 ind);
+	void t38_data(s16 ftype, const u8 *d, s16 n, s16 end);
+	void t38_tx_start(enum t38_kind kind, enum fax_mod mod, s16 long_train);
 	void t38_tx_stop();
-	void t38_tail(int ms);
+	void t38_tail(s16 ms);
 	void t38_tx_sample();
 	void t38_flush();
 	void t38_flush_v21();
@@ -219,9 +219,9 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	void t38_rx_fast(const struct t38_ifp *p);
 	void t38_v21_end();
 	void t38_fast_end();
-	void out_bit(int bit);
+	void out_bit(s16 bit);
 	void out_flag();
-	void out_hdlc_frame(const u8 *d, int n, int ok);
+	void out_hdlc_frame(const u8 *d, s16 n, s16 ok);
 };
 
 
@@ -230,7 +230,7 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
  */
 
 /* queue a FAX_STATUS_* result for FAX_process to return (4 at most) */
-void Fax::report_status(int status_)
+void Fax::report_status(s16 status_)
 {
 	if (nstatus < 4)
 		status[nstatus++] = status_;
@@ -288,7 +288,7 @@ void Fax::stop_rx()
 }
 
 /* a received V.21 frame (with its FCS) into the queue, unless full */
-void Fax::queue_frame(const u8 *d, int len, int ok)
+void Fax::queue_frame(const u8 *d, s16 len, s16 ok)
 {
 	struct rx_frame *fr;
 
@@ -311,9 +311,9 @@ void Fax::queue_frame(const u8 *d, int len, int ok)
    before the first one, at least 8 flag bits between them, closing flags
    after the final one, the P/F bit set).  A frame going out lets the DTE
    send the next one */
-int Fax::hdlc_tx_next(HdlcV21, u8 *frame, int /* max: hframe's size */)
+s16 Fax::hdlc_tx_next(HdlcV21, u8 *frame, s16 /* max: hframe's size */)
 {
-	int n = hlen;
+	s16 n = hlen;
 
 	if (!hready)
 		return 0;
@@ -350,7 +350,7 @@ bool Fax::fth_closing() const
 
 /* a flag from the HDLC receiver (+FRH), with what came before it: into
    the queue if whole octets, at least 4, with its FCS checked */
-void Fax::hdlc_rx_frame(HdlcV21, const u8 *d, int len, bool whole)
+void Fax::hdlc_rx_frame(HdlcV21, const u8 *d, s16 len, bool whole)
 {
 	rflags++;
 	if (!whole || len < 4)
@@ -365,10 +365,10 @@ void Fax::hdlc_rx_frame(HdlcV21, const u8 *d, int len, bool whole)
 
 /* FaxTx callback for +FTM: the DTE's bytes, the lowest bit first; zeros
    when it falls behind, FAX_BIT_END once <DLE><ETX> came */
-static int ftm_get_bit(void *ctx)
+static s16 ftm_get_bit(void *ctx)
 {
 	Fax *f = static_cast<Fax*>(ctx);
-	int bit;
+	s16 bit;
 
 	if (!f->nbits) {
 		if (f->head == f->tail) {
@@ -387,7 +387,7 @@ static int ftm_get_bit(void *ctx)
 }
 
 /* FaxRx callback for +FRM: bytes to the DTE, the first bit lowest */
-static void frm_put_bit(void *ctx, int bit)
+static void frm_put_bit(void *ctx, s16 bit)
 {
 	Fax *f = static_cast<Fax*>(ctx);
 
@@ -399,7 +399,7 @@ static void frm_put_bit(void *ctx, int bit)
 }
 
 /* a bit to the DTE (+FRM), the first of an octet lowest */
-void Fax::out_bit(int bit)
+void Fax::out_bit(s16 bit)
 {
 	rbyte |= (bit & 1) << rbitn;
 	if (++rbitn == 8) {
@@ -464,11 +464,11 @@ void Fax::read_dte()
    other way round: T.38's octets have the first bit on the line at the
    top, the DTE's and T.30's at the bottom (t38.h's t38_reverse(), which
    is in the T.30 library) */
-static void flip_octets(u8 *out, const u8 *in, int n)
+static void flip_octets(u8 *out, const u8 *in, s16 n)
 {
-	int i;
+	s16 i;
 	for (i = 0; i < n; i++) {
-		unsigned c = in[i];
+		u16 c = in[i];
 		c = (c & 0xf0) >> 4 | (c & 0x0f) << 4;
 		c = (c & 0xcc) >> 2 | (c & 0x33) << 2;
 		c = (c & 0xaa) >> 1 | (c & 0x55) << 1;
@@ -478,7 +478,7 @@ static void flip_octets(u8 *out, const u8 *in, int n)
 
 /* a fast modulation's T.38 data type, its indicator (long or short
    training) and training time */
-static int mod_t38_data(enum fax_mod mod)
+static s16 mod_t38_data(enum fax_mod mod)
 {
 	switch (mod) {
 	case FM_V27_2400:  return T38_DATA_V27_2400;
@@ -495,7 +495,7 @@ static int mod_t38_data(enum fax_mod mod)
 
 /* T.38's indicator for the training of mod (V.17: long_train or
    short) */
-static int mod_t38_ind(enum fax_mod mod, int long_train)
+static s16 mod_t38_ind(enum fax_mod mod, s16 long_train)
 {
 	switch (mod) {
 	case FM_V21:       return T38_IND_V21_PREAMBLE;
@@ -512,7 +512,7 @@ static int mod_t38_ind(enum fax_mod mod, int long_train)
 }
 
 /* the ms of mod's training (V.17: long_train or short), for T.38 */
-static int mod_train_ms(enum fax_mod mod, int long_train)
+static s16 mod_train_ms(enum fax_mod mod, s16 long_train)
 {
 	switch (mod) {
 	case FM_V21:       return 1000;         /* the flags before the
@@ -526,7 +526,7 @@ static int mod_train_ms(enum fax_mod mod, int long_train)
 }
 
 /* an indicator, unless it is the last one sent */
-void Fax::t38_ind(int ind)
+void Fax::t38_ind(s16 ind)
 {
 	struct t38_ifp p;
 
@@ -542,7 +542,7 @@ void Fax::t38_ind(int ind)
 /* a data packet of the transmission's modulation: n octets as field
    type ftype (none if n is 0), then end, a field without data (-1:
    none) */
-void Fax::t38_data(int ftype, const u8 *d, int n, int end)
+void Fax::t38_data(s16 ftype, const u8 *d, s16 n, s16 end)
 {
 	struct t38_ifp p;
 
@@ -564,7 +564,7 @@ void Fax::t38_data(int ftype, const u8 *d, int n, int end)
 /* a transmission (V.21 HDLC, or a fast modulation) starting: its
    indicator now, its data once the training (V.21: the flags) has had
    its time; the V.21 receiver off */
-void Fax::t38_tx_start(enum t38_kind kind, enum fax_mod mod, int long_train)
+void Fax::t38_tx_start(enum t38_kind kind, enum fax_mod mod, s16 long_train)
 {
 	t38_rx_v21 = 0;
 	t38_kind = kind;
@@ -592,7 +592,7 @@ void Fax::t38_tx_stop()
 }
 
 /* the data is over: ms of tail, then no-signal and the OK */
-void Fax::t38_tail(int ms)
+void Fax::t38_tail(s16 ms)
 {
 	t38_step = TS_TAIL;
 	t38_wait = ms2samples(ms, srate);
@@ -648,7 +648,7 @@ void Fax::t38_flush()
 void Fax::t38_flush_v21()
 {
 	while (t38_due > 0) {
-		int n, left;
+		s16 n, left;
 		if (t38_hpos < 0) {
 			if (hready) {
 				t38_hlen = hlen;
@@ -697,10 +697,10 @@ void Fax::t38_flush_v21()
 void Fax::t38_flush_fast()
 {
 	u8 d[T38_DATA_MAX];
-	int max = t38_max < T38_DATA_MAX ? t38_max : T38_DATA_MAX;
+	s16 max = t38_max < T38_DATA_MAX ? t38_max : T38_DATA_MAX;
 
 	if (t38_fmode == FMODE_UNKNOWN) {
-		int avail = (head - tail + TX_BUF) % TX_BUF;
+		s16 avail = (head - tail + TX_BUF) % TX_BUF;
 		if (avail >= 2)
 			t38_fmode = buf[tail] == 0x7e &&
 				buf[(tail + 1) % TX_BUF] == 0x7e ?
@@ -711,7 +711,7 @@ void Fax::t38_flush_fast()
 			return;
 	}
 	while (t38_due > 0) {
-		int n = 0, ended;
+		s16 n = 0, ended;
 		while (n < max && n < t38_due && head != tail) {
 			d[n++] = buf[tail];
 			tail = (tail + 1) % TX_BUF;
@@ -727,7 +727,7 @@ void Fax::t38_flush_fast()
 			flip_octets(d, d, n);
 			t38_data(ended ? T38_T4_SIG_END : T38_T4_DATA, d, n, -1);
 		} else {
-			int i, k;
+			s16 i, k;
 			for (i = 0; i < n; i++)
 				for (k = 0; k < 8; k++)
 					EcmRx::hdlc_rx_bit((d[i] >> k) & 1);
@@ -745,7 +745,7 @@ void Fax::t38_flush_fast()
 
 /* the DTE's HDLC (+FTM): a frame out of its bits, at a flag (whole
    octets, at least the address, control and FCS) */
-void Fax::hdlc_rx_frame(HdlcEcm, const u8 *d, int len, bool whole)
+void Fax::hdlc_rx_frame(HdlcEcm, const u8 *d, s16 len, bool whole)
 {
 	struct ecm_frame *fr;
 
@@ -764,11 +764,11 @@ void Fax::hdlc_rx_frame(HdlcEcm, const u8 *d, int len, bool whole)
    fcs-OK (fcs-BAD if the DTE's FCS was wrong) */
 void Fax::t38_send_ecm()
 {
-	int max = t38_max < T38_DATA_MAX ? t38_max : T38_DATA_MAX;
+	s16 max = t38_max < T38_DATA_MAX ? t38_max : T38_DATA_MAX;
 
 	while (eq_tail != eq_head) {
 		struct ecm_frame *fr = &ecm_q[eq_tail];
-		int left = fr->len - eq_pos;
+		s16 left = fr->len - eq_pos;
 		if (left > max) {
 			t38_data(T38_HDLC_DATA, fr->data + eq_pos, max, -1);
 			eq_pos += max;
@@ -815,7 +815,7 @@ void Fax::t38_fast_end()
 /* a flag to the DTE (+FRM, ECM), its bits unstuffed */
 void Fax::out_flag()
 {
-	int k;
+	s16 k;
 	for (k = 0; k < 8; k++)
 		out_bit((0x7e >> k) & 1);
 	t38_ones = 0;
@@ -824,11 +824,11 @@ void Fax::out_flag()
 /* an ECM frame to the DTE as HDLC (+FRM): flags first, then the frame
    (its octets back the line's way round) with its FCS and the stuffed
    zeros, then a flag; a bad one with its FCS spoilt */
-void Fax::out_hdlc_frame(const u8 *d, int n, int ok)
+void Fax::out_hdlc_frame(const u8 *d, s16 n, s16 ok)
 {
 	u8 fr[ECM_MAX];
-	unsigned crc;
-	int i, k;
+	u16 crc;
+	s16 i, k;
 
 	if (!t38_hdlc_out) {
 		for (i = 0; i < 4; i++)
@@ -843,7 +843,7 @@ void Fax::out_hdlc_frame(const u8 *d, int n, int ok)
 	fr[n + 1] = crc >> 8;
 	for (i = 0; i < n + 2; i++)
 		for (k = 0; k < 8; k++) {
-			int bit = (fr[i] >> k) & 1;
+			s16 bit = (fr[i] >> k) & 1;
 			out_bit(bit);
 			if (bit) {
 				if (++t38_ones == 5) {
@@ -862,11 +862,11 @@ void Fax::out_hdlc_frame(const u8 *d, int n, int ok)
    frames as bits */
 void Fax::t38_rx_fast(const struct t38_ifp *p)
 {
-	int k;
+	s16 k;
 
 	for (k = 0; k < p->nfields; k++) {
 		const struct t38_field *fl = &p->field[k];
-		int take = state == C1_FRM;
+		s16 take = state == C1_FRM;
 		if (take && !rx_trained && fl->type != T38_HDLC_SIG_END &&
 		    fl->type != T38_T4_SIG_END) {
 			rx_trained = 1;
@@ -926,7 +926,7 @@ void Fax::t38_rx_fast(const struct t38_ifp *p)
    the queue (while FRH takes them), the fast modulations' data to FRM */
 void Fax::t38_rx(const struct t38_ifp *p)
 {
-	int k;
+	s16 k;
 
 	if (!p->data) {
 		switch (p->type) {
@@ -970,9 +970,9 @@ void Fax::t38_rx(const struct t38_ifp *p)
 		case T38_HDLC_FCS_BAD_SIG_END:
 			if (t38_rx_v21 && t38_rlen >= 2 && !t38_rover) {
 				/* with its FCS, as the DTE has frames */
-				int good = fl->type == T38_HDLC_FCS_OK ||
+				s16 good = fl->type == T38_HDLC_FCS_OK ||
 					fl->type == T38_HDLC_FCS_OK_SIG_END;
-				unsigned crc = hdlc_fcs(t38_rframe, t38_rlen) ^
+				u16 crc = hdlc_fcs(t38_rframe, t38_rlen) ^
 					0xffff;
 				if (!good)
 					crc ^= 0x5a5a;
@@ -1000,7 +1000,7 @@ void Fax::t38_rx(const struct t38_ifp *p)
  */
 
 /* transmit mod (the receiver stops); get_bit gives the bits */
-void Fax::start_tx(enum fax_mod mod, int short_train, fax_get_bit_t get_bit)
+void Fax::start_tx(enum fax_mod mod, s16 short_train, fax_get_bit_t get_bit)
 {
 	stop_rx();
 	tx_mod = mod;
@@ -1019,7 +1019,7 @@ void Fax::start_tx(enum fax_mod mod, int short_train, fax_get_bit_t get_bit)
 /* receive mod, the bits to put_bit; a V.17 short train starts from the
    last long one.  -1 when out of memory.  T.38: the packets bring the
    bits */
-int Fax::start_rx(enum fax_mod mod, int short_train, fax_put_bit_t put_bit)
+s16 Fax::start_rx(enum fax_mod mod, s16 short_train, fax_put_bit_t put_bit)
 {
 	stop_rx();
 	rx_mod = mod;
@@ -1076,7 +1076,7 @@ void Fax::begin_frh()
 }
 
 /* +FTM: data at mod, CONNECT at once */
-void Fax::begin_ftm(enum fax_mod mod, int short_train)
+void Fax::begin_ftm(enum fax_mod mod, s16 short_train)
 {
 	stop_tx();
 	set_state(C1_FTM);
@@ -1087,7 +1087,7 @@ void Fax::begin_ftm(enum fax_mod mod, int short_train)
 
 /* +FRM: data at mod, CONNECT once trained (T.38: its first data); -1
    when out of memory */
-int Fax::begin_frm(enum fax_mod mod, int short_train)
+s16 Fax::begin_frm(enum fax_mod mod, s16 short_train)
 {
 	stop_tx();
 	set_state(C1_FRM);
@@ -1102,7 +1102,7 @@ int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
 {
 	Fax *f = static_cast<Fax*>(obj);
 	enum fax_mod mod;
-	int short_train;
+	s16 short_train;
 
 	if (!f)
 		return -1;
@@ -1156,7 +1156,7 @@ int FAX_t38_start(void *obj, void (*tx)(void *ctx, const void *ifp),
 		  void *ctx, int max_data)
 {
 	Fax *f = static_cast<Fax*>(obj);
-	int was_tx;
+	s16 was_tx;
 
 	if (!f)
 		return -1;
@@ -1312,7 +1312,8 @@ int FAX_process(void *obj, void *in, void *out, int count)
 {
 	Fax *f = static_cast<Fax*>(obj);
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
-	int i, status = 0;
+	s32 i;
+	s16 status = 0;
 
 	if (f->state == C1_FTH || f->state == C1_FTM)
 		f->read_dte();
@@ -1390,7 +1391,7 @@ int FAX_process(void *obj, void *in, void *out, int count)
 				break;  /* the CONNECT goes out first */
 			if (f->ftail != f->fhead) {
 				struct rx_frame *fr = &f->frames[f->ftail];
-				int k;
+				s16 k;
 				if (!f->frh_connected) {
 					f->frh_connected = 1;
 					f->report_status(FAX_STATUS_CONNECT);

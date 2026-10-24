@@ -306,9 +306,9 @@ struct FrameSource : Framer {
 /* an owner that sends nothing and takes all */
 struct NullOwner : Owner {
 	/* nothing to send */
-	int read_chars(uint8_t *, int) override { return 0; }
+	s16 read_chars(uint8_t *, s16) override { return 0; }
 	/* all taken */
-	int write_chars(const uint8_t *, int n) override { return n; }
+	s16 write_chars(const uint8_t *, s16 n) override { return n; }
 	/* the link's progress ignored */
 	void status(Status) override {}
 };
@@ -381,14 +381,14 @@ struct Dte : Owner {
 	/* the DTE called n in the log */
 	explicit Dte(const char *n) : name(n) {}
 	/* the rest of to_send */
-	int read_chars(uint8_t *buf, int n) override {
+	s16 read_chars(uint8_t *buf, s16 n) override {
 		int k = (int)std::min((size_t)n, to_send.size() - pos);
 		memcpy(buf, to_send.data() + pos, k);
 		pos += k;
 		return k;
 	}
 	/* up to accept characters into got */
-	int write_chars(const uint8_t *buf, int n) override {
+	s16 write_chars(const uint8_t *buf, s16 n) override {
 		if (n > accept)
 			n = accept;
 		got.insert(got.end(), buf, buf + n);

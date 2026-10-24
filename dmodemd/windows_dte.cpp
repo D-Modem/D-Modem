@@ -43,7 +43,7 @@ const DWORD READ_POLL_MS = 5, WRITE_WAIT_MS = 200;
 const DWORD PIPE_BUFFER = DWORD{64} * 1024, CONNECT_RETRY_MS = 500;
 
 /* n octets to the stream socket fd, all of them (it waits) */
-bool send_all(int fd, const char *p, int n)
+bool send_all(int fd, const char *p, s32 n)
 {
 	while (n > 0) {
 		int r = fd_write(fd, p, n);
@@ -137,10 +137,11 @@ void TcpDte::drop(dcore::Modem &m, const char *why)
 }
 
 /* a connection taken, or its characters into the modem */
-int TcpDte::serve(dcore::Modem &m)
+s16 TcpDte::serve(dcore::Modem &m)
 {
 	char buf[4096];
-	int room = m.dte_space(), n;
+	s32 room = m.dte_space();
+	int n;
 
 	if (client_ < 0) {
 		SOCKET s = accept((SOCKET)listen_, nullptr, nullptr);
@@ -156,7 +157,7 @@ int TcpDte::serve(dcore::Modem &m)
 	}
 	if (room <= 0)
 		return 0;
-	if (room > (int)sizeof(buf))
+	if (room > (s32)sizeof(buf))
 		room = sizeof(buf);
 	n = fd_read(client_, buf, room);
 	if (n < 0) {
@@ -189,9 +190,9 @@ void TcpDte::flush()
 
 /* the modem's characters: to the connection, what it can't take now
    kept (up to BUFFER); with no connection they go nowhere */
-int TcpDte::write(const char *buf, int n)
+s32 TcpDte::write(const char *buf, s32 n)
 {
-	int took = 0;
+	s32 took = 0;
 
 	if (n <= 0)
 		return 0;
@@ -209,7 +210,7 @@ int TcpDte::write(const char *buf, int n)
 		}
 	}
 	if (n > (s32)(BUFFER - out_.size()))
-		n = (int)(BUFFER - out_.size());
+		n = (s32)(BUFFER - out_.size());
 	if (n > 0)
 		out_.append(buf, n);
 	return took + (n > 0 ? n : 0);
@@ -255,16 +256,16 @@ void ThreadDte::stop()
 }
 
 /* see windows_dte.h: p with ESC doubled */
-bool ThreadDte::put(const unsigned char *p, int n)
+bool ThreadDte::put(const unsigned char *p, s32 n)
 {
 	char out[2 * 512];
-	int k = 0;
+	s16 k = 0;
 
-	for (int i = 0; i < n; i++) {
+	for (s32 i = 0; i < n; i++) {
 		out[k++] = (char)p[i];
 		if (p[i] == ESC)
 			out[k++] = (char)ESC;
-		if (k >= (int)sizeof(out) - 1 || i == n - 1) {
+		if (k >= (s16)sizeof(out) - 1 || i == n - 1) {
 			if (!send_all(pair_[1], out, k))
 				return false;
 			k = 0;
@@ -281,7 +282,7 @@ bool ThreadDte::put_state(bool up)
 }
 
 /* see windows_dte.h */
-bool ThreadDte::nap(unsigned ms)
+bool ThreadDte::nap(u16 ms)
 {
 	return WaitForSingleObject((HANDLE)quit_ev_, ms) == WAIT_TIMEOUT &&
 		!quit_;
@@ -300,16 +301,18 @@ bool ThreadDte::want_read(const dcore::Modem &m)
 }
 
 /* the DTE's characters into the modem; its going hangs it up */
-int ThreadDte::serve(dcore::Modem &m)
+s16 ThreadDte::serve(dcore::Modem &m)
 {
 	unsigned char raw[4096];
 	char buf[sizeof(raw)];
-	int room = m.dte_space(), n, k = 0;
+	s32 room = m.dte_space();
+	int n;
+	s16 k = 0;
 	bool gone = false;
 
 	if (room <= 0)
 		return 0;
-	if (room > (int)sizeof(raw))
+	if (room > (s32)sizeof(raw))
 		room = sizeof(raw);
 	n = fd_read(pair_[0], raw, room);
 	if (n < 0)
@@ -318,7 +321,7 @@ int ThreadDte::serve(dcore::Modem &m)
 		ERR("%s: the reader has stopped\n", name_.c_str());
 		return 1;
 	}
-	for (int i = 0; i < n; i++) {
+	for (s16 i = 0; i < n; i++) {
 		unsigned char c = raw[i];
 		if (!esc_) {
 			if (c == ESC)
@@ -421,7 +424,7 @@ void ComDte::reader()
 {
 	OVERLAPPED ov = {};
 	unsigned char buf[512];
-	int dsr = -1;
+	s16 dsr = -1;
 
 	ov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
 	while (!quit_) {
@@ -439,10 +442,10 @@ void ComDte::reader()
 				got = 0;
 			}
 		}
-		if (got > 0 && !put(buf, (int)got))
+		if (got > 0 && !put(buf, (s32)got))
 			break;
 		if (GetCommModemStatus((HANDLE)port_, &st)) {
-			int now = (st & MS_DSR_ON) ? 1 : 0;
+			s16 now = (st & MS_DSR_ON) ? 1 : 0;
 			if (now != dsr) {
 				if (!put_state(now))
 					break;
@@ -463,7 +466,7 @@ void ComDte::carrier(bool on)
 }
 
 /* to the port: what it took within WRITE_WAIT_MS */
-int ComDte::write(const char *buf, int n)
+s32 ComDte::write(const char *buf, s32 n)
 {
 	OVERLAPPED ov = {};
 	DWORD done = 0;
@@ -478,7 +481,7 @@ int ComDte::write(const char *buf, int n)
 			done = 0;
 	}
 	CloseHandle(ov.hEvent);
-	return (int)done;
+	return (s32)done;
 }
 
 /*
@@ -638,7 +641,7 @@ void PipeDte::serve_client(void *h)
 			}
 		}
 		/* (a zero-length read: a zero-length message, not an end) */
-		if (got > 0 && !put(buf, (int)got))
+		if (got > 0 && !put(buf, (s32)got))
 			break;
 	}
 	CloseHandle(ov.hEvent);
@@ -646,7 +649,7 @@ void PipeDte::serve_client(void *h)
 
 /* to the client: what it took within WRITE_WAIT_MS; without one the
    modem's characters go nowhere */
-int PipeDte::write(const char *buf, int n)
+s32 PipeDte::write(const char *buf, s32 n)
 {
 	std::lock_guard<std::mutex> lk(mu_);
 	OVERLAPPED ov = {};
@@ -671,7 +674,7 @@ int PipeDte::write(const char *buf, int n)
 		}
 	}
 	CloseHandle(ov.hEvent);
-	return (int)done;
+	return (s32)done;
 }
 
 /*
@@ -724,7 +727,7 @@ std::string DriverDte::find_pipe() const
 		if (!found.empty())
 			return found;
 	}
-	for (int i = 1; i <= 32; i++) {
+	for (s16 i = 1; i <= 32; i++) {
 		std::string name = dir + prefix + "COM" + std::to_string(i);
 		/* (there, free or not: ERROR_SEM_TIMEOUT when taken) */
 		if (WaitNamedPipeA(name.c_str(), 1) ||
@@ -877,7 +880,7 @@ void DriverDte::serve_driver(void *h)
 					}
 					break;
 				case vmodem::FRAME_DATA:
-					ok = put(f.p, (int)f.n);
+					ok = put(f.p, (s32)f.n);
 					break;
 				case vmodem::FRAME_STATE:
 					if (vmodem::WireReader::state(f, &st,
@@ -929,7 +932,7 @@ void DriverDte::serve_driver(void *h)
 /* to the driver's port, as DATA frames queued for the thread: what
    there is room for (OUT_MAX), the rest the modem's to give again;
    without the driver the modem's characters go nowhere */
-int DriverDte::write(const char *buf, int n)
+s32 DriverDte::write(const char *buf, s32 n)
 {
 	std::lock_guard<std::mutex> lk(mu_);
 	std::string out;
@@ -942,7 +945,7 @@ int DriverDte::write(const char *buf, int n)
 		return 0;
 	size_t room = OUT_MAX - out_.size();
 	if ((size_t)n > room)
-		n = (int)room;
+		n = (s32)room;
 	vmodem::wire_data(out, buf, (size_t)n);
 	queue_locked(out);
 	return n;

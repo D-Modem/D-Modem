@@ -51,7 +51,7 @@ bool sdp_parse(const std::string &body, Sdp *s);
 
 /* T.38's settings as SDP says them (T38Fax...) */
 struct T38Params {
-	int version = 0;
+	s32 version = 0;
 	s32 max_bitrate = 14400;
 	s32 max_datagram = 0;           /* 0: not said */
 	bool redundancy = false;        /* T38FaxUdpEC: t38UDPRedundancy */
@@ -65,7 +65,7 @@ enum T38State { T38_NONE, T38_ASKED, T38_ON, T38_REFUSED };
 /* one call's leg (all of it under the agent's lock) */
 struct SipLeg {
 	std::string token;              /* the user Asterisk calls */
-	int pt = 0;                     /* our G.711: 0 PCMU, 8 PCMA */
+	s16 pt = 0;                     /* our G.711: 0 PCMU, 8 PCMA */
 	s32 rtp_port = 0, udptl_port = 0;       /* ours */
 
 	/* the dialog */
@@ -112,12 +112,12 @@ public:
 
 	/* a leg for a call Asterisk is to make to token, its audio in RTP
 	   payload type pt to our rtp_port, UDPTL to our udptl_port */
-	std::shared_ptr<SipLeg> expect(const std::string &token, int pt,
+	std::shared_ptr<SipLeg> expect(const std::string &token, s16 pt,
 				       s32 rtp_port, s32 udptl_port);
 	/* the leg forgotten (its call is over; its BYE still answered) */
 	void forget(const std::shared_ptr<SipLeg> &leg);
 	/* the leg up (Asterisk has our answer) within ms; false if not */
-	bool wait_up(const std::shared_ptr<SipLeg> &leg, int ms);
+	bool wait_up(const std::shared_ptr<SipLeg> &leg, s16 ms);
 	/* a copy of the leg's state */
 	SipLeg get(const std::shared_ptr<SipLeg> &leg);
 	/* T.38 offers answered (on) or refused (488) from now on */

@@ -324,7 +324,7 @@ ParamResult param_call(int fs, bool p10, int n, double ppm,
 	if (!r.locked)
 		return r;
 	for (int i = 0; i < n; i++) {
-		int d;
+		s16 d;
 		if (!rx.next(&d))
 			break;
 		r.syms++;

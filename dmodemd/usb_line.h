@@ -119,21 +119,21 @@ public:
 	/* libusb's events (the transfers done), then the samples that have
 	   come, a frame (20 ms) at a time, through the modem; 0, or -1 if
 	   the modem has gone (unplugged) */
-	int pump(dcore::Modem &m);
+	s16 pump(dcore::Modem &m);
 
 	/* Host */
-	int start(dcore::Modem &) override {
+	s16 start(dcore::Modem &) override {
 		running_ = true;
 		update_rhom();
 		return 0;
 	}
 	/* the samples no longer through the modem */
-	int stop(dcore::Modem &) override {
+	s16 stop(dcore::Modem &) override {
 		running_ = false;
 		update_rhom();
 		return 0;
 	}
-	int set_hook(dcore::Modem &m, int state) override;
+	s16 set_hook(dcore::Modem &m, s16 state) override;
 	/* the local phone sensed (set_handset(), a SmartUSB56) */
 	bool senses_local_phone(dcore::Modem &) override {
 		return handset_ && kind_ == Kind::St7554;
@@ -146,19 +146,19 @@ public:
 	}
 	/* where the modem's samples are (pump()): the line's, the
 	   handset's, or the line's with the handset on the call */
-	int voice_route(dcore::Modem &, unsigned device) override;
+	s16 voice_route(dcore::Modem &, u16 device) override;
 	/* the speaker's volume (set_buzzer()): the buzzer on or off */
-	void speaker(dcore::Modem &m, int volume) override;
+	void speaker(dcore::Modem &m, s16 volume) override;
 	/* an analogue line, the modem dialling it itself */
 	bool analog_line(dcore::Modem &) override { return true; }
 	/* a hook flash it can make (hook_flash()) */
 	bool can_flash(dcore::Modem &) override { return true; }
-	void hook_flash(dcore::Modem &m, unsigned ms) override;
-	int pulse_hook(dcore::Modem &m, bool broken) override;
+	void hook_flash(dcore::Modem &m, u16 ms) override;
+	s16 pulse_hook(dcore::Modem &m, bool broken) override;
 	/* (see set_international()) */
 	void pulse_dialling(dcore::Modem &m, bool on) override;
 	/* the playback's lead, in samples */
-	int io_delay(dcore::Modem &) override { return delay_; }
+	s32 io_delay(dcore::Modem &) override { return delay_; }
 	/* the country: the stick's line settings (si3056.h), written now
 	   on hook, else once the line is on hook again */
 	void country(dcore::Modem &m, const char *name) override;
@@ -169,7 +169,7 @@ public:
 	/* the modem's characters to the DTE: how many it took (data, for
 	   the data LED, once the call has been seen online: not its
 	   CONNECT) */
-	int dte_write(dcore::Modem &m, const char *buf, int n) override {
+	s32 dte_write(dcore::Modem &m, const char *buf, s32 n) override {
 		if (n > 0 && online_seen_ &&
 		    m.link_state() == dcore::LinkState::Online)
 			data_seen_ = true;
@@ -185,7 +185,7 @@ public:
 	/* --usb list: each SmartUSB56 and pico-serial Line on stdout, its
 	   <bus>:<address> and whether it can be opened (on Windows: whether
 	   WinUSB is its driver); 0, or -1 if libusb can't start */
-	static int list();
+	static s16 list();
 
 private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
@@ -199,18 +199,18 @@ private:
 		UsbLine *line = nullptr;
 		bool voice = false;
 		u8 ep_out = 0, ep_in = 0;
-		int max_out = 0, max_in = 0;
+		s16 max_out = 0, max_in = 0;
 		libusb_transfer *in[ISO_TRANSFERS] = {}, *out[ISO_TRANSFERS] = {};
 		/* each IN transfer's packets' lengths, for the OUT one it
 		   frees; the OUT ones not in flight */
-		std::deque<std::vector<int>> out_lengths;
+		std::deque<std::vector<s16>> out_lengths;
 		std::deque<libusb_transfer *> idle_out;
 		std::vector<s16> in_buf;        /* the samples come, not taken */
 		std::deque<s16> out_buf;        /* the samples to send */
 	};
 
 	bool find(const char *dev);
-	bool endpoints(int alt);
+	bool endpoints(s16 alt);
 	bool set_reg(u8 reg, u16 v);
 	bool get_reg(u8 reg, u16 *v);
 	bool set_gpio(u16 v);
@@ -228,12 +228,12 @@ private:
 	bool stick_out(u8 req, u16 value);
 	bool stick_in(u8 req, u16 value, u8 *buf, u16 len);
 	/* an event from the stick's interrupt endpoint */
-	void stick_event(const u8 *b, int len);
+	void stick_event(const u8 *b, s16 len);
 	/* the country's settings into the stick's DAA (each register read,
 	   its own bits changed); false (logged) */
 	bool stick_country();
 	bool start_streams();
-	bool start_iso(Iso &s, int pkt);
+	bool start_iso(Iso &s, s16 pkt);
 	bool start_fifos();
 	void close();
 
@@ -241,7 +241,7 @@ private:
 	static void LIBUSB_CALL out_done(libusb_transfer *t);
 	static void LIBUSB_CALL intr_done(libusb_transfer *t);
 	void in_complete(Iso &s, libusb_transfer *t);
-	void out_fill(Iso &s, libusb_transfer *t, const int *lengths);
+	void out_fill(Iso &s, libusb_transfer *t, const s16 *lengths);
 	void send_out(Iso &s);
 	void voice_frame(dcore::Modem &m);
 	u16 fifo_control2() const;
@@ -260,10 +260,10 @@ private:
 	libusb_transfer *intr_ = nullptr;
 	/* the codec's stream, and the voice codec's (set_voice_codec()) */
 	Iso iso_, viso_;
-	int in_flight_ = 0;             /* transfers submitted */
+	s16 in_flight_ = 0;             /* transfers submitted */
 	u8 intr_buf_[8] = {};           /* the ST7554's 4 octets, the stick's 8 */
-	int intr_len_ = 4;
-	int fifo_samples_ = 0;          /* the device's own delay */
+	s16 intr_len_ = 4;
+	s16 fifo_samples_ = 0;          /* the device's own delay */
 	/* the stick: its ring detector's changes (mod 256) so far, its
 	   errors last seen */
 	u8 ring_edges_ = 0;
@@ -275,8 +275,8 @@ private:
 	std::string daa_name_ = "USA";
 	bool daa_due_ = true;
 	u32 rate_ = 9600;
-	int frame_ = 192;               /* 20 ms */
-	int delay_ = 0;
+	s16 frame_ = 192;               /* 20 ms */
+	s16 delay_ = 0;
 	std::vector<s16> frame_in_, frame_out_;
 	/* set_voice_codec(); +VLS's device (voice_route()); the handset's
 	   microphone at the line's rate, not yet taken; the rate changes
@@ -288,7 +288,7 @@ private:
 	bool rhom_ = false, rhom_ok_ = false;
 	bool buzzer_ = false;           /* set_buzzer() */
 	u16 fifo2_ = 0;
-	unsigned route_ = VOICE_DEVICE_LINE;
+	u16 route_ = VOICE_DEVICE_LINE;
 	std::deque<s16> mic_;
 	double mic_pos_ = 0, ear_pos_ = 0;
 	s16 mic_last_ = 0, ear_last_ = 0;
@@ -296,7 +296,7 @@ private:
 	u64 samples_ = 0;
 	bool running_ = false;
 	bool dead_ = false;
-	int hook_ = MODEM_HOOK_ON;
+	s16 hook_ = MODEM_HOOK_ON;
 	u16 gpio_ = 0;
 	bool st75951_ = false;          /* the ST7554's codec an ST75951/2 */
 	bool leds_ = false;             /* set_leds() */
@@ -318,7 +318,7 @@ private:
 	u64 parked_since_ = 0, resume_tried_ = 0;
 	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
 	u64 flash_end_ = 0;
-	unsigned rings_ = 0;            /* ring detector changes not given */
+	u16 rings_ = 0;                 /* ring detector changes not given */
 };
 
 } // namespace dmd

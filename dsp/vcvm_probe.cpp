@@ -21,7 +21,7 @@ namespace dsp {
 
 /* see vcvm_startup.h: bit c comb code c (N200 to N400 at 8000 Hz, W200,
    W300 and W400 at 16000) */
-unsigned vcvm_probe_combs(s32 fs, int allowed)
+u16 vcvm_probe_combs(s32 fs, s16 allowed)
 {
 	if (fs == 8000)
 		return allowed & VCVM_M_NARROW ? 0x7 : 0;
@@ -33,19 +33,19 @@ unsigned vcvm_probe_combs(s32 fs, int allowed)
 
 /* the known phase steps of a symbol: two bits a tone, from the lowest,
    from the scrambler fed with ones, Gray coded as DQPSK */
-static void known_steps(u32 *scr, int tap, int tones, u8 *ph8)
+static void known_steps(u32 *scr, s16 tap, s16 tones, u8 *ph8)
 {
-	for (int k = 0; k < tones; k++) {
-		int b1 = scramble(scr, tap, 1), b0 = scramble(scr, tap, 1);
+	for (s16 k = 0; k < tones; k++) {
+		s16 b1 = scramble(scr, tap, 1), b0 = scramble(scr, tap, 1);
 		ph8[k] = static_cast<u8>(2 * vcvm_ungray(b1 << 1 | b0));
 	}
 }
 
 /* the known lag symbol's four bits, and its index */
-static int known_lag(u32 *scr, int tap, u8 *b)
+static s16 known_lag(u32 *scr, s16 tap, u8 *b)
 {
-	int v = 0;
-	for (int i = 0; i < 4; i++) {
+	s16 v = 0;
+	for (s16 i = 0; i < 4; i++) {
 		b[i] = static_cast<u8>(scramble(scr, tap, 1));
 		v = v << 1 | b[i];
 	}
@@ -53,8 +53,8 @@ static int known_lag(u32 *scr, int tap, u8 *b)
 }
 
 /* a comb part: its reference, then n - 1 symbols of known steps */
-static void comb_part(int code, s32 fs, bool sym22, int n, u32 *scr,
-		      int tap, std::vector<float> &out)
+static void comb_part(s16 code, s32 fs, bool sym22, s16 n, u32 *scr,
+		      s16 tap, std::vector<float> &out)
 {
 	VcvmCombTx tx;
 	if (tx.init(code, fs, sym22))
@@ -62,30 +62,30 @@ static void comb_part(int code, s32 fs, bool sym22, int n, u32 *scr,
 	VcvmLoad l;
 	l.all(tx.comb().tones, 2);
 	tx.set_load(l);
-	const int sps = tx.sps();
+	const s16 sps = tx.sps();
 	size_t at = out.size();
 	out.resize(at + static_cast<size_t>(n) * sps);
 	tx.reference(&out[at]);
 	u8 ph8[VCVM_TONES], rs[VCVM_TONES] = {};
-	for (int s = 1; s < n; s++) {
+	for (s16 s = 1; s < n; s++) {
 		known_steps(scr, tap, tx.comb().tones, ph8);
 		tx.steps(ph8, rs, &out[at + static_cast<size_t>(s) * sps]);
 	}
 }
 
 /* a parametric part: its preamble, then n symbols of known lags */
-static void param_part(s32 fs, bool p10, int n, u32 *scr, int tap,
+static void param_part(s32 fs, bool p10, s16 n, u32 *scr, s16 tap,
 		       std::vector<float> &out)
 {
 	VcvmParamTx tx;
 	if (tx.init(fs, p10))
 		return;
-	const int T = tx.sps();
+	const s16 T = tx.sps();
 	size_t at = out.size();
 	out.resize(at + static_cast<size_t>(8 + n) * T);
 	tx.preamble(&out[at]);
 	u8 b[4];
-	for (int s = 0; s < n; s++) {
+	for (s16 s = 0; s < n; s++) {
 		known_lag(scr, tap, b);
 		tx.data(b, &out[at + static_cast<size_t>(8 + s) * T]);
 	}
@@ -96,7 +96,7 @@ static void param_part(s32 fs, bool p10, int n, u32 *scr, int tap,
 void vcvm_probe_send(const VcvmProbe &p, std::vector<float> &out)
 {
 	u32 scr = 0;
-	for (int c = 0; c < 9; c++)
+	for (s16 c = 0; c < 9; c++)
 		if (p.combs & (1u << c))
 			comb_part(c, p.fs, false, VcvmProbe::L1_SYMS, &scr,
 				  p.tap, out);
@@ -115,14 +115,14 @@ void vcvm_probe_send(const VcvmProbe &p, std::vector<float> &out)
 
 /* the receiver for the parts p says (L1's combs, L2, L3), idle until
    start(); 0, or -1 for a rate not 8000 or 16000 */
-int VcvmProbeRx::init(const VcvmProbe &p)
+s16 VcvmProbeRx::init(const VcvmProbe &p)
 {
 	if (p.fs != 8000 && p.fs != 16000)
 		return -1;
 	p_ = p;
 	m_ = VcvmProbeMeas();
 	parts_.clear();
-	for (int c = 0; c < 9; c++)
+	for (s16 c = 0; c < 9; c++)
 		if ((p.combs & (1u << c)) && m_.ncomb < 3) {
 			VcvmCombMeas &cm = m_.comb[m_.ncomb++];
 			cm.code = c;
@@ -159,7 +159,7 @@ void VcvmProbeRx::start(s32 from)
 
 /* see vcvm_startup.h: the last 3 to 4 s kept, the parts taken as they
    come */
-void VcvmProbeRx::push(const float *x, int n)
+void VcvmProbeRx::push(const float *x, s32 n)
 {
 	hist_.insert(hist_.end(), x, x + n);
 	if (static_cast<s32>(hist_.size()) > 4L * p_.fs) {
@@ -178,7 +178,7 @@ template <class R> static void feed(R &r, const std::vector<float> &h,
 		e = hbase + static_cast<s32>(h.size());
 	if (a < e)
 		r.push(&h[static_cast<size_t>(a - hbase)],
-		       static_cast<int>(e - a));
+		       static_cast<s32>(e - a));
 }
 
 /* the next comb part: its receiver from a symbol before its expected
@@ -187,12 +187,12 @@ void VcvmProbeRx::begin_comb()
 {
 	Part &pt = parts_[static_cast<size_t>(part_)];
 	crx_.init(pt.code, p_.fs, pt.sym22);
-	const int sps = crx_.comb().sps;
+	const s16 sps = crx_.comb().sps;
 	crx_.restart(std::max(hbase_, first_ - sps));
 	acquired_ = pend_ = false;
 	sym_ = 0;
 	n_ = 0;
-	for (int k = 0; k < VCVM_TONES; k++)
+	for (s16 k = 0; k < VCVM_TONES; k++)
 		se_[k] = see_[k] = sa_[k] = lv_[k] = err_[k] = 0;
 	pt.m->tones = crx_.comb().tones;
 	deadline_ = first_ + 2L * p_.fs;
@@ -226,17 +226,17 @@ void VcvmProbeRx::begin_param(bool p10)
 void VcvmProbeRx::finish_comb(VcvmCombMeas *cm)
 {
 	double mx = 0;
-	for (int k = 0; k < cm->tones; k++)
+	for (s16 k = 0; k < cm->tones; k++)
 		mx = std::max(mx, lv_[k]);
 	cm->n = n_;
-	for (int k = 0; k < cm->tones; k++) {
-		double n = std::max(n_, 1), mu = se_[k] / n;
+	for (s16 k = 0; k < cm->tones; k++) {
+		double n = std::max<s16>(n_, 1), mu = se_[k] / n;
 		cm->sigma[k] = static_cast<float>(
 			sqrt(std::max(0.0, see_[k] / n - mu * mu)));
 		cm->sigma_a[k] = static_cast<float>(sqrt(sa_[k] / n));
 		cm->level_db[k] = static_cast<float>(
 			20 * log10((lv_[k] + 1e-9) / (mx + 1e-9)));
-		cm->errs[k] = static_cast<int>(err_[k]);
+		cm->errs[k] = static_cast<s16>(err_[k]);
 	}
 	cm->ok = n_ > 0;
 }
@@ -256,12 +256,12 @@ void VcvmProbeRx::run()
 			/* 5 ms of the signal at -35 dBFS: over the level
 			   the message mode's receiver takes for quiet (-40),
 			   which a codec's tail after a message may keep */
-			const int w = p_.fs / 200, step = p_.fs / 1000;
+			const s16 w = p_.fs / 200, step = p_.fs / 1000;
 			const double thr = pow(32767 * pow(10, -35 / 20.0), 2) * w;
 			s32 e = received();
 			for (; scan_ + w <= e; scan_ += step) {
 				double s = 0;
-				for (int t = 0; t < w; t++) {
+				for (s16 t = 0; t < w; t++) {
 					double v = hist_[static_cast<size_t>(
 						scan_ - hbase_ + t)];
 					s += v * v;
@@ -282,7 +282,7 @@ void VcvmProbeRx::run()
 		case COMB: {
 			Part &pt = parts_[static_cast<size_t>(part_)];
 			feed(crx_, hist_, hbase_);
-			const int sps = crx_.comb().sps;
+			const s16 sps = crx_.comb().sps;
 			if (!acquired_) {
 				s32 from =
 					onset_ ? first_ : first_ + sps / 4;
@@ -294,7 +294,7 @@ void VcvmProbeRx::run()
 				acquired_ = true;
 				onset_ = false;
 			}
-			const int K = crx_.comb().tones;
+			const s16 K = crx_.comb().tones;
 			VcvmCombSym s;
 			for (;;) {
 				if (sym_ > 0 && !pend_) {
@@ -307,7 +307,7 @@ void VcvmProbeRx::run()
 				/* the first two after the reference aside: the
 				   codec's start, the last comb's end */
 				if (sym_ >= 3) {
-					for (int k = 0; k < K; k++) {
+					for (s16 k = 0; k < K; k++) {
 						double e = s.perr[k] * 180 / M_PI;
 						se_[k] += e;
 						see_[k] += e * e;
@@ -326,7 +326,7 @@ void VcvmProbeRx::run()
 			finish_comb(pt.m);
 			first_ = crx_.next_start();
 			end_ = first_;
-			if (++part_ < static_cast<int>(parts_.size()))
+			if (++part_ < static_cast<s16>(parts_.size()))
 				begin_comb();
 			else if (p_.l3)
 				begin_param(false);
@@ -352,8 +352,8 @@ void VcvmProbeRx::run()
 				}
 				return;
 			}
-			const int N = p10 ? VcvmProbe::L3_P10 : VcvmProbe::L3_P20;
-			int idx;
+			const s16 N = p10 ? VcvmProbe::L3_P10 : VcvmProbe::L3_P20;
+			s16 idx;
 			float c;
 			while (sym_ < N) {
 				u8 b[4];
@@ -393,18 +393,18 @@ void VcvmProbeRx::run()
 
 /* the tones' loading of a comb, its bits a second; the tones whose
    phase error says no have none */
-static double load_comb(const VcvmCombMeas &cm, int allowed, VcvmLoad *l)
+static double load_comb(const VcvmCombMeas &cm, s16 allowed, VcvmLoad *l)
 {
 	zero(*l);
 	double bits = 0;
-	for (int k = 0; k < cm.tones; k++) {
+	for (s16 k = 0; k < cm.tones; k++) {
 		if (cm.level_db[k] < -20)
 			continue;               /* a) out of the band */
 		double s = cm.sigma[k];
-		int pb = s <= 9 && (allowed & VCVM_M_8DPSK) ? 3 : s <= 20 ? 2 : 0;
+		s16 pb = s <= 9 && (allowed & VCVM_M_8DPSK) ? 3 : s <= 20 ? 2 : 0;
 		if (!pb)
 			continue;
-		int rb = 0;
+		s16 rb = 0;
 		if (allowed & VCVM_M_RINGS)
 			rb = cm.sigma_a[k] <= 0.4f ? 2 : cm.sigma_a[k] <= 0.8f ? 1 : 0;
 		l->phase[k] = static_cast<u8>(pb);
@@ -417,11 +417,11 @@ static double load_comb(const VcvmCombMeas &cm, int allowed, VcvmLoad *l)
 /* d): the code rate from the tone symbol error ratio, measured (on
    DQPSK) or, where higher, what the phase error gives on the order
    loaded */
-static int comb_rate(const VcvmCombMeas &cm, const VcvmLoad &l)
+static s16 comb_rate(const VcvmCombMeas &cm, const VcvmLoad &l)
 {
 	double p = 0;
-	int n = 0;
-	for (int k = 0; k < cm.tones; k++) {
+	s16 n = 0;
+	for (s16 k = 0; k < cm.tones; k++) {
 		if (!l.phase[k])
 			continue;
 		double M = l.phase[k] == 2 ? 4 : 8;
@@ -436,7 +436,7 @@ static int comb_rate(const VcvmCombMeas &cm, const VcvmLoad &l)
 }
 
 /* comb code (sym22: its 22.5 ms symbol) in the modes allowed */
-static bool comb_allowed(int code, bool sym22, int allowed)
+static bool comb_allowed(s16 code, bool sym22, s16 allowed)
 {
 	if (sym22 && !(allowed & VCVM_M_SYM22))
 		return false;
@@ -452,16 +452,16 @@ static bool comb_allowed(int code, bool sym22, int allowed)
 /* see vcvm_startup.h: the comb that carries the most (its tones'
    orders and rings, its code rate) where it loads four tones and
    carries more than the parametric mode; else that mode, or none */
-VcvmLoading vcvm_choose(const VcvmProbeMeas &m, int allowed)
+VcvmLoading vcvm_choose(const VcvmProbeMeas &m, s16 allowed)
 {
 	VcvmLoading best;
 	double bbps = -1;
 	const VcvmCombMeas *cand[4];
-	int nc = 0;
-	for (int i = 0; i < m.ncomb; i++)
+	s16 nc = 0;
+	for (s16 i = 0; i < m.ncomb; i++)
 		cand[nc++] = &m.comb[i];
 	cand[nc++] = &m.l2;
-	for (int i = 0; i < nc; i++) {
+	for (s16 i = 0; i < nc; i++) {
 		const VcvmCombMeas &cm = *cand[i];
 		if (!cm.ok || !comb_allowed(cm.code, cm.sym22, allowed))
 			continue;

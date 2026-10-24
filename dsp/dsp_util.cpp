@@ -97,7 +97,7 @@ void Biquad::highpass(float freq, float q, s32 srate)
  */
 
 /* a detector for freq Hz over blocks of block samples, state cleared */
-void Goertzel::init(float freq, int block, s32 srate)
+void Goertzel::init(float freq, s16 block, s32 srate)
 {
 	*this = Goertzel();
 	coef = 2 * cos(2 * M_PI * freq / srate);
@@ -107,7 +107,7 @@ void Goertzel::init(float freq, int block, s32 srate)
 /* one sample in; at the end of a block power gets the tone's mean
    square (A^2 / 2 for a sine of amplitude A at freq), the filter starts
    over and 1 is returned, else 0 */
-int Goertzel::run(float x)
+s16 Goertzel::run(float x)
 {
 	float s = x + coef * s1 - s2;
 	s2 = s1;
@@ -141,9 +141,9 @@ void PowerMeter::init(float time_const_sec, s32 srate)
  */
 
 /* see dsp.h */
-int V22Scrambler::scramble(int bit)
+s16 V22Scrambler::scramble(s16 bit)
 {
-	int out = (bit ^ (reg >> 13) ^ (reg >> 16)) & 1;
+	s16 out = (bit ^ (reg >> 13) ^ (reg >> 16)) & 1;
 	if (ones >= 64) {
 		out ^= 1;
 		ones = 0;
@@ -155,9 +155,9 @@ int V22Scrambler::scramble(int bit)
 
 /* the inverse of scramble(): the line bit goes into the register, and
    after 64 ones on the line the next output bit is inverted back */
-int V22Scrambler::descramble(int bit)
+s16 V22Scrambler::descramble(s16 bit)
 {
-	int out = (bit ^ (reg >> 13) ^ (reg >> 16)) & 1;
+	s16 out = (bit ^ (reg >> 13) ^ (reg >> 16)) & 1;
 	if (ones >= 64) {
 		out ^= 1;
 		ones = 0;
@@ -200,10 +200,10 @@ static const float dtmf_hi[] = { 1209, 1336, 1477, 1633 };
 
 /* the tone pair of digit (0-9, *, #, A-D, a-d) at srate, from phase 0;
    0, or -1 (state unchanged) when it is no DTMF digit */
-int DtmfGen::set(char digit, s32 srate)
+s16 DtmfGen::set(char digit, s32 srate)
 {
 	const char *p;
-	int i;
+	s16 i;
 	if (digit >= 'a' && digit <= 'd')
 		digit -= 'a' - 'A';
 	p = strchr(dtmf_keys, digit);
@@ -235,7 +235,7 @@ void DtmfDetect::init(s32 srate)
 {
 	*this = DtmfDetect();
 	n_block = (205 * srate + 4000) / 8000;
-	for (int k = 0; k < 4; k++) {
+	for (s16 k = 0; k < 4; k++) {
 		coef[k] = 2 * cosf(2 * static_cast<float>(M_PI) * dtmf_lo[k] /
 				   srate);
 		coef[4 + k] = 2 * cosf(2 * static_cast<float>(M_PI) *
@@ -251,17 +251,17 @@ void DtmfDetect::init(s32 srate)
 char DtmfDetect::classify(float e, const float *p) const
 {
 	static const char keys[] = "123A456B789C*0#D";
-	int lo = 0, hi = 4;
+	s16 lo = 0, hi = 4;
 
 	if (e < static_cast<float>(n_block) * 100.0f * 100.0f)
 		return 0;
-	for (int k = 1; k < 4; k++) {
+	for (s16 k = 1; k < 4; k++) {
 		if (p[k] > p[lo])
 			lo = k;
 		if (p[4 + k] > p[hi])
 			hi = 4 + k;
 	}
-	for (int k = 0; k < 4; k++) {
+	for (s16 k = 0; k < 4; k++) {
 		if (k != lo && p[k] * 4 > p[lo])
 			return 0;
 		if (4 + k != hi && p[4 + k] * 4 > p[hi])
@@ -281,7 +281,7 @@ DtmfDetect::Event DtmfDetect::sample(float x)
 	Event ev = NONE;
 	char d;
 
-	for (int k = 0; k < 8; k++) {
+	for (s16 k = 0; k < 8; k++) {
 		float s = x + coef[k] * s1[k] - s2[k];
 		s2[k] = s1[k];
 		s1[k] = s;
@@ -289,7 +289,7 @@ DtmfDetect::Event DtmfDetect::sample(float x)
 	energy += x * x;
 	if (++n < n_block)
 		return NONE;
-	for (int k = 0; k < 8; k++)
+	for (s16 k = 0; k < 8; k++)
 		p[k] = s1[k] * s1[k] + s2[k] * s2[k] - coef[k] * s1[k] * s2[k];
 	d = classify(energy, p);
 	if (digit) {
@@ -303,7 +303,7 @@ DtmfDetect::Event DtmfDetect::sample(float x)
 		ev = ON;
 	}
 	last = d;
-	for (int k = 0; k < 8; k++)
+	for (s16 k = 0; k < 8; k++)
 		s1[k] = s2[k] = 0;
 	energy = 0;
 	n = 0;
@@ -327,7 +327,7 @@ void CallToneDetect::init(s32 srate)
 
 	*this = CallToneDetect();
 	len = srate * CT_BLOCK_MS / 1000;
-	for (int k = 0; k < 5; k++)
+	for (s16 k = 0; k < 5; k++)
 		g[k].init(f[k], len, srate);
 	ans[0].init(2100, len, srate);
 	ans[1].init(2225, len, srate);
@@ -343,7 +343,7 @@ void CallToneDetect::sample(float x)
 
 	energy += x * x;
 	band_energy += b * b;
-	for (int k = 0; k < 5; k++)
+	for (s16 k = 0; k < 5; k++)
 		g[k].run(x);
 	ans[0].run(x);
 	ans[1].run(x);
@@ -368,7 +368,7 @@ void CallToneDetect::block()
 	float e = energy / len, t = 0;
 	bool on, b;
 
-	for (int k = 0; k < 5; k++)
+	for (s16 k = 0; k < 5; k++)
 		t = std::max(t, g[k].power);
 	t = std::max(t, g[2].power + g[4].power);       /* 440 + 480 */
 	t = std::max(t, g[0].power + g[3].power);       /* 400 + 450 */
@@ -396,7 +396,7 @@ void CallToneDetect::block()
 	else
 		since_ring++;
 
-	for (int k = 0; k < 2; k++) {
+	for (s16 k = 0; k < 2; k++) {
 		if (e > 100.0f * 100.0f && ans[k].power > 0.6f * e) {
 			if (ans_drop[k] > CT_DROP_MAX)
 				ans_run[k] = 0;
@@ -434,11 +434,11 @@ void CallToneDetect::block()
 #define CNG_RUN_MAX     (800 / CT_BLOCK_MS)
 
 /* see dsp.h */
-void CngDetect::init(s32 srate, int freq)
+void CngDetect::init(s32 srate, s16 freq)
 {
 	*this = CngDetect();
 	len = srate * CT_BLOCK_MS / 1000;
-	for (int k = 0; k < 3; k++)
+	for (s16 k = 0; k < 3; k++)
 		tone[k].init(freq - 25 + 25 * k, len, srate);
 	ans.init(2100, len, srate);
 	drop = CT_GAP;
@@ -525,7 +525,7 @@ bool RingDetect::sample(float x)
 		off_samples = 0;
 	}
 	if (a > 100) {
-		int s = y > 0 ? 1 : -1;
+		s16 s = y > 0 ? 1 : -1;
 		pulse = on && s > 0 && sign < 0;
 		sign = s;
 	}
@@ -544,7 +544,7 @@ static float rs_h6[RS_LEN], rs_h5[RS_LEN];
 static double bessel_i0(double x)
 {
 	double s = 1, t = 1;
-	int k;
+	s16 k;
 	for (k = 1; k < 40; k++) {
 		t *= (x / (2 * k)) * (x / (2 * k));
 		s += t;
@@ -554,10 +554,10 @@ static double bessel_i0(double x)
 
 /* the low pass prototype at 48 kHz, cut off at 3870 Hz, Kaiser window
    (beta 7: about 70 dB), sorted into L phases of RS_LEN / L taps */
-static void rs_design(float *h, int L)
+static void rs_design(float *h, s16 L)
 {
 	const double fc = 3870.0 / 48000, beta = 7.0;
-	int n, taps = RS_LEN / L;
+	s16 n, taps = RS_LEN / L;
 	for (n = 0; n < RS_LEN; n++) {
 		double m = n - (RS_LEN - 1) / 2.0, r = 2 * m / (RS_LEN - 1);
 		double s = m == 0 ? 2 * fc : sin(2 * M_PI * fc * m) / (M_PI * m);
@@ -577,7 +577,7 @@ static void rs_tables(void)
 
 /* up / down must be 6/5 (8000 -> 9600 Hz) or 5/6 (9600 -> 8000 Hz):
    0, else -1; the shared tables are built on the first call */
-int Resampler::init(int up, int down)
+s16 Resampler::init(s16 up, s16 down)
 {
 	static std::once_flag once;
 	std::call_once(once, rs_tables);
@@ -593,9 +593,9 @@ int Resampler::init(int up, int down)
 
 /* x into the history, then every output due before the next input:
    phase t of the polyphase filter, t stepping by M modulo L */
-int Resampler::run(float x, float out[2])
+s16 Resampler::run(float x, float out[2])
 {
-	int n = 0;
+	s16 n = 0;
 	/* the history twice over, so that it reads as one block */
 	if (--pos < 0)
 		pos = taps - 1;
@@ -603,7 +603,7 @@ int Resampler::run(float x, float out[2])
 	while (t < L) {
 		const float *hp = h + t * taps, *b = hist + pos;
 		float y = 0;
-		int k;
+		s16 k;
 		for (k = 0; k < taps; k++)
 			y += hp[k] * b[k];
 		out[n++] = y;

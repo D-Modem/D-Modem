@@ -23,7 +23,7 @@ static const u8 SYN = 0x16, DLE = 0x10, STX = 0x02, ETX = 0x03;
 static u16 crc_add(u16 crc, u8 c)
 {
 	crc ^= c;
-	for (int i = 0; i < 8; i++)
+	for (s16 i = 0; i < 8; i++)
 		crc = crc & 1 ? static_cast<u16>(crc >> 1 ^ 0xa001) :
 			static_cast<u16>(crc >> 1);
 	return crc;
@@ -32,9 +32,9 @@ static u16 crc_add(u16 crc, u8 c)
 /* the first octet of variable parameter type in a header of len octets
    (with its length indication), its parameters from octet start; -1 if
    it has none */
-static int param(const u8 *h, int len, int start, int type)
+static s16 param(const u8 *h, s16 len, s16 start, s16 type)
 {
-	for (int i = start; i + 2 <= len; i += 2 + h[i + 1]) {
+	for (s16 i = start; i + 2 <= len; i += 2 + h[i + 1]) {
 		if (i + 2 + h[i + 1] > len)
 			break;
 		if (h[i] == type && h[i + 1] >= 1)
@@ -152,9 +152,9 @@ bool MnpAsync::tx_fill()
 
 /* the rest of the n items with no frame to send: what is left of the
    last character, then marks; how many */
-int MnpAsync::tx_idle(int nbits, u8 mask, u8 *&buf, int &n)
+s32 MnpAsync::tx_idle(s16 nbits, u8 mask, u8 *&buf, s32 &n)
 {
-	int ret = 0;
+	s32 ret = 0;
 
 	if (tx_.bit && n > 0) {
 		*buf++ = static_cast<u8>(tx_.data << (nbits - tx_.bit) |
@@ -289,8 +289,8 @@ s32 Mnp::t401_est() const
    at the line's rate, and a round trip of 1 s */
 s32 Mnp::t401_data() const
 {
-	const int lb = mode_ == 3 ? 8 : 10, lf = mode_ == 3 ? 4 : 7;
-	const int llt = opt_ & 2 ? 3 : 5, lla = opt_ & 2 ? 4 : 8;
+	const s16 lb = mode_ == 3 ? 8 : 10, lf = mode_ == 3 ? 4 : 7;
+	const s16 llt = opt_ & 2 ? 3 : 5, lla = opt_ & 2 ? 4 : 8;
 	return static_cast<s32>(k_) * lb * (lf + llt + n401_) +
 	       lb * (lf + lla) + rate();
 }
@@ -392,7 +392,7 @@ void Mnp::t401_expired()
 
 /* the control frame's buffer for a header of len octets (with the
    length indication) */
-Frame *Mnp::ctrl(int len)
+Frame *Mnp::ctrl(s16 len)
 {
 	ctrl_.buf = ctrl_buf_;
 	ctrl_.size = len;
@@ -408,11 +408,11 @@ Frame *Mnp::build_lr()
 {
 	static const u8 constant2[] = { 1, 6, 1, 0, 0, 0, 0, 255 };
 	u8 *b = ctrl_buf_;
-	int n = 1;
-	const int mode = initiator_ ? our_mode_ : mode_;
-	const int k = initiator_ ? our_k_ : k_;
-	const int n401 = !initiator_ ? lr_n401_ :
-		our_opt_ & 1 ? MNP_DFLT_INFO : our_n401_;
+	s16 n = 1;
+	const s16 mode = initiator_ ? our_mode_ : mode_;
+	const s16 k = initiator_ ? our_k_ : k_;
+	const s16 n401 = !initiator_ ? lr_n401_ :
+		our_opt_ & 1 ? static_cast<s16>(MNP_DFLT_INFO) : our_n401_;
 
 	b[n++] = LR;
 	b[n++] = 2;             /* constant parameter 1 */
@@ -518,8 +518,8 @@ Frame *Mnp::next_lt()
 		if (static_cast<u8>(vs_ - una_) >= k_ || !can_send(vs_))
 			return nullptr;
 		s = &slot_[vs_ % MNP_MAX_K];
-		const int hdr = opt_ & 2 ? 3 : 5;
-		int n = link_->read_chars(s->buf + hdr, n401_);
+		const s16 hdr = opt_ & 2 ? 3 : 5;
+		s16 n = link_->read_chars(s->buf + hdr, n401_);
 		if (n <= 0)
 			return nullptr;
 		u8 *b = s->buf;
@@ -631,25 +631,25 @@ void Mnp::tx_complete(Frame *f)
    have (256-octet information fields with bit 1), MNP 5 (parameter 9)
    if both want it; unknown parameters are ignored; false (ld_reason_
    set) if they cannot be agreed */
-bool Mnp::rx_lr(const u8 *h, int len)
+bool Mnp::rx_lr(const u8 *h, s16 len)
 {
 	if (len < 3 || h[2] != 2) {
 		ld_reason_ = 2;
 		return false;
 	}
-	int mode = param(h, len, 3, 2);
-	int k = param(h, len, 3, 3);
-	int opt = param(h, len, 3, 8);
-	int mnp5 = param(h, len, 3, 9);
+	s16 mode = param(h, len, 3, 2);
+	s16 k = param(h, len, 3, 3);
+	s16 opt = param(h, len, 3, 8);
+	s16 mnp5 = param(h, len, 3, 9);
 	s32 n401 = MNP_DFLT_INFO;
-	for (int i = 3; i + 2 <= len && i + 2 + h[i + 1] <= len;
+	for (s16 i = 3; i + 2 <= len && i + 2 + h[i + 1] <= len;
 	     i += 2 + h[i + 1])
 		if (h[i] == 4)
 			n401 = h[i + 1] >= 2 ?
 				h[i + 2] | static_cast<s32>(h[i + 3]) << 8 :
 				h[i + 1] == 1 ? h[i + 2] : n401;
-	mode = std::min(mode < 0 ? 2 : mode, our_mode_);
-	k = std::min(k < 0 ? 1 : k, our_k_);
+	mode = std::min<s16>(mode < 0 ? 2 : mode, our_mode_);
+	k = std::min<s16>(k < 0 ? 1 : k, our_k_);
 	n401 = std::min(n401, static_cast<s32>(our_n401_));
 	if (mode < 2 || k < 1 || n401 < 1) {
 		link_->logf("mnp: LR: mode %d, k %d, N401 %" PRId32
@@ -677,9 +677,9 @@ bool Mnp::rx_lr(const u8 *h, int len)
    has); V(R) - 1 once ignored, others out of sequence or without credit
    discarded with an LA.  One with no data (A.6.6.1 has none, but the
    HSF modem sends them with MNP 5) is in sequence all the same */
-void Mnp::rx_lt(const u8 *h, int len, const u8 *info, int n)
+void Mnp::rx_lt(const u8 *h, s16 len, const u8 *info, s16 n)
 {
-	const int ns = len == 3 ? h[2] : param(h, len, 2, 1);
+	const s16 ns = len == 3 ? h[2] : param(h, len, 2, 1);
 	if (ns < 0 || n > MNP_MAX_INFO) {
 		link_->logf("mnp: bad LT (header %d, N(S) %d, %d octets).",
 			    len, ns, n);
@@ -706,7 +706,7 @@ void Mnp::rx_lt(const u8 *h, int len, const u8 *info, int n)
 	lt_rcvd_++;
 	if (!n)
 		return;
-	int w = link_->write_chars(info, n);
+	s16 w = link_->write_chars(info, n);
 	if (w < 0)
 		w = 0;
 	if (w < n) {
@@ -724,10 +724,10 @@ void Mnp::rx_lt(const u8 *h, int len, const u8 *info, int n)
    (T401 again for any still out), its credit; the same N(R) again sends
    from the first not acknowledged (A.7.3.5), but for the LAs the LTs
    sent before that may still bring */
-void Mnp::rx_la(const u8 *h, int len)
+void Mnp::rx_la(const u8 *h, s16 len)
 {
-	int nr = len == 4 ? h[2] : param(h, len, 2, 1);
-	int nk = len == 4 ? h[3] : param(h, len, 2, 2);
+	s16 nr = len == 4 ? h[2] : param(h, len, 2, 1);
+	s16 nk = len == 4 ? h[3] : param(h, len, 2, 2);
 	if (nr < 0 || nk < 0) {
 		link_->logf("mnp: bad LA.");
 		return;
@@ -774,10 +774,10 @@ void Mnp::rx_la(const u8 *h, int len)
 
 /* an LN (A.7.4.3): an LNA, and the break (in sequence) noted; we pass
    no break to the DTE */
-void Mnp::rx_ln(const u8 *h, int len)
+void Mnp::rx_ln(const u8 *h, s16 len)
 {
-	const int nsa = param(h, len, 2, 1);
-	const int type = param(h, len, 2, 2);
+	const s16 nsa = param(h, len, 2, 1);
+	const s16 type = param(h, len, 2, 2);
 	if (nsa < 0) {
 		link_->logf("mnp: bad LN.");
 		return;
@@ -791,7 +791,7 @@ void Mnp::rx_ln(const u8 *h, int len)
 }
 
 /* an LD: the connection is over */
-void Mnp::rx_ld(const u8 *h, int len)
+void Mnp::rx_ld(const u8 *h, s16 len)
 {
 	link_->logf("mnp: LD, reason %d.", param(h, len, 2, 1));
 	phase_ = Phase::Idle;
@@ -803,13 +803,13 @@ void Mnp::rx_ld(const u8 *h, int len)
 void Mnp::rx_frame(Frame *f, bool bit)
 {
 	const u8 *b = f->buf;
-	const int len = b[0] + 1;
+	const s16 len = b[0] + 1;
 	if (b[0] == 255 || len < 2 || len > f->count) {
 		link_->logf("mnp: bad header (%d of %d).", b[0], f->count);
 		rx_bad_frame(bit);
 		return;
 	}
-	const int type = b[1];
+	const s16 type = b[1];
 	/* the data phase's framing */
 	const bool data = bit == (mode_ == 3);
 	heard_ = true;
@@ -847,7 +847,7 @@ void Mnp::rx_frame(Frame *f, bool bit)
 			t401_ = t401_est();
 		} else if (type == LA && !bit) {
 			data_phase();
-			const int nk = len == 4 ? b[3] : param(b, len, 2, 2);
+			const s16 nk = len == 4 ? b[3] : param(b, len, 2, 2);
 			if (nk >= 0)
 				nk_ = static_cast<u8>(nk);
 		} else if ((type == LT || type == LA) && data) {
@@ -958,7 +958,7 @@ void Mnp::data_phase()
 
 /* the establishment failed or the connection is lost: LD with reason,
    then released */
-void Mnp::fail(int reason)
+void Mnp::fail(s16 reason)
 {
 	link_->logf("mnp: disconnect, reason %d.", reason);
 	ld_reason_ = reason;
@@ -993,7 +993,7 @@ void Mnp::push_rest()
 		link_->push_pending = false;
 		return;
 	}
-	int w = link_->write_chars(rx_buf_ + rx_head_, rx_count_);
+	s16 w = link_->write_chars(rx_buf_ + rx_head_, rx_count_);
 	if (w > 0) {
 		rx_head_ += w;
 		rx_count_ -= w;
@@ -1049,8 +1049,8 @@ void Mnp::init(Link *link, const Config &cfg)
 	link_ = link;
 	phase_ = Phase::Idle;
 	our_mode_ = cfg.mnp_mode == 2 ? 2 : 3;
-	our_k_ = std::clamp(cfg.mnp_k, 1, static_cast<int>(MNP_MAX_K));
-	our_n401_ = std::clamp(cfg.mnp_info, 1, static_cast<int>(MNP_MAX_INFO));
+	our_k_ = std::clamp<s16>(cfg.mnp_k, 1, MNP_MAX_K);
+	our_n401_ = std::clamp<s16>(cfg.mnp_info, 1, MNP_MAX_INFO);
 	our_opt_ = cfg.mnp_opt & (our_n401_ == MNP_MAX_INFO ? 3 : 2);
 	our_mnp5_ = cfg.mnp5;
 	for (auto &s : slot_) {

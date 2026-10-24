@@ -33,23 +33,23 @@ public:
 
 	/* N2 codewords and strings of up to N7 characters allocated; -1 if
 	   out of range or no memory */
-	int init(s32 dict_size, s32 max_string);
+	s16 init(s32 dict_size, s32 max_string);
 	/* smaller values from the remote (within what init allocated) */
-	int config(s32 dict_size, s32 max_string);
+	s16 config(s32 dict_size, s32 max_string);
 	/* frees the dictionary (not ready() any more) */
 	void exit();
 	/* init() was done */
 	bool ready() const { return dict_ != nullptr; }
 
 	/* one character in; then out() gives what it produced */
-	int encode(u8 ch);
-	int decode(u8 ch);
+	s16 encode(u8 ch);
+	s16 decode(u8 ch);
 	/* the encoder: what it holds out (FLUSH); the decoder: the string so
 	   far out, at the end of a frame */
-	int flush_encoder();
-	int flush_decoder();
+	s16 flush_encoder();
+	s16 flush_decoder();
 	/* the output so far, up to n bytes */
-	int out(u8 *buf, int n);
+	s16 out(u8 *buf, s16 n);
 	/* output waiting */
 	bool has_out() const { return olen_ > 0; }
 
@@ -68,13 +68,13 @@ private:
 	void dict_init();
 	u16 match_char(u16 at, u8 ch) const;
 	u16 add_char(u16 at, u8 ch);
-	int send_string();
-	int recv_data(u16 cw);
-	int send_data(u16 cw);
-	int test_mode();
+	s16 send_string();
+	s16 recv_data(u16 cw);
+	s16 send_data(u16 cw);
+	s16 test_mode();
 	void send_cw(u16 cw);
 	void align_bits();
-	int send_bits();
+	s16 send_bits();
 
 	Mode mode_ = TRANSPARENT;
 	bool escape_ = false;           /* decoder: after the escape char */
@@ -85,19 +85,19 @@ private:
 	u16 cw_size_ = 0;
 	u16 threshold_ = 0;
 	u8 escape_char_ = 0;
-	int max_string_ = 0;
+	s16 max_string_ = 0;
 	s32 dict_size_ = 0;
 	Node *dict_ = nullptr;
-	int bit_len_ = 0;
+	s16 bit_len_ = 0;
 	u32 bit_data_ = 0;
-	int flushed_len_ = 0;
-	int str_len_ = 0;
+	s16 flushed_len_ = 0;
+	s16 str_len_ = 0;
 	u8 str_data_[V42BIS_MAX_STRING];
 	/* the encoder's test of the compression ratio */
 	u16 cmp_last_ = 0;
 	u32 cmp_bits_ = 0, raw_bits_ = 0;
 	/* output */
-	int olen_ = 0, ohead_ = 0;
+	s16 olen_ = 0, ohead_ = 0;
 	u8 obuf_[1024];
 };
 

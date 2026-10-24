@@ -41,7 +41,7 @@ struct Ours {
 
 /* our machine's next page, from our document: 1, 0 when there are no
    more, -1 on an error */
-static int ours_next_page(void *ctx, T4Page *p)
+static s16 ours_next_page(void *ctx, T4Page *p)
 {
 	return static_cast<Ours *>(ctx)->in.read_page(p);
 }

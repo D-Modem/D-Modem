@@ -44,11 +44,11 @@ enum {
 /* how much slower the V.17 AGC is in the data than in the training */
 #define V17_DATA_AGC_SLOWER 16
 
-static const int cdba_to_abcd[4] = { 2, 3, 1, 0 };
-static const int dibit_to_step[4] = { 1, 0, 2, 3 };
+static const s16 cdba_to_abcd[4] = { 2, 3, 1, 0 };
+static const s16 dibit_to_step[4] = { 1, 0, 2, 3 };
 /* phase steps in 45 degree units */
-static const int steps_8[8] = { 1, 0, 2, 3, 6, 7, 5, 4 };
-static const int steps_4[4] = { 0, 2, 6, 4 };
+static const s16 steps_8[8] = { 1, 0, 2, 3, 6, 7, 5, 4 };
+static const s16 steps_4[4] = { 0, 2, 6, 4 };
 
 static const cplx v27_points[8] = {
 	{ 1.414f, 0 }, { 1, 1 }, { 0, 1.414f }, { -1, 1 },
@@ -72,7 +72,7 @@ static const cplx v29_cdcd[6] = {
 /* the T.31 class 1 <mod> code (3, 24 ... 146) to a modulation; the
    V.17 codes one above a rate (74, 98, 122, 146) set short_train.  1, or
    0 for a code that has none */
-int fax_mod_from_code(int code, enum fax_mod *mod, int *short_train)
+s16 fax_mod_from_code(u32 code, enum fax_mod *mod, s16 *short_train)
 {
 	*short_train = 0;
 	switch (code) {
@@ -117,15 +117,15 @@ float fax_tx_rms(enum fax_mod mod)
 }
 
 /* the modulation families */
-static int is_v17(enum fax_mod m) { return m >= FM_V17_7200; }
+static s16 is_v17(enum fax_mod m) { return m >= FM_V17_7200; }
 /* (see is_v17()) */
-static int is_v29(enum fax_mod m) { return m >= FM_V29_4800 && m <= FM_V29_9600; }
+static s16 is_v29(enum fax_mod m) { return m >= FM_V29_4800 && m <= FM_V29_9600; }
 /* (see is_v17()) */
-static int is_v27(enum fax_mod m) { return m == FM_V27_2400 || m == FM_V27_4800; }
+static s16 is_v27(enum fax_mod m) { return m == FM_V27_2400 || m == FM_V27_4800; }
 
 /* data bits per symbol (V.17: those into the trellis encoder, which
    adds one) */
-static int data_bits(enum fax_mod m)
+static s16 data_bits(enum fax_mod m)
 {
 	switch (m) {
 	case FM_V27_2400: return 2;
@@ -153,7 +153,7 @@ static const cplx *v17_points(enum fax_mod m)
 }
 
 /* where the points of a V.29 rate are in v29_abab[] and v29_cdcd[] */
-static int v29_offset(enum fax_mod m)
+static s16 v29_offset(enum fax_mod m)
 {
 	return m == FM_V29_9600 ? 0 : m == FM_V29_7200 ? 2 : 4;
 }
@@ -207,7 +207,7 @@ static float mod_alpha(enum fax_mod m)
 }
 
 /* training lengths in symbols */
-static int trn_len(enum fax_mod m, int short_train)
+static s16 trn_len(enum fax_mod m, s16 short_train)
 {
 	if (is_v17(m))
 		return short_train ? 38 : 2976;
@@ -218,7 +218,7 @@ static int trn_len(enum fax_mod m, int short_train)
 
 /* the scrambled ones before the data, symbols (V.27ter segment 5,
    V.29 and V.17 segment 4) */
-static int ones_len(enum fax_mod m)
+static s16 ones_len(enum fax_mod m)
 {
 	return is_v27(m) ? 8 : 48;
 }
@@ -229,9 +229,9 @@ static int ones_len(enum fax_mod m)
  */
 
 /* 1 + x^-6 + x^-7 with the V.27ter repeated pattern guard */
-static int scr7(u32 *reg, int *count, int bit)
+static s16 scr7(u32 *reg, s16 *count, s16 bit)
 {
-	int out = (bit ^ (*reg >> 5) ^ (*reg >> 6)) & 1;
+	s16 out = (bit ^ (*reg >> 5) ^ (*reg >> 6)) & 1;
 	if (*count >= 33) {
 		out ^= 1;
 		*count = 0;
@@ -246,9 +246,9 @@ static int scr7(u32 *reg, int *count, int bit)
 
 /* its descrambler, the guard counting on the received bits as the
    scrambler's does on the sent ones */
-static int descr7(u32 *reg, int *count, int bit)
+static s16 descr7(u32 *reg, s16 *count, s16 bit)
 {
-	int out = (bit ^ (*reg >> 5) ^ (*reg >> 6)) & 1;
+	s16 out = (bit ^ (*reg >> 5) ^ (*reg >> 6)) & 1;
 	if (*count >= 33) {
 		out ^= 1;
 		*count = 0;
@@ -262,9 +262,9 @@ static int descr7(u32 *reg, int *count, int bit)
 }
 
 /* V.29 training sequence generator (1 + x^-6 + x^-7, seed 0x2A) */
-static int v29_trn_bit(u32 *reg)
+static s16 v29_trn_bit(u32 *reg)
 {
-	int bit = *reg & 1;
+	s16 bit = *reg & 1;
 	*reg >>= 1;
 	*reg |= ((bit ^ *reg) & 1) << 6;
 	return bit;
@@ -277,9 +277,9 @@ static int v29_trn_bit(u32 *reg)
 
 /* the next bit into the scrambler: the caller's in the data segment,
    else a one; the caller's FAX_BIT_END sets ending (a one goes out) */
-int FaxTx::data_bit()
+s16 FaxTx::data_bit()
 {
-	int b;
+	s16 b;
 	if (seg != SEG_DATA)
 		return 1;
 	b = get_bit(ctx);
@@ -295,7 +295,7 @@ int FaxTx::data_bit()
    the last state (V.29 9600: the first bit picks the amplitude) */
 cplx FaxTx::data_symbol()
 {
-	int n = data_bits(mod), q = 0, k, amp = 0, bits;
+	s16 n = data_bits(mod), q = 0, k, amp = 0, bits;
 
 	if (is_v17(mod)) {
 		for (k = 0; k < n; k++)
@@ -327,7 +327,7 @@ cplx FaxTx::data_symbol()
 }
 
 /* on to training segment seg_, counting its symbols from 0 */
-void FaxTx::next_segment(int seg_)
+void FaxTx::next_segment(s16 seg_)
 {
 	seg = seg_;
 	seg_sym = 0;
@@ -339,7 +339,7 @@ void FaxTx::next_segment(int seg_)
 static cplx fax_tx_symbol(FaxTx *t)
 {
 	cplx z = { 0, 0 };
-	int b1, b2, off, shift;
+	s16 b1, b2, off, shift;
 
 	/* segment changes */
 	switch (t->seg) {
@@ -376,7 +376,7 @@ static cplx fax_tx_symbol(FaxTx *t)
 		   14400.  100 ms of them cover that. */
 		if (t->seg_sym >= ((is_v17(t->mod) && t->short_train) ||
 				    is_v27(t->mod) ?
-				    static_cast<int>(mod_baud(t->mod)) / 10 :
+				    static_cast<s16>(mod_baud(t->mod)) / 10 :
 				    ones_len(t->mod)))
 			t->next_segment(SEG_DATA);
 		break;
@@ -452,7 +452,7 @@ static cplx fax_tx_symbol(FaxTx *t)
 /* a transmitter for mod_ at srate_ samples/s, short_train_ for the V.17
    short training; get_bit_(ctx_) gives the data bits.  V.21 sends the
    caller's bits from the start (the HDLC flags are the caller's) */
-void FaxTx::init(enum fax_mod mod_, int short_train_, s32 srate_, fax_get_bit_t get_bit_, void *ctx_)
+void FaxTx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_get_bit_t get_bit_, void *ctx_)
 {
 	reinit(*this);
 	mod = mod_;
@@ -510,30 +510,30 @@ float FaxTx::sample()
 
 /* the phase state of a received symbol: V.17 the nearest of A, B, C, D
    (0-3), else the nearest multiple of 45 degrees (0-7) */
-int FaxRx::state_of(cplx z)
+s16 FaxRx::state_of(cplx z)
 {
 	if (is_v17(mod))
 		return nearest_point(v32_abcd, 4, z);
-	return static_cast<int>(lrintf(atan2f(z.im, z.re) /
+	return static_cast<s16>(lrintf(atan2f(z.im, z.re) /
 				       static_cast<float>(M_PI / 4))) &
 	       7;
 }
 
 /* the absolute phase state of a training point */
-int FaxRx::point_state(cplx p)
+s16 FaxRx::point_state(cplx p)
 {
 	return state_of(p);
 }
 
 /* the point reference symbol k is sent as */
-cplx FaxRx::ref_point(int k)
+cplx FaxRx::ref_point(s16 k)
 {
-	int s = ref[k];
+	s16 s = ref[k];
 	if (is_v17(mod))
 		return v32_abcd[s];
 	if (is_v29(mod)) {
 		/* the C/D points of this rate */
-		int off = v29_offset(mod);
+		s16 off = v29_offset(mod);
 		return s == point_state(v29_cdcd[off]) ?
 			v29_cdcd[off] : v29_cdcd[off + 1];
 	}
@@ -542,11 +542,11 @@ cplx FaxRx::ref_point(int k)
 
 /* the training symbols as phase states, and the scrambler state at the
    start of the data path */
-int FaxRx::make_reference()
+s16 FaxRx::make_reference()
 {
-	int n = trn_len(mod, short_train), k, b1, b2, shift, state_ = 0;
+	s16 n = trn_len(mod, short_train), k, b1, b2, shift, state_ = 0;
 	u32 scr_ = 0, tscr = 0x2A;
-	int count = 0;
+	s16 count = 0;
 	signed char *ref_;
 
 	if (is_v17(mod))
@@ -574,7 +574,7 @@ int FaxRx::make_reference()
 		}
 		scr = scr_;
 	} else if (is_v29(mod)) {
-		int off = v29_offset(mod);
+		s16 off = v29_offset(mod);
 		for (k = 0; k < n; k++)
 			ref_[k] = point_state(v29_cdcd[off + v29_trn_bit(&tscr)]);
 		scr = 0;
@@ -598,7 +598,7 @@ int FaxRx::make_reference()
    short training; put_bit_(ctx_) gets the descrambled data bits once it
    has trained.  mem: what a V.17 long train left (may be NULL).  0, or
    -1 when out of memory */
-int FaxRx::init(enum fax_mod mod_, int short_train_, s32 srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem)
+s16 FaxRx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem)
 {
 	reinit(*this);
 	mod = mod_;
@@ -657,11 +657,11 @@ void FaxRx::release()
 
 /* the n bits of a symbol's value q (the highest first if msb_first)
    through the descrambler, to put_bit once trained */
-void FaxRx::bits_out(int q, int n, int msb_first)
+void FaxRx::bits_out(s16 q, s16 n, s16 msb_first)
 {
-	int k;
+	s16 k;
 	for (k = 0; k < n; k++) {
-		int bit = msb_first ? (q >> (n - 1 - k)) & 1 : (q >> k) & 1;
+		s16 bit = msb_first ? (q >> (n - 1 - k)) & 1 : (q >> k) & 1;
 		bit = is_v27(mod) ? descr7(&scr, &scr_count, bit) :
 			descramble(&scr, SCR_GPC, bit);
 		if (trained)
@@ -703,11 +703,11 @@ void FaxRx::data_start()
 void FaxRx::data_symbol()
 {
 	cplx z = qam.z, d;
-	int n = data_bits(mod), k, best, phase, dp, bits;
+	s16 n = data_bits(mod), k, best, phase, dp, bits;
 
 	if (is_v17(mod)) {
 		const cplx *pts = v17_points(mod);
-		int q;
+		s16 q;
 		best = nearest_point(pts, 1 << (n + 1), z);
 		d = pts[best];
 		q = vit.decode(z, nullptr);
@@ -720,7 +720,7 @@ void FaxRx::data_symbol()
 		}
 	} else {
 		const cplx *pts = is_v29(mod) ? v29_points : v27_points;
-		int npts = mod == FM_V29_9600 ? 16 : 8;
+		s16 npts = mod == FM_V29_9600 ? 16 : 8;
 		/* (V.29 4800: the even points) */
 		best = nearest_point(pts, npts, z,
 				     mod == FM_V29_4800 ? 2 : 1);
@@ -818,9 +818,9 @@ void FaxRx::data_symbol()
 }
 
 /* how well the last 32 phase steps fit the reference ending at symbol k */
-int FaxRx::window_match(int k)
+s16 FaxRx::window_match(s16 k)
 {
-	int i, match = 0;
+	s16 i, match = 0;
 	for (i = 0; i < 32; i++)
 		match += steps[i] == ((ref[k - 31 + i] - ref[k - 32 + i]) &
 					 (nstates - 1));
@@ -851,7 +851,7 @@ void FaxRx::track_alternations(cplx z)
 void FaxRx::symbol()
 {
 	cplx z = qam.z;
-	int s, match;
+	s16 s, match;
 	s32 k;
 
 	switch (stage) {
@@ -887,7 +887,7 @@ void FaxRx::symbol()
 		{
 			/* where in the training is this symbol? */
 			s32 lo = 32, hi = 32, best = 32;
-			int m;
+			s16 m;
 			if (alt_end >= 0) {
 				lo = onset - alt_end - 4;
 				hi = onset - alt_end + 8;
@@ -934,7 +934,7 @@ void FaxRx::symbol()
 		break;
 	case RXS_TRAIN: {
 		cplx d = ref_point(seg_sym);
-		int trn = trn_len(mod, short_train);
+		s16 trn = trn_len(mod, short_train);
 		/* V.17 short train: some modems send the 64 symbol bridge as
 		   after a long train, the original library and spandsp go on
 		   with the scrambled ones (segment 4) at once.  Its first
@@ -996,7 +996,7 @@ void FaxRx::symbol()
 void FaxRx::sample(float x)
 {
 	if (mod == FM_V21) {
-		int bit = fsk.run(x);
+		s16 bit = fsk.run(x);
 		carrier = fsk.carrier;
 		trained = carrier;
 		if (bit >= 0 && carrier)

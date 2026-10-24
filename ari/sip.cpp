@@ -48,13 +48,13 @@ s64 now_ms()
 }
 
 /* n random hex digits, for tags, branches and Call-IDs */
-std::string random_hex(int n)
+std::string random_hex(s16 n)
 {
 	static std::mutex lock;
 	static std::mt19937_64 rng{std::random_device{}()};
 	std::lock_guard<std::mutex> lk(lock);
 	std::string s;
-	for (int k = 0; k < n; k++)
+	for (s16 k = 0; k < n; k++)
 		s += "0123456789abcdef"[rng() & 15];
 	return s;
 }
@@ -78,7 +78,7 @@ std::string trim(const std::string &s)
 struct Msg {
 	bool request = false;
 	std::string method, uri, reason;
-	int code = 0;
+	s32 code = 0;
 	std::vector<std::pair<std::string, std::string>> headers;
 	std::string body;
 
@@ -226,7 +226,7 @@ bool addr_of(const std::string &uri, struct sockaddr_in *sa)
 
 /* a response to req: its Vias, From, To (with our tag if it has none),
    Call-ID and CSeq, then extra headers and body */
-std::string response(const Msg &req, int code, const char *reason,
+std::string response(const Msg &req, s16 code, const char *reason,
 		     const std::string &tag, const std::string &extra,
 		     const std::string &body)
 {
@@ -251,7 +251,7 @@ std::string response(const Msg &req, int code, const char *reason,
 }
 
 /* our T.38 media line's attributes */
-std::string t38_attrs(int version)
+std::string t38_attrs(s32 version)
 {
 	return "a=T38FaxVersion:" + std::to_string(version) + "\r\n"
 		"a=T38MaxBitRate:14400\r\n"
@@ -411,7 +411,7 @@ bool SipAgent::start(const std::string &host, s32 port)
 }
 
 /* see sip.h */
-std::shared_ptr<SipLeg> SipAgent::expect(const std::string &token, int pt,
+std::shared_ptr<SipLeg> SipAgent::expect(const std::string &token, s16 pt,
 					  s32 rtp_port, s32 udptl_port)
 {
 	auto leg = std::make_shared<SipLeg>();
@@ -437,7 +437,7 @@ void SipAgent::forget(const std::shared_ptr<SipLeg> &leg)
 }
 
 /* see sip.h */
-bool SipAgent::wait_up(const std::shared_ptr<SipLeg> &leg, int ms)
+bool SipAgent::wait_up(const std::shared_ptr<SipLeg> &leg, s16 ms)
 {
 	std::unique_lock<std::mutex> lk(lock_);
 	return changed_.wait_for(lk, std::chrono::milliseconds(ms),
@@ -640,7 +640,7 @@ void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 		if (audio && std::find(audio->fmts.begin(), audio->fmts.end(),
 				       std::to_string(l.pt)) == audio->fmts.end()) {
 			/* not the law we wanted: the other one, if offered */
-			int other = l.pt == 8 ? 0 : 8;
+			s16 other = l.pt == 8 ? 0 : 8;
 			if (std::find(audio->fmts.begin(), audio->fmts.end(),
 				      std::to_string(other)) != audio->fmts.end())
 				l.pt = other;
@@ -717,7 +717,7 @@ void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 			if (image && l.accept_t38) {
 				T38Params p = t38_params(*image);
 				std::string media;
-				int version = std::min(p.version, 3);
+				s32 version = std::min(p.version, 3);
 				for (const SdpMedia &sm : s.media)
 					media += sm.type == "image" ?
 						"m=image " +

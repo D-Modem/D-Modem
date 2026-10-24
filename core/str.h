@@ -28,19 +28,19 @@ namespace dcore {
 
 /* v in decimal, at least width digits (zeros after a minus sign) */
 template <class T>
-inline std::string dec(T v, int width = 0)
+inline std::string dec(T v, s16 width = 0)
 {
 	static_assert(std::is_integral<T>::value, "dec() takes integers");
 	std::string s = std::to_string(v);
 	std::size_t digits = s.size() - (v < 0 ? 1 : 0);
-	if (static_cast<int>(digits) < width)
+	if (static_cast<s16>(digits) < width)
 		s.insert(v < 0 ? 1 : 0, width - digits, '0');
 	return s;
 }
 
 /* v in hexadecimal, lower case (upper with upper_case), at least width
    digits */
-inline std::string hex(u32 v, int width = 0, bool upper_case = false)
+inline std::string hex(u32 v, s16 width = 0, bool upper_case = false)
 {
 	char buf[2 * sizeof(v)];
 	auto r = std::to_chars(buf, buf + sizeof(buf), v, 16);
@@ -49,7 +49,7 @@ inline std::string hex(u32 v, int width = 0, bool upper_case = false)
 		for (char &c : s)
 			if (c >= 'a' && c <= 'f')
 				c = static_cast<char>(c - 'a' + 'A');
-	if (static_cast<int>(s.size()) < width)
+	if (static_cast<s16>(s.size()) < width)
 		s.insert(0, width - s.size(), '0');
 	return s;
 }
@@ -58,7 +58,7 @@ inline std::string hex(u32 v, int width = 0, bool upper_case = false)
    its digits (p and 0 when there are none); too large a number is
    UINT32_MAX, as strtoul() has it with a 32-bit long */
 inline u32 to_ulong(const char *p, const char *last,
-			 const char **end, int base = 10)
+			 const char **end, s16 base = 10)
 {
 	u32 v = 0;
 	auto r = std::from_chars(p, last, v, base);
@@ -80,7 +80,7 @@ inline u32 to_ulong(const char *p, const char *last,
    hex, 0 octal, else decimal), a sign allowed: false if s is anything
    else, or too large for v (a signed integer of any width) */
 template <class T>
-inline bool parse_long(std::string_view s, T &v, int base = 10)
+inline bool parse_long(std::string_view s, T &v, s16 base = 10)
 {
 	static_assert(std::is_integral<T>::value && std::is_signed<T>::value,
 		      "parse_long() takes signed integers");
@@ -124,7 +124,7 @@ inline s32 leading_long(std::string_view s)
 }
 
 /* v with prec digits after the point ("%.*f" in the C locale) */
-inline std::string fixed(double v, int prec)
+inline std::string fixed(double v, s16 prec)
 {
 	std::ostringstream o;
 	o.imbue(std::locale::classic());

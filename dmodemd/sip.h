@@ -46,7 +46,7 @@ struct Config {
 					   spaces; NULL: /etc/resolv.conf's
 					   (a system without one, Android,
 					   gives them here) */
-	int log_level = -1;             /* 1 errors .. 4 the SIP messages,
+	s16 log_level = -1;             /* 1 errors .. 4 the SIP messages,
 					   0 none; -1: $SIP_LOG_LEVEL, or
 					   4.  The lines go to the modem's
 					   log hook if it has one
@@ -81,7 +81,7 @@ std::string dial_user(const char *dial);
 void answer(int audio_fd);
 
 /* the G.711 law of the current call: 1 mu-law, 2 A-law, 0 not known yet */
-int law();
+s16 law();
 
 /* the modem is in fax mode: its calls may go over to T.38 */
 void set_fax(bool fax);
@@ -104,7 +104,7 @@ struct T38 {
 					   own descriptor of it */
 	struct sockaddr_storage peer;   /* the far end's UDPTL */
 	socklen_t peer_len;
-	int version;                    /* T38FaxVersion agreed */
+	s32 version;                    /* T38FaxVersion agreed */
 	s32 max_datagram;               /* its T38FaxMaxDatagram, 0 if
 					   none */
 	bool redundancy;                /* T38FaxUdpEC t38UDPRedundancy */

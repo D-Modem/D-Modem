@@ -51,8 +51,8 @@ class Ac97Regs {
 public:
 	virtual ~Ac97Regs() = default;
 	/* register reg into *v, or written with v; false on an error */
-	virtual bool read(int reg, u16 *v) = 0;
-	virtual bool write(int reg, u16 v) = 0;
+	virtual bool read(s16 reg, u16 *v) = 0;
+	virtual bool write(s16 reg, u16 v) = 0;
 	/* at least us microseconds gone */
 	virtual void delay_us(u32 us) = 0;
 };
@@ -75,7 +75,7 @@ struct CxVariant {
 };
 
 /* SOAR's kind kind's differences (0 to 0x26); the plain one for others */
-CxVariant cx_variant(int kind);
+CxVariant cx_variant(s16 kind);
 
 /* whether the codec's vendor ID (registers 0x7c, 0x7e) is a Conexant
    or Rockwell modem codec with a SmartDAA */
@@ -84,7 +84,7 @@ bool cx_codec(u16 id1, u16 id2);
 /* the SSD's kind of a cx_codec() codec, from register 0x7e's low byte
    (its DAA type) as Conexant's ICH driver takes it; -1 for type 0x24,
    whose SSD is in the codec's own registers, not behind 0x7a */
-int cx_kind(u16 id2);
+s16 cx_kind(u16 id2);
 
 class CxDaa {
 public:
@@ -106,21 +106,21 @@ public:
 
 	/* the SmartDAA behind regs's register 0x7a, an SSD of kind v */
 	explicit CxDaa(Ac97Regs &regs, CxVariant v = CxVariant(),
-		       int kind = -1)
+		       s16 kind = -1)
 		: regs_(regs), kind_(kind), v_(v), board_(default_board()),
 		  country_(default_country()) {}
 
 	/* an SSD register into *v, or written with v */
-	bool ssd_read(int reg, u8 *v);
-	bool ssd_write(int reg, u8 v);
+	bool ssd_read(s16 reg, u8 *v);
+	bool ssd_write(s16 reg, u8 v);
 	/* an LSD register into *v (from the line side, not a copy), or
 	   written with v (the answer checked; tried again 4 times, LSD
 	   register 0x17 once) */
-	bool lsd_read(int reg, u8 *v);
-	bool lsd_write(int reg, u8 v);
+	bool lsd_read(s16 reg, u8 *v);
+	bool lsd_write(s16 reg, u8 v);
 	/* the bits mask of LSD register reg made val's, the rest kept;
 	   not written if they are already */
-	bool lsd_field(int reg, u8 mask, u8 val);
+	bool lsd_field(s16 reg, u8 mask, u8 val);
 	/* whether the line side answers: its version (LSD register 0x22)
 	   into *version */
 	bool probe(u8 *version);
@@ -168,14 +168,14 @@ private:
 	static const CxCountry *default_country();
 
 	Ac97Regs &regs_;
-	int kind_;              /* SOAR's kind, -1 not known */
+	s16 kind_;              /* SOAR's kind, -1 not known */
 	/* the steps ops[0 .. n - 1] of the library's setup, in turn */
-	bool run(const Op *ops, int n);
+	bool run(const Op *ops, s16 n);
 	/* LSD register 2 0x0f after 3 and 4 written: the LSD powered */
 	bool wait_power();
 	/* Op::Param p's byte for a step's set, the board's, the country's
 	   or the line side's version's */
-	u8 param(int p, u8 set) const;
+	u8 param(s16 p, u8 set) const;
 
 	CxVariant v_;
 	bool setup_ = false;    /* power_up() set the line up */

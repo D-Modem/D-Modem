@@ -33,41 +33,41 @@ enum fax_mod {
 };
 
 /* class 1 <mod> code -> modulation and training; returns 0 if unknown */
-int fax_mod_from_code(int code, enum fax_mod *mod, int *short_train);
+s16 fax_mod_from_code(u32 code, enum fax_mod *mod, s16 *short_train);
 /* the data rate of a modulation, bit/s */
 s32 fax_mod_bps(enum fax_mod mod);
 
 /* the transmitter gets its data bits through this callback: 0/1, or
    FAX_BIT_END when there is no more data (it then shuts down) */
 #define FAX_BIT_END (-1)
-typedef int (*fax_get_bit_t)(void *ctx);
-typedef void (*fax_put_bit_t)(void *ctx, int bit);
+typedef s16 (*fax_get_bit_t)(void *ctx);
+typedef void (*fax_put_bit_t)(void *ctx, s16 bit);
 
 #define FAX_MAX_TRN 3100
 
 struct FaxTx {
 	enum fax_mod mod;
-	int short_train;
+	s16 short_train;
 	s32 srate;
 	QamTx qam;
 	FskBitTx fsk;                   /* V.21 */
-	int seg;                        /* training segment */
+	s16 seg;                        /* training segment */
 	s32 seg_sym;                    /* symbols sent in this segment */
 	u32 scr;                        /* data scrambler */
-	int scr_count;                  /* V.27ter repeat pattern guard */
+	s16 scr_count;                  /* V.27ter repeat pattern guard */
 	u32 tscr;                       /* V.29 training scrambler */
-	int state;                      /* differential phase state */
+	s16 state;                      /* differential phase state */
 	TrellisEnc trellis;
 	fax_get_bit_t get_bit;
 	void *ctx;
-	int ending;
-	int done;
+	s16 ending;
+	s16 done;
 
-	int data_bit();
+	s16 data_bit();
 	cplx data_symbol();
-	void next_segment(int seg_);
+	void next_segment(s16 seg_);
 	/* mod_ at srate_ samples/s, the data bits from get_bit_(ctx_) */
-	void init(enum fax_mod mod_, int short_train_, s32 srate_, fax_get_bit_t get_bit_, void *ctx_);
+	void init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_get_bit_t get_bit_, void *ctx_);
 	/* the next output sample; done is set at the end of the signal */
 	float sample();
 };
@@ -77,30 +77,30 @@ struct FaxRxMemory;
 
 struct FaxRx {
 	enum fax_mod mod;
-	int short_train;
+	s16 short_train;
 	s32 srate;
 	QamRx qam;
 	FskDemod fsk;
-	int nstates;                    /* phase states for training sync */
+	s16 nstates;                    /* phase states for training sync */
 	/* searching for the training; in it (found on its reference
 	   symbols); data */
 	enum { RXS_SEARCH, RXS_TRAIN, RXS_DATA };
-	int stage;
+	s16 stage;
 	s32 seg_sym;
-	int last_state;
-	int steps[32];
-	int nsteps;
+	s16 last_state;
+	s16 steps[32];
+	s16 nsteps;
 	/* reference training symbols (absolute phase states) */
 	std::vector<signed char> ref;
-	int ref_len;
+	s16 ref_len;
 	u32 scr;
-	int scr_count;
-	int state;
+	s16 scr_count;
+	s16 state;
 	Viterbi vit;
 	s32 data_sym;                   /* trellis symbols fed to the decoder */
 	float mse, mse_fast;
 	float data_power;
-	int carrier;
+	s16 carrier;
 	float det_pwr, det_alpha;        /* fast power for carrier detection */
 	float det_floor, det_level;     /* noise floor, signal level */
 	s32 det_hold;                   /* samples before a carrier may start */
@@ -111,35 +111,35 @@ struct FaxRx {
 	s32 alt_run;                    /* length of the current alternation */
 	s32 alt_end;                    /* symbol where the alternations ended */
 	s32 carrier_run;
-	int trained;                    /* data is flowing */
+	s16 trained;                    /* data is flowing */
 	cplx mem_eq[QAM_MAX_EQ];        /* equalizer from a long train */
 	cplx good_eq[QAM_MAX_EQ];       /* recent equalizer with good data */
 	cplx new_eq[QAM_MAX_EQ];
 	float good_gain, new_gain;
-	int have_good, have_new;
+	s16 have_good, have_new;
 	float mem_gain;                 /* its AGC gain in the data */
-	int use_mem;
-	int bridge_hits;        /* V.17 short train: the bridge is there? */
+	s16 use_mem;
+	s16 bridge_hits;        /* V.17 short train: the bridge is there? */
 	float zpow, zpow_slow;  /* received data power */
 	fax_put_bit_t put_bit;
 	void *ctx;
 
-	int state_of(cplx z);
-	int point_state(cplx p);
-	cplx ref_point(int k);
-	int make_reference();
+	s16 state_of(cplx z);
+	s16 point_state(cplx p);
+	cplx ref_point(s16 k);
+	s16 make_reference();
 	/* mod_ at srate_ samples/s, the data bits to put_bit_(ctx_) once
 	   trained; mem: for a V.17 short train (may be NULL).  -1: no
 	   memory */
-	int init(enum fax_mod mod_, int short_train_, s32 srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem);
+	s16 init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem);
 	/* keep the trained equalizer for a later short train */
 	void save(FaxRxMemory *mem);
 	/* free what init took */
 	void release();
-	void bits_out(int q, int n, int msb_first);
+	void bits_out(s16 q, s16 n, s16 msb_first);
 	void data_start();
 	void data_symbol();
-	int window_match(int k);
+	s16 window_match(s16 k);
 	void track_alternations(cplx z);
 	void symbol();
 	/* an input sample; carrier and trained tell how it goes */
@@ -151,7 +151,7 @@ struct FaxRxMemory {
 	enum fax_mod mod;
 	cplx eq[QAM_MAX_EQ];
 	float agc_gain;
-	int valid;
+	s16 valid;
 };
 
 /* transmit levels (rms) of the fax signals, as the original library's */

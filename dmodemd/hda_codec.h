@@ -45,12 +45,12 @@ public:
 	const std::string &name() const { return name_; }
 	/* register (node) nid read into *v, or written with v; false on
 	   an error */
-	bool read(int nid, u16 *v);
-	bool write(int nid, u16 v);
+	bool read(s16 nid, u16 *v);
+	bool write(s16 nid, u16 v);
 
 private:
 	/* a command (node, verb, parameter) and its response */
-	bool verb(int nid, u32 verb, u32 param, u32 *res);
+	bool verb(s16 nid, u32 verb, u32 param, u32 *res);
 	/* whether the codec has a modem function group */
 	bool is_modem();
 

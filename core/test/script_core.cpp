@@ -36,11 +36,11 @@ struct ScriptCore final : public Core, public dcore::Host {
 	~ScriptCore() override { delete m; }
 
 	/* Host */
-	int start(dcore::Modem &) override { return 0; }
+	s16 start(dcore::Modem &) override { return 0; }
 	/* (see start()) */
-	int stop(dcore::Modem &) override { return 0; }
+	s16 stop(dcore::Modem &) override { return 0; }
 	/* the DTE's output, kept */
-	int dte_write(dcore::Modem &, const char *buf, int n) override {
+	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
 		out.append(buf, n);
 		return n;
 	}

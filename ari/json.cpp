@@ -21,7 +21,7 @@ const std::string empty;
 /* a recursive descent over text from p */
 struct Reader {
 	const char *p, *end;
-	int depth = 0;
+	s16 depth = 0;
 
 	/* past the whitespace */
 	void space()
@@ -43,7 +43,7 @@ struct Reader {
 	bool hex4(u32 &v)
 	{
 		v = 0;
-		for (int i = 0; i < 4; i++, p++) {
+		for (s16 i = 0; i < 4; i++, p++) {
 			if (p >= end)
 				return false;
 			char c = *p;

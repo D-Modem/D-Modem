@@ -36,10 +36,10 @@ void RunLoop::catch_signals()
 }
 
 /* see run_loop.h */
-s32 RunLoop::poll(dcore::Modem *const *m, int n)
+s32 RunLoop::poll(dcore::Modem *const *m, s16 n)
 {
 	s32 next = 1000;
-	for (int i = 0; i < n; i++) {
+	for (s16 i = 0; i < n; i++) {
 		s64 t;
 		m[i]->poll();
 		t = m[i]->next_timer_ms();

@@ -34,6 +34,8 @@
 #include <newdev.h>
 #include <setupapi.h>
 
+#include "dm_types.h"
+
 namespace {
 
 /* the device's hardware ID (dmodem.inf's), as a REG_MULTI_SZ */
@@ -63,11 +65,11 @@ std::string full_path(const char *path)
 }
 
 /* the devices with our hardware ID in set, each by f(set, data) */
-template <class F> int each_device(F f)
+template <class F> s16 each_device(F f)
 {
 	HDEVINFO set = SetupDiGetClassDevsA(nullptr, nullptr, nullptr,
 					    DIGCF_ALLCLASSES);
-	int found = 0;
+	s16 found = 0;
 	if (set == INVALID_HANDLE_VALUE) {
 		fail("the devices can't be listed");
 		return -1;
@@ -94,7 +96,7 @@ template <class F> int each_device(F f)
 
 /* install: a root device with our hardware ID, then the INF's driver
    for it (and for any there already were) */
-int install(const char *inf_arg)
+s16 install(const char *inf_arg)
 {
 	std::string inf = full_path(inf_arg);
 	GUID cls;
@@ -134,7 +136,7 @@ int install(const char *inf_arg)
 }
 
 /* update: the devices there are to the INF's driver */
-int update(const char *inf_arg)
+s16 update(const char *inf_arg)
 {
 	std::string inf = full_path(inf_arg);
 	BOOL reboot = FALSE;
@@ -149,10 +151,10 @@ int update(const char *inf_arg)
 }
 
 /* remove: every device of ours (the driver stays in the store) */
-int remove_all()
+s16 remove_all()
 {
-	int bad = 0;
-	int n = each_device([&bad](HDEVINFO set, SP_DEVINFO_DATA *d) {
+	s16 bad = 0;
+	s16 n = each_device([&bad](HDEVINFO set, SP_DEVINFO_DATA *d) {
 		SP_REMOVEDEVICE_PARAMS rp = {};
 		rp.ClassInstallHeader.cbSize = sizeof(SP_CLASSINSTALL_HEADER);
 		rp.ClassInstallHeader.InstallFunction = DIF_REMOVE;
@@ -172,9 +174,9 @@ int remove_all()
 }
 
 /* list: each device, its COM port (PortName) and its pipe */
-int list()
+s16 list()
 {
-	int n = each_device([](HDEVINFO set, SP_DEVINFO_DATA *d) {
+	s16 n = each_device([](HDEVINFO set, SP_DEVINFO_DATA *d) {
 		char id[256] = "", port[64] = "";
 		SetupDiGetDeviceInstanceIdA(set, d, id, sizeof(id), nullptr);
 		HKEY k = SetupDiOpenDevRegKey(set, d, DICS_FLAG_GLOBAL, 0,
@@ -211,7 +213,7 @@ bool winusb_streams()
 
 /* usb: dmodem-usb.inf's package (WinUSB for the USB modems) into the
    driver store, and onto the modems there are now */
-int usb(const char *inf_arg)
+s16 usb(const char *inf_arg)
 {
 	std::string inf = full_path(inf_arg);
 	BOOL reboot = FALSE;
@@ -241,7 +243,7 @@ int usb(const char *inf_arg)
 }
 
 /* how to use it */
-int usage()
+s16 usage()
 {
 	fprintf(stderr,
 		"usage: dmodem-driver install <dmodem.inf>\n"

@@ -47,10 +47,10 @@ namespace dsp {
 #define J_DASH          0x899F
 
 /* the low 16 bits of w in reverse order */
-static unsigned rev16(unsigned w)
+static u16 rev16(u16 w)
 {
-	unsigned r = 0;
-	int i;
+	u16 r = 0;
+	s16 i;
 	for (i = 0; i < 16; i++)
 		r |= ((w >> i) & 1) << (15 - i);
 	return r;
@@ -63,7 +63,7 @@ static unsigned rev16(unsigned w)
 
 /* where an MP frame's CRC is (bits.h): after its fields, at bit 69 in
    type 0 (88 bits), 171 in type 1 (188) */
-static int mp_crc_at(int len)
+static s16 mp_crc_at(s16 len)
 {
 	return len == 188 ? 171 : 69;
 }
@@ -71,9 +71,10 @@ static int mp_crc_at(int len)
 /* the bits of the MP frame (type 0: 88 bits, type 1 with the precoding
    coefficients: 188), one per byte in time order, frame sync, start
    bits, CRC and fill bits included; returns its length */
-int V34Mp::build(unsigned char *b) const
+s16 V34Mp::build(unsigned char *b) const
 {
-	int n = 0, i, len = type ? 188 : 88;
+	s32 n = 0;
+	s16 i, len = type ? 188 : 88;
 
 	put_bits(b, &n, 0x1FFFF, 17);
 	put_bits(b, &n, 0, 1);
@@ -106,9 +107,9 @@ int V34Mp::build(unsigned char *b) const
 /* the fields of an MP frame of len (88 or 188) bits, from its frame sync
    on; returns 0 when the frame is good, -1 (fields unchanged) on a bad
    CRC */
-int V34Mp::parse(const unsigned char *b, int len)
+s16 V34Mp::parse(const unsigned char *b, s16 len)
 {
-	int i;
+	s16 i;
 	if (!frame_crc_ok(b, mp_crc_at(len)))
 		return -1;
 	type = b[18];
@@ -133,7 +134,7 @@ int V34Mp::parse(const unsigned char *b, int len)
  */
 
 /* point idx (0..3) of the 4 point training constellation */
-static cplx tx_point(int idx)
+static cplx tx_point(s16 idx)
 {
 	return v34_trn4[idx & 3];
 }
@@ -141,11 +142,11 @@ static cplx tx_point(int idx)
 /* 16 point training (10.1.3.8/V.34, when the remote's J asks for it):
    point q of the quarter-superconstellation, turned as tx_point() turns
    point 0, at the average power of the 4 point signals */
-static cplx tx_point16(int idx, int q)
+static cplx tx_point16(s16 idx, s16 q)
 {
 	const float s = 0.4472136f;     /* sqrt(2 / 10) */
 	cplx z = { v34_quarter[q & 3][0] * s, v34_quarter[q & 3][1] * s };
-	int k;
+	s16 k;
 	for (k = 0; k < ((idx + 2) & 3); k++) {
 		float x = z.re;         /* clockwise */
 		z.re = z.im;
@@ -155,7 +156,7 @@ static cplx tx_point16(int idx, int q)
 }
 
 /* scrambles b0, then b1; returns them as b0 | b1 << 1 */
-int V34Tx::dibit(int b0, int b1)
+s16 V34Tx::dibit(s16 b0, s16 b1)
 {
 	b0 = scramble(&scr, tap, b0);
 	b1 = scramble(&scr, tap, b1);
@@ -168,7 +169,7 @@ int V34Tx::dibit(int b0, int b1)
 static cplx tx_symbol(V34Tx *t)
 {
 	cplx z = { 0, 0 };
-	int k;
+	s16 k;
 	u32 w;
 
 	if (t->seg == V34_TX_CP && t->pos >= t->nbits) {
@@ -266,7 +267,7 @@ static cplx tx_symbol(V34Tx *t)
 /* the transmitter, silent, at symbol rate baud_ (V34_BAUD_*) on its low
    or high carrier; the caller scrambles with GPC, the answerer with
    GPA */
-void V34Tx::init(int baud_, int high, int caller)
+void V34Tx::init(s16 baud_, s16 high, s16 caller)
 {
 	reinit(*this);
 	baud = baud_;
@@ -283,7 +284,7 @@ void V34Tx::segment(enum v34_txseg seg_)
 	DSP_DBG("v34 tx: segment %d -> %d after %" PRId32 " symbols\n", seg,
 		seg_, n);
 	s_odd = seg_ == V34_TX_SBAR && seg == V34_TX_S ?
-			static_cast<int>(n & 1) :
+			static_cast<s16>(n & 1) :
 			0;
 	seg = seg_;
 	n = 0;
@@ -328,7 +329,7 @@ float V34Tx::sample()
 /* the receiver of the remote's signals at symbol rate baud_ on its low
    or high carrier, waiting for S; caller: we are the caller, the remote
    scrambles with GPA.  Returns -1 when out of memory */
-int V34Rx::init(int baud_, int high, int caller)
+s16 V34Rx::init(s16 baud_, s16 high, s16 caller)
 {
 	reinit(*this);
 	baud = baud_;
@@ -343,7 +344,7 @@ int V34Rx::init(int baud_, int high, int caller)
 }
 
 /* the receiver of a V.90 digital modem: Ja instead of J */
-int V34Rx::set_v90()
+s16 V34Rx::set_v90()
 {
 	v90 = 1;
 	fr.reset(new (std::nothrow) SyncFrames());
@@ -373,17 +374,17 @@ void V34Rx::set_stage(enum v34_rxstage s)
 }
 
 /* the index of the 4 point training point nearest to z: its quadrant */
-static int nearest4(cplx z)
+static s16 nearest4(cplx z)
 {
 	return z.re < 0 ? (z.im < 0 ? 0 : 1) : (z.im < 0 ? 3 : 2);
 }
 
 /* the debug log of a DIL's SP or TP bits, 40 to a line */
-static void ja_dump_bits(const char *what, const unsigned char *b, int n)
+static void ja_dump_bits(const char *what, const unsigned char *b, s16 n)
 {
-	for (int i = 0; i < n; i += 40) {
+	for (s16 i = 0; i < n; i += 40) {
 		char line[41];
-		int k;
+		s16 k;
 		for (k = 0; k < 40 && i + k < n; k++)
 			line[k] = '0' + b[i + k];
 		line[k] = 0;
@@ -396,20 +397,20 @@ static void ja_dump_bits(const char *what, const unsigned char *b, int n)
 void V34Rx::frame_start()
 {
 	if (ev_ja)
-		fr->init(SyncFrames::CP90, static_cast<int>(sizeof(cpraw)));
+		fr->init(SyncFrames::CP90, static_cast<s16>(sizeof(cpraw)));
 	else
 		fr->init(SyncFrames::DIL90, V90_JA_MAX);
 	fr->start();
 }
 
 /* a bit of Ja: a good frame's DIL into dil, ev_ja */
-void V34Rx::ja_bit(int bit)
+void V34Rx::ja_bit(s16 bit)
 {
-	int r = fr->add(bit);
+	s16 r = fr->add(bit);
 	if (r == SyncFrames::GOOD || r == SyncFrames::BAD_CRC) {
 		if (r == SyncFrames::GOOD && dil.parse(fr->b, fr->len) == 0) {
 			if (!ev_ja) {
-				int i;
+				s16 i;
 				DSP_DBG("v34 rx: Ja at symbol %" PRId32
 					": DIL N %d, LSP %d, LTP %d\n", sym,
 					dil.n, dil.lsp, dil.ltp);
@@ -419,7 +420,7 @@ void V34Rx::ja_bit(int bit)
 						dil.ref[i]);
 				for (i = 0; i < dil.n; i += 16) {
 					char line[16 * 4 + 1];
-					int k, l = 0;
+					s16 k, l = 0;
 					/* (no more than the DIL has) */
 					for (k = i; k < i + 16 && k < dil.n; k++)
 						l += snprintf(line + l, sizeof(line) - l,
@@ -439,12 +440,12 @@ void V34Rx::ja_bit(int bit)
 
 /* CP (V.90): MP style frames of a length given by the number of
    constellations they carry */
-void V34Rx::cp_bit(int bit)
+void V34Rx::cp_bit(s16 bit)
 {
-	int r = fr->add(bit);
+	s16 r = fr->add(bit);
 	if (r == SyncFrames::GOOD || r == SyncFrames::BAD_CRC) {
 		V90Cp cp;
-		int ok;
+		s16 ok;
 		ok = r == SyncFrames::GOOD && cp.parse(fr->b, fr->len) == 0;
 		if (ok && !cp.usable(cp.drn + (cp.cp ? 20 : 8), 6 - cp.sr)) {
 			/* our encoder can't use it: no CP (a retrain
@@ -485,7 +486,7 @@ void V34Rx::cp_bit(int bit)
 /* a descrambled bit after S-bar: Ja and CP frames (V.90), MP frames,
    E (20 ones after an MP or CP' frame, which starts data mode), J
    (twice, and whether it asks for 16 point TRN) and J' */
-void V34Rx::got_bit(int bit)
+void V34Rx::got_bit(s16 bit)
 {
 	sr = (sr << 1) | bit;
 	if (v90 && ev_ja && stage == V34_RX_TRN) {
@@ -554,7 +555,7 @@ void V34Rx::got_bit(int bit)
 	}
 	if ((sr & 0x3FFFF) == 0x3FFFE) {
 		/* MP frame sync: 17 ones and a start bit */
-		int i;
+		s16 i;
 		for (i = 0; i < 17; i++)
 			mpbits[i] = 1;
 		mpbits[17] = 0;
@@ -581,7 +582,7 @@ void V34Rx::got_bit(int bit)
 /* the 4 point signals after S-bar: J, MP and E are coded differentially */
 void V34Rx::diff_decode(cplx z)
 {
-	int idx_ = nearest4(z), d = (idx_ - idx) & 3;
+	s16 idx_ = nearest4(z), d = (idx_ - idx) & 3;
 	idx = idx_;
 	got_bit(descramble(&scr, tap, d & 1));
 	if (stage == V34_RX_DATA)
@@ -595,7 +596,7 @@ void V34Rx::pp_align()
 {
 	cplx best = { 0, 0 };
 	float bm = -1;
-	int off, k;
+	s16 off, k;
 	for (off = -4; off <= 4; off++) {
 		cplx c = { 0, 0 };
 		for (k = 0; k < 48; k++)
@@ -624,11 +625,11 @@ void V34Rx::pp_align()
    normal equations R w = p of the least squares equalizer */
 void V34Rx::ls_collect(cplx d)
 {
-	const int n_ = V34_EQ_LEN;
+	const s16 n_ = V34_EQ_LEN;
 	const cplx *x = qam.eq_buf;
 	/* the target before the carrier rotation */
 	cplx t = cplx_mulc(d, qam.rot);
-	int i, j;
+	s16 i, j;
 	for (i = 0; i < n_; i++) {
 		double xr = x[i].re, xi = -x[i].im;     /* conj(x_i) */
 		lscplx *row = ls_r.data() + i * n_;
@@ -644,12 +645,12 @@ void V34Rx::ls_collect(cplx d)
 /* R w = p by Cholesky (R Hermitian, upper triangle collected), with a
    little diagonal loading, into the equalizer; returns -1 when R is not
    positive definite.  ls_r is overwritten. */
-int V34Rx::ls_solve()
+s16 V34Rx::ls_solve()
 {
-	const int n_ = V34_EQ_LEN;
+	const s16 n_ = V34_EQ_LEN;
 	lscplx *a = ls_r.data(), *p = ls_p.data(), w[V34_EQ_LEN];
 	double load = 0;
-	int i, j, k;
+	s16 i, j, k;
 
 	for (i = 0; i < n_; i++)
 		load += a[i * n_ + i].re;
@@ -776,7 +777,7 @@ float V34Rx::eq_delay() const
 {
 	cplx hp = { 0, 0 }, hm = { 0, 0 }, c;
 	float w = 2 * static_cast<float>(M_PI) * 0.25f / 2;  /* per T/2 tap */
-	int i;
+	s16 i;
 	for (i = 0; i < qam.eq_len; i++) {
 		c = cplx_make(cosf(w * i), sinf(w * i));
 		hp = cplx_add(hp, cplx_mulc(qam.eq[i], c));
@@ -803,7 +804,7 @@ void V34Rx::timing_dd(cplx d)
 {
 	cplx zd = { 0, 0 }, e;
 	float dt, p;
-	int i;
+	s16 i;
 	if (!timing_fixed || !have_ls)
 		return;
 	for (i = 1; i < qam.eq_len - 1; i++) {
@@ -828,10 +829,10 @@ void V34Rx::timing_dd(cplx d)
 
 /* whether the equalizer input is at the trained level: normalized
    LMS steps grow without bounds on a fading signal */
-int V34Rx::level_ok()
+s16 V34Rx::level_ok()
 {
 	float e = 0;
-	int i;
+	s16 i;
 	for (i = 0; i < qam.eq_len; i++)
 		e += cplx_pow(qam.eq_buf[i]);
 	if (qam.power < 0.5f * ref_power)
@@ -848,7 +849,7 @@ int V34Rx::level_ok()
 /* the autocorrelation of the equalizer's error, for the precoder */
 void V34Rx::err_collect(cplx e)
 {
-	int k;
+	s16 k;
 	err_r[0] += cplx_pow(e);
 	for (k = 1; k <= 3; k++) {
 		cplx c = cplx_mulc(e, err_h[k - 1]);
@@ -1062,7 +1063,7 @@ void V34Rx::reneg_s()
 void V34Rx::precode_eq(const V34Params *p)
 {
 	cplx eq[QAM_MAX_EQ];
-	int i, k, len;
+	s16 i, k, len;
 
 	/* never on top of an earlier 1 + H(z): from the equalizer
 	   without it */
@@ -1102,7 +1103,7 @@ void V34Rx::precode_eq(const V34Params *p)
 cplx V34Rx::precode_start(cplx z)
 {
 	const V34Params *p = &drx.p;
-	int k, n_ = static_cast<int>(n) - 1;
+	s16 k, n_ = static_cast<s16>(n) - 1;
 
 	for (k = n_ + 1; k <= 3; k++) {
 		cplx h = cplx_make(p->h[2 * k - 2] / 16384.0f,
@@ -1116,12 +1117,12 @@ cplx V34Rx::precode_start(cplx z)
    a(k) the third order linear predictor of the equalizer's error, so
    that the error through 1 + H(z) is white.  Returns the gain in dB of
    the decisions' SNR (0 when there is too little data to tell). */
-float V34Rx::precoder(int h[6]) const
+float V34Rx::precoder(s16 h[6]) const
 {
 	typedef struct { double re, im; } dc;
 	dc R[4], A[3][4], a[3];
 	double eps, s;
-	int i, j, k;
+	s16 i, j, k;
 
 	std::fill_n(h, 6, 0);
 	if (err_n < 500 || err_r[0] <= 0)
@@ -1133,14 +1134,14 @@ float V34Rx::precoder(int h[6]) const
 	/* sum over k of a(k) R(j - k) = R(j), j = 1..3; R(-m) = R(m)* */
 	for (j = 0; j < 3; j++) {
 		for (k = 0; k < 3; k++) {
-			int m = j - k;
+			s16 m = j - k;
 			A[j][k].re = R[m < 0 ? -m : m].re;
 			A[j][k].im = m < 0 ? -R[-m].im : R[m].im;
 		}
 		A[j][3] = R[j + 1];
 	}
 	for (i = 0; i < 3; i++) {
-		int piv = i;
+		s16 piv = i;
 		for (j = i + 1; j < 3; j++)
 			if (A[j][i].re * A[j][i].re + A[j][i].im * A[j][i].im >
 			    A[piv][i].re * A[piv][i].re + A[piv][i].im * A[piv][i].im)
@@ -1185,8 +1186,8 @@ float V34Rx::precoder(int h[6]) const
 		double hr = -a[k].re, hi = -a[k].im;
 		hr = hr > 1.99 ? 1.99 : hr < -1.99 ? -1.99 : hr;
 		hi = hi > 1.99 ? 1.99 : hi < -1.99 ? -1.99 : hi;
-		h[2 * k] = static_cast<int>(lrint(hr * 16384));
-		h[2 * k + 1] = static_cast<int>(lrint(hi * 16384));
+		h[2 * k] = static_cast<s16>(lrint(hr * 16384));
+		h[2 * k + 1] = static_cast<s16>(lrint(hi * 16384));
 		a[k].re = -h[2 * k] / 16384.0;
 		a[k].im = -h[2 * k + 1] / 16384.0;
 	}
@@ -1197,7 +1198,7 @@ float V34Rx::precoder(int h[6]) const
 		eps -= 2 * (a[k].re * R[k + 1].re + a[k].im * R[k + 1].im);
 	for (j = 0; j < 3; j++)
 		for (k = 0; k < 3; k++) {
-			int m = k - j;
+			s16 m = k - j;
 			dc rr = R[m < 0 ? -m : m], p;
 			if (m < 0)
 				rr.im = -rr.im;
@@ -1225,7 +1226,7 @@ void V34Rx::start_data(const V34Params *p, CoreBits link)
    goes back to waiting for S), and a symbol when one is complete */
 void V34Rx::sample(float x)
 {
-	int on_;
+	s16 on_;
 	/* the timing must not wander on the noise between the signals */
 	qam.timing_freeze = !on || timing_fixed;
 	if (!qam.sample(x))

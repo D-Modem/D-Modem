@@ -80,9 +80,9 @@ enum v22_state {
 struct V22Pump : PumpBase<V22Pump, v22_state> {
 	static constexpr const char *name = "V.22/V.22bis data pump";
 
-	int bis;                /* we offer V.22bis */
-	int remote_bis;         /* remote sent S1 */
-	int automode;           /* fallen back from V.32bis: V.21 next */
+	s16 bis;                /* we offer V.22bis */
+	s16 remote_bis;         /* remote sent S1 */
+	s16 automode;           /* fallen back from V.32bis: V.21 next */
 	/* a Bell 103 caller takes our unscrambled ones (2250 Hz) for its
 	   answerer's 2225 Hz mark and answers with its own, 1270 Hz: 100 ms
 	   of it before its data (only a pure tone, a V.22 caller never
@@ -93,8 +93,8 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	/* transmitter */
 	enum v22_tx tx_mode;
 	s32 tx_rate;
-	int tx_quad;
-	int tx_s1_phase;
+	s16 tx_quad;
+	s16 tx_s1_phase;
 	V22Scrambler tx_scr;
 	QamTx tx;               /* on our carrier (1200 Hz calling, 2400 Hz
 				   answering) */
@@ -105,7 +105,7 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	Osc rx_lo;
 	std::vector<float> mf;  /* matched filter taps */
 	std::vector<cplx> mf_buf;
-	int mf_len, mf_pos;
+	s16 mf_len, mf_pos;
 	PowerMeter in_pwr;
 	CarrierDetect carrier;
 	float agc_pwr, agc_alpha;
@@ -114,29 +114,29 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	cplx hist[4];
 	float t_next;
 	float t_adj;
-	int half;
+	s16 half;
 	cplx mid, prev_sym;
 
 	/* equalizer and carrier recovery */
 	cplx eq[V22_EQ_LEN];
 	cplx eq_buf[V22_EQ_LEN];
 	float eq_mu;
-	int adapt;
-	int eq_train;           /* remote sends scrambled data now */
-	int eq_freeze;          /* remote is changing to 16 points */
+	s16 adapt;
+	s16 eq_train;           /* remote sends scrambled data now */
+	s16 eq_freeze;          /* remote is changing to 16 points */
 	float theta, dtheta;
 	s32 rx_rate;            /* 1200 or 2400: slicer and data path */
-	int rx_quad;
+	s16 rx_quad;
 
 	/* pattern detectors */
 	s32 run_usb1, run_s1, run_sb1_12, run_sb1_24;
-	int last_dibit;
-	int dq1, dq2;
+	s16 last_dibit;
+	s16 dq1, dq2;
 	s32 run_periodic;       /* tone like (period 1 or 2) input */
 	cplx last_y;
 	float rot_avg;          /* mean phase step per symbol of the input */
 	s32 s1_seen;            /* sample time when remote S1 was detected */
-	int sb1_seen;           /* remote scrambled ones at 1200 bit/s */
+	s16 sb1_seen;           /* remote scrambled ones at 1200 bit/s */
 	s32 sb1_at;             /* when 270 ms of them were in */
 	V22Scrambler rx_scr12, rx_scr24;
 
@@ -148,30 +148,30 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	void set_state(enum v22_state state_);
 	cplx tx_symbol();
 	float tx_sample();
-	int slice(cplx z, cplx *d, int *q34);
-	void rx_bits(int dquad, int q34_16, int dq_raw);
+	s16 slice(cplx z, cplx *d, s16 *q34);
+	void rx_bits(s16 dquad, s16 q34_16, s16 dq_raw);
 	void eq_reset();
 	void rx_symbol(cplx y);
 	void rx_reset();
 	void rx_sample(float x);
 	void set_rx_rate(s32 rate);
 	void set_tx(enum v22_tx mode);
-	int connect();
-	int handshake();
-	int start(struct modem *m, enum DP_ID id, int caller_, s32 srate_,
-		  int max_frag);
-	int sample(float x, float *y);
+	s16 connect();
+	s16 handshake();
+	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
+		  s32 max_frag);
+	s16 sample(float x, float *y);
 	/* cnt samples in and out, through sample() */
-	int process(void *in, void *out, int cnt) override
+	s16 process(void *in, void *out, s32 cnt) override
 	{
 		return pump_loop(in, out, cnt);
 	}
 };
 
 /* quadrant change for the first dibit (Q1 Q2, Q1 first in time) */
-static const int dibit2quad[4] = { 1, 0, 2, 3 };
+static const s16 dibit2quad[4] = { 1, 0, 2, 3 };
 /* and back: quadrant change -> dibit, the table is an involution */
-static const int quad2dibit[4] = { 1, 0, 2, 3 };
+static const s16 quad2dibit[4] = { 1, 0, 2, 3 };
 
 /* first quadrant constellation indexed by Q3 Q4 */
 static const cplx v22_points[4] = {
@@ -179,7 +179,7 @@ static const cplx v22_points[4] = {
 };
 
 /* c turned by quad * 90 degrees counter clockwise */
-static cplx rot90(cplx c, int quad)
+static cplx rot90(cplx c, s16 quad)
 {
 	switch (quad & 3) {
 	case 1: return cplx_make(-c.im, c.re);
@@ -215,8 +215,8 @@ void V22Pump::set_state(enum v22_state state_)
 cplx V22Pump::tx_symbol()
 {
 	u8 bits[4] = { 1, 1, 1, 1 };
-	int n = tx_rate == 2400 ? 4 : 2;
-	int i, dibit, q34 = 1;
+	s16 n = tx_rate == 2400 ? 4 : 2;
+	s16 i, dibit, q34 = 1;
 
 	switch (tx_mode) {
 	case TX_SILENCE:
@@ -268,9 +268,9 @@ float V22Pump::tx_sample()
 
 /* the decision for z: returns its quadrant, the point in *d and its
    Q3Q4 in *q34 (always 01 at 1200 bit/s) */
-int V22Pump::slice(cplx z, cplx *d, int *q34)
+s16 V22Pump::slice(cplx z, cplx *d, s16 *q34)
 {
-	int quad;
+	s16 quad;
 	cplx r;
 
 	/* 1200 bit/s has one point a quadrant, 01 (3 + j), 18 degrees off
@@ -299,11 +299,11 @@ int V22Pump::slice(cplx z, cplx *d, int *q34)
 /* dquad: the quadrant change of the decisions; dq_raw: the phase change
    from the last symbol, whatever the carrier phase (for the unscrambled
    patterns) */
-void V22Pump::rx_bits(int dquad, int q34_16, int dq_raw)
+void V22Pump::rx_bits(s16 dquad, s16 q34_16, s16 dq_raw)
 {
-	int dibit = quad2dibit[dquad], raw = quad2dibit[dq_raw];
-	int b0 = dibit >> 1, b1 = dibit & 1;
-	int ones12, ones24;
+	s16 dibit = quad2dibit[dquad], raw = quad2dibit[dq_raw];
+	s16 b0 = dibit >> 1, b1 = dibit & 1;
+	s16 ones12, ones24;
 	u8 bits[4];
 
 	/* raw (unscrambled) patterns, from the phase changes themselves: S1
@@ -357,7 +357,7 @@ void V22Pump::eq_reset()
 void V22Pump::rx_symbol(cplx y)
 {
 	cplx out = { 0, 0 }, z, d, e, rot;
-	int i, quad, q34, q34_16, dq_raw;
+	s16 i, quad, q34, q34_16, dq_raw;
 	float perr, step;
 
 	/* unscrambled ones step exactly -90 degrees per symbol; this tells
@@ -366,7 +366,7 @@ void V22Pump::rx_symbol(cplx y)
 	last_y = y;
 	step = atan2f(d.im, d.re);
 	rot_avg += 0.1f * (step - rot_avg);
-	dq_raw = static_cast<int>(
+	dq_raw = static_cast<s16>(
 			 lrintf(step / (static_cast<float>(M_PI) / 2))) &
 		 3;
 
@@ -464,7 +464,7 @@ void V22Pump::rx_reset()
 void V22Pump::rx_sample(float x)
 {
 	cplx b, y;
-	int i, j;
+	s16 i, j;
 	float g, mu;
 
 	/* carrier detector on the band passed input */
@@ -572,7 +572,7 @@ void V22Pump::set_tx(enum v22_tx mode)
 }
 
 /* to data: rates to the core, DPSTAT_CONNECT */
-int V22Pump::connect()
+s16 V22Pump::connect()
 {
 	set_state(V22_DATA);
 	set_tx(TX_DATA);
@@ -583,7 +583,7 @@ int V22Pump::connect()
    and the caller's start-up sequences (6.3.1/V.22 and V.22bis), the
    Bell 212A variants and the automode fallbacks.  Returns DPSTAT_OK,
    DPSTAT_CONNECT or DPSTAT_CHANGEDP. */
-int V22Pump::handshake()
+s16 V22Pump::handshake()
 {
 	s32 ms = static_cast<s32>(s64{count} * 1000 / srate);
 
@@ -750,9 +750,9 @@ int V22Pump::handshake()
 /* a sample x in, *y out: receiver, Bell 103 detector (automode),
    handshake and transmitter.  The handshake's status (the time limit,
    S7, and the loss of carrier in data, S10, are pump_loop()'s) */
-int V22Pump::sample(float x, float *y)
+s16 V22Pump::sample(float x, float *y)
 {
-	int r;
+	s16 r;
 
 	rx_sample(x);
 	if (automode)
@@ -769,10 +769,10 @@ int V22Pump::sample(float x, float *y)
    and the first state (an automode answerer whose answer tone is sent
    starts at the gap; a Bell 212A caller after a 2225 Hz tone at once
    with scrambled ones); 0 */
-int V22Pump::start(struct modem *m, enum DP_ID id, int caller_,
-		   s32 srate_, int max_frag)
+s16 V22Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
+		   s32 srate_, s32 max_frag)
 {
-	int i;
+	s16 i;
 	float sum;
 
 	pump_setup(m, srate_, caller_);
@@ -787,7 +787,7 @@ int V22Pump::start(struct modem *m, enum DP_ID id, int caller_,
 
 	rx_bp.bandpass(caller_ ? 2400 : 1200, 1.0f, srate_);
 	rx_lo.set_freq(caller_ ? -2400 : -1200, srate_);
-	mf_len = static_cast<int>(2 * V22_SPAN * sps) | 1;
+	mf_len = static_cast<s16>(2 * V22_SPAN * sps) | 1;
 	mf.assign(mf_len, 0);
 	mf_buf.assign(mf_len, cplx());
 	for (i = 0, sum = 0; i < mf_len; i++) {
@@ -832,9 +832,9 @@ static const enum DP_ID v22_ids[] = {
 };
 
 /* registers the pump as DP_V22, DP_V22BIS and DP_B212; 0 */
-int dp_v22_init(void)
+s16 dp_v22_init(void)
 {
-	unsigned i;
+	u16 i;
 	for (i = 0; i < std::size(v22_ids); i++)
 		modem_dp_register(v22_ids[i], &PumpOps<V22Pump>::ops);
 	return 0;
@@ -843,7 +843,7 @@ int dp_v22_init(void)
 /* deregisters them */
 void dp_v22_exit(void)
 {
-	unsigned i;
+	u16 i;
 	for (i = 0; i < std::size(v22_ids); i++)
 		modem_dp_deregister(v22_ids[i], &PumpOps<V22Pump>::ops);
 }

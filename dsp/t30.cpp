@@ -100,10 +100,10 @@ enum {
 static const struct rate {
 	enum fax_mod mod;
 	s32 bps;
-	unsigned bits;
-	int family;                     /* 2: V.17, 1: V.29, 0: V.27ter */
-	int t38_data, t38_ind;
-	int train_ms, long_train_ms;
+	u16 bits;
+	s16 family;                     /* 2: V.17, 1: V.29, 0: V.27ter */
+	s16 t38_data, t38_ind;
+	s16 train_ms, long_train_ms;
 } rates[] = {
 	{ FM_V17_14400, 14400, 0x8, 2, T38_DATA_V17_14400,
 	  T38_IND_V17_14400_SHORT, 142, 1393 },
@@ -122,7 +122,7 @@ static const struct rate {
 	{ FM_V27_2400,  2400,  0x0, 0, T38_DATA_V27_2400,
 	  T38_IND_V27_2400, 943, 943 },
 };
-#define NRATES ((int)std::size(rates))
+#define NRATES ((s16)std::size(rates))
 
 enum state {
 	S_IDLE,
@@ -173,7 +173,7 @@ static const char *state_name[] = {
 
 struct frame {
 	unsigned char data[FRAME_MAX];
-	int len;                        /* without the FCS */
+	s16 len;                        /* without the FCS */
 };
 
 /* HDLC: frames on V.21, ECM frames (FCD, RCP) on the fast modulation */
@@ -193,13 +193,13 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s32 count;                      /* samples in this state */
 	s32 timer;                      /* samples left, 0: none */
 	s32 t1;                         /* samples to T1, 0: off */
-	int tries;
+	s16 tries;
 
 	/* the transmitter: frames, a modem or a tone */
-	int tx_on;
+	s16 tx_on;
 	FaxTx tx;
 	struct frame frames[MAX_FRAMES];
-	int nframes, cur_frame;         /* the next one to send */
+	s16 nframes, cur_frame;         /* the next one to send */
 	s32 gap;                        /* S_GAP: samples left */
 	void (T30::*after_gap)();
 	s32 tcf_bits;                   /* to send */
@@ -209,95 +209,96 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	/* receivers: V.21 for frames, a fast one for TCF and pages */
 	FaxRx v21;
 	FaxRx fast;
-	int fast_on;
+	s16 fast_on;
 	FaxRxMemory mem;
 	unsigned char msg[MAX_FRAMES * 2][RX_FRAME_MAX];
-	int msg_len[MAX_FRAMES * 2], nmsg;
-	int msg_ready;
+	s16 msg_len[MAX_FRAMES * 2], nmsg;
+	s16 msg_ready;
 
 	/* the session */
-	int remote_dis_ok;
+	s16 remote_dis_ok;
 	unsigned char dis[16];          /* the remote's DIS FIF */
-	int dis_len;
-	int rate;                       /* index in rates[] */
-	int fine, mr, min_ms;
+	s16 dis_len;
+	s16 rate;                       /* index in rates[] */
+	s16 fine, mr, min_ms;
 	char remote_ident[21];
 
 	/* sending */
 	T4Page page, next;
-	int have_page, have_next;
-	int page_tries;
-	int last_post;                  /* MPS, EOM, EOP */
-	int cng;                        /* S_CNG with the tone */
-	int need_retrain;
+	s16 have_page, have_next;
+	s16 page_tries;
+	s16 last_post;                  /* MPS, EOM, EOP */
+	s16 cng;                        /* S_CNG with the tone */
+	s16 need_retrain;
 
 	/* receiving */
 	T4Page rx_page;
 	T4Rx t4rx;
-	int rx_page_on;
-	int page_ok;
-	int eop_acked;                  /* MCF to an EOP sent: all came */
+	s16 rx_page_on;
+	s16 page_ok;
+	s16 eop_acked;                  /* MCF to an EOP sent: all came */
 	s32 zero_run, max_zero_run, tcf_trained;
 
-	int pages;
+	s16 pages;
 
 	/* error correction mode */
-	int ecm_on;                     /* this call has it */
-	int ecm_size;                   /* octets in a frame: 256 or 64 */
-	int ecm_page, ecm_block;        /* the counters of PPS (the pages of
+	s16 ecm_on;                     /* this call has it */
+	s16 ecm_size;                   /* octets in a frame: 256 or 64 */
+	s16 ecm_page, ecm_block;        /* the counters of PPS (the pages of
 					   the call, the blocks of the page) */
-	int ecm_long_train;             /* after CTC */
+	s16 ecm_long_train;             /* after CTC */
 	/* sending */
 	std::vector<unsigned char> ecm_doc;     /* the page's coded data */
 	size_t ecm_doc_pos;             /* where the block starts */
-	int ecm_frames;                 /* in the block */
-	int ecm_last;                   /* the block ends the page */
+	s16 ecm_frames;                 /* in the block */
+	s16 ecm_last;                   /* the block ends the page */
 	unsigned char ecm_send[32];     /* frames to (re)send */
-	int ppr_count, rnr_count;
-	int etx_frame, etx_rcp;         /* the next frame to look at, RCPs */
+	s16 ppr_count, rnr_count;
+	s16 etx_frame, etx_rcp;         /* the next frame to look at, RCPs */
 	/* receiving */
 	std::vector<unsigned char> ecm_rx;      /* the block's frames */
 	s16 ecm_rx_len[ECM_FRAMES]; /* -1: not (yet) received */
-	int ecm_rx_frames;              /* in the block, -1: not known */
-	int ecm_rcp;
+	s16 ecm_rx_frames;              /* in the block, -1: not known */
+	s16 ecm_rcp;
 	/* non-ECM: our last post-page response, to the command post_fcf,
 	   and the state it took us to (a repeated command gets it again) */
-	int post_fcf, post_resp;
+	s16 post_fcf, post_resp;
 	enum state post_state;
-	int page_heard;                 /* S_RX_PAGE: a training was found */
-	int lose_fcf, lose_n, tx_mute;  /* test: DSP_T30_LOSE */
-	int last_resp;                  /* our last response, for RR */
+	s16 page_heard;                 /* S_RX_PAGE: a training was found */
+	s16 lose_fcf, tx_mute;          /* test: DSP_T30_LOSE */
+	s32 lose_n;
+	s16 last_resp;                  /* our last response, for RR */
 	unsigned char last_resp_fif[32];
-	int last_resp_len;
+	s16 last_resp_len;
 	enum state last_resp_next;
 
 	/* T.38: the transmission going out as packets */
-	int t38_kind;                   /* enum t38_tx */
-	int t38_step;                   /* enum t38_step */
+	s16 t38_kind;                   /* enum t38_tx */
+	s16 t38_step;                   /* enum t38_step */
 	s32 t38_wait;                   /* samples left in the step, -1:
 					   it starts */
 	s32 t38_acc;                    /* the data's time: bits x srate */
-	int t38_due;                    /* octets the line had time for */
-	int t38_debt;                   /* octets of time to go first (the
+	s16 t38_due;                    /* octets the line had time for */
+	s16 t38_debt;                   /* octets of time to go first (the
 					   frame's FCS and a flag) */
-	int t38_last_ind;               /* the indicator sent last */
-	int t38_long_train;             /* V.17: the long training */
+	s16 t38_last_ind;               /* the indicator sent last */
+	s16 t38_long_train;             /* V.17: the long training */
 	unsigned char t38_frame[4 + ECM_SIZE], t38_next[4 + ECM_SIZE];
-	int t38_frame_len, t38_frame_pos, t38_next_len; /* -1: none */
+	s16 t38_frame_len, t38_frame_pos, t38_next_len; /* -1: none */
 	size_t t38_t4_pos, t38_t4_len;  /* T.4 octets sent, in all */
 	/* receiving */
 	unsigned char t38_hdlc[RX_FRAME_MAX];
-	int t38_hdlc_len;                 /* the V.21 frame so far */
+	s16 t38_hdlc_len;                 /* the V.21 frame so far */
 	unsigned char t38_ecm[ECM_RX_MAX];
-	int t38_ecm_len;                /* the ECM frame so far */
-	int t38_heard;                  /* the fast modulation came */
+	s16 t38_ecm_len;                /* the ECM frame so far */
+	s16 t38_heard;                  /* the fast modulation came */
 
 	void set_state(enum state s);
 	void start_timer(s32 ms);
 	void stop_fast();
-	void start_fast(int short_train);
+	void start_fast(s16 short_train);
 	void restart_v21();
-	void add_frame(int fcf, const unsigned char *fif, int len);
+	void add_frame(s16 fcf, const unsigned char *fif, s16 len);
 	void send_frames(enum state next_);
 	void new_frames();
 	void gap_then(s32 ms, void (T30::*f)());
@@ -307,55 +308,55 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void start_page_rx();
 	void page_done();
 	void tcf_done();
-	void got_dcs(const unsigned char *fif, int len);
+	void got_dcs(const unsigned char *fif, s16 len);
 	void rx_message();
 	void encode_page();
 	void send_tcf();
 	void send_dcs();
 	void send_page();
-	int load_next();
+	s16 load_next();
 	void send_post_page();
-	int choose();
+	s16 choose();
 	void next_page_or_end();
 	void page_settings();
 	void sender_message();
-	int hdlc_tx_next(HdlcV21, unsigned char *buf, int max);
-	void hdlc_rx_frame(HdlcV21, const unsigned char *d, int len,
+	s16 hdlc_tx_next(HdlcV21, unsigned char *buf, s16 max);
+	void hdlc_rx_frame(HdlcV21, const unsigned char *d, s16 len,
 			   bool whole);
 	void on_timeout();
 	void tx_done();
 	/* error correction mode */
-	int post_command();
+	s16 post_command();
 	void start_ecm_page();
 	void start_ecm_block();
 	void send_ecm_burst();
 	void send_pps();
 	void send_ctc();
 	void send_rr();
-	int hdlc_tx_next(HdlcEcm, unsigned char *buf, int max);
+	s16 hdlc_tx_next(HdlcEcm, unsigned char *buf, s16 max);
 	void start_ecm_rx();
 	void ecm_block_end();
-	void hdlc_rx_frame(HdlcEcm, const unsigned char *d, int len,
+	void hdlc_rx_frame(HdlcEcm, const unsigned char *d, s16 len,
 			   bool whole);
-	void ecm_frame_in(const unsigned char *d, int len);
-	void got_pps(const unsigned char *fif, int len);
-	void ecm_respond(int fcf, const unsigned char *fif, int len,
+	void ecm_frame_in(const unsigned char *d, s16 len);
+	void got_pps(const unsigned char *fif, s16 len);
+	void ecm_respond(s16 fcf, const unsigned char *fif, s16 len,
 			 enum state next_);
-	enum state ecm_page_end(int fcf2);
+	enum state ecm_page_end(s16 fcf2);
 	float tone(float freq);
 	float tx_sample();
 	void rx_sample(float x);
 	void take_message();
 	/* T.38 */
-	void t38_start(int kind);
-	void t38_ind(int ind);
-	void t38_data(int type, const unsigned char *d, int n, int end);
-	int t38_get_frame(unsigned char *buf);
+	void t38_start(s16 kind);
+	void t38_ind(s16 ind);
+	void t38_data(s16 type, const unsigned char *d, s16 n, s16 end);
+	s16 t38_get_frame(unsigned char *buf);
 	void t38_flush();
 	void t38_tx_sample();
 	void t38_sample();
 	void t38_rx(const struct t38_ifp *p);
-	void t38_frame_in(const unsigned char *d, int len);
+	void t38_frame_in(const unsigned char *d, s16 len);
 	void t38_t4_in(const unsigned char *d, s32 n);
 	void t38_signal_end();
 };
@@ -366,13 +367,13 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
  */
 
 /* set a bit, numbered from 1 as in T.30 Table 2 */
-static void set_bit(unsigned char *fif, int bit)
+static void set_bit(unsigned char *fif, s16 bit)
 {
 	fif[(bit - 1) / 8] |= 1 << ((bit - 1) % 8);
 }
 
 /* a bit of a FIF of len octets; 0 beyond its end */
-static int get_bit(const unsigned char *fif, int len, int bit)
+static s16 get_bit(const unsigned char *fif, s16 len, s16 bit)
 {
 	if ((bit - 1) / 8 >= len)
 		return 0;
@@ -380,16 +381,16 @@ static int get_bit(const unsigned char *fif, int len, int bit)
 }
 
 /* the minimum scan line time a DIS asks for (bits 21-23), ms */
-static int dis_min_ms(const unsigned char *fif, int len)
+static s16 dis_min_ms(const unsigned char *fif, s16 len)
 {
-	static const int ms[8] = { 20, 40, 10, 10, 5, 40, 20, 0 };
-	int c = get_bit(fif, len, 21) << 2 | get_bit(fif, len, 22) << 1 |
+	static const s16 ms[8] = { 20, 40, 10, 10, 5, 40, 20, 0 };
+	s16 c = get_bit(fif, len, 21) << 2 | get_bit(fif, len, 22) << 1 |
 		get_bit(fif, len, 23);
 	return ms[c];
 }
 
 /* ... and its code in a DCS */
-static void dcs_min_ms(unsigned char *fif, int ms)
+static void dcs_min_ms(unsigned char *fif, s16 ms)
 {
 	switch (ms) {
 	case 40: set_bit(fif, 23); break;
@@ -401,9 +402,9 @@ static void dcs_min_ms(unsigned char *fif, int ms)
 }
 
 /* the rates a DIS offers */
-static int dis_rate_ok(const unsigned char *fif, int len, const struct rate *r)
+static s16 dis_rate_ok(const unsigned char *fif, s16 len, const struct rate *r)
 {
-	unsigned v = get_bit(fif, len, 11) | get_bit(fif, len, 12) << 1 |
+	u16 v = get_bit(fif, len, 11) | get_bit(fif, len, 12) << 1 |
 		     get_bit(fif, len, 13) << 2 | get_bit(fif, len, 14) << 3;
 	switch (r->family) {
 	case 2:
@@ -416,9 +417,10 @@ static int dis_rate_ok(const unsigned char *fif, int len, const struct rate *r)
 }
 
 /* a CSI / TSI: 20 characters, the last first */
-static int put_ident(unsigned char *d, const char *id)
+static s16 put_ident(unsigned char *d, const char *id)
 {
-	int k, n = id ? static_cast<int>(strlen(id)) : 0;
+	s16 k;
+	s32 n = id ? static_cast<s32>(strlen(id)) : 0;
 	if (n > 20)
 		n = 20;
 	for (k = 0; k < 20; k++)
@@ -428,9 +430,9 @@ static int put_ident(unsigned char *d, const char *id)
 
 /* a received CSI / TSI into id (21 octets): in reading order, the
    spaces around it and anything not printable out */
-static void get_ident(char *id, const unsigned char *d, int len)
+static void get_ident(char *id, const unsigned char *d, s16 len)
 {
-	int k, n = 0;
+	s16 k, n = 0;
 	if (len > 20)
 		len = 20;
 	for (k = len - 1; k >= 0; k--)
@@ -463,7 +465,7 @@ void T30::start_timer(s32 ms)
 	timer = ms2samples(ms, srate);
 }
 
-static void page_bit(void *ctx, int bit);
+static void page_bit(void *ctx, s16 bit);
 
 /* the fast receiver off, its V.17 equalizer kept in mem */
 void T30::stop_fast()
@@ -478,7 +480,7 @@ void T30::stop_fast()
 /* the fast receiver on at the call's rate (short_train: V.17 short
    training, from what mem keeps); stays off when out of memory (T.38:
    none, its data comes in packets) */
-void T30::start_fast(int short_train)
+void T30::start_fast(s16 short_train)
 {
 	stop_fast();
 	t38_heard = 0;
@@ -493,7 +495,7 @@ void T30::start_fast(int short_train)
 
 /* a frame for the next message: address, control, fcf with our X bit
    and len octets of fif (cut to what FRAME_MAX leaves) */
-void T30::add_frame(int fcf, const unsigned char *fif, int len)
+void T30::add_frame(s16 fcf, const unsigned char *fif, s16 len)
 {
 	struct frame *f;
 	if (nframes == MAX_FRAMES)
@@ -512,7 +514,7 @@ void T30::add_frame(int fcf, const unsigned char *fif, int len)
 
 /* the HDLC transmitter's next V.21 frame (FCS and flags are its); -1
    after the last */
-int T30::hdlc_tx_next(HdlcV21, unsigned char *buf, int /* max */)
+s16 T30::hdlc_tx_next(HdlcV21, unsigned char *buf, s16 /* max */)
 {
 	struct frame *f;
 	if (cur_frame >= nframes)
@@ -596,7 +598,7 @@ void T30::send_dcn(enum t30_result r)
 void T30::send_dis()
 {
 	unsigned char fif[4] = { 0 }, id[20];
-	int len = 3;
+	s16 len = 3;
 
 	set_bit(fif, 10);                       /* receives */
 	/* V.27ter, V.29 and V.17 as far as the configuration goes */
@@ -625,7 +627,7 @@ void T30::send_dis()
 /* after our CFR or MCF: a new page coming (ECM: its first block) */
 void T30::start_page_rx()
 {
-	int v17 = rates[rate].family == 2;
+	s16 v17 = rates[rate].family == 2;
 	if (rx_page_on) {
 		t4rx.release();
 		rx_page.release();
@@ -637,7 +639,7 @@ void T30::start_page_rx()
 		/* the blocks of the page */
 		ecm_block = 0;
 		ecm_rx_frames = -1;
-		for (int k = 0; k < ECM_FRAMES; k++)
+		for (s16 k = 0; k < ECM_FRAMES; k++)
 			ecm_rx_len[k] = -1;
 		start_ecm_rx();
 		return;
@@ -650,7 +652,7 @@ void T30::start_page_rx()
 
 /* fast receiver callback: the bits of the TCF (the longest run of
    zeros), of a page, or of an ECM block */
-static void page_bit(void *ctx, int bit)
+static void page_bit(void *ctx, s16 bit)
 {
 	T30 *t = static_cast<T30*>(ctx);
 	if (t->state == S_RX_TCF) {
@@ -693,7 +695,7 @@ void T30::page_done()
 void T30::tcf_done()
 {
 	s32 bps = rates[rate].bps;
-	int ok = max_zero_run >= bps * 3 / 4;        /* 750 ms */
+	s16 ok = max_zero_run >= bps * 3 / 4;        /* 750 ms */
 	DSP_DBG("t30: TCF: %" PRId32 " zeros in a row (of %" PRId32 "): %s\n",
 		max_zero_run, bps * 3 / 2, ok ? "ok" : "failed");
 	stop_fast();
@@ -709,11 +711,11 @@ void T30::tcf_done()
 
 /* a DCS: the rate and page settings the sender chose; the TCF follows
    (a DCS with a rate we don't know is ignored) */
-void T30::got_dcs(const unsigned char *fif, int len)
+void T30::got_dcs(const unsigned char *fif, s16 len)
 {
-	unsigned v = get_bit(fif, len, 11) | get_bit(fif, len, 12) << 1 |
+	u16 v = get_bit(fif, len, 11) | get_bit(fif, len, 12) << 1 |
 		     get_bit(fif, len, 13) << 2 | get_bit(fif, len, 14) << 3;
-	int k;
+	s16 k;
 	for (k = 0; k < NRATES; k++)
 		if (rates[k].bits == v)
 			break;
@@ -743,13 +745,13 @@ void T30::got_dcs(const unsigned char *fif, int len)
    handling of the sender's commands */
 void T30::rx_message()
 {
-	int k, fcf = 0, last = nmsg - 1;
+	s16 k, fcf = 0, last = nmsg - 1;
 	const unsigned char *fif = nullptr;
-	int fif_len = 0;
+	s16 fif_len = 0;
 
 	/* the identity, then the command */
 	for (k = 0; k < nmsg; k++) {
-		int f = msg[k][2] & 0xfe;
+		s16 f = msg[k][2] & 0xfe;
 		if ((f == FCF_TSI || f == FCF_CSI) && msg_len[k] > 3)
 			get_ident(remote_ident, msg[k] + 3,
 				  msg_len[k] - 3);
@@ -772,7 +774,7 @@ void T30::rx_message()
 		/* the calling machine */
 		switch (fcf) {
 		case FCF_DIS:
-			if (fif_len > static_cast<int>(sizeof(dis)))
+			if (fif_len > static_cast<s16>(sizeof(dis)))
 				fif_len = sizeof(dis);
 			memcpy(dis, fif, fif_len);
 			dis_len = fif_len;
@@ -795,7 +797,7 @@ void T30::rx_message()
 		/* continue to correct, maybe at another rate: the frames
 		   again after a long training */
 		if (fif_len >= 2) {
-			unsigned v = (fif[1] >> 2) & 0xf;
+			u16 v = (fif[1] >> 2) & 0xf;
 			for (k = 0; k < NRATES; k++)
 				if (rates[k].bits == v) {
 					rate = k;
@@ -889,7 +891,7 @@ void T30::encode_page()
 }
 
 /* fast transmitter callback: the bits of the page */
-static int page_get_bit(void *ctx)
+static s16 page_get_bit(void *ctx)
 {
 	T30 *t = static_cast<T30*>(ctx);
 	if (t->page_pos >= t->page_bits.n)
@@ -898,7 +900,7 @@ static int page_get_bit(void *ctx)
 }
 
 /* fast transmitter callback: the zeros of the TCF */
-static int tcf_get_bit(void *ctx)
+static s16 tcf_get_bit(void *ctx)
 {
 	T30 *t = static_cast<T30*>(ctx);
 	if (t->tcf_bits <= 0)
@@ -924,8 +926,8 @@ void T30::send_tcf()
 void T30::send_dcs()
 {
 	unsigned char fif[4] = { 0 }, id[20];
-	unsigned v = rates[rate].bits;
-	int len = 3;
+	u16 v = rates[rate].bits;
+	s16 len = 3;
 
 	set_bit(fif, 10);
 	if (v & 1) set_bit(fif, 11);
@@ -968,7 +970,7 @@ void T30::send_page()
 }
 
 /* the next page of the document into next; 1 if there is one */
-int T30::load_next()
+s16 T30::load_next()
 {
 	if (have_next)
 		return 1;
@@ -979,9 +981,9 @@ int T30::load_next()
 
 /* what follows the page: EOP, MPS, or EOM (another resolution needs
    another DCS: phase B again) */
-int T30::post_command()
+s16 T30::post_command()
 {
-	int more = load_next();
+	s16 more = load_next();
 	return !more ? FCF_EOP :
 		(next.fine != 0) != (fine != 0) ? FCF_EOM : FCF_MPS;
 }
@@ -996,9 +998,9 @@ void T30::send_post_page()
 }
 
 /* the DIS came: what the call can do */
-int T30::choose()
+s16 T30::choose()
 {
-	int k;
+	s16 k;
 	for (k = 0; k < NRATES; k++)
 		if (rates[k].bps <= cfg.max_bps &&
 		    dis_rate_ok(dis, dis_len, &rates[k]))
@@ -1033,7 +1035,7 @@ void T30::page_settings()
 		/* the remote takes only standard: every other row */
 		T4Page p;
 		s32 y;
-		int s = T4_STRIDE(page.width);
+		s16 s = T4_STRIDE(page.width);
 		p.init(page.width, 0);
 		for (y = 0; y < page.rows; y += 2)
 			p.add_row(page.bits.data() +
@@ -1047,7 +1049,7 @@ void T30::page_settings()
    state */
 void T30::sender_message()
 {
-	int fcf = msg[nmsg - 1][2] & 0xfe;
+	s16 fcf = msg[nmsg - 1][2] & 0xfe;
 
 	switch (state) {
 	case S_CNG:
@@ -1077,7 +1079,7 @@ void T30::sender_message()
 				 &T30::send_page);
 		} else if (fcf == FCF_FTT) {
 			/* a lower rate the remote has */
-			int k;
+			s16 k;
 			for (k = rate + 1; k < NRATES; k++)
 				if (dis_rate_ok(dis, dis_len, &rates[k]))
 					break;
@@ -1155,9 +1157,9 @@ void T30::sender_message()
 					 &T30::start_ecm_page);
 			}
 		} else if (fcf == FCF_PPR) {
-			int k, any = 0;
+			s16 k, any = 0;
 			const unsigned char *map = msg[nmsg - 1] + 3;
-			int map_len = msg_len[nmsg - 1] - 3;
+			s16 map_len = msg_len[nmsg - 1] - 3;
 			tries = 0;
 			rnr_count = 0;
 			zero(ecm_send);
@@ -1238,10 +1240,10 @@ void T30::start_ecm_block()
 		n = 1;
 	if (n > ECM_FRAMES)
 		n = ECM_FRAMES;
-	ecm_frames = static_cast<int>(n);
+	ecm_frames = static_cast<s16>(n);
 	ecm_last = ecm_doc_pos + n * ecm_size >= ecm_doc.size();
 	zero(ecm_send);
-	for (int k = 0; k < ecm_frames; k++)
+	for (s16 k = 0; k < ecm_frames; k++)
 		ecm_send[k / 8] |= 1 << (k % 8);
 	ppr_count = 0;
 	rnr_count = 0;
@@ -1251,7 +1253,7 @@ void T30::start_ecm_block()
 /* the HDLC transmitter's next ECM frame into buf (its FCS and flags are
    the transmitter's): an FCD still to send, else RCP three times (T.4
    A.1); -1 after them */
-int T30::hdlc_tx_next(HdlcEcm, unsigned char *buf, int /* max */)
+s16 T30::hdlc_tx_next(HdlcEcm, unsigned char *buf, s16 /* max */)
 {
 	while (etx_frame < ecm_frames &&
 	       !(ecm_send[etx_frame / 8] >> (etx_frame % 8) & 1))
@@ -1288,7 +1290,7 @@ int T30::hdlc_tx_next(HdlcEcm, unsigned char *buf, int /* max */)
    training, but after CTC) */
 void T30::send_ecm_burst()
 {
-	int v17 = rates[rate].family == 2;
+	s16 v17 = rates[rate].family == 2;
 	etx_frame = etx_rcp = 0;
 	if (cfg.t38) {
 		t38_start(T38_TX_ECM);
@@ -1353,7 +1355,7 @@ void T30::send_rr()
    training, but after CTC) */
 void T30::start_ecm_rx()
 {
-	int v17 = rates[rate].family == 2;
+	s16 v17 = rates[rate].family == 2;
 	EcmRx::hdlc_rx_reset();
 	ecm_rcp = 0;
 	start_fast(v17 && !ecm_long_train);
@@ -1371,12 +1373,12 @@ void T30::ecm_block_end()
 }
 
 /* a frame off the fast modulation, FCS checked */
-void T30::ecm_frame_in(const unsigned char *d, int len)
+void T30::ecm_frame_in(const unsigned char *d, s16 len)
 {
 	if (d[0] != HDLC_ADDR || len < 3)
 		return;
 	if ((d[2] & 0xfe) == FCF_FCD && len >= 5) {
-		int fn = d[3], n = len - 4;
+		s16 fn = d[3], n = len - 4;
 		if (n > ECM_SIZE)
 			n = ECM_SIZE;
 		memcpy(&ecm_rx[static_cast<size_t>(fn) * ECM_SIZE], d + 4, n);
@@ -1389,7 +1391,7 @@ void T30::ecm_frame_in(const unsigned char *d, int len)
 
 /* a flag from the ECM HDLC receiver: the frame before it, if whole
    octets with a good FCS */
-void T30::hdlc_rx_frame(HdlcEcm, const unsigned char *d, int len,
+void T30::hdlc_rx_frame(HdlcEcm, const unsigned char *d, s16 len,
 			bool whole)
 {
 	if (whole && len >= 5 && hdlc_fcs(d, len) == HDLC_FCS_GOOD)
@@ -1397,7 +1399,7 @@ void T30::hdlc_rx_frame(HdlcEcm, const unsigned char *d, int len,
 }
 
 /* a response to the sender, remembered for its RR */
-void T30::ecm_respond(int fcf, const unsigned char *fif, int len,
+void T30::ecm_respond(s16 fcf, const unsigned char *fif, s16 len,
 		      enum state next_)
 {
 	last_resp = fcf;
@@ -1412,7 +1414,7 @@ void T30::ecm_respond(int fcf, const unsigned char *fif, int len,
 
 /* the page is complete (PPS or EOR with MPS, EOP, EOM): to the page's
    receiver; the state after our answer */
-enum state T30::ecm_page_end(int fcf2)
+enum state T30::ecm_page_end(s16 fcf2)
 {
 	T4Page *p = &rx_page;
 	if (rx_page_on) {
@@ -1445,10 +1447,10 @@ enum state T30::ecm_page_end(int fcf2)
 
 /* a PPS (T.30 A.4.3): PPR with the map of the frames missing, else MCF
    and the block into the page, which ends if the PPS says so */
-void T30::got_pps(const unsigned char *fif, int len)
+void T30::got_pps(const unsigned char *fif, s16 len)
 {
 	unsigned char map[32];
-	int fcf2, page_no, block, n, k, missing = 0;
+	s16 fcf2, page_no, block, n, k, missing = 0;
 
 	if (len < 4) {
 		DSP_DBG("t30: PPS of %d octets\n", len);
@@ -1494,7 +1496,7 @@ void T30::got_pps(const unsigned char *fif, int len)
 	for (k = 0; k < ecm_rx_frames && rx_page_on && !t4rx.done; k++) {
 		const unsigned char *d =
 			&ecm_rx[static_cast<size_t>(k) * ECM_SIZE];
-		for (int i = 0; i < ecm_rx_len[k] * 8 && !t4rx.done; i++)
+		for (s16 i = 0; i < ecm_rx_len[k] * 8 && !t4rx.done; i++)
 			t4rx.bit(d[i / 8] >> (i % 8) & 1);
 	}
 	for (k = 0; k < ECM_FRAMES; k++)
@@ -1518,7 +1520,7 @@ void T30::got_pps(const unsigned char *fif, int len)
 /* a flag from the V.21 HDLC receiver: the frame before it into msg[]
    if whole octets (address, control, FCF and FCS at least) with a good
    FCS; the final bit makes the message ready */
-void T30::hdlc_rx_frame(HdlcV21, const unsigned char *d, int len,
+void T30::hdlc_rx_frame(HdlcV21, const unsigned char *d, s16 len,
 			bool whole)
 {
 	if (!whole || len < 5)
@@ -1554,7 +1556,7 @@ void T30::restart_v21()
 /* the transmission of kind on its way (its packets by t38_tx_sample()):
    kind's indicator and training; V.17 pages and ECM blocks with the
    short one (but after CTC), the TCF with the long one */
-void T30::t38_start(int kind)
+void T30::t38_start(s16 kind)
 {
 	t38_kind = kind;
 	t38_step = T38_STEP_SILENCE;
@@ -1573,7 +1575,7 @@ void T30::t38_start(int kind)
 
 /* an indicator, unless it is the last one sent (none while the
    transmission is lost for a test) */
-void T30::t38_ind(int ind)
+void T30::t38_ind(s16 ind)
 {
 	struct t38_ifp p;
 	if (ind == t38_last_ind)
@@ -1587,7 +1589,7 @@ void T30::t38_ind(int ind)
 
 /* a data packet of the transmission's modulation: n octets as field
    type (none if n is 0), then end, a field without data (-1: none) */
-void T30::t38_data(int type, const unsigned char *d, int n, int end)
+void T30::t38_data(s16 type, const unsigned char *d, s16 n, s16 end)
 {
 	struct t38_ifp p;
 	zero(p);
@@ -1607,9 +1609,9 @@ void T30::t38_data(int type, const unsigned char *d, int n, int end)
 /* the transmission's next HDLC frame into buf, its octets the T.38 way
    round: our V.21 frames, or the ECM block's (FCD, RCP); its length,
    -1 after the last */
-int T30::t38_get_frame(unsigned char *buf)
+s16 T30::t38_get_frame(unsigned char *buf)
 {
-	int n;
+	s16 n;
 	if (t38_kind == T38_TX_V21) {
 		if (cur_frame >= nframes)
 			return -1;
@@ -1629,14 +1631,14 @@ int T30::t38_get_frame(unsigned char *buf)
 void T30::t38_flush()
 {
 	unsigned char buf[T38_CHUNK_MAX];
-	int max = t38_kind == T38_TX_V21 ? T38_V21_MAX :
+	s16 max = t38_kind == T38_TX_V21 ? T38_V21_MAX :
 		cfg.t38_max_data > 0 && cfg.t38_max_data < T38_CHUNK_MAX ?
 		cfg.t38_max_data : T38_CHUNK_MAX;
 
 	while (tx_on && t38_step == T38_STEP_DATA && t38_due > 0) {
-		int n = t38_due < max ? t38_due : max;
+		s16 n = t38_due < max ? t38_due : max;
 		if (t38_kind == T38_TX_V21 || t38_kind == T38_TX_ECM) {
-			int left;
+			s16 left;
 			if (t38_frame_len < 0) {
 				t38_frame_len = t38_get_frame(t38_frame);
 				t38_frame_pos = 0;
@@ -1674,9 +1676,9 @@ void T30::t38_flush()
 		} else {
 			/* T.4: the TCF's zeros, or the page's octets */
 			size_t left = t38_t4_len - t38_t4_pos;
-			int last = static_cast<size_t>(n) >= left, k;
+			s16 last = static_cast<size_t>(n) >= left, k;
 			if (last)
-				n = static_cast<int>(left);
+				n = static_cast<s16>(left);
 			memset(buf, 0, n);
 			if (t38_kind == T38_TX_PAGE)
 				for (k = 0; k < n * 8; k++) {
@@ -1705,7 +1707,7 @@ void T30::t38_flush()
 void T30::t38_tx_sample()
 {
 	const struct rate *r = &rates[rate];
-	int fast = t38_kind != T38_TX_V21;
+	s16 fast = t38_kind != T38_TX_V21;
 
 	if (t38_step == T38_STEP_DATA) {
 		t38_acc += fast ? r->bps : 300;
@@ -1786,7 +1788,7 @@ void T30::t38_sample()
 
 /* a frame that came whole (the other end saw its FCS good) into msg[];
    the final one makes the message ready */
-void T30::t38_frame_in(const unsigned char *d, int len)
+void T30::t38_frame_in(const unsigned char *d, s16 len)
 {
 	if (len < 3 || nmsg >= MAX_FRAMES * 2 || d[0] != HDLC_ADDR)
 		return;
@@ -1801,7 +1803,7 @@ void T30::t38_frame_in(const unsigned char *d, int len)
 void T30::t38_t4_in(const unsigned char *d, s32 n)
 {
 	for (s32 k = 0; k < n * 8; k++) {
-		int bit = d[k / 8] >> (7 - k % 8) & 1;
+		s16 bit = d[k / 8] >> (7 - k % 8) & 1;
 		if (state == S_RX_TCF) {
 			tcf_trained = 1;
 			if (bit)
@@ -1842,7 +1844,7 @@ void T30::t38_signal_end()
    the fast modulation's data to the TCF, the page or the ECM block */
 void T30::t38_rx(const struct t38_ifp *p)
 {
-	int k, end = 0;
+	s16 k, end = 0;
 
 	if (!p->data) {
 		if (p->type == T38_IND_NO_SIGNAL) {
@@ -2141,9 +2143,9 @@ void T30::take_message()
 
 /* n samples of 16 bit audio in and out (in NULL: silence, out NULL:
    none wanted), the timers by them */
-void t30_process(T30 *t, const s16 *in, s16 *out, int n)
+void t30_process(T30 *t, const s16 *in, s16 *out, s32 n)
 {
-	int i;
+	s32 i;
 	for (i = 0; i < n; i++) {
 		float x = in ? in[i] : 0;
 		float y = 0;
@@ -2162,9 +2164,9 @@ void t30_process(T30 *t, const s16 *in, s16 *out, int n)
 }
 
 /* n samples' time of T.38: what goes out by then, and the timers */
-void t30_t38_time(T30 *t, int n)
+void t30_t38_time(T30 *t, s32 n)
 {
-	int i;
+	s32 i;
 	for (i = 0; i < n && t->state != S_DONE; i++) {
 		t->t38_sample();
 		t->count++;

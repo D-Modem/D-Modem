@@ -23,9 +23,9 @@ namespace tones {
 
 /* a tone and its cadence */
 struct Tone {
-	int f1, f2;             /* Hz; f2 0: one tone */
+	s16 f1, f2;             /* Hz; f2 0: one tone */
 	float mod;              /* f1 modulated at this (Hz), or 0 */
-	int n;                  /* the cadence: n seconds, on and off in
+	s16 n;                  /* the cadence: n seconds, on and off in
 				   turn from on, round and round; 0:
 				   continuous */
 	float cadence[8];
@@ -34,7 +34,7 @@ struct Tone {
 struct Country {
 	const char *name;       /* upper case, words joined by '_' */
 	Tone ringing;           /* (n > 0) */
-	int ring_hz;            /* the ring signal's */
+	s16 ring_hz;            /* the ring signal's */
 	Tone dial;
 	Tone busy;              /* the called line busy */
 	Tone congestion;        /* the network's lines or switches busy */
@@ -59,11 +59,11 @@ inline bool on_at(const Tone &c, double t)
 	if (c.n <= 0)
 		return true;
 	double period = 0;
-	for (int i = 0; i < c.n; i++)
+	for (s16 i = 0; i < c.n; i++)
 		period += c.cadence[i];
 	double x = t - period * static_cast<double>(
 				       static_cast<s64>(t / period));
-	for (int i = 0; i < c.n; i++) {
+	for (s16 i = 0; i < c.n; i++) {
 		if (x < c.cadence[i])
 			return i % 2 == 0;
 		x -= c.cadence[i];
@@ -75,7 +75,7 @@ inline bool on_at(const Tone &c, double t)
 inline double period(const Tone &c)
 {
 	double p = 0;
-	for (int i = 0; i < c.n; i++)
+	for (s16 i = 0; i < c.n; i++)
 		p += c.cadence[i];
 	return p;
 }

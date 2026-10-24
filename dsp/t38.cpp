@@ -39,10 +39,11 @@ namespace dsp {
 #define FIELD_EXT       T38_CM_MESSAGE
 
 /* see t38.h */
-int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
-		   int max)
+s32 t38_ifp_encode(const struct t38_ifp *p, s16 version, unsigned char *buf,
+		   s32 max)
 {
-	int at = 0, k, present;
+	s32 at = 0;
+	s16 k, present;
 
 	if (max < 2)
 		return -1;
@@ -52,7 +53,7 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 			return 1;
 		}
 		if (version && p->type <= T38_IND_V33_14400) {
-			int v = p->type - IND_EXT;
+			s16 v = p->type - IND_EXT;
 			buf[0] = static_cast<unsigned char>(0x20 | v >> 2);
 			buf[1] = static_cast<unsigned char>((v & 3) << 6);
 			return 2;
@@ -64,7 +65,7 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 		buf[at++] = static_cast<unsigned char>(present | 0x40 |
 						       p->type << 1);
 	} else if (version && p->type <= T38_DATA_V33_14400) {
-		int v = p->type - DATA_EXT;
+		s16 v = p->type - DATA_EXT;
 		buf[at++] = static_cast<unsigned char>(present | 0x60 | v >> 2);
 		buf[at++] = static_cast<unsigned char>((v & 3) << 6);
 	} else {
@@ -77,7 +78,7 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 	buf[at++] = static_cast<unsigned char>(p->nfields);
 	for (k = 0; k < p->nfields; k++) {
 		const struct t38_field *f = &p->field[k];
-		int fp = f->len > 0 ? 0x80 : 0;
+		s16 fp = f->len > 0 ? 0x80 : 0;
 		/* (so the 1998 encoding never shares an octet) */
 		if (!fp && k != p->nfields - 1)
 			return -1;
@@ -87,7 +88,7 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 			buf[at++] = static_cast<unsigned char>(
 				fp | f->type << (version ? 3 : 4));
 		} else if (version && f->type <= T38_V34RATE) {
-			int v = f->type - FIELD_EXT;
+			s16 v = f->type - FIELD_EXT;
 			buf[at++] =
 				static_cast<unsigned char>(fp | 0x40 | v >> 2);
 			buf[at++] = static_cast<unsigned char>((v & 3) << 6);
@@ -108,11 +109,11 @@ int t38_ifp_encode(const struct t38_ifp *p, int version, unsigned char *buf,
 }
 
 /* see t38.h */
-int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
+s16 t38_ifp_decode(struct t38_ifp *p, s16 version, const unsigned char *buf,
 		   s32 len)
 {
 	s32 at;
-	int k, count, present, half = 0;
+	s16 k, count, present, half = 0;
 
 	zero(*p);
 	if (len < 1)
@@ -123,8 +124,8 @@ int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 		/* an extension: six bits over the octet's end */
 		if (!version || len < 2)
 			return -1;
-		p->type = (p->data ? static_cast<int>(DATA_EXT) :
-				     static_cast<int>(IND_EXT)) +
+		p->type = (p->data ? static_cast<s16>(DATA_EXT) :
+				     static_cast<s16>(IND_EXT)) +
 			  ((buf[0] << 2 & 0x3c) | buf[1] >> 6);
 		at = 2;
 	} else {
@@ -151,7 +152,7 @@ int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 		return -1;
 	for (k = 0; k < count; k++) {
 		struct t38_field *f = &p->field[k];
-		int fp;
+		s16 fp;
 		if (at >= len)
 			return -1;
 		if (!version) {
@@ -200,10 +201,10 @@ int t38_ifp_decode(struct t38_ifp *p, int version, const unsigned char *buf,
 }
 
 /* see t38.h */
-void t38_reverse(unsigned char *out, const unsigned char *in, int n)
+void t38_reverse(unsigned char *out, const unsigned char *in, s32 n)
 {
-	for (int k = 0; k < n; k++) {
-		unsigned v = in[k];
+	for (s32 k = 0; k < n; k++) {
+		u16 v = in[k];
 		v = (v & 0xf0) >> 4 | (v & 0x0f) << 4;
 		v = (v & 0xcc) >> 2 | (v & 0x33) << 2;
 		v = (v & 0xaa) >> 1 | (v & 0x55) << 1;
@@ -218,7 +219,7 @@ void t38_reverse(unsigned char *out, const unsigned char *in, int n)
 
 /* a length below 16384 at buf[at]: the octets it took, 0 if max leaves
    no room */
-static int put_len(unsigned char *buf, int at, int max, unsigned v)
+static s16 put_len(unsigned char *buf, s32 at, s32 max, u16 v)
 {
 	if (v < 0x80) {
 		if (at + 1 > max)
@@ -234,15 +235,15 @@ static int put_len(unsigned char *buf, int at, int max, unsigned v)
 }
 
 /* the octets a length takes */
-static int len_len(unsigned v)
+static s16 len_len(s32 v)
 {
 	return v < 0x80 ? 1 : 2;
 }
 
 /* a length from buf[*at] (len octets) into *v; -1 if there is none, or
    it is a fragment's (16 K or more) */
-static int get_len(const unsigned char *buf, s32 len, s32 *at,
-		   unsigned *v)
+static s16 get_len(const unsigned char *buf, s32 len, s32 *at,
+		   u16 *v)
 {
 	if (*at >= len)
 		return -1;
@@ -259,7 +260,7 @@ static int get_len(const unsigned char *buf, s32 len, s32 *at,
 
 /* ec (enum t38_ec) with depth packets before (at most
    UDPTL_HISTORY), sequence number 0 */
-void UdptlTx::init(int ec_, int depth_)
+void UdptlTx::init(s16 ec_, s16 depth_)
 {
 	reinit(*this);
 	ec = ec_;
@@ -268,10 +269,11 @@ void UdptlTx::init(int ec_, int depth_)
 }
 
 /* see t38.h */
-int UdptlTx::packet(const unsigned char *ifp, int len, unsigned char *buf,
-		    int max)
+s32 UdptlTx::packet(const unsigned char *ifp, s32 len, unsigned char *buf,
+		    s32 max)
 {
-	int at, n, k, room;
+	s32 at, room;
+	s16 n, k;
 
 	if (len <= 0 || len > UDPTL_IFP_MAX ||
 	    2 + len_len(len) + len + 2 > max)
@@ -288,7 +290,7 @@ int UdptlTx::packet(const unsigned char *ifp, int len, unsigned char *buf,
 	for (;;) {
 		room = len_len(n);
 		for (k = 0; k < n; k++) {
-			int l = hist_len[(nhist - 1 - k) % UDPTL_HISTORY];
+			s16 l = hist_len[(nhist - 1 - k) % UDPTL_HISTORY];
 			room += len_len(l) + l;
 		}
 		if (at + room <= max || n == 0)
@@ -297,7 +299,7 @@ int UdptlTx::packet(const unsigned char *ifp, int len, unsigned char *buf,
 	}
 	at += put_len(buf, at, max, n);
 	for (k = 0; k < n; k++) {
-		int h = (nhist - 1 - k) % UDPTL_HISTORY;
+		s16 h = (nhist - 1 - k) % UDPTL_HISTORY;
 		at += put_len(buf, at, max, hist_len[h]);
 		memcpy(buf + at, hist[h], hist_len[h]);
 		at += hist_len[h];
@@ -319,24 +321,24 @@ void UdptlRx::init()
 }
 
 /* see t38.h */
-int UdptlRx::packet(const unsigned char *buf, s32 len,
-		    void (*fn)(void *ctx, const unsigned char *ifp, int len,
-			       unsigned seq),
+s16 UdptlRx::packet(const unsigned char *buf, s32 len,
+		    void (*fn)(void *ctx, const unsigned char *ifp, s16 len,
+			       u16 seq),
 		    void *ctx)
 {
 	const unsigned char *prim, *sec[UDPTL_HISTORY * 2];
-	int sec_len[UDPTL_HISTORY * 2], nsec = 0, k, prim_len;
+	s16 sec_len[UDPTL_HISTORY * 2], nsec = 0, k, prim_len;
 	s32 at = 2;
-	unsigned seq, n, count, d;
+	u16 seq, n, count, d;
 
 	if (len < 4)
 		return -1;
-	seq = static_cast<unsigned>(buf[0]) << 8 | buf[1];
+	seq = static_cast<u16>(buf[0]) << 8 | buf[1];
 	if (get_len(buf, len, &at, &n) || n == 0 ||
 	    at + static_cast<s32>(n) > len)
 		return -1;
 	prim = buf + at;
-	prim_len = static_cast<int>(n);
+	prim_len = static_cast<s16>(n);
 	at += n;
 	if (at >= len)
 		return -1;
@@ -344,11 +346,11 @@ int UdptlRx::packet(const unsigned char *buf, s32 len,
 		/* the packets before, newest first */
 		if (get_len(buf, len, &at, &count))
 			return -1;
-		for (k = 0; k < static_cast<int>(count); k++) {
+		for (k = 0; k < static_cast<s16>(count); k++) {
 			if (get_len(buf, len, &at, &n) ||
 			    at + static_cast<s32>(n) > len)
 				return -1;
-			if (nsec < static_cast<int>(std::size(sec))) {
+			if (nsec < static_cast<s16>(std::size(sec))) {
 				sec[nsec] = buf + at;
 				sec_len[nsec++] = n;
 			}
@@ -361,12 +363,12 @@ int UdptlRx::packet(const unsigned char *buf, s32 len,
 		expected = (seq + 1) & 0xffff;
 		return 0;
 	}
-	d = (seq - static_cast<unsigned>(expected)) & 0xffff;
+	d = (seq - static_cast<u16>(expected)) & 0xffff;
 	if (d >= 0x8000)
 		return 0;                       /* had it, or too late */
 	/* the lost ones from the packets before, oldest first (an empty
 	   one stands for none) */
-	for (k = static_cast<int>(d); k >= 1; k--)
+	for (k = static_cast<s16>(d); k >= 1; k--)
 		if (k <= nsec && sec_len[k - 1] > 0)
 			fn(ctx, sec[k - 1], sec_len[k - 1], (seq - k) & 0xffff);
 	fn(ctx, prim, prim_len, seq);

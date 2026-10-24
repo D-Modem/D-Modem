@@ -67,8 +67,8 @@ namespace dsp {
 
 struct v32_rate {
 	s32 bps;
-	unsigned bits;
-	int nbits;
+	u16 bits;
+	s16 nbits;
 	const cplx *points;
 };
 
@@ -79,7 +79,7 @@ static const struct v32_rate v32_rates[] = {
 	{ 7200, RB_TCM | RB_7200, 3, v32_points_7200 },
 	{ 4800, RB_4800, 2, v32_points_4800 },
 };
-#define V32_NRATES (int)std::size(v32_rates)
+#define V32_NRATES (s16)std::size(v32_rates)
 
 /* 4800 bit/s differential code: next point index from previous index
    and dibit (first bit in bit 0); points indexed as v32_points_4800 */
@@ -87,9 +87,9 @@ static const unsigned char v32_4800_enc[4][4] = {
 	{ 2, 3, 0, 1 }, { 0, 2, 1, 3 }, { 3, 1, 2, 0 }, { 1, 0, 3, 2 },
 };
 /* A B C D -> index in v32_points_4800 */
-static const int abcd_to_4800[4] = { 0, 2, 3, 1 };
+static const s16 abcd_to_4800[4] = { 0, 2, 3, 1 };
 /* TRN dibit (first bit << 1 | second bit) -> A B C D */
-static const int trn_dibit_abcd[4] = { 0, 1, 3, 2 };
+static const s16 trn_dibit_abcd[4] = { 0, 1, 3, 2 };
 
 enum v32_txm {
 	TXM_SILENCE,
@@ -149,13 +149,13 @@ struct ToneTrk {
 	float a;
 	cplx hist[128];
 	u32 pos;
-	int lag;
-	int on;
+	s16 lag;
+	s16 on;
 	s32 on_count;
-	int hold;
+	s16 hold;
 
 	void init(float freq, s32 srate);
-	int run(float x, float in_power, s32 srate);
+	s16 run(float x, float in_power, s32 srate);
 };
 
 struct V32Pump : PumpBase<V32Pump, v32_state> {
@@ -164,24 +164,24 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	/* frees the receiver's and echo canceller's buffers */
 	~V32Pump() { cleanup(); }
 
-	int automode;
-	unsigned caps;          /* rate bits we offer */
-	unsigned r2_caps;       /* caller: rates in R2 */
+	s16 automode;
+	u16 caps;               /* rate bits we offer */
+	u16 r2_caps;            /* caller: rates in R2 */
 
 	/* transmitter */
 	QamTx tx;
 	enum v32_txm txm;
 	s32 tx_syms;            /* symbols sent in the current tx state */
-	int tx_ac_phase;
-	int tx_reverse;         /* repeat one AC symbol: phase reversal */
-	int ca_rev;             /* answerer: the caller's CC reversal seen */
+	s16 tx_ac_phase;
+	s16 tx_reverse;         /* repeat one AC symbol: phase reversal */
+	s16 ca_rev;             /* answerer: the caller's CC reversal seen */
 	s32 nt_syms = 0;        /* caller: the round trip delay NT (symbols) */
 	u32 tx_scr;
-	int tx_scr_tap;
-	int tx_4800;            /* 4800 coding state (v32_points_4800 index) */
-	int tx_last_abcd;
-	unsigned tx_word;
-	int tx_word_bit;
+	s16 tx_scr_tap;
+	s16 tx_4800;            /* 4800 coding state (v32_points_4800 index) */
+	s16 tx_last_abcd;
+	u16 tx_word;
+	s16 tx_word_bit;
 	TrellisEnc tx_trellis;
 	const struct v32_rate *tx_rate;
 	Osc ans;
@@ -195,57 +195,58 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	ToneTrk v21m, v23m;     /* FSK answerers' marks */
 	CarrierDetect carrier;
 	enum v32_rxp rxp;
-	int run_s, last_sgn, s_miss;
+	s32 run_s;
+	s16 last_sgn, s_miss;
 	cplx last_z;
 	u32 rx_scr;
-	int rx_scr_tap;
-	int rx_4800;
+	s16 rx_scr_tap;
+	s16 rx_4800;
 	u32 rx_bits;            /* last 32 descrambled bits */
 	s32 rx_nbits;
-	unsigned rx_word, rx_r_word;
-	int rx_word_align;
+	u16 rx_word, rx_r_word;
+	s16 rx_word_align;
 	float rx_mse;
 	float data_power;       /* the input's power as data mode began */
-	int rx_e_seen;
+	s16 rx_e_seen;
 	const struct v32_rate *rx_rate;
 	Viterbi vit;
-	int rx_dbits;           /* data bits per symbol */
+	s16 rx_dbits;           /* data bits per symbol */
 
 	/* events from the receiver to the handshake */
-	int ev_aa, ev_ac, ev_rev, ev_s, ev_r, ev_e, ev_usb1;
-	int retraining;         /* a retrain in data mode (no new CONNECT) */
-	int retrains;
+	s16 ev_aa, ev_ac, ev_rev, ev_s, ev_r, ev_e, ev_usb1;
+	s16 retraining;         /* a retrain in data mode (no new CONNECT) */
+	s16 retrains;
 	s32 retrain_at;         /* test: our own retrain this far (samples)
 				   into the data, $DSP_V32_RETRAIN ms */
-	unsigned r_word;        /* last R word received */
+	u16 r_word;             /* last R word received */
 
 	cplx tx_symbol();
 	void set_tx(enum v32_txm m);
-	cplx tx_word_symbol(unsigned word, int data);
+	cplx tx_word_symbol(u16 word, s16 data);
 	cplx tx_data_symbol();
 	void rx_reset();
-	void rx_word_bit(int bit);
+	void rx_word_bit(s16 bit);
 	void rx_symbol();
 	void rx_sample(float x);
 	/* its name in the log */
 	const char *tag() const { return "v32"; }
 	/* in data mode (the carrier watched, no handshake timeout) */
 	bool in_data() const { return state == V32_DATA; }
-	void start_word(enum v32_txm m, unsigned w);
-	int connect();
+	void start_word(enum v32_txm m, u16 w);
+	s16 connect();
 	void retrain(bool remote);
-	int fallback_to(enum DP_ID id, const char *mode);
-	int fallback();
-	unsigned quality_caps();
-	const struct v32_rate *choose(unsigned w);
-	int handshake();
-	cplx abcd_point(int k);
-	int start(struct modem *m, enum DP_ID id, int caller_, s32 srate_,
-		  int max_frag);
+	s16 fallback_to(enum DP_ID id, const char *mode);
+	s16 fallback();
+	u16 quality_caps();
+	const struct v32_rate *choose(u16 w);
+	s16 handshake();
+	cplx abcd_point(s16 k);
+	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
+		  s32 max_frag);
 	void cleanup();
-	int sample(float x, float *y);
+	s16 sample(float x, float *y);
 	/* cnt samples in and out, through sample() */
-	int process(void *in, void *out, int cnt) override
+	s16 process(void *in, void *out, s32 cnt) override
 	{
 		return pump_loop(in, out, cnt);
 	}
@@ -256,15 +257,15 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
  */
 
 /* the index (A B C D: 0..3) of the training point nearest to z */
-static int nearest_abcd(cplx z)
+static s16 nearest_abcd(cplx z)
 {
 	return nearest_point(v32_abcd, 4, z);
 }
 
 /* the fastest rate whose bits are all set in the rate word w, or NULL */
-static const struct v32_rate *rate_of_word(unsigned w)
+static const struct v32_rate *rate_of_word(u16 w)
 {
-	int i;
+	s16 i;
 	for (i = 0; i < V32_NRATES; i++)
 		if ((w & v32_rates[i].bits) == v32_rates[i].bits)
 			return &v32_rates[i];
@@ -272,7 +273,7 @@ static const struct v32_rate *rate_of_word(unsigned w)
 }
 
 /* the rate word naming r alone (R3, and E with RB_HEADER added) */
-static unsigned final_word(const struct v32_rate *r)
+static u16 final_word(const struct v32_rate *r)
 {
 	return RB_B4 | RB_SYNC | r->bits;
 }
@@ -291,11 +292,11 @@ void ToneTrk::init(float freq, s32 srate)
 
 /* returns 1 on a phase reversal; the tone has to carry a fair part of
    the total input power (in_power), noise alone does not turn it on */
-int ToneTrk::run(float x, float in_power, s32 srate)
+s16 ToneTrk::run(float x, float in_power, s32 srate)
 {
 	cplx v = cplx_scale(lo.next_cplx(), x), old;
 	float p, po;
-	int rev = 0;
+	s16 rev = 0;
 
 	lp1.re += a * (v.re - lp1.re);
 	lp1.im += a * (v.im - lp1.im);
@@ -340,7 +341,7 @@ void V32Pump::set_tx(enum v32_txm m)
 
 /* training point k (A B C D: 0..3), remembered for the 4800 coding
    state that follows TRN */
-cplx V32Pump::abcd_point(int k)
+cplx V32Pump::abcd_point(s16 k)
 {
 	tx_last_abcd = k;
 	return v32_abcd[k];
@@ -353,11 +354,11 @@ cplx V32Pump::abcd_point(int k)
 /* one 4800 bit/s symbol (two scrambled bits, differentially coded):
    the next two bits of the rate word word (MSB first), or with data two
    bits from the link layer (ones during B1) */
-cplx V32Pump::tx_word_symbol(unsigned word, int data)
+cplx V32Pump::tx_word_symbol(u16 word, s16 data)
 {
-	int b[2], k, q;
+	s16 b[2], k, q;
 	for (k = 0; k < 2; k++) {
-		int bit;
+		s16 bit;
 		if (data) {
 			u8 x = 1;
 			if (tx_syms >= V32_B1_SYMS)
@@ -379,7 +380,7 @@ cplx V32Pump::tx_word_symbol(unsigned word, int data)
 cplx V32Pump::tx_data_symbol()
 {
 	const struct v32_rate *r = tx_rate;
-	int q = 0, k, idx;
+	s16 q = 0, k, idx;
 	u8 bits[6];
 
 	if (r->nbits == 2)
@@ -400,7 +401,7 @@ cplx V32Pump::tx_data_symbol()
 cplx V32Pump::tx_symbol()
 {
 	cplx z = { 0, 0 };
-	int b1, b2;
+	s16 b1, b2;
 
 	switch (txm) {
 	case TXM_SILENCE:
@@ -464,9 +465,9 @@ void V32Pump::rx_reset()
    (seen twice in a row) sets ev_r and r_word; E on the same 16 bit
    boundaries, with one rate and a clean signal, sets ev_e and starts
    the data receiver at that rate */
-void V32Pump::rx_word_bit(int bit)
+void V32Pump::rx_word_bit(s16 bit)
 {
-	unsigned w;
+	u16 w;
 
 	rx_bits = (rx_bits << 1) | (bit & 1);
 	if (++rx_nbits < 32)
@@ -514,7 +515,7 @@ void V32Pump::rx_word_bit(int bit)
 void V32Pump::rx_symbol()
 {
 	cplx z = rx.z, d, st;
-	int k, q, sgn;
+	s16 k, q, sgn;
 	float a;
 
 	/* while we send our own training the line carries mostly our echo
@@ -611,7 +612,7 @@ void V32Pump::rx_symbol()
 		{
 			const struct v32_rate *r = rx_rate;
 			u8 bits[6];
-			int n = r->nbits;
+			s16 n = r->nbits;
 			k = nearest_point(r->points, 1 << (n == 2 ? 2 : n + 1), z);
 			d = r->points[k];
 			rx_mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / V32_POWER -
@@ -687,7 +688,7 @@ void V32Pump::rx_sample(float x)
 
 /* transmit signal m (TXM_R or TXM_E) repeating the word w from its
    first bit */
-void V32Pump::start_word(enum v32_txm m, unsigned w)
+void V32Pump::start_word(enum v32_txm m, u16 w)
 {
 	tx_word = w;
 	tx_word_bit = 0;
@@ -696,7 +697,7 @@ void V32Pump::start_word(enum v32_txm m, unsigned w)
 
 /* to data, the rates to the core: DPSTAT_CONNECT, or DPSTAT_OK after a
    retrain */
-int V32Pump::connect()
+s16 V32Pump::connect()
 {
 	set_state(V32_DATA);
 	data_power = rx.power;
@@ -739,26 +740,26 @@ void V32Pump::retrain(bool remote)
 
 /* hands over to the pump id (mode its name for the debug output); an
    answerer's answer tone is marked as sent.  DPSTAT_CHANGEDP */
-int V32Pump::fallback_to(enum DP_ID id, const char *mode)
+s16 V32Pump::fallback_to(enum DP_ID id, const char *mode)
 {
 	DSP_DBG("v32: remote is not V.32, falling back to %s\n", mode);
 	return hand_over(id, !caller);
 }
 
 /* fallback_to() V.22bis */
-int V32Pump::fallback()
+s16 V32Pump::fallback()
 {
 	return fallback_to(DP_V22BIS, "V.22bis");
 }
 
 /* the rates our receiver can take, judged by the decision error on
    the training signal (4 points) */
-unsigned V32Pump::quality_caps()
+u16 V32Pump::quality_caps()
 {
 	static const float min_snr[] = { 25, 22, 19, 16, 0 };
 	float snr = -10 * log10f(rx_mse + 1e-6f);
-	unsigned caps_ = 0;
-	int i;
+	u16 caps_ = 0;
+	s16 i;
 	for (i = 0; i < V32_NRATES; i++)
 		if (snr >= min_snr[i])
 			caps_ |= v32_rates[i].bits;
@@ -769,13 +770,13 @@ unsigned V32Pump::quality_caps()
 }
 
 /* the best common rate of our capabilities and the remote's word */
-const struct v32_rate *V32Pump::choose(unsigned w)
+const struct v32_rate *V32Pump::choose(u16 w)
 {
 	return rate_of_word(w & quality_caps());
 }
 
 /* called once per transmitted symbol, before the symbol is made */
-int V32Pump::handshake()
+s16 V32Pump::handshake()
 {
 	s32 sym = tx_syms;
 	const struct v32_rate *r;
@@ -1022,9 +1023,9 @@ int V32Pump::handshake()
    DPSTAT_CONNECT once, DPSTAT_CHANGEDP on a fallback, DPSTAT_ERROR on
    a handshake failure (the time limit, S7, and the loss of carrier in
    data, S10, are pump_loop()'s) */
-int V32Pump::sample(float x, float *y)
+s16 V32Pump::sample(float x, float *y)
 {
-	int r = DPSTAT_OK;
+	s16 r = DPSTAT_OK;
 
 	/* the handshake acts on symbol boundaries */
 	if (txm != TXM_ANS && tx.t + 1.0f / tx.sps >= 1) {
@@ -1032,7 +1033,7 @@ int V32Pump::sample(float x, float *y)
 		if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 			return r;
 	} else if (txm == TXM_ANS || txm == TXM_SILENCE) {
-		int h = handshake();
+		s16 h = handshake();
 		if (h == DPSTAT_CHANGEDP || h == DPSTAT_ERROR)
 			return h;
 	}
@@ -1051,10 +1052,10 @@ int V32Pump::sample(float x, float *y)
    transmitter, receiver, echo canceller and tone trackers; timeouts
    from S7 and S10; an answerer after V.8 starts at the gap.  0, or -1
    when out of memory. */
-int V32Pump::start(struct modem *m, enum DP_ID id, int caller_,
-		   s32 srate_, int max_frag)
+s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
+		   s32 srate_, s32 max_frag)
 {
-	int i;
+	s16 i;
 	s32 min_rate, max_rate;
 
 	pump_setup(m, srate_, caller_);
@@ -1134,9 +1135,9 @@ void V32Pump::cleanup()
 static const enum DP_ID v32_ids[] = { DP_V32, DP_V32BIS };
 
 /* registers the pump as DP_V32 and DP_V32BIS; 0 */
-int dp_v32_init(void)
+s16 dp_v32_init(void)
 {
-	unsigned i;
+	u16 i;
 	for (i = 0; i < std::size(v32_ids); i++)
 		modem_dp_register(v32_ids[i], &PumpOps<V32Pump>::ops);
 	return 0;
@@ -1145,7 +1146,7 @@ int dp_v32_init(void)
 /* deregisters them */
 void dp_v32_exit(void)
 {
-	unsigned i;
+	u16 i;
 	for (i = 0; i < std::size(v32_ids); i++)
 		modem_dp_deregister(v32_ids[i], &PumpOps<V32Pump>::ops);
 }

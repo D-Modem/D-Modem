@@ -34,15 +34,15 @@ inline u8 reverse_bits(u8 c)
 /* a frame: address, control, information (no FCS) */
 struct Frame {
 	Frame *next;            /* the frame lists of LAPM are rings */
-	int count;              /* bytes sent or received so far */
-	int size;               /* to send / room */
+	s16 count;              /* bytes sent or received so far */
+	s16 size;               /* to send / room */
 	u16 fcs;
 	u8 *buf;
 };
 
 /* the bits not yet given out or taken in */
 struct BitQueue {
-	int bit = 0;
+	s16 bit = 0;
 	u32 data = 0;
 	/* empty */
 	void clear() { bit = 0; data = 0; }
@@ -74,8 +74,8 @@ template <class F>
 class BitFramer {
 public:
 	/* n items of nbits bits for the data pump, and from it; how many */
-	int get_bits(int nbits, u8 *buf, int n);
-	int put_bits(int nbits, const u8 *buf, int n);
+	s32 get_bits(s16 nbits, u8 *buf, s32 n);
+	s32 put_bits(s16 nbits, const u8 *buf, s32 n);
 	/* the received bits not taken yet (for the framer after this one) */
 	const BitQueue &rx_queue() const { return rx_; }
 
@@ -89,7 +89,7 @@ protected:
 	}
 	/* (F's) the rest of the n items when tx_fill() has nothing: none
 	   here; how many it filled */
-	int tx_idle(int nbits, u8 mask, u8 *&buf, int &n)
+	s32 tx_idle(s16 nbits, u8 mask, u8 *&buf, s32 &n)
 	{
 		(void)nbits;
 		(void)mask;
@@ -122,8 +122,8 @@ private:
 	Frame *tx_frame_ = nullptr;
 	Frame rx_frame_ = {};
 	u8 rx_buf_[512];
-	int rx_error_ = 0;
-	int rx_ones_ = 0, tx_ones_ = 0;
+	s16 rx_error_ = 0;
+	s16 rx_ones_ = 0, tx_ones_ = 0;
 };
 
 /* start bit, 8 data bits (least significant first), stop bit */
@@ -134,7 +134,7 @@ public:
 private:
 	friend class BitFramer<Async>;
 	bool tx_fill();
-	int tx_idle(int nbits, u8 mask, u8 *&buf, int &n);
+	s32 tx_idle(s16 nbits, u8 mask, u8 *&buf, s32 &n);
 	void rx_scan();
 };
 
@@ -155,9 +155,9 @@ private:
 	bool tx_fill();
 	void rx_scan();
 
-	int tx_count_ = 0;
+	s16 tx_count_ = 0;
 	u8 tx_pattern_[2] = {};
-	int rx_count_ = 0;
+	s16 rx_count_ = 0;
 	u8 rx_pattern_[2] = {};
 	bool ec_enable_ = false;
 	bool refused_ = false;          /* ADP "E" NUL: no error correction */

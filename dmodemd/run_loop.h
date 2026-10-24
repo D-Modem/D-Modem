@@ -45,7 +45,7 @@ public:
 
 	/* the n modems' work due (poll()): the ms to the first of their
 	   next timers, 1000 at most */
-	static s32 poll(dcore::Modem *const *m, int n);
+	static s32 poll(dcore::Modem *const *m, s16 n);
 
 	/* this turn's descriptors: none, then each to watch (to read
 	   from, or to write to) */

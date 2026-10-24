@@ -55,9 +55,9 @@ public:
 	V44 &operator=(const V44 &) = delete;
 
 	/* the largest dictionary and history (what XID can agree on) */
-	int init(s32 codewords, s32 max_string, s32 history);
+	s16 init(s32 codewords, s32 max_string, s32 history);
 	/* what was agreed (no more than init's); -1 if out of range */
-	int config(s32 codewords, s32 max_string, s32 history);
+	s16 config(s32 codewords, s32 max_string, s32 history);
 	/* frees it all (not ready() any more) */
 	void exit();
 	/* init() was done */
@@ -65,14 +65,14 @@ public:
 
 	/* the encoder: one character in; the tokens come once there are
 	   enough characters to look ahead, or at the flush */
-	int encode(u8 ch);
-	int flush_encoder();
+	s16 encode(u8 ch);
+	s16 flush_encoder();
 	/* the decoder: one octet in; -1 on an error */
-	int decode(u8 octet);
+	s16 decode(u8 octet);
 	/* the decoder: nothing to flush */
-	int flush_decoder() { return 0; }
+	s16 flush_decoder() { return 0; }
 	/* the output so far, up to n bytes */
-	int out(u8 *buf, int n);
+	s16 out(u8 *buf, s16 n);
 	/* output waiting */
 	bool has_out() const { return ohead_ < obuf_.size(); }
 
@@ -92,23 +92,23 @@ private:
 	};
 
 	void reset();
-	void add(int len, u32 last);
-	void after_token(int type, u32 value);
+	void add(s16 len, u32 last);
+	void after_token(s16 type, u32 value);
 	/* encoder */
 	void step();
-	void put_bits(u32 v, int n);
-	void put_control(int code);
+	void put_bits(u32 v, s16 n);
+	void put_control(s16 code);
 	void put_ordinal(u8 ch);
 	void put_codeword(u32 cw);
-	void put_extension(int n);
+	void put_extension(s16 n);
 	void reinit();
-	s32 find(u32 pos, u32 avail, int *len) const;
+	s32 find(u32 pos, u32 avail, s16 *len) const;
 	/* decoder */
-	bool get_bits(int n, u32 *v);
-	bool read_token(int *type, u32 *value);
-	int run_decoder();
-	int token(int type, u32 value);
-	int put_hist(u8 ch);
+	bool get_bits(s16 n, u32 *v);
+	bool read_token(s16 *type, u32 *value);
+	s16 run_decoder();
+	s16 token(s16 type, u32 value);
+	s16 put_hist(u8 ch);
 
 	s32 n2_ = 0, n7_ = 0, n8_ = 0;          /* agreed */
 	s32 max_n2_ = 0, max_n7_ = 0, max_n8_ = 0;
@@ -116,17 +116,17 @@ private:
 	std::vector<u8> hist_;
 	u32 hp_ = 0;                            /* history: written */
 	u32 c1_ = 0;                            /* the next codeword */
-	int c2_ = 0, c5_ = 0;                   /* codeword, ordinal size */
+	s16 c2_ = 0, c5_ = 0;                   /* codeword, ordinal size */
 	u32 c3_ = 0;                            /* 1 << c2_ */
-	int last_type_ = NONE;                  /* for the dictionary */
+	s16 last_type_ = NONE;                  /* for the dictionary */
 	u32 last_value_ = 0;
-	int prev_type_ = NONE;                  /* any token, controls too */
+	s16 prev_type_ = NONE;                  /* any token, controls too */
 	/* encoder */
 	std::vector<s32> head_;                 /* the first two characters
 						   of a string -> its entry */
 	u32 end_ = 0;                           /* characters in hist_ */
 	u32 bits_ = 0;
-	int nbits_ = 0;
+	s16 nbits_ = 0;
 	/* decoder */
 	bool transparent_ = false;
 	bool escape_ = false;
@@ -134,7 +134,7 @@ private:
 	bool stepup_ = false;
 	std::vector<u8> in_;                    /* octets not decoded yet */
 	size_t in_pos_ = 0;
-	int in_bit_ = 0;                        /* bits used of in_[in_pos_] */
+	s16 in_bit_ = 0;                        /* bits used of in_[in_pos_] */
 	/* output */
 	std::vector<u8> obuf_;
 	size_t ohead_ = 0;

@@ -29,14 +29,14 @@ namespace dmd {
 class LineFrames {
 public:
 	/* the line in on fd, cut at every frame-th sample */
-	LineFrames(int fd, int frame) : fd_(fd), frame_(frame) {}
+	LineFrames(int fd, s16 frame) : fd_(fd), frame_(frame) {}
 
 	/* what the descriptor has, behind what waits, until fill bytes
 	   wait at most: the bytes read, 0 at its end, -1 on an error
 	   (errno; EINTR is tried again; ENOBUFS: fill bytes wait already) */
-	int read(int fill = SIZE)
+	s16 read(s16 fill = SIZE)
 	{
-		int r;
+		s16 r;
 
 		if (head_) {
 			memmove(bytes(), bytes() + head_, n_);
@@ -49,7 +49,7 @@ public:
 			return -1;
 		}
 		do
-			r = static_cast<int>(
+			r = static_cast<s16>(
 				::read(fd_, bytes() + n_, fill - n_));
 		while (r < 0 && errno == EINTR);
 		if (r > 0)
@@ -57,7 +57,7 @@ public:
 		return r;
 	}
 	/* the whole samples waiting */
-	int waiting() const { return n_ / 2; }
+	s16 waiting() const { return n_ / 2; }
 	/* the line's samples taken so far */
 	u64 taken() const { return taken_; }
 
@@ -65,16 +65,16 @@ public:
 	   max at most: at *p (until read()), how many; 0 if none wait.  The
 	   clock is the samples taken, or the host's own count of the line
 	   (HalfModem's line_n, which a modem's delay moves on as well) */
-	int block(const s16 **p, int max) { return block(p, max, taken_); }
+	s16 block(const s16 **p, s16 max) { return block(p, max, taken_); }
 	/* (the same, at the clock given) */
-	int block(const s16 **p, int max, u64 clock)
+	s16 block(const s16 **p, s16 max, u64 clock)
 	{
-		int k = frame_ - static_cast<int>(clock % frame_);
+		s16 k = frame_ - static_cast<s16>(clock % frame_);
 		return take(p, k < max ? k : max);
 	}
 	/* the last n samples taken wait again (a host that did fewer of
 	   them than it took; no read() since) */
-	void unget(int n)
+	void unget(s16 n)
 	{
 		head_ -= 2 * n;
 		n_ += 2 * n;
@@ -83,13 +83,13 @@ public:
 	/* the samples waiting up to the last frame end there is among
 	   them, max at most: at *p (until read()), how many; 0 if no frame
 	   end is that near */
-	int frames(const s16 **p, int max)
+	s16 frames(const s16 **p, s16 max)
 	{
 		u64 end;
-		int n = waiting() < max ? waiting() : max;
+		s16 n = waiting() < max ? waiting() : max;
 
 		end = (taken_ + n) / frame_ * frame_;
-		return end > taken_ ? take(p, static_cast<int>(end - taken_)) :
+		return end > taken_ ? take(p, static_cast<s16>(end - taken_)) :
 				      0;
 	}
 
@@ -97,7 +97,7 @@ private:
 	enum { SIZE = 8192 };
 
 	/* n of the samples waiting, fewer if fewer wait */
-	int take(const s16 **p, int n)
+	s16 take(const s16 **p, s16 n)
 	{
 		if (n > waiting())
 			n = waiting();
@@ -113,9 +113,10 @@ private:
 	/* the buffer's octets */
 	char *bytes() { return reinterpret_cast<char *>(buf_); }
 
-	int fd_, frame_;
+	int fd_;
+	s16 frame_;
 	s16 buf_[SIZE / 2];
-	int head_ = 0, n_ = 0;          /* bytes()[head_ .. head_ + n_)
+	s16 head_ = 0, n_ = 0;          /* bytes()[head_ .. head_ + n_)
 					   waits, head_ even */
 	u64 taken_ = 0;
 };

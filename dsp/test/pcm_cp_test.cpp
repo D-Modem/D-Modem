@@ -30,7 +30,7 @@ static V90Cp make_cp(int drn, int n)
 	return cp;
 }
 
-static int lin[128];
+static s16 lin[128];
 
 /* drn 22 (56 000 bit/s) on 128 points: K = 36 bits of 42 */
 TEST(PcmCp, FullConstellationsAreUsable)
@@ -59,7 +59,7 @@ TEST(PcmCp, V90EncoderSilentWhenUnusable)
 	V90Cp cp = make_cp(10, 0);
 	V90Enc e;
 	unsigned char bits[48];
-	int out[6];
+	s16 out[6];
 
 	memset(bits, 1, sizeof(bits));
 	EXPECT_EQ(e.init(&cp, cp.drn + 20, lin), -1);
@@ -76,7 +76,7 @@ TEST(PcmCp, V91EncoderSilentWhenUnusable)
 	for (V90Cp cp : { make_cp(10, 0), make_cp(31, 128) }) {
 		V91Enc e;
 		unsigned char bits[48];
-		int out[6];
+		s16 out[6];
 
 		memset(bits, 1, sizeof(bits));
 		EXPECT_EQ(e.init(&cp, cp.drn + 20, lin), -1);

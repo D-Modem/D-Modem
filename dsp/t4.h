@@ -24,13 +24,13 @@ struct T4Bits;
 /* a page: rows of width bits, 1 = black, the first pel in the top bit
    of the first byte */
 struct T4Page {
-	int width = 0;
+	s16 width = 0;
 	s32 rows = 0, cap = 0;
-	int fine = 0;                   /* 196 lines per inch (else 98) */
+	s16 fine = 0;                   /* 196 lines per inch (else 98) */
 	std::vector<unsigned char> bits;
 	s32 bad_rows = 0;               /* received with errors */
 
-	int init(int width_, int fine_);
+	s16 init(s16 width_, s16 fine_);
 	void release();
 	/* a row added at the bottom; NULL: a copy of the last one (white for
 	   the first) */
@@ -38,16 +38,16 @@ struct T4Page {
 	/* a page in MH (one dimensional) coding: an EOL before each row, rows
 	   padded with fill to at least min_bits, RTC at the end (rtc), EOLs
 	   ending on a byte boundary (align, as TIFF's T4Options bit 2) */
-	void encode_mh(T4Bits *out, int min_bits, int align, int rtc) const;
+	void encode_mh(T4Bits *out, s16 min_bits, s16 align, s16 rtc) const;
 	/* a whole page from a buffer: compression as TIFF's (2 MH without
 	   EOLs, 3 T.4 with EOLs, 1D or, t4opts & 1, 2D; 4 T.6), msb_first as
 	   TIFF's FillOrder 1; rows: how many to expect (0: until the end of
 	   data) */
-	int decode(const unsigned char *data, size_t len, int compression, int t4opts, int msb_first, s32 rows_);
+	s16 decode(const unsigned char *data, size_t len, s16 compression, u32 t4opts, s16 msb_first, s32 rows_);
 
 	/* src to this page's width (scaled down, or centred), every
 	   row_step-th row */
-	void fit(const T4Page *src, int row_step);
+	void fit(const T4Page *src, s16 row_step);
 };
 
 #define T4_STRIDE(w)    (((w) + 7) / 8)
@@ -57,39 +57,39 @@ struct T4Bits {
 	std::vector<unsigned char> buf;
 	size_t n = 0, cap = 0;          /* bits */
 
-	void put(unsigned code, int len);
+	void put(u16 code, s16 len);
 	void release();
 	void put_code(const char *bits);
-	void put_run(int run, int black);
-	void put_eol(int align);
-	int line_empty() const;
+	void put_run(s16 run, s16 black);
+	void put_eol(s16 align);
+	s16 line_empty() const;
 };
 
 /* bit i of b, counting in the order they go out */
-static inline int t4_bits_get(const T4Bits *b, size_t i)
+static inline s16 t4_bits_get(const T4Bits *b, size_t i)
 {
 	return (b->buf[i >> 3] >> (7 - (i & 7))) & 1;
 }
 
 /* a page coming in bit by bit, as on the line (MH or MR with EOLs) */
 struct T4Rx {
-	int width, mr;
+	s16 width, mr;
 	T4Page *page;
 	T4Bits line;            /* bits of the row being received */
 	s32 zeros;                      /* zeros in a row (an EOL coming) */
-	int eols;                       /* EOLs in a row with nothing in
+	s16 eols;                       /* EOLs in a row with nothing in
 					   between (6: RTC) */
-	int started;                    /* the first EOL went by */
-	int next_2d;                    /* MR: the tag bit after the EOL */
-	int tag_pending;
-	int done;
+	s16 started;                    /* the first EOL went by */
+	s16 next_2d;                    /* MR: the tag bit after the EOL */
+	s16 tag_pending;
+	s16 done;
 	std::vector<unsigned char> ref; /* the last good row */
 
-	void init(T4Page *page_, int mr_);
+	void init(T4Page *page_, s16 mr_);
 	void release();
-	void row(int two_d);
+	void row(s16 two_d);
 	/* one bit; 1 once the page has ended (RTC) */
-	int bit(int bit);
+	s16 bit(s16 bit);
 	/* the end of the data without RTC (the carrier went): the last
 	   row */
 	void end();
@@ -98,15 +98,15 @@ struct T4Rx {
 /* TIFF-F: pages appended to a file, written at the end */
 struct TiffOut {
 	void *f;
-	int pages;
+	s16 pages;
 	long last_ifd_next;             /* where to link the next page */
-	int rtc;                        /* RTC after each page's rows, for
+	s16 rtc;                        /* RTC after each page's rows, for
 					   readers that look for it (efax);
 					   set after open() */
 
-	int open(const char *path);
-	int write_page(const T4Page *p);
-	int close();
+	s16 open(const char *path);
+	s16 write_page(const T4Page *p);
+	s16 close();
 };
 
 
@@ -117,22 +117,22 @@ struct TiffOut {
 struct TiffIn {
 	std::vector<unsigned char> data;
 	size_t len;
-	int big_endian;
+	s16 big_endian;
 	u32 next_ifd;
-	int page;
+	s16 page;
 	/* the IFDs read, for a chain that links back; plain data, as it
 	   sits in calloc()ed C structs */
 	u32 ifds[TIFF_MAX_PAGES];
 
-	unsigned get16(u64 at) const;
+	u16 get16(u64 at) const;
 	u32 get32(u64 at) const;
-	int open(const char *path);
+	s16 open(const char *path);
 	void close();
 	u32 tag_value(u64 e, u64 index) const;
 	double tag_rational(u64 e) const;
 	/* the next page (scaled to T4_WIDTH if narrower or wider); 0 when
 	   there are no more, -1 on an error */
-	int read_page(T4Page *p);
+	s16 read_page(T4Page *p);
 };
 
 } // namespace dsp

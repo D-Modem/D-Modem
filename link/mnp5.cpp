@@ -15,14 +15,14 @@ namespace dlink {
 
 /* the flush: eleven 1s */
 static const u32 FLUSH = 0x7ff;
-static const int FLUSH_LEN = 11;
+static const s16 FLUSH_LEN = 11;
 /* the longest run counted after the first three */
-static const int MAX_COUNT = 250;
+static const s16 MAX_COUNT = 250;
 
 /* a new stream: rank r is character r, all counts 0 */
 void Mnp5::init()
 {
-	for (int i = 0; i < 256; i++) {
+	for (s16 i = 0; i < 256; i++) {
 		char_[i] = rank_[i] = static_cast<u8>(i);
 		count_[i] = 0;
 	}
@@ -37,7 +37,7 @@ void Mnp5::init()
 
 /* the character at rank r came once more: up past those with fewer;
    all counts halved when the top one reaches 255 */
-void Mnp5::rank_up(int r)
+void Mnp5::rank_up(s16 r)
 {
 	count_[r]++;
 	while (r > 0 && count_[r] > count_[r - 1]) {
@@ -57,14 +57,14 @@ void Mnp5::rank_up(int r)
 }
 
 /* an octet out */
-void Mnp5::out_char(u8 ch, int n)
+void Mnp5::out_char(u8 ch, s16 n)
 {
-	while (n-- > 0 && olen_ < static_cast<int>(sizeof(obuf_)))
+	while (n-- > 0 && olen_ < static_cast<s16>(sizeof(obuf_)))
 		obuf_[(ohead_ + olen_++) % sizeof(obuf_)] = ch;
 }
 
 /* len bits out, the first the most significant of each octet */
-void Mnp5::put(u32 bits, int len)
+void Mnp5::put(u32 bits, s16 len)
 {
 	acc_ = acc_ << len | bits;
 	bits_ += len;
@@ -78,13 +78,13 @@ void Mnp5::put(u32 bits, int len)
 /* the code of value v (a rank or a count): the header h (the highest
    bit of v; 0 for 0 and 1) and the body (v without that bit; 255 one
    0 more) */
-void Mnp5::put_value(int v)
+void Mnp5::put_value(s16 v)
 {
 	if (v < 2) {
 		put(static_cast<u32>(v), 4);
 		return;
 	}
-	int h = 0;              /* (the highest bit's place) */
+	s16 h = 0;              /* (the highest bit's place) */
 	while ((v >> (h + 1)) != 0)
 		h++;
 	u32 code = static_cast<u32>(h) << h |
@@ -98,14 +98,14 @@ void Mnp5::put_value(int v)
 /* a character by its rank, which it then moves up from */
 void Mnp5::put_char(u8 ch)
 {
-	int r = rank_[ch];
+	s16 r = rank_[ch];
 	put_value(r);
 	rank_up(r);
 }
 
 /* the encoder: the first three of a run as characters, the rest
    counted (a count when another comes, or at 250) */
-int Mnp5::encode(u8 ch)
+s16 Mnp5::encode(u8 ch)
 {
 	dirty_ = true;
 	if (first_) {
@@ -135,7 +135,7 @@ int Mnp5::encode(u8 ch)
 
 /* the encoder's flush (when the DTE has nothing more): the count of a
    run of three or more, the flush, the rest of the octet 1s */
-int Mnp5::flush_encoder()
+s16 Mnp5::flush_encoder()
 {
 	if (!dirty_)
 		return 0;
@@ -152,7 +152,7 @@ int Mnp5::flush_encoder()
 
 /* the decoder: a value, after three equal characters a count, else a
    rank (which moves up) */
-void Mnp5::token(int v)
+void Mnp5::token(s16 v)
 {
 	if (first_) {
 		first_ = false;
@@ -182,19 +182,19 @@ void Mnp5::token(int v)
 /* the decoder: an octet's bits after those held, each whole code
    taken; the flush drops the rest of its octet (and a count three
    equal characters wait for: none) */
-int Mnp5::decode(u8 ch)
+s16 Mnp5::decode(u8 ch)
 {
 	acc_ = acc_ << 8 | ch;
 	bits_ += 8;
 	while (bits_ >= 3) {
-		const int h = static_cast<int>(acc_ >> (bits_ - 3)) & 7;
-		const int blen = h ? h : 1;
+		const s16 h = static_cast<s16>(acc_ >> (bits_ - 3)) & 7;
+		const s16 blen = h ? h : 1;
 		if (bits_ < 3 + blen)
 			break;
-		int v = (h ? 1 << h : 0) +
-			static_cast<int>((acc_ >> (bits_ - 3 - blen)) &
+		s16 v = (h ? 1 << h : 0) +
+			static_cast<s16>((acc_ >> (bits_ - 3 - blen)) &
 					 ((1u << blen) - 1));
-		int len = 3 + blen;
+		s16 len = 3 + blen;
 		if (v == 255) {
 			if (bits_ < 11)
 				break;
@@ -217,12 +217,12 @@ int Mnp5::decode(u8 ch)
 }
 
 /* the output so far, up to n octets; how many */
-int Mnp5::out(u8 *buf, int n)
+s16 Mnp5::out(u8 *buf, s16 n)
 {
-	int k = 0;
+	s16 k = 0;
 	while (k < n && olen_) {
 		buf[k++] = obuf_[ohead_];
-		ohead_ = (ohead_ + 1) % static_cast<int>(sizeof(obuf_));
+		ohead_ = (ohead_ + 1) % static_cast<s16>(sizeof(obuf_));
 		olen_--;
 	}
 	return k;

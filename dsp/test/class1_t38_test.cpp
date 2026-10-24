@@ -374,7 +374,7 @@ static void t30_tx(void *ctx, const struct t38_ifp *p)
 
 /* the machine's page to send (the test page, kept in sent): 1, or 0
    after the one page */
-static int t30_next_page(void *ctx, T4Page *p)
+static s16 t30_next_page(void *ctx, T4Page *p)
 {
 	World *w = static_cast<World *>(ctx);
 	if (w->sent.rows)

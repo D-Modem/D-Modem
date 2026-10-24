@@ -32,7 +32,7 @@ struct QamTx {
 	s32 srate;
 	float sps;
 	float t;
-	int span;
+	s16 span;
 	cplx sym[2 * QAM_MAX_SPAN];
 	Osc carrier;
 	float scale;
@@ -42,7 +42,7 @@ struct QamTx {
 	   symbols each side; symbols of rms rms_symbol give a pass band rms
 	   of amplitude / sqrt(2) (that of a sine of amplitude amplitude) */
 	void  init(s32 srate, float carrier, float baud, float alpha,
-		   int span, float rms_symbol, float amplitude);
+		   s16 span, float rms_symbol, float amplitude);
 	/* the next line sample; at a symbol boundary the next symbol from
 	   next() */
 	template <class Next> float sample(Next next)
@@ -77,22 +77,22 @@ struct QamRx {
 	Osc lo;
 	std::vector<float> mf;
 	std::vector<cplx> mf_buf;
-	int mf_len, mf_pos;
+	s16 mf_len, mf_pos;
 	/* level */
 	float power;            /* input power (tc 20 ms) */
 	float power_alpha;
 	float agc_pwr, agc_alpha, agc_target;
 	float agc_gain;
-	int agc_hold;           /* keep the gain fixed */
+	s16 agc_hold;           /* keep the gain fixed */
 	/* timing */
 	float t_next, t_adj;
 	float kt_p, kt_i, kt_gi;  /* proportional gain, integrator range and gain */
-	int timing_hold;        /* no timing corrections (but the frequency) */
-	int timing_freeze;      /* none at all */
-	int half;
+	s16 timing_hold;        /* no timing corrections (but the frequency) */
+	s16 timing_freeze;      /* none at all */
+	s16 half;
 	cplx mid, prev_sym;
 	/* equalizer and carrier */
-	int eq_len;
+	s16 eq_len;
 	cplx eq[QAM_MAX_EQ];
 	cplx eq_buf[QAM_MAX_EQ];
 	float theta, dtheta;
@@ -106,12 +106,12 @@ struct QamRx {
 	/* carrier (Hz), baud, roll off alpha, matched filter span symbols
 	   each side, eq_len T/2 taps, AGC to target_power at the symbol
 	   instants; 0, or -1 when out of memory */
-	int   init(s32 srate, float carrier, float baud, float alpha,
-		   int span, int eq_len, float target_power);
+	s16   init(s32 srate, float carrier, float baud, float alpha,
+		   s16 span, s16 eq_len, float target_power);
 	void  release();        /* the buffers init took */
 	void  reset();          /* eq to centre tap, PLL to 0 */
 	/* returns 1 when a new symbol is available in z */
-	int   sample(float x);
+	s16   sample(float x);
 	/* adapt equalizer (mu, normalized) and carrier loop toward
 	   decision d: k1 the phase gain, k2 the frequency gain (rad per
 	   symbol per radian of error), 0 leaves that part alone */
@@ -126,21 +126,21 @@ struct QamRx {
  *    V.17 / V.32bis trellis code (8 state, rotationally invariant)
  */
 struct TrellisEnc {
-	int diff;
-	int conv;
+	s16 diff;
+	s16 conv;
 
 	/* q: the scrambled bits of one symbol (Q1 first in bit 0); returns
 	   the constellation index (bit 0 Y0, bits 1-2 Y1Y2, bits 3.. Q3...) */
-	int encode(int q, int bits);
+	s16 encode(s16 q, s16 bits);
 };
 
 /* the index of the point nearest to z among pts[0], pts[step], ... below
    pts[n] (the first of equals): a slicer on a constellation's table */
-inline int nearest_point(const cplx *pts, int n, cplx z, int step = 1)
+inline s16 nearest_point(const cplx *pts, s16 n, cplx z, s16 step = 1)
 {
-	int best = 0;
+	s16 best = 0;
 	float bd = 1e30f;
-	for (int k = 0; k < n; k += step) {
+	for (s16 k = 0; k < n; k += step) {
 		float d = cplx_pow(cplx_sub(z, pts[k]));
 		if (d < bd) {
 			bd = d;
@@ -152,38 +152,38 @@ inline int nearest_point(const cplx *pts, int n, cplx z, int step = 1)
 
 #define VITERBI_DEPTH 16
 struct Viterbi {
-	int nbits;              /* bits per symbol */
+	s16 nbits;              /* bits per symbol */
 	const cplx *points;     /* constellation, indexed like trellis_encode */
-	int npoints;
+	s16 npoints;
 	float metric[8];
 	/* survivor paths: per state, the decided constellation index */
-	int path[VITERBI_DEPTH][8];
-	int prev[VITERBI_DEPTH][8];
-	int pos;
-	int filled;
-	int last_y12;           /* differential decoder state */
+	s16 path[VITERBI_DEPTH][8];
+	s16 prev[VITERBI_DEPTH][8];
+	s16 pos;
+	s16 filled;
+	s16 last_y12;           /* differential decoder state */
 
 	/* points: the 2^(nbits + 1) point constellation; clears the paths */
-	void init(const cplx *points, int nbits);
+	void init(const cplx *points, s16 nbits);
 	/* feed one received point; returns the decoded data bits (Q1 in bit
 	   0) of the symbol VITERBI_DEPTH-1 periods ago, or -1 while filling */
-	int  decode(cplx z, cplx *decided);
+	s16  decode(cplx z, cplx *decided);
 };
 
 /*
  *    line echo canceller (real pass band, NLMS)
  */
 struct EchoCanceller {
-	int len;
+	s16 len;
 	std::vector<float> w;
 	std::vector<float> hist;
-	int pos;
+	s16 pos;
 	float tx_power;
 	float pw_rx, pw_err;    /* in and out while it adapts */
-	int training, off;
+	s16 training, off;
 
 	/* len taps (samples); 0, or -1 when out of memory */
-	int   init(int len);
+	s16   init(s16 len);
 	/* the end of the training: what did it take away (dB)?  Below 6 dB
 	   there was no echo to cancel (a 4-wire network, or the remote was
 	   not silent) and the canceller stays off rather than add noise */

@@ -71,7 +71,7 @@ std::string data_path(const char *name)
    (for its characters if the modem takes them now, for its output that
    waits) for UsbLine::POLL_MS at most (Windows' libusb has no
    descriptors to watch), then the line's samples */
-int run_usb(dcore::Modem &m, dmd::UsbLine &line, dmd::Dte &dte)
+s16 run_usb(dcore::Modem &m, dmd::UsbLine &line, dmd::Dte &dte)
 {
 	dcore::Modem *const modems[] = { &m };
 	dmd::RunLoop loop;
@@ -122,7 +122,7 @@ int main(int argc, char *argv[])
 	const char *name, *slash;
 	std::unique_ptr<dmd::Dte> dte;
 	std::string where;
-	int ret;
+	s16 ret;
 
 	/* (Windows' C library buffers a pipe whole, line buffering or
 	   not: the log as it comes, for whatever reads it) */

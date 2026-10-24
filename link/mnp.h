@@ -52,7 +52,7 @@ private:
 	enum class Tx { Idle, Start, Body, End, Done };
 	enum class Rx { Hunt, Syn, Dle, Body, BodyDle, Fcs1, Fcs2 };
 	bool tx_fill();
-	int tx_idle(int nbits, u8 mask, u8 *&buf, int &n);
+	s32 tx_idle(s16 nbits, u8 mask, u8 *&buf, s32 &n);
 	void rx_scan();
 	void rx_char(u8 ch);
 	void tx_char(u8 ch);
@@ -61,7 +61,7 @@ private:
 	Mnp *mnp_ = nullptr;
 	Frame *tx_frame_ = nullptr;
 	Tx tx_state_ = Tx::Idle;
-	int tx_step_ = 0;               /* within Start and End */
+	s16 tx_step_ = 0;               /* within Start and End */
 	bool tx_dle_ = false;           /* a DLE to double */
 	u16 tx_fcs_ = 0;
 	Rx rx_state_ = Rx::Hunt;
@@ -98,13 +98,13 @@ public:
 
 	/* what the LRs agreed (the framing mode, k, N401, the data phase
 	   optimization, MNP 5) */
-	int mode() const { return mode_; }
+	s16 mode() const { return mode_; }
 	/* (see mode()) */
-	int k() const { return k_; }
+	s16 k() const { return k_; }
 	/* (see mode()) */
-	int n401() const { return n401_; }
+	s16 n401() const { return n401_; }
 	/* (see mode()) */
-	int optimization() const { return opt_; }
+	s16 optimization() const { return opt_; }
 	/* (see mode()) */
 	bool mnp5() const { return mnp5_; }
 
@@ -143,20 +143,20 @@ private:
 	};
 
 	Frame *next_frame();
-	Frame *ctrl(int len);
+	Frame *ctrl(s16 len);
 	Frame *build_lr();
 	Frame *build_la();
 	Frame *build_ld();
 	Frame *build_lna();
 	Frame *next_lt();
 	void rx_frame(Frame *f, bool bit);
-	bool rx_lr(const u8 *h, int len);
-	void rx_lt(const u8 *h, int len, const u8 *info, int n);
-	void rx_la(const u8 *h, int len);
-	void rx_ln(const u8 *h, int len);
-	void rx_ld(const u8 *h, int len);
+	bool rx_lr(const u8 *h, s16 len);
+	void rx_lt(const u8 *h, s16 len, const u8 *info, s16 n);
+	void rx_la(const u8 *h, s16 len);
+	void rx_ln(const u8 *h, s16 len);
+	void rx_ld(const u8 *h, s16 len);
 	void data_phase();
-	void fail(int reason);
+	void fail(s16 reason);
 	void fallback();
 	void t401_expired();
 	bool can_send(u8 ns) const;
@@ -169,20 +169,20 @@ private:
 	bool initiator_ = false;
 	bool bit_tx_ = false;
 	/* our offer, then what was agreed */
-	int our_mode_ = 3, our_k_ = MNP_MAX_K, our_n401_ = MNP_MAX_INFO;
-	int our_opt_ = 3;
+	s16 our_mode_ = 3, our_k_ = MNP_MAX_K, our_n401_ = MNP_MAX_INFO;
+	s16 our_opt_ = 3;
 	bool our_mnp5_ = false;
-	int mode_ = 2, k_ = 1, n401_ = MNP_DFLT_INFO, opt_ = 0;
+	s16 mode_ = 2, k_ = 1, n401_ = MNP_DFLT_INFO, opt_ = 0;
 	bool mnp5_ = false;
-	int lr_n401_ = MNP_DFLT_INFO;   /* N401 agreed (before the 256-octet
+	s16 lr_n401_ = MNP_DFLT_INFO;   /* N401 agreed (before the 256-octet
 					   optimization) */
 	/* the parameters the initiator's LR had (the responder echoes
 	   those it understood) */
 	bool lr_opt_ = false;
 	/* establishment */
-	int tries_ = 0;
+	s16 tries_ = 0;
 	bool heard_ = false;            /* a frame came, good or bad */
-	int ld_reason_ = 0;
+	s16 ld_reason_ = 0;
 	/* control frames to send when the framer asks */
 	bool lr_due_ = false, ld_due_ = false;
 	/* timers: bits left, 0 when stopped */
@@ -192,13 +192,13 @@ private:
 	u8 vs_ = 1, una_ = 1, nxt_ = 1;
 	u8 nr_ = 0, nk_ = 0;
 	bool have_la_ = false;          /* an LA came in the data phase */
-	int rtx_count_ = 0;
-	int dup_ignore_ = 0;            /* duplicate LAs from frames sent
+	s16 rtx_count_ = 0;
+	s16 dup_ignore_ = 0;            /* duplicate LAs from frames sent
 					   before our retransmission */
 	/* receiving: V(R), LTs not acknowledged, an LA due, V(R) - 1 seen
 	   once, the DTE busy (no credit) */
 	u8 vr_ = 1, vra_ = 1;
-	int unacked_ = 0;
+	s16 unacked_ = 0;
 	bool la_due_ = false;
 	bool dup_seen_ = false;
 	bool busy_ = false;
@@ -206,7 +206,7 @@ private:
 	bool lna_due_ = false;
 	u8 lna_nr_ = 0;
 	/* received characters the DTE has not taken */
-	int rx_count_ = 0, rx_head_ = 0;
+	s16 rx_count_ = 0, rx_head_ = 0;
 	u8 rx_buf_[MNP_MAX_INFO];
 	/* the call's LTs: sent, sent again, received in sequence */
 	s32 lt_sent_ = 0, lt_again_ = 0, lt_rcvd_ = 0;

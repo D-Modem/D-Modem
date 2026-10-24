@@ -57,24 +57,24 @@ namespace dsp {
 
 struct dp_runtime {
 	struct modem *modem;
-	int answer_tone;
+	s16 answer_tone;
 	s32 answer_tone_end;       /* sample counter when the tone was seen */
-	int ans_sent;           /* the answer tone is already sent: an
+	s16 ans_sent;           /* the answer tone is already sent: an
 				   automode fallback skips it */
-	int v32_automode;       /* V.32bis started by the V.8/V.34 pump:
+	s16 v32_automode;       /* V.32bis started by the V.8/V.34 pump:
 				   keep the V.22bis fallback */
-	int after_v8;           /* the modulation was agreed in V.8: the
+	s16 after_v8;           /* the modulation was agreed in V.8: the
 				   caller starts at once after CJ */
-	int v8_for;             /* a forced V.21 caller heard 2100 Hz: V.8
+	s16 v8_for;             /* a forced V.21 caller heard 2100 Hz: V.8
 				   (if it is ANSam) for V.21 alone, then
 				   back to it */
-	int v8_tried;
-	int law;                /* the G.711 network: 1 mu-law, 2 A-law, 0
+	s16 v8_tried;
+	s16 law;                /* the G.711 network: 1 mu-law, 2 A-law, 0
 				   unknown (then $DSP_G711) */
-	int pcm;                /* V.91: the received codes as they are
+	s16 pcm;                /* V.91: the received codes as they are
 				   (no DC removal) */
-	int analog;             /* an analogue line (dp_runtime_set_analog) */
-	int vcvm_peer;          /* V.8 agreed on V.cvm: the peer's ... */
+	s16 analog;             /* an analogue line (dp_runtime_set_analog) */
+	s16 vcvm_peer;          /* V.8 agreed on V.cvm: the peer's ... */
 	unsigned char vcvm_info[2];     /* ... information field (Annex A) */
 };
 
@@ -151,18 +151,18 @@ private:
 
 /* a forced V.21 caller's first block: after a 2100 Hz answer tone, once
    a call, to the V.8 pump (dsp_glue.cpp) */
-int dp_v8_first(struct modem *m, enum DP_ID id);
+s16 dp_v8_first(struct modem *m, enum DP_ID id);
 
 /* block Goertzel tone power estimator */
 struct Goertzel {
 	float coef;
 	float s1, s2;
-	int n, len;
+	s16 n, len;
 	float power;    /* last complete block: mean square of the tone */
 
 	/* tone freq (Hz), block of len samples at srate */
-	void init(float freq, int len, s32 srate);
-	int  run(float x);      /* 1 when a block is complete */
+	void init(float freq, s16 len, s32 srate);
+	s16  run(float x);      /* 1 when a block is complete */
 };
 
 /* single pole power tracker */
@@ -183,12 +183,12 @@ struct PowerMeter {
 /* V.22 / V.22bis scrambler (1 + x^-14 + x^-17) */
 struct V22Scrambler {
 	u32 reg;
-	int ones;
+	s16 ones;
 
 	/* one bit (0/1) in, the line bit out */
-	int scramble(int bit);
+	s16 scramble(s16 bit);
 	/* one line bit in, the data bit out */
-	int descramble(int bit);
+	s16 descramble(s16 bit);
 };
 
 /* root raised cosine impulse response, t in symbol periods */
@@ -198,15 +198,15 @@ float rrc_pulse(float t, float alpha);
    cut off at 0.484 of the lower of the two rates) */
 #define RESAMPLER_MAX_TAPS 100
 struct Resampler {
-	int L, M, taps, t;
+	s16 L, M, taps, t;
 	const float *h;         /* L * taps, phase major */
 	float hist[2 * RESAMPLER_MAX_TAPS];
-	int pos;
+	s16 pos;
 
 	/* 8000 <-> 9600 Hz: (L, M) = (6, 5) or (5, 6) */
-	int init(int L, int M);
+	s16 init(s16 L, s16 M);
 	/* one input sample in; returns the number of outputs (0 to 2) */
-	int run(float x, float out[2]);
+	s16 run(float x, float out[2]);
 };
 
 /* dB helper: power of a sine of amplitude 'a' */
@@ -230,7 +230,7 @@ struct FskMod {
 	/* mark and space in Hz, amp the peak sample value */
 	void  init(float mark, float space, float amp, s32 srate);
 	/* the next sample of the tone for bit (1 mark, 0 space) */
-	float next(int bit);
+	float next(s16 bit);
 };
 
 struct FskDemod {
@@ -245,15 +245,15 @@ struct FskDemod {
 	float dev_avg;          /* average |frequency deviation| */
 	float dev_alpha;
 	float on_level, off_level;
-	int carrier;
+	s16 carrier;
 	/* bit clock recovery */
 	float bit_phase, bit_inc, bit_gain;
-	int last_dec;
+	s16 last_dec;
 
 	/* mark and space in Hz, baud in bit/s */
 	void init(float mark, float space, float baud, s32 srate);
 	/* returns the recovered bit (0/1) at the bit center, or -1 */
-	int  run(float x);
+	s16  run(float x);
 };
 
 /* an FSK transmitter on its own bit clock: at each bit boundary the
@@ -262,8 +262,8 @@ struct FskDemod {
 struct FskBitTx {
 	FskMod mod;
 	float phase, inc;       /* the bit clock: a bit due at 1 */
-	int bit;                /* the one going out */
-	int ended;              /* the source had no more */
+	s16 bit;                /* the one going out */
+	s16 ended;              /* the source had no more */
 
 	/* mark and space (Hz), peak amplitude amp, baud bit/s at srate;
 	   the clock from phase_ (1: the first bit at once), a mark until
@@ -284,7 +284,7 @@ struct FskBitTx {
 	{
 		phase += inc;
 		if (phase >= 1) {
-			int b;
+			s16 b;
 			phase -= 1;
 			b = next();
 			if (b < 0) {
@@ -309,7 +309,7 @@ struct FskBitTx {
    off below another */
 struct CarrierDetect {
 	float on_level, off_level;
-	int on;
+	s16 on;
 
 	/* the levels as the amplitudes of tones */
 	void init(float on_amp, float off_amp)
@@ -319,7 +319,7 @@ struct CarrierDetect {
 		on = 0;
 	}
 	/* the power now: 1 as the carrier comes, -1 as it goes, else 0 */
-	int run(float power)
+	s16 run(float power)
 	{
 		if (!on && power > on_level) {
 			on = 1;
@@ -338,7 +338,7 @@ struct CarrierDetect {
 struct Bell103Detect {
 	Goertzel g1270, g1070;
 	float energy;           /* of the block so far */
-	int blocks;             /* in a row with the tones */
+	s32 blocks;             /* in a row with the tones */
 
 	/* at srate, nothing found yet */
 	void init(s32 srate)
@@ -371,13 +371,13 @@ struct CoreBits {
 	struct modem *modem;
 
 	/* n bits to send into bits (ones where the core has none) */
-	void get(unsigned char *bits, int n) const
+	void get(unsigned char *bits, s32 n) const
 	{
 		std::fill_n(bits, n, 1);
 		modem_get_bits(modem, 1, bits, n);
 	}
 	/* n bits received to the core */
-	void put(const unsigned char *bits, int n) const
+	void put(const unsigned char *bits, s32 n) const
 	{
 		modem_put_bits(modem, 1, const_cast<u8 *>(bits), n);
 	}
@@ -387,17 +387,17 @@ struct CoreBits {
  *    data pump registration helpers: *_init registers the pump's DP_IDs
  *    with the modem core (prop_dp_init), *_exit takes them back
  */
-int  dp_callprog_init(void);
+s16 dp_callprog_init(void);
 void dp_callprog_exit(void);
-int  dp_fsk_init(void);
+s16 dp_fsk_init(void);
 void dp_fsk_exit(void);
-int  dp_v22_init(void);
+s16 dp_v22_init(void);
 void dp_v22_exit(void);
-int  dp_v32_init(void);
+s16 dp_v32_init(void);
 void dp_v32_exit(void);
-int  dp_v34_init(void);
+s16  dp_v34_init(void);
 void dp_v34_exit(void);
-int  dp_vcvm_init(void);
+s16  dp_vcvm_init(void);
 void dp_vcvm_exit(void);
 
 /* DTMF generator used by the call progress pump and the voice object */
@@ -406,7 +406,7 @@ struct DtmfGen {
 	float amp_lo, amp_hi;
 
 	/* 0-9, *, #, A-D (or a-d); -1 for anything else */
-	int   set(char digit, s32 srate);
+	s16   set(char digit, s32 srate);
 	/* the next sample of the dual tone */
 	float next();
 };
@@ -418,11 +418,11 @@ struct DtmfGen {
 struct DtmfDetect {
 	enum Event { NONE, ON, OFF };
 
-	int n_block;            /* samples a block */
+	s16 n_block;            /* samples a block */
 	float coef[8];          /* 2 cos(2 pi f / srate) */
 	float s1[8], s2[8];
 	float energy;
-	int n;
+	s16 n;
 	char last;              /* the last block's digit, 0 if none */
 	char digit;             /* the digit on, 0 if none */
 	float ref;              /* its first block's energy */
@@ -451,7 +451,7 @@ struct CallToneDetect {
 	s32 ans_run[2], ans_drop[2];
 	Biquad band;            /* the busy tones' band, around 480 Hz */
 	float energy, band_energy;
-	int n, len;
+	s16 n, len;
 	/* the ringing tone: blocks of the segment that goes on (gaps of 40
 	   ms at most), off since its last block, of segments of 0.3 s or
 	   more in the burst; blocks since the ring sounded last */
@@ -460,10 +460,10 @@ struct CallToneDetect {
 	/* the busy tone's cadence: the band on, blocks of its run, rounds */
 	s32 band_on, band_run, rounds;
 
-	unsigned rings;         /* rings heard */
+	u16 rings;              /* rings heard */
 	bool ringing;           /* one sounds */
-	unsigned busy;          /* busy cadences heard (each four rounds) */
-	unsigned answer[2];     /* answer tones heard: 2100, 2225 Hz */
+	u16 busy;               /* busy cadences heard (each four rounds) */
+	u16 answer[2];          /* answer tones heard: 2100, 2225 Hz */
 
 	/* at srate, nothing heard */
 	void init(s32 srate);
@@ -491,13 +491,13 @@ struct CallToneDetect {
 struct CngDetect {
 	Goertzel tone[3], ans;  /* freq - 25, freq, freq + 25; 2100 Hz */
 	float energy;
-	int n, len;
+	s16 n, len;
 	s32 run, drop;          /* blocks on in the run, off since */
-	unsigned bursts;        /* bursts heard */
-	unsigned cut;           /* bursts cut short */
+	u16 bursts;             /* bursts heard */
+	u16 cut;                /* bursts cut short */
 
 	/* at srate, the tone at freq Hz, nothing heard */
-	void init(s32 srate, int freq = 1100);
+	void init(s32 srate, s16 freq = 1100);
 	/* one sample of the line */
 	void sample(float x);
 	/* ms of the tone in the run going on (0 when off) */
@@ -520,7 +520,7 @@ struct RingDetect {
 	float env, decay;
 	bool on;                /* a burst */
 	s32 on_samples, off_samples;
-	int sign;               /* the wave's last (1 up, -1 down, 0 none) */
+	s16 sign;               /* the wave's last (1 up, -1 down, 0 none) */
 	s32 srate;
 
 	/* at srate, no burst */

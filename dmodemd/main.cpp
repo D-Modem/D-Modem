@@ -150,7 +150,7 @@ void drop_privileges(bool realtime)
    then select() on the line's descriptors and the pty (if the modem
    takes its characters now), then the samples that came */
 template <class Line>
-int run_line(dcore::Modem &m, Line &line, dmd::Pty &pty)
+s16 run_line(dcore::Modem &m, Line &line, dmd::Pty &pty)
 {
 	dcore::Modem *const modems[] = { &m };
 	dmd::RunLoop loop;
@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
 	dcore::Options mo;
 	sip::Config cfg;
 	const char *name, *slash;
-	int ret;
+	s16 ret;
 #ifdef DMODEM_ALSA
 	dmd::AlsaLine alsa(pty);
 	std::unique_ptr<dcore::Modem> am;

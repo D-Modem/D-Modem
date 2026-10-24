@@ -40,9 +40,9 @@ namespace {
 
 /* the line: 8000 samples a second, in frames of 20 ms */
 const s32 RATE = 8000;
-const int FRAME = RATE / 50;
+const s16 FRAME = RATE / 50;
 /* the most samples one read of the call's audio takes */
-const int AUDIO_MAX = 2048;
+const s16 AUDIO_MAX = 2048;
 
 /* the SIP user agent's control lines: the longest, with its newline */
 const size_t CONTROL_MAX = 255;
@@ -52,11 +52,11 @@ const size_t CONTROL_MAX = 255;
    need; the IFP packets each one repeats (redundancy); the longest
    datagram we read; the loop's longest wait while on T.38 (ms), and
    the most of its clock made up after a pause (samples) */
-const int T38_DATAGRAM = 400;
-const int T38_DATAGRAM_MIN = 32;
-const int T38_IFP_HEADERS = 16;
-const int T38_DEPTH = 3;
-const int T38_RX_MAX = 2048;
+const s16 T38_DATAGRAM = 400;
+const s16 T38_DATAGRAM_MIN = 32;
+const s16 T38_IFP_HEADERS = 16;
+const s16 T38_DEPTH = 3;
+const s16 T38_RX_MAX = 2048;
 const s32 T38_WAIT_MS = 20;
 const u64 T38_CATCH_UP = RATE;
 
@@ -74,14 +74,14 @@ public:
 	SipLine &operator=(const SipLine &) = delete;
 
 	/* Host */
-	int start(dcore::Modem &m) override;
-	int stop(dcore::Modem &m) override;
+	s16 start(dcore::Modem &m) override;
+	s16 stop(dcore::Modem &m) override;
 	/* for ATI3 */
 	const char *driver_name() override { return "SIP"; }
 	/* SIP says when a call we dial is answered, and why it failed */
 	bool signals_answer(dcore::Modem &) override { return true; }
 	/* the modem's characters to the DTE: how many it took */
-	int dte_write(dcore::Modem &, const char *buf, int n) override {
+	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
 		return dte_.write(buf, n);
 	}
 	void t38_send(dcore::Modem &m, const void *ifp) override;
@@ -90,13 +90,13 @@ public:
 		return audio_ >= 0 && sip::can_flash();
 	}
 	/* (the event of ms) */
-	void hook_flash(dcore::Modem &, unsigned ms) override {
+	void hook_flash(dcore::Modem &, u16 ms) override {
 		sip::flash(ms);
 	}
 	/* the clock: the monotonic one's ms */
 	u64 now_ms() override { return dcore::monotonic_ms(); }
 	/* ATM, ATL: to the speaker's owner (SipModem::on_speaker()) */
-	void speaker(dcore::Modem &, int volume) override {
+	void speaker(dcore::Modem &, s16 volume) override {
 		speaker_level_ = volume;
 		if (speaker_to.volume)
 			speaker_to.volume(volume);
@@ -109,7 +109,7 @@ public:
 	int audio_fd() const { return audio_; }
 	/* it is readable: its samples through the modem and back; 0, or
 	   -1 if the answer can't be written */
-	int audio(dcore::Modem &m);
+	s16 audio(dcore::Modem &m);
 
 	/* the call's UDPTL socket while on T.38, -1 if none */
 	int t38_fd() const { return t38_; }
@@ -124,16 +124,16 @@ public:
 
 private:
 	/* an IFP packet out of UDPTL (UdptlRx::packet()'s callback) */
-	static void ifp_in(void *ctx, const unsigned char *ifp, int len,
-			   unsigned seq);
+	static void ifp_in(void *ctx, const unsigned char *ifp, s16 len,
+			   u16 seq);
 
 	Dte &dte_;
 	int audio_ = -1;
 	/* (an odd octet of the audio a read split off: the next read's
 	   first; TCP's loopback on Windows splits where it likes) */
 	char carry_ = 0;
-	int carry_n_ = 0;
-	int speaker_level_ = 0;
+	s16 carry_n_ = 0;
+	s16 speaker_level_ = 0;
 
 	/* T.38: the socket, the far end, the version agreed, the largest
 	   datagram it takes; UDPTL each way; the fax engine's clock (when
@@ -141,7 +141,7 @@ private:
 	int t38_ = -1;
 	struct sockaddr_storage peer_ = {};
 	socklen_t peer_len_ = 0;
-	int version_ = 0;
+	s32 version_ = 0;
 	s32 datagram_ = T38_DATAGRAM;
 	dsp::UdptlTx tx_ = {};
 	dsp::UdptlRx rx_ = {};
@@ -163,7 +163,7 @@ SipLine::~SipLine()
    silence in it ahead (the user agent reads our answer to each frame it
    writes, and finds this one for its first), the other end to the user
    agent to dial with or to answer the ringing call */
-int SipLine::start(dcore::Modem &m)
+s16 SipLine::start(dcore::Modem &m)
 {
 	static const s16 silence[FRAME] = {};
 	int sv[2];
@@ -193,7 +193,7 @@ int SipLine::start(dcore::Modem &m)
 
 /* on hook: our end of the audio closed (the call ends with it), and
    T.38's */
-int SipLine::stop(dcore::Modem &)
+s16 SipLine::stop(dcore::Modem &)
 {
 	DBG("on hook\n");
 	if (audio_ >= 0) {
@@ -215,7 +215,7 @@ int SipLine::stop(dcore::Modem &)
 /* the call's samples into the modem, its answer back: as many samples
    as came.  On T.38 the modem's time is the clock's (t38_clock()), and
    the answer silence */
-int SipLine::audio(dcore::Modem &m)
+s16 SipLine::audio(dcore::Modem &m)
 {
 	s16 in[AUDIO_MAX], out[AUDIO_MAX];
 	char *bytes = reinterpret_cast<char *>(in);
@@ -223,7 +223,7 @@ int SipLine::audio(dcore::Modem &m)
 		bytes[0] = carry_;
 	ssize_t n = dmd::fd_read(audio_, bytes + carry_n_,
 				 static_cast<int>(sizeof(in)) - carry_n_), done;
-	int count;
+	s16 count;
 
 	if (n < 0 && (errno == EINTR || errno == EAGAIN))
 		return 0;
@@ -239,16 +239,16 @@ int SipLine::audio(dcore::Modem &m)
 	/* (the user agent writes whole frames; a read may end inside a
 	   sample all the same) */
 	n += carry_n_;
-	carry_n_ = static_cast<int>(n & 1);
+	carry_n_ = static_cast<s16>(n & 1);
 	if (carry_n_)
 		carry_ = bytes[n - 1];
-	count = static_cast<int>(n) / 2;
+	count = static_cast<s16>(n) / 2;
 	if (count == 0)
 		return 0;
 	if (t38_ >= 0) {
 		std::fill_n(out, count, 0);
 	} else {
-		int law = sip::law();
+		s16 law = sip::law();
 		if (law)
 			m.set_line_law(law);
 		m.process(in, out, count);
@@ -324,7 +324,7 @@ void SipLine::t38_end()
 void SipLine::t38_send(dcore::Modem &, const void *ifp)
 {
 	unsigned char pkt[UDPTL_IFP_MAX], dgram[2 * UDPTL_IFP_MAX];
-	int n, len, max;
+	s16 n, len, max;
 
 	if (t38_ < 0)
 		return;
@@ -333,8 +333,8 @@ void SipLine::t38_send(dcore::Modem &, const void *ifp)
 	if (n < 0)
 		return;
 	max = datagram_ < static_cast<s32>(sizeof(dgram)) ?
-		      static_cast<int>(datagram_) :
-		      static_cast<int>(sizeof(dgram));
+		      static_cast<s16>(datagram_) :
+		      static_cast<s16>(sizeof(dgram));
 	len = tx_.packet(pkt, n, dgram, max);
 	if (len <= 0)
 		return;
@@ -346,8 +346,8 @@ void SipLine::t38_send(dcore::Modem &, const void *ifp)
 
 /* an IFP packet UDPTL gave (ctx: the SipLine), decoded for the version
    agreed and, if it is one, to the modem */
-void SipLine::ifp_in(void *ctx, const unsigned char *ifp, int len,
-		     unsigned)
+void SipLine::ifp_in(void *ctx, const unsigned char *ifp, s16 len,
+		     u16)
 {
 	SipLine *line = static_cast<SipLine *>(ctx);
 	dsp::t38_ifp p;
@@ -400,7 +400,7 @@ namespace {
 /* the result for a call we dialled that failed with SIP status code: busy
    (486 Busy Here, 600 Busy Everywhere, 603 Decline), no answer (408
    Request Timeout, 480 Temporarily Unavailable), else no carrier */
-dcore::Result failure(int code)
+dcore::Result failure(s32 code)
 {
 	switch (code) {
 	case 486:
@@ -425,7 +425,7 @@ public:
 	/* the descriptor to watch */
 	int fd() const { return fd_; }
 	/* it is readable: what came; -1 if the user agent has gone */
-	int serve(dcore::Modem &m, SipLine &line);
+	s16 serve(dcore::Modem &m, SipLine &line);
 
 private:
 	void act(const char *s, dcore::Modem &m, SipLine &line);
@@ -437,7 +437,7 @@ private:
 
 /* what came, onto the line kept from before: each complete line acted
    on (a line that fills the buffer without its end dropped) */
-int Control::serve(dcore::Modem &m, SipLine &line)
+s16 Control::serve(dcore::Modem &m, SipLine &line)
 {
 	char chunk[CONTROL_MAX];
 	ssize_t n = dmd::fd_read(fd_, chunk, sizeof(chunk));
@@ -484,7 +484,7 @@ void Control::act(const char *s, dcore::Modem &m, SipLine &line)
 		m.line_answered();
 	} else if (dcore::starts_with(c, "FAILED ")) {
 		m.line_failed(failure(
-			static_cast<int>(dcore::leading_long(c.substr(7)))));
+			static_cast<s32>(dcore::leading_long(c.substr(7)))));
 	}
 }
 
@@ -509,13 +509,13 @@ bool PtyDte::want_read(const dcore::Modem &m)
 
 /* see sip_modem.h: the DTE closing the slave with HUPCL hangs up, and a
    new pty stands in for it */
-int PtyDte::serve(dcore::Modem &m)
+s16 PtyDte::serve(dcore::Modem &m)
 {
 	return pty_.serve(m, true) < 0 ? -1 : 0;
 }
 
 /* see sip_modem.h */
-int PtyDte::write(const char *buf, int n)
+s32 PtyDte::write(const char *buf, s32 n)
 {
 	return pty_.write(buf, n);
 }
@@ -535,15 +535,15 @@ bool FdDte::want_read(const dcore::Modem &m)
 
 /* up to the modem's room of the DTE's characters into it; its end of
    the descriptor closed: the call hung up, and the DTE gone */
-int FdDte::serve(dcore::Modem &m)
+s16 FdDte::serve(dcore::Modem &m)
 {
 	char buf[4096];
-	int room = m.dte_space();
+	s32 room = m.dte_space();
 	ssize_t n;
 
 	if (room <= 0)
 		return 0;
-	if (room > static_cast<int>(sizeof(buf)))
+	if (room > static_cast<s32>(sizeof(buf)))
 		room = sizeof(buf);
 	n = dmd::fd_read(fd_, buf, room);
 	if (n < 0) {
@@ -583,9 +583,9 @@ void FdDte::flush()
 
 /* buf after what waits: written now as far as it goes, the rest kept
    while there is room */
-int FdDte::write(const char *buf, int n)
+s32 FdDte::write(const char *buf, s32 n)
 {
-	int took;
+	s32 took;
 
 	if (fd_ < 0 || n <= 0)
 		return 0;
@@ -598,13 +598,13 @@ int FdDte::write(const char *buf, int n)
 		if (done < 0)
 			done = 0;
 		buf += done;
-		n -= static_cast<int>(done);
-		took = static_cast<int>(done);
+		n -= static_cast<s32>(done);
+		took = static_cast<s32>(done);
 	} else {
 		took = 0;
 	}
 	if (n > static_cast<s32>(BUFFER - out_.size()))
-		n = static_cast<int>(BUFFER - out_.size());
+		n = static_cast<s32>(BUFFER - out_.size());
 	if (n > 0)
 		out_.append(buf, n);
 	return took + (n > 0 ? n : 0);
@@ -683,9 +683,10 @@ void SipModem::report()
 }
 
 /* see sip_modem.h */
-int SipModem::run(const sip::Config &cfg)
+s16 SipModem::run(const sip::Config &cfg)
 {
-	int ctl, ret;
+	int ctl;
+	s16 ret;
 
 	if (!ok())
 		return -1;
@@ -711,7 +712,7 @@ int SipModem::run(const sip::Config &cfg)
    turn: the modem's timers, then select() on the call's audio, the
    control lines, the DTE (if the modem takes its characters now, and for
    its output that waits), T.38 and stop()'s pipe */
-int SipModem::serve(int ctl)
+s16 SipModem::serve(int ctl)
 {
 	dcore::Modem &m = *m_;
 	dcore::Modem *const modems[] = { &m };

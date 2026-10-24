@@ -30,20 +30,20 @@ public:
 	/* its name in the log */
 	const char *tag() const { return "vcvm"; }
 
-	int start(struct modem *m, enum DP_ID id, int caller_, s32 srate_,
-		  int max_frag);
-	int process(void *in, void *out, int cnt) override;
+	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
+		  s32 max_frag);
+	s16 process(void *in, void *out, s32 cnt) override;
 
 private:
-	int source();
-	void sink(const u8 *d, int n);
+	s16 source();
+	void sink(const u8 *d, s32 n);
 	void report();
 	void log_lines();
 
 	VcvmModem mdm_;
 	struct dp_vcvm *info_ = nullptr;
 	bool up_ = false;               /* CONNECT reported */
-	int renegs_ = 0, retrains_ = 0;
+	s32 renegs_ = 0, retrains_ = 0;
 	s32 line_rate_ = 8000;
 	Resampler rs_up_, rs_down_;     /* 9600 -> 8000, 8000 -> 9600 */
 	std::vector<float> in8_, out8_, back_;
@@ -55,8 +55,8 @@ private:
 /* the pump at srate_ (8000, or 9600 through the converters) once V.8
    agreed on V.cvm: the DCE's modes from MDMPRM_VCVM, the peer's from
    its field; 0, or -1 */
-int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, s32 srate_,
-		    int)
+s16 VcvmPump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_,
+		    s32)
 {
 	if (srate_ != 8000 && srate_ != 9600) {
 		DSP_DBG("vcvm: sample rate %" PRId32 " not supported\n",
@@ -83,7 +83,7 @@ int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, s32 srate_,
 	c.su.own = vcvm_caps_for(c.su.modes, 8000);
 	c.su.peer = VcvmCaps::decode(rt->vcvm_info);
 	if (mdm_.init(c, [this]() { return source(); },
-		      [this](const u8 *d, int n) { sink(d, n); }))
+		      [this](const u8 *d, s32 n) { sink(d, n); }))
 		return -1;
 	stat_dp(DP_VCVM);
 	DSP_DBG("vcvm: %s, the peer's field %02x %02x\n",
@@ -94,23 +94,23 @@ int VcvmPump::start(struct modem *m, enum DP_ID, int caller_, s32 srate_,
 
 /* an octet of the link layer's bits, the first the least significant
    (ones when it has none) */
-int VcvmPump::source()
+s16 VcvmPump::source()
 {
 	u8 b[8];
 	modem_get_bits(modem, 1, b, 8);
-	int v = 0;
-	for (int i = 0; i < 8; i++)
+	s16 v = 0;
+	for (s16 i = 0; i < 8; i++)
 		v |= (b[i] & 1) << i;
 	return v;
 }
 
 /* the octets the modem decoded, to the link layer, the first bit the
    least significant */
-void VcvmPump::sink(const u8 *d, int n)
+void VcvmPump::sink(const u8 *d, s32 n)
 {
-	for (int i = 0; i < n; i++) {
+	for (s32 i = 0; i < n; i++) {
 		u8 b[8];
-		for (int k = 0; k < 8; k++)
+		for (s16 k = 0; k < 8; k++)
 			b[k] = (d[i] >> k) & 1;
 		modem_put_bits(modem, 1, b, 8);
 	}
@@ -161,41 +161,41 @@ void VcvmPump::report()
 /* cnt of the line's samples in, cnt out, through the modem at 8000 Hz:
    the renegotiations, retrains and CONNECT reported; DPSTAT_ERROR on a
    failure or no connection in time */
-int VcvmPump::process(void *in, void *out, int cnt)
+s16 VcvmPump::process(void *in, void *out, s32 cnt)
 {
 	const s16 *src = static_cast<s16 *>(in);
 	s16 *dst = static_cast<s16 *>(out);
 	int ret = DPSTAT_OK;
 	/* the line's samples at 8000 Hz */
 	in8_.clear();
-	for (int i = 0; i < cnt; i++) {
+	for (s32 i = 0; i < cnt; i++) {
 		if (line_rate_ == 8000) {
 			in8_.push_back(src[i]);
 			continue;
 		}
 		float o[2];
-		int k = rs_down_.run(src[i], o);
-		for (int j = 0; j < k; j++)
+		s16 k = rs_down_.run(src[i], o);
+		for (s16 j = 0; j < k; j++)
 			in8_.push_back(o[j]);
 	}
 	out8_.assign(in8_.size(), 0.0f);
 	if (!in8_.empty())
 		mdm_.process(in8_.data(), out8_.data(),
-			     static_cast<int>(in8_.size()));
+			     static_cast<s32>(in8_.size()));
 	log_lines();
 	if (line_rate_ == 8000) {
-		for (int i = 0; i < cnt; i++)
+		for (s32 i = 0; i < cnt; i++)
 			dst[i] = dsp_clip16(out8_[static_cast<size_t>(i)]);
 	} else {
 		/* 8000 -> 9600: what comes out a block, kept in back_ to
 		   give exactly cnt */
 		for (float x : out8_) {
 			float o[2];
-			int k = rs_up_.run(x, o);
-			for (int j = 0; j < k; j++)
+			s16 k = rs_up_.run(x, o);
+			for (s16 j = 0; j < k; j++)
 				back_.push_back(o[j]);
 		}
-		for (int i = 0; i < cnt; i++)
+		for (s32 i = 0; i < cnt; i++)
 			dst[i] = back_pos_ < back_.size() ?
 				dsp_clip16(back_[back_pos_++]) : 0;
 		if (back_pos_ > 4096) {
@@ -243,7 +243,7 @@ int VcvmPump::process(void *in, void *out, int cnt)
 }
 
 /* registers the pump as DP_VCVM */
-int dp_vcvm_init(void)
+s16 dp_vcvm_init(void)
 {
 	return modem_dp_register(DP_VCVM, &PumpOps<VcvmPump>::ops);
 }

@@ -27,9 +27,9 @@ namespace g711 {
 
 /* the segment of v: the first of the 8 ends in t that v does not pass,
    8 beyond the last */
-inline int seg_search(s32 v, const s16 *t)
+inline s16 seg_search(s32 v, const s16 *t)
 {
-	for (int i = 0; i < 8; i++)
+	for (s16 i = 0; i < 8; i++)
 		if (v <= t[i])
 			return i;
 	return 8;
@@ -40,7 +40,7 @@ inline unsigned char lin2ulaw(s32 x)
 {
 	static const s16 seg_end[8] = { 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF,
 					  0x7FF, 0xFFF, 0x1FFF };
-	int mask = 0xFF, seg;
+	s16 mask = 0xFF, seg;
 	x >>= 2;
 	if (x < 0) {
 		x = -x;
@@ -57,9 +57,9 @@ inline unsigned char lin2ulaw(s32 x)
 }
 
 /* mu-law to 16 bit linear */
-inline int ulaw2lin(unsigned char u)
+inline s16 ulaw2lin(unsigned char u)
 {
-	int t;
+	s16 t;
 	u = static_cast<unsigned char>(~u);
 	t = ((u & 15) << 3) + 0x84;
 	t <<= (u & 0x70) >> 4;
@@ -71,7 +71,7 @@ inline unsigned char lin2alaw(s32 x)
 {
 	static const s16 seg_end[8] = { 0x1F, 0x3F, 0x7F, 0xFF, 0x1FF,
 					  0x3FF, 0x7FF, 0xFFF };
-	int mask = 0xD5, seg, aval;
+	s16 mask = 0xD5, seg, aval;
 	x >>= 3;
 	if (x < 0) {
 		mask = 0x55;
@@ -86,9 +86,9 @@ inline unsigned char lin2alaw(s32 x)
 }
 
 /* A-law to 16 bit linear */
-inline int alaw2lin(unsigned char a)
+inline s16 alaw2lin(unsigned char a)
 {
-	int t, seg;
+	s16 t, seg;
 	a ^= 0x55;
 	t = (a & 15) << 4;
 	seg = (a & 0x70) >> 4;
@@ -103,19 +103,19 @@ inline int alaw2lin(unsigned char a)
 
 /* an octet of either law (A-law if alaw, else mu-law) to 16 bit
    linear, and 16 bit linear to one */
-inline int decode(int alaw, unsigned char c)
+inline s16 decode(s16 alaw, unsigned char c)
 {
 	return alaw ? alaw2lin(c) : ulaw2lin(c);
 }
 /* (see decode()) */
-inline unsigned char encode(int alaw, s32 x)
+inline unsigned char encode(s16 alaw, s32 x)
 {
 	return alaw ? lin2alaw(x) : lin2ulaw(x);
 }
 
 /* the octet of x's magnitude, its sign bit (the MSB) cleared for a
    negative x */
-inline unsigned char encode_sm(int alaw, s32 x)
+inline unsigned char encode_sm(s16 alaw, s32 x)
 {
 	return x < 0 ? static_cast<unsigned char>(encode(alaw, -x) ^ 0x80) :
 		encode(alaw, x);

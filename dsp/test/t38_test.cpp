@@ -133,7 +133,7 @@ struct Got {
 };
 
 /* an IFP packet UDPTL delivered, with its sequence number, kept in g */
-static void got(void *ctx, const unsigned char *ifp, int len, unsigned seq)
+static void got(void *ctx, const unsigned char *ifp, s16 len, u16 seq)
 {
 	Got *g = static_cast<Got *>(ctx);
 	g->ifp.push_back(Bytes(ifp, ifp + len));
@@ -215,7 +215,7 @@ struct Side {
 
 /* the side's next page, from its document: 1, 0 when there are no
    more, -1 on an error */
-static int side_next_page(void *ctx, T4Page *p)
+static s16 side_next_page(void *ctx, T4Page *p)
 {
 	return static_cast<Side *>(ctx)->in.read_page(p);
 }
@@ -242,7 +242,7 @@ static void side_tx(void *ctx, const struct t38_ifp *p)
 }
 
 /* an IFP packet off the line, to the machine */
-static void side_rx(void *ctx, const unsigned char *ifp, int len, unsigned)
+static void side_rx(void *ctx, const unsigned char *ifp, s16 len, u16)
 {
 	Side *s = static_cast<Side *>(ctx);
 	struct t38_ifp p;

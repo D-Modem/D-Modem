@@ -20,7 +20,7 @@ namespace dsp {
 
 /* the DCE of c, the octets it sends from src, those it decodes to
    sink, its start-up begun; 0, or -1 if the configuration won't go */
-int VcvmModem::init(const Config &c, Source src, Sink sink)
+s16 VcvmModem::init(const Config &c, Source src, Sink sink)
 {
 	c_ = c;
 	src_ = std::move(src);
@@ -69,7 +69,7 @@ void VcvmModem::fail(const char *why)
 }
 
 /* ms of silence to the transmitter's queue */
-void VcvmModem::silence(int ms)
+void VcvmModem::silence(s16 ms)
 {
 	txq_.insert(txq_.end(), static_cast<size_t>(ms) * c_.su.fs / 1000,
 		    0.0f);
@@ -82,7 +82,7 @@ template <class R> void VcvmModem::replay(R &r, s32 from)
 	s32 e = hbase_ + static_cast<s32>(hist_.size());
 	if (from < e)
 		r.push(&hist_[static_cast<size_t>(from - hbase_)],
-		       static_cast<int>(e - from));
+		       static_cast<s32>(e - from));
 }
 
 /* see vcvm_modem.h */
@@ -200,14 +200,14 @@ VcvmLoading VcvmModem::rechoose(bool *retrain)
 		return l;
 	}
 	const VcvmDataStats &st = drx_.stats();
-	int allowed = vcvm_allowed(c_.su.own, c_.su.peer, c_.su.modes);
-	for (int k = 0; k < l.tones; k++) {
-		int pb = l.load.phase[k];
+	s16 allowed = vcvm_allowed(c_.su.own, c_.su.peer, c_.su.modes);
+	for (s16 k = 0; k < l.tones; k++) {
+		s16 pb = l.load.phase[k];
 		if (!pb)
 			continue;
 		double s = st.sigma[k];
-		int rule = s <= 9 && (allowed & VCVM_M_8DPSK) ? 3 : s <= 20 ? 2 : 0;
-		int npb = std::min(pb, rule);
+		s16 rule = s <= 9 && (allowed & VCVM_M_8DPSK) ? 3 : s <= 20 ? 2 : 0;
+		s16 npb = std::min(pb, rule);
 		if (npb != pb || s > (pb == 3 ? 7 : 15))
 			l.load.ring[k] = 0;
 		l.load.phase[k] = static_cast<u8>(npb);
@@ -283,7 +283,7 @@ void VcvmModem::on_msg(const VcvmMsg &m)
 {
 	VcvmMp mp;
 	if (!m.ok ||
-	    mp.decode(m.octets.data(), static_cast<int>(m.octets.size())))
+	    mp.decode(m.octets.data(), static_cast<s16>(m.octets.size())))
 		return;
 	last_rx_end_ = m.end;
 	if (state_ == DATA) {
@@ -380,8 +380,8 @@ void VcvmModem::check_data()
 	bool bad = st.failed - failed_ >= 2;
 	words_ = st.words;
 	failed_ = st.failed;
-	for (int k = 0; k < rxl_.tones && rxl_.kind == VcvmLoading::COMB; k++) {
-		int pb = rxl_.load.phase[k];
+	for (s16 k = 0; k < rxl_.tones && rxl_.kind == VcvmLoading::COMB; k++) {
+		s16 pb = rxl_.load.phase[k];
 		if (pb && st.sigma[k] > (pb == 2 ? 24 : 12))
 			bad = true;
 	}
@@ -442,12 +442,12 @@ void VcvmModem::step()
 
 /* n samples from the line in, n out, 10 ms at a time: the start-up's,
    then phase 4's and the renegotiations' */
-void VcvmModem::process(const float *in, float *out, int n)
+void VcvmModem::process(const float *in, float *out, s32 n)
 {
 	const s32 fs = c_.su.fs;
-	const int B = fs / 100;
+	const s16 B = fs / 100;
 	while (n > 0) {
-		int k = std::min(n, B);
+		s16 k = static_cast<s16>(std::min<s32>(n, B));
 		hist_.insert(hist_.end(), in, in + k);
 		if (static_cast<s32>(hist_.size()) > 4L * fs) {
 			s32 cut = static_cast<s32>(hist_.size()) -
@@ -472,7 +472,7 @@ void VcvmModem::process(const float *in, float *out, int n)
 			/* a symbol ahead of what goes out */
 			while (tx_data_ && queued() < t_ + k)
 				dtx_.symbol(txq_);
-			for (int i = 0; i < k; i++)
+			for (s16 i = 0; i < k; i++)
 				out[i] = txpos_ < txq_.size() ? txq_[txpos_++] : 0.0f;
 			if (txpos_ >= txq_.size()) {
 				txq_.clear();

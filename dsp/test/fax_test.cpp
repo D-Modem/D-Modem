@@ -61,7 +61,7 @@ protected:
 	~FaxModulation() override { page.release(); }
 	/* the transmitter's next bit: the page's or PRBS 2^23-1, kept in
 	   txb; FAX_BIT_END after maxbits */
-	static int get_bit(void *ctx) {
+	static s16 get_bit(void *ctx) {
 		FaxModulation *t = static_cast<FaxModulation *>(ctx);
 		int b;
 		if (t->ntx >= t->maxbits)
@@ -76,7 +76,7 @@ protected:
 		return b;
 	}
 	/* a received bit into rxb (2 * maxbits at most) */
-	static void put_bit(void *ctx, int bit) {
+	static void put_bit(void *ctx, s16 bit) {
 		FaxModulation *t = static_cast<FaxModulation *>(ctx);
 		if (t->nrx < 2 * t->maxbits)
 			t->rxb[t->nrx++] = bit;
@@ -147,7 +147,7 @@ TEST_P(FaxModulation, BitsArriveIntact)
 {
 	const Loopback &p = GetParam();
 	enum fax_mod mod;
-	int short_train;
+	s16 short_train;
 	FaxRxMemory mem;
 
 	debug_level();
@@ -351,7 +351,7 @@ struct Doc {
 };
 
 /* the sender's next page (t30_config next_page): read_page's result */
-static int next_page(void *ctx, T4Page *p)
+static s16 next_page(void *ctx, T4Page *p)
 {
 	return static_cast<Doc *>(ctx)->in.read_page(p);
 }

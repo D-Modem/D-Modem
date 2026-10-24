@@ -22,7 +22,7 @@ namespace dsp {
    either side, tabulated by symbol from -V92A_SPAN */
 void V92ATx::init(s32 rate_, float lu_)
 {
-	int i;
+	s16 i;
 	reinit(*this);
 	rate = rate_;
 	lu = lu_;
@@ -75,7 +75,7 @@ void V92ATx::segment(enum v92a_seg s)
 }
 
 /* a bit scrambled (GPA) and differentially encoded: its symbol */
-float V92ATx::dbit(int bit)
+float V92ATx::dbit(s16 bit)
 {
 	last_d ^= scramble(&scr, SCR_GPA, bit);
 	return last_d ? -lu : lu;
@@ -94,14 +94,14 @@ float V92ATx::symbol()
 	static const float su[6] = { 1, 0, 1, -1, 0, -1 };
 	const float a15 = 1.2247449f * lu;
 	float y = 0;
-	int k;
+	s16 k;
 
 	switch (seg) {
 	case V92A_SIL:
 		break;
 	case V92A_RU:
 	case V92A_RUBAR:
-		k = static_cast<int>(n % 6);
+		k = static_cast<s16>(n % 6);
 		y = (k < 3) == (seg == V92A_RU) ? lu : -lu;
 		/* (TRN2u's differential encoder goes on from its sign) */
 		last_d = y < 0;
@@ -224,9 +224,9 @@ float V92ATx::symbol()
 /* a symbol of the 4 points of TRN2u (Table 28/V.92), from two bits:
    the sign's scrambled and differentially encoded, then the
    magnitude's scrambled (3 / sqrt 5 for 1) */
-float V92ATx::sym4(int sign, int mag)
+float V92ATx::sym4(s16 sign, s16 mag)
 {
-	int m;
+	s16 m;
 	last_d ^= scramble(&scr, SCR_GPA, sign);
 	m = scramble(&scr, SCR_GPA, mag);
 	float l = (m ? 1.3416408f : 0.4472136f) * lu;
@@ -234,7 +234,7 @@ float V92ATx::sym4(int sign, int mag)
 }
 
 /* point e (-LC .. LC - 1, negative ones negative) of constellation c */
-float V92ATx::point(int c, int e) const
+float V92ATx::point(s16 c, s16 e) const
 {
 	return e >= 0 ? static_cast<float>(cpd.pts[c][e]) :
 			-static_cast<float>(cpd.pts[c][-e - 1]);
@@ -252,7 +252,7 @@ struct Wide {
 	void mul(u32 m)
 	{
 		u64 c = 0;
-		for (int i = 0; i < 4; i++) {
+		for (s16 i = 0; i < 4; i++) {
 			c += static_cast<u64>(w[i]) * m;
 			w[i] = static_cast<u32>(c);
 			c >>= 32;
@@ -262,7 +262,7 @@ struct Wide {
 	u32 div(u32 m)
 	{
 		u64 r = 0;
-		for (int i = 3; i >= 0; i--) {
+		for (s16 i = 3; i >= 0; i--) {
 			r = r << 32 | w[i];
 			w[i] = static_cast<u32>(r / m);
 			r %= m;
@@ -273,7 +273,7 @@ struct Wide {
 	void rsub(const Wide &a)
 	{
 		s64 br = 0;
-		for (int i = 0; i < 4; i++) {
+		for (s16 i = 0; i < 4; i++) {
 			s64 d =
 				static_cast<s64>(a.w[i]) - w[i] - br;
 			br = d < 0;
@@ -281,9 +281,9 @@ struct Wide {
 		}
 	}
 	/* -1, 0 or 1 as this is less than, equal to or more than a */
-	int cmp(const Wide &a) const
+	s16 cmp(const Wide &a) const
 	{
-		for (int i = 3; i >= 0; i--)
+		for (s16 i = 3; i >= 0; i--)
 			if (w[i] != a.w[i])
 				return w[i] < a.w[i] ? -1 : 1;
 		return 0;
@@ -319,7 +319,7 @@ void V92ATx::data_frame()
 	static const char rmp[12] = { 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0 };
 	unsigned char b[80];
 	Wide R, Mt, R2, M1;
-	int j, s;
+	s16 j, s;
 
 	if (b1u_next) {
 		b1u_next = 0;
@@ -403,7 +403,7 @@ void V92ATx::data_frame()
 		R.rsub(M1);
 	dprev ^= s;
 	for (j = 0; j < 12; j++)
-		kq[j] = static_cast<int>(
+		kq[j] = static_cast<s16>(
 			R.div(static_cast<u32>(cpd.M[j])));
 }
 
@@ -415,7 +415,7 @@ float V92ATx::data_symbol()
 {
 	const s16 *z1 = cpd.coef[0], *p1 = cpd.coef[1];
 	const s16 *z2 = cpd.coef[2], *p2 = cpd.coef[3];
-	int c, lc, M, k = fi % 4, e, step, best = 0, i;
+	s16 c, lc, M, k = fi % 4, e, step, best = 0, i;
 	double fb = 0, x, v = 0, bd = 1e300;
 
 	/* (a new CPd comes in at a frame's start) */
@@ -462,8 +462,8 @@ float V92ATx::data_symbol()
 	std::copy_backward(vh, vh + (V92A_HIST - 1), vh + V92A_HIST);
 	vh[0] = v;
 	if (k == 3) {
-		int l0 = v34_subset_label(2 * eta[0] + 1, 2 * eta[1] + 1);
-		int l1 = v34_subset_label(2 * eta[2] + 1, 2 * eta[3] + 1);
+		s16 l0 = v34_subset_label(2 * eta[0] + 1, 2 * eta[1] + 1);
+		s16 l1 = v34_subset_label(2 * eta[2] + 1, 2 * eta[3] + 1);
 		tstate = v34_trellis_next(16 << cpd.trellis, tstate,
 					  v34_conv_in(l0, l1));
 	}
@@ -482,8 +482,8 @@ float V92ATx::sample()
 	s32 j;
 
 	while (tnext <= m + reach) {
-		int r = static_cast<int>(nsym & (V92A_RING - 1));
-		int was = next;
+		s16 r = static_cast<s16>(nsym & (V92A_RING - 1));
+		s16 was = next;
 		a[r] = symbol();
 		at[r] = tnext;
 		if (next && !was)
@@ -493,16 +493,16 @@ float V92ATx::sample()
 		delay = 0;
 	}
 	for (j = nsym - 1; j >= 0 && j >= nsym - V92A_RING; j--) {
-		int r = static_cast<int>(j & (V92A_RING - 1));
+		s16 r = static_cast<s16>(j & (V92A_RING - 1));
 		double u = (m - at[r]) / T;
 		double f;
-		int i;
+		s16 i;
 		if (u >= V92A_SPAN)
 			break;
 		if (u <= -V92A_SPAN || a[r] == 0)
 			continue;
 		f = (u + V92A_SPAN) * V92A_P;
-		i = static_cast<int>(f);
+		i = static_cast<s16>(f);
 		y += a[r] * (pulse[i] + static_cast<float>(f - i) *
 			     (pulse[i + 1] - pulse[i]));
 	}

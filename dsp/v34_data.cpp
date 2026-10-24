@@ -43,7 +43,7 @@ static const unsigned char v34_subset[16] = {
 
 /* the encoder inputs from the subset labels of a 4D symbol:
    Y1 | Y2 << 1 | Y3 << 2 | Y4 << 3 */
-static int conv_in(int s0, int s1)
+static s16 conv_in(s16 s0, s16 s1)
 {
 	static const unsigned char row[4][8] = {
 		{ 0, 0, 1, 1, 0, 0, 1, 1 },
@@ -55,11 +55,11 @@ static int conv_in(int s0, int s1)
 }
 
 /* the next encoder state; its low bit is Y0 */
-static int trellis_next(int states, int st, int y)
+static s16 trellis_next(s16 states, s16 st, s16 y)
 {
-	int y0 = st & 1, y1 = y & 1, y2 = (y >> 1) & 1;
-	int y3 = (y >> 2) & 1, y4 = (y >> 3) & 1;
-	int r[6], i;
+	s16 y0 = st & 1, y1 = y & 1, y2 = (y >> 1) & 1;
+	s16 y3 = (y >> 2) & 1, y4 = (y >> 3) & 1;
+	s16 r[6], i;
 
 	switch (states) {
 	case 16:        /* Figure 10 */
@@ -81,25 +81,25 @@ static int trellis_next(int states, int st, int y)
 }
 
 /* the 2D subset label (0..7) of the point (x, y), odd coordinates */
-static int subset_label(int x, int y)
+static s16 subset_label(s16 x, s16 y)
 {
 	return v34_subset[((x - 1) & 6) / 2 + 2 * ((y - 1) & 6)];
 }
 
 /* for V.92's trellis code (6.4.4/V.92): the same converter and encoders */
-int v34_conv_in(int s0, int s1) { return conv_in(s0, s1); }
+s16 v34_conv_in(s16 s0, s16 s1) { return conv_in(s0, s1); }
 /* (see v34.h) */
-int v34_trellis_next(int states, int st, int y)
+s16 v34_trellis_next(s16 states, s16 st, s16 y)
 {
 	return trellis_next(states, st, y);
 }
 /* (see v34.h) */
-int v34_subset_label(int x, int y) { return subset_label(x, y); }
+s16 v34_subset_label(s16 x, s16 y) { return subset_label(x, y); }
 
 /* clockwise by k quarter turns */
-static void rotate(int *x, int *y, int k)
+static void rotate(s16 *x, s16 *y, s16 k)
 {
-	int t;
+	s16 t;
 	for (k &= 3; k; k--) {
 		t = *x;
 		*x = *y;
@@ -116,9 +116,9 @@ static void rotate(int *x, int *y, int k)
    numbers of ring pairs and quadruples with each sum, and z8, the number
    of ring 8-tuples with a sum below each value; -1 when M is out of
    range */
-int V34Params::shell_tables()
+s16 V34Params::shell_tables()
 {
-	int M_ = M, i, j;
+	s16 M_ = M, i, j;
 	if (M_ < 1 || 2 * M_ - 1 > V34_G2_LEN || 8 * M_ - 6 > V34_Z8_LEN)
 		return -1;
 	zero(g2);
@@ -141,13 +141,13 @@ int V34Params::shell_tables()
 }
 
 /* g2(i), 0 outside the table */
-u64 V34Params::g2p(int i) const
+u64 V34Params::g2p(s16 i) const
 {
 	return i >= 0 && i < 2 * M - 1 ? g2[i] : 0;
 }
 
 /* g4(i), 0 outside the table */
-u64 V34Params::g4p(int i) const
+u64 V34Params::g4p(s16 i) const
 {
 	return i >= 0 && i < 4 * M - 3 ? g4[i] : 0;
 }
@@ -155,9 +155,9 @@ u64 V34Params::g4p(int i) const
 /* the mean power of the points of a frame with k shell mapping bits;
    with theta, of the points through the non-linear encoder (9.7/V.34)
    for points of mean power e0 */
-double V34Params::frame_power(int k, double theta, double e0) const
+double V34Params::frame_power(s16 k, double theta, double e0) const
 {
-	int M_ = M, a, m, i;
+	s16 M_ = M, a, m, i;
 	double ringp[V34_MAX_RINGS], left = ldexp(1, k), e = 0;
 	double g7[8 * V34_MAX_RINGS];
 
@@ -202,7 +202,7 @@ double V34Params::frame_power(int k, double theta, double e0) const
    sizes, the switching pattern, the point spacing at the training
    power; 16 states, no precoding, no non-linear encoding.  Returns -1
    when the rate is not allowed at that symbol rate. */
-int V34Params::init(int baud, int n, int expanded)
+s16 V34Params::init(s16 baud, s16 n, s16 expanded)
 {
 	const struct v34_rate *rt;
 	double pw;
@@ -261,10 +261,10 @@ void V34Params::set_nonlinear(double theta_)
 /* precoding with the coefficients h_ of an MP sequence (14 fractional
    bits; all zero: none), the point spacing g made smaller for the same
    power */
-void V34Params::set_precoder(const int h_[6])
+void V34Params::set_precoder(const s16 h_[6])
 {
 	double pw = 2 / (g * g);
-	int i;
+	s16 i;
 
 	precode = 0;
 	for (i = 0; i < 6; i++) {
@@ -279,16 +279,16 @@ void V34Params::set_precoder(const int h_[6])
 }
 
 /* to the nearest multiple of 2^s; half way: to the smaller magnitude */
-static s32 round_shift(s64 v, int s)
+static s32 round_shift(s64 v, s16 s)
 {
 	return static_cast<s32>((v + (1LL << (s - 1)) - 1 + (v < 0)) >> s);
 }
 
 /* x(n) = y(n) - p(n) goes in: p(n + 1) and c(n + 1) */
-void V34Params::precoder_push(V34Precoder *pc, int yr, int yi) const
+void V34Params::precoder_push(V34Precoder *pc, s16 yr, s16 yi) const
 {
 	s64 qr = 0, qi = 0;
-	int k;
+	s16 k;
 
 	for (k = 2; k > 0; k--) {
 		pc->x[k][0] = pc->x[k - 1][0];
@@ -298,7 +298,7 @@ void V34Params::precoder_push(V34Precoder *pc, int yr, int yi) const
 	pc->x[0][1] = static_cast<s32>(yi) * 128 - pc->p[1];
 	for (k = 0; k < 3; k++) {
 		s64 xr = pc->x[k][0], xi = pc->x[k][1];
-		int hr = h[2 * k], hi = h[2 * k + 1];
+		s16 hr = h[2 * k], hi = h[2 * k + 1];
 		qr += xr * hr - xi * hi;
 		qi += xr * hi + xi * hr;
 	}
@@ -309,17 +309,17 @@ void V34Params::precoder_push(V34Precoder *pc, int yr, int yi) const
 }
 
 /* the bit of the modulo encoder (9.6.3.3) for c(n) */
-int V34Precoder::c_parity() const
+s16 V34Precoder::c_parity() const
 {
 	return ((c[0] + c[1]) >> 1) & 1;
 }
 
 /* the shell mapper (9.4/V.34): the rings m[0..7] of a mapping frame
    from the value r0 of its shell mapping bits */
-void V34Params::shell_map(u32 r0, int m[8]) const
+void V34Params::shell_map(u32 r0, s16 m[8]) const
 {
 	u64 r1, r2, r3, r4, r5, t;
-	int a, b_, c, d, e, f, g_, h_, M_ = M;
+	s16 a, b_, c, d, e, f, g_, h_, M_ = M;
 
 	for (a = 1; a < 8 * M_ - 6 && z8[a] <= r0; a++)
 		;
@@ -347,10 +347,10 @@ void V34Params::shell_map(u32 r0, int m[8]) const
 		r3 -= t;
 	}
 	r5 = r3;
-	e = static_cast<int>(r4 % g2p(c));
-	f = static_cast<int>(r4 / g2p(c));
-	g_ = static_cast<int>(r5 % g2p(d));
-	h_ = static_cast<int>(r5 / g2p(d));
+	e = static_cast<s16>(r4 % g2p(c));
+	f = static_cast<s16>(r4 / g2p(c));
+	g_ = static_cast<s16>(r5 % g2p(d));
+	h_ = static_cast<s16>(r5 / g2p(d));
 /* m[i], m[i + 1]: the pair of rings with index v among those with that
    sum */
 #define PAIR(i, sum, v) do { \
@@ -366,15 +366,15 @@ void V34Params::shell_map(u32 r0, int m[8]) const
 
 /* the index of the ring pair (x, y) among those with its sum, as
    shell_map() numbers them */
-int V34Params::pair_index(int x, int y) const
+s16 V34Params::pair_index(s16 x, s16 y) const
 {
 	return x + y < M ? x : M - 1 - y;
 }
 
 /* the inverse of shell_map(): r0 from the rings m[0..7] */
-u32 V34Params::shell_demap(const int m[8]) const
+u32 V34Params::shell_demap(const s16 m[8]) const
 {
-	int a = 0, b_, c, d, i;
+	s16 a = 0, b_, c, d, i;
 	u64 r_;
 
 	for (i = 0; i < 8; i++)
@@ -434,11 +434,11 @@ static cplx nonlinear(cplx s, float theta)
    the primary channel's scrambler), shell mapped, coded differentially
    and by the trellis code, precoded and through the non-linear encoder
    as set */
-void V34DataTx::encode_frame(u32 *scr, int tap)
+void V34DataTx::encode_frame(u32 *scr, s16 tap)
 {
 	const V34Params *p_ = &p;
 	unsigned char bits[V34_MAX_B];
-	int bb = p_->b, kk = p_->K, n = 0, i, j, m[8], ib[4], qb[8];
+	s16 bb = p_->b, kk = p_->K, n = 0, i, j, m[8], ib[4], qb[8];
 	u32 r0 = 0;
 
 	sbc += p_->r;
@@ -459,7 +459,7 @@ void V34DataTx::encode_frame(u32 *scr, int tap)
 			ib[i] = bits[n] | bits[n + 1] << 1 | bits[n + 2] << 2;
 			n += 3;
 			for (j = 0; j < 2; j++) {
-				int k, v = 0;
+				s16 k, v = 0;
 				for (k = 0; k < p_->q; k++)
 					v |= bits[n++] << k;
 				qb[2 * i + j] = v;
@@ -480,7 +480,7 @@ void V34DataTx::encode_frame(u32 *scr, int tap)
 	}
 
 	for (i = 0; i < 4; i++) {
-		int x[2], y[2], k, rot, u0 = 0, c0 = 0, lab[2];
+		s16 x[2], y[2], k, rot, u0 = 0, c0 = 0, lab[2];
 		z = (z + (ib[i] >> 1)) & 3;
 		/* in the order of Table 11/V.34 */
 		for (k = 0; k < 2; k++) {
@@ -529,7 +529,7 @@ void V34DataTx::encode_frame(u32 *scr, int tap)
 
 /* the next data symbol, in units of the training points: a new mapping
    frame every 8 */
-cplx V34DataTx::symbol(u32 *scr, int tap)
+cplx V34DataTx::symbol(u32 *scr, s16 tap)
 {
 	if (pos >= 8) {
 		encode_frame(scr, tap);
@@ -550,12 +550,12 @@ static s16 lookup[46][46];
 /* lookup[] from the quarter superconstellation and its rotations */
 static void make_lookup(void)
 {
-	int i, k;
+	s16 i, k;
 	for (auto &row : lookup)
 		std::fill(std::begin(row), std::end(row), -1);
 	for (i = 0; i < 416; i++)
 		for (k = 0; k < 4; k++) {
-			int x = v34_quarter[i][0], y = v34_quarter[i][1];
+			s16 x = v34_quarter[i][0], y = v34_quarter[i][1];
 			rotate(&x, &y, k);
 			lookup[(x + 45) / 2][(y + 45) / 2] =
 				static_cast<s16>(k << 9 | i);
@@ -579,16 +579,17 @@ void V34DataRx::init(const V34Params *p_)
 /* the nearest point of the constellation in use to z (in units of the
    training points): its coordinates into *px, *py; returns its
    rotation << 9 | index, as lookup[] */
-int V34Params::decide(cplx z, int *px, int *py) const
+s16 V34Params::decide(cplx z, s16 *px, s16 *py) const
 {
 	float u = z.re / g, v = z.im / g, best = 1e9f;
-	int x0 = 2 * static_cast<int>(floorf(u / 2)) + 1,
-	    y0 = 2 * static_cast<int>(floorf(v / 2)) + 1;
-	int dx, dy, ret = -1, lim = M << q;
+	s32 x0 = 2 * static_cast<s32>(floorf(u / 2)) + 1,
+	    y0 = 2 * static_cast<s32>(floorf(v / 2)) + 1;
+	s16 dx, dy, ret = -1, lim = M << q;
 
 	for (dx = -2; dx <= 2; dx += 2)
 		for (dy = -2; dy <= 2; dy += 2) {
-			int x = x0 + dx, y = y0 + dy, e;
+			s32 x = x0 + dx, y = y0 + dy;
+			s16 e;
 			float dd;
 			if (x < -45 || x > 45 || y < -45 || y > 45)
 				continue;
@@ -618,11 +619,11 @@ int V34Params::decide(cplx z, int *px, int *py) const
 /* the bits of the mapping frame of the 8 decided points in e[]: shell
    demapping, the differential decoding of the rotations, descrambling
    (scr, tap), out to link */
-void V34DataRx::decode_frame(u32 *scr, int tap)
+void V34DataRx::decode_frame(u32 *scr, s16 tap)
 {
 	const V34Params *p_ = &p;
 	unsigned char bits[V34_MAX_B];
-	int bb = p_->b, kk = p_->K, n = 0, i, j, m[8];
+	s16 bb = p_->b, kk = p_->K, n = 0, i, j, m[8];
 	u32 r0;
 
 	sbc += p_->r;
@@ -640,16 +641,16 @@ void V34DataRx::decode_frame(u32 *scr, int tap)
 			bits[n++] = (r0 >> i) & 1;
 	}
 	for (i = 0; i < 4; i++) {
-		int re = e[2 * i] >> 9, ro = e[2 * i + 1] >> 9;
-		int i32 = (re - z) & 3, rel = (ro - re) & 3;
-		int nb = p_->K || i < bb - 8 ? 3 : 2;
+		s16 re = e[2 * i] >> 9, ro = e[2 * i + 1] >> 9;
+		s16 i32 = (re - z) & 3, rel = (ro - re) & 3;
+		s16 nb = p_->K || i < bb - 8 ? 3 : 2;
 		z = re;
 		bits[n++] = rel >> 1;
 		bits[n++] = i32 & 1;
 		if (nb == 3)
 			bits[n++] = i32 >> 1;
 		for (j = 0; j < 2 && p_->K; j++) {
-			int k, v = e[2 * i + j] & ((1 << p_->q) - 1);
+			s16 k, v = e[2 * i + j] & ((1 << p_->q) - 1);
 			for (k = 0; k < p_->q; k++)
 				bits[n++] = (v >> k) & 1;
 		}
@@ -674,9 +675,9 @@ void V34DataRx::decode_frame(u32 *scr, int tap)
 void V34Params::subset_points(float u, float v, float dist[8],
 			      s32 pt[8]) const
 {
-	int x0 = 2 * static_cast<int>(floorf(u / 2)) + 1,
-	    y0 = 2 * static_cast<int>(floorf(v / 2)) + 1;
-	int dx, dy, i, lim = M << q, edge = precode ? 261 : 45;
+	s32 x0 = 2 * static_cast<s32>(floorf(u / 2)) + 1,
+	    y0 = 2 * static_cast<s32>(floorf(v / 2)) + 1;
+	s16 dx, dy, i, lim = M << q, edge = precode ? 261 : 45;
 
 	/* outside: from the edge */
 	if (x0 > edge) x0 = edge;
@@ -689,10 +690,10 @@ void V34Params::subset_points(float u, float v, float dist[8],
 	}
 	for (dx = -6; dx <= 6; dx += 2)
 		for (dy = -6; dy <= 6; dy += 2) {
-			int x = x0 + dx, y = y0 + dy, l;
+			s16 x = x0 + dx, y = y0 + dy, l;
 			float dd;
 			if (!precode) {
-				int e;
+				s16 e;
 				if (x < -45 || x > 45 || y < -45 || y > 45)
 					continue;
 				e = lookup[(x + 45) / 2][(y + 45) / 2];
@@ -722,9 +723,9 @@ void V34DataRx::viterbi_init()
 
 /* a decided channel output point y(n): with precoding u(n) = y(n) - c(n),
    as the transmitter's precoder had it */
-void V34DataRx::point(s32 pt, u32 *scr, int tap)
+void V34DataRx::point(s32 pt, u32 *scr, s16 tap)
 {
-	int x = UNPACK_X(pt), y = UNPACK_Y(pt), e_ = -1;
+	s16 x = UNPACK_X(pt), y = UNPACK_Y(pt), e_ = -1;
 
 	if (p.precode) {
 		s32 cx = pc.c[0], cy = pc.c[1];
@@ -744,7 +745,7 @@ void V34DataRx::point(s32 pt, u32 *scr, int tap)
 /* z: the equalized symbol, in units of the training points (with
    precoding: equalized to 1 + H(z)); returns the (tentative) decided
    point for the adaptation */
-cplx V34DataRx::symbol(cplx z_, u32 *scr, int tap)
+cplx V34DataRx::symbol(cplx z_, u32 *scr, s16 tap)
 {
 	const V34Params *p_ = &p;
 	float u = z_.re / p_->g, v = z_.im / p_->g;
@@ -759,7 +760,7 @@ cplx V34DataRx::symbol(cplx z_, u32 *scr, int tap)
 		yv = yv > 261 ? 261 : yv < -261 ? -261 : yv;
 		ret = cplx_make(p_->g * yu, p_->g * yv);
 	} else {
-		int x, y;
+		s16 x, y;
 		p_->decide(z_, &x, &y);
 		ret = cplx_make(p_->g * x, p_->g * y);
 	}
@@ -771,7 +772,7 @@ cplx V34DataRx::symbol(cplx z_, u32 *scr, int tap)
 		s32 cb[8];
 		p_->subset_points(u, v, db, cb);
 		half2 = 0;
-		int got = vit.step(p.states, v0, da, ca, db, cb, out);
+		s16 got = vit.step(p.states, v0, da, ca, db, cb, out);
 		/* the superframe inversions, as the transmitter */
 		if (++half >= 2 * p.P) {
 			half = 0;

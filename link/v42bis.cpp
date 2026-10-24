@@ -53,7 +53,7 @@ enum {
 
 /* the estimate after one codeword of size bits stood for len more
    characters: it loses len / WINDOW of itself and gains the codeword */
-static u16 estimate(u16 est, int len, int size)
+static u16 estimate(u16 est, s16 len, s16 size)
 {
 	return static_cast<u16>(est + size -
 				     static_cast<s32>(est) * len / WINDOW);
@@ -63,7 +63,7 @@ static u16 estimate(u16 est, int len, int size)
    characters, and starts the coder in the initial state with no
    statistics and no output; -1 if out of range (codewords are 16 bits,
    the string buffer holds V42BIS_MAX_STRING) or out of memory */
-int V42bis::init(s32 dict_size, s32 max_string)
+s16 V42bis::init(s32 dict_size, s32 max_string)
 {
 	exit();
 	if (dict_size < MIN_CODEWORDS || dict_size > 65535 ||
@@ -84,7 +84,7 @@ int V42bis::init(s32 dict_size, s32 max_string)
    than now, strings of MIN_STRING to V42BIS_MAX_STRING characters.  The
    dictionary stays as it is; -1, and nothing changed, if out of range
    (always when not ready()) */
-int V42bis::config(s32 dict_size, s32 max_string)
+s16 V42bis::config(s32 dict_size, s32 max_string)
 {
 	if (dict_size < MIN_CODEWORDS || dict_size > dict_size_ ||
 	    max_string < MIN_STRING || max_string > V42BIS_MAX_STRING)
@@ -188,7 +188,7 @@ u16 V42bis::add_char(u16 at, u8 ch)
    now pending, at the excluded entry nothing is and the entry is not
    excluded any more.  After 0 the caller ends the string and matches ch
    again, which then starts the next string */
-int V42bis::recv_data(u16 ch)
+s16 V42bis::recv_data(u16 ch)
 {
 	if (update_at_) {
 		add_char(update_at_, static_cast<u8>(ch));
@@ -217,10 +217,10 @@ int V42bis::recv_data(u16 ch)
    ends passed on (7.5), the compressibility test after each of these
    and after the character joins a string (7.8).  Returns the octets it
    queued */
-int V42bis::encode(u8 ch)
+s16 V42bis::encode(u8 ch)
 {
-	int before = olen_;
-	int r;
+	s16 before = olen_;
+	s16 r;
 	while (!(r = recv_data(ch))) {
 		send_string();
 		test_mode();
@@ -246,11 +246,11 @@ int V42bis::encode(u8 ch)
    in transparent mode) count as one codeword of the size in effect
    before any STEPUP, in the estimate and the statistics.  Returns how
    many characters that was */
-int V42bis::send_string()
+s16 V42bis::send_string()
 {
-	int len = str_len_ - flushed_len_;
+	s16 len = str_len_ - flushed_len_;
 	if (len > 0) {
-		int size = cw_size_;
+		s16 size = cw_size_;
 		if (mode_ == COMPRESSED)
 			send_cw(last_matched_);
 		cmp_last_ = estimate(cmp_last_, len, size);
@@ -269,7 +269,7 @@ int V42bis::send_string()
    becomes the pending update with the next character (7.8.1 a, 7.8.2 b);
    without one, an update already pending stays.  Returns 1 if the mode
    changed */
-int V42bis::test_mode()
+s16 V42bis::test_mode()
 {
 	if (mode_ == TRANSPARENT ? cmp_last_ >= TO_COMPRESSED :
 	    cmp_last_ <= TO_TRANSPARENT)
@@ -319,9 +319,9 @@ void V42bis::align_bits()
 
 /* the whole octets of the bit reservoir to the output, bit 1 first
    (Figure 3); returns how many */
-int V42bis::send_bits()
+s16 V42bis::send_bits()
 {
-	int n = 0;
+	s16 n = 0;
 	for (; bit_len_ >= 8; n++) {
 		send_data(bit_data_ & 0xff);
 		bit_data_ >>= 8;
@@ -338,11 +338,11 @@ int V42bis::send_bits()
    to the octet boundary, unless no codeword went and no bits wait.  With
    nothing new since the last flush nothing happens.  Returns the octets
    it queued */
-int V42bis::flush_encoder()
+s16 V42bis::flush_encoder()
 {
-	int before = olen_;
+	s16 before = olen_;
 	if (mode_ == TRANSPARENT) {
-		int len = str_len_ - flushed_len_;
+		s16 len = str_len_ - flushed_len_;
 		if (len > 0) {
 			cmp_last_ = estimate(cmp_last_, len, cw_size_);
 			raw_bits_ += 8 * len;
@@ -371,7 +371,7 @@ int V42bis::flush_encoder()
 
 /* one octet of a received I frame (8); the characters it gives join the
    output.  Returns how many, or -1 on C-ERROR (5.8) */
-int V42bis::decode(u8 ch)
+s16 V42bis::decode(u8 ch)
 {
 	if (mode_ == COMPRESSED) {
 		/* the octet's bits join the reservoir, the least significant
@@ -414,7 +414,7 @@ int V42bis::decode(u8 ch)
 			return -1;
 		/* spelled from the leaf up into the end of str_data_ (no string
 		   is longer than N7) */
-		int pos = V42BIS_MAX_STRING;
+		s16 pos = V42BIS_MAX_STRING;
 		for (u16 at = cw;; at = dict_[at].parent) {
 			str_data_[--pos] = dict_[at].ch;
 			if (at < N5)
@@ -429,7 +429,7 @@ int V42bis::decode(u8 ch)
 			if (cw >= N5 && !dict_[cw].parent)
 				return -1;
 		}
-		int len = V42BIS_MAX_STRING - pos;
+		s16 len = V42BIS_MAX_STRING - pos;
 		if (len < max_string_)
 			update_at_ = cw;
 		/* out, the escape character cycling on its own (9.2 b) */
@@ -471,7 +471,7 @@ int V42bis::decode(u8 ch)
 		return 0;
 	}
 	/* a data character: matched as the encoder did, then out */
-	int r;
+	s16 r;
 	do {
 		r = recv_data(ch);
 		if (r != 1) {
@@ -487,7 +487,7 @@ int V42bis::decode(u8 ch)
    (each goes out as soon as it is known), and string matching and an
    escape character just received carry on into the next frame, so
    there is nothing to do; returns 0 characters */
-int V42bis::flush_decoder()
+s16 V42bis::flush_decoder()
 {
 	return 0;
 }
@@ -502,26 +502,26 @@ int V42bis::flush_decoder()
    of the output queue; dropped if it is full (callers take the output
    before each encode() and decode(), which queue far less).  Returns 1
    if queued */
-int V42bis::send_data(u16 ch)
+s16 V42bis::send_data(u16 ch)
 {
-	if (olen_ >= static_cast<int>(sizeof(obuf_)))
+	if (olen_ >= static_cast<s16>(sizeof(obuf_)))
 		return 0;
-	obuf_[(ohead_ + olen_++) % static_cast<int>(sizeof(obuf_))] =
+	obuf_[(ohead_ + olen_++) % static_cast<s16>(sizeof(obuf_))] =
 		static_cast<u8>(ch);
 	return 1;
 }
 
 /* takes up to n octets from the front of the output queue into buf;
    returns how many */
-int V42bis::out(u8 *buf, int n)
+s16 V42bis::out(u8 *buf, s16 n)
 {
 	if (n > olen_)
 		n = olen_;
 	if (n <= 0)
 		return 0;
-	for (int i = 0; i < n; i++) {
+	for (s16 i = 0; i < n; i++) {
 		buf[i] = obuf_[ohead_];
-		ohead_ = (ohead_ + 1) % static_cast<int>(sizeof(obuf_));
+		ohead_ = (ohead_ + 1) % static_cast<s16>(sizeof(obuf_));
 	}
 	olen_ -= n;
 	return n;
