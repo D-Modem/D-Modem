@@ -2,31 +2,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Neo-Desktop
 //
-// linecheck.php <asterisk command> <endpoint> <verdict> [app|ari]: the
-// module's line check (Dmodem::check()) on a running Asterisk, its CLI
-// through "<asterisk command> -rx" in place of the manager; exit status
-// 0 if the engine is up and endpoint's verdict is <verdict> (ok, info or
+// linecheck.php <ami port> <endpoint> <verdict> [app|ari]: the module's
+// line check (Dmodem::check()) on a running Asterisk, through its manager
+// (127.0.0.1:<ami port>, user dmodem, secret dmodem); exit status 0 if
+// the engine is up and endpoint's verdict is <verdict> (ok, info or
 // warn).  For e2e.sh.
 
 require_once __DIR__ . '/fpbx_env.php';
 
-/* the manager's Command through the CLI */
-class CliAstman extends FakeAstman
-{
-	public $ast;
+require_once __DIR__ . '/ami.php';
 
-	/* cmd's output from the running Asterisk */
-	public function Command($cmd)
-	{
-		return ['data' => shell_exec($this->ast . ' -rx ' . escapeshellarg($cmd))];
-	}
-}
-
-list(, $ast, $endpoint, $want) = $argv;
+list(, $port, $endpoint, $want) = $argv;
 $engine = isset($argv[4]) ? $argv[4] : 'app';
 $m = dmodem_new();
-$m->FreePBX->astman = new CliAstman();
-$m->FreePBX->astman->ast = $ast;
+$m->FreePBX->astman = new TestAmi($port, 'dmodem', 'dmodem');
 $s = $m->getSettings();
 $s['engine'] = $engine;
 $c = $m->check($s);

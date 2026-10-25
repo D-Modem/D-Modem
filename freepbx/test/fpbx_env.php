@@ -104,6 +104,17 @@ class FakeAstman
 		return $this->up;
 	}
 
+	/* the manager actions sent: [action, fields]; the reply to the next */
+	public $sent = [];
+	public $reply = ['Response' => 'Success', 'Message' => 'Originate successfully queued'];
+
+	/* action with its fields sent, as php-asmanager's send_request() */
+	public function send_request($action, $fields = [])
+	{
+		$this->sent[] = [$action, $fields];
+		return $this->reply;
+	}
+
 	/* cmd's output, as php-asmanager hands Command back */
 	public function Command($cmd)
 	{
@@ -123,6 +134,12 @@ class FakeFreePBX
 	public function __construct()
 	{
 		$this->astman = new FakeAstman();
+	}
+
+	/* FreePBX->Dmodem and the like: the module objects */
+	public function __get($name)
+	{
+		return FreePBX::$modules[$name];
 	}
 
 	/* files filename => contents written */
@@ -222,6 +239,7 @@ if ($fwext !== '' && is_file($fwext)) {
 	}
 }
 
+require_once __DIR__ . '/backup_env.php';
 require_once __DIR__ . '/../dmodem/Dmodem.class.php';
 require_once __DIR__ . '/../dmodem/functions.inc.php';
 
@@ -253,6 +271,10 @@ function dmodem_get($m, array $r)
 	$_REQUEST = $_GET = $r + ['display' => 'dmodem'];
 	$_POST = [];
 	$_SERVER['REQUEST_METHOD'] = 'GET';
+	/* (a new request: nothing of the last post's) */
+	$m->errors = [];
+	$m->posted = null;
+	$m->message = null;
 	return $m->showPage();
 }
 

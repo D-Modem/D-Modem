@@ -15,6 +15,8 @@ use FreePBX\modules\Dmodem;
 use FreePBX\modules\Dmodem\Config;
 use FreePBX\modules\Dmodem\Dialplan;
 use FreePBX\modules\Dmodem\LineCheck;
+use FreePBX\modules\Dmodem\Dialout;
+use FreePBX\modules\Dmodem\Cli;
 
 $failed = 0;
 $passed = 0;
@@ -329,6 +331,130 @@ same(array_keys($m->getActionBar(['display' => 'dmodem', 'view' => 'form', 'prof
 same(array_keys($m->getActionBar(['display' => 'dmodem', 'view' => 'form'])),
      ['reset', 'submit'], 'action bar: a new profile');
 same($m->getActionBar(['display' => 'dmodem']), [], 'action bar: none on the list');
+
+/* --- dialling out --- */
+
+$o = Dialout::originate(Config::defaultSettings(), 'bbs', '15551234');
+same($o, ['Channel' => 'Local/15551234@from-internal', 'Application' => 'DModem',
+	  'Data' => 'bbs,o', 'Timeout' => '60000', 'Async' => 'true',
+	  'Variable' => 'DMODEM_DIALOUT=bbs'], 'Originate: DModem(bbs,o) on Local/<number>@from-internal');
+$o = Dialout::originate(array_merge(Config::defaultSettings(), ['engine' => 'ari',
+	'ari_app' => 'dm', 'dialout_context' => 'modem-out', 'dialout_ring' => 30,
+	'dialout_callerid' => '5550100']), 'bbs', '*99#');
+same([$o['Channel'], $o['Application'], $o['Data'], $o['Timeout'], $o['CallerID']],
+     ['Local/*99#@modem-out', 'Stasis', 'dm,bbs,o', '30000', '5550100'],
+     'Originate for dmodem-ari: Stasis(<app>,<profile>,o), the settings\' context, ring and caller ID');
+same(Dialout::originate(Config::defaultSettings(), 'bbs', '1', '"BBS" <5550199>')['CallerID'],
+     '"BBS" <5550199>', 'a caller ID given wins');
+$profiles = $m->getProfiles();
+ok(isset(Dialout::validate('nope', '1', '', $profiles)['profile']), 'dial: an unknown profile');
+foreach (['', '12a3', "1\r\nAction: Command", str_repeat('1', 41)] as $n)
+	ok(isset(Dialout::validate('bbs', $n, '', $profiles)['number']), 'dial: bad number ' . json_encode($n));
+foreach (["5550100\r\nAction: Logoff", '"a"b" <1>', 'name <1>'] as $c)
+	ok(isset(Dialout::validate('bbs', '1', $c, $profiles)['callerid']), 'dial: bad caller ID ' . json_encode($c));
+same(Dialout::validate('bbs', '15551234', '"The BBS" <5550199>', $profiles), [], 'dial: good arguments');
+
+$am = $m->FreePBX->astman;
+$am->sent = [];
+$r = $m->dialOut('bbs', '15551234');
+ok($r['ok'], 'dialOut: queued');
+same(count($am->sent), 1, 'dialOut: one manager action');
+same($am->sent[0][0], 'Originate', 'dialOut: an Originate');
+same($am->sent[0][1]['Channel'], 'Local/15551234@from-internal', 'dialOut: through the outbound routes');
+$r = $m->dialOut('bbs', '1x');
+ok(!$r['ok'] && count($am->sent) === 1, 'dialOut: bad number, nothing sent');
+$am->reply = ['Response' => 'Error', 'Message' => 'Extension does not exist.'];
+$r = $m->dialOut('bbs', '15551234');
+ok(!$r['ok'] && strpos($r['message'], 'Extension does not exist.') !== false, 'dialOut: Asterisk\'s refusal shown');
+$am->reply = ['Response' => 'Success'];
+$am->up = false;
+ok(!$m->dialOut('bbs', '15551234')['ok'], 'dialOut: no manager');
+$am->up = true;
+
+/* the page's form */
+dmodem_post($m, ['action' => 'dialout', 'profile' => 'bbs', 'number' => '15551234', 'callerid' => '']);
+same($m->message[0], 'success', 'dial-out form: queued');
+$h = $m->showPage();
+ok(strpos($h, 'Calling 15551234 with profile bbs') !== false && strpos($h, 'value="15551234"') !== false,
+   'dial-out page: the message and the number kept');
+dmodem_post($m, ['action' => 'dialout', 'profile' => 'bbs', 'number' => 'abc', 'callerid' => '']);
+$h = $m->showPage();
+ok($m->message[0] === 'danger' && strpos($h, 'The number to dial') !== false, 'dial-out form: a bad number shown');
+$h = dmodem_get($m, ['view' => 'dialout']);
+ok(strpos($h, 'name="number"') !== false && strpos($h, 'fwconsole dmodem dial') !== false, 'dial-out page');
+$h = dmodem_get($m, ['view' => 'settings']);
+ok(strpos($h, 'name="dialout_context"') !== false, 'settings: the dial-out section');
+$set = $m->getSettings();
+foreach (['dialout_context' => 'from internal', 'dialout_callerid' => "1\n2", 'dialout_ring' => 0] as $k => $v)
+	ok(isset(Config::validateSettings(array_merge($set, [$k => $v]))[$k]), "bad setting $k refused");
+
+/* fwconsole dmodem */
+$lines = [];
+$say = function ($l) use (&$lines) {
+	$lines[] = $l;
+};
+$am->sent = [];
+same(Cli::run($m, ['dial', 'bbs', '15551234'], ['callerid' => '5550100'], $say), 0, 'fwconsole dmodem dial');
+same($am->sent[0][1]['CallerID'], '5550100', 'fwconsole dmodem dial --callerid');
+same(Cli::run($m, ['dial', 'bbs'], [], $say), 2, 'fwconsole dmodem dial: usage');
+same(Cli::run($m, ['dial', 'bbs', 'x'], [], $say), 1, 'fwconsole dmodem dial: a bad number fails');
+$lines = [];
+Cli::run($m, ['profiles'], [], $say);
+ok(count($lines) === 1 && strpos($lines[0], 'bbs') === 0, 'fwconsole dmodem profiles');
+same(Cli::run($m, ['nonsense'], [], $say), 2, 'fwconsole dmodem: usage');
+
+/* --- export, import, backup and restore --- */
+
+$exp = $m->exportData();
+same(array_keys($exp), ['format', 'settings', 'profiles'], 'export: its parts');
+same($exp['settings']['fax_ecm'], false, 'export: settings as they are');
+$file = sys_get_temp_dir() . '/dmodem-unit-' . getmypid() . '.json';
+same(Cli::run($m, ['export', $file], [], $say), 0, 'fwconsole dmodem export <file>');
+same(fileperms($file) & 0777, 0600, 'the export readable by its owner alone (the ARI password)');
+
+/* into a fresh module, as on another system */
+$saved = unserialize(serialize(FreePBX_Helpers::$kv));
+$m3 = dmodem_new();
+same(Cli::run($m3, ['import', $file], [], $say), 0, 'fwconsole dmodem import');
+same($m3->exportData(), $exp, 'import: the settings and profiles as exported');
+unlink($file);
+
+/* a bad profile is left out, the rest goes in; replace drops the others */
+dmodem_post($m3, array_merge($bbs, ['name' => 'extra', 'original' => '']));
+$bad = $exp;
+$bad['profiles']['evil'] = array_merge($exp['profiles']['bbs'], ['mode' => 'exec', 'command' => '']);
+$bad['profiles']['general'] = $exp['profiles']['bbs'];
+$r = $m3->importData($bad);
+ok(!$r['ok'] && isset($r['skipped']['evil']['command']) && isset($r['skipped']['general']['name']),
+   'import: bad profiles left out, and said why');
+same(array_keys($m3->getProfiles()), ['bbs'], 'import: the profiles of the file alone');
+dmodem_post($m3, array_merge($bbs, ['name' => 'extra', 'original' => '']));
+$m3->importData($exp, false);
+same(array_keys($m3->getProfiles()), ['bbs', 'extra'], 'import --keep: the others stay');
+ok(!$m3->importData(['profiles' => []])['ok'], 'import: not an export');
+$r = $m3->importData(array_merge($exp, ['settings' => array_merge($exp['settings'], ['fax_dir' => 'x'])]));
+ok(isset($r['settings']['fax_dir']) && $m3->getSettings()['fax_dir'] === '/var/spool/asterisk/fax',
+   'import: bad settings not kept');
+
+/* FreePBX's Backup & Restore: the module's own classes */
+require_once __DIR__ . '/../dmodem/Backup.php';
+require_once __DIR__ . '/../dmodem/Restore.php';
+FreePBX::$modules['Dmodem'] = $m;
+$b = new \FreePBX\modules\Dmodem\Backup($m->FreePBX, '17.0', null, 'tx1',
+	['module' => 'dmodem', 'version' => '16.0.2'], false);
+$b->runBackup('id1', 'tx1');
+same($b->getConfigs(), $exp, 'backup: the export in the backup\'s configs');
+/* the restore after the backup module's reset (an empty store) */
+$m4 = dmodem_new();
+FreePBX::$modules['Dmodem'] = $m4;
+$rs = new \FreePBX\modules\Dmodem\Restore($m4->FreePBX, '17.0', null, 'tx2',
+	['module' => 'dmodem', 'configs' => json_decode(json_encode($b->getConfigs()), true)],
+	'/tmp', false);
+$rs->runRestore();
+same($m4->exportData(), $exp, 'restore: the settings and profiles back');
+ok(strpos(json_encode($rs->logged), '1 profiles restored') !== false, 'restore: logged');
+FreePBX_Helpers::$kv = $saved;
+FreePBX::$modules['Dmodem'] = $m;
 
 /* --- uninstall --- */
 

@@ -8,6 +8,8 @@
 
 namespace FreePBX\modules\Dmodem;
 
+require_once __DIR__ . '/Dialout.php';
+
 class Config
 {
 	/* where a profile's data goes (dmodem.conf mode) */
@@ -42,6 +44,12 @@ class Config
 			'ari_t38' => false,
 			'sip_endpoint' => 'dmodem',
 			'sip_bind' => '127.0.0.1:5090',
+			/* dialling out (Dialout): the context the number is
+			   dialled in (FreePBX's outbound routes), the caller ID,
+			   how long it may ring */
+			'dialout_context' => 'from-internal',
+			'dialout_callerid' => '',
+			'dialout_ring' => 60,
 		];
 	}
 
@@ -178,6 +186,12 @@ class Config
 			$e['fax_ident'] = _('Up to 20 digits, + and spaces');
 		if (!in_array($s['fax_max_rate'], self::FAX_RATES, true))
 			$e['fax_max_rate'] = _('One of the fax rates');
+		if (!preg_match('/^[A-Za-z0-9_.-]{1,79}$/', $s['dialout_context']))
+			$e['dialout_context'] = _('A dialplan context, e.g. from-internal');
+		if (!Dialout::callerIdOk($s['dialout_callerid']))
+			$e['dialout_callerid'] = _('A number, or "Name" <number>');
+		if (!self::intIn($s['dialout_ring'], 5, 300))
+			$e['dialout_ring'] = _('From 5 to 300 seconds');
 		if ($s['engine'] === 'ari') {
 			if (!preg_match('#^https?://[^\s;]{1,200}$#', $s['ari_url']))
 				$e['ari_url'] = _('http://host:port of Asterisk\'s HTTP server');

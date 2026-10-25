@@ -5,18 +5,22 @@
 // Dmodem.class.php - the FreePBX module (BMO) of D-Modem: profiles of
 // DModem() (app_dmodem) or dmodem-ari kept in the module's store,
 // dmodem.conf written from them on Apply Config, the app-dmodem context
-// with a destination for each, and a check of the PJSIP endpoints for
-// modem calls.
+// with a destination for each, calls out with a profile, the settings'
+// export and import (Backup.php, Restore.php, fwconsole dmodem), and a
+// check of the PJSIP endpoints for modem calls.
 
 namespace FreePBX\modules;
 
 require_once __DIR__ . '/lib/Config.php';
 require_once __DIR__ . '/lib/Dialplan.php';
 require_once __DIR__ . '/lib/LineCheck.php';
+require_once __DIR__ . '/lib/Dialout.php';
+require_once __DIR__ . '/lib/Cli.php';
 
 use FreePBX\modules\Dmodem\Config;
 use FreePBX\modules\Dmodem\Dialplan;
 use FreePBX\modules\Dmodem\LineCheck;
+use FreePBX\modules\Dmodem\Dialout;
 
 class Dmodem extends \FreePBX_Helpers implements \BMO
 {
@@ -25,6 +29,8 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	const PROFILES = 'profiles';
 	/* the endpoints the check reads at most */
 	const MAX_ENDPOINTS = 200;
+	/* exportData()'s format */
+	const EXPORT_FORMAT = 1;
 
 	public $FreePBX;
 	/* the last form's errors, field => message, and its values */
@@ -120,6 +126,87 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$this->setConfig($name, false, self::PROFILES);
 	}
 
+	/* the settings and profiles, for a backup or fwconsole dmodem
+	   export: ['format', 'settings', 'profiles' (name => profile)] */
+	public function exportData()
+	{
+		return [
+			'format' => self::EXPORT_FORMAT,
+			'settings' => $this->getSettings(),
+			'profiles' => $this->getProfiles(),
+		];
+	}
+
+	/* exportData()'s data back (a restore, fwconsole dmodem import):
+	   the settings and each profile checked as the forms check them,
+	   what passes kept; the profiles that data hasn't are dropped
+	   (replace false: kept).  [ok, settings errors, name => errors of
+	   the profiles left out, names imported] */
+	public function importData($data, $replace = true)
+	{
+		$r = ['ok' => false, 'settings' => [], 'skipped' => [], 'imported' => []];
+		if (!is_array($data) || !isset($data['format']) ||
+		    (int)$data['format'] !== self::EXPORT_FORMAT) {
+			$r['settings'] = ['format' => _('Not D-Modem settings, or of another format')];
+			return $r;
+		}
+		if (isset($data['settings']) && is_array($data['settings'])) {
+			$s = Config::normalizeSettings(array_merge(
+				$this->getSettings(), $data['settings']));
+			$r['settings'] = Config::validateSettings($s);
+			if (!$r['settings'])
+				$this->saveSettings($s);
+		}
+		$in = isset($data['profiles']) && is_array($data['profiles']) ?
+			$data['profiles'] : [];
+		$names = [];
+		foreach ($in as $name => $p) {
+			if (!is_array($p)) {
+				$r['skipped'][(string)$name] = ['name' => _('Not a profile')];
+				continue;
+			}
+			$p = Config::normalizeProfile(array_merge(Config::defaultProfile(),
+				$p, ['name' => (string)$name]));
+			$e = Config::validateProfile($p, $names);
+			if ($e) {
+				$r['skipped'][(string)$name] = $e;
+				continue;
+			}
+			$names[] = $p['name'];
+			$this->saveProfile($p);
+			$r['imported'][] = $p['name'];
+		}
+		if ($replace)
+			foreach (array_keys($this->getProfiles()) as $name)
+				if (!in_array($name, $names, true))
+					$this->deleteProfile($name);
+		$this->reload();
+		$r['ok'] = !$r['settings'] && !$r['skipped'];
+		return $r;
+	}
+
+	/* a modem call out: number dialled through the dial-out context,
+	   the modem of profile the caller (Dialout); cid the caller ID
+	   (empty: the settings').  [ok, message, errors (field => message)] */
+	public function dialOut($profile, $number, $cid = '')
+	{
+		$e = Dialout::validate($profile, $number, $cid, $this->getProfiles());
+		if ($e)
+			return ['ok' => false, 'message' => implode('; ', $e), 'errors' => $e];
+		$am = isset($this->FreePBX->astman) ? $this->FreePBX->astman : null;
+		if (!$am || (method_exists($am, 'connected') && !$am->connected()))
+			return ['ok' => false, 'errors' => [],
+				'message' => _('Asterisk\'s manager interface is not connected')];
+		$o = Dialout::originate($this->getSettings(), $profile, $number, $cid);
+		$res = $am->send_request('Originate', $o);
+		$ok = is_array($res) && isset($res['Response']) &&
+			strcasecmp($res['Response'], 'Success') === 0;
+		$why = is_array($res) && isset($res['Message']) ? $res['Message'] : '';
+		return ['ok' => $ok, 'errors' => [], 'message' => $ok ?
+			sprintf(_('Calling %s with profile %s (%s)'), $number, $profile, $o['Channel']) :
+			sprintf(_('Asterisk refused the call: %s'), $why)];
+	}
+
 	/* the destination of profile (or extension) name */
 	public static function destination($name)
 	{
@@ -177,6 +264,17 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			$this->reload();
 			$this->message = ['success', sprintf(_('Profile %s saved'), $p['name'])];
 			$_REQUEST['view'] = '';
+			return;
+		}
+		if ($action === 'dialout') {
+			$num = isset($req['number']) ? trim((string)$req['number']) : '';
+			$prof = isset($req['profile']) ? (string)$req['profile'] : '';
+			$cid = isset($req['callerid']) ? trim((string)$req['callerid']) : '';
+			$r = $this->dialOut($prof, $num, $cid);
+			$this->errors = $r['errors'];
+			$this->posted = ['profile' => $prof, 'number' => $num, 'callerid' => $cid];
+			$this->message = [$r['ok'] ? 'success' : 'danger', $r['message']];
+			$_REQUEST['view'] = 'dialout';
 			return;
 		}
 		if ($action === 'save_settings') {
@@ -261,6 +359,12 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			break;
 		case 'check':
 			$body = $this->view('check', ['check' => $this->check($settings)]);
+			break;
+		case 'dialout':
+			$body = $this->view('dialout', ['profiles' => $this->getProfiles(),
+				'call' => $this->posted !== null ? $this->posted :
+					['profile' => '', 'number' => '', 'callerid' => ''],
+				'errors' => $this->errors]);
 			break;
 		case 'dialplan':
 			$body = $this->view('dialplan', [

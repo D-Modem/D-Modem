@@ -2,7 +2,7 @@
 	<rawname>dmodem</rawname>
 	<repo>unsupported</repo>
 	<name>D-Modem</name>
-	<version>16.0.1</version>
+	<version>16.0.2</version>
 	<publisher>Neo-Desktop</publisher>
 	<license>AGPLv3</license>
 	<licenselink>https://www.gnu.org/licenses/agpl-3.0.txt</licenselink>
@@ -14,8 +14,14 @@
 	</description>
 	<more-info>https://github.com/Neo-Desktop/D-Modem-RE</more-info>
 	<changelog>
+		*16.0.2* Dialling out with a profile (page and fwconsole dmodem dial), Backup and Restore, fwconsole dmodem export/import
 		*16.0.1* Profiles as destinations, dmodem.conf, a fax destination, dmodem-ari as an engine, the line check
 	</changelog>
+	<console>
+		<command>
+			<name>dmodem</name>
+		</command>
+	</console>
 	<menuitems>
 		<dmodem>D-Modem</dmodem>
 	</menuitems>

@@ -94,6 +94,16 @@ foreach (Config::FAX_RATES as $r)
 		?>
 	</div>
 
+	<h2><?php echo _('Dialling out'); ?></h2>
+	<?php
+	$row('dialout_context', _('Dial-out context'), $text('dialout_context', $s['dialout_context']),
+	     _('Where the number is dialled: from-internal goes through your outbound routes, as an extension\'s call would.'));
+	$row('dialout_callerid', _('Caller ID'), $text('dialout_callerid', $s['dialout_callerid']),
+	     _('Sent with the call: a number, or "Name" <number>. Empty: the outbound route\'s.'));
+	$row('dialout_ring', _('Ring time'), $text('dialout_ring', $s['dialout_ring']),
+	     _('Seconds the far end may ring before the call is given up.'));
+	?>
+
 	<h2><?php echo _('Fax'); ?></h2>
 	<?php
 	$row('fax_destination', _('Fax destination'), $check('fax_destination', $s['fax_destination']),
