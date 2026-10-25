@@ -28,8 +28,6 @@ set(DMODEM_FLAKY_TESTS
 	open.open_v92a_fpe_precoder
 	# #259: ESS's V.29 receiver
 	ess.ess_fax_96_open_sends
-	# #264: retrain, no tone B
-	open.open_v90a_retrain
 	# #296: V.34 stalls in phase 3, or the woken call does not connect
 	dmodemd_usb
 	# #297

@@ -645,6 +645,8 @@ struct V34Retrain {
 	float rt_e;
 	s16 rt_blocks;
 	s16 rt_heard;           /* the tone has been there a while */
+	s32 rt_since;           /* where the blocks that made it heard
+				   began (0: not by its blocks) */
 	s32 bad;                /* data mode: samples with a poor mse */
 	s16 retraining;         /* back to data mode without a new CONNECT */
 	s16 retrains;
@@ -2774,6 +2776,7 @@ void V34Retrain<P>::rt_tone(float x)
 				self.srate, e, rt_g.power, own_g.power);
 		if (rt_blocks >= 5 && !rt_heard) {
 			rt_heard = 1;
+			rt_since = self.total - rt_blocks * PROBE_PERIOD;
 			DSP_DBG("v34: tone %s heard\n",
 				self.caller ? "A" : "B");
 		}
@@ -3754,6 +3757,7 @@ void V34Retrain<P>::retrain(const char *why, s16 by)
 	self.ptotal = self.pdiff = 0;
 	self.pcount = 0;
 	rt_blocks = rt_heard = 0;
+	rt_since = 0;
 	self.lost = bad = 0;
 	/* V.90's phase 3 (Jd, the DIL) takes about 8 s more */
 	self.timeout = self.total +
@@ -4773,6 +4777,16 @@ s16 V34Pump::handshake()
 				return DPSTAT_ERROR;
 			}
 			break;
+		}
+		/* nor one before the tone, or as it began: the remote's
+		   data going over to tone A can look like one (taken for
+		   its reversal we would stop tone B, which it is still
+		   waiting for) */
+		if (retraining && ev_rev &&
+		    rev_time - rt_since < ms2samples(20, srate)) {
+			DSP_DBG("v34: retrain: a reversal before tone A, "
+				"not its\n");
+			ev_rev = 0;
 		}
 		/* V.92's short phase 2 (9.4.1/V.92): we reverse B once A
 		   is there and B has been for 50 ms; no probing, no INFO1d */
