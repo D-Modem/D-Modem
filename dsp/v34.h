@@ -289,6 +289,27 @@ struct Viterbi4d {
 		out[1] = pb[tt][s];
 		return 1;
 	}
+
+	/* the 4D symbols not yet out (up to TB - 1, fewer while the paths
+	   were still filling), on the best path, oldest first, into out;
+	   how many.  For a transmitter's encoder that starts anew (V.92's
+	   B1u in a fast parameter exchange): then init(0) */
+	s16 flush(s32 (*out)[2])
+	{
+		s16 m = static_cast<s16>(n < TB ? n : TB - 1), k, s, bs = 0,
+		    tt = static_cast<s16>((t + TB - 1) % TB);
+		for (s = 1; s < V34_STATES; s++)
+			if (metric[s] < metric[bs])
+				bs = s;
+		s = bs;
+		for (k = m - 1; k >= 0; k--) {
+			out[k][0] = pa[tt][s];
+			out[k][1] = pb[tt][s];
+			s = prev[tt][s];
+			tt = static_cast<s16>((tt + TB - 1) % TB);
+		}
+		return m;
+	}
 };
 
 struct V34DataRx {

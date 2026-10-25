@@ -24,8 +24,6 @@ set(DMODEM_FLAKY_TESTS
 	# #237
 	open.open_v90a_alaw
 	dmodemd_alsa
-	# #257: FB1u with tens of zeros
-	open.open_v92a_fpe_precoder
 	# #259: ESS's V.29 receiver
 	ess.ess_fax_96_open_sends
 	# #296: V.34 stalls in phase 3, or the woken call does not connect

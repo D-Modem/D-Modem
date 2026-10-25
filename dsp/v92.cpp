@@ -1094,6 +1094,9 @@ void V92Up::symbol(float y)
 			neg_step = ns_n = pq_on = 0;
 			ns_odd = ns_even = pq_eq = pq_ed = 0;
 			zero(pq_x);
+			zero(pq_xr);
+			pq_xs0 = 0;
+			pq_xok = 1;
 			fpe_rx = fpe_sw = 0;
 			dmse = 0;
 			vi = 0;
@@ -1558,6 +1561,38 @@ void V92Up::data_symbol(float y)
 			cpd = cpd_fpe;
 			fpe_sw = 1;
 		}
+		/* its scrambler, modulus encoder, convolutional encoder
+		   and precoder from zero (8.7.1/V.92): the paths through the
+		   old code to their end, the new from state 0 (the
+		   descrambler at B1u's first decision, decided()) */
+		if (trellis_on) {
+			s32 left[V92_VT][2];
+			s16 m = vit.flush(left);
+			for (s16 k = 0; k < m; k++) {
+				decided((static_cast<s16>(left[k][0] & 0xFFFF) -
+					 1) / 2);
+				decided(((left[k][0] >> 16) - 1) / 2);
+				decided((static_cast<s16>(left[k][1] & 0xFFFF) -
+					 1) / 2);
+				decided(((left[k][1] >> 16) - 1) / 2);
+			}
+			vit.init(0);
+		}
+		/* with precoding (and not the ESS modem's): its outputs
+		   before go on through the line, no longer cancelled by its
+		   precoder; those rebuilt (decided()) into the feedback, and
+		   out of this symbol's output (the feedback was 0) */
+		if (!pf_on && b_frozen && !pq_on && pq_xok) {
+			for (s16 q = 0; q < V92_EQ_B; q++) {
+				float x = fpe_b1 - 1 - q >= pq_xs0 ?
+					static_cast<float>(pq_xr[(fpe_b1 - 1 - q) &
+						(V92_PMAX - 1)]) : 0;
+				y -= b[q] * (x - dh[q]);
+				dh[q] = x;
+			}
+		}
+		pq_xs0 = fpe_b1;
+		pq_xok = 1;
 		DSP_DBG("v92: FPE: B1u at symbol %" PRId32 "\n", sym);
 	}
 	dsn++;
@@ -1766,9 +1801,36 @@ void V92Up::decided(s16 eta)
 	s32 idx = ddn++;
 	if (fpe_sw && idx >= fpe_b1)
 		fpe_sw = 0;
+	/* a fast parameter exchange's B1u: the analogue modem's scrambler
+	   and differential encoder from zero (8.7.1/V.92) */
+	if (fpe_rx >= 4 && idx == fpe_b1) {
+		dscr = 0;
+		dprev = 0;
+	}
 	/* until B1u of a fast parameter exchange: the CPd before it */
 	const V92Cpd *c = fpe_sw ? &cpd_old : &cpd;
 	s16 i = vi, M = c->M[i], K;
+
+	/* with precoding: the analogue modem's precoder output for it, the
+	   point plus its feedback (6.4.2/V.92), from the decoded points
+	   (the line hardly passes 4 kHz: a slicer's few wrong points would
+	   leave that tone in it), for a fast parameter exchange's B1u.
+	   Where the precoder's recursion grows (its modem keeps its output
+	   small by the points it takes), a rounding not quite its own soon
+	   runs away: past twice the outermost point, none */
+	if (!pf_on && b_frozen && !pq_on && pq_xok) {
+		double x = (2 * eta + 1 - (neg_step && eta < 0)) * 16.0 * c->g;
+		for (s16 k = 0; k < c->len[1] && k < V92_PMAX &&
+			     idx - 1 - k >= pq_xs0; k++)
+			x += c->coef[1][k] / 16384.0 *
+				pq_xr[(idx - 1 - k) & (V92_PMAX - 1)];
+		pq_xr[idx & (V92_PMAX - 1)] = x;
+		if (!(fabs(x) <= 2 * (2 * c->lc[0] + 1) * 16.0 * c->g)) {
+			pq_xok = 0;
+			DSP_DBG("v92: the precoder's output rebuilt runs away "
+				"at symbol %" PRId32 "\n", idx);
+		}
+	}
 
 	vi = (vi + 1) % 12;
 	/* the class: eta = K + zM, and on the 4th symbol of a trellis
@@ -1833,11 +1895,19 @@ void V92Up::decided(s16 eta)
 		}
 		if (fpe_rx == 4) {
 			/* FB1u: ones, at the old parameters */
+			s16 z = 0;
 			for (j = 0; j < nb; j++)
-				derrs += !bits[j];
+				z += !bits[j];
+			derrs += z;
+			b1z[fpe_fb] = static_cast<unsigned char>(z);
 			if (++fpe_fb == 48) {
+				char zs[200];
+				s16 q, o = 0;
+				for (q = 0; q < 48; q++)
+					o += sprintf(zs + o, " %d", b1z[q]);
 				DSP_DBG("v92: FPE: FB1u, %" PRId32 " zeros in "
-					"%d bits\n", derrs, 48 * nb);
+					"%d bits; by frame:%s\n", derrs, 48 * nb,
+					zs);
 				fpe_rx = 5;
 				dframes = derrs = 0;
 				rn_rxd = 1;

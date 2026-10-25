@@ -160,6 +160,14 @@ struct V92Up : PcmFrames<V92Up> {
 	s16 pq_on;
 	float pq_eq, pq_ed;
 	double pq_x[V92_PMAX];
+	/* without the prefilter, with precoding: the analogue modem's
+	   precoder outputs rebuilt from the decoded points, by data
+	   symbol (in the equalizer's units), and the first of its run
+	   (0, or a fast parameter exchange's B1u), and whether they are
+	   still to be had (not run away) */
+	double pq_xr[V92_PMAX];
+	s32 pq_xs0;
+	s16 pq_xok;
 	CoreBits link;          /* the data */
 	s32 n;                  /* samples since the start */
 	s16 connected;
