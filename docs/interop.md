@@ -1245,6 +1245,37 @@ T400 for it), and the HSF modem sends LTs without information with MNP
 5. None of them has MNP 10 or 10EC. See [link.md](link.md#mnp) for MNP
 and what MNP 10EC would take.
 
+## V.80
+
+`interop_call`'s `V80=1` (`interop_call.h`) makes the call's data V.80
+frames: both DTEs ask for Synchronous Access Mode (`+ES=6` calling,
+`+ES=,,8` answering), and after CONNECT each goes over to the framed
+sub-mode (`<EM><flag>`), sends a warm-up frame that need not arrive,
+then 20 frames of 1 to 250 octets, every octet value among them; the
+other DTE must get each whole, ended by `<EM><flag>`. V.34, our
+transmitter at most 28800 bit/s: V.80 has no error correction, and a
+renegotiation in the middle (the SM56 modem's, from 33600) costs frames.
+The tests (`ctest -R _v80_`) and what each modem does:
+
+| Modem | `+ES=?` | FCS (`+ESA`'s `<crc_type>`) | Calls | What its DCE does |
+|---|---|---|---|---|
+| Agere | `(0,1,2,3,4,5-6),...,(0-3,4,5,6,7-8)` | none, FCS-16 | both ways, each FCS | Drops the FCS it checked by the octets of its shielded output: an FCS octet 19h or 99h, shielded, leaves a stray EM before `<EM><flag>` (the frame itself whole). With FCS-32 its DCE sends nothing and gives its DTE nothing |
+| Broadcom | the same | none, FCS-16 | both ways, each FCS | The same V.80 code as Agere's, the same answers and the same stray EM |
+| SM56 | `(0-4,6),(0-4),(0-6,8)` | none, FCS-16 (`+ESA:(0),(0),(0-1),(),(0-1),...`) | it calling with FCS-16; answering with none | Gives its DTE the received frames with their FCS (two octets more). Answering, any `+ESA` command and it no longer answers. Its receiver starts hunting only with its own first frame |
+| Intel | `(1-4,6),(0,2-4),(1,2,4-6,8)` | none only | both ways, its reception only | Receives as it should; its transmitter sends 16 1s in place of each frame's last two octets (an FCS field with no FCS), which a receiver takes for an abort |
+| HSF, PCTel, ESS | no 6 or 8 | | none | No Synchronous Access Mode (ESS takes `+ES=6` and makes a plain call) |
+
+Our transmitter's frames were taken whole by every receiver (with each
+FCS they offer: our FCS-16 is theirs), and ours took theirs whole but for
+Intel's. `V80_STRAY_A` (`_B`) lets that side's DTE get the stray EM,
+`V80_EXTRA_A=2` (`_B`) the FCS after each frame, `V80_ONLY=A` (`B`)
+checks one side's frames alone, and `V80_PAD_A=<octets>` (`_B`) puts
+octets after that side's frames (Intel's two last octets: with `XY` after
+each frame the frame itself arrives whole). `half_intel` gives the
+Intel controller the DTE's characters as they come while online (its
+serial port's interrupt did): from its background task alone, every
+15 ms, its V.80 transmitter ran out in the middle of frames.
+
 ## The calls' options
 
 `ANSWER_AFTER=<s>` gives the answerer its ATA that long after the

@@ -845,6 +845,14 @@ void Intel::dte_poll()
 		tx_put = (tx_put + 1) % FIFO;
 		tx_count++;
 	}
+	/* online, the controller takes them now, as the serial port's
+	   receive interrupt had it do (clm_rx_int): only from its
+	   background task, every 15 ms, V.80's framed transmitter runs out
+	   in a frame at 33600 bit/s */
+	if (tx_count && results.online()) {
+		stack_clear();
+		clm_rx_int();
+	}
 }
 
 /*

@@ -589,6 +589,253 @@ std::string bulk(size_t n, unsigned seed)
 	return out;
 }
 
+/*
+ *    V.80 Synchronous Access Mode (V80=1)
+ */
+
+/* the in-band codes (Table 9/V.80) the exchange uses */
+enum : unsigned char {
+	V80_EM = 0x19, V80_MARK = 0xb0, V80_FLAG = 0xb1, V80_ERR = 0xb2,
+	V80_BNUM = 0xb8, V80_UNUM = 0xb9, V80_RATE = 0xbe,
+};
+
+/* f for a V.80 DCE: EM, 99h, DC1 and DC3 shielded (T1 to T4) */
+std::string v80_shield(const std::string &f)
+{
+	std::string s;
+	for (char c : f) {
+		unsigned char u = (unsigned char)c;
+		int t = u == 0x19 ? 0x5c : u == 0x99 ? 0x76 : u == 0x11 ? 0xa0 :
+			u == 0x13 ? 0xa1 : -1;
+		if (t < 0) {
+			s += c;
+		} else {
+			s += (char)V80_EM;
+			s += (char)t;
+		}
+	}
+	return s;
+}
+
+/* what a V.80 DCE gave its DTE: the frames it ended with <EM><flag>
+   (good) and with <EM><err> (bad; empty ones, a hunt's flag, left out),
+   and the other indications as text ("<b4>", "<be 2c 2c>").  An EM
+   followed by an EM is dropped and counted (stray): the Agere modem
+   strips a checked FCS by the octets of its shielded output, and of an
+   FCS octet it shields (19h, 99h) leaves the EM */
+struct V80In {
+	std::vector<std::string> good, bad;
+	std::string other;
+	int stray = 0;          /* EMs followed by another EM, dropped */
+};
+
+/* (see V80In) from the octets in */
+V80In v80_parse(const std::string &in)
+{
+	/* the shielding codes T1 to T20: the octets they stand for */
+	static const unsigned char set[4] = { 0x19, 0x99, 0x11, 0x13 };
+	V80In r;
+	std::string frame;
+	for (size_t i = 0; i < in.size(); i++) {
+		unsigned char c = (unsigned char)in[i];
+		if ((c != 0x19 && c != 0x99) || i + 1 == in.size()) {
+			frame += (char)c;
+			continue;
+		}
+		unsigned char code = (unsigned char)in[i + 1];
+		if (code == 0x19 || code == 0x99) {
+			r.stray++;
+			continue;
+		}
+		i++;
+		static const unsigned char one[4] = { 0x5c, 0x76, 0xa0, 0xa1 },
+			two[4] = { 0x5d, 0x77, 0xa2, 0xa3 };
+		bool shield = false;
+		for (int k = 0; k < 4; k++) {
+			if (code == one[k]) {
+				frame += (char)set[k];
+				shield = true;
+			} else if (code == two[k]) {
+				frame += std::string(2, (char)set[k]);
+				shield = true;
+			}
+		}
+		if (code >= 0xa4 && code <= 0xaf) {
+			int k = code - 0xa4, a = k / 3, b = k % 3;
+			if (b >= a)
+				b++;
+			frame += (char)set[a];
+			frame += (char)set[b];
+			shield = true;
+		}
+		if (shield)
+			continue;
+		if (code == V80_FLAG || code == V80_ERR) {
+			if (!frame.empty())
+				(code == V80_FLAG ? r.good : r.bad).push_back(frame);
+			frame.clear();
+			continue;
+		}
+		char t[32];
+		int par = code == V80_BNUM || code == V80_UNUM ||
+			code == V80_RATE ? 2 : 0;
+		int n = snprintf(t, sizeof(t), "<%02x", code);
+		for (int k = 0; k < par && i + 1 < in.size(); k++)
+			n += snprintf(t + n, sizeof(t) - n, " %02x",
+				      (unsigned char)in[++i]);
+		snprintf(t + n, sizeof(t) - n, ">");
+		/* (<bnum>s, which come every report period: once) */
+		if (code != V80_BNUM || r.other.find("<b8") == std::string::npos)
+			r.other += t;
+	}
+	return r;
+}
+
+/* V80=1: after CONNECT (both in V.80's Synchronous Access Mode, by the
+   AT commands: +ES=6, +ES=,,8) each DTE goes over to the framed
+   sub-mode (<EM><flag>) and sends a frame that may be lost, then V80_FRAMES frames (20) of 1 to 250
+   octets, every octet value among them, each ended by <EM><flag>.  Each
+   side must get the other's frames, in order, each ended by <EM><flag>;
+   V80_EXTRA_A=<n> (or _B): that side's frames come with n octets more at
+   their end (the FCS, from a DCE that passes it on); V80_STRAY_A=1 (_B):
+   stray EMs allowed there (see v80_parse()); V80_ONLY=A (B): only that
+   side's frames checked; V80_PAD_A=<octets> (_B): that DTE's frames
+   sent with these after them (to see what a DCE does with a frame's
+   last octets).  rate: the slower
+   direction's, for how long it may take */
+bool v80_exchange(Dte &dte, long rate)
+{
+	std::string em_flag = { (char)V80_EM, (char)V80_FLAG };
+	/* framed, then a frame each that need not come through: the SM56
+	   modem's receiver starts its hunt only with its own first frame
+	   (after its DTE's <EM><flag> it still gives the line's octets as
+	   they are) */
+	const std::string warm = "V.80 warm-up";
+	for (int k = 0; k < 2; k++)
+		dte.send(k, em_flag + warm + em_flag);
+	dte.pump(1.5);
+	for (int k = 0; k < 2; k++) {
+		say("%c: the warm-up frame %s\n", "AB"[k],
+		    dte.buf[k].find(warm + em_flag) != std::string::npos ?
+		    "came" : "did not come");
+		const std::string &b = dte.buf[k];
+		say("%c before the frames (%zu octets): ...%s\n", "AB"[k],
+		    b.size(), show(b.substr(b.size() > 48 ? b.size() - 48 : 0))
+		    .c_str());
+		dte.buf[k].clear();
+	}
+	int n = atoi(env("V80_FRAMES", "20").c_str());
+	std::vector<std::string> frames[2];
+	std::string out[2];
+	size_t total = 0;
+	for (int k = 0; k < 2; k++) {
+		unsigned x = 12345 + 777 * k;
+		for (int i = 0; i < n; i++) {
+			size_t len = 1 + (i * 97 + k * 13) % 250;
+			std::string f;
+			for (size_t j = 0; j < len; j++) {
+				x = x * 1103515245 + 12345;
+				/* every value in the first frames, then noise */
+				f += (char)(i < 2 ? (j + i * 128) & 0xff :
+					    (x >> 16) & 0xff);
+			}
+			frames[k].push_back(f);
+			out[k] += v80_shield(f + env(k ? "V80_PAD_B" :
+						     "V80_PAD_A")) + em_flag;
+			total += len;
+		}
+	}
+	size_t at[2] = { 0, 0 };
+	for (int f : dte.fd)
+		fcntl(f, F_SETFL, fcntl(f, F_GETFL) | O_NONBLOCK);
+	double end = dte.t() + 40 + 15.0 * total / 2 / rate;
+	while ((at[0] < out[0].size() || at[1] < out[1].size()) &&
+	       dte.t() < end) {
+		for (int k = 0; k < 2; k++)
+			if (at[k] < out[k].size()) {
+				ssize_t w = write(dte.fd[k], out[k].data() + at[k],
+						  out[k].size() - at[k]);
+				if (w > 0)
+					at[k] += w;
+			}
+		/* (the pty kept full: a DCE that runs out in a frame aborts
+		   it) */
+		dte.pump(0.01);
+	}
+	if (at[0] < out[0].size() || at[1] < out[1].size()) {
+		say("v80: only %zu and %zu of %zu, %zu octets written\n", at[0],
+		    at[1], out[0].size(), out[1].size());
+		return false;
+	}
+	/* until each has the other's frames (or time is up) */
+	auto have = [&](int k) {
+		return (int)v80_parse(dte.buf[k]).good.size() +
+			(int)v80_parse(dte.buf[k]).bad.size() >= n;
+	};
+	while (dte.t() < end && !(have(0) && have(1)))
+		dte.pump(0.2);
+	dte.pump(0.5);
+	bool ok = true;
+	for (int k = 0; k < 2; k++) {
+		char who = "AB"[k];
+		/* what came, as it came, and what was sent, for a look */
+		std::string dir = env("LOG_DIR", ".");
+		for (auto [name, data] : { std::make_pair("rx", &dte.buf[k]),
+					   std::make_pair("tx", &out[k]) }) {
+			FILE *f = fopen((dir + "/v80_" + name + "_" + who)
+					.c_str(), "wbe");
+			if (f) {
+				fwrite(data->data(), 1, data->size(), f);
+				fclose(f);
+			}
+		}
+		V80In in = v80_parse(dte.buf[k]);
+		const auto &want = frames[1 - k];
+		size_t extra = atoi(env(k ? "V80_EXTRA_B" : "V80_EXTRA_A",
+					"0").c_str());
+		size_t same = 0, longer = 0;
+		std::map<long, int> diffs;
+		for (size_t i = 0; i < in.good.size() && i < want.size(); i++) {
+			const std::string &g = in.good[i], &w = want[i];
+			if (g.size() == w.size() + extra &&
+			    !g.compare(0, w.size(), w))
+				same++;
+			else if (g.size() > w.size() && !g.compare(0, w.size(), w))
+				longer++;
+			diffs[(long)g.size() - (long)w.size()]++;
+		}
+		std::string d;
+		for (auto &[delta, c] : diffs)
+			d += " " + std::to_string(delta) + ":" + std::to_string(c);
+		say("%c: %zu good frames, %zu bad, %zu as sent%s, %zu with "
+		    "more octets at the end; length - sent's:%s; %d stray "
+		    "EMs; %s\n", who, in.good.size(), in.bad.size(), same,
+		    extra ? (" (+" + std::to_string(extra) + ")").c_str() : "",
+		    longer, d.c_str(), in.stray, in.other.c_str());
+		if (in.stray && env(k ? "V80_STRAY_B" : "V80_STRAY_A").empty() &&
+		    (env("V80_ONLY").empty() || env("V80_ONLY")[0] == who))
+			ok = false;
+		if (!in.good.empty() && same < in.good.size()) {
+			size_t i = 0;
+			while (i < in.good.size() && i < want.size() &&
+			       in.good[i].size() == want[i].size() + extra &&
+			       !in.good[i].compare(0, want[i].size(), want[i]))
+				i++;
+			if (i < in.good.size() && i < want.size())
+				say("%c frame %zu: %s, sent %s\n", who, i,
+				    show(in.good[i].substr(0, 48)).c_str(),
+				    show(want[i].substr(0, 48)).c_str());
+		}
+		/* V80_ONLY=<A|B>: only that side's frames checked (the other's
+		   shown) */
+		std::string only = env("V80_ONLY");
+		if (!only.empty() && only[0] != who)
+			continue;
+		ok = ok && same == want.size() && in.good.size() == want.size();
+	}
+	return ok;
+}
+
 } // namespace
 
 /* (interop_call.h) the modems (through netsim with NET) set up with
@@ -970,6 +1217,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		dte.pump(atof(env("DATA_WAIT", "0.1").c_str()));
 		dte.buf[0].clear();
 		dte.buf[1].clear();
+		/* V80: V.80 frames both ways instead of the data */
+		if (!env("V80").empty())
+			done(v80_exchange(dte, rate));
 
 		std::string msg[2];
 		for (int c = 32; c < 127; c++)

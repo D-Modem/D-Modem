@@ -334,6 +334,11 @@ NRZI, V.34 half duplex (`<hd_auto>`, `<EM><pri>`, `<ctl>`...), retrains
 and renegotiations on the DTE's `<EM><rtn>` and `<EM><rrn>` (logged), the
 `<EM><rtn>`/`<rrn>` indications of the remote's, and staying off hook
 after `<EM><eot>`. +ES's 5 and 7 (Synchronous Mode, Frame Tunnelling
-Mode) are not taken. Nothing has been tried against another modem's
-V.80 yet: whether its receiver hands the FCS to the DTE is the first
-thing to check.
+Mode) are not taken.
+
+Against the other modems (`ctest -R _v80_`, [interop.md](interop.md#v80)):
+the Agere and Broadcom modems (one V.80 code) and the SM56 modem take
+our frames whole, with no FCS and with FCS-16, and we take theirs; the
+Intel modem takes ours, but its own end in 16 1s. Agere and Broadcom drop
+the FCS as we do (with a stray EM when an FCS octet needed shielding);
+the SM56 modem hands it to its DTE.

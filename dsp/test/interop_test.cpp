@@ -1381,6 +1381,58 @@ std::vector<Call> calls()
 	    "ATX3;AT+MS=34;AT\\N5%C2",
 	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6",
 	      "BULK=20000", "EXPECT_A=optimization 3\\.\n" });
+	/* --- V.80 Synchronous Access Mode (+ES=6 calling, 8 answering;
+	   docs/link.md, V.80): after CONNECT both DTEs go over to the
+	   framed sub-mode and send 20 frames each, every octet value among
+	   them, which the other DTE must get whole, each ended by
+	   <EM><flag>.  V.34, our transmitter at most 28800 bit/s (the SM56
+	   modem renegotiates down from 33600, and V.80 has no error
+	   correction to carry frames over it).  What the peers' DCEs do:
+	   - the Agere and Broadcom modems (the same V.80 code): no FCS or
+	     FCS-16 (their FCS-32 sends nothing, and gives the DTE nothing);
+	     a checked FCS is dropped, but by the octets of the shielded
+	     output, so an FCS octet 19h or 99h leaves a stray EM before the
+	     <EM><flag> (V80_STRAY);
+	   - the SM56 modem: FCS-16 calling, its DTE getting the FCS with
+	     each frame (V80_EXTRA); answering it takes no +ESA (any +ESA
+	     and it does not answer), so no FCS; its receiver hunts only
+	     from its own first frame (the exchange's warm-up frame);
+	   - the Intel modem: no FCS only, and its transmitter sends 16 1s
+	     in place of a frame's last two octets (as if there were an
+	     FCS), which every receiver takes for an abort: only its
+	     reception is checked (V80_ONLY);
+	   - HSF, PCTel and ESS have no Synchronous Access Mode (+ES=? has
+	     no 6 or 8) */
+	const std::string esa1 = "AT+ESA=0,0,0,0,1,0,255,255";
+	const std::string ours = "ATX3;AT+MS=34,1,2400,28800;AT+ES=6,0,8";
+	for (const char *p : { "agere", "broadcom" })
+		for (int crc : { 0, 1 }) {
+			std::string n = p, c = std::to_string(crc);
+			std::string esa = "AT+ESA=0,0,0,0," + c + ",0,255,255";
+			std::string theirs = "ATX3;AT+MS=V34;AT+ES=6,0,8;" + esa;
+			add(p, n + "_v80_crc" + c + "_" + n + "_calls", p, "open",
+			    theirs, { "V80=1", "NET=8000:9600:ulaw",
+				      "PROTO_B=" + ours + ";" + esa,
+				      "V80_STRAY_A=1" });
+			add(p, n + "_v80_crc" + c + "_open_calls", "open", p,
+			    ours + ";" + esa, { "V80=1", "NET=9600:8000:ulaw",
+					      "PROTO_B=" + theirs,
+					      "V80_STRAY_B=1" });
+		}
+	add("sm56", "sm56_v80_crc1_sm56_calls", "sm56", "open",
+	    "ATX3;AT+MS=V34;AT+ES=6,0,8;" + esa1,
+	    { "V80=1", "NET=8000:9600:ulaw", "PROTO_B=" + ours + ";" + esa1,
+	      "V80_EXTRA_A=2" });
+	add("sm56", "sm56_v80_open_calls", "open", "sm56", ours,
+	    { "V80=1", "NET=9600:8000:ulaw",
+	      "PROTO_B=ATX3;AT+MS=V34;AT+ES=6,0,8" });
+	add("intel", "intel_v80_intel_calls", "intel", "open",
+	    "ATX3;AT+MS=V34;AT+ES=6,0,8",
+	    { "V80=1", "INTEL_RATE=9600", "NET=9600:9600:ulaw",
+	      "PROTO_B=" + ours, "V80_ONLY=A" });
+	add("intel", "intel_v80_open_calls", "open", "intel", ours,
+	    { "V80=1", "INTEL_RATE=9600", "NET=9600:9600:ulaw",
+	      "PROTO_B=ATX3;AT+MS=V34;AT+ES=6,0,8", "V80_ONLY=B" });
 	/* --- the open modem on the emulated HD-audio modem codec
 	   (half_hda: an HD Audio controller and a Si3054, its codec at
 	   9600 Hz on the 8000 Hz line) and the open modem (9600 Hz): each

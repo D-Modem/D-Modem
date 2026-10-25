@@ -65,6 +65,14 @@ namespace interop {
  *   WAV=<file>        the line through netsim as a stereo WAV
  *   LOG_DIR=<dir>     modemA.log, modemB.log (default: the current dir)
  *   DBG=<level>       the modems' debug level (3)
+ *   V80=1             V.80: frames both ways in the framed sub-mode
+ *                     instead of the data (the AT commands ask for
+ *                     Synchronous Access Mode); V80_FRAMES=<n> (20),
+ *                     V80_EXTRA_A=<n> (_B): A's frames come with n
+ *                     octets more (a DCE that passes the FCS on)
+ *                     V80_STRAY_A=1 (_B): an EM before an EM allowed
+ *                     V80_ONLY=A (B): only A's (B's) frames checked;
+ *                     V80_PAD_A=<octets> (_B): after each of A's frames
  *   PIPE_SYNC=<n>     the line samples the modems take commands at (4800;
  *                     AGERE_SYNC, SM56_SYNC, ... default to it)
  */
