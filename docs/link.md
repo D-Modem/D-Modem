@@ -35,6 +35,10 @@ bits once a call has connected (C++, `namespace dlink`):
   See below.
 - **Asynchronous characters** (`Async`): start bit, 8 data bits, stop bit,
   for the modulations without V.42 and when the remote has no LAPM.
+- **V.80 Synchronous Access Mode** (`SyncAccess`, `v80.cpp`), instead of
+  all the above when the DTE asks for it (`AT+ES=6`, `AT+ES=,,8`
+  answering): the DTE's octets, with in-band commands after EM, as a
+  synchronous bit stream, transparent or as HDLC frames. See below.
 
 `Link` (`link.h`) puts them together. The modem core is its `Owner`: it
 gives and takes the DTE's characters, hears of the link's progress
@@ -77,7 +81,13 @@ first, after ODPs a V.42 answerer did not answer, in framing mode 2 and
 without the optimizations, with bit errors in both modes, a slow DTE (no
 credit), MNP required against a modem without it, N400 with the line
 cut; MNP 5's round trips (text, noise, runs, every value, flushes) and
-the Agere modem's MNP 5 octets decoded and coded again (`Mnp5`).
+the Agere modem's MNP 5 octets decoded and coded again (`Mnp5`). For
+V.80 (`V80*`): transparent octets both ways with the first underrun
+reported, all twenty shielding codes and DC1/DC3 with and without flow
+control, frames with no FCS, FCS-16 and FCS-32 with flags or marks
+between them, a bad FCS, the DTE's abort, underruns in a frame (an abort,
+or a flag and `<EM><resume>`'s count), the commands for the core,
+`<EM><bnum>` reports, and a receive overrun (`<EM><rover>`).
 
 ## V.44
 
@@ -268,3 +278,62 @@ passes over the "EM" ADPs and takes the "EC" after them (LAPM,
 a setup string written for a cellular-ready modem (CDS-9022's
 `AT&F;+MS=V32,1,4800,9600;-SEC=1,12;)M1;\N2`) ends in OK (the AT
 reference, "Setup strings from other modems").
+
+## V.80
+
+V.80's Synchronous Access Mode (8.8/V.80) is for DTEs that do their own
+framing over a modem: H.324 videophones (V.8's call function, H.223
+frames), V.42 or other protocols run in the DTE. The modem gives up error
+correction and compression and moves the DTE's octets as a synchronous
+bit stream: no start and stop bits on the line, and in-band commands in
+the DTE's stream after an EM (19h), both ways (Table 9/V.80).
+
+`AT+ES=6` (calling) or `AT+ES=,,8` (answering) asks for it; the call
+reports CONNECT once the data pump is up, as without error correction,
+and then the mode starts transparent:
+
+- **Transparent**: the DTE's octets go out least significant bit first;
+  the line's bits come back as octets at whatever alignment they have.
+  When the DTE has nothing, `+ESA`'s `<syn1>` goes out and the DTE hears
+  `<EM><under>` (once, until it sends again). The DCE does not hunt for
+  SYN octets (`<trans_idle>` 0, the mandatory value).
+- **Framed** (from the DTE's first `<EM><flag>`): HDLC frames with zero
+  insertion. The DTE ends each frame with `<EM><flag>`; the DCE adds the
+  FCS if `+ESA`'s `<crc_type>` asks (1: FCS-16, 2: FCS-32, 8.1.1.6/V.42)
+  and the flag. Between frames: flags or marks (`<framed_idle>`). A frame
+  the DTE leaves unfinished ends in an abort (`<framed_un_ov>` 0) or a
+  flag without FCS, the DTE's octets then dropped until `<EM><resume>`,
+  which `<EM><unum>` answers with their count (1); both with
+  `<EM><under>`. `<EM><err>` from the DTE sends an abort. The receiver
+  hunts for a flag (`<EM><err>` when it finds one), then gives each
+  frame's octets and `<EM><flag>` (whole octets, a good FCS) or
+  `<EM><err>`; when the DCE checks the FCS it keeps it back and drops it
+  (the DTE sent none either). Seven 1s are `<EM><mark>` and a new hunt.
+  `<EM><hunt>` starts one; `<EM><mark>` goes back to transparent.
+
+Towards the DTE, EM and 99h are always shielded (`<EM><t1>`, `<t2>`), DC1
+and DC3 too when it has DC1/DC3 flow control from the modem (`+IFC=,1`).
+From the DTE all the codes T1 to T20 are taken, and bare DC1 and DC3 are
+dropped when it flows the modem off with them (`+IFC=1`). What the DTE
+does not take waits in a ring of 2048 octets; past that the received
+octets are lost and `<EM><rover>` marks the place.
+
+The core (`core/modem.cpp`, the link's owner) does the rest: `<EM><ecs>`
+(the escape: `+++` is data here) answers `<EM><ecs>` and OK in online
+command state, and `ATO` goes back; `<EM><eot>` answers `<EM><eot>` and
+hangs up (NO CARRIER); the remote's carrier gone is `<EM><eot>` before NO
+CARRIER; `<EM><rate>` sets `+MS`'s highest rate from its `<tx>` code;
+`<EM><rate>` to the DTE when the pump's rates change in the call (V.34's
+renegotiations: Table 10's codes stop at 33600, faster rates are 2Eh).
+`+ITF`'s `<off>` limits what the DTE's buffer takes (`dte_space()`),
+and its `<report_period>` sends `<EM><bnum>` with what waits in the buffer
+(EM codes counted as octets) every so many 10 ms.
+
+Not there: the transparent receiver's hunt for SYN (`<trans_idle>` 1, 2),
+NRZI, V.34 half duplex (`<hd_auto>`, `<EM><pri>`, `<ctl>`...), retrains
+and renegotiations on the DTE's `<EM><rtn>` and `<EM><rrn>` (logged), the
+`<EM><rtn>`/`<rrn>` indications of the remote's, and staying off hook
+after `<EM><eot>`. +ES's 5 and 7 (Synchronous Mode, Frame Tunnelling
+Mode) are not taken. Nothing has been tried against another modem's
+V.80 yet: whether its receiver hands the FCS to the DTE is the first
+thing to check.

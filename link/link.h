@@ -11,7 +11,8 @@
  *    compression when both modems agree on it, or MNP 2 to 4 (V.42's
  *    alternative procedure, with MNP 5 compression) with a modem that
  *    has no LAPM, or plain asynchronous characters (start bit, 8 data
- *    bits, stop bit).
+ *    bits, stop bit); or, asked for instead of all that, V.80's
+ *    Synchronous Access Mode (v80.h).
  *
  *    The modem core is the Owner: it gives and takes the DTE's
  *    characters, hears of the link's progress and gets its log lines.
@@ -43,6 +44,7 @@
 #include "mnp5.h"
 #include "v42bis.h"
 #include "v44.h"
+#include "v80.h"
 
 namespace dlink {
 
@@ -79,6 +81,10 @@ struct Config {
 	s32 v44_codewords = V44_MAX_CODEWORDS;
 	s32 v44_max_string = V44_MAX_STRING;
 	s32 v44_history = V44_MAX_HISTORY;
+	/* V.80 Synchronous Access Mode (+ES=6, or 8 answering), with its
+	   settings, rather than any of the above */
+	bool sync = false;
+	SyncConfig sync_cfg;
 };
 
 /* the error correction a call has */
@@ -114,6 +120,15 @@ public:
 	virtual s32 tx_rate() { return 0; }
 	/* parameters agreed in an XID exchange */
 	virtual void negotiated(const Config &cfg) { (void)cfg; }
+	/* the DTE's in-band command in Synchronous Access Mode (<EM><rate>:
+	   tx and rx are its rate codes) */
+	virtual void sync_command(SyncCommand c, u8 tx, u8 rx) {
+		(void)c;
+		(void)tx;
+		(void)rx;
+	}
+	/* the DTE's octets waiting to go (for <EM><bnum>) */
+	virtual s32 tx_buffered() { return 0; }
 	/* one line of debug output (without the modem's name) */
 	virtual void log(const char *line) { (void)line; }
 protected:
@@ -143,6 +158,13 @@ public:
 	void stop();
 	/* characters flow only while online (the DTE is in data mode) */
 	void set_online(bool on) { online_ = on; }
+	/* (see set_online()) */
+	bool online() const { return online_; }
+	/* the call is in V.80's Synchronous Access Mode */
+	bool sync() const { return mode_ == Mode::Sync; }
+	/* Synchronous Access Mode: the indication <EM><code> (and n
+	   parameter octets) to the DTE, after what waits for it */
+	void sync_indicate(u8 code, const u8 *par = nullptr, s16 n = 0);
 
 	/* the data pump's bits: nbits bits in each byte of buf */
 	s32 get_bits(s16 nbits, u8 *buf, s32 n);
@@ -163,6 +185,12 @@ public:
 	}
 	/* the data pump's transmit rate (bit/s), 0 if not known */
 	s32 tx_rate() const { return owner_->tx_rate(); }
+	/* the DTE's octets waiting (the owner's) */
+	s32 tx_buffered() const { return owner_->tx_buffered(); }
+	/* the DTE's in-band command, to the owner */
+	void sync_command(SyncCommand c, u8 tx, u8 rx) {
+		owner_->sync_command(c, tx, rx);
+	}
 	/* the call's counts so far (kept after it, until the next init()),
 	   which the framers add to */
 	const Stats &stats() const { return stats_; }
@@ -219,7 +247,7 @@ private:
 	void end_detect();
 	void start_mnp(bool initiator, const BitQueue *rx);
 	void no_ec();
-	enum class Mode { Idle, Detect, Lapm, Mnp, Async };
+	enum class Mode { Idle, Detect, Lapm, Mnp, Async, Sync };
 	void run_timer();
 	s16 comp_read(u8 *buf, s16 n);
 	s16 comp_write(const u8 *buf, s16 n);
@@ -251,6 +279,7 @@ private:
 	V42bis enc_, dec_;
 	V44 enc44_, dec44_;
 	Mnp5 enc5_, dec5_;
+	SyncAccess sync_;
 	/* decoded characters the DTE has not taken yet */
 	u8 dec_out_[256];
 	s16 dec_head_ = 0, dec_count_ = 0;

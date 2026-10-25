@@ -209,6 +209,12 @@ struct LinkOwner final : public dlink::Owner {
 		m_.negotiated(c.comp, c.v44, c.dict_size, c.max_string,
 			      c.mnp5);
 	}
+	/* the DTE's in-band command (V.80) */
+	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx) override {
+		m_.sync_command(c, tx, rx);
+	}
+	/* the DTE's characters waiting (V.80's <EM><bnum>) */
+	s32 tx_buffered() override { return m_.xmit_count_; }
 	/* a line of the link's in the modem's log */
 	void log(const char *line) override { m_.logf("%s\n", line); }
 
@@ -703,8 +709,9 @@ void Modem::later(Later what, u32 samples)
  */
 
 /* the link's configuration for this call (our side's: caller_) from
-   +ES, S104 and S105, nothing in use yet; and whether the pumps may
-   skip V.42's detection phase (qc_lapm) */
+   +ES, S104 and S105, nothing in use yet (+ES=6, or 8 answering: V.80
+   Synchronous Access Mode instead of error correction); and whether the
+   pumps may skip V.42's detection phase (qc_lapm) */
 void Modem::setup_config()
 {
 	const u32 *es = kept("+ES");
@@ -744,6 +751,11 @@ void Modem::setup_config()
 		c.required = fbk >= 4 && fbk <= 6;
 		c.ec_detector = true;
 	}
+	c.sync = caller_ ? es[0] == 6 : es[2] == 8;
+	if (c.sync) {
+		c.ec = c.mnp = c.mnp_first = c.required = false;
+		c.ec_detector = false;
+	}
 	c.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
 	c.tx_win = c.rx_win = dlink::LAPM_MAX_WIN;
 	c.tx_info = c.rx_info = dlink::LAPM_MAX_INFO;
@@ -775,6 +787,21 @@ s16 Modem::link_init()
 	c.comp = cfg_.comp;
 	c.dict_size = cfg_.dict_size;
 	c.max_string = cfg_.max_string;
+	c.sync = cfg_.sync;
+	if (c.sync) {
+		/* +ESA: <trans_idle>, <framed_idle>, <framed_un_ov>,
+		   <hd_auto>, <crc_type>, <nrzi_en>, <syn1>, <syn2>; +ITF's
+		   <report_period>; +IFC's DC1/DC3 flow control */
+		const u32 *esa = kept("+ESA"), *itf = kept("+ITF");
+		const u32 *ifc = kept("+IFC");
+		c.sync_cfg.framed_idle = static_cast<s16>(esa[1]);
+		c.sync_cfg.framed_un_ov = static_cast<s16>(esa[2]);
+		c.sync_cfg.crc = static_cast<s16>(esa[4]);
+		c.sync_cfg.syn1 = static_cast<u8>(esa[6]);
+		c.sync_cfg.report_period = static_cast<s16>(itf[2]);
+		c.sync_cfg.dc_flow = ifc[0] == 1;
+		c.sync_cfg.shield_dc = ifc[1] == 1;
+	}
 	return link_->init(link_owner_, caller_, c);
 }
 
@@ -854,6 +881,8 @@ void Modem::update_status(Status s)
 			stats_.rx0 = rx_rate_;
 		}
 		report(Result::Connect);
+		sync_tx_ = tx_rate_;
+		sync_rx_ = rx_rate_;
 		if (sregs_[SREG_SPEAKER_CONTROL] & 1)
 			host_.speaker(*this, 0);
 		break;
@@ -890,6 +919,9 @@ void Modem::update_status(Status s)
 			result_ = Result::NoCarrier;
 			break;
 		}
+		/* V.80: the carrier's loss in band, before NO CARRIER */
+		if (state_ == ONLINE)
+			link_->sync_indicate(dlink::v80::EOT);
 		have_result_ = true;
 		hup(state_ == EC_DISC || state_ == DP_DISC);
 		break;
@@ -944,7 +976,8 @@ s32 Modem::dte_input(const char *buf, s32 n)
 		hup(true);
 		return n;
 	}
-	if (state_ == ONLINE)
+	/* (V.80's Synchronous Access Mode has <EM><ecs> instead) */
+	if (state_ == ONLINE && !link_->sync())
 		check_escape(buf, n);
 	while (k < n && xmit_count_ < xmit_size_) {
 		s16 run = xmit_size_ - xmit_head_;
@@ -957,13 +990,72 @@ s32 Modem::dte_input(const char *buf, s32 n)
 		xmit_count_ += run;
 		k += run;
 	}
-	if (k < n)
+	if (k < n) {
 		logf("DTE buffer full: %d of %d characters taken\n", k, n);
+		if (state_ == ONLINE)
+			link_->sync_indicate(dlink::v80::TOVER);
+	}
 	if (voice_drain_)
 		voice_drain();
 	if (command_)
 		at_process();
 	return k;
+}
+
+/* the room in the DTE's buffer; in V.80's Synchronous Access Mode
+   online, only up to +ITF's <off> octets (8.4/V.80: the DTE is flowed
+   off above it) */
+s16 Modem::dte_space() const
+{
+	s32 room = xmit_size_ - xmit_count_;
+	if (state_ == ONLINE && link_->sync()) {
+		s32 off = static_cast<s32>(kept("+ITF")[0]);
+		if (off - xmit_count_ < room)
+			room = off - xmit_count_;
+	}
+	return static_cast<s16>(room > 0 ? room : 0);
+}
+
+/* the DTE's in-band command in V.80's Synchronous Access Mode
+   (8.8.3, 8.8.4/V.80): <EM><ecs> online command state (confirmed with
+   <EM><ecs>, then OK; what the DTE sent after it waits for the command
+   interpreter), <EM><eot> the carrier's end (confirmed with <EM><eot>:
+   we hang up, NO CARRIER), <EM><rate> +MS's highest rate from <tx>;
+   retrains and renegotiations on request are not there (logged) */
+void Modem::sync_command(dlink::SyncCommand c, u8 tx, u8 rx)
+{
+	switch (c) {
+	case dlink::SyncCommand::Ecs:
+		if (state_ != ONLINE)
+			break;
+		link_->sync_indicate(dlink::v80::ECS);
+		set_state(COMMAND_ONLINE);
+		crlf();
+		report(Result::Ok);
+		command_ = true;
+		commands_due_ = xmit_count_ > 0;
+		break;
+	case dlink::SyncCommand::Eot:
+		if (state_ != ONLINE)
+			break;
+		link_->sync_indicate(dlink::v80::EOT);
+		set_cause(Cause::LocalHangup);
+		hup(true);
+		break;
+	case dlink::SyncCommand::Rate: {
+		u32 r = static_cast<u32>(dlink::v80::code_rate(tx));
+		logf("v80: rate %u (0x%02x), rx 0x%02x\n", r, tx, rx);
+		if (r && r >= min_rate_)
+			max_rate_ = r;
+		break;
+	}
+	case dlink::SyncCommand::Retrain:
+	case dlink::SyncCommand::Reneg:
+		logf("v80: %s asked: not supported\n",
+		     c == dlink::SyncCommand::Retrain ? "retrain" :
+		     "rate renegotiation");
+		break;
+	}
 }
 
 /* up to n of the DTE's characters, oldest first: how many */
@@ -1085,6 +1177,15 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 			stats_.tx_pow += static_cast<double>(out[i]) * out[i];
 		}
 		stats_.samples += n;
+	}
+	/* V.80: the rates after a retrain or renegotiation in band */
+	if (state_ == ONLINE && link_->sync() &&
+	    (tx_rate_ != sync_tx_ || rx_rate_ != sync_rx_)) {
+		u8 r[2] = { dlink::v80::rate_code(static_cast<s32>(tx_rate_)),
+			    dlink::v80::rate_code(static_cast<s32>(rx_rate_)) };
+		sync_tx_ = tx_rate_;
+		sync_rx_ = rx_rate_;
+		link_->sync_indicate(dlink::v80::RATE, r, 2);
 	}
 	count_ += n;
 	samples_at_ms_ = host_.now_ms();

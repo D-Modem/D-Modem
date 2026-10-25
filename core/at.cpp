@@ -169,8 +169,9 @@ bool taken(const char *p, s16 *len)
 	return false;
 }
 
-/* extended parameters kept with no effect but for +ES and +FAA (which
-   modem.cpp reads): the name, the values at the start, the range groups
+/* extended parameters kept with no effect but for +ES, +ESA, +ITF,
+   +IFC (in V.80's Synchronous Access Mode) and +FAA (which modem.cpp
+   reads): the name, the values at the start, the range groups
    (one a value) */
 const struct Kept {
 	const char *name;
@@ -188,7 +189,15 @@ const struct Kept {
 	{ "+MR", 1, { 0 }, "(0,1)" },
 	{ "+ER", 1, { 0 }, "(0,1)" },
 	{ "+DR", 1, { 0 }, "(0,1)" },
-	{ "+ES", 3, { 3, 0, 2 }, "(0-6),(0-4),(0-8)" },
+	/* +ES=6 (8 answering): V.80 Synchronous Access Mode, modem.cpp */
+	{ "+ES", 3, { 3, 0, 2 }, "(0-4,6),(0-4),(0-6,8)" },
+	/* V.80's Synchronous Access Mode (Table 8/V.80): <trans_idle>,
+	   <framed_idle>, <framed_un_ov>, <hd_auto>, <crc_type>, <nrzi_en>,
+	   <syn1>, <syn2>; and its transmit buffer (8.4): <off>, <on>
+	   (<off> above <on>), <report_period> */
+	{ "+ESA", 8, { 0, 0, 0, 0, 0, 0, 255, 255 },
+	  "(0),(0,1),(0,1),(0),(0-2),(0),(0-255),(0-255)" },
+	{ "+ITF", 3, { 383, 128, 0 }, "(1-4095),(0-4094),(0-500)" },
 	{ "+DS", 4, { 3, 0, 2048, 32 }, "(0-3),(0,1),(512-65535),(6-250)" },
 	{ "+DS44", 9, { 3, 0, 0, 2048, 2048, 255, 255, 6144, 6144 },
 	  "(0-3),(0,1),(0,1),(256-65535),(256-65535),(32-255),(32-255),"
@@ -1603,6 +1612,9 @@ s16 Modem::at_kept(const char *p, s16 *len)
 			break;
 		q++;
 	}
+	/* +ITF: <off> above <on> (8.4/V.80), else ERROR */
+	if (name == "+ITF" && v[0] <= v[1])
+		return -1;
 	dsp::copy_array(kept_[i], v);
 	kept_n_[i] = n;
 	if (name == "+ES")

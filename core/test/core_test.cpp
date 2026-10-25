@@ -886,6 +886,140 @@ TEST(Core, Log)
 	EXPECT_TRUE(log_lines > 0);
 }
 
+/* V.80 framed frames for the DCE: <EM><flag>, then each frame with
+   EM, 99h, DC1 and DC3 shielded and <EM><flag> after it */
+static std::string v80_frames(const std::vector<std::string> &frames)
+{
+	static const char em = 0x19;
+	std::string s = { em, (char)0xb1 };
+	for (const std::string &f : frames) {
+		for (char c : f) {
+			unsigned char u = (unsigned char)c;
+			int t = u == 0x19 ? 0x5c : u == 0x99 ? 0x76 :
+				u == 0x11 ? 0xa0 : u == 0x13 ? 0xa1 : -1;
+			if (t < 0) {
+				s += c;
+			} else {
+				s += em;
+				s += (char)t;
+			}
+		}
+		s += em;
+		s += (char)0xb1;
+	}
+	return s;
+}
+
+/* what a V.80 DCE gave its DTE, from the first <EM><err> (the
+   receiver's hunt finding a flag) on: the frames ended with <EM><flag>
+   (good) or <EM><err> (bad), as text "<frame>|" and "<frame>!" */
+static std::string v80_received(const std::string &got)
+{
+	size_t i = 0;
+	for (; i + 1 < got.size(); i++)
+		if (got[i] == 0x19 && (unsigned char)got[i + 1] == 0xb2)
+			break;
+	std::string out, frame;
+	for (i += 2; i < got.size(); i++) {
+		unsigned char c = (unsigned char)got[i];
+		if (c != 0x19 || i + 1 == got.size()) {
+			frame += (char)c;
+			continue;
+		}
+		unsigned char code = (unsigned char)got[++i];
+		switch (code) {
+		case 0x5c: frame += (char)0x19; break;
+		case 0x76: frame += (char)0x99; break;
+		case 0xa0: frame += (char)0x11; break;
+		case 0xa1: frame += (char)0x13; break;
+		case 0xb1: out += frame + "|"; frame.clear(); break;
+		case 0xb2: out += frame + "!"; frame.clear(); break;
+		default: out += "<" + std::to_string(code) + ">"; break;
+		}
+	}
+	return out + frame;
+}
+
+/* V.80 Synchronous Access Mode end to end (+ES=6 calling, 8
+   answering; +ESA's FCS-16): frames each way between the DTEs, then
+   <EM><ecs> (online command state, OK, ATO back), and <EM><eot>: the
+   carrier ends, NO CARRIER at both, <EM><eot> before it at the other */
+TEST(Core, V80)
+{
+	Pair p("+MS=132;+ES=6,,8;+ESA=,,,,1;+ITF=383,128,0");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ES?\r"), "+ES: 6,0,8\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ESA?\r"),
+		  "+ESA: 0,0,0,0,1,0,255,255\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ITF=10,20\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ES=5\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ESA=1\r"), "ERROR\r\n");
+	p.la.out.clear();
+
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	EXPECT_TRUE(p.got_a.find("CONNECT") != std::string::npos);
+	EXPECT_TRUE(p.got_b.find("CONNECT") != std::string::npos);
+	/* transparent at first: the DTE's first underrun reported */
+	size_t c = p.got_a.find("CONNECT");
+	EXPECT_TRUE(p.got_a.find("\x19\xb4", c) != std::string::npos);
+	/* both framed; the frames */
+	std::string fa = data('a', 200), fb = data('b', 120);
+	std::vector<std::string> to_b = { "hello", fa, std::string(1, 0x19) },
+		to_a = { fb, "x" };
+	std::string sa = v80_frames(to_b), sb = v80_frames(to_a);
+	EXPECT_EQ(p.a->dte_input(sa.data(), sa.size()), (int)sa.size());
+	EXPECT_EQ(p.b->dte_input(sb.data(), sb.size()), (int)sb.size());
+	p.got_a.clear();
+	p.got_b.clear();
+	p.run_until([](Pair &) { return false; }, 2000);
+	std::string want_b, want_a;
+	for (const std::string &f : to_b)
+		want_b += f + "|";
+	for (const std::string &f : to_a)
+		want_a += f + "|";
+	EXPECT_EQ(v80_received(p.got_b), want_b);
+	EXPECT_EQ(v80_received(p.got_a), want_a);
+	/* +++ is data here */
+	std::string plus = "+++";
+	p.run_until([](Pair &) { return false; }, 1100);
+	p.a->dte_input(plus.data(), plus.size());
+	p.run_until([](Pair &) { return false; }, 1500);
+	EXPECT_TRUE(p.got_a.find("OK") == std::string::npos);
+	/* <EM><ecs>: online command state */
+	p.got_a.clear();
+	std::string ecs = { 0x19, (char)0xbb };
+	p.a->dte_input(ecs.data(), ecs.size());
+	p.run_until([](Pair &q) {
+		return q.got_a.find("OK") != std::string::npos; }, 1000);
+	EXPECT_EQ(p.got_a, std::string("\x19\xbb\r\nOK\r\n"));
+	EXPECT_EQ(cmd(p.a, p.la, "ATO\r").find("CONNECT") != std::string::npos,
+		  true);
+	/* framed still: another frame */
+	p.got_b.clear();
+	std::string more = { 'o', 'k', 0x19, (char)0xb1 };
+	p.a->dte_input(more.data(), more.size());
+	p.run_until([](Pair &) { return false; }, 1000);
+	EXPECT_TRUE(p.got_b.find(std::string("ok\x19\xb1")) !=
+		    std::string::npos);
+	/* <EM><eot>: the carrier ends */
+	p.got_a.clear();
+	p.got_b.clear();
+	std::string eot = { 0x19, (char)0xba };
+	p.a->dte_input(eot.data(), eot.size());
+	EXPECT_TRUE(p.run_until([](Pair &q) {
+		return !q.a->started() && !q.b->started(); }, 20000));
+	EXPECT_EQ(p.got_a.substr(0, 2), std::string("\x19\xba"));
+	EXPECT_TRUE(p.got_a.find("NO CARRIER") != std::string::npos);
+	size_t e = p.got_b.find("\x19\xba");
+	EXPECT_TRUE(e != std::string::npos &&
+		    p.got_b.find("NO CARRIER", e) != std::string::npos)
+		<< "B: [" << p.got_b.substr(p.got_b.size() > 40 ?
+					   p.got_b.size() - 40 : 0) << "]";
+}
+
 INSTANTIATE_TEST_SUITE_P(Pumps, CoreCall, testing::Values(
 	Call{ "+MS=132", 14400, 20000 },
 	Call{ "+MS=34", 28800, 40000 },

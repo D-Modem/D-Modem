@@ -101,7 +101,8 @@ void Link::status(Status s)
 	owner_->status(s);
 }
 
-/* the data pump has connected (on: error correction is possible): the
+/* the data pump has connected (on: error correction is possible): V.80
+   Synchronous Access Mode when asked for, else the
    originator's MNP at once when it is first or alone (no LAPM), the
    detection phase (detect, or an answerer without LAPM: MNP's LR comes
    in it), LAPM straight away, or no error correction */
@@ -109,6 +110,19 @@ void Link::start(bool on, bool detect)
 {
 	mnp_tried_ = false;
 	proto_ = Protocol::None;
+	if (asked_.sync) {
+		/* V.80: no error correction, Synchronous Access Mode as
+		   soon as the DTE is online (Detected, then Up) */
+		cfg_.ec = false;
+		timer_ = 0;
+		timer_what_ = Timer::None;
+		push_pending = false;
+		owner_->status(Status::Detected);
+		mode_ = Mode::Sync;
+		sync_.start(this, asked_.sync_cfg);
+		owner_->status(Status::Up);
+		return;
+	}
 	if (!on || (!asked_.ec && !asked_.mnp)) {
 		no_ec();
 		return;
@@ -239,7 +253,8 @@ void Link::disconnect()
 
 /* the data pump's transmitter: n items of nbits bits from the mode's
    framer (marks when idle; MNP's octets, or HDLC frames in its data
-   phase); the bit timer and MNP's timers count them, and characters
+   phase; V.80's, whose <EM><bnum> timer counts them and whose output
+   to the DTE goes on); the bit timer and MNP's timers count them, and characters
    LAPM or MNP still holds are pushed on; returns n */
 s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 {
@@ -257,6 +272,11 @@ s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 		break;
 	case Mode::Async:
 		n = async_.get_bits(nbits, buf, n);
+		break;
+	case Mode::Sync:
+		n = sync_.get_bits(nbits, buf, n);
+		sync_.clock(static_cast<s32>(nbits) * n);
+		sync_.flush();
 		break;
 	case Mode::Idle:
 		memset(buf, (1 << nbits) - 1, n);
@@ -321,10 +341,25 @@ s32 Link::put_bits(s16 nbits, const u8 *buf, s32 n)
 		return n;
 	case Mode::Async:
 		return async_.put_bits(nbits, buf, n);
+	case Mode::Sync:
+		n = sync_.put_bits(nbits, buf, n);
+		sync_.flush();
+		return n;
 	case Mode::Idle:
 		break;
 	}
 	return n;
+}
+
+/* V.80: an indication from the owner (<EM><ecs>, <EM><eot>,
+   <EM><rate>...) to the DTE, after what the DTE has not taken yet;
+   nothing outside Synchronous Access Mode */
+void Link::sync_indicate(u8 code, const u8 *par, s16 n)
+{
+	if (mode_ != Mode::Sync)
+		return;
+	sync_.indicate(code, par, n);
+	sync_.flush();
 }
 
 /* XID: the directions both modems want (remote's P0, already from our

@@ -39,7 +39,7 @@
 #endif
 #endif
 
-namespace dlink { class Link; }
+namespace dlink { class Link; enum class SyncCommand; }
 
 namespace tones {
 struct Country;
@@ -202,8 +202,9 @@ public:
 	/* characters from the DTE: commands, or data when online; returns
 	   how many it took (see dte_space()) */
 	s32 dte_input(const char *buf, s32 n);
-	/* the characters dte_input() takes now */
-	s16 dte_space() const { return xmit_size_ - xmit_count_; }
+	/* the characters dte_input() takes now (in V.80's Synchronous
+	   Access Mode, up to +ITF's <off> in the buffer) */
+	s16 dte_space() const;
 	/* the line's samples, while started(): n in, n out */
 	void process(const s16 *in, s16 *out, s32 n);
 	/* the timers: what is due now; the ms until the next one, or -1 */
@@ -341,6 +342,8 @@ public:
 	/* what XID (or MNP's LRs) agreed */
 	void negotiated(s16 comp, bool v44, s32 dict_size,
 			s32 max_string, bool mnp5);
+	/* the DTE's in-band command in V.80's Synchronous Access Mode */
+	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx);
 	/* a debug line with the modem's name */
 	void logf(const char *fmt, ...) DMODEM_PRINTF(2, 3);
 
@@ -549,7 +552,11 @@ private:
 		bool v44;               /* V.44 rather than V.42bis */
 		bool mnp5;
 		bool mnp_on;            /* the call has MNP */
+		bool sync;              /* V.80 Synchronous Access Mode */
 	} cfg_ = {};
+	/* Synchronous Access Mode: the rates the DTE last heard of (an
+	   <EM><rate> when they change) */
+	u32 sync_tx_ = 0, sync_rx_ = 0;
 	dlink::Link *link_ = nullptr;
 	LinkOwner *link_owner_ = nullptr;
 

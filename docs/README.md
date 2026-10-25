@@ -14,7 +14,7 @@ The project's overview, building and usage are in the top
   - [V.91 digital to digital](dsp/v91.md)
   - [Fax](dsp/fax.md): class 1 modems and the T.30 fax machine
 - [The data link layer](link.md): V.42 (LAPM), MNP 2 to 4, V.42bis, V.44,
-  MNP 5
+  MNP 5, V.80 synchronous access
 - [The modem core](core.md): AT commands, S-registers, the call's state
   machine
 

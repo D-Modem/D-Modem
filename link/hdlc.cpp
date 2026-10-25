@@ -22,10 +22,6 @@ namespace dlink {
 /* the HDLC flag, 01111110 */
 static const u8 FLAG = 0x7e;
 
-/* the FCS-16 register before a frame, and after a whole good frame,
-   its FCS included (8.1.1.6.1/V.42) */
-static const u16 FCS_INIT = 0xffff, FCS_GOOD = 0xf0b8;
-
 enum {
 	RX_LOOKAHEAD = 18,      /* bits the HDLC receiver needs for a step:
 				   an octet, two inserted zeros, a flag */
@@ -51,32 +47,6 @@ enum {
    of a pattern, a pattern decided */
 enum { RX_NONE, RX_FIRST, RX_DECIDED };
 
-
-/*
- *    bit queues
- *
- */
-
-/* the k low bits of bits (the first on the line the most significant
-   of them) queued in q after those already there */
-static inline void queue_bits(BitQueue &q, u32 bits, s16 k)
-{
-	q.data = q.data << k | bits;
-	q.bit += k;
-}
-
-/* the oldest bit queued in q, taken */
-static inline s16 take_bit(BitQueue &q)
-{
-	return static_cast<s16>(q.data >> --q.bit & 1);
-}
-
-/* the 8 oldest bits queued in q (at least 8), left in it: the oldest
-   in the most significant */
-static inline u8 peek_octet(const BitQueue &q)
-{
-	return static_cast<u8>(q.data >> (q.bit - 8));
-}
 
 /* a start-stop character into q: start bit, the 8 data bits least
    significant first, stop bit */
@@ -341,22 +311,11 @@ void Detector::rx_scan()
  *
  */
 
-/* the FCS-16 (x^16 + x^12 + x^5 + 1, the register reflected) after one
-   more octet */
-static u16 fcs_add(u16 fcs, u8 c)
-{
-	fcs ^= c;
-	for (s16 i = 0; i < 8; i++)
-		fcs = fcs & 1 ? static_cast<u16>(fcs >> 1 ^ 0x8408) :
-			static_cast<u16>(fcs >> 1);
-	return fcs;
-}
-
 /* f empty, for the next frame */
 static void frame_reset(Frame &f)
 {
 	f.count = 0;
-	f.fcs = FCS_INIT;
+	f.fcs = FCS16_INIT;
 }
 
 /* a flag has ended frame f (bits: the data bits after its last whole
@@ -375,7 +334,7 @@ static void frame_end(Link *link, Framer *framer, Frame &f, s16 bits)
 		link->logf("hdlc: rx frame too short (%d octets).", f.count);
 		return;
 	}
-	if (f.fcs != FCS_GOOD) {
+	if (f.fcs != FCS16_GOOD) {
 		link->logf("hdlc: rx frame fcs error (%d octets).", f.count);
 		if (framer) {
 			link->stats().rx_errors++;
@@ -435,14 +394,14 @@ bool Hdlc::tx_fill()
 		if (framer_ && tx_on_ &&
 		    (tx_frame_ = framer_->next_tx_frame())) {
 			tx_frame_->count = 0;
-			tx_frame_->fcs = FCS_INIT;
+			tx_frame_->fcs = FCS16_INIT;
 			link_->stats().tx_frames++;
 		}
 		return true;
 	}
 	if (tx_frame_->count < tx_frame_->size) {
 		u8 c = tx_frame_->buf[tx_frame_->count++];
-		tx_frame_->fcs = fcs_add(tx_frame_->fcs, c);
+		tx_frame_->fcs = fcs16_add(tx_frame_->fcs, c);
 		put_byte(c);
 		return true;
 	}
@@ -501,13 +460,14 @@ void Hdlc::rx_scan()
 		return;
 	}
 	rx_frame_.buf[rx_frame_.count++] = octet;
-	rx_frame_.fcs = fcs_add(rx_frame_.fcs, octet);
+	rx_frame_.fcs = fcs16_add(rx_frame_.fcs, octet);
 }
 
-/* the loops of the four framers (MnpAsync's hooks are in mnp.cpp) */
+/* the loops of the five framers (MnpAsync's hooks are in mnp.cpp) */
 template class BitFramer<Async>;
 template class BitFramer<Detector>;
 template class BitFramer<Hdlc>;
 template class BitFramer<MnpAsync>;
+template class BitFramer<SyncAccess>;
 
 } // namespace dlink

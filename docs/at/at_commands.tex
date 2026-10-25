@@ -774,14 +774,74 @@ dialling settings; the others the USA's (\cmd{ATI7}: \cmd{Country: FIJI
 \begin{command}{plusES}{AT+ES=[\p{orig}][,[\p{orig\_fb}][,[\p{ans\_fb}]]], AT+ES?, AT+ES=?}
 V.250's error control selection (default \cmd{3,0,2}): as the
 originator, \p{orig} 0 or 1 none, 2 V.42 (LAPM) without the detection
-phase, 3 V.42 with it, 4 MNP first (no detection phase, no LAPM), and
+phase, 3 V.42 with it, 4 MNP first (no detection phase, no LAPM), 6
+V.80's Synchronous Access Mode (section~\ref{sec:v80}), and
 \p{orig\_fb} what may follow when that fails: 0 or 1 none, 2 V.42 or MNP
 or hang up, 3 V.42 only, 4 MNP only (and first); as the answerer,
 \p{ans\_fb} 0 or 1 none, 2 or 3 V.42, MNP or none, 4 V.42 or MNP or hang
-up, 5 V.42 only, 6 MNP only (7 and 8 as 2).  A parameter left out keeps
-its value; \cmd{=?} gives the ranges \cmd{(0-6),(0-4),(0-8)}.
+up, 5 V.42 only, 6 MNP only, 8 Synchronous Access Mode.  V.80's
+Synchronous Mode and Frame Tunnelling Mode (5 and 7, 7 and 9) are not
+there.  A parameter left out keeps its value; \cmd{=?} gives the ranges
+\cmd{(0-4,6),(0-4),(0-6,8)}.
 \cmdl[bsN]{\bs N} sets it, and it sets \sreg{103} to the \cmd{\bs N}
 with its values (as it was if none has them).
+\end{command}
+
+\subsection{V.80 Synchronous Access Mode: +ESA, +ITF}
+\label{sec:v80}
+
+With \cmdl[plusES]{+ES=6} (calling) or \cmd{+ES=,,8} (answering) the
+call has no error correction or compression: after CONNECT the modem
+moves the DTE's octets as a synchronous bit stream, with V.80's in-band
+commands after EM (19h) both ways (Table~9/V.80).  It starts in the
+transparent sub-mode: the DTE's octets go out as they are, least
+significant bit first, and the line's bits come back as octets; when the
+DTE has nothing the modem sends \p{syn1} and tells it
+\cmd{<EM><under>}.  \cmd{<EM><flag>} from the DTE starts the framed
+sub-mode: HDLC frames, each ended by the DTE's \cmd{<EM><flag>}, the
+modem adding the zero insertion, the flags and the FCS; it gives back
+each received frame's octets (without the FCS it checked) and
+\cmd{<EM><flag>} for a good one or \cmd{<EM><err>} for a bad one, an
+\cmd{<EM><err>} when its hunt finds a flag, and \cmd{<EM><mark>} for an
+abort or marks.  \cmd{<EM><mark>} from the DTE goes back to transparent.
+EM and 99h in the data are shielded both ways (\cmd{<EM><t1>},
+\cmd{<EM><t2>}; DC1 and DC3 too with DC1/DC3 flow control,
+\cmd{+IFC}); from the DTE all the codes T1 to T20 are taken.
+
+The other commands: \cmd{<EM><ecs>} (instead of \cmd{+++}, which is
+data) gives \cmd{<EM><ecs>}, then OK in online command state, where
+\cmd{ATO} goes back; \cmd{<EM><eot>} gives \cmd{<EM><eot>} and hangs up
+(NO CARRIER); \cmd{<EM><rate><tx><rx>} sets \cmd{+MS}'s highest rate from
+\p{tx}; \cmd{<EM><hunt>} restarts the framed receiver's hunt;
+\cmd{<EM><resume>} after an underrun (below).  The modem gives
+\cmd{<EM><eot>} before NO CARRIER when the remote's carrier goes,
+\cmd{<EM><rate><tx><rx>} when the rates change in the call,
+\cmd{<EM><rover>} where received octets were lost (the DTE took nothing
+for 2048 octets), \cmd{<EM><tover>} where its own were (the buffer
+full), and \cmd{<EM><bnum>} with \cmd{+ITF}.  Retrains and rate
+renegotiations on the DTE's request (\cmd{<EM><rtn>}, \cmd{<EM><rrn>})
+are not there, nor V.34's half duplex.
+
+\begin{command}{plusESA}{AT+ESA=[\p{trans\_idle}][,\p{framed\_idle}...][,\p{syn2}], AT+ESA?, AT+ESA=?}
+The Synchronous Access Mode's eight settings, each left out as it is (default
+\cmd{0,0,0,0,0,0,255,255}): \p{trans\_idle} 0 (the receiver does not
+hunt for SYN octets in the transparent sub-mode); \p{framed\_idle}
+between frames 0 flags, 1 marks; \p{framed\_un\_ov} when the DTE runs out
+in a frame, 0 an abort, 1 a flag (no FCS), the DTE's octets then dropped
+until its \cmd{<EM><resume>}, which \cmd{<EM><unum>} and their count
+answer (both: \cmd{<EM><under>}); \p{hd\_auto} 0; \p{crc\_type} 0 no FCS,
+1 FCS-16, 2 FCS-32 (V.42's); \p{nrzi\_en} 0; \p{syn1} the octet sent
+when the DTE has nothing in the transparent sub-mode; \p{syn2} kept.
+\cmd{=?} gives \cmd{(0),(0,1),(0,1),(0),(0-2),(0),(0-255),(0-255)}.
+\end{command}
+
+\begin{command}{plusITF}{AT+ITF=[\p{off}][,[\p{on}][,[\p{report\_period}]]], AT+ITF?, AT+ITF=?}
+The Synchronous Access Mode's transmit buffer (default \cmd{383,128,0}):
+the DTE's octets in it, EM codes included, stop being taken above
+\p{off} (\p{on} is kept; \p{off} must be above it, else ERROR), and with
+\p{report\_period} not 0 the modem gives \cmd{<EM><bnum>} with their
+number every \p{report\_period} times 10~ms.  \cmd{=?} gives
+\cmd{(1-4095),(0-4094),(0-500)}.
 \end{command}
 
 \subsection{Mode}
@@ -1204,7 +1264,8 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
   \thd{on other modems} \\
 \midrule
 \endhead
-+IFC & 2,2 & flow control, each way (0 to 3, 0 to 2) \\
++IFC & 2,2 & flow control, each way (0 to 3, 0 to 2; here DC1/DC3
+  in V.80's Synchronous Access Mode, section~\ref{sec:v80}) \\
 +ICF & 3,3 & the DTE's character framing \\
 +IPR & 0 & the DTE's rate (0 automatic, 300 to 921600) \\
 +ILRR & 0 & the DTE's rate reported \\

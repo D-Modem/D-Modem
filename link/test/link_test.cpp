@@ -1439,3 +1439,566 @@ TEST(Link, MnpMnp5)
 	CHECK(q.dc.up && q.da.up && !q.dc.agreed.mnp5 && !q.da.agreed.mnp5,
 	      "MNP 5 not agreed");
 }
+
+
+/*
+ *    V.80 Synchronous Access Mode
+ *
+ */
+
+namespace {
+
+/* a V.80 DTE: what it sends (EM-coded already) and what it got, the
+   in-band commands it gave the DCE, the octets it says wait in its
+   buffer */
+struct SyncDte : Owner {
+	std::vector<uint8_t> to_send, got;
+	size_t pos = 0;
+	bool up = false;
+	int accept = 1 << 30;
+	std::vector<int> commands;      /* SyncCommand, then rate codes */
+	int32_t buffered = 0;
+	/* the rest of to_send */
+	s16 read_chars(uint8_t *buf, s16 n) override {
+		int k = (int)std::min((size_t)n, to_send.size() - pos);
+		memcpy(buf, to_send.data() + pos, k);
+		pos += k;
+		return k;
+	}
+	/* up to accept characters into got */
+	s16 write_chars(const uint8_t *buf, s16 n) override {
+		if (n > accept)
+			n = accept;
+		got.insert(got.end(), buf, buf + n);
+		return n;
+	}
+	/* Up */
+	void status(Status s) override {
+		if (s == Status::Up)
+			up = true;
+	}
+	/* 9600 bit/s */
+	int32_t tx_rate() override { return 9600; }
+	/* the command (and <EM><rate>'s codes) */
+	void sync_command(SyncCommand c, u8 tx, u8 rx) override {
+		commands.push_back((int)c);
+		if (c == SyncCommand::Rate) {
+			commands.push_back(tx);
+			commands.push_back(rx);
+		}
+	}
+	/* buffered */
+	int32_t tx_buffered() override { return buffered; }
+	/* LINK_DEBUG */
+	void log(const char *line) override {
+		const char *v = getenv("LINK_DEBUG");
+		if (v && *v)
+			printf("    %s\n", line);
+	}
+};
+
+/* two Links in Synchronous Access Mode back to back, online from the
+   start; flip: the bit of the A to B stream to invert (-1 none) */
+struct SyncPair {
+	SyncDte da, db;
+	Link la, lb;
+	long flip = -1, sent = 0;
+
+	/* the call, each with its +ESA */
+	SyncPair(const SyncConfig &ca, const SyncConfig &cb) {
+		Config c;
+		c.sync = true;
+		c.sync_cfg = ca;
+		la.init(&da, true, c);
+		c.sync_cfg = cb;
+		lb.init(&db, false, c);
+	}
+	/* connected: the DTEs online */
+	void start() {
+		la.start(false, false);
+		lb.start(false, false);
+		la.set_online(true);
+		lb.set_online(true);
+	}
+	/* bits both ways; B's transmitter first (its DTE's commands, such
+	   as <EM><flag>, before A's bits come in) */
+	void run(long bits, int chunk = 48) {
+		std::vector<uint8_t> b(chunk);
+		for (long k = 0; k < bits; k += chunk) {
+			lb.get_bits(1, b.data(), chunk);
+			la.put_bits(1, b.data(), chunk);
+			la.get_bits(1, b.data(), chunk);
+			for (auto &x : b)
+				if (sent++ == flip)
+					x ^= 1;
+			lb.put_bits(1, b.data(), chunk);
+		}
+	}
+};
+
+/* in for the DCE: EM, 99h (and DC1, DC3 if dc) shielded with T1 to T4 */
+std::vector<uint8_t> shield(const std::vector<uint8_t> &in, bool dc = false)
+{
+	std::vector<uint8_t> v;
+	for (uint8_t c : in) {
+		int t = c == v80::EM ? v80::T1 : c == v80::EM8 ? v80::T2 :
+			dc && c == v80::DC1 ? v80::T3 :
+			dc && c == v80::DC3 ? v80::T4 : -1;
+		if (t >= 0) {
+			v.push_back(v80::EM);
+			v.push_back((uint8_t)t);
+		} else
+			v.push_back(c);
+	}
+	return v;
+}
+
+/* <EM><code> */
+void em(std::vector<uint8_t> &v, uint8_t code)
+{
+	v.push_back(v80::EM);
+	v.push_back(code);
+}
+
+/* what the DCE gave the DTE: octets as they are (0 to 255),
+   indications as 256 + code with their parameter octets after them */
+std::vector<int> events(const std::vector<uint8_t> &got)
+{
+	std::vector<int> e;
+	for (size_t i = 0; i < got.size(); i++) {
+		uint8_t c = got[i];
+		if (c != v80::EM || i + 1 == got.size()) {
+			e.push_back(c);
+			continue;
+		}
+		uint8_t code = got[++i];
+		static const uint8_t single[4] = { v80::T1, v80::T2, v80::T3,
+						   v80::T4 };
+		static const uint8_t octet[4] = { v80::EM, v80::EM8, v80::DC1,
+						  v80::DC3 };
+		bool done = false;
+		for (int k = 0; k < 4; k++)
+			if (code == single[k]) {
+				e.push_back(octet[k]);
+				done = true;
+			}
+		if (done)
+			continue;
+		e.push_back(256 + code);
+		int par = code == v80::BNUM || code == v80::UNUM ||
+			code == v80::RATE ? 2 : 0;
+		for (int k = 0; k < par && i + 1 < got.size(); k++)
+			e.push_back(got[++i]);
+	}
+	return e;
+}
+
+/* events as text, for a failed check: indications by their codes */
+std::string dump(const std::vector<int> &e, size_t max = 40)
+{
+	std::string s;
+	for (size_t i = 0; i < e.size() && i < max; i++) {
+		char b[16];
+		snprintf(b, sizeof(b), e[i] >= 256 ? " <%02x>" : " %02x",
+			 e[i] & 0xff);
+		s += b;
+	}
+	if (e.size() > max)
+		s += " ...";
+	return s;
+}
+
+/* the indication code as an event */
+int ind(uint8_t code)
+{
+	return 256 + code;
+}
+
+/* the events without the idle octets before the first other one
+   (transparent: what the line had before the data) */
+std::vector<int> after_idle(const std::vector<int> &e, int idle)
+{
+	size_t i = 0;
+	while (i < e.size() && e[i] == idle)
+		i++;
+	return std::vector<int>(e.begin() + (long)i, e.end());
+}
+
+/* frames for the DTE to send: <EM><flag> before the first and after
+   each */
+std::vector<uint8_t> framed(const std::vector<std::vector<uint8_t>> &f)
+{
+	std::vector<uint8_t> v;
+	em(v, v80::FLAG);
+	for (const auto &x : f) {
+		std::vector<uint8_t> s = shield(x);
+		v.insert(v.end(), s.begin(), s.end());
+		em(v, v80::FLAG);
+	}
+	return v;
+}
+
+/* the events of good frames f as B's DTE gets them after the hunt:
+   <EM><err> for the first flag, then each frame and <EM><flag> */
+std::vector<int> good_frames(const std::vector<std::vector<uint8_t>> &f)
+{
+	std::vector<int> e = { ind(v80::ERR) };
+	for (const auto &x : f) {
+		e.insert(e.end(), x.begin(), x.end());
+		e.push_back(ind(v80::FLAG));
+	}
+	return e;
+}
+
+/* a frame's octets: n random ones, with the octets that need care
+   (EM, 99h, DC1, DC3, a flag, 1s) among them */
+std::vector<uint8_t> frame_octets(size_t n)
+{
+	std::vector<uint8_t> v = noise(n);
+	static const uint8_t hard[] = { 0x19, 0x99, 0x11, 0x13, 0x7e, 0xff,
+					0xff, 0x7d, 0x3f };
+	for (size_t i = 0; i < sizeof(hard) && i * 7 < n; i++)
+		v[i * 7] = hard[i];
+	return v;
+}
+
+} // namespace
+
+/* transparent: the DTE's octets (EM and 99h shielded) go out as they
+   are; the line's octets come back to the other DTE, the idle SYN
+   octets too; each DTE hears of its first underrun */
+TEST(Link, V80Transparent)
+{
+	rnd_state = 4321;
+	SyncConfig c;
+	c.syn1 = 0xa5;
+	SyncPair p(c, c);
+	std::vector<uint8_t> data = frame_octets(500);
+	p.da.to_send = shield(data);
+	p.start();
+	p.run(6000);
+	CHECK(p.da.up && p.db.up, "up");
+	CHECK(p.la.sync() && !p.la.ec(), "synchronous access");
+	std::vector<int> a = events(p.da.got), b = events(p.db.got);
+	/* B's DTE: its own underrun first, then A's octets, then A's
+	   idle */
+	CHECK(!b.empty() && b[0] == ind(v80::UNDER), "B's underrun");
+	b.erase(b.begin());
+	CHECK(b.size() > data.size(), "B got %zu", b.size());
+	b.resize(std::min(b.size(), data.size() + 4));
+	std::vector<int> want(data.begin(), data.end());
+	want.insert(want.end(), 4, 0xa5);
+	CHECK(b == want, "B's octets:%s", dump(b).c_str());
+	/* A's DTE: B's idle octets, and its own underrun after its data */
+	CHECK(std::count(a.begin(), a.end(), ind(v80::UNDER)) == 1,
+	      "one underrun");
+	a.erase(std::remove(a.begin(), a.end(), ind(v80::UNDER)), a.end());
+	CHECK(after_idle(a, 0xa5).empty(), "A got only B's idle octets:%s",
+	      dump(a).c_str());
+}
+
+/* the 20 shielding codes from the DTE (both forms of EM), and DC1/DC3
+   shielded towards a DTE with DC1/DC3 flow control */
+TEST(Link, V80Shielding)
+{
+	SyncConfig ca, cb;
+	cb.shield_dc = true;
+	SyncPair p(ca, cb);
+	std::vector<uint8_t> s, want;
+	static const uint8_t oct[4] = { 0x19, 0x99, 0x11, 0x13 };
+	for (int i = 0; i < 4; i++) {
+		s.push_back(i & 1 ? v80::EM8 : v80::EM);
+		s.push_back((uint8_t)(v80::T1 + (i == 1 ? 0x1a :
+						 i ? 0x44 + i - 2 : 0)));
+		want.push_back(oct[i]);
+	}
+	/* T5 to T8 */
+	const uint8_t twice[4] = { v80::T5, v80::T6, v80::T7, v80::T8 };
+	for (int i = 0; i < 4; i++) {
+		em(s, twice[i]);
+		want.push_back(oct[i]);
+		want.push_back(oct[i]);
+	}
+	/* T9 to T20 */
+	int code = v80::T9;
+	for (int i = 0; i < 4; i++)
+		for (int j = 0; j < 4; j++)
+			if (i != j) {
+				em(s, (uint8_t)code++);
+				want.push_back(oct[i]);
+				want.push_back(oct[j]);
+			}
+	CHECK(code == v80::T20 + 1, "codes");
+	p.da.to_send = s;
+	p.start();
+	p.run(2000);
+	std::vector<int> b = events(p.db.got);
+	b.erase(b.begin());             /* B's own underrun */
+	b.resize(std::min(b.size(), want.size()));
+	CHECK(b == std::vector<int>(want.begin(), want.end()),
+	      "B got the octets");
+	/* every one shielded: no bare EM, 99h, DC1 or DC3 */
+	bool bare = false;
+	for (size_t i = 0; i < p.db.got.size(); i++) {
+		uint8_t c = p.db.got[i];
+		if (c == 0x99 || c == 0x11 || c == 0x13)
+			bare = true;
+		if (c == 0x19)
+			i++;
+	}
+	CHECK(!bare, "B's octets shielded");
+	/* DC1 and DC3 without flow control go to the DTE as they are */
+	SyncPair q(ca, ca);
+	q.da.to_send = { 0x11, 0x13 };
+	q.start();
+	q.run(500);
+	std::vector<uint8_t> g(q.db.got.begin() + 2, q.db.got.end());
+	CHECK(g.size() >= 2 && g[0] == 0x11 && g[1] == 0x13, "DC1 DC3 bare");
+	/* a DTE with DC1/DC3 flow control: its bare DC1 and DC3 are not
+	   data */
+	SyncConfig cf;
+	cf.dc_flow = true;
+	SyncPair r(cf, ca);
+	r.da.to_send = { 'a', 0x11, 'b', 0x13, 'c' };
+	r.start();
+	r.run(500);
+	std::vector<int> e = events(r.db.got);
+	CHECK(e.size() >= 4 && e[1] == 'a' && e[2] == 'b' && e[3] == 'c',
+	      "flow control characters dropped");
+}
+
+/* framed: frames with the octets that need care, with no FCS, FCS-16
+   and FCS-32, each received whole, between <EM><err> (the hunt's first
+   flag) and <EM><flag>s */
+TEST(Link, V80Framed)
+{
+	for (int crc = 0; crc <= 2; crc++) {
+		for (int idle = 0; idle <= 1; idle++) {
+			rnd_state = 777 + crc;
+			SyncConfig c;
+			c.crc = (s16)crc;
+			c.framed_idle = (s16)idle;
+			SyncPair p(c, c);
+			std::vector<std::vector<uint8_t>> f = {
+				frame_octets(1), frame_octets(64),
+				frame_octets(300), frame_octets(2) };
+			p.da.to_send = framed(f);
+			em(p.db.to_send, v80::FLAG);
+			p.start();
+			p.run(20000);
+			std::vector<int> b = events(p.db.got), want;
+			want = good_frames(f);
+			/* the frames go back to back (a flag between
+			   them); with marks after the last, <EM><mark> */
+			if (idle)
+				want.push_back(ind(v80::MARK));
+			CHECK(b == want, "crc %d, idle %d: %zu events, %zu "
+			      "wanted:%s", crc, idle, b.size(), want.size(),
+			      dump(b, 400).c_str());
+			CHECK(p.lb.stats().rx_frames == f.size(),
+			      "crc %d: %u frames", crc,
+			      p.lb.stats().rx_frames);
+			/* A's DTE: B's flags as octets until A's own
+			   <EM><flag> made it framed, then B's idle flags
+			   after its hunt (or its marks) */
+			std::vector<int> a = after_idle(events(p.da.got), 0x7e);
+			a = after_idle(a, 0xff);
+			CHECK(a == (idle ? std::vector<int>{} :
+				    std::vector<int>{ ind(v80::ERR) }),
+			      "crc %d: A's events:%s", crc, dump(a).c_str());
+		}
+	}
+}
+
+/* a bit inverted in a frame: <EM><err> at its end (the FCS checked),
+   the next frame good */
+TEST(Link, V80BadFcs)
+{
+	for (int crc = 1; crc <= 2; crc++) {
+		rnd_state = 99;
+		SyncConfig c;
+		c.crc = (s16)crc;
+		SyncPair p(c, c);
+		std::vector<std::vector<uint8_t>> f = {
+			std::vector<uint8_t>(200, 0x55), frame_octets(50) };
+		p.da.to_send = framed(f);
+		em(p.db.to_send, v80::FLAG);
+		p.flip = 48 + 8 * 100;          /* in the first frame */
+		p.start();
+		p.run(8000);
+		std::vector<int> b = events(p.db.got);
+		std::vector<int> tail = { ind(v80::ERR) };
+		tail.insert(tail.end(), f[1].begin(), f[1].end());
+		tail.push_back(ind(v80::FLAG));
+		CHECK(b.size() > tail.size() &&
+		      std::vector<int>(b.end() - (long)tail.size(), b.end()) ==
+		      tail, "crc %d: the bad frame's <err>, the good one",
+		      crc);
+		CHECK(b[0] == ind(v80::ERR), "crc %d: the hunt", crc);
+		CHECK(std::count(b.begin(), b.end(), ind(v80::FLAG)) == 1,
+		      "crc %d: one good frame", crc);
+		CHECK(p.lb.stats().rx_errors == 1 && p.lb.stats().rx_frames == 1,
+		      "crc %d: counts", crc);
+	}
+}
+
+/* the DTE's abort (<EM><err>) in a frame: the remote's DTE gets what
+   came, <EM><mark>, then the hunt's <EM><err> at the next flag */
+TEST(Link, V80Abort)
+{
+	SyncConfig c;
+	c.crc = 1;
+	SyncPair p(c, c);
+	std::vector<uint8_t> part = { 1, 2, 3, 4, 5 };
+	em(p.da.to_send, v80::FLAG);
+	p.da.to_send.insert(p.da.to_send.end(), part.begin(), part.end());
+	em(p.da.to_send, v80::ERR);
+	std::vector<uint8_t> f = { 9, 8, 7 };
+	p.da.to_send.insert(p.da.to_send.end(), f.begin(), f.end());
+	em(p.da.to_send, v80::FLAG);
+	em(p.db.to_send, v80::FLAG);
+	p.start();
+	p.run(4000);
+	/* the abort's octets that came are held back (they may be the
+	   FCS): only those before the last two reach the DTE */
+	std::vector<int> want = { ind(v80::ERR), 1, 2, 3, ind(v80::MARK),
+				  ind(v80::ERR), 9, 8, 7, ind(v80::FLAG) };
+	CHECK(events(p.db.got) == want, "abort, then a frame");
+}
+
+/* the DTE runs out in a frame: framed_un_ov 0, an abort; 1, a flag and
+   the DTE's octets dropped until <EM><resume>, which <EM><unum>
+   answers with their count */
+TEST(Link, V80Underrun)
+{
+	SyncConfig c;
+	c.crc = 1;
+	SyncPair p(c, c);
+	em(p.da.to_send, v80::FLAG);
+	for (int i = 0; i < 10; i++)
+		p.da.to_send.push_back((uint8_t)(0x40 + i));
+	em(p.db.to_send, v80::FLAG);
+	p.start();
+	p.run(2000);
+	CHECK(after_idle(events(p.da.got), 0x7e) == (std::vector<int>{
+		      ind(v80::ERR), ind(v80::UNDER) }),
+	      "A: abort's underrun:%s", dump(events(p.da.got)).c_str());
+	std::vector<int> b = events(p.db.got);
+	CHECK(b.size() >= 2 && b[b.size() - 2] == ind(v80::MARK) &&
+	      b.back() == ind(v80::ERR), "B: the abort, the hunt");
+
+	c.framed_un_ov = 1;
+	SyncPair q(c, c);
+	em(q.da.to_send, v80::FLAG);
+	for (int i = 0; i < 10; i++)
+		q.da.to_send.push_back((uint8_t)(0x40 + i));
+	em(q.db.to_send, v80::FLAG);
+	q.start();
+	q.run(2000);
+	CHECK(after_idle(events(q.da.got), 0x7e) == (std::vector<int>{
+		      ind(v80::ERR), ind(v80::UNDER) }),
+	      "A: flag's underrun:%s", dump(events(q.da.got)).c_str());
+	b = events(q.db.got);
+	CHECK(!b.empty() && b.back() == ind(v80::ERR),
+	      "B: the cut frame's FCS is bad");
+	/* octets after the underrun are dropped, then <EM><resume> */
+	std::vector<uint8_t> drop;
+	for (int i = 0; i < 300; i++)
+		drop.push_back((uint8_t)i);
+	drop = shield(drop);
+	q.da.to_send.insert(q.da.to_send.end(), drop.begin(), drop.end());
+	em(q.da.to_send, v80::RESUME);
+	size_t nb = q.db.got.size();
+	q.run(4000);
+	std::vector<int> a = after_idle(events(q.da.got), 0x7e);
+	CHECK(a.size() == 5 && a[2] == ind(v80::UNUM) &&
+	      a[3] == ((300 & 0x7f) << 1) && a[4] == ((300 >> 7) << 1),
+	      "A: <unum> 300:%s", dump(a).c_str());
+	CHECK(q.db.got.size() == nb, "B: nothing more");
+	/* then a frame goes */
+	std::vector<uint8_t> f = { 'o', 'k' };
+	q.da.to_send.insert(q.da.to_send.end(), f.begin(), f.end());
+	em(q.da.to_send, v80::FLAG);
+	q.run(2000);
+	b = events(q.db.got);
+	CHECK(b.size() >= 3 && b[b.size() - 3] == 'o' &&
+	      b[b.size() - 2] == 'k' && b.back() == ind(v80::FLAG),
+	      "B: the frame after the resume");
+}
+
+/* back to transparent (<EM><mark>) and framed again; the DTE's other
+   commands to the owner; <EM><bnum> every report period */
+TEST(Link, V80Commands)
+{
+	SyncConfig c;
+	c.report_period = 1;            /* 10 ms: 96 bits at 9600 bit/s */
+	SyncPair p(c, SyncConfig());
+	std::vector<uint8_t> &s = p.da.to_send;
+	em(s, v80::ECS);
+	em(s, v80::RTN);
+	em(s, v80::RRN);
+	s.push_back(v80::EM);
+	s.push_back(v80::RATE);
+	s.push_back(0x2c);
+	s.push_back(0x24);
+	em(s, v80::EOT);
+	em(s, 0x60);                    /* not one: ignored */
+	s.push_back('x');
+	p.da.buffered = 300;
+	p.start();
+	p.run(96 * 10);
+	std::vector<int> want = { (int)SyncCommand::Ecs,
+		(int)SyncCommand::Retrain, (int)SyncCommand::Reneg,
+		(int)SyncCommand::Rate, 0x2c, 0x24, (int)SyncCommand::Eot };
+	CHECK(p.da.commands == want, "commands");
+	std::vector<int> a = events(p.da.got);
+	long reports = 0;
+	for (size_t i = 0; i + 2 < a.size(); i++)
+		if (a[i] == ind(v80::BNUM)) {
+			reports++;
+			CHECK(a[i + 1] == ((300 & 0x7f) << 1) &&
+			      a[i + 2] == ((300 >> 7) << 1), "bnum 300");
+		}
+	CHECK(reports >= 9 && reports <= 11, "%ld reports", reports);
+	CHECK(v80::rate_code(33600) == 0x2e && v80::rate_code(1200) == 0x20 &&
+	      v80::rate_code(28800) == 0x2c && v80::rate_code(56000) == 0x2e &&
+	      v80::code_rate(0x24) == 9600 && v80::code_rate(0x30) == 0,
+	      "rate codes");
+	/* framed, then transparent: B's octets as they come again */
+	SyncPair q{SyncConfig(), SyncConfig()};
+	q.da.to_send = framed({ { 1, 2, 3 } });
+	em(q.da.to_send, v80::MARK);
+	q.da.to_send.insert(q.da.to_send.end(), 100, 0x42);
+	em(q.db.to_send, v80::FLAG);
+	q.start();
+	q.run(2000);
+	em(q.db.to_send, v80::MARK);
+	q.run(2000);
+	std::vector<int> b = events(q.db.got);
+	CHECK(b.size() > 5 && b[0] == ind(v80::ERR) && b[1] == 1 &&
+	      b[4] == ind(v80::FLAG), "B: the frame");
+	/* A idles with SYN octets (FFh) after its 42hs: B transparent
+	   again gets them as octets */
+	CHECK(b.size() > 20 &&
+	      std::count(b.end() - 20, b.end(), 0xff) == 20,
+	      "B: transparent octets:%s", dump(b, 400).c_str());
+}
+
+/* the DTE takes nothing for a while: the ring fills, the octets after
+   are lost and <EM><rover> marks the place */
+TEST(Link, V80ReceiveOverrun)
+{
+	SyncPair p{SyncConfig(), SyncConfig()};
+	p.da.to_send.assign(6000, 0x42);
+	p.db.accept = 0;
+	p.start();
+	p.run(8 * 3000);
+	p.db.accept = 1 << 30;
+	p.run(8 * 4000);
+	std::vector<int> b = events(p.db.got);
+	long rovers = std::count(b.begin(), b.end(), ind(v80::ROVER));
+	CHECK(rovers == 1, "%ld <rover>s", rovers);
+	auto r = std::find(b.begin(), b.end(), ind(v80::ROVER));
+	CHECK(r - b.begin() > 2000 && r - b.begin() < 2100,
+	      "<rover> after the ring's octets (%ld)", (long)(r - b.begin()));
+}

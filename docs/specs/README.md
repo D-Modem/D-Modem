@@ -30,6 +30,7 @@ links below the table then work.
 | [V.42](https://www.itu.int/rec/T-REC-V.42) | Error correction (LAPM) | `link/lapm.cpp`, `link/hdlc.cpp` | [V.42.pdf](V.42.pdf) |
 | [V.42bis](https://www.itu.int/rec/T-REC-V.42bis) | Data compression | `link/v42bis.cpp` | [V.42bis.pdf](V.42bis.pdf) |
 | [V.44](https://www.itu.int/rec/T-REC-V.44) | Data compression (LZJH) | `link/v44.cpp` | [V.44.pdf](V.44.pdf) |
+| [V.80](https://www.itu.int/rec/T-REC-V.80) | Synchronous access mode (in-band DTE control) | `link/v80.cpp`, `core/modem.cpp` | [V.80.pdf](V.80.pdf) |
 | [V.90](https://www.itu.int/rec/T-REC-V.90) | 56000 bit/s downstream, digital modem | `dsp/v90.cpp`, `dsp/dp_v34.cpp` | [V.90.pdf](V.90.pdf) |
 | [V.91](https://www.itu.int/rec/T-REC-V.91) | PCM between two digital modems | `dsp/v91.cpp` | [V.91.pdf](V.91.pdf) |
 | [V.92](https://www.itu.int/rec/T-REC-V.92) | Quick connect, modem-on-hold, PCM upstream | `dsp/v92.cpp`, `dsp/dp_v34.cpp` | [V.92.pdf](V.92.pdf) |

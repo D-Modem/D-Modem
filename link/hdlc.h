@@ -48,6 +48,42 @@ struct BitQueue {
 	void clear() { bit = 0; data = 0; }
 };
 
+/* the k low bits of bits (the first on the line the most significant
+   of them) queued in q after those already there */
+inline void queue_bits(BitQueue &q, u32 bits, s16 k)
+{
+	q.data = q.data << k | bits;
+	q.bit += k;
+}
+
+/* the oldest bit queued in q, taken */
+inline s16 take_bit(BitQueue &q)
+{
+	return static_cast<s16>(q.data >> --q.bit & 1);
+}
+
+/* the 8 oldest bits queued in q (at least 8), left in it: the oldest
+   in the most significant */
+inline u8 peek_octet(const BitQueue &q)
+{
+	return static_cast<u8>(q.data >> (q.bit - 8));
+}
+
+/* the FCS-16 register before a frame, and after a whole good frame,
+   its FCS included (8.1.1.6.1/V.42) */
+const u16 FCS16_INIT = 0xffff, FCS16_GOOD = 0xf0b8;
+
+/* the FCS-16 (x^16 + x^12 + x^5 + 1, the register reflected) after one
+   more octet */
+inline u16 fcs16_add(u16 fcs, u8 c)
+{
+	fcs ^= c;
+	for (s16 i = 0; i < 8; i++)
+		fcs = fcs & 1 ? static_cast<u16>(fcs >> 1 ^ 0x8408) :
+			static_cast<u16>(fcs >> 1);
+	return fcs;
+}
+
 /* who sends and receives the frames */
 class Framer {
 public:
