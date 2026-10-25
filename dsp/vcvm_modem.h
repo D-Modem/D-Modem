@@ -80,6 +80,8 @@ public:
 	const VcvmLoading &tx_loading() const { return txl_; }
 	/* the round trip the start-up measured, ms (-1 before) */
 	s16 rtt_ms() const { return rtt_ms_; }
+	/* both DCEs indicated V.44's preset dictionary (INFO0) */
+	bool v44_preset() const { return su_ && su_->v44_preset(); }
 	/* the renegotiations completed */
 	s32 renegotiations() const { return renegs_; }
 	/* the retrains */

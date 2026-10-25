@@ -15,6 +15,7 @@
 
 #include "dm_types.h"
 #include "bits.h"
+#include "env.h"
 #include "vcvm_startup.h"
 
 namespace dsp {
@@ -69,6 +70,8 @@ s16 VcvmStartup::init(const Config &c)
 	info0_.modes = info0_modes(allowed_);
 	info0_.combs = vcvm_probe_combs(c.fs, allowed_);
 	info0_.rings = allowed_ & VCVM_M_RINGS;
+	/* V.44's preset dictionary (DSP_VCVM_V44DICT=0: not, a test) */
+	info0_.v44dict = env_int("DSP_VCVM_V44DICT", 1) != 0;
 	info0_.level = c.level;
 	if (!info0_.combs)
 		return -1;

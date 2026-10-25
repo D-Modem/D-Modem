@@ -15,7 +15,6 @@
 
 #include "dm_types.h"
 #include "dsp.h"
-#include "env.h"
 #include "fax_hdlc.h"
 #include "vcvm_startup.h"
 
@@ -34,25 +33,24 @@ u8 VcvmCaps::modes() const
 				    (param ? 0x01 : 0));
 }
 
-/* the field's two octets to o: the version, 16000 Hz, fax, rings and
-   the preset dictionary, then the modes */
-void VcvmCaps::encode(u8 o[2]) const
+/* the field's octets to o: the version, 16000 Hz, fax and rings (bits
+   2 and 1 0), then the modes */
+void VcvmCaps::encode(u8 o[VCVM_FIELD_OCTETS]) const
 {
 	o[0] = static_cast<u8>(((version & 7) << 5) | (fs16 ? 0x10 : 0) |
-			 (fax ? 0x08 : 0) | (rings ? 0x04 : 0) |
-			 (v44dict ? 0x02 : 0));
+			 (fax ? 0x08 : 0) | (rings ? 0x04 : 0));
 	o[1] = modes();
 }
 
 /* see vcvm_startup.h */
-VcvmCaps VcvmCaps::decode(const u8 o[2])
+VcvmCaps VcvmCaps::decode(const u8 *o, s16 n)
 {
 	VcvmCaps c;
 	c.version = 1;
 	c.fs16 = o[0] & 0x10;
 	c.fax = o[0] & 0x08;
 	c.rings = o[0] & 0x04;
-	c.v44dict = o[0] & 0x02;
+	(void)n;
 	c.wide = o[1] & 0x20;
 	c.wide400 = o[1] & 0x10;
 	c.dpsk8 = o[1] & 0x08;
@@ -62,7 +60,7 @@ VcvmCaps VcvmCaps::decode(const u8 o[2])
 	return c;
 }
 
-/* see vcvm_startup.h: 6 octets */
+/* see vcvm_startup.h */
 s16 vcvm_nsf_build(const VcvmCaps &c, u8 *out)
 {
 	out[0] = VCVM_T35_COUNTRY;
@@ -70,7 +68,7 @@ s16 vcvm_nsf_build(const VcvmCaps &c, u8 *out)
 	out[2] = VCVM_T35_PROVIDER1;
 	out[3] = VCVM_NSF_ID;
 	c.encode(out + 4);
-	return 6;
+	return 4 + VCVM_FIELD_OCTETS;
 }
 
 /* the identifier and a field that reads as one: a version, the
@@ -93,7 +91,7 @@ bool vcvm_nsf_find(const u8 *p, s16 n, VcvmCaps *c)
 			at = i;
 	if (at < 0)
 		return false;
-	*c = VcvmCaps::decode(p + at + 1);
+	*c = VcvmCaps::decode(p + at + 1, static_cast<s16>(n - at - 1));
 	return true;
 }
 
@@ -101,22 +99,20 @@ bool vcvm_nsf_find(const u8 *p, s16 n, VcvmCaps *c)
 s16 vcvm_v8_ns(const VcvmCaps &c, u8 *out)
 {
 	/* the NS field: K + L + M + 1, the country (K = 1), L = 2, the
-	   provider, the identifier and the field (M = 3) */
-	u8 f[8], nsf[6];
+	   provider, the identifier and the field (M = 1 + its octets) */
+	enum { NF = 1 + 4 + 1 + VCVM_FIELD_OCTETS };
+	u8 f[NF], nsf[4 + VCVM_FIELD_OCTETS];
 	vcvm_nsf_build(c, nsf);
-	f[0] = 7;
+	f[0] = NF - 1;
 	f[1] = nsf[0];
 	f[2] = 2;
-	f[3] = nsf[1];
-	f[4] = nsf[2];
-	f[5] = nsf[3];
-	f[6] = nsf[4];
-	f[7] = nsf[5];
+	for (s16 k = 1; k < 4 + VCVM_FIELD_OCTETS; k++)
+		f[2 + k] = nsf[k];
 	s16 n = 0;
 	out[n++] = 0x0F;
-	for (s16 b = 0; b < 8 * 8; b += 5) {
+	for (s16 b = 0; b < NF * 8; b += 5) {
 		u16 v = 0;
-		for (s16 i = 0; i < 5 && b + i < 64; i++)
+		for (s16 i = 0; i < 5 && b + i < NF * 8; i++)
 			v |= static_cast<u16>(
 				     (f[(b + i) / 8] >> ((b + i) % 8)) & 1)
 			     << i;
@@ -155,11 +151,15 @@ bool vcvm_v8_find(const u8 *msg, s16 n, VcvmCaps *c)
 				continue;
 			q += 1 + f[q];
 			if (q + 3 <= e && f[q] == VCVM_NSF_ID) {
-				const u8 inf[3] = { f[q], f[q + 1], f[q + 2] };
-				/* nsf_at's checks, on the field alone */
+				const u8 *inf = &f[q];
+				/* nsf_at's checks, on the field alone; its
+				   octets the rest of the block (2 from a DCE
+				   before octet 3) */
 				if ((inf[1] >> 5) && !(inf[1] & 1) &&
 				    (inf[2] & 0xC0) == 0xC0) {
-					*c = VcvmCaps::decode(inf + 1);
+					*c = VcvmCaps::decode(
+						inf + 1,
+						static_cast<s16>(e - q - 1));
 					return true;
 				}
 			}
@@ -177,7 +177,6 @@ VcvmCaps vcvm_caps_for(s16 modes, s32 fs)
 	c.dpsk8 = modes & VCVM_M_8DPSK;
 	c.rings = modes & VCVM_M_RINGS;
 	c.param = modes & VCVM_M_PARAM;
-	c.v44dict = env_int("DSP_VCVM_V44DICT", 1) != 0;
 	return c;
 }
 
@@ -216,7 +215,8 @@ s16 VcvmInfo0::encode(u8 *o) const
 			o[1] |= static_cast<u8>(0x80 >> c);
 	o[2] = static_cast<u8>((combs & 0x100 ? 0x80 : 0) |
 			 (quick_offer ? 0x40 : 0) | (quick_accept ? 0x20 : 0) |
-			 (rings ? 0x10 : 0));
+			 (rings ? 0x10 : 0) | (v44dict ? 0x08 : 0) |
+			 (zstd ? 0x04 : 0));
 	o[3] = static_cast<u8>(std::min<s16>(std::max<s16>(level, 0), 255));
 	return 4;
 }
@@ -236,6 +236,8 @@ s16 VcvmInfo0::decode(const u8 *o, s16 n)
 	quick_offer = o[2] & 0x40;
 	quick_accept = o[2] & 0x20;
 	rings = o[2] & 0x10;
+	v44dict = o[2] & 0x08;
+	zstd = o[2] & 0x04;
 	level = o[3];
 	return 0;
 }

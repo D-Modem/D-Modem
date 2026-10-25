@@ -81,9 +81,7 @@ s16 VcvmPump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_,
 	c.su.fs = 8000;
 	c.su.modes = info_ ? info_->modes : VCVM_M_ALL;
 	c.su.own = vcvm_caps_for(c.su.modes, 8000);
-	c.su.peer = VcvmCaps::decode(rt->vcvm_info);
-	if (info_)
-		info_->v44_preset = c.su.own.v44dict && c.su.peer.v44dict;
+	c.su.peer = VcvmCaps::decode(rt->vcvm_info, VCVM_FIELD_OCTETS);
 	if (mdm_.init(c, [this]() { return source(); },
 		      [this](const u8 *d, s32 n) { sink(d, n); }))
 		return -1;
@@ -158,6 +156,7 @@ void VcvmPump::report()
 	info_->code_rate = r.rate;
 	info_->renegs = mdm_.renegotiations();
 	info_->erasures = mdm_.rx_stats().erasures;
+	info_->v44_preset = mdm_.v44_preset();
 }
 
 /* cnt of the line's samples in, cnt out, through the modem at 8000 Hz:

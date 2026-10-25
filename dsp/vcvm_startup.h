@@ -51,6 +51,10 @@ namespace dsp {
  *    Annex A: the capabilities
  */
 
+/* the information field's octets (Table A.1); a later DCE's may have
+   more, which this one passes over */
+#define VCVM_FIELD_OCTETS       2
+
 /* the information field (Table A.1) */
 struct VcvmCaps {
 	s16 version = 1;
@@ -63,12 +67,15 @@ struct VcvmCaps {
 	bool sym22 = true;      /* the 22.5 ms symbol */
 	bool quick = false;     /* quick start, 10.10 */
 	bool param = true;      /* the parametric mode, 10.6 */
-	bool v44dict = true;    /* octet 1 bit 2: V.44's preset dictionary
-				   of Annex E (11.1) */
 
-	void encode(u8 o[2]) const;
-	/* a field of another version: version 1 and the bits it knows */
-	static VcvmCaps decode(const u8 o[2]);
+	/* VCVM_FIELD_OCTETS octets.  Octet 1 bit 1 is always 0: with it
+	   set, the field in a V.8bis non-standard block would read as
+	   K56flex's to a K56flex client (Annex A.2).  (What the link layer
+	   can do goes in INFO0, not here: V.8's messages stay short) */
+	void encode(u8 o[VCVM_FIELD_OCTETS]) const;
+	/* a field of n octets (2 or more; of another version: version 1
+	   and the bits it knows) */
+	static VcvmCaps decode(const u8 *o, s16 n);
 	u8 modes() const;       /* octet 2: the modes */
 	s32 fs() const { return fs16 ? 16000 : 8000; }
 };
@@ -82,7 +89,7 @@ struct VcvmCaps {
 #define VCVM_T35_PROVIDER1      0x00
 
 /* the non-standard facilities' octets (country, provider, 'C', the
-   field): their number */
+   field): their number (6) */
 s16 vcvm_nsf_build(const VcvmCaps &c, u8 *out);
 /* the field in non-standard facilities' octets, if there */
 bool vcvm_nsf_find(const u8 *p, s16 n, VcvmCaps *c);
@@ -92,7 +99,7 @@ bool vcvm_nsf_find(const u8 *p, s16 n, VcvmCaps *c);
    country code, the provider code's length, the provider code, then the
    identifier and the information field) in extension octets of five
    bits each (b0-b2 and b6-b7), the field's bits least significant
-   first.  Its octets to out (21 at most): their number */
+   first.  Its octets to out (21 at most; 14): their number */
 s16 vcvm_v8_ns(const VcvmCaps &c, u8 *out);
 /* the information field among a CM's or JM's octets, if there */
 bool vcvm_v8_find(const u8 *msg, s16 n, VcvmCaps *c);
@@ -107,8 +114,7 @@ enum {
 };
 
 /* this DCE's information field for +CVM's mode set (VCVM_M_*) at the
-   signal interface's fs (DSP_VCVM_V44DICT=0: without the preset
-   dictionary, for a test) */
+   signal interface's fs */
 VcvmCaps vcvm_caps_for(s16 modes, s32 fs);
 
 /* what both DCEs have and the mode set allows, as VCVM_M_* bits */
@@ -125,6 +131,10 @@ struct VcvmInfo0 {
 	bool quick_offer = false, quick_accept = false;
 	bool rings = true;      /* octet 3 bit 5: the amplitude rings allowed
 				   (where both have them) */
+	bool v44dict = false;   /* octet 3 bit 4: V.44's preset dictionary
+				   of Annex E (11.1) */
+	bool zstd = false;      /* octet 3 bit 3: zstd, allocated, not
+				   specified yet: always 0 */
 	s16 level = 6;          /* the transmit level, 0.5 dB below -9 dBFS */
 
 	s16 encode(u8 *o) const;                /* 4 octets */
@@ -432,6 +442,8 @@ public:
 	/* the end of the last message received (phase 4's signal is
 	   looked for from there) */
 	s32 last_rx_end() const { return last_rx_end_; }
+	/* both INFO0s have V.44's preset dictionary (Annex E) */
+	bool v44_preset() const { return info0_.v44dict && peer0_.v44dict; }
 	/* what happened, a line a step */
 	const std::string &log() const { return log_; }
 

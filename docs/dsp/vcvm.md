@@ -58,9 +58,9 @@ from the same text, the Recommendation's Annex E
 HTTP, mail, HTML, JSON and XML, NMEA sentences, logins and common English,
 7-bit characters only (so that V.44's ordinals stay 7 bits).
 
-- **Indication.** The information field's octet 1 bit 2 (bit 1 is still
-  reserved), in V.8's CM and JM. A DCE whose peer does not set it runs
-  V.44 as it is. `DSP_VCVM_V44DICT=0` leaves it out (a test).
+- **Indication.** INFO0's octet 3 bit 4, in phase 2 (not V.8's field: see
+  below). A DCE whose peer does not set it runs V.44 as it is.
+  `DSP_VCVM_V44DICT=0` leaves it out (a test).
 - **Use.** Both indicate it and XID agrees on V.44: the link
   (`Link::update_config()`) primes its V.44 encoder and decoder before
   any data (`V44::prime()`): the text through an encoder of the agreed
@@ -82,6 +82,30 @@ HTTP, mail, HTML, JSON and XML, NMEA sentences, logins and common English,
 
 `link/v44_preset.cpp` has the text, and the `v44_preset_check` test
 fails if it and the annex's listing ever differ.
+
+## Capabilities: where they go, and K56flex
+
+- **V.8's field stays two octets** (Annex A). CM and JM go through the
+  codec in V.21, which loses bits at the low modes (1 to 3 per cent
+  through AMR 5.15 to 6.7); a field of three octets made CM and JM two
+  octets longer, and through AMR 7.4 the calling DCE then missed every JM
+  and fell back. The parsers take a longer field and use its first two,
+  so that a later version can still add octets.
+- **Octet 1 bit 1 is always 0.** A K56flex client (sm56, HSF) takes a
+  V.8bis non-standard block as K56flex's when its country is 0xB5, its
+  provider code two octets long, o[6] bit 0 set, (o[7] & 0x2f) >= 2
+  and o[7] bit 0x40 ([k56flex.md](k56flex.md)); it does not look at the
+  provider code. In V.cvm's block (country 0xB5, the placeholder provider
+  00 00) o[6] and o[7] are the field's two octets, and octet 2 always has
+  0x40 and nearly always the 0x2f bits. Octet 1 bit 1 clear is all that
+  keeps a V.cvm DCE from looking like a K56flex server should the field
+  go into V.8bis (Annex A.3). `VcvmCaps.NotK56flex` checks every
+  combination of capabilities against that rule.
+- **Link-layer capabilities go in INFO0's octet 3** (Table B.1): bit 4
+  the V.44 preset dictionary, bit 3 reserved for zstd (for further
+  study), bit 2 reserved, bit 1 reserved for an octet of further
+  capabilities after octet 4. INFO0 has its FCS and comes again until
+  received, and both INFO0s are in well before the link starts.
 
 ## Files
 

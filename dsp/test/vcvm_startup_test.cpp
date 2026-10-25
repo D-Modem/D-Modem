@@ -47,8 +47,9 @@ VcvmCaps caps(bool fs16 = false)
  *    the field, INFO0 and MP
  */
 
-/* the capabilities' two octets: encoded and decoded back, a later
-   version's read */
+/* the capabilities' two octets: encoded and decoded back (octet 1's
+   last two bits 0), a later version's read, a longer field's first two
+   */
 TEST(VcvmCaps, Field)
 {
 	VcvmCaps c;
@@ -56,24 +57,59 @@ TEST(VcvmCaps, Field)
 	c.wide = true;
 	c.fax = true;
 	c.param = false;
-	uint8_t o[2];
+	uint8_t o[4] = {};
+	ASSERT_EQ(VCVM_FIELD_OCTETS, 2);
 	c.encode(o);
-	EXPECT_EQ(o[0], 0x20 | 0x10 | 0x08 | 0x04 | 0x02);
+	EXPECT_EQ(o[0], 0x20 | 0x10 | 0x08 | 0x04);
 	EXPECT_EQ(o[1], 0x80 | 0x40 | 0x20 | 0x08 | 0x04);
-	VcvmCaps d = VcvmCaps::decode(o);
-	EXPECT_TRUE(d.fs16 && d.wide && d.fax && d.rings && d.dpsk8 && d.sym22 &&
-		    d.v44dict);
+	VcvmCaps d = VcvmCaps::decode(o, 2);
+	EXPECT_TRUE(d.fs16 && d.wide && d.fax && d.rings && d.dpsk8 && d.sym22);
 	EXPECT_FALSE(d.param || d.wide400 || d.quick);
 	EXPECT_EQ(d.fs(), 16000);
-	c.v44dict = false;
-	c.encode(o);
-	EXPECT_EQ(o[0] & 0x03, 0);
-	EXPECT_FALSE(VcvmCaps::decode(o).v44dict);
-	c.v44dict = true;
-	c.encode(o);
 	/* a later version: version 1's bits */
 	o[0] = (uint8_t)((o[0] & 0x1f) | 0x40);
-	EXPECT_EQ(VcvmCaps::decode(o).version, 1);
+	EXPECT_EQ(VcvmCaps::decode(o, 2).version, 1);
+	o[2] = 0xff;
+	EXPECT_TRUE(VcvmCaps::decode(o, 3).fs16);
+}
+
+/* K56flex: a client takes a V.8bis NS block as K56flex's when its L >
+   6, o[1] 0xB5, o[2] 2, o[6] bit 0, (o[7] & 0x2f) >= 2 and o[7] & 0x40
+   (docs/dsp/k56flex.md); V.cvm's block (in V.8bis as Annex A.3 has it:
+   [L][country][provider's length][provider][identifier][field]) never
+   does, whatever the capabilities, and octet 1 bit 1 is what keeps it
+   so */
+TEST(VcvmCaps, NotK56flex)
+{
+	auto k56flex = [](const uint8_t *o) {
+		return o[0] > 6 && o[1] == 0xb5 && o[2] == 0x02 &&
+		       (o[6] & 1) && (o[7] & 0x2f) >= 2 && (o[7] & 0x40);
+	};
+	int n = 0;
+	for (int m = 0; m < 1 << 10; m++) {
+		VcvmCaps c;
+		c.fs16 = m & 1;
+		c.fax = m & 2;
+		c.rings = m & 4;
+		c.wide = m & 8;
+		c.wide400 = m & 16;
+		c.dpsk8 = m & 32;
+		c.sym22 = m & 64;
+		c.quick = m & 128;
+		c.param = m & 256;
+		c.version = (m & 512) ? 7 : 1;
+		uint8_t nsf[16], b[17];
+		int k = vcvm_nsf_build(c, nsf);
+		b[0] = (uint8_t)(k + 1);
+		b[1] = nsf[0];
+		b[2] = 2;
+		memcpy(b + 3, nsf + 1, (size_t)(k - 1));
+		EXPECT_FALSE(k56flex(b)) << m;
+		/* (the same block with octet 1 bit 1 set would be) */
+		b[6] |= 1;
+		n += k56flex(b);
+	}
+	EXPECT_GT(n, 0);
 }
 
 /* the capabilities in a T.30 NSF: built and found again; found with
@@ -83,7 +119,7 @@ TEST(VcvmCaps, NonStandardFacilities)
 	VcvmCaps c = caps(true), d;
 	uint8_t nsf[16];
 	int n = vcvm_nsf_build(c, nsf);
-	EXPECT_EQ(n, 6);
+	EXPECT_EQ(n, 4 + VCVM_FIELD_OCTETS);
 	EXPECT_EQ(nsf[3], VCVM_NSF_ID);
 	ASSERT_TRUE(vcvm_nsf_find(nsf, n, &d));
 	EXPECT_TRUE(d.fs16 && d.wide && d.wide400 && d.param);
@@ -113,6 +149,24 @@ TEST(VcvmCaps, V8)
 	}
 	ASSERT_TRUE(vcvm_v8_find(cm, n, &d));
 	EXPECT_TRUE(d.fs16 && d.wide && !d.param);
+	/* a later DCE's longer field (a third octet): found, its first two
+	   taken */
+	uint8_t later[40] = { 0xe0, 0xc1, 0x45, 0x13, 0x94, 0x2a, 0x0d, 0x0F };
+	{
+		uint8_t f[9] = { 8, 0xB5, 2, 0, 0, VCVM_NSF_ID, 0, 0, 0x5a }, o[2];
+		c.encode(o);
+		f[6] = o[0];
+		f[7] = o[1];
+		int m = 8;
+		for (int b = 0; b < 72; b += 5) {
+			int v = 0;
+			for (int i = 0; i < 5 && b + i < 72; i++)
+				v |= ((f[(b + i) / 8] >> ((b + i) % 8)) & 1) << i;
+			later[m++] = (uint8_t)(0x10 | (v & 7) | ((v >> 3) & 3) << 6);
+		}
+		ASSERT_TRUE(vcvm_v8_find(later, m, &d));
+		EXPECT_TRUE(d.fs16 && d.wide && !d.param);
+	}
 	/* none in a plain CM, nor in a provider's other NS block */
 	EXPECT_FALSE(vcvm_v8_find(cm, 7, &d));
 	uint8_t other[40] = { 0xe0, 0xc1, 0x45, 0x0F };
@@ -160,6 +214,19 @@ TEST(VcvmMessages, Info0)
 	EXPECT_EQ(j.combs, 0x105u);
 	EXPECT_TRUE(j.quick_offer && !j.quick_accept && j.l2() && j.l3());
 	EXPECT_EQ(j.level, 6);
+	EXPECT_FALSE(j.v44dict || j.zstd);
+	/* octet 3: the preset dictionary (bit 4), zstd (bit 3) */
+	i.v44dict = true;
+	i.encode(o);
+	EXPECT_EQ(o[2], 0xD8);
+	ASSERT_EQ(j.decode(o, 4), 0);
+	EXPECT_TRUE(j.v44dict && !j.zstd);
+	i.v44dict = false;
+	i.zstd = true;
+	i.encode(o);
+	EXPECT_EQ(o[2], 0xD4);
+	ASSERT_EQ(j.decode(o, 4), 0);
+	EXPECT_TRUE(j.zstd && !j.v44dict);
 	o[0] = 0;
 	EXPECT_EQ(j.decode(o, 4), -1);
 }
