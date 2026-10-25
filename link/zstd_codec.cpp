@@ -68,6 +68,7 @@ struct FwdBits {
 	s32 n;
 	s64 pos = 0;
 	bool bad = false;
+	/* the next nb bits, not taken */
 	u32 peek(s16 nb) const
 	{
 		u32 v = 0;
@@ -79,6 +80,7 @@ struct FwdBits {
 		}
 		return v;
 	}
+	/* the next nb bits, taken */
 	u32 read(s16 nb)
 	{
 		u32 v = peek(nb);
@@ -87,6 +89,7 @@ struct FwdBits {
 			bad = true;
 		return v;
 	}
+	/* the octets taken so far */
 	s32 bytes() const { return static_cast<s32>((pos + 7) / 8); }
 };
 
@@ -97,6 +100,7 @@ struct BackBits {
 	const u8 *p;
 	s32 n;
 	s64 off = 0;
+	/* the start (the last octet's marker); false if none */
 	bool init()
 	{
 		if (n <= 0 || !p[n - 1])
@@ -104,6 +108,7 @@ struct BackBits {
 		off = 8 * static_cast<s64>(n - 1) + hbit(p[n - 1]);
 		return true;
 	}
+	/* the next nb bits, highest first */
 	u64 read(s16 nb)
 	{
 		u64 v = 0;
@@ -116,6 +121,7 @@ struct BackBits {
 		}
 		return v;
 	}
+	/* read past the start */
 	bool over() const { return off < 0; }
 };
 
@@ -124,6 +130,7 @@ struct BitW {
 	std::vector<u8> b;
 	u64 acc = 0;
 	s16 n = 0;
+	/* the low nb bits of v */
 	void put(u64 v, s16 nb)
 	{
 		for (s16 k = 0; k < nb; k++) {
@@ -355,6 +362,7 @@ struct FseEnc {
 	s16 al = 0;
 	std::vector<s16> cnt;
 	std::vector<std::vector<u16>> states;
+	/* from the counts c of nsym symbols at accuracy log */
 	void build(const s16 *c, s16 nsym, s16 log)
 	{
 		Zstd::Fse t;

@@ -29,13 +29,6 @@
   15440 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15440 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15440 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
@@ -52,13 +45,13 @@
   15460 A: B0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 A: B0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 A: B0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15460 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15460 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15460 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15460 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15460 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15460 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15460 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 B: A0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 B: A0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 B: A0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
@@ -84,6 +77,13 @@
   15460 B: A0045 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 B: A0046 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15460 B: A0047 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 A: B0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 A: B0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 A: B0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 A: B0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 A: B0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 A: B0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 A: B0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15480 A: B0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15480 A: B0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
   15480 A: B0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
@@ -121,19 +121,19 @@
   22340 A: Final Transmit Carrier Rate         33600\r\n
   22340 A: Final Receive Carrier Rate          24000\r\n
   22340 A: Protocol Negotiation Result         LAPM\r\n
-  22340 A: Data Compression Result             V44\r\n
-  22340 A: Estimated SNR (dB)                  29.5\r\n
+  22340 A: Data Compression Result             ZSTD\r\n
+  22340 A: Estimated SNR (dB)                  29.2\r\n
   22340 A: Receive Signal Power Level (dBm0)   -14.8\r\n
-  22340 A: Transmit Signal Power Level (dBm0)  -15.0\r\n
+  22340 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
   22340 A: Round Trip Delay (ms)               37\r\n
-  22340 A: Near Echo Level (dBm0)              -58.2\r\n
-  22340 A: Far Echo Level (dBm0)               -27.0\r\n
+  22340 A: Near Echo Level (dBm0)              -57.9\r\n
+  22340 A: Far Echo Level (dBm0)               -27.1\r\n
   22340 A: Characters Sent                     3003\r\n
   22340 A: Characters Received                 3000\r\n
   22340 A: Transmit Frame Count                8\r\n
   22340 A: Transmit Frame Error Count          0\r\n
   22340 A: Receive Frame Count                 7\r\n
-  22340 A: Receive Frame Error Count           25\r\n
+  22340 A: Receive Frame Error Count           14\r\n
   22340 A: Retrains by Local Modem             0\r\n
   22340 A: Retrains Requested by Remote Modem  0\r\n
   22340 A: Rate Renegotiation by Local Modem   1\r\n
@@ -159,19 +159,19 @@
   25920 A: Final Transmit Carrier Rate         33600\r\n
   25920 A: Final Receive Carrier Rate          24000\r\n
   25920 A: Protocol Negotiation Result         LAPM\r\n
-  25920 A: Data Compression Result             V44\r\n
-  25920 A: Estimated SNR (dB)                  29.5\r\n
+  25920 A: Data Compression Result             ZSTD\r\n
+  25920 A: Estimated SNR (dB)                  29.1\r\n
   25920 A: Receive Signal Power Level (dBm0)   -14.8\r\n
-  25920 A: Transmit Signal Power Level (dBm0)  -15.0\r\n
+  25920 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
   25920 A: Round Trip Delay (ms)               37\r\n
-  25920 A: Near Echo Level (dBm0)              -58.1\r\n
-  25920 A: Far Echo Level (dBm0)               -27.0\r\n
+  25920 A: Near Echo Level (dBm0)              -57.5\r\n
+  25920 A: Far Echo Level (dBm0)               -27.1\r\n
   25920 A: Characters Sent                     3006\r\n
   25920 A: Characters Received                 3000\r\n
   25920 A: Transmit Frame Count                10\r\n
   25920 A: Transmit Frame Error Count          0\r\n
   25920 A: Receive Frame Count                 8\r\n
-  25920 A: Receive Frame Error Count           25\r\n
+  25920 A: Receive Frame Error Count           14\r\n
   25920 A: Retrains by Local Modem             0\r\n
   25920 A: Retrains Requested by Remote Modem  0\r\n
   25920 A: Rate Renegotiation by Local Modem   1\r\n
@@ -188,9 +188,9 @@
   25920 B: Final Transmit Carrier Rate         24000\r\n
   25920 B: Final Receive Carrier Rate          33600\r\n
   25920 B: Protocol Negotiation Result         LAPM\r\n
-  25920 B: Data Compression Result             V44\r\n
-  25920 B: Estimated SNR (dB)                  48.6\r\n
-  25920 B: Receive Signal Power Level (dBm0)   -15.0\r\n
+  25920 B: Data Compression Result             ZSTD\r\n
+  25920 B: Estimated SNR (dB)                  48.2\r\n
+  25920 B: Receive Signal Power Level (dBm0)   -15.1\r\n
   25920 B: Transmit Signal Power Level (dBm0)  -15.1\r\n
   25920 B: Round Trip Delay (ms)               37\r\n
   25920 B: Characters Sent                     3000\r\n
