@@ -16,14 +16,20 @@
 #
 # dmodem_test_launcher(<target>): a gtest program's tests under it (as
 # its emulator, which gtest_discover_tests takes); dmodem_add_test(<name>
-# <command...>): add_test() under it.  Both require the fixture
-# (DMODEM_TEST_FIXTURE in a test's FIXTURES_REQUIRED).
+# <command...>): add_test() under it.  Both require a fixture that
+# test_logs_begin sets up: DMODEM_STEADY_FIXTURE, whose cleanup test
+# (dmodem_flaky_gate) itself requires DMODEM_TEST_FIXTURE, or for the
+# known flaky tests (flaky_tests.cmake) DMODEM_TEST_FIXTURE alone, after
+# the gate and serially (gtest.cmake, dmodem_add_test).  test_logs_end, the
+# cleanup of DMODEM_TEST_FIXTURE, so ends after all of them.
 
 set(DMODEM_TEST_LOG_ROOT "${PROJECT_BINARY_DIR}/test-logs" CACHE PATH
 	"where each ctest run's test logs go")
 set(DMODEM_TEST_LOG_KEEP 20 CACHE STRING
 	"how many ctest runs' test logs are kept")
 set(DMODEM_TEST_FIXTURE dmodem_test_logs)
+set(DMODEM_STEADY_FIXTURE dmodem_steady)
+include(${CMAKE_CURRENT_LIST_DIR}/flaky_tests.cmake)
 # (bash: on Windows Git's, not System32's WSL launcher)
 if(CMAKE_HOST_WIN32)
 	find_program(DMODEM_BASH bash HINTS "$ENV{ProgramFiles}/Git/bin"
@@ -42,7 +48,14 @@ add_test(NAME test_logs_begin COMMAND ${DMODEM_BASH}
 	"${PROJECT_SOURCE_DIR}/cmake/test_logs.sh" begin
 	"${DMODEM_TEST_LOG_ROOT}" ${DMODEM_TEST_LOG_KEEP})
 set_tests_properties(test_logs_begin PROPERTIES
-	FIXTURES_SETUP ${DMODEM_TEST_FIXTURE} LABELS logs)
+	FIXTURES_SETUP "${DMODEM_TEST_FIXTURE};${DMODEM_STEADY_FIXTURE}"
+	LABELS logs)
+# (once the steady tests have all ended: the flaky ones after it)
+add_test(NAME dmodem_flaky_gate COMMAND ${CMAKE_COMMAND} -E echo
+	"the steady tests are over")
+set_tests_properties(dmodem_flaky_gate PROPERTIES
+	FIXTURES_CLEANUP ${DMODEM_STEADY_FIXTURE}
+	FIXTURES_REQUIRED ${DMODEM_TEST_FIXTURE} LABELS logs)
 add_test(NAME test_logs_end COMMAND ${DMODEM_BASH}
 	"${PROJECT_SOURCE_DIR}/cmake/test_logs.sh" end "${DMODEM_TEST_LOG_ROOT}")
 set_tests_properties(test_logs_end PROPERTIES
@@ -63,6 +76,33 @@ function(dmodem_add_test name)
 		list(APPEND _cmd ${CMAKE_CROSSCOMPILING_EMULATOR})
 	endif()
 	add_test(NAME ${name} COMMAND ${_cmd} ${ARGN})
-	set_tests_properties(${name} PROPERTIES
-		FIXTURES_REQUIRED ${DMODEM_TEST_FIXTURE})
+	if(name IN_LIST DMODEM_FLAKY_TESTS)
+		set_tests_properties(${name} PROPERTIES
+			FIXTURES_REQUIRED ${DMODEM_TEST_FIXTURE}
+			DEPENDS dmodem_flaky_gate RUN_SERIAL TRUE)
+		set_property(TEST ${name} APPEND PROPERTY LABELS flaky)
+	else()
+		set_tests_properties(${name} PROPERTIES
+			FIXTURES_REQUIRED ${DMODEM_STEADY_FIXTURE})
+	endif()
+endfunction()
+
+# (dmodem_gtest) an include file for ctest, after the discovery of
+# target's flaky tests (into tests_file): each of them also labelled
+# flaky (ctest adds to a list property here; a discovery's properties
+# take one value each)
+function(dmodem_flaky_label target tests_file)
+	set(_f "${CMAKE_CURRENT_BINARY_DIR}/${target}_flaky.cmake")
+	file(WRITE ${_f}
+		"# the known flaky tests of ${target}: labelled flaky\n"
+		"if(EXISTS \"${tests_file}\")\n"
+		"  file(READ \"${tests_file}\" _tests)\n"
+		"  foreach(_t ${DMODEM_FLAKY_TESTS})\n"
+		"    string(FIND \"\${_tests}\" \"add_test([=[\${_t}]=]\" _at)\n"
+		"    if(_at GREATER -1)\n"
+		"      set_tests_properties(\${_t} PROPERTIES LABELS flaky)\n"
+		"    endif()\n"
+		"  endforeach()\n"
+		"endif()\n")
+	set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES ${_f})
 endfunction()

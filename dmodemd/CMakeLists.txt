@@ -300,7 +300,8 @@ if(DMODEM_DMODEMD)
 				$<TARGET_FILE_DIR:asound_module_dmline>
 				$<TARGET_FILE:dmodem_fake_hda_hwdep>)
 			set_tests_properties(dmodemd_alsa PROPERTIES
-				LABELS alsa TIMEOUT 300 COST 1000)
+				TIMEOUT 300 COST 1000)
+			set_property(TEST dmodemd_alsa APPEND PROPERTY LABELS alsa)
 		endif()
 		if(LIBUSB_FOUND)
 			dmodem_add_test(dmodemd_usb ${Python3_EXECUTABLE}
@@ -309,14 +310,16 @@ if(DMODEM_DMODEMD)
 				$<TARGET_FILE:line_exchange>
 				$<TARGET_FILE:dmodem_fake_st7554>)
 			set_tests_properties(dmodemd_usb PROPERTIES
-				LABELS alsa TIMEOUT 300 COST 1000)
+				TIMEOUT 300 COST 1000)
+			set_property(TEST dmodemd_usb APPEND PROPERTY LABELS alsa)
 			dmodem_add_test(dmodemd_pico_line ${Python3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/test/pico_line_test.py
 				$<TARGET_FILE:dmodemd>
 				$<TARGET_FILE:line_exchange>
 				$<TARGET_FILE:dmodem_fake_pico_line>)
 			set_tests_properties(dmodemd_pico_line PROPERTIES
-				LABELS alsa TIMEOUT 300 COST 1000)
+				TIMEOUT 300 COST 1000)
+			set_property(TEST dmodemd_pico_line APPEND PROPERTY LABELS alsa)
 		endif()
 	endif()
 endif()

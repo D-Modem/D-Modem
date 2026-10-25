@@ -38,6 +38,19 @@ interop tests are left out there ([windows.md](windows.md)).
                                             # (sm56, pctel, hsf, broadcom, intel, ess, spanpeer: the other modems; hda: ours on HD audio;
                                             # open: two of this one)
 
+    ctest --test-dir build -L flaky     # only the known flaky tests (-LE flaky: all but them)
+
+The known flaky tests (`cmake/flaky_tests.cmake`: each an open
+intermittent, most of them only on a loaded machine) run last and one at
+a time: every other test requires the fixture `dmodem_steady`, whose
+cleanup test `dmodem_flaky_gate` runs once they have all ended, and the
+flaky ones depend on it and are `RUN_SERIAL`. Each keeps its own labels
+and has `flaky` as well; run on its own (`-R`) it waits for nothing. A
+gtest program's flaky cases are found by a discovery of their own
+(`TEST_FILTER`, CMake 3.22 and later; before that they run with the
+others). When one of them is fixed, take it off the list; a new one goes
+on it with its task.
+
 The test programs are in `dsp/test/` (the link layer's and the core's in `link/test/` and `core/test/`). All the tests but one are GoogleTest programs (the system's libgtest-dev, or
 fetched while configuring); ctest runs each of their cases as a test of
 its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
