@@ -21,6 +21,8 @@ The project's overview, building and usage are in the top
 ## Telephony
 
 - [Asterisk: app_dmodem](asterisk.md)
+- [FreePBX: the D-Modem module](freepbx.md): the profiles as destinations,
+  dmodem.conf and the dialplan, a check of the trunks for modem calls
 - [FreeSWITCH: mod_dmodem](freeswitch.md)
 - [Softmodem hardware](hardware.md): dmodemd on an AC'97 or HD-audio
   modem codec through ALSA (`-a`)

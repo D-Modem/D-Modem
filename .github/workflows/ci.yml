@@ -248,7 +248,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev \
             libtiff-tools asterisk asterisk-modules asterisk-dev python3 \
-            efax
+            efax php-cli
           # the tests run an Asterisk of their own
           sudo systemctl stop asterisk || true
 
@@ -285,6 +285,12 @@ jobs:
           ARI=1 INCOMING=1 timeout 300 asterisk/test/sip.sh
           ARI=1 CODEC=alaw timeout 300 asterisk/test/sip.sh
           ARI=1 ARI_SIP=1 timeout 300 asterisk/test/sip.sh
+
+      - name: FreePBX module
+        run: |
+          php freepbx/test/unit.php
+          timeout 300 freepbx/test/e2e.sh
+          ARI=1 timeout 300 freepbx/test/e2e.sh
 
       - name: Fax
         run: |

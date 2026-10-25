@@ -1,0 +1,30 @@
+<module>
+	<rawname>dmodem</rawname>
+	<repo>unsupported</repo>
+	<name>D-Modem</name>
+	<version>16.0.1</version>
+	<publisher>Neo-Desktop</publisher>
+	<license>AGPLv3</license>
+	<licenselink>https://www.gnu.org/licenses/agpl-3.0.txt</licenselink>
+	<category>Applications</category>
+	<description>
+		Software data modems and fax for your calls with D-Modem: V.21 to V.34, and V.90 to a dial-up modem over G.711.
+		Profiles send a call's data to a BBS or another server, or to a program such as pppd, and each is a destination.
+		Needs app_dmodem.so in Asterisk, or dmodem-ari beside it.
+	</description>
+	<more-info>https://github.com/Neo-Desktop/D-Modem-RE</more-info>
+	<changelog>
+		*16.0.1* Profiles as destinations, dmodem.conf, a fax destination, dmodem-ari as an engine, the line check
+	</changelog>
+	<menuitems>
+		<dmodem>D-Modem</dmodem>
+	</menuitems>
+	<depends>
+		<version>16.0</version>
+		<module>core ge 16.0</module>
+	</depends>
+	<supported>
+		<version>16.0</version>
+		<version>17.0</version>
+	</supported>
+</module>

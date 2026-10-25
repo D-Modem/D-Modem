@@ -203,6 +203,8 @@ endif()
 if(DMODEM_ARI)
 	add_subdirectory(ari)
 endif()
+# the FreePBX module (PHP): its package and its tests
+add_subdirectory(freepbx)
 
 if(DMODEM_TESTS)
 	add_subdirectory(dsp/test)

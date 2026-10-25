@@ -1,0 +1,19 @@
+
+ Endpoint:  <Endpoint/CID.....................................>  <State.....>  <Channels.>
+    I/OAuth:  <AuthId/UserName...........................................................>
+        Aor:  <Aor............................................>  <MaxContact>
+      Contact:  <Aor/ContactUri..........................> <Hash....> <Status> <RTT(ms)..>
+  Transport:  <TransportId........>  <Type>  <cos>  <tos>  <BindAddress..................>
+   Identify:  <Identify/Endpoint.........................................................>
+        Match:  <criteria.........................>
+    Channel:  <ChannelId......................................>  <State.....>  <Time.....>
+        Exten: <DialedExten...........>  CLCID: <ConnectedLineCID.......>
+==========================================================================================
+
+ Endpoint:  bad                                                  Unavailable   0 of inf
+
+ Endpoint:  good                                                 Unavailable   0 of inf
+
+
+Objects found: 2
+
