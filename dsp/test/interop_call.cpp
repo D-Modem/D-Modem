@@ -625,6 +625,8 @@ std::string v80_shield(const std::string &f)
    FCS octet it shields (19h, 99h) leaves the EM */
 struct V80In {
 	std::vector<std::string> good, bad;
+	std::string rest;       /* the octets after the last frame (all
+				   of them, transparent) */
 	std::string other;
 	int stray = 0;          /* EMs followed by another EM, dropped */
 };
@@ -688,7 +690,117 @@ V80In v80_parse(const std::string &in)
 		if (code != V80_BNUM || r.other.find("<b8") == std::string::npos)
 			r.other += t;
 	}
+	r.rest = frame;
 	return r;
+}
+
+/* V80=2: the transparent sub-mode with the receivers hunting for the
+   SYN (the AT commands' +ESA=1 or 2; V80_SYN=<hex> its <syn1>, or
+   <syn1> <syn2>: 16, or 1696 for 16h then 96h).  Each DCE idles with
+   the SYN, which the other's receiver finds; then each DTE sends 3000
+   octets, which the other's must get whole, with only the SYN idle
+   before them from the CONNECT on, the SYN first (in its order: no
+   octet of it off its alignment).
+   V80_HUNT=1: then A's DTE sends <EM><hunt>, and B's 1000 more octets,
+   which A's must get the same way.  V80_PAIR_LOST=A (B): that side's
+   DCE loses the first of two octets in a row it shields (the Agere and
+   Broadcom modems): the octets for it have no such pair.
+   V80_IDLE_FIRST=A (B): that DTE's octets may begin anywhere in the SYN
+   idle (the Agere modem calling, with <syn1> <syn2>: <syn2> first).
+   rate: the slower direction's */
+bool v80_transparent(Dte &dte, long rate)
+{
+	std::string syn;
+	std::string hex = env("V80_SYN", "16");
+	for (size_t i = 0; i + 1 < hex.size(); i += 2)
+		syn += (char)strtol(hex.substr(i, 2).c_str(), nullptr, 16);
+	dte.pump(1.5);
+	/* from after the CONNECT line */
+	for (int k = 0; k < 2; k++) {
+		size_t c = dte.buf[k].find("CONNECT");
+		size_t e = c == std::string::npos ? c :
+			dte.buf[k].find("\r\n", c);
+		if (e != std::string::npos)
+			dte.buf[k].erase(0, e + 2);
+	}
+	std::string block[2];
+	auto shielded = [](char c) {
+		unsigned char u = (unsigned char)c;
+		return u == 0x19 || u == 0x99 || u == 0x11 || u == 0x13;
+	};
+	for (int k = 0; k < 2; k++) {
+		unsigned x = 4242 + 999 * k;
+		bool no_pair = env("V80_PAIR_LOST") == std::string(1, "BA"[k]);
+		for (int j = 0; j < 3000; j++) {
+			x = x * 1103515245 + 12345;
+			char c = (char)(j < 256 ? j : (x >> 16) & 0xff);
+			if (no_pair && j && shielded(c) && shielded(block[k][j - 1]))
+				c = (char)(c ^ 0x40);
+			block[k] += c;
+		}
+		dte.send(k, v80_shield(block[k]));
+	}
+	auto got = [&](int k, const std::string &want, size_t from) {
+		return v80_parse(dte.buf[k].substr(from)).rest.find(want) !=
+			std::string::npos;
+	};
+	double end = dte.t() + 20 + 15.0 * 3000 / rate;
+	while (dte.t() < end && !(got(0, block[1], 0) && got(1, block[0], 0)))
+		dte.pump(0.2);
+	/* the octets from where the DTE's buffer starts: the SYN idle,
+	   octet by octet in its order, then want */
+	auto check = [&](int k, const std::string &want, size_t from) {
+		V80In in = v80_parse(dte.buf[k].substr(from));
+		size_t at = in.rest.find(want);
+		size_t idle = 0;
+		if (at != std::string::npos && at > 0) {
+			size_t p = syn.find(in.rest[0]);
+			while (p != std::string::npos && idle < at &&
+			       in.rest[idle] == syn[p]) {
+				idle++;
+				p = (p + 1) % syn.size();
+			}
+		}
+		say("%c: %zu octets, %s first; the data %s%s, %zu SYN octets "
+		    "before it; %s\n", "AB"[k], in.rest.size(),
+		    show(in.rest.substr(0, 8)).c_str(),
+		    at == std::string::npos ? "not there" : "at ",
+		    at == std::string::npos ? "" : std::to_string(at).c_str(),
+		    idle, in.other.c_str());
+		/* from the CONNECT: the SYN first, as the hunt found it (or,
+		   V80_IDLE_FIRST, any octet of the SYN idle) */
+		bool first = from || !in.rest.compare(0, syn.size(), syn) ||
+			(env("V80_IDLE_FIRST") == std::string(1, "AB"[k]) &&
+			 !in.rest.empty() &&
+			 syn.find(in.rest[0]) != std::string::npos);
+		if (!first)
+			say("%c: not the SYN first\n", "AB"[k]);
+		return first && at != std::string::npos && at > 0 &&
+			idle == at;
+	};
+	bool ok = true;
+	for (int k = 0; k < 2; k++) {
+		/* what came, for a look */
+		FILE *f = fopen((env("LOG_DIR", ".") + "/v80_rx_" + "AB"[k])
+				.c_str(), "wbe");
+		if (f) {
+			fwrite(dte.buf[k].data(), 1, dte.buf[k].size(), f);
+			fclose(f);
+		}
+		ok = check(k, block[1 - k], 0) && ok;
+	}
+	if (env("V80_HUNT").empty() || !ok)
+		return ok;
+	dte.send(0, std::string{ (char)V80_EM, (char)0xb3 });
+	dte.pump(1.0);
+	size_t from = dte.buf[0].size();
+	std::string more = block[1].substr(500, 1000);
+	dte.send(1, v80_shield(more));
+	end = dte.t() + 20 + 15.0 * 1000 / rate;
+	while (dte.t() < end && !got(0, more, from))
+		dte.pump(0.2);
+	say("A after its <EM><hunt>:\n");
+	return check(0, more, from);
 }
 
 /* V80=1: after CONNECT (both in V.80's Synchronous Access Mode, by the
@@ -1214,6 +1326,10 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		   what comes sooner as a command line; unpaced, we might
 		   answer in no time of the line's; DATA_WAIT=<s> longer,
 		   for a modem that takes a while to receive after it) */
+		/* V80=2: the DTEs' octets from the CONNECT on (the
+		   receivers' first ones must be the SYN) */
+		if (env("V80") == "2")
+			done(v80_transparent(dte, rate));
 		dte.pump(atof(env("DATA_WAIT", "0.1").c_str()));
 		dte.buf[0].clear();
 		dte.buf[1].clear();

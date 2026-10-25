@@ -798,7 +798,9 @@ s16 Modem::link_init()
 		c.sync_cfg.framed_idle = static_cast<s16>(esa[1]);
 		c.sync_cfg.framed_un_ov = static_cast<s16>(esa[2]);
 		c.sync_cfg.crc = static_cast<s16>(esa[4]);
+		c.sync_cfg.trans_idle = static_cast<s16>(esa[0]);
 		c.sync_cfg.syn1 = static_cast<u8>(esa[6]);
+		c.sync_cfg.syn2 = static_cast<u8>(esa[7]);
 		c.sync_cfg.report_period = static_cast<s16>(itf[2]);
 		c.sync_cfg.dc_flow = ifc[0] == 1;
 		c.sync_cfg.shield_dc = ifc[1] == 1;

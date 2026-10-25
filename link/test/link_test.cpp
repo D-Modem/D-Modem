@@ -1984,6 +1984,122 @@ TEST(Link, V80Commands)
 	      "B: transparent octets:%s", dump(b, 400).c_str());
 }
 
+namespace {
+
+/* line bits (the first on the line first) as the DTE's transparent
+   octets, least significant bit first, the last one padded with 1s */
+std::vector<uint8_t> pack_bits(const std::vector<int> &bits)
+{
+	std::vector<uint8_t> v((bits.size() + 7) / 8, 0xff);
+	for (size_t i = 0; i < bits.size(); i++)
+		if (!bits[i])
+			v[i / 8] &= (uint8_t)~(1 << (i % 8));
+	return v;
+}
+
+/* n 1s, then octets' bits, least significant first */
+void add_bits(std::vector<int> &bits, int ones,
+	      const std::vector<uint8_t> &octets)
+{
+	bits.insert(bits.end(), (size_t)ones, 1);
+	for (uint8_t c : octets)
+		for (int k = 0; k < 8; k++)
+			bits.push_back(c >> k & 1);
+}
+
+/* the events without the DCE's underrun indications */
+std::vector<int> no_under(std::vector<int> e)
+{
+	e.erase(std::remove(e.begin(), e.end(), ind(v80::UNDER)), e.end());
+	return e;
+}
+
+} // namespace
+
+/* the transparent receiver's hunt (<trans_idle> 1, 2): nothing until
+   the SYN, the octets aligned on it from there (the SYN first); 8 bits
+   find a lone <syn1>, 16 only <syn1> <syn2>; <EM><hunt> hunts again */
+TEST(Link, V80SynHunt)
+{
+	rnd_state = 2468;
+	std::vector<uint8_t> data = frame_octets(40);
+	for (int idle = 1; idle <= 2; idle++) {
+		SyncConfig cb;
+		cb.trans_idle = (s16)idle;
+		cb.syn1 = 0x16;
+		cb.syn2 = 0x96;
+		SyncPair p(SyncConfig(), cb);
+		/* 13 1s (off the octets), a lone <syn1>, 3 1s, the whole
+		   SYN, the data */
+		std::vector<int> bits;
+		add_bits(bits, 13, { 0x16, 0x00 });
+		add_bits(bits, 3, { 0x16, 0x96 });
+		add_bits(bits, 0, data);
+		p.da.to_send = shield(pack_bits(bits));
+		p.start();
+		p.run(2000);
+		std::vector<int> b = no_under(events(p.db.got));
+		if (idle == 1) {
+			CHECK(b.size() > 2 && b[0] == 0x16 && b[1] == 0x00,
+			      "8 bits: the lone syn1:%s", dump(b).c_str());
+			continue;
+		}
+		std::vector<int> want = { 0x16, 0x96 };
+		want.insert(want.end(), data.begin(), data.end());
+		CHECK(b.size() > want.size() &&
+		      std::vector<int>(b.begin(), b.begin() +
+				       (long)want.size()) == want,
+		      "16 bits: the SYN, the data:%s", dump(b).c_str());
+	}
+
+	/* <EM><hunt>: A's FFh idle is not the SYN, nothing comes until
+	   its next SYN, 7 bits off from the last */
+	SyncConfig cb;
+	cb.trans_idle = 1;
+	cb.syn1 = 0x16;
+	SyncPair q(SyncConfig(), cb);
+	std::vector<int> bits;
+	add_bits(bits, 5, { 0x16, 1, 2, 3 });
+	q.da.to_send = shield(pack_bits(bits));
+	q.start();
+	q.run(1000);
+	std::vector<int> b = no_under(events(q.db.got));
+	CHECK(b.size() > 4 && b[0] == 0x16 && b[1] == 1 && b[3] == 3,
+	      "first SYN:%s", dump(b).c_str());
+	em(q.db.to_send, v80::HUNT);
+	q.run(1000);
+	size_t nb = q.db.got.size();
+	bits.clear();
+	add_bits(bits, 7, { 0x16 });
+	add_bits(bits, 0, data);
+	std::vector<uint8_t> more = shield(pack_bits(bits));
+	q.da.to_send.insert(q.da.to_send.end(), more.begin(), more.end());
+	q.run(2000);
+	b = no_under(events(std::vector<uint8_t>(q.db.got.begin() + (long)nb,
+						 q.db.got.end())));
+	std::vector<int> want = { 0x16 };
+	want.insert(want.end(), data.begin(), data.end());
+	CHECK(b.size() > want.size() &&
+	      std::vector<int>(b.begin(), b.begin() + (long)want.size()) ==
+	      want, "after the hunt:%s", dump(b).c_str());
+
+	/* <trans_idle> 2 idles with <syn1> <syn2> in turn; <EM><hunt> with
+	   <trans_idle> 0 does nothing */
+	SyncConfig ca;
+	ca.trans_idle = 2;
+	ca.syn1 = 0xa5;
+	ca.syn2 = 0x5a;
+	SyncPair r(ca, SyncConfig());
+	em(r.db.to_send, v80::HUNT);
+	r.start();
+	r.run(1000);
+	b = no_under(events(r.db.got));
+	bool alt = b.size() > 40;
+	for (size_t i = 0; alt && i < 40; i++)
+		alt = b[i] == (i & 1 ? 0x5a : 0xa5);
+	CHECK(alt, "syn1 syn2 in turn:%s", dump(b).c_str());
+}
+
 /* the DTE takes nothing for a while: the ring fills, the octets after
    are lost and <EM><rover> marks the place */
 TEST(Link, V80ReceiveOverrun)

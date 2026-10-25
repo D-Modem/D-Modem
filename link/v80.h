@@ -72,7 +72,12 @@ struct SyncConfig {
 				   flag, then the DTE's octets dropped
 				   until <EM><resume> */
 	s16 crc = 0;            /* framed: 0 no FCS, 1 FCS-16, 2 FCS-32 */
+	s16 trans_idle = 0;     /* transparent: 0 syn1 on underrun, the
+				   receiver as it is; 1 the same, the
+				   receiver hunts for syn1; 2 syn1 syn2 on
+				   underrun, the receiver hunts for both */
 	u8 syn1 = 0xff;         /* transparent: the octet sent on underrun */
+	u8 syn2 = 0xff;         /* and the second (trans_idle 2) */
 	s16 report_period = 0;  /* <EM><bnum> every this many 10 ms, 0 none */
 	bool shield_dc = false; /* DC1 and DC3 to the DTE shielded (it has
 				   DC1/DC3 flow control from us) */
@@ -122,6 +127,8 @@ private:
 	void rx_flag();
 	void rx_abort();
 	void rx_reset(bool hunt);
+	void syn_hunt();
+	void syn_scan();
 	void put(u8 octet);
 	void put_raw(const u8 *p, s16 n);
 	static void encode14(u8 *par, s32 v);
@@ -144,6 +151,7 @@ private:
 	   a flag due before the next octet, the 1s in a row, the DTE's
 	   octets dropped since the underrun (framed_un_ov 1) */
 	bool underrun_ = false;
+	bool syn_second_ = false;       /* syn2 next on underrun */
 	bool in_frame_ = false;
 	u32 tx_fcs_ = 0;
 	bool need_flag_ = false;
@@ -164,6 +172,11 @@ private:
 	u32 rx_fcs_ = 0;
 	u8 held_[4] = {};
 	s16 held_n_ = 0;
+	/* receive (transparent, trans_idle 1 or 2): hunting for the SYN,
+	   the last 16 bits (the latest at the top), how many there are */
+	bool syn_hunting_ = false;
+	u16 syn_reg_ = 0;
+	s16 syn_bits_ = 0;
 	/* to the DTE: a ring of octets, an overrun to report */
 	u8 out_[2048];
 	s16 out_head_ = 0, out_count_ = 0;

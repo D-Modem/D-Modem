@@ -1483,6 +1483,40 @@ std::vector<Call> calls()
 					      "PROTO_B=" + theirs,
 					      "V80_STRAY_B=1" });
 		}
+	/* the transparent sub-mode with the SYN hunt (+ESA's <trans_idle>
+	   1 and 2, the 8 and 16 bit SYN 16h, 16h 96h): the Agere and
+	   Broadcom modems take both (SM56 and Intel only 0); each DCE idles
+	   with the SYN and the other's receiver finds it, then 3000
+	   octets each way (V80=2).  Their DCE loses the first of two
+	   octets in a row it shields for its DTE (19h, 99h, DC1, DC3: 13h
+	   13h comes as <EM><t4> alone), so the octets for them have no
+	   such pair (V80_PAIR_LOST).  The Agere modem calling, with the
+	   16 bit SYN, gives its DTE the idle from its <syn2> on
+	   (V80_IDLE_FIRST: it takes our SYN otherwise, the SYN first) */
+	for (const char *p : { "agere", "broadcom" })
+		for (int t : { 1, 2 }) {
+			std::string n = p, ti = std::to_string(t);
+			std::string esa = "AT+ESA=" + ti + ",0,0,0,0,0,22,150";
+			std::string theirs = "ATX3;AT+MS=V34;AT+ES=6,0,8;" + esa;
+			std::string syn = t == 1 ? "V80_SYN=16" : "V80_SYN=1696";
+			add(p, n + "_v80_syn" + ti + "_" + n + "_calls", p, "open",
+			    theirs, { "V80=2", syn, "NET=8000:9600:ulaw",
+				      "PROTO_B=" + ours + ";" + esa,
+				      "V80_PAIR_LOST=A", "V80_IDLE_FIRST=A" });
+			add(p, n + "_v80_syn" + ti + "_open_calls", "open", p,
+			    ours + ";" + esa, { "V80=2", syn, "V80_HUNT=1",
+					      "NET=9600:8000:ulaw",
+					      "PROTO_B=" + theirs,
+					      "V80_PAIR_LOST=B" });
+		}
+	for (int t : { 1, 2 }) {
+		std::string ti = std::to_string(t);
+		std::string esa = "AT+ESA=" + ti + ",0,0,0,0,0,22,150";
+		add("open", "open_v80_syn" + ti, "open", "open",
+		    ours + ";" + esa,
+		    { "V80=2", t == 1 ? "V80_SYN=16" : "V80_SYN=1696",
+		      "V80_HUNT=1", "NET=9600:9600:ulaw" });
+	}
 	add("sm56", "sm56_v80_crc1_sm56_calls", "sm56", "open",
 	    "ATX3;AT+MS=V34;AT+ES=6,0,8;" + esa1,
 	    { "V80=1", "NET=8000:9600:ulaw", "PROTO_B=" + ours + ";" + esa1,

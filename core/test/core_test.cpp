@@ -954,7 +954,7 @@ TEST(Core, V80)
 		  "+ESA: 0,0,0,0,1,0,255,255\r\nOK\r\n");
 	EXPECT_EQ(cmd(p.a, p.la, "AT+ITF=10,20\r"), "ERROR\r\n");
 	EXPECT_EQ(cmd(p.a, p.la, "AT+ES=5\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(p.a, p.la, "AT+ESA=1\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ESA=3\r"), "ERROR\r\n");
 	p.la.out.clear();
 
 	EXPECT_EQ(p.b->answer(), 0);

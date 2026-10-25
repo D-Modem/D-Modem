@@ -294,9 +294,15 @@ and then the mode starts transparent:
 
 - **Transparent**: the DTE's octets go out least significant bit first;
   the line's bits come back as octets at whatever alignment they have.
-  When the DTE has nothing, `+ESA`'s `<syn1>` goes out and the DTE hears
-  `<EM><under>` (once, until it sends again). The DCE does not hunt for
-  SYN octets (`<trans_idle>` 0, the mandatory value).
+  When the DTE has nothing, `+ESA`'s `<syn1>` goes out (`<syn1>` and
+  `<syn2>` in turn with `<trans_idle>` 2) and the DTE hears
+  `<EM><under>` (once, until it sends again). With `<trans_idle>` 1 or 2
+  the receiver hunts (8.8.1.2/V.80, `SyncAccess::syn_scan()`): it takes
+  the bits one at a time until the last 8 are `<syn1>` (or the last 16
+  `<syn1>` then `<syn2>`), and from there gives the DTE octets aligned on
+  them, the SYN first. It hunts at the start of the mode, on each return
+  to transparent, and on the DTE's `<EM><hunt>` (which also flushes what
+  waits for the DTE); with `<trans_idle>` 0 `<EM><hunt>` does nothing.
 - **Framed** (from the DTE's first `<EM><flag>`): HDLC frames with zero
   insertion. The DTE ends each frame with `<EM><flag>`; the DCE adds the
   FCS if `+ESA`'s `<crc_type>` asks (1: FCS-16, 2: FCS-32, 8.1.1.6/V.42)
@@ -335,8 +341,7 @@ the call (Table 10's codes stop at 33600, faster rates are 2Eh).
 and its `<report_period>` sends `<EM><bnum>` with what waits in the buffer
 (EM codes counted as octets) every so many 10 ms.
 
-Not there: the transparent receiver's hunt for SYN (`<trans_idle>` 1, 2),
-NRZI, V.34 half duplex (`<hd_auto>`, `<EM><pri>`, `<ctl>`...), and
+Not there: NRZI, V.34 half duplex (`<hd_auto>`, `<EM><pri>`, `<ctl>`...), and
 staying off hook after `<EM><eot>`. +ES's 5 and 7 (Synchronous Mode, Frame Tunnelling
 Mode) are not taken.
 
@@ -345,4 +350,7 @@ the Agere and Broadcom modems (one V.80 code) and the SM56 modem take
 our frames whole, with no FCS and with FCS-16, and we take theirs; the
 Intel modem takes ours, but its own end in 16 1s. Agere and Broadcom drop
 the FCS as we do (with a stray EM when an FCS octet needed shielding);
-the SM56 modem hands it to its DTE.
+the SM56 modem hands it to its DTE. In the transparent sub-mode the
+Agere and Broadcom modems hunt for our SYN, 8 and 16 bit, and we for
+theirs (`_v80_syn`); their DCE loses the first of two octets in a row
+that it shields for its DTE.

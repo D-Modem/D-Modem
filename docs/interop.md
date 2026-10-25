@@ -1276,6 +1276,23 @@ Intel controller the DTE's characters as they come while online (its
 serial port's interrupt did): from its background task alone, every
 15 ms, its V.80 transmitter ran out in the middle of frames.
 
+### The transparent sub-mode's SYN hunt
+
+`V80=2` keeps both DTEs in the transparent sub-mode with `+ESA`'s
+`<trans_idle>` 1 (the 8 bit SYN 16h) or 2 (16h then 96h): each DCE idles
+with the SYN, and the other's receiver must find it and give its DTE
+octets aligned on it, the SYN first, from the CONNECT on. Then each DTE
+sends 3000 octets, which the other's must get whole with only the SYN
+idle before them; `V80_HUNT=1` then has A's DTE send `<EM><hunt>` and B's
+1000 octets more. Without the hunt (`<trans_idle>` 0) our DTE gets
+`8a 76 b3 ff ...` before the SYN and the check fails. The tests
+(`ctest -R _v80_syn`):
+
+| Modem | `+ESA=?` | Calls | What its DCE does |
+|---|---|---|---|
+| Agere, Broadcom | `(0-2),(0,1),(0,1),(0,1),(0-2),(0,1),(0-255),(0-255)` | both ways, both SYNs | Finds our SYN and we find theirs. Its DTE gets DC1 and DC3 shielded, and it loses the first of two octets in a row it shields: `13 13` and `99 13` come as `<EM><t4>` alone (`V80_PAIR_LOST`: none such in the octets for it). The Agere modem calling, with the 16 bit SYN, gives its DTE the idle from a `<syn2>` on (`V80_IDLE_FIRST`); with octets of ours that start with the SYN it gives the SYN first |
+| SM56, Intel | `<trans_idle>` 0 only | none | |
+
 ## Retrains and renegotiations on request
 
 `MIDCALL_ATO_A=<cmd>` (`_B`) makes `interop_call`'s mid-call return

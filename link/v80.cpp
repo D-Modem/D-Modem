@@ -14,7 +14,9 @@
  *    after an abort or a flag for a frame cut short (+ESA's
  *    <framed_un_ov>).
  *
- *    Receive: the line's bits as octets (transparent), or HDLC frames
+ *    Receive: the line's bits as octets (transparent; with +ESA's
+ *    <trans_idle> 1 or 2 only from the first SYN sequence on, the
+ *    octets aligned on it), or HDLC frames
  *    (framed): the receiver hunts for a flag, reports it with
  *    <EM><err>, then gives each frame's octets (the FCS held back and
  *    dropped when the DCE checks it) and <EM><flag> or <EM><err> at its
@@ -137,15 +139,26 @@ void SyncAccess::start(Link *link, const SyncConfig &cfg)
 	discard_ = false;
 	discarded_ = 0;
 	report_left_ = 0;
+	syn_second_ = false;
 	rx_reset(true);
+	syn_hunt();
 	out_head_ = out_count_ = 0;
 	rover_ = false;
 	link->set_timer(0, Link::Timer::None);
 	link->logf("v80: synchronous access, transparent; idle %s, %s, "
-		   "crc %d, syn 0x%02x.",
+		   "crc %d, syn 0x%02x 0x%02x (trans_idle %d).",
 		   cfg.framed_idle ? "marks" : "flags",
 		   cfg.framed_un_ov ? "flag on underrun" : "abort on underrun",
-		   cfg.crc, cfg.syn1);
+		   cfg.crc, cfg.syn1, cfg.syn2, cfg.trans_idle);
+}
+
+/* the transparent receiver hunts for the SYN sequence (8.8.1.2/V.80)
+   when <trans_idle> asks for it: nothing to the DTE until it comes */
+void SyncAccess::syn_hunt()
+{
+	syn_hunting_ = cfg_.trans_idle == 1 || cfg_.trans_idle == 2;
+	syn_reg_ = 0;
+	syn_bits_ = 0;
 }
 
 /* the framed sub-mode, from the transparent one (<EM><flag>): no frame
@@ -171,7 +184,9 @@ void SyncAccess::enter_transparent()
 	in_frame_ = false;
 	discard_ = false;
 	underrun_ = false;
+	syn_second_ = false;
 	rx_.clear();
+	syn_hunt();
 	out_count_ = 0;
 	rover_ = false;
 }
@@ -364,8 +379,13 @@ void SyncAccess::command(u8 code)
 		need_flag_ = true;
 		break;
 	case HUNT:
+		/* framed, or transparent with a SYN to hunt for (else
+		   nothing, 8.8.1.2/V.80): the buffer flushed */
 		if (framed_) {
 			rx_reset(true);
+			out_count_ = 0;
+		} else if (cfg_.trans_idle == 1 || cfg_.trans_idle == 2) {
+			syn_hunt();
 			out_count_ = 0;
 		}
 		break;
@@ -407,6 +427,7 @@ void SyncAccess::data(u8 octet)
 		return;
 	}
 	underrun_ = false;
+	syn_second_ = false;
 	if (!framed_) {
 		push(octet, true);
 		return;
@@ -424,7 +445,8 @@ void SyncAccess::data(u8 octet)
 }
 
 /* the DTE has nothing (8.8.1.1, 8.8.2.1/V.80): transparent, <syn1>
-   (and <EM><under> the first time); framed, a frame cut short ends in
+   (<syn1> <syn2> in turn with <trans_idle> 2), and <EM><under> the
+   first time; framed, a frame cut short ends in
    an abort or a flag (no FCS) with <EM><under> (after the flag the
    DTE's octets are dropped until <EM><resume>), then flags or marks */
 void SyncAccess::idle()
@@ -434,7 +456,8 @@ void SyncAccess::idle()
 			underrun_ = true;
 			indicate(UNDER);
 		}
-		push(cfg_.syn1, true);
+		push(syn_second_ ? cfg_.syn2 : cfg_.syn1, true);
+		syn_second_ = cfg_.trans_idle == 2 && !syn_second_;
 		return;
 	}
 	if (in_frame_) {
@@ -466,11 +489,13 @@ void SyncAccess::idle()
  */
 
 /* the line's bits: octets as they come (transparent, least significant
-   bit first), or bit by bit to the HDLC receiver */
+   bit first, after the SYN when hunting for it), or bit by bit to the
+   HDLC receiver */
 void SyncAccess::rx_scan()
 {
 	if (!framed_) {
-		while (rx_.bit >= 8) {
+		syn_scan();
+		while (!syn_hunting_ && rx_.bit >= 8) {
 			u8 c = reverse_bits(peek_octet(rx_));
 			rx_.bit -= 8;
 			put(c);
@@ -479,6 +504,31 @@ void SyncAccess::rx_scan()
 	}
 	while (rx_.bit)
 		rx_bit(take_bit(rx_));
+}
+
+/* the transparent receiver's hunt: the bits one at a time until the
+   last 8 are <syn1> (<trans_idle> 1) or the last 16 <syn1> then <syn2>
+   (2, <syn1> first on the line); the SYN to the DTE, and the octets
+   from there on aligned on it */
+void SyncAccess::syn_scan()
+{
+	const s16 len = cfg_.trans_idle == 2 ? 16 : 8;
+	const u16 want = len == 16 ?
+		static_cast<u16>(cfg_.syn1 | cfg_.syn2 << 8) : cfg_.syn1;
+	while (syn_hunting_ && rx_.bit) {
+		u16 b = static_cast<u16>(take_bit(rx_));
+		syn_reg_ = static_cast<u16>(syn_reg_ >> 1 | b << 15);
+		if (syn_bits_ < 16)
+			syn_bits_++;
+		if (syn_bits_ < len ||
+		    (len == 16 ? syn_reg_ : syn_reg_ >> 8) != want)
+			continue;
+		syn_hunting_ = false;
+		link_->logf("v80: rx SYN found.");
+		put(cfg_.syn1);
+		if (len == 16)
+			put(cfg_.syn2);
+	}
 }
 
 /* the receiver hunts for a flag (hunt) or waits for a frame: nothing

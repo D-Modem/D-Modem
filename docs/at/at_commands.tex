@@ -803,7 +803,9 @@ commands after EM (19h) both ways (Table~9/V.80).  It starts in the
 transparent sub-mode: the DTE's octets go out as they are, least
 significant bit first, and the line's bits come back as octets; when the
 DTE has nothing the modem sends \p{syn1} and tells it
-\cmd{<EM><under>}.  \cmd{<EM><flag>} from the DTE starts the framed
+\cmd{<EM><under>}.  With \cmdl[plusESA]{+ESA}'s \p{trans\_idle} 1 or 2
+the receiver first hunts for the SYN, and gives the DTE nothing before
+it.  \cmd{<EM><flag>} from the DTE starts the framed
 sub-mode: HDLC frames, each ended by the DTE's \cmd{<EM><flag>}, the
 modem adding the zero insertion, the flags and the FCS; it gives back
 each received frame's octets (without the FCS it checked) and
@@ -819,7 +821,8 @@ data) gives \cmd{<EM><ecs>}, then OK in online command state, where
 \cmd{ATO} goes back; \cmd{<EM><eot>} gives \cmd{<EM><eot>} and hangs up
 (NO CARRIER); \cmd{<EM><rate><tx><rx>} sets the highest rates to send at (\cmd{+MS}'s
 \p{max}) from \p{tx} and to receive at from \p{rx}, for the next
-retrain or renegotiation (\cmd{AT+MS} sets both again); \cmd{<EM><hunt>} restarts the framed receiver's hunt;
+retrain or renegotiation (\cmd{AT+MS} sets both again); \cmd{<EM><hunt>} restarts the receiver's hunt (framed, or
+transparent with \p{trans\_idle} 1 or 2), what waits for the DTE dropped;
 \cmd{<EM><resume>} after an underrun (below).  \cmd{<EM><rtn>}
 retrains the call and \cmd{<EM><rrn>} renegotiates its rate, as
 \cmdl[O]{ATO1} and \cmd{ATO3}.  The modem gives
@@ -835,15 +838,19 @@ not there.
 
 \begin{command}{plusESA}{AT+ESA=[\p{trans\_idle}][,\p{framed\_idle}...][,\p{syn2}], AT+ESA?, AT+ESA=?}
 The Synchronous Access Mode's eight settings, each left out as it is (default
-\cmd{0,0,0,0,0,0,255,255}): \p{trans\_idle} 0 (the receiver does not
-hunt for SYN octets in the transparent sub-mode); \p{framed\_idle}
+\cmd{0,0,0,0,0,0,255,255}): \p{trans\_idle}, the transparent
+sub-mode's SYN, 0 \p{syn1} sent when the DTE has nothing and the
+receiver's octets as they come, 1 the same but the receiver hunting for
+\p{syn1}, 2 \p{syn1} and \p{syn2} sent in turn and the receiver hunting
+for the two (\p{syn1} first), each hunt giving the DTE the octets from
+the SYN on, aligned on it; \p{framed\_idle}
 between frames 0 flags, 1 marks; \p{framed\_un\_ov} when the DTE runs out
 in a frame, 0 an abort, 1 a flag (no FCS), the DTE's octets then dropped
 until its \cmd{<EM><resume>}, which \cmd{<EM><unum>} and their count
 answer (both: \cmd{<EM><under>}); \p{hd\_auto} 0; \p{crc\_type} 0 no FCS,
-1 FCS-16, 2 FCS-32 (V.42's); \p{nrzi\_en} 0; \p{syn1} the octet sent
-when the DTE has nothing in the transparent sub-mode; \p{syn2} kept.
-\cmd{=?} gives \cmd{(0),(0,1),(0,1),(0),(0-2),(0),(0-255),(0-255)}.
+1 FCS-16, 2 FCS-32 (V.42's); \p{nrzi\_en} 0; \p{syn1} and \p{syn2}
+as above.
+\cmd{=?} gives \cmd{(0-2),(0,1),(0,1),(0),(0-2),(0),(0-255),(0-255)}.
 \end{command}
 
 \begin{command}{plusITF}{AT+ITF=[\p{off}][,[\p{on}][,[\p{report\_period}]]], AT+ITF?, AT+ITF=?}

@@ -74,6 +74,14 @@ namespace interop {
  *                     V80_STRAY_A=1 (_B): an EM before an EM allowed
  *                     V80_ONLY=A (B): only A's (B's) frames checked;
  *                     V80_PAD_A=<octets> (_B): after each of A's frames
+ *   V80=2             V.80: octets both ways in the transparent sub-mode,
+ *                     the receivers hunting for the SYN (+ESA=1 or 2 in
+ *                     the AT commands; V80_SYN=<hex>, 16 or 1696, its
+ *                     octets); V80_HUNT=1: A's DTE's <EM><hunt>, then
+ *                     more of B's octets; V80_PAIR_LOST=A (B): no two
+ *                     octets that A's (B's) DCE shields in a row;
+ *                     V80_IDLE_FIRST=A (B): that DTE's octets may begin
+ *                     in the middle of the SYN idle
  *   PIPE_SYNC=<n>     the line samples the modems take commands at (4800;
  *                     AGERE_SYNC, SM56_SYNC, ... default to it)
  */
