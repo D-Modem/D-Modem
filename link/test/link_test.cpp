@@ -24,7 +24,9 @@
 
 #include "link.h"
 #include "mnp5.h"
+#include "v44_preset.h"
 #include "v44.h"
+#include "v44_preset.h"
 
 using namespace dlink;
 
@@ -87,7 +89,9 @@ static std::vector<uint8_t> noise(size_t n)
 static std::vector<uint8_t> v44_roundtrip(const char *name,
 					  const std::vector<uint8_t> &in,
 					  int n2, int n7, int n8,
-					  int flush_every)
+					  int flush_every,
+					  const std::vector<uint8_t> *preset =
+						  nullptr)
 {
 	V44 enc, dec;
 	std::vector<uint8_t> line, out;
@@ -95,6 +99,14 @@ static std::vector<uint8_t> v44_roundtrip(const char *name,
 	int n;
 
 	CHECK(!enc.init(n2, n7, n8) && !dec.init(n2, n7, n8), "init");
+	if (preset) {
+		s32 a = enc.prime(preset->data(),
+				  static_cast<s32>(preset->size()));
+		s32 b = dec.prime(preset->data(),
+				  static_cast<s32>(preset->size()));
+		CHECK(a > 0 && a == b, "%s: primed %d and %d", name, (int)a,
+		      (int)b);
+	}
 	for (size_t i = 0; i < in.size(); i++) {
 		enc.encode(in[i]);
 		if (flush_every && (i + 1) % flush_every == 0)
@@ -168,6 +180,97 @@ TEST(Link, V44)
 	std::vector<uint8_t> want = { 'h', 'i', 0, 'A' };
 	CHECK(o == want, "transparent: %zu octets", o.size());
 	printf("  transparent mode, EID, ECM: ok\n");
+}
+
+/* typical short messages of a slow mobile data call */
+static std::vector<std::vector<uint8_t>> v44_messages()
+{
+	static const char *const m[] = {
+		"GET /status/today.html HTTP/1.1\r\nHost: www.weather.example.net"
+		"\r\nUser-Agent: Mozilla/5.0 (compatible)\r\nAccept: text/html,"
+		"application/xhtml+xml\r\nConnection: keep-alive\r\n\r\n",
+		"HTTP/1.1 200 OK\r\nDate: Thu, 24 Oct 2026 08:15:02 GMT\r\n"
+		"Server: Apache\r\nContent-Type: text/html; charset=UTF-8\r\n"
+		"Content-Length: 211\r\n\r\n<!DOCTYPE html>\r\n<html lang=\"en\">"
+		"\r\n<head>\r\n<title>Today</title>\r\n</head>\r\n<body>\r\n"
+		"<div class=\"report\"><p>Light rain in the morning, then "
+		"cloudy.</p></div>\r\n</body>\r\n</html>\r\n",
+		"From: <field.unit@example.org>\r\nTo: <office@example.com>\r\n"
+		"Subject: Re: the pump report\r\nDate: Thu, 24 Oct 2026 09:00:00 "
+		"+0000\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset="
+		"\"us-ascii\"\r\n\r\nThank you for your message. The pump at the "
+		"north station has been running since yesterday, and the "
+		"pressure is normal. Best regards,\r\n",
+		"{\"id\": 4711, \"name\": \"station 12\", \"type\": \"meter\", "
+		"\"value\": 231, \"status\": \"ok\", \"time\": "
+		"\"2026-10-24T09:00:00Z\", \"enabled\": true, \"error\": null}"
+		"\r\n",
+		"$GPGGA,091502.00,5130.1234,N,00007.5678,W,1,09,0.9,35.2,M,47.0,M,"
+		",*5C\r\n$GPRMC,091502.00,A,5130.1234,N,00007.5678,W,0.4,71.2,"
+		"241026,,,A*6B\r\n",
+		"Dear Sir or Madam,\r\nPlease find the information about your "
+		"account and the total of the order below. The service will be "
+		"available again tomorrow, after the system update.\r\n",
+	};
+	std::vector<std::vector<uint8_t>> r;
+	for (const char *x : m)
+		r.emplace_back(x, x + strlen(x));
+	return r;
+}
+
+/* V.cvm's preset dictionary (v44_preset.h): round trips primed, with
+   REINITs (small parameters, a long text, noise's STEPUP undone), and
+   the gain on short messages, each on its own (a call's first) and
+   all of them in a row with a flush after each */
+TEST(Link, V44Preset)
+{
+	const std::vector<uint8_t> &p = v44_preset();
+	V44 e;
+	CHECK(!e.init(4096, 255, 12288), "init");
+	CHECK(e.prime(p.data(), static_cast<s32>(p.size())) ==
+		      static_cast<s32>(p.size()) && e.primed(),
+	      "the whole preset (%zu octets)", p.size());
+	CHECK(!e.init(256, 32, 512) &&
+		      e.prime(p.data(), static_cast<s32>(p.size())) > 0 &&
+		      e.prime(p.data(), static_cast<s32>(p.size())) <
+			      static_cast<s32>(p.size()),
+	      "part of it with 256 codewords and a history of 512");
+	printf("  preset: %zu octets\n", p.size());
+
+	rnd_state = 777;
+	std::vector<uint8_t> t = text(100000), z = noise(20000);
+	v44_roundtrip("primed: text", t, 4096, 255, 12288, 0, &p);
+	v44_roundtrip("primed: text, flush every 50", t, 4096, 255, 12288, 50,
+		      &p);
+	v44_roundtrip("primed: text, 256 codewords, history 512", t, 256, 32,
+		      512, 0, &p);
+	v44_roundtrip("primed: text, 1024 codewords, history 2048", t, 1024,
+		      100, 2048, 13, &p);
+	std::vector<uint8_t> mix = z;
+	mix.insert(mix.end(), t.begin(), t.end());
+	v44_roundtrip("primed: noise, then text", mix, 4096, 255, 12288, 0, &p);
+
+	size_t plain = 0, primed = 0, in = 0;
+	std::vector<uint8_t> all;
+	for (auto &m : v44_messages()) {
+		size_t a = v44_roundtrip("message", m, 4096, 255, 12288, 0)
+				   .size();
+		size_t b = v44_roundtrip("message, primed", m, 4096, 255,
+					 12288, 0, &p).size();
+		in += m.size();
+		plain += a;
+		primed += b;
+		all.insert(all.end(), m.begin(), m.end());
+	}
+	printf("  the messages one by one: %zu octets, %zu compressed, %zu "
+	       "primed\n", in, plain, primed);
+	CHECK(primed * 10 < plain * 8, "primed %zu, not primed %zu", primed,
+	      plain);
+	size_t a = v44_roundtrip("the messages in a row", all, 4096, 255,
+				 12288, 0).size();
+	size_t b = v44_roundtrip("the messages in a row, primed", all, 4096,
+				 255, 12288, 0, &p).size();
+	CHECK(b < a, "in a row: primed %zu, not primed %zu", b, a);
 }
 
 /*

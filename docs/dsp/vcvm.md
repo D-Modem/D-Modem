@@ -27,7 +27,9 @@ measurements; this page is the implementation.
    the scrambler, then RS(32,k) (`rs.cpp`), then the interleaver, onto
    the loaded tones or the lags. CONNECT comes at the coded rate with
    `/CVM` once data runs both ways. LAPM starts without V.42's detection
-   phase.
+   phase. XID agrees on V.44 compression as on any other call, and
+   where both DCEs indicate the preset dictionary (below) V.44 starts
+   from it.
 4. **Renegotiation and retrain.** A renegotiation is the control sequence,
    then the MP exchange with new loadings. It is triggered by request, by
    a loaded tone's phase error, or by failing codewords. A retrain is the
@@ -46,6 +48,41 @@ At AMR 7.4 the first loading can be P10 (400 bit/s raw) in one direction.
 The receiver's failing codewords then renegotiate it down to P20 within
 the first minute.
 
+## Compression: V.44 with a preset dictionary
+
+V.44 starts with an empty dictionary and learns from the data. At V.cvm's
+rates (175 to 3500 bit/s) a call's data is often a few short messages,
+over before the dictionary has learnt much. So both DCEs can start V.44
+from the same text, the Recommendation's Annex E
+([annexes.tex](../cellular/annexes.tex), [v_cvm.pdf](../v_cvm.pdf)): 113 lines, 3505 octets, of
+HTTP, mail, HTML, JSON and XML, NMEA sentences, logins and common English,
+7-bit characters only (so that V.44's ordinals stay 7 bits).
+
+- **Indication.** The information field's octet 1 bit 2 (bit 1 is still
+  reserved), in V.8's CM and JM. A DCE whose peer does not set it runs
+  V.44 as it is. `DSP_VCVM_V44DICT=0` leaves it out (a test).
+- **Use.** Both indicate it and XID agrees on V.44: the link
+  (`Link::update_config()`) primes its V.44 encoder and decoder before
+  any data (`V44::prime()`): the text through an encoder of the agreed
+  parameters, its output through the decoder. That state is where both
+  ends start, and where a REINIT (the dictionary or history full) goes
+  back to, in place of empty ones. With small parameters only as much of
+  the text as the dictionary and half the history hold is taken (both
+  ends work it out alike). The log says `v44: preset dictionary 1, 3505
+  of its 3505 characters`.
+- **The gain.** Six typical short messages (an HTTP request and
+  response, a mail, JSON, NMEA, a short letter; 1264 octets) come to 958
+  octets with V.44 alone and 485 primed, each as a call's first; 826 and
+  449 in a row (`Link.V44Preset`). The messages are of the kinds the
+  text was written for, so data of other kinds gains less. Long
+  transfers gain little: the dictionary learns their own strings soon
+  enough.
+- **Cost.** Nothing on the line; 3.5 kB of the 12 kB history at each end
+  (V.44's REINIT comes that much sooner).
+
+`link/v44_preset.cpp` has the text, and the `v44_preset_check` test
+fails if it and the annex's listing ever differ.
+
 ## Files
 
 | File | What it is |
@@ -57,7 +94,8 @@ the first minute.
 | `dsp/rs.h`, `rs.cpp` | The Reed-Solomon code (G.975's field and generator), errors and erasures |
 | `dsp/vcvm_data.h`, `vcvm_data.cpp` | Phase 4: transmitter and receiver, the control sequence, loss of signal |
 | `dsp/vcvm_modem.h`, `vcvm_modem.cpp` | One DCE after V.8: the start-up, phase 4, renegotiations, retrains |
-| `dsp/dp_vcvm.cpp` | The pump `DP_VCVM`: the core's bits as octets (first bit the least significant), 9600 Hz lines through resamplers, CONNECT, the figures for `+CVM?`, S44 and S45 |
+| `dsp/dp_vcvm.cpp` | The pump `DP_VCVM`: the core's bits as octets (first bit the least significant), 9600 Hz lines through resamplers, CONNECT, the figures for `+CVM?`, S44 and S45, whether both have the preset dictionary |
+| `link/v44_preset.h`, `v44_preset.cpp` | Annex E's text, V.44's preset dictionary (`V44::prime()` in `link/v44.cpp`) |
 
 ## Receivers
 
@@ -69,6 +107,15 @@ the first minute.
   most likely lag on the 5 least reliable symbols, one at a time and in
   pairs. A lost INFO1 is recovered from the peer's MP, which has its
   layout.
+- **L1's first symbol.** The cyclic prefix gives the symbol timing to a
+  symbol; which symbol is the first is taken from the signal's onset.
+  Through AMR-WB the codec opens up slowly and the onset comes as much as
+  half a symbol late, so a few samples either way meant a symbol either
+  way, and every symbol of the probing then read against the wrong
+  known step (70 to 80 per cent in error, no data mode asked for, the
+  start-up failed). The receiver now tries the symbol before, the one
+  found and the one after, and keeps the one whose first 8 symbols' steps
+  are nearest the known ones (`VcvmProbeRx::resolve_start()`).
 - **L3.** The P10 part is locked to where the P20 part ends. Its own
   preamble is found poorly through AMR 10.2 and below.
 - **RS decoding** uses GMD: errors alone first, then with the 2, 4, … least
@@ -78,6 +125,12 @@ the first minute.
   parametric mode). Without this, an MP's zero octets and silence both
   read as control sequences. The signal counts as lost when it is quiet,
   or when nothing decodes for max(2 s, 2.5 blocks).
+- **Phase 4's start.** The peer's data begins at the end of its one more
+  MP after our acknowledgement. Through AMR-WB that MP is lost now and
+  then; a transmission without a good frame, while the peer's data does
+  not decode yet, is taken for it (before, the receiver stayed aligned
+  to the MP before it and never decoded, and the call ended for want of
+  a connection).
 
 ## Where it departs from the Recommendation's first draft
 
@@ -129,7 +182,11 @@ These are written into the Recommendation now:
   has no 32-bit FCS yet. `open_vcvm_amr74` sends one line each way.
 - P20 messages through AMR-WB 23.85 at an 8000 Hz interface are lost
   often (c is about 0.8). The MP exchange recovers, but the start-up
-  takes longer.
+  takes longer. `open_vcvm_amrwb2385` failed in two ways that a small change
+  of timing (V.8's octets, the load) brought about: L1's first symbol
+  one off, and phase 4's start lost with the peer's last MP. Both are
+  fixed (Receivers, above); the test stays among the flaky ones until it
+  has a longer record.
 
 ## Tests
 
@@ -138,6 +195,10 @@ These are written into the Recommendation now:
   start-up through G.711, AMR 12.2, AMR 7.4, AMR-WB and impaired lines.
 - `vcvm_data_test`: phase 4, and `VcvmModem` through a clean line and AMR,
   with renegotiation, retrain and a cut line.
+- `link_test`'s `Link.V44Preset`: V.44 primed with the preset dictionary,
+  round trips with REINITs, and the gain on short messages;
+  `v44_preset_check`: the text is the annex's.
 - `rs_test`: the code.
 - The `open.open_vcvm*` interop calls (table above): two open modems
-  through netsim, V.8 and LAPM included.
+  through netsim, V.8 and LAPM included; `open_vcvm` with the preset
+  dictionary, `open_vcvm_nodict` without it on offer.

@@ -15,6 +15,7 @@
 
 #include "dm_types.h"
 #include "dsp.h"
+#include "env.h"
 #include "fax_hdlc.h"
 #include "vcvm_startup.h"
 
@@ -33,12 +34,13 @@ u8 VcvmCaps::modes() const
 				    (param ? 0x01 : 0));
 }
 
-/* the field's two octets to o: the version, 16000 Hz, fax and rings,
-   then the modes */
+/* the field's two octets to o: the version, 16000 Hz, fax, rings and
+   the preset dictionary, then the modes */
 void VcvmCaps::encode(u8 o[2]) const
 {
 	o[0] = static_cast<u8>(((version & 7) << 5) | (fs16 ? 0x10 : 0) |
-			 (fax ? 0x08 : 0) | (rings ? 0x04 : 0));
+			 (fax ? 0x08 : 0) | (rings ? 0x04 : 0) |
+			 (v44dict ? 0x02 : 0));
 	o[1] = modes();
 }
 
@@ -50,6 +52,7 @@ VcvmCaps VcvmCaps::decode(const u8 o[2])
 	c.fs16 = o[0] & 0x10;
 	c.fax = o[0] & 0x08;
 	c.rings = o[0] & 0x04;
+	c.v44dict = o[0] & 0x02;
 	c.wide = o[1] & 0x20;
 	c.wide400 = o[1] & 0x10;
 	c.dpsk8 = o[1] & 0x08;
@@ -71,11 +74,12 @@ s16 vcvm_nsf_build(const VcvmCaps &c, u8 *out)
 }
 
 /* the identifier and a field that reads as one: a version, the
-   reserved bits clear, the robust and narrowband modes there */
+   reserved bit (octet 1 bit 1) clear, the robust and narrowband modes
+   there */
 static bool nsf_at(const u8 *p, s16 n, s16 i)
 {
 	return i + 2 < n && p[i] == VCVM_NSF_ID && (p[i + 1] >> 5) &&
-	       !(p[i + 1] & 3) && (p[i + 2] & 0xC0) == 0xC0;
+	       !(p[i + 1] & 1) && (p[i + 2] & 0xC0) == 0xC0;
 }
 
 /* see vcvm_startup.h */
@@ -153,7 +157,7 @@ bool vcvm_v8_find(const u8 *msg, s16 n, VcvmCaps *c)
 			if (q + 3 <= e && f[q] == VCVM_NSF_ID) {
 				const u8 inf[3] = { f[q], f[q + 1], f[q + 2] };
 				/* nsf_at's checks, on the field alone */
-				if ((inf[1] >> 5) && !(inf[1] & 3) &&
+				if ((inf[1] >> 5) && !(inf[1] & 1) &&
 				    (inf[2] & 0xC0) == 0xC0) {
 					*c = VcvmCaps::decode(inf + 1);
 					return true;
@@ -173,6 +177,7 @@ VcvmCaps vcvm_caps_for(s16 modes, s32 fs)
 	c.dpsk8 = modes & VCVM_M_8DPSK;
 	c.rings = modes & VCVM_M_RINGS;
 	c.param = modes & VCVM_M_PARAM;
+	c.v44dict = env_int("DSP_VCVM_V44DICT", 1) != 0;
 	return c;
 }
 

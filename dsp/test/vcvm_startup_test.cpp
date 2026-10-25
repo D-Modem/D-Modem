@@ -58,12 +58,19 @@ TEST(VcvmCaps, Field)
 	c.param = false;
 	uint8_t o[2];
 	c.encode(o);
-	EXPECT_EQ(o[0], 0x20 | 0x10 | 0x08 | 0x04);
+	EXPECT_EQ(o[0], 0x20 | 0x10 | 0x08 | 0x04 | 0x02);
 	EXPECT_EQ(o[1], 0x80 | 0x40 | 0x20 | 0x08 | 0x04);
 	VcvmCaps d = VcvmCaps::decode(o);
-	EXPECT_TRUE(d.fs16 && d.wide && d.fax && d.rings && d.dpsk8 && d.sym22);
+	EXPECT_TRUE(d.fs16 && d.wide && d.fax && d.rings && d.dpsk8 && d.sym22 &&
+		    d.v44dict);
 	EXPECT_FALSE(d.param || d.wide400 || d.quick);
 	EXPECT_EQ(d.fs(), 16000);
+	c.v44dict = false;
+	c.encode(o);
+	EXPECT_EQ(o[0] & 0x03, 0);
+	EXPECT_FALSE(VcvmCaps::decode(o).v44dict);
+	c.v44dict = true;
+	c.encode(o);
 	/* a later version: version 1's bits */
 	o[0] = (uint8_t)((o[0] & 0x1f) | 0x40);
 	EXPECT_EQ(VcvmCaps::decode(o).version, 1);

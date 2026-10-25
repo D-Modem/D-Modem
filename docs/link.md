@@ -117,6 +117,14 @@ Agere modem: `CONNECT 33600 V44`), its encoder going to transparent mode
 and back now and then; the other Agere and interop calls use V.44 too
 (V.42bis with the original Smart Link library, which has no V.44).
 
+**Preset dictionary** (V.cvm only): `V44::prime()` takes a text into the
+dictionary and history as if it had been encoded and decoded, and REINIT
+then goes back to that state rather than to empty ones. On a V.cvm call
+where both DCEs indicate it, the core tells the link
+(`Link::set_v44_preset()`) and both ends prime with
+`link/v44_preset.cpp`'s text once XID agrees on V.44
+([vcvm.md](dsp/vcvm.md#compression-v44-with-a-preset-dictionary)).
+
 ## MNP
 
 MNP 2 to 4 is V.42's "alternative procedure" (Annex A of V.42 (10/96)),

@@ -567,7 +567,9 @@ protocol (LAPM).  The indication carries:
 \item the version of this Recommendation (1);
 \item the signal interface rate: 8000, or 16000~Hz;
 \item the modes of clause~\ref{sec:modulation} the DCE supports;
-\item whether the DCE can carry facsimile (Annex~\ref{annex:fax}).
+\item whether the DCE can carry facsimile (Annex~\ref{annex:fax});
+\item whether it has the preset dictionary for \rec{V.44}
+  (Annex~\ref{annex:v44dict}).
 \end{itemize}
 
 \subsection{Outcome}
@@ -910,7 +912,10 @@ detection phase of \rec{V.42} (ODP and ADP) is not needed and shall not be
 used: both DCEs have indicated LAPM in the V.8 session; the originator
 shall start LAPM's XID exchange on entering phase~4.  The DCEs should
 negotiate \rec{V.44} compression, or \rec{V.42bis} where V.44 is not
-available, in XID as those Recommendations specify.  LAPM's T401 shall be
+available, in XID as those Recommendations specify.  Where both DCEs
+indicate the preset dictionary of Annex~\ref{annex:v44dict}
+(Table~\ref{tab:infofield}) and XID agrees on V.44, both shall start
+V.44 from it as that annex specifies.  LAPM's T401 shall be
 set from the round-trip delay measured in phase~2 (clause~\ref{sec:phase2}),
 with at least 1~s added for the interleaver's delay and the symbol
 period, and 3~s in the parametric mode (a codeword takes 1.3~s at

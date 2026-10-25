@@ -750,8 +750,17 @@ std::vector<Call> calls()
 	/* V.cvm on a line without a codec (G.711 alone) */
 	add("open", "open_vcvm", "open8", "open8", "ATX3;AT+MS=V_CVM",
 	    { "NET=8000:8000:ulaw", "STREAM=10",
-	      "EXPECT_A=(?s)V.8 agreed on V.cvm.*vcvm: phase 4: transmitting N200",
-	      "EXPECT_B=vcvm: phase 4: transmitting N200" });
+	      "EXPECT_A=(?s)V.8 agreed on V.cvm.*vcvm: phase 4: transmitting N200"
+	      ".*v44: preset dictionary 1, 3505 of its 3505",
+	      "EXPECT_B=(?s)vcvm: phase 4: transmitting N200.*"
+	      "v44: preset dictionary 1, 3505 of its 3505" });
+	/* without V.44's preset dictionary (Annex E) on offer: V.44 as it
+	   is, and the data through */
+	add("open", "open_vcvm_nodict", "open8", "open8", "ATX3;AT+MS=V_CVM",
+	    { "NET=8000:8000:ulaw", "STREAM=5", "DSP_VCVM_V44DICT=0",
+	      "EXPECT_A=(?s)vcvm: phase 4.*v44: 4096 codewords",
+	      "EXPECT_B=(?s)vcvm: phase 4.*v44: 4096 codewords",
+	      "REJECT_B=preset dictionary" });
 
 	/* --- the Agere soft modem (8000 Hz) and the open modem (9600 Hz)
 	   call each other; AT+MS takes names there (B103, V21, ..., V34) */

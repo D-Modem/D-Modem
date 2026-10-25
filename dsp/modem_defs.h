@@ -201,6 +201,8 @@ struct dp_vcvm {
 				   2 7/8 */
 	int renegs;             /* this call's renegotiations */
 	long erasures;          /* octets the receiver marked */
+	int v44_preset;         /* both DCEs have V.44's preset dictionary
+				   (Annex E): the link primes V.44 with it */
 };
 
 #define DP_STATS_SNR            0x1

@@ -354,11 +354,17 @@ s16 VcvmCombRx::acquire(s32 from, s32 first)
 		while (s0 - sps / 2 > first && s0 - sps >= base_)
 			s0 -= sps;
 	}
+	start_at(s0);
+	return 0;
+}
+
+/* see vcvm.h */
+void VcvmCombRx::start_at(s32 s0)
+{
 	next_ = s0;
 	locked_ = true;
 	have_prev_ = false;
 	tau_ = drift_ = rot_ = 0;
-	return 0;
 }
 
 /* angle a (radians) wrapped into [-pi, pi) */

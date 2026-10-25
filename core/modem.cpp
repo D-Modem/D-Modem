@@ -867,6 +867,8 @@ void Modem::update_status(Status s)
 		if (dp_ && dp_->id == DP_VCVM) {
 			cfg_.ec = true;
 			cfg_.mnp = false;
+			/* both DCEs have V.44's preset dictionary (Annex E) */
+			link_->set_v44_preset(vcvm_.v44_preset != 0);
 		}
 		set_state(EC_ESTAB);
 		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&

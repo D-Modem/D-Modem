@@ -188,8 +188,8 @@ void VcvmProbeRx::begin_comb()
 	Part &pt = parts_[static_cast<size_t>(part_)];
 	crx_.init(pt.code, p_.fs, pt.sym22);
 	const s16 sps = crx_.comb().sps;
-	crx_.restart(std::max(hbase_, first_ - sps));
-	acquired_ = pend_ = false;
+	crx_.restart(std::max(hbase_, first_ - 2 * sps));
+	acquired_ = pend_ = resolve_ = false;
 	sym_ = 0;
 	n_ = 0;
 	for (s16 k = 0; k < VCVM_TONES; k++)
@@ -239,6 +239,54 @@ void VcvmProbeRx::finish_comb(VcvmCombMeas *cm)
 		cm->errs[k] = static_cast<s16>(err_[k]);
 	}
 	cm->ok = n_ > 0;
+}
+
+/* the first comb's first symbol, which the prefix's timing finds only
+   to a symbol, by the signal's onset: through a codec that opens up
+   slowly the onset comes as much as half a symbol late, so that a few
+   samples either way are a symbol either way.  The symbol before, the
+   one acquired and the one after, each as the start: the one whose
+   first symbols' steps are nearest the known ones.  0, or -1 while
+   the symbols are not all in */
+s16 VcvmProbeRx::resolve_start()
+{
+	enum { NS = 8 };
+	const s16 sps = crx_.comb().sps, K = crx_.comb().tones;
+	const s32 s0 = crx_.next_start();
+	feed(crx_, hist_, hbase_);
+	if (crx_.received() < s0 + static_cast<s32>(NS + 3) * sps)
+		return -1;
+	double best = 1e300;
+	s32 at = s0;
+	for (s16 d = -1; d <= 1; d++) {
+		s32 c0 = s0 + d * sps;
+		if (c0 < crx_.base())
+			continue;
+		VcvmCombRx c = crx_;
+		c.start_at(c0);
+		u32 scr = scr_;
+		u8 ph8[VCVM_TONES];
+		VcvmCombSym s;
+		double e = 0;
+		if (!c.next(&s))
+			continue;
+		for (s16 i = 1; i <= NS; i++) {
+			known_steps(&scr, p_.tap, K, ph8);
+			if (!c.next(&s, ph8))
+				break;
+			/* (the codec's start aside) */
+			if (i >= 2)
+				for (s16 k = 0; k < K; k++)
+					e += fabs(s.perr[k]);
+		}
+		if (e < best) {
+			best = e;
+			at = c0;
+		}
+	}
+	if (at != s0)
+		crx_.start_at(at);
+	return 0;
 }
 
 /* the probing received so far taken: L1's onset, each comb part's
@@ -292,7 +340,16 @@ void VcvmProbeRx::run()
 					return;
 				}
 				acquired_ = true;
+				resolve_ = onset_;
 				onset_ = false;
+			}
+			if (resolve_) {
+				if (resolve_start() < 0) {
+					if (received() > deadline_)
+						st_ = FAILED;
+					return;
+				}
+				resolve_ = false;
 			}
 			const s16 K = crx_.comb().tones;
 			VcvmCombSym s;

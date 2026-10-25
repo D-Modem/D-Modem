@@ -218,6 +218,13 @@ if(DMODEM_TESTS)
 			${PROJECT_SOURCE_DIR})
 		set_tests_properties(doc_check PROPERTIES LABELS quick
 			TIMEOUT 120)
+		# V.cvm's preset dictionary for V.44: the code's text is
+		# the Recommendation's Annex E
+		dmodem_add_test(v44_preset_check ${Python3_EXECUTABLE}
+			${PROJECT_SOURCE_DIR}/cmake/v44_preset_check.py
+			${PROJECT_SOURCE_DIR})
+		set_tests_properties(v44_preset_check PROPERTIES LABELS quick
+			TIMEOUT 60)
 		# Windows: the programs and drivers load on Windows 7
 		# (DMODEM_WINNT): no imports of Windows 8's or later
 		if(WIN32)

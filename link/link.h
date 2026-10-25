@@ -81,6 +81,9 @@ struct Config {
 	s32 v44_codewords = V44_MAX_CODEWORDS;
 	s32 v44_max_string = V44_MAX_STRING;
 	s32 v44_history = V44_MAX_HISTORY;
+	/* V.cvm: both DCEs have the preset dictionary (v44_preset.h);
+	   V.44, if XID agrees on it, starts from it */
+	bool v44_preset = false;
 	/* V.80 Synchronous Access Mode (+ES=6, or 8 answering), with its
 	   settings, rather than any of the above */
 	bool sync = false;
@@ -152,6 +155,11 @@ public:
 	   (Config), the detection phase (detect) and LAPM or MNP, else
 	   async */
 	void start(bool on, bool detect);
+	/* V.cvm (before XID): both DCEs have V.44's preset dictionary */
+	void set_v44_preset(bool on)
+	{
+		cfg_.v44_preset = asked_.v44_preset = on;
+	}
 	/* we hang up: LAPM sends DISC, MNP LD */
 	void disconnect();
 	/* the data pump is not there (any more): marks out, nothing in */

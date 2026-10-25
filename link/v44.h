@@ -29,6 +29,12 @@
  *    is full.  FLUSH ends the data so far on an octet.  The decoder also
  *    takes transparent mode (ETM: octets with an escape character).
  *
+ *    A preset dictionary (prime()): before the data, both ends take the
+ *    same text into the dictionary and the history as if it had gone
+ *    through, encoded then decoded, and come back to that state, rather
+ *    than to empty ones, at each REINIT.  Both ends have to have agreed
+ *    on it (V.cvm's capabilities do it, link/v44_preset.h).
+ *
  */
 #ifndef DMODEM_LINK_V44_H
 #define DMODEM_LINK_V44_H
@@ -60,6 +66,13 @@ public:
 	s16 config(s32 codewords, s32 max_string, s32 history);
 	/* frees it all (not ready() any more) */
 	void exit();
+	/* after config(): the preset dictionary, the first of text's n
+	   characters that the dictionary and half the history have room
+	   for (the same in the encoder and the decoder of the same
+	   parameters); how many were taken, 0 if none (then as without) */
+	s32 prime(const u8 *text, s32 n);
+	/* prime() took some */
+	bool primed() const { return primed_; }
 	/* init() was done */
 	bool ready() const { return !hist_.empty(); }
 
@@ -92,6 +105,8 @@ private:
 	};
 
 	void reset();
+	/* back to the start: the preset's state, or reset() */
+	void restart();
 	void add(s16 len, u32 last);
 	void after_token(s16 type, u32 value);
 	/* encoder */
@@ -139,6 +154,15 @@ private:
 	std::vector<u8> obuf_;
 	size_t ohead_ = 0;
 	u32 raw_bits_ = 0, cmp_bits_ = 0;
+	/* the preset's state (prime()) */
+	bool primed_ = false;
+	std::vector<Entry> p_dict_;
+	std::vector<s32> p_head_;
+	std::vector<u8> p_hist_;
+	u32 p_c1_ = 0;
+	s16 p_c2_ = 0, p_c5_ = 0;
+	s16 p_last_type_ = NONE;
+	u32 p_last_value_ = 0;
 };
 
 } // namespace dlink

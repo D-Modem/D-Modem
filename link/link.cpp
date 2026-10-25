@@ -15,6 +15,7 @@
 
 #include "dm_types.h"
 #include "link.h"
+#include "v44_preset.h"
 
 namespace dlink {
 
@@ -382,6 +383,25 @@ void Link::update_config(const Config &remote)
 			cfg_.v44_history = n8;
 			logf("v44: %" PRId32 " codewords, strings of %" PRId32
 			     ", history %" PRId32, n2, n7, n8);
+			/* V.cvm's preset dictionary, both ways alike */
+			if (cfg_.v44_preset) {
+				const std::vector<u8> &p = v44_preset();
+				s32 n = static_cast<s32>(p.size());
+				s32 a = enc44_.prime(p.data(), n);
+				s32 b = dec44_.prime(p.data(), n);
+				if (a == b && a > 0)
+					logf("v44: preset dictionary %d, %" PRId32
+					     " of its %" PRId32 " characters",
+					     V44_PRESET_VERSION, a, n);
+				else {
+					/* (both ends alike: then neither) */
+					enc44_.config(n2, n7, n8);
+					dec44_.config(n2, n7, n8);
+					logf("err: v44: preset dictionary not "
+					     "taken (%" PRId32 "/%" PRId32 ")",
+					     a, b);
+				}
+			}
 			owner_->negotiated(cfg_);
 			return;
 		}

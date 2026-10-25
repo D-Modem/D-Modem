@@ -63,6 +63,8 @@ struct VcvmCaps {
 	bool sym22 = true;      /* the 22.5 ms symbol */
 	bool quick = false;     /* quick start, 10.10 */
 	bool param = true;      /* the parametric mode, 10.6 */
+	bool v44dict = true;    /* octet 1 bit 2: V.44's preset dictionary
+				   of Annex E (11.1) */
 
 	void encode(u8 o[2]) const;
 	/* a field of another version: version 1 and the bits it knows */
@@ -105,7 +107,8 @@ enum {
 };
 
 /* this DCE's information field for +CVM's mode set (VCVM_M_*) at the
-   signal interface's fs */
+   signal interface's fs (DSP_VCVM_V44DICT=0: without the preset
+   dictionary, for a test) */
 VcvmCaps vcvm_caps_for(s16 modes, s32 fs);
 
 /* what both DCEs have and the mode set allows, as VCVM_M_* bits */
@@ -354,6 +357,7 @@ private:
 	void begin_comb();
 	void begin_param(bool p10);
 	void finish_comb(VcvmCombMeas *cm);
+	s16 resolve_start();
 
 	VcvmProbe p_{};
 	VcvmProbeMeas m_{};
@@ -375,6 +379,8 @@ private:
 	s16 part_ = 0;
 	s16 sym_ = 0;                   /* its symbols so far */
 	bool acquired_ = false, onset_ = false;
+	bool resolve_ = false;          /* the first comb's symbol still to
+					   be told by its known steps */
 	s16 n_ = 0;                     /* the symbols measured */
 	double se_[VCVM_TONES], see_[VCVM_TONES], sa_[VCVM_TONES],
 		lv_[VCVM_TONES], err_[VCVM_TONES];

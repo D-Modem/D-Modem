@@ -160,6 +160,11 @@ public:
 	   nearest `first`, the signal's onset; -1 for the first after
 	   from): 0, or -1 if the samples aren't in yet */
 	s16 acquire(s32 from, s32 first = -1);
+	/* the symbol timing as given: the next symbol (the reference)
+	   at sample s0 */
+	void start_at(s32 s0);
+	/* the oldest sample kept */
+	s32 base() const { return base_; }
 	/* the signal's onset: the first sample from `from` at which 5 ms
 	   of it reach dbfs (rms); -1 if none yet */
 	s32 onset(s32 from, double dbfs = -45) const;

@@ -12,6 +12,7 @@
  *
  */
 
+#include <algorithm>
 #include <cstring>
 
 #include "dm_types.h"
@@ -58,6 +59,7 @@ s16 V44::init(s32 codewords, s32 max_string, s32 history)
 	ohead_ = 0;
 	raw_bits_ = cmp_bits_ = 0;
 	prev_type_ = NONE;
+	primed_ = false;
 	reset();
 	return 0;
 }
@@ -75,6 +77,7 @@ s16 V44::config(s32 codewords, s32 max_string, s32 history)
 	n7_ = max_string;
 	n8_ = history;
 	end_ = 0;
+	primed_ = false;
 	reset();
 	return 0;
 }
@@ -88,6 +91,10 @@ void V44::exit()
 	in_.clear();
 	obuf_.clear();
 	ohead_ = 0;
+	primed_ = false;
+	p_dict_.clear();
+	p_head_.clear();
+	p_hist_.clear();
 }
 
 /* the dictionary and history from the start */
@@ -104,6 +111,93 @@ void V44::reset()
 	if (!head_.empty())
 		for (auto &h : head_)
 			h = -1;
+}
+
+/* the dictionary and history from the start: the preset's (prime()),
+   if there is one */
+void V44::restart()
+{
+	if (!primed_) {
+		reset();
+		return;
+	}
+	std::copy(p_dict_.begin(), p_dict_.end(), dict_.begin());
+	head_ = p_head_;
+	std::copy(p_hist_.begin(), p_hist_.end(), hist_.begin());
+	hp_ = static_cast<u32>(p_hist_.size());
+	c1_ = p_c1_;
+	c2_ = p_c2_;
+	c3_ = UINT32_C(1) << c2_;
+	c5_ = p_c5_;
+	last_type_ = p_last_type_;
+	last_value_ = p_last_value_;
+	stepup_ = false;
+}
+
+/* see v44.h: the text through an encoder of the same parameters, its
+   tokens through this one's decoder (whichever this is), and that state
+   kept for restart() */
+s32 V44::prime(const u8 *text, s32 n)
+{
+	if (!ready() || n <= 0)
+		return 0;
+	V44 enc;
+	if (enc.init(n2_, n7_, n8_))
+		return 0;
+	/* no more than the dictionary has room for, the lookahead's
+	   strings (two a character at most) and the flush's included, nor
+	   half the history: no REINIT */
+	s32 k = 0;
+	while (k < n &&
+	       enc.c1_ + 2 * (enc.end_ - enc.hp_ + 1) + 4 <
+		       static_cast<u32>(n2_) &&
+	       enc.end_ + 1 < static_cast<u32>(n8_ / 2))
+		enc.encode(text[k++]);
+	enc.flush_encoder();
+	if (!k || enc.hp_ != enc.end_ || enc.hp_ != static_cast<u32>(k))
+		return 0;               /* (it started again: none) */
+	end_ = 0;
+	hp_ = 0;
+	primed_ = false;
+	reset();
+	in_.clear();
+	in_pos_ = 0;
+	in_bit_ = 0;
+	transparent_ = escape_ = false;
+	prev_type_ = NONE;
+	bool ok = true;
+	for (u8 o : enc.obuf_)
+		if (decode(o) < 0 || transparent_) {
+			ok = false;
+			break;
+		}
+	if (!ok || hp_ != static_cast<u32>(k) || !in_.empty()) {
+		/* (cannot be: as config() left it) */
+		s32 a = n2_, b = n7_, c = n8_;
+		init(max_n2_, max_n7_, max_n8_);
+		config(a, b, c);
+		return 0;
+	}
+	/* the decoder's state is the encoder's after its FLUSH: both
+	   ends start from it */
+	end_ = hp_;
+	c3_ = UINT32_C(1) << c2_;
+	bits_ = 0;
+	nbits_ = 0;
+	prev_type_ = NONE;
+	obuf_.clear();
+	ohead_ = 0;
+	raw_bits_ = cmp_bits_ = 0;
+	p_dict_.assign(dict_.begin(), dict_.begin() + c1_);
+	p_head_ = head_;
+	p_hist_.assign(hist_.begin(), hist_.begin() + hp_);
+	p_c1_ = c1_;
+	p_c2_ = c2_;
+	p_c5_ = c5_;
+	p_last_type_ = last_type_;
+	p_last_value_ = last_value_;
+	primed_ = true;
+	return k;
 }
 
 /* a new string in the dictionary */
@@ -233,10 +327,11 @@ void V44::reinit()
 {
 	put_control(REINIT);
 	u32 rest = end_ - hp_;
+	u32 at = primed_ ? static_cast<u32>(p_hist_.size()) : 0;
 	if (rest)
-		memmove(&hist_[0], &hist_[hp_], rest);
-	reset();
-	end_ = rest;
+		memmove(&hist_[at], &hist_[hp_], rest);
+	restart();
+	end_ = at + rest;
 }
 
 /* the longest string of the dictionary at pos (avail characters there);
@@ -454,7 +549,7 @@ s16 V44::token(s16 type, u32 value)
 			stepup_ = true;
 			break;
 		case REINIT:
-			reset();
+			restart();
 			break;
 		}
 		return 0;
@@ -534,7 +629,7 @@ s16 V44::run_decoder()
 					   start */
 					transparent_ = false;
 					prev_type_ = NONE;
-					reset();
+					restart();
 				} else if (b == 1) {
 					obuf_.push_back(escape_char_);
 					escape_char_ += 0x33;

@@ -276,12 +276,28 @@ void VcvmModem::finish_reneg()
 	words_ = failed_ = 0;
 }
 
-/* a message received: in phase 4 the peer's last MP, a repeated one
+/* a message received: in phase 4 the peer's last MP (or a
+   transmission without a good frame in its place), a repeated one
    (answered), or a renegotiation's; in a renegotiation the peer's MP
    taken */
 void VcvmModem::on_msg(const VcvmMsg &m)
 {
 	VcvmMp mp;
+	if (!m.ok && state_ == DATA && rx_on_ && p4_mps_ == 0 &&
+	    !drx_.confirmed()) {
+		/* a transmission without a good frame, the peer's data not
+		   decoding yet: its one more MP, lost (a codec's low mode
+		   loses messages now and then).  Its data starts at its end
+		   all the same */
+		p4_mps_++;
+		last_rx_end_ = m.end;
+		note("the peer's last MP in phase 4 (no good frame)");
+		drx_.start(m.end);
+		replay(drx_, m.end);
+		next_check_ = t_ + 3L * c_.su.fs;
+		words_ = failed_ = 0;
+		return;
+	}
 	if (!m.ok ||
 	    mp.decode(m.octets.data(), static_cast<s16>(m.octets.size())))
 		return;
