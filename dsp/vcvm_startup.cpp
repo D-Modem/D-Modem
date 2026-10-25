@@ -204,6 +204,18 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 	}
 	switch (step_) {
 	case WAIT_INFO0: {
+		/* the peer's INFO0 follows our probing (calling), or our
+		   INFO0 3 s late after a retrain (answering): what began
+		   before is the peer's last MP of the retrain, still coming
+		   in when phase 2 began (an MP's first octet can pass for
+		   INFO0's) */
+		if ((c_.calling && m.start < probe_end_tx_) ||
+		    (!c_.calling && c_.after_retrain && m.start < c_.fs)) {
+			note("the peer's last MP, not its INFO0 (%.3f to %.3f s)",
+			     static_cast<double>(m.start) / c_.fs,
+			     static_cast<double>(m.end) / c_.fs);
+			return;
+		}
 		if (peer0_.decode(m.octets.data(),
 				  static_cast<s16>(m.octets.size()))) {
 			note("not an INFO0");

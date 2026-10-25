@@ -98,6 +98,7 @@ void VcvmModem::start_startup(bool after_retrain)
 	VcvmStartup::Config k = c_.su;
 	if (after_retrain && k.calling)
 		k.delay_ms = 3000;
+	k.after_retrain = after_retrain;
 	su_.reset(new VcvmStartup);
 	su_at_ = t_;
 	if (su_->init(k)) {
@@ -162,6 +163,7 @@ void VcvmModem::enter_data()
 	start_tx();
 	start_rx(last_rx_end_);
 	p4_mps_ = 0;
+	mp_resent_ = false;
 	data_at_ = t_;
 	next_check_ = t_ + 3L * c_.su.fs;
 	words_ = failed_ = 0;
@@ -171,7 +173,10 @@ void VcvmModem::enter_data()
 }
 
 /* an MP (this DCE's loading, the round trip, ack and retrain) and
-   100 ms of silence to the queue */
+   100 ms of silence to the queue; before it 6.25 ms of silence for each
+   MP before it up to the fourth (P20 through AMR-WB loses a message at
+   some positions in the codec's frame: a repeated MP must not land on
+   the same one; after it the 100 ms alone, where phase 4 begins) */
 void VcvmModem::send_mp()
 {
 	VcvmMp mp;
@@ -180,10 +185,19 @@ void VcvmModem::send_mp()
 	mp.rtt = rtt_ms_ < 0 ? 255 : std::min(rtt_ms_ / 10, 254);
 	mp.l = rxl_;
 	u8 o[48];
+	txq_.insert(txq_.end(), static_cast<size_t>(mps_ & 3) * c_.su.fs / 160,
+		    0.0f);
 	mtx_.send(o, mp.encode(o), txq_);
+	mp_end_ = queued();
 	silence(100);
 	sent_ack_ = mp.ack && got_ack_;
 	mps_++;
+}
+
+/* the round trip in samples (the start-up's measure; 200 ms if none) */
+s32 VcvmModem::rtt_samples() const
+{
+	return (rtt_ms_ < 0 ? 200L : rtt_ms_) * c_.su.fs / 1000;
 }
 
 /* the loading phase 4's measurements allow: each loaded tone's order no
@@ -271,6 +285,7 @@ void VcvmModem::finish_reneg()
 	start_tx();
 	start_rx(last_rx_end_);
 	p4_mps_ = 0;
+	mp_resent_ = false;
 	data_at_ = t_;
 	next_check_ = t_ + 3L * c_.su.fs;
 	words_ = failed_ = 0;
@@ -283,15 +298,16 @@ void VcvmModem::finish_reneg()
 void VcvmModem::on_msg(const VcvmMsg &m)
 {
 	VcvmMp mp;
-	if (!m.ok && state_ == DATA && rx_on_ && p4_mps_ == 0 &&
-	    !drx_.confirmed()) {
+	if (!m.ok && state_ == DATA && rx_on_ && !drx_.confirmed()) {
 		/* a transmission without a good frame, the peer's data not
-		   decoding yet: its one more MP, lost (a codec's low mode
-		   loses messages now and then).  Its data starts at its end
-		   all the same */
-		p4_mps_++;
+		   decoding yet: one of its MPs, lost (a codec's low mode
+		   loses messages now and then; P20 through AMR-WB at some
+		   positions in the frame).  Its data starts after its last
+		   MP all the same: the receiver at this one's end */
 		last_rx_end_ = m.end;
-		note("the peer's last MP in phase 4 (no good frame)");
+		note(p4_mps_++ == 0 ? "the peer's last MP in phase 4 (no good "
+				      "frame)" :
+				      "another MP of the peer's, no good frame");
 		drx_.start(m.end);
 		replay(drx_, m.end);
 		next_check_ = t_ + 3L * c_.su.fs;
@@ -303,6 +319,20 @@ void VcvmModem::on_msg(const VcvmMsg &m)
 		return;
 	last_rx_end_ = m.end;
 	if (state_ == DATA) {
+		if (mp.ack && !mp.retrain && mp_resent_ &&
+		    m.start < mp_end_ + rtt_samples()) {
+			/* begun before our MP sent again could reach the
+			   peer: one already on its way, which says nothing of
+			   ours; the peer's data (or its last MP) after it */
+			note("an MP of the peer's sent before ours reached it");
+			if (rx_on_) {
+				drx_.start(m.end);
+				replay(drx_, m.end);
+				next_check_ = t_ + 3L * c_.su.fs;
+				words_ = failed_ = 0;
+			}
+			return;
+		}
 		if (mp.ack && !mp.retrain && p4_mps_++ == 0) {
 			/* the peer's one more MP after our acknowledgement
 			   (9.4), which ends after we have begun phase 4: its
@@ -326,6 +356,7 @@ void VcvmModem::on_msg(const VcvmMsg &m)
 			tx_data_ = false;
 			got_mp_ = got_ack_ = true;
 			send_mp();
+			mp_resent_ = true;
 			start_tx();
 			if (rx_on_) {
 				drx_.start(m.end);

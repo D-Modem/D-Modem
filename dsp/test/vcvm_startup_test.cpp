@@ -896,3 +896,55 @@ TEST(VcvmStartup, Lines)
 		}
 	}
 }
+
+/* an MP in P20 through AMR-WB 23.85 from each position in the codec's
+   frame (every 4th sample), sent four times as the DCEs repeat it in
+   phase 4 and its renegotiations (100 ms apart and 6.25 ms more before
+   each): at least one of the four received whole from every position
+   (a single MP is lost from a few: 48 and 92 samples in) */
+TEST(VcvmMessages, P20RepeatsAmrWb)
+{
+	if (!have_codec())
+		GTEST_SKIP() << "no AMR-WB";
+	VcvmMp mp;
+	mp.rtt = 9;
+	mp.ack = true;
+	mp.l.kind = VcvmLoading::COMB;
+	mp.l.tones = 16;
+	for (int k = 0; k < 16; k++) {
+		mp.l.load.phase[k] = 3;
+		mp.l.load.ring[k] = 1;
+	}
+	uint8_t o[48];
+	int n = mp.encode(o);
+	int single = 0, positions = 0;
+	for (int lead = 8000; lead < 8160; lead += 4) {
+		VcvmMsgTx tx;
+		VcvmMsgRx rx;
+		tx.init(8000, true, true);
+		rx.init(8000, true, true);
+		std::vector<float> x((size_t)lead, 0.0f);
+		for (int k = 0; k < 4; k++) {
+			x.insert(x.end(), (size_t)(k & 3) * 50, 0.0f);
+			tx.send(o, n, x);
+			x.insert(x.end(), 800, 0.0f);
+		}
+		std::vector<float> y = through(x, 8000, 360, 0.7, 100,
+					       "amrwb:23.85");
+		for (size_t i = 0; i < y.size(); i += 160)
+			rx.push(&y[i], (int)std::min<size_t>(160, y.size() - i));
+		VcvmMsg g;
+		int good = 0, k = 0;
+		while (rx.get(&g)) {
+			bool ok = g.ok && (int)g.octets.size() == n;
+			good += ok;
+			if (k++ == 0)
+				single += ok;
+		}
+		positions++;
+		EXPECT_GE(good, 1) << "from " << lead - 8000 << " samples in";
+	}
+	printf("one MP alone through from %d of %d positions; with its "
+	       "repeats from all\n", single, positions);
+}
+

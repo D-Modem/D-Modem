@@ -225,8 +225,22 @@ These are written into the Recommendation now:
   takes longer. `open_vcvm_amrwb2385` failed in two ways that a small change
   of timing (V.8's octets, the load) brought about: L1's first symbol
   one off, and phase 4's start lost with the peer's last MP. Both are
-  fixed (Receivers, above); the test stays among the flaky ones until it
-  has a longer record.
+  fixed (Receivers, above). Then, as a pass rate of 7 in 10 alone and 1
+  in 6 under load: an MP lost from a few positions in the codec's frame,
+  and repeats a whole number of frames apart kept landing there, so a
+  renegotiation never finished (each MP in phase 4 and its renegotiations
+  now goes 6.25 ms later than the last, to the fourth); an MP of the
+  peer's already on its way when ours went again taken for a second one
+  and answered, our data broken off again (now let by); a second lost MP
+  of the peer's left the data receiver at the wrong place (now restarted
+  after each); and after a retrain the peer's last MP, still coming in,
+  read as its INFO0 (an MP's first octet passes for INFO0's; now passed
+  over). With those, 23 of 24 alone and 4 of 6 under load. What is left:
+  the start-up's own MPs, a whole number of frames apart, can all be lost
+  for one call's timing; giving them the same 6.25 ms steps moves the
+  last MP's measured end, which the parametric data receiver (P10's 10 ms
+  symbols) takes as phase 4's start, so it needs that receiver to find
+  its own symbol timing first. The test stays among the flaky ones.
 
 ## Tests
 

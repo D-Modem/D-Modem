@@ -105,6 +105,7 @@ private:
 	}
 	void silence(s16 ms);
 	void send_mp();
+	s32 rtt_samples() const;
 	void start_tx();
 	void start_rx(s32 from);
 	void enter_data();
@@ -148,6 +149,8 @@ private:
 	s32 last_rx_end_ = 0;
 	s16 p4_mps_ = 0;                /* the peer's MPs in phase 4 (the
 					   first its last of the exchange) */
+	s32 mp_end_ = 0;                /* where our last MP ends (sent) */
+	bool mp_resent_ = false;        /* phase 4: ours sent again */
 	s32 renegs_ = 0, retrains_ = 0;
 	/* phase 4's watch */
 	s32 data_at_ = 0;               /* phase 4 (re)entered */

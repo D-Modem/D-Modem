@@ -414,6 +414,8 @@ public:
 					   INFO0 (after V.8; longer after a
 					   retrain, while the peer finishes
 					   its MP) */
+		bool after_retrain = false;     /* phase 2 again: the peer's
+						   last MP may still come */
 	};
 	enum State { RUNNING, DONE, FAILED };
 

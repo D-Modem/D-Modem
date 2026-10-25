@@ -316,7 +316,8 @@ struct Pair {
 /* a call of secs through the line; at (secs) the hook */
 template <class Hook>
 void run(Pair *p, int fs, const char *codec, double secs, double ppm, Hook hook,
-	 VcvmCaps ca = VcvmCaps(), VcvmCaps cb = VcvmCaps(), bool timers = false)
+	 VcvmCaps ca = VcvmCaps(), VcvmCaps cb = VcvmCaps(), bool timers = false,
+	 int delay_ms = 50)
 {
 	VcvmModem::Config k;
 	k.su.fs = fs;
@@ -331,8 +332,8 @@ void run(Pair *p, int fs, const char *codec, double secs, double ppm, Hook hook,
 	k.su.peer = ca;
 	ASSERT_EQ(p->b.init(k, [p]() { return p->rb_src.source(); },
 			    [p](const uint8_t *d, int n) { p->rb.sink(d, n); }), 0);
-	Path ab(fs, fs * 50 / 1000, 0.5, ppm, codec);
-	Path ba(fs, fs * 50 / 1000 + 3, 0.7, -ppm, codec);
+	Path ab(fs, fs * delay_ms / 1000, 0.5, ppm, codec);
+	Path ba(fs, fs * delay_ms / 1000 + 3, 0.7, -ppm, codec);
 	const int B = fs / 50;
 	std::vector<float> ia(B), oa(B), ib(B), ob(B);
 	for (long t = 0; t < (long)(secs * fs); t += B) {
@@ -493,4 +494,41 @@ TEST(VcvmModem, AmrWbNarrow)
 	printf("%s", logs(p).c_str());
 	printf("records: %ld good, %ld bad one way, %ld good, %ld bad the other\n",
 	       p.rb.good, p.rb.bad, p.ra_sink.good, p.ra_sink.bad);
+}
+
+/* a renegotiation through AMR-WB at 8000 Hz (the interop call's line),
+   asked for by each DCE in turn, at two path delays: both finish and the
+   data goes on */
+TEST(VcvmModem, AmrWbRenegotiate)
+{
+	if (!have_codec())
+		GTEST_SKIP() << "no AMR-WB";
+	VcvmCaps c = vcvm_caps_for(VCVM_M_ALL, 8000);
+	const int delays[] = { 50, 140 };
+	for (int d : delays)
+		for (int who = 0; who < 2; who++) {
+			Pair p;
+			bool asked = false;
+			long before = 0;
+			run(&p, 8000, "amrwb:23.85", 70, 100, [&](double t) {
+				if (t >= 35 && !asked) {
+					asked = true;
+					before = p.rb.good + p.ra_sink.good;
+					(who ? p.b : p.a).renegotiate();
+				}
+				return false;
+			}, c, c, false, d);
+			printf("delay %d ms, %s asks: %d/%d renegotiations, %d/%d "
+			       "retrains, %s\n", d, who ? "B" : "A",
+			       (int)p.a.renegotiations(), (int)p.b.renegotiations(),
+			       (int)p.a.retrains(), (int)p.b.retrains(),
+			       p.a.state() == VcvmModem::FAILED ||
+			       p.b.state() == VcvmModem::FAILED ? "FAILED" : "ok");
+			EXPECT_GE(p.a.renegotiations() + p.a.retrains(), 1) << logs(p);
+			EXPECT_EQ(p.a.renegotiations(), p.b.renegotiations()) << logs(p);
+			EXPECT_TRUE(p.a.connected()) << logs(p);
+			EXPECT_TRUE(p.b.connected()) << logs(p);
+			EXPECT_GT(p.rb.good + p.ra_sink.good, before + 10L * 1000 / 32)
+				<< logs(p);
+		}
 }
