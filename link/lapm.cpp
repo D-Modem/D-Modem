@@ -48,6 +48,12 @@ static const u8 PI_V42BIS_SET = 0, PI_V42BIS_P0 = 1, PI_V42BIS_N2 = 2,
 static const u8 PI_V44_SET = 0x40, PI_V44_C0 = 0x41, PI_V44_P0 = 0x42,
 	PI_V44_P1T = 0x43, PI_V44_P1R = 0x44, PI_V44_P2T = 0x45,
 	PI_V44_P2R = 0x46, PI_V44_P3T = 0x47, PI_V44_P3R = 0x48;
+/* zstd's private set (Annex F/V.cvm), in the private parameter group
+   after V.42bis's (in V.44's user data subfield Intel's 537EP drops the
+   call): "ZST", its P0 (as V.42bis's), the window's log, the
+   dictionary's ID (0: none) */
+static const u8 PI_ZSTD_SET = 0x60, PI_ZSTD_P0 = 0x61, PI_ZSTD_WIN = 0x62,
+	PI_ZSTD_DICT = 0x63;
 
 /* the HDLC optional functions we send (PL 3): the ISO bit positions 2,
    4, 8, 9, 12 and 16 only (Note 1 of Table 11a), so neither SREJ, TEST
@@ -442,8 +448,9 @@ s16 Lapm::tx_super(u8 addr, u8 ctrl, s16 pf)
 
 /* our XID (12.2) queued, a command (P 0) or, with our response address,
    a response (F 0), from the Link's configuration and our k and N401:
-   a command offers the compression asked for (V.42bis, and V.44 in the
-   user data subfield), a response says what was agreed (one algorithm,
+   a command offers the compression asked for (V.42bis and zstd in the
+   private group, V.44 in the user data subfield), a response says what
+   was agreed (one algorithm,
    7.3/V.44); -1 if the queue is full */
 s16 Lapm::tx_xid(u8 addr)
 {
@@ -460,7 +467,8 @@ s16 Lapm::tx_xid(u8 addr)
 	/* P0 counts from the initiator, for V.42bis and V.44 alike */
 	const s16 p0 = response ? c.comp & 3 : swap_dirs(c.comp);
 	const bool v44 = c.comp && c.v44;
-	const bool v42bis = c.comp && !(response && c.v44);
+	const bool zstd = c.comp && c.zstd;
+	const bool v42bis = c.comp && !(response && (c.v44 || c.zstd));
 	u8 *p = f->buf, *g;
 
 	*p++ = addr;
@@ -473,12 +481,22 @@ s16 Lapm::tx_xid(u8 addr)
 	p = put_param(p, PI_K_TX, win_i, 1);
 	p = put_param(p, PI_K_RX, win_r, 1);
 	put_group(g, GI_PARAM, p);
-	if (v42bis) {
+	if (v42bis || zstd) {
 		g = p;
-		p = put_id(p + 3, PI_V42BIS_SET, "V42");
-		p = put_param(p, PI_V42BIS_P0, p0, 1);
-		p = put_param(p, PI_V42BIS_N2, c.dict_size, 2);
-		p = put_param(p, PI_V42BIS_N7, c.max_string, 1);
+		p += 3;
+		if (v42bis) {
+			p = put_id(p, PI_V42BIS_SET, "V42");
+			p = put_param(p, PI_V42BIS_P0, p0, 1);
+			p = put_param(p, PI_V42BIS_N2, c.dict_size, 2);
+			p = put_param(p, PI_V42BIS_N7, c.max_string, 1);
+		}
+		if (zstd) {
+			p = put_id(p, PI_ZSTD_SET, "ZST");
+			p = put_param(p, PI_ZSTD_P0, p0, 1);
+			p = put_param(p, PI_ZSTD_WIN,
+				      static_cast<u32>(c.zstd_window), 1);
+			p = put_param(p, PI_ZSTD_DICT, c.zstd_dict, 4);
+		}
 		put_group(g, GI_PRIVATE, p);
 	}
 	if (v44) {
@@ -922,8 +940,10 @@ void Lapm::rx_xid(Frame *f, bool response)
 	}
 	Config r;
 	s16 p0 = 0;
-	s32 v44_p0 = 0;
-	bool v44_set = false;
+	s32 v44_p0 = 0, zstd_p0 = 0;
+	bool v44_set = false, zstd_set = false;
+	r.zstd_dict = 0;
+	r.zstd_window = ZSTD_WINDOW_LOG;
 	r.dict_size = V42BIS_DFLT_N2;
 	r.max_string = V42BIS_DFLT_N7;
 	r.v44_codewords = r.v44_max_string = r.v44_history = NO_LIMIT;
@@ -952,7 +972,20 @@ void Lapm::rx_xid(Frame *f, bool response)
 		}
 	};
 	auto priv = [&](u8 pi, const u8 *pv, s16 pl) {
+		const s32 v = bounded(get_be(pv, pl));
 		switch (pi) {
+		case PI_ZSTD_SET:
+			zstd_set = pl == 3 && !memcmp(pv, "ZST", 3);
+			break;
+		case PI_ZSTD_P0:
+			zstd_p0 = v;
+			break;
+		case PI_ZSTD_WIN:
+			r.zstd_window = static_cast<s16>(std::min<s32>(v, 31));
+			break;
+		case PI_ZSTD_DICT:
+			r.zstd_dict = get_be(pv, pl);
+			break;
 		case PI_V42BIS_P0:
 			p0 = static_cast<s16>(get_le(pv, pl) & 3);
 			break;
@@ -1012,6 +1045,10 @@ void Lapm::rx_xid(Frame *f, bool response)
 	r.v44 = v44_set && v44_p0;
 	if (r.v44)
 		p0 = v44_p0 & 3;
+	/* zstd likewise (a response that names it has only it) */
+	r.zstd = zstd_set && zstd_p0;
+	if (r.zstd)
+		p0 = zstd_p0 & 3;
 	r.comp = response ? swap_dirs(p0) : p0;
 	r.tx_win = static_cast<s16>(tx_win_);
 	r.rx_win = static_cast<s16>(rx_win_);
@@ -1020,6 +1057,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 	r.ec = r.detect = true;
 	link_->logf("ec: XID %s: compression %d%s, k %u/%u, N401 %u/%u.",
 		    response ? "response" : "command", r.comp,
+		    r.zstd ? (r.v44 ? " (zstd, V.44)" : " (zstd)") :
 		    r.v44 ? " (V.44)" : "", tx_win_, rx_win_, tx_info_,
 		    rx_info_);
 	link_->update_config(r);

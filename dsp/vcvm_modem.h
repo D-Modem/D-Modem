@@ -82,6 +82,8 @@ public:
 	s16 rtt_ms() const { return rtt_ms_; }
 	/* both DCEs indicated V.44's preset dictionary (INFO0) */
 	bool v44_preset() const { return su_ && su_->v44_preset(); }
+	/* both DCEs indicated zstd (INFO0) */
+	bool zstd() const { return su_ && su_->zstd(); }
 	/* the renegotiations completed */
 	s32 renegotiations() const { return renegs_; }
 	/* the retrains */

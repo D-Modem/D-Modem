@@ -16,6 +16,7 @@
 #include "dm_types.h"
 #include "link.h"
 #include "v44_preset.h"
+#include "zstd_dict.h"
 
 namespace dlink {
 
@@ -60,6 +61,7 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 		}
 	} else {
 		cfg_.v44 = false;
+		cfg_.zstd = false;
 	}
 	if (cfg.ec)
 		lapm_.init(this, cfg.tx_win, cfg.rx_win, cfg.tx_info,
@@ -78,6 +80,8 @@ void Link::exit()
 	dec_.exit();
 	enc44_.exit();
 	dec44_.exit();
+	encz_.exit();
+	decz_.exit();
 	mode_ = Mode::Idle;
 	timer_ = 0;
 	push_pending = false;
@@ -364,13 +368,19 @@ void Link::sync_indicate(u8 code, const u8 *par, s16 n)
 }
 
 /* XID: the directions both modems want (remote's P0, already from our
-   side, and ours); V.44 if both have it, else V.42bis, either with the
+   side, and ours); zstd if both offer it (Annex F/V.cvm), else V.44
+   if both have it, else V.42bis, either with the
    smaller of the two modems' parameters, the same both ways (6.4/V.42bis);
    no compression if they cannot be had */
 void Link::update_config(const Config &remote)
 {
 	s16 dir = remote.comp & cfg_.comp;
 
+	if (dir && cfg_.zstd && remote.zstd && start_zstd(dir, remote)) {
+		owner_->negotiated(cfg_);
+		return;
+	}
+	cfg_.zstd = false;
 	if (dir && remote.v44 && cfg_.v44 && enc44_.ready()) {
 		s32 n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
 		s32 n7 = std::min(cfg_.v44_max_string,
@@ -424,6 +434,36 @@ void Link::update_config(const Config &remote)
 	owner_->negotiated(cfg_);
 }
 
+/* zstd (Annex F/V.cvm) in the directions dir, both modems having
+   offered it (remote: the other's XID): a frame each way, the smaller
+   window, the dictionary if both name the same one (the one we know);
+   false if it cannot be had (then V.44 or V.42bis) */
+bool Link::start_zstd(s16 dir, const Config &remote)
+{
+	s16 wl = std::min(cfg_.zstd_window, remote.zstd_window);
+	u32 id = remote.zstd_dict == cfg_.zstd_dict &&
+		 cfg_.zstd_dict == ZSTD_DICT_ID ? ZSTD_DICT_ID : 0;
+	const std::vector<u8> &d = zstd_dict();
+	const u8 *p = id ? d.data() : nullptr;
+	s32 n = id ? static_cast<s32>(d.size()) : 0;
+	if (wl < 10 || wl > ZSTD_MAX_WINDOW_LOG || encz_.init(wl, p, n) ||
+	    decz_.init(wl, p, n)) {
+		encz_.exit();
+		decz_.exit();
+		logf("err: zstd: setup failed (window %d).", wl);
+		return false;
+	}
+	cfg_.comp = dir;
+	cfg_.v44 = false;
+	cfg_.zstd_window = wl;
+	cfg_.zstd_dict = id;
+	if (p)
+		logf("zstd: window %d, dictionary %08" PRIx32 " (%" PRId32
+		     " octets)", 1 << wl, id, n);
+	else
+		logf("zstd: window %d, no dictionary", 1 << wl);
+	return true;
+}
 
 /*
  *    characters
@@ -439,8 +479,7 @@ s16 Link::read_chars(u8 *buf, s16 n)
 		return 0;
 	if (proto_ == Protocol::Mnp && cfg_.mnp5)
 		return comp_read_with(enc5_, buf, n);
-	if (cfg_.ec && cfg_.comp & 2 &&
-	    (cfg_.v44 ? enc44_.ready() : enc_.ready()))
+	if (cfg_.ec && cfg_.comp & 2 && enc_ready())
 		return comp_read(buf, n);
 	return dte_read(buf, n);
 }
@@ -453,8 +492,7 @@ s16 Link::write_chars(const u8 *buf, s16 n)
 		return 0;
 	if (proto_ == Protocol::Mnp && cfg_.mnp5)
 		return comp_write_with(dec5_, buf, n);
-	if (cfg_.ec && cfg_.comp & 1 &&
-	    (cfg_.v44 ? dec44_.ready() : dec_.ready()))
+	if (cfg_.ec && cfg_.comp & 1 && dec_ready())
 		return comp_write(buf, n);
 	return dte_write(buf, n);
 }
@@ -477,16 +515,34 @@ s16 Link::dte_write(const u8 *buf, s16 n)
 	return w;
 }
 
-/* read_chars() through V.44's or V.42bis's encoder */
+/* the call's encoder (zstd's, V.44's or V.42bis's) is set up */
+bool Link::enc_ready() const
+{
+	return cfg_.zstd ? encz_.ready() : cfg_.v44 ? enc44_.ready() :
+		enc_.ready();
+}
+
+/* the call's decoder is set up */
+bool Link::dec_ready() const
+{
+	return cfg_.zstd ? decz_.ready() : cfg_.v44 ? dec44_.ready() :
+		dec_.ready();
+}
+
+/* read_chars() through zstd's, V.44's or V.42bis's encoder */
 s16 Link::comp_read(u8 *buf, s16 n)
 {
+	if (cfg_.zstd)
+		return comp_read_with(encz_, buf, n);
 	return cfg_.v44 ? comp_read_with(enc44_, buf, n) :
 		comp_read_with(enc_, buf, n);
 }
 
-/* write_chars() through V.44's or V.42bis's decoder */
+/* write_chars() through zstd's, V.44's or V.42bis's decoder */
 s16 Link::comp_write(const u8 *buf, s16 n)
 {
+	if (cfg_.zstd)
+		return comp_write_with(decz_, buf, n);
 	return cfg_.v44 ? comp_write_with(dec44_, buf, n) :
 		comp_write_with(dec_, buf, n);
 }
@@ -496,6 +552,8 @@ bool Link::comp_flush_output()
 {
 	if (proto_ == Protocol::Mnp)
 		return comp_flush_with(dec5_);
+	if (cfg_.zstd)
+		return comp_flush_with(decz_);
 	return cfg_.v44 ? comp_flush_with(dec44_) : comp_flush_with(dec_);
 }
 

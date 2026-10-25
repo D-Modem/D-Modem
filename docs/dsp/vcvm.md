@@ -27,9 +27,10 @@ measurements; this page is the implementation.
    the scrambler, then RS(32,k) (`rs.cpp`), then the interleaver, onto
    the loaded tones or the lags. CONNECT comes at the coded rate with
    `/CVM` once data runs both ways. LAPM starts without V.42's detection
-   phase. XID agrees on V.44 compression as on any other call, and
-   where both DCEs indicate the preset dictionary (below) V.44 starts
-   from it.
+   phase. XID agrees on compression as on any other call: zstd where
+   both offer it (Annex F; both INFO0s must indicate it), from its
+   dictionary where both indicate the preset, else V.44, from the
+   preset dictionary (below) where both indicate it.
 4. **Renegotiation and retrain.** A renegotiation is the control sequence,
    then the MP exchange with new loadings. It is triggered by request, by
    a loaded tone's phase error, or by failing codewords. A retrain is the
@@ -83,6 +84,20 @@ HTTP, mail, HTML, JSON and XML, NMEA sentences, logins and common English,
 `link/v44_preset.cpp` has the text, and the `v44_preset_check` test
 fails if it and the annex's listing ever differ.
 
+## Compression: zstd (Annex F)
+
+Between two D-Modems (V.cvm or any other mode with LAPM) the call's
+compression is zstd rather than V.44: XID offers it in a private set,
+and both take it when both offer it ([link.md](../link.md#zstd)). On
+V.cvm INFO0's octet 3 bit 3 indicates it ahead (`DSP_VCVM_ZSTD=0` leaves
+it out, a test): without it in both INFO0s neither offers it, and V.44
+runs as above. The dictionary is a formatted zstd dictionary whose
+content is the same Annex E text, offered where both INFO0s have the
+preset bit (`DSP_VCVM_V44DICT=0`: zstd without it). The log says
+`zstd: window 32768, dictionary 56434d01 (3660 octets)`. The same six
+messages come to 474 octets with it, each on its own (V.44 primed: 485),
+414 in a row (449); bulk text about three times smaller than V.44's.
+
 ## Capabilities: where they go, and K56flex
 
 - **V.8's field stays two octets** (Annex A). CM and JM go through the
@@ -102,8 +117,8 @@ fails if it and the annex's listing ever differ.
   go into V.8bis (Annex A.3). `VcvmCaps.NotK56flex` checks every
   combination of capabilities against that rule.
 - **Link-layer capabilities go in INFO0's octet 3** (Table B.1): bit 4
-  the V.44 preset dictionary, bit 3 reserved for zstd (for further
-  study), bit 2 reserved, bit 1 reserved for an octet of further
+  the V.44 preset dictionary (and zstd's dictionary), bit 3 zstd
+  (Annex F), bit 2 reserved, bit 1 reserved for an octet of further
   capabilities after octet 4. INFO0 has its FCS and comes again until
   received, and both INFO0s are in well before the link starts.
 
@@ -120,6 +135,7 @@ fails if it and the annex's listing ever differ.
 | `dsp/vcvm_modem.h`, `vcvm_modem.cpp` | One DCE after V.8: the start-up, phase 4, renegotiations, retrains |
 | `dsp/dp_vcvm.cpp` | The pump `DP_VCVM`: the core's bits as octets (first bit the least significant), 9600 Hz lines through resamplers, CONNECT, the figures for `+CVM?`, S44 and S45, whether both have the preset dictionary |
 | `link/v44_preset.h`, `v44_preset.cpp` | Annex E's text, V.44's preset dictionary (`V44::prime()` in `link/v44.cpp`) |
+| `link/zstd_codec.h`, `zstd_codec.cpp`, `zstd_dict.h`, `zstd_dict.cpp` | zstd (Annex F) and its dictionary |
 
 ## Receivers
 
@@ -221,8 +237,13 @@ These are written into the Recommendation now:
   with renegotiation, retrain and a cut line.
 - `link_test`'s `Link.V44Preset`: V.44 primed with the preset dictionary,
   round trips with REINITs, and the gain on short messages;
-  `v44_preset_check`: the text is the annex's.
+  `v44_preset_check`: the text is the annex's (and zstd's dictionary
+  header Annex F's). `Link.Zstd`, `Link.ZstdDict`, `Link.LapmZstd`:
+  zstd's round trips, its dictionary, its negotiation; `zstd_ref_test`:
+  against libzstd, both ways.
 - `rs_test`: the code.
 - The `open.open_vcvm*` interop calls (table above): two open modems
-  through netsim, V.8 and LAPM included; `open_vcvm` with the preset
-  dictionary, `open_vcvm_nodict` without it on offer.
+  through netsim, V.8 and LAPM included; `open_vcvm` with zstd and its
+  dictionary, `open_vcvm_nodict` without the preset on offer (zstd
+  without a dictionary), `open_vcvm_nozstd` without zstd (V.44 primed);
+  `open_34_zstd` and `open_34_nozstd` zstd over V.34.

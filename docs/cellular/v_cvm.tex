@@ -279,6 +279,7 @@ stand-alone document, the status of a Recommendation.
 \item[{[ITU-T V.42]}] Recommendation ITU-T V.42 (2002), \emph{Error-correcting procedures for DCEs using asynchronous-to-synchronous conversion}.
 \item[{[ITU-T V.42bis]}] Recommendation ITU-T V.42bis (1990), \emph{Data compression procedures for data circuit-terminating equipment (DCE) using error correction procedures}.
 \item[{[ITU-T V.44]}] Recommendation ITU-T V.44 (2000), \emph{Data compression procedures}.
+\item[{[IETF RFC 8878]}] IETF RFC 8878 (2021), \emph{Zstandard Compression and the 'application/zstd' Media Type}.
 \item[{[ITU-T V.250]}] Recommendation ITU-T V.250 (2003), \emph{Serial asynchronous automatic dialling and control}.
 \item[{[ITU-T T.35]}] Recommendation ITU-T T.35 (2000), \emph{Procedure for the allocation of ITU-T defined codes for non-standard facilities}.
 \item[{[3GPP TS 26.090]}] 3GPP TS 26.090, \emph{Mandatory Speech Codec speech processing functions; Adaptive Multi-Rate (AMR) speech codec; Transcoding functions}.
@@ -442,7 +443,7 @@ Fallback & \rec{V.22} (1200~bit/s, through AMR 12.2) and \rec{V.21} (300~bit/s, 
 Probing & the principle of \rec{V.34} clause 10: a multitone probing signal, INFO exchanges, MP parameter exchange, rate renegotiation and retrain & the probing signals and the parameters exchanged (clause~\ref{sec:probing}) \\
 Modulation & the differential phase modulation of \rec{V.22} per tone; the multitone structure of ADSL (\rec{G.992.1}) with a cyclic prefix & the comb, symbol timing and loading (clause~\ref{sec:modulation}); the parametric mode on the codec's pitch lag (clause~\ref{sec:parametric}) \\
 Inner code & the Reed-Solomon code of \rec{G.975} over GF($2^8$), shortened & its interleaving over symbols and frames (Annex~\ref{annex:rs}) \\
-Link layer & \rec{V.42} LAPM with its detection phase, \rec{V.42bis} and \rec{V.44} compression & -- \\
+Link layer & \rec{V.42} LAPM with its detection phase, \rec{V.42bis} and \rec{V.44} compression; Zstandard (\ietf{8878}) & its negotiation in XID and its frames (Annex~\ref{annex:zstd}) \\
 DTE interface & \rec{V.250} & the +MS values, S-registers and result codes of clause~\ref{sec:dte} \\
 Facsimile & \rec{T.38} internet facsimile packets, \rec{T.30} & their carriage in the data link (Annex~\ref{annex:fax}) \\
 Codec & \rec{G.722.2} (AMR-WB) as a channel model & -- \\
@@ -814,8 +815,8 @@ a codec mode leaving that range, is the earliest sign one may.}
 \subsection{Structure}
 The data of phase~4 pass, from the DTE towards the line, through:
 \begin{enumerate}
-\item \rec{V.42}: LAPM, with the V.42bis or V.44 compression the DCEs
-  negotiate in XID (clause~\ref{sec:link});
+\item \rec{V.42}: LAPM, with the zstd, V.44 or V.42bis compression the
+  DCEs negotiate in XID (clause~\ref{sec:link});
 \item the inner code: the Reed-Solomon code of Annex~\ref{annex:rs} over
   the HDLC frames' octets, as a continuous octet stream (the LAPM frames
   with their flags are the stream; no further framing is added);
@@ -915,7 +916,10 @@ negotiate \rec{V.44} compression, or \rec{V.42bis} where V.44 is not
 available, in XID as those Recommendations specify.  Where both DCEs
 indicate the preset dictionary of Annex~\ref{annex:v44dict} in INFO0
 (Table~\ref{tab:info0}) and XID agrees on V.44, both shall start
-V.44 from it as that annex specifies.  LAPM's T401 shall be
+V.44 from it as that annex specifies.  Where both indicate zstd in
+INFO0, both shall offer it in XID, and where XID agrees on it the call's
+compression is zstd, as Annex~\ref{annex:zstd} specifies, in place of
+V.44 or V.42bis.  LAPM's T401 shall be
 set from the round-trip delay measured in phase~2 (clause~\ref{sec:phase2}),
 with at least 1~s added for the interleaver's delay and the symbol
 period, and 3~s in the parametric mode (a codeword takes 1.3~s at

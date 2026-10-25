@@ -133,8 +133,7 @@ struct VcvmInfo0 {
 				   (where both have them) */
 	bool v44dict = false;   /* octet 3 bit 4: V.44's preset dictionary
 				   of Annex E (11.1) */
-	bool zstd = false;      /* octet 3 bit 3: zstd, allocated, not
-				   specified yet: always 0 */
+	bool zstd = false;      /* octet 3 bit 3: zstd (Annex F) */
 	s16 level = 6;          /* the transmit level, 0.5 dB below -9 dBFS */
 
 	s16 encode(u8 *o) const;                /* 4 octets */
@@ -444,6 +443,8 @@ public:
 	s32 last_rx_end() const { return last_rx_end_; }
 	/* both INFO0s have V.44's preset dictionary (Annex E) */
 	bool v44_preset() const { return info0_.v44dict && peer0_.v44dict; }
+	/* both INFO0s have zstd (Annex F) */
+	bool zstd() const { return info0_.zstd && peer0_.zstd; }
 	/* what happened, a line a step */
 	const std::string &log() const { return log_; }
 

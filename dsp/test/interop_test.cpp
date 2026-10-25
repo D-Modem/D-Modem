@@ -747,20 +747,39 @@ std::vector<Call> calls()
 	    { "NET=8000:8000:ulaw", "NET_CODEC=amrwb:23.85", "STREAM=10",
 	      "EXPECT_A=vcvm: phase 4", "EXPECT_B=vcvm: phase 4" });
 #endif
-	/* V.cvm on a line without a codec (G.711 alone) */
+	/* V.cvm on a line without a codec (G.711 alone): zstd from the
+	   dictionary (Annex F), offered in XID by both */
 	add("open", "open_vcvm", "open8", "open8", "ATX3;AT+MS=V_CVM",
 	    { "NET=8000:8000:ulaw", "STREAM=10",
 	      "EXPECT_A=(?s)V.8 agreed on V.cvm.*vcvm: phase 4: transmitting N200"
-	      ".*v44: preset dictionary 1, 3505 of its 3505",
+	      ".*zstd: window 32768, dictionary 56434d01 \\(3660 octets\\)",
 	      "EXPECT_B=(?s)vcvm: phase 4: transmitting N200.*"
-	      "v44: preset dictionary 1, 3505 of its 3505" });
-	/* without V.44's preset dictionary (Annex E) on offer: V.44 as it
-	   is, and the data through */
+	      "zstd: window 32768, dictionary 56434d01" });
+	/* without the preset (Annex E) on offer: zstd without its
+	   dictionary, and the data through */
 	add("open", "open_vcvm_nodict", "open8", "open8", "ATX3;AT+MS=V_CVM",
 	    { "NET=8000:8000:ulaw", "STREAM=5", "DSP_VCVM_V44DICT=0",
-	      "EXPECT_A=(?s)vcvm: phase 4.*v44: 4096 codewords",
-	      "EXPECT_B=(?s)vcvm: phase 4.*v44: 4096 codewords",
+	      "EXPECT_A=(?s)vcvm: phase 4.*zstd: window 32768, no dictionary",
+	      "EXPECT_B=(?s)vcvm: phase 4.*zstd: window 32768, no dictionary",
 	      "REJECT_B=preset dictionary" });
+	/* without zstd in the INFO0s: V.44 from its preset dictionary */
+	add("open", "open_vcvm_nozstd", "open8", "open8", "ATX3;AT+MS=V_CVM",
+	    { "NET=8000:8000:ulaw", "STREAM=5", "DSP_VCVM_ZSTD=0",
+	      "EXPECT_A=(?s)vcvm: phase 4.*v44: preset dictionary 1, 3505 of "
+	      "its 3505",
+	      "EXPECT_B=(?s)vcvm: phase 4.*v44: preset dictionary 1, 3505 of "
+	      "its 3505",
+	      "REJECT_B=zstd: window" });
+	/* zstd in the other modes too: V.34 both ways with bulk data, and
+	   +DSZ=0 on one side (V.44 then) */
+	add("open", "open_34_zstd", "open", "open", "ATX3;AT+MS=34",
+	    { "NET=9600:9600:ulaw", "BULK=60000",
+	      "EXPECT_A=zstd: window 32768, dictionary 56434d01",
+	      "EXPECT_B=zstd: window 32768, dictionary 56434d01" });
+	add("open", "open_34_nozstd", "open", "open", "ATX3;AT+MS=34;AT+DSZ=0",
+	    { "NET=9600:9600:ulaw", "STREAM=5", "PROTO_B=ATX3;AT+MS=34",
+	      "EXPECT_A=v44: 4096 codewords", "EXPECT_B=v44: 4096 codewords",
+	      "REJECT_B=zstd: window" });
 
 	/* --- the Agere soft modem (8000 Hz) and the open modem (9600 Hz)
 	   call each other; AT+MS takes names there (B103, V21, ..., V34) */

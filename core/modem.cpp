@@ -207,8 +207,8 @@ struct LinkOwner final : public dlink::Owner {
 	}
 	/* what XID or MNP's LRs agreed */
 	void negotiated(const dlink::Config &c) override {
-		m_.negotiated(c.comp, c.v44, c.dict_size, c.max_string,
-			      c.mnp5);
+		m_.negotiated(c.comp, c.v44, c.zstd, c.dict_size,
+			      c.max_string, c.mnp5);
 	}
 	/* the DTE's in-band command (V.80) */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx) override {
@@ -770,6 +770,7 @@ void Modem::setup_config()
 	c.dict_size = dlink::V42BIS_MAX_CODEWORDS;
 	c.max_string = dlink::V42BIS_MAX_STRING;
 	c.v44 = false;
+	c.zstd = false;
 	c.mnp_on = false;
 	cfg_ = c;
 	dsp_info_.qc_lapm = c.ec && c.ec_detector;
@@ -793,6 +794,10 @@ s16 Modem::link_init()
 	c.comp = cfg_.comp;
 	c.dict_size = cfg_.dict_size;
 	c.max_string = cfg_.max_string;
+	/* +DSZ: zstd offered, with its dictionary */
+	const u32 *dsz = kept("+DSZ");
+	c.zstd = c.ec && c.comp && dsz[0];
+	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
 	if (c.sync) {
 		/* +ESA: <trans_idle>, <framed_idle>, <framed_un_ov>,
@@ -814,17 +819,19 @@ s16 Modem::link_init()
 }
 
 /* what XID or MNP's LRs agreed: the call's compression */
-void Modem::negotiated(s16 comp, bool v44, s32 dict_size,
+void Modem::negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
 		       s32 max_string, bool mnp5)
 {
 	cfg_.comp = comp;
 	cfg_.v44 = v44;
+	cfg_.zstd = zstd;
 	cfg_.dict_size = dict_size;
 	cfg_.max_string = max_string;
 	cfg_.mnp5 = mnp5;
 	logf("negotiated: compression %d%s, %" PRId32 " codewords, strings of %"
 	     PRId32 "%s\n",
-	     comp, v44 ? " (V.44)" : "", dict_size, max_string,
+	     comp, zstd ? " (zstd)" : v44 ? " (V.44)" : "", dict_size,
+	     max_string,
 	     mnp5 ? ", MNP 5" : "");
 }
 
@@ -840,7 +847,7 @@ const char *Modem::compression_name() const
 	if (cfg_.mnp_on)
 		return cfg_.mnp5 ? "MNP5" : "NONE";
 	if (cfg_.ec && cfg_.comp)
-		return cfg_.v44 ? "V44" : "V42bis";
+		return cfg_.zstd ? "ZSTD" : cfg_.v44 ? "V44" : "V42bis";
 	return "NONE";
 }
 
@@ -869,6 +876,9 @@ void Modem::update_status(Status s)
 			cfg_.mnp = false;
 			/* both DCEs have V.44's preset dictionary (Annex E) */
 			link_->set_v44_preset(vcvm_.v44_preset != 0);
+			/* zstd only if both indicated it, its dictionary
+			   only if both have the preset (Annex F) */
+			link_->set_zstd(vcvm_.zstd != 0, vcvm_.v44_preset != 0);
 		}
 		set_state(EC_ESTAB);
 		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
@@ -1845,7 +1855,7 @@ void Modem::report(Result r)
 				line = "Compression: " + std::string(c);
 			else
 				line = dec(c == "MNP5" ? 66 : c == "V42bis" ? 67 :
-					   c == "V44" ? 68 : 69);
+					   c == "V44" ? 68 : c == "ZSTD" ? 70 : 69);
 			puts(line);
 			crlf();
 		}

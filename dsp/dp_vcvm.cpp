@@ -157,6 +157,7 @@ void VcvmPump::report()
 	info_->renegs = mdm_.renegotiations();
 	info_->erasures = mdm_.rx_stats().erasures;
 	info_->v44_preset = mdm_.v44_preset();
+	info_->zstd = mdm_.zstd();
 }
 
 /* cnt of the line's samples in, cnt out, through the modem at 8000 Hz:

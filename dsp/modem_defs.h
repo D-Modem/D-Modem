@@ -204,6 +204,9 @@ struct dp_vcvm {
 	int v44_preset;         /* both DCEs have V.44's preset dictionary
 				   (their INFO0s, Annex E): the link primes
 				   V.44 with it */
+	int zstd;               /* both DCEs indicated zstd (their INFO0s,
+				   Annex F): the link's compression, if XID
+				   agrees on any */
 };
 
 #define DP_STATS_SNR            0x1

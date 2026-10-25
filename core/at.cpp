@@ -202,6 +202,9 @@ const struct Kept {
 	{ "+DS44", 9, { 3, 0, 0, 2048, 2048, 255, 255, 6144, 6144 },
 	  "(0-3),(0,1),(0,1),(256-65535),(256-65535),(32-255),(32-255),"
 	  "(512-65535),(512-65535)" },
+	/* D-Modem's own: zstd offered in XID (<on>), with V.cvm's
+	   dictionary (<dict>); modem.cpp reads it (Annex F/V.cvm) */
+	{ "+DSZ", 2, { 1, 1 }, "(0,1),(0,1)" },
 	{ "+PCW", 1, { 2 }, "(0-2)" },
 	{ "+PIG", 1, { 1 }, "(0,1)" },
 	/* +FAA=1, adaptive answer: modem.cpp reads it */

@@ -341,7 +341,7 @@ public:
 	/* what the core does with it */
 	void update_status(Status s);
 	/* what XID (or MNP's LRs) agreed */
-	void negotiated(s16 comp, bool v44, s32 dict_size,
+	void negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
 			s32 max_string, bool mnp5);
 	/* the DTE's in-band command in V.80's Synchronous Access Mode */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx);
@@ -555,6 +555,7 @@ private:
 		s16 comp;
 		s32 dict_size, max_string;
 		bool v44;               /* V.44 rather than V.42bis */
+		bool zstd;              /* zstd (V.cvm) rather than either */
 		bool mnp5;
 		bool mnp_on;            /* the call has MNP */
 		bool sync;              /* V.80 Synchronous Access Mode */

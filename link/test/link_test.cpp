@@ -24,9 +24,10 @@
 
 #include "link.h"
 #include "mnp5.h"
-#include "v44_preset.h"
 #include "v44.h"
 #include "v44_preset.h"
+#include "zstd_codec.h"
+#include "zstd_dict.h"
 
 using namespace dlink;
 
@@ -271,6 +272,174 @@ TEST(Link, V44Preset)
 	size_t b = v44_roundtrip("the messages in a row, primed", all, 4096,
 				 255, 12288, 0, &p).size();
 	CHECK(b < a, "in a row: primed %zu, not primed %zu", b, a);
+}
+
+/*
+ *    zstd
+ *
+ */
+
+/* in through a zstd encoder (a block every flush_every characters, 0:
+   at the end only; block: the encoder's largest) and a decoder, both
+   from dict (or none): the output must be in; returns the compressed
+   octets (the frame's header too) */
+static std::vector<uint8_t> zstd_roundtrip(const char *name,
+					   const std::vector<uint8_t> &in,
+					   int flush_every,
+					   const std::vector<uint8_t> *dict =
+						   nullptr,
+					   int block = ZSTD_BLOCK)
+{
+	Zstd enc, dec;
+	std::vector<uint8_t> line, out;
+	uint8_t buf[2048];
+	int n;
+	const u8 *d = dict ? dict->data() : nullptr;
+	s32 dn = dict ? static_cast<s32>(dict->size()) : 0;
+
+	CHECK(!enc.init(ZSTD_WINDOW_LOG, d, dn, block) &&
+		      !dec.init(ZSTD_WINDOW_LOG, d, dn), "%s: init", name);
+	for (size_t i = 0; i < in.size(); i++) {
+		enc.encode(in[i]);
+		if (flush_every && (i + 1) % flush_every == 0)
+			enc.flush_encoder();
+		while ((n = enc.out(buf, sizeof(buf))) > 0)
+			line.insert(line.end(), buf, buf + n);
+	}
+	enc.flush_encoder();
+	while ((n = enc.out(buf, sizeof(buf))) > 0)
+		line.insert(line.end(), buf, buf + n);
+	bool bad = false;
+	for (uint8_t c : line) {
+		if (dec.decode(c) < 0)
+			bad = true;
+		while ((n = dec.out(buf, sizeof(buf))) > 0)
+			out.insert(out.end(), buf, buf + n);
+	}
+	CHECK(!bad, "%s: decode error", name);
+	CHECK(out == in, "%s: %zu in, %zu out", name, in.size(), out.size());
+	printf("  %s: %zu -> %zu octets\n", name, in.size(), line.size());
+	return line;
+}
+
+/* zstd round trips (text, flushes, a large block, noise, repeats, a
+   mix, the window slid by far), a whole frame, and the decoder on
+   damaged frames (an error, not a crash) */
+TEST(Link, Zstd)
+{
+	rnd_state = 4242;
+	std::vector<uint8_t> t = text(200000), z = noise(40000);
+	std::vector<uint8_t> rep, line;
+	for (int i = 0; i < 30000; i++)
+		rep.push_back("abababababababababcabcabcabc"[i % 28]);
+	line = zstd_roundtrip("text", t, 0);
+	CHECK(line.size() < t.size() / 5, "text: %zu octets", line.size());
+	zstd_roundtrip("text, flush every 100", t, 100);
+	zstd_roundtrip("text, flush every one", text(3000), 1);
+	zstd_roundtrip("text, blocks of 64 kB", t, 0, nullptr, 65536);
+	line = zstd_roundtrip("noise", z, 0);
+	CHECK(line.size() < z.size() + z.size() / 64, "noise: %zu octets",
+	      line.size());
+	zstd_roundtrip("repeats", rep, 0);
+	std::vector<uint8_t> mixed = text(30000), z2 = noise(30000);
+	mixed.insert(mixed.end(), z2.begin(), z2.end());
+	std::vector<uint8_t> t2 = text(30000);
+	mixed.insert(mixed.end(), t2.begin(), t2.end());
+	zstd_roundtrip("text, noise, text", mixed, 37);
+	zstd_roundtrip("one character", std::vector<uint8_t>(1, 'x'), 0);
+	zstd_roundtrip("one character 5000 times",
+		       std::vector<uint8_t>(5000, 'q'), 0);
+
+	/* a whole frame: its last block ends it */
+	Zstd enc, dec;
+	CHECK(!enc.init() && !dec.init(), "init");
+	std::vector<uint8_t> s = text(5000), f, o;
+	uint8_t buf[2048];
+	int n;
+	for (uint8_t c : s)
+		enc.encode(c);
+	enc.finish();
+	while ((n = enc.out(buf, sizeof(buf))) > 0)
+		f.insert(f.end(), buf, buf + n);
+	CHECK(f.size() > 4 && f[0] == 0x28 && f[1] == 0xB5 && f[2] == 0x2F &&
+		      f[3] == 0xFD, "the magic number");
+	for (uint8_t c : f) {
+		CHECK(dec.decode(c) >= 0, "a whole frame: decode error");
+		while ((n = dec.out(buf, sizeof(buf))) > 0)
+			o.insert(o.end(), buf, buf + n);
+	}
+	CHECK(o == s && dec.frame_done(), "a whole frame: %zu of %zu, done %d",
+	      o.size(), s.size(), dec.frame_done());
+
+	/* damaged: an octet changed here and there, and noise after the
+	   header; the decoder may give garbage, never crash */
+	int errors = 0;
+	for (int k = 0; k < 200; k++) {
+		std::vector<uint8_t> g = f;
+		if (k < 100)
+			g[6 + rnd() % (g.size() - 6)] ^= 1 << (rnd() % 8);
+		else
+			for (size_t i = 6; i < g.size(); i++)
+				g[i] = (uint8_t)rnd();
+		Zstd d2;
+		d2.init();
+		for (uint8_t c : g) {
+			if (d2.decode(c) < 0) {
+				errors++;
+				break;
+			}
+			while (d2.out(buf, sizeof(buf)) > 0)
+				;
+		}
+	}
+	printf("  damaged frames: %d of 200 found bad\n", errors);
+	CHECK(errors >= 100, "damaged frames found bad: %d", errors);
+}
+
+/* V.cvm's dictionary (zstd_dict.h): it loads, round trips from it, its
+   ID in the frame header, and the gain on short messages, each on its
+   own and all of them in a row */
+TEST(Link, ZstdDict)
+{
+	const std::vector<uint8_t> &d = zstd_dict();
+	CHECK(d.size() == zstd_dict_header() + v44_preset().size(),
+	      "%zu octets", d.size());
+	Zstd e;
+	CHECK(!e.init(ZSTD_WINDOW_LOG, d.data(), static_cast<s32>(d.size())),
+	      "it loads");
+	/* a damaged header does not */
+	std::vector<uint8_t> bad = d;
+	bad[9] = 0xFF;
+	CHECK(e.init(ZSTD_WINDOW_LOG, bad.data(),
+		     static_cast<s32>(bad.size())) < 0, "a damaged one does not");
+
+	rnd_state = 999;
+	std::vector<uint8_t> t = text(100000);
+	std::vector<uint8_t> line = zstd_roundtrip("dictionary: text", t, 0, &d);
+	CHECK(line.size() > 9 && (line[4] & 3) == 3 &&
+		      (line[6] | line[7] << 8 | line[8] << 16 |
+		       (uint32_t)line[9] << 24) == ZSTD_DICT_ID,
+	      "the dictionary's ID in the frame header");
+	zstd_roundtrip("dictionary: text, flush every 13", t, 13, &d);
+	zstd_roundtrip("dictionary: noise", noise(20000), 0, &d);
+
+	size_t plain = 0, dict = 0, in = 0;
+	std::vector<uint8_t> all;
+	for (auto &m : v44_messages()) {
+		/* (the frame headers, 6 and 10 octets, not counted) */
+		plain += zstd_roundtrip("message", m, 0).size() - 6;
+		dict += zstd_roundtrip("message, dictionary", m, 0, &d).size() -
+			10;
+		in += m.size();
+		all.insert(all.end(), m.begin(), m.end());
+	}
+	printf("  the messages one by one: %zu octets, %zu compressed, %zu "
+	       "with the dictionary\n", in, plain, dict);
+	CHECK(dict * 10 < plain * 6, "dictionary %zu, none %zu", dict, plain);
+	size_t a = zstd_roundtrip("the messages in a row", all, 0).size();
+	size_t b = zstd_roundtrip("the messages in a row, dictionary", all, 0,
+				  &d).size();
+	CHECK(b < a, "in a row: dictionary %zu, none %zu", b, a);
 }
 
 /*
@@ -566,14 +735,18 @@ struct Pair {
 	}
 };
 
-/* LAPM with the detection phase, compression comp (V.42bis's P0), V.44 */
-static Config lapm_config(int comp, bool v44 = true)
+/* LAPM with the detection phase, compression comp (V.42bis's P0), V.44,
+   zstd (from V.cvm's dictionary, or none) */
+static Config lapm_config(int comp, bool v44 = true, bool zstd = false,
+			  bool dict = true)
 {
 	Config c;
 	c.ec = true;
 	c.detect = true;
 	c.comp = comp;
 	c.v44 = v44;
+	c.zstd = zstd;
+	c.zstd_dict = dict ? ZSTD_DICT_ID : 0;
 	return c;
 }
 
@@ -625,6 +798,88 @@ TEST(Link, Lapm)
 	p.run(9600 * 2);
 	CHECK(p.da.released, "answerer released after DISC");
 	CHECK(p.dc.released, "caller released after UA");
+}
+
+/* zstd offered in XID by both: it rather than V.44, with the
+   dictionary where both name it, text and noise both ways, with the
+   detection phase or without; offered by one only: V.44; V.cvm's
+   set_zstd() takes the offer or the dictionary away */
+TEST(Link, LapmZstd)
+{
+	for (int k = 0; k < 4; k++) {
+		bool dc = k & 1, da = k & 2;
+		rnd_state = 2026 + k;
+		Pair p(lapm_config(3, true, true, dc),
+		       lapm_config(3, true, true, da));
+		p.start(k == 1, k == 1);
+		p.run(9600 * 3);
+		CHECK(p.dc.up && p.da.up, "LAPM up");
+		bool dict = dc && da;
+		CHECK(p.lc.config().zstd && p.la.config().zstd &&
+			      !p.lc.config().v44 && p.lc.config().comp == 3 &&
+			      p.la.config().comp == 3 && p.dc.agreed.zstd &&
+			      p.da.agreed.zstd,
+		      "zstd both ways (%d, %d)", p.lc.config().zstd,
+		      p.la.config().zstd);
+		CHECK(p.lc.config().zstd_dict == (dict ? ZSTD_DICT_ID : 0) &&
+			      p.la.config().zstd_dict == p.lc.config().zstd_dict,
+		      "dictionary %08x, %08x", (unsigned)p.lc.config().zstd_dict,
+		      (unsigned)p.la.config().zstd_dict);
+		std::string n = std::string("lapm + zstd") +
+			(dict ? " + dictionary" : "") + (k == 1 ? " (detection)" : "");
+		transfer((n + ", text").c_str(), p, 60000, 40000, 9600 * 60);
+		transfer((n + ", noise").c_str(), p, 5000, 5000, 9600 * 20,
+			 false);
+	}
+	for (int side = 0; side < 2; side++) {
+		rnd_state = 77 + side;
+		Pair p(lapm_config(3, true, side == 0),
+		       lapm_config(3, true, side == 1));
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(!p.lc.config().zstd && !p.la.config().zstd &&
+			      p.lc.config().v44 && p.la.config().v44,
+		      "zstd offered by the %s only: V.44",
+		      side ? "answerer" : "caller");
+		transfer(side ? "lapm + v44 (zstd: answerer only), text" :
+			 "lapm + v44 (zstd: caller only), text", p, 20000,
+			 20000, 9600 * 30);
+	}
+	/* V.cvm: the INFO0s without zstd, then without the preset */
+	{
+		Pair p(lapm_config(3, true, true), lapm_config(3, true, true));
+		p.lc.set_zstd(false, true);
+		p.la.set_zstd(false, true);
+		p.start(false, false);
+		p.run(9600 * 3);
+		CHECK(!p.lc.config().zstd && p.lc.config().v44,
+		      "set_zstd(false): V.44");
+	}
+	{
+		Pair p(lapm_config(3, true, true), lapm_config(3, true, true));
+		p.lc.set_zstd(true, false);
+		p.la.set_zstd(true, false);
+		p.start(false, false);
+		p.run(9600 * 3);
+		CHECK(p.lc.config().zstd && !p.lc.config().zstd_dict &&
+			      !p.la.config().zstd_dict,
+		      "set_zstd(true, false): zstd without the dictionary");
+		transfer("lapm + zstd (V.cvm, no preset), text", p, 20000, 20000,
+			 9600 * 30);
+	}
+	/* zstd without V.44 offered, and with one direction only */
+	{
+		Pair p(lapm_config(1, false, true), lapm_config(3, false, true));
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(p.lc.config().zstd && p.la.config().zstd &&
+			      p.lc.config().comp == p.la.config().comp >> 1 &&
+			      p.lc.config().comp != 3,
+		      "one direction: comp %d, %d", p.lc.config().comp,
+		      p.la.config().comp);
+		transfer("lapm + zstd one way, text", p, 20000, 20000,
+			 9600 * 30);
+	}
 }
 
 /* frames LAPM must drop: an I frame of two octets (no second control

@@ -44,6 +44,8 @@
 #include "mnp5.h"
 #include "v42bis.h"
 #include "v44.h"
+#include "zstd_codec.h"
+#include "zstd_dict.h"
 #include "v80.h"
 
 namespace dlink {
@@ -84,6 +86,14 @@ struct Config {
 	/* V.cvm: both DCEs have the preset dictionary (v44_preset.h);
 	   V.44, if XID agrees on it, starts from it */
 	bool v44_preset = false;
+	/* zstd (zstd_codec.h; Annex F of V.cvm) offered with compression, in
+	   XID's user data subfield (the private set "ZST"), from the
+	   dictionary zstd_dict (0: none; zstd_dict.h) with a window of
+	   2^zstd_window; after XID: it, rather than V.44 or V.42bis, is
+	   what the call has, with the dictionary and window agreed */
+	bool zstd = false;
+	u32 zstd_dict = ZSTD_DICT_ID;
+	s16 zstd_window = ZSTD_WINDOW_LOG;
 	/* V.80 Synchronous Access Mode (+ES=6, or 8 answering), with its
 	   settings, rather than any of the above */
 	bool sync = false;
@@ -159,6 +169,14 @@ public:
 	void set_v44_preset(bool on)
 	{
 		cfg_.v44_preset = asked_.v44_preset = on;
+	}
+	/* V.cvm (before XID): zstd offered only if both DCEs indicated
+	   it (on), its dictionary only if both have the preset (dict) */
+	void set_zstd(bool on, bool dict)
+	{
+		cfg_.zstd = asked_.zstd = asked_.zstd && on;
+		if (!dict)
+			cfg_.zstd_dict = asked_.zstd_dict = 0;
 	}
 	/* we hang up: LAPM sends DISC, MNP LD */
 	void disconnect();
@@ -286,6 +304,10 @@ private:
 	Mnp mnp_;
 	V42bis enc_, dec_;
 	V44 enc44_, dec44_;
+	Zstd encz_, decz_;
+	bool enc_ready() const;
+	bool dec_ready() const;
+	bool start_zstd(s16 dir, const Config &remote);
 	Mnp5 enc5_, dec5_;
 	SyncAccess sync_;
 	/* decoded characters the DTE has not taken yet */

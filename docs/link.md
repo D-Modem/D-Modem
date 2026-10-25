@@ -14,8 +14,8 @@ bits once a call has connected (C++, `namespace dlink`):
   bits (2 s at the data pump's rate) and N400 = 5 retransmissions (XID,
   SABME, DISC, the data phase's polls) before giving up, and parameter
   negotiation in XID,
-  with the private parameters of V.42bis and the user data subfield of
-  V.44.
+  with the private parameters of V.42bis (and zstd's set after them)
+  and the user data subfield of V.44.
 - **MNP 2 to 4** (`Mnp`, `mnp.cpp`), V.42's "alternative procedure" (Annex
   A of V.42 (10/96)), with the modems that have no LAPM: the LR, LR, LA
   establishment in start-stop octets (`MnpAsync`), the data phase in HDLC
@@ -33,6 +33,10 @@ bits once a call has connected (C++, `namespace dlink`):
   the remote asks. The caller offers V.42bis and V.44 in its XID; the
   answerer takes V.44 when both have it, and answers with what it took.
   See below.
+- **zstd** (`Zstd`, `zstd_codec.cpp`; Zstandard, RFC 8878): D-Modem's
+  own, offered beside V.42bis and V.44 in every mode with LAPM, taken
+  when both modems offer it (so between two D-Modems), else V.44 or
+  V.42bis as before. See below.
 - **Asynchronous characters** (`Async`): start bit, 8 data bits, stop bit,
   for the modulations without V.42 and when the remote has no LAPM.
 - **V.80 Synchronous Access Mode** (`SyncAccess`, `v80.cpp`), instead of
@@ -60,8 +64,8 @@ when V.42bis's pending output filled a frame exactly, a decoder flush
 could overwrite decoded characters the DTE had not taken yet, and an idle
 link in compressed mode sent a FLUSH and padding each time LAPM asked.
 
-`link_test` (`ctest -R Link`, GoogleTest) runs it without a modem: V.42bis and
-V.44 round trips (text, noise, escape characters, repeats, small
+`link_test` (`ctest -R Link`, GoogleTest) runs it without a modem: V.42bis,
+V.44 and zstd round trips (text, noise, escape characters, repeats, small
 dictionaries, flushes), V.44's transparent mode, HDLC framing with a bit
 error, and two Links back to back bit by bit: detection, XID, V.44 both
 ways, V.42bis when either has no V.44, bit errors (REJ and T401 recovery),
@@ -124,6 +128,56 @@ where both DCEs indicate it, the core tells the link
 (`Link::set_v44_preset()`) and both ends prime with
 `link/v44_preset.cpp`'s text once XID agrees on V.44
 ([vcvm.md](dsp/vcvm.md#compression-v44-with-a-preset-dictionary)).
+
+## zstd
+
+A small Zstandard codec of our own, written from RFC 8878
+(`link/zstd_codec.{h,cpp}`, about 1700 lines, no libzstd), and its
+negotiation in XID. Annex F of the V.cvm Recommendation
+(`docs/v_cvm.pdf`) is its specification; it is not V.cvm's alone.
+
+**Negotiation.** The XID command carries, in the private parameter group
+after V.42bis's parameters, a set `ZST` (PI 0x60) with P0 (0x61, as
+V.42bis's), the window's log (0x62, 15: 32 kB) and the dictionary's ID
+(0x63, 4 octets: 0x56434D01, or 0 for none). A responder that has it
+answers with that set alone (the directions, the smaller window, the
+dictionary if both named it); both then use zstd in place of V.44. Other
+modems pass over the set and answer for V.44 or V.42bis. The set was in
+V.44's user data subfield first: Intel's 537EP code drops the call when
+that subfield holds a set it does not know (`intel_v44_open_calls`), so
+it moved. `AT+DSZ=<on>,<dict>` (default 1,1) offers it and its
+dictionary; on V.cvm the INFO0 bits can take either away
+(`Link::set_zstd()`). CONNECT says `/ZSTD` (numeric compression result
+70).
+
+**Frames.** Each direction is one frame from the first data on, without
+a content size or checksum (LAPM has its FCS), never ended; the encoder
+puts out a block whenever the DTE has nothing more waiting (LAPM asks
+for characters only when it can send a frame, so bulk data makes large
+blocks and typing small ones) and at 1024 characters. The decoder takes
+any frame RFC 8878 allows (it is checked both ways against libzstd,
+levels -5 to 19, by `zstd_ref_test` where libzstd is installed).
+
+**Encoder.** Hash chains (depth 48) over a 32 kB window, the repeat
+offsets first, a lazy match; literals raw, RLE or Huffman (a new table,
+or the last one again); each sequence table predefined, repeated or a new
+FSE table of the block's codes, whichever costs least; a raw block when
+coding gains nothing. About libzstd's level 3 on text.
+
+**Dictionary.** `link/zstd_dict.cpp`: a formatted dictionary (RFC 8878
+5) whose content is V.44's preset text (Annex E) and whose entropy
+tables (155 octets) `Zstd::make_dict()` made once from it, then frozen
+(Annex F lists them; `v44_preset_check` compares). libzstd loads it for
+compression and decompression alike.
+
+| 1264 octets of six short messages | V.44 | V.44 primed | zstd | zstd + dictionary |
+|---|---|---|---|---|
+| each on its own | 958 | 485 | 1121 | 474 |
+| in a row | 826 | 449 | 829 | 414 |
+
+On 50 kB of text without flushes zstd comes to 1325 octets, V.44 to 4881.
+A block costs at least 3 octets of header, so characters flushed one at
+a time cost more than V.44's (typing; no matter at those rates).
 
 ## MNP
 
