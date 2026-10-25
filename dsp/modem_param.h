@@ -126,6 +126,14 @@ enum MODEM_PARAMETER_NAMES {
 	MDMPRM_PULSE_DIALLING = 71, /* set: pulse dialling begins (1, at
 				      its first digit) or is over (0: the
 				      dial string's end, a ';' or a 'T') */
+	MDMPRM_LINK_REQ     = 72,  /* the DTE asks for a retrain (1) or a
+				      rate renegotiation (2) in data mode
+				      (V.80's <EM><rtn>, <EM><rrn>; ATO1,
+				      ATO3); the pump sets it back to 0 as
+				      it takes the request */
+	MDMPRM_MAX_RX_RATE  = 73,  /* the highest rate to receive at, bit/s
+				      (MDMPRM_MAX_RATE: to send at); -1
+				      from a core that has none */
 };
 
 /*

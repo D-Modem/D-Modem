@@ -322,18 +322,22 @@ The core (`core/modem.cpp`, the link's owner) does the rest: `<EM><ecs>`
 (the escape: `+++` is data here) answers `<EM><ecs>` and OK in online
 command state, and `ATO` goes back; `<EM><eot>` answers `<EM><eot>` and
 hangs up (NO CARRIER); the remote's carrier gone is `<EM><eot>` before NO
-CARRIER; `<EM><rate>` sets `+MS`'s highest rate from its `<tx>` code;
-`<EM><rate>` to the DTE when the pump's rates change in the call (V.34's
-renegotiations: Table 10's codes stop at 33600, faster rates are 2Eh).
+CARRIER; `<EM><rate>` sets `+MS`'s highest rate from its `<tx>` code and the
+highest to receive at (`MDMPRM_MAX_RX_RATE`) from its `<rx>`, for the
+next retrain or renegotiation; `<EM><rtn>` and `<EM><rrn>` ask the pump
+for a retrain or a renegotiation (`Modem::link_req()`, as `ATO1` and
+`ATO3`; V.34, V.90 and V.92 only). To the DTE: `<EM><rtn>` and
+`<EM><rrn>` for each retrain and renegotiation the pump counts in
+`dp_stats_` but the DTE's own (the remote's and the pump's), each
+followed by `<EM><rate>`, sent as well when the pump's rates change in
+the call (Table 10's codes stop at 33600, faster rates are 2Eh).
 `+ITF`'s `<off>` limits what the DTE's buffer takes (`dte_space()`),
 and its `<report_period>` sends `<EM><bnum>` with what waits in the buffer
 (EM codes counted as octets) every so many 10 ms.
 
 Not there: the transparent receiver's hunt for SYN (`<trans_idle>` 1, 2),
-NRZI, V.34 half duplex (`<hd_auto>`, `<EM><pri>`, `<ctl>`...), retrains
-and renegotiations on the DTE's `<EM><rtn>` and `<EM><rrn>` (logged), the
-`<EM><rtn>`/`<rrn>` indications of the remote's, and staying off hook
-after `<EM><eot>`. +ES's 5 and 7 (Synchronous Mode, Frame Tunnelling
+NRZI, V.34 half duplex (`<hd_auto>`, `<EM><pri>`, `<ctl>`...), and
+staying off hook after `<EM><eot>`. +ES's 5 and 7 (Synchronous Mode, Frame Tunnelling
 Mode) are not taken.
 
 Against the other modems (`ctest -R _v80_`, [interop.md](interop.md#v80)):

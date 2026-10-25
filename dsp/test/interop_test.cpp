@@ -492,6 +492,39 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
 	      "V.90 failed, V.34 next.*V.34 this time.*"
 	      "data rates tx [0-9]+ rx [0-9]+, trellis" });
+	/* the DTE's retrain (ATO1) and rate renegotiation (ATO3) in V.90
+	   and V.92 data, on either modem: V.90's (9.6/V.90) ours as the
+	   analogue modem and as the digital modem, a retrain; with PCM
+	   upstream V.92's, the digital modem's (its Ru) and the analogue
+	   modem's, and a retrain */
+	for (auto [n, k, o, v92, want] : std::vector<std::tuple<const char *,
+		     char, const char *, bool, const char *>>{
+		     { "v90a_dte_retrain", 'A', "ATO1", false,
+		       "retrain 1 \\(the DTE's\\).*V.90 retrained" },
+		     { "v90a_dte_reneg", 'A', "ATO3", false,
+		       "V.90 renegotiation 1 \\(ours: the DTE's\\).*"
+		       "V.90 renegotiated" },
+		     { "v90_dte_reneg", 'B', "ATO3", false,
+		       "V.90 renegotiation 1 \\(the DTE's\\).*"
+		       "V.90 renegotiated" },
+		     { "v92_dte_reneg", 'B', "ATO3", true,
+		       "V.92 renegotiation \\(the DTE's\\).*v92: renegotiated" },
+		     { "v92a_dte_reneg", 'A', "ATO3", true,
+		       "V.92 renegotiation 1 \\(ours: the DTE's\\).*"
+		       "V.92 renegotiated" },
+		     { "v92_dte_retrain", 'B', "ATO1", true,
+		       "retrain 1 \\(the DTE's\\).*v92: connect" } }) {
+		std::string side(1, k);
+		std::vector<std::string> e = {
+			"NET=9600:8000:ulaw", "STREAM=25",
+			"MIDCALL_" + side + "=6:WAIT 0",
+			"MIDCALL_ATO_" + side + "=" + o,
+			"EXPECT_" + side + "=(?s)" + want };
+		if (v92)
+			e.push_back("DSP_V92A_UP=1");
+		add("open", std::string("open_") + n, "open", "open8",
+		    v92 ? "ATX3" : "ATX3;AT+MS=90", e);
+	}
 	/* V.92 as the analogue modem (V.92 in our INFO0a, the digital
 	   modem's INFO0d): V.90 with V.34 upstream, and modem-on-hold
 	   (9.10/V.92).  Ours (AT+PMHR=5 in the middle of the data): tone
@@ -1381,6 +1414,37 @@ std::vector<Call> calls()
 	    "ATX3;AT+MS=34;AT\\N5%C2",
 	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6",
 	      "BULK=20000", "EXPECT_A=optimization 3\\.\n" });
+	/* --- retrains and rate renegotiations the DTE asks for (ATO1,
+	   ATO3: MDMPRM_LINK_REQ; V.80's <EM><rtn>, <EM><rrn>) in the middle
+	   of V.34 data, both ways with each modem that runs V.34 here; the
+	   Agere, Broadcom and HSF modems answer our retrain as the caller
+	   with tone A and as much again at 1800 Hz.  The data goes on (V.42
+	   carries it over) */
+	for (const char *p : { "agere", "broadcom", "sm56", "pctel", "hsf",
+			       "intel", "ess" }) {
+		std::string n = p;
+		std::string r = n == "intel" ? "9600" : "8000";
+		std::string rt = "EXPECT_A=(?s)retrain 1 \\(the DTE's\\).*"
+			"retrained";
+		add(p, n + "_34_dte_retrain_open_calls", "open", p,
+		    "ATX3;AT+MS=34",
+		    { "NET=9600:" + r + ":ulaw", "PROTO_B=ATX3;AT+MS=V34",
+		      "STREAM=25", "MIDCALL_A=6:WAIT 0", "MIDCALL_ATO_A=ATO1",
+		      rt, i537 });
+		add(p, n + "_34_dte_retrain_" + n + "_calls", p, "open",
+		    "ATX3;AT+MS=V34",
+		    { "NET=" + r + ":9600:ulaw", "PROTO_B=ATX3;AT+MS=34",
+		      "STREAM=25", "MIDCALL_B=6:WAIT 0", "MIDCALL_ATO_B=ATO1",
+		      "EXPECT_B=(?s)retrain 1 \\(the DTE's\\).*retrained",
+		      i537 });
+	}
+	for (const char *p : { "agere", "broadcom" })
+		add(p, std::string(p) + "_34_dte_reneg_open_calls", "open", p,
+		    "ATX3;AT+MS=34",
+		    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34",
+		      "STREAM=25", "MIDCALL_A=6:WAIT 0", "MIDCALL_ATO_A=ATO3",
+		      "EXPECT_A=(?s)renegotiation 1 \\(the DTE's\\).*"
+		      "renegotiated" });
 	/* --- V.80 Synchronous Access Mode (+ES=6 calling, 8 answering;
 	   docs/link.md, V.80): after CONNECT both DTEs go over to the
 	   framed sub-mode and send 20 frames each, every octet value among

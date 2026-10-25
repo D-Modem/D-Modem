@@ -1276,6 +1276,27 @@ Intel controller the DTE's characters as they come while online (its
 serial port's interrupt did): from its background task alone, every
 15 ms, its V.80 transmitter ran out in the middle of frames.
 
+## Retrains and renegotiations on request
+
+`MIDCALL_ATO_A=<cmd>` (`_B`) makes `interop_call`'s mid-call return
+online that command instead of `ATO`: `ATO1` retrains, `ATO3`
+renegotiates the rate. `ctest -R dte_` runs them with `STREAM=25` and
+an escape 6 s in:
+
+- V.34 (`AT+MS=V34`) retrains both ways against Agere, Broadcom, SM56,
+  PCTel, HSF, Intel and ESS (`<peer>_34_dte_retrain_open_calls`, `..._<peer>_calls`),
+  and renegotiations with us calling Agere and Broadcom
+  (`<peer>_34_dte_reneg_open_calls`): each peer answers, and the data
+  carries on whole.
+- Between two of ours: V.90 as the analogue modem (`open_v90a_dte_retrain`,
+  `open_v90a_dte_reneg`) and the digital (`open_v90_dte_reneg`), V.92
+  with PCM upstream as either (`open_v92_dte_reneg`, `open_v92a_dte_reneg`,
+  `open_v92_dte_retrain`).
+
+The Agere, Broadcom and HSF modems answer our retrain's tone B with tone
+A and an 1800 Hz tone as strong: until the tone detector allowed for it
+([dsp/v34.md](dsp/v34.md)) our retrains with them failed with no tone A.
+
 ## The calls' options
 
 `ANSWER_AFTER=<s>` gives the answerer its ATA that long after the

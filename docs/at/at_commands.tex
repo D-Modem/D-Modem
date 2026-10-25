@@ -492,10 +492,15 @@ common modulation from the one \cmdl[plusMS]{+MS} chose down, \cmd{N0} keeps to
 it.  The same as \cmdl[plusMS]{+MS}'s second parameter.
 \end{command}
 
-\begin{command}{O}{ATO}
+\begin{command}{O}{ATO[\p{n}]}
 Back online after the escape (section~\ref{sec:online}): CONNECT.  On a
 call held after a dial string's \cmd{;}, the calling modem's handshake
 (as \cmdl[D]{ATD}).  ERROR when there is no call to go back to.
+\cmd{O0} only goes back; \cmd{O1} then retrains (V.250's) and \cmd{O3}
+renegotiates the rate (Rockwell's), both in V.34, V.90 and V.92 calls
+(in the others it only goes back); \cmd{O2} and the other numbers are
+ERROR.  The retrain or renegotiation counts as the local modem's in
+\cmdl[I]{ATI11}.
 \end{command}
 
 \begin{command}{P}{ATP, ATT}
@@ -693,7 +698,8 @@ back (\p{automode} 1, as \cmdl[N]{N1}; \sreg{31}) and the rates it may connect a
 \p{mod} is a number or V.250's name for it, in either case
 (\cmd{AT+MS=V34} is \cmd{AT+MS=34}); \cmd{?} and \cmd{=?} give the
 numbers.  A parameter left out keeps its value: \cmd{AT+MS=,0} only
-turns automode off.  The default is \cmd{92,1,300,56000}.
+turns automode off.  The default is \cmd{92,1,300,56000}.  In V.34
+\p{max} caps both directions' rates (sent in its MP sequences).
 
 \begin{center}
 \begin{tabular}{rlll}
@@ -811,16 +817,21 @@ EM and 99h in the data are shielded both ways (\cmd{<EM><t1>},
 The other commands: \cmd{<EM><ecs>} (instead of \cmd{+++}, which is
 data) gives \cmd{<EM><ecs>}, then OK in online command state, where
 \cmd{ATO} goes back; \cmd{<EM><eot>} gives \cmd{<EM><eot>} and hangs up
-(NO CARRIER); \cmd{<EM><rate><tx><rx>} sets \cmd{+MS}'s highest rate from
-\p{tx}; \cmd{<EM><hunt>} restarts the framed receiver's hunt;
-\cmd{<EM><resume>} after an underrun (below).  The modem gives
+(NO CARRIER); \cmd{<EM><rate><tx><rx>} sets the highest rates to send at (\cmd{+MS}'s
+\p{max}) from \p{tx} and to receive at from \p{rx}, for the next
+retrain or renegotiation (\cmd{AT+MS} sets both again); \cmd{<EM><hunt>} restarts the framed receiver's hunt;
+\cmd{<EM><resume>} after an underrun (below).  \cmd{<EM><rtn>}
+retrains the call and \cmd{<EM><rrn>} renegotiates its rate, as
+\cmdl[O]{ATO1} and \cmd{ATO3}.  The modem gives
 \cmd{<EM><eot>} before NO CARRIER when the remote's carrier goes,
-\cmd{<EM><rate><tx><rx>} when the rates change in the call,
+\cmd{<EM><rtn>} and \cmd{<EM><rrn>} for each retrain and rate
+renegotiation but the DTE's own (the remote's, or the modem's after a
+loss of signal), \cmd{<EM><rate><tx><rx>} after each, or when the rates
+change in the call,
 \cmd{<EM><rover>} where received octets were lost (the DTE took nothing
 for 2048 octets), \cmd{<EM><tover>} where its own were (the buffer
-full), and \cmd{<EM><bnum>} with \cmd{+ITF}.  Retrains and rate
-renegotiations on the DTE's request (\cmd{<EM><rtn>}, \cmd{<EM><rrn>})
-are not there, nor V.34's half duplex.
+full), and \cmd{<EM><bnum>} with \cmd{+ITF}.  V.34's half duplex is
+not there.
 
 \begin{command}{plusESA}{AT+ESA=[\p{trans\_idle}][,\p{framed\_idle}...][,\p{syn2}], AT+ESA?, AT+ESA=?}
 The Synchronous Access Mode's eight settings, each left out as it is (default

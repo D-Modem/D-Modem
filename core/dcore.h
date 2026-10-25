@@ -557,6 +557,22 @@ private:
 	/* Synchronous Access Mode: the rates the DTE last heard of (an
 	   <EM><rate> when they change) */
 	u32 sync_tx_ = 0, sync_rx_ = 0;
+	/* the retrains and renegotiations the DTE has heard of
+	   (<EM><rtn>, <EM><rrn>: all but those it asked for, dte_rt_ and
+	   dte_rn_ of them), and all of them: after one, an <EM><rate>
+	   once the pump has set its rates again (rate_sets_ past
+	   sync_rate_mark_) */
+	u32 sync_rt_ = 0, sync_rn_ = 0, sync_events_ = 0;
+	u32 dte_rt_ = 0, dte_rn_ = 0;
+	u32 rate_sets_ = 0, sync_rate_mark_ = 0;
+	bool sync_rate_due_ = false;
+	/* the DTE's retrain (1) or renegotiation (2) for the pump
+	   (MDMPRM_LINK_REQ: V.80's <EM><rtn>, <EM><rrn>; ATO1, ATO3) */
+	s32 link_req_ = 0;
+	/* the highest rate to receive at (V.80's <EM><rate>), 0: as
+	   max_rate_ */
+	u32 max_rx_rate_ = 0;
+	bool link_req(s32 what);
 	dlink::Link *link_ = nullptr;
 	LinkOwner *link_owner_ = nullptr;
 

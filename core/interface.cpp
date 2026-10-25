@@ -137,6 +137,12 @@ intptr_t Modem::get_param(u32 name)
 		return moh_off_ ? 0 : moh_timer_;
 	case MDMPRM_MOH_REQ:
 		return moh_req_;
+	/* the DTE's retrain or renegotiation, the highest rate to receive
+	   at */
+	case MDMPRM_LINK_REQ:
+		return link_req_;
+	case MDMPRM_MAX_RX_RATE:
+		return max_rx_rate_ ? max_rx_rate_ : max_rate_;
 
 	/* the settings the S-registers hold */
 	case GetDTMFDialSpeed:
@@ -240,9 +246,11 @@ s32 Modem::set_param(u32 name, s32 val)
 		return 0;
 	case MDMPRM_RX_RATE:
 		rx_rate_ = static_cast<u32>(val);
+		rate_sets_++;
 		return 0;
 	case MDMPRM_TX_RATE:
 		tx_rate_ = static_cast<u32>(val);
+		rate_sets_++;
 		return 0;
 	case MDMPRM_DP_REQUESTED:
 		/* change_dp() takes it when the pump says DPSTAT_CHANGEDP */
@@ -253,6 +261,14 @@ s32 Modem::set_param(u32 name, s32 val)
 		return 0;
 	case MDMPRM_MOH_REQ:
 		moh_req_ = val;
+		return 0;
+	case MDMPRM_LINK_REQ:
+		/* taken: counted, not to be told the DTE (V.80) */
+		if (!val && link_req_ == 1)
+			dte_rt_++;
+		else if (!val && link_req_ == 2)
+			dte_rn_++;
+		link_req_ = val;
 		return 0;
 	case MDMPRM_HOOK_ON:
 		/* straight to the host: the Modem's hook state stays */

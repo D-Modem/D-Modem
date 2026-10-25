@@ -18,6 +18,8 @@
 
 #include <gtest/gtest.h>
 
+#include <regex>
+
 #include <dcore.h>
 #include <log.h>
 #include <modem_param.h>
@@ -1018,6 +1020,134 @@ TEST(Core, V80)
 		    p.got_b.find("NO CARRIER", e) != std::string::npos)
 		<< "B: [" << p.got_b.substr(p.got_b.size() > 40 ?
 					   p.got_b.size() - 40 : 0) << "]";
+}
+
+/* the last <EM><rate><tx><rx> in got (V.80), its two codes; false if
+   none */
+static bool v80_last_rate(const std::string &got, int &tx, int &rx)
+{
+	size_t at = got.rfind("\x19\xbe");
+	if (at == std::string::npos || at + 3 >= got.size())
+		return false;
+	tx = (unsigned char)got[at + 2];
+	rx = (unsigned char)got[at + 3];
+	return true;
+}
+
+/* V.80 on V.34: the DTE's <EM><rtn> retrains (the other DTE hears
+   <EM><rtn>, both <EM><rate> after it), frames go on; <EM><rate> with
+   24000 bit/s each way, then <EM><rrn>: a renegotiation (<EM><rrn> at
+   the other end) to rates no faster */
+TEST(Core, V80Retrain)
+{
+	Pair p("+MS=34;+ES=6,,8");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	std::string flag = { 0x19, (char)0xb1 };
+	p.a->dte_input(flag.data(), flag.size());
+	p.b->dte_input(flag.data(), flag.size());
+	p.run_until([](Pair &) { return false; }, 1000);
+	p.got_a.clear();
+	p.got_b.clear();
+	std::string rtn = { 0x19, (char)0xbd };
+	p.a->dte_input(rtn.data(), rtn.size());
+	EXPECT_TRUE(p.run_until([](Pair &q) {
+		return q.got_a.find("\x19\xbe") != std::string::npos &&
+			q.got_b.find("\x19\xbe") != std::string::npos; },
+		30000)) << "no <EM><rate> after the retrain";
+	EXPECT_TRUE(p.got_b.find("\x19\xbd") != std::string::npos)
+		<< "B: no <EM><rtn>";
+	EXPECT_TRUE(p.got_a.find("\x19\xbd") == std::string::npos)
+		<< "A: its own retrain indicated";
+	EXPECT_TRUE(p.a->link_state() == LinkState::Online &&
+		    p.a->carrier());
+	/* frames still */
+	p.got_b.clear();
+	std::string f = "after the retrain" + flag;
+	p.a->dte_input(f.data(), f.size());
+	EXPECT_TRUE(p.run_until([](Pair &q) {
+		return q.got_b.find("after the retrain\x19\xb1") !=
+			std::string::npos; }, 3000));
+	/* at most 24000 bit/s each way, then a renegotiation */
+	p.got_a.clear();
+	p.got_b.clear();
+	std::string rrn = { 0x19, (char)0xbe, 0x2a, 0x2a, 0x19, (char)0xbc };
+	p.a->dte_input(rrn.data(), rrn.size());
+	EXPECT_TRUE(p.run_until([](Pair &q) {
+		return q.got_a.find("\x19\xbe") != std::string::npos; },
+		20000)) << "no <EM><rate> after the renegotiation";
+	EXPECT_TRUE(p.got_b.find("\x19\xbc") != std::string::npos)
+		<< "B: no <EM><rrn>";
+	int tx = 0, rx = 0;
+	EXPECT_TRUE(v80_last_rate(p.got_a, tx, rx));
+	EXPECT_TRUE(tx <= 0x2a && rx <= 0x2a && tx >= 0x20 && rx >= 0x20)
+		<< "A's rates " << tx << " " << rx;
+	EXPECT_TRUE(p.a->tx_rate() <= 24000 && p.a->rx_rate() <= 24000)
+		<< p.a->tx_rate() << "/" << p.a->rx_rate();
+}
+
+/* ATO1 (V.250) back online with a retrain, ATO3 (Rockwell's) with a rate
+   renegotiation, on a V.34 call with LAPM; the link goes on; ATI11
+   counts them; ATO2 is an error */
+TEST(Core, RetrainOnRequest)
+{
+	Pair p("+MS=34");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	for (const char *o : { "ATO1\r", "ATO3\r" }) {
+		p.run_until([](Pair &) { return false; }, 1100);
+		p.got_a.clear();
+		p.a->dte_input("+++", 3);
+		EXPECT_TRUE(p.run_until([](Pair &q) {
+			return q.got_a.find("OK") != std::string::npos; },
+			2000));
+		if (!strcmp(o, "ATO1\r")) {
+			EXPECT_EQ(cmd(p.a, p.la, "ATO2\r"), "ERROR\r\n");
+		}
+		EXPECT_TRUE(cmd(p.a, p.la, o).find("CONNECT") !=
+			    std::string::npos);
+		p.run_until([](Pair &) { return false; }, 15000);
+		EXPECT_TRUE(p.a->link_state() == LinkState::Online &&
+			    p.a->carrier()) << o;
+	}
+	/* data after both */
+	p.got_b.clear();
+	p.a->dte_input("still here", 10);
+	EXPECT_TRUE(p.run_until([](Pair &q) {
+		return q.got_b.find("still here") != std::string::npos; },
+		3000));
+	p.run_until([](Pair &) { return false; }, 1100);
+	p.got_a.clear();
+	p.a->dte_input("+++", 3);
+	p.run_until([](Pair &q) {
+		return q.got_a.find("OK") != std::string::npos; }, 2000);
+	std::string i11 = cmd(p.a, p.la, "ATI11\r");
+	EXPECT_TRUE(std::regex_search(i11,
+		std::regex("Retrains by Local Modem\\s+1\\b")) &&
+		std::regex_search(i11,
+		std::regex("Rate Renegotiation by Local Modem\\s+1\\b")))
+		<< i11;
+}
+
+/* +MS's highest rate holds on V.34 as well (each MP asks for no more,
+   both ways) */
+TEST(Core, V34MaxRate)
+{
+	Pair p("+MS=34,1,2400,21600");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	EXPECT_TRUE(p.a->tx_rate() <= 21600 && p.a->rx_rate() <= 21600 &&
+		    p.a->tx_rate() >= 2400)
+		<< p.a->tx_rate() << "/" << p.a->rx_rate();
 }
 
 INSTANTIATE_TEST_SUITE_P(Pumps, CoreCall, testing::Values(

@@ -1281,7 +1281,10 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 						    .c_str());
 					}
 					size_t mark = dte.buf[k].size();
-					dte.cmd(k, "ATO");
+					/* MIDCALL_ATO_A (_B): back with this (ATO1:
+					   a retrain) */
+					dte.cmd(k, env(k ? "MIDCALL_ATO_B" :
+						       "MIDCALL_ATO_A", "ATO"));
 					dte.wait_from(k, connect_b, mark, 60);
 					/* ATO's echo and result; the remote's data
 					   may follow at once */

@@ -937,8 +937,18 @@ s16 Modem::at_I(char *p, s16 *len)
    ERROR */
 s16 Modem::at_O(char *p, s16 *len)
 {
+	/* O, O0; O1 with a retrain (V.250), O3 with a rate renegotiation
+	   (Rockwell's) */
+	const char *e;
+	u32 n = number(p + 1, &e);
 	*len = static_cast<s16>(strlen(p));
-	return online() ? -1 : 1;
+	if (e != p + 1 && n != 0 && n != 1 && n != 3)
+		return -1;
+	if (online())
+		return -1;
+	if (e != p + 1 && n)
+		link_req(n == 1 ? 1 : 2);
+	return 1;
 }
 
 /* ATS<n>? reads S-register n, ATS<n>=<v> sets it (S103 as \N) */
@@ -1143,6 +1153,7 @@ s16 Modem::at_MS(char *p, s16 *len)
 	sregs_[SREG_AUTOMODE] = static_cast<unsigned char>(automode);
 	min_rate_ = min;
 	max_rate_ = max;
+	max_rx_rate_ = 0;
 	*len = static_cast<s16>(q - p);
 	return 0;
 }

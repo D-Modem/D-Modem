@@ -51,6 +51,7 @@ namespace interop {
  *   RESTART_B=1       modemB a new process for each call after the first
  *   MIDCALL_A=<s>:<cmd>;...  (or _B) escape that modem s seconds into the
  *                     data, give it the commands (WAIT <s> waits), ATO
+ *                     (MIDCALL_ATO_A=<cmd>, _B: that instead, as ATO1)
  *   EXPECT_B=<regex>  modemB's log must have it ((?s) allowed, '.' takes
  *                     newlines anyway); EXPECT_A modemA's
  *   REJECT_B=<regex>  and must not have it

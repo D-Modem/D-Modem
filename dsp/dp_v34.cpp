@@ -640,6 +640,8 @@ enum { RT_OURS, RT_REMOTE, RT_HOLD };
 template <class P>
 struct V34Retrain {
 	Goertzel rt_g, own_g;    /* the remote's tone, the echo of ours */
+	Goertzel mate_g;         /* 1800 Hz: what the Agere, Broadcom and
+				    HSF modems send with their tone A */
 	float rt_e;
 	s16 rt_blocks;
 	s16 rt_heard;           /* the tone has been there a while */
@@ -755,6 +757,10 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	s32 quiet_blocks;       /* phase 2: blocks without the remote's tone */
 	s16 p2_gap;             /* waiting for INFO1a: 1 tone, 2 then a gap */
 	V92Up v92u;
+	u32 link_poll;          /* when to look for the DTE's retrain or
+				   renegotiation (MDMPRM_LINK_REQ) */
+	void link_req_poll();
+	s16 rate_cap(unsigned param) const;
 	s16 alaw;               /* the network's G.711 law */
 	V90Tx v90tx;    /* the PCM transmitter */
 	s16 pcm_tx;             /* our output from it */
@@ -2748,13 +2754,18 @@ void V34Retrain<P>::rt_tone(float x)
 	P &self = static_cast<P &>(*this);
 	rt_e += x * x;
 	own_g.run(x);
+	mate_g.run(x);
 	if (rt_g.run(x)) {
-		/* without the echo of our own tone */
-		float e = rt_e / PROBE_PERIOD - own_g.power;
+		/* without the echo of our own tone, and without 1800 Hz: the
+		   Agere, Broadcom and HSF modems answer a retrain with tone A
+		   and as much again at 1800 Hz (and Agere's asks for one so
+		   in V.90) */
+		float all = rt_e / PROBE_PERIOD - own_g.power;
+		float e = all - mate_g.power;
 		rt_e = 0;
-		/* the Agere modem's tone A when it asks for a retrain in
-		   V.90 has as much again at 1800 Hz */
-		rt_blocks = e > tone_power(150) &&
+		if (e < 0)
+			e = 0;
+		rt_blocks = all > tone_power(150) &&
 			rt_g.power > (self.pcm ? 0.4f : 0.6f) * e ?
 			rt_blocks + 1 : 0;
 		if (dsplibs_debug_level >= 5 && retraining)
@@ -3603,11 +3614,17 @@ void V34Pump::mp_start()
 	/* test: DSP_V34_RX_MAX=<n> asks for at most n * 2400 bit/s */
 	if (s32 m = env_int("DSP_V34_RX_MAX"); m > 0 && max_rate_rx > m)
 		max_rate_rx = m;
+	/* the core's highest rates (+MS, V.80's <EM><rate>) */
+	s16 tx_max = rate_cap(MDMPRM_MAX_RATE);
+	if (s16 m = rate_cap(MDMPRM_MAX_RX_RATE); max_rate_rx > m)
+		max_rate_rx = m;
 	/* (no less than the symbol rate has: no common rate else) */
 	if (max_rate_rx < rate_floor())
 		max_rate_rx = rate_floor();
-	mp->rate_ca = caller ? 14 : max_rate_rx;
-	mp->rate_ac = caller ? max_rate_rx : 14;
+	if (tx_max < v34_min_rate(baud_tx))
+		tx_max = v34_min_rate(baud_tx);
+	mp->rate_ca = caller ? tx_max : max_rate_rx;
+	mp->rate_ac = caller ? max_rate_rx : tx_max;
 	mp->expanded = 1;
 	mp->trellis = V34_TRELLIS;
 	mp->rate_mask = 0x3FFF;
@@ -3622,6 +3639,55 @@ void V34Pump::mp_start()
 			zero(mp->h);
 	}
 	tx_next(P4_MP, V34_TX_MP);
+}
+
+/* the core's highest rate param (MDMPRM_MAX_RATE, MDMPRM_MAX_RX_RATE)
+   as V.34's N (rate / 2400), 14 (33600) when it gives none or more */
+s16 V34Pump::rate_cap(unsigned param) const
+{
+	intptr_t r = modem_get_param(modem, param);
+	if (r <= 0 || r >= 14 * 2400)
+		return 14;
+	return static_cast<s16>(r / 2400);
+}
+
+/* the DTE's retrain or rate renegotiation (MDMPRM_LINK_REQ: V.80's
+   <EM><rtn> and <EM><rrn>, ATO1, ATO3), looked for once a block in data
+   mode, as modem-on-hold's request is: a retrain (11.4/V.34, 9.5.2/V.90)
+   from any data mode; a renegotiation, V.34's or V.90's (the most we
+   receive from the data mode's error, within the core's highest rate),
+   V.92's upstream one as its digital modem, or as the analogue modem
+   V.90's (V.92's with PCM upstream) */
+void V34Pump::link_req_poll()
+{
+	if (link_poll++ % 160 || !connected || retraining || renegotiating ||
+	    (state != V34_DATA && state != V92_RUN && state != V90A_DATA))
+		return;
+	intptr_t r = modem_get_param(modem, MDMPRM_LINK_REQ);
+	if (r != 1 && r != 2)
+		return;
+	modem_set_param(modem, MDMPRM_LINK_REQ, 0);
+	if (r == 1) {
+		retrain("the DTE's");
+		return;
+	}
+	if (state == V92_RUN) {
+		DSP_DBG("v34: V.92 renegotiation (the DTE's)\n");
+		v92u.rn_req = 1;
+	} else if (state == V90A_DATA) {
+		v90rx.reneg_wait();
+		v90a_reneg_ours("the DTE's");
+	} else {
+		s16 n = reneg_rate(0);
+		if (s16 m = rate_cap(MDMPRM_MAX_RX_RATE); n > m)
+			n = m;
+		if (n < rate_floor())
+			n = rate_floor();
+		if (pcm)
+			v90_renegotiate("the DTE's", n, 0);
+		else
+			renegotiate("the DTE's", n);
+	}
 }
 
 /* a retrain: both modems go back to phase 2 at tones A and B
@@ -4455,6 +4521,7 @@ s16 V34Retrain<P>::rt_step(s32 c)
 s16 V34Pump::handshake()
 {
 	moh_req_test();
+	link_req_poll();
 	s32 c = count;
 
 	/* V.90: the analogue modem asks for a retrain in phase 3 or 4 with
@@ -5948,8 +6015,10 @@ s16 V34Pump::process(void *in, void *out, s32 cnt)
 			continue;
 		}
 		/* (handshake() does not run here; ours leaves V92_RUN) */
-		if (state == V92_RUN)
+		if (state == V92_RUN) {
 			moh_req_test();
+			link_req_poll();
+		}
 		if (state == V92_RUN) {
 			/* the echo of our signal from the analogue modem's
 			   hybrid, after the network's round trip */
@@ -6210,6 +6279,7 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	tone_g.init(caller_ ? 2400 : 1200, PROBE_PERIOD, srate_);
 	rt_g.init(caller_ ? 2400 : 1200, PROBE_PERIOD, srate_);
 	own_g.init(caller_ ? 1200 : 2400, PROBE_PERIOD, srate_);
+	mate_g.init(1800, PROBE_PERIOD, srate_);
 	/* test: DSP_V34_RETRAIN=<ms in data mode>[a|c], c or a: only the
 	   caller or the answerer starts it */
 	retrain_at = test_samples("DSP_V34_RETRAIN");

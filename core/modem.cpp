@@ -592,6 +592,7 @@ s16 Modem::start_call(bool keep_line)
 	event_ = new_event_ = 0;
 	timer_on_ = false;
 	escape_count_ = 0;
+	link_req_ = 0;
 	if (!(keep_line && started_) && do_start())
 		return fail("the line does not start");
 	return 0;
@@ -883,6 +884,13 @@ void Modem::update_status(Status s)
 		report(Result::Connect);
 		sync_tx_ = tx_rate_;
 		sync_rx_ = rx_rate_;
+		dte_rt_ = dte_rn_ = 0;
+		sync_rt_ = dp_stats_.retrains_local + dp_stats_.retrains_remote;
+		sync_rn_ = dp_stats_.renegs_local + dp_stats_.renegs_remote;
+		sync_events_ = dp_stats_.retrains_local +
+			dp_stats_.retrains_remote + dp_stats_.renegs_local +
+			dp_stats_.renegs_remote;
+		sync_rate_due_ = false;
 		if (sregs_[SREG_SPEAKER_CONTROL] & 1)
 			host_.speaker(*this, 0);
 		break;
@@ -1043,19 +1051,42 @@ void Modem::sync_command(dlink::SyncCommand c, u8 tx, u8 rx)
 		hup(true);
 		break;
 	case dlink::SyncCommand::Rate: {
-		u32 r = static_cast<u32>(dlink::v80::code_rate(tx));
-		logf("v80: rate %u (0x%02x), rx 0x%02x\n", r, tx, rx);
+		u32 t = static_cast<u32>(dlink::v80::code_rate(tx));
+		u32 r = static_cast<u32>(dlink::v80::code_rate(rx));
+		logf("v80: highest rates %u/%u (0x%02x 0x%02x)\n", t, r, tx,
+		     rx);
+		if (t && t >= min_rate_)
+			max_rate_ = t;
 		if (r && r >= min_rate_)
-			max_rate_ = r;
+			max_rx_rate_ = r;
 		break;
 	}
 	case dlink::SyncCommand::Retrain:
+		link_req(1);
+		break;
 	case dlink::SyncCommand::Reneg:
-		logf("v80: %s asked: not supported\n",
-		     c == dlink::SyncCommand::Retrain ? "retrain" :
-		     "rate renegotiation");
+		link_req(2);
 		break;
 	}
+}
+
+/* the DTE's retrain (what 1) or rate renegotiation (2) for the pump to
+   start (MDMPRM_LINK_REQ), online and with V.34, V.90 or V.92 (their
+   data modes take it); false (logged) where it cannot be */
+bool Modem::link_req(s32 what)
+{
+	const char *n = what == 1 ? "retrain" : "rate renegotiation";
+	s16 id = dp_ ? static_cast<s16>(dp_->id) : 0;
+	if ((state_ != ONLINE && state_ != COMMAND_ONLINE) || !dp_ ||
+	    stats_.dp == DP_V91 ||
+	    (id != DP_V8 && id != DP_V34 && id != DP_V90 && id != DP_V92 &&
+	     id != DP_K56)) {
+		logf("%s asked: not with this modulation\n", n);
+		return false;
+	}
+	logf("%s asked by the DTE\n", n);
+	link_req_ = what;
+	return true;
 }
 
 /* up to n of the DTE's characters, oldest first: how many */
@@ -1178,9 +1209,33 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 		}
 		stats_.samples += n;
 	}
-	/* V.80: the rates after a retrain or renegotiation in band */
+	/* V.80: the retrains and renegotiations in band (8.8.4/V.80:
+	   the remote's; here all that the DTE did not ask for, the
+	   remote's or the pump's own: a pump that loses the remote's
+	   signal as it retrains counts the retrain as its own), and the
+	   rates after each (or when they change) */
+	if (state_ == ONLINE && link_->sync()) {
+		u32 rt = dp_stats_.retrains_local + dp_stats_.retrains_remote;
+		u32 rn = dp_stats_.renegs_local + dp_stats_.renegs_remote;
+		u32 all = rt + rn;
+		if (rt - dte_rt_ != sync_rt_) {
+			sync_rt_ = rt - dte_rt_;
+			link_->sync_indicate(dlink::v80::RTN);
+		}
+		if (rn - dte_rn_ != sync_rn_) {
+			sync_rn_ = rn - dte_rn_;
+			link_->sync_indicate(dlink::v80::RRN);
+		}
+		if (all != sync_events_) {
+			sync_events_ = all;
+			sync_rate_due_ = true;
+			sync_rate_mark_ = rate_sets_;
+		}
+	}
 	if (state_ == ONLINE && link_->sync() &&
-	    (tx_rate_ != sync_tx_ || rx_rate_ != sync_rx_)) {
+	    ((sync_rate_due_ && rate_sets_ != sync_rate_mark_) ||
+	     tx_rate_ != sync_tx_ || rx_rate_ != sync_rx_)) {
+		sync_rate_due_ = false;
 		u8 r[2] = { dlink::v80::rate_code(static_cast<s32>(tx_rate_)),
 			    dlink::v80::rate_code(static_cast<s32>(rx_rate_)) };
 		sync_tx_ = tx_rate_;
@@ -1660,6 +1715,8 @@ s16 Modem::reset()
 	moh_off_ = 0;
 	moh_timer_ = 5;
 	moh_req_ = 0;
+	link_req_ = 0;
+	max_rx_rate_ = 0;
 	sregs_init();
 	kept_init();
 	sregs_[SREG_DIAL_PAUSE_TIME] = homolog_->params->DialPauseTime;
