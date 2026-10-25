@@ -177,7 +177,8 @@ struct LinkOwner final : public dlink::Owner {
 
 	/* the DTE's characters for the line */
 	s16 read_chars(u8 *buf, s16 n) override {
-		return m_.get_chars(reinterpret_cast<char *>(buf), n);
+		return static_cast<s16>(m_.link_chars(
+			reinterpret_cast<char *>(buf), n));
 	}
 	/* the remote's characters for the DTE: what it took */
 	s16 write_chars(const u8 *buf, s16 n) override {
@@ -214,7 +215,9 @@ struct LinkOwner final : public dlink::Owner {
 		m_.sync_command(c, tx, rx);
 	}
 	/* the DTE's characters waiting (V.80's <EM><bnum>) */
-	s32 tx_buffered() override { return m_.xmit_count_; }
+	s32 tx_buffered() override {
+		return m_.xmit_count_ + static_cast<s32>(m_.esc_held_.size());
+	}
 	/* a line of the link's in the modem's log */
 	void log(const char *line) override { m_.logf("%s\n", line); }
 
@@ -576,6 +579,7 @@ s16 Modem::start_call(bool keep_line)
 	if (set_hook(MODEM_HOOK_OFF))
 		return fail("cannot go off hook");
 	xmit_head_ = xmit_tail_ = xmit_count_ = 0;
+	esc_held_.clear();
 	command_ = false;
 	dcr_ = dcr_create();
 	dp_runtime_ = dp_runtime_create(handle());
@@ -642,6 +646,7 @@ s16 Modem::stop_call()
 	/* data that did not go out is no command */
 	if (!command_)
 		xmit_head_ = xmit_tail_ = xmit_count_ = 0;
+	esc_held_.clear();
 	command_ = true;
 	commands_due_ = false;
 	link_->exit();
@@ -957,7 +962,7 @@ s32 Modem::put_bits(s16 nbits, const u8 *buf, s32 n)
 /* DTE data the remote does not have yet */
 bool Modem::tx_pending() const
 {
-	return xmit_count_ > 0 || link_->tx_pending();
+	return xmit_count_ > 0 || !esc_held_.empty() || link_->tx_pending();
 }
 
 /* LAPM's or MNP's frames not sent or not acknowledged */
@@ -1107,6 +1112,19 @@ s32 Modem::get_chars(char *buf, s32 n)
 		k += run;
 	}
 	return k;
+}
+
+/* up to n of the DTE's characters for the line, oldest first: those
+   held at the escape, then the buffer's; how many */
+s32 Modem::link_chars(char *buf, s32 n)
+{
+	s32 k = 0;
+	if (!esc_held_.empty()) {
+		k = std::min(n, static_cast<s32>(esc_held_.size()));
+		memcpy(buf, esc_held_.data(), static_cast<size_t>(k));
+		esc_held_.erase(0, static_cast<size_t>(k));
+	}
+	return k + get_chars(buf + k, n - k);
 }
 
 /* n characters to the DTE: how many the Host took */
@@ -2044,7 +2062,12 @@ void Modem::events(u16 ev)
 	if (ev & EV_ESCAPE) {
 		if (state_ == ONLINE && escape_count_ == 3) {
 			set_state(COMMAND_ONLINE);
-			xmit_head_ = xmit_tail_ = xmit_count_ = 0;
+			/* the data not sent yet (the +++ too, which the
+			   line gets as data) waits for the return online;
+			   the interpreter starts with nothing */
+			char c;
+			while (get_chars(&c, 1) == 1)
+				esc_held_ += c;
 			crlf();
 			report(Result::Ok);
 			command_ = true;

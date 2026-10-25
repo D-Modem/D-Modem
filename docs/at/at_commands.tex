@@ -1180,7 +1180,11 @@ three \sreg{2} characters (\cmd{+++}), each within 0.5 s of the one before,
 with 0.5 s of nothing before them and after them.  The modem then says
 OK and is in online command mode, the call still up: \cmdl[O]{ATO} goes back
 online, \cmdl[H]{ATH} hangs up, and on a V.92 connection \cmdl[plusPMHR]{AT+PMHR} asks
-for modem-on-hold.
+for modem-on-hold.  The \cmd{+++} itself is data (the modem cannot know
+it is the escape until the guard time after it), and what the DTE sent
+before the escape and the line had not taken yet is kept, not dropped:
+it goes to the other modem, \cmd{+++} last, once \cmd{ATO} is back
+online.
 
 The call ends with NO CARRIER when the other side hangs up or its
 carrier is gone for \sreg{10} tenths of a second.  dmodemd hangs up as well

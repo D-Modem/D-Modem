@@ -330,6 +330,7 @@ public:
 
 	/* the link layer's side (LinkOwner) */
 	s32 get_chars(char *buf, s32 n);
+	s32 link_chars(char *buf, s32 n);
 	s32 put_chars(const char *buf, s32 n);
 	/* the progress of the pump and of the link */
 	enum Status {
@@ -539,6 +540,10 @@ private:
 	   interpreter */
 	char *xmit_ = nullptr;
 	s16 xmit_size_ = 0, xmit_head_ = 0, xmit_tail_ = 0, xmit_count_ = 0;
+	/* the DTE's data still in the buffer when the escape took effect
+	   (+++ itself among it): for the line when the call is online
+	   again, ahead of what comes then */
+	std::string esc_held_;
 
 	/* the link layer: what is asked (ec LAPM, mnp, mnp_first,
 	   required: see dlink::Config), then what the call has */

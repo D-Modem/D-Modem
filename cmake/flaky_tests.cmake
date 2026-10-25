@@ -24,8 +24,6 @@ set(DMODEM_FLAKY_TESTS
 	# #237
 	open.open_v90a_alaw
 	dmodemd_alsa
-	# #241: the +++ escape sent as data
-	smartlink.smartlink_v92_moh_request
 	# #257: FB1u with tens of zeros
 	open.open_v92a_fpe_precoder
 	# #259: ESS's V.29 receiver
@@ -36,6 +34,4 @@ set(DMODEM_FLAKY_TESTS
 	dmodemd_usb
 	# #297
 	open.open_vcvm_amrwb2385
-	# #298: the +++ escape, as #241
-	ess.ess_v92_moh_request
 )

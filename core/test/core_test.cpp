@@ -780,6 +780,45 @@ TEST_P(CoreCall, DataBothWaysAndHangup)
 		printf("A after the hangup: [%s]\n", p.got_a.c_str());
 }
 
+/* the escape while the DTE's data still waits for the line (V.22 at
+   1200 bit/s, 800 octets): none of it lost, the +++ after it as data,
+   all of it to the remote once ATO is back online; the command
+   interpreter takes none of it */
+TEST(Core, EscapeKeepsData)
+{
+	Pair p("+MS=22");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	p.got_a.clear();
+	p.got_b.clear();
+	std::string d = data('a', 800);
+	size_t sent = 0;
+	while (sent < d.size()) {
+		sent += p.a->dte_input(d.data() + sent,
+				       std::min<int>(p.a->dte_space(),
+						     d.size() - sent));
+		p.step();
+	}
+	/* guard time, +++, guard time: OK with octets still waiting */
+	p.run_until([](Pair &) { return false; }, 1100);
+	p.a->dte_input("+++", 3);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.got_a.find("OK") != std::string::npos; }, 2000));
+	EXPECT_LT(p.got_b.size(), d.size()) << "nothing was waiting";
+	EXPECT_TRUE(p.a->tx_pending());
+	p.got_a.clear();
+	p.a->dte_input("ATO\r", 4);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.got_a.find("CONNECT") != std::string::npos; }, 5000));
+	EXPECT_TRUE(p.run_until([](Pair &q) {
+		return q.got_b.size() >= 803; }, 15000));
+	EXPECT_EQ(p.got_b, d + "+++");
+	EXPECT_EQ(p.got_a.find("ERROR"), std::string::npos) << p.got_a;
+}
+
 /* a fax machine (class 1, its CNG) calls a modem in voice mode, on
    the line (+VLS=1): <DLE>c; +FCLASS=1 keeps the call, and ATA on it
    is the fax answer (CED and the DIS's flags: the caller's CONNECT).

@@ -97,6 +97,11 @@ core has gone beyond the old one where it fell short:
 - a call that ends online drops the data still waiting to go out; the old
   core kept it, and its AT interpreter later took it for commands (a line
   of the data that began with AT ran);
+- the escape keeps the data still waiting to go out, the `+++` with it
+  (`esc_held_`), for the line once `ATO` is back online, and the AT
+  interpreter starts with none of it; the old core dropped it, so that
+  the `+++` reached the remote or not depending on whether the line had
+  taken it within the guard time (`EscapeKeepsData`);
 - `AT&V` lists the active settings (the old core: ERROR), `AT\V1` puts the
   protocol after CONNECT's rate, and with `ATV0` a data call's CONNECT is
   its rate's number (the old core: 1 for every one);
