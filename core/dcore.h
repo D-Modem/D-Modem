@@ -506,6 +506,10 @@ private:
 	u64 count_ = 0;
 	u64 later_at_ = 0;
 	Later later_ = Later::None;
+	/* when the line's samples last went through (now_ms()): a stop due
+	   after samples is done on time once they have stopped coming (a
+	   SIP call ringing without early media has none) */
+	u64 samples_at_ms_ = 0;
 
 	/* AT */
 	u16 at_count_ = 0;

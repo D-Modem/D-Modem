@@ -70,6 +70,11 @@ const char *const Modem::version = DMODEM_VERSION;
 static const s16 XMIT_SIZE = 4096;
 /* a hang-up's stop: the samples after it */
 static const u32 STOP_SAMPLES = 48;
+/* the stop due after STOP_SAMPLES done anyway once the line has given no
+   samples for this long: a line with no audio yet (a SIP call that
+   rings without early media) would otherwise hold it until the call
+   ended some other way.  Well past a frame's gap (20 ms) with jitter */
+static const u32 STOP_IDLE_MS = 100;
 /* the escape's guard time (before, between and after the S2s) */
 static const u32 ESCAPE_MS = 500;
 /* caller ID listens this long after the first ring */
@@ -1082,6 +1087,7 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 		stats_.samples += n;
 	}
 	count_ += n;
+	samples_at_ms_ = host_.now_ms();
 	if (later_ != Later::None &&
 	    static_cast<s64>(count_ - later_at_) >= 0)
 		later(later_, 0);
@@ -1798,6 +1804,11 @@ void Modem::poll()
 {
 	u16 ev;
 
+	/* (a call stopped while its line had no audio: at once) */
+	if (later_ == Later::Stop &&
+	    host_.now_ms() - samples_at_ms_ >= STOP_IDLE_MS)
+		later(Later::Stop, 0);
+
 	if (voice_dialing_ && !voice_dial_digits_)
 		voice_dial_check();
 	if (timer_on_ &&
@@ -1829,6 +1840,13 @@ s32 Modem::next_timer_ms()
 		s32 vd = voice_dial_left_ms();
 		if (left < 0 || vd < left)
 			left = vd;
+	}
+	if (later_ == Later::Stop) {
+		u64 idle = host_.now_ms() - samples_at_ms_;
+		s32 st = idle >= STOP_IDLE_MS ? 0 :
+			static_cast<s32>(STOP_IDLE_MS - idle);
+		if (left < 0 || st < left)
+			left = st;
 	}
 	return left;
 }
