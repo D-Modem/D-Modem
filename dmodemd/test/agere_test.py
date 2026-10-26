@@ -199,6 +199,22 @@ try:
         check("%s: it streams" % tag, not m.expect_log(b"streaming without the bulk patch", 2))
         m.stop()
 
+    # command 0x10's mode: read back from the patch's stream state; a ROM
+    # that takes it from wIndex gets it again there, and streams
+    m = Modem("1001", "dmodem40", "-index", args=["-d2"])
+    check("the stream's state read back: streaming",
+          m.expect_log(b"after command 0x10: the mailbox 00 00 00 00 02 00 00 00, "
+                       b"the stream's state 2 (2: streaming)", 5))
+    check("not sent again", not m.expect_log(b"its mode as wIndex", 1))
+    m.stop()
+    m = Modem("1001", "dmodem40", "-index", args=["-d2"], FAKE_AGERE_MODE_INDEX="1")
+    check("-index: not streaming, said",
+          m.expect_log(b"the bulk patch has not started the stream: command 0x10 again", 5))
+    check("-index: streaming, its mode as wIndex",
+          m.expect_log(b"Agere: streaming, its mode as wIndex", 5))
+    check("-index: its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
+    m.stop()
+
     a = Modem("1001", "dmodem41", args=["-r", "9600"], FAKE_AGERE_FULL="1")
     b = Modem("1002", "dmodem42")
     check("-r 9600: 8000 Hz all the same", a.expect_log(b"8000 Hz, its rate (not 9600)", 5))

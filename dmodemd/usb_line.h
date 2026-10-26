@@ -275,6 +275,10 @@ private:
 	bool agere_bulk_patch();
 	bool agere_mercury();
 	bool agere_streams();
+	/* the bulk patch's mailbox and stream state read back after command
+	   0x10, logged; command 0x10 again, its mode as wIndex, if it is not
+	   streaming */
+	void agere_stream_check(bool high);
 	void agere_in(libusb_transfer *t);
 	void agere_fill(libusb_transfer *t, s16 n);
 	void agere_rate_check();

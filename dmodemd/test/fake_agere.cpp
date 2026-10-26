@@ -41,6 +41,8 @@
  *    FAKE_AGERE_POLARIS=1: the codec does not answer (command 0x0a stalls).
  *    FAKE_AGERE_FULL=1: a full speed device (command 0x10 wanted before
  *    the transfers; at high speed after them).
+ *    FAKE_AGERE_MODE_INDEX=1: command 0x10's mode taken from wIndex,
+ *    not wValue.
  *    FAKE_AGERE_LOG=1: the commands on stderr.
  *
  */
@@ -78,6 +80,8 @@ const uint16_t MAX_PACKET = 512;
 const int RING_LEVEL = 8000;
 const unsigned SAMPLES = 48;
 const uint32_t FUNCTABLE = 0x70000a64;
+/* the bulk patches' command 0x10 mailbox and stream state */
+const uint32_t PATCH_MAILBOX = 0x70000e24, PATCH_STREAM = 0x70000a0c;
 
 libusb_device the_device;
 
@@ -88,6 +92,7 @@ struct Fake {
 	int alt = 0;
 	uint16_t rom = 0x121;
 	bool flash = false, polaris = false, full = false;
+	bool mode_index = false;        /* command 0x10's mode in wIndex */
 	bool hook = false;              /* off hook */
 	bool streaming = false;         /* command 0x10's 1 */
 	bool said_stuck = false;
@@ -400,13 +405,24 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 			switch_to(0, fake.hook);
 		}
 		return 0;
-	case 0x10:
-		if (value == 1) {
+	case 0x10: {
+		/* (the patch's: the mode from the mailbox, answered with 2;
+		   its stream state 2 streaming, 1 stopped) */
+		uint16_t mode = fake.mode_index ? index : value;
+		if (patched())
+			set32(PATCH_MAILBOX + 4, 2);
+		if (mode == 1) {
 			fake.streaming = true;
+			if (patched())
+				fake.mem[PATCH_STREAM] = 2;
 			fake.in.clear();
 			fake.ringing.clear();
+		} else if (mode == 2 && patched()) {
+			fake.streaming = false;
+			fake.mem[PATCH_STREAM] = 1;
 		}
 		return 0;
+	}
 	case 0x11:
 		return fake.rom == 0x106 && mem32(FUNCTABLE + 24) == 0x70001140 ?
 			0 : LIBUSB_ERROR_PIPE;
@@ -432,6 +448,7 @@ int LIBUSB_CALL libusb_init(libusb_context **ctx)
 	fake.flash = getenv("FAKE_AGERE_FLASH") != nullptr;
 	fake.polaris = getenv("FAKE_AGERE_POLARIS") != nullptr;
 	fake.full = getenv("FAKE_AGERE_FULL") != nullptr;
+	fake.mode_index = getenv("FAKE_AGERE_MODE_INDEX") != nullptr;
 	if (ctx)
 		*ctx = fake.ctx;
 	return 0;

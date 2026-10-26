@@ -76,6 +76,11 @@ between the codec's serial port and the USB endpoints' FIFOs:
 and this function answers it: 1 starts the stream (the endpoints' modes for high or full speed,
 the counters cleared), 2 stops it, 3 adds a register (its index the argument) to those reported
 in the status words, 4 clears them; then it marks the command done.
+It takes the mode from the low half of the mailbox's second word (`0x70000e28`) and the
+argument from its high half, and marks the command done by writing 2 to that word. It keeps the
+stream's state at `0x70000a0c`: 2 streaming (start), 1 stopped. The three bulk patches have the
+same two addresses. Which fields of the setup packet the ROM copies into the mailbox (`wValue`
+and `wIndex`, or `wIndex` and `wLength`) is not known.
 
 **The clock change patch** (`async_clockchange`, ROM 1.0.6's command 0x11, ARM code): it waits
 for the PLL to lock, then sets the divider in ARMCDR and runs the ARM from the PLL, or falls
@@ -178,6 +183,13 @@ isochronous packets. The first two OUT transfers are silence.
 - **Loop current:** fixed in this driver (`UsbMerCheckLoopCurrent`: 20).
 
 ## Bring-up
+
+**The first device (an Android phone, ROM 1.2.1, a Mercury codec, high speed):** everything up
+to command 0x10 goes as above, and the function table shows the patch in, but no IN transfer
+ever comes back (and one OUT transfer of the two): the samples never start. So dmodemd now reads
+the mailbox and the stream state back after command 0x10 and logs them (`-d1`). If the state is
+not 2, it says so and sends command 0x10 again with the mode in `wIndex`, then logs whether that
+started the stream.
 
     dmodemd --usb=auto -d2 dmodem0
 

@@ -92,6 +92,11 @@ const u32 V106_4 = 0x700013f0, V106_7 = 0x70001400;
 const u32 FLASH_4 = 0x700013f0, FLASH_7 = 0x70001400;
 const u32 ROM_4 = 0x70001588, ROM_7 = 0x70001598;
 const u32 CLOCK_6 = 0x70001140;
+/* the bulk patches' command 0x10: the ROM's mailbox (the word at +4: the
+   mode in its low half, 2 once answered) and the stream's state the
+   patch keeps (2 streaming, 1 stopped), the same in all three */
+const u32 PATCH_MAILBOX = 0x70000e24, PATCH_STREAM = 0x70000a0c;
+const u8 STREAM_ON = 2;
 /* the function table's entry 0: the bit of a 1.2.1 in flash */
 const u32 FUNCTABLE_FLASH = 0x20000000;
 
@@ -642,8 +647,43 @@ bool UsbLine::agere_streams()
 	if (high && (!agere_cmd(CMD_STREAM, 0, 0, 4, nullptr) ||
 		     !agere_cmd(CMD_STREAM, 0, 0, 1, nullptr)))
 		return false;
+	agere_stream_check(high);
 	agere_t0_ = 0;
 	return true;
+}
+
+/* see usb_line.h: the patch's mailbox and stream state read back after
+   command 0x10 (logged); not streaming: command 0x10 again with its mode
+   in wIndex instead of wValue (which half of the setup packet the ROM
+   leaves in the mailbox is not known: never seen on the wire) */
+void UsbLine::agere_stream_check(bool high)
+{
+	u8 mb[8], st[4];
+	auto look = [&](const char *when) {
+		if (!agere_read(PATCH_MAILBOX, mb, sizeof(mb)) ||
+		    !agere_read(PATCH_STREAM, st, sizeof(st)))
+			return false;
+		DBG("Agere: %s: the mailbox %02x %02x %02x %02x %02x %02x %02x "
+		    "%02x, the stream's state %u (%u: streaming)\n", when,
+		    mb[0], mb[1], mb[2], mb[3], mb[4], mb[5], mb[6], mb[7],
+		    st[0], STREAM_ON);
+		return true;
+	};
+	if (!look("after command 0x10") || st[0] == STREAM_ON)
+		return;
+	ERR("Agere USB modem: the bulk patch has not started the stream: "
+	    "command 0x10 again, its mode as wIndex\n");
+	if (high && !agere_cmd(CMD_STREAM, 0, 4, 0, nullptr))
+		return;
+	if (!agere_cmd(CMD_STREAM, 0, 1, 0, nullptr) ||
+	    !look("after command 0x10, its mode as wIndex"))
+		return;
+	if (st[0] == STREAM_ON)
+		DBG("Agere: streaming, its mode as wIndex: tell D-Modem "
+		    "(docs/agere-usb.md)\n");
+	else
+		ERR("Agere USB modem: still not streaming: tell D-Modem, with "
+		    "this log (docs/agere-usb.md)\n");
 }
 
 /* see usb_line.h: an IN transfer's header and samples (in_complete()):
