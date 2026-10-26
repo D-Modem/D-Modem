@@ -968,7 +968,8 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const s16 *lengths)
 	s16 off = 0;
 	s16 bps = s.voice ? 1 : 2;
 	if (kind_ == Kind::Agere) {
-		agere_fill(t, lengths[0]);
+		(void)lengths;
+		agere_fill(t);
 		return;
 	}
 	for (s16 i = 0; i < ISO_PACKETS; i++) {
@@ -1018,6 +1019,17 @@ void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 		l->gone("unplugged");
 	if (l->dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
+	/* (the Agere modem's: sent again at once, with what is owed: its
+	   ROM answers each OUT packet with an IN one) */
+	if (l->kind_ == Kind::Agere) {
+		l->agere_fill(t);
+		int err = libusb_submit_transfer(t);
+		if (err == 0)
+			l->in_flight_++;
+		else
+			l->park(t, err);
+		return;
+	}
 	/* sent again with the lengths an IN transfer has given, or once
 	   one does */
 	s->idle_out.push_back(t);
@@ -1187,7 +1199,6 @@ void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 		return;
 	if (kind_ == Kind::Agere) {
 		agere_in(t);
-		send_out(s);
 		int err = libusb_submit_transfer(t);
 		if (err == 0)
 			in_flight_++;
@@ -1267,10 +1278,10 @@ void UsbLine::resume()
 			arm_wake(true);
 		handset_due_ = handset_;
 	}
-	/* (the Agere modem's patch may have gone with a reset) */
-	if (kind_ == Kind::Agere &&
-	    (!agere_bulk_patch() || !agere_cmd(0x10, 0, 0, 1, nullptr)))
+	/* (the Agere modem's stream may have gone with a reset) */
+	if (kind_ == Kind::Agere && (!agere_table() || !agere_start()))
 		return;
+	agere_owed_ = 0;
 	/* the streams from their start again: nothing kept from before
 	   the suspend, the playback's lead a frame and a half */
 	for (Iso *st : { &iso_, &viso_ }) {
@@ -1289,9 +1300,12 @@ void UsbLine::resume()
 				in_flight_++;
 			else
 				park(t, err);
-		} else if (!(t->endpoint & LIBUSB_ENDPOINT_IN)) {
+		} else if (!(t->endpoint & LIBUSB_ENDPOINT_IN) &&
+			   kind_ != Kind::Agere) {
 			static_cast<Iso *>(t->user_data)->idle_out.push_back(t);
 		} else {
+			if (!(t->endpoint & LIBUSB_ENDPOINT_IN))
+				agere_fill(t);
 			int err = libusb_submit_transfer(t);
 			if (err == 0)
 				in_flight_++;
@@ -1653,8 +1667,9 @@ void UsbLine::voice_frame(dcore::Modem &m)
 void UsbLine::close()
 {
 	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_) {
-		/* on hook, the LED as CUsbStop leaves it */
+		/* the stream stopped, on hook, the LED as CUsbStop leaves it */
 		u16 v;
+		agere_stop();
 		codec_write(AGERE_HOOK, 1);
 		if (agere_read16(0x30000008, &v))
 			agere_write16(0x30000008, static_cast<u16>((v & 0xfff3) | 0x000c));

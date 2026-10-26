@@ -4,8 +4,7 @@
 ; dmodem-usb.inf - WinUSB (Windows' own generic USB driver) for the USB
 ; modems dmodemd drives itself through libusb (dmodemd --usb): Smart
 ; Link's SmartUSB56 (ST7554, USB 0483:7554), the pico-serial Line
-; stick (1209:0002) and Agere's USB 2.0 soft modem (047E:2892, 047E:2828;
-; its bulk patch is Agere's, in firmware\agere under Agere's licence).
+; stick (1209:0002) and Agere's USB 2.0 soft modem (047E:2892, 047E:2828).
 ; No driver of D-Modem's: the INF only gives these
 ; devices WinUSB, as Zadig would.
 ; (The pico-serial Line's firmware asks for WinUSB itself, with Microsoft

@@ -5,30 +5,30 @@
  *    usb_agere.cpp - the Agere USB 2.0 soft modem (USB 047E:2892, 047E:2828)
  *                    as the modem's line: UsbLine's Kind::Agere (usb_line.h)
  *
- *    What the device wants is what Agere's drivers do, read from them
- *    (docs/agere-usb.md: agrsm 2.1.73's agrmodemlib.o, whose symbols
- *    name its functions, and AGRSM.sys 2.2.98 where they differ); the
- *    code is ours.  In order, as Agere's Linux driver goes (uss_probe,
- *    Usb_HandleStartDevice, CUsbInit, UsbMerInitCodec, CUsbStart):
+ *    The device streams on its ROM's own isochronous endpoints, as Agere's
+ *    Windows driver has it (docs/agere-usb.md: read from the device's ROM
+ *    and AGRSM.sys 2.2.98; its start-up as agrsm 2.1.73's agrmodemlib.o
+ *    does it, whose symbols name its functions); the code is ours.  In
+ *    order:
  *
  *    - SET_CONFIGURATION 2 as the driver sends it (bmRequestType 0x0b),
- *      then interface 0's alternate setting 2: a bulk IN and a bulk OUT
- *      endpoint;
+ *      then interface 0's alternate setting 1: an isochronous IN and OUT
+ *      endpoint, a packet every 2 microframes (high speed only);
  *    - the ROM's version (command 1), GPIO set-up and the "enumeration"
  *      LED, the ARM's clock lowered (command 0x12);
  *    - the codec found (its register 0xc0 read: a Mercury; a "Polaris"
  *      DAA, whose register reads fail, is not done here), started (its
  *      registers as UsbMerInitCodec writes them, its two gains), on hook;
- *    - the bulk patch into the ARM (command 9, and 7 to hook it in)
- *      unless it is there (its function table at 0x70000a64 says so), the
- *      clock raised, the endpoints' halts and FIFOs cleared, two bulk
- *      transfers each way, the samples started (command 0x10).
+ *    - the ROM's function table as the ROM has it (a bulk patch of an
+ *      earlier driver's, left in it, would take the samples), the clock
+ *      raised, the stream started (command 0x0c), the transfers.
  *
- *    Each IN transfer is 100 octets: the count of samples (48), a status
- *    word (bit 0 the ring detector, the high octet 0), the samples (S16
- *    little-endian, 8000 Hz).  Each OUT one the same, its status 0; one
- *    goes for each IN one, with its count, so that the playback keeps the
- *    codec's clock.
+ *    Each OUT packet has a header (a count of samples, a word not looked
+ *    at) and that many samples, S16 little-endian at 8000 Hz; the ROM
+ *    answers each with an IN packet of the samples it has (a count, at
+ *    most 10, or 0xaa55 for none; a status word, bit 0 the ring
+ *    detector; the samples).  As many samples go out as have come in,
+ *    so that the playback keeps the codec's clock.
  *
  */
 
@@ -38,15 +38,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <system_error>
-#include <utility>
 
 #include <log.h>
 
-#include "agere_patch.h"
 #include "dm_types.h"
 #include "usb_line.h"
 
@@ -64,8 +58,8 @@ const u16 AGERE_2892 = 0x2892, AGERE_2828 = 0x2828;
 /* its commands (bRequest), and which of them are IN (Usb_Command's
    table: 1, 2, 4, 6 and 10) */
 const u8 CMD_VERSION = 0x01, CMD_READ = 0x02, CMD_WRITE = 0x03,
-	CMD_PATCH = 0x09, CMD_CODEC_READ = 0x0a, CMD_CODEC_WRITE = 0x0b,
-	CMD_STREAM = 0x10, CMD_CUSTOM_ASYNC = 0x11, CMD_CHANGE_CLK = 0x12;
+	CMD_CODEC_READ = 0x0a, CMD_CODEC_WRITE = 0x0b,
+	CMD_ISO_START = 0x0c, CMD_ISO_STOP = 0x0d, CMD_CHANGE_CLK = 0x12;
 /* cmd an IN command (its data from the device) */
 bool cmd_in(u8 cmd)
 {
@@ -76,39 +70,42 @@ const u16 CMD_MAX = 0x4b0;
 
 /* the ARM's memory: the controller's registers (the PLL's state, the
    clock's divider, two set up at start), the GPIOs (directions, inputs,
-   outputs; the LED on bits 2 and 3), the ROM's function table, the
-   endpoints' FIFOs */
+   outputs; the LED on bits 2 and 3), the ROM's function table, the USB
+   controller's speed (1 high) */
 const u32 CTRL_PLL = 0xcd000008, CTRL_ARMCDR = 0xcd00000c,
 	CTRL_30 = 0xcd000030, CTRL_34 = 0xcd000034;
 const u32 GPIO_DIR = 0x30000000, GPIO_OUT = 0x30000008;
 const u16 GPIO_LED_MASK = 0xfff3, GPIO_LED = 0x000c;
 const u32 FUNCTABLE = 0x70000a64;
-const u32 FIFO_IN = 0x90002048, FIFO_OUT = 0x90004048;
-const u16 FIFO_RESET = 0x000f;
+const u32 USB_SPEED = 0x90000018;
 
-/* what the bulk patches put in the function table's entries 4 and 7,
-   and the clock change patch in entry 6 (ROM 1.0.6) */
-const u32 V106_4 = 0x700013f0, V106_7 = 0x70001400;
-const u32 FLASH_4 = 0x700013f0, FLASH_7 = 0x70001400;
-const u32 ROM_4 = 0x70001588, ROM_7 = 0x70001598;
-const u32 CLOCK_6 = 0x70001140;
-/* the bulk patches' command 0x10: the ROM's mailbox (the word at +4: the
-   mode in its low half, 2 once answered) and the stream's state the
-   patch keeps (2 streaming, 1 stopped), the same in all three */
-const u32 PATCH_MAILBOX = 0x70000e24, PATCH_STREAM = 0x70000a0c;
-const u8 STREAM_ON = 2;
-/* the function table's entry 0: the bit of a 1.2.1 in flash */
-const u32 FUNCTABLE_FLASH = 0x20000000;
+/* the ROM's function table as it has it at boot (0x3970): entry 4 its
+   deferred commands' handler (0x14b0), entry 2 its own, the others an
+   empty function; a patch rewrites entries (a bulk patch 4 and 7) */
+const u32 ROM_TABLE[8] = { 0x14af, 0x14af, 0x221c, 0x14af,
+			   0x14b1, 0x14af, 0x14af, 0x14af };
 
 /* the Mercury codec's registers: the hook (0 off, 1 on), its ready bit */
 const u16 MER_HOOK = 0x00c0, MER_STATUS = 0x02dc;
 /* its two gains (MerGain1, MerGain2) */
 const u16 MER_GAIN1 = 0xc990, MER_GAIN2 = 0x3b0e;
 
-/* the bulk transfers: their octets each (a header and 48 samples) */
-const s16 BULK_LEN = 100, BULK_SAMPLES = 48;
-/* the device's own delay, a guess: a packet */
-const s16 AGERE_FIFO_SAMPLES = 48;
+/* the isochronous stream (alternate setting 1): its packets' octets at
+   most, and a packet's header; the samples a packet, at most, each way
+   (OUT: the packet's room; IN: the ROM's) and as the stream starts; the
+   packets a transfer (6 ms, as Windows' driver has them: 24) */
+const u8 ISO_ALT = 1;
+const s16 ISO_MAX = 16, ISO_HEAD = 4;
+const s16 OUT_MOST = (ISO_MAX - ISO_HEAD) / 2, IN_MOST = 10;
+const s16 AGERE_PACKETS = 24;
+/* the ROM's "no samples" count */
+const u16 NONE = 0xaa55;
+/* command 0x0c's data (AGRSM.sys's, at high speed): an empty IN
+   packet's size, (2 + 2) * 2 octets; the receive ring's start; the
+   transmit ring's, 24 samples of silence ahead of the codec; the
+   microframes served, every other one */
+const u16 START[4] = { 2, 0, 24, 0x2aaa };
+const s16 RING_AHEAD = 24;
 /* its rate */
 const u32 AGERE_RATE = 8000;
 /* the rate measured over this long (ms) */
@@ -130,50 +127,6 @@ u32 le32(const u8 *b)
 	return u32{b[0]} | u32{b[1]} << 8 | u32{b[2]} << 16 | u32{b[3]} << 24;
 }
 
-/* the patches, by the hashes in agere_patch.h, found in the file's
-   octets d (n of them) into out; DMODEM_AGERE_TEST_PATCHES=1: the
-   tests' ones as well (fake_agere.cpp's) */
-void find_patches(const u8 *d, size_t n, std::vector<u8> *out)
-{
-	std::vector<std::pair<int, agere::Patch>> want;
-	for (int i = 0; i < agere::PATCHES; i++) {
-		want.emplace_back(i, agere::known(i));
-		if (getenv("DMODEM_AGERE_TEST_PATCHES")) {
-			agere::Patch t = agere::known(i);
-			std::vector<u8> p(t.len);
-			for (u32 k = 0; k < t.len; k++)
-				p[k] = agere::test_patch(i, k);
-			t.head = agere::fnv(p.data(), agere::PATCH_HEAD);
-			t.all = agere::fnv(p.data(), p.size());
-			want.emplace_back(i, t);
-		}
-	}
-	for (size_t off = 0; off + agere::PATCH_HEAD <= n; off++) {
-		u64 h = agere::fnv(d + off, agere::PATCH_HEAD);
-		for (const auto &w : want) {
-			const agere::Patch &p = w.second;
-			if (h != p.head || !out[w.first].empty() ||
-			    off + p.len > n || agere::fnv(d + off, p.len) != p.all)
-				continue;
-			out[w.first].assign(d + off, d + off + p.len);
-		}
-	}
-}
-
-/* a file's octets (at most 64 MB); false if it can't be read */
-bool read_file(const std::filesystem::path &p, std::vector<u8> &d)
-{
-	std::error_code ec;
-	auto size = std::filesystem::file_size(p, ec);
-	if (ec || size > (64u << 20))
-		return false;
-	std::ifstream f(p, std::ios::binary);
-	if (!f)
-		return false;
-	d.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-	return true;
-}
-
 } // namespace
 
 /* see usb_line.h: an Agere USB modem's USB IDs */
@@ -181,94 +134,6 @@ bool UsbLine::agere_device(u16 vendor, u16 product)
 {
 	return vendor == AGERE_VENDOR &&
 		(product == AGERE_2892 || product == AGERE_2828);
-}
-
-/* the directories with the Agere patches D-Modem ships
-   (firmware/agere): DMODEM_AGERE_FIRMWARE's alone if it is set; else
-   the installed one, the source tree's (dmodemd run from its build),
-   and on Windows the one beside dmodemd.exe */
-std::vector<std::string> UsbLine::agere_firmware_dirs()
-{
-	std::vector<std::string> dirs;
-	if (const char *e = getenv("DMODEM_AGERE_FIRMWARE")) {
-		dirs.push_back(e);
-		return dirs;
-	}
-#ifdef DMODEM_FIRMWARE_DIR
-	dirs.push_back(DMODEM_FIRMWARE_DIR "/agere");
-#endif
-#ifdef DMODEM_SOURCE_FIRMWARE_DIR
-	dirs.push_back(DMODEM_SOURCE_FIRMWARE_DIR "/agere");
-#endif
-#ifdef _WIN32
-	char exe[MAX_PATH];
-	DWORD n = GetModuleFileNameA(nullptr, exe, sizeof(exe));
-	if (n > 0 && n < sizeof(exe))
-		dirs.push_back((std::filesystem::path(exe).parent_path() /
-				"firmware" / "agere").string());
-#endif
-	return dirs;
-}
-
-/* see usb_line.h: set_agere_driver()'s file, or the files of its
-   directory and under it, searched for the patches (all of them, or
-   those there are); without it the patches D-Modem ships
-   (agere_firmware_dirs()); false (said) if there are none */
-bool UsbLine::load_agere_patches()
-{
-	namespace fs = std::filesystem;
-	std::error_code ec;
-	if (agere_driver_.empty()) {
-		for (const std::string &d : agere_firmware_dirs())
-			if (fs::is_directory(d, ec)) {
-				agere_driver_ = d;
-				break;
-			}
-	}
-	if (agere_driver_.empty()) {
-		ERR("Agere USB modem: no bulk patch: D-Modem's firmware/agere "
-		    "is not installed (or DMODEM_AGERE_FIRMWARE's directory is "
-		    "not there); --usb-agere-driver <Agere's AGRSM.sys, "
-		    "AGRSM64.sys, agrmodem.ko or agrmodemlib.o, or a directory "
-		    "with one> takes it from Agere's driver (docs/agere-usb.md)\n");
-		return false;
-	}
-	std::vector<fs::path> files;
-	fs::path root(agere_driver_);
-	if (fs::is_directory(root, ec)) {
-		for (fs::recursive_directory_iterator it(root, ec), end;
-		     !ec && it != end; it.increment(ec))
-			if (it->is_regular_file(ec))
-				files.push_back(it->path());
-		std::sort(files.begin(), files.end());
-	} else {
-		files.push_back(root);
-	}
-	std::vector<u8> d;
-	for (const fs::path &p : files) {
-		bool all = true;
-		for (const auto &q : agere_patch_)
-			all = all && !q.empty();
-		if (all)
-			break;
-		if (!read_file(p, d))
-			continue;
-		std::vector<u8> found[agere::PATCHES];
-		find_patches(d.data(), d.size(), found);
-		for (int i = 0; i < agere::PATCHES; i++)
-			if (agere_patch_[i].empty() && !found[i].empty()) {
-				agere_patch_[i].swap(found[i]);
-				DBG("Agere: %s in %s\n", agere::known(i).name,
-				    p.string().c_str());
-			}
-	}
-	for (int i = 0; i < agere::V121_ROM + 1; i++)
-		if (!agere_patch_[i].empty())
-			return true;
-	ERR("Agere USB modem: no bulk patch in %s (its driver's AGRSM.sys, "
-	    "AGRSM64.sys, agrmodem.ko or agrmodemlib.o has it)\n",
-	    agere_driver_.c_str());
-	return false;
 }
 
 /* see usb_line.h: Usb_Command's vendor request, to the device: IN for
@@ -344,8 +209,9 @@ bool UsbLine::codec_write(u16 reg, u16 v)
 	return agere_cmd(CMD_CODEC_WRITE, 0, reg, v, nullptr);
 }
 
+
 /* see usb_line.h: the device opened as Agere's driver does (the file's
-   head), up to its codec on hook; the streams are agere_streams()' */
+   head), up to its codec on hook; the stream is agere_streams()' */
 bool UsbLine::open_agere()
 {
 	int err;
@@ -353,15 +219,18 @@ bool UsbLine::open_agere()
 
 	if (voice_law_ != VoiceLaw::None)
 		ERR("Agere USB modem: no voice codec (--usb-voice-codec)\n");
-	if (!load_agere_patches())
+	if (libusb_get_device_speed(libusb_get_device(h_)) != LIBUSB_SPEED_HIGH) {
+		ERR("Agere USB modem: not at high speed: it streams only on a "
+		    "USB 2.0 port (docs/agere-usb.md)\n");
 		return false;
+	}
 	/* (uss_probe's: SET_CONFIGURATION 2 as it sends it, its answer
 	   not looked at) */
 	err = libusb_control_transfer(h_, 0x0b, LIBUSB_REQUEST_SET_CONFIGURATION,
 				      2, 0, nullptr, 0, 10);
 	TRACE("Agere: SET_CONFIGURATION 2 (0x0b): %d\n", err);
-	if ((err = libusb_set_interface_alt_setting(h_, 0, 2)) < 0) {
-		ERR("Agere USB modem: alternate setting 2: %s\n",
+	if ((err = libusb_set_interface_alt_setting(h_, 0, ISO_ALT)) < 0) {
+		ERR("Agere USB modem: alternate setting %u: %s\n", ISO_ALT,
 		    libusb_strerror(err));
 		return false;
 	}
@@ -372,31 +241,37 @@ bool UsbLine::open_agere()
 		    libusb_strerror(err));
 		return false;
 	}
+	iso_.ep_in = iso_.ep_out = 0;
 	for (s16 i = 0; cfg->bNumInterfaces >= 1 &&
 	     i < cfg->interface[0].num_altsetting; i++) {
 		const libusb_interface_descriptor &d = cfg->interface[0].altsetting[i];
-		if (d.bAlternateSetting != 2)
+		if (d.bAlternateSetting != ISO_ALT)
 			continue;
 		for (s16 k = 0; k < d.bNumEndpoints; k++) {
 			const libusb_endpoint_descriptor &e = d.endpoint[k];
 			if ((e.bmAttributes & LIBUSB_TRANSFER_TYPE_MASK) !=
-			    LIBUSB_TRANSFER_TYPE_BULK)
+			    LIBUSB_TRANSFER_TYPE_ISOCHRONOUS)
 				continue;
-			if (e.bEndpointAddress & LIBUSB_ENDPOINT_IN)
-				bulk_in_ = bulk_in_ ? bulk_in_ : e.bEndpointAddress;
-			else
-				bulk_out_ = bulk_out_ ? bulk_out_ : e.bEndpointAddress;
+			s16 size = static_cast<s16>(std::min<int>(e.wMaxPacketSize & 0x7ff,
+								  ISO_MAX));
+			if (e.bEndpointAddress & LIBUSB_ENDPOINT_IN) {
+				iso_.ep_in = e.bEndpointAddress;
+				iso_.max_in = size;
+			} else {
+				iso_.ep_out = e.bEndpointAddress;
+				iso_.max_out = size;
+			}
 		}
 	}
 	libusb_free_config_descriptor(cfg);
-	if (!bulk_in_ || !bulk_out_) {
-		ERR("Agere USB modem: no bulk IN and OUT endpoints in "
-		    "alternate setting 2\n");
+	if (!iso_.ep_in || !iso_.ep_out || iso_.max_in < ISO_HEAD ||
+	    iso_.max_out < ISO_HEAD + 2) {
+		ERR("Agere USB modem: no isochronous IN and OUT endpoints in "
+		    "alternate setting %u\n", ISO_ALT);
 		return false;
 	}
-	DBG("Agere: bulk out %02x, in %02x, %s speed\n", bulk_out_, bulk_in_,
-	    libusb_get_device_speed(libusb_get_device(h_)) == LIBUSB_SPEED_HIGH ?
-	    "high" : "full");
+	DBG("Agere: isochronous out %02x, in %02x, %d octets a packet\n",
+	    iso_.ep_out, iso_.ep_in, iso_.max_out);
 	/* Usb_HandleStartDevice: the ROM's version (0: not known, as
 	   Windows' driver has it; DMODEM_AGERE_ROM=<hex> instead), the
 	   GPIOs (U2InitGpio), the LED, the clock lowered */
@@ -431,43 +306,22 @@ bool UsbLine::open_agere()
 	}
 	if (!agere_mercury())
 		return false;
-	fifo_samples_ = AGERE_FIFO_SAMPLES;
+	fifo_samples_ = RING_AHEAD;
 	return true;
 }
 
 /* see usb_line.h: the ARM's clock lowered (at start) or raised (for the
-   samples), as Usb_LowerArmClock and Usb_BoostArmClock: a ROM 1.0.6 its
-   clock change patch and USS_CMD_CUSTOM_ASYNC, the others
-   USS_CMD_CHANGE_CLK, none if its version is not known; raised, the PLL
-   not locked, the clock's source and divider set by hand */
+   samples), as Usb_LowerArmClock and Usb_BoostArmClock: USS_CMD_CHANGE_CLK
+   (0xf lowered, 3 raised), not with a ROM 1.0.6 (whose clock change wants
+   Agere's patch: its clock left as it is) or one whose version is not
+   known; raised, the PLL not locked, the clock's source and divider set
+   by hand */
 bool UsbLine::agere_clock(bool boost)
 {
-	return agere_clock_div(boost ? 3 : 0xf, boost ? "raised" : "lowered");
-}
-
-/* see usb_line.h: agere_clock()'s, with its divider (0xf lowered) */
-bool UsbLine::agere_clock_div(u16 div, const char *what)
-{
-	bool boost = div != 0xf;
-	if (agere_rom_ != 0xffff && (agere_rom_ & 0xf) == 6) {
-		u8 t[32];
-		if (!agere_read(FUNCTABLE, t, sizeof(t)))
-			return false;
-		if (le32(t + 24) != CLOCK_6) {
-			std::vector<u8> &p = agere_patch_[agere::ASYNC_CLOCKCHANGE];
-			if (p.empty()) {
-				ERR("Agere USB modem: ROM 1.0.6 wants the clock "
-				    "change patch (async_clockchange), not in "
-				    "%s\n", agere_driver_.c_str());
-				return false;
-			}
-			DBG("Agere: clock change patch\n");
-			if (!agere_cmd(CMD_PATCH, static_cast<u16>(p.size()), 6, 0,
-				       p.data()))
-				return false;
-		}
-		if (!agere_cmd(CMD_CUSTOM_ASYNC, 0, 1, div, nullptr))
-			return false;
+	u16 div = boost ? 3 : 0xf;
+	if ((agere_rom_ & 0xfff) == 0x106) {
+		if (!boost)
+			DBG("Agere: ROM 1.0.6: its clock left as it is\n");
 	} else if (agere_rom_ != 0xffff &&
 		   !agere_cmd(CMD_CHANGE_CLK, 0, 1, div, nullptr)) {
 		return false;
@@ -483,7 +337,8 @@ bool UsbLine::agere_clock_div(u16 div, const char *what)
 	}
 	if (!agere_read16(CTRL_ARMCDR, &cdr))
 		return false;
-	DBG("Agere: ARM clock %s, %d MHz (ARMCDR %x)\n", what,
+	DBG("Agere: ARM clock %s, %d MHz (ARMCDR %x)\n",
+	    boost ? "raised" : "lowered",
 	    480 / (2 * static_cast<s16>(cdr) + 2), cdr);
 	return true;
 }
@@ -537,118 +392,88 @@ bool UsbLine::agere_mercury()
 	for (const W &w : last)
 		if (!codec_write(w.reg, w.v))
 			return false;
-	/* (read back, those that differ logged: some are banked by 0x048,
-	   or read other bits than they take; for the first device, whose
-	   samples are all 0x8000) */
-	for (const W &w : first)
-		if (codec_read(w.reg, &v) && v != w.v)
-			DBG("Agere: codec register %03x reads %04x (%04x written)\n",
-			    w.reg, v, w.v);
 	return true;
 }
 
-/* see usb_line.h: the bulk patch for the ROM (1.0.6's; a 1.2.1's in
-   flash or in ROM, as its function table's entry 0 says) unless its
-   entries 4 and 7 say it is in, as Uss_InitForUsingBulkEps: downloaded
-   (command 9, index 4), hooked in (index 7: entry 7's function, with
-   the word at 0) */
-bool UsbLine::agere_bulk_patch()
+
+/* see usb_line.h: the ROM's function table as it has it at boot; entries
+   a patch has rewritten (a bulk patch of an earlier driver's, there until
+   the device is reset: its per-sample function would take the samples)
+   put back; false (logged) */
+bool UsbLine::agere_table()
 {
 	u8 t[32];
 	if (!agere_read(FUNCTABLE, t, sizeof(t)))
 		return false;
-	int which;
-	u32 e4, e7;
-	if ((agere_rom_ & 0xfff) == 0x106) {
-		which = agere::V106;
-		e4 = V106_4;
-		e7 = V106_7;
-	} else if (le32(t) & FUNCTABLE_FLASH) {
-		which = agere::V121_FLASH;
-		e4 = FLASH_4;
-		e7 = FLASH_7;
-	} else {
-		which = agere::V121_ROM;
-		e4 = ROM_4;
-		e7 = ROM_7;
+	for (s16 i = 0; i < 8; i++) {
+		if (le32(t + 4 * i) == ROM_TABLE[i])
+			continue;
+		DBG("Agere: function table entry %d %08x (a patch's), put back\n",
+		    i, le32(t + 4 * i));
+		u8 b[4] = { static_cast<u8>(ROM_TABLE[i]),
+			    static_cast<u8>(ROM_TABLE[i] >> 8), 0, 0 };
+		u32 a = FUNCTABLE + 4u * static_cast<u32>(i);
+		if (!agere_cmd(CMD_WRITE, 4, static_cast<u16>(a),
+			       static_cast<u16>(a >> 16), b))
+			return false;
 	}
-	if (le32(t + 16) == e4 && le32(t + 28) == e7) {
-		DBG("Agere: bulk patch in already\n");
-		return true;
-	}
-	std::vector<u8> &p = agere_patch_[which];
-	if (p.empty()) {
-		ERR("Agere USB modem: its ROM wants %s, not in %s\n",
-		    agere::known(which).name, agere_driver_.c_str());
-		return false;
-	}
-	DBG("Agere: %s\n", agere::known(which).name);
-	u16 w0;
-	if (!agere_cmd(CMD_PATCH, static_cast<u16>(p.size()), 4, 0, p.data()) ||
-	    !agere_read16(0, &w0))
-		return false;
-	u8 hook[12] = { 0, 0, 0, 0, 2, 0, static_cast<u8>(w0),
-			static_cast<u8>(w0 >> 8), static_cast<u8>(e7),
-			static_cast<u8>(e7 >> 8), static_cast<u8>(e7 >> 16),
-			static_cast<u8>(e7 >> 24) };
-	if (!agere_cmd(CMD_PATCH, sizeof(hook), 7, 0, hook) ||
-	    !agere_read(FUNCTABLE, t, sizeof(t)))
-		return false;
-	if (le32(t + 16) != e4 || le32(t + 28) != e7)
-		DBG("Agere: after the patch its function table has %08x and "
-		    "%08x, not %08x and %08x\n", le32(t + 16), le32(t + 28),
-		    e4, e7);
 	return true;
 }
 
-/* see usb_line.h: the samples started, as CUsbStart: the patch, the
-   clock raised, the endpoints' halts and the FIFOs cleared, the
-   transfers (IN ones, then OUT ones of silence), command 0x10 (at full
-   speed 1 before them, at high speed 4 and 1 after them) */
+/* see usb_line.h: the ROM's stream (command 0x0c, its data as Windows'
+   driver sends it at high speed), stopped first (0x0d) */
+bool UsbLine::agere_start()
+{
+	u16 speed = 0;
+	agere_read16(USB_SPEED, &speed);
+	if (speed != 1)
+		DBG("Agere: its USB speed register %04x (1: high)\n", speed);
+	u8 d[8];
+	for (s16 i = 0; i < 4; i++) {
+		d[2 * i] = static_cast<u8>(START[i]);
+		d[2 * i + 1] = static_cast<u8>(START[i] >> 8);
+	}
+	return agere_cmd(CMD_ISO_STOP, 0, 0, 0, nullptr) &&
+		agere_cmd(CMD_ISO_START, sizeof(d), 1, 8, d);
+}
+
+/* see usb_line.h: the samples started, as CUsbStart does it without a
+   bulk patch: the ROM's table, the clock raised, the ROM's stream; then
+   the isochronous transfers each way (AGERE_PACKETS packets each, OUT
+   ones of silence) */
 bool UsbLine::agere_streams()
 {
-	u16 v;
 	int err;
-	bool high = libusb_get_device_speed(libusb_get_device(h_)) ==
-		LIBUSB_SPEED_HIGH;
-
-	if (!agere_read16(CTRL_PLL, &v) || !agere_bulk_patch() || !agere_clock(true))
+	if (!agere_table() || !agere_clock(true) || !agere_start())
 		return false;
-	if (!high && !agere_cmd(CMD_STREAM, 0, 1, 0, nullptr))
-		return false;
-	libusb_clear_halt(h_, bulk_out_);
-	libusb_clear_halt(h_, bulk_in_);
-	if (!agere_write16(FIFO_OUT, FIFO_RESET) || !agere_write16(FIFO_IN, FIFO_RESET))
-		return false;
-	/* (each way: Agere's driver's 2, or DMODEM_AGERE_TRANSFERS, for a
-	   host slower to send the next than the 6 ms of a packet: the
-	   patch starts a packet only once the IN FIFO has room for it, and
-	   the codec's samples meanwhile are lost) */
-	agere_transfers_ = 2;
+	if (getenv("DMODEM_AGERE_DUMP"))
+		agere_dump();
+	agere_transfers_ = 3;
 	if (const char *e = getenv("DMODEM_AGERE_TRANSFERS"))
 		agere_transfers_ = static_cast<s16>(std::max(2L, std::min(
 			static_cast<long>(MAX_TRANSFERS), strtol(e, nullptr, 10))));
-	if (agere_transfers_ != 2)
-		DBG("Agere: %d transfers each way (DMODEM_AGERE_TRANSFERS)\n",
-		    agere_transfers_);
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
-	delay_ = static_cast<s16>(iso_.out_buf.size() + agere_transfers_ * BULK_SAMPLES +
-				  fifo_samples_);
+	agere_owed_ = 0;
+	delay_ = static_cast<s16>(iso_.out_buf.size() + RING_AHEAD +
+				  agere_transfers_ * AGERE_PACKETS * 2);
 	for (s16 i = 0; i < agere_transfers_; i++) {
-		iso_.in[i] = libusb_alloc_transfer(0);
-		iso_.out[i] = libusb_alloc_transfer(0);
-		u8 *ib = static_cast<u8 *>(calloc(1, BULK_LEN));
-		u8 *ob = static_cast<u8 *>(calloc(1, BULK_LEN));
+		iso_.in[i] = libusb_alloc_transfer(AGERE_PACKETS);
+		iso_.out[i] = libusb_alloc_transfer(AGERE_PACKETS);
+		u8 *ib = static_cast<u8 *>(calloc(AGERE_PACKETS, iso_.max_in));
+		u8 *ob = static_cast<u8 *>(calloc(AGERE_PACKETS, iso_.max_out));
 		if (!iso_.in[i] || !iso_.out[i] || !ib || !ob) {
 			free(ib);
 			free(ob);
 			return false;
 		}
-		libusb_fill_bulk_transfer(iso_.in[i], h_, bulk_in_, ib, BULK_LEN,
-					  in_done, &iso_, 0);
+		libusb_fill_iso_transfer(iso_.in[i], h_, iso_.ep_in, ib,
+					 AGERE_PACKETS * iso_.max_in, AGERE_PACKETS,
+					 in_done, &iso_, 0);
+		libusb_set_iso_packet_lengths(iso_.in[i], iso_.max_in);
 		iso_.in[i]->flags = LIBUSB_TRANSFER_FREE_BUFFER;
-		libusb_fill_bulk_transfer(iso_.out[i], h_, bulk_out_, ob, BULK_LEN,
-					  out_done, &iso_, 0);
+		libusb_fill_iso_transfer(iso_.out[i], h_, iso_.ep_out, ob,
+					 AGERE_PACKETS * iso_.max_out, AGERE_PACKETS,
+					 out_done, &iso_, 0);
 		iso_.out[i]->flags = LIBUSB_TRANSFER_FREE_BUFFER;
 		if ((err = libusb_submit_transfer(iso_.in[i])) < 0) {
 			ERR("Agere USB modem: an IN transfer: %s\n",
@@ -658,7 +483,7 @@ bool UsbLine::agere_streams()
 		in_flight_++;
 	}
 	for (s16 i = 0; i < agere_transfers_; i++) {
-		agere_fill(iso_.out[i], BULK_SAMPLES);
+		agere_fill(iso_.out[i]);
 		if ((err = libusb_submit_transfer(iso_.out[i])) < 0) {
 			ERR("Agere USB modem: an OUT transfer: %s\n",
 			    libusb_strerror(err));
@@ -666,115 +491,8 @@ bool UsbLine::agere_streams()
 		}
 		in_flight_++;
 	}
-	if (high && (!agere_cmd(CMD_STREAM, 0, 4, 0, nullptr) ||
-		     !agere_cmd(CMD_STREAM, 0, 1, 0, nullptr)))
-		return false;
-	agere_stream_check(high);
-	if (getenv("DMODEM_AGERE_CLOCK_SWEEP"))
-		agere_clock_sweep();
-	if (getenv("DMODEM_AGERE_PROBE"))
-		agere_probe();
-	if (getenv("DMODEM_AGERE_DUMP"))
-		agere_dump();
-	if (getenv("DMODEM_AGERE_CODEC_TRY"))
-		agere_codec_try();
 	agere_t0_ = 0;
 	return true;
-}
-
-/* see usb_line.h: the samples' rate and range while streaming, after a
-   moment to settle (MEASURE_MS), logged with what */
-void UsbLine::agere_measure(const char *what)
-{
-	const u64 SETTLE_MS = 300, MEASURE_MS = 1500;
-	auto run = [&](u64 ms) {
-		u64 t0 = sys_ms();
-		while (!dead_ && sys_ms() - t0 < ms) {
-			struct timeval tv = { 0, 10000 };
-			libusb_handle_events_timeout_completed(ctx_, &tv, nullptr);
-		}
-	};
-	run(SETTLE_MS);
-	size_t n0 = iso_.in_buf.size();
-	u64 t0 = sys_ms();
-	run(MEASURE_MS);
-	u64 dt = sys_ms() - t0;
-	u64 n = iso_.in_buf.size() - n0;
-	s16 lo = 0, hi = 0;
-	for (size_t k = n0; k < iso_.in_buf.size(); k++) {
-		s16 x = iso_.in_buf[k];
-		if (k == n0 || x < lo)
-			lo = x;
-		if (k == n0 || x > hi)
-			hi = x;
-	}
-	DBG("Agere: %s: %" PRIu64 " samples a second, from %d to %d\n", what,
-	    dt ? n * 1000 / dt : 0, lo, hi);
-	iso_.in_buf.clear();
-}
-
-/* see usb_line.h: the samples' rate measured at several ARM clocks while
-   streaming, logged, then the clock raised again: what the codec's rate
-   follows (the first device's: not the ARM's clock) */
-void UsbLine::agere_clock_sweep()
-{
-	static const u16 divs[] = { 3, 2, 4, 5, 6, 8, 0xf };
-	DBG("Agere: clock sweep (DMODEM_AGERE_CLOCK_SWEEP)\n");
-	for (u16 d : divs) {
-		u16 cdr = 0;
-		if (!agere_clock_div(d, "for the sweep") ||
-		    !agere_read16(CTRL_ARMCDR, &cdr))
-			break;
-		char what[64];
-		snprintf(what, sizeof(what), "clock sweep: divider %x, %d MHz (ARMCDR %x)",
-			 d, 480 / (2 * static_cast<s16>(cdr) + 2), cdr);
-		agere_measure(what);
-		if (dead_)
-			return;
-	}
-	agere_clock(true);
-}
-
-/* see usb_line.h: DMODEM_AGERE_PROBE: the controller's registers
-   (0xcd000000 on) and the codec interface's (0xe00000c0 on) and the
-   codec's (0x000 to 0x3fc) logged; then 0xcd000034 (2 at start, what
-   for not known) swept while streaming, the samples' rate at each, and
-   put back */
-void UsbLine::agere_probe()
-{
-	DBG("Agere: probe (DMODEM_AGERE_PROBE)\n");
-	auto dump = [&](u32 base, u16 words) {
-		for (u16 i = 0; i < words; i += 4) {
-			u8 b[16];
-			if (!agere_read(base + 4u * i, b, sizeof(b)))
-				return;
-			DBG("Agere: probe: %08x: %08x %08x %08x %08x\n", base + 4u * i,
-			    le32(b), le32(b + 4), le32(b + 8), le32(b + 12));
-		}
-	};
-	dump(0xcd000000, 32);
-	dump(0xe00000c0, 16);
-	dump(0xe0000100, 4);
-	for (u16 r = 0; r < 0x400; r += 0x20) {
-		u16 v[8];
-		for (int k = 0; k < 8; k++)
-			if (!codec_read(static_cast<u16>(r + 4 * k), &v[k]))
-				v[k] = 0xdead;
-		DBG("Agere: probe: codec %03x: %04x %04x %04x %04x %04x %04x %04x %04x\n",
-		    r, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
-	}
-	u16 was;
-	if (!agere_read16(CTRL_34, &was))
-		return;
-	for (u16 x = 0; x < 8 && !dead_; x++) {
-		char what[48];
-		if (!agere_write16(CTRL_34, x))
-			break;
-		snprintf(what, sizeof(what), "probe: %08x = %u", CTRL_34, x);
-		agere_measure(what);
-	}
-	agere_write16(CTRL_34, was);
-	agere_measure("probe: put back");
 }
 
 /* see usb_line.h: DMODEM_AGERE_DUMP: the configuration's alternate
@@ -782,7 +500,7 @@ void UsbLine::agere_probe()
    line (command 2, not traced): the ROM from 0 (up to 64 KB, until a read
    fails), its RAM (0x70000000, 8 KB: the patches, the ROM's data), the
    controller's registers, the codec interface's, the endpoints' FIFOs'
-   registers; while streaming, for what the ROM's own command 0x10 does */
+   registers; while streaming */
 void UsbLine::agere_dump()
 {
 	libusb_config_descriptor *cfg;
@@ -838,85 +556,32 @@ void UsbLine::agere_dump()
 	DBG("Agere: dump over\n");
 }
 
-/* see usb_line.h: DMODEM_AGERE_CODEC_TRY: the samples' rate and range
-   measured as they are, then with codec register 0x0d0 as the ROM sets it
-   at boot (0x0fd2: its codec interface's set-up at 0x1416 and again at
-   0x380; the Mercury's start-up writes 0x9f02 to 0x2d0, which seems to
-   land on it), then with 0x0e0 as the ROM sets it too (0x0307, 0x0304 in
-   the start-up): what the first device's 2459 a second, all 0x8000, come
-   from */
-void UsbLine::agere_codec_try()
-{
-	u16 d0 = 0, e0 = 0, d2 = 0;
-	codec_read(0x0d0, &d0);
-	codec_read(0x0e0, &e0);
-	codec_read(0x2d0, &d2);
-	DBG("Agere: codec try: 0x0d0 %04x, 0x0e0 %04x, 0x2d0 %04x\n", d0, e0, d2);
-	agere_measure("codec try: as it is");
-	codec_write(0x0d0, 0x0fd2);
-	codec_read(0x0d0, &d0);
-	codec_read(0x2d0, &d2);
-	DBG("Agere: codec try: 0x0d0 now %04x, 0x2d0 %04x\n", d0, d2);
-	agere_measure("codec try: 0x0d0 = 0x0fd2");
-	codec_write(0x0e0, 0x0307);
-	codec_read(0x0e0, &e0);
-	DBG("Agere: codec try: 0x0e0 now %04x\n", e0);
-	agere_measure("codec try: and 0x0e0 = 0x0307");
-}
 
-/* see usb_line.h: the patch's mailbox and stream state read back after
-   command 0x10 (logged); not streaming: command 0x10 again with its mode
-   in wValue instead of wIndex (the ROM leaves wIndex in the mailbox: the
-   first device's, seen streaming with it there; wValue as the doc first
-   had it, for a ROM that differs) */
-void UsbLine::agere_stream_check(bool high)
-{
-	u8 mb[8], st[4];
-	auto look = [&](const char *when) {
-		if (!agere_read(PATCH_MAILBOX, mb, sizeof(mb)) ||
-		    !agere_read(PATCH_STREAM, st, sizeof(st)))
-			return false;
-		DBG("Agere: %s: the mailbox %02x %02x %02x %02x %02x %02x %02x "
-		    "%02x, the stream's state %u (%u: streaming)\n", when,
-		    mb[0], mb[1], mb[2], mb[3], mb[4], mb[5], mb[6], mb[7],
-		    st[0], STREAM_ON);
-		return true;
-	};
-	if (!look("after command 0x10") || st[0] == STREAM_ON)
-		return;
-	ERR("Agere USB modem: the bulk patch has not started the stream: "
-	    "command 0x10 again, its mode as wValue\n");
-	if (high && !agere_cmd(CMD_STREAM, 0, 0, 4, nullptr))
-		return;
-	if (!agere_cmd(CMD_STREAM, 0, 0, 1, nullptr) ||
-	    !look("after command 0x10, its mode as wValue"))
-		return;
-	if (st[0] == STREAM_ON)
-		DBG("Agere: streaming, its mode as wValue: tell D-Modem "
-		    "(docs/agere-usb.md)\n");
-	else
-		ERR("Agere USB modem: still not streaming: tell D-Modem, with "
-		    "this log (docs/agere-usb.md)\n");
-}
-
-/* see usb_line.h: an IN transfer's header and samples (in_complete()):
-   the samples queued, their count for the OUT transfer that answers it,
-   the ring detector's bit (a pulse a packet while it is set) */
+/* see usb_line.h: an IN transfer's packets (in_complete()): each one's
+   samples queued (none for 0xaa55), owed to the OUT packets; the ring
+   detector's bit (a pulse a packet while it is set) */
 void UsbLine::agere_in(libusb_transfer *t)
 {
-	s16 n = 0;
-	if (t->status == LIBUSB_TRANSFER_COMPLETED && t->actual_length >= 4) {
-		const u8 *b = t->buffer;
+	if (t->status != LIBUSB_TRANSFER_COMPLETED) {
+		DBG("Agere: IN transfer: status %d\n", t->status);
+		return;
+	}
+	for (int i = 0; i < t->num_iso_packets; i++) {
+		const libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
+		if (p.status != LIBUSB_TRANSFER_COMPLETED ||
+		    p.actual_length < static_cast<unsigned>(ISO_HEAD))
+			continue;
+		const u8 *b = libusb_get_iso_packet_buffer_simple(t, static_cast<unsigned>(i));
 		u16 count = static_cast<u16>(b[0] | u16{b[1]} << 8);
 		u16 status = static_cast<u16>(b[2] | u16{b[3]} << 8);
-		if (count == 0xaa55) {
-			DBG("Agere: AA55 from the device\n");
+		if (count == NONE)
 			count = 0;
-		}
-		u16 room = static_cast<u16>((t->actual_length - 4) / 2);
-		n = static_cast<s16>(std::min(count, room));
+		s16 n = static_cast<s16>(std::min<unsigned>(
+			std::min<unsigned>(count, IN_MOST),
+			(p.actual_length - ISO_HEAD) / 2));
 		for (s16 k = 0; k < n; k++) {
-			s16 x = static_cast<s16>(b[4 + 2 * k] | u16{b[5 + 2 * k]} << 8);
+			s16 x = static_cast<s16>(b[ISO_HEAD + 2 * k] |
+						 u16{b[ISO_HEAD + 1 + 2 * k]} << 8);
 			iso_.in_buf.push_back(x);
 			/* (their range, for the rate's log line) */
 			if (agere_t0_ && !agere_rate_said_) {
@@ -925,38 +590,49 @@ void UsbLine::agere_in(libusb_transfer *t)
 				agere_seen_ = true;
 			}
 		}
+		agere_owed_ += n;
 		if (status != agere_status_)
-			TRACE("Agere: status %04x (%u samples)\n", status, count);
+			TRACE("Agere: status %04x\n", status);
 		agere_status_ = status;
-		agere_ring_ = !(status >> 8) && (status & 1);
+		agere_ring_ = (status & 1) != 0;
 		if (agere_ring_)
 			rings_++;
-	} else if (t->status != LIBUSB_TRANSFER_COMPLETED) {
-		DBG("Agere: IN transfer: status %d\n", t->status);
 	}
-	iso_.out_lengths.push_back(std::vector<s16>(1, n));
 }
 
-/* see usb_line.h: an OUT transfer of 48 samples queued, n asked for whatever (silence if there
-   are too few): its header (n, 0), the samples, 100 octets in all */
-void UsbLine::agere_fill(libusb_transfer *t, s16 n)
+/* see usb_line.h: an OUT transfer's packets filled: each the samples owed
+   (as many as have come in, OUT_MOST at most; silence if the modem has
+   not given them yet) with their count */
+void UsbLine::agere_fill(libusb_transfer *t)
 {
-	/* (the bulk patch plays 48 samples whatever the count: always 48) */
-	(void)n;
-	n = BULK_SAMPLES;
-	memset(t->buffer, 0, BULK_LEN);
-	t->buffer[0] = static_cast<u8>(n);
-	t->buffer[1] = static_cast<u8>(n >> 8);
-	for (s16 k = 0; k < n; k++) {
-		s16 x = 0;
-		if (!iso_.out_buf.empty()) {
-			x = iso_.out_buf.front();
-			iso_.out_buf.pop_front();
+	s16 off = 0;
+	for (int i = 0; i < t->num_iso_packets; i++) {
+		s16 n = static_cast<s16>(std::min<s32>(agere_owed_, OUT_MOST));
+		agere_owed_ -= n;
+		u8 *b = t->buffer + off;
+		b[0] = static_cast<u8>(n);
+		b[1] = static_cast<u8>(n >> 8);
+		b[2] = b[3] = 0;
+		for (s16 k = 0; k < n; k++) {
+			s16 x = 0;
+			if (!iso_.out_buf.empty()) {
+				x = iso_.out_buf.front();
+				iso_.out_buf.pop_front();
+			}
+			b[ISO_HEAD + 2 * k] = static_cast<u8>(x);
+			b[ISO_HEAD + 1 + 2 * k] = static_cast<u8>(x >> 8);
 		}
-		t->buffer[4 + 2 * k] = static_cast<u8>(x);
-		t->buffer[5 + 2 * k] = static_cast<u8>(x >> 8);
+		s16 len = static_cast<s16>(ISO_HEAD + 2 * n);
+		t->iso_packet_desc[i].length = static_cast<unsigned>(len);
+		off = static_cast<s16>(off + len);
 	}
-	t->length = BULK_LEN;
+	t->length = off;
+}
+
+/* see usb_line.h: the ROM's stream stopped (command 0x0d), at close */
+void UsbLine::agere_stop()
+{
+	agere_cmd(CMD_ISO_STOP, 0, 0, 0, nullptr);
 }
 
 /* see usb_line.h (pump()): the samples' rate, once, measured over

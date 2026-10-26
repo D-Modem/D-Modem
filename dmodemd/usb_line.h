@@ -36,15 +36,14 @@
  *    ringer, on-hook speed: si3056.h) go into its DAA's registers.
  *
  *    The Agere modem (docs/agere-usb.md, usb_agere.cpp) is a USB
- *    controller with an ARM in it whose ROM is patched, at each start,
- *    with a "bulk patch" of Agere's (firmware/agere, under Agere's
- *    licence, or set_agere_driver()'s driver file), so that its samples go on bulk endpoints:
- *    100-octet transfers both ways of a header (the samples' count, a
- *    status word: bit 0 the ring detector) and 48 samples, S16
- *    little-endian at 8000 Hz.  Its codec's registers, its ARM's memory
- *    and its commands are vendor requests; its hook is codec register
- *    0xc0.  It hears the line on hook, so caller ID comes in the
- *    samples.
+ *    controller with an ARM in it whose ROM streams the codec's samples on
+ *    isochronous endpoints (alternate setting 1, high speed): an OUT
+ *    packet every 2 microframes of a header (the samples' count) and
+ *    samples, S16 little-endian at 8000 Hz, each answered with an IN
+ *    packet of the same kind whose status word's bit 0 is the ring
+ *    detector.  Its codec's registers, its ARM's memory and its commands
+ *    are vendor requests; its hook is codec register 0xc0.  It hears the
+ *    line on hook, so caller ID comes in the samples.
  *
  */
 #ifndef DMODEMD_USB_LINE_H
@@ -120,11 +119,6 @@ public:
 	   Link's Windows driver drives it with Options.Buzzer
 	   (SetSpeakerVolume).  Not every board has one: off by default */
 	void set_buzzer(bool on) { buzzer_ = on; }
-	/* an Agere modem's driver, whose bulk patch the modem needs (its
-	   AGRSM.sys, AGRSM64.sys, agrmodem.ko or agrmodemlib.o, any of
-	   their versions, or a directory with one): read at open(); none,
-	   the patches D-Modem ships (firmware/agere, installed) */
-	void set_agere_driver(const char *path) { agere_driver_ = path ? path : ""; }
 	/* the modem dev ("" or "auto": the first SmartUSB56, pico-serial
 	   Line or Agere modem; <bus>:<address> one of them, as lsusb shows
 	   them) opened at rate (an Agere modem at 8000 Hz whatever it is),
@@ -259,14 +253,14 @@ private:
 	   its own bits changed); false (logged) */
 	bool stick_country();
 	bool start_streams();
-	/* the Agere modem's (usb_agere.cpp): its start-up, its bulk patch
-	   from the driver, a vendor command (cmd, wLength, wIndex, wValue:
-	   IN or OUT as the command is), its ARM's memory and its codec's
-	   registers, the ROM's clock, the codec's start-up, the bulk
-	   transfers, an IN one done, an OUT one filled with n samples */
+	/* the Agere modem's (usb_agere.cpp): its start-up, a vendor command
+	   (cmd, wLength, wIndex, wValue: IN or OUT as the command is), its
+	   ARM's memory and its codec's registers, the ROM's clock, the
+	   codec's start-up, the ROM's function table put back as it has it,
+	   its stream started and stopped (commands 0x0c, 0x0d), the
+	   transfers, an IN one done, an OUT one filled; DMODEM_AGERE_DUMP=1:
+	   its descriptors and memory logged */
 	bool open_agere();
-	static std::vector<std::string> agere_firmware_dirs();
-	bool load_agere_patches();
 	bool agere_cmd(u8 cmd, u16 len, u16 index, u16 value, u8 *buf);
 	bool agere_read(u32 addr, u8 *buf, u16 len);
 	bool agere_read16(u32 addr, u16 *v);
@@ -274,27 +268,14 @@ private:
 	bool codec_read(u16 reg, u16 *v);
 	bool codec_write(u16 reg, u16 v);
 	bool agere_clock(bool boost);
-	bool agere_clock_div(u16 div, const char *what);
-	/* DMODEM_AGERE_CLOCK_SWEEP=1: the samples' rate at several ARM
-	   clocks, logged, while streaming at start */
-	void agere_clock_sweep();
-	/* the samples' rate and range over a moment, logged */
-	void agere_measure(const char *what);
-	/* DMODEM_AGERE_PROBE=1: registers dumped, 0xcd000034 swept */
-	void agere_probe();
-	/* DMODEM_AGERE_DUMP=1: its descriptors and memory logged */
-	void agere_dump();
-	/* DMODEM_AGERE_CODEC_TRY=1: the rate with the ROM's own 0x0d0, 0x0e0 */
-	void agere_codec_try();
-	bool agere_bulk_patch();
 	bool agere_mercury();
+	bool agere_table();
+	bool agere_start();
+	void agere_stop();
 	bool agere_streams();
-	/* the bulk patch's mailbox and stream state read back after command
-	   0x10, logged; command 0x10 again, its mode as wValue, if it is not
-	   streaming */
-	void agere_stream_check(bool high);
+	void agere_dump();
 	void agere_in(libusb_transfer *t);
-	void agere_fill(libusb_transfer *t, s16 n);
+	void agere_fill(libusb_transfer *t);
 	void agere_rate_check();
 	static bool agere_device(u16 vendor, u16 product);
 	bool start_iso(Iso &s, s16 pkt);
@@ -383,23 +364,19 @@ private:
 	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
 	u64 flash_end_ = 0;
 	u16 rings_ = 0;                 /* ring detector changes not given */
-	/* the Agere modem: set_agere_driver(); its bulk patches found there
-	   (by name: v106, v121_flash, v121_rom, async_clockchange); its ROM's
-	   version (0xffff unknown); its bulk endpoints; the ring bit last
-	   seen; the status words logged; the samples' count and the clock
-	   when they started (the rate checked once) */
-	std::string agere_driver_;
-	std::vector<u8> agere_patch_[4];
+	/* the Agere modem: its ROM's version (0xffff unknown); the samples
+	   come and not yet sent back (each OUT packet as many as the IN ones
+	   brought); its transfers each way (DMODEM_AGERE_TRANSFERS, 2 to
+	   MAX_TRANSFERS: 3); the ring bit last seen; the status words
+	   logged; the samples' count and the clock when they started (the
+	   rate checked once), their range then */
 	u16 agere_rom_ = 0xffff;
-	u8 bulk_in_ = 0, bulk_out_ = 0;
+	s32 agere_owed_ = 0;
+	s16 agere_transfers_ = 3;
 	bool agere_ring_ = false;
 	u16 agere_status_ = 0;
 	u64 agere_t0_ = 0, agere_n0_ = 0;
 	bool agere_rate_said_ = false;
-	/* its bulk transfers in flight each way (DMODEM_AGERE_TRANSFERS, 2
-	   to MAX_TRANSFERS; Agere's driver's 2) */
-	s16 agere_transfers_ = 2;
-	/* the samples' range while their rate is measured */
 	s16 agere_lo_ = 0, agere_hi_ = 0;
 	bool agere_seen_ = false;
 };

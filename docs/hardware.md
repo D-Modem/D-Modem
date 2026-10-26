@@ -444,41 +444,36 @@ against a fake of it (below), not yet on a real one.
 Agere's (later LSI's) USB soft modem, USB `047e:2892` (and `047e:2828`),
 sold under other names too, has no kernel driver: dmodemd drives it
 through libusb. It is an Agere USB controller with an ARM in it and a
-Mercury codec and DAA. Its ROM is patched at every start with a "bulk
-patch" of Agere's. D-Modem ships Agere's patches, unaltered, in
-`firmware/agere/` (installed in `<prefix>/share/dmodem/firmware/agere`):
-their binary contents are subject to Agere's licence
-(`firmware/agere/LICENSE`, [NOTICE.md](../firmware/agere/NOTICE.md)),
-not D-Modem's.
+Mercury codec and DAA. Its ROM streams the samples itself on isochronous
+endpoints, as Agere's Windows driver has it: nothing is downloaded into
+it. It needs a USB 2.0 (high speed) port.
 
     lsusb -d 047e:                # Bus 001 Device 009: ID 047e:2892 ...
     dmodemd --usb=auto
 
-`--usb-agere-driver` takes the patches from Agere's own driver instead:
-any of them has them (`AGRSM.sys` or `AGRSM64.sys`, Windows 98 to 7;
-`agrmodem.ko` or `agrmodemlib.o`, agrsm's Linux package), or a directory
-with one of them (an unpacked driver package). The line runs at 8000 Hz, whatever `-r` says. A udev
-rule (`/etc/udev/rules.d/60-agere-usb.rules`) lets dmodemd open it
-without root:
+The line runs at 8000 Hz, whatever `-r` says. A udev rule
+(`/etc/udev/rules.d/60-agere-usb.rules`) lets dmodemd open it without
+root:
 
     SUBSYSTEM=="usb", ATTR{idVendor}=="047e", ATTR{idProduct}=="2892", MODE="0660", GROUP="dialout"
 
-What it does, from Agere's drivers ([agere-usb.md](agere-usb.md)), in
-`dmodemd/usb_agere.cpp`:
+What it does, from the device's ROM and Agere's drivers
+([agere-usb.md](agere-usb.md)), in `dmodemd/usb_agere.cpp`:
 
-- **Start-up.** Interface 0's alternate setting 2 (bulk IN and OUT), the
-  ROM's version, its GPIOs and clock, the Mercury codec's registers as
-  Agere's driver writes them, on hook; then the bulk patch for the ROM
-  (1.0.6's, or 1.2.1's in flash or ROM) unless it is in, the clock raised,
-  the samples started. A "Polaris" DAA (its codec registers do not
-  answer) is not driven yet: dmodemd says so.
-- **Samples.** 100-octet bulk transfers each way: a header (the samples'
-  count, a status word) and 48 samples. One OUT transfer goes for each IN
-  one, with its count, so the playback keeps the device's clock.
+- **Start-up.** Interface 0's alternate setting 1 (isochronous IN and
+  OUT), the ROM's version, its GPIOs and clock, the Mercury codec's
+  registers as Agere's drivers write them, on hook; then the ROM's
+  function table as the ROM has it (an earlier driver's patch in it put
+  back), the clock raised, the ROM's stream started (command 0x0c). A
+  "Polaris" DAA (its codec registers do not answer) is not driven yet:
+  dmodemd says so.
+- **Samples.** A packet each way every 2 microframes: a header (the
+  samples' count, a status word) and the samples. dmodemd sends as many
+  as it has been sent, so the playback keeps the codec's clock.
 - **Hook.** Codec register 0xc0 (0 off hook); pulse dialling and the
   hook flash break and make it.
-- **Rings.** Bit 0 of the IN transfers' status word: a pulse to the
-  core's `ring()` for each transfer that has it.
+- **Rings.** Bit 0 of the IN packets' status word: a pulse to the
+  core's `ring()` for each packet that has it.
 - **Caller ID.** The codec hears the line on hook, so caller ID comes
   in the samples.
 - **Unplugged.** dmodemd says so and exits.
@@ -518,7 +513,6 @@ start from.
 | `--usb-buzzer` | the SmartUSB56's buzzer (GPIO 11, BUZEN) as the speaker: on while ATM/ATL have it on, as Windows' `Options.Buzzer` |
 | `--usb-rhom` | the SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15, and the voice codec's bit 7) while the modem runs, as Windows' `Options.RHOM`; not below revision 0x200 |
 | `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
-| `--usb-agere-driver=<file>` | an Agere USB modem's bulk patch from Agere's driver for it (`AGRSM.sys`, `AGRSM64.sys`, `agrmodem.ko` or `agrmodemlib.o`), or a directory with one, instead of the patches D-Modem ships (`firmware/agere`) |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' (an Agere USB modem's is 8000 whatever it says) |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
@@ -688,15 +682,14 @@ whose line side does not answer (said, and dmodemd goes on).
 does it with two Agere USB modems at 8000 Hz: `dmodemd/test/fake_agere.cpp`
 is one (047e:2892) whose line is the exchange's, with its vendor
 commands, its ARM's memory and function table, its codec registers (the
-hook register 0xc0 the exchange's switch) and its 100-octet bulk
-transfers, whose status word's bit 0 is set while the ring signal is
-there. It streams only once the patch its ROM wants is downloaded and
-hooked in. The patches are the tests' own (`DMODEM_AGERE_TEST_PATCHES=1`
-makes dmodemd look for them, `agere_patch.h`), put in a "driver" file of
-other octets in a directory. It checks that dmodemd takes the patches
-D-Modem ships when there is no `--usb-agere-driver`, and says what is
-wrong with none there, a driver without the patches and a Polaris DAA; each ROM's patch (1.2.1 in ROM and in flash, 1.0.6 with its clock
-change patch); 8000 Hz with `-r 9600`; a full speed device; a data call
-(rings, caller ID, the answer at the second ring, V.34 at 33600, text
-each way); a call dialled in pulses; and that both exit once the
-exchange has gone.
+hook register 0xc0 the exchange's switch) and its ROM's isochronous
+stream: each 2 of the line's samples a packet's time, in which it takes
+an OUT packet and answers it with an IN one of the samples come, whose
+status word's bit 0 is set while the ring signal is there. It refuses a
+patch, and gives no samples while a patch's entry is in its function
+table. It checks that dmodemd says what is wrong with a Polaris DAA and a
+full speed device; that the samples come at 8000 a second, with a bulk
+patch's entries left in the table (put back) and with a ROM 1.0.6 (its
+clock left alone); 8000 Hz with `-r 9600`; a data call (rings, caller
+ID, the answer at the second ring, V.34 at 33600, text each way); a call
+dialled in pulses; and that both exit once the exchange has gone.

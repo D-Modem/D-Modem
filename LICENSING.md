@@ -31,22 +31,6 @@ under the BSD-3-Clause licence. The file keeps that licence's notice
 with a dmodemd that is shipped. It combines with D-Modem under the AGPL
 and under the commercial licence alike.
 
-## Agere's USB modem patches
-
-The Agere USB 2.0 soft modem (`dmodemd/usb_agere.cpp`) needs a "bulk
-patch", ARM code of Agere's, downloaded into it at every start. Agere's
-patches are in `firmware/agere/` (the `.bin` files), unaltered.
-**Their binary contents are Agere Systems' software, subject to Agere's
-licence (`firmware/agere/LICENSE`, Agere's Soft Modem End User Software
-Licence Agreement), not to this repository's terms** (the AGPL, the
-commercial licence, or any other licence D-Modem is offered under). They
-are redistributed under that licence's section 2.3, with its notices
-(`firmware/agere/NOTICE.md`). They are data files, read at run time and
-sent to the device; nothing of them is compiled or linked into any
-D-Modem program. The device's commands, registers and start-up were read
-from Agere's drivers; the code that drives it is D-Modem's own, under
-the AGPL-3.0 or the commercial licence.
-
 ## Not covered: the interop test binaries
 
 The closed modem drivers and objects in `dsp/test/` (`smartlink/`,
