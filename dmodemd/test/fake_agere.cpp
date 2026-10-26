@@ -41,8 +41,8 @@
  *    FAKE_AGERE_POLARIS=1: the codec does not answer (command 0x0a stalls).
  *    FAKE_AGERE_FULL=1: a full speed device (command 0x10 wanted before
  *    the transfers; at high speed after them).
- *    FAKE_AGERE_MODE_INDEX=1: command 0x10's mode taken from wIndex,
- *    not wValue.
+ *    FAKE_AGERE_MODE_VALUE=1: command 0x10's mode taken from wValue,
+ *    not wIndex (the real device's).
  *    FAKE_AGERE_LOG=1: the commands on stderr.
  *
  */
@@ -92,7 +92,7 @@ struct Fake {
 	int alt = 0;
 	uint16_t rom = 0x121;
 	bool flash = false, polaris = false, full = false;
-	bool mode_index = false;        /* command 0x10's mode in wIndex */
+	bool mode_value = false;        /* command 0x10's mode in wValue */
 	bool hook = false;              /* off hook */
 	bool streaming = false;         /* command 0x10's 1 */
 	bool said_stuck = false;
@@ -408,7 +408,7 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 	case 0x10: {
 		/* (the patch's: the mode from the mailbox, answered with 2;
 		   its stream state 2 streaming, 1 stopped) */
-		uint16_t mode = fake.mode_index ? index : value;
+		uint16_t mode = fake.mode_value ? value : index;
 		if (patched())
 			set32(PATCH_MAILBOX + 4, 2);
 		if (mode == 1) {
@@ -448,7 +448,7 @@ int LIBUSB_CALL libusb_init(libusb_context **ctx)
 	fake.flash = getenv("FAKE_AGERE_FLASH") != nullptr;
 	fake.polaris = getenv("FAKE_AGERE_POLARIS") != nullptr;
 	fake.full = getenv("FAKE_AGERE_FULL") != nullptr;
-	fake.mode_index = getenv("FAKE_AGERE_MODE_INDEX") != nullptr;
+	fake.mode_value = getenv("FAKE_AGERE_MODE_VALUE") != nullptr;
 	if (ctx)
 		*ctx = fake.ctx;
 	return 0;

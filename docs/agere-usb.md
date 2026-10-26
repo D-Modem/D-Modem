@@ -79,8 +79,13 @@ in the status words, 4 clears them; then it marks the command done.
 It takes the mode from the low half of the mailbox's second word (`0x70000e28`) and the
 argument from its high half, and marks the command done by writing 2 to that word. It keeps the
 stream's state at `0x70000a0c`: 2 streaming (start), 1 stopped. The three bulk patches have the
-same two addresses. Which fields of the setup packet the ROM copies into the mailbox (`wValue`
-and `wIndex`, or `wIndex` and `wLength`) is not known.
+same two addresses. The mode is the setup packet's `wIndex` (the first device streams with it
+there, and not with it in `wValue`).
+
+**Entry 4's samples come at the codec's pace.** IN: while the codec's receive FIFO has data
+(`0xe00000d8` & 0xf), a sample from its data register (`0xe0000100`), two to a word into the IN
+endpoint's FIFO. OUT: while its transmit FIFO has room (`0xe00000d8` & 0xf00 below 0x800), a
+sample from the OUT endpoint's FIFO to the codec. So the samples' rate is the codec's.
 
 **The clock change patch** (`async_clockchange`, ROM 1.0.6's command 0x11, ARM code): it waits
 for the PLL to lock, then sets the divider in ARMCDR and runs the ARM from the PLL, or falls
@@ -101,7 +106,7 @@ Commands 1, 2, 4, 6 and 10 are IN (`bmRequestType` 0xc0), the others OUT (0x40).
 | 0x09 | OUT n | slot, 0 | a patch: slot 4 a bulk patch, 6 the clock change patch, 7 a bulk patch's hook (12 octets: u32 0, u16 2, u16 the word at address 0, u32 the function table's entry 7 as the patch has it) |
 | 0x0a | IN 2 | register, 0 | a codec register read |
 | 0x0b | OUT 0 | register, value | a codec register written |
-| 0x10 | OUT 0 | 0, mode | the samples: 1 at full speed before the transfers start; at high speed 4 then 1 after they start |
+| 0x10 | OUT 0 | mode, 0 | the samples: 1 at full speed before the transfers start; at high speed 4 then 1 after they start. The mode goes in `wIndex`: the ROM leaves `wIndex` in the patch's mailbox (seen on the first device; `wValue` there does nothing) |
 | 0x11 | OUT 0 | 1, divider | `USS_CMD_CUSTOM_ASYNC` (ROM 1.0.6, with its clock change patch): the ARM's clock, 0xf lowered, 3 raised |
 | 0x12 | OUT 0 | 1, divider | `USS_CMD_CHANGE_CLK` (other ROMs): the same |
 
@@ -185,11 +190,17 @@ isochronous packets. The first two OUT transfers are silence.
 ## Bring-up
 
 **The first device (an Android phone, ROM 1.2.1, a Mercury codec, high speed):** everything up
-to command 0x10 goes as above, and the function table shows the patch in, but no IN transfer
-ever comes back (and one OUT transfer of the two): the samples never start. So dmodemd now reads
-the mailbox and the stream state back after command 0x10 and logs them (`-d1`). If the state is
-not 2, it says so and sends command 0x10 again with the mode in `wIndex`, then logs whether that
-started the stream.
+to command 0x10 goes as above, and the function table shows the patch in. With command 0x10's
+mode in `wValue` no IN transfer ever came back: the stream's state stayed 0. With it in `wIndex`
+the state is 2 and the samples come, but at 2459 a second, not 8000, and every one of them
+-32768 (0x8000), off hook as well. 2459 is 8000 × 24.576 / 80 to within the measurement: the
+ARM runs at 80 MHz there (ARMCDR 2 after USS_CMD_CHANGE_CLK with 3), and 24.576 MHz is an audio
+master clock. Not yet known: what sets the codec's rate, and why its samples are all 0x8000.
+
+dmodemd reads the mailbox and the stream state back after command 0x10 and logs them (`-d1`).
+If the state is not 2 it says so, sends command 0x10 again with the mode in `wValue`, and logs
+whether that started the stream. `DMODEM_AGERE_CLOCK_SWEEP=1` measures the samples' rate (and
+their range) at several ARM clocks while streaming at start, and logs each.
 
     dmodemd --usb=auto -d2 dmodem0
 

@@ -199,20 +199,32 @@ try:
         check("%s: it streams" % tag, not m.expect_log(b"streaming without the bulk patch", 2))
         m.stop()
 
-    # command 0x10's mode: read back from the patch's stream state; a ROM
-    # that takes it from wIndex gets it again there, and streams
+    # command 0x10's mode (in wIndex): read back from the patch's stream
+    # state; a ROM that takes it from wValue gets it again there, and streams
     m = Modem("1001", "dmodem40", "-index", args=["-d2"])
     check("the stream's state read back: streaming",
           m.expect_log(b"after command 0x10: the mailbox 00 00 00 00 02 00 00 00, "
                        b"the stream's state 2 (2: streaming)", 5))
-    check("not sent again", not m.expect_log(b"its mode as wIndex", 1))
+    check("not sent again", not m.expect_log(b"its mode as wValue", 1))
     m.stop()
-    m = Modem("1001", "dmodem40", "-index", args=["-d2"], FAKE_AGERE_MODE_INDEX="1")
-    check("-index: not streaming, said",
+    m = Modem("1001", "dmodem40", "-value", args=["-d2"], FAKE_AGERE_MODE_VALUE="1")
+    check("-value: not streaming, said",
           m.expect_log(b"the bulk patch has not started the stream: command 0x10 again", 5))
-    check("-index: streaming, its mode as wIndex",
-          m.expect_log(b"Agere: streaming, its mode as wIndex", 5))
-    check("-index: its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
+    check("-value: streaming, its mode as wValue",
+          m.expect_log(b"Agere: streaming, its mode as wValue", 5))
+    check("-value: its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
+    m.stop()
+
+    # DMODEM_AGERE_CLOCK_SWEEP: the rate at each ARM clock, then streaming
+    m = Modem("1001", "dmodem40", "-sweep", args=["-d2"], DMODEM_AGERE_CLOCK_SWEEP="1")
+    check("-sweep: the rate at each clock",
+          all(m.expect_log(("clock sweep: divider %x, " % d).encode(), 15)
+              for d in (3, 2, 4, 5, 6, 8, 0xf)))
+    check("-sweep: 8000 a second (the fake's clock is its own)",
+          re.search(rb"clock sweep: divider 2, \d+ MHz \(ARMCDR \w+\): (79\d\d|80\d\d) samples a second",
+                    open(m.log.name, "rb").read()))
+    check("-sweep: then raised", m.expect_log(b"Agere: ARM clock raised", 5))
+    check("-sweep: then its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
     m.stop()
 
     a = Modem("1001", "dmodem41", args=["-r", "9600"], FAKE_AGERE_FULL="1")

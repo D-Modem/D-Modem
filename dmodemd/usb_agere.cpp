@@ -443,7 +443,13 @@ bool UsbLine::open_agere()
    not locked, the clock's source and divider set by hand */
 bool UsbLine::agere_clock(bool boost)
 {
-	u16 div = boost ? 3 : 0xf;
+	return agere_clock_div(boost ? 3 : 0xf, boost ? "raised" : "lowered");
+}
+
+/* see usb_line.h: agere_clock()'s, with its divider (0xf lowered) */
+bool UsbLine::agere_clock_div(u16 div, const char *what)
+{
+	bool boost = div != 0xf;
 	if (agere_rom_ != 0xffff && (agere_rom_ & 0xf) == 6) {
 		u8 t[32];
 		if (!agere_read(FUNCTABLE, t, sizeof(t)))
@@ -478,8 +484,7 @@ bool UsbLine::agere_clock(bool boost)
 	}
 	if (!agere_read16(CTRL_ARMCDR, &cdr))
 		return false;
-	DBG("Agere: ARM clock %s, %d MHz (ARMCDR %x)\n",
-	    boost ? "raised" : "lowered",
+	DBG("Agere: ARM clock %s, %d MHz (ARMCDR %x)\n", what,
 	    480 / (2 * static_cast<s16>(cdr) + 2), cdr);
 	return true;
 }
@@ -533,6 +538,13 @@ bool UsbLine::agere_mercury()
 	for (const W &w : last)
 		if (!codec_write(w.reg, w.v))
 			return false;
+	/* (read back, those that differ logged: some are banked by 0x048,
+	   or read other bits than they take; for the first device, whose
+	   samples are all 0x8000) */
+	for (const W &w : first)
+		if (codec_read(w.reg, &v) && v != w.v)
+			DBG("Agere: codec register %03x reads %04x (%04x written)\n",
+			    w.reg, v, w.v);
 	return true;
 }
 
@@ -603,7 +615,7 @@ bool UsbLine::agere_streams()
 
 	if (!agere_read16(CTRL_PLL, &v) || !agere_bulk_patch() || !agere_clock(true))
 		return false;
-	if (!high && !agere_cmd(CMD_STREAM, 0, 0, 1, nullptr))
+	if (!high && !agere_cmd(CMD_STREAM, 0, 1, 0, nullptr))
 		return false;
 	libusb_clear_halt(h_, bulk_out_);
 	libusb_clear_halt(h_, bulk_in_);
@@ -644,18 +656,66 @@ bool UsbLine::agere_streams()
 		}
 		in_flight_++;
 	}
-	if (high && (!agere_cmd(CMD_STREAM, 0, 0, 4, nullptr) ||
-		     !agere_cmd(CMD_STREAM, 0, 0, 1, nullptr)))
+	if (high && (!agere_cmd(CMD_STREAM, 0, 4, 0, nullptr) ||
+		     !agere_cmd(CMD_STREAM, 0, 1, 0, nullptr)))
 		return false;
 	agere_stream_check(high);
+	if (getenv("DMODEM_AGERE_CLOCK_SWEEP"))
+		agere_clock_sweep();
 	agere_t0_ = 0;
 	return true;
 }
 
+/* see usb_line.h: the samples' rate measured at several ARM clocks while
+   streaming (after a moment to settle, over SWEEP_MS each), logged, then
+   the clock raised again: what the codec's rate follows */
+void UsbLine::agere_clock_sweep()
+{
+	static const u16 divs[] = { 3, 2, 4, 5, 6, 8, 0xf };
+	const u64 SETTLE_MS = 300, SWEEP_MS = 1500;
+	auto run = [&](u64 ms) {
+		u64 t0 = sys_ms();
+		while (!dead_ && sys_ms() - t0 < ms) {
+			struct timeval tv = { 0, 10000 };
+			libusb_handle_events_timeout_completed(ctx_, &tv, nullptr);
+		}
+	};
+	DBG("Agere: clock sweep (DMODEM_AGERE_CLOCK_SWEEP)\n");
+	for (u16 d : divs) {
+		u16 cdr = 0;
+		if (!agere_clock_div(d, "for the sweep") ||
+		    !agere_read16(CTRL_ARMCDR, &cdr))
+			break;
+		run(SETTLE_MS);
+		size_t n0 = iso_.in_buf.size();
+		u64 t0 = sys_ms();
+		run(SWEEP_MS);
+		u64 dt = sys_ms() - t0;
+		u64 n = iso_.in_buf.size() - n0;
+		s16 lo = 0, hi = 0;
+		for (size_t k = n0; k < iso_.in_buf.size(); k++) {
+			s16 x = iso_.in_buf[k];
+			if (k == n0 || x < lo)
+				lo = x;
+			if (k == n0 || x > hi)
+				hi = x;
+		}
+		DBG("Agere: clock sweep: divider %x, %d MHz (ARMCDR %x): %" PRIu64
+		    " samples a second, from %d to %d\n", d,
+		    480 / (2 * static_cast<s16>(cdr) + 2), cdr,
+		    dt ? n * 1000 / dt : 0, lo, hi);
+		iso_.in_buf.clear();
+		if (dead_)
+			return;
+	}
+	agere_clock(true);
+}
+
 /* see usb_line.h: the patch's mailbox and stream state read back after
    command 0x10 (logged); not streaming: command 0x10 again with its mode
-   in wIndex instead of wValue (which half of the setup packet the ROM
-   leaves in the mailbox is not known: never seen on the wire) */
+   in wValue instead of wIndex (the ROM leaves wIndex in the mailbox: the
+   first device's, seen streaming with it there; wValue as the doc first
+   had it, for a ROM that differs) */
 void UsbLine::agere_stream_check(bool high)
 {
 	u8 mb[8], st[4];
@@ -672,14 +732,14 @@ void UsbLine::agere_stream_check(bool high)
 	if (!look("after command 0x10") || st[0] == STREAM_ON)
 		return;
 	ERR("Agere USB modem: the bulk patch has not started the stream: "
-	    "command 0x10 again, its mode as wIndex\n");
-	if (high && !agere_cmd(CMD_STREAM, 0, 4, 0, nullptr))
+	    "command 0x10 again, its mode as wValue\n");
+	if (high && !agere_cmd(CMD_STREAM, 0, 0, 4, nullptr))
 		return;
-	if (!agere_cmd(CMD_STREAM, 0, 1, 0, nullptr) ||
-	    !look("after command 0x10, its mode as wIndex"))
+	if (!agere_cmd(CMD_STREAM, 0, 0, 1, nullptr) ||
+	    !look("after command 0x10, its mode as wValue"))
 		return;
 	if (st[0] == STREAM_ON)
-		DBG("Agere: streaming, its mode as wIndex: tell D-Modem "
+		DBG("Agere: streaming, its mode as wValue: tell D-Modem "
 		    "(docs/agere-usb.md)\n");
 	else
 		ERR("Agere USB modem: still not streaming: tell D-Modem, with "
@@ -702,9 +762,16 @@ void UsbLine::agere_in(libusb_transfer *t)
 		}
 		u16 room = static_cast<u16>((t->actual_length - 4) / 2);
 		n = static_cast<s16>(std::min(count, room));
-		for (s16 k = 0; k < n; k++)
-			iso_.in_buf.push_back(static_cast<s16>(
-				b[4 + 2 * k] | u16{b[5 + 2 * k]} << 8));
+		for (s16 k = 0; k < n; k++) {
+			s16 x = static_cast<s16>(b[4 + 2 * k] | u16{b[5 + 2 * k]} << 8);
+			iso_.in_buf.push_back(x);
+			/* (their range, for the rate's log line) */
+			if (agere_t0_ && !agere_rate_said_) {
+				agere_lo_ = agere_seen_ ? std::min(agere_lo_, x) : x;
+				agere_hi_ = agere_seen_ ? std::max(agere_hi_, x) : x;
+				agere_seen_ = true;
+			}
+		}
 		if (status != agere_status_)
 			TRACE("Agere: status %04x (%u samples)\n", status, count);
 		agere_status_ = status;
@@ -755,7 +822,8 @@ void UsbLine::agere_rate_check()
 		return;
 	agere_rate_said_ = true;
 	u64 hz = (samples_ - agere_n0_) * 1000 / (now - agere_t0_);
-	DBG("Agere: %" PRIu64 " samples a second\n", hz);
+	DBG("Agere: %" PRIu64 " samples a second, from %d to %d\n", hz,
+	    agere_lo_, agere_hi_);
 	if (hz < AGERE_RATE * 95 / 100 || hz > AGERE_RATE * 105 / 100)
 		ERR("Agere USB modem: %" PRIu64 " samples a second, not %" PRIu32
 		    ": tell D-Modem (docs/agere-usb.md)\n", hz, AGERE_RATE);

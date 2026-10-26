@@ -272,11 +272,15 @@ private:
 	bool codec_read(u16 reg, u16 *v);
 	bool codec_write(u16 reg, u16 v);
 	bool agere_clock(bool boost);
+	bool agere_clock_div(u16 div, const char *what);
+	/* DMODEM_AGERE_CLOCK_SWEEP=1: the samples' rate at several ARM
+	   clocks, logged, while streaming at start */
+	void agere_clock_sweep();
 	bool agere_bulk_patch();
 	bool agere_mercury();
 	bool agere_streams();
 	/* the bulk patch's mailbox and stream state read back after command
-	   0x10, logged; command 0x10 again, its mode as wIndex, if it is not
+	   0x10, logged; command 0x10 again, its mode as wValue, if it is not
 	   streaming */
 	void agere_stream_check(bool high);
 	void agere_in(libusb_transfer *t);
@@ -382,6 +386,9 @@ private:
 	u16 agere_status_ = 0;
 	u64 agere_t0_ = 0, agere_n0_ = 0;
 	bool agere_rate_said_ = false;
+	/* the samples' range while their rate is measured */
+	s16 agere_lo_ = 0, agere_hi_ = 0;
+	bool agere_seen_ = false;
 };
 
 } // namespace dmd
