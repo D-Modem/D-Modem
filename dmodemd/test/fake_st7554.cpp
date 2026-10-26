@@ -563,6 +563,13 @@ uint8_t LIBUSB_CALL libusb_get_bus_number(libusb_device *)
 	return 1;
 }
 
+/* full speed (only the Agere line asks; on Windows this replaces
+   libusb, which would answer otherwise) */
+int LIBUSB_CALL libusb_get_device_speed(libusb_device *)
+{
+	return LIBUSB_SPEED_FULL;
+}
+
 /* its ports from the root: port 250, which no real hub has (so that
    the kernel's power/wakeup of it is no real device's) */
 int LIBUSB_CALL libusb_get_port_numbers(libusb_device *, uint8_t *ports,
