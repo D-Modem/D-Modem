@@ -461,12 +461,12 @@ What it does, from the device's ROM and Agere's drivers
 ([agere-usb.md](agere-usb.md)), in `dmodemd/usb_agere.cpp`:
 
 - **Start-up.** Interface 0's alternate setting 1 (isochronous IN and
-  OUT), the ROM's version, its GPIOs and clock, the Mercury codec's
-  registers as Agere's drivers write them, on hook; then the ROM's
-  function table as the ROM has it (an earlier driver's patch in it put
-  back), the clock raised, the ROM's stream started (command 0x0c). A
-  "Polaris" DAA (its codec registers do not answer) is not driven yet:
-  dmodemd says so.
+  OUT), the ROM's version, its GPIOs and clock, its codec's registers as
+  Agere's drivers write them (a Mercury's, or a "Polaris" DAA's, register
+  0xc0's bit 15 set: its link pulsed up, its calibration, its country's
+  DAA registers), on hook; then the ROM's function table as the ROM has
+  it (an earlier driver's patch in it put back), the clock raised, the
+  ROM's stream started (command 0x0c).
 - **Samples.** A packet each way every 2 microframes: a header (the
   samples' count, a status word) and the samples. dmodemd sends as many
   as it has been sent, so the playback keeps the codec's clock.
@@ -691,8 +691,8 @@ an OUT packet and answers it with an IN one of the samples come, whose
 status word's bit 0 is set while the ring signal is there; it says its
 two LEDs as they change. It refuses a
 patch, and gives no samples while a patch's entry is in its function
-table. It checks that dmodemd says what is wrong with a Polaris DAA and a
-full speed device; that the samples come at 8000 a second, with a bulk
+table. It checks that dmodemd says what is wrong with a full speed device,
+that it brings a Polaris DAA's link up (the call's 1001 has one); that the samples come at 8000 a second, with a bulk
 patch's entries left in the table (put back) and with a ROM 1.0.6 (its
 clock left alone); 8000 Hz with `-r 9600`; a data call (rings, caller
 ID, the answer at the second ring, V.34 at 33600, text each way) and the
