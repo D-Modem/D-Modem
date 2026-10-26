@@ -230,7 +230,7 @@ try:
               DMODEM_USB_REC=os.path.join(recs, "line"))
     # (1002's codec's clock 300 ppm faster than its USB's: its transmit ring
     # kept by the OUT transfers' corrections, no overrun or underrun)
-    b = Modem("1002", "dmodem42", FAKE_AGERE_DRIFT="300")
+    b = Modem("1002", "dmodem42", FAKE_AGERE_DRIFT="300", DMODEM_USB_TX_GAIN="3")
     check("-r 9600: 8000 Hz all the same", a.expect_log(b"8000 Hz, its rate (not 9600)", 5))
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
@@ -247,6 +247,7 @@ try:
     check("1001 Polaris calibrated (13)", a.expect_log(b"Agere: Polaris calibration 13 (16 readings)", 1))
     check("1001 Polaris DAA revision 3", a.expect_log(b"Agere: Polaris DAA revision 3", 1))
     check("1001's OH not lit", led(a, b"OH") == b"off")
+    check("1002's samples 3 dB louder (DMODEM_USB_TX_GAIN)", b.expect_log(b"to the line +3.0 dB", 1))
     a.dte.write(b"ATD1002\r")
     time.sleep(0.5)
     check("1001's OH lit off hook", led(a, b"OH") == b"on")

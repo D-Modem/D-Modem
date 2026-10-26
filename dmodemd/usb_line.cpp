@@ -77,6 +77,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <cstring>
 #include <ctime>
 
@@ -598,6 +599,13 @@ bool UsbLine::open(const char *dev, u32 rate)
 	viso_ = Iso();
 	iso_.line = viso_.line = this;
 	viso_.voice = true;
+	tx_gain_ = 4096;
+	tx_clipped_ = 0;
+	if (const char *g = getenv("DMODEM_USB_TX_GAIN"); g && *g) {
+		double db = std::max(-20.0, std::min(20.0, strtod(g, nullptr)));
+		tx_gain_ = static_cast<s32>(std::lround(4096.0 * std::pow(10.0, db / 20.0)));
+		DBG("the modem's samples to the line %+.1f dB (DMODEM_USB_TX_GAIN)\n", db);
+	}
 	if ((err = libusb_init(&ctx_)) < 0) {
 		ERR("libusb: %s\n", libusb_strerror(err));
 		ctx_ = nullptr;
@@ -1570,6 +1578,17 @@ s16 UsbLine::pump(dcore::Modem &m)
 			m.process(frame_in_.data(), frame_out_.data(), frame_);
 		else
 			std::fill_n(frame_out_.data(), frame_, 0);
+		/* (DMODEM_USB_TX_GAIN: louder or softer to the line) */
+		if (tx_gain_ != 4096)
+			for (s16 k = 0; k < frame_; k++) {
+				s32 x = (frame_out_[k] * tx_gain_) / 4096;
+				if (x > 32767 || x < -32768) {
+					x = x > 0 ? 32767 : -32768;
+					if (tx_clipped_++ == 0)
+						DBG("the modem's samples clipped: DMODEM_USB_TX_GAIN too high\n");
+				}
+				frame_out_[k] = static_cast<s16>(x);
+			}
 		if (rec_)
 			rec_frame(frame_in_.data(), frame_out_.data(), frame_);
 		iso_.out_buf.insert(iso_.out_buf.end(), frame_out_.begin(),

@@ -365,6 +365,10 @@ private:
 	/* DMODEM_USB_REC: the line recorded while off hook (rec_start()) */
 	FILE *rec_ = nullptr;
 	u64 rec_frames_ = 0;
+	/* DMODEM_USB_TX_GAIN=<dB> (-20 to 20): the modem's samples to the
+	   line scaled (in 1/4096ths: 4096 none), the samples clipped */
+	s32 tx_gain_ = 4096;
+	u64 tx_clipped_ = 0;
 	bool running_ = false;
 	bool dead_ = false;
 	s16 hook_ = MODEM_HOOK_ON;
