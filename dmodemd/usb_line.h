@@ -274,6 +274,10 @@ private:
 	bool agere_table();
 	bool agere_start();
 	void agere_stop();
+	/* the hook (true: off), its ring indices reset off hook */
+	bool agere_hook(bool off);
+	/* the controller's and codec's registers logged (-d2) */
+	void agere_regs(const char *when);
 	bool agere_streams();
 	void agere_dump();
 	void agere_in(libusb_transfer *t);

@@ -196,6 +196,9 @@ try:
                   m.expect_log(b"ROM 1.0.6: its clock left as it is", 5))
         check("%s: ATE0" % tag, m.cmd(b"ATE0"))
         check("%s: its samples come" % tag, samples_come(m))
+        st = re.search(rb"Agere: streaming:.*", open(m.log.name, "rb").read())
+        check("%s: Windows' first step (0xcd000044, codec 0x0b0)" % tag,
+              st and b"cd000044 00000003" in st.group(0) and b"codec 0b0 000a" in st.group(0))
         log = open(m.log.name, "rb").read()
         check("%s: no patch sent" % tag, b"a patch (command 9" not in log)
         check("%s: none stuck" % tag, b"no samples" not in log)
@@ -226,6 +229,7 @@ try:
     a.dte.write(b"ATD1002\r")
     time.sleep(0.5)
     check("1001's OH lit off hook", led(a, b"OH") == b"on")
+    check("1001's rings put back off hook", a.expect_log(b"fake Agere: rings 24 0", 5))
     check("1002 RING", b.expect(rb"RING\r\n", 15))
     n = led_changes(b, b"OH")
     time.sleep(0.6)

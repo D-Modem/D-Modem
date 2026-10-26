@@ -1340,7 +1340,7 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 	hook_ = state;
 	flash_end_ = 0;
 	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
-		return codec_write(AGERE_HOOK, off ? 0 : 1) ? 0 : -1;
+		return agere_hook(off) ? 0 : -1;
 	if (kind_ == Kind::Stick)
 		return off ? (stick_out(LP_SET_HOOK, 1) &&
 			      stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
@@ -1552,7 +1552,7 @@ s16 UsbLine::pump(dcore::Modem &m)
 		if (flash_end_ && samples_ >= flash_end_) {
 			flash_end_ = 0;
 			if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Agere)
-				codec_write(AGERE_HOOK, 0);
+				agere_hook(true);
 			else if (hook_ == MODEM_HOOK_OFF)
 				set_gpio(static_cast<u16>(gpio_ |
 							       GPIO_HOOK1));

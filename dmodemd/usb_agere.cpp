@@ -75,6 +75,13 @@ const u16 CMD_MAX = 0x4b0;
 const u32 CTRL_PLL = 0xcd000008, CTRL_ARMCDR = 0xcd00000c,
 	CTRL_30 = 0xcd000030, CTRL_34 = 0xcd000034;
 const u32 GPIO_DIR = 0x30000000, GPIO_OUT = 0x30000008;
+/* Windows' first step at start (0x1e820(1), Linux's U2SetRing): the
+   controller's 0xcd000044, then codec registers 0x0e0, 0x0a4, 0x0b0 */
+const u32 CTRL_44 = 0xcd000044;
+const u16 MER_0B0 = 0x00b0;
+/* the ROM's ring indices on the endpoints' side: written {24, 0} (two
+   words) off hook, as both drivers do */
+const u32 RINGS = 0x70001020;
 const u16 GPIO_LED_MASK = 0xfff3, GPIO_LED = 0x000c;
 /* its LEDs (D8 READY/DATA, D6 OH on the Hiro H50113's board), each lit
    when its bit is clear: which bit is which, a guess */
@@ -232,11 +239,13 @@ bool UsbLine::open_agere()
 		    "USB 2.0 port (docs/agere-usb.md)\n");
 		return false;
 	}
-	/* (uss_probe's: SET_CONFIGURATION 2 as it sends it, its answer
-	   not looked at) */
-	err = libusb_control_transfer(h_, 0x0b, LIBUSB_REQUEST_SET_CONFIGURATION,
-				      2, 0, nullptr, 0, 10);
-	TRACE("Agere: SET_CONFIGURATION 2 (0x0b): %d\n", err);
+	/* (its one configuration, 1, as its descriptors have it; its
+	   answer not looked at) */
+	err = libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_STANDARD |
+				      LIBUSB_RECIPIENT_DEVICE,
+				      LIBUSB_REQUEST_SET_CONFIGURATION, 1, 0,
+				      nullptr, 0, 10);
+	TRACE("Agere: SET_CONFIGURATION 1: %d\n", err);
 	if ((err = libusb_set_interface_alt_setting(h_, 0, ISO_ALT)) < 0) {
 		ERR("Agere USB modem: alternate setting %u: %s\n", ISO_ALT,
 		    libusb_strerror(err));
@@ -293,6 +302,15 @@ bool UsbLine::open_agere()
 	DBG("Agere: ROM %u.%u.%u (%04x)\n", agere_rom_ >> 8 & 0xf,
 	    agere_rom_ >> 4 & 0xf, agere_rom_ & 0xf, agere_rom_);
 	u16 v;
+	/* Windows' first step (0x1e820(1)): 0xcd000030 bit 2 cleared,
+	   0xcd000044 = 3, the codec's 0x0e0, 0x0a4 and 0x0b0 */
+	if (!agere_read16(CTRL_30, &v) ||
+	    !agere_write16(CTRL_30, static_cast<u16>(v & ~0x0004)) ||
+	    !agere_write16(CTRL_44, 3))
+		return false;
+	/* (not a Polaris's: its codec's own start-up is below) */
+	if (codec_write(0x0e0, 0x0304))
+		codec_write(0x0a4, 0x0004) && codec_write(MER_0B0, 0x000a);
 	if (!agere_read16(CTRL_30, &v) ||
 	    !agere_write16(CTRL_30, static_cast<u16>(v & ~0x0008)) ||
 	    !agere_write16(CTRL_34, 2) || !agere_write16(GPIO_DIR, 0xffff) ||
@@ -454,6 +472,7 @@ bool UsbLine::agere_streams()
 	int err;
 	if (!agere_table() || !agere_clock(true) || !agere_start())
 		return false;
+	agere_regs("streaming");
 	if (getenv("DMODEM_AGERE_DUMP"))
 		agere_dump();
 	agere_transfers_ = 3;
@@ -678,6 +697,52 @@ void UsbLine::agere_stop()
 	agere_cmd(CMD_ISO_STOP, 0, 0, 0, nullptr);
 }
 
+/* see usb_line.h: the hook (codec register 0xc0: 0 off hook); off hook
+   the ROM's ring indices too, as both drivers have it */
+bool UsbLine::agere_hook(bool off)
+{
+	if (!codec_write(MER_HOOK, off ? 0 : 1))
+		return false;
+	if (!off)
+		return true;
+	u8 d[8] = { static_cast<u8>(RING_AHEAD), 0, 0, 0, 0, 0, 0, 0 };
+	return agere_cmd(CMD_WRITE, sizeof(d), static_cast<u16>(RINGS),
+			 static_cast<u16>(RINGS >> 16), d);
+}
+
+/* see usb_line.h: the registers that say how the codec runs, logged
+   (when: "streaming", "after 10 s") */
+void UsbLine::agere_regs(const char *when)
+{
+	static const u32 ctrl[] = { CTRL_PLL, CTRL_ARMCDR, CTRL_30, CTRL_34,
+				    CTRL_44 };
+	static const u16 codec[] = { 0x080, 0x0a4, 0x0a8, 0x0ac, MER_0B0,
+				     0x0b8, MER_HOOK, 0x2d4, MER_STATUS };
+	char line[512];
+	int n = snprintf(line, sizeof(line), "Agere: %s:", when);
+	for (u32 a : ctrl) {
+		u8 b[4] = { 0, 0, 0, 0 };
+		if (n < static_cast<int>(sizeof(line)) && agere_read(a, b, 4))
+			n += snprintf(line + n, sizeof(line) - n, " %08x %08x", a,
+				      b[0] | u32{b[1]} << 8 | u32{b[2]} << 16 |
+					      u32{b[3]} << 24);
+	}
+	for (u16 r : codec) {
+		u16 v;
+		if (n < static_cast<int>(sizeof(line)) && codec_read(r, &v))
+			n += snprintf(line + n, sizeof(line) - n, ", codec %03x %04x",
+				      r, v);
+	}
+	u8 b[16] = {};
+	if (n < static_cast<int>(sizeof(line)) && agere_read(0x7000101c, b, 16))
+		n += snprintf(line + n, sizeof(line) - n,
+			      ", rings %u %u %u %u %u %u %u %u",
+			      b[0] | b[1] << 8, b[2] | b[3] << 8, b[4] | b[5] << 8,
+			      b[6] | b[7] << 8, b[8] | b[9] << 8, b[10] | b[11] << 8,
+			      b[12] | b[13] << 8, b[14] | b[15] << 8);
+	DBG("%s\n", line);
+}
+
 /* see usb_line.h (pump()): the samples' rate, once, measured over
    RATE_CHECK_MS, said if it is not AGERE_RATE's */
 void UsbLine::agere_rate_check()
@@ -696,6 +761,7 @@ void UsbLine::agere_rate_check()
 	u64 hz = (samples_ - agere_n0_) * 1000 / (now - agere_t0_);
 	DBG("Agere: %" PRIu64 " samples a second, from %d to %d\n", hz,
 	    agere_lo_, agere_hi_);
+	agere_regs("after 10 s");
 	if (hz < AGERE_RATE * 95 / 100 || hz > AGERE_RATE * 105 / 100)
 		ERR("Agere USB modem: %" PRIu64 " samples a second, not %" PRIu32
 		    ": tell D-Modem (docs/agere-usb.md)\n", hz, AGERE_RATE);

@@ -427,6 +427,13 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 	case 0x03: {
 		for (uint16_t i = 0; i < length; i++)
 			fake.mem[a + i] = data[i];
+		/* (the ROM's ring indices, as the drivers write them off hook) */
+		if (a == 0x70001020 && length == 8)
+			fprintf(stderr, "fake Agere: rings %u %u\n",
+				data[0] | data[1] << 8 | data[2] << 16 |
+					(unsigned)data[3] << 24,
+				data[4] | data[5] << 8 | data[6] << 16 |
+					(unsigned)data[7] << 24);
 		/* (the LEDs: READY/DATA GPIO 2, OH GPIO 3, each lit when
 		   clear; said as they change) */
 		if (a <= GPIO_OUT && a + length > GPIO_OUT) {
@@ -678,7 +685,7 @@ void LIBUSB_CALL libusb_free_config_descriptor(libusb_config_descriptor *)
 }
 
 /* a vendor command to the device: command_in() or command_out(); the
-   driver's odd SET_CONFIGURATION (bmRequestType 0x0b) stalls;
+   standard requests (SET_CONFIGURATION) stall;
    LIBUSB_ERROR_NO_DEVICE once gone */
 int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
 					uint8_t type, uint8_t request,

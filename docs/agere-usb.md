@@ -129,17 +129,23 @@ The ARM's memory that the drivers touch:
 As Agere's drivers go (`uss_probe`, `Usb_HandleStartDevice`, then `CUsbInit` and `CUsbStart`),
 and as `usb_agere.cpp` does it:
 
-1. `SET_CONFIGURATION` 2, sent as the Linux driver sends it: `bmRequestType` 0x0b (its arguments
-   to `usb_control_msg` are the wrong way round). Its answer is ignored.
+1. `SET_CONFIGURATION` 1, the ROM's one configuration (its descriptors at 0x39bc and 0x39dc).
+   Its answer is ignored. (The Linux driver sends 2 with `bmRequestType` 0x0b: its arguments to
+   `usb_control_msg` are the wrong way round.)
 2. Interface 0's alternate setting 1: the isochronous endpoints.
-3. The ROM's version (command 1). The GPIOs: `0xcd000030` bit 3 cleared, `0xcd000034` = 2,
+3. Windows' first step at start (AGRSM.sys 0x1e820 with mode 1, from 0x1e530; Linux's
+   `U2SetRing`, which only its Polaris code calls): `0xcd000030` bit 2 cleared, `0xcd000034`'s
+   neighbour `0xcd000044` = 3, then codec registers 0x0e0 = 0x0304, 0x0a4 = 0x0004 and 0x0b0 =
+   0x000a. Nothing else writes 0xcd000044 or 0x0b0 (it reads 0xbb80, 48000, from power-on;
+   Windows writes that back at stop). Whether the codec's rate needs it is not yet known.
+4. The ROM's version (command 1). The GPIOs: `0xcd000030` bit 3 cleared, `0xcd000034` = 2,
    `0x30000000` = 0xffff. The LED (`0x30000008` bits 2 and 3 set). The clock lowered (0x12
    with 0xf; not with a ROM 1.0.6, whose clock change is Agere's code, nor one whose version
    is not known: its clock is left as it is).
-4. `CUsbInit`: `0xcd000030` bits 2 and 3 cleared, `0xcd000034` = 2, then codec register 0xc0
+5. `CUsbInit`: `0xcd000030` bits 2 and 3 cleared, `0xcd000034` = 2, then codec register 0xc0
    read. If the read fails the codec is a "Polaris" DAA (`U2Pol*`), whose start-up has a
    calibration loop; dmodemd does not drive one yet and says so. Otherwise it is a Mercury.
-5. The Mercury's start-up (`UsbMerInitCodec`, the same in Windows' driver), as codec register
+6. The Mercury's start-up (`UsbMerInitCodec`, the same in Windows' driver), as codec register
    writes, in order: 0x0b4 = 0x1387; 0x0a4 |= 0x0004; 0x0e0 = 0x0304, 0x0e4 = 0x0070, 0x0e8 =
    0x042f, 0x0f0 = 0x2242, 0x048 = 2, 0x2c0 = 0x01ff, 0x2c4 = 0xfaac, 0x2d4 = 0x1411, 0x2d0 =
    0x9f02, 0x2cc = 0x01c0, 0x048 = 3, 0x3cc = 1, 0x3c0 = 0x187c, 0x3d0 = 0, 0x3cc = 0x0101,
@@ -148,7 +154,7 @@ and as `usb_agere.cpp` does it:
    0x3b0e (`MerGain2`). Then 0x048 = 2, 0x2cc = 0x41c0, 0x048 = 0, 0x0c0 = 0, 0x08c = 0.
    `CUsbInit` then puts it on hook (0x0c0 = 1). dmodemd writes 1 at once instead of 0: going
    off hook for a moment at start is a dialled pulse to an exchange.
-6. The function table put back as the ROM has it (above), the clock raised (divider 3),
+7. The function table put back as the ROM has it (above), the clock raised (divider 3),
    command 0x0d, then 0x0c, then the transfers.
 
 While it runs, the LEDs ([below](#the-line)). On close: command 0x0d, on hook, the LED bits set
@@ -157,7 +163,9 @@ again.
 ## The line
 
 - **Hook:** codec register 0xc0, 0 off hook and 1 on hook (`UsbMerSetHook`). Pulse dialling
-  and the hook flash break and make it.
+  and the hook flash break and make it. Off hook (but for a pulse's make) the drivers also
+  write the ROM's ring indices on the endpoints' side, `0x70001020` = {24, 0} (two words,
+  command 3 with 8 octets), and so does dmodemd.
 - **Ring:** bit 0 of the IN status word. dmodemd gives the core a ring pulse for each IN
   packet that has it, while on hook.
 - **Caller ID:** the Mercury's `EnableCallerID` does nothing, so the codec hears the line on
@@ -176,7 +184,14 @@ again.
 The samples are S16 little-endian, mono, at 8000 Hz (the host driver's sample rate converter
 takes only 8000 Hz: `ConverterSetSampleRate`). dmodemd runs the line at 8000 Hz whatever `-r`
 says, and after 10 s of samples logs their rate (`Agere: N samples a second`, with their range),
-as an error if it is not 8000.
+as an error if it is not 8000. With `-d2` it logs the controller's clock registers, codec
+registers 0x080 to 0x2dc and the ROM's ring indices as the stream starts and again then
+(`Agere: streaming: ...`, `Agere: after 10 s: ...`).
+
+The first device's stream came at 2457 samples a second, all -32768 (0x8000, from the codec's
+data register `0xe0000100` itself), with the stream above and with the bulk patch alike, at
+either ARM clock: the codec is not sampling at 8000 Hz. Step 3 is the start-up's one write
+that Windows' driver makes and dmodemd did not.
 
 ## Bring-up
 
