@@ -3,9 +3,10 @@
  * Copyright (C) 2026 Neo-Desktop
  *
  *    agere_patch.h - the Agere USB modem's ROM patches (docs/agere-usb.md),
- *                    known by their length and hashes only: the patches
- *                    themselves are Agere's, in Agere's drivers, and are
- *                    taken from the user's own copy (usb_agere.cpp)
+ *                    known by their length and hashes: the patches
+ *                    themselves are Agere's, shipped as data files in
+ *                    firmware/agere under Agere's licence, or taken from
+ *                    a copy of Agere's driver (usb_agere.cpp)
  *
  *    They are byte for byte the same in every driver of the package
  *    (agrsm 2.1.73's agrmodemlib.o and agrmodem.ko, AGRSM.sys and

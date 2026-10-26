@@ -163,9 +163,9 @@ Windows has no kernel driver to hold either device. libusb reaches a USB device 
 
 A SmartUSB56 with Smart Link's own Windows driver installed must be moved to WinUSB first. Until then, `--usb list` says "its driver is not WinUSB or libusbK".
 
-Agere's USB 2.0 soft modem (`047E:2892`, `047E:2828`: [agere-usb.md](agere-usb.md)) is driven the same way, with `dmodem-usb.inf` or Zadig moving it from Agere's `AGRSM.sys` to WinUSB. Its samples are bulk transfers, so WinUSB streams them on Windows 7 and 8 as well. dmodemd.exe needs Agere's driver file all the same, for the bulk patch it downloads into the modem: `--usb-agere-driver` with the driver package's `AGRSM.sys` or `AGRSM64.sys`, or the copy Windows installed (`C:\Windows\System32\drivers\AGRSM.sys`), copied somewhere first if Agere's driver is to be uninstalled.
+Agere's USB 2.0 soft modem (`047E:2892`, `047E:2828`: [agere-usb.md](agere-usb.md)) is driven the same way, with `dmodem-usb.inf` or Zadig moving it from Agere's `AGRSM.sys` to WinUSB. Its samples are bulk transfers, so WinUSB streams them on Windows 7 and 8 as well. The bulk patch dmodemd.exe downloads into the modem is Agere's, shipped in `firmware\agere\` beside dmodemd.exe (installed there with it; its binary contents under Agere's licence, `firmware\agere\LICENSE`). `--usb-agere-driver` takes it from Agere's own `AGRSM.sys` or `AGRSM64.sys` instead.
 
-    dmodemd.exe --usb auto --usb-agere-driver C:\agere\AGRSM64.sys --tcp 127.0.0.1:2323
+    dmodemd.exe --usb auto --tcp 127.0.0.1:2323
 
 #### Windows 7 and 8
 

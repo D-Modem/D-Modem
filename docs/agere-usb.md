@@ -17,14 +17,18 @@ statically and never run. The function names below are theirs.
 patches, not seen on the wire. The sample rate (8000 Hz) is what the firmware's own clock patch
 times ([below](#what-the-patches-do)). The [first run](#bring-up) reports both.
 
-## The bulk patch: not in D-Modem
+## The bulk patch: Agere's, shipped under Agere's licence
 
 The ROM streams its samples on isochronous endpoints. Agere's drivers patch it, at every start,
 so that the samples go on bulk endpoints instead: a "bulk patch" of ARM code downloaded into its
 RAM. The Linux driver always does this (`gUseBulk` = 1); Windows does it when the `UseBulk`
-registry value is set. The patches are Agere's code. D-Modem does not ship them and dmodemd
-takes them from the user's own copy of Agere's driver (`--usb-agere-driver`). The four are byte
-for byte the same in every driver of the package, with no relocations in them:
+registry value is set. The patches are Agere's code. D-Modem ships them unaltered in
+[`firmware/agere/`](../firmware/agere/NOTICE.md), as data files that dmodemd reads at run time:
+**their binary contents are subject to Agere's licence** (`firmware/agere/LICENSE`), not
+D-Modem's. dmodemd takes them from there (installed: `<prefix>/share/dmodem/firmware/agere`; on
+Windows `firmware\agere` beside dmodemd.exe; or the source tree's), or from the directory
+`DMODEM_AGERE_FIRMWARE` names, or from a copy of Agere's driver (`--usb-agere-driver`). The four
+are byte for byte the same in every driver of the package, with no relocations in them:
 
 | patch | octets | what it is for |
 |---|---|---|
@@ -33,8 +37,8 @@ for byte the same in every driver of the package, with no relocations in them:
 | `bulk_patch_v121_rom` | 1156 | ROM 1.2.1 otherwise |
 | `async_clockchange` | 508 | ROM 1.0.6's clock change command (`USS_CMD_CUSTOM_ASYNC`) |
 
-dmodemd knows each only by its length and two hashes (FNV-1a of its first 16 octets and of all
-of it: `dmodemd/agere_patch.h`), and finds it in whatever file it is given: `AGRSM.sys` and
+dmodemd knows each by its length and two hashes (FNV-1a of its first 16 octets and of all of
+it: `dmodemd/agere_patch.h`), and finds it in whatever file it is given: `AGRSM.sys` and
 `AGRSM64.sys` of 2.1.70 to 2.2.98 (Windows 98 to 7) and agrsm 2.1.73's `agrmodem.ko` and
 `agrmodemlib.o` all have all four. A directory is searched with everything under it.
 
@@ -175,7 +179,10 @@ isochronous packets. The first two OUT transfers are silence.
 
 ## Bring-up
 
-    dmodemd --usb=auto --usb-agere-driver /path/to/AGRSM.sys -d2 dmodem0
+    dmodemd --usb=auto -d2 dmodem0
+
+(the patches D-Modem ships; `--usb-agere-driver /path/to/AGRSM.sys` takes them from Agere's driver
+instead)
 
 On Linux the device needs read and write access, as root or with a udev rule
 (`/etc/udev/rules.d/60-agere-usb.rules`):

@@ -42,6 +42,7 @@
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <utility>
 
 #include <log.h>
 
@@ -127,29 +128,30 @@ u32 le32(const u8 *b)
 
 /* the patches, by the hashes in agere_patch.h, found in the file's
    octets d (n of them) into out; DMODEM_AGERE_TEST_PATCHES=1: the
-   tests' ones too */
+   tests' ones as well (fake_agere.cpp's) */
 void find_patches(const u8 *d, size_t n, std::vector<u8> *out)
 {
-	agere::Patch want[agere::PATCHES];
-	bool test = getenv("DMODEM_AGERE_TEST_PATCHES") != nullptr;
+	std::vector<std::pair<int, agere::Patch>> want;
 	for (int i = 0; i < agere::PATCHES; i++) {
-		want[i] = agere::known(i);
-		if (test) {
-			std::vector<u8> p(want[i].len);
-			for (u32 k = 0; k < want[i].len; k++)
+		want.emplace_back(i, agere::known(i));
+		if (getenv("DMODEM_AGERE_TEST_PATCHES")) {
+			agere::Patch t = agere::known(i);
+			std::vector<u8> p(t.len);
+			for (u32 k = 0; k < t.len; k++)
 				p[k] = agere::test_patch(i, k);
-			want[i].head = agere::fnv(p.data(), agere::PATCH_HEAD);
-			want[i].all = agere::fnv(p.data(), p.size());
+			t.head = agere::fnv(p.data(), agere::PATCH_HEAD);
+			t.all = agere::fnv(p.data(), p.size());
+			want.emplace_back(i, t);
 		}
 	}
 	for (size_t off = 0; off + agere::PATCH_HEAD <= n; off++) {
 		u64 h = agere::fnv(d + off, agere::PATCH_HEAD);
-		for (int i = 0; i < agere::PATCHES; i++) {
-			if (h != want[i].head || !out[i].empty() ||
-			    off + want[i].len > n ||
-			    agere::fnv(d + off, want[i].len) != want[i].all)
+		for (const auto &w : want) {
+			const agere::Patch &p = w.second;
+			if (h != p.head || !out[w.first].empty() ||
+			    off + p.len > n || agere::fnv(d + off, p.len) != p.all)
 				continue;
-			out[i].assign(d + off, d + off + want[i].len);
+			out[w.first].assign(d + off, d + off + p.len);
 		}
 	}
 }
@@ -177,21 +179,57 @@ bool UsbLine::agere_device(u16 vendor, u16 product)
 		(product == AGERE_2892 || product == AGERE_2828);
 }
 
+/* the directories with the Agere patches D-Modem ships
+   (firmware/agere): DMODEM_AGERE_FIRMWARE's alone if it is set; else
+   the installed one, the source tree's (dmodemd run from its build),
+   and on Windows the one beside dmodemd.exe */
+std::vector<std::string> UsbLine::agere_firmware_dirs()
+{
+	std::vector<std::string> dirs;
+	if (const char *e = getenv("DMODEM_AGERE_FIRMWARE")) {
+		dirs.push_back(e);
+		return dirs;
+	}
+#ifdef DMODEM_FIRMWARE_DIR
+	dirs.push_back(DMODEM_FIRMWARE_DIR "/agere");
+#endif
+#ifdef DMODEM_SOURCE_FIRMWARE_DIR
+	dirs.push_back(DMODEM_SOURCE_FIRMWARE_DIR "/agere");
+#endif
+#ifdef _WIN32
+	char exe[MAX_PATH];
+	DWORD n = GetModuleFileNameA(nullptr, exe, sizeof(exe));
+	if (n > 0 && n < sizeof(exe))
+		dirs.push_back((std::filesystem::path(exe).parent_path() /
+				"firmware" / "agere").string());
+#endif
+	return dirs;
+}
+
 /* see usb_line.h: set_agere_driver()'s file, or the files of its
    directory and under it, searched for the patches (all of them, or
-   those there are); false (said) if it has none */
+   those there are); without it the patches D-Modem ships
+   (agere_firmware_dirs()); false (said) if there are none */
 bool UsbLine::load_agere_patches()
 {
 	namespace fs = std::filesystem;
+	std::error_code ec;
 	if (agere_driver_.empty()) {
-		ERR("Agere USB modem: it needs its bulk patch, from Agere's "
-		    "driver for it: --usb-agere-driver <its AGRSM.sys, "
+		for (const std::string &d : agere_firmware_dirs())
+			if (fs::is_directory(d, ec)) {
+				agere_driver_ = d;
+				break;
+			}
+	}
+	if (agere_driver_.empty()) {
+		ERR("Agere USB modem: no bulk patch: D-Modem's firmware/agere "
+		    "is not installed (or DMODEM_AGERE_FIRMWARE's directory is "
+		    "not there); --usb-agere-driver <Agere's AGRSM.sys, "
 		    "AGRSM64.sys, agrmodem.ko or agrmodemlib.o, or a directory "
-		    "with one> (docs/agere-usb.md)\n");
+		    "with one> takes it from Agere's driver (docs/agere-usb.md)\n");
 		return false;
 	}
 	std::vector<fs::path> files;
-	std::error_code ec;
 	fs::path root(agere_driver_);
 	if (fs::is_directory(root, ec)) {
 		for (fs::recursive_directory_iterator it(root, ec), end;

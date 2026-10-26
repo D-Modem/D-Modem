@@ -51,7 +51,8 @@ struct Options {
 	/* the SmartUSB56's buzzer as the speaker (--usb-buzzer) */
 	bool usb_buzzer = false;
 	/* an Agere USB modem's driver, whose bulk patch it needs
-	   (--usb-agere-driver: a file, or a directory with one) */
+	   (--usb-agere-driver: a file, or a directory with one; none, the
+	   patches D-Modem ships, firmware/agere) */
 	const char *usb_agere_driver = nullptr;
 	u32 rate = 9600;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem

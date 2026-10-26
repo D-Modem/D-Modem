@@ -7,9 +7,11 @@
 # (fake_agere.cpp, a libusb in front of the real one through LD_PRELOAD)
 # whose lines are line_exchange's, 1001 and 1002, at 8000 Hz:
 #
-# - no --usb-agere-driver: dmodemd says the modem needs Agere's driver;
-#   a driver without the patches: said; a "Polaris" DAA (its codec does
-#   not answer): said;
+# - no --usb-agere-driver: dmodemd takes the patches D-Modem ships
+#   (firmware/agere: Agere's own, which the fake refuses, it wanting the
+#   tests'); with none there (DMODEM_AGERE_FIRMWARE an empty directory)
+#   it says so; a driver without the patches: said; a "Polaris" DAA (its
+#   codec does not answer): said;
 # - the patches found in a driver's file (here the tests' patches,
 #   DMODEM_AGERE_TEST_PATCHES=1, in a file of other octets, in a
 #   directory): a ROM 1.2.1 in ROM takes bulk_patch_v121_rom, one in
@@ -164,14 +166,23 @@ def check(what, cond):
     ok = ok and bool(cond)
 
 def fails(why, *args, **env):
-    """dmodemd on 1001's modem fails, why in its stderr"""
-    p = subprocess.run(run + ["-n", "--usb=auto", "-r", rate] + list(args) + ["dmodem40"],
-                       env=env_for("1001", **env), capture_output=True, text=True,
-                       timeout=60)
-    return p.returncode != 0 and why in p.stderr
+    """dmodemd on 1001's modem fails, why in its output (-d2)"""
+    p = subprocess.run(run + ["-n", "-d2", "--usb=auto", "-r", rate] + list(args) + ["dmodem40"],
+                       env=env_for("1001", **env), stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, text=True, timeout=60)
+    return p.returncode != 0 and why in p.stdout
+
+shipped = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                       "firmware", "agere")
+empty = os.path.join(tmp, "empty")
+os.makedirs(empty)
 
 try:
-    check("no --usb-agere-driver: said", fails("needs its bulk patch, from Agere's driver"))
+    check("no --usb-agere-driver: the shipped patches",
+          fails("bulk_patch_v121_rom in " + os.path.realpath(shipped).split("/firmware/")[0])
+          and fails("not bulk_patch_v121_rom"))
+    check("none shipped: said", fails("no bulk patch in " + empty,
+                                      DMODEM_AGERE_FIRMWARE=empty))
     check("a driver without the patch: said",
           fails("no bulk patch in " + no_patch, "--usb-agere-driver", no_patch))
     check("a Polaris DAA: said", fails('a "Polaris" DAA', "--usb-agere-driver", driver_dir,

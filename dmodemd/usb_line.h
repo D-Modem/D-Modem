@@ -37,8 +37,8 @@
  *
  *    The Agere modem (docs/agere-usb.md, usb_agere.cpp) is a USB
  *    controller with an ARM in it whose ROM is patched, at each start,
- *    with a "bulk patch" from Agere's own driver (set_agere_driver():
- *    not ours to ship), so that its samples go on bulk endpoints:
+ *    with a "bulk patch" of Agere's (firmware/agere, under Agere's
+ *    licence, or set_agere_driver()'s driver file), so that its samples go on bulk endpoints:
  *    100-octet transfers both ways of a header (the samples' count, a
  *    status word: bit 0 the ring detector) and 48 samples, S16
  *    little-endian at 8000 Hz.  Its codec's registers, its ARM's memory
@@ -122,7 +122,8 @@ public:
 	void set_buzzer(bool on) { buzzer_ = on; }
 	/* an Agere modem's driver, whose bulk patch the modem needs (its
 	   AGRSM.sys, AGRSM64.sys, agrmodem.ko or agrmodemlib.o, any of
-	   their versions, or a directory with one): read at open() */
+	   their versions, or a directory with one): read at open(); none,
+	   the patches D-Modem ships (firmware/agere, installed) */
 	void set_agere_driver(const char *path) { agere_driver_ = path ? path : ""; }
 	/* the modem dev ("" or "auto": the first SmartUSB56, pico-serial
 	   Line or Agere modem; <bus>:<address> one of them, as lsusb shows
@@ -262,6 +263,7 @@ private:
 	   registers, the ROM's clock, the codec's start-up, the bulk
 	   transfers, an IN one done, an OUT one filled with n samples */
 	bool open_agere();
+	static std::vector<std::string> agere_firmware_dirs();
 	bool load_agere_patches();
 	bool agere_cmd(u8 cmd, u16 len, u16 index, u16 value, u8 *buf);
 	bool agere_read(u32 addr, u8 *buf, u16 len);

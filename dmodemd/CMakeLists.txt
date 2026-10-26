@@ -69,6 +69,29 @@ if(DMODEM_DMODEMD)
 			DESTINATION ${CMAKE_INSTALL_SBINDIR})
 	endif()
 	dmodem_flags(dmodemd)
+	# the Agere USB modem's ROM patches (firmware/agere: Agere's, under
+	# Agere's licence, its LICENSE and NOTICE.md with them), installed
+	# as data files: on Windows beside dmodemd.exe, else in the data
+	# directory; dmodemd looks there, then in the source tree
+	set(_agere_files
+		${PROJECT_SOURCE_DIR}/firmware/agere/bulk_patch_v106.bin
+		${PROJECT_SOURCE_DIR}/firmware/agere/bulk_patch_v121_flash.bin
+		${PROJECT_SOURCE_DIR}/firmware/agere/bulk_patch_v121_rom.bin
+		${PROJECT_SOURCE_DIR}/firmware/agere/async_clockchange.bin
+		${PROJECT_SOURCE_DIR}/firmware/agere/LICENSE
+		${PROJECT_SOURCE_DIR}/firmware/agere/NOTICE.md
+		${PROJECT_SOURCE_DIR}/firmware/agere/SHA256SUMS)
+	if(WIN32)
+		install(FILES ${_agere_files}
+			DESTINATION ${CMAKE_INSTALL_BINDIR}/firmware/agere)
+	else()
+		install(FILES ${_agere_files}
+			DESTINATION ${CMAKE_INSTALL_DATADIR}/dmodem/firmware/agere)
+		target_compile_definitions(dmodemd PRIVATE
+			DMODEM_FIRMWARE_DIR="${CMAKE_INSTALL_FULL_DATADIR}/dmodem/firmware")
+	endif()
+	target_compile_definitions(dmodemd PRIVATE
+		DMODEM_SOURCE_FIRMWARE_DIR="${PROJECT_SOURCE_DIR}/firmware")
 	# -a: a softmodem's codec through ALSA for the line (alsa_line.cpp),
 	# if libasound2-dev is there
 	find_package(PkgConfig QUIET)

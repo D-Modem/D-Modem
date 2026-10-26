@@ -445,16 +445,19 @@ Agere's (later LSI's) USB soft modem, USB `047e:2892` (and `047e:2828`),
 sold under other names too, has no kernel driver: dmodemd drives it
 through libusb. It is an Agere USB controller with an ARM in it and a
 Mercury codec and DAA. Its ROM is patched at every start with a "bulk
-patch" from Agere's own driver: D-Modem does not ship it, and dmodemd
-takes it from the user's copy of Agere's driver, which has to be given:
+patch" of Agere's. D-Modem ships Agere's patches, unaltered, in
+`firmware/agere/` (installed in `<prefix>/share/dmodem/firmware/agere`):
+their binary contents are subject to Agere's licence
+(`firmware/agere/LICENSE`, [NOTICE.md](../firmware/agere/NOTICE.md)),
+not D-Modem's.
 
     lsusb -d 047e:                # Bus 001 Device 009: ID 047e:2892 ...
-    dmodemd --usb=auto --usb-agere-driver /path/to/AGRSM.sys
+    dmodemd --usb=auto
 
-Any of Agere's drivers for it has the patches: `AGRSM.sys` or
-`AGRSM64.sys` (Windows 98 to 7), `agrmodem.ko` or `agrmodemlib.o`
-(agrsm's Linux package), or a directory with one of them (an unpacked
-driver package). The line runs at 8000 Hz, whatever `-r` says. A udev
+`--usb-agere-driver` takes the patches from Agere's own driver instead:
+any of them has them (`AGRSM.sys` or `AGRSM64.sys`, Windows 98 to 7;
+`agrmodem.ko` or `agrmodemlib.o`, agrsm's Linux package), or a directory
+with one of them (an unpacked driver package). The line runs at 8000 Hz, whatever `-r` says. A udev
 rule (`/etc/udev/rules.d/60-agere-usb.rules`) lets dmodemd open it
 without root:
 
@@ -515,7 +518,7 @@ start from.
 | `--usb-buzzer` | the SmartUSB56's buzzer (GPIO 11, BUZEN) as the speaker: on while ATM/ATL have it on, as Windows' `Options.Buzzer` |
 | `--usb-rhom` | the SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15, and the voice codec's bit 7) while the modem runs, as Windows' `Options.RHOM`; not below revision 0x200 |
 | `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
-| `--usb-agere-driver=<file>` | an Agere USB modem's bulk patch: Agere's driver for it (`AGRSM.sys`, `AGRSM64.sys`, `agrmodem.ko` or `agrmodemlib.o`), or a directory with one |
+| `--usb-agere-driver=<file>` | an Agere USB modem's bulk patch from Agere's driver for it (`AGRSM.sys`, `AGRSM64.sys`, `agrmodem.ko` or `agrmodemlib.o`), or a directory with one, instead of the patches D-Modem ships (`firmware/agere`) |
 | `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' (an Agere USB modem's is 8000 whatever it says) |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
@@ -690,9 +693,9 @@ transfers, whose status word's bit 0 is set while the ring signal is
 there. It streams only once the patch its ROM wants is downloaded and
 hooked in. The patches are the tests' own (`DMODEM_AGERE_TEST_PATCHES=1`
 makes dmodemd look for them, `agere_patch.h`), put in a "driver" file of
-other octets in a directory. It checks that dmodemd says what is wrong
-with no `--usb-agere-driver`, a driver without the patches and a Polaris
-DAA; each ROM's patch (1.2.1 in ROM and in flash, 1.0.6 with its clock
+other octets in a directory. It checks that dmodemd takes the patches
+D-Modem ships when there is no `--usb-agere-driver`, and says what is
+wrong with none there, a driver without the patches and a Polaris DAA; each ROM's patch (1.2.1 in ROM and in flash, 1.0.6 with its clock
 change patch); 8000 Hz with `-r 9600`; a full speed device; a data call
 (rings, caller ID, the answer at the second ring, V.34 at 33600, text
 each way); a call dialled in pulses; and that both exit once the

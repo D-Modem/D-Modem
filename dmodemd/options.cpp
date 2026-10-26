@@ -115,9 +115,10 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "a SmartUSB56's buzzer (GPIO 11) as the speaker (ATM, ATL)",
 	  nullptr, false },
 	{ 0, "usb-agere-driver", Takes::Text, true,
-	  "an Agere USB modem's bulk patch taken from Agere's own driver: "
-	  "its AGRSM.sys, AGRSM64.sys, agrmodem.ko or agrmodemlib.o, or a "
-	  "directory with one", "none", false },
+	  "an Agere USB modem's bulk patch taken from Agere's own driver "
+	  "(its AGRSM.sys, AGRSM64.sys, agrmodem.ko or agrmodemlib.o, or a "
+	  "directory with one), not D-Modem's firmware/agere",
+	  "firmware/agere", false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a or --usb (8000 or 9600)", "9600", false },
 #ifdef _WIN32
