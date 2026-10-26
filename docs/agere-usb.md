@@ -92,6 +92,68 @@ for the PLL to lock, then sets the divider in ARMCDR and runs the ARM from the P
 back to the 30 MHz crystal. It then works out the ROM's timing constants from the new clock:
 ticks per millisecond and **ticks per 1/8000 s**. The firmware times its samples at 8000 Hz.
 
+## The ROM's own isochronous stream (Windows')
+
+Windows' `AGRSM.sys` (2.2.98, from the Hiro box's package) streams on the ROM's isochronous
+endpoints unless `UseBulk` is set, which its INF does not do: at high speed it takes interface 0's
+alternate setting 1, and alternate setting 2 (bulk) only with `UseBulk`. The ROM does the
+streaming itself; no bulk patch. This was read from the ROM (16 KB at 0, mirrored to 64 KB, read
+with command 2 from the first device: ROM 1.2.1) and from `AGRSM.sys`, and not yet run.
+
+**The endpoints** (configuration 2, interface 0): alternate setting 1, isochronous IN 0x82 and OUT
+0x02, 16 octets a packet, `bInterval` 2 (at high speed a packet every 2 microframes: 4000 a
+second); alternate setting 3, the same with `bInterval` 1; alternate setting 2, bulk 0x81 and
+0x01 (512) and interrupt 0x82 (16, `bInterval` 16).
+
+**Its start** (`AGRSM.sys` 0x1e0e0): command 0x0c, OUT, `wValue` 8, `wIndex` 1, 8 octets:
+
+| octets | high speed (`0x90000018` reads 1) | otherwise | what the ROM does with it (0x2a78) |
+|---|---|---|---|
+| 0–1 | 2 | 8 | `0x70000a04`: an empty IN packet is (n + 2) × 2 octets |
+| 2–3 | 0 | 0 | the receive ring's write index once streaming |
+| 4–5 | 24 | 24 | the transmit ring's write index once streaming: 24 of its 48 samples of silence ahead |
+| 6–7 | 0x2aaa | 0 | written to `0x90000040` (the microframes it serves, as it looks) |
+
+The ROM then clears codec register 0x0ac, leaves the codec's page at 2, takes (0x2d4 & 7) + 1
+samples a codec interrupt (2 after the Mercury's start-up), sends two IN packets of silence, and
+turns on interrupts 25 (the codec: 0x4ac) and 17 (the data endpoints: 0x578). Command 0x0d stops
+it (0x2b02: the two interrupts off). Its transfers (0x1d0..): 24 packets of 12 octets each way at
+high speed, 6 of 24 otherwise. Before it, Windows downloads a 380-octet patch into slot 4 (command
+9) that only drives the LED (its command 0x10 modes 5, 6 and 7); the samples do not need it.
+
+**The codec interrupt** (0x4ac): n samples (above) from the codec's data register `0xe0000100`
+into a receive ring of 32, and n from a transmit ring of 48 to it.
+
+**The OUT packet**, on each one the endpoint interrupt (0x578, with `0x70000f40` 2) handles:
+
+| octets | what |
+|---|---|
+| 0–1 | n, the samples in it (more than 48: none) |
+| 2–3 | not looked at |
+| 4… | n samples, S16 little-endian, into the transmit ring |
+
+**The IN packet**, one queued for each OUT packet taken, of what the receive ring holds:
+
+| octets | what |
+|---|---|
+| 0–1 | n, the samples (at most 10); 0xaa55 if there are none, and no samples |
+| 2–3 | a status word: bit 0 the ring detector (codec register 0x0a8 bit 2) |
+| 4… | n samples, S16 little-endian |
+
+So the host paces the stream with its OUT packets (2 samples each at 4000 a second at high
+speed), and the samples' rate is the codec's: the host sends back as many as it has been sent,
+as dmodemd does for the ST7554's packets.
+
+**The ROM otherwise.** Its main routine (0x1616) sets the codec interface up at boot (0x1416:
+0x0a4 |= 4, 0x0f4 = 0xff, 0x0d0 = 0x0fd2, 0x0e0 = 0x0307) when `0xcd000018` & 3 is 2 (kept at
+`0x70000f40`), then calls the function table's entries 4 and 5 for ever: the bulk patch's
+per-sample function runs from there, polling the codec's and the endpoints' FIFOs with the two
+interrupts off. Its commands (the table at 0x2a2c, by command − 1): 1 the version, 2 and 3 memory,
+9 a patch, 0x0a and 0x0b the codec, **0x0c and 0x0d its isochronous stream**, 0x10 the function
+table's entry 7 (nothing of its own: the bulk patch's hook), 0x11 entry 6, 0x12 the clock. The
+codec's registers are memory at `0xe0000000` + the register's low octet, its high octet the page
+(`0xe0000048`). The entries the patches do not take are 0x14af, an empty function.
+
 ## Commands
 
 Everything but the samples is a vendor request on endpoint 0 (`Usb_Command`, `x_usb_command`):
