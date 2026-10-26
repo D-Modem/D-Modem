@@ -254,6 +254,14 @@ try:
     check("-dump: then its samples come", samples_come(m))
     m.stop()
 
+    # DMODEM_AGERE_CODEC_TRY: the rate with the ROM's own codec settings
+    m = Modem("1001", "dmodem40", "-codec", args=["-d1"], DMODEM_AGERE_CODEC_TRY="1")
+    check("-codec: as it is", m.expect_log(b"Agere: codec try: as it is: ", 10))
+    check("-codec: 0x0d0", m.expect_log(b"Agere: codec try: 0x0d0 = 0x0fd2: ", 10))
+    check("-codec: 0x0e0", m.expect_log(b"Agere: codec try: and 0x0e0 = 0x0307: ", 10))
+    check("-codec: then its samples come", samples_come(m))
+    m.stop()
+
     # DMODEM_AGERE_PROBE: registers dumped, 0xcd000034 swept, then streaming
     m = Modem("1001", "dmodem40", "-probe", args=["-d2"], DMODEM_AGERE_PROBE="1")
     check("-probe: the controller's registers", m.expect_log(b"Agere: probe: cd000000: ", 10))

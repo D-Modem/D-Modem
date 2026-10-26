@@ -219,6 +219,18 @@ device streams on the ROM's isochronous endpoints with the ROM's own command 0x1
 bulk patch replaces. `DMODEM_AGERE_DUMP=1` logs the descriptors and the ARM's memory (the ROM
 from 0, its RAM, the controller's and the codec interface's registers) as hex, for that.
 
+**The ROM (16 KB at 0, read with command 2).** Its main routine (0x1616) sets the codec
+interface up at boot (0x1416: 0x0a4 |= 4, 0x0f4 = 0xff, 0x0d0 = 0x0fd2, 0x0e0 = 0x0307), then
+calls the function table's entries 4 and 5 for ever: the bulk patch's per-sample function runs
+from that loop. The codec's registers are memory at `0xe0000000` + the register's low octet, its
+high octet the page (`0xe0000048`), as the ROM's commands 0x0a and 0x0b do it. Its commands
+(0x2958's table): 1 the version, 2 and 3 memory, 9 a patch, 0x0a and 0x0b the codec, **0x0c its
+own isochronous stream's start** (0x2a78, with data), 0x0d its stop, 0x10 the function table's
+entry 7 (the patch's hook, nothing else), 0x11 entry 6, 0x12 the clock. Its codec interrupt
+(0x4ac) moves the samples between `0xe0000100` and its buffers. The first device, after the
+Mercury's start-up, has 0x9f02 at `0xe00000d0`, the start-up's 0x2d0: `DMODEM_AGERE_CODEC_TRY=1`
+measures the rate as it is, with 0x0d0 = 0x0fd2, then with 0x0e0 = 0x0307 as well.
+
 `DMODEM_AGERE_PROBE=1` logs the controller's registers (`0xcd000000` on), the codec
 interface's (`0xe00000c0` on) and the codec's (0x000 to 0x3fc), then writes 0 to 7 to
 `0xcd000034` (2 at start; what for is not known) while streaming, logs the rate at each, and

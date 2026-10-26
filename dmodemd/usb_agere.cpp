@@ -676,6 +676,8 @@ bool UsbLine::agere_streams()
 		agere_probe();
 	if (getenv("DMODEM_AGERE_DUMP"))
 		agere_dump();
+	if (getenv("DMODEM_AGERE_CODEC_TRY"))
+		agere_codec_try();
 	agere_t0_ = 0;
 	return true;
 }
@@ -834,6 +836,32 @@ void UsbLine::agere_dump()
 	dump(0x90004000, 0x80);
 	dump(0x90006000, 0x80);
 	DBG("Agere: dump over\n");
+}
+
+/* see usb_line.h: DMODEM_AGERE_CODEC_TRY: the samples' rate and range
+   measured as they are, then with codec register 0x0d0 as the ROM sets it
+   at boot (0x0fd2: its codec interface's set-up at 0x1416 and again at
+   0x380; the Mercury's start-up writes 0x9f02 to 0x2d0, which seems to
+   land on it), then with 0x0e0 as the ROM sets it too (0x0307, 0x0304 in
+   the start-up): what the first device's 2459 a second, all 0x8000, come
+   from */
+void UsbLine::agere_codec_try()
+{
+	u16 d0 = 0, e0 = 0, d2 = 0;
+	codec_read(0x0d0, &d0);
+	codec_read(0x0e0, &e0);
+	codec_read(0x2d0, &d2);
+	DBG("Agere: codec try: 0x0d0 %04x, 0x0e0 %04x, 0x2d0 %04x\n", d0, e0, d2);
+	agere_measure("codec try: as it is");
+	codec_write(0x0d0, 0x0fd2);
+	codec_read(0x0d0, &d0);
+	codec_read(0x2d0, &d2);
+	DBG("Agere: codec try: 0x0d0 now %04x, 0x2d0 %04x\n", d0, d2);
+	agere_measure("codec try: 0x0d0 = 0x0fd2");
+	codec_write(0x0e0, 0x0307);
+	codec_read(0x0e0, &e0);
+	DBG("Agere: codec try: 0x0e0 now %04x\n", e0);
+	agere_measure("codec try: and 0x0e0 = 0x0307");
 }
 
 /* see usb_line.h: the patch's mailbox and stream state read back after

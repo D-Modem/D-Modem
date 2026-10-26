@@ -284,6 +284,8 @@ private:
 	void agere_probe();
 	/* DMODEM_AGERE_DUMP=1: its descriptors and memory logged */
 	void agere_dump();
+	/* DMODEM_AGERE_CODEC_TRY=1: the rate with the ROM's own 0x0d0, 0x0e0 */
+	void agere_codec_try();
 	bool agere_bulk_patch();
 	bool agere_mercury();
 	bool agere_streams();
