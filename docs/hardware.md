@@ -476,6 +476,9 @@ What it does, from the device's ROM and Agere's drivers
   core's `ring()` for each packet that has it.
 - **Caller ID.** The codec hears the line on hook, so caller ID comes
   in the samples.
+- **LEDs.** READY/DATA lit while dmodemd runs, flickering with data;
+  OH lit off hook, blinking while the line rings (GPIO 2 and 3, lit when
+  clear).
 - **Unplugged.** dmodemd says so and exits.
 
 It has been tested against a fake of it (below), not yet on a real one:
@@ -685,11 +688,13 @@ commands, its ARM's memory and function table, its codec registers (the
 hook register 0xc0 the exchange's switch) and its ROM's isochronous
 stream: each 2 of the line's samples a packet's time, in which it takes
 an OUT packet and answers it with an IN one of the samples come, whose
-status word's bit 0 is set while the ring signal is there. It refuses a
+status word's bit 0 is set while the ring signal is there; it says its
+two LEDs as they change. It refuses a
 patch, and gives no samples while a patch's entry is in its function
 table. It checks that dmodemd says what is wrong with a Polaris DAA and a
 full speed device; that the samples come at 8000 a second, with a bulk
 patch's entries left in the table (put back) and with a ROM 1.0.6 (its
 clock left alone); 8000 Hz with `-r 9600`; a data call (rings, caller
-ID, the answer at the second ring, V.34 at 33600, text each way); a call
+ID, the answer at the second ring, V.34 at 33600, text each way) and the
+LEDs through it; a call
 dialled in pulses; and that both exit once the exchange has gone.

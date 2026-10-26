@@ -76,6 +76,9 @@ const u32 CTRL_PLL = 0xcd000008, CTRL_ARMCDR = 0xcd00000c,
 	CTRL_30 = 0xcd000030, CTRL_34 = 0xcd000034;
 const u32 GPIO_DIR = 0x30000000, GPIO_OUT = 0x30000008;
 const u16 GPIO_LED_MASK = 0xfff3, GPIO_LED = 0x000c;
+/* its LEDs (D8 READY/DATA, D6 OH on the Hiro H50113's board), each lit
+   when its bit is clear: which bit is which, a guess */
+const u16 GPIO_LED_READY = 0x0004, GPIO_LED_OH = 0x0008;
 const u32 FUNCTABLE = 0x70000a64;
 const u32 USB_SPEED = 0x90000018;
 
@@ -87,6 +90,11 @@ const u32 ROM_TABLE[8] = { 0x14af, 0x14af, 0x221c, 0x14af,
 
 /* the Mercury codec's registers: the hook (0 off, 1 on), its ready bit */
 const u16 MER_HOOK = 0x00c0, MER_STATUS = 0x02dc;
+/* its LEDs' blinking, half a period each (ms of the line's clock): OH's
+   while the line rings, READY/DATA's while data passes; how long a ring
+   or data keeps them at it */
+const u64 LED_FAST_MS = 125, LED_FLICKER_MS = 50;
+const u64 LED_RING_MS = 1000, LED_DATA_MS = 150;
 /* its two gains (MerGain1, MerGain2) */
 const u16 MER_GAIN1 = 0xc990, MER_GAIN2 = 0x3b0e;
 
@@ -289,8 +297,8 @@ bool UsbLine::open_agere()
 	    !agere_write16(CTRL_30, static_cast<u16>(v & ~0x0008)) ||
 	    !agere_write16(CTRL_34, 2) || !agere_write16(GPIO_DIR, 0xffff) ||
 	    !agere_read16(GPIO_OUT, &v) ||
-	    !agere_write16(GPIO_OUT, static_cast<u16>((v & GPIO_LED_MASK) |
-							   GPIO_LED)) ||
+	    !agere_write16(GPIO_OUT, agere_gpio_ = static_cast<u16>(
+				   (v & GPIO_LED_MASK) | GPIO_LED)) ||
 	    !agere_clock(false))
 		return false;
 	/* CUsbInit: the codec's: a Mercury answers register 0xc0 */
@@ -454,7 +462,7 @@ bool UsbLine::agere_streams()
 			static_cast<long>(MAX_TRANSFERS), strtol(e, nullptr, 10))));
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
 	agere_owed_ = 0;
-	agere_ahead_ = agere_transfers_ * AGERE_PACKETS * OUT_MOST;
+	agere_ahead_ = static_cast<s32>(AGERE_RATE);
 	delay_ = static_cast<s16>(iso_.out_buf.size() + RING_AHEAD +
 				  agere_transfers_ * AGERE_PACKETS * 2);
 	for (s16 i = 0; i < agere_transfers_; i++) {
@@ -591,13 +599,16 @@ void UsbLine::agere_in(libusb_transfer *t)
 				agere_seen_ = true;
 			}
 		}
-		/* (owed no more than a few frames: a modem that has stopped
-		   giving its samples is not paid back later at once) */
-		agere_owed_ = std::min<s32>(agere_owed_ + n, 4 * frame_);
+		/* (owed a second's at most: a modem that has stopped giving
+		   its samples is not paid back for longer; less is caught up,
+		   OUT_MOST a packet against the 2 that come) */
+		agere_owed_ = std::min<s32>(agere_owed_ + n, static_cast<s32>(AGERE_RATE));
 		if (status != agere_status_)
 			TRACE("Agere: status %04x\n", status);
 		agere_status_ = status;
 		agere_ring_ = (status & 1) != 0;
+		if (agere_ring_)
+			agere_ring_ms_ = now_ms();
 		if (agere_ring_)
 			rings_++;
 	}
@@ -633,6 +644,32 @@ void UsbLine::agere_fill(libusb_transfer *t)
 		off = static_cast<s16>(off + len);
 	}
 	t->length = off;
+}
+
+/* see usb_line.h (update_leds()): the modem's two LEDs (GPIO outputs, lit
+   when clear, as Agere's drivers leave them unlit set: at start and on
+   stop): READY/DATA (D8) lit while it runs, flickering while data passes
+   online; OH (D6) lit off hook, blinking fast while the line rings;
+   written only when they change */
+void UsbLine::agere_leds(dcore::Modem &m)
+{
+	u64 now = now_ms();
+	bool online = m.link_state() == dcore::LinkState::Online;
+	online_seen_ = online_seen_ || online;
+	if (online && m.tx_pending())
+		agere_data_ms_ = now;
+	bool ready = true;
+	if (online && agere_data_ms_ && now - agere_data_ms_ < LED_DATA_MS)
+		ready = now / LED_FLICKER_MS % 2 == 0;
+	bool oh = hook_ == MODEM_HOOK_OFF;
+	if (!oh && agere_ring_ms_ && now - agere_ring_ms_ < LED_RING_MS)
+		oh = now / LED_FAST_MS % 2 == 0;
+	u16 v = static_cast<u16>((agere_gpio_ & GPIO_LED_MASK) |
+				 (ready ? 0 : GPIO_LED_READY) | (oh ? 0 : GPIO_LED_OH));
+	if (v == agere_gpio_)
+		return;
+	if (agere_write16(GPIO_OUT, v))
+		agere_gpio_ = v;
 }
 
 /* see usb_line.h: the ROM's stream stopped (command 0x0d), at close */

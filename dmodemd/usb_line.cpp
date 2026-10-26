@@ -1380,12 +1380,17 @@ void UsbLine::speaker(dcore::Modem &, s16 volume)
 	set_gpio(v);
 }
 
-/* the SmartUSB56's LEDs (set_leds()): the carrier's while the call is
+/* the Agere modem's LED (agere_leds(): always); the SmartUSB56's LEDs
+   (set_leds()): the carrier's while the call is
    online, the data one once data has passed (the DTE's waiting, or the
    modem's to it after the pump that saw the call online), until on
    hook */
 void UsbLine::update_leds(dcore::Modem &m)
 {
+	if (kind_ == Kind::Agere) {
+		agere_leds(m);
+		return;
+	}
 	if (!leds_ || kind_ != Kind::St7554 || hook_ != MODEM_HOOK_OFF)
 		return;
 	bool online = m.link_state() == dcore::LinkState::Online;
@@ -1569,8 +1574,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
 	size_t most = static_cast<size_t>(3 * frame_);
-	/* (the Agere modem's OUT packets are filled ahead: after a burst
-	   of its samples, as many more as they can catch up on) */
+	/* (the Agere modem's playback catches up after a burst of its
+	   samples: agere_ahead_ more) */
 	if (kind_ == Kind::Agere)
 		most += static_cast<size_t>(agere_ahead_);
 	if (iso_.out_buf.size() > most) {

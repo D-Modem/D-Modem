@@ -41,6 +41,8 @@
  *    FAKE_AGERE_FULL=1: a full speed device.
  *    FAKE_AGERE_PATCHED=1: a bulk patch's entries 4 and 7 in the function
  *    table, as an earlier driver left them.
+ *    The LEDs (at 0x30000008: READY/DATA GPIO 2, OH GPIO 3, each lit when
+ *    its bit is clear) are said on stderr as they go on and off.
  *    FAKE_AGERE_LOG=1: the commands on stderr.
  *
  */
@@ -76,6 +78,7 @@ const uint8_t BULK_OUT = 0x01, BULK_IN = 0x81, INTR_IN = 0x82;
 const uint16_t ISO_PACKET = 16, BULK_PACKET = 512;
 const int RING_LEVEL = 8000;
 const uint32_t FUNCTABLE = 0x70000a64, USB_SPEED = 0x90000018;
+const uint32_t GPIO_OUT = 0x30000008;
 /* the ROM's function table at boot */
 const uint32_t ROM_TABLE[8] = { 0x14af, 0x14af, 0x221c, 0x14af,
 				0x14b1, 0x14af, 0x14af, 0x14af };
@@ -98,6 +101,7 @@ struct Fake {
 	bool hook = false;              /* off hook */
 	bool streaming = false;         /* command 0x0c, not 0x0d since */
 	bool said_stuck = false;
+	int led[2] = { -1, -1 };        /* the LEDs lit (-1 not yet written) */
 	std::map<uint32_t, uint8_t> mem;
 	std::map<uint16_t, uint16_t> codec;
 	bool gone = false;
@@ -162,6 +166,7 @@ void reset()
 	fake.codec[0x2dc] = 1;
 	fake.codec[0xc0] = 1;
 	fake.streaming = false;
+	fake.led[0] = fake.led[1] = -1;
 }
 
 /* a connection to the exchange (fake_net.h) */
@@ -419,10 +424,24 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 {
 	uint32_t a = (uint32_t)value << 16 | index;
 	switch (cmd) {
-	case 0x03:
+	case 0x03: {
 		for (uint16_t i = 0; i < length; i++)
 			fake.mem[a + i] = data[i];
+		/* (the LEDs: READY/DATA GPIO 2, OH GPIO 3, each lit when
+		   clear; said as they change) */
+		if (a <= GPIO_OUT && a + length > GPIO_OUT) {
+			static const char *const names[2] = { "READY/DATA", "OH" };
+			for (int k = 0; k < 2; k++) {
+				int lit = (fake.mem[GPIO_OUT] & (4 << k)) == 0;
+				if (lit != fake.led[k]) {
+					fake.led[k] = lit;
+					fprintf(stderr, "fake Agere: LED %s %s\n",
+						names[k], lit ? "on" : "off");
+				}
+			}
+		}
 		return 0;
+	}
 	case 0x09:
 		fprintf(stderr, "fake Agere: a patch (command 9, slot %u): not "
 			"wanted\n", index);

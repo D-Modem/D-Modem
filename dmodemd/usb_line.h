@@ -184,8 +184,10 @@ public:
 	   CONNECT) */
 	s32 dte_write(dcore::Modem &m, const char *buf, s32 n) override {
 		if (n > 0 && online_seen_ &&
-		    m.link_state() == dcore::LinkState::Online)
+		    m.link_state() == dcore::LinkState::Online) {
 			data_seen_ = true;
+			agere_data_ms_ = now_ms();
+		}
 		return dte_.write(buf, n);
 	}
 	/* the clock: the device's samples so far, in ms */
@@ -277,6 +279,7 @@ private:
 	void agere_in(libusb_transfer *t);
 	void agere_fill(libusb_transfer *t);
 	void agere_rate_check();
+	void agere_leds(dcore::Modem &m);
 	static bool agere_device(u16 vendor, u16 product);
 	bool start_iso(Iso &s, s16 pkt);
 	bool start_fifos();
@@ -373,10 +376,17 @@ private:
 	u16 agere_rom_ = 0xffff;
 	s32 agere_owed_ = 0;
 	s16 agere_transfers_ = 3;
-	/* the playback's lead it may have past pump()'s, the samples its OUT
-	   packets in flight can carry */
+	/* the playback's lead it may have past pump()'s (a second's: after a
+	   burst of its samples it catches up, OUT_MOST a packet) */
 	s32 agere_ahead_ = 0;
 	bool agere_ring_ = false;
+	/* the line's clock when the ring bit was last seen (0: never); the
+	   GPIO outputs as last written (the LEDs' bits, agere_leds()) */
+	u64 agere_ring_ms_ = 0;
+	u16 agere_gpio_ = 0;
+	/* the line's clock when data last passed online (READY/DATA's
+	   flicker) */
+	u64 agere_data_ms_ = 0;
 	u16 agere_status_ = 0;
 	u64 agere_t0_ = 0, agere_n0_ = 0;
 	bool agere_rate_said_ = false;

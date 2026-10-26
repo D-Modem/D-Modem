@@ -116,7 +116,7 @@ The ARM's memory that the drivers touch:
 |---|---|
 | `0x30000000` | GPIO directions: 0xffff at start (`U2InitGpio`) |
 | `0x30000004` | GPIO inputs (`UsbReadGPIO`) |
-| `0x30000008` | GPIO outputs (`UsbWriteGPIO`); bits 2 and 3 the "enumeration" LED, set at start and on stop |
+| `0x30000008` | GPIO outputs (`UsbWriteGPIO`); bits 2 and 3 the LEDs (READY/DATA and OH), unlit set: set at start and on stop |
 | `0x70000a64` | the ROM's function table, 8 words (above) |
 | `0x90000018` | the USB controller's speed: 1 high |
 | `0xcd000008` | the PLL's state: 0 when not locked |
@@ -151,7 +151,8 @@ and as `usb_agere.cpp` does it:
 6. The function table put back as the ROM has it (above), the clock raised (divider 3),
    command 0x0d, then 0x0c, then the transfers.
 
-On close: command 0x0d, on hook, the LED bits set again.
+While it runs, the LEDs ([below](#the-line)). On close: command 0x0d, on hook, the LED bits set
+again.
 
 ## The line
 
@@ -164,6 +165,13 @@ On close: command 0x0d, on hook, the LED bits set again.
 - **Country:** the Mercury's `ConfigureCountry` does nothing in this driver (the Polaris has
   one). dmodemd's `-c` and `AT+GCI` set the core's rules only.
 - **Loop current:** fixed in this driver (`UsbMerCheckLoopCurrent`: 20).
+- **LEDs:** two on the Hiro H50113's board (the FCC's AS560USB), D8 "READY/DATA" and D6 "OH",
+  on GPIO outputs 2 and 3 (`0x30000008`): Agere's drivers set both at start and on stop
+  (`U2SetEnumerationLED`, `CUsbStop`), and Windows' LED patch blinks them, so they are lit while
+  clear. dmodemd drives them itself (memory writes, command 3), as it does the SmartUSB56's:
+  READY/DATA lit while it runs, flickering while data passes online; OH lit off hook, blinking
+  fast while the line rings; both unlit at close. Which bit is which is a guess (2 READY/DATA,
+  3 OH): the first device has not shown them yet.
 
 The samples are S16 little-endian, mono, at 8000 Hz (the host driver's sample rate converter
 takes only 8000 Hz: `ConverterSetSampleRate`). dmodemd runs the line at 8000 Hz whatever `-r`

@@ -150,6 +150,21 @@ def samples_come(m, t=15):
     return False
 
 
+def led(m, which):
+    """m's LED which (b"OH", b"READY/DATA") as the fake last said it:
+    b"on", b"off" or None"""
+    m.log.flush()
+    found = re.findall(rb"fake Agere: LED " + re.escape(which) + rb" (on|off)",
+                       open(m.log.name, "rb").read())
+    return found[-1] if found else None
+
+
+def led_changes(m, which):
+    """how many times the fake has said m's LED which changed"""
+    m.log.flush()
+    return open(m.log.name, "rb").read().count(b"fake Agere: LED " + which + b" ")
+
+
 def check(what, cond):
     global ok
     print("%s: %s" % (what, "yes" if cond else "NO"))
@@ -206,8 +221,15 @@ try:
     check("1001 waits for the dial tone", a.cmd(b"ATX4"))
 
     t = time.time()
+    check("1001's READY/DATA lit, its OH not", led(a, b"READY/DATA") == b"on"
+          and led(a, b"OH") == b"off")
     a.dte.write(b"ATD1002\r")
+    time.sleep(0.5)
+    check("1001's OH lit off hook", led(a, b"OH") == b"on")
     check("1002 RING", b.expect(rb"RING\r\n", 15))
+    n = led_changes(b, b"OH")
+    time.sleep(0.6)
+    check("1002's OH blinks while it rings", led_changes(b, b"OH") - n >= 2)
     cid = b.expect(rb"NMBR = (\d+)\r\n", 6)
     check("1002 caller ID 1001", cid and cid.group(1) == b"1001")
     check("1002 RING again", b.expect(rb"RING\r\n", 8))
@@ -217,9 +239,17 @@ try:
                                          cb and cb.group(1).decode(), time.time() - t))
     check("both CONNECT", ca and cb and ca.group(1).startswith(b"CONNECT")
           and cb.group(1).startswith(b"CONNECT"))
+    time.sleep(0.5)
+    n = led_changes(a, b"READY/DATA")
+    time.sleep(1.5)
+    check("1001's LEDs steady online, no data", led(a, b"READY/DATA") == b"on"
+          and led(a, b"OH") == b"on" and led_changes(a, b"READY/DATA") == n)
     check("the exchange heard 1002 dialled", "1001 dialled 1002" in events)
+    n = led_changes(b, b"READY/DATA")
     a.dte.write(b"hello from 1001\r\n")
     check("1002 gets 1001's line", b.expect(rb"hello from 1001", 10))
+    time.sleep(0.3)
+    check("1002's READY/DATA flickers with data", led_changes(b, b"READY/DATA") - n >= 2)
     b.dte.write(b"hello from 1002\r\n")
     check("1001 gets 1002's line", a.expect(rb"hello from 1002", 10))
     time.sleep(1.2)
@@ -228,6 +258,9 @@ try:
     check("1001 ATH", a.cmd(b"ATH"))
     check("1001 NO CARRIER", a.expect(rb"NO CARRIER\r\n", 5))
     check("1002 NO CARRIER", b.expect(rb"NO CARRIER\r\n", 30))
+    time.sleep(0.5)
+    check("1001's OH off on hook, READY/DATA lit", led(a, b"OH") == b"off"
+          and led(a, b"READY/DATA") == b"on")
 
     # pulse dialling: the hook (codec register 0xc0) broken and made
     check("1002 no auto answer", b.cmd(b"ATS0=0"))
