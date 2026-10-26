@@ -276,6 +276,10 @@ private:
 	/* DMODEM_AGERE_CLOCK_SWEEP=1: the samples' rate at several ARM
 	   clocks, logged, while streaming at start */
 	void agere_clock_sweep();
+	/* the samples' rate and range over a moment, logged */
+	void agere_measure(const char *what);
+	/* DMODEM_AGERE_PROBE=1: registers dumped, 0xcd000034 swept */
+	void agere_probe();
 	bool agere_bulk_patch();
 	bool agere_mercury();
 	bool agere_streams();

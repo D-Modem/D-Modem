@@ -662,17 +662,17 @@ bool UsbLine::agere_streams()
 	agere_stream_check(high);
 	if (getenv("DMODEM_AGERE_CLOCK_SWEEP"))
 		agere_clock_sweep();
+	if (getenv("DMODEM_AGERE_PROBE"))
+		agere_probe();
 	agere_t0_ = 0;
 	return true;
 }
 
-/* see usb_line.h: the samples' rate measured at several ARM clocks while
-   streaming (after a moment to settle, over SWEEP_MS each), logged, then
-   the clock raised again: what the codec's rate follows */
-void UsbLine::agere_clock_sweep()
+/* see usb_line.h: the samples' rate and range while streaming, after a
+   moment to settle (MEASURE_MS), logged with what */
+void UsbLine::agere_measure(const char *what)
 {
-	static const u16 divs[] = { 3, 2, 4, 5, 6, 8, 0xf };
-	const u64 SETTLE_MS = 300, SWEEP_MS = 1500;
+	const u64 SETTLE_MS = 300, MEASURE_MS = 1500;
 	auto run = [&](u64 ms) {
 		u64 t0 = sys_ms();
 		while (!dead_ && sys_ms() - t0 < ms) {
@@ -680,35 +680,87 @@ void UsbLine::agere_clock_sweep()
 			libusb_handle_events_timeout_completed(ctx_, &tv, nullptr);
 		}
 	};
+	run(SETTLE_MS);
+	size_t n0 = iso_.in_buf.size();
+	u64 t0 = sys_ms();
+	run(MEASURE_MS);
+	u64 dt = sys_ms() - t0;
+	u64 n = iso_.in_buf.size() - n0;
+	s16 lo = 0, hi = 0;
+	for (size_t k = n0; k < iso_.in_buf.size(); k++) {
+		s16 x = iso_.in_buf[k];
+		if (k == n0 || x < lo)
+			lo = x;
+		if (k == n0 || x > hi)
+			hi = x;
+	}
+	DBG("Agere: %s: %" PRIu64 " samples a second, from %d to %d\n", what,
+	    dt ? n * 1000 / dt : 0, lo, hi);
+	iso_.in_buf.clear();
+}
+
+/* see usb_line.h: the samples' rate measured at several ARM clocks while
+   streaming, logged, then the clock raised again: what the codec's rate
+   follows (the first device's: not the ARM's clock) */
+void UsbLine::agere_clock_sweep()
+{
+	static const u16 divs[] = { 3, 2, 4, 5, 6, 8, 0xf };
 	DBG("Agere: clock sweep (DMODEM_AGERE_CLOCK_SWEEP)\n");
 	for (u16 d : divs) {
 		u16 cdr = 0;
 		if (!agere_clock_div(d, "for the sweep") ||
 		    !agere_read16(CTRL_ARMCDR, &cdr))
 			break;
-		run(SETTLE_MS);
-		size_t n0 = iso_.in_buf.size();
-		u64 t0 = sys_ms();
-		run(SWEEP_MS);
-		u64 dt = sys_ms() - t0;
-		u64 n = iso_.in_buf.size() - n0;
-		s16 lo = 0, hi = 0;
-		for (size_t k = n0; k < iso_.in_buf.size(); k++) {
-			s16 x = iso_.in_buf[k];
-			if (k == n0 || x < lo)
-				lo = x;
-			if (k == n0 || x > hi)
-				hi = x;
-		}
-		DBG("Agere: clock sweep: divider %x, %d MHz (ARMCDR %x): %" PRIu64
-		    " samples a second, from %d to %d\n", d,
-		    480 / (2 * static_cast<s16>(cdr) + 2), cdr,
-		    dt ? n * 1000 / dt : 0, lo, hi);
-		iso_.in_buf.clear();
+		char what[64];
+		snprintf(what, sizeof(what), "clock sweep: divider %x, %d MHz (ARMCDR %x)",
+			 d, 480 / (2 * static_cast<s16>(cdr) + 2), cdr);
+		agere_measure(what);
 		if (dead_)
 			return;
 	}
 	agere_clock(true);
+}
+
+/* see usb_line.h: DMODEM_AGERE_PROBE: the controller's registers
+   (0xcd000000 on) and the codec interface's (0xe00000c0 on) and the
+   codec's (0x000 to 0x3fc) logged; then 0xcd000034 (2 at start, what
+   for not known) swept while streaming, the samples' rate at each, and
+   put back */
+void UsbLine::agere_probe()
+{
+	DBG("Agere: probe (DMODEM_AGERE_PROBE)\n");
+	auto dump = [&](u32 base, u16 words) {
+		for (u16 i = 0; i < words; i += 4) {
+			u8 b[16];
+			if (!agere_read(base + 4u * i, b, sizeof(b)))
+				return;
+			DBG("Agere: probe: %08x: %08x %08x %08x %08x\n", base + 4u * i,
+			    le32(b), le32(b + 4), le32(b + 8), le32(b + 12));
+		}
+	};
+	dump(0xcd000000, 32);
+	dump(0xe00000c0, 16);
+	dump(0xe0000100, 4);
+	for (u16 r = 0; r < 0x400; r += 0x20) {
+		u16 v[8];
+		for (int k = 0; k < 8; k++)
+			if (!codec_read(static_cast<u16>(r + 4 * k), &v[k]))
+				v[k] = 0xdead;
+		DBG("Agere: probe: codec %03x: %04x %04x %04x %04x %04x %04x %04x %04x\n",
+		    r, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+	}
+	u16 was;
+	if (!agere_read16(CTRL_34, &was))
+		return;
+	for (u16 x = 0; x < 8 && !dead_; x++) {
+		char what[48];
+		if (!agere_write16(CTRL_34, x))
+			break;
+		snprintf(what, sizeof(what), "probe: %08x = %u", CTRL_34, x);
+		agere_measure(what);
+	}
+	agere_write16(CTRL_34, was);
+	agere_measure("probe: put back");
 }
 
 /* see usb_line.h: the patch's mailbox and stream state read back after

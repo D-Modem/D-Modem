@@ -195,12 +195,19 @@ mode in `wValue` no IN transfer ever came back: the stream's state stayed 0. Wit
 the state is 2 and the samples come, but at 2459 a second, not 8000, and every one of them
 -32768 (0x8000), off hook as well. 2459 is 8000 × 24.576 / 80 to within the measurement: the
 ARM runs at 80 MHz there (ARMCDR 2 after USS_CMD_CHANGE_CLK with 3), and 24.576 MHz is an audio
-master clock. Not yet known: what sets the codec's rate, and why its samples are all 0x8000.
+master clock. The rate is the same at every ARM clock from 16 to 80 MHz (dividers 2 to 0xf), so
+it is the codec's own. Its registers 0x2d4 and 0x0e0 read back otherwise than written (0x0401
+for 0x1411, 0x0337 for 0x0304); 0x3c0 to 0x3cc read 0 with 0x048 back at 0. Not yet known: what
+sets the codec's rate, and why its samples are all 0x8000.
 
 dmodemd reads the mailbox and the stream state back after command 0x10 and logs them (`-d1`).
 If the state is not 2 it says so, sends command 0x10 again with the mode in `wValue`, and logs
 whether that started the stream. `DMODEM_AGERE_CLOCK_SWEEP=1` measures the samples' rate (and
 their range) at several ARM clocks while streaming at start, and logs each.
+`DMODEM_AGERE_PROBE=1` logs the controller's registers (`0xcd000000` on), the codec
+interface's (`0xe00000c0` on) and the codec's (0x000 to 0x3fc), then writes 0 to 7 to
+`0xcd000034` (2 at start; what for is not known) while streaming, logs the rate at each, and
+puts it back.
 
     dmodemd --usb=auto -d2 dmodem0
 

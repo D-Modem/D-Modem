@@ -227,6 +227,15 @@ try:
     check("-sweep: then its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
     m.stop()
 
+    # DMODEM_AGERE_PROBE: registers dumped, 0xcd000034 swept, then streaming
+    m = Modem("1001", "dmodem40", "-probe", args=["-d2"], DMODEM_AGERE_PROBE="1")
+    check("-probe: the controller's registers", m.expect_log(b"Agere: probe: cd000000: ", 10))
+    check("-probe: the codec's", m.expect_log(b"Agere: probe: codec 3e0: ", 15))
+    check("-probe: 0xcd000034 swept", m.expect_log(b"Agere: probe: cd000034 = 7: ", 30))
+    check("-probe: put back, streaming", m.expect_log(b"Agere: probe: put back: ", 5))
+    check("-probe: then its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
+    m.stop()
+
     a = Modem("1001", "dmodem41", args=["-r", "9600"], FAKE_AGERE_FULL="1")
     b = Modem("1002", "dmodem42")
     check("-r 9600: 8000 Hz all the same", a.expect_log(b"8000 Hz, its rate (not 9600)", 5))
