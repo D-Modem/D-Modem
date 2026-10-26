@@ -65,6 +65,7 @@ const u16 AGERE_2892 = 0x2892, AGERE_2828 = 0x2828;
 const u8 CMD_VERSION = 0x01, CMD_READ = 0x02, CMD_WRITE = 0x03,
 	CMD_PATCH = 0x09, CMD_CODEC_READ = 0x0a, CMD_CODEC_WRITE = 0x0b,
 	CMD_STREAM = 0x10, CMD_CUSTOM_ASYNC = 0x11, CMD_CHANGE_CLK = 0x12;
+/* cmd an IN command (its data from the device) */
 bool cmd_in(u8 cmd)
 {
 	return cmd == 1 || cmd == 2 || cmd == 4 || cmd == 6 || cmd == 10;
@@ -638,14 +639,13 @@ void UsbLine::agere_in(libusb_transfer *t)
 	iso_.out_lengths.push_back(std::vector<s16>(1, n));
 }
 
-/* see usb_line.h: an OUT transfer of n samples queued (silence if there
+/* see usb_line.h: an OUT transfer of 48 samples queued, n asked for whatever (silence if there
    are too few): its header (n, 0), the samples, 100 octets in all */
 void UsbLine::agere_fill(libusb_transfer *t, s16 n)
 {
-	if (n > BULK_SAMPLES)
-		n = BULK_SAMPLES;
-	if (n < 0)
-		n = 0;
+	/* (the bulk patch plays 48 samples whatever the count: always 48) */
+	(void)n;
+	n = BULK_SAMPLES;
 	memset(t->buffer, 0, BULK_LEN);
 	t->buffer[0] = static_cast<u8>(n);
 	t->buffer[1] = static_cast<u8>(n >> 8);

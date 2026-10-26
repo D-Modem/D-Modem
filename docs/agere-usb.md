@@ -13,8 +13,9 @@ This page says what the device wants. It was read from Agere's drivers: agrsm 2.
 `agrsoftmodem.c`, and `AGRSM.sys` 2.2.98 (Windows 7) where they differ. Both were read
 statically and never run. The function names below are theirs.
 
-**Not yet tried on the device.** The sample rate (8000 Hz) and the IN/OUT pacing are inferred
-from the driver, not seen on the wire; the [first run](#bring-up) reports both.
+**Not yet tried on the device.** The IN/OUT pacing is inferred from the driver and the
+patches, not seen on the wire. The sample rate (8000 Hz) is what the firmware's own clock patch
+times ([below](#what-the-patches-do)). The [first run](#bring-up) reports both.
 
 ## The bulk patch: not in D-Modem
 
@@ -36,6 +37,46 @@ dmodemd knows each only by its length and two hashes (FNV-1a of its first 16 oct
 of it: `dmodemd/agere_patch.h`), and finds it in whatever file it is given: `AGRSM.sys` and
 `AGRSM64.sys` of 2.1.70 to 2.2.98 (Windows 98 to 7) and agrsm 2.1.73's `agrmodem.ko` and
 `agrmodemlib.o` all have all four. A directory is searched with everything under it.
+
+### What the patches do
+
+This was read from the patches' disassembly; nothing was run.
+
+**The file.** Each patch is a 12-octet header and then ARM code: u32 the load address
+(`0x70001140` for all four), u16 the code's length, u16 the sum of its octets mod 65536 (a
+checksum: it matches for all four), and u32 the address the function table's entry 4 is to get.
+The ROM takes the file with command 9 (index 4) and copies the code into its RAM at the load
+address; command 9 with index 7 then points entry 7 at the patch's second function.
+`bulk_patch_v106` and `bulk_patch_v121_flash` differ in 3 octets only, the ROM addresses they
+call back into. `bulk_patch_v121_rom` is the same logic with the status reports and the LED
+added.
+
+**Entry 4: the samples, one at a time.** The function the ROM calls for each sample first calls
+the ROM's own routine (the patch extends it), then, while streaming, moves one sample each way
+between the codec's serial port and the USB endpoints' FIFOs:
+
+- **IN:** when the IN FIFO has room, a 100-octet packet begins: in one piece at high speed, in
+  64 and 36 octets (30 and 18 samples) at full speed. Its header is `48 | status << 16`, then
+  two codec samples to a 32-bit word.
+- **The status word:** if the host has asked for device registers (a mask of 25, through command
+  0x10, below), the next one: its index + 1 in the high octet, its value in the low one (the
+  Polaris DAA's states, the host driver's `udev_info`). Otherwise 1 while the codec interface's
+  ring detect line is set, else 0: the ring bit.
+- **OUT:** when the OUT FIFO has data, the 4-octet header is read and **dropped**, and 48 samples
+  (30 and 18 at full speed) go to the codec as its transmit FIFO has room. The device does not
+  look at the OUT count: every OUT transfer is played as 48 samples, so dmodemd always sends 48.
+- **The LED** (GPIO bits 2 and 3): on, blinking slowly or blinking fast, as a mode word says.
+- When the stream stops, both endpoints' FIFOs are flushed.
+
+**Entry 7: command 0x10.** The ROM leaves the host's command 0x10 in a mailbox (`0x70000e24`),
+and this function answers it: 1 starts the stream (the endpoints' modes for high or full speed,
+the counters cleared), 2 stops it, 3 adds a register (its index the argument) to those reported
+in the status words, 4 clears them; then it marks the command done.
+
+**The clock change patch** (`async_clockchange`, ROM 1.0.6's command 0x11, ARM code): it waits
+for the PLL to lock, then sets the divider in ARMCDR and runs the ARM from the PLL, or falls
+back to the 30 MHz crystal. It then works out the ROM's timing constants from the new clock:
+ticks per millisecond and **ticks per 1/8000 s**. The firmware times its samples at 8000 Hz.
 
 ## Commands
 
@@ -101,24 +142,24 @@ As Agere's Linux driver goes (`uss_probe`, `Usb_HandleStartDevice`, then `LXHard
 
 ## The samples
 
-S16 little-endian, mono. The rate is not stated anywhere in the driver, but its sample rate
-converter takes only 8000 Hz (`ConverterSetSampleRate`: 8000, resampled to 7200 inside), and the
-AC'97 build of the same library runs its codec at 8000 Hz. dmodemd runs the line at 8000 Hz
+S16 little-endian, mono, at 8000 Hz: the clock change patch times the samples at 8000 Hz, the
+host driver's sample rate converter takes only 8000 Hz (`ConverterSetSampleRate`: 8000,
+resampled to 7200 inside), and the AC'97 build of the same library runs its codec at 8000 Hz. dmodemd runs the line at 8000 Hz
 whatever `-r` says, and checks the rate once (below).
 
 Each bulk transfer is 100 octets each way (`uss_write`, `urb_complete`, `x_usb_copyplaybuf`):
 
 | octets | IN | OUT |
 |---|---|---|
-| 0–1 | the samples' count (48; up to 50 is accepted; `0xaa55` a marker, no samples) | the samples' count |
+| 0–1 | the samples' count (48; up to 50 is accepted; `0xaa55` a marker, no samples) | the samples' count (ignored by the device: 48 are played) |
 | 2–3 | a status word: bit 0 the ring detector (`UsbMerRingDetected`). For a Polaris, the high octet indexes a table of the device's states (`udev_info`) | 0 |
 | 4… | the samples | the samples, the rest zeros |
 
 Agere's driver expects 96 samples (two transfers) a period, 12 ms at 8000 Hz. When fewer come
 it sends fewer back (`gSendLessSamples`: packets of 46 instead of 48), so the playback keeps
-the device's clock. dmodemd does the same in its own way. It sends one OUT transfer for each IN
-transfer done, with that one's count of samples, as it does for the ST7554's isochronous
-packets. The first two OUT transfers are silence.
+the device's clock. dmodemd does it in its own way. It sends one OUT transfer of 48 samples for
+each IN transfer done, so the playback keeps the device's clock, as it does for the ST7554's
+isochronous packets. The first two OUT transfers are silence.
 
 ## The line
 
