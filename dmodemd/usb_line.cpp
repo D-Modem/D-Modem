@@ -1676,12 +1676,14 @@ void UsbLine::voice_frame(dcore::Modem &m)
 void UsbLine::close()
 {
 	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_) {
-		/* the stream stopped, on hook, the LED as CUsbStop leaves it */
+		/* the stream stopped, on hook, GPIOs 2 and 3 as CUsbStop leaves
+		   them, the OH LED (GPIO 4) out */
 		u16 v;
 		agere_stop();
 		codec_write(AGERE_HOOK, 1);
 		if (agere_read16(0x30000008, &v))
-			agere_write16(0x30000008, static_cast<u16>((v & 0xfff3) | 0x000c));
+			agere_write16(0x30000008, static_cast<u16>(
+				((v & 0xfff3) | 0x000c) & ~0x0010));
 	}
 	if (h_ && !dead_ && kind_ == Kind::St7554) {
 		set_reg(FIFO_MASK, 0);

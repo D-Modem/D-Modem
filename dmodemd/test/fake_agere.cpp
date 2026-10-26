@@ -41,8 +41,8 @@
  *    FAKE_AGERE_FULL=1: a full speed device.
  *    FAKE_AGERE_PATCHED=1: a bulk patch's entries 4 and 7 in the function
  *    table, as an earlier driver left them.
- *    The LEDs (at 0x30000008: READY/DATA GPIO 2, OH GPIO 3, each lit when
- *    its bit is clear) are said on stderr as they go on and off.
+ *    The OH LED (at 0x30000008: GPIO 4, lit while set, as on the Hiro
+ *    H50113) is said on stderr as it goes on and off.
  *    FAKE_AGERE_LOG=1: the commands on stderr.
  *
  */
@@ -101,7 +101,7 @@ struct Fake {
 	bool hook = false;              /* off hook */
 	bool streaming = false;         /* command 0x0c, not 0x0d since */
 	bool said_stuck = false;
-	int led[2] = { -1, -1 };        /* the LEDs lit (-1 not yet written) */
+	int led = -1;        /* the LEDs lit (-1 not yet written) */
 	std::map<uint32_t, uint8_t> mem;
 	std::map<uint16_t, uint16_t> codec;
 	bool gone = false;
@@ -166,7 +166,7 @@ void reset()
 	fake.codec[0x2dc] = 1;
 	fake.codec[0xc0] = 1;
 	fake.streaming = false;
-	fake.led[0] = fake.led[1] = -1;
+	fake.led = -1;
 }
 
 /* a connection to the exchange (fake_net.h) */
@@ -434,17 +434,13 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 					(unsigned)data[3] << 24,
 				data[4] | data[5] << 8 | data[6] << 16 |
 					(unsigned)data[7] << 24);
-		/* (the LEDs: READY/DATA GPIO 2, OH GPIO 3, each lit when
-		   clear; said as they change) */
+		/* (the OH LED: GPIO 4, lit while set; said as it changes) */
 		if (a <= GPIO_OUT && a + length > GPIO_OUT) {
-			static const char *const names[2] = { "READY/DATA", "OH" };
-			for (int k = 0; k < 2; k++) {
-				int lit = (fake.mem[GPIO_OUT] & (4 << k)) == 0;
-				if (lit != fake.led[k]) {
-					fake.led[k] = lit;
-					fprintf(stderr, "fake Agere: LED %s %s\n",
-						names[k], lit ? "on" : "off");
-				}
+			int lit = (fake.mem[GPIO_OUT] & 0x10) != 0;
+			if (lit != fake.led) {
+				fake.led = lit;
+				fprintf(stderr, "fake Agere: LED OH %s\n",
+					lit ? "on" : "off");
 			}
 		}
 		return 0;

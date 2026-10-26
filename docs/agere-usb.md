@@ -174,17 +174,17 @@ again.
 - **Country:** the Mercury's `ConfigureCountry` does nothing in this driver (the Polaris has
   one). dmodemd's `-c` and `AT+GCI` set the core's rules only.
 - **Loop current:** fixed in this driver (`UsbMerCheckLoopCurrent`: 20).
-- **LEDs:** two on the Hiro H50113's board (the FCC's AS560USB), D8 "READY/DATA" and D6 "OH",
-  on GPIO outputs 2 and 3 (`0x30000008`): Agere's drivers set both at start and on stop
-  (`U2SetEnumerationLED`, `CUsbStop`), and Windows' LED patch blinks them, so they are lit while
-  clear. dmodemd drives them itself (memory writes, command 3), as it does the SmartUSB56's:
-  READY/DATA lit while it runs, flickering while data passes online; OH lit off hook, blinking
-  fast while the line rings; both unlit at close. Which bit is which is a guess (2 READY/DATA,
-  3 OH): on the first device neither has lit yet. `DMODEM_AGERE_LED_PROBE=1` (or a build with
-  `DMODEM_AGERE_LED_PROBE` defined) flips each GPIO output 0 to 15 in turn at start, 1.5 s each
-  with 0.5 s between (`=<ms>`: that long each), then with the directions 0 lowers and raises
-  GPIOs 2 and 3, and logs each step (`Agere: LED probe step N: ...`, what was written and read
-  back): which step lights an LED says which output drives it.
+- **LEDs:** two on the Hiro H50113's board (the FCC's AS560USB), D8 "READY/DATA" and D6 "OH".
+  Agere's drivers set GPIOs 2 and 3 (`0x30000008`) at start and on stop (`U2SetEnumerationLED`,
+  `CUsbStop`), and Windows' LED patch blinks those two: the reference design's LEDs, but not
+  this board's. The first device's LED probe (below) lit OH on GPIO 4 while it is set; dmodemd
+  lights it off hook and blinks it fast while the line rings, and puts it out at close.
+  READY/DATA lit on none of GPIOs 0 to 15. The GPIOs are 24 (the directions read 0x00ffffff
+  as words); 16 to 23 are still to be probed. `DMODEM_AGERE_LED_PROBE=1` (or a build with
+  `DMODEM_AGERE_LED_PROBE` defined) flips each GPIO output 0 to 31 in turn at start, as words,
+  1.5 s each with 0.5 s between (`=<ms>`: that long each), and logs each step (`Agere: LED
+  probe step N: ...`, what was written and read back): which step lights an LED says which
+  output drives it.
 
 The samples are S16 little-endian, mono, at 8000 Hz (the host driver's sample rate converter
 takes only 8000 Hz: `ConverterSetSampleRate`). dmodemd runs the line at 8000 Hz whatever `-r`

@@ -84,10 +84,13 @@ const u16 MER_0B0 = 0x00b0;
 const u32 RINGS = 0x7000101c;
 /* how long each GPIO is flipped for in the LED probe (agere_led_probe()) */
 const int PROBE_MS = 1500, PROBE_GAP_MS = 500;
+/* GPIOs 2 and 3: set at start and on stop, as Agere's drivers do
+   (U2SetEnumerationLED: the reference design's LEDs) */
 const u16 GPIO_LED_MASK = 0xfff3, GPIO_LED = 0x000c;
-/* its LEDs (D8 READY/DATA, D6 OH on the Hiro H50113's board), each lit
-   when its bit is clear: which bit is which, a guess */
-const u16 GPIO_LED_READY = 0x0004, GPIO_LED_OH = 0x0008;
+/* the Hiro H50113's OH LED (D6): GPIO 4, lit while set (the first
+   device's LED probe); its READY/DATA (D8) is on none of GPIOs 0 to 15 (16 to 23 are
+   still to be probed) */
+const u16 GPIO_LED_OH = 0x0010;
 const u32 FUNCTABLE = 0x70000a64;
 const u32 USB_SPEED = 0x90000018;
 
@@ -99,11 +102,9 @@ const u32 ROM_TABLE[8] = { 0x14af, 0x14af, 0x221c, 0x14af,
 
 /* the Mercury codec's registers: the hook (0 off, 1 on), its ready bit */
 const u16 MER_HOOK = 0x00c0, MER_STATUS = 0x02dc;
-/* its LEDs' blinking, half a period each (ms of the line's clock): OH's
-   while the line rings, READY/DATA's while data passes; how long a ring
-   or data keeps them at it */
-const u64 LED_FAST_MS = 125, LED_FLICKER_MS = 50;
-const u64 LED_RING_MS = 1000, LED_DATA_MS = 150;
+/* the OH LED's blinking while the line rings, half a period (ms of the
+   line's clock); how long a ring keeps it at it */
+const u64 LED_FAST_MS = 125, LED_RING_MS = 1000;
 /* its two gains (MerGain1, MerGain2) */
 const u16 MER_GAIN1 = 0xc990, MER_GAIN2 = 0x3b0e;
 
@@ -318,7 +319,7 @@ bool UsbLine::open_agere()
 	    !agere_write16(CTRL_34, 2) || !agere_write16(GPIO_DIR, 0xffff) ||
 	    !agere_read16(GPIO_OUT, &v) ||
 	    !agere_write16(GPIO_OUT, agere_gpio_ = static_cast<u16>(
-				   (v & GPIO_LED_MASK) | GPIO_LED)) ||
+				   ((v & GPIO_LED_MASK) | GPIO_LED) & ~GPIO_LED_OH)) ||
 	    !agere_clock(false))
 		return false;
 	/* CUsbInit: the codec's: a Mercury answers register 0xc0 */
@@ -668,26 +669,20 @@ void UsbLine::agere_fill(libusb_transfer *t)
 	t->length = off;
 }
 
-/* see usb_line.h (update_leds()): the modem's two LEDs (GPIO outputs, lit
-   when clear, as Agere's drivers leave them unlit set: at start and on
-   stop): READY/DATA (D8) lit while it runs, flickering while data passes
-   online; OH (D6) lit off hook, blinking fast while the line rings;
-   written only when they change */
+/* see usb_line.h (update_leds()): the modem's OH LED (D6, GPIO 4, lit
+   while set): lit off hook, blinking fast while the line rings; written
+   only when it changes. (READY/DATA, D8, is not on GPIOs 0 to 15: not
+   driven) */
 void UsbLine::agere_leds(dcore::Modem &m)
 {
 	u64 now = now_ms();
-	bool online = m.link_state() == dcore::LinkState::Online;
-	online_seen_ = online_seen_ || online;
-	if (online && m.tx_pending())
-		agere_data_ms_ = now;
-	bool ready = true;
-	if (online && agere_data_ms_ && now - agere_data_ms_ < LED_DATA_MS)
-		ready = now / LED_FLICKER_MS % 2 == 0;
+	online_seen_ = online_seen_ ||
+		m.link_state() == dcore::LinkState::Online;
 	bool oh = hook_ == MODEM_HOOK_OFF;
 	if (!oh && agere_ring_ms_ && now - agere_ring_ms_ < LED_RING_MS)
 		oh = now / LED_FAST_MS % 2 == 0;
-	u16 v = static_cast<u16>((agere_gpio_ & GPIO_LED_MASK) |
-				 (ready ? 0 : GPIO_LED_READY) | (oh ? 0 : GPIO_LED_OH));
+	u16 v = static_cast<u16>((agere_gpio_ & ~GPIO_LED_OH) |
+				 (oh ? GPIO_LED_OH : 0));
 	if (v == agere_gpio_)
 		return;
 	if (agere_write16(GPIO_OUT, v))
@@ -723,33 +718,39 @@ void UsbLine::agere_led_probe()
 	/* (its value, if more than 1: the ms each step lasts) */
 	int ms = e && atoi(e) > 1 ? atoi(e) : PROBE_MS;
 	int gap = ms * PROBE_GAP_MS / PROBE_MS;
-	u16 dir = 0, in = 0, out = 0;
-	agere_read16(GPIO_DIR, &dir);
-	agere_read16(GPIO_DIR + 4, &in);
-	agere_read16(GPIO_OUT, &out);
-	DBG("Agere: LED probe: GPIO directions %04x, inputs %04x, outputs "
-	    "%04x; each output flipped for %d ms in turn\n", dir, in, out,
+	/* (words: the GPIOs' 32 bits, a word written by the ROM as one) */
+	auto get = [this](u32 a) {
+		u8 b[4] = { 0, 0, 0, 0 };
+		agere_read(a, b, 4);
+		return b[0] | u32{b[1]} << 8 | u32{b[2]} << 16 | u32{b[3]} << 24;
+	};
+	auto put = [this](u32 a, u32 v) {
+		u8 b[4] = { static_cast<u8>(v), static_cast<u8>(v >> 8),
+			    static_cast<u8>(v >> 16), static_cast<u8>(v >> 24) };
+		agere_cmd(CMD_WRITE, 4, static_cast<u16>(a),
+			  static_cast<u16>(a >> 16), b);
+	};
+	u32 dir = get(GPIO_DIR), in = get(GPIO_DIR + 4), out = get(GPIO_OUT);
+	DBG("Agere: LED probe: GPIO directions %08x, inputs %08x, outputs "
+	    "%08x; each output flipped for %d ms in turn\n", dir, in, out,
 	    ms);
-	for (int k = 0; k < 16; k++) {
-		u16 v = static_cast<u16>(out ^ (1u << k)), back = 0;
-		agere_write16(GPIO_OUT, v);
-		agere_read16(GPIO_OUT, &back);
-		DBG("Agere: LED probe step %d: GPIO %d %s (wrote %04x, read "
-		    "%04x)\n", k + 1, k, v >> k & 1 ? "high" : "low", v, back);
+	if (dir != 0xffffffff) {
+		put(GPIO_DIR, 0xffffffff);
+		DBG("Agere: LED probe: directions %08x read back\n",
+		    get(GPIO_DIR));
+	}
+	for (int k = 0; k < 32; k++) {
+		u32 v = out ^ (1u << k);
+		put(GPIO_OUT, v);
+		DBG("Agere: LED probe step %d: GPIO %d %s (wrote %08x, read "
+		    "%08x)\n", k + 1, k, v >> k & 1 ? "high" : "low", v,
+		    get(GPIO_OUT));
 		std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-		agere_write16(GPIO_OUT, out);
+		put(GPIO_OUT, out);
 		std::this_thread::sleep_for(std::chrono::milliseconds(gap));
 	}
-	/* (and the directions the other way, in case 1 is an input) */
-	agere_write16(GPIO_DIR, 0);
-	agere_write16(GPIO_OUT, static_cast<u16>(out & ~GPIO_LED));
-	DBG("Agere: LED probe step 17: directions 0000, GPIO 2 and 3 low\n");
-	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-	agere_write16(GPIO_OUT, static_cast<u16>(out | GPIO_LED));
-	DBG("Agere: LED probe step 18: directions 0000, GPIO 2 and 3 high\n");
-	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-	agere_write16(GPIO_DIR, dir);
-	agere_write16(GPIO_OUT, out);
+	put(GPIO_DIR, dir);
+	put(GPIO_OUT, out);
 	DBG("Agere: LED probe over\n");
 }
 
