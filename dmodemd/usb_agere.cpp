@@ -124,7 +124,7 @@ const u16 MER_GAIN1 = 0xc990, MER_GAIN2 = 0x3b0e;
    packets a transfer (6 ms, as Windows' driver has them: 24) */
 const u8 ISO_ALT = 1;
 const s16 ISO_MAX = 16, ISO_HEAD = 4;
-const s16 OUT_MOST = (ISO_MAX - ISO_HEAD) / 2, IN_MOST = 10;
+const s16 IN_MOST = 10;
 const s16 AGERE_PACKETS = 24;
 /* the ROM's "no samples" count */
 const u16 NONE = 0xaa55;
@@ -487,12 +487,12 @@ bool UsbLine::agere_streams()
 	agere_regs("streaming");
 	if (getenv("DMODEM_AGERE_DUMP"))
 		agere_dump();
-	agere_transfers_ = 3;
+	agere_transfers_ = 16;
 	if (const char *e = getenv("DMODEM_AGERE_TRANSFERS"))
 		agere_transfers_ = static_cast<s16>(std::max(2L, std::min(
 			static_cast<long>(MAX_TRANSFERS), strtol(e, nullptr, 10))));
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
-	agere_owed_ = 0;
+	agere_lead_ = agere_lead_lo_ = agere_lead_hi_ = 0;
 	agere_last_in_ms_ = 0;
 	agere_stopped_ = false;
 	agere_ahead_ = static_cast<s32>(AGERE_RATE);
@@ -642,11 +642,8 @@ void UsbLine::agere_in(libusb_transfer *t)
 				agere_seen_ = true;
 			}
 		}
-		/* (owed a second's at most: a modem that has stopped giving
-		   its samples is not paid back for longer; less is caught up,
-		   OUT_MOST a packet against the 2 that come) */
-		agere_owed_ = std::min<s32>(agere_owed_ + n, static_cast<s32>(AGERE_RATE));
-		agere_owed_most_ = std::max(agere_owed_most_, agere_owed_);
+		agere_lead_ -= n;
+		agere_lead_lo_ = std::min(agere_lead_lo_, agere_lead_);
 		agere_in_n_ += static_cast<u64>(n);
 		got += n;
 		if (status != agere_status_)
@@ -667,53 +664,72 @@ void UsbLine::agere_in(libusb_transfer *t)
 	bool stopped = agere_last_in_ms_ && now - agere_last_in_ms_ > 500;
 	if (stopped && !agere_stopped_)
 		DBG("Agere: its samples stopped %" PRIu64 " ms ago: %" PRIu64 " in, %" PRIu64
-		    " out, %d owed (at most %d), %" PRIu64 " packets short, %zu to play\n",
-		    now - agere_last_in_ms_, agere_in_n_, agere_out_n_, agere_owed_,
-		    agere_owed_most_, agere_short_, iso_.out_buf.size());
+		    " out, lead %" PRId64 " (%" PRId64 " to %" PRId64 "), %" PRIu64
+		    " packets of silence, %zu to play\n",
+		    now - agere_last_in_ms_, agere_in_n_, agere_out_n_, agere_lead_,
+		    agere_lead_lo_, agere_lead_hi_, agere_short_, iso_.out_buf.size());
 	agere_stopped_ = stopped;
 	if (now - agere_stats_ms_ >= 10000) {
 		agere_stats_ms_ = now;
-		DBG("Agere: %" PRIu64 " samples in, %" PRIu64 " out, %d owed (at most %d), %" PRIu64
-		    " packets short, %zu to play\n", agere_in_n_, agere_out_n_, agere_owed_,
-		    agere_owed_most_, agere_short_, iso_.out_buf.size());
-		agere_owed_most_ = agere_owed_;
+		DBG("Agere: %" PRIu64 " samples in, %" PRIu64 " out, lead %" PRId64 " (%" PRId64
+		    " to %" PRId64 "), %" PRIu64 " packets of silence, %zu to play\n",
+		    agere_in_n_, agere_out_n_, agere_lead_, agere_lead_lo_, agere_lead_hi_,
+		    agere_short_, iso_.out_buf.size());
+		agere_lead_lo_ = agere_lead_hi_ = agere_lead_;
 	}
 }
 
-/* see usb_line.h: an OUT transfer's packets filled: each the samples owed
-   (as many as have come in, OUT_MOST at most) that the modem has given;
-   the rest owed still, for the next packets (silence sent for them would
-   leave the modem's samples behind, its playback ever further ahead) */
+/* see usb_line.h: an OUT transfer filled, as Windows' driver paces them
+   (AGRSM.sys 0x1ba37): 2 samples a packet, 48 a transfer; 46 while more
+   have gone to the modem than have come from it, 50 while fewer (one
+   packet of 4), so its transmit ring keeps its lead of 24 (never more
+   than 4 a packet: an even pace, not bursts). The playback's samples,
+   silence if it has none */
 void UsbLine::agere_fill(libusb_transfer *t)
 {
+	s16 total = agere_lead_ > 0 ? 46 : agere_lead_ < 0 ? 50 : 48;
 	s16 off = 0;
 	for (int i = 0; i < t->num_iso_packets; i++) {
-		s16 n = static_cast<s16>(std::min<s32>(
-			std::min<s32>(agere_owed_, OUT_MOST),
-			static_cast<s32>(iso_.out_buf.size())));
-		agere_owed_ -= n;
-		agere_out_n_ += static_cast<u64>(n);
-		/* (less than owed and its room: the playback ran short) */
-		if (n < std::min<s32>(agere_owed_ + n, OUT_MOST))
-			agere_short_++;
+		s16 n = 2;
+		if (total == 46 && i >= t->num_iso_packets - 2)
+			n = 1;
+		else if (total == 50 && i == t->num_iso_packets - 1)
+			n = 4;
 		u8 *b = t->buffer + off;
 		b[0] = static_cast<u8>(n);
 		b[1] = static_cast<u8>(n >> 8);
 		b[2] = b[3] = 0;
+		bool silence = false;
 		for (s16 k = 0; k < n; k++) {
 			s16 x = 0;
 			if (!iso_.out_buf.empty()) {
 				x = iso_.out_buf.front();
 				iso_.out_buf.pop_front();
+			} else {
+				silence = true;
 			}
 			b[ISO_HEAD + 2 * k] = static_cast<u8>(x);
 			b[ISO_HEAD + 1 + 2 * k] = static_cast<u8>(x >> 8);
 		}
+		if (silence)
+			agere_short_++;
 		s16 len = static_cast<s16>(ISO_HEAD + 2 * n);
 		t->iso_packet_desc[i].length = static_cast<unsigned>(len);
 		off = static_cast<s16>(off + len);
 	}
 	t->length = off;
+}
+
+/* see usb_line.h */
+void UsbLine::agere_sent(libusb_transfer *t)
+{
+	s64 n = 0;
+	for (int i = 0; i < t->num_iso_packets; i++)
+		if (t->iso_packet_desc[i].length >= static_cast<unsigned>(ISO_HEAD))
+			n += (t->iso_packet_desc[i].length - ISO_HEAD) / 2;
+	agere_lead_ += n;
+	agere_lead_hi_ = std::max(agere_lead_hi_, agere_lead_);
+	agere_out_n_ += static_cast<u64>(n);
 }
 
 /* see usb_line.h (update_leds()): the modem's OH LED (D6, GPIO 4, lit

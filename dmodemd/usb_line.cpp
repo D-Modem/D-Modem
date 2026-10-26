@@ -1018,9 +1018,11 @@ void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 		l->gone("unplugged");
 	if (l->dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
-	/* (the Agere modem's: sent again at once, with what is owed: its
-	   ROM answers each OUT packet with an IN one) */
+	/* (the Agere modem's: sent again at once, paced as its samples come:
+	   its ROM answers each OUT packet with an IN one) */
 	if (l->kind_ == Kind::Agere) {
+		if (t->status == LIBUSB_TRANSFER_COMPLETED)
+			l->agere_sent(t);
 		l->agere_fill(t);
 		int err = libusb_submit_transfer(t);
 		if (err == 0)
@@ -1280,7 +1282,7 @@ void UsbLine::resume()
 	/* (the Agere modem's stream may have gone with a reset) */
 	if (kind_ == Kind::Agere && (!agere_table() || !agere_start()))
 		return;
-	agere_owed_ = 0;
+	agere_lead_ = 0;
 	/* the streams from their start again: nothing kept from before
 	   the suspend, the playback's lead a frame and a half */
 	for (Iso *st : { &iso_, &viso_ }) {

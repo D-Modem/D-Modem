@@ -210,7 +210,7 @@ public:
 private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
 	/* the most transfers a stream has each way (the Agere's: agere_transfers_) */
-	enum { MAX_TRANSFERS = 16 };
+	enum { MAX_TRANSFERS = 32 };
 	/* the three devices it drives */
 	enum class Kind { St7554, Stick, Agere };
 	/* an isochronous stream both ways: the codec's (the modem's line,
@@ -289,6 +289,8 @@ private:
 	void agere_dump();
 	void agere_in(libusb_transfer *t);
 	void agere_fill(libusb_transfer *t);
+	/* an OUT transfer done: its samples counted (agere_lead_) */
+	void agere_sent(libusb_transfer *t);
 	void agere_rate_check();
 	void agere_leds(dcore::Modem &m);
 	static bool agere_device(u16 vendor, u16 product);
@@ -379,18 +381,18 @@ private:
 	u64 flash_end_ = 0;
 	u16 rings_ = 0;                 /* ring detector changes not given */
 	/* the Agere modem: its ROM's version (0xffff unknown); the samples
-	   come and not yet sent back (each OUT packet as many as the IN ones
-	   brought); its transfers each way (DMODEM_AGERE_TRANSFERS, 2 to
-	   MAX_TRANSFERS: 3); the ring bit last seen; the status words
-	   logged; the samples' count and the clock when they started (the
-	   rate checked once), their range then */
+	   sent (OUT transfers done) less those come (IN), which sets each OUT
+	   transfer's 46, 48 or 50 (agere_fill()); its transfers each way
+	   (DMODEM_AGERE_TRANSFERS, 2 to MAX_TRANSFERS: 16); the ring bit last
+	   seen; the status words logged; the samples' count and the clock
+	   when they started (the rate checked once), their range then */
 	u16 agere_rom_ = 0xffff;
 	/* its codec a Polaris DAA (else a Mercury) */
 	bool agere_polaris_ = false;
-	s32 agere_owed_ = 0;
-	s16 agere_transfers_ = 3;
-	/* the playback's lead it may have past pump()'s (a second's: after a
-	   burst of its samples it catches up, OUT_MOST a packet) */
+	s64 agere_lead_ = 0;
+	s16 agere_transfers_ = 16;
+	/* the playback's lead it may have past pump()'s (a second's: the
+	   OUT transfers in flight take theirs from it at their own pace) */
 	s32 agere_ahead_ = 0;
 	bool agere_ring_ = false;
 	/* the line's clock when the ring bit was last seen (0: never); the
@@ -403,11 +405,12 @@ private:
 	u16 agere_status_ = 0;
 	u64 agere_t0_ = 0, agere_n0_ = 0;
 	bool agere_rate_said_ = false;
-	/* the stream's counts for the log: samples in and out, the most
-	   owed, OUT packets short of what was owed, odd IN packets; when
-	   samples last came, the last log of them, the stream stopped */
+	/* the stream's counts for the log: samples in and out, the lead's
+	   least and most since the last log, OUT packets of silence (the
+	   playback had none), odd IN packets; when samples last came, the
+	   last log of them, the stream stopped */
 	u64 agere_in_n_ = 0, agere_out_n_ = 0, agere_short_ = 0;
-	s32 agere_owed_most_ = 0;
+	s64 agere_lead_lo_ = 0, agere_lead_hi_ = 0;
 	u32 agere_odd_ = 0;
 	u64 agere_last_in_ms_ = 0, agere_stats_ms_ = 0;
 	bool agere_stopped_ = false;

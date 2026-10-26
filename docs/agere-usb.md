@@ -70,11 +70,17 @@ clock, 8000 a second.
 | 2–3 | a status word: bit 0 the ring detector (codec register 0x0a8 bit 2) |
 | 4… | n samples, S16 little-endian |
 
-So the host paces the packets, and the samples' rate is the codec's. dmodemd sends back as many
-samples as it has been sent (at most 6 a packet, the 16 octets' room), as it does for the
-ST7554's packets: the playback keeps the codec's clock. Its transfers are 24 packets (6 ms)
-each way, as Windows' are, three of them in flight (`DMODEM_AGERE_TRANSFERS` 2 to 16 instead);
-an OUT transfer goes again as soon as it is done, so that the ROM is never left without one.
+So the host paces the packets, and the samples' rate is the codec's. The ROM's rings check
+nothing: their indices wrap (a full transmit ring is written over, an empty one played again),
+and an IN packet takes up to 10 samples (0x940), 24 octets, past the 16 of a high speed
+packet: a backlog of 7 or more in the receive ring (a few slots without an OUT packet, 0.75
+ms) makes one that the host takes for babble, and the stream stops (the first device's, 38 s
+in, with 3 transfers in flight). So dmodemd keeps the slots full as Windows' driver does
+(AGRSM.sys 0x1ded8, 0x1ba37): 16 transfers of 24 packets (6 ms) in flight each way
+(`DMODEM_AGERE_TRANSFERS` 2 to 32; Windows' 32), an OUT transfer sent again as soon as it is
+done, each one 48 samples, 2 a packet, or 46 while more samples have gone to the modem than
+have come from it, 50 while fewer (one packet of 4): its transmit ring keeps its lead of 24,
+at an even pace, never in bursts. Silence if the playback has none.
 
 **The function table.** The ROM's main routine (0x1616) sets the codec interface up at boot
 (0x1416), then calls entries 4 and 5 of a table of functions at `0x70000a64` for ever. At boot
