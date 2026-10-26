@@ -653,6 +653,9 @@ void UsbLine::agere_in(libusb_transfer *t)
 			s16 x = static_cast<s16>(b[ISO_HEAD + 2 * k] |
 						 u16{b[ISO_HEAD + 1 + 2 * k]} << 8);
 			iso_.in_buf.push_back(x);
+			agere_win_lo_ = agere_win_seen_ ? std::min(agere_win_lo_, x) : x;
+			agere_win_hi_ = agere_win_seen_ ? std::max(agere_win_hi_, x) : x;
+			agere_win_seen_ = true;
 			/* (their range, for the rate's log line) */
 			if (agere_t0_ && !agere_rate_said_) {
 				agere_lo_ = agere_seen_ ? std::min(agere_lo_, x) : x;
@@ -664,8 +667,15 @@ void UsbLine::agere_in(libusb_transfer *t)
 		agere_lead_lo_ = std::min(agere_lead_lo_, agere_lead_);
 		agere_in_n_ += static_cast<u64>(n);
 		got += n;
-		if (status != agere_status_)
-			TRACE("Agere: status %04x\n", status);
+		if (status != agere_status_) {
+			if (agere_status_said_ < 20) {
+				agere_status_said_++;
+				DBG("Agere: status %04x (%s hook)\n", status,
+				    hook_ == MODEM_HOOK_OFF ? "off" : "on");
+			} else {
+				TRACE("Agere: status %04x\n", status);
+			}
+		}
 		agere_status_ = status;
 		agere_ring_ = (status & 1) != 0;
 		if (agere_ring_)
@@ -692,14 +702,16 @@ void UsbLine::agere_in(libusb_transfer *t)
 	if (now - agere_stats_ms_ >= 10000) {
 		agere_stats_ms_ = now;
 		DBG("Agere: %" PRIu64 " samples in, %" PRIu64 " out, lead %" PRId64 " (%" PRId64
-		    " to %" PRId64 "), the ring's lead %+" PRId64 " past its 24, transfers %" PRIu64
+		    " to %" PRId64 "), samples %d to %d (%s hook), the ring's lead %+" PRId64 " past its 24, transfers %" PRIu64
 		    " longer and %" PRIu64 " shorter, %" PRIu64 " packets of silence, %zu to play; IN "
 		    "packets %" PRIu64 " failed, %" PRIu64 " short, %u odd\n",
 		    agere_in_n_, agere_out_n_, agere_lead_, agere_lead_lo_, agere_lead_hi_,
+		    agere_win_lo_, agere_win_hi_, hook_ == MODEM_HOOK_OFF ? "off" : "on",
 		    agere_drift_, agere_longer_,
 		    agere_shorter_, agere_short_, iso_.out_buf.size(), agere_in_bad_,
 		    agere_in_short_, agere_odd_);
 		agere_lead_lo_ = agere_lead_hi_ = agere_lead_;
+		agere_win_seen_ = false;
 	}
 }
 
@@ -1036,6 +1048,31 @@ void UsbLine::agere_regs(const char *when)
 			      b[6] | b[7] << 8, b[8] | b[9] << 8, b[10] | b[11] << 8,
 			      b[12] | b[13] << 8, b[14] | b[15] << 8);
 	DBG("%s\n", line);
+}
+
+/* see usb_line.h (pump()). (The drivers take the ring from the IN status
+   word alone, which the ROM fills from 0x0a8's bit 2 for either codec,
+   0x948; the first Polaris's rings were not seen there: read here too,
+   to say what moves) */
+void UsbLine::agere_ring_poll()
+{
+	u64 now = sys_ms();
+	if (now - agere_poll_ms_ < 100)
+		return;
+	agere_poll_ms_ = now;
+	u16 a8 = 0, c4 = 0;
+	if (!codec_read(0x0a8, &a8) || !codec_read(0x0c4, &c4))
+		return;
+	if ((a8 != agere_0a8_ || c4 != agere_0c4_) && agere_poll_said_ < 40) {
+		agere_poll_said_++;
+		DBG("Agere: on hook: codec 0a8 %04x, 0c4 %04x\n", a8, c4);
+	}
+	agere_0a8_ = a8;
+	agere_0c4_ = c4;
+	if (a8 & 0x0004) {
+		agere_ring_ms_ = now_ms();
+		rings_++;
+	}
 }
 
 /* see usb_line.h (pump()): the samples' rate, once, measured over

@@ -299,6 +299,13 @@ private:
 	/* an OUT transfer done: its samples counted (agere_lead_) */
 	void agere_sent(libusb_transfer *t);
 	void agere_rate_check();
+	/* on hook, every 100 ms: codec registers 0x0a8 (bit 2 the ring
+	   detector's) and 0x0c4 read, their changes said (a few), 0x0a8's
+	   bit 2 a ring as the IN status word's is */
+	void agere_ring_poll();
+	u64 agere_poll_ms_ = 0;
+	u16 agere_0a8_ = 0xffff, agere_0c4_ = 0xffff;
+	u32 agere_poll_said_ = 0;
 	void agere_leds(dcore::Modem &m);
 	static bool agere_device(u16 vendor, u16 product);
 	bool start_iso(Iso &s, s16 pkt);
@@ -439,6 +446,11 @@ private:
 	s64 agere_lead_lo_ = 0, agere_lead_hi_ = 0;
 	u32 agere_odd_ = 0;
 	u64 agere_in_bad_ = 0, agere_in_short_ = 0;
+	/* the samples' range since the last log of the counts; the status
+	   words' changes said (a few) */
+	s16 agere_win_lo_ = 0, agere_win_hi_ = 0;
+	bool agere_win_seen_ = false;
+	u32 agere_status_said_ = 0;
 	u64 agere_last_in_ms_ = 0, agere_stats_ms_ = 0;
 	bool agere_stopped_ = false;
 	s16 agere_lo_ = 0, agere_hi_ = 0;

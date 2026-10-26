@@ -1597,6 +1597,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 	iso_.in_buf.erase(iso_.in_buf.begin(), iso_.in_buf.begin() + used);
 	if (kind_ == Kind::Agere && used)
 		agere_rate_check();
+	if (kind_ == Kind::Agere && hook_ != MODEM_HOOK_OFF)
+		agere_ring_poll();
 	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
