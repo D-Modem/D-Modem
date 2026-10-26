@@ -86,7 +86,7 @@ const uint32_t ROM_TABLE[8] = { 0x14af, 0x14af, 0x221c, 0x14af,
 				0x14b1, 0x14af, 0x14af, 0x14af };
 /* a packet's time, in the line's samples; the receive ring; the
    samples an IN packet, at most; the ROM's "none" */
-const unsigned SLOT = 2, RING = 32, IN_MOST = 10;
+const unsigned SLOT = 2, RING = 32, IN_MOST = 10, TX_RING = 48, TX_LEAD = 24;
 const uint16_t NONE = 0xaa55;
 /* command 0x0c's data, as Windows' driver sends it at high speed */
 const uint16_t START[4] = { 2, 0, 24, 0x2aaa };
@@ -112,6 +112,14 @@ struct Fake {
 	std::deque<int16_t> in;         /* the receive ring */
 	bool ringing = false;           /* the ring signal on what came */
 	unsigned since = 0;             /* the samples come since a slot */
+	/* the transmit ring (48, a lead of 24 at 0x0c), the codec playing
+	   from it each slot what came in it; a slot every SLOT samples, or
+	   one more or fewer as FAKE_AGERE_DRIFT (ppm: the codec's clock
+	   faster than the USB's) has it; the ring's overruns and underruns */
+	std::deque<int16_t> tx;
+	unsigned slot_len = SLOT;
+	long drift = 0, drift_acc = 0;
+	unsigned overruns = 0, underruns = 0;
 	int half = -1;
 	std::deque<libusb_transfer *> in_q, out_q, cancelled;
 	std::map<libusb_transfer *, int> next;   /* a transfer's next packet */
@@ -199,6 +207,7 @@ void switch_to(uint8_t which, bool on)
 }
 
 void tick();
+void play(unsigned n);
 
 /* the exchange's samples that have come: into the receive ring while
    streaming (its oldest lost when it is full), the ring signal on them;
@@ -228,10 +237,22 @@ void take()
 				if (!fake.hook && (s > RING_LEVEL || s < -RING_LEVEL))
 					fake.ringing = true;
 			}
-			/* (a packet's time each SLOT samples, as they come) */
-			if (++fake.since == SLOT) {
+			/* (a packet's time each SLOT samples, as they come; one
+			   more or fewer now and then, FAKE_AGERE_DRIFT) */
+			if (++fake.since >= fake.slot_len) {
+				unsigned played = fake.since;
 				fake.since = 0;
 				tick();
+				play(played);
+				fake.slot_len = SLOT;
+				fake.drift_acc += fake.drift * (long)SLOT;
+				if (fake.drift_acc >= 1000000) {
+					fake.drift_acc -= 1000000;
+					fake.slot_len = SLOT + 1;
+				} else if (fake.drift_acc <= -1000000) {
+					fake.drift_acc += 1000000;
+					fake.slot_len = SLOT - 1;
+				}
 			}
 		}
 	}
@@ -278,9 +299,16 @@ bool slot()
 	unsigned n = len >= 4 ? (unsigned)(b[0] | b[1] << 8) : 0;
 	if (n > (len - 4) / 2)
 		n = (len - 4) / 2;
-	if (fake.streaming && fake.play >= 0 && n &&
-	    !fake_net::send_all(fake.play, b + 4, n * 2))
-		fake.gone = true;
+	/* (into the transmit ring: one too many written over its oldest) */
+	if (fake.streaming)
+		for (unsigned j = 0; j < n; j++) {
+			fake.tx.push_back((int16_t)(b[4 + 2 * j] | b[5 + 2 * j] << 8));
+			if (fake.tx.size() > TX_RING) {
+				fake.tx.pop_front();
+				if (fake.overruns++ < 3)
+					fprintf(stderr, "fake Agere: transmit ring overrun\n");
+			}
+		}
 	t->iso_packet_desc[i].actual_length = len;
 	t->iso_packet_desc[i].status = LIBUSB_TRANSFER_COMPLETED;
 	if (fake.next[t] == t->num_iso_packets) {
@@ -359,6 +387,28 @@ void tick()
 		fake.in.clear();
 	else
 		slot();
+}
+
+/* the codec's n samples played from the transmit ring to the exchange,
+   streaming (silence for any it hasn't) */
+void play(unsigned n)
+{
+	if (!fake.streaming || fake.play < 0 || fake.gone)
+		return;
+	unsigned char b[2 * (SLOT + 1)];
+	for (unsigned j = 0; j < n; j++) {
+		int16_t x = 0;
+		if (!fake.tx.empty()) {
+			x = fake.tx.front();
+			fake.tx.pop_front();
+		} else if (fake.underruns++ < 3) {
+			fprintf(stderr, "fake Agere: transmit ring underrun\n");
+		}
+		b[2 * j] = (uint8_t)x;
+		b[2 * j + 1] = (uint8_t)(x >> 8);
+	}
+	if (!fake_net::send_all(fake.play, b, n * 2))
+		fake.gone = true;
 }
 
 /* the configuration: interface 0, alternate settings 0 (no endpoints),
@@ -503,6 +553,7 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 				return LIBUSB_ERROR_PIPE;
 			}
 		fake.streaming = true;
+		fake.tx.assign(TX_LEAD, 0);
 		fake.in.clear();
 		fake.ringing = false;
 		return 0;
@@ -531,6 +582,8 @@ int LIBUSB_CALL libusb_init(libusb_context **ctx)
 	if (const char *r = getenv("FAKE_AGERE_ROM"))
 		fake.rom = (uint16_t)strtoul(r, nullptr, 16);
 	fake.polaris = getenv("FAKE_AGERE_POLARIS") != nullptr;
+	if (const char *e = getenv("FAKE_AGERE_DRIFT"))
+		fake.drift = strtol(e, nullptr, 10);
 	fake.full = getenv("FAKE_AGERE_FULL") != nullptr;
 	fake.patched = getenv("FAKE_AGERE_PATCHED") != nullptr;
 	if (ctx)

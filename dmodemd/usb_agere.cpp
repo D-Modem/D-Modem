@@ -125,9 +125,9 @@ const u16 MER_GAIN1 = 0xc990, MER_GAIN2 = 0x3b0e;
 const u8 ISO_ALT = 1;
 const s16 ISO_MAX = 16, ISO_HEAD = 4;
 const s16 IN_MOST = 10;
-/* how far the OUT samples' averaged lead may stray from its settled
-   value before a transfer is a sample longer or shorter (agere_fill()) */
-const s64 LEAD_SLACK = 6;
+/* how far the transmit ring's lead may stray from its 24 before an OUT
+   transfer is a sample longer or shorter (agere_fill()) */
+const s64 LEAD_SLACK = 3;
 const s16 AGERE_PACKETS = 24;
 /* the ROM's "no samples" count */
 const u16 NONE = 0xaa55;
@@ -494,16 +494,20 @@ bool UsbLine::agere_streams()
 	if (const char *e = getenv("DMODEM_AGERE_TRANSFERS"))
 		agere_transfers_ = static_cast<s16>(std::max(2L, std::min(
 			static_cast<long>(MAX_TRANSFERS), strtol(e, nullptr, 10))));
-	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
+	/* (the playback's: the OUT transfers in flight's silence, and three
+	   frames' to spare, so that a late frame of the modem's isn't a gap
+	   in what goes to the line: they took all it had before, its spare
+	   then a few samples) */
+	iso_.out_buf.assign(static_cast<size_t>(agere_transfers_ * AGERE_PACKETS * 2 + 3 * frame_), 0);
 	agere_lead_ = agere_lead_lo_ = agere_lead_hi_ = 0;
-	agere_avg_ = agere_ref_ = 0;
-	agere_settled_ = false;
+	agere_ins_.clear();
+	agere_outs_.clear();
+	agere_drift_ = agere_pending_ = 0;
 	agere_longer_ = agere_shorter_ = 0;
 	agere_last_in_ms_ = 0;
 	agere_stopped_ = false;
 	agere_ahead_ = static_cast<s32>(AGERE_RATE);
-	delay_ = static_cast<s16>(iso_.out_buf.size() + RING_AHEAD +
-				  agere_transfers_ * AGERE_PACKETS * 2);
+	delay_ = static_cast<s16>(iso_.out_buf.size() + RING_AHEAD);
 	for (s16 i = 0; i < agere_transfers_; i++) {
 		iso_.in[i] = libusb_alloc_transfer(AGERE_PACKETS);
 		iso_.out[i] = libusb_alloc_transfer(AGERE_PACKETS);
@@ -669,8 +673,10 @@ void UsbLine::agere_in(libusb_transfer *t)
 		if (agere_ring_)
 			rings_++;
 	}
-	/* (every 10 s: the samples each way, the most owed, the OUT packets
-	   short of what was owed; the stream's stopping, once) */
+	agere_ins_.push_back(got);
+	agere_pair();
+	/* (every 10 s: the samples each way, the ring's lead, the OUT
+	   transfers corrected; the stream's stopping, once) */
 	if (got)
 		agere_last_in_ms_ = now;
 	if (!agere_stats_ms_)
@@ -686,11 +692,11 @@ void UsbLine::agere_in(libusb_transfer *t)
 	if (now - agere_stats_ms_ >= 10000) {
 		agere_stats_ms_ = now;
 		DBG("Agere: %" PRIu64 " samples in, %" PRIu64 " out, lead %" PRId64 " (%" PRId64
-		    " to %" PRId64 "), averaged %+" PRId64 " from its settled value, transfers %" PRIu64
+		    " to %" PRId64 "), the ring's lead %+" PRId64 " past its 24, transfers %" PRIu64
 		    " longer and %" PRIu64 " shorter, %" PRIu64 " packets of silence, %zu to play; IN "
 		    "packets %" PRIu64 " failed, %" PRIu64 " short, %u odd\n",
 		    agere_in_n_, agere_out_n_, agere_lead_, agere_lead_lo_, agere_lead_hi_,
-		    agere_settled_ ? (agere_avg_ - agere_ref_) / 256 : 0, agere_longer_,
+		    agere_drift_, agere_longer_,
 		    agere_shorter_, agere_short_, iso_.out_buf.size(), agere_in_bad_,
 		    agere_in_short_, agere_odd_);
 		agere_lead_lo_ = agere_lead_hi_ = agere_lead_;
@@ -699,36 +705,30 @@ void UsbLine::agere_in(libusb_transfer *t)
 
 /* see usb_line.h: an OUT transfer filled: 2 samples a packet, 48 a
    transfer, the codec's 2 a packet's time, so the modem's transmit ring
-   keeps the lead of 24 that 0x0c gave it. That lead is the samples sent
-   (OUT transfers done) less those come (IN), but for a bias of how the
-   two kinds of transfer complete, and that count jumps by a transfer's
-   48 as they do: so it is averaged, its average once the stream has
-   settled (2 s) is its reference, and a transfer is one sample shorter
-   (47: a packet of 1) or longer (49: a packet of 3) only while the
-   average is more than LEAD_SLACK from it: for the drift between the
-   USB's clock and the codec's, a sample or so a second. (Windows'
-   driver's own, 46 or 50 by the count's sign at each transfer, AGRSM.sys
-   0x1ba37, makes it wander past the ring's 24 either way: the samples
-   played chopped.) The playback's samples, silence if it has none */
+   keeps the lead of 24 that 0x0c gave it. What it has strayed is the
+   paired transfers' OUT samples less their IN ones (agere_pair()): one
+   sample shorter (47: a packet of 1) or longer (49: a packet of 3)
+   while that is past LEAD_SLACK, for the drift between the USB's clock
+   and the codec's, a sample or so a second. (The samples sent less those
+   come, as they complete, jump by a transfer's 48 as IN and OUT ones
+   complete in either order: Windows' driver's 46 or 50 by that count's
+   sign, AGRSM.sys 0x1ba37, is a random walk past the ring's 24, the
+   samples played chopped.) The playback's samples, silence if it has
+   none */
 void UsbLine::agere_fill(libusb_transfer *t)
 {
+	/* (with the corrections already in flight, 16 transfers' worth: not
+	   made again while they come) */
 	s16 total = AGERE_PACKETS * 2;
-	agere_avg_ += (agere_lead_ * 256 - agere_avg_) / 64;
-	if (!agere_settled_ && agere_in_n_ >= 2 * AGERE_RATE) {
-		agere_settled_ = true;
-		agere_ref_ = agere_avg_;
-		DBG("Agere: the stream settled, its lead %" PRId64 "\n", agere_ref_ / 256);
+	s64 drift = agere_drift_ + agere_pending_;
+	if (drift > LEAD_SLACK) {
+		total--;
+		agere_shorter_++;
+	} else if (drift < -LEAD_SLACK) {
+		total++;
+		agere_longer_++;
 	}
-	if (agere_settled_) {
-		s64 off = (agere_avg_ - agere_ref_) / 256;
-		if (off > LEAD_SLACK) {
-			total--;
-			agere_shorter_++;
-		} else if (off < -LEAD_SLACK) {
-			total++;
-			agere_longer_++;
-		}
-	}
+	agere_pending_ += total - AGERE_PACKETS * 2;
 	s16 off = 0;
 	for (int i = 0; i < t->num_iso_packets; i++) {
 		s16 n = 2;
@@ -769,6 +769,24 @@ void UsbLine::agere_sent(libusb_transfer *t)
 	agere_lead_ += n;
 	agere_lead_hi_ = std::max(agere_lead_hi_, agere_lead_);
 	agere_out_n_ += static_cast<u64>(n);
+	agere_outs_.push_back(static_cast<s32>(n));
+	agere_pending_ -= n - AGERE_PACKETS * 2;
+	agere_pair();
+}
+
+/* see usb_line.h: the transfers done each way paired, in order */
+void UsbLine::agere_pair()
+{
+	while (!agere_ins_.empty() && !agere_outs_.empty()) {
+		agere_drift_ += agere_outs_.front() - agere_ins_.front();
+		agere_outs_.pop_front();
+		agere_ins_.pop_front();
+	}
+	/* (one way stopped: not paired for ever) */
+	while (agere_ins_.size() > 64)
+		agere_ins_.pop_front();
+	while (agere_outs_.size() > 64)
+		agere_outs_.pop_front();
 }
 
 /* see usb_line.h (update_leds()): the modem's OH LED (D6, GPIO 4, lit

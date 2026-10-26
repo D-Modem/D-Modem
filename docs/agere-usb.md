@@ -79,13 +79,18 @@ in, with 3 transfers in flight). So dmodemd keeps the slots full as Windows' dri
 (AGRSM.sys 0x1ded8, 0x1ba37): 16 transfers of 24 packets (6 ms) in flight each way
 (`DMODEM_AGERE_TRANSFERS` 2 to 32; Windows' 32), an OUT transfer sent again as soon as it is
 done, each one 48 samples, 2 a packet: the codec's pace, so its transmit ring keeps the lead of
-24 that 0x0c gave it. Windows' driver makes a transfer 46 or 50 by the sign of the samples sent
-less those come at each transfer; that count jumps by a transfer's 48 as the two kinds complete,
-so its corrections go either way at random and the ring's lead wanders past 24 (the first
-device's V.8 call menu went out chopped: the remote never answered it). dmodemd averages the
-count, takes its average once the stream has settled (2 s) as the ring's 24, and makes a
-transfer 47 or 49 only while the average strays more than 6 from it: for the drift between the
-USB's clock and the codec's. Silence if the playback has none.
+24 that 0x0c gave it. What the ring's lead has strayed is the OUT samples less the IN ones of
+the transfers paired in order (the k-th OUT transfer with the k-th IN one: the same packets'
+times); a transfer is 47 or 49 (a packet of 1 or 3) while that, with the corrections still in
+flight, is past 3: for the drift between the USB's clock and the codec's. (Windows' driver
+makes a transfer 46 or 50 by the sign of the samples sent less those come at each transfer: a
+count that jumps by a transfer's 48 as IN and OUT transfers complete in either order, so its
+corrections go either way at random and the ring's lead wanders past its 24; on the first
+device the V.8 call menu went out chopped and the remote never answered it.) The playback
+starts with the transfers' silence and three frames (60 ms) to spare, so that a frame of the
+modem's that comes late is no gap in what goes to the line; silence if it has none (counted in
+the log). The fake device (`test/fake_agere.cpp`) models the transmit ring, its overruns and
+underruns, and a codec clock off the USB's (`FAKE_AGERE_DRIFT`, ppm).
 
 **The function table.** The ROM's main routine (0x1616) sets the codec interface up at boot
 (0x1416), then calls entries 4 and 5 of a table of functions at `0x70000a64` for ever. At boot

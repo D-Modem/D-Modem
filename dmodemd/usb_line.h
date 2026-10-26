@@ -400,12 +400,18 @@ private:
 	/* its codec a Polaris DAA (else a Mercury) */
 	bool agere_polaris_ = false;
 	s64 agere_lead_ = 0;
-	/* the lead averaged (in 1/256ths of a sample), its value once settled
-	   (the reference the modem's own lead of 24 has), whether settled;
+	/* the transfers done each way, their samples, not yet paired: the
+	   k-th OUT transfer with the k-th IN one, the same packets' times
+	   (the ROM answers each OUT packet with an IN one); the paired ones'
+	   OUT samples less IN, the modem's transmit ring's lead past its 24;
 	   the OUT transfers made one longer or shorter */
-	s64 agere_avg_ = 0, agere_ref_ = 0;
-	bool agere_settled_ = false;
+	std::deque<s32> agere_ins_, agere_outs_;
+	s64 agere_drift_ = 0;
+	/* the corrections of the OUT transfers in flight (not yet in
+	   agere_drift_) */
+	s64 agere_pending_ = 0;
 	u64 agere_longer_ = 0, agere_shorter_ = 0;
+	void agere_pair();
 	s16 agere_transfers_ = 16;
 	/* the playback's lead it may have past pump()'s (a second's: the
 	   OUT transfers in flight take theirs from it at their own pace) */

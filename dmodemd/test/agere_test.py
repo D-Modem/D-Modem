@@ -228,7 +228,9 @@ try:
     os.chmod(recs, 0o777)
     a = Modem("1001", "dmodem41", args=["-r", "9600", "-d2"], FAKE_AGERE_POLARIS="1",
               DMODEM_USB_REC=os.path.join(recs, "line"))
-    b = Modem("1002", "dmodem42")
+    # (1002's codec's clock 300 ppm faster than its USB's: its transmit ring
+    # kept by the OUT transfers' corrections, no overrun or underrun)
+    b = Modem("1002", "dmodem42", FAKE_AGERE_DRIFT="300")
     check("-r 9600: 8000 Hz all the same", a.expect_log(b"8000 Hz, its rate (not 9600)", 5))
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
@@ -279,6 +281,10 @@ try:
     check("1002 NO CARRIER", b.expect(rb"NO CARRIER\r\n", 30))
     time.sleep(0.5)
     check("1001's OH off on hook", led(a, b"OH") == b"off")
+    for m in (a, b):
+        log = open(m.log.name, "rb").read()
+        check("%s's transmit ring kept (no overrun, no underrun)" % m.n,
+              b"transmit ring overrun" not in log and b"transmit ring underrun" not in log)
     # the call recorded (DMODEM_USB_REC): a stereo WAV at 8000 Hz, the line's sound in it
     wavs = sorted(f for f in os.listdir(recs) if f.startswith("line-") and f.endswith(".wav"))
     w = open(os.path.join(recs, wavs[0]), "rb").read() if wavs else b""
