@@ -247,7 +247,6 @@ const s16 FIFO_SAMPLES = 64 + 24;
 const u16 TIMEOUT_MS = 1000;
 
 /* the Agere modem's hook: its codec's register (0 off hook, 1 on) */
-const u16 AGERE_HOOK = 0x00c0;
 
 /* the configuration's remote wakeup bit; USB's DEVICE_REMOTE_WAKEUP */
 const u8 CONFIG_REMOTE_WAKEUP = 0x20;
@@ -1340,7 +1339,7 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 	hook_ = state;
 	flash_end_ = 0;
 	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
-		return agere_hook(off) ? 0 : -1;
+		return agere_hook(off) && agere_caller_id(!off) ? 0 : -1;
 	if (kind_ == Kind::Stick)
 		return off ? (stick_out(LP_SET_HOOK, 1) &&
 			      stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
@@ -1421,7 +1420,7 @@ void UsbLine::hook_flash(dcore::Modem &, u16 ms)
 		return;
 	}
 	if (kind_ == Kind::Agere)
-		codec_write(AGERE_HOOK, 1);
+		agere_hook(false);
 	else
 		set_gpio(static_cast<u16>(gpio_ & ~GPIO_HOOK1));
 	flash_end_ =
@@ -1437,7 +1436,7 @@ s16 UsbLine::pulse_hook(dcore::Modem &, bool broken)
 	if (kind_ == Kind::Stick)
 		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
 	if (kind_ == Kind::Agere)
-		return codec_write(AGERE_HOOK, broken ? 1 : 0) ? 0 : -1;
+		return agere_hook(!broken) ? 0 : -1;
 	u16 v = broken ? static_cast<u16>(gpio_ & ~GPIO_HOOK1) :
 		static_cast<u16>(gpio_ | GPIO_HOOK1);
 	if (intl_)
@@ -1680,7 +1679,7 @@ void UsbLine::close()
 		   them, the OH LED (GPIO 4) out */
 		u16 v;
 		agere_stop();
-		codec_write(AGERE_HOOK, 1);
+		agere_hook(false);
 		if (agere_read16(0x30000008, &v))
 			agere_write16(0x30000008, static_cast<u16>(
 				((v & 0xfff3) | 0x000c) & ~0x0010));

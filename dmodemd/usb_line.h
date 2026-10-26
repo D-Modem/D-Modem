@@ -274,8 +274,13 @@ private:
 	bool agere_table();
 	bool agere_start();
 	void agere_stop();
-	/* the hook (true: off) */
+	/* the hook (true: off), a Mercury's or a Polaris's */
 	bool agere_hook(bool off);
+	/* a Polaris DAA: started, caller ID on or off, its DAA registers */
+	bool agere_polaris();
+	bool agere_caller_id(bool on);
+	bool daa_write(u8 reg, u8 v);
+	bool daa_read(u8 reg, u8 *v);
 	/* the GPIOs flipped one by one, if asked (DMODEM_AGERE_LED_PROBE) */
 	void agere_led_probe();
 	/* the controller's and codec's registers logged (-d2) */
@@ -380,6 +385,8 @@ private:
 	   logged; the samples' count and the clock when they started (the
 	   rate checked once), their range then */
 	u16 agere_rom_ = 0xffff;
+	/* its codec a Polaris DAA (else a Mercury) */
+	bool agere_polaris_ = false;
 	s32 agere_owed_ = 0;
 	s16 agere_transfers_ = 3;
 	/* the playback's lead it may have past pump()'s (a second's: after a

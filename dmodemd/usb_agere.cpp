@@ -102,6 +102,16 @@ const u32 ROM_TABLE[8] = { 0x14af, 0x14af, 0x221c, 0x14af,
 
 /* the Mercury codec's registers: the hook (0 off, 1 on), its ready bit */
 const u16 MER_HOOK = 0x00c0, MER_STATUS = 0x02dc;
+/* a Polaris DAA's (U2Pol*: the drivers take one when register 0xc0 reads
+   with bit 15 set): its link (0xc4 bit 2 once up), its line side's
+   control (0xd0), its calibration reading (0xdc), and its DAA registers
+   (written as 0x8000 | reg << 8 | value to 0xc8; read by writing reg << 8
+   there, then 0xcc) */
+const u16 POL_FLAG = 0x8000, POL_LINK = 0x00c4, POL_LINK_UP = 0x0004;
+const u16 POL_CTRL = 0x00d0, POL_CAL = 0x00dc;
+const u16 POL_DAA = 0x00c8, POL_DAA_READ = 0x00cc;
+const u32 CTRL_3C = 0xcd00003c;
+const u64 POL_LINK_MS = 500;
 /* the OH LED's blinking while the line rings, half a period (ms of the
    line's clock); how long a ring keeps it at it */
 const u64 LED_FAST_MS = 125, LED_RING_MS = 1000;
@@ -327,13 +337,11 @@ bool UsbLine::open_agere()
 	    !agere_write16(CTRL_30, static_cast<u16>(v & ~0x000c)) ||
 	    !agere_write16(CTRL_34, 2))
 		return false;
-	if (!codec_read(MER_HOOK, &v)) {
-		ERR("Agere USB modem: its codec does not answer register 0xc0: "
-		    "a \"Polaris\" DAA, which dmodemd does not drive yet "
-		    "(docs/agere-usb.md)\n");
-		return false;
-	}
-	if (!agere_mercury())
+	/* (as both drivers: bit 15 a Polaris; a read that fails, 0, a
+	   Mercury) */
+	agere_polaris_ = codec_read(MER_HOOK, &v) && (v & POL_FLAG);
+	DBG("Agere: a %s\n", agere_polaris_ ? "Polaris DAA" : "Mercury codec");
+	if (!(agere_polaris_ ? agere_polaris() : agere_mercury()))
 		return false;
 	agere_led_probe();
 	fifo_samples_ = RING_AHEAD;
@@ -695,13 +703,143 @@ void UsbLine::agere_stop()
 	agere_cmd(CMD_ISO_STOP, 0, 0, 0, nullptr);
 }
 
-/* see usb_line.h: the hook (codec register 0xc0: 0 off hook). (Not the
-   ROM's ring indices as the drivers write them off hook, 0x70001020 =
-   {24, 0}: on the first device that stopped its stream and then its
-   commands) */
+/* see usb_line.h: the hook (codec register 0xc0: a Mercury's 0 off hook,
+   a Polaris's 1). (Not the ROM's ring indices as the drivers write them,
+   0x70001020 = {24, 0}: on the first device that stopped its stream and
+   then its commands) */
 bool UsbLine::agere_hook(bool off)
 {
-	return codec_write(MER_HOOK, off ? 0 : 1);
+	return codec_write(MER_HOOK, off == agere_polaris_ ? 1 : 0);
+}
+
+/* see usb_line.h: a Polaris's caller ID (DAA register 2: 8 on, 4 off;
+   U2PolEnableCallerID); nothing on a Mercury, which hears the line on
+   hook */
+bool UsbLine::agere_caller_id(bool on)
+{
+	return !agere_polaris_ || daa_write(2, on ? 0x08 : 0x04);
+}
+
+/* see usb_line.h: a Polaris's DAA register written (through 0xc8) */
+bool UsbLine::daa_write(u8 reg, u8 v)
+{
+	return codec_write(POL_DAA, static_cast<u16>(0x8000 | reg << 8 | v));
+}
+
+/* see usb_line.h: a Polaris's DAA register read: reg << 8 to 0xc8, then
+   0xcc once its high octet is reg (5 ms apart, 10 tries) */
+bool UsbLine::daa_read(u8 reg, u8 *v)
+{
+	for (s16 i = 0; i < 10; i++) {
+		u16 r;
+		if (!codec_write(POL_DAA, static_cast<u16>(reg << 8)))
+			return false;
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		if (codec_read(POL_DAA_READ, &r) && (r >> 8) == reg) {
+			*v = static_cast<u8>(r);
+			return true;
+		}
+	}
+	return false;
+}
+
+/* see usb_line.h: a Polaris DAA started, as U2PolInitCodec (Windows'
+   0x1f330), then its country's registers as U2PolConfigureCountry
+   (0x1f720; but the pulse dialling's timings and the country's own
+   register 3), on hook with caller ID on */
+bool UsbLine::agere_polaris()
+{
+	auto ms = [](int n) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(n));
+	};
+	struct W {
+		u16 reg, v;
+	};
+	static const W init[] = {
+		{ 0x0ac, 0x0000 }, { 0x048, 0x0002 }, { 0x2c0, 0x0007 },
+		{ 0x2c4, 0xfffe }, { 0x2d4, 0x1411 }, { 0x2d0, 0x9f02 },
+		{ 0x2cc, 0x01c0 }, { 0x2cc, 0x41c0 }, { 0x048, 0x0000 },
+		{ 0x0b4, 0x11ff },
+	};
+	u16 v;
+	if (!agere_read16(CTRL_30, &v) ||
+	    !agere_write16(CTRL_30, static_cast<u16>(v & ~0x000c)) ||
+	    !agere_write16(CTRL_34, 2) || !agere_read16(CTRL_3C, &v) ||
+	    !agere_write16(CTRL_3C, 5))
+		return false;
+	for (const W &w : init)
+		if (!codec_write(w.reg, w.v))
+			return false;
+	/* its link: pulsed until 0xc4 says it is up (500 ms at most) */
+	u64 t0 = sys_ms();
+	u16 link = 0;
+	do {
+		if (!codec_write(0x0a4, 0) || !agere_write16(CTRL_3C, 7))
+			return false;
+		ms(5);
+		agere_write16(CTRL_3C, 5);
+		ms(5);
+		codec_write(POL_CTRL, 0x2fd2);
+		ms(5);
+		codec_write(POL_CTRL, 0x1fd2);
+		codec_write(POL_CTRL, 0xd7d2);
+		codec_write(POL_CTRL, 0x17d2);
+		ms(5);
+		if (!codec_read(POL_LINK, &link))
+			return false;
+	} while (!(link & POL_LINK_UP) && sys_ms() - t0 < POL_LINK_MS);
+	DBG("Agere: Polaris link %s (%04x)\n",
+	    link & POL_LINK_UP ? "up" : "not up", link);
+	/* its calibration: 16 readings of 0xdc's bits 10 to 14 (Gray coded)
+	   that are not 0, 100 at most, their mean + 3 into 0xd0's bits 6 to
+	   10 if 7 to 20 */
+	u32 sum = 0;
+	s16 got = 0;
+	for (s16 i = 0; i < 100 && got < 16; i++) {
+		if (!codec_read(POL_CAL, &v))
+			break;
+		u32 g = v >> 10 & 0x1f;
+		g ^= g >> 1;
+		g ^= g >> 2;
+		g ^= g >> 4;
+		if (g) {
+			sum += g;
+			got++;
+		}
+	}
+	u32 n = (sum >> 4) + 3;
+	DBG("Agere: Polaris calibration %u (%d readings)\n", n, got);
+	if (got == 16 && n > 7 && n < 20) {
+		codec_write(POL_CTRL, static_cast<u16>((0x17d2 & 0xf83f) |
+						       (n | 0x20) << 6));
+	} else {
+		codec_write(POL_CTRL, 0xdfd2);
+		codec_write(POL_CTRL, 0x1fd2);
+	}
+	/* U2SetRing(2), on hook */
+	if (!codec_write(0x08c, 0) || !agere_read16(CTRL_30, &v) ||
+	    !agere_write16(CTRL_30, static_cast<u16>(v & ~0x0004)) ||
+	    !agere_write16(CTRL_44, 3) || !codec_write(0x0e0, 0x0304) ||
+	    !codec_write(0x0a4, 0) || !codec_write(MER_0B0, 0xbb80) ||
+	    !agere_hook(false))
+		return false;
+	/* the country's: its DAA's registers 1 and 2, its revision (0x16)
+	   for register 5, 6, 7, 0x1b, 4 */
+	u8 rev = 0;
+	daa_write(1, 0x80);
+	daa_write(1, 0x01);
+	daa_write(2, 0x04);
+	ms(5);
+	if (!daa_read(0x16, &rev))
+		DBG("Agere: Polaris DAA: no revision\n");
+	u8 r17 = 0;
+	bool ok = daa_write(5, rev > 2 ? 0x50 : 0x54) && daa_write(6, 0x0a) &&
+		daa_write(7, 0x0a) && daa_write(0x1b, 0x01) &&
+		codec_write(0x0e0, 0x0304) && daa_write(4, 0x00);
+	ms(5);
+	daa_read(0x17, &r17);
+	DBG("Agere: Polaris DAA revision %u, register 0x17 %02x\n", rev, r17);
+	return ok && agere_caller_id(true);
 }
 
 /* see usb_line.h: with DMODEM_AGERE_LED_PROBE (in the environment, or

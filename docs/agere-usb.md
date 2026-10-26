@@ -46,7 +46,7 @@ at high speed it takes interface 0's alternate setting 1 and the ROM streams the
 
 (At full speed, `0x90000018` not 1, Windows sends 8, 0, 24, 0 and 24-octet packets; dmodemd
 does not do full speed.) The ROM then clears codec register 0x0ac, leaves the codec's page at 2,
-takes (0x2d4 & 7) + 1 samples a codec interrupt (2 after the Mercury's start-up), sends two IN
+takes (0x2d4 & 7) + 1 samples a codec interrupt (2 after either codec's start-up), sends two IN
 packets of silence, and turns on two interrupts: 25, the codec's (0x4ac), and 17, the data
 endpoints' (0x578). **Command 0x0d** stops it (0x2b02: the two interrupts off).
 
@@ -143,9 +143,25 @@ and as `usb_agere.cpp` does it:
    with 0xf; not with a ROM 1.0.6, whose clock change is Agere's code, nor one whose version
    is not known: its clock is left as it is).
 5. `CUsbInit`: `0xcd000030` bits 2 and 3 cleared, `0xcd000034` = 2, then codec register 0xc0
-   read. If the read fails the codec is a "Polaris" DAA (`U2Pol*`), whose start-up has a
-   calibration loop; dmodemd does not drive one yet and says so. Otherwise it is a Mercury.
-6. The Mercury's start-up (`UsbMerInitCodec`, the same in Windows' driver), as codec register
+   read. With its bit 15 set the codec is a "Polaris" DAA (`U2Pol*`; Linux's `CUsbInit` at
+   d61e2, Windows' 0x27950); otherwise (a read that fails reads 0) a Mercury (`UsbMer*`). The
+   Hiro H50113's is a Polaris: 0xc0 reads 0x8000. (The ROM's own boot writes Polaris values:
+   0x0d0 = 0x0fd2, 0x0e0 = 0x0307, 0x0f4 = 0xff, at 0x1416.)
+6. A Polaris's start-up (`U2PolInitCodec`, Windows' 0x1f330): `0xcd000030` bits 2 and 3
+   cleared, `0xcd000034` = 2, `0xcd00003c` = 5; codec 0x0ac = 0, 0x048 = 2, 0x2c0 = 7, 0x2c4 =
+   0xfffe, 0x2d4 = 0x1411, 0x2d0 = 0x9f02, 0x2cc = 0x01c0, 0x2cc = 0x41c0, 0x048 = 0, 0x0b4 =
+   0x11ff. Then its link, until 0x0c4's bit 2 says it is up (500 ms at most): 0x0a4 = 0,
+   `0xcd00003c` = 7, 5 ms, 5, 5 ms; 0x0d0 = 0x2fd2, 5 ms, 0x1fd2, 0xd7d2, 0x17d2, 5 ms. Then its
+   calibration: 16 readings (of 100 at most) of 0x0dc's bits 10 to 14 that are not 0, Gray
+   coded; their mean + 3, n, if 7 < n < 20 into 0x0d0's bits 6 to 10 (`(0x0d0 & 0xf83f) |
+   (n | 0x20) << 6`), else 0x0d0 = 0xdfd2, 0x1fd2. Then 0x08c = 0, `U2SetRing(2)` (step 3 with
+   0x0a4 = 0, 0x0b0 = 0xbb80), on hook. Then the country's (`U2PolConfigureCountry`, Windows'
+   0x1f720), DAA registers written as 0x8000 | reg << 8 | value to codec 0x0c8 (read: reg << 8
+   to 0x0c8, 5 ms, then 0x0cc, whose high octet is reg once it answers): 1 = 0x80, 1 = 1, 2 =
+   4, 5 ms, its revision (0x16) read, 5 = 0x50 (0x54 if the revision is 2 or less), 6 = 0x0a,
+   7 = 0x0a, 0x1b = 1, codec 0x0e0 = 0x0304, 4 = 0. (Not done yet: the pulse dialling's timings,
+   0x0e4 and 0x0e8, and the country's register 3.) Then caller ID on (DAA 2 = 8).
+6. (Or) a Mercury's start-up (`UsbMerInitCodec`, the same in Windows' driver), as codec register
    writes, in order: 0x0b4 = 0x1387; 0x0a4 |= 0x0004; 0x0e0 = 0x0304, 0x0e4 = 0x0070, 0x0e8 =
    0x042f, 0x0f0 = 0x2242, 0x048 = 2, 0x2c0 = 0x01ff, 0x2c4 = 0xfaac, 0x2d4 = 0x1411, 0x2d0 =
    0x9f02, 0x2cc = 0x01c0, 0x048 = 3, 0x3cc = 1, 0x3c0 = 0x187c, 0x3d0 = 0, 0x3cc = 0x0101,
@@ -162,17 +178,19 @@ again.
 
 ## The line
 
-- **Hook:** codec register 0xc0, 0 off hook and 1 on hook (`UsbMerSetHook`). Pulse dialling
-  and the hook flash break and make it. Off hook the drivers also write the ROM's ring
+- **Hook:** codec register 0xc0: a Mercury's 0 off hook and 1 on hook (`UsbMerSetHook`), a
+  Polaris's the other way round, 1 off hook (`U2PolSetHook`). Pulse dialling and the hook
+  flash break and make it. A Polaris's caller ID is DAA register 2: 8 on hook, 4 off hook. Off hook the drivers also write the ROM's ring
   indices, `0x70001020` = {24, 0} (two words, command 3 with 8 octets); dmodemd does not: on
   the first device that stopped the stream's samples, then its commands. (The indices are four
   words from `0x7000101c`.)
 - **Ring:** bit 0 of the IN status word. dmodemd gives the core a ring pulse for each IN
   packet that has it, while on hook.
 - **Caller ID:** the Mercury's `EnableCallerID` does nothing, so the codec hears the line on
-  hook. Caller ID comes in the samples, as on an ALSA codec.
-- **Country:** the Mercury's `ConfigureCountry` does nothing in this driver (the Polaris has
-  one). dmodemd's `-c` and `AT+GCI` set the core's rules only.
+  hook; a Polaris's is on while on hook (above). Caller ID comes in the samples, as on an ALSA
+  codec.
+- **Country:** the Mercury's `ConfigureCountry` does nothing in this driver; a Polaris's gets
+  its default registers (above). dmodemd's `-c` and `AT+GCI` set the core's rules only.
 - **Loop current:** fixed in this driver (`UsbMerCheckLoopCurrent`: 20).
 - **LEDs:** two on the Hiro H50113's board (the FCC's AS560USB), D8 "READY/DATA" and D6 "OH".
   Agere's drivers set GPIOs 2 and 3 (`0x30000008`) at start and on stop (`U2SetEnumerationLED`,
@@ -221,12 +239,15 @@ Useful to send if it does not work: that log, with the dump.
 
 ### The first device
 
-An Android phone's, through D-Modem for Android: ROM 1.2.1, a Mercury, high speed. dmodemd then
+An Android phone's, through D-Modem for Android: ROM 1.2.1, a Polaris (driven at first as a
+Mercury: dmodemd had the test of register 0xc0 the wrong way round), high speed. dmodemd then
 streamed on alternate setting 2 with Agere's Linux bulk patch, as `agrmodemlib.o` does. Its
 command 0x10 takes its mode in `wIndex` (`Usb_StartIsoDma` sends it so). The samples came, but at
 2459 a second whatever the ARM's clock, and all -32768: the patch polls the codec's FIFOs from
 the ROM's main loop with the codec's interrupt off, and the codec's samples did not come through
-it. Reading the ROM and Windows' driver showed the stream above, which needs no patch.
+it. Reading the ROM and Windows' driver showed the stream above, which needs no patch. On it the
+samples were the same, 2457 a second of -32768: the Polaris was given the Mercury's start-up,
+its link never pulsed up.
 
-Not done yet: full speed, the Polaris DAA, the country's DAA settings (none for the Mercury in
-this driver), and the voice and speakerphone parts.
+Not done yet: full speed, a Polaris's country-specific DAA settings (its pulse timings and
+register 3), and the voice and speakerphone parts.

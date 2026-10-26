@@ -23,8 +23,8 @@
  *    FAKE_AGERE_SOCKET is the exchange's socket of the line.  Opening the
  *    device connects to it as fake_modem_card.cpp does ('C' the line's
  *    samples, 'P' the modem's, 'K' the switches), its line monitor on:
- *    the Mercury codec hears the line on hook.  The hook is codec
- *    register 0xc0 (0 off hook).  The line's samples (8000 Hz) pace the
+ *    the codec hears the line on hook.  The hook is codec register 0xc0
+ *    (a Mercury's 0 off hook; a Polaris's 1).  The line's samples (8000 Hz) pace the
  *    device: each 2 of them a packet's time (250 us, a packet every 2
  *    microframes).  In each, the next OUT packet queued is taken (its
  *    header's count of samples to the exchange) and, streaming, answered
@@ -37,7 +37,9 @@
  *
  *    FAKE_AGERE_ROM=<hex>: the ROM's version (command 1), 0x121 without
  *    it; 0x106 has no command 0x12 (a stall).
- *    FAKE_AGERE_POLARIS=1: the codec does not answer (command 0x0a stalls).
+ *    FAKE_AGERE_POLARIS=1: a Polaris DAA (register 0xc0's bit 15 set; the
+ *    hook 1 off; its samples 0x8000 until its link is pulsed up; its DAA's
+ *    registers through 0xc8 and 0xcc), as on the Hiro H50113.
  *    FAKE_AGERE_FULL=1: a full speed device.
  *    FAKE_AGERE_PATCHED=1: a bulk patch's entries 4 and 7 in the function
  *    table, as an earlier driver left them.
@@ -99,6 +101,8 @@ struct Fake {
 	uint16_t rom = 0x121;
 	bool polaris = false, full = false, patched = false;
 	bool hook = false;              /* off hook */
+	bool link = false;              /* a Polaris's link up */
+	std::map<uint8_t, uint8_t> daa; /* a Polaris's DAA registers */
 	bool streaming = false;         /* command 0x0c, not 0x0d since */
 	bool said_stuck = false;
 	int led = -1;        /* the LEDs lit (-1 not yet written) */
@@ -165,6 +169,16 @@ void reset()
 	set16(USB_SPEED, fake.full ? 0 : 1);
 	fake.codec[0x2dc] = 1;
 	fake.codec[0xc0] = 1;
+	/* (a Polaris: 0xc0's bit 15 set, its link down, a calibration
+	   reading of 10 Gray coded, its DAA's revision 3) */
+	fake.link = false;
+	fake.daa.clear();
+	if (fake.polaris) {
+		fake.codec[0xc0] = 0x8000;
+		fake.codec[0xdc] = 15 << 10;
+		fake.daa[0x16] = 3;
+		fake.daa[0x17] = 0x5a;
+	}
 	fake.streaming = false;
 	fake.led = -1;
 }
@@ -204,6 +218,9 @@ void take()
 			}
 			int16_t s = (int16_t)(fake.half | b[i] << 8);
 			fake.half = -1;
+			/* (a Polaris's link down: its data register's 0x8000) */
+			if (fake.polaris && !fake.link)
+				s = -32768;
 			if (fake.streaming) {
 				fake.in.push_back(s);
 				if (fake.in.size() > RING)
@@ -408,7 +425,7 @@ int command_in(uint8_t cmd, uint16_t index, uint16_t value,
 			data[i] = fake.mem[a + i];
 		return length;
 	case 0x0a:
-		if (fake.polaris || length < 2)
+		if (length < 2)
 			return LIBUSB_ERROR_PIPE;
 		data[0] = (uint8_t)fake.codec[index];
 		data[1] = (uint8_t)(fake.codec[index] >> 8);
@@ -450,11 +467,25 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 			"wanted\n", index);
 		return LIBUSB_ERROR_PIPE;
 	case 0x0b:
-		if (fake.polaris)
-			return LIBUSB_ERROR_PIPE;
 		fake.codec[index] = value;
-		if (index == 0xc0 && (value == 0) != fake.hook) {
-			fake.hook = value == 0;
+		/* (a Polaris: its link up once its line side is pulsed; its
+		   DAA's registers through 0xc8, read back in 0xcc) */
+		if (fake.polaris && index == 0xd0 && value == 0x17d2 && !fake.link) {
+			fake.link = true;
+			fake.codec[0xc4] = 4;
+			fprintf(stderr, "fake Agere: Polaris link up\n");
+		}
+		if (fake.polaris && index == 0xc8) {
+			uint8_t r = (uint8_t)(value >> 8 & 0x7f);
+			if (value & 0x8000)
+				fake.daa[r] = (uint8_t)value;
+			else
+				fake.codec[0xcc] = (uint16_t)(r << 8 | fake.daa[r]);
+		}
+		if (fake.polaris && index == 0xc0)
+			fake.codec[0xc0] = (uint16_t)(0x8000 | value);
+		if (index == 0xc0 && (fake.polaris ? value == 1 : value == 0) != fake.hook) {
+			fake.hook = fake.polaris ? value == 1 : value == 0;
 			switch_to(0, fake.hook);
 		}
 		return 0;

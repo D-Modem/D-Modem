@@ -178,7 +178,6 @@ def fails(why, *args, **env):
     return p.returncode != 0 and why in p.stdout
 
 try:
-    check("a Polaris DAA: said", fails('a "Polaris" DAA', FAKE_AGERE_POLARIS="1"))
     check("full speed: said", fails("not at high speed", FAKE_AGERE_FULL="1"))
 
     # the ROM's stream: from a function table as the ROM has it, or with
@@ -222,7 +221,8 @@ try:
     check("-probe: its samples come after", samples_come(m))
     m.stop()
 
-    a = Modem("1001", "dmodem41", args=["-r", "9600"])
+    # 1001 a Polaris DAA (as the Hiro H50113), 1002 a Mercury codec
+    a = Modem("1001", "dmodem41", args=["-r", "9600", "-d2"], FAKE_AGERE_POLARIS="1")
     b = Modem("1002", "dmodem42")
     check("-r 9600: 8000 Hz all the same", a.expect_log(b"8000 Hz, its rate (not 9600)", 5))
     for m in (a, b):
@@ -234,6 +234,11 @@ try:
     check("1001 waits for the dial tone", a.cmd(b"ATX4"))
 
     t = time.time()
+    check("1001 a Polaris, its link up", a.expect_log(b"Agere: a Polaris DAA", 1)
+          and a.expect_log(b"fake Agere: Polaris link up", 1)
+          and a.expect_log(b"Agere: Polaris link up", 1))
+    check("1001 Polaris calibrated (13)", a.expect_log(b"Agere: Polaris calibration 13 (16 readings)", 1))
+    check("1001 Polaris DAA revision 3", a.expect_log(b"Agere: Polaris DAA revision 3", 1))
     check("1001's OH not lit", led(a, b"OH") == b"off")
     a.dte.write(b"ATD1002\r")
     time.sleep(0.5)
