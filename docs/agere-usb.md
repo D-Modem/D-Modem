@@ -134,10 +134,10 @@ and as `usb_agere.cpp` does it:
    `usb_control_msg` are the wrong way round.)
 2. Interface 0's alternate setting 1: the isochronous endpoints.
 3. Windows' first step at start (AGRSM.sys 0x1e820 with mode 1, from 0x1e530; Linux's
-   `U2SetRing`, which only its Polaris code calls): `0xcd000030` bit 2 cleared, `0xcd000034`'s
-   neighbour `0xcd000044` = 3, then codec registers 0x0e0 = 0x0304, 0x0a4 = 0x0004 and 0x0b0 =
+   `U2SetRing`, which only its Polaris code calls): `0xcd000030` bit 2 cleared, `0xcd000044` = 3, then codec registers 0x0e0 = 0x0304, 0x0a4 = 0x0004 and 0x0b0 =
    0x000a. Nothing else writes 0xcd000044 or 0x0b0 (it reads 0xbb80, 48000, from power-on;
-   Windows writes that back at stop). Whether the codec's rate needs it is not yet known.
+   Windows writes that back at stop). It reads back as written, but did not change the first
+   device's rate.
 4. The ROM's version (command 1). The GPIOs: `0xcd000030` bit 3 cleared, `0xcd000034` = 2,
    `0x30000000` = 0xffff. The LED (`0x30000008` bits 2 and 3 set). The clock lowered (0x12
    with 0xf; not with a ROM 1.0.6, whose clock change is Agere's code, nor one whose version
@@ -163,9 +163,10 @@ again.
 ## The line
 
 - **Hook:** codec register 0xc0, 0 off hook and 1 on hook (`UsbMerSetHook`). Pulse dialling
-  and the hook flash break and make it. Off hook (but for a pulse's make) the drivers also
-  write the ROM's ring indices on the endpoints' side, `0x70001020` = {24, 0} (two words,
-  command 3 with 8 octets), and so does dmodemd.
+  and the hook flash break and make it. Off hook the drivers also write the ROM's ring
+  indices, `0x70001020` = {24, 0} (two words, command 3 with 8 octets); dmodemd does not: on
+  the first device that stopped the stream's samples, then its commands. (The indices are four
+  words from `0x7000101c`.)
 - **Ring:** bit 0 of the IN status word. dmodemd gives the core a ring pulse for each IN
   packet that has it, while on hook.
 - **Caller ID:** the Mercury's `EnableCallerID` does nothing, so the codec hears the line on
@@ -179,7 +180,11 @@ again.
   clear. dmodemd drives them itself (memory writes, command 3), as it does the SmartUSB56's:
   READY/DATA lit while it runs, flickering while data passes online; OH lit off hook, blinking
   fast while the line rings; both unlit at close. Which bit is which is a guess (2 READY/DATA,
-  3 OH): the first device has not shown them yet.
+  3 OH): on the first device neither has lit yet. `DMODEM_AGERE_LED_PROBE=1` (or a build with
+  `DMODEM_AGERE_LED_PROBE` defined) flips each GPIO output 0 to 15 in turn at start, 1.5 s each
+  with 0.5 s between (`=<ms>`: that long each), then with the directions 0 lowers and raises
+  GPIOs 2 and 3, and logs each step (`Agere: LED probe step N: ...`, what was written and read
+  back): which step lights an LED says which output drives it.
 
 The samples are S16 little-endian, mono, at 8000 Hz (the host driver's sample rate converter
 takes only 8000 Hz: `ConverterSetSampleRate`). dmodemd runs the line at 8000 Hz whatever `-r`
@@ -190,8 +195,9 @@ registers 0x080 to 0x2dc and the ROM's ring indices as the stream starts and aga
 
 The first device's stream came at 2457 samples a second, all -32768 (0x8000, from the codec's
 data register `0xe0000100` itself), with the stream above and with the bulk patch alike, at
-either ARM clock: the codec is not sampling at 8000 Hz. Step 3 is the start-up's one write
-that Windows' driver makes and dmodemd did not.
+either ARM clock: the codec is not sampling at 8000 Hz. Step 3, the start-up's one write that
+Windows' driver makes and dmodemd did not, did not change that. Codec register 0x0c0 reads with
+bit 15 set (0x8001 on hook), 0x080 0x1f40 (8000).
 
 ## Bring-up
 

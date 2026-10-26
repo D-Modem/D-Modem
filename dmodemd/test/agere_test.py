@@ -212,6 +212,15 @@ try:
     check("-transfers: its samples come", samples_come(m))
     m.stop()
 
+    # the LED probe: each GPIO flipped in turn, logged, then put back
+    m = Modem("1001", "dmodem40", "-probe", args=["-d2"], DMODEM_AGERE_LED_PROBE="20")
+    check("-probe: over", m.expect_log(b"Agere: LED probe over", 10))
+    log = open(m.log.name, "rb").read()
+    check("-probe: GPIO 2 low, read back", b"step 3: GPIO 2 low (wrote 0008, read 0008)" in log)
+    check("-probe: READY/DATA lit by it", b"fake Agere: LED READY/DATA on" in log.split(b"LED probe over")[0])
+    check("-probe: its samples come after", samples_come(m))
+    m.stop()
+
     a = Modem("1001", "dmodem41", args=["-r", "9600"])
     b = Modem("1002", "dmodem42")
     check("-r 9600: 8000 Hz all the same", a.expect_log(b"8000 Hz, its rate (not 9600)", 5))
@@ -229,7 +238,7 @@ try:
     a.dte.write(b"ATD1002\r")
     time.sleep(0.5)
     check("1001's OH lit off hook", led(a, b"OH") == b"on")
-    check("1001's rings put back off hook", a.expect_log(b"fake Agere: rings 24 0", 5))
+    check("1001's rings left alone off hook", b"fake Agere: rings" not in open(a.log.name, "rb").read())
     check("1002 RING", b.expect(rb"RING\r\n", 15))
     n = led_changes(b, b"OH")
     time.sleep(0.6)

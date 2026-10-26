@@ -274,8 +274,10 @@ private:
 	bool agere_table();
 	bool agere_start();
 	void agere_stop();
-	/* the hook (true: off), its ring indices reset off hook */
+	/* the hook (true: off) */
 	bool agere_hook(bool off);
+	/* the GPIOs flipped one by one, if asked (DMODEM_AGERE_LED_PROBE) */
+	void agere_led_probe();
 	/* the controller's and codec's registers logged (-d2) */
 	void agere_regs(const char *when);
 	bool agere_streams();

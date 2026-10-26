@@ -38,6 +38,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
 
 #include <log.h>
 
@@ -79,9 +80,10 @@ const u32 GPIO_DIR = 0x30000000, GPIO_OUT = 0x30000008;
    controller's 0xcd000044, then codec registers 0x0e0, 0x0a4, 0x0b0 */
 const u32 CTRL_44 = 0xcd000044;
 const u16 MER_0B0 = 0x00b0;
-/* the ROM's ring indices on the endpoints' side: written {24, 0} (two
-   words) off hook, as both drivers do */
-const u32 RINGS = 0x70001020;
+/* the ROM's ring indices (four words), logged */
+const u32 RINGS = 0x7000101c;
+/* how long each GPIO is flipped for in the LED probe (agere_led_probe()) */
+const int PROBE_MS = 1500, PROBE_GAP_MS = 500;
 const u16 GPIO_LED_MASK = 0xfff3, GPIO_LED = 0x000c;
 /* its LEDs (D8 READY/DATA, D6 OH on the Hiro H50113's board), each lit
    when its bit is clear: which bit is which, a guess */
@@ -332,6 +334,7 @@ bool UsbLine::open_agere()
 	}
 	if (!agere_mercury())
 		return false;
+	agere_led_probe();
 	fifo_samples_ = RING_AHEAD;
 	return true;
 }
@@ -697,17 +700,57 @@ void UsbLine::agere_stop()
 	agere_cmd(CMD_ISO_STOP, 0, 0, 0, nullptr);
 }
 
-/* see usb_line.h: the hook (codec register 0xc0: 0 off hook); off hook
-   the ROM's ring indices too, as both drivers have it */
+/* see usb_line.h: the hook (codec register 0xc0: 0 off hook). (Not the
+   ROM's ring indices as the drivers write them off hook, 0x70001020 =
+   {24, 0}: on the first device that stopped its stream and then its
+   commands) */
 bool UsbLine::agere_hook(bool off)
 {
-	if (!codec_write(MER_HOOK, off ? 0 : 1))
-		return false;
-	if (!off)
-		return true;
-	u8 d[8] = { static_cast<u8>(RING_AHEAD), 0, 0, 0, 0, 0, 0, 0 };
-	return agere_cmd(CMD_WRITE, sizeof(d), static_cast<u16>(RINGS),
-			 static_cast<u16>(RINGS >> 16), d);
+	return codec_write(MER_HOOK, off ? 0 : 1);
+}
+
+/* see usb_line.h: with DMODEM_AGERE_LED_PROBE (in the environment, or
+   built in), each of GPIO outputs 0 to 15 flipped in turn for PROBE_MS,
+   what was written and read back logged: which lights an LED says
+   which drives it */
+void UsbLine::agere_led_probe()
+{
+	const char *e = getenv("DMODEM_AGERE_LED_PROBE");
+#ifndef DMODEM_AGERE_LED_PROBE
+	if (!e)
+		return;
+#endif
+	/* (its value, if more than 1: the ms each step lasts) */
+	int ms = e && atoi(e) > 1 ? atoi(e) : PROBE_MS;
+	int gap = ms * PROBE_GAP_MS / PROBE_MS;
+	u16 dir = 0, in = 0, out = 0;
+	agere_read16(GPIO_DIR, &dir);
+	agere_read16(GPIO_DIR + 4, &in);
+	agere_read16(GPIO_OUT, &out);
+	DBG("Agere: LED probe: GPIO directions %04x, inputs %04x, outputs "
+	    "%04x; each output flipped for %d ms in turn\n", dir, in, out,
+	    ms);
+	for (int k = 0; k < 16; k++) {
+		u16 v = static_cast<u16>(out ^ (1u << k)), back = 0;
+		agere_write16(GPIO_OUT, v);
+		agere_read16(GPIO_OUT, &back);
+		DBG("Agere: LED probe step %d: GPIO %d %s (wrote %04x, read "
+		    "%04x)\n", k + 1, k, v >> k & 1 ? "high" : "low", v, back);
+		std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+		agere_write16(GPIO_OUT, out);
+		std::this_thread::sleep_for(std::chrono::milliseconds(gap));
+	}
+	/* (and the directions the other way, in case 1 is an input) */
+	agere_write16(GPIO_DIR, 0);
+	agere_write16(GPIO_OUT, static_cast<u16>(out & ~GPIO_LED));
+	DBG("Agere: LED probe step 17: directions 0000, GPIO 2 and 3 low\n");
+	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+	agere_write16(GPIO_OUT, static_cast<u16>(out | GPIO_LED));
+	DBG("Agere: LED probe step 18: directions 0000, GPIO 2 and 3 high\n");
+	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+	agere_write16(GPIO_DIR, dir);
+	agere_write16(GPIO_OUT, out);
+	DBG("Agere: LED probe over\n");
 }
 
 /* see usb_line.h: the registers that say how the codec runs, logged
@@ -715,7 +758,8 @@ bool UsbLine::agere_hook(bool off)
 void UsbLine::agere_regs(const char *when)
 {
 	static const u32 ctrl[] = { CTRL_PLL, CTRL_ARMCDR, CTRL_30, CTRL_34,
-				    CTRL_44 };
+				    CTRL_44, GPIO_DIR, GPIO_DIR + 4,
+				    GPIO_OUT };
 	static const u16 codec[] = { 0x080, 0x0a4, 0x0a8, 0x0ac, MER_0B0,
 				     0x0b8, MER_HOOK, 0x2d4, MER_STATUS };
 	char line[512];
@@ -734,7 +778,7 @@ void UsbLine::agere_regs(const char *when)
 				      r, v);
 	}
 	u8 b[16] = {};
-	if (n < static_cast<int>(sizeof(line)) && agere_read(0x7000101c, b, 16))
+	if (n < static_cast<int>(sizeof(line)) && agere_read(RINGS, b, 16))
 		n += snprintf(line + n, sizeof(line) - n,
 			      ", rings %u %u %u %u %u %u %u %u",
 			      b[0] | b[1] << 8, b[2] | b[3] << 8, b[4] | b[5] << 8,
