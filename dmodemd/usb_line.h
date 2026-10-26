@@ -3,8 +3,10 @@
  * Copyright (C) 2026 Neo-Desktop
  *
  *    usb_line.h - the modem's line a Smart Link SmartUSB56 (ST7554, USB
- *                 0483:7554 with an STLC7550 codec) or a pico-serial Line
- *                 stick (USB 1209:0002, a Si3056 DAA behind an RP2040)
+ *                 0483:7554 with an STLC7550 codec), a pico-serial Line
+ *                 stick (USB 1209:0002, a Si3056 DAA behind an RP2040) or
+ *                 an Agere USB 2.0 soft modem (USB 047E:2892 or 047E:2828,
+ *                 an Agere "USS" ARM controller with a Mercury codec)
  *                 through libusb: no kernel driver
  *
  *    The ST7554 is a USB bridge to a codec and a DAA: its registers are
@@ -32,6 +34,17 @@
  *    with its monitor on, so caller ID comes in the samples as on an ALSA
  *    codec.  The country's line settings (termination, current limit,
  *    ringer, on-hook speed: si3056.h) go into its DAA's registers.
+ *
+ *    The Agere modem (docs/agere-usb.md, usb_agere.cpp) is a USB
+ *    controller with an ARM in it whose ROM is patched, at each start,
+ *    with a "bulk patch" from Agere's own driver (set_agere_driver():
+ *    not ours to ship), so that its samples go on bulk endpoints:
+ *    100-octet transfers both ways of a header (the samples' count, a
+ *    status word: bit 0 the ring detector) and 48 samples, S16
+ *    little-endian at 8000 Hz.  Its codec's registers, its ARM's memory
+ *    and its commands are vendor requests; its hook is codec register
+ *    0xc0.  It hears the line on hook, so caller ID comes in the
+ *    samples.
  *
  */
 #ifndef DMODEMD_USB_LINE_H
@@ -107,10 +120,14 @@ public:
 	   Link's Windows driver drives it with Options.Buzzer
 	   (SetSpeakerVolume).  Not every board has one: off by default */
 	void set_buzzer(bool on) { buzzer_ = on; }
-	/* the modem dev ("" or "auto": the first SmartUSB56 or pico-serial
-	   Line; <bus>:<address> one of them, as lsusb shows them) opened at
-	   rate, its samples running, on hook; false with the reason on
-	   stderr */
+	/* an Agere modem's driver, whose bulk patch the modem needs (its
+	   AGRSM.sys, AGRSM64.sys, agrmodem.ko or agrmodemlib.o, any of
+	   their versions, or a directory with one): read at open() */
+	void set_agere_driver(const char *path) { agere_driver_ = path ? path : ""; }
+	/* the modem dev ("" or "auto": the first SmartUSB56, pico-serial
+	   Line or Agere modem; <bus>:<address> one of them, as lsusb shows
+	   them) opened at rate (an Agere modem at 8000 Hz whatever it is),
+	   its samples running, on hook; false with the reason on stderr */
 	bool open(const char *dev, u32 rate);
 	/* libusb's descriptors watched this turn (POSIX: Windows' libusb
 	   has none, and the caller polls every POLL_MS instead) */
@@ -164,7 +181,8 @@ public:
 	void country(dcore::Modem &m, const char *name) override;
 	/* for ATI3 */
 	const char *driver_name() override {
-		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" : "ST7554";
+		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" :
+			kind_ == Kind::Agere ? "Agere USB 2.0 (Mercury)" : "ST7554";
 	}
 	/* the modem's characters to the DTE: how many it took (data, for
 	   the data LED, once the call has been seen online: not its
@@ -180,17 +198,22 @@ public:
 		return samples_ * 1000 / rate_;
 	}
 
+	/* the rate the line dev (as open() takes it) will run at, asked
+	   for rate: an Agere modem's 8000 Hz, else rate (the bus looked
+	   at, nothing opened) */
+	static u32 line_rate(const char *dev, u32 rate);
 	/* "<bus>:<address>" into bus and addr; false if it is not that */
 	static bool parse_dev(const char *dev, int *bus, int *addr);
-	/* --usb list: each SmartUSB56 and pico-serial Line on stdout, its
+	/* --usb list: each SmartUSB56, pico-serial Line and Agere modem on
+	   stdout, its
 	   <bus>:<address> and whether it can be opened (on Windows: whether
 	   WinUSB is its driver); 0, or -1 if libusb can't start */
 	static s16 list();
 
 private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
-	/* the two devices it drives */
-	enum class Kind { St7554, Stick };
+	/* the three devices it drives */
+	enum class Kind { St7554, Stick, Agere };
 	/* an isochronous stream both ways: the codec's (the modem's line,
 	   S16 little-endian) or the voice codec's (set_voice_codec(): an
 	   octet a sample, at VOICE_RATE).  An OUT transfer goes when an
@@ -233,6 +256,27 @@ private:
 	   its own bits changed); false (logged) */
 	bool stick_country();
 	bool start_streams();
+	/* the Agere modem's (usb_agere.cpp): its start-up, its bulk patch
+	   from the driver, a vendor command (cmd, wLength, wIndex, wValue:
+	   IN or OUT as the command is), its ARM's memory and its codec's
+	   registers, the ROM's clock, the codec's start-up, the bulk
+	   transfers, an IN one done, an OUT one filled with n samples */
+	bool open_agere();
+	bool load_agere_patches();
+	bool agere_cmd(u8 cmd, u16 len, u16 index, u16 value, u8 *buf);
+	bool agere_read(u32 addr, u8 *buf, u16 len);
+	bool agere_read16(u32 addr, u16 *v);
+	bool agere_write16(u32 addr, u16 v);
+	bool codec_read(u16 reg, u16 *v);
+	bool codec_write(u16 reg, u16 v);
+	bool agere_clock(bool boost);
+	bool agere_bulk_patch();
+	bool agere_mercury();
+	bool agere_streams();
+	void agere_in(libusb_transfer *t);
+	void agere_fill(libusb_transfer *t, s16 n);
+	void agere_rate_check();
+	static bool agere_device(u16 vendor, u16 product);
 	bool start_iso(Iso &s, s16 pkt);
 	bool start_fifos();
 	void close();
@@ -319,6 +363,19 @@ private:
 	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
 	u64 flash_end_ = 0;
 	u16 rings_ = 0;                 /* ring detector changes not given */
+	/* the Agere modem: set_agere_driver(); its bulk patches found there
+	   (by name: v106, v121_flash, v121_rom, async_clockchange); its ROM's
+	   version (0xffff unknown); its bulk endpoints; the ring bit last
+	   seen; the status words logged; the samples' count and the clock
+	   when they started (the rate checked once) */
+	std::string agere_driver_;
+	std::vector<u8> agere_patch_[4];
+	u16 agere_rom_ = 0xffff;
+	u8 bulk_in_ = 0, bulk_out_ = 0;
+	bool agere_ring_ = false;
+	u16 agere_status_ = 0;
+	u64 agere_t0_ = 0, agere_n0_ = 0;
+	bool agere_rate_said_ = false;
 };
 
 } // namespace dmd

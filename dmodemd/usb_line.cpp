@@ -246,6 +246,9 @@ const s16 FIFO_SAMPLES = 64 + 24;
 
 const u16 TIMEOUT_MS = 1000;
 
+/* the Agere modem's hook: its codec's register (0 off hook, 1 on) */
+const u16 AGERE_HOOK = 0x00c0;
+
 /* the configuration's remote wakeup bit; USB's DEVICE_REMOTE_WAKEUP */
 const u8 CONFIG_REMOTE_WAKEUP = 0x20;
 const u16 FEATURE_REMOTE_WAKEUP = 1;
@@ -340,17 +343,22 @@ bool UsbLine::find(const char *dev)
 			continue;
 		bool st7554 = d.idVendor == ST7554_VENDOR && d.idProduct == ST7554_PRODUCT;
 		bool stick = d.idVendor == STICK_VENDOR && d.idProduct == STICK_PRODUCT;
-		if (!st7554 && !stick)
+		bool agere = agere_device(d.idVendor, d.idProduct);
+		if (!st7554 && !stick && !agere)
 			continue;
 		found++;
 		if (!any && (libusb_get_bus_number(list[i]) != bus ||
 			     libusb_get_device_address(list[i]) != addr))
 			continue;
-		kind_ = stick ? Kind::Stick : Kind::St7554;
-		name_ = stick ? "pico-serial Line" : "SmartUSB56";
+		kind_ = stick ? Kind::Stick : agere ? Kind::Agere : Kind::St7554;
+		name_ = stick ? "pico-serial Line" : agere ? "Agere USB modem" :
+			"SmartUSB56";
 		int err = libusb_open(list[i], &h_);
 		if (err < 0) {
-			const char *id = stick ? "1209:0002" : "0483:7554";
+			char idbuf[10];
+			snprintf(idbuf, sizeof(idbuf), "%04x:%04x", d.idVendor,
+				 d.idProduct);
+			const char *id = idbuf;
 			std::string hint;
 #ifdef _WIN32
 			/* (another driver than WinUSB has it: Smart Link's
@@ -379,12 +387,49 @@ bool UsbLine::find(const char *dev)
 	}
 	libusb_free_device_list(list, 1);
 	if (!h_ && !found)
-		ERR("no Smart Link SmartUSB56 (USB 0483:7554) or pico-serial "
-		    "Line (1209:0002)%s%s\n", any ? "" : " at ", any ? "" : dev);
+		ERR("no Smart Link SmartUSB56 (USB 0483:7554), pico-serial "
+		    "Line (1209:0002) or Agere USB modem (047e:2892, 047e:2828)"
+		    "%s%s\n", any ? "" : " at ", any ? "" : dev);
 	else if (!h_ && found && !any)
-		ERR("no SmartUSB56 or pico-serial Line at %s (%d elsewhere)\n",
-		    dev, found);
+		ERR("no SmartUSB56, pico-serial Line or Agere USB modem at %s "
+		    "(%d elsewhere)\n", dev, found);
 	return h_ != nullptr;
+}
+
+/* see usb_line.h: the first device find() would take an Agere modem */
+u32 UsbLine::line_rate(const char *dev, u32 rate)
+{
+	libusb_context *ctx;
+	libusb_device **list;
+	int bus = -1, addr = -1;
+	bool any = !dev || !*dev || !strcmp(dev, "auto");
+	bool agere = false;
+
+	if ((!any && !parse_dev(dev, &bus, &addr)) || libusb_init(&ctx) < 0)
+		return rate;
+#ifdef _WIN32
+	use_usbdk(ctx);
+#endif
+	ssize_t n = libusb_get_device_list(ctx, &list);
+	for (ssize_t i = 0; i < n; i++) {
+		libusb_device_descriptor d;
+		if (libusb_get_device_descriptor(list[i], &d) < 0)
+			continue;
+		bool ours = agere_device(d.idVendor, d.idProduct) ||
+			(d.idVendor == ST7554_VENDOR && d.idProduct == ST7554_PRODUCT) ||
+			(d.idVendor == STICK_VENDOR && d.idProduct == STICK_PRODUCT);
+		if (!ours || (!any && (libusb_get_bus_number(list[i]) != bus ||
+				       libusb_get_device_address(list[i]) != addr)))
+			continue;
+		agere = agere_device(d.idVendor, d.idProduct);
+		break;
+	}
+	if (n >= 0)
+		libusb_free_device_list(list, 1);
+	libusb_exit(ctx);
+	if (agere && rate != 8000)
+		DBG("Agere USB modem: 8000 Hz, its rate (not %" PRIu32 ")\n", rate);
+	return agere ? 8000 : rate;
 }
 
 /* see usb_line.h */
@@ -412,7 +457,8 @@ s16 UsbLine::list()
 			d.idProduct == ST7554_PRODUCT;
 		bool stick = d.idVendor == STICK_VENDOR &&
 			d.idProduct == STICK_PRODUCT;
-		if (!st7554 && !stick)
+		bool agere = agere_device(d.idVendor, d.idProduct);
+		if (!st7554 && !stick && !agere)
 			continue;
 		found++;
 		err = libusb_open(devs[i], &h);
@@ -421,7 +467,8 @@ s16 UsbLine::list()
 		printf("%03d:%03d %04x:%04x %s: %s%s\n",
 		       libusb_get_bus_number(devs[i]),
 		       libusb_get_device_address(devs[i]), d.idVendor,
-		       d.idProduct, stick ? "pico-serial Line" : "SmartUSB56",
+		       d.idProduct, stick ? "pico-serial Line" :
+		       agere ? "Agere USB modem" : "SmartUSB56",
 		       err == 0 ? "ready" : libusb_strerror(err),
 #ifdef _WIN32
 		       err == LIBUSB_ERROR_NOT_SUPPORTED ?
@@ -432,8 +479,8 @@ s16 UsbLine::list()
 	if (n >= 0)
 		libusb_free_device_list(devs, 1);
 	if (!found)
-		printf("no SmartUSB56 (0483:7554) or pico-serial Line "
-		       "(1209:0002)\n");
+		printf("no SmartUSB56 (0483:7554), pico-serial Line "
+		       "(1209:0002) or Agere USB modem (047e:2892, 047e:2828)\n");
 #ifdef _WIN32
 	else if (usbdk)
 		printf("(through UsbDk)\n");
@@ -547,12 +594,6 @@ bool UsbLine::open(const char *dev, u32 rate)
 {
 	int err;
 
-	rate_ = rate;
-	frame_ = static_cast<s16>(rate / 50);
-	frame_in_.assign(frame_, 0);
-	frame_out_.assign(frame_, 0);
-	frame_mic_.assign(frame_, 0);
-	frame_ear_.assign(frame_, 0);
 	iso_ = Iso();
 	viso_ = Iso();
 	iso_.line = viso_.line = this;
@@ -570,6 +611,17 @@ bool UsbLine::open(const char *dev, u32 rate)
 		close();
 		return false;
 	}
+	/* (an Agere modem's samples are at 8000 Hz) */
+	if (kind_ == Kind::Agere && rate != 8000) {
+		DBG("Agere USB modem: 8000 Hz, its rate (not %" PRIu32 ")\n", rate);
+		rate = 8000;
+	}
+	rate_ = rate;
+	frame_ = static_cast<s16>(rate / 50);
+	frame_in_.assign(frame_, 0);
+	frame_out_.assign(frame_, 0);
+	frame_mic_.assign(frame_, 0);
+	frame_ear_.assign(frame_, 0);
 	/* (slusb, Smart Link's kernel driver, if it is there) */
 	libusb_set_auto_detach_kernel_driver(h_, 1);
 	if ((err = libusb_claim_interface(h_, 0)) < 0) {
@@ -578,7 +630,8 @@ bool UsbLine::open(const char *dev, u32 rate)
 		return false;
 	}
 	claimed_ = true;
-	if (!(kind_ == Kind::Stick ? open_stick(rate) : open_st7554(rate)) ||
+	if (!(kind_ == Kind::Stick ? open_stick(rate) :
+	      kind_ == Kind::Agere ? open_agere() : open_st7554(rate)) ||
 	    !start_streams()) {
 		close();
 		return false;
@@ -819,6 +872,8 @@ bool UsbLine::start_streams()
 	/* octets a ms, at most */
 	s16 pkt = static_cast<s16>((rate_ * 2 + 999) / 1000);
 
+	if (kind_ == Kind::Agere)
+		return agere_streams();
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
 	delay_ = static_cast<s16>(iso_.out_buf.size()) +
 		 ISO_TRANSFERS * ISO_PACKETS * static_cast<s32>(rate_) /
@@ -912,6 +967,10 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const s16 *lengths)
 {
 	s16 off = 0;
 	s16 bps = s.voice ? 1 : 2;
+	if (kind_ == Kind::Agere) {
+		agere_fill(t, lengths[0]);
+		return;
+	}
 	for (s16 i = 0; i < ISO_PACKETS; i++) {
 		s16 len = lengths[i] - lengths[i] % bps;
 		if (len > s.max_out)
@@ -1126,6 +1185,16 @@ void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 	}
 	if (dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
+	if (kind_ == Kind::Agere) {
+		agere_in(t);
+		send_out(s);
+		int err = libusb_submit_transfer(t);
+		if (err == 0)
+			in_flight_++;
+		else
+			park(t, err);
+		return;
+	}
 	if (t->status == LIBUSB_TRANSFER_COMPLETED) {
 		for (s16 i = 0; i < t->num_iso_packets; i++) {
 			const libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
@@ -1198,6 +1267,10 @@ void UsbLine::resume()
 			arm_wake(true);
 		handset_due_ = handset_;
 	}
+	/* (the Agere modem's patch may have gone with a reset) */
+	if (kind_ == Kind::Agere &&
+	    (!agere_bulk_patch() || !agere_cmd(0x10, 0, 0, 1, nullptr)))
+		return;
 	/* the streams from their start again: nothing kept from before
 	   the suspend, the playback's lead a frame and a half */
 	for (Iso *st : { &iso_, &viso_ }) {
@@ -1252,6 +1325,8 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 	DBG("%s\n", off ? "off hook" : "on hook");
 	hook_ = state;
 	flash_end_ = 0;
+	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
+		return codec_write(AGERE_HOOK, off ? 0 : 1) ? 0 : -1;
 	if (kind_ == Kind::Stick)
 		return off ? (stick_out(LP_SET_HOOK, 1) &&
 			      stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
@@ -1326,7 +1401,10 @@ void UsbLine::hook_flash(dcore::Modem &, u16 ms)
 							    ms));
 		return;
 	}
-	set_gpio(static_cast<u16>(gpio_ & ~GPIO_HOOK1));
+	if (kind_ == Kind::Agere)
+		codec_write(AGERE_HOOK, 1);
+	else
+		set_gpio(static_cast<u16>(gpio_ & ~GPIO_HOOK1));
 	flash_end_ =
 		samples_ + static_cast<u64>(ms) * rate_ / 1000;
 }
@@ -1339,6 +1417,8 @@ s16 UsbLine::pulse_hook(dcore::Modem &, bool broken)
 	flash_end_ = 0;
 	if (kind_ == Kind::Stick)
 		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
+	if (kind_ == Kind::Agere)
+		return codec_write(AGERE_HOOK, broken ? 1 : 0) ? 0 : -1;
 	u16 v = broken ? static_cast<u16>(gpio_ & ~GPIO_HOOK1) :
 		static_cast<u16>(gpio_ | GPIO_HOOK1);
 	if (intl_)
@@ -1452,7 +1532,9 @@ s16 UsbLine::pump(dcore::Modem &m)
 		}
 		if (flash_end_ && samples_ >= flash_end_) {
 			flash_end_ = 0;
-			if (hook_ == MODEM_HOOK_OFF)
+			if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Agere)
+				codec_write(AGERE_HOOK, 0);
+			else if (hook_ == MODEM_HOOK_OFF)
 				set_gpio(static_cast<u16>(gpio_ |
 							       GPIO_HOOK1));
 		}
@@ -1467,6 +1549,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 				    frame_out_.end());
 	}
 	iso_.in_buf.erase(iso_.in_buf.begin(), iso_.in_buf.begin() + used);
+	if (kind_ == Kind::Agere && used)
+		agere_rate_check();
 	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
@@ -1568,6 +1652,13 @@ void UsbLine::voice_frame(dcore::Modem &m)
    powered down, the interface released, libusb closed */
 void UsbLine::close()
 {
+	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_) {
+		/* on hook, the LED as CUsbStop leaves it */
+		u16 v;
+		codec_write(AGERE_HOOK, 1);
+		if (agere_read16(0x30000008, &v))
+			agere_write16(0x30000008, static_cast<u16>((v & 0xfff3) | 0x000c));
+	}
 	if (h_ && !dead_ && kind_ == Kind::St7554) {
 		set_reg(FIFO_MASK, 0);
 		set_reg(SSI1_COUNTER, 0);
@@ -1608,7 +1699,7 @@ void UsbLine::close()
 						0, nullptr, 0, TIMEOUT_MS);
 			libusb_set_interface_alt_setting(h_, 0, 0);
 		}
-	} else if (h_) {
+	} else if (h_ && kind_ == Kind::St7554) {
 		set_reg(FIFO_MASK, 0);
 		set_reg(GPIO_MASK, 0);
 		set_reg(GPIO_OUT, 0);

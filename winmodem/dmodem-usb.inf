@@ -3,8 +3,10 @@
 ;
 ; dmodem-usb.inf - WinUSB (Windows' own generic USB driver) for the USB
 ; modems dmodemd drives itself through libusb (dmodemd --usb): Smart
-; Link's SmartUSB56 (ST7554, USB 0483:7554) and the pico-serial Line
-; stick (1209:0002).  No driver of D-Modem's: the INF only gives these
+; Link's SmartUSB56 (ST7554, USB 0483:7554), the pico-serial Line
+; stick (1209:0002) and Agere's USB 2.0 soft modem (047E:2892, 047E:2828;
+; dmodemd takes its bulk patch from Agere's driver, --usb-agere-driver).
+; No driver of D-Modem's: the INF only gives these
 ; devices WinUSB, as Zadig would.
 ; (The pico-serial Line's firmware asks for WinUSB itself, with Microsoft
 ; OS 2.0 descriptors; older firmware needs this INF.)
@@ -30,16 +32,22 @@ PnpLockdown = 1
 %SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+%AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2892
+%AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2828
 
 [DModemUsb.NTarm64]
 %SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+%AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2892
+%AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2828
 
 [DModemUsb.NTx86]
 %SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+%AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2892
+%AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2828
 
 [UsbModem_Install.NT]
 Include = winusb.inf
@@ -61,3 +69,4 @@ Provider   = "D-Modem"
 Mfg        = "D-Modem (WinUSB)"
 SmartUSB56 = "Smart Link SmartUSB56 (WinUSB, for D-Modem)"
 PicoLine   = "pico-serial Line (WinUSB, for D-Modem)"
+AgereUsb   = "Agere USB 2.0 Soft Modem (WinUSB, for D-Modem)"

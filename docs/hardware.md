@@ -2,8 +2,9 @@
 
 dmodemd's line is normally a SIP call. With `-a` it is instead a
 softmodem's codec on a telephone line, through ALSA. With `--usb` it is
-a Smart Link SmartUSB56 ([below](#smart-link-smartusb56)) or a
-pico-serial Line stick ([below](#pico-serial-line)), through libusb.
+a Smart Link SmartUSB56 ([below](#smart-link-smartusb56)), a
+pico-serial Line stick ([below](#pico-serial-line)) or an Agere USB 2.0
+soft modem ([below](#agere-usb-20-soft-modem)), through libusb.
 The modem is then D-Modem's open DSP, on any architecture. Smart Link's
 slmodemd, Agere's agrsm and their kind were closed, mostly i386-only
 programs; dmodemd can replace them.
@@ -438,6 +439,51 @@ going off hook, for a higher transmit level, is not taken). The stick's
 USB ID is a pid.codes test PID until it has its own. It has been tested
 against a fake of it (below), not yet on a real one.
 
+### Agere USB 2.0 soft modem
+
+Agere's (later LSI's) USB soft modem, USB `047e:2892` (and `047e:2828`),
+sold under other names too, has no kernel driver: dmodemd drives it
+through libusb. It is an Agere USB controller with an ARM in it and a
+Mercury codec and DAA. Its ROM is patched at every start with a "bulk
+patch" from Agere's own driver: D-Modem does not ship it, and dmodemd
+takes it from the user's copy of Agere's driver, which has to be given:
+
+    lsusb -d 047e:                # Bus 001 Device 009: ID 047e:2892 ...
+    dmodemd --usb=auto --usb-agere-driver /path/to/AGRSM.sys
+
+Any of Agere's drivers for it has the patches: `AGRSM.sys` or
+`AGRSM64.sys` (Windows 98 to 7), `agrmodem.ko` or `agrmodemlib.o`
+(agrsm's Linux package), or a directory with one of them (an unpacked
+driver package). The line runs at 8000 Hz, whatever `-r` says. A udev
+rule (`/etc/udev/rules.d/60-agere-usb.rules`) lets dmodemd open it
+without root:
+
+    SUBSYSTEM=="usb", ATTR{idVendor}=="047e", ATTR{idProduct}=="2892", MODE="0660", GROUP="dialout"
+
+What it does, from Agere's drivers ([agere-usb.md](agere-usb.md)), in
+`dmodemd/usb_agere.cpp`:
+
+- **Start-up.** Interface 0's alternate setting 2 (bulk IN and OUT), the
+  ROM's version, its GPIOs and clock, the Mercury codec's registers as
+  Agere's driver writes them, on hook; then the bulk patch for the ROM
+  (1.0.6's, or 1.2.1's in flash or ROM) unless it is in, the clock raised,
+  the samples started. A "Polaris" DAA (its codec registers do not
+  answer) is not driven yet: dmodemd says so.
+- **Samples.** 100-octet bulk transfers each way: a header (the samples'
+  count, a status word) and 48 samples. One OUT transfer goes for each IN
+  one, with its count, so the playback keeps the device's clock.
+- **Hook.** Codec register 0xc0 (0 off hook); pulse dialling and the
+  hook flash break and make it.
+- **Rings.** Bit 0 of the IN transfers' status word: a pulse to the
+  core's `ring()` for each transfer that has it.
+- **Caller ID.** The codec hears the line on hook, so caller ID comes
+  in the samples.
+- **Unplugged.** dmodemd says so and exits.
+
+It has been tested against a fake of it (below), not yet on a real one:
+[agere-usb.md](agere-usb.md#bring-up) says what to look for, and what to
+send, on the first run.
+
 ### Not covered
 
 Not covered yet, because Linux has no driver that gives their samples:
@@ -461,7 +507,7 @@ start from.
 |---|---|
 | `-a <pcm>`, `--alsa=<pcm>` | the codec's PCM (`hw:1`, `hw:0,6`, `plughw:...`): the line is a telephone line, not SIP |
 | `--alsa-ctl=<ctl>` | its controls, if not the card's (`hw:1` for `hw:1,0` or `plughw:1,0`; the PCM's own name otherwise) |
-| `--usb=<dev>` | a SmartUSB56 or pico-serial Line (`auto`, the first one; or `<bus>:<address>`, as `lsusb` and `--usb list` show it): the line is a telephone line, not SIP; `--usb list` lists them and exits |
+| `--usb=<dev>` | a SmartUSB56, pico-serial Line or Agere USB modem (`auto`, the first one; or `<bus>:<address>`, as `lsusb` and `--usb list` show it): the line is a telephone line, not SIP; `--usb list` lists them and exits |
 | `--usb-leds` | a SmartUSB56's carrier and data LEDs lit (GPIO 6 and 13), as on Creative's Modem Blaster; only for a board that has them |
 | `--usb-wake` | a ring wakes the computer: the SmartUSB56's USB remote wakeup armed (and on Linux the kernel's `power/wakeup` of it enabled, as root) |
 | `--usb-handset` | the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook, `<DLE>H` and `<DLE>h` in voice mode |
@@ -469,7 +515,8 @@ start from.
 | `--usb-buzzer` | the SmartUSB56's buzzer (GPIO 11, BUZEN) as the speaker: on while ATM/ATL have it on, as Windows' `Options.Buzzer` |
 | `--usb-rhom` | the SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15, and the voice codec's bit 7) while the modem runs, as Windows' `Options.RHOM`; not below revision 0x200 |
 | `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
-| `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' |
+| `--usb-agere-driver=<file>` | an Agere USB modem's bulk patch: Agere's driver for it (`AGRSM.sys`, `AGRSM64.sys`, `agrmodem.ko` or `agrmodemlib.o`), or a directory with one |
+| `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' (an Agere USB modem's is 8000 whatever it says) |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
 the device's group (usually `audio`) does not matter. Started as a user,
@@ -633,3 +680,20 @@ the exchange's, speaking its firmware's protocol: `SET_HOOK` and
 its samples, its ring detector's changes come as events. On top of the
 SmartUSB56's checks it has the country's line settings, and a stick
 whose line side does not answer (said, and dmodemd goes on).
+
+`dmodemd/test/agere_test.py` (ctest's `dmodemd_agere`, label `alsa`)
+does it with two Agere USB modems at 8000 Hz: `dmodemd/test/fake_agere.cpp`
+is one (047e:2892) whose line is the exchange's, with its vendor
+commands, its ARM's memory and function table, its codec registers (the
+hook register 0xc0 the exchange's switch) and its 100-octet bulk
+transfers, whose status word's bit 0 is set while the ring signal is
+there. It streams only once the patch its ROM wants is downloaded and
+hooked in. The patches are the tests' own (`DMODEM_AGERE_TEST_PATCHES=1`
+makes dmodemd look for them, `agere_patch.h`), put in a "driver" file of
+other octets in a directory. It checks that dmodemd says what is wrong
+with no `--usb-agere-driver`, a driver without the patches and a Polaris
+DAA; each ROM's patch (1.2.1 in ROM and in flash, 1.0.6 with its clock
+change patch); 8000 Hz with `-r 9600`; a full speed device; a data call
+(rings, caller ID, the answer at the second ring, V.34 at 33600, text
+each way); a call dialled in pulses; and that both exit once the
+exchange has gone.

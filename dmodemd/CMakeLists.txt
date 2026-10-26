@@ -114,7 +114,7 @@ if(DMODEM_DMODEMD)
 	# devices on WinUSB, docs/windows.md)
 	if(WIN32 AND DMODEM_USB)
 		include(libusb)
-		target_sources(dmodemd PRIVATE usb_line.cpp si3056.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE dmodem_libusb)
 		# the tests' dmodemd.exe with a fake modem in libusb's place
@@ -129,7 +129,7 @@ if(DMODEM_DMODEMD)
 			find_package(Python3 COMPONENTS Interpreter QUIET)
 			foreach(_f st7554 pico_line)
 				add_executable(dmodemd_fake_${_f} main_windows.cpp
-					usb_line.cpp si3056.cpp test/fake_${_f}.cpp)
+					usb_line.cpp usb_agere.cpp si3056.cpp test/fake_${_f}.cpp)
 				target_compile_definitions(dmodemd_fake_${_f}
 					PRIVATE DMODEM_USB)
 				target_include_directories(dmodemd_fake_${_f}
@@ -159,7 +159,7 @@ if(DMODEM_DMODEMD)
 			endif()
 		endif()
 	elseif(LIBUSB_FOUND)
-		target_sources(dmodemd PRIVATE usb_line.cpp si3056.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE PkgConfig::LIBUSB)
 		# test/usb_test.py: two dmodemd on fake SmartUSB56s
@@ -177,6 +177,13 @@ if(DMODEM_DMODEMD)
 				test/fake_pico_line.cpp)
 			dmodem_flags(dmodem_fake_pico_line EXTRA NOOPT)
 			target_include_directories(dmodem_fake_pico_line PRIVATE
+				${LIBUSB_INCLUDE_DIRS})
+			# test/agere_test.py: on fake Agere USB modems
+			# (test/fake_agere.cpp)
+			add_library(dmodem_fake_agere SHARED
+				test/fake_agere.cpp)
+			dmodem_flags(dmodem_fake_agere EXTRA NOOPT)
+			target_include_directories(dmodem_fake_agere PRIVATE
 				${LIBUSB_INCLUDE_DIRS})
 		endif()
 	else()
@@ -320,6 +327,14 @@ if(DMODEM_DMODEMD)
 			set_tests_properties(dmodemd_pico_line PROPERTIES
 				TIMEOUT 300 COST 1000)
 			set_property(TEST dmodemd_pico_line APPEND PROPERTY LABELS alsa)
+			dmodem_add_test(dmodemd_agere ${Python3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/test/agere_test.py
+				$<TARGET_FILE:dmodemd>
+				$<TARGET_FILE:line_exchange>
+				$<TARGET_FILE:dmodem_fake_agere>)
+			set_tests_properties(dmodemd_agere PROPERTIES
+				TIMEOUT 300 COST 1000)
+			set_property(TEST dmodemd_agere APPEND PROPERTY LABELS alsa)
 		endif()
 	endif()
 endif()

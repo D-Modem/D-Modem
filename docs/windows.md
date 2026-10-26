@@ -1,6 +1,6 @@
 # D-Modem on Windows
 
-dmodemd builds for 64-bit Windows with MinGW-w64 (Clang or GCC) or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  The USB modems (Smart Link's SmartUSB56 and the pico-serial Line) are dmodemd.exe's lines too (`--usb`, on WinUSB).  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
+dmodemd builds for 64-bit Windows with MinGW-w64 (Clang or GCC) or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  The USB modems (Smart Link's SmartUSB56, the pico-serial Line and Agere's USB 2.0 soft modem) are dmodemd.exe's lines too (`--usb`, on WinUSB).  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 
 Windows 7 is the oldest Windows it runs on:
 
@@ -163,9 +163,13 @@ Windows has no kernel driver to hold either device. libusb reaches a USB device 
 
 A SmartUSB56 with Smart Link's own Windows driver installed must be moved to WinUSB first. Until then, `--usb list` says "its driver is not WinUSB or libusbK".
 
+Agere's USB 2.0 soft modem (`047E:2892`, `047E:2828`: [agere-usb.md](agere-usb.md)) is driven the same way, with `dmodem-usb.inf` or Zadig moving it from Agere's `AGRSM.sys` to WinUSB. Its samples are bulk transfers, so WinUSB streams them on Windows 7 and 8 as well. dmodemd.exe needs Agere's driver file all the same, for the bulk patch it downloads into the modem: `--usb-agere-driver` with the driver package's `AGRSM.sys` or `AGRSM64.sys`, or the copy Windows installed (`C:\Windows\System32\drivers\AGRSM.sys`), copied somewhere first if Agere's driver is to be uninstalled.
+
+    dmodemd.exe --usb auto --usb-agere-driver C:\agere\AGRSM64.sys --tcp 127.0.0.1:2323
+
 #### Windows 7 and 8
 
-WinUSB can't stream before Windows 8.1: it has no isochronous transfers, which both modems' samples are. On Windows 7 and 8 the modem needs one of these instead:
+WinUSB can't stream before Windows 8.1: it has no isochronous transfers, which the SmartUSB56's and the pico-serial Line's samples are (the Agere modem's are bulk: WinUSB will do). On Windows 7 and 8 the modem needs one of these instead:
 - **libusbK** as its driver: in [Zadig](https://zadig.akeo.ie/), choose the device, then libusbK. libusb drives it as it drives WinUSB, isochronous transfers included.
 - **[UsbDk](https://github.com/daynix/UsbDk)** installed (its MSI): a filter that lends libusb any USB device, whatever its driver. dmodemd.exe uses it by itself when WinUSB can't stream and UsbDk is there (`usb: through UsbDk` in its log). `DMODEM_USBDK=1` in the environment makes it use UsbDk on any Windows, and `DMODEM_USBDK=0` never.
 
