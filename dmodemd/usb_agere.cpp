@@ -226,7 +226,8 @@ bool UsbLine::codec_read(u16 reg, u16 *v)
 					  LIBUSB_RECIPIENT_DEVICE |
 					  LIBUSB_ENDPOINT_IN, CMD_CODEC_READ,
 					  0, reg, b, 2, TIMEOUT_MS);
-	TRACE("Agere: codec register %03x: %d (%02x%02x)\n", reg, err, b[1], b[0]);
+	if (!agere_quiet_)
+		TRACE("Agere: codec register %03x: %d (%02x%02x)\n", reg, err, b[1], b[0]);
 	if (err < 2)
 		return false;
 	*v = static_cast<u16>(b[0] | u16{b[1]} << 8);
@@ -1050,26 +1051,34 @@ void UsbLine::agere_regs(const char *when)
 	DBG("%s\n", line);
 }
 
-/* see usb_line.h (pump()). (The drivers take the ring from the IN status
-   word alone, which the ROM fills from 0x0a8's bit 2 for either codec,
-   0x948; the first Polaris's rings were not seen there: read here too,
-   to say what moves) */
+/* see usb_line.h (pump()). The drivers take the ring from the IN status
+   word alone, which the ROM fills from 0x0a8's bit 2 for either codec
+   (0x948): a Mercury's ring detector. A Polaris's sets 0x0a8's bit 1
+   instead (0x0010 on hook, 0x0012 or 0x0013 while it rings, the first
+   device's; 0x0c4's bit 3 too, its bits 6 and 7 the ring's halves):
+   read here, a ring while it is set */
 void UsbLine::agere_ring_poll()
 {
 	u64 now = sys_ms();
 	if (now - agere_poll_ms_ < 100)
 		return;
 	agere_poll_ms_ = now;
-	u16 a8 = 0, c4 = 0;
-	if (!codec_read(0x0a8, &a8) || !codec_read(0x0c4, &c4))
+	u16 a8 = 0;
+	agere_quiet_ = true;
+	bool ok = codec_read(0x0a8, &a8);
+	agere_quiet_ = false;
+	if (!ok)
 		return;
-	if ((a8 != agere_0a8_ || c4 != agere_0c4_) && agere_poll_said_ < 40) {
+	if (a8 != agere_0a8_ && agere_poll_said_ < 20) {
 		agere_poll_said_++;
-		DBG("Agere: on hook: codec 0a8 %04x, 0c4 %04x\n", a8, c4);
+		DBG("Agere: on hook: codec 0a8 %04x\n", a8);
 	}
 	agere_0a8_ = a8;
-	agere_0c4_ = c4;
-	if (a8 & 0x0004) {
+	bool ringing = (a8 & (agere_polaris_ ? 0x0002 : 0x0004)) != 0;
+	if (ringing != agere_ringing_)
+		DBG("Agere: the line %s\n", ringing ? "rings" : "stopped ringing");
+	agere_ringing_ = ringing;
+	if (ringing) {
 		agere_ring_ms_ = now_ms();
 		rings_++;
 	}

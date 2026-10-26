@@ -200,11 +200,13 @@ again.
   indices, `0x70001020` = {24, 0} (two words, command 3 with 8 octets); dmodemd does not: on
   the first device that stopped the stream's samples, then its commands. (The indices are four
   words from `0x7000101c`.)
-- **Ring:** bit 0 of the IN status word (the ROM's copy of codec register 0x0a8's bit 2, for
-  either codec, 0x948; both drivers take the ring from it alone, Windows' Polaris from its low
-  octet). On the first device's Polaris no ring was seen there: on hook dmodemd also reads 0x0a8
-  and 0x0c4 every 100 ms, says their changes, and takes 0x0a8's bit 2 as a ring too. dmodemd gives the core a ring pulse for each IN
-  packet that has it, while on hook.
+- **Ring:** a Mercury's in bit 0 of the IN status word, the ROM's copy of codec register 0x0a8's
+  bit 2 (0x948; both drivers take the ring from it alone). A Polaris doesn't set that bit: its
+  ring detector is 0x0a8's bit 1 (0x0010 on hook, 0x0012 or 0x0013 while the line rings, on the
+  first device; 0x0c4's bit 3 too, its bits 6 and 7 the ring's halves, and the samples go to
+  full scale). dmodemd reads 0x0a8 every 100 ms on hook and gives the core a ring pulse while
+  the codec's ring bit is set (a Polaris's bit 1, a Mercury's bit 2), as well as for each IN
+  packet whose status has it.
 - **Caller ID:** the Mercury's `EnableCallerID` does nothing, so the codec hears the line on
   hook; a Polaris's is on while on hook (above). Caller ID comes in the samples, as on an ALSA
   codec.

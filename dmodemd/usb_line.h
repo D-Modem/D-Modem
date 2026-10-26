@@ -299,13 +299,15 @@ private:
 	/* an OUT transfer done: its samples counted (agere_lead_) */
 	void agere_sent(libusb_transfer *t);
 	void agere_rate_check();
-	/* on hook, every 100 ms: codec registers 0x0a8 (bit 2 the ring
-	   detector's) and 0x0c4 read, their changes said (a few), 0x0a8's
-	   bit 2 a ring as the IN status word's is */
+	/* on hook, every 100 ms: codec register 0x0a8 read, a ring while
+	   its ring bit is set (a Polaris's 1, a Mercury's 2); its changes
+	   said (a few); whether it rang at the last read; the reads not
+	   traced */
 	void agere_ring_poll();
 	u64 agere_poll_ms_ = 0;
-	u16 agere_0a8_ = 0xffff, agere_0c4_ = 0xffff;
+	u16 agere_0a8_ = 0xffff;
 	u32 agere_poll_said_ = 0;
+	bool agere_ringing_ = false, agere_quiet_ = false;
 	void agere_leds(dcore::Modem &m);
 	static bool agere_device(u16 vendor, u16 product);
 	bool start_iso(Iso &s, s16 pkt);

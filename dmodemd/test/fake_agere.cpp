@@ -111,6 +111,9 @@ struct Fake {
 	bool gone = false;
 	std::deque<int16_t> in;         /* the receive ring */
 	bool ringing = false;           /* the ring signal on what came */
+	/* the samples come, and the last that rang (a Polaris's 0x0a8 bit 1
+	   for 100 ms after) */
+	unsigned long long samples = 0, rang = 0;
 	unsigned since = 0;             /* the samples come since a slot */
 	/* the transmit ring (48, a lead of 24 at 0x0c), the codec playing
 	   from it each slot what came in it; a slot every SLOT samples, or
@@ -227,6 +230,7 @@ void take()
 			}
 			int16_t s = (int16_t)(fake.half | b[i] << 8);
 			fake.half = -1;
+			fake.samples++;
 			/* (a Polaris's link down: its data register's 0x8000) */
 			if (fake.polaris && !fake.link)
 				s = -32768;
@@ -235,7 +239,10 @@ void take()
 				if (fake.in.size() > RING)
 					fake.in.pop_front();
 				if (!fake.hook && (s > RING_LEVEL || s < -RING_LEVEL))
+				{
 					fake.ringing = true;
+					fake.rang = fake.samples;
+				}
 			}
 			/* (a packet's time each SLOT samples, as they come; one
 			   more or fewer now and then, FAKE_AGERE_DRIFT) */
@@ -329,7 +336,8 @@ bool slot()
 	uint16_t count = k ? (uint16_t)k : NONE;
 	b[0] = (uint8_t)count;
 	b[1] = (uint8_t)(count >> 8);
-	b[2] = fake.ringing ? 1 : 0;
+	/* (a Polaris's ring detector isn't in it: its 0x0a8's bit 1 is) */
+	b[2] = fake.ringing && !fake.polaris ? 1 : 0;
 	b[3] = 0;
 	fake.ringing = false;
 	for (unsigned j = 0; j < k; j++) {
@@ -474,12 +482,20 @@ int command_in(uint8_t cmd, uint16_t index, uint16_t value,
 		for (uint16_t i = 0; i < length; i++)
 			data[i] = fake.mem[a + i];
 		return length;
-	case 0x0a:
+	case 0x0a: {
 		if (length < 2)
 			return LIBUSB_ERROR_PIPE;
-		data[0] = (uint8_t)fake.codec[index];
-		data[1] = (uint8_t)(fake.codec[index] >> 8);
+		uint16_t v = fake.codec[index];
+		/* (a Polaris ringing: 0x0a8's bit 1, as the first device's) */
+		if (fake.polaris && index == 0xa8) {
+			v = 0x0010;
+			if (fake.rang && fake.samples - fake.rang < 800)
+				v |= 0x0002;
+		}
+		data[0] = (uint8_t)v;
+		data[1] = (uint8_t)(v >> 8);
 		return 2;
+	}
 	}
 	return LIBUSB_ERROR_PIPE;
 }
