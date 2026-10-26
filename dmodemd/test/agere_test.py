@@ -246,6 +246,14 @@ try:
     check("-transfers: ATE0", m.cmd(b"ATE0"))
     m.stop()
 
+    # DMODEM_AGERE_DUMP: the descriptors and the memory, then streaming
+    m = Modem("1001", "dmodem40", "-dump", args=["-d1"], DMODEM_AGERE_DUMP="1")
+    check("-dump: the endpoints", m.expect_log(b"Agere: dump: interface 0 alt ", 10))
+    check("-dump: the ROM", m.expect_log(b"Agere: dump 0000ff80 ", 20))
+    check("-dump: over", m.expect_log(b"Agere: dump over", 10))
+    check("-dump: then its samples come", samples_come(m))
+    m.stop()
+
     # DMODEM_AGERE_PROBE: registers dumped, 0xcd000034 swept, then streaming
     m = Modem("1001", "dmodem40", "-probe", args=["-d2"], DMODEM_AGERE_PROBE="1")
     check("-probe: the controller's registers", m.expect_log(b"Agere: probe: cd000000: ", 10))

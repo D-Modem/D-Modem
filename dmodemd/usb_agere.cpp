@@ -674,6 +674,8 @@ bool UsbLine::agere_streams()
 		agere_clock_sweep();
 	if (getenv("DMODEM_AGERE_PROBE"))
 		agere_probe();
+	if (getenv("DMODEM_AGERE_DUMP"))
+		agere_dump();
 	agere_t0_ = 0;
 	return true;
 }
@@ -771,6 +773,67 @@ void UsbLine::agere_probe()
 	}
 	agere_write16(CTRL_34, was);
 	agere_measure("probe: put back");
+}
+
+/* see usb_line.h: DMODEM_AGERE_DUMP: the configuration's alternate
+   settings and endpoints, then the ARM's memory as hex, 128 octets a
+   line (command 2, not traced): the ROM from 0 (up to 64 KB, until a read
+   fails), its RAM (0x70000000, 8 KB: the patches, the ROM's data), the
+   controller's registers, the codec interface's, the endpoints' FIFOs'
+   registers; while streaming, for what the ROM's own command 0x10 does */
+void UsbLine::agere_dump()
+{
+	libusb_config_descriptor *cfg;
+	if (libusb_get_active_config_descriptor(libusb_get_device(h_), &cfg) == 0) {
+		DBG("Agere: dump: configuration %u, %u interfaces\n",
+		    cfg->bConfigurationValue, cfg->bNumInterfaces);
+		for (u8 i = 0; i < cfg->bNumInterfaces; i++)
+			for (int a = 0; a < cfg->interface[i].num_altsetting; a++) {
+				const libusb_interface_descriptor &d =
+					cfg->interface[i].altsetting[a];
+				for (u8 k = 0; k < d.bNumEndpoints; k++) {
+					const libusb_endpoint_descriptor &e = d.endpoint[k];
+					DBG("Agere: dump: interface %u alt %u: endpoint %02x, "
+					    "attributes %02x, %u octets, interval %u\n",
+					    i, d.bAlternateSetting, e.bEndpointAddress,
+					    e.bmAttributes, e.wMaxPacketSize, e.bInterval);
+				}
+				if (!d.bNumEndpoints)
+					DBG("Agere: dump: interface %u alt %u: no endpoints\n",
+					    i, d.bAlternateSetting);
+			}
+		libusb_free_config_descriptor(cfg);
+	}
+	auto dump = [&](u32 base, u32 len) {
+		const u16 LINE = 128;
+		for (u32 off = 0; off < len; off += LINE) {
+			u8 b[LINE];
+			u32 a = base + off;
+			int err = libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_VENDOR |
+							  LIBUSB_RECIPIENT_DEVICE |
+							  LIBUSB_ENDPOINT_IN, CMD_READ,
+							  static_cast<u16>(a >> 16),
+							  static_cast<u16>(a), b, LINE,
+							  TIMEOUT_MS);
+			if (err < LINE) {
+				DBG("Agere: dump: %08x: %d, stopped\n", a, err);
+				return;
+			}
+			char hex[2 * LINE + 1];
+			for (u16 k = 0; k < LINE; k++)
+				snprintf(hex + 2 * k, 3, "%02x", b[k]);
+			DBG("Agere: dump %08x %s\n", a, hex);
+		}
+	};
+	DBG("Agere: dump (DMODEM_AGERE_DUMP)\n");
+	dump(0x00000000, 0x10000);
+	dump(0x70000000, 0x2000);
+	dump(0xcd000000, 0x80);
+	dump(0xe0000000, 0x200);
+	dump(0x90002000, 0x80);
+	dump(0x90004000, 0x80);
+	dump(0x90006000, 0x80);
+	DBG("Agere: dump over\n");
 }
 
 /* see usb_line.h: the patch's mailbox and stream state read back after

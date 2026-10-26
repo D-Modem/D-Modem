@@ -282,6 +282,8 @@ private:
 	void agere_measure(const char *what);
 	/* DMODEM_AGERE_PROBE=1: registers dumped, 0xcd000034 swept */
 	void agere_probe();
+	/* DMODEM_AGERE_DUMP=1: its descriptors and memory logged */
+	void agere_dump();
 	bool agere_bulk_patch();
 	bool agere_mercury();
 	bool agere_streams();

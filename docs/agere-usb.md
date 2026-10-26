@@ -212,6 +212,13 @@ way, sent again from the kernel's completion handler. The patch starts an IN pac
 the IN FIFO has room, so a host slower than that (a user-space one, Android's) loses samples
 while it is not there: `DMODEM_AGERE_TRANSFERS=n` (2 to 16) keeps n each way in flight.
 
+With 8 transfers in flight each way the rate is the same, 2459 a second, each IN transfer
+coming back 19.5 ms after the last: the device's pace, not the host's. Windows' driver reads
+`UseBulk` (`...\SERVICES\ISOUSB\Parameters`), which its INF does not set, so on Windows the
+device streams on the ROM's isochronous endpoints with the ROM's own command 0x10, which the
+bulk patch replaces. `DMODEM_AGERE_DUMP=1` logs the descriptors and the ARM's memory (the ROM
+from 0, its RAM, the controller's and the codec interface's registers) as hex, for that.
+
 `DMODEM_AGERE_PROBE=1` logs the controller's registers (`0xcd000000` on), the codec
 interface's (`0xe00000c0` on) and the codec's (0x000 to 0x3fc), then writes 0 to 7 to
 `0xcd000034` (2 at start; what for is not known) while streaming, logs the rate at each, and
