@@ -160,6 +160,18 @@ class Modem:
         self.p.wait(5)
 
 ok = True
+def samples_come(m, t=15):
+    """m's rate check within t s: about 8000 a second (the fake's clock
+    is the host's: a sample or so either way under load)"""
+    end = time.time() + t
+    while time.time() < end:
+        m.log.flush()
+        if re.search(rb"Agere: (79\d\d|80\d\d) samples a second", open(m.log.name, "rb").read()):
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def check(what, cond):
     global ok
     print("%s: %s" % (what, "yes" if cond else "NO"))
@@ -212,7 +224,7 @@ try:
           m.expect_log(b"the bulk patch has not started the stream: command 0x10 again", 5))
     check("-value: streaming, its mode as wValue",
           m.expect_log(b"Agere: streaming, its mode as wValue", 5))
-    check("-value: its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
+    check("-value: its samples come", samples_come(m))
     m.stop()
 
     # DMODEM_AGERE_CLOCK_SWEEP: the rate at each ARM clock, then streaming
@@ -224,7 +236,14 @@ try:
           re.search(rb"clock sweep: divider 2, \d+ MHz \(ARMCDR \w+\): (79\d\d|80\d\d) samples a second",
                     open(m.log.name, "rb").read()))
     check("-sweep: then raised", m.expect_log(b"Agere: ARM clock raised", 5))
-    check("-sweep: then its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
+    check("-sweep: then its samples come", samples_come(m))
+    m.stop()
+
+    # DMODEM_AGERE_TRANSFERS: more transfers in flight each way
+    m = Modem("1001", "dmodem40", "-transfers", args=["-d2"], DMODEM_AGERE_TRANSFERS="8")
+    check("-transfers: 8 each way", m.expect_log(b"Agere: 8 transfers each way", 5))
+    check("-transfers: its samples come", samples_come(m))
+    check("-transfers: ATE0", m.cmd(b"ATE0"))
     m.stop()
 
     # DMODEM_AGERE_PROBE: registers dumped, 0xcd000034 swept, then streaming
@@ -233,7 +252,7 @@ try:
     check("-probe: the codec's", m.expect_log(b"Agere: probe: codec 3e0: ", 15))
     check("-probe: 0xcd000034 swept", m.expect_log(b"Agere: probe: cd000034 = 7: ", 30))
     check("-probe: put back, streaming", m.expect_log(b"Agere: probe: put back: ", 5))
-    check("-probe: then its samples come", m.expect_log(b"Agere: 8000 samples a second", 15))
+    check("-probe: then its samples come", samples_come(m))
     m.stop()
 
     a = Modem("1001", "dmodem41", args=["-r", "9600"], FAKE_AGERE_FULL="1")

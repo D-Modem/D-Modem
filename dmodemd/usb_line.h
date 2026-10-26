@@ -213,6 +213,8 @@ public:
 
 private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
+	/* the most transfers a stream has each way (the Agere's: agere_transfers_) */
+	enum { MAX_TRANSFERS = 16 };
 	/* the three devices it drives */
 	enum class Kind { St7554, Stick, Agere };
 	/* an isochronous stream both ways: the codec's (the modem's line,
@@ -224,7 +226,7 @@ private:
 		bool voice = false;
 		u8 ep_out = 0, ep_in = 0;
 		s16 max_out = 0, max_in = 0;
-		libusb_transfer *in[ISO_TRANSFERS] = {}, *out[ISO_TRANSFERS] = {};
+		libusb_transfer *in[MAX_TRANSFERS] = {}, *out[MAX_TRANSFERS] = {};
 		/* each IN transfer's packets' lengths, for the OUT one it
 		   frees; the OUT ones not in flight */
 		std::deque<std::vector<s16>> out_lengths;
@@ -390,6 +392,9 @@ private:
 	u16 agere_status_ = 0;
 	u64 agere_t0_ = 0, agere_n0_ = 0;
 	bool agere_rate_said_ = false;
+	/* its bulk transfers in flight each way (DMODEM_AGERE_TRANSFERS, 2
+	   to MAX_TRANSFERS; Agere's driver's 2) */
+	s16 agere_transfers_ = 2;
 	/* the samples' range while their rate is measured */
 	s16 agere_lo_ = 0, agere_hi_ = 0;
 	bool agere_seen_ = false;

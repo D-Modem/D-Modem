@@ -105,8 +105,7 @@ const u16 MER_HOOK = 0x00c0, MER_STATUS = 0x02dc;
 /* its two gains (MerGain1, MerGain2) */
 const u16 MER_GAIN1 = 0xc990, MER_GAIN2 = 0x3b0e;
 
-/* the bulk transfers: each way, their octets (a header and 48 samples) */
-const s16 BULK_TRANSFERS = 2;
+/* the bulk transfers: their octets each (a header and 48 samples) */
 const s16 BULK_LEN = 100, BULK_SAMPLES = 48;
 /* the device's own delay, a guess: a packet */
 const s16 AGERE_FIFO_SAMPLES = 48;
@@ -621,10 +620,21 @@ bool UsbLine::agere_streams()
 	libusb_clear_halt(h_, bulk_in_);
 	if (!agere_write16(FIFO_OUT, FIFO_RESET) || !agere_write16(FIFO_IN, FIFO_RESET))
 		return false;
+	/* (each way: Agere's driver's 2, or DMODEM_AGERE_TRANSFERS, for a
+	   host slower to send the next than the 6 ms of a packet: the
+	   patch starts a packet only once the IN FIFO has room for it, and
+	   the codec's samples meanwhile are lost) */
+	agere_transfers_ = 2;
+	if (const char *e = getenv("DMODEM_AGERE_TRANSFERS"))
+		agere_transfers_ = static_cast<s16>(std::max(2L, std::min(
+			static_cast<long>(MAX_TRANSFERS), strtol(e, nullptr, 10))));
+	if (agere_transfers_ != 2)
+		DBG("Agere: %d transfers each way (DMODEM_AGERE_TRANSFERS)\n",
+		    agere_transfers_);
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
-	delay_ = static_cast<s16>(iso_.out_buf.size() + BULK_TRANSFERS * BULK_SAMPLES +
+	delay_ = static_cast<s16>(iso_.out_buf.size() + agere_transfers_ * BULK_SAMPLES +
 				  fifo_samples_);
-	for (s16 i = 0; i < BULK_TRANSFERS; i++) {
+	for (s16 i = 0; i < agere_transfers_; i++) {
 		iso_.in[i] = libusb_alloc_transfer(0);
 		iso_.out[i] = libusb_alloc_transfer(0);
 		u8 *ib = static_cast<u8 *>(calloc(1, BULK_LEN));
@@ -647,7 +657,7 @@ bool UsbLine::agere_streams()
 		}
 		in_flight_++;
 	}
-	for (s16 i = 0; i < BULK_TRANSFERS; i++) {
+	for (s16 i = 0; i < agere_transfers_; i++) {
 		agere_fill(iso_.out[i], BULK_SAMPLES);
 		if ((err = libusb_submit_transfer(iso_.out[i])) < 0) {
 			ERR("Agere USB modem: an OUT transfer: %s\n",

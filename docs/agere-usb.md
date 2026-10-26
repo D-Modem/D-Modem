@@ -204,6 +204,14 @@ dmodemd reads the mailbox and the stream state back after command 0x10 and logs 
 If the state is not 2 it says so, sends command 0x10 again with the mode in `wValue`, and logs
 whether that started the stream. `DMODEM_AGERE_CLOCK_SWEEP=1` measures the samples' rate (and
 their range) at several ARM clocks while streaming at start, and logs each.
+Agere's Linux driver (agrsm 2.1.73's `agrmodemlib.o`, from the Hiro box's package) does what
+dmodemd does: `Usb_StartIsoDma` sends command 0x10 with the mode in `wIndex` (`Usb_Command`'s
+third argument; `x_usb_command` builds the setup packet by hand, `wIndex` from it), the
+Mercury's start-up is the same writes, and it keeps two 100-octet transfers in flight each
+way, sent again from the kernel's completion handler. The patch starts an IN packet only once
+the IN FIFO has room, so a host slower than that (a user-space one, Android's) loses samples
+while it is not there: `DMODEM_AGERE_TRANSFERS=n` (2 to 16) keeps n each way in flight.
+
 `DMODEM_AGERE_PROBE=1` logs the controller's registers (`0xcd000000` on), the codec
 interface's (`0xe00000c0` on) and the codec's (0x000 to 0x3fc), then writes 0 to 7 to
 `0xcd000034` (2 at start; what for is not known) while streaming, logs the rate at each, and

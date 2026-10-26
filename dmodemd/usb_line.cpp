@@ -1667,10 +1667,10 @@ void UsbLine::close()
 		if (wake_)
 			arm_wake(false);
 	}
-	libusb_transfer *all[4 * ISO_TRANSFERS + 1];
+	libusb_transfer *all[4 * MAX_TRANSFERS + 1];
 	s16 n = 0;
 	for (Iso *st : { &iso_, &viso_ })
-		for (s16 i = 0; i < ISO_TRANSFERS; i++) {
+		for (s16 i = 0; i < MAX_TRANSFERS; i++) {
 			all[n++] = st->in[i];
 			all[n++] = st->out[i];
 		}
@@ -1687,7 +1687,7 @@ void UsbLine::close()
 		if (all[i])
 			libusb_free_transfer(all[i]);
 	for (Iso *st : { &iso_, &viso_ })
-		for (s16 i = 0; i < ISO_TRANSFERS; i++)
+		for (s16 i = 0; i < MAX_TRANSFERS; i++)
 			st->in[i] = st->out[i] = nullptr;
 	intr_ = nullptr;
 	if (h_ && kind_ == Kind::Stick) {
