@@ -403,6 +403,14 @@ private:
 	u16 agere_status_ = 0;
 	u64 agere_t0_ = 0, agere_n0_ = 0;
 	bool agere_rate_said_ = false;
+	/* the stream's counts for the log: samples in and out, the most
+	   owed, OUT packets short of what was owed, odd IN packets; when
+	   samples last came, the last log of them, the stream stopped */
+	u64 agere_in_n_ = 0, agere_out_n_ = 0, agere_short_ = 0;
+	s32 agere_owed_most_ = 0;
+	u32 agere_odd_ = 0;
+	u64 agere_last_in_ms_ = 0, agere_stats_ms_ = 0;
+	bool agere_stopped_ = false;
 	s16 agere_lo_ = 0, agere_hi_ = 0;
 	bool agere_seen_ = false;
 };

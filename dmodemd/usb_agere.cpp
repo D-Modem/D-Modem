@@ -493,6 +493,8 @@ bool UsbLine::agere_streams()
 			static_cast<long>(MAX_TRANSFERS), strtol(e, nullptr, 10))));
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
 	agere_owed_ = 0;
+	agere_last_in_ms_ = 0;
+	agere_stopped_ = false;
 	agere_ahead_ = static_cast<s32>(AGERE_RATE);
 	delay_ = static_cast<s16>(iso_.out_buf.size() + RING_AHEAD +
 				  agere_transfers_ * AGERE_PACKETS * 2);
@@ -606,6 +608,8 @@ void UsbLine::agere_in(libusb_transfer *t)
 		DBG("Agere: IN transfer: status %d\n", t->status);
 		return;
 	}
+	u64 now = sys_ms();
+	s32 got = 0;
 	for (int i = 0; i < t->num_iso_packets; i++) {
 		const libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
 		if (p.status != LIBUSB_TRANSFER_COMPLETED ||
@@ -616,6 +620,14 @@ void UsbLine::agere_in(libusb_transfer *t)
 		u16 status = static_cast<u16>(b[2] | u16{b[3]} << 8);
 		if (count == NONE)
 			count = 0;
+		/* (a count that isn't one: the packet said, a few times) */
+		if (count > IN_MOST || 2u * count + ISO_HEAD > p.actual_length) {
+			if (agere_odd_++ < 5)
+				DBG("Agere: an odd IN packet (%u octets): %02x %02x %02x %02x %02x %02x %02x %02x\n",
+				    p.actual_length, b[0], b[1], b[2], b[3],
+				    p.actual_length > 4 ? b[4] : 0, p.actual_length > 5 ? b[5] : 0,
+				    p.actual_length > 6 ? b[6] : 0, p.actual_length > 7 ? b[7] : 0);
+		}
 		s16 n = static_cast<s16>(std::min<unsigned>(
 			std::min<unsigned>(count, IN_MOST),
 			(p.actual_length - ISO_HEAD) / 2));
@@ -634,6 +646,9 @@ void UsbLine::agere_in(libusb_transfer *t)
 		   its samples is not paid back for longer; less is caught up,
 		   OUT_MOST a packet against the 2 that come) */
 		agere_owed_ = std::min<s32>(agere_owed_ + n, static_cast<s32>(AGERE_RATE));
+		agere_owed_most_ = std::max(agere_owed_most_, agere_owed_);
+		agere_in_n_ += static_cast<u64>(n);
+		got += n;
 		if (status != agere_status_)
 			TRACE("Agere: status %04x\n", status);
 		agere_status_ = status;
@@ -642,6 +657,26 @@ void UsbLine::agere_in(libusb_transfer *t)
 			agere_ring_ms_ = now_ms();
 		if (agere_ring_)
 			rings_++;
+	}
+	/* (every 10 s: the samples each way, the most owed, the OUT packets
+	   short of what was owed; the stream's stopping, once) */
+	if (got)
+		agere_last_in_ms_ = now;
+	if (!agere_stats_ms_)
+		agere_stats_ms_ = now;
+	bool stopped = agere_last_in_ms_ && now - agere_last_in_ms_ > 500;
+	if (stopped && !agere_stopped_)
+		DBG("Agere: its samples stopped %" PRIu64 " ms ago: %" PRIu64 " in, %" PRIu64
+		    " out, %d owed (at most %d), %" PRIu64 " packets short, %zu to play\n",
+		    now - agere_last_in_ms_, agere_in_n_, agere_out_n_, agere_owed_,
+		    agere_owed_most_, agere_short_, iso_.out_buf.size());
+	agere_stopped_ = stopped;
+	if (now - agere_stats_ms_ >= 10000) {
+		agere_stats_ms_ = now;
+		DBG("Agere: %" PRIu64 " samples in, %" PRIu64 " out, %d owed (at most %d), %" PRIu64
+		    " packets short, %zu to play\n", agere_in_n_, agere_out_n_, agere_owed_,
+		    agere_owed_most_, agere_short_, iso_.out_buf.size());
+		agere_owed_most_ = agere_owed_;
 	}
 }
 
@@ -657,6 +692,10 @@ void UsbLine::agere_fill(libusb_transfer *t)
 			std::min<s32>(agere_owed_, OUT_MOST),
 			static_cast<s32>(iso_.out_buf.size())));
 		agere_owed_ -= n;
+		agere_out_n_ += static_cast<u64>(n);
+		/* (less than owed and its room: the playback ran short) */
+		if (n < std::min<s32>(agere_owed_ + n, OUT_MOST))
+			agere_short_++;
 		u8 *b = t->buffer + off;
 		b[0] = static_cast<u8>(n);
 		b[1] = static_cast<u8>(n >> 8);
