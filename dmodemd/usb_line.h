@@ -373,6 +373,9 @@ private:
 	u16 agere_rom_ = 0xffff;
 	s32 agere_owed_ = 0;
 	s16 agere_transfers_ = 3;
+	/* the playback's lead it may have past pump()'s, the samples its OUT
+	   packets in flight can carry */
+	s32 agere_ahead_ = 0;
 	bool agere_ring_ = false;
 	u16 agere_status_ = 0;
 	u64 agere_t0_ = 0, agere_n0_ = 0;

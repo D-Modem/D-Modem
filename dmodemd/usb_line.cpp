@@ -1569,6 +1569,10 @@ s16 UsbLine::pump(dcore::Modem &m)
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
 	size_t most = static_cast<size_t>(3 * frame_);
+	/* (the Agere modem's OUT packets are filled ahead: after a burst
+	   of its samples, as many more as they can catch up on) */
+	if (kind_ == Kind::Agere)
+		most += static_cast<size_t>(agere_ahead_);
 	if (iso_.out_buf.size() > most) {
 		DBG("playback ahead: %zu samples dropped\n",
 		    iso_.out_buf.size() - most);

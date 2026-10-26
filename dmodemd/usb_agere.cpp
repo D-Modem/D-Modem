@@ -454,6 +454,7 @@ bool UsbLine::agere_streams()
 			static_cast<long>(MAX_TRANSFERS), strtol(e, nullptr, 10))));
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
 	agere_owed_ = 0;
+	agere_ahead_ = agere_transfers_ * AGERE_PACKETS * OUT_MOST;
 	delay_ = static_cast<s16>(iso_.out_buf.size() + RING_AHEAD +
 				  agere_transfers_ * AGERE_PACKETS * 2);
 	for (s16 i = 0; i < agere_transfers_; i++) {
@@ -590,7 +591,9 @@ void UsbLine::agere_in(libusb_transfer *t)
 				agere_seen_ = true;
 			}
 		}
-		agere_owed_ += n;
+		/* (owed no more than a few frames: a modem that has stopped
+		   giving its samples is not paid back later at once) */
+		agere_owed_ = std::min<s32>(agere_owed_ + n, 4 * frame_);
 		if (status != agere_status_)
 			TRACE("Agere: status %04x\n", status);
 		agere_status_ = status;
@@ -601,13 +604,16 @@ void UsbLine::agere_in(libusb_transfer *t)
 }
 
 /* see usb_line.h: an OUT transfer's packets filled: each the samples owed
-   (as many as have come in, OUT_MOST at most; silence if the modem has
-   not given them yet) with their count */
+   (as many as have come in, OUT_MOST at most) that the modem has given;
+   the rest owed still, for the next packets (silence sent for them would
+   leave the modem's samples behind, its playback ever further ahead) */
 void UsbLine::agere_fill(libusb_transfer *t)
 {
 	s16 off = 0;
 	for (int i = 0; i < t->num_iso_packets; i++) {
-		s16 n = static_cast<s16>(std::min<s32>(agere_owed_, OUT_MOST));
+		s16 n = static_cast<s16>(std::min<s32>(
+			std::min<s32>(agere_owed_, OUT_MOST),
+			static_cast<s32>(iso_.out_buf.size())));
 		agere_owed_ -= n;
 		u8 *b = t->buffer + off;
 		b[0] = static_cast<u8>(n);
