@@ -78,9 +78,14 @@ ms) makes one that the host takes for babble, and the stream stops (the first de
 in, with 3 transfers in flight). So dmodemd keeps the slots full as Windows' driver does
 (AGRSM.sys 0x1ded8, 0x1ba37): 16 transfers of 24 packets (6 ms) in flight each way
 (`DMODEM_AGERE_TRANSFERS` 2 to 32; Windows' 32), an OUT transfer sent again as soon as it is
-done, each one 48 samples, 2 a packet, or 46 while more samples have gone to the modem than
-have come from it, 50 while fewer (one packet of 4): its transmit ring keeps its lead of 24,
-at an even pace, never in bursts. Silence if the playback has none.
+done, each one 48 samples, 2 a packet: the codec's pace, so its transmit ring keeps the lead of
+24 that 0x0c gave it. Windows' driver makes a transfer 46 or 50 by the sign of the samples sent
+less those come at each transfer; that count jumps by a transfer's 48 as the two kinds complete,
+so its corrections go either way at random and the ring's lead wanders past 24 (the first
+device's V.8 call menu went out chopped: the remote never answered it). dmodemd averages the
+count, takes its average once the stream has settled (2 s) as the ring's 24, and makes a
+transfer 47 or 49 only while the average strays more than 6 from it: for the drift between the
+USB's clock and the codec's. Silence if the playback has none.
 
 **The function table.** The ROM's main routine (0x1616) sets the codec interface up at boot
 (0x1416), then calls entries 4 and 5 of a table of functions at `0x70000a64` for ever. At boot

@@ -400,6 +400,12 @@ private:
 	/* its codec a Polaris DAA (else a Mercury) */
 	bool agere_polaris_ = false;
 	s64 agere_lead_ = 0;
+	/* the lead averaged (in 1/256ths of a sample), its value once settled
+	   (the reference the modem's own lead of 24 has), whether settled;
+	   the OUT transfers made one longer or shorter */
+	s64 agere_avg_ = 0, agere_ref_ = 0;
+	bool agere_settled_ = false;
+	u64 agere_longer_ = 0, agere_shorter_ = 0;
 	s16 agere_transfers_ = 16;
 	/* the playback's lead it may have past pump()'s (a second's: the
 	   OUT transfers in flight take theirs from it at their own pace) */
