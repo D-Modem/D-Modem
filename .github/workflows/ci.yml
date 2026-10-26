@@ -18,6 +18,11 @@
 # (dmodemvm.dll, unsigned, when the runner's WDK has UMDF 2.15; dmodem.inf
 # and dmodem-driver.exe).
 #
+# haiku: the Haiku build (x86_64, Clang, cross from Linux against a
+# sysroot of Haiku's own packages, cmake/haiku_sysroot.py), warnings as
+# errors; nothing here runs its programs, so no tests; dmodemd kept as an
+# artifact.
+#
 # asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
 # in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
 # source by freeswitch/test/build_freeswitch.sh, cached): calls between
@@ -235,6 +240,49 @@ jobs:
             build-msvc/winmodem/dmodem-driver.exe
             winmodem/dmodem.inf
           if-no-files-found: warn
+          retention-days: 30
+
+  haiku:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config clang lld libzstd1 python3
+
+      # Haiku's packages (checked against their repositories' SHA-256)
+      - name: Haiku packages cache
+        uses: actions/cache@v4
+        with:
+          path: haiku-packages
+          key: haiku-packages-${{ hashFiles('cmake/haiku_sysroot.py') }}
+
+      - name: Sysroot
+        run: python3 cmake/haiku_sysroot.py haiku-sysroot --cache haiku-packages
+
+      - name: libre cache
+        uses: actions/cache@v4
+        with:
+          path: build-haiku/_deps/libre-install
+          key: libre-v4.12.0-haiku-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-haiku.patch', 'cmake/haiku.cmake', 'cmake/haiku_sysroot.py') }}
+
+      - name: Configure
+        run: |
+          cmake -B build-haiku -G Ninja -DDMODEM_WERROR=ON \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/haiku.cmake \
+            -DHAIKU_SYSROOT=$PWD/haiku-sysroot
+
+      - name: Build
+        run: cmake --build build-haiku
+
+      - name: dmodemd
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmodemd-haiku-x86_64
+          path: build-haiku/dmodemd/dmodemd
           retention-days: 30
 
   asterisk:

@@ -31,6 +31,8 @@ The project's overview, building and usage are in the top
 - [Windows](windows.md): dmodemd for Windows (MSVC, MinGW-w64), its DTE a COM
   port (com0com), a named pipe (a VM's COM port) or TCP, and its tests
   under Wine
+- [Haiku](haiku.md): dmodemd for Haiku (BeOS's successor), built there or
+  from Linux with a sysroot of Haiku's packages
 
 ## Testing
 

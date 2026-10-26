@@ -24,7 +24,9 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
+#ifndef __HAIKU__
 #include <sys/syscall.h>
+#endif
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -284,8 +286,11 @@ static int connect_tcp(const struct dmbridge_host *h, const char *host,
 static int connect_unix(const struct dmbridge_host *h, const char *path)
 {
 	struct sockaddr_un sun = { .sun_family = AF_UNIX };
-	int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	/* (closed on exec: fcntl(), as Haiku has no SOCK_CLOEXEC) */
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
 
+	if (fd >= 0)
+		fcntl(fd, F_SETFD, FD_CLOEXEC);
 	copy(sun.sun_path, path, sizeof(sun.sun_path));
 	if (fd < 0 || connect(fd, (struct sockaddr *)&sun, sizeof(sun))) {
 		log_line(h, NULL, DMBRIDGE_WARNING, "cannot connect to %s: %s",
@@ -405,6 +410,22 @@ static void close_fds_above_2(void)
 		close(fd);
 }
 
+/* the path of the slave of the master fd into path (size octets): 0,
+   or -1.  ptsname_r(), or where there is none (Haiku) ptsname()'s copy */
+static int pts_name(int fd, char *path, size_t size)
+{
+#ifdef __HAIKU__
+	const char *p = ptsname(fd);
+
+	if (!p || strlen(p) >= size)
+		return -1;
+	memcpy(path, p, strlen(p) + 1);
+	return 0;
+#else
+	return ptsname_r(fd, path, size) ? -1 : 0;
+#endif
+}
+
 /* the program on the slave of a new pty, the master returned; the child
    is ours to reap (end_exec()) */
 static int start_exec(const struct dmbridge_host *h,
@@ -416,7 +437,7 @@ static int start_exec(const struct dmbridge_host *h,
 
 	master = posix_openpt(O_RDWR | O_NOCTTY);
 	if (master < 0 || grantpt(master) || unlockpt(master) ||
-	    ptsname_r(master, slave, sizeof(slave))) {
+	    pts_name(master, slave, sizeof(slave))) {
 		log_line(h, NULL, DMBRIDGE_WARNING, "no pty: %s",
 			 strerror(errno));
 		if (master >= 0)

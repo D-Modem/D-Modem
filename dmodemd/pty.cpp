@@ -26,7 +26,9 @@
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#ifndef __HAIKU__
 #include <sys/syscall.h>
+#endif
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -117,6 +119,25 @@ void remove_link(const char *link, const char *target)
 		unlink(link);
 }
 
+/* the path of the slave of the master fd into path (size octets): 0,
+   or an errno.  ptsname_r(), or where there is none (Haiku) ptsname()'s
+   copy: only the keeper, single threaded, and open() call it */
+int pts_name(int fd, char *path, size_t size)
+{
+#ifdef __HAIKU__
+	const char *p = ptsname(fd);
+
+	if (!p)
+		return errno ? errno : EINVAL;
+	if (strlen(p) >= size)
+		return ERANGE;
+	memcpy(path, p, strlen(p) + 1);
+	return 0;
+#else
+	return ptsname_r(fd, path, size);
+#endif
+}
+
 /* every descriptor from first up closed.  Async-signal-safe */
 void close_from(int first)
 {
@@ -179,11 +200,19 @@ ssize_t keeper_receive(char *op, int *fd)
 	msg.msg_control = ctl.buf;
 	msg.msg_controllen = sizeof(ctl.buf);
 	*fd = -1;
+#ifdef MSG_CMSG_CLOEXEC
 	n = recvmsg(KEEPER_FD, &msg, MSG_CMSG_CLOEXEC);
+#else
+	n = recvmsg(KEEPER_FD, &msg, 0);
+#endif
 	c = n > 0 ? CMSG_FIRSTHDR(&msg) : nullptr;
 	if (c && c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS &&
-	    c->cmsg_len >= CMSG_LEN(sizeof(int)))
+	    c->cmsg_len >= CMSG_LEN(sizeof(int))) {
 		memcpy(fd, CMSG_DATA(c), sizeof(int));
+#ifndef MSG_CMSG_CLOEXEC
+		fcntl(*fd, F_SETFD, FD_CLOEXEC);
+#endif
+	}
 	return n;
 }
 
@@ -218,7 +247,7 @@ ssize_t keeper_receive(char *op, int *fd)
 			break;
 		/* the slave of a master only: nothing else of the system's
 		   is ours to touch */
-		err = fd < 0 ? EBADF : ptsname_r(fd, path, sizeof(path));
+		err = fd < 0 ? EBADF : pts_name(fd, path, sizeof(path));
 		if (fd >= 0)
 			close(fd);
 		if (err) {
@@ -253,7 +282,7 @@ int new_master(struct termios *t, bool keep, char *path, size_t size)
 	}
 	if (grantpt(fd) < 0 || unlockpt(fd) < 0) {
 		failed = "unlock";
-	} else if ((errno = ptsname_r(fd, path, size)) != 0) {
+	} else if ((errno = pts_name(fd, path, size)) != 0) {
 		failed = "name";
 	} else if (!keep && tcgetattr(fd, t) < 0) {
 		failed = "read the settings of";

@@ -100,7 +100,11 @@ unsigned seed = 1;
 int listen_at(const std::string &path)
 {
 	struct sockaddr_un a = {};
-	int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	/* (closed on exec: fcntl(), as Haiku has no SOCK_CLOEXEC) */
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+
+	if (fd >= 0)
+		fcntl(fd, F_SETFD, FD_CLOEXEC);
 
 	unlink(path.c_str());
 	a.sun_family = AF_UNIX;
@@ -403,8 +407,8 @@ void accept_all()
 {
 	for (Line &l : lines) {
 		int fd;
-		while ((fd = accept4(l.listen, nullptr, nullptr,
-				     SOCK_CLOEXEC)) >= 0) {
+		while ((fd = accept(l.listen, nullptr, nullptr)) >= 0) {
+			fcntl(fd, F_SETFD, FD_CLOEXEC);
 			char kind = 0;
 			struct pollfd p = { fd, POLLIN, 0 };
 			if (poll(&p, 1, 1000) != 1 || read(fd, &kind, 1) != 1) {

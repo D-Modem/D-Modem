@@ -32,6 +32,9 @@
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
+#ifdef __HAIKU__
+#include <OS.h>
+#endif
 #include <dcore.h>
 #include <dsplibs.h>
 #include <log.h>
@@ -62,7 +65,9 @@ const s32 RATE = 8000;
 /* the user dmodemd goes on as, started as root, and the locked memory
    it then needs with realtime scheduling */
 const char RUN_AS[] = "nobody";
+#ifdef RLIMIT_MEMLOCK
 const rlim_t MEMLOCK_MIN = 8UL << 20;
+#endif
 
 /* where the modems' data files are */
 const char DATA_PREFIX[] = "/var/lib/dmodem/data.";
@@ -86,6 +91,17 @@ std::string link_path(const char *name)
    reported */
 void go_realtime()
 {
+#ifdef __HAIKU__
+	/* (Haiku: no mlockall() or SCHED_FIFO, but real-time priorities,
+	   which run until they block, as SCHED_FIFO does: this thread's,
+	   the line's loop; the threads made later have their own) */
+	status_t r = set_thread_priority(find_thread(nullptr),
+					 B_REAL_TIME_DISPLAY_PRIORITY);
+	if (r < B_OK)
+		ERR("cannot have a real-time priority: %s\n", strerror(r));
+	else
+		DBG("real-time priority %d\n", B_REAL_TIME_DISPLAY_PRIORITY);
+#else
 	struct sched_param sp;
 
 	if (mlockall(MCL_CURRENT) < 0)
@@ -97,6 +113,18 @@ void go_realtime()
 	else
 		DBG("realtime scheduling: SCHED_FIFO, priority %d\n",
 		    sp.sched_priority);
+#endif
+}
+
+/* started with root's rights, to be given up after start-up (Haiku:
+   every process has uid 0, and there are no other users to run as) */
+bool started_as_root()
+{
+#ifdef __HAIKU__
+	return false;
+#else
+	return geteuid() == 0;
+#endif
 }
 
 /* root's rights given up for RUN_AS's, for good (exits if they can't
@@ -108,6 +136,7 @@ void drop_privileges(bool realtime)
 	gid_t gid;
 	uid_t uid;
 
+#ifdef RLIMIT_MEMLOCK
 	if (realtime) {
 		struct rlimit rl;
 		if (getrlimit(RLIMIT_MEMLOCK, &rl) < 0) {
@@ -124,6 +153,9 @@ void drop_privileges(bool realtime)
 			exit(-1);
 		}
 	}
+#else
+	(void)realtime;
+#endif
 	pw = getpwnam(RUN_AS);
 	if (!pw) {
 		ERR("cannot find the user '%s'\n", RUN_AS);
@@ -284,13 +316,13 @@ int main(int argc, char *argv[])
 		exit(-1);
 #endif
 	/* the keeper an ordinary process, forked before any thread */
-	if (geteuid() == 0)
+	if (started_as_root())
 		pty.fork_keeper();
 	if (opt.realtime)
 		go_realtime();
 	dmd::RunLoop::catch_signals();
 	signal(SIGPIPE, SIG_IGN);
-	if (geteuid() == 0)
+	if (started_as_root())
 		drop_privileges(opt.realtime);
 	fprintf(stderr, "Use `%s' as modem device, Ctrl+C for termination.\n",
 		*pty.link() ? pty.link() : pty.name());

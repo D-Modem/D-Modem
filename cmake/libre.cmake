@@ -75,8 +75,10 @@ if(MSVC)
 endif()
 # (Apple's: the SDK, iphoneos or iphonesimulator, and the oldest
 # system the build runs on)
-# (MinGW-w64: the compiler and target this build's toolchain file took)
-foreach(_v CMAKE_TOOLCHAIN_FILE MINGW_TRIPLE MINGW_COMPILER CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION
+# (MinGW-w64: the compiler and target this build's toolchain file took;
+# Haiku: its packages, extracted, and cmake/rules.cmake's -fPIC)
+foreach(_v CMAKE_TOOLCHAIN_FILE CMAKE_USER_MAKE_RULES_OVERRIDE MINGW_TRIPLE MINGW_COMPILER HAIKU_SYSROOT HAIKU_TRIPLE
+	CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION
 	CMAKE_SYSROOT CMAKE_OSX_ARCHITECTURES CMAKE_OSX_SYSROOT
 	CMAKE_OSX_DEPLOYMENT_TARGET ANDROID_ABI ANDROID_PLATFORM
 	ANDROID_NDK ANDROID_STL)
@@ -105,6 +107,21 @@ function(dmodem_fetch_build name repo tag src build log)
 			RESULT_VARIABLE _r)
 		if(_r)
 			message(FATAL_ERROR "${name}: git clone failed")
+		endif()
+	endif()
+	# (<name>_PATCH: a patch for this system, applied once)
+	if(${name}_PATCH)
+		execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
+			${${name}_PATCH} WORKING_DIRECTORY ${src}
+			RESULT_VARIABLE _applied OUTPUT_QUIET ERROR_QUIET)
+		if(_applied)
+			execute_process(COMMAND ${GIT_EXECUTABLE} apply
+				${${name}_PATCH} WORKING_DIRECTORY ${src}
+				RESULT_VARIABLE _r)
+			if(_r)
+				message(FATAL_ERROR "${name}: ${${name}_PATCH} "
+					"does not apply")
+			endif()
 		endif()
 	endif()
 	file(REMOVE_RECURSE ${build})
@@ -167,6 +184,12 @@ endif()
 if(MSVC)
 	string(APPEND _re_cflags " -DDISABLE_RE_ARG")
 endif()
+# (Haiku: cmake/libre-haiku.patch, for its interface ioctls and its lack
+# of a routing table listing)
+if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+	set(libre_PATCH ${CMAKE_CURRENT_LIST_DIR}/libre-haiku.patch)
+	set(_re_stamp ${_re_stamp}-haiku)
+endif()
 if(NOT EXISTS ${_re_lib} OR NOT EXISTS ${_re_stamp})
 	dmodem_fetch_build(libre ${DMODEM_LIBRE_REPO} ${DMODEM_LIBRE_TAG}
 		${_re_src} ${_re_build} ${_re_log} ${_cross} ${_re_crypto}
@@ -185,6 +208,10 @@ add_library(libre INTERFACE IMPORTED)
 target_include_directories(libre INTERFACE ${_re_prefix}/include/re)
 target_link_libraries(libre INTERFACE ${_re_lib} ${_crypto_libs}
 	Threads::Threads ${DMODEM_LIBM} ${CMAKE_DL_LIBS})
+# (Haiku: the sockets and getifaddrs() in libnetwork)
+if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+	target_link_libraries(libre INTERFACE network)
+endif()
 if(WIN32)
 	# (its headers choose Winsock's by WIN32; the system libraries its
 	# .pc and Mbed TLS's name)

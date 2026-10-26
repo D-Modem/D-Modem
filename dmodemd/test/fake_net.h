@@ -17,6 +17,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -136,8 +137,9 @@ inline int connect_exchange(const char *where, char kind)
 		return -1;
 #else
 		struct sockaddr_un a = {};
-		fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-		if (fd < 0)
+		/* (closed on exec: fcntl(), as Haiku has no SOCK_CLOEXEC) */
+		fd = socket(AF_UNIX, SOCK_STREAM, 0);
+		if (fd < 0 || fcntl(fd, F_SETFD, FD_CLOEXEC) < 0)
 			return -1;
 		a.sun_family = AF_UNIX;
 		strncpy(a.sun_path, where, sizeof(a.sun_path) - 1);

@@ -57,6 +57,7 @@
 #include <vector>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -71,6 +72,16 @@
 #include "sip.h"
 
 namespace {
+
+/* a UDP socket closed on exec (fcntl(): Haiku has no SOCK_CLOEXEC) */
+int udp_socket()
+{
+	int fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+	if (fd >= 0)
+		fcntl(fd, F_SETFD, FD_CLOEXEC);
+	return fd;
+}
 
 const s16 IDLE_MS = 200;        /* no packet this long: go on alone */
 const s16 MAX_SAMPLES = 1600;   /* in a packet, 200 ms */
@@ -289,7 +300,7 @@ struct Rtp {
 	{
 		struct sockaddr_in a = {};
 		socklen_t len = sizeof(a);
-		fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		fd = udp_socket();
 		a.sin_family = AF_INET;
 		if (fd < 0 ||
 		    inet_pton(AF_INET, host.c_str(), &a.sin_addr) != 1 ||
@@ -758,7 +769,7 @@ s32 udp_open(const std::string &host, int *fd)
 {
 	struct sockaddr_in a = {};
 	socklen_t len = sizeof(a);
-	*fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	*fd = udp_socket();
 	a.sin_family = AF_INET;
 	if (*fd < 0 || inet_pton(AF_INET, host.c_str(), &a.sin_addr) != 1 ||
 	    bind(*fd, reinterpret_cast<struct sockaddr *>(&a), sizeof(a)) ||

@@ -15,7 +15,13 @@ if(NOT PKG_CONFIG_FOUND)
 	message(STATUS "mod_dmodem: no pkg-config, skipped")
 	return()
 endif()
-set(FREESWITCH_PKGCONFIG "/usr/local/freeswitch/lib/pkgconfig" CACHE PATH
+# (cross compiling: not the build host's source install)
+if(CMAKE_CROSSCOMPILING)
+	set(_fs_pc "")
+else()
+	set(_fs_pc "/usr/local/freeswitch/lib/pkgconfig")
+endif()
+set(FREESWITCH_PKGCONFIG "${_fs_pc}" CACHE PATH
 	"the directory of freeswitch.pc")
 # only for this (FreeSWITCH's prefix may have its own spandsp, which the
 # tests' must not find)

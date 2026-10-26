@@ -12,6 +12,7 @@
 #include <cstring>
 #include <random>
 
+#include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -74,10 +75,11 @@ int connect_to(const Server &srv)
 	if (getaddrinfo(srv.host.c_str(), port, &hints, &res))
 		return -1;
 	for (ai = res; ai; ai = ai->ai_next) {
-		fd = socket(ai->ai_family, ai->ai_socktype | SOCK_CLOEXEC,
-			    ai->ai_protocol);
+		/* (closed on exec: fcntl(), as Haiku has no SOCK_CLOEXEC) */
+		fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 		if (fd < 0)
 			continue;
+		fcntl(fd, F_SETFD, FD_CLOEXEC);
 		if (!connect(fd, ai->ai_addr, ai->ai_addrlen))
 			break;
 		::close(fd);

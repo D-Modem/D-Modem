@@ -25,6 +25,10 @@
 #   DMODEM_PREFER_CLANG  Clang where it is installed, not GCC (a first
 #                      configure without CC, CXX or a toolchain file)
 cmake_minimum_required(VERSION 3.16)
+# (cmake/rules.cmake: after CMake's settings for each compiler)
+if(NOT CMAKE_USER_MAKE_RULES_OVERRIDE)
+	set(CMAKE_USER_MAKE_RULES_OVERRIDE ${CMAKE_CURRENT_LIST_DIR}/cmake/rules.cmake)
+endif()
 # the compilers: Clang where it is installed (clang and clang++, else the
 # newest clang-<n>), GCC otherwise.  Only when nothing else chose them:
 # CC and CXX, -DCMAKE_C_COMPILER, a toolchain file (cross builds: their
@@ -127,6 +131,10 @@ if(MSVC)
 	add_compile_options(/FI${PROJECT_SOURCE_DIR}/compat/msvc/dmodem_msvc.h)
 else()
 	set(DMODEM_LIBM m)
+	# (Haiku: the sockets are libnetwork's, not the C library's)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+		link_libraries(network)
+	endif()
 	if(DMODEM_WERROR)
 		add_compile_options(-Werror)
 	endif()
@@ -169,6 +177,18 @@ if(MINGW)
 	add_compile_options(-Wno-format)
 endif()
 
+# Haiku: /boot/system is its packages' (read only); what isn't packaged
+# goes in /boot/system/non-packaged, its data in data/, not share/
+if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+	if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+		set(CMAKE_INSTALL_PREFIX "/boot/system/non-packaged" CACHE PATH
+			"Install path prefix" FORCE)
+	endif()
+	set(CMAKE_INSTALL_DATAROOTDIR "data" CACHE PATH
+		"read-only architecture-independent data root")
+	# (and no sbin: the programs in bin, which is on the PATH)
+	set(CMAKE_INSTALL_SBINDIR "bin" CACHE PATH "system admin executables")
+endif()
 include(GNUInstallDirs)
 # (PROJECT_SOURCE_DIR: also as another project's subdirectory)
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)

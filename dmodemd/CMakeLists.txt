@@ -64,9 +64,11 @@ if(DMODEM_DMODEMD)
 		install(TARGETS dmodemd RUNTIME
 			DESTINATION ${CMAKE_INSTALL_SBINDIR})
 		# HD-audio modem codecs outside snd-hda-codec-si3054's list
-		# for -a (docs/hardware.md)
-		install(PROGRAMS hda-modem-setup
-			DESTINATION ${CMAKE_INSTALL_SBINDIR})
+		# for -a (docs/hardware.md): Linux's
+		if(NOT CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+			install(PROGRAMS hda-modem-setup
+				DESTINATION ${CMAKE_INSTALL_SBINDIR})
+		endif()
 	endif()
 	dmodem_flags(dmodemd)
 	# the Agere USB modem's ROM patches (firmware/agere: Agere's, under
