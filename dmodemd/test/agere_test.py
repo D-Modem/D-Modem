@@ -222,7 +222,12 @@ try:
     m.stop()
 
     # 1001 a Polaris DAA (as the Hiro H50113), 1002 a Mercury codec
-    a = Modem("1001", "dmodem41", args=["-r", "9600", "-d2"], FAKE_AGERE_POLARIS="1")
+    # (its recordings' folder: dmodemd may run as another user)
+    recs = os.path.join(tmp, "recs")
+    os.mkdir(recs)
+    os.chmod(recs, 0o777)
+    a = Modem("1001", "dmodem41", args=["-r", "9600", "-d2"], FAKE_AGERE_POLARIS="1",
+              DMODEM_USB_REC=os.path.join(recs, "line"))
     b = Modem("1002", "dmodem42")
     check("-r 9600: 8000 Hz all the same", a.expect_log(b"8000 Hz, its rate (not 9600)", 5))
     for m in (a, b):
@@ -274,6 +279,12 @@ try:
     check("1002 NO CARRIER", b.expect(rb"NO CARRIER\r\n", 30))
     time.sleep(0.5)
     check("1001's OH off on hook", led(a, b"OH") == b"off")
+    # the call recorded (DMODEM_USB_REC): a stereo WAV at 8000 Hz, the line's sound in it
+    wavs = sorted(f for f in os.listdir(recs) if f.startswith("line-") and f.endswith(".wav"))
+    w = open(os.path.join(recs, wavs[0]), "rb").read() if wavs else b""
+    check("1001's call recorded", len(w) > 44 + 8000 * 4 * 10 and w[:4] == b"RIFF"
+          and int.from_bytes(w[22:24], "little") == 2 and int.from_bytes(w[24:28], "little") == 8000
+          and int.from_bytes(w[40:44], "little") == len(w) - 44)
 
     # pulse dialling: the hook (codec register 0xc0) broken and made
     check("1002 no auto answer", b.cmd(b"ATS0=0"))

@@ -241,7 +241,12 @@ the status word. `DMODEM_AGERE_DUMP=1` also logs, once streaming, the configurat
 and the ARM's memory as hex: the ROM from 0 (64 KB, until a read fails), its RAM
 (`0x70000000`, 8 KB), the controller's, the codec's and the endpoints' registers.
 
-Useful to send if it does not work: that log, with the dump.
+`DMODEM_USB_REC=<path>` records each call on any USB modem, from off hook to on hook, to
+`<path>-<date>-<time>.wav`: stereo at the line's rate, left the line's samples as they came,
+right the modem's as it sent them. The 10 s counts (`Agere: N samples in, N out, lead ...`)
+also count the IN packets that failed or came short.
+
+Useful to send if it does not work: that log, with the dump (and a call's recording).
 
 ### The first device
 

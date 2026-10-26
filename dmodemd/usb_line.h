@@ -51,6 +51,7 @@
 
 #include <deque>
 #include <string>
+#include <cstdio>
 #include <vector>
 
 #ifdef _WIN32
@@ -274,6 +275,12 @@ private:
 	bool agere_table();
 	bool agere_start();
 	void agere_stop();
+	/* DMODEM_USB_REC=<path>: each time off hook, the line recorded to
+	   <path>-<date>-<time>.wav until on hook (stereo, the line's rate:
+	   left what came from the line, right what the modem sent to it) */
+	void rec_start();
+	void rec_frame(const s16 *in, const s16 *out, s16 n);
+	void rec_stop();
 	/* the hook (true: off), a Mercury's or a Polaris's */
 	bool agere_hook(bool off);
 	/* a Polaris DAA: started, caller ID on or off, its DAA registers */
@@ -355,6 +362,9 @@ private:
 	s16 mic_last_ = 0, ear_last_ = 0;
 	std::vector<s16> frame_mic_, frame_ear_;
 	u64 samples_ = 0;
+	/* DMODEM_USB_REC: the line recorded while off hook (rec_start()) */
+	FILE *rec_ = nullptr;
+	u64 rec_frames_ = 0;
 	bool running_ = false;
 	bool dead_ = false;
 	s16 hook_ = MODEM_HOOK_ON;
@@ -412,6 +422,7 @@ private:
 	u64 agere_in_n_ = 0, agere_out_n_ = 0, agere_short_ = 0;
 	s64 agere_lead_lo_ = 0, agere_lead_hi_ = 0;
 	u32 agere_odd_ = 0;
+	u64 agere_in_bad_ = 0, agere_in_short_ = 0;
 	u64 agere_last_in_ms_ = 0, agere_stats_ms_ = 0;
 	bool agere_stopped_ = false;
 	s16 agere_lo_ = 0, agere_hi_ = 0;

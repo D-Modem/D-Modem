@@ -78,6 +78,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 
 #include <g711.h>
 #include <log.h>
@@ -1339,6 +1340,10 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 
 	DBG("%s\n", off ? "off hook" : "on hook");
 	hook_ = state;
+	if (off)
+		rec_start();
+	else
+		rec_stop();
 	flash_end_ = 0;
 	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
 		return agere_hook(off) && agere_caller_id(!off) ? 0 : -1;
@@ -1565,6 +1570,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 			m.process(frame_in_.data(), frame_out_.data(), frame_);
 		else
 			std::fill_n(frame_out_.data(), frame_, 0);
+		if (rec_)
+			rec_frame(frame_in_.data(), frame_out_.data(), frame_);
 		iso_.out_buf.insert(iso_.out_buf.end(), frame_out_.begin(),
 				    frame_out_.end());
 	}
@@ -1674,8 +1681,91 @@ void UsbLine::voice_frame(dcore::Modem &m)
 
 /* the transfers cancelled (and their callbacks run), on hook, the codec
    powered down, the interface released, libusb closed */
+/* see usb_line.h: a WAV file's header for frames of 2 channels at the
+   line's rate (sizes 0 until rec_stop()) */
+static void wav_header(FILE *f, u32 rate, u64 frames)
+{
+	auto le = [f](u32 v, int n) {
+		for (int i = 0; i < n; i++)
+			fputc(static_cast<int>(v >> (8 * i) & 0xff), f);
+	};
+	u32 data = static_cast<u32>(std::min<u64>(frames * 4, 0xffffffd3u));
+	fputs("RIFF", f);
+	le(36 + data, 4);
+	fputs("WAVEfmt ", f);
+	le(16, 4);
+	le(1, 2);
+	le(2, 2);
+	le(rate, 4);
+	le(rate * 4, 4);
+	le(4, 2);
+	le(16, 2);
+	fputs("data", f);
+	le(data, 4);
+}
+
+/* see usb_line.h */
+void UsbLine::rec_start()
+{
+	const char *p = getenv("DMODEM_USB_REC");
+	if (rec_ || !p || !*p)
+		return;
+	char name[512], when[32];
+	time_t t = time(nullptr);
+	struct tm tm;
+#ifdef _WIN32
+	localtime_s(&tm, &t);
+#else
+	localtime_r(&t, &tm);
+#endif
+	strftime(when, sizeof(when), "%Y%m%d-%H%M%S", &tm);
+	snprintf(name, sizeof(name), "%s-%s.wav", p, when);
+	rec_ = fopen(name, "wb");
+	if (!rec_) {
+		ERR("the line's recording: %s: %s\n", name, strerror(errno));
+		return;
+	}
+	rec_frames_ = 0;
+	wav_header(rec_, rate_, 0);
+	DBG("recording the line to %s\n", name);
+}
+
+/* see usb_line.h */
+void UsbLine::rec_frame(const s16 *in, const s16 *out, s16 n)
+{
+	u8 b[4 * 512];
+	s16 k = 0;
+	while (k < n) {
+		s16 m = static_cast<s16>(std::min<int>(n - k, 512));
+		for (s16 i = 0; i < m; i++) {
+			u16 l = static_cast<u16>(in[k + i]), r = static_cast<u16>(out[k + i]);
+			b[4 * i] = static_cast<u8>(l);
+			b[4 * i + 1] = static_cast<u8>(l >> 8);
+			b[4 * i + 2] = static_cast<u8>(r);
+			b[4 * i + 3] = static_cast<u8>(r >> 8);
+		}
+		fwrite(b, 4, static_cast<size_t>(m), rec_);
+		k = static_cast<s16>(k + m);
+	}
+	rec_frames_ += static_cast<u64>(n);
+}
+
+/* see usb_line.h */
+void UsbLine::rec_stop()
+{
+	if (!rec_)
+		return;
+	fflush(rec_);
+	rewind(rec_);
+	wav_header(rec_, rate_, rec_frames_);
+	fclose(rec_);
+	rec_ = nullptr;
+	DBG("the line recorded: %" PRIu64 " s\n", rate_ ? rec_frames_ / rate_ : 0);
+}
+
 void UsbLine::close()
 {
+	rec_stop();
 	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_) {
 		/* the stream stopped, on hook, GPIOs 2 and 3 as CUsbStop leaves
 		   them, the OH LED (GPIO 4) out */

@@ -612,9 +612,17 @@ void UsbLine::agere_in(libusb_transfer *t)
 	s32 got = 0;
 	for (int i = 0; i < t->num_iso_packets; i++) {
 		const libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
-		if (p.status != LIBUSB_TRANSFER_COMPLETED ||
-		    p.actual_length < static_cast<unsigned>(ISO_HEAD))
+		/* (a packet that failed, or came short: counted, for the log) */
+		if (p.status != LIBUSB_TRANSFER_COMPLETED) {
+			if (agere_in_bad_++ < 5)
+				DBG("Agere: an IN packet failed: %d (%u octets)\n", p.status,
+				    p.actual_length);
 			continue;
+		}
+		if (p.actual_length < static_cast<unsigned>(ISO_HEAD)) {
+			agere_in_short_++;
+			continue;
+		}
 		const u8 *b = libusb_get_iso_packet_buffer_simple(t, static_cast<unsigned>(i));
 		u16 count = static_cast<u16>(b[0] | u16{b[1]} << 8);
 		u16 status = static_cast<u16>(b[2] | u16{b[3]} << 8);
@@ -672,9 +680,10 @@ void UsbLine::agere_in(libusb_transfer *t)
 	if (now - agere_stats_ms_ >= 10000) {
 		agere_stats_ms_ = now;
 		DBG("Agere: %" PRIu64 " samples in, %" PRIu64 " out, lead %" PRId64 " (%" PRId64
-		    " to %" PRId64 "), %" PRIu64 " packets of silence, %zu to play\n",
+		    " to %" PRId64 "), %" PRIu64 " packets of silence, %zu to play; IN packets "
+		    "%" PRIu64 " failed, %" PRIu64 " short, %u odd\n",
 		    agere_in_n_, agere_out_n_, agere_lead_, agere_lead_lo_, agere_lead_hi_,
-		    agere_short_, iso_.out_buf.size());
+		    agere_short_, iso_.out_buf.size(), agere_in_bad_, agere_in_short_, agere_odd_);
 		agere_lead_lo_ = agere_lead_hi_ = agere_lead_;
 	}
 }
