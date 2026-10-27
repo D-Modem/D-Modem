@@ -537,6 +537,46 @@ TEST(DmodemCxx, TextBothWays)
 	EXPECT_EQ(got_b, msg);
 }
 
+/* the line's rates: 8000 and 9600 for the voice band, 48000, 96000 and
+   192000 for the wideband mode, no other; a voice-band modulation
+   refused at 96000 Hz (NO CARRIER after an ATD that dials nothing: a
+   bare pair has no exchange) */
+TEST(DmodemRate, WidebandRates)
+{
+	dm::init();
+	if (getenv("DMODEM_DEBUG"))
+		dmodem_set_debug(atoi(getenv("DMODEM_DEBUG")));
+	for (int32_t r : { 8000, 9600, 48000, 96000, 192000, 16000, 44100 }) {
+		Dte d;
+		dmodem_config c{};
+		c.name = "modem";
+		c.dte_fd = d.modem_end();
+		struct dmodem *m = dmodem_create_rate(&c, r);
+		bool ok = r == 8000 || r == 9600 || r >= 48000;
+		EXPECT_EQ(m != nullptr, ok) << r << " Hz";
+		dmodem_destroy(m);
+	}
+	Dte d;
+	dmodem_config c{};
+	c.name = "modem";
+	c.dte_fd = d.modem_end();
+	c.init = "ATE0X3+MS=V34\r";
+	struct dmodem *m = dmodem_create_rate(&c, 96000);
+	ASSERT_NE(m, nullptr);
+	d.read_all();
+	ASSERT_EQ(dmodem_dial(m, "123"), 0);
+	std::vector<short> in(1920), out(1920);
+	std::string got;
+	for (int i = 0; i < 100 && got.find("NO CARRIER") ==
+	     std::string::npos; i++) {
+		dmodem_process(m, in.data(), out.data(), 1920);
+		dmodem_poll_dte(m);
+		got += d.read_all();
+	}
+	EXPECT_NE(got.find("NO CARRIER"), std::string::npos) << got;
+	dmodem_destroy(m);
+}
+
 /* command lines as the DTE's (dmodem_command): their results to the
    DTE, what they do to the call (an answer); one too long refused */
 TEST(DmodemCxx, CommandLines)

@@ -115,7 +115,8 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "a SmartUSB56's buzzer (GPIO 11) as the speaker (ATM, ATL)",
 	  nullptr, false },
 	{ 'r', "rate", Takes::Number, true,
-	  "the codec's rate with -a or --usb (8000 or 9600)", "9600", false },
+	  "the codec's rate with -a or --usb (8000 or 9600; 48000, 96000 or "
+	  "192000 for the wideband mode, AT+MS=VWB)", "9600", false },
 #ifdef _WIN32
 	{ 0, "com", Takes::Text, true,
 	  "the DTE a COM port (COM5: one end of a com0com pair)", "none",
@@ -403,8 +404,9 @@ void CommandLine::apply(Options &opt) const
 	if (o[OPT_RATE].given) {
 		s32 rate = 0;
 		dcore::parse_long(o[OPT_RATE].value, rate);
-		if (rate != 8000 && rate != 9600) {
-			fprintf(stderr, "%s: -r: 8000 or 9600\n", prog_);
+		if (!dmd::line_rate_ok(rate)) {
+			fprintf(stderr, "%s: -r: 8000, 9600, 48000, 96000 or "
+				"192000\n", prog_);
 			exit(1);
 		}
 		opt.rate = static_cast<u32>(rate);

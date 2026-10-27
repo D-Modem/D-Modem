@@ -516,7 +516,7 @@ start from.
 | `--usb-buzzer` | the SmartUSB56's buzzer (GPIO 11, BUZEN) as the speaker: on while ATM/ATL have it on, as Windows' `Options.Buzzer` |
 | `--usb-rhom` | the SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15, and the voice codec's bit 7) while the modem runs, as Windows' `Options.RHOM`; not below revision 0x200 |
 | `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
-| `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the data pumps' (an Agere USB modem's is 8000 whatever it says) |
+| `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the voice-band data pumps' (an Agere USB modem's is 8000 whatever it says); 48000, 96000 or 192000 for the wideband mode on a bare pair (`AT+MS=VWB`, [dsp/vwb.md](dsp/vwb.md)), on a line that has the rate (an ALSA codec; not the SmartUSB56 or the Line stick). At those rates the voice-band pumps are refused (`NO CARRIER`) and `ATD` dials nothing |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
 the device's group (usually `audio`) does not matter. Started as a user,

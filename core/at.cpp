@@ -262,7 +262,7 @@ const struct {
 	{ "V34", DP_V34 }, { "V90", DP_V90 }, { "V91", DP_V91 },
 	{ "V92", DP_V92 }, { "B103", DP_B103 }, { "BELL103", DP_B103 },
 	{ "B212", DP_B212 }, { "BELL212A", DP_B212 }, { "K56", DP_K56 },
-	{ "V_CVM", DP_VCVM },
+	{ "V_CVM", DP_VCVM }, { "VWB", DP_VWB },
 };
 
 /* pump id is registered */

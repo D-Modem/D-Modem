@@ -1413,6 +1413,14 @@ void Modem::change_dp()
 	}
 	logf("pump %u (driver %u), %s\n", id, drv,
 	     caller_ ? "caller" : "answerer");
+	/* the voice band's pumps at 8000 or 9600 Hz alone, the wideband
+	   one at 48000 Hz and up (it refuses less itself) */
+	if (wideband() && drv != DP_VWB) {
+		log_printf(1, "err: %s: pump %u needs 8000 or 9600 Hz, not "
+			   "%" PRId32 " (AT+MS=VWB)\n", name_, id, srate_);
+		hup(true);
+		return;
+	}
 	/* the answering pump's answer tone after its 0.2 s of silence */
 	if (!caller_ && !dp_)
 		answer_tone_at_ =
@@ -1440,8 +1448,9 @@ void Modem::change_dp()
 /* call progress for a dial: the line stopped if caller ID or voice has
    it, the caller, the pump created with the dial string hidden when the
    network dials it (unless the pump has to wait for a dial tone; on an
-   analogue line, Host::analog_line(), the modem dials it); -1 if there
-   is a pump already or none can be made */
+   analogue line, Host::analog_line(), the modem dials it); none on a
+   wideband line (dial() starts the data pump); -1 if there is a pump
+   already or none can be made */
 s16 Modem::dial_start()
 {
 	const DpDriver *d;
@@ -1452,6 +1461,9 @@ s16 Modem::dial_start()
 	if (started_ && !voice_held_ && stop_call())
 		return -1;
 	caller_ = true;
+	/* a wideband line has no exchange: the pump at once */
+	if (wideband())
+		return 0;
 	d = find_driver(DP_CALLPROG);
 	first = dialing_[0];
 	if (!host_.analog_line(*this))
@@ -1495,7 +1507,11 @@ s16 Modem::dial(const char *number)
 	if (dial_start())
 		return -1;
 	voice_held_ = false;
-	return start_call(held);
+	if (start_call(held))
+		return -1;
+	if (wideband())
+		later(Later::ChangeDp, 0);
+	return 0;
 }
 
 /* call progress has dialled up to the ';': the call is held in command

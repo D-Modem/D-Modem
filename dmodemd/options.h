@@ -25,8 +25,9 @@ struct Options {
 	bool realtime = true;            /* -n: not */
 	bool listen = false;             /* -L */
 	/* dmodemd: a softmodem's codec through ALSA for its line (-a, its
-	   control --alsa-ctl), at rate Hz (-r: 8000 or 9600, the data
-	   pumps') */
+	   control --alsa-ctl), at rate Hz (-r: line_rate_ok(): 8000 or
+	   9600, the voice-band pumps'; 48000, 96000 or 192000, the wideband
+	   pump's, DP_VWB) */
 	const char *alsa = nullptr;
 	const char *alsa_ctl = nullptr;
 	/* or a Smart Link SmartUSB56 through libusb (--usb: auto, or
@@ -68,6 +69,16 @@ struct Options {
 /* parses argv (prints the usage and exits on an error, -h, -v,
    --countrylist); sets the log levels (-d, -l) */
 void parse_options(int argc, char *argv[], Options &opt);
+
+/* a line's sample rate the modem runs at (-r): 8000 and 9600 for the
+   voice-band pumps, 48000, 96000 and 192000 for the wideband one
+   (DP_VWB, which refuses less than 48000; the voice-band pumps refuse
+   more than 9600) */
+inline bool line_rate_ok(long rate)
+{
+	return rate == 8000 || rate == 9600 || rate == 48000 ||
+	       rate == 96000 || rate == 192000;
+}
 
 /* the modem's name and version, on stdout and in the log */
 void print_version();

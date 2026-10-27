@@ -33,6 +33,7 @@ struct dmodem final : public dcore::Host {
 	int dte_fd = -1;
 	enum dmodem_law law = DMODEM_LAW_UNKNOWN;
 	u64 samples = 0; /* the modem's clock: its audio */
+	s32 rate = DMODEM_RATE;         /* its samples a second */
 	char name[32] = {};
 	/* a calling fax machine's CNG (on the line before the modem's
 	   own detector, which runs as it answers) */
@@ -61,7 +62,7 @@ struct dmodem final : public dcore::Host {
 	}
 	/* the clock: the samples processed so far, in ms */
 	u64 now_ms() override {
-		return samples * 1000 / DMODEM_RATE;
+		return samples * 1000 / static_cast<u64>(rate);
 	}
 };
 
@@ -97,15 +98,26 @@ void dmodem_set_debug(int level)
 	dsplibs_debug_level = level;
 }
 
-/* the core with d as its Host at DMODEM_RATE, the name cut to 31
-   characters; cfg->init goes in as the DTE's input */
+/* the core with d as its Host at DMODEM_RATE */
 struct dmodem *dmodem_create(const struct dmodem_config *cfg)
+{
+	return dmodem_create_rate(cfg, DMODEM_RATE);
+}
+
+/* the core with d as its Host at rate, the name cut to 31 characters;
+   cfg->init goes in as the DTE's input */
+struct dmodem *dmodem_create_rate(const struct dmodem_config *cfg,
+				  int32_t rate)
 {
 	struct dmodem *d;
 	dcore::Options o;
 
+	if (rate != 8000 && rate != 9600 && rate != 48000 && rate != 96000 &&
+	    rate != 192000)
+		return nullptr;
 	dmodem_init();
 	d = new dmodem;
+	d->rate = rate;
 	strncpy(d->name, cfg->name ? cfg->name : "dmodem",
 		sizeof(d->name) - 1);
 	d->dte_fd = cfg->dte_fd;
@@ -114,11 +126,11 @@ struct dmodem *dmodem_create(const struct dmodem_config *cfg)
 	d->flash_arg = cfg->hook_flash_arg;
 	o.name = d->name;
 	o.dev_name = d->name;
-	o.rate = DMODEM_RATE;
+	o.rate = rate;
 	/* a fax caller is the program's (dmodem_status()'s fax_caller):
 	   the core finds out a V.8 fax call too */
 	o.fax_detect = true;
-	d->cng.init(DMODEM_RATE);
+	d->cng.init(rate);
 	d->m = new dcore::Modem(*d, o);
 	if (!d->m->ok()) {
 		delete d->m;

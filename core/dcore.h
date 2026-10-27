@@ -268,6 +268,10 @@ public:
 	const char *dev_name() const { return dev_name_; }
 	/* the line's sample rate (Hz) */
 	s32 rate() const { return srate_; }
+	/* the line runs above the voice band's rates (48000 Hz and up):
+	   only the wideband pump (DP_VWB) runs there, and with no call
+	   progress (a bare pair's, no exchange) */
+	bool wideband() const { return srate_ > 9600; }
 	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
 	/* we dialled */

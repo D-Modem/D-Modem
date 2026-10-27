@@ -12,7 +12,8 @@
  *    own: dmodem_process() keeps the time.
  *
  *    Audio: 16 bit linear at 8000 Hz, any number of samples per call, the
- *    same number in and out.  For V.90 (the digital modem) the samples go
+ *    same number in and out (dmodem_create_rate(): at the rate given, for
+ *    the wideband mode on a bare pair, AT+MS=VWB, 48000 Hz or more).  For V.90 (the digital modem) the samples go
  *    to the network's G.711 encoder unchanged: give the law in the
  *    configuration (it holds for each call of the modem).
  *
@@ -78,6 +79,11 @@ int  dmodem_init(void);
 /* a modem on hook, cfg->init taken as the DTE's first commands; NULL on
    failure.  cfg->dte_fd stays the caller's (destroy does not close it) */
 struct dmodem *dmodem_create(const struct dmodem_config *cfg);
+/* the same with the line's audio at rate samples a second: DMODEM_RATE,
+   9600, or 48000, 96000 or 192000 for the wideband mode (no G.711 then);
+   NULL for another rate */
+struct dmodem *dmodem_create_rate(const struct dmodem_config *cfg,
+				  int32_t rate);
 /* hangs up a call still on, frees d (NULL is fine) */
 void dmodem_destroy(struct dmodem *d);
 /* answer the call now (as ATA); dial (as ATD<number>; -1 if the number
