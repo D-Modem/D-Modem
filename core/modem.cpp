@@ -75,6 +75,8 @@ static const u32 STOP_SAMPLES = 48;
    rings without early media) would otherwise hold it until the call
    ended some other way.  Well past a frame's gap (20 ms) with jitter */
 static const u32 STOP_IDLE_MS = 100;
+/* a leased line's call again so long after its NO CARRIER (AT&L1) */
+static const u32 LEASED_AGAIN_MS = 2000;
 /* the escape's guard time (before, between and after the S2s) */
 static const u32 ESCAPE_MS = 500;
 /* caller ID listens this long after the first ring */
@@ -628,6 +630,11 @@ s16 Modem::stop_call()
 	if (adapt_ == Adapt::Fax)
 		set_mode(MODEM_MODE_FAX);
 	adapt_ = Adapt::Off;
+	/* a leased line's call that the line ended (not ATH, DTR, ATZ):
+	   started again by itself in 2 s (poll()) */
+	if (leased_role_ != Leased::None && sregs_[SREG_LEASED] &&
+	    stats_.cause != Cause::LocalHangup)
+		leased_at_ms_ = host_.now_ms() + LEASED_AGAIN_MS;
 	if (stats_.call && !stats_.ended) {
 		const char *dp = stats_.connected ? dp_name(stats_.dp) :
 			nullptr;
@@ -1449,8 +1456,8 @@ void Modem::change_dp()
    it, the caller, the pump created with the dial string hidden when the
    network dials it (unless the pump has to wait for a dial tone; on an
    analogue line, Host::analog_line(), the modem dials it); none on a
-   wideband line (dial() starts the data pump); -1 if there is a pump
-   already or none can be made */
+   leased or wideband line (dial() starts the data pump); -1 if there is
+   a pump already or none can be made */
 s16 Modem::dial_start()
 {
 	const DpDriver *d;
@@ -1461,8 +1468,9 @@ s16 Modem::dial_start()
 	if (started_ && !voice_held_ && stop_call())
 		return -1;
 	caller_ = true;
-	/* a wideband line has no exchange: the pump at once */
-	if (wideband())
+	/* a leased line, or a wideband one, has no exchange: the pump at
+	   once (dial()) */
+	if (leased())
 		return 0;
 	d = find_driver(DP_CALLPROG);
 	first = dialing_[0];
@@ -1509,8 +1517,11 @@ s16 Modem::dial(const char *number)
 	voice_held_ = false;
 	if (start_call(held))
 		return -1;
-	if (wideband())
+	if (leased()) {
+		if (sregs_[SREG_LEASED])
+			leased_role_ = Leased::Dial;
 		later(Later::ChangeDp, 0);
+	}
 	return 0;
 }
 
@@ -1592,6 +1603,8 @@ s16 Modem::answer(bool adaptive)
 		return -1;
 	caller_ = false;
 	dp_requested_ = 0;
+	if (sregs_[SREG_LEASED])
+		leased_role_ = Leased::Answer;
 	/* adaptive answer: +FAA=1 in data or fax mode (from fax mode the
 	   data answer runs, in data mode, until a fax is found), or the
 	   program's own fax receiver in data mode */
@@ -1660,6 +1673,7 @@ s16 Modem::adaptive_param() const
 /* the Host hangs up (DTR, HUPCL) */
 void Modem::hangup()
 {
+	leased_stop();
 	if (state_ != IDLE)
 		set_cause(Cause::LocalHangup);
 	else if (voice_held_)
@@ -1730,6 +1744,8 @@ void Modem::line_failed(Result r)
    nothing if the hook is there already; the Host's result */
 s16 Modem::hook(s16 state)
 {
+	if (state == MODEM_HOOK_ON)
+		leased_stop();
 	if (state == MODEM_HOOK_ON && voice_held_) {
 		stop_call();
 		return 0;
@@ -1748,6 +1764,7 @@ s16 Modem::hook(s16 state)
    data mode as at the start, the country's S8 and S24 again; 0 */
 s16 Modem::reset()
 {
+	leased_stop();
 	if (state_ != IDLE) {
 		set_cause(Cause::LocalHangup);
 		hup(true);
@@ -2023,11 +2040,53 @@ void Modem::poll()
 		event_ |= new_event_;
 		new_event_ = 0;
 	}
+	leased_poll();
 	if (!event_)
 		return;
 	ev = event_;
 	event_ = 0;
 	events(ev);
+}
+
+/* a leased line's call again (AT&L1), when the modem is idle: the one
+   that ended, LEASED_AGAIN_MS after its NO CARRIER; else with S0 set an
+   answer, with no ring (once a command line has come since the last
+   local hang up) */
+void Modem::leased_poll()
+{
+	if (!sregs_[SREG_LEASED]) {
+		leased_role_ = Leased::None;
+		leased_at_ms_ = 0;
+		return;
+	}
+	if (state_ != IDLE || started_ || dp_ || mode_ != MODEM_MODE_DATA)
+		return;
+	if (leased_at_ms_) {
+		if (static_cast<s64>(host_.now_ms() - leased_at_ms_) < 0)
+			return;
+		leased_at_ms_ = 0;
+		logf("leased line: the call again (%s)\n",
+		     leased_role_ == Leased::Dial ? "dialling" : "answering");
+		if (leased_role_ == Leased::Dial)
+			dial(nullptr);
+		else
+			answer(false);
+		return;
+	}
+	if (leased_role_ == Leased::None &&
+	    sregs_[SREG_RINGS_TO_AUTO_ANSWER] && leased_auto_) {
+		logf("leased line: answering (S0)\n");
+		answer(false);
+	}
+}
+
+/* no call again by itself on the leased line until a command line (the
+   DTE hung up) */
+void Modem::leased_stop()
+{
+	leased_role_ = Leased::None;
+	leased_at_ms_ = 0;
+	leased_auto_ = false;
 }
 
 /* the ms until the timer's events or a voice dial's timer (0: due), -1
@@ -2046,6 +2105,17 @@ s32 Modem::next_timer_ms()
 		s32 vd = voice_dial_left_ms();
 		if (left < 0 || vd < left)
 			left = vd;
+	}
+	if (sregs_[SREG_LEASED] && state_ == IDLE && !started_) {
+		s32 l = -1;
+		if (leased_at_ms_)
+			l = std::max<s32>(0, static_cast<s32>(leased_at_ms_ -
+							      host_.now_ms()));
+		else if (leased_role_ == Leased::None &&
+			 sregs_[SREG_RINGS_TO_AUTO_ANSWER] && leased_auto_)
+			l = 0;
+		if (l >= 0 && (left < 0 || l < left))
+			left = l;
 	}
 	if (later_ == Later::Stop) {
 		u64 idle = host_.now_ms() - samples_at_ms_;

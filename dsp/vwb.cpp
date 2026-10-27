@@ -991,8 +991,7 @@ void VwbModem::start_data_rx()
 	rx_state_ = RX_DATA;
 	rx_count_ = 0;
 	rx_data_ = true;
-	depth_rx_ = static_cast<s16>(std::min(std::max((rx_.bits / 8 + 7) / 8,
-						       1), 8));
+	depth_rx_ = depth_for(rx_);
 	rx_octets_.clear();
 	rx_acc_ = 0;
 	rx_acc_n_ = 0;
@@ -1017,8 +1016,7 @@ void VwbModem::start_data_rx()
 void VwbModem::start_data_tx()
 {
 	tx_data_ = true;
-	depth_tx_ = static_cast<s16>(std::min(std::max((tx_.bits / 8 + 7) / 8,
-						       1), 8));
+	depth_tx_ = depth_for(tx_);
 	tx_bits_.clear();
 	tx_bit_pos_ = 0;
 	scr_ = 0;
@@ -1321,6 +1319,17 @@ bool VwbModem::plan_from(const std::vector<u8> &b)
 	logf("plan received: split at tone %d; sending %s; receiving %s\n",
 	     split_, tx_.str().c_str(), rx_.str().c_str());
 	return true;
+}
+
+/* the interleaver's codewords for loading l: as many as 30 ms of the
+   line hold (1 to 8).  Deeper would spread a burst over more of them,
+   but the delay each way it adds slows V.42 (its window of 15 frames
+   of 128 octets waits a round trip for its acknowledgement) */
+s16 VwbModem::depth_for(const VwbLoading &l) const
+{
+	s32 d = static_cast<s32>(0.03 * rate_of(l) * RS_N / RS_K /
+				 (8.0 * RS_N));
+	return static_cast<s16>(std::min(std::max(d, 1), 8));
 }
 
 /* bit/s of octets on loading l: its bits a symbol less RS's checks */

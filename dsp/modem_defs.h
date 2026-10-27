@@ -102,6 +102,11 @@ enum S_REGISTER {
 	SREG_VCVM_RENEGS                  = 45,  /* and its
 						    renegotiations */
 	SREG_CONNECT_PROTOCOL             = 106, /* AT\V */
+	SREG_LEASED                       = 47,  /* AT&L: 1 a leased line (no
+						    dial tone or ringing: ATD
+						    and ATA start the pump at
+						    once, again after NO
+						    CARRIER) */
 	SREG_DEFAULT_SETTING              = 161, /* ATY */
 };
 

@@ -284,6 +284,7 @@ private:
 	void retrain(const char *why);
 	void restart();
 	s32 rate_of(const VwbLoading &l) const;
+	s16 depth_for(const VwbLoading &l) const;
 	void logf(const char *fmt, ...)
 #ifdef __GNUC__
 		__attribute__((format(printf, 2, 3)))

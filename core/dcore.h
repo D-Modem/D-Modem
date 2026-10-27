@@ -272,6 +272,9 @@ public:
 	   only the wideband pump (DP_VWB) runs there, and with no call
 	   progress (a bare pair's, no exchange) */
 	bool wideband() const { return srate_ > 9600; }
+	/* a line without an exchange: AT&L1, or wideband (no call
+	   progress: ATD starts the data pump at once) */
+	bool leased() const { return wideband() || sregs_[SREG_LEASED]; }
 	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
 	/* we dialled */
@@ -389,6 +392,8 @@ private:
 	s16 link_init();
 	void report(Result r);
 	void events(u16 ev);
+	void leased_poll();
+	void leased_stop();
 	void schedule_event(u16 mask, u32 ms);
 	void sregs_init();
 	s16 homolog_init(s32 id, const char *name);
@@ -514,6 +519,14 @@ private:
 	u64 count_ = 0;
 	u64 later_at_ = 0;
 	Later later_ = Later::None;
+	/* AT&L1: the call to start again by itself (ATD's or ATA's, or
+	   S0's answer) after a NO CARRIER, at leased_at_ms_ (0: none due);
+	   S0's answer only once a command line has come since a local
+	   hang up (so that one can be typed to stop it) */
+	enum class Leased { None, Dial, Answer };
+	Leased leased_role_ = Leased::None;
+	u64 leased_at_ms_ = 0;
+	bool leased_auto_ = true;
 	/* when the line's samples last went through (now_ms()): a stop due
 	   after samples is done on time once they have stopped coming (a
 	   SIP call ringing without early media has none) */

@@ -479,6 +479,8 @@ s16 Modem::at_command(char *cmd)
 
 	if (upper(cmd[0]) != 'A' || upper(cmd[1]) != 'T')
 		return -1;
+	/* (a leased line may answer by itself again: S0, AT&L1) */
+	leased_auto_ = true;
 	for (p = cmd + 2; *p;) {
 		s16 len = 1, ret = 0;
 		/* a one-digit setting in S-register reg, skip characters
@@ -600,6 +602,10 @@ s16 Modem::at_command(char *cmd)
 				case 'H':
 					ret = setting(SREG_FLOW_CONTROL, 2, 0,
 						      3);
+					break;
+				case 'L':
+					/* a leased line (1) or a dialled one */
+					ret = setting(SREG_LEASED, 2, 0, 1);
 					break;
 				case 'K': {
 					/* USRobotics': as %C */
