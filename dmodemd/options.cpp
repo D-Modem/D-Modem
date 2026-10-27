@@ -50,7 +50,7 @@ enum {
 	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
 	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_USB_LEDS, OPT_USB_WAKE,
-	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_USB_RHOM, OPT_USB_BUZZER, OPT_USB_AGERE_DRIVER, OPT_RATE,
+	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_USB_RHOM, OPT_USB_BUZZER, OPT_RATE,
 #ifdef _WIN32
 	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP, OPT_DRIVER,
 #endif
@@ -114,11 +114,6 @@ const Option OPTIONS[OPT_COUNT] = {
 	{ 0, "usb-buzzer", Takes::Nothing, false,
 	  "a SmartUSB56's buzzer (GPIO 11) as the speaker (ATM, ATL)",
 	  nullptr, false },
-	{ 0, "usb-agere-driver", Takes::Text, true,
-	  "an Agere USB modem's bulk patch taken from Agere's own driver "
-	  "(its AGRSM.sys, AGRSM64.sys, agrmodem.ko or agrmodemlib.o, or a "
-	  "directory with one), not D-Modem's firmware/agere",
-	  "firmware/agere", false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a or --usb (8000 or 9600)", "9600", false },
 #ifdef _WIN32
@@ -401,8 +396,6 @@ void CommandLine::apply(Options &opt) const
 		opt.usb_rhom = true;
 	if (o[OPT_USB_BUZZER].given)
 		opt.usb_buzzer = true;
-	if (o[OPT_USB_AGERE_DRIVER].given)
-		opt.usb_agere_driver = o[OPT_USB_AGERE_DRIVER].value;
 	if (opt.alsa && opt.usb) {
 		fprintf(stderr, "%s: -a or --usb, not both\n", prog_);
 		exit(1);

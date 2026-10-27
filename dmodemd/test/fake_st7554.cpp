@@ -693,6 +693,17 @@ int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *,
 	return 0;
 }
 
+/* the configuration by its index (the one: 0) */
+int LIBUSB_CALL libusb_get_config_descriptor(libusb_device *, uint8_t index,
+					     libusb_config_descriptor **c)
+{
+	if (index != 0)
+		return LIBUSB_ERROR_NOT_FOUND;
+	make_config();
+	*c = &config;
+	return 0;
+}
+
 /* nothing to free (static) */
 void LIBUSB_CALL libusb_free_config_descriptor(libusb_config_descriptor *)
 {

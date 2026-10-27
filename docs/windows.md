@@ -163,13 +163,13 @@ Windows has no kernel driver to hold either device. libusb reaches a USB device 
 
 A SmartUSB56 with Smart Link's own Windows driver installed must be moved to WinUSB first. Until then, `--usb list` says "its driver is not WinUSB or libusbK".
 
-Agere's USB 2.0 soft modem (`047E:2892`, `047E:2828`: [agere-usb.md](agere-usb.md)) is driven the same way, with `dmodem-usb.inf` or Zadig moving it from Agere's `AGRSM.sys` to WinUSB. Its samples are bulk transfers, so WinUSB streams them on Windows 7 and 8 as well. The bulk patch dmodemd.exe downloads into the modem is Agere's, shipped in `firmware\agere\` beside dmodemd.exe (installed there with it; its binary contents under Agere's licence, `firmware\agere\LICENSE`). `--usb-agere-driver` takes it from Agere's own `AGRSM.sys` or `AGRSM64.sys` instead.
+Agere's USB 2.0 soft modem (`047E:2892`, `047E:2828`: [agere-usb.md](agere-usb.md)) is driven the same way, with `dmodem-usb.inf` or Zadig moving it from Agere's `AGRSM.sys` to WinUSB. Its samples are isochronous transfers, as the SmartUSB56's are.
 
     dmodemd.exe --usb auto --tcp 127.0.0.1:2323
 
 #### Windows 7 and 8
 
-WinUSB can't stream before Windows 8.1: it has no isochronous transfers, which the SmartUSB56's and the pico-serial Line's samples are (the Agere modem's are bulk: WinUSB will do). On Windows 7 and 8 the modem needs one of these instead:
+WinUSB can't stream before Windows 8.1: it has no isochronous transfers, which the SmartUSB56's, the pico-serial Line's and the Agere modem's samples are. On Windows 7 and 8 the modem needs one of these instead:
 - **libusbK** as its driver: in [Zadig](https://zadig.akeo.ie/), choose the device, then libusbK. libusb drives it as it drives WinUSB, isochronous transfers included.
 - **[UsbDk](https://github.com/daynix/UsbDk)** installed (its MSI): a filter that lends libusb any USB device, whatever its driver. dmodemd.exe uses it by itself when WinUSB can't stream and UsbDk is there (`usb: through UsbDk` in its log). `DMODEM_USBDK=1` in the environment makes it use UsbDk on any Windows, and `DMODEM_USBDK=0` never.
 

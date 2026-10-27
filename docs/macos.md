@@ -31,7 +31,7 @@ For both architectures in one binary, and an older or newer oldest macOS:
 
 (Homebrew's GoogleTest is for one architecture: with it disabled, the tests' GoogleTest is fetched and built for both.)
 
-`cmake --install build` puts dmodemd in `/usr/local/sbin` and the Agere modem's ROM patches in `/usr/local/share/dmodem/firmware`.
+`cmake --install build` puts dmodemd in `/usr/local/sbin`.
 
 ## Running
 

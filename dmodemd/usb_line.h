@@ -36,15 +36,14 @@
  *    ringer, on-hook speed: si3056.h) go into its DAA's registers.
  *
  *    The Agere modem (docs/agere-usb.md, usb_agere.cpp) is a USB
- *    controller with an ARM in it whose ROM is patched, at each start,
- *    with a "bulk patch" of Agere's (firmware/agere, under Agere's
- *    licence, or set_agere_driver()'s driver file), so that its samples go on bulk endpoints:
- *    100-octet transfers both ways of a header (the samples' count, a
- *    status word: bit 0 the ring detector) and 48 samples, S16
- *    little-endian at 8000 Hz.  Its codec's registers, its ARM's memory
- *    and its commands are vendor requests; its hook is codec register
- *    0xc0.  It hears the line on hook, so caller ID comes in the
- *    samples.
+ *    controller with an ARM in it whose ROM streams the codec's samples on
+ *    isochronous endpoints (alternate setting 1, high speed): an OUT
+ *    packet every 2 microframes of a header (the samples' count) and
+ *    samples, S16 little-endian at 8000 Hz, each answered with an IN
+ *    packet of the same kind whose status word's bit 0 is the ring
+ *    detector.  Its codec's registers, its ARM's memory and its commands
+ *    are vendor requests; its hook is codec register 0xc0.  It hears the
+ *    line on hook, so caller ID comes in the samples.
  *
  */
 #ifndef DMODEMD_USB_LINE_H
@@ -52,6 +51,7 @@
 
 #include <deque>
 #include <string>
+#include <cstdio>
 #include <vector>
 
 #ifdef _WIN32
@@ -120,11 +120,6 @@ public:
 	   Link's Windows driver drives it with Options.Buzzer
 	   (SetSpeakerVolume).  Not every board has one: off by default */
 	void set_buzzer(bool on) { buzzer_ = on; }
-	/* an Agere modem's driver, whose bulk patch the modem needs (its
-	   AGRSM.sys, AGRSM64.sys, agrmodem.ko or agrmodemlib.o, any of
-	   their versions, or a directory with one): read at open(); none,
-	   the patches D-Modem ships (firmware/agere, installed) */
-	void set_agere_driver(const char *path) { agere_driver_ = path ? path : ""; }
 	/* the modem dev ("" or "auto": the first SmartUSB56, pico-serial
 	   Line or Agere modem; <bus>:<address> one of them, as lsusb shows
 	   them) opened at rate (an Agere modem at 8000 Hz whatever it is),
@@ -190,8 +185,10 @@ public:
 	   CONNECT) */
 	s32 dte_write(dcore::Modem &m, const char *buf, s32 n) override {
 		if (n > 0 && online_seen_ &&
-		    m.link_state() == dcore::LinkState::Online)
+		    m.link_state() == dcore::LinkState::Online) {
 			data_seen_ = true;
+			agere_data_ms_ = now_ms();
+		}
 		return dte_.write(buf, n);
 	}
 	/* the clock: the device's samples so far, in ms */
@@ -213,6 +210,8 @@ public:
 
 private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
+	/* the most transfers a stream has each way (the Agere's: agere_transfers_) */
+	enum { MAX_TRANSFERS = 32 };
 	/* the three devices it drives */
 	enum class Kind { St7554, Stick, Agere };
 	/* an isochronous stream both ways: the codec's (the modem's line,
@@ -224,7 +223,7 @@ private:
 		bool voice = false;
 		u8 ep_out = 0, ep_in = 0;
 		s16 max_out = 0, max_in = 0;
-		libusb_transfer *in[ISO_TRANSFERS] = {}, *out[ISO_TRANSFERS] = {};
+		libusb_transfer *in[MAX_TRANSFERS] = {}, *out[MAX_TRANSFERS] = {};
 		/* each IN transfer's packets' lengths, for the OUT one it
 		   frees; the OUT ones not in flight */
 		std::deque<std::vector<s16>> out_lengths;
@@ -257,14 +256,14 @@ private:
 	   its own bits changed); false (logged) */
 	bool stick_country();
 	bool start_streams();
-	/* the Agere modem's (usb_agere.cpp): its start-up, its bulk patch
-	   from the driver, a vendor command (cmd, wLength, wIndex, wValue:
-	   IN or OUT as the command is), its ARM's memory and its codec's
-	   registers, the ROM's clock, the codec's start-up, the bulk
-	   transfers, an IN one done, an OUT one filled with n samples */
+	/* the Agere modem's (usb_agere.cpp): its start-up, a vendor command
+	   (cmd, wLength, wIndex, wValue: IN or OUT as the command is), its
+	   ARM's memory and its codec's registers, the ROM's clock, the
+	   codec's start-up, the ROM's function table put back as it has it,
+	   its stream started and stopped (commands 0x0c, 0x0d), the
+	   transfers, an IN one done, an OUT one filled; DMODEM_AGERE_DUMP=1:
+	   its descriptors and memory logged */
 	bool open_agere();
-	static std::vector<std::string> agere_firmware_dirs();
-	bool load_agere_patches();
 	bool agere_cmd(u8 cmd, u16 len, u16 index, u16 value, u8 *buf);
 	bool agere_read(u32 addr, u8 *buf, u16 len);
 	bool agere_read16(u32 addr, u16 *v);
@@ -272,12 +271,51 @@ private:
 	bool codec_read(u16 reg, u16 *v);
 	bool codec_write(u16 reg, u16 v);
 	bool agere_clock(bool boost);
-	bool agere_bulk_patch();
 	bool agere_mercury();
+	bool agere_table();
+	bool agere_start();
+	void agere_stop();
+	/* DMODEM_USB_REC=<path>: each time off hook, the line recorded to
+	   <path>-<date>-<time>.wav until on hook (stereo, the line's rate:
+	   left what came from the line, right what the modem sent to it) */
+	void rec_start();
+	void rec_frame(const s16 *in, const s16 *out, s16 n);
+	void rec_stop();
+	/* the hook (true: off), a Mercury's or a Polaris's */
+	bool agere_hook(bool off);
+	/* a Polaris DAA: started, caller ID on or off, its DAA registers */
+	bool agere_polaris();
+	bool agere_caller_id(bool on);
+	bool daa_write(u8 reg, u8 v);
+	bool daa_read(u8 reg, u8 *v);
+	/* the GPIOs flipped one by one, if asked (DMODEM_AGERE_LED_PROBE) */
+	void agere_led_probe();
+	/* the controller's and codec's registers logged (-d2) */
+	void agere_regs(const char *when);
 	bool agere_streams();
+	void agere_dump();
 	void agere_in(libusb_transfer *t);
-	void agere_fill(libusb_transfer *t, s16 n);
+	void agere_fill(libusb_transfer *t);
+	/* an OUT transfer done: its samples counted (agere_lead_) */
+	void agere_sent(libusb_transfer *t);
 	void agere_rate_check();
+	/* on hook, every 100 ms: codec register 0x0a8 read, a ring while
+	   its ring bit is set (a Polaris's 1, a Mercury's 2); its changes
+	   said (a few); whether it rang at the last read; the reads not
+	   traced */
+	void agere_ring_poll();
+	u64 agere_poll_ms_ = 0;
+	u16 agere_0a8_ = 0xffff, agere_0c4_ = 0xffff;
+	/* when 0x0c4's bit 7 and bit 6 (a Polaris's ring's halves) were last
+	   seen set; when the modem last went on hook */
+	u64 agere_half7_ms_ = 0, agere_half6_ms_ = 0, agere_onhook_ms_ = 0;
+	u32 agere_poll_said_ = 0;
+	bool agere_ringing_ = false, agere_quiet_ = false;
+	/* since when the ring bit has been set; whether it was set too long
+	   to be a ring (stuck: not a ring until it clears) */
+	u64 agere_ring_since_ = 0;
+	bool agere_ring_stuck_ = false;
+	void agere_leds(dcore::Modem &m);
 	static bool agere_device(u16 vendor, u16 product);
 	bool start_iso(Iso &s, s16 pkt);
 	bool start_fifos();
@@ -340,6 +378,35 @@ private:
 	s16 mic_last_ = 0, ear_last_ = 0;
 	std::vector<s16> frame_mic_, frame_ear_;
 	u64 samples_ = 0;
+	/* DMODEM_USB_REC: the line recorded while off hook (rec_start()) */
+	FILE *rec_ = nullptr;
+	u64 rec_frames_ = 0;
+	/* DMODEM_USB_TX_GAIN=<dB> (-20 to 20): the modem's samples to the
+	   line scaled (in 1/4096ths: 4096 none), the samples clipped */
+	s32 tx_gain_ = 4096;
+	u64 tx_clipped_ = 0;
+	/* DMODEM_USB_TX_GAIN=auto: the gain from the remote's answer tone
+	   (tx_auto_frame()), in dB: set for this call yet; the tone's frames
+	   heard (their levels, dBFS); the clipped samples at the start of
+	   this second, its frames */
+	bool tx_auto_ = false;
+	bool tx_auto_set_ = false;
+	double tx_auto_db_ = 0;
+	s16 tx_tone_n_ = 0;
+	double tx_tone_db_[10] = {};
+	u64 tx_clip_mark_ = 0;
+	s16 tx_clip_frames_ = 0;
+	/* the gain, dB */
+	/* the device's configuration: the active one's, else its first
+	   (Android: libusb asks the device for the active one when it wraps
+	   the app's fd; the Agere, started again, gave none: "not found") */
+	int config(libusb_config_descriptor **cfg);
+	void tx_gain_db(double db);
+	/* auto: the gain from the start of the call or the last one's tone */
+	void tx_auto_start();
+	/* auto: a frame looked at (the remote's 2100 Hz tone while the modem
+	   is quiet; clipping) */
+	void tx_auto_frame();
 	bool running_ = false;
 	bool dead_ = false;
 	s16 hook_ = MODEM_HOOK_ON;
@@ -365,19 +432,62 @@ private:
 	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
 	u64 flash_end_ = 0;
 	u16 rings_ = 0;                 /* ring detector changes not given */
-	/* the Agere modem: set_agere_driver(); its bulk patches found there
-	   (by name: v106, v121_flash, v121_rom, async_clockchange); its ROM's
-	   version (0xffff unknown); its bulk endpoints; the ring bit last
+	/* the Agere modem: its ROM's version (0xffff unknown); the samples
+	   sent (OUT transfers done) less those come (IN), which sets each OUT
+	   transfer's 46, 48 or 50 (agere_fill()); its transfers each way
+	   (DMODEM_AGERE_TRANSFERS, 2 to MAX_TRANSFERS: 16); the ring bit last
 	   seen; the status words logged; the samples' count and the clock
-	   when they started (the rate checked once) */
-	std::string agere_driver_;
-	std::vector<u8> agere_patch_[4];
+	   when they started (the rate checked once), their range then */
 	u16 agere_rom_ = 0xffff;
-	u8 bulk_in_ = 0, bulk_out_ = 0;
+	/* its codec a Polaris DAA (else a Mercury) */
+	bool agere_polaris_ = false;
+	/* its codec found (agere_polaris_ known): close() may put it on hook */
+	bool agere_codec_ = false;
+	s64 agere_lead_ = 0;
+	/* the transfers done each way, their samples, not yet paired: the
+	   k-th OUT transfer with the k-th IN one, the same packets' times
+	   (the ROM answers each OUT packet with an IN one); the paired ones'
+	   OUT samples less IN, the modem's transmit ring's lead past its 24;
+	   the OUT transfers made one longer or shorter */
+	std::deque<s32> agere_ins_, agere_outs_;
+	s64 agere_drift_ = 0;
+	/* the corrections of the OUT transfers in flight (not yet in
+	   agere_drift_) */
+	s64 agere_pending_ = 0;
+	u64 agere_longer_ = 0, agere_shorter_ = 0;
+	void agere_pair();
+	s16 agere_transfers_ = 16;
+	/* the playback's lead it may have past pump()'s (4 frames: more is
+	   a stall caught up, dropped) */
+	s32 agere_ahead_ = 0;
 	bool agere_ring_ = false;
+	/* the line's clock when the ring bit was last seen (0: never); the
+	   GPIO outputs as last written (the LEDs' bits, agere_leds()) */
+	u64 agere_ring_ms_ = 0;
+	u16 agere_gpio_ = 0;
+	/* the line's clock when data last passed online (READY/DATA's
+	   flicker) */
+	u64 agere_data_ms_ = 0;
 	u16 agere_status_ = 0;
 	u64 agere_t0_ = 0, agere_n0_ = 0;
 	bool agere_rate_said_ = false;
+	/* the stream's counts for the log: samples in and out, the lead's
+	   least and most since the last log, OUT packets of silence (the
+	   playback had none), odd IN packets; when samples last came, the
+	   last log of them, the stream stopped */
+	u64 agere_in_n_ = 0, agere_out_n_ = 0, agere_short_ = 0;
+	s64 agere_lead_lo_ = 0, agere_lead_hi_ = 0;
+	u32 agere_odd_ = 0;
+	u64 agere_in_bad_ = 0, agere_in_short_ = 0;
+	/* the samples' range since the last log of the counts; the status
+	   words' changes said (a few) */
+	s16 agere_win_lo_ = 0, agere_win_hi_ = 0;
+	bool agere_win_seen_ = false;
+	u32 agere_status_said_ = 0;
+	u64 agere_last_in_ms_ = 0, agere_stats_ms_ = 0;
+	bool agere_stopped_ = false;
+	s16 agere_lo_ = 0, agere_hi_ = 0;
+	bool agere_seen_ = false;
 };
 
 } // namespace dmd

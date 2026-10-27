@@ -77,7 +77,9 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <cstring>
+#include <ctime>
 
 #include <g711.h>
 #include <log.h>
@@ -85,7 +87,13 @@
 #include "dm_types.h"
 #include "usb_line.h"
 
-#define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
+/* (to the log when it has a hook, as the app's: its stderr is lost) */
+#define ERR(fmt, ...) do { \
+	if (dcore::log_hooked()) \
+		dcore::log_printf(0, "usb: error: " fmt, ##__VA_ARGS__); \
+	else \
+		fprintf(stderr, "error: " fmt, ##__VA_ARGS__); \
+} while (0)
 #define DBG(fmt, ...) dcore::log_printf(1, "usb: " fmt, ##__VA_ARGS__)
 
 #ifdef _WIN32
@@ -247,7 +255,6 @@ const s16 FIFO_SAMPLES = 64 + 24;
 const u16 TIMEOUT_MS = 1000;
 
 /* the Agere modem's hook: its codec's register (0 off hook, 1 on) */
-const u16 AGERE_HOOK = 0x00c0;
 
 /* the configuration's remote wakeup bit; USB's DEVICE_REMOTE_WAKEUP */
 const u8 CONFIG_REMOTE_WAKEUP = 0x20;
@@ -500,8 +507,7 @@ s16 UsbLine::list()
 bool UsbLine::endpoints(s16 alt)
 {
 	libusb_config_descriptor *cfg;
-	int err = libusb_get_active_config_descriptor(libusb_get_device(h_),
-						      &cfg);
+	int err = config(&cfg);
 	if (err < 0) {
 		ERR("%s: its configuration: %s\n", name_, libusb_strerror(err));
 		return false;
@@ -598,6 +604,19 @@ bool UsbLine::open(const char *dev, u32 rate)
 	viso_ = Iso();
 	iso_.line = viso_.line = this;
 	viso_.voice = true;
+	tx_gain_ = 4096;
+	tx_clipped_ = 0;
+	tx_auto_ = false;
+	if (const char *g = getenv("DMODEM_USB_TX_GAIN"); g && !strcmp(g, "auto")) {
+		tx_auto_ = true;
+		tx_auto_start();
+		DBG("the modem's samples to the line %+.1f dB to start (DMODEM_USB_TX_GAIN=auto: "
+		    "then from the remote's answer tone)\n", tx_auto_db_);
+	} else if (g && *g) {
+		double db = std::max(-20.0, std::min(20.0, strtod(g, nullptr)));
+		tx_gain_ = static_cast<s32>(std::lround(4096.0 * std::pow(10.0, db / 20.0)));
+		DBG("the modem's samples to the line %+.1f dB (DMODEM_USB_TX_GAIN)\n", db);
+	}
 	if ((err = libusb_init(&ctx_)) < 0) {
 		ERR("libusb: %s\n", libusb_strerror(err));
 		ctx_ = nullptr;
@@ -718,7 +737,7 @@ void UsbLine::arm_wake(bool on, bool kernel)
 {
 	libusb_config_descriptor *cfg;
 	bool can = false;
-	if (libusb_get_active_config_descriptor(libusb_get_device(h_), &cfg) == 0) {
+	if (config(&cfg) == 0) {
 		can = cfg->bmAttributes & CONFIG_REMOTE_WAKEUP;
 		libusb_free_config_descriptor(cfg);
 	}
@@ -968,7 +987,8 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const s16 *lengths)
 	s16 off = 0;
 	s16 bps = s.voice ? 1 : 2;
 	if (kind_ == Kind::Agere) {
-		agere_fill(t, lengths[0]);
+		(void)lengths;
+		agere_fill(t);
 		return;
 	}
 	for (s16 i = 0; i < ISO_PACKETS; i++) {
@@ -1018,6 +1038,19 @@ void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 		l->gone("unplugged");
 	if (l->dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
+	/* (the Agere modem's: sent again at once, paced as its samples come:
+	   its ROM answers each OUT packet with an IN one) */
+	if (l->kind_ == Kind::Agere) {
+		if (t->status == LIBUSB_TRANSFER_COMPLETED)
+			l->agere_sent(t);
+		l->agere_fill(t);
+		int err = libusb_submit_transfer(t);
+		if (err == 0)
+			l->in_flight_++;
+		else
+			l->park(t, err);
+		return;
+	}
 	/* sent again with the lengths an IN transfer has given, or once
 	   one does */
 	s->idle_out.push_back(t);
@@ -1187,7 +1220,6 @@ void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 		return;
 	if (kind_ == Kind::Agere) {
 		agere_in(t);
-		send_out(s);
 		int err = libusb_submit_transfer(t);
 		if (err == 0)
 			in_flight_++;
@@ -1267,10 +1299,10 @@ void UsbLine::resume()
 			arm_wake(true);
 		handset_due_ = handset_;
 	}
-	/* (the Agere modem's patch may have gone with a reset) */
-	if (kind_ == Kind::Agere &&
-	    (!agere_bulk_patch() || !agere_cmd(0x10, 0, 0, 1, nullptr)))
+	/* (the Agere modem's stream may have gone with a reset) */
+	if (kind_ == Kind::Agere && (!agere_table() || !agere_start()))
 		return;
+	agere_lead_ = 0;
 	/* the streams from their start again: nothing kept from before
 	   the suspend, the playback's lead a frame and a half */
 	for (Iso *st : { &iso_, &viso_ }) {
@@ -1289,9 +1321,12 @@ void UsbLine::resume()
 				in_flight_++;
 			else
 				park(t, err);
-		} else if (!(t->endpoint & LIBUSB_ENDPOINT_IN)) {
+		} else if (!(t->endpoint & LIBUSB_ENDPOINT_IN) &&
+			   kind_ != Kind::Agere) {
 			static_cast<Iso *>(t->user_data)->idle_out.push_back(t);
 		} else {
+			if (!(t->endpoint & LIBUSB_ENDPOINT_IN))
+				agere_fill(t);
 			int err = libusb_submit_transfer(t);
 			if (err == 0)
 				in_flight_++;
@@ -1322,11 +1357,23 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 {
 	bool off = state == MODEM_HOOK_OFF;
 
+	bool was_off = hook_ == MODEM_HOOK_OFF;
 	DBG("%s\n", off ? "off hook" : "on hook");
 	hook_ = state;
+	if (off)
+		rec_start();
+	else
+		rec_stop();
+	if (off && tx_auto_)
+		tx_auto_start();
+	/* (the Agere's ring registers' changes said again after a call) */
+	agere_poll_said_ = 0;
+	/* (after a call: not caller ID's listening between rings) */
+	if (!off && was_off && kind_ == Kind::Agere)
+		agere_onhook_ms_ = clock_ms();
 	flash_end_ = 0;
 	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
-		return codec_write(AGERE_HOOK, off ? 0 : 1) ? 0 : -1;
+		return agere_hook(off) && agere_caller_id(!off) ? 0 : -1;
 	if (kind_ == Kind::Stick)
 		return off ? (stick_out(LP_SET_HOOK, 1) &&
 			      stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
@@ -1366,12 +1413,17 @@ void UsbLine::speaker(dcore::Modem &, s16 volume)
 	set_gpio(v);
 }
 
-/* the SmartUSB56's LEDs (set_leds()): the carrier's while the call is
+/* the Agere modem's LED (agere_leds(): always); the SmartUSB56's LEDs
+   (set_leds()): the carrier's while the call is
    online, the data one once data has passed (the DTE's waiting, or the
    modem's to it after the pump that saw the call online), until on
    hook */
 void UsbLine::update_leds(dcore::Modem &m)
 {
+	if (kind_ == Kind::Agere) {
+		agere_leds(m);
+		return;
+	}
 	if (!leds_ || kind_ != Kind::St7554 || hook_ != MODEM_HOOK_OFF)
 		return;
 	bool online = m.link_state() == dcore::LinkState::Online;
@@ -1402,7 +1454,7 @@ void UsbLine::hook_flash(dcore::Modem &, u16 ms)
 		return;
 	}
 	if (kind_ == Kind::Agere)
-		codec_write(AGERE_HOOK, 1);
+		agere_hook(false);
 	else
 		set_gpio(static_cast<u16>(gpio_ & ~GPIO_HOOK1));
 	flash_end_ =
@@ -1418,7 +1470,7 @@ s16 UsbLine::pulse_hook(dcore::Modem &, bool broken)
 	if (kind_ == Kind::Stick)
 		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
 	if (kind_ == Kind::Agere)
-		return codec_write(AGERE_HOOK, broken ? 1 : 0) ? 0 : -1;
+		return agere_hook(!broken) ? 0 : -1;
 	u16 v = broken ? static_cast<u16>(gpio_ & ~GPIO_HOOK1) :
 		static_cast<u16>(gpio_ | GPIO_HOOK1);
 	if (intl_)
@@ -1533,7 +1585,7 @@ s16 UsbLine::pump(dcore::Modem &m)
 		if (flash_end_ && samples_ >= flash_end_) {
 			flash_end_ = 0;
 			if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Agere)
-				codec_write(AGERE_HOOK, 0);
+				agere_hook(true);
 			else if (hook_ == MODEM_HOOK_OFF)
 				set_gpio(static_cast<u16>(gpio_ |
 							       GPIO_HOOK1));
@@ -1545,16 +1597,37 @@ s16 UsbLine::pump(dcore::Modem &m)
 			m.process(frame_in_.data(), frame_out_.data(), frame_);
 		else
 			std::fill_n(frame_out_.data(), frame_, 0);
+		/* (DMODEM_USB_TX_GAIN: louder or softer to the line) */
+		if (tx_auto_ && hook_ == MODEM_HOOK_OFF)
+			tx_auto_frame();
+		if (tx_gain_ != 4096)
+			for (s16 k = 0; k < frame_; k++) {
+				s32 x = (frame_out_[k] * tx_gain_) / 4096;
+				if (x > 32767 || x < -32768) {
+					x = x > 0 ? 32767 : -32768;
+					if (tx_clipped_++ == 0)
+						DBG("the modem's samples clipped: DMODEM_USB_TX_GAIN too high\n");
+				}
+				frame_out_[k] = static_cast<s16>(x);
+			}
+		if (rec_)
+			rec_frame(frame_in_.data(), frame_out_.data(), frame_);
 		iso_.out_buf.insert(iso_.out_buf.end(), frame_out_.begin(),
 				    frame_out_.end());
 	}
 	iso_.in_buf.erase(iso_.in_buf.begin(), iso_.in_buf.begin() + used);
 	if (kind_ == Kind::Agere && used)
 		agere_rate_check();
+	if (kind_ == Kind::Agere && hook_ != MODEM_HOOK_OFF)
+		agere_ring_poll();
 	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
 	size_t most = static_cast<size_t>(3 * frame_);
+	/* (the Agere modem's playback catches up after a burst of its
+	   samples: agere_ahead_ more) */
+	if (kind_ == Kind::Agere)
+		most += static_cast<size_t>(agere_ahead_);
 	if (iso_.out_buf.size() > most) {
 		DBG("playback ahead: %zu samples dropped\n",
 		    iso_.out_buf.size() - most);
@@ -1650,14 +1723,196 @@ void UsbLine::voice_frame(dcore::Modem &m)
 
 /* the transfers cancelled (and their callbacks run), on hook, the codec
    powered down, the interface released, libusb closed */
+/* see usb_line.h: a WAV file's header for frames of 2 channels at the
+   line's rate (sizes 0 until rec_stop()) */
+static void wav_header(FILE *f, u32 rate, u64 frames)
+{
+	auto le = [f](u32 v, int n) {
+		for (int i = 0; i < n; i++)
+			fputc(static_cast<int>(v >> (8 * i) & 0xff), f);
+	};
+	u32 data = static_cast<u32>(std::min<u64>(frames * 4, 0xffffffd3u));
+	fputs("RIFF", f);
+	le(36 + data, 4);
+	fputs("WAVEfmt ", f);
+	le(16, 4);
+	le(1, 2);
+	le(2, 2);
+	le(rate, 4);
+	le(rate * 4, 4);
+	le(4, 2);
+	le(16, 2);
+	fputs("data", f);
+	le(data, 4);
+}
+
+/* see usb_line.h */
+void UsbLine::rec_start()
+{
+	const char *p = getenv("DMODEM_USB_REC");
+	if (rec_ || !p || !*p)
+		return;
+	char name[512], when[32];
+	time_t t = time(nullptr);
+	struct tm tm;
+#ifdef _WIN32
+	localtime_s(&tm, &t);
+#else
+	localtime_r(&t, &tm);
+#endif
+	strftime(when, sizeof(when), "%Y%m%d-%H%M%S", &tm);
+	snprintf(name, sizeof(name), "%s-%s.wav", p, when);
+	rec_ = fopen(name, "wb");
+	if (!rec_) {
+		ERR("the line's recording: %s: %s\n", name, strerror(errno));
+		return;
+	}
+	rec_frames_ = 0;
+	wav_header(rec_, rate_, 0);
+	DBG("recording the line to %s\n", name);
+}
+
+/* see usb_line.h */
+/* DMODEM_USB_TX_GAIN=auto: the remote's answer tone (2100 Hz, while the
+   modem is quiet: the caller's side) heard at TONE_REF dBFS wants
+   GAIN_REF dB (the Hiro H50113 on its first line: +6 and +10 connected),
+   half a dB more for each dB softer (a longer line), GAIN_MIN to GAIN_MAX;
+   GAIN_START until a tone is heard (the answerer's side: the last call's
+   tone's) */
+namespace {
+const double TONE_REF = -14.8, GAIN_REF = 8.0, GAIN_SLOPE = 0.5,
+	GAIN_MIN = 0.0, GAIN_MAX = 12.0, GAIN_START = 6.0;
+/* the last tone's level (dBFS; NaN: none yet), for the next call */
+double last_tone_db = std::nan("");
+
+double gain_for(double tone_db)
+{
+	return std::max(GAIN_MIN, std::min(GAIN_MAX,
+		GAIN_REF + GAIN_SLOPE * (TONE_REF - tone_db)));
+}
+
+/* a frame's level, dBFS */
+double level_db(const s16 *x, s16 n)
+{
+	double p = 0;
+	for (s16 i = 0; i < n; i++)
+		p += double(x[i]) * x[i];
+	return 10.0 * std::log10(p / n / (32768.0 * 32768.0) + 1e-12);
+}
+
+/* the share of a frame's power at f Hz (1: all of it) */
+double share_at(const s16 *x, s16 n, double f, u32 rate)
+{
+	double re = 0, im = 0, p = 0, w = 2.0 * 3.14159265358979323846 * f / rate;
+	for (s16 i = 0; i < n; i++) {
+		re += x[i] * std::cos(w * i);
+		im -= x[i] * std::sin(w * i);
+		p += double(x[i]) * x[i];
+	}
+	return p > 0 ? (re * re + im * im) / (double(n) * p / 2.0) : 0;
+}
+} // namespace
+
+int UsbLine::config(libusb_config_descriptor **cfg)
+{
+	int err = libusb_get_active_config_descriptor(libusb_get_device(h_), cfg);
+	if (err == LIBUSB_ERROR_NOT_FOUND) {
+		DBG("%s: no active configuration said: its first\n", name_);
+		err = libusb_get_config_descriptor(libusb_get_device(h_), 0, cfg);
+	}
+	return err;
+}
+
+void UsbLine::tx_gain_db(double db)
+{
+	tx_auto_db_ = db;
+	tx_gain_ = static_cast<s32>(std::lround(4096.0 * std::pow(10.0, db / 20.0)));
+}
+
+void UsbLine::tx_auto_start()
+{
+	tx_gain_db(std::isnan(last_tone_db) ? GAIN_START : gain_for(last_tone_db));
+	tx_auto_set_ = false;
+	tx_tone_n_ = 0;
+	tx_clip_mark_ = tx_clipped_;
+	tx_clip_frames_ = 0;
+}
+
+void UsbLine::tx_auto_frame()
+{
+	const s16 TONE_FRAMES = sizeof(tx_tone_db_) / sizeof(tx_tone_db_[0]);
+	if (!tx_auto_set_ && frame_ > 0) {
+		double rx = level_db(frame_in_.data(), frame_);
+		if (rx > -45.0 && level_db(frame_out_.data(), frame_) < -50.0 &&
+		    share_at(frame_in_.data(), frame_, 2100.0, rate_) > 0.6) {
+			tx_tone_db_[tx_tone_n_++] = rx;
+			if (tx_tone_n_ == TONE_FRAMES) {
+				std::sort(tx_tone_db_, tx_tone_db_ + TONE_FRAMES);
+				last_tone_db = tx_tone_db_[TONE_FRAMES / 2];
+				tx_gain_db(gain_for(last_tone_db));
+				tx_auto_set_ = true;
+				DBG("the remote's answer tone at %.1f dBFS: the modem's samples to "
+				    "the line %+.1f dB (auto)\n", last_tone_db, tx_auto_db_);
+			}
+		}
+	}
+	/* (a dB softer for each second of clipping, more than 8 samples) */
+	if (++tx_clip_frames_ >= 50) {
+		if (tx_clipped_ - tx_clip_mark_ > 8 && tx_auto_db_ > GAIN_MIN) {
+			tx_gain_db(std::max(GAIN_MIN, tx_auto_db_ - 1.0));
+			DBG("%" PRIu64 " samples clipped in a second: the modem's samples to "
+			    "the line %+.1f dB (auto)\n", tx_clipped_ - tx_clip_mark_, tx_auto_db_);
+		}
+		tx_clip_mark_ = tx_clipped_;
+		tx_clip_frames_ = 0;
+	}
+}
+
+void UsbLine::rec_frame(const s16 *in, const s16 *out, s16 n)
+{
+	u8 b[4 * 512];
+	s16 k = 0;
+	while (k < n) {
+		s16 m = static_cast<s16>(std::min<int>(n - k, 512));
+		for (s16 i = 0; i < m; i++) {
+			u16 l = static_cast<u16>(in[k + i]), r = static_cast<u16>(out[k + i]);
+			b[4 * i] = static_cast<u8>(l);
+			b[4 * i + 1] = static_cast<u8>(l >> 8);
+			b[4 * i + 2] = static_cast<u8>(r);
+			b[4 * i + 3] = static_cast<u8>(r >> 8);
+		}
+		fwrite(b, 4, static_cast<size_t>(m), rec_);
+		k = static_cast<s16>(k + m);
+	}
+	rec_frames_ += static_cast<u64>(n);
+}
+
+/* see usb_line.h */
+void UsbLine::rec_stop()
+{
+	if (!rec_)
+		return;
+	fflush(rec_);
+	rewind(rec_);
+	wav_header(rec_, rate_, rec_frames_);
+	fclose(rec_);
+	rec_ = nullptr;
+	DBG("the line recorded: %" PRIu64 " s\n", rate_ ? rec_frames_ / rate_ : 0);
+}
+
 void UsbLine::close()
 {
-	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_) {
-		/* on hook, the LED as CUsbStop leaves it */
+	rec_stop();
+	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_ && agere_codec_) {
+		/* the stream stopped, on hook, GPIOs 2 and 3 as CUsbStop leaves
+		   them, the OH LED (GPIO 4) out (not before its codec is known:
+		   a Polaris's hook is the other way round) */
 		u16 v;
-		codec_write(AGERE_HOOK, 1);
+		agere_stop();
+		agere_hook(false);
 		if (agere_read16(0x30000008, &v))
-			agere_write16(0x30000008, static_cast<u16>((v & 0xfff3) | 0x000c));
+			agere_write16(0x30000008, static_cast<u16>(
+				((v & 0xfff3) | 0x000c) & ~0x0010));
 	}
 	if (h_ && !dead_ && kind_ == Kind::St7554) {
 		set_reg(FIFO_MASK, 0);
@@ -1667,10 +1922,10 @@ void UsbLine::close()
 		if (wake_)
 			arm_wake(false);
 	}
-	libusb_transfer *all[4 * ISO_TRANSFERS + 1];
+	libusb_transfer *all[4 * MAX_TRANSFERS + 1];
 	s16 n = 0;
 	for (Iso *st : { &iso_, &viso_ })
-		for (s16 i = 0; i < ISO_TRANSFERS; i++) {
+		for (s16 i = 0; i < MAX_TRANSFERS; i++) {
 			all[n++] = st->in[i];
 			all[n++] = st->out[i];
 		}
@@ -1687,10 +1942,13 @@ void UsbLine::close()
 		if (all[i])
 			libusb_free_transfer(all[i]);
 	for (Iso *st : { &iso_, &viso_ })
-		for (s16 i = 0; i < ISO_TRANSFERS; i++)
+		for (s16 i = 0; i < MAX_TRANSFERS; i++)
 			st->in[i] = st->out[i] = nullptr;
 	intr_ = nullptr;
-	if (h_ && kind_ == Kind::Stick) {
+	if (h_ && kind_ == Kind::Agere && claimed_)
+		/* (no stream to the next open) */
+		libusb_set_interface_alt_setting(h_, 0, 0);
+	else if (h_ && kind_ == Kind::Stick) {
 		/* on hook, the samples stopped (alternate setting 0) */
 		if (claimed_) {
 			libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_VENDOR |

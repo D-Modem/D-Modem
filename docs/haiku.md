@@ -19,7 +19,7 @@ Haiku has GCC and its headers (`haiku_devel`) already.  The rest comes from Haik
 
 libre (the SIP library) is fetched and built while configuring, with a small patch for Haiku (`cmake/libre-haiku.patch`).  Without `libusb_devel` dmodemd builds without `--usb`.
 
-`cmake --install build` puts the programs in `/boot/system/non-packaged/bin` (on the `PATH`) and the Agere modem's ROM patches in `/boot/system/non-packaged/data/dmodem/firmware`.  `/boot/system` itself is Haiku's packages', read only.
+`cmake --install build` puts the programs in `/boot/system/non-packaged/bin` (on the `PATH`).  `/boot/system` itself is Haiku's packages', read only.
 
 ## Building on Linux
 
