@@ -61,6 +61,8 @@ its own, named `<suite>/<Test>.<case>/<parameters>`, e.g.
 | Program | What |
 |---|---|
 | `pump_test` | the data pumps back to back (`loopback.cpp`): each modulation on clean and noisy lines, 8000 Hz, clock offsets, gains, echoes; the answering automode. A side passes connected, with 90% of the bits its rate carries from the CONNECT on, at a BER of 1e-3 at most |
+| `vwb_test` | V.wb, the wideband mode (`vwb.h`): its FFT, QAM and interpolator, then caller and answerer on a simulated bare pair at 96000 Hz (`vwb_line.cpp`: 24 AWG cable loss k·sqrt(f)·length, the transformers, white noise, interferers, -15 dB of hybrid echo, the clocks 100 ppm apart, a dropout): error free on 0.5 to 5 km, the rate falling with the length, through interferers, for two minutes either way of the clock offset, a retrain after the dropout, 48000 and 192000 Hz; each pair's rates printed (`VWB_DEBUG=1`: the modems' logs) |
+| `vwb_call_test` | V.wb under libdmodem at 96000 Hz, `AT&L1` (S0=1 answering with no ring): bulk data both ways through V.42, a retrain under LAPM, NO CARRIER and the call again by itself, refused at 9600 Hz |
 | `dmodem_test` | libdmodem: pairs of its modems, retrains and renegotiations in the data, V.91 across G.711 networks, the network's law for each call, `dmodem.hpp` |
 | `dmodem_fax_test` | libdmodem's fax: a data modem answering hands the call to a fax receiver; a fax over T.38 through the API, in UDPTL with packets lost, and in IFP packets (`t38_ifp`, as Asterisk's channels have them) no longer than 72 octets |
 | `hw_test` | the hardware the harnesses emulate (`hw/`), on a host of its own: the ICH's bus masters, the HD Audio controller's commands and streams with the Si3054 on it |

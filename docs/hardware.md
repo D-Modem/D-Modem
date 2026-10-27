@@ -4,7 +4,9 @@ dmodemd's line is normally a SIP call. With `-a` it is instead a
 softmodem's codec on a telephone line, through ALSA. With `--usb` it is
 a Smart Link SmartUSB56 ([below](#smart-link-smartusb56)), a
 pico-serial Line stick ([below](#pico-serial-line)) or an Agere USB 2.0
-soft modem ([below](#agere-usb-20-soft-modem)), through libusb.
+soft modem ([below](#agere-usb-20-soft-modem)), through libusb. On a
+bare pair instead of a telephone line, a codec at 96 kHz runs D-Modem's
+wideband mode ([pico-serial WB](#pico-serial-wb-wideband-bare-pair)).
 The modem is then D-Modem's open DSP, on any architecture. Smart Link's
 slmodemd, Agere's agrsm and their kind were closed, mostly i386-only
 programs; dmodemd can replace them.
@@ -438,6 +440,27 @@ throughout the call (the datasheet's option of FCC mode 500 ms after
 going off hook, for a higher transmit level, is not taken). The stick's
 USB ID is a pid.codes test PID until it has its own. It has been tested
 against a fake of it (below), not yet on a real one.
+
+### pico-serial WB (wideband, bare pair)
+
+pico-serial's wideband stick ([SPEC-WB.md](https://github.com/Neo-Desktop/pico-serial/blob/main/SPEC-WB.md))
+is the Line stick's sibling for a **bare copper pair**: a dry pair, an
+alarm or leased circuit, or a pair of your own between buildings. It is
+not for a telephone line. Two WB sticks talk to each other point to
+point, through a wideband transformer, and sample the pair at 96 kHz
+instead of 9.6 kHz. The band they use is about 4 to 36 kHz. This is
+the line D-Modem's wideband mode is for: V.wb, `AT+MS=VWB`
+([dsp/vwb.md](dsp/vwb.md)), at 48000 Hz and up (`-r 96000`). It runs
+with `AT&L1`, a leased line with no dial tone or ringing: `ATD` calls,
+and `ATA` or `ATS0=1` answers. In simulation it carries about 149
+kbit/s each way on a short pair and about 70 kbit/s on 5 km.
+
+The stick's USB driver in dmodemd comes later, with its firmware. It
+will be `--usb` beside the SmartUSB56 and the Line stick, at `-r 96000`
+(its default) or `-r 192000`. Meanwhile any ALSA codec that runs at
+96 kHz (`-a hw:N -r 96000`, through a line transformer) is a line for
+V.wb, and libdmodem runs it at any of the three rates
+(`dmodem_create_rate()`).
 
 ### Agere USB 2.0 soft modem
 

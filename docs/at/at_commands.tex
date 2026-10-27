@@ -594,6 +594,20 @@ use it for flow control, whose \cmd{\&K4} to \cmd{\&K6} are taken with
 no effect, and whose \cmd{\&K3} (RTS/CTS) leaves V.42's compression on.
 \end{command}
 
+\begin{command}{ampL}{AT\&L[\p{n}]}
+\cmd{\&L1}: a leased line (\sreg{47}; default 0, a dialled line), a
+pair with no exchange: no dial tone, ringing or hook.
+\cmdl[D]{ATD} (any number, or none) starts the data pump as the caller
+at once, without call progress; \cmdl[A]{ATA} as the answerer; with
+\sreg{0} above 0 the modem answers by itself, with no ring, whenever it
+is idle.  A call the line ends (NO CARRIER) starts again by itself 2~s
+later, dialled or answered as before; \cmdl[H]{ATH}, DTR, \cmdl[Z]{ATZ}
+or \cmd{\&L0} stop that until the next command line.  A line at 48000
+Hz and more (dmodemd's \cmd{-r 96000}) always behaves so: its mode is
+\cmdl[plusMS]{+MS=VWB}, and its start-up and retrains take
+\sreg{7} seconds at most.
+\end{command}
+
 \begin{command}{ampP}{AT\&P[\p{n}]}
 \cmd{\&P0} to \cmd{\&P3}: the pulse dialing ratio, kept in \sreg{28}.
 \end{command}
@@ -723,6 +737,8 @@ turns automode off.  The default is \cmd{92,1,300,56000}.  In V.34
 56 & \cmd{K56} & K56flex & not implemented: runs V.90 \\
 150 & \cmd{V\_CVM} & V.cvm & data over mobile speech paths, \\
  & & & 175 to 3500 bit/s, after V.8 (\cmdl[plusCVM]{+CVM}) \\
+200 & \cmd{VWB} & V.wb & wideband DMT on a bare pair, at 48000 Hz \\
+ & & & and more, up to 148656 bit/s each way \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -741,6 +757,13 @@ calls whose speech path is a mobile codec's (AMR, AMR-WB), which carry
 neither V.34 nor V.32: V.8 with V.22 and V.21 as the fallback, then a
 probing of the codec and a mode loaded for it.  The start-up takes 15 to
 21~s; \sreg{7} should allow for it.  The connection runs LAPM.
+
+\cmd{VWB} is D-Modem's own mode for a bare copper pair between two of
+its modems (pico-serial's WB stick, a codec at 96 kHz): discrete
+multitone, the caller on the lower tones and the answerer on the upper,
+each tone loaded from its measured SNR; see \cmd{docs/dsp/vwb.md}.  It
+runs at 48000 Hz and more only, where it is the only mode, as a leased
+line (\cmdl[ampL]{\&L1}); the rates of \cmd{+MS} do not limit it.
 \end{command}
 
 \begin{command}{plusMS-q}{AT+MS?}
@@ -749,7 +772,7 @@ The settings: \cmd{92,1,300,56000}.
 
 \begin{command}{plusMS-t}{AT+MS=?}
 What may be chosen:\\
-\cmd{(21,22,23,122,32,132,34,103,212,56,90,91,92,150),(0,1),(300-56000),(300-56000)}
+\cmd{(21,22,23,122,32,132,34,103,212,56,90,91,92,150,200),(0,1),(300-56000),(300-56000)}
 \end{command}
 
 \subsection{Identification and country}
@@ -1174,6 +1197,7 @@ Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;
 \sregrow{39} & line quality (\cmdl[pctE]{\%E}) & 0 & kept \\
 \sregrow{44} & V.cvm: the tones loaded in the receive direction of the last call (\cmdl[plusCVM]{+CVM}) & 0 & read only \\
 \sregrow{45} & V.cvm: the last call's renegotiations & 0 & read only \\
+\sregrow{47} & a leased line (\cmdl[ampL]{\&L}) & 0 & \\
 \sregrow{56} & results and dial tone (\cmdl[X]{X}) & 4 & \\
 \sregrow{60} & carrier detect (\cmdl[ampC]{\&C}) & 0 & kept \\
 \sregrow{62} & flow control (\cmdl[ampC]{\&H}) & 0 & kept \\
