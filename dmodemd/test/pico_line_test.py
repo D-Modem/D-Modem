@@ -54,6 +54,7 @@ debug = os.environ.get("DMODEMD_DEBUG", "3")
 
 
 def env_for(n, **more):
+    """the environment for end <n>'s dmodemd: its fake stick's socket, the fake preloaded, and more"""
     e = dict(os.environ, FAKE_PICO_LINE_SOCKET=usb_dte.socket_for(
         dmodemd, os.path.join(tmp, n + ".sock")))
     if fake:
@@ -63,6 +64,7 @@ def env_for(n, **more):
 
 procs = []
 def cleanup():
+    """stop every process started here, then remove the scratch directory (unless KEEP)"""
     for p in reversed(procs):
         if p.poll() is None:
             p.terminate()
@@ -82,6 +84,7 @@ ex = subprocess.Popen([exchange, rate, tmp, "1001", "1002"], stdin=subprocess.PI
                       stdout=subprocess.PIPE, text=True)
 procs.append(ex)
 def exchange_out():
+    """the exchange's output, line by line, into exchange.log and events"""
     for l in ex.stdout:
         ex_log.write("%.2f %s" % (time.time(), l)); ex_log.flush()
         events.append(l.strip())
@@ -93,6 +96,7 @@ while "ready" not in events and time.time() - t0 < 5:
 class Modem:
     """a dmodemd on line <n>'s pico-serial Line, its pty"""
     def __init__(self, n, name, tag="", args=(), **env):
+        """start dmodemd as <name> on end <n>'s fake stick and wait for its pty (60 s at most)"""
         self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
         self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto", "-r", rate]
                                   + list(args) + [name],
@@ -128,6 +132,7 @@ class Modem:
         return False
 
     def expect(self, pat, t):
+        """the first match of pat in what the DTE has sent within t s, the text before it and itself taken off buf; None if none"""
         end = time.time() + t
         while time.time() < end:
             m = re.search(pat, self.buf)
@@ -142,11 +147,13 @@ class Modem:
         return None
 
     def cmd(self, c, pat=rb"OK\r\n", t=5):
+        """send AT command c and wait t s for pat (OK by default): the match, or None"""
         self.dte.write(c + b"\r")
         return self.expect(pat, t)
 
 ok = True
 def check(what, cond):
+    """print what was checked and whether it held; any failure fails the test"""
     global ok
     print("%s: %s" % (what, "yes" if cond else "NO"))
     ok = ok and bool(cond)
