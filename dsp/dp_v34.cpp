@@ -3552,13 +3552,23 @@ void V34Pump::tx_next(enum v34_state s, enum v34_txseg seg)
 	ptx.segment(seg);
 }
 
-/* the fastest rate allowed by both MP sequences at the symbol rate */
+/* the fastest rate allowed by both MP sequences at the symbol rate: up
+   to max and in both rate masks; if the masks leave none up to max (a
+   Motorola SM56 asks for 7200 bit/s from us with only 19200 in its
+   mask), the fastest up to max that the symbol rate has, as a slow
+   connection does better than none */
 static s16 v34_pick_rate(s16 baud, s16 max, s16 mask)
 {
 	s16 n;
 	for (n = max; n >= 1; n--)
 		if ((mask >> (n - 1)) & 1 && v34_rates[baud][n - 1].b)
 			return n;
+	for (n = max; n >= 1; n--)
+		if (v34_rates[baud][n - 1].b) {
+			DSP_DBG("v34: no rate up to %d in the masks (%04x): "
+				"%d\n", max, mask, n);
+			return n;
+		}
 	return 0;
 }
 
@@ -5528,9 +5538,16 @@ s16 V34Pump::handshake()
 			tx_next(P3A_WAIT, V34_TX_SILENCE);
 		break;
 	case P3A_WAIT:
-		/* until the caller's J */
-		if (prx.ev_j)
+		/* until the caller's J; or its MP, when its J was missed
+		   (the equalizer still training on its short phase 3): it
+		   has gone on to phase 4, so on to ours too, our TRN 4
+		   point without its J's say */
+		if (prx.ev_j || prx.ev_mp) {
+			if (!prx.ev_j)
+				DSP_DBG("v34: the caller's MP without its J: "
+					"on to phase 4\n");
 			tx_next(P4A_S, V34_TX_S);
+		}
 		break;
 	case P4A_S:
 		if (ptx.n >= 128)
