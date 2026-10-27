@@ -762,12 +762,14 @@ probing of the codec and a mode loaded for it.  The start-up takes 15 to
 its modems (pico-serial's WB stick, a codec at 96 kHz): discrete
 multitone, the caller on the lower tones and the answerer on the upper,
 each tone loaded from its measured SNR; see \cmd{docs/dsp/vwb.md}.  It
-runs at 48000 Hz and more only, where it is the only mode, as a leased
-line (\cmdl[ampL]{\&L1}); the rates of \cmd{+MS} do not limit it.
+runs at 48000 Hz and more only, where it is the only mode and the
+default (\cmd{ATZ} sets it again there), as a leased line
+(\cmdl[ampL]{\&L1}); the rates of \cmd{+MS} do not limit it.
 \end{command}
 
 \begin{command}{plusMS-q}{AT+MS?}
-The settings: \cmd{92,1,300,56000}.
+The settings: \cmd{92,1,300,56000} (\cmd{200,1,300,56000} on a line at
+48000 Hz and more).
 \end{command}
 
 \begin{command}{plusMS-t}{AT+MS=?}

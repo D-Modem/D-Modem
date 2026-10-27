@@ -306,7 +306,8 @@ void Modem::error()
 }
 
 /* the S-registers that have defaults (ATZ sets them too; the others
-   keep what they have) */
+   keep what they have); on a wideband line the modulation is V.wb's,
+   the only one that runs there */
 void Modem::sregs_init()
 {
 	static const struct {
@@ -333,6 +334,8 @@ void Modem::sregs_init()
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
+	if (wideband())
+		sregs_[SREG_DP] = DP_VWB;
 }
 
 /* the country: the first of the table whose T.35 code is id, or whose

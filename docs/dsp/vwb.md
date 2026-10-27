@@ -1,6 +1,7 @@
 # V.wb: wideband DMT on a bare pair
 
-`AT+MS=VWB` (or `AT+MS=200`) runs D-Modem's own wideband mode. It is
+`AT+MS=VWB` (or `AT+MS=200`) runs D-Modem's own wideband mode; on a
+line at 48000 Hz and more it is the default, the only mode there. It is
 for a **bare copper pair** between two of our modems: a dry pair, an
 alarm or leased circuit, or a pair of your own in a building or between
 buildings. The line is pico-serial's WB stick (`SPEC-WB.md` in
