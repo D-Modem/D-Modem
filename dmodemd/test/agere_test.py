@@ -232,7 +232,7 @@ try:
     # (1002's codec's clock 300 ppm faster than its USB's: its transmit ring
     # kept by the OUT transfers' corrections, no overrun or underrun)
     b = Modem("1002", "dmodem42", args=["-d2"], FAKE_AGERE_DRIFT="300", DMODEM_USB_TX_GAIN="3",
-              FAKE_AGERE_POLARIS="1")
+              FAKE_AGERE_POLARIS="1", FAKE_AGERE_RING_STICKS="1")
     check("-r 9600: 8000 Hz all the same", a.expect_log(b"8000 Hz, its rate (not 9600)", 5))
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
@@ -297,6 +297,9 @@ try:
           and int.from_bytes(w[40:44], "little") == len(w) - 44)
 
     # pulse dialling: the hook (codec register 0xc0) broken and made
+    # (its ring bit stuck for 10 s after the call, as the first Polaris's:
+    # no ring for it, the ring's halves in 0x0c4 not changing)
+    check("1002 no ring after the call (its ring bit stuck)", not b.expect(rb"RING\r\n", 4))
     check("1002 no auto answer", b.cmd(b"ATS0=0"))
     a.dte.write(b"ATDP1002\r")
     check("1002 RING (pulse)", b.expect(rb"RING\r\n", 30))

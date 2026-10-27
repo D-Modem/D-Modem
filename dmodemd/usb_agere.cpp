@@ -112,6 +112,9 @@ const u16 POL_CTRL = 0x00d0, POL_CAL = 0x00dc;
 const u16 POL_DAA = 0x00c8, POL_DAA_READ = 0x00cc;
 const u32 CTRL_3C = 0xcd00003c;
 const u64 POL_LINK_MS = 500;
+/* the longest a ring rings (cadences ring 0.2 to 2.5 s at a time): a ring
+   bit set longer is stuck (agere_ring_poll()) */
+const u64 RING_LONGEST_MS = 6000;
 /* the OH LED's blinking while the line rings, half a period (ms of the
    line's clock); how long a ring keeps it at it */
 const u64 LED_FAST_MS = 125, LED_RING_MS = 1000;
@@ -507,7 +510,10 @@ bool UsbLine::agere_streams()
 	agere_longer_ = agere_shorter_ = 0;
 	agere_last_in_ms_ = 0;
 	agere_stopped_ = false;
-	agere_ahead_ = static_cast<s32>(AGERE_RATE);
+	/* (4 frames past pump()'s 3: the steady OUT transfers take the
+	   playback at an even pace, so more than that is a stall's catching
+	   up, a lag the call would keep: dropped) */
+	agere_ahead_ = 4 * frame_;
 	delay_ = static_cast<s16>(iso_.out_buf.size() + RING_AHEAD);
 	for (s16 i = 0; i < agere_transfers_; i++) {
 		iso_.in[i] = libusb_alloc_transfer(AGERE_PACKETS);
@@ -1063,18 +1069,40 @@ void UsbLine::agere_ring_poll()
 	if (now - agere_poll_ms_ < 100)
 		return;
 	agere_poll_ms_ = now;
-	u16 a8 = 0;
+	u16 a8 = 0, c4 = 0;
 	agere_quiet_ = true;
-	bool ok = codec_read(0x0a8, &a8);
+	bool ok = codec_read(0x0a8, &a8) && (!agere_polaris_ || codec_read(0x0c4, &c4));
 	agere_quiet_ = false;
 	if (!ok)
 		return;
-	if (a8 != agere_0a8_ && agere_poll_said_ < 20) {
+	if ((a8 != agere_0a8_ || c4 != agere_0c4_) && agere_poll_said_ < 20) {
 		agere_poll_said_++;
-		DBG("Agere: on hook: codec 0a8 %04x\n", a8);
+		DBG("Agere: on hook: codec 0a8 %04x, 0c4 %04x\n", a8, c4);
 	}
+	/* (a Polaris's: its ring's alternating halves, 0x0c4's bits 6 and
+	   7, still changing: after a call 0x0a8's bit 1 stayed set on the
+	   first device, with no ring) */
+	if (agere_0c4_ != 0xffff && ((c4 ^ agere_0c4_) & 0x00c0))
+		agere_ac_ms_ = now;
 	agere_0a8_ = a8;
-	bool ringing = (a8 & (agere_polaris_ ? 0x0002 : 0x0004)) != 0;
+	agere_0c4_ = c4;
+	bool bit = (a8 & (agere_polaris_ ? 0x0002 : 0x0004)) != 0 &&
+		(!agere_polaris_ || (agere_ac_ms_ && now - agere_ac_ms_ < 500));
+	/* (set longer than any ring cadence's ring: stuck, not a ring, until
+	   it clears) */
+	if (!bit) {
+		agere_ring_since_ = 0;
+		if (agere_ring_stuck_)
+			DBG("Agere: codec 0a8's ring bit clear again\n");
+		agere_ring_stuck_ = false;
+	} else if (!agere_ring_since_) {
+		agere_ring_since_ = now;
+	} else if (!agere_ring_stuck_ && now - agere_ring_since_ > RING_LONGEST_MS) {
+		agere_ring_stuck_ = true;
+		DBG("Agere: codec 0a8's ring bit set %" PRIu64 " ms (%04x): not a ring\n",
+		    now - agere_ring_since_, a8);
+	}
+	bool ringing = bit && !agere_ring_stuck_;
 	if (ringing != agere_ringing_)
 		DBG("Agere: the line %s\n", ringing ? "rings" : "stopped ringing");
 	agere_ringing_ = ringing;

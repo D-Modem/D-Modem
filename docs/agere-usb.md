@@ -204,9 +204,12 @@ again.
   bit 2 (0x948; both drivers take the ring from it alone). A Polaris doesn't set that bit: its
   ring detector is 0x0a8's bit 1 (0x0010 on hook, 0x0012 or 0x0013 while the line rings, on the
   first device; 0x0c4's bit 3 too, its bits 6 and 7 the ring's halves, and the samples go to
-  full scale). dmodemd reads 0x0a8 every 100 ms on hook and gives the core a ring pulse while
-  the codec's ring bit is set (a Polaris's bit 1, a Mercury's bit 2), as well as for each IN
-  packet whose status has it.
+  full scale). dmodemd reads 0x0a8 (and a Polaris's 0x0c4) every 100 ms on hook and gives the
+  core a ring pulse while the codec's ring bit is set (a Polaris's bit 1, a Mercury's bit 2), as
+  well as for each IN packet whose status has it. After a call the first device's 0x0a8 kept its
+  bit 1 set with no ring: a Polaris's ring counts only while 0x0c4's bits 6 and 7 (the ring's
+  halves) are changing too, and a ring bit set longer than 6 s (no cadence rings that long) is
+  taken as stuck until it clears. The fake device's `FAKE_AGERE_RING_STICKS` does the same.
 - **Caller ID:** the Mercury's `EnableCallerID` does nothing, so the codec hears the line on
   hook; a Polaris's is on while on hook (above). Caller ID comes in the samples, as on an ALSA
   codec.

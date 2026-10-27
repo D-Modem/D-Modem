@@ -305,9 +305,15 @@ private:
 	   traced */
 	void agere_ring_poll();
 	u64 agere_poll_ms_ = 0;
-	u16 agere_0a8_ = 0xffff;
+	u16 agere_0a8_ = 0xffff, agere_0c4_ = 0xffff;
+	/* when 0x0c4's bits 6 and 7 (a Polaris's ring's halves) last changed */
+	u64 agere_ac_ms_ = 0;
 	u32 agere_poll_said_ = 0;
 	bool agere_ringing_ = false, agere_quiet_ = false;
+	/* since when the ring bit has been set; whether it was set too long
+	   to be a ring (stuck: not a ring until it clears) */
+	u64 agere_ring_since_ = 0;
+	bool agere_ring_stuck_ = false;
 	void agere_leds(dcore::Modem &m);
 	static bool agere_device(u16 vendor, u16 product);
 	bool start_iso(Iso &s, s16 pkt);
@@ -426,8 +432,8 @@ private:
 	u64 agere_longer_ = 0, agere_shorter_ = 0;
 	void agere_pair();
 	s16 agere_transfers_ = 16;
-	/* the playback's lead it may have past pump()'s (a second's: the
-	   OUT transfers in flight take theirs from it at their own pace) */
+	/* the playback's lead it may have past pump()'s (4 frames: more is
+	   a stall caught up, dropped) */
 	s32 agere_ahead_ = 0;
 	bool agere_ring_ = false;
 	/* the line's clock when the ring bit was last seen (0: never); the

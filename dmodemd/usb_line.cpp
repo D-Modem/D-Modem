@@ -1352,6 +1352,8 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 		rec_start();
 	else
 		rec_stop();
+	/* (the Agere's ring registers' changes said again after a call) */
+	agere_poll_said_ = 0;
 	flash_end_ = 0;
 	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
 		return agere_hook(off) && agere_caller_id(!off) ? 0 : -1;

@@ -114,6 +114,12 @@ struct Fake {
 	/* the samples come, and the last that rang (a Polaris's 0x0a8 bit 1
 	   for 100 ms after) */
 	unsigned long long samples = 0, rang = 0;
+	/* FAKE_AGERE_RING_STICKS: a Polaris's 0x0a8 bit 1 left set for 10 s
+	   after a call, as the first device's (no ring in 0x0c4); until when;
+	   0x0c4's ring halves (alternating each read while it rings) */
+	bool sticks = false;
+	unsigned long long stuck_until = 0;
+	unsigned ac = 0;
 	unsigned since = 0;             /* the samples come since a slot */
 	/* the transmit ring (48, a lead of 24 at 0x0c), the codec playing
 	   from it each slot what came in it; a slot every SLOT samples, or
@@ -487,11 +493,14 @@ int command_in(uint8_t cmd, uint16_t index, uint16_t value,
 			return LIBUSB_ERROR_PIPE;
 		uint16_t v = fake.codec[index];
 		/* (a Polaris ringing: 0x0a8's bit 1, as the first device's) */
+		bool rings = fake.rang && fake.samples - fake.rang < 800;
 		if (fake.polaris && index == 0xa8) {
 			v = 0x0010;
-			if (fake.rang && fake.samples - fake.rang < 800)
+			if (rings || fake.samples < fake.stuck_until)
 				v |= 0x0002;
 		}
+		if (fake.polaris && index == 0xc4 && rings)
+			v = (uint16_t)(0x000c | (++fake.ac & 1 ? 0x80 : 0x40));
 		data[0] = (uint8_t)v;
 		data[1] = (uint8_t)(v >> 8);
 		return 2;
@@ -552,6 +561,9 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 			fake.codec[0xc0] = (uint16_t)(0x8000 | value);
 		if (index == 0xc0 && (fake.polaris ? value == 1 : value == 0) != fake.hook) {
 			fake.hook = fake.polaris ? value == 1 : value == 0;
+			/* (on hook after a call: the ring bit stuck, FAKE_AGERE_RING_STICKS) */
+			if (fake.polaris && fake.sticks && !fake.hook)
+				fake.stuck_until = fake.samples + 80000;
 			switch_to(0, fake.hook);
 		}
 		return 0;
@@ -598,6 +610,7 @@ int LIBUSB_CALL libusb_init(libusb_context **ctx)
 	if (const char *r = getenv("FAKE_AGERE_ROM"))
 		fake.rom = (uint16_t)strtoul(r, nullptr, 16);
 	fake.polaris = getenv("FAKE_AGERE_POLARIS") != nullptr;
+	fake.sticks = getenv("FAKE_AGERE_RING_STICKS") != nullptr;
 	if (const char *e = getenv("FAKE_AGERE_DRIFT"))
 		fake.drift = strtol(e, nullptr, 10);
 	fake.full = getenv("FAKE_AGERE_FULL") != nullptr;
