@@ -124,6 +124,11 @@ dmodem_test_exe(vcvm_data_test vcvm_data_test.cpp)
 target_link_libraries(vcvm_data_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
 dmodem_gtest(rs_test LABELS quick)
+# V.wb, the wideband mode: its parts, and caller and answerer on a
+# simulated bare pair (vwb_line.cpp: cable, noise, interferers, the
+# hybrid's echo, clocks apart, a dropout)
+dmodem_test_exe(vwb_test vwb_test.cpp vwb_line.cpp ${S}/vwb.cpp ${S}/rs.cpp)
+dmodem_gtest(vwb_test LABELS quick)
 foreach(_t vcvm_test vcvm_startup_test vcvm_data_test)
 	if(AMR_FOUND)
 		target_compile_definitions(${_t} PRIVATE DMODEM_HAVE_AMR)

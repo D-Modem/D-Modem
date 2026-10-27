@@ -44,6 +44,7 @@ int prop_dp_init(void)
 	dp_v32_init();
 	dp_v34_init();
 	dp_vcvm_init();
+	dp_vwb_init();
 	return 0;
 }
 
@@ -58,6 +59,7 @@ void prop_dp_exit(void)
 	dp_v32_exit();
 	dp_v34_exit();
 	dp_vcvm_exit();
+	dp_vwb_exit();
 }
 
 
