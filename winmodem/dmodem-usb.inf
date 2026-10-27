@@ -4,11 +4,12 @@
 ; dmodem-usb.inf - WinUSB (Windows' own generic USB driver) for the USB
 ; modems dmodemd drives itself through libusb (dmodemd --usb): Smart
 ; Link's SmartUSB56 (ST7554, USB 0483:7554), the pico-serial Line
-; stick (1209:0002) and Agere's USB 2.0 soft modem (047E:2892, 047E:2828).
+; stick (1209:0002), the pico-serial WB stick (1209:0003) and Agere's USB
+; 2.0 soft modem (047E:2892, 047E:2828).
 ; No driver of D-Modem's: the INF only gives these
 ; devices WinUSB, as Zadig would.
-; (The pico-serial Line's firmware asks for WinUSB itself, with Microsoft
-; OS 2.0 descriptors; older firmware needs this INF.)
+; (The pico-serial sticks' firmware asks for WinUSB itself, with
+; Microsoft OS 2.0 descriptors; older Line firmware needs this INF.)
 ;
 ; Install with dmodem-driver.exe usb dmodem-usb.inf (as an administrator;
 ; the package must be signed: docs/windows.md), then plug the modem in
@@ -31,6 +32,8 @@ PnpLockdown = 1
 %SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+%PicoWb%     = UsbModem_Install, USB\VID_1209&PID_0003
+%PicoWb%     = UsbModem_Install, USB\VID_1209&PID_0003&MI_00
 %AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2892
 %AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2828
 
@@ -38,6 +41,8 @@ PnpLockdown = 1
 %SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+%PicoWb%     = UsbModem_Install, USB\VID_1209&PID_0003
+%PicoWb%     = UsbModem_Install, USB\VID_1209&PID_0003&MI_00
 %AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2892
 %AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2828
 
@@ -45,6 +50,8 @@ PnpLockdown = 1
 %SmartUSB56% = UsbModem_Install, USB\VID_0483&PID_7554
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002
 %PicoLine%   = UsbModem_Install, USB\VID_1209&PID_0002&MI_00
+%PicoWb%     = UsbModem_Install, USB\VID_1209&PID_0003
+%PicoWb%     = UsbModem_Install, USB\VID_1209&PID_0003&MI_00
 %AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2892
 %AgereUsb%   = UsbModem_Install, USB\VID_047E&PID_2828
 
@@ -68,4 +75,5 @@ Provider   = "D-Modem"
 Mfg        = "D-Modem (WinUSB)"
 SmartUSB56 = "Smart Link SmartUSB56 (WinUSB, for D-Modem)"
 PicoLine   = "pico-serial Line (WinUSB, for D-Modem)"
+PicoWb     = "pico-serial WB (WinUSB, for D-Modem)"
 AgereUsb   = "Agere USB 2.0 Soft Modem (WinUSB, for D-Modem)"

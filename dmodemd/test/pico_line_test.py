@@ -154,7 +154,7 @@ def check(what, cond):
 try:
     p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=2:9", "-r", rate, "dmodem40"],
                        env=env_for("1001"), capture_output=True, text=True, timeout=60)
-    check("nothing at 2:9", p.returncode != 0 and "no SmartUSB56, pico-serial Line or Agere USB modem at 2:9" in p.stderr)
+    check("nothing at 2:9", p.returncode != 0 and "no SmartUSB56, pico-serial Line or WB, or Agere USB modem at 2:9" in p.stderr)
     nl = Modem("1001", "dmodem40", "-nolink", FAKE_PICO_LINE_NOLINK="1")
     check("a line side that doesn't answer: said", nl.expect_log(b"line side does not answer", 5))
     nl.p.terminate()

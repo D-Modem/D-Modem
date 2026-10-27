@@ -1,6 +1,6 @@
 # D-Modem on Haiku
 
-dmodemd builds for [Haiku](https://www.haiku-os.org/) (R1/beta5 and later, x86_64), BeOS's open successor.  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice) and T.38, with a pty as its DTE.  The USB modems (`--usb`: Smart Link's SmartUSB56, the pico-serial Line and Agere's USB 2.0 soft modem) go through HaikuPorts' libusb.  libdmodem (`dmodemd/dmodem.h`), `libdmodem_sip.a`, dmodem-ari and the test programs build too.
+dmodemd builds for [Haiku](https://www.haiku-os.org/) (R1/beta5 and later, x86_64), BeOS's open successor.  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice) and T.38, with a pty as its DTE.  The USB modems (`--usb`: Smart Link's SmartUSB56, the pico-serial Line and WB and Agere's USB 2.0 soft modem) go through HaikuPorts' libusb.  libdmodem (`dmodemd/dmodem.h`), `libdmodem_sip.a`, dmodem-ari and the test programs build too.
 
 Not built for Haiku:
 - the ALSA line (`-a`) and `hda-modem-setup`, which are Linux's

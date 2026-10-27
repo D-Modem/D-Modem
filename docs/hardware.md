@@ -5,8 +5,9 @@ softmodem's codec on a telephone line, through ALSA. With `--usb` it is
 a Smart Link SmartUSB56 ([below](#smart-link-smartusb56)), a
 pico-serial Line stick ([below](#pico-serial-line)) or an Agere USB 2.0
 soft modem ([below](#agere-usb-20-soft-modem)), through libusb. On a
-bare pair instead of a telephone line, a codec at 96 kHz runs D-Modem's
-wideband mode ([pico-serial WB](#pico-serial-wb-wideband-bare-pair)).
+bare pair instead of a telephone line, pico-serial's WB stick (`--usb`
+too) or any codec at 96 kHz runs D-Modem's wideband mode
+([pico-serial WB](#pico-serial-wb-wideband-bare-pair)).
 The modem is then D-Modem's open DSP, on any architecture. Smart Link's
 slmodemd, Agere's agrsm and their kind were closed, mostly i386-only
 programs; dmodemd can replace them.
@@ -270,9 +271,9 @@ To start it as a user, give that user the device with a udev rule, e.g.
 If Smart Link's own kernel driver (`slusb`) is loaded, dmodemd detaches
 it from the device while it runs. dmodemd is built with `--usb` when
 pkg-config finds libusb-1.0 (libusb-1.0-0-dev). `dmodemd --usb list`
-lists the SmartUSB56s and pico-serial Lines there are, and whether each
-can be opened. On Windows dmodemd.exe drives both the same way, on
-WinUSB ([windows.md](windows.md#usb-modems---usb)).
+lists the SmartUSB56s, pico-serial Lines and WBs and Agere modems there
+are, and whether each can be opened. On Windows dmodemd.exe drives them
+the same way, on WinUSB ([windows.md](windows.md#usb-modems---usb)).
 
 The ST7554's register values and start-up are those of Smart Link's
 Linux driver for it (`drivers/st7554.c` of slmodem 2.9.11, under a BSD
@@ -455,12 +456,85 @@ with `AT&L1`, a leased line with no dial tone or ringing: `ATD` calls,
 and `ATA` or `ATS0=1` answers. In simulation it carries about 149
 kbit/s each way on a short pair and about 70 kbit/s on 5 km.
 
-The stick's USB driver in dmodemd comes later, with its firmware. It
-will be `--usb` beside the SmartUSB56 and the Line stick, at `-r 96000`
-(its default) or `-r 192000`. Meanwhile any ALSA codec that runs at
-96 kHz (`-a hw:N -r 96000`, through a line transformer) is a line for
-V.wb, and libdmodem runs it at any of the three rates
-(`dmodem_create_rate()`).
+dmodemd drives the stick through libusb, as it drives the Line stick, and
+it needs no kernel driver. `--usb=auto` finds it beside the other USB
+modems, and with no `-r` it runs at the stick's own 96000 Hz:
+
+    lsusb -d 1209:0003            # Bus 001 Device 009: ID 1209:0003 ...
+    dmodemd --usb=auto            # 96000 Hz; -r 48000 or -r 192000 for those
+
+A udev rule to start dmodemd as a user, e.g.
+`/etc/udev/rules.d/60-pico-serial-wb.rules`:
+
+    SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="0003", MODE="0660", GROUP="dialout"
+
+At both ends of the pair, one end calling and the other answering by
+itself:
+
+    AT&L1S0=1                     (the answering end, once)
+    AT&L1                         (the calling end)
+    ATD
+    CONNECT 148656
+
+At 48000 Hz and up V.wb is the modulation by default (`AT+MS?` says
+200), as no other runs there; `AT+MS=VWB` is not needed. A leased line
+has no hang-up of its own: when one end hangs up (`ATH`), the other
+sees `NO CARRIER` when V.42 tells it, or once the carrier has been gone
+for S7 seconds (`ATS7=10` for 10).
+
+Its protocol is its firmware's (`firmware/PROTOCOL.md`, "WB stick", and
+`src/core/wb_proto.h`): the Line stick's USB device with the WB stick's
+requests. In `dmodemd/usb_wb.cpp`, on `dmodemd/usb_line.cpp`'s
+transfers:
+
+- **Samples.** S16 little-endian mono at 96000 Hz (48000 and 192000
+  too), isochronous both ways in interface 0's alternate setting 1, which
+  starts them: 1 ms packets of up to 480 octets, each IN packet the
+  samples the stick's codec gave in that millisecond, each OUT transfer
+  with an IN one's lengths, as for the Line stick. `SET_RATE` (in kHz)
+  is sent first; a rate it hasn't (`-r 8000` or `9600`) is refused.
+- **At start-up** dmodemd reads its version and board (`GET_INFO`),
+  turns any loopback off (`SET_LOOPBACK`), streams the hybrid's input
+  (`SET_INPUT`: the line less our own signal; not the line itself), sets
+  the rate and the gains, and says so if the codec does not run
+  (`GET_STATUS`). ATI3 says `pico-serial WB (TLV320AIC3204)`.
+- **Gains.** `--usb-wb-tx-gain=<dB>` is the transmit level (the codec's
+  DAC volume, `SET_TX_GAIN`: -63.5 to +24 dB in 0.5 dB steps), and
+  `--usb-wb-rx-gain=<dB>` the hybrid input's gain (its MicPGA,
+  `SET_RX_GAIN`: 0 to 47.5 dB). Both are 0 by default, the stick's own
+  levels: about +3 dBm on the line for a full-scale sine, and V.wb's
+  signal (11 dB below full scale) at about -8 dBm.
+- **The LINK LED** is the modem's carrier: on while the call is online
+  (through a retrain too), off otherwise (`SET_CARRIER`). At the end
+  dmodemd gives it back to the stick, which lights it while its samples
+  run.
+- **No hook, ring or caller ID.** The modem's hook only starts and stops
+  the call; nothing rings, and `ATS0=1` answers only with `AT&L1`.
+- **Events.** The codec's overflows (the transmit level or the hybrid's
+  gain too high), over current on the line's drivers, and the stick's
+  underruns and overruns are logged (`-d1`).
+- **Unplugged.** dmodemd says so and exits.
+
+Not yet tried on a real stick or a real pair: it has been tested
+against a fake of the stick (below) on a simulated pair, the firmware's
+protocol as its sources have it. What is left to see on hardware:
+
+- the stick's real delay (its codec's filters are not counted in
+  dmodemd's `io_delay`; V.wb measures its own echo and needs none);
+- the levels: the default gains (0 dB) are untried against a real
+  hybrid's residue and a real pair's loss, and the receive gain may need
+  raising on a long pair;
+- V.42 over the host's buffers (dmodemd sends its samples 4672 ahead at
+  96 kHz, about 50 ms: a frame and a half of 20 ms, and 15 ms of
+  transfers): LAPM's window of 15 frames of 128 octets waits a round
+  trip, so in simulation, with that lead at both ends, V.wb's 148656
+  bit/s carried 83 kbit/s each way through V.42, against 137 kbit/s
+  with no buffers;
+- the stick's USB ID is a pid.codes test PID until it has its own.
+
+Any ALSA codec that runs at 96 kHz (`-a hw:N -r 96000`, through a line
+transformer) is a line for V.wb too, and libdmodem runs it at any of
+the three rates (`dmodem_create_rate()`).
 
 ### Agere USB 2.0 soft modem
 
@@ -531,7 +605,7 @@ start from.
 |---|---|
 | `-a <pcm>`, `--alsa=<pcm>` | the codec's PCM (`hw:1`, `hw:0,6`, `plughw:...`): the line is a telephone line, not SIP |
 | `--alsa-ctl=<ctl>` | its controls, if not the card's (`hw:1` for `hw:1,0` or `plughw:1,0`; the PCM's own name otherwise) |
-| `--usb=<dev>` | a SmartUSB56, pico-serial Line or Agere USB modem (`auto`, the first one; or `<bus>:<address>`, as `lsusb` and `--usb list` show it): the line is a telephone line, not SIP; `--usb list` lists them and exits |
+| `--usb=<dev>` | a SmartUSB56, pico-serial Line or WB or Agere USB modem (`auto`, the first one; or `<bus>:<address>`, as `lsusb` and `--usb list` show it): the line is a telephone line (a bare pair for the WB), not SIP; `--usb list` lists them and exits |
 | `--usb-leds` | a SmartUSB56's carrier and data LEDs lit (GPIO 6 and 13), as on Creative's Modem Blaster; only for a board that has them |
 | `--usb-wake` | a ring wakes the computer: the SmartUSB56's USB remote wakeup armed (and on Linux the kernel's `power/wakeup` of it enabled, as root) |
 | `--usb-handset` | the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook, `<DLE>H` and `<DLE>h` in voice mode |
@@ -539,7 +613,9 @@ start from.
 | `--usb-buzzer` | the SmartUSB56's buzzer (GPIO 11, BUZEN) as the speaker: on while ATM/ATL have it on, as Windows' `Options.Buzzer` |
 | `--usb-rhom` | the SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15, and the voice codec's bit 7) while the modem runs, as Windows' `Options.RHOM`; not below revision 0x200 |
 | `--usb-international` | the SmartUSB56's international line controls (GPIO 8, 10 and 12), as Smart Link's Windows driver has them: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's |
-| `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the voice-band data pumps' (an Agere USB modem's is 8000 whatever it says); 48000, 96000 or 192000 for the wideband mode on a bare pair (`AT+MS=VWB`, [dsp/vwb.md](dsp/vwb.md)), on a line that has the rate (an ALSA codec; not the SmartUSB56 or the Line stick). At those rates the voice-band pumps are refused (`NO CARRIER`) and `ATD` dials nothing |
+| `--usb-wb-tx-gain=<dB>` | a pico-serial WB's transmit level: its DAC's volume, -63.5 to +24 dB in 0.5 dB steps (0, the default, is the stick's own) |
+| `--usb-wb-rx-gain=<dB>` | a pico-serial WB's hybrid input gain: its MicPGA, 0 (the default) to 47.5 dB in 0.5 dB steps |
+| `-r <Hz>`, `--rate=<Hz>` | the codec's rate: 9600 (the default) or 8000, the voice-band data pumps' (an Agere USB modem's is 8000 whatever it says); 48000, 96000 or 192000 for the wideband mode on a bare pair (V.wb, [dsp/vwb.md](dsp/vwb.md)), on a line that has the rate (an ALSA codec, or a pico-serial WB, whose default is 96000; not the SmartUSB56 or the Line stick). At those rates V.wb is the default modulation (`AT+MS=VWB`), the voice-band pumps are refused (`NO CARRIER`) and `ATD` dials nothing |
 
 Started as root, dmodemd opens the codec before it goes on as nobody, so
 the device's group (usually `audio`) does not matter. Started as a user,
@@ -703,6 +779,24 @@ the exchange's, speaking its firmware's protocol: `SET_HOOK` and
 its samples, its ring detector's changes come as events. On top of the
 SmartUSB56's checks it has the country's line settings, and a stick
 whose line side does not answer (said, and dmodemd goes on).
+
+`dmodemd/test/pico_wb_test.py` (ctest's `dmodemd_pico_wb`, labels
+`alsa` and `quick`: about 20 s) does it with two pico-serial WB sticks
+on a bare pair instead of an exchange: `dmodemd/test/fake_pico_wb.cpp`
+is a stick (1209:0003) speaking its firmware's protocol, and
+`dmodemd/test/wb_pair.cpp` is the pair between the two, in real time
+at 96 kHz: the V.wb tests' simulated pair (`dsp/test/vwb_line.cpp`: 1
+km of cable, the transformers, noise, each end's hybrid echo, the two
+clocks 100 ppm apart), each end's samples played as the stick plays them
+(after a head start, silence when they run dry). It checks that a rate
+the stick hasn't is refused and the others set (`SET_RATE`), the
+96000 Hz default, the gains' options, V.wb as the default modulation,
+a codec that does not come up (said), and then a call: `AT&L1` both
+ends, the answerer by itself (`S0=1`), CONNECT at 148656, the LINK
+LEDs on, 32 kB each way at once byte for byte through V.42, the
+hang-up (NO CARRIER at the other end, the LEDs off), and that both exit
+once the pair (the devices) has gone. `PAIR_KM`, `PAIR_SNR`, `PAIR_PPM`
+and `PAIR_ECHO` change the pair.
 
 `dmodemd/test/agere_test.py` (ctest's `dmodemd_agere`, label `alsa`)
 does it with two Agere USB modems at 8000 Hz: `dmodemd/test/fake_agere.cpp`

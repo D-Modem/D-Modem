@@ -1,6 +1,6 @@
 # D-Modem on macOS
 
-dmodemd builds for macOS 11 (Big Sur) and later, on Apple silicon and Intel, as one universal binary if asked.  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice) and T.38, with a pty as its DTE.  The USB modems (`--usb`: Smart Link's SmartUSB56, the pico-serial Line and Agere's USB 2.0 soft modem) go through libusb's IOKit backend, built with dmodemd.  libdmodem (`dmodemd/dmodem.h`), `libdmodem_sip.a`, dmodem-ari and the test programs build too.
+dmodemd builds for macOS 11 (Big Sur) and later, on Apple silicon and Intel, as one universal binary if asked.  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice) and T.38, with a pty as its DTE.  The USB modems (`--usb`: Smart Link's SmartUSB56, the pico-serial Line and WB and Agere's USB 2.0 soft modem) go through libusb's IOKit backend, built with dmodemd.  libdmodem (`dmodemd/dmodem.h`), `libdmodem_sip.a`, dmodem-ari and the test programs build too.
 
 Not built for macOS:
 - the ALSA line (`-a`) and `hda-modem-setup`, which are Linux's
@@ -44,7 +44,7 @@ dmodemd takes the same options as on Linux ([README](../README.md)).  The differ
 
 ## The tests
 
-The offline tests (`ctest -L quick`) run as on Linux.  The USB modems' calls (`dmodemd_usb`, `dmodemd_pico_line`, `dmodemd_agere`) need no LD_PRELOAD on macOS: each fake modem (`dmodemd/test/fake_*.cpp`) is linked into a dmodemd of its own (`dmodemd_fake_st7554`, `dmodemd_fake_pico_line`, `dmodemd_fake_agere`) in libusb's place, as Windows' tests have them.  The ALSA line's test is Linux's.
+The offline tests (`ctest -L quick`) run as on Linux.  The USB modems' calls (`dmodemd_usb`, `dmodemd_pico_line`, `dmodemd_pico_wb`, `dmodemd_agere`) need no LD_PRELOAD on macOS: each fake modem (`dmodemd/test/fake_*.cpp`) is linked into a dmodemd of its own (`dmodemd_fake_st7554`, `dmodemd_fake_pico_line`, `dmodemd_fake_pico_wb`, `dmodemd_fake_agere`) in libusb's place, as Windows' tests have them.  The ALSA line's test is Linux's.
 
 ## What the port changed
 

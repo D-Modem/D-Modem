@@ -147,7 +147,7 @@ The tests cover both ways under Wine:
 
 ### USB modems (`--usb`)
 
-dmodemd.exe drives Smart Link's SmartUSB56 (ST7554, USB `0483:7554`) and the pico-serial Line stick (`1209:0002`) as dmodemd does on Linux ([hardware.md](hardware.md#smart-link-smartusb56)). There is no SIP then: the line is the modem's telephone line, and the DTE is any of the others (TCP, a COM port, a pipe, the virtual modem driver's port). The same code runs both:
+dmodemd.exe drives Smart Link's SmartUSB56 (ST7554, USB `0483:7554`), the pico-serial Line stick (`1209:0002`) and the pico-serial WB stick (`1209:0003`, a bare pair: [hardware.md](hardware.md#pico-serial-wb-wideband-bare-pair)) as dmodemd does on Linux ([hardware.md](hardware.md#smart-link-smartusb56)). There is no SIP then: the line is the modem's telephone line, and the DTE is any of the others (TCP, a COM port, a pipe, the virtual modem driver's port). The same code runs both:
 - the samples are isochronous transfers;
 - the hook and the ring detector go through the device's own requests and its interrupt endpoint;
 - the pico-serial Line gets caller ID and the country's line settings.
@@ -157,7 +157,7 @@ dmodemd.exe drives Smart Link's SmartUSB56 (ST7554, USB `0483:7554`) and the pic
     dmodemd.exe --usb auto --tcp 127.0.0.1:2323
 
 Windows has no kernel driver to hold either device. libusb reaches a USB device through WinUSB, Windows' own generic USB driver, so the device must have WinUSB as its driver. That takes one of these:
-- The pico-serial Line asks for WinUSB itself, with no INF and no Zadig. Its firmware has Microsoft OS 2.0 descriptors: the WinUSB compatible ID, and D-Modem's interface GUID, the one `dmodem-usb.inf` gives. Firmware older than that needs one of the two below.
+- The pico-serial Line and WB ask for WinUSB themselves, with no INF and no Zadig. Their firmware has Microsoft OS 2.0 descriptors: the WinUSB compatible ID, and D-Modem's interface GUID, the one `dmodem-usb.inf` gives. Line firmware older than that needs one of the two below.
 - `dmodem-usb.inf` (`winmodem/`) gives both devices WinUSB, and `dmodem-driver usb dmodem-usb.inf` installs it. The INF must be signed before Windows takes it (the test signing of the virtual modem driver, above, with `dmodem-usb.cat`).
 - [Zadig](https://zadig.akeo.ie/) does the same and signs what it installs itself: choose the device, then WinUSB.
 

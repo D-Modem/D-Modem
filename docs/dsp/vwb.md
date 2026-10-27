@@ -221,7 +221,9 @@ The other results:
 - **Through a host's buffers.** With each end's samples 4672 ahead and
   in 20 ms frames, as dmodemd's USB line has them (`vwb_call_test`'s
   HostLatency), the call connects as before; V.42 then carries 83 kbit/s
-  each way (LAPM's window waits a longer round trip).
+  each way (LAPM's window waits a longer round trip). dmodemd itself
+  runs the call between two fake WB sticks on this pair in real time
+  (`dmodemd/test/pico_wb_test.py`, [hardware.md](../hardware.md#pico-serial-wb-wideband-bare-pair)).
 - **Dropout.** A 0.5 s cut of the pair costs one retrain. The data goes
   on after it, and LAPM sends again what was lost.
 - **CPU.** One end takes about 1.5% of one x86 core at 96 kHz.
@@ -232,6 +234,5 @@ The other results:
 - Trellis coding.
 - V.42's extended windows, which a long interleaver, and a host's
   buffers, would need.
-- The WB stick's USB line driver in dmodemd, which comes with its
-  firmware.
-- A real pair.
+- A real pair, and a real WB stick (dmodemd's `--usb` drives it:
+  [hardware.md](../hardware.md#pico-serial-wb-wideband-bare-pair)).

@@ -50,7 +50,8 @@ enum {
 	OPT_HELP, OPT_USAGE, OPT_VERSION, OPT_COUNTRY, OPT_COUNTRYLIST,
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
 	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_USB_LEDS, OPT_USB_WAKE,
-	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_USB_RHOM, OPT_USB_BUZZER, OPT_RATE,
+	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_USB_RHOM, OPT_USB_BUZZER,
+	OPT_USB_WB_TX_GAIN, OPT_USB_WB_RX_GAIN, OPT_RATE,
 #ifdef _WIN32
 	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP, OPT_DRIVER,
 #endif
@@ -88,9 +89,9 @@ const Option OPTIONS[OPT_COUNT] = {
 	{ 0, "alsa-ctl", Takes::Text, true,
 	  "its controls (hw:<card> of -a's)", "-a's", false },
 	{ 0, "usb", Takes::Text, true,
-	  "the line a Smart Link SmartUSB56 or a pico-serial Line (auto, or "
-	  "<bus>:<address>), not SIP; list: those there are", "none",
-	  false },
+	  "the line a Smart Link SmartUSB56, a pico-serial Line or WB or an "
+	  "Agere USB modem (auto, or <bus>:<address>), not SIP; list: those "
+	  "there are", "none", false },
 	{ 0, "usb-leds", Takes::Nothing, false,
 	  "a SmartUSB56's carrier and data LEDs (GPIO 6 and 13) lit, on a "
 	  "board that has them (Creative's Modem Blaster)", nullptr, false },
@@ -114,9 +115,16 @@ const Option OPTIONS[OPT_COUNT] = {
 	{ 0, "usb-buzzer", Takes::Nothing, false,
 	  "a SmartUSB56's buzzer (GPIO 11) as the speaker (ATM, ATL)",
 	  nullptr, false },
+	{ 0, "usb-wb-tx-gain", Takes::Text, true,
+	  "a pico-serial WB's transmit level, dB (its DAC's volume: -63.5 "
+	  "to 24, in 0.5 dB steps)", "0", false },
+	{ 0, "usb-wb-rx-gain", Takes::Text, true,
+	  "a pico-serial WB's hybrid input gain, dB (its MicPGA: 0 to 47.5, "
+	  "in 0.5 dB steps)", "0", false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a or --usb (8000 or 9600; 48000, 96000 or "
-	  "192000 for the wideband mode, AT+MS=VWB)", "9600", false },
+	  "192000 for the wideband mode, AT+MS=VWB: a pico-serial WB's "
+	  "96000 unless given)", "9600", false },
 #ifdef _WIN32
 	{ 0, "com", Takes::Text, true,
 	  "the DTE a COM port (COM5: one end of a com0com pair)", "none",
@@ -173,6 +181,9 @@ private:
 	s16 match(const char *text, const char **value) const;
 	/* the usage on stderr, exit 1 */
 	[[noreturn]] void usage() const;
+	/* option o, if given, a number of dB from lo to hi into *db; false
+	   (and why on stderr) if it is not */
+	bool wb_gain(const Option &o, double lo, double hi, double &db) const;
 
 	int argc_;
 	char **argv_;
@@ -329,7 +340,24 @@ void list_countries()
 	}
 }
 
-/* see above */
+/* see CommandLine */
+bool CommandLine::wb_gain(const Option &o, double lo, double hi,
+			  double &db) const
+{
+	if (!o.given)
+		return true;
+	char *end = nullptr;
+	double v = strtod(o.value, &end);
+	if (end == o.value || *end || !(v >= lo && v <= hi)) {
+		fprintf(stderr, "%s: --%s: dB from %g to %g\n", prog_, o.name,
+			lo, hi);
+		return false;
+	}
+	db = v;
+	return true;
+}
+
+/* see CommandLine */
 void CommandLine::apply(Options &opt) const
 {
 	const Option *o = opts_;
@@ -397,6 +425,9 @@ void CommandLine::apply(Options &opt) const
 		opt.usb_rhom = true;
 	if (o[OPT_USB_BUZZER].given)
 		opt.usb_buzzer = true;
+	if (!wb_gain(o[OPT_USB_WB_TX_GAIN], -63.5, 24, opt.usb_wb_tx_gain) ||
+	    !wb_gain(o[OPT_USB_WB_RX_GAIN], 0, 47.5, opt.usb_wb_rx_gain))
+		exit(1);
 	if (opt.alsa && opt.usb) {
 		fprintf(stderr, "%s: -a or --usb, not both\n", prog_);
 		exit(1);
@@ -410,6 +441,7 @@ void CommandLine::apply(Options &opt) const
 			exit(1);
 		}
 		opt.rate = static_cast<u32>(rate);
+		opt.rate_given = true;
 	}
 #ifdef _WIN32
 	if (o[OPT_COM].given)

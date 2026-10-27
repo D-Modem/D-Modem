@@ -283,7 +283,7 @@ jobs:
 
       - name: USB modems
         run: |
-          ctest --test-dir build-mac -R 'dmodemd_(usb|pico_line|agere)$' \
+          ctest --test-dir build-mac -R 'dmodemd_(usb|pico_line|pico_wb|agere)$' \
             --repeat until-pass:2 --output-on-failure
 
       - name: Test logs

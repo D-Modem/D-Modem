@@ -9,9 +9,9 @@
  *                       connections (--tcp, the default 127.0.0.1:2323);
  *                       windows_dte.h has them
  *
- *    With --usb the line is a Smart Link SmartUSB56 or a pico-serial Line
- *    stick through libusb (usb_line.cpp, on WinUSB), not SIP; the DTE is
- *    any of the above.
+ *    With --usb the line is a Smart Link SmartUSB56, a pico-serial Line
+ *    or WB stick or an Agere USB modem through libusb (usb_line.cpp, on
+ *    WinUSB), not SIP; the DTE is any of the above.
  *
  *    What main.cpp does for POSIX's ptys, root and realtime scheduling
  *    has no place here: the process runs as the user who starts it, at
@@ -197,8 +197,10 @@ int main(int argc, char *argv[])
 #endif
 	if (opt.usb) {
 #ifdef DMODEM_USB
-		/* (an Agere modem's rate is its own) */
-		opt.rate = dmd::UsbLine::line_rate(opt.usb, opt.rate);
+		/* (an Agere modem's rate is its own, and a WB stick's unless
+		   -r says) */
+		opt.rate = dmd::UsbLine::line_rate(opt.usb, opt.rate,
+						      opt.rate_given);
 		mo.rate = (s32)opt.rate;
 		um.reset(new dcore::Modem(usb, mo));
 		if (!um->ok())
@@ -227,6 +229,7 @@ int main(int argc, char *argv[])
 	usb.set_international(opt.usb_international);
 	usb.set_rhom(opt.usb_rhom);
 	usb.set_buzzer(opt.usb_buzzer);
+	usb.set_wb_gains(opt.usb_wb_tx_gain, opt.usb_wb_rx_gain);
 	if (opt.usb_voice_codec)
 		usb.set_voice_codec(!strcmp(opt.usb_voice_codec, "alaw") ?
 				    dmd::UsbLine::VoiceLaw::Alaw :

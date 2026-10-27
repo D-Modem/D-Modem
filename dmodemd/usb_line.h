@@ -4,10 +4,12 @@
  *
  *    usb_line.h - the modem's line a Smart Link SmartUSB56 (ST7554, USB
  *                 0483:7554 with an STLC7550 codec), a pico-serial Line
- *                 stick (USB 1209:0002, a Si3056 DAA behind an RP2040) or
- *                 an Agere USB 2.0 soft modem (USB 047E:2892 or 047E:2828,
- *                 an Agere "USS" ARM controller with a Mercury codec)
- *                 through libusb: no kernel driver
+ *                 stick (USB 1209:0002, a Si3056 DAA behind an RP2040), a
+ *                 pico-serial WB stick (USB 1209:0003, a TLV320AIC3204
+ *                 codec on a bare pair) or an Agere USB 2.0 soft modem
+ *                 (USB 047E:2892 or 047E:2828, an Agere "USS" ARM
+ *                 controller with a Mercury codec) through libusb: no
+ *                 kernel driver
  *
  *    The ST7554 is a USB bridge to a codec and a DAA: its registers are
  *    vendor control requests, its samples isochronous transfers both
@@ -34,6 +36,14 @@
  *    with its monitor on, so caller ID comes in the samples as on an ALSA
  *    codec.  The country's line settings (termination, current limit,
  *    ringer, on-hook speed: si3056.h) go into its DAA's registers.
+ *
+ *    The pico-serial WB stick (SPEC-WB.md and firmware/PROTOCOL.md "WB
+ *    stick", usb_wb.cpp) is the Line stick's sibling for a bare copper
+ *    pair: the same interface, endpoints and framing (S16 little-endian,
+ *    mono, at 48000, 96000 or 192000 Hz, 96000 by default), its own
+ *    requests (the rate, the LINK LED, the codec's gains, which ADC is
+ *    streamed).  It has no hook, ring or caller ID: the wideband mode
+ *    (V.wb, DP_VWB) runs on it, a leased line's (AT&L1).
  *
  *    The Agere modem (docs/agere-usb.md, usb_agere.cpp) is a USB
  *    controller with an ARM in it whose ROM streams the codec's samples on
@@ -120,10 +130,19 @@ public:
 	   Link's Windows driver drives it with Options.Buzzer
 	   (SetSpeakerVolume).  Not every board has one: off by default */
 	void set_buzzer(bool on) { buzzer_ = on; }
+	/* the WB stick's transmit level (the DAC's volume, SET_TX_GAIN: -63.5
+	   to +24 dB) and its hybrid input's gain (the MicPGA, SET_RX_GAIN: 0
+	   to 47.5 dB), in dB, rounded to its 0.5 dB steps; 0 (its reset
+	   values) by default */
+	void set_wb_gains(double tx_db, double rx_db) {
+		wb_tx_db_ = tx_db;
+		wb_rx_db_ = rx_db;
+	}
 	/* the modem dev ("" or "auto": the first SmartUSB56, pico-serial
-	   Line or Agere modem; <bus>:<address> one of them, as lsusb shows
-	   them) opened at rate (an Agere modem at 8000 Hz whatever it is),
-	   its samples running, on hook; false with the reason on stderr */
+	   Line or WB, or Agere modem; <bus>:<address> one of them, as lsusb
+	   shows them) opened at rate (an Agere modem at 8000 Hz whatever it
+	   is), its samples running, on hook; false with the reason on
+	   stderr */
 	bool open(const char *dev, u32 rate);
 	/* libusb's descriptors watched this turn (POSIX: Windows' libusb
 	   has none, and the caller polls every POLL_MS instead) */
@@ -164,8 +183,9 @@ public:
 	void speaker(dcore::Modem &m, s16 volume) override;
 	/* an analogue line, the modem dialling it itself */
 	bool analog_line(dcore::Modem &) override { return true; }
-	/* a hook flash it can make (hook_flash()) */
-	bool can_flash(dcore::Modem &) override { return true; }
+	/* a hook flash it can make (hook_flash()): not on the WB stick,
+	   which has no hook */
+	bool can_flash(dcore::Modem &) override { return kind_ != Kind::Wb; }
 	void hook_flash(dcore::Modem &m, u16 ms) override;
 	s16 pulse_hook(dcore::Modem &m, bool broken) override;
 	/* (see set_international()) */
@@ -178,6 +198,7 @@ public:
 	/* for ATI3 */
 	const char *driver_name() override {
 		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" :
+			kind_ == Kind::Wb ? "pico-serial WB (TLV320AIC3204)" :
 			kind_ == Kind::Agere ? "Agere USB 2.0 (Mercury)" : "ST7554";
 	}
 	/* the modem's characters to the DTE: how many it took (data, for
@@ -197,13 +218,14 @@ public:
 	}
 
 	/* the rate the line dev (as open() takes it) will run at, asked
-	   for rate: an Agere modem's 8000 Hz, else rate (the bus looked
+	   for rate (given: by -r, else the default): an Agere modem's 8000
+	   Hz; a WB stick's 96000 Hz unless given; else rate (the bus looked
 	   at, nothing opened) */
-	static u32 line_rate(const char *dev, u32 rate);
+	static u32 line_rate(const char *dev, u32 rate, bool given = true);
 	/* "<bus>:<address>" into bus and addr; false if it is not that */
 	static bool parse_dev(const char *dev, int *bus, int *addr);
-	/* --usb list: each SmartUSB56, pico-serial Line and Agere modem on
-	   stdout, its
+	/* --usb list: each SmartUSB56, pico-serial Line and WB, and Agere
+	   modem on stdout, its
 	   <bus>:<address> and whether it can be opened (on Windows: whether
 	   WinUSB is its driver); 0, or -1 if libusb can't start */
 	static s16 list();
@@ -212,8 +234,9 @@ private:
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
 	/* the most transfers a stream has each way (the Agere's: agere_transfers_) */
 	enum { MAX_TRANSFERS = 32 };
-	/* the three devices it drives */
-	enum class Kind { St7554, Stick, Agere };
+	/* the four devices it drives (Stick: the pico-serial Line; Wb: the
+	   pico-serial WB) */
+	enum class Kind { St7554, Stick, Wb, Agere };
 	/* an isochronous stream both ways: the codec's (the modem's line,
 	   S16 little-endian) or the voice codec's (set_voice_codec(): an
 	   octet a sample, at VOICE_RATE).  An OUT transfer goes when an
@@ -255,6 +278,20 @@ private:
 	/* the country's settings into the stick's DAA (each register read,
 	   its own bits changed); false (logged) */
 	bool stick_country();
+	/* the WB stick's (usb_wb.cpp): whether a USB ID is one, and a rate
+	   its codec has (48000, 96000, 192000); its start-up (its version
+	   and board checked, the loopback off, the hybrid streamed, the
+	   rate, the gains, the LINK LED off, then alternate setting 1); an
+	   event from its interrupt endpoint; the LINK LED as the modem's
+	   carrier (each pump: SET_CARRIER on while the call is online, off
+	   otherwise); the LED back to its own (auto) and the samples
+	   stopped, at close() */
+	static bool wb_device(u16 vendor, u16 product);
+	static bool wb_rate(u32 rate);
+	bool open_wb(u32 rate);
+	void wb_event(const u8 *b, s16 len);
+	void wb_carrier(dcore::Modem &m);
+	void wb_close();
 	bool start_streams();
 	/* the Agere modem's (usb_agere.cpp): its start-up, a vendor command
 	   (cmd, wLength, wIndex, wValue: IN or OUT as the command is), its
@@ -358,6 +395,10 @@ private:
 	const Si3056Country *daa_ = &si3056_usa();
 	std::string daa_name_ = "USA";
 	bool daa_due_ = true;
+	/* the WB stick: its gains (set_wb_gains()), dB; its LINK LED as
+	   last set (-1: not yet) */
+	double wb_tx_db_ = 0, wb_rx_db_ = 0;
+	s16 wb_carrier_ = -1;
 	u32 rate_ = 9600;
 	s16 frame_ = 192;               /* 20 ms */
 	s16 delay_ = 0;

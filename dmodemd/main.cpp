@@ -286,8 +286,10 @@ int main(int argc, char *argv[])
 	dcore::Modem *m;
 	if (opt.usb) {
 #ifdef DMODEM_USB
-		/* (an Agere modem's rate is its own) */
-		opt.rate = dmd::UsbLine::line_rate(opt.usb, opt.rate);
+		/* (an Agere modem's rate is its own, and a WB stick's unless
+		   -r says) */
+		opt.rate = dmd::UsbLine::line_rate(opt.usb, opt.rate,
+						      opt.rate_given);
 		mo.rate = static_cast<s32>(opt.rate);
 		um.reset(new dcore::Modem(usb, mo));
 		if (!um->ok())
@@ -338,6 +340,7 @@ int main(int argc, char *argv[])
 	usb.set_international(opt.usb_international);
 	usb.set_rhom(opt.usb_rhom);
 	usb.set_buzzer(opt.usb_buzzer);
+	usb.set_wb_gains(opt.usb_wb_tx_gain, opt.usb_wb_rx_gain);
 	if (opt.usb_voice_codec)
 		usb.set_voice_codec(!strcmp(opt.usb_voice_codec, "alaw") ?
 				    dmd::UsbLine::VoiceLaw::Alaw :

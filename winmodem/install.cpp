@@ -19,7 +19,8 @@
  *                                           the pipe dmodemd takes
  *      dmodem-driver usb <dmodem-usb.inf>   WinUSB for the USB modems
  *                                           (SmartUSB56, pico-serial
- *                                           Line), into the driver store
+ *                                           Line and WB, Agere), into
+ *                                           the driver store
  *                                           and onto those plugged in, so
  *                                           that dmodemd --usb drives them
  *

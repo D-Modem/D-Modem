@@ -75,11 +75,11 @@ if(DMODEM_DMODEMD)
 	# dmodemd_fake_<fake>, dmodemd with test/fake_<fake>.cpp in libusb's
 	# place, linked into it (where there is no LD_PRELOAD to put it in
 	# front of libusb: Windows, macOS; DMODEM_TEST_BUILTIN_FAKES on
-	# Linux); usb_test.py, pico_line_test.py and agere_test.py run it
-	# with "-" for the fake
+	# Linux); usb_test.py, pico_line_test.py, pico_wb_test.py and
+	# agere_test.py run it with "-" for the fake
 	function(dmodem_usb_fake fake main)
 		add_executable(dmodemd_fake_${fake} ${main} usb_line.cpp
-			usb_agere.cpp si3056.cpp test/fake_${fake}.cpp)
+			usb_agere.cpp usb_wb.cpp si3056.cpp test/fake_${fake}.cpp)
 		target_compile_definitions(dmodemd_fake_${fake} PRIVATE
 			DMODEM_USB)
 		target_include_directories(dmodemd_fake_${fake} SYSTEM PRIVATE
@@ -128,8 +128,9 @@ if(DMODEM_DMODEMD)
 	else()
 		message(STATUS "dmodemd: no ALSA (libasound2-dev): no -a")
 	endif()
-	# --usb: a Smart Link SmartUSB56 (ST7554) or a pico-serial Line stick
-	# through libusb for the line (usb_line.cpp), if libusb-1.0-0-dev is
+	# --usb: a Smart Link SmartUSB56 (ST7554), a pico-serial Line or WB
+	# stick or an Agere USB modem through libusb for the line
+	# (usb_line.cpp, usb_wb.cpp, usb_agere.cpp), if libusb-1.0-0-dev is
 	# there
 	if(PkgConfig_FOUND AND NOT WIN32)
 		pkg_check_modules(LIBUSB QUIET IMPORTED_TARGET libusb-1.0)
@@ -138,7 +139,7 @@ if(DMODEM_DMODEMD)
 	# devices on WinUSB, docs/windows.md)
 	if((WIN32 OR APPLE) AND DMODEM_USB)
 		include(libusb)
-		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp si3056.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_wb.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE dmodem_libusb)
 		set(_usb_headers
@@ -154,7 +155,7 @@ if(DMODEM_DMODEMD)
 				CACHE FILEPATH
 				"a Linux build's line_exchange (Windows USB tests)")
 			find_package(Python3 COMPONENTS Interpreter QUIET)
-			foreach(_f st7554 pico_line)
+			foreach(_f st7554 pico_line pico_wb)
 				dmodem_usb_fake(${_f} main_windows.cpp ${_usb_headers})
 			endforeach()
 			if(Python3_Interpreter_FOUND AND CMAKE_CROSSCOMPILING
@@ -179,7 +180,7 @@ if(DMODEM_DMODEMD)
 			set(_usb_builtin_fakes ON)
 		endif()
 	elseif(LIBUSB_FOUND)
-		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp si3056.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_wb.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE PkgConfig::LIBUSB)
 		# test/usb_test.py: two dmodemd on fake SmartUSB56s
@@ -197,6 +198,14 @@ if(DMODEM_DMODEMD)
 				test/fake_pico_line.cpp)
 			dmodem_flags(dmodem_fake_pico_line EXTRA NOOPT)
 			target_include_directories(dmodem_fake_pico_line PRIVATE
+				${LIBUSB_INCLUDE_DIRS})
+			# test/pico_wb_test.py: two on fake pico-serial WB
+			# sticks (test/fake_pico_wb.cpp) at the two ends of a
+			# simulated bare pair (test/wb_pair.cpp)
+			add_library(dmodem_fake_pico_wb SHARED
+				test/fake_pico_wb.cpp)
+			dmodem_flags(dmodem_fake_pico_wb EXTRA NOOPT)
+			target_include_directories(dmodem_fake_pico_wb PRIVATE
 				${LIBUSB_INCLUDE_DIRS})
 			# test/agere_test.py: on fake Agere USB modems
 			# (test/fake_agere.cpp)
@@ -218,7 +227,7 @@ if(DMODEM_DMODEMD)
 		message(STATUS "dmodemd: no libusb (libusb-1.0-0-dev): no --usb")
 	endif()
 	if(_usb_builtin_fakes)
-		foreach(_f st7554 pico_line agere)
+		foreach(_f st7554 pico_line pico_wb agere)
 			dmodem_usb_fake(${_f} main.cpp ${_usb_headers})
 		endforeach()
 	endif()
@@ -228,6 +237,20 @@ if(DMODEM_DMODEMD)
 		dmodem_flags(line_exchange EXTRA)
 		target_link_libraries(line_exchange PRIVATE dmodem_core dmodem_dsp
 			dmodem_link ${DMODEM_LIBM} Threads::Threads)
+	endif()
+	# the simulated bare pair of the WB stick's test, on the V.wb tests'
+	# (dsp/test/vwb_line.cpp)
+	if(DMODEM_TESTS AND (LIBUSB_FOUND OR _usb_builtin_fakes))
+		add_executable(wb_pair test/wb_pair.cpp
+			${PROJECT_SOURCE_DIR}/dsp/test/vwb_line.cpp
+			${PROJECT_SOURCE_DIR}/dsp/vwb.cpp
+			${PROJECT_SOURCE_DIR}/dsp/rs.cpp)
+		target_include_directories(wb_pair PRIVATE
+			${PROJECT_SOURCE_DIR}/dsp/test ${PROJECT_SOURCE_DIR}/dsp
+			${DMODEM_LINK_DIR} ${DMODEM_CORE_NEW_DIR})
+		dmodem_flags(wb_pair EXTRA)
+		target_link_libraries(wb_pair PRIVATE ${DMODEM_LIBM}
+			Threads::Threads)
 	endif()
 
 	# test/root_test.py: dmodemd started as root, what needs root's
@@ -360,6 +383,18 @@ if(DMODEM_DMODEMD)
 			set_tests_properties(dmodemd_pico_line PROPERTIES
 				TIMEOUT 300 COST 1000)
 			set_property(TEST dmodemd_pico_line APPEND PROPERTY LABELS alsa)
+			dmodem_add_test(dmodemd_pico_wb ${Python3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/test/pico_wb_test.py
+				$<TARGET_FILE:dmodemd>
+				$<TARGET_FILE:wb_pair>
+				$<TARGET_FILE:dmodem_fake_pico_wb>)
+			# (quick too: about 20 s, a call and its data; alone,
+			# as its two modems run in real time at 96 kHz and a
+			# loaded machine's stalls slip their samples)
+			set_tests_properties(dmodemd_pico_wb PROPERTIES
+				TIMEOUT 300 COST 1000 RUN_SERIAL TRUE)
+			set_property(TEST dmodemd_pico_wb APPEND PROPERTY LABELS
+				alsa quick)
 			dmodem_add_test(dmodemd_agere ${Python3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/test/agere_test.py
 				$<TARGET_FILE:dmodemd>
@@ -377,17 +412,21 @@ if(DMODEM_DMODEMD)
 			else()
 				set(_sfx _builtin)
 			endif()
-			foreach(_t usb:usb_test:st7554 pico_line:pico_line_test:pico_line
-				agere:agere_test:agere)
+			# (<test>:<script>:<fake>:<its line's program>)
+			foreach(_t usb:usb_test:st7554:line_exchange
+				pico_line:pico_line_test:pico_line:line_exchange
+				pico_wb:pico_wb_test:pico_wb:wb_pair
+				agere:agere_test:agere:line_exchange)
 				string(REPLACE ":" ";" _t ${_t})
 				list(GET _t 0 _name)
 				list(GET _t 1 _script)
 				list(GET _t 2 _fake)
+				list(GET _t 3 _line)
 				dmodem_add_test(dmodemd_${_name}${_sfx}
 					${Python3_EXECUTABLE}
 					${CMAKE_CURRENT_SOURCE_DIR}/test/${_script}.py
 					$<TARGET_FILE:dmodemd_fake_${_fake}>
-					$<TARGET_FILE:line_exchange> -)
+					$<TARGET_FILE:${_line}> -)
 				set_tests_properties(dmodemd_${_name}${_sfx}
 					PROPERTIES TIMEOUT 300 COST 1000)
 				set_property(TEST dmodemd_${_name}${_sfx} APPEND

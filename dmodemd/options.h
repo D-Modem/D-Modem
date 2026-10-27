@@ -30,8 +30,9 @@ struct Options {
 	   pump's, DP_VWB) */
 	const char *alsa = nullptr;
 	const char *alsa_ctl = nullptr;
-	/* or a Smart Link SmartUSB56 through libusb (--usb: auto, or
-	   <bus>:<address>), its carrier and data LEDs lit (--usb-leds: on
+	/* or a USB modem through libusb (--usb: auto, or <bus>:<address>:
+	   a Smart Link SmartUSB56, a pico-serial Line or WB, an Agere USB
+	   modem), a SmartUSB56's carrier and data LEDs lit (--usb-leds: on
 	   boards that have them) */
 	const char *usb = nullptr;
 	bool usb_leds = false;
@@ -51,7 +52,13 @@ struct Options {
 	bool usb_rhom = false;
 	/* the SmartUSB56's buzzer as the speaker (--usb-buzzer) */
 	bool usb_buzzer = false;
+	/* a pico-serial WB's transmit level and hybrid input gain, dB
+	   (--usb-wb-tx-gain, --usb-wb-rx-gain) */
+	double usb_wb_tx_gain = 0, usb_wb_rx_gain = 0;
+	/* (-r; given: by -r, else the default, which a pico-serial WB
+	   makes 96000) */
 	u32 rate = 9600;
+	bool rate_given = false;
 	/* Windows: the DTE a COM port (--com: one end of a null-modem
 	   pair such as com0com's), or TCP connections on [address:]port
 	   (--tcp) */
