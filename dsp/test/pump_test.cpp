@@ -257,3 +257,28 @@ INSTANTIATE_TEST_SUITE_P(Automode, PumpLoopback, testing::Values(
 	Pumps{ "v21_to_v34", automode(21, 8, 45) },
 	Pumps{ "v23_to_v34", automode(23, 8, 60) },
 	Pumps{ "bell103_to_v34", automode(103, 8, 45) }), name);
+
+#include "v34.h"
+
+/* V.34's J (it repeats) and J': TRN's random bits match J's 16 now and
+   then, which once took a call's TRN for J; two in a row are J */
+TEST(V34J, RandomBitsAreNoJ)
+{
+	const u32 J_4POINT = 0x8990, J_DASH = 0x899F;
+	dsp::V34Rx rx{};
+	u32 r = 12345;
+	for (s32 i = 0; i < 400000; i++) {
+		r = r * 1103515245u + 12345u;
+		rx.got_bit(static_cast<s16>((r >> 16) & 1));
+	}
+	EXPECT_EQ(rx.ev_j, 0);
+	for (s16 k = 0; k < 2; k++)
+		for (s16 i = 0; i < 16; i++)
+			rx.got_bit(static_cast<s16>((J_4POINT >> i) & 1));
+	EXPECT_EQ(rx.ev_j, 1);
+	EXPECT_EQ(rx.j16, 0);
+	EXPECT_EQ(rx.ev_jp, 0);
+	for (s16 i = 0; i < 16; i++)
+		rx.got_bit(static_cast<s16>((J_DASH >> i) & 1));
+	EXPECT_EQ(rx.ev_jp, 1);
+}

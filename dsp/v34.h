@@ -445,6 +445,11 @@ struct V34Rx {
 	u32 scr;
 	u32 sr;                 /* last decoded bits, newest in bit 0 */
 	s16 j_count, ev_j, ev_jp, ev_s, ev_e;
+	/* the bits decoded; the last J's (it repeats every 16 bits: two in
+	   a row are J, and J' right after one; TRN's random bits matched it
+	   now and then) */
+	s32 bit_n = 0, j_last = 0;
+	u32 j_word = 0;
 	s16 j16;                /* the remote asked for 16 point TRN */
 	s16 jword;
 	unsigned char mpbits[200];

@@ -489,6 +489,7 @@ void V34Rx::cp_bit(s16 bit)
 void V34Rx::got_bit(s16 bit)
 {
 	sr = (sr << 1) | bit;
+	bit_n++;
 	if (v90 && ev_ja && stage == V34_RX_TRN) {
 		if (fr->busy()) {
 			cp_bit(bit);
@@ -566,13 +567,19 @@ void V34Rx::got_bit(s16 bit)
 	}
 	if ((sr & 0xFFFF) == rev16(J_4POINT) ||
 	    (sr & 0xFFFF) == rev16(J_16POINT)) {
-		if (++j_count >= 2 && !ev_j) {
+		/* (the same J 16 bits after the last) */
+		bool next = j_count && bit_n - j_last == 16 && (sr & 0xFFFF) == j_word;
+		j_count = next ? j_count + 1 : 1;
+		j_last = bit_n;
+		j_word = sr & 0xFFFF;
+		if (j_count >= 2 && !ev_j) {
 			ev_j = 1;
 			j16 = (sr & 0xFFFF) == rev16(J_16POINT);
 			DSP_DBG("v34 rx: J at symbol %" PRId32 "%s\n", sym,
 				j16 ? " (16 point TRN)" : "");
 		}
-	} else if ((sr & 0xFFFF) == rev16(J_DASH) && ev_j && !ev_jp) {
+	} else if ((sr & 0xFFFF) == rev16(J_DASH) && ev_j && !ev_jp &&
+		   bit_n - j_last == 16) {
 		ev_jp = 1;
 		ls_n = 0;            /* the caller's phase 4 TRN */
 		DSP_DBG("v34 rx: J' at symbol %" PRId32 "\n", sym);
