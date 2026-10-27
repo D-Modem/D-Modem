@@ -45,7 +45,13 @@
 #include "dm_types.h"
 #include "usb_line.h"
 
-#define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
+/* (to the log when it has a hook, as the app's: its stderr is lost) */
+#define ERR(fmt, ...) do { \
+	if (dcore::log_hooked()) \
+		dcore::log_printf(0, "usb: error: " fmt, ##__VA_ARGS__); \
+	else \
+		fprintf(stderr, "error: " fmt, ##__VA_ARGS__); \
+} while (0)
 #define DBG(fmt, ...) dcore::log_printf(1, "usb: " fmt, ##__VA_ARGS__)
 #define TRACE(fmt, ...) dcore::log_printf(2, "usb: " fmt, ##__VA_ARGS__)
 
@@ -266,7 +272,15 @@ bool UsbLine::open_agere()
 				      LIBUSB_REQUEST_SET_CONFIGURATION, 1, 0,
 				      nullptr, 0, 10);
 	TRACE("Agere: SET_CONFIGURATION 1: %d\n", err);
+	/* (once more from alternate setting 0 if it fails: a stream left
+	   from the last time) */
 	if ((err = libusb_set_interface_alt_setting(h_, 0, ISO_ALT)) < 0) {
+		DBG("Agere: alternate setting %u: %s; again from 0\n", ISO_ALT,
+		    libusb_strerror(err));
+		libusb_set_interface_alt_setting(h_, 0, 0);
+		err = libusb_set_interface_alt_setting(h_, 0, ISO_ALT);
+	}
+	if (err < 0) {
 		ERR("Agere USB modem: alternate setting %u: %s\n", ISO_ALT,
 		    libusb_strerror(err));
 		return false;
@@ -347,6 +361,7 @@ bool UsbLine::open_agere()
 	/* (as both drivers: bit 15 a Polaris; a read that fails, 0, a
 	   Mercury) */
 	agere_polaris_ = codec_read(MER_HOOK, &v) && (v & POL_FLAG);
+	agere_codec_ = true;
 	DBG("Agere: a %s\n", agere_polaris_ ? "Polaris DAA" : "Mercury codec");
 	if (!(agere_polaris_ ? agere_polaris() : agere_mercury()))
 		return false;

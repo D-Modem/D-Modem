@@ -87,7 +87,13 @@
 #include "dm_types.h"
 #include "usb_line.h"
 
-#define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
+/* (to the log when it has a hook, as the app's: its stderr is lost) */
+#define ERR(fmt, ...) do { \
+	if (dcore::log_hooked()) \
+		dcore::log_printf(0, "usb: error: " fmt, ##__VA_ARGS__); \
+	else \
+		fprintf(stderr, "error: " fmt, ##__VA_ARGS__); \
+} while (0)
 #define DBG(fmt, ...) dcore::log_printf(1, "usb: " fmt, ##__VA_ARGS__)
 
 #ifdef _WIN32
@@ -1791,9 +1797,10 @@ void UsbLine::rec_stop()
 void UsbLine::close()
 {
 	rec_stop();
-	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_) {
+	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_ && agere_codec_) {
 		/* the stream stopped, on hook, GPIOs 2 and 3 as CUsbStop leaves
-		   them, the OH LED (GPIO 4) out */
+		   them, the OH LED (GPIO 4) out (not before its codec is known:
+		   a Polaris's hook is the other way round) */
 		u16 v;
 		agere_stop();
 		agere_hook(false);
@@ -1832,7 +1839,10 @@ void UsbLine::close()
 		for (s16 i = 0; i < MAX_TRANSFERS; i++)
 			st->in[i] = st->out[i] = nullptr;
 	intr_ = nullptr;
-	if (h_ && kind_ == Kind::Stick) {
+	if (h_ && kind_ == Kind::Agere && claimed_)
+		/* (no stream to the next open) */
+		libusb_set_interface_alt_setting(h_, 0, 0);
+	else if (h_ && kind_ == Kind::Stick) {
 		/* on hook, the samples stopped (alternate setting 0) */
 		if (claimed_) {
 			libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_VENDOR |

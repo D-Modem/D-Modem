@@ -419,6 +419,8 @@ private:
 	u16 agere_rom_ = 0xffff;
 	/* its codec a Polaris DAA (else a Mercury) */
 	bool agere_polaris_ = false;
+	/* its codec found (agere_polaris_ known): close() may put it on hook */
+	bool agere_codec_ = false;
 	s64 agere_lead_ = 0;
 	/* the transfers done each way, their samples, not yet paired: the
 	   k-th OUT transfer with the k-th IN one, the same packets' times
