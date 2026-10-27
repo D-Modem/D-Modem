@@ -501,6 +501,10 @@ int command_in(uint8_t cmd, uint16_t index, uint16_t value,
 		}
 		if (fake.polaris && index == 0xc4 && rings)
 			v = (uint16_t)(0x000c | (++fake.ac & 1 ? 0x80 : 0x40));
+		/* (the line settling after a call: bit 6 alone, as the first
+		   device's, FAKE_AGERE_RING_STICKS) */
+		else if (fake.polaris && index == 0xc4 && fake.samples < fake.stuck_until)
+			v = (uint16_t)(0x000c | (++fake.ac & 1 ? 0x40 : 0));
 		data[0] = (uint8_t)v;
 		data[1] = (uint8_t)(v >> 8);
 		return 2;

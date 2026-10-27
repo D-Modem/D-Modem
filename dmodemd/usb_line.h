@@ -306,8 +306,9 @@ private:
 	void agere_ring_poll();
 	u64 agere_poll_ms_ = 0;
 	u16 agere_0a8_ = 0xffff, agere_0c4_ = 0xffff;
-	/* when 0x0c4's bits 6 and 7 (a Polaris's ring's halves) last changed */
-	u64 agere_ac_ms_ = 0;
+	/* when 0x0c4's bit 7 and bit 6 (a Polaris's ring's halves) were last
+	   seen set; when the modem last went on hook */
+	u64 agere_half7_ms_ = 0, agere_half6_ms_ = 0, agere_onhook_ms_ = 0;
 	u32 agere_poll_said_ = 0;
 	bool agere_ringing_ = false, agere_quiet_ = false;
 	/* since when the ring bit has been set; whether it was set too long

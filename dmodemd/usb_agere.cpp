@@ -1079,15 +1079,22 @@ void UsbLine::agere_ring_poll()
 		agere_poll_said_++;
 		DBG("Agere: on hook: codec 0a8 %04x, 0c4 %04x\n", a8, c4);
 	}
-	/* (a Polaris's: its ring's alternating halves, 0x0c4's bits 6 and
-	   7, still changing: after a call 0x0a8's bit 1 stayed set on the
-	   first device, with no ring) */
-	if (agere_0c4_ != 0xffff && ((c4 ^ agere_0c4_) & 0x00c0))
-		agere_ac_ms_ = now;
+	/* (a Polaris's: both of its ring's halves, 0x0c4's bits 7 and 6,
+	   seen in the last 500 ms: after a call the first device's 0x0a8
+	   kept its bit 1 set with no ring, and 0x0c4's bit 6 flickered as the
+	   line settled, never bit 7; and nothing taken for a ring the first
+	   2 s on hook) */
+	if (c4 & 0x0080)
+		agere_half7_ms_ = now;
+	if (c4 & 0x0040)
+		agere_half6_ms_ = now;
 	agere_0a8_ = a8;
 	agere_0c4_ = c4;
-	bool bit = (a8 & (agere_polaris_ ? 0x0002 : 0x0004)) != 0 &&
-		(!agere_polaris_ || (agere_ac_ms_ && now - agere_ac_ms_ < 500));
+	bool halves = agere_half7_ms_ && now - agere_half7_ms_ < 500 &&
+		agere_half6_ms_ && now - agere_half6_ms_ < 500;
+	bool settled = !agere_onhook_ms_ || now - agere_onhook_ms_ >= 2000;
+	bool bit = (a8 & (agere_polaris_ ? 0x0002 : 0x0004)) != 0 && settled &&
+		(!agere_polaris_ || halves);
 	/* (set longer than any ring cadence's ring: stuck, not a ring, until
 	   it clears) */
 	if (!bit) {
