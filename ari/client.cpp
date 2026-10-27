@@ -22,6 +22,12 @@
 #include "dm_types.h"
 #include "client.h"
 
+/* (sends without SIGPIPE: where there is no MSG_NOSIGNAL, the host
+   ignores SIGPIPE as Asterisk, FreeSWITCH and dmodem-ari do) */
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 namespace ari {
 
 namespace {

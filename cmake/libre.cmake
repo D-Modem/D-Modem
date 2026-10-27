@@ -83,7 +83,9 @@ foreach(_v CMAKE_TOOLCHAIN_FILE CMAKE_USER_MAKE_RULES_OVERRIDE MINGW_TRIPLE MING
 	CMAKE_OSX_DEPLOYMENT_TARGET ANDROID_ABI ANDROID_PLATFORM
 	ANDROID_NDK ANDROID_STL)
 	if(DEFINED ${_v} AND NOT "${${_v}}" STREQUAL "")
-		list(APPEND _cross -D${_v}=${${_v}})
+		# (a list, "arm64;x86_64", one argument: its ; escaped)
+		string(REPLACE ";" "\\;" _val "${${_v}}")
+		list(APPEND _cross "-D${_v}=${_val}")
 	endif()
 endforeach()
 
@@ -208,6 +210,12 @@ add_library(libre INTERFACE IMPORTED)
 target_include_directories(libre INTERFACE ${_re_prefix}/include/re)
 target_link_libraries(libre INTERFACE ${_re_lib} ${_crypto_libs}
 	Threads::Threads ${DMODEM_LIBM} ${CMAKE_DL_LIBS})
+# (Apple's systems: its DNS servers from SystemConfiguration, as libre's
+# own .pc says, src/dns/darwin/srv.c)
+if(APPLE)
+	target_link_libraries(libre INTERFACE "-framework SystemConfiguration"
+		"-framework CoreFoundation")
+endif()
 # (Haiku: the sockets and getifaddrs() in libnetwork)
 if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
 	target_link_libraries(libre INTERFACE network)

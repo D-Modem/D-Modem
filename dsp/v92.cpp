@@ -1904,7 +1904,8 @@ void V92Up::decided(s16 eta)
 				char zs[200];
 				s16 q, o = 0;
 				for (q = 0; q < 48; q++)
-					o += sprintf(zs + o, " %d", b1z[q]);
+					o += snprintf(zs + o, sizeof(zs) - o,
+						      " %d", b1z[q]);
 				DSP_DBG("v92: FPE: FB1u, %" PRId32 " zeros in "
 					"%d bits; by frame:%s\n", derrs, 48 * nb,
 					zs);
@@ -1926,7 +1927,8 @@ void V92Up::decided(s16 eta)
 				char zs[200];
 				s16 q, o = 0;
 				for (q = 0; q < 48; q++)
-					o += sprintf(zs + o, " %d", b1z[q]);
+					o += snprintf(zs + o, sizeof(zs) - o,
+						      " %d", b1z[q]);
 				DSP_DBG("v92: B1u zeros by frame:%s\n", zs);
 				DSP_DBG("v92: B1u: %" PRId32 " zeros in %d "
 					"bits, mse %.4f\n", derrs, 48 * nb,

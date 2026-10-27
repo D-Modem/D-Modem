@@ -493,6 +493,17 @@ uint8_t LIBUSB_CALL libusb_get_bus_number(libusb_device *)
 	return 1;
 }
 
+/* its one port on the bus (only Linux's remote wakeup asks, through
+   /sys; the fake linked in libusb's place answers it too) */
+int LIBUSB_CALL libusb_get_port_numbers(libusb_device *, uint8_t *ports,
+					int len)
+{
+	if (len < 1)
+		return LIBUSB_ERROR_OVERFLOW;
+	ports[0] = 250;
+	return 1;
+}
+
 /* full speed (only the Agere line asks; on Windows this replaces
    libusb, which would answer otherwise) */
 int LIBUSB_CALL libusb_get_device_speed(libusb_device *)

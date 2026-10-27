@@ -21,6 +21,7 @@
  *
  */
 
+#include <climits>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -452,13 +453,15 @@ int sysdep_vsnprintf(char *str, unsigned size, const char *format,
 	return vsnprintf(str, size, format, ap);
 }
 
-/* sprintf(): the caller sized buf */
+/* sprintf() for Smart Link's original library (its T.30 frame names):
+   the caller sized buf, and gives no size (vsnprintf() without a bound,
+   as Apple's SDK has vsprintf() deprecated) */
 int sysdep_sprintf(char *buf, const char *fmt, ...)
 {
 	va_list ap;
 	int len;
 	va_start(ap, fmt);
-	len = vsprintf(buf, fmt, ap);
+	len = vsnprintf(buf, INT_MAX, fmt, ap);
 	va_end(ap);
 	return len;
 }

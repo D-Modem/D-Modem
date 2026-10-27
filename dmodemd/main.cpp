@@ -35,6 +35,13 @@
 #ifdef __HAIKU__
 #include <OS.h>
 #endif
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/mach_error.h>
+#include <mach/mach_time.h>
+#include <mach/thread_policy.h>
+#include <pthread.h>
+#endif
 #include <dcore.h>
 #include <dsplibs.h>
 #include <log.h>
@@ -65,7 +72,10 @@ const s32 RATE = 8000;
 /* the user dmodemd goes on as, started as root, and the locked memory
    it then needs with realtime scheduling */
 const char RUN_AS[] = "nobody";
-#ifdef RLIMIT_MEMLOCK
+/* (where realtime scheduling locks the memory too: neither Haiku nor
+   macOS has mlockall()) */
+#if !defined(__HAIKU__) && !defined(__APPLE__)
+#define DMODEM_LOCKS_MEMORY 1
 const rlim_t MEMLOCK_MIN = 8UL << 20;
 #endif
 
@@ -101,6 +111,29 @@ void go_realtime()
 		ERR("cannot have a real-time priority: %s\n", strerror(r));
 	else
 		DBG("real-time priority %d\n", B_REAL_TIME_DISPLAY_PRIORITY);
+#elif defined(__APPLE__)
+	/* (macOS: no SCHED_FIFO for a process, nor mlockall(); Mach's
+	   time constraint policy, as audio threads have it: this thread's,
+	   the line's loop, every 10 ms up to 5 ms of it; the threads made
+	   later have their own) */
+	mach_timebase_info_data_t tb;
+	thread_time_constraint_policy_data_t p;
+
+	mach_timebase_info(&tb);
+	const double per_ms = 1e6 * tb.denom / tb.numer;
+	p.period = static_cast<uint32_t>(10 * per_ms);
+	p.computation = static_cast<uint32_t>(5 * per_ms);
+	p.constraint = static_cast<uint32_t>(10 * per_ms);
+	p.preemptible = TRUE;
+	kern_return_t r = thread_policy_set(pthread_mach_thread_np(pthread_self()),
+		THREAD_TIME_CONSTRAINT_POLICY,
+		reinterpret_cast<thread_policy_t>(&p),
+		THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+	if (r != KERN_SUCCESS)
+		ERR("cannot have realtime scheduling: %s\n",
+		    mach_error_string(r));
+	else
+		DBG("realtime scheduling: Mach's time constraint policy\n");
 #else
 	struct sched_param sp;
 
@@ -136,7 +169,7 @@ void drop_privileges(bool realtime)
 	gid_t gid;
 	uid_t uid;
 
-#ifdef RLIMIT_MEMLOCK
+#ifdef DMODEM_LOCKS_MEMORY
 	if (realtime) {
 		struct rlimit rl;
 		if (getrlimit(RLIMIT_MEMLOCK, &rl) < 0) {

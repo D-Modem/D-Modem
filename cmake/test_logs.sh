@@ -41,15 +41,20 @@ begin)
 	ln -sfn "$(basename "$run")" "$root/latest"
 	{
 		echo "start: $(date '+%Y-%m-%d %H:%M:%S')"
-		echo "ctest: $(tr '\0' ' ' < /proc/$PPID/cmdline 2>/dev/null)"
-		echo "directory: $(readlink /proc/$PPID/cwd 2>/dev/null)"
-		src=$(dirname "$(readlink -f "$0")")/..
+		# (ps and getconf where there is no /proc or nproc: macOS)
+		echo "ctest: $(ps -o args= -p $PPID 2>/dev/null)"
+		echo "directory: $(readlink /proc/$PPID/cwd 2>/dev/null ||
+			lsof -a -p $PPID -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+		src=$(cd "$(dirname "$0")/.." && pwd)
 		echo "commit: $(git -C "$src" describe --always --dirty 2>/dev/null)"
-		echo "host: $(uname -n), $(nproc) processors"
+		echo "host: $(uname -n), $(getconf _NPROCESSORS_ONLN 2>/dev/null ||
+			nproc) processors"
 		echo "debug: DMODEM_TEST_DEBUG=${DMODEM_TEST_DEBUG:-5}"
 	} > "$run/run.txt"
 	# the oldest runs beyond <runs kept> (with this one)
-	ls -1d "$root"/20[0-9][0-9]-* 2>/dev/null | sort | head -n -"$keep" |
+	# (all but the newest <keep>: awk, as BSD's head has no -n -<n>)
+	ls -1d "$root"/20[0-9][0-9]-* 2>/dev/null | sort |
+		awk -v k="$keep" '{ l[NR] = $0 } END { for (i = 1; i <= NR - k; i++) print l[i] }' |
 		while read -r d; do
 			rm -rf "$d"
 		done

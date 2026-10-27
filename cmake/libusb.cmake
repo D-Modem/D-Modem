@@ -1,13 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Neo-Desktop
-# libusb-1.0 for dmodemd's --usb on Windows, as the static library
-# `dmodem_libusb` (Linux takes the system's, pkg-config libusb-1.0).
+# libusb-1.0 for dmodemd's --usb on Windows and macOS, as the static
+# library `dmodem_libusb` (Linux takes the system's, pkg-config
+# libusb-1.0).
 #
 # The pinned release's tarball is downloaded once while configuring (its
-# SHA-256 checked) into the build tree, and its core and Windows backend
-# (WinUSB, and UsbDk where it is installed) are built here with this
-# build's compiler: MinGW-w64, MSVC or clang-cl.  Its config.h is ours
-# (libusb_config.h.in), not its autotools' or its Visual Studio one.
+# SHA-256 checked) into the build tree, and its core and backend are
+# built here with this build's compiler:
+# - Windows (WinUSB, and UsbDk where it is installed): MinGW-w64, MSVC or
+#   clang-cl, with our config.h (libusb_config.h.in), not its autotools'
+#   or its Visual Studio one;
+# - macOS (IOKit): Apple's Clang, with the release's own Xcode/config.h,
+#   for every architecture of CMAKE_OSX_ARCHITECTURES (a universal
+#   dmodemd needs a universal libusb, which Homebrew's is not).
 # DMODEM_LIBUSB_DIR: an unpacked libusb source tree to use instead.
 #
 # libusb is LGPL-2.1-or-later (LICENSING.md).
@@ -38,14 +43,32 @@ if(NOT _usb_src)
 		file(ARCHIVE_EXTRACT INPUT ${_usb_tar} DESTINATION ${_deps})
 	endif()
 endif()
-if(NOT EXISTS ${_usb_src}/libusb/os/windows_winusb.c)
+if(NOT EXISTS ${_usb_src}/libusb/core.c)
 	message(FATAL_ERROR "libusb: no source tree in ${_usb_src}")
 endif()
 message(STATUS "libusb: ${_usb_src}")
 
 set(_usb_cfg ${CMAKE_BINARY_DIR}/libusb-config)
-configure_file(${CMAKE_CURRENT_LIST_DIR}/libusb_config.h.in
-	${_usb_cfg}/config.h COPYONLY)
+if(APPLE)
+	configure_file(${_usb_src}/Xcode/config.h ${_usb_cfg}/config.h
+		COPYONLY)
+	set(_usb_os
+		${_usb_src}/libusb/os/events_posix.c
+		${_usb_src}/libusb/os/threads_posix.c
+		${_usb_src}/libusb/os/darwin_usb.c)
+elseif(WIN32)
+	configure_file(${CMAKE_CURRENT_LIST_DIR}/libusb_config.h.in
+		${_usb_cfg}/config.h COPYONLY)
+	set(_usb_os
+		${_usb_src}/libusb/os/events_windows.c
+		${_usb_src}/libusb/os/threads_windows.c
+		${_usb_src}/libusb/os/windows_common.c
+		${_usb_src}/libusb/os/windows_usbdk.c
+		${_usb_src}/libusb/os/windows_winusb.c)
+else()
+	message(FATAL_ERROR "libusb: built here for Windows and macOS only "
+		"(elsewhere the system's: pkg-config libusb-1.0)")
+endif()
 add_library(dmodem_libusb STATIC
 	${_usb_src}/libusb/core.c
 	${_usb_src}/libusb/descriptor.c
@@ -53,11 +76,7 @@ add_library(dmodem_libusb STATIC
 	${_usb_src}/libusb/io.c
 	${_usb_src}/libusb/strerror.c
 	${_usb_src}/libusb/sync.c
-	${_usb_src}/libusb/os/events_windows.c
-	${_usb_src}/libusb/os/threads_windows.c
-	${_usb_src}/libusb/os/windows_common.c
-	${_usb_src}/libusb/os/windows_usbdk.c
-	${_usb_src}/libusb/os/windows_winusb.c)
+	${_usb_os})
 target_include_directories(dmodem_libusb PRIVATE ${_usb_cfg}
 	${_usb_src}/libusb/os)
 target_include_directories(dmodem_libusb SYSTEM PUBLIC ${_usb_src}/libusb)
@@ -78,3 +97,8 @@ if(_usb_opts)
 endif()
 set_target_properties(dmodem_libusb PROPERTIES C_STANDARD 11)
 target_link_libraries(dmodem_libusb PUBLIC Threads::Threads)
+# (macOS: IOKit's USB, as libusb's configure links it)
+if(APPLE)
+	target_link_libraries(dmodem_libusb PUBLIC objc "-framework IOKit"
+		"-framework CoreFoundation" "-framework Security")
+endif()

@@ -333,7 +333,7 @@ void CallerId::report_fields()
 		s16 i;
 		send("MESG = ");
 		for (i = 0; i < len; i++) {
-			sprintf(buf, "%02X", msg[i]);
+			snprintf(buf, sizeof(buf), "%02X", msg[i]);
 			send(buf);
 		}
 		send("\r\n");

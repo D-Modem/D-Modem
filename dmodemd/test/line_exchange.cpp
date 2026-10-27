@@ -54,6 +54,11 @@
 
 #include "dsp.h"
 
+/* (no MSG_NOSIGNAL: SIGPIPE is ignored here anyway) */
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 namespace {
 
 volatile sig_atomic_t quit = 0;
@@ -510,6 +515,26 @@ void tick()
 	}
 }
 
+/* asleep until at (CLOCK_MONOTONIC): clock_nanosleep(), or where there
+   is none (macOS) nanosleep() for what is left of it */
+void sleep_until(const struct timespec &at)
+{
+#ifdef TIMER_ABSTIME
+	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &at, nullptr);
+#else
+	struct timespec now, d;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	d.tv_sec = at.tv_sec - now.tv_sec;
+	d.tv_nsec = at.tv_nsec - now.tv_nsec;
+	if (d.tv_nsec < 0) {
+		d.tv_nsec += 1000000000L;
+		d.tv_sec--;
+	}
+	if (d.tv_sec >= 0)
+		nanosleep(&d, nullptr);
+#endif
+}
+
 } // namespace
 
 /* the exchange: its lines' sockets, a tick each 20 ms
@@ -550,7 +575,7 @@ int main(int argc, char *argv[])
 			next.tv_nsec -= 1000000000L;
 			next.tv_sec++;
 		}
-		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, nullptr);
+		sleep_until(next);
 		tick();
 	}
 	return 0;

@@ -33,6 +33,8 @@ The project's overview, building and usage are in the top
   under Wine
 - [Haiku](haiku.md): dmodemd for Haiku (BeOS's successor), built there or
   from Linux with a sysroot of Haiku's packages
+- [macOS](macos.md): dmodemd for macOS 11 and later (Apple silicon and
+  Intel, universal), its USB modems through libusb's IOKit backend
 
 ## Testing
 

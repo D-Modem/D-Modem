@@ -32,6 +32,12 @@
 #include <termios.h>
 #include <unistd.h>
 
+/* (sends without SIGPIPE: where there is no MSG_NOSIGNAL, the host
+   ignores SIGPIPE as Asterisk, FreeSWITCH and dmodem-ari do) */
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 /* a line for the PBX's log */
 static void log_line(const struct dmbridge_host *h, void *call,
 		     enum dmbridge_level level, const char *fmt, ...)

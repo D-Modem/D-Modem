@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Neo-Desktop
 #
-# agere_test.py <dmodemd> <line_exchange> <fake libusb>: dmodemd on an
+# agere_test.py <dmodemd> <line_exchange> <fake libusb>|-: dmodemd on an
 # Agere USB 2.0 soft modem (--usb), two of them on fake ones
 # (fake_agere.cpp, a libusb in front of the real one through LD_PRELOAD)
 # whose lines are line_exchange's, 1001 and 1002, at 8000 Hz:
@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import usb_dte  # noqa: E402
 
 dmodemd, exchange, fake = sys.argv[1:4]
-fake = os.path.abspath(fake)
+fake = os.path.abspath(fake) if fake != "-" else None
 run = usb_dte.command(dmodemd)
 rate = "8000"
 tmp = tempfile.mkdtemp(prefix="dmodem-agere-")
@@ -66,7 +66,9 @@ no_patch = os.path.join(driver_dir, "README")
 
 def env_for(n, **more):
     e = dict(os.environ, FAKE_AGERE_SOCKET=os.path.join(tmp, n + ".sock"),
-             DMODEM_AGERE_TEST_PATCHES="1", LD_PRELOAD=fake)
+             DMODEM_AGERE_TEST_PATCHES="1")
+    if fake:
+        e["LD_PRELOAD"] = fake
     e.update(more)
     return e
 

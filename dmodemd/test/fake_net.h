@@ -33,7 +33,24 @@
 
 #include <string>
 
+/* (no MSG_NOSIGNAL: SO_NOSIGPIPE on each socket instead, no_sigpipe()) */
+#if !defined(_WIN32) && !defined(MSG_NOSIGNAL)
+#define MSG_NOSIGNAL 0
+#endif
+
 namespace fake_net {
+
+/* fd's sends without SIGPIPE where the system has SO_NOSIGPIPE (Apple's,
+   which may have no MSG_NOSIGNAL) */
+inline void no_sigpipe(int fd)
+{
+#ifdef SO_NOSIGPIPE
+	int one = 1;
+	setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#else
+	(void)fd;
+#endif
+}
 
 /* a TCP connection to "<host>:<port>"; -1 */
 inline int connect_tcp(const char *where)
@@ -64,6 +81,7 @@ inline int connect_tcp(const char *where)
 		int one = 1;
 		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const char *)&one,
 			   sizeof(one));
+		no_sigpipe(fd);
 	}
 	return fd;
 }
@@ -141,6 +159,7 @@ inline int connect_exchange(const char *where, char kind)
 		fd = socket(AF_UNIX, SOCK_STREAM, 0);
 		if (fd < 0 || fcntl(fd, F_SETFD, FD_CLOEXEC) < 0)
 			return -1;
+		no_sigpipe(fd);
 		a.sun_family = AF_UNIX;
 		strncpy(a.sun_path, where, sizeof(a.sun_path) - 1);
 		if (connect(fd, reinterpret_cast<struct sockaddr *>(&a),

@@ -69,15 +69,16 @@ the system:
   alike; libdmodem and the Asterisk and FreeSWITCH modules do not use it.
   The OpenSSL it links (its digests) is under the Apache License 2.0.
 - **Mbed TLS**, libre's digests in OpenSSL's place when built with
-  `-DDMODEM_CRYPTO=mbedtls` (the default for Android): Apache-2.0 or
+  `-DDMODEM_CRYPTO=mbedtls` (the default for Android, Windows and Apple's
+  systems): Apache-2.0 or
   GPL-2.0-or-later, at the shipper's choice.
 - **libusb** (dmodemd's `--usb`): LGPL-2.1-or-later. Linux's dmodemd
-  links the system's libusb-1.0 dynamically. Windows' dmodemd.exe links
-  the fetched release statically (`cmake/libusb.cmake`): a combination
-  the AGPL allows. Shipped under the commercial licence, it must meet the
-  LGPL's terms for libusb, its source and the means to relink dmodemd.exe
-  with another (dmodemd's objects, for instance); `-DDMODEM_USB=OFF`
-  builds it without.
+  links the system's libusb-1.0 dynamically. Windows' dmodemd.exe and
+  macOS's dmodemd link the fetched release statically
+  (`cmake/libusb.cmake`): a combination the AGPL allows. Shipped under
+  the commercial licence, it must meet the LGPL's terms for libusb, its
+  source and the means to relink dmodemd with another (dmodemd's
+  objects, for instance); `-DDMODEM_USB=OFF` builds it without.
 - **GoogleTest** (the tests only): BSD-3-Clause.
 - The **Windows Driver Kit**'s UMDF headers and stub library
   (`WdfDriverStubUm.lib`), which the virtual modem driver

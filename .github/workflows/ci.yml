@@ -18,6 +18,12 @@
 # (dmodemvm.dll, unsigned, when the runner's WDK has UMDF 2.15; dmodem.inf
 # and dmodem-driver.exe).
 #
+# macos: the macOS build (11 and later) on Apple silicon, universal
+# (arm64 and x86_64: libre, Mbed TLS, libusb and GoogleTest fetched and
+# built for both), warnings as errors; the offline tests, and the USB
+# modems' calls with the fake modems linked into dmodemd (no LD_PRELOAD
+# there); dmodemd kept as an artifact.
+#
 # haiku: the Haiku build (x86_64, Clang, cross from Linux against a
 # sysroot of Haiku's own packages, cmake/haiku_sysroot.py), warnings as
 # errors; nothing here runs its programs, so no tests; dmodemd kept as an
@@ -240,6 +246,62 @@ jobs:
             build-msvc/winmodem/dmodem-driver.exe
             winmodem/dmodem.inf
           if-no-files-found: warn
+          retention-days: 30
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: brew install ninja
+
+      - name: libre cache
+        uses: actions/cache@v4
+        with:
+          path: build-mac/_deps/libre-install
+          key: libre-v4.12.0-macos-universal-${{ hashFiles('cmake/libre.cmake') }}
+
+      # (GoogleTest fetched, not Homebrew's: that one is arm64 alone)
+      - name: Configure
+        run: |
+          cmake -B build-mac -G Ninja -DDMODEM_WERROR=ON \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_DISABLE_FIND_PACKAGE_GTest=ON
+
+      - name: Build
+        run: cmake --build build-mac
+
+      - name: Universal
+        run: |
+          lipo -archs build-mac/dmodemd/dmodemd
+          lipo -archs build-mac/dmodemd/dmodemd | grep -q arm64
+          lipo -archs build-mac/dmodemd/dmodemd | grep -q x86_64
+
+      - name: Tests
+        run: ctest --test-dir build-mac -L quick -j3 --output-on-failure
+
+      - name: USB modems
+        run: |
+          ctest --test-dir build-mac -R 'dmodemd_(usb|pico_line|agere)$' \
+            --repeat until-pass:2 --output-on-failure
+
+      - name: Test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-macos
+          path: |
+            build-mac/test-logs/
+            !build-mac/test-logs/latest
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: dmodemd
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmodemd-macos-universal
+          path: build-mac/dmodemd/dmodemd
           retention-days: 30
 
   haiku:

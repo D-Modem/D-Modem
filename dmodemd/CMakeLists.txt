@@ -65,7 +65,7 @@ if(DMODEM_DMODEMD)
 			DESTINATION ${CMAKE_INSTALL_SBINDIR})
 		# HD-audio modem codecs outside snd-hda-codec-si3054's list
 		# for -a (docs/hardware.md): Linux's
-		if(NOT CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 			install(PROGRAMS hda-modem-setup
 				DESTINATION ${CMAKE_INSTALL_SBINDIR})
 		endif()
@@ -94,6 +94,29 @@ if(DMODEM_DMODEMD)
 	endif()
 	target_compile_definitions(dmodemd PRIVATE
 		DMODEM_SOURCE_FIRMWARE_DIR="${PROJECT_SOURCE_DIR}/firmware")
+
+	# dmodem_usb_fake(<fake> <main> <libusb headers>...): the tests'
+	# dmodemd_fake_<fake>, dmodemd with test/fake_<fake>.cpp in libusb's
+	# place, linked into it (where there is no LD_PRELOAD to put it in
+	# front of libusb: Windows, macOS; DMODEM_TEST_BUILTIN_FAKES on
+	# Linux); usb_test.py, pico_line_test.py and agere_test.py run it
+	# with "-" for the fake
+	function(dmodem_usb_fake fake main)
+		add_executable(dmodemd_fake_${fake} ${main} usb_line.cpp
+			usb_agere.cpp si3056.cpp test/fake_${fake}.cpp)
+		target_compile_definitions(dmodemd_fake_${fake} PRIVATE
+			DMODEM_USB DMODEM_SOURCE_FIRMWARE_DIR="${PROJECT_SOURCE_DIR}/firmware")
+		target_include_directories(dmodemd_fake_${fake} SYSTEM PRIVATE
+			${ARGN})
+		target_include_directories(dmodemd_fake_${fake} PRIVATE
+			${PROJECT_SOURCE_DIR}/dsp)
+		target_link_libraries(dmodemd_fake_${fake} PRIVATE dmodem_sip)
+		if(WIN32)
+			target_link_libraries(dmodemd_fake_${fake} PRIVATE
+				winmm ws2_32)
+		endif()
+		dmodem_flags(dmodemd_fake_${fake})
+	endfunction()
 	# -a: a softmodem's codec through ALSA for the line (alsa_line.cpp),
 	# if libasound2-dev is there
 	find_package(PkgConfig QUIET)
@@ -137,32 +160,26 @@ if(DMODEM_DMODEMD)
 	endif()
 	# (Windows: libusb fetched and built here, cmake/libusb.cmake; its
 	# devices on WinUSB, docs/windows.md)
-	if(WIN32 AND DMODEM_USB)
+	if((WIN32 OR APPLE) AND DMODEM_USB)
 		include(libusb)
 		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE dmodem_libusb)
-		# the tests' dmodemd.exe with a fake modem in libusb's place
-		# (no LD_PRELOAD on Windows): usb_test.py and pico_line_test.py
-		# run them under Wine, on the exchange of a Linux build
-		# (DMODEM_HOST_LINE_EXCHANGE: its line_exchange)
-		if(DMODEM_TESTS)
+		set(_usb_headers
+			$<TARGET_PROPERTY:dmodem_libusb,INTERFACE_INCLUDE_DIRECTORIES>)
+		# the tests' dmodemd with a fake modem in libusb's place (no
+		# LD_PRELOAD on Windows, none to rely on on macOS): Windows'
+		# under Wine, on the exchange of a Linux build
+		# (DMODEM_HOST_LINE_EXCHANGE: its line_exchange); macOS's on
+		# its own (below, with Linux's)
+		if(DMODEM_TESTS AND WIN32)
 			set(DMODEM_HOST_LINE_EXCHANGE
 				"${PROJECT_SOURCE_DIR}/build/dmodemd/line_exchange"
 				CACHE FILEPATH
 				"a Linux build's line_exchange (Windows USB tests)")
 			find_package(Python3 COMPONENTS Interpreter QUIET)
 			foreach(_f st7554 pico_line)
-				add_executable(dmodemd_fake_${_f} main_windows.cpp
-					usb_line.cpp usb_agere.cpp si3056.cpp test/fake_${_f}.cpp)
-				target_compile_definitions(dmodemd_fake_${_f}
-					PRIVATE DMODEM_USB)
-				target_include_directories(dmodemd_fake_${_f}
-					SYSTEM PRIVATE
-					$<TARGET_PROPERTY:dmodem_libusb,INTERFACE_INCLUDE_DIRECTORIES>)
-				target_link_libraries(dmodemd_fake_${_f} PRIVATE
-					dmodem_sip winmm ws2_32)
-				dmodem_flags(dmodemd_fake_${_f})
+				dmodem_usb_fake(${_f} main_windows.cpp ${_usb_headers})
 			endforeach()
 			if(Python3_Interpreter_FOUND AND CMAKE_CROSSCOMPILING
 			   AND EXISTS "${DMODEM_HOST_LINE_EXCHANGE}")
@@ -182,6 +199,8 @@ if(DMODEM_DMODEMD)
 					dmodemd_pico_line_windows PROPERTIES
 					LABELS alsa TIMEOUT 400 RUN_SERIAL TRUE)
 			endif()
+		elseif(DMODEM_TESTS)
+			set(_usb_builtin_fakes ON)
 		endif()
 	elseif(LIBUSB_FOUND)
 		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp si3056.cpp)
@@ -210,12 +229,25 @@ if(DMODEM_DMODEMD)
 			dmodem_flags(dmodem_fake_agere EXTRA NOOPT)
 			target_include_directories(dmodem_fake_agere PRIVATE
 				${LIBUSB_INCLUDE_DIRS})
+			# (the fakes linked in libusb's place too, as macOS's
+			# tests have them: their own tests, *_builtin)
+			option(DMODEM_TEST_BUILTIN_FAKES
+				"Linux: also test dmodemd with the fake USB modems linked in" OFF)
+			if(DMODEM_TEST_BUILTIN_FAKES)
+				set(_usb_builtin_fakes ON)
+				set(_usb_headers ${LIBUSB_INCLUDE_DIRS})
+			endif()
 		endif()
 	else()
 		message(STATUS "dmodemd: no libusb (libusb-1.0-0-dev): no --usb")
 	endif()
+	if(_usb_builtin_fakes)
+		foreach(_f st7554 pico_line agere)
+			dmodem_usb_fake(${_f} main.cpp ${_usb_headers})
+		endforeach()
+	endif()
 	# the simulated telephone exchange of the ALSA and USB lines' tests
-	if(DMODEM_TESTS AND (ALSA_FOUND OR LIBUSB_FOUND))
+	if(DMODEM_TESTS AND (ALSA_FOUND OR LIBUSB_FOUND OR _usb_builtin_fakes))
 		add_executable(line_exchange test/line_exchange.cpp)
 		dmodem_flags(line_exchange EXTRA)
 		target_link_libraries(line_exchange PRIVATE dmodem_core dmodem_dsp
@@ -360,6 +392,31 @@ if(DMODEM_DMODEMD)
 			set_tests_properties(dmodemd_agere PROPERTIES
 				TIMEOUT 300 COST 1000)
 			set_property(TEST dmodemd_agere APPEND PROPERTY LABELS alsa)
+		endif()
+		# the same with the fakes linked in (macOS's; on Linux with
+		# DMODEM_TEST_BUILTIN_FAKES, as dmodemd_*_builtin)
+		if(_usb_builtin_fakes)
+			if(APPLE)
+				set(_sfx "")
+			else()
+				set(_sfx _builtin)
+			endif()
+			foreach(_t usb:usb_test:st7554 pico_line:pico_line_test:pico_line
+				agere:agere_test:agere)
+				string(REPLACE ":" ";" _t ${_t})
+				list(GET _t 0 _name)
+				list(GET _t 1 _script)
+				list(GET _t 2 _fake)
+				dmodem_add_test(dmodemd_${_name}${_sfx}
+					${Python3_EXECUTABLE}
+					${CMAKE_CURRENT_SOURCE_DIR}/test/${_script}.py
+					$<TARGET_FILE:dmodemd_fake_${_fake}>
+					$<TARGET_FILE:line_exchange> -)
+				set_tests_properties(dmodemd_${_name}${_sfx}
+					PROPERTIES TIMEOUT 300 COST 1000)
+				set_property(TEST dmodemd_${_name}${_sfx} APPEND
+					PROPERTY LABELS alsa)
+			endforeach()
 		endif()
 	endif()
 endif()

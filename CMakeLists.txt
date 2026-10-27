@@ -13,14 +13,16 @@
 #                      build the pinned release
 #   DMODEM_CRYPTO      the fetched libre's digests: openssl (the system's),
 #                      or mbedtls (fetched and built with it; the default
-#                      for Android, which has no OpenSSL of its own)
+#                      for Android, Windows and Apple's systems, which have
+#                      no OpenSSL of their own)
 #   DMODEM_DMODEMD     build dmodemd (its SIP on libre)
 #   DMODEM_ASTERISK    build app_dmodem when Asterisk's headers are found
 #   DMODEM_TESTS       build the test programs and register them with ctest
 #                      (with a 32 bit compiler also the interop tests
 #                      against Smart Link's original DSP library)
-#   DMODEM_USB         Windows: dmodemd's --usb (the SmartUSB56 and the
-#                      pico-serial Line through libusb, fetched and built)
+#   DMODEM_USB         Windows and macOS: dmodemd's --usb (the SmartUSB56,
+#                      the pico-serial Line and the Agere modem through
+#                      libusb, fetched and built)
 #   DMODEM_WERROR      warnings are errors (as in CI)
 #   DMODEM_PREFER_CLANG  Clang where it is installed, not GCC (a first
 #                      configure without CC, CXX or a toolchain file)
@@ -52,6 +54,14 @@ if(DMODEM_PREFER_CLANG AND NOT CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_HOST_WIN32
 		endif()
 	endforeach()
 endif()
+# macOS: 11 (Big Sur, the first for Apple silicon) and later, unless
+# asked otherwise; CMAKE_OSX_ARCHITECTURES="arm64;x86_64" builds both
+# (docs/macos.md)
+if(CMAKE_HOST_APPLE AND NOT CMAKE_TOOLCHAIN_FILE AND
+   NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+	set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING
+		"the oldest macOS to run on")
+endif()
 # MSVC: the static C runtime (/MT), here and in the projects built for
 # it (libre, Mbed TLS): one dmodemd.exe, no vcruntime DLL beside it
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -71,8 +81,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(DMODEM_LIBRE "auto" CACHE STRING "libre: auto, system or fetch")
 set_property(CACHE DMODEM_LIBRE PROPERTY STRINGS auto system fetch)
-if(ANDROID OR IOS OR WIN32)
-	# (no system OpenSSL to link: Mbed TLS's, built with the modem)
+if(ANDROID OR APPLE OR WIN32)
+	# (no system OpenSSL to link: Mbed TLS's, built with the modem;
+	# macOS's own libcrypto is not for programs to link)
 	set(_crypto mbedtls)
 else()
 	set(_crypto openssl)
@@ -93,8 +104,9 @@ option(DMODEM_FREESWITCH "Build mod_dmodem when FreeSWITCH is found"
 option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)"
 	${_dmodem_pbx_default})
 option(DMODEM_TESTS "Build the test programs (ctest)" ON)
-# (Windows: libusb is fetched and built for it, cmake/libusb.cmake)
-option(DMODEM_USB "dmodemd's --usb on Windows (libusb, fetched)" ON)
+# (Windows and macOS: libusb is fetched and built for it,
+# cmake/libusb.cmake; elsewhere the system's, pkg-config's libusb-1.0)
+option(DMODEM_USB "dmodemd's --usb on Windows and macOS (libusb, fetched)" ON)
 option(DMODEM_WERROR "Treat compiler warnings as errors (CI)" OFF)
 
 # the compilers' flags: GCC's and Clang's, or MSVC's (cl.exe, clang-cl).

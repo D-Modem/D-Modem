@@ -30,6 +30,21 @@
 #
 # gtest's discovery (--gtest_list_tests) runs the program as it is.
 
+# now, in seconds with a fraction: bash 5's EPOCHREALTIME, else GNU date's
+# %N, else (macOS's date, bash 3.2) whole seconds
+now() {
+	if [ -n "$EPOCHREALTIME" ]; then
+		echo "${EPOCHREALTIME/,/.}"
+	else
+		local t
+		t=$(date +%s.%N)
+		case $t in
+		*N) date +%s ;;
+		*) echo "$t" ;;
+		esac
+	fi
+}
+
 root=$1
 shift
 name=
@@ -74,12 +89,12 @@ fi
 	echo "test: $name"
 	echo "command: $*"
 	echo "directory: $PWD"
-	echo "start: $(date '+%Y-%m-%d %H:%M:%S.%N')"
+	echo "start: $(date '+%Y-%m-%d %H:%M:%S') ($(now))"
 	echo "debug: DMODEM_TEST_DEBUG=$level"
 	env | grep -E '^(DSP_|DMODEM|CORE_DEBUG|LINK_DEBUG|SPANDSP_DEBUG|DBG=|NET|MODEM_|INTEROP)' | sort
 } > "$dir/info.txt"
 
-t0=$(date +%s.%N)
+t0=$(now)
 "$@" > >(tee "$dir/output.log") 2>&1 &
 pid=$!
 trap 'kill -TERM $pid 2>/dev/null' TERM INT HUP
@@ -90,7 +105,7 @@ while kill -0 $pid 2>/dev/null; do
 	wait $pid
 	rc=$?
 done
-t1=$(date +%s.%N)
+t1=$(now)
 
 case $rc in
 0) st=PASS ;;

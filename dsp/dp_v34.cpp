@@ -5671,8 +5671,9 @@ s16 V34Pump::handshake()
 				char buf[400];
 				s16 i, n = 0;
 				for (i = 0; i < v90tx.enc.M[0] && n < 380; i++)
-					n += sprintf(buf + n, " %d",
-						     v90tx.enc.ucode[0][i]);
+					n += snprintf(buf + n, sizeof(buf) - n,
+						      " %d",
+						      v90tx.enc.ucode[0][i]);
 				DSP_DBG("v34: V.90 CPt ucodes%s; shaper a1 %d a2 %d b1 %d b2 %d\n",
 					buf, cpt.a1, cpt.a2, cpt.b1, cpt.b2);
 			}
