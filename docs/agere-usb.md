@@ -266,6 +266,13 @@ on any USB modem (clipped at full scale, said once in the log): the first device
 it badly (V.34's MP from it asked for 7200 bit/s at most, V.22bis's carrier lost) while its own
 samples came clean, at about -21 dBFS sent.
 
+`DMODEM_USB_TX_GAIN=auto` sets that gain for each call from the remote's answer tone (2100 Hz,
+heard while the modem is quiet: the caller's side, 10 frames' median): heard at -14.8 dBFS, as
+the first device's remote was (where +6 and +10 dB connected at 19200), +8 dB; half a dB more
+for each dB softer (a longer line), 0 to +12 dB. Until a tone is heard (the answerer's side) the
+last call's tone's gain, else +6 dB; a dB softer for each second with more than 8 samples
+clipped. Both said in the log.
+
 `DMODEM_USB_REC=<path>` records each call on any USB modem, from off hook to on hook, to
 `<path>-<date>-<time>.wav`: stereo at the line's rate, left the line's samples as they came,
 right the modem's as it sent them. The 10 s counts (`Agere: N samples in, N out, lead ...`)

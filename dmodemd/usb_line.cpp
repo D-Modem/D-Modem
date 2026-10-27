@@ -607,7 +607,13 @@ bool UsbLine::open(const char *dev, u32 rate)
 	viso_.voice = true;
 	tx_gain_ = 4096;
 	tx_clipped_ = 0;
-	if (const char *g = getenv("DMODEM_USB_TX_GAIN"); g && *g) {
+	tx_auto_ = false;
+	if (const char *g = getenv("DMODEM_USB_TX_GAIN"); g && !strcmp(g, "auto")) {
+		tx_auto_ = true;
+		tx_auto_start();
+		DBG("the modem's samples to the line %+.1f dB to start (DMODEM_USB_TX_GAIN=auto: "
+		    "then from the remote's answer tone)\n", tx_auto_db_);
+	} else if (g && *g) {
 		double db = std::max(-20.0, std::min(20.0, strtod(g, nullptr)));
 		tx_gain_ = static_cast<s32>(std::lround(4096.0 * std::pow(10.0, db / 20.0)));
 		DBG("the modem's samples to the line %+.1f dB (DMODEM_USB_TX_GAIN)\n", db);
@@ -1352,15 +1358,19 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 {
 	bool off = state == MODEM_HOOK_OFF;
 
+	bool was_off = hook_ == MODEM_HOOK_OFF;
 	DBG("%s\n", off ? "off hook" : "on hook");
 	hook_ = state;
 	if (off)
 		rec_start();
 	else
 		rec_stop();
+	if (off && tx_auto_)
+		tx_auto_start();
 	/* (the Agere's ring registers' changes said again after a call) */
 	agere_poll_said_ = 0;
-	if (!off && kind_ == Kind::Agere)
+	/* (after a call: not caller ID's listening between rings) */
+	if (!off && was_off && kind_ == Kind::Agere)
 		agere_onhook_ms_ = clock_ms();
 	flash_end_ = 0;
 	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
@@ -1589,6 +1599,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 		else
 			std::fill_n(frame_out_.data(), frame_, 0);
 		/* (DMODEM_USB_TX_GAIN: louder or softer to the line) */
+		if (tx_auto_ && hook_ == MODEM_HOOK_OFF)
+			tx_auto_frame();
 		if (tx_gain_ != 4096)
 			for (s16 k = 0; k < frame_; k++) {
 				s32 x = (frame_out_[k] * tx_gain_) / 4096;
@@ -1762,6 +1774,91 @@ void UsbLine::rec_start()
 }
 
 /* see usb_line.h */
+/* DMODEM_USB_TX_GAIN=auto: the remote's answer tone (2100 Hz, while the
+   modem is quiet: the caller's side) heard at TONE_REF dBFS wants
+   GAIN_REF dB (the Hiro H50113 on its first line: +6 and +10 connected),
+   half a dB more for each dB softer (a longer line), GAIN_MIN to GAIN_MAX;
+   GAIN_START until a tone is heard (the answerer's side: the last call's
+   tone's) */
+namespace {
+const double TONE_REF = -14.8, GAIN_REF = 8.0, GAIN_SLOPE = 0.5,
+	GAIN_MIN = 0.0, GAIN_MAX = 12.0, GAIN_START = 6.0;
+/* the last tone's level (dBFS; NaN: none yet), for the next call */
+double last_tone_db = std::nan("");
+
+double gain_for(double tone_db)
+{
+	return std::max(GAIN_MIN, std::min(GAIN_MAX,
+		GAIN_REF + GAIN_SLOPE * (TONE_REF - tone_db)));
+}
+
+/* a frame's level, dBFS */
+double level_db(const s16 *x, s16 n)
+{
+	double p = 0;
+	for (s16 i = 0; i < n; i++)
+		p += double(x[i]) * x[i];
+	return 10.0 * std::log10(p / n / (32768.0 * 32768.0) + 1e-12);
+}
+
+/* the share of a frame's power at f Hz (1: all of it) */
+double share_at(const s16 *x, s16 n, double f, u32 rate)
+{
+	double re = 0, im = 0, p = 0, w = 2.0 * 3.14159265358979323846 * f / rate;
+	for (s16 i = 0; i < n; i++) {
+		re += x[i] * std::cos(w * i);
+		im -= x[i] * std::sin(w * i);
+		p += double(x[i]) * x[i];
+	}
+	return p > 0 ? (re * re + im * im) / (double(n) * p / 2.0) : 0;
+}
+} // namespace
+
+void UsbLine::tx_gain_db(double db)
+{
+	tx_auto_db_ = db;
+	tx_gain_ = static_cast<s32>(std::lround(4096.0 * std::pow(10.0, db / 20.0)));
+}
+
+void UsbLine::tx_auto_start()
+{
+	tx_gain_db(std::isnan(last_tone_db) ? GAIN_START : gain_for(last_tone_db));
+	tx_auto_set_ = false;
+	tx_tone_n_ = 0;
+	tx_clip_mark_ = tx_clipped_;
+	tx_clip_frames_ = 0;
+}
+
+void UsbLine::tx_auto_frame()
+{
+	const s16 TONE_FRAMES = sizeof(tx_tone_db_) / sizeof(tx_tone_db_[0]);
+	if (!tx_auto_set_ && frame_ > 0) {
+		double rx = level_db(frame_in_.data(), frame_);
+		if (rx > -45.0 && level_db(frame_out_.data(), frame_) < -50.0 &&
+		    share_at(frame_in_.data(), frame_, 2100.0, rate_) > 0.6) {
+			tx_tone_db_[tx_tone_n_++] = rx;
+			if (tx_tone_n_ == TONE_FRAMES) {
+				std::sort(tx_tone_db_, tx_tone_db_ + TONE_FRAMES);
+				last_tone_db = tx_tone_db_[TONE_FRAMES / 2];
+				tx_gain_db(gain_for(last_tone_db));
+				tx_auto_set_ = true;
+				DBG("the remote's answer tone at %.1f dBFS: the modem's samples to "
+				    "the line %+.1f dB (auto)\n", last_tone_db, tx_auto_db_);
+			}
+		}
+	}
+	/* (a dB softer for each second of clipping, more than 8 samples) */
+	if (++tx_clip_frames_ >= 50) {
+		if (tx_clipped_ - tx_clip_mark_ > 8 && tx_auto_db_ > GAIN_MIN) {
+			tx_gain_db(std::max(GAIN_MIN, tx_auto_db_ - 1.0));
+			DBG("%" PRIu64 " samples clipped in a second: the modem's samples to "
+			    "the line %+.1f dB (auto)\n", tx_clipped_ - tx_clip_mark_, tx_auto_db_);
+		}
+		tx_clip_mark_ = tx_clipped_;
+		tx_clip_frames_ = 0;
+	}
+}
+
 void UsbLine::rec_frame(const s16 *in, const s16 *out, s16 n)
 {
 	u8 b[4 * 512];

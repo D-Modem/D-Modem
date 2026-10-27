@@ -228,7 +228,7 @@ try:
     os.mkdir(recs)
     os.chmod(recs, 0o777)
     a = Modem("1001", "dmodem41", args=["-r", "9600", "-d2"],
-              DMODEM_USB_REC=os.path.join(recs, "line"))
+              DMODEM_USB_REC=os.path.join(recs, "line"), DMODEM_USB_TX_GAIN="auto")
     # (1002's codec's clock 300 ppm faster than its USB's: its transmit ring
     # kept by the OUT transfers' corrections, no overrun or underrun)
     b = Modem("1002", "dmodem42", args=["-d2"], FAKE_AGERE_DRIFT="300", DMODEM_USB_TX_GAIN="3",
@@ -249,6 +249,7 @@ try:
     check("1002 Polaris calibrated (13)", b.expect_log(b"Agere: Polaris calibration 13 (16 readings)", 1))
     check("1002 Polaris DAA revision 3", b.expect_log(b"Agere: Polaris DAA revision 3", 1))
     check("1001's OH not lit", led(a, b"OH") == b"off")
+    check("1001's gain auto, +6 dB to start", a.expect_log(b"to the line +6.0 dB to start", 1))
     check("1002's samples 3 dB louder (DMODEM_USB_TX_GAIN)", b.expect_log(b"to the line +3.0 dB", 1))
     a.dte.write(b"ATD1002\r")
     time.sleep(0.5)
@@ -266,6 +267,8 @@ try:
     cb = b.expect(rb"(CONNECT[^\r]*|NO CARRIER)\r\n", 5)
     print("1001: %s, 1002: %s, %.1f s" % (ca and ca.group(1).decode(),
                                          cb and cb.group(1).decode(), time.time() - t))
+    check("1001's gain from 1002's answer tone (auto)",
+          a.expect_log(b"the remote's answer tone at", 1))
     check("both CONNECT", ca and cb and ca.group(1).startswith(b"CONNECT")
           and cb.group(1).startswith(b"CONNECT"))
     time.sleep(0.5)
