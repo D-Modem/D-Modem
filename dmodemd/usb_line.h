@@ -397,6 +397,10 @@ private:
 	u64 tx_clip_mark_ = 0;
 	s16 tx_clip_frames_ = 0;
 	/* the gain, dB */
+	/* the device's configuration: the active one's, else its first
+	   (Android: libusb asks the device for the active one when it wraps
+	   the app's fd; the Agere, started again, gave none: "not found") */
+	int config(libusb_config_descriptor **cfg);
 	void tx_gain_db(double db);
 	/* auto: the gain from the start of the call or the last one's tone */
 	void tx_auto_start();

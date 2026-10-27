@@ -507,8 +507,7 @@ s16 UsbLine::list()
 bool UsbLine::endpoints(s16 alt)
 {
 	libusb_config_descriptor *cfg;
-	int err = libusb_get_active_config_descriptor(libusb_get_device(h_),
-						      &cfg);
+	int err = config(&cfg);
 	if (err < 0) {
 		ERR("%s: its configuration: %s\n", name_, libusb_strerror(err));
 		return false;
@@ -738,7 +737,7 @@ void UsbLine::arm_wake(bool on, bool kernel)
 {
 	libusb_config_descriptor *cfg;
 	bool can = false;
-	if (libusb_get_active_config_descriptor(libusb_get_device(h_), &cfg) == 0) {
+	if (config(&cfg) == 0) {
 		can = cfg->bmAttributes & CONFIG_REMOTE_WAKEUP;
 		libusb_free_config_descriptor(cfg);
 	}
@@ -1813,6 +1812,16 @@ double share_at(const s16 *x, s16 n, double f, u32 rate)
 	return p > 0 ? (re * re + im * im) / (double(n) * p / 2.0) : 0;
 }
 } // namespace
+
+int UsbLine::config(libusb_config_descriptor **cfg)
+{
+	int err = libusb_get_active_config_descriptor(libusb_get_device(h_), cfg);
+	if (err == LIBUSB_ERROR_NOT_FOUND) {
+		DBG("%s: no active configuration said: its first\n", name_);
+		err = libusb_get_config_descriptor(libusb_get_device(h_), 0, cfg);
+	}
+	return err;
+}
 
 void UsbLine::tx_gain_db(double db)
 {

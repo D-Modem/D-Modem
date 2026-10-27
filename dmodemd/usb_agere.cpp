@@ -286,8 +286,7 @@ bool UsbLine::open_agere()
 		return false;
 	}
 	libusb_config_descriptor *cfg;
-	if ((err = libusb_get_active_config_descriptor(libusb_get_device(h_),
-						       &cfg)) < 0) {
+	if ((err = config(&cfg)) < 0) {
 		ERR("Agere USB modem: its configuration: %s\n",
 		    libusb_strerror(err));
 		return false;
@@ -578,7 +577,7 @@ bool UsbLine::agere_streams()
 void UsbLine::agere_dump()
 {
 	libusb_config_descriptor *cfg;
-	if (libusb_get_active_config_descriptor(libusb_get_device(h_), &cfg) == 0) {
+	if (config(&cfg) == 0) {
 		DBG("Agere: dump: configuration %u, %u interfaces\n",
 		    cfg->bConfigurationValue, cfg->bNumInterfaces);
 		for (u8 i = 0; i < cfg->bNumInterfaces; i++)

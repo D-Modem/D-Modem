@@ -182,11 +182,14 @@ try:
 
     # the ROM's stream: from a function table as the ROM has it, or with
     # a bulk patch's entries put back first; a ROM 1.0.6's clock left alone
-    for tag, env in (("-rom", {}), ("-patched", {"FAKE_AGERE_PATCHED": "1"}),
+    for tag, env in (("-rom", {"FAKE_AGERE_NO_ACTIVE": "1"}), ("-patched", {"FAKE_AGERE_PATCHED": "1"}),
                      ("-v106", {"FAKE_AGERE_ROM": "106"})):
         m = Modem("1001", "dmodem40", tag, args=["-d2"], **env)
         check("%s: alternate setting 1" % tag,
               m.expect_log(b"Agere: isochronous out 02, in 82, 16 octets a packet", 5))
+        if tag == "-rom":
+            check("-rom: no active configuration said, its first taken",
+                  m.expect_log(b"no active configuration said: its first", 1))
         if tag == "-patched":
             check("-patched: entry 4 put back",
                   m.expect_log(b"function table entry 4 70001588 (a patch's), put back", 5))

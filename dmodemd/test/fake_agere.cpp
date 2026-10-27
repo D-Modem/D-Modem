@@ -784,9 +784,24 @@ int LIBUSB_CALL libusb_clear_halt(libusb_device_handle *, unsigned char)
 }
 
 /* the configuration (make_config()), static */
+/* (FAKE_AGERE_NO_ACTIVE: none said, as Android's libusb had it for the
+   first device started again) */
 int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *,
 						    libusb_config_descriptor **c)
 {
+	if (getenv("FAKE_AGERE_NO_ACTIVE"))
+		return LIBUSB_ERROR_NOT_FOUND;
+	make_config();
+	*c = &config;
+	return 0;
+}
+
+/* the configuration by its index (the one: 0) */
+int LIBUSB_CALL libusb_get_config_descriptor(libusb_device *, uint8_t index,
+					     libusb_config_descriptor **c)
+{
+	if (index != 0)
+		return LIBUSB_ERROR_NOT_FOUND;
 	make_config();
 	*c = &config;
 	return 0;
