@@ -7,12 +7,16 @@
  *    leased line: ATD dials nothing, S0=1 answers with no ring), V.42
  *    and V.44 on top: bulk data both ways at once, byte for byte; a
  *    dropout the pump retrains through under LAPM; a long cut, NO
- *    CARRIER, and the call again by itself; the mode refused at 9600 Hz
+ *    CARRIER, and the call again by itself; each end behind a host's
+ *    buffers (dmodemd's USB line's: 20 ms frames, 50 ms ahead), the
+ *    start-up past its own echo's tail; the mode refused at 9600 Hz
  *
  *    VWB_DEBUG=<level>   libdmodem's log
  */
 
+#include <algorithm>
 #include <cstdio>
+#include <deque>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
@@ -155,6 +159,55 @@ void run(VwbLine &line, End &c, End &a, double secs, Stop stop)
 	}
 }
 
+/* an end behind a host's buffers, as dmodemd's lines have them: the
+   modem's samples go out lead samples after it made them (and it makes
+   them a frame at a time), its line's samples come a frame at a time */
+struct Buffered {
+	std::deque<s16> in, out;
+	s32 frame;
+	/* frames of frame samples, lead samples of silence ahead */
+	Buffered(s32 frame_, s32 lead) : out(static_cast<size_t>(lead), 0),
+		frame(frame_) {}
+	/* the line's samples x in, as many of the modem's to the line in y */
+	void step(struct dmodem *m, const std::vector<s16> &x,
+		  std::vector<s16> &y)
+	{
+		in.insert(in.end(), x.begin(), x.end());
+		std::vector<s16> a(static_cast<size_t>(frame)),
+			b(static_cast<size_t>(frame));
+		while (in.size() >= a.size()) {
+			std::copy_n(in.begin(), a.size(), a.begin());
+			in.erase(in.begin(), in.begin() + frame);
+			dmodem_process(m, a.data(), b.data(), frame);
+			out.insert(out.end(), b.begin(), b.end());
+		}
+		y.assign(x.size(), 0);
+		for (size_t i = 0; i < y.size() && !out.empty(); i++) {
+			y[i] = out.front();
+			out.pop_front();
+		}
+	}
+};
+
+/* run()'s, each end behind its host's buffers */
+template <class Stop>
+void run_buffered(VwbLine &line, End &c, End &a, Buffered &hc,
+		  Buffered &ha, double secs, Stop stop)
+{
+	std::vector<s16> c_in, a_in, c_out, a_out;
+	s64 end = line.time() + static_cast<s64>(secs * 96000);
+	while (line.time() < end) {
+		line.inputs(480, c_in, a_in);
+		hc.step(c.m, c_in, c_out);
+		ha.step(a.m, a_in, a_out);
+		line.outputs(c_out, a_out);
+		c.take();
+		a.take();
+		if (stop())
+			break;
+	}
+}
+
 /* the log level from VWB_DEBUG */
 void debug()
 {
@@ -207,15 +260,16 @@ TEST(VwbCall, LapmBothWays)
 	EXPECT_GT(n * 8 / t, 0.7 * st.tx_rate);
 }
 
-/* the pair cut for half a second in the middle of the data: the pump
-   retrains, LAPM sends again what was lost; no NO CARRIER, every byte */
+/* the pair cut for half a second in the middle of the data (11 s: V.42
+   is up about 9.3 s in): the pump retrains, LAPM sends again what was
+   lost; no NO CARRIER, every byte */
 TEST(VwbCall, RetrainUnderLapm)
 {
 	dmodem_init();
 	debug();
 	VwbLineConfig lc;
 	lc.km = 1;
-	lc.drop_at = 9;
+	lc.drop_at = 11;
 	lc.drop_s = 0.5;
 	VwbLine line(lc);
 	End c("caller", "ATE0X4&L1+MS=VWB\r"), a("answerer",
@@ -229,7 +283,7 @@ TEST(VwbCall, RetrainUnderLapm)
 		c.sent += c.dte.write_some(to_a, c.sent);
 		return a.data.size() >= n;
 	});
-	EXPECT_GT(line.time(), 10 * 96000) << "done before the cut";
+	EXPECT_GT(line.time(), 12 * 96000) << "done before the cut";
 	EXPECT_EQ(a.data.size(), n);
 	EXPECT_TRUE(a.data == to_a) << "bytes differ";
 	EXPECT_EQ(c.no_carriers + a.no_carriers, 0) << c.text << a.text;
@@ -264,6 +318,35 @@ TEST(VwbCall, LeasedLineCallsAgain)
 	c.dte.write_some(msg, 0);
 	run(line, c, a, 5, [&] { return a.data.find(msg) != std::string::npos; });
 	EXPECT_NE(a.data.find(msg), std::string::npos);
+}
+
+/* each end behind a host's buffers (dmodemd's USB line at 96000 Hz:
+   frames of 20 ms, its samples 4672 ahead, so its own echo comes 10
+   symbols after it sent them; the start-up looks for the far end's
+   syncs only after it): CONNECT, and data both ways, byte for byte */
+TEST(VwbCall, HostLatency)
+{
+	dmodem_init();
+	debug();
+	VwbLineConfig lc;
+	lc.km = 1;
+	VwbLine line(lc);
+	Buffered hc(1920, 4672), ha(1920, 4672);
+	End c("caller", "ATE0X4&L1+MS=VWB\r"), a("answerer",
+					       "ATE0X4&L1S0=1+MS=VWB\r");
+	ASSERT_EQ(dmodem_dial(c.m, ""), 0);
+	run_buffered(line, c, a, hc, ha, 15, [&] { return c.online && a.online; });
+	ASSERT_TRUE(c.online) << c.text;
+	ASSERT_TRUE(a.online) << a.text;
+	const size_t n = 100000;
+	std::string to_a = bulk(n, 5), to_c = bulk(n, 6);
+	run_buffered(line, c, a, hc, ha, 30, [&] {
+		c.sent += c.dte.write_some(to_a, c.sent);
+		a.sent += a.dte.write_some(to_c, a.sent);
+		return a.data.size() >= n && c.data.size() >= n;
+	});
+	EXPECT_TRUE(a.data == to_a) << "to the answerer: " << a.data.size();
+	EXPECT_TRUE(c.data == to_c) << "to the caller: " << c.data.size();
 }
 
 /* V.wb wants 48000 Hz and more: at 9600 the pump is not made (NO

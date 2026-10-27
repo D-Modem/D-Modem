@@ -78,8 +78,8 @@ offset they track.
 |---|---|---|
 | 1 | probe: tone 24 (4.5 kHz) | listens for it (20 dB over the other tones for 6 symbols) |
 | 2 | finds the sync, goes quiet; measures the timing, the clock, H and the SNR of every tone | sync symbol on the whole band, 160 symbols, then 2 segues (the symbol negated); measures its echo's delay |
-| 3 | sync on the whole band, 160 symbols, then 2 segues; measures its echo's delay | finds it, measures the same, then locks its transmitter to the caller's clock |
-| 4 | idle (the sync symbol on its message band) | sync on its message band, 48 symbols, 2 segues, then frames carrying its SNR table |
+| 3 | sync on the whole band, 160 symbols, then 2 segues; measures its echo's delay | finds it (looking only once its own echo has gone by), measures the same, then locks its transmitter to the caller's clock |
+| 4 | idle (the sync symbol on its message band); looks for the answerer's sync once its own echo has gone by | sync on its message band, 80 symbols, 2 segues, then frames carrying its SNR table |
 | 5 | finds the answerer's sync; on the SNR frame: the plan, then 2 segues and frames carrying the plan | |
 | 6 | | on the plan: GO frames (2, 1), then the plan's sync, 24 symbols, then data |
 | 7 | on the answerer's GO: its own GOs (2, 1), the plan's sync, then data | |
@@ -87,9 +87,19 @@ offset they track.
 The timeline is from `vwb_test`'s logs at 96 kHz:
 
 - the probe is heard after 35 ms;
-- both full-band syncs are done after 1.9 s;
-- the plan is made after 2.6 s;
-- data runs both ways after 4.8 s.
+- both full-band syncs are done after 2.1 s;
+- the plan is made after 2.8 s;
+- data runs both ways after 5.0 s.
+
+**The echo's tail.** Each side hears its own full-band sync through the
+hybrid, as long after sending it as the host's buffers and the pair
+take: a USB or ALSA line holds tens of milliseconds each way (dmodemd's
+USB line sends its samples about 50 ms ahead). Heard as the far end's,
+it would be locked onto. So each side looks for the far end's next sync
+only 32 symbols (184 ms) after its own has ended: the answerer for the
+caller's full-band sync, the caller for the answerer's sync on its
+message band, which is 80 symbols long (48 and those 32) so that it is
+still there to be found and trained on.
 
 **The message channel** is QPSK on the lowest 30% of the tones (the
 caller's) and the highest 30% (the answerer's), with 4 pilots each. The
@@ -205,8 +215,12 @@ as SPEC-WB expected.
 The other results:
 
 - **Through V.42.** Under libdmodem (`vwb_call_test`), 400 kB each way
-  at once, byte for byte, went at 137575 bit/s each way through V.42 on
+  at once, byte for byte, went at 138558 bit/s each way through V.42 on
   the 148656 bit/s pump.
+- **Through a host's buffers.** With each end's samples 4672 ahead and
+  in 20 ms frames, as dmodemd's USB line has them (`vwb_call_test`'s
+  HostLatency), the call connects as before; V.42 then carries 83 kbit/s
+  each way (LAPM's window waits a longer round trip).
 - **Dropout.** A 0.5 s cut of the pair costs one retrain. The data goes
   on after it, and LAPM sends again what was lost.
 - **CPU.** One end takes about 1.5% of one x86 core at 96 kHz.
@@ -215,7 +229,8 @@ The other results:
 
 - Bit swapping in a call (a tone's bits moved as its noise changes).
 - Trellis coding.
-- V.42's extended windows, which a long interleaver would need.
+- V.42's extended windows, which a long interleaver, and a host's
+  buffers, would need.
 - The WB stick's USB line driver in dmodemd, which comes with its
   firmware.
 - A real pair.

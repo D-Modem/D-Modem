@@ -24,7 +24,14 @@ const float TWO_PI = 6.283185307179586f;
 
 /* the start-up's lengths, in symbols */
 const s32 L_SYNC = 160;        /* each side's full-band sync */
-const s32 L_SYNC2 = 48;        /* the answerer's on the default band */
+const s32 ECHO_TAIL = 32;      /* our own echo heard so long after we
+				  sent it, at most (184 ms: the host's
+				  buffers both ways, a USB or ALSA line's
+				  tens of ms, and the pair's): a far end's
+				  sync looked for only after it */
+const s32 L_SYNC2 = 48 + ECHO_TAIL;   /* the answerer's on the default
+					 band (found after the caller's
+					 echo of its own full-band one) */
 const s32 L_SYNC3 = 24;        /* each side's on the plan's band */
 const s32 SNR_FROM = 48;       /* the SNR measured from this symbol of
 				  the far end's full-band sync */
@@ -531,7 +538,10 @@ void VwbModem::rx_symbol(cf *y)
 	case RX_ECHO:
 		if (rx_count_ == ECHO_AT)
 			measure_echo();
-		if (tx_state_ == TX_SILENT && rx_count_ > ECHO_AT) {
+		/* (the caller's sync looked for once our own has gone by:
+		   its echo would be found) */
+		if (tx_state_ == TX_SILENT && tx_count_ > ECHO_TAIL &&
+		    rx_count_ > ECHO_AT) {
 			rx_state_ = RX_DETECT;
 			rx_count_ = 0;
 			detect_hits_ = 0;
@@ -580,10 +590,11 @@ void VwbModem::rx_symbol(cf *y)
 			retrain("no segue");
 		break;
 	case RX_DETECT2:
-		/* (the caller's own full-band sync meanwhile: its echo) */
+		/* (the caller's own full-band sync meanwhile: its echo,
+		   which the answerer's sync is looked for after) */
 		if (rx_count_ == ECHO_AT - (L_SYNC + 2))
 			measure_echo();
-		if (rx_count_ >= 8 && rx_count_ % 2 == 0) {
+		if (rx_count_ >= ECHO_TAIL && rx_count_ % 2 == 0) {
 			s64 before = win_;
 			if (acquire(msg_rx_, 0, 0)) {
 				logf("the answerer's sync found\n");
