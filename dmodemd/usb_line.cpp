@@ -1772,7 +1772,6 @@ void UsbLine::rec_start()
 	DBG("recording the line to %s\n", name);
 }
 
-/* see usb_line.h */
 /* DMODEM_USB_TX_GAIN=auto: the remote's answer tone (2100 Hz, while the
    modem is quiet: the caller's side) heard at TONE_REF dBFS wants
    GAIN_REF dB (the Hiro H50113 on its first line: +6 and +10 connected),
@@ -1785,6 +1784,7 @@ const double TONE_REF = -14.8, GAIN_REF = 8.0, GAIN_SLOPE = 0.5,
 /* the last tone's level (dBFS; NaN: none yet), for the next call */
 double last_tone_db = std::nan("");
 
+/* the gain (dB) for a tone heard at tone_db (dBFS) */
 double gain_for(double tone_db)
 {
 	return std::max(GAIN_MIN, std::min(GAIN_MAX,
@@ -1813,6 +1813,7 @@ double share_at(const s16 *x, s16 n, double f, u32 rate)
 }
 } // namespace
 
+/* see usb_line.h */
 int UsbLine::config(libusb_config_descriptor **cfg)
 {
 	int err = libusb_get_active_config_descriptor(libusb_get_device(h_), cfg);
@@ -1823,12 +1824,14 @@ int UsbLine::config(libusb_config_descriptor **cfg)
 	return err;
 }
 
+/* see usb_line.h */
 void UsbLine::tx_gain_db(double db)
 {
 	tx_auto_db_ = db;
 	tx_gain_ = static_cast<s32>(std::lround(4096.0 * std::pow(10.0, db / 20.0)));
 }
 
+/* see usb_line.h */
 void UsbLine::tx_auto_start()
 {
 	tx_gain_db(std::isnan(last_tone_db) ? GAIN_START : gain_for(last_tone_db));
@@ -1838,6 +1841,7 @@ void UsbLine::tx_auto_start()
 	tx_clip_frames_ = 0;
 }
 
+/* see usb_line.h */
 void UsbLine::tx_auto_frame()
 {
 	const s16 TONE_FRAMES = sizeof(tx_tone_db_) / sizeof(tx_tone_db_[0]);
@@ -1868,6 +1872,7 @@ void UsbLine::tx_auto_frame()
 	}
 }
 
+/* see usb_line.h */
 void UsbLine::rec_frame(const s16 *in, const s16 *out, s16 n)
 {
 	u8 b[4 * 512];
@@ -1900,6 +1905,8 @@ void UsbLine::rec_stop()
 	DBG("the line recorded: %" PRIu64 " s\n", rate_ ? rec_frames_ / rate_ : 0);
 }
 
+/* see usb_line.h: the stream stopped and the device on hook, its
+   transfers cancelled and freed, the interface released, libusb closed */
 void UsbLine::close()
 {
 	rec_stop();
