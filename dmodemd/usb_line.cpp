@@ -1094,8 +1094,9 @@ void UsbLine::send_out(Iso &s)
 	}
 }
 
-/* the interrupt transfer done: the FIFO's errors logged,
-   a ring counted, it again (the line gone if unplugged) */
+/* the interrupt transfer done: the FIFO's errors logged, a ring
+   counted (not on a FIFO's error), it again (the line gone if
+   unplugged) */
 void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 {
 	UsbLine *l = static_cast<UsbLine *>(t->user_data);
@@ -1127,7 +1128,11 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 			DBG("the voice codec's FIFO underrun\n");
 		if (fifo & SSI2_OVERRUN)
 			DBG("the voice codec's FIFO overrun\n");
-		if (gpio & GPIO_RING1)
+		/* (a FIFO's error comes with the ring detector's bit set
+		   on the SmartUSB56, ringing or not: a burst of underruns
+		   made a RING; the ring's own changes come on their own) */
+		if ((gpio & GPIO_RING1) &&
+		    !(fifo & (SSI1_UNDERRUN | SSI1_OVERRUN | SSI2_UNDERRUN | SSI2_OVERRUN)))
 			l->rings_++;
 		if ((gpio & GPIO_HANDSET) && l->handset_)
 			l->handset_due_ = true;

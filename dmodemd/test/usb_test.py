@@ -320,7 +320,9 @@ try:
     m.p.terminate()
     m.p.wait(5)
 
-    a = Modem("1001", "dmodem41", ["--usb-leds", "--usb-buzzer"], FAKE_ST7554_LOG="1")
+    # (1001's FIFO underruns with the ring detector's bit set: no RING)
+    a = Modem("1001", "dmodem41", ["--usb-leds", "--usb-buzzer"], FAKE_ST7554_LOG="1",
+              FAKE_ST7554_UNDERRUNS="30")
     suspend = os.path.join(tmp, "1002.suspend")
     handset = os.path.join(tmp, "1002.handset")
     b = Modem("1002", "dmodem42", ["--usb-wake", "--usb-handset"],
@@ -340,6 +342,13 @@ try:
     if not usb_dte.windows(dmodemd):
         check("1002 the kernel's power/wakeup tried",
               b"1-250/power/wakeup" in b_log())
+    # (the core's ring check 2.5 s after a burst's first pulse)
+    t = time.time()
+    while b"FIFO underrun" not in log_of(a) and time.time() - t < 10:
+        time.sleep(0.1)
+    check("1001's underruns logged", b"FIFO underrun" in log_of(a))
+    check("1001 no RING from its underruns", not a.expect(rb"RING\r\n", 4)
+          and b"bad ring" not in log_of(a))
     check("1002 answers at the 2nd ring", b.cmd(b"ATS0=2"))
     check("1002 caller ID on", b.cmd(b"AT#CID=1"))
     check("1001 waits for the dial tone", a.cmd(b"ATX4"))

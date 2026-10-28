@@ -115,6 +115,12 @@ struct Fake {
 	const char *suspend_file = nullptr, *handset_file = nullptr;
 	bool wakeup = false, suspended = false, woke = false;
 	uint16_t events = 0;            /* GPIO events not yet on the interrupt */
+	/* FAKE_ST7554_UNDERRUNS=<n>: n playback FIFO underruns on the
+	   interrupt from 3 s into the stream, 15 ms apart, the ring
+	   detector's bit set in each, as the SmartUSB56 on a phone has it
+	   (no ring) */
+	unsigned underruns = 0;
+	unsigned long long underrun_at = 3000;  /* the next one's ms */
 	/* FAKE_ST7554_VOICE's: the earpiece's file, the voice transfers
 	   queued, the voice IN packets given, the microphone's samples */
 	FILE *ear = nullptr;
@@ -384,16 +390,23 @@ void run()
 			done(t, LIBUSB_TRANSFER_COMPLETED);
 			more = true;
 		}
-		while ((fake.ring_changes || fake.events) && !fake.intr_q.empty()) {
+		while ((fake.ring_changes || fake.events ||
+			(fake.underruns && fake.ms >= fake.underrun_at)) && !fake.intr_q.empty()) {
 			libusb_transfer *t = fake.intr_q.front();
 			fake.intr_q.pop_front();
-			uint16_t ev = fake.events;
+			uint16_t ev = fake.events, fifo = 0;
 			fake.events = 0;
 			if (fake.ring_changes) {
 				fake.ring_changes--;
 				ev |= GPIO_RING1;
+			} else if (fake.underruns && fake.ms >= fake.underrun_at) {
+				fake.underruns--;
+				fake.underrun_at = fake.ms + 15;
+				fifo = 0x0040;  /* SSI1's underrun */
+				ev |= GPIO_RING1;
 			}
-			uint8_t b[4] = { 0, 0, (uint8_t)ev, (uint8_t)(ev >> 8) };
+			uint8_t b[4] = { (uint8_t)fifo, (uint8_t)(fifo >> 8),
+					 (uint8_t)ev, (uint8_t)(ev >> 8) };
 			memcpy(t->buffer, b, t->length < 4 ? (size_t)t->length : 4);
 			t->actual_length = t->length < 4 ? t->length : 4;
 			done(t, LIBUSB_TRANSFER_COMPLETED);
@@ -613,6 +626,8 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 	fake.st75951 = getenv("FAKE_ST7554_DAA") != nullptr;
 	fake.suspend_file = getenv("FAKE_ST7554_SUSPEND");
 	fake.handset_file = getenv("FAKE_ST7554_HANDSET");
+	if (const char *u = getenv("FAKE_ST7554_UNDERRUNS"))
+		fake.underruns = (unsigned)atoi(u);
 	if (const char *v = getenv("FAKE_ST7554_VOICE")) {
 		fake.ear = fopen(v, "wb");
 		if (!fake.ear)
