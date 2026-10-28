@@ -373,6 +373,22 @@ void V34Rx::set_stage(enum v34_rxstage s)
 		fr->drop();     /* no frame across a new signal */
 }
 
+/* back to waiting for S as at the start: the gain free again, the
+   equalizer, carrier and timing reset, no phase 4 expected (what a
+   phase 3 sequence that wasn't the remote's left: our own echo) */
+void V34Rx::restart()
+{
+	DSP_DBG("v34 rx: what it heard was our own: waiting for the remote's S afresh\n");
+	set_stage(V34_RX_IDLE);
+	s_count = 0;
+	qam.reset();
+	qam.agc_hold = 0;
+	ref_power = 0;
+	phase4 = 0;
+	have_ls = have_good = timing_fixed = 0;
+	mse = 0;
+}
+
 /* the index of the 4 point training point nearest to z: its quadrant */
 static s16 nearest4(cplx z)
 {

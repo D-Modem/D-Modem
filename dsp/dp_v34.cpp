@@ -5530,6 +5530,12 @@ s16 V34Pump::handshake()
 		if (ptx.n >= TRN3_LEN) {
 			tx_next(P3A_J, V34_TX_J);
 			prx.ev_s = 0;
+			/* the caller starts its phase 3 on our J: whatever the
+			   receiver took for its S until now was our own S, PP
+			   and TRN's echo, trained on (the gain held, phase 4
+			   expected) */
+			if (prx.stage != V34_RX_IDLE || prx.phase4)
+				prx.restart();
 		}
 		break;
 	case P3A_J:

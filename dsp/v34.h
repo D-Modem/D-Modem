@@ -485,6 +485,7 @@ struct V34Rx {
 	s16 set_v90();
 	void release();
 	void set_stage(enum v34_rxstage s);
+	void restart();
 	void frame_start();
 	void ja_bit(s16 bit);
 	void cp_bit(s16 bit);
