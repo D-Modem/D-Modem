@@ -5798,8 +5798,10 @@ s16 V34Pump::handshake()
 			ptx.ack_mp = 1;
 		}
 		/* E after a complete MP' once the remote has acknowledged
-		   ours */
-		if (prx.ev_mp && prx.mp.ack && ptx.mp_sent >= 1 &&
+		   ours: with its MP', or with its E (a V.92 modem whose MP
+		   came before ours, our first one an MP' then, went from
+		   its MP to E without an MP' of its own) */
+		if (prx.ev_mp && (prx.mp.ack || prx.ev_e) && ptx.mp_sent >= 1 &&
 		    ptx.mp.ack && ptx.pos >= ptx.nbits)
 			tx_next(P4_E, V34_TX_E);
 		break;
