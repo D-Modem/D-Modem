@@ -75,6 +75,10 @@ struct Config {
 	s16 tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
 	s16 comp = 0;                   /* V.42bis: bit 0 decoder (what we
 					   receive), bit 1 encoder */
+	/* the directions (as comp's bits) V.42bis and V.44 may each have
+	   (+DS's and +DS44's <direction>): their XID sets' P0 within
+	   comp's, and what each can be agreed for; zstd has comp's */
+	s16 comp42 = 3, comp44 = 3;
 	s32 dict_size = V42BIS_MAX_CODEWORDS;
 	s32 max_string = V42BIS_MAX_STRING;
 	/* V.44 offered with compression; after XID: it, rather than

@@ -1131,13 +1131,15 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 				ok = false;
 			}
 		}
-		/* REJECT_B: and must not have this (e.g. a retrain the
-		   call can do without) */
-		if (ok && !env("REJECT_B").empty()) {
+		/* REJECT_B (REJECT_A): and must not have this (e.g. a
+		   retrain the call can do without) */
+		for (char w : { 'A', 'B' }) {
+			std::string pat = env(w == 'A' ? "REJECT_A" : "REJECT_B");
+			if (!ok || pat.empty())
+				continue;
 			sleep_s(0.5);
-			if (log_has(log_dir + "/modemB.log", env("REJECT_B"))) {
-				say("modemB's log has %s\n",
-				    env("REJECT_B").c_str());
+			if (log_has(log_dir + "/modem" + w + ".log", pat)) {
+				say("modem%c's log has %s\n", w, pat.c_str());
 				ok = false;
 			}
 		}

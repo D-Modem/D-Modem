@@ -381,13 +381,15 @@ void Link::update_config(const Config &remote)
 		return;
 	}
 	cfg_.zstd = false;
-	if (dir && remote.v44 && cfg_.v44 && enc44_.ready()) {
+	/* V.44 and V.42bis in the directions each may have */
+	const s16 dir44 = dir & cfg_.comp44, dir42 = dir & cfg_.comp42;
+	if (dir44 && remote.v44 && cfg_.v44 && enc44_.ready()) {
 		s32 n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
 		s32 n7 = std::min(cfg_.v44_max_string,
 				      remote.v44_max_string);
 		s32 n8 = std::min(cfg_.v44_history, remote.v44_history);
 		if (!enc44_.config(n2, n7, n8) && !dec44_.config(n2, n7, n8)) {
-			cfg_.comp = dir;
+			cfg_.comp = dir44;
 			cfg_.v44_codewords = n2;
 			cfg_.v44_max_string = n7;
 			cfg_.v44_history = n8;
@@ -420,11 +422,11 @@ void Link::update_config(const Config &remote)
 	}
 	cfg_.v44 = false;
 	cfg_.comp = 0;
-	if (dir) {
+	if (dir42) {
 		s32 n2 = std::min(cfg_.dict_size, remote.dict_size);
 		s32 n7 = std::min(cfg_.max_string, remote.max_string);
 		if (!enc_.config(n2, n7) && !dec_.config(n2, n7)) {
-			cfg_.comp = dir;
+			cfg_.comp = dir42;
 			cfg_.dict_size = n2;
 			cfg_.max_string = n7;
 		} else

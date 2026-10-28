@@ -390,6 +390,8 @@ private:
 	s16 dial_start();
 	void dialed();
 	s16 link_init();
+	static s16 dte_dirs(u32 direction);
+	bool link_compression_ok();
 	void report(Result r);
 	void events(u16 ev);
 	void leased_poll();
@@ -577,6 +579,9 @@ private:
 		bool mnp_on;            /* the call has MNP */
 		bool sync;              /* V.80 Synchronous Access Mode */
 	} cfg_ = {};
+	/* the directions (Config::comp's bits) +DS's and +DS44's
+	   <compression_negotiation> 1 require (link_init()) */
+	s16 comp_need42_ = 0, comp_need44_ = 0;
 	/* Synchronous Access Mode: the rates the DTE last heard of (an
 	   <EM><rate> when they change) */
 	u32 sync_tx_ = 0, sync_rx_ = 0;

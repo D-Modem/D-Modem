@@ -57,7 +57,7 @@ namespace interop {
  *                     (MIDCALL_ATO_A=<cmd>, _B: that instead, as ATO1)
  *   EXPECT_B=<regex>  modemB's log must have it ((?s) allowed, '.' takes
  *                     newlines anyway); EXPECT_A modemA's
- *   REJECT_B=<regex>  and must not have it
+ *   REJECT_B=<regex>  and must not have it; REJECT_A modemA's
  *   EXPECT_DROP=1     the call is to end on the way: the data unchecked
  *   EXPECT_FAIL=1     the call is to end before CONNECT, modemA with NO
  *                     CARRIER (EXPECT_A, EXPECT_B say how); or =<result>

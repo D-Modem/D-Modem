@@ -464,11 +464,16 @@ s16 Lapm::tx_xid(u8 addr)
 	const u16 info_r = response ? tx_info_ : rx_info_;
 	const u16 win_i = response ? rx_win_ : tx_win_;
 	const u16 win_r = response ? tx_win_ : rx_win_;
-	/* P0 counts from the initiator, for V.42bis and V.44 alike */
+	/* P0 counts from the initiator, for V.42bis and V.44 alike; each
+	   set has the directions its compressor may have (Config::comp42,
+	   comp44) */
+	const s16 dirs42 = c.comp & c.comp42, dirs44 = c.comp & c.comp44;
 	const s16 p0 = response ? c.comp & 3 : swap_dirs(c.comp);
-	const bool v44 = c.comp && c.v44;
+	const s16 p0_42 = response ? dirs42 & 3 : swap_dirs(dirs42);
+	const s16 p0_44 = response ? dirs44 & 3 : swap_dirs(dirs44);
+	const bool v44 = dirs44 && c.v44;
 	const bool zstd = c.comp && c.zstd;
-	const bool v42bis = c.comp && !(response && (c.v44 || c.zstd));
+	const bool v42bis = dirs42 && !(response && (c.v44 || c.zstd));
 	u8 *p = f->buf, *g;
 
 	*p++ = addr;
@@ -486,7 +491,7 @@ s16 Lapm::tx_xid(u8 addr)
 		p += 3;
 		if (v42bis) {
 			p = put_id(p, PI_V42BIS_SET, "V42");
-			p = put_param(p, PI_V42BIS_P0, p0, 1);
+			p = put_param(p, PI_V42BIS_P0, p0_42, 1);
 			p = put_param(p, PI_V42BIS_N2, c.dict_size, 2);
 			p = put_param(p, PI_V42BIS_N7, c.max_string, 1);
 		}
@@ -503,7 +508,7 @@ s16 Lapm::tx_xid(u8 addr)
 		*p++ = GI_USER;
 		p = put_id(p, PI_V44_SET, "V44");
 		p = put_param(p, PI_V44_C0, 0, 1);
-		p = put_param(p, PI_V44_P0, p0, 1);
+		p = put_param(p, PI_V44_P0, p0_44, 1);
 		p = put_param(p, PI_V44_P1T, c.v44_codewords, 2);
 		p = put_param(p, PI_V44_P1R, c.v44_codewords, 2);
 		p = put_param(p, PI_V44_P2T, c.v44_max_string, 1);

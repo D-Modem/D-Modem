@@ -786,6 +786,31 @@ void Modem::setup_config()
 	dsp_info_.qc_lapm = c.ec && c.ec_detector;
 }
 
+/* +DS's and +DS44's <direction> (0 to 3, the DTE's: bit 0 what it
+   sends) as the link's directions (Config::comp: bit 0 what we
+   receive) */
+s16 Modem::dte_dirs(u32 direction)
+{
+	return static_cast<s16>((direction & 1) << 1 | (direction >> 1 & 1));
+}
+
+/* what <compression_negotiation> 1 asked for (+DS: compression in its
+   directions; +DS44: V.44, or zstd in its place, in its) is what the
+   link agreed; logged if not */
+bool Modem::link_compression_ok()
+{
+	s16 agreed = cfg_.mnp_on ? 0 : cfg_.comp;
+	bool v44 = cfg_.v44 || cfg_.zstd;
+	if ((comp_need42_ & ~agreed) == 0 &&
+	    (!comp_need44_ || (v44 && (comp_need44_ & ~agreed) == 0)))
+		return true;
+	logf("compression not agreed as +DS/+DS44 ask: compression %d%s, "
+	     "wanted %d (+DS), %d (+DS44): hanging up\n", agreed,
+	     cfg_.zstd ? " (zstd)" : cfg_.v44 ? " (V.44)" : "", comp_need42_,
+	     comp_need44_);
+	return false;
+}
+
 /* the link set up for the call as configured; -1 if it cannot be */
 s16 Modem::link_init()
 {
@@ -801,9 +826,27 @@ s16 Modem::link_init()
 	c.rx_win = cfg_.rx_win;
 	c.tx_info = cfg_.tx_info;
 	c.rx_info = cfg_.rx_info;
-	c.comp = cfg_.comp;
-	c.dict_size = cfg_.dict_size;
-	c.max_string = cfg_.max_string;
+	/* +DS (V.42bis) and +DS44 (V.44): their <direction> from the
+	   DTE's side (bit 0 what it sends: our encoder, Config::comp's bit
+	   1), within %C's; their largest parameters, within ours (V.44's
+	   the smaller of each pair: both directions alike); zstd in the
+	   directions either has.  <compression_negotiation> 1: the call
+	   ends when the link comes up without them (link_compression_ok()) */
+	const u32 *ds = kept("+DS"), *ds44 = kept("+DS44");
+	c.comp42 = static_cast<s16>(cfg_.comp & dte_dirs(ds[0]));
+	c.comp44 = static_cast<s16>(cfg_.comp & dte_dirs(ds44[0]));
+	c.comp = static_cast<s16>(c.comp42 | c.comp44);
+	c.v44 = c.comp44 != 0;
+	c.dict_size = std::min<s32>(cfg_.dict_size, static_cast<s32>(ds[2]));
+	c.max_string = std::min<s32>(cfg_.max_string, static_cast<s32>(ds[3]));
+	c.v44_codewords = std::min<s32>({ dlink::V44_MAX_CODEWORDS,
+		static_cast<s32>(ds44[3]), static_cast<s32>(ds44[4]) });
+	c.v44_max_string = std::min<s32>({ dlink::V44_MAX_STRING,
+		static_cast<s32>(ds44[5]), static_cast<s32>(ds44[6]) });
+	c.v44_history = std::min<s32>({ dlink::V44_MAX_HISTORY,
+		static_cast<s32>(ds44[7]), static_cast<s32>(ds44[8]) });
+	comp_need42_ = ds[1] ? c.comp42 : 0;
+	comp_need44_ = ds44[1] ? c.comp44 : 0;
 	/* +DSZ: zstd offered, with its dictionary */
 	const u32 *dsz = kept("+DSZ");
 	c.zstd = c.ec && c.comp && dsz[0];
@@ -902,6 +945,13 @@ void Modem::update_status(Status s)
 	case ST_EC_LINK:
 		if (state_ == ONLINE || state_ == COMMAND_ONLINE)
 			break;
+		if (!link_compression_ok()) {
+			set_cause(Cause::ProtocolFailure);
+			result_ = Result::NoCarrier;
+			have_result_ = true;
+			hup(true);
+			break;
+		}
 		set_state(ONLINE);
 		if (!stats_.connected) {
 			stats_.connected = true;

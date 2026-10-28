@@ -966,6 +966,30 @@ receive rate and \cmd{/CVM}: \cmd{CONNECT 1200/CVM}, with
 the tones loaded and the renegotiations.
 \end{command}
 
+\subsection{V.42bis and V.44: +DS, +DS44}
+
+\begin{command}{plusDS}{AT+DS=[\p{direction}][,[\p{neg}][,[\p{dict}][,[\p{string}]]]], AT+DS?, AT+DS=?}
+V.42bis (V.250 6.6.1), within \cmdl[ampK]{\%C}'s compression:
+\p{direction} the DTE's directions (0 none, 1 what it sends, 2 what it
+receives, 3 both), \p{neg} 1 to hang up (NO CARRIER) when the link
+comes up without compression in those directions, \p{dict} and
+\p{string} the largest dictionary and string V.42's XID offers (here at
+most 2048 and 34, the defaults: \cmd{+DS: 3,0,2048,34}).
+\cmd{=?} gives \cmd{+DS: (0-3),(0,1),(512-65535),(6-250)}.
+\end{command}
+
+\begin{command}{plusDS44}{AT+DS44=[\p{direction}][,[\p{neg}][,[\p{capability}][,...]]], AT+DS44?, AT+DS44=?}
+V.44 (V.250 6.6.2) the same way: \p{direction}, \p{neg} (1: hang up
+when the link comes up without V.44, or zstd in its place, in those
+directions), \p{capability} (the stream method is used whatever it
+says), then the largest codewords, strings and history, each to send and
+to receive (the smaller of each pair both ways; here at most 4096, 255
+and 12288, the defaults: \cmd{+DS44: 3,0,0,4096,4096,255,255,12288,12288}).
+\cmd{AT+DS=0} with \cmd{AT+DS44=3} offers V.44 alone, \cmd{AT+DS44=0}
+V.42bis alone (and zstd, unless \cmdl[plusDSZ]{+DSZ=0}), both 0 no
+compression, as \cmd{AT\%C0}.  zstd has the directions either has.
+\end{command}
+
 \subsection{zstd compression: +DSZ}
 
 \begin{command}{plusDSZ}{AT+DSZ=[\p{on}][,[\p{dict}]], AT+DSZ?, AT+DSZ=?}
@@ -1337,9 +1361,6 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
 +MR & 0 & the modulation reported (\cmd{+MCR:}, \cmd{+MRR:}) \\
 +ER & 0 & the error correction reported (\cmd{+ER:}) \\
 +DR & 0 & the compression reported (\cmd{+DR:}) \\
-+DS & 3,0,2048,32 & V.42bis (here \cmdl[ampK]{\%C}) \\
-+DS44 & 3,0,0,2048,2048, 255,255,6144,6144 & V.44 (here
-  \cmdl[ampK]{\%C}) \\
 +PCW & 2 & V.92's call waiting (none is detected here) \\
 +PIG & 1 & V.92's PCM upstream, an analogue modem's (this one is
   the digital modem) \\

@@ -776,6 +776,27 @@ std::vector<Call> calls()
 	    { "NET=9600:9600:ulaw", "BULK=60000",
 	      "EXPECT_A=zstd: window 32768, dictionary 56434d01",
 	      "EXPECT_B=zstd: window 32768, dictionary 56434d01" });
+	/* +DS and +DS44 (6.6/V.250): V.42bis alone with V.44 and zstd
+	   off; no compression with both off; V.44 required
+	   (<compression_negotiation> 1) by A, which B has turned off: A
+	   hangs up as the link comes up */
+	add("open", "open_34_v42bis", "open", "open",
+	    "ATX3;AT+MS=34;AT+DS44=0;AT+DSZ=0",
+	    { "NET=9600:9600:ulaw", "BULK=30000",
+	      "EXPECT_A=negotiated: compression 3, 2048 codewords, strings "
+	      "of 34",
+	      "EXPECT_B=negotiated: compression 3, 2048 codewords",
+	      "REJECT_A=\\(V\\.44\\)|\\(zstd\\)" });
+	add("open", "open_34_nocomp_ds", "open", "open",
+	    "ATX3;AT+MS=34;AT+DS=0;AT+DS44=0",
+	    { "NET=9600:9600:ulaw", "STREAM=3",
+	      "EXPECT_A=negotiated: compression 0",
+	      "EXPECT_B=negotiated: compression 0" });
+	add("open", "open_34_ds44_required", "open", "open",
+	    "ATX3;AT+MS=34;AT+DS44=3,1;AT+DSZ=0",
+	    { "NET=9600:9600:ulaw", "PROTO_B=ATX3;AT+MS=34;AT+DS44=0",
+	      "EXPECT_FAIL=1",
+	      "EXPECT_A=compression not agreed as \\+DS/\\+DS44 ask" });
 	add("open", "open_34_nozstd", "open", "open", "ATX3;AT+MS=34;AT+DSZ=0",
 	    { "NET=9600:9600:ulaw", "STREAM=5", "PROTO_B=ATX3;AT+MS=34",
 	      "EXPECT_A=v44: 4096 codewords", "EXPECT_B=v44: 4096 codewords",

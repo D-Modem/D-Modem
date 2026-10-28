@@ -800,6 +800,50 @@ TEST(Link, Lapm)
 	CHECK(p.dc.released, "caller released after UA");
 }
 
+/* +DS's and +DS44's directions (Config::comp42, comp44): V.44 alone,
+   V.42bis alone, none in common, V.42bis one way only; the data both
+   ways each time */
+TEST(Link, LapmDirections)
+{
+	struct Case {
+		const char *name;
+		s16 c42, c44, a42, a44;
+		bool v44;
+		s16 comp_c, comp_a;     /* each side's agreed directions */
+	} cases[] = {
+		{ "V.44 alone (caller +DS=0)", 0, 3, 3, 3, true, 3, 3 },
+		{ "V.42bis alone (both +DS44=0)", 3, 0, 3, 0, false, 3, 3 },
+		{ "none in common", 3, 0, 0, 3, false, 0, 0 },
+		{ "V.42bis from the caller only", 2, 0, 3, 0, false, 2, 1 },
+	};
+	for (const Case &k : cases) {
+		rnd_state = 4242;
+		Config cc = lapm_config(3), ca = lapm_config(3);
+		cc.comp42 = k.c42;
+		cc.comp44 = k.c44;
+		cc.v44 = k.c44 != 0;
+		cc.comp = k.c42 | k.c44;
+		ca.comp42 = k.a42;
+		ca.comp44 = k.a44;
+		ca.v44 = k.a44 != 0;
+		ca.comp = k.a42 | k.a44;
+		Pair p(cc, ca);
+		p.start(false, false);
+		p.run(9600 * 3);
+		CHECK(p.dc.up && p.da.up, "%s: LAPM up", k.name);
+		CHECK(p.lc.config().comp == k.comp_c &&
+			      p.la.config().comp == k.comp_a,
+		      "%s: directions %d, %d (want %d, %d)", k.name,
+		      p.lc.config().comp, p.la.config().comp, k.comp_c,
+		      k.comp_a);
+		CHECK(!k.comp_c || (p.lc.config().v44 == k.v44 &&
+				    p.la.config().v44 == k.v44),
+		      "%s: V.44 %d, %d", k.name, p.lc.config().v44,
+		      p.la.config().v44);
+		transfer(k.name, p, 20000, 20000, 9600 * 40);
+	}
+}
+
 /* zstd offered in XID by both: it rather than V.44, with the
    dictionary where both name it, text and noise both ways, with the
    detection phase or without; offered by one only: V.44; V.cvm's
