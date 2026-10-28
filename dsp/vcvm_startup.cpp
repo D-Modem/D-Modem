@@ -59,7 +59,7 @@ s16 VcvmStartup::init(const Config &c)
 	rtt_ms_ = -1;
 	done_at_ = -1;
 	last_rx_end_ = 0;
-	mps_ = 0;
+	mps_ = mps_heard_ = 0;
 	rxl_ = txl_ = VcvmLoading();
 	if (c.fs != 8000 && c.fs != 16000)
 		return -1;
@@ -287,6 +287,10 @@ void VcvmStartup::on_msg(const VcvmMsg &m)
 		got_mp_ = true;
 		got_ack_ |= mp.ack;
 		note("MP%s: %s", mp.ack ? " (ack)" : "", txl_.str().c_str());
+		/* the peer still there: ten more of ours, and the time for
+		   them (a lossy codec loses MPs both ways), up to 30 */
+		mps_heard_ = mps_;
+		deadline_ = std::max<s32>(deadline_, t_ + 17L * c_.fs);
 		break;
 	}
 	case PROBE:
@@ -350,7 +354,7 @@ void VcvmStartup::step()
 			     rxl_.str().c_str(), txl_.str().c_str(), rtt_ms_);
 			return;
 		}
-		if (mps_ >= 10) {
+		if (mps_ - mps_heard_ >= 10 || mps_ >= 30) {
 			fail("no acknowledgement of MP");
 			return;
 		}

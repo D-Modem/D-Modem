@@ -496,6 +496,7 @@ private:
 	s32 done_at_ = -1;
 	s32 last_rx_end_ = 0;
 	s16 mps_ = 0;
+	s16 mps_heard_ = 0;     /* ours sent when the peer's last came */
 	std::string log_;
 };
 

@@ -93,9 +93,14 @@ s16 VcvmPump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_,
 }
 
 /* an octet of the link layer's bits, the first the least significant
-   (ones when it has none) */
+   (ones when it has none); HDLC flags instead while the peer's data is
+   not decoding, the link left alone: its frames would go unanswered,
+   and its T401, counting the bits it sends, would run out on polls
+   the answers to which we cannot hear */
 s16 VcvmPump::source()
 {
+	if (mdm_.rx_waiting())
+		return 0x7e;
 	u8 b[8];
 	modem_get_bits(modem, 1, b, 8);
 	s16 v = 0;

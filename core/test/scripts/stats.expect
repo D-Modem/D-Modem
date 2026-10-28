@@ -9,373 +9,373 @@
       0 A: OK\r\n
       0 B< ATA\r
       0 A< ATD123\r
-  15260 B: CONNECT 33600\r\n
-  15340 A: CONNECT 24000\r\n
-  15340 until A 'CONNECT': yes
-  15340 until B 'CONNECT': yes
-  15440 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15440 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 A: B0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0032 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0033 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0034 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0035 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0036 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0037 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0038 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0039 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0040 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0041 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0042 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0043 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0044 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0045 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0046 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15460 B: A0047 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0032 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0033 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0034 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0035 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0036 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0037 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0038 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0039 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0040 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0041 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0042 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0043 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0044 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0045 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0046 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  15480 A: B0047 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  21340 A< +++
-  21840 A: B0048 The quick brown fo\r\n
-  21840 A: OK\r\n
-  22340 A< ATI11\r
-  22340 A: Description                         Status\r\n
-  22340 A: -----------                         ------\r\n
-  22340 A: Last Connection                     V34\r\n
-  22340 A: Initial Transmit Carrier Rate       33600\r\n
-  22340 A: Initial Receive Carrier Rate        24000\r\n
-  22340 A: Final Transmit Carrier Rate         33600\r\n
-  22340 A: Final Receive Carrier Rate          24000\r\n
-  22340 A: Protocol Negotiation Result         LAPM\r\n
-  22340 A: Data Compression Result             ZSTD\r\n
-  22340 A: Estimated SNR (dB)                  29.2\r\n
-  22340 A: Receive Signal Power Level (dBm0)   -14.8\r\n
-  22340 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
-  22340 A: Round Trip Delay (ms)               37\r\n
-  22340 A: Near Echo Level (dBm0)              -57.9\r\n
-  22340 A: Far Echo Level (dBm0)               -27.1\r\n
-  22340 A: Characters Sent                     3003\r\n
-  22340 A: Characters Received                 3000\r\n
-  22340 A: Transmit Frame Count                8\r\n
-  22340 A: Transmit Frame Error Count          0\r\n
-  22340 A: Receive Frame Count                 7\r\n
-  22340 A: Receive Frame Error Count           14\r\n
-  22340 A: Retrains by Local Modem             0\r\n
-  22340 A: Retrains Requested by Remote Modem  0\r\n
-  22340 A: Rate Renegotiation by Local Modem   1\r\n
-  22340 A: Rate Renegotiation by Remote Modem  0\r\n
-  22340 A: Call Duration                       0:00:07\r\n
-  22340 A: OK\r\n
-  22340 A< ATO\r
-  22340 A: CONNECT 24000\r\n
-  24340 A< +++
-  24840 A: \r\n
-  24840 A: OK\r\n
-  25340 A< ATH\r
-  25340 A: OK\r\n
-  25360 A: NO CARRIER\r\n
-  25420 B: A0048 The quick brown fo++++++NO CARRIER\r\n
-  25420 until B 'NO CARRIER': yes
-  25920 A< ATI11\r
-  25920 A: Description                         Status\r\n
-  25920 A: -----------                         ------\r\n
-  25920 A: Last Connection                     V34\r\n
-  25920 A: Initial Transmit Carrier Rate       33600\r\n
-  25920 A: Initial Receive Carrier Rate        24000\r\n
-  25920 A: Final Transmit Carrier Rate         33600\r\n
-  25920 A: Final Receive Carrier Rate          24000\r\n
-  25920 A: Protocol Negotiation Result         LAPM\r\n
-  25920 A: Data Compression Result             ZSTD\r\n
-  25920 A: Estimated SNR (dB)                  29.1\r\n
-  25920 A: Receive Signal Power Level (dBm0)   -14.8\r\n
-  25920 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
-  25920 A: Round Trip Delay (ms)               37\r\n
-  25920 A: Near Echo Level (dBm0)              -57.5\r\n
-  25920 A: Far Echo Level (dBm0)               -27.1\r\n
-  25920 A: Characters Sent                     3006\r\n
-  25920 A: Characters Received                 3000\r\n
-  25920 A: Transmit Frame Count                10\r\n
-  25920 A: Transmit Frame Error Count          0\r\n
-  25920 A: Receive Frame Count                 8\r\n
-  25920 A: Receive Frame Error Count           14\r\n
-  25920 A: Retrains by Local Modem             0\r\n
-  25920 A: Retrains Requested by Remote Modem  0\r\n
-  25920 A: Rate Renegotiation by Local Modem   1\r\n
-  25920 A: Rate Renegotiation by Remote Modem  0\r\n
-  25920 A: Call Duration                       0:00:10\r\n
-  25920 A: Call Termination Cause              Local hangup\r\n
-  25920 A: OK\r\n
-  25920 B< ATI11\r
-  25920 B: Description                         Status\r\n
-  25920 B: -----------                         ------\r\n
-  25920 B: Last Connection                     V34\r\n
-  25920 B: Initial Transmit Carrier Rate       24000\r\n
-  25920 B: Initial Receive Carrier Rate        33600\r\n
-  25920 B: Final Transmit Carrier Rate         24000\r\n
-  25920 B: Final Receive Carrier Rate          33600\r\n
-  25920 B: Protocol Negotiation Result         LAPM\r\n
-  25920 B: Data Compression Result             ZSTD\r\n
-  25920 B: Estimated SNR (dB)                  48.2\r\n
-  25920 B: Receive Signal Power Level (dBm0)   -15.1\r\n
-  25920 B: Transmit Signal Power Level (dBm0)  -15.1\r\n
-  25920 B: Round Trip Delay (ms)               37\r\n
-  25920 B: Characters Sent                     3000\r\n
-  25920 B: Characters Received                 3006\r\n
-  25920 B: Transmit Frame Count                9\r\n
-  25920 B: Transmit Frame Error Count          0\r\n
-  25920 B: Receive Frame Count                 10\r\n
-  25920 B: Receive Frame Error Count           0\r\n
-  25920 B: Retrains by Local Modem             0\r\n
-  25920 B: Retrains Requested by Remote Modem  0\r\n
-  25920 B: Rate Renegotiation by Local Modem   0\r\n
-  25920 B: Rate Renegotiation by Remote Modem  1\r\n
-  25920 B: Call Duration                       0:00:10\r\n
-  25920 B: Call Termination Cause              Remote cleardown\r\n
-  25920 B: OK\r\n
-  25920 A< AT\\N5+MS=132\r
-  25920 A: OK\r\n
-  25920 until A 'OK': yes
-  25920 B< AT\\N5+MS=132\r
-  25920 B: OK\r\n
-  25920 until B 'OK': yes
-  25920 B< ATA\r
-  25920 A< ATD\r
-  35340 A: CONNECT 14400\r\n
-  35340 until A 'CONNECT': yes
-  35380 B: CONNECT 14400\r\n
-  35380 until B 'CONNECT': yes
-  35580 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35580 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 A: B0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 A: B0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35720 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 A: B0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 A: B0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 A: B0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 A: B0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 A: B0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  35860 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36020 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36020 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36020 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36020 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36020 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36020 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36160 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36160 B: A0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36160 B: A0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36160 B: A0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36160 B: A0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36160 B: A0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36260 B: A0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36260 B: A0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36260 B: A0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  36260 B: A0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  39400 B: A0032 The quick NO CARRIER\r\n
-  40260 A: B0016 ThNO CARRIER\r\n
-  40260 until A 'NO CARRIER': yes
-  40760 A< ATI11\r
-  40760 A: Description                         Status\r\n
-  40760 A: -----------                         ------\r\n
-  40760 A: Last Connection                     V32bis\r\n
-  40760 A: Initial Transmit Carrier Rate       14400\r\n
-  40760 A: Initial Receive Carrier Rate        14400\r\n
-  40760 A: Final Transmit Carrier Rate         14400\r\n
-  40760 A: Final Receive Carrier Rate          14400\r\n
-  40760 A: Protocol Negotiation Result         MNP\r\n
-  40760 A: Data Compression Result             MNP5\r\n
-  40760 A: Estimated SNR (dB)                  30.3\r\n
-  40760 A: Receive Signal Power Level (dBm0)   -18.6\r\n
-  40760 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
-  40760 A: Characters Sent                     2000\r\n
-  40760 A: Characters Received                 1000\r\n
-  40760 A: Transmit Frame Count                10\r\n
-  40760 A: Transmit Frame Error Count          0\r\n
-  40760 A: Receive Frame Count                 10\r\n
-  40760 A: Receive Frame Error Count           0\r\n
-  40760 A: Retrains by Local Modem             0\r\n
-  40760 A: Retrains Requested by Remote Modem  0\r\n
-  40760 A: Rate Renegotiation by Local Modem   0\r\n
-  40760 A: Rate Renegotiation by Remote Modem  0\r\n
-  40760 A: Call Duration                       0:00:04\r\n
-  40760 A: Call Termination Cause              Carrier lost\r\n
-  40760 A: OK\r\n
-  40760 A< AT\\N0\r
-  40760 A: OK\r\n
-  40760 until A 'OK': yes
-  40760 B< AT\\N0\r
-  40760 B: OK\r\n
-  40760 until B 'OK': yes
-  40760 B< ATA\r
-  40760 A< ATD\r
-  49980 B: CONNECT 14400\r\n
-  50020 A: CONNECT 14400\r\n
-  50020 until A 'CONNECT': yes
-  50020 until B 'CONNECT': yes
-  50100 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50160 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50200 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50240 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50280 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50320 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50360 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50400 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50460 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50500 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50540 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50580 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50620 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50660 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50720 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  50760 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  53040 B: A0016 ThNO CARRIER\r\n
-  53900 A: \x9f\x98\xf7\xcf\xbd\xdf\xef\x8f\xdf\x1d\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1cNO CARRIER\r\n
-  53900 until A 'NO CARRIER': yes
-  54400 A< ATI11\r
-  54400 A: Description                         Status\r\n
-  54400 A: -----------                         ------\r\n
-  54400 A: Last Connection                     V32bis\r\n
-  54400 A: Initial Transmit Carrier Rate       14400\r\n
-  54400 A: Initial Receive Carrier Rate        14400\r\n
-  54400 A: Final Transmit Carrier Rate         14400\r\n
-  54400 A: Final Receive Carrier Rate          14400\r\n
-  54400 A: Protocol Negotiation Result         NONE\r\n
-  54400 A: Data Compression Result             NONE\r\n
-  54400 A: Estimated SNR (dB)                  36.1\r\n
-  54400 A: Receive Signal Power Level (dBm0)   -18.8\r\n
-  54400 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
-  54400 A: Characters Sent                     1000\r\n
-  54400 A: Characters Received                 991\r\n
-  54400 A: Retrains by Local Modem             0\r\n
-  54400 A: Retrains Requested by Remote Modem  0\r\n
-  54400 A: Rate Renegotiation by Local Modem   0\r\n
-  54400 A: Rate Renegotiation by Remote Modem  0\r\n
-  54400 A: Call Duration                       0:00:03\r\n
-  54400 A: Call Termination Cause              Carrier lost\r\n
-  54400 A: OK\r\n
-  54400 B< ATI11\r
-  54400 B: Description                         Status\r\n
-  54400 B: -----------                         ------\r\n
-  54400 B: Last Connection                     V32bis\r\n
-  54400 B: Initial Transmit Carrier Rate       14400\r\n
-  54400 B: Initial Receive Carrier Rate        14400\r\n
-  54400 B: Final Transmit Carrier Rate         14400\r\n
-  54400 B: Final Receive Carrier Rate          14400\r\n
-  54400 B: Protocol Negotiation Result         NONE\r\n
-  54400 B: Data Compression Result             NONE\r\n
-  54400 B: Estimated SNR (dB)                  35.6\r\n
-  54400 B: Receive Signal Power Level (dBm0)   -17.8\r\n
-  54400 B: Transmit Signal Power Level (dBm0)  -17.8\r\n
-  54400 B: Characters Sent                     0\r\n
-  54400 B: Characters Received                 1000\r\n
-  54400 B: Retrains by Local Modem             0\r\n
-  54400 B: Retrains Requested by Remote Modem  0\r\n
-  54400 B: Rate Renegotiation by Local Modem   0\r\n
-  54400 B: Rate Renegotiation by Remote Modem  0\r\n
-  54400 B: Call Duration                       0:00:03\r\n
-  54400 B: Call Termination Cause              Local hangup\r\n
-  54400 B: OK\r\n
-  54400 A< ATS7=5D\r
-  59420 A: NO ANSWER\r\n
-  59420 until A 'NO ANSWER': yes
-  59920 A< ATI11\r
-  59920 A: Description                         Status\r\n
-  59920 A: -----------                         ------\r\n
-  59920 A: Last Connection                     None\r\n
-  59920 A: Call Termination Cause              No answer\r\n
-  59920 A: OK\r\n
+  15320 B: CONNECT 33600\r\n
+  15380 A: CONNECT 24000\r\n
+  15380 until A 'CONNECT': yes
+  15380 until B 'CONNECT': yes
+  15480 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0032 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0033 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0034 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0035 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0036 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0037 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0038 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0039 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0040 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0041 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0042 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0043 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0044 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0045 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0046 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0047 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0032 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0033 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0034 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0035 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0036 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0037 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0038 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0039 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0040 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0041 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0042 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0043 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0044 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0045 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0046 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0047 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  21380 A< +++
+  21880 A: B0048 The quick brown fo\r\n
+  21880 A: OK\r\n
+  22380 A< ATI11\r
+  22380 A: Description                         Status\r\n
+  22380 A: -----------                         ------\r\n
+  22380 A: Last Connection                     V34\r\n
+  22380 A: Initial Transmit Carrier Rate       33600\r\n
+  22380 A: Initial Receive Carrier Rate        24000\r\n
+  22380 A: Final Transmit Carrier Rate         33600\r\n
+  22380 A: Final Receive Carrier Rate          24000\r\n
+  22380 A: Protocol Negotiation Result         LAPM\r\n
+  22380 A: Data Compression Result             ZSTD\r\n
+  22380 A: Estimated SNR (dB)                  29.0\r\n
+  22380 A: Receive Signal Power Level (dBm0)   -14.8\r\n
+  22380 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
+  22380 A: Round Trip Delay (ms)               37\r\n
+  22380 A: Near Echo Level (dBm0)              -57.8\r\n
+  22380 A: Far Echo Level (dBm0)               -27.2\r\n
+  22380 A: Characters Sent                     3003\r\n
+  22380 A: Characters Received                 3000\r\n
+  22380 A: Transmit Frame Count                8\r\n
+  22380 A: Transmit Frame Error Count          0\r\n
+  22380 A: Receive Frame Count                 7\r\n
+  22380 A: Receive Frame Error Count           14\r\n
+  22380 A: Retrains by Local Modem             0\r\n
+  22380 A: Retrains Requested by Remote Modem  0\r\n
+  22380 A: Rate Renegotiation by Local Modem   1\r\n
+  22380 A: Rate Renegotiation by Remote Modem  0\r\n
+  22380 A: Call Duration                       0:00:07\r\n
+  22380 A: OK\r\n
+  22380 A< ATO\r
+  22380 A: CONNECT 24000\r\n
+  24380 A< +++
+  24880 A: \r\n
+  24880 A: OK\r\n
+  25380 A< ATH\r
+  25380 A: OK\r\n
+  25400 A: NO CARRIER\r\n
+  25460 B: A0048 The quick brown fo++++++NO CARRIER\r\n
+  25460 until B 'NO CARRIER': yes
+  25960 A< ATI11\r
+  25960 A: Description                         Status\r\n
+  25960 A: -----------                         ------\r\n
+  25960 A: Last Connection                     V34\r\n
+  25960 A: Initial Transmit Carrier Rate       33600\r\n
+  25960 A: Initial Receive Carrier Rate        24000\r\n
+  25960 A: Final Transmit Carrier Rate         33600\r\n
+  25960 A: Final Receive Carrier Rate          24000\r\n
+  25960 A: Protocol Negotiation Result         LAPM\r\n
+  25960 A: Data Compression Result             ZSTD\r\n
+  25960 A: Estimated SNR (dB)                  29.4\r\n
+  25960 A: Receive Signal Power Level (dBm0)   -14.8\r\n
+  25960 A: Transmit Signal Power Level (dBm0)  -15.0\r\n
+  25960 A: Round Trip Delay (ms)               37\r\n
+  25960 A: Near Echo Level (dBm0)              -57.7\r\n
+  25960 A: Far Echo Level (dBm0)               -27.1\r\n
+  25960 A: Characters Sent                     3006\r\n
+  25960 A: Characters Received                 3000\r\n
+  25960 A: Transmit Frame Count                10\r\n
+  25960 A: Transmit Frame Error Count          0\r\n
+  25960 A: Receive Frame Count                 8\r\n
+  25960 A: Receive Frame Error Count           14\r\n
+  25960 A: Retrains by Local Modem             0\r\n
+  25960 A: Retrains Requested by Remote Modem  0\r\n
+  25960 A: Rate Renegotiation by Local Modem   1\r\n
+  25960 A: Rate Renegotiation by Remote Modem  0\r\n
+  25960 A: Call Duration                       0:00:10\r\n
+  25960 A: Call Termination Cause              Local hangup\r\n
+  25960 A: OK\r\n
+  25960 B< ATI11\r
+  25960 B: Description                         Status\r\n
+  25960 B: -----------                         ------\r\n
+  25960 B: Last Connection                     V34\r\n
+  25960 B: Initial Transmit Carrier Rate       24000\r\n
+  25960 B: Initial Receive Carrier Rate        33600\r\n
+  25960 B: Final Transmit Carrier Rate         24000\r\n
+  25960 B: Final Receive Carrier Rate          33600\r\n
+  25960 B: Protocol Negotiation Result         LAPM\r\n
+  25960 B: Data Compression Result             ZSTD\r\n
+  25960 B: Estimated SNR (dB)                  48.4\r\n
+  25960 B: Receive Signal Power Level (dBm0)   -15.1\r\n
+  25960 B: Transmit Signal Power Level (dBm0)  -15.1\r\n
+  25960 B: Round Trip Delay (ms)               37\r\n
+  25960 B: Characters Sent                     3000\r\n
+  25960 B: Characters Received                 3006\r\n
+  25960 B: Transmit Frame Count                9\r\n
+  25960 B: Transmit Frame Error Count          0\r\n
+  25960 B: Receive Frame Count                 10\r\n
+  25960 B: Receive Frame Error Count           0\r\n
+  25960 B: Retrains by Local Modem             0\r\n
+  25960 B: Retrains Requested by Remote Modem  0\r\n
+  25960 B: Rate Renegotiation by Local Modem   0\r\n
+  25960 B: Rate Renegotiation by Remote Modem  1\r\n
+  25960 B: Call Duration                       0:00:10\r\n
+  25960 B: Call Termination Cause              Remote cleardown\r\n
+  25960 B: OK\r\n
+  25960 A< AT\\N5+MS=132\r
+  25960 A: OK\r\n
+  25960 until A 'OK': yes
+  25960 B< AT\\N5+MS=132\r
+  25960 B: OK\r\n
+  25960 until B 'OK': yes
+  25960 B< ATA\r
+  25960 A< ATD\r
+  35380 A: CONNECT 14400\r\n
+  35380 until A 'CONNECT': yes
+  35420 B: CONNECT 14400\r\n
+  35420 until B 'CONNECT': yes
+  35620 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35620 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 A: B0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 A: B0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35760 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 A: B0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 A: B0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 A: B0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 A: B0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 A: B0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35900 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36060 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36060 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36060 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36060 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36060 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36060 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36200 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36200 B: A0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36200 B: A0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36200 B: A0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36200 B: A0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36200 B: A0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36300 B: A0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36300 B: A0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36300 B: A0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  36300 B: A0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  39440 B: A0032 The quick NO CARRIER\r\n
+  40300 A: B0016 ThNO CARRIER\r\n
+  40300 until A 'NO CARRIER': yes
+  40800 A< ATI11\r
+  40800 A: Description                         Status\r\n
+  40800 A: -----------                         ------\r\n
+  40800 A: Last Connection                     V32bis\r\n
+  40800 A: Initial Transmit Carrier Rate       14400\r\n
+  40800 A: Initial Receive Carrier Rate        14400\r\n
+  40800 A: Final Transmit Carrier Rate         14400\r\n
+  40800 A: Final Receive Carrier Rate          14400\r\n
+  40800 A: Protocol Negotiation Result         MNP\r\n
+  40800 A: Data Compression Result             MNP5\r\n
+  40800 A: Estimated SNR (dB)                  30.3\r\n
+  40800 A: Receive Signal Power Level (dBm0)   -18.6\r\n
+  40800 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
+  40800 A: Characters Sent                     2000\r\n
+  40800 A: Characters Received                 1000\r\n
+  40800 A: Transmit Frame Count                10\r\n
+  40800 A: Transmit Frame Error Count          0\r\n
+  40800 A: Receive Frame Count                 10\r\n
+  40800 A: Receive Frame Error Count           0\r\n
+  40800 A: Retrains by Local Modem             0\r\n
+  40800 A: Retrains Requested by Remote Modem  0\r\n
+  40800 A: Rate Renegotiation by Local Modem   0\r\n
+  40800 A: Rate Renegotiation by Remote Modem  0\r\n
+  40800 A: Call Duration                       0:00:04\r\n
+  40800 A: Call Termination Cause              Carrier lost\r\n
+  40800 A: OK\r\n
+  40800 A< AT\\N0\r
+  40800 A: OK\r\n
+  40800 until A 'OK': yes
+  40800 B< AT\\N0\r
+  40800 B: OK\r\n
+  40800 until B 'OK': yes
+  40800 B< ATA\r
+  40800 A< ATD\r
+  50020 B: CONNECT 14400\r\n
+  50060 A: CONNECT 14400\r\n
+  50060 until A 'CONNECT': yes
+  50060 until B 'CONNECT': yes
+  50140 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50200 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50240 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50280 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50320 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50360 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50400 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50440 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50500 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50540 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50580 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50620 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50660 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50700 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50760 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  50800 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  53080 B: A0016 ThNO CARRIER\r\n
+  53940 A: \x9f\x98\xf7\xcf\xbd\xdf\xef\x8f\xdf\x1d\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1cNO CARRIER\r\n
+  53940 until A 'NO CARRIER': yes
+  54440 A< ATI11\r
+  54440 A: Description                         Status\r\n
+  54440 A: -----------                         ------\r\n
+  54440 A: Last Connection                     V32bis\r\n
+  54440 A: Initial Transmit Carrier Rate       14400\r\n
+  54440 A: Initial Receive Carrier Rate        14400\r\n
+  54440 A: Final Transmit Carrier Rate         14400\r\n
+  54440 A: Final Receive Carrier Rate          14400\r\n
+  54440 A: Protocol Negotiation Result         NONE\r\n
+  54440 A: Data Compression Result             NONE\r\n
+  54440 A: Estimated SNR (dB)                  36.1\r\n
+  54440 A: Receive Signal Power Level (dBm0)   -18.8\r\n
+  54440 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
+  54440 A: Characters Sent                     1000\r\n
+  54440 A: Characters Received                 991\r\n
+  54440 A: Retrains by Local Modem             0\r\n
+  54440 A: Retrains Requested by Remote Modem  0\r\n
+  54440 A: Rate Renegotiation by Local Modem   0\r\n
+  54440 A: Rate Renegotiation by Remote Modem  0\r\n
+  54440 A: Call Duration                       0:00:03\r\n
+  54440 A: Call Termination Cause              Carrier lost\r\n
+  54440 A: OK\r\n
+  54440 B< ATI11\r
+  54440 B: Description                         Status\r\n
+  54440 B: -----------                         ------\r\n
+  54440 B: Last Connection                     V32bis\r\n
+  54440 B: Initial Transmit Carrier Rate       14400\r\n
+  54440 B: Initial Receive Carrier Rate        14400\r\n
+  54440 B: Final Transmit Carrier Rate         14400\r\n
+  54440 B: Final Receive Carrier Rate          14400\r\n
+  54440 B: Protocol Negotiation Result         NONE\r\n
+  54440 B: Data Compression Result             NONE\r\n
+  54440 B: Estimated SNR (dB)                  35.6\r\n
+  54440 B: Receive Signal Power Level (dBm0)   -17.8\r\n
+  54440 B: Transmit Signal Power Level (dBm0)  -17.8\r\n
+  54440 B: Characters Sent                     0\r\n
+  54440 B: Characters Received                 1000\r\n
+  54440 B: Retrains by Local Modem             0\r\n
+  54440 B: Retrains Requested by Remote Modem  0\r\n
+  54440 B: Rate Renegotiation by Local Modem   0\r\n
+  54440 B: Rate Renegotiation by Remote Modem  0\r\n
+  54440 B: Call Duration                       0:00:03\r\n
+  54440 B: Call Termination Cause              Local hangup\r\n
+  54440 B: OK\r\n
+  54440 A< ATS7=5D\r
+  59460 A: NO ANSWER\r\n
+  59460 until A 'NO ANSWER': yes
+  59960 A< ATI11\r
+  59960 A: Description                         Status\r\n
+  59960 A: -----------                         ------\r\n
+  59960 A: Last Connection                     None\r\n
+  59960 A: Call Termination Cause              No answer\r\n
+  59960 A: OK\r\n

@@ -960,6 +960,47 @@ TEST(Link, LapmBadFrames)
 	transfer("lapm after bad frames", p, 2000, 2000, 9600 * 20);
 }
 
+/* an RR from the answerer (as a frame of noise that passes the FCS on a
+   noisy line) with an N(R) past the caller's V(S), while its I frames,
+   lost on the line, are outstanding: ignored, not taken to acknowledge
+   them, so T401 sends them again and all the data arrives */
+TEST(Link, LapmNrPastVs)
+{
+	rnd_state = 12345;
+	Pair p(lapm_config(0), lapm_config(0));
+	p.start(true, true);
+	p.run(9600 * 3);
+	CHECK(p.dc.up && p.da.up, "LAPM up");
+	p.dc.to_send = text(6000);
+	p.dc.pos = 0;
+	/* the caller's I frames lost on the line, the answerer's flags
+	   through */
+	std::vector<uint8_t> b(48);
+	for (int k = 0; k < 4800; k += 48) {
+		p.lc.get_bits(1, b.data(), 48);
+		p.la.get_bits(1, b.data(), 48);
+		p.lc.put_bits(1, b.data(), 48);
+	}
+	NullOwner o;
+	Link l;
+	l.init(&o, true, Config());
+	Hdlc inj;
+	FrameSource src;
+	inj.start(&l);
+	inj.set_framer(&src, true);
+	src.tx.push_back({ 0x03, 0x01, 100 << 1 });    /* RR, N(R) 100 */
+	uint8_t bits[600];
+	for (int k = 0; k < 2; k++) {
+		inj.get_bits(1, bits, sizeof(bits));
+		p.lc.put_bits(1, bits, sizeof(bits));
+	}
+	for (long run = 0; run < 9600L * 30 && p.da.got.size() < 6000;
+	     run += 9600)
+		p.run(9600);
+	CHECK(p.da.got == p.dc.to_send, "caller -> answerer %zu/6000",
+	      p.da.got.size());
+}
+
 /* frames into l from the line (rounds of 600 bits each way, as from the
    other side), and the frames l sent meanwhile */
 static std::vector<std::vector<uint8_t>> exchange(Link &l,

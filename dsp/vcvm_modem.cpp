@@ -164,7 +164,7 @@ void VcvmModem::enter_data()
 	start_rx(last_rx_end_);
 	p4_mps_ = 0;
 	mp_resent_ = false;
-	data_at_ = t_;
+	data_at_ = watch_at_ = t_;
 	next_check_ = t_ + 3L * c_.su.fs;
 	words_ = failed_ = 0;
 	cbar_low_ = false;
@@ -245,7 +245,7 @@ void VcvmModem::begin_reneg(bool remote, bool retrain)
 	retrain_ = retrain;
 	peer_retrain_ = false;
 	got_mp_ = got_ack_ = sent_ack_ = false;
-	mps_ = 0;
+	mps_ = mps_heard_ = 0;
 	if (!remote && !retrain) {
 		bool rt;
 		VcvmLoading l = rechoose(&rt);
@@ -286,7 +286,7 @@ void VcvmModem::finish_reneg()
 	start_rx(last_rx_end_);
 	p4_mps_ = 0;
 	mp_resent_ = false;
-	data_at_ = t_;
+	data_at_ = watch_at_ = t_;
 	next_check_ = t_ + 3L * c_.su.fs;
 	words_ = failed_ = 0;
 }
@@ -357,6 +357,7 @@ void VcvmModem::on_msg(const VcvmMsg &m)
 			got_mp_ = got_ack_ = true;
 			send_mp();
 			mp_resent_ = true;
+			watch_at_ = t_;
 			start_tx();
 			if (rx_on_) {
 				drx_.start(m.end);
@@ -378,14 +379,30 @@ void VcvmModem::on_msg(const VcvmMsg &m)
 	peer_retrain_ |= mp.retrain;
 	note("MP%s%s: the peer asks for %s", mp.ack ? " (ack)" : "",
 	     mp.retrain ? " (retrain)" : "", mp.l.str().c_str());
+	/* the peer still there: ten more of ours, and the time for them,
+	   up to 30 */
+	mps_heard_ = mps_;
+	deadline_ = std::max<s32>(deadline_, t_ + 17L * c_.su.fs);
 }
 
 /* phase 4's watch (9.5): a retrain on the signal lost, the parametric
    mode's c-bar and timers; a renegotiation, every 2 s, on codewords
-   failing or a tone's phase error over its order's threshold */
+   failing or a tone's phase error over its order's threshold; and a
+   renegotiation (then a retrain) when the peer's data has not begun
+   decoding 6 s into phase 4 */
 void VcvmModem::check_data()
 {
 	const s32 fs = c_.su.fs;
+	if (rx_on_ && !drx_.confirmed() && t_ - watch_at_ > 6L * fs) {
+		/* the peer's data not decoding 6 s into phase 4 (or after
+		   our MP sent again): its last MP lost where the receiver
+		   could not tell where its data begins (a codec's low
+		   mode), or the data not taking the line.  Renegotiate;
+		   retrain if a renegotiation did not bring it either */
+		note("the peer's data not decoding after 6 s");
+		begin_reneg(false, unconfirmed_++ > 0);
+		return;
+	}
 	if (!rx_on_ || !drx_.confirmed()) {
 		/* no data mode: the periodic retrain alone */
 		if (next_retrain_ >= 0 && t_ >= next_retrain_ &&
@@ -453,6 +470,7 @@ void VcvmModem::step()
 		if (rx_on_ && mrx_on_ && drx_.confirmed()) {
 			mrx_on_ = false;
 			confirmed_at_ = t_;
+			unconfirmed_ = 0;
 			note("the peer's data decoding");
 		}
 		if (rx_on_ && drx_.control()) {
@@ -477,7 +495,7 @@ void VcvmModem::step()
 			finish_reneg();
 			return;
 		}
-		if (mps_ >= 10) {
+		if (mps_ - mps_heard_ >= 10 || mps_ >= 30) {
 			fail("no acknowledgement of MP");
 			return;
 		}

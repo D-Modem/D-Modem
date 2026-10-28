@@ -89,12 +89,6 @@ static s16 seq_diff(u8 b, u8 a)
 	return (b - a) & SEQ_MASK;
 }
 
-/* T401 (9.2.1): 2 s at the data pump's rate, in bits */
-static s32 t401_bits(const Link *link)
-{
-	s32 rate = link->tx_rate();
-	return rate ? 2 * rate : T401_NO_RATE;
-}
 
 /* P0 (V.42bis Annex A) counts its directions from the negotiation's
    initiator, Config::comp from us (bit 0: we decode): the two bits
@@ -225,7 +219,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	}
 	sent_info_ = tx_info_frame_ = info_list_ = &info_buf_[0].frame;
 	tx_ctrl_ = ctrl_list_ = &ctrl_buf_[0].frame;
-	vs_ = va_ = vr_ = 0;
+	vs_ = va_ = vr_ = vs_hi_ = 0;
 }
 
 /* the end of the call: no rings (tx_pending() is false), nothing kept
@@ -301,7 +295,7 @@ void Lapm::push_rest()
 void Lapm::reset()
 {
 	busy_ = peer_busy_ = false;
-	vs_ = va_ = vr_ = 0;
+	vs_ = va_ = vr_ = vs_hi_ = 0;
 	sent_info_ = tx_info_frame_ = info_list_;
 }
 
@@ -330,11 +324,30 @@ void Lapm::configure()
 	timer_start();
 }
 
+/* T401 (9.2.1), in bits: 2 s at the data pump's rate and the time of
+   three frames (ours going out, the remote's ahead of its answer, its
+   answer, and the pump's delay): of the longest N401 either way in the
+   data phase with I frames outstanding, of 64 octets for XID, SABME,
+   DISC and the polls.  At V.cvm's few hundred or thousand bit/s 2 s
+   alone runs out before an answer can come: the polls go on through
+   the data, and a SABME sent again after the remote's UA resets the
+   link it has begun */
+s32 Lapm::t401_bits() const
+{
+	s32 rate = link_->tx_rate();
+	if (!rate)
+		return T401_NO_RATE;
+	s32 info = 64;
+	if (state_ == DATA && !config_ && vs_ != va_)
+		info = std::max<s32>(std::max(tx_info_, rx_info_), 128);
+	return 2 * rate + 3 * (info + 8) * 8;
+}
+
 /* T401 starts again, the retransmission count from 0 */
 void Lapm::timer_start()
 {
 	rtx_count_ = 0;
-	link_->set_timer(t401_bits(link_), Link::Timer::T401);
+	link_->set_timer(t401_bits(), Link::Timer::T401);
 }
 
 /* T401 stops, the retransmission count back to 0 */
@@ -368,7 +381,7 @@ void Lapm::t401_timeout()
 			tx_unnum(cmd_addr_, static_cast<u8>(U_DISC | PF));
 		else
 			tx_super(cmd_addr_, busy_ ? S_RNR : S_RR, 1);
-		link_->set_timer(t401_bits(link_), Link::Timer::T401);
+		link_->set_timer(t401_bits(), Link::Timer::T401);
 		return;
 	}
 	rtx_count_ = 0;
@@ -562,6 +575,8 @@ Frame *Lapm::next_tx_frame()
 	f->buf[1] = static_cast<u8>(vs_ << 1);
 	f->buf[2] = static_cast<u8>(vr_ << 1);
 	vs_ = static_cast<u8>((vs_ + 1) & SEQ_MASK);
+	if (seq_diff(vs_, va_) > seq_diff(vs_hi_, va_))
+		vs_hi_ = vs_;
 	tx_info_frame_ = f->next;
 	if (!link_->timer())
 		timer_start();
@@ -645,22 +660,36 @@ bool Lapm::valid_data_state()
 	return false;
 }
 
-/* the N(R) of an I, RR, RNR or REJ frame (8.4.3.2): our I frames up to
-   N(R) - 1 acknowledged and freed (not past V(S)); out of timer
-   recovery T401 stops when some were, and starts again while others
-   are outstanding; how many */
+/* whether an N(R) is one we can be sent (8.4.3.2): V(A) up to the
+   highest V(S) since, the frames sent again after a go back counted
+   as sent; else logged, and the frame is to be taken for one with a
+   bad FCS: on a noisy line now and then a frame of noise passes the
+   16 bit FCS, and its N(R) would acknowledge frames never received */
+bool Lapm::nr_ok(u8 nr)
+{
+	if (seq_diff(nr, va_) <= seq_diff(vs_hi_, va_))
+		return true;
+	link_->logf("err: ec: N(R) %d past V(S) %d (V(A) %d): frame ignored.",
+		    nr, vs_hi_, va_);
+	link_->stats().rx_errors++;
+	return false;
+}
+
+/* the N(R) of an I, RR, RNR or REJ frame (8.4.3.2, nr_ok()): our I
+   frames up to N(R) - 1 acknowledged and freed (after a go back, those
+   waiting to be sent again too); out of timer recovery T401 stops when
+   some were, and starts again while others are outstanding; how many */
 s16 Lapm::ack_info(u8 nr)
 {
 	const s16 sent = seq_diff(vs_, va_);
-	s16 n = seq_diff(nr, va_);
-	if (n > sent) {
-		link_->logf("err: ec: N(R) %d past V(S) %d (V(A) %d).", nr, vs_,
-			    va_);
-		n = sent;
-	}
+	const s16 n = seq_diff(nr, va_);
 	for (s16 i = 0; i < n; i++)
 		sent_info_ = sent_info_->next;
 	va_ = static_cast<u8>((va_ + n) & SEQ_MASK);
+	if (n > sent) {
+		vs_ = va_;
+		tx_info_frame_ = sent_info_;
+	}
 	if (n && !rtx_count_) {
 		timer_stop();
 		if (vs_ != va_)
@@ -694,6 +723,8 @@ s16 Lapm::rx_info(Frame *f)
 	const u8 ns = f->buf[1] >> 1, nr = f->buf[2] >> 1;
 	const s16 pf = f->buf[2] & 1;
 
+	if (!nr_ok(nr))
+		return 0;
 	ack_info(nr);
 	if (busy_) {
 		if (pf)
@@ -738,6 +769,8 @@ void Lapm::rx_super_cmd(Frame *f)
 	const u8 nr = f->buf[2] >> 1;
 	const s16 pf = f->buf[2] & 1;
 
+	if (!nr_ok(nr))
+		return;
 	switch (f->buf[1]) {
 	case S_RR:
 		peer_busy_ = false;
@@ -782,6 +815,8 @@ void Lapm::rx_super_rsp(Frame *f)
 		log_frame("err: ec: unsolicited final response", false, f);
 		return;
 	}
+	if (!nr_ok(nr))
+		return;
 	/* (from here on, F 1 means timer recovery) */
 	switch (f->buf[1]) {
 	case S_RR:

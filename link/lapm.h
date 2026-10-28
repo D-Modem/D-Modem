@@ -69,6 +69,7 @@ private:
 	void reset();
 	void connect();
 	void configure();
+	s32 t401_bits() const;
 	void timer_start();
 	void timer_stop();
 	Frame *ctrl_frame();
@@ -78,6 +79,7 @@ private:
 	void rx_xid(Frame *f, bool response);
 	s16 tx_info();
 	s16 reject_info();
+	bool nr_ok(u8 nr);
 	s16 ack_info(u8 nr);
 	s16 rx_info(Frame *f);
 	void rx_super_cmd(Frame *f);
@@ -96,6 +98,7 @@ private:
 	bool peer_busy_ = false;
 	u8 cmd_addr_ = 0, rsp_addr_ = 0;
 	u8 vs_ = 0, va_ = 0, vr_ = 0;
+	u8 vs_hi_ = 0;                  /* the highest V(S) since V(A) */
 	s16 rtx_count_ = 0;
 	u16 tx_win_ = 0, rx_win_ = 0, tx_info_ = 0, rx_info_ = 0;
 	/* rings of frames: info frames from sent (not acknowledged) over

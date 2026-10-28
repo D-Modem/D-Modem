@@ -9,9 +9,13 @@ bits once a call has connected (C++, `namespace dlink`):
   Other ADPs than "EC" and "E" + NUL (such as a cellular modem's "EM",
   Appendix VI/V.42) are passed over: the "EC" after them decides.
 - **V.42 LAPM** (`Lapm`, `lapm.cpp`) over **HDLC** framing (`Hdlc`): modulo
-  128, windows of up to 15 frames of up to 128 octets, REJ recovery,
+  128, windows of up to 15 frames of up to 128 octets, REJ recovery
+  (a frame whose N(R) is past every frame sent is taken for noise that
+  passed the FCS, and ignored),
   RNR while the DTE does not take the data, T401 counted in transmitted
-  bits (2 s at the data pump's rate) and N400 = 5 retransmissions (XID,
+  bits (2 s at the data pump's rate and the time of three frames, of
+  N401 octets with I frames outstanding, else of 64, so that at V.cvm's
+  rates an answer can come) and N400 = 5 retransmissions (XID,
   SABME, DISC, the data phase's polls) before giving up, and parameter
   negotiation in XID,
   with the private parameters of V.42bis (and zstd's set after them)
@@ -231,9 +235,17 @@ checked), the data's rate on the call's clock, kbit/s:
 | ELF binary | 3.31 | 13.02 | 12.42 | 13.43 | 14.05 |
 | random | 3.19 | 2.90 | 2.90 | 3.26 | 3.25 |
 
-Through AMR 12.2 and AMR-WB 23.85 most of the same calls lost their
-carrier part way, whatever the compression, so they measure the line,
-not the compressors.
+Through AMR 12.2 and AMR-WB 23.85 (three Markdown files of 32 kB, both
+ways, six calls at once; docs/dsp/vcvm.md has what made these calls drop
+before), kbit/s each way:
+
+| | none | zstd + dict |
+|---|---|---|
+| AMR 12.2 (CONNECT 1125 and about 1600) | 0.8 to 1.1, 0.6 | 2.4, 1.4 |
+| AMR-WB 23.85 (1687 to 2012) | 1.4 to 1.6 | 1.8 and 2.4; 0.6 and 1.0 |
+
+AMR-WB's rates move with the renegotiations the codec brings; two of
+its three zstd calls ended up at 300 bit/s after a retrain.
 
 ## MNP
 

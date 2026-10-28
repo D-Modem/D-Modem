@@ -74,6 +74,14 @@ public:
 	/* phase 4 both ways: the transmitter in it, the peer's data
 	   decoding */
 	bool connected() const;
+	/* in phase 4, transmitting, with the peer's data not decoding (yet,
+	   or since a renegotiation): what the link sends now goes
+	   unanswered */
+	bool rx_waiting() const
+	{
+		return state_ == DATA && tx_data_ && rx_on_ &&
+		       !drx_.confirmed();
+	}
 	/* the loading received */
 	const VcvmLoading &rx_loading() const { return rxl_; }
 	/* the loading sent */
@@ -145,6 +153,7 @@ private:
 	bool retrain_ = false, peer_retrain_ = false;
 	bool got_mp_ = false, got_ack_ = false, sent_ack_ = false;
 	s16 mps_ = 0;
+	s16 mps_heard_ = 0;     /* ours sent when the peer's last came */
 	s32 deadline_ = 0;
 	s32 last_rx_end_ = 0;
 	s16 p4_mps_ = 0;                /* the peer's MPs in phase 4 (the
@@ -154,7 +163,11 @@ private:
 	s32 renegs_ = 0, retrains_ = 0;
 	/* phase 4's watch */
 	s32 data_at_ = 0;               /* phase 4 (re)entered */
+	s32 watch_at_ = 0;              /* that, or our MP sent again: the
+					   peer's data due to decode since */
 	s32 confirmed_at_ = 0;          /* the peer's data decoding since */
+	s16 unconfirmed_ = 0;           /* renegotiations since it last
+					   decoded, for its not decoding */
 	s32 next_check_ = 0;
 	s32 words_ = 0, failed_ = 0; /* at the last check */
 	s32 next_retrain_ = -1;         /* the parametric mode's timer */

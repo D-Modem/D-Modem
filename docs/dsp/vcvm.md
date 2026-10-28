@@ -36,7 +36,15 @@ measurements; this page is the implementation.
    a loaded tone's phase error, or by failing codewords. A retrain is the
    control sequence, then MPs with the retrain bit set, then phase 2
    again. It is triggered by request, by the peer's data lost for 2 s, or
-   by the parametric mode's timers and c-bar.
+   by the parametric mode's timers and c-bar. If the peer's data has not
+   begun decoding 6 s into phase 4 (or after our MP went again), a
+   renegotiation; if that brings no data either, a retrain. Until the
+   peer's data decodes, HDLC flags go out in place of LAPM's bits: its
+   frames would go unanswered, and T401 (which counts the bits sent)
+   would run out on polls whose answers cannot be heard. The start-up's
+   and renegotiations' MPs go on while the peer's keep coming (ten more
+   of ours after each of the peer's, 30 at most), as through AMR-WB the
+   last of an exchange is often lost both ways.
 
 | Line (interop test) | Mode | CONNECT (coded bit/s) |
 |---|---|---|
@@ -241,6 +249,18 @@ These are written into the Recommendation now:
   last MP's measured end, which the parametric data receiver (P10's 10 ms
   symbols) takes as phase 4's start, so it needs that receiver to find
   its own symbol timing first. The test stays among the flaky ones.
+- Bulk transfers through AMR (`dsp/test/compress_calls.sh`, 32 kB each
+  way) stalled or dropped: after a renegotiation the peer's data never
+  decoded and LAPM gave up its polls (now the 6 s watch and the flags
+  above); the start-up's last MPs were lost and one side gave up just
+  before the other's came; T401's 2 s ran out before an answer could come
+  at 1100 to 2300 bit/s, so the polls and go-backs went on through the
+  data (T401 now has three frames' time added, docs/link.md); and a frame
+  of noise passing the 16-bit FCS acknowledged I frames never received,
+  which were lost (such an N(R) is now ignored). With those, AMR 12.2 and
+  AMR-WB, with zstd or none, went through 12 of 12 at six calls at once.
+  At twelve at once an AMR-WB call without compression now and then stops
+  one way near its end, with neither side logging an error.
 
 ## Tests
 
