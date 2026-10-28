@@ -1901,9 +1901,13 @@ void V34Cc<P>::info_frame(CcRx *r)
 			rinfo0.allow_3429,
 			rinfo0.max_diff);
 	} else {
-		if (self.caller)
+		if (self.caller) {
 			rinfo1a.parse(r->frame);
-		else {
+			DSP_DBG("v34: INFO1a: power reduction %d (+%d) dB, "
+				"preemph %d, max rate %d, md %d\n",
+				rinfo1a.power_red, rinfo1a.add_power_red,
+				rinfo1a.preemph, rinfo1a.max_rate, rinfo1a.md);
+		} else {
 			s16 b;
 			rinfo1c.parse(r->frame);
 			for (b = 0; b < V34_NBAUDS; b++)
