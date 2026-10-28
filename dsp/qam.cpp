@@ -32,6 +32,7 @@ void QamTx::init(s32 srate_, float carrier_, float baud,
 	reinit(*this);
 	srate = srate_;
 	sps = srate_ / baud;
+	step = 1.0f / sps;
 	span = span_ > QAM_MAX_SPAN ? QAM_MAX_SPAN : span_;
 	n = 2 * span * QAM_PULSE_RES;
 	for (i = 0; i <= n + 1; i++)

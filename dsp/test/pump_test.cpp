@@ -94,6 +94,8 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	/* only 2400 baud carries data (2400 bit/s, which no other symbol
 	   rate has) */
 	Pumps{ "v34_snr10", line(8, 10, 25) },
+	/* (the caller on the answerer's clock: loop timing) */
+	Pumps{ "v34_150ppm", line(8, 30, 25, 9600, 0.5f, 150) },
 	Pumps{ "v34_echoes", line(8, 40, 22, 9600, 0.5f, 0, -10, -15) },
 	Pumps{ "v34_echoes_8000", line(8, 40, 22, 8000, 0.5f, 0, -10, -15) },
 	/* a far echo over VoIP */

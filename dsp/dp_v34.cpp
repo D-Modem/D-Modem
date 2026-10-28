@@ -794,6 +794,11 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	V34Tx ptx;
 	V34Rx prx;
 	s16 prx_on;
+	/* loop timing (the caller's, DSP_V34_LOOP_TIMING=0 for none): our
+	   symbols on the remote's clock, the offset our receiver measures
+	   (prx.t_freq) followed at most TX_CLK_SLEW a sample */
+	s16 tx_loop, tx_loop_on;
+	float tx_clk;
 
 	/* outcome */
 	s16 baud_tx, baud_rx;   /* symbol rate codes */
@@ -5841,6 +5846,10 @@ s16 V34Pump::handshake()
 			connected = 1;
 			DSP_DBG("v34: connect " RATE_FMT "\n", rate_tx,
 				rate_rx);
+			if (tx_loop_on)
+				DSP_DBG("v34 tx: on the remote's clock (loop "
+					"timing), ours %+.0f ppm off it\n",
+					1e6 * tx_clk / ptx.qam.sps);
 			stat_dp(DP_V34);
 			return DPSTAT_CONNECT;
 		}
@@ -5981,6 +5990,17 @@ float V34Pump::pump_tx_sample()
 			probe_pos = 0;
 		break;
 	case TXM_PRIMARY:
+		if (tx_loop) {
+			const float TX_CLK_SLEW = 2e-7f, TX_CLK_PPM = 80;
+			/* (from an offset of TX_CLK_PPM on, for the call:
+			   less is in every modem's tolerance) */
+			if (prx.timing_fixed && !tx_loop_on &&
+			    fabsf(prx.t_freq / ptx.qam.sps) > TX_CLK_PPM * 1e-6f)
+				tx_loop_on = 1;
+			float want = tx_loop_on && prx.timing_fixed ? prx.t_freq : tx_clk;
+			tx_clk += std::max(-TX_CLK_SLEW, std::min(TX_CLK_SLEW, want - tx_clk));
+			ptx.qam.set_clock(tx_clk);
+		}
 		y = ptx.sample();
 		break;
 	case TXM_PAM:
@@ -6276,6 +6296,9 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	/* the G.711 law of the network (D-Modem knows it from the codec of
 	   the call) */
 	pump_setup(m, srate_, caller_);
+	tx_loop = caller_ && env_int("DSP_V34_LOOP_TIMING", 1);
+	tx_clk = 0;
+	tx_loop_on = 0;
 	alaw = rt && rt->law ? rt->law == 2 :
 		env_is("DSP_G711", "alaw");
 	v8_low = caller_ && rt ? rt->v8_for : 0;

@@ -37,6 +37,7 @@ struct QamTx {
 	Osc carrier;
 	float scale;
 	float pulse[2 * QAM_MAX_SPAN * QAM_PULSE_RES + 2];
+	float step;             /* symbol periods a sample: 1 / (sps + dt) */
 
 	/* carrier (Hz), baud, root raised cosine roll off alpha over span
 	   symbols each side; symbols of rms rms_symbol give a pass band rms
@@ -47,7 +48,7 @@ struct QamTx {
 	   next() */
 	template <class Next> float sample(Next next)
 	{
-		t += 1.0f / sps;
+		t += step;
 		if (t >= 1) {
 			t -= 1;
 			std::copy_backward(sym, sym + 2 * span - 1,
@@ -57,6 +58,9 @@ struct QamTx {
 		return out();
 	}
 	void  flush();          /* forget symbols in flight */
+	/* the symbol period dt samples longer than sps (loop timing: the
+	   remote's clock, as our receiver measures it) */
+	void  set_clock(float dt) { step = 1.0f / (sps + dt); }
 private:
 	/* the pulse at t symbol periods from its centre (interpolated) */
 	float pulse_at(float t);
