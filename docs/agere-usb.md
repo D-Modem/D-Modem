@@ -269,8 +269,9 @@ samples came clean, at about -21 dBFS sent.
 `DMODEM_USB_TX_GAIN=auto` sets that gain for each call from the remote's answer tone (2100 Hz,
 heard while the modem is quiet: the caller's side, 10 frames' median): heard at -14.8 dBFS, as
 the first device's remote was (where +6 and +10 dB connected at 19200), +8 dB; half a dB more
-for each dB softer (a longer line), 0 to +12 dB. Until a tone is heard (the answerer's side) the
-last call's tone's gain, else +6 dB; a dB softer for each second with more than 8 samples
+for each dB softer (a longer line), 0 to +12 dB. The SmartUSB56 (STLC7550) is far louder (+12 dB
+reached a USR Courier at -6 dBm, clipping): -2 dB at -14.8 dBFS, -12 to +6 dB. Until a tone is
+heard (the answerer's side) the last call's tone's gain, else +6 dB (SmartUSB56 -2 dB); a dB softer for each second with more than 8 samples
 clipped. Both said in the log.
 
 `DMODEM_USB_REC=<path>` records each call on any USB modem, from off hook to on hook, to

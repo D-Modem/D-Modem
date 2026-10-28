@@ -627,10 +627,8 @@ bool UsbLine::open(const char *dev, u32 rate)
 	tx_clipped_ = 0;
 	tx_auto_ = false;
 	if (const char *g = getenv("DMODEM_USB_TX_GAIN"); g && !strcmp(g, "auto")) {
+		/* (its start said once the device is known: find()) */
 		tx_auto_ = true;
-		tx_auto_start();
-		DBG("the modem's samples to the line %+.1f dB to start (DMODEM_USB_TX_GAIN=auto: "
-		    "then from the remote's answer tone)\n", tx_auto_db_);
 	} else if (g && *g) {
 		double db = std::max(-20.0, std::min(20.0, strtod(g, nullptr)));
 		tx_gain_ = static_cast<s32>(std::lround(4096.0 * std::pow(10.0, db / 20.0)));
@@ -648,6 +646,11 @@ bool UsbLine::open(const char *dev, u32 rate)
 	if (!find(dev)) {
 		close();
 		return false;
+	}
+	if (tx_auto_) {
+		tx_auto_start();
+		DBG("the modem's samples to the line %+.1f dB to start (DMODEM_USB_TX_GAIN=auto: "
+		    "then from the remote's answer tone)\n", tx_auto_db_);
 	}
 	/* (an Agere modem's samples are at 8000 Hz) */
 	if (kind_ == Kind::Agere && rate != 8000) {
@@ -1810,22 +1813,32 @@ void UsbLine::rec_start()
 }
 
 /* DMODEM_USB_TX_GAIN=auto: the remote's answer tone (2100 Hz, while the
-   modem is quiet: the caller's side) heard at TONE_REF dBFS wants
-   GAIN_REF dB (the Hiro H50113 on its first line: +6 and +10 connected),
-   half a dB more for each dB softer (a longer line), GAIN_MIN to GAIN_MAX;
-   GAIN_START until a tone is heard (the answerer's side: the last call's
-   tone's) */
+   modem is quiet: the caller's side) heard at TONE_REF dBFS wants the
+   device's ref dB, half a dB more for each dB softer (a longer line),
+   its min to max; its start until a tone is heard (the answerer's side:
+   the last call's tone's) */
 namespace {
-const double TONE_REF = -14.8, GAIN_REF = 8.0, GAIN_SLOPE = 0.5,
-	GAIN_MIN = 0.0, GAIN_MAX = 12.0, GAIN_START = 6.0;
+const double TONE_REF = -14.8, GAIN_SLOPE = 0.5;
+/* a device's transmit level: ref, min, max and start, dB */
+struct TxCal { double ref, min, max, start; };
+/* the Hiro H50113 on its first line: +6 and +10 connected */
+const TxCal AGERE_CAL = { 8.0, 0.0, 12.0, 6.0 };
+/* the SmartUSB56 (STLC7550): +12 reached a USR Courier at -6 dBm and
+   clipped, a tone at -18 dBFS; about 0 dB for -18 dBm there */
+const TxCal ST7554_CAL = { -2.0, -12.0, 6.0, -2.0 };
 /* the last tone's level (dBFS; NaN: none yet), for the next call */
 double last_tone_db = std::nan("");
 
-/* the gain (dB) for a tone heard at tone_db (dBFS) */
-double gain_for(double tone_db)
+/* the gain (dB) for a tone heard at tone_db (dBFS), by c */
+double gain_for(const TxCal &c, double tone_db)
 {
-	return std::max(GAIN_MIN, std::min(GAIN_MAX,
-		GAIN_REF + GAIN_SLOPE * (TONE_REF - tone_db)));
+	return std::max(c.min, std::min(c.max, c.ref + GAIN_SLOPE * (TONE_REF - tone_db)));
+}
+
+/* a device's transmit level (see TxCal) */
+const TxCal &cal_for(bool agere)
+{
+	return agere ? AGERE_CAL : ST7554_CAL;
 }
 
 /* a frame's level, dBFS */
@@ -1871,7 +1884,8 @@ void UsbLine::tx_gain_db(double db)
 /* see usb_line.h */
 void UsbLine::tx_auto_start()
 {
-	tx_gain_db(std::isnan(last_tone_db) ? GAIN_START : gain_for(last_tone_db));
+	const TxCal &c = cal_for(kind_ == Kind::Agere);
+	tx_gain_db(std::isnan(last_tone_db) ? c.start : gain_for(c, last_tone_db));
 	tx_auto_set_ = false;
 	tx_tone_n_ = 0;
 	tx_clip_mark_ = tx_clipped_;
@@ -1890,7 +1904,7 @@ void UsbLine::tx_auto_frame()
 			if (tx_tone_n_ == TONE_FRAMES) {
 				std::sort(tx_tone_db_, tx_tone_db_ + TONE_FRAMES);
 				last_tone_db = tx_tone_db_[TONE_FRAMES / 2];
-				tx_gain_db(gain_for(last_tone_db));
+				tx_gain_db(gain_for(cal_for(kind_ == Kind::Agere), last_tone_db));
 				tx_auto_set_ = true;
 				DBG("the remote's answer tone at %.1f dBFS: the modem's samples to "
 				    "the line %+.1f dB (auto)\n", last_tone_db, tx_auto_db_);
@@ -1899,8 +1913,9 @@ void UsbLine::tx_auto_frame()
 	}
 	/* (a dB softer for each second of clipping, more than 8 samples) */
 	if (++tx_clip_frames_ >= 50) {
-		if (tx_clipped_ - tx_clip_mark_ > 8 && tx_auto_db_ > GAIN_MIN) {
-			tx_gain_db(std::max(GAIN_MIN, tx_auto_db_ - 1.0));
+		double lo = cal_for(kind_ == Kind::Agere).min;
+		if (tx_clipped_ - tx_clip_mark_ > 8 && tx_auto_db_ > lo) {
+			tx_gain_db(std::max(lo, tx_auto_db_ - 1.0));
 			DBG("%" PRIu64 " samples clipped in a second: the modem's samples to "
 			    "the line %+.1f dB (auto)\n", tx_clipped_ - tx_clip_mark_, tx_auto_db_);
 		}
