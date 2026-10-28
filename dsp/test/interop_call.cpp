@@ -29,6 +29,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <regex>
@@ -1344,6 +1346,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		for (int i = 0; i < 8; i++)
 			msg[1] += "The quick brown fox jumps over the lazy dog. ";
 		size_t bulk_n = atol(env("BULK", "0").c_str());
+		double bench_t0 = 0;    /* when BULK's data started */
 		double stream = atof(env("STREAM", "0").c_str());
 		if (stream) {
 			std::string sent[2];
@@ -1432,9 +1435,28 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			}
 			msg[0] = sent[0];
 			msg[1] = sent[1];
-		} else if (bulk_n) {
+		} else if (bulk_n || !env("BULK_FILE").empty()) {
 			msg[0] = bulk(bulk_n, 1);
 			msg[1] = bulk(bulk_n, 2);
+			/* BULK_FILE: a file's octets both ways (no XON or
+			   XOFF: the modems' flow control) */
+			if (!env("BULK_FILE").empty()) {
+				std::ifstream bf(env("BULK_FILE"),
+						 std::ios::binary);
+				std::string s((std::istreambuf_iterator<char>(bf)),
+					      {});
+				if (s.empty()) {
+					say("bulk: no data in %s\n",
+					    env("BULK_FILE").c_str());
+					done(false);
+				}
+				s.erase(std::remove_if(s.begin(), s.end(),
+					[](char c) { return c == 0x11 || c == 0x13; }),
+					s.end());
+				msg[0] = msg[1] = s;
+				bulk_n = s.size();
+			}
+			bench_t0 = dte.t();
 			size_t at[2] = { 0, 0 };
 			for (int f : dte.fd)
 				fcntl(f, F_SETFL, fcntl(f, F_GETFL) | O_NONBLOCK);
@@ -1477,9 +1499,21 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 		   framing */
 		double end = dte.t() + 40 + stream + 15.0 *
 			std::max(msg[0].size(), msg[1].size()) / rate;
+		/* when each side had it all (for "bench:") */
+		double got_t[2] = { 0, 0 };
 		while (dte.t() < end && (dte.buf[1].size() < msg[0].size() ||
-				       dte.buf[0].size() < msg[1].size()))
-			dte.pump(0.2);
+				       dte.buf[0].size() < msg[1].size())) {
+			dte.pump(bench_t0 > 0 ? 0.05 : 0.2);
+			for (int k = 0; k < 2; k++)
+				if (!got_t[k] &&
+				    dte.buf[k].size() >= msg[1 - k].size())
+					got_t[k] = dte.t();
+		}
+		if (bench_t0 > 0)
+			say("bench: %zu octets each way: to A %.2f s, to B "
+			    "%.2f s\n", msg[0].size(),
+			    (got_t[0] ? got_t[0] : dte.t()) - bench_t0,
+			    (got_t[1] ? got_t[1] : dte.t()) - bench_t0);
 		wav_mark();
 		if (wav)
 			say("wav: %s\n", env("NET_WAV").c_str());

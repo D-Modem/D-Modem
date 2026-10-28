@@ -36,6 +36,9 @@ namespace interop {
  *   NET=<rate A>:<rate B>:<ulaw|alaw>  netsim (NETSIM=<path>) in between
  *   STREAM=<s>        keep the data going for that long, then check it
  *   BULK=<octets>     that much each way: text, binary, repeats, noise
+ *   BULK_FILE=<path>  the file's octets each way instead (XON and XOFF
+ *                     left out); with BULK or BULK_FILE, "bench:" says
+ *                     how long each way took, on the call's clock
  *   CALLS=<n>         that many calls, the data on the last; DIAL=<number>
  *   ANSWER_AFTER=<s>  modemB's ATA that long after modemA's ATD (as it
  *                     rings once A has dialed); 0: both at once

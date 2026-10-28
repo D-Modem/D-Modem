@@ -179,6 +179,62 @@ On 50 kB of text without flushes zstd comes to 1325 octets, V.44 to 4881.
 A block costs at least 3 octets of header, so characters flushed one at
 a time cost more than V.44's (typing; no matter at those rates).
 
+### Compression benchmark
+
+`compress_bench` (`link/test/compress_bench.cpp`) runs each compressor as
+the link does (XID's largest parameters, V.cvm's preset and dictionary)
+on files: the ratio and the speed, every stream decoded again and
+compared, libzstd's beside them where it is found.
+`compress_bench --check` is the round trips alone (ctest
+`compress_bench_check`). `dsp/test/compress_calls.sh` makes V.cvm calls
+between two open modems through netsim with files both ways
+(interop_call's `BULK_FILE`), for each line and compression.
+
+Ratios (input over output) on 192 to 256 kB of each kind, a flush at
+the end only (bulk data: the DTE always has more):
+
+| | V.42bis | V.44 | V.44 + preset | zstd | zstd + dict | libzstd 3 | libzstd 19 |
+|---|---|---|---|---|---|---|---|
+| docs (Markdown) | 1.86 | 2.05 | 2.00 | 2.34 | 2.39 | 2.31 | 2.74 |
+| C++ source | 2.10 | 2.54 | 2.41 | 2.93 | 3.04 | 2.88 | 3.48 |
+| HTML | 3.32 | 5.08 | 4.64 | 8.33 | 8.66 | 6.02 | 10.58 |
+| BBS screens (ANSI) | 11.66 | 18.80 | 14.86 | 21.32 | 21.42 | 23.32 | 37.22 |
+| PPP, HTTP in IP | 3.11 | 4.31 | 4.00 | 6.01 | 6.12 | 5.00 | 7.26 |
+| ELF binary | 3.73 | 4.48 | 4.13 | 5.69 | 5.73 | 6.01 | 6.98 |
+| gzip, random | 1.00 | 0.90 | 0.90 | 1.00 | 1.00 | 1.00 | 1.00 |
+
+- **Bulk**: zstd 14 to 65% ahead of V.44, ahead of libzstd's level 3 at
+  the same 32 kB window; libzstd 19 another 15 to 25%. The dictionary
+  adds 1 to 4% here; the preset costs V.44 a little (half its history).
+- **Short sessions** (each 256 octets a call of its own): the
+  dictionary is what counts, text 1.16 to 1.54, HTML 1.34 to 1.84 (V.44's
+  preset 1.39 to 1.60, 1.67 to 2.00). At 4 kB, zstd with its dictionary
+  is ahead again but for the BBS screens.
+- **A flush every 64 characters** (typing): V.44 is ahead (text 1.88
+  against 1.68, BBS screens 8.05 against 5.47): each zstd block has its
+  header and tables. A flush every 1500 changes little.
+- **Incompressible data**: zstd's raw blocks keep it at 1.00; V.44 has
+  no transparent mode here and loses 10%.
+- **Speed**: zstd encodes 6 to 27 MB/s and decodes 58 to 275 MB/s, V.44
+  14 to 144 and 13 to 183, on one core of a 2.1 GHz Xeon: V.cvm needs
+  half a kB/s.
+
+V.cvm calls over G.711 alone (CONNECT 3500, 32 kB both ways, both
+checked), the data's rate on the call's clock, kbit/s:
+
+| | none | V.44 | V.44 + preset | zstd | zstd + dict |
+|---|---|---|---|---|---|
+| docs | 3.32 | 6.60 | 6.60 | 7.05 | 7.52 |
+| HTML | 3.30 | 14.62 | 14.05 | 16.34 | 18.16 |
+| BBS screens | 3.32 | 36.51 | 32.81 | 34.20 | 35.52 |
+| PPP, HTTP in IP | 3.30 | 12.48 | 12.42 | 14.07 | 15.15 |
+| ELF binary | 3.31 | 13.02 | 12.42 | 13.43 | 14.05 |
+| random | 3.19 | 2.90 | 2.90 | 3.26 | 3.25 |
+
+Through AMR 12.2 and AMR-WB 23.85 most of the same calls lost their
+carrier part way, whatever the compression, so they measure the line,
+not the compressors.
+
 ## MNP
 
 MNP 2 to 4 is V.42's "alternative procedure" (Annex A of V.42 (10/96)),

@@ -27,6 +27,25 @@ if(DMODEM_TESTS)
 	# zstd against the reference library, where it is found
 	find_path(DMODEM_ZSTD_INCLUDE zstd.h)
 	find_library(DMODEM_ZSTD_LIB zstd)
+	# the compressors' ratio and speed on files (libzstd's beside them
+	# where it is found); --check, their round trips, as a test
+	add_executable(compress_bench test/compress_bench.cpp)
+	target_link_libraries(compress_bench PRIVATE dmodem_link)
+	dmodem_flags(compress_bench EXTRA)
+	if(DMODEM_ZSTD_INCLUDE AND DMODEM_ZSTD_LIB)
+		target_include_directories(compress_bench PRIVATE
+			${DMODEM_ZSTD_INCLUDE})
+		target_link_libraries(compress_bench PRIVATE ${DMODEM_ZSTD_LIB})
+		target_compile_definitions(compress_bench PRIVATE
+			DMODEM_HAVE_LIBZSTD)
+	endif()
+	dmodem_test_launcher(compress_bench)
+	if(DMODEM_TESTS_RUN)
+		dmodem_add_test(compress_bench_check
+			$<TARGET_FILE:compress_bench> --check)
+		set_tests_properties(compress_bench_check PROPERTIES
+			LABELS quick)
+	endif()
 	if(DMODEM_ZSTD_INCLUDE AND DMODEM_ZSTD_LIB)
 		add_executable(zstd_ref_test test/zstd_ref_test.cpp)
 		target_include_directories(zstd_ref_test PRIVATE
