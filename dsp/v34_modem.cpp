@@ -545,10 +545,13 @@ void V34Rx::got_bit(s16 bit)
 			if (mp_.parse(mpbits, mp_len) == 0) {
 				if (!ev_mp || mp_.ack != mp.ack)
 					DSP_DBG("v34 rx: MP%s type %d rates %d/%d mask %04x "
-						"trellis %d expanded %d\n",
+						"trellis %d expanded %d non-linear %d "
+						"h %d %d %d %d %d %d\n",
 						mp_.ack ? "'" : "", mp_.type,
 						mp_.rate_ca, mp_.rate_ac, mp_.rate_mask,
-						mp_.trellis, mp_.expanded);
+						mp_.trellis, mp_.expanded, mp_.nonlinear,
+						mp_.h[0], mp_.h[1], mp_.h[2], mp_.h[3],
+						mp_.h[4], mp_.h[5]);
 				mp = mp_;
 				ev_mp = 1;
 				after_mp = 1;

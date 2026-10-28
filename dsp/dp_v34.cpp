@@ -3638,7 +3638,9 @@ void V34Pump::mp_start()
 		tx_max = v34_min_rate(baud_tx);
 	mp->rate_ca = caller ? tx_max : max_rate_rx;
 	mp->rate_ac = caller ? max_rate_rx : tx_max;
-	mp->expanded = 1;
+	/* test: DSP_V34_MP_EXPANDED=0 asks for no constellation expansion
+	   (a V.92 modem's answer did, with precoding) */
+	mp->expanded = env_int("DSP_V34_MP_EXPANDED", 1) ? 1 : 0;
 	mp->trellis = V34_TRELLIS;
 	mp->rate_mask = 0x3FFF;
 	mp->asym = 1;
