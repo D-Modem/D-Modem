@@ -366,7 +366,9 @@ if(DMODEM_DMODEMD)
 				TIMEOUT 300 COST 1000)
 			set_property(TEST dmodemd_alsa APPEND PROPERTY LABELS alsa)
 		endif()
-		if(LIBUSB_FOUND)
+		# (the preloaded fakes: where they were built, not on macOS,
+		# whose tests below have them linked in under the same names)
+		if(TARGET dmodem_fake_st7554)
 			dmodem_add_test(dmodemd_usb ${Python3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/test/usb_test.py
 				$<TARGET_FILE:dmodemd>
