@@ -140,12 +140,12 @@ struct Line {
 	/* a line at r Hz */
 	explicit Line(s32 r) : rate(r) {}
 	/* an end's sample in: the far end's and its own, and the noise */
-	s16 mix(s16 far, s16 own)
+	s16 mix(s16 remote, s16 own)
 	{
 		double s = static_cast<double>(t) / rate;
 		if (s >= drop_at && s < drop_at + drop_s)
-			far = 0;
-		double v = gain * far + echo * own + noise * g(rng);
+			remote = 0;
+		double v = gain * remote + echo * own + noise * g(rng);
 		if (s >= hit_at && s < hit_at + hit_s)
 			v += hit_noise * g(rng);
 		if (change_at >= 0 && s >= change_at) {
