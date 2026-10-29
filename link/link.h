@@ -192,6 +192,9 @@ public:
 	bool online() const { return online_; }
 	/* the call is in V.80's Synchronous Access Mode */
 	bool sync() const { return mode_ == Mode::Sync; }
+	/* the call has no error correction (async): V.54's loop tests
+	   can run */
+	bool plain() const { return mode_ == Mode::Async; }
 	/* Synchronous Access Mode: the indication <EM><code> (and n
 	   parameter octets) to the DTE, after what waits for it */
 	void sync_indicate(u8 code, const u8 *par = nullptr, s16 n = 0);

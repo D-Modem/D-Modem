@@ -581,8 +581,13 @@ s16 Modem::start_call(bool keep_line)
 	set_state(DP_ESTAB);
 	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
 		host_.speaker(*this, sregs_[SREG_SPEAKER_VOLUME]);
-	if (set_hook(MODEM_HOOK_OFF))
+	/* (loop 3 keeps the line as it is: the pump hears itself) */
+	if (!loop3_ && set_hook(MODEM_HOOK_OFF))
 		return fail("cannot go off hook");
+	test_.reset();
+	test_end_ms_ = 0;
+	test_reply_ = false;
+	loop3_buf_.clear();
 	xmit_head_ = xmit_tail_ = xmit_count_ = 0;
 	esc_held_.clear();
 	command_ = false;
@@ -614,6 +619,11 @@ s16 Modem::stop_call()
 {
 	run_ = Run::None;
 	later_ = Later::None;
+	test_.reset();
+	test_end_ms_ = 0;
+	test_reply_ = false;
+	loop3_ = false;
+	loop3_buf_.clear();
 	if (started_) {
 		if (host_.stop(*this))
 			log_printf(1, "err: %s: the line does not stop\n",
@@ -917,8 +927,9 @@ void Modem::update_status(Status s)
 		if (adaptive_answering())
 			report(Result::Data);
 		adapt_ = Adapt::Off;
-		if (dp_ && (dp_->id == DP_V23 || dp_->id == DP_B103 ||
-			    dp_->id == DP_V21)) {
+		if (loop3_ || (dp_ && (dp_->id == DP_V23 ||
+					dp_->id == DP_B103 ||
+					dp_->id == DP_V21))) {
 			cfg_.ec = false;
 			cfg_.mnp = false;
 		}
@@ -952,6 +963,7 @@ void Modem::update_status(Status s)
 			hup(true);
 			break;
 		}
+		test_.set_plain(link_->plain());
 		set_state(ONLINE);
 		if (!stats_.connected) {
 			stats_.connected = true;
@@ -959,6 +971,15 @@ void Modem::update_status(Status s)
 			stats_.dp = modulation(dp_stats_, dp_);
 			stats_.tx0 = tx_rate_;
 			stats_.rx0 = rx_rate_;
+		}
+		/* loop 3 (AT&T1, AT&T8): its test from now */
+		if (loop3_) {
+			test_started();
+			if (test_.self_test()) {
+				set_state(COMMAND_ONLINE);
+				report(Result::Ok);
+				break;
+			}
 		}
 		report(Result::Connect);
 		sync_tx_ = tx_rate_;
@@ -1018,17 +1039,170 @@ void Modem::update_status(Status s)
 /* the pumps' bits for the line, from the link */
 s32 Modem::get_bits(s16 nbits, u8 *buf, s32 n)
 {
-	s32 ret = link_->get_bits(nbits, buf, n);
+	s32 ret;
+	if (nbits != 1 || !test_.active()) {
+		ret = link_->get_bits(nbits, buf, n);
+	} else if (test_.link_tx()) {
+		ret = link_->get_bits(nbits, buf, n);
+		for (s32 i = 0; i < ret; i++)
+			buf[i] = test_.tx(buf[i] & 1);
+	} else {
+		/* V.54: the test's bits, the link's wait */
+		for (s32 i = 0; i < n; i++)
+			buf[i] = test_.tx(1);
+		ret = n;
+	}
 	log_data(this, LOG_TX_BITS, buf, n);
+	test_events();
 	return ret;
 }
 
 /* the pumps' bits from the line, to the link */
 s32 Modem::put_bits(s16 nbits, const u8 *buf, s32 n)
 {
-	s32 ret = link_->put_bits(nbits, buf, n);
+	s32 ret = n;
+	bool watch = nbits == 1 && (test_.active() || test_.grant());
+	/* V.54: the link has them unless a test takes them (the test
+	   sees them all: a request for loop 2 is in the data) */
+	if (!watch || test_.link_rx())
+		ret = link_->put_bits(nbits, buf, n);
+	if (watch)
+		for (s32 i = 0; i < n; i++)
+			test_.rx(buf[i]);
 	log_data(this, LOG_RX_BITS, buf, n);
+	test_events();
 	return ret;
+}
+
+/*
+ *    V.54's loop tests (v54.h)
+ */
+
+/* the call's link has no error correction (the tests run only then) */
+bool Modem::link_plain() const
+{
+	return link_->plain();
+}
+
+/* what the test did: its results to the DTE */
+void Modem::test_events()
+{
+	switch (test_.event()) {
+	case v54::LoopTest::Event::None:
+		break;
+	case v54::LoopTest::Event::Started:
+		logf("loop 2: the far end loops\n");
+		test_started();
+		if (test_.self_test()) {
+			report(Result::Ok);
+		} else {
+			set_state(ONLINE);
+			report(Result::Connect);
+		}
+		break;
+	case v54::LoopTest::Event::NoAck:
+		logf("loop 2: no acknowledgment\n");
+		report(Result::Error);
+		break;
+	case v54::LoopTest::Event::Ended:
+		logf("loop 2: terminated\n");
+		test_end_ms_ = 0;
+		if (test_reply_) {
+			test_reply_ = false;
+			if (test_.self_test())
+				print_test_errors();
+			report(Result::Ok);
+		}
+		break;
+	case v54::LoopTest::Event::Looping:
+		logf("loop 2: the far end asks for it, looping\n");
+		break;
+	case v54::LoopTest::Event::Unlooped:
+		logf("loop 2: over\n");
+		break;
+	}
+}
+
+/* a test's phase begins: its end by S18 (s) */
+void Modem::test_started()
+{
+	u8 s = sregs_[SREG_TEST_TIMER];
+	test_end_ms_ = s ? host_.now_ms() + 1000u * s : 0;
+}
+
+/* the self-test's bit errors, as three digits (255 at most) */
+void Modem::print_test_errors()
+{
+	char buf[8];
+	u32 e = std::min<u32>(test_.errors(), 255);
+	logf("self-test: %" PRIu32 " errors in %" PRIu32 " bits%s\n",
+	     test_.errors(), test_.checker().bits(),
+	     test_.checker().locked() ? "" : " (not synchronised)");
+	snprintf(buf, sizeof(buf), "%03" PRIu32, e);
+	puts(buf);
+	crlf();
+}
+
+/* AT&T1 and AT&T8: loop 3 on a 4-wire leased line's pump (its own
+   signal into its receiver), the line silent; 1 (CONNECT, or OK, to
+   come), or -1 */
+s16 Modem::loop3_start(bool self_test)
+{
+	if (state_ != IDLE || started_ || dp_ || mode_ != MODEM_MODE_DATA ||
+	    !sregs_[SREG_LEASED] || wideband())
+		return -1;
+	switch (sregs_[SREG_DP]) {
+	case DP_V27TER:
+	case DP_V29:
+	case DP_V33:
+		break;
+	default:
+		return -1;
+	}
+	leased_stop();
+	caller_ = true;
+	dp_requested_ = 0;
+	loop3_ = true;
+	if (start_call()) {
+		loop3_ = false;
+		return -1;
+	}
+	loop3_ = true;
+	test_.local3(self_test);
+	logf("loop 3%s\n", self_test ? " with the self-test" : "");
+	later(Later::ChangeDp, 0);
+	return 1;
+}
+
+/* AT&T0 (or S18's end, timer): the test over; 1 when its result is to
+   come, 0 for OK now */
+s16 Modem::test_end(bool timer)
+{
+	if (loop3_) {
+		if (test_.self_test() && command_)
+			print_test_errors();
+		set_cause(Cause::LocalHangup);
+		result_ = Result::Ok;
+		have_result_ = true;
+		hup(true);
+		return 1;
+	}
+	switch (test_.phase()) {
+	case v54::LoopTest::Phase::Prep:
+	case v54::LoopTest::Phase::WaitAck:
+	case v54::LoopTest::Phase::Settle:
+	case v54::LoopTest::Phase::Test:
+		test_.end();
+		test_reply_ = !timer || command_;
+		return test_reply_ ? 1 : 0;
+	case v54::LoopTest::Phase::Term:
+	case v54::LoopTest::Phase::TermOnes:
+		test_reply_ = !timer;
+		return 1;
+	default:
+		test_.end();
+		return 0;
+	}
 }
 
 /* DTE data the remote does not have yet */
@@ -1352,6 +1526,20 @@ void Modem::run(s16 *in, s16 *out, s32 n)
 {
 	switch (run_) {
 	case Run::Dp:
+		if (loop3_) {
+			/* loop 3: the pump hears what it sent, the line
+			   nothing */
+			for (s32 i = 0; i < n; i++) {
+				in[i] = loop3_buf_.empty() ? 0 :
+					loop3_buf_.front();
+				if (!loop3_buf_.empty())
+					loop3_buf_.pop_front();
+			}
+			dp_process(in, out, n);
+			loop3_buf_.insert(loop3_buf_.end(), out, out + n);
+			std::fill_n(out, n, 0);
+			break;
+		}
 		dp_process(in, out, n);
 		break;
 	case Run::CallerId:
@@ -1837,6 +2025,8 @@ s16 Modem::hook(s16 state)
 s16 Modem::reset()
 {
 	leased_stop();
+	/* (V.54: the far end's loop 2 refused again, AT&T5) */
+	test_.set_grant(false);
 	if (state_ != IDLE) {
 		set_cause(Cause::LocalHangup);
 		hup(true);
@@ -2113,6 +2303,12 @@ void Modem::poll()
 		new_event_ = 0;
 	}
 	leased_poll();
+	if (test_end_ms_ &&
+	    static_cast<s64>(host_.now_ms() - test_end_ms_) >= 0) {
+		test_end_ms_ = 0;
+		logf("the test's time (S18) is over\n");
+		test_end(true);
+	}
 	if (!event_)
 		return;
 	ev = event_;
@@ -2188,6 +2384,12 @@ s32 Modem::next_timer_ms()
 			l = 0;
 		if (l >= 0 && (left < 0 || l < left))
 			left = l;
+	}
+	if (test_end_ms_) {
+		s32 t = std::max<s32>(0, static_cast<s32>(test_end_ms_ -
+							  host_.now_ms()));
+		if (left < 0 || t < left)
+			left = t;
 	}
 	if (later_ == Later::Stop) {
 		u64 idle = host_.now_ms() - samples_at_ms_;

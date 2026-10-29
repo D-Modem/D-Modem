@@ -79,6 +79,7 @@ enum S_REGISTER {
 	SREG_QUIET                        = 14,  /* ATQ */
 	SREG_VERBOSE                      = 15,  /* ATV */
 	SREG_TONE_OR_PULSE                = 16,  /* 1 tone (ATT), 0 pulse (ATP) */
+	SREG_TEST_TIMER                   = 18,  /* s of an AT&T test, 0 none */
 	SREG_FLASH_TIMER                  = 24,  /* hook flash, 10 ms */
 	SREG_PULSE_RATIO                  = 28,  /* AT&P */
 	SREG_SPEAKER_CONTROL              = 29,  /* ATM */

@@ -29,6 +29,7 @@
 #include <modem_dp.h>
 
 #include "modem_homolog.h"
+#include "v54.h"
 
 /* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
 #ifndef DMODEM_PRINTF
@@ -403,6 +404,13 @@ private:
 	void events(u16 ev);
 	void leased_poll();
 	void leased_stop();
+	s16 at_ampT(char *p, s16 *len);
+	bool link_plain() const;
+	s16 loop3_start(bool self_test);
+	s16 test_end(bool timer);
+	void test_events();
+	void test_started();
+	void print_test_errors();
 	void schedule_event(u16 mask, u32 ms);
 	void sregs_init();
 	s16 homolog_init(s32 id, const char *name);
@@ -610,6 +618,14 @@ private:
 	bool link_req(s32 what);
 	dlink::Link *link_ = nullptr;
 	LinkOwner *link_owner_ = nullptr;
+	/* V.54's loop tests (AT&T): the test, loop 3's samples back into
+	   the pump, the test's end by S18 (ms, 0 none), AT&T0's result
+	   due when the TERM has gone */
+	v54::LoopTest test_;
+	bool loop3_ = false;
+	std::deque<s16> loop3_buf_;
+	u64 test_end_ms_ = 0;
+	bool test_reply_ = false;
 
 	/* the data pumps */
 	u32 dp_requested_ = 0;

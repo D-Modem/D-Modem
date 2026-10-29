@@ -643,6 +643,9 @@ s16 Modem::at_command(char *cmd)
 				case 'V':
 					ret = at_ampV(p, &len);
 					break;
+				case 'T':
+					ret = at_ampT(p, &len);
+					break;
 				default:
 					ret = -1;
 					break;
@@ -963,6 +966,48 @@ s16 Modem::at_O(char *p, s16 *len)
 	if (e != p + 1 && n)
 		link_req(n == 1 ? 1 : 2);
 	return 1;
+}
+
+/* AT&T<n>: V.54's loop tests (Hayes' numbers): 0 (or none) the test
+   ends (AT&T7's and AT&T8's bit errors, then OK); 1 loop 3, 8 with the
+   self-test (offline, AT&L with +MS=V29, V33 or V27TC); 3 loop 2 here;
+   4 the far end may ask for loop 2, 5 it may not; 6 loop 2 at the far
+   end, 7 with the self-test (online command state, no error
+   correction) */
+s16 Modem::at_ampT(char *p, s16 *len)
+{
+	const char *e;
+	u32 n = number(p + 2, &e);
+	bool online = state_ == COMMAND_ONLINE;
+
+	*len = static_cast<s16>(e - p);
+	switch (e == p + 2 ? 0 : n) {
+	case 0:
+		return test_end(false);
+	case 1:
+	case 8:
+		return loop3_start(n == 8);
+	case 3:
+		if (!online || !link_plain() || test_.active())
+			return -1;
+		logf("loop 2 here\n");
+		test_.local2();
+		return 0;
+	case 4:
+	case 5:
+		test_.set_grant(n == 4);
+		return 0;
+	case 6:
+	case 7:
+		if (!online || !link_plain() || test_.active())
+			return -1;
+		logf("loop 2 at the far end%s\n",
+		     n == 7 ? " with the self-test" : "");
+		test_.remote(n == 7);
+		return 1;
+	default:
+		return -1;
+	}
 }
 
 /* ATS<n>? reads S-register n, ATS<n>=<v> sets it (S103 as \N) */

@@ -520,3 +520,187 @@ TEST(TwoWireNoise, V32bisThroughABurst)
 	EXPECT_EQ(p.c.no_carriers + p.a.no_carriers, 0)
 		<< p.c.text << p.a.text;
 }
+
+namespace {
+
+/* a command line from e's DTE, then the line until e's text after it
+   has want (within secs): whether it came */
+bool command(Pair &p, End &e, const std::string &cmd,
+	     const std::string &want, double secs = 15)
+{
+	size_t from = e.text.size();
+	e.dte.write_some(cmd + "\r", 0);
+	run(p.line, p.c, p.a, secs, [&] {
+		return e.text.find(want, from) != std::string::npos;
+	});
+	return e.text.find(want, from) != std::string::npos;
+}
+
+/* +++ after a second of quiet, and its OK */
+bool escape(Pair &p, End &e)
+{
+	run(p.line, p.c, p.a, 1.2, [] { return false; });
+	size_t from = e.text.size();
+	e.dte.write_some("+++", 0);
+	run(p.line, p.c, p.a, 3, [&] {
+		return e.text.find("OK", from) != std::string::npos;
+	});
+	return e.text.find("OK", from) != std::string::npos;
+}
+
+/* the text after from */
+std::string since(const End &e, size_t from)
+{
+	return e.text.substr(std::min(from, e.text.size()));
+}
+
+} // namespace
+
+/* V.54's loop 2 (the remote digital loop) with V.52's self-test,
+   AT&T7, on a call with no error correction: the far end, AT&T4,
+   recognises the PREP and loops after its ACK; the 511-bit pattern
+   comes back with no errors on a clean line; AT&T0 sends the TERM,
+   reports 000 and OK; the far end is out of its loop, and data goes
+   both ways again after ATO */
+class RemoteLoop : public ::testing::TestWithParam<Mod> {};
+
+TEST_P(RemoteLoop, SelfTest)
+{
+	dmodem_init();
+	debug();
+	const Mod &m = GetParam();
+	std::string l = m.rate == 9600 ? "&L2" : "&L1";
+	Pair p(l, std::string(m.ms) + "\\N0", std::string(m.ms) + "\\N0&T4");
+	ASSERT_TRUE(p.connect()) << p.c.text << p.a.text;
+	ASSERT_TRUE(escape(p, p.c)) << p.c.text;
+	ASSERT_TRUE(command(p, p.c, "AT&T7", "OK")) << p.c.text;
+	run(p.line, p.c, p.a, 3, [] { return false; });
+	size_t from = p.c.text.size();
+	ASSERT_TRUE(command(p, p.c, "AT&T0", "OK", 60)) << since(p.c, from);
+	EXPECT_NE(since(p.c, from).find("000\r\n"), std::string::npos)
+		<< since(p.c, from);
+	/* (the far end's DTE saw nothing of the test) */
+	EXPECT_EQ(p.a.no_carriers, 0);
+	ASSERT_TRUE(command(p, p.c, "ATO", "CONNECT"));
+	run(p.line, p.c, p.a, 1, [] { return false; });
+	EXPECT_TRUE(p.exchange(m.rate / 8, 30, 21))
+		<< p.c.data.size() << " " << p.a.data.size();
+}
+
+INSTANTIATE_TEST_SUITE_P(Leased, RemoteLoop, ::testing::Values(
+	Mod{ "+MS=29", "V29", 9600 }, Mod{ "+MS=132", "V32bis", 14400 },
+	Mod{ "+MS=122", "V22bis", 2400 }), mod_name);
+
+/* AT&T6: loop 2 for the DTE's own data, CONNECT, and what it sends
+   comes back to it (the far end's DTE gets none of it); AT&T0 after
+   the escape ends it */
+TEST(RemoteLoopData, EchoesTheDte)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "+MS=29\\N0&T4");
+	ASSERT_TRUE(p.connect());
+	ASSERT_TRUE(escape(p, p.c));
+	ASSERT_TRUE(command(p, p.c, "AT&T6", "CONNECT")) << p.c.text;
+	p.c.data.clear();
+	size_t a_had = p.a.data.size();
+	std::string msg = "round the loop and back\r\n";
+	p.c.dte.write_some(msg, 0);
+	run(p.line, p.c, p.a, 5, [&] {
+		return p.c.data.find(msg) != std::string::npos;
+	});
+	EXPECT_NE(p.c.data.find(msg), std::string::npos) << p.c.data;
+	EXPECT_EQ(p.a.data.find(msg, a_had), std::string::npos);
+	ASSERT_TRUE(escape(p, p.c));
+	EXPECT_TRUE(command(p, p.c, "AT&T0", "OK", 30)) << p.c.text;
+}
+
+/* the far end refuses loop 2 (AT&T5, as after ATZ): no ACK, ERROR */
+TEST(RemoteLoopData, Refused)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "+MS=29\\N0&T5");
+	ASSERT_TRUE(p.connect());
+	ASSERT_TRUE(escape(p, p.c));
+	EXPECT_TRUE(command(p, p.c, "AT&T7", "ERROR")) << p.c.text;
+	/* and none on a call with error correction */
+	Pair q("&L2", "+MS=29", "+MS=29&T4");
+	ASSERT_TRUE(q.connect());
+	ASSERT_TRUE(escape(q, q.c));
+	EXPECT_TRUE(command(q, q.c, "AT&T7", "ERROR")) << q.c.text;
+}
+
+/* AT&T3: loop 2 at our own end (the far end's data back to it) */
+TEST(RemoteLoopData, LocalDigitalLoop)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "+MS=29\\N0");
+	ASSERT_TRUE(p.connect());
+	ASSERT_TRUE(escape(p, p.a));
+	ASSERT_TRUE(command(p, p.a, "AT&T3", "OK"));
+	p.c.data.clear();
+	std::string msg = "back from the far end\r\n";
+	p.c.dte.write_some(msg, 0);
+	run(p.line, p.c, p.a, 5, [&] {
+		return p.c.data.find(msg) != std::string::npos;
+	});
+	EXPECT_NE(p.c.data.find(msg), std::string::npos) << p.c.data;
+	EXPECT_TRUE(command(p, p.a, "AT&T0", "OK"));
+}
+
+/* V.54's loop 3 (the local analogue loop) on a 4-wire pump, offline:
+   AT&T8 with the self-test (OK, then 000 at AT&T0); AT&T1 for the
+   DTE's data (CONNECT, and its data back); ERROR without AT&L or with
+   a 2-wire modulation */
+TEST(LocalLoop, SelfTestAndData)
+{
+	dmodem_init();
+	debug();
+	for (const char *ms : { "+MS=29", "+MS=33", "+MS=27" }) {
+		Pair p("&L2", std::string(ms) + "\\N0", "S0=0");
+		ASSERT_TRUE(command(p, p.c, "AT&T8", "OK", 20))
+			<< ms << p.c.text;
+		run(p.line, p.c, p.a, 2, [] { return false; });
+		size_t from = p.c.text.size();
+		ASSERT_TRUE(command(p, p.c, "AT&T0", "OK")) << ms;
+		EXPECT_NE(since(p.c, from).find("000\r\n"),
+			  std::string::npos) << ms << since(p.c, from);
+		run(p.line, p.c, p.a, 1, [] { return false; });
+		ASSERT_TRUE(command(p, p.c, "AT&T1", "CONNECT", 20))
+			<< ms << p.c.text;
+		p.c.online = true;
+		p.c.data.clear();
+		std::string msg = "through my own modulator\r\n";
+		p.c.dte.write_some(msg, 0);
+		run(p.line, p.c, p.a, 5, [&] {
+			return p.c.data.find(msg) != std::string::npos;
+		});
+		EXPECT_NE(p.c.data.find(msg), std::string::npos) << ms;
+		ASSERT_TRUE(escape(p, p.c));
+		EXPECT_TRUE(command(p, p.c, "AT&T0", "OK"));
+		/* (the far end's line heard nothing) */
+		EXPECT_EQ(p.a.connects, 0);
+	}
+	Pair d("&L0", "\\N0+MS=29", "S0=0");
+	EXPECT_TRUE(command(d, d.c, "AT&T8", "ERROR"));
+	Pair v("&L2", "\\N0+MS=132", "S0=0");
+	EXPECT_TRUE(command(v, v.c, "AT&T8", "ERROR"));
+}
+
+/* S18: the test ends by itself after its seconds */
+TEST(LocalLoop, TestTimer)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0S18=3", "S0=0");
+	ASSERT_TRUE(command(p, p.c, "AT&T1", "CONNECT", 20)) << p.c.text;
+	size_t from = p.c.text.size();
+	run(p.line, p.c, p.a, 5, [] { return false; });
+	EXPECT_NE(since(p.c, from).find("OK"), std::string::npos)
+		<< since(p.c, from);
+	struct dmodem_status st;
+	dmodem_status(p.c.m, &st);
+	EXPECT_NE(st.link, DMODEM_ONLINE);
+}
