@@ -17,6 +17,9 @@ The project's overview, building and usage are in the top
   MNP 5, V.80 synchronous access
 - [The modem core](core.md): AT commands, S-registers, the call's state
   machine
+- [Leased lines and dry pairs](leased.md): `AT&L1` and `AT&L2`, the 4-wire
+  pumps (V.29, V.33, V.27ter), retrains, V.54's loop tests and V.52's
+  self-test (`AT&T`), V.13's simulated carrier (S48)
 
 ## Telephony
 

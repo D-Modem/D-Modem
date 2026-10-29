@@ -47,6 +47,7 @@ struct Scrambler {
 	/* (not all 0s, where 0s stay 0s, nor all 1s, where 1s stay
 	   1s) */
 	u8 s = 0x55;
+	/* the bit scrambled */
 	u8 bit(u8 in)
 	{
 		u8 o = (in ^ (s >> 3) ^ (s >> 6)) & 1;
@@ -58,6 +59,7 @@ struct Scrambler {
 /* its self-synchronising descrambler */
 struct Descrambler {
 	u8 s = 0;
+	/* the bit descrambled */
 	u8 bit(u8 in)
 	{
 		u8 o = (in ^ (s >> 3) ^ (s >> 6)) & 1;
@@ -70,11 +72,13 @@ struct Descrambler {
    blocks blocks of 256 bits in a row */
 class Recogniser {
 public:
+	/* the pattern of scrambled v, after blocks blocks */
 	Recogniser(u8 v, s16 blocks) : v_(v), need_(blocks) {}
 	/* a bit from the line; whether the pattern is recognised (once
 	   true, true until reset()) */
 	bool bit(u8 b);
 	void reset();
+	/* (see bit()) */
 	bool seen() const { return seen_; }
 
 private:
@@ -89,6 +93,7 @@ private:
 /* V.52's 511-bit pattern, x^9 + x^5 + 1 */
 struct Prbs9 {
 	u16 s = 0x1ff;
+	/* the pattern's next bit */
 	u8 bit()
 	{
 		u8 o = ((s >> 8) ^ (s >> 4)) & 1;
@@ -103,9 +108,13 @@ struct Prbs9 {
 class Checker {
 public:
 	void bit(u8 b);
+	/* to synchronise anew */
 	void reset() { *this = Checker(); }
+	/* synchronised on the pattern */
 	bool locked() const { return locked_; }
+	/* the bits in error since */
 	u32 errors() const { return errors_; }
+	/* the bits checked */
 	u32 bits() const { return bits_; }
 
 private:
@@ -143,6 +152,7 @@ public:
 	void reset();
 	/* the far end may ask for loop 2 (AT&T4; AT&T5 refuses) */
 	void set_grant(bool g) { grant_ = g; }
+	/* (see set_grant()) */
 	bool grant() const { return grant_; }
 	/* the link has no error correction: tests run only then (loop 2's
 	   signalling is in the data) */
@@ -157,8 +167,11 @@ public:
 	/* AT&T0: A sends TERM; the other tests are over at once */
 	void end();
 
+	/* where the test is */
 	Phase phase() const { return phase_; }
+	/* a test runs */
 	bool active() const { return phase_ != Phase::Idle; }
+	/* V.52's pattern in place of the DTE's data */
 	bool self_test() const { return self_; }
 	/* the link has the bits (it sends and receives them): no test,
 	   or a test that carries the DTE's data */
@@ -184,6 +197,7 @@ public:
 	}
 	/* the self-test's bit errors so far */
 	u32 errors() const { return check_.errors(); }
+	/* the checker */
 	const Checker &checker() const { return check_; }
 
 	/* the patterns' lengths (V.54 6), A's wait for ACK (bits after
@@ -195,6 +209,7 @@ public:
 	};
 
 private:
+	/* the phase, for bits bits */
 	void set(Phase p, s32 bits = 0)
 	{
 		phase_ = p;

@@ -164,8 +164,9 @@ CARRIER).
 ## Leased lines: AT&L1
 
 A bare pair has no exchange: no dial tone, ringing or hook. At 48000 Hz
-and above the core never runs call progress, and `AT&L1` (S47) does the
-same on any line:
+and above the core never runs call progress, and the line behaves as a
+leased line (`AT&L1`, S47; the voice band's leased lines are in
+[leased.md](../leased.md)):
 
 - `ATD` (any number, or none) starts the data pump as the caller at
   once.

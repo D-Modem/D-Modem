@@ -40,7 +40,10 @@ interface has one addition the original library does not use:
 | 212 | Bell 212A, 1200 bit/s DPSK | 2225 Hz answer tone, scrambled ones handshake |
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | Full S1 handshake, falls back to V.22 |
 | 32 | ITU V.32, 4800/9600 bit/s | Uncoded 4800, trellis coded 9600, echo canceller |
-| 132 | ITU V.32bis, 4800 to 14400 bit/s | Rate chosen from the measured training quality |
+| 132 | ITU V.32bis, 4800 to 14400 bit/s | Rate chosen from the measured training quality; retrains by itself when its equalization is lost |
+| 29 | ITU V.29, 4800 to 9600 bit/s, 4-wire leased | `dp_4wire.cpp`: the fax modulators of `fax_modems.cpp` as a duplex pump on a continuous carrier (`AT&L2`): each end's synchronizing signal, the far end's rate found by parallel receivers, resynchronizing and fallback (see [leased lines](../leased.md)) |
+| 33 | ITU V.33, 12000 and 14400 bit/s, 4-wire leased | V.17's trellis coded modulation with V.33's rate signals, in `dp_4wire.cpp` |
+| 27 | ITU V.27ter, 2400 and 4800 bit/s, 4-wire leased | in `dp_4wire.cpp` |
 | V_CVM (150) | V.cvm, data over mobile speech paths, 175 to 3500 bit/s | The proposed Recommendation of [docs/cellular](../cellular/v_cvm.tex): V.8 (with V.22 and V.21 as the fallback), then probing and a loaded comb or the parametric mode through AMR, AMR-WB or G.711 (see [V.cvm](vcvm.md)) |
 | 91 | ITU V.91, 28000 to 62667 bit/s both ways | Two digital modems on an 8000 Hz G.711 line; V.8, then V.34 if V.91 does not start (see [V.91](v91.md#v91-digital-to-digital)). 90 and 92 offer it as well |
 | VWB (200) | V.wb, D-Modem's wideband mode on a bare pair, up to 148656 bit/s each way | DMT in frequency-division duplex at 48000, 96000 or 192000 Hz (refused below 48000), for pico-serial's WB stick; leased-line behaviour (no call progress; `AT&L1`), a start-up of its own, per-tone bit loading from the measured SNR, RS(255,239), a loop-timed answerer (see [V.wb](vwb.md)) |

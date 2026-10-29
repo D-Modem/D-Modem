@@ -9,8 +9,9 @@
 #   docs/specs/fetch.sh            all of them
 #   docs/specs/fetch.sh V.34 T.30  some
 cd "$(dirname "$0")"
-RECS="G.711 T.4 T.6 T.30 T.31 T.38 V.8 V.17 V.21 V.22 V.22bis V.23 V.25 V.27ter
-V.29 V.32 V.32bis V.34 V.42 V.42bis V.44 V.80 V.90 V.91 V.92 V.250
+RECS="G.711 T.4 T.6 T.30 T.31 T.38 V.8 V.13 V.17 V.21 V.22 V.22bis V.23 V.25
+V.27ter V.29 V.32 V.32bis V.33 V.34 V.42 V.42bis V.44 V.52 V.54 V.80 V.90 V.91
+V.92 V.250
 V.253"
 [ $# -gt 0 ] && RECS="$*"
 base=https://www.itu.int/rec

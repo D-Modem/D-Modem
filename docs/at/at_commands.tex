@@ -595,12 +595,20 @@ no effect, and whose \cmd{\&K3} (RTS/CTS) leaves V.42's compression on.
 \end{command}
 
 \begin{command}{ampL}{AT\&L[\p{n}]}
-\cmd{\&L1}: a leased line (\sreg{47}; default 0, a dialled line), a
-pair with no exchange: no dial tone, ringing or hook.
-\cmdl[D]{ATD} (any number, or none) starts the data pump as the caller
-at once, without call progress; \cmdl[A]{ATA} as the answerer; with
-\sreg{0} above 0 the modem answers by itself, with no ring, whenever it
-is idle.  A call the line ends (NO CARRIER) starts again by itself 2~s
+\cmd{\&L1}: a 2-wire leased line, \cmd{\&L2}: a 4-wire one (\sreg{47};
+default 0, a dialled line); a pair or a circuit with no exchange: no
+dial tone, ringing or hook.  \cmdl[D]{ATD} (any number, or none) calls
+at once, listening only for the answer tone (no dial tone, busy or
+number); \cmdl[A]{ATA} answers; with \sreg{0} above 0 the modem answers
+by itself, with no ring, whenever it is idle.  Every voice band
+modulation of \cmdl[plusMS]{+MS} runs on \cmd{\&L1}.  On \cmd{\&L2} the
+4-wire modulations (\cmd{+MS=V29}, \cmd{V33}, \cmd{V27TC}) run as
+duplex pumps on a continuous carrier, each end starting at once with
+its own synchronizing signal; the others run as on \cmd{\&L1}.  With
+\sreg{48}=1, on a call with no error correction, V.13's simulated
+carrier control: between the DTE's bursts of data the line carries
+V.13's idle pattern, which the far end takes for its carrier detect
+OFF (its DTE gets nothing), and each burst turns it ON again.  A call the line ends (NO CARRIER) starts again by itself 2~s
 later, dialled or answered as before; \cmdl[H]{ATH}, DTR, \cmdl[Z]{ATZ}
 or \cmd{\&L0} stop that until the next command line.  A line at 48000
 Hz and more (dmodemd's \cmd{-r 96000}) always behaves so: its mode is
@@ -610,6 +618,27 @@ Hz and more (dmodemd's \cmd{-r 96000}) always behaves so: its mode is
 
 \begin{command}{ampP}{AT\&P[\p{n}]}
 \cmd{\&P0} to \cmd{\&P3}: the pulse dialing ratio, kept in \sreg{28}.
+\end{command}
+
+\begin{command}{ampT}{AT\&T[\p{n}]}
+V.54's loop tests, with Hayes' numbers.  \cmd{\&T0} (or \cmd{\&T}) ends
+the test; after \cmd{\&T7} or \cmd{\&T8} it first shows the self-test's
+bit errors, three digits (255 at most), then OK.
+\cmd{\&T1}: loop 3, the local analogue loop: offline, on a leased line
+(\cmdl[ampL]{\&L}) with a 4-wire modulation (\cmd{+MS=V29}, \cmd{V33}
+or \cmd{V27TC}), the modem's signal back into its own receiver and the
+line silent; CONNECT, and the DTE's data comes back to it.  \cmd{\&T8}:
+the same with V.52's self-test (its 511-bit pattern sent and checked),
+OK and command state.
+\cmd{\&T6}: loop 2 at the far end, the remote digital loop, asked for
+in band (V.54's PREP, ACK and TERM); from online command state on a
+call with no error correction (\cmdl[bsN]{\bs N0}); CONNECT, and the
+DTE's data comes back to it from the far end; ERROR if the far end does
+not answer.  \cmd{\&T7}: the same with the self-test, OK.
+\cmd{\&T3}: loop 2 here, the far end's data back to it.
+\cmd{\&T4}: the far end may ask for loop 2; \cmd{\&T5} (the default,
+again after \cmdl[Z]{ATZ}): it may not.  \sreg{18} above 0 ends a test
+after that many seconds.
 \end{command}
 
 \begin{command}{ampQ}{AT\&Q[\p{n}]}
@@ -729,6 +758,9 @@ turns automode off.  The default is \cmd{92,1,300,56000}.  In V.34
 122 & \cmd{V22B} & ITU V.22bis & 2400 bit/s, V.22 as its fallback \\
 32 & \cmd{V32} & ITU V.32 & 4800 and 9600 bit/s \\
 132 & \cmd{V32B} & ITU V.32bis & 4800 to 14400 bit/s \\
+29 & \cmd{V29} & ITU V.29 & 4800 to 9600 bit/s, 4-wire leased \\
+33 & \cmd{V33} & ITU V.33 & 12000 and 14400 bit/s, 4-wire leased \\
+27 & \cmd{V27TC} & ITU V.27ter & 2400 and 4800 bit/s, 4-wire leased \\
 34 & \cmd{V34} & ITU V.34 & 2400 to 33600 bit/s, after V.8 \\
 90 & \cmd{V90} & ITU V.90 & as the digital modem, after V.8 \\
 91 & \cmd{V91} & ITU V.91 & two digital modems, after V.8 \\
@@ -742,6 +774,15 @@ turns automode off.  The default is \cmd{92,1,300,56000}.  In V.34
 \bottomrule
 \end{tabular}
 \end{center}
+
+V.29, V.33 and V.27ter are the 4-wire leased line modulations
+(\cmdl[ampL]{\&L2}): each end sends on its own pair, on a carrier that
+stays on.  \p{max} sets the rate each end sends at, \p{min} the lowest
+it comes down to: a receiver finds the far end's rate by itself, an end
+faster than the far end comes down to its rate, and one that loses its
+equalization twice in 20~s at its own rate takes the next rate down.
+A receiver that loses its equalization sends its synchronizing signal
+again and gets the far end's back (V.29 10, V.33 9).
 
 V.90 and V.92 are there as the \emph{digital} modem (the server's side,
 as on a G.711 VoIP line), on an 8000 Hz G.711 line: analogue V.90 and
@@ -774,7 +815,7 @@ The settings: \cmd{92,1,300,56000} (\cmd{200,1,300,56000} on a line at
 
 \begin{command}{plusMS-t}{AT+MS=?}
 What may be chosen:\\
-\cmd{(21,22,23,122,32,132,34,103,212,56,90,91,92,150,200),(0,1),(300-56000),(300-56000)}
+\cmd{(21,22,23,27,29,122,32,132,33,34,103,212,56,90,91,92,150,200),(0,1),(300-56000),(300-56000)}
 \end{command}
 
 \subsection{Identification and country}
@@ -1214,6 +1255,7 @@ Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;
 \sregrow{14} & quiet (\cmdl[Q]{Q}) & 0 & \\
 \sregrow{15} & verbose (\cmdl[V]{V}) & 1 & \\
 \sregrow{16} & tone (1) or pulse (0) dialing (\cmdl[P]{T}, \cmdl[P]{P}) & 1 & \\
+\sregrow{18} & a loop test's time, s (\cmdl[ampT]{\&T}; 0: none) & 0 & \\
 \sregrow{24} & hook flash time, 10 ms & 20 & the country's \\
 \sregrow{28} & pulse ratio (\cmdl[ampP]{\&P}) & 0 & kept \\
 \sregrow{29} & speaker control (\cmdl[L]{M}) & 1 & \\
@@ -1224,6 +1266,7 @@ Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;
 \sregrow{44} & V.cvm: the tones loaded in the receive direction of the last call (\cmdl[plusCVM]{+CVM}) & 0 & read only \\
 \sregrow{45} & V.cvm: the last call's renegotiations & 0 & read only \\
 \sregrow{47} & a leased line (\cmdl[ampL]{\&L}) & 0 & \\
+\sregrow{48} & V.13's simulated carrier control (1) & 0 & no error correction \\
 \sregrow{56} & results and dial tone (\cmdl[X]{X}) & 4 & \\
 \sregrow{60} & carrier detect (\cmdl[ampC]{\&C}) & 0 & kept \\
 \sregrow{62} & flow control (\cmdl[ampC]{\&H}) & 0 & kept \\

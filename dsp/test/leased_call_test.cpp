@@ -35,6 +35,7 @@ namespace {
 
 struct Dte {
 	int fd[2];
+	/* a socket pair, both ends non-blocking */
 	Dte()
 	{
 		if (dmd::stream_pair(fd))
@@ -42,11 +43,13 @@ struct Dte {
 		for (int f : fd)
 			dmd::set_nonblocking(f);
 	}
+	/* (both ends closed) */
 	~Dte()
 	{
 		dmd::fd_close(fd[0]);
 		dmd::fd_close(fd[1]);
 	}
+	/* what the modem wrote to the DTE so far */
 	std::string read_all()
 	{
 		std::string s;
@@ -56,6 +59,7 @@ struct Dte {
 			s.append(buf, static_cast<size_t>(n));
 		return s;
 	}
+	/* s from at on to the modem, what it took */
 	size_t write_some(const std::string &s, size_t at)
 	{
 		if (at >= s.size())
@@ -73,6 +77,7 @@ struct End {
 	bool online = false;
 	int connects = 0, no_carriers = 0;
 	size_t sent = 0;
+	/* a modem at rate Hz with its init line */
 	End(const char *name, const char *init, int32_t rate)
 	{
 		dmodem_config c{};
@@ -81,7 +86,9 @@ struct End {
 		c.init = init;
 		m = dmodem_create_rate(&c, rate);
 	}
+	/* (the modem destroyed) */
 	~End() { dmodem_destroy(m); }
+	/* the DTE's text so far: CONNECT, data, NO CARRIER */
 	void take()
 	{
 		dmodem_poll_dte(m);
@@ -130,7 +137,9 @@ struct Line {
 	long t = 0;
 	s32 rate;
 	bool changed = false;
+	/* a line at r Hz */
 	explicit Line(s32 r) : rate(r) {}
+	/* an end's sample in: the far end's and its own, and the noise */
 	s16 mix(s16 far, s16 own)
 	{
 		double s = static_cast<double>(t) / rate;
@@ -150,6 +159,7 @@ struct Line {
 };
 
 template <class Stop>
+/* secs of the line between c and a, or until stop() */
 void run(Line &l, End &c, End &a, double secs, Stop stop)
 {
 	const s32 n = l.rate / 200;
@@ -192,6 +202,7 @@ void run(Line &l, End &c, End &a, double secs, Stop stop)
 	}
 }
 
+/* n bytes of data, a different stream for each side */
 std::string bulk(size_t n, unsigned side)
 {
 	std::string s(n, '\0');
@@ -230,6 +241,7 @@ void debug()
 struct Pair {
 	Line line{9600};
 	End c, a;
+	/* the two modems, set up */
 	Pair(const std::string &l, const std::string &ci,
 	     const std::string &ai)
 		: c("caller", ("ATE0X4" + l + ci + "\r").c_str(), 9600),
@@ -277,6 +289,7 @@ struct Mod {
 	uint32_t rate;          /* the CONNECT's */
 };
 
+/* the test's name: the modulation's */
 std::string mod_name(const ::testing::TestParamInfo<Mod> &i)
 {
 	return i.param.name;
@@ -289,6 +302,7 @@ std::string mod_name(const ::testing::TestParamInfo<Mod> &i)
    tone and nothing else), and 5 s of data goes both ways */
 class TwoWire : public ::testing::TestWithParam<Mod> {};
 
+/* (see TwoWire) */
 TEST_P(TwoWire, Connects)
 {
 	dmodem_init();
@@ -315,6 +329,7 @@ INSTANTIATE_TEST_SUITE_P(Leased, TwoWire, ::testing::Values(
    rates, duplex on a continuous carrier */
 class FourWire : public ::testing::TestWithParam<Mod> {};
 
+/* (see FourWire) */
 TEST_P(FourWire, Connects)
 {
 	dmodem_init();
@@ -471,6 +486,7 @@ TEST(FourWireResync, CallsAgainAfterACut)
    call is lost */
 class TwoWireRetrain : public ::testing::TestWithParam<Mod> {};
 
+/* (see TwoWireRetrain) */
 TEST_P(TwoWireRetrain, AfterAReroute)
 {
 	dmodem_init();
@@ -564,6 +580,7 @@ std::string since(const End &e, size_t from)
    both ways again after ATO */
 class RemoteLoop : public ::testing::TestWithParam<Mod> {};
 
+/* (see RemoteLoop) */
 TEST_P(RemoteLoop, SelfTest)
 {
 	dmodem_init();

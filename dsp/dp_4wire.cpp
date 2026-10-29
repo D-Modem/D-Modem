@@ -123,10 +123,12 @@ struct FourWirePump : PumpBase<FourWirePump, fw_state> {
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
 		  s32 max_frag);
 	s16 sample(float x, float *y);
+	/* the line's samples (PumpBase) */
 	s16 process(void *in, void *out, s32 cnt) override
 	{
 		return pump_loop(in, out, cnt);
 	}
+	/* (the receivers freed) */
 	~FourWirePump() override
 	{
 		for (s16 k = 0; k < nrx; k++)
@@ -141,7 +143,9 @@ struct FourWirePump : PumpBase<FourWirePump, fw_state> {
 	s16 get_bit();
 	float limit_of(enum fax_mod mod) const;
 	bool slower(enum fax_mod to);
+	/* a modulation's rate, bit/s */
 	s32 rate_of(enum fax_mod mod) const { return fax_mod_bps(mod); }
+	/* the receiver chosen, or none yet */
 	const FaxRx *rx_active() const
 	{
 		return active >= 0 ? &rx[active] : nullptr;

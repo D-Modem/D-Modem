@@ -9,6 +9,7 @@
 namespace dcore {
 namespace v13 {
 
+/* see v13.h */
 u8 SimCarrier::tx(u8 link_bit)
 {
 	link_bit &= 1;
@@ -48,6 +49,7 @@ u8 SimCarrier::tx(u8 link_bit)
 	return o;
 }
 
+/* see v13.h */
 u8 SimCarrier::rx(u8 b)
 {
 	u8 d = d_.bit(b & 1);

@@ -9,6 +9,7 @@
 namespace dcore {
 namespace v54 {
 
+/* see v54.h */
 bool Recogniser::bit(u8 b)
 {
 	u8 d = d_.bit(b);
@@ -32,6 +33,7 @@ bool Recogniser::bit(u8 b)
 	return seen_;
 }
 
+/* (see v54.h) */
 void Recogniser::reset()
 {
 	d_ = Descrambler();
@@ -40,6 +42,7 @@ void Recogniser::reset()
 	run_seen_ = seen_ = false;
 }
 
+/* see v54.h */
 void Checker::bit(u8 b)
 {
 	if (!locked_) {
@@ -67,6 +70,7 @@ void Checker::bit(u8 b)
 	win_ = win_err_ = 0;
 }
 
+/* see v54.h */
 void LoopTest::reset()
 {
 	bool g = grant_;
@@ -74,6 +78,7 @@ void LoopTest::reset()
 	grant_ = g;
 }
 
+/* see v54.h */
 void LoopTest::remote(bool self_test)
 {
 	self_ = self_test;
@@ -84,6 +89,7 @@ void LoopTest::remote(bool self_test)
 	set(Phase::Prep, PREP_BITS);
 }
 
+/* see v54.h */
 void LoopTest::local2()
 {
 	asked_ = false;
@@ -91,6 +97,7 @@ void LoopTest::local2()
 	set(Phase::Loop);
 }
 
+/* see v54.h */
 void LoopTest::local3(bool self_test)
 {
 	self_ = self_test;
@@ -99,6 +106,7 @@ void LoopTest::local3(bool self_test)
 	set(Phase::Local3);
 }
 
+/* see v54.h */
 void LoopTest::end()
 {
 	switch (phase_) {
@@ -121,6 +129,7 @@ void LoopTest::end()
 	}
 }
 
+/* see v54.h */
 bool LoopTest::link_tx() const
 {
 	switch (phase_) {
@@ -134,11 +143,13 @@ bool LoopTest::link_tx() const
 	}
 }
 
+/* see v54.h */
 bool LoopTest::link_rx() const
 {
 	return link_tx();
 }
 
+/* see v54.h */
 u8 LoopTest::tx(u8 link_bit)
 {
 	u8 o;
@@ -197,6 +208,7 @@ u8 LoopTest::tx(u8 link_bit)
 	return 1;
 }
 
+/* see v54.h */
 void LoopTest::rx(u8 b)
 {
 	b &= 1;

@@ -69,7 +69,10 @@ The data pumps (`../dsp`) see the core through their C interface
 (`interface.cpp`: `modem_dp.h`, `modem_param.h`, `dsplibs.h`): a
 `struct modem` that leads back to the `Modem`. The data link layer
 (`../link`: V.42 detection, LAPM, MNP 2 to 4, V.44, V.42bis, MNP 5,
-async) runs between the DTE's characters and the pumps' bits. `log.cpp`
+async) runs between the DTE's characters and the pumps' bits. Between
+the link and the pumps, on calls with no error correction, sit V.13's
+simulated carrier (`v13.cpp`, S48) and V.54's loop tests with V.52's
+self-test (`v54.cpp`, `AT&T`; see [leased.md](leased.md)). `log.cpp`
 has the debug output (stderr or a hook, and the binary `dmodem.log`).
 
 The behaviour started as that of Smart Link's slmodemd core (`modem.c`,

@@ -16,20 +16,24 @@ links below the table then work.
 | [T.31](https://www.itu.int/rec/T-REC-T.31) | Class 1 fax AT commands | `dsp/fax_class1.cpp` | [T.31.pdf](T.31.pdf) |
 | [T.38](https://www.itu.int/rec/T-REC-T.38) | Fax over IP: IFP packets, UDPTL | `dsp/t38.cpp`, `dsp/t30.cpp` (T.38 terminal), `ari/` | [T.38.pdf](T.38.pdf) |
 | [V.8](https://www.itu.int/rec/T-REC-V.8) | Start-up: ANSam, CM/JM/CJ | `dsp/dp_v34.cpp` | [V.8.pdf](V.8.pdf) |
+| [V.13](https://www.itu.int/rec/T-REC-V.13) | Simulated carrier control | `core/v13.cpp` (S48) | [V.13.pdf](V.13.pdf) |
 | [V.17](https://www.itu.int/rec/T-REC-V.17) | 14400 bit/s fax modem | `dsp/fax_modems.cpp` | [V.17.pdf](V.17.pdf) |
 | [V.21](https://www.itu.int/rec/T-REC-V.21) | 300 bit/s FSK | `dsp/dp_fsk.cpp`, V.8 and fax HDLC | [V.21.pdf](V.21.pdf) |
 | [V.22](https://www.itu.int/rec/T-REC-V.22) | 1200 bit/s DPSK | `dsp/dp_v22.cpp` | [V.22.pdf](V.22.pdf) |
 | [V.22bis](https://www.itu.int/rec/T-REC-V.22bis) | 2400 bit/s QAM | `dsp/dp_v22.cpp` | [V.22bis.pdf](V.22bis.pdf) |
 | [V.23](https://www.itu.int/rec/T-REC-V.23) | 1200/75 bit/s FSK | `dsp/dp_fsk.cpp` | [V.23.pdf](V.23.pdf) |
 | [V.25](https://www.itu.int/rec/T-REC-V.25) | Answer and calling tones | `dsp/dp_callprog.cpp` | [V.25.pdf](V.25.pdf) |
-| [V.27ter](https://www.itu.int/rec/T-REC-V.27ter) | 4800/2400 bit/s fax modem | `dsp/fax_modems.cpp` | [V.27ter.pdf](V.27ter.pdf) |
-| [V.29](https://www.itu.int/rec/T-REC-V.29) | 9600 bit/s fax modem | `dsp/fax_modems.cpp` | [V.29.pdf](V.29.pdf) |
+| [V.27ter](https://www.itu.int/rec/T-REC-V.27ter) | 4800/2400 bit/s modem (fax, 4-wire leased) | `dsp/fax_modems.cpp`, `dsp/dp_4wire.cpp` | [V.27ter.pdf](V.27ter.pdf) |
+| [V.29](https://www.itu.int/rec/T-REC-V.29) | 9600 bit/s modem (fax, 4-wire leased) | `dsp/fax_modems.cpp`, `dsp/dp_4wire.cpp` | [V.29.pdf](V.29.pdf) |
 | [V.32](https://www.itu.int/rec/T-REC-V.32) | 9600 bit/s duplex, trellis coded | `dsp/dp_v32.cpp` | [V.32.pdf](V.32.pdf) |
 | [V.32bis](https://www.itu.int/rec/T-REC-V.32bis) | 14400 bit/s duplex | `dsp/dp_v32.cpp` | [V.32bis.pdf](V.32bis.pdf) |
+| [V.33](https://www.itu.int/rec/T-REC-V.33) | 14400 bit/s on 4-wire leased circuits | `dsp/dp_4wire.cpp`, `dsp/fax_modems.cpp` | [V.33.pdf](V.33.pdf) |
 | [V.34](https://www.itu.int/rec/T-REC-V.34) | 33600 bit/s duplex | `dsp/dp_v34.cpp`, `v34_modem.cpp`, `v34_data.cpp` | [V.34.pdf](V.34.pdf) |
 | [V.42](https://www.itu.int/rec/T-REC-V.42) | Error correction (LAPM) | `link/lapm.cpp`, `link/hdlc.cpp` | [V.42.pdf](V.42.pdf) |
 | [V.42bis](https://www.itu.int/rec/T-REC-V.42bis) | Data compression | `link/v42bis.cpp` | [V.42bis.pdf](V.42bis.pdf) |
 | [V.44](https://www.itu.int/rec/T-REC-V.44) | Data compression (LZJH) | `link/v44.cpp` | [V.44.pdf](V.44.pdf) |
+| [V.52](https://www.itu.int/rec/T-REC-V.52) | Test patterns (the 511-bit pattern) | `core/v54.cpp` (`AT&T7`, `AT&T8`) | [V.52.pdf](V.52.pdf) |
+| [V.54](https://www.itu.int/rec/T-REC-V.54) | Loop test devices (loops 2 and 3) | `core/v54.cpp` (`AT&T`) | [V.54.pdf](V.54.pdf) |
 | [V.80](https://www.itu.int/rec/T-REC-V.80) | Synchronous access mode (in-band DTE control) | `link/v80.cpp`, `core/modem.cpp` | [V.80.pdf](V.80.pdf) |
 | [V.90](https://www.itu.int/rec/T-REC-V.90) | 56000 bit/s downstream, digital modem | `dsp/v90.cpp`, `dsp/dp_v34.cpp` | [V.90.pdf](V.90.pdf) |
 | [V.91](https://www.itu.int/rec/T-REC-V.91) | PCM between two digital modems | `dsp/v91.cpp` | [V.91.pdf](V.91.pdf) |

@@ -37,6 +37,7 @@ namespace v13 {
 /* 1 + x^-3 + x^-7 */
 struct Scrambler {
 	u8 s = 0x2a;
+	/* the bit scrambled */
 	u8 bit(u8 in)
 	{
 		u8 o = (in ^ (s >> 2) ^ (s >> 6)) & 1;
@@ -47,6 +48,7 @@ struct Scrambler {
 
 struct Descrambler {
 	u8 s = 0;
+	/* the bit descrambled */
 	u8 bit(u8 in)
 	{
 		u8 o = (in ^ (s >> 2) ^ (s >> 6)) & 1;
@@ -64,7 +66,9 @@ public:
 	/* a bit from the line: what goes to the link (1 while 109 is
 	   OFF) */
 	u8 rx(u8 b);
+	/* circuit 105 here (we send data) */
 	bool c105() const { return on_; }
+	/* circuit 109 from the far end's */
 	bool c109() const { return c109_; }
 	/* 109 changed since the last call */
 	bool c109_changed()
