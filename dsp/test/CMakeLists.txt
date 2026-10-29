@@ -156,9 +156,14 @@ if(CMAKE_CROSSCOMPILING)
 else()
 	find_program(TIFFCP tiffcp)
 endif()
+# (none found: "" for the test to skip, not TIFFCP-NOTFOUND)
+set(_tiffcp "${TIFFCP}")
+if(NOT TIFFCP)
+	set(_tiffcp "")
+endif()
 dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp
 	${S}/t4.cpp ${S}/tiff.cpp ${_fax})
-target_compile_definitions(fax_test PRIVATE "TIFFCP=\"${TIFFCP}\"")
+target_compile_definitions(fax_test PRIVATE "TIFFCP=\"${_tiffcp}\"")
 dmodem_gtest(fax_test LABELS quick)
 # T.38: its packets, UDPTL, and two T.30 machines over it
 dmodem_test_exe(t38_test t38_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp
