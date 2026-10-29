@@ -155,12 +155,15 @@ jobs:
       - name: Wine prefix
         run: wineboot --init && wineserver -w
 
-      # (a wineserver kept running, its output nowhere: one the tests
-      # started took the starting test's stdout with it, and ctest waited
-      # on that pipe until its timeout, the test's own body long passed)
+      # (Wine's own processes, wineserver and its services, kept running
+      # by an idle cmd waiting on a pipe, all with their output nowhere:
+      # started by a test's wine they took its stdout with them, and
+      # ctest waited on that pipe until its timeout, the test long done)
       - name: Tests
         run: |
           wineserver -p </dev/null >/dev/null 2>&1
+          (sleep 7200 </dev/null 2>/dev/null | wine cmd /c "set /p x=" >/dev/null 2>&1 &)
+          wine cmd /c exit </dev/null >/dev/null 2>&1
           ctest --test-dir build-win -L quick -j4 --output-on-failure
 
       - name: Test logs
