@@ -1521,13 +1521,15 @@ s16 Modem::dial_start()
 	if (started_ && !voice_held_ && stop_call())
 		return -1;
 	caller_ = true;
-	/* a leased line, or a wideband one, has no exchange: the pump at
+	/* a wideband line, or a 4-wire pump on a leased one: the pump at
 	   once (dial()) */
-	if (leased())
+	if (leased_direct())
 		return 0;
 	d = find_driver(DP_CALLPROG);
 	first = dialing_[0];
-	if (!host_.analog_line(*this))
+	/* (a leased line has nothing to dial: call progress only listens
+	   for the answer tone) */
+	if (!host_.analog_line(*this) || leased())
 		dialing_[0] = '\0';
 	if (d && d->op)
 		dp_ = d->op->create(handle(), DP_CALLPROG, 1, srate_, frag_,
@@ -1570,12 +1572,29 @@ s16 Modem::dial(const char *number)
 	voice_held_ = false;
 	if (start_call(held))
 		return -1;
-	if (leased()) {
-		if (sregs_[SREG_LEASED])
-			leased_role_ = Leased::Dial;
+	if (sregs_[SREG_LEASED])
+		leased_role_ = Leased::Dial;
+	if (leased_direct())
 		later(Later::ChangeDp, 0);
-	}
 	return 0;
+}
+
+/* see dcore.h */
+bool Modem::leased_direct() const
+{
+	if (wideband())
+		return true;
+	if (!sregs_[SREG_LEASED])
+		return false;
+	switch (sregs_[SREG_DP]) {
+	case DP_VWB:            /* (refused below 48000 Hz at once) */
+	case DP_V27TER:
+	case DP_V29:
+	case DP_V33:
+		return true;
+	default:
+		return false;
+	}
 }
 
 /* call progress has dialled up to the ';': the call is held in command

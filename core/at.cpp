@@ -607,8 +607,9 @@ s16 Modem::at_command(char *cmd)
 						      3);
 					break;
 				case 'L':
-					/* a leased line (1) or a dialled one */
-					ret = setting(SREG_LEASED, 2, 0, 1);
+					/* a dialled line (0), a 2-wire leased
+					   one (1) or a 4-wire one (2) */
+					ret = setting(SREG_LEASED, 2, 0, 2);
 					break;
 				case 'K': {
 					/* USRobotics': as %C */

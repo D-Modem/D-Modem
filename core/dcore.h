@@ -272,9 +272,16 @@ public:
 	   only the wideband pump (DP_VWB) runs there, and with no call
 	   progress (a bare pair's, no exchange) */
 	bool wideband() const { return srate_ > 9600; }
-	/* a line without an exchange: AT&L1, or wideband (no call
-	   progress: ATD starts the data pump at once) */
+	/* a line without an exchange: AT&L1 or AT&L2, or wideband (no
+	   dial tone, dialling or ringing) */
 	bool leased() const { return wideband() || sregs_[SREG_LEASED]; }
+	/* a 4-wire leased line (AT&L2): each way on a pair of its own */
+	bool four_wire() const { return sregs_[SREG_LEASED] == 2; }
+	/* the calling pump starts at once, with no call progress: the
+	   wideband one, and on a leased line V.wb's and the 4-wire pumps
+	   (V.29, V.33, V.27ter), which have no answer tone to wait for;
+	   the voice band's others listen for the answerer's tone first */
+	bool leased_direct() const;
 	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
 	/* we dialled */

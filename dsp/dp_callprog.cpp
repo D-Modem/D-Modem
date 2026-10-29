@@ -213,6 +213,12 @@ s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
 	v = modem_get_sreg(m, SREG_X_CODE);
 	need_dialtone = (v == 2 || v == 4);
 	busy_detect = v >= 3;
+	/* a leased line (AT&L1, AT&L2) has no exchange: no dial tone or
+	   busy tone, only the answerer's tone to listen for */
+	if (modem_get_sreg(m, SREG_LEASED) > 0) {
+		need_dialtone = 0;
+		busy_detect = 0;
+	}
 
 	calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
 	fax = modem_get_param(m, MDMPRM_MODE) == MODEM_MODE_FAX;

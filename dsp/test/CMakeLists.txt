@@ -134,6 +134,12 @@ dmodem_test_exe(vwb_call_test vwb_call_test.cpp vwb_line.cpp)
 target_include_directories(vwb_call_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
 target_link_libraries(vwb_call_test PRIVATE dmodem)
 dmodem_gtest(vwb_call_test LABELS quick)
+# leased lines and dry pairs in the voice band: AT&L1 and AT&L2, the
+# 4-wire pumps, V.54's loops, V.13
+dmodem_test_exe(leased_call_test leased_call_test.cpp)
+target_include_directories(leased_call_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
+target_link_libraries(leased_call_test PRIVATE dmodem)
+dmodem_gtest(leased_call_test LABELS quick)
 foreach(_t vcvm_test vcvm_startup_test vcvm_data_test)
 	if(AMR_FOUND)
 		target_compile_definitions(${_t} PRIVATE DMODEM_HAVE_AMR)

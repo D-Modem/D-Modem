@@ -102,9 +102,10 @@ enum S_REGISTER {
 	SREG_VCVM_RENEGS                  = 45,  /* and its
 						    renegotiations */
 	SREG_CONNECT_PROTOCOL             = 106, /* AT\V */
-	SREG_LEASED                       = 47,  /* AT&L: 1 a leased line (no
+	SREG_LEASED                       = 47,  /* AT&L: 1 a 2-wire leased
+						    line, 2 a 4-wire one (no
 						    dial tone or ringing: ATD
-						    and ATA start the pump at
+						    and ATA start the call at
 						    once, again after NO
 						    CARRIER) */
 	SREG_DEFAULT_SETTING              = 161, /* ATY */
@@ -123,6 +124,12 @@ enum DP_ID {
 	DP_V8       = 8,        /* V.8, the start of V.34 and above */
 	DP_V17      = 17,
 	DP_V21      = 21,
+	DP_V27TER   = 27,       /* V.27ter on a 4-wire leased line, 4800 and
+				   2400 bit/s duplex */
+	DP_V29      = 29,       /* V.29 on a 4-wire leased line, 9600 to
+				   4800 bit/s duplex */
+	DP_V33      = 33,       /* V.33 on a 4-wire leased line, 14400 and
+				   12000 bit/s duplex */
 	DP_V22      = 22,
 	DP_V23      = 23,
 	DP_V32      = 32,
