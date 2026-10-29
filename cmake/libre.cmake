@@ -218,10 +218,11 @@ target_include_directories(libre INTERFACE ${_re_prefix}/include/re)
 target_link_libraries(libre INTERFACE ${_re_lib} ${_crypto_libs}
 	Threads::Threads ${DMODEM_LIBM} ${CMAKE_DL_LIBS})
 # (Apple's systems: its DNS servers from SystemConfiguration, as libre's
-# own .pc says, src/dns/darwin/srv.c)
+# own .pc says, src/dns/darwin/srv.c, and resolv.conf's through libresolv's
+# res_ninit(), src/dns/res.c)
 if(APPLE)
 	target_link_libraries(libre INTERFACE "-framework SystemConfiguration"
-		"-framework CoreFoundation")
+		"-framework CoreFoundation" resolv)
 endif()
 # (Haiku: the sockets and getifaddrs() in libnetwork)
 if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
