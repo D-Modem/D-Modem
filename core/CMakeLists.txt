@@ -9,7 +9,7 @@
 #   DMODEM_CORE_NEW_DIR, DMODEM_CORE_NEW_SRCS
 
 set(DMODEM_CORE_NEW_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(_core modem.cpp at.cpp interface.cpp log.cpp homolog_data.cpp v54.cpp)
+set(_core modem.cpp at.cpp interface.cpp log.cpp homolog_data.cpp v13.cpp v54.cpp)
 list(TRANSFORM _core PREPEND ${DMODEM_CORE_NEW_DIR}/)
 add_library(dmodem_core OBJECT ${_core})
 target_include_directories(dmodem_core PUBLIC ${DMODEM_CORE_NEW_DIR}

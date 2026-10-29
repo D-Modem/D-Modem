@@ -109,6 +109,8 @@ enum S_REGISTER {
 						    and ATA start the call at
 						    once, again after NO
 						    CARRIER) */
+	SREG_SIM_CARRIER                  = 48,  /* 1: V.13's simulated
+						    carrier control */
 	SREG_DEFAULT_SETTING              = 161, /* ATY */
 };
 

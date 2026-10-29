@@ -588,6 +588,8 @@ s16 Modem::start_call(bool keep_line)
 	test_end_ms_ = 0;
 	test_reply_ = false;
 	loop3_buf_.clear();
+	sim_.reset();
+	sim_on_ = false;
 	xmit_head_ = xmit_tail_ = xmit_count_ = 0;
 	esc_held_.clear();
 	command_ = false;
@@ -624,6 +626,7 @@ s16 Modem::stop_call()
 	test_reply_ = false;
 	loop3_ = false;
 	loop3_buf_.clear();
+	sim_on_ = false;
 	if (started_) {
 		if (host_.stop(*this))
 			log_printf(1, "err: %s: the line does not stop\n",
@@ -964,6 +967,10 @@ void Modem::update_status(Status s)
 			break;
 		}
 		test_.set_plain(link_->plain());
+		/* V.13 (S48=1) on a call with no error correction */
+		sim_on_ = sregs_[SREG_SIM_CARRIER] && link_->plain();
+		if (sim_on_)
+			logf("V.13: simulated carrier control\n");
 		set_state(ONLINE);
 		if (!stats_.connected) {
 			stats_.connected = true;
@@ -1040,12 +1047,17 @@ void Modem::update_status(Status s)
 s32 Modem::get_bits(s16 nbits, u8 *buf, s32 n)
 {
 	s32 ret;
-	if (nbits != 1 || !test_.active()) {
+	if (nbits != 1 || (!test_.active() && !sim_on_)) {
 		ret = link_->get_bits(nbits, buf, n);
-	} else if (test_.link_tx()) {
+	} else if (!test_.active() || test_.link_tx()) {
+		/* the link's through V.13, then the test */
 		ret = link_->get_bits(nbits, buf, n);
-		for (s32 i = 0; i < ret; i++)
-			buf[i] = test_.tx(buf[i] & 1);
+		for (s32 i = 0; i < ret; i++) {
+			u8 b = buf[i] & 1;
+			if (sim_on_)
+				b = sim_.tx(b);
+			buf[i] = test_.active() ? test_.tx(b) : b;
+		}
 	} else {
 		/* V.54: the test's bits, the link's wait */
 		for (s32 i = 0; i < n; i++)
@@ -1064,8 +1076,20 @@ s32 Modem::put_bits(s16 nbits, const u8 *buf, s32 n)
 	bool watch = nbits == 1 && (test_.active() || test_.grant());
 	/* V.54: the link has them unless a test takes them (the test
 	   sees them all: a request for loop 2 is in the data) */
-	if (!watch || test_.link_rx())
-		ret = link_->put_bits(nbits, buf, n);
+	if (!watch || test_.link_rx()) {
+		if (sim_on_ && nbits == 1) {
+			/* through V.13: 1s while 109 is OFF */
+			sim_bits_.resize(static_cast<size_t>(n));
+			for (s32 i = 0; i < n; i++)
+				sim_bits_[i] = sim_.rx(buf[i]);
+			ret = link_->put_bits(nbits, sim_bits_.data(), n);
+			if (sim_.c109_changed())
+				logf("V.13: circuit 109 %s\n",
+				     sim_.c109() ? "ON" : "OFF");
+		} else {
+			ret = link_->put_bits(nbits, buf, n);
+		}
+	}
 	if (watch)
 		for (s32 i = 0; i < n; i++)
 			test_.rx(buf[i]);

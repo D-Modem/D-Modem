@@ -704,3 +704,45 @@ TEST(LocalLoop, TestTimer)
 	dmodem_status(p.c.m, &st);
 	EXPECT_NE(st.link, DMODEM_ONLINE);
 }
+
+/* V.13's simulated carrier control (S48=1) on a 4-wire line with no
+   error correction: between the DTE's bursts the line carries the idle
+   pattern, which the far end's V.13 takes for 109 OFF (its DTE gets
+   nothing); each burst's ON pattern turns it ON again, and every burst
+   comes through whole.  A far end without V.13 gets the idle pattern
+   as characters */
+TEST(SimulatedCarrier, BurstsAndIdle)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0S48=1", "+MS=29\\N0S48=1");
+	ASSERT_TRUE(p.connect()) << p.c.text << p.a.text;
+	run(p.line, p.c, p.a, 2, [] { return false; });
+	p.a.data.clear();
+	p.c.data.clear();
+	run(p.line, p.c, p.a, 3, [] { return false; });
+	EXPECT_TRUE(p.a.data.empty()) << p.a.data.size();
+	EXPECT_TRUE(p.c.data.empty()) << p.c.data.size();
+	std::string all, back;
+	for (int k = 0; k < 5; k++) {
+		std::string msg = "burst " + std::to_string(k) + " " +
+			bulk(300, k) + "\r\n";
+		std::string rep = "reply " + std::to_string(k) + "\r\n";
+		all += msg;
+		back += rep;
+		p.c.dte.write_some(msg, 0);
+		p.a.dte.write_some(rep, 0);
+		run(p.line, p.c, p.a, 1.5, [] { return false; });
+	}
+	EXPECT_EQ(p.a.data, all);
+	EXPECT_EQ(p.c.data, back);
+	EXPECT_EQ(p.c.no_carriers + p.a.no_carriers, 0);
+
+	/* the far end without it: the idle pattern reaches its DTE */
+	Pair q("&L2", "+MS=29\\N0S48=1", "+MS=29\\N0");
+	ASSERT_TRUE(q.connect());
+	run(q.line, q.c, q.a, 1, [] { return false; });
+	q.a.data.clear();
+	run(q.line, q.c, q.a, 2, [] { return false; });
+	EXPECT_GT(q.a.data.size(), 100u);
+}

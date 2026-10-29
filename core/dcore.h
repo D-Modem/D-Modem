@@ -29,6 +29,7 @@
 #include <modem_dp.h>
 
 #include "modem_homolog.h"
+#include "v13.h"
 #include "v54.h"
 
 /* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
@@ -626,6 +627,11 @@ private:
 	std::deque<s16> loop3_buf_;
 	u64 test_end_ms_ = 0;
 	bool test_reply_ = false;
+	/* V.13's simulated carrier (S48=1, a call with no error
+	   correction), the bits to the link through it */
+	v13::SimCarrier sim_;
+	bool sim_on_ = false;
+	std::vector<u8> sim_bits_;
 
 	/* the data pumps */
 	u32 dp_requested_ = 0;
