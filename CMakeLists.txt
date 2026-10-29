@@ -150,6 +150,12 @@ else()
 	if(DMODEM_WERROR)
 		add_compile_options(-Werror)
 	endif()
+	# a * b + c rounded twice everywhere, never fused into one FMA: the
+	# pumps' arithmetic then comes out the same on every architecture
+	# (Clang fuses by default where the CPU has FMA, as on Apple
+	# silicon and arm64 Linux; GCC outside ISO mode too), and with it
+	# the tests' recorded transcripts (core_equiv)
+	add_compile_options(-ffp-contract=off)
 endif()
 function(dmodem_flags target)
 	cmake_parse_arguments(F "EXTRA;NOOPT;NODEBUG" "" "" ${ARGN})
