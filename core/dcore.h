@@ -281,7 +281,8 @@ public:
 	bool four_wire() const { return sregs_[SREG_LEASED] == 2; }
 	/* the calling pump starts at once, with no call progress: the
 	   wideband one, and on a leased line V.wb's and the 4-wire pumps
-	   (V.29, V.33, V.27ter), which have no answer tone to wait for;
+	   (V.29, V.33, V.27ter) and V.91 on a 4-wire digital circuit,
+	   which have no answer tone to wait for;
 	   the voice band's others listen for the answerer's tone first */
 	bool leased_direct() const;
 	/* the line's audio runs (process()) */

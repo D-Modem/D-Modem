@@ -828,7 +828,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	   sync and CRC included */
 	s16 info0_rx_len() const { return v90a_on ? 42 + 16 : 29 + 16; }
 	s16 info_expected();
-	void v91_start();
+	void v91_start(s16 leased = 0);
 	void v92_start();
 	s16 v91_escape();
 	void ec_schedule();
@@ -3898,11 +3898,13 @@ void V34Pump::v92_start()
 	set_state(V92_RUN);
 }
 
-/* V.91 after V.8: v91.cpp from here on, at 8000 Hz */
-void V34Pump::v91_start()
+/* V.91 after V.8 (or, leased, on a 4-wire leased circuit with no V.8):
+   v91.cpp from here on, at 8000 Hz */
+void V34Pump::v91_start(s16 leased)
 {
-	DSP_DBG("v34: V.91\n");
-	v91m.init(alaw, caller, env_int("DSP_V91_K"), env("DSP_V91_CC") != nullptr);
+	DSP_DBG("v34: V.91%s\n", leased ? " (leased)" : "");
+	v91m.init(alaw, caller, env_int("DSP_V91_K"), env("DSP_V91_CC") != nullptr,
+		  leased);
 	v91m.link.modem = modem;
 	v91m.stats = stats;
 	if (rt)
@@ -6401,6 +6403,13 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	}
 	txm = TXM_SILENCE;
 	DSP_DBG("v34: create %s (dp %d)\n", caller_ ? "caller" : "answerer", id);
+	/* +MS=V91 on a 4-wire leased circuit (AT&L2, a digital line, the
+	   core starting us with no call progress): V.91 from INFO on, with
+	   no V.8 (8.8/V.91) */
+	if (id == DP_V91 && v91 && modem_get_sreg(m, SREG_LEASED) == 2) {
+		v91_on = 1;
+		v91_start(1);
+	}
 	return 0;
 }
 

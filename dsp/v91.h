@@ -99,6 +99,8 @@ struct V91 {
 	s32 retrain_at;         /* test: our own retrain (symbols) */
 	struct dp_stats *stats; /* the call's statistics (NULL: none) */
 	s16 mute;               /* test: we send nothing */
+	s16 leased;             /* a 4-wire leased circuit (8.8): from
+				   INFO on, no V.8 and no escape to V.34 */
 
 	/* transmitter */
 	enum v91_tx tx;
@@ -142,8 +144,11 @@ struct V91 {
 	s16 ru[6], rsg[6], rpos, bframes;
 	s32 rframes;
 	s32 err_window, err_count;
+	s16 last_x;             /* the last value received */
+	s32 same;               /* how many in a row (in data mode) */
 
-	void init(s16 alaw_, s16 caller_, s32 max_k_, s16 want_cc_);
+	void init(s16 alaw_, s16 caller_, s32 max_k_, s16 want_cc_,
+		  s16 leased_ = 0);
 	s16 sample(s16 x, s16 *y);
 
 	/* transmitter */
