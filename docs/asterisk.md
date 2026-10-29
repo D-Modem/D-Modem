@@ -254,6 +254,15 @@ a fax machine calling (two receivers: no document, only that is
 checked).  `CASES`, `SIP_LOG=1` (the SIP messages in the console),
 `FAX_DEBUG=1` (spandsp's).
 
+Before the two gateway cases `t38.sh` tries Asterisk's gateway by
+itself (`SendFAX` on the audio through it to `ReceiveFAX` over T.38).
+Ubuntu 24.04's Asterisk 20.6 passes no fax there, so on it those two
+cases are skipped and say so (`GATEWAY=yes` runs them anyway).  CI
+builds Asterisk 22 (LTS) from source with `test/build_asterisk.sh
+<prefix>`, where all of them run; the script's header lists the
+packages it needs and how to point the tests at it (`PATH`,
+`AST_MODULES`, `AST_DATA`, and `-DASTERISK_INCLUDE_DIR` for the build).
+
 `ARI=1` runs these tests (and `test/sip.sh`) through
 [dmodem-ari](ari.md#testing) instead of the module.
 

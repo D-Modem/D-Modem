@@ -365,10 +365,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev \
-            libtiff-tools asterisk asterisk-modules asterisk-dev python3 \
-            efax php-cli
-          # the tests run an Asterisk of their own
-          sudo systemctl stop asterisk || true
+            libtiff-tools python3 efax php-cli \
+            libjansson-dev libxml2-dev libsqlite3-dev uuid-dev libedit-dev \
+            libspandsp-dev libtiff-dev libcurl4-openssl-dev bzip2 patch
+
+      # Asterisk 22 (LTS) built from source, as Ubuntu 24.04's 20.6 has a
+      # T.38 gateway that passes no fax (t38.sh's cases 6 and 7)
+      - name: Asterisk cache
+        id: asterisk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/asterisk
+          key: asterisk-${{ runner.os }}-${{ hashFiles('asterisk/test/build_asterisk.sh') }}
+
+      - name: Asterisk
+        run: |
+          [ -x ~/asterisk/sbin/asterisk ] ||
+            SRC=/tmp/asterisk-src asterisk/test/build_asterisk.sh ~/asterisk
+          echo ~/asterisk/sbin >> "$GITHUB_PATH"
+          echo "AST_MODULES=$HOME/asterisk/lib/asterisk/modules" >> "$GITHUB_ENV"
+          echo "AST_DATA=$HOME/asterisk/var/lib/asterisk" >> "$GITHUB_ENV"
+          ~/asterisk/sbin/asterisk -V
 
       - name: libre cache
         uses: actions/cache@v4
@@ -378,8 +395,10 @@ jobs:
 
       - name: Build
         run: |
-          cmake -B build -G Ninja -DDMODEM_WERROR=ON
+          cmake -B build -G Ninja -DDMODEM_WERROR=ON \
+            -DASTERISK_INCLUDE_DIR=$HOME/asterisk/include
           cmake --build build
+          test -f build/asterisk/app_dmodem.so
 
       - name: Calls
         run: |
@@ -406,6 +425,17 @@ jobs:
 
       - name: FreePBX module
         run: |
+          php freepbx/test/unit.php
+          timeout 300 freepbx/test/e2e.sh
+          ARI=1 timeout 300 freepbx/test/e2e.sh
+
+      # (the same through the latest FreePBX's own dialplan classes: its
+      # framework's extensions.class.php in place of the tests' stand-in)
+      - name: FreePBX module (FreePBX 18)
+        run: |
+          git clone -q --depth 1 -b release/18.0.1.3 \
+            https://github.com/FreePBX/framework /tmp/freepbx-framework
+          export FREEPBX_FRAMEWORK=/tmp/freepbx-framework
           php freepbx/test/unit.php
           timeout 300 freepbx/test/e2e.sh
           ARI=1 timeout 300 freepbx/test/e2e.sh
