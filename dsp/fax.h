@@ -58,10 +58,16 @@ struct FaxTx {
 	u32 tscr;                       /* V.29 training scrambler */
 	s16 state;                      /* differential phase state */
 	TrellisEnc trellis;
+	u16 bridge;                     /* V.17's segment 3 word (V.33: its
+					   rate signal) */
 	fax_get_bit_t get_bit;
 	void *ctx;
 	s16 ending;
 	s16 done;
+
+	/* past the training: the data path (the scrambled ones, then the
+	   caller's bits) */
+	bool in_data() const;
 
 	s16 data_bit();
 	cplx data_symbol();
@@ -120,6 +126,18 @@ struct FaxRx {
 	float mem_gain;                 /* its AGC gain in the data */
 	s16 use_mem;
 	s16 bridge_hits;        /* V.17 short train: the bridge is there? */
+	u16 bridge;             /* the V.17 bridge word expected (V.33: the
+				   rate signal) */
+	s16 strict_bridge;      /* the bridge's symbols are the reference's
+				   (V.33), not the nearest A, B, C or D */
+	/* how far the training symbols were from the reference: the sum
+	   of |z - d|^2 / |d|^2 past its first 64, and their number; the
+	   same over the bridge alone (4-wire leased: which rate it is) */
+	float trn_err, bridge_err;
+	s32 trn_n, bridge_n;
+	s32 const_run;          /* data: the symbols in a row that were the
+				   one before (an unmodulated carrier) */
+	s32 symbols;            /* from the demodulator, in all */
 	float zpow, zpow_slow;  /* received data power */
 	fax_put_bit_t put_bit;
 	void *ctx;
@@ -134,6 +152,9 @@ struct FaxRx {
 	s16 init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t put_bit_, void *ctx_, const FaxRxMemory *mem);
 	/* keep the trained equalizer for a later short train */
 	void save(FaxRxMemory *mem);
+	/* V.17: the bridge word w, its symbols checked against the
+	   reference (strict): the reference made again.  -1: no memory */
+	s16 set_bridge(u16 w, s16 strict);
 	/* free what init took */
 	void release();
 	void bits_out(s16 q, s16 n, s16 msb_first);

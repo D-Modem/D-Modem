@@ -431,9 +431,8 @@ static cplx fax_tx_symbol(FaxTx *t)
 		break;
 	case SEG_BRIDGE:
 		shift = (t->seg_sym & 7) << 1;
-		b1 = scramble(&t->scr, SCR_GPC, V17_BRIDGE_WORD >> shift);
-		b2 = scramble(&t->scr, SCR_GPC,
-			      V17_BRIDGE_WORD >> (shift + 1));
+		b1 = scramble(&t->scr, SCR_GPC, t->bridge >> shift);
+		b2 = scramble(&t->scr, SCR_GPC, t->bridge >> (shift + 1));
 		t->state = (t->state + dibit_to_step[b1 << 1 | b2]) & 3;
 		z = v32_abcd[t->state];
 		break;
@@ -460,6 +459,7 @@ void FaxTx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_get_bit_t 
 	srate = srate_;
 	get_bit = get_bit_;
 	ctx = ctx_;
+	bridge = V17_BRIDGE_WORD;
 	if (mod_ == FM_V21) {
 		fsk.init(1650, 1850, fax_tx_rms(mod_) * 1.41421f, 300.0f,
 			 srate_);
@@ -487,6 +487,12 @@ void FaxTx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_get_bit_t 
 		scr = 0x3C;
 		seg = SEG_CARRIER;
 	}
+}
+
+/* see fax.h */
+bool FaxTx::in_data() const
+{
+	return seg >= SEG_DATA;
 }
 
 /* the next output sample, 16 bit scale; 0 once done */
@@ -564,10 +570,9 @@ s16 FaxRx::make_reference()
 				state_ = cdba_to_abcd[b1 << 1 | b2];
 			} else {
 				shift = ((k - trn_len(mod, short_train)) & 7) << 1;
-				b1 = scramble(&scr_, SCR_GPC,
-					      V17_BRIDGE_WORD >> shift);
+				b1 = scramble(&scr_, SCR_GPC, bridge >> shift);
 				b2 = scramble(&scr_, SCR_GPC,
-					      V17_BRIDGE_WORD >> (shift + 1));
+					      bridge >> (shift + 1));
 				state_ = (state_ + dibit_to_step[b1 << 1 | b2]) & 3;
 			}
 			ref_[k] = state_;
@@ -606,6 +611,7 @@ s16 FaxRx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t p
 	srate = srate_;
 	put_bit = put_bit_;
 	ctx = ctx_;
+	bridge = V17_BRIDGE_WORD;
 	if (mod_ == FM_V21) {
 		fsk.init(1650, 1850, 300, srate_);
 		return 0;
@@ -644,6 +650,14 @@ void FaxRx::save(FaxRxMemory *mem)
 	copy_array(mem->eq, good_eq);
 	mem->agc_gain = good_gain;
 	mem->valid = 1;
+}
+
+/* see fax.h */
+s16 FaxRx::set_bridge(u16 w, s16 strict)
+{
+	bridge = w;
+	strict_bridge = strict;
+	return is_v17(mod) ? make_reference() : 0;
 }
 
 /* free the demodulator and the reference */
@@ -854,6 +868,7 @@ void FaxRx::symbol()
 	s16 s, match;
 	s32 k;
 
+	symbols++;
 	switch (stage) {
 	case RXS_SEARCH:
 		if (carrier && ++onset == 6)
@@ -959,8 +974,19 @@ void FaxRx::symbol()
 		   a wrong reference winds the carrier loop up to a frequency
 		   offset of some hertz.  Its points are A, B, C or D, so the
 		   nearest one is the decision. */
-		if (is_v17(mod) && seg_sym >= trn)
+		if (is_v17(mod) && seg_sym >= trn && !strict_bridge)
 			d = v32_abcd[state_of(z)];
+		{
+			float e = cplx_pow(cplx_sub(z, d)) /
+				(cplx_pow(d) + 1e-9f);
+			if (is_v17(mod) && seg_sym >= trn) {
+				bridge_err += e;
+				bridge_n++;
+			} else if (seg_sym >= 64) {
+				trn_err += e;
+				trn_n++;
+			}
+		}
 		/* the original library's V.27ter training has stray 180
 		   degree flips: follow them, its points are all on one axis */
 		if (is_v27(mod) &&
@@ -985,6 +1011,14 @@ void FaxRx::symbol()
 	}
 	case RXS_DATA:
 		data_symbol();
+		/* a resynchronizing modem's alternations or unmodulated
+		   carrier in the data (4-wire leased) */
+		track_alternations(z);
+		if (cplx_pow(cplx_sub(z, zh[1])) <
+		    0.04f * data_mean_power(mod))
+			const_run++;
+		else
+			const_run = 0;
 		break;
 	}
 }

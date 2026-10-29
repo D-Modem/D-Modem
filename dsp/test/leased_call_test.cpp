@@ -2,7 +2,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 Neo-Desktop
  *
- *    leased_call_test.cpp - experiment
+ *    leased_call_test.cpp - leased lines and dry pairs in the voice band:
+ *    two of libdmodem's modems at 9600 Hz on a simulated circuit (each
+ *    way's delay and loss, white noise, and on a 2-wire one each end's
+ *    own signal through its hybrid), with no exchange: AT&L1 (2-wire)
+ *    or AT&L2 (4-wire), ATD calling at once and S0=1 answering with no
+ *    ring.  Each voice band modulation on AT&L1, the 4-wire pumps (V.29,
+ *    V.33, V.27ter) on AT&L2: CONNECT and data both ways through V.42,
+ *    byte for byte; their rates each way, a dropout they resynchronize
+ *    through, noise that brings V.33 down to 12000, an answerer that
+ *    comes late, a long cut and the call again by itself
+ *
+ *    LEASED_DEBUG=<level>   libdmodem's log
  */
 
 #include <algorithm>
@@ -105,7 +116,7 @@ struct End {
    end's signal at gain, each end's own at echo (2-wire: its hybrid's
    leak; 4-wire: none), white noise */
 struct Line {
-	double gain = 0.5, echo = 0, noise = 3;
+	double gain = 0.5, echo = 0, noise = 3;     /* noise: rms */
 	size_t delay = 96;
 	std::deque<s16> ca, ac, ce, ae;
 	std::mt19937 rng{1};
@@ -172,40 +183,251 @@ std::string bulk(size_t n, unsigned side)
 	return s;
 }
 
-} // namespace
 
-class Leased : public ::testing::TestWithParam<const char *> {};
-
-TEST_P(Leased, Connects)
+/* the log level from LEASED_DEBUG */
+void debug()
 {
-	dmodem_init();
 	if (getenv("LEASED_DEBUG"))
 		dmodem_set_debug(atoi(getenv("LEASED_DEBUG")));
-	std::string ms = GetParam();
-	Line l(9600);
-	l.echo = getenv("LEASED_ECHO") ? atof(getenv("LEASED_ECHO")) : 0.1;
-	std::string ci = "ATE0X4&L1" + ms + "\r", ai = "ATE0X4&L1S0=1" + ms + "\r";
-	End c("caller", ci.c_str(), 9600), a("answerer", ai.c_str(), 9600);
-	ASSERT_TRUE(c.m && a.m);
-	ASSERT_EQ(dmodem_dial(c.m, ""), 0);
-	run(l, c, a, 40, [&] { return c.online && a.online; });
-	printf("%s: %.1f s\ncaller: %s\nanswerer: %s\n", ms.c_str(),
-	       l.t / 9600.0, c.text.c_str(), a.text.c_str());
-	ASSERT_TRUE(c.online && a.online);
-	struct dmodem_status st;
-	dmodem_status(c.m, &st);
-	/* some 5 s of data */
-	const size_t n = std::max<size_t>(200, std::min(st.tx_rate, st.rx_rate) * 5 / 10);
-	std::string to_a = bulk(n, 1), to_c = bulk(n, 2);
-	run(l, c, a, 30, [&] {
-		c.sent += c.dte.write_some(to_a, c.sent);
-		a.sent += a.dte.write_some(to_c, a.sent);
-		return a.data.size() >= n && c.data.size() >= n;
-	});
-	EXPECT_TRUE(a.data == to_a);
-	EXPECT_TRUE(c.data == to_c);
 }
 
-INSTANTIATE_TEST_SUITE_P(Mods, Leased, ::testing::Values(
-	"", "+MS=34", "+MS=132", "+MS=32", "+MS=122", "+MS=22", "+MS=212",
-	"+MS=21", "+MS=23", "+MS=103"));
+/* two modems on a leased line: the caller's commands and the
+   answerer's (S0=1 added), each after ATE0X4 and the line's AT&L */
+struct Pair {
+	Line line{9600};
+	End c, a;
+	Pair(const std::string &l, const std::string &ci,
+	     const std::string &ai)
+		: c("caller", ("ATE0X4" + l + ci + "\r").c_str(), 9600),
+		  a("answerer", ("ATE0X4" + l + "S0=1" + ai + "\r").c_str(),
+		    9600)
+	{
+		line.echo = l == "&L1" ? 0.1 : 0;  /* 2-wire: -20 dB */
+	}
+	/* ATD, then CONNECT at both ends within secs */
+	bool connect(double secs = 40)
+	{
+		if (dmodem_dial(c.m, ""))
+			return false;
+		run(line, c, a, secs, [&] { return c.online && a.online; });
+		return c.online && a.online;
+	}
+	/* n bytes each way at once within secs: whether all came, byte
+	   for byte */
+	bool exchange(size_t n, double secs, unsigned seed = 1)
+	{
+		std::string to_a = bulk(n, seed), to_c = bulk(n, seed + 1);
+		c.sent = a.sent = 0;
+		c.data.clear();
+		a.data.clear();
+		run(line, c, a, secs, [&] {
+			c.sent += c.dte.write_some(to_a, c.sent);
+			a.sent += a.dte.write_some(to_c, a.sent);
+			return a.data.size() >= n && c.data.size() >= n;
+		});
+		return a.data == to_a && c.data == to_c;
+	}
+	/* an end's rates now */
+	static std::pair<uint32_t, uint32_t> rates(const End &e)
+	{
+		struct dmodem_status st;
+		dmodem_status(e.m, &st);
+		return { st.tx_rate, st.rx_rate };
+	}
+};
+
+/* "+MS=..." of a test's name: what comes after the '=' */
+struct Mod {
+	const char *ms;
+	const char *name;
+	uint32_t rate;          /* the CONNECT's */
+};
+
+std::string mod_name(const ::testing::TestParamInfo<Mod> &i)
+{
+	return i.param.name;
+}
+
+} // namespace
+
+/* AT&L1, a 2-wire leased line: each voice band modulation connects
+   with no exchange (the caller's call progress listens for the answer
+   tone and nothing else), and 5 s of data goes both ways */
+class TwoWire : public ::testing::TestWithParam<Mod> {};
+
+TEST_P(TwoWire, Connects)
+{
+	dmodem_init();
+	debug();
+	const Mod &m = GetParam();
+	Pair p("&L1", m.ms, m.ms);
+	ASSERT_TRUE(p.c.m && p.a.m);
+	ASSERT_TRUE(p.connect()) << p.c.text << p.a.text;
+	auto r = Pair::rates(p.c);
+	EXPECT_EQ(std::max(r.first, r.second), m.rate) << p.c.text;
+	size_t n = std::max<size_t>(200, std::min(r.first, r.second) / 2);
+	EXPECT_TRUE(p.exchange(n, 30)) << p.c.data.size() << " "
+				       << p.a.data.size();
+}
+
+INSTANTIATE_TEST_SUITE_P(Leased, TwoWire, ::testing::Values(
+	Mod{ "", "V34", 33600 }, Mod{ "+MS=132", "V32bis", 14400 },
+	Mod{ "+MS=32", "V32", 9600 }, Mod{ "+MS=122", "V22bis", 2400 },
+	Mod{ "+MS=22", "V22", 1200 }, Mod{ "+MS=212", "Bell212A", 1200 },
+	Mod{ "+MS=21", "V21", 300 }, Mod{ "+MS=23", "V23", 1200 },
+	Mod{ "+MS=103", "Bell103", 300 }), mod_name);
+
+/* AT&L2, a 4-wire leased line: V.29, V.33 and V.27ter at each of their
+   rates, duplex on a continuous carrier */
+class FourWire : public ::testing::TestWithParam<Mod> {};
+
+TEST_P(FourWire, Connects)
+{
+	dmodem_init();
+	debug();
+	const Mod &m = GetParam();
+	Pair p("&L2", m.ms, m.ms);
+	ASSERT_TRUE(p.connect()) << p.c.text << p.a.text;
+	auto rc = Pair::rates(p.c), ra = Pair::rates(p.a);
+	EXPECT_EQ(rc.first, m.rate);
+	EXPECT_EQ(rc.second, m.rate);
+	EXPECT_EQ(ra.first, m.rate);
+	EXPECT_EQ(ra.second, m.rate);
+	size_t n = m.rate / 2;
+	EXPECT_TRUE(p.exchange(n, 30)) << p.c.data.size() << " "
+				       << p.a.data.size();
+}
+
+INSTANTIATE_TEST_SUITE_P(Leased, FourWire, ::testing::Values(
+	Mod{ "+MS=29", "V29_9600", 9600 },
+	Mod{ "+MS=29,0,4800,7200", "V29_7200", 7200 },
+	Mod{ "+MS=29,0,4800,4800", "V29_4800", 4800 },
+	Mod{ "+MS=V33", "V33_14400", 14400 },
+	Mod{ "+MS=33,0,12000,12000", "V33_12000", 12000 },
+	Mod{ "+MS=V27TC", "V27ter_4800", 4800 },
+	Mod{ "+MS=27,0,2400,2400", "V27ter_2400", 2400 }), mod_name);
+
+/* the two ends at different rates: the receivers find the far end's
+   rate by themselves, and the faster end comes down to the slower's
+   (V.33's rate signal; V.29's and V.27ter's rate) */
+TEST(FourWireRates, FasterEndComesDown)
+{
+	dmodem_init();
+	debug();
+	const struct {
+		const char *c, *a;
+		uint32_t rate;
+	} cases[] = {
+		{ "+MS=29", "+MS=29,0,4800,4800", 4800 },
+		{ "+MS=29,0,4800,7200", "+MS=29", 7200 },
+		{ "+MS=33", "+MS=33,0,12000,12000", 12000 },
+		{ "+MS=27,0,2400,2400", "+MS=27", 2400 },
+	};
+	for (const auto &k : cases) {
+		if (getenv("LEASED_CASE") &&
+		    &k - cases != atoi(getenv("LEASED_CASE")))
+			continue;
+		Pair p("&L2", k.c, k.a);
+		ASSERT_TRUE(p.connect()) << k.c << " " << k.a;
+		/* (the faster one's synchronizing signal at the slower
+		   rate after its CONNECT) */
+		run(p.line, p.c, p.a, 5, [] { return false; });
+		auto rc = Pair::rates(p.c), ra = Pair::rates(p.a);
+		EXPECT_EQ(rc.first, k.rate) << k.c << " " << k.a;
+		EXPECT_EQ(rc.second, k.rate) << k.c << " " << k.a;
+		EXPECT_EQ(ra.first, k.rate) << k.c << " " << k.a;
+		EXPECT_EQ(ra.second, k.rate) << k.c << " " << k.a;
+		EXPECT_TRUE(p.exchange(k.rate / 4, 20)) << k.c << " " << k.a;
+	}
+}
+
+/* the circuit cut for 0.4 s in the middle of the data (S10, 0.7 s, not
+   reached): each receiver finds the far end's synchronizing signal
+   again or sends its own, LAPM sends again what was lost; no NO
+   CARRIER, every byte */
+TEST(FourWireResync, DropoutUnderLapm)
+{
+	dmodem_init();
+	debug();
+	for (const char *ms : { "+MS=29", "+MS=33", "+MS=27" }) {
+		Pair p("&L2", ms, ms);
+		ASSERT_TRUE(p.connect()) << ms;
+		p.line.drop_at = static_cast<double>(p.line.t) / 9600 + 2;
+		p.line.drop_s = 0.4;
+		EXPECT_TRUE(p.exchange(10000, 60, 7)) << ms << ": "
+			<< p.a.data.size() << " " << p.c.data.size();
+		EXPECT_EQ(p.c.no_carriers + p.a.no_carriers, 0)
+			<< ms << ": " << p.c.text << p.a.text;
+		EXPECT_EQ(p.c.connects, 1) << ms;
+	}
+}
+
+/* noise (about 23 dB) that 14400 does not stand: the receivers lose
+   their equalization at it, and V.33 comes down to 12000 both ways */
+TEST(FourWireResync, NoiseBringsV33Down)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=33", "+MS=33");
+	p.line.noise = 200;
+	ASSERT_TRUE(p.connect());
+	run(p.line, p.c, p.a, 20, [&] {
+		return Pair::rates(p.c).first == 12000 &&
+			Pair::rates(p.a).first == 12000;
+	});
+	run(p.line, p.c, p.a, 5, [] { return false; });
+	auto rc = Pair::rates(p.c), ra = Pair::rates(p.a);
+	EXPECT_EQ(rc.first, 12000u);
+	EXPECT_EQ(rc.second, 12000u);
+	EXPECT_EQ(ra.first, 12000u);
+	EXPECT_EQ(ra.second, 12000u);
+	EXPECT_TRUE(p.exchange(6000, 30, 9));
+}
+
+/* the answerer set up 8 s after the caller has started: the caller's
+   synchronizing signals every 1.2 s after its last, until the
+   answerer's comes */
+TEST(FourWireResync, LateAnswerer)
+{
+	dmodem_init();
+	debug();
+	Line line(9600);
+	End c("caller", "ATE0X4&L2+MS=29\r", 9600);
+	ASSERT_EQ(dmodem_dial(c.m, ""), 0);
+	/* the answerer silent meanwhile: a modem of its own with no AT&L
+	   (it does not answer) */
+	End idle("idle", "ATE0X4\r", 9600);
+	run(line, c, idle, 8, [] { return false; });
+	EXPECT_FALSE(c.online);
+	End a("answerer", "ATE0X4&L2S0=1+MS=29\r", 9600);
+	run(line, c, a, 15, [&] { return c.online && a.online; });
+	ASSERT_TRUE(c.online && a.online) << c.text << a.text;
+	std::string msg = "late but here\r\n";
+	c.dte.write_some(msg, 0);
+	run(line, c, a, 5, [&] {
+		return a.data.find(msg) != std::string::npos;
+	});
+	EXPECT_NE(a.data.find(msg), std::string::npos);
+}
+
+/* AT&L2: a cut longer than S10: NO CARRIER at both ends, and each
+   starts the call again by itself; CONNECT again once the circuit is
+   back, and data */
+TEST(FourWireResync, CallsAgainAfterACut)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "S7=10+MS=29", "S7=10+MS=29");
+	ASSERT_TRUE(p.connect());
+	p.line.drop_at = static_cast<double>(p.line.t) / 9600 + 1;
+	p.line.drop_s = 12;
+	run(p.line, p.c, p.a, 60, [&] {
+		return p.c.connects >= 2 && p.a.connects >= 2 &&
+			p.c.online && p.a.online;
+	});
+	EXPECT_GE(p.c.no_carriers, 1) << p.c.text;
+	EXPECT_GE(p.a.no_carriers, 1) << p.a.text;
+	ASSERT_GE(p.c.connects, 2) << p.c.text;
+	ASSERT_GE(p.a.connects, 2) << p.a.text;
+	EXPECT_TRUE(p.exchange(2000, 20, 11));
+}

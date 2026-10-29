@@ -401,6 +401,8 @@ s16  dp_vcvm_init(void);
 void dp_vcvm_exit(void);
 s16  dp_vwb_init(void);
 void dp_vwb_exit(void);
+s16  dp_4wire_init(void);
+void dp_4wire_exit(void);
 
 /* DTMF generator used by the call progress pump and the voice object */
 struct DtmfGen {
