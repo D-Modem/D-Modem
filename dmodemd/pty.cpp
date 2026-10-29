@@ -267,6 +267,14 @@ ssize_t keeper_receive(char *op, int *fd)
 	_exit(0);
 }
 
+/* whether the master fd has terminal settings of its own (Linux and the
+   BSDs: the slave's; macOS: none, ENOTTY) */
+static bool master_termios(int fd)
+{
+	struct termios t;
+	return tcgetattr(fd, &t) == 0 || errno != ENOTTY;
+}
+
 /* a new pty: its master (non-blocking), its slave's path into path; the
    settings *t if keep, else its own made raw at 115200 bit/s, and in *t
    what it has then.  -1 (reported) if it can't be had */
@@ -284,6 +292,12 @@ int new_master(struct termios *t, bool keep, char *path, size_t size)
 		failed = "unlock";
 	} else if ((errno = pts_name(fd, path, size)) != 0) {
 		failed = "name";
+	} else if (!master_termios(fd)) {
+		/* (macOS: a master has no terminal settings, ENOTTY; the
+		   DTE sets the slave's itself, as it opens it) */
+		flags = fcntl(fd, F_GETFL);
+		if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
+			failed = "make non-blocking";
 	} else if (!keep && tcgetattr(fd, t) < 0) {
 		failed = "read the settings of";
 	} else {
