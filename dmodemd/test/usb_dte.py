@@ -12,7 +12,7 @@
 # - Wine's Winsock has no Unix sockets, so each line's socket of the
 #   exchange is relayed from TCP (Relay), the fake given tcp:<host>:<port>
 #   (test/fake_net.h).
-import os, re, select, socket, threading, tty
+import os, re, select, socket, sys, threading, tty
 
 
 def windows(dmodemd):
@@ -35,6 +35,16 @@ def free_port():
     port = s.getsockname()[1]
     s.close()
     return port
+
+
+def realtime():
+    """dmodemd's -n (no realtime scheduling) but on macOS: there Mach's
+    time constraint policy needs no root, and without it a CI runner
+    wakes the line's loop tens of ms late, the stick's playback runs dry
+    then over, and the calls fail"""
+    if sys.platform == "darwin":
+        return []
+    return ["-n"]
 
 
 def dte_args(dmodemd):

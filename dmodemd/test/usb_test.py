@@ -119,7 +119,7 @@ class Modem:
     environment more), its pty; its log dmodemd-<n><tag>.log"""
     def __init__(self, n, name, args=(), tag="", **more):
         self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
-        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto", "-r", rate] + list(args) + [name],
+        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["-d" + debug, "--usb=auto", "-r", rate] + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n, **more))
         procs.append(self.p)
@@ -166,7 +166,7 @@ def check(what, cond):
     ok = ok and bool(cond)
 
 try:
-    p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=2:9", "-r", rate, "dmodem40"],
+    p = subprocess.run(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["--usb=2:9", "-r", rate, "dmodem40"],
                        env=env_for("1001"), capture_output=True, text=True, timeout=60)
     check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56, pico-serial Line or WB, or Agere USB modem at 2:9" in p.stderr)
 
@@ -339,7 +339,8 @@ try:
     check("1001 an STLC7550", b"codec: STLC7550" in log_of(a))
     check("1002 its remote wakeup armed", b"fake st7554: remote wakeup armed" in b_log())
     check("1001 its remote wakeup not armed", b"remote wakeup armed" not in log_of(a))
-    if not usb_dte.windows(dmodemd):
+    # (Linux's alone: the kernel's power/wakeup, usb_line.cpp's arm_wake())
+    if not usb_dte.windows(dmodemd) and sys.platform.startswith("linux"):
         check("1002 the kernel's power/wakeup tried",
               b"1-250/power/wakeup" in b_log())
     # (the core's ring check 2.5 s after a burst's first pulse)

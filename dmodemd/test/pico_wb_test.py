@@ -92,7 +92,7 @@ class Modem:
     def __init__(self, n, name, tag="", args=(), **env):
         """start dmodemd as <name> on end <n>'s fake stick and wait for its pty (60 s at most)"""
         self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
-        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto"]
+        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["-d" + debug, "--usb=auto"]
                                   + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n, **env))
@@ -179,7 +179,7 @@ def check(what, cond):
 
 def once(args, n="1001", **env):
     """dmodemd run with args until it exits (60 s at most)"""
-    return subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug] + args,
+    return subprocess.run(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["-d" + debug] + args,
                           env=env_for(n, **env), capture_output=True, text=True, timeout=60)
 
 def text(n, seed):
@@ -265,6 +265,12 @@ try:
         time.sleep(0.01)
     took = time.time() - t
     print("%d octets each way in %.1f s" % (data_len, took))
+    for name, sent, want, got in (("1001 -> 1002", sa, da, b.buf), ("1002 -> 1001", sb, db, a.buf)):
+        if got[:data_len] != want:
+            diff = next((i for i in range(min(len(got), data_len)) if got[i] != want[i]), None)
+            print("%s: %d sent, %d got, the first difference at %s%s" % (
+                name, sent, len(got), diff,
+                "" if diff is None else ": %r for %r" % (got[diff:diff + 24], want[diff:diff + 24])))
     check("1002 got 1001's data, byte for byte", b.buf[:data_len] == da)
     check("1001 got 1002's data, byte for byte", a.buf[:data_len] == db)
     a.buf = b.buf = b""

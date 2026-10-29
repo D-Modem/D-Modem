@@ -98,7 +98,7 @@ class Modem:
     def __init__(self, n, name, tag="", args=(), **env):
         """start dmodemd as <name> on end <n>'s fake stick and wait for its pty (60 s at most)"""
         self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
-        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto", "-r", rate]
+        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["-d" + debug, "--usb=auto", "-r", rate]
                                   + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n, **env))
@@ -159,7 +159,7 @@ def check(what, cond):
     ok = ok and bool(cond)
 
 try:
-    p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=2:9", "-r", rate, "dmodem40"],
+    p = subprocess.run(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["--usb=2:9", "-r", rate, "dmodem40"],
                        env=env_for("1001"), capture_output=True, text=True, timeout=60)
     check("nothing at 2:9", p.returncode != 0 and "no SmartUSB56, pico-serial Line or WB, or Agere USB modem at 2:9" in p.stderr)
     nl = Modem("1001", "dmodem40", "-nolink", FAKE_PICO_LINE_NOLINK="1")
@@ -171,7 +171,7 @@ try:
     # theirs): a driver that can't stream (WinUSB) said so, with what to
     # do; UsbDk taken where it is installed (DMODEM_USBDK=0: not)
     if usb_dte.windows(dmodemd):
-        p = subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "--usb=auto", "-r", rate, "dmodem40"],
+        p = subprocess.run(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["--usb=auto", "-r", rate, "dmodem40"],
                            env=env_for("1001", FAKE_USB_NO_ISO="1"), capture_output=True,
                            text=True, timeout=60)
         check("WinUSB before 8.1: can't stream, libusbK or UsbDk",
