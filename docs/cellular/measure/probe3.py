@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe3.py: the design's own symbols: the 200 Hz comb with the 20 ms
 # symbol (15 ms useful, 5 ms prefix) aligned to the codec frame and 10 ms
 # off it, against the 22.5 ms symbol; more codec modes; two codecs in

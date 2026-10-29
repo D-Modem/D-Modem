@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    codec_sim.cpp - a mobile network's speech codec on an 8000 Hz line
  *                    (codec_sim.h): AMR and AMR-WB through OpenCORE's and

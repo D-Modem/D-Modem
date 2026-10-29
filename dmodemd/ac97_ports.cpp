@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    ac97_ports.cpp - an ICH modem codec's registers through its I/O
  *                     ports (ac97_ports.h)

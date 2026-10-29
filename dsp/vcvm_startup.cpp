@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vcvm_startup.cpp - V.cvm's start-up after V.8, one DCE's: phase 2
  *                       (INFO0, L1 to L3, INFO1) and phase 3 (MP), as

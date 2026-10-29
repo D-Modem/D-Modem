@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    hda_codec.cpp - an HD-audio modem codec's registers through the
  *                    kernel's hwdep device (hda_codec.h)

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    pty.h - the DTE side of a modem program: a pseudo terminal whose
  *            slave the DTE (a terminal program, pppd) opens

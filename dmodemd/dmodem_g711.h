@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dmodem_g711.h - libdmodem's G.711 calls (dmodem_process_g711,
  *                    dmodem_fax_process_g711): the call's octets as 16

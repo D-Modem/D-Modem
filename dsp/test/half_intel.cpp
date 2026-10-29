@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    half_intel.cpp - Intel's 537EP soft modem (537core.lib of the
  *    Intel537EP 2.37.50.1 driver for Fedora Core 1: its controller, AT

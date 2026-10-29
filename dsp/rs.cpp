@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    rs.cpp - the Reed-Solomon code of rs.h: systematic encoding by the
  *             generator's division, decoding of errors and erasures by

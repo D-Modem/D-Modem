@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    fake_pico_line.cpp - a pico-serial Line stick for the tests: the part
  *                         of libusb-1.0 that usb_line.cpp uses (LD_PRELOAD

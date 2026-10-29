@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    windows_dte.cpp - dmodemd's DTE on Windows: a TCP connection, a
  *                      COM port or a named pipe (windows_dte.h)

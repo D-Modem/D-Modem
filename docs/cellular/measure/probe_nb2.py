@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe_nb2.py: more of the design space on the codecs: tone combs with
 # other spacings (with and without integer-period tones), DQPSK at other
 # carriers and symbol rates, 8-DPSK

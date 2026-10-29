@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    hw/i537ep.hpp - Intel's 537EP modem chip (8086:1080): a mixin of a
  *                    harness

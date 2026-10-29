@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    pcm_cp_test.cpp - the PCM encoders (V.90's, V.91's) against the
  *    analogue modem's CP: one whose constellations cannot carry its rate

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    str.h - text helpers in place of the C library's: numbers to
  *            text (dec(), hex(), fixed()), numbers from text

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # agere_test.py <dmodemd> <line_exchange> <fake libusb>|-: dmodemd on an
 # Agere USB 2.0 soft modem (--usb), two of them on fake ones

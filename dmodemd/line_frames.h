@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    line_frames.h - a modem's line of 16 bit samples coming in on a
  *                    descriptor, cut at every frame-th sample of the

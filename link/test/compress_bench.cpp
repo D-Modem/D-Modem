@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    compress_bench.cpp - the link's compressors (V.42bis, V.44 with and
  *                         without V.cvm's preset, zstd with and without

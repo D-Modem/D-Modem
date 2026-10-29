@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // ami.php - Asterisk's manager interface for the end-to-end tests, in
 // place of FreePBX's php-asmanager: connected(), send_request() (the

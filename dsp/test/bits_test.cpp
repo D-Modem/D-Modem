@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    bits_test.cpp - the frame helpers of bits.h: fields, the V.34 CRC
  *                    and MP style frames' CRC, the HDLC FCS

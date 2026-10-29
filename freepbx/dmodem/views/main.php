@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // views/main.php - the page: its tabs, the last action's message, and the
 // view's body.  Given $view, $message, $settings, $body.

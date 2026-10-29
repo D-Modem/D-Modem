@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # win_imports.py - checks that Windows programs and DLLs (PE files) load
 # on the oldest Windows D-Modem supports (Windows 7, NT 6.1):

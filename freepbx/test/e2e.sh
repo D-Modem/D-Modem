@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # e2e.sh: the FreePBX module's output in a real Asterisk.  gen.php makes
 # dmodem.conf and the app-dmodem context the way the module's page does;
 # a private Asterisk (installed, with chan_pjsip; app_dmodem.so from the

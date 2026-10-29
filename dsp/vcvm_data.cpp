@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vcvm_data.cpp - V.cvm's data mode: the inner code, the interleaver,
  *                    the scrambler and the mapping (vcvm_data.h)

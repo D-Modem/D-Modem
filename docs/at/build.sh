@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # build.sh: docs/at_commands.pdf from at_commands.tex (pdflatex through
 # latexmk; Debian's texlive-latex-recommended, texlive-latex-extra,
 # texlive-fonts-recommended, texlive-pictures, lmodern and latexmk).  The

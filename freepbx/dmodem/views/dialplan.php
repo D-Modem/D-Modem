@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // views/dialplan.php - what Apply Config writes: dmodem.conf and the
 // app-dmodem context.  Given $conf and $dialplan.

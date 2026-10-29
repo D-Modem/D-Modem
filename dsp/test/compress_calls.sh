@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # compress_calls.sh <build dir> <out dir> <file>...: V.cvm calls between
 # two open modems (half_open8, through netsim) with each file sent both

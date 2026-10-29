@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    fax_test.cpp - the fax without a modem core: each class 1
  *    modulation from its transmitter into its receiver, the page coding

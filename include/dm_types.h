@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dm_types.h - integers of a fixed width, by their short names: u8,
  *                 u16, u32, u64 unsigned and s8, s16, s32, s64 signed

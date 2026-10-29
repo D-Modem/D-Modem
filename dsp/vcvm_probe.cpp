@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vcvm_probe.cpp - V.cvm's probing (Annex B.1, B.2): L1, L2 and L3
  *                     sent, received and measured, and the loading of

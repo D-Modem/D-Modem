@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    modem.cpp - the modem core's call (dcore.h): its states from the
  *                dial or the answer to the hang-up, the DTE's characters,

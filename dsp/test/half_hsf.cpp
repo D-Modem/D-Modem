@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    half_hsf.cpp - Conexant's HSF soft modem (hsfmodem-7.80.02.06oem:
  *    hsfengine, its controller and data pumps, V.92 with PCM upstream;

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # haiku.cmake: a toolchain file for Haiku (x86_64) from Linux, with Clang
 # and lld:
 #

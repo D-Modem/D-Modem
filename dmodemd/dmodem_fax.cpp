@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dmodem_fax.cpp - fax calls of the library (dmodem.h): a T.30 fax
  *                   machine (dsp/t30.cpp) that sends a TIFF file or

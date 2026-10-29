@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    zstd_dict.h - V.cvm's dictionary for zstd (Annex F of
  *                  docs/cellular/v_cvm.tex): a formatted Zstandard

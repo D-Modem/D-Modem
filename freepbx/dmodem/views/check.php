@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // views/check.php - the line check: the engine's state and each PJSIP
 // endpoint's settings for modem calls.  Given $check (Dmodem::check()).

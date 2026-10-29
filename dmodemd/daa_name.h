@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    daa_name.h - a country's name as the DAA tables (si3054.cpp,
  *                 si3056.cpp) have it

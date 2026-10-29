@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    sip_modem.cpp - the modem core on a SIP line, its DTE a descriptor
  *                    (sip_modem.h)

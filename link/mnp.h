@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    mnp.h - MNP 2 to 4: V.42's alternative procedure (Annex A of V.42
  *            (10/96)), the error correction of modems from before LAPM

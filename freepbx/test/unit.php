@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // unit.php - the FreePBX module's tests without FreePBX (fpbx_env.php):
 // the forms, the store, dmodem.conf as app_dmodem and dmodem-ari read

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    class1_t38_test.cpp - fax class 1 over T.38 (fax_class1.cpp's
  *    FAX_t38_*): a DTE of the test's own goes through T.30 with the

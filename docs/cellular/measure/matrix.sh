@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # matrix.sh: D-Modem's modulations (half_open8 both ends) through each
 # speech codec on netsim's line; one line per call: codec, +MS, result
 # (CONNECT rate or none), the octets received each way and whether the

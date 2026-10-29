@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe_pquality.py: the parametric mode's normalized autocorrelation as a
 # measure of the codec's mode (clause sec:retrain of the Recommendation:
 # whether it can replace the periodic retrain of a DCE in the parametric

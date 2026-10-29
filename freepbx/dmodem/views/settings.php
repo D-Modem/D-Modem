@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // views/settings.php - the module's settings ([general] of dmodem.conf,
 // the engine, the fax destination).  Given $s and $errors.

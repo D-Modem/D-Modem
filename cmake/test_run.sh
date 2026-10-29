@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # test_run.sh <log root> [--name <test>] <command> [args...]: one ctest
 # test, its output kept if it fails (cmake/test_logs.cmake): ctest's

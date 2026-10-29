@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    ring_detect_test.cpp - the ring signal detector (dsp.h's RingDetect)
  *                           on a codec's on-hook samples: a pulse each

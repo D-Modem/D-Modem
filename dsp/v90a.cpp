@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    v90a.cpp - V.90 analogue modem: the PCM receiver of phase 3
  *               (v90a.h, docs/dsp/v90a.md)

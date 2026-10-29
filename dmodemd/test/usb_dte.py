@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # usb_dte.py - what usb_test.py and pico_line_test.py share to run a
 # Windows dmodemd.exe as well as Linux's dmodemd on the fake USB modems:

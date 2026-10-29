@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // Dialout.php - a modem call out: the number dialled through FreePBX's
 // outbound routes (a Local channel into the dial-out context, from-internal

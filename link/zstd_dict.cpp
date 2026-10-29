@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    zstd_dict.cpp - V.cvm's dictionary for zstd (see zstd_dict.h); the
  *                    Recommendation's Annex F lists the same header

@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // functions.inc.php - FreePBX's destination hooks, which it looks up by
 // the module's name: the profiles (and the fax receiver) as destinations

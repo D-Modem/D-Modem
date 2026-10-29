@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    fax_stubs.cpp - the modem core the FSK pump in dp_fsk.cpp links
  *    against, for the fax tests without a core (the DSP's log is

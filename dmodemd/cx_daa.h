@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    cx_daa.h - the line of a Conexant (Rockwell) AC'97 modem codec: its
  *               SmartDAA's hook, which is not the AC'97 modem GPIO the

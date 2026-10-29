@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    half_ess.cpp - ESS's V.92 soft modem for Windows (es56hpi.sys
  *    5.43.070 of 2003, the WDM driver of the "ESS ES56H-PI Data Fax

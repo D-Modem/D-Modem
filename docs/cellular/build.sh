@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # build.sh: docs/v_cvm.pdf from v_cvm.tex (pdflatex through latexmk; the
 # same TeX Live packages as docs/at/build.sh).  The tables of the
 # measurements, measured.tex, come with the source (tables.py makes
