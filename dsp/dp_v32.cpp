@@ -218,6 +218,10 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	s16 retrains;
 	s32 retrain_at;         /* test: our own retrain this far (samples)
 				   into the data, $DSP_V32_RETRAIN ms */
+	float lost_mse;         /* the data mse past which the receiver has
+				   lost its equalization (its rate's) ... */
+	s32 lost_syms;          /* ... symbols in a row past it */
+	s16 lost_off;           /* (tests: none of that) */
 	u16 r_word;             /* last R word received */
 
 	cplx tx_symbol();
@@ -238,6 +242,7 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	s16 fallback_to(enum DP_ID id, const char *mode);
 	s16 fallback();
 	u16 quality_caps();
+	float lost_limit(const struct v32_rate *r);
 	const struct v32_rate *choose(u16 w);
 	s16 handshake();
 	cplx abcd_point(s16 k);
@@ -499,6 +504,8 @@ void V32Pump::rx_word_bit(s16 bit)
 		ev_e = 1;
 		rxp = RX_DATA;
 		vit.init(rx_rate->points, rx_rate->nbits);
+		lost_mse = lost_limit(rx_rate);
+		lost_syms = 0;
 		/* trained: slow timing loop, its jitter hurts the dense
 		   constellations */
 		rx.kt_p = 0.004f * rx.sps;
@@ -617,6 +624,10 @@ void V32Pump::rx_symbol()
 			d = r->points[k];
 			rx_mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / V32_POWER -
 					      rx_mse);
+			if (rx_mse > lost_mse)
+				lost_syms++;
+			else
+				lost_syms = 0;
 			if (rx.symbols % 50 == 0)
 				DSP_TRACE("%s data mse %.4f t %.3f tadj %.5f th %.2f dth %.5f\n",
 					  caller ? "C" : "A", rx_mse, rx.t_next,
@@ -752,16 +763,29 @@ s16 V32Pump::fallback()
 	return fallback_to(DP_V22BIS, "V.22bis");
 }
 
+/* the training SNR (dB) each rate of v32_rates[] takes */
+static const float v32_min_snr[] = { 25, 22, 19, 16, 0 };
+
+/* the data mse (of V32_POWER) past which a receiver at rate r has
+   lost its equalization: 4 dB short of the SNR its rate was chosen at
+   (quality_caps(); 4800: 7 dB), so that a line that only just took the
+   rate does not retrain again and again */
+float V32Pump::lost_limit(const struct v32_rate *r)
+{
+	s16 i = static_cast<s16>(r - v32_rates);
+	float snr = v32_min_snr[i] > 0 ? v32_min_snr[i] - 4 : 7;
+	return powf(10, -snr / 10);
+}
+
 /* the rates our receiver can take, judged by the decision error on
    the training signal (4 points) */
 u16 V32Pump::quality_caps()
 {
-	static const float min_snr[] = { 25, 22, 19, 16, 0 };
 	float snr = -10 * log10f(rx_mse + 1e-6f);
 	u16 caps_ = 0;
 	s16 i;
 	for (i = 0; i < V32_NRATES; i++)
-		if (snr >= min_snr[i])
+		if (snr >= v32_min_snr[i])
 			caps_ |= v32_rates[i].bits;
 	/* TCM is shared by the trellis rates */
 	if (caps_ & (RB_7200 | RB_9600 | RB_12000 | RB_14400))
@@ -1007,6 +1031,20 @@ s16 V32Pump::handshake()
 			 !retrains) {
 			retrain(false);
 		}
+		/* our receiver has lost its equalization (5.5/V.32: either
+		   modem may retrain): its error past its rate's limit for
+		   2 s (a burst of noise passes: the equalizer comes back
+		   by itself, and a retrain in it would fail), the far end's
+		   signal still there (not as it fades at a hang up, which
+		   S10 is for) */
+		else if (lost_syms >= 2 * 2400 &&
+			 rx.power > 0.5f * data_power &&
+			 !lost_off) {
+			DSP_DBG("v32: equalization lost (mse %.4f)\n",
+				rx_mse);
+			lost_syms = 0;
+			retrain(false);
+		}
 		/* the receiver's quality, for the call's statistics (while
 		   the signal is there as it was: not as it fades at the
 		   end) */
@@ -1105,6 +1143,9 @@ s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 
 	/* test: DSP_V32_RETRAIN=<ms in data mode>[a|c] */
 	retrain_at = static_cast<s32>(test_samples("DSP_V32_RETRAIN"));
+	/* (tests: DSP_V32_LOST=0, no retrain of our own on a lost
+	   equalization) */
+	lost_off = env_off("DSP_V32_LOST");
 
 	if (caller_) {
 		state = C_AA;

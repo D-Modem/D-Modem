@@ -121,9 +121,15 @@ struct Line {
 	std::deque<s16> ca, ac, ce, ae;
 	std::mt19937 rng{1};
 	std::normal_distribution<float> g{0, 1};
-	double drop_at = -1, drop_s = 0;
+	double drop_at = -1, drop_s = 0;    /* far end cut (s) */
+	double hit_at = -1, hit_s = 0, hit_noise = 0;  /* a burst of
+							  noise (s, rms) */
+	double change_at = -1, new_echo = 0;  /* the hybrid's echo from
+						 then (s) */
+	size_t new_delay = 0;                 /* and each way's delay */
 	long t = 0;
 	s32 rate;
+	bool changed = false;
 	explicit Line(s32 r) : rate(r) {}
 	s16 mix(s16 far, s16 own)
 	{
@@ -131,6 +137,13 @@ struct Line {
 		if (s >= drop_at && s < drop_at + drop_s)
 			far = 0;
 		double v = gain * far + echo * own + noise * g(rng);
+		if (s >= hit_at && s < hit_at + hit_s)
+			v += hit_noise * g(rng);
+		if (change_at >= 0 && s >= change_at) {
+			echo = new_echo;
+			change_at = -1;
+			changed = true;
+		}
 		return static_cast<s16>(std::lround(std::max(-32767.0,
 					std::min(32767.0, v))));
 	}
@@ -155,6 +168,14 @@ void run(Line &l, End &c, End &a, double secs, Stop stop)
 			l.ac.pop_front(); l.ce.pop_front();
 			l.ca.pop_front(); l.ae.pop_front();
 			l.t++;
+		}
+		if (l.changed) {
+			/* the circuit rerouted: each way's delay */
+			l.changed = false;
+			while (l.ca.size() < l.new_delay) {
+				l.ca.push_front(0);
+				l.ac.push_front(0);
+			}
 		}
 		dmodem_process(c.m, ci.data(), co.data(), n);
 		dmodem_process(a.m, ai.data(), ao.data(), n);
@@ -183,6 +204,19 @@ std::string bulk(size_t n, unsigned side)
 	return s;
 }
 
+
+/* a test's setting in the environment (NULL: none) */
+void test_env(const char *var, const char *val)
+{
+#ifdef _WIN32
+	_putenv_s(var, val ? val : "");
+#else
+	if (val)
+		setenv(var, val, 1);
+	else
+		unsetenv(var);
+#endif
+}
 
 /* the log level from LEASED_DEBUG */
 void debug()
@@ -324,9 +358,6 @@ TEST(FourWireRates, FasterEndComesDown)
 		{ "+MS=27,0,2400,2400", "+MS=27", 2400 },
 	};
 	for (const auto &k : cases) {
-		if (getenv("LEASED_CASE") &&
-		    &k - cases != atoi(getenv("LEASED_CASE")))
-			continue;
 		Pair p("&L2", k.c, k.a);
 		ASSERT_TRUE(p.connect()) << k.c << " " << k.a;
 		/* (the faster one's synchronizing signal at the slower
@@ -430,4 +461,62 @@ TEST(FourWireResync, CallsAgainAfterACut)
 	ASSERT_GE(p.c.connects, 2) << p.c.text;
 	ASSERT_GE(p.a.connects, 2) << p.a.text;
 	EXPECT_TRUE(p.exchange(2000, 20, 11));
+}
+
+/* AT&L1: the circuit rerouted in the middle of the data (each end's
+   echo and each way's delay new): the echo cancellers and equalizers
+   are lost, each receiver finds out from its error and retrains by
+   itself (5.5/V.32, 11.5/V.34), the call goes on and LAPM sends again
+   what was lost.  Without V.32's own retrain (DSP_V32_LOST=0) the
+   call is lost */
+class TwoWireRetrain : public ::testing::TestWithParam<Mod> {};
+
+TEST_P(TwoWireRetrain, AfterAReroute)
+{
+	dmodem_init();
+	debug();
+	auto call = [](const char *ms, std::string *why) {
+		Pair p("&L1", ms, ms);
+		if (!p.connect()) {
+			*why = "no CONNECT";
+			return false;
+		}
+		p.line.change_at = static_cast<double>(p.line.t) / 9600 + 2;
+		p.line.new_echo = -0.2;
+		p.line.new_delay = 200;
+		bool ok = p.exchange(20000, 60, 13);
+		*why = std::to_string(p.a.data.size()) + " " +
+			std::to_string(p.c.data.size()) + "\n" + p.c.text +
+			p.a.text;
+		return ok && p.c.no_carriers + p.a.no_carriers == 0;
+	};
+	std::string why;
+	EXPECT_TRUE(call(GetParam().ms, &why)) << why;
+	if (std::string(GetParam().name) == "V32bis") {
+		test_env("DSP_V32_LOST", "0");
+		EXPECT_FALSE(call(GetParam().ms, &why)) << why;
+		test_env("DSP_V32_LOST", nullptr);
+	}
+}
+
+INSTANTIATE_TEST_SUITE_P(Leased, TwoWireRetrain, ::testing::Values(
+	Mod{ "", "V34", 33600 }, Mod{ "+MS=132", "V32bis", 14400 }),
+	mod_name);
+
+/* AT&L1, V.32bis: a second of loud noise (about 0 dB) in the data: the
+   equalizers come back by themselves after it, with no retrain into
+   the noise, and the call goes on */
+TEST(TwoWireNoise, V32bisThroughABurst)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L1", "+MS=132", "+MS=132");
+	ASSERT_TRUE(p.connect());
+	p.line.hit_at = static_cast<double>(p.line.t) / 9600 + 2;
+	p.line.hit_s = 1;
+	p.line.hit_noise = 6000;
+	EXPECT_TRUE(p.exchange(20000, 60, 15)) << p.a.data.size() << " "
+					       << p.c.data.size();
+	EXPECT_EQ(p.c.no_carriers + p.a.no_carriers, 0)
+		<< p.c.text << p.a.text;
 }
