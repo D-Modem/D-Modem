@@ -25,6 +25,8 @@ struct LoopbackConfig {
 				   (hybrid echo, about 2 ms) */
 	float far_db = 0;       /* < 0: the echo of the far end's hybrid */
 	int far_delay = 0;      /* samples more for the far echo (VoIP) */
+	int line_delay = 0;     /* samples more to the answerer (VoIP) */
+	int line_delay_c = -1;  /* to the caller (< 0: line_delay) */
 	bool flat = false;      /* no band limitation */
 	float cut_s = 0;        /* > 0: what the pumps receive from then
 				   on dropped (a call that stalls) */
