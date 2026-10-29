@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    pipe_modem.h - a modem whose line's audio comes from one file
  *                   descriptor and goes to another (16 bit linear), with

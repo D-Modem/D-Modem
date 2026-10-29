@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // Dmodem.class.php - the FreePBX module (BMO) of D-Modem: profiles of
 // DModem() (app_dmodem) or dmodem-ari kept in the module's store,

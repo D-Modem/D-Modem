@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # winmodem/: D-Modem's virtual modem driver for Windows, a UMDF 2 driver
 # whose COM port Windows' modem stack (Unimodem, modem.sys) and apps use

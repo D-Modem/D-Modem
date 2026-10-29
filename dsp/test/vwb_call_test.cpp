@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vwb_call_test.cpp - V.wb under the whole modem: two of libdmodem's
  *    modems at 96000 Hz on a simulated bare pair (vwb_line.h), AT&L1 (a

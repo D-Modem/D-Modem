@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    port.h - the COM port of D-Modem's virtual modem driver: what an app
  *             (or Unimodem's modem.sys above it) asks of a serial port,

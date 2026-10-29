@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vcvm_data_test.cpp - V.cvm's data mode (dsp/vcvm_data.h): octets
  *                         through the inner code, the interleaver, the

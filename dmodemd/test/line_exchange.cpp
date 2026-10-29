@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    line_exchange.cpp - a telephone exchange for the ALSA line's tests:
  *                        the lines of fake_modem_card.cpp's cards, a

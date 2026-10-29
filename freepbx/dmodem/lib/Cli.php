@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // Cli.php - fwconsole dmodem's subcommands (Console/Dmodem.class.php
 // hands them here, so they work, and are tested, without Symfony):

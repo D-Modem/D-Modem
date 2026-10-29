@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # dmodemd (the modem daemon behind a pty, on SIP calls), modem_test, and
 # libdmodem (the modem as a library, dmodem.h).  They run the modem core
 # (../core, dmodem_core) with the data pumps (../dsp, dmodem_dsp) and the

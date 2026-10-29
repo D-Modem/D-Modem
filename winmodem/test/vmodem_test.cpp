@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vmodem_test.cpp - dmodemd.exe on the virtual modem driver's pipe
  *                      (Windows; Wine in the tests): the driver's own end

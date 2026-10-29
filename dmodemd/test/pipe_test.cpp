@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    pipe_test.cpp - dmodemd.exe's named pipe DTE (Windows): dmodemd
  *                    started beside this program with --pipe (we its

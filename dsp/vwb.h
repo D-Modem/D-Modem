@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vwb.h - V.wb, D-Modem's own wideband mode for a bare copper pair
  *            (pico-serial's WB stick, SPEC-WB): discrete multitone

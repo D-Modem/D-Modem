@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    fax_doc.cpp - the fax tests' document for the Asterisk and
  *    FreeSWITCH fax scripts

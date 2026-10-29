@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // fpbx_env.php - what the module uses of FreePBX, for the tests: the
 // kvstore (DB_Helper's rules: false deletes, scalars come back as

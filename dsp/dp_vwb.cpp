@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dp_vwb.cpp - the V.wb pump (DP_VWB, AT+MS=VWB or 200): one end of
  *                 vwb.h's wideband modem on a bare pair at 48000, 96000

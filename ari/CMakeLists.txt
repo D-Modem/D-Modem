@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # dmodem-ari: D-Modem's modem for Asterisk calls as an ARI application, a
 # program of its own beside Asterisk (no module in it).  Its call is the
 # PBX modules' (pbx/dmodem_bridge.c) on libdmodem.

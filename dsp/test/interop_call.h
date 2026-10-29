@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    interop_call.h - calls between two modem processes: the interop
  *                     tests' driver (interop_test.cpp) and interop_call's

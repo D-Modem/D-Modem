@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe_dapsk.py: amplitude loading on the comb (clause sec:qam of the
 # Recommendation).  Each tone carries, per symbol, a differential phase
 # (DQPSK or 8-DPSK, as the combs do) and a differential amplitude: the

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe.py <codec_probe> <codec spec>...: what a speech codec does to
 # modem-like signals, through codec_probe (16 bit, 8000 Hz).  Each
 # measurement generates a signal, runs it through the codec and analyses

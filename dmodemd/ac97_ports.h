@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    ac97_ports.h - an AC'97 modem codec's registers from user space on
  *                   an Intel ICH modem controller (snd-intel8x0m's: ICH,

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    t30.h - a fax machine: the ITU-T T.30 procedure for group 3 fax on
  *            the fax modulations of fax_modems.cpp, with the pages in

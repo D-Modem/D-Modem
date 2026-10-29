@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # The modem core (C++, namespace dcore): the AT command interpreter, the
 # S-registers, the result codes, the call's state machine and its timers
 # (dcore.h).  It runs the data pumps of ../dsp through their interface

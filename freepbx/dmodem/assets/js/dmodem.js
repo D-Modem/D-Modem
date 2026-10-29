@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // dmodem.js - the D-Modem page (FreePBX loads it for display=dmodem):
 // a profile form shows the fields of its mode, the settings those of the

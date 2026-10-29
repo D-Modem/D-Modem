@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    sip.h - dmodem-ari's own SIP side, for T.38: Asterisk calls it on a
  *            PJSIP endpoint of its own (one leg for each call, the call's

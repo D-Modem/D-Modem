@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # hsf_obj.cmake - one of the HSF modem's objects (hsfengine, hsfmc97ich,
 # hsfsoar) as an object half_hsf links: its .ctors and its
 # .gnu.linkonce.* sections renamed for the object (.<name>_ctors,

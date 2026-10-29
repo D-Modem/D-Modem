@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    cx_country.cpp - a country's SmartDAA line setting and the board's
  *                     parameters for a Conexant AC'97 codec (cx_country.h)

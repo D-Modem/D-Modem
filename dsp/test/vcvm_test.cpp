@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vcvm_test.cpp - V.cvm's signal set (dsp/vcvm.h): the combs and the
  *                    parametric mode back to back, through a delay, a

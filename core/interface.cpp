@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    interface.cpp - the modem core as the data pumps see it: the C
  *                    functions of modem_dp.h, modem_param.h, modem_defs.h

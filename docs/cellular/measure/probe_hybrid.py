@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe_hybrid.py: the two layers at once.  The transmitted signal is the
 # comb of probe3.py (tones with differential phase modulation, the
 # waveform layer) added to the pulse train of probe_pitch.py (the codec's

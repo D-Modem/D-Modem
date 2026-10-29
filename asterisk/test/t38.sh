@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # t38.sh: faxes over T.38 through app_dmodem (app_dmodem.so from the
 # CMake build) in a private Asterisk (installed, with chan_pjsip and
 # res_fax_spandsp) that calls itself over PJSIP, out on loopout, in on

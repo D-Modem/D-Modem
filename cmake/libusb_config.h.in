@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  * libusb's config.h for its Windows backend, built by cmake/libusb.cmake
  * with MinGW-w64, MSVC or clang-cl (what its configure script and its

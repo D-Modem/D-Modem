@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    options.h - the command line of dmodemd, modem_test and the interop
  *                tests' modem (half_open): Smart Link's slmodemd's options

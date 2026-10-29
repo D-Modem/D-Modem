@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    half_open.cpp - one modem (the open data pumps on the modem core)
  *                     whose line's audio is read from fd 3 and written to

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    mnp.cpp - MNP 2 to 4 (V.42 (10/96) Annex A): the octet framing and
  *              the procedure

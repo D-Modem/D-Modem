@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vwb.cpp - V.wb, the wideband DMT modem for a bare pair (vwb.h,
  *              docs/dsp/vwb.md)

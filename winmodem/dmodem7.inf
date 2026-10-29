@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: AGPL-3.0-only
-; Copyright (C) 2026 Neo-Desktop
+; Copyright (C) 2026 D-Modem Authors
 ;
 ; dmodem7.inf - D-Modem's virtual modem for Windows 7 and 8: a modem
 ; without hardware whose COM port (dmodemvm7.dll, a UMDF 1.9 driver under

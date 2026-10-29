@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    smartlink_glue.cpp - Smart Link's original library
  *                         (smartlink/dsplibs.o) on the modem core, for

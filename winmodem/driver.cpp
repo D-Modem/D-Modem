@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    driver.cpp - dmodemvm.dll, D-Modem's virtual modem driver: a UMDF 2
  *                 driver whose device is a modem (dmodem.inf: the Modem

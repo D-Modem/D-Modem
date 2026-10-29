@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # The tests known to fail now and then (each an open intermittent, most
 # of them under a loaded machine): ctest runs them last, after every
 # other test it runs, and one at a time, with nothing else beside them.

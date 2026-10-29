@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    rtp_events.h - the telephone-events a call's far end sends (RFC 4733,
  *                   RFC 4734), played into the modem's audio as the tones

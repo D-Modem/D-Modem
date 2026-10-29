@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    hw/codec_line.hpp - the line and a codec at a rate of its own (as
  *                        the modem's driver sets it): a mixin of a

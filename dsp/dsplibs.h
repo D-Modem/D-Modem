@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dsplibs.h - the rest of a data pump library's interface: the entry
  *                points the modem core calls (start up, the call's

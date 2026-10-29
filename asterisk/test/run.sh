@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # run.sh [AT+MS=.. [answering profile]]: a call between two DModem() over a Local channel in a
 # private Asterisk (installed, with app_dmodem.so from the CMake build), see bbs_sim.py
 #   LAW=alaw       both modems on an A-law channel

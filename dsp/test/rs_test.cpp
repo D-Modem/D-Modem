@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    rs_test.cpp - dsp/rs.h: the generator's roots, and the decoder on
  *                  random codewords with errors and erasures up to the

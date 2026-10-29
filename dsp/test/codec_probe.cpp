@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    codec_probe.cpp - a signal through a mobile network's speech codec
  *                      (codec_sim.h), for measuring what the codec does

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    main_windows.cpp - dmodemd on Windows: the modem core on a SIP line
  *                       (sip_modem.h), its DTE a COM port (--com), a

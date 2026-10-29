@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # usb_test.py <dmodemd> <line_exchange> <fake libusb>: dmodemd on a Smart
 # Link SmartUSB56 (--usb), two of them on fake ST7554s (fake_st7554.cpp,

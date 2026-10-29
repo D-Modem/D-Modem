@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vcvm_msg.cpp - V.cvm's capabilities (Annex A), its INFO and MP
  *                   messages (Annex B) and the message mode they go in

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # The tests' logs: each ctest run in a directory of its own under
 # DMODEM_TEST_LOG_ROOT (<build>/test-logs/<YYYY-MM-DD_HH-MM-SS>/, latest
 # pointing to the newest), each test's output, files and result in

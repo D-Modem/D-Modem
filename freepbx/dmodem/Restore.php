@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // Restore.php - the module's settings and profiles out of a FreePBX
 // backup (Dmodem::importData(): each checked as the forms check it).

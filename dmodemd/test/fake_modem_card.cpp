@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    fake_modem_card.cpp - an ALSA modem card for the tests: alsa-lib's
  *                          external PCM (ioplug) and control (ctl_ext)

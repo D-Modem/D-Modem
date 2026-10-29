@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: AGPL-3.0-only
-; Copyright (C) 2026 Neo-Desktop
+; Copyright (C) 2026 D-Modem Authors
 ;
 ; dmodemvm7.def - dmodemvm7.dll's exports: COM's, for UMDF 1's host
 LIBRARY dmodemvm7

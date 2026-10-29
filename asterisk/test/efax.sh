@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # efax.sh: faxes of dmodemd (built in ../..) with efax on its pty (class
 # 1) over SIP to a private Asterisk (installed, with chan_pjsip and
 # res_fax_spandsp):

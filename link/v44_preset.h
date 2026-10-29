@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    v44_preset.h - V.cvm's preset dictionary for V.44 (Annex E of
  *                   docs/cellular/v_cvm.tex): text both DCEs take into

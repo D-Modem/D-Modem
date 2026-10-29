@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // Apps.php - a dialplan step of any application for FreePBX's
 // extensions class (DModem(), Stasis(), DModemReceiveFax()), which has a

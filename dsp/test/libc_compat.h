@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    libc_compat.h - the test programs' C library the same everywhere:
  *                    on Windows the few POSIX calls they make that its

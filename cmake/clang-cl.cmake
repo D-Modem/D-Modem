@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # clang-cl.cmake: a toolchain file for Windows (x86_64) with LLVM's
 # clang-cl and lld-link, MSVC's ABI and C library, from Linux:
 #

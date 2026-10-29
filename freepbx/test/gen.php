@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // gen.php <dir> [app|ari] [ari port]: what the FreePBX module writes on
 // Apply Config, made the way the page makes it (its forms posted through

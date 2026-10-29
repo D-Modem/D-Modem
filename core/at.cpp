@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    at.cpp - the modem core's AT command interpreter (dcore.h): the
  *             DTE's characters in command state made into command lines

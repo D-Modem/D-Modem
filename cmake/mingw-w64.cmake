@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # mingw-w64.cmake: a toolchain file for Windows (x86_64) with MinGW-w64,
 # its POSIX thread model (winpthreads), from Linux:
 #

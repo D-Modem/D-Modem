@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    v91.h - ITU-T V.91: two digital modems on a 4-wire digital connection
  *            (here: two D-Modems on a G.711 VoIP call), PCM both ways at

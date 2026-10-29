@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    call_tone_test.cpp - the call progress tone detector (dsp.h's
  *                         CallToneDetect): the ringing and busy tones

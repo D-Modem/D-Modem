@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 #    tones_gen.py - tones.cpp from the ITU's list of the tones
 #                        used in national networks (Annex to ITU
@@ -257,7 +257,7 @@ def main():
 
 HEAD = """/*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    tones.cpp - the countries' tones (tones.h), from the
  *                     ITU's list of the tones used in national networks

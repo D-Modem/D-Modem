@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dtmf_test.cpp - the DTMF detector (dsp.h's DtmfDetect) on the
  *                    generator's digits, at the sample rates the modem

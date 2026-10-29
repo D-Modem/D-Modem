@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    fake_pico_wb.cpp - a pico-serial WB stick for the tests: the part of
  *                       libusb-1.0 that usb_line.cpp and usb_wb.cpp use

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # tables.py <matrix.txt> <probe.txt> <probe3.txt> <probe3_wb.txt>
 #           <probe_evs8.txt> <probe_evs16.txt> <probe_evs32.txt> <cross.tex>
 #           <pitch.txt> <pitch_evs.txt> <stack.txt> <dapsk_nb.txt>

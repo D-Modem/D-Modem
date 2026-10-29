@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    qam.cpp - generic QAM transmitter and receiver, V.17/V.32bis trellis
  *            coding with a Viterbi decoder, line echo canceller

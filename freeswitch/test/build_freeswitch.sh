@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # build_freeswitch.sh <prefix>: FreeSWITCH 1.10.12 from source into
 # <prefix>, with what it needs that distributions lack: sofia-sip, and
 # FreeSWITCH's spandsp at the commit its 1.10.12 build uses (mod_spandsp

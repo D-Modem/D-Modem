@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # Test programs of the open data pumps, the library and the fax, and their
 # ctest registrations.  Labels:
 #   quick     offline, faster than real time (a few minutes in all)

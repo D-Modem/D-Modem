@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # ari_env.sh: sourced by the tests for ARI=1, their calls through
 # dmodem-ari (D-Modem as an ARI application, ../../ari) instead of
 # app_dmodem:

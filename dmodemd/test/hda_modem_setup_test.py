@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # hda_modem_setup_test.py <hda-modem-setup>: the helper on a fake sysfs
 # and kernel configuration (in a temporary directory):

@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // backup_env.php - what the module's Backup.php and Restore.php use of
 // FreePBX's backup module (its BackupBase and RestoreBase, as its

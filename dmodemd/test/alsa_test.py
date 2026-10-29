@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # alsa_test.py <dmodemd> <line_exchange> <plugin dir> [<fake hwdep>]: dmodemd on a
 # softmodem codec through ALSA (-a), two of them on fake modem cards

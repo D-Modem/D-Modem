@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // LineCheck.php - the PJSIP endpoints' settings that matter to a modem
 // call, from Asterisk's CLI ("pjsip show endpoints", "pjsip show endpoint
