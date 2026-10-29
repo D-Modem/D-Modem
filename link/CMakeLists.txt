@@ -27,12 +27,27 @@ if(DMODEM_TESTS)
 	# zstd against the reference library, where it is found
 	find_path(DMODEM_ZSTD_INCLUDE zstd.h)
 	find_library(DMODEM_ZSTD_LIB zstd)
+	# and only where it links for this build's every architecture (a
+	# universal macOS build, Homebrew's libzstd being arm64 only)
+	set(_zstd OFF)
+	if(DMODEM_ZSTD_INCLUDE AND DMODEM_ZSTD_LIB)
+		include(CheckCXXSourceCompiles)
+		set(CMAKE_REQUIRED_INCLUDES ${DMODEM_ZSTD_INCLUDE})
+		set(CMAKE_REQUIRED_LIBRARIES ${DMODEM_ZSTD_LIB})
+		check_cxx_source_compiles([[
+#include <zstd.h>
+int main() { return ZSTD_versionNumber() == 0; }
+]] DMODEM_ZSTD_LINKS)
+		unset(CMAKE_REQUIRED_INCLUDES)
+		unset(CMAKE_REQUIRED_LIBRARIES)
+		set(_zstd ${DMODEM_ZSTD_LINKS})
+	endif()
 	# the compressors' ratio and speed on files (libzstd's beside them
 	# where it is found); --check, their round trips, as a test
 	add_executable(compress_bench test/compress_bench.cpp)
 	target_link_libraries(compress_bench PRIVATE dmodem_link)
 	dmodem_flags(compress_bench EXTRA)
-	if(DMODEM_ZSTD_INCLUDE AND DMODEM_ZSTD_LIB)
+	if(_zstd)
 		target_include_directories(compress_bench PRIVATE
 			${DMODEM_ZSTD_INCLUDE})
 		target_link_libraries(compress_bench PRIVATE ${DMODEM_ZSTD_LIB})
@@ -46,7 +61,7 @@ if(DMODEM_TESTS)
 		set_tests_properties(compress_bench_check PROPERTIES
 			LABELS quick)
 	endif()
-	if(DMODEM_ZSTD_INCLUDE AND DMODEM_ZSTD_LIB)
+	if(_zstd)
 		add_executable(zstd_ref_test test/zstd_ref_test.cpp)
 		target_include_directories(zstd_ref_test PRIVATE
 			${DMODEM_ZSTD_INCLUDE})
