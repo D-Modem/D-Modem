@@ -79,7 +79,7 @@ ari_start() {
 }
 
 ari_stop() {
-	[ -z "$ari_pid" ] || kill "$ari_pid" 2>/dev/null
+	[ -z "$ari_pid" ] || kill "$ari_pid" 2>/dev/null || true
 	ari_pid=
 }
 
