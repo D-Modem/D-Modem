@@ -56,12 +56,14 @@ static const double BER_MAX = 1e-3;
 /* the line's delay each way, samples */
 static const int DELAY_TO_ANSWERER = 37;
 static const int DELAY_TO_CALLER = 53;
-/* cfg's samples more to the answerer, to the caller */
+/* cfg's samples more to the answerer */
 static int to_answerer_delay(const LoopbackConfig &cfg)
 {
 	return std::max(cfg.line_delay, 0);
 }
 
+/* cfg's samples more to the caller (as many as to the answerer, unless
+   it says) */
 static int to_caller_delay(const LoopbackConfig &cfg)
 {
 	return cfg.line_delay_c >= 0 ? cfg.line_delay_c :
