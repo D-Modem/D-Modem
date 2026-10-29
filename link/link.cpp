@@ -292,6 +292,10 @@ s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 		timer_ = 0;
 		run_timer();
 	}
+	/* (the decoder's output the DTE did not take when the last frame
+	   came: to it again, as no frame may come after it) */
+	if (dec_count_ && online_)
+		comp_flush_output();
 	if (push_pending) {
 		if (mode_ == Mode::Lapm)
 			lapm_.push_rest();

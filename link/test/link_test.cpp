@@ -648,6 +648,7 @@ struct Dte : Owner {
 	size_t pos = 0;
 	bool up = false, released = false, error = false, detected = false;
 	int accept = 1 << 30;           /* characters it takes per call */
+	int room = -1;                  /* characters it takes in all, if >= 0 */
 	Config agreed;
 	bool verbose = false;
 	/* the DTE called n in the log */
@@ -663,6 +664,10 @@ struct Dte : Owner {
 	s16 write_chars(const uint8_t *buf, s16 n) override {
 		if (n > accept)
 			n = accept;
+		if (room >= 0 && n > room)
+			n = static_cast<s16>(room);
+		if (room >= 0)
+			room -= n;
 		got.insert(got.end(), buf, buf + n);
 		return n;
 	}
@@ -1258,6 +1263,34 @@ TEST(Link, LapmSlowDte)
 	/* a slow DTE: RNR, the rest later */
 	p.da.accept = 7;
 	transfer("lapm, slow DTE", p, 20000, 2000, 9600 * 120);
+}
+
+/* a DTE that takes a little now and then and at times nothing (a full
+   pty), with compression: the decoder's output it has not taken reaches
+   it later, the last of it too, when no frame comes after it */
+TEST(Link, LapmCompressedSlowDte)
+{
+	const char *names[] = { "V.44", "V.42bis", "zstd" };
+	for (int k = 0; k < 3; k++) {
+		rnd_state = 12345;
+		Config c = lapm_config(3, k == 0, k == 2);
+		Pair p(c, c);
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(p.dc.up && p.da.up, "%s: LAPM up", names[k]);
+		const size_t n = 20000;
+		p.dc.to_send = text(n);
+		p.dc.pos = 0;
+		p.da.got.clear();
+		for (long run = 0; run < 9600L * 120 && p.da.got.size() < n;
+		     run += 480) {
+			p.da.room = 40;
+			p.run(480);
+		}
+		p.da.room = -1;
+		CHECK(p.da.got == p.dc.to_send, "%s, a DTE at times full: %zu/%zu",
+		      names[k], p.da.got.size(), n);
+	}
 }
 
 /* no LAPM: async both ways */
