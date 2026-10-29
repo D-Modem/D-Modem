@@ -339,7 +339,8 @@ try:
     check("1001 an STLC7550", b"codec: STLC7550" in log_of(a))
     check("1002 its remote wakeup armed", b"fake st7554: remote wakeup armed" in b_log())
     check("1001 its remote wakeup not armed", b"remote wakeup armed" not in log_of(a))
-    if not usb_dte.windows(dmodemd):
+    # (Linux's alone: the kernel's power/wakeup, usb_line.cpp's arm_wake())
+    if not usb_dte.windows(dmodemd) and sys.platform.startswith("linux"):
         check("1002 the kernel's power/wakeup tried",
               b"1-250/power/wakeup" in b_log())
     # (the core's ring check 2.5 s after a burst's first pulse)
