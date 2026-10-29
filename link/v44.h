@@ -39,6 +39,7 @@
 #ifndef DMODEM_LINK_V44_H
 #define DMODEM_LINK_V44_H
 
+#include <cstddef>
 #include <vector>
 
 #include "dm_types.h"
