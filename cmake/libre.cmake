@@ -90,11 +90,20 @@ foreach(_v CMAKE_TOOLCHAIN_FILE CMAKE_USER_MAKE_RULES_OVERRIDE MINGW_TRIPLE MING
 	CMAKE_OSX_DEPLOYMENT_TARGET ANDROID_ABI ANDROID_PLATFORM
 	ANDROID_NDK ANDROID_STL)
 	if(DEFINED ${_v} AND NOT "${${_v}}" STREQUAL "")
-		# (a list, "arm64;x86_64", one argument: its ; escaped)
-		string(REPLACE ";" "\\;" _val "${${_v}}")
-		list(APPEND _cross "-D${_v}=${_val}")
+		if("${${_v}}" MATCHES ";")
+			# (a list, "arm64;x86_64": in an initial cache file, as a
+			# ; in an argument does not survive being passed on)
+			string(APPEND _cross_cache
+				"set(${_v} \"${${_v}}\" CACHE STRING \"\")\n")
+		else()
+			list(APPEND _cross "-D${_v}=${${_v}}")
+		endif()
 	endif()
 endforeach()
+if(_cross_cache)
+	file(WRITE ${CMAKE_BINARY_DIR}/libre-cross.cmake "${_cross_cache}")
+	list(APPEND _cross -C ${CMAKE_BINARY_DIR}/libre-cross.cmake)
+endif()
 
 include(ProcessorCount)
 ProcessorCount(_jobs)
