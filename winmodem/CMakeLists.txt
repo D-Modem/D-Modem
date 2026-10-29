@@ -134,8 +134,9 @@ set(_wdf_defs UMDF_VERSION_MAJOR=2 UMDF_VERSION_MINOR=15 UMDF_USING_NTSTATUS
 	_UNICODE UNICODE)
 if(DMODEM_WDF_STUB)
 	add_library(dmodemvm SHARED driver.cpp dmodemvm.rc)
+	# (ntdll: the stub's DbgPrintEx, which mincore does not have)
 	target_link_libraries(dmodemvm PRIVATE dmodem_winlink
-		${DMODEM_WDF_STUB} mincore)
+		${DMODEM_WDF_STUB} mincore ntdll)
 	# (the stub's FxDriverEntryUm is the DLL's entry for the framework)
 	target_link_options(dmodemvm PRIVATE /INCLUDE:FxDriverEntryUm)
 	install(TARGETS dmodemvm RUNTIME DESTINATION driver)
