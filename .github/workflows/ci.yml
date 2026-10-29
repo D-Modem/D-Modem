@@ -490,7 +490,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /home/runner/freeswitch
-          key: freeswitch-1.10.12-${{ runner.os }}-${{ hashFiles('freeswitch/test/build_freeswitch.sh') }}
+          key: freeswitch-1.11.3-${{ runner.os }}-${{ hashFiles('freeswitch/test/build_freeswitch.sh') }}
 
       - name: FreeSWITCH
         if: steps.fs-cache.outputs.cache-hit != 'true'
