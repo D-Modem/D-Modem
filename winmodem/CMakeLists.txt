@@ -82,6 +82,8 @@ if(NOT DMODEM_UMDF1_INCLUDE AND
 	set(DMODEM_UMDF1_INCLUDE
 		"$ENV{ProgramFiles\(x86\)}/Windows Kits/10/Include/wdf/umdf/1.9")
 endif()
+# (found here: for ../dmodemd's umdf1_test too)
+set(DMODEM_UMDF1_INCLUDE "${DMODEM_UMDF1_INCLUDE}" PARENT_SCOPE)
 if(DMODEM_UMDF1_INCLUDE)
 	add_library(dmodemvm7 SHARED driver7.cpp dmodemvm7.def dmodemvm7.rc)
 	target_include_directories(dmodemvm7 SYSTEM PRIVATE
