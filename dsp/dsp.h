@@ -30,12 +30,12 @@
 namespace dsp {
 
 /* debug output (dsplibs_debug_printf), routed through modem_debug.cpp like
-   the original library */
-#define DSP_DBG(fmt, arg...) do { if (dsplibs_debug_level > 1) \
-	dsplibs_debug_printf("dsp: " fmt, ##arg); } while (0)
+   the original library; the format, a literal, comes first */
+#define DSP_DBG(...) do { if (dsplibs_debug_level > 1) \
+	dsplibs_debug_printf("dsp: " __VA_ARGS__); } while (0)
 /* per symbol traces, only for development */
-#define DSP_TRACE(fmt, arg...) do { if (dsplibs_debug_level > 4) \
-	dsplibs_debug_printf("dsp: " fmt, ##arg); } while (0)
+#define DSP_TRACE(...) do { if (dsplibs_debug_level > 4) \
+	dsplibs_debug_printf("dsp: " __VA_ARGS__); } while (0)
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
