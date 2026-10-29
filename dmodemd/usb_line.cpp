@@ -59,8 +59,8 @@
  *    half ahead).
  *
  *    The pico-serial Line stick's protocol is its firmware's
- *    (firmware/PROTOCOL.md "Line stick", github.com/Neo-Desktop/
- *    pico-serial): the same transfers on interface 0, alternate setting
+ *    (firmware/PROTOCOL.md "Line stick", github.com/D-Modem/
+ *    hardware): the same transfers on interface 0, alternate setting
  *    1 (selecting it starts the samples, its rate set before), 8-octet
  *    events on the interrupt endpoint, vendor requests for the rest.
  *    The country's line settings (si3056.h) go into its DAA's registers
