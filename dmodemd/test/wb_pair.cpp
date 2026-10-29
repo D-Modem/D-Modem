@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "vwb_line.h"
+#include "mac_realtime.h"
 
 /* (no MSG_NOSIGNAL: SIGPIPE is ignored here anyway) */
 #ifndef MSG_NOSIGNAL
@@ -317,6 +318,7 @@ int main(int argc, char *argv[])
 	signal(SIGINT, on_signal);
 	signal(SIGPIPE, SIG_IGN);
 	fcntl(0, F_SETFL, O_NONBLOCK);
+	mac_realtime(5000000L);
 	say("ready");
 	clock_gettime(CLOCK_MONOTONIC, &next);
 	long long due = ns(next);
