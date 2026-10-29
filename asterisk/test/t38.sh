@@ -21,6 +21,12 @@
 #      T.38 (two receivers: no document, only that is checked)
 # Each document received (1 to 7) must be the one sent; all but 5 over
 # T.38.
+# Before 6 and 7, Asterisk's gateway by itself: SendFAX on the audio
+# through it to ReceiveFAX over T.38, no DModem.  Where that fax does
+# not get through, the gateway does not work in this Asterisk (Ubuntu
+# 24.04's 20.6: once it has started it sends the audio side nothing),
+# so 6 and 7 could say nothing about DModem: they are skipped, and say
+# so (GATEWAY=yes runs them all the same).
 # ARI=1: through dmodem-ari instead (D-Modem as an ARI application,
 # ../../ari, with t38 = yes: each call's line a leg to its own SIP side;
 # the dialplan's DModem...() as Stasis(dmodem,...)).
@@ -192,9 +198,39 @@ log_since() {
 	tail -n +$(($1 + 1)) "$log" |
 		grep -iE "dmodem fax|a fax machine|dmodem.*(ERROR|WARNING)"
 }
+# Asterisk's gateway by itself (above): 0 if its fax got through (asked
+# once)
+gw_ok=
+gateway_works() {
+	if [ -z "$gw_ok" ]; then
+		echo "== Asterisk's T.38 gateway by itself: SendFAX (audio) -> gateway -> ReceiveFAX (T.38)"
+		rm -f "$run/spandsp.tif"
+		$ast -rx "channel originate PJSIP/gwsp@loopaudio extension s@sp-send"
+		n_send=$((n_send+1)); n_in=$((n_in+2))
+		wait_for " SPSEND FAXSTATUS" $n_send && wait_for " T38IN " $n_in
+		grep -E " SPSEND" "$run/console.log" | tail -1
+		if [ "${GATEWAY:-}" = yes ] ||
+		   "$t4" compare "$run/doc.tif" "$run/spandsp.tif" \
+			>/dev/null 2>&1; then
+			gw_ok=0
+		else
+			gw_ok=1
+		fi
+		rm -f "$run/spandsp.tif"
+	fi
+	return $gw_ok
+}
 r=0
 n_send=0; n_in=0
 for c in ${CASES:-1 2 3 4 5 6 7 8}; do
+	case $c in
+	6|7)
+		if ! gateway_works; then
+			echo "== $c: SKIP: Asterisk's T.38 gateway passes no fax here, even between its own SendFAX and ReceiveFAX"
+			continue
+		fi
+		;;
+	esac
 	t=$(over_t38); l=$(wc -l < "$log")
 	rm -f "$run/received.tif" "$run/spandsp.tif"
 	case $c in
