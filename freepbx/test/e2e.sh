@@ -71,14 +71,16 @@ EOT
 ast="asterisk -C $run/etc/asterisk.conf"
 $ast -f -n -T -vvvvv > "$run/console.log" 2>&1 &
 pid=$!
-trap 'kill $pid 2>/dev/null' EXIT
+# (|| true: Asterisk is gone after 'core stop now', and set -e would make
+# the failed kill the script's status)
+trap 'kill $pid 2>/dev/null || true' EXIT
 i=0; until $ast -rx "core waitfullybooted" >/dev/null 2>&1; do
 	sleep 0.5; i=$((i+1)); [ $i -lt 60 ] || { tail "$run/console.log"; exit 1; }
 done
 echo "--- the context, as Asterisk has it"
 $ast -rx "dialplan show app-dmodem" | grep -E "bbs|receivefax|DModem|Stasis" || true
 if [ -n "$ARI" ]; then
-	trap 'kill $pid 2>/dev/null; ari_stop' EXIT
+	trap 'kill $pid 2>/dev/null || true; ari_stop' EXIT
 	ari_start "$run" "$run/etc/dmodem.conf"
 fi
 
