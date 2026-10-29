@@ -515,6 +515,33 @@ void tick()
 	}
 }
 
+/* t in ns (CLOCK_MONOTONIC's) */
+long long ns(const struct timespec &t)
+{
+	return t.tv_sec * 1000000000LL + t.tv_nsec;
+}
+
+/* the next tick (next) after the one due at due: on the clock, tick_ns
+   on; but late (a busy machine: a CI runner), half a tick apart until
+   the clock is caught up, rather than a burst of ticks at once, which
+   the modems would take as their line's samples all coming together (a
+   stick's playback padded with silence, then too far ahead and cut);
+   over a second late, the clock is now */
+void pace(long long &due, struct timespec &next, long tick_ns)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	due += tick_ns;
+	if (ns(now) - due > 1000000000LL)
+		due = ns(now);
+	long long at = due;
+	if (at < ns(now) + tick_ns / 2)
+		at = ns(now) + tick_ns / 2;
+	next.tv_sec = (time_t)(at / 1000000000LL);
+	next.tv_nsec = (long)(at % 1000000000LL);
+}
+
 /* asleep until at (CLOCK_MONOTONIC): clock_nanosleep(), or where there
    is none (macOS) nanosleep() for what is left of it */
 void sleep_until(const struct timespec &at)
@@ -566,15 +593,12 @@ int main(int argc, char *argv[])
 	fcntl(0, F_SETFL, O_NONBLOCK);
 	say("ready");
 	clock_gettime(CLOCK_MONOTONIC, &next);
+	long long due = ns(next);
 	while (!quit) {
 		char c;
 		if (read(0, &c, 1) == 0)
 			break;
-		next.tv_nsec += 20000000L;
-		if (next.tv_nsec >= 1000000000L) {
-			next.tv_nsec -= 1000000000L;
-			next.tv_sec++;
-		}
+		pace(due, next, 20000000L);
 		sleep_until(next);
 		tick();
 	}
