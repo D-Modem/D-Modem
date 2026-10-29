@@ -410,7 +410,9 @@ same(array_keys($exp), ['format', 'settings', 'profiles'], 'export: its parts');
 same($exp['settings']['fax_ecm'], false, 'export: settings as they are');
 $file = sys_get_temp_dir() . '/dmodem-unit-' . getmypid() . '.json';
 same(Cli::run($m, ['export', $file], [], $say), 0, 'fwconsole dmodem export <file>');
-same(fileperms($file) & 0777, 0600, 'the export readable by its owner alone (the ARI password)');
+/* (Windows' files have no owner/group/other modes: FreePBX runs on POSIX) */
+if (PHP_OS_FAMILY !== 'Windows')
+	same(fileperms($file) & 0777, 0600, 'the export readable by its owner alone (the ARI password)');
 
 /* into a fresh module, as on another system */
 $saved = unserialize(serialize(FreePBX_Helpers::$kv));
