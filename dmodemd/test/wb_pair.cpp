@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    wb_pair.cpp - a bare pair between two WB sticks for the tests: the
  *                  pair of fake_pico_wb.cpp's sticks, line_exchange's

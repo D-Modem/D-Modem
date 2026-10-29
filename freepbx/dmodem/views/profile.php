@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // views/profile.php - a profile's form.  Given $profile, $editing (the
 // profile exists: its name stays) and $errors.

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # freepbx/: the FreePBX module (dmodem/, PHP: nothing to build).  The
 # freepbx_module target packs it as FreePBX installs a module from,

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    codec_sim.h - a mobile network's speech codec on an 8000 Hz line:
  *                  AMR (3GPP TS 26.090, the codec of GSM and VoLTE

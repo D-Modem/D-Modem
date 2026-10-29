@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    datafile.cpp - the dsp_info file (datafile.h), in the format of
  *                   slmodemd's modem_datafile.c

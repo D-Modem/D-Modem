@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # libusb-1.0 for dmodemd's --usb on Windows and macOS, as the static
 # library `dmodem_libusb` (Linux takes the system's, pkg-config
 # libusb-1.0).

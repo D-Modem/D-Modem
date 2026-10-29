@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    modem_param.h - the parameters a data pump reads from or gives to
  *                    the modem core, by number: rates, the line, the dial

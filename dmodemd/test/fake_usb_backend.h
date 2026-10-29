@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    fake_usb_backend.h - what the fake USB modems (fake_st7554.cpp,
  *                         fake_pico_line.cpp) share to stand for

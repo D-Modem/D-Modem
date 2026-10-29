@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    half_agere.cpp - the Agere Systems soft modem (agrsm 2.1.x,
  *    agrmodemlib.o: its controller and data pumps, i386 object code) as a

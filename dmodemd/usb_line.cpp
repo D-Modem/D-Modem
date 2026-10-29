@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only AND BSD-3-Clause
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    usb_line.cpp - the modem's line a Smart Link SmartUSB56 (ST7554)
  *                   or a pico-serial Line or WB stick through libusb

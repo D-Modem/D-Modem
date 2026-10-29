@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    alsa_line.h - the modem's line a softmodem's codec through ALSA: an
  *                  AC'97 modem (snd-intel8x0m, snd-atiixp-modem,

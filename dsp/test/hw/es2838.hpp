@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    hw/es2838.hpp - ESS's ES2838 PCI modem chip (125d:2838, the ES56H-PI
  *                    host signal processing modem): a mixin of a harness

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    t38.h - ITU-T T.38 fax over IP: the IFP packets (Annex A) in the
  *            encoding of the 1998 version (T38FaxVersion 0) and of the

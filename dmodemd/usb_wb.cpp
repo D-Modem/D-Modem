@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    usb_wb.cpp - the pico-serial WB stick (USB 1209:0003) as the modem's
  *                 line: UsbLine's Kind::Wb (usb_line.h)

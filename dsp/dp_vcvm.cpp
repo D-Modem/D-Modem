@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dp_vcvm.cpp - the V.cvm pump (DP_VCVM): what V.8's pump hands the
  *                  call to when CM and JM both carry V.cvm's information

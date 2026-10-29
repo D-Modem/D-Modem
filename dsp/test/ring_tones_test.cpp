@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    ring_tones_test.cpp - the countries' tones (tones.h): their
  *                          rows, and each country's ring signal, at its

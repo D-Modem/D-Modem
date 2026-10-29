@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    t38_spandsp.cpp - our T.30 machine over T.38 against spandsp's T.38
  *    terminal (t38_terminal_state_t, as Asterisk's SendFAX and ReceiveFAX

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    g711.h - G.711 mu-law and A-law, the usual reference algorithms
  *             (16 bit linear values; mu-law from 14 bits clipped at

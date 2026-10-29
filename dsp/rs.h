@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    rs.h - a Reed-Solomon code over GF(2^8): the field of x^8 + x^4 +
  *           x^3 + x^2 + 1 and the generator prod (x - a^i), i = 0 ..

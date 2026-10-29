@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    tones.h - the countries' tones, from the ITU's list of the tones
  *              of national networks (after E.180; tones.cpp): the ringing

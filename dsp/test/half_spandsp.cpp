@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    half_spandsp.cpp - spandsp's data modems (libspandsp 0.0.6, as
  *    Asterisk and FreeSWITCH have it) as a test peer (modem_half.hpp):

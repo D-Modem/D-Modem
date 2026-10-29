@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    umdf1_host.cpp - umdf1_test: dmodemvm7.dll, the virtual modem driver
  *                     for Windows 7 and 8 (driver7.cpp), in a UMDF 1 host

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    v44_preset.cpp - V.cvm's preset dictionary for V.44 (see
  *                     v44_preset.h); the Recommendation's Annex E lists

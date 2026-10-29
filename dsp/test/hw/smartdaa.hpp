@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    hw/smartdaa.hpp - Conexant's SmartDAA, behind the Conexant AC'97
  *                      modem codec's register 0x7a: a mixin of a harness

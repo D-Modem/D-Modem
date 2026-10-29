@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    install.cpp - dmodem-driver.exe: the virtual modem's device (a root
  *                  device, Root\DModemVM) made and its driver installed,

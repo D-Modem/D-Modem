@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # fax.sh: faxes over SIP in a private FreeSWITCH (see fs.sh), between
 # dmodem's fax applications and against FreeSWITCH's own (mod_spandsp):
 #   1. dmodem_send_fax calls dmodem bbs, which sees the CNG and receives

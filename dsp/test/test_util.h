@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    test_util.h - what the DSP's test programs share: the DSP's log
  *    (dsplibs_debug_level and dsplibs_debug_printf, defined in

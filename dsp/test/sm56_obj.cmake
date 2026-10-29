@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # sm56_obj.cmake - Motorola's sm56.ko as an object half_sm56 links: its
 # imports (the kernel's) renamed k_<name>, which half_sm56.c provides, and
 # its tty entry points made global.

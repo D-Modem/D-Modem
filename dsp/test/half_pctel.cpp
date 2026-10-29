@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    half_pctel.cpp - PCTel's HSP soft modem (pctel-0.9.7-9's Intel AMR
  *    data pumps, dsp.a, and its controller, control.a: i386 objects,

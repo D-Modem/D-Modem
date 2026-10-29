@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    datafile.h - what the data pumps learn about the line over calls
  *                 (struct dsp_info), kept in a file between runs

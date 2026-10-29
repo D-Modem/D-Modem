@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // dmodemvm7.rc - the Windows 7 virtual modem driver's version resource
 
@@ -22,7 +22,7 @@ BEGIN
 			VALUE "FileDescription", "D-Modem virtual modem driver for Windows 7 and 8 (UMDF 1)"
 			VALUE "FileVersion", "1.0.0.0"
 			VALUE "InternalName", "dmodemvm7"
-			VALUE "LegalCopyright", "Copyright (C) 2026 Neo-Desktop, AGPL-3.0-only"
+			VALUE "LegalCopyright", "Copyright (C) 2026 D-Modem Authors, AGPL-3.0-only"
 			VALUE "OriginalFilename", "dmodemvm7.dll"
 			VALUE "ProductName", "D-Modem"
 			VALUE "ProductVersion", "1.0.0.0"

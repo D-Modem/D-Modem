@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    usb_line.h - the modem's line a Smart Link SmartUSB56 (ST7554, USB
  *                 0483:7554 with an STLC7550 codec), a pico-serial Line

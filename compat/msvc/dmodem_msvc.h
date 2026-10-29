@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dmodem_msvc.h - what of POSIX the sources take from the C library
  *                    and MSVC's lacks: ssize_t, mode_t, clock_gettime()

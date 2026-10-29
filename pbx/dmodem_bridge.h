@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  * dmodem_bridge.h - the modem call of the PBX modules (asterisk/app_dmodem.c,
  *                   freeswitch/mod_dmodem.c) on libdmodem's C API

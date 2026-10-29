@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    sip_dial_test.cpp - the SIP user dmodemd calls for a dial string
  *                        (sip::dial_user())

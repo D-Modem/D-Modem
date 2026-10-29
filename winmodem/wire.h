@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    wire.h - the frames between D-Modem's virtual modem driver (its COM
  *             port, port.h) and dmodemd (--driver), on the named pipe

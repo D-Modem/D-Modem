@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // linecheck.php <ami port> <endpoint> <verdict> [app|ari]: the module's
 // line check (Dmodem::check()) on a running Asterisk, through its manager

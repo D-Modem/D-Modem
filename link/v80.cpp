@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    v80.cpp - V.80 Synchronous Access Mode (8.8/V.80): the DTE's
  *              EM-coded octets to the line's bits and back, in the

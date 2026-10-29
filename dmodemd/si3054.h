@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    si3054.h - a country's line settings for a Silicon Labs Si3054
  *               HD-audio modem codec and its Si3018 line side (the ALSA

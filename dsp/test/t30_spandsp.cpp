@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    t30_spandsp.cpp - our T.30 fax machine against spandsp's, back to
  *    back in one process, both ways, with and without error correction

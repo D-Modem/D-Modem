@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe_evs.py: the signal set through the EVS reference codec (slow: the
 # fixed-point reference encoder), a shorter set of measurements than
 # probe3.py: the three combs with DQPSK and 8-DPSK at the 20 ms symbol,

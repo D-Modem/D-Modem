@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe_stack.py: the waveform layer and the parametric layer as one
 # signal.  A symbol is one period of L samples, repeated to fill the
 # symbol: the signal is then exactly periodic at L, so the codec's

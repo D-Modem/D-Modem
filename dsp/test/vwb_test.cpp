@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vwb_test.cpp - V.wb, the wideband modem (vwb.h): its parts (the
  *    FFT, the QAM, the interpolator), and two of it, caller and

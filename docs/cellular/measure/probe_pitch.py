@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 # probe_pitch.py: a parametric channel on the speech codec's own pitch
 # (long-term predictor) lag.  The transmitter sends a band-limited pulse
 # train whose period is the symbol; an ACELP codec's adaptive codebook

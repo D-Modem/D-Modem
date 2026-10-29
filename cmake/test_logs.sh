@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 # test_logs.sh begin|end <log root> [<runs kept>]: a ctest run's log
 # directory (cmake/test_logs.cmake), ctest's fixture around every test.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Neo-Desktop
+# Copyright (C) 2026 D-Modem Authors
 #
 #    make_inf.py - the virtual modem driver's INFs: the UMDF driver's
 #                  install and Unimodem's settings for D-Modem, its result
@@ -27,7 +27,7 @@ import re
 import sys
 
 HEAD = r"""; SPDX-License-Identifier: AGPL-3.0-only
-; Copyright (C) 2026 Neo-Desktop
+; Copyright (C) 2026 D-Modem Authors
 ;
 @INTRO@
 [Version]

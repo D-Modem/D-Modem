@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    pump_test.cpp - the open data pumps back to back (loopback.h): each
  *    modulation on a clean and a noisy line, at 8000 Hz, with clock

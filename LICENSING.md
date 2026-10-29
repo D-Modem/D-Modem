@@ -1,12 +1,12 @@
 # Licensing
 
-D-Modem is copyright Neo-Desktop, and is available under either of two
+D-Modem is copyright the D-Modem Authors, and is available under either of two
 licences:
 
 - the **GNU Affero General Public License, version 3 only**
   (AGPL-3.0-only), in [COPYING](COPYING); or
-- a **commercial licence** from Neo-Desktop, for uses that cannot meet
-  the AGPL's terms. Ask Neo-Desktop (<https://github.com/Neo-Desktop>)
+- a **commercial licence** from the D-Modem Authors, for uses that cannot meet
+  the AGPL's terms. Ask the D-Modem Authors (<https://github.com/D-Modem>)
   for its terms.
 
 Each source file names its licence on an `SPDX-License-Identifier` line.
@@ -90,5 +90,5 @@ does, without their code.
 
 ## Contributions
 
-Contributions can be accepted only under terms that let Neo-Desktop offer
+Contributions can be accepted only under terms that let the D-Modem Authors offer
 them under both licences above. Ask before sending one.

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    hdlc.cpp - the bit framers: the loops between the data pump's bits
  *               and a framer, HDLC frames (V.42 8.1: flags, zero

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    modem_dp.h - a data pump as the modem core knows it: the instance
  *                 (struct dp), the table of functions a library registers

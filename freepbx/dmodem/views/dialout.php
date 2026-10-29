@@ -1,6 +1,6 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Neo-Desktop
+// Copyright (C) 2026 D-Modem Authors
 //
 // views/dialout.php - a modem call out (Dmodem::dialOut()).  Given
 // $profiles, $call (the last one's profile, number, callerid) and $errors.

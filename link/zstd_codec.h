@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    zstd_codec.h - Zstandard compression (RFC 8878), one direction (an
  *                   encoder or a decoder), small: written from the RFC

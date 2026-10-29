@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vcvm_modem.cpp - one V.cvm DCE after V.8: the start-up, phase 4,
  *                     the renegotiations and the retrains (vcvm_modem.h)

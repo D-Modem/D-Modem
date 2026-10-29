@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    vwb_line.h - a bare pair between two wideband modems (V.wb,
  *                 vwb.h) for the tests: the cable's loss rising with

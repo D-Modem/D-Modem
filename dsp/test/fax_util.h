@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    fax_util.h - what the fax tests share: the test documents, pages
  *    compared, G.711 and noise (test_util.h) for the line between two
