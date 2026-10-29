@@ -261,8 +261,8 @@ bool huf_build(Zstd::Huf *h, const std::vector<u8> &w)
 	for (s16 i = mb; i >= 1; i--)
 		rank_idx[i - 1] = rank_idx[i] + rank_cnt[i] * (1u << (mb - i));
 	h->max_bits = mb;
-	h->sym.assign(1u << mb, 0);
-	h->nb.assign(1u << mb, 0);
+	h->sym.assign(size_t(1) << mb, 0);
+	h->nb.assign(size_t(1) << mb, 0);
 	for (size_t s = 0; s < bits.size(); s++) {
 		if (!bits[s])
 			continue;
