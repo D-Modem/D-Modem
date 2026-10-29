@@ -32,6 +32,7 @@
 #ifndef DMODEM_LINK_ZSTD_CODEC_H
 #define DMODEM_LINK_ZSTD_CODEC_H
 
+#include <cstddef>
 #include <vector>
 
 #include "dm_types.h"
