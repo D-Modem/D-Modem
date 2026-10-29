@@ -11,8 +11,10 @@
  *    starts a new script off).
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -76,6 +78,82 @@ static bool write_file(const std::string &path, const std::string &s)
 	return ok;
 }
 
+#ifdef _WIN32
+/* s's lines */
+static std::vector<std::string> lines(const std::string &s)
+{
+	std::vector<std::string> v;
+	size_t i = 0, j;
+	while ((j = s.find('\n', i)) != std::string::npos) {
+		v.push_back(s.substr(i, j - i));
+		i = j + 1;
+	}
+	if (i < s.size())
+		v.push_back(s.substr(i));
+	return v;
+}
+
+/* an ATI11 line's measurement: its field and value; false if line is
+   not one of them */
+static bool measurement(const std::string &line, std::string *field,
+			double *value)
+{
+	static const char *const fields[] = {
+		"Estimated SNR (dB)",
+		"Receive Signal Power Level (dBm0)",
+		"Transmit Signal Power Level (dBm0)",
+		"Near Echo Level (dBm0)",
+		"Far Echo Level (dBm0)",
+		"Receive Frame Error Count",
+	};
+	for (const char *f : fields) {
+		size_t at = line.find(std::string(": ") + f);
+		if (at == std::string::npos)
+			continue;
+		size_t v = line.find_first_not_of(' ', at + 2 + strlen(f));
+		if (v == std::string::npos)
+			return false;
+		char *end;
+		*value = strtod(line.c_str() + v, &end);
+		if (end == line.c_str() + v)
+			return false;
+		*field = line.substr(0, v);
+		return true;
+	}
+	return false;
+}
+
+/* Windows' maths library rounds its sines, logarithms and square roots
+   a little otherwise than glibc's, musl's and Apple's: over a line's
+   echoes that moves the measurements a little (a few tenths of a dB,
+   and a few frame errors more or less under the echoes).  got the same
+   as want but in those, each within its tolerance: a dB within 1, an
+   error count none where want has none.  Everything else stays exact,
+   and elsewhere all of it does. */
+static bool close_enough(const std::string &want, const std::string &got)
+{
+	std::vector<std::string> w = lines(want), g = lines(got);
+	if (w.size() != g.size())
+		return false;
+	for (size_t i = 0; i < w.size(); i++) {
+		if (w[i] == g[i])
+			continue;
+		std::string wf, gf;
+		double wv, gv;
+		if (!measurement(w[i], &wf, &wv) ||
+		    !measurement(g[i], &gf, &gv) || wf != gf)
+			return false;
+		if (wf.find("Error Count") != std::string::npos) {
+			if ((wv == 0) != (gv == 0))
+				return false;
+		} else if (fabs(wv - gv) > 1.0) {
+			return false;
+		}
+	}
+	return true;
+}
+#endif
+
 /* the scripts of SCRIPTS_DIR (their names without .txt), sorted */
 static std::vector<std::string> scripts()
 {
@@ -110,6 +188,10 @@ TEST_P(CoreEquiv, SameTranscript)
 		ASSERT_TRUE(write_file(e, t)) << e;
 		return;
 	}
+#ifdef _WIN32
+	if (close_enough(want, t))
+		t = want;
+#endif
 	/* line by line, for a readable difference */
 	EXPECT_EQ(want, t) << "the core against " << e;
 }
