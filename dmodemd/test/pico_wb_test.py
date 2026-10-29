@@ -92,7 +92,7 @@ class Modem:
     def __init__(self, n, name, tag="", args=(), **env):
         """start dmodemd as <name> on end <n>'s fake stick and wait for its pty (60 s at most)"""
         self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
-        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug, "--usb=auto"]
+        self.p = subprocess.Popen(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["-d" + debug, "--usb=auto"]
                                   + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n, **env))
@@ -179,7 +179,7 @@ def check(what, cond):
 
 def once(args, n="1001", **env):
     """dmodemd run with args until it exits (60 s at most)"""
-    return subprocess.run(run + usb_dte.dte_args(dmodemd) + ["-n", "-d" + debug] + args,
+    return subprocess.run(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["-d" + debug] + args,
                           env=env_for(n, **env), capture_output=True, text=True, timeout=60)
 
 def text(n, seed):
