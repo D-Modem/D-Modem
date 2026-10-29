@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    v13.h - V.13's simulated carrier control, at the bit level between
  *            the link and the data pump (S48=1)

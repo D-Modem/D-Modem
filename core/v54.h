@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    v54.h - V.54's loop tests and V.52's test pattern, at the bit level
  *            between the link and the data pump

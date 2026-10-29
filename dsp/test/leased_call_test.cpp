@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    leased_call_test.cpp - leased lines and dry pairs in the voice band:
  *    two of libdmodem's modems at 9600 Hz on a simulated circuit (each

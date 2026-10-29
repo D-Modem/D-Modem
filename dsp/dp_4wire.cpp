@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-only
- * Copyright (C) 2026 Neo-Desktop
+ * Copyright (C) 2026 D-Modem Authors
  *
  *    dp_4wire.cpp - the 4-wire leased line's data pumps: ITU V.29 (9600,
  *                   7200 and 4800 bit/s), V.33 (14400 and 12000 bit/s)
