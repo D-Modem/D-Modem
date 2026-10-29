@@ -66,6 +66,32 @@ modulations run on `AT&L2` as on `AT&L1`.
 - **Carrier loss.** S10 is the time without the far end's signal before
   NO CARRIER; the call then starts again by itself, as on `AT&L1`.
 
+## V.91 on a 4-wire digital circuit: AT&L2+MS=V91
+
+A digital leased circuit (a 64 kbit/s DS0 or E1 time slot, or a G.711
+trunk between two PBXs) carries PCM codes each way unchanged. Between
+two D-Modems on one, `AT&L2+MS=V91` runs V.91, the symmetric PCM
+modem: up to 62667 bit/s both ways (about 58700 bit/s of data through
+V.42). Both ends need a digital line at 8000 Hz (libdmodem with its
+G.711 law, dmodemd on a PBX or SIP trunk, or the Asterisk and
+FreeSWITCH modules); on an analogue line `+MS=V91` is V.34.
+
+- **Start-up** (8.8/V.91). There is no V.8 and no Ez: each end sends
+  INFO at once (8.2.1.2) and goes on sending it until the far end's
+  comes, however late that end comes up. The rest is V.91's own
+  start-up: INFO', the DIL, CP and B1. CONNECT comes when data mode is
+  up both ways, the rate the same each way unless the circuit treats
+  the two directions differently.
+- **Rates.** As on a switched call ([dsp/v91.md](dsp/v91.md)): 62667
+  on a clean circuit in either law; less where it robs bits (61333) or
+  pads.
+- **Retrains and carrier loss.** A receiver retrains (INFO again) when
+  it decodes poorly or when the far end's signal is gone (the same
+  value for 6 ms: a cut circuit's idle code). The far end answers its
+  INFO, and LAPM sends again what was lost. With no INFO back within
+  10 s the call ends with NO CARRIER and starts again by itself, as on
+  `AT&L1`. There is no escape to V.34 (8.3/V.91 is for V.8's calls).
+
 ## Loop tests: AT&T (V.54, V.52)
 
 | Command | Test |
@@ -139,5 +165,8 @@ on a 2-wire one each end's own signal through its hybrid). It covers
 each modulation on `AT&L1` and `AT&L2`, the 4-wire rates and fallback,
 a dropout, noise that brings V.33 down, a late answerer, a long cut and
 the call again, a reroute that V.34 and V.32bis retrain through, a burst
-of noise, the loop tests and the self-test, and V.13's bursts and idle
+of noise, the loop tests and the self-test, and V.13's bursts and idle.
+V.91 runs on a digital circuit instead (G.711 octets each way at 8000
+Hz): both laws at 62667 both ways, robbed bits, a late answerer, a
+short cut it retrains through and a long one it calls again after
 ([testing.md](testing.md)).

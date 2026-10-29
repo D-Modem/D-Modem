@@ -11,7 +11,9 @@
  *    V.33, V.27ter) on AT&L2: CONNECT and data both ways through V.42,
  *    byte for byte; their rates each way, a dropout they resynchronize
  *    through, noise that brings V.33 down to 12000, an answerer that
- *    comes late, a long cut and the call again by itself
+ *    comes late, a long cut and the call again by itself.  V.91 on a
+ *    4-wire digital circuit (G.711 octets each way at 8000 Hz, with no
+ *    V.8: 8.8/V.91): both laws, robbed bits, a late answerer, a cut
  *
  *    LEASED_DEBUG=<level>   libdmodem's log
  */
@@ -77,13 +79,16 @@ struct End {
 	bool online = false;
 	int connects = 0, no_carriers = 0;
 	size_t sent = 0;
-	/* a modem at rate Hz with its init line */
-	End(const char *name, const char *init, int32_t rate)
+	/* a modem at rate Hz with its init line (and on a digital
+	   circuit its G.711 law) */
+	End(const char *name, const char *init, int32_t rate,
+	    dmodem_law law = DMODEM_LAW_UNKNOWN)
 	{
 		dmodem_config c{};
 		c.name = name;
 		c.dte_fd = dte.fd[0];
 		c.init = init;
+		c.law = law;
 		m = dmodem_create_rate(&c, rate);
 	}
 	/* (the modem destroyed) */
@@ -762,4 +767,204 @@ TEST(SimulatedCarrier, BurstsAndIdle)
 	q.a.data.clear();
 	run(q.line, q.c, q.a, 2, [] { return false; });
 	EXPECT_GT(q.a.data.size(), 100u);
+}
+
+namespace {
+
+/* a 4-wire digital circuit (64 kbit/s each way, as a leased line's
+   DS0 or E1 time slot): each way's G.711 octets delay octets later
+   (at least a block's, 160),
+   unchanged; robbed: the LSB of every 6th octet set (robbed-bit
+   signalling); a cut: the idle code instead */
+struct Digital {
+	dmodem_law law;
+	size_t delay = 240;
+	bool robbed = false;
+	std::deque<unsigned char> ca, ac;
+	double drop_at = -1, drop_s = 0;
+	long t = 0;
+	/* (a circuit of law) */
+	explicit Digital(dmodem_law l) : law(l) {}
+	/* an octet as it comes out at the far end */
+	unsigned char pass(unsigned char o, long k)
+	{
+		double s = static_cast<double>(k) / 8000;
+		if (s >= drop_at && s < drop_at + drop_s)
+			return law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF;
+		if (robbed && k % 6 == 5)
+			o |= 1;
+		return o;
+	}
+};
+
+template <class Stop>
+/* secs of the circuit between c and a, or until stop() */
+void run91(Digital &l, End &c, End &a, double secs, Stop stop)
+{
+	const s32 n = 160;
+	std::vector<unsigned char> ci(n), ai(n), co(n), ao(n);
+	long end = l.t + static_cast<long>(secs * 8000);
+	unsigned char idle = l.law == DMODEM_LAW_ALAW ? 0xD5 : 0xFF;
+	if (l.ca.empty()) {
+		l.ca.assign(l.delay, idle);
+		l.ac.assign(l.delay, idle);
+	}
+	while (l.t < end) {
+		for (s32 i = 0; i < n; i++) {
+			ci[i] = l.pass(l.ac.front(), l.t + i);
+			ai[i] = l.pass(l.ca.front(), l.t + i);
+			l.ac.pop_front();
+			l.ca.pop_front();
+		}
+		l.t += n;
+		dmodem_process_g711(c.m, ci.data(), co.data(), n);
+		dmodem_process_g711(a.m, ai.data(), ao.data(), n);
+		l.ca.insert(l.ca.end(), co.begin(), co.end());
+		l.ac.insert(l.ac.end(), ao.begin(), ao.end());
+		c.take();
+		a.take();
+		if (stop())
+			break;
+	}
+}
+
+/* two modems on a digital 4-wire circuit with AT&L2+MS=V91 (and the
+   answerer's S0=1), each its init's extra */
+struct Pair91 {
+	Digital line;
+	End c, a;
+	/* (the two, set up) */
+	Pair91(dmodem_law law, const std::string &ci = "",
+	       const std::string &ai = "")
+		: line(law),
+		  c("caller", ("ATE0X4&L2+MS=V91" + ci + "\r").c_str(),
+		    8000, law),
+		  a("answerer", ("ATE0X4&L2S0=1+MS=V91" + ai + "\r").c_str(),
+		    8000, law) {}
+	/* ATD, then CONNECT at both ends within secs */
+	bool connect(double secs = 20)
+	{
+		if (dmodem_dial(c.m, ""))
+			return false;
+		run91(line, c, a, secs, [&] { return c.online && a.online; });
+		return c.online && a.online;
+	}
+	/* n bytes each way within secs, byte for byte */
+	bool exchange(size_t n, double secs, unsigned seed = 1)
+	{
+		std::string to_a = bulk(n, seed), to_c = bulk(n, seed + 1);
+		c.sent = a.sent = 0;
+		c.data.clear();
+		a.data.clear();
+		run91(line, c, a, secs, [&] {
+			c.sent += c.dte.write_some(to_a, c.sent);
+			a.sent += a.dte.write_some(to_c, a.sent);
+			return a.data.size() >= n && c.data.size() >= n;
+		});
+		return a.data == to_a && c.data == to_c;
+	}
+};
+
+/* a test's name: the law's */
+std::string law_name(const ::testing::TestParamInfo<dmodem_law> &i)
+{
+	return i.param == DMODEM_LAW_ALAW ? "Alaw" : "ulaw";
+}
+
+} // namespace
+
+/* AT&L2+MS=V91 on a clean digital circuit: V.91 with no V.8, CONNECT
+   within 3 s of ATD, the same rate both ways (62667: K = 41, 124 or
+   125 codes in each interval), 200 kB each way through V.42 */
+class FourWireV91 : public ::testing::TestWithParam<dmodem_law> {};
+
+/* (see FourWireV91) */
+TEST_P(FourWireV91, Symmetric)
+{
+	dmodem_init();
+	debug();
+	Pair91 p(GetParam());
+	ASSERT_TRUE(p.connect(3)) << p.c.text << p.a.text;
+	auto rc = Pair::rates(p.c), ra = Pair::rates(p.a);
+	EXPECT_EQ(rc.first, rc.second);
+	EXPECT_EQ(rc.first, ra.first);
+	EXPECT_EQ(rc.second, ra.second);
+	EXPECT_GE(rc.first, 62000u) << p.c.text;
+	/* (CONNECT names V.91's rate) */
+	EXPECT_NE(p.c.text.find("CONNECT 6"), std::string::npos) << p.c.text;
+	EXPECT_TRUE(p.exchange(200000, 60)) << p.c.data.size() << " "
+					    << p.a.data.size();
+}
+
+INSTANTIATE_TEST_SUITE_P(Leased, FourWireV91, ::testing::Values(
+	DMODEM_LAW_ULAW, DMODEM_LAW_ALAW), law_name);
+
+/* robbed-bit signalling on the circuit: a code fewer in one interval
+   of six, both ends ask for less, and still the same rate both ways */
+TEST(FourWireV91Line, RobbedBits)
+{
+	dmodem_init();
+	debug();
+	Pair91 p(DMODEM_LAW_ULAW);
+	p.line.robbed = true;
+	ASSERT_TRUE(p.connect(5)) << p.c.text << p.a.text;
+	auto rc = Pair::rates(p.c), ra = Pair::rates(p.a);
+	EXPECT_EQ(rc.first, rc.second);
+	EXPECT_EQ(rc.first, ra.first);
+	EXPECT_LT(rc.first, 62000u);
+	EXPECT_GE(rc.first, 56000u);
+	EXPECT_TRUE(p.exchange(50000, 30));
+}
+
+/* the answerer set up 8 s after the caller has started: the caller's
+   INFO goes on, with no escape to V.34, until the answerer's comes */
+TEST(FourWireV91Line, LateAnswerer)
+{
+	dmodem_init();
+	debug();
+	Digital line(DMODEM_LAW_ULAW);
+	End c("caller", "ATE0X4&L2+MS=V91\r", 8000, DMODEM_LAW_ULAW);
+	ASSERT_EQ(dmodem_dial(c.m, ""), 0);
+	End idle("idle", "ATE0X4\r", 8000, DMODEM_LAW_ULAW);
+	run91(line, c, idle, 8, [] { return false; });
+	EXPECT_FALSE(c.online);
+	End a("answerer", "ATE0X4&L2S0=1+MS=V91\r", 8000, DMODEM_LAW_ULAW);
+	run91(line, c, a, 10, [&] { return c.online && a.online; });
+	ASSERT_TRUE(c.online && a.online) << c.text << a.text;
+	EXPECT_GE(Pair::rates(c).first, 62000u);
+	std::string msg = "late but here\r\n";
+	c.dte.write_some(msg, 0);
+	run91(line, c, a, 5, [&] {
+		return a.data.find(msg) != std::string::npos;
+	});
+	EXPECT_NE(a.data.find(msg), std::string::npos);
+}
+
+/* a short cut (0.3 s): a retrain (INFO again) and every byte through
+   LAPM, no NO CARRIER; a long one (15 s): NO CARRIER at both ends,
+   each starts the call again by itself, CONNECT again once the
+   circuit is back */
+TEST(FourWireV91Line, Cuts)
+{
+	dmodem_init();
+	debug();
+	Pair91 p(DMODEM_LAW_ALAW);
+	ASSERT_TRUE(p.connect());
+	p.line.drop_at = static_cast<double>(p.line.t) / 8000 + 1;
+	p.line.drop_s = 0.3;
+	EXPECT_TRUE(p.exchange(100000, 40, 5)) << p.a.data.size() << " "
+					       << p.c.data.size();
+	EXPECT_EQ(p.c.no_carriers + p.a.no_carriers, 0)
+		<< p.c.text << p.a.text;
+	p.line.drop_at = static_cast<double>(p.line.t) / 8000 + 1;
+	p.line.drop_s = 15;
+	run91(p.line, p.c, p.a, 60, [&] {
+		return p.c.connects >= 2 && p.a.connects >= 2 &&
+			p.c.online && p.a.online;
+	});
+	EXPECT_GE(p.c.no_carriers, 1) << p.c.text;
+	EXPECT_GE(p.a.no_carriers, 1) << p.a.text;
+	ASSERT_GE(p.c.connects, 2) << p.c.text;
+	ASSERT_GE(p.a.connects, 2) << p.a.text;
+	EXPECT_TRUE(p.exchange(20000, 20, 13));
 }

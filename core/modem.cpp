@@ -1804,6 +1804,11 @@ bool Modem::leased_direct() const
 	case DP_V29:
 	case DP_V33:
 		return true;
+	case DP_V91:
+		/* V.91 on a 4-wire digital circuit: from INFO on, with no
+		   V.8 (8.8/V.91); a G.711 line at 8000 Hz alone */
+		return four_wire() && srate_ == 8000 &&
+			!host_.analog_line(const_cast<Modem &>(*this));
 	default:
 		return false;
 	}

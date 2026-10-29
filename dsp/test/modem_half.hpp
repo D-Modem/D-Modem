@@ -52,6 +52,14 @@
 
 #include <functional>
 
+/* printf's format checked by GCC and Clang (MSVC builds this header for
+   hw_test, and has no such attribute) */
+#ifdef __GNUC__
+#define MODEM_HALF_PRINTF(f, a) __attribute__((format(printf, f, a)))
+#else
+#define MODEM_HALF_PRINTF(f, a)
+#endif
+
 namespace half {
 
 typedef unsigned char byte;
@@ -167,7 +175,7 @@ public:
 	/* getenv("<PREFIX>_<what>") */
 	const char *env(const char *what) const;
 	/* "<name>: ..." to stderr */
-	void log(const char *fmt, ...) const __attribute__((format(printf, 2, 3)));
+	void log(const char *fmt, ...) const MODEM_HALF_PRINTF(2, 3);
 	/* ms of line time */
 	unsigned long long ms() const { return line_n * 1000 / line_rate; }
 	/* the DTE's input waits: with <PREFIX>_SYNC, in command state, but

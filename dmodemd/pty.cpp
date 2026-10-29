@@ -267,6 +267,51 @@ ssize_t keeper_receive(char *op, int *fd)
 	_exit(0);
 }
 
+/* whether the master fd has terminal settings of its own (Linux and the
+   BSDs: the slave's; macOS: none, ENOTTY) */
+static bool master_termios(int fd)
+{
+	struct termios t;
+	return tcgetattr(fd, &t) == 0 || errno != ENOTTY;
+}
+
+/* macOS: the master has no terminal settings and takes no ioctl until
+   its slave has been opened: the settings set through the slave (*t
+   if keep, else raw at 115200 bit/s), the master made non-blocking
+   while the slave is open, the slave closed again; what failed, or
+   NULL (errno for it) */
+static const char *slave_setup(int fd, const char *path, struct termios *t,
+			       bool keep)
+{
+	const char *failed = nullptr;
+	int s, flags, e = 0;
+
+	s = open(path, O_RDWR | O_NOCTTY);
+	if (s < 0)
+		return "open the slave of";
+	if (!keep && tcgetattr(s, t) < 0) {
+		failed = "read the settings of";
+	} else {
+		if (!keep) {
+			cfmakeraw(t);
+			cfsetispeed(t, B115200);
+			cfsetospeed(t, B115200);
+		}
+		flags = fcntl(fd, F_GETFL);
+		if (tcsetattr(s, TCSANOW, t) < 0)
+			failed = "set up";
+		else if (flags < 0 ||
+			 fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
+			failed = "make non-blocking";
+		else
+			tcgetattr(s, t);
+	}
+	e = errno;
+	close(s);
+	errno = e;
+	return failed;
+}
+
 /* a new pty: its master (non-blocking), its slave's path into path; the
    settings *t if keep, else its own made raw at 115200 bit/s, and in *t
    what it has then.  -1 (reported) if it can't be had */
@@ -284,6 +329,8 @@ int new_master(struct termios *t, bool keep, char *path, size_t size)
 		failed = "unlock";
 	} else if ((errno = pts_name(fd, path, size)) != 0) {
 		failed = "name";
+	} else if (!master_termios(fd)) {
+		failed = slave_setup(fd, path, t, keep);
 	} else if (!keep && tcgetattr(fd, t) < 0) {
 		failed = "read the settings of";
 	} else {

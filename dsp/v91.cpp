@@ -213,9 +213,12 @@ s32 V91Map::decode(s16 i, s16 x, s16 *u, s16 *s) const
 
 /* the modem at the start of V.91 (after V.8): A-law when alaw_, at most
    max_k_ bits through the modulus encoder (up to 41), want_cc_: we ask
-   for the control channel.  Tests: DSP_V91_RETRAIN=<ms>[a|c] (our own
-   retrain that long after connecting), DSP_V91_MUTE=a|c */
-void V91::init(s16 alaw_, s16 caller_, s32 max_k_, s16 want_cc_)
+   for the control channel; leased_: on a 4-wire leased circuit, with
+   no V.8 before (8.8/V.91: INFO at once, 8.2.1.2).  Tests:
+   DSP_V91_RETRAIN=<ms>[a|c] (our own retrain that long after
+   connecting), DSP_V91_MUTE=a|c */
+void V91::init(s16 alaw_, s16 caller_, s32 max_k_, s16 want_cc_,
+	       s16 leased_)
 {
 	static const char slip[] = "0111011111111010";
 	s16 i;
@@ -248,10 +251,13 @@ void V91::init(s16 alaw_, s16 caller_, s32 max_k_, s16 want_cc_)
 	   V.34) */
 	if (const char *e = env("DSP_V91_MUTE"))
 		mute = *e == (caller_ ? 'c' : 'a');
+	leased = leased_;
 	rx = V91R_INFO;
-	tx_segment(V91T_EZ);
-	DSP_DBG("v91: start, %s, %s\n", caller ? "caller" : "answerer",
-		alaw ? "A-law" : "mu-law");
+	/* (Ez follows V.8's silence; a leased circuit's start-up has
+	   neither) */
+	tx_segment(leased ? V91T_INFO : V91T_EZ);
+	DSP_DBG("v91: start, %s, %s%s\n", caller ? "caller" : "answerer",
+		alaw ? "A-law" : "mu-law", leased ? ", leased" : "");
 }
 
 /* INFO (Table 6/V.91): the default DIL, our law */
@@ -856,6 +862,10 @@ s16 V91::sample(s16 x, s16 *y)
 		*y = 0;
 	r = rx_sample(x);
 	n++;
+	/* a leased circuit has no V.34 to escape to (8.3 is for V.8's
+	   calls): the call ends, and starts again */
+	if (r == V91_ESCAPE && leased)
+		r = V91_FAIL;
 	if (r)
 		return r;
 	if (tx == V91T_DATA && rx == V91R_DATA) {
@@ -869,6 +879,17 @@ s16 V91::sample(s16 x, s16 *y)
 			if (retrain_at)
 				retrain_at += n;
 			return V91_CONNECT;
+		}
+		/* the remote's signal gone (a cut circuit's idle code, or
+		   silence): the scrambled data never stays on one value
+		   for 6 ms.  INFO again, and the call ends if no INFO
+		   comes back in 10 s */
+		same = x == last_x ? same + 1 : 0;
+		last_x = x;
+		if (same >= MS(6)) {
+			same = 0;
+			retrain("no signal");
+			return 0;
 		}
 		/* poor decoding: retrain */
 		if (n - err_window >= MS(1000)) {
@@ -886,8 +907,16 @@ s16 V91::sample(s16 x, s16 *y)
 		}
 		return 0;
 	}
+	/* a leased circuit's far end can come up at any time: INFO
+	   until its own comes, then 10 s to data */
+	if (leased && !connected && !got_info)
+		phase_start = n;
+	if (leased && !connected && n - phase_start > MS(10000)) {
+		DSP_DBG("v91: start-up timeout (INFO' %d)\n", got_info_ack);
+		return V91_FAIL;
+	}
 	/* 8.3: no INFO' in 1.5 s, no B1 in 10 s */
-	if (!retraining && !connected &&
+	if (!leased && !retraining && !connected &&
 	    ((!got_info_ack && n - phase_start > MS(1500)) ||
 	     n - phase_start > MS(10000))) {
 		DSP_DBG("v91: start-up timeout (INFO' %d)\n", got_info_ack);
