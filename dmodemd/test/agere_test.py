@@ -83,7 +83,7 @@ class Modem:
     """a dmodemd on line <n>'s Agere modem, its pty"""
     def __init__(self, n, name, tag="", args=(), **env):
         self.log = open(os.path.join(logs, "dmodemd-%s%s.log" % (n, tag)), "wb")
-        self.p = subprocess.Popen(run + ["-n", "-d" + debug, "--usb=auto", "-r", rate]
+        self.p = subprocess.Popen(run + usb_dte.realtime() + ["-d" + debug, "--usb=auto", "-r", rate]
                                   + list(args) + [name],
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   env=env_for(n, **env))
@@ -173,7 +173,7 @@ def check(what, cond):
 
 def fails(why, *args, **env):
     """dmodemd on 1001's modem fails, why in its output (-d2)"""
-    p = subprocess.run(run + ["-n", "-d2", "--usb=auto", "-r", rate] + list(args) + ["dmodem40"],
+    p = subprocess.run(run + usb_dte.realtime() + ["-d2", "--usb=auto", "-r", rate] + list(args) + ["dmodem40"],
                        env=env_for("1001", **env), stdout=subprocess.PIPE,
                        stderr=subprocess.STDOUT, text=True, timeout=60)
     return p.returncode != 0 and why in p.stdout

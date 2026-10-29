@@ -1,10 +1,9 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 D-Modem Authors
-# build_freeswitch.sh <prefix>: FreeSWITCH 1.10.12 from source into
+# build_freeswitch.sh <prefix>: FreeSWITCH 1.11.3 from source into
 # <prefix>, with what it needs that distributions lack: sofia-sip, and
-# FreeSWITCH's spandsp at the commit its 1.10.12 build uses (mod_spandsp
-# does not build with spandsp's master).  A minimal set of modules, enough
+# FreeSWITCH's spandsp at a pinned commit (3.1.1, what 1.11 asks for).  A minimal set of modules, enough
 # for the tests here (SIP, the dialplan, mod_spandsp's fax).
 #
 # The packages it builds with, on Debian or Ubuntu:
@@ -29,17 +28,17 @@ export LDFLAGS="-L$prefix/lib -Wl,-rpath,$prefix/lib"
 
 cd "$src"
 [ -d sofia-sip ] ||
-	git clone -q --depth 1 -b v1.13.17 https://github.com/freeswitch/sofia-sip
+	git clone -q --depth 1 -b v1.13.19 https://github.com/freeswitch/sofia-sip
 [ -d spandsp ] || git clone -q https://github.com/freeswitch/spandsp
 [ -d freeswitch ] ||
-	git clone -q --depth 1 -b v1.10.12 https://github.com/signalwire/freeswitch
+	git clone -q --depth 1 -b v1.11.3 https://github.com/signalwire/freeswitch
 
 if [ ! -f "$prefix/lib/pkgconfig/sofia-sip-ua.pc" ]; then
 	(cd sofia-sip && ./bootstrap.sh && ./configure -q --prefix="$prefix" &&
 	 make -s -j"$jobs" && make -s install)
 fi
 if [ ! -f "$prefix/lib/pkgconfig/spandsp.pc" ]; then
-	(cd spandsp && git checkout -q 0d2e6ac65e0e8f53d652665a743015a88bf048d4 &&
+	(cd spandsp && git checkout -q 8f1e1646bdec99eac5fd2cd92c35563f736b9b89 &&
 	 ./bootstrap.sh && ./configure -q --prefix="$prefix" &&
 	 make -s -j"$jobs" && make -s install)
 fi

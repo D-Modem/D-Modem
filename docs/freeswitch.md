@@ -189,9 +189,9 @@ start. Other locations:
 - `-DFREESWITCH_MODULES_DIR=...` and `-DFREESWITCH_CONF_DIR=...` for
   where `cmake --install` puts the module and the sample configuration.
 
-It was tested with FreeSWITCH 1.10.12 built from source (sofia-sip, and
-the spandsp of FreeSWITCH's own repository at the commit its 1.10.12
-build uses, which `mod_spandsp` needs). `test/build_freeswitch.sh <prefix>`
+It was tested with FreeSWITCH 1.11.3 built from source (sofia-sip
+1.13.19, and the spandsp of FreeSWITCH's own repository, 3.1.1, which
+1.11 asks for). `test/build_freeswitch.sh <prefix>`
 builds that, with the modules the tests need, into `<prefix>` (as CI
 does); then `-DFREESWITCH_PKGCONFIG=<prefix>/lib/pkgconfig`, and
 `FS_PREFIX=<prefix>` for the test scripts.
