@@ -26,7 +26,7 @@
  *    start-up differs (docs/smartusb56-windows.md).  The modem dials
  *    itself, in DTMF.  Time is the codec's: the samples it has given.
  *
- *    The pico-serial Line stick (github.com/Neo-Desktop/pico-serial,
+ *    The pico-serial Line stick (github.com/D-Modem/hardware,
  *    SPEC-L.md and firmware/PROTOCOL.md "Line stick") is shaped the same
  *    way on purpose: its samples isochronous both ways in alternate
  *    setting 1 (S16 little-endian, mono, at any of the Si3056's rates,

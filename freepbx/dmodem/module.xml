@@ -12,7 +12,7 @@
 		Profiles send a call's data to a BBS or another server, or to a program such as pppd, and each is a destination.
 		Needs app_dmodem.so in Asterisk, or dmodem-ari beside it.
 	</description>
-	<more-info>https://github.com/Neo-Desktop/D-Modem-RE</more-info>
+	<more-info>https://github.com/D-Modem/D-Modem</more-info>
 	<changelog>
 		*16.0.2* Dialling out with a profile (page and fwconsole dmodem dial), Backup and Restore, fwconsole dmodem export/import
 		*16.0.1* Profiles as destinations, dmodem.conf, a fax destination, dmodem-ari as an engine, the line check

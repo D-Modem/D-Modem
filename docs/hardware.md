@@ -385,8 +385,8 @@ and have been tested on the fake device only.
 
 ### pico-serial Line
 
-The [pico-serial](https://github.com/Neo-Desktop/pico-serial) project's
-phone-line stick ([SPEC-L.md](https://github.com/Neo-Desktop/pico-serial/blob/main/SPEC-L.md)):
+The [pico-serial](https://github.com/D-Modem/hardware) project's
+phone-line stick ([SPEC-L.md](https://github.com/D-Modem/hardware/blob/HEAD/SPEC-L.md)):
 a USB-C stick with an RJ11 socket, made for D-Modem. It is a softmodem's
 line and nothing more: a Skyworks Si3056 DAA and its Si3018 line side
 behind an RP2040, at 9600 Hz so the open DSP's V.90 works. dmodemd drives
@@ -444,7 +444,7 @@ against a fake of it (below), not yet on a real one.
 
 ### pico-serial WB (wideband, bare pair)
 
-pico-serial's wideband stick ([SPEC-WB.md](https://github.com/Neo-Desktop/pico-serial/blob/main/SPEC-WB.md))
+pico-serial's wideband stick ([SPEC-WB.md](https://github.com/D-Modem/hardware/blob/HEAD/SPEC-WB.md))
 is the Line stick's sibling for a **bare copper pair**: a dry pair, an
 alarm or leased circuit, or a pair of your own between buildings. It is
 not for a telephone line. Two WB sticks talk to each other point to

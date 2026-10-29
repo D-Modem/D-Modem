@@ -242,7 +242,7 @@ DMODEM_CONNECTED=1791666309
 
 ```
 
-[`modemmenu`](https://github.com/Neo-Desktop/modemmenu) uses these: a
+[`modemmenu`](https://github.com/D-Modem/menu) uses these: a
 login (a text file, LDAP, SQL or PAM) and a menu of a BBS, PPP and a
 shell, started with the caller's credentials and these details of the
 call.  It runs as a `mode` `exec` program for each call, or as one
