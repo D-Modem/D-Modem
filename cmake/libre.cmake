@@ -36,8 +36,15 @@ endif()
 # an installed one: not for another system than this one, unless asked
 if(DMODEM_LIBRE STREQUAL "system" OR
    (DMODEM_LIBRE STREQUAL "auto" AND NOT CMAKE_CROSSCOMPILING))
-	find_package(PkgConfig REQUIRED)
-	pkg_check_modules(LIBRE QUIET libre>=${_re_min})
+	# (auto: none without pkg-config, as on MSVC's machines)
+	if(DMODEM_LIBRE STREQUAL "system")
+		find_package(PkgConfig REQUIRED)
+	else()
+		find_package(PkgConfig QUIET)
+	endif()
+	if(PKG_CONFIG_FOUND)
+		pkg_check_modules(LIBRE QUIET libre>=${_re_min})
+	endif()
 	if(NOT LIBRE_FOUND AND DMODEM_LIBRE STREQUAL "system")
 		message(FATAL_ERROR "libre ${_re_min} or later (pkg-config "
 			"libre) not found; install it or use "
