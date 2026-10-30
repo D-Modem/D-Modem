@@ -396,7 +396,8 @@ struct Call {
 
 std::mutex calls_lock;
 std::map<std::string, std::shared_ptr<Call>> calls;
-/* the external media channels of ours (their StasisStart ignored) */
+/* the external media channels of ours: true once in Stasis (their
+   StasisStart starts no call) */
 std::map<std::string, bool> media_channels;
 
 /* the call's law: law if it is known, else the channel's (A-law if it has
@@ -886,8 +887,9 @@ bool open_line(Call &c, enum dmodem_law &law, Line &line, bool t38)
 			return false;
 		line.media = r["id"].str();
 		{
+			/* (its StasisStart may have come already) */
 			std::lock_guard<std::mutex> lk(calls_lock);
-			media_channels[line.media] = true;
+			media_channels.emplace(line.media, false);
 		}
 		if (!line.rtp.set_peer(
 			    r["channelvars"]["UNICASTRTP_LOCAL_ADDRESS"].str(),
@@ -898,6 +900,12 @@ bool open_line(Call &c, enum dmodem_law &law, Line &line, bool t38)
 					       "UNICASTRTP_LOCAL_PORT"))) {
 			say("ERROR %s: no address of the external media channel",
 			    c.name.c_str());
+			return false;
+		}
+		/* a channel not yet in Stasis can't go into the bridge */
+		if (!media_started(line.media, 5000)) {
+			say("ERROR %s: the external media channel never "
+			    "reached Stasis", c.name.c_str());
 			return false;
 		}
 	}
@@ -985,8 +993,12 @@ void event(const ari::Json &e)
 			m->second = true;       /* (a SIP leg: up) */
 			return;
 		}
-		if (!ch["name"].str().compare(0, 11, "UnicastRTP/"))
+		if (!ch["name"].str().compare(0, 11, "UnicastRTP/")) {
+			/* ours, in Stasis before externalMedia's answer
+			   reached open_line() */
+			media_channels[id] = true;
 			return;
+		}
 		auto c = std::make_shared<Call>();
 		const std::string &what = e["args"][0].str();
 		c->id = id;
