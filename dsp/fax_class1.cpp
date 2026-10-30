@@ -200,6 +200,7 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	void set_state(enum c1_state s);
 	void begin_fth();
 	void begin_frh();
+	void listen_v21();
 	void begin_ftm(enum fax_mod mod, s16 short_train);
 	s16 begin_frm(enum fax_mod mod, s16 short_train);
 	void queue_frame(const u8 *d, s16 len, s16 ok);
@@ -1064,7 +1065,13 @@ void Fax::begin_frh()
 	stop_tx();
 	set_state(C1_FRH);
 	frh_connected = 0;
-	/* keep a running V.21 receiver (frames may already be queued) */
+	listen_v21();
+}
+
+/* V.21 channel 2's HDLC received, its frames queued for +FRH: a
+   running V.21 receiver kept (frames may already be queued) */
+void Fax::listen_v21()
+{
 	if (t38) {
 		rx_mod = FM_V21;
 		t38_rx_v21 = 1;
@@ -1118,6 +1125,11 @@ int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
 		f->set_state(C1_FRS);
 		f->duration = static_cast<s32>(param) * f->srate / 100;
 		f->rx_quiet = 0;
+		/* the remote's frames heard meanwhile, for the +FRH that
+		   follows: after our TCF the DTE waits for silence
+		   (+FRS=1, efax) while the receiver's CFR may already be
+		   coming, and the wait lasts until it is over */
+		f->listen_v21();
 		return 1;
 	case FAX_CMD_FTH:
 		if (param != 3)
