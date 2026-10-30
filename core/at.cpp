@@ -1017,11 +1017,12 @@ s16 Modem::at_ampT(char *p, s16 *len)
 	}
 }
 
-/* ATS<n>? reads S-register n, ATS<n>=<v> sets it (S103 as \N) */
+/* ATS<n>? reads S-register n, ATS<n>=<v> sets it (S103 as \N); n and v
+   in decimal, a leading 0 no octal (ATS08=1, ATS0=010) */
 s16 Modem::at_S(char *p, s16 *len)
 {
 	const char *e;
-	u32 n = number(p + 1, &e), v;
+	u32 n = decimal(p + 1, &e), v;
 
 	if (n >= sizeof(sregs_))
 		return -1;
@@ -1035,7 +1036,7 @@ s16 Modem::at_S(char *p, s16 *len)
 	}
 	if (*e != '=')
 		return -1;
-	v = number(e + 1, &e);
+	v = decimal(e + 1, &e);
 	/* S44 and S45 (V.cvm's) are read only */
 	if (n == SREG_VCVM_TONES || n == SREG_VCVM_RENEGS)
 		return -1;

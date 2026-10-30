@@ -1,7 +1,9 @@
 % at_commands.tex - the AT command set of D-Modem's modem core
 % (core/at.cpp), as dmodemd, libdmodem and the PBX modules have it.
-% Built with docs/at/build.sh into docs/at_commands.pdf.
-\documentclass[a4paper,10pt]{article}
+% Built with docs/at/build.sh into docs/at_commands.pdf, on A5 pages
+% (half an A4 sheet), and docs/at_commands-booklet.pdf, the same pages
+% two to an A4 sheet in booklet order (at_commands_booklet.tex).
+\documentclass[a5paper,10pt]{article}
 
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -10,8 +12,9 @@
 \renewcommand{\familydefault}{\sfdefault}
 \usepackage{microtype}
 \setlength{\emergencystretch}{3em}
-\usepackage[a4paper,left=2.2cm,right=2.2cm,top=3.0cm,bottom=2.4cm,
-  headheight=14pt,headsep=0.9cm,footskip=1.0cm]{geometry}
+% A5: 148 x 210 mm, a text block of 11.8 x 17.1 cm
+\usepackage[a5paper,left=1.5cm,right=1.5cm,top=2.1cm,bottom=1.8cm,
+  headheight=12pt,headsep=0.45cm,footskip=0.8cm]{geometry}
 \usepackage[table]{xcolor}
 \usepackage{booktabs}
 \usepackage{longtable}
@@ -46,6 +49,10 @@
 \definecolor{dmgrey}{HTML}{6B7785}
 
 \setlist{nosep,leftmargin=*}
+
+% examples of what the modem says: small enough for 72 columns (AT&V's)
+% across the A5 page
+\AtBeginEnvironment{verbatim}{\footnotesize}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.6ex}
 
@@ -99,20 +106,20 @@
 \makeatother
 
 % headings: the section's number in a box of the band's colour
-\titleformat{\section}{\Large\bfseries\color{dmblue}}
+\titleformat{\section}{\large\bfseries\color{dmblue}}
   {\colorbox{dmblue}{\makebox[1.1em]{\color{white}\thesection}}}{0.6em}{}
   [{\color{dmaccent}\titlerule[1.2pt]}]
 \titlespacing*{\section}{0pt}{3.2ex plus 1ex minus .2ex}{1.6ex}
 % each section on a page of its own
 \newcommand{\sectionbreak}{\clearpage}
-\titleformat{\subsection}{\large\bfseries\color{dmblue}}
+\titleformat{\subsection}{\normalsize\bfseries\color{dmblue}}
   {\textcolor{dmaccent}{\thesubsection}}{0.6em}{}
 \titleformat{\paragraph}[runin]{\bfseries\color{dmblue}}{}{0pt}{}
 
 % the contents: sections in the band's colour, subsections dotted
 \renewcommand{\cftsecfont}{\bfseries\color{dmblue}}
 \renewcommand{\cftsecpagefont}{\bfseries\color{dmblue}}
-\renewcommand{\cfttoctitlefont}{\Large\bfseries\color{dmblue}}
+\renewcommand{\cfttoctitlefont}{\large\bfseries\color{dmblue}}
 \setlength{\cftbeforesecskip}{0.45ex}
 \renewcommand{\cftmarktoc}{\markboth{\contentsname}{\contentsname}}
 
@@ -123,21 +130,21 @@
 \newcommand{\pageband}{%
   \begin{tikzpicture}[remember picture,overlay]
     \fill[dmblue] (current page.north west) rectangle
-      ([yshift=-1.7cm]current page.north east);
-    \fill[dmaccent] ([yshift=-1.7cm]current page.north west) rectangle
-      ([yshift=-1.86cm]current page.north east);
+      ([yshift=-1.25cm]current page.north east);
+    \fill[dmaccent] ([yshift=-1.25cm]current page.north west) rectangle
+      ([yshift=-1.37cm]current page.north east);
     \node[anchor=base west,text=white,inner sep=0pt]
-      at ([xshift=2.2cm,yshift=-1.0cm]current page.north west)
-      {\bfseries D-Modem\quad\mdseries AT Command Reference};
+      at ([xshift=1.5cm,yshift=-0.75cm]current page.north west)
+      {\small\bfseries D-Modem\quad\mdseries AT Command Reference};
     \node[anchor=base east,text=white,inner sep=0pt]
-      at ([xshift=-2.2cm,yshift=-1.0cm]current page.north east)
-      {\small\leftmark};
+      at ([xshift=-1.5cm,yshift=-0.75cm]current page.north east)
+      {\footnotesize\leftmark};
   \end{tikzpicture}}
 \fancypagestyle{dm}{%
   \fancyhf{}%
   \fancyhead[L]{\pageband}%
-  \fancyfoot[L]{\small\color{dmgrey}\docname\ \textbullet\ \docedition}%
-  \fancyfoot[R]{\small\color{dmgrey}Page \thepage\ of
+  \fancyfoot[L]{\footnotesize\color{dmgrey}\docname\ \textbullet\ \docedition}%
+  \fancyfoot[R]{\footnotesize\color{dmgrey}Page \thepage\ of
     \pageref*{LastPage}}%
   \renewcommand{\headrulewidth}{0pt}%
   \renewcommand{\footrulewidth}{0.5pt}%
@@ -153,24 +160,24 @@
 \thispagestyle{empty}
 \begin{tikzpicture}[remember picture,overlay]
   \fill[dmblue] (current page.north west) rectangle
-    ([yshift=-17cm]current page.north east);
-  \begin{scope}[shift={([yshift=-6.5cm]current page.north west)}]
-    \foreach \a/\f/\o in {1.1/1.3/0.10, 0.7/2.1/0.08, 1.6/0.7/0.06}
-      \draw[white,opacity=\o,line width=1.2pt,domain=0:21,samples=300,
+    ([yshift=-12cm]current page.north east);
+  \begin{scope}[shift={([yshift=-4.6cm]current page.north west)}]
+    \foreach \a/\f/\o in {0.8/1.8/0.10, 0.5/2.9/0.08, 1.1/1.0/0.06}
+      \draw[white,opacity=\o,line width=1.2pt,domain=0:14.8,samples=300,
         smooth] plot (\x,{\a*sin(\f*\x r)});
   \end{scope}
-  \fill[dmaccent] ([yshift=-17cm]current page.north west) rectangle
-    ([yshift=-17.4cm]current page.north east);
+  \fill[dmaccent] ([yshift=-12cm]current page.north west) rectangle
+    ([yshift=-12.3cm]current page.north east);
   \node[anchor=south west,text=white,align=left,inner sep=0pt,
-    text width=16.6cm]
-    at ([xshift=2.2cm,yshift=-15.8cm]current page.north west)
-    {{\fontsize{48}{54}\selectfont\bfseries D-Modem}\\[12pt]
-     {\fontsize{28}{32}\selectfont AT Command Reference}\\[20pt]
-     {\Large\color{dmhead}The modem core of dmodemd, libdmodem
+    text width=11.8cm]
+    at ([xshift=1.5cm,yshift=-11.1cm]current page.north west)
+    {{\fontsize{34}{38}\selectfont\bfseries D-Modem}\\[8pt]
+     {\fontsize{20}{24}\selectfont AT Command Reference}\\[14pt]
+     {\normalsize\color{dmhead}The modem core of dmodemd, libdmodem
       and the PBX modules}};
   \node[anchor=north west,text=dmblue,inner sep=0pt]
-    at ([xshift=2.2cm,yshift=-18.6cm]current page.north west)
-    {\Large\docedition};
+    at ([xshift=1.5cm,yshift=-13.2cm]current page.north west)
+    {\large\docedition};
 \end{tikzpicture}
 \clearpage
 
@@ -193,7 +200,7 @@ every D-Modem program:
 
 The command set is D-Modem's own.  It began as Smart Link's slmodemd's
 (the reference of Smart Link's ST56 modems is kept as
-\cmd{docs/legacy/ST56ATCommands.pdf}) and has grown V.90 and V.92 as the
+\cmd{docs/\allowbreak legacy/\allowbreak ST56ATCommands.pdf}) and has grown V.90 and V.92 as the
 digital modem, V.91, V.44, V.92's modem-on-hold, and MNP 2 to 5 since.  It takes as
 well the commands that other modems' setup strings send (V.250's,
 Rockwell's and Conexant's, USRobotics'), most of them with no effect, so
@@ -306,7 +313,7 @@ connection, each bit one of them; with \cmdl[V]{V0} the first three are
 numbers, Smart Link's, and the fourth is left out:
 
 \begin{center}
-\begin{tabular}{c p{0.5\textwidth} p{0.28\textwidth}}
+\begin{tabular}{c p{0.47\textwidth} p{0.27\textwidth}}
 \toprule
 \rowcolor{dmhead}\thd{bit} & \thd{line} & \thd{\cmdl[V]{V0}} \\
 \midrule
@@ -394,7 +401,7 @@ Echo of the DTE's characters in command mode: \cmd{E0} off, \cmd{E1} on
 \begin{command}{I}{ATI[\p{n}]}
 Information:
 \begin{center}
-\begin{tabular}{cl}
+\begin{tabular}{c >{\raggedright\arraybackslash}p{0.72\textwidth}}
 \toprule
 \cmd{I0} & the product: \cmd{D-Modem} \\
 \cmd{I1}, \cmd{I2} & the product and version (\cmd{D-Modem, 1.0.0}),
@@ -402,45 +409,64 @@ Information:
 \cmd{I3} & the modem's name, then its line's kind (dmodemd:
   \cmd{dmodem0}, \cmd{SIP}) \\
 \cmd{I4} & \sreg{0} to S23, eight a line (\cmd{s00=000 s01=000 \ldots}) \\
-\cmd{I5}, \cmd{I6} & \cmd{Stored Profile 0:}, \cmd{1:} (there are none) \\
+\cmd{I5} & \cmd{Stored Profile 0:} (there are none) \\
+\cmd{I6}, \cmd{I11} & the last call's statistics, or this one's (below) \\
 \cmd{I7} & the country: \cmd{Country: USA} \\
-\cmd{I11} & the last call's statistics, or this one's (below) \\
 \bottomrule
 \end{tabular}
 \end{center}
 Any other number is ERROR.
 
-\cmd{ATI11} lists the last call's statistics, as Conexant's modems do:
+\cmd{ATI11} lists the last call's statistics, as Conexant's modems do
+(\cmd{ATI6}, USRobotics' link diagnostics, and \cmdl[ampV]{AT\&V1},
+Rockwell's, give the same lines; \cmdl[hashUD]{AT\#UD} the same figures
+in Unimodem's form):
 in online command state those of the call that is up, after a call
 (dialed or answered, connected or not) its own, until the next one;
 before any, \cmd{No Previous Call}.  A line whose value the call does
 not have is left out (the rates and what follows for a call that never
 came up, the frame counts without error correction, the SNR, the round
 trip delay and the echoes where the modulation does not measure them,
-the cause while the call is up):
+the coding lines without V.34, the cause while the call is up):
 
-\begin{center}
-\small
-\begin{tabular}{>{\raggedright\arraybackslash\ttfamily}p{0.36\textwidth}
-  >{\raggedright\arraybackslash}p{0.56\textwidth}}
+{\small
+\begin{longtable}{>{\raggedright\arraybackslash\ttfamily}p{0.34\textwidth}
+  >{\raggedright\arraybackslash}p{0.53\textwidth}}
 \toprule
 \rowcolor{dmhead}\normalfont\thd{line} & \thd{} \\
 \midrule
+\endhead
 Last Connection & the modulation it came up with (\cmd{V34},
   \cmd{V90}, \cmd{V92}, \cmd{V91}, \cmd{V32bis}, \ldots), \cmd{Fax},
   or \cmd{None} \\
 Initial ..., Final Transmit / Receive Carrier Rate & the rates
   (bit/s) at CONNECT, and now or at the end (after renegotiations) \\
+Symbol Rate (Tx/Rx) & each direction's symbols a second (V.22 to
+  V.92, the clear channel) \\
+Carrier Frequency (Hz, Tx/Rx) & each direction's carrier, \cmd{PCM}
+  for a V.90, V.91 or V.92 PCM direction \\
 Protocol Negotiation Result & \cmd{LAPM}, \cmd{MNP} or \cmd{NONE} \\
 Data Compression Result & \cmd{V44}, \cmd{V42bis}, \cmd{MNP5},
   \cmd{ZSTD} or \cmd{NONE} \\
+Trellis Code, Nonlinear Encoding, Precoding, Shaping (Tx/Rx) & V.34's
+  coding each way (\cmd{16S-4D}, \cmd{ON}, \cmd{OFF}; \cmd{-} for a PCM
+  direction) \\
 Estimated SNR (dB) & the receiver's signal to noise ratio (V.34, V.90's
-  upstream, V.32bis) \\
+  upstream, V.32bis, V.29, V.33, V.27ter, V.wb) \\
 Receive / Transmit Signal Power Level (dBm0) & the line's mean power
   each way while the call was up \\
-Round Trip Delay (ms) & as V.34's phase 2 measured it \\
+Round Trip Delay (ms) & as V.34's phase 2 (or V.cvm's start-up)
+  measured it \\
 Near / Far Echo Level (dBm0) & the echoes of our signal the canceller
   takes away (V.34, V.90, V.92) \\
+Carrier Frequency Offset (Hz), Timing Offset (ppm) & how far the far
+  end's carrier (V.22 to V.92) and clock (V.32bis to V.92) are from
+  ours \\
+PCM Encoding & the network's law, \cmd{A-law} or \cmd{u-law} (V.90,
+  V.92) \\
+Digital Loss (dB), Robbed Bit Frames & the network's pad and the frames
+  of six whose bit it robs (\cmd{None}, \cmd{6}, \ldots), as the analogue
+  modem's DIL found them (section~\ref{sec:analogue}) \\
 Characters Sent / Received & the DTE's \\
 Transmit Frame Count & LAPM's or MNP's frames sent \\
 Transmit Frame Error Count & the information frames among them sent
@@ -460,8 +486,7 @@ Call Termination Cause & \cmd{Local hangup} (\cmdl[H]{ATH},
   \cmd{Protocol failure} (no error correction where it is required,
   LAPM's errors), \cmd{No carrier} \\
 \bottomrule
-\end{tabular}
-\end{center}
+\end{longtable}}
 
 \begin{verbatim}
 Description                         Status
@@ -473,9 +498,9 @@ Call Duration                       0:00:10
 Call Termination Cause              Local hangup
 \end{verbatim}
 
-A digital modem has no view of the line's digital loss or robbed-bit
-signalling (the analogue modem measures them), so those other modems'
-lines are not there.
+The digital modem has no view of the line's digital loss or robbed-bit
+signalling, so on dmodemd's SIP line those two lines are not there; the
+analogue modem (\texttt{dmodemd -a}, \texttt{--usb}) measures them.
 \end{command}
 
 \begin{command}{L}{ATL[\p{n}], ATM[\p{n}]}
@@ -515,8 +540,8 @@ Pulse or tone dialing (\sreg{16}; default tone): see \cmdl[D]{ATD}.
 
 \begin{command}{S}{ATS\p{n}?, ATS\p{n}=\p{v}}
 Reads S-register \p{n} (0 to 255), in decimal on a line of its own, or
-sets it to \p{v} (8 bits: \p{v} modulo 256).  A number over 255 is
-ERROR.  Section~\ref{sec:sregs} lists them.
+sets it to \p{v} (8 bits: \p{v} modulo 256).  Both are decimal, a
+leading 0 too (\cmd{ATS09?} is S9).  A number over 255 is ERROR.  Section~\ref{sec:sregs} lists them.
 \end{command}
 
 \begin{command}{V}{ATV[\p{n}]}
@@ -527,7 +552,8 @@ default 1).
 \begin{command}{X}{ATX[\p{n}]}
 Results and dial tone, \cmd{X0} to \cmd{X4} (\sreg{56}; default 4):
 \begin{center}
-\begin{tabular}{cll}
+\begin{tabular}{c >{\raggedright\arraybackslash}p{0.2\textwidth}
+  >{\raggedright\arraybackslash}p{0.47\textwidth}}
 \toprule
 \rowcolor{dmhead}& \thd{CONNECT} & \thd{before dialing} \\
 \midrule
@@ -558,7 +584,9 @@ call has no dial tone: dmodemd wants \cmd{ATX3}.
 \cmd{Z} or \cmd{Z0} to \cmd{Z3}: hangs up, and the S-registers,
 \cmdl[plusMS]{+MS}, modem-on-hold, the data mode (\cmdl[plusFCLASS]{+FCLASS=0}) and
 the parameters kept for other modems' setup strings
-(section~\ref{sec:compat}) as at the start; the country stays.  There are no stored profiles: the number
+(section~\ref{sec:compat}) as at the start; the country stays, and so do
+the S-registers without a default of their own: \sreg{18}, \sreg{28},
+\sreg{47} (\cmdl[ampL]{\&L}), \sreg{48}, \sreg{161} and the free ones.  There are no stored profiles: the number
 changes nothing.  OK, and the rest of the line is not read.
 \end{command}
 
@@ -648,15 +676,17 @@ Other modems' choice of error correction, as \cmdl[bsN]{\bs N}:
 none).  The others (synchronous modes) are ERROR.
 \end{command}
 
-\begin{command}{ampV}{AT\&V[0], AT\&W[\p{n}]}
+\begin{command}{ampV}{AT\&V[\p{n}], AT\&W[\p{n}]}
 \cmd{\&V} and \cmd{\&V0} show the active settings, in lines of 72
 columns at most: the basic commands', the S-registers in use
-(\cmd{S}\p{nn}\cmd{:}\p{vvv}), \cmdl[plusMS]{+MS} and the other
+(\cmd{S}\p{nn}\cmd{:}\p{vvv}; not \sreg{18} or \sreg{44} to
+\sreg{48}), \cmdl[plusMS]{+MS} and the other
 extended settings, and the parameters kept for other modems' setup
 strings (section~\ref{sec:compat}).  There are no stored profiles: the
 list ends with \cmd{STORED PROFILES: none}, and \cmd{\&W}, \cmd{\&W0},
-\cmd{\&W1} (store one) answer OK, storing nothing.  \cmd{\&V1} and up
-are ERROR.
+\cmd{\&W1} (store one) answer OK, storing nothing.  \cmd{\&V1} gives
+the last call's statistics, as \cmdl[I]{ATI11} (Rockwell's);
+\cmd{\&V2} and up are ERROR.
 \begin{verbatim}
 ACTIVE PROFILE:
 E1 L3 M1 N1 Q0 T V1 X4 Y0 &A0 &C0 &E0 &H0 &P0 \A3 \N3 \V0 %C3 %E0
@@ -731,6 +761,29 @@ complex event report, between \cmd{<DLE>X} and \cmd{<DLE>.}; in the
 other modes after an empty line.  A SIP call rings without it.
 \end{command}
 
+\begin{command}{hashUD}{AT\#UD}
+The last call's statistics (or this one's), as \cmdl[I]{ATI11} has
+them, in the form of Microsoft's Unimodem diagnostics (its draft
+specification, rev.~0.85), for Windows' modem log and the programs that
+read it: a line \cmd{DIAG <2A4D3263 }\p{key}\cmd{=}\p{value}\cmd{>} for
+each key there is a value for, both in hexadecimal.  The keys: 0 the
+format (10), 1 the call's setup, 10 to 17 the receive and transmit
+levels, the noise, the echoes' loss and the round trip delay, 20 and 21
+the modulation (V.58's codes), 22 to 27 the symbol rates, the carriers
+and the first rates, 31 and 32 the renegotiations and retrains, 34 and
+35 the last rates, 40 the error control, 44 the compression (V.58's
+codes, 80 MNP~5, 81 V.44, 82 zstd), 50 and 51 the flow control, 52 to
+59 the characters and frames, 60 how the call ended (V.58's
+\p{callCleared}; 2 while it goes on).  Before any call: \cmd{0=10},
+\cmd{1=0} and \cmd{60=1}.
+\begin{verbatim}
+DIAG <2A4D3263 0=10>
+DIAG <2A4D3263 1=7>
+DIAG <2A4D3263 10=0C>
+...
+\end{verbatim}
+\end{command}
+
 \section{Extended commands}
 
 \subsection{Modulation: +MS}
@@ -746,15 +799,17 @@ turns automode off.  The default is \cmd{92,1,300,56000}.  In V.34
 \p{max} caps both directions' rates (sent in its MP sequences).
 
 \begin{center}
-\begin{tabular}{rlll}
+\small
+\begin{tabular}{r>{\raggedright\arraybackslash}p{0.19\textwidth}l
+  >{\raggedright\arraybackslash}p{0.36\textwidth}}
 \toprule
 \rowcolor{dmhead}\thd{\p{mod}} & \thd{name} & & \\
 \midrule
 21 & \cmd{V21} & ITU V.21 & 300 bit/s FSK \\
 23 & \cmd{V23C} & ITU V.23 & 1200/75 bit/s FSK \\
-103 & \cmd{B103}, \cmd{Bell103} & Bell 103 & 300 bit/s FSK \\
+103 & \cmd{B103}, \cmd{BELL103} & Bell 103 & 300 bit/s FSK \\
 22 & \cmd{V22} & ITU V.22 & 1200 bit/s DPSK \\
-212 & \cmd{B212}, \cmd{Bell212A} & Bell 212A & 1200 bit/s DPSK \\
+212 & \cmd{B212}, \cmd{BELL212A} & Bell 212A & 1200 bit/s DPSK \\
 122 & \cmd{V22B} & ITU V.22bis & 2400 bit/s, V.22 as its fallback \\
 32 & \cmd{V32} & ITU V.32 & 4800 and 9600 bit/s \\
 132 & \cmd{V32B} & ITU V.32bis & 4800 to 14400 bit/s \\
@@ -764,15 +819,15 @@ turns automode off.  The default is \cmd{92,1,300,56000}.  In V.34
 34 & \cmd{V34} & ITU V.34 & 2400 to 33600 bit/s, after V.8 \\
 90 & \cmd{V90} & ITU V.90 & as the digital modem, after V.8 \\
 91 & \cmd{V91} & ITU V.91 & two digital modems, after V.8 \\
-92 & \cmd{V92} & ITU V.92 & V.90 with quick connect, PCM upstream \\
- & & & and modem-on-hold \\
+92 & \cmd{V92} & ITU V.92 & V.90 with quick connect, PCM upstream
+  and modem-on-hold \\
 56 & \cmd{K56} & K56flex & not implemented: runs V.90 \\
-150 & \cmd{V\_CVM} & V.cvm & data over mobile speech paths, \\
- & & & 175 to 3500 bit/s, after V.8 (\cmdl[plusCVM]{+CVM}) \\
-200 & \cmd{VWB} & V.wb & wideband DMT on a bare pair, at 48000 Hz \\
- & & & and more, up to 148656 bit/s each way \\
-64 & \cmd{CLEAR} & clear channel & 64000 bit/s on a clear digital channel \\
- & & & (an ISDN data call), no modulation \\
+150 & \cmd{V\_CVM} & V.cvm & data over mobile speech paths, 175 to
+  3500 bit/s, after V.8 (\cmdl[plusCVM]{+CVM}) \\
+200 & \cmd{VWB} & V.wb & wideband DMT on a bare pair, at 48000 Hz
+  and more, up to 148656 bit/s each way \\
+64 & \cmd{CLEAR} & clear channel & 64000 bit/s on a clear digital
+  channel (an ISDN data call), no modulation \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -790,7 +845,12 @@ V.90 and V.92 are there as the \emph{digital} modem (the server's side,
 as on a G.711 VoIP line), on an 8000 Hz G.711 line: analogue V.90 and
 V.92 modems calling connect at up to 56000 bit/s downstream.  90 and 92
 offer V.91 too, which two digital modems use instead, and V.34 for the
-others; on a line at another sample rate they are V.34.  With automode
+others; on a line at another sample rate they are V.34.
+\label{sec:analogue}On an analogue telephone line (dmodemd's \texttt{-a}
+and \texttt{--usb}) the modem is the call's analogue end instead: V.90
+and V.92 run as the analogue modem against a V.90 or V.92 server (at
+9600~Hz; see \texttt{docs/hardware.md}), and V.91 and \cmd{CLEAR}, which
+need a digital line, run as V.34.  With automode
 V.8 and the V.34 modem hand over to V.32bis (and its V.22bis and V.22)
 for a modem without V.34, and the answering modem tries V.23 and Bell
 103 for one without V.8.
@@ -820,6 +880,11 @@ compressions run over it as over any modulation.  A line that says its
 call is clear (dmodemd's SIP for a CLEARMODE call, \cmd{app\_dmodem}
 for an ISDN data call) runs it whatever \cmd{+MS} says.  See
 \cmd{docs/isdn.md}.
+
+\emph{Pending:} ISDN's second phase, X.75 and synchronous PPP on the
+clear channel and the command that chooses them (\cmd{AT+B2}, with
+CAPI's layer 2 numbers), is being added; this edition does not
+describe it yet.
 \end{command}
 
 \begin{command}{plusMS-q}{AT+MS?}
@@ -829,7 +894,10 @@ The settings: \cmd{92,1,300,56000} (\cmd{200,1,300,56000} on a line at
 
 \begin{command}{plusMS-t}{AT+MS=?}
 What may be chosen:\\
-\cmd{(21,22,23,27,29,122,32,132,33,34,103,212,56,90,91,92,150,200),(0,1),(300-56000),(300-56000)}
+\cmd{(21,22,23,27,29,122,32,132,33,34,103,212,56,90,91,92,150,200,%
+\allowbreak 64),(0,1),(300-56000),(300-56000)}\\
+(only the modulations the program has; libdmodem's lists those its
+program registered).
 \end{command}
 
 \subsection{Identification and country}
@@ -1247,7 +1315,7 @@ until then are discarded), then OK, \cmd{+VTR}'s after
 Registers 0 to 255 hold 8 bits each.  Those not listed are 0 and free;
 ``kept'' means set and read back, with no other effect.
 
-\begin{longtable}{rp{0.42\textwidth}rp{0.30\textwidth}}
+\begin{longtable}{rp{0.41\textwidth}rp{0.30\textwidth}}
 \toprule
 \rowcolor{dmhead}\thd{S} & & \thd{default} & \\
 \midrule
@@ -1436,14 +1504,15 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
   \sreg{30} are the speaker's (elsewhere the hook flash time and the
   inactivity timer), \sreg{92} the answer's delay (elsewhere a fax
   transmit level: \cmd{ATS92=10} makes the modem wait 10 s before its
-  answer tone).  The others (S36, S37, S48, S91 \ldots) are free: kept
+  answer tone).  The others (S36, S37, S91 \ldots) are free: kept
   as written.  \sreg{7} and \sreg{11} start at 60 and 100.
 \item The dial string's \cmd{!} (hook flash) and \cmd{\$} (bong tone)
   are skipped.  There are no stored numbers: \cmd{\&Z} and
   \cmd{ATDS=}\p{n} are ERROR.
 \item \cmdl[I]{ATI}'s numbers are the modem's own (\cmd{I0} to
-  \cmd{I7}, and \cmd{I11} as Conexant's); \cmd{ATI8} to \cmd{ATI10}
-  and \cmd{ATI12} and up are ERROR.
+  \cmd{I7}), but for the call statistics: \cmd{I6} as USRobotics',
+  \cmd{I11} as Conexant's, \cmdl[ampV]{\&V1} as Rockwell's; \cmd{ATI8}
+  to \cmd{ATI10} and \cmd{ATI12} and up are ERROR.
 \item The numeric results (\cmdl[V]{V0}) are Smart Link's, CONNECT's
   for each rate among them; those of USRobotics' and Conexant's modems
   differ.  CONNECT's rates without a number of Smart Link's have
@@ -1457,12 +1526,12 @@ alone), \cmd{=?} the ranges, and \cmdl[Z]{ATZ} the defaults.
 
 \subsection{Not there}
 
-ERROR: \cmd{\&V1} and up, \cmd{\&Z} (no stored numbers),
-\cmd{\&T} (self tests), \cmd{\bs B} (a break), \cmd{X5} and up,
+ERROR: \cmd{\&V2} and up, \cmd{\&Z} (no stored numbers),
+\cmd{\&T2} and \cmd{\&T9} and up, \cmd{\bs B} (a break), \cmd{X5} and up,
 \cmd{-V90} (\cmdl[plusMS]{+MS} chooses), \cmd{+MA}, \cmd{+MSC},
 \cmd{+EB}, \cmd{+ESR}, \cmd{+ETBM}, \cmd{+EWIND}, \cmd{+EFRAM},
-\cmd{+A8E}, \cmd{+A8T}, \cmd{+PMHF}, \cmd{+GSN}, \cmd{+GOI} and
-\cmd{\#UD}; \cmd{+MS}'s names of modulations the modem has not got
-(\cmd{V32T}, \cmd{V29} \ldots).
+\cmd{+A8E}, \cmd{+A8T}, \cmd{+PMHF}, \cmd{+GSN} and \cmd{+GOI};
+\cmd{+MS}'s names of modulations the modem has not got (\cmd{V23S},
+\cmd{V26B}, \cmd{V26T}, \cmd{V27} \ldots).
 
 \end{document}

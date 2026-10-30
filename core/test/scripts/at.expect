@@ -65,6 +65,11 @@
       0 A: ATS7=45S7?\r\r\n
       0 A: 45\r\n
       0 A: OK\r\n
+      0 A< ATS09=6S9?S010=7S10?\r
+      0 A: ATS09=6S9?S010=7S10?\r\r\n
+      0 A: 6\r\n
+      0 A: 7\r\n
+      0 A: OK\r\n
       0 A< ATS\r
       0 A: ATS\r\r\n
       0 A: ERROR\r\n
