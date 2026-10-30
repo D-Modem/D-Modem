@@ -75,6 +75,7 @@ struct TextUart {
 	float pos;              /* samples into the character */
 	u16 bits;
 
+	/* baud bit/s, nbits_ data bits, at srate; idle */
 	void init(float baud, s16 nbits_, s32 srate)
 	{
 		*this = TextUart();
@@ -212,23 +213,29 @@ struct TextPump : PumpBase<TextPump, text_state> {
 				   ours starts (half duplex) */
 	s32 quiet;              /* samples the remote has had no
 				   carrier */
+	s32 listened;           /* samples since a message probe went
+				   out */
 	s32 found_at;           /* samples of DATA before the held
 				   characters go to the link */
 	char held[64];          /* the remote's characters while
 				   detecting */
 	s16 held_n;
 
+	/* its name in the log */
 	const char *tag() const { return "text"; }
+	/* in data (no handshake timeout; the carrier is not watched) */
 	bool in_data() const { return state == TXT_DATA; }
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
 		  s32 max_frag);
 	s16 sample(float x, float *y);
+	/* cnt samples in and out, through sample() */
 	s16 process(void *in, void *out, s32 cnt) override
 	{
 		return pump_loop(in, out, cnt);
 	}
 
 	void set_mode(enum text_mode m_);
+	/* the mode's rate, bit/s */
 	float baud() const
 	{
 		return mode == TM_BAUDOT ? set.baud100 / 100.0f : 110.0f;
@@ -581,8 +588,9 @@ s16 TextPump::found(enum DP_ID id)
 }
 
 /* automoding's detectors on x: a remote's mode found (found()'s
-   result), else DPSTAT_OK.  While we send in a band, its detector is
-   deaf; a mark probe hears only its answer */
+   result), else DPSTAT_OK.  While a message probe goes out (and just
+   after) they decide nothing (its echo is no remote); a mark probe
+   hears only its answer */
 s16 TextPump::detect(float x)
 {
 	bool probing_tone = state == TXT_PROBE && probe >= PR_V21;
@@ -593,8 +601,8 @@ s16 TextPump::detect(float x)
 
 	/* 5-bit: a good character */
 	d_baudot.run(x);
-	s32 v = u_baudot.run(d_baudot.last_dec, d_baudot.carrier &&
-			     !(own_text && mode == TM_BAUDOT));
+	s32 v = u_baudot.run(d_baudot.last_dec,
+			     d_baudot.carrier && !own_text);
 	if (v >= 0 && !probing_tone) {
 		char c = baudot_char(static_cast<s16>(v), &rx_shift_auto);
 		if (c && held_n < static_cast<s16>(sizeof(held)))
@@ -606,8 +614,8 @@ s16 TextPump::detect(float x)
 	/* V.21's channel 1: EDT at 110 bit/s, V.21 at 300 (the shortest
 	   run of a decision tells), or a steady V.21 mark */
 	d_ch1.run(x);
-	bool ch1 = d_ch1.carrier && !(own_text && mode == TM_EDT);
-	v = u_edt.run(d_ch1.last_dec, ch1);
+	bool ch1 = d_ch1.carrier && !own_text;
+	v = u_edt.run(d_ch1.last_dec, ch1 && !own_text);
 	if (ch1) {
 		ch1_on++;
 		if (d_ch1.last_dec != ch1_prev) {
@@ -647,7 +655,7 @@ s16 TextPump::detect(float x)
 
 	/* the answerer's V.21 channel 2 (a caller's) */
 	d_ch2.run(x);
-	ch2_on = d_ch2.carrier ? ch2_on + 1 : 0;
+	ch2_on = d_ch2.carrier && !own_text ? ch2_on + 1 : 0;
 	if (caller && (!probing_tone || probe == PR_V21) &&
 	    ch2_on >= ms2samples(300, srate))
 		return found(DP_V21);
@@ -657,7 +665,8 @@ s16 TextPump::detect(float x)
 	   1300 Hz to a caller */
 	if (!caller) {
 		bell.run(x);
-		if (bell.found() && (!probing_tone || probe == PR_B103))
+		if (bell.found() && !own_text &&
+		    (!probing_tone || probe == PR_B103))
 			return found(DP_B103);
 	}
 	g300.run(x);
@@ -678,9 +687,9 @@ s16 TextPump::detect(float x)
 					   g2100.power);
 		bool b2225 = g2225.power > level &&
 			g2225.power > 4 * (g2050.power + g2100.power);
-		v23b_blocks = b390 ? v23b_blocks + 1 : 0;
-		v23f_blocks = b1300 ? v23f_blocks + 1 : 0;
-		b2225_blocks = b2225 ? b2225_blocks + 1 : 0;
+		v23b_blocks = b390 && !own_text ? v23b_blocks + 1 : 0;
+		v23f_blocks = b1300 && !own_text ? v23f_blocks + 1 : 0;
+		b2225_blocks = b2225 && !own_text ? b2225_blocks + 1 : 0;
 		const s32 need = 300 / 20;
 		if (!caller && v23b_blocks >= need &&
 		    (!probing_tone || probe == PR_V23))
@@ -704,10 +713,10 @@ float TextPump::probe_sample(s16 *done)
 	*done = 0;
 	if (!tx_on && c_at >= c_n && h_at >= h_n) {
 		/* listening after it: counted from the end */
-		if (++found_at >= ms2samples(PROBE_LISTEN_MS, srate))
+		if (++listened >= ms2samples(PROBE_LISTEN_MS, srate))
 			*done = 1;
 	} else {
-		found_at = 0;
+		listened = 0;
 	}
 	return y;
 }
@@ -729,7 +738,7 @@ s16 TextPump::sample(float x, float *y)
 			c_n = c_at = 0;
 			queue_text(set.msg);
 			queue_text("\r\n");
-			found_at = 0;
+			listened = 0;
 			set_state(TXT_PROBE);
 		}
 		break;
@@ -760,7 +769,7 @@ s16 TextPump::sample(float x, float *y)
 				c_n = c_at = 0;
 				queue_text(set.msg);
 				queue_text("\r\n");
-				found_at = 0;
+				listened = 0;
 			}
 			set_state(TXT_PROBE);
 		}
