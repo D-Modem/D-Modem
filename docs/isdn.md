@@ -410,7 +410,13 @@ modems on a simulated line, with an application of the test's:
   ringing, and a B protocol the controller lacks;
 - the TCP server in rcapi's framing, against a modem of the test's.
 
-It has not yet been run against libcapi20 itself.
+Tried with libcapi20 from isdn4k-utils (its `rcapi` module): `capiinfo`
+lists the controller and its profile, and an application of libcapi20's
+called a libdmodem modem through `dmodem-capid` with X.75, frames, V.120,
+V.110 at 9600 bit/s and a modem call (V.42 over V.90), its data echoed
+back byte for byte, then hung up. Not yet tried: an incoming call
+through libcapi20, and the applications themselves (capi4hylafax,
+chan_capi, capiplugin).
 
 ## What comes next
 
