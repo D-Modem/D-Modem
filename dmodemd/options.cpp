@@ -51,7 +51,8 @@ enum {
 	OPT_GROUP, OPT_PERM, OPT_NORT, OPT_DEBUG, OPT_LOG, OPT_LISTEN,
 	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_USB_LEDS, OPT_USB_WAKE,
 	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_USB_RHOM, OPT_USB_BUZZER,
-	OPT_USB_WB_TX_GAIN, OPT_USB_WB_RX_GAIN, OPT_RATE,
+	OPT_USB_WB_TX_GAIN, OPT_USB_WB_RX_GAIN, OPT_MISDN, OPT_MISDN_MSN,
+	OPT_MISDN_NOFLIP, OPT_RATE,
 #ifdef _WIN32
 	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP, OPT_DRIVER,
 #endif
@@ -121,6 +122,15 @@ const Option OPTIONS[OPT_COUNT] = {
 	{ 0, "usb-wb-rx-gain", Takes::Text, true,
 	  "a pico-serial WB's hybrid input gain, dB (its MicPGA: 0 to 47.5, "
 	  "in 0.5 dB steps)", "0", false },
+	{ 0, "misdn", Takes::Text, true,
+	  "the line an ISDN basic rate interface through Linux's mISDN (the "
+	  "device's number or name), not SIP", "none", false },
+	{ 0, "misdn-msn", Takes::Text, true,
+	  "--misdn: take calls for this MSN alone (and send it as ours)",
+	  "any", false },
+	{ 0, "misdn-noflip", Takes::Nothing, false,
+	  "--misdn: the B-channel's octets as the card gives them, not bit "
+	  "reversed", nullptr, false },
 	{ 'r', "rate", Takes::Number, true,
 	  "the codec's rate with -a or --usb (8000 or 9600; 48000, 96000 or "
 	  "192000 for the wideband mode, AT+MS=VWB: a pico-serial WB's "
@@ -150,7 +160,8 @@ bool posix_only(s16 i)
 {
 #ifdef _WIN32
 	return i == OPT_GROUP || i == OPT_PERM || i == OPT_ALSA ||
-		i == OPT_ALSA_CTL;
+		i == OPT_ALSA_CTL || i == OPT_MISDN || i == OPT_MISDN_MSN ||
+		i == OPT_MISDN_NOFLIP;
 #else
 	(void)i;
 	return false;
@@ -428,8 +439,15 @@ void CommandLine::apply(Options &opt) const
 	if (!wb_gain(o[OPT_USB_WB_TX_GAIN], -63.5, 24, opt.usb_wb_tx_gain) ||
 	    !wb_gain(o[OPT_USB_WB_RX_GAIN], 0, 47.5, opt.usb_wb_rx_gain))
 		exit(1);
-	if (opt.alsa && opt.usb) {
-		fprintf(stderr, "%s: -a or --usb, not both\n", prog_);
+	if (o[OPT_MISDN].given)
+		opt.misdn = o[OPT_MISDN].value;
+	if (o[OPT_MISDN_MSN].given)
+		opt.misdn_msn = o[OPT_MISDN_MSN].value;
+	if (o[OPT_MISDN_NOFLIP].given)
+		opt.misdn_flip = false;
+	if ((opt.alsa != nullptr) + (opt.usb != nullptr) +
+	    (opt.misdn != nullptr) > 1) {
+		fprintf(stderr, "%s: one of -a, --usb and --misdn\n", prog_);
 		exit(1);
 	}
 	if (o[OPT_RATE].given) {

@@ -606,6 +606,9 @@ start from.
 | `-a <pcm>`, `--alsa=<pcm>` | the codec's PCM (`hw:1`, `hw:0,6`, `plughw:...`): the line is a telephone line, not SIP |
 | `--alsa-ctl=<ctl>` | its controls, if not the card's (`hw:1` for `hw:1,0` or `plughw:1,0`; the PCM's own name otherwise) |
 | `--usb=<dev>` | a SmartUSB56, pico-serial Line or WB or Agere USB modem (`auto`, the first one; or `<bus>:<address>`, as `lsusb` and `--usb list` show it): the line is a telephone line (a bare pair for the WB), not SIP; `--usb list` lists them and exits |
+| `--misdn=<dev>` | an ISDN basic rate interface through Linux's mISDN (its number, or its name such as `hfc-pci.1`): the line is ISDN, not SIP (docs/isdn.md) |
+| `--misdn-msn=<msn>` | with `--misdn`: take calls for this MSN alone, and send it as our number |
+| `--misdn-noflip` | with `--misdn`: the B-channel's octets as the card gives them, not bit reversed |
 | `--usb-leds` | a SmartUSB56's carrier and data LEDs lit (GPIO 6 and 13), as on Creative's Modem Blaster; only for a board that has them |
 | `--usb-wake` | a ring wakes the computer: the SmartUSB56's USB remote wakeup armed (and on Linux the kernel's `power/wakeup` of it enabled, as root) |
 | `--usb-handset` | the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook, `<DLE>H` and `<DLE>h` in voice mode |

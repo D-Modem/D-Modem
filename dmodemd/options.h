@@ -55,6 +55,13 @@ struct Options {
 	/* a pico-serial WB's transmit level and hybrid input gain, dB
 	   (--usb-wb-tx-gain, --usb-wb-rx-gain) */
 	double usb_wb_tx_gain = 0, usb_wb_rx_gain = 0;
+	/* or an ISDN basic rate interface through Linux's mISDN (--misdn:
+	   the device's number or name), calls for an MSN alone
+	   (--misdn-msn), the B-channel's octets as they come, not bit
+	   reversed (--misdn-noflip) */
+	const char *misdn = nullptr;
+	const char *misdn_msn = nullptr;
+	bool misdn_flip = true;
 	/* (-r; given: by -r, else the default, which a pico-serial WB
 	   makes 96000) */
 	u32 rate = 9600;

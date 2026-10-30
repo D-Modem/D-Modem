@@ -97,8 +97,9 @@ V.42bis and MNP run over it as over any modulation, and `\N0` gives plain
 asynchronous characters (start bit, 8 data bits, stop bit) on the bit
 stream. A D-Modem from before `AT+B2` speaks this.
 
-MSN selection (isdn4linux's `AT&E`, CAPI's called party number) is not
-done: every number a line brings to the modem is the modem's.
+MSN selection by AT command (isdn4linux's `AT&E`, CAPI's called party
+number) is not done: every number a line brings to the modem is the
+modem's. On an mISDN card, dmodemd's `--misdn-msn` picks the MSN (below).
 
 ## AT+B2=9: V.120
 
@@ -182,6 +183,57 @@ it on a clean network. X.75 retransmits what is lost.
 `dmodemd/test/clearmode_test.py` checks both directions against a SIP
 peer and a far clear channel of the script's own.
 
+## dmodemd --misdn: a BRI card on Linux
+
+With `--misdn <dev>` dmodemd's line is an ISDN basic rate interface
+through Linux's mISDN, the kernel's ISDN stack: an HFC-S PCI or USB
+card, an AVM Fritz!Card PCI, or another card with an mISDN driver. It
+takes the S0 bus's terminal side, one call at a time.
+
+```
+modprobe hfcpci            # or hfcsusb, avmfritz, ...
+dmodemd --misdn 0 --misdn-msn 4711
+```
+
+`<dev>` is the device's number or its name (`hfc-pci.1`). dmodemd must
+start as root, because listing mISDN's devices needs `CAP_NET_RAW`; it
+opens the D-channel and then goes on as `nobody`, as it does for its pty.
+
+- **Layer 2** (LAPD, the TEI) is the kernel's. Q.931, the call control
+  on top of it, is dmodemd's own (`dmodemd/q931.cpp`, ETSI's Euro-ISDN
+  user side).
+- **Calls out** send the whole number in the SETUP, with sending
+  complete. With `AT+MS=CLEAR` the bearer is unrestricted digital
+  information, and the clear channel modes above run on it: X.75, V.110,
+  V.120 and the rest. Any other `+MS` mode makes a 3.1 kHz audio call,
+  and the modem runs as it does on any digital line. The network picks
+  the B-channel. Cause 17 (user busy) is `BUSY`, causes 18 and 19 are
+  `NO ANSWER`, and anything else is `NO CARRIER`.
+- **Calls in** ring when they are for our MSN (`--misdn-msn`: the
+  called number must end with it), or for any number without one. They
+  need a bearer of speech, 3.1 kHz audio or unrestricted digital
+  information, and a B-channel. `RING` repeats every 5 seconds, and the
+  calling number is the caller ID (`AT+VCID=1`). A call with the bearer
+  unrestricted digital information is answered on the clear channel.
+  With a call up, another call for us gets `RELEASE COMPLETE` with
+  cause 17.
+- **The B-channel** runs in the card's transparent mode (`ISDN_P_B_RAW`).
+  Its octets are A-law, bit reversed: the cards send an octet's least
+  significant bit first, and G.711 and the clear channel send the most
+  significant first. `--misdn-noflip` takes the octets as they come, for
+  a card that does not need the reversal. The modem answers each block
+  of octets with as many, so the B-channel's clock paces the modem.
+- The bearer we send is always A-law. Overlap dialling, supplementary
+  services and PRI cards are not supported.
+
+**Untested on hardware.** `dmodemd/test/misdn_test.py` runs two dmodemd
+on fake cards (`dmodemd/test/fake_misdn.cpp`, loaded with `LD_PRELOAD`)
+through the script's own network. The test covers a clear channel call
+(X.75, caller ID, text each way), a 3.1 kHz V.22bis call, `BUSY` and
+`NO ANSWER`. `dmodemd/test/q931_test.cpp` covers Q.931's states, timers
+and messages. The bit reversal follows Asterisk's chan_misdn and LCR, but
+no card has checked it yet.
+
 ## app_dmodem: an ISDN data call through Asterisk
 
 A call that reaches `DModem()` with an unrestricted digital bearer
@@ -264,6 +316,6 @@ The feasibility study's later phases build on this line mode:
 
 1. Done: X.75 and sync PPP (`AT+B2`), and `codec_clearmode`. Still to
    come here: V.42bis over X.75, and MSN selection.
-2. Done: V.110 (`AT+CBST`) and V.120 (`AT+B2=9`). Next: mISDN for BRI
-   cards on Linux.
+2. Done: V.110 (`AT+CBST`), V.120 (`AT+B2=9`), and mISDN for BRI cards
+   on Linux (`--misdn`), which still needs a test on a real card.
 3. Maybe CAPI 2.0 emulation, and hardware.
