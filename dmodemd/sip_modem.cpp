@@ -356,8 +356,9 @@ void SipLine::ifp_in(void *ctx, const unsigned char *ifp, s16 len,
 	SipLine *line = static_cast<SipLine *>(ctx);
 	dsp::t38_ifp p;
 
-	/* (the modem may have hung up on the packet before) */
-	if (line->t38_ < 0)
+	/* (the modem may have hung up on the packet before; len 0: a
+	   packet lost) */
+	if (line->t38_ < 0 || !len)
 		return;
 	if (!dsp::t38_ifp_decode(&p, line->version_, ifp, len))
 		line->rx_modem_->t38_rx(&p);
