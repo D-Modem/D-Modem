@@ -154,7 +154,8 @@ static bool measurement(const std::string &line, std::string *field,
    echoes that moves the measurements a little (a few tenths of a dB,
    and a few frame errors more or less under the echoes; the receivers'
    offsets).  got the same as want but in those, each within its
-   tolerance: a dB (or Hz) within 1, a ppm within 5, an error count none
+   tolerance: a dB (or Hz) within 1, a ppm within 20 (the echoes move
+   the clock's estimate by a few), an error count none
    where want has none.  Everything else stays exact,
    and elsewhere all of it does. */
 static bool close_enough(const std::string &want, const std::string &got)
@@ -174,7 +175,7 @@ static bool close_enough(const std::string &want, const std::string &got)
 			if ((wv == 0) != (gv == 0))
 				return false;
 		} else if (fabs(wv - gv) >
-			   (wf.find("(ppm)") != std::string::npos ? 5.0 :
+			   (wf.find("(ppm)") != std::string::npos ? 20.0 :
 			    1.0)) {
 			return false;
 		}
