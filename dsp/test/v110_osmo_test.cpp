@@ -128,6 +128,8 @@ struct Osmo {
 	bool rx_sync = false;
 	int frames = 0, refused = 0, sx_on = 0;
 
+	/* libosmocore's rate i: its user rate, intermediate rate, frame's
+	   user bits */
 	explicit Osmo(int i_) : i(i_)
 	{
 		rate = osmo_peer_rate(i, &ir, &chunk);

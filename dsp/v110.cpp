@@ -67,6 +67,7 @@ static const u8 *fill_mask(V110Fill fill)
 		fill == V110Fill::Nx12000 ? nx12000 : all;
 }
 
+/* see v110.h */
 const V110Rate *v110_rate(s32 user)
 {
 	for (const V110Rate &r : RATES)
@@ -75,6 +76,7 @@ const V110Rate *v110_rate(s32 user)
 	return nullptr;
 }
 
+/* see v110.h */
 const V110Rate *v110_rate_found(s32 ir, u8 e123)
 {
 	for (const V110Rate &r : RATES)
@@ -104,6 +106,7 @@ void v110_frame_bits(u8 bits[80], const V110Frame &f)
 	}
 }
 
+/* see v110.h */
 void V110Adapt::to_frame(V110Frame &f, const u8 *user) const
 {
 	const u8 *mask = fill_mask(rate_->fill);
@@ -120,6 +123,7 @@ void V110Adapt::to_frame(V110Frame &f, const u8 *user) const
 		f.e[i] = 1;
 }
 
+/* see v110.h */
 void V110Adapt::from_frame(u8 *user, const V110Frame &f) const
 {
 	const u8 *mask = fill_mask(rate_->fill);
@@ -181,6 +185,7 @@ void V110Sync::decode()
 	frame_.x = x;
 }
 
+/* see v110.h */
 bool V110Sync::put(u8 bit)
 {
 	win_[head_] = bit & 1;

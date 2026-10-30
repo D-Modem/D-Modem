@@ -68,7 +68,9 @@ void v110_frame_bits(u8 bits[80], const V110Frame &f);
 /* the user's bits in, a frame out, and back (Tables 6a-6f) */
 class V110Adapt {
 public:
+	/* the user rate's adaption */
 	void init(const V110Rate *r) { rate_ = r; }
+	/* (see init()) */
 	const V110Rate *rate() const { return rate_; }
 	/* f's D and E1-E3 from rate()->user_bits bits of user (the rest of
 	   E ones) */
@@ -89,7 +91,10 @@ public:
 	void init();
 	/* one bit: true when it ends a frame while in sync (frame()) */
 	bool put(u8 bit);
+	/* frames are found (three good alignment patterns, not yet three
+	   bad) */
 	bool synced() const { return synced_; }
+	/* the last frame put() ended */
 	const V110Frame &frame() const { return frame_; }
 
 private:
