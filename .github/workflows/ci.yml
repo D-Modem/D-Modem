@@ -45,8 +45,11 @@
 # ccache keeps the jobs' compiles (all but windows-msvc): restored before
 # the build, saved after it (in a sharded job by its first shard alone).
 #
-# A push or pull request that changes only documentation (docs/ and the
-# Markdown files: nothing builds or tests from them) runs none of it.  A
+# A push or pull request that changes only documentation (docs/, the
+# Markdown files and COPYING: nothing builds or tests from them) runs
+# none of it; but for docs/cellular/annexes.tex, whose Annex E the
+# v44_preset_check test compares with the code.  (The patterns are
+# paths, not paths-ignore, so that a later one can take a file back.)  A
 # push runs it on main alone (a branch's commits run it as its pull
 # request, not twice), or by hand (workflow_dispatch); a newer push to a
 # pull request cancels its older run.
@@ -55,13 +58,19 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**.md'
+      - '!COPYING'
+      - 'docs/cellular/annexes.tex'
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**.md'
+      - '!COPYING'
+      - 'docs/cellular/annexes.tex'
   workflow_dispatch:
 
 concurrency:
