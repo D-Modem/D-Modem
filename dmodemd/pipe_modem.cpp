@@ -254,6 +254,8 @@ s16 PipeModem::line(bool rd)
 		for (s16 k = 0; k < count; k++)
 			if (ring_.sample(in[k]))
 				m_->ring();
+		/* and caller ID sent before the ring */
+		m_->idle_audio(in, count);
 		std::fill_n(outbuf, count, 0);
 	}
 	/* MODEM_REC: the line while off hook */

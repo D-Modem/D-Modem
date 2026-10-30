@@ -220,6 +220,15 @@ public:
 
 	/* a ring signal on the line (its cadence is checked) */
 	void ring();
+	/* the line's samples while it is on hook and not started (a host
+	   that has them, such as a pipe or ALSA): caller ID sent before the
+	   first ring (ETSI's after its alerting tone, the UK's, DTMF) is
+	   listened for in them, with #CID on */
+	void idle_audio(const s16 *in, s32 n);
+	/* the line's polarity reversed while idle (a host that senses it):
+	   caller ID may follow before the first ring (ETSI EN 300 659-1, BT
+	   SIN 227), the line snooped for it for 5 s, with #CID on */
+	void line_reversal();
 	/* the local phone (a phone on the modem's own jack: Host's
 	   senses_local_phone()) off or on hook: in voice mode V.253's
 	   event 8, <DLE>H or <DLE>h, to the DTE; logged */
@@ -578,6 +587,8 @@ private:
 	u32 ring_first_ = 0, ring_last_ = 0;
 	u16 cid_requested_ = 0;
 	void *cid_ = nullptr;
+	/* idle_audio()'s receiver */
+	void *idle_cid_ = nullptr;
 	/* caller_id()'s MDMF message, until the first RING */
 	std::vector<u8> cid_msg_;
 

@@ -1635,8 +1635,13 @@ s16 UsbLine::pump(dcore::Modem &m)
 			voice_frame(m);
 		else if (running_ && m.started())
 			m.process(frame_in_.data(), frame_out_.data(), frame_);
-		else
+		else {
+			/* caller ID sent before the ring, on a line that
+			   hears the line on hook */
+			if (hook_ != MODEM_HOOK_OFF)
+				m.idle_audio(frame_in_.data(), frame_);
 			std::fill_n(frame_out_.data(), frame_, 0);
+		}
 		/* (DMODEM_USB_TX_GAIN: louder or softer to the line) */
 		if (tx_auto_ && hook_ == MODEM_HOOK_OFF)
 			tx_auto_frame();
