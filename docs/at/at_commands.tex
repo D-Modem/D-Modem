@@ -195,9 +195,14 @@
 \makeatother
 \newenvironment{syntax}{\par\dmneedinside{3\baselineskip}Syntax:%
   \begin{itemize}\ttfamily\raggedright}{\end{itemize}}
-% "Result codes:" and when each comes, one a bullet
-\newenvironment{results}{\par\dmneedinside{3\baselineskip}Result codes:%
-  \begin{itemize}}{\end{itemize}}
+% "Result codes:" and when each comes, run in on one line
+\newif\ifdmfirstresult
+\newenvironment{results}{\par\dmneedinside{2\baselineskip}%
+  \raggedright Result codes:\global\dmfirstresulttrue
+  \def\item{\ifdmfirstresult\global\dmfirstresultfalse\hskip0.6em
+    \else\hskip1em plus 0.5em\fi
+    {\color{dmred}\rule[0.3ex]{0.55ex}{0.55ex}}\hskip0.4em\ignorespaces}}%
+  {\par}
 % an S-register's range, default and units, a bullet each
 \newcommand{\facts}[3]{\begin{itemize}
   \item Range: #1 \item Default: #2 \item Units: #3\end{itemize}}
