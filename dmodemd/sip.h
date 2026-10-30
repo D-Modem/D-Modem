@@ -45,6 +45,17 @@ struct Config {
 				   call's, taken when an offer has it
 				   first, and offered first for the
 				   modem's AT+MS=CLEAR */
+	s16 srtp = 1;           /* $SIP_SRTP: SRTP (RFC 3711, its keys in
+				   SDP's a=crypto, RFC 4568): 0 ("no")
+				   never, an RTP/SAVP line declined; 1
+				   (the default) an RTP/SAVP offer
+				   answered in SRTP, ours plain RTP; 2
+				   ("require") ours RTP/SAVP, and plain
+				   RTP declined */
+	bool v152 = true;       /* $SIP_V152 (not "no"): V.152's voice
+				   band data, our G.711 formats marked
+				   a=gpmd:<pt> vbd=yes, and a VBD
+				   format the far end has taken first */
 	const char *dns = nullptr;      /* the DNS servers for SRV and
 					   NAPTR, addresses (with :port, 53
 					   if none) apart by commas or

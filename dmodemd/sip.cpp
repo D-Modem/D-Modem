@@ -501,14 +501,122 @@ s16 line_of(const Sdp &s, bool t38)
 	return -1;
 }
 
+/*
+ *    SRTP (RFC 3711) with its keys in the SDP (RFC 4568's a=crypto)
+ */
+
+/* a crypto suite libre's SRTP has: its name, and its master key and
+   salt's length */
+struct Suite {
+	const char *name;
+	enum srtp_suite id;
+	size_t key;
+};
+const Suite suites[] = {
+	{ "AES_CM_128_HMAC_SHA1_80", SRTP_AES_CM_128_HMAC_SHA1_80, 30 },
+	{ "AES_CM_128_HMAC_SHA1_32", SRTP_AES_CM_128_HMAC_SHA1_32, 30 },
+	{ "AES_256_CM_HMAC_SHA1_80", SRTP_AES_256_CM_HMAC_SHA1_80, 46 },
+	{ "AES_256_CM_HMAC_SHA1_32", SRTP_AES_256_CM_HMAC_SHA1_32, 46 },
+};
+/* our master keys: as long as the longest suite's */
+const size_t KEY_MAX = 46;
+
+/* the far end's a=crypto: its tag, suite and master key (and salt) */
+struct Crypto {
+	s32 tag = -1;                   /* -1: none */
+	const Suite *suite = nullptr;
+	std::vector<u8> key;
+};
+
+/* m is an SRTP line (RTP/SAVP) */
+bool is_savp(const SdpMedia &m)
+{
+	return lower(m.proto) == "rtp/savp";
+}
+
+/* the first a=crypto of line m with a suite we have and its key (the
+   first inline: key, its lifetime and MKI left out), tag -1 if none */
+Crypto crypto_of(const SdpMedia &m)
+{
+	for (const auto &a : m.attrs) {
+		if (!dcore::same_nocase(a.first, "crypto"))
+			continue;
+		/* <tag> <suite> inline:<key||salt>[|...][;...] [<params>] */
+		std::vector<std::string> w;
+		for (size_t i = 0; i < a.second.size();) {
+			size_t e = a.second.find(' ', i);
+			if (e == std::string::npos)
+				e = a.second.size();
+			if (e > i)
+				w.push_back(a.second.substr(i, e - i));
+			i = e + 1;
+		}
+		s32 tag;
+		if (w.size() < 3 || !dcore::parse_long(w[0], tag) || tag < 0 ||
+		    lower(w[2]).compare(0, 7, "inline:") != 0)
+			continue;
+		const Suite *suite = nullptr;
+		for (const Suite &x : suites)
+			if (dcore::same_nocase(w[1], x.name))
+				suite = &x;
+		if (!suite)
+			continue;
+		std::string b64 = w[2].substr(7);
+		b64 = b64.substr(0, b64.find_first_of("|;"));
+		u8 key[64];
+		size_t n = sizeof(key);
+		if (base64_decode(b64.data(), b64.size(), key, &n) ||
+		    n != suite->key)
+			continue;
+		Crypto c;
+		c.tag = tag;
+		c.suite = suite;
+		c.key.assign(key, key + n);
+		return c;
+	}
+	return Crypto();
+}
+
+/* line m's security is what we take: SRTP with a key we can use
+   (unless SRTP is off), or plain RTP (unless SRTP is required) */
+bool secure_ok(const SdpMedia &m)
+{
+	if (is_savp(m))
+		return cfg_.srtp > 0 && crypto_of(m).tag >= 0;
+	return cfg_.srtp < 2;
+}
+
+/* format f of audio line m is a voice band data one (V.152: a=gpmd:<f>
+   vbd=yes) */
+bool is_vbd(const SdpMedia &m, const std::string &f)
+{
+	for (const auto &a : m.attrs) {
+		if (!dcore::same_nocase(a.first, "gpmd"))
+			continue;
+		size_t sp = a.second.find(' ');
+		if (sp != std::string::npos && a.second.substr(0, sp) == f &&
+		    lower(a.second.substr(sp + 1)).find("vbd=yes") !=
+			    std::string::npos)
+			return true;
+	}
+	return false;
+}
+
 /* the first G.711 format of audio line m, or CLEARMODE (RFC 4040)
    unless $SIP_CLEARMODE is "no", its law into *law (1 mu-law, 2 A-law,
-   3 CLEARMODE); -1 if it has none */
+   3 CLEARMODE); with V.152 on, a G.711 format marked for voice band
+   data rather than the first (unless that is CLEARMODE); -1 if it has
+   none, or its security is not what we take (secure_ok()) */
 s16 g711_pt(const SdpMedia &m, s16 *law)
 {
+	s16 first = -1, first_law = 0;
+
+	if (!secure_ok(m))
+		return -1;
 	for (const std::string &f : m.fmts) {
 		s32 pt;
 		std::string enc;
+		s16 l;
 
 		if (!dcore::parse_long(f, pt) || pt < 0 || pt > 127)
 			continue;
@@ -523,17 +631,28 @@ s16 g711_pt(const SdpMedia &m, s16 *law)
 		if (enc.empty())
 			enc = pt == 0 ? "pcmu/8000" : pt == 8 ? "pcma/8000" : "";
 		if (enc.compare(0, 9, "pcmu/8000") == 0)
-			*law = 1;
+			l = 1;
 		else if (enc.compare(0, 9, "pcma/8000") == 0)
-			*law = 2;
+			l = 2;
 		else if (cfg_.clearmode &&
 			 enc.compare(0, 14, "clearmode/8000") == 0)
-			*law = 3;
+			l = 3;
 		else
 			continue;
-		return static_cast<s16>(pt);
+		if (first < 0) {
+			first = static_cast<s16>(pt);
+			first_law = l;
+			if (l == 3 || !cfg_.v152)
+				break;
+		}
+		if (l != 3 && is_vbd(m, f)) {
+			*law = l;
+			return static_cast<s16>(pt);
+		}
 	}
-	return -1;
+	if (first >= 0)
+		*law = first_law;
+	return first;
 }
 
 /* the telephone-event format of audio line m, -1 if it has none */
@@ -612,6 +731,9 @@ struct Line {
 	s16 law = 0;
 	s16 te = -1;                    /* audio: telephone-event's format
 					   agreed, -1 if none */
+	s32 crypto = -1;                /* audio: SRTP, the a=crypto tag
+					   agreed (-1: plain RTP) */
+	const Suite *suite = nullptr;   /* and its suite */
 	std::string dir = "sendrecv";
 	s32 version = 0;                /* image: T38FaxVersion */
 	std::string type, proto, fmts;  /* off: the far end's line */
@@ -626,6 +748,11 @@ Line audio_answer(const Sdp &s, const SdpMedia &m)
 	l.pt = g711_pt(m, &l.law);
 	/* (no events on a clear channel: their tones would be data) */
 	l.te = l.law == 3 ? -1 : te_pt(m);
+	if (is_savp(m)) {
+		Crypto c = crypto_of(m);
+		l.crypto = c.tag;
+		l.suite = c.suite;
+	}
 	l.dir = d == "sendonly" ? "recvonly" : d == "recvonly" ? "sendonly" :
 		d == "inactive" ? "inactive" : "sendrecv";
 	return l;
@@ -804,6 +931,65 @@ private:
 	}
 };
 
+/* a call's SRTP: our packets protected with our key, the far end's
+   checked and opened with theirs (libre's SRTP) */
+class Srtp {
+public:
+	/* for suite x with our key ours and theirs (x.key octets each);
+	   NULL if it cannot be (no AES in libre's build) */
+	static std::shared_ptr<Srtp> make(const Suite &x, const u8 *ours,
+					  const u8 *theirs)
+	{
+		std::shared_ptr<Srtp> p(new Srtp);
+		if (srtp_alloc(&p->tx_, x.id, ours, x.key, 0) ||
+		    srtp_alloc(&p->rx_, x.id, theirs, x.key, 0))
+			return nullptr;
+		return p;
+	}
+	/* the contexts freed */
+	~Srtp()
+	{
+		mem_deref(tx_);
+		mem_deref(rx_);
+	}
+	Srtp(const Srtp &) = delete;
+	Srtp &operator=(const Srtp &) = delete;
+
+	/* RTP packet p of n octets (room for TAG_MAX more) protected in
+	   place: its new length, 0 if it can't be */
+	size_t protect(u8 *p, size_t n) { return run(tx_, p, n, true); }
+	/* SRTP packet p of n octets checked and opened in place: the RTP
+	   packet's length, 0 if it is not good */
+	size_t open(u8 *p, size_t n) { return run(rx_, p, n, false); }
+
+	static const size_t TAG_MAX = 16;
+
+private:
+	Srtp() = default;
+	struct srtp *tx_ = nullptr, *rx_ = nullptr;
+
+	/* p (n octets) through ctx, encrypting or not: see protect() */
+	static size_t run(struct srtp *ctx, u8 *p, size_t n, bool encrypt)
+	{
+		struct mbuf *mb = mbuf_alloc(n + TAG_MAX);
+		size_t out = 0;
+
+		if (!mb)
+			return 0;
+		if (!mbuf_write_mem(mb, p, n)) {
+			mbuf_set_pos(mb, 0);
+			if (!(encrypt ? srtp_encrypt(ctx, mb) :
+			      srtp_decrypt(ctx, mb)) &&
+			    mb->end - mb->pos <= n + TAG_MAX) {
+				out = mb->end - mb->pos;
+				memcpy(p, mb->buf + mb->pos, out);
+			}
+		}
+		mem_deref(mb);
+		return out;
+	}
+};
+
 /* a call's audio: the modem's socket and the call's RTP, a thread on
    the clock between them.  Until active(), and while on T.38, no
    frames pass (the thread looks for the modem's hanging up); a failed
@@ -853,6 +1039,10 @@ public:
 			    "%" PRIu32 " restarts", serial_,
 			    jb_.packets, jb_.late, jb_.late_max / (RATE / 1000),
 			    jb_.restarts);
+			if (bad_)
+				say(3, "call %" PRIu32 ": %" PRIu32 " SRTP "
+				    "packets failed their check", serial_,
+				    bad_);
 		}
 		if (modem_ >= 0) {
 			say(4, "audio socket %d closed", modem_);
@@ -876,6 +1066,19 @@ public:
 		send_ = send;
 	}
 
+	/* the call's SRTP from now on (NULL: plain RTP) */
+	void keys(std::shared_ptr<Srtp> k)
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		srtp_ = std::move(k);
+	}
+	/* it has SRTP */
+	bool secure()
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		return srtp_ != nullptr;
+	}
+
 	/* frames pass (on) or not */
 	void active(bool on)
 	{
@@ -896,9 +1099,12 @@ private:
 	struct sockaddr_storage peer_ = {};
 	socklen_t peer_len_ = 0;
 	s16 pt_ = 0, law_ = 1, te_ = -1;
+	std::shared_ptr<Srtp> srtp_;
 
 	/* the thread's own */
+	std::shared_ptr<Srtp> crypt_;   /* srtp_, this tick's */
 	Jitter jb_;
+	u32 bad_ = 0;                   /* SRTP packets that failed */
 	u16 seq_;
 	u32 ts_, ssrc_;
 	bool marker_ = true;
@@ -972,6 +1178,14 @@ private:
 				return;
 			if (!on || n < 12 || (b[0] >> 6) != 2)
 				continue;
+			if (crypt_) {
+				n = static_cast<ssize_t>(crypt_->open(
+					b, static_cast<size_t>(n)));
+				if (n < 12) {
+					bad_++;
+					continue;
+				}
+			}
 			h = 12 + 4 * static_cast<size_t>(b[0] & 15);
 			if (b[0] & 0x10) {
 				if (static_cast<size_t>(n) < h + 4)
@@ -1032,19 +1246,29 @@ private:
 		seq_++;
 	}
 
+	/* packet p (n octets, room for Srtp::TAG_MAX more) to peer, in
+	   SRTP if the call has it */
+	void send_packet(u8 *p, size_t n, const struct sockaddr_storage &peer,
+			 socklen_t len)
+	{
+		if (crypt_ && !(n = crypt_->protect(p, n)))
+			return;
+		(void)sendto(rtp_, reinterpret_cast<const char *>(p), n,
+			     MSG_DONTWAIT,
+			     reinterpret_cast<const struct sockaddr *>(&peer),
+			     len);
+	}
+
 	/* a frame of the modem's (out) in RTP to peer */
 	void send_rtp(const s16 *out, s16 pt, s16 law,
 		      const struct sockaddr_storage &peer, socklen_t len)
 	{
-		u8 p[12 + SAMPLES];
+		u8 p[12 + SAMPLES + Srtp::TAG_MAX];
 
 		header(p, pt, marker_, ts_);
 		for (u16 i = 0; i < SAMPLES; i++)
 			p[12 + i] = dsp::g711::encode(law >= 2, out[i]);
-		(void)sendto(rtp_, reinterpret_cast<const char *>(p), sizeof(p),
-			     MSG_DONTWAIT,
-			     reinterpret_cast<const struct sockaddr *>(&peer),
-			     len);
+		send_packet(p, 12 + SAMPLES, peer, len);
 		marker_ = false;
 	}
 
@@ -1054,7 +1278,7 @@ private:
 	void send_flash(s16 te, const struct sockaddr_storage &peer,
 			socklen_t len)
 	{
-		u8 p[12 + 4];
+		u8 p[12 + 4 + Srtp::TAG_MAX];
 		bool end = ev_ends_ > 0;
 
 		header(p, te, ev_first_, ev_ts_);
@@ -1063,10 +1287,7 @@ private:
 		p[13] = end ? 0x80 : 0;
 		p[14] = static_cast<u8>(ev_dur_ >> 8);
 		p[15] = static_cast<u8>(ev_dur_);
-		(void)sendto(rtp_, reinterpret_cast<const char *>(p), sizeof(p),
-			     MSG_DONTWAIT,
-			     reinterpret_cast<const struct sockaddr *>(&peer),
-			     len);
+		send_packet(p, 12 + 4, peer, len);
 	}
 
 	/* this frame's part of a hook flash: one asked for started (if
@@ -1153,6 +1374,7 @@ private:
 				pt = pt_;
 				law = law_;
 				te = te_;
+				crypt_ = srtp_;
 			}
 			drain(on, pt, law, te);
 			if (!on) {
@@ -1233,13 +1455,19 @@ struct Call {
 	int udptl = -1, udptl_family = AF_INET;
 	s32 udptl_port = 0;
 
-	/* call serial s: no timers running, a new SDP session id */
+	/* our SRTP master key (and salt), the call's: as much of it as a
+	   suite takes */
+	u8 key[KEY_MAX];
+
+	/* call serial s: no timers running, a new SDP session id, a new
+	   SRTP key */
 	explicit Call(u32 s) : serial(s)
 	{
 		tmr_init(&ring_tmr);
 		tmr_init(&poll_tmr);
 		tmr_init(&tell_tmr);
 		sdp_id = std::to_string(rand_u32());
+		rand_bytes(key, sizeof(key));
 	}
 	/* its timers cancelled */
 	~Call()
@@ -1251,6 +1479,18 @@ struct Call {
 	Call(const Call &) = delete;
 	Call &operator=(const Call &) = delete;
 
+	/* our a=crypto line of tag for suite x, with our key */
+	std::string crypto_line(s32 tag, const Suite &x) const
+	{
+		char b64[96];
+		size_t n = sizeof(b64) - 1;
+		if (base64_encode(key, x.key, b64, &n))
+			n = 0;
+		b64[n] = 0;
+		return "a=crypto:" + std::to_string(tag) + " " + x.name +
+			" inline:" + b64 + "\r\n";
+	}
+
 	/* our SDP of lines: its version a new one if its media lines are */
 	std::string sdp(const std::vector<Line> &v)
 	{
@@ -1259,9 +1499,13 @@ struct Call {
 
 		for (const Line &l : v) {
 			switch (l.kind) {
-			case Line::AUDIO:
+			case Line::AUDIO: {
+				/* our offer SRTP if it is required, our answer
+				   if the far end's offer was */
+				bool srtp = l.pt < 0 ? cfg_.srtp == 2 :
+					l.crypto >= 0;
 				m += "m=audio " + std::to_string(rtp_port) +
-					" RTP/AVP ";
+					(srtp ? " RTP/SAVP " : " RTP/AVP ");
 				if (l.pt < 0) {
 					std::string te = std::to_string(TE_PT);
 					std::string cl = std::to_string(CLEAR_PT);
@@ -1276,6 +1520,13 @@ struct Call {
 						"a=rtpmap:" + te +
 						" telephone-event/8000\r\n"
 						"a=fmtp:" + te + " 0-16\r\n";
+					if (cfg_.v152)
+						m += "a=gpmd:0 vbd=yes\r\n"
+							"a=gpmd:8 vbd=yes\r\n";
+					if (srtp)
+						m += crypto_line(1, suites[0]) +
+							crypto_line(2,
+								    suites[1]);
 				} else {
 					std::string pt = std::to_string(l.pt);
 					std::string te = std::to_string(l.te);
@@ -1288,9 +1539,16 @@ struct Call {
 						m += "a=rtpmap:" + te +
 							" telephone-event/8000\r\n"
 							"a=fmtp:" + te + " 0-16\r\n";
+					if (cfg_.v152 && l.law != 3)
+						m += "a=gpmd:" + pt +
+							" vbd=yes\r\n";
+					if (srtp && l.suite)
+						m += crypto_line(l.crypto,
+								 *l.suite);
 				}
 				m += "a=ptime:20\r\na=" + l.dir + "\r\n";
 				break;
+			}
 			case Line::IMAGE:
 				m += "m=image " + std::to_string(udptl_port) +
 					" udptl t38\r\n" + t38_attrs(l.version);
@@ -1456,6 +1714,22 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 		return false;
 	}
 	s16 te = law == 3 ? -1 : te_pt(m);
+	/* SRTP: ours in the suite agreed with our key, theirs with
+	   theirs */
+	std::shared_ptr<Srtp> srtp;
+	if (is_savp(m)) {
+		Crypto k = crypto_of(m);
+		srtp = Srtp::make(*k.suite, c->key, k.key.data());
+		if (!srtp) {
+			say(1, "call %" PRIu32 ": SRTP (%s) cannot start",
+			    c->serial, k.suite->name);
+			return false;
+		}
+		if (!c->media->secure())
+			say(3, "call %" PRIu32 ": SRTP, %s", c->serial,
+			    k.suite->name);
+	}
+	c->media->keys(srtp);
 	c->media->remote(a, len, pt, law, te,
 			 d != "sendonly" && d != "inactive" &&
 			 m.addr != "0.0.0.0");
@@ -1611,6 +1885,11 @@ int on_answer(const struct sip_msg *msg, void *arg)
 	Line l = c->offered[i];
 	l.pt = g711_pt(s.media[i], &l.law);
 	l.te = l.law == 3 ? -1 : te_pt(s.media[i]);
+	if (is_savp(s.media[i])) {
+		Crypto k = crypto_of(s.media[i]);
+		l.crypto = k.tag;
+		l.suite = k.suite;
+	}
 	if (l.pt < 0 || !take_audio(c, s, s.media[i])) {
 		say(1, "call %" PRIu32 ": an answer without G.711", c->serial);
 		return c->confirmed ? 0 : EPROTO;
@@ -2198,6 +2477,8 @@ bool config_from_env(Config &cfg, bool listen)
 	const char *rec_base = getenv("DMODEM_REC");
 	const char *t38 = getenv("SIP_T38");
 	const char *clearmode = getenv("SIP_CLEARMODE");
+	const char *srtp = getenv("SIP_SRTP");
+	const char *v152 = getenv("SIP_V152");
 	std::string s = login ? login : "";
 	size_t at = s.rfind('@');
 	size_t colon = s.find(':');
@@ -2230,6 +2511,21 @@ bool config_from_env(Config &cfg, bool listen)
 		  std::string_view(clearmode) == "0" ||
 		  dcore::same_nocase(clearmode, "off") ||
 		  dcore::same_nocase(clearmode, "false"));
+	cfg.srtp = 1;
+	if (srtp && (dcore::same_nocase(srtp, "no") ||
+		     std::string_view(srtp) == "0" ||
+		     dcore::same_nocase(srtp, "off") ||
+		     dcore::same_nocase(srtp, "false")))
+		cfg.srtp = 0;
+	else if (srtp && (dcore::same_nocase(srtp, "require") ||
+			  dcore::same_nocase(srtp, "required") ||
+			  std::string_view(srtp) == "2"))
+		cfg.srtp = 2;
+	cfg.v152 = !v152 ||
+		!(dcore::same_nocase(v152, "no") ||
+		  std::string_view(v152) == "0" ||
+		  dcore::same_nocase(v152, "off") ||
+		  dcore::same_nocase(v152, "false"));
 	return true;
 }
 
@@ -2253,6 +2549,16 @@ int start(const Config &cfg)
 				4;
 	if (cfg.record)
 		rec.open(cfg.record, ".rx", ".tx");
+	/* libre built without AES (its stub: Mbed TLS off Apple) has no
+	   SRTP: then RTP/SAVP is neither offered nor taken */
+	if (cfg_.srtp) {
+		u8 zero[KEY_MAX] = {};
+		if (!Srtp::make(suites[0], zero, zero)) {
+			say(cfg_.srtp == 2 ? 1 : 3,
+			    "SRTP: not in this build, so off");
+			cfg_.srtp = 0;
+		}
+	}
 
 	if (dmd::socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, ctl) < 0) {
 		say(1, "socketpair: %s", strerror(errno));

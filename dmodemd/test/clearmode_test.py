@@ -18,15 +18,29 @@
 # CLEARMODE first in the offer; it answers (S0=1) in CLEARMODE, with no
 # telephone-event, CONNECT 64000, and a line each way.
 #
+# Both ways, dmodemd's offer must mark its G.711 formats as voice band
+# data (V.152's a=gpmd:<pt> vbd=yes).
+#
+# --srtp: the same calls in SRTP (RTP/SAVP, RFC 4568's a=crypto,
+# AES_CM_128_HMAC_SHA1_80; srtp.py): out, dmodemd with SIP_SRTP=require
+# must offer RTP/SAVP; in, it answers our RTP/SAVP offer as it is
+# (SIP_SRTP's default).
+#
 # DMODEMD_DEBUG=<level>: dmodemd's -d (its log in $TMPDIR/clearmode.log)
-import os, random, re, select, shutil, socket, subprocess, sys, tempfile
-import threading
+import base64, os, random, re, select, shutil, socket, subprocess, sys
+import tempfile, threading
 import time, tty
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import srtp
 
 dmodemd = sys.argv[1]
+SRTP = "--srtp" in sys.argv[2:]
+SUITE = "AES_CM_128_HMAC_SHA1_80"
+OUR_KEY = os.urandom(30)          # our master key || salt
 SIP_PORT = 15090 + random.randrange(500) * 2      # ours
 DM_PORT = SIP_PORT + 1                            # dmodemd's
-log = open(os.path.join(tempfile.gettempdir(), "clearmode.log"), "wb")
+log = open(os.path.join(tempfile.gettempdir(),
+            "clearmode%s.log" % ("-srtp" if SRTP else "")), "wb")
 FLAG, ONES = 0x7E, 0xFF
 
 # the reason, and the end of the log (SIP and dmodemd's output) for CI
@@ -35,18 +49,25 @@ def fail(why):
     try:
         log.flush()
         with open(log.name, "rb") as f:
-            tail = f.read()[-6000:]
-        sys.stdout.write(tail.decode("latin-1"))
+            all = f.read()
+        # (libre built with no AES has no SRTP: skipped)
+        if SRTP and b"SRTP: not in this build" in all:
+            print("SKIP: no SRTP in this build", flush=True)
+            sys.exit(77)
+        sys.stdout.write(all[-6000:].decode("latin-1"))
     except OSError:
         pass
     sys.stdout.flush()
     sys.exit(1)
 
 # the far end of the clear channel on an RTP socket, its own thread: the
-# start, then characters to send (send()) and those received (got)
+# start, then characters to send (send()) and those received (got); in
+# SRTP with key (ours) and theirs, the far end's master keys
 class ClearEnd:
-    def __init__(self, rtp, peer, pt):
+    def __init__(self, rtp, peer, pt, key=None, theirs=None):
         self.rtp, self.peer, self.pt = rtp, peer, pt
+        self.tx = srtp.Srtp(key) if key else None
+        self.rx = srtp.Srtp(theirs) if theirs else None
         self.tx_bits = []           # characters' bits waiting
         self.got = b""
         self.heard = self.open = False
@@ -106,7 +127,9 @@ class ClearEnd:
             payload = bytes(self.out_octet() for _ in range(160))
             hdr = bytes([0x80, self.pt, seq >> 8 & 255, seq & 255]) + \
                 ts.to_bytes(4, "big") + ssrc.to_bytes(4, "big")
-            self.rtp.sendto(hdr + payload, self.peer)
+            pkt = hdr + payload
+            self.rtp.sendto(self.tx.protect(pkt) if self.tx else pkt,
+                            self.peer)
             seq, ts = (seq + 1) & 0xFFFF, ts + 160
             nxt += 0.02
             while True:
@@ -115,6 +138,10 @@ class ClearEnd:
                 if not r:
                     break
                 d, _ = self.rtp.recvfrom(2048)
+                if self.rx:
+                    d = self.rx.unprotect(d)
+                    if d is None:
+                        fail("an SRTP packet failed its tag")
                 if len(d) > 12 and d[1] & 0x7F == self.pt:
                     for o in d[12:]:
                         self.in_octet(o)
@@ -160,14 +187,18 @@ def reply(req, code, text, a, body="", tag="far1"):
         m += "Content-Type: application/sdp\r\n"
     m += "Content-Length: %d\r\n\r\n%s" % (len(body), body)
     sip_send(m, a)
-def sdp(fmts, rtpmaps):
+# (in SRTP, with our key under crypto tag)
+def sdp(fmts, rtpmaps, tag=1):
     return ("v=0\r\no=far 1 1 IN IP4 127.0.0.1\r\ns=far\r\nc=IN IP4 127.0.0.1\r\n"
-            "t=0 0\r\nm=audio %d RTP/AVP %s\r\n" % (RTP_PORT, fmts) +
-            "".join("a=rtpmap:%s\r\n" % r for r in rtpmaps) + "a=ptime:20\r\n")
+            "t=0 0\r\nm=audio %d RTP/%s %s\r\n" % (
+                RTP_PORT, "SAVP" if SRTP else "AVP", fmts) +
+            "".join("a=rtpmap:%s\r\n" % r for r in rtpmaps) + "a=ptime:20\r\n" +
+            ("a=crypto:%d %s inline:%s\r\n" % (
+                tag, SUITE, base64.b64encode(OUR_KEY).decode()) if SRTP else ""))
 # the audio line of an SDP body: its address, port and formats, the
 # rtpmaps
 def audio_of(body):
-    m = re.search(r"m=audio (\d+) RTP/AVP ([\d ]+)", body)
+    m = re.search(r"m=audio (\d+) RTP/S?AVP ([\d ]+)", body)
     c = re.search(r"c=IN IP4 (\S+)", body)
     return (c.group(1), int(m.group(1))), m.group(2).split(), \
         dict(re.findall(r"a=rtpmap:(\d+) (\S+)", body))
@@ -184,6 +215,9 @@ def as_nobody():
 def start_dmodemd(listen):
     env = dict(os.environ, SIP_LOGIN="dm:secret@127.0.0.1:%d" % SIP_PORT,
                SIP_PORT=str(DM_PORT))
+    env.pop("SIP_SRTP", None)
+    if SRTP and not listen:
+        env["SIP_SRTP"] = "require"
     # (its lines as they come, where stdbuf is: not busybox's)
     pre = ["stdbuf", "-oL", "-eL"] if shutil.which("stdbuf") else []
     p = subprocess.Popen(pre + [dmodemd,
@@ -230,6 +264,24 @@ class Dte:
                 time.sleep(0.02)
         return None
 
+# an SDP body's SRTP: its proto must be RTP/SAVP (RTP/AVP without
+# --srtp), and the far end's master key under crypto tag (our suite)
+def their_key(body, tag):
+    proto = re.search(r"m=audio \d+ (\S+)", body).group(1)
+    if proto != ("RTP/SAVP" if SRTP else "RTP/AVP"):
+        fail("the audio line is %s: %r" % (proto, body))
+    if not SRTP:
+        if "a=crypto" in body:
+            fail("a=crypto in RTP/AVP: %r" % body)
+        return None
+    m = re.search(r"a=crypto:%d (\S+) inline:([A-Za-z0-9+/=]+)" % tag, body)
+    if not m or m.group(1) != SUITE:
+        fail("no a=crypto:%d %s: %r" % (tag, SUITE, body))
+    key = base64.b64decode(m.group(2))
+    if len(key) != 30:
+        fail("a %d byte master key" % len(key))
+    return key
+
 def data_both_ways(dte, far):
     m = dte.expect(rb"CONNECT (\d+)", 5)
     if not m or m.group(1) != b"64000":
@@ -266,6 +318,10 @@ def outgoing():
                  for f in fmts]
         if names[:3] != ["CLEARMODE/8000", "PCMA/8000", "PCMU/8000"]:
             fail("the offer's formats: %r" % names)
+        for pt in ("0", "8"):
+            if not re.search(r"a=gpmd:%s vbd=yes" % pt, body):
+                fail("no a=gpmd:%s vbd=yes: %r" % (pt, body))
+        theirs = their_key(body, 1)
         dm_rtp, _, _ = audio_of(body)
         reply(req, 100, "Trying", a)
         reply(req, 200, "OK", a, sdp(fmts[0], [fmts[0] + " CLEARMODE/8000"]))
@@ -275,10 +331,12 @@ def outgoing():
                 fail("no ACK")
             if r[0].startswith("ACK"):
                 break
-        far = ClearEnd(rtp, dm_rtp, int(fmts[0]))
+        far = ClearEnd(rtp, dm_rtp, int(fmts[0]),
+                       OUR_KEY if SRTP else None, theirs)
         data_both_ways(dte, far)
         far.stop = True
-        print("out: CONNECT 64000 in CLEARMODE, data both ways", flush=True)
+        print("out: CONNECT 64000 in CLEARMODE%s, data both ways" % (
+            " over SRTP" if SRTP else ""), flush=True)
     finally:
         p.kill()
         p.wait()
@@ -323,16 +381,18 @@ def incoming():
             fail("the answer is not CLEARMODE: %r" % ok[2])
         if any("telephone-event" in v for v in maps.values()):
             fail("telephone-event on a clear channel: %r" % ok[2])
+        theirs = their_key(ok[2], 1)
         to_tagged = ok[1]["to"]
         sip_send("ACK sip:dm@127.0.0.1:%d SIP/2.0\r\n%s\r\nMax-Forwards: 70\r\n"
                  "From: %s\r\nTo: %s\r\nCall-ID: %s\r\nCSeq: 1 ACK\r\n"
                  "Content-Length: 0\r\n\r\n" % (
                      DM_PORT, via.replace("branch=z9hG4bK", "branch=z9hG4bKa"),
                      frm, to_tagged, call_id), dm)
-        far = ClearEnd(rtp, dm_rtp, 97)
+        far = ClearEnd(rtp, dm_rtp, 97, OUR_KEY if SRTP else None, theirs)
         data_both_ways(dte, far)
         far.stop = True
-        print("in: answered in CLEARMODE, CONNECT 64000, data both ways", flush=True)
+        print("in: answered in CLEARMODE%s, CONNECT 64000, data both ways" % (
+            " over SRTP" if SRTP else ""), flush=True)
     finally:
         p.kill()
         p.wait()

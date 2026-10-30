@@ -100,6 +100,23 @@ over to T.38 when the other end asks for it, or a second after dmodemd
 answered one: the same commands and results for the software, the call's
 UDPTL instead of its audio.  `SIP_T38=no` keeps faxes on the audio.
 
+### Media: V.152 and SRTP
+dmodemd marks the G.711 formats in its offers as voice band data
+(V.152, `a=gpmd:0 vbd=yes`), so a gateway that honours it turns off
+its echo canceller, comfort noise and silence suppression for the call;
+an offer with a format so marked gets that format in the answer.
+`SIP_V152=no` leaves the marks out.
+
+A call whose offer is SRTP (`RTP/SAVP`, RFC 3711, its keys in
+RFC 4568's `a=crypto`: AES_CM_128 and AES_256_CM, with 80 or 32 bit
+tags) is answered in SRTP; dmodemd's own offers are plain RTP.
+`SIP_SRTP=require` offers SRTP and declines a plain RTP line;
+`SIP_SRTP=no` declines SRTP. The keys go in the SDP, and dmodemd's SIP
+is plain UDP: SRTP keeps the media from those who see only the RTP, not
+from those who see the SIP. SRTP needs libre's
+AES (OpenSSL, or Apple's on macOS): builds without it (Windows,
+Android) have it off.
+
 ### Voice
 In voice mode (`AT+FCLASS=8`), `AT+VLS=1` answers a ringing call,
 `ATD` dials one (OK when the far end answers with its 200 OK; BUSY on
