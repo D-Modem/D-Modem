@@ -16,6 +16,9 @@ class Config
 	const MODES = ['tcp', 'unix', 'exec'];
 	/* the network's G.711 law (auto: the channel's) */
 	const LAWS = ['auto', 'ulaw', 'alaw'];
+	/* the clear 64 kbit/s channel (an ISDN data call): for a call with
+	   a digital bearer or in CLEARMODE (auto), every call, or none */
+	const CLEARS = ['auto', 'yes', 'no'];
 	/* what answers the calls: app_dmodem's DModem() in Asterisk, or
 	   dmodem-ari beside it through Stasis() */
 	const ENGINES = ['app', 'ari'];
@@ -66,6 +69,7 @@ class Config
 			'command' => '',
 			'header' => false,
 			'law' => 'auto',
+			'clear' => 'auto',
 			'init' => '',
 			'answer' => '',
 			'timeout' => 60,
@@ -162,6 +166,8 @@ class Config
 		}
 		if (!in_array($p['law'], self::LAWS, true))
 			$e['law'] = _('auto, ulaw or alaw');
+		if (!in_array($p['clear'], self::CLEARS, true))
+			$e['clear'] = _('auto, yes or no');
 		foreach (['init', 'answer'] as $k)
 			if (self::breaksLine($p[$k]) || strlen($p[$k]) > 200)
 				$e[$k] = _('One line of AT commands, 200 characters at most');
@@ -279,6 +285,7 @@ class Config
 			if ($p['mode'] !== 'exec')
 				$o[] = self::line('header', (bool)$p['header']);
 			$o[] = self::line('law', $p['law']);
+			$o[] = self::line('clear', $p['clear']);
 			if ($p['init'] !== '')
 				$o[] = self::line('init', $p['init']);
 			if ($p['answer'] !== '')
