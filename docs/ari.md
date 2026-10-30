@@ -196,7 +196,9 @@ How the faxes take it, as the module's do ([asterisk.md](asterisk.md#t38);
 
 - `receivefax`, and a modem profile that hears a fax machine, ask for
   T.38 (our re-INVITE, as `ReceiveFAX` does) and wait for the answer, 6 s
-  at most, with silence on the line; refused, the fax goes on the audio.
+  at most (by the clock, or of the line's audio if that comes faster),
+  with silence on the line; refused, or no answer, the fax goes on the
+  audio.
 - `sendfax` takes T.38 when the other end asks for it (as `SendFAX` does
   while it sends CNG), any time before its first page.
 - A modem profile takes a T.38 offer before the modems connect as a fax
