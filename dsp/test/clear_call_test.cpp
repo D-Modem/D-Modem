@@ -26,6 +26,7 @@
 #include <deque>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -374,7 +375,7 @@ unsigned fcs16(const unsigned char *p, size_t n, unsigned fcs = 0xffff)
 }
 
 /* the good HDLC frames (without FCS) in a channel's octets, each
-   octet's first bit its least significant, decoded independently of
+   octet's first bit its most significant, decoded independently of
    the link layer: flags, zero deletion, aborts, the FCS checked */
 std::vector<std::vector<unsigned char>> hdlc_frames(
 	const std::vector<unsigned char> &line)
@@ -382,7 +383,7 @@ std::vector<std::vector<unsigned char>> hdlc_frames(
 	std::vector<unsigned char> bits;
 	for (unsigned char o : line)
 		for (int k = 0; k < 8; k++)
-			bits.push_back(o >> k & 1);
+			bits.push_back(o >> (7 - k) & 1);
 	/* the 8 bits at i are a flag (0, six 1s, 0); the 7 at i are 1s */
 	auto flag = [&](size_t i) {
 		if (i + 8 > bits.size() || bits[i] || bits[i + 7])
@@ -607,4 +608,335 @@ TEST(Clear, PppFrames)
 	/* on the line: just the frames, each once, without our FCS */
 	EXPECT_EQ(hdlc_frames(l.tap_ca), to_a);
 	EXPECT_EQ(hdlc_frames(l.tap_ac), to_c);
+}
+
+namespace {
+
+/* +CBST's <speed> codes and their user rates (27.007 6.7) */
+const std::pair<int, unsigned> CBST_RATES[] = {
+	{ 65, 300 }, { 66, 1200 }, { 68, 2400 }, { 70, 4800 },
+	{ 71, 9600 }, { 75, 14400 }, { 79, 19200 }, { 80, 28800 },
+	{ 81, 38400 }, { 83, 56000 },
+};
+
+/* V.110 on a channel's octets, decoded independently of libdmodem: the
+   octets' first k bits (the intermediate rate's, the rest of each
+   octet ones) as 80 bit frames after the first alignment pattern; how
+   many frames, how many had a bad pattern, and the E1-E3 and S and X
+   of the last */
+struct V110Seen {
+	int frames = 0, bad = 0, rest_not_ones = 0;
+	unsigned e123 = 0, s = 1, x = 1;
+};
+
+/* (see V110Seen) line's frames with k bits an octet */
+V110Seen v110_seen(const std::vector<unsigned char> &line, int k)
+{
+	V110Seen v;
+	std::vector<unsigned char> bits;
+	for (unsigned char o : line) {
+		for (int i = 0; i < k; i++)
+			bits.push_back(o >> (7 - i) & 1);
+		if (k < 8 && (o & (0xff >> k)) != (0xff >> k))
+			v.rest_not_ones++;
+	}
+	auto pattern = [&](size_t at) {
+		for (size_t i = 0; i < 80; i++) {
+			unsigned b = bits[at + i];
+			if (i < 8 ? b != 0 : (i % 8 == 0 && b != 1))
+				return false;
+		}
+		return true;
+	};
+	size_t at = 0;
+	while (at + 80 <= bits.size() && !pattern(at))
+		at++;
+	for (; at + 80 <= bits.size(); at += 80) {
+		if (!pattern(at)) {
+			if (getenv("V110_DUMP") && v.bad < 3) {
+				fprintf(stderr, "bad at bit %zu of %zu:", at,
+					bits.size());
+				for (size_t i = 0; i < 80; i++)
+					fprintf(stderr, "%s%u", i % 8 ? "" : " ",
+						bits[at + i]);
+				fprintf(stderr, "\n");
+			}
+			v.bad++;
+			continue;
+		}
+		v.frames++;
+		const unsigned char *f = bits.data() + at;
+		v.e123 = f[41] | f[42] << 1 | f[43] << 2;
+		v.s = f[15] | f[31] | f[39] | f[55] | f[71] | f[79];
+		v.x = f[23] | f[63];
+	}
+	return v;
+}
+
+/* a channel's octets from the pump's first on (the silence before the
+   call left out) */
+std::vector<unsigned char> from_start(const std::vector<unsigned char> &t)
+{
+	auto at = std::find_if(t.begin(), t.end(),
+			       [](unsigned char o) { return o != 0xD5; });
+	return std::vector<unsigned char>(at, t.end());
+}
+
+/* an init line with +CBST=speed[,name] */
+std::string cbst_init(const char *base, int speed, int name = 0)
+{
+	return std::string(base) + "+MS=CLEAR;+CBST=" + std::to_string(speed) +
+		"," + std::to_string(name) + "\r";
+}
+
+} // namespace
+
+/* V.110 asynchronous at each of +CBST's rates, both ends asking for it,
+   no V.42 (\N0): CONNECT at the user rate both ways, the DTEs'
+   characters through, at that rate */
+TEST(Clear, V110EachRate)
+{
+	debug();
+	for (auto [speed, rate] : CBST_RATES) {
+		SCOPED_TRACE(rate);
+		Channel l;
+		End c("caller", cbst_init("ATE0X3\\N0\\V1", speed).c_str()),
+			a("answerer", cbst_init("ATE0\\N0", speed).c_str());
+		ASSERT_TRUE(call(l, c, a, 2)) << c.text << a.text;
+		std::string want = "CONNECT " + std::to_string(rate) + "/V.110";
+		EXPECT_NE(c.text.find(want), std::string::npos) << c.text;
+		EXPECT_EQ(c.rates(), std::make_pair(rate, rate));
+		EXPECT_EQ(a.rates(), std::make_pair(rate, rate));
+		/* (the far end's link may still be starting) */
+		run(l, c, a, 0.1, [] { return false; });
+		size_t n = std::max<size_t>(rate / 40, 8);
+		EXPECT_TRUE(exchange(l, c, a, n, 3)) << c.data.size() << " "
+						     << a.data.size();
+	}
+}
+
+/* V.110 on the line as the standard has it: at 9600 bit/s the
+   intermediate rate is 16 kbit/s, the first two bits of each octet,
+   the rest ones; every frame's alignment pattern good; E1-E3 0, 1, 1
+   (N x 4800); S and X ON once in sync */
+TEST(Clear, V110Frames)
+{
+	debug();
+	Channel l;
+	End c("caller", cbst_init("ATE0X3\\N0", 71).c_str()),
+		a("answerer", cbst_init("ATE0\\N0", 71).c_str());
+	ASSERT_TRUE(call(l, c, a, 2)) << c.text << a.text;
+	exchange(l, c, a, 500, 3);
+	V110Seen v = v110_seen(from_start(l.tap_ca), 2);
+	EXPECT_EQ(v.rest_not_ones, 0);
+	EXPECT_EQ(v.bad, 0);
+	EXPECT_GT(v.frames, 100);
+	EXPECT_EQ(v.e123, 0x6u);
+	EXPECT_EQ(v.s, 0u);
+	EXPECT_EQ(v.x, 0u);
+	/* 1200 bit/s: 8 kbit/s, E1-E3 0, 1, 0; 14400: 32 kbit/s, 1, 0, 1 */
+	for (auto [speed, k, e] : { std::tuple{ 66, 1, 0x2u },
+				    std::tuple{ 75, 4, 0x5u },
+				    std::tuple{ 81, 8, 0x6u } }) {
+		Channel m;
+		End c2("caller", cbst_init("ATE0X3\\N0", speed).c_str()),
+			a2("answerer", cbst_init("ATE0\\N0", speed).c_str());
+		ASSERT_TRUE(call(m, c2, a2, 2)) << c2.text << a2.text;
+		run(m, c2, a2, 0.3, [] { return false; });
+		V110Seen w = v110_seen(from_start(m.tap_ca), k);
+		EXPECT_EQ(w.bad, 0) << speed;
+		EXPECT_EQ(w.rest_not_ones, 0) << speed;
+		EXPECT_EQ(w.e123, e) << speed;
+	}
+}
+
+/* an answerer with no V.110 rate of its own (+CBST=0, the default)
+   finds the caller's from its frames: CONNECT at that rate */
+TEST(Clear, V110FoundByAnswerer)
+{
+	debug();
+	for (auto [speed, rate] : CBST_RATES) {
+		if (rate == 300 || rate == 56000)
+			continue;       /* (600's frames; no frames) */
+		SCOPED_TRACE(rate);
+		Channel l;
+		End c("caller", cbst_init("ATE0X3\\N0", speed).c_str()),
+			a("answerer", "ATE0X3\\N0+MS=CLEAR\r");
+		ASSERT_TRUE(call(l, c, a, 2)) << c.text << a.text;
+		EXPECT_NE(a.text.find("CONNECT " + std::to_string(rate)),
+			  std::string::npos) << a.text;
+		run(l, c, a, 0.1, [] { return false; });
+		EXPECT_TRUE(exchange(l, c, a, rate / 40, 3));
+	}
+}
+
+/* V.42 over V.110 (the default \N): LAPM's detection phase and XID on
+   the asynchronous bits, CONNECT 19200, data through */
+TEST(Clear, V110WithV42)
+{
+	debug();
+	Channel l;
+	End c("caller", cbst_init("ATE0X3\\V1", 79).c_str()),
+		a("answerer", cbst_init("ATE0", 79).c_str());
+	ASSERT_TRUE(call(l, c, a, 5)) << c.text << a.text;
+	EXPECT_NE(c.text.find("CONNECT 19200/LAPM"), std::string::npos)
+		<< c.text;
+	EXPECT_TRUE(exchange(l, c, a, 5000, 10));
+}
+
+/* V.110 synchronous (+CBST=71,1): +B2's X.75 in HDLC at 9600 bit/s */
+TEST(Clear, V110SyncX75)
+{
+	debug();
+	Channel l;
+	End c("caller", cbst_init("ATE0X3\\V1", 71, 1).c_str()),
+		a("answerer", cbst_init("ATE0", 71, 1).c_str());
+	ASSERT_TRUE(call(l, c, a, 5)) << c.text << a.text;
+	EXPECT_NE(c.text.find("CONNECT 9600/X.75"), std::string::npos)
+		<< c.text;
+	EXPECT_TRUE(exchange(l, c, a, 3000, 10));
+}
+
+/* a far end that is no D-Modem, its HDLC flags and then its frames with
+   no ones between (an X.75 TA's SABM): the answerer takes it from the
+   frames on */
+TEST(Clear, HdlcPeerWithoutOnes)
+{
+	debug();
+	Channel l;
+	End a("answerer", "ATE0\\V1+MS=CLEAR\r");
+	ASSERT_EQ(dmodem_answer(a.m), 0);
+	/* the TA's line: flags (more than the answer's delay takes), then
+	   its SABM (01 3F) again and again,
+	   each between flags, bit for bit as HDLC sends it */
+	std::vector<unsigned char> bits;
+	auto octet = [&](unsigned v) {
+		for (int k = 0; k < 8; k++)
+			bits.push_back(v >> k & 1);
+	};
+	auto frame = [&](std::vector<unsigned char> f) {
+		unsigned fcs = fcs16(f.data(), f.size()) ^ 0xffff;
+		f.push_back(static_cast<unsigned char>(fcs));
+		f.push_back(static_cast<unsigned char>(fcs >> 8));
+		int ones = 0;
+		for (unsigned char o : f)
+			for (int k = 0; k < 8; k++) {
+				unsigned b = o >> k & 1;
+				bits.push_back(static_cast<unsigned char>(b));
+				ones = b ? ones + 1 : 0;
+				if (ones == 5) {
+					bits.push_back(0);
+					ones = 0;
+				}
+			}
+		octet(0x7e);
+	};
+	for (int i = 0; i < 400; i++)
+		octet(0x7e);
+	for (int i = 0; i < 40; i++) {
+		frame({ 0x01, 0x3f });
+		for (int j = 0; j < 200; j++)
+			octet(0x7e);
+	}
+	std::vector<unsigned char> ta;
+	for (size_t i = 0; i + 8 <= bits.size(); i += 8) {
+		unsigned v = 0;
+		for (int k = 0; k < 8; k++)
+			v |= static_cast<unsigned>(bits[i + k]) << (7 - k);
+		ta.push_back(static_cast<unsigned char>(v));
+	}
+	std::vector<unsigned char> out(160), in(160);
+	std::vector<unsigned char> from_a;
+	for (size_t at = 0; at + 160 <= ta.size(); at += 160) {
+		std::copy(ta.begin() + static_cast<long>(at),
+			  ta.begin() + static_cast<long>(at + 160), in.begin());
+		dmodem_process_g711(a.m, in.data(), out.data(), 160);
+		from_a.insert(from_a.end(), out.begin(), out.end());
+		a.take();
+	}
+	EXPECT_NE(a.text.find("CONNECT 64000"), std::string::npos) << a.text;
+	/* its UA (03 73) to the SABM */
+	bool ua = false;
+	for (const auto &f : hdlc_frames(from_a))
+		ua = ua || (f.size() == 2 && f[0] == 0x01 && f[1] == 0x73);
+	EXPECT_TRUE(ua);
+}
+
+/* V.120 (+B2=9): Q.921's frames for logical link 256 (address 08 01
+   for the caller's commands, 0A 01 for the answerer's), set up with
+   SABME, I frames in extended mode (two control octets) whose
+   information starts with the terminal adaption header 0x83; the data
+   through byte for byte, CONNECT 64000/V.120; DISC on hangup */
+TEST(Clear, V120)
+{
+	debug();
+	Channel l;
+	End c("caller", "ATE0X3\\V1+MS=CLEAR;+B2=9\r"),
+		a("answerer", "ATE0\\V1+MS=CLEAR;+B2=9\r");
+	ASSERT_TRUE(call(l, c, a, 1)) << c.text << a.text;
+	EXPECT_NE(c.text.find("CONNECT 64000/V.120"), std::string::npos)
+		<< c.text;
+	EXPECT_NE(a.text.find("CONNECT 64000/V.120"), std::string::npos)
+		<< a.text;
+	ASSERT_TRUE(exchange(l, c, a, 20000, 10));
+	auto fc = hdlc_frames(l.tap_ca), fa = hdlc_frames(l.tap_ac);
+	ASSERT_GE(fc.size(), 2u);
+	ASSERT_GE(fa.size(), 2u);
+	EXPECT_EQ(fc[0], (std::vector<unsigned char>{ 0x08, 0x01, 0x7f }));
+	EXPECT_EQ(fa[0], (std::vector<unsigned char>{ 0x08, 0x01, 0x73 }));
+	bool ci = false, ai = false;
+	for (auto &f : fc)
+		if (f.size() > 5 && !(f[2] & 1)) {
+			EXPECT_EQ(f[0], 0x08);
+			EXPECT_EQ(f[1], 0x01);
+			EXPECT_EQ(f[2], 0x00) << "N(S) of the first";
+			EXPECT_EQ(f[4], 0x83) << "the header";
+			ci = true;
+			break;
+		}
+	for (auto &f : fa)
+		if (f.size() > 5 && !(f[2] & 1)) {
+			EXPECT_EQ(f[0], 0x0a);
+			EXPECT_EQ(f[4], 0x83);
+			ai = true;
+			break;
+		}
+	EXPECT_TRUE(ci && ai);
+	dmodem_hangup(c.m);
+	run(l, c, a, 2, [&] { return a.no_carriers > 0; });
+	EXPECT_EQ(a.no_carriers, 1) << a.text;
+	bool disc = false;
+	for (auto &f : hdlc_frames(l.tap_ca))
+		disc = disc || (f.size() == 3 && f[0] == 0x08 &&
+				(f[2] & ~0x10) == 0x43);
+	EXPECT_TRUE(disc);
+}
+
+/* V.120 through a dropout of 0.3 s each way: N(S) and N(R) past 7 (the
+   window wraps modulo 128), REJ and T200's polls bring the lost frames
+   back, 100 kB each way intact */
+TEST(Clear, V120Dropout)
+{
+	debug();
+	Channel l;
+	End c("caller", "ATE0X3+MS=CLEAR;+B2=9\r"),
+		a("answerer", "ATE0+MS=CLEAR;+B2=9\r");
+	ASSERT_TRUE(call(l, c, a, 1)) << c.text << a.text;
+	l.drop_at = static_cast<double>(l.t) / 8000 + 2;
+	l.drop_s = 0.3;
+	EXPECT_TRUE(exchange(l, c, a, 100000, 30)) << c.data.size() << " "
+						   << a.data.size();
+}
+
+/* V.120 over V.110 at 19200 bit/s (+CBST=79,1, synchronous) */
+TEST(Clear, V120OverV110)
+{
+	debug();
+	Channel l;
+	End c("caller", "ATE0X3\\V1+MS=CLEAR;+B2=9;+CBST=79,1\r"),
+		a("answerer", "ATE0+MS=CLEAR;+B2=9;+CBST=79,1\r");
+	ASSERT_TRUE(call(l, c, a, 5)) << c.text << a.text;
+	EXPECT_NE(c.text.find("CONNECT 19200/V.120"), std::string::npos)
+		<< c.text;
+	EXPECT_TRUE(exchange(l, c, a, 5000, 10));
 }

@@ -93,6 +93,25 @@ if(DMODEM_DMODEMD)
 		endif()
 		dmodem_flags(dmodemd_fake_${fake})
 	endfunction()
+	# --misdn: an ISDN basic rate interface through Linux's mISDN for
+	# the line (misdn_line.cpp, Q.931 in q931.cpp): Linux alone
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		target_sources(dmodemd PRIVATE misdn_line.cpp q931.cpp)
+		target_compile_definitions(dmodemd PRIVATE DMODEM_MISDN)
+		target_include_directories(dmodemd PRIVATE
+			${PROJECT_SOURCE_DIR}/dsp)
+		# test/misdn_test.py: two dmodemd on fake cards
+		# (test/fake_misdn.cpp in front of the C library,
+		# LD_PRELOAD) calling each other through the script's
+		# network
+		if(DMODEM_TESTS)
+			add_library(dmodem_fake_misdn SHARED
+				test/fake_misdn.cpp)
+			dmodem_flags(dmodem_fake_misdn EXTRA NOOPT)
+			target_link_libraries(dmodem_fake_misdn PRIVATE
+				${CMAKE_DL_LIBS})
+		endif()
+	endif()
 	# -a: a softmodem's codec through ALSA for the line (alsa_line.cpp),
 	# if libasound2-dev is there
 	find_package(PkgConfig QUIET)
@@ -262,6 +281,13 @@ if(DMODEM_DMODEMD)
 			${CMAKE_CURRENT_SOURCE_DIR})
 		dmodem_flags(sip_dial_test EXTRA NOOPT)
 		dmodem_gtest(sip_dial_test LABELS quick)
+		# test/q931_test.cpp: ISDN's call control, the user side
+		# (q931.h), for --misdn
+		add_executable(q931_test test/q931_test.cpp q931.cpp)
+		target_include_directories(q931_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR})
+		dmodem_flags(q931_test EXTRA NOOPT)
+		dmodem_gtest(q931_test LABELS quick)
 		# test/rtp_events_test.cpp: the far end's telephone-events
 		# as tones (rtp_events.h)
 		add_executable(rtp_events_test test/rtp_events_test.cpp
@@ -357,6 +383,16 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_clearmode PROPERTIES LABELS quick
 			TIMEOUT 60)
+		# --misdn: two dmodemd on fake mISDN cards calling each
+		# other through the script's ISDN network
+		if(TARGET dmodem_fake_misdn)
+			dmodem_add_test(dmodemd_misdn ${Python3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/test/misdn_test.py
+				$<TARGET_FILE:dmodemd>
+				$<TARGET_FILE:dmodem_fake_misdn>)
+			set_tests_properties(dmodemd_misdn PROPERTIES
+				LABELS quick TIMEOUT 120)
+		endif()
 		dmodem_add_test(hda_modem_setup ${Python3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/test/hda_modem_setup_test.py
 			${CMAKE_CURRENT_SOURCE_DIR}/hda-modem-setup)

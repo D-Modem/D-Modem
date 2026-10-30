@@ -309,6 +309,8 @@ public:
 	   line says so (Host::clear_line()), on a digital line at 8000 Hz:
 	   the clear channel pump at once, as on a leased line */
 	bool clear_channel() const;
+	/* +CBST's V.110 user rate, 0 for none */
+	s32 cbst_rate() const;
 	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
 	/* we dialled */
@@ -395,7 +397,7 @@ public:
 	static const char *const author, *const product, *const version;
 	/* the extended parameters of other modems' setup strings it keeps
 	   (at most), their values (at most) */
-	enum { KEPT_PARAMS = 24, KEPT_VALUES = 9 };
+	enum { KEPT_PARAMS = 25, KEPT_VALUES = 9 };
 
 private:
 	enum State {
@@ -739,6 +741,8 @@ private:
 	   mode (V.253 5.3.2), for ATA or ATD on it; the calling tones the
 	   voice engine heard so far (CNG, V.25's CT) that +FAA=1 acted on */
 	bool voice_held_ = false;
+	bool v110_ = false;             /* the call runs V.110 (clear
+					   channel) */
 	u32 voice_cng_seen_ = 0, voice_ct_seen_ = 0;
 	void *fax_ = nullptr;
 	/* adaptive answer, while the call we answer is not yet known to

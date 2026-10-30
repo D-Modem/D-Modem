@@ -308,7 +308,7 @@ give.
 \cmdl[ampB]{\&B\p{n}} & V.32 retrain (accepted). & \cmdl[plusDS]{+DS} & V.42bis. \\ \hline
 \cmdl[ampC]{\&C\p{n}} & Data carrier detect (kept). & \cmdl[plusDS44]{+DS44} & V.44. \\ \hline
 \cmdl[ampD]{\&D\p{n}} & Data terminal ready (accepted). & \cmdl[plusDSZ]{+DSZ} & zstd compression. \\ \hline
-\cmdl[ampE]{\&E\p{n}} & Rate in CONNECT (kept). & \cmdl[plusB2]{+B2} & B-channel protocol. \\ \hline
+\cmdl[ampE]{\&E\p{n}} & Rate in CONNECT (kept). & \cmdl[plusB2]{+B2, +CBST, +CRC} & B-channel protocol, V.110, ring type. \\ \hline
 \cmdl[ampF]{\&F\p{n}} & Factory defaults (accepted). & \cmdl[plusIFC]{+IFC, +ICF, +IPR} & DTE interface. \\ \hline
 \cmdl[ampG]{\&G\p{n}} & Guard tone (accepted). & \cmdl[plusILRR]{+ILRR, +IDSR, +ILSD} & DTE interface (kept). \\ \hline
 \cmdl[ampH]{\&H\p{n}} & Flow control (kept). & \cmdl[plusMR]{+MR, +ER, +DR} & Reports (kept). \\ \hline
@@ -1654,7 +1654,7 @@ directions' rates (sent in its MP sequences).
 92 & V92 & ITU V.92 & V.90 with quick connect, PCM upstream and
   modem-on-hold (default). \\ \hline
 56 & K56 & K56flex & Not implemented: runs V.90. \\ \hline
-150 & V\_CVM & V.cvm & Data over mobile speech paths, 175 to 3500
+150 & VCVM & V.cvm & Data over mobile speech paths, 175 to 3500
   bit/s, after V.8 (\cmdl[plusCVM]{+CVM}). \\ \hline
 200 & VWB & V.wb & Wideband DMT on a bare pair, at 48000 Hz and more,
   up to 148656 bit/s each way. \\ \hline
@@ -1689,12 +1689,12 @@ modem against a V.90 or V.92 server (at 9600~Hz; see
 \texttt{docs/hardware.md}), and V.91 and \cmd{CLEAR}, which need a
 digital line, run as V.34.
 
-\paragraph{V.cvm.}  \cmd{V\_CVM} is the proposed Recommendation of
+\paragraph{V.cvm.}  \cmd{VCVM} is the proposed Recommendation of
 \cmd{docs/v\_cvm.pdf}, for calls whose speech path is a mobile codec's
 (AMR, AMR-WB), which carry neither V.34 nor V.32: V.8 with V.22 and V.21
 as the fallback, then a probing of the codec and a mode loaded for it.
 The start-up takes 15 to 21~s; \sreg{7} should allow for it.  The
-connection runs LAPM.
+connection runs LAPM.  \cmd{V\_CVM}, its old name, is still taken.
 
 \paragraph{V.wb.}  \cmd{VWB} is D-Modem's own mode for a bare copper
 pair between two of its modems (pico-serial's WB stick, a codec at 96
@@ -1709,11 +1709,13 @@ channel, such as an ISDN B-channel's data call (a SIP call in
 CLEARMODE, RFC 4040, or a PBX's call with an unrestricted digital
 bearer): no modulation, each of the channel's octets 8 bits of the
 link's, \cmd{CONNECT 64000} both ways.  It starts at once on \cmd{ATD}
-and \cmd{ATA}, with no call progress and no answer tone.  A line that
+and \cmd{ATA}, with no call progress and no answer tone.  Each octet's
+first bit is its most significant (I.460, RFC 4040).  A line that
 says its call is clear (dmodemd's SIP for a CLEARMODE call,
 \cmd{app\_dmodem} for an ISDN data call) runs it whatever \cmd{+MS}
 says.  What runs on the channel is \cmdl[plusB2]{+B2}'s, X.75 by
-default.  See \cmd{docs/isdn.md}.
+default, or V.110's rate adaption with \cmdl[plusCBST]{+CBST}.  See
+\cmd{docs/isdn.md}.
 \end{command}
 
 \subsection{Identification and country}
@@ -1978,10 +1980,10 @@ it.
 \begin{syntax}
 \item +B2=\p{n}
 \item +B2? (gives \cmd{+B2: 0})
-\item +B2=? (gives \cmd{+B2: (0,5,7)})
+\item +B2=? (gives \cmd{+B2: (0,5,7,9)})
 \end{syntax}
 \begin{results}
-\item OK if \p{n} = 0, 5 or 7.
+\item OK if \p{n} = 0, 5, 7 or 9.
 \item ERROR otherwise.
 \end{results}
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+B2 Values}
@@ -1997,7 +1999,60 @@ it.
   \cmd{\bs V1}. \\ \hline
 7 & The modem's link (V.42, MNP or plain characters, as \cmdl[bsN]{\bs N}
   says), for the clear channel of an earlier D-Modem. \\ \hline
+9 & V.120 (Q.921's frames for logical link 256 in extended mode, each I
+  frame's information after V.120's header octet \cmd{0x83}), the
+  protocol of North American terminal adapters; \cmd{/V.120} with
+  \cmd{\bs V1}. \\ \hline
 \end{vtable}
+\end{command}
+
+\begin{command}{plusCBST}{+CBST}{Bearer Service Type (V.110)}
+27.007's bearer service: V.110's rate adaption on a clear channel
+(\cmdl[plusMS]{+MS=CLEAR}).  \p{name} \cmd{0} (the default) is
+asynchronous: the DTE's characters through the modem's link
+(\cmdl[bsN]{\bs N}) whatever \cmdl[plusB2]{+B2} says; \cmd{1} is
+synchronous: \cmd{+B2}'s protocol in HDLC at the user rate.  \p{ce}
+has no use here.  \cmd{CONNECT} gives the user rate (with
+\cmdl[bsV]{\bs V1} and no V.42, \cmd{/V.110}).  \cmdl[ampV]{\&V} lists
+it.  See \cmd{docs/isdn.md}.
+\begin{syntax}
+\item +CBST=[\p{speed}][,[\p{name}][,[\p{ce}]]]
+\item +CBST? (gives \cmd{+CBST: 0,0,0})
+\item +CBST=?
+\end{syntax}
+\begin{results}
+\item OK for a \p{speed} below, \p{name} 0 or 1, \p{ce} 0 or 1.
+\item ERROR otherwise.
+\end{results}
+\begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+CBST Speeds}
+  {\thd{Value} & \thd{User rate}}
+0 & None (default): an answerer takes the rate of the caller's frames
+  (600 to 38400) if they come. \\ \hline
+65, 66, 68, 70 & 300, 1200, 2400, 4800 bit/s (intermediate rate 8k). \\ \hline
+71 & 9600 bit/s (16k). \\ \hline
+75, 79 & 14400, 19200 bit/s (32k). \\ \hline
+80, 81 & 28800, 38400 bit/s (64k). \\ \hline
+83 & 56000 bit/s (7 bits an octet, no frames). \\ \hline
+\end{vtable}
+\end{command}
+
+\begin{command}{plusCRC}{+CRC}{Cellular Result Codes}
+27.007's: with \cmd{1}, each ring of a call is \cmd{+CRING: SYNC} for a
+call on a clear 64 kbit/s channel (an ISDN data call: SIP's CLEARMODE,
+a PBX's digital bearer, an mISDN card's unrestricted digital call) and
+\cmd{+CRING: VOICE} for any other, instead of \cmd{RING} (in words
+whatever \cmdl[V]{V} says).  A program that answers by itself
+(dmodem-capid, CAPI on a D-Modem) tells the two apart by it.
+\cmdl[ampV]{\&V} lists it.
+\begin{syntax}
+\item +CRC=\p{n}
+\item +CRC? (gives \cmd{+CRC: 0})
+\item +CRC=? (gives \cmd{+CRC: (0,1)})
+\end{syntax}
+\begin{results}
+\item OK if \p{n} = 0 (\cmd{RING}, the default) or 1.
+\item ERROR otherwise.
+\end{results}
 \end{command}
 
 \subsection{Interface and report parameters}
@@ -2093,7 +2148,7 @@ modem to go on hold for \p{s} seconds (1 to 960; 10 if left out).
 \subsection{V.cvm}
 
 \begin{command}{plusCVM}{+CVM}{V.cvm Settings}
-For \cmdl[plusMS]{+MS=V\_CVM}: \p{modes}, the modes allowed, a sum of
+For \cmdl[plusMS]{+MS=VCVM}: \p{modes}, the modes allowed, a sum of
 the values below; \p{rate}, the signal interface's rate, 8000 or 16000;
 \p{report}, 0 or 1, asks for \cmd{+CVMR} on each renegotiation.
 D-Modem keeps \p{rate} and \p{report} but works at 8000~Hz only,

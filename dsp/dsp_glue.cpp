@@ -228,6 +228,23 @@ void dp_runtime_set_analog(void *runtime, int analog)
 		rt->analog = analog;
 }
 
+/* see dsplibs.h */
+void dp_runtime_set_v110(void *runtime, long rate)
+{
+	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
+	if (rt) {
+		rt->v110 = static_cast<s32>(rate);
+		rt->v110_rate = 0;
+	}
+}
+
+/* see dsplibs.h */
+long dp_runtime_v110(void *runtime)
+{
+	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
+	return rt ? rt->v110_rate : 0;
+}
+
 /* 1 while a pump takes the exact PCM codes (no DC removal), else 0 */
 int dp_runtime_pcm(void *runtime)
 {

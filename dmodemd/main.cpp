@@ -8,7 +8,9 @@
  *    With -a the line is a softmodem's codec through ALSA instead
  *    (alsa_line.cpp), with --usb a Smart Link SmartUSB56 or a
  *    pico-serial Line stick through libusb (usb_line.cpp): a telephone
- *    line, its samples pacing the modem.
+ *    line, its samples pacing the modem.  With --misdn it is an ISDN
+ *    basic rate interface through Linux's mISDN (misdn_line.cpp), its
+ *    B-channel's octets pacing the modem.
  *
  *    Started as root, it makes its pty and the link /dev/ttyDM<n> to it,
  *    opens its data file and leaves the link to a keeper process
@@ -52,6 +54,9 @@
 #endif
 #ifdef DMODEM_USB
 #include "usb_line.h"
+#endif
+#ifdef DMODEM_MISDN
+#include "misdn_line.h"
 #endif
 #include "datafile.h"
 #include "options.h"
@@ -209,8 +214,8 @@ void drop_privileges(bool realtime)
 	DBG("running as gid %u, uid %u\n", (unsigned)gid, (unsigned)uid);
 }
 
-#if defined(DMODEM_ALSA) || defined(DMODEM_USB)
-/* the loop on a telephone line (ALSA's, or the SmartUSB56's), until
+#if defined(DMODEM_ALSA) || defined(DMODEM_USB) || defined(DMODEM_MISDN)
+/* the loop on a line (ALSA's, the SmartUSB56's, mISDN's), until
    SIGINT or SIGTERM (0) or an error (-1), each turn: the modem's timers,
    then select() on the line's descriptors and the pty (if the modem
    takes its characters now), then the samples that came */
@@ -263,6 +268,10 @@ int main(int argc, char *argv[])
 	dmd::UsbLine usb(dte);
 	std::unique_ptr<dcore::Modem> um;
 #endif
+#ifdef DMODEM_MISDN
+	dmd::MisdnLine misdn(pty);
+	std::unique_ptr<dcore::Modem> mm;
+#endif
 
 	dmd::parse_options(argc, argv, opt);
 #ifdef DMODEM_USB
@@ -297,6 +306,17 @@ int main(int argc, char *argv[])
 		m = um.get();
 #else
 		ERR("--usb: dmodemd was built without libusb (libusb-1.0-0-dev)\n");
+		exit(-1);
+#endif
+	} else if (opt.misdn) {
+#ifdef DMODEM_MISDN
+		mo.rate = RATE;
+		mm.reset(new dcore::Modem(misdn, mo));
+		if (!mm->ok())
+			exit(-1);
+		m = mm.get();
+#else
+		ERR("--misdn: dmodemd was built without mISDN (Linux's)\n");
 		exit(-1);
 #endif
 	} else if (opt.alsa) {
@@ -350,6 +370,13 @@ int main(int argc, char *argv[])
 	if (opt.usb && !usb.open(opt.usb, opt.rate))
 		exit(-1);
 #endif
+#ifdef DMODEM_MISDN
+	/* the card's D-channel opened as root (the device list's socket
+	   needs CAP_NET_RAW) */
+	if (opt.misdn && !misdn.open(opt.misdn, opt.misdn_msn,
+				     opt.misdn_flip))
+		exit(-1);
+#endif
 	/* the keeper an ordinary process, forked before any thread */
 	if (started_as_root())
 		pty.fork_keeper();
@@ -372,6 +399,11 @@ int main(int argc, char *argv[])
 		ret = run_line(*um, usb, pty);
 	} else
 #endif
+#ifdef DMODEM_MISDN
+	if (mm) {
+		ret = run_line(*mm, misdn, pty);
+	} else
+#endif
 	{
 		if (!sip::config_from_env(cfg, opt.listen))
 			exit(-1);
@@ -385,6 +417,9 @@ int main(int argc, char *argv[])
 #endif
 #ifdef DMODEM_USB
 	um.reset();
+#endif
+#ifdef DMODEM_MISDN
+	mm.reset();
 #endif
 	/* what the modem said last still there for the DTE to read */
 	usleep(100000);

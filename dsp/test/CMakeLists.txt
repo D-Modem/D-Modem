@@ -149,6 +149,37 @@ dmodem_test_exe(clear_call_test clear_call_test.cpp)
 target_include_directories(clear_call_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
 target_link_libraries(clear_call_test PRIVATE dmodem)
 dmodem_gtest(clear_call_test LABELS quick)
+# V.110 against libosmocore's (OSMOCORE_SRC: a libosmocore source tree,
+# 1.14 or later): its src/isdn/v110.c alone, built into this test, with
+# the headers its build generates made here and talloc (which v110.c
+# does not use) stubbed
+set(OSMOCORE_SRC "" CACHE PATH "libosmocore's source tree, for v110_osmo_test")
+if(OSMOCORE_SRC AND EXISTS ${OSMOCORE_SRC}/src/isdn/v110.c)
+	set(_osmo_inc ${CMAKE_CURRENT_BINARY_DIR}/osmo_inc)
+	file(READ ${OSMOCORE_SRC}/include/osmocom/core/bitXXgen.h.tpl _osmo_tpl)
+	foreach(_n 16 32 64)
+		string(REPLACE "XX" "${_n}" _osmo_h "${_osmo_tpl}")
+		file(WRITE ${_osmo_inc}/osmocom/core/bit${_n}gen.h "${_osmo_h}")
+	endforeach()
+	file(WRITE ${_osmo_inc}/talloc.h
+		"/* (talloc: not used by v110.c) */\n"
+		"typedef void TALLOC_CTX;\n"
+		"#define talloc_free(p) ((void)(p), 0)\n"
+		"#define talloc_strdup(ctx, s) ((void)(ctx), (char *)(s))\n")
+	add_library(osmo_v110_peer STATIC ${OSMOCORE_SRC}/src/isdn/v110.c
+		osmo_v110_peer.c)
+	target_include_directories(osmo_v110_peer PRIVATE ${_osmo_inc}
+		${OSMOCORE_SRC}/include)
+	set_target_properties(osmo_v110_peer PROPERTIES C_STANDARD 11
+		C_EXTENSIONS ON)
+	# (libosmocore's code, its warnings not ours)
+	target_compile_options(osmo_v110_peer PRIVATE -w)
+	dmodem_test_exe(v110_osmo_test v110_osmo_test.cpp)
+	target_include_directories(v110_osmo_test PRIVATE
+		${PROJECT_SOURCE_DIR}/dmodemd)
+	target_link_libraries(v110_osmo_test PRIVATE dmodem osmo_v110_peer)
+	dmodem_gtest(v110_osmo_test LABELS quick osmocom)
+endif()
 foreach(_t vcvm_test vcvm_startup_test vcvm_data_test)
 	if(AMR_FOUND)
 		target_compile_definitions(${_t} PRIVATE DMODEM_HAVE_AMR)

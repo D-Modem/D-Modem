@@ -26,7 +26,7 @@ enum class VcvmSt { RUN };
 
 class VcvmPump : public PumpBase<VcvmPump, VcvmSt> {
 public:
-	static constexpr const char *name = "V_CVM";
+	static constexpr const char *name = "VCVM";
 	/* its name in the log */
 	const char *tag() const { return "vcvm"; }
 
