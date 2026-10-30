@@ -374,6 +374,8 @@ struct V34Echo {
 	s16 pos, rpos;
 	s16 on, far_on, far_delay, trained;
 	s16 judged, bypass;     /* the echo was measured; none: off */
+	/* the caller: the training held for the remote's J */
+	s16 waited;
 	s32 n, since, filled, far_since;
 	float mu, dbg_rx, dbg_err, dbg_tx, dbg_est;
 	float pw_rx, pw_err;    /* in and out while training */
@@ -832,6 +834,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	void v92_start();
 	s16 v91_escape();
 	void ec_schedule();
+	bool remote_j() const;
 	void pump_rx_sample(float x);
 	s16 fallback(const char *why);
 	void choose_bauds();
@@ -2657,6 +2660,14 @@ float V34Echo::run(float tx, float rx)
 	return err;
 }
 
+/* the caller in phase 3: our receiver still decodes the remote's J (one
+   in the last three J's time) */
+bool V34Pump::remote_j() const
+{
+	return prx.on && prx.stage == V34_RX_TRN &&
+		prx.bit_n - prx.j_last <= 48;
+}
+
 /* the adaptation, per sample: train while our own phase 3 sequences go
    out (the remote is silent then), then track */
 void V34Pump::ec_schedule()
@@ -2689,15 +2700,36 @@ void V34Pump::ec_schedule()
 		e->n = e->since = e->filled = 0;
 		e->far_on = 0;
 		e->judged = e->bypass = e->trained = 0;
+		e->waited = 0;
 		e->pw_rx = e->pw_err = e->es = e->pw_est = 0;
 		e->dt = 0;
 		DSP_DBG("v34: echo canceller on\n");
 	}
 	if (ours)
 		e->since++;
-	/* the answerer sends its J until it has heard the caller's S */
+	/* the answerer sends its J until it has heard the caller's S.  The
+	   caller: not before its J is over, as long as our receiver still
+	   decodes it.  The round trip measured in phase 2 can be well short
+	   of the line's (a reversal of the remote's phase 2 recovery taken
+	   for its answer to ours), and the remote takes a while to hear our
+	   S: trained on with the remote's J in the error, the canceller
+	   takes next to nothing away (and is turned off), and what it gives
+	   the receiver meanwhile drags its equalizer and carrier off, so
+	   that it misses the remote's S of phase 4.  When the echo hides the
+	   J from the receiver, at the round trip measured as before */
 	training = ours && (!caller || v90a_rx ||
-		e->since > rtd + ms2samples(150, srate));
+		(e->since > rtd + ms2samples(150, srate) &&
+		 (e->n || !remote_j())));
+	if (ours && caller && !v90a_rx && !training &&
+	    e->since > rtd + ms2samples(150, srate) && !e->waited) {
+		e->waited = 1;
+		DSP_DBG("v34: echo canceller: the remote's J still there, "
+			"its end awaited\n");
+	}
+	if (training && !e->n && e->waited)
+		DSP_DBG("v34: echo canceller: the remote's J over after "
+			"%ld ms of ours\n",
+			static_cast<long>(e->since) * 1000 / srate);
 	if (training) {
 		e->n++;
 		/* the far echo is found after some of our signal went out
@@ -5603,7 +5635,11 @@ s16 V34Pump::handshake()
 			tx_next(P3C_TRN, V34_TX_TRN);
 		break;
 	case P3C_TRN:
-		if (ptx.n >= TRN3_LEN) {
+		/* (longer, up to another TRN3_LEN, when the echo canceller
+		   waited for the remote's J: a second of its training) */
+		if (ptx.n >= TRN3_LEN &&
+		    (!ec.waited || ec.n >= ms2samples(1000, srate) ||
+		     ptx.n >= 2 * TRN3_LEN)) {
 			tx_next(P3C_J, V34_TX_J);
 			prx.ev_s = 0;
 			prx.ev_j = prx.j_count = 0;

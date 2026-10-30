@@ -56,6 +56,20 @@ static const double BER_MAX = 1e-3;
 /* the line's delay each way, samples */
 static const int DELAY_TO_ANSWERER = 37;
 static const int DELAY_TO_CALLER = 53;
+/* cfg's samples more to the answerer */
+static int to_answerer_delay(const LoopbackConfig &cfg)
+{
+	return std::max(cfg.line_delay, 0);
+}
+
+/* cfg's samples more to the caller (as many as to the answerer, unless
+   it says) */
+static int to_caller_delay(const LoopbackConfig &cfg)
+{
+	return cfg.line_delay_c >= 0 ? cfg.line_delay_c :
+		to_answerer_delay(cfg);
+}
+
 /* the near hybrid's echo delay, and the far hybrid's beyond the two
    line delays */
 static const int NEAR_ECHO_DELAY = 20;
@@ -387,7 +401,9 @@ public:
 		far_gain = cfg.far_db < 0 ?
 			pow(10.0, cfg.far_db / 20.0) * cfg.gain : 0;
 		far_n = DELAY_TO_ANSWERER + DELAY_TO_CALLER + FAR_HYBRID_DELAY +
-			std::min(std::max(cfg.far_delay, 0),
+			std::min(std::max(cfg.far_delay, 0) +
+					 to_answerer_delay(cfg) +
+					 to_caller_delay(cfg),
 				 ECHO_HISTORY - 200);
 	}
 
@@ -420,8 +436,10 @@ public:
 	{
 		double offset = cfg.ppm * 1e-6;
 
-		to_answerer.init(DELAY_TO_ANSWERER, 1 + offset, n, cfg);
-		to_caller.init(DELAY_TO_CALLER, 1 - offset, n, cfg);
+		to_answerer.init(DELAY_TO_ANSWERER + to_answerer_delay(cfg),
+				 1 + offset, n, cfg);
+		to_caller.init(DELAY_TO_CALLER + to_caller_delay(cfg),
+			       1 - offset, n, cfg);
 		for (Echoes &e : echoes)
 			e.init(cfg);
 		codecs = false;

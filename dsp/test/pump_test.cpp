@@ -45,6 +45,15 @@ static LoopbackConfig line(int dp, float snr, float secs, int srate = 9600,
 	return c;
 }
 
+/* c over a VoIP path: ms more delay toward the answerer, toward the
+   caller (the far echo with them) */
+static LoopbackConfig voip(LoopbackConfig c, int to_answerer, int to_caller)
+{
+	c.line_delay = to_answerer * c.srate / 1000;
+	c.line_delay_c = to_caller * c.srate / 1000;
+	return c;
+}
+
 /* the caller's pump, the answerer's, on a line of 30 dB */
 static LoopbackConfig automode(int caller, int answerer, float secs)
 {
@@ -100,6 +109,17 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v34_echoes_8000", line(8, 40, 22, 8000, 0.5f, 0, -10, -15) },
 	/* a far echo over VoIP */
 	Pumps{ "v34_far_echo_voip", line(8, 40, 22, 9600, 0.5f, 0, 0, -15, 1920) },
+	/* a round trip of 0.8 s, 600 ms one way and 220 ms the other (as
+	   the USB modems' tests through their exchange): phase 2 measures
+	   it short (a reversal of the answerer's recovery taken for its
+	   answer), and the answerer's J is still there when the caller's
+	   echo canceller would train; it waits for its end */
+	Pumps{ "v34_voip_asymmetric",
+	       voip(line(8, 40, 25, 9600, 0.5f, 0, 0, -24), 600, 220) },
+	Pumps{ "v34_voip_asymmetric_8000",
+	       voip(line(8, 40, 25, 8000, 0.5f, 0, 0, -20), 600, 220) },
+	Pumps{ "v34_voip_asymmetric_back",
+	       voip(line(8, 40, 25, 9600, 0.5f, 0, 0, -20), 220, 600) },
 	Pumps{ "v22", line(22, 15, 20) },
 	/* its 4 points decided 45 degrees each way, not on the axes */
 	Pumps{ "v22_snr7", line(22, 7, 20) },

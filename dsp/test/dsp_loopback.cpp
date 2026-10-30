@@ -10,8 +10,10 @@
  *
  *    CALLER_DP=<id> gives the caller another data pump than the answerer
  *    (automode); FAR_DELAY=<samples> delays the far echo more, as over
- *    VoIP; FLAT=1: no band limitation; DUMP=<name>: what each side hears
- *    into <name>.a and <name>.c; CODEC=<spec>: a speech codec on the
+ *    VoIP; LINE_DELAY=<samples>[:<samples>] the line more toward the
+ *    answerer [and toward the caller, if another] (the far echo with it);
+ *    FLAT=1: no band limitation; DUMP=<name>: what each side hears into
+ *    <name>.a and <name>.c; CODEC=<spec>: a speech codec on the
  *    line each way (codec_sim.h, 8000 Hz: CODEC=amr:12.2);
  *    DSP_DEBUG=<level>: the pumps' log.
  *
@@ -56,6 +58,9 @@ int main(int argc, char **argv)
 		c.caller_dp = atoi(getenv("CALLER_DP"));
 	if (getenv("FAR_DELAY"))
 		c.far_delay = atoi(getenv("FAR_DELAY"));
+	if (getenv("LINE_DELAY"))
+		sscanf(getenv("LINE_DELAY"), "%d:%d", &c.line_delay,
+		       &c.line_delay_c);
 	c.flat = getenv("FLAT") != nullptr;
 	c.dump = getenv("DUMP");
 	c.codec = getenv("CODEC");
