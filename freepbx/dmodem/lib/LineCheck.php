@@ -77,8 +77,15 @@ class LineCheck
 			$add('info', _('Its codecs could not be read'));
 		} else {
 			$laws = array_values(array_intersect($codecs, ['ulaw', 'alaw']));
-			$other = array_values(array_diff($codecs, ['ulaw', 'alaw']));
-			if (!$laws)
+			/* CLEARMODE (codec_clearmode): ISDN data calls,
+			   never transcoded to anything */
+			$clear = in_array('clearmode', $codecs, true);
+			$other = array_values(array_diff($codecs, ['ulaw', 'alaw', 'clearmode']));
+			if ($clear)
+				$add('info', _('CLEARMODE allowed: ISDN data calls reach D-Modem on a clear 64 kbit/s channel (X.75 by default)'));
+			if (!$laws && $clear && !$other)
+				$add('info', _('CLEARMODE only: ISDN data calls work, modem calls (G.711) do not'));
+			elseif (!$laws)
 				$add('warn', _('No G.711 (ulaw or alaw): no modem call can work, V.34 and V.90 need G.711'));
 			elseif ($other)
 				$add('warn', sprintf(_('Other codecs allowed besides G.711 (%s): a call can be set up on one of them, or transcoded'), implode(', ', $other)));

@@ -878,7 +878,8 @@ and no answer tone, with a start-up of D-Modem's own (HDLC flags each
 way, then ones), so the far end is another D-Modem; V.42 and the
 compressions run over it as over any modulation.  A line that says its
 call is clear (dmodemd's SIP for a CLEARMODE call, \cmd{app\_dmodem}
-for an ISDN data call) runs it whatever \cmd{+MS} says.  See
+for an ISDN data call) runs it whatever \cmd{+MS} says.  What runs
+on the channel is \cmdl[plusB2]{+B2}'s, X.75 by default.  See
 \cmd{docs/isdn.md}.
 
 \emph{Pending:} ISDN's second phase, X.75 and synchronous PPP on the
@@ -1125,6 +1126,26 @@ the other modem offers it too (another D-Modem): CONNECT then ends in
 \cmdl[V]{V0}); other modems go on with V.44 or V.42bis.  \cmd{0} offers
 V.44 and V.42bis alone.  \cmd{+DSZ?} gives \cmd{+DSZ: 1,1}, \cmd{=?}
 \cmd{+DSZ: (0,1),(0,1)}.
+\end{command}
+
+\subsection{The B-channel protocol: +B2}
+
+\begin{command}{plusB2}{AT+B2=\p{n}, AT+B2?, AT+B2=?}
+D-Modem's own, with CAPI 2.0's numbers for layer 2: what runs on a clear
+64 kbit/s channel (\cmdl[plusMS]{+MS=CLEAR}, or a line that says its
+call is clear); other modes do not look at it.  \cmd{0} (the default)
+is X.75 (LAPB in HDLC, basic mode, a window of 7, the caller at address
+B), the protocol of ISDN terminal adapters, BBSes and mailers: the DTE's
+characters go in I frames of up to 256 octets, \cmd{CONNECT 64000} and
+with \cmdl[bsV]{\bs V1} \cmd{CONNECT 64000/X.75};
+\cmdl[H]{ATH} sends DISC.  \cmd{5} is synchronous PPP (RFC 1618): the
+DTE speaks PPP's asynchronous framing (RFC 1662, as pppd does on a
+serial port), each frame goes to the line in HDLC with its escapes
+undone and comes back escaped, \cmd{/PPP} with \cmd{\bs V1}.
+\cmd{7} is the modem's link (V.42, MNP or plain characters, as
+\cmdl[bsN]{\bs N} says), for the clear channel of an earlier
+D-Modem.  \cmd{+B2?} gives \cmd{+B2: 0}, \cmd{=?} \cmd{+B2: (0,5,7)};
+\cmdl[ampV]{\&V} lists it.
 \end{command}
 
 \subsection{Fax class 1}

@@ -151,6 +151,7 @@ $bad = [
 	'answer' => ['answer' => 'hello'],
 	'timeout' => ['timeout' => '0'],
 	'law' => ['law' => 'g729'],
+	'clear' => ['clear' => 'maybe'],
 	'description' => ['description' => "two\nlines"],
 ];
 foreach ($bad as $field => $over) {
@@ -180,6 +181,7 @@ same($c['bbs']['answer'], 'AT+MS=132;A', 'a ; in a value survives (written \\;)'
 same($c['ppp']['command'], 'exec /usr/sbin/pppd nodetach noauth local; echo x', 'the command with its ;');
 same($c['bbs']['host'] . ':' . $c['bbs']['port'], '127.0.0.1:2323', 'tcp host and port');
 same($c['bbs']['law'], 'ulaw', 'law');
+same($c['bbs']['clear'], 'auto', 'clear: auto by default');
 same($c['bbs']['fax'], 'yes', 'fax yes');
 same($c['general']['fax_ecm'], 'no', 'fax_ecm no');
 same($c['general']['fax_ident'], '+1 555 0100', 'fax_ident');
@@ -276,6 +278,10 @@ foreach (['Other codecs allowed besides G.711 (g722, gsm)', 'Both ulaw and alaw'
 	  'DTMF mode inband', 'Fax detection on', 'Direct media on', 'T.38 on'] as $want)
 	ok(strpos($texts, $want) !== false, "bad: \"$want\"");
 same(LineCheck::worst(LineCheck::evaluate(['allow' => ['g729']])), 'warn', 'no G.711 at all: fix');
+same(LineCheck::worst(LineCheck::evaluate(['allow' => ['alaw', 'clearmode']])), 'info',
+     'CLEARMODE beside G.711: not another codec, but said');
+same(LineCheck::worst(LineCheck::evaluate(['allow' => ['clearmode']])), 'info',
+     'CLEARMODE alone: ISDN data calls only');
 ok(LineCheck::moduleRunning(fixture('module_show_like_app_dmodem'), 'app_dmodem'), 'app_dmodem running');
 ok(!LineCheck::moduleRunning("Module  Description  Use Count  Status\n0 modules loaded\n", 'app_dmodem'),
    'app_dmodem not loaded');

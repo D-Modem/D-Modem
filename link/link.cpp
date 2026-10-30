@@ -68,6 +68,8 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 			   cfg.rx_info);
 	if (cfg.mnp)
 		mnp_.init(this, cfg);
+	if (cfg.b2 == B2::X75)
+		lapb_.init(this);
 	return 0;
 }
 
@@ -115,6 +117,10 @@ void Link::start(bool on, bool detect)
 {
 	mnp_tried_ = false;
 	proto_ = Protocol::None;
+	if (asked_.b2 != B2::Modem) {
+		start_b2();
+		return;
+	}
 	if (asked_.sync) {
 		/* V.80: no error correction, Synchronous Access Mode as
 		   soon as the DTE is online (Detected, then Up) */
@@ -142,6 +148,30 @@ void Link::start(bool on, bool detect)
 		det_.start(this);
 	} else
 		detected(true);
+}
+
+/* an ISDN B-channel's own link layer (Config::b2), in place of the
+   modem's: Detected, then X.75's link set-up (Up when it is done), or
+   PPP's frames (Up at once) */
+void Link::start_b2()
+{
+	cfg_.ec = false;
+	timer_ = 0;
+	timer_what_ = Timer::None;
+	push_pending = false;
+	proto_ = asked_.b2 == B2::X75 ? Protocol::X75 : Protocol::Ppp;
+	owner_->status(Status::Detected);
+	hdlc_.start(this);
+	if (asked_.b2 == B2::X75) {
+		mode_ = Mode::X75;
+		logf("x75: %s.", caller_ ? "calling end" : "called end");
+		lapb_.start();
+		return;
+	}
+	mode_ = Mode::Ppp;
+	logf("ppp: synchronous HDLC.");
+	ppp_.start(this);
+	owner_->status(Status::Up);
 }
 
 /* the detection phase is over (or skipped): Detected, then LAPM (ec,
@@ -249,6 +279,11 @@ void Link::disconnect()
 		mnp_.disconnect();
 		return;
 	}
+	if (mode_ == Mode::X75) {
+		push_pending = false;
+		lapb_.disconnect();
+		return;
+	}
 	if (mode_ != Mode::Lapm)
 		return;
 	timer_ = 0;
@@ -268,6 +303,8 @@ s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 		n = det_.get_bits(nbits, buf, n);
 		break;
 	case Mode::Lapm:
+	case Mode::X75:
+	case Mode::Ppp:
 		n = hdlc_.get_bits(nbits, buf, n);
 		break;
 	case Mode::Mnp:
@@ -301,6 +338,10 @@ s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 			lapm_.push_rest();
 		else if (mode_ == Mode::Mnp)
 			mnp_.push_rest();
+		else if (mode_ == Mode::X75)
+			lapb_.push_rest();
+		else if (mode_ == Mode::Ppp)
+			ppp_.push_rest();
 	}
 	return n;
 }
@@ -320,6 +361,9 @@ void Link::run_timer()
 		break;
 	case Timer::Negotiate:
 		lapm_.negotiate();
+		break;
+	case Timer::T1:
+		lapb_.t1_timeout();
 		break;
 	case Timer::None:
 		break;
@@ -342,6 +386,8 @@ s32 Link::put_bits(s16 nbits, const u8 *buf, s32 n)
 		}
 		return n;
 	case Mode::Lapm:
+	case Mode::X75:
+	case Mode::Ppp:
 		return hdlc_.put_bits(nbits, buf, n);
 	case Mode::Mnp:
 		mnp_async_.put_bits(nbits, buf, n);

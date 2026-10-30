@@ -25,8 +25,11 @@
 ;   clear = auto     an ISDN data call (an unrestricted digital bearer,
 ;                    chan_dahdi's on a BRI or PRI) is a clear 64 kbit/s
 ;                    channel: the modem runs AT+MS=CLEAR on its octets
-;                    as they are, for another D-Modem's clear channel;
-;                    yes: every call; no: never
+;                    as they are, for another D-Modem's clear channel
+;                    (X.75 on it; AT+B2=5 sync PPP, AT+B2=7 the modem
+;                    link).  A SIP call in CLEARMODE (codec_clearmode)
+;                    is clear whatever this says.  yes: every call;
+;                    no: never
 ;   timeout = 60     seconds for the modems to connect
 ;
 ;   fax = yes        a fax machine calling (its CNG tone) is received

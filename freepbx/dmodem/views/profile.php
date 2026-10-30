@@ -88,6 +88,13 @@ $delete = $editing ? 'config.php?display=dmodem&action=delete&profile=' . urlenc
 		     'alaw' => _('alaw (Europe and most others)'),
 	     ]),
 	     _('The network\'s law. auto takes the channel\'s; set it when your trunk is fixed to one.'));
+	$row('clear', _('ISDN data calls'),
+	     $select('clear', $p['clear'], [
+		     'auto' => _('Clear channel for ISDN data calls (auto)'),
+		     'yes' => _('Every call is a clear channel'),
+		     'no' => _('Never: G.711 audio only'),
+	     ]),
+	     _('An ISDN data call (a digital bearer from a BRI or PRI card, or a SIP call in CLEARMODE with codec_clearmode loaded) runs on a clear 64 kbit/s channel, X.75 by default; AT+B2=5 in the modem commands takes PPP instead, AT+B2=7 the modem\'s own error correction. A CLEARMODE call is clear whatever this says.'));
 	$row('init', _('Modem commands'), $text('init', $p['init'], ' placeholder="AT..."'),
 	     _('Extra AT commands for the modem, e.g. AT+MS=34 to stop at V.34, AT+MS=132 for V.32bis at most.'));
 	$row('answer', _('Answer command'), $text('answer', $p['answer'], ' placeholder="ATA"'),

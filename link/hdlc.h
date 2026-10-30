@@ -157,7 +157,9 @@ private:
 	bool tx_on_ = false;
 	Frame *tx_frame_ = nullptr;
 	Frame rx_frame_ = {};
-	u8 rx_buf_[512];
+	/* the longest frame received: X.75's address, control and 2048
+	   octets of information, and the FCS */
+	u8 rx_buf_[2 + 2048 + 2];
 	s16 rx_error_ = 0;
 	s16 rx_ones_ = 0, tx_ones_ = 0;
 };

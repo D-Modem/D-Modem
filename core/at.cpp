@@ -208,6 +208,11 @@ const struct Kept {
 	/* D-Modem's own: zstd offered in XID (<on>), with V.cvm's
 	   dictionary (<dict>); modem.cpp reads it (Annex F/V.cvm) */
 	{ "+DSZ", 2, { 1, 1 }, "(0,1),(0,1)" },
+	/* D-Modem's own: the link layer on a clear channel (an ISDN
+	   B-channel), as CAPI numbers its B2 protocols: 0 X.75 SLP, 5 PPP
+	   in synchronous HDLC, 7 the modem's (\N, +ES); modem.cpp reads
+	   it */
+	{ "+B2", 1, { 0 }, "(0,5,7)" },
 	{ "+PCW", 1, { 2 }, "(0-2)" },
 	{ "+PIG", 1, { 1 }, "(0,1)" },
 	/* +FAA=1, adaptive answer: modem.cpp reads it */

@@ -80,7 +80,12 @@
 			64 kbit/s channel instead (<literal>AT+MS=CLEAR</literal>, the
 			channel's octets as they are, for another D-Modem's clear
 			channel), unless the profile has <literal>clear=no</literal>;
-			<literal>clear=yes</literal> does it for every call.</para>
+			<literal>clear=yes</literal> does it for every call.  So does a
+			SIP call in CLEARMODE (RFC 4040, with codec_clearmode loaded and
+			<literal>allow = clearmode</literal> on the endpoint): the module
+			reads and writes its octets in that format.  The link layer on
+			the clear channel is X.75 unless the profile's
+			<literal>init</literal> says otherwise (<literal>AT+B2</literal>).</para>
 			<para>Sets these variables on exit:</para>
 			<variablelist>
 				<variable name="DMODEMSTATUS">
@@ -238,6 +243,29 @@ static enum dmodem_law channel_law(struct ast_channel *chan)
 	    ast_format_ulaw) == AST_FORMAT_CMP_NOT_EQUAL)
 		return DMODEM_LAW_ALAW;
 	return DMODEM_LAW_ULAW;
+}
+
+/* the CLEARMODE format (codec_clearmode.so) with a reference, when it
+   is the channel's own (first of its native formats): a SIP call in
+   RFC 4040's clear channel; NULL else */
+static struct ast_format *clearmode_format(struct ast_channel *chan)
+{
+	struct ast_format_cap *caps = ast_channel_nativeformats(chan);
+	struct ast_format *cm, *first;
+	int same;
+
+	if (!caps || !ast_format_cap_count(caps))
+		return NULL;
+	cm = ast_format_cache_get("clearmode");
+	if (!cm)
+		return NULL;
+	first = ast_format_cap_get_format(caps, 0);
+	same = first && ast_format_cmp(first, cm) == AST_FORMAT_CMP_EQUAL;
+	ao2_cleanup(first);
+	if (same)
+		return cm;
+	ao2_ref(cm, -1);
+	return NULL;
 }
 
 /* n octets of the line through the modem, its answer written back */
@@ -598,7 +626,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 	struct dmbridge_profile p;
 	struct dmbridge_call c;
 	enum dmodem_law law;
-	struct ast_format *fmt;
+	struct ast_format *fmt, *clear_fmt = NULL;
 	char *parse, name[64];
 	const char *status = "ERROR";
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];
@@ -621,6 +649,17 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 	law = p.law && !(c.digital && p.clear != DMBRIDGE_CLEAR_NO) ?
 		p.law : channel_law(chan);
 	fmt = law == DMODEM_LAW_ALAW ? ast_format_alaw : ast_format_ulaw;
+	/* a SIP call in CLEARMODE: the same, in that format (its octets
+	   are no audio, whatever clear says) */
+	if ((clear_fmt = clearmode_format(chan))) {
+		if (p.clear == DMBRIDGE_CLEAR_NO)
+			ast_log(LOG_NOTICE, "%s: a CLEARMODE call: clear all the "
+				"same\n", ast_channel_name(chan));
+		p.clear = DMBRIDGE_CLEAR_YES;
+		c.digital = 1;
+		law = DMODEM_LAW_ALAW;
+		fmt = clear_fmt;
+	}
 	if (ast_channel_state(chan) != AST_STATE_UP && ast_answer(chan)) {
 		status = "HANGUP";
 		res = -1;
@@ -738,6 +777,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 
 out:
 	dmbridge_call_end(&c);
+	ao2_cleanup(clear_fmt);
 	pbx_builtin_setvar_helper(chan, "DMODEMSTATUS", status);
 	return res;
 }

@@ -13,7 +13,7 @@ The build takes Clang (`clang`, `clang++`, or the newest `clang-<n>`) when it is
 
 With libasound2-dev (ALSA), dmodemd can also drive a softmodem's codec (`-a`), and with libusb-1.0-0-dev a Smart Link SmartUSB56, a [pico-serial Line](https://github.com/D-Modem/hardware) stick, a pico-serial WB stick (a bare pair, the wideband mode) or an Agere USB 2.0 soft modem (`--usb`, [docs/hardware.md](docs/hardware.md)).
 
-This builds `build/dmodemd/dmodemd`, `build/dmodemd/libdmodem.a`, `build/dmodemd/libdmodem_sip.a` and, when Asterisk's headers are installed, `build/asterisk/app_dmodem.so`, and when FreeSWITCH is installed (its `freeswitch.pc`), `build/freeswitch/mod_dmodem.so`.  `cmake --install build` installs them.
+This builds `build/dmodemd/dmodemd`, `build/dmodemd/libdmodem.a`, `build/dmodemd/libdmodem_sip.a` and, when Asterisk's headers are installed, `build/asterisk/app_dmodem.so` (and `codec_clearmode.so`, RFC 4040's CLEARMODE for ISDN data calls), and when FreeSWITCH is installed (its `freeswitch.pc`), `build/freeswitch/mod_dmodem.so`.  `cmake --install build` installs them.
 
 The `Dockerfile` builds the same on Alpine Linux (musl) and makes a small image with dmodemd, dmodem-ari and libdmodem: `docker build -t dmodem .`, then `docker run --rm -it --network host -e SIP_LOGIN=user:password@domain dmodem`.  `--build-arg TESTS=ON` also builds the tests and runs the offline ones while building.
 

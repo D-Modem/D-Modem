@@ -509,7 +509,8 @@ void Modem::hup(bool local)
 	case EC_ESTAB:
 	case ONLINE:
 	case COMMAND_ONLINE:
-		if (local && (cfg_.ec || cfg_.mnp_on)) {
+		if (local && (cfg_.ec || cfg_.mnp_on ||
+			      link_->protocol() == dlink::Protocol::X75)) {
 			link_->disconnect();
 			set_state(EC_DISC);
 		} else {
@@ -866,6 +867,13 @@ s16 Modem::link_init()
 	c.zstd = c.ec && c.comp && dsz[0];
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
+	/* +B2: on a clear channel (an ISDN B-channel) X.75 or PPP in place
+	   of the modem's link layer */
+	if (clear_channel()) {
+		const u32 b2 = kept("+B2")[0];
+		c.b2 = b2 == 0 ? dlink::B2::X75 : b2 == 5 ? dlink::B2::Ppp :
+			dlink::B2::Modem;
+	}
 	if (c.sync) {
 		/* +ESA: <trans_idle>, <framed_idle>, <framed_un_ov>,
 		   <hd_auto>, <crc_type>, <nrzi_en>, <syn1>, <syn2>; +ITF's
@@ -905,6 +913,10 @@ void Modem::negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
 /* the call's error correction, as CONNECT and ATI11 name it */
 const char *Modem::protocol_name() const
 {
+	if (link_->protocol() == dlink::Protocol::X75)
+		return "X.75";
+	if (link_->protocol() == dlink::Protocol::Ppp)
+		return "PPP";
 	return cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : "NONE";
 }
 

@@ -485,7 +485,8 @@ jobs:
               BBS_LINGER=1 timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
               ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/14400' timeout 300 asterisk/test/run.sh
               ARI=1 timeout 300 asterisk/test/run.sh
-          # SIP (D-Modem)
+          # SIP (D-Modem); CODEC=clearmode: an ISDN data call in RFC 4040's
+          # CLEARMODE (codec_clearmode), X.75 on D-Modem's clear channel
           - shard: sip
             run: |
               timeout 300 asterisk/test/sip.sh
@@ -494,6 +495,8 @@ jobs:
               DIAL=ATDT timeout 300 asterisk/test/sip.sh
               HOLD=1 timeout 300 asterisk/test/sip.sh
               BBS_CONNECT_DELAY=15 timeout 300 asterisk/test/sip.sh
+              CODEC=clearmode timeout 300 asterisk/test/sip.sh 'AT+MS=CLEAR'
+              CODEC=clearmode INCOMING=1 timeout 300 asterisk/test/sip.sh
               ARI=1 timeout 300 asterisk/test/sip.sh
               ARI=1 INCOMING=1 timeout 300 asterisk/test/sip.sh
               ARI=1 CODEC=alaw timeout 300 asterisk/test/sip.sh
@@ -579,6 +582,7 @@ jobs:
             -DASTERISK_INCLUDE_DIR=$HOME/asterisk/include
           cmake --build build
           test -f build/asterisk/app_dmodem.so
+          test -f build/asterisk/codec_clearmode.so
           ccache -s
 
       - name: ccache save

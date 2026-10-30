@@ -35,7 +35,11 @@ D-Modem and `fwconsole dmodem`.
   server (a BBS), a unix socket, or a program on a pty (pppd for dial-up
   IP, a login, a door).  Each has its G.711 law, extra AT commands, the
   answer command (`AT+MS=132;A` answers at V.32bis at most), the connect
-  timeout and whether fax machines calling are received as faxes.  A
+  timeout, whether fax machines calling are received as faxes, and how
+  ISDN data calls are taken (`clear`: `auto` for a call with a digital
+  bearer, `yes` every call, `no` never, though a CLEARMODE call is
+  clear all the same; see
+  [isdn.md](isdn.md)).  A
   profile `bbs` is the destination `app-dmodem,bbs,1`, listed under
   "D-Modem" in every destination picker.  A profile keeps its name (it is
   its destination), and one that a route still points at can't be
@@ -54,7 +58,8 @@ D-Modem and `fwconsole dmodem`.
   the remote end.  The module asks Asterisk's manager to originate the
   call (`Local/<number>@<context>`).
 - **Line check**: each PJSIP endpoint as Asterisk has it now (through the
-  manager), with what matters to a modem call: codecs other than G.711,
+  manager), with what matters to a modem call: codecs other than G.711
+  (CLEARMODE, `codec_clearmode`'s, is listed apart: ISDN data calls),
   both laws allowed (a call can be converted between them, which costs
   V.90), DTMF in the audio (`inband`, `auto`), fax detection, direct media
   and T.38.  And whether app_dmodem is loaded, or dmodem-ari connected.

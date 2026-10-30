@@ -8,9 +8,10 @@
 # far end of the clear channel pump (dsp/dp_clear.cpp: HDLC flags until
 # it hears 32 of ours, 64 more, 64 octets of ones, then data) with plain
 # asynchronous characters (start bit, 8 data bits, stop bit; \N0 at
-# dmodemd), each octet's first bit its least significant.
+# dmodemd, and AT+B2=7, the modem link, as a clear channel's default
+# is X.75), each octet's first bit its least significant.
 #
-# Out: dmodemd (AT\N0+MS=CLEAR) dials; its offer must have CLEARMODE
+# Out: dmodemd (AT\N0+B2=7+MS=CLEAR) dials; its offer must have CLEARMODE
 # first, then PCMA and PCMU; we answer in CLEARMODE; CONNECT 64000 at
 # dmodemd, and a line of text each way.
 # In: dmodemd (-L, the default +MS) registers with us; we call it with
@@ -249,7 +250,7 @@ def outgoing():
     p, fd = start_dmodemd(False)
     dte = Dte(fd)
     try:
-        dte.send(b"ATE0\\N0X3+MS=CLEAR\r")
+        dte.send(b"ATE0\\N0X3+B2=7;+MS=CLEAR\r")
         if not dte.expect(rb"OK", 3):
             fail("no OK: %r" % dte.buf)
         dte.send(b"ATD1234\r")
@@ -293,7 +294,7 @@ def incoming():
         if not req or not req[0].startswith("REGISTER"):
             fail("no REGISTER: %r" % (req,))
         reply(req, 200, "OK", req[3])
-        dte.send(b"ATE0\\N0S0=1\r")
+        dte.send(b"ATE0\\N0S0=1+B2=7\r")
         if not dte.expect(rb"OK", 3):
             fail("no OK: %r" % dte.buf)
         dm = ("127.0.0.1", DM_PORT)

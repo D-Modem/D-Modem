@@ -39,6 +39,7 @@
 
 #include "dm_types.h"
 #include "hdlc.h"
+#include "lapb.h"
 #include "lapm.h"
 #include "mnp.h"
 #include "mnp5.h"
@@ -47,8 +48,14 @@
 #include "zstd_codec.h"
 #include "zstd_dict.h"
 #include "v80.h"
+#include "ppp_sync.h"
 
 namespace dlink {
+
+/* the link layer on an ISDN B-channel (CAPI's B2 protocol numbers):
+   the modem's (V.42 detection, LAPM, MNP or async as Config says),
+   X.75 SLP (lapb.h), or PPP's frames in synchronous HDLC (ppp_sync.h) */
+enum class B2 { X75 = 0, Ppp = 5, Modem = 7 };
 
 /* what the link negotiates and what it is asked for */
 struct Config {
@@ -102,10 +109,12 @@ struct Config {
 	   settings, rather than any of the above */
 	bool sync = false;
 	SyncConfig sync_cfg;
+	/* on a clear channel: X.75 or PPP rather than all of the above */
+	B2 b2 = B2::Modem;
 };
 
 /* the error correction a call has */
-enum class Protocol { None, Lapm, Mnp };
+enum class Protocol { None, Lapm, Mnp, X75, Ppp };
 
 /* a call's counts (ATI11): the DTE's characters each way; the frames
    of the error correction (LAPM's, MNP's) sent, the information frames
@@ -214,7 +223,8 @@ public:
 	/* LAPM's or MNP's frames not sent yet or not acknowledged */
 	bool tx_pending() const {
 		return (mode_ == Mode::Lapm && lapm_.tx_pending()) ||
-			(mode_ == Mode::Mnp && mnp_.tx_pending());
+			(mode_ == Mode::Mnp && mnp_.tx_pending()) ||
+			(mode_ == Mode::X75 && lapb_.tx_pending());
 	}
 	/* the data pump's transmit rate (bit/s), 0 if not known */
 	s32 tx_rate() const { return owner_->tx_rate(); }
@@ -241,6 +251,7 @@ public:
 		DetectEnd,      /* the detection phase's end (Detector::finish) */
 		T401,           /* LAPM's T401 (Lapm::t401_timeout) */
 		Negotiate,      /* the caller's XID (Lapm::negotiate) */
+		T1,             /* X.75's T1 (Lapb::t1_timeout) */
 	};
 	/* the bit timer: what once bits more bits went out (0: none) */
 	void set_timer(s32 bits, Timer what) {
@@ -251,7 +262,7 @@ public:
 	s32 timer() const { return timer_; }
 	/* what it runs (or last ran) */
 	Timer timer_what() const { return timer_what_; }
-	/* LAPM's frames on the line */
+	/* the frames on the line (LAPM's, MNP's, X.75's, PPP's) */
 	Hdlc &hdlc() { return hdlc_; }
 	/* the detection phase is over: LAPM (ec), else MNP (the originator,
 	   if asked and mnp) or async */
@@ -280,7 +291,8 @@ private:
 	void end_detect();
 	void start_mnp(bool initiator, const BitQueue *rx);
 	void no_ec();
-	enum class Mode { Idle, Detect, Lapm, Mnp, Async, Sync };
+	void start_b2();
+	enum class Mode { Idle, Detect, Lapm, Mnp, Async, Sync, X75, Ppp };
 	void run_timer();
 	s16 comp_read(u8 *buf, s16 n);
 	s16 comp_write(const u8 *buf, s16 n);
@@ -307,6 +319,8 @@ private:
 	Hdlc hdlc_;
 	Async async_;
 	Lapm lapm_;
+	Lapb lapb_;
+	PppSync ppp_;
 	MnpAsync mnp_async_;
 	Mnp mnp_;
 	V42bis enc_, dec_;
