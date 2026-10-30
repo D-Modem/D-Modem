@@ -121,15 +121,18 @@
       0 A: AT+MS?\r\r\n
       0 A: 56,1,1200,14400\r\n
       0 A: OK\r\n
-      0 A< AT+MS=V_CVM\r
-      0 A: AT+MS=V_CVM\r\r\n
+      0 A< AT+MS=VCVM\r
+      0 A: AT+MS=VCVM\r\r\n
       0 A: OK\r\n
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 150,1,1200,14400\r\n
       0 A: OK\r\n
-      0 A< AT+MS=v_cvm,0\r
-      0 A: AT+MS=v_cvm,0\r\r\n
+      0 A< AT+MS=vcvm,0\r
+      0 A: AT+MS=vcvm,0\r\r\n
+      0 A: OK\r\n
+      0 A< AT+MS=V_CVM,0\r
+      0 A: AT+MS=V_CVM,0\r\r\n
       0 A: OK\r\n
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n

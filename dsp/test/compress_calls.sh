@@ -9,7 +9,7 @@
 #
 #   LINES="g711 amr122 amrwb"   G.711 alone, AMR 12.2, AMR-WB 23.85
 #   COMPS="zstd_dict zstd v44_preset v44 none"
-#   MS=V_CVM                    another +MS (34: V.34 at 9600 Hz)
+#   MS=VCVM                    another +MS (34: V.34 at 9600 Hz)
 #   JOBS=4                      calls at once
 #
 # The CSV: line, compression, file, exit status, CONNECT rate, octets,
@@ -29,9 +29,9 @@ out=$(cd "$out" && pwd)
 call() {
 	local line=$1 comp=$2 file=$3
 	local name d rc rate b n ta tb ok neg
-	local half=$t/half_open8 at="ATX3;AT+MS=${MS:-V_CVM}"
+	local half=$t/half_open8 at="ATX3;AT+MS=${MS:-VCVM}"
 	local envs=(NETSIM="$t/netsim" NET=8000:8000:ulaw BULK_FILE="$file")
-	[ "${MS:-V_CVM}" = V_CVM ] || { half=$t/half_open; envs[1]=NET=9600:9600:ulaw; }
+	[ "${MS:-VCVM}" = VCVM ] || { half=$t/half_open; envs[1]=NET=9600:9600:ulaw; }
 	name=$line.$comp.$(basename "$file")
 	d=$out/$name
 	mkdir -p "$d"

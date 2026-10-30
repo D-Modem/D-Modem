@@ -756,24 +756,24 @@ std::vector<Call> calls()
 	    { "NET=8000:8000:ulaw", "NET_CODEC=amr:12.2", "STREAM=10" });
 	add("open", "open_21_amrwb2385", "open8", "open8", "ATX3;AT+MS=21",
 	    { "NET=8000:8000:ulaw", "NET_CODEC=amrwb:23.85", "STREAM=10" });
-	/* V.cvm (+MS=V_CVM): V.8 agrees on it, its start-up, then LAPM
+	/* V.cvm (+MS=VCVM): V.8 agrees on it, its start-up, then LAPM
 	   over its data mode: a comb through AMR 12.2 and AMR-WB 23.85,
 	   the parametric mode (or four tones) through AMR 7.4 */
-	add("open", "open_vcvm_amr122", "open8", "open8", "ATX3;AT+MS=V_CVM",
+	add("open", "open_vcvm_amr122", "open8", "open8", "ATX3;AT+MS=VCVM",
 	    { "NET=8000:8000:ulaw", "NET_CODEC=amr:12.2", "STREAM=10",
 	      "EXPECT_A=(?s)V.8 agreed on V.cvm.*vcvm: phase 4: transmitting N[234]00",
 	      "EXPECT_B=(?s)V.8 agreed on V.cvm.*vcvm: phase 4: transmitting N[234]00" });
 	/* (175 to 350 bit/s: one line of the stream, not 3.5 kB) */
-	add("open", "open_vcvm_amr74", "open8", "open8", "ATX3;AT+MS=V_CVM",
+	add("open", "open_vcvm_amr74", "open8", "open8", "ATX3;AT+MS=VCVM",
 	    { "NET=8000:8000:ulaw", "NET_CODEC=amr:7.4", "STREAM=0.5",
 	      "EXPECT_A=vcvm: phase 4", "EXPECT_B=vcvm: phase 4" });
-	add("open", "open_vcvm_amrwb2385", "open8", "open8", "ATX3;AT+MS=V_CVM",
+	add("open", "open_vcvm_amrwb2385", "open8", "open8", "ATX3;AT+MS=VCVM",
 	    { "NET=8000:8000:ulaw", "NET_CODEC=amrwb:23.85", "STREAM=10",
 	      "EXPECT_A=vcvm: phase 4", "EXPECT_B=vcvm: phase 4" });
 #endif
 	/* V.cvm on a line without a codec (G.711 alone): zstd from the
 	   dictionary (Annex F), offered in XID by both */
-	add("open", "open_vcvm", "open8", "open8", "ATX3;AT+MS=V_CVM",
+	add("open", "open_vcvm", "open8", "open8", "ATX3;AT+MS=VCVM",
 	    { "NET=8000:8000:ulaw", "STREAM=10",
 	      "EXPECT_A=(?s)V.8 agreed on V.cvm.*vcvm: phase 4: transmitting N200"
 	      ".*zstd: window 32768, dictionary 56434d01 \\(3660 octets\\)",
@@ -781,13 +781,13 @@ std::vector<Call> calls()
 	      "zstd: window 32768, dictionary 56434d01" });
 	/* without the preset (Annex E) on offer: zstd without its
 	   dictionary, and the data through */
-	add("open", "open_vcvm_nodict", "open8", "open8", "ATX3;AT+MS=V_CVM",
+	add("open", "open_vcvm_nodict", "open8", "open8", "ATX3;AT+MS=VCVM",
 	    { "NET=8000:8000:ulaw", "STREAM=5", "DSP_VCVM_V44DICT=0",
 	      "EXPECT_A=(?s)vcvm: phase 4.*zstd: window 32768, no dictionary",
 	      "EXPECT_B=(?s)vcvm: phase 4.*zstd: window 32768, no dictionary",
 	      "REJECT_B=preset dictionary" });
 	/* without zstd in the INFO0s: V.44 from its preset dictionary */
-	add("open", "open_vcvm_nozstd", "open8", "open8", "ATX3;AT+MS=V_CVM",
+	add("open", "open_vcvm_nozstd", "open8", "open8", "ATX3;AT+MS=VCVM",
 	    { "NET=8000:8000:ulaw", "STREAM=5", "DSP_VCVM_ZSTD=0",
 	      "EXPECT_A=(?s)vcvm: phase 4.*v44: preset dictionary 1, 3505 of "
 	      "its 3505",

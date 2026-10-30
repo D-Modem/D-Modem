@@ -6401,7 +6401,7 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	v91 = (id == DP_V90 || id == DP_V92 || id == DP_V91) &&
 		line_rate == 8000 &&
 		env_on("DSP_V91");
-	/* V.cvm (+MS=V_CVM): its field after +CVM's mode set, the pump
+	/* V.cvm (+MS=VCVM): its field after +CVM's mode set, the pump
 	   at 8000 Hz (a 9600 Hz line through converters) */
 	vcvm = id == DP_VCVM;
 	{
