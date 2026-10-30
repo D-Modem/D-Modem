@@ -143,6 +143,9 @@ The modem needs the line's audio as it is, so:
   `AT+MS=CLEAR` on the channel's octets as they are, for another
   D-Modem's clear channel.  The profile's `clear` (`auto`, `yes` or
   `no`) chooses; see [isdn.md](isdn.md).
+- A SIP call in RFC 4040's CLEARMODE is one too: `codec_clearmode.so`
+  (built and installed with the module) gives Asterisk the codec, and
+  `allow = clearmode` on an endpoint offers and takes it.
 
 ## Building
 
