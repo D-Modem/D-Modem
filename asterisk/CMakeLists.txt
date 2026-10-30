@@ -1,9 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 D-Modem Authors
-# app_dmodem.so: the DModem() dialplan application, and
 # codec_clearmode.so: RFC 4040's CLEARMODE for ISDN data calls over SIP,
-# built against the headers of an installed Asterisk (make install-headers, or the
-# asterisk-dev package of a distribution); skipped when they are missing.
+# and with -DDMODEM_APP_DMODEM=ON app_dmodem.so, the DModem() dialplan
+# application, built against the headers of an installed Asterisk (make
+# install-headers, or the asterisk-dev package of a distribution); skipped
+# when they are missing.
+#
+# app_dmodem.so has libdmodem (AGPL-3.0) inside a module of Asterisk
+# (GPL-2.0-only), two licences that can't be combined: it is off by
+# default, for building and running on your own Asterisk, and is not to be
+# distributed.  dmodem-ari (../ari) is the Asterisk path to ship
+# (LICENSING.md).
 #
 #   -DASTERISK_INCLUDE_DIR=...     headers elsewhere than the usual places
 #   -DASTERISK_MODULES_DIR=...     where `cmake --install` puts the module
@@ -13,10 +20,10 @@ find_path(ASTERISK_INCLUDE_DIR asterisk.h
 	PATHS /usr/include /usr/local/include)
 if(NOT ASTERISK_INCLUDE_DIR OR
    NOT EXISTS ${ASTERISK_INCLUDE_DIR}/asterisk/module.h)
-	message(STATUS "app_dmodem: Asterisk headers not found, skipped")
+	message(STATUS "asterisk: Asterisk headers not found, skipped")
 	return()
 endif()
-message(STATUS "app_dmodem: Asterisk headers in ${ASTERISK_INCLUDE_DIR}")
+message(STATUS "asterisk: Asterisk headers in ${ASTERISK_INCLUDE_DIR}")
 
 find_package(PkgConfig QUIET)
 set(_modules_dir /usr/lib/asterisk/modules)
@@ -34,25 +41,32 @@ endif()
 set(ASTERISK_MODULES_DIR ${_modules_dir} CACHE PATH "Asterisk modules")
 set(ASTERISK_CONF_DIR /etc/asterisk CACHE PATH "Asterisk configuration")
 
-add_library(app_dmodem MODULE app_dmodem.c ${DMODEM_PBX_DIR}/dmodem_bridge.c)
-set_target_properties(app_dmodem PROPERTIES PREFIX "")
-target_include_directories(app_dmodem PRIVATE ${ASTERISK_INCLUDE_DIR}
-	${DMODEM_PBX_DIR})
-target_compile_definitions(app_dmodem PRIVATE _GNU_SOURCE
-	AST_MODULE="app_dmodem"
-	AST_MODULE_SELF_SYM=__internal_app_dmodem_self)
-target_compile_options(app_dmodem PRIVATE -Wall -g -O2 -pthread)
-# (Clang: Asterisk's utils.h declares RAII_VAR's cleanup with a block
-# type, Clang's stand-in for GCC's nested functions.  app_dmodem uses no
-# RAII_VAR, so no block is made and the module needs no BlocksRuntime)
-if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-	target_compile_options(app_dmodem PRIVATE -fblocks)
+set(_dmodem_modules codec_clearmode)
+if(DMODEM_APP_DMODEM)
+	message(WARNING "app_dmodem: built for local use only; a built "
+		"app_dmodem.so may not be distributed (LICENSING.md)")
+	list(APPEND _dmodem_modules app_dmodem)
+	add_library(app_dmodem MODULE app_dmodem.c ${DMODEM_PBX_DIR}/dmodem_bridge.c)
+	set_target_properties(app_dmodem PROPERTIES PREFIX "")
+	target_include_directories(app_dmodem PRIVATE ${ASTERISK_INCLUDE_DIR}
+		${DMODEM_PBX_DIR})
+	target_compile_definitions(app_dmodem PRIVATE _GNU_SOURCE
+		AST_MODULE="app_dmodem"
+		AST_MODULE_SELF_SYM=__internal_app_dmodem_self)
+	target_compile_options(app_dmodem PRIVATE -Wall -g -O2 -pthread)
+	# (Clang: Asterisk's utils.h declares RAII_VAR's cleanup with a block
+	# type, Clang's stand-in for GCC's nested functions.  app_dmodem uses no
+	# RAII_VAR, so no block is made and the module needs no BlocksRuntime)
+	if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+		target_compile_options(app_dmodem PRIVATE -fblocks)
+	endif()
+	# the library's symbols stay inside the module
+	target_link_libraries(app_dmodem PRIVATE dmodem)
+	target_link_options(app_dmodem PRIVATE -Wl,--exclude-libs,ALL)
 endif()
-# the library's symbols stay inside the module
-target_link_libraries(app_dmodem PRIVATE dmodem)
-target_link_options(app_dmodem PRIVATE -Wl,--exclude-libs,ALL)
 
-# the CLEARMODE pseudo-codec: a module of its own (nothing of D-Modem's)
+# the CLEARMODE pseudo-codec: a module of its own (nothing of D-Modem's,
+# GPL-2.0-only like Asterisk), always built with the headers
 add_library(codec_clearmode MODULE codec_clearmode.c)
 set_target_properties(codec_clearmode PROPERTIES PREFIX "")
 target_include_directories(codec_clearmode PRIVATE ${ASTERISK_INCLUDE_DIR})
@@ -64,6 +78,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang")
 	target_compile_options(codec_clearmode PRIVATE -fblocks)
 endif()
 
-install(TARGETS app_dmodem codec_clearmode
+install(TARGETS ${_dmodem_modules}
 	LIBRARY DESTINATION ${ASTERISK_MODULES_DIR})
 install(FILES dmodem.conf.sample DESTINATION ${ASTERISK_CONF_DIR})

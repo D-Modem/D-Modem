@@ -11,15 +11,29 @@ licences:
 
 Each source file names its licence on an `SPDX-License-Identifier` line.
 
-## The Asterisk module
+## Asterisk
 
-`asterisk/app_dmodem.c` is under the GNU GPL version 2 only
-(GPL-2.0-only), the licence of Asterisk, which it is built against.
+Asterisk is under the GPL version 2 only, and its `LICENSE` says the GPL
+applies to every module loaded into it. The AGPL-3.0 and the GPL-2.0-only
+can't be combined in one work, so D-Modem's modem is not shipped as an
+Asterisk module:
 
-`dmodem-ari` (`ari/`) serves Asterisk calls without a module: it is an
-application of the Asterisk REST Interface, which Asterisk's licence says
-need not be under the GPL. It is under the AGPL-3.0, or the commercial
-licence, like the rest ([docs/ari.md](docs/ari.md)).
+- **dmodem-ari** (`ari/`) is how D-Modem serves Asterisk calls. It is a
+  program of its own that drives Asterisk over the Asterisk REST
+  Interface, which Asterisk's `LICENSE` says need not be under the GPL
+  (and grants a licence for in any case). It is under the AGPL-3.0, or
+  the commercial licence, like the rest ([docs/ari.md](docs/ari.md)).
+- **codec_clearmode** (`asterisk/codec_clearmode.c`), RFC 4040's
+  CLEARMODE codec, has no D-Modem code in it and is under the GPL-2.0-only,
+  Asterisk's licence. It can be built and shipped as any Asterisk module.
+- **app_dmodem** (`asterisk/app_dmodem.c`, GPL-2.0-only) is the glue for
+  running the modem inside Asterisk. Built, it holds `pbx/dmodem_bridge.c`
+  and libdmodem (AGPL-3.0-only), so a built `app_dmodem.so` falls under
+  both licences at once and may not be distributed by anyone, under the
+  AGPL or the commercial licence. It is off by default
+  (`-DDMODEM_APP_DMODEM=ON` builds it) for those who build and run it on
+  their own Asterisk, which the GPL and the AGPL allow; it must not go
+  into packages, images or releases.
 
 ## Smart Link's ST7554 driver
 

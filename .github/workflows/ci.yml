@@ -588,8 +588,10 @@ jobs:
 
       - name: Build
         run: |
+          # app_dmodem: built here only to be tested, never shipped
           cmake -B build -G Ninja -DDMODEM_WERROR=ON \
-            -DASTERISK_INCLUDE_DIR=$HOME/asterisk/include
+            -DASTERISK_INCLUDE_DIR=$HOME/asterisk/include \
+            -DDMODEM_APP_DMODEM=ON
           cmake --build build
           test -f build/asterisk/app_dmodem.so
           test -f build/asterisk/codec_clearmode.so

@@ -62,10 +62,10 @@ foreach (Config::FAX_RATES as $r)
 	<?php
 	$row('engine', _('Calls go to'),
 	     $select('engine', $s['engine'], [
-		     'app' => _('DModem() in Asterisk (app_dmodem.so)'),
 		     'ari' => _('dmodem-ari beside Asterisk (Stasis)'),
+		     'app' => _('DModem() in Asterisk (app_dmodem.so, built yourself)'),
 	     ]),
-	     _('app_dmodem runs the modem inside Asterisk: one hop less, the recommended setup. dmodem-ari is a program of its own on Asterisk\'s ARI, for an Asterisk you\'d rather not load a module into; it reads dmodem.conf when it starts, so restart it after Apply Config.'));
+	     _('dmodem-ari runs the modem as a program of its own on Asterisk\'s ARI, the recommended setup; it reads dmodem.conf when it starts, so restart it after Apply Config. app_dmodem runs the modem inside Asterisk, one hop less, but only as a module you build for your own Asterisk: a built app_dmodem.so may not be passed on (LICENSING.md).'));
 	$row('debug', _('Log level'),
 	     $select('debug', $s['debug'], [
 		     0 => _('Errors only'), 1 => _('The modem core'),

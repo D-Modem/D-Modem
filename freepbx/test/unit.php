@@ -341,6 +341,10 @@ same($m->getActionBar(['display' => 'dmodem']), [], 'action bar: none on the lis
 /* --- dialling out --- */
 
 $o = Dialout::originate(Config::defaultSettings(), 'bbs', '15551234');
+same($o['Application'] . '(' . $o['Data'] . ')', 'Stasis(dmodem,bbs,o)',
+     'Originate: dmodem-ari\'s Stasis() by default');
+$o = Dialout::originate(array_merge(Config::defaultSettings(), ['engine' => 'app']),
+			'bbs', '15551234');
 same($o, ['Channel' => 'Local/15551234@from-internal', 'Application' => 'DModem',
 	  'Data' => 'bbs,o', 'Timeout' => '60000', 'Async' => 'true',
 	  'Variable' => 'DMODEM_DIALOUT=bbs'], 'Originate: DModem(bbs,o) on Local/<number>@from-internal');

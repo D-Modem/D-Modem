@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: AGPL-3.0-only
+ * SPDX-License-Identifier: GPL-2.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
  *    codec_clearmode.c - the CLEARMODE pseudo-codec for Asterisk: RFC
@@ -20,6 +20,10 @@
  *    ast_rtp_engine_load_format()).  An idea from a gist by 7marcus9
  *    (codec_clearmode.c), written anew.
  *
+ *    No D-Modem code is in it, so it is under Asterisk's own licence.
+ *
+ * This program is free software, distributed under the terms of the GNU
+ * General Public License Version 2.
  */
 
 /*** MODULEINFO

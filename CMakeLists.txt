@@ -16,7 +16,10 @@
 #                      for Android, Windows and Apple's systems, which have
 #                      no OpenSSL of their own)
 #   DMODEM_DMODEMD     build dmodemd (its SIP on libre)
-#   DMODEM_ASTERISK    build app_dmodem when Asterisk's headers are found
+#   DMODEM_ASTERISK    build codec_clearmode when Asterisk's headers are found
+#   DMODEM_APP_DMODEM  also build app_dmodem (off: libdmodem, AGPL, inside
+#                      a GPLv2 Asterisk module; for your own Asterisk only,
+#                      never to be distributed: see LICENSING.md)
 #   DMODEM_TESTS       build the test programs and register them with ctest
 #                      (with a 32 bit compiler also the interop tests
 #                      against Smart Link's original DSP library)
@@ -97,8 +100,11 @@ if(WIN32)
 else()
 	set(_dmodem_pbx_default ON)
 endif()
-option(DMODEM_ASTERISK "Build app_dmodem when Asterisk's headers are found"
+option(DMODEM_ASTERISK "Build codec_clearmode when Asterisk's headers are found"
 	${_dmodem_pbx_default})
+option(DMODEM_APP_DMODEM
+	"Also build app_dmodem (local use only, not to be distributed: LICENSING.md)"
+	OFF)
 option(DMODEM_FREESWITCH "Build mod_dmodem when FreeSWITCH is found"
 	${_dmodem_pbx_default})
 option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)"

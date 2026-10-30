@@ -237,6 +237,10 @@ no card has checked it yet.
 
 ## app_dmodem: an ISDN data call through Asterisk
 
+(app_dmodem is built only for your own Asterisk, `-DDMODEM_APP_DMODEM=ON`,
+and a built one is not passed on: see [LICENSING.md](../LICENSING.md).
+dmodem-ari does not take clear-channel calls yet.)
+
 A call that reaches `DModem()` with an unrestricted digital bearer
 (`${CHANNEL(transfercapability)}` is `DIGITAL`, as chan_dahdi sets it
 for an ISDN data call on a BRI or PRI span) runs on the clear channel.
@@ -264,7 +268,9 @@ clear.
 ## codec_clearmode: CLEARMODE in Asterisk
 
 `asterisk/codec_clearmode.c` adds RFC 4040's codec to Asterisk, built
-and installed with `app_dmodem`. It registers the `clearmode` codec
+and installed whenever Asterisk's headers are found (it has no D-Modem
+code, and is under Asterisk's GPL-2.0-only, so it can be shipped as any
+module). It registers the `clearmode` codec
 (8000 octets a second, frames of 10 to 150 ms) and its format, and maps
 it to `CLEARMODE/8000` in RTP, using only Asterisk's public API. There is
 no translator: a clear call's octets are data, so a CLEARMODE channel
