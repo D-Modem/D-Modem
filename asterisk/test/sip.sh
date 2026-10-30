@@ -14,7 +14,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 build=${DMODEM_BUILD:-$here/../../build}
 run=${TMPDIR:-/tmp}/dmodem-sip-test
 rm -rf "$run"; mkdir -p "$run/etc" "$run/run" "$run/log" "$run/spool" "$run/lib" "$run/mod"
-# CODEC=alaw (or ulaw): the call in that law only
+# CODEC=alaw (or ulaw): the call in that law only; CODEC=clearmode: in
+# RFC 4040's clear channel (codec_clearmode.so from the build), an ISDN
+# data call: D-Modem's +MS=CLEAR, X.75 on it
 if [ -n "$CODEC" ]; then
 	sed "/^allow = /d; s/^disallow = all/disallow = all\nallow = $CODEC/" \
 		"$here/pjsip.conf" > "$run/etc/pjsip.conf"
@@ -49,6 +51,7 @@ for d in /usr/share/asterisk /var/lib/asterisk; do
 done
 for m in "$astmod"/*.so; do ln -s "$m" "$run/mod/"; done
 ln -sf "$build/asterisk/app_dmodem.so" "$run/mod/app_dmodem.so"
+ln -sf "$build/asterisk/codec_clearmode.so" "$run/mod/codec_clearmode.so"
 cat > "$run/etc/asterisk.conf" <<EOT
 [directories]
 astetcdir => $run/etc
@@ -103,6 +106,10 @@ if [ -n "$VOICE" ]; then
 	[ "$n" -ge 2 ] || r=1
 fi
 grep -E "DModem|DMODEMSTATUS" "$run/console.log"
+# CODEC=clearmode: the call was clear at 64000 bit/s
+if [ "$CODEC" = clearmode ]; then
+	grep -E "DMODEMRATE=64000/64000" "$run/console.log" || r=1
+fi
 [ -z "$ARI" ] || ari_log "$run"
 $ast -rx "core stop now" >/dev/null 2>&1
 exit $r

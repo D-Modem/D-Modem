@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 D-Modem Authors
-# app_dmodem.so: the DModem() dialplan application, built against the
-# headers of an installed Asterisk (make install-headers, or the
+# app_dmodem.so: the DModem() dialplan application, and
+# codec_clearmode.so: RFC 4040's CLEARMODE for ISDN data calls over SIP,
+# built against the headers of an installed Asterisk (make install-headers, or the
 # asterisk-dev package of a distribution); skipped when they are missing.
 #
 #   -DASTERISK_INCLUDE_DIR=...     headers elsewhere than the usual places
@@ -51,5 +52,18 @@ endif()
 target_link_libraries(app_dmodem PRIVATE dmodem)
 target_link_options(app_dmodem PRIVATE -Wl,--exclude-libs,ALL)
 
-install(TARGETS app_dmodem LIBRARY DESTINATION ${ASTERISK_MODULES_DIR})
+# the CLEARMODE pseudo-codec: a module of its own (nothing of D-Modem's)
+add_library(codec_clearmode MODULE codec_clearmode.c)
+set_target_properties(codec_clearmode PROPERTIES PREFIX "")
+target_include_directories(codec_clearmode PRIVATE ${ASTERISK_INCLUDE_DIR})
+target_compile_definitions(codec_clearmode PRIVATE _GNU_SOURCE
+	AST_MODULE="codec_clearmode"
+	AST_MODULE_SELF_SYM=__internal_codec_clearmode_self)
+target_compile_options(codec_clearmode PRIVATE -Wall -g -O2 -pthread)
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+	target_compile_options(codec_clearmode PRIVATE -fblocks)
+endif()
+
+install(TARGETS app_dmodem codec_clearmode
+	LIBRARY DESTINATION ${ASTERISK_MODULES_DIR})
 install(FILES dmodem.conf.sample DESTINATION ${ASTERISK_CONF_DIR})
