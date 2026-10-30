@@ -2276,6 +2276,10 @@ void Modem::report(Result r)
 		} else {
 			line = "CONNECT " + dec(rx_rate_) + (cvm ? "/CVM" : "");
 		}
+	} else if (r == Result::Ring && kept("+CRC")[0]) {
+		/* +CRC=1: the call's type, in words whatever V says */
+		line = std::string("+CRING: ") +
+			(clear_channel() ? "SYNC" : "VOICE");
 	} else if (verbose) {
 		line = result_text[static_cast<s16>(r)];
 	} else {

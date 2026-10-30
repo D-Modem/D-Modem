@@ -119,6 +119,12 @@ int  dmodem_poll_dte(struct dmodem *d);
 void dmodem_status(struct dmodem *d, struct dmodem_status *s);
 /* hang up (as ATH) */
 void dmodem_hangup(struct dmodem *d);
+/* a ring of a call to the modem, for a program whose line tells it of
+   calls (a PBX's, a CAPI controller's test): RING to the DTE (+CRING
+   with AT+CRC=1), and the answer with S0; again for each ring (every 6
+   s or so).  first: the call's first ring, its caller's number (NULL:
+   withheld) reported after it with AT+VCID=1 */
+void dmodem_ring(struct dmodem *d, int first, const char *number);
 /* the log: 0 errors only, higher for more */
 void dmodem_set_debug(int level);
 /* the log lines go to fn (NULL: stderr); for all the modems, set it

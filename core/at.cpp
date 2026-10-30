@@ -220,6 +220,10 @@ const struct Kept {
 	   <ce> has no use here.  modem.cpp reads it */
 	{ "+CBST", 3, { 0, 0, 0 },
 	  "(0,65,66,68,70,71,75,79,80,81,83),(0,1),(0,1)" },
+	/* the incoming call's type with its rings (27.007 6.11): 1 has
+	   +CRING: SYNC (an ISDN data call: a clear channel) or +CRING:
+	   VOICE (an audio call) instead of RING; modem.cpp reads it */
+	{ "+CRC", 1, { 0 }, "(0,1)" },
 	{ "+PCW", 1, { 2 }, "(0-2)" },
 	{ "+PIG", 1, { 1 }, "(0,1)" },
 	/* +FAA=1, adaptive answer: modem.cpp reads it */

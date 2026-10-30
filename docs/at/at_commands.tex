@@ -308,7 +308,7 @@ give.
 \cmdl[ampB]{\&B\p{n}} & V.32 retrain (accepted). & \cmdl[plusDS]{+DS} & V.42bis. \\ \hline
 \cmdl[ampC]{\&C\p{n}} & Data carrier detect (kept). & \cmdl[plusDS44]{+DS44} & V.44. \\ \hline
 \cmdl[ampD]{\&D\p{n}} & Data terminal ready (accepted). & \cmdl[plusDSZ]{+DSZ} & zstd compression. \\ \hline
-\cmdl[ampE]{\&E\p{n}} & Rate in CONNECT (kept). & \cmdl[plusB2]{+B2, +CBST} & B-channel protocol, V.110. \\ \hline
+\cmdl[ampE]{\&E\p{n}} & Rate in CONNECT (kept). & \cmdl[plusB2]{+B2, +CBST, +CRC} & B-channel protocol, V.110, ring type. \\ \hline
 \cmdl[ampF]{\&F\p{n}} & Factory defaults (accepted). & \cmdl[plusIFC]{+IFC, +ICF, +IPR} & DTE interface. \\ \hline
 \cmdl[ampG]{\&G\p{n}} & Guard tone (accepted). & \cmdl[plusILRR]{+ILRR, +IDSR, +ILSD} & DTE interface (kept). \\ \hline
 \cmdl[ampH]{\&H\p{n}} & Flow control (kept). & \cmdl[plusMR]{+MR, +ER, +DR} & Reports (kept). \\ \hline
@@ -2030,6 +2030,25 @@ it.  See \cmd{docs/isdn.md}.
 80, 81 & 28800, 38400 bit/s (64k). \\ \hline
 83 & 56000 bit/s (7 bits an octet, no frames). \\ \hline
 \end{vtable}
+\end{command}
+
+\begin{command}{plusCRC}{+CRC}{Cellular Result Codes}
+27.007's: with \cmd{1}, each ring of a call is \cmd{+CRING: SYNC} for a
+call on a clear 64 kbit/s channel (an ISDN data call: SIP's CLEARMODE,
+a PBX's digital bearer, an mISDN card's unrestricted digital call) and
+\cmd{+CRING: VOICE} for any other, instead of \cmd{RING} (in words
+whatever \cmdl[V]{V} says).  A program that answers by itself
+(dmodem-capid, CAPI on a D-Modem) tells the two apart by it.
+\cmdl[ampV]{\&V} lists it.
+\begin{syntax}
+\item +CRC=\p{n}
+\item +CRC? (gives \cmd{+CRC: 0})
+\item +CRC=? (gives \cmd{+CRC: (0,1)})
+\end{syntax}
+\begin{results}
+\item OK if \p{n} = 0 (\cmd{RING}, the default) or 1.
+\item ERROR otherwise.
+\end{results}
 \end{command}
 
 \subsection{Interface and report parameters}

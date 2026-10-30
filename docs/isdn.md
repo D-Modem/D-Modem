@@ -11,7 +11,8 @@ the two ways for a call to reach it: SIP in CLEARMODE, and an Asterisk
 channel with a digital bearer. Phase 2 runs the B-channel protocols of
 ISDN terminal adapters on it: X.75 and synchronous PPP (`AT+B2`, below),
 and gives Asterisk a CLEARMODE codec (`codec_clearmode`). Phase 3 adds
-V.110 rate adaption (`AT+CBST`) and V.120 (`AT+B2=9`).
+V.110 rate adaption (`AT+CBST`) and V.120 (`AT+B2=9`), and CAPI 2.0 for
+ISDN applications (`dmodem-capid`).
 
 ## AT+MS=CLEAR
 
@@ -310,6 +311,107 @@ source tree (1.14 or later); only its `src/isdn/v110.c` is compiled, into
 the test. CI's build job clones libosmocore 1.14.2 for it; all twelve of
 its rates, 600 to 38400 bit/s, pass both ways.
 
+## CAPI 2.0: dmodem-capid
+
+`dmodem-capid` (`capi/`) makes a D-Modem a CAPI 2.0 controller, for the
+ISDN software written against CAPI: capi4hylafax, chan_capi,
+pppd's capiplugin, and the BBS and mailer software of the isdn4linux
+years. It is a program of its own that drives the modem through its DTE
+with AT commands, so it works with every line D-Modem has: SIP (with
+CLEARMODE for data calls), an Asterisk channel, an mISDN card, and any
+line that comes later. The applications reach it over TCP with
+libcapi20's remote CAPI module (`rcapi`, the protocol of isdn4k-utils'
+`rcapid`), so they run unchanged on the same machine or another one.
+
+```
+dmodemd ...                              # its pty: /dev/ttyDM0 (or --tcp)
+dmodem-capid -l 6000 /dev/ttyDM0         # or tcp:127.0.0.1:2323
+
+# /etc/capi20.conf where the applications run
+REMOTE rcapi localhost 6000
+```
+
+`-i` adds AT commands after the controller's own setup (`ATE0V1Q0X3`,
+`+CRC=1`, `+VCID=1`, `S0=0`).
+
+It is one controller (1) with one B-channel: one call at a time, PLCI
+`0x0101` and NCCI `0x00010101`. What it does with each message:
+
+- **LISTEN_REQ**: the CIP mask is kept. A ring is offered (CONNECT_IND)
+  to each application whose mask takes it: CIP 2 (unrestricted digital)
+  for `+CRING: SYNC`, the modem's ring of a clear channel call (`AT+CRC`
+  below), else the first of 4 (3.1 kHz audio), 16 (telephony) and 1
+  (speech) the mask has. The caller's number comes from `AT+VCID`. The
+  called number is empty (no MSN selection yet).
+- **CONNECT_REQ**: the B protocol is set with AT commands (below), then
+  `ATD` with the called number. `CONNECT` is CONNECT_ACTIVE_IND. Then
+  the application's CONNECT_B3_REQ gives CONNECT_B3_ACTIVE_IND.
+- **CONNECT_RESP**: the first application to accept the call has it
+  (the others get DISCONNECT_IND, reason `0x3304`). Its B protocol is
+  set, then `ATA`. `CONNECT` is CONNECT_ACTIVE_IND and CONNECT_B3_IND.
+  A call nobody takes rings on unanswered. When the rings stop for 10
+  s, the applications it was offered to get DISCONNECT_IND.
+- **DATA_B3**: the data goes to the modem as it is, and its CONF comes
+  once the modem has taken it. The modem's data comes in DATA_B3_INDs
+  of up to the application's maxBDataLen, as many unanswered as its
+  maxBDataBlocks (7 at most).
+- **DISCONNECT_REQ**: `+++` between guard times (D-Modem's is 500 ms),
+  then `ATH`; DISCONNECT_B3_IND and DISCONNECT_IND (reason 0) follow.
+  `NO CARRIER` from the modem ends the call the same way, reason
+  `0x3490`, once the data before it has gone to the application. `BUSY`
+  is `0x3491`, `NO ANSWER` `0x3493`.
+- FACILITY_REQ answers supplementary services' GetSupportedServices
+  (none), and everything else with "facility not supported". ALERT_REQ
+  and INFO_REQ are confirmed, and do nothing. SELECT_B_PROTOCOL and
+  RESET_B3 are refused.
+
+The B protocols (CAPI's B1, B2, B3) and the AT commands for them:
+
+| B1 | B2 | B3 | the modem |
+|---|---|---|---|
+| 0 (64 kbit/s HDLC) | 0 (X.75) | 0 | `+MS=CLEAR;+B2=0` |
+| 0 | 1 (transparent) | 0 | `+MS=CLEAR;+B2=5`: each DATA_B3 a whole frame |
+| 0 | 9 (V.120 async) | 0 | `+MS=CLEAR;+B2=9` |
+| 2 (V.110 async) | 1 | 0 | `\N0+MS=CLEAR;+CBST=<rate>,0;+B2=7` |
+| 3 (V.110 sync) | 0, 1, 9 | 0 | `+CBST=<rate>,1` and B2 as above |
+| 7 (modem, negotiated) | 7 (V.42, MNP) | 0, 7 | the modem's own `+MS`, `\N3` |
+| 7, 8 (modem) | 1 | 0 | the modem's own `+MS`, `\N0` |
+
+An empty B protocol is CAPI's default, X.75. The V.110 rate is B1's
+configuration's first word (300 to 56000, or 0 for the caller's). B1 0
+with B2 1 is what capiplugin asks for: the controller turns each
+DATA_B3 into a frame in RFC 1662's framing for the modem's sync PPP
+(`+B2=5`), and each frame back into a DATA_B3. Other protocols (fax, the
+B1 1 bit-transparent channel, X.25) are refused with CAPI's "not
+supported" info.
+
+On a modem call (B1 7) the modem's own modulation is used: the
+controller reads `AT+MS?` at the start, and sets it again on each such
+call.
+
+`AT+CRC=1` (27.007's) is the one addition to the modem for this: a ring
+is `+CRING: SYNC` for a call on a clear channel and `+CRING: VOICE` for
+any other, instead of `RING`.
+
+Some limits: one call at a time; the online data is watched for the
+modem's `NO CARRIER` line (so that line inside the data would end the
+call); no fax (CAPI's B1 4) yet; no Windows `capi2032.dll` yet.
+libdmodem's `dmodem_ring()` rings a modem for a program that learns of
+calls itself; `capi/test/capi_test.cpp` uses it.
+
+`capi/test/capi_test.cpp` has the controller on one of two libdmodem
+modems on a simulated line, with an application of the test's:
+
+- calls out over X.75, V.120, frames (sync PPP), V.110 at 9600 bit/s,
+  and a modem call (V.42 over V.90) with data both ways;
+- a call in on a clear channel with the caller's number, and a second
+  listening application that loses it;
+- hangups from either end, a call nobody answers, a call that stops
+  ringing, and a B protocol the controller lacks;
+- the TCP server in rcapi's framing, against a modem of the test's.
+
+It has not yet been run against libcapi20 itself.
+
 ## What comes next
 
 The feasibility study's later phases build on this line mode:
@@ -318,4 +420,6 @@ The feasibility study's later phases build on this line mode:
    come here: V.42bis over X.75, and MSN selection.
 2. Done: V.110 (`AT+CBST`), V.120 (`AT+B2=9`), and mISDN for BRI cards
    on Linux (`--misdn`), which still needs a test on a real card.
-3. Maybe CAPI 2.0 emulation, and hardware.
+3. CAPI 2.0: done for data and modem calls (`dmodem-capid`, above). Fax
+   over CAPI and a Windows `capi2032.dll` are still to come. Hardware
+   (an S0 USB stick) is being designed.
