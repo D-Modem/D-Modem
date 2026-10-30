@@ -68,8 +68,9 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 			   cfg.rx_info);
 	if (cfg.mnp)
 		mnp_.init(this, cfg);
-	if (cfg.b2 == B2::X75)
-		lapb_.init(this);
+	if (cfg.b2 == B2::X75 || cfg.b2 == B2::V120)
+		lapb_.init(this, cfg.b2 == B2::V120 ? Lapb::Variant::V120 :
+			   Lapb::Variant::X75);
 	return 0;
 }
 
@@ -159,12 +160,14 @@ void Link::start_b2()
 	timer_ = 0;
 	timer_what_ = Timer::None;
 	push_pending = false;
-	proto_ = asked_.b2 == B2::X75 ? Protocol::X75 : Protocol::Ppp;
+	proto_ = asked_.b2 == B2::X75 ? Protocol::X75 :
+		asked_.b2 == B2::V120 ? Protocol::V120 : Protocol::Ppp;
 	owner_->status(Status::Detected);
 	hdlc_.start(this);
-	if (asked_.b2 == B2::X75) {
+	if (asked_.b2 == B2::X75 || asked_.b2 == B2::V120) {
 		mode_ = Mode::X75;
-		logf("x75: %s.", caller_ ? "calling end" : "called end");
+		logf("%s: %s.", asked_.b2 == B2::X75 ? "x75" : "v120",
+		     caller_ ? "calling end" : "called end");
 		lapb_.start();
 		return;
 	}

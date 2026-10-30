@@ -210,9 +210,15 @@ const struct Kept {
 	{ "+DSZ", 2, { 1, 1 }, "(0,1),(0,1)" },
 	/* D-Modem's own: the link layer on a clear channel (an ISDN
 	   B-channel), as CAPI numbers its B2 protocols: 0 X.75 SLP, 5 PPP
-	   in synchronous HDLC, 7 the modem's (\N, +ES); modem.cpp reads
-	   it */
-	{ "+B2", 1, { 0 }, "(0,5,7)" },
+	   in synchronous HDLC, 7 the modem's (\N, +ES), 9 V.120
+	   (asynchronous); modem.cpp reads it */
+	{ "+B2", 1, { 0 }, "(0,5,7,9)" },
+	/* the bearer service (27.007 6.7): <speed> a V.110 rate on a clear
+	   channel (0: none, the answerer takes the caller's), <name> 0
+	   asynchronous (the DTE's characters), 1 synchronous (+B2's link);
+	   <ce> has no use here.  modem.cpp reads it */
+	{ "+CBST", 3, { 0, 0, 0 },
+	  "(0,65,66,68,70,71,75,79,80,81,83),(0,1),(0,1)" },
 	{ "+PCW", 1, { 2 }, "(0-2)" },
 	{ "+PIG", 1, { 1 }, "(0,1)" },
 	/* +FAA=1, adaptive answer: modem.cpp reads it */

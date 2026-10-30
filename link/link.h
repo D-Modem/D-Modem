@@ -55,7 +55,7 @@ namespace dlink {
 /* the link layer on an ISDN B-channel (CAPI's B2 protocol numbers):
    the modem's (V.42 detection, LAPM, MNP or async as Config says),
    X.75 SLP (lapb.h), or PPP's frames in synchronous HDLC (ppp_sync.h) */
-enum class B2 { X75 = 0, Ppp = 5, Modem = 7 };
+enum class B2 { X75 = 0, Ppp = 5, Modem = 7, V120 = 9 };
 
 /* what the link negotiates and what it is asked for */
 struct Config {
@@ -114,7 +114,7 @@ struct Config {
 };
 
 /* the error correction a call has */
-enum class Protocol { None, Lapm, Mnp, X75, Ppp };
+enum class Protocol { None, Lapm, Mnp, X75, Ppp, V120 };
 
 /* a call's counts (ATI11): the DTE's characters each way; the frames
    of the error correction (LAPM's, MNP's) sent, the information frames
@@ -191,6 +191,10 @@ public:
 		if (!dict)
 			cfg_.zstd_dict = asked_.zstd_dict = 0;
 	}
+	/* the data pump has connected with V.110's asynchronous rate
+	   adaption: the modem's link (characters, or V.42) in place of
+	   Config::b2's */
+	void set_b2(B2 b2) { asked_.b2 = b2; }
 	/* we hang up: LAPM sends DISC, MNP LD */
 	void disconnect();
 	/* the data pump is not there (any more): marks out, nothing in */
