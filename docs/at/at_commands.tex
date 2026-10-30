@@ -21,6 +21,7 @@
 \usepackage{array}
 \usepackage{enumitem}
 \usepackage{needspace}
+\usepackage{etoolbox}
 \usepackage{fancyhdr}
 \usepackage{lastpage}
 \usepackage{titlesec}
@@ -39,14 +40,40 @@
 \newcommand{\docname}{D-Modem AT Command Reference}
 \newcommand{\docedition}{October 2026}
 
-% colours: the band, its accent stripe, the tints of the command strips
-% and of the tables, the links, and grey for the footer
-\definecolor{dmblue}{HTML}{1B3A5C}
-\definecolor{dmaccent}{HTML}{E07A2B}
-\definecolor{dmtint}{HTML}{EAF0F7}
-\definecolor{dmhead}{HTML}{D3E0EE}
-\definecolor{dmlink}{HTML}{1F5FA8}
-\definecolor{dmgrey}{HTML}{6B7785}
+% colours, D-Modem's (the brand repository's palette, its Red Book for
+% this repository): the navy of the band and the headings, the red of
+% the accents, a darker red for red text, the tints of the command
+% strips and of the tables, the links, the ink of the mark's carrier
+% and grey for the footer
+\definecolor{dmnavy}{HTML}{0A0F1C}
+\definecolor{dmred}{HTML}{FF4D5E}
+\definecolor{dmredtext}{HTML}{C8283A}
+\definecolor{dmtint}{HTML}{FFF0F2}
+\definecolor{dmhead}{HTML}{FFDDE1}
+\definecolor{dmlink}{HTML}{C8283A}
+\definecolor{dmink}{HTML}{E8F0FF}
+\definecolor{dmmuted}{HTML}{A9B4D0}
+\definecolor{dmgrey}{HTML}{6B7591}
+
+% the D-Modem mark (brand/tools/gen.py): a D, the carrier inside it
+% a sine turning to square pulses; the SVG's units, y down
+\newcommand{\dmlogo}[1]{\begin{tikzpicture}[x=#1/500,y=-#1/500]
+  \foreach \w/\o in {70/0.10,54/0.18}
+    \draw[dmred,line width=\w*#1/500,opacity=\o,line join=round]
+      (140,100) -- (240,100) arc[start angle=-90,end angle=90,radius=150] -- (140,400) -- cycle;
+  \draw[dmred,line width=38*#1/500,line join=round]
+    (140,100) -- (240,100) arc[start angle=-90,end angle=90,radius=150] -- (140,400) -- cycle;
+  \draw[dmink,line width=16*#1/500,line cap=round,line join=round]
+    (178.0,250.0) -- (181.1,235.5) -- (184.1,222.0) -- (187.2,210.4) --
+    (190.3,201.5) -- (193.3,195.9) -- (196.4,194.0) -- (199.5,195.9) --
+    (202.5,201.5) -- (205.6,210.4) -- (208.7,222.0) -- (211.7,235.5) --
+    (214.8,250.0) -- (217.9,264.5) -- (220.9,278.0) -- (224.0,289.6) --
+    (227.1,298.5) -- (230.1,304.1) -- (233.2,306.0) -- (236.3,304.1) --
+    (239.3,298.5) -- (242.4,289.6) -- (245.5,278.0) -- (248.5,264.5) --
+    (251.6,250.0) -- (254.7,235.5) -- (257.7,222.0) -- (260.8,210.4) --
+    (263.9,201.5) -- (266.9,195.9) -- (270.0,194.0) -- (288.4,194.0) --
+    (288.4,306.0) -- (325.2,306.0) -- (325.2,194.0) -- (362.0,194.0);
+\end{tikzpicture}}
 
 \setlist{nosep,leftmargin=*}
 
@@ -60,9 +87,9 @@
 \setlength{\aboverulesep}{0pt}
 \setlength{\belowrulesep}{0pt}
 \renewcommand{\arraystretch}{1.25}
-\arrayrulecolor{dmblue}
+\arrayrulecolor{dmnavy}
 % a header row's cell
-\newcommand{\thd}[1]{\normalfont\textbf{\color{dmblue}#1}}
+\newcommand{\thd}[1]{\normalfont\textbf{\color{dmnavy}#1}}
 
 % a command or what the modem says, as typed
 \newcommand{\cmd}[1]{\texttt{#1}}
@@ -91,33 +118,85 @@
 % range, default and units
 
 % list bullets: small squares in the band's colour
-\renewcommand{\labelitemi}{\color{dmblue}\rule[0.3ex]{0.55ex}{0.55ex}}
+\renewcommand{\labelitemi}{\color{dmred}\rule[0.3ex]{0.55ex}{0.55ex}}
+
+% Entries kept whole: an entry (a command or an S-register) that would
+% run on to the next page starts there instead, unless it is longer
+% than a page.  Each entry's height is measured (\pdfsavepos) and saved
+% in the .aux; the next run needs that much room before the entry, and
+% a heading that its first entry follows needs room for both.
+\makeatletter
+\newcount\dm@entry
+\newif\ifdm@open
+\newif\ifdm@whole  % the entry has room to be whole: no breaks inside
+\newdimen\dm@stripskip \dm@stripskip=26pt % a strip's skip and height
+\newdimen\dm@ybot \dm@ybot=1.8cm   % the text block's bottom (geometry)
+% from the .aux: \dm@pos{s or e}{entry}{y}{page}, \dm@att{entry}
+\def\dm@pos#1#2#3#4{\expandafter\gdef\csname dm@#1@#2\endcsname{{#3}{#4}}}
+\def\dm@att#1{\expandafter\gdef\csname dm@att@#1\endcsname{}}
+\def\dm@mark#1{\pdfsavepos\edef\dm@tmp{\noexpand\write\noexpand\@auxout
+  {\string\dm@pos{#1}{\the\dm@entry}{\noexpand\the\pdflastypos}%
+   {\noexpand\the\c@page}}}\dm@tmp}
+% \dm@height{n}: entry n's height last run into \dimen@ (0pt if unknown)
+\def\dm@height#1{\dimen@\z@
+  \expandafter\ifx\csname dm@s@#1\endcsname\relax\else
+  \expandafter\ifx\csname dm@e@#1\endcsname\relax\else
+    \edef\dm@tmp{\csname dm@s@#1\endcsname\csname dm@e@#1\endcsname}%
+    \expandafter\dm@calc\dm@tmp\fi\fi}
+\def\dm@calc#1#2#3#4{% start y, page; end y, page
+  \ifnum#2=#4\relax \dimen@=\dimexpr#1sp-#3sp\relax
+  \else \dimen@=\dimexpr#1sp-\dm@ybot+\textheight*(#4-#2-1)
+    +\dm@ybot+\textheight-#3sp\relax\fi}
+% room for \dimen@ plus #1, if the entry fits on a page
+\def\dm@need#1{\global\dm@wholefalse
+  \ifdim\dimen@>\z@\ifdim\dimen@<\dimexpr\textheight-#1-2pt\relax
+  \needspace{\dimexpr\dimen@+#1+2pt\relax}\global\dm@wholetrue\fi\fi}
+% close the open entry; start entry n+1 (#1 its usual \needspace, #2
+% the room its strip or heading takes above the measured start)
+\def\dm@close{\ifdm@open\par\dm@mark{e}\global\dm@openfalse\fi}
+\def\dm@start#1#2{\dm@close\global\advance\dm@entry\@ne
+  \if@nobreak\immediate\write\@auxout{\string\dm@att{\the\dm@entry}}%
+    \expandafter\ifx\csname dm@att@\the\dm@entry\endcsname\relax
+    \global\dm@wholefalse\fi
+  \else\dm@height{\the\dm@entry}\dm@need{#2}\needspace{#1}\fi
+  \global\dm@opentrue}
+% before a heading: room for it and the entry that follows it
+\def\dm@ahead#1{\dm@close\global\dm@wholefalse
+  \expandafter\ifx\csname dm@att@\the\numexpr\dm@entry+1\endcsname\relax
+  \else\dm@height{\the\numexpr\dm@entry+1}\dm@need{#1+\dm@stripskip}\fi}
+\AtBeginDocument{%
+  \pretocmd{\section}{\dm@ahead{5\baselineskip}}{}{\dm@patchfailed}%
+  \pretocmd{\subsection}{\dm@ahead{3\baselineskip}}{}{\dm@patchfailed}}
+\makeatother
 
 % one command: "name---title" in a tinted strip (a link target and a
 % bookmark under its section, as cmd:<key>), then what it does; on the
 % next page unless the strip and some of its text fit (straight after a
 % heading, the heading keeps them with it)
-\newtcolorbox{cmdstrip}{enhanced,colback=dmtint,colframe=dmblue,
+\newtcolorbox{cmdstrip}{enhanced,colback=dmtint,colframe=dmred,
   boxrule=0pt,leftrule=3pt,arc=0pt,outer arc=0pt,left=6pt,right=6pt,
   top=3pt,bottom=3pt,before skip=11pt,
   after={\par\nobreak\nointerlineskip\vspace{\glueexpr 4pt-\parskip}}}
 \makeatletter
 % \begin{command}{key}{name}{title}
 \newenvironment{command}[3]
-  {\par\if@nobreak\else\needspace{5\baselineskip}\fi
-   \begin{cmdstrip}\hypertarget{cmd:#1}{}%
+  {\par\dm@start{5\baselineskip}{\dm@stripskip}%
+   \begin{cmdstrip}\hypertarget{cmd:#1}{}\dm@mark{s}%
      \bookmark[dest={cmd:#1},rellevel=1,keeplevel]{#2 - #3}%
-     \textbf{\color{dmblue}\cmd{#2}\,---\,#3}\end{cmdstrip}\nopagebreak
+     \textbf{\color{dmredtext}\cmd{#2}\,---\,#3}\end{cmdstrip}\nopagebreak
    \begin{list}{}{\leftmargin=0.8em\topsep=0pt\@beginparpenalty=\@M}%
    \item[]}
-  {\end{list}}
+  {\par\dm@mark{e}\global\dm@openfalse\end{list}}
 \makeatother
 
 % "Syntax:" and the forms the command takes, one a bullet
-\newenvironment{syntax}{\par\needspace{3\baselineskip}Syntax:%
+\makeatletter
+\newcommand{\dmneedinside}[1]{\ifdm@whole\else\needspace{#1}\fi}
+\makeatother
+\newenvironment{syntax}{\par\dmneedinside{3\baselineskip}Syntax:%
   \begin{itemize}\ttfamily\raggedright}{\end{itemize}}
 % "Result codes:" and when each comes, one a bullet
-\newenvironment{results}{\par\needspace{3\baselineskip}Result codes:%
+\newenvironment{results}{\par\dmneedinside{3\baselineskip}Result codes:%
   \begin{itemize}}{\end{itemize}}
 % an S-register's range, default and units, a bullet each
 \newcommand{\facts}[3]{\begin{itemize}
@@ -134,7 +213,7 @@
 % caption again, "(continued)", on each page it runs on to
 \makeatletter
 \newcounter{dmtable}
-\newcommand{\tabcap}[1]{\textbf{\color{dmblue}Table~#1.}}
+\newcommand{\tabcap}[1]{\textbf{\color{dmredtext}Table~#1.}}
 \newenvironment{vtable}[4]
   {\par\addvspace{3pt}\refstepcounter{dmtable}\small
    \setlength{\LTleft}{0pt}\setlength{\LTpre}{2pt}%
@@ -153,27 +232,27 @@
 % an S-register's definition: S<n>---<title> (a link target, as
 % sreg:<n>, and a bookmark), then what it does and its \facts
 \makeatletter
-\newcommand{\sregdef}[2]{\par\addvspace{8pt}\needspace{6\baselineskip}%
-  \hypertarget{sreg:#1}{}%
+\newcommand{\sregdef}[2]{\par\dm@close\addvspace{8pt}\dm@start{6\baselineskip}{14pt}%
+  \hypertarget{sreg:#1}{}\dm@mark{s}%
   \bookmark[dest={sreg:#1},rellevel=1,keeplevel]{S#1 - #2}%
-  {\bfseries\color{dmblue}S#1---#2}\par\nobreak\@afterheading}
+  {\bfseries\color{dmredtext}S#1---#2}\par\nobreak\@afterheading}
 \makeatother
 
 % headings: the section's number in a box of the band's colour
-\titleformat{\section}{\large\bfseries\color{dmblue}}
-  {\colorbox{dmblue}{\makebox[1.1em]{\color{white}\thesection}}}{0.6em}{}
-  [{\color{dmaccent}\titlerule[1.2pt]}]
+\titleformat{\section}{\large\bfseries\color{dmnavy}}
+  {\colorbox{dmred}{\makebox[1.1em]{\color{white}\thesection}}}{0.6em}{}
+  [{\color{dmred}\titlerule[1.2pt]}]
 \titlespacing*{\section}{0pt}{3.2ex plus 1ex minus .2ex}{1.6ex}
 % each section on a page of its own
 \newcommand{\sectionbreak}{\clearpage}
-\titleformat{\subsection}{\normalsize\bfseries\color{dmblue}}
-  {\textcolor{dmaccent}{\thesubsection}}{0.6em}{}
-\titleformat{\paragraph}[runin]{\bfseries\color{dmblue}}{}{0pt}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{dmredtext}}
+  {\textcolor{dmred}{\thesubsection}}{0.6em}{}
+\titleformat{\paragraph}[runin]{\bfseries\color{dmnavy}}{}{0pt}{}
 
 % the contents: sections in the band's colour, subsections dotted
-\renewcommand{\cftsecfont}{\bfseries\color{dmblue}}
-\renewcommand{\cftsecpagefont}{\bfseries\color{dmblue}}
-\renewcommand{\cfttoctitlefont}{\large\bfseries\color{dmblue}}
+\renewcommand{\cftsecfont}{\bfseries\color{dmnavy}}
+\renewcommand{\cftsecpagefont}{\bfseries\color{dmnavy}}
+\renewcommand{\cfttoctitlefont}{\large\bfseries\color{dmnavy}}
 \setlength{\cftbeforesecskip}{0.45ex}
 \renewcommand{\cftmarktoc}{\markboth{\contentsname}{\contentsname}}
 
@@ -183,9 +262,9 @@
 \renewcommand{\sectionmark}[1]{\markboth{\thesection\quad #1}{}}
 \newcommand{\pageband}{%
   \begin{tikzpicture}[remember picture,overlay]
-    \fill[dmblue] (current page.north west) rectangle
+    \fill[dmnavy] (current page.north west) rectangle
       ([yshift=-1.25cm]current page.north east);
-    \fill[dmaccent] ([yshift=-1.25cm]current page.north west) rectangle
+    \fill[dmred] ([yshift=-1.25cm]current page.north west) rectangle
       ([yshift=-1.37cm]current page.north east);
     \node[anchor=base west,text=white,inner sep=0pt]
       at ([xshift=1.5cm,yshift=-0.75cm]current page.north west)
@@ -213,23 +292,26 @@
 \pdfbookmark[1]{Title}{title}
 \thispagestyle{empty}
 \begin{tikzpicture}[remember picture,overlay]
-  \fill[dmblue] (current page.north west) rectangle
+  \fill[dmnavy] (current page.north west) rectangle
     ([yshift=-12cm]current page.north east);
   \begin{scope}[shift={([yshift=-4.6cm]current page.north west)}]
     \foreach \a/\f/\o in {0.8/1.8/0.10, 0.5/2.9/0.08, 1.1/1.0/0.06}
       \draw[white,opacity=\o,line width=1.2pt,domain=0:14.8,samples=300,
         smooth] plot (\x,{\a*sin(\f*\x r)});
   \end{scope}
-  \fill[dmaccent] ([yshift=-12cm]current page.north west) rectangle
+  \node[anchor=north west,inner sep=0pt]
+    at ([xshift=1.1cm,yshift=-1.0cm]current page.north west)
+    {\dmlogo{3.6cm}};
+  \fill[dmred] ([yshift=-12cm]current page.north west) rectangle
     ([yshift=-12.3cm]current page.north east);
   \node[anchor=south west,text=white,align=left,inner sep=0pt,
     text width=11.8cm]
     at ([xshift=1.5cm,yshift=-11.1cm]current page.north west)
     {{\fontsize{34}{38}\selectfont\bfseries D-Modem}\\[8pt]
      {\fontsize{20}{24}\selectfont AT Command Reference}\\[14pt]
-     {\normalsize\color{dmhead}The modem core of dmodemd, libdmodem
+     {\normalsize\color{dmmuted}The modem core of dmodemd, libdmodem
       and the PBX modules}};
-  \node[anchor=north west,text=dmblue,inner sep=0pt]
+  \node[anchor=north west,text=dmnavy,inner sep=0pt]
     at ([xshift=1.5cm,yshift=-13.2cm]current page.north west)
     {\large\docedition};
 \end{tikzpicture}
