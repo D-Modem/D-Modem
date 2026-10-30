@@ -947,3 +947,36 @@ TEST(Class1T38Packets, Frh)
 	EXPECT_EQ(w.result(1), FAX_STATUS_OK);
 	EXPECT_NEAR(w.now - t, 8 * (400 + 200), 2 * TICK);
 }
+
+/* the DTE waits for silence (+FRS=1, as efax does after its TCF) while
+   the far end's frames are already coming: the wait lasts until they
+   are over, and the +FRH=3 that follows still gets them.  Here the
+   machine's TSI and DCS come during it, after our DIS */
+TEST(Class1T38Packets, FramesDuringFrs)
+{
+	World w;
+	Params p{ false, false, 0, 0 };
+
+	ASSERT_NO_FATAL_FAILURE(start(w, p));
+	Dte dte{ w };
+	ASSERT_EQ(w.result(10), FAX_STATUS_CONNECT);
+	w.send(frame(FCF_DIS, true, false, dis_fif(false)));
+	ASSERT_EQ(w.result(10), FAX_STATUS_OK);
+	/* +FRS=1 once the machine's preamble is on its way */
+	bool pre = false;
+	for (long n = 0; n < 8000L * 5 && !pre; n += TICK) {
+		w.tick();
+		for (const Bytes &d : w.to_fax) {
+			struct t38_ifp q;
+			ASSERT_EQ(t38_ifp_decode(&q, 0, d.data(),
+						 (int)d.size()), 0);
+			pre = pre || (!q.data &&
+				      q.type == T38_IND_V21_PREAMBLE);
+		}
+	}
+	ASSERT_TRUE(pre) << "the machine's preamble";
+	EXPECT_EQ(dte.cmd(FAX_CMD_FRS, 1), FAX_STATUS_OK);
+	std::vector<std::string> m = dte.message(1);
+	ASSERT_FALSE(m.empty()) << "the frames that came during +FRS=1";
+	EXPECT_EQ(fcf_of(m.back()), FCF_DCS);
+}
