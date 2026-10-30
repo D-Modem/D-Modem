@@ -81,6 +81,9 @@ static const u32 LEASED_AGAIN_MS = 2000;
 static const u32 ESCAPE_MS = 500;
 /* caller ID listens this long after the first ring */
 static const u32 CID_MS = 4000;
+/* caller ID before the ring, after a line reversal (ETSI EN 300 659-1:
+   the message within 3.5 s of it; BT SIN 227: within about 1 s) */
+static const u32 CID_PRE_MS = 5000;
 /* a ring burst: the least gap before its first pulse, when it is
    checked, its least length (first to last pulse) and pulses (four
    cycles: a 16 Hz signal's in 0.3 s); how long a ring counts in S1
@@ -274,6 +277,8 @@ Modem::~Modem()
 		}
 		stop_call();
 	}
+	if (idle_cid_)
+		CID_delete(idle_cid_);
 	delete[] xmit_;
 	delete link_;
 	delete link_owner_;
@@ -2748,6 +2753,36 @@ void Modem::local_phone(bool off_hook)
 	logf("the local phone %s hook\n", off_hook ? "off" : "on");
 	if (mode_ == MODEM_MODE_VOICE)
 		host_.dte_write(*this, ev[off_hook], 2);
+}
+
+/* see dcore.h: one receiver while the line is idle and #CID on, a new
+   one after each message */
+void Modem::idle_audio(const s16 *in, s32 n)
+{
+	if (!cid_requested_ || state_ != IDLE || started_) {
+		if (idle_cid_) {
+			CID_delete(idle_cid_);
+			idle_cid_ = nullptr;
+		}
+		return;
+	}
+	if (!idle_cid_)
+		idle_cid_ = CID_create(handle(), srate_, cid_requested_,
+				       mode_ == MODEM_MODE_VOICE);
+	if (idle_cid_ &&
+	    CID_process(idle_cid_, const_cast<s16 *>(in), n) != 0) {
+		CID_delete(idle_cid_);
+		idle_cid_ = nullptr;
+	}
+}
+
+/* see dcore.h */
+void Modem::line_reversal()
+{
+	if (state_ != IDLE || started_ || !cid_requested_)
+		return;
+	logf("line reversal: caller ID may follow\n");
+	cid_start(CID_PRE_MS);
 }
 
 /* a call that rings by itself (SIP): RING each time, the auto answer

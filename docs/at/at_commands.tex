@@ -752,8 +752,19 @@ The numbers barred from dialing: none are kept; OK.
 \end{command}
 
 \begin{command}{hashCID}{AT\#CID=\p{n}, AT\#CID?, AT\#CID=?, AT+VCID\ldots}
-Caller ID between the first two rings: \cmd{0} off, \cmd{1} or \cmd{2}
-on (\cmd{=?} gives \cmd{0,1,2}).  \cmd{1} gives the fields (\cmd{DATE = },
+Caller ID: \cmd{0} off, \cmd{1} or \cmd{2}
+on (\cmd{=?} gives \cmd{0,1,2}).  The modem listens for it after the
+first ring (North America's way, and ETSI's after a short ring), and on
+a line it hears on hook (ALSA, a pipe, the pico-serial Line) before the
+ring too (ETSI's after its alerting tone, the UK's, DTMF caller ID); on
+Bell 202 FSK and V.23 FSK (ETSI EN 300 659-1, BT SIN 227) alike, and
+on DTMF caller ID: \cmd{A} and the number, or \cmd{B} (or \cmd{D}) and a
+reason it is absent (\cmd{10} private, as \cmd{P}; others \cmd{O}), up to
+\cmd{C}, \cmd{\#} or a pause.  In voice mode with the line taken it
+takes Type~II caller ID too, a waiting call's caller: after the CPE
+alerting signal (2130 and 2750~Hz) it answers with DTMF \cmd{A}
+(GR-30's, a CPE without ADSI) and reports the FSK message that follows
+as a packet, the line's audio to the DTE silent meanwhile.  \cmd{1} gives the fields (\cmd{DATE = },
 \cmd{TIME = }, \cmd{NMBR = }, \cmd{NAME = }, a line each), \cmd{2} the whole
 message in hex (\cmd{MESG = }).  \cmd{+VCID} (V.253's) is the same, in
 every mode.  In voice mode (\cmd{+FCLASS=8}) the lines come as V.253's

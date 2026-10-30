@@ -1438,6 +1438,7 @@ s16 Modem::at_CID(char *p, s16 *len)
 		q++;
 	} else if (q[0] == '=' && q[1] >= '0' && q[1] <= '2') {
 		cid_requested_ = q[1] - '0';
+		voice_info_.cid_format = cid_requested_;
 		q += 2;
 	} else {
 		return -1;
