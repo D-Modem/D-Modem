@@ -34,6 +34,7 @@
 #include "portable.h"
 #include "dmodem.hpp"
 #include "g711.h"
+#include "voice_codec.h"
 #include "rtp_events.h"
 
 #define FRAME 160               /* 20 ms, as Asterisk */
@@ -1050,6 +1051,115 @@ TEST(DmodemCxx, VoiceDuplex)
 	run(1);
 	EXPECT_EQ(dte, "+VLS=1\r\nOK\r\n");
 	ASSERT_TRUE(m.command("AT+VLS=0"));
+}
+
+/* +VSM's formats on a +VTR: the line's 1 kHz tone comes to the DTE at
+   the format's rate and in its coding, and the DTE's 500 Hz tone, coded
+   so, goes to the line at 8000 Hz */
+TEST(DmodemCxx, VoiceFormats)
+{
+	struct { unsigned cml, vsr; } cases[] = {
+		{ 1, 8000 }, { 0, 7200 }, { 4, 8000 }, { 5, 8000 },
+		{ 129, 11025 }, { 132, 8000 }, { 132, 11025 },
+	};
+	dm::init();
+	for (const auto &c : cases) {
+		SCOPED_TRACE(std::to_string(c.cml) + "," +
+			     std::to_string(c.vsr));
+		const dsp::voice::Format *f = dsp::voice::format(c.cml);
+		ASSERT_NE(f, nullptr);
+		Dte d;
+		dm::Modem m = make("formats", d, "ATE0\r");
+		std::array<short, FRAME> in{}, out{};
+		std::vector<short> sent;
+		std::string dte;
+		long t = 0;
+		auto run = [&](int n) {
+			for (int b = 0; b < n; b++) {
+				for (int i = 0; i < FRAME; i++, t++)
+					in[i] = (short)(8000 * sin(2 * M_PI *
+						1000 * t / DMODEM_RATE));
+				m.process(in.data(), out.data(), FRAME);
+				m.poll_dte();
+				sent.insert(sent.end(), out.begin(), out.end());
+				dte += d.read_all();
+			}
+		};
+
+		d.read_all();
+		ASSERT_TRUE(m.command("AT+FCLASS=8"));
+		ASSERT_TRUE(m.command("AT+VLS=1"));
+		run(5);
+		ASSERT_TRUE(m.command("AT+VSM=" + std::to_string(c.cml) +
+				      "," + std::to_string(c.vsr)));
+		run(1);
+		ASSERT_EQ(dte.substr(dte.size() - 4), "OK\r\n") << dte;
+		ASSERT_TRUE(m.command("AT+VTR"));
+		dte.clear();
+		run(1);
+		ASSERT_EQ(dte.compare(0, 9, "CONNECT\r\n"), 0) << dte;
+		dte.erase(0, 9);
+		sent.clear();
+
+		/* 1 s of the DTE's 500 Hz tone at vsr, coded, <DLE>
+		   doubled */
+		dsp::voice::Codec enc;
+		enc.reset(f->coding);
+		std::string stream;
+		for (unsigned i = 0; i < c.vsr; i++) {
+			unsigned char b[2];
+			int n = enc.encode((short)(8000 * sin(2 * M_PI * 500 *
+							      i / c.vsr)), b);
+			for (int k = 0; k < n; k++) {
+				stream += (char)b[k];
+				if (b[k] == 0x10)
+					stream += '\x10';
+			}
+		}
+		d.write_str(stream);
+		run(50);        /* 1 s */
+
+		/* to the DTE: about vsr samples a second, a 1 kHz tone */
+		std::string data;
+		EXPECT_EQ(dle_codes(dte, &data), "");
+		dsp::voice::Codec dec;
+		dec.reset(f->coding);
+		std::vector<double> y;
+		for (char ch : data) {
+			short x[2];
+			int n = dec.decode((unsigned char)ch, x);
+			y.insert(y.end(), x, x + n);
+		}
+		EXPECT_NEAR((double)y.size(), c.vsr, 0.01 * c.vsr);
+		auto power = [](const std::vector<double> &v, size_t from,
+				double fq, double fs) {
+			double re = 0, im = 0, all = 0;
+			for (size_t i = from; i < v.size(); i++) {
+				re += v[i] * cos(2 * M_PI * fq * i / fs);
+				im += v[i] * sin(2 * M_PI * fq * i / fs);
+				all += v[i] * v[i];
+			}
+			size_t n = v.size() - from;
+			return std::make_pair(2 * (re * re + im * im) / n,
+					      all);
+		};
+		auto p = power(y, y.size() / 4, 1000, c.vsr);
+		EXPECT_GT(p.first / p.second, 0.8);
+
+		/* to the line: the 500 Hz tone */
+		std::vector<double> z(sent.begin(), sent.end());
+		size_t k = 0;
+		while (k < z.size() && z[k] == 0)
+			k++;
+		ASSERT_LT(k + DMODEM_RATE / 2, z.size());
+		z.resize(k + DMODEM_RATE * 3 / 4);
+		auto q = power(z, k + DMODEM_RATE / 8, 500, DMODEM_RATE);
+		EXPECT_GT(q.first / q.second, 0.8);
+
+		d.write_str("\x10^");
+		run(2);
+		ASSERT_TRUE(m.command("AT+VLS=0"));
+	}
 }
 
 /* the log lines (DmodemCxx.LawForEachCall) */

@@ -492,6 +492,7 @@ private:
 	s16 at_FCLASS(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
 	s16 at_voice(char *p, s16 *len);
+	s16 at_VSM(char *p, s16 *len);
 	s16 at_fax(char *p, s16 *len);
 	s16 fax_command(enum FAX_CMD cmd, u32 val);
 	s16 at_kept(const char *p, s16 *len);
@@ -688,6 +689,9 @@ private:
 	u16 voice_device_ = VOICE_DEVICE_NONE;
 	struct voice_info voice_info_ = {};
 	u16 voice_events_ = 0;          /* +VEM */
+	/* +VSM's silence compression sensitivity and expansion, taken
+	   and kept (the modem compresses no silence) */
+	u8 vsm_scs_ = 0, vsm_sel_ = 0;
 	bool local_phone_off_ = false;  /* local_phone() */
 	/* the elements of a +VTS string, played in turn: a DTMF digit
 	   (its character), a hook flash, or a tone of f1 and f2 Hz (0:
