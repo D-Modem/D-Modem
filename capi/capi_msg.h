@@ -128,6 +128,8 @@ public:
 	/* (all of v) */
 	explicit Reader(const std::vector<u8> &v)
 		: Reader(v.data(), v.size()) {}
+	/* (not of a temporary, which would be gone before the reading) */
+	explicit Reader(std::vector<u8> &&) = delete;
 	/* a byte */
 	u8 b();
 	/* a word */

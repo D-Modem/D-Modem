@@ -510,7 +510,8 @@ void Controller::facility_req(const Msg &m)
 	Reader r(m.params);
 	u32 ident = r.d();
 	u16 sel = r.w();
-	Reader f(r.s());
+	std::vector<u8> fpar = r.s();
+	Reader f(fpar);
 	std::vector<u8> p;
 	if (sel == 3 && f.w() == 0) {
 		std::vector<u8> svc, par;
@@ -703,8 +704,14 @@ void Controller::result(const std::string &l, u64 now)
 	const bool nc = l == "NO CARRIER";
 	switch (state_) {
 	case State::Init:
-		if (ok)
+		if (ok) {
 			command("+MS?", State::Query, now, INIT_MS);
+		} else if (error && init_.find("+CRC=1;") != std::string::npos) {
+			/* a D-Modem from before AT+CRC: RING, every call
+			   taken for an audio call's */
+			init_.erase(init_.find("+CRC=1;"), 7);
+			command(init_, State::Init, now, INIT_MS);
+		}
 		return;
 	case State::Query:
 		if (ok || error) {
