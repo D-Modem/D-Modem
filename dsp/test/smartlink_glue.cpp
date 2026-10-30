@@ -77,6 +77,19 @@ void FAX_t38_rx(void *obj, const void *ifp)
 	(void)ifp;
 }
 
+/* its caller ID has only the line's receiver: a caller ID message from
+   elsewhere (a SIP call's caller) is not reported */
+int CID_report(struct modem *m, unsigned cid_val, int packet,
+	       const void *msg, int len)
+{
+	(void)m;
+	(void)cid_val;
+	(void)packet;
+	(void)msg;
+	(void)len;
+	return -1;
+}
+
 /* its voice engine tells of no call progress tones: none heard */
 void VOICE_tones(void *obj, struct voice_tones *t)
 {

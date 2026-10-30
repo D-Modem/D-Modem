@@ -2756,6 +2756,7 @@ void Modem::ring_signal(bool on)
 	if (!on) {
 		sregs_[SREG_RING_COUNTER] = 0;
 		ring_count_ = 0;
+		cid_msg_.clear();
 		return;
 	}
 	if (state_ != IDLE || started_)
@@ -2764,11 +2765,53 @@ void Modem::ring_signal(bool on)
 	if (sregs_[SREG_RING_COUNTER] == 1)
 		crlf();
 	report(Result::Ring);
+	if (!cid_msg_.empty()) {
+		/* voice mode's report is a packet, as on the line */
+		if (cid_requested_)
+			CID_report(handle(), cid_requested_,
+				   mode_ == MODEM_MODE_VOICE, cid_msg_.data(),
+				   static_cast<int>(cid_msg_.size()));
+		cid_msg_.clear();
+	}
 	if (sregs_[SREG_RINGS_TO_AUTO_ANSWER] && sregs_[SREG_RING_COUNTER] >=
 	    sregs_[SREG_RINGS_TO_AUTO_ANSWER]) {
 		sregs_[SREG_RING_COUNTER] = 0;
 		answer();
 	}
+}
+
+/* see dcore.h: an MDMF message (GR-30): 0x01 the date and time, 0x02
+   the number or 0x04 the reason there is none ('P' private, 'O' out of
+   area: not known), 0x07 the name or 0x08 its reason; fields cut to 64
+   octets */
+void Modem::caller_id(const char *date, const char *number,
+		      const char *name)
+{
+	static const size_t MAX = 64;
+	auto param = [this](u8 type, const char *v, size_t n) {
+		cid_msg_.push_back(type);
+		cid_msg_.push_back(static_cast<u8>(n));
+		cid_msg_.insert(cid_msg_.end(), v, v + n);
+	};
+	auto field = [&param](u8 type, u8 absent, const char *v) {
+		if (v && *v)
+			param(type, v, std::min(strlen(v), MAX));
+		else
+			param(absent, v ? "O" : "P", 1);
+	};
+	u8 sum = 0;
+
+	cid_msg_.assign({ 0x80, 0 });
+	if (date && strlen(date) == 8)
+		param(0x01, date, 8);
+	field(0x02, 0x04, number);
+	field(0x07, 0x08, name);
+	cid_msg_[1] = static_cast<u8>(cid_msg_.size() - 2);
+	for (u8 b : cid_msg_)
+		sum = static_cast<u8>(sum + b);
+	cid_msg_.push_back(static_cast<u8>(-sum));
+	logf("caller ID: %s, %s\n", number ? number : "(withheld)",
+	     name ? name : "(withheld)");
 }
 
 /* caller ID for ms: its receiver on the line, the hook snooping; -1 if

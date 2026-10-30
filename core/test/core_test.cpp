@@ -538,6 +538,49 @@ TEST(Core, LocalPhone)
 	delete m;
 }
 
+/* a SIP call's caller (caller_id()) after its first RING, as +VCID asks:
+   formatted (1), the MDMF message in hex (2), a voice mode packet, none
+   (0), withheld and unknown fields; only the first RING has it */
+TEST(Core, CallerIdFromLine)
+{
+	Line l;
+	Modem *m = make(l, "cid");
+	auto ring = [&](const char *date, const char *nmbr, const char *name) {
+		l.out.clear();
+		m->caller_id(date, nmbr, name);
+		m->ring_signal(true);
+		std::string first = l.out;
+		l.out.clear();
+		m->ring_signal(true);
+		EXPECT_EQ(l.out, "RING\r\n");
+		m->ring_signal(false);
+		return first;
+	};
+
+	EXPECT_EQ(cmd(m, l, "ATE0+VCID=1\r"), "ATE0+VCID=1\r\r\nOK\r\n");
+	EXPECT_EQ(ring("10301043", "+15551234", "Alice Smith"),
+		  "\r\nRING\r\n\r\nDATE = 1030\r\nTIME = 1043\r\n"
+		  "NMBR = +15551234\r\nNAME = Alice Smith\r\n");
+	EXPECT_EQ(ring("10301043", nullptr, nullptr),
+		  "\r\nRING\r\n\r\nDATE = 1030\r\nTIME = 1043\r\n"
+		  "NMBR = P\r\nNAME = P\r\n");
+	EXPECT_EQ(ring("", "5551000", ""),
+		  "\r\nRING\r\n\r\nNMBR = 5551000\r\nNAME = O\r\n");
+	/* 0x80, 13 octets: 0x02 "5551000", 0x08 'O'; the checksum */
+	EXPECT_EQ(cmd(m, l, "AT+VCID=2\r"), "OK\r\n");
+	EXPECT_EQ(ring("", "5551000", ""),
+		  "\r\nRING\r\n\r\nMESG = 800C0207353535313030300801"
+		  "4FB3\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "OK\r\n");
+	EXPECT_EQ(ring("10301043", "5551000", "Bob"), "\r\nRING\r\n");
+	/* voice mode: the packet */
+	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8;+VCID=1\r"), "OK\r\n");
+	std::string v = ring("", "5551000", "Bob");
+	EXPECT_NE(v.find("\x10XNMBR = 5551000\r\nNAME = Bob\r\n\x10."),
+		  std::string::npos) << v;
+	delete m;
+}
+
 /* a handset on the modem (has_handset()): +VLS=? lists it alone (14,
    its DTMF digits) and on the call (15); +VLS=14 starts the voice engine
    on it with the line on hook, 15 or 1 takes the line (the engine going

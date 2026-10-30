@@ -128,7 +128,7 @@ end's hook flash are logged and not played: the audio carries the
 former, and no signal of a line stands for the latter.
 
 ### Receiving calls
-With `-L` (listen), dmodemd registers with the SIP server, so that calls to the account reach the modem: it reports `RING`, and answers on `ATA` or by itself after `ATS0=n` rings.  Dialing works as before in this mode.
+With `-L` (listen), dmodemd registers with the SIP server, so that calls to the account reach the modem: it reports `RING`, and answers on `ATA` or by itself after `ATS0=n` rings.  With `AT+VCID=1` (or `AT#CID=1`) the caller's number and name follow the first `RING` as caller ID does on a phone line (`DATE`, `TIME`, `NMBR`, `NAME`), taken from the INVITE's P-Asserted-Identity or From header; a withheld caller (the Privacy header, an anonymous URI) is `P`.  Dialing works as before in this mode.
 
     # ./build/dmodemd/dmodemd -L
 

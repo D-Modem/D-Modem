@@ -287,8 +287,8 @@ bool peer_closed(int fd)
 	return dmd::peer_closed(fd);
 }
 
-/* (SIP thread) a line to main.cpp's control descriptor (RING, CANCEL,
-   T38, AUDIO) */
+/* (SIP thread) a line to main.cpp's control descriptor (CALLER, RING,
+   CANCEL, T38, AUDIO) */
 void ctl_line(const char *s)
 {
 	say(4, "control: %.*s", static_cast<int>(strlen(s)) - 1, s);
@@ -1752,6 +1752,37 @@ void on_ring(void *arg)
 	tmr_start(&c->ring_tmr, RING_MS, on_ring, c);
 }
 
+/* the CALLER line of an INVITE that rings, ahead of its first RING:
+   the local date and time, then the caller (P-Asserted-Identity's if it
+   has one, else From's) */
+void tell_caller(const struct sip_msg *msg)
+{
+	const struct sip_hdr *h;
+	struct sip_addr pai;
+	struct pl auri = msg->from.auri, dname = msg->from.dname;
+	std::string privacy;
+	time_t now = time(nullptr);
+	struct tm tm {};
+	char date[16];
+
+	h = sip_msg_hdr(msg, SIP_HDR_P_ASSERTED_IDENTITY);
+	if (h && !sip_addr_decode(&pai, &h->val)) {
+		auri = pai.auri;
+		dname = pai.dname;
+	}
+	h = sip_msg_hdr(msg, SIP_HDR_PRIVACY);
+	if (h)
+		privacy = str(h->val);
+	Caller who = caller_of(str(auri), str(dname), privacy);
+	dmd::local_time(now, &tm);
+	snprintf(date, sizeof(date), "%02d%02d%02d%02d", tm.tm_mon + 1,
+		 tm.tm_mday, tm.tm_hour, tm.tm_min);
+	std::string line = std::string("CALLER ") + date + "\t" +
+		(who.number_withheld ? "-" : "=" + who.number) + "\t" +
+		(who.name_withheld ? "-" : "=" + who.name) + "\n";
+	ctl_line(line.c_str());
+}
+
 /* an INVITE: 480 unless listening, 486 if the line is busy (a call
    being dialled too), 488 if its offer has no G.711 audio; else the
    call is current and rings (180) */
@@ -1804,6 +1835,7 @@ void on_invite(const struct sip_msg *msg, void *)
 		return;
 	}
 	say(3, "call %" PRIu32 " from %s: ringing", c->serial, from.c_str());
+	tell_caller(msg);
 	on_ring(c);
 	tmr_start(&c->poll_tmr, POLL_MS, on_poll, c);
 }

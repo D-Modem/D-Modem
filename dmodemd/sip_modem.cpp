@@ -470,6 +470,29 @@ s16 Control::serve(dcore::Modem &m, SipLine &line)
 	return 0;
 }
 
+/* CALLER's fields, "<date>\t<number>\t<name>": a number or name is
+   '=' and its text, or '-' when withheld */
+void caller(std::string_view f, dcore::Modem &m)
+{
+	std::string v[3];
+	bool withheld[3] = {};
+
+	for (int i = 0; i < 3; i++) {
+		size_t tab = f.find('\t');
+		std::string_view x = f.substr(0, tab);
+		if (i > 0) {
+			withheld[i] = !x.empty() && x[0] == '-';
+			if (!x.empty())
+				x.remove_prefix(1);
+		}
+		v[i] = x;
+		f = tab == std::string_view::npos ? std::string_view() :
+						    f.substr(tab + 1);
+	}
+	m.caller_id(v[0].c_str(), withheld[1] ? nullptr : v[1].c_str(),
+		    withheld[2] ? nullptr : v[2].c_str());
+}
+
 /* a control line */
 void Control::act(const char *s, dcore::Modem &m, SipLine &line)
 {
@@ -477,6 +500,8 @@ void Control::act(const char *s, dcore::Modem &m, SipLine &line)
 	DBG("SIP: %s\n", s);
 	if (c == "RING") {
 		m.ring_signal(true);
+	} else if (dcore::starts_with(c, "CALLER ")) {
+		caller(c.substr(7), m);
 	} else if (c == "CANCEL") {
 		m.ring_signal(false);
 	} else if (c == "T38") {

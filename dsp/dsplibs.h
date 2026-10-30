@@ -72,6 +72,13 @@ void CID_delete(void *cid);
 /* count received samples: 0 to go on, 1 once a message is reported, -1
    on an error */
 int CID_process(void *cid, void *in, int count);
+/* a caller ID message (SDMF or MDMF, from its type octet to its
+   checksum: len octets at msg) that came another way than on the line,
+   such as a SIP call's caller, reported to modem m's DTE as a received
+   one would be (cid_val, packet: as CID_create()); 0, or -1 if it is
+   not a whole message */
+int CID_report(struct modem *m, unsigned cid_val, int packet,
+	       const void *msg, int len);
 
 /* the voice engine (V.253) of modem m at srate samples/s */
 void *VOICE_create(struct modem *m, u32 srate);
