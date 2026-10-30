@@ -37,12 +37,24 @@
 # in Asterisk also through dmodem-ari, D-Modem as an ARI application, and
 # dmodemd's class 1 fax with efax on its pty.
 #
+# The asterisk and freeswitch tests are mostly calls and faxes in real
+# time (a fax about a minute), one after another: split in shards (the
+# matrix), each a job of its own on its own runner, side by side, each
+# with its own build.
+#
+# ccache keeps the jobs' compiles (all but windows-msvc): restored before
+# the build, saved after it (in a sharded job by its first shard alone).
+#
 # A push or pull request that changes only documentation (docs/ and the
-# Markdown files: nothing builds or tests from them) runs none of it.
+# Markdown files: nothing builds or tests from them) runs none of it.  A
+# push runs it on main alone (a branch's commits run it as its pull
+# request, not twice), or by hand (workflow_dispatch); a newer push to a
+# pull request cancels its older run.
 name: CI
 
 on:
   push:
+    branches: [main]
     paths-ignore:
       - 'docs/**'
       - '**.md'
@@ -50,10 +62,22 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CCACHE_DIR: /tmp/ccache
+  CCACHE_MAXSIZE: 500M
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v4
 
@@ -63,7 +87,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev \
             libspandsp-dev libtiff-tools asterisk-dev g++-multilib \
-            libasound2-dev libusb-1.0-0-dev
+            libasound2-dev libusb-1.0-0-dev ccache
 
       # libre is fetched and built while configuring: keep it
       - name: libre cache
@@ -72,11 +96,24 @@ jobs:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
+      - name: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-build-${{ github.sha }}
+          restore-keys: ccache-build-
+
       - name: Configure
         run: cmake -B build -G Ninja -DDMODEM_WERROR=ON
 
       - name: Build
-        run: cmake --build build
+        run: cmake --build build && ccache -s
+
+      - name: ccache save
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-build-${{ github.sha }}
 
       - name: Tests
         run: ctest --test-dir build -L "quick|spandsp|alsa" -j4 --output-on-failure
@@ -101,21 +138,37 @@ jobs:
   musl:
     runs-on: ubuntu-24.04
     container: alpine:3.22
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       # (git first: checkout then clones, as libre's fetch wants)
       - name: Packages
         run: |
           apk add --no-cache build-base clang cmake samurai git pkgconf \
             openssl-dev gtest-dev linux-headers alsa-lib-dev libusb-dev python3 \
-            bash coreutils spandsp-dev tiff-dev tiff-tools
+            bash coreutils spandsp-dev tiff-dev tiff-tools ccache tar zstd
 
       - uses: actions/checkout@v4
+
+      - name: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-musl-${{ github.sha }}
+          restore-keys: ccache-musl-
 
       - name: Configure
         run: cmake -B build -G Ninja -DDMODEM_WERROR=ON
 
       - name: Build
-        run: cmake --build build
+        run: cmake --build build && ccache -s
+
+      - name: ccache save
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-musl-${{ github.sha }}
 
       # (as root in the container: dmodemd_root runs too)
       - name: Tests
@@ -125,6 +178,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       WINEDEBUG: -all
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v4
 
@@ -133,7 +188,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix \
-            clang lld wine wine64
+            clang lld wine wine64 ccache
 
       # libre and Mbed TLS are fetched and built while configuring: keep
       # them
@@ -143,13 +198,26 @@ jobs:
           path: build-win/_deps/libre-install
           key: libre-v4.12.0-mingw-${{ hashFiles('cmake/libre.cmake', 'cmake/mingw-w64.cmake') }}
 
+      - name: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-mingw-${{ github.sha }}
+          restore-keys: ccache-mingw-
+
       - name: Configure
         run: |
           cmake -B build-win -G Ninja -DDMODEM_WERROR=ON \
             -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
 
       - name: Build
-        run: cmake --build build-win
+        run: cmake --build build-win && ccache -s
+
+      - name: ccache save
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-mingw-${{ github.sha }}
 
       # (Wine's first start makes its prefix: before the tests' timeouts)
       - name: Wine prefix
@@ -258,17 +326,27 @@ jobs:
 
   macos:
     runs-on: macos-14
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v4
 
       - name: Packages
-        run: brew install ninja
+        run: brew install ninja ccache
 
       - name: libre cache
         uses: actions/cache@v4
         with:
           path: build-mac/_deps/libre-install
           key: libre-v4.12.0-macos-universal-${{ hashFiles('cmake/libre.cmake') }}
+
+      - name: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-macos-${{ github.sha }}
+          restore-keys: ccache-macos-
 
       # (GoogleTest fetched, not Homebrew's: that one is arm64 alone)
       - name: Configure
@@ -278,7 +356,13 @@ jobs:
             -DCMAKE_DISABLE_FIND_PACKAGE_GTest=ON
 
       - name: Build
-        run: cmake --build build-mac
+        run: cmake --build build-mac && ccache -s
+
+      - name: ccache save
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-macos-${{ github.sha }}
 
       - name: Universal
         run: |
@@ -314,6 +398,9 @@ jobs:
 
   haiku:
     runs-on: ubuntu-24.04
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v4
 
@@ -321,7 +408,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config clang lld libzstd1 python3
+            cmake ninja-build pkg-config clang lld libzstd1 python3 ccache
 
       # Haiku's packages (checked against their repositories' SHA-256)
       - name: Haiku packages cache
@@ -339,6 +426,13 @@ jobs:
           path: build-haiku/_deps/libre-install
           key: libre-v4.12.0-haiku-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-haiku.patch', 'cmake/haiku.cmake', 'cmake/haiku_sysroot.py') }}
 
+      - name: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-haiku-${{ github.sha }}
+          restore-keys: ccache-haiku-
+
       - name: Configure
         run: |
           cmake -B build-haiku -G Ninja -DDMODEM_WERROR=ON \
@@ -346,7 +440,13 @@ jobs:
             -DHAIKU_SYSROOT=$PWD/haiku-sysroot
 
       - name: Build
-        run: cmake --build build-haiku
+        run: cmake --build build-haiku && ccache -s
+
+      - name: ccache save
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-haiku-${{ github.sha }}
 
       - name: dmodemd
         uses: actions/upload-artifact@v4
@@ -355,8 +455,72 @@ jobs:
           path: build-haiku/dmodemd/dmodemd
           retention-days: 30
 
+  # (the steps' scripts in the matrix: one shard each, its calls one after
+  # another; shell bash -e, so the first failure ends it)
   asterisk:
+    name: asterisk (${{ matrix.shard }})
     runs-on: ubuntu-24.04
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: calls
+            run: |
+              timeout 300 asterisk/test/run.sh
+              timeout 300 asterisk/test/run.sh AT+MS=132
+              LAW=alaw timeout 300 asterisk/test/run.sh
+              timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
+              BBS_LINGER=1 timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
+              ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/14400' timeout 300 asterisk/test/run.sh
+              ARI=1 timeout 300 asterisk/test/run.sh
+          # SIP (D-Modem)
+          - shard: sip
+            run: |
+              timeout 300 asterisk/test/sip.sh
+              INCOMING=1 timeout 300 asterisk/test/sip.sh
+              CALLS=3 timeout 300 asterisk/test/sip.sh
+              DIAL=ATDT timeout 300 asterisk/test/sip.sh
+              HOLD=1 timeout 300 asterisk/test/sip.sh
+              BBS_CONNECT_DELAY=15 timeout 300 asterisk/test/sip.sh
+              ARI=1 timeout 300 asterisk/test/sip.sh
+              ARI=1 INCOMING=1 timeout 300 asterisk/test/sip.sh
+              ARI=1 CODEC=alaw timeout 300 asterisk/test/sip.sh
+              ARI=1 ARI_SIP=1 timeout 300 asterisk/test/sip.sh
+          # the FreePBX module, then the same through the latest FreePBX's
+          # own dialplan classes (its framework's extensions.class.php in
+          # place of the tests' stand-in)
+          - shard: freepbx
+            run: |
+              php freepbx/test/unit.php
+              timeout 300 freepbx/test/e2e.sh
+              ARI=1 timeout 300 freepbx/test/e2e.sh
+              git clone -q --depth 1 -b release/18.0.1.3 \
+                https://github.com/FreePBX/framework /tmp/freepbx-framework
+              export FREEPBX_FRAMEWORK=/tmp/freepbx-framework
+              php freepbx/test/unit.php
+              timeout 300 freepbx/test/e2e.sh
+              ARI=1 timeout 300 freepbx/test/e2e.sh
+          - shard: fax
+            run: |
+              timeout 900 asterisk/test/fax.sh
+              timeout 900 asterisk/test/fax_spandsp.sh
+              ARI=1 timeout 900 asterisk/test/fax.sh
+              ARI=1 timeout 900 asterisk/test/fax_spandsp.sh
+              ARI=1 ARI_SIP=1 timeout 900 asterisk/test/fax.sh
+          # (about ten minutes each)
+          - shard: t38
+            run: timeout 1500 asterisk/test/t38.sh
+          - shard: t38-ari
+            run: ARI=1 timeout 1500 asterisk/test/t38.sh
+          # dmodemd's class 1 fax with efax on its pty, over T.38 and not
+          - shard: efax
+            run: |
+              timeout 900 asterisk/test/efax.sh
+              T38=no timeout 900 asterisk/test/efax.sh
+              DMODEMD_T38=no timeout 900 asterisk/test/efax.sh
     steps:
       - uses: actions/checkout@v4
 
@@ -367,7 +531,7 @@ jobs:
             cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev \
             libtiff-tools python3 efax php-cli \
             libjansson-dev libxml2-dev libsqlite3-dev uuid-dev libedit-dev \
-            libspandsp-dev libtiff-dev libcurl4-openssl-dev bzip2 patch
+            libspandsp-dev libtiff-dev libcurl4-openssl-dev bzip2 patch ccache
 
       # Asterisk 22 (LTS) built from source, as Ubuntu 24.04's 20.6 has a
       # T.38 gateway that passes no fax (t38.sh's cases 6 and 7)
@@ -393,69 +557,30 @@ jobs:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
+      - name: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-asterisk-${{ github.sha }}
+          restore-keys: ccache-asterisk-
+
       - name: Build
         run: |
           cmake -B build -G Ninja -DDMODEM_WERROR=ON \
             -DASTERISK_INCLUDE_DIR=$HOME/asterisk/include
           cmake --build build
           test -f build/asterisk/app_dmodem.so
+          ccache -s
 
-      - name: Calls
-        run: |
-          timeout 300 asterisk/test/run.sh
-          timeout 300 asterisk/test/run.sh AT+MS=132
-          LAW=alaw timeout 300 asterisk/test/run.sh
-          timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
-          BBS_LINGER=1 timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
-          ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/14400' timeout 300 asterisk/test/run.sh
-          ARI=1 timeout 300 asterisk/test/run.sh
+      - name: ccache save
+        if: matrix.shard == 'calls'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-asterisk-${{ github.sha }}
 
-      - name: SIP (D-Modem)
-        run: |
-          timeout 300 asterisk/test/sip.sh
-          INCOMING=1 timeout 300 asterisk/test/sip.sh
-          CALLS=3 timeout 300 asterisk/test/sip.sh
-          DIAL=ATDT timeout 300 asterisk/test/sip.sh
-          HOLD=1 timeout 300 asterisk/test/sip.sh
-          BBS_CONNECT_DELAY=15 timeout 300 asterisk/test/sip.sh
-          ARI=1 timeout 300 asterisk/test/sip.sh
-          ARI=1 INCOMING=1 timeout 300 asterisk/test/sip.sh
-          ARI=1 CODEC=alaw timeout 300 asterisk/test/sip.sh
-          ARI=1 ARI_SIP=1 timeout 300 asterisk/test/sip.sh
-
-      - name: FreePBX module
-        run: |
-          php freepbx/test/unit.php
-          timeout 300 freepbx/test/e2e.sh
-          ARI=1 timeout 300 freepbx/test/e2e.sh
-
-      # (the same through the latest FreePBX's own dialplan classes: its
-      # framework's extensions.class.php in place of the tests' stand-in)
-      - name: FreePBX module (FreePBX 18)
-        run: |
-          git clone -q --depth 1 -b release/18.0.1.3 \
-            https://github.com/FreePBX/framework /tmp/freepbx-framework
-          export FREEPBX_FRAMEWORK=/tmp/freepbx-framework
-          php freepbx/test/unit.php
-          timeout 300 freepbx/test/e2e.sh
-          ARI=1 timeout 300 freepbx/test/e2e.sh
-
-      - name: Fax
-        run: |
-          timeout 900 asterisk/test/fax.sh
-          timeout 900 asterisk/test/fax_spandsp.sh
-          ARI=1 timeout 900 asterisk/test/fax.sh
-          ARI=1 timeout 900 asterisk/test/fax_spandsp.sh
-          ARI=1 ARI_SIP=1 timeout 900 asterisk/test/fax.sh
-          timeout 1500 asterisk/test/t38.sh
-          ARI=1 timeout 1500 asterisk/test/t38.sh
-
-      # dmodemd's class 1 fax with efax on its pty, over T.38 and not
-      - name: Fax (dmodemd)
-        run: |
-          timeout 900 asterisk/test/efax.sh
-          T38=no timeout 900 asterisk/test/efax.sh
-          DMODEMD_T38=no timeout 900 asterisk/test/efax.sh
+      - name: Tests (${{ matrix.shard }})
+        run: ${{ matrix.run }}
 
       - name: Logs of a failed step
         if: failure()
@@ -468,9 +593,34 @@ jobs:
           done
 
   freeswitch:
+    name: freeswitch (${{ matrix.shard }})
     runs-on: ubuntu-24.04
     env:
       FS_PREFIX: /home/runner/freeswitch
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the calls, then SIP (D-Modem)
+          - shard: calls
+            run: |
+              timeout 300 freeswitch/test/run.sh
+              timeout 300 freeswitch/test/run.sh AT+MS=132
+              LAW=alaw timeout 300 freeswitch/test/run.sh
+              timeout 300 freeswitch/test/run.sh AT+MS=34 bbsalaw
+              timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
+              BBS_LINGER=1 timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
+              ANSWER='AT+MS=132;A' EXPECT='ANSWERER .*dmodem_rate=14400/14400' timeout 300 freeswitch/test/run.sh
+              timeout 300 freeswitch/test/sip.sh
+              INCOMING=1 timeout 300 freeswitch/test/sip.sh
+              BBS_CONNECT_DELAY=15 timeout 300 freeswitch/test/sip.sh
+          # (about seven minutes each)
+          - shard: fax
+            run: timeout 1200 freeswitch/test/fax.sh
+          - shard: fax-t38
+            run: T38=yes timeout 1200 freeswitch/test/fax.sh
     steps:
       - uses: actions/checkout@v4
 
@@ -483,7 +633,7 @@ jobs:
             libtool libtool-bin yasm libcurl4-openssl-dev libpcre3-dev \
             libspeex-dev libspeexdsp-dev libsqlite3-dev libedit-dev \
             libldns-dev libjpeg-dev libtiff-dev libsndfile1-dev \
-            zlib1g-dev libpq-dev
+            zlib1g-dev libpq-dev ccache
 
       - name: FreeSWITCH cache
         id: fs-cache
@@ -503,33 +653,30 @@ jobs:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
+      - name: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-freeswitch-${{ github.sha }}
+          restore-keys: ccache-freeswitch-
+
       - name: Build
         run: |
           cmake -B build -G Ninja -DDMODEM_WERROR=ON \
             -DFREESWITCH_PKGCONFIG=$FS_PREFIX/lib/pkgconfig
           cmake --build build
           test -f build/freeswitch/mod_dmodem.so
+          ccache -s
 
-      - name: Calls
-        run: |
-          timeout 300 freeswitch/test/run.sh
-          timeout 300 freeswitch/test/run.sh AT+MS=132
-          LAW=alaw timeout 300 freeswitch/test/run.sh
-          timeout 300 freeswitch/test/run.sh AT+MS=34 bbsalaw
-          timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
-          BBS_LINGER=1 timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
-          ANSWER='AT+MS=132;A' EXPECT='ANSWERER .*dmodem_rate=14400/14400' timeout 300 freeswitch/test/run.sh
+      - name: ccache save
+        if: matrix.shard == 'calls'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-freeswitch-${{ github.sha }}
 
-      - name: SIP (D-Modem)
-        run: |
-          timeout 300 freeswitch/test/sip.sh
-          INCOMING=1 timeout 300 freeswitch/test/sip.sh
-          BBS_CONNECT_DELAY=15 timeout 300 freeswitch/test/sip.sh
-
-      - name: Fax
-        run: |
-          timeout 1200 freeswitch/test/fax.sh
-          T38=yes timeout 1200 freeswitch/test/fax.sh
+      - name: Tests (${{ matrix.shard }})
+        run: ${{ matrix.run }}
 
       - name: Logs of a failed step
         if: failure()
