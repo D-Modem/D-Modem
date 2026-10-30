@@ -1223,9 +1223,9 @@ name works in either class), and its reports say \cmd{+FCON},
 \cmd{+FHNG}.  The rates are V.17, V.29 and V.27ter's; error correction
 mode, when \cmd{+FIS} has it, is the modem's own (the DTE's data is the
 same).  The pages are MH whatever the remote uses (MR or ECM: the modem
-codes them again), A4 width.  There is no polling, and a class 2 call
-stays on the audio (no T.38).  \cmd{+FAA} (adaptive answer) is class
-1's.
+codes them again), A4 width.  A call goes over to T.38 as a class 1
+call does (the same commands and results).  \cmd{+FAA} (adaptive
+answer) is class 1's.
 
 Sending two pages, then receiving them:
 \begin{verbatim}
@@ -1268,9 +1268,23 @@ hexadecimal digits, class 2 in decimal) and the result of the command
 then under way (NO CARRIER for \cmd{ATD} and \cmd{ATA}), and goes on
 hook.
 
-\begin{command}{plusFLI}{AT+FLI="\p{id}", AT+FLI?, AT+FLI=?}
-Our identity in TSI and CSI: up to 20 of \cmd{0-9}, \cmd{+} (the
-command line's blanks are left out).
+\begin{command}{plusFLI}{AT+FLI="\p{id}", AT+FPI="\p{id}", AT+FLI?, AT+FLI=?}
+Our identity in TSI and CSI (\cmd{+FLI}) and in CIG when we poll
+(\cmd{+FPI}, class 2's \cmd{+FCIG}; empty: \cmd{+FLI}'s): up to 20
+printable characters, blanks kept in the quotes
+(\cmd{AT+FLI="Fax ID with Spaces"}).
+\end{command}
+
+\begin{command}{plusFLP}{AT+FLP=\p{n}, AT+FSP=\p{n}}
+Polling.  \cmd{+FLP=1} (class 2's \cmd{+FSPL}): we have a document to
+be polled; the DIS says so, and a caller's DTC has \cmd{ATA} report
+\cmd{+FCO}, \cmd{+FPI:"\p{cig}"} and \cmd{+FTC:\p{dtc}} (class 2:
+\cmd{+FCIG}, \cmd{+FDTC}) and OK, for \cmd{+FDT} to send it.
+\cmd{+FSP=1}: we poll; after a DIS that offers a document (\cmd{ATD}
+reports \cmd{+FPO}, class 2 \cmd{+FPOLL}), \cmd{+FDR} sends the CIG and
+DTC and receives as the answerer does (\cmd{+FTI}, \cmd{+FCS},
+CONNECT and the page); without \cmd{+FSP=1} the caller's \cmd{+FDR} is
+ERROR.
 \end{command}
 
 \begin{command}{plusFCC}{AT+FCC=\p{vr},\p{br},\p{wd},\p{ln},\p{df},\p{ec},\p{bf},\p{st}, AT+FIS=\dots}

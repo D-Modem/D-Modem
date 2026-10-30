@@ -122,10 +122,21 @@ as it would by itself and the engine keeps what came, the session
 (`T30_EV_POST`), for `ATA`'s results and each `+FDR`. The DTE's pages
 are MH with EOLs in `+FBO`'s bit order; they are decoded into a bitmap
 and coded again for the line (with the scan line fill, MR received, ECM
-either way), so the DTE never frames ECM. `core_test`'s `CoreFax2` cases
-send two pages between two modems in class 2.0, class 2 and class 2.0
-with ECM and the other bit order, the bitmaps compared; `Fax2Abort` ends
-a call with `+FKS`.
+either way), so the DTE never frames ECM.
+
+Polling: an answerer with `+FLP=1` (`t30_config`'s `polled`) sets DIS
+bit 9; a DTC (and the CIG before it) makes it the sender, as a caller
+is after the DIS. A caller whose remote offers a document polls with
+`+FDR` (`t30_poll()`): CIG and DTC instead of the DCS, then it is the
+receiver. The frames' X bit stays the caller's. T.38: `t30_set_t38()`
+moves the machine to T.38 (or back) at any point of the call, what was
+going out sent again from its start there, as `FAX_t38_start()` does
+for class 1.
+
+`core_test`'s `CoreFax2` cases send two pages between two modems in
+class 2.0, class 2, class 2.0 with ECM and the other bit order, and on
+T.38 from the start and from the DIS on, the bitmaps compared;
+`Fax2Poll` polls a page; `Fax2Abort` ends a call with `+FKS`.
 
 ## Fax machine (T.30)
 

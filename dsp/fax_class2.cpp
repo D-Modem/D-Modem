@@ -27,8 +27,14 @@
  *    Class 2 says +FCON, +FCSI, +FDIS, +FDCS, +FTSI, +FPTS and +FHNG
  *    instead, and its hangup codes in decimal.  The data is MH whatever
  *    the remote used (MR, ECM: this end decodes and codes it again), its
- *    bit order +FBO's (0: the first bit of an octet its lowest).  No
- *    polling, no T.38: audio only.
+ *    bit order +FBO's (0: the first bit of an octet its lowest).
+ *
+ *    Polling: answering with +FLP=1, a DTC has ATA report +FCO,
+ *    +FPI:"<CIG>", +FTC:<DTC> and OK, and the pages go as when sending
+ *    (+FDT, +FET).  Calling, a DIS that offers a document adds +FPO, and
+ *    +FDR then polls (CIG, DTC): +FTI, +FCS, CONNECT and the pages as
+ *    when receiving.  The line may be T.38 from any point
+ *    (FAX2_t38_start()).
  *
  */
 
@@ -91,6 +97,11 @@ struct Fax2 {
 	struct fax2_settings set;
 	bool caller = false;
 	u32 srate = 8000;
+	/* T.38: the core's sender of IFP packets (FAX2_t38_start()) */
+	bool t38 = false;
+	void (*t38_tx)(void *ctx, const void *ifp) = nullptr;
+	void *t38_ctx = nullptr;
+	bool ident_told = false;        /* receiving: +FTI said */
 	std::deque<Out> out;
 	size_t out_pos = 0;             /* of the first's text, written */
 	Cmd cmd = CMD_CALL;
@@ -204,7 +215,7 @@ void Fax2::snapshot(unsigned *v, const struct t30_status &st) const
 /* T.32's hangup status for how the call ended */
 int Fax2::hangup_code(const struct t30_status &st) const
 {
-	bool tx = caller;
+	bool tx = st.sending != 0;
 	if (aborted)
 		return 2;
 	switch (st.result) {
@@ -348,13 +359,22 @@ void Fax2::step(const struct t30_status &st)
 	case CMD_CALL:
 		if (st.done) {
 			end_command(st);
-		} else if (caller && st.waiting == T30_WAIT_DCS) {
+		} else if (st.sending && st.waiting == T30_WAIT_DCS) {
+			/* the DIS, or (polled) the DTC */
 			unsigned v[8] = { static_cast<unsigned>(st.remote_fine),
 					  br_code(st.remote_bps), 0, 2, 0,
 					  st.remote_ecm ? 2u : 0u, 0, 0 };
 			text(std::string("+") + name("FCO", "FCON"));
-			ident("FCI", "FCSI", st.remote_ident);
-			info("FIS", "FDIS", v);
+			if (caller) {
+				ident("FCI", "FCSI", st.remote_ident);
+				info("FIS", "FDIS", v);
+				if (st.remote_poll)
+					text(std::string("+") +
+					     name("FPO", "FPOLL"));
+			} else {
+				ident("FPI", "FCIG", st.remote_ident);
+				info("FTC", "FDTC", v);
+			}
 			result(FAX_STATUS_OK);
 			start(CMD_NONE);
 		} else if (!caller && !rx.empty() && rx.front().session) {
@@ -362,6 +382,7 @@ void Fax2::step(const struct t30_status &st)
 			text(std::string("+") + name("FCO", "FCON"));
 			ident("FTI", "FTSI", it.ident);
 			info("FCS", "FDCS", it.params);
+			ident_told = true;
 			rx.pop_front();
 			result(FAX_STATUS_OK);
 			start(CMD_NONE);
@@ -413,7 +434,20 @@ void Fax2::step(const struct t30_status &st)
 		}
 		break;
 	case CMD_FDR:
+		if (st.sending && st.waiting == T30_WAIT_DCS) {
+			/* polling: the DTC, then we receive */
+			if (t30_poll(t30) < 0) {
+				result(FAX_STATUS_FRAME_ERROR);
+				start(CMD_NONE);
+			}
+			break;
+		}
 		while (!rx.empty() && rx.front().session) {
+			/* (a poller hears the sender's TSI here first) */
+			if (!ident_told) {
+				ident("FTI", "FTSI", rx.front().ident);
+				ident_told = true;
+			}
 			info("FCS", "FDCS", rx.front().params);
 			rx.pop_front();
 		}
@@ -489,7 +523,7 @@ void event(void *ctx, s16 ev, s16 arg)
 		f->trained = false;
 		break;
 	case T30_EV_TRAINED:
-		if (f->caller) {
+		if (st.sending) {
 			f->trained = true;
 			f->fcs_due = true;
 			break;
@@ -524,6 +558,15 @@ void event(void *ctx, s16 ev, s16 arg)
 	}
 }
 
+
+/* T.30's IFP packet to the core */
+void t38_out(void *ctx, const struct t38_ifp *p)
+{
+	Fax2 *f = static_cast<Fax2 *>(ctx);
+	if (f->t38 && f->t38_tx)
+		f->t38_tx(f->t38_ctx, p);
+}
+
 } // namespace
 
 /* (dsplibs.h) */
@@ -553,6 +596,10 @@ void *FAX2_create(struct modem *m, unsigned caller, unsigned srate,
 	c.fine = s->vr != 0;
 	c.post_page = post_page;
 	c.event = event;
+	c.polled = s->lp != 0;
+	f->set.pi[sizeof(f->set.pi) - 1] = '\0';
+	c.poll_ident = f->set.pi[0] ? f->set.pi : nullptr;
+	c.t38_tx = t38_out;
 	f->t30 = t30_create(&c);
 	if (!f->t30) {
 		delete f;
@@ -581,8 +628,14 @@ int FAX2_process(void *obj, void *in, void *out, int count)
 	Fax2 *f = static_cast<Fax2 *>(obj);
 	struct t30_status st;
 
-	t30_process(f->t30, static_cast<const s16 *>(in),
-		    static_cast<s16 *>(out), count);
+	if (f->t38) {
+		/* the samples are T.38's time; the audio silent */
+		t30_t38_time(f->t30, count);
+		std::memset(out, 0, sizeof(s16) * static_cast<size_t>(count));
+	} else {
+		t30_process(f->t30, static_cast<const s16 *>(in),
+			    static_cast<s16 *>(out), count);
+	}
 	f->cmd_samples += static_cast<u32>(count);
 	t30_get_status(f->t30, &st);
 	/* the host's part: the page it waits for is there */
@@ -641,17 +694,20 @@ int FAX2_command(void *obj, unsigned cmd, unsigned param,
 	f->set.bo = s->bo;
 	switch (cmd) {
 	case FAX2_CMD_FDT:
-		if (!f->caller || f->have_ready)
+		if (!st.sending || f->have_ready)
 			return -1;
 		f->start(CMD_FDT);
 		break;
 	case FAX2_CMD_FDR:
-		if (f->caller)
+		/* (a caller polls, if the remote has a document) */
+		if (st.sending && !(f->caller &&
+				    st.waiting == T30_WAIT_DCS &&
+				    st.remote_poll))
 			return -1;
 		f->start(CMD_FDR);
 		break;
 	case FAX2_CMD_FET:
-		if (!f->caller || param > 2)
+		if (!st.sending || param > 2)
 			return -1;
 		f->fet = static_cast<int>(param);
 		f->start(CMD_FET);
@@ -680,4 +736,46 @@ void FAX2_info(void *obj, struct fax2_info *i)
 	std::memcpy(i->session, f->session, sizeof(i->session));
 	i->session_set = f->session_set;
 	i->hangup = f->hangup;
+}
+
+/* (dsplibs.h) the line becomes T.38: what goes out starts over on it */
+int FAX2_t38_start(void *obj, void (*tx)(void *ctx, const void *ifp),
+		   void *ctx, int max_data)
+{
+	Fax2 *f = static_cast<Fax2 *>(obj);
+	if (!f)
+		return -1;
+	f->t38_tx = tx;
+	f->t38_ctx = ctx;
+	f->t38 = true;
+	t30_set_t38(f->t30, 1, max_data);
+	DSP_DBG("fax2: T.38 from now on\n");
+	return 0;
+}
+
+/* (dsplibs.h) back to the audio */
+void FAX2_t38_stop(void *obj)
+{
+	Fax2 *f = static_cast<Fax2 *>(obj);
+	if (!f || !f->t38)
+		return;
+	f->t38 = false;
+	t30_set_t38(f->t30, 0, 0);
+	DSP_DBG("fax2: T.38 over\n");
+}
+
+/* (dsplibs.h) a packet that came */
+void FAX2_t38_rx(void *obj, const void *ifp)
+{
+	Fax2 *f = static_cast<Fax2 *>(obj);
+	if (f && f->t38)
+		t30_t38_rx(f->t30, static_cast<const struct t38_ifp *>(ifp));
+}
+
+/* (dsplibs.h) a packet lost */
+void FAX2_t38_lost(void *obj)
+{
+	Fax2 *f = static_cast<Fax2 *>(obj);
+	if (f && f->t38)
+		t30_t38_lost(f->t30);
 }

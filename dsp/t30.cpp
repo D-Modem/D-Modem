@@ -55,9 +55,11 @@
 namespace dsp {
 
 /* frame control fields as they come off the line (T.30 5.3.6); the
-   lowest bit is set in frames of the machine that received the DIS */
+   lowest bit is set in frames of the machine that received the DIS
+   (DTC and CIG have it set: they are DIS and CSI but for that bit) */
 enum {
 	FCF_DIS = 0x80, FCF_CSI = 0x40, FCF_NSF = 0x20, FCF_DTC = 0x81,
+	FCF_CIG = 0x41,
 	FCF_DCS = 0x82, FCF_TSI = 0x42, FCF_NSS = 0x22,
 	FCF_CFR = 0x84, FCF_FTT = 0x44,
 	FCF_EOM = 0x8e, FCF_MPS = 0x4e, FCF_EOP = 0x2e,
@@ -232,9 +234,12 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s16 last_post;                  /* MPS, EOM, EOP */
 	s16 cng;                        /* S_CNG with the tone */
 	s16 need_retrain;
+	/* the X bit of our frames: we called (received the DIS) */
+	s16 x_bit;
 	/* host: what it waits for (S_HOST), what follows; the remote's
-	   DIS's best */
+	   DIS's best, and whether it has a document to be polled */
 	s16 waiting;
+	s16 remote_poll;
 	void (T30::*after_host)();
 	s32 remote_bps;
 	s16 remote_fine, remote_ecm;
@@ -318,6 +323,9 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void finish(enum t30_result r);
 	void send_dcn(enum t30_result r);
 	void send_dis();
+	void send_dtc();
+	void send_dis_dtc(s16 dtc);
+	void got_dis();
 	void start_page_rx();
 	void page_done();
 	void tcf_done();
@@ -523,7 +531,7 @@ void T30::add_frame(s16 fcf, const unsigned char *fif, s16 len)
 	f->data[0] = HDLC_ADDR;
 	f->data[1] = HDLC_CTRL;
 	/* the lowest bit says who sent it (the one that got the DIS) */
-	f->data[2] = static_cast<unsigned char>(fcf | (cfg.sending ? 1 : 0));
+	f->data[2] = static_cast<unsigned char>(fcf | x_bit);
 	if (len > FRAME_MAX - 3)
 		len = FRAME_MAX - 3;
 	if (len)
@@ -613,12 +621,31 @@ void T30::send_dcn(enum t30_result r)
  */
 
 /* CSI and DIS: we receive, on V.27ter, V.29 and V.17 as far as max_bps
-   goes, fine, MR, any length, 0 ms scan time, ECM if configured */
+   goes, fine, MR, any length, 0 ms scan time, ECM if configured (and
+   have a document to be polled, if the host says so) */
 void T30::send_dis()
+{
+	send_dis_dtc(0);
+}
+
+/* polling: CIG and DTC, what we receive as the DIS has it, and we are
+   the receiver from now on */
+void T30::send_dtc()
+{
+	cfg.sending = 0;
+	if (cfg.ecm && ecm_rx.empty())
+		ecm_rx.assign(static_cast<size_t>(ECM_FRAMES) * ECM_SIZE, 0);
+	send_dis_dtc(1);
+}
+
+/* the DIS (dtc 0) or DTC */
+void T30::send_dis_dtc(s16 dtc)
 {
 	unsigned char fif[4] = { 0 }, id[20];
 	s16 len = 3;
 
+	if (!dtc && cfg.polled)
+		set_bit(fif, 9);                /* a document to be polled */
 	set_bit(fif, 10);                       /* receives */
 	/* V.27ter, V.29 and V.17 as far as the configuration goes */
 	if (cfg.max_bps > 9600) {
@@ -638,8 +665,12 @@ void T30::send_dis()
 		len = 4;
 	}
 	new_frames();
-	add_frame(FCF_CSI, id, put_ident(id, cfg.ident));
-	add_frame(FCF_DIS, fif, len);
+	if (dtc)
+		add_frame(FCF_CIG, id, put_ident(id, cfg.poll_ident ?
+						 cfg.poll_ident : cfg.ident));
+	else
+		add_frame(FCF_CSI, id, put_ident(id, cfg.ident));
+	add_frame(dtc ? FCF_DTC : FCF_DIS, fif, len);
 	send_frames(S_WAIT_DCS);
 }
 
@@ -778,6 +809,8 @@ void T30::rx_message()
 				  msg_len[k] - 3);
 	}
 	fcf = msg[last][2] & 0xfe;
+	if (msg[last][2] == FCF_DTC)
+		fcf = FCF_DTC;
 	fif = msg[last] + 3;
 	fif_len = msg_len[last] > 3 ? msg_len[last] - 3 : 0;
 	DSP_DBG("t30: received fcf %02x (%d frames) in %s\n", fcf, nmsg,
@@ -806,6 +839,18 @@ void T30::rx_message()
 
 	/* the answering machine */
 	switch (fcf) {
+	case FCF_DTC:
+		/* polled: we send the document, the DTC our DIS */
+		if (!cfg.polled || (state != S_WAIT_DCS && state != S_CED))
+			break;
+		if (fif_len > static_cast<s16>(sizeof(dis)))
+			fif_len = sizeof(dis);
+		memcpy(dis, fif, fif_len);
+		dis_len = fif_len;
+		DSP_DBG("t30: DTC: polled, we send\n");
+		cfg.sending = 1;
+		got_dis();
+		break;
 	case FCF_DCS:
 		got_dcs(fif, fif_len);
 		break;
@@ -1094,36 +1139,8 @@ void T30::sender_message()
 
 	switch (state) {
 	case S_CNG:
-		if (fcf != FCF_DIS)
-			break;
-		t1 = 0;
-		if (cfg.host) {
-			/* what it offers, to the host, which says how to go
-			   on */
-			s16 k;
-			for (k = 0; k < NRATES; k++)
-				if (dis_rate_ok(dis, dis_len, &rates[k]))
-					break;
-			remote_bps = k < NRATES ? rates[k].bps : 0;
-			remote_fine = get_bit(dis, dis_len, 15);
-			remote_ecm = get_bit(dis, dis_len, 27);
-			host_event(T30_EV_DIS, 0);
-			host_wait(T30_WAIT_DCS, &T30::host_dcs);
-			break;
-		}
-		if (choose()) {
-			send_dcn(T30_ERR_INCOMPATIBLE);
-			break;
-		}
-		if (!have_page && !load_next()) {
-			send_dcn(T30_ERR_DOCUMENT);
-			break;
-		}
-		if (!have_page)
-			next_page_or_end();
-		page_settings();
-		tries = 0;
-		gap_then(RESPONSE_GAP_MS, &T30::send_dcs);
+		if (fcf == FCF_DIS && msg[nmsg - 1][2] != FCF_DTC)
+			got_dis();
 		break;
 	case S_WAIT_CFR:
 		if (fcf == FCF_CFR) {
@@ -1263,6 +1280,41 @@ void T30::sender_message()
 	default:
 		break;
 	}
+}
+
+
+/* the DIS came (or, polled, the DTC): the DCS and the pages after it;
+   the host's say first */
+void T30::got_dis()
+{
+	t1 = 0;
+	if (cfg.host) {
+		/* what it offers, to the host, which says how to go on */
+		s16 k;
+		for (k = 0; k < NRATES; k++)
+			if (dis_rate_ok(dis, dis_len, &rates[k]))
+				break;
+		remote_bps = k < NRATES ? rates[k].bps : 0;
+		remote_fine = get_bit(dis, dis_len, 15);
+		remote_ecm = get_bit(dis, dis_len, 27);
+		remote_poll = get_bit(dis, dis_len, 9);
+		host_event(T30_EV_DIS, 0);
+		host_wait(T30_WAIT_DCS, &T30::host_dcs);
+		return;
+	}
+	if (choose()) {
+		send_dcn(T30_ERR_INCOMPATIBLE);
+		return;
+	}
+	if (!have_page && !load_next()) {
+		send_dcn(T30_ERR_DOCUMENT);
+		return;
+	}
+	if (!have_page)
+		next_page_or_end();
+	page_settings();
+	tries = 0;
+	gap_then(RESPONSE_GAP_MS, &T30::send_dcs);
 }
 
 
@@ -1436,7 +1488,7 @@ void T30::send_pps()
 		last_post = c;
 	}
 	fif[0] = ecm_last ? static_cast<unsigned char>(last_post |
-						       (cfg.sending ? 1 : 0)) :
+						       x_bit) :
 			    FCF_NULL;
 	fif[1] = static_cast<unsigned char>(ecm_page);
 	fif[2] = static_cast<unsigned char>(ecm_block);
@@ -2150,7 +2202,7 @@ void T30::on_timeout()
 		if (++tries >= T1_MS / (T4_MS + 2000))
 			send_dcn(T30_ERR_NO_RESPONSE);
 		else
-			send_dis();
+			send_dis_dtc(x_bit);    /* (the caller polls) */
 		break;
 	case S_RX_TCF:
 		/* the training check never came right */
@@ -2407,6 +2459,7 @@ T30 *t30_create(const struct t30_config *cfg)
 	if (!t)
 		return nullptr;
 	t->cfg = *cfg;
+	t->x_bit = cfg->sending ? 1 : 0;
 	t->srate = cfg->srate ? cfg->srate : 8000;
 	t->t38_last_ind = -1;
 	if (!t->cfg.max_bps)
@@ -2482,6 +2535,8 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->remote_bps = t->remote_bps;
 	s->remote_fine = t->remote_fine;
 	s->remote_ecm = t->remote_ecm;
+	s->remote_poll = t->remote_poll;
+	s->sending = t->cfg.sending;
 }
 
 /* the far end hung up: the end of the call */
@@ -2502,6 +2557,62 @@ void t30_resume(T30 *t)
 		return;
 	t->waiting = T30_WAIT_NONE;
 	(t->*(t->after_host))();
+}
+
+/* (t30.h) T.38 from now on, or the audio again */
+void t30_set_t38(T30 *t, s16 on, s32 max_data)
+{
+	s16 was_fast = t->fast_on;
+
+	if (on)
+		t->cfg.t38_max_data = max_data;
+	if ((on != 0) == (t->cfg.t38 != 0))
+		return;
+	DSP_DBG("t30: %s from now on, in %s\n", on ? "T.38" : "the audio",
+		state_name[t->state]);
+	t->stop_fast();
+	t->cfg.t38 = on;
+	t->t38_kind = T38_TX_NONE;
+	t->t38_last_ind = -1;
+	t->restart_v21();
+	if (was_fast)
+		t->start_fast(0);
+	if (t->tx_on) {
+		/* what was going out, again from its start */
+		t->tx_on = 0;
+		t->tx_mute = 0;
+		switch (t->state) {
+		case S_TX_FRAMES:
+			t->send_frames(t->after_tx);
+			break;
+		case S_TCF:
+			t->send_tcf();
+			break;
+		case S_PAGE:
+			t->send_page();
+			break;
+		case S_ECM_TX:
+			t->send_ecm_burst();
+			break;
+		default:
+			break;
+		}
+	} else if (on && t->state == S_CED &&
+		   t->count >= ms2samples(ANS_SILENCE_MS, t->srate)) {
+		t->t38_ind(T38_IND_CED);
+	}
+}
+
+/* (t30.h) the host polls: CIG and DTC instead of the DCS */
+s16 t30_poll(T30 *t)
+{
+	if (t->state != S_HOST || t->waiting != T30_WAIT_DCS || !t->x_bit ||
+	    !t->remote_poll)
+		return -1;
+	t->waiting = T30_WAIT_NONE;
+	t->tries = 0;
+	t->gap_then(RESPONSE_GAP_MS, &T30::send_dtc);
+	return 0;
 }
 
 /* (t30.h) the session of the host's next DCS */

@@ -393,10 +393,16 @@ void Modem::at_process()
 		char cmd[LINE_CHARS + 1];
 		u16 typed = at_count_, k = 0;
 		s16 ret;
+		bool quoted = false;
 
-		for (u16 i = 0; i < typed && at_line_[i]; i++)
-			if (at_line_[i] != ' ' && at_line_[i] != '\t')
+		/* (blanks inside a quoted string are its own: +FLI="A B") */
+		for (u16 i = 0; i < typed && at_line_[i]; i++) {
+			if (at_line_[i] == '"')
+				quoted = !quoted;
+			if (quoted || (at_line_[i] != ' ' &&
+				       at_line_[i] != '\t'))
 				cmd[k++] = at_line_[i];
+		}
 		cmd[k] = '\0';
 		at_count_ = 0;
 		if (k < 2 || upper(cmd[0]) != 'A' || upper(cmd[1]) != 'T') {
@@ -1326,7 +1332,8 @@ const struct {
 	{ "FLID", "FLI" }, { "FDCC", "FCC" }, { "FDIS", "FIS" },
 	{ "FDCS", "FCS" }, { "FBOR", "FBO" }, { "FK", "FKS" },
 	{ "FPTS", "FPS" }, { "FHNG", "FHS" }, { "FMFR", "FMI" },
-	{ "FMDL", "FMM" }, { "FREV", "FMR" },
+	{ "FMDL", "FMM" }, { "FREV", "FMR" }, { "FCIG", "FPI" },
+	{ "FSPL", "FLP" },
 };
 
 /* the ranges of +FCC and +FIS (and +FCS): vr, br, wd, ln, df, ec, bf,
@@ -1347,7 +1354,9 @@ std::string fax2_list(const u32 *u)
 } // namespace
 
 /* class 2 and 2.0 (T.32): either's names (+FLID or +FLI and the
-   like).  +FLI (the identity), +FCC and +FIS (the DCE's capabilities and
+   like).  +FLI (the identity), +FPI (the polling one, CIG), +FLP (a
+   document to be polled), +FSP (we poll: +FDR after the DIS), +FCC and
+   +FIS (the DCE's capabilities and
    the session's: +FCC sets both), +FCS? (the last session), +FCR, +FBO
    (bit 0: the page data's first bit the top of an octet), +FPS, +FHS?
    (the last hangup status), +FMI, +FMM, +FMR; the commands to the
@@ -1367,9 +1376,11 @@ s16 Modem::at_fax2(char *p, s16 *len)
 	for (const auto &n : fax2_names)
 		if (name == n.c2)
 			name = n.c20;
-	end = q;
-	while (*end && *end != ';')
-		end++;
+	/* (to the ; after it, a quoted string's own ; in it) */
+	bool quoted = false;
+	for (end = q; *end && (quoted || *end != ';'); end++)
+		if (*end == '"')
+			quoted = !quoted;
 	*len = static_cast<s16>(end - p);
 	bool query = q[0] == '?' && q + 1 == end;
 	bool range = q[0] == '=' && q[1] == '?' && q + 2 == end;
@@ -1390,9 +1401,10 @@ s16 Modem::at_fax2(char *p, s16 *len)
 		return true;
 	};
 
-	if (name == "FLI") {
+	if (name == "FLI" || name == "FPI") {
+		std::string &idv = name == "FLI" ? f2_ident_ : f2_pi_;
 		if (query)
-			return show("\"" + f2_ident_ + "\"");
+			return show("\"" + idv + "\"");
 		if (range)
 			return show("(20)(32-127)");
 		if (!set)
@@ -1404,7 +1416,10 @@ s16 Modem::at_fax2(char *p, s16 *len)
 		}
 		if (id.size() > 20)
 			return -1;
-		f2_ident_ = id;
+		for (char ch : id)
+			if (ch < 32 || ch > 126)
+				return -1;
+		idv = id;
 		return 0;
 	}
 	if (name == "FCC" || name == "FIS") {
@@ -1438,11 +1453,13 @@ s16 Modem::at_fax2(char *p, s16 *len)
 			return show(fax2_list(f2_cs_));
 		return range ? show(FAX2_RANGES) : -1;
 	}
-	if (name == "FCR" || name == "FBO" || name == "FPS") {
+	if (name == "FCR" || name == "FBO" || name == "FPS" || name == "FLP" ||
+	    name == "FSP") {
 		u32 *u = name == "FCR" ? &f2_cr_ : name == "FBO" ? &f2_bo_ :
+			name == "FLP" ? &f2_lp_ : name == "FSP" ? &f2_sp_ :
 			&f2_ps_;
 		u32 lo = name == "FPS" ? 1 : 0,
-		    hi = name == "FCR" ? 1 : name == "FBO" ? 3 : 5;
+		    hi = name == "FBO" ? 3 : name == "FPS" ? 5 : 1;
 		if (query)
 			return show(dec(*u));
 		if (range)
@@ -1470,8 +1487,10 @@ s16 Modem::at_fax2(char *p, s16 *len)
 	/* (class 2's +FDT may say the page's format: the session's is it) */
 	if (name == "FDT" && (action || set))
 		return fax2_command(FAX2_CMD_FDT, 0);
+	/* (calling, +FDR polls: +FSP=1 first) */
 	if (name == "FDR" && action)
-		return fax2_command(FAX2_CMD_FDR, 0);
+		return caller_ && !f2_sp_ ? -1 :
+			fax2_command(FAX2_CMD_FDR, 0);
 	if (name == "FKS" && action)
 		return fax_ && fax2_ ? fax2_command(FAX2_CMD_FKS, 0) : 0;
 	/* (not class 1's commands, nor names that are no +F setting) */

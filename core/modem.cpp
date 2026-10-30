@@ -71,6 +71,11 @@ extern "C" int FAX2_process(void *obj, void *in, void *out, int count)
 extern "C" int FAX2_command(void *obj, unsigned cmd, unsigned param,
 			    const struct fax2_settings *s) DCORE_WEAK;
 extern "C" void FAX2_info(void *obj, struct fax2_info *i) DCORE_WEAK;
+extern "C" int FAX2_t38_start(void *obj,
+			      void (*tx)(void *ctx, const void *ifp),
+			      void *ctx, int max_data) DCORE_WEAK;
+extern "C" void FAX2_t38_stop(void *obj) DCORE_WEAK;
+extern "C" void FAX2_t38_rx(void *obj, const void *ifp) DCORE_WEAK;
 
 namespace dcore {
 
@@ -3360,13 +3365,16 @@ s16 Modem::fax_start()
 		s.br = f2_is_[1];
 		s.ec = f2_is_[5];
 		s.bo = f2_bo_;
+		s.lp = f2_lp_;
+		f2_pi_.copy(s.pi, sizeof(s.pi) - 1);
 		fax_ = DCORE_HAS(FAX2_create) ?
 			FAX2_create(handle(), caller_, srate_, &s) : nullptr;
 	} else {
 		fax_ = FAX_create(handle(), caller_, srate_);
 	}
-	if (fax_ && !fax2_ && t38_ &&
-	    FAX_t38_start(fax_, fax_t38_send, this, t38_max_) < 0)
+	if (fax_ && t38_ &&
+	    (fax2_ ? FAX2_t38_start(fax_, fax_t38_send, this, t38_max_) :
+	     FAX_t38_start(fax_, fax_t38_send, this, t38_max_)) < 0)
 		t38_ = false;
 	later_ = Later::None;
 	run_ = fax_ ? Run::Fax : Run::None;
@@ -3480,6 +3488,9 @@ void Modem::fax2_reset()
 	std::copy(std::begin(is), std::end(is), f2_is_);
 	f2_bo_ = 0;
 	f2_cr_ = 1;
+	f2_lp_ = 0;
+	f2_sp_ = 0;
+	f2_pi_.clear();
 	f2_ps_ = 1;
 	f2_other_.clear();
 	fax_class_ = 1;
@@ -3524,11 +3535,12 @@ s16 Modem::t38_start(s32 max_data)
 	/* adaptive answer: a far end that goes over to T.38 is a fax */
 	if (mode_ != MODEM_MODE_FAX && adaptive_answering())
 		fax_found("T.38");
-	/* (class 2: on the audio) */
-	if (mode_ != MODEM_MODE_FAX || fax_class_ != 1)
+	if (mode_ != MODEM_MODE_FAX)
 		return -1;
 	t38_max_ = max_data;
-	if (fax_ && FAX_t38_start(fax_, fax_t38_send, this, max_data) < 0)
+	if (fax_ && (fax2_ ? FAX2_t38_start(fax_, fax_t38_send, this,
+					    max_data) :
+		     FAX_t38_start(fax_, fax_t38_send, this, max_data)) < 0)
 		return -1;
 	logf("T.38 on, %d octets of data a packet\n", max_data);
 	t38_ = true;
@@ -3551,14 +3563,18 @@ void Modem::t38_stop()
 		return;
 	logf("T.38 off\n");
 	t38_ = false;
-	if (fax_)
+	if (fax_ && fax2_)
+		FAX2_t38_stop(fax_);
+	else if (fax_)
 		FAX_t38_stop(fax_);
 }
 
 /* a T.38 packet from the remote, for the fax engine */
 void Modem::t38_rx(const void *ifp)
 {
-	if (t38_ && fax_)
+	if (t38_ && fax_ && fax2_)
+		FAX2_t38_rx(fax_, ifp);
+	else if (t38_ && fax_)
 		FAX_t38_rx(fax_, ifp);
 }
 

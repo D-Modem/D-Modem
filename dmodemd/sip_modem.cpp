@@ -757,9 +757,7 @@ s16 SipModem::serve(int ctl)
 		int ret;
 
 		report();
-		/* (class 2 and 2.0 stay on the audio) */
-		sip::set_fax(m.mode() == MODEM_MODE_FAX &&
-			     m.fax_class() == 1);
+		sip::set_fax(m.mode() == MODEM_MODE_FAX);
 		sip::set_t38_offers(m.adaptive_answering());
 		loop.clear();
 		if (audio >= 0)

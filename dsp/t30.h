@@ -41,9 +41,11 @@ enum t30_result {
 /* what a machine paced by its host (t30_config's host) tells it, by
    event(ctx, ev, arg) */
 enum t30_event {
-	T30_EV_DIS,             /* sending: the DIS came (t30_status has
-				   what it offers); it waits to send the DCS
-				   (T30_WAIT_DCS) */
+	T30_EV_DIS,             /* calling: the DIS came (t30_status has
+				   what it offers), or answering and polled:
+				   the DTC; it waits to send the DCS
+				   (T30_WAIT_DCS; a caller may poll instead,
+				   t30_poll()) */
 	T30_EV_TRAINED,         /* the CFR: sending, it came; receiving, it
 				   went out */
 	T30_EV_POST,            /* receiving: a page came whole
@@ -98,6 +100,10 @@ struct t30_config {
 	   -1 not yet (it may be asked again for the same page) */
 	s16 (*post_page)(void *ctx);
 	void (*event)(void *ctx, s16 ev, s16 arg);      /* enum t30_event */
+	/* host, answering: a document to be polled (DIS bit 9); a DTC then
+	   makes it the sender, as a caller after the DIS (T30_EV_DIS) */
+	s16 polled;
+	const char *poll_ident; /* our CIG when we poll (NULL: ident) */
 };
 
 struct t30_status {
@@ -118,6 +124,9 @@ struct t30_status {
 	   DIS yet) */
 	s32 remote_bps;
 	s16 remote_fine, remote_ecm;
+	s16 remote_poll;        /* it has a document to be polled */
+	s16 sending;            /* it sends now (a poller receives, the
+				   polled sends) */
 };
 
 struct T30;
@@ -142,10 +151,18 @@ void t30_get_status(T30 *t, struct t30_status *s);
 void t30_hangup(T30 *t);
 /* host: what it waits for (t30_status' waiting) is there: on it goes */
 void t30_resume(T30 *t);
+/* host, calling, at T30_WAIT_DCS: poll instead (CIG and DTC), and
+   receive what the remote sends.  0, or -1 if it has nothing to be
+   polled (or the machine is not there) */
+s16 t30_poll(T30 *t);
 /* host, sending: the session of the next DCS (before the t30_resume()
    of T30_WAIT_DCS): fine resolution, the fastest rate, error correction
    mode */
 void t30_session(T30 *t, s16 fine, s32 max_bps, s16 ecm);
+/* the line becomes T.38 (on; its packets to t38_tx, max_data octets
+   of data in one, 0: 300) or the audio again: what was going out starts
+   over on it, the receivers go on there */
+void t30_set_t38(T30 *t, s16 on, s32 max_data);
 /* host: the call ended by it, with a DCN (T30_ERR_HOST) unless it is
    over */
 void t30_abort(T30 *t);

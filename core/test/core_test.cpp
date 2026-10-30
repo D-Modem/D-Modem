@@ -25,6 +25,7 @@
 #include <modem_param.h>
 #include <dsp.h>
 #include <t4.h>
+#include <t38.h>
 
 extern "C" int prop_dp_init(void);
 
@@ -115,6 +116,19 @@ struct Line final : public dcore::Host {
 	s16 voice_route(Modem &, u16 device) override {
 		routes.push_back(device);
 		return device == VOICE_DEVICE_LINE || handset ? 0 : -1;
+	}
+	/* T.38: the fax engine's IFP packets, as T.38 2002 codes them */
+	std::vector<std::string> t38;
+	int t38_sent = 0;
+	/* (see t38) */
+	void t38_send(Modem &, const void *ifp) override {
+		unsigned char b[512];
+		s32 n = dsp::t38_ifp_encode(
+			static_cast<const struct dsp::t38_ifp *>(ifp), 1, b,
+			sizeof(b));
+		if (n > 0)
+			t38.emplace_back((const char *)b, n);
+		t38_sent++;
 	}
 };
 
@@ -913,6 +927,19 @@ struct Pair {
 			std::fill(ob.begin(), ob.end(), 0);
 		ia = ob;
 		ib = oa;
+		/* T.38's packets across */
+		for (int k = 0; k < 2; k++) {
+			Line &from = k ? lb : la;
+			Modem *to = k ? a : b;
+			for (const std::string &pkt : from.t38) {
+				struct dsp::t38_ifp ifp;
+				if (!dsp::t38_ifp_decode(&ifp, 1,
+						(const unsigned char *)pkt.data(),
+						pkt.size()))
+					to->t38_rx(&ifp);
+			}
+			from.t38.clear();
+		}
 		now += BLOCK / 8;
 		a->poll();
 		b->poll();
@@ -1446,6 +1473,8 @@ INSTANTIATE_TEST_SUITE_P(Pumps, CoreCall, testing::Values(
 struct Fax2Case {
 	const char *cls;        /* +FCLASS */
 	int bo, ec;             /* +FBO, +FIS's ec */
+	int t38;                /* 1: on T.38 from the start, 2: from the
+				   DIS on */
 };
 
 /* octet c, its bits the other way round */
@@ -1544,7 +1573,7 @@ TEST_P(CoreFax2, TwoPages)
 	for (int side = 0; side < 2; side++) {
 		Modem *m = side ? p.b : p.a;
 		std::string s = std::string("AT+FCLASS=") + c.cls + ";+" +
-			nm("FLID", "FLI") + "=\"" + (side ? "222" : "111") +
+			nm("FLID", "FLI") + "=\"" + (side ? "Fax B 222" : "Fax A 111") +
 			"\";+" + nm("FBOR", "FBO") + "=" + std::to_string(c.bo) +
 			";+" + nm("FDIS", "FIS") + "=1,5,0,2,0," +
 			std::to_string(c.ec) + ",0,0\r";
@@ -1563,10 +1592,20 @@ TEST_P(CoreFax2, TwoPages)
 
 	p.b->dte_input("ATA\r", 4);
 	p.a->dte_input("ATD\r", 4);
+	p.step();
+	if (c.t38 == 1) {
+		EXPECT_EQ(p.a->t38_start(300), 0);
+		EXPECT_EQ(p.b->t38_start(300), 0);
+	}
 	ASSERT_TRUE(until([&] { return has(p.got_a, "OK\r\n"); }, 30000))
 		<< "A [" << p.got_a << "]";
+	if (c.t38 == 2) {
+		/* (B waits for the DCS, A for +FDT) */
+		EXPECT_EQ(p.a->t38_start(300), 0);
+		EXPECT_EQ(p.b->t38_start(300), 0);
+	}
 	EXPECT_EQ(p.got_a, "+" + nm("FCON", "FCO") + "\r\n+" +
-		  nm("FCSI", "FCI") + ":\"222\"\r\n+" + nm("FDIS", "FIS") +
+		  nm("FCSI", "FCI") + ":\"Fax B 222\"\r\n+" + nm("FDIS", "FIS") +
 		  ":1,5,0,2,0," + (c.ec ? "2" : "0") + ",0,0\r\nOK\r\n");
 	EXPECT_EQ(p.got_b, "");
 	p.got_a.clear();
@@ -1576,7 +1615,7 @@ TEST_P(CoreFax2, TwoPages)
 		return has(p.got_a, "CONNECT") && has(p.got_b, "OK\r\n");
 	}, 20000)) << "A [" << p.got_a << "] B [" << p.got_b << "]";
 	EXPECT_EQ(p.got_b, "+" + nm("FCON", "FCO") + "\r\n+" +
-		  nm("FTSI", "FTI") + ":\"111\"\r\n+" + nm("FDCS", "FCS") +
+		  nm("FTSI", "FTI") + ":\"Fax A 111\"\r\n+" + nm("FDCS", "FCS") +
 		  ":1,5,0,2,0," + (c.ec ? "2" : "0") + ",0,0\r\nOK\r\n");
 	p.got_b.clear();
 
@@ -1638,6 +1677,9 @@ TEST_P(CoreFax2, TwoPages)
 	EXPECT_TRUE(until([&] {
 		return !p.a->started() && !p.b->started();
 	}, 2000));
+	/* (the pages went as T.38's packets, or as audio) */
+	EXPECT_EQ(p.la.t38_sent > 100 && p.lb.t38_sent > 20, c.t38 != 0)
+		<< p.la.t38_sent << " " << p.lb.t38_sent;
 	p.a->dte_input("AT+FHS?\r", 8);
 	p.step();
 	EXPECT_EQ(p.got_a, std::string(c2 ? "0" : "00") + "\r\nOK\r\n");
@@ -1645,12 +1687,15 @@ TEST_P(CoreFax2, TwoPages)
 
 INSTANTIATE_TEST_SUITE_P(
 	Classes, CoreFax2,
-	testing::Values(Fax2Case{ "2.0", 0, 0 }, Fax2Case{ "2", 0, 0 },
-			Fax2Case{ "2.0", 1, 2 }),
+	testing::Values(Fax2Case{ "2.0", 0, 0, 0 }, Fax2Case{ "2", 0, 0, 0 },
+			Fax2Case{ "2.0", 1, 2, 0 }, Fax2Case{ "2.0", 0, 0, 1 },
+			Fax2Case{ "2", 0, 2, 1 }, Fax2Case{ "2.0", 0, 2, 2 }),
 	[](const testing::TestParamInfo<Fax2Case> &i) {
 		return std::string(i.param.cls[1] ? "class20" : "class2") +
 			"_bo" + std::to_string(i.param.bo) + "_ec" +
-			std::to_string(i.param.ec);
+			std::to_string(i.param.ec) +
+			(i.param.t38 == 1 ? "_t38" :
+			 i.param.t38 == 2 ? "_t38_after_dis" : "");
 	});
 
 /* class 2.0: +FKS after the DIS ends the call with a DCN, +FHS:02 and
@@ -1688,4 +1733,99 @@ TEST(Core, Fax2Abort)
 	EXPECT_TRUE(until([&] {
 		return !p.a->started() && !p.b->started();
 	}, 2000));
+}
+
+/* class 2.0 polling: B has a document (+FLP=1), A polls it (+FSP=1):
+   +FPO after the DIS, +FDR sends A's CIG and DTC, B's ATA has +FPI and
+   +FTC and B sends the page with +FDT; A receives it as with +FDR, and
+   both have +FHS:00.  Without +FSP, +FDR is ERROR */
+TEST(Core, Fax2Poll)
+{
+	Pair p("");
+	auto until = [&p](auto cond, int ms) {
+		for (int t = 0; t < ms; t += 20) {
+			if (cond())
+				return true;
+			p.step();
+		}
+		return cond();
+	};
+	auto has = [](const std::string &s, const std::string &x) {
+		return s.find(x) != std::string::npos;
+	};
+	auto ok_after = [](const std::string &s, const std::string &x) {
+		size_t k = s.find(x);
+		return k != std::string::npos &&
+			s.find("OK\r\n", k) != std::string::npos;
+	};
+	/* a command line to modem m */
+	auto type = [](Modem *m, const std::string &l) {
+		m->dte_input(l.data(), l.size());
+	};
+	dsp::T4Page pg = fax2_page(240, 77);
+	std::string d = fax2_dte_data(pg, false);
+	size_t sent = 0;
+
+	type(p.a, "AT+FCLASS=2.0;+FLI=\"Caller A\"\r");
+	type(p.a, "AT+FPI=\"Poller A\"\r");
+	type(p.b, "AT+FCLASS=2.0;+FLI=\"Polled B\";+FLP=1\r");
+	p.step();
+	EXPECT_EQ(p.got_a, "OK\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "OK\r\n");
+	p.got_a.clear();
+	p.got_b.clear();
+	type(p.b, "ATA\r");
+	type(p.a, "ATD\r");
+	ASSERT_TRUE(until([&] { return has(p.got_a, "OK\r\n"); }, 30000))
+		<< "A [" << p.got_a << "]";
+	EXPECT_EQ(p.got_a, "+FCO\r\n+FCI:\"Polled B\"\r\n"
+		  "+FIS:1,5,0,2,0,0,0,0\r\n+FPO\r\nOK\r\n");
+	p.got_a.clear();
+	type(p.a, "AT+FDR\r");
+	p.step();
+	EXPECT_EQ(p.got_a, "ERROR\r\n");
+	p.got_a.clear();
+	type(p.a, "AT+FSP=1;+FDR\r");
+	ASSERT_TRUE(until([&] { return has(p.got_b, "OK\r\n"); }, 20000))
+		<< "B [" << p.got_b << "]";
+	EXPECT_EQ(p.got_b, "+FCO\r\n+FPI:\"Poller A\"\r\n"
+		  "+FTC:1,5,0,2,0,0,0,0\r\nOK\r\n");
+	p.got_b.clear();
+
+	type(p.b, "AT+FDT\r");
+	ASSERT_TRUE(until([&] { return has(p.got_b, "CONNECT"); }, 20000))
+		<< "B [" << p.got_b << "]";
+	EXPECT_TRUE(has(p.got_b, "+FCS:1,5,0,2,0,0,0,0\r\nCONNECT")) <<
+		p.got_b;
+	while (sent < d.size()) {
+		int n = p.b->dte_space();
+		if (n > (int)(d.size() - sent))
+			n = d.size() - sent;
+		sent += p.b->dte_input(d.data() + sent, n);
+		p.step();
+	}
+	ASSERT_TRUE(until([&] { return ok_after(p.got_b, "CONNECT"); },
+			  5000)) << "B [" << p.got_b << "]";
+	p.got_b.clear();
+	type(p.b, "AT+FET=2\r");
+
+	ASSERT_TRUE(until([&] { return has(p.got_a, "CONNECT"); }, 60000))
+		<< "A [" << p.got_a << "]";
+	EXPECT_TRUE(has(p.got_a, "+FTI:\"Polled B\"\r\n+FCS:1,5,0,2,0,0,0,0"
+			"\r\nCONNECT")) << p.got_a;
+	type(p.a, "\x12");
+	ASSERT_TRUE(until([&] { return ok_after(p.got_a, "+FET:"); }, 5000))
+		<< "A [" << p.got_a << "]";
+	dsp::T4Page rx = fax2_decode(p.got_a, false, true);
+	EXPECT_EQ(rx.rows, pg.rows);
+	EXPECT_TRUE(rx.bits == pg.bits);
+	EXPECT_TRUE(has(p.got_a, "+FET:2\r\nOK\r\n")) << p.got_a;
+	p.got_a.clear();
+	ASSERT_TRUE(until([&] { return ok_after(p.got_b, "+FHS"); }, 30000))
+		<< "B [" << p.got_b << "]";
+	EXPECT_EQ(p.got_b, "+FPS:1,0,0,0,0\r\n+FHS:00\r\nOK\r\n");
+	type(p.a, "AT+FDR\r");
+	ASSERT_TRUE(until([&] { return has(p.got_a, "OK\r\n"); }, 20000))
+		<< "A [" << p.got_a << "]";
+	EXPECT_EQ(p.got_a, "+FHS:00\r\nOK\r\n");
 }

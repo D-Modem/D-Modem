@@ -248,11 +248,24 @@
       0 A: AT+FCLASS=2.0;+FCLASS?\r\r\n
       0 A: 2.0\r\n
       0 A: OK\r\n
-      0 A< AT+FLI="12 34";+FLI?;+FLI=?\r
-      0 A: AT+FLI="12 34";+FLI?;+FLI=?\r\r\n
-      0 A: "1234"\r\n
+      0 A< AT+FLI="Fax ID with Spaces";+FLI?\r
+      0 A: AT+FLI="Fax ID with Spaces";+FLI?\r\r\n
+      0 A: "Fax ID with Spaces"\r\n
+      0 A: OK\r\n
+      0 A< AT+FLI = "a;b" ; +FLI?;+FLI=?\r
+      0 A: AT+FLI = "a;b" ; +FLI?;+FLI=?\r\r\n
+      0 A: "a;b"\r\n
       0 A: (20)(32-127)\r\n
       0 A: OK\r\n
+      0 A< AT+FLI="123456789012345678901"\r
+      0 A: AT+FLI="123456789012345678901"\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+FPI="Poller";+FPI?;+FLP=1;+FLP?;+FSP=1;+FSP?;+FSP=2\r
+      0 A: AT+FPI="Poller";+FPI?;+FLP=1;+FLP?;+FSP=1;+FSP?;+FSP=2\r\r\n
+      0 A: "Poller"\r\n
+      0 A: 1\r\n
+      0 A: 1\r\n
+      0 A: ERROR\r\n
       0 A< AT+FIS=?;+FIS?;+FIS=0,3;+FIS?\r
       0 A: AT+FIS=?;+FIS?;+FIS=0,3;+FIS?\r\r\n
       0 A: (0,1),(0-5),(0),(0-2),(0),(0-2),(0),(0-7)\r\n
@@ -308,11 +321,16 @@
       0 A: OK\r\n
       0 A< AT+FLID?;+FDIS?;+FBOR?;+FHNG?;+FCLASS?\r
       0 A: AT+FLID?;+FDIS?;+FBOR?;+FHNG?;+FCLASS?\r\r\n
-      0 A: "1234"\r\n
+      0 A: "a;b"\r\n
       0 A: 1,4,0,2,0,2,0,0\r\n
       0 A: 1\r\n
       0 A: 0\r\n
       0 A: 2\r\n
+      0 A: OK\r\n
+      0 A< AT+FCIG?;+FSPL?\r
+      0 A: AT+FCIG?;+FSPL?\r\r\n
+      0 A: "Poller"\r\n
+      0 A: 1\r\n
       0 A: OK\r\n
       0 A< AT+FCLASS=0\r
       0 A: AT+FCLASS=0\r\r\n

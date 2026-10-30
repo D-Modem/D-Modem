@@ -92,7 +92,7 @@ By default the modem negotiates the best common modulation (V.8, then V.34 at up
 ### Fax
 dmodemd is a class 1 fax modem (`AT+FCLASS=1`), and a class 2 and 2.0
 one (`AT+FCLASS=2`, `AT+FCLASS=2.0`, T.32: the modem runs T.30, the
-software sends and takes the pages; on the audio, not T.38), for fax software on its
+software sends, takes and polls the pages), for fax software on its
 pty such as efax (`efax -d /dev/ttyDM0 -o1 -iX3 -t <number> page.tif`;
 `-iS0=1 -w -r <prefix>` waits for a call and receives; efax reads a TIFF
 page up to its RTC, as efix writes them).  A fax call goes

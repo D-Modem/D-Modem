@@ -119,7 +119,8 @@ void FAX_t38_rx(void *obj, const void *ifp);
 
 /* service class 2 and 2.0 (T.32): the modem runs T.30 itself, its DTE
    gives and takes the pages in T.4 (MH) and steers the call with +FDT,
-   +FDR, +FET and +FKS.  What the core keeps of +FLI, +FIS and +FBO for
+   +FDR, +FET and +FKS (and polls: +FDR after the DIS).  What the core
+   keeps of +FLI, +FIS and +FBO for
    the engine */
 struct fax2_settings {
 	unsigned cls;           /* 2, or 20 for 2.0 */
@@ -129,6 +130,9 @@ struct fax2_settings {
 				   mode */
 	unsigned bo;            /* +FBO: bit 0, the page data with its first
 				   bit in the top of each octet */
+	unsigned lp;            /* +FLP: a document to be polled (answering:
+				   the DIS says so, a DTC has it sent) */
+	char pi[21];            /* +FPI: our CIG when we poll */
 };
 /* the class 2 commands for FAX2_command() */
 enum FAX2_CMD { FAX2_CMD_FDT, FAX2_CMD_FDR, FAX2_CMD_FET, FAX2_CMD_FKS };
@@ -156,6 +160,13 @@ int FAX2_command(void *obj, unsigned cmd, unsigned param,
 		 const struct fax2_settings *s);
 /* the session and the hangup status, into *i */
 void FAX2_info(void *obj, struct fax2_info *i);
+/* T.38 for the class 2 engine, as FAX_t38_start(), FAX_t38_stop() and
+   FAX_t38_rx() for class 1's; and a packet lost */
+int FAX2_t38_start(void *obj, void (*tx)(void *ctx, const void *ifp),
+		   void *ctx, int max_data);
+void FAX2_t38_stop(void *obj);
+void FAX2_t38_rx(void *obj, const void *ifp);
+void FAX2_t38_lost(void *obj);
 
 /*
  *    The core, for the library

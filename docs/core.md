@@ -8,8 +8,8 @@
   `#CID #UD`, `+MS` (by number or V.250's name) `+GCI +GCAP +GMI +GMM +GMR
   +FCLASS +FAA +VCID`, V.92 modem-on-hold (`+PMH +PMHT +PMHR`), class 1 fax
   (`+FTS +FRS +FTM +FRM +FTH +FRH +FMI +FMM +FMR`), class 2 and 2.0 fax
-  (`+FCLASS=2` and `2.0`: `+FLI +FCC +FIS +FCS +FBO +FCR +FPS +FHS +FDT
-  +FDR +FET +FKS`, and class 2's names, in `at_fax2()`) and voice (`+V...` in
+  (`+FCLASS=2` and `2.0`: `+FLI +FPI +FCC +FIS +FCS +FBO +FCR +FPS +FLP
+  +FSP +FHS +FDT +FDR +FET +FKS`, and class 2's names, in `at_fax2()`) and voice (`+V...` in
   `+FCLASS=8`). It takes as well, with no effect, the commands other
   modems' setup strings send (V.250's, Rockwell's and Conexant's,
   USRobotics'): the basic ones of `taken_cmds` and the extended parameters

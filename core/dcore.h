@@ -317,8 +317,7 @@ public:
 	const char *dial_string() const { return dial_string_; }
 	/* data, fax or voice */
 	enum MODEM_MODE mode() const { return mode_; }
-	/* in fax mode, the class: 1, 2, or 20 for 2.0 (only class 1 goes
-	   over to T.38) */
+	/* in fax mode, the class: 1, 2, or 20 for 2.0 */
 	u8 fax_class() const { return fax_class_; }
 	/* the call's state */
 	LinkState link_state() const;
@@ -760,13 +759,14 @@ private:
 	   MODEM_MODE_FAX for each); the engine in fax_ class 2's (FAX2_*) */
 	u8 fax_class_ = 1;
 	bool fax2_ = false;
-	/* class 2 and 2.0 (at_fax2()): +FLI, +FCC, +FIS, +FBO, +FCR, +FPS;
+	/* class 2 and 2.0 (at_fax2()): +FLI, +FPI, +FCC, +FIS, +FBO, +FCR,
+	   +FPS, +FLP, +FSP;
 	   the last call's +FCS (f2_cs_set_: there was one) and hangup
 	   status (-1: none); the settings it takes and gives back only
 	   (+FNR, +FIE and the like), by name */
-	std::string f2_ident_;
+	std::string f2_ident_, f2_pi_;
 	u32 f2_cc_[8] = {}, f2_is_[8] = {}, f2_cs_[8] = {};
-	u32 f2_bo_ = 0, f2_cr_ = 1, f2_ps_ = 1;
+	u32 f2_bo_ = 0, f2_cr_ = 1, f2_ps_ = 1, f2_lp_ = 0, f2_sp_ = 0;
 	bool f2_cs_set_ = false;
 	s16 f2_hangup_ = -1;
 	std::vector<std::pair<std::string, std::string>> f2_other_;
