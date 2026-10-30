@@ -255,7 +255,8 @@ synchronous V.110, and another device's HDLC start with no ones.
 V.110 code GSM's circuit switched data uses in Osmocom), both ways at
 each rate it has: built when CMake's `OSMOCORE_SRC` names a libosmocore
 source tree (1.14 or later); only its `src/isdn/v110.c` is compiled, into
-the test.
+the test. CI's build job clones libosmocore 1.14.2 for it; all twelve of
+its rates, 600 to 38400 bit/s, pass both ways.
 
 ## What comes next
 
