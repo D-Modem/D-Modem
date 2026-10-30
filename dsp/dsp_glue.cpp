@@ -13,11 +13,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <string>
 
 #include "dm_types.h"
 #include "dsp.h"
 #include "env.h"
 #include <dsplibs.h>
+#include "voice_codec.h"
 
 using namespace dsp;
 
@@ -482,8 +484,8 @@ int CID_process(void *obj, void *in, int count)
 
 
 /*
- *    Voice: IS-101 style streaming of 8 bit unsigned linear samples at
- *    8000 Hz with <DLE> shielding, tone (+VTS) generation.
+ *    Voice: IS-101 style streaming of samples in +VSM's format and rate
+ *    (voice_codec.h) with <DLE> shielding, tone (+VTS) generation.
  */
 
 #define DLE 0x10
@@ -496,9 +498,19 @@ struct Voice {
 	s32 srate;
 	u16 state;
 	s16 pending;            /* status to return from VOICE_process */
-	/* resampling between srate and 8000 Hz */
-	double rx_pos, tx_pos;
+	/* the DTE's format both ways, its rate (+VSM) */
+	voice::Codec tx_codec, rx_codec;
+	u32 vsr;
+	/* resampling between srate and vsr: the DTE's samples, the next
+	   decoded ones waiting; the line's last sample and where the next
+	   DTE sample falls after it, in line samples */
+	double tx_pos;
 	float tx_prev, tx_cur;
+	s16 tx_more[2], tx_nmore, tx_next;
+	double rx_t;
+	float rx_prev;
+	/* this process()'s characters to the DTE */
+	std::string rxbuf;
 	s16 dle;
 	s16 tx_end;
 	/* tones */
@@ -524,8 +536,9 @@ struct Voice {
 	s32 ct_since[2];
 
 	struct voice_info *info();
+	void set_format();
 	s16 get_tx_sample(float *x);
-	void tx_done(char *rxbuf, s16 *nrx);
+	void tx_done();
 	s16 command(enum VOICE_CMD cmd);
 	s16 process(void *in, void *out, s32 count);
 };
@@ -542,6 +555,7 @@ void *VOICE_create(struct modem *m, u32 srate)
 	v->srate = srate;
 	v->state = VOICE_STATE_COMMAND;
 	v->pending = VOICE_STATUS_OK;
+	v->set_format();
 	v->rx_dtmf.init(srate);
 	v->rx_cpt.init(srate);
 	for (s16 k = 0; k < 2; k++) {
@@ -584,6 +598,7 @@ s16 Voice::command(enum VOICE_CMD cmd)
 			VOICE_STATE_DUPLEX;
 		dle = 0;
 		tx_end = 0;
+		set_format();
 		pending = VOICE_STATUS_CONNECT;
 		return 0;
 	case VOICE_CMD_BEEP:
@@ -621,56 +636,81 @@ int VOICE_command(void *obj, enum VOICE_CMD cmd)
 	return static_cast<Voice*>(obj)->command(cmd);
 }
 
-/* the next 8 bit unsigned sample from the DTE, <DLE> codes taken out
-   (<DLE><DLE> a 0x10 sample; in transmit state <DLE><ETX>, <DLE>! and
-   <DLE><CAN> end the transmission, in duplex state <DLE><^> does and
-   the others are ignored (V.253 10.1.4.1): tx_end), as a 16 bit level in
-   *x; returns 1 for a sample, 0 when there is none (yet or any more) */
+/* the DTE's format and rate as +VSM has them (8 bit unsigned at 8000
+   if it has none the engine takes), its coders and resamplers from the
+   start */
+void Voice::set_format()
+{
+	struct voice_info *vi = info();
+	const voice::Format *f = vi ? voice::format(vi->comp_method) : nullptr;
+	voice::Coding c = f ? f->coding : voice::UNSIGNED8;
+
+	vsr = f && voice::runs_at(vi->comp_method, vi->sample_rate) ?
+		vi->sample_rate : 8000;
+	tx_codec.reset(c);
+	rx_codec.reset(c);
+	tx_pos = 0;
+	tx_prev = tx_cur = 0;
+	tx_nmore = tx_next = 0;
+	rx_t = 1;
+	rx_prev = 0;
+}
+
+/* the next sample from the DTE, <DLE> codes taken out (<DLE><DLE> a
+   0x10 octet; in transmit state <DLE><ETX>, <DLE>! and <DLE><CAN> end
+   the transmission, in duplex state <DLE><^> does and the others are
+   ignored (V.253 10.1.4.1): tx_end), decoded from +VSM's format as a
+   16 bit level in *x; returns 1 for a sample, 0 when there is none (yet
+   or any more) */
 s16 Voice::get_tx_sample(float *x)
 {
 	char ch;
+
+	if (tx_next < tx_nmore) {
+		*x = tx_more[tx_next++];
+		return 1;
+	}
 	while (!tx_end && modem_recv_from_tty(modem, &ch, 1) == 1) {
 		u8 c = ch;
 		if (dle) {
 			dle = 0;
-			if (c == DLE) {
-				*x = (static_cast<s16>(c) - 128) * 256.0f;
-				return 1;
+			if (c != DLE) {
+				if (state == VOICE_STATE_DUPLEX ? c == '^' :
+				    c == ETX || c == '!' || c == CAN) {
+					tx_end = 1;
+					break;
+				}
+				continue;
 			}
-			if (state == VOICE_STATE_DUPLEX ? c == '^' :
-			    c == ETX || c == '!' || c == CAN) {
-				tx_end = 1;
-				break;
-			}
-			continue;
-		}
-		if (c == DLE) {
+		} else if (c == DLE) {
 			dle = 1;
 			continue;
 		}
-		*x = (static_cast<s16>(c) - 128) * 256.0f;
-		return 1;
+		tx_nmore = static_cast<s16>(tx_codec.decode(c, tx_more));
+		tx_next = 0;
+		if (tx_nmore) {
+			*x = tx_more[tx_next++];
+			return 1;
+		}
 	}
 	return 0;
 }
 
 /* the DTE's stream over: transmit state back to command state; duplex
    state too, its samples to the DTE ended with <DLE><ETX> (after those
-   in rxbuf so far, *nrx of them); OK due */
-void Voice::tx_done(char *rxbuf, s16 *nrx)
+   in rxbuf so far); OK due */
+void Voice::tx_done()
 {
 	DSP_DBG("voice: the DTE's stream ends\n");
-	if (state == VOICE_STATE_DUPLEX && *nrx <= 512 - 2) {
-		rxbuf[(*nrx)++] = DLE;
-		rxbuf[(*nrx)++] = ETX;
-	}
+	if (state == VOICE_STATE_DUPLEX)
+		rxbuf += "\x10\x03";
 	state = VOICE_STATE_COMMAND;
 	pending = VOICE_STATUS_OK;
 }
 
 /* count samples each way at srate: out a pending tone or the DTE's
-   samples (8000 Hz, linearly interpolated), in sent to the DTE as 8 bit
-   samples at 8000 Hz (<DLE> doubled); in receive only state any character
+   samples (+VSM's, linearly interpolated from its rate), in sent to the
+   DTE in +VSM's format at its rate (<DLE> doubled); in receive only state any character
    from the DTE ends it with <DLE><ETX>.  DTMF digits on the line are
    reported in every state (V.253 7.5): <DLE><digit> when one comes on
    and every 70 ms while it lasts, <DLE><~> when it goes, among the
@@ -685,17 +725,27 @@ void Voice::tx_done(char *rxbuf, s16 *nrx)
 s16 Voice::process(void *in, void *out, s32 count)
 {
 	s16 *src = static_cast<s16*>(in), *dst = static_cast<s16*>(out);
-	double step = 8000.0 / srate;
-	char rxbuf[512];        /* tx_done() knows its size */
-	s16 nrx = 0, status;
+	const double step = static_cast<double>(vsr) / srate;
+	const double rx_step = static_cast<double>(srate) / vsr;
+	s16 status;
 	s32 i;
 	const long repeat = static_cast<long>(srate) * 70 / 1000;
 	auto report = [&](char c) {
-		if (nrx < static_cast<s16>(sizeof(rxbuf)) - 2) {
-			rxbuf[nrx++] = DLE;
-			rxbuf[nrx++] = c;
+		rxbuf += static_cast<char>(DLE);
+		rxbuf += c;
+	};
+	/* a sample to the DTE in its format, <DLE> doubled */
+	auto to_dte = [&](float y) {
+		u8 b[2];
+		int n = rx_codec.encode(dsp_clip16(y), b);
+		for (int k = 0; k < n; k++) {
+			rxbuf += static_cast<char>(b[k]);
+			if (b[k] == DLE)
+				rxbuf += static_cast<char>(DLE);
 		}
 	};
+
+	rxbuf.clear();
 
 	for (i = 0; i < count; i++) {
 		float y = 0;
@@ -713,7 +763,7 @@ s16 Voice::process(void *in, void *out, s32 count)
 			if (--tone_left == 0)
 				pending = VOICE_STATUS_OK;
 		} else if (state & VOICE_STATE_TX && !tx_end) {
-			/* linear interpolation from 8000 Hz */
+			/* linear interpolation from vsr */
 			tx_pos += step;
 			while (tx_pos >= 1) {
 				float x;
@@ -722,7 +772,7 @@ s16 Voice::process(void *in, void *out, s32 count)
 				if (get_tx_sample(&x))
 					tx_cur = x;
 				else if (tx_end) {
-					tx_done(rxbuf, &nrx);
+					tx_done();
 					break;
 				} else {
 					/* an underrun: silence (V.253's
@@ -795,21 +845,21 @@ s16 Voice::process(void *in, void *out, s32 count)
 		/* the samples after the CONNECT, which the core writes when
 		   this returns */
 		if ((state & VOICE_STATE_RX) && pending != VOICE_STATUS_CONNECT) {
-			rx_pos += step;
-			if (rx_pos >= 1) {
-				s16 c = rx_dtmf.digit ? 128 :
-					(src[i] >> 8) + 128;
-				rx_pos -= 1;
-				if (nrx < static_cast<s16>(sizeof(rxbuf)) - 2) {
-					rxbuf[nrx++] = c;
-					if (c == DLE)
-						rxbuf[nrx++] = DLE;
-				}
+			/* the DTE's samples between the last line sample and
+			   this one, interpolated (this one's own at rx_t 1) */
+			float cur = rx_dtmf.digit ? 0.0f : src[i];
+			while (rx_t <= 1 + 1e-9) {
+				to_dte(rx_prev + static_cast<float>(rx_t) *
+				       (cur - rx_prev));
+				rx_t += rx_step;
 			}
+			rx_t -= 1;
+			rx_prev = cur;
 		}
 	}
-	if (nrx)
-		modem_send_to_tty(modem, rxbuf, nrx);
+	if (!rxbuf.empty())
+		modem_send_to_tty(modem, rxbuf.data(),
+				  static_cast<int>(rxbuf.size()));
 
 	/* any character from the DTE ends receive only mode */
 	if (state == VOICE_STATE_RX) {

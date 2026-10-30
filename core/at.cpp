@@ -30,6 +30,7 @@
 #include "dcore.h"
 #include "str.h"
 #include "reinit.h"
+#include "voice_codec.h"
 
 namespace dcore {
 
@@ -331,8 +332,6 @@ const struct VoiceSetting {
 	{ "SD", 2, { &voice_info::silence_detect_sensitivity,
 		     &voice_info::silence_detect_period }, { 0, 0 },
 	  { 255, 255 } },
-	{ "SM", 2, { &voice_info::comp_method, &voice_info::sample_rate },
-	  { 0, 8000 }, { 1, 8000 } },
 	{ "LS", 1, { nullptr, nullptr }, { 0, 0 }, { 15, 0 } },
 	{ "EM", 1, { nullptr, nullptr }, { 0, 0 }, { 1, 0 } },
 	{ "TD", 1, { &voice_info::tone_default, nullptr }, { 0, 0 },
@@ -1447,6 +1446,73 @@ s16 Modem::at_CID(char *p, s16 *len)
 	return 0;
 }
 
+/* +VSM (V.253 10.2.8): the format of the voice samples to and from the
+   DTE (voice_codec.h).  =? lists each format, ? gives the setting,
+   =<cml>[,<vsr>[,<scs>[,<sel>]]] sets it: a rate left out is 8000 (or
+   the one the format runs at); <scs> and <sel>, silence compression's,
+   are taken (0 to 255) and kept for ?, though the modem compresses no
+   silence, as its =? says.  ERROR for a format it has not or a rate the
+   format does not run at, the setting kept. */
+s16 Modem::at_VSM(char *p, s16 *len)
+{
+	const char *q = p + 4, *e;
+
+	if (q[0] == '=' && q[1] == '?') {
+		int n;
+		const dsp::voice::Format *f = dsp::voice::formats(&n);
+		for (int i = 0; i < n; i++) {
+			std::string rates;
+			for (u16 r : f[i].rates)
+				if (r)
+					rates += (rates.empty() ? "" : ",") +
+						dec(r);
+			puts(dec(f[i].cml) + ",\"" + f[i].label + "\"," +
+			     dec(f[i].bps) + ",0,(" + rates + "),(0),(0)");
+			crlf();
+		}
+		q += 2;
+	} else if (q[0] == '?') {
+		puts("+VSM=" + dec(voice_info_.comp_method) + "," +
+		     dec(voice_info_.sample_rate) + "," + dec(vsm_scs_) +
+		     "," + dec(vsm_sel_));
+		crlf();
+		q++;
+	} else if (q[0] == '=') {
+		u32 v[4] = { 0, 0, 0, 0 };
+		bool given[4] = { false, false, false, false };
+		q++;
+		for (s16 i = 0; i < 4; i++) {
+			if (i) {
+				if (*q != ',')
+					break;
+				q++;
+			}
+			if (*q < '0' || *q > '9')
+				return -1;
+			v[i] = number(q, &e);
+			q = e;
+			given[i] = true;
+		}
+		const dsp::voice::Format *f = dsp::voice::format(v[0]);
+		if (!f)
+			return -1;
+		if (!given[1])
+			v[1] = dsp::voice::runs_at(v[0], 8000) ? 8000 :
+				f->rates[0];
+		if (!dsp::voice::runs_at(v[0], v[1]) || v[2] > 255 ||
+		    v[3] > 255)
+			return -1;
+		voice_info_.comp_method = v[0];
+		voice_info_.sample_rate = v[1];
+		vsm_scs_ = static_cast<u8>(v[2]);
+		vsm_sel_ = static_cast<u8>(v[3]);
+	} else {
+		return -1;
+	}
+	*len = static_cast<s16>(q - p);
+	return 0;
+}
+
 /* +V...: caller ID in any mode, the rest in voice mode only: the
    parameters (? =? =<values>), +VIP, +VLS, and what the voice engine
    does: +VTX, +VRX, +VTR, +VTS */
@@ -1462,6 +1528,8 @@ s16 Modem::at_voice(char *p, s16 *len)
 	cmd[0] = static_cast<char>(upper(p[2]));
 	cmd[1] = static_cast<char>(upper(p[3]));
 	cmd[2] = '\0';
+	if (!strcmp(cmd, "SM"))
+		return at_VSM(p, len);
 	for (const auto &s : voice_settings) {
 		std::string_view name = s.name;
 		bool device = name == "LS";

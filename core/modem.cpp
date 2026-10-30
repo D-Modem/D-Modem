@@ -402,6 +402,7 @@ void Modem::voice_init()
 	voice_info_.ring_after = 50;
 	voice_info_.ring_never = 10;
 	voice_events_ = 0;
+	vsm_scs_ = vsm_sel_ = 0;
 }
 
 /*

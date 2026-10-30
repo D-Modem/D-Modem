@@ -1212,7 +1212,24 @@ the other modes):
 +VGT=\p{n}, +VGR=\p{n} & the gain sending and receiving, 0 to 128 \\
 +VIT=\p{n} & the inactivity timer, 0 to 255 \\
 +VSD=\p{s},\p{t} & silence detection: sensitivity and period, 0 to 255 \\
-+VSM=\p{m},8000 & the compression method, 0 or 1, at 8000 samples/s \\
++VSM=\p{m}[,\p{r}[,\p{s},\p{e}]] & the samples' format \p{m} at \p{r}
+  samples/s (left out: 8000) for \cmd{+VTX}, \cmd{+VRX} and \cmd{+VTR};
+  \cmd{=?} lists the formats, one a line, and \cmd{?} gives the setting,
+  \cmd{+VSM=1,8000,0,0} at the start.  \p{s} and \p{e}, silence
+  compression's, are taken (0 to 255) and kept, though the modem
+  compresses no silence.  ERROR for another format or a rate the format
+  does not run at.  The formats (V.253's numbers, then the ones
+  Conexant's modems give theirs): \\
+\quad 0, 1 & 8-bit linear, signed and unsigned (offset by 128), at 7200,
+  8000 or 11025 \\
+\quad 4, 5 & G.711 u-law and A-law, at 8000 \\
+\quad 128 & 8-bit linear unsigned, as 1 \\
+\quad 129 & 16-bit linear signed, the low octet first, at 7200, 8000 or
+  11025 \\
+\quad 130, 131 & A-law and u-law, as 5 and 4 \\
+\quad 132 & IMA ADPCM, 4 bits a sample, two an octet with the first in
+  the low nibble (as in a WAV file), at 7200, 8000 or 11025; the coder
+  starts afresh at each \cmd{+VTX}, \cmd{+VRX}, \cmd{+VTR} \\
 +VLS=\p{n} & 1 takes the line for voice (on SIP: answers the call
   that rings), 0 leaves it; 14 and 15 a handset's (below).  \cmd{=?} lists them, each with the events
   it reports (below) \\
@@ -1233,7 +1250,7 @@ H & leaves the line and goes back to data mode, \cmd{+FCLASS=0} \\
   long after dialling, in seconds, 0 to 255 (not beyond S7); 10 at the
   start \\
 +VTX, +VRX, +VTR & sends, receives, or both at once: CONNECT, then
-  8-bit samples at 8000/s, \cmd{<DLE>} doubled.  \cmd{+VTX} ends at
+  samples in \cmd{+VSM}'s format and rate, \cmd{<DLE>} doubled.  \cmd{+VTX} ends at
   \cmd{<DLE><ETX>}, \cmd{<DLE>!} or \cmd{<DLE><CAN>} from the DTE,
   \cmd{+VRX} at any character from it, \cmd{+VTR} at \cmd{<DLE>\textasciicircum}
   only; then OK, after \cmd{<DLE><ETX>} to end the samples of
