@@ -46,6 +46,7 @@ int prop_dp_init(void)
 	dp_vcvm_init();
 	dp_vwb_init();
 	dp_4wire_init();
+	dp_clear_init();
 	return 0;
 }
 
@@ -62,6 +63,7 @@ void prop_dp_exit(void)
 	dp_vcvm_exit();
 	dp_vwb_exit();
 	dp_4wire_exit();
+	dp_clear_exit();
 }
 
 

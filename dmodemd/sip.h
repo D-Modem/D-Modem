@@ -40,6 +40,11 @@ struct Config {
 	const char *record;     /* $DMODEM_REC: the audio both ways in
 				   <record>.rx and <record>.tx */
 	bool t38;               /* $SIP_T38 (not "no"): fax over T.38 */
+	bool clearmode = true;  /* $SIP_CLEARMODE (not "no"): RFC 4040's
+				   64 kbit/s clear channel, an ISDN data
+				   call's, taken when an offer has it
+				   first, and offered first for the
+				   modem's AT+MS=CLEAR */
 	const char *dns = nullptr;      /* the DNS servers for SRV and
 					   NAPTR, addresses (with :port, 53
 					   if none) apart by commas or
@@ -80,8 +85,17 @@ void dial(const char *number, int audio_fd);
 std::string dial_user(const char *dial);
 void answer(int audio_fd);
 
-/* the G.711 law of the current call: 1 mu-law, 2 A-law, 0 not known yet */
+/* the format of the current call: 1 mu-law, 2 A-law, 3 CLEARMODE (its
+   octets as A-law samples, which give every octet back), 0 not known
+   yet */
 s16 law();
+/* the current call is a clear 64 kbit/s channel (its offer asked for
+   CLEARMODE first, or it is in CLEARMODE): the modem runs its clear
+   channel pump on it */
+bool clear();
+/* the modem's next calls are for a clear channel (AT+MS=CLEAR): our
+   offers have CLEARMODE first, then PCMA and PCMU */
+void set_clear(bool want);
 
 /* the modem is in fax mode: its calls may go over to T.38 */
 void set_fax(bool fax);

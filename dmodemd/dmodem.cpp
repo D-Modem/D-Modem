@@ -32,6 +32,7 @@ struct dmodem final : public dcore::Host {
 	dcore::Modem *m = nullptr;
 	int dte_fd = -1;
 	enum dmodem_law law = DMODEM_LAW_UNKNOWN;
+	enum dmodem_law g711_law = DMODEM_LAW_UNKNOWN; /* the config's */
 	u64 samples = 0; /* the modem's clock: its audio */
 	s32 rate = DMODEM_RATE;         /* its samples a second */
 	char name[32] = {};
@@ -48,6 +49,10 @@ struct dmodem final : public dcore::Host {
 	/* the program's hook flash, if it gave one */
 	void (*flash)(void *, unsigned) = nullptr;
 	void *flash_arg = nullptr;
+	/* a clear 64 kbit/s channel (dmodem_set_clear()) */
+	bool clear = false;
+	/* (see clear) */
+	bool clear_line(dcore::Modem &) override { return clear; }
 	/* a hook flash if the program gave one */
 	bool can_flash(dcore::Modem &) override { return flash != nullptr; }
 	/* the program's hook flash, ms long */
@@ -121,7 +126,7 @@ struct dmodem *dmodem_create_rate(const struct dmodem_config *cfg,
 	strncpy(d->name, cfg->name ? cfg->name : "dmodem",
 		sizeof(d->name) - 1);
 	d->dte_fd = cfg->dte_fd;
-	d->law = cfg->law;
+	d->law = d->g711_law = cfg->law;
 	d->flash = cfg->hook_flash;
 	d->flash_arg = cfg->hook_flash_arg;
 	o.name = d->name;
@@ -139,6 +144,7 @@ struct dmodem *dmodem_create_rate(const struct dmodem_config *cfg,
 	}
 	/* (enum dmodem_law is the pumps' code: 1 mu-law, 2 A-law) */
 	d->m->set_line_law(d->law);
+	dmodem_set_clear(d, cfg->clear);
 	if (cfg->init) {
 		d->m->dte_input(cfg->init, strlen(cfg->init));
 		d->m->poll();
@@ -214,6 +220,16 @@ void dmodem_process(struct dmodem *d, const s16 *in, s16 *out,
 		std::fill_n(out, n, 0);
 	d->samples += n;
 	m->poll();
+}
+
+/* the line clear or not: on a clear one the octets are A-law samples
+   (each octet one of its own), for the core and dmodem_process_g711()
+   alike */
+void dmodem_set_clear(struct dmodem *d, int clear)
+{
+	d->clear = clear != 0;
+	d->law = d->clear ? DMODEM_LAW_ALAW : d->g711_law;
+	d->m->set_line_law(d->law);
 }
 
 /* G.711 octets through dmodem_process(), 160 at a time */

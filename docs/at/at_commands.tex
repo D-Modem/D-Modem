@@ -771,6 +771,8 @@ turns automode off.  The default is \cmd{92,1,300,56000}.  In V.34
  & & & 175 to 3500 bit/s, after V.8 (\cmdl[plusCVM]{+CVM}) \\
 200 & \cmd{VWB} & V.wb & wideband DMT on a bare pair, at 48000 Hz \\
  & & & and more, up to 148656 bit/s each way \\
+64 & \cmd{CLEAR} & clear channel & 64000 bit/s on a clear digital channel \\
+ & & & (an ISDN data call), no modulation \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -806,6 +808,18 @@ each tone loaded from its measured SNR; see \cmd{docs/dsp/vwb.md}.  It
 runs at 48000 Hz and more only, where it is the only mode and the
 default (\cmd{ATZ} sets it again there), as a leased line
 (\cmdl[ampL]{\&L1}); the rates of \cmd{+MS} do not limit it.
+
+\cmd{CLEAR} is a clear 64 kbit/s digital channel, such as an ISDN
+B-channel's data call (a SIP call in CLEARMODE, RFC 4040, or a PBX's call
+with an unrestricted digital bearer): no modulation, each of the
+channel's octets 8 bits of the link's, \cmd{CONNECT 64000} both ways.
+It starts at once on \cmd{ATD} and \cmd{ATA}, with no call progress
+and no answer tone, with a start-up of D-Modem's own (HDLC flags each
+way, then ones), so the far end is another D-Modem; V.42 and the
+compressions run over it as over any modulation.  A line that says its
+call is clear (dmodemd's SIP for a CLEARMODE call, \cmd{app\_dmodem}
+for an ISDN data call) runs it whatever \cmd{+MS} says.  See
+\cmd{docs/isdn.md}.
 \end{command}
 
 \begin{command}{plusMS-q}{AT+MS?}

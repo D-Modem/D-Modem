@@ -171,6 +171,13 @@ int dmbridge_profile_option(const struct dmbridge_host *h,
 			p->law = DMODEM_LAW_ALAW;
 		else
 			p->law = DMODEM_LAW_UNKNOWN;
+	} else if (dmbridge_option_is(name, "clear")) {
+		/* auto, or a boolean */
+		if (!strcasecmp(value, "auto"))
+			p->clear = DMBRIDGE_CLEAR_AUTO;
+		else
+			p->clear = h->is_true(value) ? DMBRIDGE_CLEAR_YES :
+						       DMBRIDGE_CLEAR_NO;
 	} else if (dmbridge_option_is(name, "timeout")) {
 		p->timeout = atoi(value);
 	} else {
@@ -559,6 +566,13 @@ int dmbridge_call_start(struct dmbridge_call *c,
 	cfg.law = law;
 	cfg.dte_fd = c->dte[0];
 	cfg.init = init;
+	/* an ISDN data call: the clear channel, its octets as they are */
+	cfg.clear = p->clear == DMBRIDGE_CLEAR_YES ||
+		(p->clear == DMBRIDGE_CLEAR_AUTO && c->digital);
+	if (cfg.clear)
+		log_line(h, call, DMBRIDGE_INFO,
+			 "a clear 64 kbit/s channel (%s)",
+			 c->digital ? "a digital bearer" : "clear = yes");
 	c->d = dmodem_create(&cfg);
 	if (!c->d) {
 		log_line(h, call, DMBRIDGE_WARNING, "no modem");
