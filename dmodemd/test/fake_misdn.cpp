@@ -52,12 +52,14 @@ struct DevInfo {
    protocol */
 int kind[MAX_FD];
 
+/* the C library's own name */
 template <class F>
 F real(const char *name)
 {
 	return reinterpret_cast<F>(dlsym(RTLD_NEXT, name));
 }
 
+/* fd is a fake mISDN socket */
 bool ours(int fd)
 {
 	return fd >= 0 && fd < MAX_FD && kind[fd] != 0;
@@ -67,6 +69,7 @@ bool ours(int fd)
 
 extern "C" {
 
+/* PF_ISDN's: a base socket, or a connection to the network */
 int socket(int domain, int type, int protocol)
 {
 	static auto next = real<int (*)(int, int, int)>("socket");
@@ -110,6 +113,7 @@ int socket(int domain, int type, int protocol)
 	return fd;
 }
 
+/* a fake socket's: its protocol, device and channel to the network */
 int bind(int fd, const struct sockaddr *addr, socklen_t len)
 {
 	static auto next = real<int (*)(int, const struct sockaddr *,
@@ -134,23 +138,22 @@ int bind(int fd, const struct sockaddr *addr, socklen_t len)
 	return send(fd, msg, 8 + n, 0) < 0 ? -1 : 0;
 }
 
+/* (the C library's ioctl()'s request type) */
 #ifdef __GLIBC__
-int ioctl(int fd, unsigned long req, ...)
+typedef unsigned long IoctlReq;
 #else
-int ioctl(int fd, int req, ...)
+typedef int IoctlReq;
 #endif
+
+/* a base socket's: the device list */
+int ioctl(int fd, IoctlReq req, ...)
 {
 	va_list ap;
 	va_start(ap, req);
 	void *arg = va_arg(ap, void *);
 	va_end(ap);
 	if (!ours(fd) || kind[fd] > 0) {
-#ifdef __GLIBC__
-		static auto next = real<int (*)(int, unsigned long, ...)>(
-			"ioctl");
-#else
-		static auto next = real<int (*)(int, int, ...)>("ioctl");
-#endif
+		static auto next = real<int (*)(int, IoctlReq, ...)>("ioctl");
 		return next(fd, req, arg);
 	}
 	const unsigned long r = static_cast<unsigned long>(req) & 0xFFFFFFFFul;
@@ -178,6 +181,7 @@ int ioctl(int fd, int req, ...)
 	return -1;
 }
 
+/* the descriptor no longer a fake one */
 int close(int fd)
 {
 	static auto next = real<int (*)(int)>("close");

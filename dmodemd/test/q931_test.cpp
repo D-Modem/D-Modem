@@ -29,14 +29,19 @@ struct User : Q931::User {
 	int connected = 0;
 	std::vector<s16> ended;
 
+	/* (Q931::User's: each recorded) */
 	void q931_send(const u8 *m, s16 n) override {
 		sent.emplace_back(m, m + n);
 	}
+	/* (see q931_send()) */
 	void q931_channel(s16 b) override { channels.push_back(b); }
+	/* (see q931_send()) */
 	void q931_offered(const Q931::Call &c) override {
 		offered.push_back(c);
 	}
+	/* (see q931_send()) */
 	void q931_connected() override { connected++; }
+	/* (see q931_send()) */
 	void q931_ended(s16 cause) override { ended.push_back(cause); }
 };
 
@@ -49,6 +54,7 @@ Msg msg(u8 cr, u8 t, Msg ies = {})
 	return m;
 }
 
+/* m to q from the network at now */
 void rx(Q931 &q, const Msg &m, u64 now = 0)
 {
 	q.receive(m.data(), static_cast<s16>(m.size()), now);
