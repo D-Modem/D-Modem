@@ -146,6 +146,15 @@ enum DP_ID {
 	DP_V92      = 92,
 	DP_FAX      = 100,
 	DP_B103     = 103,      /* Bell 103 */
+	DP_V18      = 18,       /* V.18 text telephone automoding: the
+				   remote's mode found (or probed for),
+				   then 5-bit (Baudot) or EDT here, or
+				   V.21, V.23 or Bell 103 by their pumps */
+	DP_BAUDOT   = 45,       /* 5-bit (Baudot) text telephone: TTY,
+				   telex, RTTY (dp_text.cpp, its tones
+				   and rate from struct dp_text) */
+	DP_EDT      = 110,      /* EDT: V.21's channel 1 at 110 bit/s,
+				   half duplex, 7 bits even parity */
 	DP_V8BIS    = 108,
 	DP_V22BIS   = 122,
 	DP_SINUS    = 127,      /* a test pump */
@@ -221,6 +230,21 @@ struct dp_stats {
 	int pcm_alaw;
 	float digital_loss;
 	int robbed_bits;
+};
+
+/*
+ *    Text telephones (+MV18S, +MV18AM, +MBAUDOT): what the pumps of
+ *    DP_V18, DP_BAUDOT and DP_EDT read through MDMPRM_TEXT
+ */
+struct dp_text {
+	int baud100;            /* the 5-bit mode's rate, 1/100 bit/s
+				   (4545: 45.45) */
+	int mark, space;        /* its tones, Hz (1400, 1800) */
+	int ita2;               /* its figures: 1 ITA2's (telex), 0 the
+				   US TTY's */
+	int probe;              /* DP_V18: probe a silent remote */
+	int answer_msg;         /* answering, send msg once connected */
+	char msg[64];           /* +MV18AM's answer message */
 };
 
 /*

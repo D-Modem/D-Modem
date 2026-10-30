@@ -15,6 +15,7 @@
  *
  */
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
 #include <cstdlib>
@@ -104,6 +105,8 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 
 	/* V.25 calling tone, or the T.30 CNG of a fax call */
 	s16 calling_tone;
+	s16 text;               /* a text telephone call (MDMPRM_TEXT): no
+				   answer tone to wait for */
 	s16 fax;                /* 1 a fax call (CNG); -1 one without its
 				   CNG (DSP_FAX_CNG=0); 0 data */
 	Osc ct;
@@ -221,6 +224,7 @@ s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
 	}
 
 	calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
+	text = modem_get_param(m, MDMPRM_TEXT) > 0;
 	fax = modem_get_param(m, MDMPRM_MODE) == MODEM_MODE_FAX;
 	/* (tests: DSP_FAX_CNG=0, a fax caller that sends no CNG) */
 	if (fax && env_off("DSP_FAX_CNG"))
@@ -580,6 +584,13 @@ s16 CallProgPump::process(void *in, void *out, s32 cnt)
 				set_state(CP_DIAL);
 			break;
 		case CP_WAIT_ANSWER:
+			/* a text telephone has no answer tone: its pump
+			   from the dialling's end */
+			if (text && ret == DPSTAT_OK) {
+				set_state(CP_DONE);
+				std::fill(dst + i, dst + cnt, s16{0});
+				return DPSTAT_CHANGEDP;
+			}
 			if (fax > 0) {
 				/* CNG: 0.5 s of 1100 Hz every 3.5 s */
 				if (count % ms2samples(3500, srate) <

@@ -134,6 +134,10 @@ enum MODEM_PARAMETER_NAMES {
 	MDMPRM_MAX_RX_RATE  = 73,  /* the highest rate to receive at, bit/s
 				      (MDMPRM_MAX_RATE: to send at); -1
 				      from a core that has none */
+	MDMPRM_TEXT         = 74,  /* the struct dp_text * while a text
+				      telephone pump (DP_V18, DP_BAUDOT,
+				      DP_EDT) is +MS's, else 0; -1 from a
+				      core that has none */
 };
 
 /*

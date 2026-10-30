@@ -37,6 +37,9 @@ interface has one addition the original library does not use:
 | 21 | ITU V.21, 300 bit/s FSK | |
 | 23 | ITU V.23, 1200/75 bit/s FSK | The answering side sends the 1200 bit/s channel |
 | 103 | Bell 103, 300 bit/s FSK | |
+| BAUDOT (45) | 5-bit (Baudot) text telephone: TTY (45.45 bit/s, 1400/1800 Hz), telex, RTTY | `dp_text.cpp`: half duplex, its own character framing (5 bits, 1.5 stop bits, the shift codes) and ASCII to and from the core's asynchronous link; rate, tones and figures from `+MBAUDOT` (`struct dp_text`, `MDMPRM_TEXT`) |
+| EDT (110) | EDT text telephone: V.21 channel 1 at 110 bit/s, 7 bits even parity | `dp_text.cpp`, half duplex |
+| V18 (18) | V.18 text telephone automoding | `dp_text.cpp`: listens for a 5-bit, EDT, V.21, V.23 or Bell 103 remote, probes a silent one, then runs the mode (V.21, V.23 and Bell 103 by their pumps); call progress hands over as dialling ends, there being no answer tone |
 | 22 | ITU V.22, 1200 bit/s DPSK | |
 | 212 | Bell 212A, 1200 bit/s DPSK | 2225 Hz answer tone, scrambled ones handshake |
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | Full S1 handshake, falls back to V.22 |

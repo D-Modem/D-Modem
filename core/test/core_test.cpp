@@ -1829,3 +1829,119 @@ TEST(Core, Fax2Poll)
 		<< "A [" << p.got_a << "]";
 	EXPECT_EQ(p.got_a, "+FHS:00\r\nOK\r\n");
 }
+
+/* a text telephone call: each side's commands, the rate A and B
+   CONNECT at (B's 0: A's), a line A types, what B's DTE gets of it
+   (the 5-bit code has capitals alone), and the +MV18R report either
+   side gives (or none) */
+struct TextCall {
+	const char *a, *b;
+	unsigned rate, rate_b;
+	const char *typed, *got;
+	const char *report;
+};
+
+class CoreText : public testing::TestWithParam<TextCall> {};
+
+/* online on both sides, then A's line to B and B's to A */
+TEST_P(CoreText, LineEachWay)
+{
+	const TextCall &c = GetParam();
+	Pair p("");
+	for (int k = 0; k < 2; k++) {
+		Modem *m = k ? p.b : p.a;
+		std::string s = std::string("AT") + (k ? c.b : c.a) + "\r";
+		m->dte_input(s.data(), s.size());
+	}
+	p.step();
+	ASSERT_TRUE(p.got_a.find("OK") != std::string::npos) << p.got_a;
+	ASSERT_TRUE(p.got_b.find("OK") != std::string::npos) << p.got_b;
+	p.got_a.clear();
+	p.got_b.clear();
+
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	/* the caller's line 2.5 s after it is online, once the answerer
+	   (after its answer delay) listens: an automoding answerer finds
+	   the caller by it */
+	bool typed = false;
+	int a_online = -1;
+	auto online = [](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online;
+	};
+	for (int t = 0; t < 40000 && !online(p); t += 20) {
+		if (a_online < 0 && p.a->link_state() == LinkState::Online)
+			a_online = t;
+		if (!typed && a_online >= 0 && t - a_online >= 2500) {
+			p.a->dte_input(c.typed, strlen(c.typed));
+			typed = true;
+		}
+		p.step();
+	}
+	ASSERT_TRUE(online(p)) << "A [" << p.got_a << "] B [" << p.got_b
+			       << "]";
+	std::string connect = "CONNECT " + std::to_string(c.rate) + "\r";
+	std::string connect_b = "CONNECT " +
+		std::to_string(c.rate_b ? c.rate_b : c.rate) + "\r";
+	EXPECT_TRUE(p.got_a.find(connect) != std::string::npos) << p.got_a;
+	EXPECT_TRUE(p.got_b.find(connect_b) != std::string::npos) << p.got_b;
+	std::string both = p.got_a + p.got_b;
+	if (c.report)
+		EXPECT_TRUE(both.find(c.report) != std::string::npos) << both;
+	else
+		EXPECT_TRUE(both.find("+MV18R") == std::string::npos);
+	if (!typed)
+		p.a->dte_input(c.typed, strlen(c.typed));
+	std::string want = c.got;
+	p.run_until([](Pair &) { return false; }, 6000);
+	EXPECT_TRUE(p.got_b.find(want) != std::string::npos)
+		<< "B [" << p.got_b << "]";
+
+	/* and back */
+	p.got_a.clear();
+	p.b->dte_input(c.typed, strlen(c.typed));
+	p.run_until([](Pair &) { return false; }, 6000);
+	EXPECT_TRUE(p.got_a.find(want) != std::string::npos)
+		<< "A [" << p.got_a << "]";
+}
+
+/* the US TTY's 5-bit mode; telex (50 bit/s, ITA2, RTTY's 170 Hz
+   shift); EDT; V.18 automoding answering a TTY, an EDT terminal, and
+   another automoding modem (which hears the caller's 5-bit probe and
+   answers in 5-bit); V.18 automoding calling a V.21, a Bell 103 and a
+   V.23 modem (their answer signals tell) */
+static const TextCall text_calls[] = {
+	{ "+MS=BAUDOT", "+MS=BAUDOT", 45, 0, "Hello 123-?\r\n",
+	  "HELLO 123-?\r\n", nullptr },
+	{ "+MBAUDOT=50,2125,2295,1;+MS=BAUDOT",
+	  "+MBAUDOT=50,2125,2295,1;+MS=BAUDOT", 50, 0, "RYRY 1/2=3+4\r\n",
+	  "RYRY 1/2=3+4\r\n", nullptr },
+	{ "+MS=EDT", "+MS=EDT", 110, 0, "Hello, edt!\r\n", "Hello, edt!\r\n",
+	  nullptr },
+	{ "+MS=BAUDOT", "+MV18S=1;+MV18R=1", 45, 0, "GA\r\n", "GA\r\n",
+	  "+MV18R: 2" },
+	{ "+MS=EDT", "+MV18S=1;+MV18R=1", 110, 0, "Hi edt\r\n",
+	  "Hi edt\r\n", "+MV18R: 4" },
+	{ "+MS=V18", "+MS=V18;+MV18R=1", 45, 0, "HELLO\r\n", "HELLO\r\n",
+	  "+MV18R: 2" },
+	{ "+MS=V18;+MV18R=1", "+MS=21,0", 300, 0, "Hello\r\n", "Hello\r\n",
+	  "+MV18R: 5" },
+	{ "+MS=V18;+MV18R=1", "+MS=103,0", 300, 0, "Hello\r\n",
+	  "Hello\r\n", "+MV18R: 7" },
+	{ "+MS=V18;+MV18R=1", "+MS=V23C,0", 1200, 75, "Hello\r\n",
+	  "Hello\r\n", "+MV18R: 6" },
+};
+
+/* each case's name */
+static std::string text_name(const testing::TestParamInfo<TextCall> &i)
+{
+	static const char *names[] = {
+		"Tty", "Telex", "Edt", "V18Tty", "V18Edt", "V18V18",
+		"V18CallsV21", "V18CallsBell103", "V18CallsV23",
+	};
+	return names[i.index];
+}
+
+INSTANTIATE_TEST_SUITE_P(Modes, CoreText, testing::ValuesIn(text_calls),
+			 text_name);

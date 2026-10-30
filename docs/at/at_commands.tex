@@ -330,6 +330,9 @@ give.
  &  & \cmdl[plusFCC]{+FCC, +FIS, +FCS} & Fax class 2 capabilities. \\ \hline
  &  & \cmdl[plusFBO]{+FBO, +FHS, \ldots} & Fax class 2 settings. \\ \hline
  &  & \cmdl[plusFDT]{+FDT, +FDR, +FET, +FKS} & Fax class 2 pages. \\ \hline
+ &  & \cmdl[plusMV18S]{+MV18S, +MV18R} & V.18 text telephone. \\ \hline
+ &  & \cmdl[plusMV18AM]{+MV18AM, +MV18P} & V.18 answer message. \\ \hline
+ &  & \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (TTY, telex) settings. \\ \hline
 \end{vtable}}
 
 \section{Command lines}
@@ -1626,8 +1629,9 @@ directions' rates (sent in its MP sequences).
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
 \item +MS? (gives \cmd{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \cmd{(21,22,23,27,29,122,32,132,33,34,103,212,56,%
-\allowbreak 90,91,92,150,200,64),(0,1),(300-56000),(300-56000)}, the
+\item +MS=? (gives \cmd{(21,22,23,27,29,122,32,132,33,34,103,18,45,%
+\allowbreak 110,212,56,90,91,92,150,200,64),(0,1),(300-56000),%
+\allowbreak (300-56000)}, the
   modulations the program has)
 \end{syntax}
 \begin{results}
@@ -1660,6 +1664,11 @@ directions' rates (sent in its MP sequences).
   up to 148656 bit/s each way. \\ \hline
 64 & CLEAR & Clear channel & 64000 bit/s on a clear digital channel
   (an ISDN data call), no modulation (\cmdl[plusB2]{+B2}). \\ \hline
+18 & V18 & ITU V.18 & Text telephone automoding
+  (section~\ref{sec:text}). \\ \hline
+45 & BAUDOT & V.18, TIA-825-A & 5-bit text telephone: TTY, telex,
+  RTTY (\cmdl[plusMBAUDOT]{+MBAUDOT}). \\ \hline
+110 & EDT & V.18 & EDT text telephone, 110 bit/s. \\ \hline
 \end{vtable}
 
 \paragraph{The 4-wire modulations.}  V.29, V.33 and V.27ter are the
@@ -2476,6 +2485,120 @@ the call with a DCN (\cmd{+FHS:02}), as in the example above.
 0 & MPS: another page follows. \\ \hline
 1 & EOM: another document follows. \\ \hline
 2 & EOP: the last page. \\ \hline
+\end{vtable}
+\end{command}
+
+\section{Text telephone commands}\label{sec:text}
+
+The modem is a text telephone in V.18's modes (\cmdl[plusMS]{+MS} or
+\cmdl[plusMV18S]{+MV18S} chooses one): the 5-bit (Baudot) mode of the
+TTYs, at 45.45~bit/s on 1400 and 1800~Hz (TIA-825-A), and with
+\cmdl[plusMBAUDOT]{+MBAUDOT} the telex and RTTY variants (50~bit/s,
+ITA2's figures, other tones); EDT (V.21's channel~1 at 110~bit/s, 7
+bits, even parity, 2 stop bits); and V.21, V.23 and Bell 103 as their
+data modes.  The 5-bit mode and EDT are half duplex: the modem sends
+150~ms of mark, the characters, and 300~ms of mark after the last, and
+does not hear the line meanwhile; it starts no characters while the
+remote's carrier is on.  Neither hangs up for want of carrier.  The DTE
+sends and receives ASCII: in the 5-bit mode lower case goes as capitals,
+the shift codes are the modem's, and characters the code has not are
+dropped.  A text telephone call has no answer tone: dialling, the modem
+goes into its mode as the dialling ends; answering, at once.
+
+\cmd{AT+MS=V18} (or \cmd{AT+MV18S=1}) finds the remote's mode.  It
+listens for 3~s, for a 5-bit character, an EDT character, V.21's
+channel~1 at 300~bit/s (or a steady mark), a Bell 103 or V.23 caller's
+mark (answering), or V.21's channel~2, Bell 103's 2225~Hz or V.23's
+1300~Hz (calling).  Hearing nothing it probes, in turn: the answer
+message (\cmdl[plusMV18AM]{+MV18AM}) and a new line in the 5-bit mode,
+then in EDT, each followed by 2~s of listening, then 3~s each of its own
+V.21, Bell 103 and V.23 mark, listening for the answer to it; and over
+again until \sreg{7} runs out.  Found, a 5-bit or EDT remote is answered
+in its mode (once it is quiet, so that another automoding modem, whose
+probe this may have been, finds it too); V.21, V.23 and Bell 103 go on
+as those modems do.  DTMF text telephones (V.18's DTMF mode) are not
+supported.
+
+\begin{command}{plusMV18S}{+MV18S}{V.18 Selection}
+This command chooses the text telephone mode (as \cmd{+MS} would; 0
+sets \cmd{+MS=92} if \cmd{+MS} had a text one), and whether the modem
+probes a silent remote and sends the answer message on answering.
+\cmdl[Z]{Z} sets \cmd{0,0,0,0,1}.
+\begin{syntax}
+\item +MV18S=[\p{mode}][,[\p{dflt}][,[\p{fbk}][,[\p{msg}][,[\p{probe}]]]]]
+\item +MV18S? (gives \cmd{+MV18S: 0,0,0,0,1})
+\item +MV18S=? (gives \cmd{+MV18S: (0-2,4-7),(0-7),(0,1),(0,1),(0-2)})
+\end{syntax}
+\begin{results}
+\item OK.
+\item ERROR for a value out of range, or \p{mode} 3 (DTMF).
+\end{results}
+\begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+MV18S Values}
+  {\thd{Value} & \thd{Meaning}}
+\p{mode} & 0 off; 1 automoding (\cmd{+MS=18}); 2 5-bit (45); 4 EDT
+  (110); 5 V.21; 6 V.23; 7 Bell 103. \\ \hline
+\p{dflt} & The default answering mode: kept. \\ \hline
+\p{fbk} & Kept. \\ \hline
+\p{msg} & 1: the answer message on answering in the 5-bit mode or
+  EDT. \\ \hline
+\p{probe} & 0: automoding only listens; 1 or 2: it probes. \\ \hline
+\end{vtable}
+\end{command}
+
+\begin{command}{plusMV18R}{+MV18R}{V.18 Report}
+With \cmd{+MV18R=1} automoding reports the mode it found before the
+CONNECT, as \cmd{+MV18R: \p{mode}} with \cmd{+MV18S}'s numbers
+(\cmd{+MV18R: 2} for a TTY).
+\begin{syntax}
+\item +MV18R=\p{n}
+\item +MV18R? (gives \cmd{+MV18R: 0})
+\item +MV18R=? (gives \cmd{+MV18R: (0,1)})
+\end{syntax}
+\begin{results}
+\item OK if \p{n} = 0 or 1.
+\item ERROR otherwise.
+\end{results}
+\end{command}
+
+\begin{command}{plusMV18AM}{+MV18AM, +MV18P}{Answer Message, Probe Order}
+\cmd{+MV18AM} sets the answer message, up to 63 printable characters,
+the blanks in its quotes kept (\cmd{AT+MV18AM="GA"}): sent in the
+probes, and on answering with \cmd{+MV18S}'s \p{msg}.  \cmd{+MV18P}
+(2 to 7) is kept: the probes go in the order above.
+\begin{syntax}
+\item +MV18AM="\p{text}", +MV18AM?, +MV18AM=? (gives
+  \cmd{+MV18AM: (63)(32-126)})
+\item +MV18P=\p{n}, +MV18P? (gives \cmd{+MV18P: 2}), +MV18P=?
+\end{syntax}
+\begin{results}
+\item OK.
+\item ERROR for a message too long or a value out of range.
+\end{results}
+\end{command}
+
+\begin{command}{plusMBAUDOT}{+MBAUDOT}{5-bit Mode}
+This command (D-Modem's own) sets the 5-bit mode's rate, tones and
+figures, for telex and RTTY: \cmd{AT+MBAUDOT=50,2125,2295,1} is 50
+baud ITA2 on RTTY's 170~Hz shift.  The two ends must agree; automoding
+listens on these tones.  \cmdl[Z]{Z} sets the US TTY's
+\cmd{45,1400,1800,0}.
+\begin{syntax}
+\item +MBAUDOT=[\p{rate}][,[\p{mark}][,[\p{space}][,[\p{code}]]]]
+\item +MBAUDOT? (gives \cmd{+MBAUDOT: 45,1400,1800,0})
+\item +MBAUDOT=? (gives
+  \cmd{+MBAUDOT: (45,50,75,100),(300-3400),(300-3400),(0,1)})
+\end{syntax}
+\begin{results}
+\item OK.
+\item ERROR for a value out of range, or the same mark and space.
+\end{results}
+\begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+MBAUDOT Values}
+  {\thd{Value} & \thd{Meaning}}
+\p{rate} & 45 (45.45), 50, 75 or 100 bit/s. \\ \hline
+\p{mark} & The mark (1) tone, Hz. \\ \hline
+\p{space} & The space (0) tone, Hz. \\ \hline
+\p{code} & The figures: 0 the US TTY's (\cmd{\$} on D, \cmd{"} on Z,
+  \cmd{;} on V, unshift on space), 1 ITA2's (telex). \\ \hline
 \end{vtable}
 \end{command}
 

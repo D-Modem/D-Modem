@@ -60,6 +60,9 @@ static DpDriver pump_table[] = {
 	{ DP_V33, "V33", "33", nullptr },
 	{ DP_V34, "V34", "34", nullptr },
 	{ DP_B103, "Bell103", "103", nullptr },
+	{ DP_V18, "V18", "18", nullptr },
+	{ DP_BAUDOT, "Baudot", "45", nullptr },
+	{ DP_EDT, "EDT", "110", nullptr },
 	{ DP_B212, "Bell212", "212", nullptr },
 	{ DP_FAX, "VFax", nullptr, nullptr },
 	{ DP_K56, "K56Flex", "56", nullptr },
@@ -147,6 +150,8 @@ intptr_t Modem::get_param(u32 name)
 	   at */
 	case MDMPRM_LINK_REQ:
 		return link_req_;
+	case MDMPRM_TEXT:
+		return text_pump() ? param_address(&text_) : 0;
 	case MDMPRM_MAX_RX_RATE:
 		return max_rx_rate_ ? max_rx_rate_ : max_rate_;
 

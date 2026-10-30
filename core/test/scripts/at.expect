@@ -75,7 +75,7 @@
       0 A: ERROR\r\n
       0 A< AT+MS=?\r
       0 A: AT+MS=?\r\r\n
-      0 A: (21,22,23,27,29,122,32,132,33,34,103,212,56,90,91,92,150,200,64),(0,1),(300-56000),(300-56000)\r\n
+      0 A: (21,22,23,27,29,122,32,132,33,34,103,18,45,110,212,56,90,91,92,150,200,64),(0,1),(300-56000),(300-56000)\r\n
       0 A: OK\r\n
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
@@ -537,6 +537,59 @@
       0 A< AT+MV18\r
       0 A: AT+MV18\r\r\n
       0 A: ERROR\r\n
+      0 A< AT+MV18S=?\r
+      0 A: AT+MV18S=?\r\r\n
+      0 A: +MV18S: (0-2,4-7),(0-7),(0,1),(0,1),(0-2)\r\n
+      0 A: OK\r\n
+      0 A< AT+MV18S=1;+MV18S?;+MS?\r
+      0 A: AT+MV18S=1;+MV18S?;+MS?\r\r\n
+      0 A: +MV18S: 1,0,0,0,1\r\n
+      0 A: 18,1,300,56000\r\n
+      0 A: OK\r\n
+      0 A< AT+MV18S=3\r
+      0 A: AT+MV18S=3\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+MV18S=0;+MS?\r
+      0 A: AT+MV18S=0;+MS?\r\r\n
+      0 A: 92,1,300,56000\r\n
+      0 A: OK\r\n
+      0 A< AT+MV18R=1;+MV18R?;+MV18P?;+MV18AM=?\r
+      0 A: AT+MV18R=1;+MV18R?;+MV18P?;+MV18AM=?\r\r\n
+      0 A: +MV18R: 1\r\n
+      0 A: +MV18P: 2\r\n
+      0 A: +MV18AM: (63)(32-126)\r\n
+      0 A: OK\r\n
+      0 A< AT+MV18AM="GA, Text Here";+MV18AM?\r
+      0 A: AT+MV18AM="GA, Text Here";+MV18AM?\r\r\n
+      0 A: +MV18AM: "GA, Text Here"\r\n
+      0 A: OK\r\n
+      0 A< AT+MBAUDOT=?;+MBAUDOT?\r
+      0 A: AT+MBAUDOT=?;+MBAUDOT?\r\r\n
+      0 A: +MBAUDOT: (45,50,75,100),(300-3400),(300-3400),(0,1)\r\n
+      0 A: +MBAUDOT: 45,1400,1800,0\r\n
+      0 A: OK\r\n
+      0 A< AT+MBAUDOT=50,2125,2295,1;+MBAUDOT?\r
+      0 A: AT+MBAUDOT=50,2125,2295,1;+MBAUDOT?\r\r\n
+      0 A: +MBAUDOT: 50,2125,2295,1\r\n
+      0 A: OK\r\n
+      0 A< AT+MBAUDOT=60\r
+      0 A: AT+MBAUDOT=60\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+MS=BAUDOT;+MS?;+MS=EDT;+MS?\r
+      0 A: AT+MS=BAUDOT;+MS?;+MS=EDT;+MS?\r\r\n
+      0 A: 45,1,300,56000\r\n
+      0 A: 110,1,300,56000\r\n
+      0 A: OK\r\n
+      0 A< ATZ\r
+      0 A: ATZ\r\r\n
+      0 A: OK\r\n
+      0 A< AT+MBAUDOT?;+MV18S?;+MV18AM?;+MS?\r
+      0 A: AT+MBAUDOT?;+MV18S?;+MV18AM?;+MS?\r\r\n
+      0 A: +MBAUDOT: 45,1400,1800,0\r\n
+      0 A: +MV18S: 0,0,0,0,1\r\n
+      0 A: +MV18AM: ""\r\n
+      0 A: 92,1,300,56000\r\n
+      0 A: OK\r\n
       0 A< ATB\r
       0 A: ATB\r\r\n
       0 A: OK\r\n
