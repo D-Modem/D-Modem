@@ -85,6 +85,7 @@ int udp_socket()
 
 const s16 IDLE_MS = 200;        /* no packet this long: go on alone */
 const s16 MAX_SAMPLES = 1600;   /* in a packet, 200 ms */
+const s64 T38_WAIT_MS = 6000;   /* a fax receiver's wait for T.38 */
 
 /*
  *    configuration and logging
@@ -519,8 +520,15 @@ s64 now_us()
    On a SIP leg (fax_t38 on) the fax goes over to T.38 when the leg
    does, before a page has gone (the fax machine anew on UDPTL, its time
    by the clock): a receiver asks for it, as ReceiveFAX does, and waits
-   for the answer (6 s at most, silence on the line) before it starts on
-   the audio; a sender takes it when asked */
+   for the answer (silence on the line) before it starts on the audio; a
+   sender takes it when asked.  The wait ends after 6 s by the clock or
+   6 s of the line's audio, whichever comes first: the audio's time is
+   the fax machines' (their timers count its samples), and it can run
+   ahead of the clock.  Between two of our calls on one Asterisk nothing
+   paces the packets (each side sends one for each it gets), so if the
+   answer never comes (Asterisk drops the request when the other leg is
+   not in its bridge yet) a wait by the clock alone is the sender's T1
+   (35 s of audio) in a second or two: "no fax machine" */
 void run_fax(Call &c, Line &line, enum dmodem_law law,
 	     enum dmodem_fax_dir dir, const std::string &file,
 	     const struct dmbridge_fax &fs)
@@ -532,7 +540,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	bool sending = dir == DMODEM_FAX_SEND, told = false, t38 = false;
 	bool may_switch = line.leg != nullptr && fs.t38, asking = false;
 	T38Peer peer = { line.udptl, {} };
-	s64 t0 = 0, samples = 0, asked = 0;
+	s64 t0 = 0, samples = 0, asked = 0, waited = 0;
 
 	cfg.law = law;
 	cfg.dir = dir;
@@ -609,7 +617,8 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 				may_switch = false;
 			}
 			asking = asked && l.t38 == ari::T38_ASKED &&
-				now_us() - asked < 6000000;
+				now_us() - asked < T38_WAIT_MS * 1000 &&
+				waited < T38_WAIT_MS * 8;
 		}
 		if (t38) {
 			unsigned char pkt[2048];
@@ -645,6 +654,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 				memset(out, law == DMODEM_LAW_ALAW ? 0xd5 : 0xff,
 				       n);
 				line.rtp.send(out, n);
+				waited += n;
 				continue;
 			}
 			dmodem_fax_process_g711(f, in, out, n);

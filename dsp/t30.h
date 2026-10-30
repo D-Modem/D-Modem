@@ -88,6 +88,9 @@ void t30_process(T30 *t, const s16 *in, s16 *out, s32 n);
 void t30_t38_time(T30 *t, s32 n);
 /* T.38: an IFP packet that came */
 void t30_t38_rx(T30 *t, const struct t38_ifp *p);
+/* T.38: an IFP packet lost (UDPTL had it neither itself nor in the
+   redundancy of a later one) */
+void t30_t38_lost(T30 *t);
 /* how the call goes (or went) */
 void t30_get_status(T30 *t, struct t30_status *s);
 /* the far end hung up */

@@ -259,6 +259,8 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	std::vector<unsigned char> ecm_rx;      /* the block's frames */
 	s16 ecm_rx_len[ECM_FRAMES]; /* -1: not (yet) received */
 	s16 ecm_rx_frames;              /* in the block, -1: not known */
+	s16 ecm_rx_redo;                /* the block's frames asked for
+					   again as they did not decode */
 	s16 ecm_rcp;
 	/* non-ECM: our last post-page response, to the command post_fcf,
 	   and the state it took us to (a repeated command gets it again) */
@@ -291,6 +293,9 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s16 t38_hdlc_len;                 /* the V.21 frame so far */
 	unsigned char t38_ecm[ECM_RX_MAX];
 	s16 t38_ecm_len;                /* the ECM frame so far */
+	/* a packet lost in the V.21 frame, or the ECM frame, so far: its
+	   FCS_OK does not make it good (T.38 sends no FCS to check) */
+	s16 t38_hdlc_lost, t38_ecm_lost;
 	s16 t38_heard;                  /* the fast modulation came */
 
 	void set_state(enum state s);
@@ -339,6 +344,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void hdlc_rx_frame(HdlcEcm, const unsigned char *d, s16 len,
 			   bool whole);
 	void ecm_frame_in(const unsigned char *d, s16 len);
+	bool ecm_block_decodes(bool last, unsigned char *map);
 	void got_pps(const unsigned char *fif, s16 len);
 	void ecm_respond(s16 fcf, const unsigned char *fif, s16 len,
 			 enum state next_);
@@ -485,6 +491,7 @@ void T30::start_fast(s16 short_train)
 	stop_fast();
 	t38_heard = 0;
 	t38_ecm_len = 0;
+	t38_ecm_lost = 0;
 	if (cfg.t38)
 		fast_on = 1;
 	else if (!fast.init(rates[rate].mod, short_train, srate,
@@ -639,6 +646,7 @@ void T30::start_page_rx()
 		/* the blocks of the page */
 		ecm_block = 0;
 		ecm_rx_frames = -1;
+		ecm_rx_redo = 0;
 		for (s16 k = 0; k < ECM_FRAMES; k++)
 			ecm_rx_len[k] = -1;
 		start_ecm_rx();
@@ -817,6 +825,7 @@ void T30::rx_message()
 		for (k = 0; k < ECM_FRAMES; k++)
 			ecm_rx_len[k] = -1;
 		ecm_rx_frames = -1;
+		ecm_rx_redo = 0;
 		ecm_block++;
 		ecm_respond(FCF_ERR, nullptr, 0,
 			    fif_len >= 1 && (fif[0] & 0xfe) != FCF_NULL ?
@@ -1379,8 +1388,11 @@ void T30::ecm_frame_in(const unsigned char *d, s16 len)
 		return;
 	if ((d[2] & 0xfe) == FCF_FCD && len >= 5) {
 		s16 fn = d[3], n = len - 4;
-		if (n > ECM_SIZE)
-			n = ECM_SIZE;
+		/* (longer than the DCS said: broken, as below) */
+		if (n > ecm_size) {
+			DSP_DBG("t30: ECM frame %d of %d octets\n", fn, n);
+			return;
+		}
 		memcpy(&ecm_rx[static_cast<size_t>(fn) * ECM_SIZE], d + 4, n);
 		ecm_rx_len[fn] = static_cast<s16>(n);
 	} else if ((d[2] & 0xfe) == FCF_RCP) {
@@ -1445,6 +1457,55 @@ enum state T30::ecm_page_end(s16 fcf2)
 	return S_CED;                   /* EOM: phase B again */
 }
 
+/* the block's frames into the page (last: it ends the page); true if
+   they decode without errors, or would not by asking again.  ECM's
+   frames came with good FCSs, so a row with errors is data lost on the
+   way: on T.38 a packet lost before Asterisk's UDPTL (which numbers them
+   anew), the gateway's FCS_OK, and none to check.  Then the page is as
+   it was, and *map has the frame the bad row ended in and the one
+   before it, for PPR (a few times at most for a block: the sender's own
+   data may be wrong) */
+bool T30::ecm_block_decodes(bool last, unsigned char *map)
+{
+	T4Page page = rx_page;
+	T4Rx rx = t4rx;
+	s16 k, bad = -1;
+
+	rx.page = &page;
+	for (k = 0; k < ecm_rx_frames && !rx.done; k++) {
+		const unsigned char *d =
+			&ecm_rx[static_cast<size_t>(k) * ECM_SIZE];
+		for (s16 i = 0; i < ecm_rx_len[k] * 8 && !rx.done; i++) {
+			rx.bit(d[i / 8] >> (i % 8) & 1);
+			if (bad < 0 && page.bad_rows > rx_page.bad_rows)
+				bad = k;
+		}
+	}
+	if (bad < 0 && last && !rx.done) {
+		/* (its last row too: the end() of ecm_page_end()) */
+		T4Page end_page = page;
+		T4Rx end_rx = rx;
+		end_rx.page = &end_page;
+		end_rx.end();
+		if (end_page.bad_rows > rx_page.bad_rows)
+			bad = static_cast<s16>(ecm_rx_frames - 1);
+	}
+	if (bad >= 0 && ecm_rx_redo < TRIES) {
+		DSP_DBG("t30: ECM block: a bad row in frame %d: PPR\n", bad);
+		ecm_rx_redo++;
+		memset(map, 0, 32);
+		for (k = bad > 0 ? bad - 1 : 0; k <= bad; k++) {
+			ecm_rx_len[k] = -1;
+			map[k / 8] |= 1 << (k % 8);
+		}
+		return false;
+	}
+	rx_page = std::move(page);
+	t4rx = rx;
+	t4rx.page = &rx_page;
+	return true;
+}
+
 /* a PPS (T.30 A.4.3): PPR with the map of the frames missing, else MCF
    and the block into the page, which ends if the PPS says so */
 void T30::got_pps(const unsigned char *fif, s16 len)
@@ -1481,11 +1542,23 @@ void T30::got_pps(const unsigned char *fif, s16 len)
 	if (n > ecm_rx_frames)
 		ecm_rx_frames = n;
 	zero(map);
-	for (k = 0; k < ecm_rx_frames; k++)
+	for (k = 0; k < ecm_rx_frames; k++) {
+		/* a frame of the block is the DCS's size, but for the last
+		   one of the page's last block, which may be short: one that
+		   isn't lost some of its data on the way (on T.38 a packet
+		   lost before Asterisk's UDPTL, which numbers them anew: the
+		   FCS_OK of the gateway in front of it, none to check) */
+		if (ecm_rx_len[k] >= 0 && ecm_rx_len[k] != ecm_size &&
+		    (k < ecm_rx_frames - 1 || fcf2 == FCF_NULL)) {
+			DSP_DBG("t30: ECM frame %d of %d octets, not %d\n", k,
+				ecm_rx_len[k], ecm_size);
+			ecm_rx_len[k] = -1;
+		}
 		if (ecm_rx_len[k] < 0) {
 			map[k / 8] |= 1 << (k % 8);
 			missing++;
 		}
+	}
 	if (missing) {
 		DSP_DBG("t30: %d of %d frames missing: PPR\n", missing,
 			ecm_rx_frames);
@@ -1493,15 +1566,14 @@ void T30::got_pps(const unsigned char *fif, s16 len)
 		return;
 	}
 	/* the block to the page, bit by bit as on the line */
-	for (k = 0; k < ecm_rx_frames && rx_page_on && !t4rx.done; k++) {
-		const unsigned char *d =
-			&ecm_rx[static_cast<size_t>(k) * ECM_SIZE];
-		for (s16 i = 0; i < ecm_rx_len[k] * 8 && !t4rx.done; i++)
-			t4rx.bit(d[i / 8] >> (i % 8) & 1);
+	if (rx_page_on && !ecm_block_decodes(fcf2 != FCF_NULL, map)) {
+		ecm_respond(FCF_PPR, map, 32, S_RX_ECM);
+		return;
 	}
 	for (k = 0; k < ECM_FRAMES; k++)
 		ecm_rx_len[k] = -1;
 	ecm_rx_frames = -1;
+	ecm_rx_redo = 0;
 	ecm_block++;
 	if (fcf2 == FCF_NULL) {
 		ecm_respond(FCF_MCF, nullptr, 0, S_RX_ECM);
@@ -1546,6 +1618,7 @@ void T30::restart_v21()
 	nmsg = 0;
 	msg_ready = 0;
 	t38_hdlc_len = 0;
+	t38_hdlc_lost = 0;
 }
 
 
@@ -1851,6 +1924,7 @@ void T30::t38_rx(const struct t38_ifp *p)
 			t38_signal_end();
 		} else if (p->type == T38_IND_V21_PREAMBLE) {
 			t38_hdlc_len = 0;
+			t38_hdlc_lost = 0;
 		} else if (p->type >= T38_IND_V27_2400 &&
 			   p->type <= T38_IND_V17_14400_LONG) {
 			t38_heard = 1;
@@ -1872,8 +1946,13 @@ void T30::t38_rx(const struct t38_ifp *p)
 				break;
 			case T38_HDLC_FCS_OK:
 			case T38_HDLC_FCS_OK_SIG_END:
-				t38_frame_in(t38_hdlc, t38_hdlc_len);
+				if (t38_hdlc_lost)
+					DSP_DBG("t30: T.38 frame: a packet "
+						"of it lost\n");
+				else
+					t38_frame_in(t38_hdlc, t38_hdlc_len);
 				t38_hdlc_len = 0;
+				t38_hdlc_lost = 0;
 				end |= f->type == T38_HDLC_FCS_OK_SIG_END;
 				break;
 			case T38_HDLC_FCS_BAD:
@@ -1883,6 +1962,7 @@ void T30::t38_rx(const struct t38_ifp *p)
 					f->type == T38_HDLC_SIG_END ? "end" :
 					"bad FCS");
 				t38_hdlc_len = 0;
+				t38_hdlc_lost = 0;
 				end |= f->type != T38_HDLC_FCS_BAD;
 				break;
 			default:
@@ -1915,9 +1995,10 @@ void T30::t38_rx(const struct t38_ifp *p)
 			break;
 		case T38_HDLC_FCS_OK:
 		case T38_HDLC_FCS_OK_SIG_END:
-			if (state == S_RX_ECM)
+			if (state == S_RX_ECM && !t38_ecm_lost)
 				ecm_frame_in(t38_ecm, t38_ecm_len);
 			t38_ecm_len = 0;
+			t38_ecm_lost = 0;
 			if (f->type == T38_HDLC_FCS_OK_SIG_END)
 				t38_signal_end();
 			break;
@@ -1925,6 +2006,7 @@ void T30::t38_rx(const struct t38_ifp *p)
 		case T38_HDLC_FCS_BAD_SIG_END:
 		case T38_HDLC_SIG_END:
 			t38_ecm_len = 0;
+			t38_ecm_lost = 0;
 			if (f->type != T38_HDLC_FCS_BAD)
 				t38_signal_end();
 			break;
@@ -2184,6 +2266,17 @@ void t30_t38_rx(T30 *t, const struct t38_ifp *p)
 {
 	if (t->state != S_DONE)
 		t->t38_rx(p);
+}
+
+/* a T.38 packet lost: the HDLC frames it was in are not had (an ECM
+   frame missing is asked for again with PPR, a V.21 one by the timers),
+   rather than taken with a gap at their FCS_OK */
+void t30_t38_lost(T30 *t)
+{
+	/* (until the frame's end, or the next V.21 preamble or fast
+	   training) */
+	t->t38_hdlc_lost = 1;
+	t->t38_ecm_lost = 1;
 }
 
 /* a fax machine for one call; a sender with no first page ends at once

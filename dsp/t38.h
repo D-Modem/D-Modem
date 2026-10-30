@@ -112,7 +112,7 @@ struct UdptlTx {
 
 /* UDPTL, receiving: the IFP packets once each, in their order; a lost
    one from the next packet's redundancy where it has it (FEC: the
-   primary packets only) */
+   primary packets only), else to fn as lost: len 0, ifp NULL */
 struct UdptlRx {
 	s32 expected;                   /* the next sequence number, -1:
 					   none yet */
