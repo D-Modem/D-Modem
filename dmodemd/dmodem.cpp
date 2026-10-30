@@ -200,6 +200,15 @@ void dmodem_hangup(struct dmodem *d)
 	d->m->poll();
 }
 
+/* see dmodem.h */
+void dmodem_ring(struct dmodem *d, int first, const char *number)
+{
+	if (first)
+		d->m->caller_id("", number, "");
+	d->m->ring_signal(true);
+	d->m->poll();
+}
+
 /* n samples of the line: the CNG detector while not online, the core
    (silence out while on hook); the clock moves by n samples and the
    timers run */

@@ -229,6 +229,10 @@ add_subdirectory(dsp)
 add_subdirectory(core)
 add_subdirectory(winmodem)
 add_subdirectory(dmodemd)
+# dmodem-capid: CAPI 2.0 on a D-Modem (POSIX)
+if(NOT WIN32)
+	add_subdirectory(capi)
+endif()
 
 # the PBX modules' call on libdmodem (pbx/dmodem_bridge.c), built into each
 set(DMODEM_PBX_DIR ${PROJECT_SOURCE_DIR}/pbx)
