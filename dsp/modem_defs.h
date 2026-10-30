@@ -377,6 +377,9 @@ struct voice_info {
 	   timers, 100 ms and 1 s */
 	unsigned ring_after;
 	unsigned ring_never;
+	/* #CID: caller ID on the call (Type II, the voice object) when not
+	   0, its report as CID_create()'s cid_val */
+	unsigned cid_format;
 };
 
 /*

@@ -466,10 +466,14 @@ void AlsaLine::frame(dcore::Modem &m, const s16 *in, s16 *out)
 				m.ring();
 	}
 	samples_ += frame_;
-	if (running_ && m.started())
+	if (running_ && m.started()) {
 		m.process(in, out, frame_);
-	else
+	} else {
+		/* caller ID sent before the ring */
+		if (hook_ != MODEM_HOOK_OFF)
+			m.idle_audio(in, frame_);
 		std::fill_n(out, frame_, 0);
+	}
 }
 
 /* see alsa_line.h */

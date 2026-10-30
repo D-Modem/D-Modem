@@ -25,11 +25,19 @@
       0 A: ERROR\r\n
       0 A< AT+VSM=?\r
       0 A: AT+VSM=?\r\r\n
-      0 A: +VSM=0-1,8000-8000\r\n
+      0 A: 0,"SIGNED PCM",8,0,(7200,8000,11025),(0),(0)\r\n
+      0 A: 1,"UNSIGNED PCM",8,0,(7200,8000,11025),(0),(0)\r\n
+      0 A: 4,"G.711U",8,0,(8000),(0),(0)\r\n
+      0 A: 5,"G.711A",8,0,(8000),(0),(0)\r\n
+      0 A: 128,"8-BIT LINEAR/D-Modem",8,0,(7200,8000,11025),(0),(0)\r\n
+      0 A: 129,"16-BIT LINEAR/D-Modem",16,0,(7200,8000,11025),(0),(0)\r\n
+      0 A: 130,"8-BIT ALAW/D-Modem",8,0,(8000),(0),(0)\r\n
+      0 A: 131,"8-BIT ULAW/D-Modem",8,0,(8000),(0),(0)\r\n
+      0 A: 132,"IMA ADPCM/D-Modem",4,0,(7200,8000,11025),(0),(0)\r\n
       0 A: OK\r\n
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
-      0 A: +VSM=1,8000\r\n
+      0 A: +VSM=1,8000,0,0\r\n
       0 A: OK\r\n
       0 A< AT+VSM=1,8000\r
       0 A: AT+VSM=1,8000\r\r\n
@@ -37,6 +45,39 @@
       0 A< AT+VSM=1,9000\r
       0 A: AT+VSM=1,9000\r\r\n
       0 A: ERROR\r\n
+      0 A< AT+VSM=129,11025,128,5\r
+      0 A: AT+VSM=129,11025,128,5\r\r\n
+      0 A: OK\r\n
+      0 A< AT+VSM?\r
+      0 A: AT+VSM?\r\r\n
+      0 A: +VSM=129,11025,128,5\r\n
+      0 A: OK\r\n
+      0 A< AT+VSM=4,11025\r
+      0 A: AT+VSM=4,11025\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+VSM=4\r
+      0 A: AT+VSM=4\r\r\n
+      0 A: OK\r\n
+      0 A< AT+VSM?\r
+      0 A: AT+VSM?\r\r\n
+      0 A: +VSM=4,8000,0,0\r\n
+      0 A: OK\r\n
+      0 A< AT+VSM=2,8000\r
+      0 A: AT+VSM=2,8000\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+VSM=132,7200,256\r
+      0 A: AT+VSM=132,7200,256\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+VSM=132,7200,0,0\r
+      0 A: AT+VSM=132,7200,0,0\r\r\n
+      0 A: OK\r\n
+      0 A< AT+VSM?\r
+      0 A: AT+VSM?\r\r\n
+      0 A: +VSM=132,7200,0,0\r\n
+      0 A: OK\r\n
+      0 A< AT+VSM=1,8000\r
+      0 A: AT+VSM=1,8000\r\r\n
+      0 A: OK\r\n
       0 A< AT+VSD=?\r
       0 A: AT+VSD=?\r\r\n
       0 A: +VSD=0-255,0-255\r\n

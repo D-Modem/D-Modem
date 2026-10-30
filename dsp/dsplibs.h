@@ -69,14 +69,14 @@ void dcr_delete(void *dcr);
    suspiciously large, else 0 */
 int dcr_process(void *dcr, void *buf, int len);
 
-/* a caller ID receiver at rate samples/s, reporting to modem m's DTE
-   the fields formatted (cid_val 1) or the message in hex; packet: as
-   voice mode's complex event report, <DLE>X ... <DLE>. (V.253 7.1.2) */
+/* a caller ID receiver at rate samples/s (Bell 202 or V.23 FSK, or
+   DTMF: dsp_glue.cpp), reporting to modem m's DTE the fields formatted
+   (cid_val 1) or the message in hex; packet: as voice mode's complex
+   event report, <DLE>X ... <DLE>. (V.253 7.1.2) */
 void *CID_create(struct modem *m, u32 rate, unsigned cid_val,
 		 int packet);
 void CID_delete(void *cid);
-/* count received samples: 0 to go on, 1 once a message is reported, -1
-   on an error */
+/* count received samples: 0 to go on, 1 once a message is reported */
 int CID_process(void *cid, void *in, int count);
 /* a caller ID message (SDMF or MDMF, from its type octet to its
    checksum: len octets at msg) that came another way than on the line,

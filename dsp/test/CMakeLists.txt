@@ -72,6 +72,9 @@ dmodem_gtest(bits_test LABELS quick)
 # g711.h: the laws' octets, reference values, sign and magnitude
 dmodem_test_exe(g711_test g711_test.cpp)
 dmodem_gtest(g711_test LABELS quick)
+# +VSM's sample formats (voice_codec.h)
+dmodem_test_exe(voice_codec_test voice_codec_test.cpp)
+dmodem_gtest(voice_codec_test LABELS quick)
 # dsp.h's DTMF detector on the generator's digits, G.711, twist, length
 dmodem_test_exe(dtmf_test dtmf_test.cpp)
 target_link_libraries(dtmf_test PRIVATE dmodem_loopback dmodem_dsp)

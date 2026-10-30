@@ -23,6 +23,7 @@
 #include <dcore.h>
 #include <log.h>
 #include <modem_param.h>
+#include <dsp.h>
 
 extern "C" int prop_dp_init(void);
 
@@ -535,6 +536,205 @@ TEST(Core, LocalPhone)
 	EXPECT_EQ(change(true), "");            /* no change */
 	EXPECT_EQ(change(false), "\x10h");
 	EXPECT_FALSE(m->local_phone_off_hook());
+	delete m;
+}
+
+/* caller ID on the line as a sender would put it there */
+namespace cidline {
+
+/* an MDMF message (0x80): its parameters (type, value), the checksum */
+static std::vector<u8> mdmf(std::vector<std::pair<u8, std::string>> ps)
+{
+	std::vector<u8> m = { 0x80, 0 };
+	u8 sum = 0;
+	for (auto &p : ps) {
+		m.push_back(p.first);
+		m.push_back(static_cast<u8>(p.second.size()));
+		m.insert(m.end(), p.second.begin(), p.second.end());
+	}
+	m[1] = static_cast<u8>(m.size() - 2);
+	for (u8 b : m)
+		sum = static_cast<u8>(sum + b);
+	m.push_back(static_cast<u8>(-sum));
+	return m;
+}
+
+/* msg as FSK at 1200 bit/s, mark and space Hz: 50 ms of silence, the
+   channel seizure (300 bits of 0101...), 180 marks, the octets 8N1, a
+   few marks, 50 ms of silence; at 8000 Hz, -13 dBm or so */
+static std::vector<s16> fsk(const std::vector<u8> &msg, float mark,
+			    float space)
+{
+	std::vector<s16> bits;
+	for (int i = 0; i < 300; i++)
+		bits.push_back(i & 1);
+	bits.insert(bits.end(), 180, 1);
+	for (u8 b : msg) {
+		bits.push_back(0);
+		for (int k = 0; k < 8; k++)
+			bits.push_back((b >> k) & 1);
+		bits.push_back(1);
+	}
+	bits.insert(bits.end(), 10, 1);
+	std::vector<s16> x(400, 0);
+	dsp::FskBitTx tx;
+	size_t at = 0;
+	tx.init(mark, space, 6000, 1200, 8000, 1);
+	for (;;) {
+		float y = tx.sample([&]() -> s16 {
+			return at < bits.size() ? bits[at++] : -1;
+		});
+		if (tx.ended)
+			break;
+		x.push_back(static_cast<s16>(y));
+	}
+	x.insert(x.end(), 400, 0);
+	return x;
+}
+
+/* the digits of s as DTMF, 70 ms each with 70 ms between, then 100 ms
+   of silence */
+static std::vector<s16> dtmf(const char *s)
+{
+	std::vector<s16> x;
+	for (; *s; s++) {
+		dsp::DtmfGen g;
+		g.set(*s, 8000);
+		for (int i = 0; i < 560; i++)
+			x.push_back(static_cast<s16>(g.next()));
+		x.insert(x.end(), 560, 0);
+	}
+	x.insert(x.end(), 800, 0);
+	return x;
+}
+
+} // namespace cidline
+
+/* caller ID before the first ring, on the samples of an idle line
+   (idle_audio()), as +VCID=1 reports it: V.23 FSK (ETSI, the UK), Bell
+   202 FSK, DTMF (a number, a withheld one, one ended by a pause); none
+   with +VCID=0 */
+TEST(Core, CallerIdBeforeRing)
+{
+	using namespace cidline;
+	Line l;
+	Modem *m = make(l, "cidpre");
+	auto idle = [&](const std::vector<s16> &x) {
+		l.out.clear();
+		for (size_t k = 0; k < x.size(); k += 160)
+			m->idle_audio(x.data() + k, static_cast<s32>(
+				std::min<size_t>(160, x.size() - k)));
+		return l.out;
+	};
+	std::vector<u8> msg = mdmf({ { 0x01, "10301043" },
+				     { 0x02, "01632960123" },
+				     { 0x07, "J SMITH" } });
+	const std::string want = "\r\nDATE = 1030\r\nTIME = 1043\r\n"
+		"NMBR = 01632960123\r\nNAME = J SMITH\r\n";
+
+	EXPECT_EQ(cmd(m, l, "ATE0+VCID=1\r"), "ATE0+VCID=1\r\r\nOK\r\n");
+	EXPECT_EQ(idle(fsk(msg, 1300, 2100)), want);
+	EXPECT_EQ(idle(fsk(msg, 1200, 2200)), want);
+	EXPECT_EQ(idle(dtmf("A4512345678C")), "\r\nNMBR = 4512345678\r\n");
+	EXPECT_EQ(idle(dtmf("B10C")), "\r\nNMBR = P\r\n");
+	EXPECT_EQ(idle(dtmf("D00#")), "\r\nNMBR = O\r\n");
+	std::vector<s16> paused = dtmf("A123");
+	paused.insert(paused.end(), 4800, 0);
+	EXPECT_EQ(idle(paused), "\r\nNMBR = 123\r\n");
+	/* a message with a bad checksum: nothing */
+	std::vector<u8> bad = msg;
+	bad.back() ^= 1;
+	EXPECT_EQ(idle(fsk(bad, 1300, 2100)), "");
+	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "OK\r\n");
+	EXPECT_EQ(idle(fsk(msg, 1300, 2100)), "");
+	delete m;
+}
+
+/* a line reversal (line_reversal()) snoops the line for caller ID
+   before the ring; the message ends it */
+TEST(Core, CallerIdAfterLineReversal)
+{
+	using namespace cidline;
+	Line l;
+	Modem *m = make(l, "cidrev");
+	std::vector<s16> x = fsk(mdmf({ { 0x02, "5551000" },
+					{ 0x08, "P" } }), 1300, 2100);
+	int16_t out[160];
+
+	EXPECT_EQ(cmd(m, l, "ATE0+VCID=1\r"), "ATE0+VCID=1\r\r\nOK\r\n");
+	l.out.clear();
+	m->line_reversal();
+	EXPECT_TRUE(m->started());
+	EXPECT_EQ(l.last_hook, MODEM_HOOK_SNOOPING);
+	for (size_t k = 0; k + 160 <= x.size() && m->started(); k += 160) {
+		now += 20;
+		m->process(x.data() + k, out, 160);
+		m->poll();
+	}
+	EXPECT_EQ(l.out, "\r\nNMBR = 5551000\r\nNAME = P\r\n");
+	EXPECT_FALSE(m->started());
+	delete m;
+}
+
+/* Type II caller ID in voice mode on the call: the CPE alerting signal
+   (2130 + 2750 Hz, 80 ms), our DTMF A after it, then the FSK message,
+   reported as a <DLE>X packet; the line's audio to the DTE silent
+   meanwhile; with +VCID=0 no acknowledgement */
+TEST(Core, CallerIdOnTheCall)
+{
+	using namespace cidline;
+	Line l;
+	Modem *m = make(l, "cid2");
+	std::vector<s16> sent;
+	auto run = [&](const std::vector<s16> &x) {
+		std::vector<s16> in(x);
+		in.resize((in.size() + 159) / 160 * 160, 0);
+		int16_t out[160];
+		l.out.clear();
+		for (size_t k = 0; k < in.size(); k += 160) {
+			now += 20;
+			m->process(in.data() + k, out, 160);
+			m->poll();
+			sent.insert(sent.end(), out, out + 160);
+		}
+		return l.out;
+	};
+	std::vector<s16> cas(640);
+	for (int i = 0; i < 640; i++)
+		cas[i] = static_cast<s16>(
+			4000 * sin(2 * M_PI * 2130 * i / 8000) +
+			4000 * sin(2 * M_PI * 2750 * i / 8000));
+	cas.insert(cas.end(), 1600, 0);         /* 200 ms for the ack */
+	std::vector<s16> msg = fsk(mdmf({ { 0x02, "5551000" },
+					  { 0x07, "BOB" } }), 1200, 2200);
+	/* the DTMF digit in sent's samples [from, to), ' ' for none */
+	auto key = [&](size_t from, size_t to) {
+		dsp::DtmfDetect d;
+		d.init(8000);
+		for (size_t i = from; i < to && i < sent.size(); i++)
+			if (d.sample(sent[i]) == dsp::DtmfDetect::ON)
+				return d.digit;
+		return ' ';
+	};
+
+	EXPECT_EQ(cmd(m, l, "ATE0+FCLASS=8;+VCID=1\r"),
+		  "ATE0+FCLASS=8;+VCID=1\r\r\nOK\r\n");
+	cmd(m, l, "AT+VLS=1\r");
+	EXPECT_EQ(run(std::vector<s16>(160)), "OK\r\n");
+	sent.clear();
+	EXPECT_EQ(run(cas), "");
+	EXPECT_EQ(key(0, sent.size()), 'A');
+	std::string got = run(msg);
+	EXPECT_NE(got.find("\x10XNMBR = 5551000\r\nNAME = BOB\r\n\x10."),
+		  std::string::npos) << got;
+
+	/* +VCID=0: no acknowledgement, no report */
+	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "OK\r\n");
+	sent.clear();
+	EXPECT_EQ(run(cas), "");
+	EXPECT_EQ(key(0, sent.size()), ' ');
+	EXPECT_EQ(run(msg), "");
+	cmd(m, l, "AT+VLS=0\r");
 	delete m;
 }
 
