@@ -28,8 +28,17 @@ DM_PORT = SIP_PORT + 1                            # dmodemd's
 log = open(os.path.join(tempfile.gettempdir(), "clearmode.log"), "wb")
 FLAG, ONES = 0x7E, 0xFF
 
+# the reason, and the end of the log (SIP and dmodemd's output) for CI
 def fail(why):
     print("FAIL:", why, flush=True)
+    try:
+        log.flush()
+        with open(log.name, "rb") as f:
+            tail = f.read()[-6000:]
+        sys.stdout.write(tail.decode("latin-1"))
+    except OSError:
+        pass
+    sys.stdout.flush()
     sys.exit(1)
 
 # the far end of the clear channel on an RTP socket, its own thread: the
