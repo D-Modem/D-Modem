@@ -93,14 +93,17 @@ static void t38_tx(void *ctx, const struct t38_ifp *p)
 		f->t38_send(f->t38_ctx, pkt, m);
 }
 
-/* an IFP packet out of UDPTL, to T.30 (one it does not know dropped) */
+/* an IFP packet out of UDPTL, to T.30 (one it does not know dropped;
+   len 0: one lost) */
 static void t38_ifp_in(void *ctx, const unsigned char *ifp, s16 len,
 		       u16 seq)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	struct t38_ifp p;
 	(void)seq;
-	if (!t38_ifp_decode(&p, f->t38_version, ifp, len))
+	if (!len)
+		t30_t38_lost(f->t30);
+	else if (!t38_ifp_decode(&p, f->t38_version, ifp, len))
 		t30_t38_rx(f->t30, &p);
 }
 

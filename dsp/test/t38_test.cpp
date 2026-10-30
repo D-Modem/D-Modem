@@ -192,6 +192,12 @@ struct Net {
 	int bps;
 	int lose;       /* every lose'th packet lost (0: none), both ways */
 	int depth;      /* UDPTL's redundancy */
+	int burst;      /* each burst'th packet of the fast data starts
+			   depth + 1 lost in a row, which the redundancy
+			   can't make up (0: none) */
+	bool relay;     /* the burst lost before a relay that numbers the
+			   packets anew (Asterisk's UDPTL each side): no
+			   gap in the sequence numbers */
 };
 
 /* n, for the test's name: the version, ECM, the rate, the loss and the
@@ -199,7 +205,8 @@ struct Net {
 static void PrintTo(const Net &n, std::ostream *os)
 {
 	*os << "v" << n.version << (n.ecm ? " ecm " : " ") << n.bps
-	    << " lose " << n.lose << " depth " << n.depth;
+	    << " lose " << n.lose << " depth " << n.depth << " burst "
+	    << n.burst << (n.relay ? " relay" : "");
 }
 
 /* one side: its document, its T.30 machine, and UDPTL each way */
@@ -208,6 +215,8 @@ struct Side {
 	TiffOut out;
 	T30 *t30;
 	int version, lose, sent;
+	int depth, burst, fast, losing;
+	bool relay;
 	UdptlTx tx;
 	UdptlRx rx;
 	std::deque<Bytes> *line;        /* to the other side */
@@ -233,10 +242,19 @@ static void side_tx(void *ctx, const struct t38_ifp *p)
 	Side *s = static_cast<Side *>(ctx);
 	unsigned char ifp[UDPTL_IFP_MAX], pkt[1500];
 	int n = t38_ifp_encode(p, s->version, ifp, sizeof(ifp)), m;
+	bool lost;
 	ASSERT_GT(n, 0);
+	if (s->burst && p->data && p->type != T38_DATA_V21 &&
+	    ++s->fast % s->burst == 0)
+		s->losing = s->depth + 1;
+	lost = s->losing > 0;
+	if (lost)
+		s->losing--;
+	if (lost && s->relay)
+		return;
 	m = s->tx.packet(ifp, n, pkt, sizeof(pkt));
 	ASSERT_GT(m, 0);
-	if (s->lose && ++s->sent % s->lose == 0)
+	if (lost || (s->lose && ++s->sent % s->lose == 0))
 		return;
 	s->line->push_back(Bytes(pkt, pkt + m));
 }
@@ -246,6 +264,10 @@ static void side_rx(void *ctx, const unsigned char *ifp, s16 len, u16)
 {
 	Side *s = static_cast<Side *>(ctx);
 	struct t38_ifp p;
+	if (!len) {
+		t30_t38_lost(s->t30);
+		return;
+	}
 	ASSERT_EQ(t38_ifp_decode(&p, s->version, ifp, len), 0);
 	t30_t38_rx(s->t30, &p);
 }
@@ -254,7 +276,8 @@ class T38Pair : public testing::TestWithParam<Net> {};
 
 /* the document from a sender to a receiver over T.38 (10 minutes at
    most, the packets one 20 ms tick late): both OK, 2 pages, the same;
-   lost packets the redundancy has back don't matter */
+   lost packets the redundancy has back don't matter, and ECM frames
+   that lost some of their data are asked for again */
 TEST_P(T38Pair, SendsTheDocument)
 {
 	const Net &net = GetParam();
@@ -274,6 +297,10 @@ TEST_P(T38Pair, SendsTheDocument)
 		s->version = net.version;
 		s->lose = net.lose;
 		s->sent = 0;
+		s->depth = net.depth;
+		s->burst = net.burst;
+		s->fast = s->losing = 0;
+		s->relay = net.relay;
 		s->tx.init(net.depth ? T38_EC_REDUNDANCY : T38_EC_NONE,
 			   net.depth);
 		s->rx.init();
@@ -334,12 +361,22 @@ TEST_P(T38Pair, SendsTheDocument)
 INSTANTIATE_TEST_SUITE_P(Nets, T38Pair, testing::Values(
 	Net{ 0, false, 14400, 0, 0 }, Net{ 0, true, 14400, 0, 0 },
 	Net{ 2, false, 9600, 0, 0 }, Net{ 3, true, 4800, 0, 3 },
-	Net{ 0, false, 14400, 5, 3 }, Net{ 2, true, 14400, 5, 3 }),
-	/* v<version>[_ecm]_<bps>[_lose<n>] */
+	Net{ 0, false, 14400, 5, 3 }, Net{ 2, true, 14400, 5, 3 },
+	/* ECM: bursts the redundancy can't make up in the frames' data */
+	Net{ 2, true, 14400, 0, 3, 40, false },
+	Net{ 0, true, 9600, 0, 3, 25, false },
+	/* (a gap in a page's last frame can still go by: it may be short,
+	   as spandsp's is) */
+	Net{ 2, true, 14400, 0, 3, 40, true },
+	Net{ 3, true, 14400, 0, 3, 33, true }),
+	/* v<version>[_ecm]_<bps>[_lose<n>][_burst<n>][_relay] */
 	[](const testing::TestParamInfo<Net> &i) {
 		return "v" + std::to_string(i.param.version) +
 			(i.param.ecm ? "_ecm_" : "_") +
 			std::to_string(i.param.bps) +
 			(i.param.lose ? "_lose" + std::to_string(i.param.lose) :
-			 std::string());
+			 std::string()) +
+			(i.param.burst ? "_burst" + std::to_string(i.param.burst) :
+			 std::string()) +
+			(i.param.relay ? "_relay" : "");
 	});

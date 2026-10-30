@@ -367,10 +367,13 @@ s16 UdptlRx::packet(const unsigned char *buf, s32 len,
 	if (d >= 0x8000)
 		return 0;                       /* had it, or too late */
 	/* the lost ones from the packets before, oldest first (an empty
-	   one stands for none) */
-	for (k = static_cast<s16>(d); k >= 1; k--)
+	   one stands for none); those it doesn't have to fn as lost */
+	for (k = static_cast<s16>(d); k >= 1; k--) {
 		if (k <= nsec && sec_len[k - 1] > 0)
 			fn(ctx, sec[k - 1], sec_len[k - 1], (seq - k) & 0xffff);
+		else if (k > nsec)
+			fn(ctx, nullptr, 0, (seq - k) & 0xffff);  /* lost */
+	}
 	fn(ctx, prim, prim_len, seq);
 	expected = (seq + 1) & 0xffff;
 	return 0;
