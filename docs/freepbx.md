@@ -10,12 +10,14 @@ D-Modem and `fwconsole dmodem`.
 
 ## Installing
 
-1. The modem itself in Asterisk: `app_dmodem.so` built from `asterisk/`
-   (Asterisk's headers installed, `cmake -B build && cmake --build build`)
-   and copied to Asterisk's modules directory, then
-   `asterisk -rx "module load app_dmodem.so"`.  Or dmodem-ari instead
-   (`build/ari/dmodem-ari`), with an ARI user (Settings > Asterisk REST
-   Interface Users).
+1. The modem beside Asterisk: dmodem-ari (`build/ari/dmodem-ari`), with
+   an ARI user (Settings > Asterisk REST Interface Users).  This is the
+   default engine.  Or, on an Asterisk you build it for yourself,
+   `app_dmodem.so` (Asterisk's headers installed,
+   `cmake -B build -DDMODEM_APP_DMODEM=ON && cmake --build build`) copied
+   to Asterisk's modules directory, then
+   `asterisk -rx "module load app_dmodem.so"`; a built app_dmodem may not
+   be passed on ([LICENSING.md](../LICENSING.md)).
 2. The module: `cmake --build build --target freepbx_module` makes
    `build/freepbx/dmodem-<version>.tgz`.  Upload it in Admin > Module Admin
    (Upload modules), or unpack it into FreePBX's modules directory and
@@ -44,8 +46,8 @@ D-Modem and `fwconsole dmodem`.
   "D-Modem" in every destination picker.  A profile keeps its name (it is
   its destination), and one that a route still points at can't be
   deleted.
-- **Settings**: the engine (DModem() in Asterisk, or dmodem-ari's
-  `Stasis()`), the modem's log level, and the fax settings of `[general]`:
+- **Settings**: the engine (dmodem-ari's `Stasis()`, the default, or
+  DModem() in an Asterisk that built app_dmodem itself), the modem's log level, and the fax settings of `[general]`:
   the directory received faxes go to, our fax number, the fastest rate,
   error correction and T.38.  With "Fax destination" on, "D-Modem: receive
   a fax" (`app-dmodem,receivefax,1`) answers as a fax machine.

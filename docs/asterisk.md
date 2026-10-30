@@ -1,5 +1,13 @@
 # app_dmodem: a data modem on an Asterisk channel
 
+> **Build it yourself; don't ship it.** A built `app_dmodem.so` has
+> libdmodem (AGPL-3.0) inside a module of Asterisk (GPL-2.0-only), two
+> licences that can't be combined, so it may not be distributed
+> ([LICENSING.md](../LICENSING.md)). It is off by default: build it with
+> `-DDMODEM_APP_DMODEM=ON` for your own Asterisk. [dmodem-ari](ari.md),
+> the same modem and profiles beside Asterisk, is the way to ship D-Modem
+> for Asterisk.
+
 `DModem()` answers a call with a software modem and, once the modems are
 connected, hands the data to a server over TCP or a unix socket (a BBS,
 a login menu) or to a program on a pty (pppd for dial-up IP, a login, a
@@ -152,10 +160,11 @@ The modem needs the line's audio as it is, so:
 The module builds outside the Asterisk tree, with the rest of D-Modem,
 against the headers of an installed Asterisk of the same version (`make
 install-headers` after building Asterisk, or a distribution's
-`asterisk-dev` package); without them CMake skips it:
+`asterisk-dev` package); without them CMake skips it.  It is built only
+when asked for, for your own Asterisk (see the top of this page):
 
 ```
-cmake -B build                      # in the top directory
+cmake -B build -DDMODEM_APP_DMODEM=ON   # in the top directory
 cmake --build build --target app_dmodem
 cmake --install build               # the module, and dmodem.conf.sample
 asterisk -rx "module load app_dmodem.so"

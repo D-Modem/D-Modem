@@ -19,8 +19,9 @@ class Config
 	/* the clear 64 kbit/s channel (an ISDN data call): for a call with
 	   a digital bearer or in CLEARMODE (auto), every call, or none */
 	const CLEARS = ['auto', 'yes', 'no'];
-	/* what answers the calls: app_dmodem's DModem() in Asterisk, or
-	   dmodem-ari beside it through Stasis() */
+	/* what answers the calls: dmodem-ari beside Asterisk through Stasis()
+	   (the default), or app_dmodem's DModem() in an Asterisk that built
+	   it itself (LICENSING.md: a built app_dmodem isn't distributed) */
 	const ENGINES = ['app', 'ari'];
 	/* the fax rates T.30 can be held to */
 	const FAX_RATES = [14400, 12000, 9600, 7200, 4800, 2400];
@@ -32,7 +33,7 @@ class Config
 	public static function defaultSettings()
 	{
 		return [
-			'engine' => 'app',
+			'engine' => 'ari',
 			'debug' => 0,
 			'fax_dir' => '/var/spool/asterisk/fax',
 			'fax_ident' => '',
