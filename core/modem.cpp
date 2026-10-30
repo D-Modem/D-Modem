@@ -575,6 +575,7 @@ s16 Modem::start_call(bool keep_line)
 		vcvm_refresh();
 	}
 	stats_.fax = mode_ == MODEM_MODE_FAX;
+	stats_.caller = caller_;
 	stats_.start = static_cast<u32>(host_.now_ms());
 	dsp::zero(dp_stats_);
 	setup_config();
@@ -2255,8 +2256,49 @@ void Modem::call_stats()
 		       stats_.ended ? stats_.tx1 : tx_rate_);
 		number("Final Receive Carrier Rate",
 		       stats_.ended ? stats_.rx1 : rx_rate_);
+		if (d.have & DP_STATS_LINE) {
+			row("Symbol Rate (Tx/Rx)",
+			    dec(lrint(d.sym_tx)) + "/" + dec(lrint(d.sym_rx)));
+			auto carrier = [](float hz) {
+				return hz > 0 ? dec(lrint(hz)) :
+						std::string("PCM");
+			};
+			row("Carrier Frequency (Hz, Tx/Rx)",
+			    carrier(d.carrier_tx) + "/" +
+			    carrier(d.carrier_rx));
+		}
 		row("Protocol Negotiation Result", protocol_name());
 		row("Data Compression Result", compression_name());
+		if (d.have & (DP_STATS_CODING_TX | DP_STATS_CODING_RX)) {
+			/* each direction's V.34 coding, "-" for one without
+			   (PCM) */
+			auto both = [&d](auto what) {
+				return (d.have & DP_STATS_CODING_TX ?
+					what(d.coding_tx) : std::string("-")) +
+					"/" +
+					(d.have & DP_STATS_CODING_RX ?
+					 what(d.coding_rx) : std::string("-"));
+			};
+			auto on = [](int v) {
+				return std::string(v ? "ON" : "OFF");
+			};
+			row("Trellis Code (Tx/Rx)",
+			    both([](const dp_coding &c) {
+				    return dec(c.states) + "S-4D";
+			    }));
+			row("Nonlinear Encoding (Tx/Rx)",
+			    both([&on](const dp_coding &c) {
+				    return on(c.nonlinear);
+			    }));
+			row("Precoding (Tx/Rx)",
+			    both([&on](const dp_coding &c) {
+				    return on(c.precoding);
+			    }));
+			row("Shaping (Tx/Rx)",
+			    both([&on](const dp_coding &c) {
+				    return on(c.shaping);
+			    }));
+		}
 		if (d.have & DP_STATS_SNR)
 			decibels("Estimated SNR (dB)", d.snr);
 		if (stats_.samples) {
@@ -2274,6 +2316,25 @@ void Modem::call_stats()
 			decibels("Near Echo Level (dBm0)", d.near_echo);
 		if (d.have & DP_STATS_FAR_ECHO)
 			decibels("Far Echo Level (dBm0)", d.far_echo);
+		if (d.have & DP_STATS_FREQ_OFFSET)
+			/* (no "-0.0") */
+			row("Carrier Frequency Offset (Hz)",
+			    fixed(fabs(d.freq_offset) < 0.05 ? 0 :
+				  d.freq_offset, 1));
+		if (d.have & DP_STATS_TIMING_OFFSET)
+			row("Timing Offset (ppm)",
+			    dec(lrint(d.timing_offset)));
+		if (d.have & DP_STATS_PCM)
+			row("PCM Encoding", d.pcm_alaw ? "A-law" : "u-law");
+		if (d.have & DP_STATS_DIL) {
+			std::string rb;
+			for (s16 j = 0; j < 6; j++)
+				if (d.robbed_bits & (1 << j))
+					rb += (rb.empty() ? "" : ",") +
+						dec(j + 1);
+			decibels("Digital Loss (dB)", d.digital_loss);
+			row("Robbed Bit Frames", rb.empty() ? "None" : rb);
+		}
 		number("Characters Sent", l.tx_chars);
 		number("Characters Received", l.rx_chars);
 		if (cfg_.ec || cfg_.mnp_on) {
@@ -2298,6 +2359,145 @@ void Modem::call_stats()
 	if (stats_.ended)
 		row("Call Termination Cause",
 		    cause_text[static_cast<s16>(stats_.cause)]);
+}
+
+/* AT#UD: the last call's statistics (or this one's) as Microsoft's
+   Unimodem diagnostics (its draft reference specification, rev 0.85):
+   a line "DIAG <2A4D3263 key=value>" for each key we have, keys and
+   values in hexadecimal; the codes of V.58 (modulation, error control,
+   compression, call cleared) where it has them, the manufacturers'
+   range (80 on) for V.44 and zstd */
+void Modem::unimodem_diag()
+{
+	auto put = [this](u32 key, const std::string &value) {
+		puts("DIAG <2A4D3263 " + hex(key, 0, true) + "=" + value + ">");
+		crlf();
+	};
+	auto num = [&put](u32 key, u64 v, s16 width = 0) {
+		put(key, hex(static_cast<u32>(v > 0xFFFFFFFFu ? 0xFFFFFFFFu : v),
+			     width, true));
+	};
+	/* a level as -dBm, 0 to most */
+	auto neg_db = [&num](u32 key, double db, s32 most) {
+		long v = lrint(-db);
+		num(key, static_cast<u64>(v < 0 ? 0 : v > most ? most : v), 2);
+	};
+	/* V.58's gstnModulationSchemeActive; -1 for one it has none for */
+	auto v58_modulation = [](s16 dp) -> s32 {
+		switch (dp) {
+		case DP_V17: return 0x0;
+		case DP_V21: return 0x1;
+		case DP_V22: return 0x2;
+		case DP_V22BIS: return 0x3;
+		case DP_V23: return 0x4;
+		case DP_V27TER: return 0x8;
+		case DP_V29: return 0x9;
+		case DP_V32: return 0xA;
+		case DP_V32BIS: return 0xB;
+		case DP_V34: return 0xC;
+		case DP_V90: case DP_V92: return 0xE;
+		case DP_V91: return 0xF;
+		case DP_K56: return 0x81;
+		default: return -1;
+		}
+	};
+
+	put(0, "10");
+	if (!stats_.call) {
+		put(1, "0");
+		put(0x60, "1");
+		return;
+	}
+	/* the call's setup: the remote's answer (or calling) signal heard
+	   when it came up, else why it did not */
+	u32 setup = 4;
+	if (stats_.connected)
+		setup = stats_.fax ? (stats_.caller ? 0x9 : 0xA) :
+			(stats_.caller ? 0x7 : 0x8);
+	else if (stats_.cause == Cause::NoDialtone)
+		setup = 0x1;
+	else if (stats_.cause == Cause::Busy)
+		setup = 0x3;
+	else if (stats_.cause == Cause::TrainingFailed ||
+		 stats_.cause == Cause::ProtocolFailure)
+		setup = stats_.caller ? 0x7 : 0x8;
+	num(1, setup);
+	if (stats_.connected && !stats_.fax) {
+		const struct dp_stats &d = dp_stats_;
+		const dlink::Stats &l = link_->stats();
+		double rx = 0, tx = 0;
+		if (stats_.samples) {
+			rx = 10 * log10(stats_.rx_pow / stats_.samples /
+					DP_DBM0_POWER + 1e-9);
+			tx = 10 * log10(stats_.tx_pow / stats_.samples /
+					DP_DBM0_POWER + 1e-9);
+			neg_db(0x10, rx, 0x2B);
+			neg_db(0x11, tx, 0x11);
+			if (d.have & DP_STATS_SNR)
+				neg_db(0x12, rx - d.snr, 0x5A);
+		}
+		/* the echoes' loss: what we send over what comes back */
+		if (stats_.samples && (d.have & DP_STATS_NEAR_ECHO))
+			neg_db(0x14, d.near_echo - tx, 0xFF);
+		if (stats_.samples && (d.have & DP_STATS_FAR_ECHO))
+			neg_db(0x15, d.far_echo - tx, 0xFF);
+		if (d.have & DP_STATS_RTD)
+			num(0x17, static_cast<u64>(d.rtd > 0xFF ? 0xFF : d.rtd),
+			    2);
+		s32 m = v58_modulation(stats_.dp);
+		if (m >= 0) {
+			num(0x20, static_cast<u32>(m));
+			num(0x21, static_cast<u32>(m));
+		}
+		if (d.have & DP_STATS_LINE) {
+			num(0x22, static_cast<u32>(lrint(d.sym_tx)), 4);
+			num(0x23, static_cast<u32>(lrint(d.sym_rx)), 4);
+			num(0x24, static_cast<u32>(lrint(d.carrier_tx)), 4);
+			num(0x25, static_cast<u32>(lrint(d.carrier_rx)), 4);
+		}
+		num(0x26, stats_.tx0, 4);
+		num(0x27, stats_.rx0, 4);
+		num(0x31, d.renegs_local + d.renegs_remote, 2);
+		num(0x32, d.retrains_local + d.retrains_remote, 2);
+		num(0x34, stats_.ended ? stats_.tx1 : tx_rate_, 4);
+		num(0x35, stats_.ended ? stats_.rx1 : rx_rate_, 4);
+		num(0x40, cfg_.ec ? 1 : cfg_.mnp_on ? 2 : 0);
+		const std::string_view c = compression_name();
+		num(0x44, c == "V42bis" ? 0x1 : c == "MNP5" ? 0x80 :
+		    c == "V44" ? 0x81 : c == "ZSTD" ? 0x82 : 0x0);
+		/* &H: 0 none, 1 RTS/CTS (V.58's 2), 2 XON/XOFF (its 1), 3
+		   both */
+		static const unsigned char flow[] = { 0, 2, 1, 2 };
+		u16 h = sregs_[SREG_FLOW_CONTROL];
+		num(0x50, flow[h < 4 ? h : 0]);
+		num(0x51, flow[h < 4 ? h : 0]);
+		num(0x52, l.tx_chars, 8);
+		num(0x53, l.rx_chars, 8);
+		if (cfg_.ec || cfg_.mnp_on) {
+			num(0x56, l.tx_frames, 8);
+			num(0x57, l.rx_frames, 8);
+			num(0x58, l.tx_again, 8);
+			num(0x59, l.rx_errors, 8);
+		}
+	}
+	/* V.58's callCleared, 2 while the call goes on */
+	u32 cleared = 2;
+	if (stats_.ended) {
+		switch (stats_.cause) {
+		case Cause::None: cleared = 0x0; break;
+		case Cause::LocalHangup: cleared = 0x51; break;
+		case Cause::RemoteCleardown: cleared = 0x41; break;
+		case Cause::LineDropped: cleared = 0x2E; break;
+		case Cause::CarrierLost: cleared = 0x3C; break;
+		case Cause::NoDialtone: cleared = 0x2F; break;
+		case Cause::Busy: cleared = 0x33; break;
+		case Cause::NoAnswer: cleared = 0x2C; break;
+		case Cause::TrainingFailed: cleared = 0x3D; break;
+		case Cause::ProtocolFailure: cleared = 0x5B; break;
+		case Cause::NoCarrier: cleared = 0x2C; break;
+		}
+	}
+	num(0x60, cleared);
 }
 
 /*

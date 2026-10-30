@@ -515,21 +515,13 @@ struct Dte {
 
 const char *const NAME[2] = { "modemA", "modemB" };
 
-/* EXPECT_A, EXPECT_B, REJECT_B: POSIX extended, in which '.' takes
-   newlines ((?s) is Python's way of saying so) */
-bool log_has(const std::string &path, std::string pat)
+/* EXPECT_A, EXPECT_B, REJECT_B, EXPECT_MIDCALL_A (_B): POSIX extended,
+   in which '.' takes newlines ((?s) is Python's way of saying so); text
+   has pat */
+static bool text_has(std::string text, std::string pat)
 {
 	if (pat.compare(0, 4, "(?s)") == 0)
 		pat.erase(0, 4);
-	FILE *f = fopen(path.c_str(), "rbe");
-	if (!f)
-		return false;
-	std::string text;
-	char b[65536];
-	size_t n;
-	while ((n = fread(b, 1, sizeof(b), f)) > 0)
-		text.append(b, n);
-	fclose(f);
 	std::replace(text.begin(), text.end(), '\0', ' ');
 	regex_t re;
 	if (regcomp(&re, pat.c_str(), REG_EXTENDED | REG_NOSUB) != 0) {
@@ -539,6 +531,21 @@ bool log_has(const std::string &path, std::string pat)
 	bool ok = regexec(&re, text.c_str(), 0, nullptr, 0) == 0;
 	regfree(&re);
 	return ok;
+}
+
+/* (see text_has()) the file at path has pat */
+bool log_has(const std::string &path, std::string pat)
+{
+	FILE *f = fopen(path.c_str(), "rbe");
+	if (!f)
+		return false;
+	std::string text;
+	char b[65536];
+	size_t n;
+	while ((n = fread(b, 1, sizeof(b), f)) > 0)
+		text.append(b, n);
+	fclose(f);
+	return text_has(text, pat);
 }
 
 /* BULK: text, binary octets, long repeats and noise in turn (what a
@@ -1114,6 +1121,9 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 	/* the call's end: the modems killed, EXPECT_A and EXPECT_B checked
 	   if ok, PASS or FAIL; thrown as Done for the catch below (never
 	   returns) */
+	/* what each modem answered MIDCALL's commands (EXPECT_MIDCALL_A,
+	   _B) */
+	std::string midcall_said[2];
 	auto done = [&](bool ok) {
 		if (wav_marks == 1)
 			wav_mark();     /* a call that failed: up to here */
@@ -1140,6 +1150,19 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			sleep_s(0.5);
 			if (log_has(log_dir + "/modem" + w + ".log", pat)) {
 				say("modem%c's log has %s\n", w, pat.c_str());
+				ok = false;
+			}
+		}
+		/* EXPECT_MIDCALL_A, _B: and its answers to MIDCALL's
+		   commands this */
+		for (int k = 0; k < 2; k++) {
+			std::string pat = env(k ? "EXPECT_MIDCALL_B" :
+					      "EXPECT_MIDCALL_A");
+			if (!ok || pat.empty())
+				continue;
+			if (!text_has(midcall_said[k], pat)) {
+				say("modem%c's midcall answers have no %s\n",
+				    "AB"[k], pat.c_str());
 				ok = false;
 			}
 		}
@@ -1397,6 +1420,8 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 						size_t mark = dte.buf[k].size();
 						dte.cmd(k, c);
 						dte.wait_from(k, result_re, mark, 30);
+						midcall_said[k] +=
+							dte.buf[k].substr(mark);
 						say("%s: %s %s\n", name, c.c_str(),
 						    show(dte.buf[k].substr(mark))
 						    .c_str());

@@ -640,6 +640,7 @@ void V90Rx::dil_analyse()
 				m += snprintf(rb + m, sizeof(rb) - m, "%s%d",
 					      m ? "," : "", j);
 			}
+	dil_done = 1;
 	DSP_DBG("v90a: DIL: pad %.1f dB, noise %.1f (%.1f dB below UINFO), "
 		"%d of %d unusable, robbed %s, distinct levels %d "
 		"%d %d %d %d %d\n", dil_pad_db, dil_noise,

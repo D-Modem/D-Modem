@@ -456,6 +456,7 @@ private:
 	const char *compression_name() const;
 	void set_cause(Cause c);
 	void call_stats();
+	void unimodem_diag();
 
 	/* the AT interpreter (at.cpp) */
 	void at_process();
@@ -645,7 +646,8 @@ private:
 	/* the last call's statistics, or this one's (ATI11): the pumps'
 	   (MDMPRM_STATS), and the core's own: whether there was one, fax
 	   or not, when it started, came up (CONNECT) and ended (host ms),
-	   its modulation (the pump's id), its rates at CONNECT and at its
+	   whether we called, its modulation (the pump's id), its rates at
+	   CONNECT and at its
 	   end, why it ended, the line's power each way while it was up
 	   (sums of squares over samples) */
 	struct dp_stats dp_stats_ = {};
@@ -654,6 +656,7 @@ private:
 	void vcvm_refresh();
 	struct CallStats {
 		bool call, fax, connected, ended;
+		bool caller;
 		u32 start, up, end;
 		s16 dp;
 		u32 tx0, rx0, tx1, rx1;

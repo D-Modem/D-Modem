@@ -180,6 +180,13 @@ enum DP_ID {
  *    The call's statistics (AT I11), which the pumps fill in through
  *    MDMPRM_STATS.  The core clears them at the start of each call.
  */
+struct dp_coding {
+	int states;                     /* of the trellis code */
+	int nonlinear;                  /* the non-linear encoder */
+	int precoding;                  /* precoding coefficients not 0 */
+	int shaping;                    /* constellation expansion */
+};
+
 struct dp_stats {
 	int dp;                         /* the DP_ID the call came up with;
 					   0: the pump's own id */
@@ -193,6 +200,24 @@ struct dp_stats {
 	int rtd;                        /* round trip delay, ms */
 	float near_echo;                /* echo levels the canceller */
 	float far_echo;                 /* removed, dBm0 */
+	/* DP_STATS_LINE: each direction's symbol rate (symbols/s) and
+	   carrier (Hz); a PCM direction (V.90, V.91, V.92) 8000 and 0 */
+	float sym_tx, sym_rx;
+	float carrier_tx, carrier_rx;
+	/* DP_STATS_CODING_TX / _RX: V.34's coding of each direction */
+	struct dp_coding coding_tx, coding_rx;
+	/* DP_STATS_FREQ_OFFSET: the receiver's carrier off its nominal,
+	   Hz; DP_STATS_TIMING_OFFSET: the remote's symbol clock off ours,
+	   ppm */
+	float freq_offset;
+	float timing_offset;
+	/* DP_STATS_PCM: the network's G.711 law (1 A-law); DP_STATS_DIL:
+	   what the V.90 / V.92 analogue modem's DIL showed of it, its
+	   digital loss (dB) and the frame intervals (bit 0: the first of
+	   6) whose least significant bit is robbed */
+	int pcm_alaw;
+	float digital_loss;
+	int robbed_bits;
 };
 
 /*
@@ -230,6 +255,13 @@ struct dp_vcvm {
 #define DP_STATS_RTD            0x2
 #define DP_STATS_NEAR_ECHO      0x4
 #define DP_STATS_FAR_ECHO       0x8
+#define DP_STATS_LINE           0x10
+#define DP_STATS_CODING_TX      0x20
+#define DP_STATS_CODING_RX      0x40
+#define DP_STATS_FREQ_OFFSET    0x80
+#define DP_STATS_TIMING_OFFSET  0x100
+#define DP_STATS_PCM            0x200
+#define DP_STATS_DIL            0x400
 
 /* the mean square of 16 bit linear samples at 0 dBm0: a sine of peak
    22300, G.711's digital milliwatt */

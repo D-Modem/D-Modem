@@ -1049,8 +1049,12 @@ s16 V32Pump::handshake()
 		   the signal is there as it was: not as it fades at the
 		   end) */
 		else if (count % ms2samples(100, srate) == 0 &&
-			 rx.power > 0.5f * data_power)
+			 rx.power > 0.5f * data_power) {
 			stat_snr(-10 * log10f(rx_mse + 1e-6f));
+			stat_line(V32_BAUD, 1800, V32_BAUD, 1800);
+			stat_freq_offset(rx.dtheta, V32_BAUD);
+			stat_timing_offset(rx.t_adj, rx.sps);
+		}
 		break;
 	}
 	return DPSTAT_OK;

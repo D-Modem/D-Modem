@@ -209,6 +209,60 @@ public:
 		stats->have |= DP_STATS_RTD;
 	}
 
+	/* (see stat_retrain()) each direction's symbol rate (symbols/s)
+	   and carrier (Hz): 8000 and 0 for PCM */
+	void stat_line(float sym_tx, float carrier_tx, float sym_rx,
+		       float carrier_rx)
+	{
+		if (!stats)
+			return;
+		stats->sym_tx = sym_tx;
+		stats->carrier_tx = carrier_tx;
+		stats->sym_rx = sym_rx;
+		stats->carrier_rx = carrier_rx;
+		stats->have |= DP_STATS_LINE;
+	}
+	/* (see stat_retrain()) V.34's coding of a direction (rx or not):
+	   its trellis code's states (0: none to report), the non-linear
+	   encoder, precoding, constellation expansion */
+	void stat_coding(bool rx, s16 states, bool nonlinear, bool precoding,
+			 bool shaping)
+	{
+		if (!stats)
+			return;
+		struct dp_coding &c = rx ? stats->coding_rx : stats->coding_tx;
+		unsigned bit = rx ? DP_STATS_CODING_RX : DP_STATS_CODING_TX;
+		if (!states) {
+			stats->have &= ~bit;
+			return;
+		}
+		c.states = states;
+		c.nonlinear = nonlinear;
+		c.precoding = precoding;
+		c.shaping = shaping;
+		stats->have |= bit;
+	}
+	/* (see stat_retrain()) the receiver's carrier offset from its
+	   phase loop: dtheta radians a symbol at baud symbols/s */
+	void stat_freq_offset(float dtheta, float baud)
+	{
+		if (!stats)
+			return;
+		stats->freq_offset = dtheta * baud /
+			(2 * static_cast<float>(M_PI));
+		stats->have |= DP_STATS_FREQ_OFFSET;
+	}
+	/* (see stat_retrain()) the remote's symbol clock against ours
+	   (fast: more than 0): its symbols dt samples longer than sps of
+	   ours */
+	void stat_timing_offset(float dt, float sps)
+	{
+		if (!stats || sps <= 0)
+			return;
+		stats->timing_offset = -1e6f * dt / sps;
+		stats->have |= DP_STATS_TIMING_OFFSET;
+	}
+
 	/* to state s, count from 0 */
 	void set_state(S s)
 	{
