@@ -47,6 +47,15 @@ bits once a call has connected (C++, `namespace dlink`):
   all the above when the DTE asks for it (`AT+ES=6`, `AT+ES=,,8`
   answering): the DTE's octets, with in-band commands after EM, as a
   synchronous bit stream, transparent or as HDLC frames. See below.
+- **X.75** (`Lapb`, `lapb.cpp`) over HDLC, on a clear 64 kbit/s channel
+  with `AT+B2=0`: LAPB in basic mode (modulo 8), a window of 7 I frames
+  of up to 256 octets (2048 taken), REJ recovery, T1 (1 s and the time
+  of the frames in flight) and N2 = 4, DISC on hangup. See
+  [isdn.md](isdn.md).
+- **Sync PPP** (`PppSync`, `ppp_sync.cpp`) over HDLC, with `AT+B2=5`:
+  the DTE's PPP frames in asynchronous framing (RFC 1662) unescaped, FCS
+  checked, each one an HDLC frame on the line; the line's frames back to
+  the DTE escaped, with an FCS.
 
 `Link` (`link.h`) puts them together. The modem core is its `Owner`: it
 gives and takes the DTE's characters, hears of the link's progress

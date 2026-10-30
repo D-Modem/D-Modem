@@ -333,8 +333,8 @@
       0 A: +MS=92,1,300,56000 +FCLASS=0 +GCI=b5 +PMH=0 +PMHT=5 #CID=0 +IFC=2,2\r\n
       0 A: +ICF=3,3 +IPR=0 +ILRR=0 +IDSR=0 +ILSD=0 +MR=0 +ER=0 +DR=0 +ES=3,0,2\r\n
       0 A: +ESA=0,0,0,0,0,0,255,255 +ITF=383,128,0 +DS=3,0,2048,34\r\n
-      0 A: +DS44=3,0,0,4096,4096,255,255,12288,12288 +DSZ=1,1 +PCW=2 +PIG=1 +FAA=0\r\n
-      0 A: +FPR=8 -SEC=0 +CVM=63,8000,0\r\n
+      0 A: +DS44=3,0,0,4096,4096,255,255,12288,12288 +DSZ=1,1 +B2=0 +PCW=2 +PIG=1\r\n
+      0 A: +FAA=0 +FPR=8 -SEC=0 +CVM=63,8000,0\r\n
       0 A: STORED PROFILES: none\r\n
       0 A: OK\r\n
       0 A< AT&Z0=5551212\r
