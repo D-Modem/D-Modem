@@ -39,6 +39,7 @@ std::vector<s16> round_trip(Coding c, const std::vector<s16> &x)
 	return y;
 }
 
+/* n samples at 8000 Hz of a tone of f Hz and amplitude a */
 std::vector<s16> tone(double f, int n, double a = 8000)
 {
 	std::vector<s16> x(n);

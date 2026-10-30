@@ -49,6 +49,7 @@ struct Format {
 	u16 rates[3];
 };
 
+/* the formats, *n of them, in +VSM=?'s order */
 inline const Format *formats(int *n)
 {
 	static const Format f[] = {
@@ -97,6 +98,7 @@ struct Ima {
 	s32 pred = 0;
 	s16 index = 0;
 
+	/* the step size at index i (0 to 88) */
 	static s16 step(s16 i)
 	{
 		static const s16 t[89] = {
@@ -173,6 +175,7 @@ struct Codec {
 	u8 held = 0;
 	bool holding = false;
 
+	/* a coder of c, its state from the start */
 	void reset(Coding c)
 	{
 		coding = c;

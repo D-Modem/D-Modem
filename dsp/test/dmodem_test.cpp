@@ -1116,8 +1116,14 @@ TEST(DmodemCxx, VoiceFormats)
 					stream += '\x10';
 			}
 		}
-		d.write_str(stream);
-		run(50);        /* 1 s */
+		/* a block's worth at a time: a socket's buffer (macOS's
+		   8 KiB) holds less than 1 s of 16 bit samples */
+		size_t per = stream.size() / 50 + 1;
+		for (size_t at = 0; at < 50 * per; at += per) {        /* 1 s */
+			if (at < stream.size())
+				d.write_str(stream.substr(at, per));
+			run(1);
+		}
 
 		/* to the DTE: about vsr samples a second, a 1 kHz tone */
 		std::string data;
