@@ -59,8 +59,11 @@ The project's overview, building and usage are in the top
   links and a script that downloads them
 - [AT command reference](at_commands.pdf): the commands D-Modem's
   modem core takes (dmodemd, libdmodem, the PBX modules), its result
-  codes and S-registers; its LaTeX source is [at/](at/at_commands.tex),
-  `docs/at/build.sh` builds it
+  codes and S-registers, on A5 pages (half an A4 sheet); the
+  [booklet](at_commands-booklet.pdf) has them two to an A4 sheet, to
+  print on both sides (flip on the short edge), fold and staple.  Its
+  LaTeX source is [at/](at/at_commands.tex), `docs/at/build.sh` builds
+  both
 - [Data over mobile telephony's speech paths](v_cvm.pdf): a proposed
   Recommendation, in the form of an ITU-T Recommendation, for a modem
   through the AMR, AMR-WB and EVS codecs of VoLTE and VoNR calls, built on

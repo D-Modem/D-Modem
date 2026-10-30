@@ -116,6 +116,10 @@ core has gone beyond the old one where it fell short:
 - `AT&V` lists the active settings (the old core: ERROR), `AT\V1` puts the
   protocol after CONNECT's rate, and with `ATV0` a data call's CONNECT is
   its rate's number (the old core: 1 for every one);
+- `ATS<n>?` and `ATS<n>=<v>` read `n` and `v` in decimal, a leading 0
+  too (`ATS09?` is S9), as V.250 has them; they were read as C's
+  `strtoul()` with base 0 reads them, octal after a 0, so `ATS08=1` and
+  `ATS09?` were ERROR and `ATS0=010` set 8;
 - `ATI11` gives the last call's statistics (the old core: ERROR), so do
   `ATI6` (USRobotics': the old core's second stored profile, empty) and
   `AT&V1` (Rockwell's: the old core's ERROR), `AT#UD` gives them as

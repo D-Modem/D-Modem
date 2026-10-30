@@ -15,6 +15,7 @@ A ATS0=2\r
 A ATS0?\r
 A ATS300=1\r
 A ATS7=45S7?\r
+A ATS09=6S9?S010=7S10?\r
 A ATS\r
 A AT+MS=?\r
 A AT+MS?\r
