@@ -689,9 +689,14 @@ s16 Modem::at_command(char *cmd)
 			case '+':
 				switch (upper(p[1])) {
 				case 'F':
-					ret = !starts_nocase(p, "+FCLASS") ?
-						at_fax(p, &len) :
-						at_FCLASS(p, &len);
+					if (starts_nocase(p, "+FCLASS"))
+						ret = at_FCLASS(p, &len);
+					else if (mode_ == MODEM_MODE_FAX &&
+						 fax_class_ != 1)
+						ret = at_fax2(p, &len);
+					else if ((ret = at_fax(p, &len)) < 0 &&
+						 has_fax2())
+						ret = at_fax2(p, &len);
 					break;
 				case 'G':
 					if (starts_nocase(p, "+GCI")) {
@@ -1129,7 +1134,7 @@ s16 Modem::at_ampV(char *p, s16 *len)
 	put("+MS=" + dec(sregs_[SREG_DP]) + "," +
 	    dec(sregs_[SREG_AUTOMODE]) + "," + dec(min_rate_) + "," +
 	    dec(max_rate_));
-	put("+FCLASS=" + dec(static_cast<s16>(mode_)));
+	put("+FCLASS=" + fclass());
 	put("+GCI=" + hex(homolog_->id));
 	put("+PMH=" + dec(moh_off_));
 	put("+PMHT=" + dec(moh_timer_));
@@ -1269,29 +1274,226 @@ s16 Modem::at_GCI(char *p, s16 *len)
 	return 0;
 }
 
-/* +FCLASS=?, +FCLASS?, +FCLASS=<d>: data (0), class 1 fax (1), voice
-   (8) */
+/* +FCLASS? as it says the mode: 0, 1, 2, 2.0 or 8 */
+std::string Modem::fclass() const
+{
+	if (mode_ == MODEM_MODE_FAX && fax_class_ != 1)
+		return fax_class_ == 2 ? "2" : "2.0";
+	return dec(static_cast<s16>(mode_));
+}
+
+/* +FCLASS=?, +FCLASS?, +FCLASS=<d>: data (0), class 1 fax (1), class 2
+   and 2.0 fax (2, 2.0: T.32, with the T.30 library), voice (8) */
 s16 Modem::at_FCLASS(char *p, s16 *len)
 {
 	const char *q = p + 7;
 
 	if (q[0] == '=' && q[1] == '?') {
-		puts("0,1,8");
+		puts(has_fax2() ? "0,1,2,2.0,8" : "0,1,8");
 		crlf();
 		*len = 9;
 		return 0;
 	}
 	if (q[0] == '?') {
-		puts(dec(static_cast<s16>(mode_)));
+		puts(fclass());
 		crlf();
 		*len = 8;
 		return 0;
 	}
+	if (q[0] == '=' && q[1] == '2' && has_fax2()) {
+		bool c20 = q[2] == '.' && q[3] == '0';
+		*len = c20 ? 11 : 9;
+		if (set_mode(MODEM_MODE_FAX))
+			return -1;
+		fax_class_ = c20 ? 20 : 2;
+		return 0;
+	}
 	if (q[0] == '=' && (q[1] == '0' || q[1] == '1' || q[1] == '8')) {
 		*len = 9;
+		if (q[1] == '1')
+			fax_class_ = 1;
 		return set_mode(static_cast<enum MODEM_MODE>(q[1] - '0'));
 	}
 	return -1;
+}
+
+namespace {
+
+/* class 2's names of the commands that 2.0 (T.32) renamed, and 2.0's */
+const struct {
+	const char *c2, *c20;
+} fax2_names[] = {
+	{ "FLID", "FLI" }, { "FDCC", "FCC" }, { "FDIS", "FIS" },
+	{ "FDCS", "FCS" }, { "FBOR", "FBO" }, { "FK", "FKS" },
+	{ "FPTS", "FPS" }, { "FHNG", "FHS" }, { "FMFR", "FMI" },
+	{ "FMDL", "FMM" }, { "FREV", "FMR" },
+};
+
+/* the ranges of +FCC and +FIS (and +FCS): vr, br, wd, ln, df, ec, bf,
+   st (MH only, A4 only: the DTE's pages are MH whatever the line's) */
+const char *const FAX2_RANGES =
+	"(0,1),(0-5),(0),(0-2),(0),(0-2),(0),(0-7)";
+const u32 FAX2_MAX[8] = { 1, 5, 0, 2, 0, 2, 0, 7 };
+
+/* u's 8 values as a list */
+std::string fax2_list(const u32 *u)
+{
+	std::string s;
+	for (int i = 0; i < 8; i++)
+		s += (i ? "," : "") + dec(u[i]);
+	return s;
+}
+
+} // namespace
+
+/* class 2 and 2.0 (T.32): either's names (+FLID or +FLI and the
+   like).  +FLI (the identity), +FCC and +FIS (the DCE's capabilities and
+   the session's: +FCC sets both), +FCS? (the last session), +FCR, +FBO
+   (bit 0: the page data's first bit the top of an octet), +FPS, +FHS?
+   (the last hangup status), +FMI, +FMM, +FMR; the commands to the
+   engine +FDT, +FDR, +FET=<0-2>, +FKS.  In class 2 or 2.0 any other +F
+   setting is taken and given back (+FNR, +FIE, +FCT and the like, which
+   fax programs set: the engine has no use for them); otherwise only
+   these */
+s16 Modem::at_fax2(char *p, s16 *len)
+{
+	const char *q = p + 1, *e;
+	bool c2 = mode_ == MODEM_MODE_FAX && fax_class_ != 1;
+	std::string name;
+	const char *end;
+
+	while (isalnum(static_cast<unsigned char>(*q)))
+		name += static_cast<char>(upper(*q++));
+	for (const auto &n : fax2_names)
+		if (name == n.c2)
+			name = n.c20;
+	end = q;
+	while (*end && *end != ';')
+		end++;
+	*len = static_cast<s16>(end - p);
+	bool query = q[0] == '?' && q + 1 == end;
+	bool range = q[0] == '=' && q[1] == '?' && q + 2 == end;
+	bool set = q[0] == '=' && !range;
+	bool action = q == end;
+	const char *v = q + 1;
+	auto show = [this](const std::string &x) {
+		puts(x);
+		crlf();
+		return 0;
+	};
+	/* a number in [lo, hi] at v, to the end */
+	auto one = [&](u32 lo, u32 hi, u32 *out) {
+		u32 x = decimal(v, &e);
+		if (e == v || e != end || x < lo || x > hi)
+			return false;
+		*out = x;
+		return true;
+	};
+
+	if (name == "FLI") {
+		if (query)
+			return show("\"" + f2_ident_ + "\"");
+		if (range)
+			return show("(20)(32-127)");
+		if (!set)
+			return -1;
+		std::string id(v, end);
+		if (!id.empty() && id[0] == '"') {
+			size_t k = id.find('"', 1);
+			id = id.substr(1, k == std::string::npos ? k : k - 1);
+		}
+		if (id.size() > 20)
+			return -1;
+		f2_ident_ = id;
+		return 0;
+	}
+	if (name == "FCC" || name == "FIS") {
+		u32 *u = name == "FCC" ? f2_cc_ : f2_is_, w[8];
+		if (query)
+			return show(fax2_list(u));
+		if (range)
+			return show(FAX2_RANGES);
+		if (!set)
+			return -1;
+		std::copy(u, u + 8, w);
+		for (int i = 0; i < 8 && v < end; i++) {
+			if (is_digit(*v)) {
+				w[i] = decimal(v, &e);
+				if (w[i] > FAX2_MAX[i])
+					return -1;
+				v = e;
+			}
+			if (v < end && *v++ != ',')
+				return -1;
+		}
+		if (v != end)
+			return -1;
+		std::copy(w, w + 8, u);
+		if (u == f2_cc_)
+			std::copy(w, w + 8, f2_is_);
+		return 0;
+	}
+	if (name == "FCS") {
+		if (query)
+			return show(fax2_list(f2_cs_));
+		return range ? show(FAX2_RANGES) : -1;
+	}
+	if (name == "FCR" || name == "FBO" || name == "FPS") {
+		u32 *u = name == "FCR" ? &f2_cr_ : name == "FBO" ? &f2_bo_ :
+			&f2_ps_;
+		u32 lo = name == "FPS" ? 1 : 0,
+		    hi = name == "FCR" ? 1 : name == "FBO" ? 3 : 5;
+		if (query)
+			return show(dec(*u));
+		if (range)
+			return show("(" + dec(lo) + "-" + dec(hi) + ")");
+		return set && one(lo, hi, u) ? 0 : -1;
+	}
+	if (name == "FHS") {
+		s16 h = f2_hangup_ < 0 ? 0 : f2_hangup_;
+		if (!query)
+			return -1;
+		return show(fax_class_ == 2 ? dec(h) :
+			    hex(static_cast<u32>((h / 10) << 4 | h % 10), 2,
+				true));
+	}
+	if ((name == "FMI" || name == "FMM" || name == "FMR") &&
+	    (action || query) && identity(name[2]))
+		return show(identity(name[2]));
+	if (name == "FET") {
+		u32 x;
+		if (range)
+			return show("(0-2)");
+		return set && one(0, 2, &x) ? fax2_command(FAX2_CMD_FET, x) :
+			-1;
+	}
+	/* (class 2's +FDT may say the page's format: the session's is it) */
+	if (name == "FDT" && (action || set))
+		return fax2_command(FAX2_CMD_FDT, 0);
+	if (name == "FDR" && action)
+		return fax2_command(FAX2_CMD_FDR, 0);
+	if (name == "FKS" && action)
+		return fax_ && fax2_ ? fax2_command(FAX2_CMD_FKS, 0) : 0;
+	/* (not class 1's commands, nor names that are no +F setting) */
+	if (!c2 || name.size() < 2 || name[0] != 'F' ||
+	    (name.size() == 3 && strchr("TR", name[1]) &&
+	     strchr("SMH", name[2])))
+		return -1;
+	/* any other setting, taken and given back */
+	for (auto &o : f2_other_) {
+		if (o.first != name)
+			continue;
+		if (query)
+			return show(o.second);
+		if (set)
+			o.second.assign(v, end);
+		return range ? show("") : 0;
+	}
+	if (set)
+		f2_other_.emplace_back(name, std::string(v, end));
+	if (query)
+		return show("0");
+	return range ? show("") : 0;
 }
 
 /* +FMI, +FMM, +FMR (T.31 Annex A); the class 1 commands +FTS, +FRS
@@ -1358,7 +1560,7 @@ s16 Modem::at_fax(char *p, s16 *len)
 s16 Modem::fax_command(enum FAX_CMD cmd, u32 val)
 {
 	int ret;
-	if (!fax_)
+	if (!fax_ || fax2_)
 		return -1;
 	ret = FAX_class1_command(fax_, cmd, val);
 	if (ret > 0) {

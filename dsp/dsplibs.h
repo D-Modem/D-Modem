@@ -117,6 +117,46 @@ void FAX_t38_stop(void *obj);
 /* a T.38 IFP packet received */
 void FAX_t38_rx(void *obj, const void *ifp);
 
+/* service class 2 and 2.0 (T.32): the modem runs T.30 itself, its DTE
+   gives and takes the pages in T.4 (MH) and steers the call with +FDT,
+   +FDR, +FET and +FKS.  What the core keeps of +FLI, +FIS and +FBO for
+   the engine */
+struct fax2_settings {
+	unsigned cls;           /* 2, or 20 for 2.0 */
+	char ident[21];         /* +FLI */
+	unsigned vr, br, ec;    /* +FIS: fine resolution, the fastest rate
+				   (0 2400 to 5 14400 bit/s), error correction
+				   mode */
+	unsigned bo;            /* +FBO: bit 0, the page data with its first
+				   bit in the top of each octet */
+};
+/* the class 2 commands for FAX2_command() */
+enum FAX2_CMD { FAX2_CMD_FDT, FAX2_CMD_FDR, FAX2_CMD_FET, FAX2_CMD_FKS };
+/* what FAX2_info() tells */
+struct fax2_info {
+	unsigned session[8];    /* +FCS: vr, br, wd, ln, df, ec, bf, st */
+	int session_set;        /* there is one */
+	int hangup;             /* the hangup status (T.32 Table 23, as
+				   decimal: 100 is A0 in 2.0), -1: none yet */
+};
+/* the class 2 engine of modem m, on the calling side if caller is not
+   0, at srate samples/s; its results to ATD or ATA from
+   FAX2_process().  NULL when out of memory, or in a library without
+   it */
+void *FAX2_create(struct modem *m, unsigned caller, unsigned srate,
+		  const struct fax2_settings *s);
+void FAX2_delete(void *obj);
+/* count samples in and out: a FAX_STATUS_* to report (FRAME_ERROR is
+   ERROR), 0, or < 0 to end the call */
+int FAX2_process(void *obj, void *in, void *out, int count);
+/* a command (enum FAX2_CMD; param +FET's), with the settings as they
+   are now: 1 once started (the DTE's characters then the engine's until
+   its result), -1 to refuse it */
+int FAX2_command(void *obj, unsigned cmd, unsigned param,
+		 const struct fax2_settings *s);
+/* the session and the hangup status, into *i */
+void FAX2_info(void *obj, struct fax2_info *i);
+
 /*
  *    The core, for the library
  */

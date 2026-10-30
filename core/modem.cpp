@@ -59,6 +59,18 @@ extern "C" void dp_runtime_set_analog(void *runtime, int analog)
 /* the fax engine's CED cut short after an answer tone (dsplibs.h):
    Smart Link's library's fax engine has none */
 extern "C" void FAX_answer_tone(void *obj, unsigned ms) DCORE_WEAK;
+/* class 2 and 2.0 fax (dsplibs.h): in the T.30 library, which a program
+   may leave out (Smart Link's library has none either): then +FCLASS has
+   no 2 */
+extern "C" void *FAX2_create(struct modem *m, unsigned caller,
+			     unsigned srate, const struct fax2_settings *s)
+	DCORE_WEAK;
+extern "C" void FAX2_delete(void *obj) DCORE_WEAK;
+extern "C" int FAX2_process(void *obj, void *in, void *out, int count)
+	DCORE_WEAK;
+extern "C" int FAX2_command(void *obj, unsigned cmd, unsigned param,
+			    const struct fax2_settings *s) DCORE_WEAK;
+extern "C" void FAX2_info(void *obj, struct fax2_info *i) DCORE_WEAK;
 
 namespace dcore {
 
@@ -252,6 +264,7 @@ Modem::Modem(Host &host, const Options &opt)
 	xmit_size_ = XMIT_SIZE;
 	sregs_init();
 	kept_init();
+	fax2_reset();
 	if (homolog_init(MODEM_DEFAULT_COUNTRY_CODE, nullptr)) {
 		log_printf(1, "err: %s: no default country\n", name_);
 		return;
@@ -703,10 +716,7 @@ s16 Modem::stop_call()
 		voice_ = nullptr;
 	}
 	voice_unroute();
-	if (fax_) {
-		FAX_delete(fax_);
-		fax_ = nullptr;
-	}
+	fax_engine_delete();
 	t38_ = false;
 	set_state(IDLE);
 	if (have_result_) {
@@ -1937,7 +1947,8 @@ s16 Modem::answer(bool adaptive)
 	cng_cut_ = 0;
 	answer_tone_at_ = 0;
 	if (adaptive && kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
-					    mode_ == MODEM_MODE_FAX)) {
+					    (mode_ == MODEM_MODE_FAX &&
+					     fax_class_ == 1))) {
 		adapt_ = mode_ == MODEM_MODE_FAX ? Adapt::Fax : Adapt::Data;
 		set_mode(MODEM_MODE_DATA);
 		logf("adaptive answer (+FAA=1, from %s mode)\n",
@@ -1960,6 +1971,7 @@ void Modem::fax_found(const char *why)
 	if (fax_caller_ || adapt_ == Adapt::Off)
 		return;
 	fax_caller_ = true;
+	fax_class_ = 1;
 	logf("adaptive answer: a fax call (%s)\n", why);
 	if (adapt_ == Adapt::Detect) {
 		adapt_ = Adapt::Off;
@@ -2110,6 +2122,7 @@ s16 Modem::reset()
 	max_rx_rate_ = 0;
 	sregs_init();
 	kept_init();
+	fax2_reset();
 	sregs_[SREG_DIAL_PAUSE_TIME] = homolog_->params->DialPauseTime;
 	sregs_[SREG_FLASH_TIMER] = homolog_->params->HookFlashTime;
 	set_mode(MODEM_MODE_DATA);
@@ -3037,8 +3050,10 @@ void Modem::voice_calling_tones()
 	logf("voice: %s calling tone, +FAA=1: a %s call\n",
 	     fax ? "a fax machine's" : "a data modem's", fax ? "fax" : "data");
 	set_mode(fax ? MODEM_MODE_FAX : MODEM_MODE_DATA);
-	if (fax)
+	if (fax) {
+		fax_class_ = 1;
 		report(Result::Fax);
+	}
 	if (answer(!fax))
 		report(Result::Error);
 }
@@ -3336,8 +3351,21 @@ s16 Modem::fax_start()
 {
 	struct dp *old = dp_;
 
-	fax_ = FAX_create(handle(), caller_, srate_);
-	if (fax_ && t38_ &&
+	fax2_ = fax_class_ != 1;
+	if (fax2_) {
+		struct fax2_settings s = {};
+		s.cls = fax_class_;
+		f2_ident_.copy(s.ident, sizeof(s.ident) - 1);
+		s.vr = f2_is_[0];
+		s.br = f2_is_[1];
+		s.ec = f2_is_[5];
+		s.bo = f2_bo_;
+		fax_ = DCORE_HAS(FAX2_create) ?
+			FAX2_create(handle(), caller_, srate_, &s) : nullptr;
+	} else {
+		fax_ = FAX_create(handle(), caller_, srate_);
+	}
+	if (fax_ && !fax2_ && t38_ &&
 	    FAX_t38_start(fax_, fax_t38_send, this, t38_max_) < 0)
 		t38_ = false;
 	later_ = Later::None;
@@ -3349,7 +3377,8 @@ s16 Modem::fax_start()
 		log_printf(1, "err: %s: cannot create the fax engine\n", name_);
 		return -1;
 	}
-	logf("fax engine, %s%s\n", caller_ ? "caller" : "answerer",
+	logf("fax engine%s, %s%s\n", fax2_ ? fax_class_ == 2 ? ", class 2" :
+	     ", class 2.0" : "", caller_ ? "caller" : "answerer",
 	     t38_ ? ", T.38" : "");
 	return 0;
 }
@@ -3359,7 +3388,21 @@ s16 Modem::fax_start()
    already there run) */
 void Modem::fax_process(s16 *in, s16 *out, s32 n)
 {
-	int st = FAX_process(fax_, in, out, n);
+	int st = fax2_ ? FAX2_process(fax_, in, out, n) :
+		FAX_process(fax_, in, out, n);
+
+	if (fax2_) {
+		/* (+FCS? and +FHS? while it runs) */
+		struct fax2_info i;
+		FAX2_info(fax_, &i);
+		if (i.session_set) {
+			std::copy(std::begin(i.session), std::end(i.session),
+				  f2_cs_);
+			f2_cs_set_ = true;
+		}
+		if (i.hangup >= 0)
+			f2_hangup_ = static_cast<s16>(i.hangup);
+	}
 
 	if (st < 0) {
 		logf("fax engine: %d, the call stops\n", st);
@@ -3402,6 +3445,71 @@ void Modem::fax_process(s16 *in, s16 *out, s32 n)
 	}
 }
 
+/* the fax engine freed (class 2's session and hangup status kept for
+   +FCS? and +FHS?) */
+void Modem::fax_engine_delete()
+{
+	if (!fax_)
+		return;
+	if (fax2_) {
+		struct fax2_info i;
+		FAX2_info(fax_, &i);
+		if (i.session_set) {
+			std::copy(std::begin(i.session), std::end(i.session),
+				  f2_cs_);
+			f2_cs_set_ = true;
+		}
+		if (i.hangup >= 0)
+			f2_hangup_ = static_cast<s16>(i.hangup);
+		FAX2_delete(fax_);
+	} else {
+		FAX_delete(fax_);
+	}
+	fax_ = nullptr;
+	fax2_ = false;
+}
+
+/* class 2 and 2.0's settings as at the start (ATZ): the identity none,
+   fine resolution, 14400 bit/s, A4, any length, MH, no ECM, 0 ms; the
+   data's first bit lowest; receiving on */
+void Modem::fax2_reset()
+{
+	static const u32 is[8] = { 1, 5, 0, 2, 0, 0, 0, 0 };
+	f2_ident_.clear();
+	std::copy(std::begin(is), std::end(is), f2_cc_);
+	std::copy(std::begin(is), std::end(is), f2_is_);
+	f2_bo_ = 0;
+	f2_cr_ = 1;
+	f2_ps_ = 1;
+	f2_other_.clear();
+	fax_class_ = 1;
+}
+
+/* class 2 and 2.0 fax there is (the T.30 library linked in) */
+bool Modem::has_fax2() const
+{
+	return DCORE_HAS(FAX2_create);
+}
+
+/* a class 2 command for its engine (enum FAX2_CMD, +FET's value): once
+   it has started the DTE's characters are the engine's until it
+   reports (1); ERROR without one, or when it refuses */
+s16 Modem::fax2_command(unsigned cmd, unsigned param)
+{
+	struct fax2_settings s = {};
+	if (!fax_ || !fax2_)
+		return -1;
+	s.cls = fax_class_;
+	s.vr = f2_is_[0];
+	s.br = f2_is_[1];
+	s.ec = f2_is_[5];
+	s.bo = f2_bo_;
+	if (FAX2_command(fax_, cmd, param, &s) < 0)
+		return -1;
+	command_ = false;
+	return 1;
+}
+
 /* the fax engine's T.38 packet (ctx: the modem) to the Host */
 void Modem::fax_t38_send(void *ctx, const void *ifp)
 {
@@ -3416,7 +3524,8 @@ s16 Modem::t38_start(s32 max_data)
 	/* adaptive answer: a far end that goes over to T.38 is a fax */
 	if (mode_ != MODEM_MODE_FAX && adaptive_answering())
 		fax_found("T.38");
-	if (mode_ != MODEM_MODE_FAX)
+	/* (class 2: on the audio) */
+	if (mode_ != MODEM_MODE_FAX || fax_class_ != 1)
 		return -1;
 	t38_max_ = max_data;
 	if (fax_ && FAX_t38_start(fax_, fax_t38_send, this, max_data) < 0)

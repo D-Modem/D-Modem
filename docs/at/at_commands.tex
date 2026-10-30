@@ -1033,8 +1033,10 @@ number every \p{report\_period} times 10~ms.  \cmd{=?} gives
 \subsection{Mode}
 
 \begin{command}{plusFCLASS}{AT+FCLASS=\p{n}, AT+FCLASS?, AT+FCLASS=?}
-\cmd{0} data (default), \cmd{1} fax class 1, \cmd{8} voice
-(\cmd{=?} gives \cmd{0,1,8}).
+\cmd{0} data (default), \cmd{1} fax class 1, \cmd{2} and \cmd{2.0}
+fax class 2 and 2.0 (section~\ref{sec:class2}), \cmd{8} voice
+(\cmd{=?} gives \cmd{0,1,2,2.0,8}; \cmd{0,1,8} in a program built
+without the T.30 library).
 \end{command}
 
 \begin{command}{plusFAA}{AT+FAA=\p{n}, AT+FAA?, AT+FAA=?}
@@ -1206,6 +1208,92 @@ Sends or receives data at modulation \p{m}: CONNECT, then the data with
 \begin{command}{plusFTH}{AT+FTH=3, AT+FRH=3, AT+FTH=?, AT+FRH=?}
 Sends or receives HDLC frames at V.21 channel 2 (300 bit/s), the only
 one: \cmd{=?} gives \cmd{3}.
+\end{command}
+
+\subsection{Fax class 2 and 2.0}\label{sec:class2}
+
+With \cmdl[plusFCLASS]{AT+FCLASS=2.0} (T.32) or \cmd{AT+FCLASS=2} (the
+older class 2 that fax programs know), the modem runs T.30 itself: the
+DTE gives and takes the pages in T.4 MH with EOLs, \cmd{<DLE>} doubled,
+ended by \cmd{<DLE><ETX>}, and steers the call with these commands.
+Class 2 has the older names: \cmd{+FLID}, \cmd{+FDCC}, \cmd{+FDIS},
+\cmd{+FDCS}, \cmd{+FBOR}, \cmd{+FK}, \cmd{+FPTS} and \cmd{+FHNG} (either
+name works in either class), and its reports say \cmd{+FCON},
+\cmd{+FCSI}, \cmd{+FTSI}, \cmd{+FDIS}, \cmd{+FDCS}, \cmd{+FPTS} and
+\cmd{+FHNG}.  The rates are V.17, V.29 and V.27ter's; error correction
+mode, when \cmd{+FIS} has it, is the modem's own (the DTE's data is the
+same).  The pages are MH whatever the remote uses (MR or ECM: the modem
+codes them again), A4 width.  There is no polling, and a class 2 call
+stays on the audio (no T.38).  \cmd{+FAA} (adaptive answer) is class
+1's.
+
+Sending two pages, then receiving them:
+\begin{verbatim}
+ATD<number>       +FCO           the DIS came
+                  +FCI:"<id>"
+                  +FIS:1,5,0,2,0,0,0,0
+                  OK
+AT+FDT            +FCS:1,5,0,2,0,0,0,0
+                  CONNECT        DCS, training, CFR
+<page><DLE><ETX>  OK
+AT+FET=0          +FPS:1,0,0,0,0
+                  OK             MPS, MCF
+AT+FDT            CONNECT
+<page><DLE><ETX>  OK
+AT+FET=2          +FPS:1,0,0,0,0
+                  +FHS:00
+                  OK             EOP, MCF, DCN
+
+ATA               +FCO           the CFR went out
+                  +FTI:"<id>"
+                  +FCS:1,5,0,2,0,0,0,0
+                  OK
+AT+FDR            CONNECT
+<DC2>             <page><DLE><ETX>
+                  +FPS:1,<lines>,0,0,0
+                  +FET:0
+                  OK
+AT+FDR            ... +FET:2, OK
+AT+FDR            +FHS:00
+                  OK
+\end{verbatim}
+
+In class 2 an XON follows the sending CONNECT.  \cmd{+FDR}'s page waits
+for the DTE's \cmd{<DC2>} (a second at most); the pages are taken and
+confirmed as they come, and wait for \cmd{+FDR}.  When the call ends,
+the modem reports the hangup status (T.32 Table 23: \cmd{00} done,
+\cmd{02} \cmd{+FKS}, \cmd{11} no fax answered, \cmd{2x} sending phase B,
+\cmd{4x}, \cmd{5x} sending a page, \cmd{7x}, \cmd{9x} receiving; 2.0 in
+hexadecimal digits, class 2 in decimal) and the result of the command
+then under way (NO CARRIER for \cmd{ATD} and \cmd{ATA}), and goes on
+hook.
+
+\begin{command}{plusFLI}{AT+FLI="\p{id}", AT+FLI?, AT+FLI=?}
+Our identity in TSI and CSI: up to 20 of \cmd{0-9}, \cmd{+} (the
+command line's blanks are left out).
+\end{command}
+
+\begin{command}{plusFCC}{AT+FCC=\p{vr},\p{br},\p{wd},\p{ln},\p{df},\p{ec},\p{bf},\p{st}, AT+FIS=\dots}
+The capabilities (\cmd{+FCC}, which sets \cmd{+FIS} as well) and the
+session's (\cmd{+FIS}, read again at each \cmd{+FDT}): \p{vr} 1 fine,
+\p{br} 0 to 5 for 2400 to 14400 bit/s, \p{ec} 1 or 2 error correction
+mode; the others are taken in their ranges, \cmd{=?}
+\cmd{(0,1),(0-5),(0),(0-2),(0),(0-2),(0),(0-7)}.  At the start
+\cmd{1,5,0,2,0,0,0,0}.  \cmd{+FCS?} gives the last session's.
+\end{command}
+
+\begin{command}{plusFBO}{AT+FBO=\p{n}, AT+FCR=\p{n}, AT+FPS=\p{n}, AT+FHS?}
+\cmd{+FBO}: bit 0 set, the page data's first bit the top of each octet
+(0, the default: its lowest).  \cmd{+FCR} and \cmd{+FPS} are kept.
+\cmd{+FHS?}: the last hangup status.  Other \cmd{+F} settings that fax
+programs send in class 2 (\cmd{+FNR}, \cmd{+FIE}, \cmd{+FCT} and the
+like) are kept with no effect.
+\end{command}
+
+\begin{command}{plusFDT}{AT+FDT, AT+FDR, AT+FET=\p{n}, AT+FKS}
+Send a page, receive one, the command after the page sent (\cmd{0} MPS,
+\cmd{1} EOM, \cmd{2} EOP), end the call (a DCN, \cmd{+FHS:02}), as in
+the table above.  ERROR with no class 2 call.
 \end{command}
 
 \subsection{Voice}\label{sec:voice}

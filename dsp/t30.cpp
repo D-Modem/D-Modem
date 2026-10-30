@@ -87,6 +87,7 @@ enum {
 #define T4_MS           3000    /* for a response */
 #define RESPONSE_GAP_MS 75      /* between a message and the answer */
 #define TRIES           3
+#define HOST_MS         30000   /* for the host (t30_config's host) */
 
 /* error correction mode */
 #define ECM_FRAMES      256     /* in a block at most */
@@ -144,6 +145,7 @@ enum state {
 	S_ECM_TX,               /* sending a block */
 	S_WAIT_PPS_RESP,        /* MCF, PPR, RNR to our PPS */
 	S_WAIT_CTR,
+	S_HOST,                 /* waiting for the host (t30_resume()) */
 	/* both */
 	S_GAP,                  /* silence before the next transmission */
 	S_TX_FRAMES,
@@ -167,8 +169,8 @@ static const char *state_name[] = {
 	"idle", "CED", "wait DCS", "receive TCF", "receive page",
 	"wait post-page command", "wait DCN", "receive ECM block",
 	"wait PPS", "CNG", "send TCF", "wait CFR", "send page", "wait MCF",
-	"send ECM block", "wait PPS response", "wait CTR", "gap",
-	"send frames", "done",
+	"send ECM block", "wait PPS response", "wait CTR", "wait for the host",
+	"gap", "send frames", "done",
 };
 
 struct frame {
@@ -230,6 +232,12 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s16 last_post;                  /* MPS, EOM, EOP */
 	s16 cng;                        /* S_CNG with the tone */
 	s16 need_retrain;
+	/* host: what it waits for (S_HOST), what follows; the remote's
+	   DIS's best */
+	s16 waiting;
+	void (T30::*after_host)();
+	s32 remote_bps;
+	s16 remote_fine, remote_ecm;
 
 	/* receiving */
 	T4Page rx_page;
@@ -325,6 +333,10 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void next_page_or_end();
 	void page_settings();
 	void sender_message();
+	void host_wait(enum t30_wait w, void (T30::*f)());
+	void host_dcs();
+	s16 host_page(void (T30::*f)());
+	void host_event(s16 ev, s16 arg);
 	s16 hdlc_tx_next(HdlcV21, unsigned char *buf, s16 max);
 	void hdlc_rx_frame(HdlcV21, const unsigned char *d, s16 len,
 			   bool whole);
@@ -711,6 +723,7 @@ void T30::tcf_done()
 	add_frame(ok ? FCF_CFR : FCF_FTT, nullptr, 0);
 	if (ok) {
 		tries = 0;
+		host_event(T30_EV_TRAINED, 0);
 		send_frames(S_RX_PAGE);      /* start_page_rx after */
 	} else {
 		send_frames(S_WAIT_DCS);
@@ -859,6 +872,11 @@ void T30::rx_message()
 			/* the page ended without our seeing the carrier go */
 			page_done();
 		}
+		if (page_ok)
+			host_event(T30_EV_POST,
+				   fcf == FCF_MPS || fcf == FCF_PRI_MPS ? 0 :
+				   fcf == FCF_EOM || fcf == FCF_PRI_EOM ? 1 :
+				   2);
 		new_frames();
 		add_frame(page_ok ? FCF_MCF : FCF_RTN, nullptr, 0);
 		post_fcf = fcf;
@@ -966,6 +984,8 @@ void T30::send_dcs()
 /* the page on the fast modulation (V.17 with the short training) */
 void T30::send_page()
 {
+	if (cfg.host && !have_page && !host_page(&T30::send_page))
+		return;
 	encode_page();
 	DSP_DBG("t30: page %d: %" PRId32 " rows, %zu bits\n", pages + 1,
 		page.rows, page_bits.n);
@@ -989,9 +1009,14 @@ s16 T30::load_next()
 }
 
 /* what follows the page: EOP, MPS, or EOM (another resolution needs
-   another DCS: phase B again) */
+   another DCS: phase B again); the host's, -1 while it has none */
 s16 T30::post_command()
 {
+	if (cfg.host) {
+		s16 p = cfg.post_page ? cfg.post_page(cfg.ctx) : 2;
+		return p < 0 ? -1 : p == 0 ? FCF_MPS : p == 1 ? FCF_EOM :
+			FCF_EOP;
+	}
 	s16 more = load_next();
 	return !more ? FCF_EOP :
 		(next.fine != 0) != (fine != 0) ? FCF_EOM : FCF_MPS;
@@ -1000,7 +1025,12 @@ s16 T30::post_command()
 /* the command after a page (EOP, MPS or EOM), MCF and the rest wanted */
 void T30::send_post_page()
 {
-	last_post = post_command();
+	s16 c = post_command();
+	if (c < 0) {
+		host_wait(T30_WAIT_POST, &T30::send_post_page);
+		return;
+	}
+	last_post = c;
 	new_frames();
 	add_frame(last_post, nullptr, 0);
 	send_frames(S_WAIT_MCF);
@@ -1039,6 +1069,8 @@ void T30::next_page_or_end()
 /* the page settings to tell in the DCS */
 void T30::page_settings()
 {
+	if (cfg.host)
+		return;         /* (host_dcs()) */
 	fine = page.fine && get_bit(dis, dis_len, 15);
 	if (page.fine && !fine) {
 		/* the remote takes only standard: every other row */
@@ -1065,6 +1097,20 @@ void T30::sender_message()
 		if (fcf != FCF_DIS)
 			break;
 		t1 = 0;
+		if (cfg.host) {
+			/* what it offers, to the host, which says how to go
+			   on */
+			s16 k;
+			for (k = 0; k < NRATES; k++)
+				if (dis_rate_ok(dis, dis_len, &rates[k]))
+					break;
+			remote_bps = k < NRATES ? rates[k].bps : 0;
+			remote_fine = get_bit(dis, dis_len, 15);
+			remote_ecm = get_bit(dis, dis_len, 27);
+			host_event(T30_EV_DIS, 0);
+			host_wait(T30_WAIT_DCS, &T30::host_dcs);
+			break;
+		}
 		if (choose()) {
 			send_dcn(T30_ERR_INCOMPATIBLE);
 			break;
@@ -1084,6 +1130,7 @@ void T30::sender_message()
 			tries = 0;
 			page_tries = 0;
 			ecm_long_train = 0;
+			host_event(T30_EV_TRAINED, 0);
 			gap_then(RESPONSE_GAP_MS, ecm_on ? &T30::start_ecm_page :
 				 &T30::send_page);
 		} else if (fcf == FCF_FTT) {
@@ -1110,6 +1157,8 @@ void T30::sender_message()
 			tries = 0;
 			page_tries = 0;
 			next_page_or_end();
+			host_event(T30_EV_PAGE_SENT, last_post == FCF_MPS ? 0 :
+				   last_post == FCF_EOM ? 1 : 2);
 			if (last_post == FCF_EOP) {
 				send_dcn(T30_OK);
 			} else if (last_post == FCF_EOM) {
@@ -1154,6 +1203,8 @@ void T30::sender_message()
 			ecm_page++;
 			page_tries = 0;
 			next_page_or_end();
+			host_event(T30_EV_PAGE_SENT, last_post == FCF_MPS ? 0 :
+				   last_post == FCF_EOM ? 1 : 2);
 			if (last_post == FCF_EOP) {
 				send_dcn(T30_OK);
 			} else if (last_post == FCF_EOM) {
@@ -1216,6 +1267,58 @@ void T30::sender_message()
 
 
 /*
+ *    a machine paced by its host (t30_config's host)
+ */
+
+/* the host told of ev (enum t30_event), with arg */
+void T30::host_event(s16 ev, s16 arg)
+{
+	if (cfg.host && cfg.event)
+		cfg.event(cfg.ctx, ev, arg);
+}
+
+/* wait for the host (w, enum t30_wait), then f (t30_resume()); the
+   call ends if it takes HOST_MS */
+void T30::host_wait(enum t30_wait w, void (T30::*f)())
+{
+	DSP_DBG("t30: waits for the host (%d)\n", w);
+	set_state(S_HOST);
+	waiting = w;
+	after_host = f;
+	start_timer(HOST_MS);
+}
+
+/* the host's session (t30_session()) with the DIS: TSI and DCS after the
+   gap */
+void T30::host_dcs()
+{
+	if (choose()) {
+		send_dcn(T30_ERR_INCOMPATIBLE);
+		return;
+	}
+	fine = cfg.fine && get_bit(dis, dis_len, 15);
+	tries = 0;
+	gap_then(RESPONSE_GAP_MS, &T30::send_dcs);
+}
+
+/* the host's next page into page: 1; 0 if it has none yet (the machine
+   waits for it, then f) or no more (DCN) */
+s16 T30::host_page(void (T30::*f)())
+{
+	s16 r = cfg.next_page ? cfg.next_page(cfg.ctx, &page) : 0;
+	if (r == 1) {
+		have_page = 1;
+		return 1;
+	}
+	if (r == 2)
+		host_wait(T30_WAIT_PAGE, f);
+	else
+		send_dcn(T30_ERR_DOCUMENT);
+	return 0;
+}
+
+
+/*
  *    error correction mode: sending
  */
 
@@ -1225,6 +1328,8 @@ void T30::sender_message()
 void T30::start_ecm_page()
 {
 	size_t k;
+	if (cfg.host && !have_page && !host_page(&T30::start_ecm_page))
+		return;
 	page_bits.release();
 	page.encode_mh(&page_bits, 0, 0, 1);
 	ecm_doc.assign((page_bits.n + 7) / 8, 0);
@@ -1322,8 +1427,14 @@ void T30::send_ecm_burst()
 void T30::send_pps()
 {
 	unsigned char fif[4];
-	if (ecm_last)
-		last_post = post_command();
+	if (ecm_last) {
+		s16 c = post_command();
+		if (c < 0) {
+			host_wait(T30_WAIT_POST, &T30::send_pps);
+			return;
+		}
+		last_post = c;
+	}
 	fif[0] = ecm_last ? static_cast<unsigned char>(last_post |
 						       (cfg.sending ? 1 : 0)) :
 			    FCF_NULL;
@@ -1429,9 +1540,11 @@ void T30::ecm_respond(s16 fcf, const unsigned char *fif, s16 len,
 enum state T30::ecm_page_end(s16 fcf2)
 {
 	T4Page *p = &rx_page;
+	bool came = false;
 	if (rx_page_on) {
 		t4rx.end();
 		page_ok = p->rows > 0 && p->bad_rows * 20 < p->rows;
+		came = page_ok;
 		DSP_DBG("t30: ECM page of %" PRId32 " rows, %" PRId32
 			" bad: %s\n", p->rows, p->bad_rows,
 			page_ok ? "ok" : "bad");
@@ -1448,6 +1561,10 @@ enum state T30::ecm_page_end(s16 fcf2)
 	/* (a repeated PPS for the page's last block, after our MCF got
 	   lost, is page - 1, block 0: see got_pps()) */
 	ecm_block = 0;
+	if (came)
+		host_event(T30_EV_POST,
+			   fcf2 == FCF_MPS || fcf2 == FCF_PRI_MPS ? 0 :
+			   fcf2 == FCF_EOM || fcf2 == FCF_PRI_EOM ? 1 : 2);
 	if (fcf2 == FCF_MPS || fcf2 == FCF_PRI_MPS)
 		return S_RX_PAGE;
 	if (fcf2 == FCF_EOP || fcf2 == FCF_PRI_EOP) {
@@ -2079,6 +2196,9 @@ void T30::on_timeout()
 		else
 			gap_then(0, &T30::send_ctc);
 		break;
+	case S_HOST:
+		send_dcn(T30_ERR_HOST);
+		break;
 	default:
 		break;
 	}
@@ -2308,8 +2428,11 @@ T30 *t30_create(const struct t30_config *cfg)
 		t->set_state(S_CNG);
 		t->cng = 1;
 		t->t1 = ms2samples(T1_MS, t->srate);
-		/* the first page now: no document, no call */
-		if (!t->load_next())
+		/* the first page now: no document, no call (the host's
+		   come later) */
+		if (t->cfg.host)
+			;
+		else if (!t->load_next())
 			t->finish(T30_ERR_DOCUMENT);
 		else
 			t->next_page_or_end();
@@ -2355,6 +2478,10 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->ecm = t->ecm_on;
 	copy_array(s->remote_ident, t->remote_ident);
 	s->phase = state_name[t->state];
+	s->waiting = t->state == S_HOST ? t->waiting : T30_WAIT_NONE;
+	s->remote_bps = t->remote_bps;
+	s->remote_fine = t->remote_fine;
+	s->remote_ecm = t->remote_ecm;
 }
 
 /* the far end hung up: the end of the call */
@@ -2366,6 +2493,38 @@ void t30_hangup(T30 *t)
 	if (t->state != S_DONE)
 		t->finish(!t->cfg.sending && t->eop_acked ? T30_OK :
 		       T30_ERR_HANGUP);
+}
+
+/* (t30.h) the host has what the machine waits for */
+void t30_resume(T30 *t)
+{
+	if (t->state != S_HOST)
+		return;
+	t->waiting = T30_WAIT_NONE;
+	(t->*(t->after_host))();
+}
+
+/* (t30.h) the session of the host's next DCS */
+void t30_session(T30 *t, s16 fine, s32 max_bps, s16 ecm)
+{
+	t->cfg.fine = fine;
+	t->cfg.max_bps = max_bps ? max_bps : 14400;
+	t->cfg.ecm = ecm;
+}
+
+/* (t30.h) the host ends the call: a DCN, unless it is over (or one is
+   going out) */
+void t30_abort(T30 *t)
+{
+	if (t->state == S_DONE ||
+	    (t->state == S_TX_FRAMES && t->after_tx == S_DONE))
+		return;
+	t->stop_fast();
+	if (t->tx_on) {
+		t->tx_on = 0;
+		t->tx_mute = 0;
+	}
+	t->send_dcn(T30_ERR_HOST);
 }
 
 /* a result for the log */
@@ -2382,6 +2541,7 @@ const char *t30_result_text(enum t30_result r)
 	case T30_ERR_HANGUP: return "hung up";
 	case T30_ERR_DOCUMENT: return "no document";
 	case T30_ERR_FILE: return "cannot write the document";
+	case T30_ERR_HOST: return "the host did not go on";
 	}
 	return "?";
 }

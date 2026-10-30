@@ -8,7 +8,8 @@
 # modem_defs.h.  They do not include the core's own headers.
 #
 #   dmodem_dsp        object library: the data pumps and the class 1 fax
-#   dmodem_t30        object library: the T.30 fax machine, T.4/T.6, TIFF
+#   dmodem_t30        object library: the T.30 fax machine, T.4/T.6, TIFF,
+#                     class 2 and 2.0 fax (fax_class2.cpp)
 #   DMODEM_DSP_SRCS,  the same as source lists, for the 32 bit interop
 #   DMODEM_T30_SRCS   test programs
 #   DMODEM_DSP_DIR
@@ -20,7 +21,7 @@ set(_dsp
 	dp_v34.cpp dp_vcvm.cpp dp_vwb.cpp dp_4wire.cpp dp_clear.cpp vwb.cpp v34_tables.cpp v34_modem.cpp v34_data.cpp v90.cpp v90a.cpp v91.cpp v92.cpp v92a.cpp vcvm.cpp vcvm_msg.cpp vcvm_probe.cpp vcvm_startup.cpp vcvm_data.cpp vcvm_modem.cpp rs.cpp
 	dp_dummy.cpp dp_sinus.cpp)
 list(TRANSFORM _dsp PREPEND ${DMODEM_DSP_DIR}/)
-set(_t30 t30.cpp t38.cpp t4.cpp tiff.cpp)
+set(_t30 t30.cpp t38.cpp t4.cpp tiff.cpp fax_class2.cpp)
 list(TRANSFORM _t30 PREPEND ${DMODEM_DSP_DIR}/)
 
 foreach(_lib dsp t30)

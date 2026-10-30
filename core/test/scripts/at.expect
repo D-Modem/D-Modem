@@ -215,7 +215,7 @@
       0 A: ERROR\r\n
       0 A< AT+FCLASS=?\r
       0 A: AT+FCLASS=?\r\r\n
-      0 A: 0,1,8\r\n
+      0 A: 0,1,2,2.0,8\r\n
       0 A: OK\r\n
       0 A< AT+FCLASS?\r
       0 A: AT+FCLASS?\r\r\n
@@ -244,9 +244,76 @@
       0 A: AT+FRH=?\r\r\n
       0 A: 3\r\n
       0 A: OK\r\n
+      0 A< AT+FCLASS=2.0;+FCLASS?\r
+      0 A: AT+FCLASS=2.0;+FCLASS?\r\r\n
+      0 A: 2.0\r\n
+      0 A: OK\r\n
+      0 A< AT+FLI="12 34";+FLI?;+FLI=?\r
+      0 A: AT+FLI="12 34";+FLI?;+FLI=?\r\r\n
+      0 A: "1234"\r\n
+      0 A: (20)(32-127)\r\n
+      0 A: OK\r\n
+      0 A< AT+FIS=?;+FIS?;+FIS=0,3;+FIS?\r
+      0 A: AT+FIS=?;+FIS?;+FIS=0,3;+FIS?\r\r\n
+      0 A: (0,1),(0-5),(0),(0-2),(0),(0-2),(0),(0-7)\r\n
+      0 A: 1,5,0,2,0,0,0,0\r\n
+      0 A: 0,3,0,2,0,0,0,0\r\n
+      0 A: OK\r\n
+      0 A< AT+FCC=1,4,0,2,0,2,0,0;+FIS?;+FCC?\r
+      0 A: AT+FCC=1,4,0,2,0,2,0,0;+FIS?;+FCC?\r\r\n
+      0 A: 1,4,0,2,0,2,0,0\r\n
+      0 A: 1,4,0,2,0,2,0,0\r\n
+      0 A: OK\r\n
+      0 A< AT+FIS=1,6\r
+      0 A: AT+FIS=1,6\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+FBO=1;+FBO?;+FBO=4\r
+      0 A: AT+FBO=1;+FBO?;+FBO=4\r\r\n
+      0 A: 1\r\n
+      0 A: ERROR\r\n
+      0 A< AT+FCR?;+FPS?;+FHS?;+FCS?\r
+      0 A: AT+FCR?;+FPS?;+FHS?;+FCS?\r\r\n
+      0 A: 1\r\n
+      0 A: 1\r\n
+      0 A: 00\r\n
+      0 A: 0,0,0,0,0,0,0,0\r\n
+      0 A: OK\r\n
+      0 A< AT+FNR=1,1,1,0;+FNR?;+FIE=0\r
+      0 A: AT+FNR=1,1,1,0;+FNR?;+FIE=0\r\r\n
+      0 A: 1,1,1,0\r\n
+      0 A: OK\r\n
+      0 A< AT+FDT\r
+      0 A: AT+FDT\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+FDR\r
+      0 A: AT+FDR\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+FET=2\r
+      0 A: AT+FET=2\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+FKS\r
+      0 A: AT+FKS\r\r\n
+      0 A: OK\r\n
+      0 A< AT+FMI?;+FMM;+FMR?\r
+      0 A: AT+FMI?;+FMM;+FMR?\r\r\n
+      0 A: D-Modem project\r\n
+      0 A: D-Modem\r\n
+      0 A: 1.0.0\r\n
+      0 A: OK\r\n
+      0 A< AT+FTH=3\r
+      0 A: AT+FTH=3\r\r\n
+      0 A: ERROR\r\n
       0 A< AT+FCLASS=2\r
       0 A: AT+FCLASS=2\r\r\n
-      0 A: ERROR\r\n
+      0 A: OK\r\n
+      0 A< AT+FLID?;+FDIS?;+FBOR?;+FHNG?;+FCLASS?\r
+      0 A: AT+FLID?;+FDIS?;+FBOR?;+FHNG?;+FCLASS?\r\r\n
+      0 A: "1234"\r\n
+      0 A: 1,4,0,2,0,2,0,0\r\n
+      0 A: 1\r\n
+      0 A: 0\r\n
+      0 A: 2\r\n
+      0 A: OK\r\n
       0 A< AT+FCLASS=0\r
       0 A: AT+FCLASS=0\r\r\n
       0 A: OK\r\n

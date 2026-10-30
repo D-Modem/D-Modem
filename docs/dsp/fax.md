@@ -106,6 +106,27 @@ machine over T.38, with the packets' timing; `asterisk/test/efax.sh`
 has efax on dmodemd against Asterisk's fax over T.38 (dmodemd's
 `SIP_T38`, [README](../../README.md)).
 
+## Fax (class 2 and 2.0)
+
+`fax_class2.cpp` is T.32's class 2.0, and the older class 2 that fax
+programs know (`FAX2_*` in `dsplibs.h`, in the T.30 library: a program
+without it has no `+FCLASS=2`). The modem runs the T.30 machine below,
+paced by the engine as its host (`t30_config`'s `host`): sending, the
+machine waits after the DIS (`T30_EV_DIS`) for `+FDT` to send the DCS
+with `+FIS`'s session (`t30_session()`, `t30_resume()`), for each page
+(`next_page()` says 2 until the DTE's page has come and been decoded),
+and for `+FET`'s post-page command (`post_page()`); it tells the CFR
+(`T30_EV_TRAINED`) and each MCF (`T30_EV_PAGE_SENT`). Receiving, it runs
+as it would by itself and the engine keeps what came, the session
+(`T30_EV_TRAINED`) and the pages with their post-page commands
+(`T30_EV_POST`), for `ATA`'s results and each `+FDR`. The DTE's pages
+are MH with EOLs in `+FBO`'s bit order; they are decoded into a bitmap
+and coded again for the line (with the scan line fill, MR received, ECM
+either way), so the DTE never frames ECM. `core_test`'s `CoreFax2` cases
+send two pages between two modems in class 2.0, class 2 and class 2.0
+with ECM and the other bit order, the bitmaps compared; `Fax2Abort` ends
+a call with `+FKS`.
+
 ## Fax machine (T.30)
 
 `t30.cpp` is a group 3 fax machine on these modulations (libdmodem's fax,
