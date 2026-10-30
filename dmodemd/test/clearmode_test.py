@@ -162,7 +162,15 @@ def audio_of(body):
     return (c.group(1), int(m.group(1))), m.group(2).split(), \
         dict(re.findall(r"a=rtpmap:(\d+) (\S+)", body))
 
-# dmodemd and its pty
+# dmodemd and its pty.  Run as root (CI's containers), it goes on as
+# nobody from the start: as root it would make /dev/ttyDM0 and save
+# /var/lib/dmodem/data.dmodem0, which root_test.py (run beside it)
+# counts as its own
+def as_nobody():
+    if os.geteuid() == 0:
+        os.setgroups([])
+        os.setgid(65534)
+        os.setuid(65534)
 def start_dmodemd(listen):
     env = dict(os.environ, SIP_LOGIN="dm:secret@127.0.0.1:%d" % SIP_PORT,
                SIP_PORT=str(DM_PORT))
@@ -171,7 +179,8 @@ def start_dmodemd(listen):
     p = subprocess.Popen(pre + [dmodemd,
                           "-d" + os.environ.get("DMODEMD_DEBUG", "1")] +
                          (["-L"] if listen else []),
-                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                         preexec_fn=as_nobody)
     pty = None
     t0 = time.time()
     while time.time() - t0 < 10:
