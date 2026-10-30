@@ -93,8 +93,8 @@ static std::vector<std::string> lines(const std::string &s)
 	return v;
 }
 
-/* an ATI11 line's measurement: its field and value; false if line is
-   not one of them */
+/* an ATI11 (or AT#UD) line's measurement: its field and value; false if
+   line is not one of them */
 static bool measurement(const std::string &line, std::string *field,
 			double *value)
 {
@@ -105,7 +105,33 @@ static bool measurement(const std::string &line, std::string *field,
 		"Near Echo Level (dBm0)",
 		"Far Echo Level (dBm0)",
 		"Receive Frame Error Count",
+		"Carrier Frequency Offset (Hz)",
+		"Timing Offset (ppm)",
 	};
+	/* AT#UD's levels (hexadecimal -dBm, dB) and receive frame errors:
+	   as ATI11's ("Error Count" for the errors) */
+	static const struct {
+		const char *key, *field;
+	} diag[] = {
+		{ "DIAG <2A4D3263 10=", "DIAG 10" },
+		{ "DIAG <2A4D3263 11=", "DIAG 11" },
+		{ "DIAG <2A4D3263 12=", "DIAG 12" },
+		{ "DIAG <2A4D3263 14=", "DIAG 14" },
+		{ "DIAG <2A4D3263 15=", "DIAG 15" },
+		{ "DIAG <2A4D3263 59=", "DIAG 59 Error Count" },
+	};
+	for (const auto &d : diag) {
+		size_t at = line.find(std::string(": ") + d.key);
+		if (at == std::string::npos)
+			continue;
+		const char *v = line.c_str() + at + 2 + strlen(d.key);
+		char *end;
+		*value = static_cast<double>(strtoul(v, &end, 16));
+		if (end == v)
+			return false;
+		*field = line.substr(0, at) + d.field;
+		return true;
+	}
 	for (const char *f : fields) {
 		size_t at = line.find(std::string(": ") + f);
 		if (at == std::string::npos)
@@ -126,9 +152,11 @@ static bool measurement(const std::string &line, std::string *field,
 /* Windows' maths library rounds its sines, logarithms and square roots
    a little otherwise than glibc's, musl's and Apple's: over a line's
    echoes that moves the measurements a little (a few tenths of a dB,
-   and a few frame errors more or less under the echoes).  got the same
-   as want but in those, each within its tolerance: a dB within 1, an
-   error count none where want has none.  Everything else stays exact,
+   and a few frame errors more or less under the echoes; the receivers'
+   offsets).  got the same as want but in those, each within its
+   tolerance: a dB (or Hz) within 1, a ppm within 20 (the echoes move
+   the clock's estimate by a few), an error count none
+   where want has none.  Everything else stays exact,
    and elsewhere all of it does. */
 static bool close_enough(const std::string &want, const std::string &got)
 {
@@ -146,7 +174,9 @@ static bool close_enough(const std::string &want, const std::string &got)
 		if (wf.find("Error Count") != std::string::npos) {
 			if ((wv == 0) != (gv == 0))
 				return false;
-		} else if (fabs(wv - gv) > 1.0) {
+		} else if (fabs(wv - gv) >
+			   (wf.find("(ppm)") != std::string::npos ? 20.0 :
+			    1.0)) {
 			return false;
 		}
 	}

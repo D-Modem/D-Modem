@@ -871,6 +871,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	s16 v90_data_setup();
 	void tx_next(enum v34_state s, enum v34_txseg seg);
 	s16 data_setup();
+	void stat_link();
 	void mp_start();
 	s16 rate_floor() const;
 	void v90_renegotiate(const char *why, s16 n, s16 remote);
@@ -3362,6 +3363,7 @@ s16 V34Pump::v90a_data_setup()
 	p.states = 16 << mp.trellis;
 	p.set_precoder(mp.h);
 	ptx.start_data(&p, CoreBits{ modem });
+	stat_coding(false, p.states, mp.nonlinear, p.precode, mp.expanded);
 	rate_tx = p.rate;
 	rate_rx = (v90a_cp.drn + 20) * INT32_C(8000) / 6;
 	DSP_DBG("v34: V.90 rates: up %" PRId32 " (%d states%s), down %" PRId32
@@ -3578,6 +3580,7 @@ s16 V34Pump::v90_data_setup()
 	   with what the equalizer has adapted to since */
 	p.set_precoder(mp_h);
 	prx.start_data(&p, CoreBits{ modem });
+	stat_coding(true, p.states, false, p.precode, true);
 	up_n = n;
 	rate_rx = p.rate;
 	rate_tx = (cp.drn + 20) * INT32_C(8000) / 6;
@@ -3613,6 +3616,59 @@ static s16 v34_pick_rate(s16 baud, s16 max, s16 mask)
 	return 0;
 }
 
+/* the call's statistics (ATI11) while connected: each direction's
+   symbol rate and carrier (PCM's 8000 and none), the receiver's carrier
+   and clock offsets (a V.34 receiver's, in data mode), the network's
+   law and what the analogue modem's DIL showed of it */
+void V34Pump::stat_link()
+{
+	if (!stats || !(connected || state == V91_RUN))
+		return;
+	bool pcm_both = state == V91_RUN || state == V92_RUN;
+	bool tx_pcm = pcm_both || (v90a_on ? v92a_up_on != 0 : pcm != 0);
+	bool rx_pcm = pcm_both || v90a_on;
+	float sym_tx = 8000, car_tx = 0, sym_rx = 8000, car_rx = 0;
+
+	if (!tx_pcm) {
+		sym_tx = v34_symbol_rate(ptx.baud);
+		car_tx = static_cast<float>(fabs(ptx.qam.carrier.inc)) *
+			V34_SRATE;
+	} else {
+		stat_coding(false, 0, false, false, false);
+	}
+	if (!rx_pcm) {
+		sym_rx = v34_symbol_rate(prx.baud);
+		car_rx = static_cast<float>(fabs(prx.qam.lo.inc)) *
+			V34_SRATE;
+		if (prx.data_on) {
+			stat_freq_offset(prx.qam.dtheta, prx.qam.baud);
+			/* (the equalizer's clock once trained; the timing
+			   loop's integrator before) */
+			stat_timing_offset(prx.timing_fixed ? prx.t_freq :
+					   prx.qam.t_adj, prx.qam.sps);
+		}
+	} else {
+		stat_coding(true, 0, false, false, false);
+		/* the analogue modem's PCM receiver: the network's clock
+		   against ours */
+		if (v90a_on && stats) {
+			stats->timing_offset =
+				static_cast<float>(-v90rx.ppm());
+			stats->have |= DP_STATS_TIMING_OFFSET;
+		}
+	}
+	stat_line(sym_tx, car_tx, sym_rx, car_rx);
+	if (tx_pcm || rx_pcm) {
+		stats->pcm_alaw = alaw;
+		stats->have |= DP_STATS_PCM;
+	}
+	if (v90a_on && v90rx.dil_done) {
+		stats->digital_loss = v90rx.dil_pad_db;
+		stats->robbed_bits = v90rx.dil_robbed;
+		stats->have |= DP_STATS_DIL;
+	}
+}
+
 /* both MP sequences are known: set up the data mode */
 s16 V34Pump::data_setup()
 {
@@ -3644,12 +3700,14 @@ s16 V34Pump::data_setup()
 	p.set_precoder(r->h);
 	ptx.start_data(&p, CoreBits{ modem });
 	rate_tx = p.rate;
+	stat_coding(false, p.states, r->nonlinear, p.precode, r->expanded);
 	if (p.init(prx.baud, nrx, l->expanded))
 		return -1;
 	p.states = 16 << l->trellis;
 	p.set_precoder(l->h);
 	prx.start_data(&p, CoreBits{ modem });
 	rate_rx = p.rate;
+	stat_coding(true, p.states, l->nonlinear, p.precode, l->expanded);
 	DSP_DBG("v34: data rates tx %" PRId32 " rx %" PRId32
 		", trellis tx %d rx %d states%s\n",
 		rate_tx, rate_rx, 16 << r->trellis, 16 << l->trellis,
@@ -6098,6 +6156,7 @@ s16 V34Pump::process(void *in, void *out, s32 cnt)
 	/* silence where an early return (V.8 done, another pump, an error)
 	   leaves the block unwritten */
 	std::fill_n(dst, cnt, 0);
+	stat_link();
 	for (i = 0; i < cnt; i++) {
 		if (state == V91_RUN) {
 			s16 y91, ev = v91m.sample(src[i], &y91);

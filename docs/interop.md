@@ -1293,6 +1293,19 @@ idle before them; `V80_HUNT=1` then has A's DTE send `<EM><hunt>` and B's
 | Agere, Broadcom | `(0-2),(0,1),(0,1),(0,1),(0-2),(0,1),(0-255),(0-255)` | both ways, both SYNs | Finds our SYN and we find theirs. Its DTE gets DC1 and DC3 shielded, and it loses the first of two octets in a row it shields: `13 13` and `99 13` come as `<EM><t4>` alone (`V80_PAIR_LOST`: none such in the octets for it). The Agere modem calling, with the 16 bit SYN, gives its DTE the idle from a `<syn2>` on (`V80_IDLE_FIRST`); with octets of ours that start with the SYN it gives the SYN first |
 | SM56, Intel | `<trans_idle>` 0 only | none | |
 
+## The call's statistics in the middle of a call
+
+`EXPECT_MIDCALL_A=<regex>` (`_B`) checks what a modem answered its
+`MIDCALL` commands, as `EXPECT_A` checks its log. `open_v90a_stats`
+escapes both D-Modems in V.90 data (the network with a 3 dB pad, a
+robbed bit and the analogue modem's codec 100 ppm fast) for `AT&V1` or
+`ATI11` and `AT#UD`: each direction's symbol rate and carrier (8000 and
+PCM downstream, 3429 and 1959 Hz upstream), the upstream's trellis code
+on each side, the clock 100 ppm off as each modem sees it (the analogue
+modem's -100, the network's slower; the digital modem's +100), the pad
+and the robbed bit as the analogue modem's DIL found them, and the same
+in Unimodem's keys.
+
 ## Retrains and renegotiations on request
 
 `MIDCALL_ATO_A=<cmd>` (`_B`) makes `interop_call`'s mid-call return

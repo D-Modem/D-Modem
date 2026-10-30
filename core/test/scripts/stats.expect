@@ -7,6 +7,11 @@
       0 A< ATI11\r
       0 A: No Previous Call\r\n
       0 A: OK\r\n
+      0 A< AT#UD\r
+      0 A: DIAG <2A4D3263 0=10>\r\n
+      0 A: DIAG <2A4D3263 1=0>\r\n
+      0 A: DIAG <2A4D3263 60=1>\r\n
+      0 A: OK\r\n
       0 B< ATA\r
       0 A< ATD123\r
   15320 B: CONNECT 33600\r\n
@@ -120,14 +125,22 @@
   22380 A: Initial Receive Carrier Rate        24000\r\n
   22380 A: Final Transmit Carrier Rate         33600\r\n
   22380 A: Final Receive Carrier Rate          24000\r\n
+  22380 A: Symbol Rate (Tx/Rx)                 3429/3429\r\n
+  22380 A: Carrier Frequency (Hz, Tx/Rx)       1959/1959\r\n
   22380 A: Protocol Negotiation Result         LAPM\r\n
   22380 A: Data Compression Result             ZSTD\r\n
+  22380 A: Trellis Code (Tx/Rx)                64S-4D/64S-4D\r\n
+  22380 A: Nonlinear Encoding (Tx/Rx)          OFF/OFF\r\n
+  22380 A: Precoding (Tx/Rx)                   ON/OFF\r\n
+  22380 A: Shaping (Tx/Rx)                     ON/ON\r\n
   22380 A: Estimated SNR (dB)                  29.0\r\n
   22380 A: Receive Signal Power Level (dBm0)   -14.8\r\n
   22380 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
   22380 A: Round Trip Delay (ms)               37\r\n
   22380 A: Near Echo Level (dBm0)              -57.8\r\n
   22380 A: Far Echo Level (dBm0)               -27.2\r\n
+  22380 A: Carrier Frequency Offset (Hz)       -0.1\r\n
+  22380 A: Timing Offset (ppm)                 -1\r\n
   22380 A: Characters Sent                     3003\r\n
   22380 A: Characters Received                 3000\r\n
   22380 A: Transmit Frame Count                8\r\n
@@ -140,6 +153,39 @@
   22380 A: Rate Renegotiation by Remote Modem  0\r\n
   22380 A: Call Duration                       0:00:07\r\n
   22380 A: OK\r\n
+  22380 A< AT#UD\r
+  22380 A: DIAG <2A4D3263 0=10>\r\n
+  22380 A: DIAG <2A4D3263 1=7>\r\n
+  22380 A: DIAG <2A4D3263 10=0F>\r\n
+  22380 A: DIAG <2A4D3263 11=0F>\r\n
+  22380 A: DIAG <2A4D3263 12=2C>\r\n
+  22380 A: DIAG <2A4D3263 14=2B>\r\n
+  22380 A: DIAG <2A4D3263 15=0C>\r\n
+  22380 A: DIAG <2A4D3263 17=25>\r\n
+  22380 A: DIAG <2A4D3263 20=C>\r\n
+  22380 A: DIAG <2A4D3263 21=C>\r\n
+  22380 A: DIAG <2A4D3263 22=0D65>\r\n
+  22380 A: DIAG <2A4D3263 23=0D65>\r\n
+  22380 A: DIAG <2A4D3263 24=07A7>\r\n
+  22380 A: DIAG <2A4D3263 25=07A7>\r\n
+  22380 A: DIAG <2A4D3263 26=8340>\r\n
+  22380 A: DIAG <2A4D3263 27=5DC0>\r\n
+  22380 A: DIAG <2A4D3263 31=01>\r\n
+  22380 A: DIAG <2A4D3263 32=00>\r\n
+  22380 A: DIAG <2A4D3263 34=8340>\r\n
+  22380 A: DIAG <2A4D3263 35=5DC0>\r\n
+  22380 A: DIAG <2A4D3263 40=1>\r\n
+  22380 A: DIAG <2A4D3263 44=82>\r\n
+  22380 A: DIAG <2A4D3263 50=0>\r\n
+  22380 A: DIAG <2A4D3263 51=0>\r\n
+  22380 A: DIAG <2A4D3263 52=00000BBB>\r\n
+  22380 A: DIAG <2A4D3263 53=00000BB8>\r\n
+  22380 A: DIAG <2A4D3263 56=00000008>\r\n
+  22380 A: DIAG <2A4D3263 57=00000007>\r\n
+  22380 A: DIAG <2A4D3263 58=00000000>\r\n
+  22380 A: DIAG <2A4D3263 59=0000000E>\r\n
+  22380 A: DIAG <2A4D3263 60=2>\r\n
+  22380 A: OK\r\n
   22380 A< ATO\r
   22380 A: CONNECT 24000\r\n
   24380 A< +++
@@ -150,7 +196,7 @@
   25400 A: NO CARRIER\r\n
   25460 B: A0048 The quick brown fo++++++NO CARRIER\r\n
   25460 until B 'NO CARRIER': yes
-  25960 A< ATI11\r
+  25960 A< AT&V1\r
   25960 A: Description                         Status\r\n
   25960 A: -----------                         ------\r\n
   25960 A: Last Connection                     V34\r\n
@@ -158,14 +204,22 @@
   25960 A: Initial Receive Carrier Rate        24000\r\n
   25960 A: Final Transmit Carrier Rate         33600\r\n
   25960 A: Final Receive Carrier Rate          24000\r\n
+  25960 A: Symbol Rate (Tx/Rx)                 3429/3429\r\n
+  25960 A: Carrier Frequency (Hz, Tx/Rx)       1959/1959\r\n
   25960 A: Protocol Negotiation Result         LAPM\r\n
   25960 A: Data Compression Result             ZSTD\r\n
+  25960 A: Trellis Code (Tx/Rx)                64S-4D/64S-4D\r\n
+  25960 A: Nonlinear Encoding (Tx/Rx)          OFF/OFF\r\n
+  25960 A: Precoding (Tx/Rx)                   ON/OFF\r\n
+  25960 A: Shaping (Tx/Rx)                     ON/ON\r\n
   25960 A: Estimated SNR (dB)                  29.4\r\n
   25960 A: Receive Signal Power Level (dBm0)   -14.8\r\n
   25960 A: Transmit Signal Power Level (dBm0)  -15.0\r\n
   25960 A: Round Trip Delay (ms)               37\r\n
   25960 A: Near Echo Level (dBm0)              -57.7\r\n
   25960 A: Far Echo Level (dBm0)               -27.1\r\n
+  25960 A: Carrier Frequency Offset (Hz)       0.0\r\n
+  25960 A: Timing Offset (ppm)                 5\r\n
   25960 A: Characters Sent                     3006\r\n
   25960 A: Characters Received                 3000\r\n
   25960 A: Transmit Frame Count                10\r\n
@@ -179,7 +233,7 @@
   25960 A: Call Duration                       0:00:10\r\n
   25960 A: Call Termination Cause              Local hangup\r\n
   25960 A: OK\r\n
-  25960 B< ATI11\r
+  25960 B< ATI6\r
   25960 B: Description                         Status\r\n
   25960 B: -----------                         ------\r\n
   25960 B: Last Connection                     V34\r\n
@@ -187,12 +241,20 @@
   25960 B: Initial Receive Carrier Rate        33600\r\n
   25960 B: Final Transmit Carrier Rate         24000\r\n
   25960 B: Final Receive Carrier Rate          33600\r\n
+  25960 B: Symbol Rate (Tx/Rx)                 3429/3429\r\n
+  25960 B: Carrier Frequency (Hz, Tx/Rx)       1959/1959\r\n
   25960 B: Protocol Negotiation Result         LAPM\r\n
   25960 B: Data Compression Result             ZSTD\r\n
+  25960 B: Trellis Code (Tx/Rx)                64S-4D/64S-4D\r\n
+  25960 B: Nonlinear Encoding (Tx/Rx)          OFF/OFF\r\n
+  25960 B: Precoding (Tx/Rx)                   OFF/ON\r\n
+  25960 B: Shaping (Tx/Rx)                     ON/ON\r\n
   25960 B: Estimated SNR (dB)                  48.4\r\n
   25960 B: Receive Signal Power Level (dBm0)   -15.1\r\n
   25960 B: Transmit Signal Power Level (dBm0)  -15.1\r\n
   25960 B: Round Trip Delay (ms)               37\r\n
+  25960 B: Carrier Frequency Offset (Hz)       0.0\r\n
+  25960 B: Timing Offset (ppm)                 1\r\n
   25960 B: Characters Sent                     3000\r\n
   25960 B: Characters Received                 3006\r\n
   25960 B: Transmit Frame Count                9\r\n
@@ -205,6 +267,70 @@
   25960 B: Rate Renegotiation by Remote Modem  1\r\n
   25960 B: Call Duration                       0:00:10\r\n
   25960 B: Call Termination Cause              Remote cleardown\r\n
+  25960 B: OK\r\n
+  25960 A< AT#UD\r
+  25960 A: DIAG <2A4D3263 0=10>\r\n
+  25960 A: DIAG <2A4D3263 1=7>\r\n
+  25960 A: DIAG <2A4D3263 10=0F>\r\n
+  25960 A: DIAG <2A4D3263 11=0F>\r\n
+  25960 A: DIAG <2A4D3263 12=2C>\r\n
+  25960 A: DIAG <2A4D3263 14=2B>\r\n
+  25960 A: DIAG <2A4D3263 15=0C>\r\n
+  25960 A: DIAG <2A4D3263 17=25>\r\n
+  25960 A: DIAG <2A4D3263 20=C>\r\n
+  25960 A: DIAG <2A4D3263 21=C>\r\n
+  25960 A: DIAG <2A4D3263 22=0D65>\r\n
+  25960 A: DIAG <2A4D3263 23=0D65>\r\n
+  25960 A: DIAG <2A4D3263 24=07A7>\r\n
+  25960 A: DIAG <2A4D3263 25=07A7>\r\n
+  25960 A: DIAG <2A4D3263 26=8340>\r\n
+  25960 A: DIAG <2A4D3263 27=5DC0>\r\n
+  25960 A: DIAG <2A4D3263 31=01>\r\n
+  25960 A: DIAG <2A4D3263 32=00>\r\n
+  25960 A: DIAG <2A4D3263 34=8340>\r\n
+  25960 A: DIAG <2A4D3263 35=5DC0>\r\n
+  25960 A: DIAG <2A4D3263 40=1>\r\n
+  25960 A: DIAG <2A4D3263 44=82>\r\n
+  25960 A: DIAG <2A4D3263 50=0>\r\n
+  25960 A: DIAG <2A4D3263 51=0>\r\n
+  25960 A: DIAG <2A4D3263 52=00000BBE>\r\n
+  25960 A: DIAG <2A4D3263 53=00000BB8>\r\n
+  25960 A: DIAG <2A4D3263 56=0000000A>\r\n
+  25960 A: DIAG <2A4D3263 57=00000008>\r\n
+  25960 A: DIAG <2A4D3263 58=00000000>\r\n
+  25960 A: DIAG <2A4D3263 59=0000000E>\r\n
+  25960 A: DIAG <2A4D3263 60=51>\r\n
+  25960 A: OK\r\n
+  25960 B< AT#UD\r
+  25960 B: DIAG <2A4D3263 0=10>\r\n
+  25960 B: DIAG <2A4D3263 1=8>\r\n
+  25960 B: DIAG <2A4D3263 10=0F>\r\n
+  25960 B: DIAG <2A4D3263 11=0F>\r\n
+  25960 B: DIAG <2A4D3263 12=3F>\r\n
+  25960 B: DIAG <2A4D3263 17=25>\r\n
+  25960 B: DIAG <2A4D3263 20=C>\r\n
+  25960 B: DIAG <2A4D3263 21=C>\r\n
+  25960 B: DIAG <2A4D3263 22=0D65>\r\n
+  25960 B: DIAG <2A4D3263 23=0D65>\r\n
+  25960 B: DIAG <2A4D3263 24=07A7>\r\n
+  25960 B: DIAG <2A4D3263 25=07A7>\r\n
+  25960 B: DIAG <2A4D3263 26=5DC0>\r\n
+  25960 B: DIAG <2A4D3263 27=8340>\r\n
+  25960 B: DIAG <2A4D3263 31=01>\r\n
+  25960 B: DIAG <2A4D3263 32=00>\r\n
+  25960 B: DIAG <2A4D3263 34=5DC0>\r\n
+  25960 B: DIAG <2A4D3263 35=8340>\r\n
+  25960 B: DIAG <2A4D3263 40=1>\r\n
+  25960 B: DIAG <2A4D3263 44=82>\r\n
+  25960 B: DIAG <2A4D3263 50=0>\r\n
+  25960 B: DIAG <2A4D3263 51=0>\r\n
+  25960 B: DIAG <2A4D3263 52=00000BB8>\r\n
+  25960 B: DIAG <2A4D3263 53=00000BBE>\r\n
+  25960 B: DIAG <2A4D3263 56=00000009>\r\n
+  25960 B: DIAG <2A4D3263 57=0000000A>\r\n
+  25960 B: DIAG <2A4D3263 58=00000000>\r\n
+  25960 B: DIAG <2A4D3263 59=00000000>\r\n
+  25960 B: DIAG <2A4D3263 60=41>\r\n
   25960 B: OK\r\n
   25960 A< AT\\N5+MS=132\r
   25960 A: OK\r\n
@@ -277,11 +403,15 @@
   40800 A: Initial Receive Carrier Rate        14400\r\n
   40800 A: Final Transmit Carrier Rate         14400\r\n
   40800 A: Final Receive Carrier Rate          14400\r\n
+  40800 A: Symbol Rate (Tx/Rx)                 2400/2400\r\n
+  40800 A: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   40800 A: Protocol Negotiation Result         MNP\r\n
   40800 A: Data Compression Result             MNP5\r\n
   40800 A: Estimated SNR (dB)                  30.3\r\n
   40800 A: Receive Signal Power Level (dBm0)   -18.6\r\n
   40800 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
+  40800 A: Carrier Frequency Offset (Hz)       0.0\r\n
+  40800 A: Timing Offset (ppm)                 -2\r\n
   40800 A: Characters Sent                     2000\r\n
   40800 A: Characters Received                 1000\r\n
   40800 A: Transmit Frame Count                10\r\n
@@ -294,6 +424,36 @@
   40800 A: Rate Renegotiation by Remote Modem  0\r\n
   40800 A: Call Duration                       0:00:04\r\n
   40800 A: Call Termination Cause              Carrier lost\r\n
+  40800 A: OK\r\n
+  40800 A< AT#UD\r
+  40800 A: DIAG <2A4D3263 0=10>\r\n
+  40800 A: DIAG <2A4D3263 1=7>\r\n
+  40800 A: DIAG <2A4D3263 10=13>\r\n
+  40800 A: DIAG <2A4D3263 11=11>\r\n
+  40800 A: DIAG <2A4D3263 12=31>\r\n
+  40800 A: DIAG <2A4D3263 20=B>\r\n
+  40800 A: DIAG <2A4D3263 21=B>\r\n
+  40800 A: DIAG <2A4D3263 22=0960>\r\n
+  40800 A: DIAG <2A4D3263 23=0960>\r\n
+  40800 A: DIAG <2A4D3263 24=0708>\r\n
+  40800 A: DIAG <2A4D3263 25=0708>\r\n
+  40800 A: DIAG <2A4D3263 26=3840>\r\n
+  40800 A: DIAG <2A4D3263 27=3840>\r\n
+  40800 A: DIAG <2A4D3263 31=00>\r\n
+  40800 A: DIAG <2A4D3263 32=00>\r\n
+  40800 A: DIAG <2A4D3263 34=3840>\r\n
+  40800 A: DIAG <2A4D3263 35=3840>\r\n
+  40800 A: DIAG <2A4D3263 40=2>\r\n
+  40800 A: DIAG <2A4D3263 44=80>\r\n
+  40800 A: DIAG <2A4D3263 50=0>\r\n
+  40800 A: DIAG <2A4D3263 51=0>\r\n
+  40800 A: DIAG <2A4D3263 52=000007D0>\r\n
+  40800 A: DIAG <2A4D3263 53=000003E8>\r\n
+  40800 A: DIAG <2A4D3263 56=0000000A>\r\n
+  40800 A: DIAG <2A4D3263 57=0000000A>\r\n
+  40800 A: DIAG <2A4D3263 58=00000000>\r\n
+  40800 A: DIAG <2A4D3263 59=00000000>\r\n
+  40800 A: DIAG <2A4D3263 60=3C>\r\n
   40800 A: OK\r\n
   40800 A< AT\\N0\r
   40800 A: OK\r\n
@@ -334,11 +494,15 @@
   54440 A: Initial Receive Carrier Rate        14400\r\n
   54440 A: Final Transmit Carrier Rate         14400\r\n
   54440 A: Final Receive Carrier Rate          14400\r\n
+  54440 A: Symbol Rate (Tx/Rx)                 2400/2400\r\n
+  54440 A: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   54440 A: Protocol Negotiation Result         NONE\r\n
   54440 A: Data Compression Result             NONE\r\n
   54440 A: Estimated SNR (dB)                  36.1\r\n
   54440 A: Receive Signal Power Level (dBm0)   -18.8\r\n
   54440 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
+  54440 A: Carrier Frequency Offset (Hz)       0.0\r\n
+  54440 A: Timing Offset (ppm)                 1\r\n
   54440 A: Characters Sent                     1000\r\n
   54440 A: Characters Received                 991\r\n
   54440 A: Retrains by Local Modem             0\r\n
@@ -356,11 +520,15 @@
   54440 B: Initial Receive Carrier Rate        14400\r\n
   54440 B: Final Transmit Carrier Rate         14400\r\n
   54440 B: Final Receive Carrier Rate          14400\r\n
+  54440 B: Symbol Rate (Tx/Rx)                 2400/2400\r\n
+  54440 B: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   54440 B: Protocol Negotiation Result         NONE\r\n
   54440 B: Data Compression Result             NONE\r\n
   54440 B: Estimated SNR (dB)                  35.6\r\n
   54440 B: Receive Signal Power Level (dBm0)   -17.8\r\n
   54440 B: Transmit Signal Power Level (dBm0)  -17.8\r\n
+  54440 B: Carrier Frequency Offset (Hz)       0.0\r\n
+  54440 B: Timing Offset (ppm)                 -4\r\n
   54440 B: Characters Sent                     0\r\n
   54440 B: Characters Received                 1000\r\n
   54440 B: Retrains by Local Modem             0\r\n
@@ -378,4 +546,9 @@
   59960 A: -----------                         ------\r\n
   59960 A: Last Connection                     None\r\n
   59960 A: Call Termination Cause              No answer\r\n
+  59960 A: OK\r\n
+  59960 A< AT#UD\r
+  59960 A: DIAG <2A4D3263 0=10>\r\n
+  59960 A: DIAG <2A4D3263 1=4>\r\n
+  59960 A: DIAG <2A4D3263 60=2C>\r\n
   59960 A: OK\r\n

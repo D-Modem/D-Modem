@@ -733,6 +733,15 @@ s16 V22Pump::handshake()
 			return connect();
 		break;
 	case V22_DATA:
+		/* the call's statistics: the carriers (the caller's 1200
+		   Hz, the answerer's 2400), the receiver's carrier offset
+		   (not its timing loop's, which wanders by some hundred
+		   ppm on a perfect line) */
+		if (count % ms2samples(100, srate) == 0) {
+			stat_line(V22_BAUD, caller ? 1200 : 2400, V22_BAUD,
+				  caller ? 2400 : 1200);
+			stat_freq_offset(dtheta, V22_BAUD);
+		}
 		break;
 	}
 

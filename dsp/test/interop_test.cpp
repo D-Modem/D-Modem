@@ -436,6 +436,30 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)DIL: pad 6.0 dB.*robbed [0-5],[0-5], distinct.*"
 	      "B1d: 0 bit errors in 48 frames",
 	      "EXPECT_B=V.90 connect [0-9]+/" });
+	/* the call's statistics on both modems in the middle of V.90 data
+	   (ATI11, the same AT&V1; AT#UD Unimodem's): each direction's
+	   symbol rate and carrier, V.34 upstream's coding, the analogue
+	   modem's codec 100 ppm fast seen by each, the network's pad and
+	   robbed bit as the DIL found them */
+	add("open", "open_v90a_stats", "open", "open8", "ATX3;AT+MS=90",
+	    { "NET=9600:8000:ulaw", "NET_PAD=3", "NET_RBS=0x01",
+	      "NET_PPM=100", "NET_PHASE=0.3", "STREAM=20",
+	      "MIDCALL_A=8:AT&V1;AT#UD", "MIDCALL_B=10:ATI11;AT#UD",
+	      "EXPECT_MIDCALL_A=(?s)Last Connection +V90.*"
+	      "Symbol Rate \\(Tx/Rx\\) +3429/8000.*"
+	      "Carrier Frequency \\(Hz, Tx/Rx\\) +1959/PCM.*"
+	      "Trellis Code \\(Tx/Rx\\) +64S-4D/-.*"
+	      "Timing Offset \\(ppm\\) +-(99|100|101)\r.*"
+	      "PCM Encoding +u-law.*Digital Loss \\(dB\\) +3.0.*"
+	      "Robbed Bit Frames +[1-6]\r.*"
+	      "DIAG <2A4D3263 20=E>.*DIAG <2A4D3263 22=0D65>.*"
+	      "DIAG <2A4D3263 23=1F40>.*DIAG <2A4D3263 60=2>",
+	      "EXPECT_MIDCALL_B=(?s)Symbol Rate \\(Tx/Rx\\) +8000/3429.*"
+	      "Carrier Frequency \\(Hz, Tx/Rx\\) +PCM/1959.*"
+	      "Trellis Code \\(Tx/Rx\\) +-/64S-4D.*"
+	      "Timing Offset \\(ppm\\) +(99|100|101)\r.*"
+	      "PCM Encoding +u-law.*DIAG <2A4D3263 1=8>.*"
+	      "DIAG <2A4D3263 22=1F40>" });
 	/* stage F: rate renegotiations (9.6/V.90).  The digital modem's
 	   (DSP_V34_RENEG on it: upstream to 24 000 bit/s): its Rd, Rd-bar,
 	   TRN2d, MP; our S, S-bar, SCR, CP again, CP', E, B1, data at the

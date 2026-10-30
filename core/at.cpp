@@ -563,6 +563,12 @@ s16 Modem::at_command(char *cmd)
 				ret = at_Z(p, &len);
 				break;
 			case '#':
+				if (starts_nocase(p, "#UD")) {
+					/* Unimodem's diagnostics */
+					unimodem_diag();
+					len = 3;
+					break;
+				}
 				ret = !starts_nocase(p, "#CID") ? -1 :
 					at_CID(p, &len);
 				break;
@@ -896,7 +902,7 @@ s16 Modem::at_H(char *p, s16 *len)
 }
 
 /* ATI<n>: what the modem is, its S-registers, its country, the last
-   call's statistics */
+   call's statistics (ATI6 and ATI11) */
 s16 Modem::at_I(char *p, s16 *len)
 {
 	const char *e;
@@ -932,17 +938,18 @@ s16 Modem::at_I(char *p, s16 *len)
 		crlf();
 		break;
 	case 5:
-	case 6:
-		puts("Stored Profile " + dec(n - 5) + ":");
+		puts("Stored Profile 0:");
 		crlf();
+		break;
+	case 6:
+	case 11:
+		/* (ATI6: USRobotics' link diagnostics) */
+		call_stats();
 		break;
 	case 7:
 		puts("Country: ");
 		puts(country_name().c_str());
 		crlf();
-		break;
-	case 11:
-		call_stats();
 		break;
 	default:
 		return -1;
@@ -1048,7 +1055,7 @@ s16 Modem::at_Z(char *p, s16 *len)
 }
 
 /* AT&V, AT&V0: the active settings, in lines of PROFILE_COLUMNS at
-   most */
+   most; AT&V1: the last call's statistics, as ATI11 */
 s16 Modem::at_ampV(char *p, s16 *len)
 {
 	static const unsigned char regs[] = {
@@ -1079,6 +1086,12 @@ s16 Modem::at_ampV(char *p, s16 *len)
 		col = 0;
 	};
 
+	if (p[2] == '1') {
+		/* AT&V1: the last call's statistics (Rockwell's) */
+		*len = 3;
+		call_stats();
+		return 0;
+	}
 	if (is_digit(p[2]) && p[2] != '0')
 		return -1;
 	*len = 2 + is_digit(p[2]);

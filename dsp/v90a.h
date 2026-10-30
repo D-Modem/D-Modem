@@ -253,6 +253,7 @@ struct V90Rx {
 				   requantized levels fit the DIL's best */
 	s16 dil_robbed;
 	s16 dil_distinct[6];
+	s16 dil_done;           /* dil_analyse() has run */
 
 	/* phase 4: Ri (+ + + - - - of UINFO) frames in a row, Ri-bar's
 	   first symbol; from TRN2d (24 on) the data frames: the

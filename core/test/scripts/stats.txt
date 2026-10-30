@@ -3,10 +3,12 @@
 # 60 ms), in online command state and after it on both sides (our
 # hangup, the remote's cleardown); a V.32bis call with MNP (and MNP 5),
 # then one without error correction, both of which the remote ended
-# (the carrier lost); one nobody answered
+# (the carrier lost); one nobody answered.  AT&V1 and ATI6 are ATI11;
+# AT#UD the same as Unimodem's diagnostics
 A ATE0X3+MS=34\r
 B ATE0\r
 A ATI11\r
+A AT#UD\r
 echo A -12 0 -30 40
 B ATA\r
 A ATD123\r
@@ -18,6 +20,7 @@ run 6000
 A +++
 run 1000
 A ATI11\r
+A AT#UD\r
 A ATO\r
 run 2000
 A +++
@@ -25,8 +28,10 @@ run 1000
 A ATH\r
 until B NO CARRIER 10000
 run 500
-A ATI11\r
-B ATI11\r
+A AT&V1\r
+B ATI6\r
+A AT#UD\r
+B AT#UD\r
 echo A off
 # V.32bis with MNP (and MNP 5): B hangs up
 A AT\\N5+MS=132\r
@@ -44,6 +49,7 @@ hangup B
 until A NO CARRIER 10000
 run 500
 A ATI11\r
+A AT#UD\r
 # without error correction: B hangs up, A's carrier goes
 A AT\\N0\r
 until A OK 1000
@@ -65,3 +71,4 @@ A ATS7=5D\r
 until A NO ANSWER 10000
 run 500
 A ATI11\r
+A AT#UD\r
