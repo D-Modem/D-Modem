@@ -454,6 +454,26 @@ s16 CallerId::process(void *in, s32 count)
 	return 0;
 }
 
+/* see dsplibs.h: the message as if the receiver had it */
+int CID_report(struct modem *m, unsigned cid_val, int packet,
+	       const void *msg, int len)
+{
+	const u8 *b = static_cast<const u8 *>(msg);
+
+	if (len < 3 || len > CID_MAX_MSG || b[1] + 3 != len ||
+	    (b[0] != 0x04 && b[0] != 0x80))
+		return -1;
+	CallerId *c = static_cast<CallerId *>(CID_create(m, 8000, cid_val,
+							 packet));
+	if (!c)
+		return -1;
+	std::memcpy(c->msg, b, len);
+	c->len = static_cast<s16>(len);
+	c->report();
+	CID_delete(c);
+	return 0;
+}
+
 /* CallerId::process() for the C interface */
 int CID_process(void *obj, void *in, int count)
 {

@@ -228,6 +228,12 @@ public:
 	bool local_phone_off_hook() const { return local_phone_off_; }
 	/* a call that rings by itself (SIP): on = false, the caller gave up */
 	void ring_signal(bool on);
+	/* the caller of such a call, ahead of its first ring_signal(): date
+	   the local "MMDDHHMM" (or ""), number and name ("" when not known,
+	   nullptr when withheld); reported after the first RING as caller
+	   ID on the line is, when +VCID asks for it */
+	void caller_id(const char *date, const char *number,
+		       const char *name);
 	/* hang up (ATH, DTR off); hangup_now() also stops at once;
 	   line_dropped(): the line ended the call (a SIP call that is over),
 	   at once */
@@ -571,6 +577,8 @@ private:
 	u32 ring_first_ = 0, ring_last_ = 0;
 	u16 cid_requested_ = 0;
 	void *cid_ = nullptr;
+	/* caller_id()'s MDMF message, until the first RING */
+	std::vector<u8> cid_msg_;
 
 	char dial_string_[128] = {};
 	/* what call progress dials: the dial string, and after a ';'

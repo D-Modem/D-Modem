@@ -728,7 +728,14 @@ on (\cmd{=?} gives \cmd{0,1,2}).  \cmd{1} gives the fields (\cmd{DATE = },
 message in hex (\cmd{MESG = }).  \cmd{+VCID} (V.253's) is the same, in
 every mode.  In voice mode (\cmd{+FCLASS=8}) the lines come as V.253's
 complex event report, between \cmd{<DLE>X} and \cmd{<DLE>.}; in the
-other modes after an empty line.  A SIP call rings without it.
+other modes after an empty line.  A SIP call (dmodemd \cmd{-L}) has
+it after its first RING, from the INVITE: the caller's
+P-Asserted-Identity, else its From (the URI's user part as
+\cmd{NMBR}, the display name as \cmd{NAME}), the date and time the
+host's.  A number or name that is not known is \cmd{O}, one withheld
+(the Privacy header's \cmd{id}, \cmd{user} or \cmd{header}, or an
+anonymous caller) \cmd{P}, as on the line; \cmd{2} gives the MDMF
+message the modem made of them.
 \end{command}
 
 \section{Extended commands}

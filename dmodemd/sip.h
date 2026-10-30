@@ -63,7 +63,9 @@ struct Config {
 bool config_from_env(Config &cfg, bool listen);
 
 /* start the user agent; returns the descriptor its RING and CANCEL lines
-   come on (a call waits for ANSWER, or the caller gave up), T38 and
+   come on (a call waits for ANSWER, or the caller gave up; ahead of the
+   first RING, CALLER with the date, number and name: sip_modem.cpp's
+   caller()), T38 and
    AUDIO (the call's fax went over to T.38, or back), and for a call we
    dial ANSWERED (it is up) or FAILED <SIP status> (it never came up; 0
    for no response), ahead of the end of its audio; or -1.  A call we
@@ -84,6 +86,20 @@ void dial(const char *number, int audio_fd);
    (ATDalice), taken as it is (sip_dial.cpp) */
 std::string dial_user(const char *dial);
 void answer(int audio_fd);
+
+/* the caller of a call that rings, as caller ID gives it: a number and
+   a name, each withheld or not (empty when not known) */
+struct Caller {
+	std::string number, name;
+	bool number_withheld = false, name_withheld = false;
+};
+/* the caller from its address (P-Asserted-Identity's if there is one,
+   else From's): uri its URI (sip:, sips: or tel:), dname its display
+   name, privacy the Privacy header ("" if none: "id", "user" or
+   "header" withhold both, as does an anonymous URI or display name)
+   (sip_dial.cpp) */
+Caller caller_of(const std::string &uri, const std::string &dname,
+		 const std::string &privacy);
 
 /* the format of the current call: 1 mu-law, 2 A-law, 3 CLEARMODE (its
    octets as A-law samples, which give every octet back), 0 not known
