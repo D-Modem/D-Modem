@@ -90,7 +90,7 @@ dmodem_gtest(ring_detect_test LABELS quick)
 # the countries' tones (../tones.cpp, netsim's NET_RING); the ringing through the
 # ring detector to the core: a RING each ring, the auto answer
 dmodem_test_exe(ring_tones_test ring_tones_test.cpp)
-target_link_libraries(ring_tones_test PRIVATE dmodem_core dmodem_dsp
+target_link_libraries(ring_tones_test PRIVATE dmodem_core dmodem_dsp dmodem_t30
 	dmodem_link)
 dmodem_gtest(ring_tones_test LABELS quick)
 # the emulated hardware's mixins (hw/) on a host of the test's own

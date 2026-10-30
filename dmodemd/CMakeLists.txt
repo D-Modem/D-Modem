@@ -254,7 +254,7 @@ if(DMODEM_DMODEMD)
 	if(DMODEM_TESTS AND (ALSA_FOUND OR LIBUSB_FOUND OR _usb_builtin_fakes))
 		add_executable(line_exchange test/line_exchange.cpp)
 		dmodem_flags(line_exchange EXTRA)
-		target_link_libraries(line_exchange PRIVATE dmodem_core dmodem_dsp
+		target_link_libraries(line_exchange PRIVATE dmodem_core dmodem_dsp dmodem_t30
 			dmodem_link ${DMODEM_LIBM} Threads::Threads)
 	endif()
 	# the simulated bare pair of the WB stick's test, on the V.wb tests'
@@ -485,7 +485,7 @@ endif()
 if(NOT WIN32)
 	add_executable(modem_test modem_test.cpp)
 	dmodem_flags(modem_test EXTRA)
-	target_link_libraries(modem_test PRIVATE dmodem_front dmodem_core
+	target_link_libraries(modem_test PRIVATE dmodem_front dmodem_core dmodem_t30
 		dmodem_dsp dmodem_link ${DMODEM_LIBM} Threads::Threads)
 endif()
 

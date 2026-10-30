@@ -67,7 +67,28 @@ A AT+FTM=?\r
 A AT+FRM=?\r
 A AT+FTH=?\r
 A AT+FRH=?\r
+# class 2.0 and 2 (T.32): the settings, either's names; the commands
+# with no call are ERROR (+FKS OK)
+A AT+FCLASS=2.0;+FCLASS?\r
+A AT+FLI="Fax ID with Spaces";+FLI?\r
+A AT+FLI = "a;b" ; +FLI?;+FLI=?\r
+A AT+FLI="123456789012345678901"\r
+A AT+FPI="Poller";+FPI?;+FLP=1;+FLP?;+FSP=1;+FSP?;+FSP=2\r
+A AT+FIS=?;+FIS?;+FIS=0,3;+FIS?\r
+A AT+FCC=1,4,0,2,0,2,0,0;+FIS?;+FCC?\r
+A AT+FIS=1,6\r
+A AT+FBO=1;+FBO?;+FBO=4\r
+A AT+FCR?;+FPS?;+FHS?;+FCS?\r
+A AT+FNR=1,1,1,0;+FNR?;+FIE=0\r
+A AT+FDT\r
+A AT+FDR\r
+A AT+FET=2\r
+A AT+FKS\r
+A AT+FMI?;+FMM;+FMR?\r
+A AT+FTH=3\r
 A AT+FCLASS=2\r
+A AT+FLID?;+FDIS?;+FBOR?;+FHNG?;+FCLASS?\r
+A AT+FCIG?;+FSPL?\r
 A AT+FCLASS=0\r
 A AT+VIP\r
 A AT#CID=?\r

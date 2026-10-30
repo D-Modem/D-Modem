@@ -319,6 +319,8 @@ public:
 	const char *dial_string() const { return dial_string_; }
 	/* data, fax or voice */
 	enum MODEM_MODE mode() const { return mode_; }
+	/* in fax mode, the class: 1, 2, or 20 for 2.0 */
+	u8 fax_class() const { return fax_class_; }
 	/* the call's state */
 	LinkState link_state() const;
 	/* a data connection is (or was, in this call) up */
@@ -473,6 +475,10 @@ private:
 	void voice_init();
 	void fax_process(s16 *in, s16 *out, s32 n);
 	s16 fax_start();
+	void fax_engine_delete();
+	void fax2_reset();
+	bool has_fax2() const;
+	s16 fax2_command(unsigned cmd, unsigned param);
 	void fax_found(const char *why);
 	s16 adaptive_param() const;
 	static void fax_t38_send(void *ctx, const void *ifp);
@@ -506,6 +512,8 @@ private:
 	s16 at_VSM(char *p, s16 *len);
 	s16 at_fax(char *p, s16 *len);
 	s16 fax_command(enum FAX_CMD cmd, u32 val);
+	s16 at_fax2(char *p, s16 *len);
+	std::string fclass() const;
 	s16 at_kept(const char *p, s16 *len);
 	void kept_init();
 	/* a kept parameter's values (its name as kept_params has it) */
@@ -751,6 +759,21 @@ private:
 	dsp::CngDetect *cng_ = nullptr;
 	u16 cng_cut_ = 0;
 	u64 answer_tone_at_ = 0;
+	/* +FCLASS's fax class: 1, 2, or 20 for 2.0 (mode_ is
+	   MODEM_MODE_FAX for each); the engine in fax_ class 2's (FAX2_*) */
+	u8 fax_class_ = 1;
+	bool fax2_ = false;
+	/* class 2 and 2.0 (at_fax2()): +FLI, +FPI, +FCC, +FIS, +FBO, +FCR,
+	   +FPS, +FLP, +FSP;
+	   the last call's +FCS (f2_cs_set_: there was one) and hangup
+	   status (-1: none); the settings it takes and gives back only
+	   (+FNR, +FIE and the like), by name */
+	std::string f2_ident_, f2_pi_;
+	u32 f2_cc_[8] = {}, f2_is_[8] = {}, f2_cs_[8] = {};
+	u32 f2_bo_ = 0, f2_cr_ = 1, f2_ps_ = 1, f2_lp_ = 0, f2_sp_ = 0;
+	bool f2_cs_set_ = false;
+	s16 f2_hangup_ = -1;
+	std::vector<std::pair<std::string, std::string>> f2_other_;
 	/* the call's fax over T.38 (its data octets in a packet) */
 	bool t38_ = false;
 	s32 t38_max_ = 0;

@@ -27,6 +27,7 @@ interface has one addition the original library does not use:
 | `CID_*` | Caller ID: Bell 202 FSK, SDMF and MDMF, formatted (`AT+VCID=1`) or raw hex |
 | `VOICE_*` | IS-101 style voice: 8 bit linear at 8000 Hz with `<DLE>` shielding, `+VTS` tones and DTMF |
 | `FAX_*`, `FAX_class1_command` | T.31 class 1 fax (`AT+FCLASS=1`): V.21 HDLC, V.27ter, V.29 and V.17 (see [Fax](fax.md#fax-class-1)) |
+| `FAX2_*` | T.32 class 2 and 2.0 fax (`AT+FCLASS=2`, `2.0`): T.30 in the modem (`fax_class2.cpp`, in the T.30 library; see [Fax](fax.md#fax-class-2-and-20)) |
 
 ## Data pumps
 
