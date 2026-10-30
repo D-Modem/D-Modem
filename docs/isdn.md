@@ -10,8 +10,8 @@ Phase 1 of ISDN support gave D-Modem a clear 64 kbit/s line mode and
 the two ways for a call to reach it: SIP in CLEARMODE, and an Asterisk
 channel with a digital bearer. Phase 2 runs the B-channel protocols of
 ISDN terminal adapters on it: X.75 and synchronous PPP (`AT+B2`, below),
-and gives Asterisk a CLEARMODE codec (`codec_clearmode`). V.110 and
-V.120 come later.
+and gives Asterisk a CLEARMODE codec (`codec_clearmode`). Phase 3 adds
+V.110 rate adaption (`AT+CBST`) and V.120 (`AT+B2=9`).
 
 ## AT+MS=CLEAR
 
@@ -19,17 +19,23 @@ V.120 come later.
 (`dsp/dp_clear.cpp`):
 
 - No modulation: each octet of the channel carries 8 of the link layer's
-  bits, the first bit the octet's least significant. `CONNECT 64000`,
-  both ways.
+  bits, the first bit the octet's most significant, as I.460 and RFC
+  4040 have it (and Osmocom, and a TDM time slot). `CONNECT 64000`,
+  both ways. (Phases 1 and 2 put the first bit in the least significant
+  bit; a D-Modem built before phase 3 does not understand a newer one's
+  X.75, PPP or V.42 on a clear channel.)
 - No call progress and no answer tone: `ATD` and `ATA` start the pump at
   once, as on a leased line. There is no answer delay (S92) either.
 - What runs on it is `AT+B2`'s: X.75 by default, or sync PPP, or the
   modem's own link (below).
-- The start-up is D-Modem's own, so the far end is another D-Modem: each
-  end sends HDLC flags (`0x7E`) until it has heard 32 of the other's in a
-  row, then 64 more flags, then 64 octets of ones (`0xFF`), and then the
-  link's bits with `CONNECT`. What the far end sends from its ones on
-  goes to the link. No flags within S7 is `NO CARRIER`.
+- The start-up is D-Modem's own: each end sends HDLC flags (`0x7E`)
+  until it has heard 32 of the other's in a row, then 64 more flags,
+  then 64 octets of ones (`0xFF`), and then the link's bits with
+  `CONNECT`. What the far end sends from its ones on goes to the link.
+  Other ISDN equipment sends flags and then its frames with no ones
+  between (an X.75 adapter's SABM): the link takes it from there. No
+  flags within S7 is `NO CARRIER`.
+- With V.110 (`AT+CBST`, below) the start is V.110's own instead.
 - Nothing on a clear channel tells a carrier from none: the call ends
   when the line ends it (a SIP BYE, the PBX's hangup), or with `ATH`.
 - It needs a digital line at 8000 Hz (SIP, a PBX's channel). On an
@@ -93,6 +99,64 @@ stream. A D-Modem from before `AT+B2` speaks this.
 
 MSN selection (isdn4linux's `AT&E`, CAPI's called party number) is not
 done: every number a line brings to the modem is the modem's.
+
+## AT+B2=9: V.120
+
+`AT+B2=9` is V.120 (`link/lapb.cpp`, CAPI's B2 protocol 9), the protocol
+of North American ISDN terminal adapters:
+
+- Q.921's frames: a two octet address for logical link 256 (V.120's
+  default), the caller on the user side (its commands C/R 0, so `08 01`,
+  the called end's `0A 01`).
+- Extended mode: SABME, sequence numbers modulo 128 in two control
+  octets, a window of 7 frames, the same recovery and timers as X.75.
+- Each I frame's information starts with V.120's terminal adaption
+  header, one octet: `0x83` (asynchronous, each frame whole). Whatever
+  header the far end sends, with its extension octets, is taken off.
+- `CONNECT 64000/V.120` with `\V1`; `ATH` sends DISC.
+- Not done: other logical links, more than one at a time, UI frames,
+  the header's break and error bits, and the link's parameters from the
+  call's low layer compatibility.
+
+## AT+CBST: V.110 rate adaption
+
+V.110 carries a slower user rate in a 64 kbit/s channel: 80 bit frames
+at an intermediate rate of 8, 16, 32 or 64 kbit/s (RA1), that rate in
+the first 1, 2, 4 or 8 bits of each octet, the rest ones (RA2). ISDN
+terminal adapters used it, and GSM's circuit switched data still rides
+on it through the network (Osmocom). `dsp/v110.cpp` has the frames,
+`dsp/dp_clear.cpp` runs them.
+
+`AT+CBST=<speed>[,<name>[,<ce>]]` is 27.007's bearer service command:
+
+| `<speed>` | user rate | intermediate rate |
+|---|---|---|
+| `0` (default) | no V.110 (the answerer takes the caller's) | |
+| `65` | 300 (on 600's frames, each bit twice) | 8k |
+| `66`, `68`, `70` | 1200, 2400, 4800 | 8k |
+| `71` | 9600 | 16k |
+| `75`, `79` | 14400, 19200 | 32k |
+| `80`, `81` | 28800, 38400 | 64k |
+| `83` | 56000 (7 bits an octet, no frames) | 64k |
+
+- `<name>` `0` (default) is asynchronous: the DTE's characters as start
+  and stop bits at the user rate, through the modem's link whatever
+  `AT+B2` says (`\N0` for plain characters, or V.42 if both ends ask
+  for it). `1` is synchronous: `AT+B2`'s X.75, V.120 or PPP in HDLC at
+  the user rate. `<ce>` has no use here (0 or 1).
+- Each end sends frames with S and X OFF and its data bits ones until it
+  has frame sync (three good alignment patterns in a row), then S and X
+  ON. `CONNECT <rate>` once in sync with the other end's X ON (`CONNECT
+  9600/V.110` with `\V1` and no V.42). The user's bits go to the link
+  while the other end's S bits are ON; three bad patterns in a row lose
+  sync, and it is found again.
+- An answerer with `AT+CBST=0` looks for the caller's frames at each
+  intermediate rate while it waits for D-Modem's flags. The first rate in
+  sync gives the user rate by its E bits: 600 to 38400, including 7200,
+  12000 and 24000, which have no `<speed>` here. 300 is found as 600,
+  and 56000 not at all: set them on the answerer too.
+- 48000 bit/s and the network independent clocking bits (E4 to E6) are
+  not done.
 
 ## dmodemd: SIP in CLEARMODE
 
@@ -181,8 +245,17 @@ every call runs the clear channel pump, and `dmodem_process_g711()` takes
 the octets as they are. `dsp/test/clear_call_test.cpp` has two modems on
 a simulated clear channel: `CONNECT 64000`, 200 kB each way through
 V.42, every octet value without V.42, a late answerer, no answerer, a
-nailed-up channel, and X.75 and PPP checked frame by frame against a
-decoder of the test's own (with lost audio and a release for X.75).
+nailed-up channel, X.75, V.120 and PPP checked frame by frame against
+a decoder of the test's own (with lost audio and a release for X.75 and
+V.120), V.110 at each `+CBST` rate with its frames checked the same way
+and found by the answerer, V.42 over V.110, X.75 and V.120 over
+synchronous V.110, and another device's HDLC start with no ones.
+
+`dsp/test/v110_osmo_test.cpp` runs V.110 against libosmocore's own (the
+V.110 code GSM's circuit switched data uses in Osmocom), both ways at
+each rate it has: built when CMake's `OSMOCORE_SRC` names a libosmocore
+source tree (1.14 or later); only its `src/isdn/v110.c` is compiled, into
+the test.
 
 ## What comes next
 
@@ -190,5 +263,6 @@ The feasibility study's later phases build on this line mode:
 
 1. Done: X.75 and sync PPP (`AT+B2`), and `codec_clearmode`. Still to
    come here: V.42bis over X.75, and MSN selection.
-2. V.110 and V.120 rate adaption, and mISDN for BRI cards on Linux.
+2. Done: V.110 (`AT+CBST`) and V.120 (`AT+B2=9`). Next: mISDN for BRI
+   cards on Linux.
 3. Maybe CAPI 2.0 emulation, and hardware.

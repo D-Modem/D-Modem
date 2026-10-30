@@ -882,17 +882,14 @@ with an unrestricted digital bearer): no modulation, each of the
 channel's octets 8 bits of the link's, \cmd{CONNECT 64000} both ways.
 It starts at once on \cmd{ATD} and \cmd{ATA}, with no call progress
 and no answer tone, with a start-up of D-Modem's own (HDLC flags each
-way, then ones), so the far end is another D-Modem; V.42 and the
-compressions run over it as over any modulation.  A line that says its
+way, then ones; another device's flags and then its frames are taken
+too); V.42 and the compressions run over it as over any modulation.
+Each octet's first bit is its most significant (I.460, RFC 4040).  A line that says its
 call is clear (dmodemd's SIP for a CLEARMODE call, \cmd{app\_dmodem}
 for an ISDN data call) runs it whatever \cmd{+MS} says.  What runs
-on the channel is \cmdl[plusB2]{+B2}'s, X.75 by default.  See
+on the channel is \cmdl[plusB2]{+B2}'s, X.75 by default, or V.110's
+rate adaption with \cmdl[plusCBST]{+CBST}.  See
 \cmd{docs/isdn.md}.
-
-\emph{Pending:} ISDN's second phase, X.75 and synchronous PPP on the
-clear channel and the command that chooses them (\cmd{AT+B2}, with
-CAPI's layer 2 numbers), is being added; this edition does not
-describe it yet.
 \end{command}
 
 \begin{command}{plusMS-q}{AT+MS?}
@@ -1150,9 +1147,29 @@ DTE speaks PPP's asynchronous framing (RFC 1662, as pppd does on a
 serial port), each frame goes to the line in HDLC with its escapes
 undone and comes back escaped, \cmd{/PPP} with \cmd{\bs V1}.
 \cmd{7} is the modem's link (V.42, MNP or plain characters, as
-\cmdl[bsN]{\bs N} says), for the clear channel of an earlier
-D-Modem.  \cmd{+B2?} gives \cmd{+B2: 0}, \cmd{=?} \cmd{+B2: (0,5,7)};
+\cmdl[bsN]{\bs N} says).  \cmd{9} is V.120 (Q.921's frames for
+logical link 256 in extended mode, each I frame's information after
+V.120's header octet \cmd{0x83}), \cmd{/V.120} with \cmd{\bs V1}.
+\cmd{+B2?} gives \cmd{+B2: 0}, \cmd{=?} \cmd{+B2: (0,5,7,9)};
 \cmdl[ampV]{\&V} lists it.
+\end{command}
+
+\subsection{V.110 rate adaption: +CBST}
+
+\begin{command}{plusCBST}{AT+CBST=[\p{speed}][,[\p{name}][,[\p{ce}]]], AT+CBST?, AT+CBST=?}
+27.007's bearer service: \p{speed} a V.110 user rate on a clear
+channel (\cmdl[plusMS]{+MS=CLEAR}): \cmd{65} 300, \cmd{66} 1200,
+\cmd{68} 2400, \cmd{70} 4800, \cmd{71} 9600, \cmd{75} 14400,
+\cmd{79} 19200, \cmd{80} 28800, \cmd{81} 38400, \cmd{83} 56000
+bit/s; \cmd{0} (the default) none, when an answerer takes the rate of
+the caller's frames (600 to 38400) if they come.  \p{name} \cmd{0}
+(the default) is asynchronous: the DTE's characters through the
+modem's link (\cmdl[bsN]{\bs N}) whatever \cmdl[plusB2]{+B2} says;
+\cmd{1} synchronous: \cmd{+B2}'s protocol in HDLC at the user rate.
+\p{ce} has no use here.  \cmd{CONNECT} gives the user rate (with
+\cmdl[bsV]{\bs V1} and no V.42, \cmd{/V.110}).  \cmd{+CBST?} gives
+\cmd{+CBST: 0,0,0}; \cmdl[ampV]{\&V} lists it.  See
+\cmd{docs/isdn.md}.
 \end{command}
 
 \subsection{Fax class 1}
