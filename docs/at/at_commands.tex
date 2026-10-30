@@ -80,6 +80,11 @@
 % examples of what the modem says: small enough for 72 columns (AT&V's)
 % across the A5 page
 \AtBeginEnvironment{verbatim}{\footnotesize}
+% and on a tint of their own, so that they stand out from the text
+\definecolor{dmcode}{HTML}{F1F3F8}
+\tcolorboxenvironment{verbatim}{enhanced,breakable,colback=dmcode,
+  colframe=dmcode,boxrule=0pt,arc=2pt,left=4pt,right=4pt,top=3pt,
+  bottom=3pt,before skip=6pt,after skip=6pt}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.6ex}
 
