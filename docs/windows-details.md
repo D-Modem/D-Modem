@@ -1,4 +1,6 @@
-# D-Modem on Windows
+# D-Modem on Windows: technical details
+
+This is the technical companion to [windows.md](windows.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 dmodemd builds for 64-bit Windows with MinGW-w64 (Clang or GCC) or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  The USB modems (Smart Link's SmartUSB56, the pico-serial Line and Agere's USB 2.0 soft modem) are dmodemd.exe's lines too (`--usb`, on WinUSB).  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 

@@ -1,4 +1,6 @@
-# V.wb: wideband DMT on a bare pair
+# V.wb: wideband DMT on a bare pair: technical details
+
+This is the technical companion to [vwb.md](vwb.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `AT+MS=VWB` (or `AT+MS=200`) runs D-Modem's own wideband mode; on a
 line at 48000 Hz and more it is the default, the only mode there. It is

@@ -1,4 +1,6 @@
-# The data link layer
+# The data link layer: technical details
+
+This is the technical companion to [link.md](link.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `link/` is what goes on between the DTE's characters and the data pump's
 bits once a call has connected (C++, `namespace dlink`):

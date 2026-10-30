@@ -1,4 +1,6 @@
-# ISDN: the clear 64 kbit/s channel
+# ISDN: the clear 64 kbit/s channel: technical details
+
+This is the technical companion to [isdn.md](isdn.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 An ISDN B-channel carries 64 kbit/s: 8000 octets a second each way. A
 voice call puts G.711 audio in those octets, and every D-Modem mode

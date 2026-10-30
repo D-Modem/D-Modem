@@ -1,4 +1,6 @@
-# V.cvm: data over mobile speech paths
+# V.cvm: data over mobile speech paths: technical details
+
+This is the technical companion to [vcvm.md](vcvm.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `AT+MS=VCVM` runs the DCE of the proposed Recommendation in
 [docs/cellular](../cellular/v_cvm.tex) ([v_cvm.pdf](../v_cvm.pdf)): data

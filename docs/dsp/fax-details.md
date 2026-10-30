@@ -1,4 +1,6 @@
-# Fax
+# Fax: technical details
+
+This is the technical companion to [fax.md](fax.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 ## Fax (class 1)
 

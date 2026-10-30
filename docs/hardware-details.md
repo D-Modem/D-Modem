@@ -1,4 +1,6 @@
-# Softmodem hardware: dmodemd on ALSA and USB
+# Softmodem hardware: dmodemd on ALSA and USB: technical details
+
+This is the technical companion to [hardware.md](hardware.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 dmodemd's line is normally a SIP call. With `-a` it is instead a
 softmodem's codec on a telephone line, through ALSA. With `--usb` it is

@@ -1,4 +1,6 @@
-# The Agere USB 2.0 soft modem
+# The Agere USB 2.0 soft modem: technical details
+
+This is the technical companion to [agere-usb.md](agere-usb.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 Agere Systems' USB soft modem, later LSI's, is USB `047E:2892`; its Linux driver also takes
 `047E:2828`. It is sold under other names: one copy came in a "Hiro" box with Agere's own

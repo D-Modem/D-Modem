@@ -1,4 +1,6 @@
-# Interop tests against other soft modems
+# Interop tests against other soft modems: technical details
+
+This is the technical companion to [interop.md](interop.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 Calls between the open modem and other soft modems: Smart Link's on
 our modem core, the Agere, SM56, PCTel, HSF and Intel ones each in user

@@ -1,4 +1,6 @@
-# V.90 analogue modem
+# V.90 analogue modem: technical details
+
+This is the technical companion to [v90a.md](v90a.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 The open DSP has V.90 as the digital modem (see [V.90](v90.md)), the
 end of the call on the 8000 Hz G.711 network. This is the plan for the

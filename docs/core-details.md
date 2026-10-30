@@ -1,4 +1,6 @@
-# The modem core
+# The modem core: technical details
+
+This is the technical companion to [core.md](core.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `core/` is the part of the modem between the DTE and the data pumps (C++,
 `namespace dcore`, `dcore.h`):

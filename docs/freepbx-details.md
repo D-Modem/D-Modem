@@ -1,4 +1,6 @@
-# FreePBX: the D-Modem module
+# FreePBX: the D-Modem module: technical details
+
+This is the technical companion to [freepbx.md](freepbx.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `freepbx/dmodem/` is a FreePBX module (FreePBX 16 and 17) for
 [app_dmodem](asterisk.md) or [dmodem-ari](ari.md): the modem's profiles

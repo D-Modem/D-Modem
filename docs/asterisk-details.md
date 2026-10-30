@@ -1,4 +1,6 @@
-# app_dmodem: a data modem on an Asterisk channel
+# app_dmodem: a data modem on an Asterisk channel: technical details
+
+This is the technical companion to [asterisk.md](asterisk.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 > **Build it yourself; don't ship it.** A built `app_dmodem.so` has
 > libdmodem (AGPL-3.0) inside a module of Asterisk (GPL-2.0-only), two

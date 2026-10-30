@@ -1,4 +1,6 @@
-# K56flex
+# K56flex: technical details
+
+This is the technical companion to [k56flex.md](k56flex.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 K56flex is Rockwell's and Lucent's 56k PCM protocol from before V.90. There is
 no public specification. This page records what is known of it from the one

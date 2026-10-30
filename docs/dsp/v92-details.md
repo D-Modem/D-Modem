@@ -1,4 +1,6 @@
-# V.92
+# V.92: technical details
+
+This is the technical companion to [v92.md](v92.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 V.92 on the digital modem's side: quick connect, modem-on-hold and PCM upstream (with its rate renegotiation and fast parameter exchange).
 

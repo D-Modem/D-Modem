@@ -1,4 +1,6 @@
-# The SmartUSB56 under Windows: Creative's Modem Blaster V.92 USB
+# The SmartUSB56 under Windows: Creative's Modem Blaster V.92 USB: technical details
+
+This is the technical companion to [smartusb56-windows.md](smartusb56-windows.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 This is what Smart Link's Windows drivers for the ST7554 USB modem do, as
 shipped by Creative for the **Modem Blaster V.92 USB (DE5671)**: driver

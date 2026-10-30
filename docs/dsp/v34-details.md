@@ -1,4 +1,6 @@
-# V.8 and V.34
+# V.8 and V.34: technical details
+
+This is the technical companion to [v34.md](v34.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `dp_v34.cpp` runs the start-up, `v34_modem.cpp` the primary channel training
 signals and receiver, `v34_data.cpp` the data mode, `v34_tables.cpp` the

@@ -1,4 +1,6 @@
-# Open data pumps for D-Modem
+# Open data pumps for D-Modem: technical details
+
+This is the technical companion to [README.md](README.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `dsp/` is a reimplementation (C++) of the interface that the
 binary-only `dsplibs.o` (Smart Link's DSP library) gives to Smart Link's
