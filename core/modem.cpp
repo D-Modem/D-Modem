@@ -1679,6 +1679,12 @@ void Modem::change_dp()
 		   (dp_runtime_set_analog()) */
 		if (host_.analog_line(*this) && id == DP_V91)
 			id = DP_V34;
+		/* a clear channel has its own pump, and an analogue line
+		   none */
+		if (clear_channel())
+			id = DP_CLEAR;
+		else if (host_.analog_line(*this) && id == DP_CLEAR)
+			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
 				      id == DP_V92 || id == DP_VCVM ?
 			      static_cast<u32>(DP_V8) :
@@ -1795,7 +1801,7 @@ s16 Modem::dial(const char *number)
 /* see dcore.h */
 bool Modem::leased_direct() const
 {
-	if (wideband())
+	if (wideband() || clear_channel())
 		return true;
 	if (!sregs_[SREG_LEASED])
 		return false;
@@ -1813,6 +1819,15 @@ bool Modem::leased_direct() const
 	default:
 		return false;
 	}
+}
+
+/* see dcore.h */
+bool Modem::clear_channel() const
+{
+	Modem &self = const_cast<Modem &>(*this);
+	if (srate_ != 8000 || host_.analog_line(self))
+		return false;
+	return sregs_[SREG_DP] == DP_CLEAR || host_.clear_line(self);
 }
 
 /* call progress has dialled up to the ';': the call is held in command
@@ -1865,7 +1880,8 @@ s16 Modem::answer(bool adaptive)
 	/* a voice call's held line: off hook a while already */
 	bool held = voice_held_;
 
-	if (held)
+	/* (and a clear channel has no answer tone to hold back) */
+	if (held || clear_channel())
 		delay = srate_ / 100;
 	voice_held_ = false;
 

@@ -104,6 +104,11 @@ public:
 	   V.34).  Else the line is a digital network's (SIP, a PBX's
 	   channel), which dials the number */
 	virtual bool analog_line(Modem &m) { (void)m; return false; }
+	/* the call is a clear 64 kbit/s digital channel (an ISDN data
+	   call: a SIP call in CLEARMODE, a PBX's call with a digital
+	   bearer): the modem runs its clear channel pump (DP_CLEAR) on
+	   it, whatever +MS says, with no call progress */
+	virtual bool clear_line(Modem &m) { (void)m; return false; }
 	/* the line tells when a phone on the modem's own jack (the local
 	   phone, V.253's) goes off or on hook (Modem::local_phone()) */
 	virtual bool senses_local_phone(Modem &m) { (void)m; return false; }
@@ -285,6 +290,10 @@ public:
 	   which have no answer tone to wait for;
 	   the voice band's others listen for the answerer's tone first */
 	bool leased_direct() const;
+	/* the call is on a clear 64 kbit/s channel: +MS=CLEAR, or the
+	   line says so (Host::clear_line()), on a digital line at 8000 Hz:
+	   the clear channel pump at once, as on a leased line */
+	bool clear_channel() const;
 	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
 	/* we dialled */

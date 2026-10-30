@@ -89,6 +89,8 @@ public:
 
 	/* ATA now; false if the modem can't (a call is on) */
 	bool answer() { return dmodem_answer(p_) == 0; }
+	/* (dmodem_set_clear()) */
+	void set_clear(bool clear) { dmodem_set_clear(p_, clear); }
 	/* ATD<number> as a command; true (how it goes: the link's state) */
 	bool dial(const std::string &number)
 	{

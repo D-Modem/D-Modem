@@ -140,6 +140,12 @@ dmodem_test_exe(leased_call_test leased_call_test.cpp)
 target_include_directories(leased_call_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
 target_link_libraries(leased_call_test PRIVATE dmodem)
 dmodem_gtest(leased_call_test LABELS quick)
+# the clear 64 kbit/s channel (AT+MS=CLEAR): two libdmodem modems on a
+# simulated digital channel
+dmodem_test_exe(clear_call_test clear_call_test.cpp)
+target_include_directories(clear_call_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
+target_link_libraries(clear_call_test PRIVATE dmodem)
+dmodem_gtest(clear_call_test LABELS quick)
 foreach(_t vcvm_test vcvm_startup_test vcvm_data_test)
 	if(AMR_FOUND)
 		target_compile_definitions(${_t} PRIVATE DMODEM_HAVE_AMR)

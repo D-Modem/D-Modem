@@ -137,6 +137,9 @@ enum { MQ_DIAL, MQ_ANSWER, MQ_MODEM_GONE, MQ_QUIT };
    events (hook flash), the longest one (its 16 bit duration, in
    samples), the copies of its last packet */
 const s16 TE_PT = 101;
+/* RFC 4040's CLEARMODE (a 64 kbit/s clear channel): the payload type of
+   ours in an offer */
+const s16 CLEAR_PT = 97;
 const u16 EV_FLASH = 16;
 const u32 EV_MAX = 65535;
 const s16 EV_ENDS = 3;
@@ -148,7 +151,14 @@ s32 log_level = 4;
 
 dmd::LineRecorder rec;
 int ctl[2] = { -1, -1 };        /* our lines: written to [0] */
+/* the current call's format: 1 PCMU, 2 PCMA, 3 CLEARMODE (its octets
+   taken as A-law samples, which give each one back), 0 not known yet */
 std::atomic<s16> law_{0};
+/* the current call is a clear channel: its offer asked for CLEARMODE
+   first, or its audio is in CLEARMODE */
+std::atomic<bool> clear_{false};
+/* the modem wants a clear channel: our offers have CLEARMODE first */
+std::atomic<bool> want_clear_{false};
 /* the current call's telephone-event payload type (the far end's), -1
    if it has none; a hook flash asked for (ms), 0 if none */
 std::atomic<s16> te_pt_{-1};
@@ -491,8 +501,9 @@ s16 line_of(const Sdp &s, bool t38)
 	return -1;
 }
 
-/* the first G.711 format of audio line m, its law into *law (1 mu-law,
-   2 A-law); -1 if it has none */
+/* the first G.711 format of audio line m, or CLEARMODE (RFC 4040)
+   unless $SIP_CLEARMODE is "no", its law into *law (1 mu-law, 2 A-law,
+   3 CLEARMODE); -1 if it has none */
 s16 g711_pt(const SdpMedia &m, s16 *law)
 {
 	for (const std::string &f : m.fmts) {
@@ -515,6 +526,9 @@ s16 g711_pt(const SdpMedia &m, s16 *law)
 			*law = 1;
 		else if (enc.compare(0, 9, "pcma/8000") == 0)
 			*law = 2;
+		else if (cfg_.clearmode &&
+			 enc.compare(0, 14, "clearmode/8000") == 0)
+			*law = 3;
 		else
 			continue;
 		return static_cast<s16>(pt);
@@ -610,7 +624,8 @@ Line audio_answer(const Sdp &s, const SdpMedia &m)
 	std::string d = direction(s, m);
 
 	l.pt = g711_pt(m, &l.law);
-	l.te = te_pt(m);
+	/* (no events on a clear channel: their tones would be data) */
+	l.te = l.law == 3 ? -1 : te_pt(m);
 	l.dir = d == "sendonly" ? "recvonly" : d == "recvonly" ? "sendonly" :
 		d == "inactive" ? "inactive" : "sendrecv";
 	return l;
@@ -991,7 +1006,7 @@ private:
 					static_cast<u32>(b[4]) << 24 |
 						u32{b[5]} << 16 |
 						u32{b[6]} << 8 | b[7],
-					b + h, end - h, l == 2);
+					b + h, end - h, l >= 2);
 			if (why)
 				say(3, "call %" PRIu32 ": the jitter buffer "
 				    "starts over (%s)", serial_, why);
@@ -1025,7 +1040,7 @@ private:
 
 		header(p, pt, marker_, ts_);
 		for (u16 i = 0; i < SAMPLES; i++)
-			p[12 + i] = dsp::g711::encode(law == 2, out[i]);
+			p[12 + i] = dsp::g711::encode(law >= 2, out[i]);
 		(void)sendto(rtp_, reinterpret_cast<const char *>(p), sizeof(p),
 			     MSG_DONTWAIT,
 			     reinterpret_cast<const struct sockaddr *>(&peer),
@@ -1249,8 +1264,14 @@ struct Call {
 					" RTP/AVP ";
 				if (l.pt < 0) {
 					std::string te = std::to_string(TE_PT);
-					m += "0 8 " + te + "\r\n"
-						"a=rtpmap:0 PCMU/8000\r\n"
+					std::string cl = std::to_string(CLEAR_PT);
+					bool clear = want_clear_ && cfg_.clearmode;
+					m += (clear ? cl + " 8 0 " : "0 8 ") + te +
+						"\r\n";
+					if (clear)
+						m += "a=rtpmap:" + cl +
+							" CLEARMODE/8000\r\n";
+					m += "a=rtpmap:0 PCMU/8000\r\n"
 						"a=rtpmap:8 PCMA/8000\r\n"
 						"a=rtpmap:" + te +
 						" telephone-event/8000\r\n"
@@ -1260,7 +1281,8 @@ struct Call {
 					std::string te = std::to_string(l.te);
 					m += pt + (l.te >= 0 ? " " + te : "") +
 						"\r\na=rtpmap:" + pt +
-						(l.law == 2 ? " PCMA" : " PCMU") +
+						(l.law == 3 ? " CLEARMODE" :
+						 l.law == 2 ? " PCMA" : " PCMU") +
 						"/8000\r\n";
 					if (l.te >= 0)
 						m += "a=rtpmap:" + te +
@@ -1342,6 +1364,7 @@ void end_call()
 		return;
 	cur = nullptr;
 	te_pt_ = -1;
+	clear_ = false;
 	flash_ms_ = 0;
 	tmr_cancel(&c->ring_tmr);
 	tmr_cancel(&c->poll_tmr);
@@ -1432,18 +1455,20 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 		    m.addr.c_str());
 		return false;
 	}
-	s16 te = te_pt(m);
+	s16 te = law == 3 ? -1 : te_pt(m);
 	c->media->remote(a, len, pt, law, te,
 			 d != "sendonly" && d != "inactive" &&
 			 m.addr != "0.0.0.0");
 	law_ = law;
 	te_pt_ = te;
+	clear_ = law == 3;
 	if (!c->audio_up) {
 		c->audio_up = true;
 		say(3, "call %" PRIu32 ": media up%s, %s, to %s:%" PRId32,
 		    c->serial,
 		    c->incoming || c->confirmed ? "" : " (early media)",
-		    law == 1 ? "PCMU" : "PCMA", m.addr.c_str(), m.port);
+		    law == 1 ? "PCMU" : law == 2 ? "PCMA" : "CLEARMODE",
+		    m.addr.c_str(), m.port);
 	}
 	c->media->active(true);
 	if (c->t38) {
@@ -1585,7 +1610,7 @@ int on_answer(const struct sip_msg *msg, void *arg)
 	}
 	Line l = c->offered[i];
 	l.pt = g711_pt(s.media[i], &l.law);
-	l.te = te_pt(s.media[i]);
+	l.te = l.law == 3 ? -1 : te_pt(s.media[i]);
 	if (l.pt < 0 || !take_audio(c, s, s.media[i])) {
 		say(1, "call %" PRIu32 ": an answer without G.711", c->serial);
 		return c->confirmed ? 0 : EPROTO;
@@ -1760,6 +1785,8 @@ void on_invite(const struct sip_msg *msg, void *)
 	c->incoming = c->ringing = true;
 	c->have_offer = sdp;
 	c->offer = s;
+	/* (an ISDN data call: the modem answers on a clear channel) */
+	clear_ = sdp && law == 3;
 	c->ip = ip_of(&msg->dst);
 	cur = c;
 	err = sipsess_accept(&c->sess, sock_, msg, 180, "Ringing",
@@ -2019,6 +2046,7 @@ bool init()
 	quitting = sip_closing = sip_closed = registered = false;
 	law_ = 0;
 	te_pt_ = -1;
+	clear_ = false;
 	flash_ms_ = 0;
 
 	err = libre_init();
@@ -2137,6 +2165,7 @@ bool config_from_env(Config &cfg, bool listen)
 	const char *port = getenv("SIP_PORT");
 	const char *rec_base = getenv("DMODEM_REC");
 	const char *t38 = getenv("SIP_T38");
+	const char *clearmode = getenv("SIP_CLEARMODE");
 	std::string s = login ? login : "";
 	size_t at = s.rfind('@');
 	size_t colon = s.find(':');
@@ -2164,6 +2193,11 @@ bool config_from_env(Config &cfg, bool listen)
 			    std::string_view(t38) == "0" ||
 			    dcore::same_nocase(t38, "off") ||
 			    dcore::same_nocase(t38, "false"));
+	cfg.clearmode = !clearmode ||
+		!(dcore::same_nocase(clearmode, "no") ||
+		  std::string_view(clearmode) == "0" ||
+		  dcore::same_nocase(clearmode, "off") ||
+		  dcore::same_nocase(clearmode, "false"));
 	return true;
 }
 
@@ -2249,6 +2283,18 @@ void answer(int audio_fd)
 s16 law()
 {
 	return law_;
+}
+
+/* see sip.h */
+bool clear()
+{
+	return clear_;
+}
+
+/* see sip.h */
+void set_clear(bool want)
+{
+	want_clear_ = want;
 }
 
 /* see sip.h */

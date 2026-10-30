@@ -85,6 +85,8 @@ public:
 		return dte_.write(buf, n);
 	}
 	void t38_send(dcore::Modem &m, const void *ifp) override;
+	/* a call in CLEARMODE, or offered it first: an ISDN data call */
+	bool clear_line(dcore::Modem &) override { return sip::clear(); }
 	/* a hook flash: an RFC 4733 event on the call, if it has them */
 	bool can_flash(dcore::Modem &) override {
 		return audio_ >= 0 && sip::can_flash();
@@ -181,6 +183,7 @@ s16 SipLine::start(dcore::Modem &m)
 	}
 	audio_ = sv[0];
 	carry_n_ = 0;
+	sip::set_clear(m.sreg(SREG_DP) == DP_CLEAR);
 	if (m.caller()) {
 		DBG("off hook: dialling %s\n", m.dial_string());
 		sip::dial(m.dial_string(), sv[1]);
@@ -249,8 +252,9 @@ s16 SipLine::audio(dcore::Modem &m)
 		std::fill_n(out, count, 0);
 	} else {
 		s16 law = sip::law();
+		/* (CLEARMODE's octets are A-law samples) */
 		if (law)
-			m.set_line_law(law);
+			m.set_line_law(law == 3 ? 2 : law);
 		m.process(in, out, count);
 		if (speaker_level_ > 0 && speaker_to.audio)
 			speaker_to.audio(in, out, count);

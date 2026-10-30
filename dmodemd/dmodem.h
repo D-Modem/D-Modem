@@ -53,6 +53,12 @@ struct dmodem_config {
 	   +VTS with ! is an ERROR */
 	void (*hook_flash)(void *arg, unsigned ms);
 	void *hook_flash_arg;
+	/* 1: the line is a clear 64 kbit/s digital channel (an ISDN data
+	   call, a SIP call in CLEARMODE): the modem runs its clear channel
+	   pump (AT+MS=CLEAR) on every call, whatever +MS says, and
+	   dmodem_process_g711() takes the channel's octets as they are
+	   (law is then A-law, the law that gives every octet back) */
+	int clear;
 };
 
 enum dmodem_link { DMODEM_IDLE, DMODEM_CONNECTING, DMODEM_ONLINE,
@@ -101,6 +107,11 @@ void dmodem_process(struct dmodem *d, const int16_t *in, int16_t *out,
    configuration, mu-law if unknown) */
 void dmodem_process_g711(struct dmodem *d, const unsigned char *in,
 			 unsigned char *out, int32_t n);
+/* the line is a clear 64 kbit/s channel from now on (1), or a G.711
+   one again (0): as dmodem_config's clear, for a program that learns it
+   with each call (the bearer of a PBX's call); before the call's
+   dmodem_answer() or dmodem_dial() */
+void dmodem_set_clear(struct dmodem *d, int clear);
 /* take what the DTE wrote (call it when dte_fd is readable, or with each
    block of samples); returns -1 when the DTE side is closed */
 int  dmodem_poll_dte(struct dmodem *d);

@@ -138,6 +138,9 @@ enum DP_ID {
 	DP_V32      = 32,
 	DP_V34      = 34,
 	DP_K56      = 56,       /* K56flex: the core runs V.90 for it */
+	DP_CLEAR    = 64,       /* a clear 64 kbit/s digital channel (an
+				   ISDN B-channel's data call): no
+				   modulation, 8 bits an octet */
 	DP_V90      = 90,
 	DP_V91      = 91,
 	DP_V92      = 92,

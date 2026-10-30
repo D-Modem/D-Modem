@@ -138,6 +138,11 @@ The modem needs the line's audio as it is, so:
 
 - The RTP stream should be steady: packet loss or clock slips show as
   line errors, which V.42 retransmits but which can drop a fast connect.
+- An ISDN data call (an unrestricted digital bearer, chan_dahdi's on a
+  BRI or PRI span) is a clear 64 kbit/s channel: the modem runs
+  `AT+MS=CLEAR` on the channel's octets as they are, for another
+  D-Modem's clear channel.  The profile's `clear` (`auto`, `yes` or
+  `no`) chooses; see [isdn.md](isdn.md).
 
 ## Building
 

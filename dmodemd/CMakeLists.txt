@@ -350,6 +350,13 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_root PROPERTIES LABELS quick
 			SKIP_RETURN_CODE 77 TIMEOUT 60)
+		# the clear 64 kbit/s channel over SIP (CLEARMODE), against
+		# the script's own SIP peer and clear channel
+		dmodem_add_test(dmodemd_clearmode ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/clearmode_test.py
+			$<TARGET_FILE:dmodemd>)
+		set_tests_properties(dmodemd_clearmode PROPERTIES LABELS quick
+			TIMEOUT 60)
 		dmodem_add_test(hda_modem_setup ${Python3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/test/hda_modem_setup_test.py
 			${CMAKE_CURRENT_SOURCE_DIR}/hda-modem-setup)

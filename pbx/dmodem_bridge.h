@@ -53,6 +53,13 @@ struct dmbridge_host {
 
 enum dmbridge_mode { DMBRIDGE_TCP, DMBRIDGE_UNIX, DMBRIDGE_EXEC };
 
+/* a profile's clear option: the call a clear 64 kbit/s channel (an ISDN
+   data call: the modem's clear channel pump, AT+MS=CLEAR, on the
+   channel's octets as they are) when the PBX says the call's bearer is
+   unrestricted digital, always, or never */
+enum dmbridge_clear { DMBRIDGE_CLEAR_AUTO, DMBRIDGE_CLEAR_YES,
+		      DMBRIDGE_CLEAR_NO };
+
 /* fax: the PBX's general settings have the defaults, a profile its own */
 struct dmbridge_fax {
 	int on;                 /* a fax caller is received */
@@ -74,6 +81,7 @@ struct dmbridge_profile {
 	char init[128];         /* extra AT commands, e.g. +MS=34 */
 	char answer[128];       /* the command line that answers (ATA) */
 	enum dmodem_law law;    /* DMODEM_LAW_UNKNOWN: the channel's */
+	enum dmbridge_clear clear;
 	int timeout;            /* seconds to connect */
 	struct dmbridge_fax fax;
 };
@@ -95,7 +103,7 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
    there) */
 void dmbridge_profile_init(struct dmbridge_profile *p);
 /* a profile's option (mode, host, port, path, header, command, init,
-   answer, law, timeout and the fax ones); 0 if name is something else.
+   answer, law, clear, timeout and the fax ones); 0 if name is something else.
    where: the profile, for the log ("[bbs]", "profile bbs") */
 int dmbridge_profile_option(const struct dmbridge_host *h,
 			    struct dmbridge_profile *p, const char *where,
@@ -145,6 +153,10 @@ struct dmbridge_call {
 	const struct dmbridge_profile *p;
 	struct dmodem_status st;
 	int orig, online;
+	/* the module's: the call's bearer is unrestricted digital (with
+	   the profile's clear auto, a clear channel), before
+	   dmbridge_call_start() */
+	int digital;
 	int dte[2];             /* the modem's DTE, and ours */
 	int fd;                 /* the server's socket or the program's pty */
 	int connecting;         /* the TCP connect's result comes on it */

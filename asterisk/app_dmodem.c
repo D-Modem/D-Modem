@@ -35,6 +35,7 @@
 #include "asterisk/channel.h"
 #include "asterisk/config.h"
 #include "asterisk/format_cache.h"
+#include "asterisk/transcap.h"
 #include "asterisk/frame.h"
 #include "asterisk/localtime.h"
 #include "asterisk/logger.h"
@@ -74,6 +75,12 @@
 			<para>The channel should be G.711 (ulaw or alaw) without transcoding,
 			echo cancellation, jitter buffer or silence suppression on the way;
 			V.90 needs the G.711 octets end to end.</para>
+			<para>An ISDN data call (an unrestricted digital bearer, such as
+			chan_dahdi's on a BRI or PRI span) runs the modem on a clear
+			64 kbit/s channel instead (<literal>AT+MS=CLEAR</literal>, the
+			channel's octets as they are, for another D-Modem's clear
+			channel), unless the profile has <literal>clear=no</literal>;
+			<literal>clear=yes</literal> does it for every call.</para>
 			<para>Sets these variables on exit:</para>
 			<variablelist>
 				<variable name="DMODEMSTATUS">
@@ -606,7 +613,13 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 		goto out;
 	orig = args.options && strchr(args.options, 'o');
 
-	law = p.law ? p.law : channel_law(chan);
+	/* an ISDN data call (chan_dahdi's on a BRI or PRI: an unrestricted
+	   digital bearer): the channel's octets as they come, in its own
+	   format, for the modem's clear channel */
+	c.digital = ast_channel_transfercapability(chan) ==
+		AST_TRANS_CAP_DIGITAL;
+	law = p.law && !(c.digital && p.clear != DMBRIDGE_CLEAR_NO) ?
+		p.law : channel_law(chan);
 	fmt = law == DMODEM_LAW_ALAW ? ast_format_alaw : ast_format_ulaw;
 	if (ast_channel_state(chan) != AST_STATE_UP && ast_answer(chan)) {
 		status = "HANGUP";
