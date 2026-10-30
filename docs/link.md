@@ -52,6 +52,10 @@ bits once a call has connected (C++, `namespace dlink`):
   of up to 256 octets (2048 taken), REJ recovery, T1 (1 s and the time
   of the frames in flight) and N2 = 4, DISC on hangup. See
   [isdn.md](isdn.md).
+- **V.120** (`Lapb` again) over HDLC, with `AT+B2=9`: the same
+  procedures in extended mode (modulo 128, SABME), Q.921's two octet
+  address for logical link 256, and V.120's terminal adaption header
+  (`0x83`) before each I frame's information.
 - **Sync PPP** (`PppSync`, `ppp_sync.cpp`) over HDLC, with `AT+B2=5`:
   the DTE's PPP frames in asynchronous framing (RFC 1662) unescaped, FCS
   checked, each one an HDLC frame on the line; the line's frames back to

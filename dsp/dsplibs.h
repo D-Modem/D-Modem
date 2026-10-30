@@ -52,6 +52,12 @@ void dp_runtime_set_law(void *runtime, int law);
    or 8000 Hz), where the V.34 pump is V.90's analogue modem; 0 (the
    default): an 8000 Hz line is the G.711 network, the digital modem's */
 void dp_runtime_set_analog(void *runtime, int analog);
+/* a clear channel's V.110 user rate (300 to 56000, AT+CBST) for the
+   call's pump, 0 for none: then the answerer runs V.110 at the rate of
+   the caller's frames if they come, else D-Modem's clear channel */
+void dp_runtime_set_v110(void *runtime, long rate);
+/* the V.110 user rate the clear pump runs at, 0 for none */
+long dp_runtime_v110(void *runtime);
 /* 1 while a pump takes the line's exact PCM codes (V.91), when the core
    must not remove DC from them; else 0 */
 int dp_runtime_pcm(void *runtime);

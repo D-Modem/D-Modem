@@ -9,7 +9,7 @@
 # it hears 32 of ours, 64 more, 64 octets of ones, then data) with plain
 # asynchronous characters (start bit, 8 data bits, stop bit; \N0 at
 # dmodemd, and AT+B2=7, the modem link, as a clear channel's default
-# is X.75), each octet's first bit its least significant.
+# is X.75), each octet's first bit its most significant (I.460, RFC 4040).
 #
 # Out: dmodemd (AT\N0+B2=7+MS=CLEAR) dials; its offer must have CLEARMODE
 # first, then PCMA and PCMU; we answer in CLEARMODE; CONNECT 64000 at
@@ -73,7 +73,7 @@ class ClearEnd:
             bits = self.tx_bits[:8]
             del self.tx_bits[:8]
         bits += [1] * (8 - len(bits))
-        return sum(b << k for k, b in enumerate(bits))
+        return sum(b << (7 - k) for k, b in enumerate(bits))
     # an octet received
     def in_octet(self, o):
         if not self.heard:
@@ -84,7 +84,7 @@ class ClearEnd:
             self.open = o == ONES
             if not self.open:
                 return
-        self.rx_bits += [(o >> k) & 1 for k in range(8)]
+        self.rx_bits += [(o >> (7 - k)) & 1 for k in range(8)]
         while True:
             try:
                 i = self.rx_bits.index(0)

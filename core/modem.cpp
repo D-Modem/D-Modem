@@ -56,6 +56,10 @@ extern "C" int dp_runtime_pcm(void *runtime) DCORE_WEAK;
 /* an analogue line for the pumps (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_analog(void *runtime, int analog)
 	DCORE_WEAK;
+/* a clear channel's V.110 rate for the pump, and the one it runs at
+   (dsplibs.h): weak as well */
+extern "C" void dp_runtime_set_v110(void *runtime, long rate) DCORE_WEAK;
+extern "C" long dp_runtime_v110(void *runtime) DCORE_WEAK;
 /* the fax engine's CED cut short after an answer tone (dsplibs.h):
    Smart Link's library's fax engine has none */
 extern "C" void FAX_answer_tone(void *obj, unsigned ms) DCORE_WEAK;
@@ -516,7 +520,8 @@ void Modem::hup(bool local)
 	case ONLINE:
 	case COMMAND_ONLINE:
 		if (local && (cfg_.ec || cfg_.mnp_on ||
-			      link_->protocol() == dlink::Protocol::X75)) {
+			      link_->protocol() == dlink::Protocol::X75 ||
+			      link_->protocol() == dlink::Protocol::V120)) {
 			link_->disconnect();
 			set_state(EC_DISC);
 		} else {
@@ -873,12 +878,13 @@ s16 Modem::link_init()
 	c.zstd = c.ec && c.comp && dsz[0];
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
+	v110_ = false;
 	/* +B2: on a clear channel (an ISDN B-channel) X.75 or PPP in place
 	   of the modem's link layer */
 	if (clear_channel()) {
 		const u32 b2 = kept("+B2")[0];
 		c.b2 = b2 == 0 ? dlink::B2::X75 : b2 == 5 ? dlink::B2::Ppp :
-			dlink::B2::Modem;
+			b2 == 9 ? dlink::B2::V120 : dlink::B2::Modem;
 	}
 	if (c.sync) {
 		/* +ESA: <trans_idle>, <framed_idle>, <framed_un_ov>,
@@ -923,6 +929,10 @@ const char *Modem::protocol_name() const
 		return "X.75";
 	if (link_->protocol() == dlink::Protocol::Ppp)
 		return "PPP";
+	if (link_->protocol() == dlink::Protocol::V120)
+		return "V.120";
+	if (v110_ && !cfg_.ec && !cfg_.mnp_on)
+		return "V.110";
 	return cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : "NONE";
 }
 
@@ -966,6 +976,13 @@ void Modem::update_status(Status s)
 			   only if both have the preset (Annex F) */
 			link_->set_zstd(vcvm_.zstd != 0, vcvm_.v44_preset != 0);
 		}
+		/* V.110 on a clear channel: asynchronous (+CBST's
+		   <name> 0), the DTE's characters (or V.42) through the
+		   modem's link whatever +B2 says */
+		v110_ = clear_channel() && DCORE_HAS(dp_runtime_v110) &&
+			dp_runtime_ && dp_runtime_v110(dp_runtime_);
+		if (v110_ && !kept("+CBST")[1])
+			link_->set_b2(dlink::B2::Modem);
 		set_state(EC_ESTAB);
 		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
 			     !(caller_ && dsp_info_.qc_lapm) &&
@@ -1699,9 +1716,11 @@ void Modem::change_dp()
 			id = DP_V34;
 		/* a clear channel has its own pump, and an analogue line
 		   none */
-		if (clear_channel())
+		if (clear_channel()) {
 			id = DP_CLEAR;
-		else if (host_.analog_line(*this) && id == DP_CLEAR)
+			if (DCORE_HAS(dp_runtime_set_v110) && dp_runtime_)
+				dp_runtime_set_v110(dp_runtime_, cbst_rate());
+		} else if (host_.analog_line(*this) && id == DP_CLEAR)
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
 				      id == DP_V92 || id == DP_VCVM ?
@@ -1836,6 +1855,24 @@ bool Modem::leased_direct() const
 			!host_.analog_line(const_cast<Modem &>(*this));
 	default:
 		return false;
+	}
+}
+
+/* +CBST's <speed> as a V.110 user rate (27.007 6.7), 0 for none */
+s32 Modem::cbst_rate() const
+{
+	switch (kept("+CBST")[0]) {
+	case 65: return 300;
+	case 66: return 1200;
+	case 68: return 2400;
+	case 70: return 4800;
+	case 71: return 9600;
+	case 75: return 14400;
+	case 79: return 19200;
+	case 80: return 28800;
+	case 81: return 38400;
+	case 83: return 56000;
+	default: return 0;
 	}
 }
 

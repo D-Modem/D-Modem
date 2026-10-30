@@ -308,7 +308,7 @@ give.
 \cmdl[ampB]{\&B\p{n}} & V.32 retrain (accepted). & \cmdl[plusDS]{+DS} & V.42bis. \\ \hline
 \cmdl[ampC]{\&C\p{n}} & Data carrier detect (kept). & \cmdl[plusDS44]{+DS44} & V.44. \\ \hline
 \cmdl[ampD]{\&D\p{n}} & Data terminal ready (accepted). & \cmdl[plusDSZ]{+DSZ} & zstd compression. \\ \hline
-\cmdl[ampE]{\&E\p{n}} & Rate in CONNECT (kept). & \cmdl[plusB2]{+B2} & B-channel protocol. \\ \hline
+\cmdl[ampE]{\&E\p{n}} & Rate in CONNECT (kept). & \cmdl[plusB2]{+B2, +CBST} & B-channel protocol, V.110. \\ \hline
 \cmdl[ampF]{\&F\p{n}} & Factory defaults (accepted). & \cmdl[plusIFC]{+IFC, +ICF, +IPR} & DTE interface. \\ \hline
 \cmdl[ampG]{\&G\p{n}} & Guard tone (accepted). & \cmdl[plusILRR]{+ILRR, +IDSR, +ILSD} & DTE interface (kept). \\ \hline
 \cmdl[ampH]{\&H\p{n}} & Flow control (kept). & \cmdl[plusMR]{+MR, +ER, +DR} & Reports (kept). \\ \hline
@@ -1705,11 +1705,13 @@ channel, such as an ISDN B-channel's data call (a SIP call in
 CLEARMODE, RFC 4040, or a PBX's call with an unrestricted digital
 bearer): no modulation, each of the channel's octets 8 bits of the
 link's, \cmd{CONNECT 64000} both ways.  It starts at once on \cmd{ATD}
-and \cmd{ATA}, with no call progress and no answer tone.  A line that
+and \cmd{ATA}, with no call progress and no answer tone.  Each octet's
+first bit is its most significant (I.460, RFC 4040).  A line that
 says its call is clear (dmodemd's SIP for a CLEARMODE call,
 \cmd{app\_dmodem} for an ISDN data call) runs it whatever \cmd{+MS}
 says.  What runs on the channel is \cmdl[plusB2]{+B2}'s, X.75 by
-default.  See \cmd{docs/isdn.md}.
+default, or V.110's rate adaption with \cmdl[plusCBST]{+CBST}.  See
+\cmd{docs/isdn.md}.
 \end{command}
 
 \subsection{Identification and country}
@@ -1974,10 +1976,10 @@ it.
 \begin{syntax}
 \item +B2=\p{n}
 \item +B2? (gives \cmd{+B2: 0})
-\item +B2=? (gives \cmd{+B2: (0,5,7)})
+\item +B2=? (gives \cmd{+B2: (0,5,7,9)})
 \end{syntax}
 \begin{results}
-\item OK if \p{n} = 0, 5 or 7.
+\item OK if \p{n} = 0, 5, 7 or 9.
 \item ERROR otherwise.
 \end{results}
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+B2 Values}
@@ -1993,6 +1995,40 @@ it.
   \cmd{\bs V1}. \\ \hline
 7 & The modem's link (V.42, MNP or plain characters, as \cmdl[bsN]{\bs N}
   says), for the clear channel of an earlier D-Modem. \\ \hline
+9 & V.120 (Q.921's frames for logical link 256 in extended mode, each I
+  frame's information after V.120's header octet \cmd{0x83}), the
+  protocol of North American terminal adapters; \cmd{/V.120} with
+  \cmd{\bs V1}. \\ \hline
+\end{vtable}
+\end{command}
+
+\begin{command}{plusCBST}{+CBST}{Bearer Service Type (V.110)}
+27.007's bearer service: V.110's rate adaption on a clear channel
+(\cmdl[plusMS]{+MS=CLEAR}).  \p{name} \cmd{0} (the default) is
+asynchronous: the DTE's characters through the modem's link
+(\cmdl[bsN]{\bs N}) whatever \cmdl[plusB2]{+B2} says; \cmd{1} is
+synchronous: \cmd{+B2}'s protocol in HDLC at the user rate.  \p{ce}
+has no use here.  \cmd{CONNECT} gives the user rate (with
+\cmdl[bsV]{\bs V1} and no V.42, \cmd{/V.110}).  \cmdl[ampV]{\&V} lists
+it.  See \cmd{docs/isdn.md}.
+\begin{syntax}
+\item +CBST=[\p{speed}][,[\p{name}][,[\p{ce}]]]
+\item +CBST? (gives \cmd{+CBST: 0,0,0})
+\item +CBST=?
+\end{syntax}
+\begin{results}
+\item OK for a \p{speed} below, \p{name} 0 or 1, \p{ce} 0 or 1.
+\item ERROR otherwise.
+\end{results}
+\begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+CBST Speeds}
+  {\thd{Value} & \thd{User rate}}
+0 & None (default): an answerer takes the rate of the caller's frames
+  (600 to 38400) if they come. \\ \hline
+65, 66, 68, 70 & 300, 1200, 2400, 4800 bit/s (intermediate rate 8k). \\ \hline
+71 & 9600 bit/s (16k). \\ \hline
+75, 79 & 14400, 19200 bit/s (32k). \\ \hline
+80, 81 & 28800, 38400 bit/s (64k). \\ \hline
+83 & 56000 bit/s (7 bits an octet, no frames). \\ \hline
 \end{vtable}
 \end{command}
 

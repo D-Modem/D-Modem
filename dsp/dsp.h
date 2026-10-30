@@ -74,6 +74,11 @@ struct dp_runtime {
 	s16 pcm;                /* V.91: the received codes as they are
 				   (no DC removal) */
 	s16 analog;             /* an analogue line (dp_runtime_set_analog) */
+	s32 v110;               /* a clear channel's V.110 user rate
+				   (+CBST), 0 for none (the answerer then
+				   finds one the caller sends) */
+	s32 v110_rate;          /* the clear pump's: the V.110 user rate
+				   the call runs at, 0 for none */
 	s16 vcvm_peer;          /* V.8 agreed on V.cvm: the peer's ... */
 	unsigned char vcvm_info[2];     /* ... information field (Annex A) */
 };

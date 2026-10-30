@@ -3,7 +3,8 @@
 # with GCC's C++ library (libstdc++; g++ and g++-multilib stay for it).
 #
 # build: everything (with the 32 bit interop test programs, against Smart
-# Link's original DSP library) and the offline tests.  The interop calls
+# Link's original DSP library) and the offline tests, V.110's against
+# libosmocore's (dsp/test/v110_osmo_test.cpp, its 1.14.2 source cloned).  The interop calls
 # (ctest -L "smartlink|agere|open" -j16, about a minute) are left out:
 # they depend on the runner's timing.
 #
@@ -112,8 +113,17 @@ jobs:
           key: ccache-build-${{ github.sha }}
           restore-keys: ccache-build-
 
+      # libosmocore's V.110, the other end of v110_osmo_test
+      - name: libosmocore
+        run: |
+          git clone --depth 1 -b 1.14.2 \
+            https://gitea.osmocom.org/osmocom/libosmocore.git \
+            "$RUNNER_TEMP/libosmocore"
+
       - name: Configure
-        run: cmake -B build -G Ninja -DDMODEM_WERROR=ON
+        run: |
+          cmake -B build -G Ninja -DDMODEM_WERROR=ON \
+            -DOSMOCORE_SRC="$RUNNER_TEMP/libosmocore"
 
       - name: Build
         run: cmake --build build && ccache -s
