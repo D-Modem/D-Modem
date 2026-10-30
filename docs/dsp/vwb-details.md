@@ -1,6 +1,6 @@
 # V.wb: wideband DMT on a bare pair: technical details
 
-This is the technical companion to [vwb.md](vwb.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [V.wb: wideband on a bare pair](vwb.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `AT+MS=VWB` (or `AT+MS=200`) runs D-Modem's own wideband mode; on a
 line at 48000 Hz and more it is the default, the only mode there. It is
@@ -226,7 +226,7 @@ The other results:
   HostLatency), the call connects as before; V.42 then carries 83 kbit/s
   each way (LAPM's window waits a longer round trip). dmodemd itself
   runs the call between two fake WB sticks on this pair in real time
-  (`dmodemd/test/pico_wb_test.py`, [hardware.md](../hardware.md#pico-serial-wb-wideband-bare-pair)).
+  (`dmodemd/test/pico_wb_test.py`, [hardware.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
 - **Dropout.** A 0.5 s cut of the pair costs one retrain. The data goes
   on after it, and LAPM sends again what was lost.
 - **CPU.** One end takes about 1.5% of one x86 core at 96 kHz.
@@ -238,4 +238,4 @@ The other results:
 - V.42's extended windows, which a long interleaver, and a host's
   buffers, would need.
 - A real pair, and a real WB stick (dmodemd's `--usb` drives it:
-  [hardware.md](../hardware.md#pico-serial-wb-wideband-bare-pair)).
+  [hardware.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).

@@ -1,6 +1,6 @@
 # D-Modem on Windows: technical details
 
-This is the technical companion to [windows.md](windows.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [D-Modem on Windows](windows.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 dmodemd builds for 64-bit Windows with MinGW-w64 (Clang or GCC) or with Microsoft's compiler (MSVC).  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice), and T.38.  The USB modems (Smart Link's SmartUSB56, the pico-serial Line and Agere's USB 2.0 soft modem) are dmodemd.exe's lines too (`--usb`, on WinUSB).  Linux's pty becomes one of four DTEs: a COM port, a named pipe, D-Modem's own virtual modem driver or a TCP connection.  libdmodem (`dmodemd/dmodem.h`) and `libdmodem_sip.a` build for Windows too.
 
@@ -149,7 +149,7 @@ The tests cover both ways under Wine:
 
 ### USB modems (`--usb`)
 
-dmodemd.exe drives Smart Link's SmartUSB56 (ST7554, USB `0483:7554`), the pico-serial Line stick (`1209:0002`) and the pico-serial WB stick (`1209:0003`, a bare pair: [hardware.md](hardware.md#pico-serial-wb-wideband-bare-pair)) as dmodemd does on Linux ([hardware.md](hardware.md#smart-link-smartusb56)). There is no SIP then: the line is the modem's telephone line, and the DTE is any of the others (TCP, a COM port, a pipe, the virtual modem driver's port). The same code runs both:
+dmodemd.exe drives Smart Link's SmartUSB56 (ST7554, USB `0483:7554`), the pico-serial Line stick (`1209:0002`) and the pico-serial WB stick (`1209:0003`, a bare pair: [hardware.md](hardware-details.md#pico-serial-wb-wideband-bare-pair)) as dmodemd does on Linux ([hardware.md](hardware-details.md#smart-link-smartusb56)). There is no SIP then: the line is the modem's telephone line, and the DTE is any of the others (TCP, a COM port, a pipe, the virtual modem driver's port). The same code runs both:
 - the samples are isochronous transfers;
 - the hook and the ring detector go through the device's own requests and its interrupt endpoint;
 - the pico-serial Line gets caller ID and the country's line settings.

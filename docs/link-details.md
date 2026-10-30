@@ -1,6 +1,6 @@
 # The data link layer: technical details
 
-This is the technical companion to [link.md](link.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [The data link layer](link.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `link/` is what goes on between the DTE's characters and the data pump's
 bits once a call has connected (C++, `namespace dlink`):
@@ -146,7 +146,7 @@ then goes back to that state rather than to empty ones. On a V.cvm call
 where both DCEs indicate it, the core tells the link
 (`Link::set_v44_preset()`) and both ends prime with
 `link/v44_preset.cpp`'s text once XID agrees on V.44
-([vcvm.md](dsp/vcvm.md#compression-v44-with-a-preset-dictionary)).
+([vcvm.md](dsp/vcvm-details.md#compression-v44-with-a-preset-dictionary)).
 
 ## zstd
 
@@ -490,7 +490,7 @@ Not there: NRZI, V.34 half duplex (`<hd_auto>`, `<EM><pri>`, `<ctl>`...), and
 staying off hook after `<EM><eot>`. +ES's 5 and 7 (Synchronous Mode, Frame Tunnelling
 Mode) are not taken.
 
-Against the other modems (`ctest -R _v80_`, [interop.md](interop.md#v80)):
+Against the other modems (`ctest -R _v80_`, [interop.md](interop-details.md#v80)):
 the Agere and Broadcom modems (one V.80 code) and the SM56 modem take
 our frames whole, with no FCS and with FCS-16, and we take theirs; the
 Intel modem takes ours, but its own end in 16 1s. Agere and Broadcom drop

@@ -1,6 +1,6 @@
 # V.91 digital to digital: technical details
 
-This is the technical companion to [v91.md](v91.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [V.91: digital to digital](v91.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `v91.cpp` is ITU-T V.91 (05/99), started by the V.34 pump when both CM and
 JM have V.91 in their PCM modem availability octet (b7): two digital

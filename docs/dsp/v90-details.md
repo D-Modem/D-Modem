@@ -1,6 +1,6 @@
 # V.90 digital modem: technical details
 
-This is the technical companion to [v90.md](v90.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [V.90: the digital modem](v90.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `v90.cpp` is the digital modem's PCM transmitter, `dp_v34.cpp` runs its
 start-up on top of the V.34 pump. The modem has to run at 8000 Hz on a

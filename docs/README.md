@@ -1,79 +1,94 @@
-# D-Modem technical documentation
+# D-Modem documentation
 
-The project's overview, building and usage are in the top
-[README](../README.md). These are the technical documents.
+The project's overview, how to build it and how to use it are in the
+main [README](../README.md). This folder explains how each part works.
+
+Each page is written in plain English and covers what the part does, how
+to use it, and its current status. Each one links to a **technical
+details** page beside it (named `<page>-details.md`) with the full
+technical description: the code's names, the standards' clause numbers,
+measurements, and test lists.
+
+## A few words used throughout
+
+- **DTE**: the computer or program that uses the modem, such as a
+  terminal, `pppd` or a fax program. It talks to the modem with AT
+  commands.
+- **Data pump**: the part of the modem that turns data into sound and
+  back.
+- **SIP**: the standard for internet telephone calls. `dmodemd` makes
+  its calls over SIP unless it is driving modem hardware.
+- **G.711**: the plain digital audio format of the telephone network
+  (in two flavours, µ-law and A-law). Fast modem calls need it all the
+  way, unconverted.
+- **V.something**: the ITU-T standards that define modems, such as V.34
+  or V.92. [The list](specs/README.md) shows which D-Modem implements.
 
 ## The modem
 
-- [DSP: the open data pumps](dsp/README.md): the interface to the modem
-  core, the pumps (V.21 to V.34), the QAM receiver and the code structure
-  - [V.8 and V.34](dsp/v34.md)
-  - [V.90 digital modem](dsp/v90.md)
-  - [V.90 analogue modem](dsp/v90a.md): the plan, phases 1 to 4 and the data mode
-  - [V.92](dsp/v92.md): quick connect, modem-on-hold, PCM upstream
-  - [V.91 digital to digital](dsp/v91.md)
-  - [Fax](dsp/fax.md): class 1 modems and the T.30 fax machine
-- [The data link layer](link.md): V.42 (LAPM), MNP 2 to 4, V.42bis, V.44,
-  MNP 5, V.80 synchronous access
-- [The modem core](core.md): AT commands, S-registers, the call's state
-  machine
-- [ISDN: the clear 64 kbit/s channel](isdn.md): `AT+MS=CLEAR`, SIP in
-  CLEARMODE (RFC 4040), ISDN data calls through Asterisk
-- [Leased lines and dry pairs](leased.md): `AT&L1` and `AT&L2`, the 4-wire
-  pumps (V.29, V.33, V.27ter), retrains, V.54's loop tests and V.52's
-  self-test (`AT&T`), V.13's simulated carrier (S48)
+- [The data pumps](dsp/README.md): the modem standards, from 300 bit/s
+  to 56k and beyond
+  - [V.8 and V.34](dsp/v34.md): agreeing on a standard, and the fastest
+    analogue modem
+  - [V.90: the digital modem](dsp/v90.md): D-Modem as the 56k server
+  - [V.90 and V.92: the analogue modem](dsp/v90a.md): D-Modem as the
+    customer's 56k modem
+  - [V.92](dsp/v92.md): quick connect, modem-on-hold and faster uploads
+  - [V.91](dsp/v91.md): about 62000 bit/s between two digital modems
+  - [V.cvm](dsp/vcvm.md): data through mobile phone calls
+  - [V.wb](dsp/vwb.md): about 149000 bit/s on a bare pair of wires
+  - [K56flex](dsp/k56flex.md): the older 56k standard (not supported yet)
+  - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
+    machine, and fax over the internet (T.38)
+- [The data link layer](link.md): error correction and compression
+- [The modem core](core.md): AT commands, settings and how a call runs
+- [ISDN](isdn.md): 64000 bit/s ISDN data calls
+- [Leased lines and dry pairs](leased.md): private circuits with no
+  telephone exchange, and their line tests
 
-## Telephony
+## Phone systems
 
-- [Asterisk: app_dmodem](asterisk.md)
-- [FreePBX: the D-Modem module](freepbx.md): the profiles as destinations,
-  dmodem.conf and the dialplan, a check of the trunks for modem calls
-- [FreeSWITCH: mod_dmodem](freeswitch.md)
-- [Softmodem hardware](hardware.md): dmodemd on an AC'97 or HD-audio
-  modem codec through ALSA (`-a`)
-- [The SmartUSB56 under Windows](smartusb56-windows.md): what Smart Link's
-  Windows drivers for the ST7554 (Creative's Modem Blaster V.92 USB) do
-- [Windows](windows.md): dmodemd for Windows (MSVC, MinGW-w64), its DTE a COM
-  port (com0com), a named pipe (a VM's COM port) or TCP, and its tests
-  under Wine
-- [Haiku](haiku.md): dmodemd for Haiku (BeOS's successor), built there or
-  from Linux with a sysroot of Haiku's packages
-- [macOS](macos.md): dmodemd for macOS 11 and later (Apple silicon and
-  Intel, universal), its USB modems through libusb's IOKit backend
+- [Asterisk: app_dmodem](asterisk.md): a modem module for Asterisk
+- [dmodem-ari](ari.md): the same, as a separate program beside Asterisk
+- [FreePBX](freepbx.md): set up D-Modem from FreePBX's web interface
+- [FreeSWITCH: mod_dmodem](freeswitch.md): a modem module for
+  FreeSWITCH
+
+## Hardware and operating systems
+
+- [Softmodem hardware](hardware.md): PC modem chips and USB modems on a
+  real phone line
+- [The Agere USB 2.0 soft modem](agere-usb.md)
+- [The SmartUSB56 under Windows](smartusb56-windows.md): what Smart
+  Link's Windows driver taught us
+- [Windows](windows.md)
+- [macOS](macos.md)
+- [Haiku](haiku.md)
 
 ## Testing
 
-- [Building and testing](testing.md): the test programs, netsim (the
-  simulated G.711 network) and the interop calls
-- [Interop against other soft modems](interop.md): Agere, spandsp,
-  Motorola SM56, PCTel HSP, Conexant HSF, Broadcom (its Windows driver)
+- [Building and testing](testing.md)
+- [Interop against other soft modems](interop.md): D-Modem tested
+  against other companies' modems
 
 ## Review
 
-- [Code review (October 2026)](review.md): what was fixed, and the
-  findings still open
+- [Code review (October 2026)](review.md): what a full review of the code
+  found and fixed
 
 ## References
 
-- [ITU-T Recommendations](specs/README.md): the ones implemented, with
-  links and a script that downloads them
-- [AT command reference](at_commands.pdf): the commands D-Modem's
-  modem core takes (dmodemd, libdmodem, the PBX modules), its result
-  codes and S-registers, on A5 pages (half an A4 sheet); the
-  [booklet](at_commands-booklet.pdf) has them two to an A4 sheet, to
-  print on both sides (flip on the short edge), fold and staple.  Its
-  LaTeX source is [at/](at/at_commands.tex), `docs/at/build.sh` builds
-  both
-- [Data over mobile telephony's speech paths](v_cvm.pdf): a proposed
-  Recommendation, in the form of an ITU-T Recommendation, for a modem
-  through the AMR, AMR-WB and EVS codecs of VoLTE and VoNR calls, built on
-  V.8, V.21, V.22, V.34's probing, V.42, V.44 and T.38, with a parametric
-  mode on the codec's own pitch lag for the codec modes no waveform
-  passes, and measurements of what the codecs do to modem signals
-  (D-Modem's modems through them, waveform and pulse-train probes); its
-  LaTeX source is [cellular/](cellular/v_cvm.tex),
-  `docs/cellular/build.sh` builds it and `cellular/measure/` repeats the
-  measurements
-- [legacy/ST56ATCommands.pdf](legacy/ST56ATCommands.pdf): the AT command
-  set of Smart Link's ST56 modems, which D-Modem's own command set began
-  as
+- [ITU-T Recommendations](specs/README.md): the standards D-Modem
+  implements, with a script that downloads them
+- [AT command reference](at_commands.pdf): every command, result code and
+  S-register, on A5 pages. The [booklet](at_commands-booklet.pdf) has
+  the same two to an A4 sheet, to print on both sides (flip on the short
+  edge), fold and staple. `docs/at/build.sh` builds both from
+  [the LaTeX source](at/at_commands.tex).
+- [Data over mobile telephony's speech paths](v_cvm.pdf): D-Modem's
+  proposed V.cvm standard, written as an ITU-T Recommendation, with
+  measurements of what mobile codecs do to modem signals. Its source is
+  in [cellular/](cellular/v_cvm.tex); `docs/cellular/build.sh` builds it
+  and `cellular/measure/` repeats the measurements.
+- [Smart Link's ST56 AT commands](legacy/ST56ATCommands.pdf): the
+  original command set D-Modem's began from

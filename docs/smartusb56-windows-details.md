@@ -1,13 +1,13 @@
 # The SmartUSB56 under Windows: Creative's Modem Blaster V.92 USB: technical details
 
-This is the technical companion to [smartusb56-windows.md](smartusb56-windows.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [The SmartUSB56 under Windows](smartusb56-windows.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 This is what Smart Link's Windows drivers for the ST7554 USB modem do, as
 shipped by Creative for the **Modem Blaster V.92 USB (DE5671)**: driver
 3.00.04 (October/November 2002) for Windows 98, ME, 2000 and XP. It was
 read from the binaries with REA and objdump (see
 [Method](#method)); nothing in the package was run. The hardware is
-the one `dmodemd --usb` drives ([hardware.md](hardware.md#smart-link-smartusb56)),
+the one `dmodemd --usb` drives ([hardware.md](hardware-details.md#smart-link-smartusb56)),
 from Smart Link's Linux driver (`st7554.c` of slmodem 2.9.11). This page
 is mostly about what Windows does that Linux does not.
 

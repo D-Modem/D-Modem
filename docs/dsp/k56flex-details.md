@@ -1,11 +1,11 @@
 # K56flex: technical details
 
-This is the technical companion to [k56flex.md](k56flex.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [K56flex](k56flex.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 K56flex is Rockwell's and Lucent's 56k PCM protocol from before V.90. There is
 no public specification. This page records what is known of it from the one
 K56flex client we have, Motorola's SM56 soft modem (`sm56.ko`, the
-"A56" code; see [interop](../interop.md#against-the-motorola-sm56-soft-modem)),
+"A56" code; see [interop](../interop-details.md#against-the-motorola-sm56-soft-modem)),
 as the start of a K56flex **server** (digital modem) on the V.90 server code.
 
 Status:

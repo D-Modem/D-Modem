@@ -1,6 +1,6 @@
 # V.90 analogue modem: technical details
 
-This is the technical companion to [v90a.md](v90a.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [V.90 and V.92: the analogue modem](v90a.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 The open DSP has V.90 as the digital modem (see [V.90](v90.md)), the
 end of the call on the 8000 Hz G.711 network. This is the plan for the
@@ -747,7 +747,7 @@ after our QC1a).
   with its prefilter some 100 in FB1u's 2688 bits, about as with the
   original library (154); with its plain precoder none in either, since
   its receiver takes the restart at B1u as this modem makes it
-  ([v92.md](v92.md#v92-pcm-upstream): the trellis paths to
+  ([v92.md](v92-details.md#v92-pcm-upstream): the trellis paths to
   their end, then from state 0, the descrambler from zero, the
   precoder's earlier outputs in the feedback). Before that FB1u's
   last frames and B1u's first two or three often had tens of errors.

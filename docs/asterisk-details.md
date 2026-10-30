@@ -1,6 +1,6 @@
 # app_dmodem: a data modem on an Asterisk channel: technical details
 
-This is the technical companion to [asterisk.md](asterisk.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [Asterisk: app_dmodem](asterisk.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 > **Build it yourself; don't ship it.** A built `app_dmodem.so` has
 > libdmodem (AGPL-3.0) inside a module of Asterisk (GPL-2.0-only), two
@@ -41,7 +41,7 @@ See [dmodem.conf.sample](../asterisk/dmodem.conf.sample) for all the options.
 The same calls and faxes can go to [dmodem-ari](ari.md) instead, D-Modem
 as an ARI application beside Asterisk (`Stasis(dmodem,bbs)`,
 `Stasis(dmodem,receivefax,<file>)`), with the same profiles: no module in
-Asterisk. Its faxes go over T.38 as the module's do ([ari.md](ari.md#t38)).
+Asterisk. Its faxes go over T.38 as the module's do ([ari.md](ari-details.md#t38)).
 
 The modem answers with `ATA`. A profile's `answer` gives the command line
 it answers with instead, with commands for the answering call alone
@@ -283,7 +283,7 @@ packages it needs and how to point the tests at it (`PATH`,
 `AST_MODULES`, `AST_DATA`, and `-DASTERISK_INCLUDE_DIR` for the build).
 
 `ARI=1` runs these tests (and `test/sip.sh`) through
-[dmodem-ari](ari.md#testing) instead of the module.
+[dmodem-ari](ari-details.md#testing) instead of the module.
 
 `VOICE=1 test/sip.sh` is dmodemd in voice mode: Asterisk calls it, it
 answers with `AT+FCLASS=8` and `AT+VLS=1`, and plays

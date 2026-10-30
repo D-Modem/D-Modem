@@ -1,11 +1,13 @@
 # ITU-T Recommendations
 
-The Recommendations the modem implements, and where. ITU-T publishes them
-free of charge at itu.int but does not allow copies to be redistributed,
-so the PDFs are not part of the repository: `docs/specs/fetch.sh`
-downloads the latest in-force English edition of each into this
-directory (`fetch.sh V.34 T.30` for some of them only), where the
-links below the table then work.
+These are the standards (ITU-T "Recommendations") that D-Modem
+implements, and where each one lives in the code.
+
+ITU-T publishes them free of charge at itu.int, but does not allow
+copies to be shared, so they are not in the repository. Run
+`docs/specs/fetch.sh` to download the current English edition of each
+into this folder (`fetch.sh V.34 T.30` fetches just those two). The
+"Local copy" links below then work.
 
 | Recommendation | Subject | In D-Modem | Local copy |
 |---|---|---|---|
@@ -41,10 +43,11 @@ links below the table then work.
 | [V.250](https://www.itu.int/rec/T-REC-V.250) | AT commands | `core/at.cpp` | [V.250.pdf](V.250.pdf) |
 | [V.253](https://www.itu.int/rec/T-REC-V.253) | Voice AT commands | `dsp/dsp_glue.cpp` (voice) | [V.253.pdf](V.253.pdf) |
 
-V.42's Annex A, the alternative procedure (MNP 4), which D-Modem does
-not have, was deleted in 2002; it is in the superseded V.42 (10/96),
-`T-REC-V.42-199610-S` at itu.int (`docs/link.md`, MNP).
+V.42's Annex A, the alternative procedure (MNP 4), which D-Modem
+implements (`link/mnp.cpp`), was deleted from V.42 in 2002; it is in the
+superseded V.42 (10/96), `T-REC-V.42-199610-S` at itu.int
+([link-details.md](../link-details.md#mnp)).
 
-Not ITU: Bell 103 and Bell 212A (AT&T), Bell 202 caller ID (Telcordia
+Not from the ITU: Bell 103 and Bell 212A (AT&T), Bell 202 caller ID (Telcordia
 GR-30), TIFF-F (RFC 3949). Section references in the code and in these
 documents, such as "9.6.2/V.34", are to these editions.

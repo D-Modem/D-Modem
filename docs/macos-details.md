@@ -1,6 +1,6 @@
 # D-Modem on macOS: technical details
 
-This is the technical companion to [macos.md](macos.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [D-Modem on macOS](macos.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 dmodemd builds for macOS 11 (Big Sur) and later, on Apple silicon and Intel, as one universal binary if asked.  It is the same modem as on Linux: SIP on libre, the open DSP (data up to V.34 and V.90/V.92 as the digital modem, class 1 fax, voice) and T.38, with a pty as its DTE.  The USB modems (`--usb`: Smart Link's SmartUSB56, the pico-serial Line and WB and Agere's USB 2.0 soft modem) go through libusb's IOKit backend, built with dmodemd.  libdmodem (`dmodemd/dmodem.h`), `libdmodem_sip.a`, dmodem-ari and the test programs build too.
 

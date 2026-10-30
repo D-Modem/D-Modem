@@ -1,6 +1,6 @@
 # dmodem-ari: D-Modem as an Asterisk ARI application: technical details
 
-This is the technical companion to [ari.md](ari.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [dmodem-ari: D-Modem beside Asterisk](ari.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `dmodem-ari` answers (or makes) Asterisk calls with D-Modem's modem, like
 `DModem()`, and sends and receives faxes with its fax machine, like
@@ -193,7 +193,7 @@ sip_endpoint = dmodem           ; the endpoint above
 sip_bind = 127.0.0.1:5090       ; dmodem-ari's SIP side (its RTP, UDPTL too)
 ```
 
-How the faxes take it, as the module's do ([asterisk.md](asterisk.md#t38);
+How the faxes take it, as the module's do ([asterisk.md](asterisk-details.md#t38);
 `fax_t38 = no` keeps them on the audio):
 
 - `receivefax`, and a modem profile that hears a fax machine, ask for
@@ -230,7 +230,7 @@ codes come through it unchanged as through external media.
 
 ## Testing
 
-`ARI=1` runs the Asterisk tests ([asterisk.md](asterisk.md#testing))
+`ARI=1` runs the Asterisk tests ([asterisk.md](asterisk-details.md#testing))
 through `dmodem-ari` instead of the module (`asterisk/test/ari_env.sh`):
 Asterisk's HTTP server and ARI turned on, `app_dmodem` not loaded, and
 the dialplan's `DModem(...)`, `DModemSendFax(...)` and
@@ -252,5 +252,5 @@ the dialplan's `DModem(...)`, `DModemSendFax(...)` and
   62666/62666; the faxes between `dmodem-ari`'s own machines go over T.38
   even through a Local channel.
 - `ARI=1 asterisk/test/t38.sh`: the T.38 test of the module
-  ([asterisk.md](asterisk.md#testing)) through `dmodem-ari`, `t38 = yes`
+  ([asterisk.md](asterisk-details.md#testing)) through `dmodem-ari`, `t38 = yes`
   and its SIP side on the `dmodem` endpoint.

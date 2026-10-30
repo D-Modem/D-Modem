@@ -1,6 +1,6 @@
 # Softmodem hardware: dmodemd on ALSA and USB: technical details
 
-This is the technical companion to [hardware.md](hardware.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [Softmodem hardware](hardware.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 dmodemd's line is normally a SIP call. With `-a` it is instead a
 softmodem's codec on a telephone line, through ALSA. With `--usb` it is
@@ -275,7 +275,7 @@ it from the device while it runs. dmodemd is built with `--usb` when
 pkg-config finds libusb-1.0 (libusb-1.0-0-dev). `dmodemd --usb list`
 lists the SmartUSB56s, pico-serial Lines and WBs and Agere modems there
 are, and whether each can be opened. On Windows dmodemd.exe drives them
-the same way, on WinUSB ([windows.md](windows.md#usb-modems---usb)).
+the same way, on WinUSB ([windows.md](windows-details.md#usb-modems---usb)).
 
 The ST7554's register values and start-up are those of Smart Link's
 Linux driver for it (`drivers/st7554.c` of slmodem 2.9.11, under a BSD
@@ -581,7 +581,7 @@ What it does, from the device's ROM and Agere's drivers
 - **Unplugged.** dmodemd says so and exits.
 
 It has been tested against a fake of it (below), not yet on a real one:
-[agere-usb.md](agere-usb.md#bring-up) says what to look for, and what to
+[agere-usb.md](agere-usb-details.md#bring-up) says what to look for, and what to
 send, on the first run.
 
 ### Not covered
@@ -650,7 +650,7 @@ that user needs access to `/dev/snd/*`.
   a gap of 1.5 s, is a ring; ringing with no such gap (Egypt's 2 s on
   and 1 off) rings every 6 s; a ring counts in `S1` for 8 s. Every
   country of the ITU's list rings this way (`ring_tones_test`,
-  [interop.md](interop.md#the-line-rung)).
+  [interop.md](interop-details.md#the-line-rung)).
 - **Caller ID.** At the first ring the core runs its caller ID receiver
   (`AT#CID`) on the monitor's samples for 4 s.
 - **Dialling.** The modem dials the number itself, in DTMF, or in pulses
@@ -687,7 +687,7 @@ that user needs access to `/dev/snd/*`.
   between two digital modems, becomes V.34. At 8000 Hz (`-r 8000`)
   V.90 is there only with `DSP_V90A=1`: a codec at 8000 Hz on a clock
   of its own loses the PCM signal every few seconds (see
-  [8000 Hz lines](dsp/v90a.md#8000-hz-lines)), so keep 9600. It has fax
+  [8000 Hz lines](dsp/v90a-details.md#8000-hz-lines)), so keep 9600. It has fax
   (class 1) and voice too.
 
 ## Limits

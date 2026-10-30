@@ -1,6 +1,6 @@
 # Open data pumps for D-Modem: technical details
 
-This is the technical companion to [README.md](README.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [The data pumps: D-Modem's signal processing](README.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `dsp/` is a reimplementation (C++) of the interface that the
 binary-only `dsplibs.o` (Smart Link's DSP library) gives to Smart Link's
@@ -28,8 +28,8 @@ interface has one addition the original library does not use:
 | `RD_*` | Ring detector for snooping codecs (low frequency, high amplitude bursts) |
 | `CID_*` | Caller ID: Bell 202 FSK, SDMF and MDMF, formatted (`AT+VCID=1`) or raw hex |
 | `VOICE_*` | IS-101 style voice: 8 bit linear at 8000 Hz with `<DLE>` shielding, `+VTS` tones and DTMF |
-| `FAX_*`, `FAX_class1_command` | T.31 class 1 fax (`AT+FCLASS=1`): V.21 HDLC, V.27ter, V.29 and V.17 (see [Fax](fax.md#fax-class-1)) |
-| `FAX2_*` | T.32 class 2 and 2.0 fax (`AT+FCLASS=2`, `2.0`): T.30 in the modem (`fax_class2.cpp`, in the T.30 library; see [Fax](fax.md#fax-class-2-and-20)) |
+| `FAX_*`, `FAX_class1_command` | T.31 class 1 fax (`AT+FCLASS=1`): V.21 HDLC, V.27ter, V.29 and V.17 (see [Fax](fax-details.md#fax-class-1)) |
+| `FAX2_*` | T.32 class 2 and 2.0 fax (`AT+FCLASS=2`, `2.0`): T.30 in the modem (`fax_class2.cpp`, in the T.30 library; see [Fax](fax-details.md#fax-class-2-and-20)) |
 
 ## Data pumps
 
@@ -53,12 +53,12 @@ interface has one addition the original library does not use:
 | VCVM (150) | V.cvm, data over mobile speech paths, 175 to 3500 bit/s | The proposed Recommendation of [docs/cellular](../cellular/v_cvm.tex): V.8 (with V.22 and V.21 as the fallback), then probing and a loaded comb or the parametric mode through AMR, AMR-WB or G.711 (see [V.cvm](vcvm.md)) |
 | 91 | ITU V.91, 28000 to 62667 bit/s both ways | Two digital modems on an 8000 Hz G.711 line; V.8, then V.34 if V.91 does not start (see [V.91](v91.md#v91-digital-to-digital)). 90 and 92 offer it as well |
 | VWB (200) | V.wb, D-Modem's wideband mode on a bare pair, up to 148656 bit/s each way | DMT in frequency-division duplex at 48000, 96000 or 192000 Hz (refused below 48000), for pico-serial's WB stick; leased-line behaviour (no call progress; `AT&L1`), a start-up of its own, per-tone bit loading from the measured SNR, RS(255,239), a loop-timed answerer (see [V.wb](vwb.md)) |
-| 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s; V.90 as the digital modem | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. With 90 or 92 on an 8000 Hz G.711 line: V.90 as the digital modem, 28000 to 56000 bit/s downstream (see [V.90](v90.md#v90-digital-modem)) |
+| 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s; V.90 as the digital modem | V.8 negotiation, then V.34; hands over to the V.32bis pump (with its V.22bis/V.22 fallback) when the other end does not offer V.34. With 90 or 92 on an 8000 Hz G.711 line: V.90 as the digital modem, 28000 to 56000 bit/s downstream (see [V.90](v90-details.md)) |
 
 V.90 is there as the **digital** modem (the server side, as on a
 G.711 VoIP line), with V.92's quick connect for V.92 analogue modems
-calling (see [V.92](v92.md#v92-quick-connect)) and V.92's PCM
-upstream (see [PCM upstream](v92.md#v92-pcm-upstream)), and as the
+calling (see [V.92](v92-details.md#v92-quick-connect)) and V.92's PCM
+upstream (see [PCM upstream](v92-details.md#v92-pcm-upstream)), and as the
 **analogue** modem at 9600 Hz, with 90 or 92 (the default): 56000
 bit/s down and 33600 up from a V.90 digital modem, V.34 and below with
 any other, with its retrains and rate renegotiations (`DSP_V90A=0`

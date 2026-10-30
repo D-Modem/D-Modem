@@ -1,6 +1,6 @@
 # V.cvm: data over mobile speech paths: technical details
 
-This is the technical companion to [vcvm.md](vcvm.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [V.cvm: data over mobile phone calls](vcvm.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `AT+MS=VCVM` runs the DCE of the proposed Recommendation in
 [docs/cellular](../cellular/v_cvm.tex) ([v_cvm.pdf](../v_cvm.pdf)): data
@@ -98,7 +98,7 @@ fails if it and the annex's listing ever differ.
 
 Between two D-Modems (V.cvm or any other mode with LAPM) the call's
 compression is zstd rather than V.44: XID offers it in a private set,
-and both take it when both offer it ([link.md](../link.md#zstd)). On
+and both take it when both offer it ([link.md](../link-details.md#zstd)). On
 V.cvm INFO0's octet 3 bit 3 indicates it ahead (`DSP_VCVM_ZSTD=0` leaves
 it out, a test): without it in both INFO0s neither offers it, and V.44
 runs as above. The dictionary is a formatted zstd dictionary whose

@@ -1,6 +1,6 @@
 # Code review (October 2026): technical details
 
-This is the technical companion to [review.md](review.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [Code review (October 2026)](review.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 A review of the whole tree: every function of our own code got a comment
 saying what it does, small and clearly correct fixes were made (with a

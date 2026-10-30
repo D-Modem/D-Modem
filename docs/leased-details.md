@@ -1,6 +1,6 @@
 # Leased lines and dry pairs: technical details
 
-This is the technical companion to [leased.md](leased.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [Leased lines and dry pairs](leased.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 A leased line (a private circuit, or a dry copper pair of your own) has
 no exchange: no dial tone, no ringing, no hook. D-Modem runs on one with

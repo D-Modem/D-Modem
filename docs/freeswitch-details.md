@@ -1,6 +1,6 @@
 # mod_dmodem: a data modem on a FreeSWITCH channel: technical details
 
-This is the technical companion to [freeswitch.md](freeswitch.md), which explains the same subject in plain English. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This is the technical companion to [FreeSWITCH: mod_dmodem](freeswitch.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 The FreeSWITCH version of [Asterisk's app_dmodem](asterisk.md):
 the same modem and fax, with FreeSWITCH's applications, configuration and
