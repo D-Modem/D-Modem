@@ -396,6 +396,9 @@ s16 dp_callprog_init(void);
 void dp_callprog_exit(void);
 s16 dp_fsk_init(void);
 void dp_fsk_exit(void);
+/* the text telephone pumps (dp_text.cpp) */
+s16 dp_text_init(void);
+void dp_text_exit(void);
 s16 dp_v22_init(void);
 void dp_v22_exit(void);
 s16 dp_v32_init(void);

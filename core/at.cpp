@@ -284,6 +284,7 @@ const struct {
 	{ "VCVM", DP_VCVM }, { "V_CVM", DP_VCVM }, { "VWB", DP_VWB },
 	{ "V27TC", DP_V27TER },
 	{ "V29", DP_V29 }, { "V33", DP_V33 }, { "CLEAR", DP_CLEAR },
+	{ "V18", DP_V18 }, { "BAUDOT", DP_BAUDOT }, { "EDT", DP_EDT },
 };
 
 /* pump id is registered */
@@ -732,7 +733,10 @@ s16 Modem::at_command(char *cmd)
 					}
 					break;
 				case 'M':
-					ret = at_MS(p, &len);
+					ret = starts_nocase(p, "+MV18") ||
+						starts_nocase(p, "+MBAUDOT") ?
+						at_text(p, &len) :
+						at_MS(p, &len);
 					break;
 				case 'P':
 					ret = at_PMH(p, &len);
@@ -1255,6 +1259,157 @@ s16 Modem::at_MS(char *p, s16 *len)
 	max_rx_rate_ = 0;
 	*len = static_cast<s16>(q - p);
 	return 0;
+}
+
+/* +MV18S's <mode>s and the pumps they choose: 1 automoding, 2 5-bit,
+   4 EDT, 5 V.21, 6 V.23, 7 Bell 103 (3, DTMF, the modem has not) */
+static const u32 mv18_pumps[8] = {
+	0, DP_V18, DP_BAUDOT, 0, DP_EDT, DP_V21, DP_V23, DP_B103,
+};
+
+/* V.18's commands (V.250 6.8) and D-Modem's 5-bit settings:
+   +MV18S=<mode>,<dflt_ans_mode>,<fbk_time_enable>,<ans_msg_enable>,
+   <probing_en> (the mode chooses the pump, as +MS would; 0 back to
+   V.92 if +MS had a text one), +MV18R=<0|1> (the mode found reported
+   before CONNECT), +MV18AM="<message>" (the answer message, sent in
+   probes and, with <ans_msg_enable>, on answering), +MV18P=<2-7> (kept),
+   +MBAUDOT=<rate>,<mark>,<space>,<code> (45 for 45.45, 50, 75 or 100
+   bit/s; the tones in Hz; 0 the US TTY's figures, 1 ITA2's) */
+s16 Modem::at_text(char *p, s16 *len)
+{
+	const char *q = p + 1, *e;
+	std::string name;
+	const char *end;
+
+	while (isalnum(static_cast<unsigned char>(*q)))
+		name += static_cast<char>(upper(*q++));
+	bool quoted = false;
+	for (end = q; *end && (quoted || *end != ';'); end++)
+		if (*end == '"')
+			quoted = !quoted;
+	*len = static_cast<s16>(end - p);
+	bool query = q[0] == '?' && q + 1 == end;
+	bool range = q[0] == '=' && q[1] == '?' && q + 2 == end;
+	bool set = q[0] == '=' && !range;
+	const char *v = q + 1;
+	auto show = [this, &name](const std::string &x) {
+		puts("+" + name + ": " + x);
+		crlf();
+		return 0;
+	};
+	/* up to n numbers at v, to the end, each in its range; one left
+	   out stays as it is */
+	auto numbers = [&](u32 *out, const u32 *lo, const u32 *hi, s16 n) {
+		u32 w[5];
+		std::copy(out, out + n, w);
+		for (s16 i = 0; i < n && v < end; i++) {
+			if (is_digit(*v)) {
+				u32 x = decimal(v, &e);
+				if (x < lo[i] || x > hi[i])
+					return false;
+				w[i] = x;
+				v = e;
+			}
+			if (v < end && *v++ != ',')
+				return false;
+		}
+		if (v != end)
+			return false;
+		std::copy(w, w + n, out);
+		return true;
+	};
+
+	if (name == "MV18S") {
+		static const u32 lo[5] = { 0, 0, 0, 0, 0 };
+		static const u32 hi[5] = { 7, 7, 1, 1, 2 };
+		if (query) {
+			std::string x;
+			for (int i = 0; i < 5; i++)
+				x += (i ? "," : "") + dec(mv18s_[i]);
+			return show(x);
+		}
+		if (range)
+			return show("(0-2,4-7),(0-7),(0,1),(0,1),(0-2)");
+		if (!set)
+			return -1;
+		u32 w[5];
+		std::copy(std::begin(mv18s_), std::end(mv18s_), w);
+		if (!numbers(w, lo, hi, 5) || w[0] == 3 ||
+		    (w[0] && !ms_choosable(mv18_pumps[w[0]])))
+			return -1;
+		std::copy(w, w + 5, mv18s_);
+		if (w[0])
+			sregs_[SREG_DP] =
+				static_cast<unsigned char>(mv18_pumps[w[0]]);
+		else if (text_pump())
+			sregs_[SREG_DP] = DP_V92;
+		text_.answer_msg = static_cast<int>(w[3]);
+		text_.probe = w[4] != 0;
+		return 0;
+	}
+	if (name == "MV18R" || name == "MV18P") {
+		bool r = name == "MV18R";
+		u32 &x = r ? mv18r_ : mv18p_;
+		const u32 lo = r ? 0 : 2, hi = r ? 1 : 7;
+		if (query)
+			return show(dec(x));
+		if (range)
+			return show(r ? "(0,1)" : "(2-7)");
+		if (!set)
+			return -1;
+		u32 w = x;
+		if (!numbers(&w, &lo, &hi, 1))
+			return -1;
+		x = w;
+		return 0;
+	}
+	if (name == "MV18AM") {
+		const size_t most = sizeof(text_.msg) - 1;
+		if (query)
+			return show("\"" + std::string(text_.msg) + "\"");
+		if (range)
+			return show("(" + dec(static_cast<u32>(most)) +
+				    ")(32-126)");
+		if (!set)
+			return -1;
+		std::string m(v, end);
+		if (!m.empty() && m[0] == '"') {
+			size_t k = m.find('"', 1);
+			m = m.substr(1, k == std::string::npos ? k : k - 1);
+		}
+		if (m.size() > most)
+			return -1;
+		for (char ch : m)
+			if (ch < 32 || ch > 126)
+				return -1;
+		memcpy(text_.msg, m.c_str(), m.size() + 1);
+		return 0;
+	}
+	if (name == "MBAUDOT") {
+		static const u32 lo[4] = { 45, 300, 300, 0 };
+		static const u32 hi[4] = { 100, 3400, 3400, 1 };
+		u32 w[4] = {
+			static_cast<u32>(text_.baud100 / 100),
+			static_cast<u32>(text_.mark),
+			static_cast<u32>(text_.space),
+			static_cast<u32>(text_.ita2),
+		};
+		if (query)
+			return show(dec(w[0]) + "," + dec(w[1]) + "," +
+				    dec(w[2]) + "," + dec(w[3]));
+		if (range)
+			return show("(45,50,75,100),(300-3400),(300-3400),"
+				    "(0,1)");
+		if (!set || !numbers(w, lo, hi, 4) || w[1] == w[2] ||
+		    (w[0] != 45 && w[0] != 50 && w[0] != 75 && w[0] != 100))
+			return -1;
+		text_.baud100 = w[0] == 45 ? 4545 : static_cast<int>(w[0]) * 100;
+		text_.mark = static_cast<int>(w[1]);
+		text_.space = static_cast<int>(w[2]);
+		text_.ita2 = static_cast<int>(w[3]);
+		return 0;
+	}
+	return -1;
 }
 
 /* +GCI?, +GCI=?, +GCI=<hex>: the country by its T.35 code */

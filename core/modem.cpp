@@ -274,6 +274,7 @@ Modem::Modem(Host &host, const Options &opt)
 	sregs_init();
 	kept_init();
 	fax2_reset();
+	text_reset();
 	if (homolog_init(MODEM_DEFAULT_COUNTRY_CODE, nullptr)) {
 		log_printf(1, "err: %s: no default country\n", name_);
 		return;
@@ -976,7 +977,10 @@ void Modem::update_status(Status s)
 		adapt_ = Adapt::Off;
 		if (loop3_ || (dp_ && (dp_->id == DP_V23 ||
 					dp_->id == DP_B103 ||
-					dp_->id == DP_V21))) {
+					dp_->id == DP_V21 ||
+					dp_->id == DP_V18 ||
+					dp_->id == DP_BAUDOT ||
+					dp_->id == DP_EDT))) {
 			cfg_.ec = false;
 			cfg_.mnp = false;
 		}
@@ -2165,6 +2169,7 @@ s16 Modem::reset()
 	sregs_init();
 	kept_init();
 	fax2_reset();
+	text_reset();
 	sregs_[SREG_DIAL_PAUSE_TIME] = homolog_->params->DialPauseTime;
 	sregs_[SREG_FLASH_TIMER] = homolog_->params->HookFlashTime;
 	set_mode(MODEM_MODE_DATA);
@@ -2243,6 +2248,16 @@ void Modem::report(Result r)
 	if (r == Result::Connect) {
 		u16 a = sregs_[SREG_CONNNECT_MSG_FORMAT];
 		s16 m = modulation(dp_stats_, dp_);
+		/* V.18's automoding: the mode found, as +MV18S numbers it */
+		if (mv18r_ && sregs_[SREG_DP] == DP_V18) {
+			s16 n = m == DP_BAUDOT ? 2 : m == DP_EDT ? 4 :
+				m == DP_V21 ? 5 : m == DP_V23 ? 6 :
+				m == DP_B103 ? 7 : 0;
+			if (n) {
+				puts("+MV18R: " + dec(n));
+				crlf();
+			}
+		}
 		const char *comp = compression_name();
 		if ((a & 1) && (m || verbose)) {
 			const char *name = dp_name(m);
@@ -3535,6 +3550,30 @@ void Modem::fax2_reset()
 	f2_ps_ = 1;
 	f2_other_.clear();
 	fax_class_ = 1;
+}
+
+/* the text telephones' settings as at the start (ATZ): the US TTY's
+   45.45 bit/s at 1400 and 1800 Hz, probing, no answer message, +MV18S
+   off, no +MV18R report */
+void Modem::text_reset()
+{
+	text_ = {};
+	text_.baud100 = 4545;
+	text_.mark = 1400;
+	text_.space = 1800;
+	text_.probe = 1;
+	for (u32 &v : mv18s_)
+		v = 0;
+	mv18s_[4] = 1;
+	mv18r_ = 0;
+	mv18p_ = 2;
+}
+
+/* see dcore.h */
+bool Modem::text_pump() const
+{
+	u32 id = sregs_[SREG_DP];
+	return id == DP_V18 || id == DP_BAUDOT || id == DP_EDT;
 }
 
 /* class 2 and 2.0 fax there is (the T.30 library linked in) */

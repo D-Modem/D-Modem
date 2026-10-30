@@ -477,6 +477,10 @@ private:
 	s16 fax_start();
 	void fax_engine_delete();
 	void fax2_reset();
+	/* the text telephones' settings as at the start (ATZ) */
+	void text_reset();
+	/* the pump +MS has is a text telephone's (V.18, 5-bit, EDT) */
+	bool text_pump() const;
 	bool has_fax2() const;
 	s16 fax2_command(unsigned cmd, unsigned param);
 	void fax_found(const char *why);
@@ -505,6 +509,7 @@ private:
 	s16 at_Z(char *p, s16 *len);
 	s16 at_GCI(char *p, s16 *len);
 	s16 at_MS(char *p, s16 *len);
+	s16 at_text(char *p, s16 *len);
 	s16 at_PMH(char *p, s16 *len);
 	s16 at_FCLASS(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
@@ -771,6 +776,11 @@ private:
 	std::string f2_ident_, f2_pi_;
 	u32 f2_cc_[8] = {}, f2_is_[8] = {}, f2_cs_[8] = {};
 	u32 f2_bo_ = 0, f2_cr_ = 1, f2_ps_ = 1, f2_lp_ = 0, f2_sp_ = 0;
+	/* text telephones: the pumps' settings (MDMPRM_TEXT), +MV18S's
+	   five values, +MV18R, +MV18P */
+	struct dp_text text_ = {};
+	u32 mv18s_[5] = {};
+	u32 mv18r_ = 0, mv18p_ = 2;
 	bool f2_cs_set_ = false;
 	s16 f2_hangup_ = -1;
 	std::vector<std::pair<std::string, std::string>> f2_other_;
