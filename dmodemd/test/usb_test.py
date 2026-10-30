@@ -175,6 +175,13 @@ try:
         return open(m.log.name, "rb").read()
     gpio = lambda m: [int(v, 16) for v in
                       re.findall(rb"fake st7554: 0a = ([0-9a-f]{4})", log_of(m))]
+    def soon(f, t=2):
+        """f() once true, else after t s: the log comes through a thread
+        reading dmodemd's stderr, which can lag behind the pty's OK"""
+        end = time.time() + t
+        while not f() and time.time() < end:
+            time.sleep(0.05)
+        return f()
     def intl(country, **more):
         """1001 alone with --usb-international in country, the fake's
         environment more: its GPIO writes off hook (ATH1, 1 s) and on hook
@@ -238,7 +245,7 @@ try:
     n = len(gpio(m))
     check("voice codec: +VLS=14", m.cmd(b"AT+VLS=14"))
     check("RHOM on for both codecs while the modem runs (0xa8a8)",
-          fifo2(m)[-1:] == [0xa8a8])
+          soon(lambda: fifo2(m)[-1:] == [0xa8a8]))
     def record(t):
         """+VRX for t s: its samples (OK after)"""
         if not m.cmd(b"AT+VRX", rb"CONNECT\r\n"):
@@ -269,7 +276,8 @@ try:
     check("voice codec: the earpiece plays +VTX's 500 Hz (%.2f)" % best[0], best[0] > 0.5)
     n = len(gpio(m))
     check("voice codec: +VLS=15", m.cmd(b"AT+VLS=15"))
-    check("voice codec: off hook with +VLS=15", any(v & 0x0008 for v in gpio(m)[n:]))
+    check("voice codec: off hook with +VLS=15",
+          soon(lambda: any(v & 0x0008 for v in gpio(m)[n:])))
     size = os.path.getsize(ear)
     x = record(2)
     m.expect(rb"OK\r\n", 3)
@@ -282,8 +290,8 @@ try:
     check("voice codec: the earpiece gets the line",
           len(heard) > 4000 and tone(heard[4000:], 350) + tone(heard[4000:], 440) > 0.3)
     check("voice codec: +VLS=0", m.cmd(b"AT+VLS=0"))
-    check("voice codec: on hook again", gpio(m)[-1] & 0x0008 == 0)
-    check("RHOM off again", fifo2(m)[-1:] == [0x2828])
+    check("voice codec: on hook again", soon(lambda: gpio(m)[-1] & 0x0008 == 0))
+    check("RHOM off again", soon(lambda: fifo2(m)[-1:] == [0x2828]))
     m.p.terminate()
     m.p.wait(5)
     m = Modem("1001", "dmodem38", ["--usb-rhom"], "-rhom-0100",
