@@ -120,6 +120,18 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	       voip(line(8, 40, 25, 8000, 0.5f, 0, 0, -20), 600, 220) },
 	Pumps{ "v34_voip_asymmetric_back",
 	       voip(line(8, 40, 25, 9600, 0.5f, 0, 0, -20), 220, 600) },
+	/* a round trip of 1 s and more (the USB modems' tests on a busy
+	   machine): the far echo comes back only late in each side's
+	   training, which is searched for until it is found and goes on
+	   while the far part trains */
+	Pumps{ "v34_voip_1s",
+	       voip(line(8, 40, 40, 9600, 0.5f, 0, 0, -15), 450, 450) },
+	Pumps{ "v34_voip_1s_8000",
+	       voip(line(8, 40, 40, 8000, 0.5f, 0, 0, -20), 560, 440) },
+	Pumps{ "v34_voip_1s_back",
+	       voip(line(8, 40, 40, 9600, 0.5f, 0, 0, -20), 440, 560) },
+	Pumps{ "v34_voip_1150ms",
+	       voip(line(8, 40, 40, 8000, 0.5f, 0, 0, -20), 450, 700) },
 	Pumps{ "v22", line(22, 15, 20) },
 	/* its 4 points decided 45 degrees each way, not on the axes */
 	Pumps{ "v22_snr7", line(22, 7, 20) },

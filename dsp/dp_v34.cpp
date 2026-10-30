@@ -835,6 +835,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	s16 v91_escape();
 	void ec_schedule();
 	bool remote_j() const;
+	bool ec_far_late() const;
 	void pump_rx_sample(float x);
 	s16 fallback(const char *why);
 	void choose_bauds();
@@ -2669,6 +2670,13 @@ bool V34Pump::remote_j() const
 		prx.bit_n - prx.j_last <= 48;
 }
 
+/* phase 3: the far echo found only late in our training (a long round
+   trip), its part of the canceller not trained for half a second yet */
+bool V34Pump::ec_far_late() const
+{
+	return ec.on && ec.far_on && ec.far_since < ms2samples(500, srate);
+}
+
 /* the adaptation, per sample: train while our own phase 3 sequences go
    out (the remote is silent then), then track */
 void V34Pump::ec_schedule()
@@ -2734,11 +2742,15 @@ void V34Pump::ec_schedule()
 	if (training) {
 		e->n++;
 		/* the far echo is found after some of our signal went out
-		   (and came back) */
+		   (and came back); on a long round trip (a second, as over
+		   VoIP and the USB modems' tests) only late in the training:
+		   looked for again each 250 ms after the first second, while
+		   the training lasts */
 		if (!e->far_on && (e->n == EC_SEARCH + ms2samples(50, srate) ||
 				   e->n == ms2samples(250, srate) ||
 				   e->n == ms2samples(500, srate) ||
-				   e->n == ms2samples(1000, srate)))
+				   (e->n >= ms2samples(1000, srate) &&
+				    e->n % ms2samples(250, srate) == 0)))
 			e->search();
 		/* fast at first, also for a far part found late */
 		e->far_since++;
@@ -5630,7 +5642,10 @@ s16 V34Pump::handshake()
 			tx_next(P3A_TRN, V34_TX_TRN);
 		break;
 	case P3A_TRN:
-		if (ptx.n >= TRN3_LEN) {
+		/* (longer, up to another TRN3_LEN, while a far echo found
+		   late trains) */
+		if (ptx.n >= TRN3_LEN &&
+		    (!ec_far_late() || ptx.n >= 2 * TRN3_LEN)) {
 			tx_next(P3A_J, V34_TX_J);
 			prx.ev_s = 0;
 			/* the caller starts its phase 3 on our J: whatever the
@@ -5694,10 +5709,11 @@ s16 V34Pump::handshake()
 		break;
 	case P3C_TRN:
 		/* (longer, up to another TRN3_LEN, when the echo canceller
-		   waited for the remote's J: a second of its training) */
+		   waited for the remote's J: a second of its training; and
+		   while a far echo found late trains) */
 		if (ptx.n >= TRN3_LEN &&
-		    (!ec.waited || ec.n >= ms2samples(1000, srate) ||
-		     ptx.n >= 2 * TRN3_LEN)) {
+		    (((!ec.waited || ec.n >= ms2samples(1000, srate)) &&
+		      !ec_far_late()) || ptx.n >= 2 * TRN3_LEN)) {
 			tx_next(P3C_J, V34_TX_J);
 			prx.ev_s = 0;
 			prx.ev_j = prx.j_count = 0;
