@@ -1,6 +1,6 @@
 # V.cvm: data over mobile speech paths
 
-`AT+MS=V_CVM` runs the DCE of the proposed Recommendation in
+`AT+MS=VCVM` runs the DCE of the proposed Recommendation in
 [docs/cellular](../cellular/v_cvm.tex) ([v_cvm.pdf](../v_cvm.pdf)): data
 through the speech codecs of mobile calls (AMR, AMR-WB, EVS), where V.34
 and V.32 do not pass. The Recommendation has the reasons and the
@@ -8,7 +8,7 @@ measurements; this page is the implementation.
 
 ## A call
 
-1. **V.8** (`dp_v34.cpp`). With `+MS=V_CVM` the V.34 pump offers, in CM or
+1. **V.8** (`dp_v34.cpp`). With `+MS=VCVM` the V.34 pump offers, in CM or
    JM, V.22 and V.21 as the fallback (not V.34, V.32 or V.23, which a codec
    does not carry), LAPM, and V.cvm's information field in the
    non-standard facilities category (Annex A). The answering DCE puts the

@@ -1650,7 +1650,7 @@ directions' rates (sent in its MP sequences).
 92 & V92 & ITU V.92 & V.90 with quick connect, PCM upstream and
   modem-on-hold (default). \\ \hline
 56 & K56 & K56flex & Not implemented: runs V.90. \\ \hline
-150 & V\_CVM & V.cvm & Data over mobile speech paths, 175 to 3500
+150 & VCVM & V.cvm & Data over mobile speech paths, 175 to 3500
   bit/s, after V.8 (\cmdl[plusCVM]{+CVM}). \\ \hline
 200 & VWB & V.wb & Wideband DMT on a bare pair, at 48000 Hz and more,
   up to 148656 bit/s each way. \\ \hline
@@ -1685,12 +1685,12 @@ modem against a V.90 or V.92 server (at 9600~Hz; see
 \texttt{docs/hardware.md}), and V.91 and \cmd{CLEAR}, which need a
 digital line, run as V.34.
 
-\paragraph{V.cvm.}  \cmd{V\_CVM} is the proposed Recommendation of
+\paragraph{V.cvm.}  \cmd{VCVM} is the proposed Recommendation of
 \cmd{docs/v\_cvm.pdf}, for calls whose speech path is a mobile codec's
 (AMR, AMR-WB), which carry neither V.34 nor V.32: V.8 with V.22 and V.21
 as the fallback, then a probing of the codec and a mode loaded for it.
 The start-up takes 15 to 21~s; \sreg{7} should allow for it.  The
-connection runs LAPM.
+connection runs LAPM.  \cmd{V\_CVM}, its old name, is still taken.
 
 \paragraph{V.wb.}  \cmd{VWB} is D-Modem's own mode for a bare copper
 pair between two of its modems (pico-serial's WB stick, a codec at 96
@@ -2089,7 +2089,7 @@ modem to go on hold for \p{s} seconds (1 to 960; 10 if left out).
 \subsection{V.cvm}
 
 \begin{command}{plusCVM}{+CVM}{V.cvm Settings}
-For \cmdl[plusMS]{+MS=V\_CVM}: \p{modes}, the modes allowed, a sum of
+For \cmdl[plusMS]{+MS=VCVM}: \p{modes}, the modes allowed, a sum of
 the values below; \p{rate}, the signal interface's rate, 8000 or 16000;
 \p{report}, 0 or 1, asks for \cmd{+CVMR} on each renegotiation.
 D-Modem keeps \p{rate} and \p{report} but works at 8000~Hz only,
