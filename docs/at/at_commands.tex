@@ -2615,21 +2615,23 @@ modem sends \std{CNG} after dialing until the answerer's flags come in its
 first \cmdl[plusFTH]{+FRH=3} (\std{T.30} has it until the \std{DIS}).
 
 \begin{command}{plusFCLASS}{+FCLASS}{Service Class}
-This command sets whether the modem is a data modem, a \std{Class 1}, \std{Class 2} or
-2.0 fax modem or a voice modem.  \cmdl[Z]{ATZ} sets 0.
+This command sets whether the modem is a data modem, a \std{Class 1}, 1.0, \std{Class 2}
+or 2.0 fax modem or a voice modem.  \cmdl[Z]{ATZ} sets 0.
 \begin{syntax}
 \item +FCLASS=\p{n}
 \item +FCLASS? (gives the class)
-\item +FCLASS=? (gives \rc{0,1,2,2.0,8})
+\item +FCLASS=? (gives \rc{0,1,1.0,2,2.0,8})
 \end{syntax}
 \begin{results}
-\res{\rc{OK}}{If \p{n} = 0, 1, 2, 2.0 or 8.}
+\res{\rc{OK}}{If \p{n} = 0, 1, 1.0, 2, 2.0 or 8.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+FCLASS Values}
   {\thd{Value} & \thd{Class}}
 0 & Data (\emph{default}). \\ \hline
 1 & Fax \std{Class 1} (\std{T.31}). \\ \hline
+1.0 & Fax \std{Class 1.0}: \std{Class 1} with \std{V.34} half-duplex fax
+  (\std{T.31} Annex B, \cmdl[plusF34]{+F34}). \\ \hline
 2 & Fax \std{Class 2} (\hyperref[sec:class2]{Section~\ref*{sec:class2}}). \\ \hline
 2.0 & Fax \std{Class 2.0} (\std{T.32}, \hyperref[sec:class2]{Section~\ref*{sec:class2}}). \\ \hline
 8 & Voice (\std{V.253}, \hyperref[sec:voice]{Section~\ref*{sec:voice}}). \\ \hline
@@ -2736,6 +2738,53 @@ bit/s), the only modulation for them.
 \begin{command}{plusFPR}{+FPR}{Fax \texorpdfstring{\texttt{DTE}}{DTE} Rate}
 The fax \std{DTE}'s rate: kept, with no effect.  0 (\emph{default}), 1, 2, 4, 8, 10
 or 18.
+\end{command}
+
+\begin{command}{plusF34}{+F34}{\texorpdfstring{\texttt{V.34}}{V.34} Fax Rates}
+In \std{Class 1.0} (\cmdl[plusFCLASS]{+FCLASS=1.0}), a fax call starts with \std{V.8} and
+\std{V.34} half-duplex (\std{T.30} Annex F) instead of \std{CNG} or \std{CED}, as fax
+software such as HylaFAX expects with \cmd{AT+F34}.  When both ends have
+it, the modem gives \rc{+F34:\p{p},\p{c}} (the primary channel's rate in
+2400 bit/s, the control channel's: 1 for 1200 bit/s), then \rc{CONNECT},
+and from then on the call is \std{T.31}'s \std{V.34} data mode, with no more
+commands:
+\begin{itemize}
+\item the \std{DTE}'s frames, without their FCS, each ended by \cmd{<DLE><ETX>},
+  and the modem's, with their FCS, the same way;
+\item \cmd{<DLE><0x6B>} from the \std{DTE} (the sender) asks for the primary
+  channel; the modem gives \cmd{<DLE><0x6B><DLE><r>} when it is up (\p{r}
+  = 0x6F + the rate in 2400 bit/s), at either end, and the \std{ECM}
+  block's frames follow;
+\item \cmd{<DLE><0x6D>} from the \std{DTE} ends the block; the modem gives
+  \cmd{<DLE><0x6D><DLE><0x6E>} when the control channel (1200 bit/s) is
+  back, at either end;
+\item \cmd{<DLE><EOT>} from the \std{DTE} ends the call (\rc{OK}); the modem
+  gives it when the line goes (\rc{NO CARRIER}).
+\end{itemize}
+With a fax machine that has no \std{V.8}, the call goes on as \std{Class 1}: the
+caller's first \rc{CONNECT} is for the answerer's frames, as after
+\cmdl[plusFTH]{+FRH=3}; the answerer's is for its own, as after
+\cmdl[plusFTH]{+FTH=3} (its ANSam was the \std{CED}).  \std{V.34} fax needs \std{ECM}, and
+the modem does not poll on it.  Not on \std{T.38}, nor after adaptive
+answer.  \cmdl[Z]{ATZ} sets the defaults.
+\begin{syntax}
+\item +F34=[\p{maxp}][,[\p{minp}][,[\p{prefc}][,[\p{maxp2}][,\p{minp2}]]]]
+\item +F34? (gives \rc{14,1,0,14,1})
+\item +F34=? (gives \rc{(0-14),(0-14),(0-2),(0-14),(0-14)})
+\end{syntax}
+\begin{results}
+\res{\rc{OK}}{If each value is in its range.}
+\res{\rc{ERROR}}{Otherwise.}
+\end{results}
+\begin{vtable}{2}{|C{0.12\textwidth}|L{0.74\textwidth}|}{+F34 Values}
+  {\thd{Value} & \thd{Meaning}}
+\p{maxp} & The primary channel's highest rate, in 2400 bit/s (14:
+  33600, \emph{default}); 0: no \std{V.34}, \std{Class 1} as before. \\ \hline
+\p{minp} & Its lowest (1: 2400, \emph{default}). \\ \hline
+\p{prefc} & The control channel's rate wanted (0 any, \emph{default}; 1
+  1200; 2 2400): kept, the modem's is 1200. \\ \hline
+\p{maxp2}, \p{minp2} & For the other direction: kept. \\ \hline
+\end{vtable}
 \end{command}
 
 \subsection{Class 2 and 2.0}\label{sec:class2}

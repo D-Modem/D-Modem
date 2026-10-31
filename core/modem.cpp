@@ -63,6 +63,10 @@ extern "C" long dp_runtime_v110(void *runtime) DCORE_WEAK;
 /* the fax engine's CED cut short after an answer tone (dsplibs.h):
    Smart Link's library's fax engine has none */
 extern "C" void FAX_answer_tone(void *obj, unsigned ms) DCORE_WEAK;
+/* class 1.0's V.34 half-duplex (dsplibs.h): Smart Link's library has
+   none */
+extern "C" int FAX_v34(void *obj, unsigned maxp, unsigned minp,
+		       unsigned prefc) DCORE_WEAK;
 /* class 2 and 2.0 fax (dsplibs.h): in the T.30 library, which a program
    may leave out (Smart Link's library has none either): then +FCLASS has
    no 2 */
@@ -2001,7 +2005,7 @@ s16 Modem::answer(bool adaptive)
 	answer_tone_at_ = 0;
 	if (adaptive && kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
 					    (mode_ == MODEM_MODE_FAX &&
-					     fax_class_ == 1))) {
+					     !fax2_class()))) {
 		adapt_ = mode_ == MODEM_MODE_FAX ? Adapt::Fax : Adapt::Data;
 		set_mode(MODEM_MODE_DATA);
 		logf("adaptive answer (+FAA=1, from %s mode)\n",
@@ -3500,7 +3504,7 @@ s16 Modem::fax_start()
 {
 	struct dp *old = dp_;
 
-	fax2_ = fax_class_ != 1;
+	fax2_ = fax2_class();
 	if (fax2_) {
 		struct fax2_settings s = {};
 		s.cls = fax_class_;
@@ -3516,6 +3520,11 @@ s16 Modem::fax_start()
 			FAX2_create(handle(), caller_, srate_, &s) : nullptr;
 	} else {
 		fax_ = FAX_create(handle(), caller_, srate_);
+		/* class 1.0: V.8 and V.34 half-duplex first (not on T.38,
+		   nor after adaptive answer's own answer tone) */
+		if (fax_ && fax_class_ == 10 && f34_[0] && !t38_ &&
+		    !fax_caller_ && DCORE_HAS(FAX_v34))
+			FAX_v34(fax_, f34_[0], f34_[1], f34_[2]);
 	}
 	if (fax_ && t38_ &&
 	    (fax2_ ? FAX2_t38_start(fax_, fax_t38_send, this, t38_max_) :
@@ -3636,6 +3645,9 @@ void Modem::fax2_reset()
 	f2_lp_ = 0;
 	f2_sp_ = 0;
 	f2_pi_.clear();
+	/* (and class 1.0's +F34) */
+	static const u32 f34[5] = { 14, 1, 0, 14, 1 };
+	std::copy(std::begin(f34), std::end(f34), f34_);
 	f2_ps_ = 1;
 	f2_other_.clear();
 	fax_class_ = 1;

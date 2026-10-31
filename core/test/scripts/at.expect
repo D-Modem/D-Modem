@@ -218,7 +218,7 @@
       0 A: ERROR\r\n
       0 A< AT+FCLASS=?\r
       0 A: AT+FCLASS=?\r\r\n
-      0 A: 0,1,2,2.0,8\r\n
+      0 A: 0,1,1.0,2,2.0,8\r\n
       0 A: OK\r\n
       0 A< AT+FCLASS?\r
       0 A: AT+FCLASS?\r\r\n
@@ -246,6 +246,20 @@
       0 A< AT+FRH=?\r
       0 A: AT+FRH=?\r\r\n
       0 A: 3\r\n
+      0 A: OK\r\n
+      0 A< AT+FCLASS=1.0;+FCLASS?;+F34?;+F34=?\r
+      0 A: AT+FCLASS=1.0;+FCLASS?;+F34?;+F34=?\r\r\n
+      0 A: 1.0\r\n
+      0 A: 14,1,0,14,1\r\n
+      0 A: (0-14),(0-14),(0-2),(0-14),(0-14)\r\n
+      0 A: OK\r\n
+      0 A< AT+F34=12,2,1;+F34?;+F34=15\r
+      0 A: AT+F34=12,2,1;+F34?;+F34=15\r\r\n
+      0 A: 12,2,1,14,1\r\n
+      0 A: ERROR\r\n
+      0 A< AT+F34=,,,1,1;+F34?\r
+      0 A: AT+F34=,,,1,1;+F34?\r\r\n
+      0 A: 12,2,1,1,1\r\n
       0 A: OK\r\n
       0 A< AT+FCLASS=2.0;+FCLASS?\r
       0 A: AT+FCLASS=2.0;+FCLASS?\r\r\n

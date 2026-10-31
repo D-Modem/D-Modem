@@ -67,6 +67,10 @@ A AT+FTM=?\r
 A AT+FRM=?\r
 A AT+FTH=?\r
 A AT+FRH=?\r
+# class 1.0 (T.31): V.34 half-duplex fax, its rates
+A AT+FCLASS=1.0;+FCLASS?;+F34?;+F34=?\r
+A AT+F34=12,2,1;+F34?;+F34=15\r
+A AT+F34=,,,1,1;+F34?\r
 # class 2.0 and 2 (T.32): the settings, either's names; the commands
 # with no call are ERROR (+FKS OK)
 A AT+FCLASS=2.0;+FCLASS?\r

@@ -899,6 +899,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	V34Params hdx_p;        /* the primary channel's data mode */
 	s32 hdx_rate;
 	s16 hdx_up;             /* the control channel has been up */
+	s16 hdx_maxp, hdx_minp; /* the host's primary channel rates, in
+				   2400 bit/s (0: any) */
 	s16 hdx_pri_req;        /* the host asks for the primary channel */
 	s16 hdx_pri_done;       /* and its get_bit() said -1 */
 	s16 hdx_pri_up;         /* the recipient: the primary's data in */
@@ -5067,6 +5069,13 @@ void V34Pump::hdx_make_mp()
 		mp->expanded = 1;
 	}
 	mp->rate_mask = 0x3FFF;
+	/* the host's limits (T.31's +F34) */
+	if (hdx_maxp > 0 && mp->rate_ca > hdx_maxp)
+		mp->rate_ca = hdx_maxp;
+	if (hdx_minp > 1)
+		mp->rate_mask = static_cast<s16>(mp->rate_mask &
+						 (0x3FFF << (hdx_minp - 1)) &
+						 0x3FFF);
 }
 
 /* both MPh known: the primary channel's data mode (the recipient's MPh
@@ -7426,6 +7435,13 @@ void v34_hdx_primary(V34Hdx *h)
 {
 	if (h->hdx_source)
 		h->hdx_pri_req = 1;
+}
+
+/* (v34.h) */
+void v34_hdx_rates(V34Hdx *h, s16 maxp, s16 minp)
+{
+	h->hdx_maxp = maxp;
+	h->hdx_minp = minp;
 }
 
 /* (v34.h) */

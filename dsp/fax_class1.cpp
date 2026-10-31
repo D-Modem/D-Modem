@@ -19,6 +19,12 @@
  *    blocks itself), which goes as HDLC frames: taken out of the DTE's
  *    bits, and put into the bits it is given.
  *
+ *    Class 1.0 (FAX_v34()): V.8 and V.34 half-duplex (T.30 Annex F) from
+ *    the start of the call, ANSam for CED and CM for CNG; then +F34: and
+ *    CONNECT, and the DTE's data on the control channel or, after
+ *    <DLE><pri>, the primary channel (T.31's V.34 data mode).  A remote
+ *    without V.8 has class 1 as above.
+ *
  */
 
 #include <cinttypes>
@@ -33,6 +39,7 @@
 #include "fax.h"
 #include "fax_hdlc.h"
 #include "t38.h"
+#include "v34.h"
 #include <dsplibs.h>
 
 using namespace dsp;
@@ -40,6 +47,13 @@ using namespace dsp;
 
 #define DLE 0x10
 #define ETX 0x03
+#define EOT 0x04
+#define SUB 0x1A
+/* T.31's V.34 data mode: <DLE> and these (HylaFAX's names) */
+#define V34_PRI 0x6B            /* the primary channel */
+#define V34_CTRL 0x6D           /* the control channel */
+#define V34_CRATE 0x6D          /* + 1: 1200 bit/s, + 2: 2400 */
+#define V34_PRATE 0x6F          /* + n: n * 2400 bit/s */
 
 #define HDLC_MAX 260            /* address, control, FIF and FCS */
 #define ECM_MAX 262             /* an ECM frame (4 + 256 octets) and FCS */
@@ -64,6 +78,8 @@ enum c1_state {
 	C1_FRM,
 	C1_FTS,
 	C1_FRS,
+	C1_V8,                  /* class 1.0: V.8 and V.34's start-up */
+	C1_V34,                 /* class 1.0: V.34's data mode */
 };
 
 /* T.38: what is going out, and where it is */
@@ -84,12 +100,21 @@ struct ecm_frame {
 	s16 ok;
 };
 
+/* class 1.0: a frame from the DTE for the V.34 modem (no FCS) */
+struct v34_frame {
+	u8 data[ECM_MAX - 2];
+	s16 len;
+};
+
 struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
+	     HdlcTx<Fax, ECM_MAX - 2, HdlcEcm>,
 	     HdlcRx<Fax, HDLC_MAX, HdlcV21>,
 	     HdlcRx<Fax, ECM_MAX, HdlcEcm> {
 	/* the receivers: V.21's frames, and (T.38) the DTE's ECM frames */
 	using V21Rx = HdlcRx<Fax, HDLC_MAX, HdlcV21>;
 	using EcmRx = HdlcRx<Fax, ECM_MAX, HdlcEcm>;
+	using V21Tx = HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>;
+	using EcmTx = HdlcTx<Fax, ECM_MAX - 2, HdlcEcm>;
 
 	struct modem *modem;
 	s32 srate;
@@ -182,6 +207,33 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	s16 t38_eover;
 	s16 t38_hdlc_out;               /* FRM: the DTE has had flags */
 	s16 t38_ones;                   /* FRM: ones in a row to the DTE */
+
+	/* class 1.0: V.34 half-duplex */
+	V34Hdx *hdx;
+	s16 v34_on;                     /* its control channel has been up */
+	s16 v34_eot;                    /* the DTE's <DLE><EOT> */
+	struct v34_frame ccq[FRAME_QUEUE];      /* the DTE's frames for */
+	s16 cc_head, cc_tail;                   /* the control channel */
+	s16 cc_idle;                    /* flags going out (no frame) */
+	struct v34_frame priq[ECM_QUEUE];       /* and the primary one */
+	s16 pri_head, pri_tail;
+	s16 dte_pri;                    /* the DTE's frames are the primary
+					   channel's (<DLE><pri>) */
+	s16 pri_req;                    /* it asked: once our frames are out */
+	s16 pri_end;                    /* <DLE><ctrl>: after the frames */
+	struct v34_frame vframe;        /* the DTE's frame coming */
+	s16 vdle;
+
+	void v34_start();
+	void v34_drop();
+	void v34_process(const s16 *in, s16 *out, s32 n);
+	void v34_read_dte();
+	void v34_out_frame(const u8 *d, s16 len);
+	void v34_out_code(u8 c);
+	s16 v34_get_bit(s16 primary);
+	void v34_put_bit(s16 primary, s16 bit);
+	void v34_event(s16 ev);
+	s16 hdlc_tx_next(HdlcEcm, u8 *frame, s16 max);
 
 	void report_status(s16 status_);
 	void out_flush();
@@ -316,6 +368,19 @@ s16 Fax::hdlc_tx_next(HdlcV21, u8 *frame, s16 /* max: hframe's size */)
 {
 	s16 n = hlen;
 
+	if (hdx) {
+		/* class 1.0: the control channel's next frame, else flags */
+		if (cc_tail == cc_head) {
+			cc_idle = 1;
+			return 0;
+		}
+		n = ccq[cc_tail].len;
+		memcpy(frame, ccq[cc_tail].data, n);
+		cc_tail = (cc_tail + 1) % FRAME_QUEUE;
+		cc_idle = 0;
+		return n;
+	}
+
 	if (!hready)
 		return 0;
 	memcpy(frame, hframe, n);
@@ -323,7 +388,7 @@ s16 Fax::hdlc_tx_next(HdlcV21, u8 *frame, s16 /* max: hframe's size */)
 	hlen = 0;
 	/* the DTE may send the next frame now */
 	if (n >= 2 && (frame[1] & 0x10))
-		hdlc_tx_close();
+		V21Tx::hdlc_tx_close();
 	else
 		report_status(FAX_STATUS_CONNECT);
 	return n;
@@ -335,13 +400,13 @@ void Fax::fth_close()
 	if (t38)
 		t38_close = 1;
 	else
-		hdlc_tx_close();
+		V21Tx::hdlc_tx_close();
 }
 
 /* the frames for +FTH are over */
 bool Fax::fth_closing() const
 {
-	return t38 ? t38_close : hdlc_tx_closing();
+	return t38 ? t38_close : V21Tx::hdlc_tx_closing();
 }
 
 
@@ -353,6 +418,12 @@ bool Fax::fth_closing() const
    the queue if whole octets, at least 4, with its FCS checked */
 void Fax::hdlc_rx_frame(HdlcV21, const u8 *d, s16 len, bool whole)
 {
+	if (hdx && v34_on) {
+		/* class 1.0: the control channel's frames to the DTE */
+		if (whole && len >= 4 && hdlc_fcs(d, len) == HDLC_FCS_GOOD)
+			v34_out_frame(d, len);
+		return;
+	}
 	rflags++;
 	if (!whole || len < 4)
 		return;
@@ -750,6 +821,12 @@ void Fax::hdlc_rx_frame(HdlcEcm, const u8 *d, s16 len, bool whole)
 {
 	struct ecm_frame *fr;
 
+	if (hdx) {
+		/* class 1.0: the primary channel's frames to the DTE */
+		if (whole && len >= 4 && hdlc_fcs(d, len) == HDLC_FCS_GOOD)
+			v34_out_frame(d, len);
+		return;
+	}
 	if (!whole || len < 4)
 		return;
 	if ((eq_head + 1) % ECM_QUEUE == eq_tail)
@@ -1053,8 +1130,8 @@ void Fax::begin_fth()
 	set_state(C1_FTH);
 	hlen = hready = 0;
 	/* 1 s of flags first */
-	hdlc_tx_start(300, 16);
-	start_tx(FM_V21, 0, hdlc_tx_cb);
+	V21Tx::hdlc_tx_start(300, 16);
+	start_tx(FM_V21, 0, V21Tx::hdlc_tx_cb);
 	report_status(FAX_STATUS_CONNECT);
 }
 
@@ -1260,6 +1337,264 @@ void FAX_t38_rx(void *obj, const void *ifp)
 
 
 /*
+ *    class 1.0: V.34 half-duplex (T.31's V.34 data mode)
+ */
+
+/* (V34HdxHost) */
+static s16 v34_get_bit_cb(void *ctx, s16 primary)
+{
+	return static_cast<Fax *>(ctx)->v34_get_bit(primary);
+}
+
+/* (V34HdxHost) */
+static void v34_put_bit_cb(void *ctx, s16 primary, s16 bit)
+{
+	static_cast<Fax *>(ctx)->v34_put_bit(primary, bit);
+}
+
+/* (V34HdxHost) */
+static void v34_event_cb(void *ctx, s16 ev)
+{
+	static_cast<Fax *>(ctx)->v34_event(ev);
+}
+
+/* the V.34 modem on the line: V.8 first (no CNG: CM), calling V.21 as
+   well, for an answerer without V.8 */
+void Fax::v34_start()
+{
+	V21Tx::hdlc_tx_start(0, 0);     /* (the control channel's) */
+	cc_idle = 1;
+	cng_n = -1;
+	set_state(C1_V8);
+	if (caller)
+		listen_v21();
+}
+
+/* the V.34 modem gone (V.8 found none at the other end, or the DTE's
+   <DLE><EOT>, or the line went) */
+void Fax::v34_drop()
+{
+	v34_hdx_free(hdx);
+	hdx = nullptr;
+	v34_on = 0;
+}
+
+/* <DLE> and c to the DTE */
+void Fax::v34_out_code(u8 c)
+{
+	if (nout >= RX_OUT)
+		out_flush();
+	out[nout++] = DLE;
+	out[nout++] = static_cast<char>(c);
+}
+
+/* a frame (with its FCS) to the DTE, <DLE><ETX> after it */
+void Fax::v34_out_frame(const u8 *d, s16 len)
+{
+	for (s16 k = 0; k < len; k++)
+		out_byte(d[k]);
+	v34_out_code(ETX);
+	DSP_DBG("fax: V.34 frame of %d octets to the DTE\n", len);
+}
+
+/* the modem's next bit: the primary channel's frames (-1 after the
+   last, once the DTE's <DLE><ctrl> came), the control channel's (flags
+   between them) */
+s16 Fax::v34_get_bit(s16 primary)
+{
+	if (primary) {
+		s16 b = EcmTx::hdlc_tx_bit();
+		return b == FAX_BIT_END ? -1 : b;
+	}
+	return V21Tx::hdlc_tx_bit();
+}
+
+/* a bit from the modem into the HDLC receiver of its channel */
+void Fax::v34_put_bit(s16 primary, s16 bit)
+{
+	if (primary)
+		EcmRx::hdlc_rx_bit(bit);
+	else
+		V21Rx::hdlc_rx_bit(bit);
+}
+
+/* the modem's ev (enum v34hdx_event): the control channel up (the first
+   time +F34: and CONNECT), the primary channel up; each told to the DTE
+   in its data */
+void Fax::v34_event(s16 ev)
+{
+	switch (ev) {
+	case V34HDX_CC_UP:
+		if (!v34_on) {
+			char t[32];
+			s32 r = v34_hdx_rate(hdx);
+			v34_on = 1;
+			snprintf(t, sizeof(t), "\r\n+F34:%d,1\r\n",
+				 static_cast<int>(r / 2400));
+			modem_send_to_tty(modem, t,
+					  static_cast<int>(strlen(t)));
+			set_state(C1_V34);
+			report_status(FAX_STATUS_CONNECT);
+			DSP_DBG("fax: V.34 half-duplex, %" PRId32 " bit/s\n", r);
+		}
+		V21Rx::hdlc_rx_reset();
+		v34_out_code(V34_CTRL);
+		v34_out_code(V34_CRATE + 1);
+		break;
+	case V34HDX_PRIMARY_UP:
+		EcmRx::hdlc_rx_reset();
+		v34_out_code(V34_PRI);
+		v34_out_code(static_cast<u8>(V34_PRATE +
+					     v34_hdx_rate(hdx) / 2400));
+		break;
+	default:
+		break;
+	}
+}
+
+/* the next primary channel frame from the DTE; none yet (flags), or -1
+   once it said <DLE><ctrl> and they are out */
+s16 Fax::hdlc_tx_next(HdlcEcm, u8 *frame, s16 /* max */)
+{
+	if (pri_tail == pri_head)
+		return pri_end ? -1 : 0;
+	s16 n = priq[pri_tail].len;
+	memcpy(frame, priq[pri_tail].data, n);
+	pri_tail = (pri_tail + 1) % ECM_QUEUE;
+	return n;
+}
+
+/* the DTE's data in V.34's data mode: its frames (each to <DLE><ETX>,
+   no FCS) for the control channel, or after <DLE><pri> the primary one,
+   until <DLE><ctrl>; <DLE><EOT> ends the call */
+void Fax::v34_read_dte()
+{
+	char ch;
+
+	for (;;) {
+		s16 *head = dte_pri ? &pri_head : &cc_head;
+		s16 tail = dte_pri ? pri_tail : cc_tail;
+		s16 size = dte_pri ? ECM_QUEUE : FRAME_QUEUE;
+		u8 c;
+
+		if ((*head + 1) % size == tail || v34_eot)
+			return;
+		if (modem_recv_from_tty(modem, &ch, 1) != 1)
+			return;
+		c = static_cast<u8>(ch);
+		if (!vdle && c == DLE) {
+			vdle = 1;
+			continue;
+		}
+		if (!vdle) {
+			if (vframe.len < ECM_MAX - 2)
+				vframe.data[vframe.len++] = c;
+			continue;
+		}
+		vdle = 0;
+		switch (c) {
+		case DLE:
+			if (vframe.len < ECM_MAX - 2)
+				vframe.data[vframe.len++] = DLE;
+			break;
+		case SUB:
+			for (s16 k = 0; k < 2; k++)
+				if (vframe.len < ECM_MAX - 2)
+					vframe.data[vframe.len++] = DLE;
+			break;
+		case ETX:
+			if (vframe.len) {
+				struct v34_frame *q = dte_pri ? priq : ccq;
+				q[*head] = vframe;
+				*head = static_cast<s16>((*head + 1) % size);
+			}
+			vframe.len = 0;
+			break;
+		case V34_PRI:
+			if (!dte_pri && v34_hdx_source(hdx)) {
+				dte_pri = 1;
+				pri_req = 1;
+				pri_end = 0;
+				pri_head = pri_tail = 0;
+				EcmTx::hdlc_tx_start(8 * 8, 3 * 8);
+			}
+			vframe.len = 0;
+			break;
+		case V34_CTRL:
+			if (dte_pri) {
+				dte_pri = 0;
+				pri_end = 1;
+			}
+			vframe.len = 0;
+			break;
+		case EOT:
+			DSP_DBG("fax: <DLE><EOT> from the DTE\n");
+			v34_eot = 1;
+			return;
+		default:
+			break;  /* (a rate renegotiation and the like) */
+		}
+	}
+}
+
+/* class 1.0's samples: the V.34 modem's line, the DTE's data; while V.8
+   goes on (calling) V.21 too: the answerer's flags drop the modem, and
+   +FRH's CONNECT and frames follow as in class 1 */
+void Fax::v34_process(const s16 *in, s16 *out, s32 n)
+{
+	if (state == C1_V34)
+		v34_read_dte();
+	if (v34_eot) {
+		v34_drop();
+		v34_eot = 0;
+		set_state(C1_IDLE);
+		report_status(FAX_STATUS_OK);
+		std::fill(out, out + n, 0);
+		return;
+	}
+	/* <DLE><pri>: the primary channel once our frames are out */
+	if (pri_req && cc_head == cc_tail && cc_idle) {
+		pri_req = 0;
+		v34_hdx_primary(hdx);
+	}
+	s16 r = v34_hdx_process(hdx, const_cast<s16 *>(in), out, n);
+	if (r != DPSTAT_OK && r != DPSTAT_CONNECT) {
+		if (v34_on) {
+			/* the line went: <DLE><EOT> */
+			DSP_DBG("fax: V.34 failed\n");
+			v34_out_code(EOT);
+			v34_drop();
+			set_state(C1_IDLE);
+			report_status(FAX_STATUS_NOCARRIER);
+			return;
+		}
+		/* none at the other end: class 1 (calling, +FRH's frames;
+		   answering, the ANSam was the CED: +FTH's) */
+		DSP_DBG("fax: no V.34 half-duplex: class 1\n");
+		v34_drop();
+		if (caller) {
+			set_state(C1_FRH);
+			frh_connected = 0;
+			listen_v21();
+		} else {
+			begin_fth();
+		}
+		return;
+	}
+	count += n;
+	if (!v34_on && state == C1_V8 && caller && rx_on) {
+		for (s32 i = 0; i < n; i++)
+			rx.sample(in[i]);
+		if (rflags >= 2 && rx.carrier) {
+			DSP_DBG("fax: V.21 flags: no V.8, class 1\n");
+			v34_drop();
+			set_state(C1_FRH);
+			frh_connected = 0;
+		}
+	}
+}
+
+/*
  *    object
  */
 
@@ -1305,6 +1640,24 @@ void FAX_answer_tone(void *obj, u32 ms)
 	DSP_DBG("fax: %" PRIu32 " ms of answer tone sent already\n", ms);
 }
 
+/* (dsplibs.h) class 1.0: the V.34 modem has the line first */
+int FAX_v34(void *obj, unsigned maxp, unsigned minp, unsigned /* prefc */)
+{
+	Fax *f = static_cast<Fax*>(obj);
+	V34HdxHost h = { f, v34_get_bit_cb, v34_put_bit_cb, v34_event_cb };
+
+	if (!f || f->hdx || f->t38 || !maxp)
+		return -1;
+	f->hdx = v34_hdx_create(f->modem, static_cast<s16>(f->caller), 1,
+				f->srate, &h);
+	if (!f->hdx)
+		return -1;
+	v34_hdx_rates(f->hdx, static_cast<s16>(maxp), static_cast<s16>(minp));
+	f->v34_start();
+	DSP_DBG("fax: class 1.0, V.34 half-duplex up to %u\n", maxp * 2400);
+	return 0;
+}
+
 /* free what FAX_create made */
 void FAX_delete(void *obj)
 {
@@ -1312,6 +1665,8 @@ void FAX_delete(void *obj)
 	if (!f)
 		return;
 	DSP_DBG("fax: delete\n");
+	if (f->hdx)
+		f->v34_drop();
 	f->stop_rx();
 	delete f;
 }
@@ -1327,6 +1682,15 @@ int FAX_process(void *obj, void *in, void *out, int count)
 	s32 i;
 	s16 status = 0;
 
+	if (f->hdx) {
+		/* class 1.0's V.34 */
+		f->v34_process(src, dst, count);
+		if (!f->hdx && f->state == C1_FTH) {
+			/* (dropped, answering: ours from now on) */
+			std::fill(dst, dst + count, 0);
+		}
+		goto results;
+	}
 	if (f->state == C1_FTH || f->state == C1_FTM)
 		f->read_dte();
 
@@ -1450,6 +1814,7 @@ int FAX_process(void *obj, void *in, void *out, int count)
 	if (f->t38)
 		f->t38_flush();
 
+results:
 	/* data received after a CONNECT follows it on the tty */
 	if (!f->nstatus || f->status[0] != FAX_STATUS_CONNECT)
 		f->out_flush();
