@@ -55,9 +55,32 @@ runs them as duplex data pumps on a continuous carrier
 | `V29` (29) | V.29 | 9600, 7200, 4800 |
 | `V33` (33) | V.33 | 14400, 12000 (trellis coded) |
 | `V27TC` (27) | V.27ter | 4800, 2400 |
+| `V26` (26) | V.26 (alternative A) | 2400 |
+| `B201` (201) | Bell 201 (V.26's alternative B) | 2400 |
+| `B208` (208) | Bell 208 | 4800 |
+| `B202` (202) | Bell 202 | 1200 (FSK) |
 
-`V27TC` is V.250's name; `V29` and `V33` are D-Modem's. The other
-modulations run on `AT&L2` as they do on `AT&L1`.
+`V27TC` is V.250's name; `V29`, `V33`, `V26` and the Bell ones are
+D-Modem's. The other modulations run on `AT&L2` as they do on `AT&L1`.
+
+- **V.26 and Bell 201** use V.27ter's 2400 bit/s symbols (1200 baud,
+  carrier 1800 Hz), with the data unscrambled as those modems sent it.
+  The dibits' phase changes are those of V.26's alternative A (0, 90,
+  180, 270 degrees) or B (45, 135, 225, 315: Bell 201). Their marks are
+  phase reversals and their zeros an unmodulated carrier, so in the
+  data neither means the far end is synchronizing: only the loss of
+  the carrier or of the equalization does.
+- **Bell 208** is V.27ter's 4800 bit/s signal (8-phase at 1600 baud,
+  scrambled with 1 + x^-6 + x^-7), which V.27 took from it, at that
+  rate alone.
+- **Bell 202** runs on the FSK pump (`dsp/dp_fsk.cpp`): 1200 Hz mark,
+  2200 Hz space, 1200 bit/s from each end on its own pair. Each end
+  sends its mark at once, and the data starts once the far end's mark
+  has been steady for 150 ms.
+- The DPSK ones start with V.27ter's training as their synchronizing
+  signal. That is D-Modem's own for V.26 and Bell 201, which had none,
+  and Bell 208's own training is not V.27ter's: another D-Modem finds
+  it, but an old modem of these kinds does not.
 
 - **Start-up.** Each end sends its synchronizing signal at once
   (10/V.29, 9/V.33). It sends it again 1.2 s after its last one if the
@@ -132,7 +155,8 @@ On an analogue line `+MS=V91` runs V.34.
 ### Loop 3
 
 Loop 3 (`&T1`, `&T8`) runs offline, on a leased line (`&L1` or `&L2`)
-with a 4-wire modulation (`+MS=V29`, `V33` or `V27TC`). The pump's
+with a 4-wire modulation (`+MS=V29`, `V33`, `V27TC`, `V26`, `B201` or
+`B208`). The pump's
 signal goes back into its own receiver, and the line is silent.
 
 - `&T1` answers CONNECT, and the DTE's data comes back to it through the
@@ -216,7 +240,8 @@ on a 2-wire circuit, each end's own signal through its hybrid.
 | Test | What it checks |
 |---|---|
 | `TwoWire.Connects` | each voice band modulation on `AT&L1`: CONNECT and data both ways through V.42 |
-| `FourWire.Connects` | V.29, V.33 and V.27ter on `AT&L2`, with their rates each way |
+| `FourWire.Connects` | V.29, V.33, V.27ter, V.26 and Bell 201, 202 and 208 on `AT&L2`, with their rates each way |
+| `FourWirePlain.IdleZerosAndOnes` | V.26's, Bell 201's and Bell 202's unscrambled data idle and in long runs of zeros and ones, with no resynchronizing |
 | `FourWireRates.FasterEndComesDown` | the faster end coming down to the far end's rate |
 | `FourWireResync.DropoutUnderLapm` | a dropout the pumps resynchronize through |
 | `FourWireResync.NoiseBringsV33Down` | noise that brings V.33 down to 12000 |

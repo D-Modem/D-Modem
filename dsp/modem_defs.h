@@ -127,6 +127,8 @@ enum DP_ID {
 	DP_V8       = 8,        /* V.8, the start of V.34 and above */
 	DP_V17      = 17,
 	DP_V21      = 21,
+	DP_V26      = 26,       /* V.26 on a 4-wire leased line, 2400 bit/s
+				   duplex (alternative A) */
 	DP_V27TER   = 27,       /* V.27ter on a 4-wire leased line, 4800 and
 				   2400 bit/s duplex */
 	DP_V29      = 29,       /* V.29 on a 4-wire leased line, 9600 to
@@ -167,6 +169,9 @@ enum DP_ID {
 	DP_VWB      = 200,      /* V.wb: wideband DMT on a bare pair, at
 				   48000 Hz or more (dsp/vwb.h) */
 	DP_B212     = 212,      /* Bell 212A */
+	DP_B201     = 201,      /* Bell 201: V.26's alternative B, 4-wire */
+	DP_B202     = 202,      /* Bell 202: 1200 bit/s FSK, 4-wire duplex */
+	DP_B208     = 208,      /* Bell 208: 4800 bit/s 8-phase, 4-wire */
 };
 
 /*

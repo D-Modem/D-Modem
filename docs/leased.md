@@ -32,9 +32,13 @@ seconds later. `ATH`, `ATZ` or `AT&L0` stop it doing that.
   from 300 bit/s up to V.34's 33600 bit/s. If the circuit changes in the
   middle of a call, V.34 and V.32 retrain to the new conditions.
 - **4-wire (`AT&L2`):** as well as the above, the classic leased-line
-  modems: V.29 (up to 9600 bit/s), V.33 (up to 14400 bit/s) and V.27ter
-  (up to 4800 bit/s). These keep their signal on for the whole call. If
-  the line gets worse, they step down to a slower speed by themselves.
+  modems: V.29 (up to 9600 bit/s), V.33 (up to 14400 bit/s), V.27ter
+  (up to 4800 bit/s), V.26 and Bell 201 (2400 bit/s), Bell 208 (4800
+  bit/s) and Bell 202 (1200 bit/s). These keep their signal on for the
+  whole call. If the line gets worse, V.29, V.33 and V.27ter step down
+  to a slower speed by themselves. Two D-Modems connect with any of
+  them; the old Bell and V.26 modems themselves start up differently,
+  so D-Modem may not connect to one.
 - **4-wire digital (`AT&L2+MS=V91`):** on a digital circuit, such as a
   64 kbit/s channel between two phone systems, two D-Modems can use V.91
   to reach about 62000 bit/s in both directions.

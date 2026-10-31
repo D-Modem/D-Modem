@@ -331,7 +331,8 @@ INSTANTIATE_TEST_SUITE_P(Leased, TwoWire, ::testing::Values(
 	Mod{ "+MS=103", "Bell103", 300 }), mod_name);
 
 /* AT&L2, a 4-wire leased line: V.29, V.33 and V.27ter at each of their
-   rates, duplex on a continuous carrier */
+   rates, V.26 and Bell 201, 202 and 208, duplex on a continuous
+   carrier */
 class FourWire : public ::testing::TestWithParam<Mod> {};
 
 /* (see FourWire) */
@@ -359,7 +360,42 @@ INSTANTIATE_TEST_SUITE_P(Leased, FourWire, ::testing::Values(
 	Mod{ "+MS=V33", "V33_14400", 14400 },
 	Mod{ "+MS=33,0,12000,12000", "V33_12000", 12000 },
 	Mod{ "+MS=V27TC", "V27ter_4800", 4800 },
-	Mod{ "+MS=27,0,2400,2400", "V27ter_2400", 2400 }), mod_name);
+	Mod{ "+MS=27,0,2400,2400", "V27ter_2400", 2400 },
+	Mod{ "+MS=V26", "V26", 2400 }, Mod{ "+MS=B201", "Bell201", 2400 },
+	Mod{ "+MS=B208", "Bell208", 4800 },
+	Mod{ "+MS=B202", "Bell202", 1200 }), mod_name);
+
+/* V.26, Bell 201 and Bell 202 send their data as it is (no
+   scrambler): a link idle for seconds (marks: V.26's alternations), then
+   long runs of zeros (V.26: an unmodulated carrier) and of ones, are
+   data and not the far end synchronizing; the call goes on, no
+   NO CARRIER and every byte */
+TEST(FourWirePlain, IdleZerosAndOnes)
+{
+	dmodem_init();
+	debug();
+	for (const char *ms : { "+MS=V26", "+MS=B201", "+MS=B202" }) {
+		Pair p("&L2", ms, ms);
+		ASSERT_TRUE(p.connect()) << ms;
+		run(p.line, p.c, p.a, 5, [] { return false; });
+		std::string d(3000, '\0');
+		d += std::string(3000, '\xff');
+		d += bulk(3000, 3);
+		p.c.sent = p.a.sent = 0;
+		p.c.data.clear();
+		p.a.data.clear();
+		run(p.line, p.c, p.a, 60, [&] {
+			p.c.sent += p.c.dte.write_some(d, p.c.sent);
+			p.a.sent += p.a.dte.write_some(d, p.a.sent);
+			return p.a.data.size() >= d.size() &&
+				p.c.data.size() >= d.size();
+		});
+		EXPECT_TRUE(p.a.data == d) << ms << ": " << p.a.data.size();
+		EXPECT_TRUE(p.c.data == d) << ms << ": " << p.c.data.size();
+		EXPECT_EQ(p.c.no_carriers + p.a.no_carriers, 0) << ms;
+		EXPECT_EQ(p.c.connects, 1) << ms;
+	}
+}
 
 /* the two ends at different rates: the receivers find the far end's
    rate by themselves, and the faster end comes down to the slower's
@@ -400,7 +436,8 @@ TEST(FourWireResync, DropoutUnderLapm)
 {
 	dmodem_init();
 	debug();
-	for (const char *ms : { "+MS=29", "+MS=33", "+MS=27" }) {
+	for (const char *ms : { "+MS=29", "+MS=33", "+MS=27", "+MS=V26",
+				    "+MS=B201", "+MS=B208" }) {
 		Pair p("&L2", ms, ms);
 		ASSERT_TRUE(p.connect()) << ms;
 		p.line.drop_at = static_cast<double>(p.line.t) / 9600 + 2;

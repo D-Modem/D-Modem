@@ -30,6 +30,10 @@ enum fax_mod {
 	FM_V17_9600,
 	FM_V17_12000,
 	FM_V17_14400,
+	FM_V26_A,               /* V.26 (4-wire leased): V.27ter 2400's
+				   symbols, its data unscrambled */
+	FM_V26_B,               /* and alternative B (Bell 201): the phase
+				   changes 45 degrees on */
 };
 
 /* class 1 <mod> code -> modulation and training; returns 0 if unknown */
