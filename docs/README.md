@@ -78,6 +78,3 @@ The project's overview, building and usage are in the top
   LaTeX source is [cellular/](cellular/v_cvm.tex),
   `docs/cellular/build.sh` builds it and `cellular/measure/` repeats the
   measurements
-- [legacy/ST56ATCommands.pdf](legacy/ST56ATCommands.pdf): the AT command
-  set of Smart Link's ST56 modems, which D-Modem's own command set began
-  as
