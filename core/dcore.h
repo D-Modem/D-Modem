@@ -319,7 +319,7 @@ public:
 	const char *dial_string() const { return dial_string_; }
 	/* data, fax or voice */
 	enum MODEM_MODE mode() const { return mode_; }
-	/* in fax mode, the class: 1, 2, or 20 for 2.0 */
+	/* in fax mode, the class: 1, 10 for 1.0, 2, or 20 for 2.0 */
 	u8 fax_class() const { return fax_class_; }
 	/* the call's state */
 	LinkState link_state() const;
@@ -519,6 +519,7 @@ private:
 	s16 at_voice(char *p, s16 *len);
 	s16 at_VSM(char *p, s16 *len);
 	s16 at_fax(char *p, s16 *len);
+	s16 at_F34(char *p, s16 *len);
 	s16 fax_command(enum FAX_CMD cmd, u32 val);
 	s16 at_fax2(char *p, s16 *len);
 	std::string fclass() const;
@@ -770,10 +771,16 @@ private:
 	dsp::CngDetect *cng_ = nullptr;
 	u16 cng_cut_ = 0;
 	u64 answer_tone_at_ = 0;
-	/* +FCLASS's fax class: 1, 2, or 20 for 2.0 (mode_ is
+	/* +FCLASS's fax class: 1, 10 for 1.0, 2, or 20 for 2.0 (mode_ is
 	   MODEM_MODE_FAX for each); the engine in fax_ class 2's (FAX2_*) */
 	u8 fax_class_ = 1;
 	bool fax2_ = false;
+	/* class 2 or 2.0 (else class 1 or 1.0) */
+	bool fax2_class() const { return fax_class_ == 2 || fax_class_ == 20; }
+	/* +F34 (T.31 class 1.0): the primary channel's highest and lowest
+	   rate (in 2400 bit/s, 0: no V.34), the control channel's (0 any,
+	   1 1200, 2 2400 bit/s), and two more kept */
+	u32 f34_[5] = { 14, 1, 0, 14, 1 };
 	/* class 2 and 2.0 (at_fax2()): +FLI, +FPI, +FCC, +FIS, +FBO, +FCR,
 	   +FPS, +FLP, +FSP;
 	   the last call's +FCS (f2_cs_set_: there was one) and hangup

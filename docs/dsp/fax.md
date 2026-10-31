@@ -16,6 +16,7 @@ fax modem with one of three command sets. D-Modem has all of them:
 | Command set | Turn on with | Who does the fax protocol |
 |---|---|---|
 | **Class 1** | `AT+FCLASS=1` | the fax program; the modem only sends and receives the signals |
+| **Class 1.0** | `AT+FCLASS=1.0` | as class 1, with V.34 fax too |
 | **Class 2** | `AT+FCLASS=2` | the modem |
 | **Class 2.0** | `AT+FCLASS=2.0` | the modem (the standardised version of class 2) |
 
@@ -29,6 +30,13 @@ highest speed to 13 with error correction on (for example
 `AT+FIS=1,13,0,2,0,2,0,0`). A machine without V.34 still gets the
 usual speeds. To poll (fetch a document) on V.34, send `AT+FSP=1`
 before dialling.
+
+In class 1.0 (`AT+FCLASS=1.0`), fax programs that know V.34 fax, such as
+HylaFAX, get it the same way: the modem says `+F34:` with the speed
+before its `CONNECT`, and the program sends and receives the pages at
+up to 33600 bit/s. `AT+F34=` sets the highest and lowest speed (in
+steps of 2400 bit/s; `AT+F34=0` turns V.34 off). With a machine that has
+no V.34, the call carries on as ordinary class 1.
 
 ## Built-in fax machine
 

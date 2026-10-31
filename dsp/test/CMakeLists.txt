@@ -223,9 +223,15 @@ dmodem_gtest(t30_v34_test LABELS quick)
 # class 1 over T.38: a DTE of its own through T.30 on the engine, our
 # T.30 machine at the other end
 dmodem_test_exe(class1_t38_test class1_t38_test.cpp fax_docs.cpp fax_stubs.cpp
-	test_util.cpp ${S}/fax_class1.cpp ${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp
+	v34_hdx_stubs.cpp test_util.cpp ${S}/fax_class1.cpp ${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp
 	${S}/tiff.cpp ${_fax})
 dmodem_gtest(class1_t38_test LABELS quick)
+# class 1.0: a DTE of its own on V.34 half-duplex (T.31's V.34 data
+# mode) against our T.30 machine on it, sending and receiving
+dmodem_test_exe(class1_v34_test class1_v34_test.cpp fax_docs.cpp test_util.cpp
+	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp)
+target_link_libraries(class1_v34_test PRIVATE dmodem_dsp)
+dmodem_gtest(class1_v34_test LABELS quick)
 # the test document for the Asterisk and FreeSWITCH fax scripts
 dmodem_test_exe(fax_doc fax_doc.cpp fax_docs.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(fax_doc PRIVATE GTest::gtest)

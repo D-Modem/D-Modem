@@ -108,6 +108,41 @@ machine over T.38, with the packets' timing; `asterisk/test/efax.sh`
 has efax on dmodemd against Asterisk's fax over T.38 (dmodemd's
 `SIP_T38`, [README](../../README.md)).
 
+### Class 1.0: V.34 half-duplex
+
+With `+FCLASS=1.0` and `+F34=` (maxp not 0), the core calls `FAX_v34()`
+(dsplibs.h) right after `FAX_create()` (not on T.38, nor after adaptive
+answer's own answer tone): the engine's line is a V.34 half-duplex
+modem (`v34_hdx_create()`, [V.34](v34-details.md)) with the primary
+channel between minp and maxp (`v34_hdx_rates()`), V.8 first (CM
+calling, ANSam answering, no CNG). Once its control channel is up the
+engine writes `+F34:<p>,1` to the tty and gives `CONNECT`; from then on
+the DTE's data is T.31's V.34 data mode (Annex B), as HylaFAX speaks it:
+
+- frames each to `<DLE><ETX>` both ways (the DTE's without an FCS, the
+  engine's with theirs), `<DLE>` doubled, `<DLE><SUB>` two of them;
+  the DTE's go out on the control channel with flags between them;
+- `<DLE><0x6B>` from the source DTE: once its control channel frames
+  are out the modem turns to the primary channel
+  (`v34_hdx_primary()`); the DTE's frames that follow (the ECM block,
+  no RCP needed) go on it, `<DLE><0x6D>` after the last;
+- to the DTE at either end: `<DLE><0x6B><DLE><0x6F+p>` when the primary
+  channel is up, the frames it carries, `<DLE><0x6D><DLE><0x6E>` when
+  the control channel (1200 bit/s) is up again (also the first time);
+- `<DLE><EOT>` from the DTE drops the modem: `OK`. The line going drops
+  it too: `<DLE><EOT>` to the DTE and `NO CARRIER`. Rate renegotiation
+  and control channel retrains are not asked for.
+
+Without V.8 at the other end the engine is class 1 again: calling, the
+answerer's V.21 flags (or V.8's failure) drop the modem and `+FRH=3`'s
+`CONNECT` and frames follow; answering, the ANSam was the CED and
+`CONNECT` comes for the DTE's `+FTH=3` frames.
+
+`class1_v34_test` (ctest's `quick`) has a DTE of its own go through
+T.30 Annex F with it, sending (to 33600, and capped with maxp 6) and
+receiving, against our T.30 machine on V.34 through G.711 with a little
+noise, and with a machine without V.34 calling and answering.
+
 ## Fax (class 2 and 2.0)
 
 `fax_class2.cpp` is T.32's class 2.0, and the older class 2 that fax

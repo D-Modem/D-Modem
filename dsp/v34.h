@@ -642,6 +642,9 @@ s16 v34_hdx_process(V34Hdx *h, s16 *in, s16 *out, s32 n);
 /* the source: the primary channel from now on, until its get_bit()
    says -1; then the control channel again */
 void v34_hdx_primary(V34Hdx *h);
+/* the primary channel's rates between minp and maxp * 2400 bit/s (0:
+   any), before V.8 */
+void v34_hdx_rates(V34Hdx *h, s16 maxp, s16 minp);
 /* V.8 chose V.34 half-duplex (both have it) */
 s16 v34_hdx_on(const V34Hdx *h);
 /* we are the source (once V.8 is over) */

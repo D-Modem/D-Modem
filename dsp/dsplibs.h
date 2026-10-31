@@ -103,6 +103,11 @@ void *FAX_create(struct modem *m, unsigned caller, u32 srate);
 /* an answerer's answer tone already on the line for ms (adaptive
    answer): its CED cut short, or none */
 void FAX_answer_tone(void *obj, u32 ms);
+/* class 1.0 (T.31): V.8 and V.34 half-duplex (T.30 Annex F) before the
+   first FAX_process, the primary channel up to maxp * 2400 bit/s (minp,
+   prefc: +F34's, taken); with a remote without V.8 the engine goes on as
+   class 1.  0, or -1 when the modem can't start */
+int FAX_v34(void *obj, unsigned maxp, unsigned minp, unsigned prefc);
 /* frees it */
 void FAX_delete(void *obj);
 /* count samples in and out: a FAX_STATUS_* to report, 0, or < 0 to end

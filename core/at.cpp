@@ -711,7 +711,7 @@ s16 Modem::at_command(char *cmd)
 					if (starts_nocase(p, "+FCLASS"))
 						ret = at_FCLASS(p, &len);
 					else if (mode_ == MODEM_MODE_FAX &&
-						 fax_class_ != 1)
+						 fax2_class())
 						ret = at_fax2(p, &len);
 					else if ((ret = at_fax(p, &len)) < 0 &&
 						 has_fax2())
@@ -1447,22 +1447,25 @@ s16 Modem::at_GCI(char *p, s16 *len)
 	return 0;
 }
 
-/* +FCLASS? as it says the mode: 0, 1, 2, 2.0 or 8 */
+/* +FCLASS? as it says the mode: 0, 1, 1.0, 2, 2.0 or 8 */
 std::string Modem::fclass() const
 {
-	if (mode_ == MODEM_MODE_FAX && fax_class_ != 1)
+	if (mode_ == MODEM_MODE_FAX && fax_class_ == 10)
+		return "1.0";
+	if (mode_ == MODEM_MODE_FAX && fax2_class())
 		return fax_class_ == 2 ? "2" : "2.0";
 	return dec(static_cast<s16>(mode_));
 }
 
-/* +FCLASS=?, +FCLASS?, +FCLASS=<d>: data (0), class 1 fax (1), class 2
-   and 2.0 fax (2, 2.0: T.32, with the T.30 library), voice (8) */
+/* +FCLASS=?, +FCLASS?, +FCLASS=<d>: data (0), class 1 fax (1), class
+   1.0 (1.0: T.31's with V.34 half-duplex, +F34), class 2 and 2.0 fax (2,
+   2.0: T.32, with the T.30 library), voice (8) */
 s16 Modem::at_FCLASS(char *p, s16 *len)
 {
 	const char *q = p + 7;
 
 	if (q[0] == '=' && q[1] == '?') {
-		puts(has_fax2() ? "0,1,2,2.0,8" : "0,1,8");
+		puts(has_fax2() ? "0,1,1.0,2,2.0,8" : "0,1,1.0,8");
 		crlf();
 		*len = 9;
 		return 0;
@@ -1479,6 +1482,13 @@ s16 Modem::at_FCLASS(char *p, s16 *len)
 		if (set_mode(MODEM_MODE_FAX))
 			return -1;
 		fax_class_ = c20 ? 20 : 2;
+		return 0;
+	}
+	if (q[0] == '=' && q[1] == '1' && q[2] == '.' && q[3] == '0') {
+		*len = 11;
+		if (set_mode(MODEM_MODE_FAX))
+			return -1;
+		fax_class_ = 10;
 		return 0;
 	}
 	if (q[0] == '=' && (q[1] == '0' || q[1] == '1' || q[1] == '8')) {
@@ -1534,7 +1544,7 @@ std::string fax2_list(const u32 *u)
 s16 Modem::at_fax2(char *p, s16 *len)
 {
 	const char *q = p + 1, *e;
-	bool c2 = mode_ == MODEM_MODE_FAX && fax_class_ != 1;
+	bool c2 = mode_ == MODEM_MODE_FAX && fax2_class();
 	std::string name;
 	const char *end;
 
@@ -1693,6 +1703,8 @@ s16 Modem::at_fax(char *p, s16 *len)
 	enum FAX_CMD cmd;
 	u32 v;
 
+	if (what == '3' && kind == '4')
+		return at_F34(p, len);
 	if (what == 'M' && identity(kind)) {
 		puts(identity(kind));
 		crlf();
@@ -1738,6 +1750,51 @@ s16 Modem::at_fax(char *p, s16 *len)
 	}
 	*len = static_cast<s16>(e - p);
 	return fax_command(cmd, static_cast<u32>(v));
+}
+
+/* +F34 (T.31 class 1.0): +F34=<maxp>,<minp>,<prefc>[,<maxp2>,<minp2>]
+   (the primary channel's rates in 2400 bit/s, 1 to 14, maxp 0: no V.34;
+   the control channel's, 0 any, 1 1200, 2 2400), +F34? and +F34=? */
+s16 Modem::at_F34(char *p, s16 *len)
+{
+	static const u32 max[5] = { 14, 14, 2, 14, 14 };
+	const char *q = p + 4, *e, *end;
+	u32 w[5];
+
+	for (end = q; *end && *end != ';'; end++)
+		;
+	*len = static_cast<s16>(end - p);
+	if (q[0] == '?' && q + 1 == end) {
+		std::string s;
+		for (int i = 0; i < 5; i++)
+			s += (i ? "," : "") + dec(f34_[i]);
+		puts(s);
+		crlf();
+		return 0;
+	}
+	if (q[0] == '=' && q[1] == '?' && q + 2 == end) {
+		puts("(0-14),(0-14),(0-2),(0-14),(0-14)");
+		crlf();
+		return 0;
+	}
+	if (q[0] != '=')
+		return -1;
+	std::copy(f34_, f34_ + 5, w);
+	q++;
+	for (int i = 0; i < 5 && q < end; i++) {
+		if (is_digit(*q)) {
+			w[i] = decimal(q, &e);
+			if (w[i] > max[i])
+				return -1;
+			q = e;
+		}
+		if (q < end && *q++ != ',')
+			return -1;
+	}
+	if (q != end)
+		return -1;
+	std::copy(w, w + 5, f34_);
+	return 0;
 }
 
 /* a class 1 command for the fax engine: once it has started, the DTE's
