@@ -34,6 +34,7 @@ receiver works inside, see [the technical details](dsp-details.md).
 | Text telephones | 45 to 300 bit/s | TTY (Baudot), EDT and V.18 automatic detection, for deaf and hard of hearing users |
 | Contact ID | (DTMF digits) | alarm panels reporting to a monitoring centre; D-Modem can be either end |
 | Fixed-line SMS | 1200 bit/s | text messages to and from home phones that have an SMS button, as some European phone companies offered; D-Modem can be the phone or the message centre |
+| Modem relay (V.150.1) | the far modem's speed | data calls through a gateway that answers the far modem itself, sent as bytes over the internet (see [Modem relay](../v150.md)) |
 | Clear channel | 64000 bit/s | a fully digital ISDN data call, with no modulation at all (see [ISDN](../isdn.md)) |
 
 There are also pumps for **call progress** (dial tone, dialling, busy,

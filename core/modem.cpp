@@ -990,7 +990,8 @@ void Modem::update_status(Status s)
 					dp_->id == DP_BAUDOT ||
 					dp_->id == DP_EDT ||
 					dp_->id == DP_CONTACTID ||
-					dp_->id == DP_SMS))) {
+					dp_->id == DP_SMS ||
+					dp_->id == DP_RELAY))) {
 			cfg_.ec = false;
 			cfg_.mnp = false;
 		}
@@ -1748,9 +1749,11 @@ void Modem::change_dp()
 		   (dp_runtime_set_analog()) */
 		if (host_.analog_line(*this) && id == DP_V91)
 			id = DP_V34;
-		/* a clear channel has its own pump, and an analogue line
-		   none */
-		if (clear_channel()) {
+		/* a relayed call and a clear channel have their own
+		   pumps, and an analogue line none */
+		if (relay_channel()) {
+			id = DP_RELAY;
+		} else if (clear_channel()) {
 			id = DP_CLEAR;
 			if (DCORE_HAS(dp_runtime_set_v110) && dp_runtime_)
 				dp_runtime_set_v110(dp_runtime_, cbst_rate());
@@ -1923,6 +1926,35 @@ bool Modem::clear_channel() const
 	return sregs_[SREG_DP] == DP_CLEAR || host_.clear_line(self);
 }
 
+/* see dcore.h */
+bool Modem::relay_channel() const
+{
+	Modem &self = const_cast<Modem &>(*this);
+	return srate_ == 8000 && mode_ == MODEM_MODE_DATA &&
+	       host_.relay_line(self);
+}
+
+/* struct dp_relay's state(): the Host's */
+int Modem::relay_state_cb(void *ctx, s32 *tx, s32 *rx)
+{
+	Modem *m = static_cast<Modem *>(ctx);
+	return m->host_.relay_state(*m, tx, rx);
+}
+
+/* struct dp_relay's read(): the Host's */
+int Modem::relay_read_cb(void *ctx, unsigned char *buf, int max)
+{
+	Modem *m = static_cast<Modem *>(ctx);
+	return static_cast<int>(m->host_.relay_read(*m, buf, max));
+}
+
+/* struct dp_relay's write(): the Host's */
+int Modem::relay_write_cb(void *ctx, const unsigned char *buf, int n)
+{
+	Modem *m = static_cast<Modem *>(ctx);
+	return static_cast<int>(m->host_.relay_write(*m, buf, n));
+}
+
 /* call progress has dialled up to the ';': the call is held in command
    state, and the rest of the ATD line runs (OK when there is none) */
 void Modem::dialed()
@@ -1973,8 +2005,9 @@ s16 Modem::answer(bool adaptive)
 	/* a voice call's held line: off hook a while already */
 	bool held = voice_held_;
 
-	/* (and a clear channel has no answer tone to hold back) */
-	if (held || clear_channel())
+	/* (and a clear channel or a relayed call has no answer tone to
+	   hold back) */
+	if (held || clear_channel() || relay_channel())
 		delay = srate_ / 100;
 	voice_held_ = false;
 

@@ -91,6 +91,7 @@ namespace libre {
 #include "portable.h"
 #include "rtp_events.h"
 #include "sip.h"
+#include "v150.h"
 #include "reinit.h"
 
 namespace sip {
@@ -140,6 +141,16 @@ const s16 TE_PT = 101;
 /* RFC 4040's CLEARMODE (a 64 kbit/s clear channel): the payload type of
    ours in an offer */
 const s16 CLEAR_PT = 97;
+/* V.150.1: the payload types of ours in an offer, SSE's (RTP's
+   v150fw) and SPRT's (v150mr, not one of RTP's); RFC 4734's ANSam, the
+   answerer's answer tone as an event; our SPRT line's parameters (U-MR,
+   double trans-compression, the audio's answer tone, the modulations
+   of v150.h's OUR_MODS) */
+const s16 SSE_PT = 118;
+const s16 SPRT_PT = 120;
+const u16 EV_ANSAM = 34;
+const char *const SPRT_FMTP = "mr=1;mg=2;CDSCselect=1;mrmods=1,3-4,12;"
+			      "jmdelay=no";
 const u16 EV_FLASH = 16;
 const u32 EV_MAX = 65535;
 const s16 EV_ENDS = 3;
@@ -490,13 +501,18 @@ bool is_t38(const SdpMedia &m)
 	return lower(m.type) == "image" && lower(m.proto) == "udptl";
 }
 
-/* the first line of s on of type audio or (t38) T.38, -1 if none */
+/* (below) */
+bool is_sprt(const SdpMedia &m);
+
+/* the first line of s on of type audio (not modem relay's) or (t38)
+   T.38, -1 if none */
 s16 line_of(const Sdp &s, bool t38)
 {
 	for (size_t i = 0; i < s.media.size(); i++)
 		if (s.media[i].port > 0 &&
 		    (t38 ? is_t38(s.media[i]) :
-		     lower(s.media[i].type) == "audio"))
+		     lower(s.media[i].type) == "audio" &&
+		     !is_sprt(s.media[i])))
 			return static_cast<s16>(i);
 	return -1;
 }
@@ -655,8 +671,10 @@ s16 g711_pt(const SdpMedia &m, s16 *law)
 	return first;
 }
 
-/* the telephone-event format of audio line m, -1 if it has none */
-s16 te_pt(const SdpMedia &m)
+/* the dynamic format of audio line m whose rtpmap (attribute map) is
+   enc (lower case), -1 if it has none */
+s16 dyn_pt(const SdpMedia &m, const std::string &enc,
+	   const char *map = "rtpmap")
 {
 	for (const std::string &f : m.fmts) {
 		s32 pt;
@@ -664,17 +682,67 @@ s16 te_pt(const SdpMedia &m)
 		if (!dcore::parse_long(f, pt) || pt < 96 || pt > 127)
 			continue;
 		for (const auto &a : m.attrs) {
-			if (!dcore::same_nocase(a.first, "rtpmap"))
+			if (!dcore::same_nocase(a.first, map))
 				continue;
 			size_t sp = a.second.find(' ');
 			if (sp != std::string::npos &&
 			    a.second.substr(0, sp) == f &&
 			    lower(a.second.substr(sp + 1)).compare(
-				    0, 20, "telephone-event/8000") == 0)
+				    0, enc.size(), enc) == 0)
 				return static_cast<s16>(pt);
 		}
 	}
 	return -1;
+}
+
+/* the telephone-event format of audio line m, -1 if it has none */
+s16 te_pt(const SdpMedia &m)
+{
+	return dyn_pt(m, "telephone-event/8000");
+}
+
+/* V.150.1's SSE format (v150fw) of audio line m, -1 if it has none */
+s16 sse_pt(const SdpMedia &m)
+{
+	return dyn_pt(m, "v150fw/8000");
+}
+
+/* m is V.150.1's modem relay line (SPRT) */
+bool is_sprt(const SdpMedia &m)
+{
+	return lower(m.proto) == "udpsprt";
+}
+
+/* the first modem relay line of s that is on, -1 if none */
+s16 sprt_line(const Sdp &s)
+{
+	for (size_t i = 0; i < s.media.size(); i++)
+		if (s.media[i].port > 0 && is_sprt(s.media[i]))
+			return static_cast<s16>(i);
+	return -1;
+}
+
+/* the v150mr format of modem relay line m (its sprtmap), -1 if none */
+s16 sprt_pt(const SdpMedia &m)
+{
+	return dyn_pt(m, "v150mr/8000", "sprtmap");
+}
+
+/* the far end's media gateway type (its fmtp's mg: 0 no, 1 single, 2
+   double trans-compression; 0 if it says not) on modem relay line m */
+int sprt_mg(const SdpMedia &m)
+{
+	for (const auto &a : m.attrs) {
+		if (!dcore::same_nocase(a.first, "fmtp"))
+			continue;
+		std::string v = lower(a.second);
+		for (size_t at = v.find("mg="); at != std::string::npos;
+		     at = v.find("mg=", at + 1))
+			if (at == 0 || v[at - 1] == ' ' || v[at - 1] == ';')
+				return static_cast<int>(
+					dcore::leading_long(v.substr(at + 3)));
+	}
+	return 0;
 }
 
 /* the direction of line m of s: its own, else the session's */
@@ -722,12 +790,15 @@ Peer t38_params(const SdpMedia &m)
 	return p;
 }
 
-/* a media line of ours: our audio (RTP), our T.38 (UDPTL), or another
-   line off */
+/* a media line of ours: our audio (RTP), our T.38 (UDPTL), our modem
+   relay (SPRT), or another line off */
 struct Line {
-	enum Kind { AUDIO, IMAGE, OFF } kind = AUDIO;
+	enum Kind { AUDIO, IMAGE, SPRT, OFF } kind = AUDIO;
 	s16 pt = -1;                    /* audio: the format agreed, -1 if
-					   none yet (both offered) */
+					   none yet (both offered); SPRT:
+					   v150mr's */
+	s16 sse = -1;                   /* audio: V.150.1's SSE format, -1
+					   for none */
 	s16 law = 0;
 	s16 te = -1;                    /* audio: telephone-event's format
 					   agreed, -1 if none */
@@ -788,6 +859,15 @@ std::vector<Line> mirror(const Sdp &s, size_t i, const Line &l)
 		v.push_back(off);
 	}
 	return v;
+}
+
+/* our modem relay line, v150mr in format pt */
+Line sprt_line_of(s16 pt)
+{
+	Line l;
+	l.kind = Line::SPRT;
+	l.pt = pt;
+	return l;
 }
 
 /* the index of the first of lines of kind, -1 if none */
@@ -994,6 +1074,144 @@ private:
    the clock between them.  Until active(), and while on T.38, no
    frames pass (the thread looks for the modem's hanging up); a failed
    socket is told to the SIP thread (MQ_MODEM_GONE) */
+/*
+ *    V.150.1's modem relay: the session (v150.h) and its SPRT socket,
+ *    the audio thread's (its SSE, SPRT's packets each tick) and the
+ *    modem's (its state, its octets) both
+ */
+class Relay {
+public:
+	/* the caller's or the answerer's session on SPRT socket fd to the
+	   far end's peer (len), v150mr in format pt, the far end's mg;
+	   call serial */
+	Relay(bool caller, int fd, const struct sockaddr_storage &peer,
+	      socklen_t len, s16 pt, int mg, u32 serial)
+		: s_(caller, static_cast<u8>(pt), mg), fd_(fd), peer_(peer),
+		  len_(len), serial_(serial)
+	{
+	}
+
+	/* the far end's SPRT packets in, ours out (at now, ms); a change
+	   of phase told */
+	void tick(u64 now)
+	{
+		u8 b[2048];
+		std::vector<std::vector<u8>> out;
+		std::lock_guard<std::mutex> lk(mu_);
+
+		for (;;) {
+			ssize_t n = recv(fd_, reinterpret_cast<char *>(b),
+					 sizeof(b), MSG_DONTWAIT);
+			if (n < 0 && errno == EINTR)
+				continue;
+			if (n < 0)
+				break;
+			s_.packet_in(b, static_cast<size_t>(n), now);
+		}
+		s_.poll(now, &out);
+		for (const auto &p : out)
+			(void)sendto(fd_, reinterpret_cast<const char *>(
+					     p.data()), p.size(), MSG_DONTWAIT,
+				     reinterpret_cast<const struct sockaddr *>(
+					     &peer_), len_);
+		told();
+	}
+	/* the far end's SSE in (its payload p, n octets) */
+	void sse_in(const u8 *p, size_t n)
+	{
+		dmd::v150::Sse e;
+		if (!dmd::v150::sse_decode(p, n, &e))
+			return;
+		std::lock_guard<std::mutex> lk(mu_);
+		say(4, "call %" PRIu32 ": SSE in: event %u, reason %u, %04x",
+		    serial_, e.event, e.ric, e.info);
+		s_.sse_in(e, tmr_jiffies());
+		told();
+	}
+	/* an SSE of ours to send, false for none */
+	bool sse_out(dmd::v150::Sse *e)
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		return s_.sse_out(e);
+	}
+	/* the answerer's answer tone is on */
+	bool answer_tone()
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		return s_.answer_tone();
+	}
+	/* modem relay is on (no audio) */
+	bool relaying()
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		return s_.relaying();
+	}
+	/* (sip::relay_state()) the session started, its state */
+	s16 state(s32 *tx, s32 *rx)
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		s_.start(tmr_jiffies());
+		return static_cast<s16>(s_.state(tx, rx));
+	}
+	/* (sip::relay_read()) */
+	s32 read(u8 *buf, s32 max)
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		return static_cast<s32>(
+			s_.read(buf, static_cast<size_t>(max)));
+	}
+	/* (sip::relay_write()) */
+	s32 write(const u8 *buf, s32 n)
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		return static_cast<s32>(s_.write(
+			buf, static_cast<size_t>(n), tmr_jiffies()));
+	}
+	/* our end hangs up: its CLEARDOWN out at once */
+	void hangup()
+	{
+		u64 now = tmr_jiffies();
+		{
+			std::lock_guard<std::mutex> lk(mu_);
+			if (s_.phase() == dmd::v150::Session::OVER)
+				return;
+			s_.hangup(now);
+		}
+		tick(now);
+	}
+
+private:
+	/* (under mu_) a new phase, to the log */
+	void told()
+	{
+		using dmd::v150::Session;
+		Session::Phase p = s_.phase();
+		if (p == told_)
+			return;
+		told_ = p;
+		if (p == Session::RELAY)
+			say(3, "call %" PRIu32 ": modem relay on (SPRT)",
+			    serial_);
+		else if (p == Session::UP) {
+			s32 tx = 0, rx = 0;
+			s_.state(&tx, &rx);
+			say(3, "call %" PRIu32 ": modem relay up, %" PRId32
+			    "/%" PRId32 " bit/s", serial_, tx, rx);
+		} else if (p == Session::OVER)
+			say(3, "call %" PRIu32 ": modem relay over: %s "
+			    "(%u retransmitted)", serial_, s_.why().c_str(),
+			    s_.sprt().retransmits());
+	}
+
+	std::mutex mu_;
+	dmd::v150::Session s_;
+	dmd::v150::Session::Phase told_ = dmd::v150::Session::IDLE;
+	int fd_;
+	struct sockaddr_storage peer_;
+	socklen_t len_;
+	u32 serial_;
+};
+
 class Media {
 public:
 	/* audio for the modem's socket modem and RTP socket rtp
@@ -1086,6 +1304,15 @@ public:
 		active_ = on;
 	}
 
+	/* V.150.1's modem relay r for the call (NULL: none), its SSE in
+	   format sse */
+	void relay(std::shared_ptr<Relay> r, s16 sse)
+	{
+		std::lock_guard<std::mutex> lk(mu_);
+		relay_ = std::move(r);
+		sse_ = sse;
+	}
+
 private:
 	int modem_, rtp_, family_;
 	u32 serial_;
@@ -1100,6 +1327,8 @@ private:
 	socklen_t peer_len_ = 0;
 	s16 pt_ = 0, law_ = 1, te_ = -1;
 	std::shared_ptr<Srtp> srtp_;
+	std::shared_ptr<Relay> relay_;
+	s16 sse_ = -1;
 
 	/* the thread's own */
 	std::shared_ptr<Srtp> crypt_;   /* srtp_, this tick's */
@@ -1120,6 +1349,21 @@ private:
 	/* the far end's telephone-events, played into the modem's audio
 	   as the tones they stand for (rtp_events.h) */
 	dmd::EventPlayer rx_events_;
+
+	/* the modem relay (relay_, this tick's); our SSEs going, each
+	   three times with its timestamp; the answerer's ANSam as RFC
+	   4733 events: its timestamp, duration so far, the copies of its
+	   last packet sent (0 while it lasts), whether it is on */
+	std::shared_ptr<Relay> rl_;
+	struct SseTx {
+		dmd::v150::Sse e;
+		u32 ts;
+		s16 left;
+	};
+	std::vector<SseTx> sse_tx_;
+	u32 ans_ts_ = 0, ans_dur_ = 0;
+	s16 ans_ends_ = 0;
+	bool ans_on_ = false;
 
 	/* the socket has failed (what): told once, the thread to end */
 	void failed(const char *what)
@@ -1161,8 +1405,8 @@ private:
 
 	/* the packets that have come: into the jitter buffer if on, those
 	   in G.711 (pt of law, or a static one); telephone-events (te) to
-	   event_in() */
-	void drain(bool on, s16 pt, s16 law, s16 te)
+	   event_in(); V.150.1's SSEs (sse) to the relay */
+	void drain(bool on, s16 pt, s16 law, s16 te, s16 sse)
 	{
 		u8 b[2048];
 
@@ -1200,6 +1444,10 @@ private:
 			if (h >= end)
 				continue;
 			p = b[1] & 0x7f;
+			if (p == sse && sse >= 0 && rl_) {
+				rl_->sse_in(b + h, end - h);
+				continue;
+			}
 			if (p == te && te >= 0) {
 				event_in(b + h, end - h,
 					 static_cast<u32>(b[4]) << 24 |
@@ -1336,6 +1584,77 @@ private:
 		return false;
 	}
 
+	/* this frame's part of the modem relay: our SSEs (each three
+	   times, a frame apart), the answerer's ANSam as events while it
+	   lasts and the copies of its last after it (in te, the far end's
+	   telephone-event); true while the audio is not to go (ANSam, or
+	   modem relay on) */
+	bool relay_frame(s16 sse, s16 te, bool send,
+			 const struct sockaddr_storage &peer, socklen_t len)
+	{
+		u8 p[12 + 4 + Srtp::TAG_MAX];
+		dmd::v150::Sse e;
+
+		while (rl_->sse_out(&e)) {
+			say(4, "call %" PRIu32 ": SSE out: event %u, reason "
+			    "%u, %04x", serial_, e.event, e.ric, e.info);
+			sse_tx_.push_back({ e, ts_, 3 });
+		}
+		/* (one that cannot go is let go) */
+		if (!send || sse < 0)
+			sse_tx_.clear();
+		for (SseTx &t : sse_tx_) {
+			header(p, sse, false, t.ts);
+			dmd::v150::sse_encode(t.e, p + 12);
+			send_packet(p, 12 + 4, peer, len);
+			t.left--;
+		}
+		sse_tx_.erase(std::remove_if(sse_tx_.begin(), sse_tx_.end(),
+					     [](const SseTx &t) {
+						     return t.left <= 0;
+					     }),
+			      sse_tx_.end());
+		bool tone = rl_->answer_tone();
+		if (tone && !ans_on_) {
+			ans_on_ = true;
+			ans_ts_ = ts_;
+			ans_dur_ = 0;
+			ans_ends_ = 0;
+			if (te < 0)
+				say(3, "call %" PRIu32 ": no telephone-event: "
+				    "the far end has no answer tone of ours",
+				    serial_);
+			else
+				say(4, "call %" PRIu32 ": ANSam (RFC 4733 "
+				    "event 34) on", serial_);
+		}
+		if (ans_on_ && te >= 0 && send) {
+			bool first = ans_dur_ == 0;
+			if (tone) {
+				ans_dur_ += SAMPLES;
+				/* (a new event before its 16 bit
+				   duration runs out) */
+				if (ans_dur_ > 60000) {
+					ans_ts_ = ts_;
+					ans_dur_ = SAMPLES;
+					first = true;
+				}
+			} else {
+				ans_ends_++;
+			}
+			header(p, te, first, ans_ts_);
+			p[12] = EV_ANSAM;
+			p[13] = static_cast<u8>((tone ? 0 : 0x80) | 12);
+			p[14] = static_cast<u8>(ans_dur_ >> 8);
+			p[15] = static_cast<u8>(ans_dur_);
+			send_packet(p, 12 + 4, peer, len);
+		}
+		if (ans_on_ && !tone && (ans_ends_ >= EV_ENDS || te < 0 ||
+					 !send))
+			ans_on_ = false;
+		return tone || ans_on_ || rl_->relaying();
+	}
+
 	/* every 20 ms: the packets taken in; if active, a frame to the
 	   modem, the modem's answer to the frame before back (it keeps one
 	   in flight), and that to the far end */
@@ -1351,7 +1670,7 @@ private:
 			socklen_t len;
 			s16 in[SAMPLES], out[SAMPLES];
 			bool on, send;
-			s16 pt, law, te;
+			s16 pt, law, te, sse;
 
 			next.tv_nsec += TICK_NS;
 			if (next.tv_nsec >= 1000000000L) {
@@ -1375,8 +1694,12 @@ private:
 				law = law_;
 				te = te_;
 				crypt_ = srtp_;
+				rl_ = relay_;
+				sse = sse_;
 			}
-			drain(on, pt, law, te);
+			drain(on, pt, law, te, sse);
+			if (rl_)
+				rl_->tick(tmr_jiffies());
 			if (!on) {
 				was_on = false;
 				ts_ += SAMPLES;
@@ -1394,6 +1717,10 @@ private:
 			}
 			jb_.get(in, SAMPLES);
 			rx_events_.fill(in, SAMPLES);
+			/* (modem relay on: the line's audio is not the
+			   call's) */
+			if (rl_ && rl_->relaying())
+				std::fill(in, in + SAMPLES, s16{0});
 			rec.rx(in, FRAME);
 			if (!write_all(modem_, in, FRAME)) {
 				failed("write failed");
@@ -1404,7 +1731,9 @@ private:
 				break;
 			}
 			rec.tx(out, FRAME);
-			if (!flash(te, send, peer, len) && send)
+			bool quiet = rl_ && relay_frame(sse, te, send, peer,
+							 len);
+			if (!flash(te, send, peer, len) && send && !quiet)
 				send_rtp(out, pt, law, peer, len);
 			ts_ += SAMPLES;
 		}
@@ -1454,6 +1783,10 @@ struct Call {
 					   to ask for the audio again */
 	int udptl = -1, udptl_family = AF_INET;
 	s32 udptl_port = 0;
+
+	/* V.150.1's modem relay: our SPRT socket */
+	int sprt = -1, sprt_family = AF_INET;
+	s32 sprt_port = 0;
 
 	/* our SRTP master key (and salt), the call's: as much of it as a
 	   suite takes */
@@ -1509,8 +1842,10 @@ struct Call {
 				if (l.pt < 0) {
 					std::string te = std::to_string(TE_PT);
 					std::string cl = std::to_string(CLEAR_PT);
+					std::string se = std::to_string(l.sse);
 					bool clear = want_clear_ && cfg_.clearmode;
 					m += (clear ? cl + " 8 0 " : "0 8 ") + te +
+						(l.sse >= 0 ? " " + se : "") +
 						"\r\n";
 					if (clear)
 						m += "a=rtpmap:" + cl +
@@ -1519,7 +1854,12 @@ struct Call {
 						"a=rtpmap:8 PCMA/8000\r\n"
 						"a=rtpmap:" + te +
 						" telephone-event/8000\r\n"
-						"a=fmtp:" + te + " 0-16\r\n";
+						"a=fmtp:" + te +
+						(l.sse >= 0 ? " 0-16,32-35\r\n" :
+						 " 0-16\r\n");
+					if (l.sse >= 0)
+						m += "a=rtpmap:" + se +
+							" v150fw/8000\r\n";
 					if (cfg_.v152)
 						m += "a=gpmd:0 vbd=yes\r\n"
 							"a=gpmd:8 vbd=yes\r\n";
@@ -1530,7 +1870,9 @@ struct Call {
 				} else {
 					std::string pt = std::to_string(l.pt);
 					std::string te = std::to_string(l.te);
+					std::string se = std::to_string(l.sse);
 					m += pt + (l.te >= 0 ? " " + te : "") +
+						(l.sse >= 0 ? " " + se : "") +
 						"\r\na=rtpmap:" + pt +
 						(l.law == 3 ? " CLEARMODE" :
 						 l.law == 2 ? " PCMA" : " PCMU") +
@@ -1538,7 +1880,13 @@ struct Call {
 					if (l.te >= 0)
 						m += "a=rtpmap:" + te +
 							" telephone-event/8000\r\n"
-							"a=fmtp:" + te + " 0-16\r\n";
+							"a=fmtp:" + te +
+							(l.sse >= 0 ?
+							 " 0-16,32-35\r\n" :
+							 " 0-16\r\n");
+					if (l.sse >= 0)
+						m += "a=rtpmap:" + se +
+							" v150fw/8000\r\n";
 					if (cfg_.v152 && l.law != 3)
 						m += "a=gpmd:" + pt +
 							" vbd=yes\r\n";
@@ -1553,6 +1901,14 @@ struct Call {
 				m += "m=image " + std::to_string(udptl_port) +
 					" udptl t38\r\n" + t38_attrs(l.version);
 				break;
+			case Line::SPRT: {
+				std::string pt = std::to_string(l.pt);
+				m += "m=audio " + std::to_string(sprt_port) +
+					" udpsprt " + pt + "\r\n"
+					"a=sprtmap:" + pt + " v150mr/8000\r\n"
+					"a=fmtp:" + pt + " " + SPRT_FMTP + "\r\n";
+				break;
+			}
 			case Line::OFF:
 				m += "m=" + l.type + " 0 " + l.proto + " " +
 					l.fmts + "\r\n";
@@ -1590,6 +1946,8 @@ std::mutex mu;
 bool t38_on_;
 int t38_fd_ = -1, t38_family_;
 Peer t38_peer_;
+/* (under mu) the current call's modem relay, NULL if it has none */
+std::shared_ptr<Relay> call_relay_;
 
 /* a modem's request: dial number, or answer; the call's audio on fd */
 struct Request {
@@ -1612,6 +1970,87 @@ bool open_udptl(Call *c)
 	return c->udptl >= 0;
 }
 
+/* the call's SPRT socket, once; false if it can't be had */
+bool open_sprt(Call *c)
+{
+	if (c->sprt < 0)
+		c->sprt = open_udp(&c->sprt_port, &c->sprt_family);
+	return c->sprt >= 0;
+}
+
+/* our first offer: our audio, with V.150.1's SSE and our modem relay
+   line when $SIP_V150 has it and the modem's call is for data */
+std::vector<Line> our_offer(Call *c)
+{
+	std::vector<Line> v = { Line() };
+	if (cfg_.v150 && !want_clear_ && !fax_ && open_sprt(c)) {
+		v[0].sse = SSE_PT;
+		v.push_back(sprt_line_of(SPRT_PT));
+	}
+	return v;
+}
+
+/* modem relay for the call (once): to the far end's SPRT line m, v150mr
+   in format pt, its SSE in format sse, we the caller or not; false if
+   it can't be had */
+bool take_relay(Call *c, const SdpMedia &m, s16 pt, s16 sse, bool caller)
+{
+	struct sockaddr_storage a;
+	socklen_t len;
+
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		if (call_relay_)
+			return true;
+	}
+	if (!c->media || c->sprt < 0)
+		return false;
+	if (!sockaddr_of(m.addr, m.port, c->sprt_family, &a, &len)) {
+		say(1, "call %" PRIu32 ": no address in `%s'", c->serial,
+		    m.addr.c_str());
+		return false;
+	}
+	int mg = sprt_mg(m);
+	auto r = std::make_shared<Relay>(caller, c->sprt, a, len, pt, mg,
+					 c->serial);
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		call_relay_ = r;
+	}
+	c->media->relay(r, sse);
+	say(3, "call %" PRIu32 ": V.150.1 modem relay agreed, SPRT to "
+	    "%s:%" PRId32 " (its gateway mg=%d), SSE in format %d",
+	    c->serial, m.addr.c_str(), m.port, mg, sse);
+	return true;
+}
+
+/* our answer v to s, its audio in line i: modem relay as well when s
+   offers it (its SSE with the audio), $SIP_V150 has it and the modem is
+   not in fax mode (our SPRT line in its line's place, our SSE); its
+   line, or -1 */
+s16 answer_relay(Call *c, const Sdp &s, size_t i, std::vector<Line> *v)
+{
+	s16 j = sprt_line(s);
+	if (j < 0)
+		return -1;
+	s16 sse = sse_pt(s.media[i]);
+	if (!cfg_.v150 || fax_ || sse < 0 || !open_sprt(c)) {
+		say(3, "call %" PRIu32 ": V.150.1 modem relay offered, not "
+		    "taken (%s)", c->serial,
+		    !cfg_.v150 ? "SIP_V150 is not yes" :
+		    fax_ ? "the modem is in fax mode" :
+		    sse < 0 ? "no SSE (v150fw) with the audio" :
+			      "no socket for it");
+		return -1;
+	}
+	s16 pt = sprt_pt(s.media[j]);
+	if (pt < 0)
+		pt = SPRT_PT;
+	(*v)[i].sse = sse;
+	(*v)[j] = sprt_line_of(pt);
+	return j;
+}
+
 /* the current call ended: its audio first (the modem sees the call
    end), hung up unless it is over, the line free */
 void end_call()
@@ -1627,6 +2066,14 @@ void end_call()
 	tmr_cancel(&c->ring_tmr);
 	tmr_cancel(&c->poll_tmr);
 	tmr_cancel(&c->tell_tmr);
+	std::shared_ptr<Relay> r;
+	{
+		std::lock_guard<std::mutex> lk(mu);
+		r = std::move(call_relay_);
+		call_relay_.reset();
+	}
+	if (r)
+		r->hangup();
 	if (c->media)
 		c->media->stop();
 	if (c->sess) {
@@ -1645,6 +2092,8 @@ void end_call()
 		dmd::fd_close(c->rtp);
 	if (c->udptl >= 0)
 		dmd::fd_close(c->udptl);
+	if (c->sprt >= 0)
+		dmd::fd_close(c->sprt);
 	delete c;
 }
 
@@ -1788,7 +2237,7 @@ int on_desc(struct mbuf **descp, const struct sa *src, const struct sa *,
 	Call *c = static_cast<Call *>(arg);
 
 	c->ip = ip_of(src);
-	c->offered = { Line() };
+	c->offered = our_offer(c);
 	*descp = mbuf_of(c->sdp(c->offered));
 	return *descp ? 0 : ENOMEM;
 }
@@ -1839,10 +2288,13 @@ int on_offer(struct mbuf **descp, const struct sip_msg *msg, void *arg)
 		return EPROTO;
 	}
 	c->lines = mirror(s, i, audio_answer(s, s.media[i]));
+	s16 j = answer_relay(c, s, static_cast<size_t>(i), &c->lines);
 	*descp = mbuf_of(c->sdp(c->lines));
 	if (!*descp)
 		return ENOMEM;
-	take_audio(c, s, s.media[i]);
+	if (take_audio(c, s, s.media[i]) && j >= 0)
+		take_relay(c, s.media[j], c->lines[j].pt, c->lines[i].sse,
+			   !c->incoming);
 	return 0;
 }
 
@@ -1896,6 +2348,28 @@ int on_answer(const struct sip_msg *msg, void *arg)
 	}
 	c->lines = c->offered;
 	c->lines[i] = l;
+	s16 j = find(c->offered, Line::SPRT);
+	if (j >= 0) {
+		const SdpMedia *m = static_cast<size_t>(j) < s.media.size() ?
+			&s.media[j] : nullptr;
+		s16 sse = sse_pt(s.media[i]);
+		if (m && is_sprt(*m) && m->port > 0 && sse >= 0) {
+			s16 pt = sprt_pt(*m);
+			c->lines[i].sse = sse;
+			c->lines[j].pt = pt >= 0 ? pt : SPRT_PT;
+			take_relay(c, *m, c->lines[j].pt, sse, !c->incoming);
+		} else {
+			say(3, "call %" PRIu32 ": the far end has no V.150.1 "
+			    "modem relay", c->serial);
+			c->lines[i].sse = -1;
+			Line off;
+			off.kind = Line::OFF;
+			off.type = "audio";
+			off.proto = "udpsprt";
+			off.fmts = std::to_string(SPRT_PT);
+			c->lines[j] = off;
+		}
+	}
 	return 0;
 }
 
@@ -2177,12 +2651,14 @@ void do_answer(int fd)
 		return;
 	}
 	say(3, "call %" PRIu32 ": answering", c->serial);
+	s16 j = -1;
 	if (c->have_offer) {
 		i = line_of(c->offer, false);
 		v = mirror(c->offer, i, audio_answer(c->offer,
 						      c->offer.media[i]));
+		j = answer_relay(c, c->offer, static_cast<size_t>(i), &v);
 	} else {
-		v = { Line() };
+		v = our_offer(c);
 	}
 	mb = mbuf_of(c->sdp(v));
 	err = mb ? sipsess_answer(c->sess, 200, "OK", mb, nullptr) : ENOMEM;
@@ -2195,7 +2671,9 @@ void do_answer(int fd)
 	}
 	if (c->have_offer) {
 		c->lines = v;
-		take_audio(c, c->offer, c->offer.media[i]);
+		if (take_audio(c, c->offer, c->offer.media[i]) && j >= 0)
+			take_relay(c, c->offer.media[j], v[j].pt, v[i].sse,
+				   false);
 	} else {
 		c->offered = v;
 	}
@@ -2479,6 +2957,7 @@ bool config_from_env(Config &cfg, bool listen)
 	const char *clearmode = getenv("SIP_CLEARMODE");
 	const char *srtp = getenv("SIP_SRTP");
 	const char *v152 = getenv("SIP_V152");
+	const char *v150 = getenv("SIP_V150");
 	std::string s = login ? login : "";
 	size_t at = s.rfind('@');
 	size_t colon = s.find(':');
@@ -2526,6 +3005,10 @@ bool config_from_env(Config &cfg, bool listen)
 		  std::string_view(v152) == "0" ||
 		  dcore::same_nocase(v152, "off") ||
 		  dcore::same_nocase(v152, "false"));
+	cfg.v150 = v150 && (dcore::same_nocase(v150, "yes") ||
+			    std::string_view(v150) == "1" ||
+			    dcore::same_nocase(v150, "on") ||
+			    dcore::same_nocase(v150, "true"));
 	return true;
 }
 
@@ -2658,6 +3141,41 @@ void flash(u32 ms)
 {
 	if (ms)
 		flash_ms_ = ms;
+}
+
+/* see sip.h */
+bool relay()
+{
+	std::lock_guard<std::mutex> lk(mu);
+	return call_relay_ && !fax_;
+}
+
+/* the current call's relay, NULL if none */
+static std::shared_ptr<Relay> current_relay()
+{
+	std::lock_guard<std::mutex> lk(mu);
+	return call_relay_;
+}
+
+/* see sip.h */
+s16 relay_state(s32 *tx, s32 *rx)
+{
+	std::shared_ptr<Relay> r = current_relay();
+	return r ? r->state(tx, rx) : -1;
+}
+
+/* see sip.h */
+s32 relay_read(u8 *buf, s32 max)
+{
+	std::shared_ptr<Relay> r = current_relay();
+	return r ? r->read(buf, max) : 0;
+}
+
+/* see sip.h */
+s32 relay_write(const u8 *buf, s32 n)
+{
+	std::shared_ptr<Relay> r = current_relay();
+	return r ? r->write(buf, n) : 0;
 }
 
 /* see sip.h */
