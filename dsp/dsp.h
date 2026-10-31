@@ -475,6 +475,8 @@ s16 dp_contactid_init(void);
 void dp_contactid_exit(void);
 s16 dp_sms_init(void);
 void dp_sms_exit(void);
+s16 dp_relay_init(void);
+void dp_relay_exit(void);
 void dp_text_exit(void);
 s16 dp_v22_init(void);
 void dp_v22_exit(void);

@@ -107,6 +107,12 @@ its echo canceller, comfort noise and silence suppression for the call;
 an offer with a format so marked gets that format in the answer.
 `SIP_V152=no` leaves the marks out.
 
+`SIP_V150=yes` adds V.150.1's modem relay: on a data call with a gateway
+that has it, the gateway terminates its modem's modulation and the data
+goes as bytes over SPRT, retransmitted when lost, with no modem sound on
+dmodemd's side ([docs/v150.md](docs/v150.md)).  It is offered beside the
+audio, so a far end without it gets an ordinary call.
+
 A call whose offer is SRTP (`RTP/SAVP`, RFC 3711, its keys in
 RFC 4568's `a=crypto`: AES_CM_128 and AES_256_CM, with 80 or 32 bit
 tags) is answered in SRTP; dmodemd's own offers are plain RTP.

@@ -56,6 +56,11 @@ struct Config {
 				   band data, our G.711 formats marked
 				   a=gpmd:<pt> vbd=yes, and a VBD
 				   format the far end has taken first */
+	bool v150 = false;      /* $SIP_V150 ("yes"): V.150.1's modem
+				   relay, a data call's octets over SPRT
+				   when the far end (a gateway) has it:
+				   offered with our audio, and taken
+				   when an offer has it (v150.h) */
 	const char *dns = nullptr;      /* the DNS servers for SRV and
 					   NAPTR, addresses (with :port, 53
 					   if none) apart by commas or
@@ -138,6 +143,19 @@ void set_t38_offers(bool take);
    an analogue line (rtp_events.h). */
 bool can_flash();
 void flash(u32 ms);
+
+/* V.150.1's modem relay: the current call has it (both ends' SDP), and
+   the modem is not in fax mode: the modem runs its relay pump on it
+   (DP_RELAY), and its data goes as octets over SPRT, the audio off
+   while it does.  relay_state() starts the session (the caller's
+   SSE:M, the answerer's answer tone) and gives its state as struct
+   dp_relay's: 0 not up yet, 1 up (its rates each way into *tx, *rx),
+   -1 over or none; relay_read() the far end's octets (up to max: how
+   many), relay_write() ours (how many it took) */
+bool relay();
+s16 relay_state(s32 *tx, s32 *rx);
+s32 relay_read(u8 *buf, s32 max);
+s32 relay_write(const u8 *buf, s32 n);
 
 /* the current call's T.38, as the far end has it */
 struct T38 {

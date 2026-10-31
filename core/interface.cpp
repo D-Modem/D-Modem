@@ -67,6 +67,7 @@ static DpDriver pump_table[] = {
 	{ DP_EDT, "EDT", "110", nullptr },
 	{ DP_CONTACTID, "ContactID", "5", nullptr },
 	{ DP_SMS, "SMS", "12", nullptr },
+	{ DP_RELAY, "Relay", nullptr, nullptr },
 	{ DP_B212, "Bell212", "212", nullptr },
 	{ DP_B201, "Bell201", "201", nullptr },
 	{ DP_B202, "Bell202", "202", nullptr },
@@ -159,6 +160,12 @@ intptr_t Modem::get_param(u32 name)
 		return link_req_;
 	case MDMPRM_TEXT:
 		return text_pump() ? param_address(&text_) : 0;
+	case MDMPRM_RELAY:
+		if (!relay_channel())
+			return 0;
+		relay_ = { this, relay_state_cb, relay_read_cb,
+			   relay_write_cb };
+		return param_address(&relay_);
 	case MDMPRM_MAX_RX_RATE:
 		return max_rx_rate_ ? max_rx_rate_ : max_rate_;
 

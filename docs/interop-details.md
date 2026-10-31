@@ -1683,7 +1683,8 @@ a 3 dB pad, a robbed bit and the analogue modem's codec 100 ppm fast, for
 - the clock 100 ppm off as each modem sees it (the analogue modem's
   -100, the network being slower; the digital modem's +100);
 - the pad and the robbed bit as the analogue modem's DIL found them;
-- the same in Unimodem's keys (`AT#UD`'s `DIAG` lines).
+- the same in Unimodem's keys (`AT#UD`'s `DIAG` lines), keys 20 and 21
+  per direction: V.34's `C` upstream and PCM's `E` downstream.
 
 ## Retrains and renegotiations on request
 
