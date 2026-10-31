@@ -1044,35 +1044,21 @@ These commands list the numbers barred from dialing.  None are kept.
 \end{command}
 
 \begin{command}{hashCID}{\#CID, +VCID}{Caller ID}
-This command turns caller ID reports on or off.  \cmdl[hashCID]{+VCID} (V.253's)
-is the same, in every mode.
+This command turns caller ID on or off.  With it on, the modem tells
+the DTE who is calling: after the first \rc{RING} it sends the date and
+time, the caller's number and, when there is one, the caller's name, a
+line each.  \cmdl[hashCID]{+VCID} is another name for the same command.
 
-The modem listens for caller ID after the first ring (North America's
-way, and ETSI's after a short ring), and on a line it hears on hook
-(ALSA, a pipe, the pico-serial Line) before the ring too (ETSI's after
-its alerting tone, the UK's, DTMF caller ID).  It takes Bell 202 FSK and
-V.23 FSK (ETSI EN 300 659-1, BT SIN 227) alike, and DTMF caller ID:
-\rc{A} and the number, or \rc{B} (or \rc{D}) and a reason it is
-absent (\cmd{10} private, as \rc{P}; others \rc{O}), up to \rc{C},
-\cmd{\#} or a pause.  In voice mode with the line taken it takes Type~II
-caller ID too, a waiting call's caller: after the CPE alerting signal
-(2130 and 2750~Hz) it answers with DTMF \rc{A} (GR-30's, a CPE without
-ADSI) and reports the FSK message that follows as a packet, the line's
-audio to the DTE silent meanwhile.
+Caller ID works on a SIP call and on a telephone line.  When the caller
+has withheld the number or name, the modem sends \rc{P} (private) in its
+place; when it is not known, \rc{O} (out of area).  Value 2 sends the
+whole caller ID message in hexadecimal instead, for programs that
+decode it themselves.
 
-In voice mode (\cmdl[plusFCLASS]{+FCLASS=8}) the lines come as V.253's complex event
-report, between \cmd{<DLE>X} and \cmd{<DLE>.}; in the other modes after
-an empty line.  A SIP call (dmodemd \cmd{-L}) has caller ID after its
-first \rc{RING}, from the INVITE: the caller's P-Asserted-Identity, else its
-From (the URI's user part as \cmd{NMBR}, the display name as
-\cmd{NAME}), the date and time the host's.  A number or name that is not
-known is \rc{O}, one withheld (the Privacy header's \cmd{id},
-\cmd{user} or \cmd{header}, or an anonymous caller) \rc{P}, as on the
-line; \cmd{2} gives the MDMF message the modem made of them.
 \begin{syntax}
 \item AT\#CID=\p{n} (or AT+VCID=\p{n})
 \item AT\#CID?
-\item AT\#CID=? (gives \cmd{0,1,2})
+\item AT\#CID=? (gives \rc{0,1,2})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--2.}
@@ -1085,6 +1071,45 @@ line; \cmd{2} gives the MDMF message the modem made of them.
   a line each. \\ \hline
 2 & The whole message in hexadecimal: \rc{MESG = }. \\ \hline
 \end{vtable}
+\example{Example output: AT\#CID=1, then a call}
+\begin{verbatim}
+RING
+
+DATE = 1030
+TIME = 1043
+NMBR = +15551234
+NAME = Alice Smith
+
+RING
+\end{verbatim}
+\par\needspace{4\baselineskip}Technical details:
+\begin{itemize}
+\item \rc{DATE} is the month and day (MMDD), \rc{TIME} the hour and
+  minute (HHMM).
+\item In voice mode (\cmdl[plusFCLASS]{+FCLASS=8}) the lines come as V.253's
+  complex event report, between \cmd{<DLE>X} and \cmd{<DLE>.}; in the
+  other modes after an empty line.
+\item On a telephone line the modem listens for caller ID after the
+  first ring (North America's way, and ETSI's after a short ring).  On a
+  line it hears on hook (ALSA, a pipe, the pico-serial Line) it also
+  listens before the ring (ETSI's after its alerting tone, the UK's,
+  DTMF caller ID).
+\item It takes Bell 202 FSK and V.23 FSK (ETSI EN 300 659-1, BT SIN 227)
+  alike, and DTMF caller ID: \rc{A} and the number, or \rc{B} (or
+  \rc{D}) and a reason it is absent (\cmd{10} private, as \rc{P};
+  others \rc{O}), up to \rc{C}, \cmd{\#} or a pause.
+\item In voice mode with the line taken it takes Type~II caller ID too,
+  a waiting call's caller: after the CPE alerting signal (2130 and
+  2750~Hz) it answers with DTMF \rc{A} (GR-30's, a CPE without ADSI)
+  and reports the FSK message that follows as a packet, the line's
+  audio to the DTE silent meanwhile.
+\item A SIP call (dmodemd \cmd{-L}) has its caller ID from the INVITE:
+  the caller's P-Asserted-Identity, else its From (the URI's user part
+  as \rc{NMBR}, the display name as \rc{NAME}), the date and time the
+  host's.  A withheld number or name (the Privacy header's \cmd{id},
+  \cmd{user} or \cmd{header}, or an anonymous caller) is \rc{P}; with
+  value 2 the modem sends the MDMF message it made of them.
+\end{itemize}
 \end{command}
 
 \section{Speaker, line and country}\label{sec:line}
@@ -1198,11 +1223,11 @@ a number or V.250's name for it, in either case (\cmdl[plusMS]{AT+MS=V34} is
 directions' rates (sent in its MP sequences).
 \begin{syntax}
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
-\item +MS? (gives \cmd{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
+\item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \cmd{(21,22,23,27,29,122,32,132,33,34,103,18,45,%
-\allowbreak 110,212,56,90,91,92,150,200,64),(0,1),(300-56000),%
-\allowbreak (300-56000)}, the
+\item +MS=? (gives \rc{(21,22,23,27,29,122,32,132,33,34,103,18,45,}\allowbreak
+\rc{110,212,56,90,91,92,150,200,64),(0,1),(300-56000),}\allowbreak
+\rc{(300-56000)}, the
   modulations the program has)
 \end{syntax}
 \begin{results}
@@ -1639,8 +1664,8 @@ The Synchronous Access Mode's eight settings, each left out as it is.
 \begin{syntax}
 \item +ESA=[\p{trans\_idle}][,\p{framed\_idle}...][,\p{syn2}]
 \item +ESA? (gives \rc{+ESA: 0,0,0,0,0,0,255,255})
-\item +ESA=? (gives \rc{+ESA:} \cmd{(0-2),(0,1),(0,1),(0),\allowbreak
-  (0-2),(0),(0-255),(0-255)})
+\item +ESA=? (gives \rc{+ESA: (0-2),(0,1),(0,1),(0),}\allowbreak
+  \rc{(0-2),(0),(0-255),(0-255)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}
@@ -2305,7 +2330,7 @@ This command sets whether the modem is a data modem, a class 1, 2 or
 \begin{syntax}
 \item +FCLASS=\p{n}
 \item +FCLASS? (gives the class)
-\item +FCLASS=? (gives \cmd{0,1,2,2.0,8})
+\item +FCLASS=? (gives \rc{0,1,2,2.0,8})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0, 1, 2, 2.0 or 8.}
