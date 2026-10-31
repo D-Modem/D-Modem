@@ -84,8 +84,8 @@ static std::string name(const testing::TestParamInfo<Pumps> &i)
 	return i.param.name;
 }
 
-/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 22 V.22, 122 V.22bis,
-   212 Bell 212A, 21 V.21, 23 V.23, 103 Bell 103 */
+/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 22 V.22,
+   122 V.22bis, 212 Bell 212A, 21 V.21, 23 V.23, 103 Bell 103 */
 INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v32bis", line(132, 40, 20) },
 	Pumps{ "v32bis_snr25", line(132, 25, 20) },
@@ -94,6 +94,19 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v32bis_echo6", line(132, 30, 20, 9600, 0.5f, 0, -6) },
 	Pumps{ "v32bis_snr11", line(132, 11, 20) },
 	Pumps{ "v32", line(32, 30, 20) },
+	/* V.32terbo: 19200 bit/s on a clean line, 16800 on a noisier one
+	   (V32Terbo.Rates checks the rates), on a line without its band
+	   limit, at 8000 Hz, with a clock offset and with an echo */
+	Pumps{ "v32terbo", line(232, 40, 20) },
+	Pumps{ "v32terbo_snr27", line(232, 27, 20) },
+	Pumps{ "v32terbo_flat", [] {
+		LoopbackConfig c = line(232, 50, 20);
+		c.flat = true;
+		return c;
+	}() },
+	Pumps{ "v32terbo_8000", line(232, 40, 20, 8000) },
+	Pumps{ "v32terbo_300ppm", line(232, 40, 30, 9600, 0.5f, 300) },
+	Pumps{ "v32terbo_echo6", line(232, 40, 20, 9600, 0.5f, 0, -6) },
 	Pumps{ "v22bis", line(122, 40, 20) },
 	Pumps{ "v22bis_snr15", line(122, 15, 20) },
 	Pumps{ "v22bis_8000", line(122, 30, 20, 8000) },
@@ -142,6 +155,26 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	/* a minute at 3000 ppm: the line's clock drifts by 1700 samples,
 	   more than its resampler kept at first */
 	Pumps{ "v21_3000ppm_long", line(21, 20, 60, 9600, 0.5f, 3000) }), name);
+
+/* V.32terbo's rate follows the line: 19200 bit/s at 40 dB of SNR,
+   16800 at 29 dB, V.32bis's 14400 at 25 dB; each without errors */
+TEST(V32Terbo, Rates)
+{
+	for (auto [snr, rate] : { std::make_pair(40.0f, 19200),
+				  std::make_pair(29.0f, 16800),
+				  std::make_pair(25.0f, 14400) }) {
+		LoopbackResult r = loopback_run(line(232, snr, 20));
+		for (int k = 0; k < 2; k++) {
+			const char *who = k ? "answerer" : "caller";
+			EXPECT_TRUE(r.side[k].ok()) << snr << " dB: "
+						     << r.side[k].text(who);
+			EXPECT_EQ(r.side[k].tx_rate, rate) << snr << " dB";
+			EXPECT_EQ(r.side[k].rx_rate, rate) << snr << " dB";
+			EXPECT_EQ(r.side[k].errors, 0) << snr << " dB: "
+						      << r.side[k].text(who);
+		}
+	}
+}
 
 /* V.22 through AMR 12.2 (a mobile call): the codec turns the points by
    20 degrees and more now and then, which 1200 bit/s takes without an

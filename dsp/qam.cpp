@@ -294,7 +294,7 @@ s16 TrellisEnc::encode(s16 q, s16 bits)
 {
 	diff = (diff + (q & 3)) & 3;
 	conv = conv_next[conv][diff];
-	return ((q << 1) & 0x78 & ((1 << (bits + 1)) - 1)) |
+	return ((q << 1) & ~7 & ((1 << (bits + 1)) - 1)) |
 		(diff << 1) | ((conv >> 2) & 1);
 }
 
