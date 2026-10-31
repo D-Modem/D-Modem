@@ -6,8 +6,8 @@ K56flex is Rockwell's and Lucent's 56k PCM protocol from before V.90. There is
 no public specification. This page records what is known of it from the one
 K56flex client we have, Motorola's SM56 soft modem (`sm56.ko`, its
 "A56" code; see [interop](../interop-details.md#against-the-motorola-sm56-soft-modem)).
-It is meant as the start of a K56flex **server** (the digital modem) built on
-the V.90 server code.
+It was the start of a K56flex **server** (the digital modem) built on
+the V.90 server code, and then of a client.
 
 Terms used on this page:
 
@@ -20,11 +20,17 @@ Status:
 
 - D-Modem is a K56flex **server**: `AT+MS=56` (or `AT+MS=K56`) on an
   8000 Hz G.711 line answers with V.8bis and K56flex, and with V.90 when the
-  caller has no K56flex (`DP_K56` on the V.34 pump, `dsp/v34_k56.h`). Calling,
-  it runs V.90 (`V34Pump::start()`; `Modem::change_dp()` in `core/modem.cpp`
-  maps `DP_K56` to V.90 only when no pump is registered for it).
+  caller has no K56flex (`DP_K56` on the V.34 pump, `dsp/v34_k56.h`;
+  `Modem::change_dp()` in `core/modem.cpp` maps `DP_K56` to V.90 only when
+  no pump is registered for it).
+- D-Modem is a K56flex **client** too: `AT+MS=56` on an analogue line at
+  9600 Hz calls with K56flex when the answer is V.8bis's MRe, and with V.90
+  when it is ANSam (section 6). `DSP_K56A=0` leaves K56flex out. On a
+  digital line, calling, it runs V.90 as the digital modem.
 - The interop test `sm56_k56flex` (label `sm56`) connects sm56 as the client
   at 44000 bit/s down and 31200 up, with V.42, and passes data [seen].
+- The interop tests `open_k56flex*` (label `open`) connect our client to our
+  server at 56000 down and 31200 up [seen].
 - The training is `K56Train` (`dsp/k56flex_train.cpp`), the data mode
   `K56Enc` and `K56Dec` (`dsp/k56flex.cpp`).
 - Conexant's HSF engine (`hsfengine.o`) is no help. Its K56flex slot is
@@ -409,6 +415,98 @@ tried.
 
 In sm56's encoder, data mode starts right after E, and B1 is data. The
 client discards its first 48 symbols (B1) [seen].
+
+## 6. The client: D-Modem as the analogue modem
+
+The client mirrors sm56's, against our server (sections 1 to 5). It is
+`dsp/v34_k56.h`'s `KC8_*`, `KC3_*` and `KC4_*` states and the PCM receiver
+`K56Rx` (`dsp/k56flex_rx.cpp`).
+
+### Phase 1
+
+- The call progress (`dsp/dp_callprog.cpp`), with `+MS=56`, takes 150 ms
+  of 1375 + 2002 Hz (MRe's or CRe's dual tone) as the answer
+  (`ANSTONE_V8BIS`) and starts the V.34 pump as the caller.
+- The pump waits for MRe to end (its dual tone and its 650 Hz), sends CRd
+  150 ms later, takes the CL on V.21's channel 1, checks it for K56flex's
+  non-standard block (as `k8_ms_k56()` checks an MS), and sends sm56's MS
+  (`11 c9 80 80 80 07 b5 02 00 94 81 83 21`) on channel 2. The server's
+  ACK(1) makes K56flex agreed (`k56c_on`). V.90 is then left out of the CM.
+- A CL without K56flex, or no CL or ACK(1), goes on to V.8 without it.
+  V.8 starts when the server's ANSam has been there 200 ms.
+- Without V.8bis (a plain ANSam: a V.90 server) the call is V.90's, as
+  with `AT+MS=90` (`open_k56flex_v90`).
+
+### Phase 2
+
+V.34's, the client the call modem. Our INFO1c's frequency offset is 1.
+INFO1a's (bits 40:49) must have 1 in its low 2 bits; bit 2 is the law the
+PCM receiver decodes. Any other value goes on with V.34.
+
+### Phase 3: the PCM receiver
+
+`K56Rx` takes the line at 9600 Hz to 16 000 Hz (V.90's analogue modem's
+interpolator, `V90Interp`) and has V.90's analogue modem's T/2 equaliser
+(128 taps), least squares solution and timing loop:
+
+1. **R**: + + − − (2000 Hz) on 8 kHz samples, x(n) close to x(n − 4) and to
+   −x(n − 2) for 64 samples; then its reversal (24 symbols before TRN1A),
+   where for 4 samples x(n) is −x(n − 4). This gives symbol 0, R's 265th.
+2. From there on, the server's training up to Js is `K56Train`'s from R's
+   265th symbol, code for code. TRN1A's first 96 symbols centre the delay,
+   the next 1020 solve the equaliser, and NLMS follows TRN1A, TRN1B and
+   TRN1C on what is known. Once the timing is locked (6000 symbols) it is
+   solved again.
+3. **Js**: decisions; the even symbols' signs descrambled (from the
+   training's own scrambler state at Js's start), 16 bits LSB first, twice.
+   Our S follows (`KC3_S`): S 128 T, S-bar 16, PP 288, TRN 2048, then J
+   (`V34Tx::j24`: `0x89b0` and the robbed-bit octet 0, 12 symbols a J)
+   until the server's TRN2A. The echo canceller trains from S until the
+   server's R, which it is silent before.
+4. **The silence and R**: the equaliser held, the timing on its
+   frequency. R is the first loud symbol 12288 symbols on at the least,
+   put on the grid of 8 from the silence's start (the server keeps it so).
+
+### Phase 4
+
+- R's codes are known; TRN2A and MARK go on decisions of one magnitude
+  (`0x4f`), their even symbols' signs descrambled. 32 ones in a row is
+  TRN2A: our J' after the whole J, then TRN (16 points when Js asked) for
+  2048 T and our MP (rates 14 up, 13 down, mask `0x3fff`, asymmetric).
+- From TRN2B on each symbol is one of 4 magnitudes, 2 scrambled bits
+  (d0 first). The descrambled bits go through an 88-bit window: a frame
+  with V.34's sync and CRC is an MP. The first MP sets the rates (its
+  `rate_ac`: down 30000 + 2000·r; its `rate_ca`: up, 16 states) and our
+  MP'. The data start 1420 symbols after the first MP (its 16 frames, MP''s
+  16, E's 12), or 716 after an MP' that follows an MP 44 symbols before.
+- Our E after a whole MP' once the server's MP' is in; then CONNECT.
+
+### Data mode
+
+Each symbol is decided to the nearest magnitude of the rate's
+constellation (`K56Dec`'s points) with its sign, the equaliser and the
+timing following the decisions. `K56Dec` takes the frames of 8; the
+first 6 (B1) are dropped. Up, V.34's data encoder.
+
+### Results [seen]
+
+On netsim's quiet line the equaliser comes to 78 dB, and the data's error
+is 0.55 rms (77 dB below the signal). The tests:
+
+| Test | What |
+|---|---|
+| `open_k56flex` | 56000/31200, 200000 octets each way |
+| `open_k56flex_alaw` | A-law (INFO1a 0x5) |
+| `open_k56flex_ppm` | our codec 100 ppm fast, 0.3 of a sample off: the timing finds +100 ppm |
+| `open_k56flex_echo` | our own echo 10 dB down (`DSP_TEST_ECHO`): the canceller takes 54 dB of it away |
+| `open_k56flex_v90` | a V.90 server: V.90 |
+
+### Not done
+
+- No pad or robbed-bit measurement: our J's octet is 0, and `K56Dec` runs
+  with no pad and no robbed bits. sm56's client finds them in TRN1A to
+  TRN1C (`SC_A56_Gen_JA_RBS`), which has not been read.
+- 8000 Hz analogue lines, retrains and rate renegotiation.
 
 ## Open questions
 

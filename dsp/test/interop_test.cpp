@@ -369,6 +369,44 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)phase 3 done \\(no DIL\\).*CP: D 42 .*"
 	      "B1d: 0 bit errors in 48 frames of 42 bits",
 	      "EXPECT_B=V.90 connect 56000/" });
+	/* K56flex: the open modem as the analogue modem (9600 Hz) calls
+	   the open digital modem: V.8bis (MRe, CRd, CL, MS, ACK(1)), V.8
+	   for V.34, INFO1c and INFO1a marked; the PCM receiver trains on
+	   R, TRN1A, TRN1B and TRN1C and decodes Js; our S to J, its R,
+	   TRN2A, our J'; MP both ways, then the data: PCM down, V.34 up
+	   (docs/dsp/k56flex.md) */
+	add("open", "open_k56flex", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000",
+	      "EXPECT_A=(?s)V.8bis CL: K56flex.*V.8bis ACK\\(1\\): K56flex"
+	      ".*INFO1a: K56flex.*k56rx: Js 0x89b0.*k56rx: TRN2A"
+	      ".*k56rx: MP at.*K56flex connect [0-9]+/56000 \\(analogue "
+	      "modem\\)",
+	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect 56000/" });
+	add("open", "open_k56flex_alaw", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:alaw", "DSP_G711=alaw",
+	      "EXPECT_A=(?s)INFO1a: K56flex \\(0x5\\).*A-law.*"
+	      "K56flex connect [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=K56flex connect 56000/" });
+	/* its codec's clock 100 ppm fast, half a sample off */
+	add("open", "open_k56flex_ppm", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_PPM=100", "NET_PHASE=0.3",
+	      "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: timing \\+(99.[5-9]|100.[0-4])[0-9]* "
+	      "ppm.*K56flex connect [0-9]+/56000 \\(analogue modem\\)"
+	      ".*K56flex data: error [0-2].[0-9]+ rms",
+	      "EXPECT_B=K56flex connect 56000/" });
+	/* the analogue modem's own echo (DSP_TEST_ECHO) */
+	add("open", "open_k56flex_echo", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "DSP_TEST_ECHO=-10:1c", "BULK=100000",
+	      "EXPECT_A=(?s)echo canceller took [4-9][0-9].[0-9] dB away[^:].*"
+	      "K56flex connect [0-9]+/56000 "
+	      "\\(analogue modem\\)",
+	      "EXPECT_B=K56flex connect 56000/" });
+	/* a digital modem without K56flex (+MS=90): no V.8bis, V.90 */
+	add("open", "open_k56flex_v90", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=90",
+	      "EXPECT_A=V.90 connect 3[0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=V.90 connect 56000/" });
 	/* the analogue modem's codec on a clock of its own (netsim's
 	   NET_PHASE, NET_PPM): its samples half a network sample off the
 	   symbols (where a T-spaced receiver at 8000 Hz loses the band's

@@ -364,6 +364,11 @@ struct V34Tx {
 	s16 s_odd;              /* S-bar after an S of odd length */
 	s16 trn16;              /* phase 4 TRN, MP and E of 16 points (the
 				   remote's J asked for them) */
+	/* K56flex's analogue modem: J of 24 bits (12 symbols), jword's 16
+	   (0: V.34's 4 point J) and the robbed-bit octet j_rbs */
+	s16 j24;
+	u16 jword;
+	unsigned char j_rbs;
 	unsigned char bits[2800];       /* MP, or Ja (V90_JA_MAX) */
 	s16 nbits, pos;
 	V34Mp mp;       /* the MP we send */

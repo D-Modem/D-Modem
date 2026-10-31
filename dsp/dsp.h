@@ -54,6 +54,7 @@ namespace dsp {
 #define ANSTONE_NONE  0
 #define ANSTONE_2100  1   /* ITU V.25 ANS / V.8 ANSam */
 #define ANSTONE_2225  2   /* Bell answer tone */
+#define ANSTONE_V8BIS 3   /* V.8bis's MRe or CRe (a K56flex digital modem) */
 
 struct dp_runtime {
 	struct modem *modem;
