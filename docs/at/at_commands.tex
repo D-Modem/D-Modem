@@ -464,7 +464,7 @@ up.  Each command line is answered with a result code
 The commands of a line run in turn (\cmdr{ATE1Q0V1}).  A basic command's
 number left out is 0 (\cmdl[E]{ATE} is \cmdl[E]{ATE0}).  An extended command
 (\cmdr{+}\ldots) takes \cmdr{=}\p{values}, \cmdr{?} (its values) and
-\cmdr{=?} (its ranges).  A \cmd{;} may stand between two commands, as
+\cmdr{=?} (its ranges).  A \cmdr{;} may stand between two commands, as
 V.250 puts one after an extended command that another follows
 (\cmdr{AT+IFC=2,2;+MS=V92}); here it is not needed.  A value left out of
 an extended command's \cmdr{=}\p{values} keeps what it was.
@@ -486,14 +486,14 @@ The first command that fails ends the line with \rc{ERROR}; otherwise \rc{OK}
 follows the last one.  \cmdl[A]{A}, \cmdl[D]{D} and \cmdl[O]{O} end the line and
 give their result later (\rc{CONNECT}, \rc{NO CARRIER} and so on), and \cmdl[Z]{Z}
 ends it with \rc{OK}: whatever follows them on the line is not read, but
-for a dial string's \cmd{;}, after which the rest of the line runs once
+for a dial string's \cmdl[D]{;}, after which the rest of the line runs once
 the number is dialed (\cmdl[D]{ATD}).  A command that reports something
 (\cmdl[I]{I}, \cmdl[S]{S}\p{n}\cmdr{?}, \cmdl[plusMS]{+MS?} \ldots) prints it on
 lines of its own before the result.
 
 A character from the DTE while a call is being set up (dialing,
 answering, the modems' training) hangs up.  After a dial string's
-\cmd{;} the modem is in command state, and takes commands.
+\cmdl[D]{;} the modem is in command state, and takes commands.
 
 \section{Echo and result code settings}\label{sec:echo}
 
@@ -577,9 +577,8 @@ more while a dial tone in a cadence is heard).  A busy tone is four
 cycles of the country's busy or congestion tone's cadence (the ITU's
 list's, 15\% or 80~ms either side: 0.48~s on and off or 0.24 in
 Germany, 0.75~s in India, 1~s on and 4 off in Egypt), not its ringing
-tone; a country with neither (none of the 192) its table's bounds.  NO
-ANSWER comes with every \p{n}, and the dial string's \cmdl[W]{W} and
-\cmd{@} wait with every \p{n}.  A SIP call has no dial tone: dmodemd
+tone; a country with neither (none of the 192) its table's bounds.  \rc{NO ANSWER} comes with every \p{n}, and the dial string's \cmdl[D]{W} and
+\cmdl[D]{@} wait with every \p{n}.  A SIP call has no dial tone: dmodemd
 wants \cmdl[X]{ATX3}.
 \end{command}
 
@@ -677,7 +676,7 @@ Accepted, with or without a digit, and nothing done; see
 \begin{command}{ampV}{\&V\p{n}}{View Active Configuration}
 \cmdl[ampV]{\&V} and \cmdl[ampV]{\&V0} show the active settings, in lines of 72
 columns at most: the basic commands', the S-registers in use
-(\cmdl[S]{S}\p{nn}\cmd{:}\p{vvv}; not \sreg{18} or \sreg{44} to \sreg{48}),
+(\rc{S\p{nn}:\p{vvv}}; not \sreg{18} or \sreg{44} to \sreg{48}),
 \cmdl[plusMS]{+MS} and the other extended settings, and the extended
 parameters.  There are no stored profiles: the list ends with
 \rc{STORED PROFILES: none}.  \cmdl[ampV]{\&V1} gives the last call's
@@ -927,7 +926,7 @@ dmodemd the dial string is the SIP call's number
 0--9 * \# A--D & Dialed as DTMF, or as pulses for the digits with \cmdl[P]{P}. \\ \hline
 L & Dial the last number again (\rc{Dialing }\p{number}\cmd{...} first).
   Valid only as the first character of the string; \rc{ERROR} while a call
-  is held after \cmd{;}. \\ \hline
+  is held after \cmdl[D]{;}. \\ \hline
 T & Tone dialing (DTMF) from here on. \\ \hline
 P & Pulse dialing from here on. \\ \hline
 , & Pause for \sreg{8} seconds. \\ \hline
@@ -943,16 +942,16 @@ S=\p{n} & A stored number: \rc{ERROR} (there are none). \\ \hline
 ! \$ & Hook flash and bong tone: skipped (a SIP call has no hook to flash). \\ \hline
 \end{vtable}
 
-Other characters are skipped.  After a \cmd{;} the call waits, silent,
-for the DTE: \cmdl[D]{ATD}\p{more} dials more on it (as DTMF; a \cmd{;}
+Other characters are skipped.  After a \cmdl[D]{;} the call waits, silent,
+for the DTE: \cmdl[D]{ATD}\p{more} dials more on it (as DTMF; a \cmdl[D]{;}
 again holds it again), \cmdl[D]{ATD} alone or \cmdl[O]{ATO} starts the
 calling modem's handshake, \cmdl[A]{ATA} the answering modem's, and
 \cmdl[H]{ATH} hangs up (\rc{OK}, then \rc{NO CARRIER}).
 \begin{results}
 \res{\rc{CONNECT}}{When the call is up.}
-\res{\rc{OK}}{After a \cmd{;}.}
+\res{\rc{OK}}{After a \cmdl[D]{;}.}
 \res{\rc{BUSY}, \rc{NO ANSWER}, \rc{NO DIALTONE} or \rc{NO CARRIER}}{When it is not.}
-\res{\rc{ERROR}}{For \cmdl[D]{S=}\p{n}, or \cmdl[L]{L} with no number to dial.}
+\res{\rc{ERROR}}{For \cmdl[D]{S=}\p{n}, or \cmdl[D]{L} with no number to dial.}
 \end{results}
 \end{command}
 
@@ -985,7 +984,7 @@ pulse times.
 This command takes the modem off hook to answer a call.  After
 \sreg{92} seconds it sends the answering modem's tones.  In dmodemd the
 call that rings (\rc{RING}) is answered.  On a call held after a dial
-string's \cmd{;}, \cmdl[A]{ATA} answers that call: \cmdl[D]{ATD}\p{number}\cmd{;A}
+string's \cmdl[D]{;}, \cmdl[A]{ATA} answers that call: \cmdl[D]{ATD}\p{number}\cmd{;A}
 dials, then answers (V.250's call-back).
 \begin{results}
 \res{\rc{CONNECT}}{When the call is up.}
@@ -1012,7 +1011,7 @@ H1 & Off hook. \\ \hline
 \begin{command}{O}{O\p{n}}{Return to On-Line Data Mode}
 This command takes the modem back online after the escape
 (\hyperref[sec:online]{section~\ref*{sec:online}}).  On a call held after a dial string's
-\cmd{;} it starts the calling modem's handshake (as \cmdl[D]{ATD}).
+\cmdl[D]{;} it starts the calling modem's handshake (as \cmdl[D]{ATD}).
 \cmdl[O]{O1} and \cmdl[O]{O3} work in V.34, V.90 and V.92 calls; in the others
 they only go back.  A retrain or renegotiation counts as the local
 modem's in \cmdl[I]{ATI11}.
@@ -1053,11 +1052,11 @@ way, and ETSI's after a short ring), and on a line it hears on hook
 (ALSA, a pipe, the pico-serial Line) before the ring too (ETSI's after
 its alerting tone, the UK's, DTMF caller ID).  It takes Bell 202 FSK and
 V.23 FSK (ETSI EN 300 659-1, BT SIN 227) alike, and DTMF caller ID:
-\cmdl[A]{A} and the number, or \cmdl[B]{B} (or \cmdl[D]{D}) and a reason it is
-absent (\cmd{10} private, as \cmdl[P]{P}; others \cmdl[O]{O}), up to \cmdl[C]{C},
+\rc{A} and the number, or \rc{B} (or \rc{D}) and a reason it is
+absent (\cmd{10} private, as \rc{P}; others \rc{O}), up to \rc{C},
 \cmd{\#} or a pause.  In voice mode with the line taken it takes Type~II
 caller ID too, a waiting call's caller: after the CPE alerting signal
-(2130 and 2750~Hz) it answers with DTMF \cmdl[A]{A} (GR-30's, a CPE without
+(2130 and 2750~Hz) it answers with DTMF \rc{A} (GR-30's, a CPE without
 ADSI) and reports the FSK message that follows as a packet, the line's
 audio to the DTE silent meanwhile.
 
@@ -1067,8 +1066,8 @@ an empty line.  A SIP call (dmodemd \cmd{-L}) has caller ID after its
 first \rc{RING}, from the INVITE: the caller's P-Asserted-Identity, else its
 From (the URI's user part as \cmd{NMBR}, the display name as
 \cmd{NAME}), the date and time the host's.  A number or name that is not
-known is \cmdl[O]{O}, one withheld (the Privacy header's \cmd{id},
-\cmd{user} or \cmd{header}, or an anonymous caller) \cmdl[P]{P}, as on the
+known is \rc{O}, one withheld (the Privacy header's \cmd{id},
+\cmd{user} or \cmd{header}, or an anonymous caller) \rc{P}, as on the
 line; \cmd{2} gives the MDMF message the modem made of them.
 \begin{syntax}
 \item AT\#CID=\p{n} (or AT+VCID=\p{n})
@@ -2150,8 +2149,8 @@ while a dial tone in a cadence is heard.
 
 \sregdef{7}{Connection Completion Time-Out}
 How long the modem waits for the call to come up after dialing or
-answering: the answer and the training.  The dial string's \cmdl[W]{W} and
-\cmd{@} wait this long too, and voice mode's \cmdl[plusVRN]{+VRN} no longer.
+answering: the answer and the training.  The dial string's \cmdl[D]{W} and
+\cmdl[D]{@} wait this long too, and voice mode's \cmdl[plusVRN]{+VRN} no longer.
 V.cvm's start-up takes 15 to 21~s, so S7 should allow for it.
 \facts{0--255}{60}{seconds}
 
@@ -2165,8 +2164,7 @@ Kept: the modulations detect the carrier by themselves.
 \facts{0--255}{6}{0.1 s}
 
 \sregdef{10}{Automatic Disconnect Delay}
-How long the carrier may be gone before the modem hangs up with NO
-CARRIER.
+How long the carrier may be gone before the modem hangs up with \rc{NO CARRIER}.
 \facts{0--255}{7}{0.1 s}
 
 \sregdef{11}{DTMF Dialing Speed}
@@ -2885,7 +2883,7 @@ dials 123.  A hook flash is the line's: over SIP an RFC 4733 event
 \end{results}
 \begin{vtable}{2}{|T{0.18\textwidth}|L{0.68\textwidth}|}{+VTS Elements}
   {\thd{Element} & \thd{Plays}}
-\p{s} & The DTMF digit \p{s} (0--9, *, \#, A--D), or \cmd{!} a hook
+\p{s} & The DTMF digit \p{s} (0--9, *, \#, A--D), or \cmdr{!} a hook
   flash, for \cmdl[plusVTD]{+VTD}. \\ \hline
 \{\p{s},\p{d}\} & The DTMF digit or hook flash \p{s} for \p{d}. \\ \hline
 [\p{f1},\p{f2},\p{d}] & A tone of \p{f1} and \p{f2} Hz (0 to 4000; 0 is
@@ -2985,9 +2983,8 @@ HUPCL set on the pty, closes it; it then makes a new pty
   ! ;} and \cmd{- ( ) .} and blanks) goes as its digits and DTMF
   characters: \cmdl[D]{ATDT555-1000} calls \cmd{sip:5551000@}\p{domain}.
   Anything else is a SIP user's name, as it is: \cmdl[D]{ATDalice}.
-\item The line has no dial tone: \cmdl[X]{ATX3} (or \cmdl[X]{X1}), else NO
-  DIALTONE.
-\item A dial string with a \cmd{;} (\cmdl[D]{ATDT5551000;}) makes the SIP
+\item The line has no dial tone: \cmdl[X]{ATX3} (or \cmdl[X]{X1}), else \rc{NO DIALTONE}.
+\item A dial string with a \cmdl[D]{;} (\cmdl[D]{ATDT5551000;}) makes the SIP
   call and says \rc{OK} at once, the modem in command state: what \cmdl[D]{ATD}
   adds then goes as DTMF on the call (a menu's choices, an extension),
   and \cmdl[D]{ATD} alone or \cmdl[A]{ATA} starts the modem's handshake.
