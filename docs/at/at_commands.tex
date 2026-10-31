@@ -352,6 +352,52 @@
 \tocloftpagestyle{dm}
 \pagestyle{dm}
 
+
+% the end of the manual: ruled notes pages, then the back cover, so that
+% the pages come to a multiple of 8 (one A3 sheet folded twice, or two
+% A4 sheets of the booklet)
+\newcommand{\notespage}{%
+  \markboth{Notes}{}%
+  {\large\bfseries\color{dmnavy}Notes}\par\vspace{1ex}%
+  {\color{dmred}\hrule height 1.2pt}\vspace{2ex}%
+  \noindent\begin{tikzpicture}
+    \foreach \l in {0,...,21}
+      \draw[dmhead,line width=0.5pt] (0.25pt,-\l*7mm) -- (\linewidth-0.25pt,-\l*7mm);
+  \end{tikzpicture}\clearpage}
+\makeatletter
+\newcommand{\dm@notes}{%
+  \ifnum\numexpr\value{page}-8*((\value{page}-4)/8)\relax=0
+  \else\notespage\expandafter\dm@notes\fi}
+\newcommand{\dmnotes}{\clearpage\pdfbookmark[1]{Notes}{notes}\dm@notes}
+\makeatother
+\newcommand{\backcover}{%
+  \thispagestyle{empty}%
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[dmnavy] ([yshift=12cm]current page.south west) rectangle
+      (current page.south east);
+    \fill[dmred] ([yshift=12.3cm]current page.south west) rectangle
+      ([yshift=12cm]current page.south east);
+    \begin{scope}[shift={([yshift=7.4cm]current page.south west)}]
+      \foreach \a/\f/\o in {0.8/1.8/0.10, 0.5/2.9/0.08, 1.1/1.0/0.06}
+        \draw[white,opacity=\o,line width=1.2pt,domain=0:14.8,samples=300,
+          smooth] plot (\x,{\a*sin(\f*\x r+2)});
+    \end{scope}
+    {\renewcommand{\qamstep}{2}%
+     \qam{16}{0.52cm}{([xshift=4.2cm,yshift=6.9cm]current page.south west)}{white,opacity=0.13}{axes}}
+    \node[anchor=north east,inner sep=0pt]
+      at ([xshift=-1.5cm,yshift=10.9cm]current page.south east)
+      {\dmlogo{1.8cm}};
+    \node[anchor=south west,text=white,align=left,inner sep=0pt,
+      text width=11.8cm]
+      at ([xshift=1.5cm,yshift=1.6cm]current page.south west)
+      {{\large\bfseries D-Modem}\quad{\color{dmmuted}AT Command Reference}\\[4pt]
+       {\small\color{dmmuted}Version \dmversion\ \textbullet\ \dmdate}\\[10pt]
+       {\small\color{dmmuted}\texttt{https://github.com/D-Modem/D-Modem}}\\[4pt]
+       {\footnotesize\color{dmmuted}Copyright \textcopyright\ the D-Modem
+        Authors.  Available under the GNU Affero General Public License,
+        version~3 only, or a commercial licence.}};
+  \end{tikzpicture}}
+
 \begin{document}
 % the title page: the band down past the middle of the page, faint
 % carriers across it and the title at its foot; no header or footer
@@ -3315,4 +3361,6 @@ modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \textbf{zstd} & Zstandard.  A modern compression D-Modem offers between two D-Modems (\cmdl[plusDSZ]{+DSZ}). \\ \hline
 \end{longtable}}
 
+\dmnotes
+\backcover
 \end{document}
