@@ -37,8 +37,9 @@ dmodemd = sys.argv[1]
 SRTP = "--srtp" in sys.argv[2:]
 SUITE = "AES_CM_128_HMAC_SHA1_80"
 OUR_KEY = os.urandom(30)          # our master key || salt
-SIP_PORT = 15090 + random.randrange(500) * 2      # ours
-DM_PORT = SIP_PORT + 1                            # dmodemd's
+# SIP_PORT, ours, and DM_PORT (SIP_PORT + 1), dmodemd's: picked below,
+# a pair both free (dmodemd_clearmode and dmodemd_srtp run this script
+# side by side, and the runner may hold a port of its own)
 log = open(os.path.join(tempfile.gettempdir(),
             "clearmode%s.log" % ("-srtp" if SRTP else "")), "wb")
 FLAG, ONES = 0x7E, 0xFF
@@ -147,8 +148,24 @@ class ClearEnd:
                         self.in_octet(o)
 
 # SIP
-sip = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sip.bind(("127.0.0.1", SIP_PORT))
+def free_pair():
+    for _ in range(50):
+        port = 15090 + random.randrange(500) * 2
+        ours = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            ours.bind(("127.0.0.1", port))
+            probe.bind(("127.0.0.1", port + 1))
+        except OSError:
+            ours.close()
+            continue
+        finally:
+            probe.close()
+        return ours, port
+    fail("no free pair of UDP ports in 15090-16090")
+
+sip, SIP_PORT = free_pair()
+DM_PORT = SIP_PORT + 1
 rtp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 rtp.bind(("127.0.0.1", 0))
 RTP_PORT = rtp.getsockname()[1]
