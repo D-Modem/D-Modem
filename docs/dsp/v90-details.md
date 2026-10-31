@@ -1,0 +1,118 @@
+# V.90 digital modem: technical details
+
+This is the technical companion to [V.90: the digital modem](v90.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+
+`v90.cpp` is the digital modem's PCM transmitter, `dp_v34.cpp` runs its
+start-up on top of the V.34 pump. The modem has to run at 8000 Hz on a
+G.711 network (`MODEM_RATE=8000`): the pump sends exact codewords, as
+their linear values, that the network's encoder passes on unchanged. The
+law is mu-law, or A-law with `DSP_G711=alaw`.
+
+- **Phases 1 and 2:** PCM availability (digital) in CM or JM, then the
+  part of the V.34 call modem whichever side called: INFO0d, tone B,
+  probing, INFO1d; INFO1a asks for V.90 (symbol rate 6, UINFO) or V.34.
+- **Phase 3:** the analogue modem's S, PP, TRN and Ja (with the DIL
+  descriptor) go into the V.34 receiver; Sd, TRN1d, Jd, Jd' and the DIL
+  it asked for come out as PCM. While it takes in the DIL the analogue
+  modem is silent or sends TRN1a; the S that ends the DIL is looked for
+  after either.
+- **Phase 4:** CPt, CP and E come in; Ri, TRN2d, MP, Ed and B1d go out
+  through the encoder with the CPt and then the CP constellations.
+- **Data mode:** the encoder of 5.4/V.90: modulus encoder, mappers, sign
+  coding and the spectral shaper with its look-ahead (the exact choice of
+  5.4.5.5: the analogue modem checks TRN2d against it). Upstream is the
+  V.34 data mode receiver, with the trellis code and precoding our MP asks
+  for. The echo canceller takes our PCM signal (converted to 9600 Hz)
+  and trains while Sd, TRN1d and Jd go out (the analogue modem is meant
+  to be silent then). It stays off unless that training took at least
+  6 dB away: on a 4-wire network there is no echo, and a canceller
+  trained on the remote's signal would add noise. With the hybrid echo of netsim 20 dB down, or 12 dB down after
+  200 ms, calls still connect at 56000/31200; 12 dB down after 20 ms is
+  too much at times: the echo of the DIL's loudest codes hides the
+  analogue modem's S. Our MP's precoding coefficients are found once per
+  exchange, from the equalizer's error since the echo canceller took
+  over (before, our echo colours the error, and the predictor reads a
+  gain of 3 to 6 dB into it), every MP of the exchange asks for the same
+  ones, and the data mode receiver takes those: the HSF modem keeps
+  what it was asked for first, and a receiver that worked out its own at
+  the start of the data mode (as it did) had an mse of 0.66 instead of
+  0.14 against it. Against the HSF modem with its hybrid's echo 20 dB
+  down after 50 ms (`hsf_v90_echo`) the canceller takes 30 dB away and
+  the call connects at 52000/33600 (after a retrain at times); 10 dB
+  down too, with a data mode mse of 0.18 against 0.14 without echo (the
+  G.711 quantization of the echo with the upstream signal). (With the
+  echo after 20 ms instead, netsim left a sixth of the echo out: see
+  `NET_ECHO` below; the upstream renegotiated down to 28800 or lower on
+  that.) The retrains are the HSF modem's: after its S in phase 3 it
+  goes silent without the S-bar that answers our Jd', then sends tone
+  A. It takes no echo in itself; what changes is when we answer it. 20
+  dB down, our V.21 receiver has the carrier some milliseconds later
+  with the echo of our ANSam on the line, misses the first CM for want
+  of all ten ones before its sync, and sends JM 300 ms later. Taking the
+  sync after six ones fixes that, but the SM56 modem, whose first CM we
+  then catch too, chooses 45333 downstream instead of 50666 when JM
+  comes a CM earlier (at every alignment tried), so the sync wants all
+  ten. 10 dB down the HSF modem retrains so even with JM on time; what
+  we send differs from a call without echo only by a millisecond in
+  phase 2. The call connects after one or two of them.
+
+The original library, as an analogue V.90 modem calling through the
+simulated network (`ctest -R smartlink_v90`), connects at 56000
+bit/s downstream and 31200 upstream, mu-law and A-law, on a line without
+noise. Its phase 4 check compares the error of its equalizer output
+against the levels it expects for TRN2d's codes over the first 7200
+symbols of TRN2d with that over the next 7200; in between, it replaces
+the levels it took from the DIL with those it measured in TRN2d. More
+than about 1.5 times the error before, and it retrains (silence and tone
+A; the digital modem follows it back to phase 2 at the tones, like a
+V.34 retrain). On a line without any noise the error is only a unit or
+two of its 16 bit scale, and its levels from the DIL are off by about
+that much (they are 4 times the G.711 values of the codes, give or take
+2), so with mu-law the check fails every time: 1.96 against 1.23, and
+1.78 on the second training, which it lets pass (one retrain at most).
+The codes come through as sent; any digital modem would do the same.
+With a noise floor of -81 dBFS (netsim's `NET_FLOOR=3`, still far below a
+real line's) the error is that of the noise, the ratio 1.2 to 1.3 at
+every alignment of the call in both laws, and the call connects at
+54666/31200 without the retrain, 15 s sooner; the mu-law V.90 tests use
+it. The Agere modem as the
+analogue modem (`ctest -R agere_v90`) connects at 46666 bit/s downstream;
+it trains on TRN1d for 0.6 s and decides on it for another 0.9 s before
+it looks for Jd, so TRN1d lasts 1 s (it was 300 ms, enough for the
+original library only). Over
+SIP, through Asterisk and DModem (`asterisk/test/sip.sh AT+MS=90`, with
+`CODEC=alaw` for A-law), it connected at 56000/31200 in both laws while
+dmodemd (then slmodemd) still ran the original library at 9600 Hz; its SIP side then did
+the 8000/9600 Hz conversion itself (the resampler of pjmedia cuts below
+4000 Hz, which takes away the part of the PCM signal the analogue modem
+recovers its timing from). dmodemd now runs at the call's 8000 Hz. The
+original library's own debug
+output (its `edprintf` lines are hidden behind a key) helped: it reports
+the levels it measures in the DIL, the digital pad it concludes and why
+it retrains.
+
+Rate renegotiation (9.6/V.90): the analogue modem sends S, S-bar, SCR
+and CP with the downstream rate it wants; we answer its S-bar with Rd
+(R of each interval's largest data mode Ucode, 384 symbols, R-bar for
+24, on a data frame boundary), TRN2d, MP with the upstream rate our mse
+allows, MP', Ed and B1d, the encoder on CPt's constellations until B1d.
+Ours start on the upstream mse as in V.34 (above), with Rd first;
+`DSP_V34_RENEG=<ms>:<N>` makes one (a test). A CPs (bit 30) asks for a
+silent period, to retrain the analogue modem's echo canceller: MP' until
+CPs', Ed, then Ucode 0, keeping the data frames, until a CP with bit 30
+clear; then Rt (CPt's largest Ucodes), Rt-bar and MP. No E 5 s after Rd
+(plus the round trips): a retrain.
+
+| Test | Result |
+|---|---|
+| `smartlink_v90_reneg`: ours after 5 s, upstream to 24000 | 56000/24000 |
+| `smartlink_v90_reneg_silence`: noise on the PCM codes from 40 s | the library's, with CPs and the silent period: 54666 or 50666 down, B1d without errors |
+| `agere_v90_reneg_open`: ours, upstream to 19200 | the Agere modem goes along |
+
+The original library renegotiates on its own when the downstream gets
+worse, always with the silent period; with the noise still there it now
+and then picks 56000 again, and its data then has errors (the test stops
+netsim's noise with our silence, `NET_NOISE_QUIET`). The Agere modem
+renegotiates on its own as well, without silence, a step down at a time
+as the noise rises (45333, 46666, 44000 in one call), but only after
+40 s or so, if at all: no test.

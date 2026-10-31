@@ -1,0 +1,797 @@
+# V.90 analogue modem: technical details
+
+This is the technical companion to [V.90 and V.92: the analogue modem](v90a.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+
+The open DSP has V.90 as the digital modem (see [V.90](v90.md)), the
+end of the call on the 8000 Hz G.711 network. This is the plan for the
+other end: the analogue modem, a softmodem on a telephone line (dmodemd
+`-a`, see [hardware](../hardware.md)) calling an ISP's V.90 server.
+The work goes in stages, each with its tests:
+
+| Stage | What | State |
+|---|---|---|
+| A | Phases 1 and 2: V.8, INFO0a, INFO0d, INFO1d, INFO1a for V.90 | done |
+| B | Phase 3: S, PP, TRN, Ja out; the PCM receiver (timing, equaliser) on TRN1d, Jd, Jd' | done |
+| C | Phase 3: the DIL and what it shows (levels, robbed bits, pads) | done |
+| D | Phase 4: Ri, the CPt and CP constellations, TRN2d, MP, E, B1 | done |
+| E | Data mode: the PCM decoder, V.34 upstream; CONNECT; on by default on analogue lines | done (V.90 at 9600 Hz on by default; `DSP_V90A=0` leaves it out) |
+| F | Retrains and rate renegotiation as the analogue modem (9.5.2, 9.6.2/V.90) | done (no CPs or cleardown) |
+| G | V.92 as the analogue modem: V.92 with V.34 upstream and modem-on-hold | done |
+| G2 | V.92's PCM upstream, phase 3: INFO1a (Table 18), the PAM transmitter, Ru to E1u | done |
+| G3 | V.92's PCM upstream, phase 4 and data mode | done (on by default, `DSP_V92A_UP=0` leaves it out) |
+| G4 | V.92's quick connect as the analogue modem: short phase 1 calling, short phase 2 | done (calling; `DSP_V92A_QC=0` leaves QC1a out, `DSP_V92_SHORT2=0` short phase 2) |
+| G5 | PCM upstream's rate renegotiation and fast parameter exchange, both ways | done |
+
+The 9600 Hz modem with `+MS`'s V.90 or V.92 (the default) offers V.90
+as the analogue modem, and with V.92 asks for PCM upstream where the
+digital modem offers it; `DSP_V90A=0` leaves PCM out, `DSP_V92A_UP=0`
+PCM upstream alone. A dmodemd `-a`
+line (`Host::analog_line()`, the pump's `dp_runtime_set_analog()`) is
+an analogue line at either rate; at 8000 Hz (`-r 8000`) V.90 needs
+`DSP_V90A=1` (see 8000 Hz lines, below), else such a line is V.34's.
+V.91, between two digital modems, is always V.34 there.
+
+## Phases 1 and 2 (stage A)
+
+`dp_v34.cpp`, with `AT+MS=90` or `92` on a line other than the 8000 Hz
+digital modem's: an analogue one, at 9600 Hz (`v90a`; `DSP_V90A=0`:
+off), or at 8000 Hz with `DSP_V90A=1`:
+
+- **V.8.** CM and JM have PCM in the modulation octet and the PCM modem
+  availability octet with the analogue modem's bit (`V8_PCM_ANALOGUE`).
+  A JM keeps it only when the CM had the digital modem's bit, as the
+  digital modem's JM keeps its own only for the analogue one. The PSTN
+  access octet's digital connection bit is the digital modem's alone.
+  V.90 is agreed (`v90a_on`) when the other end's CM or JM has the
+  digital modem's bit (`v8_v90a()`).
+- **The roles.** From phase 2 on the analogue modem is the V.34 answer
+  modem, whichever side called (9.2.2/V.90). Answering, it is that
+  already. Calling, as an analogue modem does an ISP, it becomes it at
+  the end of V.8, 75 ms after CJ: its control channel sends at 2400 Hz
+  and listens at 1200 (from CJ on: the digital modem's INFO0d may come
+  at once), the tone detectors and the retrain's are mirrored, and the
+  answerer's phase 2 (`P2A_*`) begins with INFO0a. That is the digital
+  modem's swap the other way round (it becomes the call modem).
+- **INFO0a** is V.34's INFO0 (Table 8/V.90): our symbol rates and
+  carriers, bits 26 and 27 0.
+- **INFO0d** (Table 7/V.90) is 13 bits longer than INFO0 (58 bits to the
+  end of its CRC, at bit 42): the digital modem's phase 2 power, its
+  most, where it measures it, the network's law (bit 39) and whether it
+  takes 3429 baud upstream (bit 40). The receiver looks for frames of
+  that length while it waits for INFO0 (`info0_rx_len()`), for the
+  INFO0d repeats of phase 2's recovery, and when it tells INFO1d from
+  the INFO0d before it. The law becomes ours (`alaw`): what the PCM
+  receiver will decode.
+- **Probing** is V.34's: L1 and L2 both ways. INFO1d (Table 9/V.90) is
+  INFO1c: for each symbol rate the carrier, pre-emphasis and the most
+  the digital modem receives from us.
+- **INFO1a** (Table 10/V.90, `make_info1a_v90()`) asks for V.90 with 6
+  in bits 37:39 (the digital modem's 8000 symbols a second). In bits
+  34:36 is the upstream symbol rate `v90a_choose()` picks: of 3000, 3200
+  and 3429 baud (3429 only if INFO0d allows it) the one INFO1d gives the
+  most for, on the carrier INFO1d asks for if our INFO0a has it. INFO1d
+  without any of them: V.34's INFO1a instead (`choose_bauds()`), and the
+  call goes on as V.34 with us as its answer modem (9.2.2.1.9/V.90).
+  UINFO (bits 25:31) is the Ucode of TRN1d's two points: the loudest
+  within INFO0d's most, and above 66. 0 dBm0 is 3.17 dB below the sine
+  at the overload of mu-law (A-law 3.14 dB), so INFO0d's -12 dBm0 (our
+  digital modem's) gives 79 (-12.3 dBm0; A-law -12.0). The analogue
+  modems in the interop tests ask for 77 to 79 with the same INFO0d.
+- **Then** phase 3 (below).
+
+## Phase 3 (stages B and C)
+
+`dp_v34.cpp`'s `P3V_*` states and `v90a.cpp`'s PCM receiver (`V90Rx`):
+
+- **Out** (`v90a_start()`): V.34's transmitter at the upstream symbol
+  rate, on the carrier INFO1d asked for, with the answer modem's
+  scrambler (GPA). 70 ms of silence, S 128 T, S-bar 16 T, PP, TRN 2048 T
+  (512 T at least: the digital modem trains on PP and those), then Ja:
+  the DIL descriptor (`V90Dil::build()`, the inverse of the digital
+  modem's `parse()`) sent as MP is, differentially on 4 points,
+  scrambled, again and again (`V34_TX_JA`). Ja stops at Sd-bar, then
+  silence; S once Jd is in, until Jd'; S-bar 16 T after it; silence
+  while the DIL comes, then S 128 T and S-bar 16 T, which end it
+  (9.3.2.10/V.90: within 5 s).
+- **In**: the line at 16 000 Hz, two samples a PCM symbol, into
+  `V90Rx` (`line()`: the pump's 9600 Hz samples through `V90Interp`, a
+  Blackman windowed sinc over 128 samples cut at 4800 Hz, the line's
+  Nyquist, at 256 phases between two samples, linearly between those;
+  on an 8000 Hz line the line's own samples, from `process()`, by the
+  same interpolator at 0.5 a sample). The PCM signal
+  fills the band up to 4000 Hz and past (netsim's codec: a raised
+  cosine with a roll-off of 0.15, to 4600 Hz). Sampled at 8000 Hz the
+  band past 4000 Hz folds onto itself, and half a symbol off the
+  symbols' instants it cancels near 4000 Hz: a T-spaced equaliser falls
+  from 90 to 21 dB there, and nothing brings it back. At 16 000 Hz
+  nothing folds, and a T/2 equaliser makes any delay (86 to 88 dB at
+  every phase, offline, on a raised cosine line). The interpolator's
+  output time moves with the timing loop (below):
+  - **Sd** (on every other sample, 8000 Hz: Sd repeats every 6 symbols
+    at any phase): over 24 samples the line is like itself 6 samples
+    before and like its negative 3 before (+W +0 +W -W -0 -W), 96
+    samples of that. Its reversal: over 24 samples the lag 6
+    correlation dips to about 0.5 (the 6 after it against the 6
+    before), at any phase; within that dip, the 6 samples whose lag 6
+    correlation is the most negative (-1 on the symbols' instants, -0.25
+    a third of a symbol off, where the reversal spreads). That is symbol
+    0 of S-bar d, data frame interval 0, at sample `b` (16 kHz); TRN1d
+    starts 48 symbols later.
+  - **The equaliser**: 128 taps at 16 000 Hz (T/2, 64 symbols), symbol
+    k's sample b + 2 k at the middle one. TRN1d's signs are known (GPC
+    on ones from zero), so its first 96 symbols centre the delay (b
+    moved to the best correlation, either polarity: a line may reverse
+    it), the next 1020 give the normal equations, solved by Cholesky;
+    then NLMS (0.005) on TRN1d's signs up to its least length, 2040 T,
+    and on the decisions after it.
+  - **UINFO's level at each position** (`tlev`, symbol k mod 6): the
+    targets from the solution on are each position's mean magnitude of
+    late, scaled so that the loudest is UINFO's level. A robbed bit
+    takes UINFO's least significant bit in its interval (Ucode 79 comes
+    out as 78, a step lower); with one level for all six the equaliser
+    was trained to a target it could not give one symbol in six, 38 dB
+    where the clean line has 77, and UINFO's spread (the noise CP is
+    designed on) came out 13 where it is 0.5. An equaliser the same for
+    all six positions cannot give one of them a level of its own, so
+    what it gives there is the line's, and the targets follow it; Ri
+    has them too.
+  - **The timing loop** (`timing()`), from that solution on: the
+    equaliser's error times its slope, (a - y)(y(+1) - y(-1)) with its
+    output a sample either side, over the targets' power of late (the
+    DIL's codes and the data's are up to 64 times UINFO's), moves the
+    interpolator's output time: a phase term (0.02) and a frequency term
+    (2e-5), which follows the codec's clock. From 2000 to 6000 symbols
+    the phase it has moved is fitted to a line: its slope is the
+    clock's offset to some 0.1 ppm, where the frequency term is off by
+    1 or 2 (it then runs on the fitted one, with 0.004 and 2e-7: the
+    loop's jitter costs the dense constellations their margin). Then
+    the equaliser is solved again (on the locked timing: the first
+    solution spans a drifting clock, 29 dB at 100 ppm), and UINFO's
+    spread over 512 symbols is the noise (below). Only then does our S
+    go, ending Jd (we may wait 5 s for it, 9.3.2.7/V.90): the receiver
+    is ready some 1.1 s into TRN1d. Through the DIL the loop runs on
+    the frequency alone (the DIL's levels are what it measures, nothing
+    to go by); from Ri on it follows the error again: Ri's signs,
+    TRN2d's known symbols, the decisions.
+  - **Jd and Jd'**: each decision's sign, differentially decoded, through
+    the GPC descrambler (it synchronises itself: TRN1d's bits before Jd
+    do no harm), into a 72 bit window that a Jd frame fills when its
+    sync, start bits, CRC and fill bits are right (`V90Jd`: the rates,
+    the constellations of CP, E and SCR, the look-ahead). Jd' is 8
+    zeros where the next frame's sync would be.
+- **The DIL** we ask for (`v90a_start()`; `DSP_V90A_DIL=0`: none, N 0, and
+  the digital modem goes to phase 4 after Jd'): all 128 Ucodes, the
+  loudest first, 36 symbols each (H 5: six in each data frame
+  interval), every symbol a training symbol (TP 1, no reference
+  symbols), the signs SP of 12 whose second half is its first's
+  opposite (each interval has three of each sign in a segment). A round
+  is 4608 symbols, 0.58 s; two are measured. It starts 12 symbols after
+  Jd' (5 after its 8th symbol, where the receiver knows it), in data
+  frame interval 0. With the equaliser still (the levels are not
+  known: a pad changes them), each symbol's value times its sign goes
+  to its interval's and Ucode's sums (`V90Rx::dil_add`).
+- **What it shows** (`V90Rx::dil_analyse()`, for stage D's
+  constellations):
+  - each Ucode's level in each interval (`dil_level`), and its noise;
+    the noise of the DIL, their median (about 1 on a 16 bit scale on
+    netsim's quiet line: the data mode's noise is the equaliser's mse on
+    random signs, not this);
+  - a Ucode **unusable** where its noise is more than 4 times that and
+    0.2% of its level: the loudest clip at the analogue modem's codec
+    (from about Ucode 112 on netsim's line). The loudest come first in a
+    round so that what they spill (over the equaliser's span) falls on
+    the others clipped; after Ucode 0, as the round started, Ucode 0
+    had a noise of 280;
+  - **robbed bits**: in an interval whose least significant bit is
+    robbed, two neighbouring Ucodes (2m and 2m + 1, or 2m + 1 and
+    2m + 2, as the law's octet has it) come out alike, 7 in 10 of the
+    pairs the noise can tell apart; or, behind a pad (which moves the
+    codes first), the interval tells fewer than 3/4 as many levels
+    apart as the best one;
+  - **the pad**: the equaliser, trained on UINFO through the pad, takes
+    its loss away, but the codes requantized lower show in the levels'
+    shape. Of 0 to 9 dB in 0.5 dB steps, the pad whose levels
+    (re-encoded, scaled as UINFO's) fit the measured ones best, on the
+    levels 10 times the noise and more in the intervals not robbed;
+  - the levels each interval tells apart (3 noise apart): 111 to 113 of
+    128 on the quiet line, about 94 with a 3 dB pad, half in a robbed
+    interval, about 42 with netsim's noise at 100 (`NET_FLOOR=100`).
+- **Failures** that call for a retrain (9.3.2.4, 9.3.2.7/V.90: no Sd-bar,
+  no Jd, no Jd'; no DIL) retrain (stage F, below). After the last
+  S-bar, phase 4 (below).
+
+netsim's `NET_PAD` and `NET_RBS` put pads and robbed bits on the codes
+to the analogue modem ([testing](../testing.md)). What the DIL found
+with them: 0, 3 and 6 dB pads (mu-law and A-law) as 0.0, 3.0 and 6.0
+dB, quiet or with `NET_FLOOR=100` to 300; one, two and three robbed
+intervals, alone and behind a 6 dB pad, and with the noise at 100
+(where a robbed bit matters less, and the robbed interval tells 31
+levels apart against the others' 43).
+
+The equaliser's figures on netsim's quiet line (mse to the two points'
+power): 77 dB at TRN1d, at any phase of the codec's samples
+(`NET_PHASE`) and with its clock 50 to 200 ppm off the network's
+(`NET_PPM`): the noise before our S 0.4 (16 bit scale) on the
+network's clock, 0.9 at 50 ppm, 1.6 at 100, 2.8 at 200; the DIL's 0.4 to
+1.0 in all of them. Before the T/2 receiver: 75 dB at 8000 Hz on the
+network's clock and phase only (32 to 36 dB with dsp_util's converter,
+whatever the taps).
+
+**The echo canceller** (`V34Echo`, the V.34 answerer's: a near part of
+256 taps at 9600 Hz and a far part found at the round trip, NLMS) takes
+our own echo from the line before `V90Rx::line()`: our S during Jd,
+S-bar, phase 4's CPt, SCR, CP and E, the data upstream to come. It
+trains while S, S-bar, PP, TRN and Ja go out and the digital modem is
+silent, until its Sd (`ec_schedule()`), then stays as it is. For the
+PCM receiver NLMS takes too little in that time (some 33 dB of an echo
+10 dB down, which leaves noise 12 against the 0.5 of a quiet line):
+what it trained on is stored and the near part solved by least squares
+at its end (`V34Echo::ls_solve()`: the normal equations from their first
+row, each next row the one before moved on a sample, Cholesky), 47 to
+51 dB, kept when it does better than NLMS. Under 6 dB it takes away
+(no echo) it stays off. `DSP_TEST_ECHO` gives a modem its own echo in
+the tests ([testing](../testing.md)).
+
+Not yet: MD, SCR during the DIL. The DIL's sign pattern repeats with the
+segment, so what the equaliser leaves of the neighbours' symbols adds
+the same each time: some intervals' levels come out up to 0.3% high or
+low, and TRN2d's random symbols put that right (each interval's gain on
+them, fitted over its second half, scales the levels for MP, Ed and
+CP).
+
+## Phase 3: the procedure and the receiver, as planned
+
+9.3.2/V.90, the analogue modem:
+
+- **Out:** 70 ms of silence, S (128 T), S-bar (16 T), MD if INFO1a asked
+  for one (we do not), PP, TRN (512 T at least, 4 points), then Ja (8.3.1,
+  Table 12/V.90: the DIL descriptor) until the digital modem's Sd turns
+  to S-bar d (a retrain if it has not within 1500 ms), then silence.
+  This is V.34's answerer phase 3 at the upstream symbol rate, with Ja
+  for J (`ptx` as `P3A_*` has it), and the echo canceller trained on
+  it as V.34's.
+- **In:** the digital modem's Sd, S-bar d, TRN1d (its two points, signs
+  from the scrambled ones; the equaliser trains on its first 2040 T),
+  Jd (Table 13/V.90: the rates it can send, the constellation sizes).
+  Then S from us (within 5 s), the digital modem's Jd' and the DIL our
+  Ja asked for, S-bar from us after Jd' (9.3.2.5 to 9.3.2.8/V.90).
+
+What is new is the PCM receiver. The digital modem's codewords become
+voltages at the network's 8000 Hz clock, through the analogue loop to
+our codec, at 9600 Hz (the converter's rate, or the codec's own on an
+ALSA line: 8000 or 9600) on a clock of its own. The receiver needs:
+
+- **Timing** to the network's clock: the data pump at 9600 Hz gives 6/5
+  samples a PCM symbol; a fractionally spaced equaliser at T/2 or finer,
+  its phase from the equaliser's taps (their centre of mass drifting) or
+  from a timing error detector on TRN1d's two points, and an
+  interpolator. The ALSA codec's clock is free running, so this is
+  needed on real hardware at 8000 Hz as well.
+- **An equaliser** trained on TRN1d (known after its first symbols: the
+  points are ±UINFO's level, the signs the scrambled ones), then
+  decision directed on Jd, which is 2 points too. Its output is the
+  linear value of the codeword sent, before the decision.
+- **An echo canceller** for our own upstream signal while the
+  downstream is in (V.34's, with the reference at 9600 Hz). In phase 3
+  the digital modem sends TRN1d while we are silent or in TRN, so
+  the canceller trains on TRN.
+- **Detection** of Sd and S-bar d (8.4.4/V.90: the six symbol pattern
+  +W, +0, +W, -W, -0, -W of Ucodes UINFO + 16 and 0) for the frame
+  alignment: Sd's first symbol is in data frame interval 0.
+
+The DIL (8.4.1/V.90; Ja's descriptor, Table 12/V.90, says what it is) is the digital modem's codes in a pattern we ask for: each
+Ucode we name, repeated, in each of the 6 frame positions. From the
+equaliser's output for each, by position:
+
+- the level of each Ucode as it arrives (the network's pads change it:
+  a 3 or 6 dB digital loss maps Ucodes onto others);
+- robbed bit signalling: in some positions the least significant bit is
+  lost (odd and even codes arrive at the same level), as on T1 lines;
+- the noise at each, for the distances the constellations can afford.
+
+## Phase 4 (stage D)
+
+9.4.2/V.90. `dp_v34.cpp`'s `P4V_*` states, `v90a.cpp`'s constellation
+design and the PCM receiver's phase 4:
+
+- **The constellations**, CPt's at the end of phase 3
+  (`v90a_phase4()`), CP's once TRN2d has shown the noise
+  (`v90a_cp_design()`), from what the PCM receiver found: each Ucode's
+  level in each frame interval (`V90Rx::levels()`: the DIL's, those
+  usable; without a DIL the law's linear values; for CP by the gain
+  TRN2d showed in each interval), the noise (the more of
+  `V90Rx::noise()`, UINFO's spread about each interval's own mean over
+  512 symbols before our S, random signs, so the data mode's
+  intersymbol interference, a robbed bit moving an interval's mean, not
+  the noise, or the DIL's noise if more; and TRN2d's, with our SCR and
+  its echo going out) and the most power INFO0d allows (Table 15/V.90, by its max power field). Sr 0 (no spectral
+  shaping), ld 0, every upstream rate (4800 to 33 600 bit/s). The power
+  is Table 15's formula, each label's count over the 2^K values of the
+  modulus encoder (`V90Con::power()`), on the transmitter's linear
+  values.
+  - **CPt** (`v90a_design_cpt()`): 4 points in each interval, D 18 (K
+    12, drn 10, 24 000 bit/s): the Ucodes nearest L, 3 L, 5 L and 7 L
+    (with the signs 8 levels evenly apart), L for 1 dB below the
+    limit, lowered until within it.
+  - **CP** (`v90a_design_cp()`): in each interval from the least level
+    half the spacing up, each next point the spacing above the last;
+    the spacing 10 times the noise (a symbol error in about 10^6). K
+    the most the points carry, up to 36 (D 42, 56 000 bit/s), as Jd's
+    rates allow (from 28 000 bit/s, K 15); then the loudest interval's
+    largest point dropped until the power is within the limit and
+    within 3 dB of CPt's (8.5.2/V.90). Intervals with the same points
+    share a constellation. None at 28 000 bit/s: a retrain, to V.34
+    (stage F, below).
+- **Out**: CPt (`V90Cp::build()`, the inverse of the digital modem's
+  `parse()`) right after phase 3's last S-bar, from cleared scrambler
+  and differential encoder, sent as MP is, again and again
+  (`V34_TX_CP`: a frame to follow the current one, or E, takes over at
+  its end). On Ri-bar: SCR (ones sent as CP is: a frame of 2 bits)
+  after the CPt frame going out, while TRN2d's known part comes in
+  (some 300 ms; 4000 ms at most, 9.4.2.2/V.90); then CP; on MP, once a
+  whole CP is out: CP' after the CP frame going out; once a whole CP'
+  is out and MP' or Ed is in, E (20 ones), then B1 and the data mode's
+  upstream (`v90a_data_setup()`).
+- **In** (`V90Rx`, `phase4()`): the equaliser follows the decisions on
+  Ri; Ri is 8 frames of + + + - - - of UINFO in a row (frame interval 0
+  first), its reversal a frame mostly the opposite; TRN2d starts 24
+  symbols after it. From there data frames: each value to the nearest
+  level of its interval's constellation (CPt's), the labels give the
+  modulus encoder's R (interval 0 least significant), the signs
+  differentially decoded, all D bits through the GPC descrambler
+  (5.4/V.90 the other way, Sr 0). TRN2d's first 340 frames are known:
+  a copy of the digital modem's encoder (`V90Enc` on our CPt, with Ucode
+  + 1 for the linear values) gives the symbols, which train the
+  equaliser and count its errors; after them the decisions. The bits
+  give MP and MP' (`V90Mp`, Table 16/V.90: 86 bits, or 188 with the
+  precoder's coefficients); Ed is the 2 frames of zeros after an MP'
+  sequence's last frame; B1d follows on CP's constellations, from
+  cleared descrambler and signs, 48 frames of ones, its bit errors
+  counted.
+- **Then** (`P4V_E`): with B1d in and our E out, CONNECT and the data
+  mode (`V90A_DATA`, below).
+
+On netsim's quiet line: CPt's points are Ucodes 44, 67, 79 and 85
+(-13.1 dBm0 against INFO0d's -12), TRN2d has no symbol wrong, CP has 89
+points in each interval (D 42, 56 000 bit/s, -12.1 dBm0) and B1d no bit
+error; a 3 dB pad 70 points (56 000 bit/s); a robbed bit in one interval
+56 000 bit/s, on mu-law and A-law (its interval has half the others'
+points: 48 against 96); a 6 dB pad, two robbed intervals and noise at
+30 (`NET_FLOOR`) 33 333 bit/s, the noise's (57 at the receiver).
+
+Found on the way: V.34's S-bar after an S of odd length went on with
+its alternation from the start, so that it was S turned by 90 degrees,
+not reversed, and the digital modem never saw it. Our S before Jd'
+lasts as long as Jd' takes; S-bar now carries on S's alternation
+(`V34Tx::s_odd`).
+
+Tests (`ctest -R open_v90a`, label `open`): the open modem at 9600 Hz
+as the analogue modem and the open digital modem (`open8`) on the
+simulated network, each a data call (the lines of text both ways,
+checked; `open_v90a_ulaw`, `open_v90a_ppm_fast` and
+`open_v90a_echo_answers` with `BULK` as well):
+
+- `open_v90a_ulaw`: the analogue modem calls; INFO0d says mu-law, INFO1a
+  V.90 at 3429 baud with UINFO 79; the digital modem has our Ja (DIL N
+  128), Sd-bar is found, Jd decoded (all rates), our S ends Jd, Jd' is
+  found, the DIL shows no pad and no robbed bits, our S and S-bar end
+  it after 2 rounds; the digital modem has our CPt (4 points), TRN2d
+  has no symbol wrong, MP' and Ed are in, B1d has no bit error at
+  56 000 bit/s, both modems connect (33 600 up, 56 000 down), and
+  200 000 octets go each way with the downstream's error under 1 rms;
+- `open_v90a_alaw`: the same on an A-law network;
+- `open_v90a_answers`: the digital modem calls, the analogue modem
+  answers (and stays the V.34 answer modem);
+- `open_v90a_nodil`: no DIL (`DSP_V90A_DIL=0`), the constellations on
+  the law's levels;
+- `open_v90a_phase`: the codec's samples half a network sample off the
+  symbols (`NET_PHASE=0.5`);
+- `open_v90a_echo`: the analogue modem's own echo 10 dB down, 1 ms late
+  (`DSP_TEST_ECHO`): the least squares canceller takes 40 dB and more
+  away, B1d without an error at 56 000 bit/s or close;
+- `open_v90a_echo_answers`: the echo 6 dB down with the analogue modem
+  answering on an A-law network, its codec 50 ppm off;
+- `open_v90a_ppm_fast`, `open_v90a_ppm_slow`: the codec's clock 100 ppm
+  fast (a phase of 0.3), and 100 ppm slow on an A-law network with the
+  analogue modem answering (0.7): the timing found to within 0.5 ppm,
+  B1d without an error;
+- `open_v90a_dil_pad`, `open_v90a_dil_rbs`, `open_v90a_dil_pad_rbs`: a 3 dB
+  pad; a robbed interval (56 000 bit/s, UINFO's noise under 1, 100 000
+  octets each way); a 6 dB pad with two robbed intervals behind it and
+  some noise, each through B1d without a bit error;
+- `open_v90a_dil_rbs_alaw`: a robbed interval on an A-law network;
+- `open_v90a_default`: no settings, the default `AT+MS` (92) on both
+  modems: V.90 with us as the analogue modem;
+- `open_v90a_off`: the same with `DSP_V90A=0`: V.34.
+
+## Data mode (stage E)
+
+`dp_v34.cpp`'s `V90A_DATA` and `V90Rx::frame()` on `con_data`, CP's
+constellations:
+
+- **Downstream** (5.4/V.90 the other way, Sr 0): each of a frame's six
+  values to the nearest level of its interval's constellation, the
+  labels the modulus decoder's R (K bits), the signs differentially
+  decoded, all D bits through the GPC descrambler, from where B1d left
+  them. The bits wait in `V90Rx`'s queue (`take()`, 1024 of them) for
+  the pump, which hands them to the core (`CoreBits`) a sample at a
+  time. The equaliser and the timing loop follow the decisions as in
+  phase 4, and each point's level its own decisions (`LEV_MU`, 0.01):
+  the DIL's levels, by the gain TRN2d showed, are a little off for some
+  codes. The rate is CP's, (drn + 20) 8000 / 6.
+- **Upstream** (`v90a_data_setup()`): V.34's data mode at INFO1a's
+  symbol rate, from E on: the highest rate both our CP's rate mask and
+  the digital modem's MP allow (its most, `rate_max`), with MP's
+  trellis code (16, 32 or 64 states), its precoder's coefficients, and
+  its expanded constellation and nonlinear encoder bits.
+- **CONNECT** once B1d is in and our E is out: "V.90 connect
+  <up>/<down> (analogue modem)", the call's statistics as V.90's, then
+  V.42 and V.44 as with V.34.
+- **Carrier loss**: the downstream's power below a thousandth of
+  UINFO's for the pump's carrier loss time ends the call. Each second
+  the log has the downstream's error (rms, 16 bit scale), its signal
+  to error ratio, the timing offset and phase. Retrains and
+  renegotiations: stage F, below.
+
+The core takes the line's DC out (`dcr_process()` in
+`Modem::process()`) unless the pump says it takes exact PCM codes
+(`dp_runtime_pcm()`, as V.91 and V.92's PCM upstream do). The PCM
+receiver says so from phase 3 on: the codes' DC is part of their
+signal, and the DC remover's estimate, a whole number that steps
+every block, came through as an offset of up to 10 on every value
+that no equaliser could undo. In data mode that made the error wander
+from 0.5 to 9 rms over seconds, and V.42 frames failed. Without it, on
+netsim's quiet line, the error stays at 0.5 rms (78 dB) through a
+200 000 octet transfer.
+
+V.90 as the analogue modem is the 9600 Hz modem's default (`v90a` in
+`V34Pump::create()`: 90 or 92, not the digital modem's 8000 Hz line,
+no V.8 for a low speed modulation; `DSP_V90A=0` leaves it out), and
+the core keeps V.90 and V.92 on an analogue line at 9600 Hz. Against a
+modem that is not a V.90 digital modem V.8 agrees on V.34 as before.
+
+## 8000 Hz lines
+
+On an analogue line at 8000 Hz (dmodemd `-a -r 8000`; the core says so
+with `dp_runtime_set_analog()`, where an 8000 Hz line is otherwise the
+digital modem's network) the PCM receiver takes the line's samples
+from `process()` as they are, through `V90Interp` at 0.5 of a sample
+an output (the pump's 8000 to 9600 Hz converter cuts below 4000 Hz,
+part of the PCM signal); the echo canceller runs on them at 8000 Hz,
+on what we send at the same time, and `DSP_TEST_ECHO` works there too.
+
+The codec's samples have the band past 4000 Hz folded onto the band
+below it. On the network's symbols (phase 0) that is the codes
+themselves; a quarter of a sample off, an equaliser undoes it (66 dB
+at TRN1d where 9600 Hz has 77; 56 000 bit/s, CP's points 17 apart
+where they are 8); half a sample off the folded part cancels what it
+lands on, near 4000 Hz, and no equaliser brings it back (21 dB at
+best, offline with 128 taps: no constellation). A codec whose clock is
+not the network's drifts through every phase, through that one each
+1.25 s at 100 ppm, so V.90 at 8000 Hz holds only with the codec on the
+network's clock: it is there with `DSP_V90A=1` alone. netsim's
+`NET_ANALOG=a` (or `b`) with `NET=8000:8000` makes A (or B) such a
+modem, `MODEM_ANALOG=<name>` tells that half_open its line is
+analogue. Tests: `open_v90a_8k` (phase 0.25, 100 000 octets each
+way), `open_v90a_8k_answers` (0.1, answering, A-law),
+`open_v90a_8k_off` (no `DSP_V90A=1`: V.34).
+
+## Retrains and rate renegotiations (stage F)
+
+9.5.2 and 9.6.2/V.90, against our digital modem's side of them
+(9.5.1, 9.6.1):
+
+- **The digital modem's renegotiation** (Figure 8/V.90): in data mode
+  `V90Rx::rd_frame()` looks for Rd, + + + - - - (either polarity) of
+  each interval's loudest point (label 0, or 1), 8 frames in a row;
+  from then no bits go to the core (circuit 104 clamped). On Rd-bar,
+  24 symbols on, phase 4's frames start again (`reneg_frames()`):
+  CPt's constellations, cleared descrambler and signs. TRN2d is
+  optional in a renegotiation, so it is not taken as known: the
+  equaliser is trained, the decisions do, and their error over frames
+  170 to 339 is the noise the new CP is designed on (the phase 3
+  measure no longer counts). The pump (`v90a_reneg()`): S 128 T, S-bar
+  16 T (`V90A_RN_S`, `V90A_RN_SBAR`), then phase 4's SCR, CP (designed
+  again), CP', E, B1, and data at the new rates ("V.90 renegotiated
+  up/down (analogue modem)", no new CONNECT).
+- **Ours** (Figure 9/V.90): S, S-bar while the data still comes; the
+  digital modem's Rd after our S-bar, and the same from there. We
+  start one when the downstream's error is 2.5 times the noise CP was
+  designed for (8 dB worse) for a second, or under half of it for
+  20 s while a faster CP is to be had (D below 42); `DSP_V90A_RENEG=
+  <ms>[a|c]` starts one in a test. No Ed within 5000 ms plus 2 round
+  trips of our S-bar: a retrain. CPs (a silent period, to train the
+  echo canceller again) and cleardown (9.7, CP with drn 0) are not
+  used: the canceller does not track, and a hang-up ends the call
+  without one.
+- **Retrains** (9.5.2): the digital modem's tone B (`rt_tone()` on the
+  PCM receiver's line, in phases 3 and 4, data mode and
+  renegotiations): silence 70 ms, our tone A and phase 2 again, the
+  analogue modem the V.34 answerer, `retrain()` taking the PCM
+  receiver off first (and the core's DC removal back). Ours
+  (`v90a_fail()`): every failure of phases 3 and 4 (no Sd-bar, Jd,
+  Jd', DIL, Ri-bar, TRN2d, MP, MP', B1d) and a renegotiation that
+  times out; with no constellations or upstream rate to use, or from
+  the third retrain, phase 2's INFO1a asks for V.34 ("V.34 this
+  time"), so a line PCM cannot use connects at V.34; after four the
+  call ends. Back in data after a retrain: "V.90 retrained", no new
+  CONNECT. `DSP_V34_RETRAIN=<ms>[a|c]` starts one in a test, on
+  either modem.
+
+Tests: `open_v90a_reneg` (the digital modem's, upstream to 24 000 bit/s,
+then its own back up to 26 400; 100 000 octets each way across both),
+`open_v90a_reneg_ours` (ours, `DSP_V90A_RENEG`),
+`open_v90a_reneg_noise` (noise of 25 rms on the line to us 3 s into the
+data mode: ours on errors, CP spaced 231 apart, 45 333 bit/s),
+`open_v90a_retrain` (the digital modem's in data mode: tone B, phases 2
+to 4, data at 56 000 again), `open_v90a_retrain_ours` (ours, tone A),
+`open_v90a_v34` (noise of 400 rms: no CP, a retrain, V.34 at 12 000).
+
+## V.92 (stage G)
+
+With `+MS=92` (the default; `DSP_V92A=0`: V.90 only) our INFO0a says
+V.92 (bit 26, Table 16/V.92; no short phase 2), and the digital
+modem's INFO0d says so too (bit 27: INFO0d has its two V.92 bits the
+other way round from INFO0a, which `Info0::parse_d()` now takes into
+account): "INFO0d V.92: V.92 as the analogue modem" (`v92a_on`). The
+call is V.90's (PCM down, V.34 up: our INFO1a is V.90's), with V.92's
+modem-on-hold (9.10/V.92, the digital modem's side in [V.92](v92.md)):
+
+- **Ours** (`AT+PMHR=<s>` in online command mode, or
+  `DSP_V92_MOH_REQ=<ms>[:<s>]`): out of data mode as for a retrain, our
+  tone A, MHreq; its MHack (T1), our silence for s seconds (within T1);
+  meanwhile it sends ANSam, and we take it back: its ANSam for 200 ms,
+  V.8 as the call modem (CM), phases 2 to 4, "V.90 back from hold", the
+  data going on (no new CONNECT). Its MHnack: MHfrr, its ANSam, the
+  same.
+- **Its** (MHreq after its tone B): our retrain's tone A holds back its
+  reversal for 1 s on a V.92 call (a retrain's reversal would come
+  before MHreq, some 600 ms after the tone), we answer MHack (our T1,
+  `AT+PMHT`) or MHnack, go on hold on its silence or tone, send ANSam
+  (the V.21 receiver on CM's channel: we were the call's caller), and
+  answer its CM: phase 1 as the answer modem, phases 2 to 4.
+
+The requester's way back, its CM to the held modem's ANSam, is the
+digital modem's now as well; before, it sent ANSam itself after the
+hold, against 9.10.2.1/V.92 (the modems behind netsim's stand-in and
+the original library hang up during the hold, so it never showed).
+
+Tests: `open_v92a_moh` (ours, 5 s, a 50 s stream of data across it),
+`open_v92a_moh_theirs` (the digital modem's).
+
+## V.92 PCM upstream, phase 3 (stage G2)
+
+Where an INFO1d offers PCM upstream (its bit 70, Table 17/V.92: the
+3429 baud low carrier bit) our INFO1a is Table 18's: precoder and
+prefilter of p1 and z2 with the fewest coefficients (192 in all, 128
+each), no MD, UINFO, 6 for both symbol rates. Phase 3 is then 9.5.2/V.92:
+
+- **The transmitter** (`V92ATx`, dsp/v92a.cpp): PAM symbols at 8000 a
+  second, one per sample of the network's codec, each a sinc pulse cut
+  at 4000 Hz (Blackman windowed, 16 symbols either side) on our 9600 Hz
+  line, so that where the codec samples one the others are at their
+  zeros. Its clock is the network's as the PCM receiver's timing loop
+  measures it (`V90Rx::ppm()`, once it runs on TRN1d): free running
+  until then (Ru, the first TRN1u and Ja), within one symbol by the
+  second TRN1u's end at 100 ppm. LU is about our V.34 signal's power
+  (`V92A_LU`, 3000 on the line). The symbols are made 16 ahead of the
+  line, so the pump waits for E1u's last pulse to go out
+  (`e1u_sent()`).
+- **The sequence**, the transmitter moving itself on where the
+  lengths are fixed: silence 70 ms, Ru 384 T, Ru-bar 24 T, TRN1u
+  2040 T (GPA on ones from zero), Ja (24 ones, then the DIL descriptor
+  of Table 20: V.90's with the rate mask, every rate from 24 000 to
+  48 000 bit/s; scrambled, differentially encoded) until the PCM
+  receiver's Sd-bar, ended at a 12 bit boundary; silence while TRN1d
+  trains the receiver; Su 144 T once Jd is in, Su-bar 24.5 T (half a
+  symbol later from then on), Su until Jp (`V90Rx` reads Jd's bit 47:
+  Jp, its fraction in bits 18:33), ended at 12 symbols; Su-bar 24 T
+  and Jp's fraction (the digital modem's 0.5 makes the half symbol a
+  whole one); the second TRN1u (the data frames count from its first
+  symbol) while the DIL is measured, then CPt (24 ones, then V.90's
+  CPt constellations in Table 23's form, `v92_cpt_build()`) until Ri,
+  ended at a CPt's end, and E1u (12 zeros).
+- **The receiver** is V.90's: Sd, TRN1d, Jd; Jp' (12 zeros, as Jd')
+  after the Jp; the DIL; Ri.
+- **Failures** (no Sd-bar, Jd, Jp, Jp', DIL or Ri in time, and in
+  phase 4 below) retrain, with V.90 for the rest of the call
+  (`v92a_noup`); the digital modem, PCM upstream having failed before
+  data, leaves bit 70 out of its INFO1d after it too.
+
+Our digital modem's E1u detector needed one fix for it: CPt's fill to
+the data frame's end may be all zeros together with the CRC's last
+bit (when that is 0), which it took for E1u; E1u is now a frame that
+starts after the last CPt's end.
+
+The PCM receiver's Sd-bar detector needed a fix as well: after a
+hold, an echo of ours over Sd makes its lag 6 correlation dip a little
+before the reversal (to 0.49, where a reversal goes to -1.4); a dip
+that never goes below -0.2 is now not Sd-bar, and the next one is
+taken. V.90 had the same dip but its Sd comes later, past it.
+
+## V.92 PCM upstream, phase 4 and data mode (stage G3)
+
+9.6.2/V.92 after E1u:
+
+- **TRN2u** on 4 points (Table 28: the sign bit scrambled and
+  differentially encoded, then the magnitude bit, 1 / sqrt 5 or
+  3 / sqrt 5 of LU), from a cleared scrambler, until SUVd is in (or
+  12000 T) once TRN2d has shown the noise CP's design needs, at a 12
+  symbol boundary.
+- **SUVu** (Table 27, `v92_suvu_build()`) again and again, each the
+  pump's next (`v92a_next_seq()`): one CPu (Table 23 with type 1: V.90's
+  CP constellations, `v92_cpu_build()`) once SUVd is in, again if no
+  acknowledgement comes 100 ms and a round trip after it; all
+  acknowledged once CPd is in. Each sequence is filled to 12 symbols (24
+  bits).
+- **The receiver** reads V.92's sequences in V.90's MP place:
+  SUVd (51 bits to its CRC's end) or CPd (Table 30: its length from its
+  parts, `v92_cpd_length()`, `V92Cpd::parse()`), their acknowledge bits
+  for Ed (2 frames of zeros after the acknowledged one) as MP' had
+  them; B1d on CPu's constellations.
+- **E2u** after the current sequence once one of ours acknowledged has
+  gone whole and SUVd' or CPd' or Ed is in (and the CPd is one we can
+  take: its moduli enough for its bits, the classes within its points),
+  a symbol longer if CPd's bit 29 says so; then **B1u** and the data.
+- **The data mode** (6.4/V.92, `V92ATx::data_symbol()`): each data
+  frame's K = 2 (drn + 17) bits scrambled (GPA, from zero at B1u), the
+  modulus encoder (6.4.1: the sign of R above (M - 1) / 2
+  differentially encoded, R turned over when the last one was 1, then
+  K0 to K11 by the 12 moduli; R in 4 words, the moduli's product up to
+  2^96); of each Ki's class the point (CPd's linear values, the
+  negative ones mirrored) that keeps the precoder's output least, on a
+  trellis frame's 4th symbol of the parity that makes the frame's sum
+  V.34's Y0 (the encoder state's low bit; V.34's 16, 32 or 64 state
+  codes, a step a trellis frame of 4 symbols); the precoder
+  (x = u + z1 * u + p1 * x, Q0.15 and Q1.14), the prefilter (v = z2 * x
+  + p2 * v) and G: LU G v on the line (8.8.3: G v of mean square 1 is
+  the power LU has).
+- **CONNECT** once B1d is in and B1u has gone: "V.92 connect
+  <up>/<down> (analogue modem)", V.90's data mode downstream (and its
+  retrains and modem-on-hold, both of which now come back with PCM
+  upstream); PCM upstream's renegotiation and fast parameter exchange:
+  stage G5, below.
+
+Against our digital modem on netsim's line: 38666 bit/s up with its
+prefilter design (64 taps, a precoder of 32, G.711 levels to 32124),
+37333 with its plain precoder (`DSP_V92_PREFILTER=0`), 56000 down; 1.5
+MB in 5 minutes with no slip to design for (our clock is the
+network's) and no renegotiation. With the codec 100 ppm off and the
+network's samples 0.3 off ours, 33333.
+
+Our digital modem's E2u detector had the same weakness as its E1u one
+(an acknowledged SUVu's fill with its CRC's last 3 bits zero is a frame
+of zeros); E2u now starts after the last sequence's end.
+
+Tests: `open_v92a_up` (u-law, every step of phases 3 and 4 on both
+sides, 100 kB each way), `open_v92a_up_precoder` (the digital modem's
+plain precoder), `open_v92a_up_ppm` (the codec 100 ppm fast: the
+digital modem's mse at E1u stays at 0.0003, 0.05 to 0.2 without the
+clock), `open_v92a_up_answers` (A-law, us answering),
+`open_v92a_up_echo` (our hybrid's echo at -10 dB while the DIL comes in
+under our TRN1u); `open_v92a_moh` and `open_v92a_moh_theirs`
+(modem-on-hold, back with PCM upstream) and `open_v90a_default` (V.92
+the default).
+
+## V.92 quick connect (stage G4)
+
+Calling (9.2.1.1/V.92), after ANSam's second: **QC1a** on V.21(L)
+(Table 2: twice ten ones, 0101010101 and the frame 0 0 0 P W 0 X Y Z 1;
+P 0, for our V.42 always runs its detection, and UQTS 79, WXYZ 1010),
+then CM. The digital modem's **QCA1d** (on V.21(H), the receiver JM
+comes on; the QC frame parser now takes either kind, bits 21 and 22
+saying which) ends CM at once; silence until its **ANSpcm** (QTS and
+QTS-bar before it are not looked for: our PCM receiver finds Sd in
+phase 3 as before), the 2100 Hz detector of V.8's ANSam there for
+50 ms; then **TONEq** (980 Hz, V.21(L)'s mark) until ANSpcm ends (50 ms
+at least), 75 ms of silence, and phase 2 as after V.8 for V.90 with us
+the analogue modem. No ANSpcm within 2 s: CM again, V.8. A digital
+modem that does not answer QC1a sends JM to our CM as ever.
+
+**Short phase 2** (9.4.2/V.92): our INFO0a's bit 27 asks for it where
+we go for PCM upstream (not in a retrain, nor after a failed PCM
+upstream); with the digital modem's INFO0d bit 26 too, its tone B
+reversal comes first (once it hears our tone A), ours 40 ms after it,
+10 ms more of A, then PCM upstream's INFO1a (Table 18: no INFO1d,
+whose bit 70 would offer it, comes in short phase 2; the digital
+modem asking for short phase 2 is taken as the offer). No B reversal
+in 2.5 s: a retrain (with a full phase 2).
+
+Against our digital modem: CONNECT 9.7 s after dialling against 10.7 s
+with V.8 and short phase 2, 12.2 s with neither; upstream 37333 bit/s
+(the network's samples land at another phase against our line's, and
+its prefilter design comes out one step lower than the 38666 after
+V.8).
+
+Two fixes on the digital modem's side: its INFO0d asked for short phase
+2 in a retrain, where it does the full one (and the back from hold
+went wrong on that); and our own flag for it now goes in a retrain
+(the INFO0 sequences are not sent again there).
+
+Not done: answering a digital modem's QC1d (9.2.3, ours never sends
+it), and V.8 bis' QC2a / CRe.
+
+Tests (quick connect): `open_v92a_qc` (QC1a, QCA1d, ANSpcm, TONEq, short phase 2, PCM
+upstream, 100 kB each way), `open_v92a_qc_off` (V.8, short phase 2),
+`open_v92a_qc_unanswered` (the digital modem with `DSP_V92_QC=0`: V.8
+after our QC1a).
+
+## PCM upstream's renegotiation and fast parameter exchange (stage G5)
+
+- **Rate renegotiation** (9.8.2/V.92, `v92a_reneg()`): the digital
+  modem's, its Rd and Rd-bar in on the PCM receiver (V.90's Rd: + + + -
+  - - of the loudest points), or ours (the downstream's error, as
+  for V.90's: `v90a_reneg_ours()`; margin is a fast parameter exchange,
+  below; `DSP_V90A_RENEG` for a test): our Ru at the next data frame's start (`V92ATx::ru_req`, the
+  digital modem counts its frames on), Ru-bar, TRN2u (its differential
+  encoder from Ru-bar's sign), then phase 4's sequences again on the
+  receiver's renegotiation frames (TRN2d, SUVd, CPd, Ed, B1d) and a new
+  CPu, E2u, B1u on the new CPd: "V.92 renegotiated <up>/<down>
+  (analogue modem)". No B1d in 25 s (the digital modem's own limit): a
+  retrain. Neither side asks for the silent period.
+- **The digital modem's fast parameter exchange** (9.9.2.2/V.92): its
+  Rf (+ + - - + + and - - + + - - in turn on each interval's loudest
+  point, `V90Rx::rf_frame()`) and Rf-bar (the pattern a frame on, 4
+  frames); then its SUVd and CPd in the data mode modulation (from
+  cleared descrambler and signs) until Ed, and B1d. Ours, from the next
+  data frame on: RM's 32 frames and RM''s 2 (Tables 25 and 26: their Ki
+  straight into the precoder, trellis coded), then SUVu frames in the
+  data mode (scrambler and modulus encoder sign from zero; with a
+  prefilter the precoder and prefilter too, as the digital modem's
+  prefilter receiver takes it, after the original library), a CPus
+  (Table 24: the downstream as it is, so the PCM receiver's
+  constellations stay) after SUVd, acknowledged once CPd is in, E2u (a
+  frame of zeros), FB1u's 48 frames of ones on the old parameters, then
+  B1u and the data on the new CPd, from zero: "V.92 fast parameter
+  exchange done". The digital modem counts errors in FB1u and B1u:
+  with its prefilter some 100 in FB1u's 2688 bits, about as with the
+  original library (154); with its plain precoder none in either, since
+  its receiver takes the restart at B1u as this modem makes it
+  ([v92.md](v92-details.md#v92-pcm-upstream): the trellis paths to
+  their end, then from state 0, the descrambler from zero, the
+  precoder's earlier outputs in the feedback). Before that FB1u's
+  last frames and B1u's first two or three often had tens of errors.
+
+- **Our own fast parameter exchange** (9.9.2.1/V.92, `v92a_fpe(2)`):
+  for margin (the downstream's error under half the noise CP was
+  designed on for 20 s, with a faster CP to be had: no training, unlike
+  V.90's renegotiation for it), or `DSP_V92A_FPE=<ms>` for a test. RM,
+  RM' and SUVu go out as above without waiting; the PCM receiver's
+  frames stay data until the digital modem's Rf (its answer to our
+  RM'), so the start-up's SUVd and CPd events are cleared first
+  (`V90Rx::fpe_wait()`). After its SUVd a CPu (Table 23, not CPus)
+  designed anew on the data mode's error (`v90a_cp_design(2)`), which
+  the receiver keeps aside (`V90Rx::data_cp_next()`) and takes up at
+  the exchange's Ed: B1d and the data come on it, the frames before Ed
+  on the old ones. Its Rd before then: its renegotiation instead
+  (9.9.2.1.2). The downstream's errors still go to a renegotiation,
+  with TRN2d to retrain on.
+
+Before this, a digital modem's renegotiation or fast parameter
+exchange retrained to V.90 (the digital modem, with no RM a second
+after its Rf, renegotiated instead: the renegotiation alone already
+got through that).
+
+Tests: `open_v92a_reneg` (the digital modem's, `DSP_V92_RENEG`),
+`open_v92a_reneg_ours` (`DSP_V90A_RENEG`), `open_v92a_fpe` (its fast
+parameter exchange with the prefilter, `DSP_V92_FPE`),
+`open_v92a_fpe_precoder` (with its plain precoder), `open_v92a_fpe_ours`
+and `open_v92a_fpe_ours_precoder` (ours, `DSP_V92A_FPE`: a new CPu, 95
+points against the start-up's 89, B1d clean on it); 150 kB each way.
+
+## Testing
+
+The only digital modem we have is our own (`open8`): the closed
+modems in the interop tests are all analogue ones. Two checks against
+that:
+
+- the analogue modems' own phase 3 and 4 signals, from their calls to
+  `open8` (`smartlink_v90_*`, `agere_v90_*`, `sm56_v90_*`, ...), are a
+  reference for ours: S, PP, TRN, Ja and CP side by side;
+- the digital modem's receiver already reads theirs, so ours going
+  through it the same way is a check of what we send.
+
+netsim's analogue side (its noise, loss and echo) is what the
+receiver's equaliser is tested against; its timing wants a clock
+offset between the network and the codec, which netsim does not have
+yet. Then real lines through dmodemd `-a`.

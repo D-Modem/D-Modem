@@ -1,0 +1,263 @@
+# V.8 and V.34: technical details
+
+This is the technical companion to [V.8 and V.34](v34.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+
+`dp_v34.cpp` runs the start-up, `v34_modem.cpp` the primary channel training
+signals and receiver, `v34_data.cpp` the data mode, `v34_tables.cpp` the
+constants (the superconstellation, Table 10 rates, the PP sequence).
+
+- **V.8:** ANSam (2100 Hz, 15 Hz AM, reversals every 450 ms), CM/JM/CJ on
+  V.21. Our CM offers V.34, V.32bis, V.22bis, V.23 and V.21; our JM, of
+  these, what the CM has. Calling, a JM without V.34 is answered with CJ
+  and, after 75 ms without signal (8.1.2/V.8), the call goes on in the
+  best modulation the JM has (V.32bis, V.22bis, V.23, V.21; an FSK
+  caller starts its carrier then, the answerer waits for it; the PCTel
+  modem takes CJ only with the gap after it). Answering, a CM without
+  V.34 gets its JM and,
+  after CJ and 75 ms, the best modulation of it, its pump without the
+  answer tone and without automode; a CM with none of ours, or a V.32
+  calling modem (1800 Hz AA), hands the call to the V.32bis pump.
+  A forced V.21 caller (`AT+MS=21`) hands a 2100 Hz answer tone to the
+  V.8 pump: ANSam gets a CM of V.21 alone, and a JM with it CJ and V.21
+  (our carrier after the 75 ms, connecting on 400 ms of the answerer's mark, its
+  JM being in the same channel); plain ANS (a tone that ends early, or
+  without the AM), no JM or a JM without V.21 goes back to the caller as
+  before (`DSP_V8_LOWSPEED=0`: always so). Only V.21: the other low
+  speed modulations connect without V.8, and after V.8 the PCTel and HSF
+  modems take opposite sides of V.23's two rates as the answerer. As in V.32bis Annex A, that falls
+  back to V.22bis after 3 s, and V.22bis to V.21 after 3 s more of
+  unanswered USB1, V.21 to V.23 and V.23 to Bell 103 after 3 s more
+  each (FSK callers wait for the answerer's mark). A Bell 103 caller
+  usually takes V.22's unscrambled ones (2250 Hz) for its answerer's
+  2225 Hz mark and answers with its own (1270 Hz): 100 ms of that tone
+  in any of these stages switches to Bell 103 at once.
+- **Calling automode:** a 2225 Hz answer tone (told from V.22's 2250 Hz
+  unscrambled ones over 200 ms) means a Bell answerer: Bell 212A, and Bell
+  103 when no scrambled ones come back within 1.5 s. After a 2100 Hz tone
+  without ANSam, the V.32bis caller goes to V.22bis on unscrambled ones,
+  V.21 on a 1650 Hz mark or V.23 on a 1300 Hz mark. FSK callers check that
+  the mark is at their own frequency (V.21's mark demodulates as a V.23
+  one).
+- **Phase 2:** INFO0/INFO1 on the 600 baud DPSK control channel (the
+  receiver looks for the frames, by their sync and CRC, at every
+  sampling phase, not only at the timing it follows: the remote's INFO1
+  comes at a new phase after its probing signals, and the timing could
+  slip at its start), tones A/B
+  and their reversals for the round trip delay, and line probing with L1/L2
+  (21 tones, 150 Hz apart). The probe gives the SNR after equalization for
+  each symbol rate, from the received level of each tone and the noise
+  between successive periods (insensitive to clock offsets). The answerer
+  picks the symbol rate that allows the highest data rate at both ends,
+  within what the caller's INFO0c offers: 3429 only when the caller
+  supports and allows it, and at 3000 and 3200 a carrier the caller can
+  transmit on (the low one if it can, else the high one). A caller
+  retrains on an INFO1a that asks for what its INFO0c ruled out.
+  `DSP_V34_INFO0=<hex>[,a|,c]` sets our INFO0's bits 12:19 (symbol rates
+  and carriers) on both sides or on one (a test).
+  When an INFO0 doesn't get through, the modem that missed it hears the
+  other's tone and repeats its own INFO0 (11.2.2/V.34, 9.2.1.2/V.90). In
+  our tone (B, or A answering), the remote's INFO0 again, or its tone
+  for 500 ms without its INFO0, has ours go out again, back to back,
+  acknowledging the remote's (bit 28) once we have it, until an INFO0 of
+  the remote's acknowledges ours or 250 ms go by without one. One that
+  acknowledges ours gets ours once more (the HSF modem repeats its
+  INFO0a until ours acknowledges it). Only the remote's INFO0s that come
+  400 ms or more after our last count: those it sent before ours reached
+  it say nothing. After V.92's quick connect, the analogue modem's first
+  INFO0a after our INFO0d is over gets INFO0d once more (dsp/v92.md).
+  After such a recovery the answerer reverses tone A only once the
+  caller's INFO0s have stopped for 100 ms (tone B, 11.2.1.2.3/V.34).
+  Repeated INFO0s and what follows one can pass for an INFO1 frame (sync
+  and CRC right), so a candidate whose first 45 bits are an INFO0 frame
+  is not taken for INFO1. Before, we sent INFO0d again only after V.92's
+  quick connect, and a remote that had missed ours waited in phase 2
+  until the call gave up. No peer repeats its INFO0 in a call where
+  nothing is lost. `DSP_V34_LOSE_INFO0=[a|c]` sends our first INFO0 with
+  a wrong CRC bit, on either side or only the answerer's or the caller's
+  (a test: pump_test `V34LoseInfo0`, `agere_34_lose_info0`,
+  `pctel_v90_lose_info0`, `hsf_v90_lose_info0`). The Agere, SM56, PCTel
+  and HSF modems and the original library calling all recover with us;
+  the original library answering takes no INFO0c after a bad one (its
+  log has "info0 CRC not received properly" for each).
+  2400 bit/s exists only at 2400 baud (Table 10/V.34): a symbol rate
+  whose SNR doesn't carry even 4800 bit/s is not offered, so a very
+  noisy line connects at 2400 baud rather than not at all.
+- **Phases 3 and 4:** S, S-bar, PP, TRN, J, J', MP, E as the original library
+  sends them. TRN starts with a cleared scrambler (the original's receiver
+  trains on a copy of it). The receiver solves the equalizer by least
+  squares over 1500 TRN symbols, since LMS is far too slow for the accuracy
+  33600 bit/s needs on a band limited line. Two solutions in phase 3 and one
+  in phase 4 measure the sample clock offset from the drift of the
+  equalizer's delay. From then on the timing is decision directed: the error
+  against the slope of the equalizer output, for any constellation.
+- **Data mode:** shell mapping, the superconstellation with expanded
+  shaping, differential encoding, the 16, 32 and 64 state 4D trellis
+  codes (we ask for the 64 state one; the original library sends what it
+  is asked for and asks for 16), high and
+  low mapping frames and the superframe sync inversions, at every rate and
+  symbol rate of Table 10 except the auxiliary channel ones. As the original
+  library does: the trellis output of a 4D symbol is the low bit of the
+  encoder state before that symbol, and the inversion pattern starts at its
+  bit 2J - 2. The 32 and 64 state encoders take the same inputs as
+  the original's `Convolve32` and `Convolve64` tables. The receiver runs a
+  Viterbi decoder over the states of the code with
+  a decision delay of 32 4D symbols (for the equalizer and timing it still
+  takes the nearest point). It gains 3 to 4 dB over deciding on the nearest
+  points: with the 16 state code the bit error rate stays below 1e-5 from
+  an SNR of 3 dB per bit per symbol plus 4 dB, at every symbol rate (the
+  32 and 64 state codes need 0.5 to 1 dB less), and the rate selection
+  asks for 2 dB more than that.
+- **Precoding** (9.6.2/V.34): the transmitter precodes with the
+  coefficients the remote's MP asks for. The receiver asks for them when
+  they gain at least 1 dB: the third order linear predictor of the
+  equalizer's error after training, so that the error through 1 + H(z) is
+  white. In data mode its equalizer then includes 1 + H(z), decides on the
+  channel output points y(n) over the whole grid, and runs a copy of the
+  remote's precoder on the decided points to recover u(n). The original
+  library precodes when asked, and its signal decodes without errors with
+  the coefficients we compute and with stronger ones.
+- **Non-linear encoding** (9.7/V.34): when the remote's MP asks for it
+  (Θ = 0.3125; the Agere modem does, the original library does not), the
+  transmitter warps the precoded points and scales them back to the power
+  they had without it, as the note in 10.1.3 asks: by the square root of
+  the mean power of the constellation over that of its warped points,
+  computed the way `frame_power` computes the mean power. The Agere
+  receiver undoes that scale from a table of the same values (to 1/512)
+  before its non-linear decoder; without the scaling it decodes nothing
+  above 24000 bit/s. Our receiver does not ask for it.
+- **16 point training:** a J of 0x89B0 from the remote asks for TRN, MP and
+  E in the 16 point constellation in phase 4 (MP then takes 4 bits per
+  symbol, E is 5 symbols); the receiver accepts both J and the transmitter
+  follows the remote's. We send the 4 point J.
+- **Asymmetric rates:** both rates are kept only when both MPs set bit 50;
+  otherwise both directions take the lower one.
+- Pre-emphasis is neither asked for nor applied when the remote asks for
+  it.
+
+- **Echo canceller:** real pass band NLMS on the line samples, structured
+  like the one in Agere's V.34 (`agrmodemlib.o`, read for reference): a
+  near end part over the last 27 ms of our signal and a far end part over
+  27 ms around the echo from the other end's hybrid, with one shared error.
+  Both train while our own phase 3 sequences go out and the remote is
+  silent (the caller waits for the answerer's J to stop), fast, then
+  slower; once the error is well above what the training has left (the
+  remote's first signal, before we have seen it), they stop adapting, and
+  that is not counted in the echo it took away (with it counted, the
+  remote's Su made a canceller that had taken 35 dB away look like one of
+  3 dB, and switch off). After a retrain it trains again from the start. Where the far echo is gets measured: the near part's residual
+  is correlated with our scrambled signal at every delay up to 1.7 s (over
+  VoIP the echo comes back after the network delay). The tone detectors of
+  phase 2 listen exactly on a bin of the 64 sample probe period, where the
+  echo of our own L1/L2 has nothing, and the reversal detector does not
+  depend on the symbol timing.
+
+Retrains: in data mode a modem that loses the remote's signal for 30 ms,
+hears its tone A or B instead of data, or sees its error (mse) stay above
+what any rate needs for a second goes back to phase 2 at the tones (70 ms
+of silence, then A or B; INFO0 stands), probes the line again and trains
+anew; the link (V.42) carries on at the new rates without a new CONNECT.
+As there is no INFO0 to find the control channel's symbol timing with,
+the receiver takes it from the tone reversals. `DSP_V34_RETRAIN=<ms>[a|c]`
+makes the answerer (a), the caller (c) or both start one after that long
+in data mode (a test).
+
+The retrain's caller sends tone B and waits for tone A (2400 Hz) or
+INFO0a. The Agere, Broadcom and HSF modems answer with tone A and an
+1800 Hz tone of the same power: the tone detector (`rt_tone()`) takes
+the 1800 Hz (`mate_g`) out of the power the tone has to stand above,
+else it took their answer for no tone A and the retrain failed.
+A reversal the caller sees before tone A, or within 20 ms of its
+start, is not the answerer's (`rt_since`): the remote's data going
+over to tone A can look like one, and taken for its reversal the caller
+stopped tone B, which the answerer still waited for (our V.90 analogue
+modem: 200 ms of it), until both timed out (`open_v90a_retrain`, about
+one call in five).
+
+Retrains and renegotiations on request: the core asks with
+`MDMPRM_LINK_REQ` (1 a retrain, 2 a renegotiation: `ATO1`, `ATO3`, V.80's
+`<EM><rtn>` and `<EM><rrn>`), which the pump polls every 160 samples in
+data mode (`link_req_poll()`, as the modem-on-hold request) and sets
+back to 0 when it starts, so that the core counts it as the DTE's. A
+renegotiation asks for the rate the mse calls for (`reneg_rate()`), no
+more than `MDMPRM_MAX_RX_RATE` (V.80's `<EM><rate>`'s `<rx>`); in V.90
+and V.92 calls it is their own renegotiation (9.6/V.90, 9.8/V.92), as
+the digital or the analogue modem. `+MS`'s highest rate
+(`MDMPRM_MAX_RATE`) caps the rates our MP offers to send at, and
+`MDMPRM_MAX_RX_RATE` (`+MS`'s highest unless V.80 set one) those to
+receive at (never below the symbol rate's lowest); the call runs at the
+lower of the two modems' MP rates.
+
+Loop timing: the caller sends its symbols on the answerer's clock, the
+offset its receiver measures from the remote's (`clock` in the log)
+followed at most 2e-7 samples a symbol each sample once the timing is
+fixed and the offset has passed 80 ppm (less is in every modem's
+tolerance; it stays on for the call), and said at the connect (`on the remote's clock`). A SmartUSB56's
+codec runs about 140 ppm off; a USR Courier answering lost our signal a
+symbol's slip (2 s) into data without it. `DSP_V34_LOOP_TIMING=0` turns
+it off. The answerer keeps its own clock (one side follows: two would
+chase each other).
+
+Rate renegotiation (11.6/V.34): a modem whose data mode mse stays
+above what its receiving rate runs at with a margin (0.2, in units of
+the signal points' spacing) for 300 ms asks for a lower one: S for 128
+symbols, S-bar, TRN, then MP with the new rate it can receive, MP', E
+and data at the new rates, with the equalizers as they are (the one
+from before the precoder's 1 + H(z) goes back in: the training's best,
+or, when its mse never got that good, the one 1 + H(z) went into; never
+1 + H(z) on top of the last). `DSP_V34_PRECODE_MIN=<dB>` asks for
+precoding from that gain on (a test; 1 dB). It takes the rate
+down by as many steps as the mse asks for (about 3 dB per bit per
+symbol a step), and back up one step at a time, to the rate it
+started with, once the mse has left room for the next one for 10 s. A
+modem that hears the remote's S in data mode answers the same way,
+with the rate its own mse calls for. When the mse got worse by 6 dB
+and more the line has changed (both ways, most likely) and the modem
+retrains instead, as it does when it already receives at the symbol
+rate's lowest rate (4800 bit/s above 2400 baud, and V.90's upstream);
+it retrains as well when the renegotiation does not
+end with E within 3 s plus the round trips, or the remote sends its
+tone. An MP with no rates is a cleardown (11.7/V.34): the call ends.
+The original library and the Agere modem answer our renegotiations
+(the original library with type 0 MP); the Agere modem starts its own
+on errors. `DSP_V34_RENEG=<ms>:<N>[a|c]` makes the answerer (a), the
+caller (c) or both start one after that long in data mode, to receive
+at N * 2400 bit/s (a test).
+
+Not implemented: pre-emphasis, non-linear decoding (we never ask for
+it), the auxiliary channel and starting a cleardown.
+
+## Half-duplex (clause 12, for fax)
+
+`v34_hdx_create()` (`v34.h`) makes a half-duplex V.34 modem for T.30
+Annex F fax. Its host gives and takes the bits through `V34HdxHost`.
+The core does not see them yet: class 2 and class 1 use it in later
+changes.
+
+- V.8: CM and JM carry the half-duplex bit (0x80 in the first
+  modulation octet) and the T.30 call function, 0x81 to send and 0xA1
+  to poll. The modem that sends the pages is the source.
+- Phase 2: the source and the recipient probe one way only, and INFOh
+  gives the source the symbol rate, the carrier, the pre-emphasis and
+  the training length (12.3/V.34).
+- Phase 3: the source sends S, S-bar, PP and TRN; the recipient
+  trains on them.
+- The control channel (`v34_cc.cpp`, 10.2.4/V.34) runs at 1200 bit/s,
+  with PPh, ALT, MPh and E at its start (12.4/V.34). It comes back with
+  Sh, S-bar h, ALT and E after each turn of the primary channel
+  (12.6/V.34).
+- The primary channel: `v34_hdx_primary()` turns the control channel
+  off (4 symbols of ones). After 70 ms the source sends S, S-bar, PP,
+  two frames of ones (B1), then the host's bits until it returns -1,
+  then 35 ms of ones (12.5/V.34). The recipient finds S with its
+  receiver trained in phase 3. It sees the end as 20 ms without the
+  signal.
+
+The control channel's receiver keeps its gain, timing and equalizer
+while the primary channel has the line, and adapts only on the
+decisions that look right, so the primary channel's signal does not
+move it. `V34Hdx.CallerSends` and `V34Hdx.AnswererSendsToAPoll` run
+two modems back to back: messages on the control channel both ways
+and two pages, each about 3 s at 31200 bit/s.
+
+Not implemented yet: T.30 Annex F with class 2 and 2.0, class 1 (T.31
+V.34), and the primary channel's rate change between pages.
