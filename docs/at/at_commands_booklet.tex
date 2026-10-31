@@ -1,35 +1,37 @@
 % at_commands_booklet.tex - the AT command reference's A5 pages
-% (at_commands.pdf) two to a landscape A4 sheet, in booklet order:
-% printed on both sides (flipped on the short edge), folded and stapled
-% in the middle, the sheets make an A5 booklet.  Built with
-% docs/at/build.sh into docs/at_commands-booklet.pdf.
+% (at_commands.pdf) two to a landscape A4 sheet, in booklet order.  The
+% first sheet is the cover: the back and front covers side by side on
+% one side, the other side blank.  The sheets after it, printed on both
+% sides (flipped on the short edge), folded and stapled in the middle,
+% make the A5 pages between the covers; the cover sheet folds around
+% them.  Built with docs/at/build.sh into docs/at_commands-booklet.pdf.
 \documentclass{article}
 \usepackage[a4paper,landscape]{geometry}
 \usepackage{pdfpages}
 
-% the pages' count, up to a multiple of 4 (\last), blanks after the
-% reference's own (\pages)
+% the pages' count (\pages, the covers its first and last); the pages
+% between them (2 to \pages-1) up to a multiple of 4, blanks after them
+% (\last, the highest page number used)
 \pdfximage{at_commands.pdf}
 \newcount\pages \pages=\pdflastximagepages
-\newcount\last \last=\pages
+\newcount\last \last=\pages \advance\last by -2
 \advance\last by 3 \divide\last by 4 \multiply\last by 4
+\advance\last by 1
 
-% \order: the pages in booklet order, two to a side, each sheet's front
-% (last, first) then its back (second, last but one); {} a blank page
-\newcount\lo \newcount\hi \newcount\n
-\def\order{}
-\def\add#1{\ifnum#1>\pages \edef\order{\order,{}}%
-  \else\edef\order{\order,\the#1}\fi}
-\lo=1 \hi=\last
+% \order: the cover sheet (back cover, front cover; then two blanks),
+% then the inside pages in booklet order, two to a side, each sheet's
+% front (last, first) then its back (second, last but one); {} a blank
+\newcount\lo \newcount\hi
+\edef\order{\the\pages,1,{},{}}
+\def\add#1{\ifnum#1<\pages \edef\order{\order,\the#1}%
+  \else\edef\order{\order,{}}\fi}
+\lo=2 \hi=\last
 \loop
   \add\hi \add\lo
   \advance\lo by 1 \advance\hi by -1
   \add\lo \add\hi
   \advance\lo by 1 \advance\hi by -1
 \ifnum\lo<\hi \repeat
-% (the list without its first comma)
-\def\strip,#1\end{#1}
-\edef\order{\expandafter\strip\order\end}
 
 \begin{document}
 \includepdf[pages=\order,nup=2x1,noautoscale=false]{at_commands.pdf}

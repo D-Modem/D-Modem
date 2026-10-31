@@ -284,7 +284,7 @@
 
 % headings: the section's number in a box of the band's colour
 \titleformat{\section}{\large\bfseries\color{dmnavy}}
-  {\colorbox{dmred}{\makebox[1.1em]{\color{white}\thesection}}}{0.6em}{}
+  {\sbox0{\thesection}\colorbox{dmred}{\makebox[\ifdim\wd0>1.1em\wd0\else1.1em\fi]{\color{white}\thesection}}}{0.6em}{}
   [{\color{dmred}\titlerule[1.2pt]}]
 \titlespacing*{\section}{0pt}{3.2ex plus 1ex minus .2ex}{1.6ex}
 % each section on a page of its own
@@ -339,12 +339,13 @@
       at ([xshift=-1.5cm,yshift=-0.75cm]current page.north east)
       {\footnotesize\leftmark};
   \end{tikzpicture}}
+\newif\ifdmmain
 \fancypagestyle{dm}{%
   \fancyhf{}%
   \fancyhead[L]{\pageband}%
   \fancyfoot[L]{\footnotesize\color{dmgrey}\docname\ \textbullet\ \docedition}%
-  \fancyfoot[R]{\footnotesize\color{dmgrey}Page \thepage\ of
-    \pageref*{LastPage}}%
+  \fancyfoot[R]{\footnotesize\color{dmgrey}Page \thepage\ifdmmain\ of
+    \pageref*{dm:last}\fi}%
   \renewcommand{\headrulewidth}{0pt}%
   \renewcommand{\footrulewidth}{0.5pt}%
   \renewcommand{\footrule}{{\color{dmhead}%
@@ -353,9 +354,9 @@
 \pagestyle{dm}
 
 
-% the end of the manual: ruled notes pages, then the back cover, so that
-% the pages come to a multiple of 8 (one A3 sheet folded twice, or two
-% A4 sheets of the booklet)
+% the end of the manual: ruled notes pages, so that the pages between
+% the covers come to a multiple of 8 (A3 sheets folded twice), then the
+% back cover
 \newcommand{\notespage}{%
   \markboth{Notes}{}%
   {\large\bfseries\color{dmnavy}Notes}\par\vspace{1ex}%
@@ -365,10 +366,24 @@
       \draw[dmhead,line width=0.5pt] (0.25pt,-\l*7mm) -- (\linewidth-0.25pt,-\l*7mm);
   \end{tikzpicture}\clearpage}
 \makeatletter
+\newcount\dm@front % the roman pages
 \newcommand{\dm@notes}{%
-  \ifnum\numexpr\value{page}-8*((\value{page}-4)/8)\relax=0
+  \edef\dm@tmp{\the\numexpr\dm@front+\value{page}-1\relax}%
+  \ifnum\numexpr\dm@tmp-8*((\dm@tmp-4)/8)\relax=0
   \else\notespage\expandafter\dm@notes\fi}
-\newcommand{\dmnotes}{\clearpage\pdfbookmark[1]{Notes}{notes}\dm@notes}
+\newcommand{\dmnotes}{\clearpage\pdfbookmark[1]{Notes}{notes}\dm@notes
+  \immediate\write\@auxout{\string\newlabel{dm:last}%
+    {{}{\the\numexpr\value{page}-1\relax}{}{}{}}}}
+% the front matter (the contents and the first three sections, numbered
+% in roman) and the main matter, from page 1 and section 1
+\newcommand{\frontmatter}{\clearpage\pagenumbering{roman}%
+  \renewcommand{\thesection}{\Roman{section}}%
+  \renewcommand{\theHsection}{front.\arabic{section}}}
+\newcommand{\mainmatter}{\clearpage\global\dm@front=\numexpr\value{page}-1\relax
+  \pagenumbering{arabic}\global\dmmaintrue
+  \setcounter{section}{0}%
+  \renewcommand{\thesection}{\arabic{section}}%
+  \renewcommand{\theHsection}{\arabic{section}}}
 \makeatother
 \newcommand{\backcover}{%
   \thispagestyle{empty}%
@@ -401,6 +416,7 @@
 \begin{document}
 % the title page: the band down past the middle of the page, faint
 % carriers across it and the title at its foot; no header or footer
+\pagenumbering{Alph}
 \pdfbookmark[1]{Title}{title}
 \thispagestyle{empty}
 \begin{tikzpicture}[remember picture,overlay]
@@ -430,7 +446,7 @@
     {{\large\bfseries Version \dmversion}\\[4pt]
      {\normalsize\color{dmgrey}\docedition}};
 \end{tikzpicture}
-\clearpage
+\frontmatter
 
 \pdfbookmark[1]{\contentsname}{contents}
 \tableofcontents
@@ -679,6 +695,7 @@ rarer ones.
  &  & \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. \\ \hline
 \end{vtable}}
 
+\mainmatter
 \section{Command Lines}
 
 \cmdr{AT} commands are issued to the modem to control its operation and its
