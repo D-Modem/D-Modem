@@ -357,7 +357,7 @@
 
 \section{Introduction}
 
-This manual specifies the AT command set of D-Modem's modem core
+This manual specifies the \cmdr{AT} command set of D-Modem's modem core
 (\cmd{core/} in the source).  The core takes the commands of every
 D-Modem program:
 \begin{itemize}
@@ -432,7 +432,7 @@ A few words this manual uses throughout.  The glossary
 rarer ones.
 
 \begin{description}[style=nextline,leftmargin=1.2em,font=\bfseries\color{dmnavy}]
-\item[AT command] AT stands for ``attention''.  An instruction to the
+\item[\cmdr{AT} command] \cmdr{AT} stands for ``attention''.  An instruction to the
   modem, sent as text that starts with the letters \cmdr{AT}, such as \cmdl[Z]{ATZ}.  One
   line can hold several commands (\cmdr{ATE1Q0V1}).
 \item[Basic and extended commands] Basic commands are a letter, maybe
@@ -585,7 +585,7 @@ rarer ones.
 
 \section{Command Lines}
 
-AT commands are issued to the modem to control its operation and its
+\cmdr{AT} commands are issued to the modem to control its operation and its
 settings.  The modem takes them in command mode: after it starts, when
 a call ends, after any command but a dial or an answer, and online
 after the escape sequence (\hyperref[sec:online]{Section~\ref*{sec:online}}), the call still
