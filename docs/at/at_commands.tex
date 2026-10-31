@@ -509,6 +509,10 @@ rarer ones.
 \item[TTY] Teletypewriter.  A text telephone used by deaf and hard of
   hearing people, sending Baudot code at 45.45 or 50~bit/s
   (\hyperref[sec:text]{Section~\ref*{sec:text}}).
+  On Linux, a tty is also a terminal device in \texttt{/dev}, such as a
+  serial port (\texttt{/dev/ttyS0}) or a pseudo terminal
+  (\texttt{/dev/pts/3}).  \texttt{dmodemd} appears as a pseudo
+  terminal, so terminal programs open it like a serial modem.
 \end{description}
 
 \section{Command Summary}
