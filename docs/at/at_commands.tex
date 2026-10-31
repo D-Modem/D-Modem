@@ -46,6 +46,8 @@
 % the document's name and edition, for the title page and the footer
 \newcommand{\docname}{D-Modem AT Command Reference}
 \newcommand{\docedition}{October 2026}
+% the software version, from CMakeLists.txt through build.sh
+\InputIfFileExists{dmversion.tex}{}{\newcommand{\dmversion}{1.0.0}}
 
 % colours, D-Modem's (the brand repository's palette, its Red Book for
 % this repository): the navy of the band and the headings, the red of
@@ -370,9 +372,10 @@
      {\fontsize{20}{24}\selectfont AT Command Reference}\\[14pt]
      {\normalsize\color{dmmuted}The modem core of \texttt{dmodemd}, libdmodem
       and the \std{PBX} modules}};
-  \node[anchor=north west,text=dmnavy,inner sep=0pt]
+  \node[anchor=north west,text=dmnavy,inner sep=0pt,align=left]
     at ([xshift=1.5cm,yshift=-13.2cm]current page.north west)
-    {\large\docedition};
+    {{\large\bfseries Version \dmversion}\\[4pt]
+     {\normalsize\color{dmgrey}\docedition}};
 \end{tikzpicture}
 \clearpage
 

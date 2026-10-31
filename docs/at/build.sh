@@ -12,6 +12,10 @@ set -e
 here=$(cd "$(dirname "$0")" && pwd)
 out=${DMODEM_BUILD:-$here/../../build}/docs/at
 mkdir -p "$out"
+# the version on the title page: CMakeLists.txt's project() version
+ver=$(sed -n 's/^project(dmodem VERSION \([0-9.]*\).*/\1/p' \
+	"$here/../../CMakeLists.txt")
+printf '\\newcommand{\\dmversion}{%s}\n' "${ver:-unknown}" > "$out/dmversion.tex"
 # make name: latexmk on name.tex, its log's end on a failure
 make() {
 	if ! TEXINPUTS="$out:" latexmk -g -pdf -interaction=nonstopmode \
