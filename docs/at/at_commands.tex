@@ -360,14 +360,46 @@ D-Modem program:
   with.
 \end{itemize}
 
-The command set began as Smart Link's (the reference of Smart Link's
-ST56 modems is kept as \cmd{docs/\allowbreak legacy/\allowbreak
-ST56ATCommands.pdf}) and has since grown \std{V.90} and \std{V.92} as the digital
-modem, \std{V.91}, \std{V.44}, \std{V.92}'s modem-on-hold, MNP 2 to 5, \std{V.80}, the leased
-line modulations and the clear ISDN channel.  The modem also accepts
-the commands that other modems' setup strings send (\std{V.250}'s, Rockwell's
-and Conexant's, USRobotics'), most of them with no effect, so that a
-setup string written for another modem works: their entries say so.
+\subsection*{What the modem does}
+
+\begin{itemize}
+\item \textbf{Data} from 300~bit/s to 56000~bit/s: \std{V.21}, \std{V.22},
+  \std{V.22bis}, \std{V.23}, Bell 103 and 212A, \std{V.32}, \std{V.32bis},
+  \std{V.34} up to 33600~bit/s, and \std{V.90} and \std{V.92} as the
+  digital modem.  Automode finds the best modulation both ends have
+  (\hyperref[sec:modulation]{section~\ref*{sec:modulation}}).
+\item \textbf{Error correction and compression}: \std{V.42} (LAPM) and
+  MNP 2 to 5; \std{V.42bis}, \std{V.44}, MNP 5 and zstd
+  (\hyperref[sec:errctl]{sections~\ref*{sec:errctl}} and
+  \hyperref[sec:compression]{\ref*{sec:compression}}).
+\item \textbf{V.92's extras}: quick connect, PCM upstream and
+  modem-on-hold, to take a waiting call and come back to the data call.
+\item \textbf{Fax}: class 1 (\std{T.31}) and class 2 and 2.0 (\std{T.32}),
+  up to 14400~bit/s with \std{V.17}, and adaptive answer, which tells a fax
+  call from a data call (\hyperref[sec:fax]{section~\ref*{sec:fax}}).
+\item \textbf{Voice} (\std{V.253}): play and record audio, send and
+  detect DTMF and tones, use a handset, and turn a voice call into a fax
+  or data call (\hyperref[sec:voice]{section~\ref*{sec:voice}}).
+\item \textbf{Text telephones} (\std{V.18}): the 5-bit TTY of the deaf
+  community, telex and RTTY, EDT, and automoding between them
+  (\hyperref[sec:text]{section~\ref*{sec:text}}).
+\item \textbf{Caller ID}, from a SIP call or a telephone line (FSK and
+  DTMF), and a waiting call's caller in voice mode.
+\item \textbf{Leased lines}, 2-wire and 4-wire (\std{V.29}, \std{V.33},
+  \std{V.27ter}), with \std{V.13}'s simulated carrier control.
+\item \textbf{Digital channels}: \std{V.91} between two digital modems,
+  the clear 64000~bit/s channel of an ISDN data call (\std{X.75}, PPP,
+  \std{V.110}, \std{V.120}) (\hyperref[sec:isdn]{section~\ref*{sec:isdn}}),
+  and \std{V.80}'s synchronous access.
+\item \textbf{V.cvm} for data over mobile speech paths, and
+  \textbf{V.wb}, a wideband modem for a bare pair of wires.
+\item \textbf{Diagnostics}: the last call's statistics (\cmdl[I]{ATI11},
+  \cmdl[ampV]{AT\&V1}, \cmdl[hashUD]{AT\#UD}) and loop tests
+  (\cmdl[ampT]{AT\&T}).
+\item \textbf{Other modems' setup strings} work: the modem accepts the
+  commands of \std{V.250}, Rockwell and Conexant, and USRobotics modems,
+  most of them with no effect; their entries say so.
+\end{itemize}
 
 Every command, range, default and response in this manual is the
 core's own.  A setting that is kept but changes nothing says so.
@@ -587,8 +619,8 @@ wants \cmdl[X]{ATX3}.
 \begin{command}{ampA}{\&A\p{n}}{Connection Lines Before CONNECT}
 This command adds lines on the connection before a data call's
 \rc{CONNECT} (\sreg{70}).  \p{n} is a sum of the bits below.  With
-\cmdl[V]{V0} the first three lines are numbers, Smart Link's, and the
-fourth is left out.
+\cmdl[V]{V0} the first three lines are numbers and the fourth is left
+out.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--7.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -1544,8 +1576,8 @@ Other modems' choice of error correction, as \cmdl[bsN]{\bs N}.
 \end{command}
 
 \begin{command}{bsN}{\bs N\p{n}}{Error Control Mode}
-This command sets the error correction (\sreg{103}), as Smart Link's
-and Rockwell's modems have it.  Each value sets \cmdl[plusES]{+ES} to
+This command sets the error correction (\sreg{103}), as Rockwell's
+modems have it.  Each value sets \cmdl[plusES]{+ES} to
 \std{V.250}'s equal.  \cmdl[S]{ATS103=}\p{n} is \cmdl[bsN]{\bs N}\p{n}.
 
 \std{V.42}'s detection phase decides between LAPM and none.  The originator
@@ -2058,9 +2090,8 @@ A data call's \rc{CONNECT} gives the rate the modem receives at, in bit/s
 With \cmdl[X]{X0}, in fax and in voice mode it is \rc{CONNECT} (1) alone.
 \cmdl[bsV]{\bs V1} adds the error correction and the compression
 (\rc{CONNECT 33600/LAPM/V42bis}), and \cmdl[ampA]{\&A} adds lines on
-the connection before it.  The rates' numbers are Smart Link's (its
-ST56 manual's), and D-Modem's own from 80 for the rates that has not; a
-rate with neither is 1.
+the connection before it.  Each rate's number is in the table below;
+a rate not in it is 1.
 
 \begin{vtable}{8}{|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|}{CONNECT Rates and Their Numbers}
   {\thd{Rate} & \thd{n} & \thd{Rate} & \thd{n} & \thd{Rate} & \thd{n} & \thd{Rate} & \thd{n}}
@@ -2318,7 +2349,7 @@ answer tone; 0 waits 10 ms.  Elsewhere S92 is a fax transmit level:
 \cmdl[Y]{Y}'s setting, kept.  \cmdl[Z]{ATZ} keeps it.
 \facts{0--3}{0}{none}
 
-\section{Fax commands}
+\section{Fax commands}\label{sec:fax}
 
 With \cmdl[plusFCLASS]{AT+FCLASS=1}, the modem takes \std{T.31}'s class 1
 commands, the fax machine's side being the DTE's (the PBX modules and
@@ -3043,10 +3074,9 @@ HUPCL set on the pty, closes it; it then makes a new pty
 \item \cmdl[I]{ATI}'s numbers are the modem's own (\cmdl[I]{I0} to
   \cmdl[I]{I7}), but for the call statistics: \cmdl[I]{I6} as USRobotics',
   \cmdl[I]{I11} as Conexant's, \cmdl[ampV]{\&V1} as Rockwell's.
-\item The numeric results (\cmdl[V]{V0}) are Smart Link's, \rc{CONNECT}'s
-  for each rate among them; those of USRobotics' and Conexant's modems
-  differ.  \rc{CONNECT}'s rates without a number of Smart Link's have
-  D-Modem's own, 80 to 87.
+\item The numeric results (\cmdl[V]{V0}) and \rc{CONNECT}'s number for
+  each rate are D-Modem's own; those of USRobotics' and Conexant's
+  modems differ.
 \item MNP is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[pctC]{\%C}): there
   is no MNP 10 or 10EC.  A modem with MNP 10EC connects with \std{V.42} (its
   ``EM'' detection patterns are passed over).  See
