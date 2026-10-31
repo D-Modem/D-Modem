@@ -296,7 +296,8 @@
 % and the page of how many
 % a square QAM constellation: #1 points a side, #2 apart, centred at
 % #3, drawn in #4 (with its I and Q axes when #5 is not empty); each
-% ring out from the centre has points half the size of the one inside it
+% \qamstep rings out from the centre the points are half the size
+\newcommand{\qamstep}{1}
 \newcommand{\qam}[5]{%
   \begin{scope}[shift={#3}]
     \pgfmathsetmacro{\qamh}{(#1-1)/2}
@@ -308,7 +309,7 @@
       \foreach \q in {1,...,#1}
         {\pgfmathsetmacro{\qamk}{max(abs(\i-1-\qamh),abs(\q-1-\qamh))-0.5}
          \fill[#4] ({(\i-1-\qamh)*#2},{(\q-1-\qamh)*#2})
-           circle[radius={0.34*#2/pow(2,\qamk)}];}
+           circle[radius={0.34*#2/pow(2,\qamk/\qamstep)}];}
   \end{scope}}
 \renewcommand{\sectionmark}[1]{\markboth{\thesection\quad #1}{}}
 \newcommand{\pageband}{%
@@ -355,7 +356,8 @@
       \draw[white,opacity=\o,line width=1.2pt,domain=0:14.8,samples=300,
         smooth] plot (\x,{\a*sin(\f*\x r)});
   \end{scope}
-  \qam{8}{0.8cm}{([xshift=10.2cm,yshift=-4.6cm]current page.north west)}{white,opacity=0.13}{axes}
+  {\renewcommand{\qamstep}{2}%
+   \qam{16}{0.52cm}{([xshift=10.6cm,yshift=-3.6cm]current page.north west)}{white,opacity=0.13}{axes}}
   \node[anchor=north west,inner sep=0pt]
     at ([xshift=1.1cm,yshift=-1.0cm]current page.north west)
     {\dmlogo{3.6cm}};
