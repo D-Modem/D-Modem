@@ -1111,7 +1111,11 @@ s16 V32Pump::handshake()
 		/* R2 until R3 arrives */
 		if (ev_r && tx_word_bit == 0) {
 			ev_r = 0;
-			r = choose(r_word);
+			/* among the rates our R2 offered (not those our
+			   receiver's quality allows now: the answerer has
+			   chosen from R2, and an estimate a little lower
+			   since would leave no rate at all) */
+			r = rate_of_word(r_word & r2_caps);
 			DSP_DBG("v32: R word %04X in R2 (choice %04X)\n",
 				r_word, r ? r->bits : 0);
 			/* R1 repeated, until the answerer's second training;
