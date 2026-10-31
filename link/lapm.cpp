@@ -371,6 +371,8 @@ void Lapm::t401_timeout()
 		rtx_count_ = 0;
 		return;
 	}
+	if (state_ == DATA)
+		link_->stats().timeouts++;
 	if (rtx_count_ < MAX_RTX) {
 		rtx_count_++;
 		if (config_)
@@ -783,6 +785,7 @@ void Lapm::rx_super_cmd(Frame *f)
 			tx_super(rsp_addr_, busy_ ? S_RNR : S_RR, 1);
 		return;
 	case S_REJ:
+		link_->stats().naks++;
 		peer_busy_ = false;
 		ack_info(nr);
 		if (!rtx_count_) {
@@ -791,6 +794,7 @@ void Lapm::rx_super_cmd(Frame *f)
 		}
 		break;
 	case S_SREJ:
+		link_->stats().naks++;
 		log_frame("err: ec: SREJ", true, f);
 		return;
 	default:
@@ -838,6 +842,7 @@ void Lapm::rx_super_rsp(Frame *f)
 			timer_start();
 		break;
 	case S_REJ:
+		link_->stats().naks++;
 		peer_busy_ = false;
 		ack_info(nr);
 		if (!rtx_count_ || fin) {
@@ -846,6 +851,7 @@ void Lapm::rx_super_rsp(Frame *f)
 		}
 		break;
 	case S_SREJ:
+		link_->stats().naks++;
 		log_frame("err: ec: SREJ", false, f);
 		break;
 	default:

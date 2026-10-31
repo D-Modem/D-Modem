@@ -5,7 +5,7 @@
 # then one without error correction, both of which the remote ended
 # (the carrier lost); one nobody answered.  AT&V1 and ATI6 are ATI11;
 # AT#UD the same as Unimodem's diagnostics (B's hangup by DTR: its
-# termination cause 20, cct108turnedOff)
+# termination cause 20, cct108turnedOff); ATZ clears it
 A ATE0X3+MS=34\r
 B ATE0\r
 A ATI11\r
@@ -73,4 +73,22 @@ A ATS7=5D\r
 until A NO ANSWER 10000
 run 500
 A ATI11\r
+A AT#UD\r
+# ATZ clears the log: none after it; ATZ in a call ends it, and AT#UD
+# then holds only its termination cause (52, the DTE's reset)
+A ATZ\r
+A AT#UD\r
+A ATE0X3\r
+B ATZ\r
+B ATE0\r
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 2000
+run 1000
+A +++
+run 1000
+A ATZ\r
+until B NO CARRIER 15000
+run 500
 A AT#UD\r

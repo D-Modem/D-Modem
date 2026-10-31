@@ -1336,8 +1336,10 @@ s32 Modem::dte_input(const char *buf, s32 n)
 	}
 	if (k < n) {
 		logf("DTE buffer full: %d of %d characters taken\n", k, n);
-		if (state_ == ONLINE)
+		if (state_ == ONLINE) {
 			link_->sync_indicate(dlink::v80::TOVER);
+			stats_.tx_lost += static_cast<u32>(n - k);
+		}
 	}
 	if (voice_drain_)
 		voice_drain();
@@ -2153,7 +2155,8 @@ s16 Modem::reset()
 	leased_stop();
 	/* (V.54: the far end's loop 2 refused again, AT&T5) */
 	test_.set_grant(false);
-	if (state_ != IDLE) {
+	const bool in_call = state_ != IDLE;
+	if (in_call) {
 		set_cause(Cause::DteReset);
 		hup(true);
 	} else if (started_) {
@@ -2161,6 +2164,11 @@ s16 Modem::reset()
 	} else {
 		set_hook(MODEM_HOOK_ON);
 	}
+	/* the call's log cleared (as Unimodem's diagnostics have it), but
+	   for a call ATZ ended: that it did (AT#UD's 60=52) */
+	stats_ = CallStats();
+	if (in_call)
+		stats_.cause = Cause::DteReset;
 	set_state(IDLE);
 	command_ = true;
 	min_rate_ = MODEM_MIN_RATE;
@@ -2476,13 +2484,13 @@ void Modem::call_stats()
 /* AT#UD: the last call's statistics (or this one's) as Microsoft's
    Unimodem Diagnostics Command Reference Specification, version 1.0 (2
    July 1998; docs/specs/umud10.rtf): a line "DIAG <2A4D3263 key=value>"
-   for each key we have, keys and values in hexadecimal; its Tables 2-4
+   for each key we have (the log cleared by ATZ and the start of a
+   call), keys and values in hexadecimal; its Tables 2-4
    for the call's setup and modes, V.58's codes (its Tables 6-9) for the
    modulation, error control, compression and why the call ended, the
-   manufacturers' range (80 on) for V.44 and zstd.  Not reported, as
-   nothing measures them: 4-5 (V.8's CM and JM), 13 (NMSE), 16 (far echo
-   delay), 18 (V.34's INFO bits), 30 (carrier losses), 42-43 (V.42's
-   timeouts and NAKs), 54-55 (characters lost) */
+   manufacturers' range (80 on) for V.44 and zstd.  The measures only
+   some modulations have (V.8's CM and JM, NMSE, the far echo, V.34's
+   INFO bits) are left out for the others */
 void Modem::unimodem_diag()
 {
 	auto put = [this](u32 key, const std::string &value) {
@@ -2522,9 +2530,11 @@ void Modem::unimodem_diag()
 	};
 
 	put(0, "10");
+	/* no call since the log was cleared: none at all, or ATZ ended
+	   the one before (DteResetCommand) */
 	if (!stats_.call) {
 		put(1, "0");
-		put(0x60, "1");
+		put(0x60, stats_.cause == Cause::DteReset ? "52" : "1");
 		return;
 	}
 	/* the call's setup (Table 2): the remote's answer (or calling)
@@ -2549,6 +2559,18 @@ void Modem::unimodem_diag()
 			num(3, link_->sync() ? (link_->sync_framed() ? 2 : 1) :
 			    0);
 	}
+	/* V.8's CM and JM: their octets in hexadecimal, quoted (as
+	   V.250's Annex A has them) */
+	auto octets = [&put](u32 key, const unsigned char *b, int n) {
+		if (n <= 0)
+			return;
+		std::string v = "\"";
+		for (int i = 0; i < n; i++)
+			v += hex(b[i], 2, true);
+		put(key, v + "\"");
+	};
+	octets(4, dp_stats_.v8_cm, dp_stats_.v8_cm_n);
+	octets(5, dp_stats_.v8_jm, dp_stats_.v8_jm_n);
 	if (stats_.connected && !stats_.fax) {
 		const struct dp_stats &d = dp_stats_;
 		const dlink::Stats &l = link_->stats();
@@ -2564,16 +2586,28 @@ void Modem::unimodem_diag()
 			if (d.have & DP_STATS_SNR)
 				neg_db(0x12, rx - d.snr, 0x5A);
 		}
+		/* the mean squared error, 100 (64) as large as the points'
+		   minimum distance */
+		if (d.have & DP_STATS_NMSE)
+			num(0x13, static_cast<u32>(std::min(
+				    lrint(d.nmse * 100 < 0 ? 0 : d.nmse * 100),
+				    0xFFL)), 2);
 		/* the echoes' loss: what we send over what comes back,
 		   0-3F dB */
 		if (stats_.samples && (d.have & DP_STATS_NEAR_ECHO))
 			neg_db(0x14, d.near_echo - tx, 0x3F);
 		if (stats_.samples && (d.have & DP_STATS_FAR_ECHO))
 			neg_db(0x15, d.far_echo - tx, 0x3F);
+		if (d.have & DP_STATS_FAR_DELAY)
+			num(0x16, static_cast<u64>(d.far_echo_delay < 0 ? 0 :
+						   d.far_echo_delay > 0x3F ?
+						   0x3F : d.far_echo_delay), 2);
 		if (d.have & DP_STATS_RTD)
 			num(0x17, static_cast<u64>(d.rtd < 0 ? 0 :
 						   d.rtd > 0xFFF ? 0xFFF :
 						   d.rtd), 2);
+		if (d.have & DP_STATS_INFO)
+			num(0x18, d.info_bits, 8);
 		bool line = d.have & DP_STATS_LINE;
 		s32 m = v58_modulation(stats_.dp, line && d.sym_tx == 8000);
 		if (m >= 0)
@@ -2590,6 +2624,7 @@ void Modem::unimodem_diag()
 		}
 		num(0x26, stats_.tx0, 4);
 		num(0x27, stats_.rx0, 4);
+		num(0x30, d.carrier_losses > 0xFF ? 0xFF : d.carrier_losses, 2);
 		num(0x31, d.renegs_local + d.renegs_remote, 2);
 		/* retrains asked for (by either modem), and granted: the
 		   pumps carry out every one */
@@ -2604,6 +2639,12 @@ void Modem::unimodem_diag()
 			num(0x41, static_cast<u32>(lc.tx_info));
 		else if (cfg_.mnp_on)
 			num(0x41, static_cast<u32>(lc.mnp_info));
+		/* the retransmission timer run out, the remote's asks to send
+		   again */
+		if (cfg_.ec || cfg_.mnp_on) {
+			num(0x42, l.timeouts > 0xFF ? 0xFF : l.timeouts, 2);
+			num(0x43, l.naks > 0xFF ? 0xFF : l.naks, 2);
+		}
 		const std::string_view c = compression_name();
 		num(0x44, c == "V42bis" ? 0x1 : c == "MNP5" ? 0x80 :
 		    c == "V44" ? 0x81 : c == "ZSTD" ? 0x82 : 0x0);
@@ -2618,6 +2659,10 @@ void Modem::unimodem_diag()
 		num(0x51, flow[h < 4 ? h : 0]);
 		num(0x52, l.tx_chars, 8);
 		num(0x53, l.rx_chars, 8);
+		/* the characters lost each way (16-bit counters, held at
+		   their most) */
+		num(0x54, stats_.tx_lost > 0xFFFF ? 0xFFFF : stats_.tx_lost, 4);
+		num(0x55, l.rx_lost > 0xFFFF ? 0xFFFF : l.rx_lost, 4);
 		if (cfg_.ec || cfg_.mnp_on) {
 			num(0x56, l.tx_frames, 8);
 			num(0x57, l.rx_frames, 8);

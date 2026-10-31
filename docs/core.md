@@ -24,7 +24,7 @@
   `call_stats()`; `AT#UD`, `unimodem_diag()`: Microsoft's Unimodem
   Diagnostics Command Reference Specification 1.0
   (`docs/specs/umud10.rtf`), a `DIAG <2A4D3263 key=value>` line a key,
-  in hexadecimal,
+  in hexadecimal (ATZ clears it: after a call it ended, only 60=52),
   with V.58's codes for the modulation, error control, compression and
   why the call ended): kept from one
   call's start to the next's (`CallStats`): its modulation and rates at

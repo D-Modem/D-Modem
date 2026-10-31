@@ -1112,6 +1112,10 @@ This command gives the last call's statistics (or this one's), as
 Diagnostics Command Reference Specification (version~1.0) gives, for Windows' modem log
 and the programs that read it: a line \rc{DIAG <2A4D3263 \p{key}=\p{value}>} for each key there is a value for, both
 in hexadecimal.  Before any call: \rc{0=10}, \rc{1=0} and \rc{60=1}.
+\cmdl[Z]{ATZ} clears the log; if it ended a call, the log then holds
+only that: \rc{0=10}, \rc{1=0} and \rc{60=52} (the \std{DTE}'s reset).
+The measures only some modulations have (\std{V.8}'s \std{CM} and \std{JM}, the
+\std{NMSE}, the far echo, \std{V.34}'s \std{INFO} bits) are left out for the others.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
@@ -1121,17 +1125,26 @@ in hexadecimal.  Before any call: \rc{0=10}, \rc{1=0} and \rc{60=1}.
 1 & The call's setup. \\ \hline
 2, 3 & The call's mode (data or fax) and the DTE interface's (async, or
   \std{V.80}'s transparent or framed synchronous mode). \\ \hline
-10--17 & The receive and transmit levels, the noise, the echoes' loss, the
-  round trip delay. \\ \hline
+4, 5 & \std{V.8}'s \std{CM} and \std{JM}, the octets in quotes. \\ \hline
+10--12 & The receive and transmit levels, the noise. \\ \hline
+13 & The \std{NMSE} (the receiver's error over the points' least
+  distance, in hundredths). \\ \hline
+14--17 & The echoes' loss, the far echo's delay (ms), the round trip
+  delay. \\ \hline
+18 & \std{V.34}'s \std{INFO} bits (its Table~5). \\ \hline
 20, 21 & The modulation (\std{V.58}'s codes). \\ \hline
 22--27 & The symbol rates, the carriers, the first rates. \\ \hline
+30 & The carrier's losses (20~ms or more that came back). \\ \hline
 31--33 & The renegotiations, the retrains asked for and granted. \\ \hline
 34, 35 & The last rates. \\ \hline
 40, 41 & The error control and its frame size. \\ \hline
+42, 43 & The error control's timeouts and \std{REJ}s or \std{SREJ}s (\std{MNP}: the
+  acknowledgements that ask for frames again). \\ \hline
 44, 45 & The compression (\std{V.58}'s codes; 80 \std{MNP~5}, 81 \std{V.44}, 82 zstd) and
   \std{V.42bis}' dictionary size. \\ \hline
 50, 51 & The flow control (\cmdl[ampH]{\&H}). \\ \hline
-52--59 & The characters and frames. \\ \hline
+52--59 & The characters (54, 55: those lost for a full buffer) and
+  frames. \\ \hline
 60 & How the call ended (\std{V.58}'s \p{callCleared}; 2 while it goes on). \\ \hline
 \end{vtable}
 \example{Example output: AT\#UD}

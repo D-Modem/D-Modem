@@ -119,11 +119,16 @@ enum class Protocol { None, Lapm, Mnp, X75, Ppp, V120 };
 /* a call's counts (ATI11): the DTE's characters each way; the frames
    of the error correction (LAPM's, MNP's) sent, the information frames
    among them sent again, the frames received intact and those received
-   with a bad FCS */
+   with a bad FCS; in the data phase, the times the retransmission timer
+   (T401) ran out, and the remote's asks for frames again (LAPM's REJ or
+   SREJ, MNP's repeated LA); the characters received without error
+   correction that the DTE did not take (lost) */
 struct Stats {
 	u32 tx_chars = 0, rx_chars = 0;
 	u32 tx_frames = 0, tx_again = 0;
 	u32 rx_frames = 0, rx_errors = 0;
+	u32 timeouts = 0, naks = 0;
+	u32 rx_lost = 0;
 };
 
 enum class Status {
