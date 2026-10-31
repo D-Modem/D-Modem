@@ -16,7 +16,7 @@
 
 set(DMODEM_DSP_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(_dsp
-	dsp_glue.cpp dsp_util.cpp tones.cpp dp_callprog.cpp dp_fsk.cpp dp_text.cpp dp_contactid.cpp dp_sms.cpp sms_pdu.cpp dp_v22.cpp
+	dsp_glue.cpp dsp_util.cpp tones.cpp dp_callprog.cpp dp_fsk.cpp dp_text.cpp dp_contactid.cpp dp_sms.cpp sms_pdu.cpp dp_relay.cpp dp_v22.cpp
 	dp_v32.cpp qam.cpp qam_tables.cpp fax_modems.cpp fax_class1.cpp
 	dp_v34.cpp dp_vcvm.cpp dp_vwb.cpp dp_4wire.cpp dp_clear.cpp v110.cpp vwb.cpp v34_tables.cpp v34_modem.cpp v34_cc.cpp t30_v34.cpp v34_data.cpp v90.cpp v90a.cpp v91.cpp v92.cpp v92a.cpp vcvm.cpp vcvm_msg.cpp vcvm_probe.cpp vcvm_startup.cpp vcvm_data.cpp vcvm_modem.cpp rs.cpp
 	dp_dummy.cpp dp_sinus.cpp)

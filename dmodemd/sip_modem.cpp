@@ -87,6 +87,20 @@ public:
 	void t38_send(dcore::Modem &m, const void *ifp) override;
 	/* a call in CLEARMODE, or offered it first: an ISDN data call */
 	bool clear_line(dcore::Modem &) override { return sip::clear(); }
+	/* (see sip::relay()) */
+	bool relay_line(dcore::Modem &) override { return sip::relay(); }
+	/* (see sip::relay()) */
+	s16 relay_state(dcore::Modem &, s32 *tx, s32 *rx) override {
+		return sip::relay_state(tx, rx);
+	}
+	/* (see sip::relay()) */
+	s32 relay_read(dcore::Modem &, u8 *buf, s32 max) override {
+		return sip::relay_read(buf, max);
+	}
+	/* (see sip::relay()) */
+	s32 relay_write(dcore::Modem &, const u8 *buf, s32 n) override {
+		return sip::relay_write(buf, n);
+	}
 	/* a hook flash: an RFC 4733 event on the call, if it has them */
 	bool can_flash(dcore::Modem &) override {
 		return audio_ >= 0 && sip::can_flash();

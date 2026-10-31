@@ -37,7 +37,7 @@ if(DMODEM_DMODEMD)
 	# for dmodemd, and for a program that has the modem in a thread of
 	# its own (an Android app)
 	add_library(dmodem_sip STATIC sip_modem.cpp sip.cpp sip_dial.cpp
-		rtp_events.cpp
+		rtp_events.cpp v150.cpp
 		$<TARGET_OBJECTS:dmodem_front> $<TARGET_OBJECTS:dmodem_core>
 		$<TARGET_OBJECTS:dmodem_dsp> $<TARGET_OBJECTS:dmodem_t30>
 		$<TARGET_OBJECTS:dmodem_link>)
@@ -297,6 +297,12 @@ if(DMODEM_DMODEMD)
 		dmodem_flags(rtp_events_test EXTRA NOOPT)
 		target_link_libraries(rtp_events_test PRIVATE ${DMODEM_LIBM})
 		dmodem_gtest(rtp_events_test LABELS quick)
+		# test/v150_test.cpp: V.150.1's modem relay (v150.h)
+		add_executable(v150_test test/v150_test.cpp v150.cpp)
+		target_include_directories(v150_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR})
+		dmodem_flags(v150_test EXTRA NOOPT)
+		dmodem_gtest(v150_test LABELS quick)
 		# test/si3056_test.cpp: a country's line settings for the
 		# pico-serial Line's DAA (si3056.h)
 		add_executable(si3056_test test/si3056_test.cpp si3056.cpp)
@@ -382,6 +388,13 @@ if(DMODEM_DMODEMD)
 			${CMAKE_CURRENT_SOURCE_DIR}/test/clearmode_test.py
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_clearmode PROPERTIES LABELS quick
+			TIMEOUT 60)
+		# V.150.1's modem relay (SIP_V150=yes) both ways, the
+		# script's own SIP peer and gateway (SSE, SPRT)
+		dmodem_add_test(dmodemd_v150 ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/v150_test.py
+			$<TARGET_FILE:dmodemd>)
+		set_tests_properties(dmodemd_v150 PROPERTIES LABELS quick
 			TIMEOUT 60)
 		# the same in SRTP (RTP/SAVP, a=crypto), the script's own
 		# AES and SRTP (test/srtp.py); 77: no SRTP in this build

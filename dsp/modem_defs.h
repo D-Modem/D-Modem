@@ -171,6 +171,9 @@ enum DP_ID {
 	DP_V32BIS   = 132,
 	DP_VWB      = 200,      /* V.wb: wideband DMT on a bare pair, at
 				   48000 Hz or more (dsp/vwb.h) */
+	DP_RELAY    = 151,      /* the call's data relayed by the host, not
+				   modulated (V.150.1's modem relay over
+				   SIP): dp_relay.cpp, struct dp_relay */
 	DP_B212     = 212,      /* Bell 212A */
 	DP_B201     = 201,      /* Bell 201: V.26's alternative B, 4-wire */
 	DP_B202     = 202,      /* Bell 202: 1200 bit/s FSK, 4-wire duplex */
@@ -257,6 +260,23 @@ struct dp_stats {
 	int pcm_alaw;
 	float digital_loss;
 	int robbed_bits;
+};
+
+/*
+ *    A relayed call (DP_RELAY): the host carries the call's data octets
+ *    itself (V.150.1's modem relay: the far end's gateway terminates
+ *    the modulation), and the pump moves them between it and the core's
+ *    link as start-stop characters, through MDMPRM_RELAY
+ */
+struct dp_relay {
+	void *ctx;
+	/* the relay's state: 0 not up yet, 1 up (its rates each way, bit/s,
+	   into *tx and *rx), -1 over */
+	int (*state)(void *ctx, s32 *tx, s32 *rx);
+	/* the far end's octets, up to max into buf: how many */
+	int (*read)(void *ctx, unsigned char *buf, int max);
+	/* n octets to the far end: how many it took (0: no room now) */
+	int (*write)(void *ctx, const unsigned char *buf, int n);
 };
 
 /*

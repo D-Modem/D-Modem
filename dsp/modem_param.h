@@ -138,6 +138,9 @@ enum MODEM_PARAMETER_NAMES {
 				      telephone pump (DP_V18, DP_BAUDOT,
 				      DP_EDT) is +MS's, else 0; -1 from a
 				      core that has none */
+	MDMPRM_RELAY        = 75,  /* the struct dp_relay * while the call
+				      is relayed (DP_RELAY), else 0; -1
+				      from a core that has none */
 };
 
 /*

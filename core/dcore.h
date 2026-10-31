@@ -109,6 +109,26 @@ public:
 	   bearer): the modem runs its clear channel pump (DP_CLEAR) on
 	   it, whatever +MS says, with no call progress */
 	virtual bool clear_line(Modem &m) { (void)m; return false; }
+	/* the call's data is relayed, not modulated (V.150.1's modem relay
+	   over SIP: the far end's gateway terminates the modulation): the
+	   modem runs DP_RELAY on it whatever +MS says, answering at once,
+	   dialling after call progress (the answer tone).  The relay's
+	   state: 0 not up yet, 1 up (its rates each way into *tx, *rx), -1
+	   over; the far end's octets read (up to max), ours written (how
+	   many it took) */
+	virtual bool relay_line(Modem &m) { (void)m; return false; }
+	/* (the relay's state, see above) */
+	virtual s16 relay_state(Modem &m, s32 *tx, s32 *rx) {
+		(void)m; (void)tx; (void)rx; return -1;
+	}
+	/* (the far end's octets, see above) */
+	virtual s32 relay_read(Modem &m, u8 *buf, s32 max) {
+		(void)m; (void)buf; (void)max; return 0;
+	}
+	/* (ours to it, see above) */
+	virtual s32 relay_write(Modem &m, const u8 *buf, s32 n) {
+		(void)m; (void)buf; (void)n; return 0;
+	}
 	/* the line tells when a phone on the modem's own jack (the local
 	   phone, V.253's) goes off or on hook (Modem::local_phone()) */
 	virtual bool senses_local_phone(Modem &m) { (void)m; return false; }
@@ -484,6 +504,12 @@ private:
 	void text_reset();
 	/* the pump +MS has is a text telephone's (V.18, 5-bit, EDT) */
 	bool text_pump() const;
+	/* the call is relayed (Host::relay_line(), in data mode) */
+	bool relay_channel() const;
+	/* struct dp_relay's calls, to the Host's */
+	static int relay_state_cb(void *ctx, s32 *tx, s32 *rx);
+	static int relay_read_cb(void *ctx, unsigned char *buf, int max);
+	static int relay_write_cb(void *ctx, const unsigned char *buf, int n);
 	bool has_fax2() const;
 	s16 fax2_command(unsigned cmd, unsigned param);
 	void fax_found(const char *why);
@@ -792,6 +818,8 @@ private:
 	/* text telephones: the pumps' settings (MDMPRM_TEXT), +MV18S's
 	   five values, +MV18R, +MV18P */
 	struct dp_text text_ = {};
+	/* DP_RELAY's way to the Host (MDMPRM_RELAY) */
+	struct dp_relay relay_ = {};
 	u32 mv18s_[5] = {};
 	u32 mv18r_ = 0, mv18p_ = 2;
 	bool f2_cs_set_ = false;

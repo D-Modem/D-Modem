@@ -117,6 +117,38 @@ struct Line final : public dcore::Host {
 		routes.push_back(device);
 		return device == VOICE_DEVICE_LINE || handset ? 0 : -1;
 	}
+	/* a relayed call (relay): its state and rates as the test sets
+	   them; the far end's octets in rx, ours to the far end's
+	   (peer_rx) while it has fewer than window */
+	bool relay = false;
+	s16 relay_st = 0;
+	s32 relay_tx = 0, relay_rx = 0;
+	std::string rx, *peer_rx = nullptr;
+	size_t window = 64;
+	/* (see relay) */
+	bool relay_line(Modem &) override { return relay; }
+	/* (see relay) */
+	s16 relay_state(Modem &, s32 *tx, s32 *rx_) override {
+		*tx = relay_tx;
+		*rx_ = relay_rx;
+		return relay_st;
+	}
+	/* (see relay) */
+	s32 relay_read(Modem &, u8 *buf, s32 max) override {
+		s32 n = std::min<s32>(max, static_cast<s32>(rx.size()));
+		memcpy(buf, rx.data(), n);
+		rx.erase(0, n);
+		return n;
+	}
+	/* (see relay) */
+	s32 relay_write(Modem &, const u8 *buf, s32 n) override {
+		if (!peer_rx || peer_rx->size() >= window)
+			return 0;
+		s32 k = std::min<s32>(n, static_cast<s32>(window -
+							 peer_rx->size()));
+		peer_rx->append(reinterpret_cast<const char *>(buf), k);
+		return k;
+	}
 	/* T.38: the fax engine's IFP packets, as T.38 2002 codes them */
 	std::vector<std::string> t38;
 	int t38_sent = 0;
@@ -2236,4 +2268,95 @@ TEST_F(CoreSms, NothingToSend)
 		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
 	EXPECT_EQ(p.got_a, "NO CARRIER\r\n");
 	EXPECT_EQ(p.got_b, "NO CARRIER\r\n");
+}
+
+/* V.150.1's modem relay: B answers a relayed call (DP_RELAY at once), A
+   dials one and hears the answer tone the far end's gateway plays; both
+   CONNECT once the relay is up, at its rates */
+class CoreRelay : public testing::Test {
+protected:
+	Pair p{""};
+
+	/* both on relayed lines, B answers, A dials and hears 2100 Hz:
+	   both online once the relay is up */
+	void call()
+	{
+		for (Line *l : { &p.la, &p.lb }) {
+			l->relay = true;
+			l->relay_tx = l->relay_rx = 33600;
+		}
+		p.la.peer_rx = &p.lb.rx;
+		p.lb.peer_rx = &p.la.rx;
+		EXPECT_EQ(p.b->answer(), 0);
+		EXPECT_EQ(p.a->dial(""), 0);
+		/* the answer tone, then silence: the relay comes up */
+		for (int t = 0; t < 3000; t += 20) {
+			step_tone(t < 2000);
+			if (t == 2500)
+				p.la.relay_st = p.lb.relay_st = 1;
+		}
+		ASSERT_TRUE(until([&] {
+			return p.a->link_state() == LinkState::Online &&
+				p.b->link_state() == LinkState::Online;
+		}, 5000)) << "A [" << p.got_a << "] B [" << p.got_b << "]";
+		EXPECT_TRUE(has(p.got_a, "CONNECT 33600\r")) << p.got_a;
+		EXPECT_TRUE(has(p.got_b, "CONNECT 33600\r")) << p.got_b;
+		p.got_a.clear();
+		p.got_b.clear();
+	}
+	/* a step, A hearing 2100 Hz if tone (the line's samples are
+	   otherwise not the call's) */
+	void step_tone(bool tone)
+	{
+		if (tone)
+			for (int i = 0; i < Pair::BLOCK; i++)
+				p.ia[i] = static_cast<int16_t>(8000 * sin(
+					2 * M_PI * 2100 * (phase_++) / 8000.0));
+		p.step();
+	}
+	/* steps until cond, at most ms */
+	template <class F> bool until(F cond, int ms)
+	{
+		for (int t = 0; t < ms; t += 20) {
+			if (cond())
+				return true;
+			p.step();
+		}
+		return cond();
+	}
+	/* s has x */
+	static bool has(const std::string &s, const std::string &x)
+	{
+		return s.find(x) != std::string::npos;
+	}
+	long phase_ = 0;
+};
+
+/* the data each way through the relay, every octet value, more than
+   its window holds at once */
+TEST_F(CoreRelay, DataBothWays)
+{
+	call();
+	std::string da = data('a', 2000), db = data('b', 1500);
+	p.a->dte_input(da.data(), da.size());
+	p.b->dte_input(db.data(), db.size());
+	ASSERT_TRUE(until([&] {
+		return p.got_b.size() >= da.size() &&
+			p.got_a.size() >= db.size();
+	}, 20000)) << p.got_a.size() << " " << p.got_b.size();
+	EXPECT_EQ(p.got_b, da);
+	EXPECT_EQ(p.got_a, db);
+}
+
+/* the relay over: NO CARRIER at both */
+TEST_F(CoreRelay, RelayOver)
+{
+	call();
+	p.la.relay_st = p.lb.relay_st = -1;
+	ASSERT_TRUE(until([&] {
+		return p.a->link_state() == LinkState::Idle &&
+			p.b->link_state() == LinkState::Idle;
+	}, 5000));
+	EXPECT_TRUE(has(p.got_a, "NO CARRIER")) << p.got_a;
+	EXPECT_TRUE(has(p.got_b, "NO CARRIER")) << p.got_b;
 }
