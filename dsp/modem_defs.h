@@ -146,6 +146,9 @@ enum DP_ID {
 	DP_V92      = 92,
 	DP_FAX      = 100,
 	DP_B103     = 103,      /* Bell 103 */
+	DP_CONTACTID = 5,       /* Contact ID (SIA DC-05): an alarm
+				   panel's DTMF reports, the answerer the
+				   receiver (dp_contactid.cpp) */
 	DP_V18      = 18,       /* V.18 text telephone automoding: the
 				   remote's mode found (or probed for),
 				   then 5-bit (Baudot) or EDT here, or
