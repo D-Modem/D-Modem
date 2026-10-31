@@ -15,6 +15,10 @@
 % no words broken with a hyphen at the end of a line
 \hyphenpenalty=10000
 \uchyph=0
+% no paragraph leaves a single line alone at the foot or the head of a page
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
 % A5: 148 x 210 mm, a text block of 11.8 x 17.1 cm
 \usepackage[a5paper,left=1.5cm,right=1.5cm,top=2.1cm,bottom=1.8cm,
   headheight=12pt,headsep=0.45cm,footskip=0.8cm]{geometry}
@@ -149,13 +153,14 @@
 % a heading that its first entry follows needs room for both.
 \makeatletter
 \newcount\dm@entry
+\newcount\dm@head  % headings so far
 \newif\ifdm@open
 \newif\ifdm@whole  % the entry has room to be whole: no breaks inside
 \newdimen\dm@stripskip \dm@stripskip=26pt % a strip's skip and height
 \newdimen\dm@ybot \dm@ybot=1.8cm   % the text block's bottom (geometry)
-% from the .aux: \dm@pos{s or e}{entry}{y}{page}, \dm@att{entry}
+% from the .aux: \dm@pos{s or e}{entry}{y}{page}, \dm@att{entry}{heading}
 \def\dm@pos#1#2#3#4{\expandafter\gdef\csname dm@#1@#2\endcsname{{#3}{#4}}}
-\def\dm@att#1{\expandafter\gdef\csname dm@att@#1\endcsname{}}
+\def\dm@att#1#2{\expandafter\gdef\csname dm@att@#1\endcsname{#2}}
 \def\dm@mark#1{\pdfsavepos\edef\dm@tmp{\noexpand\write\noexpand\@auxout
   {\string\dm@pos{#1}{\the\dm@entry}{\noexpand\the\pdflastypos}%
    {\noexpand\the\c@page}}}\dm@tmp}
@@ -177,15 +182,18 @@
 % the room its strip or heading takes above the measured start)
 \def\dm@close{\ifdm@open\par\dm@mark{e}\global\dm@openfalse\fi}
 \def\dm@start#1#2{\dm@close\global\advance\dm@entry\@ne
-  \if@nobreak\immediate\write\@auxout{\string\dm@att{\the\dm@entry}}%
+  \if@nobreak\immediate\write\@auxout
+    {\string\dm@att{\the\dm@entry}{\the\dm@head}}%
     \expandafter\ifx\csname dm@att@\the\dm@entry\endcsname\relax
     \global\dm@wholefalse\fi
   \else\dm@height{\the\dm@entry}\dm@need{#2}\needspace{#1}\fi
   \global\dm@opentrue}
-% before a heading: room for it and the entry that follows it
-\def\dm@ahead#1{\dm@close\global\dm@wholefalse
+% before a heading: room for it and the entry that follows it, if one
+% follows it straight away
+\def\dm@ahead#1{\dm@close\global\dm@wholefalse\global\advance\dm@head\@ne
   \expandafter\ifx\csname dm@att@\the\numexpr\dm@entry+1\endcsname\relax
-  \else\dm@height{\the\numexpr\dm@entry+1}\dm@need{#1+\dm@stripskip}\fi}
+  \else\ifnum\csname dm@att@\the\numexpr\dm@entry+1\endcsname=\dm@head
+  \dm@height{\the\numexpr\dm@entry+1}\dm@need{#1+\dm@stripskip}\fi\fi}
 \AtBeginDocument{%
   \pretocmd{\section}{\dm@ahead{5\baselineskip}}{}{\dm@patchfailed}%
   \pretocmd{\subsection}{\dm@ahead{3\baselineskip}}{}{\dm@patchfailed}}
