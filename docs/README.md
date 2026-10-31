@@ -83,12 +83,16 @@ measurements, and test lists.
 - [AT command reference](at_commands.pdf): every command, result code and
   S-register, on A5 pages. The [booklet](at_commands-booklet.pdf) has
   the same two to an A4 sheet, to print on both sides (flip on the short
-  edge), fold and staple. `docs/at/build.sh` builds both from
+  edge), fold and staple, after a cover sheet. The
+  [cover](at_commands-cover.pdf) prints the covers and spine on one A3
+  sheet, and the [A3 sections](at_commands-a3.pdf) print the inside
+  pages eight to an A3 sheet (both sides, flip on the long edge, fold
+  twice and cut at the top). `docs/at/build.sh` builds them all from
   [the LaTeX source](at/at_commands.tex).
 - [Data over mobile telephony's speech paths](v_cvm.pdf): D-Modem's
   proposed V.cvm standard, written as an ITU-T Recommendation, with
   measurements of what mobile codecs do to modem signals. Its source is
   in [cellular/](cellular/v_cvm.tex); `docs/cellular/build.sh` builds it
   and `cellular/measure/` repeats the measurements.
-- [Smart Link's ST56 AT commands](legacy/ST56ATCommands.pdf): the
-  original command set D-Modem's began from
+- [Unimodem diagnostics](specs/umud10.rtf): Microsoft's specification,
+  which `AT#UD` follows

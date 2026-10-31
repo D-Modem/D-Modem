@@ -285,6 +285,7 @@ const struct {
 	{ "V27TC", DP_V27TER },
 	{ "V29", DP_V29 }, { "V33", DP_V33 }, { "CLEAR", DP_CLEAR },
 	{ "V18", DP_V18 }, { "BAUDOT", DP_BAUDOT }, { "EDT", DP_EDT },
+	{ "CONTACTID", DP_CONTACTID },
 };
 
 /* pump id is registered */

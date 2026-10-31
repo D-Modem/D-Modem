@@ -344,7 +344,7 @@ jobs:
           retention-days: 30
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-latest
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache

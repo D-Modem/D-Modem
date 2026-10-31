@@ -41,6 +41,7 @@ interface has one addition the original library does not use:
 | 103 | Bell 103, 300 bit/s FSK | |
 | BAUDOT (45) | 5-bit (Baudot) text telephone: TTY (45.45 bit/s, 1400/1800 Hz), telex, RTTY | `dp_text.cpp`: half duplex, its own character framing (5 bits, 1.5 stop bits, the shift codes) and ASCII to and from the core's asynchronous link; rate, tones and figures from `+MBAUDOT` (`struct dp_text`, `MDMPRM_TEXT`) |
 | EDT (110) | EDT text telephone: V.21 channel 1 at 110 bit/s, 7 bits even parity | `dp_text.cpp`, half duplex |
+| CONTACTID (5) | Contact ID (SIA DC-05) alarm reports: the answerer the receiver, the caller the panel | `dp_contactid.cpp`: DTMF messages of 16 digits with their checksum, the receiver's 1400/2300 Hz handshake and 1400 Hz kissoff, half duplex; each message a line to or from the core's asynchronous link; call progress hands over as dialling ends |
 | V18 (18) | V.18 text telephone automoding | `dp_text.cpp`: listens for a 5-bit, EDT, V.21, V.23 or Bell 103 remote, probes a silent one, then runs the mode (V.21, V.23 and Bell 103 by their pumps); call progress hands over as dialling ends, there being no answer tone |
 | 22 | ITU V.22, 1200 bit/s DPSK | |
 | 212 | Bell 212A, 1200 bit/s DPSK | 2225 Hz answer tone, scrambled ones handshake |

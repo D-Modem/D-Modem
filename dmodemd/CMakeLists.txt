@@ -383,6 +383,13 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_clearmode PROPERTIES LABELS quick
 			TIMEOUT 60)
+		# the same in SRTP (RTP/SAVP, a=crypto), the script's own
+		# AES and SRTP (test/srtp.py); 77: no SRTP in this build
+		dmodem_add_test(dmodemd_srtp ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/clearmode_test.py
+			$<TARGET_FILE:dmodemd> --srtp)
+		set_tests_properties(dmodemd_srtp PROPERTIES LABELS quick
+			SKIP_RETURN_CODE 77 TIMEOUT 60)
 		# --misdn: two dmodemd on fake mISDN cards calling each
 		# other through the script's ISDN network
 		if(TARGET dmodem_fake_misdn)

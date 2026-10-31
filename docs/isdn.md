@@ -42,7 +42,8 @@ channel.
 - **Over SIP.** Internet telephony can carry an ISDN data call using a
   format called CLEARMODE (RFC 4040). `dmodemd` offers it when it dials
   with `AT+MS=CLEAR`, and answers calls that ask for it.
-  `SIP_CLEARMODE=no` turns this off.
+  `SIP_CLEARMODE=no` turns this off. It also works over encrypted SIP
+  calls (SRTP).
 - **With an ISDN card on Linux.** `dmodemd --misdn 0` drives a basic
   rate ISDN card (HFC-S, AVM Fritz!Card and others) through Linux's
   mISDN drivers. This still needs testing on a real card.

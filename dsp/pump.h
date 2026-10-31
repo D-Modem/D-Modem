@@ -42,6 +42,10 @@
 
 namespace dsp {
 
+/* a carrier gone this long in data and back is a temporary loss (the
+   call's statistics) */
+const s32 CARRIER_DROP_MS = 20;
+
 class Pump {
 public:
 	/* a derived pump's destructor frees what its start() took */
@@ -144,6 +148,8 @@ public:
 					   the call */
 	s32 carrier_run;                   /* >0 samples with, <0 without
 					   carrier */
+	s32 carrier_off = 0;               /* in data: samples without
+					   carrier so far (stat_carrier()) */
 
 	/* nothing before the samples */
 	s16 block_start() { return DPSTAT_OK; }
@@ -199,6 +205,28 @@ public:
 			return;
 		stats->snr = db;
 		stats->have |= DP_STATS_SNR;
+	}
+	/* (see stat_retrain()) a sample in data with or without carrier:
+	   a loss of CARRIER_DROP_MS or more that ends with the carrier back
+	   is a temporary carrier loss (AT#UD's key 30) */
+	void stat_carrier(bool on)
+	{
+		if (!on) {
+			carrier_off++;
+			return;
+		}
+		if (stats && carrier_off >= ms2samples(CARRIER_DROP_MS, srate))
+			stats->carrier_losses++;
+		carrier_off = 0;
+	}
+	/* (see stat_retrain()) the receiver's mean squared error over the
+	   square of its points' minimum distance */
+	void stat_nmse(float nmse)
+	{
+		if (!stats)
+			return;
+		stats->nmse = nmse;
+		stats->have |= DP_STATS_NMSE;
 	}
 	/* (see stat_retrain()) */
 	void stat_rtd(s32 samples)
@@ -341,6 +369,7 @@ public:
 			if (r != DPSTAT_OK)
 				ret = r;
 			if (host().in_data()) {
+				stat_carrier(carrier_run > 0);
 				if (-carrier_run >= carrier_loss) {
 					DSP_DBG("%s: carrier lost\n",
 						host().tag());

@@ -25,9 +25,6 @@ programs in this directory load them.
 | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | Broadcom Corporation | Dell's "V.92 Soft Modem (Data Fax) Driver" A05 (BCM V.92 56K Modem 3.4.19) |
 | `ess/es56hpi.sys`, `ess/mdmzn.inf` | ESS Technology, Inc. | ESS's ES56H-PI modem driver 5.43.070 (`ess54370.exe`) |
 
-The same holds for Smart Link's AT command manual,
-[docs/legacy/ST56ATCommands.pdf](../../docs/legacy/ST56ATCommands.pdf).
-
 ## The ITU's list of national tones
 
 `tones.cpp` is generated from the ITU's list of the tones used in

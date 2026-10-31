@@ -158,14 +158,15 @@ s32 Async::tx_idle(s16 nbits, u8 mask, u8 *&buf, s32 &n)
 	return done;
 }
 
-/* received characters to the DTE, each as its stop bit comes (lost if
-   the DTE does not take it) */
+/* received characters to the DTE, each as its stop bit comes (lost,
+   and counted, if the DTE does not take it) */
 void Async::rx_scan()
 {
 	u8 ch;
 
 	while (take_char(rx_, ch))
-		link_->write_chars(&ch, 1);
+		if (link_->write_chars(&ch, 1) < 1)
+			link_->stats().rx_lost++;
 }
 
 

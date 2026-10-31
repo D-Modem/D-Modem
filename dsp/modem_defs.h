@@ -146,6 +146,9 @@ enum DP_ID {
 	DP_V92      = 92,
 	DP_FAX      = 100,
 	DP_B103     = 103,      /* Bell 103 */
+	DP_CONTACTID = 5,       /* Contact ID (SIA DC-05): an alarm
+				   panel's DTMF reports, the answerer the
+				   receiver (dp_contactid.cpp) */
 	DP_V18      = 18,       /* V.18 text telephone automoding: the
 				   remote's mode found (or probed for),
 				   then 5-bit (Baudot) or EDT here, or
@@ -199,6 +202,8 @@ struct dp_coding {
 	int shaping;                    /* constellation expansion */
 };
 
+#define DP_STATS_V8_MAX 32
+
 struct dp_stats {
 	int dp;                         /* the DP_ID the call came up with;
 					   0: the pump's own id */
@@ -206,12 +211,26 @@ struct dp_stats {
 	unsigned retrains_remote;       /* retrains the remote started */
 	unsigned renegs_local;          /* rate renegotiations we started */
 	unsigned renegs_remote;         /* those the remote started */
+	unsigned carrier_losses;        /* in data, the carrier gone for
+					   CARRIER_DROP_MS or more and back
+					   again (not the call's end) */
 	unsigned have;                  /* DP_STATS_*: which of the
 					   measures below are valid */
 	float snr;                      /* the receiver's SNR, dB */
+	float nmse;                     /* DP_STATS_NMSE: its mean squared
+					   error over the square of the
+					   points' minimum distance */
 	int rtd;                        /* round trip delay, ms */
 	float near_echo;                /* echo levels the canceller */
 	float far_echo;                 /* removed, dBm0 */
+	int far_echo_delay;             /* DP_STATS_FAR_DELAY: the far
+					   echo's delay, ms */
+	unsigned info_bits;             /* DP_STATS_INFO: V.34's INFO bits
+					   as AT#UD's key 18 has them */
+	/* V.8's CM and JM, from the call function octet on (0 octets:
+	   not known) */
+	unsigned char v8_cm[DP_STATS_V8_MAX], v8_jm[DP_STATS_V8_MAX];
+	int v8_cm_n, v8_jm_n;
 	/* DP_STATS_LINE: each direction's symbol rate (symbols/s) and
 	   carrier (Hz); a PCM direction (V.90, V.91, V.92) 8000 and 0 */
 	float sym_tx, sym_rx;
@@ -289,6 +308,9 @@ struct dp_vcvm {
 #define DP_STATS_TIMING_OFFSET  0x100
 #define DP_STATS_PCM            0x200
 #define DP_STATS_DIL            0x400
+#define DP_STATS_FAR_DELAY      0x800
+#define DP_STATS_NMSE           0x1000
+#define DP_STATS_INFO           0x2000
 
 /* the mean square of 16 bit linear samples at 0 dBm0: a sine of peak
    22300, G.711's digital milliwatt */

@@ -31,6 +31,7 @@ receiver works inside, see [the technical details](dsp-details.md).
 | [V.cvm](vcvm.md) | 175 to 3500 bit/s | D-Modem's proposal for data through mobile phone calls |
 | [V.wb](vwb.md) | about 149000 bit/s each way | D-Modem's own mode for a bare pair of wires |
 | Text telephones | 45 to 300 bit/s | TTY (Baudot), EDT and V.18 automatic detection, for deaf and hard of hearing users |
+| Contact ID | (DTMF digits) | alarm panels reporting to a monitoring centre; D-Modem can be either end |
 
 There are also pumps for **call progress** (dial tone, dialling, busy,
 ringing, the answer tone), **caller ID**, **voice** (playing and

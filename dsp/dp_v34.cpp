@@ -512,6 +512,11 @@ struct V34V8 {
 	s16 v8_blk_n, v8_quiet;
 	unsigned char v8_remote[32];
 	s16 v8_remote_n;
+	/* our CM / JM's octets (from the call function on), for the
+	   call's statistics (v8_stats()) */
+	unsigned char v8_own[32];
+	s16 v8_own_n;
+	void v8_stats();
 	/* answer tone analysis (caller) */
 	Osc ans_lo;
 	cplx ans_lp1, ans_lp2;
@@ -1168,6 +1173,12 @@ template <class P>
 void V34V8<P>::v8_make_msg(BitQ *q)
 {
 	P &self = static_cast<P &>(*this);
+	auto put = [this, q](s16 c) {
+		q->put_octet(c);
+		if (v8_own_n < static_cast<s16>(sizeof(v8_own)))
+			v8_own[v8_own_n++] = static_cast<unsigned char>(c);
+	};
+	v8_own_n = 0;
 	s16 i, k, pcm_ = (self.v90 ? V8_PCM_DIGITAL : 0) |
 		(self.v91 ? V8_PCM_V91 : 0) |
 		(self.v90a ? V8_PCM_ANALOGUE : 0);
@@ -1219,18 +1230,52 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 		if ((pcm_ & (V8_PCM_DIGITAL | V8_PCM_V91)) &&
 		    (c & 0x1F) == V8_CAT_ACCESS)
 			c |= V8_ACCESS_DIGITAL;
-		q->put_octet(c);
+		/* (not the sync octet) */
+		if (i)
+			put(c);
+		else
+			q->put_octet(c);
 	}
 	if (pcm_)
-		q->put_octet(V8_CAT_PCM | pcm_);
+		put(V8_CAT_PCM | pcm_);
 	/* V.cvm's field (Annex A/V.cvm); in a JM where the CM had it */
 	if (self.vcvm && (self.caller || v8_vcvm())) {
 		u8 ns[24];
 		s16 n = vcvm_v8_ns(self.vcvm_caps, ns);
 		for (s16 j = 0; j < n; j++)
-			q->put_octet(ns[j]);
+			put(ns[j]);
 	}
 	v8tx_repeat = 1;
+	v8_stats();
+}
+
+/* the call's statistics (AT#UD's keys 4 and 5): the CM and the JM as
+   far as they are known, ours and the remote's (without its sync
+   octet) */
+template <class P>
+void V34V8<P>::v8_stats()
+{
+	P &self = static_cast<P &>(*this);
+	if (!self.stats)
+		return;
+	const unsigned char *rem = v8_remote + 1;
+	s16 rem_n = v8_ok && v8_remote_n > 1 ? v8_remote_n - 1 : 0;
+	unsigned char *cm = self.stats->v8_cm, *jm = self.stats->v8_jm;
+	int &cm_n = self.stats->v8_cm_n, &jm_n = self.stats->v8_jm_n;
+	auto copy = [](unsigned char *to, int &to_n, const unsigned char *from,
+		       s16 n) {
+		if (n > DP_STATS_V8_MAX)
+			n = DP_STATS_V8_MAX;
+		memcpy(to, from, static_cast<size_t>(n));
+		to_n = n;
+	};
+	if (self.caller) {
+		copy(cm, cm_n, v8_own, v8_own_n);
+		copy(jm, jm_n, rem, rem_n);
+	} else {
+		copy(cm, cm_n, rem, rem_n);
+		copy(jm, jm_n, v8_own, v8_own_n);
+	}
 }
 
 /* CJ (V.8): three zero octets, framed */
@@ -1439,6 +1484,7 @@ void V34V8<P>::v8_rx_bit(s16 bit)
 				v8_ok = 1;
 				memcpy(v8_remote, v8_rx, v8_n);
 				v8_remote_n = v8_n;
+				v8_stats();
 				DSP_DBG("v34: V.8 %s received, %d octets:"
 					" %02x %02x %02x %02x %02x %02x %02x %02x"
 					" %02x %02x\n",
@@ -2798,6 +2844,15 @@ void V34Pump::ec_schedule()
 			stats->far_echo = 10 * log10f(e->pw_far /
 						      DP_DBM0_POWER + 1e-12f);
 			stats->have |= DP_STATS_FAR_ECHO;
+			/* its delay: where the far part's largest tap is */
+			s16 peak = 0;
+			for (s16 i = 1; i < EC_FAR_LEN; i++)
+				if (fabsf(e->wf[i]) > fabsf(e->wf[peak]))
+					peak = i;
+			stats->far_echo_delay = static_cast<int>(
+				static_cast<s32>(e->far_delay + peak) * 1000 /
+				srate);
+			stats->have |= DP_STATS_FAR_DELAY;
 		}
 	}
 }
@@ -3678,6 +3733,28 @@ void V34Pump::stat_link()
 		stats->digital_loss = v90rx.dil_pad_db;
 		stats->robbed_bits = v90rx.dil_robbed;
 		stats->have |= DP_STATS_DIL;
+	}
+	/* the INFO bits AT#UD reports (key 18, Table 5 of Unimodem's
+	   diagnostics): the remote's INFO0 bit 20 (bit 31); INFO1c's
+	   frequency offset (bits 20-29) and its pre-emphasis for the
+	   answerer's symbol rate (16-19); INFO1a's pre-emphasis (12-15);
+	   the remote's MP bit 50 (11); INFO1a's frequency offset (0-9).
+	   Ours have no pre-emphasis and no offset (make_info1c(),
+	   make_info1a()), so those are 0 */
+	if (ev_info1 && !pcm_both) {
+		u32 m = static_cast<u32>(rinfo0.power_red & 1) << 31;
+		if (caller) {
+			m |= static_cast<u32>(rinfo1a.preemph & 0xf) << 12;
+			m |= static_cast<u32>(rinfo1a.freq_offset & 0x3ff);
+		} else {
+			m |= static_cast<u32>(rinfo1c.freq_offset & 0x3ff) << 20;
+			if (baud_tx >= 0 && baud_tx < V34_NBAUDS)
+				m |= static_cast<u32>(
+					rinfo1c.r[baud_tx].preemph & 0xf) << 16;
+		}
+		m |= static_cast<u32>(prx.mp.asym & 1) << 11;
+		stats->info_bits = m;
+		stats->have |= DP_STATS_INFO;
 	}
 }
 
@@ -5541,6 +5618,7 @@ s16 V34Pump::handshake()
 		   are stage F's */
 		v90a_quiet = v90rx.dpow < 1e-3f * v90rx.level * v90rx.level ?
 			v90a_quiet + 1 : 0;
+		stat_carrier(!v90a_quiet);
 		if (v90a_quiet >= carrier_loss) {
 			DSP_DBG("v34: V.90: carrier lost\n");
 			return DPSTAT_ERROR;
@@ -5975,6 +6053,7 @@ s16 V34Pump::handshake()
 			lost = 0;
 		else
 			lost++;
+		stat_carrier(prx.on);
 		if (pcm) {
 			if (rt_blocks >= 6) {
 				retrain("tone A", RT_REMOTE);
@@ -6008,8 +6087,12 @@ s16 V34Pump::handshake()
 				rn_lo + 1 : 0;
 		}
 		/* the receiver's quality, for the call's statistics */
-		if (prx.data_on && !lost && c % ms2samples(100, srate) == 0)
+		if (prx.data_on && !lost && c % ms2samples(100, srate) == 0) {
 			stat_snr(10 * log10f(prx.sig / (prx.mse + 1e-6f)));
+			/* the mse against the points' spacing (2): 100 an
+			   error as large as the minimum distance */
+			stat_nmse(prx.mse / 4);
+		}
 		if (rt_blocks >= 6)
 			retrain(caller ? "tone A" : "tone B", RT_REMOTE);
 		else if (prx.ev_reneg) {

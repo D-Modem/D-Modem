@@ -48,9 +48,8 @@ and under the commercial licence alike.
 ## Not covered: the interop test binaries
 
 The closed modem drivers and objects in `dsp/test/` (`smartlink/`,
-`agere/`, `sm56/`, `pctel/`, `hsf/`, `broadcom/`) and Smart Link's manual
-`docs/legacy/ST56ATCommands.pdf` belong to their owners and are licensed
-by them, under their own terms. **They are not subject to the terms of the
+`agere/`, `sm56/`, `pctel/`, `hsf/`, `broadcom/`) belong to their owners
+and are licensed by them, under their own terms. **They are not subject to the terms of the
 rest of this repository** (the AGPL, the commercial licence, or any other
 licence or permission given here), and no rights in them are granted
 here. They are only used by the interop tests; see

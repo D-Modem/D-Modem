@@ -31,7 +31,8 @@ The code is in `core/`. For the full technical description, see
 - **Records call statistics.** After a call, `ATI11` (or `ATI6`, or
   `AT&V1`) shows what happened: the speed, the signal quality, how many
   times the line had to retrain, and why the call ended. `AT#UD` gives the
-  same in the format Windows' modem diagnostics expect.
+  same in the format of Microsoft's Unimodem diagnostics specification
+  (`ATZ` clears it).
 
 ## How it fits with the rest
 

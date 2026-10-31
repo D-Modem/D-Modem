@@ -1945,3 +1945,81 @@ static std::string text_name(const testing::TestParamInfo<TextCall> &i)
 
 INSTANTIATE_TEST_SUITE_P(Modes, CoreText, testing::ValuesIn(text_calls),
 			 text_name);
+
+/* Contact ID: B the receiver (answering), A the panel (calling) */
+class CoreContactId : public testing::Test {
+protected:
+	Pair p{""};
+
+	/* both in +MS=CONTACTID, B answers, A dials: both online */
+	void call()
+	{
+		type(p.a, "AT+MS=CONTACTID\r");
+		type(p.b, "AT+MS=CONTACTID\r");
+		p.step();
+		ASSERT_TRUE(has(p.got_a, "OK")) << p.got_a;
+		ASSERT_TRUE(has(p.got_b, "OK")) << p.got_b;
+		p.got_a.clear();
+		p.got_b.clear();
+		EXPECT_EQ(p.b->answer(), 0);
+		EXPECT_EQ(p.a->dial(""), 0);
+		ASSERT_TRUE(until([&] {
+			return p.a->link_state() == LinkState::Online &&
+				p.b->link_state() == LinkState::Online;
+		}, 10000)) << "A [" << p.got_a << "] B [" << p.got_b << "]";
+		EXPECT_TRUE(has(p.got_a, "CONNECT 40\r")) << p.got_a;
+		EXPECT_TRUE(has(p.got_b, "CONNECT 40\r")) << p.got_b;
+		p.got_a.clear();
+		p.got_b.clear();
+	}
+	/* the run until the panel's DTE has line */
+	bool until_a(const char *line, int ms)
+	{
+		return until([&] { return has(p.got_a, line); }, ms);
+	}
+	/* steps until cond, at most ms */
+	template <class F> bool until(F cond, int ms)
+	{
+		for (int t = 0; t < ms; t += 20) {
+			if (cond())
+				return true;
+			p.step();
+		}
+		return cond();
+	}
+	/* s has x */
+	static bool has(const std::string &s, const std::string &x)
+	{
+		return s.find(x) != std::string::npos;
+	}
+	/* s to m's DTE */
+	static void type(Modem *m, const char *s)
+	{
+		m->dte_input(s, strlen(s));
+	}
+};
+
+/* two messages, one with its checksum from the panel, each to the
+   receiver's DTE and kissed off; a line that is no message, ERROR */
+TEST_F(CoreContactId, MessagesKissedOff)
+{
+	call();
+	type(p.a, "1234 18 1131 01 015\r9876181602000034\rXYZ\r");
+	ASSERT_TRUE(until([&] {
+		return p.got_a.find("ACK\r\nACK\r\n") != std::string::npos;
+	}, 10000)) << "A [" << p.got_a << "] B [" << p.got_b << "]";
+	EXPECT_EQ(p.got_a, "ERROR\r\nACK\r\nACK\r\n");
+	EXPECT_EQ(p.got_b, "1234181131010158\r\n9876181602000034\r\n");
+}
+
+/* a message with a bad checksum: never kissed off, NAK after four
+   times; the next one still goes */
+TEST_F(CoreContactId, BadChecksumNak)
+{
+	call();
+	type(p.a, "1234181131010151\r1234181131010158\r");
+	ASSERT_TRUE(until_a("ACK\r\n", 30000))
+		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
+	EXPECT_EQ(p.got_a, "NAK\r\nACK\r\n");
+	EXPECT_EQ(p.got_b, "1234181131010158\r\n");
+}

@@ -1,9 +1,13 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 D-Modem Authors
-# build.sh: docs/at_commands.pdf (A5 pages) from at_commands.tex, and
-# docs/at_commands-booklet.pdf (those pages two to an A4 sheet, in
-# booklet order) from at_commands_booklet.tex; pdflatex through latexmk
+# build.sh: docs/at_commands.pdf (A5 pages) from at_commands.tex,
+# docs/at_commands-cover.pdf (the covers and the spine on an A3 sheet)
+# from at_commands_cover.tex, and docs/at_commands-booklet.pdf (the
+# pages two to an A4 sheet, in booklet order, after the cover) from
+# at_commands_booklet.tex, and docs/at_commands-a3.pdf (the pages between
+# the covers in A3 sections of 8) from at_commands_a3.tex; pdflatex
+# through latexmk
 # (Debian's texlive-latex-recommended, texlive-latex-extra,
 # texlive-fonts-recommended, texlive-pictures, lmodern and latexmk).  The
 # intermediate files go to <build>/docs/at (DMODEM_BUILD, default
@@ -12,6 +16,20 @@ set -e
 here=$(cd "$(dirname "$0")" && pwd)
 out=${DMODEM_BUILD:-$here/../../build}/docs/at
 mkdir -p "$out"
+# the version on the title page: CMakeLists.txt's project() version,
+ver=$(sed -n 's/^project(dmodem VERSION \([0-9.]*\).*/\1/p' \
+	"$here/../../CMakeLists.txt")
+# and its date: the month of the last commit to change the manual's
+# source (today's month outside a git checkout)
+date=$(git -C "$here" log -1 --format=%cd --date=format:'%B %Y' \
+	-- at_commands.tex 2>/dev/null || true)
+[ -n "$date" ] || date=$(LC_ALL=C date +'%B %Y')
+{
+	printf '\\newcommand{\\dmversion}{%s}\n' "${ver:-unknown}"
+	printf '\\newcommand{\\dmdate}{%s}\n' "$date"
+} > "$out/dmversion.tex"
+# the cover's spine: one leaf's thickness (DMODEM_LEAF, default 0.1mm)
+printf '\\newcommand{\\dmleaf}{%s}\n' "${DMODEM_LEAF:-0.1mm}" > "$out/dmcover.tex"
 # make name: latexmk on name.tex, its log's end on a failure
 make() {
 	if ! TEXINPUTS="$out:" latexmk -g -pdf -interaction=nonstopmode \
@@ -22,7 +40,11 @@ make() {
 	fi
 }
 make at_commands
+make at_commands_cover
 make at_commands_booklet
+make at_commands_a3
 cp "$out/at_commands.pdf" "$here/../at_commands.pdf"
 cp "$out/at_commands_booklet.pdf" "$here/../at_commands-booklet.pdf"
-echo "docs/at_commands.pdf docs/at_commands-booklet.pdf"
+cp "$out/at_commands_cover.pdf" "$here/../at_commands-cover.pdf"
+cp "$out/at_commands_a3.pdf" "$here/../at_commands-a3.pdf"
+echo "docs/at_commands.pdf docs/at_commands-booklet.pdf docs/at_commands-cover.pdf docs/at_commands-a3.pdf"
