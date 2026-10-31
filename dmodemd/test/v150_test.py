@@ -204,7 +204,16 @@ def udp():
     s.bind(("127.0.0.1", 0))
     return s, s.getsockname()[1]
 
+# (a BYE, such as the first call's when dmodemd hangs up on our
+# CLEARDOWN, is answered and passed over)
 def sip_recv(t):
+    end = time.time() + t
+    while True:
+        r = sip_recv1(max(end - time.time(), 0.001))
+        if not r or not r[0].startswith("BYE"):
+            return r
+        reply(r, 200, "OK", r[3])
+def sip_recv1(t):
     sip.settimeout(t)
     try:
         d, a = sip.recvfrom(65535)
