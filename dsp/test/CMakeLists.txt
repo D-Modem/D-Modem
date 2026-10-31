@@ -214,6 +214,12 @@ dmodem_gtest(fax_test LABELS quick)
 dmodem_test_exe(t38_test t38_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp
 	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 dmodem_gtest(t38_test LABELS quick)
+# T.30 Annex F: two T.30 machines on V.34 half-duplex, and with one
+# without it
+dmodem_test_exe(t30_v34_test t30_v34_test.cpp fax_docs.cpp test_util.cpp
+	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp)
+target_link_libraries(t30_v34_test PRIVATE dmodem_dsp)
+dmodem_gtest(t30_v34_test LABELS quick)
 # class 1 over T.38: a DTE of its own through T.30 on the engine, our
 # T.30 machine at the other end
 dmodem_test_exe(class1_t38_test class1_t38_test.cpp fax_docs.cpp fax_stubs.cpp

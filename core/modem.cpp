@@ -3508,6 +3508,7 @@ s16 Modem::fax_start()
 		s.vr = f2_is_[0];
 		s.br = f2_is_[1];
 		s.ec = f2_is_[5];
+		s.sp = f2_sp_;
 		s.bo = f2_bo_;
 		s.lp = f2_lp_;
 		f2_pi_.copy(s.pi, sizeof(s.pi) - 1);

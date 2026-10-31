@@ -230,8 +230,9 @@ it), the auxiliary channel and starting a cleardown.
 
 `v34_hdx_create()` (`v34.h`) makes a half-duplex V.34 modem for T.30
 Annex F fax. Its host gives and takes the bits through `V34HdxHost`.
-The core does not see them yet: class 2 and class 1 use it in later
-changes.
+The T.30 machine is its host (`t30_v34.cpp`, [the fax
+details](fax-details.md)) for class 2 and 2.0; in half-duplex mode V.8
+never falls back to another pump (its T.30 goes on with V.21).
 
 - V.8: CM and JM carry the half-duplex bit (0x80 in the first
   modulation octet) and the T.30 call function, 0x81 to send and 0xA1
@@ -259,5 +260,5 @@ move it. `V34Hdx.CallerSends` and `V34Hdx.AnswererSendsToAPoll` run
 two modems back to back: messages on the control channel both ways
 and two pages, each about 3 s at 31200 bit/s.
 
-Not implemented yet: T.30 Annex F with class 2 and 2.0, class 1 (T.31
-V.34), and the primary channel's rate change between pages.
+Not implemented yet: class 1 (T.31 V.34), and the primary channel's
+rate change between pages.

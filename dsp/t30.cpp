@@ -311,6 +311,15 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s16 t38_hdlc_lost, t38_ecm_lost;
 	s16 t38_heard;                  /* the fast modulation came */
 
+	/* V.34 half-duplex (T.30 Annex F): the modem from the start, until
+	   V.8 has no V.34 for it (it goes then) */
+	void *hdx;
+	s16 v34_on;                     /* its control channel has been up */
+	s16 cc_tx;                      /* our frames on the control channel */
+	s16 cc_flag;                    /* the idle flag's next bit */
+	s16 pri_end;                    /* the ECM block's primary channel
+					   ended (its get_bit() said -1) */
+
 	void set_state(enum state s);
 	void start_timer(s32 ms);
 	void stop_fast();
@@ -385,6 +394,11 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void t38_frame_in(const unsigned char *d, s16 len);
 	void t38_t4_in(const unsigned char *d, s32 n);
 	void t38_signal_end();
+	/* V.34 half-duplex */
+	void hdx_drop();
+	s16 hdx_get_bit(s16 primary);
+	void hdx_put_bit(s16 primary, s16 bit);
+	void hdx_event(s16 ev);
 };
 
 
@@ -512,6 +526,8 @@ void T30::start_fast(s16 short_train)
 	t38_heard = 0;
 	t38_ecm_len = 0;
 	t38_ecm_lost = 0;
+	if (v34_on)
+		return;         /* (the primary channel's bits instead) */
 	if (cfg.t38)
 		fast_on = 1;
 	else if (!fast.init(rates[rate].mod, short_train, srate,
@@ -557,6 +573,17 @@ void T30::send_frames(enum state next_)
 	if (nframes)
 		frames[nframes - 1].data[1] |= HDLC_FINAL;
 	cur_frame = 0;
+	if (v34_on) {
+		/* on the control channel (the modem's bits): a few flags
+		   first, three after the last frame */
+		V21Tx::hdlc_tx_start(4 * 8, 3 * 8);
+		cc_tx = 1;
+		after_tx = next_;
+		set_state(S_TX_FRAMES);
+		DSP_DBG("t30: send %d frames, fcf %02x (control channel)\n",
+			nframes, frames[nframes - 1].data[2]);
+		return;
+	}
 	if (cfg.t38) {
 		t38_start(T38_TX_V21);
 	} else {
@@ -646,6 +673,8 @@ void T30::send_dis_dtc(s16 dtc)
 
 	if (!dtc && cfg.polled)
 		set_bit(fif, 9);                /* a document to be polled */
+	if (v34_on)
+		set_bit(fif, 6);                /* V.8 capabilities */
 	set_bit(fif, 10);                       /* receives */
 	/* V.27ter, V.29 and V.17 as far as the configuration goes */
 	if (cfg.max_bps > 9600) {
@@ -768,6 +797,28 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 	u16 v = get_bit(fif, len, 11) | get_bit(fif, len, 12) << 1 |
 		     get_bit(fif, len, 13) << 2 | get_bit(fif, len, 14) << 3;
 	s16 k;
+	if (v34_on) {
+		/* V.34: its rate the modem's, no TCF; ECM only (T.30
+		   Annex F) */
+		fine = get_bit(fif, len, 15);
+		mr = get_bit(fif, len, 16);
+		ecm_on = cfg.ecm && get_bit(fif, len, 27);
+		ecm_size = get_bit(fif, len, 28) ? 64 : 256;
+		ecm_long_train = 0;
+		DSP_DBG("t30: DCS on V.34: %s, %s%s\n",
+			fine ? "fine" : "standard", mr ? "MR" : "MH",
+			ecm_on ? ", ECM" : "");
+		if (!ecm_on) {
+			send_dcn(T30_ERR_INCOMPATIBLE);
+			return;
+		}
+		tries = 0;
+		new_frames();
+		add_frame(FCF_CFR, nullptr, 0);
+		host_event(T30_EV_TRAINED, 0);
+		send_frames(S_RX_PAGE);
+		return;
+	}
 	for (k = 0; k < NRATES; k++)
 		if (rates[k].bits == v)
 			break;
@@ -998,7 +1049,7 @@ void T30::send_tcf()
 void T30::send_dcs()
 {
 	unsigned char fif[4] = { 0 }, id[20];
-	u16 v = rates[rate].bits;
+	u16 v = v34_on ? 0 : rates[rate].bits;  /* (V.34: not used) */
 	s16 len = 3;
 
 	set_bit(fif, 10);
@@ -1023,7 +1074,8 @@ void T30::send_dcs()
 	new_frames();
 	add_frame(FCF_TSI, id, put_ident(id, cfg.ident));
 	add_frame(FCF_DCS, fif, len);
-	send_frames(S_TCF);          /* the TCF after a gap */
+	/* the TCF after a gap; none on V.34 (its CFR comes at once) */
+	send_frames(v34_on ? S_WAIT_CFR : S_TCF);
 }
 
 /* the page on the fast modulation (V.17 with the short training) */
@@ -1095,6 +1147,8 @@ s16 T30::choose()
 	min_ms = dis_min_ms(dis, dis_len);
 	ecm_on = cfg.ecm && get_bit(dis, dis_len, 27);
 	ecm_size = ECM_SIZE;
+	if (v34_on && !ecm_on)
+		return -1;      /* (T.30 Annex F: ECM only) */
 	return 0;
 }
 
@@ -1294,7 +1348,8 @@ void T30::got_dis()
 		for (k = 0; k < NRATES; k++)
 			if (dis_rate_ok(dis, dis_len, &rates[k]))
 				break;
-		remote_bps = k < NRATES ? rates[k].bps : 0;
+		remote_bps = v34_on ? cfg.v34->rate(hdx) :
+			k < NRATES ? rates[k].bps : 0;
 		remote_fine = get_bit(dis, dis_len, 15);
 		remote_ecm = get_bit(dis, dis_len, 27);
 		remote_poll = get_bit(dis, dis_len, 9);
@@ -1458,6 +1513,24 @@ void T30::send_ecm_burst()
 {
 	s16 v17 = rates[rate].family == 2;
 	etx_frame = etx_rcp = 0;
+	if (v34_on) {
+		/* on the primary channel: we must be its source */
+		if (!cfg.v34->source(hdx)) {
+			DSP_DBG("t30: V.34: the remote sends the primary "
+				"channel\n");
+			send_dcn(T30_ERR_INCOMPATIBLE);
+			return;
+		}
+		EcmTx::hdlc_tx_start(8 * 8, 3 * 8);
+		pri_end = 0;
+		cfg.v34->primary(hdx);
+		ecm_long_train = 0;
+		set_state(S_ECM_TX);
+		DSP_DBG("t30: ECM page %d block %d: %d frames%s (V.34)\n",
+			ecm_page, ecm_block, ecm_frames,
+			ppr_count ? " (again)" : "");
+		return;
+	}
 	if (cfg.t38) {
 		t38_start(T38_TX_ECM);
 	} else {
@@ -2190,6 +2263,121 @@ void T30::t38_rx(const struct t38_ifp *p)
 
 
 /*
+ *    V.34 half-duplex (T.30 Annex F)
+ */
+
+/* V.8 found no V.34 half-duplex fax at the other end: the modem goes,
+   and the call goes on with V.21 (answering: our DIS, the ANSam was
+   the CED; calling: the DIS that came, or CNG until it comes) */
+void T30::hdx_drop()
+{
+	DSP_DBG("t30: no V.34 half-duplex: V.21 and the fax modulations\n");
+	cfg.v34->free(hdx);
+	hdx = nullptr;
+	if (!cfg.sending && state == S_CED)
+		gap_then(RESPONSE_GAP_MS, &T30::send_dis);
+}
+
+/* the modem's next bit: on the primary channel the ECM block's (-1 at
+   its end), on the control channel our frames, else flags */
+s16 T30::hdx_get_bit(s16 primary)
+{
+	s16 b;
+	if (primary) {
+		if (state != S_ECM_TX || pri_end)
+			return -1;
+		b = EcmTx::hdlc_tx_bit();
+		if (b == FAX_BIT_END) {
+			pri_end = 1;
+			return -1;
+		}
+		return b;
+	}
+	if (cc_tx) {
+		b = V21Tx::hdlc_tx_bit();
+		if (b != FAX_BIT_END)
+			return b;
+		cc_tx = 0;
+		tx_done();
+		if (cc_tx)
+			return V21Tx::hdlc_tx_bit();
+	}
+	b = (0x7e >> cc_flag) & 1;
+	cc_flag = (cc_flag + 1) & 7;
+	return b;
+}
+
+/* a bit from the modem: the ECM block's on the primary channel, the
+   remote's frames on the control channel */
+void T30::hdx_put_bit(s16 primary, s16 bit)
+{
+	if (state == S_DONE)
+		return;
+	if (primary) {
+		if (state == S_RX_ECM) {
+			EcmRx::hdlc_rx_bit(bit);
+			/* (a block may take longer than T2: the timer for
+			   its start, and for the bits stopping) */
+			start_timer(T2_MS);
+		}
+		return;
+	}
+	V21Rx::hdlc_rx_bit(bit);
+	if (msg_ready)
+		take_message();
+}
+
+/* the modem's ev (enum t30_hdx_event): its control channel up (the
+   first time: answering, our DIS on it; after the primary channel: the
+   PPS), the primary channel gone (receiving: the command follows) */
+void T30::hdx_event(s16 ev)
+{
+	if (state == S_DONE)
+		return;
+	switch (ev) {
+	case T30_HDX_CC_UP:
+		if (!v34_on) {
+			v34_on = 1;
+			cng = 0;
+			restart_v21();
+			DSP_DBG("t30: V.34 half-duplex, the primary channel "
+				"at %" PRId32 " bit/s\n",
+				cfg.v34->rate(hdx));
+			if (!cfg.sending)
+				send_dis();
+		} else if (state == S_ECM_TX) {
+			tx_done();
+		}
+		break;
+	case T30_HDX_PRIMARY_DOWN:
+		if (state == S_RX_ECM)
+			ecm_block_end();
+		break;
+	default:
+		break;
+	}
+}
+
+/* (t30_hdx_host) */
+static s16 hdx_get_bit_cb(void *ctx, s16 primary)
+{
+	return static_cast<T30 *>(ctx)->hdx_get_bit(primary);
+}
+
+/* (t30_hdx_host) */
+static void hdx_put_bit_cb(void *ctx, s16 primary, s16 bit)
+{
+	static_cast<T30 *>(ctx)->hdx_put_bit(primary, bit);
+}
+
+/* (t30_hdx_host) */
+static void hdx_event_cb(void *ctx, s16 ev)
+{
+	static_cast<T30 *>(ctx)->hdx_event(ev);
+}
+
+
+/*
  *    the machine
  */
 
@@ -2315,6 +2503,12 @@ float T30::tx_sample()
 			tx_done();
 		return y;
 	}
+	if (hdx) {
+		/* the modem's line: only the gaps go by */
+		if (state == S_GAP && --gap <= 0)
+			(this->*after_gap)();
+		return 0;
+	}
 	switch (state) {
 	case S_CNG:
 		/* 1100 Hz, 0.5 s on, 3 s off */
@@ -2340,7 +2534,9 @@ float T30::tx_sample()
    of the TCF, a page or an ECM block, and the messages that came */
 void T30::rx_sample(float x)
 {
-	if (tx_on || state == S_DONE)
+	if (tx_on || state == S_DONE || v34_on)
+		return;
+	if (hdx && !cfg.sending)
 		return;
 	v21.sample(x);
 	if (fast_on) {
@@ -2372,9 +2568,13 @@ void T30::rx_sample(float x)
 			start_timer(T2_MS);
 		}
 	}
-	/* a whole message (or what came before the carrier went) */
-	if (msg_ready || (nmsg && !v21.carrier && V21Rx::hdlc_rx_idle()))
+	/* a whole message (or what came before the carrier went); calling,
+	   in V.8 still, the answerer's DIS: it has no V.8 */
+	if (msg_ready || (nmsg && !v21.carrier && V21Rx::hdlc_rx_idle())) {
+		if (hdx)
+			hdx_drop();
 		take_message();
+	}
 }
 
 /* a message came (its frames up to the final one, or those before the
@@ -2400,9 +2600,49 @@ void T30::take_message()
 void t30_process(T30 *t, const s16 *in, s16 *out, s32 n)
 {
 	s32 i;
+	s16 *mout = nullptr;
+	/* V.34: the modem's line (its callbacks move the machine), the
+	   machine's timers after it */
+	if (t->hdx && t->state != S_DONE) {
+		static const s16 none[160] = { 0 };
+		s16 tmp[160];
+		for (i = 0; i < n && t->hdx; ) {
+			s32 k = n - i < 160 ? n - i : 160;
+			s16 *o = out ? out + i : tmp;
+			if (t->cfg.v34->process(t->hdx, in ? in + i : none, o,
+						k) < 0) {
+				if (t->v34_on) {
+					DSP_DBG("t30: V.34 failed\n");
+					t->finish(T30_ERR_NO_RESPONSE);
+					break;
+				}
+				t->hdx_drop();
+				break;
+			}
+			i += k;
+		}
+		if (t->hdx)
+			mout = out;
+	}
 	for (i = 0; i < n; i++) {
 		float x = in ? in[i] : 0;
 		float y = 0;
+		if (mout) {
+			/* (the modem's samples are out already) */
+			if (t->state != S_DONE) {
+				t->tx_sample();
+				t->rx_sample(x);
+				t->count++;
+				if (t->timer && --t->timer == 0)
+					t->on_timeout();
+				if (t->t1 && --t->t1 == 0 &&
+				    t->state == S_CNG)
+					t->finish(T30_ERR_NO_FAX);
+			}
+			if (!t->hdx)
+				mout = nullptr; /* (dropped: ours again) */
+			continue;
+		}
 		if (t->state != S_DONE) {
 			y = t->tx_sample();
 			t->rx_sample(x);
@@ -2477,6 +2717,16 @@ T30 *t30_create(const struct t30_config *cfg)
 	if (!cfg->sending && cfg->ecm)
 		t->ecm_rx.assign(static_cast<size_t>(ECM_FRAMES) * ECM_SIZE, 0);
 	t->restart_v21();
+	/* V.34 half-duplex: the modem has the line from the start (V.8
+	   instead of CNG and CED) */
+	if (cfg->v34 && !cfg->t38 && cfg->ecm) {
+		struct t30_hdx_host h = { t, hdx_get_bit_cb, hdx_put_bit_cb,
+					  hdx_event_cb };
+		t->hdx = cfg->v34->create(cfg->modem, cfg->sending,
+					  !cfg->v34_poll, t->srate, &h);
+		if (!t->hdx)
+			DSP_DBG("t30: no V.34 half-duplex modem\n");
+	}
 	if (cfg->sending) {
 		t->set_state(S_CNG);
 		t->cng = 1;
@@ -2501,6 +2751,8 @@ void t30_free(T30 *t)
 	if (!t)
 		return;
 	t->stop_fast();
+	if (t->hdx)
+		t->cfg.v34->free(t->hdx);
 	if (t->rx_page_on) {
 		t->t4rx.release();
 		t->rx_page.release();
@@ -2526,7 +2778,9 @@ void t30_get_status(T30 *t, struct t30_status *s)
 		t->eop_acked && (t->result == T30_RUNNING ||
 				 t->result == T30_OK);
 	s->pages = t->pages;
-	s->bps = rates[t->rate].bps;
+	s->bps = t->v34_on && t->hdx ? t->cfg.v34->rate(t->hdx) :
+		rates[t->rate].bps;
+	s->v34 = t->v34_on;
 	s->fine = t->fine;
 	s->ecm = t->ecm_on;
 	copy_array(s->remote_ident, t->remote_ident);
@@ -2568,6 +2822,10 @@ void t30_set_t38(T30 *t, s16 on, s32 max_data)
 		t->cfg.t38_max_data = max_data;
 	if ((on != 0) == (t->cfg.t38 != 0))
 		return;
+	if (t->hdx) {
+		DSP_DBG("t30: on V.34 half-duplex: no T.38\n");
+		return;
+	}
 	DSP_DBG("t30: %s from now on, in %s\n", on ? "T.38" : "the audio",
 		state_name[t->state]);
 	t->stop_fast();
@@ -2608,6 +2866,9 @@ s16 t30_poll(T30 *t)
 {
 	if (t->state != S_HOST || t->waiting != T30_WAIT_DCS || !t->x_bit ||
 	    !t->remote_poll)
+		return -1;
+	/* (V.34: V.8 said who sends) */
+	if (t->v34_on && t->hdx && t->cfg.v34->source(t->hdx))
 		return -1;
 	t->waiting = T30_WAIT_NONE;
 	t->tries = 0;
