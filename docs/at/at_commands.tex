@@ -708,6 +708,7 @@ rarer ones.
  &  & \cmdl[plusMV18S]{+MV18S, +MV18R} & \std{V.18} text telephone. \\ \hline
  &  & \cmdl[plusMV18AM]{+MV18AM, +MV18P} & \std{V.18} answer message. \\ \hline
  &  & \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. \\ \hline
+ &  & \cmdl[plusA8E]{+A8E} & \std{V.8} and \std{V.8 bis}. \\ \hline
 \end{vtable}}
 
 \mainmatter
@@ -1625,6 +1626,31 @@ says its call is clear (\texttt{dmodemd}'s \std{SIP} for a CLEARMODE call,
 says.  What runs on the channel is \cmdl[plusB2]{+B2}'s, \std{X.75} by
 \emph{default}, or \std{V.110}'s rate adaption with \cmdl[plusCBST]{+CBST}.  See
 \cmd{docs/isdn.md}.
+\end{command}
+
+\begin{command}{plusA8E}{+A8E}{V.8 and V.8 bis Controls}
+\std{V.251}'s controls of \std{V.8} and \std{V.8 bis}.  \p{v8o} and \p{v8a} are 1:
+the modem runs \std{V.8} itself on calls and answers (\cmdl[plusMS]{+MS} decides
+whether it does).  \p{v8cf} is 0: no call function of the \std{DTE}'s.  \p{v8b}
+1 starts a data call with \std{V.8 bis}: answering, the modem sends MRe
+before its answer tone and, with a caller that answers it, agrees on the
+data mode with it (CL, MS, ACK), then goes on with \std{V.8}; calling, it
+answers the other modem's MRe the same way.  A caller without \std{V.8 bis}
+is answered with \std{V.8} after 3~s.  Only for the modulations that start
+with \std{V.8} (\std{V.34}, \std{V.90}, \std{V.91}, \std{V.92}, \std{V.cvm}), not on a leased line or a
+clear channel.  See \cmd{docs/dsp/v8bis.md}.
+\begin{syntax}
+\item +A8E=[\p{v8o}][,[\p{v8a}][,[\p{v8cf}][,[\p{v8b}]]]]
+\item +A8E? (gives \rc{+A8E: 1,1,0,0})
+\item +A8E=? (gives \rc{+A8E: (1),(1),(0),(0,1)})
+\end{syntax}
+\begin{results}
+\res{\rc{OK}}{Always.}
+\res{\rc{ERROR}}{For a value outside its range: \p{v8b} 2 (the \std{DTE}'s own
+  \std{V.8 bis}, \cmdr{+A8M}), \p{cfrange} and \p{protrange}.}
+\end{results}
+\std{V.251}'s \emph{default} \p{v8b} is 1; D-Modem's is 0, since answering with
+\std{V.8 bis} keeps a caller without it waiting about 3.5~s.
 \end{command}
 
 \begin{command}{B}{B\p{n}}{Communication Standard Setting}
@@ -3490,7 +3516,7 @@ These are \rc{ERROR}: \cmdl[ampV]{\&V2} and up, \cmdr{\&Z} (no stored numbers),
 \cmdl[ampT]{\&T2} and \cmdl[ampT]{\&T9} and up, \cmdr{\bs B} (a break), \cmdl[X]{X5} and
 up, \cmdl[I]{ATI8} to \cmdl[I]{ATI10} and \cmdl[I]{ATI12} and up, \cmd{-V90}
 (\cmdl[plusMS]{+MS} chooses), \cmdr{+MA}, \cmdr{+MSC}, \cmdr{+EB},
-\cmdr{+ESR}, \cmdr{+ETBM}, \cmdr{+EWIND}, \cmdr{+EFRAM}, \cmdr{+A8E},
+\cmdr{+ESR}, \cmdr{+ETBM}, \cmdr{+EWIND}, \cmdr{+EFRAM}, \cmdr{+A8M},
 \cmdr{+A8T}, \cmdr{+PMHF}, \cmdr{+GSN} and \cmdr{+GOI}; \cmdl[plusMS]{+MS}'s names of
 modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \cmd{V27} \ldots).

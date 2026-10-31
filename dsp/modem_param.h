@@ -141,6 +141,9 @@ enum MODEM_PARAMETER_NAMES {
 	MDMPRM_RELAY        = 75,  /* the struct dp_relay * while the call
 				      is relayed (DP_RELAY), else 0; -1
 				      from a core that has none */
+	MDMPRM_V8BIS        = 76,  /* 1: the call starts with V.8 bis
+				      (+A8E's <v8b>, DP_V8BIS), else 0;
+				      -1 from a core that has none */
 };
 
 /*

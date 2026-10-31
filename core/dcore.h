@@ -506,6 +506,9 @@ private:
 	bool text_pump() const;
 	/* the call is relayed (Host::relay_line(), in data mode) */
 	bool relay_channel() const;
+	/* the call starts with V.8 bis (+A8E's <v8b> 1): a data call that
+	   starts with V.8, not on a leased line */
+	bool v8bis_call() const;
 	/* struct dp_relay's calls, to the Host's */
 	static int relay_state_cb(void *ctx, s32 *tx, s32 *rx);
 	static int relay_read_cb(void *ctx, unsigned char *buf, int max);

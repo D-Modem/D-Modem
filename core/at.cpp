@@ -199,6 +199,10 @@ const struct Kept {
 	{ "+ESA", 8, { 0, 0, 0, 0, 0, 0, 255, 255 },
 	  "(0-2),(0,1),(0,1),(0),(0-2),(0),(0-255),(0-255)" },
 	{ "+ITF", 3, { 383, 128, 0 }, "(1-4095),(0-4094),(0-500)" },
+	/* V.251's V.8 and V.8 bis controls: <v8o>, <v8a> (the modem's own
+	   V.8 both ways), <v8cf> (none of the DTE's), <v8b> (0 none, 1
+	   V.8 bis at the start of a data call: modem.cpp's v8bis_call()) */
+	{ "+A8E", 4, { 1, 1, 0, 0 }, "(1),(1),(0),(0,1)" },
 	/* V.42bis and V.44 (6.6.1, 6.6.2/V.250): the directions and largest
 	   parameters offered, by default ours (V42BIS_MAX_*, V44_MAX_*);
 	   modem.cpp's link_init() reads them */

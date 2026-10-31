@@ -236,6 +236,10 @@ dmodem_gtest(class1_v34_test LABELS quick)
 # alphabet and UCS2, against known encodings
 dmodem_test_exe(sms_pdu_test sms_pdu_test.cpp ${S}/sms_pdu.cpp)
 dmodem_gtest(sms_pdu_test LABELS quick)
+# V.8 bis's messages, signals and their line coding
+dmodem_test_exe(v8bis_test v8bis_test.cpp test_util.cpp fax_stubs.cpp
+	${S}/v8bis.cpp ${S}/dsp_util.cpp ${S}/dp_fsk.cpp)
+dmodem_gtest(v8bis_test LABELS quick)
 # the test document for the Asterisk and FreeSWITCH fax scripts
 dmodem_test_exe(fax_doc fax_doc.cpp fax_docs.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(fax_doc PRIVATE GTest::gtest)
