@@ -108,6 +108,8 @@
 % what the modem sends: result codes and responses, in type on a tint
 \DeclareRobustCommand{\rc}[1]{{\setlength{\fboxsep}{1pt}%
   \colorbox{dmrc}{\ttfamily\color{dmnavy}\rule[-0.45ex]{0pt}{1.95ex}#1}}}
+% a command not linked to an entry, in the links' red
+\newcommand{\cmdr}[1]{\textcolor{dmlink}{\cmd{#1}}}
 % the backslash, as in AT\N
 \newcommand{\bs}{\textbackslash}
 % a parameter
@@ -371,7 +373,7 @@ core's own.  A setting that is kept but changes nothing says so.
 \paragraph{How to read this manual.}  Each command has an entry of the
 same form: its name and title in a strip, what it does, then where it
 has them its syntax, its result codes and a numbered table of its
-values, the default marked \emph{(default)}.  Table~\ref{tab:summary}
+values, the default marked \emph{(default)}.  \hyperref[tab:summary]{Table~\ref*{tab:summary}}
 lists every command and links to its entry.  Commands are shown in
 capitals; the modem takes either case.  \p{n} is a decimal number,
 \p{h} a hexadecimal one; \verb|[ ]| marks what may be left out.  A
@@ -426,7 +428,7 @@ give.
 \cmdl[ampD]{\&S\p{n}} & Data set ready (accepted). & \cmdl[plusFTM]{+FTM, +FRM} & Fax data. \\ \hline
 \cmdl[ampT]{\&T\p{n}} & Loop tests. & \cmdl[plusFTH]{+FTH, +FRH} & Fax HDLC frames. \\ \hline
 \cmdl[ampV]{\&V\p{n}} & View active configuration, call statistics. & \cmdl[plusFPR]{+FPR} & Fax DTE rate (kept). \\ \hline
-\cmdl[ampW]{\&W\p{n}} & Store profile (accepted). & \cmdl[vcmds]{+V\ldots} & Voice (section~\ref{sec:voice}). \\ \hline
+\cmdl[ampW]{\&W\p{n}} & Store profile (accepted). & \cmdl[vcmds]{+V\ldots} & Voice (\hyperref[sec:voice]{section~\ref*{sec:voice}}). \\ \hline
 \cmdl[ampY]{\&Y\p{n}} & Profile at power on (accepted). & \cmdl[plusFLI]{+FLI, +FPI} & Fax class 2 identity. \\ \hline
  &  & \cmdl[plusFLP]{+FLP, +FSP} & Fax class 2 polling. \\ \hline
  &  & \cmdl[plusFCC]{+FCC, +FIS, +FCS} & Fax class 2 capabilities. \\ \hline
@@ -442,12 +444,12 @@ give.
 AT commands are issued to the modem to control its operation and its
 settings.  The modem takes them in command mode: after it starts, when
 a call ends, after any command but a dial or an answer, and online
-after the escape sequence (section~\ref{sec:online}), the call still
+after the escape sequence (\hyperref[sec:online]{section~\ref*{sec:online}}), the call still
 up.  Each command line is answered with a result code
-(section~\ref{sec:results}).
+(\hyperref[sec:results]{section~\ref*{sec:results}}).
 
 \begin{itemize}
-\item A command line begins with \cmd{AT} and ends with the character of
+\item A command line begins with \cmdr{AT} and ends with the character of
   \sreg{3} (carriage return) or \sreg{4} (line feed).  Blanks and tabs
   in it are dropped before it is read.
 \item The character of \sreg{5} (backspace) takes back the last one
@@ -455,38 +457,38 @@ up.  Each command line is answered with a result code
 \item A line holds 63 characters at most; a longer one is \rc{ERROR}.
 \item With echo on (\cmdl[E]{E1}), what the DTE types comes back as it
   is typed.
-\item A line that does not begin with \cmd{AT} is not a command: with
+\item A line that does not begin with \cmdr{AT} is not a command: with
   echo on it is blanked out on the DTE's screen.
 \end{itemize}
 
-The commands of a line run in turn (\cmd{ATE1Q0V1}).  A basic command's
-number left out is 0 (\cmd{ATE} is \cmd{ATE0}).  An extended command
-(\cmd{+}\ldots) takes \cmd{=}\p{values}, \cmd{?} (its values) and
-\cmd{=?} (its ranges).  A \cmd{;} may stand between two commands, as
+The commands of a line run in turn (\cmdr{ATE1Q0V1}).  A basic command's
+number left out is 0 (\cmdl[E]{ATE} is \cmdl[E]{ATE0}).  An extended command
+(\cmdr{+}\ldots) takes \cmdr{=}\p{values}, \cmdr{?} (its values) and
+\cmdr{=?} (its ranges).  A \cmd{;} may stand between two commands, as
 V.250 puts one after an extended command that another follows
-(\cmd{AT+IFC=2,2;+MS=V92}); here it is not needed.  A value left out of
-an extended command's \cmd{=}\p{values} keeps what it was.
+(\cmdr{AT+IFC=2,2;+MS=V92}); here it is not needed.  A value left out of
+an extended command's \cmdr{=}\p{values} keeps what it was.
 
 Some extended parameters (\cmdl[plusILRR]{+ILRR}, \cmdl[plusMR]{+MR},
 \cmdl[plusPCW]{+PCW}, \cmdl[minusSEC]{-SEC} and others) are kept for
 other modems' setup strings, with no other effect but where an entry
-says so.  \cmd{=}\p{values} sets them (each in its range, else \rc{ERROR}),
-\cmd{?} gives \cmd{+}\p{name}\cmd{: }\p{values}, \cmd{=?} the ranges,
+says so.  \cmdr{=}\p{values} sets them (each in its range, else \rc{ERROR}),
+\cmdr{?} gives \rc{+\p{name}: \p{values}}, \cmdr{=?} the ranges,
 and \cmdl[Z]{ATZ} the defaults.
 
 The commands are grouped by what they do, each group a section: echo
 and result codes, settings and profiles, identification, dialling and
 answering, the speaker and the line, modulation, error control, data
 compression, the DTE interface, ISDN, then fax, text telephones and
-voice.  Table~\ref{tab:summary} lists them by name.
+voice.  \hyperref[tab:summary]{Table~\ref*{tab:summary}} lists them by name.
 
 The first command that fails ends the line with \rc{ERROR}; otherwise \rc{OK}
-follows the last one.  \cmd{A}, \cmd{D} and \cmd{O} end the line and
-give their result later (\rc{CONNECT}, \rc{NO CARRIER} and so on), and \cmd{Z}
+follows the last one.  \cmdl[A]{A}, \cmdl[D]{D} and \cmdl[O]{O} end the line and
+give their result later (\rc{CONNECT}, \rc{NO CARRIER} and so on), and \cmdl[Z]{Z}
 ends it with \rc{OK}: whatever follows them on the line is not read, but
 for a dial string's \cmd{;}, after which the rest of the line runs once
 the number is dialed (\cmdl[D]{ATD}).  A command that reports something
-(\cmd{I}, \cmd{S}\p{n}\cmd{?}, \cmdl[plusMS]{+MS?} \ldots) prints it on
+(\cmdl[I]{I}, \cmdl[S]{S}\p{n}\cmdr{?}, \cmdl[plusMS]{+MS?} \ldots) prints it on
 lines of its own before the result.
 
 A character from the DTE while a call is being set up (dialing,
@@ -496,7 +498,7 @@ answering, the modems' training) hangs up.  After a dial string's
 \section{Echo and result code settings}\label{sec:echo}
 
 \begin{command}{Aslash}{A/}{Repeat Last Command}
-\cmd{A/} runs the last command line again.  It needs no \cmd{AT} before
+\cmdl[Aslash]{A/} runs the last command line again.  It needs no \cmdr{AT} before
 it and no line end after it: the modem runs it as the \cmd{/} is typed.
 It is mostly used to dial a busy number again.
 \end{command}
@@ -530,7 +532,7 @@ Q1 & Result codes are not given. \\ \hline
 
 \begin{command}{V}{V\p{n}}{Result Code Form}
 This command sets whether result codes are words or numbers
-(\sreg{15}).  Section~\ref{sec:results} lists both.
+(\sreg{15}).  \hyperref[sec:results]{Section~\ref*{sec:results}} lists both.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -543,7 +545,7 @@ V1 & Words (default). \\ \hline
 \end{command}
 
 \begin{command}{W}{W\p{n}}{Connect Message Control}
-Other modems use \cmd{W} to choose what \rc{CONNECT} reports.  The modem
+Other modems use \cmdl[W]{W} to choose what \rc{CONNECT} reports.  The modem
 accepts it and changes nothing: here \cmdl[ampA]{\&A} and
 \cmdl[bsV]{\bs V} choose.
 \begin{results}
@@ -568,7 +570,7 @@ X2 & With the rate. & Waits for a dial tone (below). & No. \\ \hline
 X3 & With the rate. & No wait for a dial tone. & Yes. \\ \hline
 X4 & With the rate. & Waits for a dial tone (below) (default). & Yes. \\ \hline
 \end{vtable}
-The dial tone \cmd{X2} and \cmd{X4} wait for is 1 s of tone, steady or
+The dial tone \cmdl[X]{X2} and \cmdl[X]{X4} wait for is 1 s of tone, steady or
 in a cadence whose gaps are 1 s at most (as Italy's: its tone added
 up); \rc{NO DIALTONE} if none comes in \sreg{6} seconds (2 s at least; 2 s
 more while a dial tone in a cadence is heard).  A busy tone is four
@@ -576,9 +578,9 @@ cycles of the country's busy or congestion tone's cadence (the ITU's
 list's, 15\% or 80~ms either side: 0.48~s on and off or 0.24 in
 Germany, 0.75~s in India, 1~s on and 4 off in Egypt), not its ringing
 tone; a country with neither (none of the 192) its table's bounds.  NO
-ANSWER comes with every \p{n}, and the dial string's \cmd{W} and
+ANSWER comes with every \p{n}, and the dial string's \cmdl[W]{W} and
 \cmd{@} wait with every \p{n}.  A SIP call has no dial tone: dmodemd
-wants \cmd{ATX3}.
+wants \cmdl[X]{ATX3}.
 \end{command}
 
 \begin{command}{ampA}{\&A\p{n}}{Connection Lines Before CONNECT}
@@ -637,11 +639,11 @@ and \rc{+DR:} reports.  Kept; each 0 or 1, default 0.
 \section{Settings and profiles}\label{sec:profiles}
 
 \begin{command}{S}{S\p{n}}{Read or Set an S-Register}
-\cmd{ATS}\p{n}\cmd{?} reads S-register \p{n} (0 to 255) and gives its
-value in decimal on a line of its own.  \cmd{ATS}\p{n}\cmd{=}\p{v}
+\cmdl[S]{ATS}\p{n}\cmd{?} reads S-register \p{n} (0 to 255) and gives its
+value in decimal on a line of its own.  \cmdl[S]{ATS}\p{n}\cmd{=}\p{v}
 sets it to \p{v}; the registers hold 8 bits, so \p{v} is taken modulo
-256.  Both numbers are decimal, a leading 0 too (\cmd{ATS09?} is S9).
-\cmd{ATS103=}\p{n} is \cmdl[bsN]{\bs N}\p{n}.  Section~\ref{sec:sregs}
+256.  Both numbers are decimal, a leading 0 too (\cmdl[S]{ATS09?} is S9).
+\cmdl[S]{ATS103=}\p{n} is \cmdl[bsN]{\bs N}\p{n}.  \hyperref[sec:sregs]{Section~\ref*{sec:sregs}}
 lists the registers.
 \begin{syntax}
 \item ATS\p{n}?
@@ -673,12 +675,12 @@ Accepted, with or without a digit, and nothing done; see
 \end{command}
 
 \begin{command}{ampV}{\&V\p{n}}{View Active Configuration}
-\cmd{\&V} and \cmd{\&V0} show the active settings, in lines of 72
+\cmdl[ampV]{\&V} and \cmdl[ampV]{\&V0} show the active settings, in lines of 72
 columns at most: the basic commands', the S-registers in use
-(\cmd{S}\p{nn}\cmd{:}\p{vvv}; not \sreg{18} or \sreg{44} to \sreg{48}),
+(\cmdl[S]{S}\p{nn}\cmd{:}\p{vvv}; not \sreg{18} or \sreg{44} to \sreg{48}),
 \cmdl[plusMS]{+MS} and the other extended settings, and the extended
 parameters.  There are no stored profiles: the list ends with
-\rc{STORED PROFILES: none}.  \cmd{\&V1} gives the last call's
+\rc{STORED PROFILES: none}.  \cmdl[ampV]{\&V1} gives the last call's
 statistics, as \cmdl[I]{ATI11} (Rockwell's).
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
@@ -697,7 +699,7 @@ STORED PROFILES: none
 \end{command}
 
 \begin{command}{ampW}{\&W\p{n}}{Store Current Configuration}
-There are no stored profiles: \cmd{\&W}, \cmd{\&W0} and \cmd{\&W1}
+There are no stored profiles: \cmdl[ampW]{\&W}, \cmdl[ampW]{\&W0} and \cmdl[ampW]{\&W1}
 answer \rc{OK} and store nothing.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
@@ -725,22 +727,22 @@ call's statistics.
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{I\p{n} Commands}
   {\thd{Command} & \thd{Function}}
 I0 & The product: \cmd{D-Modem}. \\ \hline
-I1, I2 & The product and version (\cmd{D-Modem, 1.0.0}), then the maker,
-  \cmd{D-Modem project}. \\ \hline
+I1, I2 & The product and version (\rc{D-Modem, 1.0.0}), then the maker,
+  \rc{D-Modem project}. \\ \hline
 I3 & The modem's name, then its line's kind (dmodemd: \cmd{dmodem0},
   \cmd{SIP}). \\ \hline
-I4 & \sreg{0} to S23, eight a line (\cmd{s00=000 s01=000 \ldots}). \\ \hline
-I5 & \cmd{Stored Profile 0:} (there are none). \\ \hline
+I4 & \sreg{0} to S23, eight a line (\rc{s00=000 s01=000 \ldots}). \\ \hline
+I5 & \rc{Stored Profile 0:} (there are none). \\ \hline
 I6 & The last call's statistics, as USRobotics' link diagnostics (the
-  same as \cmd{I11}). \\ \hline
+  same as \cmdl[I]{I11}). \\ \hline
 I7 & The country: \rc{Country: USA}. \\ \hline
 I11 & The last call's statistics, as Conexant's modems give them. \\ \hline
 \end{vtable}
 
-\cmd{ATI11} lists the last call's statistics: in online command state
+\cmdl[I]{ATI11} lists the last call's statistics: in online command state
 those of the call that is up, after a call (dialed or answered,
-connected or not) its own, until the next one; before any, \cmd{No
-Previous Call}.  \cmd{ATI6} and \cmdl[ampV]{AT\&V1} give the same
+connected or not) its own, until the next one; before any, \rc{No
+Previous Call}.  \cmdl[I]{ATI6} and \cmdl[ampV]{AT\&V1} give the same
 lines, and \cmdl[hashUD]{AT\#UD} the same figures in Unimodem's form.
 A line whose value the call does not have is left out: the rates and
 what follows for a call that never came up, the frame counts without
@@ -780,7 +782,7 @@ PCM Encoding & The network's law, \cmd{A-law} or \cmd{u-law} (V.90,
   V.92). \\ \hline
 Digital Loss (dB), Robbed Bit Frames & The network's pad and the frames
   of six whose bit it robs (\cmd{None}, \cmd{6}, \ldots), as the analogue
-  modem's DIL found them (section~\ref{sec:analogue}). \\ \hline
+  modem's DIL found them (\hyperref[sec:analogue]{section~\ref*{sec:analogue}}). \\ \hline
 Characters Sent/Received & The DTE's. \\ \hline
 Transmit Frame Count & LAPM's or MNP's frames sent. \\ \hline
 Transmit Frame Error Count & The information frames among them sent
@@ -792,13 +794,13 @@ Retrains by Local Modem, Retrains Requested by Remote Modem & Retrains,
 Rate Renegotiation by Local/Remote Modem & Rate renegotiations (V.34,
   V.90, V.92). \\ \hline
 Call Duration & From \rc{CONNECT}, \p{h}\cmd{:}\p{mm}\cmd{:}\p{ss}. \\ \hline
-Call Termination Cause & \cmd{Local hangup} (\cmdl[H]{ATH},
-  \cmdl[Z]{ATZ}, DTR, a character while connecting), \cmd{Remote
-  cleardown} (the other modem's LAPM DISC or MNP LD), \cmd{Line dropped}
-  (the SIP call ended), \cmd{Carrier lost}, \cmd{No dial tone},
-  \cmd{Busy}, \cmd{No answer}, \cmd{Training failed}, \cmd{Protocol
+Call Termination Cause & \rc{Local hangup} (\cmdl[H]{ATH},
+  \cmdl[Z]{ATZ}, DTR, a character while connecting), \rc{Remote
+  cleardown} (the other modem's LAPM DISC or MNP LD), \rc{Line dropped}
+  (the SIP call ended), \rc{Carrier lost}, \rc{No dial tone},
+  \rc{Busy}, \rc{No answer}, \rc{Training failed}, \rc{Protocol
   failure} (no error correction where it is required, LAPM's errors),
-  \cmd{No carrier}. \\ \hline
+  \rc{No carrier}. \\ \hline
 \end{vtable}
 
 \example{Example output: ATI11}
@@ -817,9 +819,9 @@ analogue modem (\texttt{dmodemd -a}, \texttt{--usb}) measures them.
 \end{command}
 
 \begin{command}{plusGMI}{+GMI, +GMM, +GMR}{Identification}
-These commands give the manufacturer (\cmd{D-Modem project}), the model
-(\cmd{D-Modem}) and the revision (\cmd{1.0.0}, the build's version).
-With \cmd{?} after them (\cmd{AT+GMI?}) they give the same.
+These commands give the manufacturer (\rc{D-Modem project}), the model
+(\cmd{D-Modem}) and the revision (\rc{1.0.0}, the build's version).
+With \cmd{?} after them (\cmdl[plusGMI]{AT+GMI?}) they give the same.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
@@ -870,7 +872,7 @@ DIAG <2A4D3263 10=0C>
 
 \begin{command}{ampT}{\&T\p{n}}{Loop Tests}
 V.54's loop tests, with Hayes' numbers.  Loop 3 runs offline on a
-leased line (\cmdl[ampL]{\&L}) with a 4-wire modulation (\cmd{+MS=V29},
+leased line (\cmdl[ampL]{\&L}) with a 4-wire modulation (\cmdl[plusMS]{+MS=V29},
 \cmd{V33} or \cmd{V27TC}): the modem's signal goes back into its own
 receiver and the line is silent.  Loop 2 at the far end is asked for in
 band (V.54's PREP, ACK and TERM), from online command state on a call
@@ -878,13 +880,13 @@ with no error correction (\cmdl[bsN]{\bs N0}).  The self-test sends and
 checks V.52's 511-bit pattern.  \sreg{18} above 0 ends a test after
 that many seconds.
 \begin{results}
-\res{\rc{CONNECT}}{For \cmd{\&T1} and \cmd{\&T6}: the DTE's data comes back to it.}
-\res{\rc{OK}}{For the others; \cmd{\&T0} after \cmd{\&T7} or \cmd{\&T8} first gives the self-test's bit errors, three digits (255 at most).}
-\res{\rc{ERROR}}{For \cmd{\&T2} and \p{n} over 8, outside the state the test needs, or when the far end does not answer \cmd{\&T6} or \cmd{\&T7}.}
+\res{\rc{CONNECT}}{For \cmdl[ampT]{\&T1} and \cmdl[ampT]{\&T6}: the DTE's data comes back to it.}
+\res{\rc{OK}}{For the others; \cmdl[ampT]{\&T0} after \cmdl[ampT]{\&T7} or \cmdl[ampT]{\&T8} first gives the self-test's bit errors, three digits (255 at most).}
+\res{\rc{ERROR}}{For \cmdl[ampT]{\&T2} and \p{n} over 8, outside the state the test needs, or when the far end does not answer \cmdl[ampT]{\&T6} or \cmdl[ampT]{\&T7}.}
 \end{results}
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{\&T\p{n} Commands}
   {\thd{Command} & \thd{Function}}
-\&T0 & Ends the test (\cmd{\&T} the same). \\ \hline
+\&T0 & Ends the test (\cmdl[ampT]{\&T} the same). \\ \hline
 \&T1 & Loop 3, the local analogue loop. \\ \hline
 \&T3 & Loop 2 here: the far end's data back to it. \\ \hline
 \&T4 & The far end may ask for loop 2. \\ \hline
@@ -910,20 +912,20 @@ renegotiate their rate by themselves.
 \begin{command}{D}{D\p{string}}{Dial}
 This command takes the modem off hook and dials the number in
 \p{string}, then calls.  The digits and \cmd{* \# A B C D} are dialed as
-DTMF, each \sreg{11} ms long with \sreg{11} ms between them; \cmd{T} and
-\cmd{P} choose tone or pulse dialing (\sreg{16}) for the rest of the
+DTMF, each \sreg{11} ms long with \sreg{11} ms between them; \cmdl[T]{T} and
+\cmdl[P]{P} choose tone or pulse dialing (\sreg{16}) for the rest of the
 call.  Pulses are dialed on an analogue line (dmodemd's \texttt{-a} and
 \texttt{--usb}), with the country's break, make, gap between digits
 and digit pattern (\cmdl[plusGCI]{+GCI}; \cmd{* \# A B C D} skipped); a
 line that cannot pulse, such as SIP, dials them in DTMF.  With
 \cmdl[X]{X2} or \cmdl[X]{X4} the modem waits for a dial tone first.  In
 dmodemd the dial string is the SIP call's number
-(section~\ref{sec:sip}).
+(\hyperref[sec:sip]{section~\ref*{sec:sip}}).
 
 \begin{vtable}{2}{|C{0.12\textwidth}|L{0.74\textwidth}|}{Dial Modifiers}
   {\thd{Modifier} & \thd{Function}}
-0--9 * \# A--D & Dialed as DTMF, or as pulses for the digits with \cmd{P}. \\ \hline
-L & Dial the last number again (\cmd{Dialing }\p{number}\cmd{...} first).
+0--9 * \# A--D & Dialed as DTMF, or as pulses for the digits with \cmdl[P]{P}. \\ \hline
+L & Dial the last number again (\rc{Dialing }\p{number}\cmd{...} first).
   Valid only as the first character of the string; \rc{ERROR} while a call
   is held after \cmd{;}. \\ \hline
 T & Tone dialing (DTMF) from here on. \\ \hline
@@ -942,15 +944,15 @@ S=\p{n} & A stored number: \rc{ERROR} (there are none). \\ \hline
 \end{vtable}
 
 Other characters are skipped.  After a \cmd{;} the call waits, silent,
-for the DTE: \cmd{ATD}\p{more} dials more on it (as DTMF; a \cmd{;}
-again holds it again), \cmd{ATD} alone or \cmdl[O]{ATO} starts the
+for the DTE: \cmdl[D]{ATD}\p{more} dials more on it (as DTMF; a \cmd{;}
+again holds it again), \cmdl[D]{ATD} alone or \cmdl[O]{ATO} starts the
 calling modem's handshake, \cmdl[A]{ATA} the answering modem's, and
 \cmdl[H]{ATH} hangs up (\rc{OK}, then \rc{NO CARRIER}).
 \begin{results}
 \res{\rc{CONNECT}}{When the call is up.}
 \res{\rc{OK}}{After a \cmd{;}.}
 \res{\rc{BUSY}, \rc{NO ANSWER}, \rc{NO DIALTONE} or \rc{NO CARRIER}}{When it is not.}
-\res{\rc{ERROR}}{For \cmd{S=}\p{n}, or \cmd{L} with no number to dial.}
+\res{\rc{ERROR}}{For \cmdl[D]{S=}\p{n}, or \cmdl[L]{L} with no number to dial.}
 \end{results}
 \end{command}
 
@@ -983,7 +985,7 @@ pulse times.
 This command takes the modem off hook to answer a call.  After
 \sreg{92} seconds it sends the answering modem's tones.  In dmodemd the
 call that rings (\rc{RING}) is answered.  On a call held after a dial
-string's \cmd{;}, \cmd{ATA} answers that call: \cmd{ATD}\p{number}\cmd{;A}
+string's \cmd{;}, \cmdl[A]{ATA} answers that call: \cmdl[D]{ATD}\p{number}\cmd{;A}
 dials, then answers (V.250's call-back).
 \begin{results}
 \res{\rc{CONNECT}}{When the call is up.}
@@ -993,9 +995,9 @@ dials, then answers (V.250's call-back).
 \end{command}
 
 \begin{command}{H}{H\p{n}}{Hook Control}
-This command puts the modem on or off hook.  \cmd{H} or \cmd{H0} hangs
-up a call.  In voice mode \cmd{ATH} leaves the line and goes back to
-data mode (section~\ref{sec:voice}).
+This command puts the modem on or off hook.  \cmdl[H]{H} or \cmdl[H]{H0} hangs
+up a call.  In voice mode \cmdl[H]{ATH} leaves the line and goes back to
+data mode (\hyperref[sec:voice]{section~\ref*{sec:voice}}).
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
 \res{\rc{ERROR}}{For another number, or when the hook cannot change.}
@@ -1009,9 +1011,9 @@ H1 & Off hook. \\ \hline
 
 \begin{command}{O}{O\p{n}}{Return to On-Line Data Mode}
 This command takes the modem back online after the escape
-(section~\ref{sec:online}).  On a call held after a dial string's
+(\hyperref[sec:online]{section~\ref*{sec:online}}).  On a call held after a dial string's
 \cmd{;} it starts the calling modem's handshake (as \cmdl[D]{ATD}).
-\cmd{O1} and \cmd{O3} work in V.34, V.90 and V.92 calls; in the others
+\cmdl[O]{O1} and \cmdl[O]{O3} work in V.34, V.90 and V.92 calls; in the others
 they only go back.  A retrain or renegotiation counts as the local
 modem's in \cmdl[I]{ATI11}.
 \begin{results}
@@ -1027,7 +1029,7 @@ O3 & Back online, then renegotiate the rate (Rockwell's). \\ \hline
 \end{command}
 
 \begin{command}{Y}{Y\p{n}}{Long Space Disconnect}
-Other modems use \cmd{Y} for long space disconnect.  The modem keeps
+Other modems use \cmdl[Y]{Y} for long space disconnect.  The modem keeps
 the value in \sreg{161} and does nothing more.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--3.}
@@ -1043,7 +1045,7 @@ These commands list the numbers barred from dialing.  None are kept.
 \end{command}
 
 \begin{command}{hashCID}{\#CID, +VCID}{Caller ID}
-This command turns caller ID reports on or off.  \cmd{+VCID} (V.253's)
+This command turns caller ID reports on or off.  \cmdl[hashCID]{+VCID} (V.253's)
 is the same, in every mode.
 
 The modem listens for caller ID after the first ring (North America's
@@ -1051,22 +1053,22 @@ way, and ETSI's after a short ring), and on a line it hears on hook
 (ALSA, a pipe, the pico-serial Line) before the ring too (ETSI's after
 its alerting tone, the UK's, DTMF caller ID).  It takes Bell 202 FSK and
 V.23 FSK (ETSI EN 300 659-1, BT SIN 227) alike, and DTMF caller ID:
-\cmd{A} and the number, or \cmd{B} (or \cmd{D}) and a reason it is
-absent (\cmd{10} private, as \cmd{P}; others \cmd{O}), up to \cmd{C},
+\cmdl[A]{A} and the number, or \cmdl[B]{B} (or \cmdl[D]{D}) and a reason it is
+absent (\cmd{10} private, as \cmdl[P]{P}; others \cmdl[O]{O}), up to \cmdl[C]{C},
 \cmd{\#} or a pause.  In voice mode with the line taken it takes Type~II
 caller ID too, a waiting call's caller: after the CPE alerting signal
-(2130 and 2750~Hz) it answers with DTMF \cmd{A} (GR-30's, a CPE without
+(2130 and 2750~Hz) it answers with DTMF \cmdl[A]{A} (GR-30's, a CPE without
 ADSI) and reports the FSK message that follows as a packet, the line's
 audio to the DTE silent meanwhile.
 
-In voice mode (\cmd{+FCLASS=8}) the lines come as V.253's complex event
+In voice mode (\cmdl[plusFCLASS]{+FCLASS=8}) the lines come as V.253's complex event
 report, between \cmd{<DLE>X} and \cmd{<DLE>.}; in the other modes after
 an empty line.  A SIP call (dmodemd \cmd{-L}) has caller ID after its
 first \rc{RING}, from the INVITE: the caller's P-Asserted-Identity, else its
 From (the URI's user part as \cmd{NMBR}, the display name as
 \cmd{NAME}), the date and time the host's.  A number or name that is not
-known is \cmd{O}, one withheld (the Privacy header's \cmd{id},
-\cmd{user} or \cmd{header}, or an anonymous caller) \cmd{P}, as on the
+known is \cmdl[O]{O}, one withheld (the Privacy header's \cmd{id},
+\cmd{user} or \cmd{header}, or an anonymous caller) \cmdl[P]{P}, as on the
 line; \cmd{2} gives the MDMF message the modem made of them.
 \begin{syntax}
 \item AT\#CID=\p{n} (or AT+VCID=\p{n})
@@ -1092,7 +1094,7 @@ line; \cmd{2} gives the MDMF message the modem made of them.
 This command sets the speaker's volume (\sreg{30}).  A SIP line has no
 speaker: the setting is kept.  A SmartUSB56 with \texttt{dmodemd
 --usb-buzzer} sounds its buzzer while the speaker is on, at any volume
-but \cmd{L0}.
+but \cmdl[L]{L0}.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--3.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -1117,7 +1119,7 @@ This command sets when the speaker is on (\sreg{29}).
 M0 & Speaker always off. \\ \hline
 M1 & Speaker on until the call is up (default). \\ \hline
 M2 & Speaker always on. \\ \hline
-M3 & As \cmd{M1} (on other modems: not while dialing). \\ \hline
+M3 & As \cmdl[M]{M1} (on other modems: not while dialing). \\ \hline
 \end{vtable}
 \end{command}
 
@@ -1137,13 +1139,13 @@ listening only for the answer tone; \cmdl[A]{ATA} answers; with
 \sreg{0} above 0 the modem answers by itself, with no ring, whenever it
 is idle.  A call the line ends (\rc{NO CARRIER}) starts again by itself 2~s
 later, dialled or answered as before; \cmdl[H]{ATH}, DTR,
-\cmdl[Z]{ATZ} or \cmd{\&L0} stop that until the next command line.
+\cmdl[Z]{ATZ} or \cmdl[ampL]{\&L0} stop that until the next command line.
 
-Every voice band modulation of \cmdl[plusMS]{+MS} runs on \cmd{\&L1}.
-On \cmd{\&L2} the 4-wire modulations (\cmd{+MS=V29}, \cmd{V33},
+Every voice band modulation of \cmdl[plusMS]{+MS} runs on \cmdl[ampL]{\&L1}.
+On \cmdl[ampL]{\&L2} the 4-wire modulations (\cmdl[plusMS]{+MS=V29}, \cmd{V33},
 \cmd{V27TC}) run as duplex pumps on a continuous carrier, each end
 starting at once with its own synchronizing signal; the others run as
-on \cmd{\&L1}.  With \sreg{48} = 1, on a call with no error correction,
+on \cmdl[ampL]{\&L1}.  With \sreg{48} = 1, on a call with no error correction,
 the modem does V.13's simulated carrier control: between the DTE's
 bursts of data the line carries V.13's idle pattern, which the far end
 takes for carrier detect OFF, and each burst turns it ON again.  A line
@@ -1171,7 +1173,7 @@ dmodemd's \cmd{-c} option names the country it starts with
 of the ITU's list of the tones of national networks (after E.180), by
 its name there in capitals or the table's (\cmd{-c FIJI}, \cmd{-c
 UNITED\_KINGDOM}: \cmd{UK}).  The table's countries have their own
-dialling settings; the others the USA's (\cmd{ATI7}: \rc{Country: FIJI
+dialling settings; the others the USA's (\cmdl[I]{ATI7}: \rc{Country: FIJI
 (USA line)}), and all of them their own busy and congestion tones.
 \cmdl[Z]{ATZ} keeps the country.
 \begin{syntax}
@@ -1191,9 +1193,9 @@ dialling settings; the others the USA's (\cmd{ATI7}: \rc{Country: FIJI
 This command sets the modulation the modem calls or answers with,
 whether it may fall back (\p{automode} 1, as \cmdl[N]{N1}; \sreg{31}),
 and the rates it may connect at, \p{min} to \p{max} bit/s.  \p{mod} is
-a number or V.250's name for it, in either case (\cmd{AT+MS=V34} is
-\cmd{AT+MS=34}).  A parameter left out keeps its value:
-\cmd{AT+MS=,0} only turns automode off.  In V.34, \p{max} caps both
+a number or V.250's name for it, in either case (\cmdl[plusMS]{AT+MS=V34} is
+\cmdl[plusMS]{AT+MS=34}).  A parameter left out keeps its value:
+\cmdl[plusMS]{AT+MS=,0} only turns automode off.  In V.34, \p{max} caps both
 directions' rates (sent in its MP sequences).
 \begin{syntax}
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
@@ -1234,7 +1236,7 @@ directions' rates (sent in its MP sequences).
 64 & CLEAR & Clear channel & 64000 bit/s on a clear digital channel
   (an ISDN data call), no modulation (\cmdl[plusB2]{+B2}). \\ \hline
 18 & V18 & ITU V.18 & Text telephone automoding
-  (section~\ref{sec:text}). \\ \hline
+  (\hyperref[sec:text]{section~\ref*{sec:text}}). \\ \hline
 45 & BAUDOT & V.18, TIA-825-A & 5-bit text telephone: TTY, telex,
   RTTY (\cmdl[plusMBAUDOT]{+MBAUDOT}). \\ \hline
 110 & EDT & V.18 & EDT text telephone, 110 bit/s. \\ \hline
@@ -1279,27 +1281,27 @@ pair between two of its modems (pico-serial's WB stick, a codec at 96
 kHz): discrete multitone, the caller on the lower tones and the
 answerer on the upper, each tone loaded from its measured SNR; see
 \cmd{docs/dsp/vwb.md}.  It runs at 48000 Hz and more only, where it is
-the only mode and the default (\cmd{ATZ} sets it again there), as a
-leased line (\cmdl[ampL]{\&L1}); the rates of \cmd{+MS} do not limit it.
+the only mode and the default (\cmdl[Z]{ATZ} sets it again there), as a
+leased line (\cmdl[ampL]{\&L1}); the rates of \cmdl[plusMS]{+MS} do not limit it.
 
 \paragraph{Clear channel.}  \cmd{CLEAR} is a clear 64 kbit/s digital
 channel, such as an ISDN B-channel's data call (a SIP call in
 CLEARMODE, RFC 4040, or a PBX's call with an unrestricted digital
 bearer): no modulation, each of the channel's octets 8 bits of the
-link's, \rc{CONNECT 64000} both ways.  It starts at once on \cmd{ATD}
-and \cmd{ATA}, with no call progress and no answer tone.  Each octet's
+link's, \rc{CONNECT 64000} both ways.  It starts at once on \cmdl[D]{ATD}
+and \cmdl[A]{ATA}, with no call progress and no answer tone.  Each octet's
 first bit is its most significant (I.460, RFC 4040).  A line that
 says its call is clear (dmodemd's SIP for a CLEARMODE call,
-\cmd{app\_dmodem} for an ISDN data call) runs it whatever \cmd{+MS}
+\cmd{app\_dmodem} for an ISDN data call) runs it whatever \cmdl[plusMS]{+MS}
 says.  What runs on the channel is \cmdl[plusB2]{+B2}'s, X.75 by
 default, or V.110's rate adaption with \cmdl[plusCBST]{+CBST}.  See
 \cmd{docs/isdn.md}.
 \end{command}
 
 \begin{command}{B}{B\p{n}}{Communication Standard Setting}
-\cmd{ATB} with no number sets V.22 at 1200 bit/s only, without
+\cmdl[B]{ATB} with no number sets V.22 at 1200 bit/s only, without
 automode: the same as \cmdl[plusMS]{AT+MS=22,0,1200,1200}.  Other
-modems use \cmd{B0} to \cmd{B3}, \cmd{B15} and \cmd{B16} to choose
+modems use \cmdl[B]{B0} to \cmdl[B]{B3}, \cmdl[B]{B15} and \cmdl[B]{B16} to choose
 between the ITU and the Bell modulation at 1200 and 300 bit/s.  The
 modem accepts them and changes nothing: the call's negotiation and
 \cmdl[plusMS]{+MS} choose.
@@ -1319,25 +1321,25 @@ B15, B16 & Accepted (other modems: V.21 or Bell 103 at 300 bit/s). \\ \hline
 \begin{command}{N}{N\p{n}}{Automode}
 This command sets whether the modems may find their best common
 modulation from the one \cmdl[plusMS]{+MS} chose down (\sreg{31}).  It
-is the same as \cmd{+MS}'s second parameter.
+is the same as \cmdl[plusMS]{+MS}'s second parameter.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{N\p{n} Commands}
   {\thd{Command} & \thd{Function}}
-N0 & Only the modulation \cmd{+MS} chose. \\ \hline
+N0 & Only the modulation \cmdl[plusMS]{+MS} chose. \\ \hline
 N1 & Automode: that modulation or the best common one below it (default). \\ \hline
 \end{vtable}
 \end{command}
 
 \begin{command}{C}{C\p{n}}{Carrier Control}
-The modem accepts \cmd{C1} so that software that sends it works.  It
-does not have \cmd{C0}, which on some other modems sends no carrier
+The modem accepts \cmdl[C]{C1} so that software that sends it works.  It
+does not have \cmdl[C]{C0}, which on some other modems sends no carrier
 (receive only).
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 1.}
-\res{\rc{ERROR}}{Otherwise (\cmd{C} alone is \cmd{C0}).}
+\res{\rc{ERROR}}{Otherwise (\cmdl[C]{C} alone is \cmdl[C]{C0}).}
 \end{results}
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{C\p{n} Commands}
   {\thd{Command} & \thd{Function}}
@@ -1347,7 +1349,7 @@ C1 & Normal carrier switching (default). \\ \hline
 \end{command}
 
 \begin{command}{ampB}{\&B\p{n}}{V.32 Auto Retrain}
-Other modems use \cmd{\&B} for V.32's retrain (USRobotics': the DTE's
+Other modems use \cmdl[ampB]{\&B} for V.32's retrain (USRobotics': the DTE's
 rate fixed).  The modem accepts it and changes nothing: its modulations
 retrain by themselves.
 \begin{results}
@@ -1378,10 +1380,10 @@ USRobotics' choice of the line's rate: accepted, changing nothing.
 \begin{command}{plusCVM}{+CVM}{V.cvm Settings}
 For \cmdl[plusMS]{+MS=VCVM}: \p{modes}, the modes allowed, a sum of
 the values below; \p{rate}, the signal interface's rate, 8000 or 16000;
-\p{report}, 0 or 1, asks for \cmd{+CVMR} on each renegotiation.
+\p{report}, 0 or 1, asks for \rc{+CVMR} on each renegotiation.
 D-Modem keeps \p{rate} and \p{report} but works at 8000~Hz only,
-without the wideband modes, and sends no \cmd{+CVMR}.  During and after a
-V.cvm call, \cmd{+CVM?} gives a second line with that call's figures:
+without the wideband modes, and sends no \rc{+CVMR}.  During and after a
+V.cvm call, \cmdl[plusCVM]{+CVM?} gives a second line with that call's figures:
 \rc{+CVM: }\p{raw tx}\cmd{,}\p{raw rx}\cmd{,}\p{coded tx}\cmd{,}%
 \p{coded rx}\cmd{,}\p{symbol ms}\cmd{,}\p{tones tx}\cmd{,}\p{tones rx}%
 \cmd{,}\p{code rate}\cmd{,}\p{renegotiations}\cmd{,}\p{erasures}
@@ -1414,8 +1416,8 @@ loaded and the renegotiations.
 \subsection{V.92 call waiting and modem-on-hold}
 
 \begin{command}{plusPCW}{+PCW, +PIG}{V.92 Call Waiting and PCM Upstream}
-\cmd{+PCW} (0 to 2, default 2) is V.92's call waiting: none is detected
-here.  \cmd{+PIG} (0 or 1, default 1) is V.92's PCM upstream, an
+\cmdl[plusPCW]{+PCW} (0 to 2, default 2) is V.92's call waiting: none is detected
+here.  \cmdl[plusPCW]{+PIG} (0 or 1, default 1) is V.92's PCM upstream, an
 analogue modem's setting.  Kept.
 \end{command}
 
@@ -1469,7 +1471,7 @@ modem to go on hold for \p{s} seconds (1 to 960; 10 if left out).
 V.250's error control selection: what the modem tries first as the
 originator (\p{orig}), what may follow when that fails
 (\p{orig\_fb}), and what it accepts as the answerer (\p{ans\_fb}).
-\cmdl[bsN]{\bs N} sets it, and it sets \sreg{103} to the \cmd{\bs N}
+\cmdl[bsN]{\bs N} sets it, and it sets \sreg{103} to the \cmdl[bsN]{\bs N}
 with its values (as it was if none has them).  V.80's Synchronous Mode
 and Frame Tunnelling Mode (5 and 7, 7 and 9) are not there.
 \begin{syntax}
@@ -1487,7 +1489,7 @@ and Frame Tunnelling Mode (5 and 7, 7 and 9) are not there.
  & 2 & V.42 (LAPM) without the detection phase. \\ \hline
  & 3 & V.42 with the detection phase (default). \\ \hline
  & 4 & MNP first (no detection phase, no LAPM). \\ \hline
- & 6 & V.80's Synchronous Access Mode (section~\ref{sec:v80}). \\ \hline
+ & 6 & V.80's Synchronous Access Mode (\hyperref[sec:v80]{section~\ref*{sec:v80}}). \\ \hline
 \p{orig\_fb} & 0, 1 & None (default 0). \\ \hline
  & 2 & V.42 or MNP, or hang up. \\ \hline
  & 3 & V.42 only. \\ \hline
@@ -1503,22 +1505,22 @@ and Frame Tunnelling Mode (5 and 7, 7 and 9) are not there.
 
 \begin{command}{ampQ}{\&Q\p{n}}{Error Control Mode}
 Other modems' choice of error correction, as \cmdl[bsN]{\bs N}.
-\cmd{\&Q} alone is \cmd{\&Q0}.  The synchronous modes are not there.
+\cmdl[ampQ]{\&Q} alone is \cmdl[ampQ]{\&Q0}.  The synchronous modes are not there.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0, 5, 6, 8 or 9.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{\&Q\p{n} Commands}
   {\thd{Command} & \thd{Function}}
-\&Q0, \&Q6 & No error correction (\cmd{\bs N0}). \\ \hline
-\&Q5, \&Q8, \&Q9 & V.42, then MNP, then none (\cmd{\bs N3}). \\ \hline
+\&Q0, \&Q6 & No error correction (\cmdl[bsN]{\bs N0}). \\ \hline
+\&Q5, \&Q8, \&Q9 & V.42, then MNP, then none (\cmdl[bsN]{\bs N3}). \\ \hline
 \end{vtable}
 \end{command}
 
 \begin{command}{bsN}{\bs N\p{n}}{Error Control Mode}
 This command sets the error correction (\sreg{103}), as Smart Link's
 and Rockwell's modems have it.  Each value sets \cmdl[plusES]{+ES} to
-V.250's equal.  \cmd{ATS103=}\p{n} is \cmd{\bs N}\p{n}.
+V.250's equal.  \cmdl[S]{ATS103=}\p{n} is \cmdl[bsN]{\bs N}\p{n}.
 
 V.42's detection phase decides between LAPM and none.  The originator
 sends MNP's LR when the answerer sends no V.42 answer, and the answerer
@@ -1569,7 +1571,7 @@ offers (\sreg{105}).  As other modems do, an LR offers 64 and the
 
 \begin{command}{minusSEC}{-SEC}{MNP 10EC}
 Rockwell's MNP 10EC, and its transmit level (\cmd{1,12}): kept, default
-0.  \cmd{-SEC?} gives the values alone, without the name; \cmd{=?}
+0.  \cmdl[minusSEC]{-SEC?} gives the values alone, without the name; \cmd{=?}
 gives \cmd{(0,1),(0-30)}.
 \end{command}
 
@@ -1579,14 +1581,14 @@ Services, the V.22bis fallback, power levels and the link's speed.  The
 modem has no MNP 10: it accepts them, changing nothing.  A modem with
 MNP 10EC connects with V.42.
 \begin{results}
-\res{\rc{OK}}{For \cmd{-C0}, \cmd{-C1}, \cmd{-K0} to \cmd{-K2}, \cmd{-Q0}, \cmd{-Q1}, \cmd{)M0} to \cmd{)M2}, \cmd{@M0} to \cmd{@M30}, \cmd{*H0} to \cmd{*H2}.}
+\res{\rc{OK}}{For \cmdl[mnp10]{-C0}, \cmdl[mnp10]{-C1}, \cmdl[mnp10]{-K0} to \cmdl[mnp10]{-K2}, \cmdl[mnp10]{-Q0}, \cmdl[mnp10]{-Q1}, \cmdl[mnp10]{)M0} to \cmdl[mnp10]{)M2}, \cmdl[mnp10]{@M0} to \cmdl[mnp10]{@M30}, \cmdl[mnp10]{*H0} to \cmdl[mnp10]{*H2}.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \end{command}
 
 \subsection{V.80 synchronous access}\label{sec:v80}
 
-With \cmdl[plusES]{+ES=6} (calling) or \cmd{+ES=,,8} (answering) the
+With \cmdl[plusES]{+ES=6} (calling) or \cmdl[plusES]{+ES=,,8} (answering) the
 call has no error correction or compression: after \rc{CONNECT} the modem
 moves the DTE's octets as a synchronous bit stream, with V.80's in-band
 commands after EM (19h) both ways (Table~9/V.80).
@@ -1604,23 +1606,23 @@ good one or \cmd{<EM><err>} for a bad one, an \cmd{<EM><err>} when its
 hunt finds a flag, and \cmd{<EM><mark>} for an abort or marks.
 \cmd{<EM><mark>} from the DTE goes back to transparent.  EM and 99h in
 the data are shielded both ways (\cmd{<EM><t1>}, \cmd{<EM><t2>}; DC1 and
-DC3 too with DC1/DC3 flow control, \cmd{+IFC}); from the DTE all the
+DC3 too with DC1/DC3 flow control, \cmdl[plusIFC]{+IFC}); from the DTE all the
 codes T1 to T20 are taken.  V.34's half duplex is not there.
 
 \begin{vtable}{3}{|T{0.28\textwidth}|C{0.1\textwidth}|L{0.45\textwidth}|}{V.80 In-Band Commands}
   {\thd{Command} & \thd{From} & \thd{Meaning}}
-<EM><ecs> & DTE & Online command state (instead of \cmd{+++}, which is
-  data); the modem answers \cmd{<EM><ecs>}, then \rc{OK}; \cmd{ATO} goes back. \\ \hline
+<EM><ecs> & DTE & Online command state (instead of \cmdr{+++}, which is
+  data); the modem answers \cmd{<EM><ecs>}, then \rc{OK}; \cmdl[O]{ATO} goes back. \\ \hline
 <EM><eot> & DTE & Hang up: \cmd{<EM><eot>}, then \rc{NO CARRIER}. \\ \hline
 <EM><rate><tx><rx> & DTE & The highest rates to send and to receive at
-  (\cmd{+MS}'s \p{max}), for the next retrain or renegotiation (\cmd{AT+MS}
+  (\cmdl[plusMS]{+MS}'s \p{max}), for the next retrain or renegotiation (\cmdl[plusMS]{AT+MS}
   sets both again). \\ \hline
 <EM><hunt> & DTE & Restart the receiver's hunt (framed, or transparent
   with \p{trans\_idle} 1 or 2); what waits for the DTE is dropped. \\ \hline
-<EM><resume> & DTE & Go on after an underrun (\cmd{+ESA}'s
+<EM><resume> & DTE & Go on after an underrun (\cmdl[plusESA]{+ESA}'s
   \p{framed\_un\_ov}). \\ \hline
 <EM><rtn>, <EM><rrn> & DTE & Retrain, or renegotiate the rate, as
-  \cmdl[O]{ATO1} and \cmd{ATO3}. \\ \hline
+  \cmdl[O]{ATO1} and \cmdl[O]{ATO3}. \\ \hline
 <EM><eot> & Modem & The remote's carrier is gone (before \rc{NO CARRIER}). \\ \hline
 <EM><rtn>, <EM><rrn> & Modem & A retrain or renegotiation but the DTE's
   own (the remote's, or the modem's after a loss of signal). \\ \hline
@@ -1630,7 +1632,7 @@ codes T1 to T20 are taken.  V.34's half duplex is not there.
   for 2048 octets). \\ \hline
 <EM><tover> & Modem & The DTE's octets were lost (the buffer full). \\ \hline
 <EM><under> & Modem & The DTE ran out of data. \\ \hline
-<EM><bnum> & Modem & The transmit buffer's count, with \cmd{+ITF}. \\ \hline
+<EM><bnum> & Modem & The transmit buffer's count, with \cmdl[plusITF]{+ITF}. \\ \hline
 \end{vtable}
 
 \begin{command}{plusESA}{+ESA}{Synchronous Access Mode Settings}
@@ -1687,10 +1689,10 @@ their number every \p{report\_period} times 10~ms.
 \section{Data compression}\label{sec:compression}
 
 \begin{command}{ampK}{\&K\p{n}}{Data Compression}
-\cmd{\&K0} to \cmd{\&K3} set data compression as on USRobotics' modems,
+\cmdl[ampK]{\&K0} to \cmdl[ampK]{\&K3} set data compression as on USRobotics' modems,
 the same as \cmdl[pctC]{\%C} (\sreg{104}).  Rockwell's and Conexant's
-modems use \cmd{\&K} for flow control: their \cmd{\&K4} to \cmd{\&K6}
-are accepted with no effect, and their \cmd{\&K3} (RTS/CTS) leaves
+modems use \cmdl[ampK]{\&K} for flow control: their \cmdl[ampK]{\&K4} to \cmdl[ampK]{\&K6}
+are accepted with no effect, and their \cmdl[ampK]{\&K3} (RTS/CTS) leaves
 V.42's compression on.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--6.}
@@ -1698,9 +1700,9 @@ V.42's compression on.
 \end{results}
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{\&K\p{n} Commands}
   {\thd{Command} & \thd{Function}}
-\&K0 & No compression (\cmd{\%C0}). \\ \hline
-\&K1, \&K2 & V.44, V.42bis or MNP 5 (\cmd{\%C3}). \\ \hline
-\&K3 & V.44 or V.42bis, no MNP 5 (\cmd{\%C2}). \\ \hline
+\&K0 & No compression (\cmdl[pctC]{\%C0}). \\ \hline
+\&K1, \&K2 & V.44, V.42bis or MNP 5 (\cmdl[pctC]{\%C3}). \\ \hline
+\&K3 & V.44 or V.42bis, no MNP 5 (\cmdl[pctC]{\%C2}). \\ \hline
 \&K4--\&K6 & Accepted (other modems' flow control). \\ \hline
 \end{vtable}
 \end{command}
@@ -1747,10 +1749,10 @@ string & 6--250 & The longest string offered; at most 34, the default. \\ \hline
 \end{command}
 
 \begin{command}{plusDS44}{+DS44}{V.44 Data Compression}
-V.44 (V.250 6.6.2), set the same way.  \cmd{AT+DS=0} with
-\cmd{AT+DS44=3} offers V.44 alone, \cmd{AT+DS44=0} V.42bis alone (and
+V.44 (V.250 6.6.2), set the same way.  \cmdl[plusDS]{AT+DS=0} with
+\cmdl[plusDS44]{AT+DS44=3} offers V.44 alone, \cmdl[plusDS44]{AT+DS44=0} V.42bis alone (and
 zstd, unless \cmdl[plusDSZ]{+DSZ=0}), both 0 no compression, as
-\cmd{AT\%C0}.  zstd has the directions either has.
+\cmdl[pctC]{AT\%C0}.  zstd has the directions either has.
 \begin{syntax}
 \item +DS44=[\p{direction}][,[\p{neg}][,[\p{capability}][,...]]]
 \item +DS44? (gives \rc{+DS44: 3,0,0,4096,4096,255,255,12288,12288})
@@ -1762,7 +1764,7 @@ zstd, unless \cmdl[plusDSZ]{+DSZ=0}), both 0 no compression, as
 \end{results}
 \begin{vtable}{3}{|T{0.22\textwidth}|C{0.13\textwidth}|L{0.48\textwidth}|}{+DS44 Parameters}
   {\thd{Parameter} & \thd{Values} & \thd{Meaning}}
-direction & 0--3 & As \cmd{+DS}'s (default 3). \\ \hline
+direction & 0--3 & As \cmdl[plusDS]{+DS}'s (default 3). \\ \hline
 neg & 0, 1 & 1: hang up when the link comes up without V.44, or zstd
   in its place, in those directions. \\ \hline
 capability & 0, 1 & Kept: the stream method is used whatever it says. \\ \hline
@@ -1796,9 +1798,9 @@ V.42bis.  \cmd{0} offers V.44 and V.42bis alone.
 \section{DTE interface and flow control}\label{sec:dte}
 
 \begin{command}{plusIFC}{+IFC, +ICF, +IPR}{DTE Interface}
-\cmd{+IFC} is the flow control each way (DC1/DC3 in V.80's Synchronous
-Access Mode, section~\ref{sec:v80}), \cmd{+ICF} the DTE's character
-framing, \cmd{+IPR} the DTE's rate (0 automatic).
+\cmdl[plusIFC]{+IFC} is the flow control each way (DC1/DC3 in V.80's Synchronous
+Access Mode, \hyperref[sec:v80]{section~\ref*{sec:v80}}), \cmdl[plusIFC]{+ICF} the DTE's character
+framing, \cmdl[plusIFC]{+IPR} the DTE's rate (0 automatic).
 \begin{vtable}{3}{|T{0.1\textwidth}|C{0.13\textwidth}|L{0.6\textwidth}|}{DTE Interface Parameters}
   {\thd{Name} & \thd{Default} & \thd{Range}}
 +IFC & 2,2 & (0-3),(0-2) \\ \hline
@@ -1865,18 +1867,18 @@ no carrier line.
 \begin{command}{ampD}{\&D\p{n}, \&F\p{n}, \&R\p{n}, \&S\p{n}}{DTR, Factory Defaults, RTS, DSR}
 The modem accepts these, with or without a digit, and does nothing:
 \cmdl[Z]{ATZ} gives the defaults, and dmodemd hangs up when the DTE
-drops DTR whatever \cmd{\&D} says (section~\ref{sec:online}).
+drops DTR whatever \cmdl[ampD]{\&D} says (\hyperref[sec:online]{section~\ref*{sec:online}}).
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
 \end{command}
 
 \begin{command}{F}{F\p{n}}{On-Line Data Character Echo}
-The modem accepts \cmd{F1} so that software that sends it works.  Other
-modems' \cmd{F0} echoes the data online; this modem never does.
+The modem accepts \cmdl[F]{F1} so that software that sends it works.  Other
+modems' \cmdl[F]{F0} echoes the data online; this modem never does.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 1.}
-\res{\rc{ERROR}}{Otherwise (\cmd{F} alone is \cmd{F0}).}
+\res{\rc{ERROR}}{Otherwise (\cmdl[F]{F} alone is \cmdl[F]{F0}).}
 \end{results}
 \end{command}
 
@@ -1943,13 +1945,13 @@ it.
 5 & Synchronous PPP (RFC 1618): the DTE speaks PPP's asynchronous framing
   (RFC 1662, as pppd does on a serial port), each frame goes to the line
   in HDLC with its escapes undone and comes back escaped; \cmd{/PPP} with
-  \cmd{\bs V1}. \\ \hline
+  \cmdl[bsV]{\bs V1}. \\ \hline
 7 & The modem's link (V.42, MNP or plain characters, as \cmdl[bsN]{\bs N}
   says), for the clear channel of an earlier D-Modem. \\ \hline
 9 & V.120 (Q.921's frames for logical link 256 in extended mode, each I
   frame's information after V.120's header octet \cmd{0x83}), the
   protocol of North American terminal adapters; \cmd{/V.120} with
-  \cmd{\bs V1}. \\ \hline
+  \cmdl[bsV]{\bs V1}. \\ \hline
 \end{vtable}
 \end{command}
 
@@ -1958,7 +1960,7 @@ it.
 (\cmdl[plusMS]{+MS=CLEAR}).  \p{name} \cmd{0} (the default) is
 asynchronous: the DTE's characters through the modem's link
 (\cmdl[bsN]{\bs N}) whatever \cmdl[plusB2]{+B2} says; \cmd{1} is
-synchronous: \cmd{+B2}'s protocol in HDLC at the user rate.  \p{ce}
+synchronous: \cmdl[plusB2]{+B2}'s protocol in HDLC at the user rate.  \p{ce}
 has no use here.  \rc{CONNECT} gives the user rate (with
 \cmdl[bsV]{\bs V1} and no V.42, \cmd{/V.110}).  \cmdl[ampV]{\&V} lists
 it.  See \cmd{docs/isdn.md}.
@@ -2014,7 +2016,7 @@ Each command line is answered with a result code, as a word
 \rc{CONNECT} & 1 & The call is up (\cmdl[X]{X0}, fax and voice), or a fax
   command's data begins. \\ \hline
 \rc{CONNECT} \p{rate} & Below & A data call is up at \p{rate}. \\ \hline
-\rc{RING} & 2 & A call rings (dmodemd: every 3 s, section~\ref{sec:sip}). \\ \hline
+\rc{RING} & 2 & A call rings (dmodemd: every 3 s, \hyperref[sec:sip]{section~\ref*{sec:sip}}). \\ \hline
 \rc{NO CARRIER} & 3 & No call came up, or the call is over. \\ \hline
 \rc{ERROR} & 4 & A command failed, or a line was too long. \\ \hline
 \rc{NO DIALTONE} & 6 & No dial tone (\cmdl[X]{X2}, \cmdl[X]{X4}). \\ \hline
@@ -2055,8 +2057,8 @@ rate with neither is 1.
 \section{S-registers}\label{sec:sregs}
 
 The S-registers hold the modem's settings, 8 bits each.  \cmdl[S]{ATS}
-reads and sets them: \cmd{ATS}\p{n}\cmd{?} gives register \p{n}'s value,
-\cmd{ATS}\p{n}\cmd{=}\p{v} sets it.  Registers 0 to 255 are there;
+reads and sets them: \cmdl[S]{ATS}\p{n}\cmd{?} gives register \p{n}'s value,
+\cmdl[S]{ATS}\p{n}\cmd{=}\p{v} sets it.  Registers 0 to 255 are there;
 those not listed are 0 and free, kept as written.  ``Kept'' below means
 set and read back, with no other effect.
 
@@ -2075,40 +2077,40 @@ set and read back, with no other effect.
 \hyperlink{sreg:10}{S10} & Carrier loss before hanging up. & 0--255 & 0.1 s & 7 \\ \hline
 \hyperlink{sreg:11}{S11} & DTMF tone and gap. & 0--255 & ms & 100 \\ \hline
 \hyperlink{sreg:12}{S12} & Escape guard time (kept). & 0--255 & 20 ms & 50 \\ \hline
-\hyperlink{sreg:13}{S13} & Echo (\cmd{E}). & 0, 1 & -- & 1 \\ \hline
-\hyperlink{sreg:14}{S14} & Quiet (\cmd{Q}). & 0, 1 & -- & 0 \\ \hline
-\hyperlink{sreg:15}{S15} & Verbose (\cmd{V}). & 0, 1 & -- & 1 \\ \hline
+\hyperlink{sreg:13}{S13} & Echo (\cmdl[E]{E}). & 0, 1 & -- & 1 \\ \hline
+\hyperlink{sreg:14}{S14} & Quiet (\cmdl[Q]{Q}). & 0, 1 & -- & 0 \\ \hline
+\hyperlink{sreg:15}{S15} & Verbose (\cmdl[V]{V}). & 0, 1 & -- & 1 \\ \hline
 \hyperlink{sreg:16}{S16} & Tone or pulse dialing. & 0, 1 & -- & 1 \\ \hline
 \hyperlink{sreg:18}{S18} & Loop test time. & 0--255 & s & 0 \\ \hline
 \hyperlink{sreg:24}{S24} & Hook flash time. & 0--255 & 10 ms & 20 \\ \hline
 \hyperlink{sreg:28}{S28} & Pulse ratio (kept). & 0--3 & -- & 0 \\ \hline
-\hyperlink{sreg:29}{S29} & Speaker control (\cmd{M}). & 0--3 & -- & 1 \\ \hline
-\hyperlink{sreg:30}{S30} & Speaker volume (\cmd{L}). & 0--3 & -- & 3 \\ \hline
-\hyperlink{sreg:31}{S31} & Automode (\cmd{N}). & 0, 1 & -- & 1 \\ \hline
-\hyperlink{sreg:32}{S32} & Modulation (\cmd{+MS}). & Table~\ref{tab:ms} & -- & 92 \\ \hline
+\hyperlink{sreg:29}{S29} & Speaker control (\cmdl[M]{M}). & 0--3 & -- & 1 \\ \hline
+\hyperlink{sreg:30}{S30} & Speaker volume (\cmdl[L]{L}). & 0--3 & -- & 3 \\ \hline
+\hyperlink{sreg:31}{S31} & Automode (\cmdl[N]{N}). & 0, 1 & -- & 1 \\ \hline
+\hyperlink{sreg:32}{S32} & Modulation (\cmdl[plusMS]{+MS}). & \hyperref[tab:ms]{Table~\ref*{tab:ms}} & -- & 92 \\ \hline
 \hyperlink{sreg:39}{S39} & Line quality (kept). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:44}{S44} & V.cvm: tones loaded (read only). & 0--255 & tones & 0 \\ \hline
 \hyperlink{sreg:45}{S45} & V.cvm: renegotiations (read only). & 0--255 & -- & 0 \\ \hline
-\hyperlink{sreg:47}{S47} & Leased line (\cmd{\&L}). & 0--2 & -- & 0 \\ \hline
+\hyperlink{sreg:47}{S47} & Leased line (\cmdl[ampL]{\&L}). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:48}{S48} & V.13 simulated carrier. & 0, 1 & -- & 0 \\ \hline
-\hyperlink{sreg:56}{S56} & Result codes and dial tone (\cmd{X}). & 0--4 & -- & 4 \\ \hline
+\hyperlink{sreg:56}{S56} & Result codes and dial tone (\cmdl[X]{X}). & 0--4 & -- & 4 \\ \hline
 \hyperlink{sreg:60}{S60} & Carrier detect (kept). & 0, 1 & -- & 0 \\ \hline
 \hyperlink{sreg:62}{S62} & Flow control (kept). & 0--3 & -- & 0 \\ \hline
-\hyperlink{sreg:70}{S70} & \rc{CONNECT}'s lines (\cmd{\&A}). & 0--7 & -- & 0 \\ \hline
+\hyperlink{sreg:70}{S70} & \rc{CONNECT}'s lines (\cmdl[ampA]{\&A}). & 0--7 & -- & 0 \\ \hline
 \hyperlink{sreg:71}{S71} & \rc{CONNECT}'s rate (kept). & 0, 1 & -- & 0 \\ \hline
 \hyperlink{sreg:92}{S92} & Answer delay. & 0--255 & s & 2 \\ \hline
-\hyperlink{sreg:103}{S103} & Error correction (\cmd{\bs N}). & 0--5 & -- & 3 \\ \hline
-\hyperlink{sreg:104}{S104} & Data compression (\cmd{\%C}). & 0--3 & -- & 3 \\ \hline
-\hyperlink{sreg:105}{S105} & MNP block size (\cmd{\bs A}). & 0--3 & -- & 3 \\ \hline
-\hyperlink{sreg:106}{S106} & Protocol in \rc{CONNECT} (\cmd{\bs V}). & 0--2 & -- & 0 \\ \hline
-\hyperlink{sreg:161}{S161} & \cmd{Y} (kept). & 0--3 & -- & 0 \\ \hline
+\hyperlink{sreg:103}{S103} & Error correction (\cmdl[bsN]{\bs N}). & 0--5 & -- & 3 \\ \hline
+\hyperlink{sreg:104}{S104} & Data compression (\cmdl[pctC]{\%C}). & 0--3 & -- & 3 \\ \hline
+\hyperlink{sreg:105}{S105} & MNP block size (\cmdl[bsA]{\bs A}). & 0--3 & -- & 3 \\ \hline
+\hyperlink{sreg:106}{S106} & Protocol in \rc{CONNECT} (\cmdl[bsV]{\bs V}). & 0--2 & -- & 0 \\ \hline
+\hyperlink{sreg:161}{S161} & \cmdl[Y]{Y} (kept). & 0--3 & -- & 0 \\ \hline
 \end{vtable}
 
 \subsection{S-register definitions}
 
-The range given is what the register means; \cmd{ATS} takes any value
+The range given is what the register means; \cmdl[S]{ATS} takes any value
 from 0 to 255 for any register but S44 and S45, which are read only.
-\cmd{ATZ} sets the registers to their defaults, but for S18, S28, S47,
+\cmdl[Z]{ATZ} sets the registers to their defaults, but for S18, S28, S47,
 S48 and S161, which keep their values.
 
 \sregdef{0}{Auto-Answer Ring Number}
@@ -2123,8 +2125,8 @@ The rings counted so far: \sreg{0} compares it with its own value.
 \facts{0--255}{0}{rings}
 
 \sregdef{2}{Escape Character}
-The ASCII value of the character of the escape sequence, \cmd{+++}
-(section~\ref{sec:online}).
+The ASCII value of the character of the escape sequence, \cmdr{+++}
+(\hyperref[sec:online]{section~\ref*{sec:online}}).
 \facts{0--255}{43 (\cmd{+})}{ASCII}
 
 \sregdef{3}{Command Line Termination Character}
@@ -2148,8 +2150,8 @@ while a dial tone in a cadence is heard.
 
 \sregdef{7}{Connection Completion Time-Out}
 How long the modem waits for the call to come up after dialing or
-answering: the answer and the training.  The dial string's \cmd{W} and
-\cmd{@} wait this long too, and voice mode's \cmd{+VRN} no longer.
+answering: the answer and the training.  The dial string's \cmdl[W]{W} and
+\cmd{@} wait this long too, and voice mode's \cmdl[plusVRN]{+VRN} no longer.
 V.cvm's start-up takes 15 to 21~s, so S7 should allow for it.
 \facts{0--255}{60}{seconds}
 
@@ -2219,8 +2221,8 @@ times.  \cmdl[Z]{ATZ} keeps it.
 \facts{0, 1}{1}{none}
 
 \sregdef{32}{Modulation}
-\cmdl[plusMS]{+MS}'s modulation, by its number (Table~\ref{tab:ms}).
-\facts{the numbers of Table~\ref{tab:ms}}{92 (200 at 48000 Hz and more)}{none}
+\cmdl[plusMS]{+MS}'s modulation, by its number (\hyperref[tab:ms]{Table~\ref*{tab:ms}}).
+\facts{the numbers of \hyperref[tab:ms]{Table~\ref*{tab:ms}}}{92 (200 at 48000 Hz and more)}{none}
 
 \sregdef{39}{Line Quality Monitor}
 \cmdl[pctE]{\%E}'s setting, kept.
@@ -2268,11 +2270,11 @@ error correction (\cmdl[ampL]{\&L}).  \cmdl[Z]{ATZ} keeps it.
 \sregdef{92}{Answer Delay}
 How long the modem waits after going off hook to answer before its
 answer tone; 0 waits 10 ms.  Elsewhere S92 is a fax transmit level:
-\cmd{ATS92=10} here makes the modem wait 10 s.
+\cmdl[S]{ATS92=10} here makes the modem wait 10 s.
 \facts{0--255}{2}{seconds}
 
 \sregdef{103}{Error Correction}
-\cmdl[bsN]{\bs N}'s setting; setting the register is \cmd{\bs N}.
+\cmdl[bsN]{\bs N}'s setting; setting the register is \cmdl[bsN]{\bs N}.
 \facts{0--5}{3}{none}
 
 \sregdef{104}{Data Compression}
@@ -2297,7 +2299,7 @@ With \cmdl[plusFCLASS]{AT+FCLASS=1}, the modem takes T.31's class 1
 commands, the fax machine's side being the DTE's (the PBX modules and
 libdmodem have a T.30 engine of their own as well).  As the caller, the
 modem sends CNG after dialing until the answerer's flags come in its
-first \cmd{+FRH=3} (T.30 has it until the DIS).
+first \cmdl[plusFTH]{+FRH=3} (T.30 has it until the DIS).
 
 \begin{command}{plusFCLASS}{+FCLASS}{Service Class}
 This command sets whether the modem is a data modem, a class 1, 2 or
@@ -2315,14 +2317,14 @@ This command sets whether the modem is a data modem, a class 1, 2 or
   {\thd{Value} & \thd{Class}}
 0 & Data (default). \\ \hline
 1 & Fax class 1 (T.31). \\ \hline
-2 & Fax class 2 (section~\ref{sec:class2}). \\ \hline
-2.0 & Fax class 2.0 (T.32, section~\ref{sec:class2}). \\ \hline
-8 & Voice (V.253, section~\ref{sec:voice}). \\ \hline
+2 & Fax class 2 (\hyperref[sec:class2]{section~\ref*{sec:class2}}). \\ \hline
+2.0 & Fax class 2.0 (T.32, \hyperref[sec:class2]{section~\ref*{sec:class2}}). \\ \hline
+8 & Voice (V.253, \hyperref[sec:voice]{section~\ref*{sec:voice}}). \\ \hline
 \end{vtable}
 \end{command}
 
 \begin{command}{plusFAA}{+FAA}{Adaptive Answer}
-With \cmd{+FAA=1}, a call the modem answers (\cmd{ATA}, \sreg{0}) in
+With \cmdl[plusFAA]{+FAA=1}, a call the modem answers (\cmdl[A]{ATA}, \sreg{0}) in
 data or fax mode is answered as a data call (its answer tone, V.8's
 ANSam, serves a fax machine as its CED), and found out to be a fax
 machine's or a data modem's:
@@ -2337,14 +2339,14 @@ machine's or a data modem's:
   103's, some 20~s, within T.30's T1 of 35~s): \rc{FAX},
   \cmdl[plusFCLASS]{+FCLASS} becomes 1, and the modem goes on as a
   class 1 answerer: what is left of CED's 3~s, then \rc{CONNECT}, as after
-  \cmd{AT+FTH=3}, for the DTE's first frames;
+  \cmdl[plusFTH]{AT+FTH=3}, for the DTE's first frames;
 \item a data call by its modem's handshake: \rc{DATA} when it comes up, then
-  its \rc{CONNECT}; \cmd{+FCLASS} becomes 0.
+  its \rc{CONNECT}; \cmdl[plusFCLASS]{+FCLASS} becomes 0.
 \end{itemize}
-A call that ends with neither leaves \cmd{+FCLASS} as it was.  A V.22,
+A call that ends with neither leaves \cmdl[plusFCLASS]{+FCLASS} as it was.  A V.22,
 V.21 or Bell 103 caller, silent until it hears its own answer signal,
 answers its stage of the chain: \rc{DATA}.  In voice mode see
-section~\ref{sec:voice}: a calling tone on the call switches it to fax
+\hyperref[sec:voice]{section~\ref*{sec:voice}}: a calling tone on the call switches it to fax
 or data.  Rockwell's modems give \rc{FAX} and \rc{DATA} too, as 33 and 35 with
 \cmdl[V]{V0}: here those are rates' CONNECTs, so 88 and 89.
 \begin{syntax}
@@ -2358,21 +2360,21 @@ or data.  Rockwell's modems give \rc{FAX} and \rc{DATA} too, as 33 and 35 with
 \end{results}
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+FAA Values}
   {\thd{Value} & \thd{Meaning}}
-0 & Answer as \cmd{+FCLASS} says (default; \cmdl[Z]{Z} sets it). \\ \hline
+0 & Answer as \cmdl[plusFCLASS]{+FCLASS} says (default; \cmdl[Z]{Z} sets it). \\ \hline
 1 & Adaptive answer: fax or data. \\ \hline
 \end{vtable}
 \end{command}
 
 \begin{command}{plusFMI}{+FMI, +FMM, +FMR}{Fax Identification}
 These commands give the manufacturer, the model and the revision, as
-\cmdl[plusGMI]{+GMI}, \cmd{+GMM} and \cmd{+GMR} give them, in any mode.
+\cmdl[plusGMI]{+GMI}, \cmdl[plusGMI]{+GMM} and \cmdl[plusGMI]{+GMR} give them, in any mode.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
 \end{command}
 
 \begin{command}{plusFTS}{+FTS, +FRS}{Transmit Silence, Receive Silence}
-\cmd{+FTS} sends silence for \p{n} times 10 ms; \cmd{+FRS} waits for
+\cmdl[plusFTS]{+FTS} sends silence for \p{n} times 10 ms; \cmdl[plusFTS]{+FRS} waits for
 silence of \p{n} times 10 ms.
 \begin{syntax}
 \item +FTS=\p{n}
@@ -2425,21 +2427,21 @@ or 18.
 
 \subsection{Class 2 and 2.0}\label{sec:class2}
 
-With \cmdl[plusFCLASS]{AT+FCLASS=2.0} (T.32) or \cmd{AT+FCLASS=2} (the
+With \cmdl[plusFCLASS]{AT+FCLASS=2.0} (T.32) or \cmdl[plusFCLASS]{AT+FCLASS=2} (the
 older class 2 that fax programs know), the modem runs T.30 itself: the
 DTE gives and takes the pages in T.4 MH with EOLs, \cmd{<DLE>} doubled,
 ended by \cmd{<DLE><ETX>}, and steers the call with the commands below.
-Class 2 has the older names: \cmd{+FLID}, \cmd{+FDCC}, \cmd{+FDIS},
-\cmd{+FDCS}, \cmd{+FBOR}, \cmd{+FK}, \cmd{+FPTS} and \cmd{+FHNG} (either
-name works in either class), and its reports say \cmd{+FCON},
-\cmd{+FCSI}, \cmd{+FTSI}, \cmd{+FDIS}, \cmd{+FDCS}, \cmd{+FPTS} and
-\cmd{+FHNG}.  The rates are V.17, V.29 and V.27ter's; error correction
-mode, when \cmd{+FIS} has it, is the modem's own (the DTE's data is the
+Class 2 has the older names: \cmdr{+FLID}, \cmdr{+FDCC}, \cmdr{+FDIS},
+\cmdr{+FDCS}, \cmdr{+FBOR}, \cmdr{+FK}, \cmdr{+FPTS} and \cmdr{+FHNG} (either
+name works in either class), and its reports say \rc{+FCON},
+\rc{+FCSI}, \rc{+FTSI}, \rc{+FDIS}, \rc{+FDCS}, \rc{+FPTS} and
+\rc{+FHNG}.  The rates are V.17, V.29 and V.27ter's; error correction
+mode, when \cmdl[plusFCC]{+FIS} has it, is the modem's own (the DTE's data is the
 same).  The pages are MH whatever the remote uses (MR or ECM: the modem
 codes them again), A4 width.  A call goes over to T.38 as a class 1
 call does (the same commands and results).  \cmdl[plusFAA]{+FAA}
-(adaptive answer) is class 1's, and class 1's \cmd{+FTH}, \cmd{+FRH},
-\cmd{+FTM}, \cmd{+FRM}, \cmd{+FTS} and \cmd{+FRS} are \rc{ERROR} in class 2
+(adaptive answer) is class 1's, and class 1's \cmdl[plusFTH]{+FTH}, \cmdl[plusFTH]{+FRH},
+\cmdl[plusFTM]{+FTM}, \cmdl[plusFTM]{+FRM}, \cmdl[plusFTS]{+FTS} and \cmdl[plusFTS]{+FRS} are \rc{ERROR} in class 2
 mode.
 
 \example{Example session: sending two pages, then receiving them}
@@ -2473,16 +2475,16 @@ AT+FDR            +FHS:00
                   OK
 \end{verbatim}
 
-In class 2 an XON follows the sending \rc{CONNECT}.  \cmd{+FDR}'s page waits
+In class 2 an XON follows the sending \rc{CONNECT}.  \cmdl[plusFDT]{+FDR}'s page waits
 for the DTE's \cmd{<DC2>} (a second at most); the pages are taken and
-confirmed as they come, and wait for \cmd{+FDR}.  When the call ends,
+confirmed as they come, and wait for \cmdl[plusFDT]{+FDR}.  When the call ends,
 the modem reports the hangup status and the result of the command then
-under way (\rc{NO CARRIER} for \cmd{ATD} and \cmd{ATA}), and goes on hook.
+under way (\rc{NO CARRIER} for \cmdl[D]{ATD} and \cmdl[A]{ATA}), and goes on hook.
 
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+FHS Hangup Status}
   {\thd{Value} & \thd{Meaning}}
 00 & The call was done. \\ \hline
-02 & \cmd{+FKS} ended it. \\ \hline
+02 & \cmdl[plusFDT]{+FKS} ended it. \\ \hline
 11 & No fax machine answered. \\ \hline
 2x & Sending, phase B (the DIS, the training). \\ \hline
 4x, 5x & Sending a page, or the post-page exchange. \\ \hline
@@ -2492,11 +2494,11 @@ Class 2.0 gives the status in hexadecimal digits (T.32 Table 23),
 class 2 in decimal.
 
 \begin{command}{plusFLI}{+FLI, +FPI}{Local ID, Polling ID}
-Our identity in TSI and CSI (\cmd{+FLI}, class 2's \cmd{+FLID}) and in
-CIG when we poll (\cmd{+FPI}, class 2's \cmd{+FCIG}; empty: \cmd{+FLI}'s):
+Our identity in TSI and CSI (\cmdl[plusFLI]{+FLI}, class 2's \cmdr{+FLID}) and in
+CIG when we poll (\cmdl[plusFLI]{+FPI}, class 2's \rc{+FCIG}; empty: \cmdl[plusFLI]{+FLI}'s):
 up to 20 printable characters, the blanks in the quotes kept.
 \begin{syntax}
-\item +FLI="\p{id}", for example \cmd{AT+FLI="Fax ID with Spaces"}
+\item +FLI="\p{id}", for example \cmdl[plusFLI]{AT+FLI="Fax ID with Spaces"}
 \item +FPI="\p{id}"
 \item +FLI?, +FPI? (give the identity in quotes)
 \item +FLI=?, +FPI=? (give \cmd{(20)(32-127)})
@@ -2508,13 +2510,13 @@ up to 20 printable characters, the blanks in the quotes kept.
 \end{command}
 
 \begin{command}{plusFLP}{+FLP, +FSP}{Document to Poll, Request to Poll}
-\cmd{+FLP=1} (class 2's \cmd{+FSPL}): we have a document to be polled;
-the DIS says so, and a caller's DTC has \cmd{ATA} report \cmd{+FCO},
-\rc{+FPI:"\p{cig}"} and \rc{+FTC:\p{dtc}} (class 2: \cmd{+FCIG},
-\cmd{+FDTC}) and \rc{OK}, for \cmd{+FDT} to send it.  \cmd{+FSP=1}: we poll;
-after a DIS that offers a document (\cmd{ATD} reports \cmd{+FPO},
-class 2 \cmd{+FPOLL}), \cmd{+FDR} sends the CIG and DTC and receives as
-the answerer does (\cmd{+FTI}, \cmd{+FCS}, \rc{CONNECT} and the page).
+\cmdl[plusFLP]{+FLP=1} (class 2's \cmdr{+FSPL}): we have a document to be polled;
+the DIS says so, and a caller's DTC has \cmdl[A]{ATA} report \rc{+FCO},
+\rc{+FPI:"\p{cig}"} and \rc{+FTC:\p{dtc}} (class 2: \rc{+FCIG},
+\rc{+FDTC}) and \rc{OK}, for \cmdl[plusFDT]{+FDT} to send it.  \cmdl[plusFLP]{+FSP=1}: we poll;
+after a DIS that offers a document (\cmdl[D]{ATD} reports \rc{+FPO},
+class 2 \rc{+FPOLL}), \cmdl[plusFDT]{+FDR} sends the CIG and DTC and receives as
+the answerer does (\rc{+FTI}, \cmdl[plusFCC]{+FCS}, \rc{CONNECT} and the page).
 \begin{syntax}
 \item +FLP=\p{n}, +FSP=\p{n}
 \item +FLP?, +FSP?
@@ -2522,14 +2524,14 @@ the answerer does (\cmd{+FTI}, \cmd{+FCS}, \rc{CONNECT} and the page).
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
-\res{\rc{ERROR}}{Otherwise; the caller's \cmd{+FDR} is \rc{ERROR} without \cmd{+FSP=1}.}
+\res{\rc{ERROR}}{Otherwise; the caller's \cmdl[plusFDT]{+FDR} is \rc{ERROR} without \cmdl[plusFLP]{+FSP=1}.}
 \end{results}
 \end{command}
 
 \begin{command}{plusFCC}{+FCC, +FIS, +FCS}{Capabilities, Session Parameters}
-The capabilities (\cmd{+FCC}, class 2's \cmd{+FDCC}, which sets
-\cmd{+FIS} as well) and the session's (\cmd{+FIS}, class 2's
-\cmd{+FDIS}, read again at each \cmd{+FDT}).  \cmd{+FCS?} gives the
+The capabilities (\cmdl[plusFCC]{+FCC}, class 2's \cmdr{+FDCC}, which sets
+\cmdl[plusFCC]{+FIS} as well) and the session's (\cmdl[plusFCC]{+FIS}, class 2's
+\cmdr{+FDIS}, read again at each \cmdl[plusFDT]{+FDT}).  \cmdl[plusFCC]{+FCS?} gives the
 last session's.  At the start \cmd{1,5,0,2,0,0,0,0}.
 \begin{syntax}
 \item +FCC=\p{vr},\p{br},\p{wd},\p{ln},\p{df},\p{ec},\p{bf},\p{st}
@@ -2552,11 +2554,11 @@ others & Taken in their ranges. \\ \hline
 \end{command}
 
 \begin{command}{plusFBO}{+FBO, +FCR, +FPS, +FHS}{Bit Order, Receive, Page Status, Hangup Status}
-\cmd{+FBO} (class 2's \cmd{+FBOR}): bit 0 set, the page data's first
-bit is the top of each octet (0, the default: its lowest).  \cmd{+FCR}
-and \cmd{+FPS} are kept.  \cmd{+FHS?} gives the last hangup status.
-Other \cmd{+F} settings that fax programs send in class 2 (\cmd{+FNR},
-\cmd{+FIE}, \cmd{+FCT} and the like) are kept with no effect.
+\cmdl[plusFBO]{+FBO} (class 2's \cmdr{+FBOR}): bit 0 set, the page data's first
+bit is the top of each octet (0, the default: its lowest).  \cmdl[plusFBO]{+FCR}
+and \cmdl[plusFBO]{+FPS} are kept.  \cmdl[plusFBO]{+FHS?} gives the last hangup status.
+Other \cmdr{+F} settings that fax programs send in class 2 (\cmdr{+FNR},
+\cmdr{+FIE}, \cmdr{+FCT} and the like) are kept with no effect.
 \begin{syntax}
 \item +FBO=\p{n}, +FCR=\p{n}, +FPS=\p{n}
 \item +FHS?
@@ -2567,8 +2569,8 @@ Other \cmd{+F} settings that fax programs send in class 2 (\cmd{+FNR},
 \end{command}
 
 \begin{command}{plusFDT}{+FDT, +FDR, +FET, +FKS}{Send, Receive, End Page, End Call}
-\cmd{+FDT} sends a page, \cmd{+FDR} receives one, \cmd{+FET} gives the
-command after the page sent, and \cmd{+FKS} (class 2's \cmd{+FK}) ends
+\cmdl[plusFDT]{+FDT} sends a page, \cmdl[plusFDT]{+FDR} receives one, \cmdl[plusFDT]{+FET} gives the
+command after the page sent, and \cmdl[plusFDT]{+FKS} (class 2's \cmdr{+FK}) ends
 the call with a DCN (\rc{+FHS:02}), as in the example above.
 \begin{syntax}
 \item +FDT, +FDR, +FKS
@@ -2603,7 +2605,7 @@ the shift codes are the modem's, and characters the code has not are
 dropped.  A text telephone call has no answer tone: dialling, the modem
 goes into its mode as the dialling ends; answering, at once.
 
-\cmd{AT+MS=V18} (or \cmd{AT+MV18S=1}) finds the remote's mode.  It
+\cmdl[plusMS]{AT+MS=V18} (or \cmdl[plusMV18S]{AT+MV18S=1}) finds the remote's mode.  It
 listens for 3~s, for a 5-bit character, an EDT character, V.21's
 channel~1 at 300~bit/s (or a steady mark), a Bell 103 or V.23 caller's
 mark (answering), or V.21's channel~2, Bell 103's 2225~Hz or V.23's
@@ -2618,8 +2620,8 @@ as those modems do.  DTMF text telephones (V.18's DTMF mode) are not
 supported.
 
 \begin{command}{plusMV18S}{+MV18S}{V.18 Selection}
-This command chooses the text telephone mode (as \cmd{+MS} would; 0
-sets \cmd{+MS=92} if \cmd{+MS} had a text one), and whether the modem
+This command chooses the text telephone mode (as \cmdl[plusMS]{+MS} would; 0
+sets \cmdl[plusMS]{+MS=92} if \cmdl[plusMS]{+MS} had a text one), and whether the modem
 probes a silent remote and sends the answer message on answering.
 \cmdl[Z]{Z} sets \cmd{0,0,0,0,1}.
 \begin{syntax}
@@ -2633,7 +2635,7 @@ probes a silent remote and sends the answer message on answering.
 \end{results}
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+MV18S Values}
   {\thd{Value} & \thd{Meaning}}
-\p{mode} & 0 off; 1 automoding (\cmd{+MS=18}); 2 5-bit (45); 4 EDT
+\p{mode} & 0 off; 1 automoding (\cmdl[plusMS]{+MS=18}); 2 5-bit (45); 4 EDT
   (110); 5 V.21; 6 V.23; 7 Bell 103. \\ \hline
 \p{dflt} & The default answering mode: kept. \\ \hline
 \p{fbk} & Kept. \\ \hline
@@ -2644,8 +2646,8 @@ probes a silent remote and sends the answer message on answering.
 \end{command}
 
 \begin{command}{plusMV18R}{+MV18R}{V.18 Report}
-With \cmd{+MV18R=1} automoding reports the mode it found before the
-\rc{CONNECT}, as \rc{+MV18R: \p{mode}} with \cmd{+MV18S}'s numbers
+With \cmdl[plusMV18R]{+MV18R=1} automoding reports the mode it found before the
+\rc{CONNECT}, as \rc{+MV18R: \p{mode}} with \cmdl[plusMV18S]{+MV18S}'s numbers
 (\rc{+MV18R: 2} for a TTY).
 \begin{syntax}
 \item +MV18R=\p{n}
@@ -2659,9 +2661,9 @@ With \cmd{+MV18R=1} automoding reports the mode it found before the
 \end{command}
 
 \begin{command}{plusMV18AM}{+MV18AM, +MV18P}{Answer Message, Probe Order}
-\cmd{+MV18AM} sets the answer message, up to 63 printable characters,
-the blanks in its quotes kept (\cmd{AT+MV18AM="GA"}): sent in the
-probes, and on answering with \cmd{+MV18S}'s \p{msg}.  \cmd{+MV18P}
+\cmdl[plusMV18AM]{+MV18AM} sets the answer message, up to 63 printable characters,
+the blanks in its quotes kept (\cmdl[plusMV18AM]{AT+MV18AM="GA"}): sent in the
+probes, and on answering with \cmdl[plusMV18S]{+MV18S}'s \p{msg}.  \cmdl[plusMV18AM]{+MV18P}
 (2 to 7) is kept: the probes go in the order above.
 \begin{syntax}
 \item +MV18AM="\p{text}", +MV18AM?, +MV18AM=? (gives
@@ -2676,7 +2678,7 @@ probes, and on answering with \cmd{+MV18S}'s \p{msg}.  \cmd{+MV18P}
 
 \begin{command}{plusMBAUDOT}{+MBAUDOT}{5-bit Mode}
 This command (D-Modem's own) sets the 5-bit mode's rate, tones and
-figures, for telex and RTTY: \cmd{AT+MBAUDOT=50,2125,2295,1} is 50
+figures, for telex and RTTY: \cmdl[plusMBAUDOT]{AT+MBAUDOT=50,2125,2295,1} is 50
 baud ITA2 on RTTY's 170~Hz shift.  The two ends must agree; automoding
 listens on these tones.  \cmdl[Z]{Z} sets the US TTY's
 \cmd{45,1400,1800,0}.
@@ -2703,8 +2705,8 @@ listens on these tones.  \cmdl[Z]{Z} sets the US TTY's
 \section{Voice commands}\label{sec:voice}
 
 With \cmdl[plusFCLASS]{AT+FCLASS=8} the modem takes V.253's voice
-commands; they are \rc{ERROR} in the other modes, but for \cmd{+VCID}.  Each
-\cmd{+V} parameter takes \cmd{?} (its values) and \cmd{=?} (their
+commands; they are \rc{ERROR} in the other modes, but for \cmdl[hashCID]{+VCID}.  Each
+\cmdr{+V} parameter takes \cmd{?} (its values) and \cmd{=?} (their
 ranges).
 
 \begin{command}{vcmds}{+VIP}{Initialize Voice Parameters}
@@ -2720,7 +2722,7 @@ handshake hangs up.
 \end{command}
 
 \begin{command}{plusVGT}{+VGT, +VGR}{Transmit and Receive Gain}
-The gain sending (\cmd{+VGT}) and receiving (\cmd{+VGR}), 0 to 128.
+The gain sending (\cmdl[plusVGT]{+VGT}) and receiving (\cmdl[plusVGT]{+VGR}), 0 to 128.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--128.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -2739,13 +2741,13 @@ Silence detection's sensitivity and period, each 0 to 255.
 \end{command}
 
 \begin{command}{plusVSM}{+VSM}{Voice Compression Method}
-This command sets the format of the samples \cmd{+VTX}, \cmd{+VRX} and
-\cmd{+VTR} carry: format \p{m} at \p{r} samples/s (left out: 8000, or
+This command sets the format of the samples \cmdl[plusVTX]{+VTX}, \cmdl[plusVTX]{+VRX} and
+\cmdl[plusVTX]{+VTR} carry: format \p{m} at \p{r} samples/s (left out: 8000, or
 the rate the format runs at).  \p{s} and \p{e}, silence compression's,
 are taken (0 to 255) and kept, though the modem compresses no silence.
 \begin{syntax}
 \item +VSM=\p{m}[,\p{r}[,\p{s}[,\p{e}]]]
-\item +VSM? (gives \cmd{+VSM=1,8000,0,0} at the start)
+\item +VSM? (gives \cmdl[plusVSM]{+VSM=1,8000,0,0} at the start)
 \item +VSM=? (lists the formats, one a line)
 \end{syntax}
 \begin{results}
@@ -2762,7 +2764,7 @@ are taken (0 to 255) and kept, though the modem compresses no silence.
 130, 131 & A-law and u-law, as 5 and 4. \\ \hline
 132 & IMA ADPCM, 4 bits a sample, two an octet with the first in the
   low nibble (as in a WAV file), at 7200, 8000 or 11025; the coder
-  starts afresh at each \cmd{+VTX}, \cmd{+VRX}, \cmd{+VTR}. \\ \hline
+  starts afresh at each \cmdl[plusVTX]{+VTX}, \cmdl[plusVTX]{+VRX}, \cmdl[plusVTX]{+VTR}. \\ \hline
 \end{vtable}
 \end{command}
 
@@ -2778,13 +2780,13 @@ engine running, the line taken or left.
   {\thd{Value} & \thd{Device}}
 0 & Leave the line, on hook (default). \\ \hline
 1 & Take the line for voice (on SIP: answer the call that rings). \\ \hline
-14 & A handset of the modem's own alone, the line on hook: \cmd{+VRX}
-  records its microphone, \cmd{+VTX} plays to its earpiece, and DTMF
+14 & A handset of the modem's own alone, the line on hook: \cmdl[plusVTX]{+VRX}
+  records its microphone, \cmdl[plusVTX]{+VTX} plays to its earpiece, and DTMF
   from it is reported. \\ \hline
 15 & The line with the handset on the call: the DTE hears the line and
   the handset, the line gets the DTE's samples and the handset. \\ \hline
 \end{vtable}
-\cmd{AT+VLS=?} gives V.253's list of the devices, with the events each
+\cmdl[plusVLS]{AT+VLS=?} gives V.253's list of the devices, with the events each
 reports in the transmit, receive and command states as hex bit fields
 (bit \p{n} for V.253's event \p{n}, event 0 the leftmost of 32):
 \example{Example output: AT+VLS=?}
@@ -2809,23 +2811,23 @@ two more:
 
 \begin{command}{plusVEM}{+VEM}{Event Reporting and Masking}
 0 or 1: V.253's event reports in the speakerphone state, which the modem
-has not.  Kept; 0 at the start and with \cmd{+VIP}.
+has not.  Kept; 0 at the start and with \cmdl[vcmds]{+VIP}.
 \end{command}
 
 \begin{command}{vD}{D}{Voice Dial}
-In voice mode, \cmd{ATD}\p{number} dials and gives \rc{OK} when the far end
+In voice mode, \cmdl[D]{ATD}\p{number} dials and gives \rc{OK} when the far end
 answers, \rc{BUSY}, \mbox{NO ANSWER} after \sreg{7}, or \rc{ERROR} when the call
 fails otherwise.  An answer tone is the answer and a busy tone \rc{BUSY} on
 any line (on SIP in its early media too); on SIP the answer is
 otherwise the 200~\rc{OK}, on a line that does not tell the ringing tone's
-end (\cmd{+VRA}), or \cmd{+VRN} without one.  On an analogue line the
+end (\cmdl[plusVRA]{+VRA}), or \cmdl[plusVRN]{+VRN} without one.  On an analogue line the
 modem waits 2 s for the dial tone first.  With the line taken it dials
 the digits as DTMF, \sreg{11}~ms each.
 \end{command}
 
 \begin{command}{vH}{H}{Voice Hang Up}
-In voice mode, \cmd{ATH} leaves the line and goes back to data mode,
-\cmd{+FCLASS=0}.
+In voice mode, \cmdl[H]{ATH} leaves the line and goes back to data mode,
+\cmdl[plusFCLASS]{+FCLASS=0}.
 \end{command}
 
 \begin{command}{plusVRA}{+VRA}{Ringback Goes Away Timer}
@@ -2845,7 +2847,7 @@ These commands send, receive, or both at once: \rc{CONNECT}, then samples in
 the DTE's samples plays as silence.
 \begin{results}
 \res{\rc{CONNECT}}{Then \rc{OK} when it ends.}
-\res{\rc{ERROR}}{Without the line or a handset taken (\cmd{+VLS}).}
+\res{\rc{ERROR}}{Without the line or a handset taken (\cmdl[plusVLS]{+VLS}).}
 \end{results}
 \begin{vtable}{2}{|C{0.12\textwidth}|L{0.74\textwidth}|}{Voice Data Commands}
   {\thd{Command} & \thd{Ends at}}
@@ -2859,7 +2861,7 @@ the DTE's samples plays as silence.
 \end{command}
 
 \begin{command}{plusVTD}{+VTD}{Beep Tone Duration}
-The duration of a \cmd{+VTS} element that gives none, in 10~ms, 0 to
+The duration of a \cmdl[plusVTS]{+VTS} element that gives none, in 10~ms, 0 to
 6000 (0: 1~s); 100 at the start.
 \end{command}
 
@@ -2867,15 +2869,15 @@ The duration of a \cmd{+VTS} element that gives none, in 10~ms, 0 to
 This command plays the elements of \p{string}, separated by commas, in
 turn, and gives \rc{OK} after the last.  Durations are in 10~ms, 0 to 6000.
 A field may be left empty: a frequency is then 0, a digit none
-(silence), and a duration \cmd{+VTD}'s, so \cmd{\{5\}}, \cmd{[440]} and
-\cmd{[]} last \cmd{+VTD} and \cmd{\{\}} is silence for as long.  Two
-digits in a row get 50~ms of silence between them: \cmd{+VTS=1,2,3}
+(silence), and a duration \cmdl[plusVTD]{+VTD}'s, so \cmd{\{5\}}, \cmd{[440]} and
+\cmd{[]} last \cmdl[plusVTD]{+VTD} and \cmd{\{\}} is silence for as long.  Two
+digits in a row get 50~ms of silence between them: \cmdl[plusVTS]{+VTS=1,2,3}
 dials 123.  A hook flash is the line's: over SIP an RFC 4733 event
 (16), the audio silent meanwhile.
 \begin{syntax}
 \item +VTS=\p{string}
 \item +VTS? (gives the tone settings)
-\item +VTS=? (gives \cmd{+VTS=0-4000,0-4000,0-6000})
+\item +VTS=? (gives \cmdl[plusVTS]{+VTS=0-4000,0-4000,0-6000})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{After the last element.}
@@ -2884,7 +2886,7 @@ dials 123.  A hook flash is the line's: over SIP an RFC 4733 event
 \begin{vtable}{2}{|T{0.18\textwidth}|L{0.68\textwidth}|}{+VTS Elements}
   {\thd{Element} & \thd{Plays}}
 \p{s} & The DTMF digit \p{s} (0--9, *, \#, A--D), or \cmd{!} a hook
-  flash, for \cmd{+VTD}. \\ \hline
+  flash, for \cmdl[plusVTD]{+VTD}. \\ \hline
 \{\p{s},\p{d}\} & The DTMF digit or hook flash \p{s} for \p{d}. \\ \hline
 [\p{f1},\p{f2},\p{d}] & A tone of \p{f1} and \p{f2} Hz (0 to 4000; 0 is
   none) for \p{d}. \\ \hline
@@ -2893,12 +2895,12 @@ dials 123.  A hook flash is the line's: over SIP an RFC 4733 event
 
 \subsection{Voice events}
 
-While the line is taken (\cmd{+VLS=1}) the modem reports what it hears,
+While the line is taken (\cmdl[plusVLS]{+VLS=1}) the modem reports what it hears,
 as V.253 has it, as \cmd{<DLE>} and a character.  DTMF digits from the
 far end are reported 51~ms into them and again every 70~ms while they
-last, in the voice command state as well as among \cmd{+VRX}'s samples,
+last, in the voice command state as well as among \cmdl[plusVTX]{+VRX}'s samples,
 whose audio is silence from a digit's report until it ends; the modem's
-own \cmd{+VTS} tones are not reported.  The calling tones are reported
+own \cmdl[plusVTS]{+VTS} tones are not reported.  The calling tones are reported
 as a burst ends and 4~s apart at least.
 
 \begin{vtable}{2}{|T{0.2\textwidth}|L{0.66\textwidth}|}{Voice Events}
@@ -2924,11 +2926,11 @@ as a burst ends and 4~s apart at least.
 
 When the far end ends a voice call, the modem reports \cmd{<DLE>l}
 (V.253's loop current interruption, ``usually a remote hangup'') and
-goes on hook (\cmd{+VLS=0}); V.253 has no \rc{NO CARRIER} in voice mode.
-What was under way ends: \cmd{+VRX}'s samples with \cmd{<DLE><ETX>},
-then \rc{OK}; \cmd{+VTX} and \cmd{+VTR} when the DTE ends them (its samples
-until then are discarded), then \rc{OK}, \cmd{+VTR}'s after
-\cmd{<DLE><ETX>}; \cmd{+VTS}'s tones with \rc{ERROR}.  In the command state
+goes on hook (\cmdl[plusVLS]{+VLS=0}); V.253 has no \rc{NO CARRIER} in voice mode.
+What was under way ends: \cmdl[plusVTX]{+VRX}'s samples with \cmd{<DLE><ETX>},
+then \rc{OK}; \cmdl[plusVTX]{+VTX} and \cmdl[plusVTX]{+VTR} when the DTE ends them (its samples
+until then are discarded), then \rc{OK}, \cmdl[plusVTX]{+VTR}'s after
+\cmd{<DLE><ETX>}; \cmdl[plusVTS]{+VTS}'s tones with \rc{ERROR}.  In the command state
 \cmd{<DLE>l} comes alone.
 
 \subsection{From voice to fax or data}
@@ -2950,23 +2952,23 @@ AT+FCLASS=1            OK
 ATA                    CONNECT      class 1, as after AT+FTH=3
 \end{verbatim}
 With \cmdl[plusFAA]{+FAA=1} the modem does it itself, in the voice
-command state (a \cmd{+VTX}, \cmd{+VRX}, \cmd{+VTR} or \cmd{+VTS} under
-way ends first): after \cmd{<DLE>c}, \rc{FAX}, \cmd{+FCLASS=1} and the fax
-answer's \rc{CONNECT}; after \cmd{<DLE>e}, \cmd{+FCLASS=0} and the adaptive
+command state (a \cmdl[plusVTX]{+VTX}, \cmdl[plusVTX]{+VRX}, \cmdl[plusVTX]{+VTR} or \cmdl[plusVTS]{+VTS} under
+way ends first): after \cmd{<DLE>c}, \rc{FAX}, \cmdl[plusFCLASS]{+FCLASS=1} and the fax
+answer's \rc{CONNECT}; after \cmd{<DLE>e}, \cmdl[plusFCLASS]{+FCLASS=0} and the adaptive
 data answer (\rc{DATA}, then its \rc{CONNECT}).
 
 \section{Online, the escape and hanging up}\label{sec:online}
 
 Online, what the DTE sends goes to the other modem, except the escape
-sequence: three \sreg{2} characters (\cmd{+++}), each within 0.5 s of
+sequence: three \sreg{2} characters (\cmdr{+++}), each within 0.5 s of
 the one before, with 0.5 s of nothing before them and after them.  The
 modem then says \rc{OK} and is in online command mode, the call still up:
 \cmdl[O]{ATO} goes back online, \cmdl[H]{ATH} hangs up, and on a V.92
 connection \cmdl[plusPMHR]{AT+PMHR} asks for modem-on-hold.  The
-\cmd{+++} itself is data (the modem cannot know it is the escape until
+\cmdr{+++} itself is data (the modem cannot know it is the escape until
 the guard time after it), and what the DTE sent before the escape and
 the line had not taken yet is kept, not dropped: it goes to the other
-modem, \cmd{+++} last, once \cmd{ATO} is back online.
+modem, \cmdr{+++} last, once \cmdl[O]{ATO} is back online.
 
 The call ends with \rc{NO CARRIER} when the other side hangs up or its
 carrier is gone for \sreg{10} tenths of a second.  dmodemd hangs up as
@@ -2981,22 +2983,22 @@ HUPCL set on the pty, closes it; it then makes a new pty
   of \cmd{SIP\_LOGIN}.  A telephone number (only V.250's dial
   characters: digits, \cmd{* \# + A B C D}, the modifiers \cmd{T P W , @
   ! ;} and \cmd{- ( ) .} and blanks) goes as its digits and DTMF
-  characters: \cmd{ATDT555-1000} calls \cmd{sip:5551000@}\p{domain}.
-  Anything else is a SIP user's name, as it is: \cmd{ATDalice}.
-\item The line has no dial tone: \cmdl[X]{ATX3} (or \cmd{X1}), else NO
+  characters: \cmdl[D]{ATDT555-1000} calls \cmd{sip:5551000@}\p{domain}.
+  Anything else is a SIP user's name, as it is: \cmdl[D]{ATDalice}.
+\item The line has no dial tone: \cmdl[X]{ATX3} (or \cmdl[X]{X1}), else NO
   DIALTONE.
-\item A dial string with a \cmd{;} (\cmd{ATDT5551000;}) makes the SIP
-  call and says \rc{OK} at once, the modem in command state: what \cmd{ATD}
+\item A dial string with a \cmd{;} (\cmdl[D]{ATDT5551000;}) makes the SIP
+  call and says \rc{OK} at once, the modem in command state: what \cmdl[D]{ATD}
   adds then goes as DTMF on the call (a menu's choices, an extension),
-  and \cmd{ATD} alone or \cmdl[A]{ATA} starts the modem's handshake.
+  and \cmdl[D]{ATD} alone or \cmdl[A]{ATA} starts the modem's handshake.
 \item With \cmd{-L} dmodemd registers and takes calls: \rc{RING} every 3
   seconds while one waits, \cmdl[A]{ATA} or \sreg{0} rings
-  (\cmd{ATS0=1}) answer it, and the rings stop if the caller gives up.
+  (\cmdl[S]{ATS0=1}) answer it, and the rings stop if the caller gives up.
   A call that comes while the line is in use is refused (486, busy);
   without \cmd{-L} every call is (480).
 \item The call is G.711 at 8000 Hz, which is what V.90 and V.92 need
   (\cmdl[plusMS]{AT+MS=92}, the default).  Over a real PSTN gateway a
-  lower modulation (\cmd{AT+MS=132,0,4800,9600}) may do better.
+  lower modulation (\cmdl[plusMS]{AT+MS=132,0,4800,9600}) may do better.
 \end{itemize}
 
 \section{Compatibility}\label{sec:compat}
@@ -3005,18 +3007,18 @@ HUPCL set on the pty, closes it; it then makes a new pty
 
 \begin{itemize}
 \item \cmdl[ampK]{\&K} is the compression, as on USRobotics' modems;
-  on Rockwell's and Conexant's it is flow control.  \cmd{\&K3} leaves
-  V.42's compression on (MNP 5 off), \cmd{\&K0} turns it off.
+  on Rockwell's and Conexant's it is flow control.  \cmdl[ampK]{\&K3} leaves
+  V.42's compression on (MNP 5 off), \cmdl[ampK]{\&K0} turns it off.
 \item The S-registers past \sreg{16} are D-Modem's own: \sreg{29} and
   \sreg{30} are the speaker's (elsewhere the hook flash time and the
   inactivity timer), \sreg{92} the answer's delay (elsewhere a fax
   transmit level).  The others (S36, S37, S91 \ldots) are free: kept
   as written.  \sreg{7} and \sreg{11} start at 60 and 100.
-\item There are no stored numbers or profiles: \cmd{\&Z} and
-  \cmd{ATDS=}\p{n} are \rc{ERROR}, \cmdl[ampW]{\&W} stores nothing.
-\item \cmdl[I]{ATI}'s numbers are the modem's own (\cmd{I0} to
-  \cmd{I7}), but for the call statistics: \cmd{I6} as USRobotics',
-  \cmd{I11} as Conexant's, \cmdl[ampV]{\&V1} as Rockwell's.
+\item There are no stored numbers or profiles: \cmdr{\&Z} and
+  \cmdl[D]{ATDS=}\p{n} are \rc{ERROR}, \cmdl[ampW]{\&W} stores nothing.
+\item \cmdl[I]{ATI}'s numbers are the modem's own (\cmdl[I]{I0} to
+  \cmdl[I]{I7}), but for the call statistics: \cmdl[I]{I6} as USRobotics',
+  \cmdl[I]{I11} as Conexant's, \cmdl[ampV]{\&V1} as Rockwell's.
 \item The numeric results (\cmdl[V]{V0}) are Smart Link's, \rc{CONNECT}'s
   for each rate among them; those of USRobotics' and Conexant's modems
   differ.  \rc{CONNECT}'s rates without a number of Smart Link's have
@@ -3030,12 +3032,12 @@ HUPCL set on the pty, closes it; it then makes a new pty
 
 \subsection{Not supported}
 
-These are \rc{ERROR}: \cmd{\&V2} and up, \cmd{\&Z} (no stored numbers),
-\cmd{\&T2} and \cmd{\&T9} and up, \cmd{\bs B} (a break), \cmd{X5} and
-up, \cmd{ATI8} to \cmd{ATI10} and \cmd{ATI12} and up, \cmd{-V90}
-(\cmdl[plusMS]{+MS} chooses), \cmd{+MA}, \cmd{+MSC}, \cmd{+EB},
-\cmd{+ESR}, \cmd{+ETBM}, \cmd{+EWIND}, \cmd{+EFRAM}, \cmd{+A8E},
-\cmd{+A8T}, \cmd{+PMHF}, \cmd{+GSN} and \cmd{+GOI}; \cmd{+MS}'s names of
+These are \rc{ERROR}: \cmdl[ampV]{\&V2} and up, \cmdr{\&Z} (no stored numbers),
+\cmdl[ampT]{\&T2} and \cmdl[ampT]{\&T9} and up, \cmdr{\bs B} (a break), \cmdl[X]{X5} and
+up, \cmdl[I]{ATI8} to \cmdl[I]{ATI10} and \cmdl[I]{ATI12} and up, \cmd{-V90}
+(\cmdl[plusMS]{+MS} chooses), \cmdr{+MA}, \cmdr{+MSC}, \cmdr{+EB},
+\cmdr{+ESR}, \cmdr{+ETBM}, \cmdr{+EWIND}, \cmdr{+EFRAM}, \cmdr{+A8E},
+\cmdr{+A8T}, \cmdr{+PMHF}, \cmdr{+GSN} and \cmdr{+GOI}; \cmdl[plusMS]{+MS}'s names of
 modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \cmd{V27} \ldots).
 
